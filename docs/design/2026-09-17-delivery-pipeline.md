@@ -30,7 +30,7 @@ edgefleet 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 3. 契约：OpenAPI 生成客户端编译 + oasdiff breaking 检查；MCP 工具 schema 快照；错误码注册表校验（只增、不复用）；Compose 子集校验回归（白名单/拒绝清单/受管字段/label 约定）
 4. 许可证守卫：默认发行组件清单不得出现 AGPL/DSAL（白名单机制，见 D5）
 5. 集成 E2E（单节点 dind）：`docker:29.8.1-dind` 内 install → 部署 fixture 应用（compose）→ stack 对账（增/删服务、受管字段拒绝）→ health gate → 路由 → 回滚 → 平台自升级
-6. UI：typecheck + build（Playwright smoke 可选）
+6. Console 端：typecheck + build（Playwright smoke 可选）
 
 **nightly 轨道（完整矩阵，红则阻断发版）**
 
@@ -67,7 +67,7 @@ edgefleet 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 
 ### 2.6 dogfooding
 
-v0.1 发布后：在 staging VPS 上用 edgefleet 部署 edgefleet 自身（UI + 文档 + demo）。staging 验收进入发布检查单——这是真实用户路径的最强验证。
+v0.1 发布后：在 staging VPS 上用 edgefleet 部署 edgefleet 自身（console 端 + 文档 + demo）。staging 验收进入发布检查单——这是真实用户路径的最强验证。
 
 ## 3. 关键决策及理由
 

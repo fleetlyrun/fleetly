@@ -16,7 +16,7 @@
 | **节点（Swarm node）** | 加入 Swarm 集群的一台 Docker Engine 主机 | `docker node ls` 列出的机器；承接 service 任务 | 控制面进程本身；一个容器 |
 | **actor** | 审计日志中的操作主体，取值 human / AI Agent | token 备注「CI 部署」 | — |
 
-边界裁决：平台自动重启崩溃容器 = 确定性规则，不算 AI Agent；UI 点击部署 = human actor；在 AI 编辑器里说「帮我部署这个仓库」= AI Agent。产品承诺文案 **AI/Agent Native** 中的 Agent 指 AI Agent；本约定优先于历史用法与行业通用词。历史术语「节点守护进程（edgefleetd node）」已随 D12 采纳 Swarm 而退役（自研 node 协议降级为退出预案）。
+边界裁决：平台自动重启崩溃容器 = 确定性规则，不算 AI Agent；UI 点击部署 = human actor；在 AI 编辑器里说「帮我部署这个仓库」= AI Agent。产品承诺文案 **AI/Agent Native** 中的 Agent 指 AI Agent；本约定优先于历史用法与行业通用词。**「Web 终端」为固定功能名词**（浏览器内终端，经执行中继实现，D19），不随前端组件命名（console 端）变化。历史术语「节点守护进程（edgefleetd node）」已随 D12 采纳 Swarm 而退役（自研 node 协议降级为退出预案）。
 
 ### 1.2 项目定位
 
@@ -72,7 +72,7 @@ dokku 是单机设计：接口为 SSH + bash CLI 文本输出，扩展是 bash �
 
 | 需求 | dokku 提供 | 缺口 |
 |---|---|---|
-| Web UI / MCP / 结构化 CLI | `ssh dokku@host xxx` | 解析 stdout，无事务、无事件流、无错误码；dokku 升级即破坏解析层 |
+| Console 端 / MCP / 结构化 CLI | `ssh dokku@host xxx` | 解析 stdout，无事务、无事件流、无错误码；dokku 升级即破坏解析层 |
 | AI Agent 安全 | 单个 SSH 用户全权限 | 无 scope token、无审计、无 plan/dry-run |
 | ≤10 台统一集群 | 单机设计 | 10 台 = 10 个独立盒子，中央控制面仍需自研 |
 | Go 技术栈 | bash 插件 | 与项目取向相悖 |
@@ -84,7 +84,7 @@ dokku 保留两个用途：参考实现（发布流程、零停机、代理配�
 ### 2.1 总体架构
 
 ```
-CLI / Web UI / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
+CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
         │
         ▼
 ┌─ 控制面 edgefleetd server（Go 单二进制，运行于 Swarm manager）─┐
@@ -130,7 +130,7 @@ CLI / Web UI / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
 | 备份(v0.2) | restic | Go, BSD-2 | 调度、策略、恢复流程 |
 | 镜像分发(v0.2) | zot registry（v0.1 免 registry：digest 引用本地镜像） | Go, Apache-2.0 | 构建推送、节点拉取（`--with-registry-auth`） |
 | MCP(v0.2) | 官方 modelcontextprotocol/go-sdk | Go, MIT/Apache-2.0 | 精选工具面、scope 映射、审计 |
-| Web UI | React + Vite（SPA） | MIT | 全部界面 |
+| Console 端（曾用名 Web UI，2026-09-17 更名） | React + Vite（SPA） | MIT | 全部界面 |
 
 依赖许可证以实际锁定的版本为准；默认发行包不引入 AGPL 组件。
 
@@ -293,7 +293,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 
 ```
 /                Go module 根（cmd/edgefleetd、cmd/edgefleet、internal/、pkg/api）
-/web             React SPA（Vite）
+/console         Console 端（React SPA，Vite）
 /docs            本目录
 /deploy          bootstrap 脚本、systemd unit、安装/升级
 ```
@@ -339,7 +339,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 |---|---|---|---|
 | D1 | 自研 Go 控制面 | AI/Agent Native 与 UI/MCP 承诺需要结构化状态与 API-first 地基；统一集群需求已排除 dokku | 包装 dokku：无结构化状态、解析层长期维护税、单机；纯 k8s/Tsuru：过重，违背 10 台定位；Coolify 二次开发：PHP/Laravel + 自身过重 |
 | D2 | 统一集群，底座 = Docker Swarm（引擎内置）；控制面运行于 manager，不自研分布式核心 | 三条硬约束（不自研分布式核心 / 轻量 / 五年可用）加权下 Swarm 得分最高：零新增组件、调度与成员管理全内置、health gate 与失败不切流原生可用（源码级验证）；专项评估见 [Swarm 评估报告](../research/2026-09-17-swarm-substrate-assessment.md) | 自研 node 协议：分布式核心工作量集中且最难测试（本轮推翻）；机队模式：无统一调度；Nomad：官方小集群 sizing 8-16GB 级 + BSL 许可；k3s：2C/2GB 起 + 用户拒绝 K8s（保留为可选 driver） |
-| D3 | Web UI 用 React SPA | 生态与组件库最丰富、人才与参考实现最多，长期维护与招人成本最低；MIT | Go 模板 + HTMX：更轻、单二进制，但交互上限低；Svelte / Solid：运行时更小、signals 模型更契合高频流式渲染，但生态规模小；本轮按团队选型定为 React，UI 与 API 严格解耦故后续仍可换 |
+| D3 | Console 端用 React SPA | 生态与组件库最丰富、人才与参考实现最多，长期维护与招人成本最低；MIT | Go 模板 + HTMX：更轻、单二进制，但交互上限低；Svelte / Solid：运行时更小、signals 模型更契合高频流式渲染，但生态规模小；本轮按团队选型定为 React，console 与 API 严格解耦故后续仍可换 |
 | D4 | S3 做 provider 抽象，**v0.2 只支持外部端点**；不打包 S3 服务（RustFS 为将来候选，触发式引入）〔2026-09-17 D4 复议〕 | Dokploy 地板即外部 endpoints 形态（AWS/B2/R2/MinIO/Wasabi，Rclone 备份）；「MinIO 归档空位」是市场机会非约束；provider 抽象保留切换能力 | 打包 RustFS：许可与 UI 均优，但无需求证据前打包 = 过度设计（奥卡姆裁决 F5）；Garage：AGPL，仅外部端点；SeaweedFS：运维面大 |
 | D5 | 开源核心 + 商业版，核心 Apache-2.0 | 专利授权、商业友好；核心保持完整可自用，不做 MinIO 式"先送后收" | MIT：缺少专利条款；AGPL：限制商业路径 |
 | D6 | 构建用 Railpack + BuildKit，Dockerfile 兜底 | 自研构建系统是无底洞；Nixpacks 已转维护模式，Railpack 是其官方继任且为 Go 库可复用 | 自研 buildpack 体系；herokuish：bash + 与 dokku 生态绑定 |
@@ -390,7 +390,7 @@ A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm
 3. 域名 + 自动 HTTPS（每节点 Traefik + 控制面集中 ACME；域名列表契约见 §2.4）
 4. 环境变量/密钥（加密存储、注入、自动连接串）
 5. 日志查看（实时 SSE 流 + 历史落盘检索）
-6. 基础 Web UI（应用列表/详情、部署、日志、env、域名）
+6. 基础 Console 端（应用列表/详情、部署、日志、env、域名）
 7. 发布语义全套：pause 固定、最近 5 版回滚（归一化 compose + 覆盖层）、观察窗默认告警、首发失败 scale 0 保留现场
 8. Compose 子集校验与自动放置：白名单/受管字段校验、有卷应用自动钉住到本机（同一代码路径，见[放置专项](2026-09-17-stateful-placement.md)）
 
