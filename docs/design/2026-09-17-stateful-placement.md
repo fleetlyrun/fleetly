@@ -6,7 +6,7 @@
 
 ## 1. 现状与问题
 
-- Swarm local 卷按节点各自创建，任务被重调度到其他节点会得到**空卷**（数据不跟随、数据风险）；删服务不删卷；bind mount 必须预先存在于目标节点。
+- Swarm local 卷按节点各自创建，任务被重调度到其他节点会得到**空卷**（数据不跟随、数据风险；**Spike C V6a 实测复现 2026-09-17**：写入→节点 DOWN→manager 侧新建空卷→读出为空，原数据仍完整留在原节点卷中——三段证据见 spike/c/README.md §3）；删服务不删卷；bind mount 必须预先存在于目标节点。
 - 节点消失（15–16.5s 判定 DOWN）后 manager 会在其他节点重建任务；未加约束的有卷服务因此可能静默产生空卷。**「有卷就不迁移」不成立，必须主动钉住。**
 - 自研 spec 已废止（应用模型 = Compose 规范，D14）；compose 原生没有平台放置语义——放置意图由 label `edgefleet.placement.node` 承载；节点身份只有 hostname（可变、可重名）。
 - 已验证能力边界：**manager 无法枚举/删除远端节点的 local 卷**——卷删除/校验由用户按文档在节点上执行，平台不建维护作业。
@@ -89,7 +89,7 @@ deploy_preflight(app):
 | 绑定节点 DOWN | 观测（心跳 15s 量级） | 应用 `blocked`（UI 横幅）；任务 PENDING；进行中部署 `blocked_waiting`（发布看门狗暂停计时、可 cancel；节点恢复续跑并重新起算）；新部署快速失败 |
 | 绑定节点 drain（主动维护） | `docker node update --availability drain` 后观测 | 同「DOWN」：应用 `blocked`、任务 PENDING；回岗（active）后自动回绑、本地卷数据不丢（维护窗口语义见架构 §2.6） |
 | 绑定节点恢复 | 观测 | 自动回到绑定（任务落回唯一合法节点），事件 `placement.recovered` |
-| 绑定节点移除 | `docker node rm` 后观测 | `blocked(node_gone)`；进行中部署以 `E_PLACEMENT_NODE_GONE` 失败；人工二选一：恢复数据后 `rebind --data-restored` / `rebind --discard` |
+| 绑定节点移除 | `docker node rm` 后观测 | `blocked(node_gone)`；进行中部署以 `E_PLACEMENT_NODE_GONE` 失败；人工二选一：恢复数据后 `rebind --data-restored` / `rebind --discard`（**Spike C C4b 实测 2026-09-17**：node rm 后任务永久 PENDING 无迁移、旧任务转 Orphaned；换绑新节点得到全新空卷——前哨 409 的必要性实证，原节点停止态数据可救回） |
 | 节点身份 label 被删改 | 对账器 | 自动重放 label + 事件（安全不变量） |
 | 卷位置 ≠ 绑定（手工移动/残留） | 对账器 + 前哨 | 部署 409 `E_VOLUME_NODE_MISMATCH`；不自动修数据 |
 | 无状态应用新增卷 | 部署时 | **钉住当时运行节点**（数据诞生点）；未运行则按选点算法 |

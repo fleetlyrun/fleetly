@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.5（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §1/§6；[交付流水线](2026-09-17-delivery-pipeline.md) §6；来源：独立设计×交叉验证（§8），用户裁决见 §3 D-REL-6；2026-09-17 审核裁决轮：env 快照按三层合并结果（架构 §2.4）、`blocked_waiting` 入状态机、`deployment.cancelled` 事件命名对齐 |
+| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.5（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §1/§6；[交付流水线](2026-09-17-delivery-pipeline.md) §6；来源：独立设计×交叉验证（§8），用户裁决见 §3 D-REL-6；2026-09-17 审核裁决轮：env 快照按三层合并结果（架构 §2.4）、`blocked_waiting` 入状态机、`deployment.cancelled` 事件命名对齐；2026-09-17 Spike B 回写：B2/B3 关闭、归位禁 `--force`、stop-first 停机实测 10–12s |
 
 ## 1. 现状与问题
 
@@ -58,7 +58,7 @@ queued → preparing → building → releasing → observing → succeeded
 - **保留与可重放集合**：固定保留最近 5 次**成功**部署；列表即选项（列不出来的不可回滚，没有额外的状态机与错误码）；回滚目标越界 → `E_ROLLBACK_NO_TARGET`。
 - **重放语义**：compose 字段按快照回放（**非密钥 env 随快照回滚**；env 变更必须经部署固化为新版本，天然形成可回退点）；治理参数（observe/onUnstable/keepVersions）取**当前平台配置**（前瞻设置不随版本回退）；**secret 值永远取当前**（回滚不撤销密钥轮换，文档明示）；卷数据、DB 迁移、DNS 不回滚。
 - **preflight**：镜像可得性（v0.1 本地 inspect / v0.2 registry HEAD）、约束可满足、secret 存在、compose 合法（受控子集/受管字段）——任一失败在动底座之前失败。v0.1 无 registry 时镜像被清理 → `E_IMAGE_UNAVAILABLE` + `W_ROLLBACK_IMAGE_RISK`（提示保留镜像或重建）。
-- 归位零成本：`IsTaskDirty` 按 task spec 深度相等判断，同内容重放不重建任务（**Spike B2 断言 task id 不变**，未验证前标注「待验证」）。
+- 归位零成本：`IsTaskDirty` 按 task spec 深度相等判断，同内容重放不重建任务——**2026-09-17 Spike B2 已实测验证**：旧 task id 跨「失败 + 同内容重放」不变、零新增任务；字段脏检矩阵：container-label/env/restart-policy 变更与 `--force` 触发任务重建，service-label/update-config 不触发。**平台纪律：归位重放禁用 `--force`**。
 
 ### 2.5 场景行为矩阵
 
@@ -84,7 +84,7 @@ queued → preparing → building → releasing → observing → succeeded
 ### 2.6 stop-first 专表（有卷/固定 host 端口/global）
 
 - 硬 preflight（镜像/约束/secret/端口）**在停机之前**执行，失败零停机。
-- 失败 = 强制归位重放（不受 `onUnstable` 影响），停机持续到恢复完成；`downtime_ms` 与 `deployment.downtime_started/ended` 事件如实记录。
+- 失败 = 强制归位重放（不受 `onUnstable` 影响），停机持续到恢复完成（Spike B 失败矩阵实测：stop-first 失败停机 10–12s 量级）；`downtime_ms` 与 `deployment.downtime_started/ended` 事件如实记录。
 - 观察窗策略（`onUnstable`）对 stop-first 无意义（归位是恢复不是策略），不对用户暴露该组合的歧义文案。
 - 对外口径：文档与 UI 明示「有卷/固定端口应用不承诺零停机」（既有降级表）。
 
@@ -145,8 +145,8 @@ queued → preparing → building → releasing → observing → succeeded
 
 | 风险 | 影响 | 对策 |
 |---|---|---|
-| start-first 重发布期 LB 端点可能早于 health 加入（开放问题） | 「失败=不切流量」在重发布场景失真（少量 5xx） | 最高优先级 Spike B 验证；若成立：观察窗起点前移 + 对外口径降级为「新连接零失败、切换期少量 5xx」；技术预案（若口径不可接受）：路由由 VIP 改为平台自管 task 级注册（`tasks.<service>` + 健康过滤） |
-| 归位零成本依赖 `IsTaskDirty` 深度相等（未验证） | 归位多做一次滚动（功能仍正确） | Spike B2 断言 task id 不变；不成立则接受一次滚动并修正文档 |
+| start-first 重发布期 LB 端点时机 | ~~开放问题~~ **2026-09-17 Spike B3 已关闭**：带 healthcheck 端点入集晚于 healthy 45–87ms、542 样本 0 失真，「失败=不切流量」成立、对外口径不降级；health_gate=none 的暴露（27 连败/6s 预热）归降级表 | 证据 spike/b/README.md §3；技术预案（路由改平台自管 task 级注册）不再需要 |
+| 归位零成本依赖 `IsTaskDirty` 深度相等 | ~~未验证~~ **2026-09-17 Spike B2 已实测验证**（task id 不变；`--force` 必重建→归位禁用） | 见 §2.4；spike/b/README.md §2 |
 | 冻结→归位竞态（窗口内旧任务节点 DOWN） | 按失败 spec 重建错误版本任务 | 归位 p95 <2s；故障注入测试；错误任务不会通过 health 接管流量 |
 | 观察窗阈值（60s/10s/重启判定）为拍值 | 误报或漏报 | dogfood + 3 类真实应用校准；平台默认可调 |
 | v0.1 无 registry，回滚镜像被清理 | 回滚目标不可用 | preflight + `W_ROLLBACK_IMAGE_RISK` + 文档；不自动清理镜像 |
@@ -172,4 +172,4 @@ queued → preparing → building → releasing → observing → succeeded
 - **裁决**：首发 scale=0（A 论证硬）；恢复建模同记录/新 deployment 二分（合并）；PENDING 不做 Swarm 调度约束预检，仅保留平台自身对象预检（绑定节点/镜像/secret/端口；B 更安全，A 自报近似判定风险）；系统性熔断砍掉（D18 对标纪律）。
 - **用户裁决**：观察窗默认告警（D-REL-6）。
 - **独有并验证后并入**：`IsTaskDirty` 归位零成本（B，待 Spike）；LB 端点早于 health（B，开放问题）；`W_ROLLBACK_IMAGE_RISK`、`downtime_ms` 诚实累计（A）；恢复覆写 PreviousSpec 注记（A）。guarantees 块与系统熔断经 D18 对标纪律砍除。
-- **开放问题（禁当承诺）**：LB 端点时机；归位零成本；冻结→归位竞态；观察窗阈值校准。
+- **开放问题（禁当承诺）**：~~LB 端点时机~~与~~归位零成本~~已于 2026-09-17 Spike 实测关闭（B3/B2，见架构 §5 与 §2.4）；仍开放：冻结→归位竞态；观察窗阈值校准。

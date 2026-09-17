@@ -64,15 +64,15 @@ T2 v0.1（核心；分层依赖见 §5）
 
 ## 4. T1 Spike（1-2 周，V1-V7 为采纳门）
 
-**T1.1 Spike A：构建与镜像** ｜ Blocked by: T0.1（可与他票并行）｜ 3-4 人日
+**T1.1 Spike A：构建与镜像** ｜ Blocked by: T0.1（可与他票并行）｜ 3-4 人日 ｜ ✅ 完成 2026-09-17（还原点 7042317；[spike/a/README.md](../../spike/a/README.md)）
 - 交付：构建链路风险清零的验证报告 + 可复现脚本。
 - 验收（架构 §4.1 A 行全项）：Railpack 钉版本 + `railpack-plan.json` 归档可复现；缓存三情形（本地层/registry cache/secrets-hash 失效）断言；私有依赖凭证不进最终镜像；构建在 CPU/内存限额内且不污染宿主；rootless vs 特权选型结论；**V2**——service 以 `app@sha256:` 创建零 pull 尝试。
 
-**T1.2 Spike B：发布与路由** ｜ Blocked by: T0.1；建议接 T0.4 加速 ｜ 4-6 人日
+**T1.2 Spike B：发布与路由** ｜ Blocked by: T0.1；建议接 T0.4 加速 ｜ 4-6 人日 ｜ ✅ 完成 2026-09-17（还原点 9b722c2；[spike/b/README.md](../../spike/b/README.md)）
 - 交付：发布语义全链路验证 + 失败矩阵断言脚本（即 nightly 回归的雏形）。
 - 验收（架构 §4.1 B 行全项）：**V1** health 失败 → FAILED/paused/旧任务不中断；**B2** 同内容重放任务零替换（task id 不变）；**B3** start-period 内 LB 端点时机结论（最高优先级开放问题，结论回写架构 §5 风险行与对外口径）；stack apply 增删服务 + 受管字段 `E_COMPOSE_MANAGED_FIELD`；**V3** 更新窗口探测零失败/VIP 不变；**V4** keep-alive 陈旧连接以 `serversTransport` 消除；启动即崩时旧版本持续服务且入口零污染；单应用坏配置不影响他应用；失败矩阵逐条错误码断言；快照重放回滚 1 分钟内完成。
 
-**T1.3 Spike C：底座** ｜ Blocked by: T0.1 ｜ 3-4 人日
+**T1.3 Spike C：底座** ｜ Blocked by: T0.1 ｜ 3-4 人日 ｜ ✅ 完成 2026-09-17（还原点 35fc2ad；[spike/c/README.md](../../spike/c/README.md)）
 - 交付：Swarm 底座行为验证记录（卷/绑定/恢复语义）。
 - 验收（架构 §4.1 C 行全项）：`swarm init` 对既有容器无影响、用户视角透明（副作用清单落档）；节点 DOWN 15s 量级 stateless 自动重建；**V6a** 有卷无约束迁移得空卷（复现+文档化）、加绑定钉住；**V6b** down→blocked→恢复、drain→回岗、remove→人工重绑路径走通；**V5** `--force-new-cluster` 恢复演练应用不中断；**V5b** raft 回退后孤儿容器命运（0/5/30min 观察）。
 

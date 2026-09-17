@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；技术选型补充已应用（基础 Go 框架 = lynx + google/wire，D20，参考 messageloop；API 面 = gRPC + grpc-gateway，D21，参考 torchwood，huma 经用户裁决否决）；依赖复核轮已应用（age 加密 / coder-websocket 中继流 / shadcn-ui / minio-go 四项落定，git 许可证修正为 GPLv2 子进程调用，CI S3 代演用 RustFS〔初定 SeaweedFS，后经用户裁决改定〕）；实现后更新状态并补 PR |
+| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；技术选型补充已应用（基础 Go 框架 = lynx + google/wire，D20，参考 messageloop；API 面 = gRPC + grpc-gateway，D21，参考 torchwood，huma 经用户裁决否决）；依赖复核轮已应用（age 加密 / coder-websocket 中继流 / shadcn-ui / minio-go 四项落定，git 许可证修正为 GPLv2 子进程调用，CI S3 代演用 RustFS〔初定 SeaweedFS，后经用户裁决改定〕）；T1 Spike 轮已完成并回写（2026-09-17：V1-V7 采纳门全过、B3/B2 关闭、V4 口径改优雅退出为主键、Traefik {} 纪律、DOWN 判定实测 13.5s，证据 spike/{a,b,c}/README.md）；实现后更新状态并补 PR |
 
 ## 1. 现状与问题
 
@@ -223,12 +223,12 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 **不变量（竞品事故教训 + Swarm 源码级验证；完整语义见[发布专项](2026-09-17-release-semantics.md)，Spike B 验收依据）**：
 
 - 路由发布严格晚于 health gate：**Traefik 的 Swarm provider 不检查健康**（task 进 running 即注册，源码验证），因此关闭自动发现，由控制面在 health 通过后下发路由（规避 Dokku #8974 同类事故）。
-- 入口配置写入原子且故障隔离：先校验后落盘，空 routers/services 不落盘，单应用坏配置不得影响其他应用路由（Dokploy #5189）。
+- 入口配置写入原子且故障隔离：先校验后落盘，空 routers/services 不落盘，单应用坏配置不得影响其他应用路由（Dokploy #5189）。**Spike B provider 四态实测（2026-09-17）**：Traefik 只拒绝显式空 map（保留旧配置），**裸 `{}` 载荷会清空全部路由（实测 404）**，且坏 router 会被连同整份配置一起应用——因此「非空」校验的责任在控制面：routers/services 键必须存在、合成结果必须非空，校验不过不下发；配置服务不可达时 Traefik 保留上一份好配置继续服务（实测）。
 - **失败 = 不切流量**：更新默认 `start-first`（有卷/固定端口强制 stop-first，见降级表）+ Swarm `failure-action=pause`（冻结更新、旧任务保留）；**不使用 Swarm 原生回滚**（自动回滚清空唯一 PreviousSpec、不覆盖 PENDING）——回滚由平台按完整版本快照单层重放（见 D15）。
 - **观察窗默认只告警**；`rollback` 为平台侧 per-app opt-in（v0.1 无文件字段，见[发布专项](2026-09-17-release-semantics.md)）；窗口后崩溃只告警。**stop-first（有卷/固定端口）失败强制归位**，不可关闭（不回滚=永久宕机）。
 - 失败分类以「新版本是否曾健康」为界：未切流=归位重放（start-first 下同内容重放通常零任务变动，Spike B 验证）；已切流=观察窗判定；首发失败（无版本可回）→ scale 0 保留现场。
 - 回滚 = 单层实现：平台保留最近 5 个已验证版本（归一化 compose + 平台覆盖层快照，不只 digest），列表内任意重放；数据库迁移/持久数据/secret 值不承诺回滚（secret 取当前值）。
-- 连接治理：keep-alive 连接池会复用已退出的任务（Dokploy #5281 仍 open）——Traefik `serversTransport` 调小 idle 连接 + 应用侧 SIGTERM 后 `Connection: close`；WS/SSE 明确「断线由客户端重连」语义。
+- 连接治理（2026-09-17 Spike B V4 实测改写）：keep-alive 连接池会复用已退出的任务（Dokploy #5281 同型）；用户可见失败的真实来源是 **in-flight 非幂等请求被 kill（必现 502）**——治理主键 = **应用侧 SIGTERM 优雅退出**（drain 在途请求后再退，v0.1 文档提供正确实现模板；注意 Go 默认 os.Exit 陷阱）；Traefik `serversTransport`（idleConnTimeout/maxIdleConnsPerHost）降为**辅助**（只治理空闲池，对 in-flight 无效）；幂等 GET 类请求 Go transport 自愈可观测到零失败。WS/SSE 明确「断线由客户端重连」语义。
 - Webhook 安全：强制签名校验（GitHub/Gitea 等）+ 时间窗防重放 + 按 revision 幂等去重。
 - 并发控制：同一 app 同时只允许一个进行中的部署（互斥 + 队列）。
 - 运行期语义（观察窗之后）：容器退出由 Swarm `restart-condition=any`（delay 5s）重启；平台只告警一次并建议手动回滚（不做计数升级），不自动回滚。
@@ -261,7 +261,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | 观察窗内不稳定（start-first 正常路径） | 默认告警 + `app=degraded`；平台侧 opt-in `rollback` 才自动回滚（走同一健康门与观察窗） |
 | health 通过后 5s 内崩溃 | Swarm monitor 窗不保护已切流流量（start-first 下旧任务已下线）——归入观察窗判定 |
 | stop-first 失败恢复 | 强制归位重放，停机持续到恢复完成，`downtime_ms` 如实累计；恢复失败 = critical |
-| 无 healthcheck | `health_gate=none` 显式降级（观察窗只看退出与副本水位）+ 警告事件 |
+| 无 healthcheck | `health_gate=none` 显式降级（观察窗只看退出与副本水位）+ 警告事件（Spike B3c 实测：无门时容器 start +29ms 即进端点，6.1s 预热窗内 27 次连续失败——降级有真实暴露，警告文案必须醒目） |
 | 回滚自身失败 | 不再二次自动回滚；critical + 对账对该 app 只检测不收敛，等人工/Agent |
 | 回滚目标镜像不可得（v0.1 无 registry） | 回滚前 preflight + `E_IMAGE_UNAVAILABLE` + 警告，不静默失败 |
 
@@ -272,7 +272,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 - **底座**：Docker Swarm（引擎内置，无需额外组件，见 D12）；控制面运行在 manager 节点，通过本地 Docker API 管理全集群；成员管理、心跳、服务发现、调度、任务生命周期全部由 Swarm 承担。
 - 单节点（v0.1）同样是单节点 Swarm（安装时隐式 `docker swarm init`，对用户透明）；从单机到多节点 = `docker swarm join`，无重构。
 - **调度**：Swarm 内置（bin-pack/spread）+ node label 约束；不自研调度器或成员协议。
-- **失联与故障语义**：对齐 Swarm 心跳（5s × 3 ≈ 15–16.5s 判定 DOWN）；节点 DOWN 后 **stateless 服务自动重调度**；**stateful 服务由平台绑定自动钉住**——节点消失时任务停留 PENDING、应用进入 blocked 可见态，不迁移、不自动换点（迁走会得到空卷）；数据安全由部署前哨兜底（目标节点 ≠ 卷数据节点 → 409）。节点恢复后 Swarm 不自动回迁；不做 rebalance（节点排布调整用 `docker node`，见[放置专项](2026-09-17-stateful-placement.md)）。
+- **失联与故障语义**：对齐 Swarm 心跳（理论 5s × 3 ≈ 15–16.5s；**Spike C2 实测 2026-09-17：判定 DOWN 13.5s、窗口 12.4–13.5s、替代任务 Running ≤18.7s、节点回岗零回迁、瞬时副本过冲 3/2**——对外口径用「~13s 判定、~19s 完成重调度」）；节点 DOWN 后 **stateless 服务自动重调度**；**stateful 服务由平台绑定自动钉住**——节点消失时任务停留 PENDING、应用进入 blocked 可见态，不迁移、不自动换点（迁走会得到空卷）；数据安全由部署前哨兜底（目标节点 ≠ 卷数据节点 → 409）。节点恢复后 Swarm 不自动回迁；不做 rebalance（节点排布调整用 `docker node`，见[放置专项](2026-09-17-stateful-placement.md)）。
 - **镜像分发**：v0.1 单节点 digest 引用免 registry；v0.2 引入 zot（manager 本地卷、平台绑定钉住），经 Traefik 暴露于平台域名 `registry.<base-domain>`、证书走集中 ACME（公信 CA）——**worker dockerd 零配置信任**，镜像引用形如 `registry.<base>/apps/<app>@sha256:…`，拉取经任意入口节点进 overlay 到 zot；自签 + 逐节点 `insecure-registries` 方案被否（需平台没有的远端 daemon 配置通道）。**前置条件：v0.2 多节点要求安装时提供平台基础域名**（面板与 registry 各占子域；单节点 v0.1 不需要）。服务创建时 `--with-registry-auth` 由 Swarm 原生分发凭据；zot 数据不进控制面备份（镜像可重建，文档注明）。
 - **入口（每节点入口 + 集中证书；2026-09-17 审核裁决）**：Traefik = **global service，每节点（含 manager）一个**，host 模式发布 80/443；replicated-1 单入口形态被否（与 drain 语义矛盾、入口单点），「节点文件下发」不可行（无远端访问通道）——路由与证书一律由控制面经 **HTTP provider** 下发，不启用 Swarm/Docker provider 自动发现；取不到配置时 Traefik 保留上一份成功配置（控制面故障入口不坏）。
 - **证书集中化**：控制面内嵌 ACME（lego）集中签发，证书存平台、随 HTTP provider 动态配置下发（Traefik `tls.certificates`）；v0.2 用 HTTP-01——各节点 Traefik 把 `/.well-known/acme-challenge/*` 反代到控制面，任意节点可解挑战，零 DNS 服务商集成；DNS-01/通配符留 v0.3 按服务商接入；**每节点独立 ACME 被否**（LE 重复证书限额 + 续期风暴 + N 份 acme.json 不可维护）。Traefik 轮询 manager 上控制面配置端点（Header token；跨公网走平台域名 HTTPS）。
@@ -383,7 +383,9 @@ D12 的采纳带验证门（V1-V7，见 [Swarm 评估报告](../research/2026-09
 | B 发布与路由 | Swarm 更新（start-first + healthcheck + `failure_action=pause`）+ 失败冻结与归位重放 + **stack 对账语义（服务增删、受管字段校验）** + Traefik 控制面下发（HTTP provider）+ **失败路径与配置隔离** + **连接池治理（V1/V3/V4）** + **归位零成本（B2）** | health 失败时新任务 FAILED、更新 paused、旧任务不中断（V1）；pause 后同内容 spec 重放**任务零替换**（B2）；stack apply 正确增删服务、`failure_action` 非 pause 显式报错（`E_COMPOSE_MANAGED_FIELD`）；更新窗口内持续探测零失败、VIP 更新前后不变（V3）；keep-alive 陈旧连接用 `serversTransport` 参数消除（V4）；**start-period 内任务是否已进 LB 端点集合（B3，最高优先级开放问题）**；「容器启动即崩」时旧版本持续服务且入口配置零污染；单应用坏配置不影响其他应用路由；失败矩阵（启动即崩/health 永不通过/拉取失败）逐条断言错误码；回滚（快照重放）一分钟内完成 |
 | C 底座 | Swarm 初始化与 join、节点故障重调度、**卷与绑定语义（V6a）**、**绑定保持与基本漂移（V6b）**、**单 manager 故障恢复（V5/V5b）** | 单节点 `swarm init` 对既有容器无影响、用户视角透明；节点 DOWN（15s 量级）后 stateless 任务自动重建；有卷服务无约束时迁移得空卷（复现并文档化）、加绑定后任务钉住不迁移；绑定节点 down→blocked→恢复、drain→回岗、remove→人工重绑；`--force-new-cluster` 恢复演练成功、应用不中断；raft 回退后孤儿容器命运明确（V5b） |
 
-A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm 采纳门（详见 Swarm 评估报告第 6 节），任一不通过且无缓解则启动退出预案；全部失败才需要回到"包装 dokku"备选路线。交叉验证新增验证项（B2 归位零成本、B3 LB 端点时机、V5b/V6b）并入 B/C 的通过标准；未验证前相关承诺标注「待验证」。
+A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm 采纳门（详见 Swarm 评估报告第 6 节），任一不通过且无缓解则启动退出预案；全部失败才需要回到"包装 dokku"备选路线。交叉验证新增验证项（B2 归位零成本、B3 LB 端点时机、V5b/V6b）并入 B/C 的通过标准。
+
+**Spike 结论（2026-09-17，A/B/C 全部完成）**：V1–V7 采纳门**全部通过**——V1（health 失败不切流，298 样本 0 失败）、V2（digest 引用零 pull，三层取证）、V3（更新窗口 395 样本 0 失败、VIP 不变）、V4（**条件成立**：治理主键改为应用侧优雅退出，serversTransport 降辅助——§2.5 已改写）、V5/V5b（停止态冷备可校验、恢复后 worker 任务 id 不变零中断；raft 回退孤儿命运已明）、V6a/V6b（空卷事故三段实证 + 钉住/drain/rm 全矩阵）。B3 头号开放问题关闭（带 healthcheck 端点晚于 healthy 45–87ms，失真=0，对外口径不降级）；B2 归位零成本成立。完整证据与 35 条意外发现见 `spike/a|b|c/README.md`；关键工程约束：构建本地镜像必须 `--provenance=false --sbom=false`（Spike A #9）、Traefik 裸 `{}` 会清空路由（Spike B）、Engine 29.8.1 的 docker events 无 task 事件——状态机观测走 service ps/API 轮询（Spike B #意外）。V1-V7 已转 nightly 永久回归（交付流水线 P3）。
 
 并行非技术验证：Spike 期完成 5-10 个目标用户访谈，重点验证「声明式 / 漂移检测」与「AI Agent 直接操作平台」是否为其真实痛点；v0.1 发布后 4 周内设定外部试用与反馈目标（数量在 v0.1 启动时确定）。
 
@@ -456,8 +458,8 @@ PR 预览环境（AI Agent 开 PR → 自动 URL → 合并即销毁）、官方
 | S3 依赖外部端点（打包延后） | 备份目标需用户提供或本地 | 端点可配置（restic 目标）+ 本地路径兜底；打包 S3 延后到需求证据，引入时再评估 RustFS 单厂商风险；备份密钥与元数据独立保存 |
 | 范围蔓延 | 工期失控 | 每期范围冻结；第 7 节"明确不做"清单为准 |
 | 商业化与社区信任冲突 | 开源社区反弹 | 核心完整可自用；商业边界（团队/SSO/审计留存/HA/托管）提前定义并公开；不做功能回撤 |
-| LB 端点可能早于 health 加入（开放问题） | start-first 重发布期「失败=不切流量」失真（少量 5xx） | 最高优先级 Spike（B3）；若成立：观察窗起点前移 + 对外口径降级为「新连接零失败、切换期少量 5xx」 |
-| 归位零成本依赖 task spec 深度相等（未验证） | 归位多做一次滚动（功能仍正确） | Spike B2 断言 task id 不变；不成立则接受一次滚动并修正文档 |
+| LB 端点可能早于 health 加入 | ~~start-first 重发布期「失败=不切流量」失真~~ **已于 2026-09-17 Spike B3 实测关闭**：带 healthcheck 时端点入集晚于 healthy 45–87ms、542 样本 0 失真——对外口径**不降级**；health_gate=none 的真实暴露（27 连败/6s 预热）归入降级表「无 healthcheck」行 | 见 spike/b/README.md §3；架构 §2.5 降级表同步更新 |
+| 归位零成本依赖 task spec 深度相等 | ~~未验证~~ **已于 2026-09-17 Spike B2 实测关闭**：旧 task id 跨「失败 + 同内容重放」不变、零新增任务；字段脏检矩阵——container-label/env/restart-policy/`--force` 触发重建，service-label/update-config 不触发 | 平台纪律：归位重放**禁用 `--force`**；见 spike/b/README.md §2 |
 | 冻结→归位竞态（窗口内旧任务节点 DOWN） | 按失败 spec 重建错误版本任务 | 归位 p95 <2s + 故障注入测试；错误任务不会通过 health 接管流量 |
 | 缓存陈旧被误当事实 | 用户/AI Agent 误判 | 观测数据带 `observed_at/stale`；决策路径禁止读缓存（写前直读） |
 | 恢复后孤儿误删 | 数据丢失 | 孤儿只登记不自动删；恢复后只读观察、人工处理差异 |
