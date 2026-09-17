@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.4/§2.5/§2.6（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §3/§4/§6；[控制面状态模型](2026-09-17-state-model.md)；来源：独立设计×交叉验证（§8），身份模型为用户裁决，机制面经 D18 精简 |
+| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.4/§2.5/§2.6（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §3/§4/§6；[控制面状态模型](2026-09-17-state-model.md)；来源：独立设计×交叉验证（§8），身份模型为用户裁决，机制面经 D18 精简；画像复核轮（2026-09-17）：drain 维护语义入 §2.6 与 V6b（2 台为生产基线）；S3 卷被否方案落档（§5 风险行 + §7 明确不做） |
 
 ## 1. 现状与问题
 
@@ -87,6 +87,7 @@ deploy_preflight(app):
 | 漂移 | 判定 | 动作 |
 |---|---|---|
 | 绑定节点 DOWN | 观测（心跳 15s 量级） | 应用 `blocked`（UI 横幅）；任务 PENDING；进行中部署 `blocked_waiting`（发布看门狗暂停计时、可 cancel；节点恢复续跑并重新起算）；新部署快速失败 |
+| 绑定节点 drain（主动维护） | `docker node update --availability drain` 后观测 | 同「DOWN」：应用 `blocked`、任务 PENDING；回岗（active）后自动回绑、本地卷数据不丢（维护窗口语义见架构 §2.6） |
 | 绑定节点恢复 | 观测 | 自动回到绑定（任务落回唯一合法节点），事件 `placement.recovered` |
 | 绑定节点移除 | `docker node rm` 后观测 | `blocked(node_gone)`；进行中部署以 `E_PLACEMENT_NODE_GONE` 失败；人工二选一：恢复数据后 `rebind --data-restored` / `rebind --discard` |
 | 节点身份 label 被删改 | 对账器 | 自动重放 label + 事件（安全不变量） |
@@ -139,6 +140,7 @@ deploy_preflight(app):
 | 带点 label 约束解析、身份 label 被改动 | 钉住失效 | Spike V6a 实测；对账器自动重放 + 事件（安全不变量） |
 | 无指标阶段选点质量 | 选到繁忙节点 | 显式 pin 可覆盖；指标落地后校准；不宣传智能调度 |
 | 用户期待「跟着应用走」 | 认知落差 | UI 徽标与事件解释「为什么在这」；用户访谈验证 |
+| 用户要求用 S3（兼容）卷承载数据库、或期待借此获得有状态自动迁移 | 数据损坏 / 性能崩塌 / 信任受损 | §7 明确不做并公开理由；S3 定位（备份目标 + 对象存储端点）写入文档；真实共享 POSIX 需求 → 退出预案（k3s + CSI/JuiceFS）评估，不在 Swarm 上叠 S3-FS |
 | 远端卷只能手动删除 | 误删/漏删 | 文档化指引 + 孤儿清单可见；不做高危 docker.sock 机制 |
 | 重绑依赖用户声明数据已恢复 | 声明不实时数据未恢复 | `--data-restored` 需 admin + 审计；恢复流程回读校验沿用备份体系 |
 | 24h ORPHANED 语义未实测 | 承诺偏差 | 不对外承诺定时升级；文档用「节点长期不可达时提示」保守措辞 |
@@ -146,7 +148,7 @@ deploy_preflight(app):
 ## 6. 测试与验收
 
 - **V6a**（卷与绑定）：有卷无约束迁移得空卷（复现并文档化）；加绑定后任务钉住且不迁移。
-- **V6b**（绑定保持与基本漂移）：down→blocked→恢复自动回绑（进行中部署续跑）；remove→blocked→人工 rebind 两条路径（进行中部署以 `E_PLACEMENT_NODE_GONE` 失败）；label 被删自动重放；卷位置不匹配 409。
+- **V6b**（绑定保持与基本漂移）：down→blocked→恢复自动回绑（进行中部署续跑）；remove→blocked→人工 rebind 两条路径（进行中部署以 `E_PLACEMENT_NODE_GONE` 失败）；label 被删自动重放；卷位置不匹配 409；**drain 维护**：无状态节点零停机、有状态节点 drain→回岗自动回绑（数据不丢）。
 - 单元：选点确定性（三因子）、绑定保持、前哨分支（restored/discarded/缺省）、校验规则。
 - 卷 label 传递（Spike 待验证）：服务 spec 创建卷时 `VolumeOptions.Labels` 是否生效；生效则卷身份收敛到 label（消掉名称解析与 `appid8` 生成）。
 
@@ -160,6 +162,7 @@ deploy_preflight(app):
 - 不做远端卷维护作业（docker.sock 挂载）；远端卷删除/校验由用户在节点上执行
 - 不做跨节点卷在线迁移（备份恢复是唯一路径）
 - 不做卷数据自动删除
+- 不做 S3（兼容存储）/ FUSE / CSI-S3 作为数据卷，亦不做「把数据库放 S3 上换取自动迁移」的方案：S3 无 POSIX 语义（无可靠 fsync、无文件锁、对象不可变、延迟高 3~4 个数量级），与 PG/MySQL/Redis/Mongo 的崩溃恢复模型不可调和；JuiceFS 类方案要引入元数据引擎（Redis/PG）与每节点客户端，与 1~2h/周 维护预算冲突。S3 只做备份目标（restic）与应用对象存储端点（凭证注入）；跨节点共享 POSIX 需求出现时走退出预案（k3s + CSI）评估
 
 ## 8. 来源与验证（独立设计×交叉验证 + D18 精简）
 
