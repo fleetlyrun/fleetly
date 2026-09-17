@@ -184,15 +184,15 @@ func TestGoldenSnapshot(t *testing.T) {
 	golden := filepath.Join("testdata", "codes.golden")
 	got := Default().Snapshot()
 	if *update {
-		if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(golden), 0o750); err != nil {
 			t.Fatalf("mkdir testdata: %v", err)
 		}
-		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+		if err := os.WriteFile(golden, []byte(got), 0o600); err != nil {
 			t.Fatalf("write golden: %v", err)
 		}
 		return
 	}
-	want, err := os.ReadFile(golden)
+	want, err := os.ReadFile(golden) //nolint:gosec // golden 为 testdata 固定路径
 	if err != nil {
 		t.Fatalf("read golden (run go test -update to regenerate): %v", err)
 	}

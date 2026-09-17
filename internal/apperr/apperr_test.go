@@ -18,7 +18,7 @@ func TestNewPanicsOnUnregisteredCode(t *testing.T) {
 			t.Fatal("New with unregistered code must panic")
 		}
 	}()
-	New("E_NOT_IN_REGISTRY", "boom")
+	_ = New("E_NOT_IN_REGISTRY", "boom")
 }
 
 // TestNewPanicsOnWarningCode：W_ 警告码不得构造为错误（警告不作为
@@ -29,7 +29,7 @@ func TestNewPanicsOnWarningCode(t *testing.T) {
 			t.Fatal("New with W_ warning code must panic")
 		}
 	}()
-	New("W_DEPLOY_INSTABILITY", "boom")
+	_ = New("W_DEPLOY_INSTABILITY", "boom")
 }
 
 // TestDefaultsFromRegistry：suggestion/docs 取注册表默认；code/message 保真。

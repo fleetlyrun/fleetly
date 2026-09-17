@@ -42,23 +42,23 @@ T2 v0.1（核心；分层依赖见 §5）
 
 ## 3. T0 骨架与契约（M0，约 1 周）
 
-**T0.1 仓库与 CI 骨架** ｜ Blocked by: 无 ｜ 2-3 人日
+**T0.1 仓库与 CI 骨架** ｜ Blocked by: 无 ｜ 2-3 人日 ｜ ✅ 完成 2026-09-17（还原点 d8328d5）
 - 交付：monorepo 骨架可克隆即跑——`cmd/edgefleetd`、`cmd/edgefleet`、`internal/`、`pkg/api`、`/console`、`/deploy` 就位（架构 §2.7）；edgefleetd 以 **lynx `NewRunner` + Wire（`boot.Bootstrap`）引导**（D20，装配形态参考 lynx-clean-template，lynx 用法参考 messageloop）；PR 门禁（lint/单测/并发取消）绿。
 - 验收：golangci-lint + gofmt + staticcheck + gosec + govulncheck 进 PR 轨道并阻断；`go generate ./...` 后无差异（wire_gen 同步）进 PR 门禁；空跑的单测任务绿；`go build ./...` 与 `edgefleet --help` 可执行。
 
-**T0.2 错误码与事件注册表** ｜ Blocked by: T0.1 ｜ 2 人日
+**T0.2 错误码与事件注册表** ｜ Blocked by: T0.1 ｜ 2 人日 ｜ ✅ 完成 2026-09-17（还原点 421a991；遗留裁决见冻结清单 FZ-2/3/4/5）
 - 交付：代码内注册表为唯一真源（架构 §2.8），错误信封 `{code,message,phase,deployment_id,suggestion,context,docs}` 以 proto `ErrorResponse` 定义、经 gateway `HTTPErrorHandler` 输出（发布专项 §2.7、D21）。
 - 验收：注册表只增/不复用的 CI 校验测试；首发错误码（`E_COMPOSE_*`、`E_STATE_VERSION_CONFLICT` 等 T2 首批）入表；信封序列化有 golden 测试。
 
-**T0.3 proto 契约与生成链** ｜ Blocked by: T0.1 ｜ 2-3 人日
+**T0.3 proto 契约与生成链** ｜ Blocked by: T0.1 ｜ 2-3 人日 ｜ ✅ 完成 2026-09-17（还原点 0a25e25）
 - 交付：buf 工具链 + proto 骨架（`edgefleet.{client,console,server}.vN` 分模块）+ gRPC 服务骨架挂 lynx + grpc-gateway 挂载（torchwood 范式，D21）+ 平台 SDK（gRPC client，独立模块）。
 - 验收：buf lint 通过、buf breaking 对基线跑通；hello RPC 从同一 proto 生成 gRPC client（SDK）与 REST 端点（gateway）双面可用；错误信封以 proto `ErrorResponse` 定义、gateway `HTTPErrorHandler` 输出 snake_case（torchwood 同款 `disable_default_errors`）；生成物同步检查（`buf generate` 后 diff 为空）进 PR 门禁；`/healthz/*` 来自 lynx 框架。
 
-**T0.4 dind E2E 骨架** ｜ Blocked by: T0.1 ｜ 2-3 人日
+**T0.4 dind E2E 骨架** ｜ Blocked by: T0.1 ｜ 2-3 人日 ｜ ✅ 完成 2026-09-17（还原点 bfa0f48）
 - 交付：`docker:29.8.1-dind` 内起平台的 E2E harness（交付 P2、M0）。
 - 验收：CI 中 dind 容器内拉起 edgefleetd 冒烟（启动/健康检查/关闭）；可复用为 Spike B/C 与 nightly 的底座。
 
-**T0.5 三专项 v0.1 切面冻结**（文档任务）｜ Blocked by: 无 ｜ 1-2 人日
+**T0.5 三专项 v0.1 切面冻结**（文档任务）｜ Blocked by: 无 ｜ 1-2 人日 ｜ ✅ 完成 2026-09-17（[冻结清单](2026-09-17-v0.1-scope-freeze.md)，含 FZ-1~FZ-5 裁决）
 - 交付：按架构 §4.5 对发布/放置/状态模型三专项的 v0.1 条目逐项核对，产出冻结清单（进 v0.1 的表、状态、错误码、事件白名单；超出者后置）。
 - 验收：清单经用户裁决合入；已知待裁项有结论——例：§4.2 第 4 项「自动连接串」在 v0.1 无数据服务时可为何种形态（预留机制 or 明确后置）。
 
