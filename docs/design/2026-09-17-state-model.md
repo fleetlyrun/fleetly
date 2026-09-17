@@ -20,14 +20,14 @@
 |---|---|---|---|
 | 期望态 | app/compose 期望态/env 声明/domains/placement/治理策略 | SQLite | apps/revisions/domains/env_vars/placements |
 | 平台身份与凭证 | token 哈希、主密钥、settings、备份策略 | SQLite + 密钥文件 | tokens/meta/密钥 |
-| 历史与叙事 | deployment/revision/事件/审计/构建日志引用 | SQLite/文件 | deployments/events/audit_log/日志目录 |
+| 历史与叙事 | deployment/revision/事件/审计/构建日志引用/定时任务运行记录 | SQLite/文件 | deployments/events/audit_log/cron_runs/日志目录 |
 | 运行态事实 | 节点/服务/任务/卷/实际镜像 | **Swarm/Engine** | 观测缓存（nodes 等），带 `observed_at/stale` |
 | 证书材料 | ACME 账户与证书链（`acme.json`） | 文件（Traefik 卷） | 独立备份（避免重签触发配额） |
 | 构建产物 | 镜像、日志、Railpack plan | 镜像存储/registry；平台文件 | 文件 + 引用 |
 
 ### 2.2 派生缓存与读契约
 
-- `nodes` 表定位 = **观测缓存 + 工作流载体**（drain 意图、状态历史），标注「派生自 Docker/Swarm，禁止用于决策」。
+- `nodes` 表定位 = **观测缓存**（节点状态历史在 `events`，见 §2.9；平台不建 drain 工作流，用 `docker node` 原生），标注「派生自 Docker/Swarm，禁止用于决策」。
 - 刷新：事件驱动（node/service/task 变更 1s 内）+ **统一 30s 全量 resync**；启动先全量同步再服务；底座不可达 → 指数退避，全部行置 `stale=true`。
 - **不承诺「最后心跳」**：字段用 `last_seen_at`（平台观测语义），文案与 API 不得称「心跳」。
 - 水位：`reserved`（服务 reservation 求和，永远可得）；`used` 由 v0.2 Metrics 端口提供，缺失时显式 `null` + `usage_source:"unavailable"`，不显示陈旧数字。
@@ -36,7 +36,7 @@
 ### 2.3 节点身份与重建
 
 - **领域身份 = 平台节点 ID**（`n_<ULID>`，用户裁决，见放置设计 §2.2）；写入节点 label `edgesets.node-id`；显示名=Swarm hostname。
-- Swarm node ID 仅存适配器映射 `runtime_node_refs(platform_id, swarm_node_id)`；换机/重建后走**人工 rebind**（放置设计 §2.2）。
+- Swarm node ID 仅存适配器映射 `runtime_node_refs(platform_id, swarm_node_id)`（**用途：身份 label 被删改后对账器自动重放的依据**；映射本身可从 label 反建）；换机/重建后走**人工 rebind**（放置设计 §2.2）。
 - 平台不制造节点健康语义：state/availability 逐字镜像 Swarm，外加平台观测时间。
 
 ### 2.4 对象标记契约（最小集）
@@ -45,12 +45,12 @@
 
 | 对象 | 键 | 用途 |
 |---|---|---|
-| Service | `managed=true`、`app`、`process`、`deployment` | 归属判定、孤儿检测、删除保护、堆栈对账辅助 |
+| Service | `managed=true`、`app`、`process`、`deployment`、`cron`（job 的 schedule 名） | 归属判定、孤儿检测、删除保护、堆栈对账辅助、cron 运行归属 |
 | Container | `app` | 人工排障时识别归属（不参与决策） |
 | Node | `node-id`（平台 ID） | 放置锚与重绑 |
-| Volume | 无 label，使用命名约定 `edgesets-<app>-<key>-<appid8>` | 卷归属与防代际静默复用 |
+| Volume | 无 label，使用命名约定 `edgesets-<app>-<key>-<appid8>`（约束来源：卷由服务 spec 在各节点惰性创建，label 传递能力待 Spike 验证——`VolumeOptions.Labels` 生效则可收敛到 label 体系） | 卷归属与防代际静默复用 |
 
-- 平台约定 label（v0.1 契约，compose 原生字段承载）：`edgesets.domains`（路由域名）、`edgesets.placement.node`（放置意图）。
+- 平台约定 label（compose 原生字段承载）：`edgesets.domains`（路由域名）、`edgesets.placement.node`（放置意图）〔v0.1 契约〕；`edgesets.cron` / `edgesets.cron.timezone`（定时任务，v0.2 契约；带该 label 的服务不按长驻部署）。
 - ~~锚点文档 / schema 版本化 / 溢写~~：经 D18 砍除（无硬承诺需要；DB + label 足够）。
 
 ### 2.5 漂移判定
@@ -61,7 +61,7 @@
 
 ### 2.6 对账器、孤儿保护与恢复观察
 
-- 安全不对称：**「DB 无记录」不是「对象该删」的证据**。孤儿（`managed=true` 但 DB 无 app）→ 登记 `orphans`，**永不自动删除**；处理走人工（重新 init 或按需 purge，均写审计）。
+- 安全不对称：**「DB 无记录」不是「对象该删」的证据**。孤儿（`managed=true` 但 DB 无 app）→ 登记 `orphans`，**永不自动删除**；处理走人工（重新 init 接管，或用户在底层自行清理）；平台不建 adopt/purge 流程。
 - **恢复观察模式**：恢复流程完成后控制面进入只读观察（一个开关 + UI 横幅）：只观测与列差异（复用 drift 输出），不自动收敛；人工处理后显式退出。
 - 删除 = tombstone-first（`deleting → deleted` + 保留期），恢复时不复活已删应用。
 
@@ -87,6 +87,16 @@
 - `events`（30 天）：`seq` 单调（SSE 游标，Outbox 模式与业务写同事务）；`since_seq` 早于保留期 → 410 `E_EVENT_CURSOR_EXPIRED` + `oldest_seq`（显式断档）。
 - 底座事件流只作缓存失效信号，不作产品事件来源；secret 值禁止进入事件/审计/日志。
 
+### 2.10 应用状态机（派生视图）
+
+- `app.state ∈ {running, degraded, blocked, down}`，由部署记录与观测派生，优先级裁决：`down > blocked > degraded > running`。
+  - `down`：无有效版本或首发失败 `scale=0`（没有任何期望实例）
+  - `blocked`：平台侧无合法动作可执行——绑定节点不可用/已移除（`placement.state ∈ {blocked, unresolved}`）
+  - `degraded`：运行中但有不合格判定——观察窗失败（deployment `verdict=unstable`）、窗后不稳定、`W_DEPLOY_INSTABILITY`
+  - `running`：以上皆否
+- `unstable` 仅为 **deployment verdict**，不进入 app 状态词表；`placement.state` 与最近 deployment 的 verdict 作为正交细节随应用详情返回。
+- 事件映射：进入 degraded → `app.degraded`；消除 → `app.recovered`；blocked 由 `placement.blocked` / `placement.recovered` 驱动。
+
 ## 3. 关键决策及理由
 
 | # | 决策 | 理由 | 被否选项及原因 | 来源 |
@@ -105,8 +115,8 @@
 
 ## 4. 分步实施
 
-- **v0.1**（单节点）：三层原则、观测缓存（单机同路径）、最小 label 集、`app_revisions`、tombstone、备份 manifest + 回读校验、审计 fail-closed、事件 seq/游标。
-- **v0.2**：完整 resync 刷新器、`orphans`/`state_backups` 表、恢复演练（L1/L2）、导出 tar、raft 冷备 helper、多节点 nodes 列表接入。
+- **v0.1**（单节点）：三层原则、观测缓存（单机同路径）、最小 label 集、`revisions`、tombstone、`state_backups` 台账（热备 + sha256 回读校验 + 失败红色告警）、审计 fail-closed、事件 seq/游标。
+- **v0.2**：完整 resync 刷新器、`orphans` 表、`cron_runs` 运行记录、恢复演练（L1/L2）、导出 tar、raft 冷备 helper、多节点 nodes 列表接入。
 - 交付流水线映射：V5/V5b/V6a/V6b 与状态回归项（见 §6）。
 
 ## 5. 风险与对策

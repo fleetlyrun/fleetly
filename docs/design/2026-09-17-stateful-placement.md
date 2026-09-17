@@ -19,7 +19,7 @@
 |---|---|---|---|
 | 意图 | 服务 label `edgesets.placement.node`（显示名或节点 ID，可省略） | 用户 | 改 compose 文件 |
 | 绑定 | `placements` 记录（**平台节点 ID 为锚**） | 平台 | 仅经首次自动选点、显式换点（破坏性确认）、备份恢复迁移、人工重绑四类操作 |
-| 执行 | 适配器编译为节点 label 约束（`edgesets.node-id`） | 适配器 | 随绑定自动下发 |
+| 执行 | 适配器编译为节点 label 约束（`edgesets.node-id`）；**cron job 服务继承 app 绑定**（同约束下发，任务型 job 落数据节点） | 适配器 | 随绑定自动下发 |
 
 不变量：**绑定优先于 label 的缺失**（用户删除 pin 不触发迁移）；有卷应用不存在「无绑定」的合法运行态；绑定节点不可用时**不迁移、不换点**。
 
@@ -42,6 +42,7 @@ services:
 - 有命名卷/宿主绑定 → **强制钉住**（平台自动，无需用户声明）；无卷应用默认不钉，显式 pin 时出计划警告（失去自动重调度）。
 - 用户写 `deploy.placement.constraints` 时仅允许 `node.labels.edgesets.*` 命名空间，其余 → `E_COMPOSE_UNSUPPORTED`。
 - 校验：`volumes` 非空时 `replicas` 必须为 1（本地卷不能多副本共享）。
+- label 一致性裁决：同 app 多服务 label 指向不同节点 → 422 `E_PLACEMENT_LABEL_CONFLICT`；label 指定节点与当前绑定不一致 → 不生效，部署前 409 `E_PLACEMENT_MOVE_REQUIRES_ACK`（换点走 `PUT /v1/apps/{app}/placement` 破坏性确认）；label 缺失或与绑定一致 → 正常（绑定优先于 label 缺失）。
 
 | API | 语义 |
 |---|---|
@@ -59,6 +60,7 @@ volumes(id, app, key, kind /* named|bind */, node_id, docker_name, mount_path,
         host_path, status /* active|orphaned */, created_at, UNIQUE(app, key))
 -- nodes：平台 ID/显示名/观测字段（见状态模型专项）
 -- 适配器私有：runtime_node_refs(platform_id, swarm_node_id)
+-- 用途：身份 label 被删改后对账器自动重放的依据（映射本身可从 label 反建）
 ```
 
 ### 2.5 选点与前哨（确定性、可解释）
@@ -84,9 +86,9 @@ deploy_preflight(app):
 
 | 漂移 | 判定 | 动作 |
 |---|---|---|
-| 绑定节点 DOWN | 观测（心跳 15s 量级） | 应用 `blocked`（UI 横幅）；任务 PENDING；进行中部署 `blocked_waiting`（无超时、可 cancel）；新部署快速失败 |
+| 绑定节点 DOWN | 观测（心跳 15s 量级） | 应用 `blocked`（UI 横幅）；任务 PENDING；进行中部署 `blocked_waiting`（发布看门狗暂停计时、可 cancel；节点恢复续跑并重新起算）；新部署快速失败 |
 | 绑定节点恢复 | 观测 | 自动回到绑定（任务落回唯一合法节点），事件 `placement.recovered` |
-| 绑定节点移除 | `docker node rm` 后观测 | `blocked(node_gone)`；人工二选一：恢复数据后 `rebind --data-restored` / `rebind --discard` |
+| 绑定节点移除 | `docker node rm` 后观测 | `blocked(node_gone)`；进行中部署以 `E_PLACEMENT_NODE_GONE` 失败；人工二选一：恢复数据后 `rebind --data-restored` / `rebind --discard` |
 | 节点身份 label 被删改 | 对账器 | 自动重放 label + 事件（安全不变量） |
 | 卷位置 ≠ 绑定（手工移动/残留） | 对账器 + 前哨 | 部署 409 `E_VOLUME_NODE_MISMATCH`；不自动修数据 |
 | 无状态应用新增卷 | 部署时 | **钉住当时运行节点**（数据诞生点）；未运行则按选点算法 |
@@ -102,7 +104,7 @@ deploy_preflight(app):
 
 ### 2.8 错误码与事件（精简）
 
-- 错误码：`E_PLACEMENT_NODE_INVALID`、`E_PLACEMENT_NODE_NOT_FOUND`、`E_PLACEMENT_NODE_UNAVAILABLE`、`E_PLACEMENT_NODE_GONE`、`E_PLACEMENT_NO_ELIGIBLE_NODE`、`E_PLACEMENT_MOVE_REQUIRES_ACK`、`E_VOLUME_NODE_MISMATCH`。警告：`W_PLACEMENT_STATELESS_PIN`、`W_PLACEMENT_MULTI_REPLICA`。
+- 错误码：`E_PLACEMENT_NODE_INVALID`、`E_PLACEMENT_NODE_NOT_FOUND`、`E_PLACEMENT_NODE_UNAVAILABLE`、`E_PLACEMENT_NODE_GONE`、`E_PLACEMENT_NO_ELIGIBLE_NODE`、`E_PLACEMENT_MOVE_REQUIRES_ACK`、`E_PLACEMENT_LABEL_CONFLICT`、`E_VOLUME_NODE_MISMATCH`。警告：`W_PLACEMENT_STATELESS_PIN`。
 - 事件：`placement.{bound,changed,blocked,recovered,unresolved}`、`node.{joined,down,up,removed}`、`volume.{created,detached,orphaned,discarded}`。
 - UI/CLI：应用详情「运行位置」卡片（节点、来源、原因、状态）；`edgesets nodes ls`、`apps placement`、`apps placement rebind`、`volumes ls --orphaned`；破坏性操作统一 `--confirm-destructive` + 回显。
 
@@ -144,8 +146,9 @@ deploy_preflight(app):
 ## 6. 测试与验收
 
 - **V6a**（卷与绑定）：有卷无约束迁移得空卷（复现并文档化）；加绑定后任务钉住且不迁移。
-- **V6b**（绑定保持与基本漂移）：down→blocked→恢复自动回绑；remove→blocked→人工 rebind 两条路径；label 被删自动重放；卷位置不匹配 409。
+- **V6b**（绑定保持与基本漂移）：down→blocked→恢复自动回绑（进行中部署续跑）；remove→blocked→人工 rebind 两条路径（进行中部署以 `E_PLACEMENT_NODE_GONE` 失败）；label 被删自动重放；卷位置不匹配 409。
 - 单元：选点确定性（三因子）、绑定保持、前哨分支（restored/discarded/缺省）、校验规则。
+- 卷 label 传递（Spike 待验证）：服务 spec 创建卷时 `VolumeOptions.Labels` 是否生效；生效则卷身份收敛到 label（消掉名称解析与 `appid8` 生成）。
 
 ## 7. 明确不做
 

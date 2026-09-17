@@ -24,13 +24,14 @@
 | 层 | 参数（默认） | 覆盖范围 | 信号 | 平台动作 |
 |---|---|---|---|---|
 | L1 Swarm 更新器 | `update-monitor=5s`（平台固定，不暴露） | 任务 RUNNING 后 5s 内失败；**任何从未 RUNNING 的失败（无时限）** | `UpdateStatus.State=paused` + 任务 `Status.Err` | 按错误码分类；未切流 → 归位重放 |
-| L2 平台发布看门狗 | `releaseTimeout=300s`（平台默认） | 整个 releasing 阶段 | PENDING 无进展、deadline、引擎无响应 | 确定性预检优先；超时 → 失败分类 + 归位 |
+| L2 平台发布看门狗 | `releaseTimeout=300s`（平台默认） | 整个 releasing 阶段（**平台已知的绑定节点不可用除外**：进入 `blocked_waiting` 暂停计时，恢复后重新起算，见放置专项） | PENDING 无进展、deadline、引擎无响应 | 平台自身对象的确定性预检（绑定节点/镜像/secret/端口）；超时 → 失败分类 + 归位 |
 | L3 平台观察窗 | `observe=60s`（平台默认；v0.1 无文件配置） | 从切流（首个目标实例健康）起 | 崩溃循环（≥2 次退出）、窗末未恢复、副本不足 ≥10s | 默认告警 + `app=degraded`；平台侧 opt-in `rollback` → 新 deployment（kind=rollback） |
 | L4 运行期稳定性 | 无计数机制 | 观察窗之后 | 任务失败/退出事件 | 只告警一次（不做 3 次/10min 计数与升级规则）；建议手动回滚 |
 
 - Swarm monitor 保持 5s **不放大**：放大会把「已切流后崩溃」误判为更新失败（旧任务已不在，冻结语义失真）。
+- 多副本：切流起点保持「首个目标实例健康」；观察窗副本水位按 compose `deploy.replicas`（desired）判定。`replicas` 字段 v0.1 即照用（无卷/无固定端口服务），缩放 UI/指标水位等管理面属 v0.2。
 - 观察窗判定细则：单次退出且窗末自愈 → 警告通过（`W_DEPLOY_INSTABILITY`）；窗末 unhealthy 或崩溃循环 → 不合格。
-- **UX 补偿（默认不改）**：`app=degraded/unstable` 为一等状态——UI 横幅 + 一键回滚按钮 + 通知，使可感知度对齐 Dokploy 的自动回滚体验。
+- **UX 补偿（默认不改）**：`app=degraded`（对应 deployment `verdict=unstable`）为一等状态——UI 横幅 + 一键回滚按钮 + 通知，使可感知度对齐 Dokploy 的自动回滚体验。
 
 ### 2.3 发布状态机
 
@@ -44,7 +45,7 @@ queued → preparing → building → releasing → observing → succeeded
 - **失败分流唯一判据 = `first_healthy_at`（是否曾切流）**：
   - 未切流（null）：`recovery=restore` 同记录归位——重放最后有效 revision；`start-first` 下内容深度相等通常零任务变动（待 Spike B2 验证）；stop-first 下为重建旧实例（强制、不可取消；停机持续，`downtime_ms` 如实累计）。
   - 已切流：观察窗判定，deployment 终态为 `failed`（`verdict=unstable`）；默认 `app=degraded` + 告警（不创建新 deployment）；平台侧 opt-in rollback 时额外创建 `kind=rollback` deployment（目标 `last_stable`）。
-- 首次部署失败（无有效版本）：`scale=0` 保留 service、revision 与日志，`app=runtime_state=down`，事件 `deployment.substrate_halted`。
+- 首次部署失败（无有效版本）：`scale=0` 保留 service、revision 与日志，`app.state=down`，事件 `deployment.substrate_halted`。
 - 恢复失败（含回滚失败）：`critical`，**不再二次自动回滚**；对账对该 app 只检测不收敛。
 - 引擎不可达：`recovery=blocked`，退避重试（5s/15s/60s，上限 5min），持久化可续跑。
 - 控制面重启：启动扫描非终态 deployment——健康 → 重开完整观察窗；`paused/failed` → 分类 + 归位；无法判定 → 失败 + 人工。
@@ -65,17 +66,19 @@ queued → preparing → building → releasing → observing → succeeded
 | 1 | compose 校验失败（子集/受管字段/策略冲突） | `E_COMPOSE_UNSUPPORTED` / `E_COMPOSE_MANAGED_FIELD` / `E_COMPOSE_UNSAFE_STRATEGY` | — | 不动底座 | 无 |
 | 2 | 构建失败 | `E_BUILD_FAILED` | — | 不动底座 | 无 |
 | 3 | 镜像拉取失败/本地缺失 | `E_IMAGE_PULL_FAILED` | 否 | 归位（通常零动作） | 无 |
-| 4 | PENDING 至 `releaseTimeout`（含无法调度/资源不足） | `E_SCHEDULER_PENDING_TIMEOUT` | 否 | 归位 | 无（start-first） |
+| 4 | PENDING 至 `releaseTimeout`（含无法调度/资源不足；**平台已知的绑定节点不可用除外，见 15/16**） | `E_SCHEDULER_PENDING_TIMEOUT` | 否 | 归位 | 无（start-first） |
 | 5 | 容器启动即崩 | `E_TASK_START_FAILED` | 否 | Swarm 已 pause → 归位 | 无 |
 | 6 | health 永不通过 | `E_HEALTH_TIMEOUT` | 否 | 同上（附 health 配置与探测输出） | 无 |
 | 7 | 观察窗崩溃循环（≥2 次退出） | `E_OBSERVE_CRASH_LOOP` | 是 | 默认告警；opt-in 回滚 | 已在新版本；回滚 = 二次切换 |
 | 8 | 观察窗窗末 unhealthy | `E_OBSERVE_UNHEALTHY` | 是 | 同上 | 同上 |
-| 9 | 单次退出且自愈 | `W_DEPLOY_INSTABILITY` | 是 | 警告通过，记不稳定计数 | 无 |
+| 9 | 单次退出且自愈 | `W_DEPLOY_INSTABILITY` | 是 | 警告通过（不计数升级） | 无 |
 | 10 | 观察窗后崩溃 | `E_DEPLOY_POST_WINDOW_UNSTABLE` | 是 | 只告警一次 + 建议 `edgesets rollback`；不计数升级 | 由 Swarm 重启自愈，间歇失败 |
 | 11 | 控制面重启 | `E_DEPLOY_INTERRUPTED` | 视评估 | 分类恢复（2.3） | 视现场 |
 | 12 | 引擎不可达 | `E_RUNTIME_UNAVAILABLE` | 视现场 | recovery blocked + 退避重试 | 无法保证，critical 告警 |
 | 13 | stop-first 失败 | `E_DEPLOY_DOWNTIME_FAILED` | 否 | **强制归位**，停机持续；恢复失败 = 同一码 critical | 停机窗口 = 判定 + 恢复，如实告知 |
 | 14 | 首发失败 | `deployment.substrate_halted` | — | scale=0 保留现场 | 应用本就不可用 |
+| 15 | 发布中绑定节点 DOWN | — | 否 | 部署 `blocked_waiting`（L2 计时暂停、可 cancel）；节点恢复续跑并重新起算；应用 `blocked` | 停机（唯一合法节点不可用） |
+| 16 | 发布中绑定节点 REMOVED | `E_PLACEMENT_NODE_GONE` | 否 | 部署失败；应用保持 `blocked(node_gone)` 等人工 rebind | 停机（数据安全优先） |
 
 ### 2.6 stop-first 专表（有卷/固定 host 端口/global）
 
@@ -86,9 +89,9 @@ queued → preparing → building → releasing → observing → succeeded
 
 ### 2.7 错误码、事件、审计
 
-- **错误码**（注册表只增不复用，格式 `E_<域>_<条件>`）：`E_COMPOSE_UNSUPPORTED`、`E_COMPOSE_MANAGED_FIELD`、`E_COMPOSE_UNSAFE_STRATEGY`、`E_BUILD_FAILED`、`E_IMAGE_PULL_FAILED`、`E_IMAGE_UNAVAILABLE`、`E_SCHEDULER_PENDING_TIMEOUT`、`E_TASK_START_FAILED`、`E_HEALTH_TIMEOUT`、`E_RELEASE_STALLED`、`E_OBSERVE_CRASH_LOOP`、`E_OBSERVE_UNHEALTHY`、`E_DEPLOY_INTERRUPTED`、`E_DEPLOY_POST_WINDOW_UNSTABLE`、`E_DEPLOY_DOWNTIME_FAILED`、`E_ROLLBACK_FAILED`、`E_ROLLBACK_NO_TARGET`、`E_RUNTIME_UNAVAILABLE`。警告码：`W_DEPLOY_INSTABILITY`、`W_DEPLOY_NO_HEALTHCHECK`、`W_ROLLBACK_IMAGE_RISK`。
+- **错误码**（注册表只增不复用，格式 `E_<域>_<条件>`）：`E_COMPOSE_UNSUPPORTED`、`E_COMPOSE_MANAGED_FIELD`、`E_COMPOSE_UNSAFE_STRATEGY`、`E_BUILD_FAILED`、`E_IMAGE_PULL_FAILED`、`E_IMAGE_UNAVAILABLE`、`E_SCHEDULER_PENDING_TIMEOUT`、`E_TASK_START_FAILED`、`E_HEALTH_TIMEOUT`、`E_OBSERVE_CRASH_LOOP`、`E_OBSERVE_UNHEALTHY`、`E_DEPLOY_INTERRUPTED`、`E_DEPLOY_POST_WINDOW_UNSTABLE`、`E_DEPLOY_DOWNTIME_FAILED`、`E_ROLLBACK_FAILED`、`E_ROLLBACK_NO_TARGET`、`E_RUNTIME_UNAVAILABLE`。警告码：`W_DEPLOY_INSTABILITY`、`W_DEPLOY_NO_HEALTHCHECK`、`W_ROLLBACK_IMAGE_RISK`。
 - **事件**：`deployment.{queued,release_started,healthy,switched,observe_started,succeeded,failed,warning,aborted,rollback_started,rollback_finished,rollback_failed,recovery_scheduled,recovery_blocked,substrate_halted,superseded}`、`app.{degraded,instability_detected,recovered}`。
-- **审计**：`deployment.create/cancel/rollback`（human/agent）、`deployment.auto_abort/auto_rollback/recovery_retry`（system + reason=错误码）；自动动作必入审计。
+- **审计**：`deployment.create/cancel/rollback`（human/ai_agent）、`deployment.auto_abort/auto_rollback/recovery_retry`（system + reason=错误码）；自动动作必入审计。
 - 错误信封统一：`{code, message, phase, deployment_id, suggestion, context{raw/log_tail/exit_code/...}, docs}`；部署失败是资源终态而非 HTTP 错误。
 
 ### 2.8 治理参数与 compose 受管字段
@@ -99,7 +102,7 @@ queued → preparing → building → releasing → observing → succeeded
 |---|---|---|
 | observe | 60s | 观察窗时长 |
 | onUnstable | alert | `rollback` 为平台侧 opt-in |
-| keepVersions | 5 | 可重放 compose revision 数（1..20；1=无回滚目标，警告） |
+| keepVersions | 5 | 可重放 compose revision 数（v0.1 固定；范围语义随 v0.2 开放 per-app 覆盖时定义） |
 | releaseTimeout | 300s | 发布看门狗（含 PENDING/停滞），有效值 ≥ health 预算 |
 | stopGrace | 60s | 缺省值；compose `stop_grace_period` 可覆盖 |
 
@@ -151,7 +154,7 @@ queued → preparing → building → releasing → observing → succeeded
 ## 6. 测试与验收
 
 - **Spike B 扩展**（作为通过标准）：B1 health 失败 → 更新 paused、旧任务不中断；B2 pause 后同内容重放任务零替换；B3 start-period 内任务是否进 LB 端点（最高优先级）；B4 失败矩阵逐条错误码断言；B5 stop-first 强制归位与停机账。
-- **nightly**：场景矩阵 1-15 的 E2E（含控制面重启、引擎不可达恢复 blocked→恢复）；错误码注册表快照；回滚（快照重放）一分钟内完成。
+- **nightly**：场景矩阵 1-16 的 E2E（含控制面重启、引擎不可达恢复 blocked→恢复、绑定节点 DOWN/REMOVED 的部署续跑与失败、多副本 pause 后新旧混合归位）；错误码注册表快照；回滚（快照重放）一分钟内完成。
 - **release**：上一版本 → 新版本升级 E2E 中的非终态 deployment 恢复。
 
 ## 7. 明确不做
@@ -165,7 +168,7 @@ queued → preparing → building → releasing → observing → succeeded
 ## 8. 来源与验证（独立设计×交叉验证）
 
 - **独立收敛（两份设计分别得出）**：pause 固定；单层快照重放；三层窗口；窗后只告警；stop-first 强制恢复；失败分流按是否切流；数据/迁移/secret 不回滚；治理参数平台管理、substrate 参数不进用户配置；错误码/事件/审计。
-- **裁决**：首发 scale=0（A 论证硬）；恢复建模同记录/新 deployment 二分（合并）；PENDING 只做确定性预判（B 更安全，A 自报近似判定风险）→ 后收敛为不做预检；系统性熔断砍掉（D18 对标纪律）。
+- **裁决**：首发 scale=0（A 论证硬）；恢复建模同记录/新 deployment 二分（合并）；PENDING 不做 Swarm 调度约束预检，仅保留平台自身对象预检（绑定节点/镜像/secret/端口；B 更安全，A 自报近似判定风险）；系统性熔断砍掉（D18 对标纪律）。
 - **用户裁决**：观察窗默认告警（D-REL-6）。
 - **独有并验证后并入**：`IsTaskDirty` 归位零成本（B，待 Spike）；LB 端点早于 health（B，开放问题）；`W_ROLLBACK_IMAGE_RISK`、`downtime_ms` 诚实累计（A）；恢复覆写 PreviousSpec 注记（A）。guarantees 块与系统熔断经 D18 对标纪律砍除。
 - **开放问题（禁当承诺）**：LB 端点时机；归位零成本；冻结→归位竞态；观察窗阈值校准。
