@@ -1,0 +1,19 @@
+[19:00:32] === B6.1 healthy v1 ===
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[19:00:46] v1 task=pl7ounk9wspx ; {"ev":"client-summary","host":"","iso":"2026-09-17T19:00:45.970415554Z","keepalive":false,"ms":1789671645970,"per_version":{"v1":3},"total_fail":0,"total_ok":3,"url":"http://app-rr:8080/"}
+[19:00:46] === B6.2 upgrade v1 -> v2 ===
+[19:00:55] upgrade exit=0
+[19:00:57] upgrade seconds=9 ; {"ev":"client-summary","host":"","iso":"2026-09-17T19:00:56.942963617Z","keepalive":false,"ms":1789671656942,"per_version":{"v2":3},"total_fail":0,"total_ok":3,"url":"http://app-rr:8080/"}
+[19:00:57] === B6.3 snapshot replay back to v1 spec ===
+[19:01:06] replay exit=0
+[19:01:08] replay seconds=11 (completion poll 0 s)
+itkhqqk9agv0ptkgh88sjfzv4 app-rr.1 spike-b/app:v1 Running 6 seconds ago Running
+od2u2ueuo1tqmrejflvv37sj8 app-rr.1 spike-b/app:v2 Shutdown 3 seconds ago Shutdown
+pl7ounk9wspx3z455dlerrk1l app-rr.1 spike-b/app:v1 Shutdown 14 seconds ago Shutdown
+[19:01:10] final probe: {"ev":"client-summary","host":"","iso":"2026-09-17T19:01:10.080326769Z","keepalive":false,"ms":1789671670080,"per_version":{"v1":3},"total_fail":0,"total_ok":3,"url":"http://app-rr:8080/"}
+[19:01:10] B6-ASSERT ROLLBACK_UNDER_60S: PASS (11s)
+[19:01:10] B6-RR-EXPERIMENT-DONE

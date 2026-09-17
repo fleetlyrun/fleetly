@@ -1,0 +1,140 @@
+[18:06:54] === B1.1 create app-v1: healthcheck + start-first + failure-action=pause ===
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+container-health=healthy
+[18:07:06] === B1.2 external prober starts (60s window across failing update + replay) ===
+[18:07:10] === B1.3 ps BEFORE failing update ===
+gvx4d7wofxq4qisodue5d9kfs app-v1.1 spike-b/app:v1 Running 8 seconds ago Running
+[18:07:10] old task id=gvx4d7wofxq4
+[18:07:10] === B1.4 update to v2bad (bakes HEALTH_MODE=fail: /health always 503) ===
+[18:07:19] update exit=1
+app-v1
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+service update paused: update paused due to failure or early termination of task i472dx5izhys75iaw2jq8hvkm
+[18:07:23] === B1.5 post-failure state ===
+izcbyvd2ado7u6eu2m9sh04mw app-v1.1 spike-b/app:v2bad Ready 2 seconds ago Ready
+i472dx5izhys75iaw2jq8hvkm app-v1.1 spike-b/app:v2bad Failed 4 seconds ago Shutdown
+gvx4d7wofxq4qisodue5d9kfs app-v1.1 spike-b/app:v1 Running 21 seconds ago Running
+UpdateStatus={"State":"paused","StartedAt":"2026-09-17T18:07:10.429665677Z","Message":"update paused due to failure or early termination of task i472dx5izhys75iaw2jq8hvkm"}
+[18:07:23] failed new task id=i472dx5izhys
+[18:07:23] === B1.6 V1 assertions ===
+[18:07:23] V1-ASSERT-1 UPDATE_PAUSED: PASS
+[18:07:23] V1-ASSERT-2 NEW_TASK_FAILED: PASS (i472dx5izhys)
+[18:07:23] V1-ASSERT-3 OLD_TASK_STILL_RUNNING: PASS
+[18:07:23] === B1.7 B2: replay same-content spec (image back to v1), no --force ===
+[18:07:28] replay exit=0
+app-v1
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service app-v1 converged
+izcbyvd2ado7u6eu2m9sh04mw app-v1.1 spike-b/app:v2bad Shutdown 2 seconds ago Shutdown
+i472dx5izhys75iaw2jq8hvkm app-v1.1 spike-b/app:v2bad Failed 9 seconds ago Shutdown
+gvx4d7wofxq4qisodue5d9kfs app-v1.1 spike-b/app:v1 Running 26 seconds ago Running
+[18:07:28] running task ids after replay=[gvx4d7wofxq4 ]
+[18:07:28] B2-ASSERT-1 OLD_TASK_ID_UNCHANGED_AFTER_REPLAY: PASS
+[18:07:28] B2-ASSERT-2 NO_EXTRA_TASK_CREATED: PASS
+UpdateStatus-after-replay={"State":"completed","StartedAt":"2026-09-17T18:07:23.231088751Z","CompletedAt":"2026-09-17T18:07:28.238974882Z","Message":"update completed"}
+[18:07:28] === B1.8 prober verdict (V1-ASSERT-4: zero external failures, all v1) ===
+{"ev":"req","iso":"2026-09-17T18:08:06.060803439Z","ms":1789668486060,"status":200,"url":"http://app-v1:8080/","ver":"v1"}
+{"ev":"req","iso":"2026-09-17T18:08:06.262661313Z","ms":1789668486262,"status":200,"url":"http://app-v1:8080/","ver":"v1"}
+{"ev":"req","iso":"2026-09-17T18:08:06.464684532Z","ms":1789668486464,"status":200,"url":"http://app-v1:8080/","ver":"v1"}
+{"ev":"req","iso":"2026-09-17T18:08:06.666462939Z","ms":1789668486666,"status":200,"url":"http://app-v1:8080/","ver":"v1"}
+{"ev":"req","iso":"2026-09-17T18:08:06.868154774Z","ms":1789668486868,"status":200,"url":"http://app-v1:8080/","ver":"v1"}
+{"ev":"req","iso":"2026-09-17T18:08:07.070340799Z","ms":1789668487070,"status":200,"url":"http://app-v1:8080/","ver":"v1"}
+{"ev":"req","iso":"2026-09-17T18:08:07.272707948Z","ms":1789668487272,"status":200,"url":"http://app-v1:8080/","ver":"v1"}
+{"ev":"lbwatch-summary","first_seen_ms":{"v1":1789668427375},"iso":"2026-09-17T18:08:07.373269077Z","ms":1789668487373,"per_version":{"v1":298},"total_fail":0,"total_ok":298}
+[18:08:07] prober fails=0 version-histogram:     298 "ver":"v1" 
+[18:08:07] V1-ASSERT-4 EXTERNAL_PROBE_ZERO_FAILURE: PASS
+[18:08:07] === B1.9 B2b: field-dirty matrix on app-dirty (no healthcheck, fast) ===
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:08:18] baseline task id=q0ludv97a3wv
+[18:08:26] B2b[replay-identical-image] rc=0 -> UNCHANGED
+[18:08:34] B2b[svc-label-add] rc=0 -> UNCHANGED
+[18:08:46] B2b[container-label-add] rc=0 -> REPLACED
+[18:08:54] B2b[update-config-parallel] rc=0 -> UNCHANGED
+[18:09:07] B2b[env-add] rc=0 -> REPLACED
+[18:09:19] B2b[restart-policy] rc=0 -> REPLACED
+[18:09:31] B2b[force-no-content-change] rc=0 -> REPLACED
+p9oco83o3ulitqzvxvc1xxc15 app-dirty.1 spike-b/app:v1 Running 8 seconds ago Running
+8aogfq09v8cifxrl16du04tdu app-dirty.1 spike-b/app:v1 Shutdown 8 seconds ago Shutdown
+hqb4xr3x25c93s3zgr1a5db5v app-dirty.1 spike-b/app:v1 Shutdown 20 seconds ago Shutdown
+666r0n38zkbnvbc60ub4embge app-dirty.1 spike-b/app:v1 Shutdown 33 seconds ago Shutdown
+q0ludv97a3wv12rj31kim37jh app-dirty.1 spike-b/app:v1 Shutdown 53 seconds ago Shutdown
+[18:09:31] B1-EXPERIMENT-DONE

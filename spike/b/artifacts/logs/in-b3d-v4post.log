@@ -1,0 +1,58 @@
+[18:48:20] === rebuild v1/v2 fixtures with -method-capable client ===
+[18:48:21] rebuilt spike-b/app:v1
+[18:48:22] rebuilt spike-b/app:v2
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:48:58] ##### V4-POST-a: client up (continuous in-flight), update in 4s #####
+[18:49:13] V4-POST-a update exit=0
+[18:49:16] V4-POST-a second kill (--force)
+[18:49:26] V4-POST-a force exit=0
+[18:49:54] V4-POST-a summary: {"ev":"client-summary","host":"v4a.local","iso":"2026-09-17T18:49:54.34114927Z","keepalive":false,"ms":1789670994341,"per_version":{"?":2,"v1":6,"v2":21},"total_fail":2,"total_ok":29,"url":"http://edge/"}
+[18:49:54] V4-POST-a bad samples:
+{"bad":true,"body":"Bad Gateway","ev":"req","iso":"2026-09-17T18:49:11.581426783Z","ms":1789670951581,"status":502,"ver":"?"}
+{"bad":true,"body":"Bad Gateway","ev":"req","iso":"2026-09-17T18:49:24.314396777Z","ms":1789670964314,"status":502,"ver":"?"}
+[18:49:56] (C backend graceful: GRACEFUL=1 stop-grace 15s)
+[18:49:56] ##### V4-POST-c: client up (continuous in-flight), update in 4s #####
+[18:50:10] V4-POST-c update exit=0
+[18:50:13] V4-POST-c second kill (--force)
+[18:50:23] V4-POST-c force exit=0
+[18:50:53] V4-POST-c summary: {"ev":"client-summary","host":"v4c.local","iso":"2026-09-17T18:50:53.527273038Z","keepalive":false,"ms":1789671053527,"per_version":{"v1":6,"v2":22},"total_fail":0,"total_ok":28,"url":"http://edge/"}
+[18:50:53] V4-POST-c bad samples:
+[18:50:55] === post-mortem: killed task containers (graceful markers) ===
+[18:50:55] --- container app-v4c.1.pvhfj5yijmeiydzzavxnj1g25: running exit=0 finished=0001-01-01T00:00:00Z
+{"ev":"server-listening","health_fail":false,"iso":"2026-09-17T18:50:16.282553714Z","ms":1789671016282,"port":8080,"version":"v2"}
+[18:50:55] --- container app-v4c.1.ytkexniidkg6fihnry0gga6bq: exited exit=0 finished=2026-09-17T18:50:21.526992284Z
+{"ev":"server-listening","health_fail":false,"iso":"2026-09-17T18:50:03.897328248Z","ms":1789671003897,"port":8080,"version":"v2"}
+{"ev":"graceful-shutdown-begin","iso":"2026-09-17T18:50:21.251525032Z","ms":1789671021251,"signal":"terminated"}
+{"ev":"graceful-shutdown-done","iso":"2026-09-17T18:50:21.525142187Z","ms":1789671021525}
+[18:50:55] --- container app-v4a.1.7wg7o9ximh9yzji6isd3l5gcs: running exit=0 finished=0001-01-01T00:00:00Z
+{"ev":"server-listening","health_fail":false,"iso":"2026-09-17T18:49:19.41219653Z","ms":1789670959412,"port":8080,"version":"v2"}
+[18:50:55] --- container app-v4a.1.iosp70vb2hkyi585fpqnn23u0: exited exit=2 finished=2026-09-17T18:49:24.314727278Z
+{"ev":"server-listening","health_fail":false,"iso":"2026-09-17T18:49:06.60569173Z","ms":1789670946605,"port":8080,"version":"v2"}
+[18:50:55] --- container app-v4c.1.p0lu5b3q5bjjmqv9uk77acgce: exited exit=0 finished=2026-09-17T18:50:09.941206233Z
+{"ev":"server-listening","health_fail":false,"iso":"2026-09-17T18:48:43.193326225Z","ms":1789670923193,"port":8080,"version":"v1"}
+{"ev":"graceful-shutdown-begin","iso":"2026-09-17T18:50:08.855975361Z","ms":1789671008855,"signal":"terminated"}
+{"ev":"graceful-shutdown-done","iso":"2026-09-17T18:50:09.939618286Z","ms":1789671009939}
+[18:50:55] --- container app-v4a.1.iwf2tlesd1s3mhff7xih7014g: exited exit=2 finished=2026-09-17T18:49:11.581703943Z
+{"ev":"server-listening","health_fail":false,"iso":"2026-09-17T18:48:30.948455753Z","ms":1789670910948,"port":8080,"version":"v1"}
+[18:50:55] === events: container die + health for v4a/v4c ===
+2026-09-17T18:48:30.964023312Z container start d6343c6aa7afd96609d1ee322d49264352488dfad3381ce2fbd7b164fac6338b (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=fkgor9gezkp7mhj2dl6pgao0e, com.docker.swarm.service.name=app-v4a, com.docker.swarm.task=, com.docker.swarm.task.id=iwf2tlesd1s3mhff7xih7014g, com.docker.swarm.task.name=app-v4a.1.iwf2tlesd1s3mhff7xih7014g, image=spike-b/app:v1, name=app-v4a.1.iwf2tlesd1s3mhff7xih7014g)
+2026-09-17T18:48:43.210295176Z container start 70908823ed559e4524ee419fc9c857754a7a17cd1001b8f1d811093f66e4f83a (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=elufn3dc6mmb6bmwhdwgqku9q, com.docker.swarm.service.name=app-v4c, com.docker.swarm.task=, com.docker.swarm.task.id=p0lu5b3q5bjjmqv9uk77acgce, com.docker.swarm.task.name=app-v4c.1.p0lu5b3q5bjjmqv9uk77acgce, image=spike-b/app:v1, name=app-v4c.1.p0lu5b3q5bjjmqv9uk77acgce)
+2026-09-17T18:49:06.620638200Z container start 58aafe22563f132570c3b26ae4a1450dffb06c70c95857b2613831ef63e4a8b1 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=fkgor9gezkp7mhj2dl6pgao0e, com.docker.swarm.service.name=app-v4a, com.docker.swarm.task=, com.docker.swarm.task.id=iosp70vb2hkyi585fpqnn23u0, com.docker.swarm.task.name=app-v4a.1.iosp70vb2hkyi585fpqnn23u0, image=spike-b/app:v2, name=app-v4a.1.iosp70vb2hkyi585fpqnn23u0)
+2026-09-17T18:49:11.920078883Z container die d6343c6aa7afd96609d1ee322d49264352488dfad3381ce2fbd7b164fac6338b (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=fkgor9gezkp7mhj2dl6pgao0e, com.docker.swarm.service.name=app-v4a, com.docker.swarm.task=, com.docker.swarm.task.id=iwf2tlesd1s3mhff7xih7014g, com.docker.swarm.task.name=app-v4a.1.iwf2tlesd1s3mhff7xih7014g, execDuration=40, exitCode=2, image=spike-b/app:v1, name=app-v4a.1.iwf2tlesd1s3mhff7xih7014g)
+2026-09-17T18:49:19.433920853Z container start 9b586c19e642483029e726d1887c4c8447d71501e108bcc6802a5f08cef9d45b (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=fkgor9gezkp7mhj2dl6pgao0e, com.docker.swarm.service.name=app-v4a, com.docker.swarm.task=, com.docker.swarm.task.id=7wg7o9ximh9yzji6isd3l5gcs, com.docker.swarm.task.name=app-v4a.1.7wg7o9ximh9yzji6isd3l5gcs, image=spike-b/app:v2, name=app-v4a.1.7wg7o9ximh9yzji6isd3l5gcs)
+2026-09-17T18:49:24.557972222Z container die 58aafe22563f132570c3b26ae4a1450dffb06c70c95857b2613831ef63e4a8b1 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=fkgor9gezkp7mhj2dl6pgao0e, com.docker.swarm.service.name=app-v4a, com.docker.swarm.task=, com.docker.swarm.task.id=iosp70vb2hkyi585fpqnn23u0, com.docker.swarm.task.name=app-v4a.1.iosp70vb2hkyi585fpqnn23u0, execDuration=17, exitCode=2, image=spike-b/app:v2, name=app-v4a.1.iosp70vb2hkyi585fpqnn23u0)
+2026-09-17T18:50:03.903161947Z container start 91efeefecd8a28b4acd0b597c04476a47934ca59d5bb5f6623ae1998e6a23a20 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=elufn3dc6mmb6bmwhdwgqku9q, com.docker.swarm.service.name=app-v4c, com.docker.swarm.task=, com.docker.swarm.task.id=ytkexniidkg6fihnry0gga6bq, com.docker.swarm.task.name=app-v4c.1.ytkexniidkg6fihnry0gga6bq, image=spike-b/app:v2, name=app-v4c.1.ytkexniidkg6fihnry0gga6bq)
+2026-09-17T18:50:10.192406713Z container die 70908823ed559e4524ee419fc9c857754a7a17cd1001b8f1d811093f66e4f83a (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=elufn3dc6mmb6bmwhdwgqku9q, com.docker.swarm.service.name=app-v4c, com.docker.swarm.task=, com.docker.swarm.task.id=p0lu5b3q5bjjmqv9uk77acgce, com.docker.swarm.task.name=app-v4c.1.p0lu5b3q5bjjmqv9uk77acgce, execDuration=87, exitCode=0, image=spike-b/app:v1, name=app-v4c.1.p0lu5b3q5bjjmqv9uk77acgce)
+2026-09-17T18:50:16.299579168Z container start aae33aa8a5c1079e1f45f8ef4216a64c91124f9ff09cfd64484a75b93d9dfe1f (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=elufn3dc6mmb6bmwhdwgqku9q, com.docker.swarm.service.name=app-v4c, com.docker.swarm.task=, com.docker.swarm.task.id=pvhfj5yijmeiydzzavxnj1g25, com.docker.swarm.task.name=app-v4c.1.pvhfj5yijmeiydzzavxnj1g25, image=spike-b/app:v2, name=app-v4c.1.pvhfj5yijmeiydzzavxnj1g25)
+2026-09-17T18:50:21.789989948Z container die 91efeefecd8a28b4acd0b597c04476a47934ca59d5bb5f6623ae1998e6a23a20 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=elufn3dc6mmb6bmwhdwgqku9q, com.docker.swarm.service.name=app-v4c, com.docker.swarm.task=, com.docker.swarm.task.id=ytkexniidkg6fihnry0gga6bq, com.docker.swarm.task.name=app-v4c.1.ytkexniidkg6fihnry0gga6bq, execDuration=17, exitCode=0, image=spike-b/app:v2, name=app-v4c.1.ytkexniidkg6fihnry0gga6bq)
+[18:50:56] --- Traefik log 5xx excerpts:
+[18:50:56] B3D-V4POST-EXPERIMENT-DONE

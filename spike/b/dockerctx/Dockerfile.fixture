@@ -1,0 +1,18 @@
+# Spike B fixture image template. The cross-compiled static probe binary is
+# staged into dockerctx/ by b0-up.bat before `docker build` inside the dind.
+# alpine base (not scratch): the CMD-SHELL healthcheck needs /bin/sh, and the
+# fixture env knobs (APP_VERSION / HEALTH_MODE / LISTEN_DELAY_S /
+# CRASH_ON_START) let one Dockerfile produce all variants.
+FROM alpine:3.20
+
+COPY probe /probe
+ENTRYPOINT ["/probe", "server"]
+
+ARG APP_VERSION=unset
+ARG HEALTH_MODE=ok
+ARG LISTEN_DELAY_S=0
+ARG CRASH_ON_START=0
+ENV APP_VERSION=$APP_VERSION \
+    HEALTH_MODE=$HEALTH_MODE \
+    LISTEN_DELAY_S=$LISTEN_DELAY_S \
+    CRASH_ON_START=$CRASH_ON_START

@@ -1,0 +1,49 @@
+[18:58:09] ===== combo pull-sf: order=start-first failimage=v-gone (tag does not exist anywhere) =====
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:58:21] old task=ofr4v7gajhgj
+[18:58:23] failing-update exit=1
+app-fm-pull-sf
+overall progress: 0 out of 1 tasks
+1/1:  
+[18:58:23] UpdateStatus=paused (after 0s)
+dldp9vf9iuse8246wcbi8osvf app-fm-pull-sf.1 spike-b/app:v-gone Pending less than a second ago Ready
+gtfspzuhynfezypbobjp9s14z app-fm-pull-sf.1 spike-b/app:v-gone Rejected less than a second ago Shutdown
+ofr4v7gajhgjk86sacs6tljd0 app-fm-pull-sf.1 spike-b/app:v1 Running 7 seconds ago Running
+[18:58:23] old task line now: [ofr4v7gajhgj app-fm-pull-sf.1 spike-b/app:v1 Running 7 seconds ago Running]
+[18:58:29] restore exit=0
+[18:59:14] app-fm-pull-sf restore FAILED
+[18:59:14] restore seconds=51
+[18:59:14] running ids after restore: [ofr4v7gajhgj ]
+[18:59:14] RESTORE-ZERO-CHURN: PASS (old task id ofr4v7gajhgj survived pull-failure update + restore)
+dldp9vf9iuse app-fm-pull-sf.1 spike-b/app:v-gone Shutdown 48 seconds ago Shutdown
+gtfspzuhynfe app-fm-pull-sf.1 spike-b/app:v-gone Rejected 50 seconds ago Shutdown
+ofr4v7gajhgj app-fm-pull-sf.1 spike-b/app:v1 Running 58 seconds ago Running
+[18:59:18] ===== combo pull-xf: order=stop-first failimage=v-gone (tag does not exist anywhere) =====
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:59:30] old task=195jz7wxqigt
+[18:59:34] failing-update exit=1
+app-fm-pull-xf
+overall progress: 0 out of 1 tasks
+1/1:  
+[18:59:34] UpdateStatus=paused (after 0s)
+veoul1cy6k2xqhao03rt3c1ds app-fm-pull-xf.1 spike-b/app:v-gone Preparing less than a second ago Ready
+zleiquu0d3w20fxtt8c1vb4tl app-fm-pull-xf.1 spike-b/app:v-gone Rejected 1 second ago Shutdown
+195jz7wxqigt9lbhrjodx0yai app-fm-pull-xf.1 spike-b/app:v1 Shutdown less than a second ago Shutdown
+[18:59:34] old task line now: [195jz7wxqigt app-fm-pull-xf.1 spike-b/app:v1 Shutdown less than a second ago Shutdown]
+[18:59:45] restore exit=0
+[18:59:45] restore seconds=11
+[18:59:45] running ids after restore: [zxiuc4b7i3h5 ]
+[18:59:45] RESTORE-ZERO-CHURN: FAIL (old task 195jz7wxqigt was replaced)
+zxiuc4b7i3h5 app-fm-pull-xf.1 spike-b/app:v1 Running 5 seconds ago Running
+veoul1cy6k2x app-fm-pull-xf.1 spike-b/app:v-gone Shutdown 7 seconds ago Shutdown
+zleiquu0d3w2 app-fm-pull-xf.1 spike-b/app:v-gone Rejected 12 seconds ago Shutdown
+195jz7wxqigt app-fm-pull-xf.1 spike-b/app:v1 Shutdown 11 seconds ago Shutdown
+[18:59:47] B5B-MATRIX-DONE

@@ -1,0 +1,302 @@
+[18:09:45] ############ B3a: healthy slow-start update ############
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:10:02] baseline old task=7925miwjo1i8
+[18:10:07] T0: issuing update v1 -> v2slow (listens after 6s; start-period 15s)
+[18:10:25] update exit=0 output:
+app-b3
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service app-b3 converged
+3hi2dejwilykpjvlvgj5eb8fm app-b3.1 spike-b/app:v2slow Running 5 seconds ago Running
+7925miwjo1i8af557w7bja35w app-b3.1 spike-b/app:v1 Shutdown 1 second ago Shutdown
+/tmp/b2.sh: line 37: 1: parameter not set
+[18:10:25] events captured:  lines
+[18:10:59] --- B3a lbwatch summary:
+{"ev":"lbwatch-summary","first_seen_ms":{"v1":1789668604420,"v2":1789668620060},"iso":"2026-09-17T18:10:59.416667306Z","ms":1789668659416,"per_version":{"v1":159,"v2":383},"total_fail":0,"total_ok":542}
+[18:10:59] --- B3a dnsrr transitions:
+{"ev":"dnsrr","iso":"2026-09-17T18:10:04.519983111Z","ms":1789668604519,"set":"10.0.1.42"}
+{"ev":"dnsrr","iso":"2026-09-17T18:10:20.018841552Z","ms":1789668620018,"set":"10.0.1.42,10.0.1.44"}
+{"ev":"dnsrr","iso":"2026-09-17T18:10:21.118717879Z","ms":1789668621118,"set":"10.0.1.44"}
+[18:10:59] --- B3a version sightings:
+{"ev":"req","first_seen":true,"iso":"2026-09-17T18:10:04.420395036Z","ms":1789668604420,"status":200,"url":"http://app-b3:8080/","ver":"v1"}
+{"ev":"req","first_seen":true,"iso":"2026-09-17T18:10:20.060884473Z","ms":1789668620060,"status":200,"url":"http://app-b3:8080/","ver":"v2"}
+[18:10:59] --- B3a failures: 0
+[18:10:59] --- task events:
+[18:10:59] --- health_status events:
+2026-09-17T18:10:19.973198467Z container health_status: healthy 310875e67f65c4ceedf29bf8b74abc506ac2e0ba0783015c4f1f947f82207dea (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=1gqo2dhlbucizl822cksgutkq, com.docker.swarm.service.name=app-b3, com.docker.swarm.task=, com.docker.swarm.task.id=3hi2dejwilykpjvlvgj5eb8fm, com.docker.swarm.task.name=app-b3.1.3hi2dejwilykpjvlvgj5eb8fm, image=spike-b/app:v2slow, name=app-b3.1.3hi2dejwilykpjvlvgj5eb8fm)
+[18:10:59] --- container create/die events:
+2026-09-17T18:10:03.963782741Z container create 75fe6f45c1a0f529388a7e6013a604cc485131439ef3d4a6a2c74182efa50707 (image=spike-b/app:v1, name=lbw-b3a)
+2026-09-17T18:10:04.429824466Z container start 75fe6f45c1a0f529388a7e6013a604cc485131439ef3d4a6a2c74182efa50707 (image=spike-b/app:v1, name=lbw-b3a)
+2026-09-17T18:10:09.560886008Z container create 310875e67f65c4ceedf29bf8b74abc506ac2e0ba0783015c4f1f947f82207dea (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=1gqo2dhlbucizl822cksgutkq, com.docker.swarm.service.name=app-b3, com.docker.swarm.task=, com.docker.swarm.task.id=3hi2dejwilykpjvlvgj5eb8fm, com.docker.swarm.task.name=app-b3.1.3hi2dejwilykpjvlvgj5eb8fm, image=spike-b/app:v2slow, name=app-b3.1.3hi2dejwilykpjvlvgj5eb8fm)
+2026-09-17T18:10:09.922028417Z container start 310875e67f65c4ceedf29bf8b74abc506ac2e0ba0783015c4f1f947f82207dea (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=1gqo2dhlbucizl822cksgutkq, com.docker.swarm.service.name=app-b3, com.docker.swarm.task=, com.docker.swarm.task.id=3hi2dejwilykpjvlvgj5eb8fm, com.docker.swarm.task.name=app-b3.1.3hi2dejwilykpjvlvgj5eb8fm, image=spike-b/app:v2slow, name=app-b3.1.3hi2dejwilykpjvlvgj5eb8fm)
+2026-09-17T18:10:23.350860388Z container die 04bcfa5fa621202f1b1cfef6fbec4fa8b64f7f9d5d287864ec8523384d3ebfac (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=1gqo2dhlbucizl822cksgutkq, com.docker.swarm.service.name=app-b3, com.docker.swarm.task=, com.docker.swarm.task.id=7925miwjo1i8af557w7bja35w, com.docker.swarm.task.name=app-b3.1.7925miwjo1i8af557w7bja35w, execDuration=30, exitCode=2, image=spike-b/app:v1, name=app-b3.1.7925miwjo1i8af557w7bja35w)
+[18:11:00] B3a-RESULT: first-v2-through-VIP ms=1789668620060 ; healthy-event ms=1789668619973 ; delta=87 ms
+[18:11:00] ############ B3b: failing (never-healthy) update ############
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:11:17] baseline old task=xfaxwz0x5eay
+[18:11:22] T0: issuing update v1 -> v2bad (serves / but /health always 503)
+[18:11:32] update exit=1 output:
+app-b3f
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+service update paused: update paused due to failure or early termination of task 4y795coutva1pfsrad4eziqnp
+dp2jrxytxryh5s539xo3tkg75 app-b3f.1 spike-b/app:v2bad Preparing 1 second ago Ready
+xcy54q08yasd01z6sudxov5l6 app-b3f.1 spike-b/app:v2bad Failed 1 second ago Shutdown
+4y795coutva1pfsrad4eziqnp app-b3f.1 spike-b/app:v2bad Failed 15 seconds ago Shutdown
+xfaxwz0x5eayxfk17wmwju0e3 app-b3f.1 spike-b/app:v1 Running 35 seconds ago Running
+UpdateStatus={"State":"paused","StartedAt":"2026-09-17T18:11:22.151438246Z","Message":"update paused due to failure or early termination of task 4y795coutva1pfsrad4eziqnp"}
+/tmp/b2.sh: line 37: 1: parameter not set
+[18:11:47] events captured:  lines
+[18:12:04] --- B3b lbwatch summary:
+{"ev":"lbwatch-summary","first_seen_ms":{"v1":1789668679127},"iso":"2026-09-17T18:12:04.126201654Z","ms":1789668724126,"per_version":{"v1":443},"total_fail":0,"total_ok":443}
+[18:12:04] --- B3b dnsrr transitions:
+{"ev":"dnsrr","iso":"2026-09-17T18:11:19.227457978Z","ms":1789668679227,"set":"10.0.1.46"}
+[18:12:04] --- B3b v2bad sighting samples (distortion evidence):
+[18:12:04] --- B3b failure samples:
+[18:12:05] --- B3b failure count: 0
+[18:12:05] --- task events:
+[18:12:05] --- health_status events:
+2026-09-17T18:11:30.351102430Z container health_status: unhealthy e70f4fd9e07215b01c5b4df2e11ffde7fce4b254b92a818e9e8dbeeb3726eba9 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=4y795coutva1pfsrad4eziqnp, com.docker.swarm.task.name=app-b3f.1.4y795coutva1pfsrad4eziqnp, image=spike-b/app:v2bad, name=app-b3f.1.4y795coutva1pfsrad4eziqnp)
+2026-09-17T18:11:43.817447835Z container health_status: unhealthy 97084317df06c51f53a330234622979b3e0d0c811eaa3ee1dd89f6d7e4b3f29e (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=xcy54q08yasd01z6sudxov5l6, com.docker.swarm.task.name=app-b3f.1.xcy54q08yasd01z6sudxov5l6, image=spike-b/app:v2bad, name=app-b3f.1.xcy54q08yasd01z6sudxov5l6)
+[18:12:05] --- container create/die events:
+2026-09-17T18:11:18.587219069Z container create 5a4bdd063bef6df0345929242d04600e88108630e5256e2c9a2c955652769280 (image=spike-b/app:v1, name=lbw-b3b)
+2026-09-17T18:11:19.134231861Z container start 5a4bdd063bef6df0345929242d04600e88108630e5256e2c9a2c955652769280 (image=spike-b/app:v1, name=lbw-b3b)
+2026-09-17T18:11:24.264314700Z container create e70f4fd9e07215b01c5b4df2e11ffde7fce4b254b92a818e9e8dbeeb3726eba9 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=4y795coutva1pfsrad4eziqnp, com.docker.swarm.task.name=app-b3f.1.4y795coutva1pfsrad4eziqnp, image=spike-b/app:v2bad, name=app-b3f.1.4y795coutva1pfsrad4eziqnp)
+2026-09-17T18:11:24.547286353Z container start e70f4fd9e07215b01c5b4df2e11ffde7fce4b254b92a818e9e8dbeeb3726eba9 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=4y795coutva1pfsrad4eziqnp, com.docker.swarm.task.name=app-b3f.1.4y795coutva1pfsrad4eziqnp, image=spike-b/app:v2bad, name=app-b3f.1.4y795coutva1pfsrad4eziqnp)
+2026-09-17T18:11:32.568538123Z container die e70f4fd9e07215b01c5b4df2e11ffde7fce4b254b92a818e9e8dbeeb3726eba9 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=4y795coutva1pfsrad4eziqnp, com.docker.swarm.task.name=app-b3f.1.4y795coutva1pfsrad4eziqnp, execDuration=8, exitCode=2, image=spike-b/app:v2bad, name=app-b3f.1.4y795coutva1pfsrad4eziqnp)
+2026-09-17T18:11:34.760789300Z container create 97084317df06c51f53a330234622979b3e0d0c811eaa3ee1dd89f6d7e4b3f29e (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=xcy54q08yasd01z6sudxov5l6, com.docker.swarm.task.name=app-b3f.1.xcy54q08yasd01z6sudxov5l6, image=spike-b/app:v2bad, name=app-b3f.1.xcy54q08yasd01z6sudxov5l6)
+2026-09-17T18:11:37.970764353Z container start 97084317df06c51f53a330234622979b3e0d0c811eaa3ee1dd89f6d7e4b3f29e (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=xcy54q08yasd01z6sudxov5l6, com.docker.swarm.task.name=app-b3f.1.xcy54q08yasd01z6sudxov5l6, image=spike-b/app:v2bad, name=app-b3f.1.xcy54q08yasd01z6sudxov5l6)
+2026-09-17T18:11:46.035960084Z container die 97084317df06c51f53a330234622979b3e0d0c811eaa3ee1dd89f6d7e4b3f29e (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=xcy54q08yasd01z6sudxov5l6, com.docker.swarm.task.name=app-b3f.1.xcy54q08yasd01z6sudxov5l6, execDuration=8, exitCode=2, image=spike-b/app:v2bad, name=app-b3f.1.xcy54q08yasd01z6sudxov5l6)
+[18:12:05] ############ B3c: no-healthcheck update (health_gate=none degradation) ############
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:12:17] baseline old task=lmif2l069x9w
+[18:12:22] T0: issuing update v1 -> v2slow with NO healthcheck (task RUNNING at container start)
+[18:12:29] update exit=0 output:
+app-b3n
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service app-b3n converged
+/tmp/b2.sh: line 37: 1: parameter not set
+[18:12:29] events captured:  lines
+[18:13:00] --- B3c lbwatch summary:
+{"ev":"lbwatch-summary","first_seen_ms":{"v1":1789668739108,"v2":1789668750596},"iso":"2026-09-17T18:12:59.10675468Z","ms":1789668779106,"per_version":{"v1":30,"v2":142},"total_fail":27,"total_ok":172}
+[18:13:00] --- B3c dnsrr transitions:
+{"ev":"dnsrr","iso":"2026-09-17T18:12:19.307985162Z","ms":1789668739307,"set":"10.0.1.53"}
+{"ev":"dnsrr","iso":"2026-09-17T18:12:24.507957056Z","ms":1789668744507,"set":"10.0.1.53,10.0.1.56"}
+{"ev":"dnsrr","iso":"2026-09-17T18:12:25.70841175Z","ms":1789668745708,"set":"10.0.1.56"}
+[18:13:00] --- B3c v2 first sighting:
+{"ev":"req","first_seen":true,"iso":"2026-09-17T18:12:19.10833086Z","ms":1789668739108,"status":200,"url":"http://app-b3n:8080/","ver":"v1"}
+{"ev":"req","first_seen":true,"iso":"2026-09-17T18:12:30.596475845Z","ms":1789668750596,"status":200,"url":"http://app-b3n:8080/","ver":"v2"}
+[18:13:00] --- B3c failure samples (expect the un-listening new task window):
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:24.551638879Z","ms":1789668744551,"url":"http://app-b3n:8080/"}
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:24.954990697Z","ms":1789668744954,"url":"http://app-b3n:8080/"}
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:25.358002548Z","ms":1789668745358,"url":"http://app-b3n:8080/"}
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:25.761324812Z","ms":1789668745761,"url":"http://app-b3n:8080/"}
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:25.96278865Z","ms":1789668745962,"url":"http://app-b3n:8080/"}
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:26.164186413Z","ms":1789668746164,"url":"http://app-b3n:8080/"}
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:26.365607235Z","ms":1789668746365,"url":"http://app-b3n:8080/"}
+{"ev":"req","fail":"Get \"http://app-b3n:8080/\": dial tcp 10.0.1.52:8080: connect: connection refused","iso":"2026-09-17T18:12:26.567000988Z","ms":1789668746567,"url":"http://app-b3n:8080/"}
+[18:13:00] --- B3c failure count: 27
+[18:13:00] --- task events:
+[18:13:00] --- health_status events:
+2026-09-17T18:12:24.295487929Z container health_status: unhealthy 28a8f4b5c63ac8d9613fd67e2503379d80eb8a12c1e439a6a85400708b240fbf (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=qur5d4ih76gbasr12nerfnvy4, com.docker.swarm.task.name=app-b3f.1.qur5d4ih76gbasr12nerfnvy4, image=spike-b/app:v2bad, name=app-b3f.1.qur5d4ih76gbasr12nerfnvy4)
+[18:13:00] --- container create/die events:
+2026-09-17T18:12:18.544055248Z container start 28a8f4b5c63ac8d9613fd67e2503379d80eb8a12c1e439a6a85400708b240fbf (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=qur5d4ih76gbasr12nerfnvy4, com.docker.swarm.task.name=app-b3f.1.qur5d4ih76gbasr12nerfnvy4, image=spike-b/app:v2bad, name=app-b3f.1.qur5d4ih76gbasr12nerfnvy4)
+2026-09-17T18:12:18.673999878Z container create e80bc743dde166f87420d3ceeea3f7fba9d7229affc24259580a01f250d9cfc2 (image=spike-b/app:v1, name=lbw-b3c)
+2026-09-17T18:12:19.115204896Z container start e80bc743dde166f87420d3ceeea3f7fba9d7229affc24259580a01f250d9cfc2 (image=spike-b/app:v1, name=lbw-b3c)
+2026-09-17T18:12:24.186238994Z container create 6e755f509a71e14ed118dcea5f5617ea3637c97a84d3ae0c9d60841fc5399c9a (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=30sby6z3c49yejpnuvvejfw2o, com.docker.swarm.service.name=app-b3n, com.docker.swarm.task=, com.docker.swarm.task.id=09b1pxwmmhzejo5ticlgqwcuk, com.docker.swarm.task.name=app-b3n.1.09b1pxwmmhzejo5ticlgqwcuk, image=spike-b/app:v2slow, name=app-b3n.1.09b1pxwmmhzejo5ticlgqwcuk)
+2026-09-17T18:12:24.478153747Z container start 6e755f509a71e14ed118dcea5f5617ea3637c97a84d3ae0c9d60841fc5399c9a (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=30sby6z3c49yejpnuvvejfw2o, com.docker.swarm.service.name=app-b3n, com.docker.swarm.task=, com.docker.swarm.task.id=09b1pxwmmhzejo5ticlgqwcuk, com.docker.swarm.task.name=app-b3n.1.09b1pxwmmhzejo5ticlgqwcuk, image=spike-b/app:v2slow, name=app-b3n.1.09b1pxwmmhzejo5ticlgqwcuk)
+2026-09-17T18:12:26.573412530Z container die 28a8f4b5c63ac8d9613fd67e2503379d80eb8a12c1e439a6a85400708b240fbf (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=qur5d4ih76gbasr12nerfnvy4, com.docker.swarm.task.name=app-b3f.1.qur5d4ih76gbasr12nerfnvy4, execDuration=8, exitCode=2, image=spike-b/app:v2bad, name=app-b3f.1.qur5d4ih76gbasr12nerfnvy4)
+2026-09-17T18:12:27.915450554Z container die 3d0b21ff79a2a42a8add270a13571278cdeadad54e4ad1f214faf9179f3a8892 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=30sby6z3c49yejpnuvvejfw2o, com.docker.swarm.service.name=app-b3n, com.docker.swarm.task=, com.docker.swarm.task.id=lmif2l069x9wkkod2ls7j243l, com.docker.swarm.task.name=app-b3n.1.lmif2l069x9wkkod2ls7j243l, execDuration=15, exitCode=2, image=spike-b/app:v1, name=app-b3n.1.lmif2l069x9wkkod2ls7j243l)
+2026-09-17T18:12:28.739420186Z container create 07dc218e566b4266fe63e93926a702c99ddbf620d1acd1dd56385224b2c9f891 (com.docker.swarm.node.id=4i1mlixielxfer4xz7uizg3zc, com.docker.swarm.service.id=0dz5ho49o6rhe404hbggvwv66, com.docker.swarm.service.name=app-b3f, com.docker.swarm.task=, com.docker.swarm.task.id=wikethf5ecdanc1r40dflz9br, com.docker.swarm.task.name=app-b3f.1.wikethf5ecdanc1r40dflz9br, image=spike-b/app:v2bad, name=app-b3f.1.wikethf5ecdanc1r40dflz9br)
+[18:13:00] B2-B3-EXPERIMENT-DONE

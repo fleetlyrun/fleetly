@@ -1,0 +1,46 @@
+[18:30:08] === rebuild fixtures with upgraded probe binary ===
+[18:30:08] rebuilt spike-b/app:v1
+[18:30:09] rebuilt spike-b/app:v2
+[18:30:10] rebuilt spike-b/app:v2bad
+[18:30:10] rebuilt spike-b/app:v2slow
+[18:30:11] rebuilt spike-b/app:crash
+[18:30:11] === one config, three routers: v4a plain / v4b serversTransport / v4c plain ===
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:30:58] ##### V4-a: clients up, update in 4s #####
+[18:31:14] V4-a update exit=0
+[18:31:50] V4-a keep-alive summary: {"ev":"client-summary","host":"v4a.local","iso":"2026-09-17T18:31:49.282030019Z","keepalive":true,"ms":1789669909282,"per_version":{"v1":3,"v2":7},"total_fail":0,"total_ok":10,"url":"http://edge/"}
+[18:31:50] V4-a keep-alive bad samples:
+[18:31:50] V4-a control summary:     
+[18:31:50] V4-a control bad samples:
+[18:31:52] (B uses serversTransport short: idleConnTimeout=1s maxIdleConnsPerHost=1)
+[18:31:52] ##### V4-b: clients up, update in 4s #####
+[18:32:07] V4-b update exit=0
+[18:32:43] V4-b keep-alive summary: {"ev":"client-summary","host":"v4b.local","iso":"2026-09-17T18:32:43.136630518Z","keepalive":true,"ms":1789669963136,"per_version":{"v1":2,"v2":8},"total_fail":0,"total_ok":10,"url":"http://edge/"}
+[18:32:43] V4-b keep-alive bad samples:
+[18:32:43] V4-b control summary:     
+[18:32:43] V4-b control bad samples:
+{"ev":"req","fail":"Get \"http://edge/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)","iso":"2026-09-17T18:32:06.824194587Z","ms":1789669926824}
+[18:32:46] (C backend is graceful: GRACEFUL=1 stop-grace 15s)
+[18:32:46] ##### V4-c: clients up, update in 4s #####
+[18:33:00] V4-c update exit=0
+[18:33:37] V4-c keep-alive summary: {"ev":"client-summary","host":"v4c.local","iso":"2026-09-17T18:33:36.715847915Z","keepalive":true,"ms":1789670016715,"per_version":{"v1":3,"v2":7},"total_fail":0,"total_ok":10,"url":"http://edge/"}
+[18:33:37] V4-c keep-alive bad samples:
+[18:33:37] V4-c control summary:     
+[18:33:37] V4-c control bad samples:
+{"ev":"req","fail":"Get \"http://edge/\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)","iso":"2026-09-17T18:33:00.393024167Z","ms":1789669980393}
+[18:33:39] --- Traefik log 5xx excerpts:
+[18:33:39] B3C-V4V2-EXPERIMENT-DONE

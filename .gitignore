@@ -34,4 +34,8 @@ spike/a/artifacts/spikerailpack-linux
 spike/a/artifacts/spikerailpack-linux.b64
 spike/a/artifacts/spikerailpack.exe
 spike/a/artifacts/*.tar
-spike/a/artifacts/*.b64
+spike/a/artifacts/*.b64 
+# Spike B artifacts: logs 保留入库；交叉编译探针二进制与大文件排除 
+spike/b/dockerctx/probe 
+spike/b/artifacts/*.tar 
+spike/b/artifacts/*.b64

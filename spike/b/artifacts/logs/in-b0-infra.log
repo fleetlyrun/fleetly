@@ -1,0 +1,75 @@
+[17:57:05] === B0.i engine ===
+engine=29.8.1 api=1.56
+[17:57:05] === B0.1 swarm init (single node, manager) ===
+[17:57:05] advertise-addr=172.17.0.2
+Swarm initialized: current node (4i1mlixielxfer4xz7uizg3zc) is now a manager.
+
+To add a worker to this swarm, run the following command:
+
+    docker swarm join --token SWMTKN-1-4fagpisp0uoqklmivp7mtlgplvpx8ih4bap72j91ftxw1z8l3x-doiyjg0x43qvvbz7bbdzg4mte 172.17.0.2:2377
+
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+[17:57:05] === B0.2 attachable overlay network ===
+k2rjhnnjzqlcsyylqw2gr2tlz
+[17:57:05] === B0.3 pull alpine:3.20 ===
+3.20: Pulling from library/alpine
+25f1d6b1951a: Pulling fs layer
+3a030ca3f633: Download complete
+d4050d56ebf2: Download complete
+25f1d6b1951a: Download complete
+25f1d6b1951a: Pull complete
+Digest: sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
+Status: Downloaded newer image for alpine:3.20
+docker.io/library/alpine:3.20
+[17:57:11] === B0.4 pull traefik (pinned v3 line, first available tag wins) ===
+[17:57:11] trying traefik:v3.5
+v3.5: Pulling from library/traefik
+46808017cb1c: Pulling fs layer
+365a551e6e94: Pulling fs layer
+bdedca173339: Pulling fs layer
+2d35ebdb57d9: Pulling fs layer
+46808017cb1c: Download complete
+365a551e6e94: Download complete
+2d35ebdb57d9: Download complete
+2d35ebdb57d9: Pull complete
+365a551e6e94: Pull complete
+3b6f3edb52ac: Download complete
+3986d3a61e87: Download complete
+bdedca173339: Download complete
+46808017cb1c: Pull complete
+bdedca173339: Pull complete
+Digest: sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2
+Status: Downloaded newer image for traefik:v3.5
+docker.io/library/traefik:v3.5
+[17:57:20] pinned traefik tag=v3.5
+traefik image-id=sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2
+[17:57:20] === B0.5 build fixture images (provenance/sbom OFF, spike/a lesson 9) ===
+#7 unpacking to docker.io/spike-b/app:v1 0.1s done
+#7 DONE 0.5s
+#7 unpacking to docker.io/spike-b/app:v2 0.0s done
+#7 DONE 0.1s
+#7 unpacking to docker.io/spike-b/app:v2bad 0.0s done
+#7 DONE 0.1s
+#7 unpacking to docker.io/spike-b/app:v2slow 0.0s done
+#7 DONE 0.1s
+#7 unpacking to docker.io/spike-b/app:crash 0.0s done
+#7 DONE 0.1s
+spike-b/app:v2bad 53e86e51e1de
+spike-b/app:v1 6fa8fc5c09ea
+spike-b/app:v2slow 48180ffe970e
+spike-b/app:v2 851d9816bb3d
+spike-b/app:crash 35de3291d133
+[17:57:24] === B0.6 standalone sanity of v1 fixture ===
+HC 200 ok
+HC 200 edgefleet-spike-b version=v1 host=44ca57438ac0
+[17:57:26] === B0.7 cfgsvc (control-plane stand-in for HTTP provider) ===
+[17:57:28] === B0.8 traefik v3 as swarm service (HTTP provider, poll 2s) ===
+[17:57:37] edge current-state=Running 5 seconds ago (after 0s)
+[17:57:37] === B0.9 infra sanity: overlay DNS + config fetch ===
+RESOLVE cfg -> [10.0.1.2]
+RESOLVE edge -> [10.0.1.4]
+RESOLVE tasks.edge -> [10.0.1.5]
+{"count":1,"dur":"0s","ev":"client-start","every_ms":0,"host":"","iso":"2026-09-17T17:57:39.98975124Z","keepalive":false,"ms":1789667859989,"url":"http://cfg:9000/healthz"}
+{"body":"ok","ev":"req","iso":"2026-09-17T17:57:39.990752144Z","ms":1789667859990,"status":200,"ver":"?"}
+{"ev":"client-summary","host":"","iso":"2026-09-17T17:57:39.990768704Z","keepalive":false,"ms":1789667859990,"per_version":{"?":1},"total_fail":0,"total_ok":1,"url":"http://cfg:9000/healthz"}
+[17:57:40] B0-INFRA-OK

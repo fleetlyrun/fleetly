@@ -1,0 +1,50 @@
+[19:01:32] ############ V3: zero-failure routing through a healthy update ############
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[19:01:51] VIP before: app-b3=10.0.1.41 app-b3f=10.0.1.45 app-b3n=10.0.1.52 app-v1=10.0.1.30 app-v3=10.0.1.163 app-v4a=10.0.1.32 app-v4c=10.0.1.35 edge=10.0.1.4 
+[19:01:53] T0: healthy update v1 -> v2 (image switch, healthcheck gated)
+[19:02:03] update exit=0
+[19:02:06] VIP after:  app-b3=10.0.1.41 app-b3f=10.0.1.45 app-b3n=10.0.1.52 app-v1=10.0.1.30 app-v3=10.0.1.163 app-v4a=10.0.1.32 app-v4c=10.0.1.35 edge=10.0.1.4 
+[19:02:32] --- V3 prober summary:
+{"ev":"client-summary","host":"v3.local","iso":"2026-09-17T19:02:31.809227405Z","keepalive":false,"ms":1789671751809,"per_version":{"v1":93,"v2":302},"total_fail":0,"total_ok":395,"url":"http://edge/"}
+[19:02:32] --- V3 version sightings:
+{"ev":"req","iso":"2026-09-17T19:01:51.743783154Z","ms":1789671711743,"status":200,"ver":"v1"}
+{"ev":"req","iso":"2026-09-17T19:01:51.845813615Z","ms":1789671711845,"status":200,"ver":"v1"}
+{"ev":"req","iso":"2026-09-17T19:01:51.947246595Z","ms":1789671711947,"status":200,"ver":"v1"}
+{"ev":"req","iso":"2026-09-17T19:01:52.04864655Z","ms":1789671712048,"status":200,"ver":"v1"}
+[19:02:32] V3-ASSERT-1 ROUTING_ZERO_FAILURE: PASS
+[19:02:32] V3-ASSERT-2 VIP_STABLE: PASS
+[19:02:32] ############ V4 phase 1: stale keep-alive reproduction (Dokploy #5281) ############
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[19:02:55] T0: update v1 -> v2 (old task dies ~3-5s later, mid idle gap)
+[19:03:05] update exit=0
+[19:03:05] waiting out phase-1 window...
+[19:03:30] ############ V4 phase 2: serversTransport mitigation (idleConnTimeout=1s) ############
+[19:03:30] mitigation config written; waiting 8s for Traefik poll...
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:30Z[0m [31mERR[0m [1mProvider error, retrying in 649.719288ms[0m [36merror=[0m[31m[1m"cannot decode configuration data: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `not-jso...` into map[string]interface {}"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:51Z[0m [31mERR[0m [1mProvider error, retrying in 493.96466ms[0m [36merror=[0m[31m[1m"cannot fetch configuration data: do fetch request: Get \"http://cfg:9000/config\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:54Z[0m [31mERR[0m [1mProvider error, retrying in 644.235231ms[0m [36merror=[0m[31m[1m"cannot fetch configuration data: do fetch request: Get \"http://cfg:9000/config\": dial tcp: lookup cfg on 127.0.0.11:53: no such host"[0m[0m [36mproviderName=[0mhttp
+[19:03:38] T1: update back v2 -> v1 with mitigation active
+[19:03:47] update exit=0
+[19:04:46] --- V4 keep-alive client summary:
+{"ev":"client-summary","host":"v4.local","iso":"2026-09-17T19:04:45.173555713Z","keepalive":true,"ms":1789671885173,"per_version":{"v1":11,"v2":8},"total_fail":0,"total_ok":19,"url":"http://edge/"}
+[19:04:46] --- V4 keep-alive client failure samples:
+(none)
+[19:04:46] --- V4 control (fresh-conn) client summary:
+{"ev":"client-summary","host":"v4.local","iso":"2026-09-17T19:04:42.048070836Z","keepalive":false,"ms":1789671882048,"per_version":{"v1":135,"v2":85},"total_fail":0,"total_ok":220,"url":"http://edge/"}
+[19:04:46] --- V4 control failure samples:
+(none)
+[19:04:46] --- V4 Traefik log excerpts (502/disconnect/error):
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:51:51Z[0m [31mERR[0m [1mProvider error, retrying in 430.706387ms[0m [36merror=[0m[31m[1m"cannot decode configuration data: routers cannot be a standalone element (type map[string]*dynamic.Router)"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:20Z[0m [31mERR[0m [36merror=[0m[31m[1m"middleware \"nope@file\" does not exist"[0m[0m [36mentryPointName=[0mweb [36mrouterName=[0mx2@http
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:30Z[0m [31mERR[0m [1mProvider error, retrying in 649.719288ms[0m [36merror=[0m[31m[1m"cannot decode configuration data: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `not-jso...` into map[string]interface {}"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:51Z[0m [31mERR[0m [1mProvider error, retrying in 493.96466ms[0m [36merror=[0m[31m[1m"cannot fetch configuration data: do fetch request: Get \"http://cfg:9000/config\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:54Z[0m [31mERR[0m [1mProvider error, retrying in 644.235231ms[0m [36merror=[0m[31m[1m"cannot fetch configuration data: do fetch request: Get \"http://cfg:9000/config\": dial tcp: lookup cfg on 127.0.0.11:53: no such host"[0m[0m [36mproviderName=[0mhttp
+[19:04:46] B3-V3V4-EXPERIMENT-DONE

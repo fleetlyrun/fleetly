@@ -1,0 +1,37 @@
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:51:41] baselines: x1=Running 16 seconds ago x2=Running 5 seconds ago
+[18:51:41] === P-a: good config -> both routes live ===
+[18:51:50] a/x1: {"ev":"req","iso":"2026-09-17T18:51:50.192993193Z","ms":1789671110192,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x1.local","iso":"2026-09-17T18:51:50.193011431Z","keepalive":false,"ms":1789671110193,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:51:51] a/x2: {"ev":"req","iso":"2026-09-17T18:51:50.970598819Z","ms":1789671110970,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x2.local","iso":"2026-09-17T18:51:50.970617893Z","keepalive":false,"ms":1789671110970,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:51:51] === P-b: EMPTY routers/services ===
+[18:52:00] b-empty/x1: {"ev":"req","iso":"2026-09-17T18:51:59.815310693Z","ms":1789671119815,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x1.local","iso":"2026-09-17T18:51:59.815330775Z","keepalive":false,"ms":1789671119815,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:00] b-empty/x2: {"ev":"req","iso":"2026-09-17T18:52:00.636527047Z","ms":1789671120636,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x2.local","iso":"2026-09-17T18:52:00.636553539Z","keepalive":false,"ms":1789671120636,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:00] b-empty object '{}' variant:
+[18:52:09] b-empty2/x1: {"body":"404 page not found","ev":"req","iso":"2026-09-17T18:52:09.43901779Z","ms":1789671129439,"status":404,"ver":"?"} {"ev":"client-summary","host":"x1.local","iso":"2026-09-17T18:52:09.439099513Z","keepalive":false,"ms":1789671129439,"per_version":{"?":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:09] --- restoring good config
+[18:52:18] b-restore/x1: {"ev":"req","iso":"2026-09-17T18:52:18.279816081Z","ms":1789671138279,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x1.local","iso":"2026-09-17T18:52:18.279833513Z","keepalive":false,"ms":1789671138279,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:18] === P-c1: single app bad config (x2 references nonexistent middleware) ===
+[18:52:27] c1/x1 (must keep serving): {"ev":"req","iso":"2026-09-17T18:52:27.193990507Z","ms":1789671147193,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x1.local","iso":"2026-09-17T18:52:27.194026812Z","keepalive":false,"ms":1789671147194,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:28] c1/x2 (broken app):        {"body":"404 page not found","ev":"req","iso":"2026-09-17T18:52:28.071492213Z","ms":1789671148071,"status":404,"ver":"?"} {"ev":"client-summary","host":"x2.local","iso":"2026-09-17T18:52:28.071525615Z","keepalive":false,"ms":1789671148071,"per_version":{"?":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:28] === P-c2: malformed JSON -> Traefik keeps last good config ===
+[18:52:37] c2/x1: {"ev":"req","iso":"2026-09-17T18:52:36.853975331Z","ms":1789671156853,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x1.local","iso":"2026-09-17T18:52:36.85400587Z","keepalive":false,"ms":1789671156854,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:37] c2/x2 (c1-bad router should now be back per last GOOD config? or still broken): {"body":"404 page not found","ev":"req","iso":"2026-09-17T18:52:37.623823718Z","ms":1789671157623,"status":404,"ver":"?"} {"ev":"client-summary","host":"x2.local","iso":"2026-09-17T18:52:37.623849722Z","keepalive":false,"ms":1789671157623,"per_version":{"?":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:45] === P-d: config service unreachable -> Traefik keeps serving ===
+[18:52:55] d/x1: {"ev":"req","iso":"2026-09-17T18:52:54.727088561Z","ms":1789671174727,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x1.local","iso":"2026-09-17T18:52:54.727107111Z","keepalive":false,"ms":1789671174727,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:52:55] d/x2: {"ev":"req","iso":"2026-09-17T18:52:55.519470001Z","ms":1789671175519,"status":200,"ver":"v1"} {"ev":"client-summary","host":"x2.local","iso":"2026-09-17T18:52:55.519488848Z","keepalive":false,"ms":1789671175519,"per_version":{"v1":1},"total_fail":0,"total_ok":1,"url":"http://edge/"} 
+[18:53:00] --- Traefik log excerpts:
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:51:51Z[0m [31mERR[0m [1mProvider error, retrying in 430.706387ms[0m [36merror=[0m[31m[1m"cannot decode configuration data: routers cannot be a standalone element (type map[string]*dynamic.Router)"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:20Z[0m [31mERR[0m [36merror=[0m[31m[1m"middleware \"nope@file\" does not exist"[0m[0m [36mentryPointName=[0mweb [36mrouterName=[0mx2@http
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:30Z[0m [31mERR[0m [1mProvider error, retrying in 649.719288ms[0m [36merror=[0m[31m[1m"cannot decode configuration data: yaml: unmarshal errors:\n  line 1: cannot unmarshal !!str `not-jso...` into map[string]interface {}"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:51Z[0m [31mERR[0m [1mProvider error, retrying in 493.96466ms[0m [36merror=[0m[31m[1m"cannot fetch configuration data: do fetch request: Get \"http://cfg:9000/config\": context deadline exceeded (Client.Timeout exceeded while awaiting headers)"[0m[0m [36mproviderName=[0mhttp
+edge.1.px5d1m0iut3o@a1d8973de652    | [90m2026-09-17T18:52:54Z[0m [31mERR[0m [1mProvider error, retrying in 644.235231ms[0m [36merror=[0m[31m[1m"cannot fetch configuration data: do fetch request: Get \"http://cfg:9000/config\": dial tcp: lookup cfg on 127.0.0.11:53: no such host"[0m[0m [36mproviderName=[0mhttp
+[18:53:00] B4-PROVIDER-EXPERIMENT-DONE

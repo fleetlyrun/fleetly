@@ -1,0 +1,98 @@
+[18:53:25] ===== combo crash-sf: order=start-first failimage=crash =====
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:54:03] old task=ogmqfxxtsyy9
+[18:54:30] failing-update exit=1
+app-fm-crash-sf
+overall progress: 0 out of 1 tasks
+1/1:  
+[18:54:30] UpdateStatus=paused (after 0s)
+UpdateStatus-msg=update paused due to failure or early termination of task dowb0bvir25gt9uu9j40olir9
+765oxhti8cnvy2lv1aa316t1u app-fm-crash-sf.1 spike-b/app:crash Pending less than a second ago Ready
+dowb0bvir25gt9uu9j40olir9 app-fm-crash-sf.1 spike-b/app:crash Failed less than a second ago Shutdown
+ogmqfxxtsyy9k8osaf735nsz0 app-fm-crash-sf.1 spike-b/app:v1 Running 31 seconds ago Running
+[18:54:30] old task line now: [ogmqfxxtsyy9 app-fm-crash-sf.1 spike-b/app:v1 Running 31 seconds ago Running]
+[18:54:31] prober verdict during failure window: {"ev":"client-summary","host":"","iso":"2026-09-17T18:54:31.579516065Z","keepalive":false,"ms":1789671271579,"per_version":{"v1":3},"total_fail":0,"total_ok":3,"url":"http://app-fm-crash-sf:8080/"}
+[18:54:37] restore exit=0
+[18:55:22] app-fm-crash-sf restore FAILED (task never healthy)
+[18:55:22] restore seconds=51
+765oxhti8cnv app-fm-crash-sf.1 spike-b/app:crash Shutdown 47 seconds ago Shutdown
+dowb0bvir25g app-fm-crash-sf.1 spike-b/app:crash Failed 52 seconds ago Shutdown
+ogmqfxxtsyy9 app-fm-crash-sf.1 spike-b/app:v1 Running about a minute ago Running
+[18:55:26] ===== combo crash-xf: order=stop-first failimage=crash =====
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:55:39] old task=xe7ruepx0fd6
+[18:55:43] failing-update exit=1
+app-fm-crash-xf
+overall progress: 0 out of 1 tasks
+1/1:  
+[18:55:43] UpdateStatus=paused (after 0s)
+UpdateStatus-msg=update paused due to failure or early termination of task z3re50a1rawmrypwz247hznw3
+xiyvfxrvrwdygxnjy8jv0ile5 app-fm-crash-xf.1 spike-b/app:crash Assigned less than a second ago Ready
+z3re50a1rawmrypwz247hznw3 app-fm-crash-xf.1 spike-b/app:crash Failed less than a second ago Shutdown
+xe7ruepx0fd6q7ytspzs1hbee app-fm-crash-xf.1 spike-b/app:v1 Shutdown less than a second ago Shutdown
+[18:55:43] old task line now: [xe7ruepx0fd6 app-fm-crash-xf.1 spike-b/app:v1 Shutdown less than a second ago Shutdown]
+[18:55:52] prober verdict during failure window: {"ev":"client-summary","host":"","iso":"2026-09-17T18:55:52.011042Z","keepalive":false,"ms":1789671352011,"per_version":{},"total_fail":3,"total_ok":0,"url":"http://app-fm-crash-xf:8080/"}
+[18:56:02] restore exit=0
+[18:56:02] restore seconds=10
+r7qj0aqhq0uh app-fm-crash-xf.1 spike-b/app:v1 Running 5 seconds ago Running
+8amx2t15rsa7 app-fm-crash-xf.1 spike-b/app:crash Shutdown 7 seconds ago Shutdown
+xiyvfxrvrwdy app-fm-crash-xf.1 spike-b/app:crash Failed 13 seconds ago Shutdown
+z3re50a1rawm app-fm-crash-xf.1 spike-b/app:crash Failed 18 seconds ago Shutdown
+xe7ruepx0fd6 app-fm-crash-xf.1 spike-b/app:v1 Shutdown 19 seconds ago Shutdown
+[18:56:06] ===== combo bad-sf: order=start-first failimage=v2bad =====
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:56:18] old task=mjbvdbje7dgu
+[18:56:26] failing-update exit=1
+app-fm-bad-sf
+overall progress: 0 out of 1 tasks
+1/1:  
+[18:56:26] UpdateStatus=paused (after 0s)
+UpdateStatus-msg=update paused due to failure or early termination of task jb32zxkg13eyw7sjxody40nv5
+ykevkczaed6cb9g2gpfzyf2xp app-fm-bad-sf.1 spike-b/app:v2bad Assigned less than a second ago Ready
+jb32zxkg13eyw7sjxody40nv5 app-fm-bad-sf.1 spike-b/app:v2bad Failed less than a second ago Shutdown
+mjbvdbje7dguhxtts12hwbuty app-fm-bad-sf.1 spike-b/app:v1 Running 13 seconds ago Running
+[18:56:26] old task line now: [mjbvdbje7dgu app-fm-bad-sf.1 spike-b/app:v1 Running 13 seconds ago Running]
+[18:56:28] prober verdict during failure window: {"ev":"client-summary","host":"","iso":"2026-09-17T18:56:28.118452026Z","keepalive":false,"ms":1789671388118,"per_version":{"v1":3},"total_fail":0,"total_ok":3,"url":"http://app-fm-bad-sf:8080/"}
+[18:56:33] restore exit=0
+[18:57:19] app-fm-bad-sf restore FAILED (task never healthy)
+[18:57:19] restore seconds=51
+ykevkczaed6c app-fm-bad-sf.1 spike-b/app:v2bad Shutdown 48 seconds ago Shutdown
+jb32zxkg13ey app-fm-bad-sf.1 spike-b/app:v2bad Failed 52 seconds ago Shutdown
+mjbvdbje7dgu app-fm-bad-sf.1 spike-b/app:v1 Running about a minute ago Running
+[18:57:23] ===== combo bad-xf: order=stop-first failimage=v2bad =====
+image spike-b/app:v1 could not be accessed on a registry to record
+its digest. Each node will access spike-b/app:v1 independently,
+possibly leading to different nodes running different
+versions of the image.
+
+[18:57:35] old task=be93b04x4cul
+[18:57:44] failing-update exit=1
+app-fm-bad-xf
+overall progress: 0 out of 1 tasks
+1/1:  
+[18:57:44] UpdateStatus=paused (after 0s)
+UpdateStatus-msg=update paused due to failure or early termination of task zdkb9x4ld2j3hj7u4emgwdl2w
+rgmrdv94d0ko49qrfm8vz2xed app-fm-bad-xf.1 spike-b/app:v2bad Assigned less than a second ago Ready
+zdkb9x4ld2j3hj7u4emgwdl2w app-fm-bad-xf.1 spike-b/app:v2bad Failed less than a second ago Shutdown
+be93b04x4culh4dqoj8rgvppc app-fm-bad-xf.1 spike-b/app:v1 Shutdown 5 seconds ago Shutdown
+[18:57:44] old task line now: [be93b04x4cul app-fm-bad-xf.1 spike-b/app:v1 Shutdown 5 seconds ago Shutdown]
+[18:57:53] prober verdict during failure window: {"ev":"client-summary","host":"","iso":"2026-09-17T18:57:53.485674574Z","keepalive":false,"ms":1789671473485,"per_version":{},"total_fail":3,"total_ok":0,"url":"http://app-fm-bad-xf:8080/"}
+[18:58:05] restore exit=0
+[18:58:05] restore seconds=12
+72ro6bps7vgu app-fm-bad-xf.1 spike-b/app:v1 Running 5 seconds ago Running
+rgmrdv94d0ko app-fm-bad-xf.1 spike-b/app:v2bad Shutdown 7 seconds ago Shutdown
+zdkb9x4ld2j3 app-fm-bad-xf.1 spike-b/app:v2bad Failed 21 seconds ago Shutdown
+be93b04x4cul app-fm-bad-xf.1 spike-b/app:v1 Shutdown 26 seconds ago Shutdown
+[18:58:07] B5A-MATRIX-DONE
