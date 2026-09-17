@@ -1,0 +1,88 @@
+
+D:\Codes\qiulin\edgesets>call spike\a\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_A_DIR=D:\Codes\qiulin\edgesets\spike\a\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>set "GOPROXY=goproxy.cn" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_BK_IMAGE=moby/buildkit:v0.32.2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_REGISTRY_IMAGE=registry:2.8.3" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND=spike-a-dind" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\a\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\a>if not exist artifacts\logs mkdir artifacts\logs 
+
+D:\Codes\qiulin\edgesets\spike\a>docker rm -f spike-a-dind  2>nul 
+spike-a-dind
+
+D:\Codes\qiulin\edgesets\spike\a>docker run -d --name spike-a-dind --privileged -v "D:\Codes\qiulin\edgesets\spike\a\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+6bb995a838ffca4d4c8ef2a56fac16ad79d90aaaeeb5650facfd497f9891b454
+
+D:\Codes\qiulin\edgesets\spike\a>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\a>if 1 == 0 goto ready 
+
+D:\Codes\qiulin\edgesets\spike\a>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\a>if 1 GEQ 60 (echo inner dockerd not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\a>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\a>goto waitloop 
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\a>if 0 == 0 goto ready 
+
+D:\Codes\qiulin\edgesets\spike\a>ping -n 3 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind sh -c "cp /work-src/scripts/e4-rootless.sh /tmp/e4rl.sh && sed -i 's/\r$//' /tmp/e4rl.sh && sh /tmp/e4rl.sh" 
+=== kernel / userns baseline ===
+Linux 6bb995a838ff 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 Linux
+=== pull + start rootless buildkitd ===
+pull ok
+run exit: 0
+=== buildctl debug info (rootless worker) ===
+=== tiny scratch build through the rootless worker ===
+build exit: 0
+=== cleanup ===
+=== e4-rootless complete ===
+
+D:\Codes\qiulin\edgesets\spike\a>echo inner exit=0 
+inner exit=0
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E4-rootless report ===== 
+===== E4-rootless report =====
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind cat /tmp/e4-rootless-report.txt 
+=== kernel / userns baseline ===
+Linux 6bb995a838ff 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 Linux
+no userns sysctl
+=== pull + start rootless buildkitd ===
+pull ok
+run exit: 0
+=== buildctl debug info (rootless worker) ===
+=== tiny scratch build through the rootless worker ===
+build exit: 0
+#5 exporting config sha256:47fb8d62e25f4970c2ad30c88c0348aac126a1009e57a6fe204ffb58d629c641 0.0s done
+#5 sending tarball done
+#5 DONE 0.2s
+=== cleanup ===
+=== e4-rootless complete ===
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind cat /tmp/e4-rootless-report.txt  1>artifacts\logs\e4-rootless-report.log 
+
+D:\Codes\qiulin\edgesets\spike\a>docker rm -f spike-a-dind 
+spike-a-dind
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== e4-rootless-run done ===== 
+===== e4-rootless-run done =====

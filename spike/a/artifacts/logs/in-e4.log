@@ -1,0 +1,29 @@
+===== E4.1 recreate buildkitd with hard limits =====
+spike-a-buildkitd
+c5b1a9721a03a593d125ba7f8afe764e7b2b2416f36c3c749a4b1b5a9964223a
+===== E4.2 ceiling as recorded by the engine =====
+Memory=1073741824 NanoCpus=1500000000 Privileged=true
+===== E4.3 cold build #1 under limits =====
+----- cold build spike-a/node-app:limited1 start 16:37:51 -----
+#9 ERROR: process "sh -c apt-get update && apt-get install -y libatomic1" did not complete successfully: exit code: 100
+----- cold build limited1 end 16:38:33 -----
+spike-a-buildkitd: cpu=0.17% mem=61.63MiB / 1GiB
+OOMKilled=false Status=running
+===== E4.4 cold build #2 under limits (repeatable) =====
+----- cold build spike-a/node-app:limited2 start 16:38:34 -----
+│ Successfully built image in 574.17s      │
+----- cold build limited2 end 16:48:08 -----
+spike-a-buildkitd: cpu=0.01% mem=601.5MiB / 1GiB
+OOMKilled=false Status=running
+===== E4.5 warm rebuild under limits (cache intact across restart) =====
+start 16:48:09
+#6 CACHED
+#7 CACHED
+#8 CACHED
+#9 CACHED
+#10 CACHED
+#11 CACHED
+#12 CACHED
+#13 CACHED
+end 16:48:12
+===== E4-limits done =====

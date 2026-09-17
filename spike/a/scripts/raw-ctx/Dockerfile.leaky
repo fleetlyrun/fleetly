@@ -1,0 +1,6 @@
+FROM alpine:3.20
+# E3 contrast (anti-pattern): passing a secret as a build ARG puts the
+# VALUE into image history forever. Never do this; use --mount=type=secret.
+ARG LEAKY=unset
+RUN echo "arg value is $LEAKY" > /dev/null
+CMD ["true"]

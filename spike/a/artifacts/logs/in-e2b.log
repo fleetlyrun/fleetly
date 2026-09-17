@@ -1,0 +1,155 @@
+===== E2b.1 registry catalog before (expect empty) =====
+{"repositories":["spike-a-cache"]}
+
+===== E2b.2 build with --cache-to type=registry,mode=max =====
+start 16:11:23
+│ Successfully built image in 2.55s  │
+end 16:11:25
+===== E2b.3 registry catalog after export =====
+{"repositories":["spike-a-cache"]}
+
+===== E2b.4 wipe local buildkit cache entirely =====
+ID									RECLAIMABLE	SIZE	LAST ACCESSED
+w1pj5jwbubgdvlwphn2zm1y0o                                              	true       	20.98kB	
+qk55hsnmyhcjb3rf95tsa4d14                                              	true       	0B	
+olr3o5voft5u99xsbg5jppdzy                                              	true       	0B	
+bq8v0wnm2cr8vkov4uuba6gba*                                             	true       	16.38kB	
+gbyfmk6akr4j3zcnyelwbf8ay*                                             	true       	12.29kB	
+qc8ozc0zilhmdm3fvl10v5f1m*                                             	true       	16.38kB	
+wptwdjuhlol14hv0y9dew2e7a*                                             	true       	5.64MB	
+uuh4yylcgdsmk6doaip0p6oy2*                                             	true       	12.29kB	
+6r3pt9h48geczh3ex6z9ohtjf*                                             	true       	12.29kB	
+p8anf0naxpd6idygzwzy6rrh9                                              	true       	8.19kB	
+yyywijexmzhvknrqor5evtya4                                              	true       	25.32kB	
+bbxcaze2bk43znb5snw11yius                                              	true       	24.80kB	
+tsk43nol26trtd5oh6mik2kwu                                              	true       	3.07MB	
+baen0oa6nwwom8b33djmmsomk                                              	true       	20.75kB	
+y2lvb0rzzhefqqipx7vplusah                                              	true       	16.38kB	
+x0rh09yjljne8aivaglychiuz*                                             	true       	8.19kB	
+qxzn23238axw5fm0uczw3bqgn*                                             	true       	21.59MB	
+rn7v18hzgmatkrdg1uvigc9v4*                                             	true       	20.48kB	
+rd45ut8vxfi59m4mm504mmzv8*                                             	true       	88.78MB	
+pqhp2suhr99b4qv0uxetc6s1b*                                             	true       	12.29kB	
+b94cpk3yj00yvmzw5aig9agyl                                              	true       	12.44kB	
+jl1w9m7q6ei5n5a169xafv7ux                                              	true       	123B	
+2vi8w2zzoh2adxo5qxntj79lg                                              	true       	98.30kB	
+kztna3iujcj0eca62tbe5sq8k                                              	true       	7.91MB	
+vmcom61yqp9zpyht0l41j1g8v                                              	true       	2.60MB	
+nsmwo7b463docmd703tm5r7kk                                              	true       	16.73kB	
+ozxx0vhuuuc1r786h2oegkp99                                              	true       	8.19kB	
+nk7hdkno3x72n3mint02ujthw                                              	true       	8.35kB	
+y2bykj9y4f3oh8gv2m46t2y3r                                              	true       	8.19kB	
+t269hmzp8icrvvo8al30pjlpb                                              	true       	12.53kB	
+wkjv1tl2kp2v7761ltxwv2q2b*                                             	true       	8.19kB	
+mucwf9p8qff3d6gbl1qk2lhs1                                              	true       	12.41kB	
+txn9fnsy5glq6unhw25ejxgfu                                              	true       	135.06MB	
+rmdf80vm38smb7zsikhmtnz9d                                              	true       	12.29kB	
+pogt0vfoc57y0wphdpaarn0oq*                                             	true       	8.19kB	
+j33vgv9h5h2ifuiv7w5lk2o5d                                              	true       	8.19kB	
+rbdor6bg9bndqamg9jabi3r4s                                              	true       	12.45kB	
+gyhdeoh0blplo8txsnves88o2                                              	true       	8.34kB	
+krjxglt6w4o66jav4l15bkl0q                                              	true       	12.29kB	
+vssrgovhnn7wox3aidtw9jb7x                                              	true       	265B	
+iy1arrgzpzafy1mbvnkfvq9tr                                              	true       	12.29kB	
+kvdvzo213nnbc3dng041zqgpb                                              	true       	258.47MB	
+klfck5bkpavb6ok7z4a0qptv9                                              	true       	300.59MB	
+pcc5fs77vhegwwx6yy63ymck8                                              	true       	24.72kB	
+8d4r6stekjvwwfh59sah125vx                                              	true       	12.92MB	
+4h89b4ca8qe9s6mtggvihgy1a                                              	true       	224B	
+39mbkdrp7wsyv60bengynxbt6                                              	true       	342B	
+w8ishqtw92ir7n3mnsqefz13b                                              	true       	12.49kB	
+5ioc4x0isdtqhnlovd67o4585                                              	true       	20.48kB	
+mbym0z0hfk4tyckjabhz6zi4w                                              	true       	24.58kB	
+0e0ssnljk0r85wf54ajbugy1t                                              	true       	34.28MB	
+qz04x6qp545k86lezs4r9q7di                                              	true       	259.09MB	
+v8hhloijopepnp9lbm2zh6na4                                              	true       	20.82kB	
+ab7pm9wvbyma8lspe0rux0bvy                                              	true       	56.46MB	
+72lf0ladjpfslmgfmxpce9t6o                                              	true       	12.40kB	
+kf5nxqy8wrhfex57araat5efq                                              	true       	200B	
+uzgt9ql9cx1y0ko7h8zkqx6wv                                              	true       	12.41kB	
+wjan7fybv02ie2e495cnil635                                              	true       	1.32MB	
+8rjrz6gk1rwbh3derigsmjcas                                              	true       	43.73MB	
+op4yidador1rbhiac4myb20kr                                              	true       	3.96MB	
+hdfwoo2c18gjldr3v2tl7r0pk                                              	true       	925.45MB	
+0sextl2gj6iv6kdbp0sxbzpsy                                              	true       	117.25MB	
+ti35lihwtnnf4m1p17dsjhw23                                              	true       	135.10MB	
+x0e5rld2agvbovdxuuk69x7gj                                              	true       	4.13kB	
+hs5k99qcmc3r34y7owfpf8cyn                                              	true       	270.11MB	
+agdubmtf55n4tyt4rzd35d5m6                                              	true       	90.62MB	
+x5fj961aqrlyrxrc8o1t7jv6v                                              	true       	183.35MB	
+Total:	2.96GB
+--- buildctl du after prune (expect no records):
+ID	RECLAIMABLE	SIZE	LAST ACCESSED
+Reclaimable:	0B
+Total:		0B
+===== E2b.5 control: rebuild WITHOUT --cache-from after prune (cold) =====
+start 16:11:28
+│ Successfully built image in 889.47s │
+end 16:26:18
+===== E2b.6 prune again, rebuild WITH --cache-from (expect fast + CACHED) =====
+ID									RECLAIMABLE	SIZE	LAST ACCESSED
+ra060a1ld0zfvl25mtgx2o3rm                                              	true       	0B	
+5ko43q66ryyk97wwsb3jblszk*                                             	true       	16.38kB	
+m927j35ymf6zqrrzb9e09gomz                                              	true       	8.19kB	
+eavcizghuqsck0roy8xr4q6gb*                                             	true       	12.29kB	
+x6vvd4w6u7iofh6c3vounyibz*                                             	true       	12.29kB	
+q4ilt2taci18j4vee1hc3zd4s*                                             	true       	20.48kB	
+lkj8f5uqjkrmh6c5zptocxclg*                                             	true       	12.29kB	
+qu6912z6c3ostkdvd4teys1pw*                                             	true       	8.19kB	
+hvitqccbqaqbddsbi5cnx7hk4*                                             	true       	21.59MB	
+l37djehzte8ak8ga301tqymx2                                              	true       	20.75kB	
+nmjiepk3my35zhp7apifn9okf                                              	true       	24.80kB	
+fe3dbk2rmrkp5vs44fxnx3qf7                                              	true       	25.32kB	
+uo0dc9q3vy86a4l4jnvotl789                                              	true       	2.60MB	
+h3alaftcsuwp3bxundp6ppm5y                                              	true       	1.32MB	
+2ijgrdlwpzavinm0syyyxs1z6                                              	true       	8.19kB	
+4uyi6kdgm5a82xi4kqrfjam78                                              	true       	12.41kB	
+8k2187e4swlt6ffutejyfgmxm                                              	true       	16.73kB	
+irsghagxly2rhb63b2bb9g66r                                              	true       	43.73MB	
+hqee30vz1962t5yk5hwrb4y62                                              	true       	12.92MB	
+lfl5zj6m9r7qtv473x6e7nosj                                              	true       	12.29kB	
+l1ybe6mncq0hn2q228y6l5dyd                                              	true       	12.29kB	
+1ema0945obixatf700b4bf02z                                              	true       	135.06MB	
+jlxh4185wnto7jjhspgnkupsq                                              	true       	117.25MB	
+l534f6f7sx8r6zy17llfqlgo1                                              	true       	24.58kB	
+z34fua70et8lvb2s6bf8vfx6c                                              	true       	258.47MB	
+7ywbcstk9uixoivry5noi04pd                                              	true       	12.49kB	
+sp425nq6gsx2i5qbuihl8rreo                                              	true       	202.53MB	
+r8ixbuhqnovwet7o4b4sxm38t                                              	true       	20.48kB	
+dbxys7d66ndbsfpufik1dzk66                                              	true       	12.29kB	
+7t66sdz451jsl0dto5zwwarbt                                              	true       	12.41kB	
+yd5njftv5gbnej5eshjir3fz1                                              	true       	3.96MB	
+y1fft3tv6hex9fzf6kti8aww5                                              	true       	925.45MB	
+p8uqlpeumvac0ldjiwhu7pwzf                                              	true       	135.10MB	
+sfzizefwob9snak8v6bjo9xol                                              	true       	4.13kB	
+el84zgiyikndhlw27613rds8u                                              	true       	270.11MB	
+y3k6c2is6o858l0dkslrcw95v                                              	true       	90.62MB	
+jbjbn1qbcqv60folidyi5piiv                                              	true       	183.35MB	
+Total:	2.40GB
+--- buildctl du after prune (expect no records):
+ID	RECLAIMABLE	SIZE	LAST ACCESSED
+Reclaimable:	0B
+Total:		0B
+start 16:26:20
+#7 CACHED
+#8 CACHED
+#9 CACHED
+#10 CACHED
+#11 CACHED
+#12 CACHED
+#13 CACHED
+#14 CACHED
+#15 CACHED
+#16 CACHED
+#17 CACHED
+#18 CACHED
+#19 CACHED
+#20 CACHED
+#21 CACHED
+#22 CACHED
+#23 CACHED
+#24 CACHED
+#25 CACHED
+#26 CACHED
+end 16:26:28
+===== E2b done =====

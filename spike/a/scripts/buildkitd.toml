@@ -1,0 +1,4 @@
+# Spike A buildkitd config: allow the throwaway HTTP registry on spike-a-net.
+[registry."spike-a-registry:5000"]
+  http = true
+  insecure = true

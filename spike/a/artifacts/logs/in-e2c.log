@@ -1,0 +1,69 @@
+===== E2c.0 stage build context inside buildkitd =====
+f45b48c2db3f45ea3da5583fc7665bf23014ecb6a228d965759fa76d309aca6a  /tmp/ctx-raw/payload.txt
+===== E2c.1 accident build #1 with token A (cold; sleep 3 executes) =====
+start 16:27:15
+buildctl exit=0 (image spike-a/raw:vA)
+#9 exporting layers 0.6s done
+#9 exporting manifest sha256:2177fd355dd80efa598989e563d6888d8f2f28b8a9ed2602428591ae299619e4 0.1s done
+#9 exporting config sha256:8329b1c4d1033ffd262b9cd6386660888cb57a5bb8cf994ab58019aef4bd3701 0.1s done
+#9 sending tarball 0.0s done
+#9 DONE 0.8s
+--- cached/executed lines:
+end 16:27:23
+manifest inside vA (fingerprint of TOKEN A):
+fingerprint:144a0d011fad
+===== E2c.2 accident build #2 with token B (expect RUN CACHED = stale) =====
+start 16:27:24
+buildctl exit=0 (image spike-a/raw:vB)
+#9 exporting layers done
+#9 exporting manifest sha256:2177fd355dd80efa598989e563d6888d8f2f28b8a9ed2602428591ae299619e4 done
+#9 exporting config sha256:8329b1c4d1033ffd262b9cd6386660888cb57a5bb8cf994ab58019aef4bd3701 done
+#9 sending tarball 0.0s done
+#9 DONE 0.0s
+--- cached/executed lines:
+#6 CACHED
+#7 CACHED
+#8 CACHED
+end 16:27:25
+manifest inside vB built with TOKEN B (expect fingerprint OF TOKEN A = stale):
+fingerprint:144a0d011fad
+===== E2c.3 mitigation: fold sha256(secret) into ARG stamp =====
+HASH_A=144a0d011fad8b86 HASH_B=7b1536a7ad62ae10
+buildctl exit=0 (image spike-a/raw:hA)
+#10 exporting layers 0.4s done
+#10 exporting manifest sha256:c160ee172c1d4cc4532316fd9f95cae70b6d55e5632e793f5e92cb7ae8822660 0.1s done
+#10 exporting config sha256:e26defa5fa4bf8ac257644a71435e3266c02f0a073c9294eb478c74b857cfa23 0.1s done
+#10 sending tarball 0.0s done
+#10 DONE 0.5s
+--- cached/executed lines:
+#6 CACHED
+#7 CACHED
+manifest inside hA (fingerprint of TOKEN A):
+fingerprint:144a0d011fad
+--- rebuild hA identical input (expect CACHED) ---
+buildctl exit=0 (image spike-a/raw:hA2)
+#10 exporting layers done
+#10 exporting manifest sha256:c160ee172c1d4cc4532316fd9f95cae70b6d55e5632e793f5e92cb7ae8822660 done
+#10 exporting config sha256:e26defa5fa4bf8ac257644a71435e3266c02f0a073c9294eb478c74b857cfa23 done
+#10 sending tarball 0.0s done
+#10 DONE 0.0s
+--- cached/executed lines:
+#6 CACHED
+#7 CACHED
+#8 CACHED
+#9 CACHED
+--- build with HASH_B + token B (expect EXECUTED, invalidated) ---
+start 16:27:33
+buildctl exit=0 (image spike-a/raw:hB)
+#10 exporting manifest sha256:25cf68ddbe07113049620db8f7459ceeb46f63f2df29c4a7de73c7137935103d 0.0s done
+#10 exporting config sha256:b3657d5f90171c66a3862626f2f45dff9b8742d81f1f681411986ded87057485
+#10 exporting config sha256:b3657d5f90171c66a3862626f2f45dff9b8742d81f1f681411986ded87057485 0.3s done
+#10 sending tarball 0.0s done
+#10 DONE 0.8s
+--- cached/executed lines:
+#6 CACHED
+#7 CACHED
+end 16:27:38
+manifest inside hB built with TOKEN B + hash stamp (expect fingerprint OF TOKEN B):
+fingerprint:7b1536a7ad62
+===== E2c-raw done =====

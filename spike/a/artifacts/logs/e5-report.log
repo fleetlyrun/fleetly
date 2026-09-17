@@ -1,0 +1,77 @@
+[e5] === 0. engine identity ===
+Server: 29.8.1 API: 1.56
+storage driver: overlayfs
+[e5] === 1. swarm init (single node, idempotent) ===
+Swarm initialized: current node (ue3pngizbu7n6h5smvnrgvzc9) is now a manager.
+
+(swarm already active - ok)
+[e5] === 2. produce a local image with zero registry involvement ===
+[e5] buildx present -> real docker build (FROM scratch, NO attestations)
+#6 exporting config sha256:3f599e7b1acebb5d3ece5da2abd7688dd5a786e9114ef8b949b77704df5d10cb 0.0s done
+#6 naming to docker.io/spike-a/app:v1 done
+#6 unpacking to docker.io/spike-a/app:v1 0.1s done
+#6 DONE 0.4s
+image id:        sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6
+repo digests:    ["spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6"]
+--- standalone sanity run (image must work before swarm sees it):
+standalone state: running
+standalone exec:  alive-from-standalone
+[e5] === 3. T1 digest reference: service create name@sha256:<imageID> ===
+create exit:     0
+image spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 could not be accessed on a registry to record
+its digest. Each node will access spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 independently,
+possibly leading to different nodes running different
+T1 task state:   NOT-RUNNING (deadline)
+--- service ls ---
+ID             NAME          MODE         REPLICAS   IMAGE                                                                                 PORTS
+ijqe69xuhbu8   spike-a-svc   replicated   1/1        spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   
+--- service ps spike-a-svc --no-trunc ---
+ID                          NAME            IMAGE                                                                                 NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+wv50anwpno1ibz11f49fghnxn   spike-a-svc.1   spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago             
+task container:  8937034ecc1d
+--- in-container liveness probe (busybox echo; no httpd applet in dind busybox) ---
+alive-from-digest-task
+exec probe exit: 0
+--- events [t1]: 11 total; pull-related:
+pull-attempt events [t1]: 0
+0
+[e5] === 4. T2 service update --force (digest ref must restart without pull) ===
+update exit:     0
+spike-a-svc
+overall progress: 0 out of 1 tasks
+1/1:  
+T2 task state:   NOT-RUNNING (deadline)
+--- service ps after --force --no-trunc ---
+ID                          NAME                IMAGE                                                                                 NODE           DESIRED STATE   CURRENT STATE             ERROR     PORTS
+oaj24gsi3ai53cpt51bo8r2sj   spike-a-svc.1       spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago              
+wv50anwpno1ibz11f49fghnxn    \_ spike-a-svc.1   spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Shutdown        Shutdown 51 seconds ago             
+alive-after-force
+exec probe after force exit: 0
+--- events [t2]: 14 total; pull-related:
+pull-attempt events [t2]: 0
+0
+[e5] === 5. T3 control: TAG reference spike-a/app:v1 (expect pull attempt, still runs) ===
+create exit:     0
+T3 task state:   NOT-RUNNING (deadline)
+--- service ps spike-a-svc-tag --no-trunc ---
+ID                          NAME                IMAGE            NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+zy0d0q7a9fkmbmzecm4fiu313   spike-a-svc-tag.1   spike-a/app:v1   f1e8587690eb   Running         Running 50 seconds ago             
+--- events [t3]: 4 total; pull-related:
+pull-attempt events [t3]: 0
+0
+[e5] === 6. T4 probe: bare image-ID reference (no name component) ===
+create exit:     0
+image sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 could not be accessed on a registry to record
+its digest. Each node will access sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 independently,
+possibly leading to different nodes running different
+T4 task state:   NOT-RUNNING (deadline)
+ID                          NAME                 IMAGE                                                                     NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+ipdk8hdbhx77doxrgue2sypcg   spike-a-svc-bare.1   sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago             
+--- events [t4]: 4 total; pull-related:
+pull-attempt events [t4]: 0
+0
+[e5] === 7. cleanup (inner) ===
+Node left the swarm.
+Untagged: spike-a/app:v1
+Deleted: sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6
+[e5] === E5 inner script complete ===

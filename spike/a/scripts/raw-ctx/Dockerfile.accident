@@ -1,0 +1,12 @@
+FROM alpine:3.20
+WORKDIR /work
+COPY payload.txt .
+# Negative control: secret VALUE is not part of this RUN's cache key.
+# Changing the secret must NOT invalidate (the accident we must avoid
+# at platform level, cf. Dokploy PR #4557).
+RUN --mount=type=secret,id=npm_token \
+    set -e; \
+    TOK=$(cat /run/secrets/npm_token); \
+    echo "fingerprint:$(echo "$TOK" | sha256sum | cut -c1-12)" > /work/manifest.txt; \
+    sleep 3
+CMD ["cat","/work/manifest.txt"]

@@ -1,0 +1,253 @@
+
+D:\Codes\qiulin\edgesets>call spike\a\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_A_DIR=D:\Codes\qiulin\edgesets\spike\a\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>set "GOPROXY=goproxy.cn" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_BK_IMAGE=moby/buildkit:v0.32.2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_REGISTRY_IMAGE=registry:2.8.3" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND=spike-a-dind" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\a\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\a>if not exist artifacts\logs mkdir artifacts\logs 
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E5.0 boot privileged dind ===== 
+===== E5.0 boot privileged dind =====
+
+D:\Codes\qiulin\edgesets\spike\a>docker rm -f spike-a-dind  2>nul 
+spike-a-dind
+
+D:\Codes\qiulin\edgesets\spike\a>docker pull docker:29.8.1-dind  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\a>docker run -d --name spike-a-dind --privileged -v "D:\Codes\qiulin\edgesets\spike\a\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+f1e8587690ebb09e676fcdd85597e35a63ee49db74a5e1d488ac1295fc726f2e
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E5.1 wait for inner dockerd (60s deadline) ===== 
+===== E5.1 wait for inner dockerd (60s deadline) =====
+
+D:\Codes\qiulin\edgesets\spike\a>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\a>if 1 == 0 goto ready 
+
+D:\Codes\qiulin\edgesets\spike\a>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\a>if 1 GEQ 60 (echo inner dockerd not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\a>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\a>goto waitloop 
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\a>if 0 == 0 goto ready 
+
+D:\Codes\qiulin\edgesets\spike\a>ping -n 3 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind docker version --format "inner engine: {{.Server.Version}}" 
+inner engine: 29.8.1
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E5.2 stage + de-CRLF inner script, then run ===== 
+===== E5.2 stage + de-CRLF inner script, then run =====
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind sh -c "cp /work-src/scripts/e5-v2-digest.sh /tmp/e5.sh && sed -i 's/\r$//' /tmp/e5.sh && chmod +x /tmp/e5.sh && head -2 /tmp/e5.sh"   || exit /b 1 
+#!/bin/sh
+# E5 / V2: local digest reference without a registry (MUST run inside
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind sh /tmp/e5.sh 
+[e5] === 0. engine identity ===
+Server: 29.8.1 API: 1.56
+storage driver: overlayfs
+[e5] === 1. swarm init (single node, idempotent) ===
+Swarm initialized: current node (ue3pngizbu7n6h5smvnrgvzc9) is now a manager.
+
+(swarm already active - ok)
+[e5] === 2. produce a local image with zero registry involvement ===
+[e5] buildx present -> real docker build (FROM scratch, NO attestations)
+#6 exporting config sha256:3f599e7b1acebb5d3ece5da2abd7688dd5a786e9114ef8b949b77704df5d10cb 0.0s done
+#6 naming to docker.io/spike-a/app:v1 done
+#6 unpacking to docker.io/spike-a/app:v1 0.1s done
+#6 DONE 0.4s
+image id:        sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6
+repo digests:    ["spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6"]
+--- standalone sanity run (image must work before swarm sees it):
+standalone state: running
+standalone exec:  alive-from-standalone
+[e5] === 3. T1 digest reference: service create name@sha256:<imageID> ===
+create exit:     0
+T1 task state:   NOT-RUNNING (deadline)
+--- service ls ---
+ID             NAME          MODE         REPLICAS   IMAGE                                                                                 PORTS
+ijqe69xuhbu8   spike-a-svc   replicated   1/1        spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   
+--- service ps spike-a-svc --no-trunc ---
+ID                          NAME            IMAGE                                                                                 NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+wv50anwpno1ibz11f49fghnxn   spike-a-svc.1   spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago             
+task container:  8937034ecc1d
+--- in-container liveness probe (busybox echo; no httpd applet in dind busybox) ---
+alive-from-digest-task
+exec probe exit: 0
+--- events [t1]: 11 total; pull-related:
+pull-attempt events [t1]: 0
+0
+[e5] === 4. T2 service update --force (digest ref must restart without pull) ===
+update exit:     0
+T2 task state:   NOT-RUNNING (deadline)
+--- service ps after --force --no-trunc ---
+ID                          NAME                IMAGE                                                                                 NODE           DESIRED STATE   CURRENT STATE             ERROR     PORTS
+oaj24gsi3ai53cpt51bo8r2sj   spike-a-svc.1       spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago              
+wv50anwpno1ibz11f49fghnxn    \_ spike-a-svc.1   spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Shutdown        Shutdown 51 seconds ago             
+alive-after-force
+exec probe after force exit: 0
+--- events [t2]: 14 total; pull-related:
+pull-attempt events [t2]: 0
+0
+[e5] === 5. T3 control: TAG reference spike-a/app:v1 (expect pull attempt, still runs) ===
+create exit:     0
+T3 task state:   NOT-RUNNING (deadline)
+--- service ps spike-a-svc-tag --no-trunc ---
+ID                          NAME                IMAGE            NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+zy0d0q7a9fkmbmzecm4fiu313   spike-a-svc-tag.1   spike-a/app:v1   f1e8587690eb   Running         Running 50 seconds ago             
+--- events [t3]: 4 total; pull-related:
+pull-attempt events [t3]: 0
+0
+[e5] === 6. T4 probe: bare image-ID reference (no name component) ===
+create exit:     0
+T4 task state:   NOT-RUNNING (deadline)
+ID                          NAME                 IMAGE                                                                     NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+ipdk8hdbhx77doxrgue2sypcg   spike-a-svc-bare.1   sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago             
+--- events [t4]: 4 total; pull-related:
+pull-attempt events [t4]: 0
+0
+[e5] === 7. cleanup (inner) ===
+Node left the swarm.
+Untagged: spike-a/app:v1
+Deleted: sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6
+[e5] === E5 inner script complete ===
+
+D:\Codes\qiulin\edgesets\spike\a>set "INNER_EXIT=0" 
+
+D:\Codes\qiulin\edgesets\spike\a>echo inner exit=0 
+inner exit=0
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E5.3 inner report ===== 
+===== E5.3 inner report =====
+
+D:\Codes\qiulin\edgesets\spike\a>docker exec spike-a-dind cat /tmp/e5-report.txt  1>artifacts\logs\e5-report.log 
+
+D:\Codes\qiulin\edgesets\spike\a>type artifacts\logs\e5-report.log 
+[e5] === 0. engine identity ===
+Server: 29.8.1 API: 1.56
+storage driver: overlayfs
+[e5] === 1. swarm init (single node, idempotent) ===
+Swarm initialized: current node (ue3pngizbu7n6h5smvnrgvzc9) is now a manager.
+
+(swarm already active - ok)
+[e5] === 2. produce a local image with zero registry involvement ===
+[e5] buildx present -> real docker build (FROM scratch, NO attestations)
+#6 exporting config sha256:3f599e7b1acebb5d3ece5da2abd7688dd5a786e9114ef8b949b77704df5d10cb 0.0s done
+#6 naming to docker.io/spike-a/app:v1 done
+#6 unpacking to docker.io/spike-a/app:v1 0.1s done
+#6 DONE 0.4s
+image id:        sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6
+repo digests:    ["spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6"]
+--- standalone sanity run (image must work before swarm sees it):
+standalone state: running
+standalone exec:  alive-from-standalone
+[e5] === 3. T1 digest reference: service create name@sha256:<imageID> ===
+create exit:     0
+image spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 could not be accessed on a registry to record
+its digest. Each node will access spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 independently,
+possibly leading to different nodes running different
+T1 task state:   NOT-RUNNING (deadline)
+--- service ls ---
+ID             NAME          MODE         REPLICAS   IMAGE                                                                                 PORTS
+ijqe69xuhbu8   spike-a-svc   replicated   1/1        spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   
+--- service ps spike-a-svc --no-trunc ---
+ID                          NAME            IMAGE                                                                                 NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+wv50anwpno1ibz11f49fghnxn   spike-a-svc.1   spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago             
+task container:  8937034ecc1d
+--- in-container liveness probe (busybox echo; no httpd applet in dind busybox) ---
+alive-from-digest-task
+exec probe exit: 0
+--- events [t1]: 11 total; pull-related:
+pull-attempt events [t1]: 0
+0
+[e5] === 4. T2 service update --force (digest ref must restart without pull) ===
+update exit:     0
+spike-a-svc
+overall progress: 0 out of 1 tasks
+1/1:  
+T2 task state:   NOT-RUNNING (deadline)
+--- service ps after --force --no-trunc ---
+ID                          NAME                IMAGE                                                                                 NODE           DESIRED STATE   CURRENT STATE             ERROR     PORTS
+oaj24gsi3ai53cpt51bo8r2sj   spike-a-svc.1       spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago              
+wv50anwpno1ibz11f49fghnxn    \_ spike-a-svc.1   spike-a/app@sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Shutdown        Shutdown 51 seconds ago             
+alive-after-force
+exec probe after force exit: 0
+--- events [t2]: 14 total; pull-related:
+pull-attempt events [t2]: 0
+0
+[e5] === 5. T3 control: TAG reference spike-a/app:v1 (expect pull attempt, still runs) ===
+create exit:     0
+T3 task state:   NOT-RUNNING (deadline)
+--- service ps spike-a-svc-tag --no-trunc ---
+ID                          NAME                IMAGE            NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+zy0d0q7a9fkmbmzecm4fiu313   spike-a-svc-tag.1   spike-a/app:v1   f1e8587690eb   Running         Running 50 seconds ago             
+--- events [t3]: 4 total; pull-related:
+pull-attempt events [t3]: 0
+0
+[e5] === 6. T4 probe: bare image-ID reference (no name component) ===
+create exit:     0
+image sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 could not be accessed on a registry to record
+its digest. Each node will access sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6 independently,
+possibly leading to different nodes running different
+T4 task state:   NOT-RUNNING (deadline)
+ID                          NAME                 IMAGE                                                                     NODE           DESIRED STATE   CURRENT STATE            ERROR     PORTS
+ipdk8hdbhx77doxrgue2sypcg   spike-a-svc-bare.1   sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6   f1e8587690eb   Running         Running 50 seconds ago             
+--- events [t4]: 4 total; pull-related:
+pull-attempt events [t4]: 0
+0
+[e5] === 7. cleanup (inner) ===
+Node left the swarm.
+Untagged: spike-a/app:v1
+Deleted: sha256:42cfdf83c16148cec670de439cddf8468e174b14ce11648ad1302210909cc6a6
+[e5] === E5 inner script complete ===
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E5.4 dockerd log: pull-attempt grep over the whole run ===== 
+===== E5.4 dockerd log: pull-attempt grep over the whole run =====
+
+D:\Codes\qiulin\edgesets\spike\a>docker logs spike-a-dind  1>artifacts\logs\e5-dockerd-full.log 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\a>findstr /I /C:"pull" artifacts\logs\e5-dockerd-full.log 
+time="2026-09-17T17:13:36.765107619Z" level=info msg="fetch failed" error="pull access denied, repository does not exist or may require authorization: server message: insufficient_scope: authorization failed" host=registry-1.docker.io method=HEAD url="https://registry-1.docker.io/v2/spike-a/app/manifests/v1"
+time="2026-09-17T17:13:36.768966545Z" level=error msg="pulling image failed" error="pull access denied for spike-a/app, repository does not exist or may require 'docker login'" module=node/agent/taskmanager node.id=ue3pngizbu7n6h5smvnrgvzc9 service.id=upiz58h3c3jpercmda5reqc2l task.id=zy0d0q7a9fkmbmzecm4fiu313
+
+D:\Codes\qiulin\edgesets\spike\a>echo --- pull-line count: 
+--- pull-line count:
+
+D:\Codes\qiulin\edgesets\spike\a>find /C /I "pull" artifacts\logs\e5-dockerd-full.log 
+
+---------- ARTIFACTS\LOGS\E5-DOCKERD-FULL.LOG: 2
+
+D:\Codes\qiulin\edgesets\spike\a>echo --- resolver/digest lines (context): 
+--- resolver/digest lines (context):
+
+D:\Codes\qiulin\edgesets\spike\a>findstr /I /C:"digest" /C:"manifest unknown" /C:"no such image" artifacts\logs\e5-dockerd-full.log 
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E5.5 dind teardown ===== 
+===== E5.5 dind teardown =====
+
+D:\Codes\qiulin\edgesets\spike\a>docker rm -f spike-a-dind 
+spike-a-dind
+
+D:\Codes\qiulin\edgesets\spike\a>echo ===== E5 done (inner exit=0) ===== 
+===== E5 done (inner exit=0) =====

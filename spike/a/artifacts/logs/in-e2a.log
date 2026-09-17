@@ -1,0 +1,120 @@
+===== BUILD-A1 node first build (cold baseline) =====
+----- build node-app:v1 token=tok-a-123456 start 16:06:00 -----
+│ Successfully built image in 85.09s │
+----- build node-app:v1 end 16:07:25 -----
+===== BUILD-A2 node rebuild same input (expect CACHED + shorter) =====
+----- build node-app:v1 token=tok-a-123456 start 16:07:25 -----
+#6 CACHED
+#7 CACHED
+#8 CACHED
+#9 CACHED
+#10 CACHED
+#11 CACHED
+#12 CACHED
+#13 CACHED
+#14 CACHED
+#15 CACHED
+│ Successfully built image in 4.17s  │
+----- build node-app:v1 end 16:07:29 -----
+===== BUILD-B go =====
+----- go build start 16:07:29 -----
+│ Successfully built image in 14.55s │
+----- go build end 16:07:44 -----
+===== RUNNABLE proof (HTTP answers) =====
+aebbe07035e15930842057464f278a09d640f35bbcf22cb5a0a283f4930a0040
+0c792cc9b0064c11ec071271e6ec8292afb4d1d650bede451b9ff7fd8626f9f4
+node: OCI runtime exec failed: exec failed: unable to start container process: exec: "wget": executable file not found in $PATH
+go:   OCI runtime exec failed: exec failed: unable to start container process: exec: "wget": executable file not found in $PATH
+===== E2c-railpack secrets-hash: tokA hit / tokB invalidate / tokA revert =====
+----- build node-app:sec token=tok-a-123456 start 16:07:47 -----
+#6 CACHED
+#7 CACHED
+#8 CACHED
+#9 CACHED
+#10 CACHED
+#11 CACHED
+#12 CACHED
+#13 CACHED
+#14 CACHED
+#15 CACHED
+#16 CACHED
+#17 CACHED
+#18 CACHED
+#19 CACHED
+#20 CACHED
+#21 CACHED
+#22 CACHED
+#23 CACHED
+#24 CACHED
+#25 CACHED
+#26 CACHED
+│ Successfully built image in 1.96s   │
+----- build node-app:sec end 16:07:49 -----
+----- build node-app:sec token=tok-a-123456 start 16:07:49 -----
+#3 CACHED
+#8 CACHED
+#9 CACHED
+#10 CACHED
+#11 CACHED
+#12 CACHED
+#13 CACHED
+#14 CACHED
+#15 CACHED
+#16 CACHED
+#17 CACHED
+#18 CACHED
+#19 CACHED
+#20 CACHED
+#21 CACHED
+#22 CACHED
+#23 CACHED
+#24 CACHED
+#25 CACHED
+#26 CACHED
+│ Successfully built image in 1.87s   │
+----- build node-app:sec end 16:07:51 -----
+----- build node-app:sec token=tok-b-98765 start 16:07:51 -----
+#3 CACHED
+#9 CACHED
+#10 CACHED
+#11 CACHED
+#17 CACHED
+#18 CACHED
+#19 CACHED
+#20 CACHED
+#21 CACHED
+#22 CACHED
+#23 CACHED
+#24 CACHED
+#25 CACHED
+#26 CACHED
+│ Successfully built image in 3.11s   │
+----- build node-app:sec end 16:07:54 -----
+----- build node-app:sec token=tok-a-123456 start 16:07:54 -----
+#6 CACHED
+#7 CACHED
+#8 CACHED
+#9 CACHED
+#10 CACHED
+#11 CACHED
+#12 CACHED
+#13 CACHED
+#14 CACHED
+#15 CACHED
+#16 CACHED
+#17 CACHED
+#18 CACHED
+#19 CACHED
+#20 CACHED
+#21 CACHED
+#22 CACHED
+#23 CACHED
+#24 CACHED
+#25 CACHED
+#26 CACHED
+│ Successfully built image in 1.59s   │
+----- build node-app:sec end 16:07:56 -----
+===== E2c-railpack plan-level: different secrets -> same plan bytes? =====
+PLAN_WITH_DIFFERENT_SECRETS_IDENTICAL (hash is computed at BUILD time, not archived)
+SECRET_VALUE_NOT_IN_PLAN
+===== E2a/E2c-railpack done =====

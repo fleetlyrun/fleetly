@@ -1,0 +1,17 @@
+===== RUNNABLE proof redo (dind-side probe via container IP) =====
+f4b1b8d17ab15f13826955f0ce28da978660bce5aa414d66c028a7574c9bb4ef
+ac7dbf2165201d7aed1fa28ec857afc773f4a127bfe517a807157265e8feb80a
+node container ip=172.18.0.2  go container ip=172.18.0.3
+node / -> spike-a-node-app OK stamp=unset
+go / -> spike-a-go-app OK stamp=unset
+--- why first attempt failed (runtime image has no wget):
+NO_WGET
+===== runnable redo done =====
+
+[NOTE 2026-09-17: original /work/logs/in-e2a-runnable.log was lost with the
+dind container (e4-rootless-run.bat teardown). This file is a faithful
+recovery of the tool output from the run of
+scripts/in-e2a-runnable-fix.sh inside spike-a-dind at ~16:09 UTC
+(container ids: node f4b1b8d17ab1..., go ac7dbf216520...). The failed
+first attempt (IPAddress template error) had started containers
+ee708e9635f5... / 3dea012b3f24... and produced no probe result.]

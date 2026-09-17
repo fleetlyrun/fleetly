@@ -1,0 +1,22 @@
+===== E3.1 anti-pattern control: ARG-carried secret lands in history =====
+buildctl exit=0
+LEAK_CONFIRMED_IN_HISTORY (anti-pattern proven: ARG value is in history)
+===== E3.2 secret-mounted images: history must be clean =====
+spike-a/raw:vB HISTORY_CLEAN
+spike-a/raw:hB HISTORY_CLEAN
+spike-a/node-app:sec HISTORY_CLEAN
+spike-a/go-app:v1 HISTORY_CLEAN
+--- hash stamps in hB history are by-design (sha256 prefixes only, never values):
+<missing>                                                                 About a minute ago   RUN |1 NPM_TOKEN_HASH=7b1536a7ad62ae10 /bin/sh -c set -e;     TOK=$(cat /run/secrets/npm_token);     echo "fingerprint:$(echo "$TOK" | sha256sum | cut -c1-12)" > /work/manifest.txt;     sleep 3 # buildkit   12.3kB    buildkit.dockerfile.v0
+<missing>                                                                 About a minute ago   RUN |1 NPM_TOKEN_HASH=7b1536a7ad62ae10 /bin/sh -c echo "$NPM_TOKEN_HASH" > /work/.token-hash # buildkit                                                                                                        12.3kB    buildkit.dockerfile.v0
+<missing>                                                                 About a minute ago   ARG NPM_TOKEN_HASH=7b1536a7ad62ae10                                                                                                                                                                            0B        buildkit.dockerfile.v0
+===== E3.3 image config Env must be clean =====
+spike-a/raw:vB Config.Env: ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
+spike-a/raw:vB ENV_CLEAN
+spike-a/raw:hB Config.Env: ["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"]
+spike-a/raw:hB ENV_CLEAN
+spike-a/node-app:sec Config.Env: ["CI=true","MISE_CACHE_DIR=/mise/cache","MISE_CONFIG_DIR=/mise","MISE_DATA_DIR=/mise","MISE_INSTALLS_DIR=/mise/installs","MISE_SHIMS_DIR=/mise/shims","NODE_ENV=production","NPM_CONFIG_FETCH_RETRIES=5","NPM_CONFIG_FUND=false","NPM_CONFIG_PRODUCTION=false","NPM_CONFIG_UPDATE_NOTIFIER=false","PATH=/app/node_modules/.bin:/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","RAILPACK_BUILT_AT=1789661275","RAILPACK_VERSION=v0.39.0"]
+spike-a/node-app:sec ENV_CLEAN
+spike-a/go-app:v1 Config.Env: ["CGO_ENABLED=0","GOBIN=/go/bin","GOPATH=/go","MISE_CACHE_DIR=/mise/cache","MISE_CONFIG_DIR=/mise","MISE_DATA_DIR=/mise","MISE_INSTALLS_DIR=/mise/installs","MISE_SHIMS_DIR=/mise/shims","PATH=/go/bin:/mise/shims:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","RAILPACK_BUILT_AT=1789661249","RAILPACK_VERSION=v0.39.0"]
+spike-a/go-app:v1 ENV_CLEAN
+===== E3.4 runtime filesystem grep (what actually ships) =====

@@ -1,0 +1,119 @@
+{
+  "$schema": "https://schema.railpack.com",
+  "caches": {
+    "go-build": {
+      "directory": "/root/.cache/go-build",
+      "type": "shared"
+    }
+  },
+  "deploy": {
+    "base": {
+      "image": "ghcr.io/railwayapp/railpack-runtime:mise-2026.8.16"
+    },
+    "inputs": [
+      {
+        "include": [
+          "."
+        ],
+        "step": "build"
+      }
+    ],
+    "startCommand": "./out",
+    "variables": {
+      "RAILPACK_VERSION": "v0.39.0"
+    }
+  },
+  "secrets": [
+    "RAILPACK_GO_VERSION"
+  ],
+  "steps": [
+    {
+      "assets": {
+        "generated-mise-toml": "[tools]\n  go = \"1.24.13\"\n\n[settings]\n  idiomatic_version_file_enable_tools = [\"python\", \"node\", \"ruby\", \"elixir\", \"go\", \"java\", \"yarn\", \"pnpm\", \"bun\", \"deno\", \"dotnet\", \"rust\"]\n  minimum_release_age = \"14d\"\n  paranoid = true\n  trusted_config_paths = [\"/app\"]\n  [settings.node]\n    verify = false\n"
+      },
+      "commands": [
+        {
+          "path": "/mise/shims"
+        },
+        {
+          "customName": "create mise config",
+          "name": "generated-mise-toml",
+          "path": "/etc/mise/config.toml"
+        },
+        {
+          "cmd": "mise install",
+          "customName": "install mise packages: go"
+        }
+      ],
+      "inputs": [
+        {
+          "image": "ghcr.io/railwayapp/railpack-builder:mise-2026.8.16"
+        }
+      ],
+      "name": "packages:mise",
+      "variables": {
+        "MISE_CACHE_DIR": "/mise/cache",
+        "MISE_CONFIG_DIR": "/mise",
+        "MISE_DATA_DIR": "/mise",
+        "MISE_INSTALLS_DIR": "/mise/installs",
+        "MISE_SHIMS_DIR": "/mise/shims"
+      }
+    },
+    {
+      "caches": [
+        "go-build"
+      ],
+      "commands": [
+        {
+          "path": "/go/bin"
+        },
+        {
+          "dest": "go.mod",
+          "src": "go.mod"
+        },
+        {
+          "cmd": "go mod download"
+        }
+      ],
+      "inputs": [
+        {
+          "step": "packages:mise"
+        }
+      ],
+      "name": "install",
+      "secrets": [
+        "*"
+      ],
+      "variables": {
+        "CGO_ENABLED": "0",
+        "GOBIN": "/go/bin",
+        "GOPATH": "/go"
+      }
+    },
+    {
+      "caches": [
+        "go-build"
+      ],
+      "commands": [
+        {
+          "cmd": "go build -ldflags=\"-w -s\" -o out"
+        }
+      ],
+      "inputs": [
+        {
+          "step": "install"
+        },
+        {
+          "include": [
+            "."
+          ],
+          "local": true
+        }
+      ],
+      "name": "build",
+      "secrets": [
+        "*"
+      ]
+    }
+  ]
+}

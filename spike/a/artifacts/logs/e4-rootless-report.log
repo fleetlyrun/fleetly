@@ -1,0 +1,14 @@
+=== kernel / userns baseline ===
+Linux 6bb995a838ff 6.18.33.2-microsoft-standard-WSL2 #1 SMP PREEMPT_DYNAMIC Thu Jun 18 21:54:43 UTC 2026 x86_64 Linux
+no userns sysctl
+=== pull + start rootless buildkitd ===
+pull ok
+run exit: 0
+=== buildctl debug info (rootless worker) ===
+=== tiny scratch build through the rootless worker ===
+build exit: 0
+#5 exporting config sha256:47fb8d62e25f4970c2ad30c88c0348aac126a1009e57a6fe204ffb58d629c641 0.0s done
+#5 sending tarball done
+#5 DONE 0.2s
+=== cleanup ===
+=== e4-rootless complete ===

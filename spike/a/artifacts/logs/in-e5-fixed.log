@@ -1,0 +1,39 @@
+[e5] === 0. engine identity ===
+Server: 29.8.1 API: 1.56
+storage driver: overlayfs
+[e5] === 1. swarm init (single node, idempotent) ===
+Error response from daemon: This node is already part of a swarm. Use "docker swarm leave" to leave this swarm and join another one.
+(swarm already active - ok)
+[e5] === 2. produce a local image with zero registry involvement ===
+[e5] buildx present -> real docker build (FROM scratch, NO attestations)
+#6 exporting config sha256:52eca42ebb78b0513addc6bf1a26ab3e55569639849cf14d45fdbd55a97bba12 0.0s done
+#6 naming to docker.io/spike-a/app:v1 done
+#6 unpacking to docker.io/spike-a/app:v1 0.0s done
+#6 DONE 0.1s
+image id:        sha256:e44e21555e1924eeaa2c963fee7b6c823a7661344063f381803089c2e57083a4
+repo digests:    ["spike-a/app@sha256:e44e21555e1924eeaa2c963fee7b6c823a7661344063f381803089c2e57083a4"]
+--- standalone sanity run (image must work before swarm sees it):
+standalone state: running
+standalone exec:  alive-from-standalone
+[e5] === 3. T1 digest reference: service create name@sha256:<imageID> ===
+create exit:     1
+T1 task state:   NOT-RUNNING (deadline)
+--- service ls ---
+Error response from daemon: This node is not a swarm manager. Use "docker swarm init" or "docker swarm join" to connect this node to swarm and try again.
+--- service ps spike-a-svc --no-trunc ---
+Error response from daemon: This node is not a swarm manager. Use "docker swarm init" or "docker swarm join" to connect this node to swarm and try again.
+task container:  
+--- events [t1]: 31 total; pull-related:
+EVT image untag spike-a/app:v1
+EVT image delete sha256:e44e21555e1924eeaa2c963fee7b6c823a7661344063f381803089c2e57083a4
+pull-attempt events [t1]: 0
+0
+[e5] === 4. T2 service update --force (digest ref must restart without pull) ===
+update exit:     1
+T2 task state:   NOT-RUNNING (deadline)
+--- service ps after --force --no-trunc ---
+Error response from daemon: This node is not a swarm manager. Use "docker swarm init" or "docker swarm join" to connect this node to swarm and try again.
+--- events [t2]: 0 total; pull-related:
+pull-attempt events [t2]: 0
+0
+[e5] === 5. T3 control: TAG reference spike-a/app:v1 (expect pull attempt, still runs) ===
