@@ -35,14 +35,14 @@ edgesets 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 **nightly 轨道（完整矩阵，红则阻断发版）**
 
 1. 引擎矩阵：dind 29.8.1 × { containerd 存储（默认）、overlay2 } + 上一受支持 minor
-2. **V1-V9 全套**（映射见 §6；含放置漂移矩阵、重入 adopt、raft 回退孤儿观察与恢复演练）；多节点场景 = 同一 runner 上两个 dind 容器 `swarm join`
+2. **V1-V7 全套 + 扩展项**（映射见 §6；含 B2/B3、绑定保持、raft 回退孤儿观察与恢复演练）；多节点场景 = 同一 runner 上两个 dind 容器 `swarm join`
 3. 升级 E2E：v_n → v_{n+1}（SQLite 迁移前后数据对比 + 应用不中断）
 4. conformance 套件对真实组件（Traefik / zot / RustFS 最小集）
 5. 资源基线采样（控制面 idle 内存、构建峰值；趋势告警，不阻断）
 
 **release 轨道（tag 触发 + 人工确认）**
 
-1. V1-V9 + nightly 全绿
+1. V1-V7 + 扩展项 + nightly 全绿
 2. **VPS 验证（脚本化）**：通过云 API 起一次性机器 → 干净安装 → 示例应用 → 自升级 → 回滚 → 卸载；**TLS / ACME 真路径只在这里测**
 3. 制品：多平台二进制（amd64/arm64 交叉编译，arm64 release smoke）+ 安装脚本 + ghcr 镜像；SBOM（syft）+ 签名（cosign 或 GitHub attestation）+ checksum
 4. 兼容承诺检查（Compose 子集契约 / REST `/v1` / N-2 升级路径）+ changelog
@@ -75,7 +75,7 @@ v0.1 发布后：在 staging VPS 上用 edgesets 部署 edgesets 自身（UI + �
 |---|---|---|---|
 | P1 | PR / nightly / release 三轨道分离 | PR 门禁快且稳定；多节点与矩阵测试的 flaky 隔离在 nightly；release 才做昂贵验证 | 单一大流程：慢、flaky 绑架合并、昂贵步骤拖累日常 |
 | P2 | E2E 宿主用 dind（平台整体跑在 dind 内） | 单机可重复、无外部依赖、可进 PR 轨道；TLS/DNS 真路径移至 release | 每次起真 VM：慢且贵；纯 mock：验证不到真实行为 |
-| P3 | **V1-V9 从一次性 Spike 升级为永久回归测试** | 我们依赖的 Swarm 行为是源码级结论（尤其 health gate 无官方文档），必须自证，防上游无声漂移 | 一次性验证：回归无法发现，风险变成信仰 |
+| P3 | **V1-V7 及扩展项从一次性 Spike 升级为永久回归测试** | 我们依赖的 Swarm 行为是源码级结论（尤其 health gate 无官方文档），必须自证，防上游无声漂移 | 一次性验证：回归无法发现，风险变成信仰 |
 | P4 | Docker 引擎升级走独立门禁 | v29 类破坏是已知会重演的风险类别，需要矩阵回归承载 | 与普通依赖同流程：无法携带回归证据 |
 | P5 | GitHub Actions + 免费 runner；self-hosted 只在必要场景引入 | 成本与维护最优；多节点/VPS 类验证必要时再上 | 初期自建 runner 农场：过重 |
 | P6 | 安装脚本 + 二进制签名与校验和 | `curl \| sh` 的安全基线；Open-Core 项目需要可验证的发布链路 | 仅靠 HTTPS：无完整性保障 |
@@ -85,7 +85,7 @@ v0.1 发布后：在 staging VPS 上用 edgesets 部署 edgesets 自身（UI + �
 | 里程碑 | 内容 |
 |---|---|
 | M0（与 Spike 同步） | 单节点 dind E2E 骨架；PR 基础门禁（lint/单元/契约） |
-| M1（v0.1 前） | 三轨道齐备；V1-V9 全部进 nightly（含放置漂移与恢复演练）；安装脚本 + 制品签名 + 校验和；许可证守卫；引擎矩阵 |
+| M1（v0.1 前） | 三轨道齐备；V1-V7 及扩展项全部进 nightly（含绑定保持与恢复演练）；安装脚本 + 制品签名 + 校验和；许可证守卫；引擎矩阵 |
 | M2（v0.1 后） | dogfood staging；VPS 验证脚本化；资源基线趋势 |
 | M3（v0.2） | 多节点 nightly 稳定化（必要时 self-hosted runner）；conformance 套件真实组件化 |
 
@@ -99,7 +99,7 @@ v0.1 发布后：在 staging VPS 上用 edgesets 部署 edgesets 自身（UI + �
 | 发布链路被篡改 | 供应链攻击 | 签名 + checksum + SBOM；tag 触发 + 人工确认；OIDC 短时凭据 |
 | 门禁被绕过 | 质量与兼容承诺失守 | 分支保护 + 必需检查；错误码/spec 变更需显式评审 |
 
-## 6. V1-V9 与轨道的映射（与架构文档 §6 对齐）
+## 6. V1-V7 与轨道的映射（与架构文档 §6 对齐）
 
 | 验证 | 内容 | 轨道 |
 |---|---|---|
@@ -109,13 +109,11 @@ v0.1 发布后：在 staging VPS 上用 edgesets 部署 edgesets 自身（UI + �
 | V4 | keep-alive 陈旧连接复现与治理 | nightly |
 | V5 | 单 manager 故障 + `--force-new-cluster` 恢复 | nightly（多节点） |
 | V5b | raft 回退后孤儿容器命运（0/5/30min 观察） | nightly（多节点） |
-| V6a | 卷与约束语义（无约束迁移得空卷、加绑定后钉住） | nightly（多节点） |
-| V6b | 放置漂移矩阵（down/rejoin/adopt/rename/remove/数据不匹配） | nightly（多节点） |
+| V6a | 卷与绑定语义（无约束迁移得空卷、加绑定后钉住） | nightly（多节点） |
+| V6b | 绑定保持与基本漂移（down→blocked→恢复；remove→人工 rebind；数据不匹配 409） | nightly（多节点） |
 | V7 | 引擎升级回归矩阵（dind 双存储模式） | 引擎升级 PR + nightly |
-| V8 | 远端卷能力与维护作业（probe/写读 marker/删除、label 约束两条命名） | nightly（多节点） |
-| V9 | 重入 adopt 全链路（含数据未验证的拒绝路径） | nightly（多节点）+ release |
 
-补充：B2「归位零成本」与 B3「LB 端点时机」并入 PR E2E 与 nightly（见架构 §4.1）；状态模型新增 V8a-V8f（label 重建、孤儿保护、备份顺序、缓存语义、导出导入、审计 fail-closed）按同轨道分布（见[控制面状态模型](2026-09-17-state-model.md) §6）。
+补充：B2「归位零成本」与 B3「LB 端点时机」并入 PR E2E 与 nightly（见架构 §4.1）；状态回归项（写前直读冲突、孤儿只登记不删除、备份顺序与密钥指纹、导出 tar 不含密钥、审计 fail-closed、事件游标）按同轨道分布（见[控制面状态模型](2026-09-17-state-model.md) §6）。
 
 ## 7. 明确不做的事
 
