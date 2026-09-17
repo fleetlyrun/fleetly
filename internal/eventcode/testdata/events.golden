@@ -1,0 +1,35 @@
+app.degraded	应用进入 degraded（观察窗失败/窗后不稳定/W_DEPLOY_INSTABILITY）
+app.instability_detected	运行期检测到不稳定
+app.recovered	应用退出 degraded，恢复 running
+cron.skipped	定时任务触发跳过（节点不 ready/控制面停机错过点/重叠 skip），不补跑
+deployment.cancelled	部署被取消（先归位再落 cancelled）
+deployment.failed	发布失败终态（reason=错误码）
+deployment.healthy	新版本通过健康门
+deployment.observe_started	观察窗开始（默认 60s）
+deployment.queued	部署入队（同 app 并发互斥排队）
+deployment.recovery_blocked	恢复被阻塞（如绑定节点不可用）
+deployment.recovery_scheduled	系统性失败恢复已排队（自动重试动作）
+deployment.release_started	发布开始（构建/更新启动）
+deployment.rollback_failed	回滚失败
+deployment.rollback_finished	回滚完成
+deployment.rollback_started	回滚开始（快照单层重放）
+deployment.substrate_halted	底座故障导致发布停滞（Swarm/节点不可用）
+deployment.succeeded	发布成功终态
+deployment.superseded	部署被更新目标取代（陈旧终态）
+deployment.switched	流量切换完成
+deployment.warning	发布警告（W_ 码；观察窗只告警语义）
+node.down	节点判定 DOWN（Swarm 心跳语义）
+node.joined	节点加入集群（观测）
+node.removed	节点被移除（docker node rm 观测）
+node.up	节点恢复 ready
+placement.blocked	绑定节点不可用/已移除，应用 blocked
+placement.bound	应用完成节点绑定（含自动钉住）
+placement.changed	绑定变更（经显式确认的迁移路径）
+placement.recovered	绑定节点恢复，自动回绑
+placement.unresolved	DR 后绑定无法判定，要求显式放置（不猜测）
+reconcile.drift_detected	检测到期望态与实际态漂移（含手动 docker 操作）；收敛 per-app opt-in
+restore.completed	控制面恢复流程完成（只读观察退出后）
+volume.created	卷注册（数据诞生点，钉住所在节点）
+volume.detached	卷解除挂载（移除卷声明，数据不随声明删除）
+volume.discarded	卷被显式丢弃（admin+confirm+审计）
+volume.orphaned	卷转孤儿（应用删除默认保留/--discard 后旧卷）

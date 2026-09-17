@@ -1,0 +1,1 @@
+{"code":"E_VOLUME_NODE_MISMATCH","message":"卷数据节点与目标部署节点不一致","phase":"preflight","deployment_id":"d_01JGOLDEN","suggestion":"声明数据处置后重试：--data-restored（恢复流程已重建）或 --discard（admin+confirm，旧卷转孤儿）。","context":{"bound_node":"n_01","target_node":"n_02","volume":"data"},"docs":"https://docs.edgefleet.dev/errors/E_VOLUME_NODE_MISMATCH"}

@@ -1,0 +1,202 @@
+package errcode
+
+import (
+	"flag"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+var update = flag.Bool("update", false, "rewrite golden files")
+
+// docCodes 是验收标准的内联文档清单（手抄自四份设计文档，逐条注明出处；
+// 验收：与注册表数量与拼写完全一致）。抄录基准：docs/design/ 下
+// 2026-09-17 四份文档当前版本。
+var docCodes = map[string]string{ // code → 文档出处
+	// release-semantics.md §2.7（17 E）
+	"E_COMPOSE_UNSUPPORTED":         "release-semantics §2.7",
+	"E_COMPOSE_MANAGED_FIELD":       "release-semantics §2.7",
+	"E_COMPOSE_UNSAFE_STRATEGY":     "release-semantics §2.7",
+	"E_BUILD_FAILED":                "release-semantics §2.7",
+	"E_IMAGE_PULL_FAILED":           "release-semantics §2.7",
+	"E_IMAGE_UNAVAILABLE":           "release-semantics §2.7",
+	"E_SCHEDULER_PENDING_TIMEOUT":   "release-semantics §2.7",
+	"E_TASK_START_FAILED":           "release-semantics §2.7",
+	"E_HEALTH_TIMEOUT":              "release-semantics §2.7",
+	"E_OBSERVE_CRASH_LOOP":          "release-semantics §2.7",
+	"E_OBSERVE_UNHEALTHY":           "release-semantics §2.7",
+	"E_DEPLOY_INTERRUPTED":          "release-semantics §2.7",
+	"E_DEPLOY_POST_WINDOW_UNSTABLE": "release-semantics §2.7",
+	"E_DEPLOY_DOWNTIME_FAILED":      "release-semantics §2.7",
+	"E_ROLLBACK_FAILED":             "release-semantics §2.7",
+	"E_ROLLBACK_NO_TARGET":          "release-semantics §2.7",
+	"E_RUNTIME_UNAVAILABLE":         "release-semantics §2.7",
+
+	// stateful-placement.md §2.8（8 E）
+	"E_PLACEMENT_NODE_INVALID":      "stateful-placement §2.8",
+	"E_PLACEMENT_NODE_NOT_FOUND":    "stateful-placement §2.8",
+	"E_PLACEMENT_NODE_UNAVAILABLE":  "stateful-placement §2.8",
+	"E_PLACEMENT_NODE_GONE":         "stateful-placement §2.8",
+	"E_PLACEMENT_NO_ELIGIBLE_NODE":  "stateful-placement §2.8",
+	"E_PLACEMENT_MOVE_REQUIRES_ACK": "stateful-placement §2.8",
+	"E_PLACEMENT_LABEL_CONFLICT":    "stateful-placement §2.8",
+	"E_VOLUME_NODE_MISMATCH":        "stateful-placement §2.8",
+
+	// stateful-placement.md §2.9（1 E）
+	"E_CAPABILITY_REQUIRES_MULTI_NODE": "stateful-placement §2.9",
+
+	// state-model.md §2.7 / §2.9 / §2.4 / §2.2（4 E）
+	"E_BACKUP_KEY_MISSING":     "state-model §2.7",
+	"E_EVENT_CURSOR_EXPIRED":   "state-model §2.9",
+	"E_LABEL_RESERVED":         "state-model §2.4",
+	"E_STATE_VERSION_CONFLICT": "state-model §2.2（architecture §2.3 同）",
+
+	// architecture.md §2.4（2 E，E_COMPOSE_* 与 release-semantics 重复不另计）
+	"E_DOMAIN_CONFLICT":    "architecture §2.4",
+	"E_DOMAIN_UNSUPPORTED": "architecture §2.4",
+
+	// 警告码（5 W）
+	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
+	"W_DEPLOY_NO_HEALTHCHECK":   "release-semantics §2.7/§2.8",
+	"W_ROLLBACK_IMAGE_RISK":     "release-semantics §2.7",
+	"W_PLACEMENT_STATELESS_PIN": "stateful-placement §2.8",
+	"W_ENV_PLATFORM_OVERRIDE":   "architecture §2.4",
+}
+
+// TestDocCodeSetMatchesRegistry 是验收标准 2：注册表码集与四份文档清单
+// 逐一致（数量与拼写完全一致）。
+func TestDocCodeSetMatchesRegistry(t *testing.T) {
+	regIDs := Default().IDs()
+	if len(regIDs) != len(docCodes) {
+		t.Fatalf("registry has %d codes, doc list has %d", len(regIDs), len(docCodes))
+	}
+	for _, id := range regIDs {
+		if _, ok := docCodes[id]; !ok {
+			t.Errorf("registry code %q 不在文档清单内（文档外码须单独列出并标注待 T0.5 冻结确认）", id)
+		}
+	}
+	for id, source := range docCodes {
+		if _, ok := Default().Get(id); !ok {
+			t.Errorf("doc code %q（%s）未录入注册表：遗漏", id, source)
+		}
+	}
+}
+
+// TestRegisteredCountByKind 双保险：32 E + 5 W = 37。
+func TestRegisteredCountByKind(t *testing.T) {
+	errCount, warnCount := 0, 0
+	for _, c := range Default().All() {
+		if strings.HasPrefix(c.ID, "E_") {
+			errCount++
+		} else {
+			warnCount++
+		}
+	}
+	if errCount != 32 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 32), W_ = %d (want 5)", errCount, warnCount)
+	}
+}
+
+// TestDuplicateRegistrationRejected 验收标准 3：重复注册 fail-fast。
+func TestDuplicateRegistrationRejected(t *testing.T) {
+	r := NewRegistry()
+	r.MustRegister(Code{ID: "E_TEST_DUPLICATE", HTTP: 400, Summary: "s", Suggestion: "x"})
+	defer func() {
+		if recover() == nil {
+			t.Fatal("duplicate registration must panic (fail-fast)")
+		}
+	}()
+	r.MustRegister(Code{ID: "E_TEST_DUPLICATE", HTTP: 409, Summary: "s2", Suggestion: "y"})
+}
+
+// TestInvalidFormatRejected 验收标准 3：非法格式 fail-fast（不以 E_/W_ 开头、
+// 含小写、空串、空段）。
+func TestInvalidFormatRejected(t *testing.T) {
+	cases := []string{
+		"E_lower",
+		"e_UPPER",
+		"X_NOT_REGISTRY",
+		"NOTPREFIXED",
+		"",
+		"E_",
+		"E__DOUBLE",
+		"E_TRAILING_",
+		"W_lower_case",
+	}
+	for _, id := range cases {
+		func() {
+			defer func() {
+				if recover() == nil {
+					t.Errorf("invalid code %q must panic at registration", id)
+				}
+			}()
+			NewRegistry().MustRegister(Code{ID: id, HTTP: 400, Summary: "s", Suggestion: "x"})
+		}()
+	}
+}
+
+// TestHTTPMappingInvariants：E_ 码须 4xx/5xx；W_ 码不得携带 HTTP 状态。
+func TestHTTPMappingInvariants(t *testing.T) {
+	for _, c := range Default().All() {
+		if strings.HasPrefix(c.ID, "W_") {
+			if c.HTTP != 0 {
+				t.Errorf("warning %s carries HTTP %d, want 0", c.ID, c.HTTP)
+			}
+			continue
+		}
+		if c.HTTP < 400 || c.HTTP > 599 {
+			t.Errorf("error %s HTTP = %d, want 4xx/5xx", c.ID, c.HTTP)
+		}
+		if c.Docs() != DocsURLPrefix+c.ID {
+			t.Errorf("%s docs anchor = %q, want prefix+ID", c.ID, c.Docs())
+		}
+	}
+}
+
+// TestDocumentedHTTPMappings 文档显式给定的 HTTP 映射照文档。
+func TestDocumentedHTTPMappings(t *testing.T) {
+	want := map[string]int{
+		"E_DOMAIN_CONFLICT":             409, // architecture §2.4
+		"E_STATE_VERSION_CONFLICT":      409, // state-model §2.2
+		"E_VOLUME_NODE_MISMATCH":        409, // stateful-placement §2.8（前哨 409）
+		"E_PLACEMENT_MOVE_REQUIRES_ACK": 409, // stateful-placement §2.2
+		"E_EVENT_CURSOR_EXPIRED":        410, // state-model §2.9
+		"E_LABEL_RESERVED":              422, // state-model §2.4
+		"E_PLACEMENT_LABEL_CONFLICT":    422, // stateful-placement §2.2
+		"E_PLACEMENT_NODE_INVALID":      422, // stateful-placement §2.2（解析失败 422+候选）
+		"E_PLACEMENT_NODE_NOT_FOUND":    422, // stateful-placement §2.5
+	}
+	for id, httpStatus := range want {
+		c, ok := Default().Get(id)
+		if !ok {
+			t.Fatalf("%s not registered", id)
+		}
+		if c.HTTP != httpStatus {
+			t.Errorf("%s HTTP = %d, want %d（文档显式）", id, c.HTTP, httpStatus)
+		}
+	}
+}
+
+// TestGoldenSnapshot 码集 golden 快照：新增/改写码必须显式更新 golden
+// （防静默变更；-update 重生成）。
+func TestGoldenSnapshot(t *testing.T) {
+	golden := filepath.Join("testdata", "codes.golden")
+	got := Default().Snapshot()
+	if *update {
+		if err := os.MkdirAll(filepath.Dir(golden), 0o755); err != nil {
+			t.Fatalf("mkdir testdata: %v", err)
+		}
+		if err := os.WriteFile(golden, []byte(got), 0o644); err != nil {
+			t.Fatalf("write golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(golden)
+	if err != nil {
+		t.Fatalf("read golden (run go test -update to regenerate): %v", err)
+	}
+	if string(want) != got {
+		t.Fatalf("code set drifted from golden:\n--- golden ---\n%s\n--- registry ---\n%s", want, got)
+	}
+}

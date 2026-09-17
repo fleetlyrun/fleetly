@@ -8,6 +8,7 @@ import (
 
 	"buf.build/go/protovalidate"
 	serverv1 "github.com/edgesets/edgefleet/genproto/edgefleet/server/v1"
+	sharedv1 "github.com/edgesets/edgefleet/genproto/edgefleet/shared/v1"
 	"github.com/lynx-go/lynx"
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	"google.golang.org/grpc"
@@ -77,20 +78,44 @@ func validateUnaryInterceptor(validator protovalidate.Validator) grpc.UnaryServe
 	}
 }
 
-// validateStatusError 映射校验错误：规则违规 → InvalidArgument（经 gateway
-// 默认错误处理透出，阶段 3 随自定义 HTTPErrorHandler 换 ErrorResponse 信封）；
-// CEL 编译/求值故障 → Internal（注解缺陷属服务端 bug，fail-closed 拒绝而非
-// 放行未校验请求）。
+// validateStatusError 映射校验错误为带 ErrorResponse 信封 detail 的 status：
+//   - 规则违规 → InvalidArgument；不新造错误码（清单外码须 T0.5 冻结），
+//     信封 code 留空（gateway 侧按退化信封渲染），违规明细进 message 与
+//     context（键 = 字段路径，值 = 规则 ID + 说明）；
+//   - CEL 编译/求值故障 → Internal（注解缺陷属服务端 bug，fail-closed
+//     拒绝而非放行未校验请求），同样携带信封 detail。
 func validateStatusError(err error) error {
 	var violations *protovalidate.ValidationError
 	if errors.As(err, &violations) {
 		parts := make([]string, 0, len(violations.Violations))
+		ctx := make(map[string]string, len(violations.Violations))
 		for _, violation := range violations.Violations {
 			parts = append(parts, violation.String())
+			field := ""
+			if violation.Proto != nil {
+				field = protovalidate.FieldPathString(violation.Proto.GetField())
+			}
+			if field == "" {
+				field = fmt.Sprintf("violation.%d", len(ctx))
+			}
+			ctx[field] = violation.Proto.GetRuleId() + ": " + violation.Proto.GetMessage()
 		}
-		return status.Error(codes.InvalidArgument, strings.Join(parts, "; "))
+		return statusWithEnvelope(codes.InvalidArgument, strings.Join(parts, "; "), ctx)
 	}
-	return status.Error(codes.Internal, "request validation rules failed to evaluate: "+err.Error())
+	msg := "request validation rules failed to evaluate: " + err.Error()
+	return statusWithEnvelope(codes.Internal, msg, nil)
+}
+
+// statusWithEnvelope 构造携带 ErrorResponse detail 的 status（信封 code
+// 留空、message 承载文案；detail 附加失败时退化为无 detail status，gateway
+// 走退化信封路径）。
+func statusWithEnvelope(c codes.Code, message string, context map[string]string) error {
+	st := status.New(c, message)
+	withDetail, derr := st.WithDetails(&sharedv1.ErrorResponse{Message: message, Context: context})
+	if derr != nil {
+		return st.Err()
+	}
+	return withDetail.Err()
 }
 
 func validateExempt(fullMethod string) bool {
