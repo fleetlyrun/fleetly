@@ -1,4 +1,6 @@
-# edgesets 文档索引
+# edgefleet 文档索引
+
+> 产品曾用名 **edgesets**，2026-09-17 更名为 **edgefleet**（守护进程 `edgefleetd`、CLI `edgefleet`、label 命名空间 `edgefleet.*`；全部文档已统一替换）。
 
 ## 设计方案（docs/design/）
 

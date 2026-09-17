@@ -1,4 +1,4 @@
-# edgesets 交付流水线设计（CI/CD）
+# edgefleet 交付流水线设计（CI/CD）
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
@@ -7,16 +7,16 @@
 ## 1. 现状与问题
 
 - 项目自身的构建/测试/发版尚无设计；Swarm 底座引入了必须自证的行为（health gate 等结论为**源码级而非文档承诺**）、引擎版本矩阵（Docker 29.x 破坏史）与升级 E2E 需求。
-- 平台对用户的 CI/CD 边界未写明，容易产生「edgesets 会跑我的测试」的预期错位。
+- 平台对用户的 CI/CD 边界未写明，容易产生「edgefleet 会跑我的测试」的预期错位。
 - 约束条件：open-core（公开核心 / 私有商业）、默认发行集禁 AGPL/DSAL（许可证守卫）、控制面资源预算需回归监控、`curl | sh` 安装方式需要完整性保障。
 
 ## 2. 目标设计
 
 ### 2.1 平台对用户的边界（产品侧，需写入用户文档）
 
-edgesets **不做 CI**：不跑用户测试、不校验用户产物。CI 由用户自带的 GitHub Actions / GitLab CI 承担。
+edgefleet **不做 CI**：不跑用户测试、不校验用户产物。CI 由用户自带的 GitHub Actions / GitLab CI 承担。
 
-edgesets 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 → 路由 → 回滚 → 观察窗。演进方向：
+edgefleet 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 → 路由 → 回滚 → 观察窗。演进方向：
 
 - v0.2+：**CI 门禁**——webhook 只接受 CI 已通过的事件（避免「测试挂了还自动上线」）；
 - v0.3：预览环境消费 PR 事件（合并即销毁）。
@@ -67,7 +67,7 @@ edgesets 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 
 ### 2.6 dogfooding
 
-v0.1 发布后：在 staging VPS 上用 edgesets 部署 edgesets 自身（UI + 文档 + demo）。staging 验收进入发布检查单——这是真实用户路径的最强验证。
+v0.1 发布后：在 staging VPS 上用 edgefleet 部署 edgefleet 自身（UI + 文档 + demo）。staging 验收进入发布检查单——这是真实用户路径的最强验证。
 
 ## 3. 关键决策及理由
 
@@ -117,7 +117,7 @@ v0.1 发布后：在 staging VPS 上用 edgesets 部署 edgesets 自身（UI + �
 
 ## 7. 明确不做的事
 
-- 不做 CI 执行引擎：不用 edgesets 跑用户测试（边界见 2.1）
+- 不做 CI 执行引擎：不用 edgefleet 跑用户测试（边界见 2.1）
 - PR 门禁不跑多节点 / VPS / TLS / 大矩阵（防 flaky 与慢）
 - 不引入第三方 CI 服务（CircleCI/Jenkins）——触发条件：GitHub Actions 无法满足并发或成本
 - 不做自动持续部署到用户环境（发布需人工确认）

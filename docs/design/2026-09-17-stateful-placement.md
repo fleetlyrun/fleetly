@@ -1,4 +1,4 @@
-# edgesets stateful 放置（节点约束）设计
+# edgefleet stateful 放置（节点约束）设计
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
@@ -8,7 +8,7 @@
 
 - Swarm local 卷按节点各自创建，任务被重调度到其他节点会得到**空卷**（数据不跟随、数据风险）；删服务不删卷；bind mount 必须预先存在于目标节点。
 - 节点消失（15–16.5s 判定 DOWN）后 manager 会在其他节点重建任务；未加约束的有卷服务因此可能静默产生空卷。**「有卷就不迁移」不成立，必须主动钉住。**
-- 自研 spec 已废止（应用模型 = Compose 规范，D14）；compose 原生没有平台放置语义——放置意图由 label `edgesets.placement.node` 承载；节点身份只有 hostname（可变、可重名）。
+- 自研 spec 已废止（应用模型 = Compose 规范，D14）；compose 原生没有平台放置语义——放置意图由 label `edgefleet.placement.node` 承载；节点身份只有 hostname（可变、可重名）。
 - 已验证能力边界：**manager 无法枚举/删除远端节点的 local 卷**——卷删除/校验由用户按文档在节点上执行，平台不建维护作业。
 
 ## 2. 目标设计
@@ -17,17 +17,17 @@
 
 | 层 | 载体 | 归属 | 变更规则 |
 |---|---|---|---|
-| 意图 | 服务 label `edgesets.placement.node`（显示名或节点 ID，可省略） | 用户 | 改 compose 文件 |
+| 意图 | 服务 label `edgefleet.placement.node`（显示名或节点 ID，可省略） | 用户 | 改 compose 文件 |
 | 绑定 | `placements` 记录（**平台节点 ID 为锚**） | 平台 | 仅经首次自动选点、显式换点（破坏性确认）、备份恢复迁移、人工重绑四类操作 |
-| 执行 | 适配器编译为节点 label 约束（`edgesets.node-id`）；**cron job 服务继承 app 绑定**（同约束下发，任务型 job 落数据节点） | 适配器 | 随绑定自动下发 |
+| 执行 | 适配器编译为节点 label 约束（`edgefleet.node-id`）；**cron job 服务继承 app 绑定**（同约束下发，任务型 job 落数据节点） | 适配器 | 随绑定自动下发 |
 
 不变量：**绑定优先于 label 的缺失**（用户删除 pin 不触发迁移）；有卷应用不存在「无绑定」的合法运行态；绑定节点不可用时**不迁移、不换点**。
 
 ### 2.2 节点身份
 
-- **领域身份 = 平台节点 ID**（`n_<ULID>`，永不复用，用户裁决），写入节点 label `edgesets.node-id`；服务约束引用它。
+- **领域身份 = 平台节点 ID**（`n_<ULID>`，永不复用，用户裁决），写入节点 label `edgefleet.node-id`；服务约束引用它。
 - **显示名**=Swarm hostname（展示用）；label 可写名或 ID，名→ID 解析失败 → 422 + 候选清单。
-- Swarm node ID 仅存在于适配器映射（`runtime_node_refs`）；**节点重入/重建后的人工重绑**：`edgesets placement rebind <app> --node <新节点> --data-restored|--discard`，不做 adopt 流程、不做 machine-id 自动判定（D18 砍单）。
+- Swarm node ID 仅存在于适配器映射（`runtime_node_refs`）；**节点重入/重建后的人工重绑**：`edgefleet placement rebind <app> --node <新节点> --data-restored|--discard`，不做 adopt 流程、不做 machine-id 自动判定（D18 砍单）。
 
 ### 2.3 label 与 API
 
@@ -35,12 +35,12 @@
 services:
   web:
     labels:
-      edgesets.placement.node: srv-01   # 可选：hostname 或 n_<ULID>；省略 = 平台自动选点并持久保持
+      edgefleet.placement.node: srv-01   # 可选：hostname 或 n_<ULID>；省略 = 平台自动选点并持久保持
 ```
 
 - 粒度 app 级（一个任务挂 app 全部卷，只能落单节点）；不做 process/卷级、不做标签选择器 DSL（硬钉住是唯一语义）。
 - 有命名卷/宿主绑定 → **强制钉住**（平台自动，无需用户声明）；无卷应用默认不钉，显式 pin 时出计划警告（失去自动重调度）。
-- 用户写 `deploy.placement.constraints` 时仅允许 `node.labels.edgesets.*` 命名空间，其余 → `E_COMPOSE_UNSUPPORTED`。
+- 用户写 `deploy.placement.constraints` 时仅允许 `node.labels.edgefleet.*` 命名空间，其余 → `E_COMPOSE_UNSUPPORTED`。
 - 校验：`volumes` 非空时 `replicas` 必须为 1（本地卷不能多副本共享）。
 - label 一致性裁决：同 app 多服务 label 指向不同节点 → 422 `E_PLACEMENT_LABEL_CONFLICT`；label 指定节点与当前绑定不一致 → 不生效，部署前 409 `E_PLACEMENT_MOVE_REQUIRES_ACK`（换点走 `PUT /v1/apps/{app}/placement` 破坏性确认）；label 缺失或与绑定一致 → 正常（绑定优先于 label 缺失）。
 
@@ -107,7 +107,7 @@ deploy_preflight(app):
 
 - 错误码：`E_PLACEMENT_NODE_INVALID`、`E_PLACEMENT_NODE_NOT_FOUND`、`E_PLACEMENT_NODE_UNAVAILABLE`、`E_PLACEMENT_NODE_GONE`、`E_PLACEMENT_NO_ELIGIBLE_NODE`、`E_PLACEMENT_MOVE_REQUIRES_ACK`、`E_PLACEMENT_LABEL_CONFLICT`、`E_VOLUME_NODE_MISMATCH`。警告：`W_PLACEMENT_STATELESS_PIN`。
 - 事件：`placement.{bound,changed,blocked,recovered,unresolved}`、`node.{joined,down,up,removed}`、`volume.{created,detached,orphaned,discarded}`。
-- UI/CLI：应用详情「运行位置」卡片（节点、来源、原因、状态）；`edgesets nodes ls`、`apps placement`、`apps placement rebind`、`volumes ls --orphaned`；破坏性操作统一 `--confirm-destructive` + 回显。
+- UI/CLI：应用详情「运行位置」卡片（节点、来源、原因、状态）；`edgefleet nodes ls`、`apps placement`、`apps placement rebind`、`volumes ls --orphaned`；破坏性操作统一 `--confirm-destructive` + 回显。
 
 ### 2.9 v0.1 单节点
 
@@ -129,7 +129,7 @@ deploy_preflight(app):
 
 ## 4. 分步实施
 
-- **v0.1**：`edgesets.placement.node` label 解析与校验、自动绑定（单节点同路径）、卷注册表、前哨 409、删除应用保留卷。
+- **v0.1**：`edgefleet.placement.node` label 解析与校验、自动绑定（单节点同路径）、卷注册表、前哨 409、删除应用保留卷。
 - **v0.2**：多节点绑定与选点、`GET /v1/nodes` 只读列表、孤儿卷可见性与手动清理指引、备份恢复迁移（restic）+ `rebind` CLI。
 - **v0.3**：模板目录中带卷模板的放置指引。
 
@@ -159,7 +159,7 @@ deploy_preflight(app):
 - 不做 rebalance 机制（自动与手动 plan/apply 皆不建）
 - 不做节点 adopt 流程 / 身份自动消解 / 卷内 marker / machine-id 自动再关联
 - 不做节点生命周期 API（drain/remove/rename 用 `docker node`）
-- 不做远端卷维护作业（docker.sock 挂载）；远端卷删除/校验由用户在节点上执行。**唯一例外（2026-09-17 审核裁决，架构 D19）**：执行中继 `edgesets-exec`（global service，每节点挂本机 docker.sock）——API 面仅 exec、仅平台标记容器、仅 overlay 内可达；不做卷/镜像/节点操作，例外范围不随功能扩张
+- 不做远端卷维护作业（docker.sock 挂载）；远端卷删除/校验由用户在节点上执行。**唯一例外（2026-09-17 审核裁决，架构 D19）**：执行中继 `edgefleet-exec`（global service，每节点挂本机 docker.sock）——API 面仅 exec、仅平台标记容器、仅 overlay 内可达；不做卷/镜像/节点操作，例外范围不随功能扩张
 - 不做跨节点卷在线迁移（备份恢复是唯一路径）
 - 不做卷数据自动删除
 - 不做 S3（兼容存储）/ FUSE / CSI-S3 作为数据卷，亦不做「把数据库放 S3 上换取自动迁移」的方案：S3 无 POSIX 语义（无可靠 fsync、无文件锁、对象不可变、延迟高 3~4 个数量级），与 PG/MySQL/Redis/Mongo 的崩溃恢复模型不可调和；JuiceFS 类方案要引入元数据引擎（Redis/PG）与每节点客户端，与 1~2h/周 维护预算冲突。S3 只做备份目标（restic）与应用对象存储端点（凭证注入）；跨节点共享 POSIX 需求出现时走退出预案（k3s + CSI）评估

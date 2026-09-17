@@ -2,15 +2,15 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 已完成 | 2026-09-17 | 输入给 [平台架构设计](../design/2026-09-17-architecture.md)；第 10 节 13 条修订建议已于 2026-09-17 全部应用。**后续修订注记**：本文第 3 节结论 3/4 与第 10 节第 4/5 条中关于自研 `edgesets.yaml` spec（YAML+JSON Schema、SchemaStore）的建议已失效——应用模型最终选定 Compose 规范（D14 重写，见架构 §2.4） |
+| 已完成 | 2026-09-17 | 输入给 [平台架构设计](../design/2026-09-17-architecture.md)；第 10 节 13 条修订建议已于 2026-09-17 全部应用。**后续修订注记**：本文第 3 节结论 3/4 与第 10 节第 4/5 条中关于自研 `edgefleet.yaml` spec（YAML+JSON Schema、SchemaStore）的建议已失效——应用模型最终选定 Compose 规范（D14 重写，见架构 §2.4） |
 
-> 术语注（2026-09-17 追加）：本文写作时沿用行业通用词「agent」，按语境分别指基础设施的节点守护进程（现名 `edgesetsd node`）或 AI Agent。正式术语基线见架构文档 1.1 节；本文作为档案不改写正文。
+> 术语注（2026-09-17 追加）：本文写作时沿用行业通用词「agent」，按语境分别指基础设施的节点守护进程（现名 `edgefleetd node`）或 AI Agent。正式术语基线见架构文档 1.1 节；本文作为档案不改写正文。
 
 > 事实更正（2026-09-17 追加，经专项验证）：第 2 节与 7.3 节中「Swarm 生态萎缩 / 活跃开发停止」的表述需修正——Swarm 仍处于引擎内置维护：Docker Engine 29.x（2025-11→2026-09）有约 21 条 Swarm/overlay 修复，未进 deprecated 清单，nftables 的 Swarm 支持在官方路线图上；swarmkit v2.1.2（2026-04）；Mirantis 2025-07 将支持延长至至少 2030（MKE 3）。准确表述是「低频维护、无新特性、依赖 Engine 升级、周边工具单薄」。详见 [Swarm 底座可行性评估](2026-09-17-swarm-substrate-assessment.md)。另：§10 第 12 条建议「不做 Swarm」及第 3、4 条建议已随 D12（采纳 Swarm）/D14（应用模型 = Compose）失效，以[平台架构设计](../design/2026-09-17-architecture.md)为准。同理，§2 结论 3/4、§7.1.4/§7.2.3 与借鉴项 A5/A6/A7 中「出站 agent」方向的建议亦已随 D12 失效——节点触达、心跳与重连由 Swarm 原生承担（2026-09-17 审核轮补注，档案保留原文）。
 
 ## 0. 边界与方法
 
-**核心问题**：验证 edgesets 最未经验证、且决定成败的六个设计点，找收敛点（照搬）、分歧点（差异化）、死亡区（坑）。
+**核心问题**：验证 edgefleet 最未经验证、且决定成败的六个设计点，找收敛点（照搬）、分歧点（差异化）、死亡区（坑）。
 
 **候选三层**：
 - 直接竞品：Dokku、Coolify、Dokploy、CapRover、Kamal；
@@ -59,7 +59,7 @@
 3. 「degraded 不迁移」需要显式设计：Nomad 的对应物是 `disconnect.lost_after` + `replace=false` + 恢复后对账防双跑；默认行为恰好相反（lost+重调度）[强]。
 4. 心跳阈值宁宽勿窄：秒级心跳 + 数十秒判定窗 + **连续 N 次失败**（Coolify 两次）；阈值越短越容易误判（Nomad 官方表格）[强]。
 5. 多机镜像分发的事实标准是 **registry pull**（Dokploy/Kamal/Dokku-k3s/Coolify 全部要求）；凭据应经控制面/agent 通道下发，避免用户手工逐机 docker login（Dokploy 的反复坑）[强]。
-6. 每节点本地反向代理（而非中心入口 LB）是轻量阵营共识，与 edgesets 设计一致 [强]。
+6. 每节点本地反向代理（而非中心入口 LB）是轻量阵营共识，与 edgefleet 设计一致 [强]。
 7. 死亡区：**全自建（agent + overlay + 自托管状态存储）的运维与支持成本**是 Flynn 死亡的重要背景；Deis v1 的 fleetd/etcd 自研编排被 K8s 路线取代 [中，历史复盘]。
 
 来源：https://docs.portainer.io/advanced/edge-agent · https://github.com/portainer/portainer/issues/13198 · https://github.com/rancher/rancher/issues/55931 · https://developer.hashicorp.com/nomad/docs/job-specification/disconnect · https://coolify.io/docs/core/observability/monitoring/sentinel · https://docs.dokploy.com/docs/core/deployment-options · https://github.com/Dokploy/dokploy/issues/3111 · https://kamal-deploy.org/docs/configuration/proxy/ · https://news.ycombinator.com/item?id=26295065
@@ -82,7 +82,7 @@
 4. 双真源必须硬处理：反例（Fly 混乱、ArgoCD self-heal 事故）与正例（Render 明示覆盖、Railway 阻塞）都指向同一结论——**要么禁止、要么标注来源，不能静默双向合并** [强]。
 5. 漂移检测与自动收敛应**拆成两个机制**（Terraform #35382 的规模化教训）：默认「检测 + 通知」，收敛 per-app opt-in，支持字段级豁免与事故窗口 [中-强]。
 6. 死亡区：**Waypoint**——把「声明式应用描述」本身当价值，没有 plan/apply、定位抽象层错了（客户痛点在其上游的模板/目录），2024-01 归档 [强，官方复盘]。
-7. 死亡区：**YAML 地狱是长期反弹趋势**（HN 多年热帖）；K8s 的回应是 KYAML 严格子集而非换语言——暗示 edgesets.yaml 应严格控制表达力，不做图灵完备 [中]。
+7. 死亡区：**YAML 地狱是长期反弹趋势**（HN 多年热帖）；K8s 的回应是 KYAML 严格子集而非换语言——暗示 edgefleet.yaml 应严格控制表达力，不做图灵完备 [中]。
 
 来源：https://docs.railway.com/infrastructure-as-code · https://docs.railway.com/cli/config · https://render.com/docs/blueprint-spec · https://kamal-deploy.org/ · https://github.com/argoproj/argo-cd/issues/13598 · https://github.com/hashicorp/terraform/issues/35382 · https://www.hashicorp.com/blog/a-new-vision-for-hcp-waypoint · https://community.fly.io/t/clarification-on-machine-configuration-persistence-cpu-autostop-regions-vs-fly-toml/26955
 
@@ -176,7 +176,7 @@
 
 ### 7.2 分歧点（差异化机会 / 有代价的路线）
 
-1. **持续漂移检测与收敛**：K8s GitOps 有、PaaS 阵营全部没有 → edgesets 的空白区机会；代价是 ArgoCD 式 self-heal 事故与「Synced ≠ desired」的用户教育成本。建议检测默认开、收敛 opt-in。
+1. **持续漂移检测与收敛**：K8s GitOps 有、PaaS 阵营全部没有 → edgefleet 的空白区机会；代价是 ArgoCD 式 self-heal 事故与「Synced ≠ desired」的用户教育成本。建议检测默认开、收敛 opt-in。
 2. **spec 语言**：YAML（多数）vs TS DSL（Railway，表达力换复杂度）。我们选 YAML + JSON Schema，被 agent 训练覆盖最好。
 3. **节点触达**：SSH（Coolify/Dokploy/Kamal，简单但 NAT/密钥脆弱）vs 出站 agent（Portainer/Rancher/Nomad/Coolify Sentinel）。我们选出站，与最新演化方向一致。
 4. **写权限边界**：全写（Dokploy 官方）vs 只读起步（Coolify 内置）vs 受控写+引导 UI（Render）。我们选 scope 分级。
@@ -201,7 +201,7 @@
 
 ## 8. 借鉴清单（照搬 / 适配成本 / 证据强度）
 
-| # | 借鉴项 | 落到 edgesets | 适配成本 | 强度 |
+| # | 借鉴项 | 落到 edgefleet | 适配成本 | 强度 |
 |---|---|---|---|---|
 | A1 | 路由注册严格晚于 health gate；配置写入原子且隔离 | Spike B 验收标准第 1 条；发布状态机不变量 | 设计约束，零额外成本 | 强 |
 | A2 | 复制成熟默认值：health 1s/5s、drain 60s、stop grace 30s、start-first | 平台默认参数；可在 spec 覆盖 | 低 | 强 |

@@ -1,4 +1,4 @@
-# edgesets 发布失败与回滚语义设计
+# edgefleet 发布失败与回滚语义设计
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
@@ -73,7 +73,7 @@ queued → preparing → building → releasing → observing → succeeded
 | 7 | 观察窗崩溃循环（≥2 次退出） | `E_OBSERVE_CRASH_LOOP` | 是 | 默认告警；opt-in 回滚 | 已在新版本；回滚 = 二次切换 |
 | 8 | 观察窗窗末 unhealthy | `E_OBSERVE_UNHEALTHY` | 是 | 同上 | 同上 |
 | 9 | 单次退出且自愈 | `W_DEPLOY_INSTABILITY` | 是 | 警告通过（不计数升级） | 无 |
-| 10 | 观察窗后崩溃 | `E_DEPLOY_POST_WINDOW_UNSTABLE` | 是 | 只告警一次 + 建议 `edgesets rollback`；不计数升级 | 由 Swarm 重启自愈，间歇失败 |
+| 10 | 观察窗后崩溃 | `E_DEPLOY_POST_WINDOW_UNSTABLE` | 是 | 只告警一次 + 建议 `edgefleet rollback`；不计数升级 | 由 Swarm 重启自愈，间歇失败 |
 | 11 | 控制面重启 | `E_DEPLOY_INTERRUPTED` | 视评估 | 分类恢复（2.3） | 视现场 |
 | 12 | 引擎不可达 | `E_RUNTIME_UNAVAILABLE` | 视现场 | recovery blocked + 退避重试 | 无法保证，critical 告警 |
 | 13 | stop-first 失败 | `E_DEPLOY_DOWNTIME_FAILED` | 否 | **强制归位**，停机持续；恢复失败 = 同一码 critical | 停机窗口 = 判定 + 恢复，如实告知 |
@@ -111,7 +111,7 @@ queued → preparing → building → releasing → observing → succeeded
 - `deploy.update_config.failure_action` 必须为 `pause`（或省略）
 - `deploy.update_config.monitor` 必须省略或 5s
 - 更新顺序：`deploy.update_config.order` 照用（有卷服务强制 stop-first；显式 start-first 冲突 → `E_COMPOSE_UNSAFE_STRATEGY`）
-- 其余 `deploy.*` 照用（parallelism/delay/restart_policy/resources/replicas/placement 限 `edgesets.*` 标签）
+- 其余 `deploy.*` 照用（parallelism/delay/restart_policy/resources/replicas/placement 限 `edgefleet.*` 标签）
 
 健康门解析：服务 `healthcheck`（未写子字段取平台默认 5s/3s/3/10s）> 无（`health_gate=none` + `W_DEPLOY_NO_HEALTHCHECK`）。
 
