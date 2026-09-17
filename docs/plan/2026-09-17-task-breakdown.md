@@ -43,16 +43,16 @@ T2 v0.1（核心；分层依赖见 §5）
 ## 3. T0 骨架与契约（M0，约 1 周）
 
 **T0.1 仓库与 CI 骨架** ｜ Blocked by: 无 ｜ 2-3 人日
-- 交付：monorepo 骨架可克隆即跑——`cmd/edgefleetd`、`cmd/edgefleet`、`internal/`、`pkg/api`、`/console`、`/deploy` 就位（架构 §2.7）；PR 门禁（lint/单测/并发取消）绿。
-- 验收：golangci-lint + gofmt + staticcheck + gosec + govulncheck 进 PR 轨道并阻断；空跑的单测任务绿；`go build ./...` 与 `edgefleet --help` 可执行。
+- 交付：monorepo 骨架可克隆即跑——`cmd/edgefleetd`、`cmd/edgefleet`、`internal/`、`pkg/api`、`/console`、`/deploy` 就位（架构 §2.7）；edgefleetd 以 **lynx `NewRunner` + Wire（`boot.Bootstrap`）引导**（D20，装配形态参考 lynx-clean-template，lynx 用法参考 messageloop）；PR 门禁（lint/单测/并发取消）绿。
+- 验收：golangci-lint + gofmt + staticcheck + gosec + govulncheck 进 PR 轨道并阻断；`go generate ./...` 后无差异（wire_gen 同步）进 PR 门禁；空跑的单测任务绿；`go build ./...` 与 `edgefleet --help` 可执行。
 
 **T0.2 错误码与事件注册表** ｜ Blocked by: T0.1 ｜ 2 人日
 - 交付：代码内注册表为唯一真源（架构 §2.8），错误信封 `{code,message,phase,deployment_id,suggestion,context,docs}`（发布专项 §2.7）。
 - 验收：注册表只增/不复用的 CI 校验测试；首发错误码（`E_COMPOSE_*`、`E_STATE_VERSION_CONFLICT` 等 T2 首批）入表；信封序列化有 golden 测试。
 
 **T0.3 OpenAPI + CLI 生成链** ｜ Blocked by: T0.1 ｜ 2-3 人日
-- 交付：huma 骨架 + cobra CLI + 生成 API client 的编译即校验（架构 §2.2、交付 §2.2 契约项）。
-- 验收：一个 hello-world endpoint 从 OpenAPI 生成 CLI 子命令并跑通；oasdiff breaking 检查进 PR 轨道。
+- 交付：huma 骨架（挂载于 lynx HTTP server，复用框架 healthz liveness/readiness 端点，D20）+ cobra CLI + 生成 API client 的编译即校验（架构 §2.2、交付 §2.2 契约项）。
+- 验收：一个 hello-world endpoint 从 OpenAPI 生成 CLI 子命令并跑通；`/healthz/liveness`、`/healthz/readiness` 来自 lynx 框架而非手写；oasdiff breaking 检查进 PR 轨道。
 
 **T0.4 dind E2E 骨架** ｜ Blocked by: T0.1 ｜ 2-3 人日
 - 交付：`docker:29.8.1-dind` 内起平台的 E2E harness（交付 P2、M0）。
@@ -221,7 +221,7 @@ T2 v0.1（核心；分层依赖见 §5）
 | E2 | MCP server（薄适配层）+ 工具预算 ≤30 核算 | 架构 D8/D10；CVE-2026-46519 类执行层 scope 测试 |
 | E3 | S3 外部端点（配置/连通测试 + restic 备份目标 + 凭证注入） | conformance 套件随落地 |
 | E4 | 数据库托管（PG/Redis 首发） | **跨 app 网络互访裁决**（架构 §2.4 遗留开放点）+ 备份适配器设计 |
-| E5 | Cron（细则已定，§4.3） | 与备份 ticker 共核 |
+| E5 | Cron（细则已定，§4.3） | 与备份 ticker 共核；调度核用 lynx contrib/schedule（6 段含秒 → 平台契约 5 段，秒位固定 0） |
 | E6 | Metrics（VictoriaMetrics/cAdvisor）+ 通知 | 资源预算修订（idle <400MB 目标） |
 | E7 | Web 终端（固定名词；执行中继 `edgefleet-exec`，D19） | 中继安全面测试套件 |
 | E8 | dogfooding：staging 用 edgefleet 部署自身 | 交付 §2.6，进发布检查单 |

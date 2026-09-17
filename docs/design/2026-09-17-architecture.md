@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；实现后更新状态并补 PR |
+| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；技术选型补充已应用（基础 Go 框架 = lynx + google/wire，D20，参考 messageloop）；实现后更新状态并补 PR |
 
 ## 1. 现状与问题
 
@@ -116,6 +116,7 @@ CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
 | 领域 | 复用组件 | 语言/许可 | 自研部分 |
 |---|---|---|---|
 | 运行时 | Docker Engine API（moby/client） | Go, Apache-2.0 | 容器/服务生命周期封装、发布状态机 |
+| 基础框架 | **lynx + google/wire**（`NewRunner` + `boot.Bootstrap` Wire 装配，D20；参考实现 messageloop 与 lynx-clean-template） | Go, Apache-2.0 / Apache-2.0 | 领域服务与端口适配器装配、生命周期（Start/Drain/Stop）、配置（lynx Config/Viper 适配）、平台日志（slog + zap contrib）、健康端点（healthz liveness/readiness）、进程内事件扇出（eventbus 仅作分发，events 落库仍走 SQLite Outbox） |
 | 编排底座 | Docker Swarm（引擎内置，无需额外组件） | Go, Apache-2.0 | 只做集成——调度/成员管理/服务发现不自研（D12） |
 | 应用模型 | Compose Specification（docker stack 语义） | Docker, Apache-2.0 | 受控子集校验、label 约定、平台覆盖层（digest/secret/路由/绑定）、stack 对账 |
 | 构建 | Railpack + BuildKit（Dockerfile 兜底） | Go, MIT / Apache-2.0 | 构建队列、缓存、资源限制、镜像命名 |
@@ -317,6 +318,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | Orchestration | Docker Swarm（引擎内置） | k3s driver / 自研 node（退出预案，见 D12 / 3.1） | 中（依赖 Engine 演进，需版本门禁） |
 
 **机制保障**：
+- 适配器以 **lynx.Service** 注册（Name/Init/Start/Stop，D20）：生命周期交框架托管，实现 `Checker` 的组件自动进入平台健康检查；依赖装配统一走 **google/wire 编译期生成**（`boot.Bootstrap`），禁止运行时反射 DI。
 - 每个端口定义 Go interface + **conformance 测试套件**；套件先覆盖已有双实现的端口（Builder、ObjectStore），其余端口随退出预案触发补齐——新适配器必须跑通套件才算可用，规则不变（k8s CSI/CRI 模式）；没有 conformance 的「可替换」只是愿望。
 - 每个关键依赖维护**退出预案（exit plan）**：指认替代实现与迁移成本；Builder 与 ObjectStore 天然有两个实现，替换已被预演。
 
@@ -356,6 +358,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | D17 | 控制面状态三层：权威（SQLite，意图/历史/凭证）/ 派生缓存（观测快照，带 observed_at/stale，禁入决策）/ 实时直读（写前校验）；`nodes` 降级为观测缓存；备份等序 + 恢复期禁止自动收敛 | 双状态源无法消灭只能明确属主；把运行态当权威是漂移与误删的唯一通路；恢复期自动收敛在 DB 较旧时会静默回退部署 | 全量镜像 Swarm 状态入权威（双写者）；不落缓存（无降级读、打爆底座 API）；恢复即自动收敛（静默回退）；声称「最后心跳」（Swarm 不暴露该时间戳） |
 | D18 | 对标基线 = **Dokploy 体验（地板）+ Cloudflare 式体验（方向）**；复杂度纪律：Dokploy 没有且无硬承诺的机制一律不做，预算投向对标缺口（数据库托管提前、监控/通知、模板、Web 终端、Cron） | 小团队需求不极端；机制复杂度不构成 UX，对标缺口构成 UX（Dokploy 无熔断/rebalance/adopt/DR 阶梯/导出合同也做到头部体验）；我们保留的 pause+重放、plan/apply、漂移、错误透明、统一集群恰是 Dokploy 弱项 | 用内部机制做差异化（方向错误）；为「以后可能需要」预建机制（未来需求是猜测不是约束） |
 | D19 | Web 终端经**执行中继** `edgefleet-exec`（Swarm global service）实现：仅挂内部系统网络、不发布端口；API 面仅 `healthz`/`exec` 且只对带 `edgefleet.app` label 的容器；集群 token 经 Swarm secret；成员发现复用 Swarm（`tasks.<name>` DNS + task→NodeID 反查）；`terminal` 独立 scope + 会话限制（空闲 10m/上限 30m）+ 审计入档（2026-09-17 审核裁决） | Swarm 无 exec RPC，worker 容器终端在无远端 daemon 访问下不可达；Portainer Agent / Komodo Periphery 为同型先例；成员与分发仍归 Swarm，不违反 D12 | 通用 Docker API 代理（第二 docker.sock 面、安全事故面）；SSH 隧道（密钥分发 + NAT 脆弱，调研 §2 反模式）；per-container 终端 sidecar（侵入 compose 语义） |
+| D20 | 基础 Go 框架 = **lynx + google/wire**（2026-09-17 技术选型）：`lynx.NewRunner` 承载进程生命周期，`boot.Bootstrap` + Wire 编译期装配依赖图；lynx 用法以 **messageloop**（github.com/messageloopio/messageloop，同域生产使用）为参考实现，Wire 装配形态以 lynx-clean-template 为模板；框架层只做装配与生命周期，领域代码不依赖框架类型（可替换性边界同 §2.8） | 统一生命周期（Drain/优雅关停语义现成，与排水和维护窗口契合）；`lynx.Service` 插件化天然承载端口-适配器；Wire 编译期 DI 无运行时反射、装配错误编译期暴露；轻量取向一致（非全家桶）；Apache-2.0 且上游同域可控 | 纯手工装配（messageloop 现状：装配逻辑淤积在 setup 函数，规模上升后不可读——edgefleet 自第一天用 Wire）；fx/dig（运行时反射 DI，失败后移）；kratos/go-zero（全家桶过重，违背「基础设施只复用不自研」）；自研生命周期框架（重复造轮子） |
 
 ### 3.1 底座再评估触发条件与退出预案
 
@@ -417,7 +420,7 @@ A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm
 - **策略**：重叠 skip（max-concurrent 1）；控制面停机期间错过点 skip + 事件、不补跑；失败只记录 + 通知，不自动重试。
 - **留存**：`cron_runs`（每 schedule 最近 20 条）+ 日志进现有采集；完成后删除 job 服务。
 - **入口**：手动触发 API/CLI/UI（走同一路径，写审计）。
-- **复用**：与平台热备、数据库备份共用同一调度核（由 v0.1 备份 ticker 演进）。
+- **复用**：与平台热备、数据库备份共用同一调度核（由 v0.1 备份 ticker 演进）；调度核基于 lynx contrib/schedule（表达式 6 段含秒——**平台对外契约保持 5 段**，装配时秒位固定为 0，契约不随框架变）。
 - **验收**：对齐 Dokploy 五项（表达式/时区/日志/手动触发/API）+ 本平台附加项（`replicas>0` 拒绝、不补跑、job 继承绑定）。
 - **降级**：v0.2 预算破裂时第一个降级；用户逃生口 = 应用内 cron 容器或外部触发 API（文档写明）。
 
@@ -463,6 +466,7 @@ PR 预览环境（AI Agent 开 PR → 自动 URL → 合并即销毁）、官方
 | Compose 子集外的构造被拒绝（depends_on/extends/profiles 等） | 迁移摩擦与预期落差 | 拒绝时给替代建议与文档链接；真实需求驱动 v0.3 逐项开放；用户访谈验证 |
 | stack apply 非事务（多服务部分失败） | 跨服务发布原子性缺失 | 观察窗按整体判定 + 失败归位重放整栈 revision；文档明示「按服务滚动」语义 |
 | label 约定与 compose 生态习惯差异 | 用户误写 Traefik label 期望生效 | `edgefleet.*` 为唯一一等约定；Traefik label 直写不保证（文档明示）；对账器忽略非 `edgefleet.*` label |
+| 基础框架依赖（lynx 小生态、pre-2.0 版本节奏，D20） | 框架破坏性升级波及控制面 | 锁版本（v1.11.x）+ 升级走依赖门禁附 changelog 评审；Wire 生成物 `go generate` 差异进 PR 门禁；上游同域可控，必要时可 fork 接管维护；框架只做装配与生命周期，领域代码零框架类型依赖（替换面收敛在 boot 层） |
 
 ## 6. 测试策略
 

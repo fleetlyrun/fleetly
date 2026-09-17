@@ -25,7 +25,7 @@ edgefleet 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 
 **PR 轨道（目标 ≤10 分钟，必需检查）**
 
-1. 静态：golangci-lint、gofmt、staticcheck、gosec、govulncheck
+1. 静态：golangci-lint、gofmt、staticcheck、gosec、govulncheck；Wire 生成物同步检查（`go generate ./...` 后 git diff 为空，D20）
 2. 单元 + race：发布状态机、对账器、spec、加密、配置解析
 3. 契约：OpenAPI 生成客户端编译 + oasdiff breaking 检查；MCP 工具 schema 快照；错误码注册表校验（只增、不复用）；Compose 子集校验回归（白名单/拒绝清单/受管字段/label 约定）
 4. 许可证守卫：默认发行组件清单不得出现 AGPL/DSAL（白名单机制，见 D5）
