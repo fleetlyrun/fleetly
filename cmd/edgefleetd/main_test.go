@@ -13,12 +13,13 @@ import (
 )
 
 // TestHealthzEndpointsAndGracefulStop 是 T0.1 冒烟测试：按 provides.go 的
-// NewHTTPServer 同一形态构建 lynx HTTP 服务（仅框架 healthz，随机端口），
-// 验证 ① /healthz/liveness 与 /healthz/readiness 返回 200；② Stop 优雅
-// 关停返回 nil 且此后端口不再接受连接（等价进程收到退出信号后的
-// 服务侧排水路径；信号监听与退出码由 lynx Runner 托管）。
+// NewHTTPServer 同一形态构建 lynx HTTP 服务（空根 mux——T0.3 起真实装配的
+// 根 handler 是 gateway mux，本测试只关注 healthz 面；随机端口），验证
+// ① /healthz/liveness 与 /healthz/readiness 返回 200；② Stop 优雅关停返回
+// nil 且此后端口不再接受连接（等价进程收到退出信号后的服务侧排水路径；
+// 信号监听与退出码由 lynx Runner 托管）。
 func TestHealthzEndpointsAndGracefulStop(t *testing.T) {
-	srv := lynxhttp.NewServer(newRootMux(),
+	srv := lynxhttp.NewServer(gohttp.NewServeMux(),
 		lynxhttp.WithAddr("127.0.0.1:0"),
 		// 与装配形态一致：框架健康检查器取值函数；骨架阶段无检查器，
 		// readiness 未配置检查器时恒 200（lynx 语义）。

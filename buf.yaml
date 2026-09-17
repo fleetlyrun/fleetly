@@ -1,0 +1,25 @@
+version: v2
+
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/bufbuild/protovalidate
+  - buf.build/grpc-ecosystem/grpc-gateway
+
+modules:
+  - path: proto
+
+lint:
+  use:
+    - STANDARD
+  # 以下规则与 edgefleet 契约现状的取舍说明（torchwood 同款位置）：
+  # - edgefleet 的 proto 目录即包路径（proto/edgefleet/{client,console,server,shared}/v1
+  #   ↔ edgefleet.{client,console,server,shared}.v1），PACKAGE_DIRECTORY_MATCH
+  #   天然满足，无需豁免（torchwood 因目录不含仓库名前缀才豁免）；
+  # - 本阶段契约只含 SystemService.Ping（请求/响应类型按
+  #   PingRequest/PingResponse 命名），STANDARD 全量通过；后续引入
+  #   shared 消息复用或语义化枚举时，在此逐条登记豁免与理由，不留无注释豁免。
+breaking:
+  # 契约版本化（架构 §2.8）：FILE 规则 = 文件移动/删除/重命名即 breaking，
+  # 是 v1 起的兼容门禁（PR proto job 对 origin/main 执行）。
+  use:
+    - FILE

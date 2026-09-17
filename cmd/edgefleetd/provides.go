@@ -2,11 +2,11 @@ package main
 
 import (
 	"context"
-	gohttp "net/http"
 
 	"github.com/google/wire"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
+	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 )
 
@@ -17,6 +17,8 @@ import (
 var ProviderSet = wire.NewSet(
 	boot.New,
 	NewConfig,
+	NewGRPCServer,
+	NewSystemService,
 	NewHTTPServer,
 	NewServices,
 	NewServiceFactories,
@@ -26,7 +28,7 @@ var ProviderSet = wire.NewSet(
 	NewPostStops,
 )
 
-// NewConfig 从应用配置（flags + 配置文件）解出 AppConfig。
+// NewConfig 从应用配置（flags + 配置文件）解出 AppConfig，缺省值在此回落。
 func NewConfig(app lynx.App) (*AppConfig, error) {
 	c := new(AppConfig)
 	if err := app.Config().Unmarshal(c); err != nil {
@@ -35,28 +37,30 @@ func NewConfig(app lynx.App) (*AppConfig, error) {
 	if c.Addr == "" {
 		c.Addr = defaultHTTPAddr
 	}
+	if c.GRPC.Addr == "" {
+		c.GRPC.Addr = defaultGRPCAddr
+	}
 	return c, nil
 }
 
-// NewHTTPServer 创建控制面 HTTP 服务：本阶段仅挂 lynx 内置健康端点
-// （/healthz/liveness 与 /healthz/readiness），业务路由随后续阶段接入
-// （根 mux 由 newRootMux 统一提供，测试复用同一构造）。
-func NewHTTPServer(app lynx.App, cfg *AppConfig) *lynxhttp.Server {
-	return lynxhttp.NewServer(newRootMux(),
+// NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
+// （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）；
+// /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
+// 与 gateway 路由共存（torchwood 同款双面单端口形态）。
+func NewHTTPServer(app lynx.App, cfg *AppConfig) (*lynxhttp.Server, error) {
+	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
+	if err != nil {
+		return nil, err
+	}
+	return lynxhttp.NewServer(mux,
 		lynxhttp.WithAddr(cfg.Addr),
 		lynxhttp.WithHealthCheckers(app.HealthCheckers),
 		lynxhttp.WithLogger(app.Logger("logger", "http-requestlog")),
-	)
+	), nil
 }
 
-// newRootMux 返回控制面 HTTP 根路由；健康端点由 lynxhttp.Server 在
-// buildHandler 时另行挂载，不经过此 mux。
-func newRootMux() *gohttp.ServeMux {
-	return gohttp.NewServeMux()
-}
-
-func NewServices(hs *lynxhttp.Server) []lynx.Service {
-	return []lynx.Service{hs}
+func NewServices(hs *lynxhttp.Server, gs *lynxgrpc.Server) []lynx.Service {
+	return []lynx.Service{hs, gs}
 }
 
 func NewServiceFactories() []lynx.ServiceFactory {

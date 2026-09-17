@@ -28,10 +28,16 @@ jobs:
         with:
           go-version-file: go.mod
       - name: go test
-        run: go test ./... -race
+        # go.work 工作区模式下 ./... 只匹配主模块包；显式追加 sdk/go
+        #（T0.3 起三 module：主仓 + genproto + sdk/go；genproto 无测试，
+        # 作为主模块依赖经 replace 编译覆盖）。
+        run: go test ./... ./sdk/go/... -race
 
   generate-sync:
     # wire 生成物同步检查：go generate 后工作区必须无差异。
+    # GOWORK=off：wire v0.7.0 在 wire_gen.go 头部硬编码 `-mod=mod` 指令
+    #（internal/wire/wire.go:270），该 flag 在 go.work 工作区模式非法
+    #（-mod 仅允许 readonly/vendor），故生成步骤退回单 module 模式。
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +46,42 @@ jobs:
           go-version-file: go.mod
       - name: go generate
         run: go generate ./...
+        env:
+          GOWORK: "off"
       - name: check diff
+        run: git diff --exit-code
+
+  proto:
+    # proto 契约门禁（T0.3，D21）：buf build/lint + buf breaking（FILE 规则，
+    # 对 origin/main 比较）+ 生成物同步（buf generate 后 diff 必须为空——
+    # genproto 产物已提交）。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # buf breaking 需 origin/main 可解析（torchwood 同款）。
+          fetch-depth: 0
+      - uses: bufbuild/buf-setup-action@v1
+        with:
+          version: v1.72.0
+      - name: buf build
+        run: buf build
+      - name: buf lint
+        run: buf lint
+      - name: buf breaking
+        # 首跑无基线处理：T0.3 引入 proto 之前 main 上没有任何 .proto，
+        # buf breaking 对空基线直接报错（Module had no .proto files）。
+        # 基线（origin/main）尚无 proto 时跳过本轮比较；首个契约 PR 合入
+        # 后条件恒真，FILE 规则门禁自此实际生效。
+        run: |
+          if git ls-tree -r --name-only origin/main | grep -q '^proto/.*\.proto$'; then
+            buf breaking --against '.git#branch=origin/main'
+          else
+            echo "baseline origin/main has no proto files (first contract PR); skip buf breaking"
+          fi
+      - name: buf generate
+        run: buf generate
+      - name: check generated diff
         run: git diff --exit-code
 
   vulncheck:

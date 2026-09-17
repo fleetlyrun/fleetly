@@ -23,8 +23,16 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	if err != nil {
 		return nil, nil, err
 	}
-	server := NewHTTPServer(app, appConfig)
-	v := NewServices(server)
+	server, err := NewHTTPServer(app, appConfig)
+	if err != nil {
+		return nil, nil, err
+	}
+	systemService := NewSystemService()
+	grpcServer, err := NewGRPCServer(app, appConfig, systemService)
+	if err != nil {
+		return nil, nil, err
+	}
+	v := NewServices(server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {

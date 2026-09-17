@@ -14,9 +14,8 @@
 # Dependency directories
 /vendor/
 
-# Go workspace file
-go.work
-go.work.sum
+# go.work / go.work.sum 自 T0.3 起提交入库（三 module：主仓 + genproto +
+# sdk/go）；勿在此忽略。
 
 # Built binaries at repo root
 /edgefleetd

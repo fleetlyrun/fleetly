@@ -1,7 +1,9 @@
 // edgefleetd 是 edgefleet 控制面守护进程。
-// 本阶段（T0.1）为骨架：lynx NewRunner 承载生命周期，Wire 编译期装配
-// boot.Bootstrap，仅暴露 lynx 框架内置健康端点（/healthz/liveness 与
-// /healthz/readiness）；业务服务随后续阶段按 lynx.Service 逐个接入。
+// 本阶段（T0.3）为骨架：lynx NewRunner 承载生命周期，Wire 编译期装配
+// boot.Bootstrap；HTTP 面（默认 127.0.0.1:8420）挂 lynx 内置健康端点
+// （/healthz/liveness 与 /healthz/readiness）与 grpc-gateway（REST /v1/**
+// 反代本进程 gRPC）；gRPC 面（默认 127.0.0.1:8421）承载 server.v1 服务
+// （SystemService）。业务服务随后续阶段按 lynx.Service 逐个接入。
 package main
 
 import (
