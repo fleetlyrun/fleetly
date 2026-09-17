@@ -1,1 +1,104 @@
 # edgefleet
+
+[English](README.md) | [简体中文](README_ZH.md)
+
+> Dokku's footprint, Railway's API, AI-Agent-first operations.
+
+edgefleet is an ultra-lightweight open-source PaaS for small teams. Deploy `compose.yaml` apps to a cluster of 1–10 servers with zero-downtime releases, snapshot-based rollback, drift detection, and an API surface designed for both humans and AI agents — no Kubernetes required.
+
+**Status: early development.** Design is frozen and reviewed; the T0 foundation (repo, CI, proto contract chain, error-code registry, dind E2E skeleton) has landed. v0.1 is not released yet — see the [roadmap](#roadmap). Formerly known as *edgesets*.
+
+## Why edgefleet
+
+- **Built for teams without ops.** ≤5 developers, no dedicated ops, 1–3 servers to start, a maintenance budget of 1–2 hours *per week*. Everything automatable (TLS, backups, upgrades, inspection) is automated and verifiable.
+- **Compose is the only app model.** No proprietary spec. A controlled subset of the Compose Specification with a minimal `edgefleet.*` label convention; anything outside the subset is rejected with a structured error, never silently ignored.
+- **Docker Swarm as the substrate.** Membership, scheduling, and health-gated updates come from the engine itself — no self-built distributed core. Single-node v0.1 is already a (transparent) single-node Swarm, so adding the second server is a `docker swarm join`, not a re-architecture.
+- **API-first, proto as the contract.** gRPC + REST (grpc-gateway) derived from a single protobuf source; CLI, Console, and (in v0.2) MCP are all consumers of the same contract. No feature ships without an API.
+- **Trust is the floor.** Atomic self-upgrades (pre-pulled image + snapshot + auto-rollback), backups with read-back verification, error messages as a product (stable error codes + context + fix suggestions) — for humans and AI agents alike.
+
+## Feature map (planned)
+
+| Area | Behavior | Version |
+|---|---|---|
+| Deploy | git push / webhook / API → Railpack or Dockerfile build → zero-downtime rollout → observation window | v0.1 |
+| Release safety | Swarm `failure-action=pause` + platform snapshot replay (last 5 verified revisions); never Swarm-native rollback | v0.1 |
+| Routing / TLS | Per-node Traefik with routes and certs pushed by the control plane; central ACME (HTTP-01), multi-SAN domain lists | v0.1 |
+| State | SQLite control-plane state, three-layer model (authoritative / observed cache / live read) | v0.1 |
+| Drift detection | Desired-state hash vs. reality; detection on by default, auto-converge opt-in per app | v0.1 |
+| Multi-node | `docker swarm join`, image registry (zot), stateful pinning, honest HA boundaries | v0.2 |
+| AI agents | MCP server with a curated toolset (≤30 tools), scoped tokens, two-step destructive confirmation | v0.2 |
+| Data services | Managed Postgres/Redis templates + per-engine backup adapters + connection-string injection | v0.2 |
+| Extras | Cron (Swarm jobs), metrics (VictoriaMetrics), Web terminal (exec relay, D19) | v0.2+ |
+
+## Honest boundaries
+
+We say what we don't do: no cross-node shared storage (volumes are local; stateful services are pinned to a node and never auto-migrated — moving data goes through backup/restore); **two nodes ≠ full HA** (you get stateless process HA, not management-plane or stateful HA — the installer says so explicitly); no CI engine (your Git host runs CI; edgefleet gates deploys on webhook status); no Kubernetes backend (k3s is reserved as an exit plan, not a feature).
+
+## Architecture
+
+```
+CLI (edgefleet) / Console / MCP (v0.2) / gRPC / REST / git push (SSH) / Webhook
+                 │
+   edgefleetd — single Go binary on the Swarm manager
+     API: gRPC + grpc-gateway (proto = single contract source)
+     release state machine · reconciler · build pipeline (Railpack/BuildKit)
+     state: SQLite (WAL) · secrets: envelope encryption (age) · TLS: central ACME
+                 │  Docker API (local socket manages the whole cluster)
+   Docker Engine (Swarm mode) — services · overlay networks · scheduling
+   Traefik (global, per node) — routes & certs pushed by the control plane
+```
+
+Foundation stack: [lynx](https://github.com/lynx-go/lynx) + [google/wire](https://github.com/google/wire) (D20), buf + [grpc-gateway](https://github.com/grpc-ecosystem/grpc-gateway/v2) (D21). Domain code stays free of framework types — the core/adapter boundary is a hard rule (D13).
+
+## Repository layout
+
+```
+cmd/edgefleetd/   control-plane daemon
+cmd/edgefleet/    CLI
+proto/            API contracts (edgefleet.{server,client,console,shared}.v1)
+genproto/         generated code + OpenAPI (openapiv2) — committed
+sdk/go/           Go SDK (gRPC client)
+internal/         errcode / eventcode registries, app error envelope
+e2e/              dind smoke harness (reused by CI and Spikes)
+docs/             design docs, research reports, implementation plan
+console/          Console frontend (React + Vite + shadcn/ui, lands with T2.21)
+deploy/           installer & systemd units (lands with T2.1)
+```
+
+## Documentation
+
+All docs live in [`docs/`](docs/README.md) (Chinese, design-first workflow):
+
+- [Architecture](docs/design/2026-09-17-architecture.md) — positioning, stack, 21 key decisions (D1–D21), roadmap
+- Design specials: [release semantics](docs/design/2026-09-17-release-semantics.md) · [stateful placement](docs/design/2026-09-17-stateful-placement.md) · [control-plane state model](docs/design/2026-09-17-state-model.md) · [delivery pipeline](docs/design/2026-09-17-delivery-pipeline.md)
+- Research: [competitive landscape](docs/research/2026-09-17-competitive-landscape.md) · [Swarm substrate assessment](docs/research/2026-09-17-swarm-substrate-assessment.md)
+- Implementation: [task breakdown](docs/plan/2026-09-17-task-breakdown.md) · [v0.1 scope freeze](docs/plan/2026-09-17-v0.1-scope-freeze.md)
+
+## Roadmap
+
+| Stage | Scope | Status |
+|---|---|---|
+| T0 foundation | repo, CI gates, proto contract chain, error/event registries, dind E2E skeleton | ✅ done |
+| Spike A/B/C | build, release+routing, substrate risk validation (V1–V7) | next |
+| v0.1 | single-node GA of the 8-item scope (deploy loop, TLS, rollback, trust drill) | in development |
+| v0.2 | multi-node, MCP, S3 endpoints, managed databases, cron, metrics, Web terminal | planned |
+| v0.3 | preview environments, template catalog, RBAC, Compose subset expansion, tunnel access | planned |
+
+## Development
+
+Prerequisites: Go ≥ 1.26.6 (`GOTOOLCHAIN=auto` works), buf CLI, Docker (for e2e).
+
+```bash
+go build ./...
+go test ./... ./sdk/go/... -race
+buf lint && buf generate          # generated artifacts are committed; must not drift
+golangci-lint run
+```
+
+Smoke E2E (runs edgefleetd inside `docker:29.8.1-dind`): see [`e2e/README.md`](e2e/README.md).
+
+Contribution discipline: this project is design-first — behavior changes start as doc changes (review rounds), then land as vertical slices tracked in the task breakdown. Error codes and events are append-only registries.
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE). The default distribution contains no AGPL/DSAL components.

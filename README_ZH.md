@@ -1,0 +1,104 @@
+# edgefleet
+
+[English](README.md) | [简体中文](README_ZH.md)
+
+> Dokku 的资源占用，Railway 的 API，AI Agent 优先的操作方式。
+
+edgefleet 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用部署到 1~10 台服务器的集群上，获得零停机发布、快照回滚、漂移检测，以及一套同时为人类与 AI Agent 设计的 API 面——不需要 Kubernetes。
+
+**当前状态：早期开发中。** 设计已定稿并通过评审；T0 地基（仓库、CI 门禁、proto 契约链、错误码注册表、dind E2E 骨架）已落地。v0.1 尚未发布——见[路线图](#路线图)。曾用名 *edgesets*。
+
+## 为什么是 edgefleet
+
+- **为没有运维的团队而建。** ≤5 名开发、无专职运维、1~3 台服务器起步、每周 1~2 小时的维护预算。一切可自动化的（证书、备份、升级、巡检）都自动化且可验证。
+- **Compose 是唯一应用模型。** 没有私有 spec。受控的 Compose 规范子集 + 最小 `edgefleet.*` label 约定；子集之外一律结构化报错拒绝，绝不静默忽略。
+- **Docker Swarm 作底座。** 成员管理、调度、健康门更新由引擎内置——不自研分布式核心。v0.1 单节点本身就是（对用户透明的）单节点 Swarm，加第二台是 `docker swarm join`，不是重构。
+- **API 优先，proto 即契约。** gRPC + REST（grpc-gateway）由同一份 protobuf 派生；CLI、Console 与（v0.2 的）MCP 都是同一契约的消费者。没有 API 的功能不准进产品。
+- **信任是地板。** 原子化自升级（预拉镜像 + 快照 + 失败自动回退）、带回读校验的备份、错误信息即产品（稳定错误码 + 上下文 + 修复建议）——同时服务人类与 AI Agent。
+
+## 能力地图（规划）
+
+| 领域 | 行为 | 版本 |
+|---|---|---|
+| 部署 | git push / webhook / API → Railpack 或 Dockerfile 构建 → 零停机上线 → 观察窗 | v0.1 |
+| 发布安全 | Swarm `failure-action=pause` + 平台快照重放（最近 5 个已验证版本）；不用 Swarm 原生回滚 | v0.1 |
+| 路由 / TLS | 每节点 Traefik，路由与证书由控制面下发；集中 ACME（HTTP-01）、多 SAN 域名列表 | v0.1 |
+| 状态 | SQLite 控制面状态，三层模型（权威 / 观测缓存 / 实时直读） | v0.1 |
+| 漂移检测 | 期望态 hash 对现实；检测默认开、自动收敛 per-app opt-in | v0.1 |
+| 多节点 | `docker swarm join`、镜像仓库（zot）、有状态钉住、诚实的 HA 边界 | v0.2 |
+| AI Agent | MCP server，精选工具面（≤30 工具）、scope token、破坏性操作两段式确认 | v0.2 |
+| 数据服务 | 托管 Postgres/Redis 模板 + 逐引擎备份适配器 + 连接串注入 | v0.2 |
+| 其他 | Cron（Swarm job）、指标（VictoriaMetrics）、Web 终端（执行中继，D19） | v0.2+ |
+
+## 诚实的边界
+
+我们明确说清楚不做什么：不做跨节点共享存储（卷本地；有状态服务钉住节点、永不自动迁移——数据移动只走备份恢复）；**2 台 ≠ 全面 HA**（你得到的是无状态进程级 HA，不是管理面或有状态 HA——安装器会明说）；不做 CI 引擎（测试归 Git 托管方，edgefleet 以 webhook 状态做发布门禁）；不做 Kubernetes 后端（k3s 是退出预案，不是功能）。
+
+## 架构
+
+```
+CLI (edgefleet) / Console / MCP (v0.2) / gRPC / REST / git push (SSH) / Webhook
+                 │
+   edgefleetd —— 运行于 Swarm manager 的 Go 单二进制
+     API：gRPC + grpc-gateway（proto = 唯一契约真源）
+     发布状态机 · 对账器 · 构建管线（Railpack/BuildKit）
+     状态：SQLite (WAL) · 密钥：envelope 加密（age）· TLS：集中 ACME
+                 │  Docker API（本地 socket 管理全集群）
+   Docker Engine（Swarm mode）—— 服务 · overlay 网络 · 调度
+   Traefik（global，每节点）—— 路由与证书由控制面下发
+```
+
+基础栈：[lynx](https://github.com/lynx-go/lynx) + [google/wire](https://github.com/google/wire)（D20），buf + [grpc-gateway](https://github.com/grpc-ecosystem/grpc-gateway/v2)（D21）。领域代码零框架类型依赖——核心/适配器边界是硬纪律（D13）。
+
+## 仓库结构
+
+```
+cmd/edgefleetd/   控制面守护进程
+cmd/edgefleet/    CLI
+proto/            API 契约（edgefleet.{server,client,console,shared}.v1）
+genproto/         生成代码 + OpenAPI（openapiv2）——已提交
+sdk/go/           Go SDK（gRPC client）
+internal/         errcode / eventcode 注册表、应用错误信封
+e2e/              dind 冒烟骨架（CI 与 Spike 复用）
+docs/             设计文档、调研报告、实施规划
+console/          Console 前端（React + Vite + shadcn/ui，随 T2.21 落地）
+deploy/           安装器与 systemd unit（随 T2.1 落地）
+```
+
+## 文档
+
+全部文档在 [`docs/`](docs/README.md)（中文，设计先行的工作流）：
+
+- [架构设计](docs/design/2026-09-17-architecture.md)——定位、技术栈、21 项关键决策（D1–D21）、路线图
+- 专项设计：[发布语义](docs/design/2026-09-17-release-semantics.md) · [stateful 放置](docs/design/2026-09-17-stateful-placement.md) · [控制面状态模型](docs/design/2026-09-17-state-model.md) · [交付流水线](docs/design/2026-09-17-delivery-pipeline.md)
+- 调研：[竞品全景](docs/research/2026-09-17-competitive-landscape.md) · [Swarm 底座评估](docs/research/2026-09-17-swarm-substrate-assessment.md)
+- 实施：[任务分解](docs/plan/2026-09-17-task-breakdown.md) · [v0.1 切面冻结清单](docs/plan/2026-09-17-v0.1-scope-freeze.md)
+
+## 路线图
+
+| 阶段 | 范围 | 状态 |
+|---|---|---|
+| T0 地基 | 仓库、CI 门禁、proto 契约链、错误/事件注册表、dind E2E 骨架 | ✅ 完成 |
+| Spike A/B/C | 构建、发布与路由、底座风险验证（V1–V7） | 下一步 |
+| v0.1 | 单节点 8 项范围 GA（部署闭环、TLS、回滚、信任闭环演练） | 开发中 |
+| v0.2 | 多节点、MCP、S3 端点、托管数据库、cron、指标、Web 终端 | 规划中 |
+| v0.3 | 预览环境、模板目录、RBAC、Compose 子集扩展、Tunnel 接入 | 规划中 |
+
+## 开发
+
+前置：Go ≥ 1.26.6（`GOTOOLCHAIN=auto` 可用）、buf CLI、Docker（e2e 用）。
+
+```bash
+go build ./...
+go test ./... ./sdk/go/... -race
+buf lint && buf generate          # 生成物已提交，不得漂移
+golangci-lint run
+```
+
+冒烟 E2E（在 `docker:29.8.1-dind` 内运行 edgefleetd）：见 [`e2e/README.md`](e2e/README.md)。
+
+贡献纪律：本项目设计先行——行为变更先落文档（走评审轮），再按任务分解的垂直切片落地。错误码与事件是只增注册表。
+
+## 许可证
+
+Apache-2.0——见 [LICENSE](LICENSE)。默认发行包不含 AGPL/DSAL 组件。
