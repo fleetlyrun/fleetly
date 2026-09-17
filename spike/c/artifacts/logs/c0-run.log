@@ -1,0 +1,293 @@
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>if not exist artifacts\logs mkdir artifacts\logs 
+
+D:\Codes\qiulin\edgesets\spike\c>if not exist artifacts\hostbak mkdir artifacts\hostbak 
+
+D:\Codes\qiulin\edgesets\spike\c>if not exist dockerctx mkdir dockerctx 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C0.1 cross-compile probe (linux/amd64 static, stdlib only) ===== 
+===== C0.1 cross-compile probe (linux/amd64 static, stdlib only) =====
+
+D:\Codes\qiulin\edgesets\spike\c>set "GOOS=linux" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "GOARCH=amd64" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "CGO_ENABLED=0" 
+
+D:\Codes\qiulin\edgesets\spike\c>go build -trimpath -ldflags "-s -w" -o dockerctx\probe .\cmd\probe   || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>set "GOOS=" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "GOARCH=" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "CGO_ENABLED=" 
+
+D:\Codes\qiulin\edgesets\spike\c>if not exist dockerctx\probe (echo probe build missing   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C0.2 host bridge network spike-c-br ===== 
+===== C0.2 host bridge network spike-c-br =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker network ls --format "{{.Name}}"   | findstr /x "spike-c-br"   1>nul  || docker network create --driver bridge --subnet 10.10.0.0/24 --gateway 10.10.0.1 spike-c-br   || exit /b 1 
+9abe222c40e1e80be1a9aacdefcabf39584fb059d9434f74d8a00554db85edcd
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C0.3 boot dind spike-c-m0 (bind mount /work-src = byte-faithful) ===== 
+===== C0.3 boot dind spike-c-m0 (bind mount /work-src = byte-faithful) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker rm -f spike-c-m0  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker run -d --name spike-c-m0 --hostname m0 --privileged --network spike-c-br -v "D:\Codes\qiulin\edgesets\spike\c\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+5ad447bae36cbdf46dd4386575d1ac6a4c40b839cd9c9260d11893b939c60e3b
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C0.4 wait inner dockerd (60s deadline) ===== 
+===== C0.4 wait inner dockerd (60s deadline) =====
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-m0 docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto ready 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 60 (echo inner dockerd not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitloop 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-m0 docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto ready 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 2 GEQ 60 (echo inner dockerd not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitloop 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-m0 docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto ready 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C0.5 stage probe + alpine, run C1 ===== 
+===== C0.5 stage probe + alpine, run C1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-m0 sh -c "cp /work-src/dockerctx/probe /opt/probe && chmod +x /opt/probe"   || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-m0 docker pull alpine:3.20   1>nul  || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-m0 sh -c "cp /work-src/scripts/in-c1-init.sh /tmp/c1.sh && sed -i 's/\r$//' /tmp/c1.sh && sh /tmp/c1.sh"  1>artifacts\logs\in-c1.log 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\in-c1.log 
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+===== C1.0 env =====
+probe=a4d0d1a9ff388d63 kernel=6.18.33.2-microsoft-standard-WSL2 engine=29.8.1
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+now-ms=1789674449116
+===== C1.1 pre-init state (plain docker run container + named volume) =====
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+73740c1b624b7de96232fe71e1e3249a37788231fad00f139fe4c4bec5a66302
+-- docker ps (c1-ctr expected Up)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+c1-ctr Up 2 seconds alpine:3.20
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- volume readable before init
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+stamp-c1-plaintext
+-- network list before
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+NETWORK ID     NAME      DRIVER    SCOPE
+f9bd9b819dc6   bridge    bridge    local
+a0ab0f019d23   host      host      local
+d43d051ea09f   none      null      local
+-- docker info swarm state before: inactive
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- listeners before (netstat -lnt)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+Active Internet connections (only servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       
+tcp        0      0 127.0.0.11:38177        0.0.0.0:*               LISTEN      
+tcp        0      0 :::2376                 :::*                    LISTEN      
+-- links before: 4
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+/tmp/c1.sh: line 35: can't create /work-src/artifacts/logs/in-c1.log: Permission denied
+
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- iptables rule lines before: 49
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- swarm-managed label on c1-ctr before init (expect <no value>):
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+
+===== C1.2 docker swarm init --advertise-addr eth0 =====
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+Swarm initialized: current node (o5ti8wlcrmmqtv8m3fn7htgbs) is now a manager.
+
+To add a worker to this swarm, run the following command:
+
+    docker swarm join --token SWMTKN-1-4m18teqmqyqc2lagahod7yzst1pqoi6ml0b79c0pzszpjfsy97-4303bxvnl2ldhssl6lqqzm2bh 10.10.0.2:2377
+
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+===== C1.3 post-init side-effect inventory =====
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- docker ps after (c1-ctr must still be Up)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+c1-ctr Up 4 seconds alpine:3.20
+C1-ASSERT-EXISTING_CONTAINER_RUNNING: PASS
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- volume data readable after init
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+stamp-c1-plaintext
+C1-ASSERT-EXISTING_VOLUME_DATA_INTACT: PASS
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- c1-ctr stays a plain (non-swarm) container; swarm task label expect <no value>:
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- docker info after
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+LocalNodeState=active ControlAvailable=true NodeID=o5ti8wlcrmmqtv8m3fn7htgbs
+C1-ASSERT-INFO_SWARM_ACTIVE: PASS
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- node ls
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+o5ti8wlcrmmqtv8m3fn7htgbs *   m0         Ready     Active         Leader           29.8.1
+-- network list after (expect +ingress +docker_gwbridge)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+NETWORK ID     NAME              DRIVER    SCOPE
+f9bd9b819dc6   bridge            bridge    local
+9a5cf5324779   docker_gwbridge   bridge    local
+a0ab0f019d23   host              host      local
+2rt2kh66dnxi   ingress           overlay   swarm
+d43d051ea09f   none              null      local
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+C1-ASSERT-NETWORKS_INGRESS_GWBRIDGE: PASS
+-- listeners after (expect :2377 :7946 :4789)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+Active Internet connections (only servers)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+Proto Recv-Q Send-Q Local Address           Foreign Address         State       
+tcp        0      0 127.0.0.11:38177        0.0.0.0:*               LISTEN      
+tcp        0      0 :::2376                 :::*                    LISTEN      
+tcp        0      0 :::2377                 :::*                    LISTEN      
+tcp        0      0 :::7946                 :::*                    LISTEN      
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+C1-ASSERT-LISTEN_2377: PASS
+-- links after: 6  (before logged above)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+/tmp/c1.sh: line 73: can't create /work-src/artifacts/logs/in-c1.log: Permission denied
+
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- iptables rule lines after: 56
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- iptables diff (chains/rules added by swarm init, first 40 lines)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+--- /tmp/c1-ipt-before.txt
++++ /tmp/c1-ipt-after.txt
+@@ -1,11 +1,12 @@
+-# Generated by iptables-save v1.8.13 (nf_tables) on Thu Sep 17 19:47:31 2026
++# Generated by iptables-save v1.8.13 (nf_tables) on Thu Sep 17 19:47:34 2026
+ *raw
+ :PREROUTING ACCEPT [0:0]
+ :OUTPUT ACCEPT [0:0]
+ -A PREROUTING -d 172.17.0.2/32 ! -i docker0 -j DROP
++-A PREROUTING -d 172.18.0.2/32 ! -i docker_gwbridge -j DROP
+ COMMIT
+-# Completed on Thu Sep 17 19:47:31 2026
+-# Generated by iptables-save v1.8.13 (nf_tables) on Thu Sep 17 19:47:31 2026
++# Completed on Thu Sep 17 19:47:34 2026
++# Generated by iptables-save v1.8.13 (nf_tables) on Thu Sep 17 19:47:34 2026
+ *filter
+ :INPUT ACCEPT [0:0]
+ :FORWARD ACCEPT [0:0]
+@@ -19,15 +20,20 @@
+ -A FORWARD -j DOCKER-USER
+ -A FORWARD -j DOCKER-FORWARD
+ -A DOCKER ! -i docker0 -o docker0 -j DROP
++-A DOCKER ! -i docker_gwbridge -o docker_gwbridge -j DROP
+ -A DOCKER-BRIDGE -o docker0 -j DOCKER
++-A DOCKER-BRIDGE -o docker_gwbridge -j DOCKER
+ -A DOCKER-CT -o docker0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
++-A DOCKER-CT -o docker_gwbridge -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+ -A DOCKER-FORWARD -j DOCKER-CT
+ -A DOCKER-FORWARD -j DOCKER-INTERNAL
+ -A DOCKER-FORWARD -j DOCKER-BRIDGE
+ -A DOCKER-FORWARD -i docker0 -j ACCEPT
++-A DOCKER-FORWARD -i docker_gwbridge -o docker_gwbridge -j DROP
++-A DOCKER-FORWARD -i docker_gwbridge ! -o docker_gwbridge -j ACCEPT
+ COMMIT
+-# Completed on Thu Sep 17 19:47:31 2026
+-# Generated by iptables-save v1.8.13 (nf_tables) on Thu Sep 17 19:47:31 2026
++# Completed on Thu Sep 17 19:47:34 2026
++# Generated by iptables-save v1.8.13 (nf_tables) on Thu Sep 17 19:47:34 2026
+ *nat
+ :PREROUTING ACCEPT [0:0]
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+-- volume list after (c1vol untouched)
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+DRIVER    VOLUME NAME
+local     c1vol
+C1-OK
+tee: /work-src/artifacts/logs/in-c1.log: Permission denied
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"C1-OK" artifacts\logs\in-c1.log  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo C1 FAILED   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C0 done ===== 
+===== C0 done =====

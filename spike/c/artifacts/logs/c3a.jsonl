@@ -1,0 +1,254 @@
+WATCHER-START name=c3a side=mgr svc=c3-app node=w1 ms=1789675936227
+1789675936234 nodes mgr=Ready/Active w1=Ready/Active 
+1789675936234 svc c3-app.1|w1|Running 6 seconds ago|Running
+1789675937269 nodes mgr=Ready/Active w1=Ready/Active 
+1789675937269 svc c3-app.1|w1|Running 7 seconds ago|Running
+1789675938305 nodes mgr=Ready/Active w1=Ready/Active 
+1789675938305 svc c3-app.1|w1|Running 8 seconds ago|Running
+1789675939342 nodes mgr=Ready/Active w1=Ready/Active 
+1789675939342 svc c3-app.1|w1|Running 9 seconds ago|Running
+1789675940381 nodes mgr=Ready/Active w1=Ready/Active 
+1789675940381 svc c3-app.1|w1|Running 10 seconds ago|Running
+1789675941417 nodes mgr=Ready/Active w1=Ready/Active 
+1789675941417 svc c3-app.1|w1|Running 11 seconds ago|Running
+1789675942456 nodes mgr=Ready/Active w1=Ready/Active 
+1789675942456 svc c3-app.1|w1|Running 12 seconds ago|Running
+1789675943495 nodes mgr=Ready/Active w1=Ready/Active 
+1789675943495 svc c3-app.1|w1|Running 13 seconds ago|Running
+1789675944531 nodes mgr=Ready/Active w1=Ready/Active 
+1789675944531 svc c3-app.1|w1|Running 14 seconds ago|Running
+1789675945565 nodes mgr=Ready/Active w1=Ready/Active 
+1789675945565 svc c3-app.1|w1|Running 15 seconds ago|Running
+1789675946605 nodes mgr=Ready/Active w1=Ready/Active 
+1789675946605 svc c3-app.1|w1|Running 16 seconds ago|Running
+1789675947642 nodes mgr=Ready/Active w1=Ready/Active 
+1789675947642 svc c3-app.1|w1|Running 17 seconds ago|Running
+1789675948677 nodes mgr=Ready/Active w1=Ready/Active 
+1789675948677 svc c3-app.1|w1|Running 18 seconds ago|Running
+1789675949711 nodes mgr=Ready/Active w1=Ready/Active 
+1789675949711 svc c3-app.1|w1|Running 19 seconds ago|Running
+1789675950760 nodes mgr=Ready/Active w1=Ready/Active 
+1789675950760 svc c3-app.1|w1|Running 20 seconds ago|Running
+1789675951795 nodes mgr=Ready/Active w1=Ready/Active 
+1789675951795 svc c3-app.1|w1|Running 21 seconds ago|Running
+1789675952877 nodes mgr=Ready/Active w1=Ready/Active 
+1789675952877 svc c3-app.1|w1|Running 22 seconds ago|Running
+1789675953914 nodes mgr=Ready/Active w1=Down/Active 
+1789675953914 svc c3-app.1|mgr|Ready less than a second ago|Ready
+1789675953914 svc c3-app.1|w1|Running 23 seconds ago|Shutdown
+1789675954965 nodes mgr=Ready/Active w1=Down/Active 
+1789675954965 svc c3-app.1|mgr|Ready 1 second ago|Ready
+1789675954965 svc c3-app.1|w1|Running 24 seconds ago|Shutdown
+1789675956025 nodes mgr=Ready/Active w1=Down/Active 
+1789675956025 svc c3-app.1|mgr|Ready 2 seconds ago|Ready
+1789675956025 svc c3-app.1|w1|Running 25 seconds ago|Shutdown
+1789675957063 nodes mgr=Ready/Active w1=Down/Active 
+1789675957063 svc c3-app.1|mgr|Ready 3 seconds ago|Ready
+1789675957063 svc c3-app.1|w1|Running 26 seconds ago|Shutdown
+1789675958102 nodes mgr=Ready/Active w1=Down/Active 
+1789675958102 svc c3-app.1|mgr|Starting less than a second ago|Running
+1789675958102 svc c3-app.1|w1|Running 27 seconds ago|Shutdown
+1789675959141 nodes mgr=Ready/Active w1=Down/Active 
+1789675959141 svc c3-app.1|mgr|Running less than a second ago|Running
+1789675959141 svc c3-app.1|w1|Running 29 seconds ago|Shutdown
+1789675960176 nodes mgr=Ready/Active w1=Down/Active 
+1789675960176 svc c3-app.1|mgr|Running 1 second ago|Running
+1789675960176 svc c3-app.1|w1|Running 30 seconds ago|Shutdown
+1789675961211 nodes mgr=Ready/Active w1=Down/Active 
+1789675961211 svc c3-app.1|mgr|Running 2 seconds ago|Running
+1789675961211 svc c3-app.1|w1|Running 31 seconds ago|Shutdown
+1789675962246 nodes mgr=Ready/Active w1=Down/Active 
+1789675962246 svc c3-app.1|mgr|Running 4 seconds ago|Running
+1789675962246 svc c3-app.1|w1|Running 32 seconds ago|Shutdown
+1789675963282 nodes mgr=Ready/Active w1=Down/Active 
+1789675963282 svc c3-app.1|mgr|Running 5 seconds ago|Running
+1789675963282 svc c3-app.1|w1|Running 33 seconds ago|Shutdown
+1789675964324 nodes mgr=Ready/Active w1=Down/Active 
+1789675964324 svc c3-app.1|mgr|Running 6 seconds ago|Running
+1789675964324 svc c3-app.1|w1|Running 34 seconds ago|Shutdown
+1789675965358 nodes mgr=Ready/Active w1=Down/Active 
+1789675965358 svc c3-app.1|mgr|Running 7 seconds ago|Running
+1789675965358 svc c3-app.1|w1|Running 35 seconds ago|Shutdown
+1789675966396 nodes mgr=Ready/Active w1=Down/Active 
+1789675966396 svc c3-app.1|mgr|Running 8 seconds ago|Running
+1789675966396 svc c3-app.1|w1|Running 36 seconds ago|Shutdown
+1789675967431 nodes mgr=Ready/Active w1=Down/Active 
+1789675967431 svc c3-app.1|mgr|Running 9 seconds ago|Running
+1789675967431 svc c3-app.1|w1|Running 37 seconds ago|Shutdown
+1789675968466 nodes mgr=Ready/Active w1=Down/Active 
+1789675968466 svc c3-app.1|mgr|Running 10 seconds ago|Running
+1789675968466 svc c3-app.1|w1|Running 38 seconds ago|Shutdown
+1789675969516 nodes mgr=Ready/Active w1=Down/Active 
+1789675969516 svc c3-app.1|mgr|Running 11 seconds ago|Running
+1789675969516 svc c3-app.1|w1|Running 39 seconds ago|Shutdown
+1789675970559 nodes mgr=Ready/Active w1=Down/Active 
+1789675970559 svc c3-app.1|mgr|Running 12 seconds ago|Running
+1789675970559 svc c3-app.1|w1|Running 40 seconds ago|Shutdown
+1789675971626 nodes mgr=Ready/Active w1=Down/Active 
+1789675971626 svc c3-app.1|mgr|Running 13 seconds ago|Running
+1789675971626 svc c3-app.1|w1|Running 41 seconds ago|Shutdown
+1789675972679 nodes mgr=Ready/Active w1=Down/Active 
+1789675972679 svc c3-app.1|mgr|Running 14 seconds ago|Running
+1789675972679 svc c3-app.1|w1|Running 42 seconds ago|Shutdown
+1789675973756 nodes mgr=Ready/Active w1=Down/Active 
+1789675973756 svc c3-app.1|mgr|Running 15 seconds ago|Running
+1789675973756 svc c3-app.1|w1|Running 43 seconds ago|Shutdown
+1789675974795 nodes mgr=Ready/Active w1=Down/Active 
+1789675974795 svc c3-app.1|mgr|Running 16 seconds ago|Running
+1789675974795 svc c3-app.1|w1|Running 44 seconds ago|Shutdown
+1789675975834 nodes mgr=Ready/Active w1=Down/Active 
+1789675975834 svc c3-app.1|mgr|Running 17 seconds ago|Running
+1789675975834 svc c3-app.1|w1|Running 45 seconds ago|Shutdown
+1789675976870 nodes mgr=Ready/Active w1=Down/Active 
+1789675976870 svc c3-app.1|mgr|Running 18 seconds ago|Running
+1789675976870 svc c3-app.1|w1|Running 46 seconds ago|Shutdown
+1789675977921 nodes mgr=Ready/Active w1=Down/Active 
+1789675977921 svc c3-app.1|mgr|Running 19 seconds ago|Running
+1789675977921 svc c3-app.1|w1|Running 47 seconds ago|Shutdown
+1789675978956 nodes mgr=Ready/Active w1=Down/Active 
+1789675978956 svc c3-app.1|mgr|Running 20 seconds ago|Running
+1789675978956 svc c3-app.1|w1|Running 48 seconds ago|Shutdown
+1789675979995 nodes mgr=Ready/Active w1=Down/Active 
+1789675979995 svc c3-app.1|mgr|Running 21 seconds ago|Running
+1789675979995 svc c3-app.1|w1|Running 49 seconds ago|Shutdown
+1789675981035 nodes mgr=Ready/Active w1=Down/Active 
+1789675981035 svc c3-app.1|mgr|Running 22 seconds ago|Running
+1789675981035 svc c3-app.1|w1|Running 50 seconds ago|Shutdown
+1789675982072 nodes mgr=Ready/Active w1=Down/Active 
+1789675982072 svc c3-app.1|mgr|Running 23 seconds ago|Running
+1789675982072 svc c3-app.1|w1|Running 51 seconds ago|Shutdown
+1789675983116 nodes mgr=Ready/Active w1=Down/Active 
+1789675983116 svc c3-app.1|mgr|Running 24 seconds ago|Running
+1789675983116 svc c3-app.1|w1|Running 53 seconds ago|Shutdown
+1789675984153 nodes mgr=Ready/Active w1=Down/Active 
+1789675984153 svc c3-app.1|mgr|Running 25 seconds ago|Running
+1789675984153 svc c3-app.1|w1|Running 54 seconds ago|Shutdown
+1789675985189 nodes mgr=Ready/Active w1=Down/Active 
+1789675985189 svc c3-app.1|mgr|Running 26 seconds ago|Running
+1789675985189 svc c3-app.1|w1|Running 55 seconds ago|Shutdown
+1789675986228 nodes mgr=Ready/Active w1=Down/Active 
+1789675986228 svc c3-app.1|mgr|Running 28 seconds ago|Running
+1789675986228 svc c3-app.1|w1|Running 56 seconds ago|Shutdown
+1789675987282 nodes mgr=Ready/Active w1=Down/Active 
+1789675987282 svc c3-app.1|mgr|Running 29 seconds ago|Running
+1789675987282 svc c3-app.1|w1|Running 57 seconds ago|Shutdown
+1789675988336 nodes mgr=Ready/Active w1=Down/Active 
+1789675988336 svc c3-app.1|mgr|Running 30 seconds ago|Running
+1789675988336 svc c3-app.1|w1|Running 58 seconds ago|Shutdown
+1789675989378 nodes mgr=Ready/Active w1=Down/Active 
+1789675989378 svc c3-app.1|mgr|Running 31 seconds ago|Running
+1789675989378 svc c3-app.1|w1|Running 59 seconds ago|Shutdown
+1789675990416 nodes mgr=Ready/Active w1=Down/Active 
+1789675990416 svc c3-app.1|mgr|Running 32 seconds ago|Running
+1789675990416 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675991451 nodes mgr=Ready/Active w1=Down/Active 
+1789675991451 svc c3-app.1|mgr|Running 33 seconds ago|Running
+1789675991451 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675992486 nodes mgr=Ready/Active w1=Down/Active 
+1789675992486 svc c3-app.1|mgr|Running 34 seconds ago|Running
+1789675992486 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675993520 nodes mgr=Ready/Active w1=Down/Active 
+1789675993520 svc c3-app.1|mgr|Running 35 seconds ago|Running
+1789675993520 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675994561 nodes mgr=Ready/Active w1=Down/Active 
+1789675994561 svc c3-app.1|mgr|Running 36 seconds ago|Running
+1789675994561 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675995596 nodes mgr=Ready/Active w1=Down/Active 
+1789675995596 svc c3-app.1|mgr|Running 37 seconds ago|Running
+1789675995596 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675996634 nodes mgr=Ready/Active w1=Down/Active 
+1789675996634 svc c3-app.1|mgr|Running 38 seconds ago|Running
+1789675996634 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675997669 nodes mgr=Ready/Active w1=Down/Active 
+1789675997669 svc c3-app.1|mgr|Running 39 seconds ago|Running
+1789675997669 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675998711 nodes mgr=Ready/Active w1=Down/Active 
+1789675998711 svc c3-app.1|mgr|Running 40 seconds ago|Running
+1789675998711 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789675999772 nodes mgr=Ready/Active w1=Down/Active 
+1789675999772 svc c3-app.1|mgr|Running 41 seconds ago|Running
+1789675999772 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676000814 nodes mgr=Ready/Active w1=Down/Active 
+1789676000814 svc c3-app.1|mgr|Running 42 seconds ago|Running
+1789676000814 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676001866 nodes mgr=Ready/Active w1=Down/Active 
+1789676001866 svc c3-app.1|mgr|Running 43 seconds ago|Running
+1789676001866 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676002903 nodes mgr=Ready/Active w1=Down/Active 
+1789676002903 svc c3-app.1|mgr|Running 44 seconds ago|Running
+1789676002903 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676003939 nodes mgr=Ready/Active w1=Down/Active 
+1789676003939 svc c3-app.1|mgr|Running 45 seconds ago|Running
+1789676003939 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676004989 nodes mgr=Ready/Active w1=Down/Active 
+1789676004989 svc c3-app.1|mgr|Running 46 seconds ago|Running
+1789676004989 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676006025 nodes mgr=Ready/Active w1=Down/Active 
+1789676006025 svc c3-app.1|mgr|Running 47 seconds ago|Running
+1789676006025 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676007066 nodes mgr=Ready/Active w1=Down/Active 
+1789676007066 svc c3-app.1|mgr|Running 48 seconds ago|Running
+1789676007066 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676008100 nodes mgr=Ready/Active w1=Down/Active 
+1789676008100 svc c3-app.1|mgr|Running 49 seconds ago|Running
+1789676008100 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676009139 nodes mgr=Ready/Active w1=Down/Active 
+1789676009139 svc c3-app.1|mgr|Running 50 seconds ago|Running
+1789676009139 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676010174 nodes mgr=Ready/Active w1=Down/Active 
+1789676010174 svc c3-app.1|mgr|Running 51 seconds ago|Running
+1789676010174 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676011214 nodes mgr=Ready/Active w1=Down/Active 
+1789676011214 svc c3-app.1|mgr|Running 52 seconds ago|Running
+1789676011214 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676012252 nodes mgr=Ready/Active w1=Down/Active 
+1789676012252 svc c3-app.1|mgr|Running 54 seconds ago|Running
+1789676012252 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676013291 nodes mgr=Ready/Active w1=Down/Active 
+1789676013291 svc c3-app.1|mgr|Running 55 seconds ago|Running
+1789676013291 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676014333 nodes mgr=Ready/Active w1=Down/Active 
+1789676014333 svc c3-app.1|mgr|Running 56 seconds ago|Running
+1789676014333 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676015378 nodes mgr=Ready/Active w1=Down/Active 
+1789676015378 svc c3-app.1|mgr|Running 57 seconds ago|Running
+1789676015378 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676016420 nodes mgr=Ready/Active w1=Down/Active 
+1789676016420 svc c3-app.1|mgr|Running 58 seconds ago|Running
+1789676016420 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676017474 nodes mgr=Ready/Active w1=Down/Active 
+1789676017474 svc c3-app.1|mgr|Running 59 seconds ago|Running
+1789676017474 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676018515 nodes mgr=Ready/Active w1=Down/Active 
+1789676018515 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676018515 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676019554 nodes mgr=Ready/Active w1=Down/Active 
+1789676019554 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676019554 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676020591 nodes mgr=Ready/Active w1=Down/Active 
+1789676020591 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676020591 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676021629 nodes mgr=Ready/Active w1=Down/Active 
+1789676021629 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676021629 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676022668 nodes mgr=Ready/Active w1=Down/Active 
+1789676022668 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676022668 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676023708 nodes mgr=Ready/Active w1=Down/Active 
+1789676023708 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676023708 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676024745 nodes mgr=Ready/Active w1=Down/Active 
+1789676024745 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676024745 svc c3-app.1|w1|Running about a minute ago|Shutdown
+1789676025785 nodes mgr=Ready/Active w1=Down/Active 
+1789676025785 svc c3-app.1|mgr|Running about a minute ago|Running
+1789676025785 svc c3-app.1|w1|Running about a minute ago|Shutdown
+===== ANALYSIS name=c3a =====
+milestone kill-ms:    1789675939464
+milestone restart-ms: none
+milestone drain-ms:   none
+milestone active-ms:  none
+down-at-ms: 1789675953914
+delta-kill-to-down-s: 14.4
+rescheduled-running-at-ms: 
+c3a-DONE

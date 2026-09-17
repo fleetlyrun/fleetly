@@ -1,0 +1,76 @@
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>set "TAG=t20" 
+
+D:\Codes\qiulin\edgesets\spike\c>if "t20" == "" set "TAG=t5" 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5B sample t20 ===== 
+===== V5B sample t20 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w sh -c "echo t20-ms=$(/opt/probe ts); docker ps -a --format '{{.ID}} {{.Names}} {{.Status}}' | grep -i c5-new; docker ps --format '{{.Names}}' | grep -q c5-new && echo V5B-C5NEW-CONTAINER: STILL-RUNNING || echo V5B-C5NEW-CONTAINER: GONE; docker ps --format '{{.ID}} {{.Names}} {{.Status}}'"  1>artifacts\logs\v5b-sample-t20.log 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\v5b-sample-t20.log 
+t20-ms=1789677697236
+V5B-C5NEW-CONTAINER: GONE
+907d5eb8d49a c6-old.1.c59v27dc524s4rv18dzy6ye0i Up 9 minutes
+e90a2804461c c5-app-worker.1.ko7pqx09g0zzup3diffjv1w5c Up 11 minutes
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m2 sh -c "echo -- service ls from restored manager --; docker service ls; echo -- c5-new service def? --; docker service ps c5-new 2>&1 | head -3; echo -- c5-app-worker task --; docker service ps c5-app-worker --format '{{.ID}} {{.Name}} {{.Node}} {{.CurrentState}}'"  1>>artifacts\logs\v5b-sample-t20.log 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\v5b-sample-t20.log 
+t20-ms=1789677697236
+V5B-C5NEW-CONTAINER: GONE
+907d5eb8d49a c6-old.1.c59v27dc524s4rv18dzy6ye0i Up 9 minutes
+e90a2804461c c5-app-worker.1.ko7pqx09g0zzup3diffjv1w5c Up 11 minutes
+-- service ls from restored manager --
+ID             NAME            MODE         REPLICAS   IMAGE         PORTS
+0cld7lfyxk0l   c5-app-mgr      replicated   1/1        alpine:3.20   
+5rm7or4u6cpf   c5-app-worker   replicated   1/1        alpine:3.20   
+qfp3vq3d0gjr   c6-old          replicated   1/1        alpine:3.20   
+-- c5-new service def? --
+no such service: c5-new
+-- c5-app-worker task --
+ko7pqx09g0zz c5-app-worker.1 v5w Running 11 minutes ago
+ithfqhldro8f c5-app-worker.1 v5w Shutdown 11 minutes ago
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5B sample t20 done ===== 
+===== V5B sample t20 done =====

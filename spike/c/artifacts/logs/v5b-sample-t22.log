@@ -1,0 +1,14 @@
+t22-ms=1789678505495
+V5B-C5NEW-CONTAINER: GONE
+907d5eb8d49a c6-old.1.c59v27dc524s4rv18dzy6ye0i Up 22 minutes
+e90a2804461c c5-app-worker.1.ko7pqx09g0zzup3diffjv1w5c Up 25 minutes
+-- service ls from restored manager --
+ID             NAME            MODE         REPLICAS   IMAGE         PORTS
+0cld7lfyxk0l   c5-app-mgr      replicated   1/1        alpine:3.20   
+5rm7or4u6cpf   c5-app-worker   replicated   1/1        alpine:3.20   
+qfp3vq3d0gjr   c6-old          replicated   1/1        alpine:3.20   
+-- c5-new service def? --
+no such service: c5-new
+-- c5-app-worker task --
+ko7pqx09g0zz c5-app-worker.1 v5w Running 25 minutes ago
+ithfqhldro8f c5-app-worker.1 v5w Shutdown 25 minutes ago

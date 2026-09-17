@@ -1,0 +1,9 @@
+stamp-ms=1789676192277 svc=c3-app vol=c3vol op=read-helper
+STAMP-OK {
+  "host": "f5f567b3dfb2",
+  "iso": "2026-09-17T20:12:15.954428966Z",
+  "ms": 1789675935954,
+  "pid": 7,
+  "token": "c3a-initial-worker"
+}
+stamp-rc=0

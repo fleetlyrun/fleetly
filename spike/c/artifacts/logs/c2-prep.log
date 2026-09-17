@@ -1,0 +1,139 @@
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.1 teardown leftovers ===== 
+===== PREP.1 teardown leftovers =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker rm -f spike-c-m0 spike-c-mgr spike-c-w1  2>nul 
+spike-c-mgr
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.2 boot mgr + w1 (static IPs, hostnames mgr/w1) ===== 
+===== PREP.2 boot mgr + w1 (static IPs, hostnames mgr/w1) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker run -d --name spike-c-mgr --hostname mgr --privileged --network spike-c-br --ip 10.10.0.10 -v "D:\Codes\qiulin\edgesets\spike\c\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+c07c9b130f5beca387b1de2d521c053fbfcfdb0fd8a1a5affcc53109ce5e2c04
+
+D:\Codes\qiulin\edgesets\spike\c>docker run -d --name spike-c-w1 --hostname w1 --privileged --network spike-c-br --ip 10.10.0.11 -v "D:\Codes\qiulin\edgesets\spike\c\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+adbd566d9bacad9396962983631e7e7bf2974dcb2224b9da0b156286d0eec321
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.3 wait inner dockerd both ===== 
+===== PREP.3 wait inner dockerd both =====
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto mgrready 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 60 (echo mgr dockerd not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitmgr 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto mgrready 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto w1ready 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.4 stage probe binary at /opt/probe on both nodes ===== 
+===== PREP.4 stage probe binary at /opt/probe on both nodes =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr sh -c "cp /work-src/dockerctx/probe /opt/probe && chmod +x /opt/probe"   || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "cp /work-src/dockerctx/probe /opt/probe && chmod +x /opt/probe"   || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.5 pre-pull alpine:3.20 on both nodes ===== 
+===== PREP.5 pre-pull alpine:3.20 on both nodes =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker pull alpine:3.20  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 docker pull alpine:3.20  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.6 swarm init + join ===== 
+===== PREP.6 swarm init + join =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker swarm init --advertise-addr eth0   || exit /b 1 
+Swarm initialized: current node (4qxsi5de7f2tsma4h9jzk3os0) is now a manager.
+
+To add a worker to this swarm, run the following command:
+
+    docker swarm join --token SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b7x7rfnixc9lqs5ycicfsi6-ezsn6o2kg4gusk4vmmwm2mh5t 10.10.0.10:2377
+
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+
+D:\Codes\qiulin\edgesets\spike\c>for /F %t in ('docker exec spike-c-mgr docker swarm join-token -q worker') do set "JTOK=%t" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "JTOK=SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b7x7rfnixc9lqs5ycicfsi6-ezsn6o2kg4gusk4vmmwm2mh5t" 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 docker swarm join 10.10.0.10:2377 --token SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b7x7rfnixc9lqs5ycicfsi6-ezsn6o2kg4gusk4vmmwm2mh5t   || exit /b 1 
+This node joined a swarm as a worker.
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.7 platform identity labels (edgefleet.node-id) ===== 
+===== PREP.7 platform identity labels (edgefleet.node-id) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add edgefleet.node-id=mgr mgr   || exit /b 1 
+mgr
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add edgefleet.node-id=w1 w1   || exit /b 1 
+w1
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.8 sanity ===== 
+===== PREP.8 sanity =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls   || exit /b 1 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+4qxsi5de7f2tsma4h9jzk3os0 *   mgr        Ready     Active         Leader           29.8.1
+7bug0ewlfh0yq4yfx6mmfd1qq     w1         Ready     Active                          29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"mgr=Ready" /C:"w1=Ready"   1>nul  || (echo cluster not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C-PREP done ===== 
+===== C-PREP done =====

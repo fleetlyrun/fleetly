@@ -1,0 +1,159 @@
+V5BK-START 
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5BK.1 start worker-side continuity watcher (25 min window, 3s) ===== 
+===== V5BK.1 start worker-side continuity watcher (25 min window, 3s) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec -d spike-c-v5w sh -c "cp /work-src/scripts/in-watch.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh v5w 1500 node '' '' 3" 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5BK.2 in-manager sha256 of key swarm files (verification basis) ===== 
+===== V5BK.2 in-manager sha256 of key swarm files (verification basis) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m sh -c "cd /var/lib/docker/swarm && sha256sum state.json certificates/swarm-node.crt certificates/swarm-node.key && ls -la"  1>artifacts\logs\v5-swarm-hashes-before.txt 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\v5-swarm-hashes-before.txt 
+52cfebda9c896966ee6885ff07ecc7ec66caf683dedbc99098ff09ef97d2e766  state.json
+a9220ed259201ba655c3c7b15fda4e08c2dea21d54dca7921b2bca13ef9c5a2a  certificates/swarm-node.crt
+96b7fb73a6050510f3eabb60f9614281aebae0aba2641aa981e0b02fea652e4f  certificates/swarm-node.key
+total 28
+drwx------    5 root     root          4096 Sep 17 20:29 .
+drwx--x---   13 root     root          4096 Sep 17 20:29 ..
+drwxr-xr-x    2 root     root          4096 Sep 17 20:29 certificates
+-rw-------    1 root     root           205 Sep 17 20:29 docker-state.json
+drwx------    4 root     root          4096 Sep 17 20:29 raft
+-rw-------    1 root     root            66 Sep 17 20:29 state.json
+drwxrwxrwx    2 root     root          4096 Sep 17 20:29 worker
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5BK.3 HOT fallback tar (manager running; quiescent cluster) ===== 
+===== V5BK.3 HOT fallback tar (manager running; quiescent cluster) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m sh -c "tar czf /work-src/artifacts/hostbak/swarm-hot.tgz -C /var/lib/docker swarm && ls -la /work-src/artifacts/hostbak/" 
+total 168
+drwxrwxrwx    1 root     root          4096 Sep 17 20:30 .
+drwxrwxrwx    1 root     root          4096 Sep 17 19:47 ..
+-rw-r--r--    1 root     root        172032 Sep 17 20:30 swarm-hot.tgz
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo hot tar failed   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5BK.4 backup stop #1: docker stop -t 30 (dockerd graceful down) ===== 
+===== V5BK.4 backup stop #1: docker stop -t 30 (dockerd graceful down) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker stop -t 30 spike-c-v5m   || exit /b 1 
+spike-c-v5m
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 3 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5BK.5 COLD backup: docker cp from the STOPPED manager ===== 
+===== V5BK.5 COLD backup: docker cp from the STOPPED manager =====
+
+D:\Codes\qiulin\edgesets\spike\c>rmdir /s /q artifacts\hostbak\swarm-cp  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker cp spike-c-v5m:/var/lib/docker/swarm artifacts\hostbak\swarm-cp 
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (
+echo DOCKER-CP-FROM-STOPPED-FAILED - falling back to hot tgz on restore  
+ echo DOCKER-CP-FROM-STOPPED-FAILED  1>artifacts\logs\v5-cp-verdict.txt 
+)  else (echo DOCKER-CP-FROM-STOPPED-OK  1>artifacts\logs\v5-cp-verdict.txt ) 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\v5-cp-verdict.txt 
+DOCKER-CP-FROM-STOPPED-OK 
+
+D:\Codes\qiulin\edgesets\spike\c>dir /s /b artifacts\hostbak\swarm-cp   | findstr /C:"state.json" /C:"swarm-node"  
+D:\Codes\qiulin\edgesets\spike\c\artifacts\hostbak\swarm-cp\docker-state.json
+D:\Codes\qiulin\edgesets\spike\c\artifacts\hostbak\swarm-cp\state.json
+D:\Codes\qiulin\edgesets\spike\c\artifacts\hostbak\swarm-cp\certificates\swarm-node.crt
+D:\Codes\qiulin\edgesets\spike\c\artifacts\hostbak\swarm-cp\certificates\swarm-node.key
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5BK.6 byte-verify: host certutil vs in-manager sha256 ===== 
+===== V5BK.6 byte-verify: host certutil vs in-manager sha256 =====
+
+D:\Codes\qiulin\edgesets\spike\c>certutil -hashfile artifacts\hostbak\swarm-cp\swarm\state.json SHA256 
+CertUtil: -hashfile 失败: 0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND)
+CertUtil: 系统找不到指定的文件。
+
+D:\Codes\qiulin\edgesets\spike\c>certutil -hashfile artifacts\hostbak\swarm-cp\swarm\certificates\swarm-node.crt SHA256 
+CertUtil: -hashfile 失败: 0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND)
+CertUtil: 系统找不到指定的文件。
+
+D:\Codes\qiulin\edgesets\spike\c>certutil -hashfile artifacts\hostbak\swarm-cp\swarm\certificates\swarm-node.key SHA256 
+CertUtil: -hashfile 失败: 0x80070002 (WIN32: 2 ERROR_FILE_NOT_FOUND)
+CertUtil: 系统找不到指定的文件。
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5BK.7 manager back up (same container = same identity) ===== 
+===== V5BK.7 manager back up (same container = same identity) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker start spike-c-v5m   || exit /b 1 
+spike-c-v5m
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto mup 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 60 (echo v5m dockerd not back   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitm 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto mup 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 3 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node ls 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+tcvjcv69llui7izrgarsn60uo *   v5m        Ready     Active         Leader           29.8.1
+uecz4zb4dh3bqgnli0zk6e5d0     v5w        Ready     Active                          29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker service ls 
+ID             NAME            MODE         REPLICAS   IMAGE         PORTS
+0cld7lfyxk0l   c5-app-mgr      replicated   0/1        alpine:3.20   
+5rm7or4u6cpf   c5-app-worker   replicated   1/1        alpine:3.20   
+qfp3vq3d0gjr   c6-old          replicated   1/1        alpine:3.20   
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5-BACKUP done ===== 
+===== V5-BACKUP done =====

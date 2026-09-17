@@ -1,0 +1,11 @@
+52cfebda9c896966ee6885ff07ecc7ec66caf683dedbc99098ff09ef97d2e766  state.json
+a9220ed259201ba655c3c7b15fda4e08c2dea21d54dca7921b2bca13ef9c5a2a  certificates/swarm-node.crt
+96b7fb73a6050510f3eabb60f9614281aebae0aba2641aa981e0b02fea652e4f  certificates/swarm-node.key
+total 28
+drwx------    5 root     root          4096 Sep 17 20:29 .
+drwx--x---   13 root     root          4096 Sep 17 20:29 ..
+drwxr-xr-x    2 root     root          4096 Sep 17 20:29 certificates
+-rw-------    1 root     root           205 Sep 17 20:29 docker-state.json
+drwx------    4 root     root          4096 Sep 17 20:29 raft
+-rw-------    1 root     root            66 Sep 17 20:29 state.json
+drwxrwxrwx    2 root     root          4096 Sep 17 20:29 worker

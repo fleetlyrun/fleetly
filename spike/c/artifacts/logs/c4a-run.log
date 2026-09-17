@@ -1,0 +1,1058 @@
+C4A-RUN-START 
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A.1 create pinned volume service on w1 ===== 
+===== C4A.1 create pinned volume service on w1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c4-app  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service create --name c4-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c4vol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
+wih2241ok1g6zgb4biiz73sbi
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service wih2241ok1g6zgb4biiz73sbi converged
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4-app 1 w1 120" 
+WAITSVC-OK c4-app running=1 want=1 after=0s
+ID             NAME       IMAGE         NODE      DESIRED STATE   CURRENT STATE           ERROR     PORTS
+ewef08ywy0zj   c4-app.1   alpine:3.20   w1        Running         Running 5 seconds ago             
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo C4A task never Running on w1   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A.2 BEFORE: write + read stamp ===== 
+===== C4A.2 BEFORE: write + read stamp =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "cp /work-src/scripts/in-stamp.sh /tmp/s.sh && sed -i 's/\r$//' /tmp/s.sh && sh /tmp/s.sh c4-app c4vol /data write c4a-initial-worker" 
+stamp-ms=1789676625230 svc=c4-app vol=c4vol op=write
+task-container=f6646f879153
+STAMP-WRITTEN {
+  "host": "f6646f879153",
+  "iso": "2026-09-17T20:23:45.279879554Z",
+  "ms": 1789676625279,
+  "pid": 7,
+  "token": "c4a-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "sh /tmp/s.sh c4-app c4vol /data read" 
+stamp-ms=1789676625410 svc=c4-app vol=c4vol op=read
+task-container=f6646f879153
+STAMP-OK {
+  "host": "f6646f879153",
+  "iso": "2026-09-17T20:23:45.279879554Z",
+  "ms": 1789676625279,
+  "pid": 7,
+  "token": "c4a-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A.3 watcher + drain w1 ===== 
+===== C4A.3 watcher + drain w1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec -d spike-c-mgr sh -c "cp /work-src/scripts/in-watch.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4a 110 mgr c4-app w1 1" 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 4 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --availability drain w1   || exit /b 1 
+w1
+
+D:\Codes\qiulin\edgesets\spike\c>for /F %t in ('docker exec spike-c-mgr /opt/probe ts') do echo %t 1>artifacts\logs\c4a.drain 
+
+D:\Codes\qiulin\edgesets\spike\c>echo 1789676628885 1>artifacts\logs\c4a.drain 
+
+D:\Codes\qiulin\edgesets\spike\c>echo drain milestone captured (artifacts\logs\c4a.drain) 
+drain milestone captured (artifacts\logs\c4a.drain)
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A.4 +20s: app blocked semantics ===== 
+===== C4A.4 +20s: app blocked semantics =====
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 21 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- node ls (w1 Ready/drain) --- 
+--- node ls (w1 Ready/drain) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+4qxsi5de7f2tsma4h9jzk3os0 *   mgr        Ready     Active         Leader           29.8.1
+7bug0ewlfh0yq4yfx6mmfd1qq     w1         Ready     Drain                           29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- service ps (expect old Shutdown + new PENDING, nothing Running) --- 
+--- service ps (expect old Shutdown + new PENDING, nothing Running) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c4-app 
+ID             NAME           IMAGE         NODE      DESIRED STATE   CURRENT STATE            ERROR                              PORTS
+oq55ozpdbzjx   c4-app.1       alpine:3.20             Running         Pending 20 seconds ago   "no suitable node (1 node not …"   
+ewef08ywy0zj    \_ c4-app.1   alpine:3.20   w1        Shutdown        Shutdown 9 seconds ago                                      
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- running count (expect 0) --- 
+--- running count (expect 0) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c4-app --format "{{.CurrentState}}"   | find /c "Run" 
+0
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- w1 docker ps (task container gone = app down at the node) --- 
+--- w1 docker ps (task container gone = app down at the node) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 docker ps -a --format "{{.Names}} {{.Status}}" 
+c4-app.1.ewef08ywy0zjz7qbwj9x08int Exited (137) 9 seconds ago
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- volume data still on w1 (helper read, no task container) --- 
+--- volume data still on w1 (helper read, no task container) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "sh /tmp/s.sh c4-app c4vol /data read-helper" 
+stamp-ms=1789676649693 svc=c4-app vol=c4vol op=read-helper
+STAMP-OK {
+  "host": "f6646f879153",
+  "iso": "2026-09-17T20:23:45.279879554Z",
+  "ms": 1789676625279,
+  "pid": 7,
+  "token": "c4a-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A.5 reactivate (active) - rebind ===== 1>automatic 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --availability active w1   || exit /b 1 
+w1
+
+D:\Codes\qiulin\edgesets\spike\c>for /F %t in ('docker exec spike-c-mgr /opt/probe ts') do echo %t 1>artifacts\logs\c4a.active 
+
+D:\Codes\qiulin\edgesets\spike\c>echo 1789676650397 1>artifacts\logs\c4a.active 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4-app 1 w1 120" 
+WAITSVC-OK c4-app running=1 want=1 after=1s
+ID             NAME           IMAGE         NODE      DESIRED STATE   CURRENT STATE                    ERROR     PORTS
+oq55ozpdbzjx   c4-app.1       alpine:3.20   w1        Running         Running less than a second ago             
+ewef08ywy0zj    \_ c4-app.1   alpine:3.20   w1        Shutdown        Shutdown 11 seconds ago                    
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo C4A task never came back after active   & goto skip ) 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A.6 AFTER: read stamp - data intact ===== 
+===== C4A.6 AFTER: read stamp - data intact =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "sh /tmp/s.sh c4-app c4vol /data read" 
+stamp-ms=1789676651705 svc=c4-app vol=c4vol op=read
+task-container=fe285e19c534
+STAMP-OK {
+  "host": "f6646f879153",
+  "iso": "2026-09-17T20:23:45.279879554Z",
+  "ms": 1789676625279,
+  "pid": 7,
+  "token": "c4a-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- marker: STAMP-OK same token/ms as C4A.2 = drain roundtrip keeps data --- 
+--- marker: STAMP-OK same token/ms as C4A.2 = drain roundtrip keeps data ---
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A.7 watcher analysis + cleanup ===== 
+===== C4A.7 watcher analysis + cleanup =====
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 2 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 3 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 4 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 5 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 6 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 7 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 8 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 9 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 10 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 11 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 12 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 13 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 14 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 15 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 16 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 17 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 18 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 19 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 20 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 21 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 22 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 23 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 24 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 25 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 26 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 27 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 28 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 29 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 30 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 31 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 32 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 33 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 34 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 35 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 36 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 37 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 38 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 39 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 40 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 41 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 42 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 43 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 44 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 45 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 46 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 47 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 48 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 49 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 50 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 51 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 52 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 53 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 54 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 55 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 56 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 57 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 58 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 59 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 60 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 61 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 62 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 63 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 64 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 65 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 66 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 67 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 68 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 69 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 70 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 71 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 72 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 73 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 74 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 75 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 76 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 77 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 78 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 79 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 80 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 81 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 82 GEQ 120 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4a-DONE" artifacts\logs\c4a.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\c4a.jsonl   | findstr /C:"ANALYSIS" /C:"milestone" /C:"delta" /C:"-at-ms" /C:"DONE" 
+===== ANALYSIS name=c4a =====
+milestone kill-ms:    none
+milestone restart-ms: none
+milestone drain-ms:   1789676628885
+milestone active-ms:  1789676650397
+pending-after-drain-at-ms: 1789676629792
+task-back-after-active-at-ms: 1789676651582
+delta-active-to-task-back-s: 1.1
+c4a-DONE
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c4-app 
+c4-app
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4A done ===== 
+===== C4A done =====

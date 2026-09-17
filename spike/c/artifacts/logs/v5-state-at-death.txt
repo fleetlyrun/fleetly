@@ -1,0 +1,4 @@
+ID             NAME            MODE         REPLICAS   IMAGE         PORTS
+0cld7lfyxk0l   c5-app-mgr      replicated   1/1        alpine:3.20   
+5rm7or4u6cpf   c5-app-worker   replicated   1/1        alpine:3.20   
+td2q49f2jwkn   c5-new          replicated   1/1        alpine:3.20   

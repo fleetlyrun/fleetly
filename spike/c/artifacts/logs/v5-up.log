@@ -1,0 +1,305 @@
+V5UP-START 
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5UP.1 teardown phase-2 leftovers ===== 
+===== V5UP.1 teardown phase-2 leftovers =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker rm -f spike-c-mgr spike-c-w1 spike-c-w2  2>nul 
+spike-c-mgr
+spike-c-w1
+spike-c-w2
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5UP.2 boot v5m + v5w ===== 
+===== V5UP.2 boot v5m + v5w =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker rm -f spike-c-v5m spike-c-v5w spike-c-v5m2  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker run -d --name spike-c-v5m --hostname v5m --privileged --network spike-c-br --ip 10.10.0.20 -v "D:\Codes\qiulin\edgesets\spike\c\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+3ea88ad110e4b58dc5e924cc7b28c1946d773e6d19fe0fb42573a841ec229d92
+
+D:\Codes\qiulin\edgesets\spike\c>docker run -d --name spike-c-v5w --hostname v5w --privileged --network spike-c-br --ip 10.10.0.21 -v "D:\Codes\qiulin\edgesets\spike\c\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+033cfe058d242f398eed25a4960cf20993e58a1739a8eedd006c18dff8169750
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto mup 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 60 (echo v5m dockerd not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitm 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto mup 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto wup 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m sh -c "cp /work-src/dockerctx/probe /opt/probe && chmod +x /opt/probe"   || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w sh -c "cp /work-src/dockerctx/probe /opt/probe && chmod +x /opt/probe"   || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker pull alpine:3.20  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w docker pull alpine:3.20  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5UP.3 swarm init + join + labels ===== 
+===== V5UP.3 swarm init + join + labels =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker swarm init --advertise-addr eth0   || exit /b 1 
+Swarm initialized: current node (tcvjcv69llui7izrgarsn60uo) is now a manager.
+
+To add a worker to this swarm, run the following command:
+
+    docker swarm join --token SWMTKN-1-5xry090jcxx7pbml84knont82xu73kbnwx9ssxkekned8689c2-b9gske78t2ag3k5u87mjaskkd 10.10.0.20:2377
+
+To add a manager to this swarm, run 'docker swarm join-token manager' and follow the instructions.
+
+D:\Codes\qiulin\edgesets\spike\c>for /F %t in ('docker exec spike-c-v5m docker swarm join-token -q worker') do set "JTOK=%t" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "JTOK=SWMTKN-1-5xry090jcxx7pbml84knont82xu73kbnwx9ssxkekned8689c2-b9gske78t2ag3k5u87mjaskkd" 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w docker swarm join 10.10.0.20:2377 --token SWMTKN-1-5xry090jcxx7pbml84knont82xu73kbnwx9ssxkekned8689c2-b9gske78t2ag3k5u87mjaskkd   || exit /b 1 
+This node joined a swarm as a worker.
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --label-add edgefleet.node-id=v5m v5m   || exit /b 1 
+v5m
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --label-add edgefleet.node-id=v5w v5w   || exit /b 1 
+v5w
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node ls 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+tcvjcv69llui7izrgarsn60uo *   v5m        Ready     Active         Leader           29.8.1
+uecz4zb4dh3bqgnli0zk6e5d0     v5w        Ready     Active                          29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5UP.4 c5-app-worker pinned to worker ===== 
+===== V5UP.4 c5-app-worker pinned to worker =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker service create --name c5-app-worker --replicas 1 --constraint node.role==worker alpine:3.20 sleep 31536000   || exit /b 1 
+5rm7or4u6cpfq9n8d67gidu5q
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service 5rm7or4u6cpfq9n8d67gidu5q converged
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c5-app-worker 1 v5w 120"   || exit /b 1 
+WAITSVC-OK c5-app-worker running=1 want=1 after=0s
+ID             NAME              IMAGE         NODE      DESIRED STATE   CURRENT STATE           ERROR     PORTS
+ithfqhldro8f   c5-app-worker.1   alpine:3.20   v5w       Running         Running 5 seconds ago             
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5UP.5 c5-app-mgr forced onto manager (drain trick, no constraint) ===== 
+===== V5UP.5 c5-app-mgr forced onto manager (drain trick, no constraint) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --availability drain v5w   || exit /b 1 
+v5w
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker service create --name c5-app-mgr --replicas 1 alpine:3.20 sleep 31536000   || exit /b 1 
+0cld7lfyxk0l9f13lev3rksd1
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service 0cld7lfyxk0l9f13lev3rksd1 converged
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m sh -c "sh /tmp/w.sh c5-app-mgr 1 v5m 120"   || exit /b 1 
+WAITSVC-OK c5-app-mgr running=1 want=1 after=0s
+ID             NAME           IMAGE         NODE      DESIRED STATE   CURRENT STATE           ERROR     PORTS
+h8ktrpapzjkv   c5-app-mgr.1   alpine:3.20   v5m       Running         Running 5 seconds ago             
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --availability active v5w   || exit /b 1 
+v5w
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5UP.6 c6-old (volume service on worker; will be deleted after backup) ===== 
+===== V5UP.6 c6-old (volume service on worker; will be deleted after backup) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker service create --name c6-old --replicas 1 --constraint node.role==worker --mount type=volume,source=c6vol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
+qfp3vq3d0gjr63lvv12of6276
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service qfp3vq3d0gjr63lvv12of6276 converged
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m sh -c "sh /tmp/w.sh c6-old 1 v5w 120"   || exit /b 1 
+WAITSVC-OK c6-old running=1 want=1 after=0s
+ID             NAME       IMAGE         NODE      DESIRED STATE   CURRENT STATE           ERROR     PORTS
+p7g1iagxev4r   c6-old.1   alpine:3.20   v5w       Running         Running 5 seconds ago             
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w sh -c "cp /work-src/scripts/in-stamp.sh /tmp/s.sh && sed -i 's/\r$//' /tmp/s.sh && sh /tmp/s.sh c6-old c6vol /data write c6-original-on-v5w" 
+stamp-ms=1789677001681 svc=c6-old vol=c6vol op=write
+task-container=4a7cd5777f12
+STAMP-WRITTEN {
+  "host": "4a7cd5777f12",
+  "iso": "2026-09-17T20:30:01.731306751Z",
+  "ms": 1789677001731,
+  "pid": 7,
+  "token": "c6-original-on-v5w"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w sh -c "sh /tmp/s.sh c6-old c6vol /data read" 
+stamp-ms=1789677001850 svc=c6-old vol=c6vol op=read
+task-container=4a7cd5777f12
+STAMP-OK {
+  "host": "4a7cd5777f12",
+  "iso": "2026-09-17T20:30:01.731306751Z",
+  "ms": 1789677001731,
+  "pid": 7,
+  "token": "c6-original-on-v5w"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5UP.7 baseline snapshots ===== 
+===== V5UP.7 baseline snapshots =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker service ls 
+ID             NAME            MODE         REPLICAS   IMAGE         PORTS
+0cld7lfyxk0l   c5-app-mgr      replicated   1/1        alpine:3.20   
+5rm7or4u6cpf   c5-app-worker   replicated   1/1        alpine:3.20   
+qfp3vq3d0gjr   c6-old          replicated   1/1        alpine:3.20   
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker service ps c5-app-worker --format "{{.ID}} {{.Name}} {{.Node}} {{.CurrentState}}"  1>artifacts\logs\v5-taskids-before.txt 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\v5-taskids-before.txt 
+ko7pqx09g0zz c5-app-worker.1 v5w Running 6 seconds ago
+ithfqhldro8f c5-app-worker.1 v5w Shutdown 7 seconds ago
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w docker ps --format "{{.ID}} {{.Names}} {{.Status}}"  1>artifacts\logs\v5-containers-before.txt 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\v5-containers-before.txt 
+4a7cd5777f12 c6-old.1.p7g1iagxev4rv2s1re7cmxi3q Up 6 seconds
+e90a2804461c c5-app-worker.1.ko7pqx09g0zzup3diffjv1w5c Up 7 seconds
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== V5-UP done ===== 
+===== V5-UP done =====

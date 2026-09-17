@@ -1,0 +1,3250 @@
+C3B-RUN-START 
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.1 create pinned volume service on w1 ===== 
+===== C3B.1 create pinned volume service on w1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c3b-app  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service create --name c3b-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c3bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
+ptm5iecv5ovovt40vd7tci3tu
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service ptm5iecv5ovovt40vd7tci3tu converged
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c3b-app 1 w1 120" 
+WAITSVC-OK c3b-app running=1 want=1 after=0s
+ID             NAME        IMAGE         NODE      DESIRED STATE   CURRENT STATE           ERROR     PORTS
+jbuqinvsxpbk   c3b-app.1   alpine:3.20   w1        Running         Running 5 seconds ago             
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo C3B task never Running on w1   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 docker volume inspect c3bvol --format "c3bvol-on-w1 CreatedAt={{.CreatedAt}}" 
+c3bvol-on-w1 CreatedAt=2026-09-17T20:16:39Z
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.2 BEFORE: write + read stamp on w1 ===== 
+===== C3B.2 BEFORE: write + read stamp on w1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "cp /work-src/scripts/in-stamp.sh /tmp/s.sh && sed -i 's/\r$//' /tmp/s.sh && sh /tmp/s.sh c3b-app c3bvol /data write c3b-initial-worker" 
+stamp-ms=1789676205628 svc=c3b-app vol=c3bvol op=write
+task-container=dee2ac9ed4c8
+STAMP-WRITTEN {
+  "host": "dee2ac9ed4c8",
+  "iso": "2026-09-17T20:16:45.682495447Z",
+  "ms": 1789676205682,
+  "pid": 7,
+  "token": "c3b-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "sh /tmp/s.sh c3b-app c3bvol /data read" 
+stamp-ms=1789676205793 svc=c3b-app vol=c3bvol op=read
+task-container=dee2ac9ed4c8
+STAMP-OK {
+  "host": "dee2ac9ed4c8",
+  "iso": "2026-09-17T20:16:45.682495447Z",
+  "ms": 1789676205682,
+  "pid": 7,
+  "token": "c3b-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.3 watcher (360s window covers kill- recovery- ===== 1>back) 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec -d spike-c-mgr sh -c "cp /work-src/scripts/in-watch.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c3b 360 mgr c3b-app w1 1" 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 4 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.4 kill w1 ===== 
+===== C3B.4 kill w1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>rem pre-kill runtime cleanup so the next dockerd boot is deterministic 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "rm -f /run/docker/containerd/containerd.pid /run/docker/containerd/containerd.sock /var/run/docker.pid"  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker kill spike-c-w1   || exit /b 1 
+spike-c-w1
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>for /F "delims=" %t in ('docker inspect spike-c-w1 --format "{{.State.FinishedAt}}"') do set "FIN=%t" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "FIN=2026-09-17T20:16:49.216617758Z" 
+
+D:\Codes\qiulin\edgesets\spike\c>echo 2026-09-17T20:16:49.216617758Z 1>artifacts\logs\c3b.kill 
+
+D:\Codes\qiulin\edgesets\spike\c>echo kill done, FinishedAt=2026-09-17T20:16:49.216617758Z 
+kill done, FinishedAt=2026-09-17T20:16:49.216617758Z
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.5 +25s: node Down, task PENDING, NOTHING on mgr ===== 
+===== C3B.5 +25s: node Down, task PENDING, NOTHING on mgr =====
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 26 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- node ls --- 
+--- node ls ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+4qxsi5de7f2tsma4h9jzk3os0 *   mgr        Ready     Active         Leader           29.8.1
+7bug0ewlfh0yq4yfx6mmfd1qq     w1         Down      Active                          29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- service ps (expect PENDING, no Running anywhere) --- 
+--- service ps (expect PENDING, no Running anywhere) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c3b-app 
+ID             NAME            IMAGE         NODE      DESIRED STATE   CURRENT STATE            ERROR                              PORTS
+j5zsat9ll71p   c3b-app.1       alpine:3.20             Running         Pending 12 seconds ago   "no suitable node (1 node not …"   
+jbuqinvsxpbk    \_ c3b-app.1   alpine:3.20   w1        Shutdown        Running 36 seconds ago                                      
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- running-task count on any node (expect 0) --- 
+--- running-task count on any node (expect 0) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c3b-app --format "{{.CurrentState}}"   | find /c "Run" 
+1
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.6 restart SAME dind container (docker start), capture StartedAt ===== 
+===== C3B.6 restart SAME dind container (docker start), capture StartedAt =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker start spike-c-w1   || exit /b 1 
+spike-c-w1
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>for /F "delims=" %t in ('docker inspect spike-c-w1 --format "{{.State.StartedAt}}"') do set "STA=%t" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "STA=2026-09-17T20:17:16.405636778Z" 
+
+D:\Codes\qiulin\edgesets\spike\c>echo 2026-09-17T20:17:16.405636778Z 1>artifacts\logs\c3b.restart 
+
+D:\Codes\qiulin\edgesets\spike\c>echo restart done, StartedAt=2026-09-17T20:17:16.405636778Z 
+restart done, StartedAt=2026-09-17T20:17:16.405636778Z
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.7 wait task back Running on w1 (cap 300s; dockerd recovery after kill can exceed 90s) ===== 
+===== C3B.7 wait task back Running on w1 (cap 300s; dockerd recovery after kill can exceed 90s) =====
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 2 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 3 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 4 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 5 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 6 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 7 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 8 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 9 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 10 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 11 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 12 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 13 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 14 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 15 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 16 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 17 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 18 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 19 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 20 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 21 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 22 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 23 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 24 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 25 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 26 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 27 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 28 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 29 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 30 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 31 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 32 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 33 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 34 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 35 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 36 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 37 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 38 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 39 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 40 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 41 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 42 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 43 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 44 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 45 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 46 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 47 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 48 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 49 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 50 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 51 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 52 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 53 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 54 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 55 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 56 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 57 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 58 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 59 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 60 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 61 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 62 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 63 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 64 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 65 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 66 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 67 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 68 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 69 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 70 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 71 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 72 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 73 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 74 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 75 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 76 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 77 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 78 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 79 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 80 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 81 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 82 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 83 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 84 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 85 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 86 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 87 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 88 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 89 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 90 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 91 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 92 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 93 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 94 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 95 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 96 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 97 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 98 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 99 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 100 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 101 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 102 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 103 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 104 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 105 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 106 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 107 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 108 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 109 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 110 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 111 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 112 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 113 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 114 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 115 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 116 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 117 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 118 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 119 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 120 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 121 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 122 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 123 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 124 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 125 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 126 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 127 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 128 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 129 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 130 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 131 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 132 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 133 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 134 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 135 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 136 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 137 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 138 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 139 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 140 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 141 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 142 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 143 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 144 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 145 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 146 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 147 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 148 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 149 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 150 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 151 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 152 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 153 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 154 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 155 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 156 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 157 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 158 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 159 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 160 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 161 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 162 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 163 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 164 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 165 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 166 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 167 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 168 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 169 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 170 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 171 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 172 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 173 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 174 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 175 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 176 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 177 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 178 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 179 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 180 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 181 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 182 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 183 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 184 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 185 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 186 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 187 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 188 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 189 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 190 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 191 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 192 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 193 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 194 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 195 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 196 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 197 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 198 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 199 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 200 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 201 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 202 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 203 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 204 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 205 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 206 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 207 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 208 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 209 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 210 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 211 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 212 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 213 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 214 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 215 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 216 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 217 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 218 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 219 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 220 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 221 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 222 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 223 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 224 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 225 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 226 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 227 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 228 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 229 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 230 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 231 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 232 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 233 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 234 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 235 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 236 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 237 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 238 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 239 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 240 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 241 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 242 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 243 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 244 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 245 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 246 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 247 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 248 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 249 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 250 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 251 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 252 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 253 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 254 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 255 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 256 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 257 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 258 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 259 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 260 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 261 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 262 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 263 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 264 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 265 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 266 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 267 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 268 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 269 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 270 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 271 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 272 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 273 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 274 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 275 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 276 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 277 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 278 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 279 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 280 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 281 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 282 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 283 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 284 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 285 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 286 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 287 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 288 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 289 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 290 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 291 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 292 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 293 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 294 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 295 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 296 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 297 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 298 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 299 GEQ 300 (echo task never came back to w1   & goto back ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitback 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "docker service ps c3b-app --format '{{.Node}}|{{.CurrentState}}' 2>/dev/null | grep -c '^w1|Running'"   2>nul  | findstr /r "[1-9]"   1>nul  && goto back 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 300 GEQ 300 (echo task never came back to w1   & goto back ) 
+task never came back to w1 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 3 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c3b-app 
+ID             NAME            IMAGE         NODE      DESIRED STATE   CURRENT STATE           ERROR                         PORTS
+j5zsat9ll71p   c3b-app.1       alpine:3.20   w1        Running         Running 5 minutes ago                                 
+jbuqinvsxpbk    \_ c3b-app.1   alpine:3.20   w1        Shutdown        Failed 5 minutes ago    "task: non-zero exit (255)"   
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.8 AFTER: read stamp on w1 - data must be intact ===== 
+===== C3B.8 AFTER: read stamp on w1 - data must be intact =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 docker volume inspect c3bvol --format "c3bvol-on-w1 CreatedAt={{.CreatedAt}} (must equal pre-kill)" 
+c3bvol-on-w1 CreatedAt=2026-09-17T20:16:39Z (must equal pre-kill)
+
+D:\Codes\qiulin\edgesets\spike\c>rem /tmp is wiped by the dind restart - restage before use 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "cp /work-src/scripts/in-stamp.sh /tmp/s.sh && sed -i 's/\r$//' /tmp/s.sh && sh /tmp/s.sh c3b-app c3bvol /data read" 
+stamp-ms=1789676584557 svc=c3b-app vol=c3bvol op=read
+task-container=bec611a299bc
+STAMP-OK {
+  "host": "dee2ac9ed4c8",
+  "iso": "2026-09-17T20:16:45.682495447Z",
+  "ms": 1789676205682,
+  "pid": 7,
+  "token": "c3b-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- marker: STAMP-OK with same ms/token as C3B.2 = data intact --- 
+--- marker: STAMP-OK with same ms/token as C3B.2 = data intact ---
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.9 wait watcher analysis + cleanup ===== 
+===== C3B.9 wait watcher analysis + cleanup =====
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c3b-DONE" artifacts\logs\c3b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\c3b.jsonl   | findstr /C:"ANALYSIS" /C:"milestone" /C:"delta" /C:"-at-ms" /C:"DONE" 
+===== ANALYSIS name=c3b =====
+milestone kill-ms:    1789676209216
+milestone restart-ms: 1789676236405
+milestone drain-ms:   none
+milestone active-ms:  none
+down-at-ms: 1789676223648
+delta-kill-to-down-s: 14.4
+rescheduled-running-at-ms: 
+node-ready-again-at-ms: 1789676238183
+delta-restart-to-ready-s: 1.7
+task-back-on-node-at-ms: 1789676237145
+delta-restart-to-task-back-s: 0.7
+pending-observed-at-ms (between kill and restart): 1789676223648
+c3b-DONE
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c3b-app 
+c3b-app
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B done ===== 
+===== C3B done =====

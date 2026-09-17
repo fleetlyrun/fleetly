@@ -1,0 +1,374 @@
+WATCHER-START name=c4b side=mgr svc=c4b-app node=w1 ms=1789676766888
+1789676766892 nodes mgr=Ready/Active w1=Ready/Active 
+1789676766892 svc c4b-app.1|w1|Running 5 seconds ago|Running
+1789676767927 nodes mgr=Ready/Active w1=Ready/Active 
+1789676767927 svc c4b-app.1|w1|Running 6 seconds ago|Running
+1789676768963 nodes mgr=Ready/Active w1=Ready/Active 
+1789676768963 svc c4b-app.1|w1|Running 7 seconds ago|Running
+1789676769998 nodes mgr=Ready/Active w1=Ready/Active 
+1789676769998 svc c4b-app.1|w1|Running 9 seconds ago|Running
+1789676771037 nodes mgr=Ready/Active w1=Ready/Active 
+1789676771037 svc c4b-app.1|w1|Running 10 seconds ago|Running
+1789676772073 nodes mgr=Ready/Active w1=Ready/Active 
+1789676772073 svc c4b-app.1|w1|Running 11 seconds ago|Running
+1789676773111 nodes mgr=Ready/Active w1=Ready/Active 
+1789676773111 svc c4b-app.1|w1|Running 12 seconds ago|Running
+1789676774149 nodes mgr=Ready/Active w1=Ready/Active 
+1789676774149 svc c4b-app.1|w1|Running 13 seconds ago|Running
+1789676775184 nodes mgr=Ready/Active w1=Ready/Active 
+1789676775184 svc c4b-app.1|w1|Running 14 seconds ago|Running
+1789676776223 nodes mgr=Ready/Active w1=Ready/Active 
+1789676776223 svc c4b-app.1|w1|Running 15 seconds ago|Running
+1789676777261 nodes mgr=Ready/Active w1=Ready/Active 
+1789676777261 svc c4b-app.1|w1|Running 16 seconds ago|Running
+1789676778299 nodes mgr=Ready/Active w1=Ready/Active 
+1789676778299 svc c4b-app.1|w1|Running 17 seconds ago|Running
+1789676779338 nodes mgr=Ready/Active w1=Ready/Active 
+1789676779338 svc c4b-app.1|w1|Running 18 seconds ago|Running
+1789676780373 nodes mgr=Ready/Active w1=Down/Active 
+1789676780373 svc c4b-app.1||Pending less than a second ago|Ready
+1789676780373 svc c4b-app.1|w1|Running 19 seconds ago|Shutdown
+1789676781408 nodes mgr=Ready/Active 
+1789676781408 svc c4b-app.1||Pending less than a second ago|Ready
+1789676781408 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned less than a second ago|Shutdown
+1789676782443 nodes mgr=Ready/Active 
+1789676782443 svc c4b-app.1||Pending 1 second ago|Ready
+1789676782443 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 1 second ago|Shutdown
+1789676783480 nodes mgr=Ready/Active 
+1789676783480 svc c4b-app.1||Pending 2 seconds ago|Ready
+1789676783480 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 2 seconds ago|Shutdown
+1789676784515 nodes mgr=Ready/Active 
+1789676784515 svc c4b-app.1||Pending 3 seconds ago|Ready
+1789676784515 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 3 seconds ago|Shutdown
+1789676785551 nodes mgr=Ready/Active 
+1789676785551 svc c4b-app.1||Pending 4 seconds ago|Running
+1789676785551 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 4 seconds ago|Shutdown
+1789676786591 nodes mgr=Ready/Active 
+1789676786591 svc c4b-app.1||Pending 5 seconds ago|Running
+1789676786591 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 5 seconds ago|Shutdown
+1789676787633 nodes mgr=Ready/Active 
+1789676787633 svc c4b-app.1||Pending 6 seconds ago|Running
+1789676787633 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 6 seconds ago|Shutdown
+1789676788668 nodes mgr=Ready/Active 
+1789676788668 svc c4b-app.1||Pending 7 seconds ago|Running
+1789676788668 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 7 seconds ago|Shutdown
+1789676789706 nodes mgr=Ready/Active 
+1789676789706 svc c4b-app.1||Pending 8 seconds ago|Running
+1789676789706 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 8 seconds ago|Shutdown
+1789676790748 nodes mgr=Ready/Active 
+1789676790748 svc c4b-app.1||Pending 9 seconds ago|Running
+1789676790748 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 9 seconds ago|Shutdown
+1789676791790 nodes mgr=Ready/Active 
+1789676791790 svc c4b-app.1||Pending 10 seconds ago|Running
+1789676791790 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 10 seconds ago|Shutdown
+1789676792832 nodes mgr=Ready/Active 
+1789676792832 svc c4b-app.1||Pending 11 seconds ago|Running
+1789676792832 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 11 seconds ago|Shutdown
+1789676793875 nodes mgr=Ready/Active 
+1789676793875 svc c4b-app.1||Pending 12 seconds ago|Running
+1789676793875 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 12 seconds ago|Shutdown
+1789676794912 nodes mgr=Ready/Active 
+1789676794912 svc c4b-app.1||Pending 13 seconds ago|Running
+1789676794912 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 13 seconds ago|Shutdown
+1789676795947 nodes mgr=Ready/Active 
+1789676795947 svc c4b-app.1||Pending 14 seconds ago|Running
+1789676795947 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 14 seconds ago|Shutdown
+1789676796982 nodes mgr=Ready/Active 
+1789676796982 svc c4b-app.1||Pending 15 seconds ago|Running
+1789676796982 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 16 seconds ago|Shutdown
+1789676798017 nodes mgr=Ready/Active 
+1789676798017 svc c4b-app.1||Pending 16 seconds ago|Running
+1789676798017 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 17 seconds ago|Shutdown
+1789676799054 nodes mgr=Ready/Active 
+1789676799054 svc c4b-app.1||Pending 18 seconds ago|Running
+1789676799054 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 18 seconds ago|Shutdown
+1789676800092 nodes mgr=Ready/Active 
+1789676800092 svc c4b-app.1||Pending 19 seconds ago|Running
+1789676800092 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 19 seconds ago|Shutdown
+1789676801128 nodes mgr=Ready/Active 
+1789676801128 svc c4b-app.1||Pending 20 seconds ago|Running
+1789676801128 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 20 seconds ago|Shutdown
+1789676802166 nodes mgr=Ready/Active 
+1789676802166 svc c4b-app.1||Pending 21 seconds ago|Running
+1789676802166 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 21 seconds ago|Shutdown
+1789676803202 nodes mgr=Ready/Active 
+1789676803202 svc c4b-app.1||Pending 22 seconds ago|Running
+1789676803202 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 22 seconds ago|Shutdown
+1789676804242 nodes mgr=Ready/Active 
+1789676804242 svc c4b-app.1||Pending 23 seconds ago|Running
+1789676804242 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 23 seconds ago|Shutdown
+1789676805285 nodes mgr=Ready/Active 
+1789676805285 svc c4b-app.1||Pending 24 seconds ago|Running
+1789676805285 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 24 seconds ago|Shutdown
+1789676806321 nodes mgr=Ready/Active 
+1789676806321 svc c4b-app.1||Pending 25 seconds ago|Running
+1789676806321 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 25 seconds ago|Shutdown
+1789676807356 nodes mgr=Ready/Active 
+1789676807356 svc c4b-app.1||Pending 26 seconds ago|Running
+1789676807356 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 26 seconds ago|Shutdown
+1789676808393 nodes mgr=Ready/Active 
+1789676808393 svc c4b-app.1||Pending 27 seconds ago|Running
+1789676808393 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 27 seconds ago|Shutdown
+1789676809431 nodes mgr=Ready/Active 
+1789676809431 svc c4b-app.1||Pending 28 seconds ago|Running
+1789676809431 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 28 seconds ago|Shutdown
+1789676810471 nodes mgr=Ready/Active 
+1789676810471 svc c4b-app.1||Pending 29 seconds ago|Running
+1789676810471 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 29 seconds ago|Shutdown
+1789676811507 nodes mgr=Ready/Active 
+1789676811507 svc c4b-app.1||Pending 30 seconds ago|Running
+1789676811507 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 30 seconds ago|Shutdown
+1789676812541 nodes mgr=Ready/Active 
+1789676812541 svc c4b-app.1||Pending 31 seconds ago|Running
+1789676812541 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 31 seconds ago|Shutdown
+1789676813578 nodes mgr=Ready/Active 
+1789676813578 svc c4b-app.1||Pending 32 seconds ago|Running
+1789676813578 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 32 seconds ago|Shutdown
+1789676814613 nodes mgr=Ready/Active 
+1789676814613 svc c4b-app.1||Pending 33 seconds ago|Running
+1789676814613 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 33 seconds ago|Shutdown
+1789676815652 nodes mgr=Ready/Active 
+1789676815652 svc c4b-app.1||Pending 34 seconds ago|Running
+1789676815652 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 34 seconds ago|Shutdown
+1789676816686 nodes mgr=Ready/Active 
+1789676816686 svc c4b-app.1||Pending 35 seconds ago|Running
+1789676816686 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 35 seconds ago|Shutdown
+1789676817722 nodes mgr=Ready/Active 
+1789676817722 svc c4b-app.1||Pending 36 seconds ago|Running
+1789676817722 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 36 seconds ago|Shutdown
+1789676818760 nodes mgr=Ready/Active 
+1789676818760 svc c4b-app.1||Pending 37 seconds ago|Running
+1789676818760 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 37 seconds ago|Shutdown
+1789676819800 nodes mgr=Ready/Active 
+1789676819800 svc c4b-app.1||Pending 38 seconds ago|Running
+1789676819800 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 38 seconds ago|Shutdown
+1789676820841 nodes mgr=Ready/Active 
+1789676820841 svc c4b-app.1||Pending 39 seconds ago|Running
+1789676820841 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 39 seconds ago|Shutdown
+1789676821881 nodes mgr=Ready/Active 
+1789676821881 svc c4b-app.1||Pending 40 seconds ago|Running
+1789676821881 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 40 seconds ago|Shutdown
+1789676822917 nodes mgr=Ready/Active 
+1789676822917 svc c4b-app.1||Pending 41 seconds ago|Running
+1789676822917 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 41 seconds ago|Shutdown
+1789676823953 nodes mgr=Ready/Active 
+1789676823953 svc c4b-app.1||Pending 42 seconds ago|Running
+1789676823953 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 42 seconds ago|Shutdown
+1789676825006 nodes mgr=Ready/Active 
+1789676825006 svc c4b-app.1||Pending 43 seconds ago|Running
+1789676825006 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 44 seconds ago|Shutdown
+1789676826043 nodes mgr=Ready/Active 
+1789676826043 svc c4b-app.1||Pending 45 seconds ago|Running
+1789676826043 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 45 seconds ago|Shutdown
+1789676827082 nodes mgr=Ready/Active 
+1789676827082 svc c4b-app.1||Pending 46 seconds ago|Running
+1789676827082 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 46 seconds ago|Shutdown
+1789676828118 nodes mgr=Ready/Active 
+1789676828118 svc c4b-app.1||Pending 47 seconds ago|Running
+1789676828118 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 47 seconds ago|Shutdown
+1789676829154 nodes mgr=Ready/Active 
+1789676829154 svc c4b-app.1||Pending 48 seconds ago|Running
+1789676829154 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 48 seconds ago|Shutdown
+1789676830190 nodes mgr=Ready/Active 
+1789676830190 svc c4b-app.1||Pending 49 seconds ago|Running
+1789676830190 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 49 seconds ago|Shutdown
+1789676831226 nodes mgr=Ready/Active 
+1789676831226 svc c4b-app.1||Pending 50 seconds ago|Running
+1789676831226 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 50 seconds ago|Shutdown
+1789676832262 nodes mgr=Ready/Active 
+1789676832262 svc c4b-app.1||Pending 51 seconds ago|Running
+1789676832262 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 51 seconds ago|Shutdown
+1789676833298 nodes mgr=Ready/Active 
+1789676833298 svc c4b-app.1||Pending 52 seconds ago|Running
+1789676833298 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 52 seconds ago|Shutdown
+1789676834340 nodes mgr=Ready/Active 
+1789676834340 svc c4b-app.1||Pending 53 seconds ago|Running
+1789676834340 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 53 seconds ago|Shutdown
+1789676835391 nodes mgr=Ready/Active 
+1789676835391 svc c4b-app.1||Pending 54 seconds ago|Running
+1789676835391 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 54 seconds ago|Shutdown
+1789676836477 nodes mgr=Ready/Active 
+1789676836477 svc c4b-app.1||Pending 55 seconds ago|Running
+1789676836477 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 55 seconds ago|Shutdown
+1789676837513 nodes mgr=Ready/Active 
+1789676837513 svc c4b-app.1||Pending 56 seconds ago|Running
+1789676837513 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 56 seconds ago|Shutdown
+1789676838550 nodes mgr=Ready/Active 
+1789676838550 svc c4b-app.1||Pending 57 seconds ago|Running
+1789676838550 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 57 seconds ago|Shutdown
+1789676839586 nodes mgr=Ready/Active 
+1789676839586 svc c4b-app.1||Pending 58 seconds ago|Running
+1789676839586 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 58 seconds ago|Shutdown
+1789676840623 nodes mgr=Ready/Active 
+1789676840623 svc c4b-app.1||Pending 59 seconds ago|Running
+1789676840623 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned 59 seconds ago|Shutdown
+1789676841658 nodes mgr=Ready/Active 
+1789676841658 svc c4b-app.1||Pending about a minute ago|Running
+1789676841658 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676842698 nodes mgr=Ready/Active 
+1789676842698 svc c4b-app.1||Pending about a minute ago|Running
+1789676842698 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676843739 nodes mgr=Ready/Active 
+1789676843739 svc c4b-app.1||Pending about a minute ago|Running
+1789676843739 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676844776 nodes mgr=Ready/Active 
+1789676844776 svc c4b-app.1||Pending about a minute ago|Running
+1789676844776 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676845827 nodes mgr=Ready/Active 
+1789676845827 svc c4b-app.1||Pending about a minute ago|Running
+1789676845827 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676846880 nodes mgr=Ready/Active 
+1789676846880 svc c4b-app.1||Pending about a minute ago|Running
+1789676846880 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676847982 nodes mgr=Ready/Active 
+1789676847982 svc c4b-app.1||Pending about a minute ago|Running
+1789676847982 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676849026 nodes mgr=Ready/Active 
+1789676849026 svc c4b-app.1||Pending about a minute ago|Running
+1789676849026 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676850061 nodes =Unknown/Active mgr=Ready/Active 
+1789676850061 svc c4b-app.1||Pending less than a second ago|Running
+1789676850061 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676851098 nodes mgr=Ready/Active w2=Ready/Active 
+1789676851098 svc c4b-app.1||Pending less than a second ago|Running
+1789676851098 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676852135 nodes mgr=Ready/Active w2=Ready/Active 
+1789676852135 svc c4b-app.1||Pending 1 second ago|Running
+1789676852135 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676853171 nodes mgr=Ready/Active w2=Ready/Active 
+1789676853171 svc c4b-app.1|w2|Running less than a second ago|Running
+1789676853171 svc c4b-app.1||Shutdown less than a second ago|Shutdown
+1789676853171 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676854209 nodes mgr=Ready/Active w2=Ready/Active 
+1789676854209 svc c4b-app.1|w2|Running 1 second ago|Running
+1789676854209 svc c4b-app.1||Shutdown 1 second ago|Shutdown
+1789676854209 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676855247 nodes mgr=Ready/Active w2=Ready/Active 
+1789676855247 svc c4b-app.1|w2|Running 2 seconds ago|Running
+1789676855247 svc c4b-app.1||Shutdown 2 seconds ago|Shutdown
+1789676855247 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676856283 nodes mgr=Ready/Active w2=Ready/Active 
+1789676856283 svc c4b-app.1|w2|Running 3 seconds ago|Running
+1789676856283 svc c4b-app.1||Shutdown 3 seconds ago|Shutdown
+1789676856283 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676857392 nodes mgr=Ready/Active w2=Ready/Active 
+1789676857392 svc c4b-app.1|w2|Running 4 seconds ago|Running
+1789676857392 svc c4b-app.1||Shutdown 4 seconds ago|Shutdown
+1789676857392 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676858428 nodes mgr=Ready/Active w2=Ready/Active 
+1789676858428 svc c4b-app.1|w2|Running 5 seconds ago|Running
+1789676858428 svc c4b-app.1||Shutdown 5 seconds ago|Shutdown
+1789676858428 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676859464 nodes mgr=Ready/Active w2=Ready/Active 
+1789676859464 svc c4b-app.1|w2|Running 6 seconds ago|Running
+1789676859464 svc c4b-app.1||Shutdown 6 seconds ago|Shutdown
+1789676859464 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676860502 nodes mgr=Ready/Active w2=Ready/Active 
+1789676860502 svc c4b-app.1|w2|Running 7 seconds ago|Running
+1789676860502 svc c4b-app.1||Shutdown 7 seconds ago|Shutdown
+1789676860502 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676861539 nodes mgr=Ready/Active w2=Ready/Active 
+1789676861539 svc c4b-app.1|w2|Running 8 seconds ago|Running
+1789676861539 svc c4b-app.1||Shutdown 8 seconds ago|Shutdown
+1789676861539 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676862579 nodes mgr=Ready/Active w2=Ready/Active 
+1789676862579 svc c4b-app.1|w2|Running 9 seconds ago|Running
+1789676862579 svc c4b-app.1||Shutdown 9 seconds ago|Shutdown
+1789676862579 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676863627 nodes mgr=Ready/Active w2=Ready/Active 
+1789676863627 svc c4b-app.1|w2|Running 10 seconds ago|Running
+1789676863627 svc c4b-app.1||Shutdown 11 seconds ago|Shutdown
+1789676863627 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676864696 nodes mgr=Ready/Active w2=Ready/Active 
+1789676864696 svc c4b-app.1|w2|Running 11 seconds ago|Running
+1789676864696 svc c4b-app.1||Shutdown 12 seconds ago|Shutdown
+1789676864696 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676865773 nodes mgr=Ready/Active w2=Ready/Active 
+1789676865773 svc c4b-app.1|w2|Running 12 seconds ago|Running
+1789676865773 svc c4b-app.1||Shutdown 13 seconds ago|Shutdown
+1789676865773 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676866834 nodes mgr=Ready/Active w2=Ready/Active 
+1789676866834 svc c4b-app.1|w2|Running 13 seconds ago|Running
+1789676866834 svc c4b-app.1||Shutdown 14 seconds ago|Shutdown
+1789676866834 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676867882 nodes mgr=Ready/Active w2=Ready/Active 
+1789676867882 svc c4b-app.1|w2|Running 14 seconds ago|Running
+1789676867882 svc c4b-app.1||Shutdown 15 seconds ago|Shutdown
+1789676867882 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676868926 nodes mgr=Ready/Active w2=Ready/Active 
+1789676868926 svc c4b-app.1|w2|Running 15 seconds ago|Running
+1789676868926 svc c4b-app.1||Shutdown 16 seconds ago|Shutdown
+1789676868926 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676869963 nodes mgr=Ready/Active w2=Ready/Active 
+1789676869963 svc c4b-app.1|w2|Running 16 seconds ago|Running
+1789676869963 svc c4b-app.1||Shutdown 17 seconds ago|Shutdown
+1789676869963 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676871001 nodes mgr=Ready/Active w2=Ready/Active 
+1789676871001 svc c4b-app.1|w2|Running 17 seconds ago|Running
+1789676871001 svc c4b-app.1||Shutdown 18 seconds ago|Shutdown
+1789676871001 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676872049 nodes mgr=Ready/Active w2=Ready/Active 
+1789676872049 svc c4b-app.1|w2|Running 19 seconds ago|Running
+1789676872049 svc c4b-app.1||Shutdown 19 seconds ago|Shutdown
+1789676872049 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676873097 nodes mgr=Ready/Active w2=Ready/Active 
+1789676873097 svc c4b-app.1|w2|Running 20 seconds ago|Running
+1789676873097 svc c4b-app.1||Shutdown 20 seconds ago|Shutdown
+1789676873097 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676874135 nodes mgr=Ready/Active w2=Ready/Active 
+1789676874135 svc c4b-app.1|w2|Running 21 seconds ago|Running
+1789676874135 svc c4b-app.1||Shutdown 21 seconds ago|Shutdown
+1789676874135 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676875171 nodes mgr=Ready/Active w2=Ready/Active 
+1789676875171 svc c4b-app.1|w2|Running 22 seconds ago|Running
+1789676875171 svc c4b-app.1||Shutdown 22 seconds ago|Shutdown
+1789676875171 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676876208 nodes mgr=Ready/Active w2=Ready/Active 
+1789676876208 svc c4b-app.1|w2|Running 23 seconds ago|Running
+1789676876208 svc c4b-app.1||Shutdown 23 seconds ago|Shutdown
+1789676876208 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676877244 nodes mgr=Ready/Active w2=Ready/Active 
+1789676877244 svc c4b-app.1|w2|Running 24 seconds ago|Running
+1789676877244 svc c4b-app.1||Shutdown 24 seconds ago|Shutdown
+1789676877244 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676878323 nodes mgr=Ready/Active w2=Ready/Active 
+1789676878323 svc c4b-app.1|w2|Running 25 seconds ago|Running
+1789676878323 svc c4b-app.1||Shutdown 25 seconds ago|Shutdown
+1789676878323 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676879361 nodes mgr=Ready/Active w2=Ready/Active 
+1789676879361 svc c4b-app.1|w2|Running 26 seconds ago|Running
+1789676879361 svc c4b-app.1||Shutdown 26 seconds ago|Shutdown
+1789676879361 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676880400 nodes mgr=Ready/Active w2=Ready/Active 
+1789676880400 svc c4b-app.1|w2|Running 27 seconds ago|Running
+1789676880400 svc c4b-app.1||Shutdown 27 seconds ago|Shutdown
+1789676880400 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676881436 nodes mgr=Ready/Active w2=Ready/Active 
+1789676881436 svc c4b-app.1|w2|Running 28 seconds ago|Running
+1789676881436 svc c4b-app.1||Shutdown 28 seconds ago|Shutdown
+1789676881436 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676882473 nodes mgr=Ready/Active w2=Ready/Active 
+1789676882473 svc c4b-app.1|w2|Running 29 seconds ago|Running
+1789676882473 svc c4b-app.1||Shutdown 29 seconds ago|Shutdown
+1789676882473 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676883524 nodes mgr=Ready/Active w2=Ready/Active 
+1789676883524 svc c4b-app.1|w2|Running 30 seconds ago|Running
+1789676883524 svc c4b-app.1||Shutdown 30 seconds ago|Shutdown
+1789676883524 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676884573 nodes mgr=Ready/Active w2=Ready/Active 
+1789676884573 svc c4b-app.1|w2|Running 31 seconds ago|Running
+1789676884573 svc c4b-app.1||Shutdown 31 seconds ago|Shutdown
+1789676884573 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+1789676885619 nodes mgr=Ready/Active w2=Ready/Active 
+1789676885619 svc c4b-app.1|w2|Running 32 seconds ago|Running
+1789676885619 svc c4b-app.1||Shutdown 32 seconds ago|Shutdown
+1789676885619 svc c4b-app.1|7bug0ewlfh0yq4yfx6mmfd1qq|Orphaned about a minute ago|Shutdown
+===== ANALYSIS name=c4b =====
+milestone kill-ms:    1789676770025
+milestone restart-ms: none
+milestone drain-ms:   none
+milestone active-ms:  none
+down-at-ms: 1789676780373
+delta-kill-to-down-s: 10.3
+rescheduled-running-at-ms: 
+c4b-DONE

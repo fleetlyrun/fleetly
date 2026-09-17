@@ -1,0 +1,7 @@
+ts-ms=1789677119028
+info=active/false
+-- docker node ls from worker --
+Error response from daemon: This node is not a swarm manager. Worker nodes can't be used to view or modify cluster state. Please run this command on a manager node or promote the current node to a manager.
+-- containers --
+7ca11ead2eb5 c5-new.1.rsi91aiq3dg3k081d2i4mcg54 Up 19 seconds
+e90a2804461c c5-app-worker.1.ko7pqx09g0zzup3diffjv1w5c Up 2 minutes

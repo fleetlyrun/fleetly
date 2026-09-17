@@ -1,0 +1,683 @@
+C4B-RUN-START 
+
+D:\Codes\qiulin\edgesets>call spike\c\scripts\env-common.bat 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_C_DIR=D:\Codes\qiulin\edgesets\spike\c\scripts\.." 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_DIND_IMAGE=docker:29.8.1-dind" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_NET=spike-c-br" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_SUBNET=10.10.0.0/24" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_GW=10.10.0.1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_M0=spike-c-m0" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_MGR=spike-c-mgr" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W1=spike-c-w1" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_W2=spike-c-w2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M=spike-c-v5m" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5W=spike-c-v5w" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_V5M2=spike-c-v5m2" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_MGR=10.10.0.10" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W1=10.10.0.11" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_W2=10.10.0.12" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5M=10.10.0.20" 
+
+D:\Codes\qiulin\edgesets>set "SPIKE_IP_V5W=10.10.0.21" 
+
+D:\Codes\qiulin\edgesets>set "GOWORK=off" 
+
+D:\Codes\qiulin\edgesets>cd /d D:\Codes\qiulin\edgesets\spike\c\scripts\.. 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.1 create pinned volume service on w1 ===== 
+===== C4B.1 create pinned volume service on w1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c4b-app  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service create --name c4b-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c4bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
+ojb9tkucvwkrkm10tj1t7gy9z
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service ojb9tkucvwkrkm10tj1t7gy9z converged
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4b-app 1 w1 120" 
+WAITSVC-OK c4b-app running=1 want=1 after=0s
+ID             NAME        IMAGE         NODE      DESIRED STATE   CURRENT STATE           ERROR     PORTS
+3cr95stywnp7   c4b-app.1   alpine:3.20   w1        Running         Running 5 seconds ago             
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo C4B task never Running on w1   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "cp /work-src/scripts/in-stamp.sh /tmp/s.sh && sed -i 's/\r$//' /tmp/s.sh && sh /tmp/s.sh c4b-app c4bvol /data write c4b-initial-worker" 
+stamp-ms=1789676766548 svc=c4b-app vol=c4bvol op=write
+task-container=696a7e119245
+STAMP-WRITTEN {
+  "host": "696a7e119245",
+  "iso": "2026-09-17T20:26:06.599203061Z",
+  "ms": 1789676766599,
+  "pid": 7,
+  "token": "c4b-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 sh -c "sh /tmp/s.sh c4b-app c4bvol /data read" 
+stamp-ms=1789676766716 svc=c4b-app vol=c4bvol op=read
+task-container=696a7e119245
+STAMP-OK {
+  "host": "696a7e119245",
+  "iso": "2026-09-17T20:26:06.599203061Z",
+  "ms": 1789676766599,
+  "pid": 7,
+  "token": "c4b-initial-worker"
+}
+stamp-rc=0
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.2 watcher + kill w1 ===== 
+===== C4B.2 watcher + kill w1 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec -d spike-c-mgr sh -c "cp /work-src/scripts/in-watch.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4b 120 mgr c4b-app w1 1" 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 4 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker kill spike-c-w1   || exit /b 1 
+spike-c-w1
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>for /F "delims=" %t in ('docker inspect spike-c-w1 --format "{{.State.FinishedAt}}"') do set "FIN=%t" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "FIN=2026-09-17T20:26:10.025663394Z" 
+
+D:\Codes\qiulin\edgesets\spike\c>echo 2026-09-17T20:26:10.025663394Z 1>artifacts\logs\c4b.kill 
+
+D:\Codes\qiulin\edgesets\spike\c>echo kill done, FinishedAt=2026-09-17T20:26:10.025663394Z 
+kill done, FinishedAt=2026-09-17T20:26:10.025663394Z
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.3 wait w1 Down then node rm ===== 
+===== C4B.3 wait w1 Down then node rm =====
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 2 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 3 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 4 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 5 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 6 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 7 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 8 GEQ 40 (echo w1 never went Down   & goto down ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdown 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls --format "{{.Hostname}}={{.Status}}"   | findstr /C:"w1=Down"   1>nul  && goto down 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+4qxsi5de7f2tsma4h9jzk3os0 *   mgr        Ready     Active         Leader           29.8.1
+7bug0ewlfh0yq4yfx6mmfd1qq     w1         Down      Active                          29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- node rm w1 (plain; fallback --force) --- 
+--- node rm w1 (plain; fallback --force) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node rm w1 
+w1
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (
+echo plain rm failed, trying --force  
+ docker exec spike-c-mgr docker node rm --force w1 
+) 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+4qxsi5de7f2tsma4h9jzk3os0 *   mgr        Ready     Active         Leader           29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.4 PENDING persists (3 snapshots, 20s apart) ===== 
+===== C4B.4 PENDING persists (3 snapshots, 20s apart) =====
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 21 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c4b-app 
+ID             NAME            IMAGE         NODE                        DESIRED STATE   CURRENT STATE             ERROR                              PORTS
+4ilm8k84bbkl   c4b-app.1       alpine:3.20                               Running         Pending 20 seconds ago    "no suitable node (scheduling …"   
+3cr95stywnp7    \_ c4b-app.1   alpine:3.20   7bug0ewlfh0yq4yfx6mmfd1qq   Shutdown        Orphaned 20 seconds ago                                      
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 21 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c4b-app 
+ID             NAME            IMAGE         NODE                        DESIRED STATE   CURRENT STATE             ERROR                              PORTS
+4ilm8k84bbkl   c4b-app.1       alpine:3.20                               Running         Pending 40 seconds ago    "no suitable node (scheduling …"   
+3cr95stywnp7    \_ c4b-app.1   alpine:3.20   7bug0ewlfh0yq4yfx6mmfd1qq   Shutdown        Orphaned 40 seconds ago                                      
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 21 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c4b-app 
+ID             NAME            IMAGE         NODE                        DESIRED STATE   CURRENT STATE                 ERROR                              PORTS
+4ilm8k84bbkl   c4b-app.1       alpine:3.20                               Running         Pending about a minute ago    "no suitable node (scheduling …"   
+3cr95stywnp7    \_ c4b-app.1   alpine:3.20   7bug0ewlfh0yq4yfx6mmfd1qq   Shutdown        Orphaned about a minute ago                                      
+
+D:\Codes\qiulin\edgesets\spike\c>echo --- running count (expect 0 across all snapshots) --- 
+--- running count (expect 0 across all snapshots) ---
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service ps c4b-app --format "{{.CurrentState}}"   | find /c "Run" 
+0
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.5 boot NEW worker w2, join, label ===== 
+===== C4B.5 boot NEW worker w2, join, label =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker rm -f spike-c-w2  2>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker run -d --name spike-c-w2 --hostname w2 --privileged --network spike-c-br --ip 10.10.0.12 -v "D:\Codes\qiulin\edgesets\spike\c\scripts\..:/work-src" docker:29.8.1-dind   || exit /b 1 
+7edfa72725c4cdcd0300c641097f9c89686b64d7eb38506df03493b1f2baff97
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto w2up 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 60 (echo w2 dockerd not ready   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitw2 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 docker info  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>if not errorlevel 1 goto w2up 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 sh -c "cp /work-src/dockerctx/probe /opt/probe && chmod +x /opt/probe"   || exit /b 1 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 docker pull alpine:3.20  1>nul 2>&1 
+
+D:\Codes\qiulin\edgesets\spike\c>for /F %t in ('docker exec spike-c-mgr docker swarm join-token -q worker') do set "JTOK=%t" 
+
+D:\Codes\qiulin\edgesets\spike\c>set "JTOK=SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b7x7rfnixc9lqs5ycicfsi6-ezsn6o2kg4gusk4vmmwm2mh5t" 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 docker swarm join 10.10.0.10:2377 --token SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b7x7rfnixc9lqs5ycicfsi6-ezsn6o2kg4gusk4vmmwm2mh5t   || exit /b 1 
+This node joined a swarm as a worker.
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add edgefleet.node-id=w2 w2   || exit /b 1 
+w2
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 3 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node ls 
+ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS   ENGINE VERSION
+4qxsi5de7f2tsma4h9jzk3os0 *   mgr        Ready     Active         Leader           29.8.1
+5lxyfvtd0682te2rykfkv14v8     w2         Ready     Active                          29.8.1
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.6 manual rebind: swap constraint to w2 ===== 
+===== C4B.6 manual rebind: swap constraint to w2 =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service update --constraint-rm node.labels.edgefleet.node-id==w1 --constraint-add node.labels.edgefleet.node-id==w2 c4b-app   || exit /b 1 
+c4b-app
+overall progress: 0 out of 1 tasks
+1/1:  
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 0 out of 1 tasks
+overall progress: 1 out of 1 tasks
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 5 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 4 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 3 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 2 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Waiting 1 seconds to verify that tasks are stable...
+verify: Service c4b-app converged
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4b-app 1 w2 120" 
+WAITSVC-OK c4b-app running=1 want=1 after=0s
+ID             NAME            IMAGE         NODE                        DESIRED STATE   CURRENT STATE                 ERROR     PORTS
+cr60kg786mgt   c4b-app.1       alpine:3.20   w2                          Running         Running 5 seconds ago                   
+4ilm8k84bbkl    \_ c4b-app.1   alpine:3.20                               Shutdown        Shutdown 5 seconds ago                  
+3cr95stywnp7    \_ c4b-app.1   alpine:3.20   7bug0ewlfh0yq4yfx6mmfd1qq   Shutdown        Orphaned about a minute ago             
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo C4B task never Running on w2   & exit /b 1 ) 
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.7 AFTER rebind: read volume on w2 - EMPTY (data did not follow) ===== 
+===== C4B.7 AFTER rebind: read volume on w2 - EMPTY (data did not follow) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 sh -c "cp /work-src/scripts/in-stamp.sh /tmp/s.sh && sed -i 's/\r$//' /tmp/s.sh && sh /tmp/s.sh c4b-app c4bvol /data read" 
+stamp-ms=1789676858528 svc=c4b-app vol=c4bvol op=read
+task-container=64624bc10c94
+STAMP-MISS (no stamp.json in volume = empty-volume evidence)
+stamp-rc=3
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 docker volume inspect c4bvol --format "c4bvol-on-w2 CreatedAt={{.CreatedAt}} (fresh volume, not the w1 one)" 
+c4bvol-on-w2 CreatedAt=2026-09-17T20:27:32Z (fresh volume, not the w1 one)
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.8 rescue the original stamp out of the dead w1 (docker cp, stopped container) ===== 
+===== C4B.8 rescue the original stamp out of the dead w1 (docker cp, stopped container) =====
+
+D:\Codes\qiulin\edgesets\spike\c>docker cp spike-c-w1:/var/lib/docker/volumes/c4bvol/_data/stamp.json artifacts\logs\c4b-rescued-stamp.json 
+
+D:\Codes\qiulin\edgesets\spike\c>if errorlevel 1 (echo docker cp from stopped w1 FAILED )  else (type artifacts\logs\c4b-rescued-stamp.json ) 
+{
+  "host": "696a7e119245",
+  "iso": "2026-09-17T20:26:06.599203061Z",
+  "ms": 1789676766599,
+  "pid": 7,
+  "token": "c4b-initial-worker"
+}
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.9 watcher analysis + cleanup ===== 
+===== C4B.9 watcher analysis + cleanup =====
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY=0 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 1 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 2 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 3 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 4 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 5 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 6 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 7 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 8 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 9 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 10 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 11 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 12 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 13 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 14 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 15 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 16 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 17 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 18 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 19 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 20 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 21 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 22 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 23 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 24 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 25 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 26 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>set /a TRY+=1 
+
+D:\Codes\qiulin\edgesets\spike\c>if 27 GEQ 130 (echo watcher did not finish   & goto done ) 
+
+D:\Codes\qiulin\edgesets\spike\c>ping -n 2 127.0.0.1  1>nul 
+
+D:\Codes\qiulin\edgesets\spike\c>goto waitdone 
+
+D:\Codes\qiulin\edgesets\spike\c>findstr /C:"c4b-DONE" artifacts\logs\c4b.jsonl   1>nul  && goto done 
+
+D:\Codes\qiulin\edgesets\spike\c>type artifacts\logs\c4b.jsonl   | findstr /C:"ANALYSIS" /C:"milestone" /C:"delta" /C:"-at-ms" /C:"DONE" 
+===== ANALYSIS name=c4b =====
+milestone kill-ms:    1789676770025
+milestone restart-ms: none
+milestone drain-ms:   none
+milestone active-ms:  none
+down-at-ms: 1789676780373
+delta-kill-to-down-s: 10.3
+rescheduled-running-at-ms: 
+c4b-DONE
+
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c4b-app 
+c4b-app
+
+D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B done ===== 
+===== C4B done =====
