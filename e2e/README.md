@@ -54,15 +54,21 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/edgefleetd ./cmd/edgeflee
 docker run -d --name edgefleet-e2e-dind --privileged docker:29.8.1-dind
 # 轮询 docker exec edgefleet-e2e-dind docker info（60s deadline，验证 P2 的
 # 特权 dind 可用性；smoke 本身不依赖 dockerd）
-docker cp dist/edgefleetd  edgefleet-e2e-dind:/tmp/edgefleetd
-docker cp e2e/smoke.sh     edgefleet-e2e-dind:/tmp/smoke.sh
-docker exec edgefleet-e2e-dind sh -c 'chmod +x /tmp/edgefleetd /tmp/smoke.sh \
+docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/smoke.sh'   < e2e/smoke.sh
+docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/edgefleetd' < dist/edgefleetd
+docker exec edgefleet-e2e-dind sh -c 'chmod +x /tmp/edgefleetd \
   && EDGEFLEETD_BIN=/tmp/edgefleetd sh /tmp/smoke.sh'
 docker rm -f edgefleet-e2e-dind   # if: always()；失败时先 dump 容器内外日志
 ```
 
-二进制是 `CGO_ENABLED=0` 的静态可迁文件，`docker cp` 进 Alpine 容器即可
-直接执行，无需装任何运行时。
+二进制是 `CGO_ENABLED=0` 的静态可迁文件，exec+stdin 流式写入 Alpine 容器
+即可直接执行，无需装任何运行时。
+
+> **已知问题（docker cp 静默丢文件）**：Engine 29.x 宿主向特权 `docker:*-dind`
+> 容器 `docker cp` 会 **exit 0 但文件不落盘**——CI 首跑（Linux runner）与
+> Windows Docker Desktop 29.7.2 双复现（2026-09-17，run 35234788587）。故
+> CI 与本地一律走 exec+stdin；此现象属引擎门禁知识库素材（V7 回归矩阵可
+> 考虑加 docker cp 探针）。
 
 ## 本地复跑（Windows Docker Desktop）
 
@@ -82,9 +88,8 @@ docker run -d --name edgefleet-e2e-dind --privileged docker:29.8.1-dind
 :: 3) 等 dind 内 dockerd 就绪（可选，CI 有同款 60s 门）
 docker exec edgefleet-e2e-dind docker version --format "inner engine: {{.Server.Version}}"
 
-:: 4) 送入二进制与脚本
-::    已知坑：本机 Docker Desktop 的 docker cp 静默失效（exit 0 但文件不落
-::    盘），改用 exec+stdin 直传（字节保真）；CI（Linux runner）docker cp 正常。
+:: 4) 送入二进制与脚本（exec+stdin 直传，字节保真；docker cp 在 Engine
+::    29.x 宿主 → 特权 dind 上静默丢文件，见上方已知问题，勿改回 cp）
 docker exec -i edgefleet-e2e-dind sh -c "cat > /tmp/edgefleetd" < "%TEMP%\edgefleet-e2e\edgefleetd"
 docker exec -i edgefleet-e2e-dind sh -c "cat > /tmp/smoke.sh"     < "%TEMP%\edgefleet-e2e\smoke.sh"
 
@@ -99,16 +104,16 @@ docker exec edgefleet-e2e-dind sh -c "chmod +x /tmp/edgefleetd /tmp/smoke.sh && 
 docker rm -f edgefleet-e2e-dind
 ```
 
-Linux/macOS 宿主更简单：`go build` 产出后直接 `docker cp`（无上述
-docker cp 坑）再 `docker exec`，同 CI。
+Linux/macOS 宿主：`go build` 产出后同样走 exec+stdin 送入（与 CI 完全一致
+的命令路径，见上方 CI 段）。
 
 ## 方案取舍记录（为什么没有 Dockerfile.smoke）
 
 候选两案（交付物冻结时裁决）：
 
-- **已选：裸 dind 容器 + `docker exec`**（推荐案）。二进制与脚本由 CI
-  `docker cp` 进官方 `docker:29.8.1-dind` 容器直接执行。改动面最小、无
-  镜像构建环节（PR 轨道时长预算友好）、smoke 与本地手动完全同一条命令。
+- **已选：裸 dind 容器 + `docker exec`**（推荐案）。二进制与脚本经
+  exec+stdin 流式送入官方 `docker:29.8.1-dind` 容器直接执行。改动面最小、
+  无镜像构建环节（PR 轨道时长预算友好）、smoke 与本地手动完全同一条命令。
 - 备选（未选）：把 edgefleetd 打进基于 alpine 的镜像（即原
   `Dockerfile.smoke` 形态），在 dind 内 `docker run`。多一次镜像构建/传输，
   且 dind 内 build 需要先把构建产物送进 dind 的存储，链路更长。**何时切

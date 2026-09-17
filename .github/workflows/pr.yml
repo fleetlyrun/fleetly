@@ -128,10 +128,13 @@ jobs:
             sleep 2
           done
       - name: run smoke inside dind
+        # 不用 docker cp：Engine 29.x 宿主 → 特权 dind 容器的 cp 会静默丢文件
+        # （exit 0 但不落盘，Windows Desktop 29.7.2 与 CI Linux runner 双复现，
+        # 见 e2e/README.md 已知问题）；统一走 exec+stdin 流式写入。
         run: |
-          docker cp dist/edgefleetd edgefleet-e2e-dind:/tmp/edgefleetd
-          docker cp e2e/smoke.sh edgefleet-e2e-dind:/tmp/smoke.sh
-          docker exec edgefleet-e2e-dind sh -c 'chmod +x /tmp/edgefleetd /tmp/smoke.sh && EDGEFLEETD_BIN=/tmp/edgefleetd sh /tmp/smoke.sh'
+          docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/smoke.sh' < e2e/smoke.sh
+          docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/edgefleetd' < dist/edgefleetd
+          docker exec edgefleet-e2e-dind sh -c 'chmod +x /tmp/edgefleetd && EDGEFLEETD_BIN=/tmp/edgefleetd sh /tmp/smoke.sh'
       - name: dump logs on failure
         if: failure()
         run: |
