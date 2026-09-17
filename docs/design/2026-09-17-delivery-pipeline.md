@@ -37,7 +37,7 @@ edgefleet 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 1. 引擎矩阵：dind 29.8.1 × { containerd 存储（默认）、overlay2 } + 上一受支持 minor
 2. **V1-V7 全套 + 扩展项**（映射见 §6；含 B2/B3、绑定保持、raft 回退孤儿观察与恢复演练）；多节点场景 = 同一 runner 上两个 dind 容器 `swarm join`
 3. 升级 E2E：v_n → v_{n+1}（SQLite 迁移前后数据对比 + 应用不中断）
-4. conformance 套件对真实组件（Traefik / zot / S3 端点，CI 内以 MinIO 容器代演）
+4. conformance 套件对真实组件（Traefik / zot / S3 端点，CI 内以 SeaweedFS 容器代演——MinIO 已归档且为 AGPL，CI 容器虽不分发不违规，仍换活跃替身）
 5. 资源基线采样（控制面 idle 内存、构建峰值；趋势告警，不阻断）
 
 **release 轨道（tag 触发 + 人工确认）**

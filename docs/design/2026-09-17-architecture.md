@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；技术选型补充已应用（基础 Go 框架 = lynx + google/wire，D20，参考 messageloop；API 面 = gRPC + grpc-gateway，D21，参考 torchwood，huma 经用户裁决否决）；实现后更新状态并补 PR |
+| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；技术选型补充已应用（基础 Go 框架 = lynx + google/wire，D20，参考 messageloop；API 面 = gRPC + grpc-gateway，D21，参考 torchwood，huma 经用户裁决否决）；依赖复核轮已应用（age 加密 / coder-websocket 中继流 / shadcn-ui / minio-go 四项落定，git 许可证修正为 GPLv2 子进程调用，CI S3 代演换 SeaweedFS）；实现后更新状态并补 PR |
 
 ## 1. 现状与问题
 
@@ -124,14 +124,14 @@ CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
 | 状态 | SQLite（modernc 纯 Go）+ goose 迁移 | BSD-3 | schema、对账器、观测缓存与新鲜度契约、审计 |
 | API | **gRPC + grpc-gateway/v2 + buf**（openapiv2 文档派生、protovalidate 校验；torchwood 范式，D21） | Go, Apache-2.0 / BSD-3 | proto 契约（`edgefleet.{client,console,server}.vN` 分模块）、拦截器链（鉴权/限流）、自定义错误信封（ErrorResponse + snake_case + `disable_default_errors`）、genproto/SDK 生成 |
 | CLI | lynx-go/commands + 平台 Go SDK（gRPC client，独立模块，torchwood 同型） | Go, MIT | 交互体验、输出格式（--json）；日志/事件长流走 gRPC streaming |
-| git 接收 | 系统 git | Apache-2.0 | SSH 服务、post-receive 接线 |
+| git 接收 | 系统 git | GPLv2（独立进程调用，不链接、不随发行物分发，无传染） | SSH 服务、post-receive 接线 |
 | 日志 | 无 | — | 采集、落盘轮转、ring buffer、SSE |
 | 指标(v0.2) | VictoriaMetrics（存储/查询）+ node_exporter（宿主）+ cAdvisor（逐节点容器指标：manager 无远端 Engine API） | Go, Apache-2.0 | 查询面、UI 图表、告警 |
-| S3(v0.2) | 外部 S3 端点（provider 抽象；打包 S3 延后到需求证据，见 D4） | — | 端点配置、凭证注入、备份策略 |
+| S3(v0.2) | 外部 S3 端点（**minio-go** 客户端〔2026-09-17 依赖复核选定〕；provider 抽象；打包 S3 延后到需求证据，见 D4） | Go, Apache-2.0 | 端点配置、凭证注入、备份策略、热备上传/回读 |
 | 备份(v0.2) | restic | Go, BSD-2 | 调度、策略、恢复流程 |
 | 镜像分发(v0.2) | zot registry（v0.1 免 registry：digest 引用本地镜像） | Go, Apache-2.0 | 构建推送、节点拉取（`--with-registry-auth`） |
 | MCP(v0.2) | 官方 modelcontextprotocol/go-sdk | Go, MIT/Apache-2.0 | 精选工具面、scope 映射、审计 |
-| Console 端（曾用名 Web UI，2026-09-17 更名） | React + Vite（SPA） | MIT | 全部界面 |
+| Console 端（曾用名 Web UI，2026-09-17 更名） | React + Vite + shadcn/ui（SPA） | MIT | 全部界面 |
 
 依赖许可证以实际锁定的版本为准；默认发行包不引入 AGPL 组件。
 
@@ -147,7 +147,7 @@ CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
 
 核心表（草案）：apps、deployments（含 `kind=deploy|rollback` 与 recovery 字段：归位不创建新记录，见[发布专项](2026-09-17-release-semantics.md)）、revisions（归一化 compose + 平台覆盖层快照，见[发布专项](2026-09-17-release-semantics.md)）、env_vars、domains、placements、volumes、nodes（v0.1 起即有〔单机同路径〕；观测缓存，**不承诺「最后心跳」**）、tokens、events、audit_log、state_backups、orphans。
 
-密钥方案：envelope 加密（age 或 NaCl box），主密钥存于控制面主机（文件权限保护）且与备份数据分离保存，运行时通过环境变量或 docker secrets 注入。**已知边界：Swarm service spec 中的 env 为明文，raft 备份会携带（诚实告知；v0.2 评估 secrets/tmpfs 注入）。**
+密钥方案：envelope 加密（**age**〔filippo.io/age〕，2026-09-17 依赖复核选定——密钥即文件，与主密钥文件形态天然契合），主密钥存于控制面主机（文件权限保护）且与备份数据分离保存，运行时通过环境变量或 docker secrets 注入。**已知边界：Swarm service spec 中的 env 为明文，raft 备份会携带（诚实告知；v0.2 评估 secrets/tmpfs 注入）。**
 
 数据保留（默认值，可配）：部署记录每 app 50 条、可重放版本 5 个、事件 30 天、审计 1 年、应用日志 7 天轮转；SQLite 定期归档/VACUUM，防止无限膨胀。
 
@@ -277,7 +277,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 - **入口（每节点入口 + 集中证书；2026-09-17 审核裁决）**：Traefik = **global service，每节点（含 manager）一个**，host 模式发布 80/443；replicated-1 单入口形态被否（与 drain 语义矛盾、入口单点），「节点文件下发」不可行（无远端访问通道）——路由与证书一律由控制面经 **HTTP provider** 下发，不启用 Swarm/Docker provider 自动发现；取不到配置时 Traefik 保留上一份成功配置（控制面故障入口不坏）。
 - **证书集中化**：控制面内嵌 ACME（lego）集中签发，证书存平台、随 HTTP provider 动态配置下发（Traefik `tls.certificates`）；v0.2 用 HTTP-01——各节点 Traefik 把 `/.well-known/acme-challenge/*` 反代到控制面，任意节点可解挑战，零 DNS 服务商集成；DNS-01/通配符留 v0.3 按服务商接入；**每节点独立 ACME 被否**（LE 重复证书限额 + 续期风暴 + N 份 acme.json 不可维护）。Traefik 轮询 manager 上控制面配置端点（Header token；跨公网走平台域名 HTTPS）。
 - **DNS 契约与故障转移口径**：A 记录指向**全部**节点 IP（TTL ≤300s），UI/向导列出并校验（`edgefleet domains verify`）；入口冗余 = **连接级**（节点不可达时客户端换下一 A 记录重试），非健康驱动故障转移、非 VIP；keepalived/VIP 与云 LB 只做文档配方不进产品，强入口可用性需求走 v0.3 Tunnel。
-- **执行中继（Web 终端底座，D19）**：`edgefleet-exec` global service，每节点一个任务，仅挂内部系统网络（不发布 host 端口、不挂应用网络）、挂载本节点 docker.sock；API 面收窄到 `healthz`/`exec` 且只对带 `edgefleet.app` label 的容器（其余 403）；集群 token 经 Swarm secret 下发；控制面经 `tasks.edgefleet-exec` DNS + task→NodeID 反查节点（成员发现零自研）；会话空闲 10 分钟/硬上限 30 分钟、`terminal` 独立 scope（默认仅 admin；MCP 工具面不暴露终端）、起止入审计。通用 Docker API 代理与卷/镜像/节点操作仍禁止（放置专项 §7 例外条款）。
+- **执行中继（Web 终端底座，D19）**：`edgefleet-exec` global service，每节点一个任务，仅挂内部系统网络（不发布 host 端口、不挂应用网络）、挂载本节点 docker.sock；API 面收窄到 `healthz`/`exec` 且只对带 `edgefleet.app` label 的容器（其余 403）；集群 token 经 Swarm secret 下发；控制面经 `tasks.edgefleet-exec` DNS + task→NodeID 反查节点（成员发现零自研）；会话空闲 10 分钟/硬上限 30 分钟、`terminal` 独立 scope（默认仅 admin；MCP 工具面不暴露终端）、起止入审计；流式会话 = coder/websocket（torchwood 同款），SSE 用标准库。通用 Docker API 代理与卷/镜像/节点操作仍禁止（放置专项 §7 例外条款）。
 - **能力边界（对外口径）**：统一管理 + Swarm 调度；自动迁移仅限无卷无状态服务；无跨节点共享存储（卷本地，CSI 实验性不采用）；**远端节点 local 卷不可经 manager 枚举/删除**——卷删除与校验由用户按文档在节点上执行（不建维护作业）。
 - **HA 边界（对外口径）**：
   - 2 台**得到**：无状态服务进程级 HA（失联 15s 量级判定 + 自动重调度；重调度窗口内该 app 短暂不可用，如实口径）；节点可 drain，无状态负载维护新连接零失败（连接级重试语义，见入口与维护窗口口径）；控制面故障不影响应用运行（应用运行不依赖控制面）。

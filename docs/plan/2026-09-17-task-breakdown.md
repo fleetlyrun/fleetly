@@ -112,7 +112,7 @@ T2 v0.1（核心；分层依赖见 §5）
 
 **T2.7 密钥与 env** ｜ Blocked by: T2.2、T2.4 ｜ 3-4 人日
 - 交付：加密存储 → 注入运行的完整链路（架构 §2.3 密钥方案、§2.4 变量合并/密钥行）。
-- 验收：envelope 加密（age/NaCl）落库，主密钥文件权限保护且与备份分离；compose secrets → Swarm secret 映射（`/run/secrets/<name>` 可读）；env 三层合并（`env_file` < `environment` < 平台 env_vars）+ `edgefleet env set` 创建 pending、随下次部署生效；密钥值不进事件/审计/日志（负面断言）。
+- 验收：envelope 加密（age）落库，主密钥文件权限保护且与备份分离；compose secrets → Swarm secret 映射（`/run/secrets/<name>` 可读）；env 三层合并（`env_file` < `environment` < 平台 env_vars）+ `edgefleet env set` 创建 pending、随下次部署生效；密钥值不进事件/审计/日志（负面断言）。
 
 ### 构建层
 
@@ -177,7 +177,7 @@ T2 v0.1（核心；分层依赖见 §5）
 - 验收：SSE 实时流（断线游标续读）；落盘轮转 7 天；ring buffer 限深；历史检索按 app/时间窗；日志中 secret 值脱敏（负面断言）。
 
 **T2.21 Console 端基础** ｜ Blocked by: T2.17 ｜ 8-12 人日 ★（切分建议：a 骨架与鉴权 / b 应用列表·详情·部署 / c 日志与 env·域名）
-- 交付：console 端基础界面（架构 §4.2 第 6 项）。
+- 交付：console 端基础界面（React + Vite + shadcn/ui；架构 §4.2 第 6 项）。
 - 验收：应用列表/详情、部署历史与状态（degraded/blocked 一等展示）、日志（SSE）、env 管理（pending 变更可见）、域名管理；console 仅经 REST API（无旁路调用）；Playwright smoke 进 PR 可选轨。
 
 ### 信任层
