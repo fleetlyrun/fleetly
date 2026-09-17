@@ -1,0 +1,13 @@
+# golangci-lint v2 配置（T0.1）：从简可运行，规则随阶段推进收紧。
+# default: standard = errcheck、govet、ineffassign、staticcheck、unused；
+# 另启用 gosec（安全基线）与 gofmt（格式，PR 门禁）。
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - gosec
+
+formatters:
+  enable:
+    - gofmt

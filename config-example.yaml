@@ -1,0 +1,10 @@
+# edgefleetd 配置示例。复制为 config.yaml 后按需修改；
+# 启动：edgefleetd -c config.yaml（也可用 -addr 覆盖监听地址，显式
+# flag 优先于本文件）。
+
+# HTTP 面监听地址（当前仅框架 healthz 端点）；默认只绑回环。
+addr: "127.0.0.1:8420"
+
+# 日志级别（lynx 约定键）：debug | info | warn | error
+logging:
+  level: info

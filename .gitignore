@@ -1,0 +1,31 @@
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Dependency directories
+/vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# Built binaries at repo root
+/edgefleetd
+/edgefleet
+
+# Local config product (config-example.yaml is the committed template)
+/config.yaml
+
+# Editors / OS
+.idea/
+.vscode/
+.DS_Store
