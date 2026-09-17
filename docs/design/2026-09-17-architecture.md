@@ -1,0 +1,430 @@
+# edgesets 平台架构设计
+
+| 状态 | 日期 | 关联 |
+|---|---|---|
+| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）与 compose 策略（D14）已应用；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；实现后更新状态并补 PR |
+
+## 1. 现状与问题
+
+### 1.1 术语约定（先读）
+
+同一个英文词 "agent" 在本项目里曾指两个不同事物（基础设施的节点进程 与 AI 智能体）。裸词 "agent" 已作废，统一术语基线如下：
+
+| 术语 | 定义 | 正例 | 反例 |
+|---|---|---|---|
+| **AI Agent** | 能自主决策并通过 API/MCP 操作平台的 AI 程序 | Claude Code 经 MCP 调 `deploy` 工具部署应用 | CI 脚本调 CLI 部署（属自动化客户端，非 AI Agent） |
+| **节点（Swarm node）** | 加入 Swarm 集群的一台 Docker Engine 主机 | `docker node ls` 列出的机器；承接 service 任务 | 控制面进程本身；一个容器 |
+| **actor** | 审计日志中的操作主体，取值 human / AI Agent | token 备注「CI 部署」 | — |
+
+边界裁决：平台自动重启崩溃容器 = 确定性规则，不算 AI Agent；UI 点击部署 = human actor；在 AI 编辑器里说「帮我部署这个仓库」= AI Agent。产品承诺文案 **AI/Agent Native** 中的 Agent 指 AI Agent；本约定优先于历史用法与行业通用词。历史术语「节点守护进程（edgesetsd node）」已随 D12 采纳 Swarm 而退役（自研 node 协议降级为退出预案）。
+
+### 1.2 项目定位
+
+edgesets 是极轻量级开源 PaaS：开箱即用、用户友好、面向 10 台以下的服务器集群、资源占用少、够用就好，对外承诺 AI/Agent Native。
+
+一句话定位：**Dokku 的资源占用，Railway 的 API，AI Agent 优先的操作方式。**
+
+多节点语义：**统一管理与调度由 Docker Swarm 承担**——统一 API/UI/调度视图；无状态服务自动重调度（节点失联 15s 量级判定）；**有状态服务默认自动钉住**（平台 placement 绑定；节点消失不迁移、不换点；local 卷不跟随）；无跨节点共享存储（能力边界见 2.6 与[放置专项](2026-09-17-stateful-placement.md)）。
+
+对外宣称时间线：v0.1 的 AI Agent 能力 = API/CLI/plan-apply/结构化错误；MCP 与完整 AI Agent 体验属 v0.2，对外材料不得把 v0.2 能力写进 v0.1 承诺。
+
+### 1.3 市场窗口（2026-09 事实）
+
+- Heroku 2026-02 宣布进入维持工程模式，不再增加新功能；"自托管 Heroku 替代品"需求处于高位。
+- MinIO 社区版 2026-04 归档（2025-05 移除控制台功能，2025-12 转维护模式），S3 兼容存储出现空位。
+- Coolify（约 61k stars）功能最全但自身资源占用以 GB 计，栈为 PHP/Laravel。
+- Dokploy（约 37k stars）押注 Docker Swarm，`/proprietary` 目录采用 DSAL 非开源许可。
+- Dokku（约 32k stars，MIT）持续活跃，但无 HTTP API、无 Web UI、单机设计。
+- Docker Swarm 生态冻结，Docker Engine v29 出现影响 Swarm 的兼容性断裂（Portainer 2026 白皮书）。
+- Coolify、Dokploy 均已提供 MCP 能力，但形态粗糙：Dokploy 官方 MCP 自动生成 546 个工具，tools/list 约 74k tokens（社区手工收敛版 27 工具约 8.6k tokens）。
+
+结论：**轻 + 结构化 API + 统一集群 + AI Agent 原生**这一组合目前无人占据。
+
+### 1.4 为什么不用 dokku 做核心
+
+dokku 是单机设计：接口为 SSH + bash CLI 文本输出，扩展是 bash 插件。而本项目需要：
+
+| 需求 | dokku 提供 | 缺口 |
+|---|---|---|
+| Web UI / MCP / 结构化 CLI | `ssh dokku@host xxx` | 解析 stdout，无事务、无事件流、无错误码；dokku 升级即破坏解析层 |
+| AI Agent 安全 | 单个 SSH 用户全权限 | 无 scope token、无审计、无 plan/dry-run |
+| ≤10 台统一集群 | 单机设计 | 10 台 = 10 个独立盒子，中央控制面仍需自研 |
+| Go 技术栈 | bash 插件 | 与项目取向相悖 |
+
+dokku 保留两个用途：参考实现（发布流程、零停机、代理配置的既定做法）、潜在迁移兼容目标（远期）。
+
+## 2. 目标设计
+
+### 2.1 总体架构
+
+```
+CLI / Web UI / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
+        │
+        ▼
+┌─ 控制面 edgesetsd server（Go 单二进制，运行于 Swarm manager）─┐
+│  API 层        REST(OpenAPI 3.1) + SSE 事件/日志流            │
+│  编排层        edgesets.yaml 解析 → 对账器 → 发布状态机       │
+│  构建管线      Railpack / Dockerfile → BuildKit → 镜像        │
+│  调度委托      Swarm 内置调度 + node label 约束（不自研）     │
+│  状态层        SQLite(WAL) + 迁移 + 审计日志                  │
+│  供应层        域名/TLS(Traefik)、env/密钥、S3、备份          │
+└───────────────────────────────────────────────────────────────┘
+        │  Docker API（本地 socket 管理全集群；成员管理与节点通信由 Swarm 承担）
+        ▼
+┌─ 节点：Docker Engine（Swarm mode）─────────────┐
+│  Swarm services / overlay 网络 / 内置调度      │
+│  Traefik（每节点）/ BuildKit / 日志与指标采集  │
+└────────────────────────────────────────────────┘
+```
+
+设计原则：
+
+1. **API-first 铁律**：所有能力先有 REST/OpenAPI，UI/CLI/MCP 均为其客户端；没有 API 的功能不准进产品。
+2. **对账式**：期望状态（spec + 数据库）与真实状态（Swarm service 状态、Traefik 配置）分离，对账器负责收敛与自愈。
+3. **单二进制、多角色**：`edgesetsd standalone`（单机全功能，v0.1，安装时隐式初始化单节点 Swarm）/ `server`（运行于 Swarm manager，v0.2 多节点）；**无自研 node 协议**——成员管理、心跳与节点通信由 Swarm 承担（D2/D12）。
+4. **基础设施只复用不自研**：构建、反向代理、**编排与调度（Docker Swarm）**、指标存储、备份工具、对象存储全部用成熟组件。
+5. **错误信息即产品**：错误码 + 原始上下文（stderr/事件）+ 修复建议 + 可订阅事件流，同时服务人类与 AI Agent（竞品差评最密集的类别，见调研报告第 6 节）。
+
+### 2.2 组件与复用清单
+
+| 领域 | 复用组件 | 语言/许可 | 自研部分 |
+|---|---|---|---|
+| 运行时 | Docker Engine API（moby/client） | Go, Apache-2.0 | 容器/服务生命周期封装、发布状态机 |
+| 编排底座 | Docker Swarm（引擎内置，无需额外组件） | Go, Apache-2.0 | 只做集成——调度/成员管理/服务发现不自研（D12） |
+| 构建 | Railpack + BuildKit（Dockerfile 兜底） | Go, MIT / Apache-2.0 | 构建队列、缓存、资源限制、镜像命名 |
+| 入口 | Traefik + ACME（Let's Encrypt） | Go, MIT | 动态配置生成、路由发布时机（health 门） |
+| 状态 | SQLite（modernc 纯 Go）+ goose 迁移 | BSD-3 | schema、对账器、观测缓存与新鲜度契约、审计 |
+| API | huma（OpenAPI 3.1） | Go, MIT | 资源模型、鉴权、SSE |
+| CLI | cobra + 生成的 API client | Apache-2.0 | 交互体验、输出格式（--json） |
+| git 接收 | 系统 git（v0.1）→ go-git（评估后） | Apache-2.0 | SSH 服务、post-receive 接线 |
+| 日志 | 无 | — | 采集、落盘轮转、ring buffer、SSE |
+| 指标(v0.2) | VictoriaMetrics + node_exporter + cAdvisor | Go, Apache-2.0 | 查询面、UI 图表、告警 |
+| S3(v0.2) | RustFS（provider 抽象，允许外部 S3） | Rust, Apache-2.0 | 桶管理、凭证注入、备份策略 |
+| 备份(v0.2) | restic | Go, BSD-2 | 调度、策略、恢复流程 |
+| 镜像分发(v0.2) | zot registry（v0.1 免 registry：digest 引用本地镜像） | Go, Apache-2.0 | 构建推送、节点拉取（`--with-registry-auth`） |
+| MCP(v0.2) | 官方 modelcontextprotocol/go-sdk | Go, MIT/Apache-2.0 | 精选工具面、scope 映射、审计 |
+| Web UI | React + Vite（SPA） | MIT | 全部界面 |
+
+依赖许可证以实际锁定的版本为准；默认发行包不引入 AGPL 组件。
+
+架构支持：v0.1 支持 amd64 与 arm64 的同架构构建与运行；一次构建多架构镜像列为 v0.2 评估项。
+
+### 2.3 状态模型（分层原则）
+
+状态分三层，完整判据、字段与契约见[控制面状态模型专项](2026-09-17-state-model.md)：
+
+1. **权威态（SQLite）**：只存无法从真实态重算的知识——期望态（apps/spec/domains/env 密文/placement）、历史（deployments/events/audit）、凭证（tokens）、版本快照（revisions）、备份与恢复台账。
+2. **派生缓存**：Docker/Swarm 观测快照（nodes/services/tasks/volumes），可整表重建，每行带 `observed_at/stale`，**禁止用于决策**。
+3. **实时直读**：写操作先直读底座并以对象版本作乐观令牌（`E_STATE_VERSION_CONFLICT`）。
+
+核心表（草案）：apps、deployments（含 `kind=deploy|rollback` 与 recovery 字段：归位不创建新记录，见[发布专项](2026-09-17-release-semantics.md)）、revisions（完整可部署快照，见[发布专项](2026-09-17-release-semantics.md)）、env_vars、domains、placements、volumes、nodes（v0.2；观测缓存 + 工作流字段，**不承诺「最后心跳」**）、tokens、events、audit_log、state_backups、recovery_plans、orphans。
+
+密钥方案：envelope 加密（age 或 NaCl box），主密钥存于控制面主机（文件权限保护）且与备份数据分离保存，运行时通过环境变量或 docker secrets 注入。**已知边界：Swarm service spec 中的 env 为明文，raft 备份会携带（诚实告知；v0.2 评估 secrets/tmpfs 注入）。**
+
+数据保留（默认值，可配）：部署记录每 app 50 条、可重放版本 5 个、事件 30 天、审计 1 年、应用日志 7 天轮转；SQLite 定期归档/VACUUM，防止无限膨胀。
+
+### 2.4 应用描述文件（edgesets.yaml 草案，v1alpha）
+
+```yaml
+app: my-api
+build: auto                 # auto | dockerfile | railpack | image
+image: ghcr.io/acme/api@sha256:...   # build=image 时使用
+processes:                  # 可选；缺省按镜像 ENTRYPOINT 单进程
+  web: node server.js       # web 走路由，可扩缩
+  worker: node worker.js    # worker 随 app 生命周期（cron 属 v0.2）
+port: 8080                  # web 监听端口
+health: { path: /healthz, interval: 5s, timeout: 3s }   # cmd 为逃生舱（镜像无 HTTP 客户端时），见发布专项
+domains: [api.example.com]
+env:
+  NODE_ENV: production
+secrets: [DATABASE_URL]
+volumes: [data:/var/lib/app]   # 默认只允许命名卷；宿主路径挂载需 admin scope
+placement: { node: srv-01 }    # 可选；省略=平台自动选点并持久保持（有卷应用自动钉住，见 2.6）
+update:                        # 发布治理（默认值见 2.5）
+  strategy: auto               # auto | start-first | stop-first
+  observe: 60s                 # 观察窗；0=关闭（警告）
+  onUnstable: alert            # alert（默认）| rollback（per-app opt-in）
+  keepVersions: 5
+resources: { cpu: "0.5", memory: 256Mi }
+replicas: 1                 # web 副本数；v0.1 限 1，多副本 v0.2
+```
+
+`edgesets init` 分析仓库自动生成（v0.2 起支持 `--from-compose` 从 compose 文件转换，子集范围）；`edgesets plan/apply/diff` 实现声明式闭环；对账器持续检测漂移（检测默认开、收敛 per-app opt-in，见 D11）。
+
+**spec 治理规则（来自竞品教训）**：
+- 形态：YAML + JSON Schema，发布到 SchemaStore 供 IDE 与 AI Agent 校验；严格限制表达力，不做图灵完备 DSL（YAML 反弹趋势与 Railway 转 TS DSL 的对照）。
+- spec 即完整期望态：省略 = 删除（删除语义必须显式）。
+- 单一真源：spec 管理的字段禁止在 UI 直接修改；UI 对每个字段标注来源（spec / 平台管理），禁止静默双向合并（Fly 混乱与 ArgoCD self-heal 事故的教训）。
+- 字段归属表：spec 管 build/env/domains/health/resources/placement（显式部分）/update 等；系统管证书轮转、镜像 digest、资源水位、绑定（placement 自动部分）；互不越界。
+- 数据生命周期例外：`volumes` 声明移除 = 解挂载（detach），**数据不随声明删除**；删除仅显式 `--delete-volumes`（v0.2）或孤儿卷清理（见[放置专项](2026-09-17-stateful-placement.md)）。
+- 漂移检测默认开、自动收敛 per-app opt-in（见 D11）。
+- 危险字段策略：`volumes` 默认只允许命名卷；宿主路径挂载、`privileged`、docker.sock 挂载默认拒绝，需 admin scope 显式开启并写审计（Coolify CVE-2025-34159 的根因即低权路径挂载宿主根）。平台自身维护作业（卷标记校验/远端删除）是受控例外：固定平台镜像、无用户输入、admin 触发、全程审计（Spike V8 验证）。
+
+**plan/apply 语义**（面向 AI Agent 的一等接口，照抄 Railway 已被生产验证的最小集）：
+`--json` 输出；三态退出码（0=无变化 / 2=有变化 / 1=错误）；secrets 默认脱敏；plan 可落盘为 artifact，apply 前校验 etag 防 stale 并发；破坏性操作要求 `--confirm-destructive`。
+
+### 2.5 发布流程（零停机）
+
+```
+push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
+  → 镜像不可变 digest → Swarm service 更新（start-first + healthcheck + failure-action=pause）
+  → health gate（Swarm executor 等待 healthy，平台复核）→ 路由发布 → 旧任务下线
+  → 观察窗（默认 60s；默认只告警，onUnstable=rollback 才自动回滚）→ 状态落库/事件广播
+失败任一步 → 不切流量（未切流=归位重放）；已切流失败 → 告警（或 opt-in 回滚）；结构化错误码与建议
+```
+
+**不变量（竞品事故教训 + Swarm 源码级验证；完整语义见[发布专项](2026-09-17-release-semantics.md)，Spike B 验收依据）**：
+
+- 路由发布严格晚于 health gate：**Traefik 的 Swarm provider 不检查健康**（task 进 running 即注册，源码验证），因此关闭自动发现，由控制面在 health 通过后下发路由（规避 Dokku #8974 同类事故）。
+- 入口配置写入原子且故障隔离：先校验后落盘，空 routers/services 不落盘，单应用坏配置不得影响其他应用路由（Dokploy #5189）。
+- **失败 = 不切流量**：更新统一 `start-first` + Swarm `failure-action=pause`（冻结更新、旧任务保留）；**不使用 Swarm 原生回滚**（自动回滚清空唯一 PreviousSpec、不覆盖 PENDING）——回滚由平台按完整版本快照单层重放（见 D15）。
+- **观察窗默认只告警**（`update.onUnstable=alert`）；`rollback` 为 per-app opt-in；窗口后崩溃只告警。**stop-first（有卷/固定端口）失败强制归位**，不可关闭（不回滚=永久宕机）。
+- 失败分类以「新版本是否曾健康」为界：未切流=归位重放（start-first 下同内容重放通常零任务变动，Spike B 验证）；已切流=观察窗判定；首发失败（无版本可回）→ scale 0 保留现场。
+- 回滚 = 单层实现：平台保留最近 5 个已验证版本（完整快照，不只 digest），任意版本重放；数据库迁移/持久数据/secret 值不承诺回滚（secret 取当前值）。
+- 连接治理：keep-alive 连接池会复用已退出的任务（Dokploy #5281 仍 open）——Traefik `serversTransport` 调小 idle 连接 + 应用侧 SIGTERM 后 `Connection: close`；WS/SSE 明确「断线由客户端重连」语义。
+- Webhook 安全：强制签名校验（GitHub/Gitea 等）+ 时间窗防重放 + 按 revision 幂等去重。
+- 并发控制：同一 app 同时只允许一个进行中的部署（互斥 + 队列）。
+- 运行期语义（观察窗之后）：容器退出由 Swarm `restart-condition=any`（delay 5s）重启；平台只告警并升级（3 次/10min），不自动回滚。
+- 超时与卡死：Swarm 更新在「新任务无法调度」时**没有超时**（源码 TODO）——平台以 `update.releaseTimeout`（默认 300s）兜底 + 部署前确定性预检（约束 0 节点匹配等）。
+
+**默认参数（Swarm 对齐 + 平台默认，可在 spec 覆盖）**：
+
+| 参数 | 默认值 | 来源 |
+|---|---|---|
+| 更新顺序（`update.strategy`） | `start-first`（有卷服务除外，stop-first） | 平台默认 |
+| 更新并行度 / 间隔 | 1 / 0s | Swarm 默认 |
+| Swarm 失败动作 | `pause`（平台不使用 Swarm 回滚） | 平台设定（D15） |
+| Swarm 更新监控窗 | 5s（平台固定、不暴露；只判定启动期失败） | Swarm 默认 |
+| 发布看门狗（`update.releaseTimeout`） | 300s（含 PENDING/停滞） | 平台默认 |
+| 发布观察窗（`update.observe`） | 60s（可配；0=关闭并发警告） | 平台默认 |
+| 观察窗动作（`update.onUnstable`） | `alert`（默认；`rollback` per-app opt-in） | 平台默认（D15） |
+| healthcheck | interval 5s / timeout 3s / retries 3 / start-period 10s | 平台设定 |
+| stop signal / grace | SIGTERM / 60s | 平台设定（Swarm 默认 10s；对齐 PG 建议 ≥60s） |
+| 版本保留数（`update.keepVersions`） | 最近 5 个已验证版本（完整快照） | 平台默认 |
+
+**零停机降级边界（必须显式告知，不静默降级）**：
+
+| 场景 | 行为 |
+|---|---|
+| 持久卷（local volume） | 双任务并发挂同一卷有数据风险 → `stop-first`，存在停机窗口；同时按平台绑定钉节点（不迁移，见[放置专项](2026-09-17-stateful-placement.md)） |
+| 固定 host 端口 / global 服务 | 同节点无法 start-first（端口冲突无校验）→ `stop-first` 或逐节点替换 |
+| 数据库迁移类变更 | 部署不保证零停机，用户自担，文档提供迁移指引 |
+| WS / 长连接在途请求 | 只保证新连接零失败；连接池治理见上文不变量 |
+| 镜像从 registry 拉取时 | 拉取失败任务被拒 → 发布前确保推送完成；本地已有镜像容错依赖 Engine ≥29.7 |
+| 观察窗内不稳定（start-first 正常路径） | 默认告警 + `app=degraded`；`onUnstable=rollback` 才自动回滚（走同一健康门与观察窗） |
+| health 通过后 5s 内崩溃 | Swarm monitor 窗不保护已切流流量（start-first 下旧任务已下线）——归入观察窗判定 |
+| stop-first 失败恢复 | 强制归位重放，停机持续到恢复完成，`downtime_ms` 如实累计；恢复失败 = critical |
+| 无 healthcheck | `health_gate=none` 显式降级（观察窗只看退出与副本水位）+ 警告事件 |
+| 回滚自身失败 | 不再二次自动回滚；critical + 对账对该 app 只检测不收敛，等人工/Agent |
+| 回滚目标镜像不可得（v0.1 无 registry） | 回滚前 preflight + `E_IMAGE_UNAVAILABLE` + 警告，不静默失败 |
+
+从 v0.1 起镜像一律以不可变 digest 引用：单节点免 registry（本地镜像零 pull），多节点走 zot（v0.2）。
+
+### 2.6 多节点模型（v0.2，底座 = Docker Swarm）
+
+- **底座**：Docker Swarm（引擎内置，无需额外组件，见 D12）；控制面运行在 manager 节点，通过本地 Docker API 管理全集群；成员管理、心跳、服务发现、调度、任务生命周期全部由 Swarm 承担。
+- 单节点（v0.1）同样是单节点 Swarm（安装时隐式 `docker swarm init`，对用户透明）；从单机到多节点 = `docker swarm join`，无重构。
+- **调度**：Swarm 内置（bin-pack/spread）+ node label 约束；不自研调度器或成员协议。
+- **失联与故障语义**：对齐 Swarm 心跳（5s × 3 ≈ 15–16.5s 判定 DOWN）；节点 DOWN 后 **stateless 服务自动重调度**；**stateful 服务由平台绑定自动钉住**——节点消失时任务停留 PENDING、应用进入 blocked 可见态，不迁移、不自动换点（迁走会得到空卷）；数据安全由部署前哨兜底（目标节点 ≠ 卷数据节点 → 409）。节点恢复后 Swarm 不自动回迁；rebalance 仅无状态、手动（见[放置专项](2026-09-17-stateful-placement.md)）。
+- **镜像分发**：v0.1 单节点 digest 引用免 registry；v0.2 引入 zot，服务创建时 `--with-registry-auth` 由 Swarm 原生向节点分发凭据。
+- **入口**：每节点 Traefik（global 或 replicated 1 + host 模式发布 80/443）；应用路由由控制面经 HTTP provider 或节点文件下发，不启用 Swarm/Docker provider 自动发现。
+- **能力边界（对外口径）**：统一管理 + Swarm 调度；自动迁移仅限无卷无状态服务；无跨节点共享存储（卷本地，CSI 实验性不采用）；**远端节点 local 卷不可经 manager 枚举/删除**（卷删除/校验经一次性维护作业，Spike V8 验证）。
+- **控制面灾难恢复**：备份等序原则（SQLite 允许比 raft 新、绝不更旧）+ 固定恢复顺序（raft → SQLite → 控制面 → recovery plan 人工确认 → 收敛，恢复期禁止自动收敛）+ 恢复阶梯 L1/L2/L3（L3 为容器清单离线采集，有损）；**单节点整机磁盘丢失不保应用与数据**（明确边界）。详见[状态模型专项](2026-09-17-state-model.md)。
+- **引擎门禁**：Engine ≥ 29.8.1、iptables 后端（nftables 暂不支持 Swarm 节点）、升级前跑回归矩阵（服务名 DNS / ingress / secrets / 卷 / containerd 存储双模式）。
+
+### 2.7 仓库结构（monorepo）
+
+```
+/                Go module 根（cmd/edgesetsd、cmd/edgesets、internal/、pkg/api）
+/web             React SPA（Vite）
+/docs            本目录
+/deploy          bootstrap 脚本、systemd unit、安装/升级
+```
+
+### 2.8 长期演进（核心-适配器边界，目标 5 年+ 不改核心）
+
+**核心的定义**：领域语义（App / Deployment / Domain / Env / Volume / Node）+ 期望态对账 + 发布状态机 + 契约（spec / API / 事件 / 错误码）。核心代码、数据库字段、UI 文案中不允许出现第三方概念（Traefik label、Docker 结构体、Railpack plan 等），外部表示只存在于适配器内部——这是 dokku「解析 CLI 输出」教训的一般化：外部表示一旦进入核心，上游升级就会变成我们的破坏性变更。
+
+**端口清单（稳定 SPI，9 个）**：
+
+| 端口 | 当前实现 | 退出预案 / 第二实现 | 半衰期风险 |
+|---|---|---|---|
+| Runtime | Docker Engine API（moby/client） | containerd / Wasm 运行时 | 中 |
+| Builder | Railpack | Dockerfile + BuildKit（v0.1 即一等路径） | 高（pre-1.0） |
+| Proxy | Traefik | Caddy | 中 |
+| Registry | zot | distribution | 低 |
+| ObjectStore | RustFS | 外部 S3 端点（可切换） | 高（最年轻组件） |
+| Metrics | VictoriaMetrics | Prometheus / 任意 PromQL 兼容后端 | 中 |
+| Secrets | 内置 envelope 加密 | 外部 KMS / Vault | 低 |
+| Auth | 本地 token scope | OIDC / 反向代理头 | 低 |
+| Orchestration | Docker Swarm（引擎内置） | k3s driver / 自研 node（退出预案，见 D12 / 3.1） | 中（依赖 Engine 演进，需版本门禁） |
+
+**机制保障**：
+- 每个端口定义 Go interface + **conformance 测试套件**；新适配器必须跑通套件才算可用（k8s CSI/CRI 模式）。没有 conformance 的「可替换」只是愿望。
+- 每个关键依赖维护**退出预案（exit plan）**：指认替代实现与迁移成本；Builder 与 ObjectStore 天然有两个实现，替换已被预演。
+
+**契约版本化纪律**：
+- `edgesets.yaml`：1.0 前定稿 v1；之后只加字段、不删不改语义；schema 发布 SchemaStore。
+- REST：`/v1` 加法演进 + 弃用窗口（N-2 支持）；CLI 对弃用项给出迁移命令。
+- 事件与错误码：注册表管理，稳定字符串、永不复用、只新增。
+- 状态库：只做加法迁移；回滚 = 恢复快照（不写 down migration）。
+- 引擎门禁：Engine 版本下限与升级回归矩阵（见 2.6）；控制面与节点之间无自研协议——节点通信与成员管理由 Swarm 承担，平台只消费 Docker API。
+
+**数据长寿**：期望态可从 DB + spec 完整重建；实际态可从**服务/容器/卷 label + 锚点文档**重建（节点 label 仅承载平台节点身份与别名）；一键导出为 `edgesets.export/v1` 语义 JSON + 镜像清单 + 卷 tar（**不承诺免重建**；token/主密钥不随包，见[状态模型专项](2026-09-17-state-model.md)）。代码库整体替换后，用户仍可带走应用与数据。
+
+**插件边界（L1 only）**：只做端口适配器（第三方经上游代码贡献），不做动态加载、不做通用插件 API、不开放对账器/状态机扩展点——每个插件都是永久兼容性约束，等于给核心上锁（Waypoint / MinIO 教训）。进程外集成仅通过稳定事件流 / Webhook，不触碰核心语义；L2 出现真实需求时再评估。
+
+**AI 侧的长寿赌注**：不是赌 MCP 协议本身，而是「机器可读的能力面 + scope + 审计」；MCP 只是该能力面的一个适配器，协议换代时换适配器即可。
+
+## 3. 关键决策及理由
+
+| # | 决策 | 理由 | 被否方案及原因 |
+|---|---|---|---|
+| D1 | 自研 Go 控制面 | AI/Agent Native 与 UI/MCP 承诺需要结构化状态与 API-first 地基；统一集群需求已排除 dokku | 包装 dokku：无结构化状态、解析层长期维护税、单机；纯 k8s/Tsuru：过重，违背 10 台定位；Coolify 二次开发：PHP/Laravel + 自身过重 |
+| D2 | 统一集群，底座 = Docker Swarm（引擎内置）；控制面运行于 manager，不自研分布式核心 | 三条硬约束（不自研分布式核心 / 轻量 / 五年可用）加权下 Swarm 得分最高：零新增组件、调度与成员管理全内置、health gate 与失败不切流原生可用（源码级验证）；专项评估见 [Swarm 评估报告](../research/2026-09-17-swarm-substrate-assessment.md) | 自研 node 协议：分布式核心工作量集中且最难测试（本轮推翻）；机队模式：无统一调度；Nomad：官方小集群 sizing 8-16GB 级 + BSL 许可；k3s：2C/2GB 起 + 用户拒绝 K8s（保留为可选 driver） |
+| D3 | Web UI 用 React SPA | 生态与组件库最丰富、人才与参考实现最多，长期维护与招人成本最低；MIT | Go 模板 + HTMX：更轻、单二进制，但交互上限低；Svelte / Solid：运行时更小、signals 模型更契合高频流式渲染，但生态规模小；本轮按团队选型定为 React，UI 与 API 严格解耦故后续仍可换 |
+| D4 | S3 用 RustFS，且做 provider 抽象 | Apache-2.0 与开源核心+商业版兼容；自带 Web UI | Garage：AGPL，不适合作为默认发行组件（作为可选外部端点保留）；SeaweedFS：成熟但运维面大；MinIO：社区版已归档 |
+| D5 | 开源核心 + 商业版，核心 Apache-2.0 | 专利授权、商业友好；核心保持完整可自用，不做 MinIO 式"先送后收" | MIT：缺少专利条款；AGPL：限制商业路径 |
+| D6 | 构建用 Railpack + BuildKit，Dockerfile 兜底 | 自研构建系统是无底洞；Nixpacks 已转维护模式，Railpack 是其官方继任且为 Go 库可复用 | 自研 buildpack 体系；herokuish：bash + 与 dokku 生态绑定 |
+| D7 | 状态用 SQLite | 零运维、单文件、支持 10 台规模足够；备份即复制文件 | etcd：为分布式一致性设计，杀鸡用牛刀；Postgres：平台自身变重 |
+| D8 | MCP server 移至 v0.2 | v0.1 收敛范围；API-first 下 MCP 是服务层之上的薄适配层，晚一期不欠技术债 | v0.1 即交付 MCP：会挤占部署闭环的联调时间 |
+| D9 | 镜像从 v0.1 起用不可变 digest | v0.2 多节点分发改造若发生在部署管线中途，代价远大于一开始就用 digest | tag 引用：早期省事，后期改管线 |
+| D10 | 工具面精选（MCP ≤30 工具 + action 枚举 + scope） | Dokploy 546 工具/74k tokens 反面教材；精选是业界公开收敛（Dokploy 546→27、Railway 远程 7、Coolify 只读起步、Portainer 98→15）。配套机制：破坏性操作两段式（预览→确认），`confirm` 字段从 input schema 隐藏防模型自填；scope 在**执行层**强制（每次 tools/call，非仅 tools/list 过滤）；每次调用写审计；响应默认脱敏与截断；提供只读 token 模板 | 由 OpenAPI 自动生成全量工具：上下文灾难 + 坏 schema 可致客户端整体拒收（Anthropic 案例）；仅 tools/list 过滤做权限：可被 tools/call 绕过（CVE-2026-46519） |
+| D11 | 漂移检测默认开、自动收敛 per-app opt-in | 检测是用户与 AI Agent 都需要的事实来源；PaaS 阵营无人做全（差异化空白区），K8s GitOps 证明需求同时暴露 self-heal 事故（ArgoCD #13598）；Terraform #35382 证明「检测」与「变更」应解耦 | 全自动收敛：事故中会被用户强制关闭且「Synced ≠ desired」；不做检测：与对账式原则矛盾，放弃差异化 |
+| D12 | 采纳 Docker Swarm 作为多节点底座（v0.1 单节点即 Swarm，对用户透明）；退出预案 = k3s driver 或自研 node（见 3.1） | 专项验证结论：health gate / 失败不切流由 Swarm 原生兑现（源码级）；单版自动回滚原生存在但被否（清空唯一历史槽，见 D15），平台改用 pause + 快照重放；v0.1 单节点 digest 引用免 registry 实测可行；Engine 29.x 约 21 条 Swarm 修复、未 deprecated、Mirantis 支持至 2030；代价（Engine 破坏式升级 / 有状态弱 / 单 manager SPOF）均有具体缓解（锁版本+回归矩阵 / 状态外置+绑定钉住 / 冷备+演练） | 自研 node 协议：工作量与风险最高的分布式核心（推翻原 D2）；完全不采用集群底座：放弃统一调度与自动重调度；k3s：资源与产品身份不符（保留 driver）；Nomad：BSL + 重型 sizing |
+| D13 | 核心-适配器分层（§2.8）：核心 = 语义 + 对账 + 契约；插件只做 L1 端口适配器；v1.0 冻结核心契约 | 5 年+「不动核心」的实现方式是收窄核心定义并把第三方概念全部赶入适配器；端口 + conformance 套件使替换成为工程事实而非愿望；动态插件会成为永久兼容性约束，冻结演进 | 通用插件 API / 动态加载：Waypoint、MinIO 的扩展点教训；把第三方语义留在核心：dokku CLI 解析教训，上游升级即破坏 |
+| D14 | compose 只作输入格式（v0.2 `--from-compose` 转换器），不作运行模型；多容器场景由 v0.3 受控 stack + 模板目录覆盖 | 与零停机/回滚承诺冲突（Coolify 文档明确 compose 不参与滚动、20-60s 停机 #7313）；一等 stack 会让对账器/状态机/UI/CLI/MCP/drift 全量双份，违反核心不动（D13）；真实迁移需求用转换器 + 模板目录疏解。再评估触发：转换失败率高企，或 compose 迁移进入用户调研 top-3 阻碍 | 任意 compose 一等公民：语义降级与承诺冲突公开化 + spec 无底洞；完全不支持：失去自托管用户与 AI Agent 的主要迁移入口 |
+| D15 | 发布失败动作固定 `pause`，回滚由平台按完整版本快照单层重放；观察窗默认只告警、`onUnstable=rollback` 为 per-app opt-in；stop-first 失败强制归位 | Swarm 原生回滚清空唯一历史槽且不覆盖 PENDING，无法兑现「任意版本重放」；pause 保留旧任务与服务 spec，恢复动作幂等可审计；默认告警与 D11「检测开、收敛 opt-in」一致，避免对无效回滚的震荡 | Swarm `failure-action=rollback`（历史槽失效、首发卡死）；两层回滚（两套判定权与审计）；窗口后自动回滚（抖动）；观察窗默认自动回滚（静默改变运行版本，用户裁决改为 opt-in） |
+| D16 | 有状态应用默认自动钉住：spec `placement.node` 可选，平台绑定（**平台节点 ID 为锚**）持久保持；节点消失不迁移不换点；跨点移动仅经备份恢复 + 显式数据处置确认 | 有卷应用被迁移会得到空卷（源码级验证），数据安全必须是默认行为；平台节点 ID 抗重名/重建（显示名仅供人/Agent 读写）；卷-节点归属前哨把空卷事故变成显式 409 | 要求显式 pin（首部署摩擦、AI Agent 易漏）；hostname/别名作身份（重名机器静默接管）；自动换点/迁移（空卷事故） |
+| D17 | 控制面状态三层：权威（SQLite，意图/历史/凭证）/ 派生缓存（观测快照，带 observed_at/stale，禁入决策）/ 实时直读（写前校验）；`nodes` 降级为观测缓存+工作流载体；备份等序 + 恢复期禁止自动收敛 | 双状态源无法消灭只能明确属主；把运行态当权威是漂移与误删的唯一通路；恢复期自动收敛在 DB 较旧时会静默回退部署 | 全量镜像 Swarm 状态入权威（双写者）；不落缓存（无降级读、打爆底座 API）；恢复即自动收敛（静默回退）；声称「最后心跳」（Swarm 不暴露该时间戳） |
+
+### 3.1 底座再评估触发条件与退出预案
+
+D12 的采纳带验证门（V1-V7，见 [Swarm 评估报告](../research/2026-09-17-swarm-substrate-assessment.md) 第 6 节）。以下任一条件出现时，切换到退出预案（k3s driver 或自研 node；方向已定，详细设计在触发条件出现时立项，触发前以 V1-V7 回归持续监测）：
+
+| 触发条件 | 走向 |
+|---|---|
+| V1-V7 任一不通过且无缓解 | 启动退出预案：k3s driver（应用定义保持 Compose 兼容）或自研 node |
+| Swarm 被官方废弃，或 Engine 破坏式升级无法用版本门禁缓解 | 同上 |
+| 用户群真实要求跨节点共享存储 / 更强调度 | 评估 k3s driver（本地卷/CSI 是 Swarm 的硬边界） |
+| 多节点规模远超设计（>10 台成为常态） | 重新评估底座选型 |
+| 需要纳管用户已有的 k3s 集群 | 增加 k3s driver（参考 Dokku scheduler-k3s 先例） |
+
+## 4. 分步实施计划
+
+### 4.1 Spike 阶段（1-2 周，先验最高风险）
+
+| Spike | 验证内容 | 通过标准 |
+|---|---|---|
+| A 构建 | BuildKit 容器 + Railpack 构建 Node/Go 应用；版本钉死与 plan JSON 归档；缓存三情形（本地层 / registry cache / secrets-hash 失效）；私有依赖 BuildKit secrets；rootless vs 特权选型与资源限额；**本地镜像 digest 引用免 registry（V2）** | 从源码到可运行镜像可复现（Railpack 钉版本 + `railpack-plan.json` 归档）；二次构建显著加速且 env 变化正确失效；私有依赖凭证不进入最终镜像；构建在 CPU/内存限额内且不污染宿主；rootless/特权方案明确选型；service 以 `app@sha256:` 创建时任务零 pull 尝试 |
+| B 发布与路由 | Swarm 更新（start-first + healthcheck + `failure-action=pause`）+ 失败冻结与归位重放 + Traefik 控制面下发（HTTP provider）+ **失败路径与配置隔离** + **连接池治理（V1/V3/V4）** + **归位零成本（B2）** | health 失败时新任务 FAILED、更新 paused、旧任务不中断（V1）；pause 后同内容 spec 重放**任务零替换**（B2）；更新窗口内持续探测零失败、VIP 更新前后不变（V3）；keep-alive 陈旧连接用 `serversTransport` 参数消除（V4）；**start-period 内任务是否已进 LB 端点集合（B3，最高优先级开放问题）**；「容器启动即崩」时旧版本持续服务且入口配置零污染；单应用坏配置不影响其他应用路由；失败矩阵（启动即崩/health 永不通过/拉取失败）逐条断言错误码；回滚（快照重放）一分钟内完成 |
+| C 底座 | Swarm 初始化与 join、节点故障重调度、**卷与约束语义（V6a）**、**放置漂移矩阵（V6b）**、**远端卷能力（V8）**、**重入 adopt（V9）**、**单 manager 故障恢复（V5/V5b）** | 单节点 `swarm init` 对既有容器无影响、用户视角透明；节点 DOWN（15s 量级）后 stateless 任务自动重建；有卷服务无约束时迁移得空卷（复现并文档化）、加绑定后任务钉住不迁移；放置漂移全矩阵（down→blocked→rejoin→adopt→恢复；remove→gone；rename 阻断）；远端卷 probe/维护作业可用（不可行则降级清空+人工回收）；`--force-new-cluster` 恢复演练成功、应用不中断；raft 回退后孤儿容器命运明确（V5b） |
+
+A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm 采纳门（详见 Swarm 评估报告第 6 节），任一不通过且无缓解则启动退出预案；全部失败才需要回到"包装 dokku"备选路线。交叉验证新增验证项（B2 归位零成本、B3 LB 端点时机、V5b/V6b/V8/V9）并入 B/C 的通过标准；未验证前相关承诺标注「待验证」。
+
+并行非技术验证：Spike 期完成 5-10 个目标用户访谈，重点验证「声明式 / 漂移检测」与「AI Agent 直接操作平台」是否为其真实痛点；v0.1 发布后 4 周内设定外部试用与反馈目标（数量在 v0.1 启动时确定）。
+
+### 4.2 v0.1（单机可用，8 项）
+
+1. 部署闭环：git push(SSH) / Webhook（验签）→ 构建 → 零停机上线 → 回滚；支持 web + worker 双进程（cron 与多副本 v0.2）；运行时 = 单节点 Swarm service（安装时隐式 `docker swarm init`）
+2. REST API + OpenAPI 3.1 + CLI（全命令 `--json`）
+3. 域名 + 自动 HTTPS（Traefik + ACME）
+4. 环境变量/密钥（加密存储、注入、自动连接串）
+5. 日志查看（实时 SSE 流 + 历史落盘检索）
+6. 基础 Web UI（应用列表/详情、部署、日志、env、域名）
+7. 发布语义全套：`update.*` 治理字段、任意历史版本重放（完整快照）、观察窗默认告警、首发失败 scale 0 保留现场
+8. 放置契约冻结：`placement.node` 解析与校验、有卷应用自动钉住（单节点同路径，见[放置专项](2026-09-17-stateful-placement.md)）
+
+验收：一台干净 VPS 上执行一条安装命令，用已解析的域名，20 分钟内完成 git push 部署并拿到 HTTPS 访问（DNS 传播时间不计入），UI 可见日志与配置，可一键回滚。
+
+横切硬指标（v0.1 即满足，评审门禁）：
+
+- **平台自升级原子化**：预拉镜像 + 升级前自动快照 + 失败自动回退；禁止 `--force-recreate` 式升级（Coolify/Dokploy 最高频信任事故模式）。
+- **平台状态备份基线**：控制面状态（SQLite + 密钥）可备份且恢复可演练；备份密钥与元数据独立于备份数据保存；任何备份失败红色告警（禁止「绿色成功但实际没上传」）。
+- **资源预算**：控制面 edgesetsd idle 内存 <200MB（对标 CapRover 实测值；含 dockerd + swarmkit，需自测校准；Traefik 单列约 50MB）；构建与应用资源隔离且有限额；v0.2 指标栈引入后另设平台组件总量预算（目标 idle <400MB，压测后定稿）。
+- **引擎门禁**：Docker Engine ≥ 29.8.1、iptables 后端（nftables 暂不支持 Swarm 节点）；引擎升级前跑回归矩阵（见第 6 节）。
+- **容量边界**：单节点建议 ≤50 apps / ≤200 域名 / 并发构建 2（压测后修正）；超限时显式提示而非静默降级。
+- **安全默认基线**：数据库/内部服务默认不暴露公网；面板支持不裸奔运行（Tunnel/VPN/SSO 可选）；**后端强制鉴权**（Coolify CVE 群的共同模式：前端做了权限、后端没做）。
+- **状态诚实契约**：读接口统一返回 `meta`（source/observed_at/stale）；`nodes` 不提供「最后心跳」字段；备份含 manifest + sha256 回读校验（`state_backups` 台账）。
+
+### 4.3 v0.2
+
+MCP server（首项，薄适配层；**工具预算核算**：三专项新增的读/写操作（deployment/revision/rollback/placement/nodes/volumes/export/recovery 等）须在 MCP 设计时做 ≤30 预算核算，超出者并入 action 枚举或不暴露）→ metrics（VictoriaMetrics + 图表 + 查询面）→ S3（先做 RustFS 最小验证：S3 基础操作 + restic 目标兼容；再做桶管理/凭证注入/备份）→ 多节点（`docker swarm join` + zot registry + placement 绑定与节点生命周期 API（drain/remove/adopt）+ 孤儿卷管理与远端维护作业 + rebalance + 引擎升级回归）→ `edgesets init --from-compose` 转换器（compose → spec；单服务 / 一主服务 + 依赖声明子集，不支持构造显式列出）。
+
+### 4.4 v0.3
+
+数据库托管（Postgres/Redis 等 + 自动备份 + 连接串注入）、PR 预览环境（AI Agent 开 PR → 自动 URL → 合并即销毁）、团队/RBAC/审计留存（商业版功能候选）、告警通知、受控 stack（先服务平台自身多容器场景，再以官方/社区模板目录开放：`edgesets template add xxx`）。
+
+### 4.5 工作量估算（v0.1，AI 辅助开发）
+
+约 31-42k LOC（含 UI），2-3 人 3-4 个月；单人全职 6-9 个月。多节点工作量因采纳 Swarm 显著下降（D12，分布式核心不再自研）；构建/发布与 UI 为最大变量。**估算基线说明**：本估算早于独立设计×交叉验证轮；三专项（发布/放置/状态模型）的 v0.1 实现切面须在 v0.1 启动前重算并冻结（契约冻结 ≠ v0.1 实现，超出切面的项按 §4.3 后置），避免范围蔓延（见 §5 风险表）。
+
+## 5. 风险与对策
+
+| 风险 | 影响 | 对策 |
+|---|---|---|
+| 零停机状态机时序缺陷 | 发布中断、流量丢失 | Swarm 原生 health gate + `failure-action=pause`（源码级验证，V1 实测确认）；平台显式状态机 + 每步可观测 + 事件持久化；数据库迁移类变更明确文档化为"非零停机" |
+| 构建确定性/缓存/私有依赖 | 用户构建失败 | BuildKit 独立容器 + cgroup 限额 + 构建队列；语言覆盖以 Railpack + Dockerfile 为界，不做全覆盖承诺 |
+| 多节点镜像分发返工 | v0.2 改部署管线 | v0.1 起 digest 引用；zot 方案在 spike 阶段验证 |
+| 底座依赖：Engine 破坏式升级（v29 类事件重演） | 集群不可用或功能断裂 | 锁版本 + hold + 升级回归矩阵（V7：服务名 DNS/ingress/secrets/卷/containerd 双模式）；`min-api-version` 兜底；版本门禁写入安装检查 |
+| 有状态能力边界（local 卷不跟随、CSI 实验性） | 数据丢失风险 / 误迁移 | stateful 由平台绑定自动钉住并文档化；状态优先外置（外部 DB/S3）；CSI 不用于关键路径；V6a/V6b 演练验证 |
+| keep-alive 陈旧连接 | 更新期间偶发 5xx | Traefik `serversTransport` 调小 idle 连接；应用侧 SIGTERM 后 `Connection: close`；发布观察窗；V4 实测复现与治理 |
+| Swarm 单 manager SPOF | 管理面丢失（应用仍运行） | 冷备 `/var/lib/docker/swarm` + `--force-new-cluster` 演练（V5）；服务/容器/卷 label + 锚点反向重建；Mirantis MKE 作为付费兜底选项 |
+| 节点重调度语义误用 | 有卷服务迁移后空卷、误判 | stateful 由平台绑定自动钉住（见[放置专项](2026-09-17-stateful-placement.md)）；对齐 Swarm 心跳（15s 量级）；文档与 UI 明示「自动迁移仅限无状态」 |
+| AI Agent 权限滥用 | 安全事故，信任崩塌 | scope token（read/deploy/admin）+ plan/apply + 审计 + 破坏性操作显式确认 |
+| 控制面单点丢失 | 无法管理（应用仍运行） | 备份等序与恢复阶梯 L1/L2/L3（见[状态模型专项](2026-09-17-state-model.md)）+ 服务/容器 label + 锚点反向重建 + DR runbook；应用运行不依赖控制面（既有架构性质） |
+| 差异化需求未验证 | 做出来没人要 | 需求侧验证并行（4.1）；v0.1 后设反馈门禁；保留把资源转向已验证痛点的选项 |
+| 平台自升级破坏（第一信任杀手） | 用户应用/数据不可控，信任崩塌 | 预拉镜像 + 升级前自动快照 + 失败自动回退；SQLite 迁移事务化 + 容器 label 为实际状态 + 对账自愈；发布前跑「上一版本 → 新版本」升级 E2E |
+| 备份假成功 | 灾难日发现无可用备份 | 备份产物写入对象存储后回读校验；失败红色告警；密钥随备份独立保存；定期恢复演练（见 4.2 横切硬指标） |
+| 错误信息黑盒 | 用户与 AI Agent 都无法排障；差评最密集处 | 结构化错误码 + 原始 stderr/上下文 + 修复建议 + 事件流可查（设计原则 5） |
+| 构建与应用资源竞争 | 单机雪崩 | 构建并发队列 + 资源限额 + UI 资源水位展示 |
+| RustFS 年轻/单厂商 | S3 层被绑定 | provider 抽象 + 支持外部 S3 端点；不把平台自身备份单点押在它上（restic 目标可配置；备份密钥与元数据独立保存） |
+| 范围蔓延 | 工期失控 | 每期范围冻结；第 7 节"明确不做"清单为准 |
+| 商业化与社区信任冲突 | 开源社区反弹 | 核心完整可自用；商业边界（团队/SSO/审计留存/HA/托管）提前定义并公开；不做功能回撤 |
+| LB 端点可能早于 health 加入（开放问题） | start-first 重发布期「失败=不切流量」失真（少量 5xx） | 最高优先级 Spike（B3）；若成立：观察窗起点前移 + 对外口径降级为「新连接零失败、切换期少量 5xx」 |
+| 归位零成本依赖 spec 深度相等（未验证） | 归位多做一次滚动（功能仍正确） | Spike B2 断言 task id 不变；不成立则接受一次滚动并修正文档 |
+| 冻结→归位竞态（窗口内旧任务节点 DOWN） | 按失败 spec 重建错误版本任务 | 归位 p95 <2s + 故障注入测试；错误任务不会通过 health 接管流量 |
+| 缓存陈旧被误当事实 | 用户/AI Agent 误判 | `meta` 信封 + stale 标记 + `freshness=live` 不回退；决策路径禁读缓存 |
+| 恢复后孤儿误删 / 旧版控制面操作新版对象 | 数据丢失 / 状态破坏 | 孤儿只登记不自动删；label schema 版本化（旧版只读）；恢复期禁止自动收敛 |
+| env 明文随 raft 备份 | 「密钥独立于备份」边界被击穿 | 如实文档化 + 备份介质加密 + 密钥独立保存；v0.2 评估 secrets/tmpfs 注入 |
+| 冷备维护窗口实际不执行 | 灾备假可用 | 升级前强制冷备（天然有窗口）；冷备占比监控与失败告警 |
+| 系统性故障下集体回滚震荡 | 多 app 同时失败叠加处理 | v0.1 同签名检测告警；v0.2 熔断（暂停新部署与自动回滚链） |
+
+## 6. 测试策略
+
+（落地轨道与门禁流程见[交付流水线设计](2026-09-17-delivery-pipeline.md)；V1-V9 已升级为永久回归测试，不再是一次性 Spike。）
+
+- **单元**：发布状态机（穷举转换与失败分支）、spec 解析、放置解析与选点确定性、漂移 hash、加密。
+- **集成/E2E**：真实 Docker/Swarm 环境跑 build → service 更新 → health gate → 路由 → rollback 全链路；每个 v0.1 验收项至少一条 E2E；必须覆盖失败矩阵（health 永不通过、容器启动即崩、拉取失败、观察窗崩溃循环、坏配置隔离、控制面中断恢复）与 V1/V3/V4/V6a 场景。
+- **放置与状态**：放置漂移矩阵（down/rejoin/adopt/rename/remove/数据不匹配）、绑定保持、缓存新鲜度契约、写前直读冲突、孤儿保护（只登记不删除）、备份等序与恢复顺序演练（L1/L2/L3 各一条）、导出导入一致性（密钥不随包）。
+- **契约**：label schema 快照（旧读新只读、未知保留、保留前缀拒绝）；错误码注册表只增校验。
+- **引擎升级回归（V7）**：dind 矩阵（containerd 存储 + overlay2 两条腿，锁定版本号）跑服务名 DNS、ingress、secrets 挂载、卷语义子集；引擎版本升级前必跑。
+- **契约**：OpenAPI 为真源，CLI/UI/MCP 生成客户端编译即校验；错误码变更需显式评审。
+- **适配器一致性（conformance）**：每个端口（§2.8）附 conformance 测试套件；新增或替换适配器（Builder / Proxy / Runtime / ObjectStore 等）必须跑通套件后才可合并。
+- **升级**：上一版本数据 → 新版本迁移的前后对比测试；平台自升级的失败回退路径纳入每次发布的必测项。
+- **恢复演练**：定期从备份恢复控制面与应用数据并验证（v0.2 起纳入发布检查单）。
+- **AI Agent 面向**：MCP 工具 schema 快照测试（防上下文膨胀）、错误码稳定性测试、`--json` 输出 schema 测试。
+- **手工验收**：干净 VPS 一键安装 + 示例应用部署（每次发布前执行）。
+
+## 7. 明确不做的事
+
+- 不做 k8s / Nomad 后端（底座为 Docker Swarm，见 D2/D12；k3s 保留为可选 driver，触发条件见 3.1）
+- v0.1 不做服务模板商店（Coolify 式 280+ 模板）
+- 数据库托管不早于 v0.3
+- 不做跨节点共享存储（卷本地；CSI cluster volumes 实验性，不采用）
+- 不自研调度器 / 成员管理 / 节点协议（由 Swarm 承担；这是本方案的核心取舍）
+- 不承诺构建语言全覆盖（以 Railpack + Dockerfile 能力为界）
+- 不做多租户强隔离（预留为商业版）
+- 默认发行包不引入 AGPL 组件
+- 不做 stateful 自动迁移 / 自动换点 / 自动 failback；跨节点卷移动只经备份恢复（不做在线迁移）
+- 不做 stateful 应用的零停机承诺（持久卷/固定端口场景显式降级 stop-first 并告知）
+- 不做 MCP 全量自动生成工具面（精选 ≤30）
+- 不做功能回撤：核心功能一旦发布不因商业版回收，许可证与功能承诺不可撤回（Dokploy DSAL / MinIO 教训）
+- 不做遥测：默认不采集/不上报任何使用数据；版本更新检查为显式可选
+- 不做通用插件系统：不开放动态加载、不做通用插件 API、不开放对账器/状态机扩展点（第三方集成走稳定事件流/Webhook；端口适配器经上游代码贡献，见 D13/§2.8）
+- 不做任意 compose 作为一等 workload：compose 仅作迁移输入（`--from-compose`），多容器场景走受控 stack/模板目录（见 D14）
+- 不使用 Swarm 原生回滚 / previous_spec；窗口后不自动回滚（观察窗默认告警、自动回滚 per-app opt-in）
+- 不做标签/偏好式调度 DSL（placement 只做节点级硬钉住）；v0.2 不做自动 rebalance
+- 不做对未登记对象的自动删除（孤儿只登记，adopt/purge 显式）
+- 不承诺节点心跳时间戳；不把运行态快照当权威
+- 不承诺导出免重建；不承诺单节点整机丢失的应用与数据恢复
