@@ -27,7 +27,7 @@ edgefleet 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 
 1. 静态：golangci-lint、gofmt、staticcheck、gosec、govulncheck；Wire 生成物同步检查（`go generate ./...` 后 git diff 为空，D20）
 2. 单元 + race：发布状态机、对账器、spec、加密、配置解析
-3. 契约：OpenAPI 生成客户端编译 + oasdiff breaking 检查；MCP 工具 schema 快照；错误码注册表校验（只增、不复用）；Compose 子集校验回归（白名单/拒绝清单/受管字段/label 约定）
+3. 契约：buf lint + buf breaking（对 main）+ 生成物（genproto/SDK）编译即校验与同步检查（D21）；MCP 工具 schema 快照；错误码注册表校验（只增、不复用）；Compose 子集校验回归（白名单/拒绝清单/受管字段/label 约定）
 4. 许可证守卫：默认发行组件清单不得出现 AGPL/DSAL（白名单机制，见 D5）
 5. 集成 E2E（单节点 dind）：`docker:29.8.1-dind` 内 install → 部署 fixture 应用（compose）→ stack 对账（增/删服务、受管字段拒绝）→ health gate → 路由 → 回滚 → 平台自升级
 6. Console 端：typecheck + build（Playwright smoke 可选）
@@ -45,7 +45,7 @@ edgefleet 做 CD：`git push` / Webhook / API / CLI 触发的构建 → 发布 �
 1. V1-V7 + 扩展项 + nightly 全绿
 2. **VPS 验证（脚本化）**：通过云 API 起一次性机器 → 干净安装 → 示例应用 → 自升级 → 回滚 → 卸载；**TLS / ACME 真路径只在这里测**
 3. 制品：多平台二进制（amd64/arm64 交叉编译，arm64 release smoke）+ 安装脚本 + ghcr 镜像；SBOM（syft）+ 签名（cosign 或 GitHub attestation）+ checksum
-4. 兼容承诺检查（Compose 子集契约 / REST `/v1` / N-2 升级路径）+ changelog
+4. 兼容承诺检查（Compose 子集契约 / proto buf breaking / N-2 升级路径）+ changelog
 5. 文档更新检查（含升级说明）
 
 ### 2.3 引擎门禁流程（把 Docker 升级当特殊变更类管理）

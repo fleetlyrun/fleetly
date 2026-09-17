@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；技术选型补充已应用（基础 Go 框架 = lynx + google/wire，D20，参考 messageloop）；实现后更新状态并补 PR |
+| 草案 | 2026-09-17 | 决策来自项目启动讨论；[竞品调研](../research/2026-09-17-competitive-landscape.md) 13 条建议已应用（见调研 §10）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)已采纳（D2/D12 改写，V1-V7 为采纳门）；长线演进（§2.8、D13）已应用；**应用模型反转为 Compose 规范（D14 重写、§2.4 重写，自研 spec 废止）**；独立设计×交叉验证轮已合入（发布失败/回滚→[专项](2026-09-17-release-semantics.md)、stateful 放置→[专项](2026-09-17-stateful-placement.md)、控制面状态模型→[专项](2026-09-17-state-model.md)）；交付流水线见[交付流水线设计](2026-09-17-delivery-pipeline.md)；一致性审查轮已应用（A 类矛盾修正 + 6 项裁决：blocked_waiting 看门狗豁免、replicas v0.1 照用、app 状态机、placement label 冲突规则、cron 入 v0.2、state_backups 入 v0.1）；奥卡姆裁决轮已应用（F1/F2 悬空码删除、conformance 分档、S3 改外部端点优先〔D4 复议〕、v0.1 契约与节点表去噪、runtime_node_refs/卷身份/cAdvisor 记账补记）；cron 最小形态落档（§4.3 细则 + label 约定 + `cron_runs` + job 继承绑定 + §7 明确不做）；画像复核轮已应用（目标用户画像与设计输入入 §1.2，2 节点 HA 边界口径入 §2.6，v0.2 多节点提序入 §4.3）；定位复核续轮已应用（栈边界与对外口径入 §1.2：CI/CD 拆分、四库模板、S3 措辞、稳定性表述、AI 排序；TTFW 信任闭环验收入 §4.2；数据库模板与不做清单更新）；S3 卷被否方案落档（放置专项 §5/§7）；审核裁决轮已应用（升级双轨口径、执行中继 D19、每节点入口与集中证书模型、zot 平台域名方案、env 三层合并链、服务命名与网络别名、底座端口加固、cron 触发前哨与超时看门狗、域名列表契约、C 级一致性清理）；技术选型补充已应用（基础 Go 框架 = lynx + google/wire，D20，参考 messageloop；API 面 = gRPC + grpc-gateway，D21，参考 torchwood，huma 经用户裁决否决）；实现后更新状态并补 PR |
 
 ## 1. 现状与问题
 
@@ -88,7 +88,7 @@ CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
         │
         ▼
 ┌─ 控制面 edgefleetd server（Go 单二进制，运行于 Swarm manager）─┐
-│  API 层        REST(OpenAPI 3.1) + SSE 事件/日志流            │
+│  API 层        gRPC + grpc-gateway(REST/JSON/OpenAPI) + SSE    │
 │  编排层        compose.yaml 解析（受控子集）→ 对账器 → 发布状态机 │
 │  构建管线      Railpack / Dockerfile → BuildKit → 镜像        │
 │  调度委托      Swarm 内置调度 + node label 约束（不自研）     │
@@ -122,8 +122,8 @@ CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
 | 构建 | Railpack + BuildKit（Dockerfile 兜底） | Go, MIT / Apache-2.0 | 构建队列、缓存、资源限制、镜像命名 |
 | 入口 | Traefik（global，每节点）+ ACME（lego，控制面集中签发） | Go, MIT / MIT | 动态配置与证书集中下发、路由发布时机（health 门） |
 | 状态 | SQLite（modernc 纯 Go）+ goose 迁移 | BSD-3 | schema、对账器、观测缓存与新鲜度契约、审计 |
-| API | huma（OpenAPI 3.1） | Go, MIT | 资源模型、鉴权、SSE |
-| CLI | cobra + 生成的 API client | Apache-2.0 | 交互体验、输出格式（--json） |
+| API | **gRPC + grpc-gateway/v2 + buf**（openapiv2 文档派生、protovalidate 校验；torchwood 范式，D21） | Go, Apache-2.0 / BSD-3 | proto 契约（`edgefleet.{client,console,server}.vN` 分模块）、拦截器链（鉴权/限流）、自定义错误信封（ErrorResponse + snake_case + `disable_default_errors`）、genproto/SDK 生成 |
+| CLI | lynx-go/commands + 平台 Go SDK（gRPC client，独立模块，torchwood 同型） | Go, MIT | 交互体验、输出格式（--json）；日志/事件长流走 gRPC streaming |
 | git 接收 | 系统 git | Apache-2.0 | SSH 服务、post-receive 接线 |
 | 日志 | 无 | — | 采集、落盘轮转、ring buffer、SSE |
 | 指标(v0.2) | VictoriaMetrics（存储/查询）+ node_exporter（宿主）+ cAdvisor（逐节点容器指标：manager 无远端 Engine API） | Go, Apache-2.0 | 查询面、UI 图表、告警 |
@@ -324,7 +324,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 
 **契约版本化纪律**：
 - Compose 子集与 label 约定：白名单/拒绝清单只增不减；`edgefleet.*` label 契约化（版本化、只增不改语义）；不自研 schema（compose 官方 schema 校验 + 平台子集校验）。
-- REST：`/v1` 加法演进 + 弃用窗口（N-2 支持）；CLI 对弃用项给出迁移命令。
+- API：proto package 版本化（`edgefleet.{client,console,server}.vN`）+ `buf breaking`（FILE 规则）为兼容门禁；REST 路径 `/v1` 由 proto `google.api.http` 注解派生；弃用窗口（N-2 支持），CLI 对弃用项给出迁移命令；OpenAPI（openapiv2）为派生物、禁止手改。
 - 事件与错误码：注册表管理（**唯一真源为代码内注册表**，文档域清单为定义性说明），稳定字符串、永不复用、只新增。
 - 状态库：只做加法迁移；回滚 = 恢复快照（不写 down migration）。
 - 引擎门禁：Engine 版本下限与升级回归矩阵（见 2.6）；控制面与节点之间无自研协议——节点通信与成员管理由 Swarm 承担，平台只消费 Docker API。
@@ -359,6 +359,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | D18 | 对标基线 = **Dokploy 体验（地板）+ Cloudflare 式体验（方向）**；复杂度纪律：Dokploy 没有且无硬承诺的机制一律不做，预算投向对标缺口（数据库托管提前、监控/通知、模板、Web 终端、Cron） | 小团队需求不极端；机制复杂度不构成 UX，对标缺口构成 UX（Dokploy 无熔断/rebalance/adopt/DR 阶梯/导出合同也做到头部体验）；我们保留的 pause+重放、plan/apply、漂移、错误透明、统一集群恰是 Dokploy 弱项 | 用内部机制做差异化（方向错误）；为「以后可能需要」预建机制（未来需求是猜测不是约束） |
 | D19 | Web 终端经**执行中继** `edgefleet-exec`（Swarm global service）实现：仅挂内部系统网络、不发布端口；API 面仅 `healthz`/`exec` 且只对带 `edgefleet.app` label 的容器；集群 token 经 Swarm secret；成员发现复用 Swarm（`tasks.<name>` DNS + task→NodeID 反查）；`terminal` 独立 scope + 会话限制（空闲 10m/上限 30m）+ 审计入档（2026-09-17 审核裁决） | Swarm 无 exec RPC，worker 容器终端在无远端 daemon 访问下不可达；Portainer Agent / Komodo Periphery 为同型先例；成员与分发仍归 Swarm，不违反 D12 | 通用 Docker API 代理（第二 docker.sock 面、安全事故面）；SSH 隧道（密钥分发 + NAT 脆弱，调研 §2 反模式）；per-container 终端 sidecar（侵入 compose 语义） |
 | D20 | 基础 Go 框架 = **lynx + google/wire**（2026-09-17 技术选型）：`lynx.NewRunner` 承载进程生命周期，`boot.Bootstrap` + Wire 编译期装配依赖图；lynx 用法以 **messageloop**（github.com/messageloopio/messageloop，同域生产使用）为参考实现，Wire 装配形态以 lynx-clean-template 为模板；框架层只做装配与生命周期，领域代码不依赖框架类型（可替换性边界同 §2.8） | 统一生命周期（Drain/优雅关停语义现成，与排水和维护窗口契合）；`lynx.Service` 插件化天然承载端口-适配器；Wire 编译期 DI 无运行时反射、装配错误编译期暴露；轻量取向一致（非全家桶）；Apache-2.0 且上游同域可控 | 纯手工装配（messageloop 现状：装配逻辑淤积在 setup 函数，规模上升后不可读——edgefleet 自第一天用 Wire）；fx/dig（运行时反射 DI，失败后移）；kratos/go-zero（全家桶过重，违背「基础设施只复用不自研」）；自研生命周期框架（重复造轮子） |
+| D21 | API 定义 = **gRPC + grpc-gateway/v2，proto 为契约唯一真源**（2026-09-17 技术选型，**用户裁决：不引入 huma**）：buf 工具链生成 genproto 与 SDK（`edgefleet.{client,console,server}.vN` 分模块，torchwood 同型）；REST/JSON + OpenAPI（openapiv2）由 gateway 派生；错误信封走自定义 ErrorResponse（`disable_default_errors`）+ snake_case JSON；鉴权/限流在 gRPC 拦截器链；SSE/长连接与 gateway mux 同进程共存（原生 handler，torchwood realtime 同型）——装配整体照抄 **torchwood**（github.com/torchwoodcloud/torchwood，同域生产使用） | 单一契约真源（proto）同时喂 CLI（SDK/gRPC）、Console（REST）、Agent/MCP（REST/gRPC）；`buf breaking` 即兼容门禁（对 oasdiff 类文本 diff 更强）；protovalidate 把校验写进 schema；与 D20 同栈（lynx 为壳）且参考项目代码可直接复制 | huma（**用户裁决否决**：多引入一层框架、偏离 lynx 生态参考栈）；oapi-codegen / spec 先行（spec 与代码双份维护）；纯 gRPC 无 gateway（Console/Agent 的 REST 生态面缺失）；手写 REST + 手维护 OpenAPI（漂移必然） |
 
 ### 3.1 底座再评估触发条件与退出预案
 
@@ -389,7 +390,7 @@ A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm
 ### 4.2 v0.1（单机可用，8 项）
 
 1. 部署闭环：git push(SSH) / Webhook（验签）→ 构建 → 零停机上线 → 回滚；支持 web + worker 双进程（`replicas` 字段 v0.1 即照用；cron 与多副本管理〔缩放 UI/指标水位/自动扩缩〕v0.2）；运行时 = 单节点 Swarm service（安装时隐式 `docker swarm init`）
-2. REST API + OpenAPI 3.1 + CLI（全命令 `--json`）
+2. gRPC + REST（gateway）API（OpenAPI 文档自动派生）+ CLI（全命令 `--json`）
 3. 域名 + 自动 HTTPS（每节点 Traefik + 控制面集中 ACME；域名列表契约见 §2.4）
 4. 环境变量/密钥（加密存储、注入、自动连接串）
 5. 日志查看（实时 SSE 流 + 历史落盘检索）
@@ -475,7 +476,7 @@ PR 预览环境（AI Agent 开 PR → 自动 URL → 合并即销毁）、官方
 - **单元**：发布状态机（穷举转换与失败分支）、compose 解析（子集校验/归一化）、放置解析与选点确定性、漂移 hash、加密。
 - **集成/E2E**：真实 Docker/Swarm 环境跑 build → service 更新 → health gate → 路由 → rollback 全链路；每个 v0.1 验收项至少一条 E2E；必须覆盖失败矩阵（health 永不通过、容器启动即崩、拉取失败、观察窗崩溃循环、坏配置隔离、控制面中断恢复）与 V1/V3/V4/V6a 场景。
 - **放置与状态**：绑定保持与基本漂移（down→blocked→recover / drain→回岗 / remove→人工重绑 / 数据不匹配 409）、写前直读、孤儿保护（只登记不删除）、备份等序与恢复顺序演练（L1/L2）、导出 tar 一致性（密钥不随包）。
-- **契约**：OpenAPI 为真源，CLI/UI/MCP 生成客户端编译即校验；Compose 子集校验（白名单/拒绝清单/受管字段/label 约定）进 CI；错误码注册表只增校验、变更需显式评审。
+- **契约**：proto 为 API 契约真源（buf lint + buf breaking 门禁；genproto/SDK 生成物编译即校验，生成物同步进 PR 门禁）；Compose 子集校验（白名单/拒绝清单/受管字段/label 约定）进 CI；错误码注册表只增校验、变更需显式评审。
 - **引擎升级回归（V7）**：dind 矩阵（containerd 存储 + overlay2 两条腿，锁定版本号）跑服务名 DNS、ingress、secrets 挂载、卷语义子集；引擎版本升级前必跑。
 - **适配器一致性（conformance）**：Builder 套件 v0.1 起常跑（双实现）；ObjectStore 套件随 S3 端点落地；其余端口（Proxy / Runtime 等）套件随退出预案触发补齐（§2.8）；新增或替换适配器必须跑通套件后才可合并。
 - **升级**：上一版本数据 → 新版本迁移的前后对比测试；平台自升级的失败回退路径纳入每次发布的必测项。

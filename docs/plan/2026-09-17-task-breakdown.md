@@ -47,12 +47,12 @@ T2 v0.1（核心；分层依赖见 §5）
 - 验收：golangci-lint + gofmt + staticcheck + gosec + govulncheck 进 PR 轨道并阻断；`go generate ./...` 后无差异（wire_gen 同步）进 PR 门禁；空跑的单测任务绿；`go build ./...` 与 `edgefleet --help` 可执行。
 
 **T0.2 错误码与事件注册表** ｜ Blocked by: T0.1 ｜ 2 人日
-- 交付：代码内注册表为唯一真源（架构 §2.8），错误信封 `{code,message,phase,deployment_id,suggestion,context,docs}`（发布专项 §2.7）。
+- 交付：代码内注册表为唯一真源（架构 §2.8），错误信封 `{code,message,phase,deployment_id,suggestion,context,docs}` 以 proto `ErrorResponse` 定义、经 gateway `HTTPErrorHandler` 输出（发布专项 §2.7、D21）。
 - 验收：注册表只增/不复用的 CI 校验测试；首发错误码（`E_COMPOSE_*`、`E_STATE_VERSION_CONFLICT` 等 T2 首批）入表；信封序列化有 golden 测试。
 
-**T0.3 OpenAPI + CLI 生成链** ｜ Blocked by: T0.1 ｜ 2-3 人日
-- 交付：huma 骨架（挂载于 lynx HTTP server，复用框架 healthz liveness/readiness 端点，D20）+ cobra CLI + 生成 API client 的编译即校验（架构 §2.2、交付 §2.2 契约项）。
-- 验收：一个 hello-world endpoint 从 OpenAPI 生成 CLI 子命令并跑通；`/healthz/liveness`、`/healthz/readiness` 来自 lynx 框架而非手写；oasdiff breaking 检查进 PR 轨道。
+**T0.3 proto 契约与生成链** ｜ Blocked by: T0.1 ｜ 2-3 人日
+- 交付：buf 工具链 + proto 骨架（`edgefleet.{client,console,server}.vN` 分模块）+ gRPC 服务骨架挂 lynx + grpc-gateway 挂载（torchwood 范式，D21）+ 平台 SDK（gRPC client，独立模块）。
+- 验收：buf lint 通过、buf breaking 对基线跑通；hello RPC 从同一 proto 生成 gRPC client（SDK）与 REST 端点（gateway）双面可用；错误信封以 proto `ErrorResponse` 定义、gateway `HTTPErrorHandler` 输出 snake_case（torchwood 同款 `disable_default_errors`）；生成物同步检查（`buf generate` 后 diff 为空）进 PR 门禁；`/healthz/*` 来自 lynx 框架。
 
 **T0.4 dind E2E 骨架** ｜ Blocked by: T0.1 ｜ 2-3 人日
 - 交付：`docker:29.8.1-dind` 内起平台的 E2E harness（交付 P2、M0）。
@@ -160,13 +160,13 @@ T2 v0.1（核心；分层依赖见 §5）
 
 ### 面向层
 
-**T2.17 REST API 面** ｜ Blocked by: T2.10、T2.6 ｜ 5-7 人日 ★（切分建议：按资源域 apps/deployments/domains/env/logs 各一片）
-- 交付：v0.1 全资源 API + OpenAPI 3.1 + SSE（架构 §4.2 第 2 项）。
-- 验收：apps/deployments/rollback/domains/env/logs/placement 端点齐且 `--json` 契约由 OpenAPI 生成物编译校验；SSE 事件流带游标；后端强制鉴权（token scope，read/deploy/admin）——无 token 全部 401（安全基线）。
+**T2.17 API 面（gRPC + gateway）** ｜ Blocked by: T2.10、T2.6 ｜ 5-7 人日 ★（切分建议：按资源域 apps/deployments/domains/env/logs 各一片）
+- 交付：v0.1 全资源 API——proto 服务实现 + gateway REST 面 + SSE（gRPC server-streaming 或同进程原生 handler，torchwood realtime 同型）（架构 §4.2 第 2 项、D21）。
+- 验收：apps/deployments/rollback/domains/env/logs/placement 服务齐，SDK（gRPC）与 REST（gateway）双面由同一 proto 派生且一致；SSE 事件流带游标；拦截器链强制鉴权（token scope，read/deploy/admin）——无 token 全部 401（安全基线）；gRPC-only 不挂 gateway 的服务清单显式维护（torchwood 同纪律）。
 
 **T2.18 CLI 全命令** ｜ Blocked by: T2.17 ｜ 3-4 人日
-- 交付：`edgefleet` CLI 与 API 同源（架构 §4.2 第 2 项）。
-- 验收：deploy/logs/env/domains/rollback/plan/apply/diff 全命令 `--json`；输出 schema 快照测试（防漂移）；三态退出码贯穿。
+- 交付：`edgefleet` CLI（lynx-go/commands，torchwood 同款）直接消费平台 SDK（gRPC client，与 API 同源；架构 §4.2 第 2 项、D21）。
+- 验收：deploy/logs/env/domains/rollback/plan/apply/diff 全命令 `--json`；日志/事件长流经 gRPC streaming 输出；输出 schema 快照测试（防漂移）；三态退出码贯穿。
 
 **T2.19 git push(SSH) 与 webhook** ｜ Blocked by: T2.17 ｜ 3-4 人日
 - 交付：两条触发入口（架构 §2.5 webhook 不变量、§4.2 第 1 项）。

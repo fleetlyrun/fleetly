@@ -6,7 +6,7 @@
 
 | 日期 | 标题 | 状态 | 一句话说明 |
 |---|---|---|---|
-| 2026-09-17 | [平台架构设计](design/2026-09-17-architecture.md) | 草案 | 自研 Go 控制面 + Swarm 底座的轻量 PaaS 总体架构（应用模型 = Compose 规范；含目标用户画像、栈边界与对外口径、2 节点 HA 边界口径、每节点入口与集中证书、执行中继 D19、基础框架 lynx+wire D20）、关键决策、v0.1~v0.3 路线图 |
+| 2026-09-17 | [平台架构设计](design/2026-09-17-architecture.md) | 草案 | 自研 Go 控制面 + Swarm 底座的轻量 PaaS 总体架构（应用模型 = Compose 规范；含目标用户画像、栈边界与对外口径、2 节点 HA 边界口径、每节点入口与集中证书、执行中继 D19、基础框架 lynx+wire D20、API 面 gRPC+grpc-gateway D21）、关键决策、v0.1~v0.3 路线图 |
 | 2026-09-17 | [交付流水线设计（CI/CD）](design/2026-09-17-delivery-pipeline.md) | 草案 | PR/nightly/release 三轨道、V1-V7 永久回归、引擎门禁、GitHub Actions 落地 |
 | 2026-09-17 | [发布失败与回滚语义](design/2026-09-17-release-semantics.md) | 草案 | pause 冻结 + 快照单层重放、四层窗口、观察窗默认告警、失败场景矩阵与错误码 |
 | 2026-09-17 | [stateful 放置（节点约束）](design/2026-09-17-stateful-placement.md) | 草案 | 意图/绑定/执行三层、有卷自动钉住、平台节点 ID 为锚、数据安全前哨、人工 rebind、drain 维护语义 |
