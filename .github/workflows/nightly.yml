@@ -1,0 +1,172 @@
+# nightly 轨道（交付流水线 docs/design/2026-09-17-delivery-pipeline.md §2.2、
+# §6 V1-V7 映射；P3：V1-V7 从一次性 Spike 升级为永久回归测试）。
+#
+# 本期（T1.4）落地 V1/V2/V3/V4/V6a/V6b 的可自动化子集：
+#   V1  health 失败→paused+旧任务服务（含 B2 归位）   spike/b in-b1-v1b2
+#   V2  本地 digest 引用零 pull                        spike/a e5-v2-digest
+#   V3  更新窗口路由零失败+VIP 稳定                    spike/b in-b3-v3v4
+#   V4  连接治理最小子集（abrupt 502 复现 / 优雅退出零失败 /
+#       serversTransport 辅助）                        spike/b in-b3d+in-b3
+#   V6  V6a 空卷事故+硬钉住 / V6b drain-回岗（双 dind 组网，spike/c c3a/
+#       c3b/c4a 现成形态）                             spike/c
+#   V5/V5b 占位（宿主侧 tar 冷备/换容器编排转译成本高，见 v5 占位 job 与
+#   e2e/nightly/README.md 清单表）。
+#
+# 引擎矩阵（§2.2 nightly 第 1 项）：本期单腿 docker:29.8.1-dind；
+# containerd/overlay2 双存储腿与上一 minor 腿在 T2.24 以 matrix 展开
+# （run.sh 已支持 DIND_IMAGE / DIND_EXTRA_ARGS 两个 env）。
+#
+# 每个步骤与本地可跑脚本一致：bash e2e/nightly/run.sh <suite>
+# （本地复跑见 e2e/nightly/README.md）。
+name: nightly
+
+on:
+  schedule:
+    - cron: "47 21 * * *" # 每日一次（21:47 UTC，避开整点任务高峰）
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  # 定时与手动触发不互相取消（红即阻断发版证据，不允许重试掩盖）
+  group: nightly-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DIND_IMAGE: docker:29.8.1-dind
+  # T2.24 矩阵扩展占位（交付 §2.2 nightly 第 1 项）：
+  #   overlay2 存储腿  -> DIND_EXTRA_ARGS: "--storage-driver overlay2"
+  #   上一 minor 腿    -> DIND_IMAGE: docker:29.7-dind（届时定 tag）
+
+jobs:
+  v1-health-gate:
+    # V1（含 B2 归位零成本）：health 失败时更新 paused、旧任务不中断、
+    # 外部探测零失败；同内容重放旧 task id 不变。
+    name: V1 health-gate (+B2 replay)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run V1 regression (dind)
+        run: bash e2e/nightly/run.sh v1
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
+          docker network rm edgefleet-nightly-br || true
+
+  v2-digest-nopull:
+    # V2：service 以 名称@sha256:<本地 imageID> 创建与 --force 重放零 pull；
+    # dockerd 日志 pull 取证在宿主侧（run.sh），tag 引用对照证明检测通道。
+    name: V2 digest zero-pull
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: run V2 regression (dind)
+        run: bash e2e/nightly/run.sh v2
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: cleanup
+        if: always()
+        run: docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
+
+  v3-routing:
+    # V3：健康滚动更新窗口内经 Traefik→VIP 路由零失败；VIP 前后不变。
+    name: V3 routing zero-failure
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run V3 regression (dind)
+        run: bash e2e/nightly/run.sh v3
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
+          docker network rm edgefleet-nightly-br || true
+
+  v4-conn-governance:
+    # V4 最小子集：abrupt 后端 in-flight POST 必现 502（事故类仍可检出）；
+    # 优雅退出 + stop-grace>drain 零失败；serversTransport 辅助断言
+    # （keep-alive GET 跨更新零失败 + 配置干净应用）。
+    name: V4 connection governance (subset)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run V4 regression (dind)
+        run: bash e2e/nightly/run.sh v4
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
+          docker network rm edgefleet-nightly-br || true
+
+  v6-placement:
+    # V6a/V6b（双 dind 组网）：无约束迁移得空卷 / 硬钉住 kill→PENDING→重启
+    # 自动回绑数据在 / drain→blocked→active 回岗数据在。
+    # 多节点 dind 在共享 runner 上的稳定性按交付 §5 风险跟踪：只放 nightly，
+    # 连续失败开 issue 而非重试掩盖。
+    name: V6a/V6b placement (dual-dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run V6 regression (dual dind)
+        run: bash e2e/nightly/run.sh v6
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
+          docker network rm edgefleet-nightly-br || true
+
+  v5-recovery-drill:
+    # 占位（本期范围裁决）：V5 单 manager 故障恢复 + V5b raft 回退孤儿命运
+    # 依赖宿主侧「停止态 docker cp 冷备 tar / 同 IP 换容器」编排
+    # （spike/c/scripts/v5-up.bat → v5-backup.bat → v5-death-restore.bat，
+    # 全程 ~12 分钟），转译为 CI 步骤的成本高，本期不自动化。
+    # 落地跟踪：e2e/nightly/README.md 清单表「未自动化项」。
+    name: V5/V5b recovery drill (placeholder)
+    if: false # 占位：转译 v5-*.bat 编排后启用（T2.x）
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - run: echo "placeholder — V5/V5b orchestration not yet automated; see e2e/nightly/README.md"
