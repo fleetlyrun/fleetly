@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8），机制面经 D18 精简 |
+| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8），机制面经 D18 精简；2026-09-17 审核裁决轮：冷备触发时机改为主机/Engine 升级（edgesetsd 升级走热备+原子化）、证书材料改控制面集中签发、对象命名补记、D-STM-2 措辞修正 |
 
 ## 1. 现状与问题
 
@@ -22,7 +22,7 @@
 | 平台身份与凭证 | token 哈希、主密钥、settings、备份策略 | SQLite + 密钥文件 | tokens/meta/密钥 |
 | 历史与叙事 | deployment/revision/事件/审计/构建日志引用/定时任务运行记录 | SQLite/文件 | deployments/events/audit_log/cron_runs/日志目录 |
 | 运行态事实 | 节点/服务/任务/卷/实际镜像 | **Swarm/Engine** | 观测缓存（nodes 等），带 `observed_at/stale` |
-| 证书材料 | ACME 账户与证书链（`acme.json`） | 文件（Traefik 卷） | 独立备份（避免重签触发配额） |
+| 证书材料 | ACME 账户与证书链（控制面集中 ACME，lego） | SQLite/文件（控制面） | 独立备份（避免重签触发配额）；证书随 HTTP provider 动态下发各节点 Traefik（架构 §2.6，2026-09-17 审核裁决） |
 | 构建产物 | 镜像、日志、Railpack plan | 镜像存储/registry；平台文件 | 文件 + 引用 |
 
 ### 2.2 派生缓存与读契约
@@ -50,7 +50,8 @@
 | Node | `node-id`（平台 ID） | 放置锚与重绑 |
 | Volume | 无 label，使用命名约定 `edgesets-<app>-<key>-<appid8>`（约束来源：卷由服务 spec 在各节点惰性创建，label 传递能力待 Spike 验证——`VolumeOptions.Labels` 生效则可收敛到 label 体系） | 卷归属与防代际静默复用 |
 
-- 平台约定 label（compose 原生字段承载）：`edgesets.domains`（路由域名）、`edgesets.placement.node`（放置意图）〔v0.1 契约〕；`edgesets.cron` / `edgesets.cron.timezone`（定时任务，v0.2 契约；带该 label 的服务不按长驻部署）。
+- 平台约定 label（compose 原生字段承载）：`edgesets.domains`（路由域名，逗号分隔列表）、`edgesets.placement.node`（放置意图）〔v0.1 契约〕；`edgesets.cron` / `edgesets.cron.timezone` / `edgesets.cron.timeout`（定时任务，v0.2 契约；带该 label 的服务不按长驻部署）。
+- 对象命名（适配器内，防集群全局命名空间撞名，2026-09-17 审核裁决；语义见架构 §2.4）：Swarm 服务名 `edgesets-<app>-<service>`；secret 名 `edgesets-<app>-<name>-<hash8>`（file target 保持 compose 名，轮换 = 换引用）；网络别名 = compose 服务名（app 内短名互访与 compose 语义一致）。
 - ~~锚点文档 / schema 版本化 / 溢写~~：经 D18 砍除（无硬承诺需要；DB + label 足够）。
 
 ### 2.5 漂移判定
@@ -70,7 +71,7 @@
 **等序不变量：SQLite 允许比 raft 新，绝不允许比 raft 旧**（DB 新 → 收敛补齐；DB 旧 → 孤儿待决）。
 
 - 热备：SQLite 一致快照（`VACUUM INTO`）+ sha256 回读校验；**每次成功部署后 + 每日**；不碰 raft。
-- 冷备：host 侧 helper，停 Engine → tar `/var/lib/docker/swarm`（含 raft 与 autolock key）→ DB 快照 → `acme.json` → 校验上传；**平台升级前强制** + 手动。
+- 冷备：host 侧 helper，停 Engine → tar `/var/lib/docker/swarm`（含 raft 与 autolock key）→ DB 快照 → 证书材料 → 校验上传；**主机/Engine 升级前强制** + 手动（**edgesetsd 升级不触发冷备**：只做热备快照 + 原子化自升级，不停 Engine、应用不停——升级双轨口径见架构 §4.2，2026-09-17 审核裁决）。
 - 密钥（主密钥）独立路径、不同介质保存；备份失败红色告警；`state_backups` 台账记录 `verify_status`。
 - **恢复顺序（固定）**：① 停控制面与 Engine ② 校验备份集（校验和 + 密钥指纹，不匹配 → `E_BACKUP_KEY_MISSING`，拒绝半恢复）③ raft 回填 → Engine 启动（必要时 `--force-new-cluster`）④ SQLite + acme 回填 ⑤ 启动控制面 → **只读观察** ⑥ 人工按差异清单处理 → 退出观察 ⑦ 事件 `restore.completed`。
 - **恢复阶梯 L1/L2**：L1 = raft+DB（全保真，应用不中断）；L2 = 仅 DB（新集群 + 人工重绑，运行态重建）。**L3 场景（仅容器存活）runbook 化、不建机制**。
@@ -102,7 +103,7 @@
 | # | 决策 | 理由 | 被否选项及原因 | 来源 |
 |---|---|---|---|---|
 | D-STM-1 | 三层状态（权威/派生缓存/实时直读）+ 三判据 | 双状态源无法消灭只能明确属主；缓存进决策路径是误操作唯一通路 | 全量镜像运行态入权威（双写者）；不落缓存（打爆底座 API） | 独立收敛 |
-| D-STM-2 | `nodes` 降级为观测缓存 + 工作流载体；不承诺心跳时间戳 | Swarm 是成员唯一权威且不暴露心跳 | 保留为权威（争真源）；删表（历史/降级读无家可归） | 独立收敛 |
+| D-STM-2 | `nodes` 降级为观测缓存；不承诺心跳时间戳 | Swarm 是成员唯一权威且不暴露心跳 | 保留为权威（争真源）；删表（历史/降级读无家可归） | 独立收敛 |
 | D-STM-3 | 水位 reserved/used 双概念，缺失显式 null | 不静默降级；v0.1 也能回答「预留是否超卖」 | 容量冒充用量（谎报） | 独立收敛 |
 | D-STM-4 | label 最小集（managed/app/process/deployment + 节点身份），无 schema 仪式/锚点 | ≤10 台无跨版本对象共存场景；锚点反建依赖 L3（已砍） | 完整 label 契约 + 版本化 + 锚点溢写（过度设计，D18） | 裁决（D18 砍单） |
 | D-STM-5 | desired-hash 判定漂移，深比仅报告 | 廉价、稳定、不泄露 env | 逐字段深比判定；时间戳比较 | 独立收敛 |

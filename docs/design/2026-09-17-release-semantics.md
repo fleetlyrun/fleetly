@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.5（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §1/§6；[交付流水线](2026-09-17-delivery-pipeline.md) §6；来源：独立设计×交叉验证（§8），用户裁决见 §3 D-REL-6 |
+| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.5（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §1/§6；[交付流水线](2026-09-17-delivery-pipeline.md) §6；来源：独立设计×交叉验证（§8），用户裁决见 §3 D-REL-6；2026-09-17 审核裁决轮：env 快照按三层合并结果（架构 §2.4）、`blocked_waiting` 入状态机、`deployment.cancelled` 事件命名对齐 |
 
 ## 1. 现状与问题
 
@@ -41,6 +41,7 @@ queued → preparing → building → releasing → observing → succeeded
    └─────────┴──────────┴──────────┴────────────┴─→ failed / cancelled
 ```
 
+- `releasing` 含子状态 `blocked_waiting`：发布中绑定节点 DOWN → 看门狗暂停计时、可 cancel，节点恢复续跑并重新起算（场景 15）；绑定节点 REMOVED → 直接失败，不进 `blocked_waiting`（场景 16）。
 - `kind ∈ {deploy, rollback}`：仅**已切流回滚**创建新 deployment（`kind=rollback`，用户或平台侧 opt-in rollback 触发，走完整健康门 + 观察窗）。**归位（含 stop-first 强制恢复）不创建新 deployment**——作为失败 deployment 的 `recovery=restore` 记录在同一条目内。
 - **失败分流唯一判据 = `first_healthy_at`（是否曾切流）**：
   - 未切流（null）：`recovery=restore` 同记录归位——重放最后有效 revision；`start-first` 下内容深度相等通常零任务变动（待 Spike B2 验证）；stop-first 下为重建旧实例（强制、不可取消；停机持续，`downtime_ms` 如实累计）。
@@ -53,7 +54,7 @@ queued → preparing → building → releasing → observing → succeeded
 
 ### 2.4 版本快照与回滚（最近 5 版）
 
-- **`revisions` 表**（每 app 每次成功部署一条）：`number`、`compose_normalized`（归一化 compose：受控子集内的服务与卷定义，含非密钥 env，按字面值、无插值）、平台覆盖层（镜像 digest、secret 引用、路由绑定、节点绑定）、`spec_hash`、`source_kind/source_ref`、`status ∈ {candidate|active|superseded}`。
+- **`revisions` 表**（每 app 每次成功部署一条）：`number`、`compose_normalized`（归一化 compose：受控子集内的服务与卷定义；**env 按三层合并结果快照**〔`key:sha256` + 来源标注，链式规则见架构 §2.4 变量合并〕，按字面值、无插值）、平台覆盖层（镜像 digest、secret 引用、路由绑定、节点绑定）、`spec_hash`（按合并结果计算）、`source_kind/source_ref`、`status ∈ {candidate|active|superseded}`。
 - **保留与可重放集合**：固定保留最近 5 次**成功**部署；列表即选项（列不出来的不可回滚，没有额外的状态机与错误码）；回滚目标越界 → `E_ROLLBACK_NO_TARGET`。
 - **重放语义**：compose 字段按快照回放（**非密钥 env 随快照回滚**；env 变更必须经部署固化为新版本，天然形成可回退点）；治理参数（observe/onUnstable/keepVersions）取**当前平台配置**（前瞻设置不随版本回退）；**secret 值永远取当前**（回滚不撤销密钥轮换，文档明示）；卷数据、DB 迁移、DNS 不回滚。
 - **preflight**：镜像可得性（v0.1 本地 inspect / v0.2 registry HEAD）、约束可满足、secret 存在、compose 合法（受控子集/受管字段）——任一失败在动底座之前失败。v0.1 无 registry 时镜像被清理 → `E_IMAGE_UNAVAILABLE` + `W_ROLLBACK_IMAGE_RISK`（提示保留镜像或重建）。
@@ -90,7 +91,7 @@ queued → preparing → building → releasing → observing → succeeded
 ### 2.7 错误码、事件、审计
 
 - **错误码**（注册表只增不复用，格式 `E_<域>_<条件>`）：`E_COMPOSE_UNSUPPORTED`、`E_COMPOSE_MANAGED_FIELD`、`E_COMPOSE_UNSAFE_STRATEGY`、`E_BUILD_FAILED`、`E_IMAGE_PULL_FAILED`、`E_IMAGE_UNAVAILABLE`、`E_SCHEDULER_PENDING_TIMEOUT`、`E_TASK_START_FAILED`、`E_HEALTH_TIMEOUT`、`E_OBSERVE_CRASH_LOOP`、`E_OBSERVE_UNHEALTHY`、`E_DEPLOY_INTERRUPTED`、`E_DEPLOY_POST_WINDOW_UNSTABLE`、`E_DEPLOY_DOWNTIME_FAILED`、`E_ROLLBACK_FAILED`、`E_ROLLBACK_NO_TARGET`、`E_RUNTIME_UNAVAILABLE`。警告码：`W_DEPLOY_INSTABILITY`、`W_DEPLOY_NO_HEALTHCHECK`、`W_ROLLBACK_IMAGE_RISK`。
-- **事件**：`deployment.{queued,release_started,healthy,switched,observe_started,succeeded,failed,warning,aborted,rollback_started,rollback_finished,rollback_failed,recovery_scheduled,recovery_blocked,substrate_halted,superseded}`、`app.{degraded,instability_detected,recovered}`。
+- **事件**：`deployment.{queued,release_started,healthy,switched,observe_started,succeeded,failed,warning,cancelled,rollback_started,rollback_finished,rollback_failed,recovery_scheduled,recovery_blocked,substrate_halted,superseded}`、`app.{degraded,instability_detected,recovered}`。
 - **审计**：`deployment.create/cancel/rollback`（human/ai_agent）、`deployment.auto_abort/auto_rollback/recovery_retry`（system + reason=错误码）；自动动作必入审计。
 - 错误信封统一：`{code, message, phase, deployment_id, suggestion, context{raw/log_tail/exit_code/...}, docs}`；部署失败是资源终态而非 HTTP 错误。
 
@@ -130,7 +131,7 @@ queued → preparing → building → releasing → observing → succeeded
 | D-REL-6 | **观察窗默认只告警**；rollback 为平台侧 opt-in（v0.1 无文件字段）；stop-first 强制恢复 | **用户裁决**：与 D11「检测开、收敛 opt-in」哲学一致；对外部依赖故障无效回滚会震荡。严格判据（崩溃循环/窗末未恢复）在 opt-in 时生效 | 默认自动回滚（静默改变运行版本，与不静默原则张力） | 用户裁决 |
 | D-REL-7 | 未切流归位为同记录 recovery；已切流回滚为新 deployment | 未切流常为零动作、不应污染版本历史；已切流回滚需可观察/可审计/可再回滚 | 全部新 deployment（噪音）；全部同记录（历史不可读） | 裁决（合并） |
 | D-REL-8 | stop-first 失败强制归位、`downtime_ms` 诚实累计 | 不回滚=永久宕机，无正当场景；停机必须如实告知 | 尊重默认告警（服务中断时袖手旁观） | 独立收敛 |
-| D-REL-9 | 治理参数取当前平台配置、secret 值取当前、非密钥 env 随 compose 回滚 | 前瞻设置不随版本回退；密钥回滚是安全事故；非密钥 env 属于 workload，不回退会让「完整快照」名不副实（env 变更必须经部署固化，天然形成可回退点） | 快照含治理参数/密钥（静默回退与安全事故）；env 取当前（回滚半到位） | 独立收敛 |
+| D-REL-9 | 治理参数取当前平台配置、secret 值取当前、非密钥 env 随快照回滚（三层合并结果，见架构 §2.4） | 前瞻设置不随版本回退；密钥回滚是安全事故；非密钥 env 属于 workload，不回退会让「完整快照」名不副实（env 变更必须经部署固化，天然形成可回退点） | 快照含治理参数/密钥（静默回退与安全事故）；env 取当前（回滚半到位） | 独立收敛 |
 | D-REL-10 | 首发/回滚失败不再二次自动回滚 | 断链防震荡；恢复失败是 critical 人工介入场景 | 自动重试（叠加失败与掩盖根因） | 独立收敛 |
 | D-REL-11 | 系统性失败只告警，不做熔断 | 小团队/小集群爆炸半径有限；Dokploy 无熔断也达成头部体验；机制复杂度不构成 UX（D18） | 熔断状态机（过度设计，无真实事故证据） | 裁决（砍单） |
 

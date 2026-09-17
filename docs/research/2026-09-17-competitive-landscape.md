@@ -6,7 +6,7 @@
 
 > 术语注（2026-09-17 追加）：本文写作时沿用行业通用词「agent」，按语境分别指基础设施的节点守护进程（现名 `edgesetsd node`）或 AI Agent。正式术语基线见架构文档 1.1 节；本文作为档案不改写正文。
 
-> 事实更正（2026-09-17 追加，经专项验证）：第 2 节与 7.3 节中「Swarm 生态萎缩 / 活跃开发停止」的表述需修正——Swarm 仍处于引擎内置维护：Docker Engine 29.x（2025-11→2026-09）有约 21 条 Swarm/overlay 修复，未进 deprecated 清单，nftables 的 Swarm 支持在官方路线图上；swarmkit v2.1.2（2026-04）；Mirantis 2025-07 将支持延长至至少 2030（MKE 3）。准确表述是「低频维护、无新特性、依赖 Engine 升级、周边工具单薄」。详见 [Swarm 底座可行性评估](2026-09-17-swarm-substrate-assessment.md)。另：§10 第 12 条建议「不做 Swarm」及第 3、4 条建议已随 D12（采纳 Swarm）/D14（应用模型 = Compose）失效，以[平台架构设计](../design/2026-09-17-architecture.md)为准。
+> 事实更正（2026-09-17 追加，经专项验证）：第 2 节与 7.3 节中「Swarm 生态萎缩 / 活跃开发停止」的表述需修正——Swarm 仍处于引擎内置维护：Docker Engine 29.x（2025-11→2026-09）有约 21 条 Swarm/overlay 修复，未进 deprecated 清单，nftables 的 Swarm 支持在官方路线图上；swarmkit v2.1.2（2026-04）；Mirantis 2025-07 将支持延长至至少 2030（MKE 3）。准确表述是「低频维护、无新特性、依赖 Engine 升级、周边工具单薄」。详见 [Swarm 底座可行性评估](2026-09-17-swarm-substrate-assessment.md)。另：§10 第 12 条建议「不做 Swarm」及第 3、4 条建议已随 D12（采纳 Swarm）/D14（应用模型 = Compose）失效，以[平台架构设计](../design/2026-09-17-architecture.md)为准。同理，§2 结论 3/4、§7.1.4/§7.2.3 与借鉴项 A5/A6/A7 中「出站 agent」方向的建议亦已随 D12 失效——节点触达、心跳与重连由 Swarm 原生承担（2026-09-17 审核轮补注，档案保留原文）。
 
 ## 0. 边界与方法
 

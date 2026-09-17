@@ -90,7 +90,7 @@
 
 1. **D2/D12 改写**：底座 = Docker Swarm（引擎内置）；控制面运行在 manager 节点；自研 node 协议取消；k3s 保留为将来可选 driver；退出预案 = 应用定义保持 Compose 兼容 + k3s driver。
 2. **§2.6 失联语义重写**：stateless 服务采纳 Swarm 自动重调度（相对原设计是能力升级）；stateful 用 node 约束钉住并文档化「不迁移」；degraded 判定窗改为对齐 Swarm 心跳（15s 量级）。
-3. **发布流程**：`start-first` + healthcheck + `failure-action=rollback`；多版本历史、发布后验证窗口（默认 5s→ 平台建议 60s+ 观察）、PENDING 超时中止，均属平台自研层。
+3. **发布流程**：`start-first` + healthcheck + ~~`failure-action=rollback`~~（已被 D-REL-1 否决：改为 `pause` + 平台快照重放）；多版本历史、发布后验证窗口（默认 5s→ 平台建议 60s+ 观察）、PENDING 超时中止，均属平台自研层。
 4. **路由**：Traefik 关闭 swarm/docker provider 自动发现；用 HTTP provider（控制面下发全量配置）或每节点文件；严格保持「路由晚于 health」+「空配置不落盘」两个不变量；绑定 `serversTransport` 治理 keep-alive。
 5. **镜像**：v0.1 digest 引用、免 registry；v0.2 多节点引入 zot；构建产物一律以 digest 入库。
 6. **引擎门禁**：≥29.8.1、iptables 后端、升级回归矩阵（服务名 DNS、ingress、secrets 挂载、卷、containerd 存储双模式）。
