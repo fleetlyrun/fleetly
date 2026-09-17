@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8） |
+| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8） |
 
 ## 1. 现状与问题
 
@@ -23,7 +23,7 @@
 
 | 类别 | 内容 | 权威 | 平台存储 | 可重建 |
 |---|---|---|---|---|
-| 期望态 | app/spec/env 声明/domains/placement/治理策略 | SQLite | apps/revisions/domains/env_vars/placements | 仓库 + 锚点（repo/ref/spec_digest） |
+| 期望态 | app/compose 期望态/env 声明/domains/placement/治理策略 | SQLite | apps/revisions/domains/env_vars/placements | 仓库 compose 文件 + 锚点（repo/ref/spec_digest） |
 | 平台身份与凭证 | token 哈希、主密钥、settings、备份策略 | SQLite + 密钥文件 | tokens/meta/密钥 | 不可（重发/重配，显式告知） |
 | 历史与叙事 | deployment/revision/事件/审计/构建日志引用 | SQLite/文件 | deployments/events/audit_log/日志目录 | 不可 |
 | 运行态事实 | 节点/服务/任务/卷/实际镜像 | **Swarm/Engine** | 观测缓存（nodes 等），带 `observed_at/stale` | 重读即可 |
@@ -44,14 +44,14 @@
 
 ### 2.3 节点身份与重建
 
-- **领域身份 = 平台节点 ID**（`n_<ULID>`，用户裁决，见放置设计 §2.2）；写入节点 label `io.edgesets.node-id`；显示名唯一、可改，写入 label `io.edgesets.node-name`。
+- **领域身份 = 平台节点 ID**（`n_<ULID>`，用户裁决，见放置设计 §2.2）；写入节点 label `edgesets.node-id`；显示名唯一、可改，写入 label `edgesets.node-name`。
 - Swarm node ID 仅存适配器映射 `runtime_node_refs(platform_id, swarm_node_id, synced_at)`；L2（全新建集群）后新 ID 通过显式 adopt 重绑。
 - hostname 仅展示；同名节点不自动合并，歧义 → 警告或人工裁决。
 - 平台不制造节点健康语义：state/availability 逐字镜像 Swarm，外加平台观测时间。
 
 ### 2.4 对象标记契约（label schema v1）
 
-命名空间 `io.edgesets.*`（保留前缀，用户占用 → 422 `E_LABEL_RESERVED`）；写者唯一 = 适配器 Marker 端口；密钥/payload 永不入 label。
+命名空间 `edgesets.*`（保留前缀，用户占用 → 422 `E_LABEL_RESERVED`）；写者唯一 = 适配器 Marker 端口；密钥/payload 永不入 label。
 
 | 对象 | 键 | 用途 |
 |---|---|---|
@@ -60,12 +60,13 @@
 | Node | `schema`、`node-id`（平台 ID）、`node-name` | 放置锚与重建 |
 | Volume | `schema`、`app-id`、`volume`（best-effort） | 卷归属；主机制是命名约定 `edgesets-<app>-<key>-<appid8>`（防代际静默复用） |
 
+- 平台约定 label（v0.1 契约，compose 原生字段承载）：`edgesets.domains`（路由域名）、`edgesets.port`（路由端口）、`edgesets.placement.node`（放置意图）——与内部 label 同属 `edgesets.*` 命名空间、同样版本化。
 - 锚点文档：紧凑 JSON（app/repo/ref/spec_digest/deployment/image/processes/volumes/domains/env_keys/created_by）≤2KB 存 label；溢出 → `/var/lib/edgesets/anchors/<app>.json` + label 存 `anchor-ref=sha256`。
-- 版本化：读到 `schema>1` → 只读（409 `E_OBJECT_SCHEMA_NEWER`，提示升级）；保留未知 `io.edgesets.*` 键；契约只增不改语义，快照测试。
+- 版本化：读到 `schema>1` → 只读（409 `E_OBJECT_SCHEMA_NEWER`，提示升级）；保留未知 `edgesets.*` 键；契约只增不改语义，快照测试。
 
 ### 2.5 漂移判定
 
-- `desired-hash = sha256(canonical_json(平台属主字段意图))`；平台属主 = 镜像 digest/命令/env（以 `key:sha256(value)` 参与）/mounts/replicas/labels/约束/resources/health/update/restart/stop/网络。
+- `desired-hash = sha256(canonical_json(期望态规范化))`；期望态 = compose 受控子集字段（镜像/命令/env〔以 `key:sha256(value)` 参与〕/mounts/replicas/labels/约束/resources/health/restart/stop/网络）+ 平台覆盖层（镜像 digest、secret 引用、路由与节点绑定）。
 - 判定只用 hash；字段级深比仅用于 diff 报告，env 只报键名与 `key:hash`。
 - 外部操作（含手动 `docker service update --rollback`）→ 识别为漂移 → 事件 `reconcile.drift_detected`；收敛 per-app opt-in（D11）。
 
@@ -83,7 +84,7 @@
 - 冷备：host 侧 helper，停 Engine → tar `/var/lib/docker/swarm`（含 raft 与 autolock key）→ DB 快照 → `acme.json` + anchors → 校验上传（每周 + **平台升级前强制**）；manifest 记 `state_seq/created_at/校验和`。
 - 密钥（主密钥）独立路径、不同介质保存；备份失败红色告警；备份台账 `state_backups` 记录 `verify_status`。
 - **恢复顺序（固定）**：① 停控制面与 Engine ② 校验备份集（校验和 + 密钥指纹，不匹配 → `E_BACKUP_KEY_MISSING`，拒绝半恢复）③ raft 回填 → Engine 启动（必要时 `--force-new-cluster`）④ SQLite + acme 回填 ⑤ 启动控制面 → recovery 模式 → plan ⑥ 人工 apply/purge/adopt ⑦ 事件 `restore.completed`。
-- **恢复阶梯**：L1 raft+DB（全保真，应用不中断）；L2 仅 DB（新集群 + 逐台 adopt，运行态重建）；L3 仅容器清单（离线采集：在每台节点执行 `docker ps --filter label=io.edgesets.app-id`，`edgesets recover import` 汇总——v0.2 不引入节点侧 agent，有损、需人工确认）。
+- **恢复阶梯**：L1 raft+DB（全保真，应用不中断）；L2 仅 DB（新集群 + 逐台 adopt，运行态重建）；L3 仅容器清单（离线采集：在每台节点执行 `docker ps --filter label=edgesets.app-id`，`edgesets recover import` 汇总——v0.2 不引入节点侧 agent，有损、需人工确认）。
 - **明确边界**：单节点（v0.1）整机磁盘丢失 = 应用与数据同时丢失，控制面 DR 不覆盖（写入用户文档）。
 
 ### 2.8 导出 / 导入合同

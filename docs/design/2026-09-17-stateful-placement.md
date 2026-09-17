@@ -2,13 +2,13 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.4/§2.5/§2.6；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §3/§4/§6；[控制面状态模型](2026-09-17-state-model.md)；来源：独立设计×交叉验证（§8），身份模型为用户裁决 |
+| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.4/§2.5/§2.6（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §3/§4/§6；[控制面状态模型](2026-09-17-state-model.md)；来源：独立设计×交叉验证（§8），身份模型为用户裁决 |
 
 ## 1. 现状与问题
 
 - Swarm local 卷按节点各自创建，任务被重调度到其他节点会得到**空卷**（数据不跟随、数据风险）；删服务不删卷；bind mount 必须预先存在于目标节点。
 - 节点消失（15–16.5s 判定 DOWN）后 manager 会在其他节点重建任务；未加约束的有卷服务因此可能静默产生空卷。**「有卷就不迁移」不成立，必须主动钉住。**
-- 草案 spec 没有任何约束/placement 字段；节点身份只有 hostname（可变、可重名）；谁在何时选定节点、节点更换后如何恢复均未定义。
+- 自研 spec 已废止（应用模型 = Compose 规范，D14）；compose 原生没有平台放置语义——放置意图由 label `edgesets.placement.node` 承载；节点身份只有 hostname（可变、可重名）；谁在何时选定节点、节点更换后如何恢复均未定义。
 - 已验证能力边界：**manager 无法枚举/删除远端节点的 local 卷**（维护需一次性作业经 docker.sock，Spike V8 验证）。
 
 ## 2. 目标设计
@@ -17,28 +17,31 @@
 
 | 层 | 载体 | 归属 | 变更规则 |
 |---|---|---|---|
-| 意图 | spec `placement.node`（显示名或节点 ID，可省略） | 用户 | 改 spec |
+| 意图 | 服务 label `edgesets.placement.node`（显示名或节点 ID，可省略） | 用户 | 改 compose 文件 |
 | 绑定 | `placements` 记录（**平台节点 ID 为锚**） | 平台 | 仅经首次自动选点、显式换点（破坏性确认）、备份恢复迁移、重入 adopt 四类操作 |
-| 执行 | 适配器编译为节点 label 约束（`io.edgesets.node-id`） | 适配器 | 随绑定自动下发 |
+| 执行 | 适配器编译为节点 label 约束（`edgesets.node-id`） | 适配器 | 随绑定自动下发 |
 
-不变量：**绑定优先于 spec 的缺失**（用户删除 pin 不触发迁移）；有卷应用不存在「无绑定」的合法运行态；绑定节点不可用时**不迁移、不换点**。
+不变量：**绑定优先于 label 的缺失**（用户删除 pin 不触发迁移）；有卷应用不存在「无绑定」的合法运行态；绑定节点不可用时**不迁移、不换点**。
 
 ### 2.2 节点身份（用户裁决：平台 ID 为锚）
 
-- **领域身份 = 平台节点 ID**（`n_<ULID>`，永不复用），写入节点 label `io.edgesets.node-id`；服务约束引用它。
-- **显示名**唯一（默认 hostname slug，可改），仅供人/Agent 读写；spec 可写名或 ID，名→ID 解析失败 → 422 + 候选清单。
+- **领域身份 = 平台节点 ID**（`n_<ULID>`，永不复用），写入节点 label `edgesets.node-id`；服务约束引用它。
+- **显示名**唯一（默认 hostname slug，可改），仅供人/Agent 读写；label 可写名或 ID，名→ID 解析失败 → 422 + 候选清单。
 - Swarm node ID 仅存在于适配器映射（`runtime_node_refs`），不进入核心契约；**重入 = 新 Swarm 成员 → 显式 adopt**（校验数据后把平台 ID 重新关联），不依赖 hostname/machine-id 自动判定。
 - 灾后全新建集群（L2）：平台 ID 保留在 DB/导出物，节点逐台 adopt 重绑；未 adopt 的绑定应用进入 blocked，部署 409，绝不猜测。
 
-### 2.3 spec 与 API
+### 2.3 label 与 API
 
 ```yaml
-placement:
-  node: srv-01     # 可选：显示名或 n_<ULID>；省略 = 平台自动选点并持久保持
+services:
+  web:
+    labels:
+      edgesets.placement.node: srv-01   # 可选：显示名或 n_<ULID>；省略 = 平台自动选点并持久保持
 ```
 
 - 粒度 app 级（一个任务挂 app 全部卷，只能落单节点）；不做 process/卷级、不做标签选择器 DSL（硬钉住是唯一语义）。
 - 有命名卷/宿主绑定 → **强制钉住**（平台自动，无需用户声明）；无卷应用默认不钉，显式 pin 时出计划警告（失去自动重调度）。
+- 用户写 `deploy.placement.constraints` 时仅允许 `node.labels.edgesets.*` 命名空间，其余 → `E_COMPOSE_UNSUPPORTED`。
 - 校验：`volumes` 非空时 `replicas` 必须为 1（本地卷不能多副本共享）。
 
 | API | 语义 |
@@ -52,7 +55,7 @@ placement:
 ### 2.4 状态模型增量（SQLite，只加不减）
 
 ```sql
-placements(app PRIMARY KEY, node_id, source /* platform|spec */, spec_ref,
+placements(app PRIMARY KEY, node_id, source /* platform|label */, label_ref,
            state /* ok|blocked|unresolved|conflict */, reason, pinned_at, updated_at, etag)
 volumes(id, app, key, kind /* named|bind */, node_id, docker_name, mount_path,
         host_path, status /* active|orphaned|unverified|abandoned */, verified_at,
@@ -65,7 +68,7 @@ volumes(id, app, key, kind /* named|bind */, node_id, docker_name, mount_path,
 
 ```
 resolve_placement(app):
-  spec pin → 解析（名或 ID）；失败 → E_PLACEMENT_NODE_INVALID/ NOT_FOUND
+  label pin → 解析（名或 ID）；失败 → E_PLACEMENT_NODE_INVALID/ NOT_FOUND
   已有绑定 → 保持（绑定优先）
   无绑定且无卷 → 不钉（自由调度）
   无绑定且有卷 → 自动选点：
@@ -87,7 +90,7 @@ deploy_preflight(app):
 |---|---|---|
 | 绑定节点 DOWN / drain | 观测（心跳 15s 量级） | 应用 `blocked`（UI 红条）；任务 PENDING；进行中部署 `blocked_waiting`（无超时、可 cancel、不回滚）；新部署快速失败 |
 | 绑定节点移除（remove） | 移除流程 | `blocked(node_gone)`；24h 后升级提醒；恢复仅两条路径（见 2.7） |
-| 节点重命名 | API | 默认 409（列出被 spec 按名引用的应用）；`--force` 后相关应用 `unresolved` |
+| 节点重命名 | API | 默认 409（列出被 label 按名引用的应用）；`--force` 后相关应用 `unresolved` |
 | 节点重入（同机 rejoin） | 显式 adopt | 校验卷数据（marker/verify）后重绑平台 ID；未验证 → `unverified`，部署被拒 |
 | 节点身份 label 被删改 | 对账器 | 自动重放 label + 事件（安全不变量，per-app opt-in 的收窄例外） |
 | 身份冲突（同 ID 两节点） | 对账器 | 拒绝自动处理；涉及应用拒绝调度 + 409；人工裁决 |
@@ -118,7 +121,7 @@ deploy_preflight(app):
 
 ### 2.10 v0.1 单节点
 
-- 同一字段、同一代码路径（单节点 = 候选集只有一项）；`placement.node` 可写该节点名；未声明则自动绑定本机。
+- 同一字段、同一代码路径（单节点 = 候选集只有一项）；`edgesets.placement.node` label 可写该节点名；未声明则自动绑定本机。
 - 不可用操作（drain/adopt/rebind/rebalance）返回 `E_CAPABILITY_REQUIRES_MULTI_NODE`，不静默成功。
 - UI 显示「本机」，不引入节点概念负担；v0.1 → v0.2 零迁移。
 
@@ -137,9 +140,9 @@ deploy_preflight(app):
 
 ## 4. 分步实施
 
-- **v0.1**：`placement.node` 解析与校验、自动绑定（单节点同路径）、卷注册表、前哨 409、label 契约写入、删除应用保留卷。
+- **v0.1**：`edgesets.placement.node` label 解析与校验、自动绑定（单节点同路径）、卷注册表、前哨 409、label 契约写入、删除应用保留卷。
 - **v0.2**：节点生命周期 API（drain/remove/adopt/rename）、孤儿卷管理与维护作业（Spike V8）、多节点选点与漂移矩阵（Spike V6b）、rebalance（dry-run 优先）、备份恢复迁移（restic）。
-- **v0.3**：模板目录/受控 stack 中带卷模板的放置指引；machine-id 自动重入评估。
+- **v0.3**：模板目录中带卷模板的放置指引（Compose 子集扩展后）；machine-id 自动重入评估。
 
 ## 5. 风险与对策
 
