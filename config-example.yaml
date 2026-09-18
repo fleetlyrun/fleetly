@@ -9,6 +9,18 @@ addr: "127.0.0.1:8420"
 grpc:
   addr: "127.0.0.1:8421"
 
+# 状态层（SQLite 权威态 + 底座观测缓存）。
+state:
+  # 状态库文件路径（启动即建库并应用迁移）。
+  db_path: "./edgefleet.db"
+  # 事件保留天数（默认 30；非正值回落默认，不允许关闭清理）。
+  event_retention_days: 30
+  # 审计保留天数（默认 365）。
+  audit_retention_days: 365
+  # 底座（Docker Engine）连接地址；留空 = DOCKER_HOST 环境变量，再缺省
+  # 本机套接字（linux unix socket / Windows named pipe）。
+  docker_host: ""
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info

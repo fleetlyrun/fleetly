@@ -7,6 +7,8 @@ package main
 const (
 	defaultHTTPAddr = "127.0.0.1:8420"
 	defaultGRPCAddr = "127.0.0.1:8421"
+	// defaultDBPath 是状态库缺省路径（config state.db_path 的回落值）。
+	defaultDBPath = "./edgefleet.db"
 )
 
 // AppConfig 应用配置，与 config.yaml 及 flags 对应（lynx Config，默认
@@ -17,6 +19,8 @@ type AppConfig struct {
 	Addr string `mapstructure:"addr"`
 	// GRPC 是 gRPC 面配置（server.v1 服务承载于此，gateway 反向代理目标）。
 	GRPC GRPCConfig `mapstructure:"grpc"`
+	// State 是状态层配置（config 键 state.*）。
+	State StateConfig `mapstructure:"state"`
 }
 
 // GRPCConfig 是 gRPC 面的配置节（config 键 grpc.*）。
@@ -25,10 +29,33 @@ type GRPCConfig struct {
 	Addr string `mapstructure:"addr"`
 }
 
+// StateConfig 是状态层配置节（config 键 state.*）。保留期天数取非正值
+// 时回落注册默认（事件 30 天 / 审计 365 天——保留期是契约默认，不允许
+// 误配成 0 静默关闭清理）。
+type StateConfig struct {
+	// DBPath 是 SQLite 状态库文件路径（state.db_path）。
+	DBPath string `mapstructure:"db_path"`
+	// EventRetentionDays 是事件保留天数（state.event_retention_days）。
+	EventRetentionDays int `mapstructure:"event_retention_days"`
+	// AuditRetentionDays 是审计保留天数（state.audit_retention_days）。
+	AuditRetentionDays int `mapstructure:"audit_retention_days"`
+	// DockerHost 是底座连接地址（state.docker_host）；空 = DOCKER_HOST
+	// 环境变量，再缺省本机套接字。
+	DockerHost string `mapstructure:"docker_host"`
+}
+
 // GRPCAddr 返回 gRPC 监听地址，未配置时回落缺省值。
 func (c *AppConfig) GRPCAddr() string {
 	if c.GRPC.Addr == "" {
 		return defaultGRPCAddr
 	}
 	return c.GRPC.Addr
+}
+
+// DBPath 返回状态库路径，未配置时回落缺省值。
+func (c *AppConfig) DBPath() string {
+	if c.State.DBPath == "" {
+		return defaultDBPath
+	}
+	return c.State.DBPath
 }

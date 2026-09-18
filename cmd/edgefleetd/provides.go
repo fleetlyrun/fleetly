@@ -8,6 +8,9 @@ import (
 	"github.com/lynx-go/lynx/boot"
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
+
+	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/edgesets/edgefleet/internal/substrate"
 )
 
 //go:generate go run -mod=mod github.com/google/wire/cmd/wire
@@ -17,6 +20,11 @@ import (
 var ProviderSet = wire.NewSet(
 	boot.New,
 	NewConfig,
+	NewStore,
+	NewDockerClient,
+	NewNodeIdentity,
+	NewObserver,
+	NewJanitor,
 	NewGRPCServer,
 	NewSystemService,
 	NewHTTPServer,
@@ -43,6 +51,43 @@ func NewConfig(app lynx.App) (*AppConfig, error) {
 	return c, nil
 }
 
+// NewStore 打开状态库（启动即建库迁移，失败 fail-fast 拒绝启动）；资源
+// 释放交给 Wire cleanup（main 挂 OnPostStop，晚于全部服务 Stop）。
+func NewStore(cfg *AppConfig) (*state.Store, func(), error) {
+	st, err := state.Open(context.Background(), cfg.DBPath())
+	if err != nil {
+		return nil, nil, err
+	}
+	return st, func() { _ = st.Close() }, nil
+}
+
+// NewDockerClient 构造底座客户端（state.DockerClient 端口的 moby/client
+// 实现，internal/substrate 适配器）；连接资源由 Wire cleanup 释放。
+func NewDockerClient(cfg *AppConfig) (state.DockerClient, func(), error) {
+	c, err := substrate.NewClient(cfg.State.DockerHost)
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, func() { _ = c.Close() }, nil
+}
+
+// NewNodeIdentity 构造节点身份管理器（平台节点 ID n_<ULID> 生成持久化
+// 与 Swarm label 锚定，state-model §2.3）。
+func NewNodeIdentity(app lynx.App, st *state.Store, dc state.DockerClient) *state.NodeIdentity {
+	return state.NewNodeIdentity(st, dc, app.Logger())
+}
+
+// NewObserver 构造节点观测缓存刷新器（30s 全量 resync + 事件驱动失效，
+// 底座不可达置 stale + 指数退避）。
+func NewObserver(app lynx.App, st *state.Store, dc state.DockerClient) *state.Observer {
+	return state.NewObserver(st, dc, app.Logger())
+}
+
+// NewJanitor 构造保留期清理守护（事件/审计过期清理，周期可配）。
+func NewJanitor(app lynx.App, st *state.Store, cfg *AppConfig) *state.Janitor {
+	return state.NewJanitor(st, cfg.State.EventRetentionDays, cfg.State.AuditRetentionDays, app.Logger())
+}
+
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
 // （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）；
 // /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
@@ -59,8 +104,26 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig) (*lynxhttp.Server, error) {
 	), nil
 }
 
-func NewServices(hs *lynxhttp.Server, gs *lynxgrpc.Server) []lynx.Service {
-	return []lynx.Service{hs, gs}
+// NewServices 聚合全部受托管服务：状态层四服务（store/identity/observer/
+// janitor）先于 HTTP/gRPC 注册——lynx 按注册顺序启动，store 的 Init 在
+// 装配期（Register 阶段）完成迁移，Start 阶段顺序无实质依赖，注册顺序
+// 表达「状态先于 API 面」。
+func NewServices(
+	st *state.Store,
+	id *state.NodeIdentity,
+	ob *state.Observer,
+	jr *state.Janitor,
+	hs *lynxhttp.Server,
+	gs *lynxgrpc.Server,
+) []lynx.Service {
+	return []lynx.Service{
+		newStoreService(st),
+		newIdentityService(id),
+		newObserverService(ob),
+		newJanitorService(jr),
+		hs,
+		gs,
+	}
 }
 
 func NewServiceFactories() []lynx.ServiceFactory {
