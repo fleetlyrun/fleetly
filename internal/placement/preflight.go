@@ -7,8 +7,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
-	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // 部署前哨（stateful-placement §2.5 deploy_preflight）：新部署快速失败、

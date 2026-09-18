@@ -1,8 +1,8 @@
-# edgefleet 控制面状态模型设计（Swarm 底座）
+# fleetly 控制面状态模型设计（Swarm 底座）
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8），机制面经 D18 精简；2026-09-17 审核裁决轮：冷备触发时机改为主机/Engine 升级（edgefleetd 升级走热备+原子化）、证书材料改控制面集中签发、对象命名补记、D-STM-2 措辞修正 |
+| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8），机制面经 D18 精简；2026-09-17 审核裁决轮：冷备触发时机改为主机/Engine 升级（fleetlyd 升级走热备+原子化）、证书材料改控制面集中签发、对象命名补记、D-STM-2 措辞修正 |
 
 ## 1. 现状与问题
 
@@ -35,23 +35,23 @@
 
 ### 2.3 节点身份与重建
 
-- **领域身份 = 平台节点 ID**（`n_<ULID>`，用户裁决，见放置设计 §2.2）；写入节点 label `edgefleet.node-id`；显示名=Swarm hostname。
+- **领域身份 = 平台节点 ID**（`n_<ULID>`，用户裁决，见放置设计 §2.2）；写入节点 label `fleetly.node-id`；显示名=Swarm hostname。
 - Swarm node ID 仅存适配器映射 `runtime_node_refs(platform_id, swarm_node_id)`（**用途：身份 label 被删改后对账器自动重放的依据**；映射本身可从 label 反建）；换机/重建后走**人工 rebind**（放置设计 §2.2）。
 - 平台不制造节点健康语义：state/availability 逐字镜像 Swarm，外加平台观测时间。
 
 ### 2.4 对象标记契约（最小集）
 
-命名空间 `edgefleet.*`（保留前缀，用户占用 → 422 `E_LABEL_RESERVED`）；写者唯一 = 适配器 Marker 端口；密钥/payload 永不入 label；保留未知 `edgefleet.*` 键不改写。
+命名空间 `fleetly.*`（保留前缀，用户占用 → 422 `E_LABEL_RESERVED`）；写者唯一 = 适配器 Marker 端口；密钥/payload 永不入 label；保留未知 `fleetly.*` 键不改写。
 
 | 对象 | 键 | 用途 |
 |---|---|---|
 | Service | `managed=true`、`app`、`process`、`deployment`、`cron`（job 的 schedule 名） | 归属判定、孤儿检测、删除保护、堆栈对账辅助、cron 运行归属 |
 | Container | `app` | 人工排障时识别归属（不参与决策） |
 | Node | `node-id`（平台 ID） | 放置锚与重绑 |
-| Volume | 无 label，使用命名约定 `edgefleet-<app>-<key>-<appid8>`（约束来源：卷由服务 spec 在各节点惰性创建，label 传递能力待 Spike 验证——`VolumeOptions.Labels` 生效则可收敛到 label 体系） | 卷归属与防代际静默复用 |
+| Volume | 无 label，使用命名约定 `fleetly-<app>-<key>-<appid8>`（约束来源：卷由服务 spec 在各节点惰性创建，label 传递能力待 Spike 验证——`VolumeOptions.Labels` 生效则可收敛到 label 体系） | 卷归属与防代际静默复用 |
 
-- 平台约定 label（compose 原生字段承载）：`edgefleet.domains`（路由域名，逗号分隔列表）、`edgefleet.placement.node`（放置意图）〔v0.1 契约〕；`edgefleet.cron` / `edgefleet.cron.timezone` / `edgefleet.cron.timeout`（定时任务，v0.2 契约；带该 label 的服务不按长驻部署）。
-- 对象命名（适配器内，防集群全局命名空间撞名，2026-09-17 审核裁决；语义见架构 §2.4）：Swarm 服务名 `edgefleet-<app>-<service>`；secret 名 `edgefleet-<app>-<name>-<hash8>`（file target 保持 compose 名，轮换 = 换引用）；网络别名 = compose 服务名（app 内短名互访与 compose 语义一致）。
+- 平台约定 label（compose 原生字段承载）：`fleetly.domains`（路由域名，逗号分隔列表）、`fleetly.placement.node`（放置意图）〔v0.1 契约〕；`fleetly.cron` / `fleetly.cron.timezone` / `fleetly.cron.timeout`（定时任务，v0.2 契约；带该 label 的服务不按长驻部署）。
+- 对象命名（适配器内，防集群全局命名空间撞名，2026-09-17 审核裁决；语义见架构 §2.4）：Swarm 服务名 `fleetly-<app>-<service>`；secret 名 `fleetly-<app>-<name>-<hash8>`（file target 保持 compose 名，轮换 = 换引用）；网络别名 = compose 服务名（app 内短名互访与 compose 语义一致）。
 - ~~锚点文档 / schema 版本化 / 溢写~~：经 D18 砍除（无硬承诺需要；DB + label 足够）。
 
 ### 2.5 漂移判定
@@ -71,7 +71,7 @@
 **等序不变量：SQLite 允许比 raft 新，绝不允许比 raft 旧**（DB 新 → 收敛补齐；DB 旧 → 孤儿待决）。
 
 - 热备：SQLite 一致快照（`VACUUM INTO`）+ sha256 回读校验；**每次成功部署后 + 每日**；不碰 raft。
-- 冷备：host 侧 helper，停 Engine → tar `/var/lib/docker/swarm`（含 raft 与 autolock key）→ DB 快照 → 证书材料 → 校验上传；**主机/Engine 升级前强制** + 手动（**edgefleetd 升级不触发冷备**：只做热备快照 + 原子化自升级，不停 Engine、应用不停——升级双轨口径见架构 §4.2，2026-09-17 审核裁决）。
+- 冷备：host 侧 helper，停 Engine → tar `/var/lib/docker/swarm`（含 raft 与 autolock key）→ DB 快照 → 证书材料 → 校验上传；**主机/Engine 升级前强制** + 手动（**fleetlyd 升级不触发冷备**：只做热备快照 + 原子化自升级，不停 Engine、应用不停——升级双轨口径见架构 §4.2，2026-09-17 审核裁决）。
 - 密钥（主密钥）独立路径、不同介质保存；备份失败红色告警；`state_backups` 台账记录 `verify_status`。
 - **恢复顺序（固定）**：① 停控制面与 Engine ② 校验备份集（校验和 + 密钥指纹，不匹配 → `E_BACKUP_KEY_MISSING`，拒绝半恢复）③ raft 回填 → Engine 启动（必要时 `--force-new-cluster`）④ SQLite + acme 回填 ⑤ 启动控制面 → **只读观察** ⑥ 人工按差异清单处理 → 退出观察 ⑦ 事件 `restore.completed`。
 - **恢复阶梯 L1/L2**：L1 = raft+DB（全保真，应用不中断）；L2 = 仅 DB（新集群 + 人工重绑，运行态重建）。**L3 场景（仅容器存活）runbook 化、不建机制**。
@@ -79,7 +79,7 @@
 
 ### 2.8 导出
 
-- `edgefleet export --out bundle.tar.gz`：compose 文件 + SQLite 一致性导出 + 卷 tar（可选）+ README（含恢复指引与不承诺清单）。
+- `fleetly export --out bundle.tar.gz`：compose 文件 + SQLite 一致性导出 + 卷 tar（可选）+ README（含恢复指引与不承诺清单）。
 - **不含**：token、主密钥、证书私钥。**不建格式合同与自动导入**（D18 砍单）；跨平台搬家 = 按 README 人工恢复。
 
 ### 2.9 审计与事件自存
@@ -110,7 +110,7 @@
 | D-STM-6 | 孤儿只登记不删除；恢复后只读观察 | DB 滞后于底座是 DR 的必然状态；恢复期自动收敛会静默回退部署 | 按 DB 反向清理；恢复即收敛 | 独立收敛 |
 | D-STM-7 | 备份等序 + 固定恢复顺序 + 密钥独立 | 「DB ≥ raft」使两种恢复方向都有安全路径 | 运行中 tar raft（撕裂）；恢复即自动收敛 | 独立收敛 |
 | D-STM-8 | 领域节点身份 = 平台 ID（用户裁决） | 抗重名/重建，数据安全优先 | hostname 作身份；Swarm node ID 作领域身份 | **用户裁决** |
-| D-STM-9 | 导出为简单 tar（不是格式合同），不承诺免重建 | 小团队的导出是「带走数据」承诺，不是迁移流水线 | edgefleet.export/v1 合同 + import 自动化（过度设计，D18） | 裁决（D18 砍单） |
+| D-STM-9 | 导出为简单 tar（不是格式合同），不承诺免重建 | 小团队的导出是「带走数据」承诺，不是迁移流水线 | fleetly.export/v1 合同 + import 自动化（过度设计，D18） | 裁决（D18 砍单） |
 | D-STM-10 | 审计 fail-closed + 事件游标显式断档 | 自动收敛无审计即黑盒改配置；静默跳号不可诊断 | 读操作写审计（噪音）；事件仅内存广播（断号） | 独立收敛 |
 | D-STM-11 | 不做 recovery plan 资源与两阶段 apply；只读观察开关替代 | 一个 flag 覆盖「恢复期禁收敛」，plan 状态机是仪式 | recovery_plans 表 + findings + apply 两段式（过度设计，D18） | 裁决（D18 砍单） |
 

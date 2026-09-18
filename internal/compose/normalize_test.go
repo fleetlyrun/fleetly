@@ -198,7 +198,7 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.domains: "  Bücher.DE , app.example.com, bücher.de  "
+      fleetly.domains: "  Bücher.DE , app.example.com, bücher.de  "
 `
 	spec := loadOK(t, writeCompose(t, content))
 	domains := spec.Services[0].Domains

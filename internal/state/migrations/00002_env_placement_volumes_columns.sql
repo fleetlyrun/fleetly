@@ -4,7 +4,7 @@
 
 -- +goose Up
 
--- env_vars：生效状态位（三层合并链只消费 effective；edgefleet env set 创建
+-- env_vars：生效状态位（三层合并链只消费 effective；fleetly env set 创建
 -- pending、随下次部署生效——消费点在发布引擎 T2.10）。既有行视为已生效。
 ALTER TABLE env_vars ADD COLUMN status TEXT NOT NULL DEFAULT 'effective'
     CHECK (status IN ('pending', 'effective'));

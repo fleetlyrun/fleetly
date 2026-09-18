@@ -56,13 +56,13 @@ jobs:
       - name: dump dind logs
         if: failure()
         run: |
-          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+          docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
       - name: cleanup
         if: always()
         run: |
-          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
-          docker network rm edgefleet-nightly-br || true
+          docker ps -aq --filter name=fleetly-nightly- | xargs -r docker rm -f
+          docker network rm fleetly-nightly-br || true
 
   v2-digest-nopull:
     # V2：service 以 名称@sha256:<本地 imageID> 创建与 --force 重放零 pull；
@@ -77,11 +77,11 @@ jobs:
       - name: dump dind logs
         if: failure()
         run: |
-          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+          docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
       - name: cleanup
         if: always()
-        run: docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
+        run: docker ps -aq --filter name=fleetly-nightly- | xargs -r docker rm -f
 
   v3-routing:
     # V3：健康滚动更新窗口内经 Traefik→VIP 路由零失败；VIP 前后不变。
@@ -98,13 +98,13 @@ jobs:
       - name: dump dind logs
         if: failure()
         run: |
-          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+          docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
       - name: cleanup
         if: always()
         run: |
-          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
-          docker network rm edgefleet-nightly-br || true
+          docker ps -aq --filter name=fleetly-nightly- | xargs -r docker rm -f
+          docker network rm fleetly-nightly-br || true
 
   v4-conn-governance:
     # V4 最小子集：abrupt 后端 in-flight POST 必现 502（事故类仍可检出）；
@@ -123,13 +123,13 @@ jobs:
       - name: dump dind logs
         if: failure()
         run: |
-          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+          docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
       - name: cleanup
         if: always()
         run: |
-          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
-          docker network rm edgefleet-nightly-br || true
+          docker ps -aq --filter name=fleetly-nightly- | xargs -r docker rm -f
+          docker network rm fleetly-nightly-br || true
 
   v6-placement:
     # V6a/V6b（双 dind 组网）：无约束迁移得空卷 / 硬钉住 kill→PENDING→重启
@@ -149,13 +149,13 @@ jobs:
       - name: dump dind logs
         if: failure()
         run: |
-          docker ps -a --filter name=edgefleet-nightly- --format '{{.Names}}' |
+          docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
       - name: cleanup
         if: always()
         run: |
-          docker ps -aq --filter name=edgefleet-nightly- | xargs -r docker rm -f
-          docker network rm edgefleet-nightly-br || true
+          docker ps -aq --filter name=fleetly-nightly- | xargs -r docker rm -f
+          docker network rm fleetly-nightly-br || true
 
   v5-recovery-drill:
     # 占位（本期范围裁决）：V5 单 manager 故障恢复 + V5b raft 回退孤儿命运

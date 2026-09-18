@@ -1,4 +1,4 @@
-# edgefleet 实施任务分解（Spike + v0.1）
+# fleetly 实施任务分解（Spike + v0.1）
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
@@ -43,20 +43,20 @@ T2 v0.1（核心；分层依赖见 §5）
 ## 3. T0 骨架与契约（M0，约 1 周）
 
 **T0.1 仓库与 CI 骨架** ｜ Blocked by: 无 ｜ 2-3 人日 ｜ ✅ 完成 2026-09-17（还原点 d8328d5）
-- 交付：monorepo 骨架可克隆即跑——`cmd/edgefleetd`、`cmd/edgefleet`、`internal/`、`pkg/api`、`/console`、`/deploy` 就位（架构 §2.7）；edgefleetd 以 **lynx `NewRunner` + Wire（`boot.Bootstrap`）引导**（D20，装配形态参考 lynx-clean-template，lynx 用法参考 messageloop）；PR 门禁（lint/单测/并发取消）绿。
-- 验收：golangci-lint + gofmt + staticcheck + gosec + govulncheck 进 PR 轨道并阻断；`go generate ./...` 后无差异（wire_gen 同步）进 PR 门禁；空跑的单测任务绿；`go build ./...` 与 `edgefleet --help` 可执行。
+- 交付：monorepo 骨架可克隆即跑——`cmd/fleetlyd`、`cmd/fleetly`、`internal/`、`pkg/api`、`/console`、`/deploy` 就位（架构 §2.7）；fleetlyd 以 **lynx `NewRunner` + Wire（`boot.Bootstrap`）引导**（D20，装配形态参考 lynx-clean-template，lynx 用法参考 messageloop）；PR 门禁（lint/单测/并发取消）绿。
+- 验收：golangci-lint + gofmt + staticcheck + gosec + govulncheck 进 PR 轨道并阻断；`go generate ./...` 后无差异（wire_gen 同步）进 PR 门禁；空跑的单测任务绿；`go build ./...` 与 `fleetly --help` 可执行。
 
 **T0.2 错误码与事件注册表** ｜ Blocked by: T0.1 ｜ 2 人日 ｜ ✅ 完成 2026-09-17（还原点 421a991；遗留裁决见冻结清单 FZ-2/3/4/5）
 - 交付：代码内注册表为唯一真源（架构 §2.8），错误信封 `{code,message,phase,deployment_id,suggestion,context,docs}` 以 proto `ErrorResponse` 定义、经 gateway `HTTPErrorHandler` 输出（发布专项 §2.7、D21）。
 - 验收：注册表只增/不复用的 CI 校验测试；首发错误码（`E_COMPOSE_*`、`E_STATE_VERSION_CONFLICT` 等 T2 首批）入表；信封序列化有 golden 测试。
 
 **T0.3 proto 契约与生成链** ｜ Blocked by: T0.1 ｜ 2-3 人日 ｜ ✅ 完成 2026-09-17（还原点 0a25e25）
-- 交付：buf 工具链 + proto 骨架（`edgefleet.{client,console,server}.vN` 分模块）+ gRPC 服务骨架挂 lynx + grpc-gateway 挂载（torchwood 范式，D21）+ 平台 SDK（gRPC client，独立模块）。
+- 交付：buf 工具链 + proto 骨架（`fleetly.{client,console,server}.vN` 分模块）+ gRPC 服务骨架挂 lynx + grpc-gateway 挂载（torchwood 范式，D21）+ 平台 SDK（gRPC client，独立模块）。
 - 验收：buf lint 通过、buf breaking 对基线跑通；hello RPC 从同一 proto 生成 gRPC client（SDK）与 REST 端点（gateway）双面可用；错误信封以 proto `ErrorResponse` 定义、gateway `HTTPErrorHandler` 输出 snake_case（torchwood 同款 `disable_default_errors`）；生成物同步检查（`buf generate` 后 diff 为空）进 PR 门禁；`/healthz/*` 来自 lynx 框架。
 
 **T0.4 dind E2E 骨架** ｜ Blocked by: T0.1 ｜ 2-3 人日 ｜ ✅ 完成 2026-09-17（还原点 bfa0f48）
 - 交付：`docker:29.8.1-dind` 内起平台的 E2E harness（交付 P2、M0）。
-- 验收：CI 中 dind 容器内拉起 edgefleetd 冒烟（启动/健康检查/关闭）；可复用为 Spike B/C 与 nightly 的底座。
+- 验收：CI 中 dind 容器内拉起 fleetlyd 冒烟（启动/健康检查/关闭）；可复用为 Spike B/C 与 nightly 的底座。
 
 **T0.5 三专项 v0.1 切面冻结**（文档任务）｜ Blocked by: 无 ｜ 1-2 人日 ｜ ✅ 完成 2026-09-17（[冻结清单](2026-09-17-v0.1-scope-freeze.md)，含 FZ-1~FZ-5 裁决）
 - 交付：按架构 §4.5 对发布/放置/状态模型三专项的 v0.1 条目逐项核对，产出冻结清单（进 v0.1 的表、状态、错误码、事件白名单；超出者后置）。
@@ -98,7 +98,7 @@ T2 v0.1（核心；分层依赖见 §5）
 
 **T2.4 对象标记与命名** ｜ Blocked by: T2.2 ｜ 2-3 人日
 - 交付：最小 label 集 + 平台命名约定（状态模型 §2.4、架构 §2.4 服务命名与网络行）。
-- 验收：service/container/node label 最小集下发与对账重放（label 被删改 → 自动重放 + 事件）；`edgefleet-<app>-<service>` 命名 + per-app 网络 + 别名 = compose 服务名（两个 app 同名服务互不冲突、app 内短名互通有集成测试）；secret 命名空间化 + file target 保持 compose 名；卷命名约定 `edgefleet-<app>-<key>-<appid8>`；用户占用 `edgefleet.*` 前缀 → 422 `E_LABEL_RESERVED`。
+- 验收：service/container/node label 最小集下发与对账重放（label 被删改 → 自动重放 + 事件）；`fleetly-<app>-<service>` 命名 + per-app 网络 + 别名 = compose 服务名（两个 app 同名服务互不冲突、app 内短名互通有集成测试）；secret 命名空间化 + file target 保持 compose 名；卷命名约定 `fleetly-<app>-<key>-<appid8>`；用户占用 `fleetly.*` 前缀 → 422 `E_LABEL_RESERVED`。
 
 ### 管线层
 
@@ -112,7 +112,7 @@ T2 v0.1（核心；分层依赖见 §5）
 
 **T2.7 密钥与 env** ｜ Blocked by: T2.2、T2.4 ｜ 3-4 人日
 - 交付：加密存储 → 注入运行的完整链路（架构 §2.3 密钥方案、§2.4 变量合并/密钥行）。
-- 验收：envelope 加密（age）落库，主密钥文件权限保护且与备份分离；compose secrets → Swarm secret 映射（`/run/secrets/<name>` 可读）；env 三层合并（`env_file` < `environment` < 平台 env_vars）+ `edgefleet env set` 创建 pending、随下次部署生效；密钥值不进事件/审计/日志（负面断言）。
+- 验收：envelope 加密（age）落库，主密钥文件权限保护且与备份分离；compose secrets → Swarm secret 映射（`/run/secrets/<name>` 可读）；env 三层合并（`env_file` < `environment` < 平台 env_vars）+ `fleetly env set` 创建 pending、随下次部署生效；密钥值不进事件/审计/日志（负面断言）。
 
 ### 构建层
 
@@ -156,7 +156,7 @@ T2 v0.1（核心；分层依赖见 §5）
 
 **T2.16 集中 ACME 与域名** ｜ Blocked by: T2.15 ｜ 3-5 人日
 - 交付：域名列表 → HTTPS 全自动（架构 §2.4 域名行、§2.6 证书集中化）。
-- 验收：lego 集中签发 + 多 SAN；HTTP-01 挑战经各节点 Traefik 反代到控制面；证书存平台、随动态配置下发、独立备份；`edgefleet domains verify`（解析 + 证书 + 全节点入口可达）；证书材料不进应用备份。
+- 验收：lego 集中签发 + 多 SAN；HTTP-01 挑战经各节点 Traefik 反代到控制面；证书存平台、随动态配置下发、独立备份；`fleetly domains verify`（解析 + 证书 + 全节点入口可达）；证书材料不进应用备份。
 
 ### 面向层
 
@@ -165,7 +165,7 @@ T2 v0.1（核心；分层依赖见 §5）
 - 验收：apps/deployments/rollback/domains/env/logs/placement 服务齐，SDK（gRPC）与 REST（gateway）双面由同一 proto 派生且一致；SSE 事件流带游标；拦截器链强制鉴权（token scope，read/deploy/admin）——无 token 全部 401（安全基线）；gRPC-only 不挂 gateway 的服务清单显式维护（torchwood 同纪律）。
 
 **T2.18 CLI 全命令** ｜ Blocked by: T2.17 ｜ 3-4 人日
-- 交付：`edgefleet` CLI（lynx-go/commands，torchwood 同款）直接消费平台 SDK（gRPC client，与 API 同源；架构 §4.2 第 2 项、D21）。
+- 交付：`fleetly` CLI（lynx-go/commands，torchwood 同款）直接消费平台 SDK（gRPC client，与 API 同源；架构 §4.2 第 2 项、D21）。
 - 验收：deploy/logs/env/domains/rollback/plan/apply/diff 全命令 `--json`；日志/事件长流经 gRPC streaming 输出；输出 schema 快照测试（防漂移）；三态退出码贯穿。
 
 **T2.19 git push(SSH) 与 webhook** ｜ Blocked by: T2.17 ｜ 3-4 人日
@@ -187,7 +187,7 @@ T2 v0.1（核心；分层依赖见 §5）
 - 验收：热备 `VACUUM INTO` + sha256 回读校验（每次成功部署后 + 每日）进 `state_backups` 台账（verify_status）；失败红色告警（无「绿色假成功」路径，负面测试）；备份密钥/元数据与数据分离保存；按文档人工执行 L1 恢复演练一次成功，首次配置 ≤10 分钟（演练记录落档）。
 
 **T2.23 平台自升级（升级双轨）** ｜ Blocked by: T2.22、T2.1 ｜ 3-4 人日
-- 交付：edgesetsd→edgefleetd 升级原子化 + 双轨口径落地（架构 §4.2 横切、交付 §2.4）。
+- 交付：fleetlyd 升级原子化 + 双轨口径落地（架构 §4.2 横切、交付 §2.4）。
 - 验收：预拉镜像 + 升级前热备快照 + 失败自动回退（注入失败测试）；升级全程应用不停（E2E 断言）；Engine/主机升级的冷备路径文档化并指向维护窗口语义（不停 Engine 的口径写入升级文档）；stable 通道只发签名版本。
 
 **T2.24 交付流水线 M1 完备** ｜ Blocked by: T1.4、T2.17 ｜ 4-6 人日 ★
@@ -223,8 +223,8 @@ T2 v0.1（核心；分层依赖见 §5）
 | E4 | 数据库托管（PG/Redis 首发） | **跨 app 网络互访裁决**（架构 §2.4 遗留开放点）+ 备份适配器设计 |
 | E5 | Cron（细则已定，§4.3） | 与备份 ticker 共核；调度核用 lynx contrib/schedule（6 段含秒 → 平台契约 5 段，秒位固定 0） |
 | E6 | Metrics（VictoriaMetrics/cAdvisor）+ 通知 | 资源预算修订（idle <400MB 目标） |
-| E7 | Web 终端（固定名词；执行中继 `edgefleet-exec`，D19） | 中继安全面测试套件 |
-| E8 | dogfooding：staging 用 edgefleet 部署自身 | 交付 §2.6，进发布检查单 |
+| E7 | Web 终端（固定名词；执行中继 `fleetly-exec`，D19） | 中继安全面测试套件 |
+| E8 | dogfooding：staging 用 fleetly 部署自身 | 交付 §2.6，进发布检查单 |
 
 ## 8. 非工程并行项
 

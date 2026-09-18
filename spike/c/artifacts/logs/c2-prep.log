@@ -116,13 +116,13 @@ D:\Codes\qiulin\edgesets\spike\c>set "JTOK=SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b
 D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w1 docker swarm join 10.10.0.10:2377 --token SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b7x7rfnixc9lqs5ycicfsi6-ezsn6o2kg4gusk4vmmwm2mh5t   || exit /b 1 
 This node joined a swarm as a worker.
 
-D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.7 platform identity labels (edgefleet.node-id) ===== 
-===== PREP.7 platform identity labels (edgefleet.node-id) =====
+D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.7 platform identity labels (fleetly.node-id) ===== 
+===== PREP.7 platform identity labels (fleetly.node-id) =====
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add edgefleet.node-id=mgr mgr   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add fleetly.node-id=mgr mgr   || exit /b 1 
 mgr
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add edgefleet.node-id=w1 w1   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add fleetly.node-id=w1 w1   || exit /b 1 
 w1
 
 D:\Codes\qiulin\edgesets\spike\c>echo ===== PREP.8 sanity ===== 

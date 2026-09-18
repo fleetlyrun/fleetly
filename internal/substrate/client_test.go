@@ -10,7 +10,7 @@ import (
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/swarm"
 
-	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // TestNodeToObservation 映射正确性：核心类型逐字镜像底座语义（state/
@@ -23,7 +23,7 @@ func TestNodeToObservation(t *testing.T) {
 			Version: swarm.Version{Index: 42},
 		},
 		Spec: swarm.NodeSpec{
-			Annotations:  swarm.Annotations{Labels: map[string]string{"edgefleet.node-id": "n_TEST"}},
+			Annotations:  swarm.Annotations{Labels: map[string]string{"fleetly.node-id": "n_TEST"}},
 			Role:         swarm.NodeRoleManager,
 			Availability: swarm.NodeAvailabilityDrain,
 		},
@@ -47,7 +47,7 @@ func TestNodeToObservation(t *testing.T) {
 	if got.Version.Index != 42 {
 		t.Fatalf("version = %d, want 42", got.Version.Index)
 	}
-	if got.Labels["edgefleet.node-id"] != "n_TEST" {
+	if got.Labels["fleetly.node-id"] != "n_TEST" {
 		t.Fatalf("labels = %+v", got.Labels)
 	}
 
@@ -106,7 +106,7 @@ var _ state.DockerClient = (*Client)(nil)
 
 // TestSubscribeEventsStopsWithContext 事件流在 ctx 取消后关闭（无泄漏）。
 func TestSubscribeEventsStopsWithContext(t *testing.T) {
-	c, err := NewClient("unix:///nonexistent-socket-edgefleet-test")
+	c, err := NewClient("unix:///nonexistent-socket-fleetly-test")
 	if err != nil {
 		t.Fatalf("construct client (lazy, no dial): %v", err)
 	}

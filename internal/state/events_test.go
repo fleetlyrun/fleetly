@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
-	"github.com/edgesets/edgefleet/internal/eventcode"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/eventcode"
 )
 
 // appendN 在事务外按序追加 n 条事件（独立事务）。

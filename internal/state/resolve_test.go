@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 )
 
 // 写前直读（state-model §2.2 读契约）：令牌一致放行、不一致/对象消失
@@ -13,7 +13,7 @@ import (
 func TestResolveVersion(t *testing.T) {
 	fake := newFakeDocker()
 	fake.addNode("swarm-a", "node-a", "ready", 5)
-	fake.versions["service:edgefleet-app-web"] = 9
+	fake.versions["service:fleetly-app-web"] = 9
 	r := NewVersionResolver(fake)
 	ctx := context.Background()
 
@@ -62,7 +62,7 @@ func TestResolveVersion(t *testing.T) {
 	}
 
 	// service kind 直读。
-	v, err = r.ResolveVersion(ctx, ObjectKindService, "edgefleet-app-web")
+	v, err = r.ResolveVersion(ctx, ObjectKindService, "fleetly-app-web")
 	if err != nil || v.Index != 9 {
 		t.Fatalf("service resolve = %d err=%v, want 9 nil", v.Index, err)
 	}

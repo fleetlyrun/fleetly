@@ -61,7 +61,7 @@ spike-b/app:v2 851d9816bb3d
 spike-b/app:crash 35de3291d133
 [17:57:24] === B0.6 standalone sanity of v1 fixture ===
 HC 200 ok
-HC 200 edgefleet-spike-b version=v1 host=44ca57438ac0
+HC 200 fleetly-spike-b version=v1 host=44ca57438ac0
 [17:57:26] === B0.7 cfgsvc (control-plane stand-in for HTTP provider) ===
 [17:57:28] === B0.8 traefik v3 as swarm service (HTTP provider, poll 2s) ===
 [17:57:37] edge current-state=Running 5 seconds ago (after 0s)

@@ -8,29 +8,29 @@ import (
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/net/idna"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 )
 
 // 平台 label 契约常量（架构 §2.4 平台约定表、state-model §2.4 保留前缀）。
 const (
-	LabelDomains       = "edgefleet.domains"
-	LabelPlacementNode = "edgefleet.placement.node"
-	LabelCron          = "edgefleet.cron"
-	LabelCronTimezone  = "edgefleet.cron.timezone"
-	LabelCronTimeout   = "edgefleet.cron.timeout"
+	LabelDomains       = "fleetly.domains"
+	LabelPlacementNode = "fleetly.placement.node"
+	LabelCron          = "fleetly.cron"
+	LabelCronTimezone  = "fleetly.cron.timezone"
+	LabelCronTimeout   = "fleetly.cron.timeout"
 
 	// LabelNamespace 是平台保留 label 命名空间前缀：用户占用约定键之外的
-	// edgefleet.* 键 → E_LABEL_RESERVED（422）。
-	LabelNamespace = "edgefleet."
+	// fleetly.* 键 → E_LABEL_RESERVED（422）。
+	LabelNamespace = "fleetly."
 
 	// domain 契约上限（架构 §2.4）：每服务 ≤5、每 app ≤10。
 	maxDomainsPerService = 5
 	maxDomainsPerApp     = 10
 )
 
-// knownEdgefleetLabels 是 v0.1 承认的平台约定键全集（cron 家族为 v0.2 契约，
+// knownFleetlyLabels 是 v0.1 承认的平台约定键全集（cron 家族为 v0.2 契约，
 // v0.1 出现时给警告级提示而非拒绝）。
-var knownEdgefleetLabels = map[string]bool{
+var knownFleetlyLabels = map[string]bool{
 	LabelDomains:       true,
 	LabelPlacementNode: true,
 	LabelCron:          true,
@@ -43,7 +43,7 @@ var knownEdgefleetLabels = map[string]bool{
 // 对齐。
 var idnaProfile = idna.Lookup
 
-// parseDomainsLabel 解析 edgefleet.domains label 值：逗号分隔列表 → trim/
+// parseDomainsLabel 解析 fleetly.domains label 值：逗号分隔列表 → trim/
 // 小写/IDN→punycode 归一化、排序去重；通配符与非法形态 →
 // E_DOMAIN_UNSUPPORTED；超上限 → E_DOMAIN_UNSUPPORTED（reason 上下文标注）。
 // 返回归一化后的域名列表（保序输入、输出排序去重）。
@@ -105,7 +105,7 @@ func checkDomainContracts(serviceDomains map[string][]string) error {
 	return nil
 }
 
-// checkPlacementLabel 校验 edgefleet.placement.node 语法与跨服务一致性
+// checkPlacementLabel 校验 fleetly.placement.node 语法与跨服务一致性
 // （stateful-placement §2.2/§2.3）：hostname 或 n_<ULID>；语法非法 →
 // E_PLACEMENT_NODE_INVALID（422）；同 app 多服务指向不同节点 →
 // E_PLACEMENT_LABEL_CONFLICT（422）。

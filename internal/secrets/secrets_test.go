@@ -13,7 +13,7 @@ import (
 // newKeyFile 在临时目录生成密钥文件（默认权限），返回路径。
 func newKeyFile(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), "edgefleet.key")
+	return filepath.Join(t.TempDir(), "fleetly.key")
 }
 
 // TestEncryptDecryptRoundtrip 验收 2：age envelope roundtrip。
@@ -103,7 +103,7 @@ func TestKeyPersistenceAndFormat(t *testing.T) {
 
 // TestCorruptKeyRejected 损坏密钥文件拒绝加载（fail-fast，不静默）。
 func TestCorruptKeyRejected(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "edgefleet.key")
+	path := filepath.Join(t.TempDir(), "fleetly.key")
 	if err := os.WriteFile(path, []byte("not-an-age-key\n"), 0o600); err != nil {
 		t.Fatalf("write corrupt key: %v", err)
 	}
@@ -160,7 +160,7 @@ func TestSecretRefNamingAndRotation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ref: %v", err)
 	}
-	if ref.Name != "edgefleet-my-api-database_url-"+ref.Hash8 {
+	if ref.Name != "fleetly-my-api-database_url-"+ref.Hash8 {
 		t.Fatalf("secret name = %s, hash8 = %s", ref.Name, ref.Hash8)
 	}
 	rotated, err := SecretRef("my-api", "database_url", "value-v2")

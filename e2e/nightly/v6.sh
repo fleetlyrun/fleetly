@@ -117,7 +117,7 @@ nl "############ V6a-2: C3b hard pin (kill + restart rebind, on w2) ############
 m docker service rm c3b-app >/dev/null 2>&1 || true
 sleep 2
 m docker service create --name c3b-app --replicas 1 \
-    --constraint node.labels.edgefleet.node-id==w2 \
+    --constraint node.labels.fleetly.node-id==w2 \
     --mount type=volume,source=c3bvol,target=/data \
     --mount type=bind,source=/opt/probe,target=/probe,readonly \
     alpine:3.20 sleep 31536000 >/dev/null || fatal "create c3b-app"
@@ -198,7 +198,7 @@ nl "############ V6b: C4a drain / active roundtrip (on w2) ############"
 m docker service rm c4-app >/dev/null 2>&1 || true
 sleep 2
 m docker service create --name c4-app --replicas 1 \
-    --constraint node.labels.edgefleet.node-id==w2 \
+    --constraint node.labels.fleetly.node-id==w2 \
     --mount type=volume,source=c4vol,target=/data \
     --mount type=bind,source=/opt/probe,target=/probe,readonly \
     alpine:3.20 sleep 31536000 >/dev/null || fatal "create c4-app"

@@ -1,6 +1,6 @@
-// Package apperr 是携带 edgefleet 错误信封的应用错误类型。
+// Package apperr 是携带 fleetly 错误信封的应用错误类型。
 //
-// 错误信封契约（发布专项 §2.7、proto/edgefleet/shared/v1/error.proto）：
+// 错误信封契约（发布专项 §2.7、proto/fleetly/shared/v1/error.proto）：
 // {code, message, phase, deployment_id, suggestion, context, docs} 七字段；
 // code 必须来自 errcode 注册表（唯一真源，只增不复用）。gRPC 侧以
 // status detail（*sharedv1.ErrorResponse）携带信封；REST 侧由 gateway
@@ -17,8 +17,8 @@ import (
 	"net/http"
 	"strings"
 
-	sharedv1 "github.com/edgesets/edgefleet/genproto/edgefleet/shared/v1"
-	"github.com/edgesets/edgefleet/internal/errcode"
+	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
+	"github.com/fleetlyrun/fleetly/internal/errcode"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

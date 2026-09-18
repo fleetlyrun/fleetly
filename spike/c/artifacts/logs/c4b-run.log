@@ -45,7 +45,7 @@ D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.1 create pinned volume service o
 
 D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c4b-app  2>nul 
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service create --name c4b-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c4bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service create --name c4b-app --replicas 1 --constraint node.labels.fleetly.node-id==w1 --mount type=volume,source=c4bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
 ojb9tkucvwkrkm10tj1t7gy9z
 overall progress: 0 out of 1 tasks
 1/1:  
@@ -306,7 +306,7 @@ D:\Codes\qiulin\edgesets\spike\c>set "JTOK=SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b
 D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-w2 docker swarm join 10.10.0.10:2377 --token SWMTKN-1-4koc2e0jlb6137ewflqjbzjx401b7x7rfnixc9lqs5ycicfsi6-ezsn6o2kg4gusk4vmmwm2mh5t   || exit /b 1 
 This node joined a swarm as a worker.
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add edgefleet.node-id=w2 w2   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker node update --label-add fleetly.node-id=w2 w2   || exit /b 1 
 w2
 
 D:\Codes\qiulin\edgesets\spike\c>ping -n 3 127.0.0.1  1>nul 
@@ -319,7 +319,7 @@ ID                            HOSTNAME   STATUS    AVAILABILITY   MANAGER STATUS
 D:\Codes\qiulin\edgesets\spike\c>echo ===== C4B.6 manual rebind: swap constraint to w2 ===== 
 ===== C4B.6 manual rebind: swap constraint to w2 =====
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service update --constraint-rm node.labels.edgefleet.node-id==w1 --constraint-add node.labels.edgefleet.node-id==w2 c4b-app   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service update --constraint-rm node.labels.fleetly.node-id==w1 --constraint-add node.labels.fleetly.node-id==w2 c4b-app   || exit /b 1 
 c4b-app
 overall progress: 0 out of 1 tasks
 1/1:  

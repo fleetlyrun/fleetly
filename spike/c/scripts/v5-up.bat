@@ -44,8 +44,8 @@ echo ===== V5UP.3 swarm init + join + labels =====
 docker exec %SPIKE_V5M% docker swarm init --advertise-addr eth0 || exit /b 1
 for /f %%t in ('docker exec %SPIKE_V5M% docker swarm join-token -q worker') do set "JTOK=%%t"
 docker exec %SPIKE_V5W% docker swarm join %SPIKE_IP_V5M%:2377 --token %JTOK% || exit /b 1
-docker exec %SPIKE_V5M% docker node update --label-add edgefleet.node-id=v5m v5m || exit /b 1
-docker exec %SPIKE_V5M% docker node update --label-add edgefleet.node-id=v5w v5w || exit /b 1
+docker exec %SPIKE_V5M% docker node update --label-add fleetly.node-id=v5m v5m || exit /b 1
+docker exec %SPIKE_V5M% docker node update --label-add fleetly.node-id=v5w v5w || exit /b 1
 docker exec %SPIKE_V5M% docker node ls
 
 echo ===== V5UP.4 c5-app-worker pinned to worker =====

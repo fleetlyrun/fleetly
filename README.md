@@ -1,17 +1,17 @@
-# edgefleet
+# fleetly
 
 [English](README.md) | [简体中文](README_ZH.md)
 
 > Dokku's footprint, Railway's API, AI-Agent-first operations.
 
-edgefleet is an ultra-lightweight open-source PaaS for small teams. Deploy `compose.yaml` apps to a cluster of 1–10 servers with zero-downtime releases, snapshot-based rollback, drift detection, and an API surface designed for both humans and AI agents — no Kubernetes required.
+fleetly is an ultra-lightweight open-source PaaS for small teams. Deploy `compose.yaml` apps to a cluster of 1–10 servers with zero-downtime releases, snapshot-based rollback, drift detection, and an API surface designed for both humans and AI agents — no Kubernetes required.
 
-**Status: early development.** Design is frozen and reviewed; the T0 foundation (repo, CI, proto contract chain, error-code registry, dind E2E skeleton) has landed. v0.1 is not released yet — see the [roadmap](#roadmap). Formerly known as *edgesets*.
+**Status: early development.** Design is frozen and reviewed; the T0 foundation (repo, CI, proto contract chain, error-code registry, dind E2E skeleton) has landed. v0.1 is not released yet — see the [roadmap](#roadmap). Formerly known as *edgesets* and *edgefleet*.
 
-## Why edgefleet
+## Why fleetly
 
 - **Built for teams without ops.** ≤5 developers, no dedicated ops, 1–3 servers to start, a maintenance budget of 1–2 hours *per week*. Everything automatable (TLS, backups, upgrades, inspection) is automated and verifiable.
-- **Compose is the only app model.** No proprietary spec. A controlled subset of the Compose Specification with a minimal `edgefleet.*` label convention; anything outside the subset is rejected with a structured error, never silently ignored.
+- **Compose is the only app model.** No proprietary spec. A controlled subset of the Compose Specification with a minimal `fleetly.*` label convention; anything outside the subset is rejected with a structured error, never silently ignored.
 - **Docker Swarm as the substrate.** Membership, scheduling, and health-gated updates come from the engine itself — no self-built distributed core. Single-node v0.1 is already a (transparent) single-node Swarm, so adding the second server is a `docker swarm join`, not a re-architecture.
 - **API-first, proto as the contract.** gRPC + REST (grpc-gateway) derived from a single protobuf source; CLI, Console, and (in v0.2) MCP are all consumers of the same contract. No feature ships without an API.
 - **Trust is the floor.** Atomic self-upgrades (pre-pulled image + snapshot + auto-rollback), backups with read-back verification, error messages as a product (stable error codes + context + fix suggestions) — for humans and AI agents alike.
@@ -32,14 +32,14 @@ edgefleet is an ultra-lightweight open-source PaaS for small teams. Deploy `comp
 
 ## Honest boundaries
 
-We say what we don't do: no cross-node shared storage (volumes are local; stateful services are pinned to a node and never auto-migrated — moving data goes through backup/restore); **two nodes ≠ full HA** (you get stateless process HA, not management-plane or stateful HA — the installer says so explicitly); no CI engine (your Git host runs CI; edgefleet gates deploys on webhook status); no Kubernetes backend (k3s is reserved as an exit plan, not a feature).
+We say what we don't do: no cross-node shared storage (volumes are local; stateful services are pinned to a node and never auto-migrated — moving data goes through backup/restore); **two nodes ≠ full HA** (you get stateless process HA, not management-plane or stateful HA — the installer says so explicitly); no CI engine (your Git host runs CI; fleetly gates deploys on webhook status); no Kubernetes backend (k3s is reserved as an exit plan, not a feature).
 
 ## Architecture
 
 ```
-CLI (edgefleet) / Console / MCP (v0.2) / gRPC / REST / git push (SSH) / Webhook
+CLI (fleetly) / Console / MCP (v0.2) / gRPC / REST / git push (SSH) / Webhook
                  │
-   edgefleetd — single Go binary on the Swarm manager
+   fleetlyd — single Go binary on the Swarm manager
      API: gRPC + grpc-gateway (proto = single contract source)
      release state machine · reconciler · build pipeline (Railpack/BuildKit)
      state: SQLite (WAL) · secrets: envelope encryption (age) · TLS: central ACME
@@ -53,9 +53,9 @@ Foundation stack: [lynx](https://github.com/lynx-go/lynx) + [google/wire](https:
 ## Repository layout
 
 ```
-cmd/edgefleetd/   control-plane daemon
-cmd/edgefleet/    CLI
-proto/            API contracts (edgefleet.{server,client,console,shared}.v1)
+cmd/fleetlyd/   control-plane daemon
+cmd/fleetly/    CLI
+proto/            API contracts (fleetly.{server,client,console,shared}.v1)
 genproto/         generated code + OpenAPI (openapiv2) — committed
 sdk/go/           Go SDK (gRPC client)
 internal/         errcode / eventcode registries, app error envelope
@@ -95,7 +95,7 @@ buf lint && buf generate          # generated artifacts are committed; must not 
 golangci-lint run
 ```
 
-Smoke E2E (runs edgefleetd inside `docker:29.8.1-dind`): see [`e2e/README.md`](e2e/README.md).
+Smoke E2E (runs fleetlyd inside `docker:29.8.1-dind`): see [`e2e/README.md`](e2e/README.md).
 
 Contribution discipline: this project is design-first — behavior changes start as doc changes (review rounds), then land as vertical slices tracked in the task breakdown. Error codes and events are append-only registries.
 

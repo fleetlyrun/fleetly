@@ -1,4 +1,4 @@
-# edgefleet 平台架构设计
+# fleetly 平台架构设计
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
@@ -16,11 +16,11 @@
 | **节点（Swarm node）** | 加入 Swarm 集群的一台 Docker Engine 主机 | `docker node ls` 列出的机器；承接 service 任务 | 控制面进程本身；一个容器 |
 | **actor** | 审计日志中的操作主体，取值 human / AI Agent | token 备注「CI 部署」 | — |
 
-边界裁决：平台自动重启崩溃容器 = 确定性规则，不算 AI Agent；UI 点击部署 = human actor；在 AI 编辑器里说「帮我部署这个仓库」= AI Agent。产品承诺文案 **AI/Agent Native** 中的 Agent 指 AI Agent；本约定优先于历史用法与行业通用词。**「Web 终端」为固定功能名词**（浏览器内终端，经执行中继实现，D19），不随前端组件命名（console 端）变化。历史术语「节点守护进程（edgefleetd node）」已随 D12 采纳 Swarm 而退役（自研 node 协议降级为退出预案）。
+边界裁决：平台自动重启崩溃容器 = 确定性规则，不算 AI Agent；UI 点击部署 = human actor；在 AI 编辑器里说「帮我部署这个仓库」= AI Agent。产品承诺文案 **AI/Agent Native** 中的 Agent 指 AI Agent；本约定优先于历史用法与行业通用词。**「Web 终端」为固定功能名词**（浏览器内终端，经执行中继实现，D19），不随前端组件命名（console 端）变化。历史术语「节点守护进程（fleetlyd node）」已随 D12 采纳 Swarm 而退役（自研 node 协议降级为退出预案）。
 
 ### 1.2 项目定位
 
-edgefleet（曾用名 edgesets，2026-09-17 更名）是极轻量级开源 PaaS：开箱即用、用户友好、面向 10 台以下的服务器集群、资源占用少、够用就好，对外承诺 AI/Agent Native。
+fleetly（曾用名 edgefleet，更早 edgesets；2026-09-18 更名）是极轻量级开源 PaaS：开箱即用、用户友好、面向 10 台以下的服务器集群、资源占用少、够用就好，对外承诺 AI/Agent Native。
 
 一句话定位：**Dokku 的资源占用，Railway 的 API，AI Agent 优先的操作方式。**
 
@@ -87,7 +87,7 @@ dokku 保留两个用途：参考实现（发布流程、零停机、代理配�
 CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
         │
         ▼
-┌─ 控制面 edgefleetd server（Go 单二进制，运行于 Swarm manager）─┐
+┌─ 控制面 fleetlyd server（Go 单二进制，运行于 Swarm manager）─┐
 │  API 层        gRPC + grpc-gateway(REST/JSON/OpenAPI) + SSE    │
 │  编排层        compose.yaml 解析（受控子集）→ 对账器 → 发布状态机 │
 │  构建管线      Railpack / Dockerfile → BuildKit → 镜像        │
@@ -107,7 +107,7 @@ CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
 
 1. **API-first 铁律**：所有能力先有 REST/OpenAPI，UI/CLI/MCP 均为其客户端；没有 API 的功能不准进产品。
 2. **对账式**：期望状态（spec + 数据库）与真实状态（Swarm service 状态、Traefik 配置）分离，对账器负责收敛与自愈。
-3. **单二进制、多角色**：`edgefleetd standalone`（单机全功能，v0.1，安装时隐式初始化单节点 Swarm）/ `server`（运行于 Swarm manager，v0.2 多节点）；**无自研 node 协议**——成员管理、心跳与节点通信由 Swarm 承担（D2/D12）。
+3. **单二进制、多角色**：`fleetlyd standalone`（单机全功能，v0.1，安装时隐式初始化单节点 Swarm）/ `server`（运行于 Swarm manager，v0.2 多节点）；**无自研 node 协议**——成员管理、心跳与节点通信由 Swarm 承担（D2/D12）。
 4. **基础设施只复用不自研**：构建、反向代理、**编排与调度（Docker Swarm）**、**应用模型（Compose 规范）**、指标存储、备份工具、对象存储全部用成熟组件。
 5. **错误信息即产品**：错误码 + 原始上下文（stderr/事件）+ 修复建议 + 可订阅事件流，同时服务人类与 AI Agent（竞品差评最密集的类别，见调研报告第 6 节）。
 
@@ -122,7 +122,7 @@ CLI / Console 端 / MCP 客户端(v0.2) / REST / git push(SSH) / Webhook
 | 构建 | Railpack + BuildKit（Dockerfile 兜底） | Go, MIT / Apache-2.0 | 构建队列、缓存、资源限制、镜像命名 |
 | 入口 | Traefik（global，每节点）+ ACME（lego，控制面集中签发） | Go, MIT / MIT | 动态配置与证书集中下发、路由发布时机（health 门） |
 | 状态 | SQLite（modernc 纯 Go）+ goose 迁移 | BSD-3 | schema、对账器、观测缓存与新鲜度契约、审计 |
-| API | **gRPC + grpc-gateway/v2 + buf**（openapiv2 文档派生、protovalidate 校验；torchwood 范式，D21） | Go, Apache-2.0 / BSD-3 | proto 契约（`edgefleet.{client,console,server}.vN` 分模块）、拦截器链（鉴权/限流）、自定义错误信封（ErrorResponse + snake_case + `disable_default_errors`）、genproto/SDK 生成 |
+| API | **gRPC + grpc-gateway/v2 + buf**（openapiv2 文档派生、protovalidate 校验；torchwood 范式，D21） | Go, Apache-2.0 / BSD-3 | proto 契约（`fleetly.{client,console,server}.vN` 分模块）、拦截器链（鉴权/限流）、自定义错误信封（ErrorResponse + snake_case + `disable_default_errors`）、genproto/SDK 生成 |
 | CLI | lynx-go/commands + 平台 Go SDK（gRPC client，独立模块，torchwood 同型） | Go, MIT | 交互体验、输出格式（--json）；日志/事件长流走 gRPC streaming |
 | git 接收 | 系统 git | GPLv2（独立进程调用，不链接、不随发行物分发，无传染） | SSH 服务、post-receive 接线 |
 | 日志 | 无 | — | 采集、落盘轮转、ring buffer、SSE |
@@ -162,7 +162,7 @@ services:
     build: { context: . }              # 无 dockerfile → Railpack 自动；有 build.dockerfile → Dockerfile；仅 image → 镜像模式
     expose: ["8080"]                   # 路由目标端口（取首个）
     labels:
-      edgefleet.domains: "api.example.com, www.api.example.com"   # 平台约定：域名列表（逗号分隔；TLS 自动）；有该 label 的服务即入口
+      fleetly.domains: "api.example.com, www.api.example.com"   # 平台约定：域名列表（逗号分隔；TLS 自动）；有该 label 的服务即入口
     healthcheck:
       test: ["CMD", "/app/healthcheck"]   # 未写的子字段取平台默认（5s/3s/3/10s）；完全无 healthcheck → health_gate=none（警告）
       start_period: 10s
@@ -186,13 +186,13 @@ volumes:
 
 | 能力 | 承载 | 说明 |
 |---|---|---|
-| 域名/TLS | 服务 `labels: edgefleet.domains`（**逗号分隔列表**，如 `"example.com, www.example.com"`） | 列表内域名同服务同路由，证书按 app 域名集合出一张多 SAN 证书；归一化（trim/小写/IDN→punycode）；每服务 ≤5、每 app ≤10；同域名出现在两个服务 → 409 `E_DOMAIN_CONFLICT`；通配符 v0.2 拒绝（需 DNS-01）→ `E_DOMAIN_UNSUPPORTED`；代理无关，核心契约不出现 Traefik 概念 |
+| 域名/TLS | 服务 `labels: fleetly.domains`（**逗号分隔列表**，如 `"example.com, www.example.com"`） | 列表内域名同服务同路由，证书按 app 域名集合出一张多 SAN 证书；归一化（trim/小写/IDN→punycode）；每服务 ≤5、每 app ≤10；同域名出现在两个服务 → 409 `E_DOMAIN_CONFLICT`；通配符 v0.2 拒绝（需 DNS-01）→ `E_DOMAIN_UNSUPPORTED`；代理无关，核心契约不出现 Traefik 概念 |
 | 路由目标端口 | `expose` 首个端口 | 未声明则不发布 |
-| 放置（v0.2） | `labels: edgefleet.placement.node`；有卷应用由平台自动绑定 | 用户 `deploy.placement.constraints` 仅允许 `node.labels.edgefleet.*` 命名空间 |
-| 定时任务（v0.2） | 服务 `labels: edgefleet.cron`（+可选 `edgefleet.cron.timezone`、`edgefleet.cron.timeout`） | 带该 label 的服务不按长驻部署，由调度器创建一次性 Swarm job；`replicas` 必须 0/省略；违反 → `E_COMPOSE_UNSUPPORTED`（reason 细分） |
-| 密钥 | compose `secrets`（平台密钥库映射为 Swarm secret，名 `edgefleet-<app>-<name>-<hash8>`，file target 保持 compose 名） | v0.1 无 env 注入约定（应用读 `/run/secrets`）；`env_file` 允许但仅限非密钥 |
-| 变量合并 | 三层优先链：`env_file` < `environment` < 平台 env_vars（2026-09-17 审核裁决） | 同键平台层覆盖；`desired-hash` 与 revision 快照按**合并结果**计算（`key:sha256` + 来源标注）；`edgefleet env set` 创建 pending 变更、**随下次部署生效**（不立即改运行服务——env 变更经部署固化，与发布专项 D-REL-9 一致）；覆盖键在 plan/diff 告警 `W_ENV_PLATFORM_OVERRIDE`；模板自动连接串 = `source=system` 平台 env（只读展示） |
-| 服务命名与网络 | Swarm 服务名 `edgefleet-<app>-<service>`（适配器内）；每 app 专属 overlay 网络 + 服务别名 = compose 服务名 | 集群全局命名空间防撞名（两个 app 各有 `web`/`db` 不冲突）；app 内短名互访与 compose 语义一致、跨 app 网络隔离；平台命名不进归一化 compose；v0.2 跨 app 互访（数据库模板）由平台牵线共享网络，随模板设计裁决 |
+| 放置（v0.2） | `labels: fleetly.placement.node`；有卷应用由平台自动绑定 | 用户 `deploy.placement.constraints` 仅允许 `node.labels.fleetly.*` 命名空间 |
+| 定时任务（v0.2） | 服务 `labels: fleetly.cron`（+可选 `fleetly.cron.timezone`、`fleetly.cron.timeout`） | 带该 label 的服务不按长驻部署，由调度器创建一次性 Swarm job；`replicas` 必须 0/省略；违反 → `E_COMPOSE_UNSUPPORTED`（reason 细分） |
+| 密钥 | compose `secrets`（平台密钥库映射为 Swarm secret，名 `fleetly-<app>-<name>-<hash8>`，file target 保持 compose 名） | v0.1 无 env 注入约定（应用读 `/run/secrets`）；`env_file` 允许但仅限非密钥 |
+| 变量合并 | 三层优先链：`env_file` < `environment` < 平台 env_vars（2026-09-17 审核裁决） | 同键平台层覆盖；`desired-hash` 与 revision 快照按**合并结果**计算（`key:sha256` + 来源标注）；`fleetly env set` 创建 pending 变更、**随下次部署生效**（不立即改运行服务——env 变更经部署固化，与发布专项 D-REL-9 一致）；覆盖键在 plan/diff 告警 `W_ENV_PLATFORM_OVERRIDE`；模板自动连接串 = `source=system` 平台 env（只读展示） |
+| 服务命名与网络 | Swarm 服务名 `fleetly-<app>-<service>`（适配器内）；每 app 专属 overlay 网络 + 服务别名 = compose 服务名 | 集群全局命名空间防撞名（两个 app 各有 `web`/`db` 不冲突）；app 内短名互访与 compose 语义一致、跨 app 网络隔离；平台命名不进归一化 compose；v0.2 跨 app 互访（数据库模板）由平台牵线共享网络，随模板设计裁决 |
 | 变量插值 | 关闭 `${VAR}` 与 `.env` 插值 | 消除环境相关不确定性；归一化按字面处理 |
 | 受管字段 | `deploy.update_config.failure_action` 必须 `pause`（或省略）；`monitor` 必须省略或 5s | 违反 → `E_COMPOSE_MANAGED_FIELD`，校验拒绝、不静默覆盖 |
 
@@ -201,7 +201,7 @@ volumes:
 - v0.1 拒绝：`depends_on`、`extends`、`include`、`profiles`、`configs`、外部网络、`network_mode: host`；v0.3 受控扩展。
 - 危险字段（`privileged`/`cap_add`/`pid`/`devices`/docker.sock 挂载/宿主路径 bind）默认拒绝，需 admin scope 显式开启并写审计（Coolify CVE-2025-34159 的根因即低权路径挂载宿主根）。
 
-`edgefleet init` 生成 `compose.yaml`（已有 compose 文件则直接接管）；`edgefleet plan/apply/diff` 以**归一化 compose 差异**为核心；对账器持续检测漂移（检测默认开、收敛 per-app opt-in，见 D11）。
+`fleetly init` 生成 `compose.yaml`（已有 compose 文件则直接接管）；`fleetly plan/apply/diff` 以**归一化 compose 差异**为核心；对账器持续检测漂移（检测默认开、收敛 per-app opt-in，见 D11）。
 
 **期望态治理规则（缩水版）**：
 - 单一真源：compose 文件为唯一期望态；平台管理字段（镜像 digest、secret 值、路由绑定、节点绑定、证书轮转）不进文件，UI 只读展示并标注来源，禁止静默双向合并（Fly 混乱与 ArgoCD self-heal 事故的教训）。
@@ -276,8 +276,8 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 - **镜像分发**：v0.1 单节点 digest 引用免 registry；v0.2 引入 zot（manager 本地卷、平台绑定钉住），经 Traefik 暴露于平台域名 `registry.<base-domain>`、证书走集中 ACME（公信 CA）——**worker dockerd 零配置信任**，镜像引用形如 `registry.<base>/apps/<app>@sha256:…`，拉取经任意入口节点进 overlay 到 zot；自签 + 逐节点 `insecure-registries` 方案被否（需平台没有的远端 daemon 配置通道）。**前置条件：v0.2 多节点要求安装时提供平台基础域名**（面板与 registry 各占子域；单节点 v0.1 不需要）。服务创建时 `--with-registry-auth` 由 Swarm 原生分发凭据；zot 数据不进控制面备份（镜像可重建，文档注明）。
 - **入口（每节点入口 + 集中证书；2026-09-17 审核裁决）**：Traefik = **global service，每节点（含 manager）一个**，host 模式发布 80/443；replicated-1 单入口形态被否（与 drain 语义矛盾、入口单点），「节点文件下发」不可行（无远端访问通道）——路由与证书一律由控制面经 **HTTP provider** 下发，不启用 Swarm/Docker provider 自动发现；取不到配置时 Traefik 保留上一份成功配置（控制面故障入口不坏）。
 - **证书集中化**：控制面内嵌 ACME（lego）集中签发，证书存平台、随 HTTP provider 动态配置下发（Traefik `tls.certificates`）；v0.2 用 HTTP-01——各节点 Traefik 把 `/.well-known/acme-challenge/*` 反代到控制面，任意节点可解挑战，零 DNS 服务商集成；DNS-01/通配符留 v0.3 按服务商接入；**每节点独立 ACME 被否**（LE 重复证书限额 + 续期风暴 + N 份 acme.json 不可维护）。Traefik 轮询 manager 上控制面配置端点（Header token；跨公网走平台域名 HTTPS）。
-- **DNS 契约与故障转移口径**：A 记录指向**全部**节点 IP（TTL ≤300s），UI/向导列出并校验（`edgefleet domains verify`）；入口冗余 = **连接级**（节点不可达时客户端换下一 A 记录重试），非健康驱动故障转移、非 VIP；keepalived/VIP 与云 LB 只做文档配方不进产品，强入口可用性需求走 v0.3 Tunnel。
-- **执行中继（Web 终端底座，D19）**：`edgefleet-exec` global service，每节点一个任务，仅挂内部系统网络（不发布 host 端口、不挂应用网络）、挂载本节点 docker.sock；API 面收窄到 `healthz`/`exec` 且只对带 `edgefleet.app` label 的容器（其余 403）；集群 token 经 Swarm secret 下发；控制面经 `tasks.edgefleet-exec` DNS + task→NodeID 反查节点（成员发现零自研）；会话空闲 10 分钟/硬上限 30 分钟、`terminal` 独立 scope（默认仅 admin；MCP 工具面不暴露终端）、起止入审计；流式会话 = coder/websocket（torchwood 同款），SSE 用标准库。通用 Docker API 代理与卷/镜像/节点操作仍禁止（放置专项 §7 例外条款）。
+- **DNS 契约与故障转移口径**：A 记录指向**全部**节点 IP（TTL ≤300s），UI/向导列出并校验（`fleetly domains verify`）；入口冗余 = **连接级**（节点不可达时客户端换下一 A 记录重试），非健康驱动故障转移、非 VIP；keepalived/VIP 与云 LB 只做文档配方不进产品，强入口可用性需求走 v0.3 Tunnel。
+- **执行中继（Web 终端底座，D19）**：`fleetly-exec` global service，每节点一个任务，仅挂内部系统网络（不发布 host 端口、不挂应用网络）、挂载本节点 docker.sock；API 面收窄到 `healthz`/`exec` 且只对带 `fleetly.app` label 的容器（其余 403）；集群 token 经 Swarm secret 下发；控制面经 `tasks.fleetly-exec` DNS + task→NodeID 反查节点（成员发现零自研）；会话空闲 10 分钟/硬上限 30 分钟、`terminal` 独立 scope（默认仅 admin；MCP 工具面不暴露终端）、起止入审计；流式会话 = coder/websocket（torchwood 同款），SSE 用标准库。通用 Docker API 代理与卷/镜像/节点操作仍禁止（放置专项 §7 例外条款）。
 - **能力边界（对外口径）**：统一管理 + Swarm 调度；自动迁移仅限无卷无状态服务；无跨节点共享存储（卷本地，CSI 实验性不采用）；**远端节点 local 卷不可经 manager 枚举/删除**——卷删除与校验由用户按文档在节点上执行（不建维护作业）。
 - **HA 边界（对外口径）**：
   - 2 台**得到**：无状态服务进程级 HA（失联 15s 量级判定 + 自动重调度；重调度窗口内该 app 短暂不可用，如实口径）；节点可 drain，无状态负载维护新连接零失败（连接级重试语义，见入口与维护窗口口径）；控制面故障不影响应用运行（应用运行不依赖控制面）。
@@ -293,7 +293,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 ### 2.7 仓库结构（monorepo）
 
 ```
-/                Go module 根（cmd/edgefleetd、cmd/edgefleet、internal/、pkg/api）
+/                Go module 根（cmd/fleetlyd、cmd/fleetly、internal/、pkg/api）
 /console         Console 端（React SPA，Vite）
 /docs            本目录
 /deploy          bootstrap 脚本、systemd unit、安装/升级
@@ -323,8 +323,8 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 - 每个关键依赖维护**退出预案（exit plan）**：指认替代实现与迁移成本；Builder 与 ObjectStore 天然有两个实现，替换已被预演。
 
 **契约版本化纪律**：
-- Compose 子集与 label 约定：白名单/拒绝清单只增不减；`edgefleet.*` label 契约化（版本化、只增不改语义）；不自研 schema（compose 官方 schema 校验 + 平台子集校验）。
-- API：proto package 版本化（`edgefleet.{client,console,server}.vN`）+ `buf breaking`（FILE 规则）为兼容门禁；REST 路径 `/v1` 由 proto `google.api.http` 注解派生；弃用窗口（N-2 支持），CLI 对弃用项给出迁移命令；OpenAPI（openapiv2）为派生物、禁止手改。
+- Compose 子集与 label 约定：白名单/拒绝清单只增不减；`fleetly.*` label 契约化（版本化、只增不改语义）；不自研 schema（compose 官方 schema 校验 + 平台子集校验）。
+- API：proto package 版本化（`fleetly.{client,console,server}.vN`）+ `buf breaking`（FILE 规则）为兼容门禁；REST 路径 `/v1` 由 proto `google.api.http` 注解派生；弃用窗口（N-2 支持），CLI 对弃用项给出迁移命令；OpenAPI（openapiv2）为派生物、禁止手改。
 - 事件与错误码：注册表管理（**唯一真源为代码内注册表**，文档域清单为定义性说明），稳定字符串、永不复用、只新增。
 - 状态库：只做加法迁移；回滚 = 恢复快照（不写 down migration）。
 - 引擎门禁：Engine 版本下限与升级回归矩阵（见 2.6）；控制面与节点之间无自研协议——节点通信与成员管理由 Swarm 承担，平台只消费 Docker API。
@@ -352,14 +352,14 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | D11 | 漂移检测默认开、自动收敛 per-app opt-in | 检测是用户与 AI Agent 都需要的事实来源；PaaS 阵营无人做全（差异化空白区），K8s GitOps 证明需求同时暴露 self-heal 事故（ArgoCD #13598）；Terraform #35382 证明「检测」与「变更」应解耦 | 全自动收敛：事故中会被用户强制关闭且「Synced ≠ desired」；不做检测：与对账式原则矛盾，放弃差异化 |
 | D12 | 采纳 Docker Swarm 作为多节点底座（v0.1 单节点即 Swarm，对用户透明）；退出预案 = k3s driver 或自研 node（见 3.1） | 专项验证结论：health gate / 失败不切流由 Swarm 原生兑现（源码级）；单版自动回滚原生存在但被否（清空唯一历史槽，见 D15），平台改用 pause + 快照重放；v0.1 单节点 digest 引用免 registry 实测可行；Engine 29.x 约 21 条 Swarm 修复、未 deprecated、Mirantis 支持至 2030；代价（Engine 破坏式升级 / 有状态弱 / 单 manager SPOF）均有具体缓解（锁版本+回归矩阵 / 状态外置+绑定钉住 / 冷备+演练） | 自研 node 协议：工作量与风险最高的分布式核心（推翻原 D2）；完全不采用集群底座：放弃统一调度与自动重调度；k3s：资源与产品身份不符（保留 driver）；Nomad：BSL + 重型 sizing |
 | D13 | 核心-适配器分层（§2.8）：核心 = 语义 + 对账 + 契约；插件只做 L1 端口适配器；v1.0 冻结核心契约 | 5 年+「不动核心」的实现方式是收窄核心定义并把第三方概念全部赶入适配器；端口 + conformance 套件使替换成为工程事实而非愿望；动态插件会成为永久兼容性约束，冻结演进 | 通用插件 API / 动态加载：Waypoint、MinIO 的扩展点教训；把第三方语义留在核心：dokku CLI 解析教训，上游升级即破坏 |
-| D14 | 应用定义与运行时模型 = Compose 规范（`compose.yaml`，docker stack 语义）；受控子集 + 最小 label 约定；不做自研 spec | 小团队无力维护自有规范；compose 的生态、官方 schema、AI Agent 训练覆盖与迁移入口现成；自研 spec 的每个字段都是永久兼容性负担（与 D13 同源）；Swarm 原生支持 stack 语义（`deploy.*` 映射、health gate、start-first） | 自研 `edgefleet.yaml` + SchemaStore + 字段归属表：维护税与采用摩擦（本轮推翻）；compose 仅作迁移输入（原 D14，用户仍要学平台私有格式）；任意 compose 全量语义（depends_on/extends/profiles 等）：实现面不可控，v0.1 显式拒绝、v0.3 受控评估 |
+| D14 | 应用定义与运行时模型 = Compose 规范（`compose.yaml`，docker stack 语义）；受控子集 + 最小 label 约定；不做自研 spec | 小团队无力维护自有规范；compose 的生态、官方 schema、AI Agent 训练覆盖与迁移入口现成；自研 spec 的每个字段都是永久兼容性负担（与 D13 同源）；Swarm 原生支持 stack 语义（`deploy.*` 映射、health gate、start-first） | 自研 `fleetly.yaml` + SchemaStore + 字段归属表：维护税与采用摩擦（本轮推翻）；compose 仅作迁移输入（原 D14，用户仍要学平台私有格式）；任意 compose 全量语义（depends_on/extends/profiles 等）：实现面不可控，v0.1 显式拒绝、v0.3 受控评估 |
 | D15 | 发布失败动作固定 `pause`，回滚由平台按归一化 compose + 覆盖层快照单层重放；观察窗默认只告警、rollback 为平台侧 per-app opt-in（v0.1 无文件字段）；stop-first 失败强制归位 | Swarm 原生回滚清空唯一历史槽且不覆盖 PENDING，无法兑现「任意版本重放」；pause 保留旧任务与服务 spec，恢复动作幂等可审计；默认告警与 D11「检测开、收敛 opt-in」一致，避免对无效回滚的震荡 | Swarm `failure-action=rollback`（历史槽失效、首发卡死）；两层回滚（两套判定权与审计）；窗口后自动回滚（抖动）；观察窗默认自动回滚（静默改变运行版本，用户裁决改为 opt-in） |
-| D16 | 有状态应用默认自动钉住：label `edgefleet.placement.node` 可选，平台绑定（**平台节点 ID 为锚**）持久保持；节点消失不迁移不换点；跨点移动仅经备份恢复 + 显式数据处置确认 | 有卷应用被迁移会得到空卷（源码级验证），数据安全必须是默认行为；平台节点 ID 抗重名/重建（显示名仅供人/Agent 读写）；卷-节点归属前哨把空卷事故变成显式 409 | 要求显式 pin（首部署摩擦、AI Agent 易漏）；hostname/别名作身份（重名机器静默接管）；自动换点/迁移（空卷事故） |
+| D16 | 有状态应用默认自动钉住：label `fleetly.placement.node` 可选，平台绑定（**平台节点 ID 为锚**）持久保持；节点消失不迁移不换点；跨点移动仅经备份恢复 + 显式数据处置确认 | 有卷应用被迁移会得到空卷（源码级验证），数据安全必须是默认行为；平台节点 ID 抗重名/重建（显示名仅供人/Agent 读写）；卷-节点归属前哨把空卷事故变成显式 409 | 要求显式 pin（首部署摩擦、AI Agent 易漏）；hostname/别名作身份（重名机器静默接管）；自动换点/迁移（空卷事故） |
 | D17 | 控制面状态三层：权威（SQLite，意图/历史/凭证）/ 派生缓存（观测快照，带 observed_at/stale，禁入决策）/ 实时直读（写前校验）；`nodes` 降级为观测缓存；备份等序 + 恢复期禁止自动收敛 | 双状态源无法消灭只能明确属主；把运行态当权威是漂移与误删的唯一通路；恢复期自动收敛在 DB 较旧时会静默回退部署 | 全量镜像 Swarm 状态入权威（双写者）；不落缓存（无降级读、打爆底座 API）；恢复即自动收敛（静默回退）；声称「最后心跳」（Swarm 不暴露该时间戳） |
 | D18 | 对标基线 = **Dokploy 体验（地板）+ Cloudflare 式体验（方向）**；复杂度纪律：Dokploy 没有且无硬承诺的机制一律不做，预算投向对标缺口（数据库托管提前、监控/通知、模板、Web 终端、Cron） | 小团队需求不极端；机制复杂度不构成 UX，对标缺口构成 UX（Dokploy 无熔断/rebalance/adopt/DR 阶梯/导出合同也做到头部体验）；我们保留的 pause+重放、plan/apply、漂移、错误透明、统一集群恰是 Dokploy 弱项 | 用内部机制做差异化（方向错误）；为「以后可能需要」预建机制（未来需求是猜测不是约束） |
-| D19 | Web 终端经**执行中继** `edgefleet-exec`（Swarm global service）实现：仅挂内部系统网络、不发布端口；API 面仅 `healthz`/`exec` 且只对带 `edgefleet.app` label 的容器；集群 token 经 Swarm secret；成员发现复用 Swarm（`tasks.<name>` DNS + task→NodeID 反查）；`terminal` 独立 scope + 会话限制（空闲 10m/上限 30m）+ 审计入档（2026-09-17 审核裁决） | Swarm 无 exec RPC，worker 容器终端在无远端 daemon 访问下不可达；Portainer Agent / Komodo Periphery 为同型先例；成员与分发仍归 Swarm，不违反 D12 | 通用 Docker API 代理（第二 docker.sock 面、安全事故面）；SSH 隧道（密钥分发 + NAT 脆弱，调研 §2 反模式）；per-container 终端 sidecar（侵入 compose 语义） |
-| D20 | 基础 Go 框架 = **lynx + google/wire**（2026-09-17 技术选型）：`lynx.NewRunner` 承载进程生命周期，`boot.Bootstrap` + Wire 编译期装配依赖图；lynx 用法以 **messageloop**（github.com/messageloopio/messageloop，同域生产使用）为参考实现，Wire 装配形态以 lynx-clean-template 为模板；框架层只做装配与生命周期，领域代码不依赖框架类型（可替换性边界同 §2.8） | 统一生命周期（Drain/优雅关停语义现成，与排水和维护窗口契合）；`lynx.Service` 插件化天然承载端口-适配器；Wire 编译期 DI 无运行时反射、装配错误编译期暴露；轻量取向一致（非全家桶）；Apache-2.0 且上游同域可控 | 纯手工装配（messageloop 现状：装配逻辑淤积在 setup 函数，规模上升后不可读——edgefleet 自第一天用 Wire）；fx/dig（运行时反射 DI，失败后移）；kratos/go-zero（全家桶过重，违背「基础设施只复用不自研」）；自研生命周期框架（重复造轮子） |
-| D21 | API 定义 = **gRPC + grpc-gateway/v2，proto 为契约唯一真源**（2026-09-17 技术选型，**用户裁决：不引入 huma**）：buf 工具链生成 genproto 与 SDK（`edgefleet.{client,console,server}.vN` 分模块，torchwood 同型）；REST/JSON + OpenAPI（openapiv2）由 gateway 派生；错误信封走自定义 ErrorResponse（`disable_default_errors`）+ snake_case JSON；鉴权/限流在 gRPC 拦截器链；SSE/长连接与 gateway mux 同进程共存（原生 handler，torchwood realtime 同型）——装配整体照抄 **torchwood**（github.com/torchwoodcloud/torchwood，同域生产使用） | 单一契约真源（proto）同时喂 CLI（SDK/gRPC）、Console（REST）、Agent/MCP（REST/gRPC）；`buf breaking` 即兼容门禁（对 oasdiff 类文本 diff 更强）；protovalidate 把校验写进 schema；与 D20 同栈（lynx 为壳）且参考项目代码可直接复制 | huma（**用户裁决否决**：多引入一层框架、偏离 lynx 生态参考栈）；oapi-codegen / spec 先行（spec 与代码双份维护）；纯 gRPC 无 gateway（Console/Agent 的 REST 生态面缺失）；手写 REST + 手维护 OpenAPI（漂移必然） |
+| D19 | Web 终端经**执行中继** `fleetly-exec`（Swarm global service）实现：仅挂内部系统网络、不发布端口；API 面仅 `healthz`/`exec` 且只对带 `fleetly.app` label 的容器；集群 token 经 Swarm secret；成员发现复用 Swarm（`tasks.<name>` DNS + task→NodeID 反查）；`terminal` 独立 scope + 会话限制（空闲 10m/上限 30m）+ 审计入档（2026-09-17 审核裁决） | Swarm 无 exec RPC，worker 容器终端在无远端 daemon 访问下不可达；Portainer Agent / Komodo Periphery 为同型先例；成员与分发仍归 Swarm，不违反 D12 | 通用 Docker API 代理（第二 docker.sock 面、安全事故面）；SSH 隧道（密钥分发 + NAT 脆弱，调研 §2 反模式）；per-container 终端 sidecar（侵入 compose 语义） |
+| D20 | 基础 Go 框架 = **lynx + google/wire**（2026-09-17 技术选型）：`lynx.NewRunner` 承载进程生命周期，`boot.Bootstrap` + Wire 编译期装配依赖图；lynx 用法以 **messageloop**（github.com/messageloopio/messageloop，同域生产使用）为参考实现，Wire 装配形态以 lynx-clean-template 为模板；框架层只做装配与生命周期，领域代码不依赖框架类型（可替换性边界同 §2.8） | 统一生命周期（Drain/优雅关停语义现成，与排水和维护窗口契合）；`lynx.Service` 插件化天然承载端口-适配器；Wire 编译期 DI 无运行时反射、装配错误编译期暴露；轻量取向一致（非全家桶）；Apache-2.0 且上游同域可控 | 纯手工装配（messageloop 现状：装配逻辑淤积在 setup 函数，规模上升后不可读——fleetly 自第一天用 Wire）；fx/dig（运行时反射 DI，失败后移）；kratos/go-zero（全家桶过重，违背「基础设施只复用不自研」）；自研生命周期框架（重复造轮子） |
+| D21 | API 定义 = **gRPC + grpc-gateway/v2，proto 为契约唯一真源**（2026-09-17 技术选型，**用户裁决：不引入 huma**）：buf 工具链生成 genproto 与 SDK（`fleetly.{client,console,server}.vN` 分模块，torchwood 同型）；REST/JSON + OpenAPI（openapiv2）由 gateway 派生；错误信封走自定义 ErrorResponse（`disable_default_errors`）+ snake_case JSON；鉴权/限流在 gRPC 拦截器链；SSE/长连接与 gateway mux 同进程共存（原生 handler，torchwood realtime 同型）——装配整体照抄 **torchwood**（github.com/torchwoodcloud/torchwood，同域生产使用） | 单一契约真源（proto）同时喂 CLI（SDK/gRPC）、Console（REST）、Agent/MCP（REST/gRPC）；`buf breaking` 即兼容门禁（对 oasdiff 类文本 diff 更强）；protovalidate 把校验写进 schema；与 D20 同栈（lynx 为壳）且参考项目代码可直接复制 | huma（**用户裁决否决**：多引入一层框架、偏离 lynx 生态参考栈）；oapi-codegen / spec 先行（spec 与代码双份维护）；纯 gRPC 无 gateway（Console/Agent 的 REST 生态面缺失）；手写 REST + 手维护 OpenAPI（漂移必然） |
 
 ### 3.1 底座再评估触发条件与退出预案
 
@@ -404,9 +404,9 @@ A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm
 
 横切硬指标（v0.1 即满足，评审门禁）：
 
-- **平台自升级原子化（升级双轨口径，2026-09-17 审核裁决）**：**edgefleetd 升级 = 热备快照 + 预拉镜像 + 失败自动回退，不停 Engine、应用不停**；**主机/Engine 升级 = 冷备 + 维护窗口语义（§2.6；有状态应用停机如实告知）**——两类升级不得混淆，冷备不绑定 edgefleetd 升级；禁止 `--force-recreate` 式升级（Coolify/Dokploy 最高频信任事故模式）。
+- **平台自升级原子化（升级双轨口径，2026-09-17 审核裁决）**：**fleetlyd 升级 = 热备快照 + 预拉镜像 + 失败自动回退，不停 Engine、应用不停**；**主机/Engine 升级 = 冷备 + 维护窗口语义（§2.6；有状态应用停机如实告知）**——两类升级不得混淆，冷备不绑定 fleetlyd 升级；禁止 `--force-recreate` 式升级（Coolify/Dokploy 最高频信任事故模式）。
 - **平台状态备份基线**：控制面状态（SQLite + 密钥）可备份、恢复步骤文档化且可人工执行（L1/L2 正式恢复演练属 v0.2）；备份密钥与元数据独立于备份数据保存；任何备份失败红色告警（禁止「绿色成功但实际没上传」）。
-- **资源预算**：控制面 edgefleetd idle 内存 <200MB（对标 CapRover 实测值；含 dockerd + swarmkit，需自测校准；Traefik 单列约 50MB）；构建与应用资源隔离且有限额；v0.2 指标栈引入后另设平台组件总量预算（目标 idle <400MB，压测后定稿）。
+- **资源预算**：控制面 fleetlyd idle 内存 <200MB（对标 CapRover 实测值；含 dockerd + swarmkit，需自测校准；Traefik 单列约 50MB）；构建与应用资源隔离且有限额；v0.2 指标栈引入后另设平台组件总量预算（目标 idle <400MB，压测后定稿）。
 - **引擎门禁**：Docker Engine ≥ 29.8.1、iptables 后端（nftables 暂不支持 Swarm 节点）；引擎升级前跑回归矩阵（见第 6 节）。
 - **容量边界**：单节点建议 ≤50 apps / ≤200 域名 / 并发构建 2（压测后修正）；超限时显式提示而非静默降级。
 - **安全默认基线**：数据库/内部服务默认不暴露公网；面板支持不裸奔运行（Tunnel/VPN/SSO 可选）；**后端强制鉴权**（Coolify CVE 群的共同模式：前端做了权限、后端没做）。
@@ -415,11 +415,11 @@ A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm
 
 ### 4.3 v0.2
 
-**多节点（首项；2026-09-17 画像复核提序——目标画像的生产基线是 2 台，HA 与免停机维护依赖它，是 v0.1 用户投产后的第一个结构性缺口；zot 自动接管是「加第二台」一键化的前提；drain/remove 仍用 `docker node` + 文档/UI 指引，不建生命周期 API）**：`docker swarm join` + zot registry（平台自动部署 + `--with-registry-auth` 分发）+ placement 绑定 + 节点列表 + 卷位置前哨 + HA 边界口径落向导/UI；验收：2 节点拓扑上线、无状态节点 drain 新连接零失败（重试语义；在途连接可能中断一次，指引先摘 DNS）、有状态节点 drain→回岗自动回绑 → MCP server（薄适配层；**工具预算核算**：读/写操作（deployment/rollback/placement/nodes/volumes 等）须做 ≤30 预算核算，超出者并入 action 枚举或不暴露）→ S3（外部端点支持：端点配置/连通测试 + restic 备份目标 + 应用凭证注入）→ **数据库托管（Dokploy 对标项）**：托管数据服务机制（模板 + 卷钉住 + 备份/恢复适配器 + 连接串注入）；Postgres/Redis 首发，MySQL/MongoDB 模板紧随按需求排序（新增库 = 模板 + 备份适配器，各引擎备份/恢复是主要成本）→ **Cron/定时任务（Dokploy 对标缺口，排在数据库托管之后；细则见下）** → metrics（VictoriaMetrics + 图表 + 查询面）+ 通知（Webhook/Slack/Email）+ Web 终端（经执行中继 `edgefleet-exec`，D19，覆盖 worker 节点容器；xterm.js UI）。
+**多节点（首项；2026-09-17 画像复核提序——目标画像的生产基线是 2 台，HA 与免停机维护依赖它，是 v0.1 用户投产后的第一个结构性缺口；zot 自动接管是「加第二台」一键化的前提；drain/remove 仍用 `docker node` + 文档/UI 指引，不建生命周期 API）**：`docker swarm join` + zot registry（平台自动部署 + `--with-registry-auth` 分发）+ placement 绑定 + 节点列表 + 卷位置前哨 + HA 边界口径落向导/UI；验收：2 节点拓扑上线、无状态节点 drain 新连接零失败（重试语义；在途连接可能中断一次，指引先摘 DNS）、有状态节点 drain→回岗自动回绑 → MCP server（薄适配层；**工具预算核算**：读/写操作（deployment/rollback/placement/nodes/volumes 等）须做 ≤30 预算核算，超出者并入 action 枚举或不暴露）→ S3（外部端点支持：端点配置/连通测试 + restic 备份目标 + 应用凭证注入）→ **数据库托管（Dokploy 对标项）**：托管数据服务机制（模板 + 卷钉住 + 备份/恢复适配器 + 连接串注入）；Postgres/Redis 首发，MySQL/MongoDB 模板紧随按需求排序（新增库 = 模板 + 备份适配器，各引擎备份/恢复是主要成本）→ **Cron/定时任务（Dokploy 对标缺口，排在数据库托管之后；细则见下）** → metrics（VictoriaMetrics + 图表 + 查询面）+ 通知（Webhook/Slack/Email）+ Web 终端（经执行中继 `fleetly-exec`，D19，覆盖 worker 节点容器；xterm.js UI）。
 
 **Cron 细则（v0.2）**：
-- **声明**：compose 服务 + label `edgefleet.cron`（5 段表达式；可选 `edgefleet.cron.timezone`，默认 UTC）；`replicas` 必须 0/省略；声明只在 compose（不建并行期望态）。
-- **执行**：调度器按点创建一次性 Swarm job（`--mode replicated-job`，Engine ≥23 能力、门禁 29.8.1 覆盖），继承镜像/网络/secrets/placement/资源限额；有卷应用继承绑定节点；**触发前绑定节点前哨检查**——节点不 ready → 记 `skipped(node_unavailable)` + 事件、不创建 job（与控制面停机 skip 同型）；job 以 `--restart-condition=none` 创建（失败即 run 记 failed，不重试）；看门狗 `cronJobTimeout` 默认 10m（可选 label `edgefleet.cron.timeout` 覆盖，如 `30m`），超时 → 删 job 服务 + `cron_runs` 记 timeout + 事件。
+- **声明**：compose 服务 + label `fleetly.cron`（5 段表达式；可选 `fleetly.cron.timezone`，默认 UTC）；`replicas` 必须 0/省略；声明只在 compose（不建并行期望态）。
+- **执行**：调度器按点创建一次性 Swarm job（`--mode replicated-job`，Engine ≥23 能力、门禁 29.8.1 覆盖），继承镜像/网络/secrets/placement/资源限额；有卷应用继承绑定节点；**触发前绑定节点前哨检查**——节点不 ready → 记 `skipped(node_unavailable)` + 事件、不创建 job（与控制面停机 skip 同型）；job 以 `--restart-condition=none` 创建（失败即 run 记 failed，不重试）；看门狗 `cronJobTimeout` 默认 10m（可选 label `fleetly.cron.timeout` 覆盖，如 `30m`），超时 → 删 job 服务 + `cron_runs` 记 timeout + 事件。
 - **策略**：重叠 skip（max-concurrent 1）；控制面停机期间错过点 skip + 事件、不补跑；失败只记录 + 通知，不自动重试。
 - **留存**：`cron_runs`（每 schedule 最近 20 条）+ 日志进现有采集；完成后删除 job 服务。
 - **入口**：手动触发 API/CLI/UI（走同一路径，写审计）。
@@ -429,7 +429,7 @@ A、B 通过则 v0.1 无未知数；C 通过则 v0.2 无悬念。V1-V7 为 Swarm
 
 ### 4.4 v0.3
 
-PR 预览环境（AI Agent 开 PR → 自动 URL → 合并即销毁）、官方模板目录（先维护 10 个官方模板，`edgefleet template add xxx`）、团队/RBAC/审计留存（商业版候选）、Compose 子集扩展（`depends_on`/外部网络/`configs` 按真实需求逐项开放）、Tunnel 接入（面板与应用不暴露公网，Cloudflare Tunnel 式）。
+PR 预览环境（AI Agent 开 PR → 自动 URL → 合并即销毁）、官方模板目录（先维护 10 个官方模板，`fleetly template add xxx`）、团队/RBAC/审计留存（商业版候选）、Compose 子集扩展（`depends_on`/外部网络/`configs` 按真实需求逐项开放）、Tunnel 接入（面板与应用不暴露公网，Cloudflare Tunnel 式）。
 
 ### 4.5 工作量估算（v0.1，AI 辅助开发）
 
@@ -468,7 +468,7 @@ PR 预览环境（AI Agent 开 PR → 自动 URL → 合并即销毁）、官方
 | 系统性故障（registry/节点/构建器） | 多 app 同时失败叠加处理 | 部署失败率异常事件告警，人工判断；不做熔断（Dokploy 亦无此机制） |
 | Compose 子集外的构造被拒绝（depends_on/extends/profiles 等） | 迁移摩擦与预期落差 | 拒绝时给替代建议与文档链接；真实需求驱动 v0.3 逐项开放；用户访谈验证 |
 | stack apply 非事务（多服务部分失败） | 跨服务发布原子性缺失 | 观察窗按整体判定 + 失败归位重放整栈 revision；文档明示「按服务滚动」语义 |
-| label 约定与 compose 生态习惯差异 | 用户误写 Traefik label 期望生效 | `edgefleet.*` 为唯一一等约定；Traefik label 直写不保证（文档明示）；对账器忽略非 `edgefleet.*` label |
+| label 约定与 compose 生态习惯差异 | 用户误写 Traefik label 期望生效 | `fleetly.*` 为唯一一等约定；Traefik label 直写不保证（文档明示）；对账器忽略非 `fleetly.*` label |
 | 基础框架依赖（lynx 小生态、pre-2.0 版本节奏，D20） | 框架破坏性升级波及控制面 | 锁版本（v1.11.x）+ 升级走依赖门禁附 changelog 评审；Wire 生成物 `go generate` 差异进 PR 门禁；上游同域可控，必要时可 fork 接管维护；框架只做装配与生命周期，领域代码零框架类型依赖（替换面收敛在 boot 层） |
 
 ## 6. 测试策略

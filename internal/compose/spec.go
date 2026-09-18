@@ -67,10 +67,10 @@ type Service struct {
 	Command []string `json:"command,omitempty"`
 	// Expose 保持原序（路由目标端口取首个，架构 §2.4）。
 	Expose []string `json:"expose,omitempty"`
-	// Domains 是 edgefleet.domains label 解析后的域名列表（trim/小写/
+	// Domains 是 fleetly.domains label 解析后的域名列表（trim/小写/
 	// IDN→punycode 归一化后排序）。有该 label 的服务即入口。
 	Domains []string `json:"domains,omitempty"`
-	// PlacementNode 是 edgefleet.placement.node label 的字面值（放置意图；
+	// PlacementNode 是 fleetly.placement.node label 的字面值（放置意图；
 	// 名或 n_<ULID> 的解析/绑定校验属放置层，语法校验见 validate.go）。
 	PlacementNode string `json:"placement_node,omitempty"`
 
@@ -161,7 +161,7 @@ type ResourceLimits struct {
 	MemoryBytes int64   `json:"memory_bytes,omitempty"`
 }
 
-// Placement 归一化放置约束（constraints 仅允许 node.labels.edgefleet.*
+// Placement 归一化放置约束（constraints 仅允许 node.labels.fleetly.*
 // 命名空间，stateful-placement §2.3）。
 type Placement struct {
 	Constraints []string `json:"constraints,omitempty"`

@@ -16,7 +16,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	mobyclient "github.com/moby/moby/client"
 
-	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Client 是 state.DockerClient 的 moby/client 实现。

@@ -110,10 +110,10 @@ D:\Codes\qiulin\edgesets\spike\c>set "JTOK=SWMTKN-1-5xry090jcxx7pbml84knont82xu7
 D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5w docker swarm join 10.10.0.20:2377 --token SWMTKN-1-5xry090jcxx7pbml84knont82xu73kbnwx9ssxkekned8689c2-b9gske78t2ag3k5u87mjaskkd   || exit /b 1 
 This node joined a swarm as a worker.
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --label-add edgefleet.node-id=v5m v5m   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --label-add fleetly.node-id=v5m v5m   || exit /b 1 
 v5m
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --label-add edgefleet.node-id=v5w v5w   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node update --label-add fleetly.node-id=v5w v5w   || exit /b 1 
 v5w
 
 D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-v5m docker node ls 

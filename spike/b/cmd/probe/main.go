@@ -129,7 +129,7 @@ func runServer(args []string) {
 		}
 		host, _ := os.Hostname()
 		w.Header().Set("Content-Type", "text/plain")
-		fmt.Fprintf(w, "edgefleet-spike-b version=%s host=%s\n", ver, host)
+		fmt.Fprintf(w, "fleetly-spike-b version=%s host=%s\n", ver, host)
 	})
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		if healthFail.Load() {

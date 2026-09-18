@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 )
 
 // 写前直读（state-model §2.2 读契约）：写操作先直读底座并以对象版本作

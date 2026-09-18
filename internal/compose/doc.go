@@ -1,4 +1,4 @@
-// Package compose 实现 edgefleet 的 Compose 应用描述处理：解析、受控子集
+// Package compose 实现 fleetly 的 Compose 应用描述处理：解析、受控子集
 // 校验、稳定归一化与归一化差异（plan/diff 的地基）。
 //
 // 契约真源（本包行为逐条对齐，不发明清单外语义）：
@@ -9,7 +9,7 @@
 //     （受管字段政策：failure_action=pause、monitor≤5s、order 照用）
 //   - docs/design/2026-09-17-stateful-placement.md §2.3（placement label
 //     语法、constraints 命名空间、replicas×卷校验、label 一致性）
-//   - docs/design/2026-09-17-state-model.md §2.4（edgefleet.* 保留前缀 →
+//   - docs/design/2026-09-17-state-model.md §2.4（fleetly.* 保留前缀 →
 //     E_LABEL_RESERVED）
 //
 // 解析器选型（关键决策）：采用 github.com/compose-spec/compose-go/v2 官方

@@ -1,4 +1,4 @@
-// Package errcode 是 edgefleet 错误码注册表（代码内唯一真源）。
+// Package errcode 是 fleetly 错误码注册表（代码内唯一真源）。
 //
 // 契约纪律（架构 §2.8「契约版本化纪律」）：错误码为稳定字符串
 // （`E_<域>_<条件>` / `W_<域>_<条件>`），永不复用、只新增；文档域清单
@@ -21,7 +21,7 @@ import (
 
 // DocsURLPrefix 是错误码文档锚点 URL 前缀（占位：文档站域名与路径结构
 // 待 T0.5 契约冻结定稿；锚点 = 前缀 + 码 ID）。
-const DocsURLPrefix = "https://docs.edgefleet.dev/errors/"
+const DocsURLPrefix = "https://docs.fleetly.dev/errors/"
 
 // codePattern 校验稳定码格式：E_ / W_ 前缀 + 大写字母/数字/下划线段
 // （拒绝小写、空段、缺前缀）。

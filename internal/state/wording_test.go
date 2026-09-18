@@ -10,14 +10,14 @@ import (
 // TestNoHeartbeatWording 文案断言（state-model §2.2：Swarm 不暴露心跳
 // 时间戳，平台不承诺「最后心跳」——nodes 表语义字段为 last_seen_at，
 // 代码与注释不得出现「心跳」字样）。扫描范围 = 本阶段交付面：
-// internal/state、internal/substrate、cmd/edgefleetd 与 config-example.yaml。
+// internal/state、internal/substrate、cmd/fleetlyd 与 config-example.yaml。
 // 注册表文件（internal/eventcode）含历史文档转述措辞，属 T0.2 冻结产物，
 // 不在本阶段范围（已在执行汇总记录为遗留问题）。
 func TestNoHeartbeatWording(t *testing.T) {
 	dirs := []string{
 		filepath.Join("..", "..", "internal", "state"),
 		filepath.Join("..", "..", "internal", "substrate"),
-		filepath.Join("..", "..", "cmd", "edgefleetd"),
+		filepath.Join("..", "..", "cmd", "fleetlyd"),
 	}
 	files := []string{filepath.Join("..", "..", "config-example.yaml")}
 	for _, dir := range dirs {

@@ -45,7 +45,7 @@ D:\Codes\qiulin\edgesets\spike\c>echo ===== C3B.1 create pinned volume service o
 
 D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service rm c3b-app  2>nul 
 
-D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service create --name c3b-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c3bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
+D:\Codes\qiulin\edgesets\spike\c>docker exec spike-c-mgr docker service create --name c3b-app --replicas 1 --constraint node.labels.fleetly.node-id==w1 --mount type=volume,source=c3bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000   || exit /b 1 
 ptm5iecv5ovovt40vd7tci3tu
 overall progress: 0 out of 1 tasks
 1/1:  

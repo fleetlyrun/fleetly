@@ -1,4 +1,4 @@
-module github.com/edgesets/edgefleet
+module github.com/fleetlyrun/fleetly
 
 go 1.26.6
 
@@ -7,7 +7,7 @@ require (
 	filippo.io/age v1.3.2
 	github.com/compose-spec/compose-go/v2 v2.15.0
 	github.com/containerd/errdefs v1.0.0
-	github.com/edgesets/edgefleet/genproto v0.0.0-00010101000000-000000000000
+	github.com/fleetlyrun/fleetly/genproto v0.0.0-00010101000000-000000000000
 	github.com/google/wire v0.7.0
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0
 	github.com/lynx-go/commands v0.3.0
@@ -27,7 +27,7 @@ require (
 
 // 本地三 module（主仓 + genproto + sdk/go，go.work 对齐）：genproto 为
 // proto 契约生成物、只在本仓演进，replace 保证 CI/离线环境可构建。
-replace github.com/edgesets/edgefleet/genproto => ./genproto
+replace github.com/fleetlyrun/fleetly/genproto => ./genproto
 
 require (
 	buf.build/gen/go/bufbuild/protovalidate/protocolbuffers/go v1.36.12-20260825204119-511051f7f437.2 // indirect

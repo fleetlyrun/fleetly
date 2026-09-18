@@ -11,7 +11,7 @@ cd /d %SPIKE_C_DIR%
 
 echo ===== C4B.1 create pinned volume service on w1 =====
 docker exec %SPIKE_MGR% docker service rm c4b-app 2>nul
-docker exec %SPIKE_MGR% docker service create --name c4b-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c4bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000 || exit /b 1
+docker exec %SPIKE_MGR% docker service create --name c4b-app --replicas 1 --constraint node.labels.fleetly.node-id==w1 --mount type=volume,source=c4bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000 || exit /b 1
 docker exec %SPIKE_MGR% sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4b-app 1 w1 120"
 if errorlevel 1 (echo C4B task never Running on w1 & exit /b 1)
 docker exec %SPIKE_W1% sh -c "cp /work-src/scripts/in-stamp.sh /tmp/s.sh && sed -i 's/\r$//' /tmp/s.sh && sh /tmp/s.sh c4b-app c4bvol /data write c4b-initial-worker"
@@ -70,12 +70,12 @@ docker exec %SPIKE_W2% sh -c "cp /work-src/dockerctx/probe /opt/probe && chmod +
 docker exec %SPIKE_W2% docker pull alpine:3.20 1>nul 2>&1
 for /f %%t in ('docker exec %SPIKE_MGR% docker swarm join-token -q worker') do set "JTOK=%%t"
 docker exec %SPIKE_W2% docker swarm join %SPIKE_IP_MGR%:2377 --token %JTOK% || exit /b 1
-docker exec %SPIKE_MGR% docker node update --label-add edgefleet.node-id=w2 w2 || exit /b 1
+docker exec %SPIKE_MGR% docker node update --label-add fleetly.node-id=w2 w2 || exit /b 1
 ping -n 3 127.0.0.1 >nul
 docker exec %SPIKE_MGR% docker node ls
 
 echo ===== C4B.6 manual rebind: swap constraint to w2 =====
-docker exec %SPIKE_MGR% docker service update --constraint-rm node.labels.edgefleet.node-id==w1 --constraint-add node.labels.edgefleet.node-id==w2 c4b-app || exit /b 1
+docker exec %SPIKE_MGR% docker service update --constraint-rm node.labels.fleetly.node-id==w1 --constraint-add node.labels.fleetly.node-id==w2 c4b-app || exit /b 1
 docker exec %SPIKE_MGR% sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4b-app 1 w2 120"
 if errorlevel 1 (echo C4B task never Running on w2 & exit /b 1)
 

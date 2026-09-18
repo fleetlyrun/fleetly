@@ -7,7 +7,7 @@
 //     下要求 owner 独占；Windows 无同语义位，检查降级为文件存在+可解析）；
 //   - env 密文入 env_vars 表（state 层不解释密文）；secret 值永不进
 //     事件/审计/日志（state-model §2.9——负面测试钉死）；
-//   - Swarm secret 引用 `edgefleet-<app>-<name>-<hash8>`：值轮换即换名
+//   - Swarm secret 引用 `fleetly-<app>-<name>-<hash8>`：值轮换即换名
 //     换引用（hash8 = 内容 sha256 前 8）。
 package secrets
 
@@ -25,7 +25,7 @@ import (
 )
 
 // DefaultKeyPath 是主密钥文件缺省路径（可经配置 secrets.key_path 覆盖）。
-const DefaultKeyPath = "./edgefleet.key"
+const DefaultKeyPath = "./fleetly.key"
 
 // ErrWeakPermissions 表示主密钥文件权限过宽（POSIX：group/other 有任何
 // 访问位）。密钥与备份分离、文件权限保护是架构 §2.3 的硬要求——fail-fast
@@ -176,7 +176,7 @@ func (b *Box) Decrypt(ciphertext []byte) ([]byte, error) {
 	return out, nil
 }
 
-// CheckHealth 报告密钥就绪（edgefleetd secrets 服务结构性 Checker：
+// CheckHealth 报告密钥就绪（fleetlyd secrets 服务结构性 Checker：
 // 密钥已加载即可用——解密能力由 Encrypt/Decrypt 自证，健康检查不做额外
 // 加解密自旋）。
 func (b *Box) CheckHealth() error {

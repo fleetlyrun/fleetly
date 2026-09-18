@@ -99,7 +99,7 @@ jobs:
 
   e2e:
     # T0.4 dind E2E 骨架（交付流水线 §2.2 PR 轨道第 5 项 / P2 / M0）：
-    # docker:29.8.1-dind 容器内拉起 edgefleetd 冒烟（启动/健康检查/优雅关闭）。
+    # docker:29.8.1-dind 容器内拉起 fleetlyd 冒烟（启动/健康检查/优雅关闭）。
     # 本 job 亦是 Spike B/C 与 nightly E2E 的底座：fixture 部署链（install →
     # 部署 fixture → 对账 → health gate → 路由 → 回滚 → 自升级）后续在此扩展。
     # 本地复跑见 e2e/README.md（与本地实跑同一条命令路径）。
@@ -111,18 +111,18 @@ jobs:
           go-version-file: go.mod
       - name: cross build linux/amd64
         # CGO 关闭 → 静态可迁二进制，docker cp 进 Alpine 容器直接可执行。
-        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/edgefleetd ./cmd/edgefleetd
+        run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/fleetlyd ./cmd/fleetlyd
       - name: start dind container
         run: |
-          docker run -d --name edgefleet-e2e-dind --privileged docker:29.8.1-dind
+          docker run -d --name fleetly-e2e-dind --privileged docker:29.8.1-dind
           # dind 内 dockerd 就绪门（60s）：smoke 本身不依赖 dockerd，但
           # 「特权 dind 可用」是 P2 的前提，骨架阶段顺带在此验证；后续
           # fixture 部署链（compose/Swarm 操作）依赖它。
           deadline=$(( $(date +%s) + 60 ))
-          until docker exec edgefleet-e2e-dind docker info >/dev/null 2>&1; do
+          until docker exec fleetly-e2e-dind docker info >/dev/null 2>&1; do
             if [ "$(date +%s)" -ge "$deadline" ]; then
               echo "::error::dockerd inside dind not ready within 60s"
-              docker logs edgefleet-e2e-dind --tail 50 || true
+              docker logs fleetly-e2e-dind --tail 50 || true
               exit 1
             fi
             sleep 2
@@ -132,14 +132,14 @@ jobs:
         # （exit 0 但不落盘，Windows Desktop 29.7.2 与 CI Linux runner 双复现，
         # 见 e2e/README.md 已知问题）；统一走 exec+stdin 流式写入。
         run: |
-          docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/smoke.sh' < e2e/smoke.sh
-          docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/edgefleetd' < dist/edgefleetd
-          docker exec edgefleet-e2e-dind sh -c 'chmod +x /tmp/edgefleetd && EDGEFLEETD_BIN=/tmp/edgefleetd sh /tmp/smoke.sh'
+          docker exec -i fleetly-e2e-dind sh -c 'cat > /tmp/smoke.sh' < e2e/smoke.sh
+          docker exec -i fleetly-e2e-dind sh -c 'cat > /tmp/fleetlyd' < dist/fleetlyd
+          docker exec fleetly-e2e-dind sh -c 'chmod +x /tmp/fleetlyd && FLEETLYD_BIN=/tmp/fleetlyd sh /tmp/smoke.sh'
       - name: dump logs on failure
         if: failure()
         run: |
-          docker exec edgefleet-e2e-dind sh -c 'tail -n 50 /tmp/edgefleetd-smoke.log 2>/dev/null || true' || true
-          docker logs edgefleet-e2e-dind --tail 50 || true
+          docker exec fleetly-e2e-dind sh -c 'tail -n 50 /tmp/fleetlyd-smoke.log 2>/dev/null || true' || true
+          docker logs fleetly-e2e-dind --tail 50 || true
       - name: cleanup
         if: always()
-        run: docker rm -f edgefleet-e2e-dind
+        run: docker rm -f fleetly-e2e-dind

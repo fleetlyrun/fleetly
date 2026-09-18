@@ -1,4 +1,4 @@
-module github.com/edgesets/edgefleet/genproto
+module github.com/fleetlyrun/fleetly/genproto
 
 go 1.26.6
 

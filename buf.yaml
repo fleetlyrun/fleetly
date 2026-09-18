@@ -11,9 +11,9 @@ modules:
 lint:
   use:
     - STANDARD
-  # 以下规则与 edgefleet 契约现状的取舍说明（torchwood 同款位置）：
-  # - edgefleet 的 proto 目录即包路径（proto/edgefleet/{client,console,server,shared}/v1
-  #   ↔ edgefleet.{client,console,server,shared}.v1），PACKAGE_DIRECTORY_MATCH
+  # 以下规则与 fleetly 契约现状的取舍说明（torchwood 同款位置）：
+  # - fleetly 的 proto 目录即包路径（proto/fleetly/{client,console,server,shared}/v1
+  #   ↔ fleetly.{client,console,server,shared}.v1），PACKAGE_DIRECTORY_MATCH
   #   天然满足，无需豁免（torchwood 因目录不含仓库名前缀才豁免）；
   # - 本阶段契约只含 SystemService.Ping（请求/响应类型按
   #   PingRequest/PingResponse 命名），STANDARD 全量通过；后续引入

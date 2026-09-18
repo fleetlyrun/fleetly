@@ -1,4 +1,4 @@
-module edgefleet.local/spike/a
+module fleetly.local/spike/a
 
 go 1.26.6
 

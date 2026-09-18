@@ -8,7 +8,7 @@ cd /d %SPIKE_C_DIR%
 
 echo ===== C4A.1 create pinned volume service on w1 =====
 docker exec %SPIKE_MGR% docker service rm c4-app 2>nul
-docker exec %SPIKE_MGR% docker service create --name c4-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c4vol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000 || exit /b 1
+docker exec %SPIKE_MGR% docker service create --name c4-app --replicas 1 --constraint node.labels.fleetly.node-id==w1 --mount type=volume,source=c4vol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000 || exit /b 1
 docker exec %SPIKE_MGR% sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c4-app 1 w1 120"
 if errorlevel 1 (echo C4A task never Running on w1 & exit /b 1)
 

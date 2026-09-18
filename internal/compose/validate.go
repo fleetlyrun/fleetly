@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 )
 
 // 本文件实现 §2.4 受控子集校验的第一层：在 compose-go canonical dict 上
@@ -46,10 +46,10 @@ var serviceRejectList = map[string]string{
 	"devices":             "危险字段：设备挂载默认拒绝（admin 旁路 TODO）",
 	"device_cgroup_rules": "危险字段：设备 cgroup 规则默认拒绝（admin 旁路 TODO）",
 	"network_mode":        "network_mode: host 等宿主网络模式在拒绝清单（服务一律经 app 专属网络）",
-	"ports":               "宿主端口发布不在 v0.1 受控子集（路由用 expose + edgefleet.domains）",
+	"ports":               "宿主端口发布不在 v0.1 受控子集（路由用 expose + fleetly.domains）",
 	"external_links":      "v0.1 拒绝清单字段（跨栈链接不受支持）",
 	"links":               "legacy 链接不在受控子集（服务互访用 compose 服务名）",
-	"container_name":      "容器名由平台管理（Swarm 服务名 edgefleet-<app>-<service>）",
+	"container_name":      "容器名由平台管理（Swarm 服务名 fleetly-<app>-<service>）",
 }
 
 // serviceWhitelist 是服务级键白名单（§2.4 支持清单逐项）。
@@ -143,7 +143,7 @@ var networkDefReject = map[string]string{
 // volumeDefReject：顶层卷定义拒绝的键（卷由平台卷注册表管理）。
 var volumeDefReject = map[string]string{
 	"external": "外部卷不受支持（应用卷由平台按 app 创建并登记）",
-	"name":     "卷资源名由平台管理（edgefleet-<app>-<key>），不接受 name 覆写",
+	"name":     "卷资源名由平台管理（fleetly-<app>-<key>），不接受 name 覆写",
 }
 
 // specNamePattern 校验顶层 name 形态（与 compose 项目名字符集一致）。
@@ -155,7 +155,7 @@ func validSpecName(name string) bool { return specNamePattern.MatchString(name) 
 // validateDict 在 canonical dict 上执行受控子集校验。abs 仅用于错误信息
 // 定位；返回首个违规（fail-fast）。
 func validateDict(abs string, dict map[string]any) error {
-	// 顶层 name = 应用标识（平台按它命名 Swarm 资源 edgefleet-<app>-*）。
+	// 顶层 name = 应用标识（平台按它命名 Swarm 资源 fleetly-<app>-*）。
 	// 缺失在 loader 层已报错（schema 校验开启 + SkipNormalization 组合）；
 	// 此处校验形态：小写字母/数字开头，仅含小写字母/数字/-/_（与 compose
 	// 项目名字符集一致，保证 Swarm/卷/网络命名安全）。
@@ -245,7 +245,7 @@ func validateServiceDict(name string, svc map[string]any) error {
 		// 显式拒绝。
 		for _, k := range sortedKeys(envDict) {
 			if envDict[k] == nil {
-				return errCompose("服务 %q 的 environment 条目 %q 未给字面值（edgefleet 关闭变量插值与环境透传）", name, k).
+				return errCompose("服务 %q 的 environment 条目 %q 未给字面值（fleetly 关闭变量插值与环境透传）", name, k).
 					WithContext("path", prefix+".environment."+k)
 			}
 		}
@@ -255,7 +255,7 @@ func validateServiceDict(name string, svc map[string]any) error {
 		for i, e := range envList {
 			s, _ := e.(string)
 			if !strings.Contains(s, "=") {
-				return errCompose("服务 %q 的 environment 条目 %q 未给字面值（edgefleet 关闭变量插值与环境透传）", name, s).
+				return errCompose("服务 %q 的 environment 条目 %q 未给字面值（fleetly 关闭变量插值与环境透传）", name, s).
 					WithContext("path", fmt.Sprintf("%s.environment[%d]", prefix, i))
 			}
 		}
@@ -378,7 +378,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 			for i, c := range constraints {
 				expr, _ := c.(string)
 				if !placementConstraintAllowed(expr) {
-					return errCompose("服务 %q 的放置约束 %q 超出命名空间（仅允许 node.labels.edgefleet.*）", name, expr).
+					return errCompose("服务 %q 的放置约束 %q 超出命名空间（仅允许 node.labels.fleetly.*）", name, expr).
 						WithContext("path", fmt.Sprintf("%s.deploy.placement.constraints[%d]", prefix, i))
 				}
 			}
@@ -401,7 +401,7 @@ func serviceHasVolumes(svc map[string]any) bool {
 }
 
 // placementConstraintAllowed 判定单条 Swarm 约束表达式是否落在
-// node.labels.edgefleet.* 命名空间（stateful-placement §2.3）。支持
+// node.labels.fleetly.* 命名空间（stateful-placement §2.3）。支持
 // ==/!=/in/notin 运算形态；无法识别的形态一律拒绝（白名单纪律）。
 func placementConstraintAllowed(expr string) bool {
 	s := strings.TrimSpace(expr)
@@ -414,10 +414,10 @@ func placementConstraintAllowed(expr string) bool {
 		}
 	}
 	if head == "" {
-		// 纯存在性约束（如 node.labels.edgefleet.rack）也视为合法头。
+		// 纯存在性约束（如 node.labels.fleetly.rack）也视为合法头。
 		head = strings.TrimSuffix(s, " ")
 	}
-	return strings.HasPrefix(head, "node.labels.edgefleet.")
+	return strings.HasPrefix(head, "node.labels.fleetly.")
 }
 
 // validateEnvFileDict 校验 env_file 形态。canonical transform（transformEnvFile）

@@ -1,4 +1,4 @@
-// Package eventcode 是 edgefleet 平台事件名注册表（代码内唯一真源）。
+// Package eventcode 是 fleetly 平台事件名注册表（代码内唯一真源）。
 //
 // 契约纪律（架构 §2.8）：事件与错误码同归注册表管理，稳定字符串、永不
 // 复用、只新增；文档域清单（release-semantics §2.7、stateful-placement

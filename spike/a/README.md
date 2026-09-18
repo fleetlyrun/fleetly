@@ -232,7 +232,7 @@ build exit: 0
 moby/buildkit:v0.32.2-rootless（`--oci-worker-no-process-sandbox`）在 WSL2 内核 6.18 上可启动并完成 scratch 构建。**局限（如实声明）**：该探针运行在**特权 dind 内部**——rootless buildkitd 的 userns/fuse-overlayfs 依赖在特权 dind 里天然满足，因此这只证明「rootless 变体在该内核上能跑」，**不能**证明「宿主 Docker rootless 部署形态可用」（那需要在非特权宿主环境直测，超出本 spike 条件）。
 
 **推理与选型建议**（最小证据 + 推理）：
-1. edgefleet 目标用户是「会 Docker、不愿学 k8s」的自托管人群（架构 §1.2），v0.1 平台本身就以 root 运行 Docker 操作（swarm 管理）；构建发生在平台已控的 Docker 内。**特权 buildkitd + 硬限额**在这个威胁模型下已覆盖「构建压死宿主」（E4.1 实测）的主要风险。
+1. fleetly 目标用户是「会 Docker、不愿学 k8s」的自托管人群（架构 §1.2），v0.1 平台本身就以 root 运行 Docker 操作（swarm 管理）；构建发生在平台已控的 Docker 内。**特权 buildkitd + 硬限额**在这个威胁模型下已覆盖「构建压死宿主」（E4.1 实测）的主要风险。
 2. rootless buildkitd 的额外收益（无特权攻击面）与额外成本（需内核 ≥5.11 + fuse-overlayfs + userns 配置，竞品调研 §5.5）不成比例：Coolify/Dokploy 等同类全部默认特权 buildkitd，未见 rootless 生产先例。
 3. 综合：**v0.1 选特权 buildkitd + cgroup 硬限额（实测通过）；rootless 有「变体能跑」的最小证据（内核 6.18），列为 v0.2 前的外层部署形态评估项**。
 
@@ -294,7 +294,7 @@ T4: service create sha256:42cfdf83…（裸 image-ID，无名称成分）
 6. **冷构建成本被外网带宽主导且方差极大**：同一种冷构建（node fixture）85s（E2a，快网络）vs 889s（E2b，慢网络，~700KB/s）。缓存体系（本地层 + registry cache）的价值比“加速几十秒”高一个量级，建议平台把「buildkitd 缓存卷持久化 + registry cache 导出」当作默认能力而非优化项。
 7. **railpack 生成的 mise 配置自带供应链保守默认**：`minimum_release_age = "14d"`、`paranoid = true`（见 plan JSON generated-mise-toml）。这缓解了「mise 解析最新版」的一部分风险，但不消除漂移（14 天后仍会漂），版本 pin 仍必须由平台注入。
 8. **railpack 对构建上下文的假定**：plan 中 build step `secrets: ["*"]`——railpack 把全部环境变量作为 BuildKit secrets 传给构建步骤，平台的 secrets 数组（声明式）是唯一准入面。
-9. **buildx 默认 provenance 证明与 swarm 本地 digest 引用不兼容**：`docker build`（buildx）默认产出含 attestation 的 manifest list，`docker image inspect .Id` 返回 list digest；swarm 任务以该 digest 启动时容器 `exec /busybox: no such file or directory` 崩溃循环。本地部署镜像构建必须 `--provenance=false --sbom=false`。对平台的意义：edgefleet 构建管线如果要走 buildx，必须显式关闭 provenance，或部署/运行两侧都感知 manifest list。
+9. **buildx 默认 provenance 证明与 swarm 本地 digest 引用不兼容**：`docker build`（buildx）默认产出含 attestation 的 manifest list，`docker image inspect .Id` 返回 list digest；swarm 任务以该 digest 启动时容器 `exec /busybox: no such file or directory` 崩溃循环。本地部署镜像构建必须 `--provenance=false --sbom=false`。对平台的意义：fleetly 构建管线如果要走 buildx，必须显式关闭 provenance，或部署/运行两侧都感知 manifest list。
 10. **alpine 的 busybox 是动态链接且无 httpd/wget applet**：`/bin/busybox` 为 ELF ET_DYN，FROM scratch 镜像必须连同 `/lib/ld-musl-x86_64.so.1` 一起 COPY；`httpd`/`wget` 在 busybox-extras 包里，`docker:29.8.1-dind` 自带 busybox 没有。写最小验证镜像时连续踩中这两点。
 11. **宿主侧 kill 不终止 dind 内进程（幽灵进程污染）**：E5 第 3 轮在宿主 `TaskStop` 杀掉 `docker exec` 后，dind 内 `sh /tmp/e5v2.sh` 继续跑到收尾段，执行了 `swarm leave --force` 与 `docker rmi`，把第 4 轮测试环境拆了（症状：`This node is not a swarm manager`、events 里出现不属于本轮的 image delete）。重跑类实验前必须 `ps aux | grep` 清场，或干脆重建 dind。
 12. **镜像排除于 docker events 之外**：T3 的 pull 尝试在 `docker events` 中完全不可见（0 条），只在 dockerd 日志。以「无 pull 尝试」为验收断言时，取证必须查 dockerd 日志而非 events——e5-run.bat 的 E5.4 步骤因此保留。

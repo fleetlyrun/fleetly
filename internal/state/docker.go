@@ -87,7 +87,7 @@ type SubstrateNode struct {
 	IsManager bool
 	// Version 是底座节点对象版本（节点 label 写入的乐观令牌）。
 	Version ObjectVersion
-	// Labels 是节点全部 label（含 edgefleet.node-id 身份锚）。
+	// Labels 是节点全部 label（含 fleetly.node-id 身份锚）。
 	Labels map[string]string
 }
 

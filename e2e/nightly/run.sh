@@ -37,7 +37,7 @@ NLROOT="$ROOT/e2e/nightly"
 . "$NLROOT/lib.sh"
 DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind}"
 DIND_EXTRA_ARGS="${DIND_EXTRA_ARGS:-}"
-BR_NET=edgefleet-nightly-br
+BR_NET=fleetly-nightly-br
 BR_SUBNET=10.213.0.0/24
 TMP=$(mktemp -d)
 mkdir -p "$TMP/artifacts"
@@ -84,7 +84,7 @@ trap on_exit EXIT INT TERM
 # defensive sweep: leftovers of a previously crashed run would poison
 # assertions (ghost processes, spike/a README #11)
 sweep() {
-    leftovers=$(docker ps -aq --filter name=edgefleet-nightly- 2>/dev/null || true)
+    leftovers=$(docker ps -aq --filter name=fleetly-nightly- 2>/dev/null || true)
     if [ -n "$leftovers" ]; then
         log "WARN removing leftover nightly containers: $leftovers"
         echo "$leftovers" | xargs docker rm -f >/dev/null 2>&1 || true
@@ -166,7 +166,7 @@ run_inner() { # <dind> <script.sh>
 suite_b() { # <name>  (single dind, spike/b-style infra)
     name=$1
     log "===== suite $name: single dind + spike/b infra ====="
-    d="edgefleet-nightly-$name"
+    d="fleetly-nightly-$name"
     dind_up "$d"
     stage "$d" "$NLROOT/lib.sh" /tmp/lib.sh
     stage "$d" "$NLROOT/infra-b.sh" /tmp/infra-b.sh
@@ -184,7 +184,7 @@ suite_b() { # <name>  (single dind, spike/b-style infra)
 # ---------------------------------------------------------------------- v2
 suite_v2() {
     log "===== suite v2: dedicated fresh dind (pristine dockerd log) ====="
-    d="edgefleet-nightly-v2"
+    d="fleetly-nightly-v2"
     dind_up "$d"
     stage "$d" "$NLROOT/lib.sh" /tmp/lib.sh
     stage "$d" "$NLROOT/v2.sh" /tmp/v2.sh
@@ -210,9 +210,9 @@ suite_v6() {
     build_probe spike/c "$TMP/probe-c"
     docker network create -d bridge --subnet "$BR_SUBNET" "$BR_NET" >/dev/null || die "create $BR_NET"
     ACTIVE_NET="$BR_NET"
-    MGR=edgefleet-nightly-v6-mgr
-    W1=edgefleet-nightly-v6-w1
-    W2=edgefleet-nightly-v6-w2
+    MGR=fleetly-nightly-v6-mgr
+    W1=fleetly-nightly-v6-w1
+    W2=fleetly-nightly-v6-w2
     dind_up "$MGR" --hostname mgr --network "$BR_NET" --ip 10.213.0.10
     dind_up "$W1" --hostname w1 --network "$BR_NET" --ip 10.213.0.11
     dind_up "$W2" --hostname w2 --network "$BR_NET" --ip 10.213.0.12
@@ -229,9 +229,9 @@ suite_v6() {
     JTOK=$(docker exec "$MGR" docker swarm join-token -q worker) || die "join-token"
     docker exec "$W1" docker swarm join 10.213.0.10:2377 --token "$JTOK" >/dev/null || die "w1 join"
     docker exec "$W2" docker swarm join 10.213.0.10:2377 --token "$JTOK" >/dev/null || die "w2 join"
-    docker exec "$MGR" docker node update --label-add edgefleet.node-id=mgr mgr
-    docker exec "$MGR" docker node update --label-add edgefleet.node-id=w1 w1
-    docker exec "$MGR" docker node update --label-add edgefleet.node-id=w2 w2
+    docker exec "$MGR" docker node update --label-add fleetly.node-id=mgr mgr
+    docker exec "$MGR" docker node update --label-add fleetly.node-id=w1 w1
+    docker exec "$MGR" docker node update --label-add fleetly.node-id=w2 w2
     i=0
     while :; do
         if docker exec "$MGR" docker node ls --format '{{.Hostname}}={{.Status}}' 2>/dev/null |

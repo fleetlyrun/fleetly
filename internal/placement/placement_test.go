@@ -9,9 +9,9 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
-	"github.com/edgesets/edgefleet/internal/naming"
-	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/naming"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // fakeDocker 是放置测试的底座替身（state.DockerClient 端口最小实现：
@@ -406,7 +406,7 @@ func TestPreflightBranches(t *testing.T) {
 		h := mkBound(t)
 		// 卷数据钉在另一平台节点（模拟残留/手工移动）→ 数据前哨 409。
 		if _, _, err := h.store.RegisterAppVolume(ctx, state.VolumeWrite{
-			AppID: h.appID, Key: "other", Name: "edgefleet-my-api-other-aaaaaaaa",
+			AppID: h.appID, Key: "other", Name: "fleetly-my-api-other-aaaaaaaa",
 			PlatformNodeID: "n_otherplace",
 		}); err != nil {
 			t.Fatalf("register: %v", err)
@@ -427,7 +427,7 @@ func TestPreflightBranches(t *testing.T) {
 
 // TestConstraintFor 约束编译逐字对照（stateful-placement §2.1 执行层）。
 func TestConstraintFor(t *testing.T) {
-	if got := ConstraintFor("n_01HZX"); got != "node.labels.edgefleet.node-id == n_01HZX" {
+	if got := ConstraintFor("n_01HZX"); got != "node.labels.fleetly.node-id == n_01HZX" {
 		t.Fatalf("constraint = %q", got)
 	}
 }

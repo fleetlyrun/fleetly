@@ -1,7 +1,7 @@
 // Package placement 是放置解析与绑定生命周期（stateful-placement 专项的
 // v0.1 单机切面，T2.14）：
 //
-//   - 概念模型三层（§2.1）：意图 = 服务 label edgefleet.placement.node；
+//   - 概念模型三层（§2.1）：意图 = 服务 label fleetly.placement.node；
 //     绑定 = placements 记录（平台节点 ID 为锚）；执行 = 适配器编译为
 //     节点 label 约束（本包 ConstraintFor）。
 //   - 不变量（§2.1）：绑定优先于 label 的缺失；有卷应用不存在「无绑定」
@@ -20,10 +20,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
-	"github.com/edgesets/edgefleet/internal/compose"
-	"github.com/edgesets/edgefleet/internal/naming"
-	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/compose"
+	"github.com/fleetlyrun/fleetly/internal/naming"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Resolver 是放置解析器（单机同路径）。
@@ -51,7 +51,7 @@ type Input struct {
 	AppName string
 	// Volumes 是应用整体声明的命名卷挂载（空 = 无卷应用 → 默认不钉）。
 	Volumes []VolumeMount
-	// LabelRef 是 edgefleet.placement.node 字面值（空 = 未声明）。
+	// LabelRef 是 fleetly.placement.node 字面值（空 = 未声明）。
 	LabelRef string
 }
 
@@ -69,7 +69,7 @@ type Decision struct {
 	// KeptExisting 报告既有绑定被保持（绑定优先于 label 的缺失）。
 	KeptExisting bool
 	// Constraint 是有卷服务的约束编译结果
-	//（`node.labels.edgefleet.node-id == <平台ID>`；未钉时空）。
+	//（`node.labels.fleetly.node-id == <平台ID>`；未钉时空）。
 	Constraint string
 	// Warnings 是计划级非阻断标注（W_PLACEMENT_STATELESS_PIN）。
 	Warnings []compose.Warning
@@ -272,7 +272,7 @@ func (r *Resolver) self(ctx context.Context) (selfNode, error) {
 		return selfNode{}, fmt.Errorf("placement: read platform node id: %w", err)
 	}
 	if platformID == "" {
-		return selfNode{}, errors.New("placement: platform node id not ensured (edgefleetd identity missing)")
+		return selfNode{}, errors.New("placement: platform node id not ensured (fleetlyd identity missing)")
 	}
 	swarmNodeID, err := r.docker.SelfNodeID(ctx)
 	if err != nil {
@@ -341,7 +341,7 @@ func validateLabelRef(ref string) error {
 
 // ConstraintFor 编译有卷服务的节点约束（执行层 = 适配器把绑定翻译为节点
 // label 约束，stateful-placement §2.1）：约束引用节点身份 label
-// edgefleet.node-id = 平台节点 ID。
+// fleetly.node-id = 平台节点 ID。
 func ConstraintFor(platformNodeID string) string {
 	return "node.labels." + state.LabelNodeID + " == " + platformNodeID
 }

@@ -1,6 +1,6 @@
 # e2e — dind E2E 骨架（T0.4 / 交付流水线 M0）
 
-在 `docker:29.8.1-dind` 容器内拉起 edgefleetd 并验证最小生命周期：启动 →
+在 `docker:29.8.1-dind` 容器内拉起 fleetlyd 并验证最小生命周期：启动 →
 liveness 就绪 → ping 契约断言 → SIGTERM 优雅关闭。这是交付流水线 PR 轨道
 第 5 项「集成 E2E（单节点 dind）」的骨架底座，后续随 Spike/T2 在此扩展
 fixture 部署链（install → 部署 fixture → 对账 → health gate → 路由 → 回滚 →
@@ -21,11 +21,11 @@ fixture 部署链（install → 部署 fixture → 对账 → health gate → �
 
 ## smoke.sh 断言清单
 
-1. 前置：`EDGEFLEETD_BIN` 存在且可执行
+1. 前置：`FLEETLYD_BIN` 存在且可执行
 2. 后台启动（`--addr "$HTTP_ADDR"`），日志落 `SMOKE_LOG`
 3. `/healthz/liveness` 在 `SMOKE_TIMEOUT_S` 秒内返回 200（轮询，含进程
    提前退出检测）
-4. `GET /v1/system/ping` 应答 JSON 的 `service == "edgefleetd"`（sed 提取，
+4. `GET /v1/system/ping` 应答 JSON 的 `service == "fleetlyd"`（sed 提取，
    容忍 protojson 的不定空白；**不依赖 jq**）
 5. `SIGTERM` 后进程退出码为 0（lynx Runner 托管的优雅关停契约）
 
@@ -39,10 +39,10 @@ HTTP 客户端取 `curl` 或 `wget` 之一（`docker:29.8.1-dind` 基于 Alpine�
 
 | 变量 | 默认 | 说明 |
 | --- | --- | --- |
-| `EDGEFLEETD_BIN` | （无，必填） | edgefleetd 二进制路径 |
+| `FLEETLYD_BIN` | （无，必填） | fleetlyd 二进制路径 |
 | `HTTP_ADDR` | `127.0.0.1:8420` | HTTP 面监听地址（传给 `--addr`） |
 | `SMOKE_TIMEOUT_S` | `15` | liveness 就绪 deadline（秒） |
-| `SMOKE_LOG` | `${TMPDIR:-/tmp}/edgefleetd-smoke.log` | 二进制日志落盘路径 |
+| `SMOKE_LOG` | `${TMPDIR:-/tmp}/fleetlyd-smoke.log` | 二进制日志落盘路径 |
 
 注意：gRPC 面监听 `127.0.0.1:8421` 只能经 config（`grpc.addr`）改，无
 flag；同一网络命名空间内**并发跑两份 smoke 会撞 gRPC 端口**。
@@ -50,15 +50,15 @@ flag；同一网络命名空间内**并发跑两份 smoke 会撞 gRPC 端口**�
 ## CI 路径（`.github/workflows/pr.yml` 的 `e2e` job）
 
 ```
-GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/edgefleetd ./cmd/edgefleetd
-docker run -d --name edgefleet-e2e-dind --privileged docker:29.8.1-dind
-# 轮询 docker exec edgefleet-e2e-dind docker info（60s deadline，验证 P2 的
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/fleetlyd ./cmd/fleetlyd
+docker run -d --name fleetly-e2e-dind --privileged docker:29.8.1-dind
+# 轮询 docker exec fleetly-e2e-dind docker info（60s deadline，验证 P2 的
 # 特权 dind 可用性；smoke 本身不依赖 dockerd）
-docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/smoke.sh'   < e2e/smoke.sh
-docker exec -i edgefleet-e2e-dind sh -c 'cat > /tmp/edgefleetd' < dist/edgefleetd
-docker exec edgefleet-e2e-dind sh -c 'chmod +x /tmp/edgefleetd \
-  && EDGEFLEETD_BIN=/tmp/edgefleetd sh /tmp/smoke.sh'
-docker rm -f edgefleet-e2e-dind   # if: always()；失败时先 dump 容器内外日志
+docker exec -i fleetly-e2e-dind sh -c 'cat > /tmp/smoke.sh'   < e2e/smoke.sh
+docker exec -i fleetly-e2e-dind sh -c 'cat > /tmp/fleetlyd' < dist/fleetlyd
+docker exec fleetly-e2e-dind sh -c 'chmod +x /tmp/fleetlyd \
+  && FLEETLYD_BIN=/tmp/fleetlyd sh /tmp/smoke.sh'
+docker rm -f fleetly-e2e-dind   # if: always()；失败时先 dump 容器内外日志
 ```
 
 二进制是 `CGO_ENABLED=0` 的静态可迁文件，exec+stdin 流式写入 Alpine 容器
@@ -78,30 +78,30 @@ docker rm -f edgefleet-e2e-dind   # if: always()；失败时先 dump 容器内�
 
 ```bat
 :: 1) 交叉编译（产物放仓库外，避免污染工作区）
-mkdir "%TEMP%\edgefleet-e2e"
-set GOOS=linux&& set GOARCH=amd64&& set CGO_ENABLED=0&& go build -o "%TEMP%\edgefleet-e2e\edgefleetd" ./cmd/edgefleetd
+mkdir "%TEMP%\fleetly-e2e"
+set GOOS=linux&& set GOARCH=amd64&& set CGO_ENABLED=0&& go build -o "%TEMP%\fleetly-e2e\fleetlyd" ./cmd/fleetlyd
 
 :: 2) 起 dind 容器（与 CI 同款：特权 + 默认 dockerd 入口）
-docker rm -f edgefleet-e2e-dind
-docker run -d --name edgefleet-e2e-dind --privileged docker:29.8.1-dind
+docker rm -f fleetly-e2e-dind
+docker run -d --name fleetly-e2e-dind --privileged docker:29.8.1-dind
 
 :: 3) 等 dind 内 dockerd 就绪（可选，CI 有同款 60s 门）
-docker exec edgefleet-e2e-dind docker version --format "inner engine: {{.Server.Version}}"
+docker exec fleetly-e2e-dind docker version --format "inner engine: {{.Server.Version}}"
 
 :: 4) 送入二进制与脚本（exec+stdin 直传，字节保真；docker cp 在 Engine
 ::    29.x 宿主 → 特权 dind 上静默丢文件，见上方已知问题，勿改回 cp）
-docker exec -i edgefleet-e2e-dind sh -c "cat > /tmp/edgefleetd" < "%TEMP%\edgefleet-e2e\edgefleetd"
-docker exec -i edgefleet-e2e-dind sh -c "cat > /tmp/smoke.sh"     < "%TEMP%\edgefleet-e2e\smoke.sh"
+docker exec -i fleetly-e2e-dind sh -c "cat > /tmp/fleetlyd" < "%TEMP%\fleetly-e2e\fleetlyd"
+docker exec -i fleetly-e2e-dind sh -c "cat > /tmp/smoke.sh"     < "%TEMP%\fleetly-e2e\smoke.sh"
 
 :: 4') 校验完整性（两侧 sha256 应一致）
-certutil -hashfile "%TEMP%\edgefleet-e2e\edgefleetd" SHA256
-docker exec edgefleet-e2e-dind sha256sum /tmp/edgefleetd /tmp/smoke.sh
+certutil -hashfile "%TEMP%\fleetly-e2e\fleetlyd" SHA256
+docker exec fleetly-e2e-dind sha256sum /tmp/fleetlyd /tmp/smoke.sh
 
 :: 5) 跑冒烟（与 CI 同一入口）
-docker exec edgefleet-e2e-dind sh -c "chmod +x /tmp/edgefleetd /tmp/smoke.sh && EDGEFLEETD_BIN=/tmp/edgefleetd sh /tmp/smoke.sh"
+docker exec fleetly-e2e-dind sh -c "chmod +x /tmp/fleetlyd /tmp/smoke.sh && FLEETLYD_BIN=/tmp/fleetlyd sh /tmp/smoke.sh"
 
 :: 6) 清理（每次复跑建议重建容器，避免残留进程干扰断言）
-docker rm -f edgefleet-e2e-dind
+docker rm -f fleetly-e2e-dind
 ```
 
 Linux/macOS 宿主：`go build` 产出后同样走 exec+stdin 送入（与 CI 完全一致
@@ -114,10 +114,10 @@ Linux/macOS 宿主：`go build` 产出后同样走 exec+stdin 送入（与 CI �
 - **已选：裸 dind 容器 + `docker exec`**（推荐案）。二进制与脚本经
   exec+stdin 流式送入官方 `docker:29.8.1-dind` 容器直接执行。改动面最小、
   无镜像构建环节（PR 轨道时长预算友好）、smoke 与本地手动完全同一条命令。
-- 备选（未选）：把 edgefleetd 打进基于 alpine 的镜像（即原
+- 备选（未选）：把 fleetlyd 打进基于 alpine 的镜像（即原
   `Dockerfile.smoke` 形态），在 dind 内 `docker run`。多一次镜像构建/传输，
   且 dind 内 build 需要先把构建产物送进 dind 的存储，链路更长。**何时切
-  过去**：当 §2.2 第 5 项推进到「平台以容器形态被 edgefleet 自己安装/管理
+  过去**：当 §2.2 第 5 项推进到「平台以容器形态被 fleetly 自己安装/管理
   在 dind 内」（install → 部署链）时，本目录再补一个把平台二进制打成镜像
   的 Dockerfile，服务于「被管平台」路径；冒烟断言脚本（smoke.sh）不变。
 

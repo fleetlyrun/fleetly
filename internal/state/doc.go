@@ -1,4 +1,4 @@
-// Package state 是 edgefleet 控制面状态层（SQLite 权威态 + 底座观测缓存
+// Package state 是 fleetly 控制面状态层（SQLite 权威态 + 底座观测缓存
 // + 写前直读端口）。
 //
 // 分层判据与权威归属（state-model §2.1，本包实现的真源）：
@@ -19,7 +19,7 @@
 // （apps.go：deleting → deleted 状态位，恢复不复活）。
 //
 // 节点身份（state-model §2.3）：领域身份 = 平台节点 ID（n_<ULID>），写入
-// Swarm node label edgefleet.node-id；Swarm node ID 仅存适配器映射
+// Swarm node label fleetly.node-id；Swarm node ID 仅存适配器映射
 // runtime_node_refs(platform_id, swarm_node_id)。
 //
 // 底座访问经 DockerClient 小端口（docker.go）抽象，moby/client 实现见
@@ -27,5 +27,5 @@
 // 第三方类型。
 //
 // 本包不依赖任何框架类型（D20：框架只做装配与生命周期）；lynx.Service /
-// lynx.Checker 的装配壳在 cmd/edgefleetd（CheckHealth 方法为结构性实现）。
+// lynx.Checker 的装配壳在 cmd/fleetlyd（CheckHealth 方法为结构性实现）。
 package state

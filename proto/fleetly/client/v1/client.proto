@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package fleetly.client.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/client/v1;clientv1";
+
+// Client API 占位模块（终端用户面）：首个服务随 T2 落地；本文件仅固化
+// package 与目录结构，buf breaking（FILE 规则）自此对本模块生效。

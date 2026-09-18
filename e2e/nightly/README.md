@@ -35,7 +35,7 @@ env: DIND_IMAGE（默认 docker:29.8.1-dind）
 | v2 | 单独全新 dind（dockerd 日志取证需无噪声） | v2.sh + 宿主侧 dockerd 日志 grep |
 | v3 | 单 dind | infra-b.sh → v3.sh |
 | v4 | 单 dind | infra-b.sh → v4.sh |
-| v6 | 同宿主 bridge 网三 dind（mgr/w1/w2，swarm join 组网 + `edgefleet.node-id` label） | run.sh 组网 → v6.sh |
+| v6 | 同宿主 bridge 网三 dind（mgr/w1/w2，swarm join 组网 + `fleetly.node-id` label） | run.sh 组网 → v6.sh |
 
 传文件一律 exec+stdin（docker cp 宿主→特权 dind 静默丢文件，见
 `e2e/README.md` 已知问题），送入后做大小 + sha256 双校验，文本脚本再
@@ -64,7 +64,7 @@ env: DIND_IMAGE（默认 docker:29.8.1-dind）
   步骤就是 `bash e2e/nightly/run.sh <suite>`——与本地完全同一条命令。
 - 失败时 run.sh 自身 dump dind 日志尾部；workflow 另有 `if: failure()`
   dump 兜底（runner 级超时场景）与 `if: always()` 清理
-  （容器 + `edgefleet-nightly-br` 网络）。
+  （容器 + `fleetly-nightly-br` 网络）。
 - v5-recovery-drill 为 `if: false` 占位 job，注明转译来源。
 
 ## 本地复跑（Windows Docker Desktop）
@@ -85,7 +85,7 @@ bash e2e/nightly/run.sh all
 
 产物（探针二进制、dockerd 日志、V6 戳读回证据）全部落在 `mktemp -d`
 临时目录，退出即弃，不入仓库。运行前后可用
-`docker ps -a --filter name=edgefleet-nightly-` 核查无残留（run.sh 启动时
+`docker ps -a --filter name=fleetly-nightly-` 核查无残留（run.sh 启动时
 也会清扫同前缀幽灵容器，spike/a README #11 教训）。
 
 ## 已知限制

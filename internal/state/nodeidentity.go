@@ -13,7 +13,7 @@ import (
 
 // 节点身份（state-model §2.3）：领域身份 = 平台节点 ID（n_<ULID>，用户
 // 裁决 D-STM-8），首次启动生成并持久于 meta（二次启动复用同一 ID），
-// 随后锚写到 Swarm node label edgefleet.node-id；Swarm node ID 仅存
+// 随后锚写到 Swarm node label fleetly.node-id；Swarm node ID 仅存
 // runtime_node_refs 适配器映射。
 //
 // 锚写走写前直读纪律：ResolveObjectVersion 取节点版本令牌 → 以该令牌

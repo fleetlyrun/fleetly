@@ -13,7 +13,7 @@ import (
 
 // Store 是控制面状态层门面：SQLite 权威态存储 + 底座观测缓存写入 +
 // 写前直读端口消费。零框架依赖——lynx.Service/Checker 装配壳在
-// cmd/edgefleetd（CheckHealth 为结构性实现，进 healthz readiness）。
+// cmd/fleetlyd（CheckHealth 为结构性实现，进 healthz readiness）。
 type Store struct {
 	db   *sql.DB
 	path string
@@ -39,7 +39,7 @@ func dsn(path string) string {
 }
 
 // Open 打开（必要时创建）状态库并应用全部迁移：启动即建库迁移、失败
-// fail-fast 拒绝启动。path 为数据库文件路径（默认 ./edgefleet.db，由
+// fail-fast 拒绝启动。path 为数据库文件路径（默认 ./fleetly.db，由
 // config state.db_path 提供）。
 func Open(ctx context.Context, path string) (*Store, error) {
 	if strings.TrimSpace(path) == "" {

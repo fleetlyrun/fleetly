@@ -1,7 +1,7 @@
 :: C-PREP: replace the single C1 dind with the two-node swarm used by
 :: C2 (reschedule), C3 (V6a) and C4 (V6b): mgr (10.10.0.10) + w1 (10.10.0.11)
 :: on host bridge spike-c-br, worker joined via token, platform identity
-:: labels edgefleet.node-id set on both nodes.
+:: labels fleetly.node-id set on both nodes.
 :: Rerun: (repo root)  spike\c\scripts\c2-prep.bat
 call spike\c\scripts\env-common.bat
 cd /d %SPIKE_C_DIR%
@@ -46,9 +46,9 @@ docker exec %SPIKE_MGR% docker swarm init --advertise-addr eth0 || exit /b 1
 for /f %%t in ('docker exec %SPIKE_MGR% docker swarm join-token -q worker') do set "JTOK=%%t"
 docker exec %SPIKE_W1% docker swarm join %SPIKE_IP_MGR%:2377 --token %JTOK% || exit /b 1
 
-echo ===== PREP.7 platform identity labels (edgefleet.node-id) =====
-docker exec %SPIKE_MGR% docker node update --label-add edgefleet.node-id=mgr mgr || exit /b 1
-docker exec %SPIKE_MGR% docker node update --label-add edgefleet.node-id=w1 w1 || exit /b 1
+echo ===== PREP.7 platform identity labels (fleetly.node-id) =====
+docker exec %SPIKE_MGR% docker node update --label-add fleetly.node-id=mgr mgr || exit /b 1
+docker exec %SPIKE_MGR% docker node update --label-add fleetly.node-id=w1 w1 || exit /b 1
 
 echo ===== PREP.8 sanity =====
 docker exec %SPIKE_MGR% docker node ls || exit /b 1

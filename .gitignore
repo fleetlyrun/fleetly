@@ -18,8 +18,12 @@
 # sdk/go）；勿在此忽略。
 
 # Built binaries at repo root
-/edgefleetd
-/edgefleet
+/fleetlyd
+/fleetly.db
+/fleetly.db-shm
+/fleetly.db-wal
+/fleetly.key
+/fleetly
 
 # Local config product (config-example.yaml is the committed template)
 /config.yaml

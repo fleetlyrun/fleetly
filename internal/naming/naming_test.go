@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // TestNamesMatchDesignDocs 验收 5：命名函数输出与设计文档字符串逐一相等
@@ -23,28 +23,28 @@ func TestNamesMatchDesignDocs(t *testing.T) {
 		want string
 	}{
 		{
-			// architecture §2.4：Swarm 服务名 `edgefleet-<app>-<service>`。
+			// architecture §2.4：Swarm 服务名 `fleetly-<app>-<service>`。
 			name: "service name",
 			got:  must(t, func() (string, error) { return ServiceName("my-api", "web") }),
-			want: "edgefleet-my-api-web",
+			want: "fleetly-my-api-web",
 		},
 		{
-			// architecture §2.4：secret 名 `edgefleet-<app>-<name>-<hash8>`。
+			// architecture §2.4：secret 名 `fleetly-<app>-<name>-<hash8>`。
 			name: "secret name",
 			got:  must(t, func() (string, error) { return SecretName("my-api", "database_url", wantHash8) }),
-			want: "edgefleet-my-api-database_url-" + wantHash8,
+			want: "fleetly-my-api-database_url-" + wantHash8,
 		},
 		{
-			// state-model §2.4：卷无 label，命名约定 `edgefleet-<app>-<key>-<appid8>`。
+			// state-model §2.4：卷无 label，命名约定 `fleetly-<app>-<key>-<appid8>`。
 			name: "volume name",
 			got:  must(t, func() (string, error) { return VolumeName("my-api", "data", "01JABCDEFGH") }),
-			want: "edgefleet-my-api-data-01JABCDE",
+			want: "fleetly-my-api-data-01JABCDE",
 		},
 		{
 			// 每 app 专属 overlay（保守补全名，见 NetworkName 注释）。
 			name: "network name",
 			got:  must(t, func() (string, error) { return NetworkName("my-api") }),
-			want: "edgefleet-my-api-net",
+			want: "fleetly-my-api-net",
 		},
 		{
 			// 服务别名 = compose 服务名（app 内短名互访）。
@@ -75,7 +75,7 @@ func TestHash8RotationIsNewName(t *testing.T) {
 	if old == rotated {
 		t.Fatalf("rotated secret name unchanged: %s", old)
 	}
-	if !strings.HasPrefix(old, "edgefleet-app-k-") || !strings.HasPrefix(rotated, "edgefleet-app-k-") {
+	if !strings.HasPrefix(old, "fleetly-app-k-") || !strings.HasPrefix(rotated, "fleetly-app-k-") {
 		t.Fatalf("name prefix broken: %s / %s", old, rotated)
 	}
 }
@@ -108,7 +108,7 @@ func TestServiceLabelsMinimalSet(t *testing.T) {
 		t.Fatalf("sorted labels not ordered: %v", sorted)
 	}
 
-	// 容器 label 仅 edgefleet.app。
+	// 容器 label 仅 fleetly.app。
 	cl, err := ContainerLabels("my-api")
 	if err != nil || len(cl) != 1 || cl[state.LabelApp] != "my-api" {
 		t.Fatalf("container labels = %v err=%v", cl, err)

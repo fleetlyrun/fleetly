@@ -1,4 +1,4 @@
-// Package naming 是 edgefleet 平台对象命名与最小 label 集的唯一定义点
+// Package naming 是 fleetly 平台对象命名与最小 label 集的唯一定义点
 // （state-model §2.4 对象标记契约 + architecture §2.4 服务命名与网络行）。
 //
 // 纪律：
@@ -18,18 +18,18 @@ import (
 
 // 平台命名公式（文档原文逐字；state-model §2.4 / architecture §2.4）：
 //
-//	Swarm 服务名   edgefleet-<app>-<service>
-//	Secret 名      edgefleet-<app>-<name>-<hash8>   （hash8 = 内容 sha256 前 8）
-//	卷名           edgefleet-<app>-<key>-<appid8>   （appid8 = app ID 前 8）
-//	网络名         edgefleet-<app>-net              （每 app 专属 overlay；
+//	Swarm 服务名   fleetly-<app>-<service>
+//	Secret 名      fleetly-<app>-<name>-<hash8>   （hash8 = 内容 sha256 前 8）
+//	卷名           fleetly-<app>-<key>-<appid8>   （appid8 = app ID 前 8）
+//	网络名         fleetly-<app>-net              （每 app 专属 overlay；
 //	                                                 文档未钉字符串，保守补全，
 //	                                                 见包内注释与遗留记录）
 const (
 	// namePrefix 是全部平台对象名的公共前缀（防集群全局命名空间撞名）。
-	namePrefix = "edgefleet-"
+	namePrefix = "fleetly-"
 )
 
-// ServiceName 返回 Swarm 服务名 `edgefleet-<app>-<service>`：两个 app 各有
+// ServiceName 返回 Swarm 服务名 `fleetly-<app>-<service>`：两个 app 各有
 // 同名服务（web/db）不冲突；服务别名 = compose 服务名（app 内短名互访与
 // compose 语义一致，见 NetworkAlias）。
 func ServiceName(app, service string) (string, error) {
@@ -42,7 +42,7 @@ func ServiceName(app, service string) (string, error) {
 	return joinName(app, service), nil
 }
 
-// SecretName 返回 Swarm secret 名 `edgefleet-<app>-<name>-<hash8>`。hash8
+// SecretName 返回 Swarm secret 名 `fleetly-<app>-<name>-<hash8>`。hash8
 // 由调用方经 Hash8(内容) 计算——**值轮换即换名换引用**（architecture §2.4
 // 密钥行；desired-hash 以 secret 引用参与，轮换天然触发重部署）。
 func SecretName(app, name, hash8 string) (string, error) {
@@ -58,7 +58,7 @@ func SecretName(app, name, hash8 string) (string, error) {
 	return joinName(app, name, hash8), nil
 }
 
-// VolumeName 返回平台卷名 `edgefleet-<app>-<key>-<appid8>`：卷无 label，
+// VolumeName 返回平台卷名 `fleetly-<app>-<key>-<appid8>`：卷无 label，
 // 用命名约定承载归属（state-model §2.4；VolumeOptions.Labels 生效前的
 // 收敛路径，stateful-placement §6）。appid8 = app 平台 ID 前 8 位。
 func VolumeName(app, key, appID string) (string, error) {
@@ -75,7 +75,7 @@ func VolumeName(app, key, appID string) (string, error) {
 	return joinName(app, key, id8), nil
 }
 
-// NetworkName 返回 app 专属 overlay 网络名（保守补全 `edgefleet-<app>-net`；
+// NetworkName 返回 app 专属 overlay 网络名（保守补全 `fleetly-<app>-net`；
 // 文档钉死的是「每 app 专属 overlay 网络 + 服务别名 = compose 服务名」语义，
 // 未钉网络名字符串——命名与前缀纪律保持一致，跨 app 网络隔离由专属网络
 // 承载，architecture §2.4 服务命名与网络行）。

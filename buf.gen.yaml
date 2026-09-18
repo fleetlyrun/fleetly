@@ -15,11 +15,11 @@ plugins:
     opt:
       - paths=source_relative
 
-  # 字段名使用 proto 声明（snake_case），与运行时 marshaler（cmd/edgefleetd
+  # 字段名使用 proto 声明（snake_case），与运行时 marshaler（cmd/fleetlyd
   # gateway.go 的 UseProtoNames:true）保持一致。注意：该 remote 插件默认即
   # json_names_for_fields=true，必须显式置 false 才会输出 snake_case。
   # disable_default_errors 关闭生成器自带的 rpcStatus 默认错误注入；default
-  # 错误响应（edgefleet.shared.v1.ErrorResponse）由 proto 文件级
+  # 错误响应（fleetly.shared.v1.ErrorResponse）由 proto 文件级
   # openapiv2_swagger 的 responses.default 声明（阶段 3 随自定义
   # HTTPErrorHandler 全链完善）。
   - remote: buf.build/grpc-ecosystem/openapiv2:v2.27.3

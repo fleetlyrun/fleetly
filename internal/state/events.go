@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
-	"github.com/edgesets/edgefleet/internal/eventcode"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/eventcode"
 )
 
 // 平台事件自存（state-model §2.9）：seq 单调（SSE 游标，Outbox 模式与

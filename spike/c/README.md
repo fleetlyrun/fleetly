@@ -2,7 +2,7 @@
 
 状态：**已完成**（2026-09-17 单段执行；全部 7 组必验实验在多节点 `docker:29.8.1-dind` 拓扑中完成，证据原文见 `spike/c/artifacts/logs/`）。
 
-环境基线：本机 Docker Desktop 29.7.2（宿主）+ 特权 `docker:29.8.1-dind`（inner engine **29.8.1**）。多节点拓扑 = 同一宿主 bridge 网络 `spike-c-br`（10.10.0.0/24，静态 IP：mgr=.10 / w1=.11 / w2=.12 / v5m 与恢复后 v5m2=.20 / v5w=.21）上的多个 dind 容器，`swarm init --advertise-addr eth0` + join token 组网。所有毫秒时间戳出自同一 WSL2 内核时钟（宿主 `docker inspect .State.FinishedAt/StartedAt` 与 dind 内 `/opt/probe ts` 可直接对齐）。探针：独立 Go module `spike/c`（stdlib-only 单二进制 `cmd/probe`，模式 `ts`/`parse`/`stamp write|read`，交叉编译 linux/amd64 静态链接）。fixture = `alpine:3.20` + bind 挂载 `/opt/probe` + 命名卷；**service 命令不做自动写戳**——所有卷写入/读取由实验脚本显式 exec 执行，防止重调度任务覆盖证据。节点身份 label 按设计文档预置：`edgefleet.node-id = mgr|w1|w2|v5m|v5w`。
+环境基线：本机 Docker Desktop 29.7.2（宿主）+ 特权 `docker:29.8.1-dind`（inner engine **29.8.1**）。多节点拓扑 = 同一宿主 bridge 网络 `spike-c-br`（10.10.0.0/24，静态 IP：mgr=.10 / w1=.11 / w2=.12 / v5m 与恢复后 v5m2=.20 / v5w=.21）上的多个 dind 容器，`swarm init --advertise-addr eth0` + join token 组网。所有毫秒时间戳出自同一 WSL2 内核时钟（宿主 `docker inspect .State.FinishedAt/StartedAt` 与 dind 内 `/opt/probe ts` 可直接对齐）。探针：独立 Go module `spike/c`（stdlib-only 单二进制 `cmd/probe`，模式 `ts`/`parse`/`stamp write|read`，交叉编译 linux/amd64 静态链接）。fixture = `alpine:3.20` + bind 挂载 `/opt/probe` + 命名卷；**service 命令不做自动写戳**——所有卷写入/读取由实验脚本显式 exec 执行，防止重调度任务覆盖证据。节点身份 label 按设计文档预置：`fleetly.node-id = mgr|w1|w2|v5m|v5w`。
 
 设计依据：`docs/design/2026-09-17-architecture.md` §4.1 Spike C 行（验收真源）、§2.6 多节点模型与 HA 边界；`docs/design/2026-09-17-stateful-placement.md` §1/§2（钉住、漂移矩阵、错误码）；`docs/research/2026-09-17-swarm-substrate-assessment.md` §3/§4（init 副作用、心跳判定、raft 恢复、V5/V5b/V6a/V6b 定义）。
 
@@ -15,7 +15,7 @@
 | C1 | `swarm init` 对既有普通容器/卷透明，副作用可枚举 | 单 dind：先 `docker run` 带卷容器 → init 前后全量快照（ps/卷/网络/监听/iptables/links） | ✅ 容器仍 Up、卷数据可读、不挂 swarm label；副作用 = Swarm:active + 2 网络 + 3 监听端口 + iptables 49→56 行 + links 4→6 | 用户视角透明成立；副作用清单完整 | 安装器隐式 `swarm init` 可行，需钉 `--advertise-addr`；§3 init 副作用清单逐项实测锚定 | 本段 |
 | C2 | 节点 DOWN 判定 15–16.5s；stateless 自动重调度；恢复后不回迁 | 双节点 replicas=2 → 宿主 `docker kill` worker dind → 1s 分辨率时间线 | ✅ **Down 判定实测 ~13.5s（窗口 12.4–13.5s）**，低于假设下限；重调度完成（2/2 Running）≤18.7s；恢复后**不回迁**；重调度瞬时 replicas 过冲 3/2 | 心跳判定与自动重调度成立且比假设更快 | §2.6「15s 量级判定」下修为 13s 量级（下界）；重调度窗口内不可用时长有实测锚点 | 本段 |
 | C3a | 有卷服务无约束 → 节点死 → 迁移得**空卷**（数据丢失） | drain-mgr 控制初始落点（服务零约束）→ 写戳 → kill → 在新节点读卷 | ✅ **空卷事故复现**：新节点 c3vol 全新创建（CreatedAt 不同）、读戳 MISS rc=3；原节点卷原戳完好（kill 前后对照齐） | 「有卷不迁移」不成立再次实测锚定；数据不跟随 | 放置专项 §1「必须主动钉住」+ 前哨 409 设计的实测地基 | 本段 |
-| C3b | 加 `node.labels.edgefleet.node-id==` 钉住 → 节点死任务停 **PENDING**；原容器重启后任务回绑、数据在 | 同上 + 约束；kill 后 `docker start` 同一 dind（预清理 pidfile） | ✅ PENDING `no suitable node`、NODE 列为空、无任何新任务；重启后 agent 自动重连（证书即身份），任务回 w1（restart+0.7s 观测到 Running），卷 CreatedAt 不变、原戳原值读回 | 硬钉住=唯一安全语义成立；worker 证书持久 ⇒ 引擎重启自动归队 | 放置专项绑定语义全链路实测；§2.2 节点身份=证书内嵌 ID 得证 | 本段 |
+| C3b | 加 `node.labels.fleetly.node-id==` 钉住 → 节点死任务停 **PENDING**；原容器重启后任务回绑、数据在 | 同上 + 约束；kill 后 `docker start` 同一 dind（预清理 pidfile） | ✅ PENDING `no suitable node`、NODE 列为空、无任何新任务；重启后 agent 自动重连（证书即身份），任务回 w1（restart+0.7s 观测到 Running），卷 CreatedAt 不变、原戳原值读回 | 硬钉住=唯一安全语义成立；worker 证书持久 ⇒ 引擎重启自动归队 | 放置专项绑定语义全链路实测；§2.2 节点身份=证书内嵌 ID 得证 | 本段 |
 | C4a | drain 绑定节点 → 应用 blocked（PENDING）；active 回岗 → 自动回绑数据在 | pinned 服务 → `node update --availability drain/active` → 秒级时间线 | ✅ drain→Pending ≤0.9s（控制面动作，无心跳等待）；drain 期间卷数据可读（helper）；active→回绑 **1.1s**；数据完整 | 维护窗口语义实测：drain 期间停机、回岗零人工 | §2.6 drain 行为矩阵逐格锚定；「drain 期间该应用停机」量级=秒级 | 本段 |
 | C4b | `node rm` 后绑定任务**永久 PENDING**、无自动迁移；人工重绑=改约束，**数据不跟随** | kill→Down→`node rm`→60s×3 快照 → 新 worker join → 约束换绑 | ✅ 三快照均 Pending；旧任务转 **Orphaned**、节点列显示裸 ID；换绑后任务落 w2、读戳 **MISS**、w2 卷全新；原戳经 `docker cp` 从死节点抢救成功 | rm 后无自愈，重绑必配 data-restored 确认 | 放置专项 §2.6/§2.7/§2.8 全部锚定（Orphaned 立即出现，非 24h）；`E_PLACEMENT_NODE_GONE`→rebind 流程有可执行步骤 | 本段 |
 | C5 | 单 manager 死亡 → 冷备回填 + `--force-new-cluster` 恢复；worker 侧应用不中断 | 停 manager → 停止态 `docker cp` 冷备（sha256 校验）→ rm → 同 IP 新 dind 回填 → 重启 → force-new-cluster | ✅ 冷备字节级有效；恢复后 **daemon 自动 active 且继承死亡 manager NodeID**；force-new-cluster 仍 rc=0 并轮换 join token；worker 任务 **task ID 跨死亡不变**、容器 Up 计时单调（零中断）；manager 上的服务在 v5m2 真实重建 | 「2 台=1 manager+1 worker+冷备」HA 口径成立；单 manager 场景比文档流程更顺（自举，无需 force 也可） | §2.6 管理面 SPOF 边界 + 状态模型专项 L1/L2 恢复阶梯的实测锚点；冷备操作规程可写进 runbook | 本段 |
@@ -148,7 +148,7 @@ C3A.7  mgr volume ls: local c3vol / w1 volume ls: local c3vol  ← 删服务不�
 
 ### 3.2 C3b 硬钉住 = PENDING 不迁移 + 重启回绑数据在
 
-**方法**：`c3b-run.bat`。同构造但加 `--constraint node.labels.edgefleet.node-id==w1`；kill 后等待断言，再 `docker start` 被 kill 的同一 dind 容器（保留内层 `/var/lib/docker/swarm` 证书 = swarm 节点身份），等任务回绑后读卷。
+**方法**：`c3b-run.bat`。同构造但加 `--constraint node.labels.fleetly.node-id==w1`；kill 后等待断言，再 `docker start` 被 kill 的同一 dind 容器（保留内层 `/var/lib/docker/swarm` 证书 = swarm 节点身份），等任务回绑后读卷。
 
 **原始输出**（`artifacts/logs/c3b-run.log` + watcher 分析）：
 
@@ -171,7 +171,7 @@ C3B.8  c3bvol-on-w1 CreatedAt=2026-09-17T20:16:39Z (must equal pre-kill) ✓
 
 **结论**：✅ 成立。约束钉住后节点死亡：任务停 PENDING（NODE 列为空 + `no suitable node`），**不产生任何新任务**；同一 dind 容器重启后 worker 凭持久化证书**自动归队**（无需重新 join），任务自动回到 w1，卷与数据原样。对照 C3a：「有卷必须钉住」的两组语义（不钉=空卷事故 / 钉=可用性换数据安全）同时有实测锚点。
 
-**设计影响**：放置专项 §1「必须主动钉住」、§2.1 执行层（适配器编译为 `edgefleet.node-id` 约束）、§2.6「绑定节点 DOWN→PENDING；恢复→自动回绑」全部通过。§2.2「Swarm node ID 由证书承载、引擎重启身份不变」实测成立——平台 `runtime_node_refs` 映射可安全依赖它。
+**设计影响**：放置专项 §1「必须主动钉住」、§2.1 执行层（适配器编译为 `fleetly.node-id` 约束）、§2.6「绑定节点 DOWN→PENDING；恢复→自动回绑」全部通过。§2.2「Swarm node ID 由证书承载、引擎重启身份不变」实测成立——平台 `runtime_node_refs` 映射可安全依赖它。
 
 **重跑**：`c3a-run.bat`、`c3b-run.bat`（各 ~3–4 分钟；依赖 c2-prep 的集群）。
 
@@ -205,7 +205,7 @@ milestone active-ms: 1789676650397   delta-active-to-task-back-s: 1.1
 
 ### 4.2 C4b node rm → 永久 PENDING；人工重绑路径（数据不跟随）
 
-**方法**：`c4b-run.bat`。pinned 卷服务写戳 → kill w1 → Down 后 `docker node rm w1` → 60s 内 3 次 `service ps` 快照断言无自愈 → 全新 dind w2 join + 打 `edgefleet.node-id=w2` → 人工重绑 = **换约束**（`--constraint-rm …==w1 --constraint-add …==w2`）→ 读 w2 卷 → `docker cp` 从死节点抢救原戳。
+**方法**：`c4b-run.bat`。pinned 卷服务写戳 → kill w1 → Down 后 `docker node rm w1` → 60s 内 3 次 `service ps` 快照断言无自愈 → 全新 dind w2 join + 打 `fleetly.node-id=w2` → 人工重绑 = **换约束**（`--constraint-rm …==w1 --constraint-add …==w2`）→ 读 w2 卷 → `docker cp` 从死节点抢救原戳。
 
 **原始输出**（`artifacts/logs/c4b-run.log` + `c4b-rescued-stamp.json`）：
 
@@ -220,8 +220,8 @@ C4B.4  三快照（+20s/+40s/+60s）完全一致：
        3cr95stywnp7  \_ c4b-app.1  7bug0ewlfh0yq4yfx6mmfd1qq  Shutdown  **Orphaned** …
        ← 节点被 rm 后：旧任务立即转 Orphaned（非 24h），节点列显示裸节点 ID；无自动迁移
 C4B.5  w2 join 成功 + label；node ls 出现 w2 Ready
-C4B.6  service update --constraint-rm node.labels.edgefleet.node-id==w1
-                   --constraint-add node.labels.edgefleet.node-id==w2 c4b-app
+C4B.6  service update --constraint-rm node.labels.fleetly.node-id==w1
+                   --constraint-add node.labels.fleetly.node-id==w2 c4b-app
        WAITSVC-OK c4b-app running=1 want=1 after=0s（任务落 w2）
 C4B.7  STAMP-MISS  stamp-rc=3                                 ← w2 得到空卷
        c4bvol-on-w2 CreatedAt=2026-09-17T20:27:32Z（全新卷，非 w1 那份）
@@ -367,7 +367,7 @@ e90a2804461c c5-app-worker.1.ko7pqx09g0zz… Up 5 minutes
 :: C1 swarm init 透明性（自建 m0，~2 分钟；含 probe 交叉编译 + spike-c-br 网络）
 spike\c\scripts\c0-up.bat
 
-:: 双节点集群（mgr+w1 组网 + edgefleet.node-id label，~2 分钟）
+:: 双节点集群（mgr+w1 组网 + fleetly.node-id label，~2 分钟）
 spike\c\scripts\c2-prep.bat
 
 :: C2 节点 DOWN 重调度时间线（~4 分钟）

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/edgesets/edgefleet/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // ServiceLabels 构造 Swarm 服务的平台 label 最小集（state-model §2.4 对象
@@ -34,7 +34,7 @@ func ServiceLabels(app, service, deploymentID string) (map[string]string, error)
 }
 
 // ContainerLabels 构造容器归属 label（state-model §2.4 表 Container 行：
-// 仅 edgefleet.app——人工排障识别归属，不参与决策；执行中继的容器准入
+// 仅 fleetly.app——人工排障识别归属，不参与决策；执行中继的容器准入
 // 判定同用此 label，architecture §2.6 D19）。
 func ContainerLabels(app string) (map[string]string, error) {
 	if err := validateComponent("app", app); err != nil {

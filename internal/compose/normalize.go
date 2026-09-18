@@ -8,12 +8,12 @@ import (
 
 	"github.com/compose-spec/compose-go/v2/types"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 )
 
 // normalize 把 compose-go typed 工程转换为归一化 Spec，并执行需要 typed
 // 信息的第二层校验：
-//   - 平台 label 契约（domains/placement/cron/edgefleet.* 保留前缀）；
+//   - 平台 label 契约（domains/placement/cron/fleetly.* 保留前缀）；
 //   - 危险挂载语义（宿主 bind、docker.sock——dict 层白名单之外的补刀）；
 //   - 有卷服务 replicas 校验（本地卷不能多副本共享，stateful-placement
 //     §2.3）；
@@ -39,15 +39,15 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 	for _, name := range names {
 		svc := project.Services[name]
 		prefix := "services." + name
-		// edgefleet.* 保留前缀：约定键之外的占用 → E_LABEL_RESERVED（422）。
+		// fleetly.* 保留前缀：约定键之外的占用 → E_LABEL_RESERVED（422）。
 		for _, k := range sortedStringKeys(svc.Labels) {
 			if !strings.HasPrefix(k, LabelNamespace) {
 				continue
 			}
-			if !knownEdgefleetLabels[k] {
+			if !knownFleetlyLabels[k] {
 				return nil, nil, apperr.New("E_LABEL_RESERVED",
 					"服务 %q 占用平台保留 label %q（保留命名空间 %s*，约定键：%s 等）",
-					name, k, LabelNamespace, strings.Join(sortedStringKeys(knownEdgefleetLabels), ", ")).
+					name, k, LabelNamespace, strings.Join(sortedStringKeys(knownFleetlyLabels), ", ")).
 					WithContext("path", prefix+".labels."+k)
 			}
 		}

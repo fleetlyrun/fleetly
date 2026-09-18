@@ -1,6 +1,6 @@
-# edgefleet 文档索引
+# fleetly 文档索引
 
-> 产品曾用名 **edgesets**，2026-09-17 更名为 **edgefleet**（守护进程 `edgefleetd`、CLI `edgefleet`、label 命名空间 `edgefleet.*`；全部文档已统一替换）。
+> 更名链：**edgesets** →（2026-09-17）**edgefleet** →（2026-09-18）**fleetly**；守护进程 `fleetlyd`、CLI `fleetly`、label 命名空间 `fleetly.*`、模块 `github.com/fleetlyrun/fleetly`。当前名下的文档与代码已统一替换，历史名仅存于本注记与 git 历史。
 
 ## 设计方案（docs/design/）
 

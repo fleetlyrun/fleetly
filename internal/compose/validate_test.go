@@ -184,8 +184,8 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.domains: "*.example.com"
-`, "E_DOMAIN_UNSUPPORTED", "services.web.labels.edgefleet.domains", "pos_domains"},
+      fleetly.domains: "*.example.com"
+`, "E_DOMAIN_UNSUPPORTED", "services.web.labels.fleetly.domains", "pos_domains"},
 
 		{"reject_domain_per_service_limit", `
 name: my-api
@@ -193,8 +193,8 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.domains: "a.com, b.com, c.com, d.com, e.com, f.com"
-`, "E_DOMAIN_UNSUPPORTED", "services.web.labels.edgefleet.domains", "pos_domains"},
+      fleetly.domains: "a.com, b.com, c.com, d.com, e.com, f.com"
+`, "E_DOMAIN_UNSUPPORTED", "services.web.labels.fleetly.domains", "pos_domains"},
 
 		{"reject_domain_conflict_across_services", `
 name: my-api
@@ -202,11 +202,11 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.domains: "api.example.com"
+      fleetly.domains: "api.example.com"
   admin:
     image: nginx
     labels:
-      edgefleet.domains: "API.Example.com"
+      fleetly.domains: "API.Example.com"
 `, "E_DOMAIN_CONFLICT", "", "pos_domains_two_services"},
 
 		{"reject_domain_per_app_limit", `
@@ -215,15 +215,15 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.domains: "a.com, b.com, c.com, d.com"
+      fleetly.domains: "a.com, b.com, c.com, d.com"
   extra:
     image: nginx
     labels:
-      edgefleet.domains: "e.com, f.com, g.com, h.com"
+      fleetly.domains: "e.com, f.com, g.com, h.com"
   third:
     image: nginx
     labels:
-      edgefleet.domains: "i.com, j.com, k.com, l.com"
+      fleetly.domains: "i.com, j.com, k.com, l.com"
 `, "E_DOMAIN_UNSUPPORTED", "", "pos_domains_two_services"},
 
 		// ── 保留 label 前缀（E_LABEL_RESERVED）──
@@ -233,8 +233,8 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.custom: mine
-`, "E_LABEL_RESERVED", "services.web.labels.edgefleet.custom", "pos_domains"},
+      fleetly.custom: mine
+`, "E_LABEL_RESERVED", "services.web.labels.fleetly.custom", "pos_domains"},
 
 		// ── 放置契约（E_PLACEMENT_NODE_INVALID / E_PLACEMENT_LABEL_CONFLICT）──
 		{"reject_placement_node_invalid_ulid", `
@@ -243,8 +243,8 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.placement.node: "n_not-a-ulid"
-`, "E_PLACEMENT_NODE_INVALID", "services.web.labels.edgefleet.placement.node", "pos_placement"},
+      fleetly.placement.node: "n_not-a-ulid"
+`, "E_PLACEMENT_NODE_INVALID", "services.web.labels.fleetly.placement.node", "pos_placement"},
 
 		{"reject_placement_label_conflict", `
 name: my-api
@@ -252,11 +252,11 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.placement.node: srv-01
+      fleetly.placement.node: srv-01
   worker:
     image: nginx
     labels:
-      edgefleet.placement.node: srv-02
+      fleetly.placement.node: srv-02
 `, "E_PLACEMENT_LABEL_CONFLICT", "", "pos_placement"},
 
 		// ── 白名单缺省拒绝（E_COMPOSE_UNSUPPORTED）──
@@ -544,7 +544,7 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.domains: "Bücher.de, app.example.com"
+      fleetly.domains: "Bücher.de, app.example.com"
 `,
 	"pos_domains_two_services": `
 name: my-api
@@ -552,11 +552,11 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.domains: "api.example.com, web.example.com"
+      fleetly.domains: "api.example.com, web.example.com"
   admin:
     image: nginx
     labels:
-      edgefleet.domains: "admin.example.com"
+      fleetly.domains: "admin.example.com"
 `,
 	"pos_placement": `
 name: my-api
@@ -564,11 +564,11 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.placement.node: srv-01
+      fleetly.placement.node: srv-01
   worker:
     image: nginx
     labels:
-      edgefleet.placement.node: srv-01
+      fleetly.placement.node: srv-01
 `,
 	"pos_placement_constraint": `
 name: my-api
@@ -578,8 +578,8 @@ services:
     deploy:
       placement:
         constraints:
-          - node.labels.edgefleet.rack == r1
-          - node.labels.edgefleet.zone != z9
+          - node.labels.fleetly.rack == r1
+          - node.labels.fleetly.zone != z9
 `,
 	"pos_global": `
 name: my-api

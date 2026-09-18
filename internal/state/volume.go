@@ -12,7 +12,7 @@ import (
 
 // volumes 表读写（stateful-placement §2.4 卷注册表）：卷数据生命周期归
 // 平台账——数据诞生点钉住所在节点（平台节点 ID 为锚）、命名约定名
-// `edgefleet-<app>-<key>-<appid8>` 防代际静默复用（无 label 用命名约定，
+// `fleetly-<app>-<key>-<appid8>` 防代际静默复用（无 label 用命名约定，
 // state-model §2.4）。status: active（在册）/ orphaned（应用删除默认保留、
 // 可发现）/ discarded（显式丢弃）。删除应用默认保留卷、删除仅显式
 // --delete-volumes（v0.2）或孤儿清理——平台永不自动删卷数据。

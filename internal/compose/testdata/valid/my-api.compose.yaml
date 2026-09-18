@@ -6,7 +6,7 @@ services:
     build: { context: . }              # 无 dockerfile → Railpack 自动
     expose: ["8080"]                   # 路由目标端口（取首个）
     labels:
-      edgefleet.domains: "api.example.com, www.api.example.com"   # 域名列表（TLS 自动）
+      fleetly.domains: "api.example.com, www.api.example.com"   # 域名列表（TLS 自动）
     healthcheck:
       test: ["CMD", "/app/healthcheck"]   # 未写子字段取平台默认（5s/3s/3/10s）
       start_period: 10s

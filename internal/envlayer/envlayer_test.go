@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/edgesets/edgefleet/internal/compose"
+	"github.com/fleetlyrun/fleetly/internal/compose"
 )
 
 // hashOf 是测试侧 sha256 hex 期望值计算。

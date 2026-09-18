@@ -4,7 +4,7 @@
 //	env_file < environment（compose） < 平台 env_vars
 //
 // 同键平台层覆盖；合并结果（key + sha256 + 来源）进 desired-hash 与
-// revision 快照；`edgefleet env set` 创建 pending、随下次部署生效——合并
+// revision 快照；`fleetly env set` 创建 pending、随下次部署生效——合并
 // 消费方（发布引擎 T2.10）只应传入 effective 平台层（state.EffectiveAppEnv），
 // pending 不参与当前合并，生效语义由此结构性成立。
 //
@@ -21,7 +21,7 @@ import (
 	"encoding/hex"
 	"sort"
 
-	"github.com/edgesets/edgefleet/internal/compose"
+	"github.com/fleetlyrun/fleetly/internal/compose"
 )
 
 // Source 是合并结果条目的来源标注（词表：envfile|compose|platform|system）。

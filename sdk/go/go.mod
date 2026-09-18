@@ -1,11 +1,11 @@
-module github.com/edgesets/edgefleet/sdk/go
+module github.com/fleetlyrun/fleetly/sdk/go
 
 go 1.26.6
 
-replace github.com/edgesets/edgefleet/genproto => ../../genproto
+replace github.com/fleetlyrun/fleetly/genproto => ../../genproto
 
 require (
-	github.com/edgesets/edgefleet/genproto v0.0.0-00010101000000-000000000000
+	github.com/fleetlyrun/fleetly/genproto v0.0.0-00010101000000-000000000000
 	google.golang.org/grpc v1.83.2
 )
 

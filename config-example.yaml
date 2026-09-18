@@ -1,5 +1,5 @@
-# edgefleetd 配置示例。复制为 config.yaml 后按需修改；
-# 启动：edgefleetd -c config.yaml（也可用 --addr 覆盖监听地址，显式
+# fleetlyd 配置示例。复制为 config.yaml 后按需修改；
+# 启动：fleetlyd -c config.yaml（也可用 --addr 覆盖监听地址，显式
 # flag 优先于本文件）。
 
 # HTTP 面监听地址（REST/gateway + 框架 healthz 端点）；默认只绑回环。
@@ -12,7 +12,7 @@ grpc:
 # 状态层（SQLite 权威态 + 底座观测缓存）。
 state:
   # 状态库文件路径（启动即建库并应用迁移）。
-  db_path: "./edgefleet.db"
+  db_path: "./fleetly.db"
   # 事件保留天数（默认 30；非正值回落默认，不允许关闭清理）。
   event_retention_days: 30
   # 审计保留天数（默认 365）。
@@ -24,9 +24,9 @@ state:
 # 平台密钥（envelope 加密主密钥，architecture §2.3）：主密钥文件与备份数据
 # 分离保存；权限过宽（POSIX group/other 可读）拒绝启动。
 secrets:
-  # 主密钥文件路径；留空 = ./edgefleet.key。首次启动不存在时自动生成并
+  # 主密钥文件路径；留空 = ./fleetly.key。首次启动不存在时自动生成并
   # 日志提示妥善保存（丢失后平台 env 密文不可解）。
-  key_path: "./edgefleet.key"
+  key_path: "./fleetly.key"
 
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/edgesets/edgefleet/internal/errcode"
+	"github.com/fleetlyrun/fleetly/internal/errcode"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

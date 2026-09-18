@@ -11,8 +11,8 @@ services:
       PLATFORM_OVERRIDDEN: from_environment
     expose: ["8080", "9090"]
     labels:
-      edgefleet.domains: "app.example.com, BÜCHER.de"
-      edgefleet.placement.node: n_01ARZ3NDEKTSV4RRFFQ69G5FAV
+      fleetly.domains: "app.example.com, BÜCHER.de"
+      fleetly.placement.node: n_01ARZ3NDEKTSV4RRFFQ69G5FAV
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
       interval: 30s
@@ -38,7 +38,7 @@ services:
         limits: { cpus: "1.5", memory: 512M }
       placement:
         constraints:
-          - node.labels.edgefleet.rack == r1
+          - node.labels.fleetly.rack == r1
     stop_signal: SIGINT
     stop_grace_period: 45s
   worker:

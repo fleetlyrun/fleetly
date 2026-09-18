@@ -219,7 +219,7 @@ services:
   web:
     image: nginx
     labels:
-      edgefleet.placement.node: srv-01
+      fleetly.placement.node: srv-01
 `
 	plan := planOf(t, "", pinned)
 	found := false
@@ -239,7 +239,7 @@ services:
     image: nginx
     volumes: [data:/d]
     labels:
-      edgefleet.placement.node: srv-01
+      fleetly.placement.node: srv-01
 volumes:
   data:
 `

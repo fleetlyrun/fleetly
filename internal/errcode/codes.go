@@ -79,7 +79,7 @@ var builtins = []Code{
 	// ── 有状态放置（stateful-placement §2.8/§2.5/§2.6）──
 	{ID: "E_PLACEMENT_NODE_INVALID", HTTP: 422,
 		Summary:    "放置 label 的节点名/ID 解析失败（422 + 候选清单）",
-		Suggestion: "检查 edgefleet.placement.node 取值（可写节点名或平台节点 ID）；候选节点清单见 context。"},
+		Suggestion: "检查 fleetly.placement.node 取值（可写节点名或平台节点 ID）；候选节点清单见 context。"},
 	{ID: "E_PLACEMENT_NODE_NOT_FOUND", HTTP: 422,
 		Summary:    "放置 label 指向的节点不存在或已移除",
 		Suggestion: "从节点列表中选择有效节点后重试。"},
@@ -97,7 +97,7 @@ var builtins = []Code{
 		Suggestion: "跨点移动唯一受支持路径是备份恢复迁移：通过 PUT placement 显式确认（--data-restored/--discard）。"},
 	{ID: "E_PLACEMENT_LABEL_CONFLICT", HTTP: 422,
 		Summary:    "同一应用多个服务的放置 label 指向不同节点",
-		Suggestion: "将同一应用全部服务的 edgefleet.placement.node 统一为相同节点。"},
+		Suggestion: "将同一应用全部服务的 fleetly.placement.node 统一为相同节点。"},
 	{ID: "E_VOLUME_NODE_MISMATCH", HTTP: 409,
 		Summary:    "卷数据节点 ≠ 目标部署节点（数据安全前哨，把空卷事故变成 409）",
 		Suggestion: "声明数据处置后重试：--data-restored（恢复流程已重建）或 --discard（admin+confirm，旧卷转孤儿）。"},
@@ -117,8 +117,8 @@ var builtins = []Code{
 
 	// ── label 契约（state-model §2.4）──
 	{ID: "E_LABEL_RESERVED", HTTP: 422,
-		Summary:    "用户占用了保留命名空间 edgefleet.*",
-		Suggestion: "edgefleet.* 为平台保留命名空间：请改用其他 label 前缀。"},
+		Summary:    "用户占用了保留命名空间 fleetly.*",
+		Suggestion: "fleetly.* 为平台保留命名空间：请改用其他 label 前缀。"},
 
 	// ── 状态与并发（state-model §2.2、architecture §2.3）──
 	{ID: "E_STATE_VERSION_CONFLICT", HTTP: 409,

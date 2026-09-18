@@ -1,5 +1,5 @@
 :: C3b - V6a pinned semantics. Same volume service but WITH
-:: --constraint node.labels.edgefleet.node-id==w1. Kill w1: task must stay
+:: --constraint node.labels.fleetly.node-id==w1. Kill w1: task must stay
 :: PENDING (no migration, no empty-volume accident). Restart the SAME dind
 :: container (docker start; a new dind would have no swarm identity): node
 :: rejoins automatically, task returns to w1, volume data intact.
@@ -9,7 +9,7 @@ cd /d %SPIKE_C_DIR%
 
 echo ===== C3B.1 create pinned volume service on w1 =====
 docker exec %SPIKE_MGR% docker service rm c3b-app 2>nul
-docker exec %SPIKE_MGR% docker service create --name c3b-app --replicas 1 --constraint node.labels.edgefleet.node-id==w1 --mount type=volume,source=c3bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000 || exit /b 1
+docker exec %SPIKE_MGR% docker service create --name c3b-app --replicas 1 --constraint node.labels.fleetly.node-id==w1 --mount type=volume,source=c3bvol,target=/data --mount type=bind,source=/opt/probe,target=/probe,readonly alpine:3.20 sleep 31536000 || exit /b 1
 docker exec %SPIKE_MGR% sh -c "cp /work-src/scripts/in-waitsvc.sh /tmp/w.sh && sed -i 's/\r$//' /tmp/w.sh && sh /tmp/w.sh c3b-app 1 w1 120"
 if errorlevel 1 (echo C3B task never Running on w1 & exit /b 1)
 docker exec %SPIKE_W1% docker volume inspect c3bvol --format "c3bvol-on-w1 CreatedAt={{.CreatedAt}}"

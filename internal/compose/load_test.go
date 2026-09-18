@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 )
 
 // writeCompose 把 YAML 内容写入临时目录并返回文件路径（每个用例独立目录，

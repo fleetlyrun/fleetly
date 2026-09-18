@@ -218,7 +218,7 @@ func TestVolumeRegistry(t *testing.T) {
 	appID := createTestApp(t, st, "vol-app")
 
 	v, isNew, err := st.RegisterAppVolume(ctx, VolumeWrite{
-		AppID: appID, Key: "data", Name: "edgefleet-vol-app-data-deadbeef",
+		AppID: appID, Key: "data", Name: "fleetly-vol-app-data-deadbeef",
 		Kind: VolumeKindNamed, PlatformNodeID: "n_01", MountPath: "/var/lib/db",
 	})
 	if err != nil {
@@ -243,7 +243,7 @@ func TestVolumeRegistry(t *testing.T) {
 	}
 	// 重新声明 → 复活为 active（isNew=false，created_at 保持）。
 	rev, isNew2, err := st.RegisterAppVolume(ctx, VolumeWrite{
-		AppID: appID, Key: "data", Name: "edgefleet-vol-app-data-deadbeef", PlatformNodeID: "n_01",
+		AppID: appID, Key: "data", Name: "fleetly-vol-app-data-deadbeef", PlatformNodeID: "n_01",
 	})
 	if err != nil {
 		t.Fatalf("re-register: %v", err)

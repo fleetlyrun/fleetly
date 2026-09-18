@@ -10,7 +10,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/types"
 	"github.com/sirupsen/logrus"
 
-	"github.com/edgesets/edgefleet/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 )
 
 // Load 读取并解析 compose 文件，执行受控子集校验后返回归一化 Spec 与
@@ -123,7 +123,7 @@ type Warning struct {
 
 // 警告 Kind 常量（无注册码提示的稳定标识）。
 const (
-	// WarningKindCronLabelPending：edgefleet.cron* label 在 v0.1 不生效
+	// WarningKindCronLabelPending：fleetly.cron* label 在 v0.1 不生效
 	// （定时任务为 v0.2 契约），服务按长驻部署。
 	WarningKindCronLabelPending = "cron_label_v02_pending"
 )
