@@ -1,0 +1,379 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/deployments.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "DeploymentsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps/{app}/deployments": {
+      "get": {
+        "operationId": "DeploymentsService_ListDeployments",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDeploymentsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "description": "应用名（列表必选）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      },
+      "post": {
+        "operationId": "DeploymentsService_Deploy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeployResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "description": "应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeploymentsServiceDeployBody"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/apps/{app}/rollbacks": {
+      "post": {
+        "operationId": "DeploymentsService_RollbackDeployment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RollbackDeploymentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeploymentsServiceRollbackDeploymentBody"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/deployments/{id}": {
+      "get": {
+        "operationId": "DeploymentsService_GetDeployment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetDeploymentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/deployments/{id}/cancel": {
+      "post": {
+        "operationId": "DeploymentsService_CancelDeployment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CancelDeploymentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeploymentsServiceCancelDeploymentBody"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "DeploymentsServiceCancelDeploymentBody": {
+      "type": "object"
+    },
+    "DeploymentsServiceDeployBody": {
+      "type": "object",
+      "properties": {
+        "compose": {
+          "type": "string",
+          "format": "byte",
+          "title": "compose 文件内容字节（JSON/YAML 原文；服务端落临时文件走受控子集\n校验——compose 违约不动底座、不入队）。"
+        }
+      }
+    },
+    "DeploymentsServiceRollbackDeploymentBody": {
+      "type": "object",
+      "properties": {
+        "target_revision_id": {
+          "type": "string",
+          "title": "回滚目标版本快照 ID；空 = 最近一次成功部署的版本（回退一版）。"
+        }
+      }
+    },
+    "v1CancelDeploymentResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "置位 cancel_requested 时的状态（取消是异步语义：引擎先归位再落\ncancelled；曾健康 409）。"
+        }
+      }
+    },
+    "v1DeployResponse": {
+      "type": "object",
+      "properties": {
+        "deployment_id": {
+          "type": "string"
+        },
+        "app": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "入队即返回，恒 \"queued\"。"
+        }
+      }
+    },
+    "v1DeploymentView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "title": "deploy | rollback。"
+        },
+        "status": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string",
+          "title": "子状态（blocked_waiting 或空）。"
+        },
+        "revision_id": {
+          "type": "string"
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "recovery": {
+          "type": "string"
+        },
+        "substrate_halted": {
+          "type": "boolean",
+          "title": "首发失败 scale=0 保留现场。"
+        },
+        "first_healthy_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "downtime_ms": {
+          "type": "string",
+          "format": "int64"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "DeploymentView 是部署状态机行的只读投影（词表与 state 层一致：\nqueued/preparing/building/releasing/observing/succeeded/failed/cancelled）。"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "phase": {
+          "type": "string",
+          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetDeploymentResponse": {
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "$ref": "#/definitions/v1DeploymentView"
+        }
+      }
+    },
+    "v1ListDeploymentsResponse": {
+      "type": "object",
+      "properties": {
+        "deployments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DeploymentView"
+          }
+        }
+      }
+    },
+    "v1RollbackDeploymentResponse": {
+      "type": "object",
+      "properties": {
+        "deployment_id": {
+          "type": "string"
+        },
+        "app": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "恒 \"queued\"（入队即返回）。"
+        }
+      }
+    }
+  }
+}

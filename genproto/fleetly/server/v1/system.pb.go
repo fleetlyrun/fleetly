@@ -114,6 +114,165 @@ func (x *PingResponse) GetVersion() string {
 	return ""
 }
 
+type GetSystemStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSystemStatusRequest) Reset() {
+	*x = GetSystemStatusRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSystemStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSystemStatusRequest) ProtoMessage() {}
+
+func (x *GetSystemStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSystemStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetSystemStatusRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{2}
+}
+
+// ComponentHealth 是单组件健康如实上报（name = lynx 服务名，如
+// state.store / state.observer / ingress.traefik）。ok=false 时 error 为
+// 检查器返回原文。
+type ComponentHealth struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Ok            bool                   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	Error         string                 `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ComponentHealth) Reset() {
+	*x = ComponentHealth{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ComponentHealth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ComponentHealth) ProtoMessage() {}
+
+func (x *ComponentHealth) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ComponentHealth.ProtoReflect.Descriptor instead.
+func (*ComponentHealth) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *ComponentHealth) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ComponentHealth) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *ComponentHealth) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+type GetSystemStatusResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Service       string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Components    []*ComponentHealth     `protobuf:"bytes,3,rep,name=components,proto3" json:"components,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSystemStatusResponse) Reset() {
+	*x = GetSystemStatusResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSystemStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSystemStatusResponse) ProtoMessage() {}
+
+func (x *GetSystemStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSystemStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetSystemStatusResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetSystemStatusResponse) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *GetSystemStatusResponse) GetVersion() string {
+	if x != nil {
+		return x.Version
+	}
+	return ""
+}
+
+func (x *GetSystemStatusResponse) GetComponents() []*ComponentHealth {
+	if x != nil {
+		return x.Components
+	}
+	return nil
+}
+
 var File_fleetly_server_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_system_proto_rawDesc = "" +
@@ -122,9 +281,21 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\vPingRequest\"T\n" +
 	"\fPingResponse\x12!\n" +
 	"\aservice\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aservice\x12!\n" +
-	"\aversion\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aversion2q\n" +
+	"\aversion\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aversion\"\x18\n" +
+	"\x16GetSystemStatusRequest\"K\n" +
+	"\x0fComponentHealth\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\x91\x01\n" +
+	"\x17GetSystemStatusResponse\x12\x18\n" +
+	"\aservice\x18\x01 \x01(\tR\aservice\x12\x18\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\x12B\n" +
+	"\n" +
+	"components\x18\x03 \x03(\v2\".fleetly.server.v1.ComponentHealthR\n" +
+	"components2\xf7\x01\n" +
 	"\rSystemService\x12`\n" +
-	"\x04Ping\x12\x1e.fleetly.server.v1.PingRequest\x1a\x1f.fleetly.server.v1.PingResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/pingB\x98\x01\x92ARRP\n" +
+	"\x04Ping\x12\x1e.fleetly.server.v1.PingRequest\x1a\x1f.fleetly.server.v1.PingResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/ping\x12\x83\x01\n" +
+	"\x0fGetSystemStatus\x12).fleetly.server.v1.GetSystemStatusRequest\x1a*.fleetly.server.v1.GetSystemStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/statusB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -141,19 +312,25 @@ func file_fleetly_server_v1_system_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_system_proto_rawDescData
 }
 
-var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 2)
+var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_fleetly_server_v1_system_proto_goTypes = []any{
-	(*PingRequest)(nil),  // 0: fleetly.server.v1.PingRequest
-	(*PingResponse)(nil), // 1: fleetly.server.v1.PingResponse
+	(*PingRequest)(nil),             // 0: fleetly.server.v1.PingRequest
+	(*PingResponse)(nil),            // 1: fleetly.server.v1.PingResponse
+	(*GetSystemStatusRequest)(nil),  // 2: fleetly.server.v1.GetSystemStatusRequest
+	(*ComponentHealth)(nil),         // 3: fleetly.server.v1.ComponentHealth
+	(*GetSystemStatusResponse)(nil), // 4: fleetly.server.v1.GetSystemStatusResponse
 }
 var file_fleetly_server_v1_system_proto_depIdxs = []int32{
-	0, // 0: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
-	1, // 1: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
-	1, // [1:2] is the sub-list for method output_type
-	0, // [0:1] is the sub-list for method input_type
-	0, // [0:0] is the sub-list for extension type_name
-	0, // [0:0] is the sub-list for extension extendee
-	0, // [0:0] is the sub-list for field type_name
+	3, // 0: fleetly.server.v1.GetSystemStatusResponse.components:type_name -> fleetly.server.v1.ComponentHealth
+	0, // 1: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
+	2, // 2: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
+	1, // 3: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
+	4, // 4: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
+	3, // [3:5] is the sub-list for method output_type
+	1, // [1:3] is the sub-list for method input_type
+	1, // [1:1] is the sub-list for extension type_name
+	1, // [1:1] is the sub-list for extension extendee
+	0, // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_system_proto_init() }
@@ -167,7 +344,7 @@ func file_fleetly_server_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_system_proto_rawDesc), len(file_fleetly_server_v1_system_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   2,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

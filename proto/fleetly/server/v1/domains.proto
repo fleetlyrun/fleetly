@@ -1,0 +1,83 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// DomainsService 是域名台账只读与验证面（T2.17；architecture §2.6）。
+// 台账写入方唯一 = internal/ingress（发布时按归一化 compose 对账同步），
+// API 只读不写——域名变更走部署（compose 声明）路径。Verify 是本机视角
+// 探测（解析 + 80/443 + 实收证书如实记录），判断权在操作者。
+service DomainsService {
+  rpc ListAppDomains(ListAppDomainsRequest) returns (ListAppDomainsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/domains" };
+  }
+  rpc VerifyAppDomains(VerifyAppDomainsRequest) returns (VerifyAppDomainsResponse) {
+    option (google.api.http) = {
+      post: "/v1/apps/{app}/domains/verify"
+      body: "*"
+    };
+  }
+}
+
+message ListAppDomainsRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message DomainView {
+  string service = 1;
+  string domain = 2;
+  // 路由目标端口（'' = 未同步）。
+  string port = 3;
+  // 证书 PEM 内容 sha256 hex；'' = 尚无证书。
+  string cert_sha256 = 4;
+  // 叶证书 NotAfter；未签发时不输出。
+  google.protobuf.Timestamp cert_not_after = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ListAppDomainsResponse {
+  repeated DomainView domains = 1;
+}
+
+message VerifyAppDomainsRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message DomainCheckView {
+  string domain = 1;
+  repeated string ips = 2;
+  bool resolved = 3;
+  // 80 端口探测结果（空 = 不可达；否则记录响应状态行）。
+  string http_80 = 4;
+  // 443 端口 TLS 握手结果（空 = 不可达）。
+  string https_443 = 5;
+  // 实收证书的诚实记录（不经信任判定）。
+  string cert_subject = 6;
+  repeated string cert_dns_names = 7;
+  google.protobuf.Timestamp cert_not_after = 8;
+  // 单域名探测失败原文（resolve 失败等）。
+  string error = 9;
+}
+
+message VerifyAppDomainsResponse {
+  repeated DomainCheckView checks = 1;
+}

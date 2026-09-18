@@ -60,6 +60,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		return nil, nil, err
 	}
 	engine := NewEngine(app, appConfig, store, client, resolver, box, manager)
+	logsManager := NewLogsManager(app, appConfig, store, client, box)
 	server, err := NewHTTPServer(app, appConfig)
 	if err != nil {
 		cleanup4()
@@ -68,8 +69,8 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	systemService := NewSystemService()
-	grpcServer, err := NewGRPCServer(app, appConfig, systemService)
+	systemService := NewSystemService(store, nodeIdentity, observer, box, manager)
+	authenticator, err := NewAuthenticator(app, store)
 	if err != nil {
 		cleanup4()
 		cleanup3()
@@ -77,7 +78,24 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(app, store, nodeIdentity, observer, janitor, box, queue, builder, engine, manager, appConfig, server, grpcServer)
+	appsService := NewAppsService(store)
+	deploymentsService := NewDeploymentsService(store)
+	revisionsService := NewRevisionsService(store)
+	domainsService := NewDomainsService(store, manager)
+	envService := NewEnvService(store, box)
+	apiLogsService := NewLogsService(store, logsManager)
+	eventsService := NewEventsService(store)
+	placementService := NewPlacementService(store)
+	tokensService := NewTokensService(store)
+	grpcServer, err := NewGRPCServer(app, appConfig, systemService, authenticator, appsService, deploymentsService, revisionsService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService)
+	if err != nil {
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	v := NewServices(app, store, nodeIdentity, observer, janitor, box, queue, builder, engine, manager, logsManager, appConfig, server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {

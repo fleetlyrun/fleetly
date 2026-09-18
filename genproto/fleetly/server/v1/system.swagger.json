@@ -37,9 +37,46 @@
           "SystemService"
         ]
       }
+    },
+    "/v1/system/status": {
+      "get": {
+        "operationId": "SystemService_GetSystemStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetSystemStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      }
     }
   },
   "definitions": {
+    "v1ComponentHealth": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "title": "ComponentHealth 是单组件健康如实上报（name = lynx 服务名，如\nstate.store / state.observer / ingress.traefik）。ok=false 时 error 为\n检查器返回原文。"
+    },
     "v1ErrorResponse": {
       "type": "object",
       "properties": {
@@ -76,6 +113,24 @@
         }
       },
       "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetSystemStatusResponse": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "components": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ComponentHealth"
+          }
+        }
+      }
     },
     "v1PingResponse": {
       "type": "object",

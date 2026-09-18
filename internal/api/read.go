@@ -1,0 +1,144 @@
+package api
+
+import (
+	"context"
+	"errors"
+
+	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/ingress"
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// 只读资源面：Placement / Revisions / Domains（T2.17）。
+
+// PlacementService 实现 server.v1.PlacementService。
+type PlacementService struct {
+	serverv1.UnimplementedPlacementServiceServer
+	st *state.Store
+}
+
+// NewPlacementService 构造 PlacementService。
+func NewPlacementService(st *state.Store) *PlacementService {
+	return &PlacementService{st: st}
+}
+
+// ShowPlacement 放置绑定视图（未绑定时 placement 不输出）。
+func (s *PlacementService) ShowPlacement(ctx context.Context, req *serverv1.ShowPlacementRequest) (*serverv1.ShowPlacementResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	resp := &serverv1.ShowPlacementResponse{App: app.Name}
+	if p, err := s.st.GetPlacement(ctx, app.ID); err == nil {
+		resp.Placement = placementView(p)
+	} else if !errors.Is(err, state.ErrPlacementNotFound) {
+		return nil, err
+	}
+	return resp, nil
+}
+
+// RevisionsService 实现 server.v1.RevisionsService。
+type RevisionsService struct {
+	serverv1.UnimplementedRevisionsServiceServer
+	st *state.Store
+}
+
+// NewRevisionsService 构造 RevisionsService。
+func NewRevisionsService(st *state.Store) *RevisionsService {
+	return &RevisionsService{st: st}
+}
+
+// ListRevisions 版本快照列表（保留窗；列表即回滚选项集）。
+func (s *RevisionsService) ListRevisions(ctx context.Context, req *serverv1.ListRevisionsRequest) (*serverv1.ListRevisionsResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.st.ListRevisions(ctx, app.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*serverv1.RevisionView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, &serverv1.RevisionView{
+			Id:          r.ID,
+			Seq:         r.Seq,
+			DesiredHash: r.DesiredHash,
+			Status:      r.Status,
+			Verified:    r.Verified,
+			CreatedAt:   tstamp(r.CreatedAt),
+		})
+	}
+	return &serverv1.ListRevisionsResponse{Revisions: out}, nil
+}
+
+// DomainsService 实现 server.v1.DomainsService。
+type DomainsService struct {
+	serverv1.UnimplementedDomainsServiceServer
+	st  *state.Store
+	mgr *ingress.Manager
+}
+
+// NewDomainsService 构造 DomainsService。
+func NewDomainsService(st *state.Store, mgr *ingress.Manager) *DomainsService {
+	return &DomainsService{st: st, mgr: mgr}
+}
+
+// ListAppDomains 域名台账（只读；写入方唯一 = internal/ingress 发布对账）。
+func (s *DomainsService) ListAppDomains(ctx context.Context, req *serverv1.ListAppDomainsRequest) (*serverv1.ListAppDomainsResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.st.ListAppDomains(ctx, app.ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*serverv1.DomainView, 0, len(rows))
+	for _, d := range rows {
+		out = append(out, &serverv1.DomainView{
+			Service:      d.Service,
+			Domain:       d.Domain,
+			Port:         d.Port,
+			CertSha256:   d.CertSHA256,
+			CertNotAfter: tstamp(d.CertNotAfter),
+			CreatedAt:    tstamp(d.CreatedAt),
+		})
+	}
+	return &serverv1.ListAppDomainsResponse{Domains: out}, nil
+}
+
+// VerifyAppDomains 本机视角域名验证（ingress.VerifyDomains；探测材料
+// 如实记录，判断权在操作者）。
+func (s *DomainsService) VerifyAppDomains(ctx context.Context, req *serverv1.VerifyAppDomainsRequest) (*serverv1.VerifyAppDomainsResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.st.ListAppDomains(ctx, app.ID)
+	if err != nil {
+		return nil, err
+	}
+	if len(rows) == 0 {
+		return &serverv1.VerifyAppDomainsResponse{}, nil
+	}
+	domains := make([]string, 0, len(rows))
+	for _, d := range rows {
+		domains = append(domains, d.Domain)
+	}
+	checks := ingress.VerifyDomains(ctx, domains)
+	out := make([]*serverv1.DomainCheckView, 0, len(checks))
+	for _, c := range checks {
+		out = append(out, &serverv1.DomainCheckView{
+			Domain:       c.Domain,
+			Ips:          c.IPs,
+			Resolved:     c.Resolved,
+			Http_80:      c.HTTP80,
+			Https_443:    c.HTTPS443,
+			CertSubject:  c.CertSubject,
+			CertDnsNames: c.CertDNSNames,
+			Error:        c.Err,
+		})
+	}
+	return &serverv1.VerifyAppDomainsResponse{Checks: out}, nil
+}

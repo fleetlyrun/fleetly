@@ -1,0 +1,68 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// EventsService 是平台事件流面（T2.17；architecture §2.3 事件 seq 游标）。
+//
+// 游标语义取舍（T2.17 设计裁决）：断线重连带 since_seq 续读；游标早于
+// 保留窗时，**流上发一帧 cursor_expired 信封错误帧（带 oldest_seq）后
+// 正常关闭流**，而非以 gRPC error status 终止——gateway chunked-JSON 面
+// 中途改状态码不可行，信封帧让 SSE/Console 消费方拿到统一的显式断档
+// 信号（state 层 EventsSince 的 410 E_EVENT_CURSOR_EXPIRED 语义投影）。
+// since_seq=0 表示「从头」（保留窗内最旧事件开始）。
+service EventsService {
+  rpc WatchEvents(WatchEventsRequest) returns (stream WatchEventsResponse) {
+    option (google.api.http) = { get: "/v1/events/stream" };
+  }
+}
+
+message WatchEventsRequest {
+  // 游标：返回 seq > since_seq 的事件（升序）；0 = 从保留窗起点。
+  int64 since_seq = 1 [(buf.validate.field).int64.gte = 0];
+}
+
+// EventView 是事件行投影（payload 为脱敏 JSON 文本；secret 值禁止进入
+// 事件——state-model §2.9，采集端已保证）。
+message EventView {
+  int64 seq = 1;
+  google.protobuf.Timestamp at = 2;
+  // 注册表内事件名（deployment.succeeded 等）。
+  string name = 3;
+  // 主题（deployment:<id> / app:<name> 等）。
+  string subject = 4;
+  string payload = 5;
+}
+
+// CursorExpiredView 是游标过期断档帧：seq ≤ (oldest_seq - 1) 的事件已被
+// 保留策略清理，消费方应以 oldest_seq 重新拉全量。
+message CursorExpiredView {
+  int64 oldest_seq = 1;
+  string message = 2;
+}
+
+message WatchEventsResponse {
+  oneof frame {
+    EventView event = 1;
+    CursorExpiredView cursor_expired = 2;
+  }
+}

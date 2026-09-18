@@ -49,7 +49,10 @@ func TestPingGRPCToREST(t *testing.T) {
 		lynxgrpc.WithHealthCheckers(noCheckers),
 		lynxgrpc.WithInterceptors(validateUnaryInterceptor(validator)),
 	)
-	serverv1.RegisterSystemServiceServer(gs.GetServer(), NewSystemService())
+	// SystemService 组件集为空快照（Ping/双面测试不依赖健康汇总面）。
+	serverv1.RegisterSystemServiceServer(gs.GetServer(), &SystemService{
+		components: func() []namedHealthComponent { return nil },
+	})
 	if err := gs.Init(nil); err != nil {
 		t.Fatalf("grpc Init: %v", err)
 	}

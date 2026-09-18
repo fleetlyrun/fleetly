@@ -1,0 +1,225 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/domains.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "DomainsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps/{app}/domains": {
+      "get": {
+        "operationId": "DomainsService_ListAppDomains",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAppDomainsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DomainsService"
+        ]
+      }
+    },
+    "/v1/apps/{app}/domains/verify": {
+      "post": {
+        "operationId": "DomainsService_VerifyAppDomains",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1VerifyAppDomainsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DomainsServiceVerifyAppDomainsBody"
+            }
+          }
+        ],
+        "tags": [
+          "DomainsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "DomainsServiceVerifyAppDomainsBody": {
+      "type": "object"
+    },
+    "v1DomainCheckView": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string"
+        },
+        "ips": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "resolved": {
+          "type": "boolean"
+        },
+        "http_80": {
+          "type": "string",
+          "title": "80 端口探测结果（空 = 不可达；否则记录响应状态行）。"
+        },
+        "https_443": {
+          "type": "string",
+          "title": "443 端口 TLS 握手结果（空 = 不可达）。"
+        },
+        "cert_subject": {
+          "type": "string",
+          "title": "实收证书的诚实记录（不经信任判定）。"
+        },
+        "cert_dns_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cert_not_after": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "error": {
+          "type": "string",
+          "title": "单域名探测失败原文（resolve 失败等）。"
+        }
+      }
+    },
+    "v1DomainView": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string",
+          "title": "路由目标端口（'' = 未同步）。"
+        },
+        "cert_sha256": {
+          "type": "string",
+          "title": "证书 PEM 内容 sha256 hex；'' = 尚无证书。"
+        },
+        "cert_not_after": {
+          "type": "string",
+          "format": "date-time",
+          "title": "叶证书 NotAfter；未签发时不输出。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "phase": {
+          "type": "string",
+          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1ListAppDomainsResponse": {
+      "type": "object",
+      "properties": {
+        "domains": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DomainView"
+          }
+        }
+      }
+    },
+    "v1VerifyAppDomainsResponse": {
+      "type": "object",
+      "properties": {
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DomainCheckView"
+          }
+        }
+      }
+    }
+  }
+}

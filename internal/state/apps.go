@@ -142,6 +142,26 @@ func (s *Store) MarkAppDeleting(ctx context.Context, appID string) error {
 	return s.transitionApp(ctx, appID, LifecycleActive, LifecycleDeleting, "deleting_at")
 }
 
+// MarkAppDeleting 是事务内 tombstone 第一拍（供与审计/事件同事务组合——
+// T2.17 API 删除走 fail-closed 审计）。
+func (t *Tx) MarkAppDeleting(ctx context.Context, appID string) error {
+	res, err := t.ExecContext(ctx,
+		`UPDATE apps SET lifecycle = ?, updated_at = ?, deleting_at = ?
+		WHERE id = ? AND lifecycle = ?`,
+		string(LifecycleDeleting), nowNano(), nowNano(), appID, string(LifecycleActive))
+	if err != nil {
+		return fmt.Errorf("state: update app lifecycle: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("state: read lifecycle update count: %w", err)
+	}
+	if n == 0 {
+		return ErrInvalidLifecycleTransition
+	}
+	return nil
+}
+
 // MarkAppDeleted 推进 deleting → deleted（tombstone 第二拍）。仅允许从
 // deleting 出发——active 直达 deleted 被拒绝（状态机纪律，防跳过清理）。
 func (s *Store) MarkAppDeleted(ctx context.Context, appID string) error {

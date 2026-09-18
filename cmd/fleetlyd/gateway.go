@@ -13,14 +13,27 @@ import (
 )
 
 // newGatewayMux 构建 grpc-gateway mux：REST /v1/** 反向代理到本进程 gRPC
-// （RegisterSystemServiceHandlerFromEndpoint，torchwood 同款 FromEndpoint
-// 循环形态，服务增多时逐行追加注册）。返回的 mux 直接作为 lynx HTTP 服务的
-// 根 handler，与 lynxhttp.Server 自挂的 /healthz/** 共存（healthz 不经此 mux）。
+// （torchwood 同款 FromEndpoint 循环形态）。返回的 mux 直接作为 lynx HTTP
+// 服务的根 handler，与 lynxhttp.Server 自挂的 /healthz/** 共存（healthz
+// 不经此 mux）。
 //
 // 错误处理：自定义 HTTPErrorHandler（newGatewayErrorHandler，阶段 3/T0.2
 // 落地）——gRPC 错误统一渲染为 fleetly.shared.v1.ErrorResponse 信封
 // （snake_case 七字段），与 buf.gen.yaml disable_default_errors=true 对齐
 // （默认 rpcStatus 错误体已从 OpenAPI 移除）。
+//
+// ── gateway 挂载清单（T2.17 纪律：gRPC-only 清单显式维护）────────────────
+// 挂载（全部服务，读/写/流一致）：
+//   - SystemService（Ping 豁免鉴权；Status 为 read）
+//   - AppsService / DeploymentsService / RevisionsService / DomainsService
+//   - EnvService / PlacementService / TokensService
+//   - LogsService（Follow = chunked-JSON 流；Console SSE 直接消费）
+//   - EventsService（Watch = chunked-JSON 流，seq 游标 + 过期信封帧）
+//
+// gRPC-only 清单：**v0.1 为空**——所有服务均挂 gateway（写操作挂 gateway
+// 供 Console 使用；Follow/Watch 的 JSON 帧形态适宜 REST）。若后续出现
+// 二进制/高频帧不适宜 REST 的 RPC（logs.proto 与此同步登记），在下方
+// 注册清单摘除对应 HandlerFromEndpoint 并在 proto 注释同步登记。
 func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, newJSONMarshaler()),
@@ -29,8 +42,21 @@ func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 		runtime.WithErrorHandler(newGatewayErrorHandler()),
 	)
 	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
-	if err := serverv1.RegisterSystemServiceHandlerFromEndpoint(context.Background(), mux, grpcEndpoint, opts); err != nil {
-		return nil, err
+	for _, register := range []func(context.Context, *runtime.ServeMux, string, []grpc.DialOption) error{
+		serverv1.RegisterSystemServiceHandlerFromEndpoint,
+		serverv1.RegisterAppsServiceHandlerFromEndpoint,
+		serverv1.RegisterDeploymentsServiceHandlerFromEndpoint,
+		serverv1.RegisterRevisionsServiceHandlerFromEndpoint,
+		serverv1.RegisterDomainsServiceHandlerFromEndpoint,
+		serverv1.RegisterEnvServiceHandlerFromEndpoint,
+		serverv1.RegisterLogsServiceHandlerFromEndpoint,
+		serverv1.RegisterEventsServiceHandlerFromEndpoint,
+		serverv1.RegisterPlacementServiceHandlerFromEndpoint,
+		serverv1.RegisterTokensServiceHandlerFromEndpoint,
+	} {
+		if err := register(context.Background(), mux, grpcEndpoint, opts); err != nil {
+			return nil, err
+		}
 	}
 	return mux, nil
 }

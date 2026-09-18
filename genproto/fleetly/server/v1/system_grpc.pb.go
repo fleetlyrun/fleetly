@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SystemService_Ping_FullMethodName = "/fleetly.server.v1.SystemService/Ping"
+	SystemService_Ping_FullMethodName            = "/fleetly.server.v1.SystemService/Ping"
+	SystemService_GetSystemStatus_FullMethodName = "/fleetly.server.v1.SystemService/GetSystemStatus"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -28,8 +29,11 @@ const (
 //
 // SystemService 承载控制面进程级系统信息。T0.3 的契约验证面：同一 proto
 // 同时生成 gRPC client（SDK 与 CLI）与 REST 端点（gateway），双面同源。
+// T2.17 起扩容 GetSystemStatus（引擎/Traefik/状态层健康汇总——复用 lynx
+// CheckHealth 面：逐 checker 如实上报，不聚合出单一布尔，判断权在消费方）。
 type SystemServiceClient interface {
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
+	GetSystemStatus(ctx context.Context, in *GetSystemStatusRequest, opts ...grpc.CallOption) (*GetSystemStatusResponse, error)
 }
 
 type systemServiceClient struct {
@@ -50,14 +54,27 @@ func (c *systemServiceClient) Ping(ctx context.Context, in *PingRequest, opts ..
 	return out, nil
 }
 
+func (c *systemServiceClient) GetSystemStatus(ctx context.Context, in *GetSystemStatusRequest, opts ...grpc.CallOption) (*GetSystemStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSystemStatusResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetSystemStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
 //
 // SystemService 承载控制面进程级系统信息。T0.3 的契约验证面：同一 proto
 // 同时生成 gRPC client（SDK 与 CLI）与 REST 端点（gateway），双面同源。
+// T2.17 起扩容 GetSystemStatus（引擎/Traefik/状态层健康汇总——复用 lynx
+// CheckHealth 面：逐 checker 如实上报，不聚合出单一布尔，判断权在消费方）。
 type SystemServiceServer interface {
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
+	GetSystemStatus(context.Context, *GetSystemStatusRequest) (*GetSystemStatusResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -70,6 +87,9 @@ type UnimplementedSystemServiceServer struct{}
 
 func (UnimplementedSystemServiceServer) Ping(context.Context, *PingRequest) (*PingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedSystemServiceServer) GetSystemStatus(context.Context, *GetSystemStatusRequest) (*GetSystemStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSystemStatus not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -110,6 +130,24 @@ func _SystemService_Ping_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_GetSystemStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSystemStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetSystemStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetSystemStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetSystemStatus(ctx, req.(*GetSystemStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -120,6 +158,10 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _SystemService_Ping_Handler,
+		},
+		{
+			MethodName: "GetSystemStatus",
+			Handler:    _SystemService_GetSystemStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -1,0 +1,329 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/apps.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "AppsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps": {
+      "get": {
+        "operationId": "AppsService_ListApps",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAppsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "description": "列表上限（缺省 100；v0.1 单机规模不做分页游标）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
+    },
+    "/v1/apps/{name}": {
+      "get": {
+        "operationId": "AppsService_GetApp",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAppResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "应用名（compose 应用名，权威态唯一键）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      },
+      "delete": {
+        "operationId": "AppsService_DeleteApp",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteAppResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1AppView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "type": "string",
+          "title": "生命周期状态位：active / deleting / deleted。"
+        },
+        "derived_state": {
+          "type": "string",
+          "title": "派生状态：running / degraded / blocked / down（读面即时推导）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1DeleteAppResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "type": "string",
+          "title": "删除推进后的生命周期位（active → deleting）。"
+        }
+      }
+    },
+    "v1DeploymentView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "title": "deploy | rollback。"
+        },
+        "status": {
+          "type": "string"
+        },
+        "phase": {
+          "type": "string",
+          "title": "子状态（blocked_waiting 或空）。"
+        },
+        "revision_id": {
+          "type": "string"
+        },
+        "error_code": {
+          "type": "string"
+        },
+        "verdict": {
+          "type": "string"
+        },
+        "recovery": {
+          "type": "string"
+        },
+        "substrate_halted": {
+          "type": "boolean",
+          "title": "首发失败 scale=0 保留现场。"
+        },
+        "first_healthy_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "downtime_ms": {
+          "type": "string",
+          "format": "int64"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "DeploymentView 是部署状态机行的只读投影（词表与 state 层一致：\nqueued/preparing/building/releasing/observing/succeeded/failed/cancelled）。"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "phase": {
+          "type": "string",
+          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetAppResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "lifecycle": {
+          "type": "string"
+        },
+        "derived_state": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "placement": {
+          "$ref": "#/definitions/v1PlacementView",
+          "title": "放置绑定（未绑定时不输出——EmitUnpopulated=false 语义下 message 零值\n字段不渲染，读面缺省即「无绑定」）。"
+        },
+        "recent_deployments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DeploymentView"
+          },
+          "title": "最近部署（created_at 倒序，至多 5 条；派生状态的正交细节）。"
+        }
+      }
+    },
+    "v1ListAppsResponse": {
+      "type": "object",
+      "properties": {
+        "apps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AppView"
+          }
+        }
+      }
+    },
+    "v1PlacementView": {
+      "type": "object",
+      "properties": {
+        "platform_node_id": {
+          "type": "string"
+        },
+        "label_ref": {
+          "type": "string",
+          "title": "用户 label 书写原值（显示名或 n_\u003cULID\u003e；空 = 未声明）。"
+        },
+        "state": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string",
+          "title": "进入当前状态的派生原因（node_down / node_gone 等；可空）。"
+        },
+        "source": {
+          "type": "string",
+          "title": "绑定来源（placement 源词表：显式/自动钉住等）。"
+        },
+        "pinned_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "PlacementView 是 placements 行投影（state ∈ bound/blocked/unresolved，\n派生语义见 state-model §2.10；blocked/unresolved 是 app 派生状态\nblocked 的来源）。"
+    }
+  }
+}

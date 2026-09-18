@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// RevisionsService 是版本快照只读面（T2.17）：revisions 保留窗（最近 5 次
+// 成功部署，release-semantics §2.4）投影——列表即回滚选项集，列不出来的
+// 不可回滚。compose 归一化与 overlay 全文不在此面暴露（体积与脱敏考量，
+// 需要时经 desired_hash 比对）。
+service RevisionsService {
+  rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/revisions" };
+  }
+}
+
+message ListRevisionsRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RevisionView {
+  string id = 1;
+  int64 seq = 2;
+  string desired_hash = 3;
+  // active = 可回滚选项；superseded = 被保留窗淘汰（存档）。
+  string status = 4;
+  bool verified = 5;
+  google.protobuf.Timestamp created_at = 6;
+}
+
+message ListRevisionsResponse {
+  repeated RevisionView revisions = 1;
+}

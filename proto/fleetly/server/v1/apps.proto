@@ -1,0 +1,92 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+import "fleetly/server/v1/deployments.proto";
+import "fleetly/server/v1/placement.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合——不用生成器默认的
+// rpcStatus，信封单一事实源在 fleetly.shared.v1.ErrorResponse）。与
+// system.proto 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// AppsService 是应用资源面（T2.17）：列表带派生状态（state-model §2.10，
+// running/degraded/blocked/down——读面即时推导，读 API 不落库）、详情带
+// placement 与最近部署、删除走 tombstone 生命周期（active → deleting →
+// deleted，state 现有状态机；删除进行中/保留期内名字不释放）。
+service AppsService {
+  rpc ListApps(ListAppsRequest) returns (ListAppsResponse) {
+    option (google.api.http) = { get: "/v1/apps" };
+  }
+  rpc GetApp(GetAppRequest) returns (GetAppResponse) {
+    option (google.api.http) = { get: "/v1/apps/{name}" };
+  }
+  rpc DeleteApp(DeleteAppRequest) returns (DeleteAppResponse) {
+    option (google.api.http) = { delete: "/v1/apps/{name}" };
+  }
+}
+
+message ListAppsRequest {
+  // 列表上限（缺省 100；v0.1 单机规模不做分页游标）。
+  int32 limit = 1 [(buf.validate.field).int32 = { gte: 0, lte: 1000 }];
+}
+
+message AppView {
+  string id = 1;
+  string name = 2;
+  // 生命周期状态位：active / deleting / deleted。
+  string lifecycle = 3;
+  // 派生状态：running / degraded / blocked / down（读面即时推导）。
+  string derived_state = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message ListAppsResponse {
+  repeated AppView apps = 1;
+}
+
+message GetAppRequest {
+  // 应用名（compose 应用名，权威态唯一键）。
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetAppResponse {
+  string id = 1;
+  string name = 2;
+  string lifecycle = 3;
+  string derived_state = 4;
+  google.protobuf.Timestamp created_at = 5;
+  google.protobuf.Timestamp updated_at = 6;
+  // 放置绑定（未绑定时不输出——EmitUnpopulated=false 语义下 message 零值
+  // 字段不渲染，读面缺省即「无绑定」）。
+  PlacementView placement = 7;
+  // 最近部署（created_at 倒序，至多 5 条；派生状态的正交细节）。
+  repeated DeploymentView recent_deployments = 8;
+}
+
+message DeleteAppRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message DeleteAppResponse {
+  string name = 1;
+  // 删除推进后的生命周期位（active → deleting）。
+  string lifecycle = 2;
+}

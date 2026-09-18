@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// PlacementService 是放置绑定只读面（T2.17；stateful-placement §2.8）。
+// PlacementView 同时被 apps 详情复用（同包导入）。
+service PlacementService {
+  rpc ShowPlacement(ShowPlacementRequest) returns (ShowPlacementResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/placement" };
+  }
+}
+
+// PlacementView 是 placements 行投影（state ∈ bound/blocked/unresolved，
+// 派生语义见 state-model §2.10；blocked/unresolved 是 app 派生状态
+// blocked 的来源）。
+message PlacementView {
+  string platform_node_id = 1;
+  // 用户 label 书写原值（显示名或 n_<ULID>；空 = 未声明）。
+  string label_ref = 2;
+  string state = 3;
+  // 进入当前状态的派生原因（node_down / node_gone 等；可空）。
+  string reason = 4;
+  // 绑定来源（placement 源词表：显式/自动钉住等）。
+  string source = 5;
+  google.protobuf.Timestamp pinned_at = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message ShowPlacementRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ShowPlacementResponse {
+  string app = 1;
+  // 未绑定时 placement 不输出（EmitUnpopulated=false 语义）。
+  PlacementView placement = 2;
+}

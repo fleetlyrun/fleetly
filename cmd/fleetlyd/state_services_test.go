@@ -71,9 +71,12 @@ func TestStateServicesBlockUntilShutdown(t *testing.T) {
 		}
 	}()
 
-	var app lynx.App
+	// app 经 channel 交接（直接裸写变量在 Runner goroutine 与测试 goroutine
+	// 之间无 happens-before 边——-race 高倍压测下报 DATA RACE，T2-7 修复：
+	// 测试侧同步，产品代码未涉）。
+	appCh := make(chan lynx.App, 1)
 	runner := lynx.NewRunner(func(a lynx.App) error {
-		app = a
+		appCh <- a
 		a.Register(
 			newStoreService(st),
 			newIdentityService(identity),
@@ -96,6 +99,12 @@ func TestStateServicesBlockUntilShutdown(t *testing.T) {
 	}
 
 	// 关停：RunE 应在预算内有序返回。
+	var app lynx.App
+	select {
+	case app = <-appCh:
+	case <-time.After(time.Second):
+		t.Fatal("runner did not hand over app within 1s")
+	}
 	app.Close()
 	select {
 	case err := <-runErr:

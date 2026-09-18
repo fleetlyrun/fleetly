@@ -1,0 +1,84 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// LogsService 是应用日志面（T2.20；architecture §4.2 第 5 项「实时流 +
+// 历史落盘检索」）。
+//
+// Follow 是 server-streaming（gRPC 帧 / gateway chunked-JSON 双面同源）；
+// Secret 值已在采集端脱敏（internal/logs：只脱该 app env 已知值），本面
+// 不再二次处理。History 覆盖落盘检索（按 app/service/时间窗），source
+// 字段区分容器日志与构建日志（builds 表 log_path 产物）。
+//
+// gRPC-only 清单纪律（T2.17）：v0.1 Follow **也挂 gateway**（chunked
+// JSON 流，Console SSE 可直接消费）——gRPC-only 清单当前为空；若后续
+// Follow 出现二进制/高频帧形态不适宜 REST，在此显式登记并从 gateway
+// 注册清单摘除（cmd/fleetlyd/gateway.go 同步维护）。
+service LogsService {
+  rpc FollowLogs(FollowLogsRequest) returns (stream FollowLogsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/logs/stream" };
+  }
+  rpc ListHistoryLogs(ListHistoryLogsRequest) returns (ListHistoryLogsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/logs" };
+  }
+}
+
+message FollowLogsRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // compose 服务名；空 = 该 app 全部服务。
+  string service = 2;
+}
+
+message ListHistoryLogsRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // compose 服务名；空 = 全部服务。
+  string service = 2;
+  // 时间窗下界；缺省 = 保留窗起点。
+  google.protobuf.Timestamp since = 3;
+  // 时间窗上界；缺省 = 现在。
+  google.protobuf.Timestamp until = 4;
+  // 返回上限（缺省 200，天花板 1000；超过取最新 limit 条）。
+  int32 limit = 5 [(buf.validate.field).int32 = { gte: 0, lte: 1000 }];
+  // 来源过滤：container | build；空 = 全部。
+  string source = 6 [(buf.validate.field).string = {
+    in: ["", "container", "build"]
+  }];
+}
+
+// LogEntryView 是单条日志投影。source ∈ container | build。
+message LogEntryView {
+  string app = 1;
+  string service = 2;
+  google.protobuf.Timestamp at = 3;
+  bool stderr = 4;
+  string line = 5;
+  string source = 6;
+}
+
+message FollowLogsResponse {
+  LogEntryView entry = 1;
+}
+
+message ListHistoryLogsResponse {
+  repeated LogEntryView entries = 1;
+}

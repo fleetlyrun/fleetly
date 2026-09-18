@@ -1,0 +1,139 @@
+package api
+
+import (
+	"context"
+	"net"
+	"path/filepath"
+	"testing"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/test/bufconn"
+
+	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/secrets"
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// 测试装配：真实 state.Store（独立临时目录）+ 拦截链与生产同构的 gRPC
+// server（bufconn）+ 预置三枚 scope token（read/deploy/admin）。
+
+// testEnv 是 API 测试环境。
+type testEnv struct {
+	st      *state.Store
+	box     *secrets.Box
+	conn    *grpc.ClientConn
+	readTok string
+	depTok  string
+	admTok  string
+}
+
+// newTestEnv 起一个带鉴权链的 gRPC server（bufconn），注册鉴权矩阵触达的
+// 服务面（Apps/Deployments/Env/Tokens；流式面在 events/logs 专属测试装配）。
+func newTestEnv(t *testing.T) *testEnv {
+	t.Helper()
+	dir := t.TempDir()
+	st, err := state.Open(context.Background(), filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("state.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	box, _, err := secrets.EnsureKey(filepath.Join(dir, "test.key"))
+	if err != nil {
+		t.Fatalf("EnsureKey: %v", err)
+	}
+
+	env := &testEnv{st: st, box: box}
+	env.readTok = env.seedToken(t, "read")
+	env.depTok = env.seedToken(t, "deploy")
+	env.admTok = env.seedToken(t, "admin")
+
+	auth := NewAuthenticator(st)
+	srv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(auth.UnaryAuthInterceptor()),
+		grpc.ChainStreamInterceptor(auth.StreamAuthInterceptor()),
+	)
+	serverv1.RegisterAppsServiceServer(srv, NewAppsService(st))
+	serverv1.RegisterDeploymentsServiceServer(srv, NewDeploymentsService(st))
+	serverv1.RegisterEnvServiceServer(srv, NewEnvService(st, box))
+	serverv1.RegisterTokensServiceServer(srv, NewTokensService(st))
+
+	lis := bufconn.Listen(1024 * 1024)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	env.conn = conn
+	return env
+}
+
+// seedToken 生成并落一枚指定 scope 的 token，返回明文。
+func (e *testEnv) seedToken(t *testing.T, scopes string) string {
+	t.Helper()
+	return seedTokenPlain(t, e.st, scopes)
+}
+
+// authCtx 带 Bearer 凭据的 ctx（测试直连 gRPC 用 metadata 形态）。
+func authCtx(ctx context.Context, token string) context.Context {
+	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
+}
+
+// newAuthServer 起一个只挂鉴权拦截链的空 server（各测试自行注册服务）。
+func newAuthServer(auth *Authenticator) *grpc.Server {
+	return grpc.NewServer(
+		grpc.ChainUnaryInterceptor(auth.UnaryAuthInterceptor()),
+		grpc.ChainStreamInterceptor(auth.StreamAuthInterceptor()),
+	)
+}
+
+// serveBufconn 启动 server 并返回客户端连接（生命周期挂 t.Cleanup）。
+func serveBufconn(t *testing.T, srv *grpc.Server) *grpc.ClientConn {
+	t.Helper()
+	lis := bufconn.Listen(1024 * 1024)
+	go func() { _ = srv.Serve(lis) }()
+	t.Cleanup(srv.Stop)
+	conn, err := grpc.NewClient("passthrough:///bufnet",
+		grpc.WithContextDialer(func(ctx context.Context, _ string) (net.Conn, error) {
+			return lis.DialContext(ctx)
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)
+	if err != nil {
+		t.Fatalf("grpc.NewClient: %v", err)
+	}
+	t.Cleanup(func() { _ = conn.Close() })
+	return conn
+}
+
+// tokenFor 直接落一枚 admin token 并返回明文（流式面测试的鉴权凭据）。
+func tokenFor(t *testing.T, st *state.Store) string {
+	t.Helper()
+	return seedTokenPlain(t, st, "admin")
+}
+
+// seedTokenPlain 生成并落一枚指定 scope 的 token，返回明文。
+func seedTokenPlain(t *testing.T, st *state.Store, scopes string) string {
+	t.Helper()
+	plaintext, err := generateToken()
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	if _, err := st.CreateToken(context.Background(), state.TokenWrite{
+		Hash:   state.HashToken(plaintext),
+		Name:   "test " + scopes,
+		Scopes: scopes,
+	}); err != nil {
+		t.Fatalf("seed token %s: %v", scopes, err)
+	}
+	return plaintext
+}

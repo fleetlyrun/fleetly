@@ -24,9 +24,14 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 
 // SystemService 承载控制面进程级系统信息。T0.3 的契约验证面：同一 proto
 // 同时生成 gRPC client（SDK 与 CLI）与 REST 端点（gateway），双面同源。
+// T2.17 起扩容 GetSystemStatus（引擎/Traefik/状态层健康汇总——复用 lynx
+// CheckHealth 面：逐 checker 如实上报，不聚合出单一布尔，判断权在消费方）。
 service SystemService {
   rpc Ping(PingRequest) returns (PingResponse) {
     option (google.api.http) = { get: "/v1/system/ping" };
+  }
+  rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse) {
+    option (google.api.http) = { get: "/v1/system/status" };
   }
 }
 
@@ -37,4 +42,21 @@ message PingResponse {
   string service = 1 [(buf.validate.field).string.min_len = 1];
   // 服务版本（构建 -ldflags 注入，未注入时为 "dev"）。
   string version = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetSystemStatusRequest {}
+
+// ComponentHealth 是单组件健康如实上报（name = lynx 服务名，如
+// state.store / state.observer / ingress.traefik）。ok=false 时 error 为
+// 检查器返回原文。
+message ComponentHealth {
+  string name = 1;
+  bool ok = 2;
+  string error = 3;
+}
+
+message GetSystemStatusResponse {
+  string service = 1;
+  string version = 2;
+  repeated ComponentHealth components = 3;
 }

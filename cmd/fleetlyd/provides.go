@@ -9,9 +9,11 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
+	"github.com/fleetlyrun/fleetly/internal/api"
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
+	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -38,8 +40,19 @@ var ProviderSet = wire.NewSet(
 	NewIngressManager,
 	NewEngine,
 	NewDaemonManager,
-	NewGRPCServer,
+	NewLogsManager,
+	NewAuthenticator,
 	NewSystemService,
+	NewAppsService,
+	NewDeploymentsService,
+	NewRevisionsService,
+	NewDomainsService,
+	NewEnvService,
+	NewLogsService,
+	NewEventsService,
+	NewPlacementService,
+	NewTokensService,
+	NewGRPCServer,
 	NewHTTPServer,
 	NewServices,
 	NewServiceFactories,
@@ -185,6 +198,56 @@ func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Clie
 		WithRoutePublisher(ingressPublisher{m: m})
 }
 
+// NewLogsManager 构建日志管线管理器（T2.20：采集/Follow/History/清理；
+// logs.* 配置节，缺省回落 internal/logs）。底座端口由 substrate.Client
+// 隐式实现 logs.Port（适配器方向：substrate → logs 核心接口）。
+func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, sb *secrets.Box) *logs.Manager {
+	return logs.NewManager(cfg.LogsSettings(), st, sc, sb, app.Logger())
+}
+
+// NewAppsService 构造应用资源面服务（T2.17）。
+func NewAppsService(st *state.Store) *api.AppsService { return api.NewAppsService(st) }
+
+// NewDeploymentsService 构造部署资源面服务（T2.17）。
+func NewDeploymentsService(st *state.Store) *api.DeploymentsService {
+	return api.NewDeploymentsService(st)
+}
+
+// NewRevisionsService 构造版本快照只读面服务。
+func NewRevisionsService(st *state.Store) *api.RevisionsService {
+	return api.NewRevisionsService(st)
+}
+
+// NewDomainsService 构造域名台账/验证面服务。
+func NewDomainsService(st *state.Store, m *ingress.Manager) *api.DomainsService {
+	return api.NewDomainsService(st, m)
+}
+
+// NewEnvService 构造平台 env 面服务（值加密边界在服务实现内）。
+func NewEnvService(st *state.Store, sb *secrets.Box) *api.EnvService {
+	return api.NewEnvService(st, sb)
+}
+
+// NewLogsService 构造日志面服务（T2.20：Follow/History 接管线管理器）。
+func NewLogsService(st *state.Store, mg *logs.Manager) *api.LogsService {
+	return api.NewLogsService(st, mg)
+}
+
+// NewEventsService 构造事件流面服务（seq 游标）。
+func NewEventsService(st *state.Store) *api.EventsService {
+	return api.NewEventsService(st)
+}
+
+// NewPlacementService 构造放置绑定只读面服务。
+func NewPlacementService(st *state.Store) *api.PlacementService {
+	return api.NewPlacementService(st)
+}
+
+// NewTokensService 构造 token 管理面服务。
+func NewTokensService(st *state.Store) *api.TokensService {
+	return api.NewTokensService(st)
+}
+
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
 // （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）；
 // /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
@@ -202,10 +265,11 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig) (*lynxhttp.Server, error) {
 }
 
 // NewServices 聚合全部受托管服务：状态层四服务（store/identity/observer/
-// janitor）、构建队列、发布引擎与入口服务先于 HTTP/gRPC 注册——lynx 按
-// 注册顺序启动，store 的 Init 在装配期（Register 阶段）完成迁移，Start
-// 阶段顺序无实质依赖，注册顺序表达「状态与队列、引擎、入口先于 API 面」
-// （ingress 在 engine 之后：引擎 tick 触发发布时配置端点已监听）。
+// janitor）、构建队列、发布引擎、入口与日志采集服务先于 HTTP/gRPC 注册
+// ——lynx 按注册顺序启动，store 的 Init 在装配期（Register 阶段）完成
+// 迁移，Start 阶段顺序无实质依赖，注册顺序表达「状态与队列、引擎、入口、
+// 日志采集先于 API 面」（ingress 在 engine 之后：引擎 tick 触发发布时
+// 配置端点已监听）。
 func NewServices(
 	app lynx.App,
 	st *state.Store,
@@ -217,6 +281,7 @@ func NewServices(
 	b *build.Builder,
 	eng *engine.Engine,
 	ing *ingress.Manager,
+	lm *logs.Manager,
 	cfg *AppConfig,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
@@ -230,6 +295,7 @@ func NewServices(
 		newBuilderService(q, b, app.Logger()),
 		newEngineService(eng),
 		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr),
+		newLogsService(lm),
 		hs,
 		gs,
 	}

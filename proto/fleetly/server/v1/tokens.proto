@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// TokensService 是 API token 管理面（T2.17；state-model §2.9：哈希存储，
+// 明文永不落库；审计 actor=human/ai_agent）。token 管理 = admin scope
+// 专用（鉴权矩阵在拦截器链强制）。
+//
+// CreateToken 返回的明文 token **仅此一次**可见——服务端只存 sha256 哈希，
+// 丢失只能 revoke 后重建。
+service TokensService {
+  rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/tokens"
+      body: "*"
+    };
+  }
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
+    option (google.api.http) = { get: "/v1/tokens" };
+  }
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse) {
+    option (google.api.http) = { delete: "/v1/tokens/{id}" };
+  }
+}
+
+message CreateTokenRequest {
+  // scope 集（read / deploy / admin；admin 蕴含 deploy 蕴含 read；重复项
+  // 服务端归一去重）。
+  repeated string scopes = 1 [(buf.validate.field).repeated = {
+    min_items: 1,
+    items: { string: { in: ["read", "deploy", "admin"] } }
+  }];
+  // 备注（人读；如 "CI 部署"）。字段名 note（name 列承载，兼容既有表结构）。
+  string note = 2 [(buf.validate.field).string.max_len = 200];
+}
+
+message CreateTokenResponse {
+  string id = 1;
+  // 明文 token（flt_<随机 48 hex>），仅本次响应可见。
+  string token = 2;
+  string note = 3;
+  repeated string scopes = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message ListTokensRequest {}
+
+// TokenView 是 token 行的无敏感投影：备注/scope/哈希前缀——明文与完整
+// 哈希永不回读（state-model §2.9）。
+message TokenView {
+  string id = 1;
+  string note = 2;
+  repeated string scopes = 3;
+  // token_hash 前 12 hex（识别用，非凭据）。
+  string hash_prefix = 4;
+  google.protobuf.Timestamp created_at = 5;
+  // 最近使用；从未使用时不输出。
+  google.protobuf.Timestamp last_used_at = 6;
+  // 已吊销时不输出（列表默认只出在册 token）。
+  google.protobuf.Timestamp revoked_at = 7;
+}
+
+message ListTokensResponse {
+  repeated TokenView tokens = 1;
+}
+
+message RevokeTokenRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RevokeTokenResponse {
+  string id = 1;
+  string revoked_at = 2;
+}

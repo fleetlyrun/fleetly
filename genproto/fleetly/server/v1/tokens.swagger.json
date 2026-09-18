@@ -1,0 +1,241 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/tokens.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "TokensService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/tokens": {
+      "get": {
+        "operationId": "TokensService_ListTokens",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTokensResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "TokensService"
+        ]
+      },
+      "post": {
+        "operationId": "TokensService_CreateToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateTokenRequest"
+            }
+          }
+        ],
+        "tags": [
+          "TokensService"
+        ]
+      }
+    },
+    "/v1/tokens/{id}": {
+      "delete": {
+        "operationId": "TokensService_RevokeToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RevokeTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TokensService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1CreateTokenRequest": {
+      "type": "object",
+      "properties": {
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "scope 集（read / deploy / admin；admin 蕴含 deploy 蕴含 read；重复项\n服务端归一去重）。"
+        },
+        "note": {
+          "type": "string",
+          "title": "备注（人读；如 \"CI 部署\"）。字段名 note（name 列承载，兼容既有表结构）。"
+        }
+      }
+    },
+    "v1CreateTokenResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string",
+          "title": "明文 token（flt_\u003c随机 48 hex\u003e），仅本次响应可见。"
+        },
+        "note": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "phase": {
+          "type": "string",
+          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1ListTokensResponse": {
+      "type": "object",
+      "properties": {
+        "tokens": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1TokenView"
+          }
+        }
+      }
+    },
+    "v1RevokeTokenResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "revoked_at": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TokenView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "scopes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "hash_prefix": {
+          "type": "string",
+          "title": "token_hash 前 12 hex（识别用，非凭据）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_used_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "最近使用；从未使用时不输出。"
+        },
+        "revoked_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "已吊销时不输出（列表默认只出在册 token）。"
+        }
+      },
+      "title": "TokenView 是 token 行的无敏感投影：备注/scope/哈希前缀——明文与完整\n哈希永不回读（state-model §2.9）。"
+    }
+  }
+}

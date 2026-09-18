@@ -6,6 +6,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
+	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 )
 
@@ -42,6 +43,37 @@ type AppConfig struct {
 	// Traefik 部署 + 配置端点 + 集中 ACME——缺省值经 ingress.Config.
 	// Normalize 回落，单一事实源在 internal/ingress）。
 	Ingress IngressConfig `mapstructure:"ingress"`
+	// Logs 是日志管线配置节（config 键 logs.*，T2.20；缺省值经 logs.
+	// Config.Normalize 回落——单一事实源在 internal/logs）。
+	Logs LogsConfig `mapstructure:"logs"`
+}
+
+// LogsConfig 是日志管线配置节（config 键 logs.*）。字段与 internal/logs.
+// Config 一一对应；缺省回落 internal/logs（fleetly-logs 目录 / 保留 7 天 /
+// 轮询 2s / ring 1000）。
+type LogsConfig struct {
+	// Dir 是落盘根目录（logs.dir；缺省 ./fleetly-logs）。
+	Dir string `mapstructure:"dir"`
+	// RetentionDays 是落盘保留天数（logs.retention_days；缺省 7——架构
+	// §2.3 数据保留：应用日志 7 天轮转）。
+	RetentionDays int `mapstructure:"retention_days"`
+	// ScanIntervalMillis 是采集轮询周期毫秒数（logs.scan_interval_millis；
+	// 缺省 2000）。
+	ScanIntervalMillis int `mapstructure:"scan_interval_millis"`
+	// RingSize 是 per app-service 内存环形缓冲深度（logs.ring_size；缺省
+	// 1000）。
+	RingSize int `mapstructure:"ring_size"`
+}
+
+// LogsSettings 把 logs.* 配置节翻译为日志管线核心配置（logs.Config，
+// 缺省值经 Normalize 回落——单一事实源在 internal/logs）。
+func (c *AppConfig) LogsSettings() logs.Config {
+	return logs.Config{
+		Dir:                c.Logs.Dir,
+		RetentionDays:      c.Logs.RetentionDays,
+		ScanIntervalMillis: c.Logs.ScanIntervalMillis,
+		RingSize:           c.Logs.RingSize,
+	}.Normalize()
 }
 
 // EngineConfig 是发布引擎配置节（config 键 engine.*）。默认值与

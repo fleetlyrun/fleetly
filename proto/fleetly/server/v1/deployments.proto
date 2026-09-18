@@ -1,0 +1,137 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// DeploymentsService 是部署资源面（T2.17，发布专项状态机行投影）。
+//
+// Deploy 契约取舍（T2.17 设计裁决）：客户端传 compose 文件**内容字节** +
+// 应用名，服务端走引擎入队（deployments queued 行 + deployment.queued
+// 事件 + 审计），返回 deployment id 后立即返回——等待终态由客户端轮询
+// GetDeployment 或消费事件流（部署是长事务，不占 HTTP/gRPC 连接）。
+// Rollback 复用引擎 EnqueueRollback（快照单层重放）；Cancel 是受限语义
+// （未切流可取消，曾健康 409 E_STATE_VERSION_CONFLICT，建议 rollback）。
+service DeploymentsService {
+  rpc ListDeployments(ListDeploymentsRequest) returns (ListDeploymentsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/deployments" };
+  }
+  rpc GetDeployment(GetDeploymentRequest) returns (GetDeploymentResponse) {
+    option (google.api.http) = { get: "/v1/deployments/{id}" };
+  }
+  rpc Deploy(DeployRequest) returns (DeployResponse) {
+    option (google.api.http) = {
+      post: "/v1/apps/{app}/deployments"
+      body: "*"
+    };
+  }
+  rpc CancelDeployment(CancelDeploymentRequest) returns (CancelDeploymentResponse) {
+    option (google.api.http) = {
+      post: "/v1/deployments/{id}/cancel"
+      body: "*"
+    };
+  }
+  rpc RollbackDeployment(RollbackDeploymentRequest) returns (RollbackDeploymentResponse) {
+    option (google.api.http) = {
+      post: "/v1/apps/{app}/rollbacks"
+      body: "*"
+    };
+  }
+}
+
+// DeploymentView 是部署状态机行的只读投影（词表与 state 层一致：
+// queued/preparing/building/releasing/observing/succeeded/failed/cancelled）。
+message DeploymentView {
+  string id = 1;
+  string app = 2;
+  // deploy | rollback。
+  string kind = 3;
+  string status = 4;
+  // 子状态（blocked_waiting 或空）。
+  string phase = 5;
+  string revision_id = 6;
+  string error_code = 7;
+  string verdict = 8;
+  string recovery = 9;
+  // 首发失败 scale=0 保留现场。
+  bool substrate_halted = 10;
+  google.protobuf.Timestamp first_healthy_at = 11;
+  int64 downtime_ms = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+}
+
+message ListDeploymentsRequest {
+  // 应用名（列表必选）。
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  int32 limit = 2 [(buf.validate.field).int32 = { gte: 0, lte: 100 }];
+}
+
+message ListDeploymentsResponse {
+  repeated DeploymentView deployments = 1;
+}
+
+message GetDeploymentRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetDeploymentResponse {
+  DeploymentView deployment = 1;
+}
+
+message DeployRequest {
+  // 应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // compose 文件内容字节（JSON/YAML 原文；服务端落临时文件走受控子集
+  // 校验——compose 违约不动底座、不入队）。
+  bytes compose = 2 [(buf.validate.field).bytes.min_len = 1];
+}
+
+message DeployResponse {
+  string deployment_id = 1;
+  string app = 2;
+  // 入队即返回，恒 "queued"。
+  string status = 3;
+}
+
+message CancelDeploymentRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message CancelDeploymentResponse {
+  string id = 1;
+  // 置位 cancel_requested 时的状态（取消是异步语义：引擎先归位再落
+  // cancelled；曾健康 409）。
+  string status = 2;
+}
+
+message RollbackDeploymentRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // 回滚目标版本快照 ID；空 = 最近一次成功部署的版本（回退一版）。
+  string target_revision_id = 2;
+}
+
+message RollbackDeploymentResponse {
+  string deployment_id = 1;
+  string app = 2;
+  // 恒 "queued"（入队即返回）。
+  string status = 3;
+}

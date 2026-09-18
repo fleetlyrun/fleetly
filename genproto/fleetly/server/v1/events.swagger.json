@@ -1,0 +1,146 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/events.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "EventsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/events/stream": {
+      "get": {
+        "operationId": "EventsService_WatchEvents",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1WatchEventsResponse"
+                }
+              },
+              "title": "Stream result of v1WatchEventsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "since_seq",
+            "description": "游标：返回 seq \u003e since_seq 的事件（升序）；0 = 从保留窗起点。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "EventsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1CursorExpiredView": {
+      "type": "object",
+      "properties": {
+        "oldest_seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "title": "CursorExpiredView 是游标过期断档帧：seq ≤ (oldest_seq - 1) 的事件已被\n保留策略清理，消费方应以 oldest_seq 重新拉全量。"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "phase": {
+          "type": "string",
+          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1EventView": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "name": {
+          "type": "string",
+          "title": "注册表内事件名（deployment.succeeded 等）。"
+        },
+        "subject": {
+          "type": "string",
+          "title": "主题（deployment:\u003cid\u003e / app:\u003cname\u003e 等）。"
+        },
+        "payload": {
+          "type": "string"
+        }
+      },
+      "title": "EventView 是事件行投影（payload 为脱敏 JSON 文本；secret 值禁止进入\n事件——state-model §2.9，采集端已保证）。"
+    },
+    "v1WatchEventsResponse": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "$ref": "#/definitions/v1EventView"
+        },
+        "cursor_expired": {
+          "$ref": "#/definitions/v1CursorExpiredView"
+        }
+      }
+    }
+  }
+}
