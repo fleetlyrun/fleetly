@@ -1,1 +1,0 @@
-feat(T2.17+T2.20): T2-7 还原点——API 面 10 服务 24 RPC（apps/deployments/revisions/domains/env/logs/events/placement/tokens/system，proto 唯一真源全链生成）+ 鉴权拦截器（Bearer 哈希比对/scope 三级矩阵/限流/401-403）+ bootstrap admin token 首启一次显示 + 日志管线（采集/ring/按天落盘 7 天轮转/env 值脱敏/Follow-Stream/History 兼 build 源）+ 事件流 seq 游标与过期信封帧；实机验证 REST 双面与流式；自修采集游标重置缺陷与先期测试 DATA RACE
