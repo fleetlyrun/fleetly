@@ -1,0 +1,334 @@
+package compose
+
+import (
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/compose-spec/compose-go/v2/types"
+
+	"github.com/edgesets/edgefleet/internal/apperr"
+)
+
+// normalize 把 compose-go typed 工程转换为归一化 Spec，并执行需要 typed
+// 信息的第二层校验：
+//   - 平台 label 契约（domains/placement/cron/edgefleet.* 保留前缀）；
+//   - 危险挂载语义（宿主 bind、docker.sock——dict 层白名单之外的补刀）；
+//   - 有卷服务 replicas 校验（本地卷不能多副本共享，stateful-placement
+//     §2.3）；
+//   - env_file 合并（来源标注 env_file < environment）。
+//
+// 同时产出非阻断警告（无 healthcheck、cron label v0.2 生效提示、无卷显式
+// 钉节点的计划警告在 plan 层产出）。
+func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
+	workDir := filepath.Dir(abs)
+	ws := &warnings{}
+
+	// ── 平台 label 契约（跨服务判定先收集，逐服务判定即查即报）──
+	serviceDomains := map[string][]string{}
+	placementRefs := map[string]string{}
+
+	names := make([]string, 0, len(project.Services))
+	for name := range project.Services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+
+	services := make([]Service, 0, len(names))
+	for _, name := range names {
+		svc := project.Services[name]
+		prefix := "services." + name
+		// edgefleet.* 保留前缀：约定键之外的占用 → E_LABEL_RESERVED（422）。
+		for _, k := range sortedStringKeys(svc.Labels) {
+			if !strings.HasPrefix(k, LabelNamespace) {
+				continue
+			}
+			if !knownEdgefleetLabels[k] {
+				return nil, nil, apperr.New("E_LABEL_RESERVED",
+					"服务 %q 占用平台保留 label %q（保留命名空间 %s*，约定键：%s 等）",
+					name, k, LabelNamespace, strings.Join(sortedStringKeys(knownEdgefleetLabels), ", ")).
+					WithContext("path", prefix+".labels."+k)
+			}
+		}
+
+		// domains label（有该 label 的服务即入口）。
+		var domains []string
+		if v, ok := svc.Labels[LabelDomains]; ok {
+			parsed, err := parseDomainsLabel(name, v)
+			if err != nil {
+				return nil, nil, err
+			}
+			domains = parsed
+		}
+		serviceDomains[name] = domains
+
+		// placement label：语法 + 跨服务一致性。
+		if v, ok := svc.Labels[LabelPlacementNode]; ok {
+			placementRefs[name] = strings.TrimSpace(v)
+		}
+
+		// cron 家族：v0.1 不生效 → 警告级提示（v0.2 生效；不发明新码，
+		// Kind 标识）。
+		for _, k := range []string{LabelCron, LabelCronTimezone, LabelCronTimeout} {
+			if _, ok := svc.Labels[k]; ok {
+				ws.add(Warning{
+					Kind:    WarningKindCronLabelPending,
+					Service: name,
+					Message: "服务 " + name + " 声明了 " + k + "（定时任务为 v0.2 契约，v0.1 按长驻服务部署）",
+				})
+				break
+			}
+		}
+
+		normalized, err := normalizeService(workDir, name, &svc, ws)
+		if err != nil {
+			return nil, nil, err
+		}
+		normalized.Domains = domains
+		normalized.PlacementNode = placementRefs[name]
+		services = append(services, normalized)
+	}
+
+	if err := checkDomainContracts(serviceDomains); err != nil {
+		return nil, nil, err
+	}
+	if err := checkPlacementLabel(placementRefs); err != nil {
+		return nil, nil, err
+	}
+
+	// ── 顶层卷/网络/secret 归一化 ──
+	var volumes []Volume
+	for key, def := range project.Volumes {
+		volumes = append(volumes, Volume{Key: key, Driver: def.Driver})
+	}
+	sort.Slice(volumes, func(i, j int) bool { return volumes[i].Key < volumes[j].Key })
+
+	var networks []string
+	for net := range project.Networks {
+		networks = append(networks, net)
+	}
+	sort.Strings(networks)
+
+	var secrets []string
+	for name := range project.Secrets {
+		secrets = append(secrets, name)
+	}
+	sort.Strings(secrets)
+
+	// ── 无 healthcheck 警告（health_gate=none 显式降级，release-semantics
+	// §2.8 健康门解析）──
+	for i := range services {
+		if services[i].Healthcheck == nil {
+			ws.add(Warning{
+				Code:    "W_DEPLOY_NO_HEALTHCHECK",
+				Service: services[i].Name,
+				Message: "服务 " + services[i].Name + " 未声明 healthcheck：health_gate=none（发布健康门退化为退出/副本水位判定，故障暴露更晚）",
+			})
+		}
+	}
+
+	spec := &Spec{
+		Name:     project.Name,
+		Services: services,
+		Volumes:  volumes,
+		Networks: networks,
+		Secrets:  secrets,
+	}
+	return spec, ws.items, nil
+}
+
+// normalizeService 归一化单个服务（不含 domains/placement——由调用方回填）。
+func normalizeService(workDir, name string, svc *types.ServiceConfig, ws *warnings) (Service, error) {
+	out := Service{Name: name}
+
+	if svc.Build != nil {
+		out.Build = &Build{Context: svc.Build.Context, Dockerfile: svc.Build.Dockerfile}
+	}
+	out.Image = svc.Image
+	out.Command = append([]string{}, svc.Command...)
+	if len(svc.Expose) > 0 {
+		out.Expose = append([]string{}, svc.Expose...)
+	}
+	if svc.HealthCheck != nil {
+		hc := &Healthcheck{Test: append([]string{}, svc.HealthCheck.Test...)}
+		if svc.HealthCheck.Interval != nil {
+			hc.Interval = svc.HealthCheck.Interval.String()
+		}
+		if svc.HealthCheck.Timeout != nil {
+			hc.Timeout = svc.HealthCheck.Timeout.String()
+		}
+		if svc.HealthCheck.Retries != nil {
+			hc.Retries = *svc.HealthCheck.Retries
+		}
+		if svc.HealthCheck.StartPeriod != nil {
+			hc.StartPeriod = svc.HealthCheck.StartPeriod.String()
+		}
+		out.Healthcheck = hc
+	}
+
+	// env 合并链：env_file < environment（架构 §2.4 变量合并行；平台层随
+	// env 票接入）。值只以 sha256 表示。
+	env, err := mergeEnvironment(workDir, name, svc)
+	if err != nil {
+		return out, err
+	}
+	out.Environment = env
+
+	for _, s := range svc.Secrets {
+		out.Secrets = append(out.Secrets, s.Source)
+	}
+	sort.Strings(out.Secrets)
+
+	for _, v := range svc.Volumes {
+		// 危险挂载语义（Coolify CVE-2025-34159 根因类）：宿主 bind 与
+		// docker.sock 一律拒绝（admin 显式开启 + 审计为后续票 TODO）。
+		if v.Type == "bind" {
+			return out, errCompose("服务 %q 的卷挂载 %s:%s 为宿主路径 bind（危险字段默认拒绝；数据持久化用命名卷）", name, v.Source, v.Target).
+				WithContext("path", "services."+name+".volumes").
+				WithContext("reason", "host_bind")
+		}
+		if isDockerSockTarget(v.Target) {
+			return out, errCompose("服务 %q 的卷挂载目标 %s 命中 Docker 守护进程套接字（危险字段默认拒绝）", name, v.Target).
+				WithContext("path", "services."+name+".volumes").
+				WithContext("reason", "docker_sock")
+		}
+		out.Volumes = append(out.Volumes, Mount{Volume: v.Source, Target: v.Target, ReadOnly: v.ReadOnly})
+	}
+
+	for net := range svc.Networks {
+		out.Networks = append(out.Networks, net)
+	}
+	sort.Strings(out.Networks)
+
+	if svc.Deploy != nil {
+		// 有命名卷服务 replicas 上限（stateful-placement §2.3：本地卷不能
+		// 多副本共享——双任务并发挂同一卷有数据风险；replicas 0/1 合法，
+		// 上限校验收敛在 >1，省略 = 平台按 1 处理）。
+		if r := svc.Deploy.Replicas; r != nil && *r > 1 && len(svc.Volumes) > 0 {
+			return out, errCompose("服务 %q 挂载命名卷且 replicas=%d（本地卷不能多副本共享，replicas 必须 ≤1）", name, *r).
+				WithContext("path", "services."+name+".deploy.replicas")
+		}
+		out.Deploy = normalizeDeploy(svc.Deploy)
+	}
+	out.StopSignal = svc.StopSignal
+	if svc.StopGracePeriod != nil {
+		out.StopGracePeriod = svc.StopGracePeriod.String()
+	}
+	return out, nil
+}
+
+// normalizeDeploy 归一化 deploy 段（受管字段 failure_action/monitor 校验已
+// 通过，不进快照——平台常量；order 及其余字段照用）。
+func normalizeDeploy(d *types.DeployConfig) *Deploy {
+	out := &Deploy{}
+	if d.Mode != "" {
+		out.Mode = d.Mode
+	}
+	if d.Replicas != nil {
+		out.Replicas = int64(*d.Replicas)
+	}
+	if uc := d.UpdateConfig; uc != nil {
+		u := &UpdateConfig{Order: uc.Order, Parallelism: valueOrZero(uc.Parallelism)}
+		if uc.Delay != 0 {
+			u.Delay = uc.Delay.String()
+		}
+		out.UpdateConfig = u
+	}
+	if rp := d.RestartPolicy; rp != nil {
+		out.RestartPolicy = &RestartPolicy{
+			Condition:   rp.Condition,
+			MaxAttempts: valueOrZero(rp.MaxAttempts),
+		}
+		if rp.Delay != nil && *rp.Delay != 0 {
+			out.RestartPolicy.Delay = rp.Delay.String()
+		}
+		if rp.Window != nil && *rp.Window != 0 {
+			out.RestartPolicy.Window = rp.Window.String()
+		}
+	}
+	if d.Resources.Limits != nil {
+		out.Resources = &Resources{Limits: &ResourceLimits{
+			CPUS:        float64(d.Resources.Limits.NanoCPUs),
+			MemoryBytes: int64(d.Resources.Limits.MemoryBytes),
+		}}
+	}
+	if len(d.Placement.Constraints) > 0 {
+		out.Placement = &Placement{Constraints: append([]string{}, d.Placement.Constraints...)}
+	}
+	return out
+}
+
+// mergeEnvironment 按 env_file < environment 合并并产出排序后的
+// key+hash+source 列表。
+func mergeEnvironment(workDir, name string, svc *types.ServiceConfig) ([]EnvVar, error) {
+	merged := map[string]EnvVar{}
+	for _, ef := range svc.EnvFiles {
+		p := ef.Path
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(workDir, p)
+		}
+		content, err := os.ReadFile(p) //nolint:gosec // env_file 为用户 compose 显式声明的读取对象（校验已定路径形态）
+		if err != nil {
+			if !bool(ef.Required) {
+				continue // required: false 显式缺省容忍
+			}
+			return nil, errCompose("服务 %q 的 env_file %s 不可读: %v", name, ef.Path, err).
+				WithContext("path", "services."+name+".env_file")
+		}
+		kvs, err := parseEnvFile(name, ef.Path, content)
+		if err != nil {
+			return nil, err
+		}
+		for k, v := range kvs {
+			merged[k] = EnvVar{Key: k, Hash: sha256Hex(v), Source: EnvSourceEnvFile}
+		}
+	}
+	for k, v := range svc.Environment {
+		if v == nil {
+			// dict 层已拒绝裸键；typed 兜底（防御性，理论不可达）。
+			return nil, errCompose("服务 %q 的 environment 条目 %q 未给字面值", name, k).
+				WithContext("path", "services."+name+".environment."+k)
+		}
+		merged[k] = EnvVar{Key: k, Hash: sha256Hex(*v), Source: EnvSourceEnvironment}
+	}
+	keys := make([]string, 0, len(merged))
+	for k := range merged {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	out := make([]EnvVar, 0, len(keys))
+	for _, k := range keys {
+		out = append(out, merged[k])
+	}
+	return out, nil
+}
+
+// isDockerSockTarget 判定挂载目标是否命中 Docker 守护进程套接字（含其
+// 父目录挂载）。
+func isDockerSockTarget(target string) bool {
+	t := filepath.ToSlash(target)
+	return t == "/var/run/docker.sock" || strings.HasPrefix(t, "/var/run/docker.sock/")
+}
+
+// valueOrZero 解 nil 指针为零值（归一化输出不允许指针）。
+func valueOrZero[T any](p *T) T {
+	var zero T
+	if p != nil {
+		return *p
+	}
+	return zero
+}
+
+// sortedStringKeys 返回映射键排序切片（泛型工具）。
+func sortedStringKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// sortedKeys 是 sortedStringKeys 的别名（validate.go 用）。
+func sortedKeys[V any](m map[string]V) []string { return sortedStringKeys(m) }

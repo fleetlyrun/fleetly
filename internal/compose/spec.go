@@ -1,0 +1,175 @@
+package compose
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+)
+
+// EnvSource 是归一化 env 条目的来源标注（release-semantics §2.4：三层合并
+// 链 env_file < environment < 平台层；平台层随引擎/env 票接入，本包只产出
+// 文件内两层）。值取稳定字符串，进快照与 plan/diff 输出。
+const (
+	EnvSourceEnvFile     = "env_file"
+	EnvSourceEnvironment = "environment"
+)
+
+// Spec 是 compose 文件经受控子集校验后的稳定归一化形态（架构 §2.4、
+// release-semantics §2.4）：受控子集内的服务与卷定义；env 以
+// key:sha256(value)+来源标注表示（值本身不进归一化结果）；无插值、字面值。
+// 该形态即 revisions.compose_normalized 快照与 desired-hash 的地基。
+//
+// 稳定性纪律：所有切片输出前排序（服务/卷/网络/secret/域名/env 按名称或
+// 字典序；expose/volumes 挂载顺序语义保留原序），canonical JSON 由
+// CanonicalJSON 确定性编码，spec_hash = sha256(canonical_json)。
+type Spec struct {
+	Name     string    `json:"name,omitempty"`
+	Services []Service `json:"services"`
+	Volumes  []Volume  `json:"volumes,omitempty"`
+	Networks []string  `json:"networks,omitempty"`
+	Secrets  []string  `json:"secrets,omitempty"`
+	// SpecHash 是 CanonicalJSON 的 sha256 hex（载入时填定）。
+	SpecHash string `json:"spec_hash"`
+}
+
+// CanonicalJSON 输出确定性 JSON（键排序由 encoding/json 保证、HTML 转义
+// 关闭、无尾部换行），作为 spec_hash 的哈希输入。
+func (s *Spec) CanonicalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	if err := enc.Encode(s); err != nil {
+		return nil, err
+	}
+	return bytes.TrimRight(buf.Bytes(), "\n"), nil
+}
+
+// hashSpec 计算 spec_hash 并回填（Load 内部使用）。
+func (s *Spec) hashSpec() error {
+	canonical, err := s.CanonicalJSON()
+	if err != nil {
+		return err
+	}
+	sum := sha256.Sum256(canonical)
+	s.SpecHash = hex.EncodeToString(sum[:])
+	return nil
+}
+
+// Service 是归一化后的服务定义。只承载受控子集字段；平台管理项（镜像
+// digest、secret 值、路由绑定、节点绑定）不进文件、不进快照。
+type Service struct {
+	Name string `json:"name"`
+	// Build/Image 互斥或同现均可（compose 允许 image+build；构建模式裁决
+	// 随构建票：无 dockerfile → Railpack，有 build.dockerfile → Dockerfile）。
+	Build   *Build   `json:"build,omitempty"`
+	Image   string   `json:"image,omitempty"`
+	Command []string `json:"command,omitempty"`
+	// Expose 保持原序（路由目标端口取首个，架构 §2.4）。
+	Expose []string `json:"expose,omitempty"`
+	// Domains 是 edgefleet.domains label 解析后的域名列表（trim/小写/
+	// IDN→punycode 归一化后排序）。有该 label 的服务即入口。
+	Domains []string `json:"domains,omitempty"`
+	// PlacementNode 是 edgefleet.placement.node label 的字面值（放置意图；
+	// 名或 n_<ULID> 的解析/绑定校验属放置层，语法校验见 validate.go）。
+	PlacementNode string `json:"placement_node,omitempty"`
+
+	Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
+	// Environment 是 env 合并结果（env_file < environment），按 key 排序；
+	// 只含 key+hash+source，值永不进归一化形态（脱敏结构性成立）。
+	Environment []EnvVar `json:"environment,omitempty"`
+	Secrets     []string `json:"secrets,omitempty"`
+	// Volumes 是命名卷挂载（v0.1 受控子集：仅命名卷；bind/tmpfs 拒绝），
+	// 保持声明顺序（挂载点集合有语义）。
+	Volumes  []Mount  `json:"volumes,omitempty"`
+	Networks []string `json:"networks,omitempty"`
+
+	Deploy          *Deploy `json:"deploy,omitempty"`
+	StopSignal      string  `json:"stop_signal,omitempty"`
+	StopGracePeriod string  `json:"stop_grace_period,omitempty"`
+}
+
+// Build 是归一化后的构建声明（仅保留平台消费的子键；构建引擎参数不在
+// §2.4 支持清单，白名单拒绝）。
+type Build struct {
+	Context    string `json:"context"`
+	Dockerfile string `json:"dockerfile,omitempty"`
+}
+
+// Healthcheck 是按书写形态归一化的健康检查（平台默认 5s/3s/3/10s 只补
+// 运行态缺省，不烘焙进快照——治理参数取当前平台配置，release-semantics
+// §2.4）。时长为归一化字符串（time.Duration.String() 形态，如 10s）。
+type Healthcheck struct {
+	Test        []string `json:"test,omitempty"`
+	Interval    string   `json:"interval,omitempty"`
+	Timeout     string   `json:"timeout,omitempty"`
+	Retries     uint64   `json:"retries,omitempty"`
+	StartPeriod string   `json:"start_period,omitempty"`
+}
+
+// EnvVar 是一条 env 合并结果：值只以 sha256 hex 表示（spec_hash 参与；
+// 明文与明文长度都不泄露），Source 标注三层合并链中的文件内层级。
+type EnvVar struct {
+	Key    string `json:"key"`
+	Hash   string `json:"hash"`
+	Source string `json:"source"`
+}
+
+// Mount 是一次命名卷挂载。
+type Mount struct {
+	Volume   string `json:"volume"`
+	Target   string `json:"target"`
+	ReadOnly bool   `json:"read_only,omitempty"`
+}
+
+// Deploy 是归一化后的 deploy 段（受管字段 failure_action/monitor 校验通过
+// 后不进快照——值恒为 pause/5s 平台常量，写进快照只会放大噪音；order 及
+// 其余字段照用）。
+type Deploy struct {
+	Mode          string         `json:"mode,omitempty"`
+	Replicas      int64          `json:"replicas,omitempty"`
+	UpdateConfig  *UpdateConfig  `json:"update_config,omitempty"`
+	RestartPolicy *RestartPolicy `json:"restart_policy,omitempty"`
+	Resources     *Resources     `json:"resources,omitempty"`
+	Placement     *Placement     `json:"placement,omitempty"`
+}
+
+// UpdateConfig 归一化更新策略（order 照用；有卷服务显式 start-first 在
+// 校验层拒绝 → E_COMPOSE_UNSAFE_STRATEGY）。
+type UpdateConfig struct {
+	Order       string `json:"order,omitempty"`
+	Parallelism uint64 `json:"parallelism,omitempty"`
+	Delay       string `json:"delay,omitempty"`
+}
+
+// RestartPolicy 归一化重启策略（release-semantics §2.8：restart_policy 照用）。
+type RestartPolicy struct {
+	Condition   string `json:"condition,omitempty"`
+	Delay       string `json:"delay,omitempty"`
+	MaxAttempts uint64 `json:"max_attempts,omitempty"`
+	Window      string `json:"window,omitempty"`
+}
+
+// Resources 归一化资源限额（仅 limits；reservations 不在支持清单）。
+type Resources struct {
+	Limits *ResourceLimits `json:"limits,omitempty"`
+}
+
+// ResourceLimits 是 limits 的平台消费子集。
+type ResourceLimits struct {
+	CPUS        float64 `json:"cpus,omitempty"`
+	MemoryBytes int64   `json:"memory_bytes,omitempty"`
+}
+
+// Placement 归一化放置约束（constraints 仅允许 node.labels.edgefleet.*
+// 命名空间，stateful-placement §2.3）。
+type Placement struct {
+	Constraints []string `json:"constraints,omitempty"`
+}
+
+// Volume 是顶层命名卷声明（卷数据生命周期归平台卷注册表，声明仅承载
+// driver 等卷级参数；external/name 拒绝）。
+type Volume struct {
+	Key    string `json:"key"`
+	Driver string `json:"driver,omitempty"`
+}

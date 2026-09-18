@@ -1,0 +1,60 @@
+# 扩展面归一化夹具：env_file 合并、命名卷挂载、栈内网络、stop 字段、
+# placement 约束与 pin、global 模式、restart_policy、env_file 来源标注。
+name: extended-app
+services:
+  web:
+    image: nginx:1.27
+    env_file:
+      - base.env
+    environment:
+      LOG_LEVEL: debug
+      PLATFORM_OVERRIDDEN: from_environment
+    expose: ["8080", "9090"]
+    labels:
+      edgefleet.domains: "app.example.com, BÜCHER.de"
+      edgefleet.placement.node: n_01ARZ3NDEKTSV4RRFFQ69G5FAV
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    volumes:
+      - data:/var/lib/app
+      - { type: volume, source: cache, target: /cache, read_only: false }
+    networks: [frontnet, backnet]
+    deploy:
+      replicas: 1
+      update_config:
+        order: stop-first
+        parallelism: 2
+        delay: 10s
+      restart_policy:
+        condition: any
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits: { cpus: "1.5", memory: 512M }
+      placement:
+        constraints:
+          - node.labels.edgefleet.rack == r1
+    stop_signal: SIGINT
+    stop_grace_period: 45s
+  worker:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile
+    command: ["node", "worker.js", "--queue"]
+    env_file:
+      - path: optional.env
+        required: false
+secrets:
+  db_url: { external: true }
+volumes:
+  data: { driver: local }
+  cache:
+networks:
+  frontnet:
+  backnet:
+    driver: overlay

@@ -1,0 +1,161 @@
+package compose
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+
+	"github.com/oklog/ulid/v2"
+	"golang.org/x/net/idna"
+
+	"github.com/edgesets/edgefleet/internal/apperr"
+)
+
+// 平台 label 契约常量（架构 §2.4 平台约定表、state-model §2.4 保留前缀）。
+const (
+	LabelDomains       = "edgefleet.domains"
+	LabelPlacementNode = "edgefleet.placement.node"
+	LabelCron          = "edgefleet.cron"
+	LabelCronTimezone  = "edgefleet.cron.timezone"
+	LabelCronTimeout   = "edgefleet.cron.timeout"
+
+	// LabelNamespace 是平台保留 label 命名空间前缀：用户占用约定键之外的
+	// edgefleet.* 键 → E_LABEL_RESERVED（422）。
+	LabelNamespace = "edgefleet."
+
+	// domain 契约上限（架构 §2.4）：每服务 ≤5、每 app ≤10。
+	maxDomainsPerService = 5
+	maxDomainsPerApp     = 10
+)
+
+// knownEdgefleetLabels 是 v0.1 承认的平台约定键全集（cron 家族为 v0.2 契约，
+// v0.1 出现时给警告级提示而非拒绝）。
+var knownEdgefleetLabels = map[string]bool{
+	LabelDomains:       true,
+	LabelPlacementNode: true,
+	LabelCron:          true,
+	LabelCronTimezone:  true,
+	LabelCronTimeout:   true,
+}
+
+// idnaProfile 是域名归一化档案：IDN → punycode（架构 §2.4 域名行）。Lookup
+// 档案做大小写折叠与合法性校验（拒绝非法字符/超长标签），与证书 SAN 语义
+// 对齐。
+var idnaProfile = idna.Lookup
+
+// parseDomainsLabel 解析 edgefleet.domains label 值：逗号分隔列表 → trim/
+// 小写/IDN→punycode 归一化、排序去重；通配符与非法形态 →
+// E_DOMAIN_UNSUPPORTED；超上限 → E_DOMAIN_UNSUPPORTED（reason 上下文标注）。
+// 返回归一化后的域名列表（保序输入、输出排序去重）。
+func parseDomainsLabel(service, value string) ([]string, error) {
+	rawItems := strings.Split(value, ",")
+	domains := make([]string, 0, len(rawItems))
+	seen := map[string]bool{}
+	for i, raw := range rawItems {
+		d := strings.TrimSpace(raw)
+		pathCtx := fmt.Sprintf("services.%s.labels.%s[%d]", service, LabelDomains, i)
+		if d == "" {
+			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 的域名列表含空条目", service).
+				WithContext("path", pathCtx).WithContext("reason", "empty_entry")
+		}
+		if strings.HasPrefix(d, "*") {
+			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 的域名 %q 为通配符（通配符证书需 DNS-01，v0.2 起支持）", service, d).
+				WithContext("path", pathCtx).WithContext("reason", "wildcard")
+		}
+		ascii, err := idnaProfile.ToASCII(strings.ToLower(d))
+		if err != nil {
+			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 的域名 %q 形态不受支持: %v", service, d, err).
+				WithContext("path", pathCtx).WithContext("reason", "invalid_form")
+		}
+		if !seen[ascii] {
+			seen[ascii] = true
+			domains = append(domains, ascii)
+		}
+	}
+	if len(domains) > maxDomainsPerService {
+		return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 声明了 %d 个域名，超出每服务上限 %d", service, len(domains), maxDomainsPerService).
+			WithContext("path", fmt.Sprintf("services.%s.labels.%s", service, LabelDomains)).
+			WithContext("reason", "per_service_limit")
+	}
+	sortStrings(domains)
+	return domains, nil
+}
+
+// checkDomainContract 执行跨服务域名契约：同域名出现在两个服务 →
+// E_DOMAIN_CONFLICT（409）；全 app 域名总数 ≤10。返回合并后的 app 域名集。
+func checkDomainContracts(serviceDomains map[string][]string) error {
+	owner := map[string]string{} // domain → 首个占用服务
+	total := 0
+	for _, svc := range sortedKeys(serviceDomains) {
+		total += len(serviceDomains[svc])
+		for _, d := range serviceDomains[svc] {
+			if prev, ok := owner[d]; ok {
+				return apperr.New("E_DOMAIN_CONFLICT", "域名 %q 同时出现在服务 %q 与 %q（同应用内域名归属唯一）", d, prev, svc).
+					WithContext("domain", d).
+					WithContext("services", prev+","+svc)
+			}
+			owner[d] = svc
+		}
+	}
+	if total > maxDomainsPerApp {
+		return apperr.New("E_DOMAIN_UNSUPPORTED", "应用共声明 %d 个域名，超出每应用上限 %d", total, maxDomainsPerApp).
+			WithContext("path", "services.*.labels."+LabelDomains).
+			WithContext("reason", "per_app_limit")
+	}
+	return nil
+}
+
+// checkPlacementLabel 校验 edgefleet.placement.node 语法与跨服务一致性
+// （stateful-placement §2.2/§2.3）：hostname 或 n_<ULID>；语法非法 →
+// E_PLACEMENT_NODE_INVALID（422）；同 app 多服务指向不同节点 →
+// E_PLACEMENT_LABEL_CONFLICT（422）。
+func checkPlacementLabel(values map[string]string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	firstSvc, firstVal := "", ""
+	for _, svc := range sortedKeys(values) {
+		v := strings.TrimSpace(values[svc])
+		if err := validatePlacementNodeRef(svc, v); err != nil {
+			return err
+		}
+		if firstSvc == "" {
+			firstSvc, firstVal = svc, v
+			continue
+		}
+		if v != firstVal {
+			return apperr.New("E_PLACEMENT_LABEL_CONFLICT",
+				"服务 %q 与 %q 的 placement.node 指向不同节点（%q vs %q）——放置粒度为 app 级，同一应用的全部服务必须同节点", firstSvc, svc, firstVal, v).
+				WithContext("services", firstSvc+","+svc)
+		}
+	}
+	return nil
+}
+
+// validatePlacementNodeRef 校验单个 placement.node 引用语法：hostname 或
+// n_<ULID>（stateful-placement §2.2）；n_ 前缀必须是合法 ULID，否则 422
+// E_PLACEMENT_NODE_INVALID。hostname 形态在此只做非空与非空白检查——名字
+// 是否存在属部署前哨校验（E_PLACEMENT_NODE_NOT_FOUND，运行期），解析层不
+// 拥有节点清单。
+func validatePlacementNodeRef(service, ref string) error {
+	pathCtx := "services." + service + ".labels." + LabelPlacementNode
+	if ref == "" {
+		return apperr.New("E_PLACEMENT_NODE_INVALID", "服务 %q 的 placement.node 为空（hostname 或 n_<ULID>）", service).
+			WithContext("path", pathCtx)
+	}
+	if strings.HasPrefix(ref, "n_") {
+		if _, err := ulid.Parse(strings.TrimPrefix(ref, "n_")); err != nil {
+			return apperr.New("E_PLACEMENT_NODE_INVALID", "服务 %q 的 placement.node %q 不是合法节点 ID（要求 n_<ULID> 形态）", service, ref).
+				WithContext("path", pathCtx)
+		}
+		return nil
+	}
+	if strings.ContainsAny(ref, " \t\r\n") {
+		return apperr.New("E_PLACEMENT_NODE_INVALID", "服务 %q 的 placement.node %q 含空白字符（hostname 或 n_<ULID>）", service, ref).
+			WithContext("path", pathCtx)
+	}
+	return nil
+}
+
+// sortStrings 原地字典序排序。
+func sortStrings(s []string) { sort.Strings(s) }

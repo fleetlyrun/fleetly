@@ -1,0 +1,26 @@
+# 架构 §2.4 的示例 compose（核心真源：受控子集 + 最小 label 约定）。
+# 本文件是归一化 golden 测试与 CLI 实机验收的基准夹具。
+name: my-api
+services:
+  web:
+    build: { context: . }              # 无 dockerfile → Railpack 自动
+    expose: ["8080"]                   # 路由目标端口（取首个）
+    labels:
+      edgefleet.domains: "api.example.com, www.api.example.com"   # 域名列表（TLS 自动）
+    healthcheck:
+      test: ["CMD", "/app/healthcheck"]   # 未写子字段取平台默认（5s/3s/3/10s）
+      start_period: 10s
+    environment: { NODE_ENV: production }
+    secrets: [database_url]            # 平台密钥库 → Swarm secret（挂 /run/secrets）
+    deploy:
+      replicas: 1
+      update_config: { order: start-first, failure_action: pause }   # failure_action 必须为 pause
+      resources: { limits: { cpus: "0.5", memory: 256M } }
+  worker:
+    build: { context: . }
+    command: node worker.js
+    secrets: [database_url]
+secrets:
+  database_url: { external: true }     # 名称对应平台密钥库条目
+volumes:
+  data:
