@@ -1,0 +1,1 @@
+feat(T2.15+T2.16): T2-6 还原点——Traefik 入口（global 自部署/HTTP provider 配置端点 token 鉴权/裸 {} 与空视图拒绝/Spike B 四态纪律回归）+ 路由发布严格晚于健康门（时序断言）+ 集中 ACME（lego HTTP-01 经 Traefik 反代、Pebble 实测全链、多 SAN、续期扫描）+ domains 台账与 verify/ingress CLI；注册表只增 1 码 2 事件（E_ROUTE_PUBLISH_FAILED、route.published/publish_failed，待冻结轮确认）；验收修复引擎缺陷：崩溃计数按发布起始时间划界（同镜像连续部署误判 E_OBSERVE_CRASH_LOOP）+ 回归测试

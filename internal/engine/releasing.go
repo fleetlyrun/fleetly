@@ -196,7 +196,7 @@ func (e *Engine) enterObserving(ctx context.Context, rec state.DeployRecord) err
 	if firstHealthy != nil {
 		rec.FirstHealthyAt = now
 	}
-	return e.store.InTx(ctx, func(tx *state.Tx) error {
+	if err := e.store.InTx(ctx, func(tx *state.Tx) error {
 		if healthy {
 			if err := deploymentEvent(ctx, tx, "deployment.healthy", rec.ID); err != nil {
 				return err
@@ -207,7 +207,14 @@ func (e *Engine) enterObserving(ctx context.Context, rec state.DeployRecord) err
 		}
 		return deploymentEvent(ctx, tx, "deployment.observe_started", rec.ID,
 			"window_seconds", fmt.Sprintf("%d", int64(e.cfg.ObserveWindow/time.Second)))
-	})
+	}); err != nil {
+		return err
+	}
+	// 路由发布挂点（T2.15；architecture §2.5 不变量）：严格晚于健康门
+	//（切流/observe_started 之后）——端点入集晚于 healthy 的 V1/B3 语义。
+	// 失败只告警，不影响部署状态机（publishRoutes 内部消化）。
+	e.publishRoutes(ctx, rec)
+	return nil
 }
 
 // failUnswitchedOrSwitched 是失败分流唯一入口（D-REL-4，判据 =

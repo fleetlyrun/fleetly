@@ -29,6 +29,8 @@ placement.recovered	绑定节点恢复，自动回绑
 placement.unresolved	DR 后绑定无法判定，要求显式放置（不猜测）
 reconcile.drift_detected	检测到期望态与实际态漂移（含手动 docker 操作）；收敛 per-app opt-in
 restore.completed	控制面恢复流程完成（只读观察退出后）
+route.publish_failed	应用入口路由发布失败（部署不受影响，单独告警）
+route.published	应用入口路由已发布（健康门通过后，全量动态配置已收敛）
 volume.created	卷注册（数据诞生点，钉住所在节点）
 volume.detached	卷解除挂载（移除卷声明，数据不随声明删除）
 volume.discarded	卷被显式丢弃（admin+confirm+审计）

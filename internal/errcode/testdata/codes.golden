@@ -25,6 +25,7 @@ E_PLACEMENT_NODE_UNAVAILABLE	503	https://docs.fleetly.dev/errors/E_PLACEMENT_NOD
 E_PLACEMENT_NO_ELIGIBLE_NODE	503	https://docs.fleetly.dev/errors/E_PLACEMENT_NO_ELIGIBLE_NODE	自动选点无候选（无 ready 节点满足条件）	检查节点 ready 状态与放置约束，恢复候选节点后重试。
 E_ROLLBACK_FAILED	500	https://docs.fleetly.dev/errors/E_ROLLBACK_FAILED	回滚（快照单层重放）失败	查看部署记录与日志定位重放失败原因，可再次发起回滚。
 E_ROLLBACK_NO_TARGET	409	https://docs.fleetly.dev/errors/E_ROLLBACK_NO_TARGET	没有可重放的回滚目标（保留最近 5 个已验证版本之外/首发失败）	没有可重放的历史版本：请改用新版本部署（版本保留数默认 5）。
+E_ROUTE_PUBLISH_FAILED	503	https://docs.fleetly.dev/errors/E_ROUTE_PUBLISH_FAILED	入口路由发布失败（部署不受影响，路由单独告警）	查看 route.publish_failed 事件与 fleetly ingress status；底座/入口恢复后随下次部署或重发布自动收敛。
 E_RUNTIME_UNAVAILABLE	503	https://docs.fleetly.dev/errors/E_RUNTIME_UNAVAILABLE	Swarm/节点底座不可达或操作失败	检查 Docker Engine 与节点状态，底座恢复后重试；对账器会自动收敛观测缓存。
 E_SCHEDULER_PENDING_TIMEOUT	500	https://docs.fleetly.dev/errors/E_SCHEDULER_PENDING_TIMEOUT	任务滞留 PENDING 超过发布看门狗（调度约束/资源不足/节点不可用）	检查节点资源与放置约束（绑定节点是否 ready），释放资源或调整约束后重试。
 E_STATE_VERSION_CONFLICT	409	https://docs.fleetly.dev/errors/E_STATE_VERSION_CONFLICT	写前直读乐观并发冲突（对象版本令牌失效）	对象已被并发修改：重新读取最新状态后以新版本令牌重试。

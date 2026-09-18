@@ -5,6 +5,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 )
 
@@ -37,6 +38,10 @@ type AppConfig struct {
 	// Engine 是发布引擎配置（config 键 engine.*，T2.10/T2.11；治理参数
 	// v0.1 平台默认——文件缺省即文档默认，见 engine.Config.Normalize）。
 	Engine EngineConfig `mapstructure:"engine"`
+	// Ingress 是入口/证书配置节（config 键 ingress.*，T2.15/T2.16；
+	// Traefik 部署 + 配置端点 + 集中 ACME——缺省值经 ingress.Config.
+	// Normalize 回落，单一事实源在 internal/ingress）。
+	Ingress IngressConfig `mapstructure:"ingress"`
 }
 
 // EngineConfig 是发布引擎配置节（config 键 engine.*）。默认值与
@@ -104,6 +109,77 @@ type BuildConfig struct {
 type GRPCConfig struct {
 	// Addr 是 gRPC 监听地址（grpc.addr）。
 	Addr string `mapstructure:"addr"`
+}
+
+// IngressConfig 是入口/证书配置节（config 键 ingress.*）。字段与
+// internal/ingress.Config 一一对应；缺省值在 ingress.Config.Normalize
+// （traefik:v3.5 钉版、host 80/443、配置端点 :8422、LE production ACME、
+// 续期窗口 30 天）。
+type IngressConfig struct {
+	// TraefikImage 是入口镜像（traefik_image；钉版，升级 = 改配置 +
+	// 回归，不追 latest）。
+	TraefikImage string `mapstructure:"traefik_image"`
+	// HTTPPort / HTTPSPort 是宿主发布端口（host 模式）。
+	HTTPPort  int `mapstructure:"http_port"`
+	HTTPSPort int `mapstructure:"https_port"`
+	// ConfigAddr 是控制面配置端点监听地址（config_addr；默认 0.0.0.0:8422
+	// ——Traefik 任务经宿主 IP 访问，鉴权 token 强制）。
+	ConfigAddr string `mapstructure:"config_addr"`
+	// ConfigAdvertiseIP 是下发给 Traefik 的控制面可达 IP
+	//（config_advertise_ip；空 = 自动探测。Docker Desktop 形态 advertise
+	// addr 是 VM 内部 IP，须显式配置宿主可达地址）。
+	ConfigAdvertiseIP string `mapstructure:"config_advertise_ip"`
+	// TokenFile 是配置端点 bearer token 文件（token_file；首启生成）。
+	TokenFile string `mapstructure:"token_file"`
+	// CertDir 是证书存储根目录（cert_dir；控制面侧明文 PEM，独立备份目录
+	// ——state-model §2.1；bind 挂载进 Traefik 只读）。
+	CertDir string `mapstructure:"cert_dir"`
+	// ACME 是集中签发器配置。
+	ACME IngressACMEConfig `mapstructure:"acme"`
+	// RenewBeforeDays 是续期窗口天数（renew_before_days；缺省 30）。
+	RenewBeforeDays int `mapstructure:"renew_before_days"`
+	// RenewScanSeconds 是续期扫描周期秒数（renew_scan_seconds；缺省 12h）。
+	RenewScanSeconds int `mapstructure:"renew_scan_seconds"`
+}
+
+// IngressACMEConfig 是集中 ACME 配置（config 键 ingress.acme.*）。
+type IngressACMEConfig struct {
+	// Enabled 报告是否启用集中签发（enabled；缺省 true。false = 只发布
+	// HTTP 路由——无域名/离线环境的显式关闭位）。
+	Enabled *bool `mapstructure:"enabled"`
+	// CADirURL 是 ACME 目录端点（ca_dir_url；默认 LE production，测试用
+	// Pebble URL）。
+	CADirURL string `mapstructure:"ca_dir_url"`
+	// Email 是 ACME 账号邮箱（email）。
+	Email string `mapstructure:"email"`
+	// CAPoolFile 是 CA 根证书池 PEM（ca_pool_file；Pebble/私有 CA 信任）。
+	CAPoolFile string `mapstructure:"ca_pool_file"`
+	// AccountKeyFile 是 ACME 账号私钥文件（account_key_file；空 =
+	// <cert_dir>/acme-account.key）。
+	AccountKeyFile string `mapstructure:"account_key_file"`
+}
+
+// IngressSettings 把 ingress.* 配置节翻译为入口适配器核心配置（ingress.
+// Config，缺省值经 Normalize 回落——单一事实源在 internal/ingress）。
+func (c *AppConfig) IngressSettings() ingress.Config {
+	return ingress.Config{
+		TraefikImage:      c.Ingress.TraefikImage,
+		HTTPPort:          c.Ingress.HTTPPort,
+		HTTPSPort:         c.Ingress.HTTPSPort,
+		ConfigAddr:        c.Ingress.ConfigAddr,
+		ConfigAdvertiseIP: c.Ingress.ConfigAdvertiseIP,
+		TokenFile:         c.Ingress.TokenFile,
+		CertDir:           c.Ingress.CertDir,
+		ACME: ingress.ACMEConfig{
+			Enabled:        c.Ingress.ACME.Enabled,
+			CADirURL:       c.Ingress.ACME.CADirURL,
+			Email:          c.Ingress.ACME.Email,
+			CAPoolFile:     c.Ingress.ACME.CAPoolFile,
+			AccountKeyFile: c.Ingress.ACME.AccountKeyFile,
+		},
+		RenewBefore:       time.Duration(c.Ingress.RenewBeforeDays) * 24 * time.Hour,
+		RenewScanInterval: time.Duration(c.Ingress.RenewScanSeconds) * time.Second,
+	}
 }
 
 // StateConfig 是状态层配置节（config 键 state.*）。保留期天数取非正值

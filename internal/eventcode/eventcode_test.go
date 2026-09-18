@@ -56,6 +56,12 @@ var docEvents = map[string]string{ // event → 文档出处
 
 	// architecture.md §4.3（cron 触发前哨「记 skipped + 事件」，v0.2）
 	"cron.skipped": "architecture §4.3",
+
+	// T2.15 实现期新增（文档外事件名单独列出，待 T0.5 契约冻结确认）：架构
+	// §2.5 不变量「路由发布严格晚于健康门；发布失败不回滚部署、单独告警 +
+	// 审计」。证书签发/续期不设新事件名（走审计记录）。
+	"route.published":      "T2.15 实现期新增（architecture §2.5 路由发布时机；待 T0.5 冻结确认）",
+	"route.publish_failed": "T2.15 实现期新增（architecture §2.5 路由失败单独告警；待 T0.5 冻结确认）",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

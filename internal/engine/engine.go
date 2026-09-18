@@ -36,6 +36,9 @@ type Engine struct {
 	box      *secrets.Box
 	clock    Clock
 	log      *slog.Logger
+	// routes 是入口路由发布端口（T2.15；nil = 未接入口面——发布挂点
+	// 整体跳过。由 WithRoutePublisher 注入，fleetlyd 装配 ingress.Manager）。
+	routes RoutePublisher
 	// waterMarks 是副本水位不足判定的进程内计时（观察窗辅助信号；引擎
 	// 重启后重摆——窗口本身持久化，重启代价可接受）。
 	waterMarks map[string]time.Time

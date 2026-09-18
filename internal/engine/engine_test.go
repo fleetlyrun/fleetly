@@ -377,6 +377,25 @@ func TestObserveCrashLoopFailsUnstable(t *testing.T) {
 	}
 }
 
+func TestObserveIgnoresPriorDeploymentCrashHistory(t *testing.T) {
+	h := newHarness(t)
+	// 首次部署成功。
+	rec1 := h.enqueue(h.writeCompose(composeV1))
+	if row := h.runToTerminal(rec1); row.Status != state.DeploySucceeded {
+		t.Fatalf("first deploy = %s (%s)", row.Status, row.ErrorCode)
+	}
+	// 注入两条同镜像的历史崩溃任务：时间戳在第二次部署发布开始之前
+	// （上一部署的崩溃史，与目标镜像相同——时间界是唯一判据）。
+	h.sub.crashNewRunning("fleetly-demo-web", 2, h.clk.Now())
+	// 同镜像连续部署：旧崩溃史不得计入新观察窗（回归：曾误判
+	// E_OBSERVE_CRASH_LOOP，见 T2-6 实机发现）。
+	rec2 := h.enqueue(h.writeCompose(composeV1))
+	row := h.runToTerminal(rec2)
+	if row.Status != state.DeploySucceeded {
+		t.Fatalf("second deploy = %s (%s), want succeeded（旧崩溃史不应误判崩溃循环）", row.Status, row.ErrorCode)
+	}
+}
+
 func TestObserveWindowPassesAfterFreshWindow(t *testing.T) {
 	h := newHarness(t)
 	path := h.writeCompose(composeV1)

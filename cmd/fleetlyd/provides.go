@@ -11,6 +11,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -34,6 +35,7 @@ var ProviderSet = wire.NewSet(
 	NewBuilder,
 	NewBuildQueue,
 	NewPlacementResolver,
+	NewIngressManager,
 	NewEngine,
 	NewDaemonManager,
 	NewGRPCServer,
@@ -149,12 +151,38 @@ func NewPlacementResolver(st *state.Store, dc state.DockerClient) *placement.Res
 	return placement.NewResolver(st, dc)
 }
 
+// NewIngressManager 构建入口/证书管理器（T2.15/T2.16：Traefik 部署 +
+// 配置端点 + 集中 ACME；ingress.* 配置节，缺省回落 internal/ingress）。
+// docker 连接经 manager cleanup 释放（Wire cleanup，OnPostStop 时点）。
+func NewIngressManager(app lynx.App, cfg *AppConfig, st *state.Store) (*ingress.Manager, func(), error) {
+	return ingress.NewManager(cfg.IngressSettings(), st, app.Logger())
+}
+
+// ingressPublisher 是 engine.RoutePublisher 的载荷转换适配器：引擎侧
+// RoutePublishInput（核心类型）→ ingress.PublishInput（适配器类型）。
+// 方向纪律：核心不感知适配器类型，转换只在此处。
+type ingressPublisher struct {
+	m *ingress.Manager
+}
+
+func (p ingressPublisher) PublishRoutes(ctx context.Context, in engine.RoutePublishInput) error {
+	out := ingress.PublishInput{AppID: in.AppID, AppName: in.AppName}
+	for _, svc := range in.Services {
+		out.Services = append(out.Services, ingress.ServiceRoutes{
+			Service: svc.Service, Port: svc.Port, Domains: svc.Domains,
+		})
+	}
+	return p.m.PublishRoutes(ctx, out)
+}
+
 // NewEngine 构建发布引擎（T2-5a：状态机/对账/窗口语义；治理参数取 engine.*
 // 配置节，缺省回落文档默认）。底座服务/任务面由 substrate.Client 隐式实现
 // engine.Substrate + engine.ImageChecker（适配器方向：substrate → engine
-// 核心接口）。
-func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box) *engine.Engine {
-	return engine.NewEngine(cfg.EngineSettings(), st, sc, sc, pl, box, app.Logger())
+// 核心接口）；路由发布端口由 ingress.Manager 经载荷适配实现（T2.15——
+// 健康门后挂点）。
+func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box, m *ingress.Manager) *engine.Engine {
+	return engine.NewEngine(cfg.EngineSettings(), st, sc, sc, pl, box, app.Logger()).
+		WithRoutePublisher(ingressPublisher{m: m})
 }
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
@@ -174,9 +202,10 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig) (*lynxhttp.Server, error) {
 }
 
 // NewServices 聚合全部受托管服务：状态层四服务（store/identity/observer/
-// janitor）、构建队列与发布引擎先于 HTTP/gRPC 注册——lynx 按注册顺序启动，
-// store 的 Init 在装配期（Register 阶段）完成迁移，Start 阶段顺序无实质
-// 依赖，注册顺序表达「状态与队列、引擎先于 API 面」。
+// janitor）、构建队列、发布引擎与入口服务先于 HTTP/gRPC 注册——lynx 按
+// 注册顺序启动，store 的 Init 在装配期（Register 阶段）完成迁移，Start
+// 阶段顺序无实质依赖，注册顺序表达「状态与队列、引擎、入口先于 API 面」
+// （ingress 在 engine 之后：引擎 tick 触发发布时配置端点已监听）。
 func NewServices(
 	app lynx.App,
 	st *state.Store,
@@ -187,6 +216,8 @@ func NewServices(
 	q *build.Queue,
 	b *build.Builder,
 	eng *engine.Engine,
+	ing *ingress.Manager,
+	cfg *AppConfig,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
@@ -198,6 +229,7 @@ func NewServices(
 		newSecretsService(sb),
 		newBuilderService(q, b, app.Logger()),
 		newEngineService(eng),
+		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr),
 		hs,
 		gs,
 	}

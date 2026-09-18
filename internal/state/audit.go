@@ -68,7 +68,8 @@ func (t *Tx) WriteAudit(ctx context.Context, e AuditEntry) error {
 	return nil
 }
 
-// AuditRecord 是审计只读投影（验证/后台展示用，v0.1 最小面）。
+// AuditRecord 是审计只读投影（验证/后台展示用）。T2.15 起随读通道披露
+// ErrorCode/DiffSummary（路由发布失败审计的断言面；加法扩展）。
 type AuditRecord struct {
 	ID     string
 	At     time.Time
@@ -76,11 +77,15 @@ type AuditRecord struct {
 	Action string
 	Target string
 	Result string
+	// ErrorCode 是失败路径的注册表错误码（'' = 成功行）。
+	ErrorCode string
+	// DiffSummary 是审计差异摘要（'' = 无）。
+	DiffSummary string
 }
 
 // RecentAudits 按 at 倒序返回最近 n 条审计记录。
 func (s *Store) RecentAudits(ctx context.Context, n int) ([]AuditRecord, error) {
-	const q = `SELECT id, at, actor, action, target, result
+	const q = `SELECT id, at, actor, action, target, result, error_code, diff_summary
 		FROM audit_log ORDER BY at DESC, id DESC LIMIT ?`
 	rows, err := s.db.QueryContext(ctx, q, n)
 	if err != nil {
@@ -91,7 +96,8 @@ func (s *Store) RecentAudits(ctx context.Context, n int) ([]AuditRecord, error) 
 	for rows.Next() {
 		var r AuditRecord
 		var atNano int64
-		if err := rows.Scan(&r.ID, &atNano, &r.Actor, &r.Action, &r.Target, &r.Result); err != nil {
+		if err := rows.Scan(&r.ID, &atNano, &r.Actor, &r.Action, &r.Target, &r.Result,
+			&r.ErrorCode, &r.DiffSummary); err != nil {
 			return nil, fmt.Errorf("state: scan audit: %w", err)
 		}
 		r.At = time.Unix(0, atNano).UTC()

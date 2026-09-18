@@ -72,6 +72,45 @@ engine:
   # 引擎轮询周期秒数（poll_seconds；缺省 2）。
   poll_seconds: 2
 
+# 入口与证书（T2.15/T2.16：平台自管 Traefik + 配置端点 + 集中 ACME）。
+# 缺省值经 internal/ingress 归一回落（traefik:v3.5 钉版、host 80/443、
+# LE production、续期窗口 30 天）；下列键为部署面覆盖入口。
+ingress:
+  # 入口镜像（钉版；Spike B 实测版本。升级 = 改此项 + 回归，不追 latest）。
+  traefik_image: "traefik:v3.5"
+  # 宿主发布端口（host 模式）。
+  http_port: 80
+  https_port: 443
+  # 控制面配置端点（Traefik HTTP provider 的拉取目标；独立内部端口，
+  # 不与 REST/gateway 面混挂）。鉴权 token 强制（首启生成至 token_file）。
+  config_addr: "0.0.0.0:8422"
+  # 下发给 Traefik 的控制面可达 IP；留空 = 自动探测（Swarm advertise
+  # addr 优先，出口本地地址兜底）。Docker Desktop 形态 advertise addr 是
+  # VM 内部 IP——须显式配置为宿主可达地址（如宿主局域网 IP）。
+  config_advertise_ip: ""
+  # 配置端点 bearer token 文件（首启生成，0600；与 Traefik 静态配置
+  # providers.http.headers 同步传递）。
+  token_file: "./fleetly-ingress.token"
+  # 证书存储根目录（控制面侧明文 PEM：0600 私钥；独立备份目录
+  # ——state-model §2.1。bind 挂载进 Traefik 只读 /fleetly-certs）。
+  cert_dir: "./fleetly-certs"
+  # 证书续期窗口天数（到期前）与扫描周期秒数。
+  renew_before_days: 30
+  renew_scan_seconds: 43200
+  acme:
+    # 集中签发开关（false = 只发布 HTTP 路由——无域名/离线环境的显式
+    # 关闭位）。
+    enabled: true
+    # ACME 目录端点（默认 LE production；本地验证用 Pebble：
+    # https://127.0.0.1:14000/dir）。
+    ca_dir_url: "https://acme-v02.api.letsencrypt.org/directory"
+    # ACME 账号邮箱。
+    email: ""
+    # CA 根证书池 PEM（Pebble/私有 CA 信任；空 = 系统信任池）。
+    ca_pool_file: ""
+    # ACME 账号私钥文件（空 = <cert_dir>/acme-account.key）。
+    account_key_file: ""
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info

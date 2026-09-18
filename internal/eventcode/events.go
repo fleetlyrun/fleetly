@@ -52,6 +52,12 @@ var builtins = []Event{
 	// ── 备份恢复（state-model §2.7）──
 	{Name: "restore.completed", Summary: "控制面恢复流程完成（只读观察退出后）"},
 
+	// ── 入口路由（T2.15；架构 §2.5 不变量：路由发布严格晚于健康门——
+	//    发布失败不回滚部署，route.publish_failed 单独告警 + 审计；证书
+	//    签发/续期不设新事件名，走审计记录）──
+	{Name: "route.published", Summary: "应用入口路由已发布（健康门通过后，全量动态配置已收敛）"},
+	{Name: "route.publish_failed", Summary: "应用入口路由发布失败（部署不受影响，单独告警）"},
+
 	// ── 定时任务（architecture §4.3：触发前哨「记 skipped + 事件」；cron 入 v0.2）──
 	{Name: "cron.skipped", Summary: "定时任务触发跳过（节点不 ready/控制面停机错过点/重叠 skip），不补跑"},
 }

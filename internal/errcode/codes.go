@@ -115,6 +115,12 @@ var builtins = []Code{
 		Summary:    "事件游标早于保留期（30 天），显式断档",
 		Suggestion: "以响应中的 oldest_seq 为起点重新拉取全量事件。"},
 
+	// ── 入口路由（T2.15；架构 §2.5/§2.6：路由发布严格晚于健康门，发布
+	//    失败不回滚部署、单独告警——deployment 仍可成功，错误落审计与本码）──
+	{ID: "E_ROUTE_PUBLISH_FAILED", HTTP: 503,
+		Summary:    "入口路由发布失败（部署不受影响，路由单独告警）",
+		Suggestion: "查看 route.publish_failed 事件与 fleetly ingress status；底座/入口恢复后随下次部署或重发布自动收敛。"},
+
 	// ── label 契约（state-model §2.4）──
 	{ID: "E_LABEL_RESERVED", HTTP: 422,
 		Summary:    "用户占用了保留命名空间 fleetly.*",

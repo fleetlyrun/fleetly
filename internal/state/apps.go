@@ -103,6 +103,15 @@ func (s *Store) GetAppByName(ctx context.Context, name string) (App, error) {
 	return scanApp(row)
 }
 
+// GetAppByID 按平台 ID 取应用行；不存在返回 ErrAppNotFound（入口路由
+// 合成时的 app 名反查消费）。
+func (s *Store) GetAppByID(ctx context.Context, id string) (App, error) {
+	const q = `SELECT id, name, lifecycle, created_at, updated_at, deleting_at, deleted_at
+		FROM apps WHERE id = ?`
+	row := s.db.QueryRowContext(ctx, q, id)
+	return scanApp(row)
+}
+
 // scanApp 从单行构造 App（row 接口同时覆盖 *sql.Row 与 *sql.Rows）。
 func scanApp(row interface{ Scan(dest ...any) error }) (App, error) {
 	var a App

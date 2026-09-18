@@ -48,7 +48,7 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 			spec:       spec,
 			desired:    desiredReplicasOf(spec),
 			running:    countNewRunning(tasks, spec.Image),
-			crashCount: countNewCrashes(tasks, spec.Image),
+			crashCount: countNewCrashes(tasks, spec.Image, rec.ReleaseStartedAt),
 		})
 	}
 
@@ -119,10 +119,16 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 }
 
 // countNewCrashes 统计目标版本任务的退出次数（failed/rejected/complete）。
-func countNewCrashes(tasks []TaskState, targetImage string) int {
+// since 之后的状态才计数：同镜像连续部署时，上一部署的历史崩溃任务与目标
+// 版本镜像相同（isNewVersionTask 无法区分），按部署的发布起始时间划界，
+// 防止旧崩溃史被计入新部署观察窗造成 E_OBSERVE_CRASH_LOOP 误判。
+func countNewCrashes(tasks []TaskState, targetImage string, since time.Time) int {
 	n := 0
 	for _, t := range tasks {
 		if !isNewVersionTask(t, targetImage) {
+			continue
+		}
+		if !since.IsZero() && t.Timestamp.Before(since) {
 			continue
 		}
 		switch t.State {
@@ -200,7 +206,14 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 			return err
 		}
 	}
-	return e.refreshDerivedState(ctx, rec.AppID, rec.AppName)
+	if err := e.refreshDerivedState(ctx, rec.AppID, rec.AppName); err != nil {
+		return err
+	}
+	// 路由发布二次挂点（T2.15）：首健康挂点的幂等重试 + 服务移除/域名
+	// 撤销的全量同步（声明集对账在发布器内按 compose 声明集执行——
+	// 「省略 = 删除」的路由面）。失败语义同首挂点：只告警不回滚部署。
+	e.publishRoutes(ctx, rec)
+	return nil
 }
 
 // composeNormalizedSnapshot 生成版本快照的归一化 compose（§2.4：受控子集

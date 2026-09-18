@@ -52,9 +52,17 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	builder := NewBuilder(appConfig, store, client, daemonManager, app)
 	queue := NewBuildQueue(app, appConfig, store, builder)
 	resolver := NewPlacementResolver(store, dockerClient)
-	engine := NewEngine(app, appConfig, store, client, resolver, box)
+	manager, cleanup4, err := NewIngressManager(app, appConfig, store)
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	engine := NewEngine(app, appConfig, store, client, resolver, box, manager)
 	server, err := NewHTTPServer(app, appConfig)
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -63,15 +71,17 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	systemService := NewSystemService()
 	grpcServer, err := NewGRPCServer(app, appConfig, systemService)
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(app, store, nodeIdentity, observer, janitor, box, queue, builder, engine, server, grpcServer)
+	v := NewServices(app, store, nodeIdentity, observer, janitor, box, queue, builder, engine, manager, appConfig, server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
