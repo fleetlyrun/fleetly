@@ -20,6 +20,10 @@ const (
 	LabelProcess = "fleetly.process"
 	// LabelDeployment 标记发布归属（值 = deployment ID）。
 	LabelDeployment = "fleetly.deployment"
+	// LabelDesiredHash 是服务级期望态哈希（对账变更判据的落点 label，
+	// state-model §2.5 desired-hash 纪律；service-label 变更不触发任务
+	// 重建——归位零成本的配套，Spike B2）。
+	LabelDesiredHash = "fleetly.desired-hash"
 	// LabelCron 标记定时任务 schedule（v0.2 契约，常量先行，state-model §2.4）。
 	LabelCron = "fleetly.cron"
 

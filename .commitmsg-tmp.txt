@@ -1,0 +1,1 @@
+feat(T2.10+T2.11): T2-5a 还原点——发布状态机（穷举转移+blocked_waiting+cancel+重启恢复）与窗口失败语义（L2 看门狗/L3 观察窗/first_healthy_at 分流/首发 substrate_halted/stop-first 停机账）；stack 对账增删改+受管字段固定+env promote；实机验证成功/失败/对账/重启四链路；验收修复 G115 三处

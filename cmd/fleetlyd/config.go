@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 )
 
@@ -33,6 +34,36 @@ type AppConfig struct {
 	Secrets SecretsConfig `mapstructure:"secrets"`
 	// Build 是构建管线配置（config 键 build.*，T2.8）。
 	Build BuildConfig `mapstructure:"build"`
+	// Engine 是发布引擎配置（config 键 engine.*，T2.10/T2.11；治理参数
+	// v0.1 平台默认——文件缺省即文档默认，见 engine.Config.Normalize）。
+	Engine EngineConfig `mapstructure:"engine"`
+}
+
+// EngineConfig 是发布引擎配置节（config 键 engine.*）。默认值与
+// release-semantics §2.8 治理参数表一致（releaseTimeout=300s、观察窗 60s、
+// 水位判定 10s、轮询 2s），经 engine.Config.Normalize 回落。
+type EngineConfig struct {
+	// ReleaseTimeoutSeconds 是 L2 发布看门狗秒数（engine.release_timeout_seconds；
+	// 缺省 300——含 PENDING/停滞，有效值 ≥ health 预算）。
+	ReleaseTimeoutSeconds int `mapstructure:"release_timeout_seconds"`
+	// ObserveSeconds 是 L3 观察窗秒数（engine.observe_seconds；缺省 60）。
+	ObserveSeconds int `mapstructure:"observe_seconds"`
+	// ReplicasBelowSeconds 是观察窗副本水位不足判定的持续秒数
+	//（engine.replicas_below_seconds；缺省 10）。
+	ReplicasBelowSeconds int `mapstructure:"replicas_below_seconds"`
+	// PollSeconds 是引擎轮询周期秒数（engine.poll_seconds；缺省 2）。
+	PollSeconds int `mapstructure:"poll_seconds"`
+}
+
+// EngineSettings 把 engine.* 配置节翻译为引擎核心配置（engine.Config，
+// 缺省值经 Normalize 回落——单一事实源在 internal/engine）。
+func (c *AppConfig) EngineSettings() engine.Config {
+	return engine.Config{
+		ReleaseTimeout:   time.Duration(c.Engine.ReleaseTimeoutSeconds) * time.Second,
+		ObserveWindow:    time.Duration(c.Engine.ObserveSeconds) * time.Second,
+		ReplicasBelowFor: time.Duration(c.Engine.ReplicasBelowSeconds) * time.Second,
+		PollInterval:     time.Duration(c.Engine.PollSeconds) * time.Second,
+	}
 }
 
 // BuildConfig 是构建管线配置节（config 键 build.*）。缺省值经

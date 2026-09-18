@@ -10,6 +10,8 @@ import (
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
@@ -31,6 +33,8 @@ var ProviderSet = wire.NewSet(
 	NewSecretsBox,
 	NewBuilder,
 	NewBuildQueue,
+	NewPlacementResolver,
+	NewEngine,
 	NewDaemonManager,
 	NewGRPCServer,
 	NewSystemService,
@@ -139,6 +143,20 @@ func NewBuildQueue(app lynx.App, cfg *AppConfig, st *state.Store, b *build.Build
 	return build.NewQueue(st, b, settings.Concurrency, settings.PollInterval, app.Logger())
 }
 
+// NewPlacementResolver 构造放置解析器（放置意图解析/绑定落库/卷登记/
+// 部署前哨；引擎 preparing 与 releasing 全程消费）。
+func NewPlacementResolver(st *state.Store, dc state.DockerClient) *placement.Resolver {
+	return placement.NewResolver(st, dc)
+}
+
+// NewEngine 构建发布引擎（T2-5a：状态机/对账/窗口语义；治理参数取 engine.*
+// 配置节，缺省回落文档默认）。底座服务/任务面由 substrate.Client 隐式实现
+// engine.Substrate + engine.ImageChecker（适配器方向：substrate → engine
+// 核心接口）。
+func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box) *engine.Engine {
+	return engine.NewEngine(cfg.EngineSettings(), st, sc, sc, pl, box, app.Logger())
+}
+
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
 // （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）；
 // /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
@@ -156,9 +174,9 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig) (*lynxhttp.Server, error) {
 }
 
 // NewServices 聚合全部受托管服务：状态层四服务（store/identity/observer/
-// janitor）与构建队列先于 HTTP/gRPC 注册——lynx 按注册顺序启动，store 的
-// Init 在装配期（Register 阶段）完成迁移，Start 阶段顺序无实质依赖，注册
-// 顺序表达「状态与队列先于 API 面」。
+// janitor）、构建队列与发布引擎先于 HTTP/gRPC 注册——lynx 按注册顺序启动，
+// store 的 Init 在装配期（Register 阶段）完成迁移，Start 阶段顺序无实质
+// 依赖，注册顺序表达「状态与队列、引擎先于 API 面」。
 func NewServices(
 	app lynx.App,
 	st *state.Store,
@@ -168,6 +186,7 @@ func NewServices(
 	sb *secrets.Box,
 	q *build.Queue,
 	b *build.Builder,
+	eng *engine.Engine,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
@@ -178,6 +197,7 @@ func NewServices(
 		newJanitorService(jr),
 		newSecretsService(sb),
 		newBuilderService(q, b, app.Logger()),
+		newEngineService(eng),
 		hs,
 		gs,
 	}

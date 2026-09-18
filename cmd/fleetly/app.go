@@ -35,6 +35,8 @@ func newApp() *commands.App {
 		&diffCmd{},
 		&buildCmd{},
 		newBuildsCmd(),
+		&deployCmd{},
+		newDeploymentsCmd(),
 		newEnvCmd(),
 		newPlacementCmd(),
 		newNodesCmd(),

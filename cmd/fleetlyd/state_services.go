@@ -13,6 +13,7 @@ import (
 	"github.com/lynx-go/lynx"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -153,6 +154,27 @@ func (s builderService) Start(ctx context.Context) error {
 
 // Stop 无资源动作：Run 随服务 ctx 取消返回，在途构建经 ctx 排水。
 func (s builderService) Stop(_ context.Context) error { return nil }
+
+// engineService 是发布引擎服务壳（T2-5a）：Start 阶段进入引擎主循环（启动
+// 扫描非终态 deployment 分类恢复 → 周期 tick 推进状态机/对账/窗口语义）。
+// Start 阻塞到关停（actor 契约同上），Stop 无资源动作（循环生命周期 = 服务
+// ctx；在途发布状态全部落库，控制面重启由引擎自身分类恢复）。
+type engineService struct {
+	eng *engine.Engine
+}
+
+func newEngineService(e *engine.Engine) lynx.Service { return engineService{eng: e} }
+
+func (s engineService) Name() string                 { return "engine.release" }
+func (s engineService) Init(_ lynx.AppContext) error { return nil }
+
+func (s engineService) Start(ctx context.Context) error {
+	return s.eng.Run(ctx)
+}
+
+// Stop 无资源动作：Run 随服务 ctx 取消返回（部署状态机持久化于 SQLite，
+// 续跑语义由控制面重启恢复承载）。
+func (s engineService) Stop(_ context.Context) error { return nil }
 
 // warmDaemon 后台预热平台自管 buildkitd（预算 6 分钟——首启拉镜像受网络
 // 主导）。ManageDaemon=false（外部端点形态）为 no-op。预热失败不阻塞启动、

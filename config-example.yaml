@@ -58,6 +58,20 @@ build:
   # 构建队列扫描周期（秒）。
   poll_seconds: 2
 
+# 发布引擎（T2-5a：发布状态机/对账/窗口语义）。治理参数 v0.1 为平台默认
+# （文件缺省即文档默认；release-semantics §2.8）——这些键是部署面覆盖入口，
+# 不构成 per-app 可配置承诺。
+engine:
+  # L2 发布看门狗秒数（release_timeout_seconds；缺省 300，含 PENDING/停滞，
+  # 有效值 ≥ health 预算；blocked_waiting 期间暂停计时）。
+  release_timeout_seconds: 300
+  # L3 观察窗秒数（observe_seconds；缺省 60，默认只告警）。
+  observe_seconds: 60
+  # 观察窗副本水位不足判定的持续秒数（replicas_below_seconds；缺省 10）。
+  replicas_below_seconds: 10
+  # 引擎轮询周期秒数（poll_seconds；缺省 2）。
+  poll_seconds: 2
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info

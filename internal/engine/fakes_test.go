@@ -1,0 +1,391 @@
+package engine
+
+// 引擎单测的假底座/假放置/假时钟/假镜像检查器：以最小 Swarm 行为模型
+// （创建/更新即收敛、pause 判定、PENDING 滞留、运行中任务注入崩溃）覆盖
+// 状态机与失败语义的判定路径。时间由 fakeClock 控制（看门狗/观察窗判定）。
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"sort"
+	"sync"
+	"time"
+
+	"github.com/fleetlyrun/fleetly/internal/placement"
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// fakeClock 是可控时钟。
+type fakeClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newFakeClock(start time.Time) *fakeClock { return &fakeClock{now: start} }
+
+func (c *fakeClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.now
+}
+
+func (c *fakeClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.now = c.now.Add(d)
+}
+
+// fakeImages 是可控镜像可见性。
+type fakeImages struct {
+	missing map[string]bool
+}
+
+func (f *fakeImages) ImageDigest(_ context.Context, ref string) (string, error) {
+	if f.missing[ref] {
+		return "", ErrImageMissing
+	}
+	return "sha256:digest-" + ref, nil
+}
+
+// updateMode 是一次服务更新/创建的底座行为模型。
+type updateMode string
+
+const (
+	modeHealthy      updateMode = "healthy"       // 新任务立即运行、更新完成（切流）
+	modePausedHealth updateMode = "paused_health" // 新任务健康门失败 → paused
+	modePausedStart  updateMode = "paused_start"  // 新任务启动即崩 → paused
+	modePending      updateMode = "pending"       // 新任务滞留 PENDING
+)
+
+// fakeService 是一只受管服务的假实况。
+type fakeService struct {
+	spec    ServiceSpec
+	version uint64
+	update  string
+	message string
+	tasks   []TaskState
+	// nextMode 是下一次 update 应表现的行为。
+	nextMode updateMode
+	// noTaskChurn 断言辅助：记录每次 update 前的任务 ID 集合。
+	created bool
+}
+
+// fakeSubstrate 是 Substrate 端口的内存实现。
+type fakeSubstrate struct {
+	mu       sync.Mutex
+	services map[string]*fakeService
+	networks map[string]bool
+	removed  []string
+	// updates 记录每次 ServiceUpdate 的（服务, 镜像）——归位重放断言用。
+	updates [][2]string
+	// pendingModes 是服务创建/下一次更新应表现的行为（可先于服务存在设置）。
+	pendingModes map[string]updateMode
+	failUpdates  map[string]error
+}
+
+func newFakeSubstrate() *fakeSubstrate {
+	return &fakeSubstrate{
+		services:     map[string]*fakeService{},
+		networks:     map[string]bool{},
+		pendingModes: map[string]updateMode{},
+		failUpdates:  map[string]error{},
+	}
+}
+
+func (f *fakeSubstrate) SwarmReady(context.Context) error { return nil }
+
+func (f *fakeSubstrate) NetworkEnsure(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.networks[name] = true
+	return nil
+}
+
+func (f *fakeSubstrate) ServiceInspect(_ context.Context, name string) (ServiceState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	svc, ok := f.services[name]
+	if !ok {
+		return ServiceState{}, ErrServiceNotFound
+	}
+	return f.stateOf(svc), nil
+}
+
+func (f *fakeSubstrate) stateOf(svc *fakeService) ServiceState {
+	out := ServiceState{
+		Name:          svc.spec.Name,
+		Version:       svc.version,
+		Labels:        map[string]string{},
+		Image:         svc.spec.Image,
+		Replicas:      svc.spec.Replicas,
+		UpdateState:   svc.update,
+		UpdateMessage: svc.message,
+	}
+	for k, v := range svc.spec.ServiceLabels {
+		out.Labels[k] = v
+	}
+	out.DesiredHash = svc.spec.ServiceLabels[state.LabelDesiredHash]
+	return out
+}
+
+func (f *fakeSubstrate) ServiceCreate(_ context.Context, spec ServiceSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.failUpdates[spec.Name]; err != nil {
+		return err
+	}
+	svc := &fakeService{spec: spec, version: 1, nextMode: modeHealthy}
+	svc.created = true
+	f.applyMode(svc, "", nil)
+	delete(f.pendingModes, spec.Name)
+	f.services[spec.Name] = svc
+	return nil
+}
+
+func (f *fakeSubstrate) ServiceUpdate(_ context.Context, name string, spec ServiceSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.failUpdates[name]; err != nil {
+		return err
+	}
+	svc, ok := f.services[name]
+	if !ok {
+		// 更新一只不存在的服务：按创建收敛（幂等对账语义）。
+		svc = &fakeService{version: 0, nextMode: modeHealthy}
+		f.services[name] = svc
+	}
+	svc.version++
+	f.updates = append(f.updates, [2]string{name, spec.Image})
+	oldImage := svc.spec.Image
+	oldTasks := append([]TaskState{}, svc.tasks...)
+	// 判定是否有实质变更（镜像变化才进入行为模型；纯 label 更新零任务
+	// 变动——归位零成本的假底座同构，Spike B2）。
+	contentChanged := oldImage != spec.Image
+	svc.spec = spec
+	if !contentChanged {
+		svc.update = "completed"
+		return nil
+	}
+	f.applyMode(svc, oldImage, oldTasks)
+	return nil
+}
+
+// applyMode 依据 nextMode 生成任务与更新状态（oldTasks = 变更前的任务集，
+// pause 冻结语义下旧版本任务继续服务）。pendingModes 为一次性消费。
+func (f *fakeSubstrate) applyMode(svc *fakeService, oldImage string, oldTasks []TaskState) {
+	mode, ok := f.pendingModes[svc.spec.Name]
+	if ok {
+		delete(f.pendingModes, svc.spec.Name)
+		svc.nextMode = mode
+	}
+	replicas := 0
+	if svc.spec.Replicas < 1024 { // 受控子集副本量级有限（gosec G115 窄化守卫）
+		replicas = int(svc.spec.Replicas)
+	}
+	if svc.spec.Global {
+		replicas = 1
+	}
+	runningOld := 0
+	for _, t := range oldTasks {
+		if t.State == "running" && t.DesiredState == "running" &&
+			(oldImage == "" || t.Image == oldImage) {
+			runningOld++
+		}
+	}
+	switch svc.nextMode {
+	case modeHealthy:
+		svc.update = "completed"
+		svc.message = ""
+		// IsTaskDirty 同构：目标版本运行任务已满足副本水位 → 零任务替换
+		//（同内容重放，Spike B2）。
+		runningNew := 0
+		for _, t := range oldTasks {
+			if t.State == "running" && t.DesiredState == "running" && t.Image == svc.spec.Image {
+				runningNew++
+			}
+		}
+		if runningNew < replicas {
+			svc.tasks = f.runningTasks(svc, "t-new")
+		} else {
+			svc.tasks = oldTasks
+		}
+	case modePausedHealth:
+		// pause 冻结：旧任务继续服务、新任务带健康失败原因退出。
+		svc.update = "paused"
+		svc.message = "task t-new-1 container: Health check: command failed"
+		svc.tasks = append([]TaskState{{
+			ID: "t-new-1", State: "failed", DesiredState: "running",
+			Err:   "task: non-zero exit (1): Health check: command failed",
+			Image: svc.spec.Image,
+		}}, runningOf(oldTasks)...)
+	case modePausedStart:
+		// pause 冻结：新任务启动即崩（无健康语义）。
+		svc.update = "paused"
+		svc.message = "task t-new-1 container exited"
+		svc.tasks = append([]TaskState{{
+			ID: "t-new-1", State: "failed", DesiredState: "running",
+			Err:   "task: non-zero exit (1)",
+			Image: svc.spec.Image,
+		}}, runningOf(oldTasks)...)
+	case modePending:
+		svc.update = "updating"
+		svc.tasks = []TaskState{{ID: "t-new-1", State: "pending", DesiredState: "running",
+			Image: svc.spec.Image}}
+	}
+}
+
+// runningOf 取旧任务集中仍在运行的（pause 冻结：旧版本继续服务）。
+func runningOf(tasks []TaskState) []TaskState {
+	var out []TaskState
+	for _, t := range tasks {
+		if t.State == "running" && t.DesiredState == "running" {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+// runningTasks 生成 replicas 个运行中的目标版本任务。
+func (f *fakeSubstrate) runningTasks(svc *fakeService, prefix string) []TaskState {
+	n := int(min(svc.spec.Replicas, math.MaxInt32)) //nolint:gosec // 测试替身，受控值
+	if svc.spec.Global {
+		n = 1
+	}
+	if n == 0 {
+		n = 0
+	}
+	out := make([]TaskState, 0, n)
+	for i := 0; i < n; i++ {
+		out = append(out, TaskState{
+			ID:           fmt.Sprintf("%s-%d", prefix, i),
+			Slot:         i + 1,
+			State:        "running",
+			DesiredState: "running",
+			Image:        svc.spec.Image,
+		})
+	}
+	return out
+}
+
+func (f *fakeSubstrate) ServiceRemove(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.services, name)
+	f.removed = append(f.removed, name)
+	return nil
+}
+
+func (f *fakeSubstrate) ServiceList(_ context.Context, labels map[string]string) ([]ServiceState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	names := make([]string, 0, len(f.services))
+	for name := range f.services {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	var out []ServiceState
+	for _, name := range names {
+		svc := f.services[name]
+		if labels[state.LabelManaged] != "" && svc.spec.ServiceLabels[state.LabelManaged] != labels[state.LabelManaged] {
+			continue
+		}
+		if labels[state.LabelApp] != "" && svc.spec.ServiceLabels[state.LabelApp] != labels[state.LabelApp] {
+			continue
+		}
+		out = append(out, f.stateOf(svc))
+	}
+	return out, nil
+}
+
+func (f *fakeSubstrate) TaskList(_ context.Context, serviceName string) ([]TaskState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	svc, ok := f.services[serviceName]
+	if !ok {
+		return nil, nil
+	}
+	out := make([]TaskState, len(svc.tasks))
+	copy(out, svc.tasks)
+	return out, nil
+}
+
+// setMode 配置某服务下一次更新/创建的行为（可先于服务存在设置——首发
+// 失败路径在 ServiceCreate 时消费）。
+func (f *fakeSubstrate) setMode(service string, mode updateMode) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.pendingModes[service] = mode
+	if svc, ok := f.services[service]; ok {
+		svc.nextMode = mode
+	}
+}
+
+// crashNewRunning 追加 n 条目标版本的失败任务记录（崩溃退出注入；重复
+// 调用模拟崩溃循环——退出计数累加，运行任务保留表示 Swarm 重启自愈）。
+func (f *fakeSubstrate) crashNewRunning(service string, n int, at time.Time) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	svc := f.services[service]
+	for i := 0; i < n; i++ {
+		svc.tasks = append(svc.tasks, TaskState{
+			ID:           fmt.Sprintf("t-crash-%d-%d", at.UnixNano(), i),
+			State:        "failed",
+			DesiredState: "running",
+			Image:        svc.spec.Image,
+			Timestamp:    at,
+		})
+	}
+}
+
+// fakeResolver 是 PlacementResolver 的假实现（签名对齐 placement 真实类型；
+// Preflight 错误序列驱动 blocked_waiting / node_gone / 前哨失败路径；Apply
+// 同构真实放置层——卷注册表登记）。
+type fakeResolver struct {
+	store         *state.Store
+	preflightErrs []error // 依次弹出（nil = 通过）；弹尽后恒 nil
+	applyCalls    int
+}
+
+func (f *fakeResolver) Resolve(_ context.Context, in placement.Input) (placement.Decision, error) {
+	return placement.Decision{}, nil
+}
+
+func (f *fakeResolver) Apply(ctx context.Context, in placement.Input) (placement.Decision, error) {
+	f.applyCalls++
+	// 卷登记（真实放置层 Apply 的最小同构：新卷 = 数据诞生点登记）。
+	for _, m := range in.Volumes {
+		if _, _, err := f.store.RegisterAppVolume(ctx, state.VolumeWrite{
+			AppID:          in.AppID,
+			Key:            m.Key,
+			Name:           "fleetly-" + in.AppName + "-" + m.Key + "-test",
+			Kind:           state.VolumeKindNamed,
+			PlatformNodeID: "n_test000000000000000000",
+			MountPath:      m.Target,
+		}); err != nil {
+			return placement.Decision{}, err
+		}
+	}
+	if len(in.Volumes) > 0 {
+		return placement.Decision{AppID: in.AppID, Bind: true,
+			PlatformNodeID: "n_test000000000000000000"}, nil
+	}
+	return placement.Decision{AppID: in.AppID}, nil
+}
+
+func (f *fakeResolver) Preflight(context.Context, string) error {
+	if len(f.preflightErrs) == 0 {
+		return nil
+	}
+	err := f.preflightErrs[0]
+	f.preflightErrs = f.preflightErrs[1:]
+	return err
+}
+
+// 编译期断言：假底座/假解析器满足引擎端口。
+var (
+	_ Substrate         = (*fakeSubstrate)(nil)
+	_ PlacementResolver = (*fakeResolver)(nil)
+	_ ImageChecker      = (*fakeImages)(nil)
+	_ Clock             = (*fakeClock)(nil)
+)
