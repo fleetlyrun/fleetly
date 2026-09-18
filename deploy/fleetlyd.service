@@ -1,0 +1,55 @@
+# fleetlyd.service — fleetly 控制面 systemd unit（T2.1 参考模板）。
+#
+# 安装期由 deploy/install.sh 内嵌的同源 heredoc 生成：systemd 环境写入
+# /etc/systemd/system/fleetlyd.service，--no-systemd 环境写入
+# /opt/fleetly/etc/fleetlyd.service（参考副本，供手工环境对照）。
+# 本文件与 install.sh 内嵌内容保持一致——修改任一侧必须同步另一侧，
+# deploy/test-install.sh 会对两侧做 diff 断言防漂移。
+#
+# 设计依据：docs/design/2026-09-17-architecture.md §2.6（运行时 = 单节点
+# Swarm）、§4.2（安全默认基线）；硬约束 = daemon 经本地 docker.sock 管理
+# Swarm 集群，故 unit 不指定 User（root 运行——专用用户 + docker 组收敛
+# 属后续加固，见 deploy/README.md 已知边界）。
+
+[Unit]
+Description=fleetly control plane daemon (fleetlyd)
+Documentation=https://github.com/fleetlyrun/fleetly
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=exec
+# 数据根：daemon 的工作目录（SQLite/主密钥/git bare 仓库/构建缓存/日志/
+# 证书等都落这里；卸载默认保留的就是这个目录）。
+WorkingDirectory=/var/lib/fleetly
+ExecStart=/opt/fleetly/bin/fleetlyd -c /opt/fleetly/etc/config.yaml
+Restart=on-failure
+RestartSec=5s
+# SIGTERM → lynx Runner 优雅关停（e2e/smoke.sh 断言 5 的退出码 0 契约）。
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# ---- 适度加固（逐项注释；过度加固会让排障变黑盒，故不启用全量 sandbox）----
+# 阻断 setuid/setgid 提权链（daemon 无特权子进程需求）。
+NoNewPrivileges=true
+# /tmp 私有化（防符号链接攻击与跨服务窥探）。
+PrivateTmp=true
+# 整个文件系统只读挂载；唯一可写面 = 数据根（ReadWritePaths 显式放行）。
+ProtectSystem=strict
+ReadWritePaths=/var/lib/fleetly
+# 用户 home 不可见（平台数据全部在 /var/lib/fleetly，不需要 home）。
+ProtectHome=true
+# 内核参数/模块/控制组只读或禁改。
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+# 仅保留 daemon 实际需要的地址族（TCP 双栈 + docker.sock 的 AF_UNIX）。
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# 常规加固位：禁 SUID/SGID 文件创建、固定 personality、禁止可写可执行内存映射。
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+
+[Install]
+WantedBy=multi-user.target

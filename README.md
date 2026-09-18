@@ -8,6 +8,18 @@ fleetly is an ultra-lightweight open-source PaaS for small teams. Deploy `compos
 
 **Status: early development.** Design is frozen and reviewed; the T0 foundation (repo, CI, proto contract chain, error-code registry, dind E2E skeleton) has landed. v0.1 is not released yet — see the [roadmap](#roadmap). Formerly known as *edgesets* and *edgefleet*.
 
+## Install
+
+One command on a clean Linux VPS (amd64/arm64, root) installs a running platform — engine gate (Docker ≥ 29.8.1, iptables backend), implicit `docker swarm init`, systemd autostart, and an install report with the port-exposure surface:
+
+```sh
+curl -fsSL https://fleetly.dev/install.sh | sudo sh -            # latest stable
+curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
+sudo sh install.sh --bin-dir ./dist                              # offline / dev form
+```
+
+The first start prints a bootstrap admin token **once** to the fleetlyd log. Uninstall keeps application data (`--purge` removes it). Forms, gate list, port table, and dind verification: [`deploy/README.md`](deploy/README.md). (Release artifacts land with the release pipeline — until then the offline `--bin-dir` form is the working path.)
+
 ## Why fleetly
 
 - **Built for teams without ops.** ≤5 developers, no dedicated ops, 1–3 servers to start, a maintenance budget of 1–2 hours *per week*. Everything automatable (TLS, backups, upgrades, inspection) is automated and verifiable.

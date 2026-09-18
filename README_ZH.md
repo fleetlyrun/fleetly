@@ -8,6 +8,18 @@ fleetly 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用
 
 **当前状态：早期开发中。** 设计已定稿并通过评审；T0 地基（仓库、CI 门禁、proto 契约链、错误码注册表、dind E2E 骨架）已落地。v0.1 尚未发布——见[路线图](#路线图)。曾用名 *edgesets* 与 *edgefleet*。
 
+## 安装
+
+干净 Linux VPS（amd64/arm64，root）上一条命令装出可运行平台——引擎门禁（Docker ≥ 29.8.1 + iptables 后端）、隐式 `docker swarm init`、systemd 开机自启，安装报告含端口暴露面提示：
+
+```sh
+curl -fsSL https://fleetly.dev/install.sh | sudo sh -            # 最新 stable
+curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
+sudo sh install.sh --bin-dir ./dist                              # 离线 / 开发形态
+```
+
+首启日志会**只打印一次** bootstrap admin token。卸载默认保留应用数据（`--purge` 才删）。三形态、门禁清单、端口面表与 dind 验收见 [`deploy/README.md`](deploy/README.md)。（release 制品链随发布流水线落地；在那之前离线 `--bin-dir` 形态是可用路径。）
+
 ## 为什么是 fleetly
 
 - **为没有运维的团队而建。** ≤5 名开发、无专职运维、1~3 台服务器起步、每周 1~2 小时的维护预算。一切可自动化的（证书、备份、升级、巡检）都自动化且可验证。
