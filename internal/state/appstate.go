@@ -100,3 +100,53 @@ func (t *Tx) SetAppDerivedState(ctx context.Context, appID, expected, next strin
 
 // ErrAppDerivedStateConflict 表示派生状态 CAS 落败（并发翻转已发生）。
 var ErrAppDerivedStateConflict = errors.New("app derived state conflict")
+
+// ── 漂移收敛 opt-in（T2.13，state-model §2.5 D11）───────────────────────────
+
+// GetAppDriftConverge 读取漂移自动收敛 opt-in 位（apps.drift_converge，
+// 00005 加法列）。默认关（D11：检测默认开、自动收敛默认关）——列不存在
+// 语义即关，false 是唯一安全缺省。回滚失败时引擎强制清 0（D-REL-10），
+// 人工经 CLI 重新置位（带审计）。
+func (s *Store) GetAppDriftConverge(ctx context.Context, appID string) (bool, error) {
+	const q = `SELECT drift_converge FROM apps WHERE id = ?`
+	var v int64
+	if err := s.db.QueryRowContext(ctx, q, appID).Scan(&v); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrAppNotFound
+		}
+		return false, fmt.Errorf("state: read drift converge flag: %w", err)
+	}
+	return v != 0, nil
+}
+
+// GetAppDriftConverge 是事务内读 opt-in 位（与清位写同事务的组合点）。
+func (t *Tx) GetAppDriftConverge(ctx context.Context, appID string) (bool, error) {
+	const q = `SELECT drift_converge FROM apps WHERE id = ?`
+	var v int64
+	if err := t.QueryRowContext(ctx, q, appID).Scan(&v); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, ErrAppNotFound
+		}
+		return false, fmt.Errorf("state: read drift converge flag: %w", err)
+	}
+	return v != 0, nil
+}
+
+// SetAppDriftConverge 置位/清除漂移收敛 opt-in（幂等写；审计由调用方与
+// 本写同事务组合——fail-closed）。
+func (t *Tx) SetAppDriftConverge(ctx context.Context, appID string, on bool) error {
+	res, err := t.ExecContext(ctx,
+		`UPDATE apps SET drift_converge = ?, updated_at = ? WHERE id = ?`,
+		boolToInt(on), nowNano(), appID)
+	if err != nil {
+		return fmt.Errorf("state: update drift converge flag: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("state: read drift converge update count: %w", err)
+	}
+	if n == 0 {
+		return ErrAppNotFound
+	}
+	return nil
+}

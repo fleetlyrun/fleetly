@@ -121,12 +121,40 @@ func (f *fakeSubstrate) stateOf(svc *fakeService) ServiceState {
 		Replicas:      svc.spec.Replicas,
 		UpdateState:   svc.update,
 		UpdateMessage: svc.message,
+		// spec 侧深投影（真实适配器同构：漂移反解的实况侧输入）。
+		Command:         append([]string{}, svc.spec.Command...),
+		Env:             append([]string{}, svc.spec.Env...),
+		ContainerLabels: svc.spec.ContainerLabels,
+		Global:          svc.spec.Global,
+		Networks:        append([]NetworkAttach{}, svc.spec.Networks...),
+		Mounts:          append([]MountSpec{}, svc.spec.Mounts...),
+		Secrets:         append([]SecretMount{}, svc.spec.Secrets...),
+		Healthcheck:     svc.spec.Healthcheck,
+		RestartPolicy:   svc.spec.RestartPolicy,
+		Resources:       svc.spec.Resources,
+		Constraints:     append([]string{}, svc.spec.Constraints...),
+		StopSignal:      svc.spec.StopSignal,
+		StopGracePeriod: svc.spec.StopGracePeriod,
 	}
 	for k, v := range svc.spec.ServiceLabels {
 		out.Labels[k] = v
 	}
 	out.DesiredHash = svc.spec.ServiceLabels[state.LabelDesiredHash]
 	return out
+}
+
+// mutateExternal 模拟外部操作（手动 docker service update --env 等）：绕过
+// 平台写语义直接改写运行服务形态并推进对象版本（不触碰 desired-hash
+// label——外部改动不清理平台簿记，正是漂移检测要抓的形态）。
+func (f *fakeSubstrate) mutateExternal(service string, mutate func(spec *ServiceSpec)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	svc, ok := f.services[service]
+	if !ok {
+		return
+	}
+	mutate(&svc.spec)
+	svc.version++
 }
 
 func (f *fakeSubstrate) ServiceCreate(_ context.Context, spec ServiceSpec) error {

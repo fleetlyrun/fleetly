@@ -216,7 +216,13 @@ func (e *Engine) enterObserving(ctx context.Context, rec state.DeployRecord) err
 //     首发无版本 → scale=0 保留现场）；stop-first 停机如实累计；
 //   - 已切流：verdict=unstable 终态告警（不建新 deployment——默认只告警，
 //     D-REL-6；app=degraded）。
+//
+// kind=rollback 分流到 failRollbackDeployment（D-REL-10：回滚失败不再二次
+// 自动恢复——归位/重放都省略）。
 func (e *Engine) failUnswitchedOrSwitched(ctx context.Context, rec state.DeployRecord, code, detail string) error {
+	if rec.Kind == kindRollback {
+		return e.failRollbackDeployment(ctx, rec, code, detail)
+	}
 	if !rec.FirstHealthyAt.IsZero() {
 		return e.failSwitched(ctx, rec, code, detail)
 	}
@@ -224,8 +230,11 @@ func (e *Engine) failUnswitchedOrSwitched(ctx context.Context, rec state.DeployR
 }
 
 // failSwitched 已切流失败（场景 7/8）：deployment failed（verdict=unstable）
-// + app degraded 告警；不自动回滚。
+// + app degraded 告警；不自动回滚。kind=rollback 见 failRollbackDeployment。
 func (e *Engine) failSwitched(ctx context.Context, rec state.DeployRecord, code, detail string) error {
+	if rec.Kind == kindRollback {
+		return e.failRollbackDeployment(ctx, rec, code, detail)
+	}
 	verdict := state.VerdictUnstable
 	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{Verdict: &verdict}); err != nil {
 		return err
@@ -322,8 +331,11 @@ func (e *Engine) failCriticalRestore(ctx context.Context, rec state.DeployRecord
 	return e.refreshDerivedState(ctx, rec.AppID, rec.AppName)
 }
 
-// restoreSnapshot 按快照重放（归位/回滚共用原语，不变量 3）：对期望快照
-// 执行完整对账（含删除多余服务）——确定性、幂等、无 --force。
+// restoreSnapshot 按快照重放（归位/回滚/漂移收敛共用原语，不变量 3）：
+// 对期望快照执行完整对账（含删除多余服务）——确定性、幂等、无 --force。
+// 重放路径恒下发 ServiceUpdate（applyDesired force=true）：desired-hash
+// label 是上次平台写的存根，外部改动不清理它——相等不代表实况未被篡改；
+// 同内容 ServiceUpdate 不触发任务重建（Spike B2 零替换语义不受影响）。
 func (e *Engine) restoreSnapshot(ctx context.Context, rec state.DeployRecord, snapshot []ServiceSpec) error {
 	// 快照里的服务 label 补当前发布归属（服务 label 更新不触发任务替换）。
 	for i := range snapshot {
@@ -333,7 +345,7 @@ func (e *Engine) restoreSnapshot(ctx context.Context, rec state.DeployRecord, sn
 		snapshot[i].ServiceLabels[state.LabelDeployment] = rec.ID
 		snapshot[i].ServiceLabels[state.LabelDesiredHash] = snapshot[i].DesiredHash()
 	}
-	return e.applyDesired(ctx, rec, snapshot)
+	return e.applyDesired(ctx, rec, snapshot, true)
 }
 
 // lastActiveSnapshot 取最近一次 succeeded deployment 的期望快照（最后有效

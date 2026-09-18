@@ -39,6 +39,9 @@ type Engine struct {
 	// waterMarks 是副本水位不足判定的进程内计时（观察窗辅助信号；引擎
 	// 重启后重摆——窗口本身持久化，重启代价可接受）。
 	waterMarks map[string]time.Time
+	// driftSeen 是漂移上报的进程内迁移记忆（no-drift → drift 只报一次；
+	// 重启清零 = 漂移存续时重报一次，漏报劣于重复）。
+	driftSeen map[string]bool
 }
 
 // PlacementResolver 是引擎对放置层的消费端口（internal/placement.Resolver
@@ -62,24 +65,29 @@ func NewEngine(cfg Config, store *state.Store, sub Substrate, images ImageChecke
 		clock:      realClock{},
 		log:        log,
 		waterMarks: map[string]time.Time{},
+		driftSeen:  map[string]bool{},
 	}
 }
 
 // WithClock 注入时钟（单测）。
 func (e *Engine) WithClock(c Clock) *Engine { e.clock = c; return e }
 
-// Run 启动引擎主循环：启动扫描（控制面重启分类恢复）→ 周期 tick。ctx 取消
-// 返回 nil（lynx actor 契约由服务壳负责阻塞语义）。
+// Run 启动引擎主循环：启动扫描（控制面重启分类恢复）→ 周期 tick + 漂移
+// 扫描。ctx 取消返回 nil（lynx actor 契约由服务壳负责阻塞语义）。
 func (e *Engine) Run(ctx context.Context) error {
 	e.recoverInterrupted(ctx)
 	ticker := time.NewTicker(e.cfg.PollInterval)
 	defer ticker.Stop()
+	driftTicker := time.NewTicker(e.cfg.DriftInterval)
+	defer driftTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
 			e.tick(ctx)
+		case <-driftTicker.C:
+			e.driftScan(ctx)
 		}
 	}
 }
@@ -207,8 +215,12 @@ type prepareResult struct {
 
 // runPreparing 执行准备阶段：底座就绪 → compose 重载 → 放置解析/绑定/前哨
 // → env 提取 → secret 检查 → 分路（build-mode → building；纯镜像 → 直接
-// 规划进 releasing）。
+// 规划进 releasing）。kind=rollback 分路见 rollback.go（期望态已随入队
+// 固化，preflight 后直接对账）。
 func (e *Engine) runPreparing(ctx context.Context, rec state.DeployRecord) error {
+	if rec.Kind == kindRollback {
+		return e.runRollbackPreparing(ctx, rec)
+	}
 	// cancel（preparing 未触底座：直接落 cancelled）。
 	if rec.CancelRequested {
 		return e.cancelTerminal(ctx, rec)
@@ -404,7 +416,7 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	rec.WatchdogDeadlineAt = deadline
 
 	// 对账执行（新增/更新/删除）。
-	if err := e.applyDesired(ctx, rec, plan.Services); err != nil {
+	if err := e.applyDesired(ctx, rec, plan.Services, false); err != nil {
 		return e.failTransitionErr(ctx, rec, err)
 	}
 	return nil
@@ -505,7 +517,13 @@ func (e *Engine) platformEnvForMerge(ctx context.Context, appID string) ([]envla
 // applyDesired 是 stack 对账核心（architecture §2.4 省略=删除）：期望服务
 // 集 vs 实际（fleetly- 前缀 + managed label）——缺失创建、内容/归属更新、
 // 多余删除。幂等；服务 label 以当前发布归属重写（任务零替换，Spike B2）。
-func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desired []ServiceSpec) error {
+//
+// force 语义：false（发布对账）以 desired-hash label 做跳过捷径；true
+// （归位/回滚/漂移收敛的重放路径）**恒下发 ServiceUpdate**——label 是上次
+// 平台写的存根，外部改动不清理它：期望与 label 相等不代表实况未被篡改，
+// 重放必须以 swarm 侧 spec 重申为准（同内容 ServiceUpdate 不触发任务重建，
+// Spike B2 零替换语义不受影响）。
+func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desired []ServiceSpec, force bool) error {
 	if err := e.sub.SwarmReady(ctx); err != nil {
 		return appErrOf(err, rec.ID)
 	}
@@ -551,7 +569,8 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 			if err := e.sub.ServiceCreate(ctx, spec); err != nil {
 				return appErrOf(err, rec.ID)
 			}
-		case cur.DesiredHash != spec.DesiredHash() ||
+		case force ||
+			cur.DesiredHash != spec.DesiredHash() ||
 			cur.Labels[state.LabelDeployment] != rec.ID:
 			if err := e.sub.ServiceUpdate(ctx, spec.Name, spec); err != nil {
 				return appErrOf(err, rec.ID)

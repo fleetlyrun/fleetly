@@ -134,8 +134,9 @@ func countNewCrashes(tasks []TaskState, targetImage string) int {
 }
 
 // succeedDeployment 成功终态：版本快照固化（revisions verified + 部署行
-// revision_id 回填，同事务）→ 终态 CAS + 事件 → pending env promote（随
-// 部署生效）→ app 派生状态。
+// revision_id 回填，同事务；保留窗裁剪由 CreateRevision 同事务执行）→ 终态
+// CAS + 事件 → pending env promote（随部署生效；kind=rollback 不 promote，
+// 见下）→ app 派生状态。
 func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, flags int64) error {
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
@@ -164,7 +165,16 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 		}); err != nil {
 			return err
 		}
-		return deploymentEvent(ctx, tx, "deployment.succeeded", rec.ID, "revision", rev.ID)
+		if err := deploymentEvent(ctx, tx, "deployment.succeeded", rec.ID, "revision", rev.ID); err != nil {
+			return err
+		}
+		if rec.Kind == kindRollback {
+			// 回滚成功：快照重放通过完整健康门 + 观察窗，回退版本固化为
+			// 新 revision（版本历史里回滚 = 一次成功部署，§2.4）。
+			return deploymentEvent(ctx, tx, "deployment.rollback_finished", rec.ID,
+				"revision", rev.ID)
+		}
+		return nil
 	})
 	if err != nil {
 		return err
@@ -182,9 +192,13 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 	rec.Status = state.DeploySucceeded
 
 	// pending env 随部署生效（architecture §2.4 变量合并行；
-	// MarkAppEnvEffective 自带 app.env_applied 审计与幂等）。
-	if _, err := e.store.MarkAppEnvEffective(ctx, rec.AppID); err != nil {
-		return err
+	// MarkAppEnvEffective 自带 app.env_applied 审计与幂等）。kind=rollback
+	// 跳过：回滚重放的 env 随快照（D-REL-9「非密钥 env 随快照回滚」），
+	// pending 平台层未被本次部署消费——留待下次显式部署生效，不虚报生效。
+	if rec.Kind != kindRollback {
+		if _, err := e.store.MarkAppEnvEffective(ctx, rec.AppID); err != nil {
+			return err
+		}
 	}
 	return e.refreshDerivedState(ctx, rec.AppID, rec.AppName)
 }

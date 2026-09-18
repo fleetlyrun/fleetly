@@ -53,6 +53,9 @@ type EngineConfig struct {
 	ReplicasBelowSeconds int `mapstructure:"replicas_below_seconds"`
 	// PollSeconds 是引擎轮询周期秒数（engine.poll_seconds；缺省 2）。
 	PollSeconds int `mapstructure:"poll_seconds"`
+	// DriftIntervalSeconds 是运行域漂移检测扫描周期秒数
+	//（engine.drift_interval_seconds；缺省 30，T2.13）。
+	DriftIntervalSeconds int `mapstructure:"drift_interval_seconds"`
 }
 
 // EngineSettings 把 engine.* 配置节翻译为引擎核心配置（engine.Config，
@@ -63,6 +66,7 @@ func (c *AppConfig) EngineSettings() engine.Config {
 		ObserveWindow:    time.Duration(c.Engine.ObserveSeconds) * time.Second,
 		ReplicasBelowFor: time.Duration(c.Engine.ReplicasBelowSeconds) * time.Second,
 		PollInterval:     time.Duration(c.Engine.PollSeconds) * time.Second,
+		DriftInterval:    time.Duration(c.Engine.DriftIntervalSeconds) * time.Second,
 	}
 }
 

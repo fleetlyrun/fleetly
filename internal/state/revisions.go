@@ -10,16 +10,20 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// revisions 表写入通道（release-semantics §2.4 版本快照）：每 app 每次
-// 成功部署一条（verified=1）。seq 为 app 内自增（事务内 max+1 分配）；
+// revisions 表写入与读取通道（release-semantics §2.4 版本快照）：每 app
+// 每次成功部署一条（verified=1）。seq 为 app 内自增（事务内 max+1 分配）；
 // compose_normalized 为归一化 compose 快照（env 按 key:sha256+来源，值不落
-// 明文）；overlay 为平台覆盖层 JSON（镜像 digest、secret 引用等）。读取面
-// （回滚目标 = 最近成功部署的 revision）由 deployments 历史承载，本层只
-// 提供写入与按 ID 读。
+// 明文）；overlay 为平台覆盖层 JSON（镜像 digest、secret 引用等）。
 //
-// 注意：00001 词表的 verified INTEGER 不可加 CHECK——「active/superseded」
-// 状态位未建列，最近有效版本 = 最近 succeeded deployment 的 revision_id
-// （发布专项 D-REL-7：版本历史经部署记录读取，不设冗余状态位）。
+// 保留窗（T2.12，§2.4「固定保留最近 5 次成功部署、列表即选项」）：00005
+// 加法列 status 承载淘汰位——CreateRevision 固化第 6 个成功快照时把最旧
+// 的标记 superseded（不物理删，审计与历史可读）；active 集即回滚选项集，
+// ListRevisions / GetAppRevision 只暴露 active。重放的执行形态（含合并
+// env 明文的 desired_spec 密文）仍由创建该 revision 的 succeeded deployment
+// 行承载——回滚经 revision_id 反查部署行取快照（D-REL-7 部署记录读取纪律）。
+//
+// 注意：00001 词表不可加 CHECK——status 词表（active/superseded）由本包
+// 常量承载，非法值经写入通道防御。
 
 // Revision 是一次版本快照行。
 type Revision struct {
@@ -30,10 +34,28 @@ type Revision struct {
 	Overlay           string
 	DesiredHash       string
 	Verified          bool
-	CreatedAt         time.Time
+	// Status 是保留窗状态位（active = 可回滚选项；superseded = 被保留窗
+	// 淘汰，仅存档——列表即选项，列不出来的不可回滚）。
+	Status    string
+	CreatedAt time.Time
 }
 
-// ErrRevisionNotFound 表示版本快照不存在。
+// 保留窗状态位词表（revisions.status，00005 加法列；无 CHECK，词表在此
+// 冻结）。v0.1 只有两个值；候选态（candidate）不进 v0.1——快照仅在成功
+// 终态固化（verified=1 与 active 同拍写入）。
+const (
+	// RevisionStatusActive 在保留窗内（回滚选项集）。
+	RevisionStatusActive = "active"
+	// RevisionStatusSuperseded 被更新快照挤出保留窗（存档不删）。
+	RevisionStatusSuperseded = "superseded"
+)
+
+// RevisionKeepVersions 是保留窗宽度（release-semantics §2.4 / architecture
+// §2.5 默认参数表：版本保留 5）。
+const RevisionKeepVersions = 5
+
+// ErrRevisionNotFound 表示版本快照不存在（含 superseded 后不可经选项面
+// 解析的形态——调用方按 E_ROLLBACK_NO_TARGET 映射）。
 var ErrRevisionNotFound = errors.New("revision not found")
 
 // RevisionWrite 是一次版本快照写入。
@@ -69,6 +91,9 @@ func (t *Tx) CreateRevision(ctx context.Context, w RevisionWrite) (Revision, err
 	if _, err := t.ExecContext(ctx, q, id, w.AppID, seq, w.ComposeNormalized, w.Overlay, w.DesiredHash, now); err != nil {
 		return Revision{}, fmt.Errorf("state: insert revision: %w", err)
 	}
+	if err := t.trimRevisions(ctx, w.AppID); err != nil {
+		return Revision{}, err
+	}
 	return Revision{
 		ID:                id,
 		AppID:             w.AppID,
@@ -77,26 +102,97 @@ func (t *Tx) CreateRevision(ctx context.Context, w RevisionWrite) (Revision, err
 		Overlay:           w.Overlay,
 		DesiredHash:       w.DesiredHash,
 		Verified:          true,
+		Status:            RevisionStatusActive,
 		CreatedAt:         time.Unix(0, now).UTC(),
 	}, nil
 }
 
-// GetRevision 按 ID 取版本快照；不存在返回 ErrRevisionNotFound。
-func (s *Store) GetRevision(ctx context.Context, id string) (Revision, error) {
-	const q = `SELECT id, app_id, seq, compose_normalized, overlay, desired_hash, verified, created_at
-		FROM revisions WHERE id = ?`
-	var r Revision
-	var verified int64
-	var created int64
-	err := s.db.QueryRowContext(ctx, q, id).Scan(
-		&r.ID, &r.AppID, &r.Seq, &r.ComposeNormalized, &r.Overlay, &r.DesiredHash, &verified, &created)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Revision{}, ErrRevisionNotFound
-		}
-		return Revision{}, fmt.Errorf("state: get revision %s: %w", id, err)
+// trimRevisions 执行保留窗裁剪（§2.4：第 6 个成功固化时淘汰最旧——标记
+// superseded，不物理删）。active 集按 seq 降序保留最新 RevisionKeepVersions
+// 条，其余翻 superseded。幂等；与快照写入同事务（fail-closed）。
+func (t *Tx) trimRevisions(ctx context.Context, appID string) error {
+	const q = `UPDATE revisions SET status = 'superseded'
+		WHERE app_id = ? AND status = 'active' AND id NOT IN (
+			SELECT id FROM revisions
+			WHERE app_id = ? AND status = 'active'
+			ORDER BY seq DESC LIMIT ?
+		)`
+	if _, err := t.ExecContext(ctx, q, appID, appID, RevisionKeepVersions); err != nil {
+		return fmt.Errorf("state: trim revisions window: %w", err)
 	}
-	r.Verified = verified != 0
-	r.CreatedAt = time.Unix(0, created).UTC()
-	return r, nil
+	return nil
+}
+
+// ListRevisions 返回该 app 保留窗内的版本快照（active，seq 降序 = 最新
+// 在前，release-semantics §2.4「列表即选项」——返回集即可回滚目标全集）。
+func (s *Store) ListRevisions(ctx context.Context, appID string) ([]Revision, error) {
+	const q = `SELECT id, app_id, seq, compose_normalized, overlay, desired_hash, verified, status, created_at
+		FROM revisions WHERE app_id = ? AND status = 'active' AND verified = 1
+		ORDER BY seq DESC, id DESC`
+	rows, err := s.db.QueryContext(ctx, q, appID)
+	if err != nil {
+		return nil, fmt.Errorf("state: query revisions: %w", err)
+	}
+	return scanRevisions(ctx, rows)
+}
+
+// GetAppRevision 解析该 app 的一个可回滚目标（active + app 归属双谓词）；
+// 不存在 / 已被保留窗淘汰 / 归属不符 → ErrRevisionNotFound（列表即选项：
+// 列不出来的不可回滚）。
+func (s *Store) GetAppRevision(ctx context.Context, appID, revisionID string) (Revision, error) {
+	const q = `SELECT id, app_id, seq, compose_normalized, overlay, desired_hash, verified, status, created_at
+		FROM revisions WHERE id = ? AND app_id = ? AND status = 'active' AND verified = 1`
+	rows, err := s.db.QueryContext(ctx, q, revisionID, appID)
+	if err != nil {
+		return Revision{}, fmt.Errorf("state: query revisions: %w", err)
+	}
+	out, err := scanRevisions(ctx, rows)
+	if err != nil {
+		return Revision{}, err
+	}
+	if len(out) == 0 {
+		return Revision{}, ErrRevisionNotFound
+	}
+	return out[0], nil
+}
+
+// scanRevisions 迭代版本快照查询结果。
+func scanRevisions(ctx context.Context, rows *sql.Rows) ([]Revision, error) {
+	defer func() { _ = rows.Close() }()
+	var out []Revision
+	for rows.Next() {
+		var r Revision
+		var verified int64
+		var created int64
+		if err := rows.Scan(&r.ID, &r.AppID, &r.Seq, &r.ComposeNormalized, &r.Overlay,
+			&r.DesiredHash, &verified, &r.Status, &created); err != nil {
+			return nil, fmt.Errorf("state: scan revision: %w", err)
+		}
+		r.Verified = verified != 0
+		r.CreatedAt = time.Unix(0, created).UTC()
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate revisions: %w", err)
+	}
+	return out, nil
+}
+
+// GetRevision 按 ID 取版本快照（不限保留窗状态——存档行仍可读）；不存在
+// 返回 ErrRevisionNotFound。回滚目标解析须走 GetAppRevision（active 谓词）。
+func (s *Store) GetRevision(ctx context.Context, id string) (Revision, error) {
+	const q = `SELECT id, app_id, seq, compose_normalized, overlay, desired_hash, verified, status, created_at
+		FROM revisions WHERE id = ?`
+	rows, err := s.db.QueryContext(ctx, q, id)
+	if err != nil {
+		return Revision{}, fmt.Errorf("state: query revisions: %w", err)
+	}
+	out, err := scanRevisions(ctx, rows)
+	if err != nil {
+		return Revision{}, err
+	}
+	if len(out) == 0 {
+		return Revision{}, ErrRevisionNotFound
+	}
+	return out[0], nil
 }

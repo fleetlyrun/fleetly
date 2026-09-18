@@ -327,16 +327,79 @@ func (c *Client) TaskList(ctx context.Context, serviceName string) ([]engine.Tas
 }
 
 // serviceToState 把 swarm.Service 投影为核心类型（UpdateStatus 逐字镜像：
-// paused + Message 是更新失败的平台判定来源，Spike B）。
+// paused + Message 是更新失败的平台判定来源，Spike B）。T2.13 起同时抄出
+// spec 侧受控子集字段（T2.13 运行域漂移反解的实况侧输入；第三方类型不出
+// 本函数，出口一律 engine 核心类型）。
 func serviceToState(svc swarm.Service) engine.ServiceState {
 	out := engine.ServiceState{
 		Name:    svc.Spec.Name,
 		Version: svc.Version.Index,
 		Labels:  svc.Spec.Labels,
 	}
-	if svc.Spec.TaskTemplate.ContainerSpec != nil {
-		out.Image = svc.Spec.TaskTemplate.ContainerSpec.Image
+	task := svc.Spec.TaskTemplate
+	if task.ContainerSpec != nil {
+		c := task.ContainerSpec
+		out.Image = c.Image
+		out.Command = append([]string{}, c.Command...)
+		out.Env = append([]string{}, c.Env...)
+		out.ContainerLabels = c.Labels
+		out.StopSignal = c.StopSignal
+		if c.StopGracePeriod != nil {
+			out.StopGracePeriod = *c.StopGracePeriod
+		}
+		if c.Healthcheck != nil {
+			out.Healthcheck = &engine.HealthcheckSpec{
+				Test:        append([]string{}, c.Healthcheck.Test...),
+				Interval:    c.Healthcheck.Interval,
+				Timeout:     c.Healthcheck.Timeout,
+				Retries:     uint64(max(c.Healthcheck.Retries, 0)),
+				StartPeriod: c.Healthcheck.StartPeriod,
+			}
+		}
+		for _, m := range c.Mounts {
+			if m.Type != mount.TypeVolume {
+				continue // 受控子集只写命名卷；其余形态不进漂移投影
+			}
+			out.Mounts = append(out.Mounts, engine.MountSpec{
+				VolumeName: m.Source, Target: m.Target, ReadOnly: m.ReadOnly,
+			})
+		}
+		for _, s := range c.Secrets {
+			target := ""
+			if s.File != nil {
+				target = s.File.Name
+			}
+			out.Secrets = append(out.Secrets, engine.SecretMount{SecretName: s.SecretName, Target: target})
+		}
 	}
+	for _, n := range task.Networks {
+		out.Networks = append(out.Networks, engine.NetworkAttach{
+			Name: n.Target, Aliases: append([]string{}, n.Aliases...),
+		})
+	}
+	if task.Placement != nil {
+		out.Constraints = append([]string{}, task.Placement.Constraints...)
+	}
+	if task.Resources != nil && task.Resources.Limits != nil {
+		out.Resources = &engine.ResourcesSpec{
+			NanoCPUs:    task.Resources.Limits.NanoCPUs,
+			MemoryBytes: task.Resources.Limits.MemoryBytes,
+		}
+	}
+	if task.RestartPolicy != nil {
+		rp := &engine.RestartPolicySpec{Condition: string(task.RestartPolicy.Condition)}
+		if task.RestartPolicy.Delay != nil {
+			rp.Delay = *task.RestartPolicy.Delay
+		}
+		if task.RestartPolicy.MaxAttempts != nil {
+			rp.MaxAttempts = *task.RestartPolicy.MaxAttempts
+		}
+		if task.RestartPolicy.Window != nil {
+			rp.Window = *task.RestartPolicy.Window
+		}
+		out.RestartPolicy = rp
+	}
+	out.Global = svc.Spec.Mode.Global != nil
 	if svc.Spec.Mode.Replicated != nil && svc.Spec.Mode.Replicated.Replicas != nil {
 		out.Replicas = *svc.Spec.Mode.Replicated.Replicas
 	}

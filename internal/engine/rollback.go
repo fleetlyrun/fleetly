@@ -1,0 +1,379 @@
+package engine
+
+// 回滚（T2.12，release-semantics §2.4 单层快照重放 + §2.3 kind=rollback）：
+//   - 回滚目标 = revisions 保留窗内最近 5 次成功部署（列表即选项）；越界 /
+//     不存在 / 归属不符 → E_ROLLBACK_NO_TARGET；
+//   - 重放语义：compose 字段与合并 env 按快照（执行形态 = 目标 succeeded
+//     deployment 行的 desired_spec 密文——合并 env 明文只在密文里）；治理
+//     参数（看门狗/观察窗）取当前引擎配置；secret 值取当前（v0.1 平台
+//     密钥库未接入，快照不含 secret——结构性地满足「回滚不撤销密钥轮换」，
+//     密钥票落地后此处语义不变）；卷数据/DB 迁移/DNS 不回滚；
+//   - preflight 四项（镜像可得/约束可满足/secret 存在/compose 合法）在动
+//     底座之前执行，失败按原因码落 failed（不动 app、不关收敛 opt-in）；
+//   - 已切流回滚 = 新 deployment（kind=rollback，recovery_of 指向被回退的
+//     源部署），复用 T2-5a 全链：对账/健康门/观察窗；
+//   - 回滚执行后失败（已动底座）：E_ROLLBACK_FAILED（critical，不再二次
+//     自动恢复，D-REL-10）+ 该 app 漂移收敛 opt-in 强制关闭，直至人工重置
+//    （`fleetly drift enable`，带审计）；
+//   - 事件 deployment.rollback_started / rollback_finished / rollback_failed
+//    （release-semantics §2.7）+ 审计（actor 透传）。
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"strings"
+
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// kindRollback 是 deployments.kind 的回滚取值（00001 CHECK 词表）。
+const kindRollback = "rollback"
+
+// RollbackInput 是一次回滚入队的请求。
+type RollbackInput struct {
+	// AppName 是 compose 应用名。
+	AppName string
+	// TargetRevisionID 是回滚目标版本快照；空 = 最近一次成功部署的版本
+	//（`fleetly rollback <app>` 缺省回退一版）。
+	TargetRevisionID string
+	// Actor 是审计操作主体（human/ai_agent；CLI 直连为 human）。空按
+	// human 兜底（审计列非空约束）。
+	Actor string
+}
+
+// EnqueueRollback 解析回滚目标并入队 kind=rollback 部署（CLI 入口；与
+// deploy 同拓扑——入队与执行跨进程解耦，执行由 fleetlyd 引擎扫描推进）。
+// 目标解析失败（app 不存在 / revision 越界或被保留窗淘汰 / 源部署快照
+// 缺失）→ E_ROLLBACK_NO_TARGET。
+func EnqueueRollback(ctx context.Context, st *state.Store, in RollbackInput) (state.DeployRecord, error) {
+	app, err := st.GetAppByName(ctx, in.AppName)
+	if err != nil {
+		if errors.Is(err, state.ErrAppNotFound) {
+			return state.DeployRecord{}, errorf("E_ROLLBACK_NO_TARGET",
+				"应用 %s 不存在：没有可回滚的版本（回滚目标 = revisions 保留窗内最近 5 次成功部署）", in.AppName).
+				WithContext("app", in.AppName)
+		}
+		return state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "读取应用失败: %v", err)
+	}
+
+	rev, err := resolveRollbackTarget(ctx, st, app.ID, in.TargetRevisionID)
+	if err != nil {
+		return state.DeployRecord{}, err
+	}
+
+	// 重放执行形态与回退对象：replay source = 创建目标 revision 的
+	// succeeded 部署行（密文快照，含合并 env 明文——§2.4「env 随快照
+	// 回滚」的载体）；origin = 最近一次 succeeded 部署（被回退的现行
+	// 版本），recovery_of 指向它（D-REL-7：回滚记录指向的原 deployment）。
+	origin, source, err := rollbackDeployments(ctx, st, app.ID, rev.ID)
+	if err != nil {
+		return state.DeployRecord{}, err
+	}
+
+	actor := in.Actor
+	if actor == "" {
+		actor = "human"
+	}
+	rec, err := st.CreateDeployment(ctx, state.DeployRecord{
+		AppID:           app.ID,
+		AppName:         app.Name,
+		Kind:            kindRollback,
+		RecoveryOf:      origin.ID,
+		SpecHash:        source.SpecHash,
+		EnvSnapshotHash: source.EnvSnapshotHash,
+		DesiredHash:     source.DesiredHash,
+		DesiredSpec:     source.DesiredSpec,
+		ComposePath:     source.ComposePath,
+	})
+	if err != nil {
+		return state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "创建回滚部署失败: %v", err)
+	}
+	if err := st.InTx(ctx, func(tx *state.Tx) error {
+		if err := appendEvent(ctx, tx, "deployment.rollback_started", "deployment:"+rec.ID,
+			"deployment", rec.ID, "app", app.Name,
+			"target_revision", rev.ID, "source_deployment", source.ID,
+			"recovery_of", origin.ID); err != nil {
+			return err
+		}
+		return tx.WriteAudit(ctx, state.AuditEntry{
+			Actor:  actor,
+			Action: "deployment.rollback",
+			Target: "deployment:" + rec.ID,
+			Result: "ok",
+			DiffSummary: `{"app":"` + app.Name + `","target_revision":"` + rev.ID +
+				`","source_deployment":"` + source.ID + `","recovery_of":"` + origin.ID + `"}`,
+		})
+	}); err != nil {
+		return state.DeployRecord{}, err
+	}
+	return rec, nil
+}
+
+// resolveRollbackTarget 解析回滚目标 revision（保留窗 active 谓词 + 缺省
+// 取最新；越界/不存在 → E_ROLLBACK_NO_TARGET——列表即选项，无额外状态机）。
+func resolveRollbackTarget(ctx context.Context, st *state.Store, appID, revisionID string) (state.Revision, error) {
+	if revisionID == "" {
+		rows, err := st.ListRevisions(ctx, appID)
+		if err != nil {
+			return state.Revision{}, errorf("E_RUNTIME_UNAVAILABLE", "读取版本列表失败: %v", err)
+		}
+		if len(rows) == 0 {
+			return state.Revision{}, errorf("E_ROLLBACK_NO_TARGET",
+				"应用没有可回滚的版本（revisions 保留窗为空——尚无成功部署）").WithContext("app_id", appID)
+		}
+		return rows[0], nil
+	}
+	rev, err := st.GetAppRevision(ctx, appID, revisionID)
+	if err != nil {
+		if errors.Is(err, state.ErrRevisionNotFound) {
+			return state.Revision{}, errorf("E_ROLLBACK_NO_TARGET",
+				"版本 %s 不在可回滚集合内（保留窗只列最近 %d 次成功部署；列表见 fleetly revisions list）",
+				revisionID, state.RevisionKeepVersions).
+				WithContext("revision", revisionID)
+		}
+		return state.Revision{}, errorf("E_RUNTIME_UNAVAILABLE", "读取版本失败: %v", err)
+	}
+	return rev, nil
+}
+
+// rollbackDeployments 反查回滚涉及的两个部署行：origin（最近一次
+// succeeded——被回退的现行版本）与 source（创建目标 revision 的成功部署
+// ——重放快照载体）。source 缺失（理论不可达：revision 仅在成功终态固化）
+// → E_ROLLBACK_NO_TARGET（目标不可重放即不可回滚）。
+func rollbackDeployments(ctx context.Context, st *state.Store, appID, revisionID string) (state.DeployRecord, state.DeployRecord, error) {
+	rows, err := st.ListAppDeployments(ctx, appID, 50)
+	if err != nil {
+		return state.DeployRecord{}, state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "读取部署历史失败: %v", err)
+	}
+	var origin, source state.DeployRecord
+	for _, r := range rows {
+		if r.Status != state.DeploySucceeded {
+			continue
+		}
+		if origin.ID == "" {
+			origin = r // created_at 倒序：首个 succeeded 即最新
+		}
+		if r.RevisionID == revisionID && r.DesiredSpec != "" {
+			source = r
+			break // origin 已就位后即可停
+		}
+	}
+	if source.ID == "" {
+		return state.DeployRecord{}, state.DeployRecord{}, errorf("E_ROLLBACK_NO_TARGET",
+			"版本 %s 缺少可重放的部署快照（历史记录缺失或损坏）", revisionID).
+			WithContext("revision", revisionID)
+	}
+	if origin.ID == "" {
+		origin = source
+	}
+	return origin, source, nil
+}
+
+// runRollbackPreparing 执行 kind=rollback 部署的准备阶段：跳过 compose
+// 重载/构建核对（期望态已随入队固化），preflight 四项通过后直接进
+// releasing 并按快照对账（§2.4：preflight 任一失败在动底座之前失败）。
+func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecord) error {
+	// 未触底座：cancel 直接落 cancelled（无归位动作）。
+	if rec.CancelRequested {
+		return e.cancelTerminal(ctx, rec)
+	}
+	if !rec.CreatedAt.IsZero() && e.now().Sub(rec.CreatedAt) > e.cfg.ReleaseTimeout {
+		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE",
+			"回滚准备超过发布看门狗预算（底座不可用或环境异常）"))
+	}
+	if err := e.sub.SwarmReady(ctx); err != nil {
+		if errors.Is(err, ErrNotSwarmReady) {
+			e.log.Warn("engine: swarm not ready, retrying rollback next tick", "deployment", rec.ID)
+			return nil // 暂态：下一 tick 重试（预算由上守）
+		}
+		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "底座检查失败: %v", err))
+	}
+
+	specs, err := e.decodeSpecs(rec)
+	if err != nil || len(specs) == 0 {
+		return e.failRollbackPreflight(ctx, rec, errorf("E_ROLLBACK_FAILED",
+			"回滚期望态快照不可读（%v）：目标版本不可重放", err))
+	}
+
+	// preflight 四项（§2.4）——任一失败不动底座。
+	if err := e.preflightRollback(ctx, rec, specs); err != nil {
+		return e.failRollbackPreflight(ctx, rec, err)
+	}
+
+	// releasing 迁移（哈希/快照已在入队时落行；看门狗按当前平台配置起算
+	// ——治理参数取当前，§2.4）。
+	releaseAt := e.now()
+	deadline := releaseAt.Add(e.cfg.ReleaseTimeout)
+	to := state.DeployReleasing
+	from := state.DeployPreparing
+	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
+		Status:             &to,
+		PrevStatus:         &from,
+		ReleaseStartedAt:   &releaseAt,
+		WatchdogDeadlineAt: &deadline,
+	}); err != nil {
+		return err
+	}
+	rec.Status = state.DeployReleasing
+
+	// 快照对账（归位/回滚共用原语：确定性、幂等、禁 --force）。
+	if err := e.restoreSnapshot(ctx, rec, specs); err != nil {
+		ae := appErrOf(err, rec.ID)
+		return e.failRollbackDeployment(ctx, rec, ae.Code(), ae.Message())
+	}
+	return nil
+}
+
+// preflightRollback 执行回滚 preflight 四项（release-semantics §2.4）：
+//  1. 镜像可得：build.PreflightImage（E_IMAGE_UNAVAILABLE 信封自带
+//     W_ROLLBACK_IMAGE_RISK——v0.1 无 registry，镜像被清理时提示保留或重建）；
+//  2. 约束可满足：放置前哨（绑定节点 ready / 卷归属一致——取当前平台
+//     绑定状态，不放快照）；
+//  3. secret 存在：v0.1 平台密钥库未接入，规划层拒绝 secrets，快照结构性
+//     不含 secret（见本文件头「secret 值取当前」注）；防御分支兜底；
+//  4. compose 合法：取舍——信任归一化快照（目标 compose 在原部署入队时
+//     已过受控子集校验，快照是其 canonical 投影），只复核关键执行面
+//     （服务集非空、服务名在平台命名空间内、镜像引用非空）。不做反解析：
+//     compose_normalized 是 canonical JSON 而非 YAML 源文件，重走
+//     compose.Load 无输入可用；且回滚的执行依据是 desired_spec 本身。
+func (e *Engine) preflightRollback(ctx context.Context, rec state.DeployRecord, specs []ServiceSpec) error {
+	images := checkerImageSource{images: e.images}
+	for i := range specs {
+		spec := specs[i]
+		// 4. compose 合法（关键执行面复核）。
+		if !strings.HasPrefix(spec.Name, "fleetly-") || spec.Image == "" {
+			return errorf("E_ROLLBACK_FAILED",
+				"快照服务 %s 关键面不合法（命名空间/镜像引用缺失）：目标版本不可重放", spec.Name)
+		}
+		// 1. 镜像可得（v0.1 本机 inspect；缺失 → E_IMAGE_UNAVAILABLE +
+		//    W_ROLLBACK_IMAGE_RISK）。
+		if _, err := build.PreflightImage(ctx, images, spec.Image); err != nil {
+			var ae *apperr.Error
+			if asAppErr(err, &ae) && ae != nil {
+				return ae
+			}
+			return errorf("E_RUNTIME_UNAVAILABLE", "镜像检查失败 %s: %v", spec.Image, err)
+		}
+		// 3. secret 存在（防御分支：v0.1 快照不含 secret——出现即不可重放）。
+		if len(spec.Secrets) > 0 {
+			return errorf("E_ROLLBACK_FAILED",
+				"快照服务 %s 携带 secret 引用：v0.1 平台密钥库未接入，无法校验 secret 存在性", spec.Name)
+		}
+	}
+	// 2. 约束可满足（放置前哨：绑定节点 ready / 卷归属一致；取当前绑定）。
+	if err := e.resolver.Preflight(ctx, rec.AppID); err != nil {
+		return err
+	}
+	return nil
+}
+
+// checkerImageSource 把引擎镜像可见性端口适配为 build.ImageSource
+// （PreflightImage 只消费 InspectImage；LoadImage 属构建管线，回滚路径
+// 不可达——桩实现显式报错防误用）。
+type checkerImageSource struct {
+	images ImageChecker
+}
+
+func (c checkerImageSource) InspectImage(ctx context.Context, ref string) (build.ImageInfo, error) {
+	digest, err := c.images.ImageDigest(ctx, ref)
+	if err != nil {
+		if errors.Is(err, ErrImageMissing) {
+			return build.ImageInfo{}, fmt.Errorf("%w: %s", build.ErrImageNotFound, ref)
+		}
+		return build.ImageInfo{}, err
+	}
+	return build.ImageInfo{ID: digest}, nil
+}
+
+func (c checkerImageSource) LoadImage(context.Context, io.Reader) error {
+	return errors.New("engine: LoadImage is not available on the rollback preflight path")
+}
+
+// failRollbackPreflight 回滚 preflight 失败（未触底座）：按原因码落
+// failed + rollback_failed 事件（reason=preflight）。app 运行现场未被
+// 改动——不判 critical、不关漂移收敛 opt-in。
+func (e *Engine) failRollbackPreflight(ctx context.Context, rec state.DeployRecord, err error) error {
+	ae := appErrOf(err, rec.ID)
+	if ferr := e.failTransition(ctx, rec, ae.Code(), ae.Message()); ferr != nil {
+		return ferr
+	}
+	return e.store.InTx(ctx, func(tx *state.Tx) error {
+		return deploymentEvent(ctx, tx, "deployment.rollback_failed", rec.ID,
+			"reason", "preflight", "code", ae.Code())
+	})
+}
+
+// failRollbackDeployment 回滚执行后失败（已动底座，D-REL-10 critical）：
+// E_ROLLBACK_FAILED 终态（切流过则 verdict=unstable）+ 不再二次自动恢复
+// （不重放、不归位——现场留人工）+ 该 app 漂移收敛 opt-in 强制关闭直至
+// 人工重置 + rollback_failed 事件与审计（cause 码随 payload）。
+func (e *Engine) failRollbackDeployment(ctx context.Context, rec state.DeployRecord, causeCode, detail string) error {
+	code := "E_ROLLBACK_FAILED"
+	msg := fmt.Sprintf("%s；回滚失败（critical，不再二次自动恢复）：%s", detail, causeCode)
+	to := state.DeployFailed
+	from := rec.Status
+	patch := state.DeploymentPatch{Status: &to, PrevStatus: &from, ErrorCode: &code}
+	verdict := state.VerdictUnstable
+	if !rec.FirstHealthyAt.IsZero() {
+		patch.Verdict = &verdict // 切流过：app=degraded（旧版本未接住）
+	}
+	if err := e.store.UpdateDeployment(ctx, rec.ID, patch); err != nil {
+		if errors.Is(err, state.ErrDeploymentStateTransition) {
+			return nil // 已被并发推进（重启恢复/CLI 竞争）：终态不可逆
+		}
+		return err
+	}
+	rec.Status = state.DeployFailed
+	err := e.store.InTx(ctx, func(tx *state.Tx) error {
+		if err := tx.WriteAudit(ctx, state.AuditEntry{
+			Actor:       "system",
+			Action:      "deployment.auto_abort",
+			Target:      "deployment:" + rec.ID,
+			Result:      "ok",
+			ErrorCode:   code,
+			DiffSummary: `{"app":"` + rec.AppName + `","kind":"` + rec.Kind + `","cause":"` + causeCode + `"}`,
+		}); err != nil {
+			return err
+		}
+		if err := auditDeployment(ctx, tx, "system", "deployment.rollback", rec.ID,
+			"error", code, `{"cause":"`+causeCode+`"}`); err != nil {
+			return err
+		}
+		if err := deploymentEvent(ctx, tx, "deployment.failed", rec.ID,
+			"code", code, "detail", msg); err != nil {
+			return err
+		}
+		if err := deploymentEvent(ctx, tx, "deployment.rollback_failed", rec.ID,
+			"reason", "replay", "code", causeCode); err != nil {
+			return err
+		}
+		// 收敛 opt-in 强制关闭（critical 后只检测不收敛；人工经
+		// `fleetly drift enable` 重置）。已关或 app 缺失则无副作用。
+		on, gerr := tx.GetAppDriftConverge(ctx, rec.AppID)
+		if gerr != nil && !errors.Is(gerr, state.ErrAppNotFound) {
+			return gerr
+		}
+		if on {
+			if err := tx.SetAppDriftConverge(ctx, rec.AppID, false); err != nil {
+				return err
+			}
+			return tx.WriteAudit(ctx, state.AuditEntry{
+				Actor:       "system",
+				Action:      "reconcile.drift_converge_disabled",
+				Target:      "app:" + rec.AppName,
+				Result:      "ok",
+				ErrorCode:   code,
+				DiffSummary: `{"reason":"rollback_failed","deployment":"` + rec.ID + `"}`,
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return e.refreshDerivedState(ctx, rec.AppID, rec.AppName)
+}

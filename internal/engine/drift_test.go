@@ -1,0 +1,245 @@
+package engine
+
+// 漂移检测测试（T2.13）：投影哈希稳定性与敏感性（env 只进 key:hash）、
+// 检测 → reconcile.drift_detected 事件（mock 注入外部改动；不重复报）、
+// 收敛 opt-in 默认关 / 开启即收敛、报告与事件不泄露 env 明文、人工一次性
+// 收敛与在途部署拒绝。
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// driftProbeValue 是注入外部改动的"密钥形态"明文（负面断言：任何事件/
+// 审计载荷都不得出现）。
+const driftProbeValue = "super-secret-plaintext-9f2c"
+
+func TestDriftHashStabilityAndSensitivity(t *testing.T) {
+	base := ServiceSpec{
+		Name:     "fleetly-demo-web",
+		Image:    "alpine:3@sha256:aaa",
+		Command:  []string{"sleep", "infinity"},
+		Env:      []string{"A=1", "B=2"},
+		Replicas: 2,
+		Networks: []NetworkAttach{{Name: "fleetly-demo-net", Aliases: []string{"web"}}},
+		ServiceLabels: map[string]string{
+			state.LabelManaged: "true", state.LabelApp: "demo",
+			state.LabelDeployment: "d1", state.LabelDesiredHash: "h1",
+		},
+		ContainerLabels: map[string]string{state.LabelApp: "demo"},
+		Healthcheck:     &HealthcheckSpec{Test: []string{"CMD", "true"}, Interval: time.Second},
+	}
+	baseHash := driftHash(base)
+
+	// 稳定性：env 顺序、label 迭代序、平台簿记 label、swarm 的 repo 前缀
+	// 归一——都不影响哈希。
+	reordered := base
+	reordered.Env = []string{"B=2", "A=1"}
+	if driftHash(reordered) != baseHash {
+		t.Fatal("env order changed the drift hash")
+	}
+	bookkeeping := base
+	bookkeeping.ServiceLabels = map[string]string{
+		state.LabelManaged: "true", state.LabelApp: "demo",
+		state.LabelDeployment: "OTHER", state.LabelDesiredHash: "OTHER",
+	}
+	if driftHash(bookkeeping) != baseHash {
+		t.Fatal("bookkeeping labels changed the drift hash")
+	}
+	renamed := base
+	renamed.Image = "docker.io/library/alpine@sha256:aaa"
+	if driftHash(renamed) != baseHash {
+		t.Fatal("repo string changed the drift hash despite equal digest")
+	}
+
+	// 敏感性：env 值变化 / 键集变化 / 副本变化 / 别名变化都改变哈希。
+	envChanged := base
+	envChanged.Env = []string{"A=1", "B=3"}
+	if driftHash(envChanged) == baseHash {
+		t.Fatal("env value change not detected")
+	}
+	keyAdded := base
+	keyAdded.Env = []string{"A=1", "B=2", "C=3"}
+	if driftHash(keyAdded) == baseHash {
+		t.Fatal("env key addition not detected")
+	}
+	replicasChanged := base
+	replicasChanged.Replicas = 3
+	if driftHash(replicasChanged) == baseHash {
+		t.Fatal("replica change not detected")
+	}
+	aliasChanged := base
+	aliasChanged.Networks = []NetworkAttach{{Name: "x", Aliases: []string{"web2"}}}
+	if driftHash(aliasChanged) == baseHash {
+		t.Fatal("network alias change not detected")
+	}
+}
+
+func TestDriftDetectionEmitsEventOnceAndDoesNotConvergeByDefault(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if final := h.runToTerminal(h.enqueue(h.writeCompose(composeV1))); final.Status != state.DeploySucceeded {
+		t.Fatalf("deploy = %s (%s)", final.Status, final.ErrorCode)
+	}
+
+	// 基线：无漂移、无事件。
+	h.eng.DriftScan(ctx)
+	if hasEvent(h.events(), "reconcile.drift_detected") {
+		t.Fatal("drift event on clean baseline")
+	}
+
+	// 注入外部改动（模拟手动 docker service update --env）。
+	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+		spec.Env = append(spec.Env, "EVIL="+driftProbeValue)
+	})
+
+	// 检测：事件 + 报告漂移（env 只报键名 + hash）。
+	h.eng.DriftScan(ctx)
+	if !hasEvent(h.events(), "reconcile.drift_detected") {
+		t.Fatal("drift not detected after external mutation")
+	}
+	report, err := h.eng.DriftShow(ctx, "demo")
+	if err != nil || !report.Drifted {
+		t.Fatalf("drift show = %+v (%v), want drifted", report, err)
+	}
+	if len(report.Services) != 1 || len(report.Services[0].Diff) == 0 {
+		t.Fatalf("report diff empty: %+v", report.Services)
+	}
+	foundEnvDiff := false
+	for _, d := range report.Services[0].Diff {
+		if d.Field == "env.EVIL" {
+			foundEnvDiff = true
+			if strings.Contains(d.Expected, driftProbeValue) || strings.Contains(d.Actual, driftProbeValue) {
+				t.Fatalf("env diff leaks plaintext: %+v", d)
+			}
+			if !strings.HasPrefix(d.Expected, "<absent>") && len(d.Expected) != 64 {
+				t.Fatalf("env diff hash form unexpected: %q", d.Expected)
+			}
+		}
+	}
+	if !foundEnvDiff {
+		t.Fatalf("no env.EVIL diff: %+v", report.Services[0].Diff)
+	}
+	// 事件载荷同样不泄露明文。
+	for _, ev := range mustEvents(t, h) {
+		if strings.Contains(ev.Payload, driftProbeValue) {
+			t.Fatalf("event %s leaks env plaintext", ev.Name)
+		}
+	}
+
+	// 同一漂移存续：不重复发事件（迁移判定）。
+	h.eng.DriftScan(ctx)
+	if n := countEvents(t, h, "reconcile.drift_detected"); n != 1 {
+		t.Fatalf("drift event count = %d, want 1（只报迁移）", n)
+	}
+
+	// opt-in 默认关：漂移不被自动收敛（外部改动保持原样）。
+	app, err := h.store.GetAppByName(ctx, "demo")
+	if err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if on, _ := h.store.GetAppDriftConverge(ctx, app.ID); on {
+		t.Fatal("drift converge default is on")
+	}
+	joined := strings.Join(h.sub.services["fleetly-demo-web"].spec.Env, ",")
+	if !strings.Contains(joined, driftProbeValue) {
+		t.Fatalf("drift was converged while opt-in is off: %v", joined)
+	}
+}
+
+func TestDriftConvergeOptInAndManual(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if final := h.runToTerminal(h.enqueue(h.writeCompose(composeV1))); final.Status != state.DeploySucceeded {
+		t.Fatalf("deploy = %s (%s)", final.Status, final.ErrorCode)
+	}
+
+	// 开启 opt-in（人工置位面）。
+	if err := h.eng.SetDriftConverge(ctx, "demo", true, "human"); err != nil {
+		t.Fatalf("enable converge: %v", err)
+	}
+	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+		spec.Env = append(spec.Env, "EVIL="+driftProbeValue)
+	})
+	h.eng.DriftScan(ctx)
+
+	// 开启时漂移 → 按当前期望态收敛（归位重放原语：同内容重放零任务
+	// 替换——外部 env 改动被写回）。
+	got := h.sub.services["fleetly-demo-web"].spec.Env
+	for _, kv := range got {
+		if strings.HasPrefix(kv, "EVIL=") {
+			t.Fatalf("opt-in converge did not remove drift: %v", got)
+		}
+	}
+	// 收敛审计。
+	found := false
+	audits, _ := h.store.RecentAudits(ctx, 50)
+	for _, a := range audits {
+		if a.Action == "reconcile.converge" && a.Actor == "system" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("no reconcile.converge audit after auto-converge")
+	}
+	// 下一拍：漂移消除、无新事件。
+	h.eng.DriftScan(ctx)
+	if n := countEvents(t, h, "reconcile.drift_detected"); n != 1 {
+		t.Fatalf("drift event count after converge = %d, want 1", n)
+	}
+
+	// 人工一次性收敛（actor=human；不经 opt-in 位）。
+	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+		spec.Env = append(spec.Env, "MANUAL=1")
+	})
+	source, err := h.eng.ConvergeApp(ctx, "demo", "human")
+	if err != nil {
+		t.Fatalf("manual converge: %v", err)
+	}
+	if source.ID == "" {
+		t.Fatal("manual converge returned no source deployment")
+	}
+	audits, _ = h.store.RecentAudits(ctx, 50)
+	humanConverge := false
+	for _, a := range audits {
+		if a.Action == "reconcile.converge" && a.Actor == "human" {
+			humanConverge = true
+		}
+	}
+	if !humanConverge {
+		t.Fatal("no human-actor converge audit")
+	}
+
+	// 在途部署存在时拒绝收敛（409 语义）。
+	rec := h.enqueue(h.writeCompose(composeV1))
+	if _, err := h.eng.ConvergeApp(ctx, "demo", "human"); err == nil {
+		t.Fatal("converge accepted with in-flight deployment")
+	} else if got := appErrCodeOf(t, err); got != "E_STATE_VERSION_CONFLICT" {
+		t.Fatalf("in-flight converge code = %s, want E_STATE_VERSION_CONFLICT", got)
+	}
+	h.runToTerminal(rec)
+}
+
+func mustEvents(t *testing.T, h *harness) []state.Event {
+	t.Helper()
+	rows, err := h.store.EventsSince(context.Background(), 0, 1000)
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	return rows
+}
+
+func countEvents(t *testing.T, h *harness, name string) int {
+	t.Helper()
+	n := 0
+	for _, ev := range mustEvents(t, h) {
+		if ev.Name == name {
+			n++
+		}
+	}
+	return n
+}

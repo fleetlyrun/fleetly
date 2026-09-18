@@ -117,7 +117,10 @@ type ResourcesSpec struct {
 	MemoryBytes int64 `json:"memory_bytes,omitempty"`
 }
 
-// ServiceState 是一次 Swarm 服务实况投影（对账/健康门观测输入）。
+// ServiceState 是一次 Swarm 服务实况投影（对账/健康门观测输入；T2.13 起
+// 兼作运行域漂移反解载体——spec 侧字段由适配器从 swarm.Service.Spec 逐字
+// 抄出，漂移投影只取 state-model §2.5 受控子集字段，env 值只进 sha256 不
+// 出端口消费面）。
 type ServiceState struct {
 	Name string
 	// Version 是底座对象版本（乐观令牌；诊断用——服务写经适配器内部取版
@@ -134,6 +137,45 @@ type ServiceState struct {
 	//（''/updating/paused/completed，Spike B：更新失败归 paused+Message）。
 	UpdateState   string
 	UpdateMessage string
+
+	// ── 运行域漂移反解字段（T2.13；与 ServiceSpec 同构，由适配器填充）──
+	Command         []string
+	Env             []string
+	ContainerLabels map[string]string
+	Global          bool
+	Networks        []NetworkAttach
+	Mounts          []MountSpec
+	Secrets         []SecretMount
+	Healthcheck     *HealthcheckSpec
+	RestartPolicy   *RestartPolicySpec
+	Resources       *ResourcesSpec
+	Constraints     []string
+	StopSignal      string
+	StopGracePeriod time.Duration
+}
+
+// serviceSpecOf 把服务实况投影还原为 ServiceSpec 形态（漂移投影的实况侧
+// 输入；仅投影字段参与，Version/UpdateState 等观测字段不进哈希）。
+func serviceSpecOf(s ServiceState) ServiceSpec {
+	return ServiceSpec{
+		Name:            s.Name,
+		Image:           s.Image,
+		Command:         s.Command,
+		Env:             s.Env,
+		ServiceLabels:   s.Labels,
+		ContainerLabels: s.ContainerLabels,
+		Global:          s.Global,
+		Replicas:        s.Replicas,
+		Networks:        s.Networks,
+		Mounts:          s.Mounts,
+		Secrets:         s.Secrets,
+		Healthcheck:     s.Healthcheck,
+		RestartPolicy:   s.RestartPolicy,
+		Resources:       s.Resources,
+		Constraints:     s.Constraints,
+		StopSignal:      s.StopSignal,
+		StopGracePeriod: s.StopGracePeriod,
+	}
 }
 
 // TaskState 是一次任务实况投影（service ps 轮询；Spike B 观测纪律）。
@@ -213,6 +255,9 @@ type Config struct {
 	ReplicasBelowFor time.Duration
 	// PollInterval 是引擎轮询周期（默认 2s）。
 	PollInterval time.Duration
+	// DriftInterval 是运行域漂移检测扫描周期（默认 30s，可配
+	// engine.drift_interval_seconds；D11：检测默认开）。
+	DriftInterval time.Duration
 }
 
 // Normalize 回落文档默认值。
@@ -228,6 +273,9 @@ func (c Config) Normalize() Config {
 	}
 	if c.PollInterval <= 0 {
 		c.PollInterval = 2 * time.Second
+	}
+	if c.DriftInterval <= 0 {
+		c.DriftInterval = 30 * time.Second
 	}
 	return c
 }
