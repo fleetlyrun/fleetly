@@ -20,12 +20,20 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.AppsService/ListApps":  ScopeRead,
 	"/fleetly.server.v1.AppsService/GetApp":    ScopeRead,
 	"/fleetly.server.v1.AppsService/DeleteApp": ScopeAdmin,
+	// webhook/git 触发配置面（T2.19；secret 与认证材料写面 = admin——
+	// 验签是该端点的唯一认证，材料属平台敏感面）。
+	"/fleetly.server.v1.AppsService/SetAppWebhookSecret": ScopeAdmin,
+	"/fleetly.server.v1.AppsService/ShowAppWebhook":      ScopeAdmin,
+	"/fleetly.server.v1.AppsService/SetAppSource":        ScopeAdmin,
 	// DeploymentsService
 	"/fleetly.server.v1.DeploymentsService/ListDeployments":    ScopeRead,
 	"/fleetly.server.v1.DeploymentsService/GetDeployment":      ScopeRead,
 	"/fleetly.server.v1.DeploymentsService/Deploy":             ScopeDeploy,
 	"/fleetly.server.v1.DeploymentsService/CancelDeployment":   ScopeDeploy,
 	"/fleetly.server.v1.DeploymentsService/RollbackDeployment": ScopeDeploy,
+	// DeployFromGit（T2.19）：post-receive 钩子经 hook token（deploy
+	// scope）回调——最小权限，与 Deploy 同级。
+	"/fleetly.server.v1.DeploymentsService/DeployFromGit": ScopeDeploy,
 	// RevisionsService
 	"/fleetly.server.v1.RevisionsService/ListRevisions":   ScopeRead,
 	"/fleetly.server.v1.RevisionsService/GetRevisionSpec": ScopeRead,
@@ -57,6 +65,11 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.TokensService/CreateToken": ScopeAdmin,
 	"/fleetly.server.v1.TokensService/ListTokens":  ScopeAdmin,
 	"/fleetly.server.v1.TokensService/RevokeToken": ScopeAdmin,
+	// GitKeysService（git 公钥管理面整体 admin——SSH push 认证凭据，
+	// T2.19）
+	"/fleetly.server.v1.GitKeysService/AddGitKey":    ScopeAdmin,
+	"/fleetly.server.v1.GitKeysService/ListGitKeys":  ScopeAdmin,
+	"/fleetly.server.v1.GitKeysService/RemoveGitKey": ScopeAdmin,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

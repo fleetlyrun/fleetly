@@ -111,6 +111,27 @@ ingress:
     # ACME 账号私钥文件（空 = <cert_dir>/acme-account.key）。
     account_key_file: ""
 
+# git push(SSH) 触发入口（T2.19）。宿主 git 为前置条件；bare 仓库按 app
+# 懒创建（<root>/<app>.git），post-receive 钩子回调控制面入队部署。
+git:
+  # SSH git 面开关（缺省 true）。
+  enabled: true
+  # SSH 监听地址。安全默认基线：只绑回环（内部服务默认不暴露公网）——
+  # VPS 上对外提供 git push 时改为 0.0.0.0:8424（或宿主 IP）并配合防火墙。
+  addr: "127.0.0.1:8424"
+  # bare 仓库根目录；留空 = <state 库同目录>/git。
+  root: ""
+  # SSH host key 文件（ed25519 首启自动生成并持久化，指纹见启动日志；
+  # 私钥绝不打印）；留空 = <root>/host_ed25519。
+  host_key_file: ""
+
+# webhook 触发入口（T2.19）：POST /v1/apps/<app>/webhooks/github|gitea。
+# per-app secret 经 `fleetly apps webhook set-secret` 配置（未配置即未启用）；
+# 验签 = HMAC-SHA256 对原始 body；防重放 = delivery ID TTL 缓存。
+webhook:
+  # delivery ID 防重放窗口秒数（缺省 900 = 15 分钟）。
+  replay_ttl_seconds: 900
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info

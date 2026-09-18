@@ -210,6 +210,10 @@ type deploymentJSON struct {
 	DowntimeMS      int64  `json:"downtime_ms,omitempty"`
 	CreatedAt       string `json:"created_at,omitempty"`
 	UpdatedAt       string `json:"updated_at,omitempty"`
+	// git 触发来源（T2.19）：仅 git push/webhook 入队的部署非空——
+	// API/CLI 读面可见部署来源（与 DeploymentView 同语义）。
+	SourceGitSHA string `json:"source_git_sha,omitempty"`
+	SourceGitRef string `json:"source_git_ref,omitempty"`
 }
 
 // toDeploymentJSON 把部署投影转为机器形态。
@@ -226,6 +230,8 @@ func toDeploymentJSON(rec *serverv1.DeploymentView) deploymentJSON {
 		Verdict:         rec.GetVerdict(),
 		ErrorCode:       rec.GetErrorCode(),
 		DowntimeMS:      rec.GetDowntimeMs(),
+		SourceGitSHA:    rec.GetSourceGitSha(),
+		SourceGitRef:    rec.GetSourceGitRef(),
 	}
 	if t := rec.GetFirstHealthyAt(); t != nil {
 		out.FirstHealthyAt = t.AsTime().Format(time.RFC3339)

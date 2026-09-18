@@ -70,7 +70,7 @@ deploy/           installer & systemd units (lands with T2.1)
 The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`) and `--token` (env `FLEETLY_TOKEN`); the bootstrap admin token is printed **once** to the fleetlyd log on first start, further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only).
 
 ```bash
-fleetlyd &                                  # control plane (gRPC :8421, HTTP :8420)
+fleetlyd &                                  # control plane (gRPC :8421, HTTP :8420, git SSH :8424)
 export FLEETLY_ADDR=127.0.0.1:8421
 export FLEETLY_TOKEN=<bootstrap admin token>
 
@@ -83,6 +83,28 @@ fleetly env set my-api KEY value            # pending until next deploy
 fleetly rollback my-api                     # snapshot replay (last 5 revisions)
 fleetly drift show my-api                   # desired vs. live
 fleetly tokens create --scopes deploy --note CI   # plaintext shown once
+```
+
+### Deploying via `git push` (SSH)
+
+The daemon runs an embedded SSH git endpoint (default `127.0.0.1:8424` — loopback by default; expose it on a VPS by setting `git.addr` and firewalling accordingly). Register your public key, then push to the app's bare repo; `compose.yaml`/`compose.yml` at the repo root is the deploy unit, and pushes to the app's configured branch (default `main`) trigger a deployment.
+
+```bash
+fleetly git keys add ~/.ssh/id_ed25519.pub --note laptop   # admin scope; fingerprints at rest
+git remote add fleetly ssh://git@127.0.0.1:8424/my-api.git
+git push fleetly main                                      # → build → zero-downtime rollout
+fleetly git keys list && fleetly git keys rm <id>
+```
+
+### Deploying via webhook (GitHub / Gitea)
+
+Configure the per-app signing secret (never echoed again), point the webhook at the control plane (`POST /v1/apps/<app>/webhooks/github` or `/gitea`, JSON body), and the daemon verifies the HMAC-SHA256 signature, rejects replayed delivery IDs (15-min TTL), dedups by commit, fetches the source, and enqueues the deploy.
+
+```bash
+fleetly apps webhook set-secret my-api <secret>            # ≥16 chars; admin scope
+fleetly apps webhook set-source my-api https://github.com/acme/web.git \
+    --branch main --auth-kind none                          # or https_token / ssh_key
+fleetly apps webhook show my-api                           # no sensitive projection
 ```
 
 See `fleetly help <verb>` for the full flag list.

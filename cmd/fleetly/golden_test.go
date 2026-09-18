@@ -49,6 +49,9 @@ var (
 	// volatileHashPrefix 是 token 列表的哈希前缀（sha256 前 12 hex——
 	// 识别用非凭据，但逐 token 不同）。
 	volatileHashPre = regexp.MustCompile(`"hash_prefix": "[0-9a-f]{12}"`)
+	// volatileFingerprint 是 git key 的 SHA256 指纹（T2.19；识别用非凭据，
+	// 逐 key 不同）。
+	volatileFingerprint = regexp.MustCompile(`SHA256:[A-Za-z0-9+/]+={0,3}`)
 )
 
 // normalizeVolatile 把非确定字段替换为占位符（golden 的确定性边界）。
@@ -59,6 +62,7 @@ func normalizeVolatile(s string) string {
 	s = volatileRFC3339.ReplaceAllString(s, "<rfc3339>")
 	s = volatileAppID8.ReplaceAllString(s, `-<appid8>"`)
 	s = volatileHashPre.ReplaceAllString(s, `"hash_prefix": "<hashprefix>"`)
+	s = volatileFingerprint.ReplaceAllString(s, "SHA256:<fingerprint>")
 	return s
 }
 

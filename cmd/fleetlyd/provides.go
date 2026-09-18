@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"net"
 
 	"github.com/google/wire"
 	"github.com/lynx-go/lynx"
@@ -12,6 +13,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api"
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/placement"
@@ -54,6 +56,8 @@ var ProviderSet = wire.NewSet(
 	NewEventsService,
 	NewPlacementService,
 	NewTokensService,
+	NewGitSource,
+	NewGitKeysService,
 	NewGRPCServer,
 	NewHTTPServer,
 	NewServices,
@@ -207,12 +211,43 @@ func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate
 	return logs.NewManager(cfg.LogsSettings(), st, sc, sb, app.Logger())
 }
 
-// NewAppsService 构造应用资源面服务（T2.17）。
-func NewAppsService(st *state.Store) *api.AppsService { return api.NewAppsService(st) }
+// NewAppsService 构造应用资源面服务（T2.17；T2.19 增补 webhook/git 触发
+// 配置面——box 加密 webhook secret 与拉源认证材料，gitEndpoint 拼 remote
+// 提示）。
+func NewAppsService(st *state.Store, sb *secrets.Box, cfg *AppConfig) *api.AppsService {
+	return api.NewAppsService(st, sb, gitEndpointForHint(cfg.GitSettings().Addr))
+}
 
-// NewDeploymentsService 构造部署资源面服务（T2.17）。
-func NewDeploymentsService(st *state.Store) *api.DeploymentsService {
-	return api.NewDeploymentsService(st)
+// gitEndpointForHint 把 SSH 监听地址归一为 remote 提示的 host:port
+// （host 位通配/空回落 127.0.0.1——提示面永不输出空 host 形态）。
+func gitEndpointForHint(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		return "127.0.0.1:8424"
+	}
+	if host == "" || host == "0.0.0.0" || host == "::" {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// NewDeploymentsService 构造部署资源面服务（T2.17；T2.19 增补 DeployFromGit
+// ——git 源端口由 internal/gitserver 实现，方向纪律：api 定义端口）。
+func NewDeploymentsService(st *state.Store, src *gitserver.Source) *api.DeploymentsService {
+	return api.NewDeploymentsService(st, src)
+}
+
+// NewGitSource 构建 git 触发入口核心（T2.19：bare 仓库管理 + post-receive
+// 钩子 + DeployFromCommit + webhook 验签/防重放/去重/拉源 + SSH 服务器）。
+// git.*/webhook.* 配置节经 AppConfig.GitSettings 翻译（缺省回落
+// internal/gitserver 单一事实源）。
+func NewGitSource(cfg *AppConfig, st *state.Store, sb *secrets.Box, app lynx.App) *gitserver.Source {
+	return gitserver.New(cfg.GitSettings(), st, sb, app.Logger())
+}
+
+// NewGitKeysService 构造 git 公钥管理面服务（T2.19；admin scope）。
+func NewGitKeysService(st *state.Store) *api.GitKeysService {
+	return api.NewGitKeysService(st)
 }
 
 // NewRevisionsService 构造版本快照只读面服务。
@@ -278,15 +313,17 @@ func NewTokensService(st *state.Store) *api.TokensService {
 }
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
-// （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）；
+// （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）外包
+// webhook 原生端点分派（newRootHandler——例外清单见 gateway.go）；
 // /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
 // 与 gateway 路由共存（torchwood 同款双面单端口形态）。
-func NewHTTPServer(app lynx.App, cfg *AppConfig) (*lynxhttp.Server, error) {
+func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.Source) (*lynxhttp.Server, error) {
 	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
 	if err != nil {
 		return nil, err
 	}
-	return lynxhttp.NewServer(mux,
+	root := newRootHandler(gitserver.NewWebhookHandler(src), mux)
+	return lynxhttp.NewServer(root,
 		lynxhttp.WithAddr(cfg.Addr),
 		lynxhttp.WithHealthCheckers(app.HealthCheckers),
 		lynxhttp.WithLogger(app.Logger("logger", "http-requestlog")),
@@ -311,6 +348,7 @@ func NewServices(
 	eng *engine.Engine,
 	ing *ingress.Manager,
 	lm *logs.Manager,
+	src *gitserver.Source,
 	cfg *AppConfig,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
@@ -325,6 +363,7 @@ func NewServices(
 		newEngineService(eng),
 		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr),
 		newLogsService(lm),
+		newGitService(src, app, cfg.GitSettings().Enabled, cfg.GitSettings().Addr),
 		hs,
 		gs,
 	}

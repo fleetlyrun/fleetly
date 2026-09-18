@@ -46,8 +46,15 @@ type DeploymentView struct {
 	DowntimeMs      int64                  `protobuf:"varint,12,opt,name=downtime_ms,json=downtimeMs,proto3" json:"downtime_ms,omitempty"`
 	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// git 触发来源（T2.19）：仅经 git push(SSH)/webhook 入队（DeployFromGit
+	// 路径）的部署非空——sha 为 40 位 commit、ref 为 refs/heads/<branch>；
+	// API/CLI 直传 compose 的部署为空（EmitUnpopulated=false 语义下不输出）。
+	// webhook 入口的 (app, sha) 幂等去重即以此字段为判据，读面回显供
+	// AI-Agent/运营核对「这次部署来自哪个 commit」。
+	SourceGitSha  string `protobuf:"bytes,15,opt,name=source_git_sha,json=sourceGitSha,proto3" json:"source_git_sha,omitempty"`
+	SourceGitRef  string `protobuf:"bytes,16,opt,name=source_git_ref,json=sourceGitRef,proto3" json:"source_git_ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeploymentView) Reset() {
@@ -176,6 +183,20 @@ func (x *DeploymentView) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *DeploymentView) GetSourceGitSha() string {
+	if x != nil {
+		return x.SourceGitSha
+	}
+	return ""
+}
+
+func (x *DeploymentView) GetSourceGitRef() string {
+	if x != nil {
+		return x.SourceGitRef
+	}
+	return ""
 }
 
 type ListDeploymentsRequest struct {
@@ -418,6 +439,138 @@ func (x *DeployRequest) GetCompose() []byte {
 	return nil
 }
 
+// DeployFromGitRequest 携带 push 上下文（app 来自 REST 路径）。ref 形如
+// refs/heads/main；sha 为 40 位十六进制 commit（服务端严格校验）。
+type DeployFromGitRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	Sha           string                 `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
+	Ref           string                 `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployFromGitRequest) Reset() {
+	*x = DeployFromGitRequest{}
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployFromGitRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployFromGitRequest) ProtoMessage() {}
+
+func (x *DeployFromGitRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployFromGitRequest.ProtoReflect.Descriptor instead.
+func (*DeployFromGitRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *DeployFromGitRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *DeployFromGitRequest) GetSha() string {
+	if x != nil {
+		return x.Sha
+	}
+	return ""
+}
+
+func (x *DeployFromGitRequest) GetRef() string {
+	if x != nil {
+		return x.Ref
+	}
+	return ""
+}
+
+// DeployFromGitResponse 与 DeployResponse 同投影面（独立消息以满足 buf
+// lint 的 RPC 响应类型命名纪律；字段语义一致——入队即返回 queued）。
+type DeployFromGitResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	DeploymentId  string                 `protobuf:"bytes,1,opt,name=deployment_id,json=deploymentId,proto3" json:"deployment_id,omitempty"`
+	App           string                 `protobuf:"bytes,2,opt,name=app,proto3" json:"app,omitempty"`
+	Status        string                 `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Warnings      []*ComposeWarning      `protobuf:"bytes,4,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeployFromGitResponse) Reset() {
+	*x = DeployFromGitResponse{}
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeployFromGitResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeployFromGitResponse) ProtoMessage() {}
+
+func (x *DeployFromGitResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeployFromGitResponse.ProtoReflect.Descriptor instead.
+func (*DeployFromGitResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *DeployFromGitResponse) GetDeploymentId() string {
+	if x != nil {
+		return x.DeploymentId
+	}
+	return ""
+}
+
+func (x *DeployFromGitResponse) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *DeployFromGitResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *DeployFromGitResponse) GetWarnings() []*ComposeWarning {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 type DeployResponse struct {
 	state        protoimpl.MessageState `protogen:"open.v1"`
 	DeploymentId string                 `protobuf:"bytes,1,opt,name=deployment_id,json=deploymentId,proto3" json:"deployment_id,omitempty"`
@@ -433,7 +586,7 @@ type DeployResponse struct {
 
 func (x *DeployResponse) Reset() {
 	*x = DeployResponse{}
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[6]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -445,7 +598,7 @@ func (x *DeployResponse) String() string {
 func (*DeployResponse) ProtoMessage() {}
 
 func (x *DeployResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[6]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -458,7 +611,7 @@ func (x *DeployResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeployResponse.ProtoReflect.Descriptor instead.
 func (*DeployResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *DeployResponse) GetDeploymentId() string {
@@ -498,7 +651,7 @@ type CancelDeploymentRequest struct {
 
 func (x *CancelDeploymentRequest) Reset() {
 	*x = CancelDeploymentRequest{}
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[7]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -510,7 +663,7 @@ func (x *CancelDeploymentRequest) String() string {
 func (*CancelDeploymentRequest) ProtoMessage() {}
 
 func (x *CancelDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[7]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -523,7 +676,7 @@ func (x *CancelDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*CancelDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CancelDeploymentRequest) GetId() string {
@@ -545,7 +698,7 @@ type CancelDeploymentResponse struct {
 
 func (x *CancelDeploymentResponse) Reset() {
 	*x = CancelDeploymentResponse{}
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[8]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -557,7 +710,7 @@ func (x *CancelDeploymentResponse) String() string {
 func (*CancelDeploymentResponse) ProtoMessage() {}
 
 func (x *CancelDeploymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[8]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -570,7 +723,7 @@ func (x *CancelDeploymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelDeploymentResponse.ProtoReflect.Descriptor instead.
 func (*CancelDeploymentResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *CancelDeploymentResponse) GetId() string {
@@ -598,7 +751,7 @@ type RollbackDeploymentRequest struct {
 
 func (x *RollbackDeploymentRequest) Reset() {
 	*x = RollbackDeploymentRequest{}
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[9]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -610,7 +763,7 @@ func (x *RollbackDeploymentRequest) String() string {
 func (*RollbackDeploymentRequest) ProtoMessage() {}
 
 func (x *RollbackDeploymentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[9]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -623,7 +776,7 @@ func (x *RollbackDeploymentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackDeploymentRequest.ProtoReflect.Descriptor instead.
 func (*RollbackDeploymentRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{9}
+	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RollbackDeploymentRequest) GetApp() string {
@@ -652,7 +805,7 @@ type RollbackDeploymentResponse struct {
 
 func (x *RollbackDeploymentResponse) Reset() {
 	*x = RollbackDeploymentResponse{}
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[10]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -664,7 +817,7 @@ func (x *RollbackDeploymentResponse) String() string {
 func (*RollbackDeploymentResponse) ProtoMessage() {}
 
 func (x *RollbackDeploymentResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[10]
+	mi := &file_fleetly_server_v1_deployments_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -677,7 +830,7 @@ func (x *RollbackDeploymentResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RollbackDeploymentResponse.ProtoReflect.Descriptor instead.
 func (*RollbackDeploymentResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{10}
+	return file_fleetly_server_v1_deployments_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RollbackDeploymentResponse) GetDeploymentId() string {
@@ -705,7 +858,7 @@ var File_fleetly_server_v1_deployments_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"\n" +
-	"#fleetly/server/v1/deployments.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x1efleetly/server/v1/builds.proto\"\xf2\x03\n" +
+	"#fleetly/server/v1/deployments.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x1efleetly/server/v1/builds.proto\"\xbe\x04\n" +
 	"\x0eDeploymentView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03app\x18\x02 \x01(\tR\x03app\x12\x12\n" +
@@ -726,7 +879,9 @@ const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"T\n" +
+	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12$\n" +
+	"\x0esource_git_sha\x18\x0f \x01(\tR\fsourceGitSha\x12$\n" +
+	"\x0esource_git_ref\x18\x10 \x01(\tR\fsourceGitRef\"T\n" +
 	"\x16ListDeploymentsRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1f\n" +
 	"\x05limit\x18\x02 \x01(\x05B\t\xbaH\x06\x1a\x04\x18d(\x00R\x05limit\"^\n" +
@@ -740,7 +895,16 @@ const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"deployment\"M\n" +
 	"\rDeployRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12!\n" +
-	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\"\x9e\x01\n" +
+	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\"h\n" +
+	"\x14DeployFromGitRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1a\n" +
+	"\x03sha\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x98\x01(R\x03sha\x12\x19\n" +
+	"\x03ref\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03ref\"\xa5\x01\n" +
+	"\x15DeployFromGitResponse\x12#\n" +
+	"\rdeployment_id\x18\x01 \x01(\tR\fdeploymentId\x12\x10\n" +
+	"\x03app\x18\x02 \x01(\tR\x03app\x12\x16\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12=\n" +
+	"\bwarnings\x18\x04 \x03(\v2!.fleetly.server.v1.ComposeWarningR\bwarnings\"\x9e\x01\n" +
 	"\x0eDeployResponse\x12#\n" +
 	"\rdeployment_id\x18\x01 \x01(\tR\fdeploymentId\x12\x10\n" +
 	"\x03app\x18\x02 \x01(\tR\x03app\x12\x16\n" +
@@ -757,13 +921,14 @@ const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"\x1aRollbackDeploymentResponse\x12#\n" +
 	"\rdeployment_id\x18\x01 \x01(\tR\fdeploymentId\x12\x10\n" +
 	"\x03app\x18\x02 \x01(\tR\x03app\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status2\xcb\x05\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status2\xdb\x06\n" +
 	"\x12DeploymentsService\x12\x8c\x01\n" +
 	"\x0fListDeployments\x12).fleetly.server.v1.ListDeploymentsRequest\x1a*.fleetly.server.v1.ListDeploymentsResponse\"\"\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/apps/{app}/deployments\x12\x80\x01\n" +
 	"\rGetDeployment\x12'.fleetly.server.v1.GetDeploymentRequest\x1a(.fleetly.server.v1.GetDeploymentResponse\"\x1c\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/deployments/{id}\x12t\n" +
 	"\x06Deploy\x12 .fleetly.server.v1.DeployRequest\x1a!.fleetly.server.v1.DeployResponse\"%\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/apps/{app}/deployments\x12\x93\x01\n" +
 	"\x10CancelDeployment\x12*.fleetly.server.v1.CancelDeploymentRequest\x1a+.fleetly.server.v1.CancelDeploymentResponse\"&\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/deployments/{id}/cancel\x12\x96\x01\n" +
-	"\x12RollbackDeployment\x12,.fleetly.server.v1.RollbackDeploymentRequest\x1a-.fleetly.server.v1.RollbackDeploymentResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/apps/{app}/rollbacksB\x98\x01\x92ARRP\n" +
+	"\x12RollbackDeployment\x12,.fleetly.server.v1.RollbackDeploymentRequest\x1a-.fleetly.server.v1.RollbackDeploymentResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/apps/{app}/rollbacks\x12\x8d\x01\n" +
+	"\rDeployFromGit\x12'.fleetly.server.v1.DeployFromGitRequest\x1a(.fleetly.server.v1.DeployFromGitResponse\")\x82\xd3\xe4\x93\x02#:\x01*\"\x1e/v1/apps/{app}/deployments/gitB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -780,7 +945,7 @@ func file_fleetly_server_v1_deployments_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_deployments_proto_rawDescData
 }
 
-var file_fleetly_server_v1_deployments_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_fleetly_server_v1_deployments_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_fleetly_server_v1_deployments_proto_goTypes = []any{
 	(*DeploymentView)(nil),             // 0: fleetly.server.v1.DeploymentView
 	(*ListDeploymentsRequest)(nil),     // 1: fleetly.server.v1.ListDeploymentsRequest
@@ -788,36 +953,41 @@ var file_fleetly_server_v1_deployments_proto_goTypes = []any{
 	(*GetDeploymentRequest)(nil),       // 3: fleetly.server.v1.GetDeploymentRequest
 	(*GetDeploymentResponse)(nil),      // 4: fleetly.server.v1.GetDeploymentResponse
 	(*DeployRequest)(nil),              // 5: fleetly.server.v1.DeployRequest
-	(*DeployResponse)(nil),             // 6: fleetly.server.v1.DeployResponse
-	(*CancelDeploymentRequest)(nil),    // 7: fleetly.server.v1.CancelDeploymentRequest
-	(*CancelDeploymentResponse)(nil),   // 8: fleetly.server.v1.CancelDeploymentResponse
-	(*RollbackDeploymentRequest)(nil),  // 9: fleetly.server.v1.RollbackDeploymentRequest
-	(*RollbackDeploymentResponse)(nil), // 10: fleetly.server.v1.RollbackDeploymentResponse
-	(*timestamppb.Timestamp)(nil),      // 11: google.protobuf.Timestamp
-	(*ComposeWarning)(nil),             // 12: fleetly.server.v1.ComposeWarning
+	(*DeployFromGitRequest)(nil),       // 6: fleetly.server.v1.DeployFromGitRequest
+	(*DeployFromGitResponse)(nil),      // 7: fleetly.server.v1.DeployFromGitResponse
+	(*DeployResponse)(nil),             // 8: fleetly.server.v1.DeployResponse
+	(*CancelDeploymentRequest)(nil),    // 9: fleetly.server.v1.CancelDeploymentRequest
+	(*CancelDeploymentResponse)(nil),   // 10: fleetly.server.v1.CancelDeploymentResponse
+	(*RollbackDeploymentRequest)(nil),  // 11: fleetly.server.v1.RollbackDeploymentRequest
+	(*RollbackDeploymentResponse)(nil), // 12: fleetly.server.v1.RollbackDeploymentResponse
+	(*timestamppb.Timestamp)(nil),      // 13: google.protobuf.Timestamp
+	(*ComposeWarning)(nil),             // 14: fleetly.server.v1.ComposeWarning
 }
 var file_fleetly_server_v1_deployments_proto_depIdxs = []int32{
-	11, // 0: fleetly.server.v1.DeploymentView.first_healthy_at:type_name -> google.protobuf.Timestamp
-	11, // 1: fleetly.server.v1.DeploymentView.created_at:type_name -> google.protobuf.Timestamp
-	11, // 2: fleetly.server.v1.DeploymentView.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 0: fleetly.server.v1.DeploymentView.first_healthy_at:type_name -> google.protobuf.Timestamp
+	13, // 1: fleetly.server.v1.DeploymentView.created_at:type_name -> google.protobuf.Timestamp
+	13, // 2: fleetly.server.v1.DeploymentView.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: fleetly.server.v1.ListDeploymentsResponse.deployments:type_name -> fleetly.server.v1.DeploymentView
 	0,  // 4: fleetly.server.v1.GetDeploymentResponse.deployment:type_name -> fleetly.server.v1.DeploymentView
-	12, // 5: fleetly.server.v1.DeployResponse.warnings:type_name -> fleetly.server.v1.ComposeWarning
-	1,  // 6: fleetly.server.v1.DeploymentsService.ListDeployments:input_type -> fleetly.server.v1.ListDeploymentsRequest
-	3,  // 7: fleetly.server.v1.DeploymentsService.GetDeployment:input_type -> fleetly.server.v1.GetDeploymentRequest
-	5,  // 8: fleetly.server.v1.DeploymentsService.Deploy:input_type -> fleetly.server.v1.DeployRequest
-	7,  // 9: fleetly.server.v1.DeploymentsService.CancelDeployment:input_type -> fleetly.server.v1.CancelDeploymentRequest
-	9,  // 10: fleetly.server.v1.DeploymentsService.RollbackDeployment:input_type -> fleetly.server.v1.RollbackDeploymentRequest
-	2,  // 11: fleetly.server.v1.DeploymentsService.ListDeployments:output_type -> fleetly.server.v1.ListDeploymentsResponse
-	4,  // 12: fleetly.server.v1.DeploymentsService.GetDeployment:output_type -> fleetly.server.v1.GetDeploymentResponse
-	6,  // 13: fleetly.server.v1.DeploymentsService.Deploy:output_type -> fleetly.server.v1.DeployResponse
-	8,  // 14: fleetly.server.v1.DeploymentsService.CancelDeployment:output_type -> fleetly.server.v1.CancelDeploymentResponse
-	10, // 15: fleetly.server.v1.DeploymentsService.RollbackDeployment:output_type -> fleetly.server.v1.RollbackDeploymentResponse
-	11, // [11:16] is the sub-list for method output_type
-	6,  // [6:11] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	14, // 5: fleetly.server.v1.DeployFromGitResponse.warnings:type_name -> fleetly.server.v1.ComposeWarning
+	14, // 6: fleetly.server.v1.DeployResponse.warnings:type_name -> fleetly.server.v1.ComposeWarning
+	1,  // 7: fleetly.server.v1.DeploymentsService.ListDeployments:input_type -> fleetly.server.v1.ListDeploymentsRequest
+	3,  // 8: fleetly.server.v1.DeploymentsService.GetDeployment:input_type -> fleetly.server.v1.GetDeploymentRequest
+	5,  // 9: fleetly.server.v1.DeploymentsService.Deploy:input_type -> fleetly.server.v1.DeployRequest
+	9,  // 10: fleetly.server.v1.DeploymentsService.CancelDeployment:input_type -> fleetly.server.v1.CancelDeploymentRequest
+	11, // 11: fleetly.server.v1.DeploymentsService.RollbackDeployment:input_type -> fleetly.server.v1.RollbackDeploymentRequest
+	6,  // 12: fleetly.server.v1.DeploymentsService.DeployFromGit:input_type -> fleetly.server.v1.DeployFromGitRequest
+	2,  // 13: fleetly.server.v1.DeploymentsService.ListDeployments:output_type -> fleetly.server.v1.ListDeploymentsResponse
+	4,  // 14: fleetly.server.v1.DeploymentsService.GetDeployment:output_type -> fleetly.server.v1.GetDeploymentResponse
+	8,  // 15: fleetly.server.v1.DeploymentsService.Deploy:output_type -> fleetly.server.v1.DeployResponse
+	10, // 16: fleetly.server.v1.DeploymentsService.CancelDeployment:output_type -> fleetly.server.v1.CancelDeploymentResponse
+	12, // 17: fleetly.server.v1.DeploymentsService.RollbackDeployment:output_type -> fleetly.server.v1.RollbackDeploymentResponse
+	7,  // 18: fleetly.server.v1.DeploymentsService.DeployFromGit:output_type -> fleetly.server.v1.DeployFromGitResponse
+	13, // [13:19] is the sub-list for method output_type
+	7,  // [7:13] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_deployments_proto_init() }
@@ -832,7 +1002,7 @@ func file_fleetly_server_v1_deployments_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_deployments_proto_rawDesc), len(file_fleetly_server_v1_deployments_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   11,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

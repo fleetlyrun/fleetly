@@ -74,6 +74,9 @@ type TokenWrite struct {
 	// ActorTokenID 是发起写入的调用方 token（可空——bootstrap 种子无调用
 	// 方 token）；入审计 fail-closed。
 	ActorTokenID string
+	// Actor 是审计主体（human/ai_agent/system；空回落 human——系统代签发
+	// 的 token 如 git push 钩子回调 token 传 system，T2.19）。
+	Actor string
 }
 
 // CreateToken 在事务内落一条 token 行（哈希形态入参）并与审计同事务
@@ -89,6 +92,10 @@ func (s *Store) CreateToken(ctx context.Context, w TokenWrite) (Token, error) {
 	if id == "" {
 		id = ulid.Make().String()
 	}
+	actor := w.Actor
+	if actor == "" {
+		actor = "human"
+	}
 	var out Token
 	err := s.InTx(ctx, func(tx *Tx) error {
 		now := nowNano()
@@ -100,7 +107,7 @@ func (s *Store) CreateToken(ctx context.Context, w TokenWrite) (Token, error) {
 			return fmt.Errorf("state: insert token: %w", err)
 		}
 		if err := tx.WriteAudit(ctx, AuditEntry{
-			Actor:        "human",
+			Actor:        actor,
 			ActorTokenID: w.ActorTokenID,
 			Action:       "token.create",
 			Target:       "token:" + id,

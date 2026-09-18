@@ -1,0 +1,6 @@
+{
+  "name": "my-api",
+  "source_url": "https://example.com/acme/web.git",
+  "source_branch": "main",
+  "auth_kind": "none"
+}

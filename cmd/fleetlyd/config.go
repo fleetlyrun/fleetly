@@ -1,10 +1,13 @@
 package main
 
 import (
+	"net"
+	"path/filepath"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
@@ -46,6 +49,11 @@ type AppConfig struct {
 	// Logs 是日志管线配置节（config 键 logs.*，T2.20；缺省值经 logs.
 	// Config.Normalize 回落——单一事实源在 internal/logs）。
 	Logs LogsConfig `mapstructure:"logs"`
+	// Git 是 git push(SSH) 触发入口配置节（config 键 git.*，T2.19；缺省值
+	// 经 gitserver.Config.Normalize 回落——单一事实源在 internal/gitserver）。
+	Git GitConfig `mapstructure:"git"`
+	// Webhook 是 webhook 触发入口配置节（config 键 webhook.*，T2.19）。
+	Webhook WebhookConfig `mapstructure:"webhook"`
 }
 
 // LogsConfig 是日志管线配置节（config 键 logs.*）。字段与 internal/logs.
@@ -141,6 +149,30 @@ type BuildConfig struct {
 type GRPCConfig struct {
 	// Addr 是 gRPC 监听地址（grpc.addr）。
 	Addr string `mapstructure:"addr"`
+}
+
+// GitConfig 是 git push(SSH) 入口配置节（config 键 git.*，T2.19）。字段与
+// internal/gitserver.Config 一一对应；安全默认基线：enabled 缺省 true、
+// addr 缺省 127.0.0.1:8424（内部服务默认不暴露公网——VPS 上由安装/文档
+// 指引改为对外）、root 缺省与 state 库同目录下 git/。
+type GitConfig struct {
+	// Enabled 报告是否启用 SSH git 面（git.enabled；缺省 true。false =
+	// 显式关闭位——webhook 拉源不依赖 SSH 面，但 bare 仓库根共用）。
+	Enabled *bool `mapstructure:"enabled"`
+	// Addr 是 SSH 监听地址（git.addr；缺省 127.0.0.1:8424）。
+	Addr string `mapstructure:"addr"`
+	// Root 是 bare 仓库根目录（git.root；空 = <state 库同目录>/git）。
+	Root string `mapstructure:"root"`
+	// HostKeyFile 是 SSH host key 文件（git.host_key_file；空 =
+	// <root>/host_ed25519。ed25519 首启生成持久化，绝不打印私钥）。
+	HostKeyFile string `mapstructure:"host_key_file"`
+}
+
+// WebhookConfig 是 webhook 入口配置节（config 键 webhook.*，T2.19）。
+type WebhookConfig struct {
+	// ReplayTTLSecs 是 delivery ID 防重放窗口秒数
+	//（webhook.replay_ttl_seconds；缺省 900 = 15 分钟）。
+	ReplayTTLSecs int `mapstructure:"replay_ttl_seconds"`
 }
 
 // IngressConfig 是入口/证书配置节（config 键 ingress.*）。字段与
@@ -264,6 +296,46 @@ func (c *AppConfig) KeyPath() string {
 		return secrets.DefaultKeyPath
 	}
 	return c.Secrets.KeyPath
+}
+
+// GitSettings 把 git.*/webhook.* 配置节翻译为 git 触发入口核心配置
+// （gitserver.Config，缺省值经 Normalize 回落——单一事实源在
+// internal/gitserver）。Root 依赖 state 库路径，缺省在此计算（<db 同目录>/
+// git）；HookEndpoint 由 HTTP addr 推导（host 位为通配/空时回落 127.0.0.1
+// ——钩子回调走 loopback）。gitEndpoint() 是 SSH 面的 host:port 投影
+// （apps 面的 git remote 提示原料）。
+func (c *AppConfig) GitSettings() gitserver.Config {
+	endpoint := hookEndpointFromAddr(c.Addr)
+	return gitserver.Config{
+		Enabled:      c.Git.Enabled == nil || *c.Git.Enabled,
+		Addr:         c.Git.Addr,
+		Root:         c.GitRoot(),
+		HostKeyFile:  c.Git.HostKeyFile,
+		HookEndpoint: endpoint,
+		ReplayTTL:    time.Duration(c.Webhook.ReplayTTLSecs) * time.Second,
+	}
+}
+
+// GitRoot 回落 bare 仓库根目录缺省值（与 state 库同目录下 git/）。
+func (c *AppConfig) GitRoot() string {
+	if c.Git.Root != "" {
+		return c.Git.Root
+	}
+	return filepath.Join(filepath.Dir(c.DBPath()), "git")
+}
+
+// hookEndpointFromAddr 由 HTTP 监听地址推导钩子回调基址（host 位通配或
+// 空回落 127.0.0.1；host 已是具体地址则原样使用）。
+func hookEndpointFromAddr(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		return "http://127.0.0.1:8420"
+	}
+	switch host {
+	case "", "0.0.0.0", "::":
+		host = "127.0.0.1"
+	}
+	return "http://" + net.JoinHostPort(host, port)
 }
 
 // BuildSettings 把 build.* 配置节翻译为构建管线核心配置（build.Config，

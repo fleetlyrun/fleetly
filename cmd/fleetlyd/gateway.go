@@ -3,9 +3,11 @@ package main
 import (
 	"context"
 	"net"
+	"net/http"
 	"strings"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -35,6 +37,19 @@ import (
 // 供 Console 使用；Follow/Watch 的 JSON 帧形态适宜 REST）。若后续出现
 // 二进制/高频帧不适宜 REST 的 RPC（logs.proto 与此同步登记），在下方
 // 注册清单摘除对应 HandlerFromEndpoint 并在 proto 注释同步登记。
+//
+// ── 原生端点例外清单（T2.19 起；torchwood 同纪律：gateway 上非 proto
+// 派生的 HTTP 端点在此显式登记，禁止在别处悄悄挂载）────────────────────
+//   - POST /v1/apps/{app}/webhooks/github —— GitHub push 投递（T2.19）；
+//     投递体是 JSON 不是 proto，验签必须对原始字节做，无法走 gateway 反代
+//     形态（gRPC 侧收到的 body 已被 protojson 重组）。签名即认证：该路径
+//     前缀精确豁免 Bearer 拦截（豁免面 = webhookPathPattern，绝未放宽到
+//     其他路径——非 webhook 路径无 token 仍 401，gateway_rest_test 钉死）。
+//   - POST /v1/apps/{app}/webhooks/gitea  —— Gitea push 投递（T2.19），
+//     同上。
+//
+// 实现：newRootHandler 先按精确路径形态分派 webhook handler，其余一律
+// 交回 grpc-gateway mux。
 func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, newJSONMarshaler()),
@@ -92,4 +107,18 @@ func grpcEndpointFromAddr(addr string) string {
 		host = "127.0.0.1"
 	}
 	return net.JoinHostPort(host, port)
+}
+
+// newRootHandler 组装 HTTP 面根 handler：webhook 原生端点优先精确分派
+// （路径形态不匹配 gitserver.WebhookPathPattern 的请求原样交回 gateway
+// mux——豁免面即分派面，两者同一线性词形，不存在「先豁免再分发」的放宽
+// 空间）。
+func newRootHandler(webhook http.Handler, fallback http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if gitserver.WebhookPathPattern.MatchString(r.URL.Path) {
+			webhook.ServeHTTP(w, r)
+			return
+		}
+		fallback.ServeHTTP(w, r)
+	})
 }

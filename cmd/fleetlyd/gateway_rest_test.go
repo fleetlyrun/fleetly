@@ -80,8 +80,8 @@ func TestGatewayRESTDualFace(t *testing.T) {
 	g := gs.GetServer()
 	serverv1.RegisterSystemServiceServer(g, api.NewSystemService("dev", st,
 		func() []api.SystemComponent { return nil }, nil))
-	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st))
-	serverv1.RegisterDeploymentsServiceServer(g, api.NewDeploymentsService(st))
+	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st, box, "127.0.0.1:8424"))
+	serverv1.RegisterDeploymentsServiceServer(g, api.NewDeploymentsService(st, nil))
 	serverv1.RegisterRevisionsServiceServer(g, api.NewRevisionsService(st))
 	serverv1.RegisterBuildsServiceServer(g, api.NewBuildsService(st))
 	serverv1.RegisterDriftServiceServer(g, api.NewDriftService(st, nil))

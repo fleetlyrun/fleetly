@@ -445,6 +445,407 @@ func (x *DeleteAppResponse) GetLifecycle() string {
 	return ""
 }
 
+type SetAppWebhookSecretRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 应用名。
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// webhook 签名密钥（HMAC-SHA256 原料，GitHub/Gitea 同形态）。≥16 字符
+	// ——弱密钥显式拒绝（验签是该端点的唯一认证）。
+	Secret        string `protobuf:"bytes,2,opt,name=secret,proto3" json:"secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAppWebhookSecretRequest) Reset() {
+	*x = SetAppWebhookSecretRequest{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAppWebhookSecretRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAppWebhookSecretRequest) ProtoMessage() {}
+
+func (x *SetAppWebhookSecretRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAppWebhookSecretRequest.ProtoReflect.Descriptor instead.
+func (*SetAppWebhookSecretRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SetAppWebhookSecretRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SetAppWebhookSecretRequest) GetSecret() string {
+	if x != nil {
+		return x.Secret
+	}
+	return ""
+}
+
+type SetAppWebhookSecretResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// 恒 true（设置成功即已配置）。
+	Configured    bool `protobuf:"varint,2,opt,name=configured,proto3" json:"configured,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAppWebhookSecretResponse) Reset() {
+	*x = SetAppWebhookSecretResponse{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAppWebhookSecretResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAppWebhookSecretResponse) ProtoMessage() {}
+
+func (x *SetAppWebhookSecretResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAppWebhookSecretResponse.ProtoReflect.Descriptor instead.
+func (*SetAppWebhookSecretResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *SetAppWebhookSecretResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SetAppWebhookSecretResponse) GetConfigured() bool {
+	if x != nil {
+		return x.Configured
+	}
+	return false
+}
+
+type ShowAppWebhookRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShowAppWebhookRequest) Reset() {
+	*x = ShowAppWebhookRequest{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShowAppWebhookRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShowAppWebhookRequest) ProtoMessage() {}
+
+func (x *ShowAppWebhookRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShowAppWebhookRequest.ProtoReflect.Descriptor instead.
+func (*ShowAppWebhookRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *ShowAppWebhookRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type ShowAppWebhookResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// webhook 签名密钥已配置（secret 值永不回读）。
+	SecretConfigured bool `protobuf:"varint,2,opt,name=secret_configured,json=secretConfigured,proto3" json:"secret_configured,omitempty"`
+	// 拉源配置（未设置时 url/branch 为空串、auth_kind = none）。
+	SourceUrl    string `protobuf:"bytes,3,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
+	SourceBranch string `protobuf:"bytes,4,opt,name=source_branch,json=sourceBranch,proto3" json:"source_branch,omitempty"`
+	// none | https_token | ssh_key。
+	SourceAuthKind string `protobuf:"bytes,5,opt,name=source_auth_kind,json=sourceAuthKind,proto3" json:"source_auth_kind,omitempty"`
+	// git push 触发分支（app 配置分支，默认 main）。
+	Branch string `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`
+	// push/webhook 端点提示（SSH git URL，如 ssh://git@host:8424/<app>.git；
+	// 主机位取 control-plane 可达地址的尽力形态）。
+	GitRemoteHint string `protobuf:"bytes,7,opt,name=git_remote_hint,json=gitRemoteHint,proto3" json:"git_remote_hint,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ShowAppWebhookResponse) Reset() {
+	*x = ShowAppWebhookResponse{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ShowAppWebhookResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ShowAppWebhookResponse) ProtoMessage() {}
+
+func (x *ShowAppWebhookResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ShowAppWebhookResponse.ProtoReflect.Descriptor instead.
+func (*ShowAppWebhookResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *ShowAppWebhookResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ShowAppWebhookResponse) GetSecretConfigured() bool {
+	if x != nil {
+		return x.SecretConfigured
+	}
+	return false
+}
+
+func (x *ShowAppWebhookResponse) GetSourceUrl() string {
+	if x != nil {
+		return x.SourceUrl
+	}
+	return ""
+}
+
+func (x *ShowAppWebhookResponse) GetSourceBranch() string {
+	if x != nil {
+		return x.SourceBranch
+	}
+	return ""
+}
+
+func (x *ShowAppWebhookResponse) GetSourceAuthKind() string {
+	if x != nil {
+		return x.SourceAuthKind
+	}
+	return ""
+}
+
+func (x *ShowAppWebhookResponse) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *ShowAppWebhookResponse) GetGitRemoteHint() string {
+	if x != nil {
+		return x.GitRemoteHint
+	}
+	return ""
+}
+
+type SetAppSourceRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// 拉源 remote URL（file:// 与 https://、ssh:// 形态）。
+	Url string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
+	// 触发/拉取分支（默认 main）。
+	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	// 认证形态：none | https_token | ssh_key。
+	AuthKind string `protobuf:"bytes,4,opt,name=auth_kind,json=authKind,proto3" json:"auth_kind,omitempty"`
+	// 认证材料（https_token = token 原文；ssh_key = PEM 私钥）。auth_kind =
+	// none 时必须为空；服务端 envelope 加密落库，明文不落、永不回读。
+	// protovalidate 形状约束在服务端用例层按 auth_kind 交叉校验（跨字段
+	// 规则—— CEL 交叉字段此处不引入，保持 proto 面最小）。
+	AuthSecret    string `protobuf:"bytes,5,opt,name=auth_secret,json=authSecret,proto3" json:"auth_secret,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAppSourceRequest) Reset() {
+	*x = SetAppSourceRequest{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAppSourceRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAppSourceRequest) ProtoMessage() {}
+
+func (x *SetAppSourceRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAppSourceRequest.ProtoReflect.Descriptor instead.
+func (*SetAppSourceRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SetAppSourceRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SetAppSourceRequest) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
+func (x *SetAppSourceRequest) GetBranch() string {
+	if x != nil {
+		return x.Branch
+	}
+	return ""
+}
+
+func (x *SetAppSourceRequest) GetAuthKind() string {
+	if x != nil {
+		return x.AuthKind
+	}
+	return ""
+}
+
+func (x *SetAppSourceRequest) GetAuthSecret() string {
+	if x != nil {
+		return x.AuthSecret
+	}
+	return ""
+}
+
+type SetAppSourceResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	SourceUrl     string                 `protobuf:"bytes,2,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
+	SourceBranch  string                 `protobuf:"bytes,3,opt,name=source_branch,json=sourceBranch,proto3" json:"source_branch,omitempty"`
+	AuthKind      string                 `protobuf:"bytes,4,opt,name=auth_kind,json=authKind,proto3" json:"auth_kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAppSourceResponse) Reset() {
+	*x = SetAppSourceResponse{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAppSourceResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAppSourceResponse) ProtoMessage() {}
+
+func (x *SetAppSourceResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAppSourceResponse.ProtoReflect.Descriptor instead.
+func (*SetAppSourceResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SetAppSourceResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SetAppSourceResponse) GetSourceUrl() string {
+	if x != nil {
+		return x.SourceUrl
+	}
+	return ""
+}
+
+func (x *SetAppSourceResponse) GetSourceBranch() string {
+	if x != nil {
+		return x.SourceBranch
+	}
+	return ""
+}
+
+func (x *SetAppSourceResponse) GetAuthKind() string {
+	if x != nil {
+		return x.AuthKind
+	}
+	return ""
+}
+
 var File_fleetly_server_v1_apps_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_apps_proto_rawDesc = "" +
@@ -481,12 +882,49 @@ const file_fleetly_server_v1_apps_proto_rawDesc = "" +
 	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"E\n" +
 	"\x11DeleteAppResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1c\n" +
-	"\tlifecycle\x18\x02 \x01(\tR\tlifecycle2\xcd\x02\n" +
+	"\tlifecycle\x18\x02 \x01(\tR\tlifecycle\"]\n" +
+	"\x1aSetAppWebhookSecretRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12\"\n" +
+	"\x06secret\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x10\x18\x80\x04R\x06secret\"Q\n" +
+	"\x1bSetAppWebhookSecretResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1e\n" +
+	"\n" +
+	"configured\x18\x02 \x01(\bR\n" +
+	"configured\"4\n" +
+	"\x15ShowAppWebhookRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"\x87\x02\n" +
+	"\x16ShowAppWebhookResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
+	"\x11secret_configured\x18\x02 \x01(\bR\x10secretConfigured\x12\x1d\n" +
+	"\n" +
+	"source_url\x18\x03 \x01(\tR\tsourceUrl\x12#\n" +
+	"\rsource_branch\x18\x04 \x01(\tR\fsourceBranch\x12(\n" +
+	"\x10source_auth_kind\x18\x05 \x01(\tR\x0esourceAuthKind\x12\x16\n" +
+	"\x06branch\x18\x06 \x01(\tR\x06branch\x12&\n" +
+	"\x0fgit_remote_hint\x18\a \x01(\tR\rgitRemoteHint\"\xde\x01\n" +
+	"\x13SetAppSourceRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12\x1a\n" +
+	"\x03url\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\x03url\x12\"\n" +
+	"\x06branch\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x06branch\x12>\n" +
+	"\tauth_kind\x18\x04 \x01(\tB!\xbaH\x1er\x1cR\x04noneR\vhttps_tokenR\assh_keyR\bauthKind\x12*\n" +
+	"\vauth_secret\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\x80\x80\x01R\n" +
+	"authSecret\"\x8b\x01\n" +
+	"\x14SetAppSourceResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
+	"\n" +
+	"source_url\x18\x02 \x01(\tR\tsourceUrl\x12#\n" +
+	"\rsource_branch\x18\x03 \x01(\tR\fsourceBranch\x12\x1b\n" +
+	"\tauth_kind\x18\x04 \x01(\tR\bauthKind2\xfd\x05\n" +
 	"\vAppsService\x12e\n" +
 	"\bListApps\x12\".fleetly.server.v1.ListAppsRequest\x1a#.fleetly.server.v1.ListAppsResponse\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/apps\x12f\n" +
 	"\x06GetApp\x12 .fleetly.server.v1.GetAppRequest\x1a!.fleetly.server.v1.GetAppResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/apps/{name}\x12o\n" +
-	"\tDeleteApp\x12#.fleetly.server.v1.DeleteAppRequest\x1a$.fleetly.server.v1.DeleteAppResponse\"\x17\x82\xd3\xe4\x93\x02\x11*\x0f/v1/apps/{name}B\x98\x01\x92ARRP\n" +
+	"\tDeleteApp\x12#.fleetly.server.v1.DeleteAppRequest\x1a$.fleetly.server.v1.DeleteAppResponse\"\x17\x82\xd3\xe4\x93\x02\x11*\x0f/v1/apps/{name}\x12\x9f\x01\n" +
+	"\x13SetAppWebhookSecret\x12-.fleetly.server.v1.SetAppWebhookSecretRequest\x1a..fleetly.server.v1.SetAppWebhookSecretResponse\")\x82\xd3\xe4\x93\x02#:\x01*\x1a\x1e/v1/apps/{name}/webhook-secret\x12\x86\x01\n" +
+	"\x0eShowAppWebhook\x12(.fleetly.server.v1.ShowAppWebhookRequest\x1a).fleetly.server.v1.ShowAppWebhookResponse\"\x1f\x82\xd3\xe4\x93\x02\x19\x12\x17/v1/apps/{name}/webhook\x12\x82\x01\n" +
+	"\fSetAppSource\x12&.fleetly.server.v1.SetAppSourceRequest\x1a'.fleetly.server.v1.SetAppSourceResponse\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\x1a\x16/v1/apps/{name}/sourceB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -503,35 +941,47 @@ func file_fleetly_server_v1_apps_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_apps_proto_rawDescData
 }
 
-var file_fleetly_server_v1_apps_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_fleetly_server_v1_apps_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_fleetly_server_v1_apps_proto_goTypes = []any{
-	(*ListAppsRequest)(nil),       // 0: fleetly.server.v1.ListAppsRequest
-	(*AppView)(nil),               // 1: fleetly.server.v1.AppView
-	(*ListAppsResponse)(nil),      // 2: fleetly.server.v1.ListAppsResponse
-	(*GetAppRequest)(nil),         // 3: fleetly.server.v1.GetAppRequest
-	(*GetAppResponse)(nil),        // 4: fleetly.server.v1.GetAppResponse
-	(*DeleteAppRequest)(nil),      // 5: fleetly.server.v1.DeleteAppRequest
-	(*DeleteAppResponse)(nil),     // 6: fleetly.server.v1.DeleteAppResponse
-	(*timestamppb.Timestamp)(nil), // 7: google.protobuf.Timestamp
-	(*PlacementView)(nil),         // 8: fleetly.server.v1.PlacementView
-	(*DeploymentView)(nil),        // 9: fleetly.server.v1.DeploymentView
+	(*ListAppsRequest)(nil),             // 0: fleetly.server.v1.ListAppsRequest
+	(*AppView)(nil),                     // 1: fleetly.server.v1.AppView
+	(*ListAppsResponse)(nil),            // 2: fleetly.server.v1.ListAppsResponse
+	(*GetAppRequest)(nil),               // 3: fleetly.server.v1.GetAppRequest
+	(*GetAppResponse)(nil),              // 4: fleetly.server.v1.GetAppResponse
+	(*DeleteAppRequest)(nil),            // 5: fleetly.server.v1.DeleteAppRequest
+	(*DeleteAppResponse)(nil),           // 6: fleetly.server.v1.DeleteAppResponse
+	(*SetAppWebhookSecretRequest)(nil),  // 7: fleetly.server.v1.SetAppWebhookSecretRequest
+	(*SetAppWebhookSecretResponse)(nil), // 8: fleetly.server.v1.SetAppWebhookSecretResponse
+	(*ShowAppWebhookRequest)(nil),       // 9: fleetly.server.v1.ShowAppWebhookRequest
+	(*ShowAppWebhookResponse)(nil),      // 10: fleetly.server.v1.ShowAppWebhookResponse
+	(*SetAppSourceRequest)(nil),         // 11: fleetly.server.v1.SetAppSourceRequest
+	(*SetAppSourceResponse)(nil),        // 12: fleetly.server.v1.SetAppSourceResponse
+	(*timestamppb.Timestamp)(nil),       // 13: google.protobuf.Timestamp
+	(*PlacementView)(nil),               // 14: fleetly.server.v1.PlacementView
+	(*DeploymentView)(nil),              // 15: fleetly.server.v1.DeploymentView
 }
 var file_fleetly_server_v1_apps_proto_depIdxs = []int32{
-	7,  // 0: fleetly.server.v1.AppView.created_at:type_name -> google.protobuf.Timestamp
-	7,  // 1: fleetly.server.v1.AppView.updated_at:type_name -> google.protobuf.Timestamp
+	13, // 0: fleetly.server.v1.AppView.created_at:type_name -> google.protobuf.Timestamp
+	13, // 1: fleetly.server.v1.AppView.updated_at:type_name -> google.protobuf.Timestamp
 	1,  // 2: fleetly.server.v1.ListAppsResponse.apps:type_name -> fleetly.server.v1.AppView
-	7,  // 3: fleetly.server.v1.GetAppResponse.created_at:type_name -> google.protobuf.Timestamp
-	7,  // 4: fleetly.server.v1.GetAppResponse.updated_at:type_name -> google.protobuf.Timestamp
-	8,  // 5: fleetly.server.v1.GetAppResponse.placement:type_name -> fleetly.server.v1.PlacementView
-	9,  // 6: fleetly.server.v1.GetAppResponse.recent_deployments:type_name -> fleetly.server.v1.DeploymentView
+	13, // 3: fleetly.server.v1.GetAppResponse.created_at:type_name -> google.protobuf.Timestamp
+	13, // 4: fleetly.server.v1.GetAppResponse.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 5: fleetly.server.v1.GetAppResponse.placement:type_name -> fleetly.server.v1.PlacementView
+	15, // 6: fleetly.server.v1.GetAppResponse.recent_deployments:type_name -> fleetly.server.v1.DeploymentView
 	0,  // 7: fleetly.server.v1.AppsService.ListApps:input_type -> fleetly.server.v1.ListAppsRequest
 	3,  // 8: fleetly.server.v1.AppsService.GetApp:input_type -> fleetly.server.v1.GetAppRequest
 	5,  // 9: fleetly.server.v1.AppsService.DeleteApp:input_type -> fleetly.server.v1.DeleteAppRequest
-	2,  // 10: fleetly.server.v1.AppsService.ListApps:output_type -> fleetly.server.v1.ListAppsResponse
-	4,  // 11: fleetly.server.v1.AppsService.GetApp:output_type -> fleetly.server.v1.GetAppResponse
-	6,  // 12: fleetly.server.v1.AppsService.DeleteApp:output_type -> fleetly.server.v1.DeleteAppResponse
-	10, // [10:13] is the sub-list for method output_type
-	7,  // [7:10] is the sub-list for method input_type
+	7,  // 10: fleetly.server.v1.AppsService.SetAppWebhookSecret:input_type -> fleetly.server.v1.SetAppWebhookSecretRequest
+	9,  // 11: fleetly.server.v1.AppsService.ShowAppWebhook:input_type -> fleetly.server.v1.ShowAppWebhookRequest
+	11, // 12: fleetly.server.v1.AppsService.SetAppSource:input_type -> fleetly.server.v1.SetAppSourceRequest
+	2,  // 13: fleetly.server.v1.AppsService.ListApps:output_type -> fleetly.server.v1.ListAppsResponse
+	4,  // 14: fleetly.server.v1.AppsService.GetApp:output_type -> fleetly.server.v1.GetAppResponse
+	6,  // 15: fleetly.server.v1.AppsService.DeleteApp:output_type -> fleetly.server.v1.DeleteAppResponse
+	8,  // 16: fleetly.server.v1.AppsService.SetAppWebhookSecret:output_type -> fleetly.server.v1.SetAppWebhookSecretResponse
+	10, // 17: fleetly.server.v1.AppsService.ShowAppWebhook:output_type -> fleetly.server.v1.ShowAppWebhookResponse
+	12, // 18: fleetly.server.v1.AppsService.SetAppSource:output_type -> fleetly.server.v1.SetAppSourceResponse
+	13, // [13:19] is the sub-list for method output_type
+	7,  // [7:13] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -550,7 +1000,7 @@ func file_fleetly_server_v1_apps_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_apps_proto_rawDesc), len(file_fleetly_server_v1_apps_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   7,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

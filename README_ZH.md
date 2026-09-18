@@ -70,7 +70,7 @@ deploy/           安装器与 systemd unit（随 T2.1 落地）
 CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）与 `--token`（env `FLEETLY_TOKEN`）；bootstrap admin token 在 fleetlyd 首启日志中**只打印一次**，后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）。
 
 ```bash
-fleetlyd &                                  # 控制面（gRPC :8421，HTTP :8420）
+fleetlyd &                                  # 控制面（gRPC :8421，HTTP :8420，git SSH :8424）
 export FLEETLY_ADDR=127.0.0.1:8421
 export FLEETLY_TOKEN=<bootstrap admin token>
 
@@ -83,6 +83,28 @@ fleetly env set my-api KEY value            # 随下次部署生效
 fleetly rollback my-api                     # 快照重放（最近 5 版）
 fleetly drift show my-api                   # 期望态 vs 实况
 fleetly tokens create --scopes deploy --note CI   # 明文仅此一次显示
+```
+
+### 通过 `git push`（SSH）部署
+
+守护进程内嵌 SSH git 端点（默认 `127.0.0.1:8424`——安全默认只绑回环；VPS 上对外时改 `git.addr` 并配防火墙）。注册公钥后向应用 bare 仓库推送：仓库根的 `compose.yaml`/`compose.yml` 即部署单元，推送到应用配置分支（默认 `main`）触发部署。
+
+```bash
+fleetly git keys add ~/.ssh/id_ed25519.pub --note laptop   # admin scope；库内只落指纹
+git remote add fleetly ssh://git@127.0.0.1:8424/my-api.git
+git push fleetly main                                      # → 构建 → 零停机上线
+fleetly git keys list && fleetly git keys rm <id>
+```
+
+### 通过 Webhook（GitHub / Gitea）部署
+
+先配置 per-app 签名密钥（设置后不再回显），再在 Git 托管方把 webhook 指向控制面（`POST /v1/apps/<app>/webhooks/github` 或 `/gitea`）。守护进程强制校验 HMAC-SHA256 签名、按 delivery ID 防重放（15 分钟窗口）、按 commit 幂等去重，随后拉源并入队部署。
+
+```bash
+fleetly apps webhook set-secret my-api <secret>            # ≥16 字符；admin scope
+fleetly apps webhook set-source my-api https://github.com/acme/web.git \
+    --branch main --auth-kind none                          # 或 https_token / ssh_key
+fleetly apps webhook show my-api                           # 无敏感投影
 ```
 
 完整 flag 列表见 `fleetly help <动词>`。

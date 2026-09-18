@@ -115,8 +115,8 @@ func Start(t *testing.T) *Env {
 	)
 	serverv1.RegisterSystemServiceServer(srv, api.NewSystemService("dev", st,
 		func() []api.SystemComponent { return nil }, nil))
-	serverv1.RegisterAppsServiceServer(srv, api.NewAppsService(st))
-	serverv1.RegisterDeploymentsServiceServer(srv, api.NewDeploymentsService(st))
+	serverv1.RegisterAppsServiceServer(srv, api.NewAppsService(st, box, "127.0.0.1:8424"))
+	serverv1.RegisterDeploymentsServiceServer(srv, api.NewDeploymentsService(st, nil))
 	serverv1.RegisterRevisionsServiceServer(srv, api.NewRevisionsService(st))
 	serverv1.RegisterBuildsServiceServer(srv, api.NewBuildsService(st))
 	serverv1.RegisterDriftServiceServer(srv, api.NewDriftService(st, eng))
@@ -126,6 +126,7 @@ func Start(t *testing.T) *Env {
 	serverv1.RegisterEventsServiceServer(srv, api.NewEventsService(st))
 	serverv1.RegisterPlacementServiceServer(srv, api.NewPlacementService(st))
 	serverv1.RegisterTokensServiceServer(srv, api.NewTokensService(st))
+	serverv1.RegisterGitKeysServiceServer(srv, api.NewGitKeysService(st))
 
 	lis := bufconn.Listen(1024 * 1024)
 	go func() { _ = srv.Serve(lis) }()

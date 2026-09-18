@@ -7,12 +7,24 @@ import (
 	"os"
 	"path/filepath"
 
+	"google.golang.org/grpc/codes"
+
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/compose"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
+
+// GitDeploySource 是 DeployFromGit RPC 的 compose 源端口（实现方在
+// internal/gitserver——compose 真源在其 bare 仓库对象库；方向纪律：api
+// 定义端口、不感知实现类型）。
+type GitDeploySource interface {
+	// DeployFromGitPush 以 git push 语义入队部署：每次调用建部署记录
+	// （显式用户动作，不去重——幂等口径绑定在票面）；返回记录与校验期
+	// 警告。actorTokenID 记录钩子回调 token（可空）。
+	DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID string) (state.DeployRecord, []compose.Warning, error)
+}
 
 // DeploymentsService 实现 server.v1.DeploymentsService（T2.17）。
 //
@@ -23,12 +35,14 @@ import (
 // 消费完成，v0.1 不做清理回收，遗留记录）。
 type DeploymentsService struct {
 	serverv1.UnimplementedDeploymentsServiceServer
-	st *state.Store
+	st  *state.Store
+	git GitDeploySource
 }
 
-// NewDeploymentsService 构造 DeploymentsService。
-func NewDeploymentsService(st *state.Store) *DeploymentsService {
-	return &DeploymentsService{st: st}
+// NewDeploymentsService 构造 DeploymentsService（git 源端口可 nil——
+// DeployFromGit 届时显式不可用，进程内夹具形态）。
+func NewDeploymentsService(st *state.Store, git GitDeploySource) *DeploymentsService {
+	return &DeploymentsService{st: st, git: git}
 }
 
 // ListDeployments 按应用列部署（created_at 倒序）。
@@ -112,6 +126,46 @@ func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployReq
 		Status:       string(state.DeployQueued),
 		Warnings:     composeWarnings(warnings),
 	}, nil
+}
+
+// DeployFromGit 是 git push(SSH) 触发入口的入队面（T2.19）：post-receive
+// 钩子经 loopback REST 携带 hook token（deploy scope）调用。compose 字节
+// 由服务端从 bare 仓库自取（真源在 git 对象库，不信任客户端传字节）；sha
+// 为 40 位 commit（protovalidate 形状 + 服务端十六进制复核）。审计在源端
+// 实现（git.push_deploy，actor=system + 钩子 token id）。
+func (s *DeploymentsService) DeployFromGit(ctx context.Context, req *serverv1.DeployFromGitRequest) (*serverv1.DeployFromGitResponse, error) {
+	if s.git == nil {
+		return nil, statusEnvelope(codes.Internal, "git deploy source not configured")
+	}
+	if !gitSHAValid(req.GetSha()) {
+		return nil, statusInvalidArgument("sha must be 40 hex chars")
+	}
+	rec, warnings, err := s.git.DeployFromGitPush(ctx, req.GetApp(), req.GetSha(), req.GetRef(), callerTokenID(ctx))
+	if err != nil {
+		return nil, err // apperr（E_COMPOSE_*）原样透传；其余按信封退化
+	}
+	return &serverv1.DeployFromGitResponse{
+		DeploymentId: rec.ID,
+		App:          rec.AppName,
+		Status:       string(rec.Status),
+		Warnings:     composeWarnings(warnings),
+	}, nil
+}
+
+// gitSHAValid 复核 commit 形态（40 位小写十六进制；protovalidate 只约束
+// 长度）。
+func gitSHAValid(sha string) bool {
+	if len(sha) != 40 {
+		return false
+	}
+	for _, c := range sha {
+		isDigit := c >= '0' && c <= '9'
+		isLowerHex := c >= 'a' && c <= 'f'
+		if !isDigit && !isLowerHex {
+			return false
+		}
+	}
+	return true
 }
 
 // CancelDeployment 置位取消（受限语义：未切流可取消；曾健康/终态 409

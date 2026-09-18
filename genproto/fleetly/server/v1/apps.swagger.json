@@ -106,9 +106,149 @@
           "AppsService"
         ]
       }
+    },
+    "/v1/apps/{name}/source": {
+      "put": {
+        "summary": "SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；\nadmin）。branch 同时是 git push 的触发分支（app 配置分支，默认 main）。\n认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。",
+        "operationId": "AppsService_SetAppSource",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetAppSourceResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AppsServiceSetAppSourceBody"
+            }
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
+    },
+    "/v1/apps/{name}/webhook": {
+      "get": {
+        "summary": "ShowAppWebhook 回读 webhook/git 触发配置（无敏感投影：secret 只回\nconfigured 位；admin scope——source URL 与分支拓扑属运维面）。",
+        "operationId": "AppsService_ShowAppWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ShowAppWebhookResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
+    },
+    "/v1/apps/{name}/webhook-secret": {
+      "put": {
+        "summary": "SetAppWebhookSecret 设置 per-app webhook 签名密钥（T2.19；admin）。\n值经平台 envelope 加密落库（明文不落），show 面只回 configured 位。\n未配置 = webhook 端点未启用（404 语义）。",
+        "operationId": "AppsService_SetAppWebhookSecret",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetAppWebhookSecretResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "应用名。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AppsServiceSetAppWebhookSecretBody"
+            }
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
     }
   },
   "definitions": {
+    "AppsServiceSetAppSourceBody": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "title": "拉源 remote URL（file:// 与 https://、ssh:// 形态）。"
+        },
+        "branch": {
+          "type": "string",
+          "title": "触发/拉取分支（默认 main）。"
+        },
+        "auth_kind": {
+          "type": "string",
+          "title": "认证形态：none | https_token | ssh_key。"
+        },
+        "auth_secret": {
+          "type": "string",
+          "title": "认证材料（https_token = token 原文；ssh_key = PEM 私钥）。auth_kind =\nnone 时必须为空；服务端 envelope 加密落库，明文不落、永不回读。\nprotovalidate 形状约束在服务端用例层按 auth_kind 交叉校验（跨字段\n规则—— CEL 交叉字段此处不引入，保持 proto 面最小）。"
+        }
+      }
+    },
+    "AppsServiceSetAppWebhookSecretBody": {
+      "type": "object",
+      "properties": {
+        "secret": {
+          "type": "string",
+          "title": "webhook 签名密钥（HMAC-SHA256 原料，GitHub/Gitea 同形态）。≥16 字符\n——弱密钥显式拒绝（验签是该端点的唯一认证）。"
+        }
+      }
+    },
     "v1AppView": {
       "type": "object",
       "properties": {
@@ -199,6 +339,13 @@
         "updated_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "source_git_sha": {
+          "type": "string",
+          "title": "git 触发来源（T2.19）：仅经 git push(SSH)/webhook 入队（DeployFromGit\n路径）的部署非空——sha 为 40 位 commit、ref 为 refs/heads/\u003cbranch\u003e；\nAPI/CLI 直传 compose 的部署为空（EmitUnpopulated=false 语义下不输出）。\nwebhook 入口的 (app, sha) 幂等去重即以此字段为判据，读面回显供\nAI-Agent/运营核对「这次部署来自哪个 commit」。"
+        },
+        "source_git_ref": {
+          "type": "string"
         }
       },
       "title": "DeploymentView 是部署状态机行的只读投影（词表与 state 层一致：\nqueued/preparing/building/releasing/observing/succeeded/failed/cancelled）。"
@@ -324,6 +471,66 @@
         }
       },
       "title": "PlacementView 是 placements 行投影（state ∈ bound/blocked/unresolved，\n派生语义见 state-model §2.10；blocked/unresolved 是 app 派生状态\nblocked 的来源）。"
+    },
+    "v1SetAppSourceResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "source_url": {
+          "type": "string"
+        },
+        "source_branch": {
+          "type": "string"
+        },
+        "auth_kind": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SetAppWebhookSecretResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "configured": {
+          "type": "boolean",
+          "title": "恒 true（设置成功即已配置）。"
+        }
+      }
+    },
+    "v1ShowAppWebhookResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "secret_configured": {
+          "type": "boolean",
+          "title": "webhook 签名密钥已配置（secret 值永不回读）。"
+        },
+        "source_url": {
+          "type": "string",
+          "title": "拉源配置（未设置时 url/branch 为空串、auth_kind = none）。"
+        },
+        "source_branch": {
+          "type": "string"
+        },
+        "source_auth_kind": {
+          "type": "string",
+          "title": "none | https_token | ssh_key。"
+        },
+        "branch": {
+          "type": "string",
+          "title": "git push 触发分支（app 配置分支，默认 main）。"
+        },
+        "git_remote_hint": {
+          "type": "string",
+          "title": "push/webhook 端点提示（SSH git URL，如 ssh://git@host:8424/\u003capp\u003e.git；\n主机位取 control-plane 可达地址的尽力形态）。"
+        }
+      }
     }
   }
 }

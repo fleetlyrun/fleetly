@@ -19,27 +19,27 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 )
 
-// appsCmd 是外层动词 `apps`：分发 list/get/delete。
+// appsCmd 是外层动词 `apps`：分发 list/get/delete/webhook。
 type appsCmd struct {
 	sub *commands.App
 }
 
 func newAppsCmd() *appsCmd {
 	sub := commands.New()
-	sub.Register(&appsListCmd{}, &appsGetCmd{}, &appsDeleteCmd{})
+	sub.Register(&appsListCmd{}, &appsGetCmd{}, &appsDeleteCmd{}, newWebhookCmd())
 	sub.VerbTitle = "apps subcommands:"
 	return &appsCmd{sub: sub}
 }
 
 func (c *appsCmd) Name() string     { return "apps" }
-func (c *appsCmd) Synopsis() string { return "app resources (list, details, delete)" }
-func (c *appsCmd) Usage() string    { return "apps <list|get|delete> [flags] ..." }
+func (c *appsCmd) Synopsis() string { return "app resources (list, details, delete, webhook)" }
+func (c *appsCmd) Usage() string    { return "apps <list|get|delete|webhook> [flags] ..." }
 
 func (c *appsCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *appsCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list|get|delete)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list|get|delete|webhook)")}
 	}
 	return c.sub.SubDispatch(ctx, env, args)
 }

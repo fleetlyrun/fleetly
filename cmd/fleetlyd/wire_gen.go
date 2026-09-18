@@ -61,7 +61,8 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	}
 	engine := NewEngine(app, appConfig, store, client, resolver, box, manager)
 	logsManager := NewLogsManager(app, appConfig, store, client, box)
-	server, err := NewHTTPServer(app, appConfig)
+	source := NewGitSource(appConfig, store, box, app)
+	server, err := NewHTTPServer(app, appConfig, source)
 	if err != nil {
 		cleanup4()
 		cleanup3()
@@ -77,8 +78,8 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	appsService := NewAppsService(store)
-	deploymentsService := NewDeploymentsService(store)
+	appsService := NewAppsService(store, box, appConfig)
+	deploymentsService := NewDeploymentsService(store, source)
 	revisionsService := NewRevisionsService(store)
 	buildsService := NewBuildsService(store)
 	driftService := NewDriftService(store, engine)
@@ -88,8 +89,9 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	eventsService := NewEventsService(store)
 	placementService := NewPlacementService(store)
 	tokensService := NewTokensService(store)
+	gitKeysService := NewGitKeysService(store)
 	systemService := NewSystemService(store, nodeIdentity, observer, box, manager)
-	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, systemService)
+	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, systemService)
 	if err != nil {
 		cleanup4()
 		cleanup3()
@@ -97,7 +99,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(app, store, nodeIdentity, observer, janitor, box, queue, builder, engine, manager, logsManager, appConfig, server, grpcServer)
+	v := NewServices(app, store, nodeIdentity, observer, janitor, box, queue, builder, engine, manager, logsManager, source, appConfig, server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {

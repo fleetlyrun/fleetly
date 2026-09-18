@@ -19,9 +19,12 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	AppsService_ListApps_FullMethodName  = "/fleetly.server.v1.AppsService/ListApps"
-	AppsService_GetApp_FullMethodName    = "/fleetly.server.v1.AppsService/GetApp"
-	AppsService_DeleteApp_FullMethodName = "/fleetly.server.v1.AppsService/DeleteApp"
+	AppsService_ListApps_FullMethodName            = "/fleetly.server.v1.AppsService/ListApps"
+	AppsService_GetApp_FullMethodName              = "/fleetly.server.v1.AppsService/GetApp"
+	AppsService_DeleteApp_FullMethodName           = "/fleetly.server.v1.AppsService/DeleteApp"
+	AppsService_SetAppWebhookSecret_FullMethodName = "/fleetly.server.v1.AppsService/SetAppWebhookSecret"
+	AppsService_ShowAppWebhook_FullMethodName      = "/fleetly.server.v1.AppsService/ShowAppWebhook"
+	AppsService_SetAppSource_FullMethodName        = "/fleetly.server.v1.AppsService/SetAppSource"
 )
 
 // AppsServiceClient is the client API for AppsService service.
@@ -36,6 +39,17 @@ type AppsServiceClient interface {
 	ListApps(ctx context.Context, in *ListAppsRequest, opts ...grpc.CallOption) (*ListAppsResponse, error)
 	GetApp(ctx context.Context, in *GetAppRequest, opts ...grpc.CallOption) (*GetAppResponse, error)
 	DeleteApp(ctx context.Context, in *DeleteAppRequest, opts ...grpc.CallOption) (*DeleteAppResponse, error)
+	// SetAppWebhookSecret 设置 per-app webhook 签名密钥（T2.19；admin）。
+	// 值经平台 envelope 加密落库（明文不落），show 面只回 configured 位。
+	// 未配置 = webhook 端点未启用（404 语义）。
+	SetAppWebhookSecret(ctx context.Context, in *SetAppWebhookSecretRequest, opts ...grpc.CallOption) (*SetAppWebhookSecretResponse, error)
+	// ShowAppWebhook 回读 webhook/git 触发配置（无敏感投影：secret 只回
+	// configured 位；admin scope——source URL 与分支拓扑属运维面）。
+	ShowAppWebhook(ctx context.Context, in *ShowAppWebhookRequest, opts ...grpc.CallOption) (*ShowAppWebhookResponse, error)
+	// SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；
+	// admin）。branch 同时是 git push 的触发分支（app 配置分支，默认 main）。
+	// 认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。
+	SetAppSource(ctx context.Context, in *SetAppSourceRequest, opts ...grpc.CallOption) (*SetAppSourceResponse, error)
 }
 
 type appsServiceClient struct {
@@ -76,6 +90,36 @@ func (c *appsServiceClient) DeleteApp(ctx context.Context, in *DeleteAppRequest,
 	return out, nil
 }
 
+func (c *appsServiceClient) SetAppWebhookSecret(ctx context.Context, in *SetAppWebhookSecretRequest, opts ...grpc.CallOption) (*SetAppWebhookSecretResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAppWebhookSecretResponse)
+	err := c.cc.Invoke(ctx, AppsService_SetAppWebhookSecret_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appsServiceClient) ShowAppWebhook(ctx context.Context, in *ShowAppWebhookRequest, opts ...grpc.CallOption) (*ShowAppWebhookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ShowAppWebhookResponse)
+	err := c.cc.Invoke(ctx, AppsService_ShowAppWebhook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appsServiceClient) SetAppSource(ctx context.Context, in *SetAppSourceRequest, opts ...grpc.CallOption) (*SetAppSourceResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAppSourceResponse)
+	err := c.cc.Invoke(ctx, AppsService_SetAppSource_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AppsServiceServer is the server API for AppsService service.
 // All implementations must embed UnimplementedAppsServiceServer
 // for forward compatibility.
@@ -88,6 +132,17 @@ type AppsServiceServer interface {
 	ListApps(context.Context, *ListAppsRequest) (*ListAppsResponse, error)
 	GetApp(context.Context, *GetAppRequest) (*GetAppResponse, error)
 	DeleteApp(context.Context, *DeleteAppRequest) (*DeleteAppResponse, error)
+	// SetAppWebhookSecret 设置 per-app webhook 签名密钥（T2.19；admin）。
+	// 值经平台 envelope 加密落库（明文不落），show 面只回 configured 位。
+	// 未配置 = webhook 端点未启用（404 语义）。
+	SetAppWebhookSecret(context.Context, *SetAppWebhookSecretRequest) (*SetAppWebhookSecretResponse, error)
+	// ShowAppWebhook 回读 webhook/git 触发配置（无敏感投影：secret 只回
+	// configured 位；admin scope——source URL 与分支拓扑属运维面）。
+	ShowAppWebhook(context.Context, *ShowAppWebhookRequest) (*ShowAppWebhookResponse, error)
+	// SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；
+	// admin）。branch 同时是 git push 的触发分支（app 配置分支，默认 main）。
+	// 认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。
+	SetAppSource(context.Context, *SetAppSourceRequest) (*SetAppSourceResponse, error)
 	mustEmbedUnimplementedAppsServiceServer()
 }
 
@@ -106,6 +161,15 @@ func (UnimplementedAppsServiceServer) GetApp(context.Context, *GetAppRequest) (*
 }
 func (UnimplementedAppsServiceServer) DeleteApp(context.Context, *DeleteAppRequest) (*DeleteAppResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeleteApp not implemented")
+}
+func (UnimplementedAppsServiceServer) SetAppWebhookSecret(context.Context, *SetAppWebhookSecretRequest) (*SetAppWebhookSecretResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetAppWebhookSecret not implemented")
+}
+func (UnimplementedAppsServiceServer) ShowAppWebhook(context.Context, *ShowAppWebhookRequest) (*ShowAppWebhookResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ShowAppWebhook not implemented")
+}
+func (UnimplementedAppsServiceServer) SetAppSource(context.Context, *SetAppSourceRequest) (*SetAppSourceResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetAppSource not implemented")
 }
 func (UnimplementedAppsServiceServer) mustEmbedUnimplementedAppsServiceServer() {}
 func (UnimplementedAppsServiceServer) testEmbeddedByValue()                     {}
@@ -182,6 +246,60 @@ func _AppsService_DeleteApp_Handler(srv interface{}, ctx context.Context, dec fu
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AppsService_SetAppWebhookSecret_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAppWebhookSecretRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).SetAppWebhookSecret(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_SetAppWebhookSecret_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).SetAppWebhookSecret(ctx, req.(*SetAppWebhookSecretRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppsService_ShowAppWebhook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ShowAppWebhookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).ShowAppWebhook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_ShowAppWebhook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).ShowAppWebhook(ctx, req.(*ShowAppWebhookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppsService_SetAppSource_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAppSourceRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).SetAppSource(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_SetAppSource_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).SetAppSource(ctx, req.(*SetAppSourceRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AppsService_ServiceDesc is the grpc.ServiceDesc for AppsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -200,6 +318,18 @@ var AppsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "DeleteApp",
 			Handler:    _AppsService_DeleteApp_Handler,
+		},
+		{
+			MethodName: "SetAppWebhookSecret",
+			Handler:    _AppsService_SetAppWebhookSecret_Handler,
+		},
+		{
+			MethodName: "ShowAppWebhook",
+			Handler:    _AppsService_ShowAppWebhook_Handler,
+		},
+		{
+			MethodName: "SetAppSource",
+			Handler:    _AppsService_SetAppSource_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

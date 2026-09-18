@@ -130,9 +130,12 @@ type DeployRecord struct {
 	CancelRequested bool
 	// Flags 是部署级告警/标志位（bitmask；PostWindowAlerted /
 	// InstabilityWarning——L4 只告警一次与观察窗警告通过）。
-	Flags     int64
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	Flags int64
+	// git 触发来源（T2.19 迁移 00007；空串 = API/CLI 直传 compose）。
+	SourceGitSHA string
+	SourceGitRef string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // 部署级标志位（deployments.flags，只增位不回收）。
@@ -177,6 +180,8 @@ type DeploymentPatch struct {
 	ComposePath        *string
 	CancelRequested    *bool
 	Flags              *int64
+	SourceGitSHA       *string
+	SourceGitRef       *string
 }
 
 // CreateDeployment 创建 queued 部署行（发布入队）。kind 取 deploy|rollback；
@@ -196,11 +201,12 @@ func (s *Store) CreateDeployment(ctx context.Context, rec DeployRecord) (DeployR
 	const q = `INSERT INTO deployments
 		(id, app_id, kind, status, revision_id, recovery_of, substrate_halted,
 		 spec_hash, env_snapshot_hash, desired_hash, desired_spec, compose_path,
-		 created_at, updated_at)
-		VALUES (?, ?, ?, 'queued', NULL, ?, 0, ?, ?, ?, ?, ?, ?, ?)`
+		 source_git_sha, source_git_ref, created_at, updated_at)
+		VALUES (?, ?, ?, 'queued', NULL, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err := s.db.ExecContext(ctx, q,
 		rec.ID, rec.AppID, rec.Kind, recoveryOf,
 		rec.SpecHash, rec.EnvSnapshotHash, rec.DesiredHash, rec.DesiredSpec, rec.ComposePath,
+		rec.SourceGitSHA, rec.SourceGitRef,
 		now, now)
 	if err != nil {
 		return DeployRecord{}, fmt.Errorf("state: insert deployment %s: %w", rec.ID, err)
@@ -217,7 +223,7 @@ const deploymentScanCols = `d.id, d.app_id, a.name, d.kind, d.status, d.phase,
 	d.downtime_ended_at, d.release_started_at, d.watchdog_deadline_at,
 	d.observe_started_at, d.spec_hash, d.env_snapshot_hash, d.desired_hash,
 	d.desired_spec, d.compose_path, d.cancel_requested, d.flags,
-	d.created_at, d.updated_at`
+	d.source_git_sha, d.source_git_ref, d.created_at, d.updated_at`
 
 const deploymentScanFrom = ` FROM deployments d JOIN apps a ON a.id = d.app_id `
 
@@ -355,6 +361,14 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, p DeploymentPat
 		sets = append(sets, "flags = ?")
 		args = append(args, *p.Flags)
 	}
+	if p.SourceGitSHA != nil {
+		sets = append(sets, "source_git_sha = ?")
+		args = append(args, *p.SourceGitSHA)
+	}
+	if p.SourceGitRef != nil {
+		sets = append(sets, "source_git_ref = ?")
+		args = append(args, *p.SourceGitRef)
+	}
 	q := `UPDATE deployments SET ` + sets[0]
 	for _, s := range sets[1:] {
 		q += ", " + s //nolint:gosec // G202：sets 全为编译期字面量白名单，值经 ? 参数绑定
@@ -398,6 +412,7 @@ func scanDeployment(row interface{ Scan(dest ...any) error }) (DeployRecord, err
 	var firstHealthy, downtimeStarted, downtimeEnded, releaseStarted,
 		watchdogDeadline, observeStarted sql.NullInt64
 	var specHash, envSnapshotHash, desiredHash, desiredSpec, composePath string
+	var sourceSHA, sourceRef string
 	var phase string
 	var created, updated int64
 	err := row.Scan(&r.ID, &r.AppID, &r.AppName, &kind, &status, &phase,
@@ -405,7 +420,7 @@ func scanDeployment(row interface{ Scan(dest ...any) error }) (DeployRecord, err
 		&recovery, &verdict, &errorCode, &downtimeMS, &downtimeStarted,
 		&downtimeEnded, &releaseStarted, &watchdogDeadline, &observeStarted,
 		&specHash, &envSnapshotHash, &desiredHash, &desiredSpec, &composePath,
-		&cancelRequested, &flags, &created, &updated)
+		&cancelRequested, &flags, &sourceSHA, &sourceRef, &created, &updated)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DeployRecord{}, ErrDeploymentNotFound
@@ -435,6 +450,8 @@ func scanDeployment(row interface{ Scan(dest ...any) error }) (DeployRecord, err
 	r.ComposePath = composePath
 	r.CancelRequested = cancelRequested != 0
 	r.Flags = flags
+	r.SourceGitSHA = sourceSHA
+	r.SourceGitRef = sourceRef
 	r.CreatedAt = time.Unix(0, created).UTC()
 	r.UpdatedAt = time.Unix(0, updated).UTC()
 	return r, nil
@@ -467,4 +484,19 @@ func queryDeployments(ctx context.Context, db *sql.DB, query string, args ...any
 		return nil, fmt.Errorf("state: iterate deployments: %w", err)
 	}
 	return out, nil
+}
+
+// CountGitDeploymentsForSHA 统计应用在给定 git commit 上处于 enqueued/
+// active/succeeded 的部署数（T2.19 webhook 幂等去重判据：> 0 = 该 sha 已有
+// 进行中或成功的部署，重投不建新记录；failed/cancelled 不计入——失败后重投
+// 应允许重试）。source_git_sha 为空串的部署（API/CLI 直传）不参与匹配。
+func (s *Store) CountGitDeploymentsForSHA(ctx context.Context, appID, sha string) (int64, error) {
+	const q = `SELECT COUNT(1) FROM deployments
+		WHERE app_id = ? AND source_git_sha = ?
+		AND status IN ('queued','preparing','building','releasing','observing','succeeded')`
+	var n int64
+	if err := s.db.QueryRowContext(ctx, q, appID, sha).Scan(&n); err != nil {
+		return 0, fmt.Errorf("state: count git deployments for sha: %w", err)
+	}
+	return n, nil
 }
