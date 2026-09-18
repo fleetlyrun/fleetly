@@ -46,6 +46,8 @@ var ProviderSet = wire.NewSet(
 	NewAppsService,
 	NewDeploymentsService,
 	NewRevisionsService,
+	NewBuildsService,
+	NewDriftService,
 	NewDomainsService,
 	NewEnvService,
 	NewLogsService,
@@ -216,6 +218,33 @@ func NewDeploymentsService(st *state.Store) *api.DeploymentsService {
 // NewRevisionsService 构造版本快照只读面服务。
 func NewRevisionsService(st *state.Store) *api.RevisionsService {
 	return api.NewRevisionsService(st)
+}
+
+// NewBuildsService 构造构建资源面服务（T2.18）。
+func NewBuildsService(st *state.Store) *api.BuildsService {
+	return api.NewBuildsService(st)
+}
+
+// NewDriftService 构造漂移面服务（T2.18；复用引擎对账原语）。
+func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
+	return api.NewDriftService(st, eng)
+}
+
+// NewSystemService 构造系统/集群观察面服务（T2.18 起 SystemService 实现在
+// internal/api；健康组件集在本装配点命名——lynx Checker 接口无名。Traefik
+// 是降级设计（收敛/续期失败只日志告警，ingress 服务壳 CheckHealth 恒健康）
+// ——组件集与装配壳同语义如实上报恒健康）。
+func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager) *api.SystemService {
+	components := func() []api.SystemComponent {
+		return []api.SystemComponent{
+			{Name: "state.store", Check: st.CheckHealth},
+			{Name: "state.identity", Check: id.CheckHealth},
+			{Name: "state.observer", Check: ob.CheckHealth},
+			{Name: "state.secrets", Check: sb.CheckHealth},
+			{Name: "ingress.traefik", Check: func() error { return nil }},
+		}
+	}
+	return api.NewSystemService(version, st, components, ing)
 }
 
 // NewDomainsService 构造域名台账/验证面服务。

@@ -1,0 +1,13 @@
+{
+  "name": "my-api",
+  "spec_hash": "<sha256>",
+  "has_changes": true,
+  "destructive": false,
+  "requires_confirm_destructive": false,
+  "services": {
+    "added": [
+      "web"
+    ]
+  },
+  "volumes": {}
+}

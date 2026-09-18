@@ -130,8 +130,40 @@
         "placement": {
           "$ref": "#/definitions/v1PlacementView",
           "title": "未绑定时 placement 不输出（EmitUnpopulated=false 语义）。"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1VolumeView"
+          },
+          "title": "卷注册表（无卷应用为空集）。"
         }
       }
+    },
+    "v1VolumeView": {
+      "type": "object",
+      "properties": {
+        "key": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "node_id": {
+          "type": "string"
+        },
+        "mount_path": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "title": "VolumeView 是卷注册表行投影（volumes 表；orphaned 状态位经 status 透出\n——删除应用保留卷）。"
     }
   }
 }

@@ -16,6 +16,8 @@ import (
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/fleetlyrun/fleetly/internal/api"
 )
 
 // discardLogger 与装配形态同构的静默 logger（测试不刷屏）。
@@ -49,10 +51,10 @@ func TestPingGRPCToREST(t *testing.T) {
 		lynxgrpc.WithHealthCheckers(noCheckers),
 		lynxgrpc.WithInterceptors(validateUnaryInterceptor(validator)),
 	)
-	// SystemService 组件集为空快照（Ping/双面测试不依赖健康汇总面）。
-	serverv1.RegisterSystemServiceServer(gs.GetServer(), &SystemService{
-		components: func() []namedHealthComponent { return nil },
-	})
+	// SystemService 组件集为空快照（Ping/双面测试不依赖健康汇总面）；
+	// 实现在 internal/api（T2.18 起），nil ingress 端口 = 入口面未装配形态。
+	serverv1.RegisterSystemServiceServer(gs.GetServer(), api.NewSystemService("dev", nil,
+		func() []api.SystemComponent { return nil }, nil))
 	if err := gs.Init(nil); err != nil {
 		t.Fatalf("grpc Init: %v", err)
 	}

@@ -1,0 +1,97 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// DriftService 是运行域漂移面（T2.18；state-model §2.5、D11「检测默认开、
+// 收敛 opt-in」）。独立成 service 的理由：漂移横跨 deployments 快照与 Swarm
+// 运行实况的对账域，不是部署资源行的 CRUD——并入 DeploymentsService 会让
+// 资源投影面混入动作语义。Show 即时判定（不写事件不收敛，与 CLI 读面同
+// 源）；Converge 人工一次性收敛（带审计，不经 opt-in 位）；SetDriftConverge
+// 是收敛 opt-in 的人工置位/重置入口（回滚失败强制关闭后的恢复路径）。
+service DriftService {
+  rpc ShowDrift(ShowDriftRequest) returns (ShowDriftResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/drift" };
+  }
+  rpc ConvergeDrift(ConvergeDriftRequest) returns (ConvergeDriftResponse) {
+    option (google.api.http) = {
+      post: "/v1/apps/{app}/drift/converge"
+      body: "*"
+    };
+  }
+  rpc SetDriftConverge(SetDriftConvergeRequest) returns (SetDriftConvergeResponse) {
+    option (google.api.http) = {
+      put: "/v1/apps/{app}/drift/convergence"
+      body: "*"
+    };
+  }
+}
+
+message ShowDriftRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// FieldDiffView 是单字段差异（值均为投影形态：env 只到键名 + key:hash，
+// 值明文与长度都不出投影）。
+message FieldDiffView {
+  string field = 1;
+  string expected = 2;
+  string actual = 3;
+}
+
+// ServiceDriftView 是单服务的漂移结果（missing = 期望服务不存在；extra =
+// 期望集之外的多余受管服务）。
+message ServiceDriftView {
+  string service = 1;
+  bool drifted = 2;
+  bool missing = 3;
+  bool extra = 4;
+  repeated FieldDiffView diff = 5;
+}
+
+message ShowDriftResponse {
+  string app = 1;
+  // 期望态来源部署（空 = 无成功部署记录，无从判定）。
+  string desired_deployment = 2;
+  bool drifted = 3;
+  repeated ServiceDriftView services = 4;
+}
+
+message ConvergeDriftRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ConvergeDriftResponse {
+  string app = 1;
+  // 收敛基准部署（期望态快照来源；收敛入队为准入重放，状态经部署面跟踪）。
+  string deployment_id = 2;
+  string desired_hash = 3;
+}
+
+message SetDriftConvergeRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  bool enabled = 2;
+}
+
+message SetDriftConvergeResponse {
+  string app = 1;
+  bool enabled = 2;
+}

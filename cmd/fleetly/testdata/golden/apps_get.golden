@@ -1,0 +1,8 @@
+{
+  "id": "<ulid>",
+  "name": "my-api",
+  "lifecycle": "active",
+  "derived_state": "down",
+  "created_at": "<rfc3339>",
+  "updated_at": "<rfc3339>"
+}

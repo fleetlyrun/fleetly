@@ -1,0 +1,6 @@
+{
+  "app": "my-api",
+  "key": "DATABASE_URL",
+  "status": "pending",
+  "value": "postgres://secret-conn"
+}

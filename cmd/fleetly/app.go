@@ -1,10 +1,10 @@
 // fleetly CLI：fleetly 平台命令行（lynx-go/commands 动词注册，D21）。
 //
-// T2-2 阶段命令面：validate/plan/diff——compose 受控子集校验、归一化与
-// 归一化差异（internal/compose）。plan/apply 的真实执行依赖引擎层
-// （T2.10），本期 plan/diff 只产出基于归一化差异的计划；DB 基线（上一
-// revision 快照）随引擎票接入，当前以 --baseline 另一份 compose 文件或
-// 空基线（首部署语义）替代。
+// T2.18 CLI-over-SDK 改造：CLI 与 API 同源——全部平台动词只经 SDK（gRPC）
+// 消费 fleetlyd（连接参数 --addr/--token，env 覆盖 FLEETLY_ADDR/
+// FLEETLY_TOKEN），不再有任何直开 DB / 直连 docker / 直读密钥的路径。
+// 纯本地解析保留在 validate/plan--baseline/diff（internal/compose 纯库）。
+// 全动词支持 --json；退出码三态不变（0=无变化/成功、2=有变化、1=错误）。
 package main
 
 import (
@@ -33,6 +33,7 @@ func newApp() *commands.App {
 		&validateCmd{},
 		&planCmd{},
 		&diffCmd{},
+		newAppsCmd(),
 		&buildCmd{},
 		newBuildsCmd(),
 		&deployCmd{},
@@ -41,6 +42,9 @@ func newApp() *commands.App {
 		newRevisionsCmd(),
 		newDriftCmd(),
 		newEnvCmd(),
+		newLogsCmd(),
+		newEventsCmd(),
+		newTokensCmd(),
 		newPlacementCmd(),
 		newNodesCmd(),
 		newDomainsCmd(),

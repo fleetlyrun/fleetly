@@ -28,6 +28,12 @@ func conflict(message string) error {
 	return statusEnvelope(codes.FailedPrecondition, message)
 }
 
+// statusInvalidArgument 构造退化信封无效请求（400——客户端可修正的输入
+// 错误，如服务过滤名不存在）。
+func statusInvalidArgument(message string) error {
+	return statusEnvelope(codes.InvalidArgument, message)
+}
+
 // mapAppErr 把 app 读取哨兵映射为 api 语义（ErrAppNotFound → 404；
 // tombstoned → 409 冲突——deleting/deleted 上不可继续业务写）。
 func mapAppErr(err error, name string) error {

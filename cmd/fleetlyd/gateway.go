@@ -24,9 +24,10 @@ import (
 //
 // ── gateway 挂载清单（T2.17 纪律：gRPC-only 清单显式维护）────────────────
 // 挂载（全部服务，读/写/流一致）：
-//   - SystemService（Ping 豁免鉴权；Status 为 read）
-//   - AppsService / DeploymentsService / RevisionsService / DomainsService
-//   - EnvService / PlacementService / TokensService
+//   - SystemService（Ping 豁免鉴权；Status/Nodes/Ingress 为 read）
+//   - AppsService / DeploymentsService / RevisionsService / BuildsService
+//   - DriftService / DomainsService / EnvService / PlacementService
+//   - TokensService
 //   - LogsService（Follow = chunked-JSON 流；Console SSE 直接消费）
 //   - EventsService（Watch = chunked-JSON 流，seq 游标 + 过期信封帧）
 //
@@ -47,6 +48,8 @@ func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 		serverv1.RegisterAppsServiceHandlerFromEndpoint,
 		serverv1.RegisterDeploymentsServiceHandlerFromEndpoint,
 		serverv1.RegisterRevisionsServiceHandlerFromEndpoint,
+		serverv1.RegisterBuildsServiceHandlerFromEndpoint,
+		serverv1.RegisterDriftServiceHandlerFromEndpoint,
 		serverv1.RegisterDomainsServiceHandlerFromEndpoint,
 		serverv1.RegisterEnvServiceHandlerFromEndpoint,
 		serverv1.RegisterLogsServiceHandlerFromEndpoint,

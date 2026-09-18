@@ -198,6 +198,121 @@ func (x *ListRevisionsResponse) GetRevisions() []*RevisionView {
 	return nil
 }
 
+type GetRevisionSpecRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// 目标快照 ID（active 集内；superseded → 404，与回滚选项面同口径）。
+	RevisionId    string `protobuf:"bytes,2,opt,name=revision_id,json=revisionId,proto3" json:"revision_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRevisionSpecRequest) Reset() {
+	*x = GetRevisionSpecRequest{}
+	mi := &file_fleetly_server_v1_revisions_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRevisionSpecRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRevisionSpecRequest) ProtoMessage() {}
+
+func (x *GetRevisionSpecRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_revisions_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRevisionSpecRequest.ProtoReflect.Descriptor instead.
+func (*GetRevisionSpecRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_revisions_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *GetRevisionSpecRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *GetRevisionSpecRequest) GetRevisionId() string {
+	if x != nil {
+		return x.RevisionId
+	}
+	return ""
+}
+
+type GetRevisionSpecResponse struct {
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	RevisionId string                 `protobuf:"bytes,1,opt,name=revision_id,json=revisionId,proto3" json:"revision_id,omitempty"`
+	Seq        int64                  `protobuf:"varint,2,opt,name=seq,proto3" json:"seq,omitempty"`
+	// 归一化 compose 快照（canonical JSON 文本；compose.Spec 同构——env 为
+	// key:sha256，值明文结构性不在快照中）。
+	Compose       string `protobuf:"bytes,3,opt,name=compose,proto3" json:"compose,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRevisionSpecResponse) Reset() {
+	*x = GetRevisionSpecResponse{}
+	mi := &file_fleetly_server_v1_revisions_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRevisionSpecResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRevisionSpecResponse) ProtoMessage() {}
+
+func (x *GetRevisionSpecResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_revisions_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRevisionSpecResponse.ProtoReflect.Descriptor instead.
+func (*GetRevisionSpecResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_revisions_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *GetRevisionSpecResponse) GetRevisionId() string {
+	if x != nil {
+		return x.RevisionId
+	}
+	return ""
+}
+
+func (x *GetRevisionSpecResponse) GetSeq() int64 {
+	if x != nil {
+		return x.Seq
+	}
+	return 0
+}
+
+func (x *GetRevisionSpecResponse) GetCompose() string {
+	if x != nil {
+		return x.Compose
+	}
+	return ""
+}
+
 var File_fleetly_server_v1_revisions_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_revisions_proto_rawDesc = "" +
@@ -214,9 +329,19 @@ const file_fleetly_server_v1_revisions_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"V\n" +
 	"\x15ListRevisionsResponse\x12=\n" +
-	"\trevisions\x18\x01 \x03(\v2\x1f.fleetly.server.v1.RevisionViewR\trevisions2\x99\x01\n" +
+	"\trevisions\x18\x01 \x03(\v2\x1f.fleetly.server.v1.RevisionViewR\trevisions\"]\n" +
+	"\x16GetRevisionSpecRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12(\n" +
+	"\vrevision_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\n" +
+	"revisionId\"f\n" +
+	"\x17GetRevisionSpecResponse\x12\x1f\n" +
+	"\vrevision_id\x18\x01 \x01(\tR\n" +
+	"revisionId\x12\x10\n" +
+	"\x03seq\x18\x02 \x01(\x03R\x03seq\x12\x18\n" +
+	"\acompose\x18\x03 \x01(\tR\acompose2\xb9\x02\n" +
 	"\x10RevisionsService\x12\x84\x01\n" +
-	"\rListRevisions\x12'.fleetly.server.v1.ListRevisionsRequest\x1a(.fleetly.server.v1.ListRevisionsResponse\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/apps/{app}/revisionsB\x98\x01\x92ARRP\n" +
+	"\rListRevisions\x12'.fleetly.server.v1.ListRevisionsRequest\x1a(.fleetly.server.v1.ListRevisionsResponse\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/apps/{app}/revisions\x12\x9d\x01\n" +
+	"\x0fGetRevisionSpec\x12).fleetly.server.v1.GetRevisionSpecRequest\x1a*.fleetly.server.v1.GetRevisionSpecResponse\"3\x82\xd3\xe4\x93\x02-\x12+/v1/apps/{app}/revisions/{revision_id}/specB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -233,20 +358,24 @@ func file_fleetly_server_v1_revisions_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_revisions_proto_rawDescData
 }
 
-var file_fleetly_server_v1_revisions_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_fleetly_server_v1_revisions_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
 var file_fleetly_server_v1_revisions_proto_goTypes = []any{
-	(*ListRevisionsRequest)(nil),  // 0: fleetly.server.v1.ListRevisionsRequest
-	(*RevisionView)(nil),          // 1: fleetly.server.v1.RevisionView
-	(*ListRevisionsResponse)(nil), // 2: fleetly.server.v1.ListRevisionsResponse
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*ListRevisionsRequest)(nil),    // 0: fleetly.server.v1.ListRevisionsRequest
+	(*RevisionView)(nil),            // 1: fleetly.server.v1.RevisionView
+	(*ListRevisionsResponse)(nil),   // 2: fleetly.server.v1.ListRevisionsResponse
+	(*GetRevisionSpecRequest)(nil),  // 3: fleetly.server.v1.GetRevisionSpecRequest
+	(*GetRevisionSpecResponse)(nil), // 4: fleetly.server.v1.GetRevisionSpecResponse
+	(*timestamppb.Timestamp)(nil),   // 5: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_revisions_proto_depIdxs = []int32{
-	3, // 0: fleetly.server.v1.RevisionView.created_at:type_name -> google.protobuf.Timestamp
+	5, // 0: fleetly.server.v1.RevisionView.created_at:type_name -> google.protobuf.Timestamp
 	1, // 1: fleetly.server.v1.ListRevisionsResponse.revisions:type_name -> fleetly.server.v1.RevisionView
 	0, // 2: fleetly.server.v1.RevisionsService.ListRevisions:input_type -> fleetly.server.v1.ListRevisionsRequest
-	2, // 3: fleetly.server.v1.RevisionsService.ListRevisions:output_type -> fleetly.server.v1.ListRevisionsResponse
-	3, // [3:4] is the sub-list for method output_type
-	2, // [2:3] is the sub-list for method input_type
+	3, // 3: fleetly.server.v1.RevisionsService.GetRevisionSpec:input_type -> fleetly.server.v1.GetRevisionSpecRequest
+	2, // 4: fleetly.server.v1.RevisionsService.ListRevisions:output_type -> fleetly.server.v1.ListRevisionsResponse
+	4, // 5: fleetly.server.v1.RevisionsService.GetRevisionSpec:output_type -> fleetly.server.v1.GetRevisionSpecResponse
+	4, // [4:6] is the sub-list for method output_type
+	2, // [2:4] is the sub-list for method input_type
 	2, // [2:2] is the sub-list for extension type_name
 	2, // [2:2] is the sub-list for extension extendee
 	0, // [0:2] is the sub-list for field type_name
@@ -263,7 +392,7 @@ func file_fleetly_server_v1_revisions_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_revisions_proto_rawDesc), len(file_fleetly_server_v1_revisions_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   5,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

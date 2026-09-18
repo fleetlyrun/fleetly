@@ -1,0 +1,10 @@
+{
+  "app": "my-api",
+  "domains": [
+    {
+      "domain": "api.example.com",
+      "service": "web",
+      "port": "8080"
+    }
+  ]
+}

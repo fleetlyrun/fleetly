@@ -233,6 +233,24 @@
         }
       }
     },
+    "v1ComposeWarning": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "title": "ComposeWarning 是 compose 校验期非阻断标注的跨面投影（deploy/build 共\n用；code = 注册表 W_ 码，无注册码提示以 kind 承载稳定标识）。"
+    },
     "v1DeployResponse": {
       "type": "object",
       "properties": {
@@ -245,6 +263,14 @@
         "status": {
           "type": "string",
           "title": "入队即返回，恒 \"queued\"。"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ComposeWarning"
+          },
+          "title": "compose 校验期非阻断标注（服务端受控子集校验的警告随响应带出——\nT2.18：CLI 改经 RPC 入队后仍保留校验警告的人读呈现）。"
         }
       }
     },

@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "app": "my-api",
+      "service": "web",
+      "at": "<rfc3339>",
+      "line": "hello from web",
+      "source": "container"
+    }
+  ]
+}

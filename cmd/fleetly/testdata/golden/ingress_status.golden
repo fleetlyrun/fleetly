@@ -1,0 +1,7 @@
+{
+  "traefik": {
+    "error": "ingress manager unavailable"
+  },
+  "healthz": "unreachable",
+  "auth": "unreachable"
+}

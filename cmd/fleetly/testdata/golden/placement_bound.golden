@@ -1,0 +1,19 @@
+{
+  "app": "my-api",
+  "bound": true,
+  "node_id": "n_01TESTNODE",
+  "state": "bound",
+  "source": "platform",
+  "pinned_at": "<rfc3339>",
+  "constraint": "node.labels.fleetly.node-id == n_01TESTNODE",
+  "volumes": [
+    {
+      "key": "data",
+      "name": "fleetly-my-api-data-<appid8>",
+      "kind": "named",
+      "node_id": "n_01TESTNODE",
+      "mount_path": "/var/lib/data",
+      "status": "active"
+    }
+  ]
+}

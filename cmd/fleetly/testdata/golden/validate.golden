@@ -1,0 +1,7 @@
+{
+  "valid": true,
+  "name": "my-api",
+  "spec_hash": "<sha256>",
+  "services": 1,
+  "volumes": 0
+}

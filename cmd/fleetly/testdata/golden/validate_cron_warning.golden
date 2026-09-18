@@ -1,0 +1,19 @@
+{
+  "valid": true,
+  "name": "my-api",
+  "spec_hash": "<sha256>",
+  "services": 1,
+  "volumes": 0,
+  "warnings": [
+    {
+      "kind": "cron_label_v02_pending",
+      "service": "web",
+      "message": "服务 web 声明了 fleetly.cron（定时任务为 v0.2 契约，v0.1 按长驻服务部署）"
+    },
+    {
+      "code": "W_DEPLOY_NO_HEALTHCHECK",
+      "service": "web",
+      "message": "服务 web 未声明 healthcheck：health_gate=none（发布健康门退化为退出/副本水位判定，故障暴露更晚）"
+    }
+  ]
+}

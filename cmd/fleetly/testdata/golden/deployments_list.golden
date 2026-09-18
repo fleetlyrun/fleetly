@@ -1,0 +1,14 @@
+{
+  "app": "my-api",
+  "app_state": "running",
+  "deployments": [
+    {
+      "id": "<ulid>",
+      "app": "my-api",
+      "kind": "deploy",
+      "status": "queued",
+      "created_at": "<rfc3339>",
+      "updated_at": "<rfc3339>"
+    }
+  ]
+}

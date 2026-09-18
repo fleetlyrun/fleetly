@@ -131,6 +131,92 @@ func (x *PlacementView) GetUpdatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+// VolumeView 是卷注册表行投影（volumes 表；orphaned 状态位经 status 透出
+// ——删除应用保留卷）。
+type VolumeView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	NodeId        string                 `protobuf:"bytes,4,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	MountPath     string                 `protobuf:"bytes,5,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *VolumeView) Reset() {
+	*x = VolumeView{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *VolumeView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*VolumeView) ProtoMessage() {}
+
+func (x *VolumeView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use VolumeView.ProtoReflect.Descriptor instead.
+func (*VolumeView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *VolumeView) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *VolumeView) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *VolumeView) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *VolumeView) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+func (x *VolumeView) GetMountPath() string {
+	if x != nil {
+		return x.MountPath
+	}
+	return ""
+}
+
+func (x *VolumeView) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 type ShowPlacementRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
@@ -140,7 +226,7 @@ type ShowPlacementRequest struct {
 
 func (x *ShowPlacementRequest) Reset() {
 	*x = ShowPlacementRequest{}
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[1]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -152,7 +238,7 @@ func (x *ShowPlacementRequest) String() string {
 func (*ShowPlacementRequest) ProtoMessage() {}
 
 func (x *ShowPlacementRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[1]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -165,7 +251,7 @@ func (x *ShowPlacementRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowPlacementRequest.ProtoReflect.Descriptor instead.
 func (*ShowPlacementRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{1}
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *ShowPlacementRequest) GetApp() string {
@@ -179,14 +265,16 @@ type ShowPlacementResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
 	// 未绑定时 placement 不输出（EmitUnpopulated=false 语义）。
-	Placement     *PlacementView `protobuf:"bytes,2,opt,name=placement,proto3" json:"placement,omitempty"`
+	Placement *PlacementView `protobuf:"bytes,2,opt,name=placement,proto3" json:"placement,omitempty"`
+	// 卷注册表（无卷应用为空集）。
+	Volumes       []*VolumeView `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ShowPlacementResponse) Reset() {
 	*x = ShowPlacementResponse{}
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -198,7 +286,7 @@ func (x *ShowPlacementResponse) String() string {
 func (*ShowPlacementResponse) ProtoMessage() {}
 
 func (x *ShowPlacementResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -211,7 +299,7 @@ func (x *ShowPlacementResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowPlacementResponse.ProtoReflect.Descriptor instead.
 func (*ShowPlacementResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{2}
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ShowPlacementResponse) GetApp() string {
@@ -224,6 +312,13 @@ func (x *ShowPlacementResponse) GetApp() string {
 func (x *ShowPlacementResponse) GetPlacement() *PlacementView {
 	if x != nil {
 		return x.Placement
+	}
+	return nil
+}
+
+func (x *ShowPlacementResponse) GetVolumes() []*VolumeView {
+	if x != nil {
+		return x.Volumes
 	}
 	return nil
 }
@@ -243,12 +338,22 @@ const file_fleetly_server_v1_placement_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"1\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x96\x01\n" +
+	"\n" +
+	"VolumeView\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x17\n" +
+	"\anode_id\x18\x04 \x01(\tR\x06nodeId\x12\x1d\n" +
+	"\n" +
+	"mount_path\x18\x05 \x01(\tR\tmountPath\x12\x16\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\"1\n" +
 	"\x14ShowPlacementRequest\x12\x19\n" +
-	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\"i\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\"\xa2\x01\n" +
 	"\x15ShowPlacementResponse\x12\x10\n" +
 	"\x03app\x18\x01 \x01(\tR\x03app\x12>\n" +
-	"\tplacement\x18\x02 \x01(\v2 .fleetly.server.v1.PlacementViewR\tplacement2\x99\x01\n" +
+	"\tplacement\x18\x02 \x01(\v2 .fleetly.server.v1.PlacementViewR\tplacement\x127\n" +
+	"\avolumes\x18\x03 \x03(\v2\x1d.fleetly.server.v1.VolumeViewR\avolumes2\x99\x01\n" +
 	"\x10PlacementService\x12\x84\x01\n" +
 	"\rShowPlacement\x12'.fleetly.server.v1.ShowPlacementRequest\x1a(.fleetly.server.v1.ShowPlacementResponse\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/apps/{app}/placementB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
@@ -267,25 +372,27 @@ func file_fleetly_server_v1_placement_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_placement_proto_rawDescData
 }
 
-var file_fleetly_server_v1_placement_proto_msgTypes = make([]protoimpl.MessageInfo, 3)
+var file_fleetly_server_v1_placement_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
 var file_fleetly_server_v1_placement_proto_goTypes = []any{
 	(*PlacementView)(nil),         // 0: fleetly.server.v1.PlacementView
-	(*ShowPlacementRequest)(nil),  // 1: fleetly.server.v1.ShowPlacementRequest
-	(*ShowPlacementResponse)(nil), // 2: fleetly.server.v1.ShowPlacementResponse
-	(*timestamppb.Timestamp)(nil), // 3: google.protobuf.Timestamp
+	(*VolumeView)(nil),            // 1: fleetly.server.v1.VolumeView
+	(*ShowPlacementRequest)(nil),  // 2: fleetly.server.v1.ShowPlacementRequest
+	(*ShowPlacementResponse)(nil), // 3: fleetly.server.v1.ShowPlacementResponse
+	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_placement_proto_depIdxs = []int32{
-	3, // 0: fleetly.server.v1.PlacementView.pinned_at:type_name -> google.protobuf.Timestamp
-	3, // 1: fleetly.server.v1.PlacementView.created_at:type_name -> google.protobuf.Timestamp
-	3, // 2: fleetly.server.v1.PlacementView.updated_at:type_name -> google.protobuf.Timestamp
+	4, // 0: fleetly.server.v1.PlacementView.pinned_at:type_name -> google.protobuf.Timestamp
+	4, // 1: fleetly.server.v1.PlacementView.created_at:type_name -> google.protobuf.Timestamp
+	4, // 2: fleetly.server.v1.PlacementView.updated_at:type_name -> google.protobuf.Timestamp
 	0, // 3: fleetly.server.v1.ShowPlacementResponse.placement:type_name -> fleetly.server.v1.PlacementView
-	1, // 4: fleetly.server.v1.PlacementService.ShowPlacement:input_type -> fleetly.server.v1.ShowPlacementRequest
-	2, // 5: fleetly.server.v1.PlacementService.ShowPlacement:output_type -> fleetly.server.v1.ShowPlacementResponse
-	5, // [5:6] is the sub-list for method output_type
-	4, // [4:5] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	1, // 4: fleetly.server.v1.ShowPlacementResponse.volumes:type_name -> fleetly.server.v1.VolumeView
+	2, // 5: fleetly.server.v1.PlacementService.ShowPlacement:input_type -> fleetly.server.v1.ShowPlacementRequest
+	3, // 6: fleetly.server.v1.PlacementService.ShowPlacement:output_type -> fleetly.server.v1.ShowPlacementResponse
+	6, // [6:7] is the sub-list for method output_type
+	5, // [5:6] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_placement_proto_init() }
@@ -299,7 +406,7 @@ func file_fleetly_server_v1_placement_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_placement_proto_rawDesc), len(file_fleetly_server_v1_placement_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   3,
+			NumMessages:   4,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -27,7 +27,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // PlacementService 是放置绑定只读面（T2.17；stateful-placement §2.8）。
-// PlacementView 同时被 apps 详情复用（同包导入）。
+// PlacementView 同时被 apps 详情复用（同包导入）。T2.18 起详情响应附带
+// 卷注册表——卷的钉住语义由放置绑定决定（有卷应用自动钉住到本机），与
+// 绑定同源同面展示（放置卡片的数据面，stateful-placement §2.3）。
 type PlacementServiceClient interface {
 	ShowPlacement(ctx context.Context, in *ShowPlacementRequest, opts ...grpc.CallOption) (*ShowPlacementResponse, error)
 }
@@ -55,7 +57,9 @@ func (c *placementServiceClient) ShowPlacement(ctx context.Context, in *ShowPlac
 // for forward compatibility.
 //
 // PlacementService 是放置绑定只读面（T2.17；stateful-placement §2.8）。
-// PlacementView 同时被 apps 详情复用（同包导入）。
+// PlacementView 同时被 apps 详情复用（同包导入）。T2.18 起详情响应附带
+// 卷注册表——卷的钉住语义由放置绑定决定（有卷应用自动钉住到本机），与
+// 绑定同源同面展示（放置卡片的数据面，stateful-placement §2.3）。
 type PlacementServiceServer interface {
 	ShowPlacement(context.Context, *ShowPlacementRequest) (*ShowPlacementResponse, error)
 	mustEmbedUnimplementedPlacementServiceServer()

@@ -78,11 +78,13 @@ func TestGatewayRESTDualFace(t *testing.T) {
 		lynxgrpc.WithStreamInterceptors(auth.StreamAuthInterceptor()),
 	)
 	g := gs.GetServer()
-	serverv1.RegisterSystemServiceServer(g, &SystemService{
-		components: func() []namedHealthComponent { return nil },
-	})
+	serverv1.RegisterSystemServiceServer(g, api.NewSystemService("dev", st,
+		func() []api.SystemComponent { return nil }, nil))
 	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st))
 	serverv1.RegisterDeploymentsServiceServer(g, api.NewDeploymentsService(st))
+	serverv1.RegisterRevisionsServiceServer(g, api.NewRevisionsService(st))
+	serverv1.RegisterBuildsServiceServer(g, api.NewBuildsService(st))
+	serverv1.RegisterDriftServiceServer(g, api.NewDriftService(st, nil))
 	serverv1.RegisterEnvServiceServer(g, api.NewEnvService(st, box))
 	serverv1.RegisterTokensServiceServer(g, api.NewTokensService(st))
 	if err := gs.Init(nil); err != nil {

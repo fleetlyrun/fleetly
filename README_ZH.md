@@ -65,6 +65,28 @@ console/          Console 前端（React + Vite + shadcn/ui，随 T2.21 落地�
 deploy/           安装器与 systemd unit（随 T2.1 落地）
 ```
 
+## CLI
+
+CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）与 `--token`（env `FLEETLY_TOKEN`）；bootstrap admin token 在 fleetlyd 首启日志中**只打印一次**，后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）。
+
+```bash
+fleetlyd &                                  # 控制面（gRPC :8421，HTTP :8420）
+export FLEETLY_ADDR=127.0.0.1:8421
+export FLEETLY_TOKEN=<bootstrap admin token>
+
+fleetly validate compose.yaml               # 受控子集校验（本地）
+fleetly plan compose.yaml                   # 经 API 与最近版本快照比对；退出 2 = 有变化
+fleetly deploy compose.yaml                 # 入队并等待终态
+fleetly apps list && fleetly deployments list my-api
+fleetly logs follow my-api --service web    # 实时流（--json 为 JSONL）
+fleetly env set my-api KEY value            # 随下次部署生效
+fleetly rollback my-api                     # 快照重放（最近 5 版）
+fleetly drift show my-api                   # 期望态 vs 实况
+fleetly tokens create --scopes deploy --note CI   # 明文仅此一次显示
+```
+
+完整 flag 列表见 `fleetly help <动词>`。
+
 ## 文档
 
 全部文档在 [`docs/`](docs/README.md)（中文，设计先行的工作流）：

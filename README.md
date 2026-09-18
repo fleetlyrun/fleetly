@@ -65,6 +65,28 @@ console/          Console frontend (React + Vite + shadcn/ui, lands with T2.21)
 deploy/           installer & systemd units (lands with T2.1)
 ```
 
+## CLI
+
+The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`) and `--token` (env `FLEETLY_TOKEN`); the bootstrap admin token is printed **once** to the fleetlyd log on first start, further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only).
+
+```bash
+fleetlyd &                                  # control plane (gRPC :8421, HTTP :8420)
+export FLEETLY_ADDR=127.0.0.1:8421
+export FLEETLY_TOKEN=<bootstrap admin token>
+
+fleetly validate compose.yaml               # controlled-subset validation (local)
+fleetly plan compose.yaml                   # diff vs latest revision via API; exit 2 = changes
+fleetly deploy compose.yaml                 # enqueue and wait for the terminal state
+fleetly apps list && fleetly deployments list my-api
+fleetly logs follow my-api --service web    # live stream (--json for JSONL)
+fleetly env set my-api KEY value            # pending until next deploy
+fleetly rollback my-api                     # snapshot replay (last 5 revisions)
+fleetly drift show my-api                   # desired vs. live
+fleetly tokens create --scopes deploy --note CI   # plaintext shown once
+```
+
+See `fleetly help <verb>` for the full flag list.
+
 ## Documentation
 
 All docs live in [`docs/`](docs/README.md) (Chinese, design-first workflow):

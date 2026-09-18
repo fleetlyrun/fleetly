@@ -12,6 +12,7 @@ import (
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
 	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
@@ -273,11 +274,505 @@ func (x *GetSystemStatusResponse) GetComponents() []*ComponentHealth {
 	return nil
 }
 
+type ListNodesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodesRequest) Reset() {
+	*x = ListNodesRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodesRequest) ProtoMessage() {}
+
+func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
+func (*ListNodesRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{5}
+}
+
+// NodeView 是节点观测缓存行的只读投影（state-model §2.2：缓存禁止用于
+// 决策，展示/诊断专用；节点变更用 docker node 原生命令）。观测数据带
+// observed_at/stale——状态诚实契约（architecture §4.2 横切硬指标）；
+// nodes 不提供「最后心跳」字段。
+type NodeView struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	SwarmNodeId string                 `protobuf:"bytes,1,opt,name=swarm_node_id,json=swarmNodeId,proto3" json:"swarm_node_id,omitempty"`
+	// 平台节点 ID（fleetly.placement.node-id label；未锚定时为空）。
+	PlatformId    string                 `protobuf:"bytes,2,opt,name=platform_id,json=platformId,proto3" json:"platform_id,omitempty"`
+	Hostname      string                 `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"`
+	State         string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"`
+	Availability  string                 `protobuf:"bytes,5,opt,name=availability,proto3" json:"availability,omitempty"`
+	IsManager     bool                   `protobuf:"varint,6,opt,name=is_manager,json=isManager,proto3" json:"is_manager,omitempty"`
+	ObservedAt    *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=observed_at,json=observedAt,proto3" json:"observed_at,omitempty"`
+	Stale         bool                   `protobuf:"varint,8,opt,name=stale,proto3" json:"stale,omitempty"`
+	Labels        map[string]string      `protobuf:"bytes,9,rep,name=labels,proto3" json:"labels,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NodeView) Reset() {
+	*x = NodeView{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NodeView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NodeView) ProtoMessage() {}
+
+func (x *NodeView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NodeView.ProtoReflect.Descriptor instead.
+func (*NodeView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *NodeView) GetSwarmNodeId() string {
+	if x != nil {
+		return x.SwarmNodeId
+	}
+	return ""
+}
+
+func (x *NodeView) GetPlatformId() string {
+	if x != nil {
+		return x.PlatformId
+	}
+	return ""
+}
+
+func (x *NodeView) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
+func (x *NodeView) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *NodeView) GetAvailability() string {
+	if x != nil {
+		return x.Availability
+	}
+	return ""
+}
+
+func (x *NodeView) GetIsManager() bool {
+	if x != nil {
+		return x.IsManager
+	}
+	return false
+}
+
+func (x *NodeView) GetObservedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ObservedAt
+	}
+	return nil
+}
+
+func (x *NodeView) GetStale() bool {
+	if x != nil {
+		return x.Stale
+	}
+	return false
+}
+
+func (x *NodeView) GetLabels() map[string]string {
+	if x != nil {
+		return x.Labels
+	}
+	return nil
+}
+
+type ListNodesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Nodes         []*NodeView            `protobuf:"bytes,1,rep,name=nodes,proto3" json:"nodes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListNodesResponse) Reset() {
+	*x = ListNodesResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListNodesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListNodesResponse) ProtoMessage() {}
+
+func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListNodesResponse.ProtoReflect.Descriptor instead.
+func (*ListNodesResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ListNodesResponse) GetNodes() []*NodeView {
+	if x != nil {
+		return x.Nodes
+	}
+	return nil
+}
+
+type GetIngressStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIngressStatusRequest) Reset() {
+	*x = GetIngressStatusRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIngressStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIngressStatusRequest) ProtoMessage() {}
+
+func (x *GetIngressStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIngressStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetIngressStatusRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{8}
+}
+
+// TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists
+// = false 且 error 为探测原文）。
+type TraefikView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Exists        bool                   `protobuf:"varint,1,opt,name=exists,proto3" json:"exists,omitempty"`
+	Image         string                 `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	StaticArgs    int32                  `protobuf:"varint,3,opt,name=static_args,json=staticArgs,proto3" json:"static_args,omitempty"`
+	Error         string                 `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TraefikView) Reset() {
+	*x = TraefikView{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TraefikView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TraefikView) ProtoMessage() {}
+
+func (x *TraefikView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TraefikView.ProtoReflect.Descriptor instead.
+func (*TraefikView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *TraefikView) GetExists() bool {
+	if x != nil {
+		return x.Exists
+	}
+	return false
+}
+
+func (x *TraefikView) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *TraefikView) GetStaticArgs() int32 {
+	if x != nil {
+		return x.StaticArgs
+	}
+	return 0
+}
+
+func (x *TraefikView) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// CertLedgerView 是证书台账行投影（domains 表 cert 列对照；app 为显示名，
+// 已删除应用回退显示 app id）。
+type CertLedgerView struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	Domain        string                 `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`
+	CertSha256    string                 `protobuf:"bytes,3,opt,name=cert_sha256,json=certSha256,proto3" json:"cert_sha256,omitempty"`
+	CertNotAfter  *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=cert_not_after,json=certNotAfter,proto3" json:"cert_not_after,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CertLedgerView) Reset() {
+	*x = CertLedgerView{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CertLedgerView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CertLedgerView) ProtoMessage() {}
+
+func (x *CertLedgerView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CertLedgerView.ProtoReflect.Descriptor instead.
+func (*CertLedgerView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CertLedgerView) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *CertLedgerView) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *CertLedgerView) GetCertSha256() string {
+	if x != nil {
+		return x.CertSha256
+	}
+	return ""
+}
+
+func (x *CertLedgerView) GetCertNotAfter() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CertNotAfter
+	}
+	return nil
+}
+
+type GetIngressStatusResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Traefik *TraefikView           `protobuf:"bytes,1,opt,name=traefik,proto3" json:"traefik,omitempty"`
+	// 控制面配置端点监听地址（ingress.config_addr 配置原值）。
+	ConfigAddr string `protobuf:"bytes,2,opt,name=config_addr,json=configAddr,proto3" json:"config_addr,omitempty"`
+	// 下发给 Traefik 的控制面可达 IP（空 = 自动探测）。
+	AdvertiseIp string `protobuf:"bytes,3,opt,name=advertise_ip,json=advertiseIp,proto3" json:"advertise_ip,omitempty"`
+	// ACME challenge 应答器基址（空 = 未接入集中签发）。
+	Responder string `protobuf:"bytes,4,opt,name=responder,proto3" json:"responder,omitempty"`
+	// 配置端点两面探测结果（服务端环回执行）：/healthz 无鉴权状态行；
+	// /configs 带 token 鉴权核验（401 = token 缺失/错误，如实报告；200 =
+	// 鉴权通过且返回合法 JSON）。不可达 = "unreachable"。
+	Healthz string `protobuf:"bytes,5,opt,name=healthz,proto3" json:"healthz,omitempty"`
+	Auth    string `protobuf:"bytes,6,opt,name=auth,proto3" json:"auth,omitempty"`
+	// 证书台账（有证书的域名行）。
+	Certificates []*CertLedgerView `protobuf:"bytes,7,rep,name=certificates,proto3" json:"certificates,omitempty"`
+	// 证书存储目录（控制面侧）与其中的 app 清单（meta 索引；目录缺失 =
+	// 空清单非错误，cert_dir_error 承载读取故障原文）。
+	CertDir       string   `protobuf:"bytes,8,opt,name=cert_dir,json=certDir,proto3" json:"cert_dir,omitempty"`
+	CertDirApps   []string `protobuf:"bytes,9,rep,name=cert_dir_apps,json=certDirApps,proto3" json:"cert_dir_apps,omitempty"`
+	CertDirError  string   `protobuf:"bytes,10,opt,name=cert_dir_error,json=certDirError,proto3" json:"cert_dir_error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetIngressStatusResponse) Reset() {
+	*x = GetIngressStatusResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetIngressStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetIngressStatusResponse) ProtoMessage() {}
+
+func (x *GetIngressStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetIngressStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetIngressStatusResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *GetIngressStatusResponse) GetTraefik() *TraefikView {
+	if x != nil {
+		return x.Traefik
+	}
+	return nil
+}
+
+func (x *GetIngressStatusResponse) GetConfigAddr() string {
+	if x != nil {
+		return x.ConfigAddr
+	}
+	return ""
+}
+
+func (x *GetIngressStatusResponse) GetAdvertiseIp() string {
+	if x != nil {
+		return x.AdvertiseIp
+	}
+	return ""
+}
+
+func (x *GetIngressStatusResponse) GetResponder() string {
+	if x != nil {
+		return x.Responder
+	}
+	return ""
+}
+
+func (x *GetIngressStatusResponse) GetHealthz() string {
+	if x != nil {
+		return x.Healthz
+	}
+	return ""
+}
+
+func (x *GetIngressStatusResponse) GetAuth() string {
+	if x != nil {
+		return x.Auth
+	}
+	return ""
+}
+
+func (x *GetIngressStatusResponse) GetCertificates() []*CertLedgerView {
+	if x != nil {
+		return x.Certificates
+	}
+	return nil
+}
+
+func (x *GetIngressStatusResponse) GetCertDir() string {
+	if x != nil {
+		return x.CertDir
+	}
+	return ""
+}
+
+func (x *GetIngressStatusResponse) GetCertDirApps() []string {
+	if x != nil {
+		return x.CertDirApps
+	}
+	return nil
+}
+
+func (x *GetIngressStatusResponse) GetCertDirError() string {
+	if x != nil {
+		return x.CertDirError
+	}
+	return ""
+}
+
 var File_fleetly_server_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\n" +
-	"\x1efleetly/server/v1/system.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\r\n" +
+	"\x1efleetly/server/v1/system.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\r\n" +
 	"\vPingRequest\"T\n" +
 	"\fPingResponse\x12!\n" +
 	"\aservice\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aservice\x12!\n" +
@@ -292,10 +787,57 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12B\n" +
 	"\n" +
 	"components\x18\x03 \x03(\v2\".fleetly.server.v1.ComponentHealthR\n" +
-	"components2\xf7\x01\n" +
+	"components\"\x12\n" +
+	"\x10ListNodesRequest\"\x93\x03\n" +
+	"\bNodeView\x12\"\n" +
+	"\rswarm_node_id\x18\x01 \x01(\tR\vswarmNodeId\x12\x1f\n" +
+	"\vplatform_id\x18\x02 \x01(\tR\n" +
+	"platformId\x12\x1a\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\"\n" +
+	"\favailability\x18\x05 \x01(\tR\favailability\x12\x1d\n" +
+	"\n" +
+	"is_manager\x18\x06 \x01(\bR\tisManager\x12;\n" +
+	"\vobserved_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"observedAt\x12\x14\n" +
+	"\x05stale\x18\b \x01(\bR\x05stale\x12?\n" +
+	"\x06labels\x18\t \x03(\v2'.fleetly.server.v1.NodeView.LabelsEntryR\x06labels\x1a9\n" +
+	"\vLabelsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"F\n" +
+	"\x11ListNodesResponse\x121\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x1b.fleetly.server.v1.NodeViewR\x05nodes\"\x19\n" +
+	"\x17GetIngressStatusRequest\"r\n" +
+	"\vTraefikView\x12\x16\n" +
+	"\x06exists\x18\x01 \x01(\bR\x06exists\x12\x14\n" +
+	"\x05image\x18\x02 \x01(\tR\x05image\x12\x1f\n" +
+	"\vstatic_args\x18\x03 \x01(\x05R\n" +
+	"staticArgs\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\x9d\x01\n" +
+	"\x0eCertLedgerView\x12\x10\n" +
+	"\x03app\x18\x01 \x01(\tR\x03app\x12\x16\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\x12\x1f\n" +
+	"\vcert_sha256\x18\x03 \x01(\tR\n" +
+	"certSha256\x12@\n" +
+	"\x0ecert_not_after\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\fcertNotAfter\"\x90\x03\n" +
+	"\x18GetIngressStatusResponse\x128\n" +
+	"\atraefik\x18\x01 \x01(\v2\x1e.fleetly.server.v1.TraefikViewR\atraefik\x12\x1f\n" +
+	"\vconfig_addr\x18\x02 \x01(\tR\n" +
+	"configAddr\x12!\n" +
+	"\fadvertise_ip\x18\x03 \x01(\tR\vadvertiseIp\x12\x1c\n" +
+	"\tresponder\x18\x04 \x01(\tR\tresponder\x12\x18\n" +
+	"\ahealthz\x18\x05 \x01(\tR\ahealthz\x12\x12\n" +
+	"\x04auth\x18\x06 \x01(\tR\x04auth\x12E\n" +
+	"\fcertificates\x18\a \x03(\v2!.fleetly.server.v1.CertLedgerViewR\fcertificates\x12\x19\n" +
+	"\bcert_dir\x18\b \x01(\tR\acertDir\x12\"\n" +
+	"\rcert_dir_apps\x18\t \x03(\tR\vcertDirApps\x12$\n" +
+	"\x0ecert_dir_error\x18\n" +
+	" \x01(\tR\fcertDirError2\xf3\x03\n" +
 	"\rSystemService\x12`\n" +
 	"\x04Ping\x12\x1e.fleetly.server.v1.PingRequest\x1a\x1f.fleetly.server.v1.PingResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/ping\x12\x83\x01\n" +
-	"\x0fGetSystemStatus\x12).fleetly.server.v1.GetSystemStatusRequest\x1a*.fleetly.server.v1.GetSystemStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/statusB\x98\x01\x92ARRP\n" +
+	"\x0fGetSystemStatus\x12).fleetly.server.v1.GetSystemStatusRequest\x1a*.fleetly.server.v1.GetSystemStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12p\n" +
+	"\tListNodes\x12#.fleetly.server.v1.ListNodesRequest\x1a$.fleetly.server.v1.ListNodesResponse\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/system/nodes\x12\x87\x01\n" +
+	"\x10GetIngressStatus\x12*.fleetly.server.v1.GetIngressStatusRequest\x1a+.fleetly.server.v1.GetIngressStatusResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/ingressB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -312,25 +854,44 @@ func file_fleetly_server_v1_system_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_system_proto_rawDescData
 }
 
-var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_fleetly_server_v1_system_proto_goTypes = []any{
-	(*PingRequest)(nil),             // 0: fleetly.server.v1.PingRequest
-	(*PingResponse)(nil),            // 1: fleetly.server.v1.PingResponse
-	(*GetSystemStatusRequest)(nil),  // 2: fleetly.server.v1.GetSystemStatusRequest
-	(*ComponentHealth)(nil),         // 3: fleetly.server.v1.ComponentHealth
-	(*GetSystemStatusResponse)(nil), // 4: fleetly.server.v1.GetSystemStatusResponse
+	(*PingRequest)(nil),              // 0: fleetly.server.v1.PingRequest
+	(*PingResponse)(nil),             // 1: fleetly.server.v1.PingResponse
+	(*GetSystemStatusRequest)(nil),   // 2: fleetly.server.v1.GetSystemStatusRequest
+	(*ComponentHealth)(nil),          // 3: fleetly.server.v1.ComponentHealth
+	(*GetSystemStatusResponse)(nil),  // 4: fleetly.server.v1.GetSystemStatusResponse
+	(*ListNodesRequest)(nil),         // 5: fleetly.server.v1.ListNodesRequest
+	(*NodeView)(nil),                 // 6: fleetly.server.v1.NodeView
+	(*ListNodesResponse)(nil),        // 7: fleetly.server.v1.ListNodesResponse
+	(*GetIngressStatusRequest)(nil),  // 8: fleetly.server.v1.GetIngressStatusRequest
+	(*TraefikView)(nil),              // 9: fleetly.server.v1.TraefikView
+	(*CertLedgerView)(nil),           // 10: fleetly.server.v1.CertLedgerView
+	(*GetIngressStatusResponse)(nil), // 11: fleetly.server.v1.GetIngressStatusResponse
+	nil,                              // 12: fleetly.server.v1.NodeView.LabelsEntry
+	(*timestamppb.Timestamp)(nil),    // 13: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_system_proto_depIdxs = []int32{
-	3, // 0: fleetly.server.v1.GetSystemStatusResponse.components:type_name -> fleetly.server.v1.ComponentHealth
-	0, // 1: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
-	2, // 2: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
-	1, // 3: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
-	4, // 4: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	3,  // 0: fleetly.server.v1.GetSystemStatusResponse.components:type_name -> fleetly.server.v1.ComponentHealth
+	13, // 1: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
+	12, // 2: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
+	6,  // 3: fleetly.server.v1.ListNodesResponse.nodes:type_name -> fleetly.server.v1.NodeView
+	13, // 4: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
+	9,  // 5: fleetly.server.v1.GetIngressStatusResponse.traefik:type_name -> fleetly.server.v1.TraefikView
+	10, // 6: fleetly.server.v1.GetIngressStatusResponse.certificates:type_name -> fleetly.server.v1.CertLedgerView
+	0,  // 7: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
+	2,  // 8: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
+	5,  // 9: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
+	8,  // 10: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
+	1,  // 11: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
+	4,  // 12: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
+	7,  // 13: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
+	11, // 14: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
+	11, // [11:15] is the sub-list for method output_type
+	7,  // [7:11] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_system_proto_init() }
@@ -344,7 +905,7 @@ func file_fleetly_server_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_system_proto_rawDesc), len(file_fleetly_server_v1_system_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

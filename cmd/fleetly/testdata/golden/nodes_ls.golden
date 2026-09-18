@@ -1,0 +1,18 @@
+{
+  "cache": true,
+  "nodes": [
+    {
+      "swarm_node_id": "swarm-test",
+      "platform_id": "n_test",
+      "hostname": "srv-01",
+      "state": "ready",
+      "availability": "active",
+      "is_manager": true,
+      "observed_at": "<rfc3339>",
+      "stale": false,
+      "labels": {
+        "fleetly.node-id": "n_test"
+      }
+    }
+  ]
+}

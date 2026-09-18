@@ -1,0 +1,9 @@
+{
+  "id": "<ulid>",
+  "token": "<token>",
+  "note": "golden ci",
+  "scopes": [
+    "read"
+  ],
+  "created_at": "<rfc3339>"
+}

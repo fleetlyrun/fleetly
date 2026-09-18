@@ -9,6 +9,8 @@ import "google/api/annotations.proto";
 import "google/protobuf/timestamp.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 
+import "fleetly/server/v1/builds.proto";
+
 // 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
 //（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
 // 同款惯例，逐文件声明。
@@ -110,6 +112,9 @@ message DeployResponse {
   string app = 2;
   // 入队即返回，恒 "queued"。
   string status = 3;
+  // compose 校验期非阻断标注（服务端受控子集校验的警告随响应带出——
+  // T2.18：CLI 改经 RPC 入队后仍保留校验警告的人读呈现）。
+  repeated ComposeWarning warnings = 4;
 }
 
 message CancelDeploymentRequest {

@@ -1,0 +1,6 @@
+{
+  "app": "my-api",
+  "effective_on": "next deploy",
+  "key": "DATABASE_URL",
+  "removed": true
+}

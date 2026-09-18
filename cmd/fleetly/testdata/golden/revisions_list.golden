@@ -1,0 +1,14 @@
+{
+  "app": "my-api",
+  "keep_versions": 5,
+  "revisions": [
+    {
+      "id": "<ulid>",
+      "seq": 1,
+      "desired_hash": "<sha256>",
+      "status": "active",
+      "verified": true,
+      "created_at": "<rfc3339>"
+    }
+  ]
+}

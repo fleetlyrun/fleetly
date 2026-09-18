@@ -1,0 +1,23 @@
+{
+  "tokens": [
+    {
+      "id": "<ulid>",
+      "note": "apitest admin",
+      "scopes": [
+        "admin"
+      ],
+      "hash_prefix": "<hashprefix>",
+      "created_at": "<rfc3339>",
+      "last_used_at": "<rfc3339>"
+    },
+    {
+      "id": "<ulid>",
+      "note": "golden ci",
+      "scopes": [
+        "read"
+      ],
+      "hash_prefix": "<hashprefix>",
+      "created_at": "<rfc3339>"
+    }
+  ]
+}

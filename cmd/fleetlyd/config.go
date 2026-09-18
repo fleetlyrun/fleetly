@@ -192,7 +192,10 @@ type IngressACMEConfig struct {
 }
 
 // IngressSettings 把 ingress.* 配置节翻译为入口适配器核心配置（ingress.
-// Config，缺省值经 Normalize 回落——单一事实源在 internal/ingress）。
+// Config，缺省值经 Normalize 回落——单一事实源在 internal/ingress）。归一
+// 必须发生在装配入口：ingress 服务的配置端点监听地址取自此处的 ConfigAddr
+// ——不经 Normalize 的空串会让 net.Listen 落到随机端口（与 manager 内部
+// 归一值漂移，T2.18 实机扫描发现并修正）。
 func (c *AppConfig) IngressSettings() ingress.Config {
 	return ingress.Config{
 		TraefikImage:      c.Ingress.TraefikImage,
@@ -211,7 +214,7 @@ func (c *AppConfig) IngressSettings() ingress.Config {
 		},
 		RenewBefore:       time.Duration(c.Ingress.RenewBeforeDays) * 24 * time.Hour,
 		RenewScanInterval: time.Duration(c.Ingress.RenewScanSeconds) * time.Second,
-	}
+	}.Normalize()
 }
 
 // StateConfig 是状态层配置节（config 键 state.*）。保留期天数取非正值

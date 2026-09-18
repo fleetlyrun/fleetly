@@ -19,7 +19,8 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	RevisionsService_ListRevisions_FullMethodName = "/fleetly.server.v1.RevisionsService/ListRevisions"
+	RevisionsService_ListRevisions_FullMethodName   = "/fleetly.server.v1.RevisionsService/ListRevisions"
+	RevisionsService_GetRevisionSpec_FullMethodName = "/fleetly.server.v1.RevisionsService/GetRevisionSpec"
 )
 
 // RevisionsServiceClient is the client API for RevisionsService service.
@@ -28,10 +29,14 @@ const (
 //
 // RevisionsService 是版本快照只读面（T2.17）：revisions 保留窗（最近 5 次
 // 成功部署，release-semantics §2.4）投影——列表即回滚选项集，列不出来的
-// 不可回滚。compose 归一化与 overlay 全文不在此面暴露（体积与脱敏考量，
-// 需要时经 desired_hash 比对）。
+// 不可回滚。T2.18 起按需开放快照正文本面：GetRevisionSpec 返回归一化
+// compose 快照（canonical JSON；env 以 key:sha256+来源表示，值明文结构性
+// 不在快照中）——plan 的 RPC 基线消费（T2.18 票面：未给 --baseline 时取
+// 最近成功 revision 快照为基线）。旧口径「快照全文不在此面暴露」随之收
+// 窄为「按单条显式拉取」；overlay（镜像 digest 等覆盖层）仍不暴露。
 type RevisionsServiceClient interface {
 	ListRevisions(ctx context.Context, in *ListRevisionsRequest, opts ...grpc.CallOption) (*ListRevisionsResponse, error)
+	GetRevisionSpec(ctx context.Context, in *GetRevisionSpecRequest, opts ...grpc.CallOption) (*GetRevisionSpecResponse, error)
 }
 
 type revisionsServiceClient struct {
@@ -52,16 +57,30 @@ func (c *revisionsServiceClient) ListRevisions(ctx context.Context, in *ListRevi
 	return out, nil
 }
 
+func (c *revisionsServiceClient) GetRevisionSpec(ctx context.Context, in *GetRevisionSpecRequest, opts ...grpc.CallOption) (*GetRevisionSpecResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRevisionSpecResponse)
+	err := c.cc.Invoke(ctx, RevisionsService_GetRevisionSpec_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // RevisionsServiceServer is the server API for RevisionsService service.
 // All implementations must embed UnimplementedRevisionsServiceServer
 // for forward compatibility.
 //
 // RevisionsService 是版本快照只读面（T2.17）：revisions 保留窗（最近 5 次
 // 成功部署，release-semantics §2.4）投影——列表即回滚选项集，列不出来的
-// 不可回滚。compose 归一化与 overlay 全文不在此面暴露（体积与脱敏考量，
-// 需要时经 desired_hash 比对）。
+// 不可回滚。T2.18 起按需开放快照正文本面：GetRevisionSpec 返回归一化
+// compose 快照（canonical JSON；env 以 key:sha256+来源表示，值明文结构性
+// 不在快照中）——plan 的 RPC 基线消费（T2.18 票面：未给 --baseline 时取
+// 最近成功 revision 快照为基线）。旧口径「快照全文不在此面暴露」随之收
+// 窄为「按单条显式拉取」；overlay（镜像 digest 等覆盖层）仍不暴露。
 type RevisionsServiceServer interface {
 	ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error)
+	GetRevisionSpec(context.Context, *GetRevisionSpecRequest) (*GetRevisionSpecResponse, error)
 	mustEmbedUnimplementedRevisionsServiceServer()
 }
 
@@ -74,6 +93,9 @@ type UnimplementedRevisionsServiceServer struct{}
 
 func (UnimplementedRevisionsServiceServer) ListRevisions(context.Context, *ListRevisionsRequest) (*ListRevisionsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListRevisions not implemented")
+}
+func (UnimplementedRevisionsServiceServer) GetRevisionSpec(context.Context, *GetRevisionSpecRequest) (*GetRevisionSpecResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRevisionSpec not implemented")
 }
 func (UnimplementedRevisionsServiceServer) mustEmbedUnimplementedRevisionsServiceServer() {}
 func (UnimplementedRevisionsServiceServer) testEmbeddedByValue()                          {}
@@ -114,6 +136,24 @@ func _RevisionsService_ListRevisions_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _RevisionsService_GetRevisionSpec_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRevisionSpecRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(RevisionsServiceServer).GetRevisionSpec(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: RevisionsService_GetRevisionSpec_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(RevisionsServiceServer).GetRevisionSpec(ctx, req.(*GetRevisionSpecRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // RevisionsService_ServiceDesc is the grpc.ServiceDesc for RevisionsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -124,6 +164,10 @@ var RevisionsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListRevisions",
 			Handler:    _RevisionsService_ListRevisions_Handler,
+		},
+		{
+			MethodName: "GetRevisionSpec",
+			Handler:    _RevisionsService_GetRevisionSpec_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

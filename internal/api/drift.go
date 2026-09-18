@@ -1,0 +1,87 @@
+package api
+
+import (
+	"context"
+
+	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// DriftService 实现 server.v1.DriftService（T2.18）：漂移判定/收敛/opt-in
+// 置位复用 engine 既有逻辑（DriftShow/ConvergeApp/SetDriftConverge），本面
+// 只做契约投影——不重写对账语义。actor 恒 "human"（API 无法区分人类/AI
+// 代理，可追溯性由审计 actor_token_id 承载，与 rollback 面同口径）。
+type DriftService struct {
+	serverv1.UnimplementedDriftServiceServer
+	st  *state.Store
+	eng *engine.Engine
+}
+
+// NewDriftService 构造 DriftService。
+func NewDriftService(st *state.Store, eng *engine.Engine) *DriftService {
+	return &DriftService{st: st, eng: eng}
+}
+
+// ShowDrift 即时判定运行域漂移（不写事件不收敛——与 CLI 读面同源）。
+func (s *DriftService) ShowDrift(ctx context.Context, req *serverv1.ShowDriftRequest) (*serverv1.ShowDriftResponse, error) {
+	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+		return nil, err
+	}
+	report, err := s.eng.DriftShow(ctx, req.GetApp())
+	if err != nil {
+		return nil, mapAppErr(err, req.GetApp())
+	}
+	out := &serverv1.ShowDriftResponse{
+		App:               report.App,
+		DesiredDeployment: report.DesiredDeployment,
+		Drifted:           report.Drifted,
+		Services:          make([]*serverv1.ServiceDriftView, 0, len(report.Services)),
+	}
+	for _, svc := range report.Services {
+		view := &serverv1.ServiceDriftView{
+			Service: svc.Service,
+			Drifted: svc.Drifted,
+			Missing: svc.Missing,
+			Extra:   svc.Extra,
+		}
+		for _, d := range svc.Diff {
+			view.Diff = append(view.Diff, &serverv1.FieldDiffView{
+				Field: d.Field, Expected: d.Expected, Actual: d.Actual,
+			})
+		}
+		out.Services = append(out.Services, view)
+	}
+	return out, nil
+}
+
+// ConvergeDrift 人工一次性收敛（归位重放原语，带审计；在途部署存在时
+// 409 语义由引擎承载）。
+func (s *DriftService) ConvergeDrift(ctx context.Context, req *serverv1.ConvergeDriftRequest) (*serverv1.ConvergeDriftResponse, error) {
+	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+		return nil, err
+	}
+	rec, err := s.eng.ConvergeApp(ctx, req.GetApp(), "human")
+	if err != nil {
+		return nil, mapAppErr(err, req.GetApp())
+	}
+	return &serverv1.ConvergeDriftResponse{
+		App:          req.GetApp(),
+		DeploymentId: rec.ID,
+		DesiredHash:  rec.DesiredHash,
+	}, nil
+}
+
+// SetDriftConverge 收敛 opt-in 的人工置位/重置（回滚失败强制关闭后的
+// 唯一恢复入口；带审计）。
+func (s *DriftService) SetDriftConverge(ctx context.Context, req *serverv1.SetDriftConvergeRequest) (*serverv1.SetDriftConvergeResponse, error) {
+	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+		return nil, err
+	}
+	if err := s.eng.SetDriftConverge(ctx, req.GetApp(), req.GetEnabled(), "human"); err != nil {
+		return nil, mapAppErr(err, req.GetApp())
+	}
+	return &serverv1.SetDriftConvergeResponse{
+		App: req.GetApp(), Enabled: req.GetEnabled(),
+	}, nil
+}

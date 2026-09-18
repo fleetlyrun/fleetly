@@ -19,8 +19,10 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SystemService_Ping_FullMethodName            = "/fleetly.server.v1.SystemService/Ping"
-	SystemService_GetSystemStatus_FullMethodName = "/fleetly.server.v1.SystemService/GetSystemStatus"
+	SystemService_Ping_FullMethodName             = "/fleetly.server.v1.SystemService/Ping"
+	SystemService_GetSystemStatus_FullMethodName  = "/fleetly.server.v1.SystemService/GetSystemStatus"
+	SystemService_ListNodes_FullMethodName        = "/fleetly.server.v1.SystemService/ListNodes"
+	SystemService_GetIngressStatus_FullMethodName = "/fleetly.server.v1.SystemService/GetIngressStatus"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -31,9 +33,15 @@ const (
 // 同时生成 gRPC client（SDK 与 CLI）与 REST 端点（gateway），双面同源。
 // T2.17 起扩容 GetSystemStatus（引擎/Traefik/状态层健康汇总——复用 lynx
 // CheckHealth 面：逐 checker 如实上报，不聚合出单一布尔，判断权在消费方）。
+// T2.18 起扩容集群级观察面：ListNodes（节点观测缓存只读列表——无 app 归
+// 属的控制面/集群级诊断，与状态汇总同层）与 GetIngressStatus（入口链三面
+// 状态：Traefik 服务实况 + 配置端点健康 + 证书台账对照——探测在服务端
+// 执行，CLI 不再直连 docker/读本地 token 文件）。
 type SystemServiceClient interface {
 	Ping(ctx context.Context, in *PingRequest, opts ...grpc.CallOption) (*PingResponse, error)
 	GetSystemStatus(ctx context.Context, in *GetSystemStatusRequest, opts ...grpc.CallOption) (*GetSystemStatusResponse, error)
+	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
+	GetIngressStatus(ctx context.Context, in *GetIngressStatusRequest, opts ...grpc.CallOption) (*GetIngressStatusResponse, error)
 }
 
 type systemServiceClient struct {
@@ -64,6 +72,26 @@ func (c *systemServiceClient) GetSystemStatus(ctx context.Context, in *GetSystem
 	return out, nil
 }
 
+func (c *systemServiceClient) ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNodesResponse)
+	err := c.cc.Invoke(ctx, SystemService_ListNodes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) GetIngressStatus(ctx context.Context, in *GetIngressStatusRequest, opts ...grpc.CallOption) (*GetIngressStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetIngressStatusResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetIngressStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
@@ -72,9 +100,15 @@ func (c *systemServiceClient) GetSystemStatus(ctx context.Context, in *GetSystem
 // 同时生成 gRPC client（SDK 与 CLI）与 REST 端点（gateway），双面同源。
 // T2.17 起扩容 GetSystemStatus（引擎/Traefik/状态层健康汇总——复用 lynx
 // CheckHealth 面：逐 checker 如实上报，不聚合出单一布尔，判断权在消费方）。
+// T2.18 起扩容集群级观察面：ListNodes（节点观测缓存只读列表——无 app 归
+// 属的控制面/集群级诊断，与状态汇总同层）与 GetIngressStatus（入口链三面
+// 状态：Traefik 服务实况 + 配置端点健康 + 证书台账对照——探测在服务端
+// 执行，CLI 不再直连 docker/读本地 token 文件）。
 type SystemServiceServer interface {
 	Ping(context.Context, *PingRequest) (*PingResponse, error)
 	GetSystemStatus(context.Context, *GetSystemStatusRequest) (*GetSystemStatusResponse, error)
+	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
+	GetIngressStatus(context.Context, *GetIngressStatusRequest) (*GetIngressStatusResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -90,6 +124,12 @@ func (UnimplementedSystemServiceServer) Ping(context.Context, *PingRequest) (*Pi
 }
 func (UnimplementedSystemServiceServer) GetSystemStatus(context.Context, *GetSystemStatusRequest) (*GetSystemStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetSystemStatus not implemented")
+}
+func (UnimplementedSystemServiceServer) ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNodes not implemented")
+}
+func (UnimplementedSystemServiceServer) GetIngressStatus(context.Context, *GetIngressStatusRequest) (*GetIngressStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetIngressStatus not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -148,6 +188,42 @@ func _SystemService_GetSystemStatus_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_ListNodes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNodesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).ListNodes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_ListNodes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).ListNodes(ctx, req.(*ListNodesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_GetIngressStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetIngressStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetIngressStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetIngressStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetIngressStatus(ctx, req.(*GetIngressStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -162,6 +238,14 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetSystemStatus",
 			Handler:    _SystemService_GetSystemStatus_Handler,
+		},
+		{
+			MethodName: "ListNodes",
+			Handler:    _SystemService_ListNodes_Handler,
+		},
+		{
+			MethodName: "GetIngressStatus",
+			Handler:    _SystemService_GetIngressStatus_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -1,0 +1,5 @@
+{
+  "app": "my-api",
+  "keep_versions": 5,
+  "revisions": []
+}

@@ -61,7 +61,8 @@ func (s *DeploymentsService) GetDeployment(ctx context.Context, req *serverv1.Ge
 }
 
 // Deploy 入队部署（同 CLI：入队前受控子集校验——compose 违约不动底座、
-// 不入队；deployment.queued 事件与审计同事务 fail-closed）。
+// 不入队；deployment.queued 事件与审计同事务 fail-closed）。校验期警告随
+// 响应带出（T2.18：CLI 改经 RPC 入队后保留警告的人读呈现）。
 func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployRequest) (*serverv1.DeployResponse, error) {
 	// 入队前受控子集校验：内容落临时文件（引擎 preparing 重载复核同路径）。
 	dir, err := os.MkdirTemp("", "fleetly-compose-")
@@ -72,7 +73,7 @@ func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployReq
 	if err := os.WriteFile(path, req.GetCompose(), 0o600); err != nil { //nolint:gosec // G306：compose 内容非密钥，0600 保守
 		return nil, fmt.Errorf("write compose temp file: %w", err)
 	}
-	spec, _, err := compose.Load(ctx, path)
+	spec, warnings, err := compose.Load(ctx, path)
 	if err != nil {
 		return nil, err // apperr（E_COMPOSE_*）原样透传
 	}
@@ -105,7 +106,12 @@ func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployReq
 	if err != nil {
 		return nil, err
 	}
-	return &serverv1.DeployResponse{DeploymentId: rec.ID, App: app.Name, Status: string(state.DeployQueued)}, nil
+	return &serverv1.DeployResponse{
+		DeploymentId: rec.ID,
+		App:          app.Name,
+		Status:       string(state.DeployQueued),
+		Warnings:     composeWarnings(warnings),
+	}, nil
 }
 
 // CancelDeployment 置位取消（受限语义：未切流可取消；曾健康/终态 409

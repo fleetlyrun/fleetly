@@ -423,7 +423,10 @@ type DeployResponse struct {
 	DeploymentId string                 `protobuf:"bytes,1,opt,name=deployment_id,json=deploymentId,proto3" json:"deployment_id,omitempty"`
 	App          string                 `protobuf:"bytes,2,opt,name=app,proto3" json:"app,omitempty"`
 	// 入队即返回，恒 "queued"。
-	Status        string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	Status string `protobuf:"bytes,3,opt,name=status,proto3" json:"status,omitempty"`
+	// compose 校验期非阻断标注（服务端受控子集校验的警告随响应带出——
+	// T2.18：CLI 改经 RPC 入队后仍保留校验警告的人读呈现）。
+	Warnings      []*ComposeWarning `protobuf:"bytes,4,rep,name=warnings,proto3" json:"warnings,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -477,6 +480,13 @@ func (x *DeployResponse) GetStatus() string {
 		return x.Status
 	}
 	return ""
+}
+
+func (x *DeployResponse) GetWarnings() []*ComposeWarning {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
 }
 
 type CancelDeploymentRequest struct {
@@ -695,7 +705,7 @@ var File_fleetly_server_v1_deployments_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"\n" +
-	"#fleetly/server/v1/deployments.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xf2\x03\n" +
+	"#fleetly/server/v1/deployments.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x1efleetly/server/v1/builds.proto\"\xf2\x03\n" +
 	"\x0eDeploymentView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x10\n" +
 	"\x03app\x18\x02 \x01(\tR\x03app\x12\x12\n" +
@@ -730,11 +740,12 @@ const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"deployment\"M\n" +
 	"\rDeployRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12!\n" +
-	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\"_\n" +
+	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\"\x9e\x01\n" +
 	"\x0eDeployResponse\x12#\n" +
 	"\rdeployment_id\x18\x01 \x01(\tR\fdeploymentId\x12\x10\n" +
 	"\x03app\x18\x02 \x01(\tR\x03app\x12\x16\n" +
-	"\x06status\x18\x03 \x01(\tR\x06status\"2\n" +
+	"\x06status\x18\x03 \x01(\tR\x06status\x12=\n" +
+	"\bwarnings\x18\x04 \x03(\v2!.fleetly.server.v1.ComposeWarningR\bwarnings\"2\n" +
 	"\x17CancelDeploymentRequest\x12\x17\n" +
 	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"B\n" +
 	"\x18CancelDeploymentResponse\x12\x0e\n" +
@@ -783,6 +794,7 @@ var file_fleetly_server_v1_deployments_proto_goTypes = []any{
 	(*RollbackDeploymentRequest)(nil),  // 9: fleetly.server.v1.RollbackDeploymentRequest
 	(*RollbackDeploymentResponse)(nil), // 10: fleetly.server.v1.RollbackDeploymentResponse
 	(*timestamppb.Timestamp)(nil),      // 11: google.protobuf.Timestamp
+	(*ComposeWarning)(nil),             // 12: fleetly.server.v1.ComposeWarning
 }
 var file_fleetly_server_v1_deployments_proto_depIdxs = []int32{
 	11, // 0: fleetly.server.v1.DeploymentView.first_healthy_at:type_name -> google.protobuf.Timestamp
@@ -790,21 +802,22 @@ var file_fleetly_server_v1_deployments_proto_depIdxs = []int32{
 	11, // 2: fleetly.server.v1.DeploymentView.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 3: fleetly.server.v1.ListDeploymentsResponse.deployments:type_name -> fleetly.server.v1.DeploymentView
 	0,  // 4: fleetly.server.v1.GetDeploymentResponse.deployment:type_name -> fleetly.server.v1.DeploymentView
-	1,  // 5: fleetly.server.v1.DeploymentsService.ListDeployments:input_type -> fleetly.server.v1.ListDeploymentsRequest
-	3,  // 6: fleetly.server.v1.DeploymentsService.GetDeployment:input_type -> fleetly.server.v1.GetDeploymentRequest
-	5,  // 7: fleetly.server.v1.DeploymentsService.Deploy:input_type -> fleetly.server.v1.DeployRequest
-	7,  // 8: fleetly.server.v1.DeploymentsService.CancelDeployment:input_type -> fleetly.server.v1.CancelDeploymentRequest
-	9,  // 9: fleetly.server.v1.DeploymentsService.RollbackDeployment:input_type -> fleetly.server.v1.RollbackDeploymentRequest
-	2,  // 10: fleetly.server.v1.DeploymentsService.ListDeployments:output_type -> fleetly.server.v1.ListDeploymentsResponse
-	4,  // 11: fleetly.server.v1.DeploymentsService.GetDeployment:output_type -> fleetly.server.v1.GetDeploymentResponse
-	6,  // 12: fleetly.server.v1.DeploymentsService.Deploy:output_type -> fleetly.server.v1.DeployResponse
-	8,  // 13: fleetly.server.v1.DeploymentsService.CancelDeployment:output_type -> fleetly.server.v1.CancelDeploymentResponse
-	10, // 14: fleetly.server.v1.DeploymentsService.RollbackDeployment:output_type -> fleetly.server.v1.RollbackDeploymentResponse
-	10, // [10:15] is the sub-list for method output_type
-	5,  // [5:10] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	12, // 5: fleetly.server.v1.DeployResponse.warnings:type_name -> fleetly.server.v1.ComposeWarning
+	1,  // 6: fleetly.server.v1.DeploymentsService.ListDeployments:input_type -> fleetly.server.v1.ListDeploymentsRequest
+	3,  // 7: fleetly.server.v1.DeploymentsService.GetDeployment:input_type -> fleetly.server.v1.GetDeploymentRequest
+	5,  // 8: fleetly.server.v1.DeploymentsService.Deploy:input_type -> fleetly.server.v1.DeployRequest
+	7,  // 9: fleetly.server.v1.DeploymentsService.CancelDeployment:input_type -> fleetly.server.v1.CancelDeploymentRequest
+	9,  // 10: fleetly.server.v1.DeploymentsService.RollbackDeployment:input_type -> fleetly.server.v1.RollbackDeploymentRequest
+	2,  // 11: fleetly.server.v1.DeploymentsService.ListDeployments:output_type -> fleetly.server.v1.ListDeploymentsResponse
+	4,  // 12: fleetly.server.v1.DeploymentsService.GetDeployment:output_type -> fleetly.server.v1.GetDeploymentResponse
+	6,  // 13: fleetly.server.v1.DeploymentsService.Deploy:output_type -> fleetly.server.v1.DeployResponse
+	8,  // 14: fleetly.server.v1.DeploymentsService.CancelDeployment:output_type -> fleetly.server.v1.CancelDeploymentResponse
+	10, // 15: fleetly.server.v1.DeploymentsService.RollbackDeployment:output_type -> fleetly.server.v1.RollbackDeploymentResponse
+	11, // [11:16] is the sub-list for method output_type
+	6,  // [6:11] is the sub-list for method input_type
+	6,  // [6:6] is the sub-list for extension type_name
+	6,  // [6:6] is the sub-list for extension extendee
+	0,  // [0:6] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_deployments_proto_init() }
@@ -812,6 +825,7 @@ func file_fleetly_server_v1_deployments_proto_init() {
 	if File_fleetly_server_v1_deployments_proto != nil {
 		return
 	}
+	file_fleetly_server_v1_builds_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{

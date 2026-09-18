@@ -69,7 +69,6 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	systemService := NewSystemService(store, nodeIdentity, observer, box, manager)
 	authenticator, err := NewAuthenticator(app, store)
 	if err != nil {
 		cleanup4()
@@ -81,13 +80,16 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	appsService := NewAppsService(store)
 	deploymentsService := NewDeploymentsService(store)
 	revisionsService := NewRevisionsService(store)
+	buildsService := NewBuildsService(store)
+	driftService := NewDriftService(store, engine)
 	domainsService := NewDomainsService(store, manager)
 	envService := NewEnvService(store, box)
 	apiLogsService := NewLogsService(store, logsManager)
 	eventsService := NewEventsService(store)
 	placementService := NewPlacementService(store)
 	tokensService := NewTokensService(store)
-	grpcServer, err := NewGRPCServer(app, appConfig, systemService, authenticator, appsService, deploymentsService, revisionsService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService)
+	systemService := NewSystemService(store, nodeIdentity, observer, box, manager)
+	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, systemService)
 	if err != nil {
 		cleanup4()
 		cleanup3()

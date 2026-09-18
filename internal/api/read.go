@@ -22,17 +22,32 @@ func NewPlacementService(st *state.Store) *PlacementService {
 	return &PlacementService{st: st}
 }
 
-// ShowPlacement 放置绑定视图（未绑定时 placement 不输出）。
+// ShowPlacement 放置绑定视图（未绑定时 placement 不输出）+ 卷注册表
+// （T2.18：卷的钉住语义由放置绑定决定，与绑定同面展示）。
 func (s *PlacementService) ShowPlacement(ctx context.Context, req *serverv1.ShowPlacementRequest) (*serverv1.ShowPlacementResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
 		return nil, err
 	}
-	resp := &serverv1.ShowPlacementResponse{App: app.Name}
+	resp := &serverv1.ShowPlacementResponse{App: app.Name, Volumes: []*serverv1.VolumeView{}}
 	if p, err := s.st.GetPlacement(ctx, app.ID); err == nil {
 		resp.Placement = placementView(p)
 	} else if !errors.Is(err, state.ErrPlacementNotFound) {
 		return nil, err
+	}
+	volumes, err := s.st.ListAppVolumes(ctx, app.ID)
+	if err != nil {
+		return nil, err
+	}
+	for _, v := range volumes {
+		resp.Volumes = append(resp.Volumes, &serverv1.VolumeView{
+			Key:       v.Key,
+			Name:      v.Name,
+			Kind:      string(v.Kind),
+			NodeId:    v.PlatformNodeID,
+			MountPath: v.MountPath,
+			Status:    string(v.Status),
+		})
 	}
 	return resp, nil
 }
@@ -70,6 +85,28 @@ func (s *RevisionsService) ListRevisions(ctx context.Context, req *serverv1.List
 		})
 	}
 	return &serverv1.ListRevisionsResponse{Revisions: out}, nil
+}
+
+// GetRevisionSpec 单条快照的归一化 compose 正文（canonical JSON；T2.18
+// plan 的 RPC 基线消费——env 为 key:sha256，值明文结构性不在快照中）。
+// superseded → 404（与回滚选项面同口径：列不出来的不可消费）。
+func (s *RevisionsService) GetRevisionSpec(ctx context.Context, req *serverv1.GetRevisionSpecRequest) (*serverv1.GetRevisionSpecResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	rev, err := s.st.GetAppRevision(ctx, app.ID, req.GetRevisionId())
+	if err != nil {
+		if errors.Is(err, state.ErrRevisionNotFound) {
+			return nil, notFound("revision not found: " + req.GetRevisionId())
+		}
+		return nil, err
+	}
+	return &serverv1.GetRevisionSpecResponse{
+		RevisionId: rev.ID,
+		Seq:        rev.Seq,
+		Compose:    rev.ComposeNormalized,
+	}, nil
 }
 
 // DomainsService 实现 server.v1.DomainsService。

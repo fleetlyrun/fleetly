@@ -1,0 +1,10 @@
+{
+  "app": "my-api",
+  "builds": [],
+  "passthrough": [
+    {
+      "service": "web",
+      "image": "nginx:1.27"
+    }
+  ]
+}

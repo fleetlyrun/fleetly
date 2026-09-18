@@ -1,0 +1,126 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// BuildsService 是构建资源面（T2.18）：builds 表状态机（queued/building/
+// succeeded/failed）的写入与读取。独立成 service 的理由：构建是自有资源与
+// 独立状态机（builds 表，审计 build.create/start/finish 随行），不挂
+// deployment.* 事件、不占部署资源面——并入 DeploymentsService 会混淆两类
+// 生命周期。
+//
+// TriggerBuild 契约取舍（T2.18 设计裁决）：与 Deploy 同型——客户端传
+// compose 内容字节，服务端解析受控子集、裁决构建目标（railpack/dockerfile
+// 双驱动 + image 直通）并逐服务入队，返回构建行后立即返回；等待终态由
+// 客户端轮询 GetBuild。base_dir 承载构建上下文解析基准（context 相对路径
+// 的宿主基准目录）——v0.1 单机同宿主语义：CLI 与 fleetlyd 共享文件系统，
+// 与旧 CLI 直连入队的 context 绝对路径等价；空 = 服务端临时目录（上下文
+// 随 compose 暂存形态，纯 image/无上下文构建可用）。
+service BuildsService {
+  rpc TriggerBuild(TriggerBuildRequest) returns (TriggerBuildResponse) {
+    option (google.api.http) = {
+      post: "/v1/builds"
+      body: "*"
+    };
+  }
+  rpc GetBuild(GetBuildRequest) returns (GetBuildResponse) {
+    option (google.api.http) = { get: "/v1/builds/{id}" };
+  }
+  rpc ListBuilds(ListBuildsRequest) returns (ListBuildsResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/builds" };
+  }
+}
+
+message TriggerBuildRequest {
+  // compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name，服务端
+  // 解析受控子集——compose 违约不动底座、不入队）。
+  bytes compose = 1 [(buf.validate.field).bytes.min_len = 1];
+  // 只构建该 compose 服务；空 = 全部 build 模式服务。
+  string service = 2;
+  // 构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时
+  // 目录）。v0.1 单机同宿主语义，见 service 注释。
+  string base_dir = 3;
+}
+
+message TriggerBuildResponse {
+  // 应用名（compose name；应用不存在时自动创建——与 deploy 同语义）。
+  string app = 1;
+  // 入队的构建行（status 恒 "queued"）。
+  repeated BuildView builds = 2;
+  // compose 校验期非阻断标注（与 Deploy 同口径透传）。
+  repeated ComposeWarning warnings = 3;
+  // 直通服务（仅 image 无 build——不建行不构建，附镜像引用）。
+  repeated PassthroughService passthrough = 4;
+}
+
+// PassthroughService 是镜像模式服务的直通报告（无构建行）。
+message PassthroughService {
+  string service = 1;
+  string image = 2;
+}
+
+message GetBuildRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetBuildResponse {
+  BuildView build = 1;
+}
+
+message ListBuildsRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // 返回上限（缺省 20，天花板 100）。
+  int32 limit = 2 [(buf.validate.field).int32 = { gte: 0, lte: 100 }];
+}
+
+message ListBuildsResponse {
+  repeated BuildView builds = 1;
+}
+
+// BuildView 是构建行的只读投影（词表与 state 层一致：queued/building/
+// succeeded/failed；driver ∈ railpack/dockerfile/passthrough）。
+message BuildView {
+  string id = 1;
+  string app = 2;
+  string service = 3;
+  string driver = 4;
+  string status = 5;
+  // 成功终态必非空（image_ref ↔ image_digest，D9 digest 引用）。
+  string image_ref = 6;
+  string image_digest = 7;
+  // 产物归档路径（railpack plan JSON / 构建日志）。
+  string plan_path = 8;
+  string log_path = 9;
+  // 失败终态的注册表错误码。
+  string error_code = 10;
+  google.protobuf.Timestamp started_at = 11;
+  google.protobuf.Timestamp finished_at = 12;
+}
+
+// ComposeWarning 是 compose 校验期非阻断标注的跨面投影（deploy/build 共
+// 用；code = 注册表 W_ 码，无注册码提示以 kind 承载稳定标识）。
+message ComposeWarning {
+  string kind = 1;
+  string code = 2;
+  string service = 3;
+  string message = 4;
+}

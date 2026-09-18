@@ -1,0 +1,11 @@
+{
+  "app": "my-api",
+  "vars": [
+    {
+      "key": "DATABASE_URL",
+      "source": "platform",
+      "status": "pending",
+      "value": "********"
+    }
+  ]
+}

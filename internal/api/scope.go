@@ -5,14 +5,17 @@ import "strings"
 // 方法级 scope 映射（T2.17 鉴权矩阵的唯一登记点）：
 //
 //	read   — 全部只读面（List/Get/Show/Watch/Follow/History/Status）
-//	deploy — 部署/回滚/取消、env 写（env-set 影响下次部署）
+//	deploy — 部署/回滚/取消、env 写（env-set 影响下次部署）、构建触发、
+//	         漂移收敛与 opt-in 置位（写运行域/影响下次部署语义）
 //	admin  — token 管理、env 明文读、app 删除（破坏性）
 //
 // 纪律：新增 RPC 必须在此登记；未登记方法在拦截器按 admin 拒绝
 // （fail-closed，见 auth.go）。
 var methodScopes = map[string]string{
 	// SystemService
-	"/fleetly.server.v1.SystemService/GetSystemStatus": ScopeRead,
+	"/fleetly.server.v1.SystemService/GetSystemStatus":  ScopeRead,
+	"/fleetly.server.v1.SystemService/ListNodes":        ScopeRead,
+	"/fleetly.server.v1.SystemService/GetIngressStatus": ScopeRead,
 	// AppsService
 	"/fleetly.server.v1.AppsService/ListApps":  ScopeRead,
 	"/fleetly.server.v1.AppsService/GetApp":    ScopeRead,
@@ -24,7 +27,16 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.DeploymentsService/CancelDeployment":   ScopeDeploy,
 	"/fleetly.server.v1.DeploymentsService/RollbackDeployment": ScopeDeploy,
 	// RevisionsService
-	"/fleetly.server.v1.RevisionsService/ListRevisions": ScopeRead,
+	"/fleetly.server.v1.RevisionsService/ListRevisions":   ScopeRead,
+	"/fleetly.server.v1.RevisionsService/GetRevisionSpec": ScopeRead,
+	// BuildsService
+	"/fleetly.server.v1.BuildsService/TriggerBuild": ScopeDeploy,
+	"/fleetly.server.v1.BuildsService/GetBuild":     ScopeRead,
+	"/fleetly.server.v1.BuildsService/ListBuilds":   ScopeRead,
+	// DriftService
+	"/fleetly.server.v1.DriftService/ShowDrift":        ScopeRead,
+	"/fleetly.server.v1.DriftService/ConvergeDrift":    ScopeDeploy,
+	"/fleetly.server.v1.DriftService/SetDriftConverge": ScopeDeploy,
 	// DomainsService
 	"/fleetly.server.v1.DomainsService/ListAppDomains":   ScopeRead,
 	"/fleetly.server.v1.DomainsService/VerifyAppDomains": ScopeRead,

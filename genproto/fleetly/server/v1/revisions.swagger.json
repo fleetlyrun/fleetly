@@ -45,6 +45,43 @@
           "RevisionsService"
         ]
       }
+    },
+    "/v1/apps/{app}/revisions/{revision_id}/spec": {
+      "get": {
+        "operationId": "RevisionsService_GetRevisionSpec",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetRevisionSpecResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "revision_id",
+            "description": "目标快照 ID（active 集内；superseded → 404，与回滚选项面同口径）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RevisionsService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -84,6 +121,22 @@
         }
       },
       "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetRevisionSpecResponse": {
+      "type": "object",
+      "properties": {
+        "revision_id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "compose": {
+          "type": "string",
+          "title": "归一化 compose 快照（canonical JSON 文本；compose.Spec 同构——env 为\nkey:sha256，值明文结构性不在快照中）。"
+        }
+      }
     },
     "v1ListRevisionsResponse": {
       "type": "object",

@@ -1,0 +1,264 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/drift.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "DriftService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps/{app}/drift": {
+      "get": {
+        "operationId": "DriftService_ShowDrift",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ShowDriftResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DriftService"
+        ]
+      }
+    },
+    "/v1/apps/{app}/drift/converge": {
+      "post": {
+        "operationId": "DriftService_ConvergeDrift",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ConvergeDriftResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DriftServiceConvergeDriftBody"
+            }
+          }
+        ],
+        "tags": [
+          "DriftService"
+        ]
+      }
+    },
+    "/v1/apps/{app}/drift/convergence": {
+      "put": {
+        "operationId": "DriftService_SetDriftConverge",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetDriftConvergeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DriftServiceSetDriftConvergeBody"
+            }
+          }
+        ],
+        "tags": [
+          "DriftService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "DriftServiceConvergeDriftBody": {
+      "type": "object"
+    },
+    "DriftServiceSetDriftConvergeBody": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ConvergeDriftResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "收敛基准部署（期望态快照来源；收敛入队为准入重放，状态经部署面跟踪）。"
+        },
+        "desired_hash": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "phase": {
+          "type": "string",
+          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1FieldDiffView": {
+      "type": "object",
+      "properties": {
+        "field": {
+          "type": "string"
+        },
+        "expected": {
+          "type": "string"
+        },
+        "actual": {
+          "type": "string"
+        }
+      },
+      "title": "FieldDiffView 是单字段差异（值均为投影形态：env 只到键名 + key:hash，\n值明文与长度都不出投影）。"
+    },
+    "v1ServiceDriftView": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "drifted": {
+          "type": "boolean"
+        },
+        "missing": {
+          "type": "boolean"
+        },
+        "extra": {
+          "type": "boolean"
+        },
+        "diff": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FieldDiffView"
+          }
+        }
+      },
+      "title": "ServiceDriftView 是单服务的漂移结果（missing = 期望服务不存在；extra =\n期望集之外的多余受管服务）。"
+    },
+    "v1SetDriftConvergeResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1ShowDriftResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "desired_deployment": {
+          "type": "string",
+          "title": "期望态来源部署（空 = 无成功部署记录，无从判定）。"
+        },
+        "drifted": {
+          "type": "boolean"
+        },
+        "services": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ServiceDriftView"
+          }
+        }
+      }
+    }
+  }
+}

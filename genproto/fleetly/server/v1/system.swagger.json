@@ -16,6 +16,50 @@
     "application/json"
   ],
   "paths": {
+    "/v1/system/ingress": {
+      "get": {
+        "operationId": "SystemService_GetIngressStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetIngressStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
+    "/v1/system/nodes": {
+      "get": {
+        "operationId": "SystemService_ListNodes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListNodesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
     "/v1/system/ping": {
       "get": {
         "operationId": "SystemService_Ping",
@@ -62,6 +106,25 @@
     }
   },
   "definitions": {
+    "v1CertLedgerView": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "domain": {
+          "type": "string"
+        },
+        "cert_sha256": {
+          "type": "string"
+        },
+        "cert_not_after": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "CertLedgerView 是证书台账行投影（domains 表 cert 列对照；app 为显示名，\n已删除应用回退显示 app id）。"
+    },
     "v1ComponentHealth": {
       "type": "object",
       "properties": {
@@ -114,6 +177,54 @@
       },
       "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
     },
+    "v1GetIngressStatusResponse": {
+      "type": "object",
+      "properties": {
+        "traefik": {
+          "$ref": "#/definitions/v1TraefikView"
+        },
+        "config_addr": {
+          "type": "string",
+          "title": "控制面配置端点监听地址（ingress.config_addr 配置原值）。"
+        },
+        "advertise_ip": {
+          "type": "string",
+          "title": "下发给 Traefik 的控制面可达 IP（空 = 自动探测）。"
+        },
+        "responder": {
+          "type": "string",
+          "title": "ACME challenge 应答器基址（空 = 未接入集中签发）。"
+        },
+        "healthz": {
+          "type": "string",
+          "title": "配置端点两面探测结果（服务端环回执行）：/healthz 无鉴权状态行；\n/configs 带 token 鉴权核验（401 = token 缺失/错误，如实报告；200 =\n鉴权通过且返回合法 JSON）。不可达 = \"unreachable\"。"
+        },
+        "auth": {
+          "type": "string"
+        },
+        "certificates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CertLedgerView"
+          },
+          "title": "证书台账（有证书的域名行）。"
+        },
+        "cert_dir": {
+          "type": "string",
+          "title": "证书存储目录（控制面侧）与其中的 app 清单（meta 索引；目录缺失 =\n空清单非错误，cert_dir_error 承载读取故障原文）。"
+        },
+        "cert_dir_apps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cert_dir_error": {
+          "type": "string"
+        }
+      }
+    },
     "v1GetSystemStatusResponse": {
       "type": "object",
       "properties": {
@@ -132,6 +243,56 @@
         }
       }
     },
+    "v1ListNodesResponse": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1NodeView"
+          }
+        }
+      }
+    },
+    "v1NodeView": {
+      "type": "object",
+      "properties": {
+        "swarm_node_id": {
+          "type": "string"
+        },
+        "platform_id": {
+          "type": "string",
+          "title": "平台节点 ID（fleetly.placement.node-id label；未锚定时为空）。"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "availability": {
+          "type": "string"
+        },
+        "is_manager": {
+          "type": "boolean"
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "NodeView 是节点观测缓存行的只读投影（state-model §2.2：缓存禁止用于\n决策，展示/诊断专用；节点变更用 docker node 原生命令）。观测数据带\nobserved_at/stale——状态诚实契约（architecture §4.2 横切硬指标）；\nnodes 不提供「最后心跳」字段。"
+    },
     "v1PingResponse": {
       "type": "object",
       "properties": {
@@ -144,6 +305,25 @@
           "title": "服务版本（构建 -ldflags 注入，未注入时为 \"dev\"）。"
         }
       }
+    },
+    "v1TraefikView": {
+      "type": "object",
+      "properties": {
+        "exists": {
+          "type": "boolean"
+        },
+        "image": {
+          "type": "string"
+        },
+        "static_args": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "error": {
+          "type": "string"
+        }
+      },
+      "title": "TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists\n= false 且 error 为探测原文）。"
     }
   }
 }

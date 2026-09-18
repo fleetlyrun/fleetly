@@ -1,0 +1,307 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/builds.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "BuildsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps/{app}/builds": {
+      "get": {
+        "operationId": "BuildsService_ListBuilds",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListBuildsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "返回上限（缺省 20，天花板 100）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "BuildsService"
+        ]
+      }
+    },
+    "/v1/builds": {
+      "post": {
+        "operationId": "BuildsService_TriggerBuild",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TriggerBuildResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TriggerBuildRequest"
+            }
+          }
+        ],
+        "tags": [
+          "BuildsService"
+        ]
+      }
+    },
+    "/v1/builds/{id}": {
+      "get": {
+        "operationId": "BuildsService_GetBuild",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetBuildResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BuildsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1BuildView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "driver": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "image_ref": {
+          "type": "string",
+          "title": "成功终态必非空（image_ref ↔ image_digest，D9 digest 引用）。"
+        },
+        "image_digest": {
+          "type": "string"
+        },
+        "plan_path": {
+          "type": "string",
+          "title": "产物归档路径（railpack plan JSON / 构建日志）。"
+        },
+        "log_path": {
+          "type": "string"
+        },
+        "error_code": {
+          "type": "string",
+          "title": "失败终态的注册表错误码。"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "BuildView 是构建行的只读投影（词表与 state 层一致：queued/building/\nsucceeded/failed；driver ∈ railpack/dockerfile/passthrough）。"
+    },
+    "v1ComposeWarning": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string"
+        },
+        "code": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "message": {
+          "type": "string"
+        }
+      },
+      "title": "ComposeWarning 是 compose 校验期非阻断标注的跨面投影（deploy/build 共\n用；code = 注册表 W_ 码，无注册码提示以 kind 承载稳定标识）。"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "phase": {
+          "type": "string",
+          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetBuildResponse": {
+      "type": "object",
+      "properties": {
+        "build": {
+          "$ref": "#/definitions/v1BuildView"
+        }
+      }
+    },
+    "v1ListBuildsResponse": {
+      "type": "object",
+      "properties": {
+        "builds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1BuildView"
+          }
+        }
+      }
+    },
+    "v1PassthroughService": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        }
+      },
+      "title": "PassthroughService 是镜像模式服务的直通报告（无构建行）。"
+    },
+    "v1TriggerBuildRequest": {
+      "type": "object",
+      "properties": {
+        "compose": {
+          "type": "string",
+          "format": "byte",
+          "title": "compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name，服务端\n解析受控子集——compose 违约不动底座、不入队）。"
+        },
+        "service": {
+          "type": "string",
+          "title": "只构建该 compose 服务；空 = 全部 build 模式服务。"
+        },
+        "base_dir": {
+          "type": "string",
+          "title": "构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时\n目录）。v0.1 单机同宿主语义，见 service 注释。"
+        }
+      }
+    },
+    "v1TriggerBuildResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "title": "应用名（compose name；应用不存在时自动创建——与 deploy 同语义）。"
+        },
+        "builds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1BuildView"
+          },
+          "title": "入队的构建行（status 恒 \"queued\"）。"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ComposeWarning"
+          },
+          "title": "compose 校验期非阻断标注（与 Deploy 同口径透传）。"
+        },
+        "passthrough": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PassthroughService"
+          },
+          "title": "直通服务（仅 image 无 build——不建行不构建，附镜像引用）。"
+        }
+      }
+    }
+  }
+}

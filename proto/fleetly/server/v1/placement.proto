@@ -23,7 +23,9 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 // PlacementService 是放置绑定只读面（T2.17；stateful-placement §2.8）。
-// PlacementView 同时被 apps 详情复用（同包导入）。
+// PlacementView 同时被 apps 详情复用（同包导入）。T2.18 起详情响应附带
+// 卷注册表——卷的钉住语义由放置绑定决定（有卷应用自动钉住到本机），与
+// 绑定同源同面展示（放置卡片的数据面，stateful-placement §2.3）。
 service PlacementService {
   rpc ShowPlacement(ShowPlacementRequest) returns (ShowPlacementResponse) {
     option (google.api.http) = { get: "/v1/apps/{app}/placement" };
@@ -47,6 +49,17 @@ message PlacementView {
   google.protobuf.Timestamp updated_at = 8;
 }
 
+// VolumeView 是卷注册表行投影（volumes 表；orphaned 状态位经 status 透出
+// ——删除应用保留卷）。
+message VolumeView {
+  string key = 1;
+  string name = 2;
+  string kind = 3;
+  string node_id = 4;
+  string mount_path = 5;
+  string status = 6;
+}
+
 message ShowPlacementRequest {
   string app = 1 [(buf.validate.field).string.min_len = 1];
 }
@@ -55,4 +68,6 @@ message ShowPlacementResponse {
   string app = 1;
   // 未绑定时 placement 不输出（EmitUnpopulated=false 语义）。
   PlacementView placement = 2;
+  // 卷注册表（无卷应用为空集）。
+  repeated VolumeView volumes = 3;
 }

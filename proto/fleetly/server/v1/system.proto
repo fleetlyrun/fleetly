@@ -6,6 +6,7 @@ option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;se
 
 import "buf/validate/validate.proto";
 import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
 import "protoc-gen-openapiv2/options/annotations.proto";
 
 // 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
@@ -26,12 +27,22 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 // 同时生成 gRPC client（SDK 与 CLI）与 REST 端点（gateway），双面同源。
 // T2.17 起扩容 GetSystemStatus（引擎/Traefik/状态层健康汇总——复用 lynx
 // CheckHealth 面：逐 checker 如实上报，不聚合出单一布尔，判断权在消费方）。
+// T2.18 起扩容集群级观察面：ListNodes（节点观测缓存只读列表——无 app 归
+// 属的控制面/集群级诊断，与状态汇总同层）与 GetIngressStatus（入口链三面
+// 状态：Traefik 服务实况 + 配置端点健康 + 证书台账对照——探测在服务端
+// 执行，CLI 不再直连 docker/读本地 token 文件）。
 service SystemService {
   rpc Ping(PingRequest) returns (PingResponse) {
     option (google.api.http) = { get: "/v1/system/ping" };
   }
   rpc GetSystemStatus(GetSystemStatusRequest) returns (GetSystemStatusResponse) {
     option (google.api.http) = { get: "/v1/system/status" };
+  }
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
+    option (google.api.http) = { get: "/v1/system/nodes" };
+  }
+  rpc GetIngressStatus(GetIngressStatusRequest) returns (GetIngressStatusResponse) {
+    option (google.api.http) = { get: "/v1/system/ingress" };
   }
 }
 
@@ -59,4 +70,69 @@ message GetSystemStatusResponse {
   string service = 1;
   string version = 2;
   repeated ComponentHealth components = 3;
+}
+
+message ListNodesRequest {}
+
+// NodeView 是节点观测缓存行的只读投影（state-model §2.2：缓存禁止用于
+// 决策，展示/诊断专用；节点变更用 docker node 原生命令）。观测数据带
+// observed_at/stale——状态诚实契约（architecture §4.2 横切硬指标）；
+// nodes 不提供「最后心跳」字段。
+message NodeView {
+  string swarm_node_id = 1;
+  // 平台节点 ID（fleetly.placement.node-id label；未锚定时为空）。
+  string platform_id = 2;
+  string hostname = 3;
+  string state = 4;
+  string availability = 5;
+  bool is_manager = 6;
+  google.protobuf.Timestamp observed_at = 7;
+  bool stale = 8;
+  map<string, string> labels = 9;
+}
+
+message ListNodesResponse {
+  repeated NodeView nodes = 1;
+}
+
+message GetIngressStatusRequest {}
+
+// TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists
+// = false 且 error 为探测原文）。
+message TraefikView {
+  bool exists = 1;
+  string image = 2;
+  int32 static_args = 3;
+  string error = 4;
+}
+
+// CertLedgerView 是证书台账行投影（domains 表 cert 列对照；app 为显示名，
+// 已删除应用回退显示 app id）。
+message CertLedgerView {
+  string app = 1;
+  string domain = 2;
+  string cert_sha256 = 3;
+  google.protobuf.Timestamp cert_not_after = 4;
+}
+
+message GetIngressStatusResponse {
+  TraefikView traefik = 1;
+  // 控制面配置端点监听地址（ingress.config_addr 配置原值）。
+  string config_addr = 2;
+  // 下发给 Traefik 的控制面可达 IP（空 = 自动探测）。
+  string advertise_ip = 3;
+  // ACME challenge 应答器基址（空 = 未接入集中签发）。
+  string responder = 4;
+  // 配置端点两面探测结果（服务端环回执行）：/healthz 无鉴权状态行；
+  // /configs 带 token 鉴权核验（401 = token 缺失/错误，如实报告；200 =
+  // 鉴权通过且返回合法 JSON）。不可达 = "unreachable"。
+  string healthz = 5;
+  string auth = 6;
+  // 证书台账（有证书的域名行）。
+  repeated CertLedgerView certificates = 7;
+  // 证书存储目录（控制面侧）与其中的 app 清单（meta 索引；目录缺失 =
+  // 空清单非错误，cert_dir_error 承载读取故障原文）。
+  string cert_dir = 8;
+  repeated string cert_dir_apps = 9;
+  string cert_dir_error = 10;
 }

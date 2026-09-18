@@ -141,21 +141,13 @@ func TestCLIValidateJSON(t *testing.T) {
 }
 
 // TestCLIPlanThreeState 验收 4/5：plan 三态退出码——0 无变化（自基线）、
-// 2 有变化（首部署/异基线）、1 错误。
+// 2 有变化（异基线）、1 错误（--baseline 本地形态；RPC 基线形态在
+// golden_test.go 的服务面夹具上覆盖）。
 func TestCLIPlanThreeState(t *testing.T) {
 	good := writeFixture(t, cliValid)
 
-	// 首部署（缺省空基线）→ 一切新增 → 2。
-	code, out, _ := runCLI(t, "plan", good)
-	if code != 2 {
-		t.Fatalf("first deploy: code=%d, 期望 2\n%s", code, out)
-	}
-	if !strings.Contains(out, "+ service web") {
-		t.Errorf("首部署人读报告缺新增行:\n%s", out)
-	}
-
 	// 自基线（同文件）→ 无变化 → 0。
-	code, out, _ = runCLI(t, "plan", "--baseline", good, good)
+	code, out, _ := runCLI(t, "plan", "--baseline", good, good)
 	if code != 0 {
 		t.Fatalf("no changes: code=%d, 期望 0\n%s", code, out)
 	}
@@ -263,11 +255,14 @@ func TestCLIPlanDestructive(t *testing.T) {
 	}
 }
 
-// TestCLIPlanOutputArtifact --output 落盘 artifact（etag 机制位）。
+// TestCLIPlanOutputArtifact --output 落盘 artifact（etag 机制位；--baseline
+// 本地形态，不依赖 daemon）。
 func TestCLIPlanOutputArtifact(t *testing.T) {
 	dir := t.TempDir()
 	artifactPath := filepath.Join(dir, "plan.json")
-	code, out, _ := runCLI(t, "plan", "--output", artifactPath, writeFixture(t, cliValid))
+	base := writeFixture(t, cliValid)
+	target := writeFixture(t, strings.Replace(cliValid, "nginx:1.27", "nginx:1.29", 1))
+	code, out, _ := runCLI(t, "plan", "--baseline", base, "--output", artifactPath, target)
 	if code != 2 || !strings.Contains(out, "plan artifact written to") {
 		t.Fatalf("code=%d out=%q", code, out)
 	}
@@ -302,33 +297,5 @@ func TestCLIDiffThreeState(t *testing.T) {
 	code, _, _ = runCLI(t, "diff", a)
 	if code != 2 {
 		t.Fatalf("usage: code=%d, 期望 2", code)
-	}
-}
-
-// TestCLIInterpolationLiteralEndToEnd CLI 全链：${FOO} 字面值贯穿到 plan
-// artifact（验收 3 的 CLI 侧证据）。
-func TestCLIInterpolationLiteralEndToEnd(t *testing.T) {
-	target := writeFixture(t, `
-name: my-api
-services:
-  web:
-    image: nginx
-    environment:
-      LITERAL: "${FOO}"
-`)
-	code, out, _ := runCLI(t, "plan", "--json", target)
-	if code != 2 {
-		t.Fatalf("code=%d", code)
-	}
-	if strings.Contains(out, "${FOO}") {
-		t.Errorf("artifact 泄露字面 env 值（应为 hash 形态）:\n%s", out)
-	}
-	var plan struct {
-		Services struct {
-			Added []string `json:"added"`
-		} `json:"services"`
-	}
-	if err := json.Unmarshal([]byte(out), &plan); err != nil {
-		t.Fatalf("artifact: %v", err)
 	}
 }
