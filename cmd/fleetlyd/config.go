@@ -1,6 +1,9 @@
 package main
 
 import (
+	"time"
+
+	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 )
 
@@ -28,6 +31,38 @@ type AppConfig struct {
 	// Secrets 是平台密钥配置（config 键 secrets.*，architecture §2.3：
 	// envelope 主密钥存控制面主机文件、权限保护、与备份数据分离）。
 	Secrets SecretsConfig `mapstructure:"secrets"`
+	// Build 是构建管线配置（config 键 build.*，T2.8）。
+	Build BuildConfig `mapstructure:"build"`
+}
+
+// BuildConfig 是构建管线配置节（config 键 build.*）。缺省值经
+// build.Config.Normalize 回落（并发 2、限额 1GiB/1.5CPU、缓存命名卷）。
+type BuildConfig struct {
+	// BuildkitHost 是 buildkit 端点（build.buildkit_host）；空 = 缺省
+	// docker-container://fleetly-buildkit（平台自管容器）。指向外部
+	// buildkitd（tcp://…）时应把 manage_daemon 置 false。
+	BuildkitHost string `mapstructure:"buildkit_host"`
+	// ManageDaemon 报告平台是否自管 buildkitd 容器（build.manage_daemon，
+	// 缺省 true；外部端点形态置 false）。
+	ManageDaemon *bool `mapstructure:"manage_daemon"`
+	// DaemonContainerName 是自管 buildkitd 容器名（build.daemon_container_name）。
+	DaemonContainerName string `mapstructure:"daemon_container_name"`
+	// CacheVolume 是 buildkitd 内部工作缓存的持久化命名卷
+	// （build.cache_volume，挂 /var/lib/buildkit）。
+	CacheVolume string `mapstructure:"cache_volume"`
+	// CacheDir 是 local cache 导入/导出的宿主目录（build.cache_dir；
+	// 客户端侧数据根，缺省 ./build-cache）。
+	CacheDir string `mapstructure:"cache_dir"`
+	// ArtifactsDir 是 plan JSON / 构建日志归档根目录（build.artifacts_dir）。
+	ArtifactsDir string `mapstructure:"artifacts_dir"`
+	// Concurrency 是构建队列并发上限（build.concurrency；缺省 2，天花板 8）。
+	Concurrency int `mapstructure:"concurrency"`
+	// MemoryBytes 是 buildkitd 容器内存限额（build.memory_bytes；缺省 1GiB）。
+	MemoryBytes int64 `mapstructure:"memory_bytes"`
+	// CPUS 是 buildkitd 容器 CPU 限额（build.cpus；缺省 1.5）。
+	CPUS float64 `mapstructure:"cpus"`
+	// PollSeconds 是队列扫描周期秒数（build.poll_seconds；缺省 2）。
+	PollSeconds int `mapstructure:"poll_seconds"`
 }
 
 // GRPCConfig 是 gRPC 面的配置节（config 键 grpc.*）。
@@ -83,4 +118,22 @@ func (c *AppConfig) KeyPath() string {
 		return secrets.DefaultKeyPath
 	}
 	return c.Secrets.KeyPath
+}
+
+// BuildSettings 把 build.* 配置节翻译为构建管线核心配置（build.Config，
+// 缺省值经 Normalize 回落——单一事实源在 internal/build）。
+func (c *AppConfig) BuildSettings() build.Config {
+	cfg := build.Config{
+		BuildkitHost:        c.Build.BuildkitHost,
+		DaemonContainerName: c.Build.DaemonContainerName,
+		CacheVolume:         c.Build.CacheVolume,
+		CacheDir:            c.Build.CacheDir,
+		ArtifactsDir:        c.Build.ArtifactsDir,
+		Concurrency:         c.Build.Concurrency,
+		MemoryBytes:         c.Build.MemoryBytes,
+		NanoCPUs:            int64(c.Build.CPUS * 1e9),
+		PollInterval:        time.Duration(c.Build.PollSeconds) * time.Second,
+		ManageDaemon:        c.Build.ManageDaemon == nil || *c.Build.ManageDaemon,
+	}
+	return cfg.Normalize()
 }

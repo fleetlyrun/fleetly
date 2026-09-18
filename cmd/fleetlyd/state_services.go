@@ -7,9 +7,12 @@ package main
 
 import (
 	"context"
+	"log/slog"
+	"time"
 
 	"github.com/lynx-go/lynx"
 
+	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -124,3 +127,42 @@ func (s secretsService) Start(ctx context.Context) error {
 func (s secretsService) Stop(_ context.Context) error { return nil }
 
 func (s secretsService) CheckHealth() error { return s.box.CheckHealth() }
+
+// builderService 是构建队列服务壳（T2.8）：Start 阶段先后台预热自管
+// buildkitd（预拉钉版镜像 + 收敛容器运行，失败只降级日志——构建执行前的
+// ensureDaemonReady 同步收敛兜底），然后进入队列调度主循环（扫描 builds
+// queued 行 + 信号量并发执行）。Start 阻塞到关停（actor 契约同上），Stop
+// 无资源动作（worker 生命周期 = 服务 ctx）。
+type builderService struct {
+	queue   *build.Queue
+	builder *build.Builder
+	log     *slog.Logger
+}
+
+func newBuilderService(q *build.Queue, b *build.Builder, log *slog.Logger) lynx.Service {
+	return builderService{queue: q, builder: b, log: log}
+}
+
+func (s builderService) Name() string                 { return "build.queue" }
+func (s builderService) Init(_ lynx.AppContext) error { return nil }
+
+func (s builderService) Start(ctx context.Context) error {
+	s.warmDaemon()
+	return s.queue.Run(ctx)
+}
+
+// Stop 无资源动作：Run 随服务 ctx 取消返回，在途构建经 ctx 排水。
+func (s builderService) Stop(_ context.Context) error { return nil }
+
+// warmDaemon 后台预热平台自管 buildkitd（预算 6 分钟——首启拉镜像受网络
+// 主导）。ManageDaemon=false（外部端点形态）为 no-op。预热失败不阻塞启动、
+// 不影响 readiness（构建执行前 ensureDaemonReady 同步收敛兜底）。
+func (s builderService) warmDaemon() {
+	go func() {
+		warmCtx, cancel := context.WithTimeout(context.Background(), 6*time.Minute)
+		defer cancel()
+		if err := s.builder.EnsureDaemonReady(warmCtx); err != nil {
+			s.log.Warn("buildkitd warm-up failed (first build will retry ensure)", "error", err)
+		}
+	}()
+}

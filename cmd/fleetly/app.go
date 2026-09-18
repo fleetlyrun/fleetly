@@ -33,6 +33,8 @@ func newApp() *commands.App {
 		&validateCmd{},
 		&planCmd{},
 		&diffCmd{},
+		&buildCmd{},
+		newBuildsCmd(),
 		newEnvCmd(),
 		newPlacementCmd(),
 		newNodesCmd(),

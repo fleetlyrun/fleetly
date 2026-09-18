@@ -27,8 +27,14 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	if err != nil {
 		return nil, nil, err
 	}
-	dockerClient, cleanup2, err := NewDockerClient(appConfig)
+	client, cleanup2, err := NewSubstrateClient(appConfig)
 	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	dockerClient, cleanup3, err := NewDockerClient(client)
+	if err != nil {
+		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
@@ -37,12 +43,17 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	janitor := NewJanitor(app, store, appConfig)
 	box, err := NewSecretsBox(app, appConfig)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
+	daemonManager := NewDaemonManager(client)
+	builder := NewBuilder(appConfig, store, client, daemonManager, app)
+	queue := NewBuildQueue(app, appConfig, store, builder)
 	server, err := NewHTTPServer(app, appConfig)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -50,14 +61,16 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	systemService := NewSystemService()
 	grpcServer, err := NewGRPCServer(app, appConfig, systemService)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(store, nodeIdentity, observer, janitor, box, server, grpcServer)
+	v := NewServices(app, store, nodeIdentity, observer, janitor, box, queue, builder, server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {
+		cleanup3()
 		cleanup2()
 		cleanup()
 	}, nil

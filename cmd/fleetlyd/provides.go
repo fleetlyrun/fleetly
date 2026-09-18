@@ -9,6 +9,7 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
+	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
@@ -22,11 +23,15 @@ var ProviderSet = wire.NewSet(
 	boot.New,
 	NewConfig,
 	NewStore,
+	NewSubstrateClient,
 	NewDockerClient,
 	NewNodeIdentity,
 	NewObserver,
 	NewJanitor,
 	NewSecretsBox,
+	NewBuilder,
+	NewBuildQueue,
+	NewDaemonManager,
 	NewGRPCServer,
 	NewSystemService,
 	NewHTTPServer,
@@ -63,14 +68,27 @@ func NewStore(cfg *AppConfig) (*state.Store, func(), error) {
 	return st, func() { _ = st.Close() }, nil
 }
 
-// NewDockerClient 构造底座客户端（state.DockerClient 端口的 moby/client
-// 实现，internal/substrate 适配器）；连接资源由 Wire cleanup 释放。
-func NewDockerClient(cfg *AppConfig) (state.DockerClient, func(), error) {
+// NewSubstrateClient 构造底座适配器客户端（moby/client）。它是多个端口
+// 的实现载体：state.DockerClient（节点观测/身份）与 build 包端口（镜像
+// inspect/load、buildkitd 容器编排）；连接资源由 Wire cleanup 释放。
+func NewSubstrateClient(cfg *AppConfig) (*substrate.Client, func(), error) {
 	c, err := substrate.NewClient(cfg.State.DockerHost)
 	if err != nil {
 		return nil, nil, err
 	}
 	return c, func() { _ = c.Close() }, nil
+}
+
+// NewDockerClient 以 substrate 客户端实现 state.DockerClient 端口（连接
+// 生命周期归 NewSubstrateClient 的 cleanup，此处不重复释放）。
+func NewDockerClient(sc *substrate.Client) (state.DockerClient, func(), error) {
+	return sc, func() {}, nil
+}
+
+// NewDaemonManager 以 substrate 客户端实现 build.DaemonManager 端口
+// （buildkitd 容器编排：镜像拉取/卷/容器幂等收敛）。
+func NewDaemonManager(sc *substrate.Client) build.DaemonManager {
+	return sc
 }
 
 // NewNodeIdentity 构造节点身份管理器（平台节点 ID n_<ULID> 生成持久化
@@ -107,6 +125,20 @@ func NewSecretsBox(app lynx.App, cfg *AppConfig) (*secrets.Box, error) {
 	return box, nil
 }
 
+// NewBuilder 构建构建执行器（build.Builder：railpack/dockerfile 双驱动 +
+// buildkit solve + 产物归档 + 执行前 buildkitd 就绪收敛）。镜像端口与容器
+// 编排由 substrate.Client 隐式实现 build 包端口（适配器方向：
+// substrate → build 核心接口）。
+func NewBuilder(cfg *AppConfig, st *state.Store, dc *substrate.Client, dm build.DaemonManager, app lynx.App) *build.Builder {
+	return build.NewBuilder(cfg.BuildSettings(), st, dc, dm, app.Logger())
+}
+
+// NewBuildQueue 构建构建队列调度器（信号量并发上限 + builds 行扫描认领）。
+func NewBuildQueue(app lynx.App, cfg *AppConfig, st *state.Store, b *build.Builder) *build.Queue {
+	settings := cfg.BuildSettings()
+	return build.NewQueue(st, b, settings.Concurrency, settings.PollInterval, app.Logger())
+}
+
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
 // （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）；
 // /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
@@ -124,15 +156,18 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig) (*lynxhttp.Server, error) {
 }
 
 // NewServices 聚合全部受托管服务：状态层四服务（store/identity/observer/
-// janitor）先于 HTTP/gRPC 注册——lynx 按注册顺序启动，store 的 Init 在
-// 装配期（Register 阶段）完成迁移，Start 阶段顺序无实质依赖，注册顺序
-// 表达「状态先于 API 面」。
+// janitor）与构建队列先于 HTTP/gRPC 注册——lynx 按注册顺序启动，store 的
+// Init 在装配期（Register 阶段）完成迁移，Start 阶段顺序无实质依赖，注册
+// 顺序表达「状态与队列先于 API 面」。
 func NewServices(
+	app lynx.App,
 	st *state.Store,
 	id *state.NodeIdentity,
 	ob *state.Observer,
 	jr *state.Janitor,
 	sb *secrets.Box,
+	q *build.Queue,
+	b *build.Builder,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
@@ -142,6 +177,7 @@ func NewServices(
 		newObserverService(ob),
 		newJanitorService(jr),
 		newSecretsService(sb),
+		newBuilderService(q, b, app.Logger()),
 		hs,
 		gs,
 	}

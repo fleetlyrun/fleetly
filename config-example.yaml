@@ -28,6 +28,36 @@ secrets:
   # 日志提示妥善保存（丢失后平台 env 密文不可解）。
   key_path: "./fleetly.key"
 
+# 构建管线（T2.8：Railpack + BuildKit，Dockerfile 兜底）。缺省形态 = 平台
+# 自管 buildkitd 容器（钉版 moby/buildkit:v0.32.2，privileged + cgroup
+# 限额 + 双缓存持久化），经 docker CLI 连接（docker-container://）。
+build:
+  # buildkit 端点；留空 = docker-container://fleetly-buildkit。指向外部
+  # buildkitd（如 tcp://buildkit.internal:1234）时请把 manage_daemon 置
+  # false（隔离升级形态：外部 buildkitd 自行运维）。
+  buildkit_host: ""
+  # 平台是否自管 buildkitd 容器（缺省 true）。
+  manage_daemon: true
+  # 自管 buildkitd 容器名（缺省 fleetly-buildkit）。
+  daemon_container_name: "fleetly-buildkit"
+  # 缓存持久化（两层，缺省全开）：
+  #   cache_volume —— buildkitd 内部工作缓存命名卷（挂 /var/lib/buildkit，
+  #                   容器重建不丢层缓存）；
+  #   cache_dir    —— local cache 导入/导出的宿主目录（fleetlyd 侧数据根，
+  #                   跨容器重建/跨实例可移植）。
+  cache_volume: "fleetly-buildkit-cache"
+  cache_dir: "./build-cache"
+  # 构建产物归档根目录（railpack plan JSON / 构建日志，按 app/构建ID 落盘）。
+  artifacts_dir: "./build-artifacts"
+  # 构建队列并发上限（缺省 2，天花板 8；架构 §4.2 容量边界）。
+  concurrency: 2
+  # buildkitd 容器资源限额（Spike A E4 实证缺省：1GiB / 1.5 CPU 下真实
+  # 构建可完成且不击穿宿主）。
+  memory_bytes: 1073741824
+  cpus: 1.5
+  # 构建队列扫描周期（秒）。
+  poll_seconds: 2
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info
