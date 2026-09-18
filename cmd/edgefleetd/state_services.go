@@ -10,6 +10,7 @@ import (
 
 	"github.com/lynx-go/lynx"
 
+	"github.com/edgesets/edgefleet/internal/secrets"
 	"github.com/edgesets/edgefleet/internal/state"
 )
 
@@ -102,3 +103,24 @@ func (s janitorService) Start(ctx context.Context) error {
 	return nil
 }
 func (s janitorService) Stop(ctx context.Context) error { return s.jr.Stop(ctx) }
+
+// secretsService 是平台密钥服务壳：主密钥已在装配期（NewSecretsBox →
+// EnsureKey）fail-fast 加载/生成，Init 无动作；CheckHealth 持续上报密钥
+// 就绪（readiness 汇总可见——密钥丢失/损坏是平台 env 不可解的先行指标）。
+// Start 阻塞到关停（actor 契约同上），Stop 无资源动作（密钥文件句柄不
+// 常驻，文件生命周期归 OS）。
+type secretsService struct {
+	box *secrets.Box
+}
+
+func newSecretsService(b *secrets.Box) lynx.Service { return secretsService{box: b} }
+
+func (s secretsService) Name() string                 { return "state.secrets" }
+func (s secretsService) Init(_ lynx.AppContext) error { return nil }
+func (s secretsService) Start(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
+}
+func (s secretsService) Stop(_ context.Context) error { return nil }
+
+func (s secretsService) CheckHealth() error { return s.box.CheckHealth() }

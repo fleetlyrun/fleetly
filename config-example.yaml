@@ -21,6 +21,13 @@ state:
   # 本机套接字（linux unix socket / Windows named pipe）。
   docker_host: ""
 
+# 平台密钥（envelope 加密主密钥，architecture §2.3）：主密钥文件与备份数据
+# 分离保存；权限过宽（POSIX group/other 可读）拒绝启动。
+secrets:
+  # 主密钥文件路径；留空 = ./edgefleet.key。首次启动不存在时自动生成并
+  # 日志提示妥善保存（丢失后平台 env 密文不可解）。
+  key_path: "./edgefleet.key"
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info

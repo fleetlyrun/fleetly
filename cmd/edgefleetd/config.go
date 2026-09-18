@@ -1,5 +1,9 @@
 package main
 
+import (
+	"github.com/edgesets/edgefleet/internal/secrets"
+)
+
 // defaultHTTPAddr / defaultGRPCAddr 分别是 HTTP 面与 gRPC 面的缺省监听
 // 地址：默认只绑回环，避免控制面未配置时暴露公网（架构 §4.2 安全默认
 // 基线）。HTTP 可用 -addr 覆盖，或经 -c config.yaml 中的 addr 键覆盖
@@ -21,6 +25,9 @@ type AppConfig struct {
 	GRPC GRPCConfig `mapstructure:"grpc"`
 	// State 是状态层配置（config 键 state.*）。
 	State StateConfig `mapstructure:"state"`
+	// Secrets 是平台密钥配置（config 键 secrets.*，architecture §2.3：
+	// envelope 主密钥存控制面主机文件、权限保护、与备份数据分离）。
+	Secrets SecretsConfig `mapstructure:"secrets"`
 }
 
 // GRPCConfig 是 gRPC 面的配置节（config 键 grpc.*）。
@@ -44,6 +51,15 @@ type StateConfig struct {
 	DockerHost string `mapstructure:"docker_host"`
 }
 
+// SecretsConfig 是平台密钥配置节（config 键 secrets.*）。主密钥文件与
+// 备份数据分离保存（architecture §2.3）；权限过宽 fail-fast 拒绝启动
+// （internal/secrets ErrWeakPermissions，POSIX 面）。
+type SecretsConfig struct {
+	// KeyPath 是 envelope 主密钥文件路径（secrets.key_path）；空 = 缺省
+	// ./edgefleet.key。首启不存在则生成并日志提示妥善保存。
+	KeyPath string `mapstructure:"key_path"`
+}
+
 // GRPCAddr 返回 gRPC 监听地址，未配置时回落缺省值。
 func (c *AppConfig) GRPCAddr() string {
 	if c.GRPC.Addr == "" {
@@ -58,4 +74,13 @@ func (c *AppConfig) DBPath() string {
 		return defaultDBPath
 	}
 	return c.State.DBPath
+}
+
+// KeyPath 返回主密钥文件路径，未配置时回落缺省值（单一事实源 =
+// secrets.DefaultKeyPath）。
+func (c *AppConfig) KeyPath() string {
+	if c.Secrets.KeyPath == "" {
+		return secrets.DefaultKeyPath
+	}
+	return c.Secrets.KeyPath
 }

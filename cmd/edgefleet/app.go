@@ -33,6 +33,9 @@ func newApp() *commands.App {
 		&validateCmd{},
 		&planCmd{},
 		&diffCmd{},
+		newEnvCmd(),
+		newPlacementCmd(),
+		newNodesCmd(),
 	)
 	// 三态退出码（架构 §2.4 plan/apply 语义）：0=无变化/成功、2=有变化、
 	// 1=错误。用法类错误（未知动词/flag 解析失败）沿用框架约定退出 2。

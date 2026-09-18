@@ -9,6 +9,7 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
+	"github.com/edgesets/edgefleet/internal/secrets"
 	"github.com/edgesets/edgefleet/internal/state"
 	"github.com/edgesets/edgefleet/internal/substrate"
 )
@@ -25,6 +26,7 @@ var ProviderSet = wire.NewSet(
 	NewNodeIdentity,
 	NewObserver,
 	NewJanitor,
+	NewSecretsBox,
 	NewGRPCServer,
 	NewSystemService,
 	NewHTTPServer,
@@ -88,6 +90,23 @@ func NewJanitor(app lynx.App, st *state.Store, cfg *AppConfig) *state.Janitor {
 	return state.NewJanitor(st, cfg.State.EventRetentionDays, cfg.State.AuditRetentionDays, app.Logger())
 }
 
+// NewSecretsBox 初始化 envelope 主密钥（fail-fast：加载/权限/生成任一失败
+// 拒绝启动——密钥是全部平台 env 密文的生命线，architecture §2.3）。首启
+// 生成时日志明示妥善保存（与备份分离；丢失 = env 密文不可解）。装配期
+// 完成即 edgefleetd 主密钥初始化语义；健康面由 secrets 服务壳 CheckHealth
+// 持续上报。
+func NewSecretsBox(app lynx.App, cfg *AppConfig) (*secrets.Box, error) {
+	box, created, err := secrets.EnsureKey(cfg.KeyPath())
+	if err != nil {
+		return nil, err
+	}
+	if created {
+		app.Logger().Warn("master key generated at " + box.Path() +
+			" —妥善保存并与备份分离（丢失后平台 env 密文不可解）")
+	}
+	return box, nil
+}
+
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
 // （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）；
 // /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
@@ -113,6 +132,7 @@ func NewServices(
 	id *state.NodeIdentity,
 	ob *state.Observer,
 	jr *state.Janitor,
+	sb *secrets.Box,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
@@ -121,6 +141,7 @@ func NewServices(
 		newIdentityService(id),
 		newObserverService(ob),
 		newJanitorService(jr),
+		newSecretsService(sb),
 		hs,
 		gs,
 	}

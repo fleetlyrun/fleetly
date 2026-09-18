@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -10,6 +11,8 @@ import (
 	"github.com/lynx-go/commands"
 
 	"github.com/edgesets/edgefleet/internal/compose"
+	"github.com/edgesets/edgefleet/internal/envlayer"
+	"github.com/edgesets/edgefleet/internal/state"
 )
 
 // validateCmd 实现 edgefleet validate <path>：校验 + 归一化。--json 输出
@@ -62,12 +65,15 @@ func (c *validateCmd) Run(ctx context.Context, env *commands.Environment, args [
 // plan artifact（spec_hash 即 etag）。三态退出码：0 无变化 / 2 有变化 /
 // 1 错误。--baseline 指定另一 compose 文件作基线（真实 DB 基线随引擎票；
 // 缺省 = 空基线，即首部署语义，一切服务视为新增）。--output 将 artifact
-// 落盘（apply 前校验 etag 防 stale 并发的机制位）。apply 动词随引擎层
-// （T2.10）接入：本期不改运行态，不做假 apply。
+// 落盘（apply 前校验 etag 防 stale 并发的机制位）。--db 打开状态库读取
+// 平台 env_vars，把 W_ENV_PLATFORM_OVERRIDE 覆盖告警并入计划（architecture
+// §2.4 变量合并行；pending 条目计入——下次部署即其生效点）。apply 动词随
+// 引擎层（T2.10）接入：本期不改运行态，不做假 apply。
 type planCmd struct {
 	jsonOut  bool
 	baseline string
 	output   string
+	dbPath   string
 }
 
 func (c *planCmd) Name() string { return "plan" }
@@ -75,13 +81,14 @@ func (c *planCmd) Synopsis() string {
 	return "plan changes of a compose file against a baseline (exit 2 = changes)"
 }
 func (c *planCmd) Usage() string {
-	return "plan [--baseline <compose-file>] [--output <artifact-file>] [--json] <compose-file>"
+	return "plan [--baseline <compose-file>] [--output <artifact-file>] [--db <state-db>] [--json] <compose-file>"
 }
 
 func (c *planCmd) SetFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&c.jsonOut, "json", false, "output the plan artifact as JSON")
 	fs.StringVar(&c.baseline, "baseline", "", "baseline compose file (default: empty baseline, first-deploy semantics)")
 	fs.StringVar(&c.output, "output", "", "write the plan artifact to a file")
+	fs.StringVar(&c.dbPath, "db", "", "state db path for platform env override warnings (W_ENV_PLATFORM_OVERRIDE)")
 }
 
 func (c *planCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
@@ -104,6 +111,13 @@ func (c *planCmd) Run(ctx context.Context, env *commands.Environment, args []str
 	}
 	// 校验期警告（无 healthcheck、cron label v0.2 提示）随 artifact 带出。
 	plan.Warnings = append(plan.Warnings, warnings...)
+	// 平台 env_vars 覆盖告警（--db 提供状态库时；DB 缺省关闭，plan 保持
+	// 纯 compose 语义）。
+	platformWarnings, err := c.platformOverrideWarnings(ctx, target)
+	if err != nil {
+		return err
+	}
+	plan.Warnings = append(plan.Warnings, platformWarnings...)
 	if err := c.emit(env, plan); err != nil {
 		return err
 	}
@@ -111,6 +125,46 @@ func (c *planCmd) Run(ctx context.Context, env *commands.Environment, args []str
 		return errChanges
 	}
 	return nil
+}
+
+// platformOverrideWarnings 读取状态库平台 env_vars（effective + pending）
+// 并产出 W_ENV_PLATFORM_OVERRIDE 警告。--db 未给或库文件不存在 → 无警告
+// （plan 的缺省形态不依赖状态库）。
+func (c *planCmd) platformOverrideWarnings(ctx context.Context, target *compose.Spec) ([]compose.Warning, error) {
+	if c.dbPath == "" {
+		return nil, nil
+	}
+	if _, err := os.Stat(c.dbPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("stat state db %s: %w", c.dbPath, err)
+	}
+	st, err := state.Open(ctx, c.dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = st.Close() }()
+	app, err := st.GetAppByName(ctx, target.Name)
+	if errors.Is(err, state.ErrAppNotFound) {
+		return nil, nil // 应用未创建 → 平台层必空 → 无覆盖
+	}
+	if err != nil {
+		return nil, err
+	}
+	rows, err := st.ListAppEnv(ctx, app.ID)
+	if err != nil {
+		return nil, err
+	}
+	platform := make([]envlayer.PlatformVar, 0, len(rows))
+	for _, r := range rows {
+		source := r.Source
+		if source == "" {
+			source = "platform"
+		}
+		platform = append(platform, envlayer.PlatformVar{Key: r.Key, Source: source})
+	}
+	return envlayer.PlatformOverrideWarnings(target, platform), nil
 }
 
 // emit 输出 plan artifact：--output 落盘（人读摘要仍上 stdout）；--json
