@@ -47,9 +47,15 @@ import (
 //     其他路径——非 webhook 路径无 token 仍 401，gateway_rest_test 钉死）。
 //   - POST /v1/apps/{app}/webhooks/gitea  —— Gitea push 投递（T2.19），
 //     同上。
+//   - GET /ui/** —— Console 端静态托管（T2.21，console.static_dir 指向
+//     构建产物目录时启用；缺省空 = 不挂载）。静态资源不要求 token：SPA
+//     无服务端会话，鉴权语义在其数据面（REST /v1 全部走 Bearer）。豁免
+//     精确到 /ui/ 前缀（实现 = console_static.go，分派面 = 豁免面），
+//     非 /ui/ 路径无 token 仍 401（gateway_console_test 钉死）。
 //
-// 实现：newRootHandler 先按精确路径形态分派 webhook handler，其余一律
-// 交回 grpc-gateway mux。
+// 实现：newRootHandler 先按精确路径形态分派 webhook 与 /ui/ 静态 handler
+// （console handler 未启用时为 nil——分派跳过），其余一律交回 grpc-gateway
+// mux。
 func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, newJSONMarshaler()),
@@ -109,14 +115,18 @@ func grpcEndpointFromAddr(addr string) string {
 	return net.JoinHostPort(host, port)
 }
 
-// newRootHandler 组装 HTTP 面根 handler：webhook 原生端点优先精确分派
-// （路径形态不匹配 gitserver.WebhookPathPattern 的请求原样交回 gateway
-// mux——豁免面即分派面，两者同一线性词形，不存在「先豁免再分发」的放宽
-// 空间）。
-func newRootHandler(webhook http.Handler, fallback http.Handler) http.Handler {
+// newRootHandler 组装 HTTP 面根 handler：webhook 原生端点优先精确分派，
+// 其次 /ui/ 前缀的 Console 静态托管（consoleUI 为 nil 时跳过——静态托管
+// 关闭形态），两者路径形态不匹配的请求原样交回 grpc-gateway mux。各豁免
+// 面 = 各自分派面（线性词形判定，不存在「先豁免再分发」的放宽空间）。
+func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if gitserver.WebhookPathPattern.MatchString(r.URL.Path) {
 			webhook.ServeHTTP(w, r)
+			return
+		}
+		if consoleUI != nil && (r.URL.Path == consoleUIPathPrefix || strings.HasPrefix(r.URL.Path, consoleUIPathPrefix+"/")) {
+			consoleUI.ServeHTTP(w, r)
 			return
 		}
 		fallback.ServeHTTP(w, r)

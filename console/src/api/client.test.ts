@@ -1,0 +1,103 @@
+// API 客户端单测（stubbed fetch，不起真服务）：Bearer 注入、错误信封
+// 类型化、401 时清凭据 + 触发未授权监听、bytes base64 上行（Deploy 契约）。
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { api, clearToken, getToken, setToken, utf8ToBase64 } from "@/api/client";
+import { ApiError } from "@/api/errors";
+
+function jsonResponse(status: number, body: unknown) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 401 ? "Unauthorized" : "",
+    json: () => Promise.resolve(body),
+  };
+}
+
+beforeEach(() => clearToken());
+afterEach(() => {
+  vi.unstubAllGlobals();
+  clearToken();
+});
+
+describe("api client", () => {
+  it("sends Authorization: Bearer when a token is stored", async () => {
+    setToken("flt_abc");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api("/apps");
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/v1/apps");
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer flt_abc",
+    );
+  });
+
+  it("omits the Authorization header without a token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api("/system/ping");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
+  });
+
+  it("throws a typed ApiError carrying the snake_case envelope", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(409, {
+          code: "E_STATE_VERSION_CONFLICT",
+          message: "deployment already healthy",
+          suggestion: "use rollback instead of cancel",
+        }),
+      ),
+    );
+
+    const err = await api("/deployments/x/cancel", { method: "POST", json: {} }).then(
+      () => null,
+      (e: unknown) => e,
+    );
+
+    expect(err).toBeInstanceOf(ApiError);
+    const apiErr = err as ApiError;
+    expect(apiErr.status).toBe(409);
+    expect(apiErr.code).toBe("E_STATE_VERSION_CONFLICT");
+    expect(apiErr.suggestion).toBe("use rollback instead of cancel");
+  });
+
+  it("clears the token and notifies the listener on 401", async () => {
+    setToken("flt_revoked");
+    const listener = vi.fn();
+    const { setUnauthorizedListener } = await import("@/api/client");
+    setUnauthorizedListener(listener);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(401, { message: "invalid or revoked token" }),
+      ),
+    );
+
+    await expect(api("/apps")).rejects.toBeInstanceOf(ApiError);
+    expect(getToken()).toBe("");
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "invalid or revoked token" }),
+    );
+    setUnauthorizedListener(null);
+  });
+
+  it("base64-encodes compose bytes for the Deploy contract", () => {
+    expect(utf8ToBase64("services: {}")).toBe(
+      Buffer.from("services: {}", "utf8").toString("base64"),
+    );
+    // 非 ASCII（UTF-8 多字节）不炸。
+    expect(utf8ToBase64("記録")).toBe(
+      Buffer.from("記録", "utf8").toString("base64"),
+    );
+  });
+});

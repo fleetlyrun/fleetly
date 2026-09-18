@@ -39,7 +39,7 @@ spike/a/artifacts/spikerailpack-linux.b64
 spike/a/artifacts/spikerailpack.exe
 spike/a/artifacts/*.tar
 spike/a/artifacts/*.b64 
-# Spike B artifacts: logs ±£ÁôÈë¿â£»½»²æ±àÒëÌ½Õë¶ş½øÖÆÓë´óÎÄ¼şÅÅ³ı 
+# Spike B artifacts: logs ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½â£»ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ì½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½ï¿½Ä¼ï¿½ï¿½Å³ï¿½ 
 spike/b/dockerctx/probe 
 spike/b/artifacts/*.tar 
 spike/b/artifacts/*.b64
@@ -49,3 +49,8 @@ spike/c/dockerctx/probe
 spike/c/artifacts/hostbak/ 
 spike/c/artifacts/*.tar 
 spike/c/artifacts/*.b64 
+
+# Console (T2.21): deps and build output are reproducible from the lockfile;
+# pnpm-lock.yaml IS committed.
+console/node_modules/
+console/dist/

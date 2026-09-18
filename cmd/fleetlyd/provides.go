@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"net"
+	"net/http"
 
 	"github.com/google/wire"
 	"github.com/lynx-go/lynx"
@@ -313,16 +314,25 @@ func NewTokensService(st *state.Store) *api.TokensService {
 }
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
-// （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）外包
-// webhook 原生端点分派（newRootHandler——例外清单见 gateway.go）；
-// /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，
-// 与 gateway 路由共存（torchwood 同款双面单端口形态）。
+// （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）外包原生
+// 端点分派（newRootHandler——webhook 与 Console /ui/ 静态托管，例外清单
+// 见 gateway.go）；/healthz/liveness 与 /healthz/readiness 由 lynxhttp.
+// Server 自行挂载，与 gateway 路由共存（torchwood 同款双面单端口形态）。
+// Console 静态托管仅在 console.static_dir 非空时挂载（缺省关闭），目录缺
+// index.html 时 fail-fast 拒绝启动。
 func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.Source) (*lynxhttp.Server, error) {
 	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
 	if err != nil {
 		return nil, err
 	}
-	root := newRootHandler(gitserver.NewWebhookHandler(src), mux)
+	var consoleUI http.Handler
+	if dir := cfg.Console.StaticDir; dir != "" {
+		consoleUI, err = newConsoleUIHandler(dir)
+		if err != nil {
+			return nil, err
+		}
+	}
+	root := newRootHandler(gitserver.NewWebhookHandler(src), consoleUI, mux)
 	return lynxhttp.NewServer(root,
 		lynxhttp.WithAddr(cfg.Addr),
 		lynxhttp.WithHealthCheckers(app.HealthCheckers),

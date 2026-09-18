@@ -132,6 +132,14 @@ webhook:
   # delivery ID 防重放窗口秒数（缺省 900 = 15 分钟）。
   replay_ttl_seconds: 900
 
+# Console 端静态托管（T2.21）：gateway 在 /ui/ 前缀托管 Console SPA 构建
+# 产物（未命中文件的路径回退 index.html——SPA 深链）。静态资源不要求
+# token；数据面恒走 REST /v1（全部 Bearer 鉴权，不因托管放宽）。
+console:
+  # SPA 构建产物目录（console/ 下 `pnpm install && pnpm build` 产出
+  # console/dist）。空 = 关闭（缺省；/ui/ 前缀不分派）。
+  # static_dir: "./console/dist"
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info

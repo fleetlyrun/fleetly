@@ -109,6 +109,18 @@ fleetly apps webhook show my-api                           # no sensitive projec
 
 See `fleetly help <verb>` for the full flag list.
 
+### Console (web UI)
+
+A React SPA (Vite + Tailwind + shadcn/ui) that consumes only the authenticated REST API. Build it and point the daemon at the output to get it served at `/ui/` (static assets are unauthenticated; all data still goes through the Bearer-authenticated `/v1` API):
+
+```bash
+cd console && pnpm install && pnpm build      # → console/dist
+fleetlyd -c config.yaml                       # with console.static_dir: "./console/dist"
+# open http://127.0.0.1:8420/ui/  → paste an API token to sign in
+```
+
+The console covers app list/detail (derived-state badges), deploys with live terminal-state tracking, rollback, streaming logs (NDJSON follow + history search), env management (pending changes grouped as "takes effect on next deploy"), domains with verify, system health, and the platform event stream. See [console/README.md](console/README.md).
+
 ## Documentation
 
 All docs live in [`docs/`](docs/README.md) (Chinese, design-first workflow):

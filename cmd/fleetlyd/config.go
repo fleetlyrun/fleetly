@@ -54,6 +54,19 @@ type AppConfig struct {
 	Git GitConfig `mapstructure:"git"`
 	// Webhook 是 webhook 触发入口配置节（config 键 webhook.*，T2.19）。
 	Webhook WebhookConfig `mapstructure:"webhook"`
+	// Console 是 Console 端静态托管配置节（config 键 console.*，T2.21）。
+	Console ConsoleConfig `mapstructure:"console"`
+}
+
+// ConsoleConfig 是 Console 静态托管配置节（config 键 console.*，T2.21）。
+// Console SPA 的数据面恒走 REST /v1（鉴权在 gRPC 拦截器链，不因静态托管
+// 放宽）；静态资源豁免精确到 /ui/ 前缀（例外清单登记见 gateway.go）。
+type ConsoleConfig struct {
+	// StaticDir 是 Console SPA 构建产物的静态根目录（console.static_dir）。
+	// 空 = 关闭（/ui/ 前缀不分派——豁免面 = 分派面，缺省零暴露）。指向
+	// console/dist（`pnpm build` 产物）时 gateway 在 /ui/ 前缀托管静态文件
+	// 并做 SPA 回退（未命中文件的路径一律回 index.html）。
+	StaticDir string `mapstructure:"static_dir"`
 }
 
 // LogsConfig 是日志管线配置节（config 键 logs.*）。字段与 internal/logs.

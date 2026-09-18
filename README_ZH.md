@@ -109,6 +109,18 @@ fleetly apps webhook show my-api                           # 无敏感投影
 
 完整 flag 列表见 `fleetly help <动词>`。
 
+### Console 端（Web UI）
+
+React SPA（Vite + Tailwind + shadcn/ui），只经带鉴权的 REST API 消费平台。构建后把产物目录配给 daemon 即可在 `/ui/` 前缀访问（静态资源不要求 token；数据仍全部走 Bearer 鉴权的 `/v1`）：
+
+```bash
+cd console && pnpm install && pnpm build      # → console/dist
+fleetlyd -c config.yaml                       # 配置 console.static_dir: "./console/dist"
+# 打开 http://127.0.0.1:8420/ui/  → 粘贴 API token 登录
+```
+
+覆盖：应用列表/详情（派生状态徽章）、部署（跟踪到终态）与回滚、实时日志（NDJSON 跟随 + 历史检索）、env 管理（pending 变更独立分组「待下次部署生效」）、域名管理与 verify、系统健康、平台事件流。详见 [console/README.md](console/README.md)。
+
 ## 文档
 
 全部文档在 [`docs/`](docs/README.md)（中文，设计先行的工作流）：
