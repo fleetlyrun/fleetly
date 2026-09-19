@@ -117,3 +117,42 @@ Docker 29.x 有破坏式变更史（引擎门禁下限 29.8.1 即此缘故）。
 
 两轨各自操作、各自记录；**fleetlyd 升级永远不触发冷备、Engine 升级永远
 不能用 §1 脚本代替**。
+
+---
+
+## 4. 带 schema 迁移的升级（回退 = 二进制 + 快照，缺一不可）
+
+迁移体系只加法（SQL 迁移内嵌二进制，启动即应用；无 down migration），
+「回滚 = 恢复快照」是架构契约（state-model §2.8）。这决定了 fleetlyd 轨
+升级在 schema 迁移面前的完整语义：
+
+### 4.1 守卫语义
+
+- 新 fleetlyd 首次启动即把状态库迁移到新 schema（`goose_db_version` 可查）；
+- 此后**旧 fleetlyd 对该库拒绝启动**：state.Open 检测库版本 > 本二进制
+  已知最大迁移版本即 fail-fast，错误信息形如
+  `数据库来自更新版本（schema N > 本二进制 M）；回退二进制前须按快照恢复
+  状态库，见 docs/runbooks/backup-restore.md`；
+- 守卫的意图：旧二进制读不懂新 schema，静默运行是数据损坏的温床——宁可
+  拒启，不给「回退只换二进制」的错配留绿色假象。
+
+### 4.2 回退序列（upgrade.sh 失败自动回退时的完整口径）
+
+1. `upgrade.sh` 回退只换二进制（`fleetlyd.previous` 归位），**不自动恢复
+   快照**——数据回滚必须由操作员显式决定，脚本无权代做；
+2. 回退后 start 前脚本打印一行 schema 提示；若旧 daemon 启动即报 schema
+   版本错误，说明新 daemon 已迁移 schema，此时按 backup-restore.md §4/§5
+   **先恢复 §1 序列第 2 步的 pre_upgrade 快照，再用旧二进制启动**；
+3. 升级成功（未回退）则无需任何动作——新 schema 与新二进制配套。
+
+操作口径一句话：**升级窗口内「二进制版本」与「schema 版本」必须同进同
+退；快照是 schema 的回退载体，`fleetlyd.previous` 只是代码的。**
+
+### 4.3 与冷备轨的边界
+
+- fleetlyd 轨（§1）：schema 迁移由热备快照兜底——pre_upgrade 快照即旧
+  schema 的完整副本，回退 = 恢复它；全程应用不停。
+- Engine/主机轨（§3）：冷备同样覆盖状态库（tar 内含 `/var/lib/fleetly`），
+  Engine 升级若伴随 fleetlyd 大版本跨越，回退口径与本节相同。
+- 两轨都不要在**无 verified 快照**的情况下跨 schema 版本升级/回退；
+  `--skip-backup` 跳过的不只是备份，是 schema 的退路。

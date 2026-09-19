@@ -101,6 +101,20 @@ http_fetch() { # <url> <outfile>   （outfile 为 - 时写 stdout）
     fi
 }
 
+# health_probe_host <http-addr> — 从 --http-addr 推导健康探测目标 host
+# （整改⑤）：探测必须打在 daemon 真实绑定的地址上——--http-addr 10.0.0.5:8420
+# 时 daemon 只绑 10.0.0.5，硬编码 127.0.0.1 恒拒连（探测假死 60s 后 die，
+# 而 systemctl enable --now 已成功——安装报红但平台在跑）。通配绑定
+# （0.0.0.0 / :: / 空 host）回落 127.0.0.1；IPv6 括号形态原样保留（URL
+# 词形 http://[::1]:port/... 合法）。
+health_probe_host() { # <http-addr>
+    _ph=${1%:*}
+    case "$_ph" in
+    '' | ':' | 0.0.0.0 | '::' | '[::]' | '[0.0.0.0]') printf '127.0.0.1' ;;
+    *) printf '%s' "$_ph" ;;
+    esac
+}
+
 # ---------------------------------------------------------------- 参数解析
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -557,20 +571,23 @@ else
             journalctl -u fleetlyd.service -n 50 --no-pager 2>&1 || true
             die 'systemctl enable/start failed — see status/journal output above'
         fi
-        # 健康等待：/healthz/liveness 轮询；失败给出 journalctl 诊断指引。
+        # 健康等待：/healthz/liveness 轮询；探测 host 跟随 --http-addr 的
+        # host 部分（整改⑤——非回环绑定时 127.0.0.1 恒拒连）；失败给出
+        # journalctl 诊断指引。
         HEALTH_PORT=${HTTP_ADDR##*:}
+        HEALTH_HOST=$(health_probe_host "$HTTP_ADDR")
         _deadline=$(( $(date +%s) + 60 ))
         _healthy=0
         while [ "$(date +%s)" -lt "$_deadline" ]; do
             if have curl; then
-                curl -fsS --max-time 3 "http://127.0.0.1:$HEALTH_PORT/healthz/liveness" >/dev/null 2>&1 && _healthy=1 && break
+                curl -fsS --max-time 3 "http://$HEALTH_HOST:$HEALTH_PORT/healthz/liveness" >/dev/null 2>&1 && _healthy=1 && break
             else
-                wget -q -T 3 -O /dev/null "http://127.0.0.1:$HEALTH_PORT/healthz/liveness" 2>/dev/null && _healthy=1 && break
+                wget -q -T 3 -O /dev/null "http://$HEALTH_HOST:$HEALTH_PORT/healthz/liveness" 2>/dev/null && _healthy=1 && break
             fi
             sleep 2
         done
         if [ "$_healthy" -eq 1 ]; then
-            log "health: /healthz/liveness 200 on 127.0.0.1:$HEALTH_PORT"
+            log "health: /healthz/liveness 200 on $HEALTH_HOST:$HEALTH_PORT"
         else
             echo '---- systemctl status ----' >&2
             systemctl status fleetlyd.service --no-pager -l 2>&1 || true
@@ -584,9 +601,13 @@ else
 fi
 
 # ---------------------------------------------------------------- 安装报告
-HTTP_EXPOSURE='as configured'
-case "$HTTP_ADDR" in
-0.0.0.0:*) HTTP_EXPOSURE='PUBLIC' ;;
+# 端口面判定使用真实 bind host（整改⑤）：通配绑定 = PUBLIC；回环 =
+# loopback only；具体地址 = 按该地址评估暴露面（不再是含糊的 as configured）。
+HTTP_BIND_HOST=${HTTP_ADDR%:*}
+case "$HTTP_BIND_HOST" in
+'' | ':' | 0.0.0.0 | '::' | '[::]') HTTP_EXPOSURE='PUBLIC (wildcard bind)' ;;
+127.0.0.1 | '[::1]' | localhost) HTTP_EXPOSURE='loopback only' ;;
+*) HTTP_EXPOSURE="bound to $HTTP_BIND_HOST (evaluate exposure for this address)" ;;
 esac
 ADV_CLASS='private'
 if [ "$ADV_IS_PUBLIC" -eq 1 ]; then

@@ -25,6 +25,9 @@
 #   A8  门禁负路径（iptables）：nftables-only shim → 拒绝、退出非零
 #   A9  卸载：unit/二进制/配置/符号链接消失，/var/lib/fleetly 保留且明示；
 #       --purge 后数据目录消失
+#   A10 探测 host 推导（整改⑤）：health_probe_host 对非回环 bind 地址打
+#       真实 host、通配/空 host 回落 127.0.0.1（非回环绑定时硬编码回环
+#       探测恒拒连——安装报红但平台在跑的假死形态）
 #
 # 断言风格与 e2e/nightly/lib.sh 一致（NAME: PASS/FAIL + 退出码），但独立
 # 存放（e2e/ 只读，本脚本不引用它）。
@@ -283,6 +286,29 @@ RC=$?
 assert "A8-nftables-rejected" $? "rc=$RC (want non-zero)"
 grep -qi 'iptables' "$NEG_IPT_LOG"
 assert "A8-nftables-reason-echoed" $?
+
+# ------------------------------------- A10 探测 host 推导（整改⑤）
+# install.sh 的健康探测必须打在 daemon 真实绑定的地址上：--http-addr 绑
+# 非回环地址（如 10.0.0.5:8420）时 daemon 只绑该地址，127.0.0.1 探测恒
+# 拒连——60s 假死后 die，而 systemctl enable --now 已成功（安装报红但
+# 平台在跑）。最小可靠形态：把 health_probe_host 定义从 install.sh 原样
+# 抽出直接喂样本断言（dind 内不必起第二个 daemon 生命周期即可复核推导）。
+PH_SH=/tmp/ti-probe-host.sh
+sed -n '/^health_probe_host()/,/^}/p' "$INSTALL_SH" >"$PH_SH"
+[ -s "$PH_SH" ]
+assert "A10-probe-host-fn-extracted" $?
+# shellcheck disable=SC1090
+. "$PH_SH"
+[ "$(health_probe_host '10.0.0.5:8420')" = '10.0.0.5' ]
+assert "A10-specific-host-probed-directly" $?
+[ "$(health_probe_host '0.0.0.0:8420')" = '127.0.0.1' ]
+assert "A10-wildcard-host-falls-back" $?
+[ "$(health_probe_host ':8420')" = '127.0.0.1' ]
+assert "A10-empty-host-falls-back" $?
+[ "$(health_probe_host '[::1]:8420')" = '[::1]' ]
+assert "A10-ipv6-literal-kept" $?
+[ "$(health_probe_host '[::]:8420')" = '127.0.0.1' ]
+assert "A10-ipv6-wildcard-falls-back" $?
 
 # --------------------------------------------------------------- A9 卸载
 sh "$UNINSTALL_SH" >"$UNINSTALL_LOG" 2>&1

@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"sort"
@@ -80,6 +81,82 @@ func TestOpenEnablesWALAndForeignKeys(t *testing.T) {
 	}
 	if fk != 1 {
 		t.Fatalf("foreign_keys = %d, want 1", fk)
+	}
+}
+
+// TestOpenRefusesNewerSchema 高版本守卫（升级回退错配整改③的验收断言）：
+// DB schema 版本 > 本二进制已知最大迁移版本 → state.Open 拒绝启动，错误
+// 信息指明版本差与可行动路径（按快照恢复）——旧二进制对新 schema 静默
+// no-op 运行的路径不存在。
+func TestOpenRefusesNewerSchema(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.db")
+
+	// 正常打开一次：迁移到本二进制的最大版本。
+	st1, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("first open: %v", err)
+	}
+	ctx := context.Background()
+	var maxKnown int64
+	if err := st1.db.QueryRowContext(ctx,
+		`SELECT max(version_id) FROM `+gooseVersionTableName).Scan(&maxKnown); err != nil {
+		t.Fatalf("read goose version: %v", err)
+	}
+	if err := st1.Close(); err != nil {
+		t.Fatalf("close first store: %v", err)
+	}
+
+	// 把库版本顶到「更新版本」（模拟：新版 fleetlyd 升级后按旧二进制回退
+	// 的现场——版本差 = future-gap）。
+	const futureGap = int64(7)
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	future := maxKnown + futureGap
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO `+gooseVersionTableName+` (version_id, is_applied) VALUES (?, 1)`, future); err != nil {
+		t.Fatalf("bump schema version to %d: %v", future, err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw sqlite: %v", err)
+	}
+
+	_, err = Open(context.Background(), path)
+	if err == nil {
+		t.Fatal("Open must refuse a database from a newer schema (silent no-op path exists!)")
+	}
+	for _, want := range []string{
+		"更新版本",
+		strconv.FormatInt(future, 10),
+		strconv.FormatInt(maxKnown, 10),
+		"backup-restore",
+	} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("guard error %q missing %q", err.Error(), want)
+		}
+	}
+
+	// 守卫只在版本超前时触发：同库把版本退回本二进制最大版本后照常打开
+	// （幂等 no-op），确认拒绝面没有误伤正常升级路径。
+	raw, err = sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopen raw sqlite: %v", err)
+	}
+	if _, err := raw.ExecContext(ctx,
+		`DELETE FROM `+gooseVersionTableName+` WHERE version_id = ?`, future); err != nil {
+		t.Fatalf("revert schema version: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw sqlite: %v", err)
+	}
+	st2, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatalf("reopen after reverting future version: %v", err)
+	}
+	if err := st2.Close(); err != nil {
+		t.Fatalf("close second store: %v", err)
 	}
 }
 

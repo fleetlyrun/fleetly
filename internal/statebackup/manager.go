@@ -241,19 +241,47 @@ func (m *Manager) runOnce(ctx context.Context, kind string) (state.StateBackup, 
 // <backup.dir>/<ULID>/fleetly.db + manifest.json）。
 const backupDBName = "fleetly.db"
 
-// prune 保留期清理：台账超出 keep 份的最旧行 → 删行 + 审计 backup.pruned
-// + 目录清除。台账只描述真实存在的备份（不保留幽灵行——ListBackups 的
-// 消费方看到的每一行都可取用）。清理失败只告警不回滚本次备份。
+// failedLedgerKeep 是失败台账行的独立保留上限（R3）：失败行入台账用于
+// 诊断，但不占 kind 配额、也非无限保留——超出保留最近 N 条，更旧的删行。
+const failedLedgerKeep = 10
+
+// prune 保留期清理（一轮整改⑥ per-kind 配额 + 二轮 R3 failed 分账）：
+//   - verified 行：每种 kind 各自保留最近 keep 份（keep 语义与配置键不变）
+//     ——跨 kind 全局配额会让部署频繁的一天把 daily/pre_upgrade 全部挤出，
+//     「每日备份」轨名存实亡；failed 行不占 kind 配额（连续失败风暴不得
+//     挤掉 verified 恢复点——恢复点塌缩是备份信任闭环的杀手）；
+//   - failed 行：独立小上限 failedLedgerKeep，保留最近 N 条用于诊断，
+//     其余删行（失败行可能残留半成品目录，RemoveAll 对不存在路径为
+//     no-op，一并兜住）。
+//
+// 超配额行 → 删行 + 审计 backup.pruned（审计行为不变）+ 目录清除。台账
+// 只描述真实存在的备份（不保留幽灵行——ListBackups 的消费方看到的每一行
+// 都可取用）。清理失败只告警不回滚本次备份。
 func (m *Manager) prune(ctx context.Context) {
 	rows, err := m.store.ListStateBackups(ctx, 0)
 	if err != nil {
 		m.log.Warn("backup: retention scan failed", "error", err)
 		return
 	}
-	if len(rows) <= m.cfg.Keep {
-		return
-	}
-	for _, victim := range rows[m.cfg.Keep:] {
+	// ListStateBackups 按 created_at 倒序（新 → 旧）：verified 逐 kind 计
+	// 数、超 keep 即淘汰；failed 独立计数、超 failedLedgerKeep 即淘汰。
+	perKind := make(map[string]int)
+	failed := 0
+	for _, victim := range rows {
+		overQuota := false
+		if victim.VerifyStatus == state.BackupVerifyVerified {
+			if perKind[victim.Kind] >= m.cfg.Keep {
+				overQuota = true
+			} else {
+				perKind[victim.Kind]++
+			}
+		} else {
+			failed++
+			overQuota = failed > failedLedgerKeep
+		}
+		if !overQuota {
+			continue
+		}
 		path, err := m.store.DeleteStateBackup(ctx, victim.ID)
 		if err != nil {
 			m.log.Warn("backup: retention delete row failed", "id", victim.ID, "error", err)

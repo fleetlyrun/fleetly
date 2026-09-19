@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"strconv"
+	"strings"
 
 	"github.com/pressly/goose/v3"
 )
@@ -31,8 +33,46 @@ func migrationFiles() (fs.FS, error) {
 	return fs.Sub(migrationsFS, "migrations")
 }
 
+// maxEmbeddedMigration 解析内嵌迁移文件名的最大版本号（本二进制的已知
+// 最大 schema 版本）。迁移链只加法，该值随二进制单调递增——高于它的库
+// 一定出自更新版本的 fleetlyd。
+func maxEmbeddedMigration() (int64, error) {
+	fsys, err := migrationFiles()
+	if err != nil {
+		return 0, fmt.Errorf("state: open embedded migrations: %w", err)
+	}
+	entries, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return 0, fmt.Errorf("state: read embedded migrations: %w", err)
+	}
+	var max int64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		lead, _, found := strings.Cut(e.Name(), "_")
+		if !found {
+			return 0, fmt.Errorf("state: migration %s: filename must be <version>_<name>.sql", e.Name())
+		}
+		v, err := strconv.ParseInt(lead, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("state: migration %s: parse leading version: %w", e.Name(), err)
+		}
+		if v > max {
+			max = v
+		}
+	}
+	return max, nil
+}
+
 // ensureMigrated 在 db 上应用全部未执行的迁移，返回迁移后的当前版本号
 // （空库 → 最大版本；重复调用幂等，goose 版本表记录已应用版本）。
+//
+// 高版本守卫（升级回退错配整改③核心）：DB schema 版本 > 本二进制已知
+// 最大迁移版本 → 拒绝打开。迁移只加法 + 回滚 = 恢复快照（架构 §2.8
+// 契约）意味着旧二进制读不懂新 schema；静默 no-op 运行是「升级失败回退
+// 只换二进制」路径上的错配陷阱——这里把错配变成显式失败，错误信息直接
+// 给出可行动路径（见 docs/runbooks/upgrade.md §4）。
 func ensureMigrated(ctx context.Context, db *sql.DB) (int64, error) {
 	fsys, err := migrationFiles()
 	if err != nil {
@@ -41,6 +81,23 @@ func ensureMigrated(ctx context.Context, db *sql.DB) (int64, error) {
 	provider, err := goose.NewProvider(goose.DialectSQLite3, db, fsys)
 	if err != nil {
 		return 0, fmt.Errorf("state: construct migration provider: %w", err)
+	}
+	// 空库（goose 自动建版本表并落 version 0）照常放行；有版本记录的库
+	// 先对照本二进制的迁移天花板。
+	dbVersion, err := provider.GetDBVersion(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("state: read migration version: %w", err)
+	}
+	maxVersion, err := maxEmbeddedMigration()
+	if err != nil {
+		return 0, err
+	}
+	if dbVersion > maxVersion {
+		return 0, fmt.Errorf(
+			"state: 数据库来自更新版本（schema %d > 本二进制已知最大迁移 %d）；"+
+				"回退二进制前须按快照恢复状态库，见 docs/runbooks/backup-restore.md "+
+				"（升级回退语义见 docs/runbooks/upgrade.md）",
+			dbVersion, maxVersion)
 	}
 	if _, err := provider.Up(ctx); err != nil {
 		return 0, fmt.Errorf("state: apply migrations: %w", err)

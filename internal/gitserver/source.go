@@ -24,6 +24,10 @@ type Source struct {
 	box    *secrets.Box
 	log    *slog.Logger
 	replay *deliveryCache
+	// fetchFn 是拉源执行步骤的注入缝（New 恒设为 runFetch；测试替换后可
+	// 不真实触网驱动 TOFU 审计链——与 statebackup.Manager.verifyFn 同款
+	// 接缝形态）。
+	fetchFn func(ctx context.Context, plan fetchPlan) error
 }
 
 // New 构造 Source（cfg 先经 Normalize；启用态完整性 Validate 由装配点
@@ -34,11 +38,12 @@ func New(cfg Config, st *state.Store, box *secrets.Box, log *slog.Logger) *Sourc
 		log = slog.New(discardHandler{})
 	}
 	return &Source{
-		cfg:    norm,
-		st:     st,
-		box:    box,
-		log:    log,
-		replay: newDeliveryCache(norm.ReplayTTL, time.Now),
+		cfg:     norm,
+		st:      st,
+		box:     box,
+		log:     log,
+		replay:  newDeliveryCache(norm.ReplayTTL, time.Now),
+		fetchFn: runFetch,
 	}
 }
 

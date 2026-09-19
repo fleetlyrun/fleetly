@@ -93,6 +93,17 @@ func newTestSource(t *testing.T, replayTTL time.Duration) (*Source, *state.Store
 	return src, st, box, dir
 }
 
+// fileURL 把本地仓库目录转成 file:/// URL（整改②白名单放行的本地裸仓库
+// 形态；跨平台：Windows 盘符路径 C:/x → file:///C:/x，POSIX /tmp/x →
+// file:///tmp/x）。
+func fileURL(dir string) string {
+	u := filepath.ToSlash(dir)
+	if !strings.HasPrefix(u, "/") {
+		u = "/" + u
+	}
+	return "file://" + u
+}
+
 // testLogger 是测试侧静默日志（与生产装配解耦）。
 func testLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))

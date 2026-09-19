@@ -572,6 +572,10 @@ if [ "$UPGRADE_OK" -ne 1 ]; then
     rm -f "$FLEETLY_BIN_DIR/fleetlyd" "$FLEETLY_BIN_DIR/fleetly"
     mv "$FLEETLY_BIN_DIR/fleetlyd.previous" "$FLEETLY_BIN_DIR/fleetlyd"
     mv "$FLEETLY_BIN_DIR/fleetly.previous" "$FLEETLY_BIN_DIR/fleetly"
+    # schema 提示（整改③）：迁移只加法——若新 daemon 已应用 schema 迁移，
+    # 回退后的旧 daemon 拒绝启动（启动守卫显式报错，不静默 no-op）；此时
+    # 须按快照恢复状态库后再回退（本脚本不替用户决定数据回滚）。
+    log 'rollback note: if the rolled-back daemon refuses to start with a schema-version error, restore the pre-upgrade snapshot first — see docs/runbooks/backup-restore.md (runbook: docs/runbooks/upgrade.md)'
     if start_daemon && ROLLBACK_VERSION=$(verify_running); then
         warn "ROLLED BACK to $ROLLBACK_VERSION — platform healthy, upgrade NOT applied (honest result: RED, not green)"
         printf '\n'

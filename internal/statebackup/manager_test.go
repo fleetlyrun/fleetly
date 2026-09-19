@@ -220,7 +220,8 @@ func TestVerifyFailureRealCorruption(t *testing.T) {
 }
 
 // TestRetentionPrunesOldest 保留策略：keep=2，第三份落账后最旧行删行 +
-// 审计 backup.pruned + 目录清除（台账不留幽灵行）。
+// 审计 backup.pruned + 目录清除（台账不留幽灵行）。同 kind 连续触发下
+// 行为与全局配额一致（per-kind 配额的单 kind 退化形态）。
 func TestRetentionPrunesOldest(t *testing.T) {
 	mgr, st, _ := newTestManager(t, func(c *Config) { c.Keep = 2 })
 	for i := 0; i < 3; i++ {
@@ -248,6 +249,130 @@ func TestRetentionPrunesOldest(t *testing.T) {
 	}
 	if len(entries) != 2 {
 		t.Fatalf("backup dirs = %d, want 2", len(entries))
+	}
+}
+
+// TestRetentionFailedRowsDoNotDisplaceVerified R3 验收：failed 行不占
+// kind 配额——verify 风暴（≥keep 次连续失败）之后，verified 份额不被挤
+// 占、CheckHealth 仍以最新 verified 行为健康依据；failed 行走独立小上限
+// failedLedgerKeep（保留最近 N 条用于诊断，更旧的删行）。
+func TestRetentionFailedRowsDoNotDisplaceVerified(t *testing.T) {
+	mgr, st, _ := newTestManager(t, func(c *Config) { c.Keep = 2 })
+	ctx := context.Background()
+	// 2 份 verified daily 打满配额。
+	for i := 0; i < 2; i++ {
+		if _, err := mgr.Trigger(ctx, state.BackupKindDaily); err != nil {
+			t.Fatalf("verified trigger %d: %v", i, err)
+		}
+	}
+	// failed 风暴：12 次注入校验失败（kind 同为 daily；verify 失败路径
+	// 不触发 prune—— prune 只挂在成功备份之后）。
+	mgr.verifyFn = func(string) (snapshotFacts, error) {
+		return snapshotFacts{}, errors.New("injected storm failure")
+	}
+	for i := 0; i < 12; i++ {
+		if _, err := mgr.Trigger(ctx, state.BackupKindDaily); err == nil {
+			t.Fatalf("storm trigger %d: want failure", i)
+		}
+	}
+	mgr.verifyFn = nil // 恢复真实校验
+
+	// 恢复后第一次成功 → prune 执行：verified 配额按 verified 行计（2 份
+	// 最新 verified 保留），failed 独立上限 10 生效（12 条删最旧 2 条）。
+	if _, err := mgr.Trigger(ctx, state.BackupKindDaily); err != nil {
+		t.Fatalf("recovery trigger: %v", err)
+	}
+
+	rows := backupRows(t, st)
+	verifiedDaily, failedRows := 0, 0
+	for _, r := range rows {
+		switch {
+		case r.VerifyStatus == state.BackupVerifyVerified && r.Kind == state.BackupKindDaily:
+			verifiedDaily++
+		case r.VerifyStatus == state.BackupVerifyFailed:
+			failedRows++
+		default:
+			t.Fatalf("unexpected ledger row kind=%s verify=%s", r.Kind, r.VerifyStatus)
+		}
+	}
+	if verifiedDaily != 2 {
+		t.Errorf("verified daily rows = %d, want 2 (failed storm must not displace verified quota)", verifiedDaily)
+	}
+	if failedRows != failedLedgerKeep {
+		t.Errorf("failed rows = %d, want %d (independent failed cap)", failedRows, failedLedgerKeep)
+	}
+	if len(rows) != 2+failedLedgerKeep {
+		t.Errorf("ledger rows = %d, want %d", len(rows), 2+failedLedgerKeep)
+	}
+	// 恢复点未塌缩：最新行 verified → CheckHealth 绿。
+	if err := mgr.CheckHealth(); err != nil {
+		t.Errorf("CheckHealth after recovery = %v, want healthy (latest row verified)", err)
+	}
+	// 目录与台账一致（failed 行的半成品目录随删行一并清除）。
+	entries, err := os.ReadDir(mgr.Dir())
+	if err != nil {
+		t.Fatalf("read backup dir: %v", err)
+	}
+	if len(entries) != 2+failedLedgerKeep {
+		t.Errorf("backup dirs = %d, want %d", len(entries), 2+failedLedgerKeep)
+	}
+}
+
+// TestRetentionPerKindQuota 一轮整改⑥验收（per-kind 配额）：同一天内
+// >keep 次 post_deploy 之后，daily 仍保留 keep 份——高频部署不再把每日
+// 备份轨挤出保留集。keep=2：2 份 daily 打满各自配额 + 4 次 post_deploy
+// （>2）→ 台账终态 = daily 2 份 + post_deploy 2 份（各 kind 独立保留最近
+// keep 份），目录数与台账一致。
+func TestRetentionPerKindQuota(t *testing.T) {
+	mgr, st, _ := newTestManager(t, func(c *Config) { c.Keep = 2 })
+	ctx := context.Background()
+	for i := 0; i < 2; i++ {
+		if _, err := mgr.Trigger(ctx, state.BackupKindDaily); err != nil {
+			t.Fatalf("daily trigger %d: %v", i, err)
+		}
+	}
+	for i := 0; i < 4; i++ {
+		if _, err := mgr.Trigger(ctx, state.BackupKindPostDeploy); err != nil {
+			t.Fatalf("post_deploy trigger %d: %v", i, err)
+		}
+	}
+
+	rows := backupRows(t, st)
+	counts := map[string]int{}
+	for _, r := range rows {
+		if r.VerifyStatus != state.BackupVerifyVerified {
+			t.Fatalf("surviving row %s (%s) verify = %s, want verified", r.ID, r.Kind, r.VerifyStatus)
+		}
+		counts[r.Kind]++
+	}
+	if counts[state.BackupKindDaily] != 2 {
+		t.Errorf("daily rows = %d, want 2 (per-kind keep; global quota would leave 0)", counts[state.BackupKindDaily])
+	}
+	if counts[state.BackupKindPostDeploy] != 2 {
+		t.Errorf("post_deploy rows = %d, want 2", counts[state.BackupKindPostDeploy])
+	}
+	if len(rows) != 4 {
+		t.Errorf("ledger rows = %d, want 4 (2 daily + 2 post_deploy)", len(rows))
+	}
+
+	// 目录与台账一致（不保留幽灵目录/幽灵行）。
+	entries, err := os.ReadDir(mgr.Dir())
+	if err != nil {
+		t.Fatalf("read backup dir: %v", err)
+	}
+	if len(entries) != 4 {
+		t.Errorf("backup dirs = %d, want 4", len(entries))
+	}
+
+	// 审计行为不变：被挤出的 2 份 post_deploy 各留一条 backup.pruned。
+	pruned := 0
+	for _, a := range auditActions(t, st) {
+		if a.Action == "backup.pruned" {
+			pruned++
+		}
+	}
+	if pruned != 2 {
+		t.Errorf("backup.pruned audit count = %d, want 2", pruned)
 	}
 }
 
