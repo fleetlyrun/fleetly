@@ -49,8 +49,8 @@ permissions:
 
 env:
   GHCR_IMAGE: ghcr.io/fleetlyrun/fleetlyd
-  COSIGN_IDENTITY: ^https://github\.com/fleetlyrun/fleetly/
-  COSIGN_OIDC_ISSUER: https://token.actions.githubusercontent.com
+  EXPECTED_SIGNER: ^https://github\.com/fleetlyrun/fleetly/
+  EXPECTED_ISSUER: https://token.actions.githubusercontent.com
 
 jobs:
   # ─────────────────────────────────────────────── 1. 交叉编译 + 打包 ────
@@ -239,8 +239,8 @@ jobs:
           cd dist
           cosign verify-blob \
             --bundle checksums.txt.sig \
-            --certificate-identity-regexp "$COSIGN_IDENTITY" \
-            --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+            --certificate-identity-regexp "$EXPECTED_SIGNER" \
+            --certificate-oidc-issuer "$EXPECTED_ISSUER" \
             checksums.txt
       - name: verify gate B — install.sh command face + --certificate
         # install.sh 的 cosign 命令缺 --certificate/--bundle（cosign ≥2.6 的
@@ -252,8 +252,8 @@ jobs:
           cosign verify-blob \
             --signature detached.b64 \
             --certificate checksums.txt.cert \
-            --certificate-identity-regexp "$COSIGN_IDENTITY" \
-            --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER" \
+            --certificate-identity-regexp "$EXPECTED_SIGNER" \
+            --certificate-oidc-issuer "$EXPECTED_ISSUER" \
             checksums.txt
       - uses: actions/upload-artifact@v4
         with:
@@ -310,8 +310,8 @@ jobs:
         run: |
           cosign verify \
             '${{ env.GHCR_IMAGE }}@${{ steps.push.outputs.digest }}' \
-            --certificate-identity-regexp "$COSIGN_IDENTITY" \
-            --certificate-oidc-issuer "$COSIGN_OIDC_ISSUER"
+            --certificate-identity-regexp "$EXPECTED_SIGNER" \
+            --certificate-oidc-issuer "$EXPECTED_ISSUER"
 
   # ────────────────────────────────────────────────── 6. GitHub Release ──
   publish:
