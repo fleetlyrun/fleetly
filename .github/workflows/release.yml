@@ -326,6 +326,10 @@ jobs:
       contents: write
     needs: [build, checksums, sbom, sign, image]
     steps:
+      # gh release --verify-tag 需要 git 上下文（gh 内部 shell 出 git 命令）。
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - id: ver
         run: |
           if [ "$EVENT" = "workflow_dispatch" ]; then V="$TAG"; else V="$GITHUB_REF_NAME"; fi
