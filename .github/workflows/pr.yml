@@ -67,6 +67,9 @@ jobs:
       - uses: bufbuild/buf-setup-action@v1
         with:
           version: v1.72.0
+          # 带凭据调 api.github.com——匿名请求会撞 runner 共享 IP 的限流
+          # （2026-09-19 proto 门实录：API rate limit exceeded）。
+          github_token: ${{ github.token }}
       - name: buf build
         run: buf build
       - name: buf lint
