@@ -230,10 +230,14 @@ jobs:
           cosign sign-blob --yes \
             --bundle checksums.txt.sig \
             checksums.txt
-          # 从 bundle 提取签名证书（install.sh --certificate 修复形态用）。
+          # 从 bundle 提取签名证书（install.sh --certificate 形态用）。bundle 内
+          # 是裸 base64(DER)——封装为规范 PEM（64 列折行），verify 与分发都要 PEM。
           jq -r '.verificationMaterial.x509CertificateChain.certificates[0]' \
-            checksums.txt.sig > checksums.txt.cert
+            checksums.txt.sig | fold -w 64 \
+            | { echo '-----BEGIN CERTIFICATE-----'; cat; echo '-----END CERTIFICATE-----'; } \
+            > checksums.txt.cert
           test -s checksums.txt.cert
+          grep -q 'BEGIN CERTIFICATE' checksums.txt.cert
       - name: verify gate A — bundle form with install.sh identity constraints
         run: |
           cd dist
