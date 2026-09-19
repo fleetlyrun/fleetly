@@ -97,6 +97,84 @@ jobs:
       - name: govulncheck
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
+  console:
+    # T2.24 PR 轨道第 6 项（交付 §2.2）：console 门禁（typecheck+build / lint /
+    # vitest）。build 脚本 = `tsc --noEmit && vite build`，typecheck 已含于 build。
+    # pnpm-lock 冻结安装（--frozen-lockfile）；锁文件 lockfileVersion 9.0 →
+    # pnpm 10 线。setup-node 的 pnpm 缓存要求 pnpm 先就位，故 action-setup 在前。
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: console/pnpm-lock.yaml
+      - name: pnpm install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: pnpm build (tsc --noEmit + vite build)
+        run: pnpm build
+      - name: pnpm lint (eslint)
+        run: pnpm lint
+      - name: pnpm test (vitest run)
+        run: pnpm test
+
+  license-guard:
+    # T2.24 PR 轨道第 4 项（交付 §2.2 / D5）：默认发行组件许可证守卫。
+    # 白名单语义（清单外一律 fail，AGPL/DSAL/GPL/LGPL/SSPL/未知必阻）：
+    #   {Apache-2.0, MIT, BSD-2-Clause, BSD-3-Clause, ISC, 0BSD, BSD-1-Clause,
+    #    PostgreSQL, Python-2.0, Zlib, MPL-2.0, BlueOak-1.0.0}
+    # 分类依据（2026-09-18 本机 go-licenses v2.0.1 全树实跑，153 行 report）：
+    #   现有依赖树实际只出现 {MIT 60, Apache-2.0 59, BSD-3-Clause 27,
+    #   BSD-2-Clause 1, MPL-2.0 1}——全部在白名单内；其余名单项是前瞻预留。
+    #   负向对照：去掉 --ignore modernc.org/mathutil 后 check rc=1（Unknown 被
+    #   拦），守卫确实咬合。
+    # 豁免（--ignore 为纯路径前缀，见 go-licenses root.go "Package path
+    # prefixes to be ignored"；被豁免包的传递依赖仍受检）：
+    #   1. github.com/fleetlyrun/fleetly —— 本仓自有代码（根 LICENSE =
+    #      Apache-2.0）；genproto/ 与 sdk/go/ 为同仓 replace 子模块目录，无
+    #      独立 LICENSE 文件，分类器按模块根找不到文件而误报 Unknown，
+    #      并非第三方依赖。
+    #   2. modernc.org/mathutil —— 模块 zip 未随附 LICENSE 文件（go-licenses
+    #      报 Unknown）；上游 gitlab.com/cznic/mathutil 仓库 LICENSE 为
+    #      BSD-3-Clause（2026-09-18 原文核验：BSD 三条款再分发条款），
+    #      在白名单语义内。
+    # go.work 三模块分别扫：go.work 模式下 ./... 只展开主模块包，sdk/genproto
+    # 的独立传递依赖需各自 GOWORK=off 扫描兜底（genproto 亦非零依赖——
+    # protobuf 运行时等，照扫）。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: go-licenses check (root module)
+        # 钉 v1.6.0（非 @latest/@v2.0.1，依据 2026-09-19 验收录证）：
+        #   - go-licenses 自 v2.0.0 起模块路径为 github.com/google/go-licenses/v2，
+        #     非后缀路径上 @v2.0.1 直接 invalid version（"go.mod has post-v2
+        #     module path"），CI 必红；
+        #   - 非后缀路径 @latest 解析到 v1.6.0（go list -m 实证）；
+        #   - /v2@v2.0.1 在 go.work 模式下误报 in-toto 系 Did not find license
+        #     （其自身依赖树混入扫描集），GOWORK=off 又解析不了 root 对 sdk/go
+        #     的导入——v1.6.0 无此问题且为 T2.24 本地实证版本。
+        run: go run github.com/google/go-licenses@v1.6.0 check ./... --allowed_licenses="$ALLOWED" --ignore github.com/fleetlyrun/fleetly --ignore modernc.org/mathutil
+        env:
+          ALLOWED: Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,BSD-1-Clause,PostgreSQL,Python-2.0,Zlib,MPL-2.0,BlueOak-1.0.0
+      - name: go-licenses check (sdk/go)
+        run: cd sdk/go && GOWORK=off go run github.com/google/go-licenses@v1.6.0 check ./... --allowed_licenses="$ALLOWED" --ignore github.com/fleetlyrun/fleetly --ignore modernc.org/mathutil
+        env:
+          ALLOWED: Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,BSD-1-Clause,PostgreSQL,Python-2.0,Zlib,MPL-2.0,BlueOak-1.0.0
+      - name: go-licenses check (genproto)
+        run: cd genproto && GOWORK=off go run github.com/google/go-licenses@v1.6.0 check ./... --allowed_licenses="$ALLOWED" --ignore github.com/fleetlyrun/fleetly --ignore modernc.org/mathutil
+        env:
+          ALLOWED: Apache-2.0,MIT,BSD-2-Clause,BSD-3-Clause,ISC,0BSD,BSD-1-Clause,PostgreSQL,Python-2.0,Zlib,MPL-2.0,BlueOak-1.0.0
+
   e2e:
     # T0.4 dind E2E 骨架（交付流水线 §2.2 PR 轨道第 5 项 / P2 / M0）：
     # docker:29.8.1-dind 容器内拉起 fleetlyd 冒烟（启动/健康检查/优雅关闭）。

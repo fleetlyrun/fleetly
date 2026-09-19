@@ -20,6 +20,8 @@
 | `infra-b.sh` | dind 内 | spike/b 式基建：swarm init、overlay、traefik v3.5（钉 v3 线）、3 个 fixture 镜像、cfgsvc、edge 服务、DNS 自检 |
 | `v1.sh` / `v2.sh` / `v3.sh` / `v4.sh` | dind 内 | 每个 V 项一个断言入口，输出 spike 同风格 `NAME: PASS/FAIL` 行，失败非零退出 |
 | `n-waitsvc.sh` / `n-stamp.sh` | dind 内 | V6 节点侧助手（源自 spike/c in-waitsvc.sh / in-stamp.sh） |
+| `conformance-builder.sh` | 宿主+内层 | Builder conformance（T2.24）：场景 A Dockerfile 驱动 / B railpack 检测裁决 / C 坏 Dockerfile 信封；模式照抄 run-upgrade-test.sh（exec+stdin、sha256 校验、CR 剥离） |
+| `resource-sample.sh` | 宿主+内层 | 控制面 idle 资源基线采样（T2.24，为 T2.25 出样本）：dind 起 daemon → 稳定 60s → fleetlyd RSS 多拍（/proc VmRSS）+ docker stats 逐容器；产 Markdown + JSON |
 
 ## 入口与拓扑
 
@@ -27,6 +29,9 @@
 bash e2e/nightly/run.sh <suite>...      # suite = v1 | v2 | v3 | v4 | v6 | all
 env: DIND_IMAGE（默认 docker:29.8.1-dind）
      DIND_EXTRA_ARGS（透传 docker run，如 --storage-driver overlay2）
+
+bash e2e/nightly/conformance-builder.sh # Builder conformance A/B/C（单 dind）
+bash e2e/nightly/resource-sample.sh     # 资源采样（单 dind；RS_OUT_DIR 收产物）
 ```
 
 | suite | 拓扑 | 内层脚本 |
@@ -52,20 +57,54 @@ env: DIND_IMAGE（默认 docker:29.8.1-dind）
 | V4 | `V4-ASSERT-1 ABRUPT_INFLIGHT_POST_KILL_SURFACES_502`（≥1）/ `2 GRACEFUL_INFLIGHT_POST_ZERO_FAILURE` / `3 KEEPALIVE_IDLE_POOL_ZERO_FAILURE` / `4 TRAEFIK_CONFIG_APPLIED_CLEAN`（v4.sh） | spike/b `in-b3d-v4post.sh`（A/C 相）+ `in-b3-v3v4.sh` serversTransport 段 | 最小子集 | 未收录：R1 空闲池干净退出对照组、R2 GET in-flight 三配置矩阵、`os.Exit` 陷阱正反证（属探针实现细节，回归价值在 A/C 两端点） |
 | V6a | `V6A-ASSERT-1 UNPINNED_TASK_MIGRATED_TO_MGR` / `2 EMPTY_VOLUME_ACCIDENT` / `3 NEW_NODE_STAMP_MISSING` / `4 ORIGINAL_DATA_PRESERVED_ON_DEAD_NODE` / `5 PINNED_STAYS_PENDING_NO_NEWTASK` / `6 AUTO_REBIND_AFTER_RESTART` / `7 SAME_VOLUME_AFTER_ROUNDTRIP` / `8 STAMP_INTACT_AFTER_ROUNDTRIP`（v6.sh，双 dind） | spike/c `c3a-run.bat` / `c3b-run.bat`（+ in-waitsvc/in-stamp） | C3a+C3b 全量（kill 用宿主 SIGKILL） | ①三 dind 组网在 Actions runner 的稳定性未经验证（首跑 nightly 才知；按交付 §5 风险只放 nightly、失败开 issue）；②w2 重启用「kill 前 pidfile 预清理 + docker start」，noderestart.bat 的 rescue-dind 兜底未转译（预清理后 2s 级恢复，未观测到需要兜底） |
 | V6b | `V6B-ASSERT-1 DRAIN_BLOCKS_APP` / `2 VOLUME_DATA_ALIVE_DURING_DRAIN` / `3 AUTO_REBIND_AFTER_ACTIVE` / `4 DATA_INTACT_AFTER_ROUNDTRIP`（v6.sh，drain/回岗） | spike/c `c4a-run.bat` | C4a 全量 | 未收录 C4b（node rm→永久 PENDING→人工 rebind→docker cp 抢救）：需第四个 dind join + 死容器 cp 编排，见下「未自动化项」 |
-| V5/V5b | —（占位 job `v5-recovery-drill`，`if: false`） | spike/c `v5-up.bat` → `v5-backup.bat` → `v5-death-restore.bat`（+ `v5-sample.bat`） | **未自动化** | 依赖宿主侧「停止态 docker cp 冷备 → 同 IP 换 dind 容器 → dockerd 重启载 raft（+可选 force-new-cluster）→ 25 分钟 worker 连续性采样」编排，转译成本高。转译要点已在 spike/c README §5/§6（冷备 sha256 校验、同 IP 复用、join token 轮换注意）。启用时补 v5.sh（宿主编排）+ workflow job 去 `if: false` |
-| V7 | — | — | **未自动化** | 引擎矩阵属 T2.24：双存储腿（containerd 默认/overlay2）与上一 minor 腿以 matrix 展开，run.sh 已预留 `DIND_IMAGE`/`DIND_EXTRA_ARGS` |
+| V5/V5b | —（占位 job `v5-recovery-drill`，`if: false`） | spike/c `v5-up.bat` → `v5-backup.bat` → `v5-death-restore.bat`（+ `v5-sample.bat`） | **未自动化（T2.24 复核后维持裁决）** | 依赖宿主侧「停止态 docker cp 冷备 → 同 IP 换 dind 容器 → dockerd 重启载 raft（+可选 force-new-cluster）→ 25 分钟 worker 连续性采样」编排，转译成本高。转译要点已在 spike/c README §5/§6（冷备 sha256 校验、同 IP 复用、join token 轮换注意）。启用时补 v5.sh（宿主编排）+ workflow job 去 `if: false` |
+| V7 | `V7 engine <image> / <storage>` 矩阵 job：`DIND_IMAGE {docker:29.8.1-dind, docker:29.7.2-dind} × {containerd 缺省, --storage-driver overlay2}` 四格，每格跑 v1/v3/v4/v6（交付 §2.3 引擎升级回归面） | —（run.sh 既有 `DIND_IMAGE`/`DIND_EXTRA_ARGS` 钩子） | **T2.24 自动化** | V2 不进矩阵（断言与引擎/存储形态正交 + 取证依赖专用全新 dind 的 dockerd 日志）；`29.8.1×containerd` 格与基线 suite jobs 同构（控制格） |
 
-## CI 路径（`.github/workflows/nightly.yml`）
+## CI 路径（`.github/workflows/nightly.yml`，T2.24 扩容后）
 
-- `schedule` 每日一次 + `workflow_dispatch`；`concurrency` 组不互相取消
-  （红即证据，不允许重试掩盖）；`ubuntu-latest`；引擎单腿
-  `docker:29.8.1-dind`（矩阵腿占位注释，T2.24）。
-- 五个 suite job（v1/v2/v3/v4/v6）各自独立 dind，失败隔离；每个 job 的
+- `schedule` 每日一次 + `workflow_dispatch`（主会话验收手动触发实跑）；
+  `concurrency` 组不互相取消（红即证据，不允许重试掩盖）；`ubuntu-latest`。
+- 基线 suite jobs（T1.4 原样）：v1/v2/v3/v4/v6 各自独立 dind，失败隔离；
   步骤就是 `bash e2e/nightly/run.sh <suite>`——与本地完全同一条命令。
-- 失败时 run.sh 自身 dump dind 日志尾部；workflow 另有 `if: failure()`
-  dump 兜底（runner 级超时场景）与 `if: always()` 清理
-  （容器 + `fleetly-nightly-br` 网络）。
-- v5-recovery-drill 为 `if: false` 占位 job，注明转译来源。
+- `engine-matrix`（V7）：见清单表 V7 行；`fail-fast: false`，每格顺序跑
+  v1/v3/v4/v6。
+- `upgrade-e2e` / `install-suite`：直接跑 `deploy/run-upgrade-test.sh` /
+  `deploy/run-dind-test.sh`（T2.23 / T2.1 验收入 nightly）。
+- `conformance-builder`：`bash e2e/nightly/conformance-builder.sh`，CB-*
+  断言行与场景 B 结论收进 job summary。
+- `resource-sample`：`bash e2e/nightly/resource-sample.sh`，Markdown 表进
+  job summary，`sample.json` 附加 artifact（actions/upload-artifact）。
+- 失败时 run.sh / 各编排脚本自身 dump dind 日志尾部；workflow 另有
+  `if: failure()` dump 兜底与 `if: always()` 清理（容器 + `fleetly-nightly-br`
+  网络）。
+- v5-recovery-drill 为 `if: false` 占位 job（T1.4 裁决，T2.24 维持）。
+
+## Builder conformance（T2.24；场景与断言）
+
+`conformance-builder.sh`（单 dind；fleetlyd+fleetly+探针交叉编译注入，
+daemon `--bin-dir --no-systemd` 起服，Traefik 就绪后走 CLI）：
+
+| 场景 | 素材 | 断言（内层脚本） |
+| --- | --- | --- |
+| A Dockerfile 驱动 | scratch + 静态探针二进制（零 registry 依赖） | `CB-A1..A8`：build rc0 / succeeded / driver=dockerfile / digest `sha256:<64hex>` / 镜像落本机 / deploy rc0 / derived_state=running / 入口路由 200 |
+| B 无 Dockerfile（railpack） | go.mod + main.go（stdlib-only） | `CB-B1` 驱动裁决 = railpack（**判定线，必须过**）；`CB-B2` 终态；`CB-B3` 终态证据（成功带 digest、失败带 E_BUILD_FAILED）；`CB-B4` plan 归档（成功时）。构建本身受外网/工具链下载影响，成功或失败都合法——`CB-B-OUTCOME` 结论行进 job summary |
+| C 坏 Dockerfile | COPY 不存在的文件 | `CB-C1..C6`：build rc≠0 / builds 行 failed / E_BUILD_FAILED / deploy rc≠0 / 部署行 failed / E_BUILD_FAILED |
+
+**ObjectStore conformance 记 N/A（T2.24 裁决落档）**：ObjectStore 组件
+v0.1 未落地（minio-go 在代码库零使用、无真实消费者），以 MinIO/RustFS
+容器代演没有验证对象；等 v0.2 备份上传统一落地后再进 conformance。
+本阶段 Builder conformance 必落地（如上）。
+
+## 资源基线采样（T2.24；T2.25 前置）
+
+`resource-sample.sh`：dind 内 `--bin-dir --no-systemd` 安装起服 → 预拉
+traefik（fleetly-ingress 计入 idle 基线；fleetly-buildkitd 由 daemon 后台
+预热拉起，采样时是否已在跑如实报告）→ 稳定 60s → fleetlyd RSS 连采 5 拍
+×5s（`/proc/<pid>/status` VmRSS，报 min/avg/max/last）→
+`docker stats --no-stream` 逐容器单列（Traefik / buildkit 各自一行）。
+产物：`summary.md`（Markdown 表，CI 进 job summary）+ `sample.json`
+（CI 附加 artifact；本地落 `RS_OUT_DIR`，默认临时目录）。
+
 
 ## 本地复跑（Windows Docker Desktop）
 
@@ -81,6 +120,10 @@ bash e2e/nightly/run.sh v1
 bash e2e/nightly/run.sh v2
 # 全套
 bash e2e/nightly/run.sh all
+
+# T2.24 新增（与 CI 同一条命令）
+bash e2e/nightly/conformance-builder.sh
+bash e2e/nightly/resource-sample.sh
 ```
 
 产物（探针二进制、dockerd 日志、V6 戳读回证据）全部落在 `mktemp -d`

@@ -1,7 +1,7 @@
 # nightly 轨道（交付流水线 docs/design/2026-09-17-delivery-pipeline.md §2.2、
 # §6 V1-V7 映射；P3：V1-V7 从一次性 Spike 升级为永久回归测试）。
 #
-# 本期（T1.4）落地 V1/V2/V3/V4/V6a/V6b 的可自动化子集：
+# T1.4 落地 V1/V2/V3/V4/V6a/V6b 的可自动化子集（spike/b、spike/c 转译）：
 #   V1  health 失败→paused+旧任务服务（含 B2 归位）   spike/b in-b1-v1b2
 #   V2  本地 digest 引用零 pull                        spike/a e5-v2-digest
 #   V3  更新窗口路由零失败+VIP 稳定                    spike/b in-b3-v3v4
@@ -9,21 +9,40 @@
 #       serversTransport 辅助）                        spike/b in-b3d+in-b3
 #   V6  V6a 空卷事故+硬钉住 / V6b drain-回岗（双 dind 组网，spike/c c3a/
 #       c3b/c4a 现成形态）                             spike/c
-#   V5/V5b 占位（宿主侧 tar 冷备/换容器编排转译成本高，见 v5 占位 job 与
-#   e2e/nightly/README.md 清单表）。
+#   V5/V5b 维持 T1.4「不可 CI 化」裁决：宿主 docker 依赖编排 + 25 分钟连续性
+#   采样，转译成本高——占位 job if:false 保留，不强行自动化。
 #
-# 引擎矩阵（§2.2 nightly 第 1 项）：本期单腿 docker:29.8.1-dind；
-# containerd/overlay2 双存储腿与上一 minor 腿在 T2.24 以 matrix 展开
-# （run.sh 已支持 DIND_IMAGE / DIND_EXTRA_ARGS 两个 env）。
+# T2.24 扩容（交付 §4 M1 验收线）：
+#   - engine-matrix（V7 落地，§2.2 nightly 第 1 项 / §2.3 引擎门禁流程）：
+#     matrix = DIND_IMAGE {29.8.1, 29.7.2} × storage {containerd 缺省,
+#     overlay2}，每格跑 V1/V3/V4/V6（交付 §2.3 引擎升级回归面）。
+#     覆盖映射表：
+#       | 格                  | 断言面   | 说明                         |
+#       | 29.8.1×containerd   | V1/V3/V4/V6 | 基线（与基线 job 同构，控制格）|
+#       | 29.8.1×overlay2     | V1/V3/V4/V6 | 存储驱动回归                 |
+#       | 29.7.2×containerd   | V1/V3/V4/V6 | 上一受支持 minor 回归        |
+#       | 29.7.2×overlay2     | V1/V3/V4/V6 | 双因子交叉                   |
+#     V2 不进矩阵：其断言（digest 零 pull）与引擎/存储形态正交，且取证依赖
+#     专用全新 dind 的 dockerd 日志；保留独立基线 job 单跑。
+#   - upgrade-e2e / install-suite：T2.23 / T2.1 的 dind 验收直接进 nightly
+#     （deploy/run-upgrade-test.sh、deploy/run-dind-test.sh，自足编排）。
+#   - conformance-builder：Builder conformance（场景 A Dockerfile 驱动 / B
+#     railpack 检测裁决 / C 坏 Dockerfile E_BUILD_FAILED 信封）。ObjectStore
+#     conformance 记 N/A（组件 v0.1 未落地、无真实消费者，v0.2 备份上传
+#     统一落地）——见 e2e/nightly/README.md。
+#   - resource-sample：控制面 idle 资源基线采样（RSS + docker stats），产物
+#     附加 artifact 供 T2.25 趋势线；趋势告警不阻断。
 #
-# 每个步骤与本地可跑脚本一致：bash e2e/nightly/run.sh <suite>
-# （本地复跑见 e2e/nightly/README.md）。
+# 每个步骤与本地可跑脚本一致：bash e2e/nightly/run.sh <suite> /
+# sh deploy/run-*.sh / bash e2e/nightly/conformance-builder.sh /
+# bash e2e/nightly/resource-sample.sh（本地复跑见 e2e/nightly/README.md 与
+# deploy/README.md）。
 name: nightly
 
 on:
   schedule:
     - cron: "47 21 * * *" # 每日一次（21:47 UTC，避开整点任务高峰）
-  workflow_dispatch:
+  workflow_dispatch: # 主会话验收手动触发实跑
 
 permissions:
   contents: read
@@ -35,11 +54,9 @@ concurrency:
 
 env:
   DIND_IMAGE: docker:29.8.1-dind
-  # T2.24 矩阵扩展占位（交付 §2.2 nightly 第 1 项）：
-  #   overlay2 存储腿  -> DIND_EXTRA_ARGS: "--storage-driver overlay2"
-  #   上一 minor 腿    -> DIND_IMAGE: docker:29.7-dind（届时定 tag）
 
 jobs:
+  # ───────────────────────── 基线 suite jobs（T1.4 原样；29.8.1 缺省存储）───
   v1-health-gate:
     # V1（含 B2 归位零成本）：health 失败时更新 paused、旧任务不中断、
     # 外部探测零失败；同内容重放旧 task id 不变。
@@ -67,6 +84,7 @@ jobs:
   v2-digest-nopull:
     # V2：service 以 名称@sha256:<本地 imageID> 创建与 --force 重放零 pull；
     # dockerd 日志 pull 取证在宿主侧（run.sh），tag 引用对照证明检测通道。
+    # 不进 V7 引擎矩阵：断言与引擎/存储形态正交（见文件头覆盖映射表）。
     name: V2 digest zero-pull
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -158,15 +176,167 @@ jobs:
           docker network rm fleetly-nightly-br || true
 
   v5-recovery-drill:
-    # 占位（本期范围裁决）：V5 单 manager 故障恢复 + V5b raft 回退孤儿命运
-    # 依赖宿主侧「停止态 docker cp 冷备 tar / 同 IP 换容器」编排
+    # 占位（T1.4 裁决，T2.24 复核后维持）：V5 单 manager 故障恢复 + V5b raft
+    # 回退孤儿命运依赖宿主侧「停止态 docker cp 冷备 tar / 同 IP 换容器」编排
     # （spike/c/scripts/v5-up.bat → v5-backup.bat → v5-death-restore.bat，
-    # 全程 ~12 分钟），转译为 CI 步骤的成本高，本期不自动化。
-    # 落地跟踪：e2e/nightly/README.md 清单表「未自动化项」。
+    # 全程 ~12 分钟 + 25 分钟 worker 连续性采样），转译为 CI 步骤的成本高，
+    # 不强行自动化。落地跟踪：e2e/nightly/README.md 清单表「未自动化项」。
     name: V5/V5b recovery drill (placeholder)
-    if: false # 占位：转译 v5-*.bat 编排后启用（T2.x）
+    if: false # 占位：转译 v5-*.bat 编排后启用（T1.4 裁决维持）
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - run: echo "placeholder — V5/V5b orchestration not yet automated; see e2e/nightly/README.md"
+
+  # ─────────────────────────────── V7 引擎矩阵（T2.24；交付 §2.2/§2.3）─────
+  engine-matrix:
+    # V7 引擎升级回归矩阵：DIND_IMAGE {29.8.1, 29.7.2} × storage
+    # {containerd 缺省, overlay2} 四格，每格顺序跑 V1/V3/V4/V6（交付 §2.3
+    # 引擎升级回归面；Docker 29.x 破坏史要求 minor 升级必须携带回归证据）。
+    # fail-fast: false——红格各自暴露，不互相掩盖；DIND_IMAGE/DIND_EXTRA_ARGS
+    # 是 run.sh 的既有环境钩子（引擎版本由镜像钉定，脚本内无版本断言）。
+    name: V7 engine ${{ matrix.engine }} / ${{ matrix.storage.id }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        engine:
+          - docker:29.8.1-dind
+          - docker:29.7.2-dind
+        storage:
+          - id: containerd
+            args: ""
+          - id: overlay2
+            args: "--storage-driver overlay2"
+    env:
+      DIND_IMAGE: ${{ matrix.engine }}
+      DIND_EXTRA_ARGS: ${{ matrix.storage.args }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: engine identity
+        run: |
+          echo "engine image: $DIND_IMAGE"
+          echo "storage extra args: [$DIND_EXTRA_ARGS]"
+      - name: run V1/V3/V4/V6 regression on this engine leg
+        run: bash e2e/nightly/run.sh v1 v3 v4 v6
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-nightly- | xargs -r docker rm -f
+          docker network rm fleetly-nightly-br || true
+
+  # ───────────────────────────── T2.23 / T2.1 验收入 nightly（T2.24）────────
+  upgrade-e2e:
+    # T2.23 自升级 dind 验收（升级 E2E 47 断言：应用不停 probe 零失败 +
+    # 坏件自动回退 + 备份台账）。编排自足：交叉编译/注入/清理全在
+    # deploy/run-upgrade-test.sh，与本地同一条命令。
+    name: upgrade E2E (run-upgrade-test.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run upgrade suite (dind)
+        run: sh deploy/run-upgrade-test.sh
+      - name: cleanup
+        if: always()
+        run: docker ps -aq --filter name=fleetly-upgrade-test | xargs -r docker rm -f
+
+  install-suite:
+    # T2.1 安装器 dind 验收（51 断言：安装/门禁/幂等/卸载全链）。
+    # 编排自足：deploy/run-dind-test.sh，与本地同一条命令。
+    name: install suite (run-dind-test.sh)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run installer suite (dind)
+        run: sh deploy/run-dind-test.sh
+      - name: cleanup
+        if: always()
+        run: docker ps -aq --filter name=fleetly-install-test | xargs -r docker rm -f
+
+  # ───────────────────────────────────── conformance / 资源采样（T2.24）────
+  conformance-builder:
+    # Builder conformance（ObjectStore 部分记 N/A：组件 v0.1 未落地、无真实
+    # 消费者，等 v0.2 备份上传统一落地——见 e2e/nightly/README.md）：
+    #   场景 A  Dockerfile 驱动构建 → 成功 + digest + 部署 succeeded + 路由
+    #   场景 B  无 Dockerfile（railpack 检测）→ 裁决正确（成功或带证据的
+    #           E_BUILD_FAILED；工具链下载受外网影响，结论进 summary）
+    #   场景 C  坏 Dockerfile → E_BUILD_FAILED 信封 + 部署 failed
+    name: conformance builder (A/B/C)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run builder conformance (dind)
+        # pipefail 保 rc；CB-* 断言行与场景 B 结论收进 job summary。
+        run: |
+          set -o pipefail
+          bash e2e/nightly/conformance-builder.sh 2>&1 | tee "$RUNNER_TEMP/cb.log"
+      - name: job summary
+        if: always()
+        run: |
+          {
+            echo '## Builder conformance results'
+            echo ''
+            grep -E 'CB-(P|A|B|C)[0-9].*(PASS|FAIL)|CB-B-OUTCOME' "$RUNNER_TEMP/cb.log" |
+              sed 's/^/    /' || echo '(no CB-* lines found — suite did not reach assertions)'
+            echo ''
+            echo "ObjectStore conformance: N/A (component not shipped in v0.1; lands with v0.2 backup upload)"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: cleanup
+        if: always()
+        run: docker ps -aq --filter name=fleetly-conformance-builder | xargs -r docker rm -f
+
+  resource-sample:
+    # 控制面 idle 资源基线采样（交付 §2.2 nightly 第 5 项；趋势告警不阻断，
+    # 为 T2.25 提供第一份 CI 样本）：dind 内 --no-systemd 起 daemon → 稳定
+    # 60s → fleetlyd RSS 多拍（/proc/<pid>/status VmRSS）+ docker stats 逐
+    # 容器单列（Traefik / buildkit 按实际在跑如实列出）。Markdown 表进 job
+    # summary，JSON 附加 artifact 供趋势对比。
+    name: resource sample (idle baseline)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: run resource sampler (dind)
+        env:
+          RS_OUT_DIR: ${{ github.workspace }}/resource-sample
+        run: bash e2e/nightly/resource-sample.sh
+      - name: job summary
+        if: always()
+        env:
+          RS_OUT_DIR: ${{ github.workspace }}/resource-sample
+        run: cat "$RS_OUT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo '(summary.md missing — sampler failed)'
+      - name: upload sample artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: resource-sample
+          path: resource-sample/sample.json
+          if-no-files-found: warn
+      - name: cleanup
+        if: always()
+        run: docker ps -aq --filter name=fleetly-resource-sample | xargs -r docker rm -f

@@ -1,4 +1,4 @@
-#!/bin/sh
+﻿#!/bin/sh
 # deploy/upgrade.sh — fleetlyd 平台自升级（T2.23，升级双轨的 fleetlyd 轨）。
 #
 # 双轨口径（architecture §4.2 横切硬指标，2026-09-17 审核裁决；runbook 见
@@ -418,7 +418,7 @@ else
         fi
     elif have cosign; then
         cosign verify-blob \
-            --signature "$TMPD/checksums.txt.sig" \
+            --bundle "$TMPD/checksums.txt.sig" \
             --certificate-identity-regexp "^https://github.com/$FLEETLY_GITHUB_REPO/" \
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
             "$TMPD/checksums.txt" ||

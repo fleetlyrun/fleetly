@@ -1,0 +1,47 @@
+# deploy/Dockerfile.fleetlyd — fleetlyd 容器形态（T2.24 release 制品链）。
+#
+# 多阶段：golang 构建层（CGO 关，-trimpath + 版本注入）+ alpine 运行层
+# （入口 fleetlyd；带 shell 便于排障，distroless 收敛属后续加固）。
+#
+# 构建上下文最小集：go.work / go.work.sum / go.mod / go.sum / cmd / internal /
+# genproto / sdk（go.work 三模块闭包；pkg、proto、console、spike 等不在
+# 编译闭包内）。仓库根直接构建亦可（上下文多带无害，只是慢）：
+#   docker build -f deploy/Dockerfile.fleetlyd \
+#     --build-arg FLEETLY_VERSION=v0.1.0 -t ghcr.io/fleetlyrun/fleetlyd:v0.1.0 .
+#
+# 运行形态口径（v0.1）：容器是「可选运行形态」，主形态 = 宿主二进制 +
+# systemd（deploy/install.sh）。fleetlyd 经本地 docker.sock 管理单节点
+# Swarm，容器化运行必须把宿主 dockerd socket 挂进来：
+#   docker run -d --name fleetlyd \
+#     -v /var/run/docker.sock:/var/run/docker.sock \
+#     -v fleetly-data:/var/lib/fleetly \
+#     -p 8420:8420 -p 8424:8424 \
+#     ghcr.io/fleetlyrun/fleetlyd:<tag>
+# （挂宿主 socket = 容器内进程获得宿主 dockerd 的 root 等价权限——v0.1
+# 众所周知的取舍，与主形态一致；socket 收紧属后续安全阶段。）
+
+FROM golang:1.26-alpine AS build
+ARG FLEETLY_VERSION=dev
+WORKDIR /src
+COPY go.work go.work.sum go.mod go.sum ./
+COPY cmd ./cmd
+COPY internal ./internal
+COPY genproto ./genproto
+COPY sdk ./sdk
+RUN CGO_ENABLED=0 GOOS=linux \
+    go build -trimpath \
+      -ldflags "-s -w -X main.version=${FLEETLY_VERSION}" \
+      -o /out/fleetlyd ./cmd/fleetlyd
+
+FROM alpine:3.22
+# 排障依赖（swarm/daemon 自检需要的基础工具；docker CLI 不进容器——平台经
+# socket 由 dockerd 服务端执行，容器内不装 docker 客户端以收窄攻击面）。
+RUN apk add --no-cache ca-certificates wget
+COPY --from=build /out/fleetlyd /usr/local/bin/fleetlyd
+# 数据根与安装器/主形态同口径（SQLite/主密钥/构建缓存/日志全在此卷）。
+RUN mkdir -p /var/lib/fleetly /etc/fleetly
+VOLUME ["/var/lib/fleetly"]
+WORKDIR /var/lib/fleetly
+EXPOSE 8420 8421 8422 8424
+ENTRYPOINT ["/usr/local/bin/fleetlyd"]
+CMD ["-c", "/etc/fleetly/config.yaml"]

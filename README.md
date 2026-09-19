@@ -1,5 +1,7 @@
 # fleetly
 
+[![ci](https://github.com/fleetlyrun/fleetly/actions/workflows/pr.yml/badge.svg)](https://github.com/fleetlyrun/fleetly/actions/workflows/pr.yml) [![nightly](https://github.com/fleetlyrun/fleetly/actions/workflows/nightly.yml/badge.svg)](https://github.com/fleetlyrun/fleetly/actions/workflows/nightly.yml)
+
 [English](README.md) | [简体中文](README_ZH.md)
 
 > Dokku's footprint, Railway's API, AI-Agent-first operations.

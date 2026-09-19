@@ -20,6 +20,7 @@ init）、§4.2（引擎门禁 / 安全默认基线 / 底座端口加固）、de
 | `test-upgrade.sh` | dind 内升级验收套件（U/S 两段：正常升级零停应用 + 坏件自动回退 + 备份链） |
 | `run-upgrade-test.sh` | 升级套件宿主编排（两份版本串二进制 + 探针应用交叉编译 → dind → 套件 → 清理） |
 | `testdata/probeapp/` | 升级 E2E 探针应用（serve/hc/watch 三模式；scratch 镜像零 registry 依赖） |
+| `Dockerfile.fleetlyd` | fleetlyd 容器形态（T2.24；多阶段构建 + alpine 运行层，入口 fleetlyd——可选运行形态，见下文） |
 
 ## 一条命令安装
 
@@ -42,14 +43,24 @@ sudo sh install.sh --bin-dir ./dist
 | 版本钉定 | `--version vX.Y.Z` | 同上 |
 | 离线/开发 | `--bin-dir <dir>` | 本地直取（自备完整性） |
 
-下载形态的 release 契约（T2.24 制品链需满足）：release 附
-`fleetly_<tag>_linux_<arch>.tar.gz`（tar 包根下有 `fleetlyd`、`fleetly`）、
-`checksums.txt`（`<sha256>  <文件名>` 行式）、`checksums.txt.sig`（cosign
-对 checksums.txt 的签名，按 GitHub OIDC keyless 校验：
+下载形态的 release 契约（T2.24 制品链已落地 `.github/workflows/release.yml`）：
+release 附 `fleetly_<tag>_linux_<arch>.tar.gz`（tar 包根下有 `fleetlyd`、
+`fleetly`；安装脚本**独立制品**不打进 tar——`install.sh`/`uninstall.sh`/
+`upgrade.sh` 在 release 根）、`checksums.txt`（`<sha256>  <文件名>` 行式，
+覆盖 tar + 三个安装脚本）、`checksums.txt.sig`（**Sigstore bundle JSON**——
+cosign v3 keyless `sign-blob --bundle` 的唯一产物形态，内嵌签名 + 证书 +
+Rekor 条目；另附 `checksums.txt.cert` 供 `--certificate` 验证形态）与
+`*.spdx.json` SBOM（syft）。签名验证约束（keyless，GitHub OIDC）：
 `--certificate-oidc-issuer https://token.actions.githubusercontent.com`、
-`--certificate-identity-regexp ^https://github.com/fleetlyrun/fleetly/`）。
-cosign 缺失时安装器**显式警告降级**（不静默）；cosign 在而验证失败即中止；
-`--skip-signature-verify` 仅调试用。
+`--certificate-identity-regexp ^https://github.com/fleetlyrun/fleetly/`。
+
+**验签形态（已修复）**：install.sh/upgrade.sh 的 verify 命令用
+`--bundle "$TMPD/checksums.txt.sig"`（checksums.txt.sig 是 cosign v3
+keyless `sign-blob --bundle` 的自足产物：内嵌签名 + 证书 + Rekor 证据；
+cosign ≥ 2.6 / 3.x 的 verify-blob 要求 `--key`/`--certificate`/`--bundle`
+三者有其一，release.yml 的 verify gate A 即本命令同款 identity 约束的
+bundle 形态验证）。cosign 缺失时安装器**显式警告降级**（不静默）；cosign
+在而验证失败即中止；`--skip-signature-verify` 仅调试用。
 
 ## 引擎门禁（不满足即拒绝，exit 1）
 
@@ -171,14 +182,40 @@ A8 nftables-only shim iptables 门禁拒绝；A9 卸载（数据保留/明示 +
 `--purge`）。
 
 amd64 运行验证即覆盖门禁主路径；arm64 交叉编译产物存在性由构建证明
-（release smoke 属 T2.24）。
+（release.yml build matrix；arm64 QEMU 运行 smoke 成本高，T2.24 明确列
+遗留，见 release.yml 头注）。
+
+## 容器形态（T2.24，可选运行形态）
+
+`Dockerfile.fleetlyd`：多阶段（golang:1.26-alpine 构建层，`CGO_ENABLED=0`
++ `-trimpath` + `-X main.version=<tag>`）→ alpine:3.22 运行层，入口
+`fleetlyd`，数据卷 `/var/lib/fleetly`，配置 `-c /etc/fleetly/config.yaml`。
+
+```sh
+docker build -f deploy/Dockerfile.fleetlyd \
+  --build-arg FLEETLY_VERSION=v0.1.0 -t ghcr.io/fleetlyrun/fleetlyd:v0.1.0 .
+docker run -d --name fleetlyd \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v fleetly-data:/var/lib/fleetly \
+  -p 8420:8420 -p 8424:8424 \
+  ghcr.io/fleetlyrun/fleetlyd:v0.1.0
+```
+
+边界：**主形态仍是宿主二进制 + systemd**（install.sh）；容器形态挂宿主
+docker.socket（容器内进程获得宿主 dockerd root 等价权限——与主形态同权限
+口径的明示取舍）；release 轨道按 digest cosign 签名
+（`ghcr.io/fleetlyrun/fleetlyd:<tag>`，linux/amd64 单平台——arm64 运行
+形态走 tarball/安装器，多平台镜像列后续）。
 
 ## 已知边界（后续阶段）
 
-- 二进制签名验证的 release 制品链（cosign keyless）随 T2.24 落地；
-  本阶段按上方契约预留探测与降级路径。
+- release 制品链已落地（`.github/workflows/release.yml`，T2.24）：tar +
+  checksums + SBOM + cosign keyless 签名 + ghcr 镜像 + GitHub Release。
+  **install.sh 的 cosign verify 命令缺 `--certificate`/`--bundle`，装了
+  cosign 的环境会失败关闭**——一行修复待 T2.26（见上方「已知缺口」）。
 - `--harden-firewall`（自动 iptables 放行规则）为 architecture §4.2
   预留，本阶段只提示不写规则。
 - unit 以 root 运行（需要 docker.sock；专用用户 + docker 组收敛属后续
   加固项）。
-- Engine 升级回归矩阵（V7）与自升级（T2.23）不在本阶段。
+- release 首发实跑（打 tag 全链）与 nightly 全绿门禁接入 release 轨道
+  属 T2.26 验收面。

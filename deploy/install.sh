@@ -271,7 +271,7 @@ else
         warn 'signature file unavailable — signature verification SKIPPED (degraded; delivery-pipeline section 2.4 requires signed releases)'
     elif have cosign; then
         cosign verify-blob \
-            --signature "$TMPD/checksums.txt.sig" \
+            --bundle "$TMPD/checksums.txt.sig" \
             --certificate-identity-regexp "^https://github.com/$FLEETLY_GITHUB_REPO/" \
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
             "$TMPD/checksums.txt" ||
