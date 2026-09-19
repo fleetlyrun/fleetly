@@ -76,7 +76,7 @@
 **Flagged ambiguities（按重要性）：**
 
 1. **sweep 双义**〔已改（2026-09-19）〕：`gitserver.deliveryCache.sweep` 已更名 **expire**（TTL 惰性过期删除）；sweep 专指周期扫描轮（ingress 收敛/续期）。
-2. **source 四义**〔部分已改（2026-09-19）〕：git 来源（source_url）/日志来源（container|build）/env 层来源/部署溯源（source_git_*）四义仍并存——各自有 enum 与字段前缀限界，属可容忍多义；`gitserver.Source` 聚合门面已更名 **GitTriggers**（构造器 `NewGitTriggers`，装配 provider 同名），名实相符。
+2. **source 四义**〔部分已改（2026-09-19）〕：git 来源（source_url）/日志来源（container|build）/env 层来源/部署溯源（source_git_*）四义仍并存——各自有 enum 与字段前缀限界，属可容忍多义；`gitserver.Source` 聚合门面已更名 **GitTriggers**（构造器 `NewGitTriggers`，装配 provider 同名），api 端口 `GitDeploySource` 同步更名 **GitDeployTriggers** 与实现词汇同族，名实相符。
 3. **drift/converge 混族对**〔有意让位〕：反义对语族不对称（日/拉），对称替代 `diverge/converge`（双拉）被否——drift detection 是 GitOps 全行业词汇，行业词优先于词源对称。
 4. **rollback 混合词源**〔接受〕：roll（拉）+back（日）。行业标准，不动。
 5. 双语对照钉死：台账=ledger（21 处已一致）、对账=reconcile、切流=switch flow（switch traffic）、锚写=anchor、钉住=pin。

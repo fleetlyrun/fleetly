@@ -16,10 +16,11 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// GitDeploySource 是 DeployFromGit RPC 的 compose 源端口（实现方在
-// internal/gitserver——compose 真源在其 bare 仓库对象库；方向纪律：api
-// 定义端口、不感知实现类型）。
-type GitDeploySource interface {
+// GitDeployTriggers 是 DeployFromGit RPC 的 git 触发端口（实现方在
+// internal/gitserver 的 GitTriggers——compose 真源在其 bare 仓库对象库；
+// 方向纪律：api 定义端口、不感知实现类型；命名口径 UBIQUITOUS_LANGUAGE
+// §flagged-2：与实现类型同族词汇，弃旧名 GitDeploySource）。
+type GitDeployTriggers interface {
 	// DeployFromGitPush 以 git push 语义入队部署：每次调用建部署记录
 	// （显式用户动作，不去重——幂等口径绑定在票面）；返回记录与校验期
 	// 警告。actorTokenID 记录钩子回调 token（可空）。
@@ -36,12 +37,12 @@ type GitDeploySource interface {
 type DeploymentsService struct {
 	serverv1.UnimplementedDeploymentsServiceServer
 	st  *state.Store
-	git GitDeploySource
+	git GitDeployTriggers
 }
 
-// NewDeploymentsService 构造 DeploymentsService（git 源端口可 nil——
+// NewDeploymentsService 构造 DeploymentsService（git 触发端口可 nil——
 // DeployFromGit 届时显式不可用，进程内夹具形态）。
-func NewDeploymentsService(st *state.Store, git GitDeploySource) *DeploymentsService {
+func NewDeploymentsService(st *state.Store, git GitDeployTriggers) *DeploymentsService {
 	return &DeploymentsService{st: st, git: git}
 }
 
