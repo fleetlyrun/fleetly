@@ -11,8 +11,9 @@
 # usage: run.sh <suite>...     suite = v1 | v2 | v3 | v4 | v6 | all
 # env:
 #   DIND_IMAGE       dind image (default docker:29.8.1-dind)
-#   DIND_EXTRA_ARGS  extra `docker run` args for the dind containers, e.g.
-#                    "--storage-driver overlay2" for the future storage leg
+#   DIND_EXTRA_ARGS  extra dockerd args appended AFTER the image ref (they go
+#                    to dockerd via the dind entrypoint, not to `docker run`),
+#                    e.g. "--storage-driver overlay2" for the storage leg
 #
 # Suite -> engine topology:
 #   v1  one dind (infra-b + v1.sh)             spike/b B1/B2
@@ -97,7 +98,7 @@ dind_up() { # <name> [extra docker run args...]
     shift
     docker rm -f "$n" >/dev/null 2>&1 || true
     # shellcheck disable=SC2086
-    docker run -d --name "$n" --privileged $DIND_EXTRA_ARGS "$@" "$DIND_IMAGE" >/dev/null ||
+    docker run -d --name "$n" --privileged "$@" "$DIND_IMAGE" $DIND_EXTRA_ARGS >/dev/null ||
         die "docker run $n"
     SUITE_DINDS="$SUITE_DINDS $n"
     i=0
