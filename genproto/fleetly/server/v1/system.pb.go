@@ -220,7 +220,7 @@ type GetSystemStatusResponse struct {
 	Version    string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
 	Components []*ComponentHealth     `protobuf:"bytes,3,rep,name=components,proto3" json:"components,omitempty"`
 	// 状态备份健康视图（T2.22）：最近一次台账行的投影。从未备份 → 不输出
-	//（backup 组件的 ComponentHealth 行会以 ok=false 显式表达不健康）。
+	// （backup 组件的 ComponentHealth 行会以 ok=false 显式表达不健康）。
 	Backup        *BackupHealth `protobuf:"bytes,4,opt,name=backup,proto3" json:"backup,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

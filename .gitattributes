@@ -1,0 +1,9 @@
+# proto 源强制 LF：注释里的换行会经 protoc-gen-openapiv2 原样嵌入 swagger
+# title；Windows 检出的 CRLF proto 会生成含 \r\n 的生成物，CI（Linux）再生成
+# 即漂移（T2-9b proto 门翻车实录）。生成物由 proto 派生，源头钉 LF 即全局确定。
+*.proto text eol=lf
+# 生成物同样钉 LF：保证 Windows 本机再生成与 CI（Linux）再生成逐字节一致，
+# 生成物同步门（proto job 的 git diff --exit-code）不再依赖 autocrlf 归一。
+genproto/** text eol=lf
+# dind/POSIX 执行面脚本同样钉 LF（宿主编排已带 CR 剥离兜底，此处为仓库侧一致性）。
+*.sh text eol=lf

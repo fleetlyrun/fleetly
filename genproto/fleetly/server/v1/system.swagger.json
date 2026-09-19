@@ -18,7 +18,7 @@
   "paths": {
     "/v1/system/backups": {
       "get": {
-        "summary": "ListBackups 状态备份台账（T2.22，只读）：热备快照的诚实账（kind/路径/\r\nsha256/verify_status）。verify_status=failed 的行是红色告警面的一部分\r\n——台账如实保留失败行，消费方据此判断备份可用性。",
+        "summary": "ListBackups 状态备份台账（T2.22，只读）：热备快照的诚实账（kind/路径/\nsha256/verify_status）。verify_status=failed 的行是红色告警面的一部分\n——台账如实保留失败行，消费方据此判断备份可用性。",
         "operationId": "SystemService_ListBackups",
         "responses": {
           "200": {
@@ -39,7 +39,7 @@
         ]
       },
       "post": {
-        "summary": "TriggerBackup 手动触发一次状态备份（T2.22；deploy scope——写面语义，\r\n与升级编排 pre_upgrade 快照共用同一同步入口；响应即落账后的台账行，\r\nverify_status=failed 时调用方必须视为备份失败而非请求失败歧义态）。",
+        "summary": "TriggerBackup 手动触发一次状态备份（T2.22；deploy scope——写面语义，\n与升级编排 pre_upgrade 快照共用同一同步入口；响应即落账后的台账行，\nverify_status=failed 时调用方必须视为备份失败而非请求失败歧义态）。",
         "operationId": "SystemService_TriggerBackup",
         "responses": {
           "200": {
@@ -185,7 +185,7 @@
           "title": "失败原因原文（verified 行为空）。"
         }
       },
-      "title": "BackupHealth 是系统状态里备份面的明细视图（组件布尔健康的展开：最近\r\n一次备份的时间与校验结论——「绿色成功但实际没备份」的对立面是让\r\nverify_status 与时间直接可见）。"
+      "title": "BackupHealth 是系统状态里备份面的明细视图（组件布尔健康的展开：最近\n一次备份的时间与校验结论——「绿色成功但实际没备份」的对立面是让\nverify_status 与时间直接可见）。"
     },
     "v1BackupView": {
       "type": "object",
@@ -195,7 +195,7 @@
         },
         "kind": {
           "type": "string",
-          "title": "触发类别：daily / pre_upgrade / post_deploy / manual（历史行可为\r\nhot/cold）。"
+          "title": "触发类别：daily / pre_upgrade / post_deploy / manual（历史行可为\nhot/cold）。"
         },
         "path": {
           "type": "string",
@@ -223,7 +223,7 @@
           "title": "台账落账时刻。"
         }
       },
-      "title": "BackupView 是状态备份台账行的只读投影（state_backups 表）。path 指向\r\n备份目录内的快照文件；manifest.json 与其同目录（含 sha256/密钥指纹/\r\nschema 版本——恢复核对材料，密钥本体绝不入备份目录）。"
+      "title": "BackupView 是状态备份台账行的只读投影（state_backups 表）。path 指向\n备份目录内的快照文件；manifest.json 与其同目录（含 sha256/密钥指纹/\nschema 版本——恢复核对材料，密钥本体绝不入备份目录）。"
     },
     "v1CertLedgerView": {
       "type": "object",
@@ -242,7 +242,7 @@
           "format": "date-time"
         }
       },
-      "title": "CertLedgerView 是证书台账行投影（domains 表 cert 列对照；app 为显示名，\r\n已删除应用回退显示 app id）。"
+      "title": "CertLedgerView 是证书台账行投影（domains 表 cert 列对照；app 为显示名，\n已删除应用回退显示 app id）。"
     },
     "v1ComponentHealth": {
       "type": "object",
@@ -257,7 +257,7 @@
           "type": "string"
         }
       },
-      "title": "ComponentHealth 是单组件健康如实上报（name = lynx 服务名，如\r\nstate.store / state.observer / ingress.traefik）。ok=false 时 error 为\r\n检查器返回原文。"
+      "title": "ComponentHealth 是单组件健康如实上报（name = lynx 服务名，如\nstate.store / state.observer / ingress.traefik）。ok=false 时 error 为\n检查器返回原文。"
     },
     "v1ErrorResponse": {
       "type": "object",
@@ -316,7 +316,7 @@
         },
         "healthz": {
           "type": "string",
-          "title": "配置端点两面探测结果（服务端环回执行）：/healthz 无鉴权状态行；\r\n/configs 带 token 鉴权核验（401 = token 缺失/错误，如实报告；200 =\r\n鉴权通过且返回合法 JSON）。不可达 = \"unreachable\"。"
+          "title": "配置端点两面探测结果（服务端环回执行）：/healthz 无鉴权状态行；\n/configs 带 token 鉴权核验（401 = token 缺失/错误，如实报告；200 =\n鉴权通过且返回合法 JSON）。不可达 = \"unreachable\"。"
         },
         "auth": {
           "type": "string"
@@ -331,7 +331,7 @@
         },
         "cert_dir": {
           "type": "string",
-          "title": "证书存储目录（控制面侧）与其中的 app 清单（meta 索引；目录缺失 =\r\n空清单非错误，cert_dir_error 承载读取故障原文）。"
+          "title": "证书存储目录（控制面侧）与其中的 app 清单（meta 索引；目录缺失 =\n空清单非错误，cert_dir_error 承载读取故障原文）。"
         },
         "cert_dir_apps": {
           "type": "array",
@@ -362,7 +362,7 @@
         },
         "backup": {
           "$ref": "#/definitions/v1BackupHealth",
-          "title": "状态备份健康视图（T2.22）：最近一次台账行的投影。从未备份 → 不输出\r\n（backup 组件的 ComponentHealth 行会以 ok=false 显式表达不健康）。"
+          "title": "状态备份健康视图（T2.22）：最近一次台账行的投影。从未备份 → 不输出\n（backup 组件的 ComponentHealth 行会以 ok=false 显式表达不健康）。"
         }
       }
     },
@@ -426,7 +426,7 @@
           }
         }
       },
-      "title": "NodeView 是节点观测缓存行的只读投影（state-model §2.2：缓存禁止用于\r\n决策，展示/诊断专用；节点变更用 docker node 原生命令）。观测数据带\r\nobserved_at/stale——状态诚实契约（architecture §4.2 横切硬指标）；\r\nnodes 不提供「最后心跳」字段。"
+      "title": "NodeView 是节点观测缓存行的只读投影（state-model §2.2：缓存禁止用于\n决策，展示/诊断专用；节点变更用 docker node 原生命令）。观测数据带\nobserved_at/stale——状态诚实契约（architecture §4.2 横切硬指标）；\nnodes 不提供「最后心跳」字段。"
     },
     "v1PingResponse": {
       "type": "object",
@@ -458,14 +458,14 @@
           "type": "string"
         }
       },
-      "title": "TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists\r\n= false 且 error 为探测原文）。"
+      "title": "TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists\n= false 且 error 为探测原文）。"
     },
     "v1TriggerBackupRequest": {
       "type": "object",
       "properties": {
         "kind": {
           "type": "string",
-          "title": "触发类别（缺省 manual；升级编排传 pre_upgrade）。manual/daily/\r\npre_upgrade/post_deploy 之外取值被请求校验拒绝。"
+          "title": "触发类别（缺省 manual；升级编排传 pre_upgrade）。manual/daily/\npre_upgrade/post_deploy 之外取值被请求校验拒绝。"
         }
       }
     },
