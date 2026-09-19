@@ -238,6 +238,25 @@ jobs:
             > checksums.txt.cert
           test -s checksums.txt.cert
           grep -q 'BEGIN CERTIFICATE' checksums.txt.cert
+      - name: dump bundle structure (debug)
+        if: always()
+        run: |
+          cd dist
+          echo '--- top-level keys ---'
+          jq -r 'keys[]' checksums.txt.sig
+          echo '--- verificationMaterial keys ---'
+          jq -r '.verificationMaterial // {} | keys[]' checksums.txt.sig
+          echo '--- x509 chain length + first 40 chars ---'
+          jq -r '.verificationMaterial.x509CertificateChain.certificates // [] | length' checksums.txt.sig
+          jq -r '.verificationMaterial.x509CertificateChain.certificates[0] // "NULL" | .[0:40]' checksums.txt.sig
+          echo '--- messageSignature keys ---'
+          jq -r '.messageSignature // {} | keys[]' checksums.txt.sig
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-signature-debug
+          path: dist/checksums.txt.sig
+          if-no-files-found: error
       - name: verify gate A — bundle form with install.sh identity constraints
         run: |
           cd dist
