@@ -55,7 +55,7 @@ func TestGatewayWebhookNativeEndpoints(t *testing.T) {
 		t.Fatalf("SetAppWebhookSecret: %v", err)
 	}
 
-	src := gitserver.New(gitserver.Config{
+	src := gitserver.NewGitTriggers(gitserver.Config{
 		Enabled:      true,
 		Root:         filepath.Join(dir, "git"),
 		HookEndpoint: "http://127.0.0.1:1",

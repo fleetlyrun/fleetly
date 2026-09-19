@@ -28,7 +28,7 @@ import (
 
 // ListenAndServe 监听 SSH git 面（阻塞至 ctx 取消或监听错误）；启用态由
 // lynx.Service 壳（cmd/fleetlyd）驱动。
-func (s *Source) ListenAndServe(ctx context.Context, addr string) error {
+func (s *GitTriggers) ListenAndServe(ctx context.Context, addr string) error {
 	signer, err := s.ensureHostKey()
 	if err != nil {
 		return err
@@ -70,7 +70,7 @@ func (s *Source) ListenAndServe(ctx context.Context, addr string) error {
 }
 
 // handleConn 完成一次 SSH 握手并服务其会话（每连接独立 goroutine）。
-func (s *Source) handleConn(ctx context.Context, conn net.Conn, config *gossh.ServerConfig) {
+func (s *GitTriggers) handleConn(ctx context.Context, conn net.Conn, config *gossh.ServerConfig) {
 	defer func() { _ = conn.Close() }()
 	sconn, chans, reqs, err := gossh.NewServerConn(conn, config)
 	if err != nil {
@@ -98,7 +98,7 @@ func (s *Source) handleConn(ctx context.Context, conn net.Conn, config *gossh.Se
 
 // handleSession 服务一个 session 通道：只认 exec 请求（env/pty 等一律
 // 拒绝——请求面即攻击面）。
-func (s *Source) handleSession(ctx context.Context, sconn *gossh.ServerConn, ch gossh.Channel, requests <-chan *gossh.Request) {
+func (s *GitTriggers) handleSession(ctx context.Context, sconn *gossh.ServerConn, ch gossh.Channel, requests <-chan *gossh.Request) {
 	defer func() { _ = ch.Close() }()
 	for req := range requests {
 		switch req.Type {
@@ -123,7 +123,7 @@ func (s *Source) handleSession(ctx context.Context, sconn *gossh.ServerConn, ch 
 
 // execGitCommand 解析白名单命令并 exec 系统 git（stdio 直连通道）。exit
 // status 随通道回执；未知命令回 127。
-func (s *Source) execGitCommand(ctx context.Context, sconn *gossh.ServerConn, ch gossh.Channel, command string) {
+func (s *GitTriggers) execGitCommand(ctx context.Context, sconn *gossh.ServerConn, ch gossh.Channel, command string) {
 	sub, app, err := parseGitCommand(command)
 	if err != nil {
 		s.log.Warn("gitserver: rejected git command", "remote", sconn.RemoteAddr().String(),

@@ -32,7 +32,7 @@ func ValidAppName(name string) bool { return appNamePattern.MatchString(name) }
 func ValidSHA(sha string) bool { return shaPattern.MatchString(sha) }
 
 // repoPath 返回 app 的 bare 仓库路径（app 名已经 ValidAppName 校验）。
-func (s *Source) repoPath(app string) string {
+func (s *GitTriggers) repoPath(app string) string {
 	return filepath.Join(s.cfg.Root, app+".git")
 }
 
@@ -43,7 +43,7 @@ func (s *Source) repoPath(app string) string {
 //     旧 token）+ 重写钩子——daemon 重建仓库时轮换的绑定语义。
 //
 // 幂等；返回仓库路径与是否发生了创建。
-func (s *Source) EnsureBareRepo(ctx context.Context, app string) (string, bool, error) {
+func (s *GitTriggers) EnsureBareRepo(ctx context.Context, app string) (string, bool, error) {
 	if !ValidAppName(app) {
 		return "", false, fmt.Errorf("gitserver: invalid app name %q", app)
 	}
@@ -79,7 +79,7 @@ func (s *Source) EnsureBareRepo(ctx context.Context, app string) (string, bool, 
 
 // writeHook 生成钩子 token（先按名吊销旧 token = 轮换）并写 post-receive
 // 钩子文件（0600；POSIX 侧补可执行位 0700）。
-func (s *Source) writeHook(ctx context.Context, app, hookPath string) error {
+func (s *GitTriggers) writeHook(ctx context.Context, app, hookPath string) error {
 	plaintext, err := s.rotateHookToken(ctx, app)
 	if err != nil {
 		return err
@@ -99,7 +99,7 @@ func (s *Source) writeHook(ctx context.Context, app, hookPath string) error {
 
 // rotateHookToken 轮换 app 的钩子 token：按名吊销在册旧 token，签发新
 // token（scope=deploy，明文仅本次返回——只进钩子文件）。
-func (s *Source) rotateHookToken(ctx context.Context, app string) (string, error) {
+func (s *GitTriggers) rotateHookToken(ctx context.Context, app string) (string, error) {
 	name := hookTokenName(app)
 	existing, err := s.st.ListTokens(ctx)
 	if err != nil {
@@ -172,7 +172,7 @@ exit 0
 // composeFromCommit 从 bare 仓库读指定 commit 的 compose 文件：约定在仓库
 // 根的 compose.yaml / compose.yml——两者都在 → 拒绝（歧义信封，compose
 // 族）；都缺 → 拒绝。compose 真源在 git 对象库，不信任客户端传字节。
-func (s *Source) composeFromCommit(ctx context.Context, app, sha string) ([]byte, error) {
+func (s *GitTriggers) composeFromCommit(ctx context.Context, app, sha string) ([]byte, error) {
 	path := s.repoPath(app)
 	yamlBytes, yamlErr := gitShow(ctx, path, sha, "compose.yaml")
 	ymlBytes, ymlErr := gitShow(ctx, path, sha, "compose.yml")

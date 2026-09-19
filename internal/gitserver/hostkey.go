@@ -17,7 +17,7 @@ import (
 // 出指纹；FingerprintSHA256 是公钥指纹，可安全展示）。
 
 // ensureHostKey 装载（必要时生成）host key 并返回 signer。
-func (s *Source) ensureHostKey() (gossh.Signer, error) {
+func (s *GitTriggers) ensureHostKey() (gossh.Signer, error) {
 	path := s.cfg.HostKeyFile
 	if path == "" {
 		path = filepath.Join(s.cfg.Root, "host_ed25519")

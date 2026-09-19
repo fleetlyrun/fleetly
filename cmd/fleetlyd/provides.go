@@ -59,7 +59,7 @@ var ProviderSet = wire.NewSet(
 	NewEventsService,
 	NewPlacementService,
 	NewTokensService,
-	NewGitSource,
+	NewGitTriggers,
 	NewGitKeysService,
 	NewGRPCServer,
 	NewHTTPServer,
@@ -247,16 +247,16 @@ func gitEndpointForHint(addr string) string {
 
 // NewDeploymentsService 构造部署资源面服务（T2.17；T2.19 增补 DeployFromGit
 // ——git 源端口由 internal/gitserver 实现，方向纪律：api 定义端口）。
-func NewDeploymentsService(st *state.Store, src *gitserver.Source) *api.DeploymentsService {
+func NewDeploymentsService(st *state.Store, src *gitserver.GitTriggers) *api.DeploymentsService {
 	return api.NewDeploymentsService(st, src)
 }
 
-// NewGitSource 构建 git 触发入口核心（T2.19：bare 仓库管理 + post-receive
+// NewGitTriggers 构建 git 触发入口核心（T2.19：bare 仓库管理 + post-receive
 // 钩子 + DeployFromCommit + webhook 验签/防重放/去重/拉源 + SSH 服务器）。
 // git.*/webhook.* 配置节经 AppConfig.GitSettings 翻译（缺省回落
 // internal/gitserver 单一事实源）。
-func NewGitSource(cfg *AppConfig, st *state.Store, sb *secrets.Box, app lynx.App) *gitserver.Source {
-	return gitserver.New(cfg.GitSettings(), st, sb, app.Logger())
+func NewGitTriggers(cfg *AppConfig, st *state.Store, sb *secrets.Box, app lynx.App) *gitserver.GitTriggers {
+	return gitserver.NewGitTriggers(cfg.GitSettings(), st, sb, app.Logger())
 }
 
 // NewGitKeysService 构造 git 公钥管理面服务（T2.19；admin scope）。
@@ -336,7 +336,7 @@ func NewTokensService(st *state.Store) *api.TokensService {
 // Server 自行挂载，与 gateway 路由共存（torchwood 同款双面单端口形态）。
 // Console 静态托管仅在 console.static_dir 非空时挂载（缺省关闭），目录缺
 // index.html 时 fail-fast 拒绝启动。
-func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.Source) (*lynxhttp.Server, error) {
+func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers) (*lynxhttp.Server, error) {
 	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
 	if err != nil {
 		return nil, err
@@ -375,7 +375,7 @@ func NewServices(
 	eng *engine.Engine,
 	ing *ingress.Manager,
 	lm *logs.Manager,
-	src *gitserver.Source,
+	src *gitserver.GitTriggers,
 	cfg *AppConfig,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,

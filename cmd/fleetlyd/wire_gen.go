@@ -68,8 +68,8 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	}
 	engine := NewEngine(app, appConfig, store, client, resolver, box, ingressManager, manager)
 	logsManager := NewLogsManager(app, appConfig, store, client, box)
-	source := NewGitSource(appConfig, store, box, app)
-	server, err := NewHTTPServer(app, appConfig, source)
+	gitTriggers := NewGitTriggers(appConfig, store, box, app)
+	server, err := NewHTTPServer(app, appConfig, gitTriggers)
 	if err != nil {
 		cleanup4()
 		cleanup3()
@@ -86,7 +86,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		return nil, nil, err
 	}
 	appsService := NewAppsService(store, box, appConfig)
-	deploymentsService := NewDeploymentsService(store, source)
+	deploymentsService := NewDeploymentsService(store, gitTriggers)
 	revisionsService := NewRevisionsService(store)
 	buildsService := NewBuildsService(store)
 	driftService := NewDriftService(store, engine)
@@ -106,7 +106,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(app, store, nodeIdentity, observer, janitor, manager, box, queue, builder, engine, ingressManager, logsManager, source, appConfig, server, grpcServer)
+	v := NewServices(app, store, nodeIdentity, observer, janitor, manager, box, queue, builder, engine, ingressManager, logsManager, gitTriggers, appConfig, server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {

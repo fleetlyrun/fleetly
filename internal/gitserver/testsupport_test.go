@@ -68,10 +68,10 @@ services:
     expose: ["80"]
 `
 
-// newTestSource 构造测试用 Source（真实 store + box；Root/HostKey 在临时
+// newTestSource 构造测试用 GitTriggers（真实 store + box；Root/HostKey 在临时
 // 目录；HookEndpoint 指向本地占位——钩子只在真实 SSH push 时执行）。
 // replayTTL ≤ 0 时用配置默认（Normalize 回落 15 分钟）。
-func newTestSource(t *testing.T, replayTTL time.Duration) (*Source, *state.Store, *secrets.Box, string) {
+func newTestSource(t *testing.T, replayTTL time.Duration) (*GitTriggers, *state.Store, *secrets.Box, string) {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := state.Open(context.Background(), filepath.Join(dir, "test.db"))
@@ -89,7 +89,7 @@ func newTestSource(t *testing.T, replayTTL time.Duration) (*Source, *state.Store
 		HookEndpoint: "http://127.0.0.1:1",
 		ReplayTTL:    replayTTL,
 	}
-	src := New(cfg, st, box, testLogger())
+	src := NewGitTriggers(cfg, st, box, testLogger())
 	return src, st, box, dir
 }
 

@@ -20,14 +20,14 @@ import (
 
 // gitService 是 SSH git 面服务壳。
 type gitService struct {
-	src     *gitserver.Source
+	src     *gitserver.GitTriggers
 	enabled bool
 	addr    string
 	log     *slog.Logger
 	started chan struct{}
 }
 
-func newGitService(src *gitserver.Source, app lynx.App, enabled bool, addr string) lynx.Service {
+func newGitService(src *gitserver.GitTriggers, app lynx.App, enabled bool, addr string) lynx.Service {
 	return &gitService{
 		src:     src,
 		enabled: enabled,

@@ -9,8 +9,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// Source 是 git 触发入口的核心：bare 仓库管理与 post-receive 钩子、
-// DeployFromCommit 入队、webhook 验签/防重放/去重/拉源、SSH 服务器。
+// GitTriggers 是 git 触发入口的门面（命名口径 UBIQUITOUS_LANGUAGE §flagged-2：
+// 承载触发面+拉源+部署入队，不只是一个「来源」，故弃 Source 旧名）：
+// bare 仓库管理与 post-receive 钩子、DeployFromCommit 入队、webhook
+// 验签/防重放/去重/拉源、SSH 服务器。
 // 它聚合 state 层（git keys/tokens/apps/deployments）与平台密钥盒
 // （webhook secret / 拉源认证材料的 envelope 加解密），对上暴露：
 //
@@ -18,13 +20,13 @@ import (
 //   - HTTP：WebhookHandler（gateway 原生端点例外清单挂载）
 //   - API：DeployFromGitPush（DeployFromGit RPC 的端口实现——端口接口
 //     定义在 internal/api，方向纪律：api 不感知本包类型）
-type Source struct {
+type GitTriggers struct {
 	cfg    Config
 	st     *state.Store
 	box    *secrets.Box
 	log    *slog.Logger
 	replay *deliveryCache
-	// fetchFn 是拉源执行步骤的注入缝（New 恒设为 runFetch；测试替换后可
+	// fetchFn 是拉源执行步骤的注入缝（NewGitTriggers 恒设为 runFetch；测试替换后可
 	// 不真实触网驱动 TOFU 审计链——与 statebackup.Manager.verifyFn 同款
 	// 接缝形态）。
 	fetchFn func(ctx context.Context, plan fetchPlan) error
@@ -32,12 +34,12 @@ type Source struct {
 
 // New 构造 Source（cfg 先经 Normalize；启用态完整性 Validate 由装配点
 // 在 Init 阶段 fail-fast）。
-func New(cfg Config, st *state.Store, box *secrets.Box, log *slog.Logger) *Source {
+func NewGitTriggers(cfg Config, st *state.Store, box *secrets.Box, log *slog.Logger) *GitTriggers {
 	norm := cfg.Normalize()
 	if log == nil {
 		log = slog.New(discardHandler{})
 	}
-	return &Source{
+	return &GitTriggers{
 		cfg:     norm,
 		st:      st,
 		box:     box,
@@ -48,12 +50,12 @@ func New(cfg Config, st *state.Store, box *secrets.Box, log *slog.Logger) *Sourc
 }
 
 // Config 返回归一后的配置（只读投影）。
-func (s *Source) Config() Config { return s.cfg }
+func (s *GitTriggers) Config() Config { return s.cfg }
 
 // CheckHealth 报告 git 入口层健康：启用态配置完整性 + state 可达。SSH
 // 监听失败属 Start 阶段显式失败，不在健康面二次上报（与 ingress 服务壳
 // 同口径）。
-func (s *Source) CheckHealth() error {
+func (s *GitTriggers) CheckHealth() error {
 	if err := s.cfg.Validate(); err != nil {
 		return err
 	}
@@ -65,7 +67,7 @@ func (s *Source) CheckHealth() error {
 func hookTokenName(app string) string { return "git hook " + app }
 
 // webhookEndpoint 拼钩子回调 URL（loopback REST → DeployFromGit RPC）。
-func (s *Source) webhookEndpoint(app string) string {
+func (s *GitTriggers) webhookEndpoint(app string) string {
 	return s.cfg.HookEndpoint + "/v1/apps/" + app + "/deployments/git"
 }
 

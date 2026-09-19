@@ -134,7 +134,7 @@ type fetchPlan struct {
 // buildFetch 构造拉源计划（认证材料在此解密；不执行任何 git 命令）。
 // appID 必须已存在；source url 未配置返回 ErrSourceNotConfigured，协议
 // 白名单外返回错误（整改②）。
-func (s *Source) buildFetch(ctx context.Context, appID, repoPath string) (fetchPlan, error) {
+func (s *GitTriggers) buildFetch(ctx context.Context, appID, repoPath string) (fetchPlan, error) {
 	cfg, err := s.st.GetAppGitConfig(ctx, appID)
 	if err != nil {
 		return fetchPlan{}, fmt.Errorf("gitserver: read app source config: %w", err)
@@ -201,7 +201,7 @@ func (s *Source) buildFetch(ctx context.Context, appID, repoPath string) (fetchP
 
 // FetchRemote 执行拉源：确保 bare 仓库在位 → 按计划 fetch。失败一律包装
 // ErrFetchFailed（调用方映射错误族信封）。
-func (s *Source) FetchRemote(ctx context.Context, app string) error {
+func (s *GitTriggers) FetchRemote(ctx context.Context, app string) error {
 	path, _, err := s.EnsureBareRepo(ctx, app)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrFetchFailed, err)
@@ -278,7 +278,7 @@ func snapshotKnownHosts(path string) map[string]struct{} {
 // 首连同一 host 或不同 host）可能串账/漏账审计（两请求快照到同一前态，
 // 新增行被重复记或互相吞掉）。这是审计保真度问题，非控制面伤；按 host
 // 粒度对账或对快照-对比区间加锁留 v0.2。
-func (s *Source) auditHostKeyFirstSeen(ctx context.Context, appID, app, host, knownHostsFile string, before map[string]struct{}) {
+func (s *GitTriggers) auditHostKeyFirstSeen(ctx context.Context, appID, app, host, knownHostsFile string, before map[string]struct{}) {
 	after := snapshotKnownHosts(knownHostsFile)
 	if len(after) == 0 {
 		return

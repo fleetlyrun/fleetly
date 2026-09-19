@@ -39,7 +39,7 @@ type DeployInput struct {
 // DeployFromCommit 执行读源 → 校验 → 入队；返回 queued 部署记录与校验
 // 期警告（非阻断标注，与 API Deploy 同面）。compose 违约（受控子集之外）
 // 经 compose.Load 原样透传 E_COMPOSE_* 信封。
-func (s *Source) DeployFromCommit(ctx context.Context, in DeployInput) (state.DeployRecord, []compose.Warning, error) {
+func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (state.DeployRecord, []compose.Warning, error) {
 	if !ValidAppName(in.App) {
 		return state.DeployRecord{}, nil, fmt.Errorf("gitserver: invalid app name %q", in.App)
 	}
@@ -122,7 +122,7 @@ func (s *Source) DeployFromCommit(ctx context.Context, in DeployInput) (state.De
 
 // DeployFromGitPush 是 DeployFromGit RPC 的端口实现（git push 路径；每次
 // push 都建部署记录）。actorTokenID 记录钩子回调 token（可追溯）。
-func (s *Source) DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID string) (state.DeployRecord, []compose.Warning, error) {
+func (s *GitTriggers) DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID string) (state.DeployRecord, []compose.Warning, error) {
 	return s.DeployFromCommit(ctx, DeployInput{
 		App:          app,
 		SHA:          sha,

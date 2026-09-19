@@ -58,12 +58,12 @@ const maxWebhookBody = 25 << 20
 
 // WebhookHandler 是原生 webhook 端点处理器。
 type WebhookHandler struct {
-	src *Source
+	src *GitTriggers
 	log *slog.Logger
 }
 
 // NewWebhookHandler 构造（src 提供验签材料/防重放缓存/拉源/入队）。
-func NewWebhookHandler(src *Source) *WebhookHandler {
+func NewWebhookHandler(src *GitTriggers) *WebhookHandler {
 	return &WebhookHandler{src: src, log: src.log}
 }
 
@@ -94,8 +94,10 @@ func newDeliveryCache(ttl time.Duration, now func() time.Time) *deliveryCache {
 	}
 }
 
-// sweep 清扫过期项（缓存体量以 TTL 窗口内的投递量为上界）。调用方须持锁。
-func (c *deliveryCache) sweep(now time.Time) {
+// expire 清除 TTL 过期项（缓存体量以 TTL 窗口内的投递量为上界）。调用方
+// 须持锁。命名口径（UBIQUITOUS_LANGUAGE §flagged-1）：sweep 专指周期扫描
+// 轮（ingress 收敛/续期），本处是惰性过期删除，称 expire。
+func (c *deliveryCache) expire(now time.Time) {
 	for k, at := range c.seen {
 		if now.Sub(at) > c.ttl {
 			delete(c.seen, k)
@@ -123,7 +125,7 @@ func (c *deliveryCache) Seen(id string) bool {
 	now := c.now().UTC()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.sweep(now)
+	c.expire(now)
 	_, dup := c.seen[id]
 	return dup
 }
@@ -135,7 +137,7 @@ func (c *deliveryCache) Claim(id string) bool {
 	now := c.now().UTC()
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.sweep(now)
+	c.expire(now)
 	if _, dup := c.seen[id]; dup {
 		return false
 	}
