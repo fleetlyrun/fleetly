@@ -23,7 +23,10 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,7 +74,15 @@ func (p *challengeProvider) Present(_, token, keyAuth string) error {
 	if !p.mgr.vw.awaitServed(rev, 12*time.Second) {
 		p.mgr.log.Warn("ingress: challenge router not yet observed by traefik "+
 			"(proceeding; validation may fail if ingress not converged)", "token", token[:8]+"…")
+		return nil
 	}
+	// awaitServed 只确认「Traefik 取走载荷」（fetch），不含 Traefik 侧应用
+	// 生效（apply）——CA 校验请求若先于 apply 到达，挑战路径 404 且 authz
+	// 直接作废（lego 不重试单一 challenge；T2.26 旅程 dind 实测复现为
+	// 403 unauthorized: Non-200 404）。此处主动探测「经 Traefik 的挑战路径」
+	// 应答 = keyAuth 才放行；超时按原口径不阻塞签发（失败由 lego 上报，
+	// cert 审计 error 行兜底）。
+	p.mgr.awaitChallengePathLive(token, keyAuth)
 	return nil
 }
 
@@ -82,6 +93,36 @@ func (p *challengeProvider) CleanUp(_, token, _ string) error {
 }
 
 var _ challenge.Provider = (*challengeProvider)(nil)
+
+// awaitChallengePathLive 主动探测「经 Traefik 的挑战路径」直至应答 = keyAuth
+// ——把 awaitServed 的「Traefik 已取走」收敛确认推进到「Traefik 已应用并
+// 反代回控制面」的端到端确认。预算 6s（200ms × 30，超时按 awaitServed 同款
+// 「不阻塞签发」口径放行，失败形态由 lego 上报 + cert 审计 error 行兜底）。
+// 探测出口 = swarm advertise（与 Traefik provider endpoint 同源地址），入口 =
+// 平台 HTTP 端口（挑战路由所在 entrypoint）。
+func (m *Manager) awaitChallengePathLive(token, keyAuth string) {
+	u, err := neturl.Parse(m.responderURLValue())
+	if err != nil || u.Hostname() == "" {
+		return // 出口未知（单测/未收敛形态）：保持「不阻塞」语义
+	}
+	target := fmt.Sprintf("http://%s%s%s",
+		net.JoinHostPort(u.Hostname(), fmt.Sprint(m.cfg.HTTPPort)), acmeChallengePathPrefix, token)
+	client := &http.Client{Timeout: 2 * time.Second}
+	deadline := m.nowFunc().Add(6 * time.Second)
+	for m.nowFunc().Before(deadline) {
+		resp, getErr := client.Get(target)
+		if getErr == nil {
+			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 4096))
+			_ = resp.Body.Close()
+			if readErr == nil && resp.StatusCode == http.StatusOK && string(body) == keyAuth {
+				return
+			}
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	m.log.Warn("ingress: challenge path did not serve keyauth within budget "+
+		"(proceeding; validation may fail)", "token", token[:8]+"…")
+}
 
 // ensureAccount 加载（或创建）ACME 账号：私钥文件 + 注册 URI sidecar。
 func (m *Manager) ensureAccount(ctx context.Context) (*acmeUser, error) {
