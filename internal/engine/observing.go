@@ -213,6 +213,12 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 	// 撤销的全量同步（声明集对账在发布器内按 compose 声明集执行——
 	// 「省略 = 删除」的路由面）。失败语义同首挂点：只告警不回滚部署。
 	e.publishRoutes(ctx, rec)
+	// 备份挂钩（T2.22）：部署成功即触发一次热备快照（kind=post_deploy）。
+	// 异步不阻塞部署主链——引擎 tick 在 go 例程逸出前已返回；实现方
+	// （statebackup.Manager.RunPostDeploy）自带预算与失败只告警语义。
+	if e.postDeploy != nil {
+		go e.postDeploy(rec)
+	}
 	return nil
 }
 

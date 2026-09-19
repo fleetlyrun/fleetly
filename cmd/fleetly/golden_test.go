@@ -382,6 +382,25 @@ func TestGoldenNodesLs(t *testing.T) {
 	compareGolden(t, "nodes_ls", out)
 }
 
+// TestGoldenBackupsList backups list --json（台账空态 + verified/failed
+// 两行态——失败行如实出现在列表是红色告警面的一部分）。
+func TestGoldenBackupsList(t *testing.T) {
+	env := startCLI(t)
+	code, out, errOut := runCLIConn(t, "backups", "list", "--json")
+	if code != 0 {
+		t.Fatalf("code=%d stderr=%s", code, errOut)
+	}
+	compareGolden(t, "backups_list_empty", out)
+
+	env.SeedBackup(t, "pre_upgrade", "verified", "")
+	env.SeedBackup(t, "daily", "failed", "statebackup: integrity_check reported \"corrupt page\"")
+	code, out, _ = runCLIConn(t, "backups", "list", "--json")
+	if code != 0 {
+		t.Fatalf("code=%d", code)
+	}
+	compareGolden(t, "backups_list", out)
+}
+
 // TestGoldenDomainsList domains list --json（空与单行两态）。
 func TestGoldenDomainsList(t *testing.T) {
 	env := startCLI(t)

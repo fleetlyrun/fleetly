@@ -14,6 +14,9 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/statebackup"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // SystemService 实现 server.v1.SystemService：进程级系统信息（Ping/Status，
@@ -31,6 +34,9 @@ type SystemService struct {
 	components func() []SystemComponent
 	st         *state.Store
 	ing        IngressStatusSource
+	// backup 是状态备份管理器（T2.22；nil = 备份面未装配——ListBackups/
+	// GetSystemStatus 的备份视图走台账仍可用，TriggerBackup 如实报不可用）。
+	backup *statebackup.Manager
 }
 
 // SystemComponent 是带名的健康组件（CheckHealth 复用面）。
@@ -51,14 +57,23 @@ func NewSystemService(version string, st *state.Store, components func() []Syste
 	return &SystemService{version: version, st: st, components: components, ing: ing}
 }
 
+// WithBackupManager 注入状态备份管理器（T2.22；链式装配，nil 合法——
+// 测试/精简形态的备份面缺省）。
+func (s *SystemService) WithBackupManager(m *statebackup.Manager) *SystemService {
+	s.backup = m
+	return s
+}
+
 // Ping 回应 service / version。proto 字段上的 buf.validate 最小约束由拦截
 // 器统一校验；Ping 豁免鉴权（T2.17 契约：与 healthz 同为存活面）。
 func (s *SystemService) Ping(ctx context.Context, req *serverv1.PingRequest) (*serverv1.PingResponse, error) {
 	return &serverv1.PingResponse{Service: "fleetlyd", Version: s.version}, nil
 }
 
-// GetSystemStatus 健康汇总（引擎/Traefik/状态层——复用 CheckHealth 面）：
-// 逐组件如实上报，不聚合单一布尔，判断权在消费方。
+// GetSystemStatus 健康汇总（引擎/Traefik/状态层/备份——复用 CheckHealth 面）：
+// 逐组件如实上报，不聚合单一布尔，判断权在消费方。备份明细（最近一次
+// 台账行的时间与 verify_status）随 backup 字段带出——组件布尔之外让
+// 「备份上次何时成功」直接可见（T2.22 状态诚实契约）。
 func (s *SystemService) GetSystemStatus(ctx context.Context, req *serverv1.GetSystemStatusRequest) (*serverv1.GetSystemStatusResponse, error) {
 	resp := &serverv1.GetSystemStatusResponse{Service: "fleetlyd", Version: s.version}
 	for _, c := range s.components() {
@@ -71,7 +86,75 @@ func (s *SystemService) GetSystemStatus(ctx context.Context, req *serverv1.GetSy
 		}
 		resp.Components = append(resp.Components, ch)
 	}
+	if latest, err := s.st.LatestStateBackup(ctx); err == nil && latest != nil {
+		resp.Backup = backupHealth(latest)
+	}
 	return resp, nil
+}
+
+// backupHealth 把最近一次台账行投影为备份健康视图。
+func backupHealth(latest *state.StateBackup) *serverv1.BackupHealth {
+	return &serverv1.BackupHealth{
+		LastBackupId:     latest.ID,
+		LastKind:         latest.Kind,
+		LastBackupAt:     tstamp(latest.CreatedAt),
+		LastVerifyStatus: latest.VerifyStatus,
+		LastError:        latest.Error,
+	}
+}
+
+// ListBackups 状态备份台账只读列表（T2.22；n 缺省 50——台账量级受保留
+// 份数约束，50 已覆盖全部现行行 + 近期失败行）。
+func (s *SystemService) ListBackups(ctx context.Context, req *serverv1.ListBackupsRequest) (*serverv1.ListBackupsResponse, error) {
+	rows, err := s.st.ListStateBackups(ctx, 50)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*serverv1.BackupView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, backupView(r))
+	}
+	return &serverv1.ListBackupsResponse{Backups: out}, nil
+}
+
+// TriggerBackup 手动触发一次状态备份（同步：响应即落账后的台账行；
+// verify_status=failed 时以 FailedPrecondition 返回且台账行保留失败事实
+// ——调用方看得见失败，绝不渲染成成功）。
+func (s *SystemService) TriggerBackup(ctx context.Context, req *serverv1.TriggerBackupRequest) (*serverv1.TriggerBackupResponse, error) {
+	if s.backup == nil {
+		return nil, status.Error(codes.Unavailable, "backup manager unavailable (not assembled)")
+	}
+	kind := req.GetKind()
+	if kind == "" {
+		kind = state.BackupKindManual
+	}
+	rec, err := s.backup.Trigger(ctx, kind)
+	if err != nil {
+		// 失败行已落台账（backup.failed 审计随行）——错误原文回传，调用方
+		// 可经 ListBackups 复核失败事实。
+		return nil, status.Error(codes.FailedPrecondition, err.Error())
+	}
+	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
+		return tx.WriteAudit(ctx, auditEntry(ctx, "backup:"+rec.ID,
+			`{"kind":"`+rec.Kind+`","verify":"`+rec.VerifyStatus+`"}`))
+	}); err != nil {
+		return nil, err
+	}
+	return &serverv1.TriggerBackupResponse{Backup: backupView(rec)}, nil
+}
+
+// backupView 把台账行投影为只读视图。
+func backupView(r state.StateBackup) *serverv1.BackupView {
+	return &serverv1.BackupView{
+		Id:           r.ID,
+		Kind:         r.Kind,
+		Path:         r.Path,
+		Sha256:       r.SHA256,
+		SizeBytes:    r.SizeBytes,
+		VerifyStatus: r.VerifyStatus,
+		Error:        r.Error,
+		CreatedAt:    tstamp(r.CreatedAt),
+	}
 }
 
 // ListNodes 节点观测缓存只读列表（state-model §2.2：缓存禁止用于决策，

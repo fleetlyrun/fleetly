@@ -11,6 +11,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
+	"github.com/fleetlyrun/fleetly/internal/statebackup"
 )
 
 // defaultHTTPAddr / defaultGRPCAddr 分别是 HTTP 面与 gRPC 面的缺省监听
@@ -56,6 +57,35 @@ type AppConfig struct {
 	Webhook WebhookConfig `mapstructure:"webhook"`
 	// Console 是 Console 端静态托管配置节（config 键 console.*，T2.21）。
 	Console ConsoleConfig `mapstructure:"console"`
+	// Backup 是状态备份配置节（config 键 backup.*，T2.22；缺省值经
+	// statebackup.Config.Normalize 回落——单一事实源在 internal/statebackup）。
+	Backup BackupConfig `mapstructure:"backup"`
+}
+
+// BackupConfig 是状态备份配置节（config 键 backup.*，T2.22）。dir 留空时
+// 由装配点回落 <state 库同目录>/backups（依赖 state 库路径，缺省在
+// AppConfig.BackupRoot 计算——与 GitRoot 同款装配期回落）。
+type BackupConfig struct {
+	// Dir 是备份根目录（backup.dir）。主密钥（fleetly.key）绝不进备份目录
+	// ——manifest 只记密钥文件 sha256 指纹；配置把密钥放进备份目录会被
+	// statebackup.NewManager 构造期拒绝（fail-fast）。
+	Dir string `mapstructure:"dir"`
+	// Keep 是保留份数上限（backup.keep；非正值回落 DefaultKeep=7）。
+	Keep int `mapstructure:"keep"`
+}
+
+// BackupSettings 把 backup.* 配置节翻译为备份核心配置（statebackup.Config，
+// 缺省值经 Normalize 回落——单一事实源在 internal/statebackup）。
+func (c *AppConfig) BackupSettings() statebackup.Config {
+	return statebackup.Config{Dir: c.Backup.Dir, Keep: c.Backup.Keep}
+}
+
+// BackupRoot 回落备份根目录缺省值（与 state 库同目录下 backups/）。
+func (c *AppConfig) BackupRoot() string {
+	if c.Backup.Dir != "" {
+		return c.Backup.Dir
+	}
+	return filepath.Join(filepath.Dir(c.DBPath()), "backups")
 }
 
 // ConsoleConfig 是 Console 静态托管配置节（config 键 console.*，T2.21）。

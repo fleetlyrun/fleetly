@@ -140,6 +140,22 @@ console:
   # console/dist）。空 = 关闭（缺省；/ui/ 前缀不分派）。
   # static_dir: "./console/dist"
 
+# 平台状态备份（T2.22，备份基线与信任闭环）：SQLite 一致性快照
+# （VACUUM INTO）→ 回读校验（integrity_check + 关键表行数）→ sha256 落
+# manifest → state_backups 台账。触发 = 每次部署成功后（异步）+ 每日 +
+# 手动（fleetly backups create / 升级前 pre_upgrade 快照）。
+backup:
+  # 备份根目录；留空 = <state 库同目录>/backups。布局 <dir>/<ULID>/ 下
+  # fleetly.db + manifest.json（含 sha256/schema 版本/密钥指纹）。
+  # **主密钥（fleetly.key）绝不进备份目录**——manifest 只记密钥文件的
+  # sha256 指纹（恢复时 sha256sum 人工核对）；密钥另行离线保管，
+  # 见 docs/runbooks/backup-restore.md。把 key_path 配进备份目录会被
+  # 构造期拒绝（fail-fast）。
+  dir: ""
+  # 保留份数（缺省 7；超限删最旧——台账删行 + 审计 backup.pruned +
+  # 目录清除，台账只描述真实存在的备份）。
+  keep: 7
+
 # 日志级别（lynx 约定键）：debug | info | warn | error
 logging:
   level: info

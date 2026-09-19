@@ -23,6 +23,8 @@ const (
 	SystemService_GetSystemStatus_FullMethodName  = "/fleetly.server.v1.SystemService/GetSystemStatus"
 	SystemService_ListNodes_FullMethodName        = "/fleetly.server.v1.SystemService/ListNodes"
 	SystemService_GetIngressStatus_FullMethodName = "/fleetly.server.v1.SystemService/GetIngressStatus"
+	SystemService_ListBackups_FullMethodName      = "/fleetly.server.v1.SystemService/ListBackups"
+	SystemService_TriggerBackup_FullMethodName    = "/fleetly.server.v1.SystemService/TriggerBackup"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -42,6 +44,14 @@ type SystemServiceClient interface {
 	GetSystemStatus(ctx context.Context, in *GetSystemStatusRequest, opts ...grpc.CallOption) (*GetSystemStatusResponse, error)
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 	GetIngressStatus(ctx context.Context, in *GetIngressStatusRequest, opts ...grpc.CallOption) (*GetIngressStatusResponse, error)
+	// ListBackups 状态备份台账（T2.22，只读）：热备快照的诚实账（kind/路径/
+	// sha256/verify_status）。verify_status=failed 的行是红色告警面的一部分
+	// ——台账如实保留失败行，消费方据此判断备份可用性。
+	ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResponse, error)
+	// TriggerBackup 手动触发一次状态备份（T2.22；deploy scope——写面语义，
+	// 与升级编排 pre_upgrade 快照共用同一同步入口；响应即落账后的台账行，
+	// verify_status=failed 时调用方必须视为备份失败而非请求失败歧义态）。
+	TriggerBackup(ctx context.Context, in *TriggerBackupRequest, opts ...grpc.CallOption) (*TriggerBackupResponse, error)
 }
 
 type systemServiceClient struct {
@@ -92,6 +102,26 @@ func (c *systemServiceClient) GetIngressStatus(ctx context.Context, in *GetIngre
 	return out, nil
 }
 
+func (c *systemServiceClient) ListBackups(ctx context.Context, in *ListBackupsRequest, opts ...grpc.CallOption) (*ListBackupsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListBackupsResponse)
+	err := c.cc.Invoke(ctx, SystemService_ListBackups_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) TriggerBackup(ctx context.Context, in *TriggerBackupRequest, opts ...grpc.CallOption) (*TriggerBackupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TriggerBackupResponse)
+	err := c.cc.Invoke(ctx, SystemService_TriggerBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
@@ -109,6 +139,14 @@ type SystemServiceServer interface {
 	GetSystemStatus(context.Context, *GetSystemStatusRequest) (*GetSystemStatusResponse, error)
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	GetIngressStatus(context.Context, *GetIngressStatusRequest) (*GetIngressStatusResponse, error)
+	// ListBackups 状态备份台账（T2.22，只读）：热备快照的诚实账（kind/路径/
+	// sha256/verify_status）。verify_status=failed 的行是红色告警面的一部分
+	// ——台账如实保留失败行，消费方据此判断备份可用性。
+	ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResponse, error)
+	// TriggerBackup 手动触发一次状态备份（T2.22；deploy scope——写面语义，
+	// 与升级编排 pre_upgrade 快照共用同一同步入口；响应即落账后的台账行，
+	// verify_status=failed 时调用方必须视为备份失败而非请求失败歧义态）。
+	TriggerBackup(context.Context, *TriggerBackupRequest) (*TriggerBackupResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -130,6 +168,12 @@ func (UnimplementedSystemServiceServer) ListNodes(context.Context, *ListNodesReq
 }
 func (UnimplementedSystemServiceServer) GetIngressStatus(context.Context, *GetIngressStatusRequest) (*GetIngressStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetIngressStatus not implemented")
+}
+func (UnimplementedSystemServiceServer) ListBackups(context.Context, *ListBackupsRequest) (*ListBackupsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListBackups not implemented")
+}
+func (UnimplementedSystemServiceServer) TriggerBackup(context.Context, *TriggerBackupRequest) (*TriggerBackupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TriggerBackup not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -224,6 +268,42 @@ func _SystemService_GetIngressStatus_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_ListBackups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListBackupsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).ListBackups(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_ListBackups_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).ListBackups(ctx, req.(*ListBackupsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_TriggerBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TriggerBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).TriggerBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_TriggerBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).TriggerBackup(ctx, req.(*TriggerBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -246,6 +326,14 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetIngressStatus",
 			Handler:    _SystemService_GetIngressStatus_Handler,
+		},
+		{
+			MethodName: "ListBackups",
+			Handler:    _SystemService_ListBackups_Handler,
+		},
+		{
+			MethodName: "TriggerBackup",
+			Handler:    _SystemService_TriggerBackup_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

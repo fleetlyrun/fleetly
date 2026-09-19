@@ -1,0 +1,23 @@
+{
+  "backups": [
+    {
+      "id": "01BKTESTpre_upgrade0000000",
+      "kind": "pre_upgrade",
+      "path": "/var/lib/fleetly/backups/01BKTESTpre_upgrade0000000/fleetly.db",
+      "sha256": "<sha256>",
+      "size_bytes": 2048,
+      "verify_status": "verified",
+      "created_at": "<rfc3339>"
+    },
+    {
+      "id": "01BKTESTdaily0000000000000",
+      "kind": "daily",
+      "path": "/var/lib/fleetly/backups/01BKTESTdaily0000000000000/fleetly.db",
+      "sha256": "<sha256>",
+      "size_bytes": 2048,
+      "verify_status": "failed",
+      "error": "statebackup: integrity_check reported \"corrupt page\"",
+      "created_at": "<rfc3339>"
+    }
+  ]
+}

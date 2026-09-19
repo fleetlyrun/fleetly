@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/statebackup"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
 )
 
@@ -37,6 +38,7 @@ var ProviderSet = wire.NewSet(
 	NewObserver,
 	NewJanitor,
 	NewSecretsBox,
+	NewBackupManager,
 	NewBuilder,
 	NewBuildQueue,
 	NewPlacementResolver,
@@ -159,6 +161,14 @@ func NewBuilder(cfg *AppConfig, st *state.Store, dc *substrate.Client, dm build.
 	return build.NewBuilder(cfg.BuildSettings(), st, dc, dm, app.Logger())
 }
 
+// NewBackupManager 构建状态备份管理器（T2.22：热备快照 + 回读校验 +
+// manifest/台账 + 每日循环；backup.* 配置节，dir 缺省回落数据根下 backups/
+// ——主密钥分离性由构造期 fail-fast 守卫）。
+func NewBackupManager(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets.Box) (*statebackup.Manager, error) {
+	return statebackup.NewManager(cfg.BackupSettings(), cfg.BackupRoot(), sb.Path(),
+		version, st, app.Logger())
+}
+
 // NewBuildQueue 构建构建队列调度器（信号量并发上限 + builds 行扫描认领）。
 func NewBuildQueue(app lynx.App, cfg *AppConfig, st *state.Store, b *build.Builder) *build.Queue {
 	settings := cfg.BuildSettings()
@@ -200,9 +210,12 @@ func (p ingressPublisher) PublishRoutes(ctx context.Context, in engine.RoutePubl
 // engine.Substrate + engine.ImageChecker（适配器方向：substrate → engine
 // 核心接口）；路由发布端口由 ingress.Manager 经载荷适配实现（T2.15——
 // 健康门后挂点）。
-func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box, m *ingress.Manager) *engine.Engine {
+func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box, m *ingress.Manager, bm *statebackup.Manager) *engine.Engine {
 	return engine.NewEngine(cfg.EngineSettings(), st, sc, sc, pl, box, app.Logger()).
-		WithRoutePublisher(ingressPublisher{m: m})
+		WithRoutePublisher(ingressPublisher{m: m}).
+		// 备份挂钩（T2.22）：每次部署成功后异步触发一次热备快照
+		// （kind=post_deploy；失败只落台账/审计/组件三面红，不影响部署）。
+		WithPostDeployHook(bm.RunPostDeploy)
 }
 
 // NewLogsManager 构建日志管线管理器（T2.20：采集/Follow/History/清理；
@@ -269,18 +282,21 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // NewSystemService 构造系统/集群观察面服务（T2.18 起 SystemService 实现在
 // internal/api；健康组件集在本装配点命名——lynx Checker 接口无名。Traefik
 // 是降级设计（收敛/续期失败只日志告警，ingress 服务壳 CheckHealth 恒健康）
-// ——组件集与装配壳同语义如实上报恒健康）。
-func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager) *api.SystemService {
+// ——组件集与装配壳同语义如实上报恒健康）。备份组件（T2.22）的检查器 =
+// statebackup.Manager.CheckHealth：无 verified 备份 / 最近一次 verify 失败
+// → 不健康（红色告警面：台账 failed 行 + backup.failed 审计 + 此组件）。
+func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
 			{Name: "state.identity", Check: id.CheckHealth},
 			{Name: "state.observer", Check: ob.CheckHealth},
 			{Name: "state.secrets", Check: sb.CheckHealth},
+			{Name: "state.backup", Check: bm.CheckHealth},
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
 	}
-	return api.NewSystemService(version, st, components, ing)
+	return api.NewSystemService(version, st, components, ing).WithBackupManager(bm)
 }
 
 // NewDomainsService 构造域名台账/验证面服务。
@@ -340,9 +356,9 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.Source) (*lynxht
 	), nil
 }
 
-// NewServices 聚合全部受托管服务：状态层四服务（store/identity/observer/
-// janitor）、构建队列、发布引擎、入口与日志采集服务先于 HTTP/gRPC 注册
-// ——lynx 按注册顺序启动，store 的 Init 在装配期（Register 阶段）完成
+// NewServices 聚合全部受托管服务：状态层五服务（store/identity/observer/
+// janitor/backup）、构建队列、发布引擎、入口与日志采集服务先于 HTTP/gRPC
+// 注册——lynx 按注册顺序启动，store 的 Init 在装配期（Register 阶段）完成
 // 迁移，Start 阶段顺序无实质依赖，注册顺序表达「状态与队列、引擎、入口、
 // 日志采集先于 API 面」（ingress 在 engine 之后：引擎 tick 触发发布时
 // 配置端点已监听）。
@@ -352,6 +368,7 @@ func NewServices(
 	id *state.NodeIdentity,
 	ob *state.Observer,
 	jr *state.Janitor,
+	bm *statebackup.Manager,
 	sb *secrets.Box,
 	q *build.Queue,
 	b *build.Builder,
@@ -368,6 +385,7 @@ func NewServices(
 		newIdentityService(id),
 		newObserverService(ob),
 		newJanitorService(jr),
+		newBackupService(bm),
 		newSecretsService(sb),
 		newBuilderService(q, b, app.Logger()),
 		newEngineService(eng),

@@ -226,6 +226,55 @@ func TestFirstDeploySucceeds(t *testing.T) {
 	}
 }
 
+// TestPostDeployHookFiresOnSuccess 备份挂钩（T2.22）：部署成功终态后挂钩
+// 以成功记录为载荷异步触发一次；失败路径不触发（失败分流不经成功终态）。
+func TestPostDeployHookFiresOnSuccess(t *testing.T) {
+	h := newHarness(t)
+	fired := make(chan state.DeployRecord, 4)
+	h.eng.WithPostDeployHook(func(rec state.DeployRecord) {
+		fired <- rec
+	})
+	path := h.writeCompose(composeV1)
+	rec := h.enqueue(path)
+	final := h.runToTerminal(rec)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("status = %s, want succeeded", final.Status)
+	}
+	select {
+	case got := <-fired:
+		if got.ID != rec.ID {
+			t.Fatalf("hook payload deployment = %s, want %s", got.ID, rec.ID)
+		}
+		if got.Status != state.DeploySucceeded {
+			t.Fatalf("hook payload status = %s, want succeeded", got.Status)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("post-deploy hook did not fire on success")
+	}
+}
+
+// TestPostDeployHookNotFiredOnFailure 失败部署不触发备份挂钩（备份语义 =
+// 部署成功后；失败路径的快照由 daily/pre_upgrade 承担）。
+func TestPostDeployHookNotFiredOnFailure(t *testing.T) {
+	h := newHarness(t)
+	fired := make(chan state.DeployRecord, 4)
+	h.eng.WithPostDeployHook(func(rec state.DeployRecord) {
+		fired <- rec
+	})
+	h.images.missing["alpine:3"] = true
+	path := h.writeCompose(composeV1)
+	rec := h.enqueue(path)
+	final := h.runToTerminal(rec)
+	if final.Status != state.DeployFailed {
+		t.Fatalf("status = %s, want failed", final.Status)
+	}
+	select {
+	case got := <-fired:
+		t.Fatalf("hook fired on failed deployment %s", got.ID)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
 func TestDeployMutexSecondStaysQueued(t *testing.T) {
 	h := newHarness(t)
 	path := h.writeCompose(composeV1)

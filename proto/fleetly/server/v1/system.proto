@@ -44,6 +44,21 @@ service SystemService {
   rpc GetIngressStatus(GetIngressStatusRequest) returns (GetIngressStatusResponse) {
     option (google.api.http) = { get: "/v1/system/ingress" };
   }
+  // ListBackups 状态备份台账（T2.22，只读）：热备快照的诚实账（kind/路径/
+  // sha256/verify_status）。verify_status=failed 的行是红色告警面的一部分
+  // ——台账如实保留失败行，消费方据此判断备份可用性。
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {
+    option (google.api.http) = { get: "/v1/system/backups" };
+  }
+  // TriggerBackup 手动触发一次状态备份（T2.22；deploy scope——写面语义，
+  // 与升级编排 pre_upgrade 快照共用同一同步入口；响应即落账后的台账行，
+  // verify_status=failed 时调用方必须视为备份失败而非请求失败歧义态）。
+  rpc TriggerBackup(TriggerBackupRequest) returns (TriggerBackupResponse) {
+    option (google.api.http) = {
+      post: "/v1/system/backups"
+      body: "*"
+    };
+  }
 }
 
 message PingRequest {}
@@ -70,6 +85,25 @@ message GetSystemStatusResponse {
   string service = 1;
   string version = 2;
   repeated ComponentHealth components = 3;
+  // 状态备份健康视图（T2.22）：最近一次台账行的投影。从未备份 → 不输出
+  //（backup 组件的 ComponentHealth 行会以 ok=false 显式表达不健康）。
+  BackupHealth backup = 4;
+}
+
+// BackupHealth 是系统状态里备份面的明细视图（组件布尔健康的展开：最近
+// 一次备份的时间与校验结论——「绿色成功但实际没备份」的对立面是让
+// verify_status 与时间直接可见）。
+message BackupHealth {
+  // 最近一次备份的台账 ID（= 备份目录名）。
+  string last_backup_id = 1;
+  // 最近一次备份的触发类别（daily/pre_upgrade/post_deploy/manual）。
+  string last_kind = 2;
+  // 最近一次备份的台账落账时刻。
+  google.protobuf.Timestamp last_backup_at = 3;
+  // 回读校验结论（verified/failed）。
+  string last_verify_status = 4;
+  // 失败原因原文（verified 行为空）。
+  string last_error = 5;
 }
 
 message ListNodesRequest {}
@@ -135,4 +169,49 @@ message GetIngressStatusResponse {
   string cert_dir = 8;
   repeated string cert_dir_apps = 9;
   string cert_dir_error = 10;
+}
+
+message ListBackupsRequest {}
+
+// BackupView 是状态备份台账行的只读投影（state_backups 表）。path 指向
+// 备份目录内的快照文件；manifest.json 与其同目录（含 sha256/密钥指纹/
+// schema 版本——恢复核对材料，密钥本体绝不入备份目录）。
+message BackupView {
+  string id = 1;
+  // 触发类别：daily / pre_upgrade / post_deploy / manual（历史行可为
+  // hot/cold）。
+  string kind = 2;
+  // 快照文件路径。
+  string path = 3;
+  // 快照文件 sha256（hex；回读校验对象）。
+  string sha256 = 4;
+  int64 size_bytes = 5;
+  // 回读校验结论：verified / failed（失败行保留——红色告警面的一部分）。
+  string verify_status = 6;
+  // 校验失败原因原文（verified 行为空）。
+  string error = 7;
+  // 台账落账时刻。
+  google.protobuf.Timestamp created_at = 8;
+}
+
+message ListBackupsResponse {
+  repeated BackupView backups = 1;
+}
+
+message TriggerBackupRequest {
+  // 触发类别（缺省 manual；升级编排传 pre_upgrade）。manual/daily/
+  // pre_upgrade/post_deploy 之外取值被请求校验拒绝。
+  string kind = 1 [(buf.validate.field).string = {
+    in: [
+      "",
+      "manual",
+      "daily",
+      "pre_upgrade",
+      "post_deploy"
+    ]
+  }];
+}
+
+message TriggerBackupResponse {
+  BackupView backup = 1;
 }

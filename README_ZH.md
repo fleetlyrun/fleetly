@@ -18,7 +18,7 @@ curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
 sudo sh install.sh --bin-dir ./dist                              # 离线 / 开发形态
 ```
 
-首启日志会**只打印一次** bootstrap admin token。卸载默认保留应用数据（`--purge` 才删）。三形态、门禁清单、端口面表与 dind 验收见 [`deploy/README.md`](deploy/README.md)。（release 制品链随发布流水线落地；在那之前离线 `--bin-dir` 形态是可用路径。）
+首启日志会**只打印一次** bootstrap admin token。卸载默认保留应用数据（`--purge` 才删）。控制面升级一条命令、自带升级前快照与失败自动回退（`sudo sh upgrade.sh --version vX.Y.Z`）；Engine/主机升级是另一条冷备轨——见 [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md)。三形态、门禁清单、端口面表与 dind 验收见 [`deploy/README.md`](deploy/README.md)。（release 制品链随发布流水线落地；在那之前离线 `--bin-dir` 形态是可用路径。）
 
 ## 为什么是 fleetly
 

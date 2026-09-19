@@ -39,6 +39,10 @@ type Engine struct {
 	// routes 是入口路由发布端口（T2.15；nil = 未接入口面——发布挂点
 	// 整体跳过。由 WithRoutePublisher 注入，fleetlyd 装配 ingress.Manager）。
 	routes RoutePublisher
+	// postDeploy 是部署成功后的备份挂钩（T2.22：每次部署成功后触发一次
+	// 热备快照，异步不阻塞部署主链；nil = 未接备份面。由 WithPostDeployHook
+	// 注入，fleetlyd 装配 statebackup.Manager）。
+	postDeploy PostDeployHook
 	// waterMarks 是副本水位不足判定的进程内计时（观察窗辅助信号；引擎
 	// 重启后重摆——窗口本身持久化，重启代价可接受）。
 	waterMarks map[string]time.Time
@@ -74,6 +78,14 @@ func NewEngine(cfg Config, store *state.Store, sub Substrate, images ImageChecke
 
 // WithClock 注入时钟（单测）。
 func (e *Engine) WithClock(c Clock) *Engine { e.clock = c; return e }
+
+// PostDeployHook 是部署成功后的备份挂钩签名（rec 为成功部署记录的副本）。
+type PostDeployHook func(rec state.DeployRecord)
+
+// WithPostDeployHook 注入部署成功挂钩（T2.22 备份触发面：每次部署成功后
+// 一次热备快照。引擎侧异步触发——go 例程 + 独立预算在实现方；挂钩失败
+// 只落备份台账与告警，绝不回滚/阻塞已成功的部署）。
+func (e *Engine) WithPostDeployHook(fn PostDeployHook) *Engine { e.postDeploy = fn; return e }
 
 // Run 启动引擎主循环：启动扫描（控制面重启分类恢复）→ 周期 tick + 漂移
 // 扫描。ctx 取消返回 nil（lynx actor 契约由服务壳负责阻塞语义）。

@@ -215,10 +215,13 @@ func (x *ComponentHealth) GetError() string {
 }
 
 type GetSystemStatusResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Service       string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
-	Version       string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
-	Components    []*ComponentHealth     `protobuf:"bytes,3,rep,name=components,proto3" json:"components,omitempty"`
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Service    string                 `protobuf:"bytes,1,opt,name=service,proto3" json:"service,omitempty"`
+	Version    string                 `protobuf:"bytes,2,opt,name=version,proto3" json:"version,omitempty"`
+	Components []*ComponentHealth     `protobuf:"bytes,3,rep,name=components,proto3" json:"components,omitempty"`
+	// 状态备份健康视图（T2.22）：最近一次台账行的投影。从未备份 → 不输出
+	//（backup 组件的 ComponentHealth 行会以 ok=false 显式表达不健康）。
+	Backup        *BackupHealth `protobuf:"bytes,4,opt,name=backup,proto3" json:"backup,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -274,6 +277,97 @@ func (x *GetSystemStatusResponse) GetComponents() []*ComponentHealth {
 	return nil
 }
 
+func (x *GetSystemStatusResponse) GetBackup() *BackupHealth {
+	if x != nil {
+		return x.Backup
+	}
+	return nil
+}
+
+// BackupHealth 是系统状态里备份面的明细视图（组件布尔健康的展开：最近
+// 一次备份的时间与校验结论——「绿色成功但实际没备份」的对立面是让
+// verify_status 与时间直接可见）。
+type BackupHealth struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 最近一次备份的台账 ID（= 备份目录名）。
+	LastBackupId string `protobuf:"bytes,1,opt,name=last_backup_id,json=lastBackupId,proto3" json:"last_backup_id,omitempty"`
+	// 最近一次备份的触发类别（daily/pre_upgrade/post_deploy/manual）。
+	LastKind string `protobuf:"bytes,2,opt,name=last_kind,json=lastKind,proto3" json:"last_kind,omitempty"`
+	// 最近一次备份的台账落账时刻。
+	LastBackupAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=last_backup_at,json=lastBackupAt,proto3" json:"last_backup_at,omitempty"`
+	// 回读校验结论（verified/failed）。
+	LastVerifyStatus string `protobuf:"bytes,4,opt,name=last_verify_status,json=lastVerifyStatus,proto3" json:"last_verify_status,omitempty"`
+	// 失败原因原文（verified 行为空）。
+	LastError     string `protobuf:"bytes,5,opt,name=last_error,json=lastError,proto3" json:"last_error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackupHealth) Reset() {
+	*x = BackupHealth{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackupHealth) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackupHealth) ProtoMessage() {}
+
+func (x *BackupHealth) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackupHealth.ProtoReflect.Descriptor instead.
+func (*BackupHealth) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *BackupHealth) GetLastBackupId() string {
+	if x != nil {
+		return x.LastBackupId
+	}
+	return ""
+}
+
+func (x *BackupHealth) GetLastKind() string {
+	if x != nil {
+		return x.LastKind
+	}
+	return ""
+}
+
+func (x *BackupHealth) GetLastBackupAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.LastBackupAt
+	}
+	return nil
+}
+
+func (x *BackupHealth) GetLastVerifyStatus() string {
+	if x != nil {
+		return x.LastVerifyStatus
+	}
+	return ""
+}
+
+func (x *BackupHealth) GetLastError() string {
+	if x != nil {
+		return x.LastError
+	}
+	return ""
+}
+
 type ListNodesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -282,7 +376,7 @@ type ListNodesRequest struct {
 
 func (x *ListNodesRequest) Reset() {
 	*x = ListNodesRequest{}
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[5]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -294,7 +388,7 @@ func (x *ListNodesRequest) String() string {
 func (*ListNodesRequest) ProtoMessage() {}
 
 func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[5]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -307,7 +401,7 @@ func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
 func (*ListNodesRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{6}
 }
 
 // NodeView 是节点观测缓存行的只读投影（state-model §2.2：缓存禁止用于
@@ -332,7 +426,7 @@ type NodeView struct {
 
 func (x *NodeView) Reset() {
 	*x = NodeView{}
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[6]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -344,7 +438,7 @@ func (x *NodeView) String() string {
 func (*NodeView) ProtoMessage() {}
 
 func (x *NodeView) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[6]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -357,7 +451,7 @@ func (x *NodeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NodeView.ProtoReflect.Descriptor instead.
 func (*NodeView) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{6}
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *NodeView) GetSwarmNodeId() string {
@@ -432,7 +526,7 @@ type ListNodesResponse struct {
 
 func (x *ListNodesResponse) Reset() {
 	*x = ListNodesResponse{}
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[7]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -444,7 +538,7 @@ func (x *ListNodesResponse) String() string {
 func (*ListNodesResponse) ProtoMessage() {}
 
 func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[7]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -457,7 +551,7 @@ func (x *ListNodesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListNodesResponse.ProtoReflect.Descriptor instead.
 func (*ListNodesResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{7}
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ListNodesResponse) GetNodes() []*NodeView {
@@ -475,7 +569,7 @@ type GetIngressStatusRequest struct {
 
 func (x *GetIngressStatusRequest) Reset() {
 	*x = GetIngressStatusRequest{}
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[8]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -487,7 +581,7 @@ func (x *GetIngressStatusRequest) String() string {
 func (*GetIngressStatusRequest) ProtoMessage() {}
 
 func (x *GetIngressStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[8]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -500,7 +594,7 @@ func (x *GetIngressStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetIngressStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetIngressStatusRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{8}
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{9}
 }
 
 // TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists
@@ -517,7 +611,7 @@ type TraefikView struct {
 
 func (x *TraefikView) Reset() {
 	*x = TraefikView{}
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[9]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -529,7 +623,7 @@ func (x *TraefikView) String() string {
 func (*TraefikView) ProtoMessage() {}
 
 func (x *TraefikView) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[9]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +636,7 @@ func (x *TraefikView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TraefikView.ProtoReflect.Descriptor instead.
 func (*TraefikView) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{9}
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *TraefikView) GetExists() bool {
@@ -587,7 +681,7 @@ type CertLedgerView struct {
 
 func (x *CertLedgerView) Reset() {
 	*x = CertLedgerView{}
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[10]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -599,7 +693,7 @@ func (x *CertLedgerView) String() string {
 func (*CertLedgerView) ProtoMessage() {}
 
 func (x *CertLedgerView) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[10]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -612,7 +706,7 @@ func (x *CertLedgerView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CertLedgerView.ProtoReflect.Descriptor instead.
 func (*CertLedgerView) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{10}
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CertLedgerView) GetApp() string {
@@ -670,7 +764,7 @@ type GetIngressStatusResponse struct {
 
 func (x *GetIngressStatusResponse) Reset() {
 	*x = GetIngressStatusResponse{}
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[11]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -682,7 +776,7 @@ func (x *GetIngressStatusResponse) String() string {
 func (*GetIngressStatusResponse) ProtoMessage() {}
 
 func (x *GetIngressStatusResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_system_proto_msgTypes[11]
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -695,7 +789,7 @@ func (x *GetIngressStatusResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetIngressStatusResponse.ProtoReflect.Descriptor instead.
 func (*GetIngressStatusResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{11}
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *GetIngressStatusResponse) GetTraefik() *TraefikView {
@@ -768,6 +862,286 @@ func (x *GetIngressStatusResponse) GetCertDirError() string {
 	return ""
 }
 
+type ListBackupsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBackupsRequest) Reset() {
+	*x = ListBackupsRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBackupsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBackupsRequest) ProtoMessage() {}
+
+func (x *ListBackupsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBackupsRequest.ProtoReflect.Descriptor instead.
+func (*ListBackupsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{13}
+}
+
+// BackupView 是状态备份台账行的只读投影（state_backups 表）。path 指向
+// 备份目录内的快照文件；manifest.json 与其同目录（含 sha256/密钥指纹/
+// schema 版本——恢复核对材料，密钥本体绝不入备份目录）。
+type BackupView struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// 触发类别：daily / pre_upgrade / post_deploy / manual（历史行可为
+	// hot/cold）。
+	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// 快照文件路径。
+	Path string `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
+	// 快照文件 sha256（hex；回读校验对象）。
+	Sha256    string `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
+	SizeBytes int64  `protobuf:"varint,5,opt,name=size_bytes,json=sizeBytes,proto3" json:"size_bytes,omitempty"`
+	// 回读校验结论：verified / failed（失败行保留——红色告警面的一部分）。
+	VerifyStatus string `protobuf:"bytes,6,opt,name=verify_status,json=verifyStatus,proto3" json:"verify_status,omitempty"`
+	// 校验失败原因原文（verified 行为空）。
+	Error string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
+	// 台账落账时刻。
+	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BackupView) Reset() {
+	*x = BackupView{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BackupView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BackupView) ProtoMessage() {}
+
+func (x *BackupView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BackupView.ProtoReflect.Descriptor instead.
+func (*BackupView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *BackupView) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *BackupView) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *BackupView) GetPath() string {
+	if x != nil {
+		return x.Path
+	}
+	return ""
+}
+
+func (x *BackupView) GetSha256() string {
+	if x != nil {
+		return x.Sha256
+	}
+	return ""
+}
+
+func (x *BackupView) GetSizeBytes() int64 {
+	if x != nil {
+		return x.SizeBytes
+	}
+	return 0
+}
+
+func (x *BackupView) GetVerifyStatus() string {
+	if x != nil {
+		return x.VerifyStatus
+	}
+	return ""
+}
+
+func (x *BackupView) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+func (x *BackupView) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+type ListBackupsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Backups       []*BackupView          `protobuf:"bytes,1,rep,name=backups,proto3" json:"backups,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListBackupsResponse) Reset() {
+	*x = ListBackupsResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListBackupsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListBackupsResponse) ProtoMessage() {}
+
+func (x *ListBackupsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListBackupsResponse.ProtoReflect.Descriptor instead.
+func (*ListBackupsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *ListBackupsResponse) GetBackups() []*BackupView {
+	if x != nil {
+		return x.Backups
+	}
+	return nil
+}
+
+type TriggerBackupRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 触发类别（缺省 manual；升级编排传 pre_upgrade）。manual/daily/
+	// pre_upgrade/post_deploy 之外取值被请求校验拒绝。
+	Kind          string `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerBackupRequest) Reset() {
+	*x = TriggerBackupRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerBackupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerBackupRequest) ProtoMessage() {}
+
+func (x *TriggerBackupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerBackupRequest.ProtoReflect.Descriptor instead.
+func (*TriggerBackupRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *TriggerBackupRequest) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+type TriggerBackupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Backup        *BackupView            `protobuf:"bytes,1,opt,name=backup,proto3" json:"backup,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerBackupResponse) Reset() {
+	*x = TriggerBackupResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerBackupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerBackupResponse) ProtoMessage() {}
+
+func (x *TriggerBackupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerBackupResponse.ProtoReflect.Descriptor instead.
+func (*TriggerBackupResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *TriggerBackupResponse) GetBackup() *BackupView {
+	if x != nil {
+		return x.Backup
+	}
+	return nil
+}
+
 var File_fleetly_server_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_system_proto_rawDesc = "" +
@@ -781,13 +1155,21 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\x0fComponentHealth\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x0e\n" +
 	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x14\n" +
-	"\x05error\x18\x03 \x01(\tR\x05error\"\x91\x01\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error\"\xca\x01\n" +
 	"\x17GetSystemStatusResponse\x12\x18\n" +
 	"\aservice\x18\x01 \x01(\tR\aservice\x12\x18\n" +
 	"\aversion\x18\x02 \x01(\tR\aversion\x12B\n" +
 	"\n" +
 	"components\x18\x03 \x03(\v2\".fleetly.server.v1.ComponentHealthR\n" +
-	"components\"\x12\n" +
+	"components\x127\n" +
+	"\x06backup\x18\x04 \x01(\v2\x1f.fleetly.server.v1.BackupHealthR\x06backup\"\xe0\x01\n" +
+	"\fBackupHealth\x12$\n" +
+	"\x0elast_backup_id\x18\x01 \x01(\tR\flastBackupId\x12\x1b\n" +
+	"\tlast_kind\x18\x02 \x01(\tR\blastKind\x12@\n" +
+	"\x0elast_backup_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\flastBackupAt\x12,\n" +
+	"\x12last_verify_status\x18\x04 \x01(\tR\x10lastVerifyStatus\x12\x1d\n" +
+	"\n" +
+	"last_error\x18\x05 \x01(\tR\tlastError\"\x12\n" +
 	"\x10ListNodesRequest\"\x93\x03\n" +
 	"\bNodeView\x12\"\n" +
 	"\rswarm_node_id\x18\x01 \x01(\tR\vswarmNodeId\x12\x1f\n" +
@@ -832,12 +1214,33 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\bcert_dir\x18\b \x01(\tR\acertDir\x12\"\n" +
 	"\rcert_dir_apps\x18\t \x03(\tR\vcertDirApps\x12$\n" +
 	"\x0ecert_dir_error\x18\n" +
-	" \x01(\tR\fcertDirError2\xf3\x03\n" +
+	" \x01(\tR\fcertDirError\"\x14\n" +
+	"\x12ListBackupsRequest\"\xf1\x01\n" +
+	"\n" +
+	"BackupView\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x12\n" +
+	"\x04path\x18\x03 \x01(\tR\x04path\x12\x16\n" +
+	"\x06sha256\x18\x04 \x01(\tR\x06sha256\x12\x1d\n" +
+	"\n" +
+	"size_bytes\x18\x05 \x01(\x03R\tsizeBytes\x12#\n" +
+	"\rverify_status\x18\x06 \x01(\tR\fverifyStatus\x12\x14\n" +
+	"\x05error\x18\a \x01(\tR\x05error\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"N\n" +
+	"\x13ListBackupsResponse\x127\n" +
+	"\abackups\x18\x01 \x03(\v2\x1d.fleetly.server.v1.BackupViewR\abackups\"\\\n" +
+	"\x14TriggerBackupRequest\x12D\n" +
+	"\x04kind\x18\x01 \x01(\tB0\xbaH-r+R\x00R\x06manualR\x05dailyR\vpre_upgradeR\vpost_deployR\x04kind\"N\n" +
+	"\x15TriggerBackupResponse\x125\n" +
+	"\x06backup\x18\x01 \x01(\v2\x1d.fleetly.server.v1.BackupViewR\x06backup2\xf1\x05\n" +
 	"\rSystemService\x12`\n" +
 	"\x04Ping\x12\x1e.fleetly.server.v1.PingRequest\x1a\x1f.fleetly.server.v1.PingResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/ping\x12\x83\x01\n" +
 	"\x0fGetSystemStatus\x12).fleetly.server.v1.GetSystemStatusRequest\x1a*.fleetly.server.v1.GetSystemStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12p\n" +
 	"\tListNodes\x12#.fleetly.server.v1.ListNodesRequest\x1a$.fleetly.server.v1.ListNodesResponse\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/system/nodes\x12\x87\x01\n" +
-	"\x10GetIngressStatus\x12*.fleetly.server.v1.GetIngressStatusRequest\x1a+.fleetly.server.v1.GetIngressStatusResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/ingressB\x98\x01\x92ARRP\n" +
+	"\x10GetIngressStatus\x12*.fleetly.server.v1.GetIngressStatusRequest\x1a+.fleetly.server.v1.GetIngressStatusResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/ingress\x12x\n" +
+	"\vListBackups\x12%.fleetly.server.v1.ListBackupsRequest\x1a&.fleetly.server.v1.ListBackupsResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/backups\x12\x81\x01\n" +
+	"\rTriggerBackup\x12'.fleetly.server.v1.TriggerBackupRequest\x1a(.fleetly.server.v1.TriggerBackupResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/system/backupsB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -854,44 +1257,59 @@ func file_fleetly_server_v1_system_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_system_proto_rawDescData
 }
 
-var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_fleetly_server_v1_system_proto_goTypes = []any{
 	(*PingRequest)(nil),              // 0: fleetly.server.v1.PingRequest
 	(*PingResponse)(nil),             // 1: fleetly.server.v1.PingResponse
 	(*GetSystemStatusRequest)(nil),   // 2: fleetly.server.v1.GetSystemStatusRequest
 	(*ComponentHealth)(nil),          // 3: fleetly.server.v1.ComponentHealth
 	(*GetSystemStatusResponse)(nil),  // 4: fleetly.server.v1.GetSystemStatusResponse
-	(*ListNodesRequest)(nil),         // 5: fleetly.server.v1.ListNodesRequest
-	(*NodeView)(nil),                 // 6: fleetly.server.v1.NodeView
-	(*ListNodesResponse)(nil),        // 7: fleetly.server.v1.ListNodesResponse
-	(*GetIngressStatusRequest)(nil),  // 8: fleetly.server.v1.GetIngressStatusRequest
-	(*TraefikView)(nil),              // 9: fleetly.server.v1.TraefikView
-	(*CertLedgerView)(nil),           // 10: fleetly.server.v1.CertLedgerView
-	(*GetIngressStatusResponse)(nil), // 11: fleetly.server.v1.GetIngressStatusResponse
-	nil,                              // 12: fleetly.server.v1.NodeView.LabelsEntry
-	(*timestamppb.Timestamp)(nil),    // 13: google.protobuf.Timestamp
+	(*BackupHealth)(nil),             // 5: fleetly.server.v1.BackupHealth
+	(*ListNodesRequest)(nil),         // 6: fleetly.server.v1.ListNodesRequest
+	(*NodeView)(nil),                 // 7: fleetly.server.v1.NodeView
+	(*ListNodesResponse)(nil),        // 8: fleetly.server.v1.ListNodesResponse
+	(*GetIngressStatusRequest)(nil),  // 9: fleetly.server.v1.GetIngressStatusRequest
+	(*TraefikView)(nil),              // 10: fleetly.server.v1.TraefikView
+	(*CertLedgerView)(nil),           // 11: fleetly.server.v1.CertLedgerView
+	(*GetIngressStatusResponse)(nil), // 12: fleetly.server.v1.GetIngressStatusResponse
+	(*ListBackupsRequest)(nil),       // 13: fleetly.server.v1.ListBackupsRequest
+	(*BackupView)(nil),               // 14: fleetly.server.v1.BackupView
+	(*ListBackupsResponse)(nil),      // 15: fleetly.server.v1.ListBackupsResponse
+	(*TriggerBackupRequest)(nil),     // 16: fleetly.server.v1.TriggerBackupRequest
+	(*TriggerBackupResponse)(nil),    // 17: fleetly.server.v1.TriggerBackupResponse
+	nil,                              // 18: fleetly.server.v1.NodeView.LabelsEntry
+	(*timestamppb.Timestamp)(nil),    // 19: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_system_proto_depIdxs = []int32{
 	3,  // 0: fleetly.server.v1.GetSystemStatusResponse.components:type_name -> fleetly.server.v1.ComponentHealth
-	13, // 1: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
-	12, // 2: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
-	6,  // 3: fleetly.server.v1.ListNodesResponse.nodes:type_name -> fleetly.server.v1.NodeView
-	13, // 4: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
-	9,  // 5: fleetly.server.v1.GetIngressStatusResponse.traefik:type_name -> fleetly.server.v1.TraefikView
-	10, // 6: fleetly.server.v1.GetIngressStatusResponse.certificates:type_name -> fleetly.server.v1.CertLedgerView
-	0,  // 7: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
-	2,  // 8: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
-	5,  // 9: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
-	8,  // 10: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
-	1,  // 11: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
-	4,  // 12: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
-	7,  // 13: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
-	11, // 14: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
-	11, // [11:15] is the sub-list for method output_type
-	7,  // [7:11] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	5,  // 1: fleetly.server.v1.GetSystemStatusResponse.backup:type_name -> fleetly.server.v1.BackupHealth
+	19, // 2: fleetly.server.v1.BackupHealth.last_backup_at:type_name -> google.protobuf.Timestamp
+	19, // 3: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
+	18, // 4: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
+	7,  // 5: fleetly.server.v1.ListNodesResponse.nodes:type_name -> fleetly.server.v1.NodeView
+	19, // 6: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
+	10, // 7: fleetly.server.v1.GetIngressStatusResponse.traefik:type_name -> fleetly.server.v1.TraefikView
+	11, // 8: fleetly.server.v1.GetIngressStatusResponse.certificates:type_name -> fleetly.server.v1.CertLedgerView
+	19, // 9: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
+	14, // 10: fleetly.server.v1.ListBackupsResponse.backups:type_name -> fleetly.server.v1.BackupView
+	14, // 11: fleetly.server.v1.TriggerBackupResponse.backup:type_name -> fleetly.server.v1.BackupView
+	0,  // 12: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
+	2,  // 13: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
+	6,  // 14: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
+	9,  // 15: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
+	13, // 16: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
+	16, // 17: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
+	1,  // 18: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
+	4,  // 19: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
+	8,  // 20: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
+	12, // 21: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
+	15, // 22: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
+	17, // 23: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
+	18, // [18:24] is the sub-list for method output_type
+	12, // [12:18] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_system_proto_init() }
@@ -905,7 +1323,7 @@ func file_fleetly_server_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_system_proto_rawDesc), len(file_fleetly_server_v1_system_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

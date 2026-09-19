@@ -16,6 +16,10 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.SystemService/GetSystemStatus":  ScopeRead,
 	"/fleetly.server.v1.SystemService/ListNodes":        ScopeRead,
 	"/fleetly.server.v1.SystemService/GetIngressStatus": ScopeRead,
+	// 备份面（T2.22）：台账只读；手动触发 = 写面语义（与升级编排的
+	// pre_upgrade 快照共用入口），取 deploy scope。
+	"/fleetly.server.v1.SystemService/ListBackups":   ScopeRead,
+	"/fleetly.server.v1.SystemService/TriggerBackup": ScopeDeploy,
 	// AppsService
 	"/fleetly.server.v1.AppsService/ListApps":  ScopeRead,
 	"/fleetly.server.v1.AppsService/GetApp":    ScopeRead,

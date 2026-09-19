@@ -14,6 +14,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -269,6 +270,29 @@ func (e *Env) SeedBuild(t *testing.T, appName, service string) string {
 		t.Fatalf("apitest: seed build: %v", err)
 	}
 	return rec.ID
+}
+
+// SeedBackup 播种一条状态备份台账行（backups list 夹具；ID 按类别区分、
+// 时间取按 kind 长度偏移的固定纪元——台账按 created_at DESC 排序，同刻
+// 并列会造成顺序抖动，确定偏移使列表顺序稳定）。
+func (e *Env) SeedBackup(t *testing.T, kind, verify, errMsg string) state.StateBackup {
+	t.Helper()
+	id := ("01BKTEST" + kind + "0000000000000000000000")[:26]
+	at := time.Unix(1700000000, 0).UTC().Add(time.Duration(len(kind)) * time.Hour)
+	rec, err := e.Store.RecordStateBackup(context.Background(), state.BackupWrite{
+		ID:     id,
+		At:     at,
+		Kind:   kind,
+		Path:   "/var/lib/fleetly/backups/" + id + "/fleetly.db",
+		SHA256: strings.Repeat("a", 64),
+		Size:   2048,
+		Verify: verify,
+		Error:  errMsg,
+	})
+	if err != nil {
+		t.Fatalf("apitest: seed backup: %v", err)
+	}
+	return rec
 }
 
 // AppendEvent 播种一条注册表内事件（events watch 夹具）。

@@ -18,7 +18,7 @@ curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
 sudo sh install.sh --bin-dir ./dist                              # offline / dev form
 ```
 
-The first start prints a bootstrap admin token **once** to the fleetlyd log. Uninstall keeps application data (`--purge` removes it). Forms, gate list, port table, and dind verification: [`deploy/README.md`](deploy/README.md). (Release artifacts land with the release pipeline — until then the offline `--bin-dir` form is the working path.)
+The first start prints a bootstrap admin token **once** to the fleetlyd log. Uninstall keeps application data (`--purge` removes it). Upgrading the control plane is one command with a pre-upgrade snapshot and automatic rollback (`sudo sh upgrade.sh --version vX.Y.Z`); Engine/host upgrades are a separate cold-backup procedure — see [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md). Forms, gate list, port table, and dind verification: [`deploy/README.md`](deploy/README.md). (Release artifacts land with the release pipeline — until then the offline `--bin-dir` form is the working path.)
 
 ## Why fleetly
 

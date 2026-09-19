@@ -13,9 +13,13 @@ init）、§4.2（引擎门禁 / 安全默认基线 / 底座端口加固）、de
 | --- | --- |
 | `install.sh` | 安装器（POSIX sh；systemd unit 经内嵌同源 heredoc 生成） |
 | `uninstall.sh` | 卸载器（应用数据默认保留，`--purge` 才删） |
+| `upgrade.sh` | 平台自升级（T2.23；升级双轨的 fleetlyd 轨——热备快照 + 原子换件 + 失败自动回退，应用不停） |
 | `fleetlyd.service` | systemd unit 参考模板（与 install.sh 内嵌 heredoc 逐字一致，test-install.sh 做 diff 防漂移） |
-| `test-install.sh` | dind 内验收套件（A1-A9，51 断言） |
-| `run-dind-test.sh` | 宿主编排：交叉编译 → 起 dind → exec+stdin 注入 → 跑套件 → 清理 |
+| `test-install.sh` | dind 内安装验收套件（A1-A9） |
+| `run-dind-test.sh` | 宿主编排：交叉编译 → 起 dind → exec+stdin 注入 → 跑安装套件 → 清理 |
+| `test-upgrade.sh` | dind 内升级验收套件（U/S 两段：正常升级零停应用 + 坏件自动回退 + 备份链） |
+| `run-upgrade-test.sh` | 升级套件宿主编排（两份版本串二进制 + 探针应用交叉编译 → dind → 套件 → 清理） |
+| `testdata/probeapp/` | 升级 E2E 探针应用（serve/hc/watch 三模式；scratch 镜像零 registry 依赖） |
 
 ## 一条命令安装
 
@@ -96,6 +100,40 @@ cosign 缺失时安装器**显式警告降级**（不静默）；cosign 在而�
 `journalctl -u fleetlyd.service | grep "bootstrap admin token"`；手动形态
 在 daemon stdout/日志文件里 grep 同关键字。随后
 `FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN=<token> fleetly apps list` 验通。
+
+## 升级（T2.23，升级双轨）
+
+**fleetlyd 轨**（`upgrade.sh`，不停 Engine、应用不停）——八步原子序列：
+① 预下载并校验（先下后停）→ ② 升级前热备快照（`kind=pre_upgrade`，经
+CLI 调 daemon RPC，`verify_status=verified` 才继续，否则在停 daemon 之前
+中止）→ ③ 应用健康基线（apps derived_state + 可选 `--probe-url` 采样）→
+④ 停 fleetlyd（Swarm service 与 Traefik 独立于 daemon——应用路由继续
+服务）→ ⑤ 原子换二进制（旧件存 `fleetlyd.previous`）→ ⑥ start + liveness
+门 → ⑦ 升级后验证（版本号 + derived_state 与基线一致 + probe 200）→
+⑧ 任一步失败自动回退 previous 并再验证，仍失败停在最诚实状态打诊断。
+
+```sh
+sudo sh upgrade.sh --version v0.1.1        # 或缺省 latest stable（stable 渠道只接受带签名版本）
+sudo sh upgrade.sh --bin-dir /tmp/new-bin  # 离线/开发形态
+# 可选：--probe-url <url> --probe-host <host>（入口可达性采样）
+#       --allow-nightly（显式接受无签名 nightly）；--skip-backup（红色警告，破坏原子保证）
+```
+
+**Engine/主机轨** = 冷备 + 维护窗口（先备份 + 停应用；有状态应用停机
+如实告知）——操作手册与双轨口径见 `docs/runbooks/upgrade.md`，**禁止用
+本目录脚本执行 Engine/主机升级**；`--force-recreate` 式升级被双轨口径
+明令禁止（升级脚本对应用服务零操作）。
+
+dind 验收（含 probe 零失败断言与坏件回退）：
+
+```sh
+sh deploy/run-upgrade-test.sh
+```
+
+场景：S1 正常升级（vA→vB：probe 全程零失败 = 应用不停 E2E、版本正确、
+derived_state 不变、pre_upgrade 备份 verified）；S2 坏 vB'（截断 ELF）→
+自动回退 vA、daemon healthy、probe 仍零失败；S3 备份链台账
+（kind/verify_status、manifest 密钥指纹、密钥不在备份目录）。
 
 ## 卸载
 

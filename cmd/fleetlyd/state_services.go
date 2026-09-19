@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/statebackup"
 )
 
 // storeService 是状态库服务壳：迁移已在装配期（state.Open）完成，Init
@@ -107,6 +108,28 @@ func (s janitorService) Start(ctx context.Context) error {
 	return nil
 }
 func (s janitorService) Stop(ctx context.Context) error { return s.jr.Stop(ctx) }
+
+// backupService 是状态备份服务壳（T2.22）：Start 阶段进入每日备份循环
+// （启动即一拍——新装平台首启即有 verified 备份；此后每 Interval 一拍）。
+// Start 阻塞到关停（actor 契约同上），Stop 等待循环退出（在途单次备份由
+// Trigger 自身预算收敛）。手动与升级编排触发（RPC / upgrade.sh）不经过
+// 本循环——循环只承载 daily 拍子。
+type backupService struct {
+	bm *statebackup.Manager
+}
+
+func newBackupService(bm *statebackup.Manager) lynx.Service { return backupService{bm: bm} }
+
+func (s backupService) Name() string                 { return "state.backup" }
+func (s backupService) Init(_ lynx.AppContext) error { return nil }
+func (s backupService) Start(ctx context.Context) error {
+	if err := s.bm.Start(ctx); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return nil
+}
+func (s backupService) Stop(ctx context.Context) error { return s.bm.Stop(ctx) }
 
 // secretsService 是平台密钥服务壳：主密钥已在装配期（NewSecretsBox →
 // EnsureKey）fail-fast 加载/生成，Init 无动作；CheckHealth 持续上报密钥
