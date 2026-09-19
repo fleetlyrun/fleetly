@@ -27,13 +27,15 @@ const (
 
 type TriggerBuildRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name，服务端
-	// 解析受控子集——compose 违约不动底座、不入队）。
+	// compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name——请求
+	// 无 app 字段，单源无错位面（A1 注记；若后续加 app 字段须与 Deploy 同款
+	// 一致性校验）；服务端解析受控子集——compose 违约不动底座、不入队）。
 	Compose []byte `protobuf:"bytes,1,opt,name=compose,proto3" json:"compose,omitempty"`
 	// 只构建该 compose 服务；空 = 全部 build 模式服务。
 	Service string `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
 	// 构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时
-	// 目录）。v0.1 单机同宿主语义，见 service 注释。
+	// 目录）。v0.1 单机同宿主语义，见 service 注释（H14：admin scope，且
+	// context 解析后不得越出该基准目录）。
 	BaseDir       string `protobuf:"bytes,3,opt,name=base_dir,json=baseDir,proto3" json:"base_dir,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache

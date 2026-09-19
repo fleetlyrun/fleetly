@@ -13,8 +13,11 @@
 #   UG_SKIP_BUILD   1 = 跳过交叉编译，改用 UG_BIN_A / UG_BIN_DIR 指定的目录
 #   UG_BIN_A        UG_SKIP_BUILD=1 时的 vA 二进制目录（含 fleetlyd+fleetly）
 #   UG_BIN_B        UG_SKIP_BUILD=1 时的 vB 二进制目录（含 fleetlyd+fleetly）
+#   UG_BIN_C        UG_SKIP_BUILD=1 时的 vC fleetlyd（schema-skew 变体，S4；
+#                   只需 fleetlyd——CLI 由 test-upgrade.sh 在 dind 内伪造）
 #   UG_VERSION_A    vA 版本串（默认 v0.1.0-uga）
 #   UG_VERSION_B    vB 版本串（默认 v0.1.0-ugb；必须 ≠ A）
+#   UG_VERSION_C    vC 版本串（默认 v0.1.0-ugc；S4 变体——见下方 vc 变体说明）
 set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
@@ -24,6 +27,7 @@ DIND_NAME="${DIND_NAME:-fleetly-upgrade-test}"
 UG_SKIP_BUILD="${UG_SKIP_BUILD:-0}"
 UG_VERSION_A="${UG_VERSION_A:-v0.1.0-uga}"
 UG_VERSION_B="${UG_VERSION_B:-v0.1.0-ugb}"
+UG_VERSION_C="${UG_VERSION_C:-v0.1.0-ugc}"
 
 log() { printf '[upgrade-test %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 die() {
@@ -83,7 +87,7 @@ stage() {
 # ------------------------------------------------------------------ 构建
 log "repo root: $ROOT  tmp: $TMP"
 if [ "$UG_SKIP_BUILD" != '1' ]; then
-    mkdir -p "$TMP/bin-vA" "$TMP/bin-vB"
+    mkdir -p "$TMP/bin-vA" "$TMP/bin-vB" "$TMP/bin-vC"
     log "cross-compiling linux/amd64 fleetlyd+fleetly (vA=$UG_VERSION_A, vB=$UG_VERSION_B)"
     (
         cd "$ROOT" &&
@@ -103,17 +107,45 @@ if [ "$UG_SKIP_BUILD" != '1' ]; then
                 go build -trimpath -ldflags "-s -w" \
                 -o "$TMP/probe" ./deploy/testdata/probeapp
     ) || die 'go build failed'
+    # vC 变体（S4/F5，S20 schema 感知场景）：临时源树副本注入一条 vA/vB
+    # 都不认识的更高版本迁移（00099）——go:embed 编译期读取，只能改树构建。
+    # vC = 「新版本应用迁移 → 验证失败 → 回退旧版本」的错配源。只构建
+    # fleetlyd（触发错位的 CLI 由 test-upgrade.sh 在 dind 内伪造）。
+    log "building vC schema-skew variant ($UG_VERSION_C, injected migration 00099)"
+    VC_SRC="$TMP/vc-src"
+    mkdir -p "$VC_SRC"
+    # 排除重目录只影响复制速度，不参与编译闭包（go.work 三模块 = cmd/
+    # internal/genproto/sdk）。
+    tar -C "$ROOT" -cf - \
+        --exclude=./.git --exclude=./console --exclude=./spike \
+        --exclude=./docs --exclude=./.tmp-* --exclude=./cmd/fleetlyd/fleetlyd.exe \
+        . | tar -C "$VC_SRC" -xf - ||
+        die 'copy source tree for vC variant'
+    cat >"$VC_SRC/internal/state/migrations/00099_f5_schema_skew.sql" <<'MIG'
+-- 00099_f5_schema_skew.sql —— 测试专用注入迁移（deploy/run-upgrade-test.sh
+-- 构建 vC 变体时写入临时源树副本，绝不进仓库）：制造「新版本 fleetlyd 应
+-- 用了旧版本不认识的更高 schema 迁移」的回退错配现场（S4/F5，S20）。
+CREATE TABLE f5_schema_skew_marker (id INTEGER PRIMARY KEY, note TEXT NOT NULL);
+MIG
+    (
+        cd "$VC_SRC" &&
+            GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+                go build -trimpath -ldflags "-s -w -X main.version=$UG_VERSION_C" \
+                -o "$TMP/bin-vC/fleetlyd" ./cmd/fleetlyd
+    ) || die 'go build of vC variant failed'
     UG_BIN_A="$TMP/bin-vA"
     UG_BIN_B="$TMP/bin-vB"
+    UG_BIN_C="$TMP/bin-vC/fleetlyd"
     UG_PROBE="$TMP/probe"
 else
     UG_BIN_A="${UG_BIN_A:?UG_SKIP_BUILD=1 requires UG_BIN_A}"
     UG_BIN_B="${UG_BIN_B:?UG_SKIP_BUILD=1 requires UG_BIN_B}"
+    UG_BIN_C="${UG_BIN_C:?UG_SKIP_BUILD=1 requires UG_BIN_C (vC schema-skew fleetlyd)}"
     UG_PROBE="${UG_PROBE:?UG_SKIP_BUILD=1 requires UG_PROBE (probeapp binary)}"
-    log "using prebuilt binaries: A=$UG_BIN_A B=$UG_BIN_B probe=$UG_PROBE"
+    log "using prebuilt binaries: A=$UG_BIN_A B=$UG_BIN_B C=$UG_BIN_C probe=$UG_PROBE"
 fi
 # 宿主侧只验存在性（Windows 宿主对 Linux ELF 的 -x 恒假——容器内 chmod 兜底）。
-for _f in "$UG_BIN_A/fleetlyd" "$UG_BIN_A/fleetly" "$UG_BIN_B/fleetlyd" "$UG_BIN_B/fleetly" "$UG_PROBE"; do
+for _f in "$UG_BIN_A/fleetlyd" "$UG_BIN_A/fleetly" "$UG_BIN_B/fleetlyd" "$UG_BIN_B/fleetly" "$UG_BIN_C" "$UG_PROBE"; do
     [ -f "$_f" ] || die "missing: $_f"
 done
 for _f in deploy/install.sh deploy/upgrade.sh deploy/test-upgrade.sh; do
@@ -149,7 +181,7 @@ log "dind $DIND_NAME ready"
 
 # ----------------------------------------------------------------- 注入
 log 'staging scripts + binaries via exec+stdin'
-docker exec "$DIND_NAME" mkdir -p /tmp/upgrade-test/bin-vA /tmp/upgrade-test/bin-vB ||
+docker exec "$DIND_NAME" mkdir -p /tmp/upgrade-test/bin-vA /tmp/upgrade-test/bin-vB /tmp/upgrade-test/bin-vC ||
     die 'mkdir stage'
 stage /tmp/upgrade-test/install.sh "$ROOT/deploy/install.sh"
 stage /tmp/upgrade-test/upgrade.sh "$ROOT/deploy/upgrade.sh"
@@ -161,9 +193,10 @@ stage /tmp/upgrade-test/bin-vA/fleetlyd "$UG_BIN_A/fleetlyd"
 stage /tmp/upgrade-test/bin-vA/fleetly "$UG_BIN_A/fleetly"
 stage /tmp/upgrade-test/bin-vB/fleetlyd "$UG_BIN_B/fleetlyd"
 stage /tmp/upgrade-test/bin-vB/fleetly "$UG_BIN_B/fleetly"
+stage /tmp/upgrade-test/bin-vC/fleetlyd "$UG_BIN_C"
 docker exec "$DIND_NAME" chmod +x /tmp/upgrade-test/bin-vA/fleetlyd \
     /tmp/upgrade-test/bin-vA/fleetly /tmp/upgrade-test/bin-vB/fleetlyd \
-    /tmp/upgrade-test/bin-vB/fleetly || die 'chmod binaries'
+    /tmp/upgrade-test/bin-vB/fleetly /tmp/upgrade-test/bin-vC/fleetlyd || die 'chmod binaries'
 
 # ----------------------------------------------------------------- 执行
 log 'running in-dind suite (deploy/test-upgrade.sh)'

@@ -54,8 +54,10 @@ func TestReplaceAppDomainsLedgerReconcile(t *testing.T) {
 	for _, r := range rows {
 		byDomain[r.Domain] = r
 	}
-	if got := byDomain["b.example.test"]; got.Service != "api" {
-		t.Fatalf("domain b should move to api, got %+v", got)
+	if got := byDomain["b.example.test"]; got.Service != "api" || got.Port != "9000" {
+		// 全列断言（MG-T2）：迁移后 service 与 port 必须一起切到新服务
+		// （web:8080 → api:9000 后行必须是 api/9000），防止 port 残留。
+		t.Fatalf("domain b should move to api/9000, got %+v", got)
 	}
 	if got := byDomain["c.example.test"]; got.Port != "9000" {
 		t.Fatalf("domain c port not recorded: %+v", got)
@@ -74,6 +76,40 @@ func TestReplaceAppDomainsLedgerReconcile(t *testing.T) {
 	rows2, _ := st.ListAppDomains(ctx, app.ID)
 	if len(rows2) != 2 {
 		t.Fatalf("idempotent replay changed row count: %d", len(rows2))
+	}
+}
+
+func TestReplaceAppDomainsPortOnlyChange(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "portchange")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	// 首次声明：web:8080。
+	if err := st.ReplaceAppDomains(ctx, app.ID, []DomainServiceRoutes{
+		{Service: "web", Port: "8080", Domains: []string{"p.example.test"}},
+	}); err != nil {
+		t.Fatalf("replace domains: %v", err)
+	}
+
+	// 二次声明：service 不变、port 变化（web:8080 → web:9090）——
+	// 跳过条件必须同时比对 service 与 port，否则台账残留旧端口。
+	if err := st.ReplaceAppDomains(ctx, app.ID, []DomainServiceRoutes{
+		{Service: "web", Port: "9090", Domains: []string{"p.example.test"}},
+	}); err != nil {
+		t.Fatalf("replace domains 2: %v", err)
+	}
+	rows, err := st.ListAppDomains(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("list domains: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d: %+v", len(rows), rows)
+	}
+	if rows[0].Service != "web" || rows[0].Port != "9090" {
+		t.Fatalf("port-only change must rewrite port to 9090, got %+v", rows[0])
 	}
 }
 

@@ -39,6 +39,10 @@
 # deploy/README.md）。
 name: nightly
 
+# F1（S20 交付/CI 修正）：全部 uses 钉 commit SHA，注释保留版本号便于人读
+#（升级 action = 同时改 SHA 与版本注释）。SHA 于 2026-09-19 经 GitHub API
+# /commits/<tag> 解析并经 tags 列表 / git ls-remote 交叉核验。
+
 on:
   schedule:
     - cron: "47 21 * * *" # 每日一次（21:47 UTC，避开整点任务高峰）
@@ -64,17 +68,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run V1 regression (dind)
-        run: bash e2e/nightly/run.sh v1
+        # F2：TMPDIR 钉取证目录根（run.sh 的 mktemp -d 自动遵循），失败时
+        # run.sh 保留 $TMP 并打印路径，下方 upload 步骤收取同一根。
+        env:
+          TMPDIR: ${{ runner.temp }}/nightly-forensics
+        run: |
+          mkdir -p "$TMPDIR"
+          bash e2e/nightly/run.sh v1
       - name: dump dind logs
         if: failure()
         run: |
           docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: upload forensics on failure
+        # F2：$TMP 全量取证（dind 全量日志 + 套件 artifacts）。
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-forensics-v1
+          path: ${{ runner.temp }}/nightly-forensics
+          if-no-files-found: warn
       - name: cleanup
         if: always()
         run: |
@@ -89,14 +107,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: run V2 regression (dind)
-        run: bash e2e/nightly/run.sh v2
+        # F2：同 v1（取证目录钉 TMPDIR，失败保留 + upload 收取）。
+        env:
+          TMPDIR: ${{ runner.temp }}/nightly-forensics
+        run: |
+          mkdir -p "$TMPDIR"
+          bash e2e/nightly/run.sh v2
       - name: dump dind logs
         if: failure()
         run: |
           docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: upload forensics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-forensics-v2
+          path: ${{ runner.temp }}/nightly-forensics
+          if-no-files-found: warn
       - name: cleanup
         if: always()
         run: docker ps -aq --filter name=fleetly-nightly- | xargs -r docker rm -f
@@ -107,17 +137,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run V3 regression (dind)
-        run: bash e2e/nightly/run.sh v3
+        # F2：同 v1（取证目录钉 TMPDIR，失败保留 + upload 收取）。
+        env:
+          TMPDIR: ${{ runner.temp }}/nightly-forensics
+        run: |
+          mkdir -p "$TMPDIR"
+          bash e2e/nightly/run.sh v3
       - name: dump dind logs
         if: failure()
         run: |
           docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: upload forensics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-forensics-v3
+          path: ${{ runner.temp }}/nightly-forensics
+          if-no-files-found: warn
       - name: cleanup
         if: always()
         run: |
@@ -132,17 +174,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run V4 regression (dind)
-        run: bash e2e/nightly/run.sh v4
+        # F2：同 v1（取证目录钉 TMPDIR，失败保留 + upload 收取）。
+        env:
+          TMPDIR: ${{ runner.temp }}/nightly-forensics
+        run: |
+          mkdir -p "$TMPDIR"
+          bash e2e/nightly/run.sh v4
       - name: dump dind logs
         if: failure()
         run: |
           docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: upload forensics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-forensics-v4
+          path: ${{ runner.temp }}/nightly-forensics
+          if-no-files-found: warn
       - name: cleanup
         if: always()
         run: |
@@ -158,17 +212,30 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run V6 regression (dual dind)
-        run: bash e2e/nightly/run.sh v6
+        # F2：同 v1（取证目录钉 TMPDIR，失败保留 + upload 收取；v6 artifacts
+        # 在 $TMP/artifacts 下，一并入包）。
+        env:
+          TMPDIR: ${{ runner.temp }}/nightly-forensics
+        run: |
+          mkdir -p "$TMPDIR"
+          bash e2e/nightly/run.sh v6
       - name: dump dind logs
         if: failure()
         run: |
           docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: upload forensics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-forensics-v6
+          path: ${{ runner.temp }}/nightly-forensics
+          if-no-files-found: warn
       - name: cleanup
         if: always()
         run: |
@@ -186,7 +253,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - run: echo "placeholder — V5/V5b orchestration not yet automated; see e2e/nightly/README.md"
 
   # ─────────────────────────────── V7 引擎矩阵（T2.24；交付 §2.2/§2.3）─────
@@ -214,8 +281,8 @@ jobs:
       DIND_IMAGE: ${{ matrix.engine }}
       DIND_EXTRA_ARGS: ${{ matrix.storage.args }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: engine identity
@@ -223,12 +290,25 @@ jobs:
           echo "engine image: $DIND_IMAGE"
           echo "storage extra args: [$DIND_EXTRA_ARGS]"
       - name: run V1/V3/V4/V6 regression on this engine leg
-        run: bash e2e/nightly/run.sh v1 v3 v4 v6
+        # F2：同 v1（取证目录钉 TMPDIR，失败保留 + upload 收取）。artifact
+        # 名用 strategy.job-index（matrix.engine 含 ':/' 非法字符）。
+        env:
+          TMPDIR: ${{ runner.temp }}/nightly-forensics
+        run: |
+          mkdir -p "$TMPDIR"
+          bash e2e/nightly/run.sh v1 v3 v4 v6
       - name: dump dind logs
         if: failure()
         run: |
           docker ps -a --filter name=fleetly-nightly- --format '{{.Names}}' |
             xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 100 || true'
+      - name: upload forensics on failure
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nightly-forensics-engine-${{ strategy.job-index }}
+          path: ${{ runner.temp }}/nightly-forensics
+          if-no-files-found: warn
       - name: cleanup
         if: always()
         run: |
@@ -244,8 +324,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run upgrade suite (dind)
@@ -261,8 +341,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run installer suite (dind)
@@ -283,8 +363,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run builder conformance (dind)
@@ -317,8 +397,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: run resource sampler (dind)
@@ -332,7 +412,7 @@ jobs:
         run: cat "$RS_OUT_DIR/summary.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || echo '(summary.md missing — sampler failed)'
       - name: upload sample artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: resource-sample
           path: resource-sample/sample.json

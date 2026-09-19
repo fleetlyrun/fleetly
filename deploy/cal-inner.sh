@@ -252,7 +252,8 @@ if [ "$(http_code "$HTTP/healthz/liveness")" != '200' ]; then
     fail "CAL-P1-aborted-suite" "daemon not live"
     finish
 fi
-TOKEN=$(grep 'bootstrap admin token' "$DLOG" 2>/dev/null | sed -e 's/.*: //' -e 's/".*//' | head -n 1)
+# B5：token 本体不再进日志——首启写入 <数据根>/bootstrap-token（0600）。
+TOKEN=$(cat /var/lib/fleetly/bootstrap-token 2>/dev/null)
 [ -n "$TOKEN" ]
 assert "CAL-P1-bootstrap-token" $?
 [ -n "$TOKEN" ] || {

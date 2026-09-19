@@ -293,9 +293,35 @@ func TestCLIDiffThreeState(t *testing.T) {
 	if code != 1 || !strings.Contains(errOut, "E_COMPOSE_MANAGED_FIELD") {
 		t.Fatalf("error: code=%d stderr=%q", code, errOut)
 	}
-	// 参数数量违规 → 用法错误（2）。
+	// 参数数量违规 → 用法错误（64，S17-D3）。
 	code, _, _ = runCLI(t, "diff", a)
+	if code != 64 {
+		t.Fatalf("usage: code=%d, 期望 64", code)
+	}
+}
+
+// TestCLIUsageExitCodes S17-D3：用法类错误（未知动词/flag 解析失败/位置
+// 参数违规）退出 64（EX_USAGE 惯例）——与 plan/diff「检测到变化」的 2
+// 分离，Agent/脚本可区分"有漂移"与"调用姿势错误"。
+func TestCLIUsageExitCodes(t *testing.T) {
+	// 未知动词 → 64。
+	code, _, _ := runCLI(t, "no-such-verb")
+	if code != 64 {
+		t.Fatalf("unknown verb: code=%d, 期望 64", code)
+	}
+	// flag 解析失败 → 64。
+	code, _, _ = runCLI(t, "validate", "--nope", writeFixture(t, cliValid))
+	if code != 64 {
+		t.Fatalf("bad flag: code=%d, 期望 64", code)
+	}
+	// 位置参数缺失 → 64。
+	code, _, _ = runCLI(t, "validate")
+	if code != 64 {
+		t.Fatalf("missing arg: code=%d, 期望 64", code)
+	}
+	// 对照：plan 有变化仍是 2（不与用法错误混用）。
+	code, _, _ = runCLI(t, "plan", "--baseline", writeFixture(t, cliOther), writeFixture(t, cliValid))
 	if code != 2 {
-		t.Fatalf("usage: code=%d, 期望 2", code)
+		t.Fatalf("changes: code=%d, 期望 2", code)
 	}
 }

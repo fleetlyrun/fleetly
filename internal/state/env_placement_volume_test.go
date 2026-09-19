@@ -17,10 +17,11 @@ func createTestApp(t *testing.T, st *Store, name string) string {
 	return app.ID
 }
 
-// TestSetAppEnvPendingLifecycle 验收 3 的存储侧：SetAppEnv 创建 pending；
-// EffectiveAppEnv 不含 pending（合并链只消费 effective 的结构性前提）；
-// MarkAppEnvEffective 统一提升（部署消费点 T2.10 的接口留位）；再次 Set
-// 覆盖既有 effective 行回到 pending（生效语义 = 下次部署）。
+// TestSetAppEnvPendingLifecycle 验收 3 的存储侧（S16-C4 语义，以引擎现行
+// 为准）：SetAppEnv 创建 pending；合并消费面 = ListAppEnv 全量行（引擎
+// 传全量——pending 参与合并，部署即消费点）；MarkAppEnvEffective 在部署
+// 成功后统一提升；再次 Set 覆盖既有 effective 行回到 pending（生效语义 =
+// 下次部署）。
 func TestSetAppEnvPendingLifecycle(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
@@ -37,16 +38,16 @@ func TestSetAppEnvPendingLifecycle(t *testing.T) {
 		t.Fatalf("source = %s, want platform", v.Source)
 	}
 
-	// pending 不进 effective 读取（当前合并不受影响）。
-	eff, err := st.EffectiveAppEnv(ctx, appID)
+	// 合并消费面：ListAppEnv 返回全量行（含 pending——引擎合并面）。
+	rows, err := st.ListAppEnv(ctx, appID)
 	if err != nil {
-		t.Fatalf("effective env: %v", err)
+		t.Fatalf("list env: %v", err)
 	}
-	if len(eff) != 0 {
-		t.Fatalf("effective before promote = %d rows, want 0", len(eff))
+	if len(rows) != 1 || rows[0].Status != EnvStatusPending {
+		t.Fatalf("rows before promote = %+v, want 1 pending", rows)
 	}
 
-	// 部署消费点：全部提升。
+	// 部署成功后的消费点（observing.go succeedDeployment）：全部提升。
 	n, err := st.MarkAppEnvEffective(ctx, appID)
 	if err != nil {
 		t.Fatalf("mark effective: %v", err)
@@ -54,9 +55,9 @@ func TestSetAppEnvPendingLifecycle(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("promoted = %d, want 1", n)
 	}
-	eff, err = st.EffectiveAppEnv(ctx, appID)
-	if err != nil || len(eff) != 1 || eff[0].Value != "cipher-aabbcc" {
-		t.Fatalf("effective after promote = %+v err=%v", eff, err)
+	promoted, err := st.GetAppEnv(ctx, appID, "DATABASE_URL")
+	if err != nil || promoted.Status != EnvStatusEffective || promoted.Value != "cipher-aabbcc" {
+		t.Fatalf("env after promote = %+v err=%v, want effective + value", promoted, err)
 	}
 
 	// 覆盖既有 effective 行 → 回到 pending（新值随下次部署生效）。
@@ -208,6 +209,47 @@ func TestPlacementBindingLifecycle(t *testing.T) {
 	_, err = st.BindPlacement(ctx, PlacementWrite{AppID: appID, PlatformNodeID: "n_01", Source: "weird"})
 	if err == nil {
 		t.Fatal("invalid source accepted")
+	}
+}
+
+// TestPlacementByAppBatch S18-A4：批量绑定读取——一次 IN 查询返回已有绑定
+// 的 app 集；无绑定 app 不在 map（ErrPlacementNotFound 的批量等价形态）；
+// 空 ID 集直接空 map。
+func TestPlacementByAppBatch(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	bound := createTestApp(t, st, "batch-bound")
+	blocked := createTestApp(t, st, "batch-blocked")
+	unbound := createTestApp(t, st, "batch-unbound")
+
+	if _, err := st.BindPlacement(ctx, PlacementWrite{
+		AppID: bound, PlatformNodeID: "n_01", Source: PlacementSourcePlatform,
+	}); err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+	if _, err := st.BindPlacement(ctx, PlacementWrite{
+		AppID: blocked, PlatformNodeID: "n_02", State: PlacementBlocked, Source: PlacementSourcePlatform,
+	}); err != nil {
+		t.Fatalf("bind blocked: %v", err)
+	}
+
+	got, err := st.PlacementByApp(ctx, []string{bound, blocked, unbound})
+	if err != nil {
+		t.Fatalf("PlacementByApp: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("placements = %d keys, want 2 (unbound absent): %+v", len(got), got)
+	}
+	if p, ok := got[bound]; !ok || p.State != PlacementBound || p.PlatformNodeID != "n_01" {
+		t.Fatalf("bound placement = %+v ok=%v", p, ok)
+	}
+	if p, ok := got[blocked]; !ok || p.State != PlacementBlocked {
+		t.Fatalf("blocked placement = %+v ok=%v", p, ok)
+	}
+
+	empty, err := st.PlacementByApp(ctx, nil)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty batch = (%d, %v), want (0, nil)", len(empty), err)
 	}
 }
 

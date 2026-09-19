@@ -78,21 +78,29 @@ func EnqueueRollback(ctx context.Context, st *state.Store, in RollbackInput) (st
 	if actor == "" {
 		actor = "human"
 	}
-	rec, err := st.CreateDeployment(ctx, state.DeployRecord{
-		AppID:           app.ID,
-		AppName:         app.Name,
-		Kind:            kindRollback,
-		RecoveryOf:      origin.ID,
-		SpecHash:        source.SpecHash,
-		EnvSnapshotHash: source.EnvSnapshotHash,
-		DesiredHash:     source.DesiredHash,
-		DesiredSpec:     source.DesiredSpec,
-		ComposePath:     source.ComposePath,
-	})
-	if err != nil {
-		return state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "创建回滚部署失败: %v", err)
-	}
+	// fail-closed 单事务（H13 修复，state-model §2.9）：回滚部署行、
+	// deployment.rollback_started 事件与审计在同一个 InTx 内写入——回调内
+	// 任一失败（含事件/审计写失败）整体回滚、部署行不落库，杜绝「引擎照常
+	// 执行但事件与审计缺失」的审计黑洞。回调内拿到的 rec（含生成的 ID/
+	// 时间戳）供事件 payload 与审计使用；建行失败仍映射
+	// E_RUNTIME_UNAVAILABLE（错误形态与合并前一致）。
+	var rec state.DeployRecord
 	if err := st.InTx(ctx, func(tx *state.Tx) error {
+		r, err := tx.CreateDeployment(ctx, state.DeployRecord{
+			AppID:           app.ID,
+			AppName:         app.Name,
+			Kind:            kindRollback,
+			RecoveryOf:      origin.ID,
+			SpecHash:        source.SpecHash,
+			EnvSnapshotHash: source.EnvSnapshotHash,
+			DesiredHash:     source.DesiredHash,
+			DesiredSpec:     source.DesiredSpec,
+			ComposePath:     source.ComposePath,
+		})
+		if err != nil {
+			return errorf("E_RUNTIME_UNAVAILABLE", "创建回滚部署失败: %v", err)
+		}
+		rec = r
 		if err := appendEvent(ctx, tx, "deployment.rollback_started", "deployment:"+rec.ID,
 			"deployment", rec.ID, "app", app.Name,
 			"target_revision", rev.ID, "source_deployment", source.ID,
@@ -181,7 +189,9 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 	if rec.CancelRequested {
 		return e.cancelTerminal(ctx, rec)
 	}
-	if !rec.CreatedAt.IsZero() && e.now().Sub(rec.CreatedAt) > e.cfg.ReleaseTimeout {
+	// 回滚准备预算同 deploying 路径：锚点（拾取时刻）起算，排队等待不计入
+	//（H11）；存量行锚点为 0 回落 created_at 保持旧语义。
+	if anchor := prepareBudgetAnchor(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.ReleaseTimeout {
 		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE",
 			"回滚准备超过发布看门狗预算（底座不可用或环境异常）"))
 	}
@@ -233,8 +243,8 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 //     W_ROLLBACK_IMAGE_RISK——v0.1 无 registry，镜像被清理时提示保留或重建）；
 //  2. 约束可满足：放置前哨（绑定节点 ready / 卷归属一致——取当前平台
 //     绑定状态，不放快照）；
-//  3. secret 存在：v0.1 平台密钥库未接入，规划层拒绝 secrets，快照结构性
-//     不含 secret（见本文件头「secret 值取当前」注）；防御分支兜底；
+//  3. secret 存在：v0.1 平台密钥库未接入，校验层显式拒绝 secrets（S16-C1），
+//     快照结构性不含 secret（见本文件头「secret 值取当前」注）；防御分支兜底。
 //  4. compose 合法：取舍——信任归一化快照（目标 compose 在原部署入队时
 //     已过受控子集校验，快照是其 canonical 投影），只复核关键执行面
 //     （服务集非空、服务名在平台命名空间内、镜像引用非空）。不做反解析：

@@ -126,6 +126,41 @@ func TestBuildFetchAuthKinds(t *testing.T) {
 	plan.Cleanup()
 }
 
+// TestBuildFetchHTTPSOnlyForTokenAuth E7⑤（S19）：https_token 认证强制
+// https:// 源——http:// + token 的组合在拉源计划构造期拒绝（明文链路会把
+// token 泄露给窃听者）；http:// + none 的匿名明文拉取仍允许（本地/journey
+// 形态）。
+func TestBuildFetchHTTPSOnlyForTokenAuth(t *testing.T) {
+	src, st, box, _ := newTestSource(t, 0)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "tok-app")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cipher, err := box.Encrypt([]byte("token-at-least-16ch"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAppSource(ctx, app.ID, state.AppSourceWrite{
+		URL: "http://example.com/acme/web.git", Branch: "main",
+		AuthKind: state.SourceAuthToken, AuthSecret: string(cipher),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := src.buildFetch(ctx, app.ID, "/repo"); err == nil || !strings.Contains(err.Error(), "https_token auth requires https://") {
+		t.Fatalf("http + https_token err = %v, want scheme rejection", err)
+	}
+	// 匿名 http 仍允许（无凭据可泄露）。
+	if err := st.SetAppSource(ctx, app.ID, state.AppSourceWrite{
+		URL: "http://example.com/acme/web.git", Branch: "main", AuthKind: state.SourceAuthNone,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := src.buildFetch(ctx, app.ID, "/repo"); err != nil {
+		t.Fatalf("http + none must stay allowed: %v", err)
+	}
+}
+
 // TestSourceURLWhitelist URL 协议白名单（整改②验收）：ext::/fd:: 传输伪
 // 协议与 `-` 参数注入形态拒绝且错误信息点名；https/http/ssh/git@/file///
 // 放行（file 为 v0.1 有意保留的本地裸仓库形态）。

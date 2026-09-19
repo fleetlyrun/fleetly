@@ -70,11 +70,15 @@ func (c *logsFollowCmd) Run(ctx context.Context, env *commands.Environment, args
 	if err := requireArgs(c.Usage(), args, 1); err != nil {
 		return err
 	}
-	return c.conn.withClient(func(cl *fleetlyClient) error {
+	err := c.conn.withClient(func(cl *fleetlyClient) error {
 		return cl.FollowLogs(ctx, args[0], c.service, func(frame *serverv1.FollowLogsResponse) error {
 			return emitLogEntry(env, c.jsonOut, frame.GetEntry())
 		})
 	})
+	if isCleanCancel(ctx, err) {
+		return nil // Ctrl-C/SIGTERM：流随 ctx 取消干净收尾，exit 0（S17-D3）
+	}
+	return err
 }
 
 // logsHistoryCmd 实现 `fleetly logs history <app> [--service] [--source]

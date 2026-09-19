@@ -7,6 +7,7 @@ package state
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -209,5 +210,81 @@ func TestCreateBuildValidation(t *testing.T) {
 
 	if _, err := st.CreateBuild(context.Background(), BuildRecord{AppID: app.ID, Service: "web", Driver: "magical"}); err == nil {
 		t.Fatal("invalid driver accepted")
+	}
+}
+
+// TestResetInterruptedBuilds 启动复位（MG-A3 crashpoint：重启恢复）：
+// building 行 → failed（错误码 + finished_at + 审计 reason）；queued 与终态
+// 行不动；无 building 行时返回 0；FailStrandedBuild 对非 building 行按
+// CAS 谓词拒绝。
+func TestResetInterruptedBuilds(t *testing.T) {
+	st := newTestStore(t)
+	app := createBuildTestApp(t, st, "build-reset")
+	interrupted := createTestBuild(t, st, app.ID, "web")
+	queued := createTestBuild(t, st, app.ID, "worker")
+	terminal := createTestBuild(t, st, app.ID, "api")
+	if err := st.ClaimBuild(context.Background(), interrupted.ID); err != nil {
+		t.Fatalf("claim interrupted: %v", err)
+	}
+	if err := st.ClaimBuild(context.Background(), terminal.ID); err != nil {
+		t.Fatalf("claim terminal: %v", err)
+	}
+	if err := st.FinishBuildSucceeded(context.Background(), terminal.ID, "r", "sha256:t", "", ""); err != nil {
+		t.Fatalf("finish terminal: %v", err)
+	}
+
+	const reason = "构建被中断（daemon 重启/关停）"
+	n, err := st.ResetInterruptedBuilds(context.Background(), "E_BUILD_FAILED", reason)
+	if err != nil {
+		t.Fatalf("reset: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("reset count = %d, want 1（只复位 building 行）", n)
+	}
+
+	row, err := st.GetBuild(context.Background(), interrupted.ID)
+	if err != nil {
+		t.Fatalf("get interrupted: %v", err)
+	}
+	if row.Status != BuildFailed || row.ErrorCode != "E_BUILD_FAILED" {
+		t.Fatalf("interrupted row = %s/%s, want failed/E_BUILD_FAILED", row.Status, row.ErrorCode)
+	}
+	if row.FinishedAt.IsZero() {
+		t.Fatal("reset row must stamp finished_at")
+	}
+	if qrow, err := st.GetBuild(context.Background(), queued.ID); err != nil || qrow.Status != BuildQueued {
+		t.Fatalf("queued row = %s (%v), want queued untouched", qrow.Status, err)
+	}
+	if trow, err := st.GetBuild(context.Background(), terminal.ID); err != nil || trow.Status != BuildSucceeded {
+		t.Fatalf("terminal row = %s (%v), want succeeded untouched（终态不可逆）", trow.Status, err)
+	}
+
+	// 复位归因进审计 diff（builds 表只存错误码，归因落点在审计）。
+	audits, err := st.RecentAudits(context.Background(), 20)
+	if err != nil {
+		t.Fatalf("read audits: %v", err)
+	}
+	found := false
+	for _, a := range audits {
+		if a.Target == "build:"+interrupted.ID && a.Action == "build.finish" && a.Result == "error" {
+			if !strings.Contains(a.DiffSummary, reason) {
+				t.Fatalf("audit diff = %s, want contains %q", a.DiffSummary, reason)
+			}
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("reset must audit build.finish(error) per row")
+	}
+
+	// 幂等：无 building 行时再复位返回 0。
+	if n, err := st.ResetInterruptedBuilds(context.Background(), "E_BUILD_FAILED", reason); err != nil || n != 0 {
+		t.Fatalf("second reset = %d, %v; want 0, nil", n, err)
+	}
+
+	// FailStrandedBuild 的 CAS 谓词：非 building 行拒绝（queued 行不得被
+	// 兜底路径误伤）。
+	if err := st.FailStrandedBuild(context.Background(), queued.ID, "E_BUILD_FAILED", "x"); !errors.Is(err, ErrBuildStateTransition) {
+		t.Fatalf("fail stranded on queued = %v, want ErrBuildStateTransition", err)
 	}
 }

@@ -49,8 +49,8 @@ services:
     env_file:
       - path: optional.env
         required: false
-secrets:
-  db_url: { external: true }
+    labels:
+      com.example.owner: platform-team   # 用户 label：平台不透传（C2 警告面夹具）
 volumes:
   data: { driver: local }
   cache:

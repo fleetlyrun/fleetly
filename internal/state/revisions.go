@@ -107,6 +107,55 @@ func (t *Tx) CreateRevision(ctx context.Context, w RevisionWrite) (Revision, err
 	}, nil
 }
 
+// ReusableRevisionByDesiredHash 在事务内裁决成功固化的幂等复用（S18-A6）：
+// 按 (app_id, desired_hash) 查既有 active 快照，**且该行同时是该 app 最新
+// active 快照**时返回复用（seq 不递增、不重复插入）；否则返回未命中走插入。
+//
+// 「最新 active」判据兼顾两侧契约：
+//   - 崩溃重放幂等：两事务间崩溃留下的残行必然是最新 active（同 app 互斥
+//     ——残行所属部署未终态，同 app 无更晚成功部署），命中复用，重跑窗口
+//     再固化不产生重复行；
+//   - 回滚/旧态重部署语义：目标 hash 的既有行不是最新（其后已有更新版本）
+//     时不复用——按新 revision 固化，回退版本在「列表即选项」里前移到最新
+//     位（release-semantics §2.4「回滚 = 一次成功部署」）。
+//
+// superseded 行（保留窗外存档）恒不复用；空哈希（旧形态行）无可比性，
+// 恒走插入。
+func (t *Tx) ReusableRevisionByDesiredHash(ctx context.Context, appID, desiredHash string) (Revision, bool, error) {
+	if desiredHash == "" {
+		return Revision{}, false, nil // 旧形态行无哈希：无幂等键可比，走插入
+	}
+	const q = `SELECT id, app_id, seq, compose_normalized, overlay, desired_hash, verified, status, created_at
+		FROM revisions
+		WHERE app_id = ? AND desired_hash = ? AND status = 'active' AND verified = 1
+		ORDER BY seq DESC LIMIT 1`
+	var r Revision
+	var verified, created int64
+	err := t.QueryRowContext(ctx, q, appID, desiredHash).Scan(
+		&r.ID, &r.AppID, &r.Seq, &r.ComposeNormalized, &r.Overlay,
+		&r.DesiredHash, &verified, &r.Status, &created)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Revision{}, false, nil
+	}
+	if err != nil {
+		return Revision{}, false, fmt.Errorf("state: query revision by desired_hash: %w", err)
+	}
+	r.Verified = verified != 0
+	r.CreatedAt = time.Unix(0, created).UTC()
+
+	// 最新 active 判据：该 app active 集 max(seq) 与命中行一致。
+	var maxSeq sql.NullInt64
+	if err := t.QueryRowContext(ctx,
+		`SELECT MAX(seq) FROM revisions WHERE app_id = ? AND status = 'active'`,
+		appID).Scan(&maxSeq); err != nil {
+		return Revision{}, false, fmt.Errorf("state: read max revision seq: %w", err)
+	}
+	if !maxSeq.Valid || maxSeq.Int64 != r.Seq {
+		return Revision{}, false, nil // 既有行不是最新：回滚/旧态重部署，按新行固化
+	}
+	return r, true, nil
+}
+
 // trimRevisions 执行保留窗裁剪（§2.4：第 6 个成功固化时淘汰最旧——标记
 // superseded，不物理删）。active 集按 seq 降序保留最新 RevisionKeepVersions
 // 条，其余翻 superseded。幂等；与快照写入同事务（fail-closed）。

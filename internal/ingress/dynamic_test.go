@@ -2,10 +2,11 @@ package ingress
 
 // 动态配置合成与非空校验测试（Spike B 四态纪律的回归——硬约束）：
 //   - 裸 {} 会清空 Traefik 全部路由（实测 404）→ 合成器与发布路径双重
-//     保证「routers/services 键存在且非空」；
+//     保证「routers 键存在且非空」（空路由集由 noop 兜底路由承载，H9）；
 //   - 显式空 map 被 Traefik 拒绝（保留旧配置）→ 视图未发布时端点应答
 //     该形态（等价「不动」语义）；
-//   - 坏 router 会被连同整份配置应用 → 悬空引用先校验拒绝。
+//   - 坏 router 会被连同整份配置应用 → 悬空引用先校验拒绝
+//     （Traefik 内建 @internal 引用豁免）。
 
 import (
 	"encoding/json"
@@ -99,14 +100,57 @@ func TestValidateRejectsEmpty(t *testing.T) {
 	if err := Validate(empty); err == nil {
 		t.Fatal("explicit empty routers/services must be rejected on publish path")
 	}
-	// 形态 4：零路由集的合成结果（最后一个服务移除）。
+	// 形态 4：零路由集的合成结果（最后一个服务移除）——语义已反转（H9）：
+	// 合成器产出 noop 兜底路由，「空合成」恒过 Validate（撤销即真实下发
+	// 空态，而非拒绝后残留旧路由）。形态钉死见
+	// TestSynthesizeEmptyRouteSetEmitsNoopFallback。
 	synthesized := Synthesize(nil)
-	if err := Validate(synthesized); err == nil {
-		t.Fatal("synthesized empty route set must be rejected")
+	if err := Validate(synthesized); err != nil {
+		t.Fatalf("synthesized empty route set must pass via fallback router: %v", err)
 	}
 	// 且合成结果永远不是裸 {}（键恒存在——http 段非 nil）。
 	if synthesized.HTTP == nil || synthesized.HTTP.Routers == nil || synthesized.HTTP.Services == nil {
 		t.Fatal("synthesizer must always emit http.routers/services keys")
+	}
+}
+
+// TestSynthesizeEmptyRouteSetEmitsNoopFallback 钉死空路由集的合成产物
+// JSON 形态（H9 合法空态）：单条 fleetly-fallback router（.invalid 保留
+// TLD + noop@internal 内建引用），services 键在值空，serversTransport
+// 平台默认恒注入。该形态使 Traefik 收到合法非空配置 → 旧路由被真实撤销。
+func TestSynthesizeEmptyRouteSetEmitsNoopFallback(t *testing.T) {
+	cfg := Synthesize(nil)
+	if len(cfg.HTTP.Routers) != 1 {
+		t.Fatalf("empty route set must synthesize exactly the fallback router: %+v", cfg.HTTP.Routers)
+	}
+	fb := cfg.HTTP.Routers[fallbackRouterName]
+	if fb == nil {
+		t.Fatalf("fallback router missing: %+v", cfg.HTTP.Routers)
+	}
+	if fb.Rule != "Host(`fleetly.invalid`)" {
+		t.Fatalf("fallback rule = %q, want Host(`fleetly.invalid`)", fb.Rule)
+	}
+	if fb.Service != noopServiceRef {
+		t.Fatalf("fallback service = %q, want %s", fb.Service, noopServiceRef)
+	}
+	if len(cfg.HTTP.Services) != 0 || cfg.HTTP.Services == nil {
+		t.Fatalf("fallback services must be present-but-empty map: %+v", cfg.HTTP.Services)
+	}
+	// 序列化形态钉死（Traefik HTTP provider 消费的载荷契约）。
+	raw, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal fallback config: %v", err)
+	}
+	want := `{"http":{"routers":{"fleetly-fallback":{"rule":"Host(` + "`fleetly.invalid`" + `)",` +
+		`"entryPoints":["web","websecure"],"service":"noop@internal"}},` +
+		`"services":{},"serversTransports":{"fleetly-default":{"maxIdleConnsPerHost":8,` +
+		`"forwardingTimeouts":{"dialTimeout":"5s","idleConnTimeout":"15s"}}}}}`
+	if string(raw) != want {
+		t.Fatalf("fallback payload mismatch:\n got: %s\nwant: %s", raw, want)
+	}
+	// Validate 恒过（发布路径不拒绝空合成）。
+	if err := Validate(cfg); err != nil {
+		t.Fatalf("fallback config must pass Validate: %v", err)
 	}
 }
 
@@ -142,7 +186,7 @@ func TestViewChallengeOverlayAndServedRevision(t *testing.T) {
 	v.setRoutes([]Route{{App: "demo", Service: "web", Port: "80", Domains: []string{"d.test"}}})
 
 	// 无挑战：快照 = 纯路由。
-	if v.snapshot().HTTP.Routers[acmeChallengeRouterName] != nil {
+	if snap, _ := v.snapshot(); snap.HTTP.Routers[acmeChallengeRouterName] != nil {
 		t.Fatal("challenge router must be absent without in-flight challenge")
 	}
 	// 注入挑战：挑战路由叠加 + 优先级压过 host 路由 + 应答端点指向控制面。
@@ -150,7 +194,7 @@ func TestViewChallengeOverlayAndServedRevision(t *testing.T) {
 	if v.currentRevision() < rev {
 		t.Fatalf("revision must advance on challenge add: %d < %d", v.currentRevision(), rev)
 	}
-	snap := v.snapshot()
+	snap, _ := v.snapshot()
 	cr := snap.HTTP.Routers[acmeChallengeRouterName]
 	if cr == nil || cr.Priority != 1000 {
 		t.Fatalf("challenge router missing or priority wrong: %+v", cr)
@@ -161,12 +205,47 @@ func TestViewChallengeOverlayAndServedRevision(t *testing.T) {
 	}
 	// 清理挑战：路由消失。
 	v.removeChallenge("tok-1")
-	if v.snapshot().HTTP.Routers[acmeChallengeRouterName] != nil {
+	if snap, _ := v.snapshot(); snap.HTTP.Routers[acmeChallengeRouterName] != nil {
 		t.Fatal("challenge router must be removed after CleanUp")
 	}
-	// awaitServed：servedRevision 追上后收敛。
-	v.markServed()
-	if !v.awaitServed(v.currentRevision(), 10*1000*1000) {
+	// awaitServed：servedRevision 追上后收敛（E2：markServed 以快照 rev 入参）。
+	_, rev2 := v.snapshot()
+	v.markServed(rev2)
+	if !v.awaitServed(rev2, 10*1000*1000) {
 		t.Fatal("awaitServed should return immediately once served >= rev")
+	}
+}
+
+// TestViewUnpublishedServesExplicitEmpty 未发布视图（routes 为 nil——控制面
+// 重启后的首拍窗口）应答显式空 map：Traefik 拒绝并保留其侧既有配置，
+// 重启本身不制造路由撤销窗口（Spike B 实测语义；区别于已发布的空集）。
+func TestViewUnpublishedServesExplicitEmpty(t *testing.T) {
+	v := newView("")
+	snap, _ := v.snapshot()
+	if snap.HTTP == nil || snap.HTTP.Routers == nil || len(snap.HTTP.Routers) != 0 {
+		t.Fatalf("unpublished view must serve explicit empty map: %+v", snap.HTTP)
+	}
+	if snap.HTTP.Routers[fallbackRouterName] != nil {
+		t.Fatal("unpublished view must NOT serve the fallback (never published = keep-last-good)")
+	}
+}
+
+// TestViewEmptyRoutesMergesChallenge 空视图（已发布的合法空态，H9）与
+// ACME 挑战路由共存：兜底路由与挑战路由/服务同盘（最后一个域名撤销期间
+// 仍有 app 在签证书的合法场景）。
+func TestViewEmptyRoutesMergesChallenge(t *testing.T) {
+	v := newView("http://10.0.0.5:8422")
+	v.setRoutes([]Route{}) // 已发布的空路由集（合法空态）
+	v.addChallenge("tok-1", "token.thumbprint")
+	snap, _ := v.snapshot()
+	if snap.HTTP.Routers[fallbackRouterName] == nil {
+		t.Fatalf("fallback router missing on published empty view: %+v", snap.HTTP.Routers)
+	}
+	if snap.HTTP.Routers[acmeChallengeRouterName] == nil {
+		t.Fatalf("challenge router missing alongside fallback: %+v", snap.HTTP.Routers)
+	}
+	cs := snap.HTTP.Services[acmeChallengeServiceName]
+	if cs == nil || cs.LoadBalancer.Servers[0].URL != "http://10.0.0.5:8422" {
+		t.Fatalf("challenge responder service wrong: %+v", cs)
 	}
 }

@@ -163,7 +163,13 @@ func (s *DomainsService) VerifyAppDomains(ctx context.Context, req *serverv1.Ver
 	for _, d := range rows {
 		domains = append(domains, d.Domain)
 	}
-	checks := ingress.VerifyDomains(ctx, domains)
+	// E4（S19）：探测端口与入口发布端口同源（Manager 配置）——非默认
+	// 端口部署不再探测 80/443 假目标；无 ingress 装配的测试面回落缺省。
+	httpPort, httpsPort := 80, 443
+	if s.mgr != nil {
+		httpPort, httpsPort = s.mgr.Config().HTTPPort, s.mgr.Config().HTTPSPort
+	}
+	checks := ingress.VerifyDomains(ctx, domains, httpPort, httpsPort)
 	out := make([]*serverv1.DomainCheckView, 0, len(checks))
 	for _, c := range checks {
 		out = append(out, &serverv1.DomainCheckView{

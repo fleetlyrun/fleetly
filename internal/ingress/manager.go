@@ -1,8 +1,9 @@
 package ingress
 
-// Manager 是入口适配器门面：Traefik 收敛 + 配置端点 + 路由发布 +
-// ACME 证书。发布引擎经 RoutePublisher 端口（PublishRoutes）消费；
-// fleetlyd ingress 服务壳消费 EnsureTraefik/Run/Handler。
+// Manager 是入口适配器门面：Traefik 收敛 + 配置端点 + 路由发布/撤销 +
+// ACME 证书。发布引擎经 RoutePublisher 端口（PublishRoutes）消费；app
+// 删除管线经 WithdrawAppRoutes 撤销路由（H9）；fleetlyd ingress 服务壳
+// 消费 EnsureTraefik/Run/Handler。
 
 import (
 	"context"
@@ -15,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/go-acme/lego/v4/registration"
 	"github.com/moby/moby/api/types/swarm"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -57,12 +59,22 @@ type Manager struct {
 	tokenVal  string
 	tokenErr  error
 	// mu 保护 advertiseIP/lastSpec（EnsureTraefik 与 attachNetwork 的
-	// 生产者-消费者）。
+	// 生产者-消费者）与 user（E1：账号缓存的读写统一走本锁）。
 	mu          sync.Mutex
 	advertiseIP string
 	lastSpec    *swarm.ServiceSpec
 	// user 是 ACME 账号缓存。
 	user *acmeUser
+	// issueMu 是签发互斥（E1，S19）：ensureCertificate 全程串行——v0.1
+	// 单签发容量。调用方有两路并发来源（engine PublishRoutes 与 Run 的
+	// sweep/续期扫描），两个 goroutine 对同一 app 并发 Obtain 会打 LE
+	// duplicate 证书限额；串行后后到者重读证书库即命中刚落盘的证书
+	//（幂等返回，不二次签发）。
+	issueMu sync.Mutex
+	// obtainFn 是 lego Obtain 步骤的注入缝（E1）：生产恒为 legoObtain；
+	// 单测注入假签发器（计数 + 自签证书）断言并发串行化与单次签发，
+	// 不依赖真实 CA。
+	obtainFn func(ctx context.Context, app string, user registration.User, domains []string) (certPEM, keyPEM []byte, err error)
 }
 
 // NewManager 构造入口管理器（cfg 缺省回落；docker client 按
@@ -86,7 +98,7 @@ func NewManagerWithDocker(cfg Config, store *state.Store, dc dockerClient, log *
 }
 
 func newManagerWithDocker(norm Config, store *state.Store, dc dockerClient, log *slog.Logger) *Manager {
-	return &Manager{
+	m := &Manager{
 		cfg:     norm,
 		store:   store,
 		docker:  dc,
@@ -95,6 +107,9 @@ func newManagerWithDocker(norm Config, store *state.Store, dc dockerClient, log 
 		vw:      newView(""),
 		certs:   newCertStore(norm.CertDir),
 	}
+	// E1：签发缝默认接 lego 实现（单测覆盖为假签发器）。
+	m.obtainFn = m.legoObtain
+	return m
 }
 
 // WithClock 注入时钟（单测）。
@@ -198,16 +213,29 @@ func (m *Manager) renewDue(ctx context.Context) error {
 		return err
 	}
 	byApp := map[string][]string{}
-	appIDs := map[string]string{}
 	for _, r := range routes {
 		byApp[r.App] = append(byApp[r.App], r.Domains...)
-		if _, ok := appIDs[r.App]; !ok {
-			if appRow, err := m.store.GetAppByName(ctx, r.App); err == nil {
-				appIDs[r.App] = appRow.ID
-			}
-		}
 	}
+	return m.renewDueByApp(ctx, byApp)
+}
+
+// renewDueByApp 按 app 域名集聚合执行续期（renewDue 的分段：byApp 来自
+// routesFromStore 快照，appID 在本段解析——两步之间 app 可能已被删除）。
+// E3（S19）：GetAppByName 解析失败（app 刚删除/改名竞态）→ 跳过该 app +
+// warn——原实现把空串 appID 下传 ensureCertificate，SetDomainCert 全部落空
+// 且每个域名误报一条「revoked domain row」warn；跳过是如实的语义（路由
+// 集快照时 app 还在，续期已无台账可登记）。
+func (m *Manager) renewDueByApp(ctx context.Context, byApp map[string][]string) error {
+	appIDs := map[string]string{}
 	for _, app := range sortedKeys(byApp) {
+		appRow, err := m.store.GetAppByName(ctx, app)
+		if err != nil {
+			m.log.Warn("ingress: cert renewal skip (app id unresolvable)", "app", app, "error", err)
+			continue // E3：不再空串下传
+		}
+		appIDs[app] = appRow.ID
+	}
+	for _, app := range sortedKeys(appIDs) {
 		domains := uniqueSorted(byApp[app])
 		if _, err := m.ensureCertificate(ctx, appIDs[app], app, domains, true); err != nil {
 			m.log.Warn("ingress: cert renewal", "app", app, "error", err)
@@ -226,8 +254,9 @@ func (m *Manager) routesFromStore(ctx context.Context) ([]Route, error) {
 }
 
 // publish 换入全量视图（HTTP 路由形态）：从台账构建路由集 → 合成 →
-// Validate → 换入。校验不过（键缺失/合成空）= 不换视图、不落库
-// （Spike B 纪律）。
+// Validate → 换入。校验不过（键缺失/悬空引用类坏形态）= 不换视图、不落
+// 库（Spike B 纪律）。空路由集经兜底路由恒过（H9 合法空态——撤销即真实
+// 下发空态，而非拒绝后残留旧路由）。
 func (m *Manager) publish(ctx context.Context) error {
 	routes, err := m.routesFromStore(ctx)
 	if err != nil {
@@ -235,9 +264,6 @@ func (m *Manager) publish(ctx context.Context) error {
 	}
 	cfg := Synthesize(routes)
 	if err := Validate(cfg); err != nil {
-		// 全空视图（最后一个入口服务被移除）也在此拒绝：Traefik 侧保留
-		// 上一份好配置（显式空 map 载荷会被 Traefik 拒绝，效果等价）；
-		// 事实经调用方告警/审计披露——不发明静默清空路径。
 		return err
 	}
 	m.vw.setRoutes(routes)
@@ -328,6 +354,21 @@ func (m *Manager) publishWithCerts(ctx context.Context) error {
 	}
 	m.vw.setRoutes(withCerts)
 	return nil
+}
+
+// WithdrawAppRoutes 撤销 app 的全部路由（app 删除管线的显式撤销入口，
+// H9）：删该 app 域名台账行 → 全量重发布（台账空出的视图自然落 noop
+// 兜底——Traefik 侧真实撤销旧路由）。幂等（无行删除为空操作、重发布
+// 幂等）；台账写入方唯一纪律（本包）决定域名清理必须经本通道。失败
+// 语义与 PublishRoutes 同构：处置权在调用方（DeleteApp 侧失败告警）。
+func (m *Manager) WithdrawAppRoutes(ctx context.Context, appID string) error {
+	if appID == "" {
+		return fmt.Errorf("ingress: withdraw requires app id")
+	}
+	if err := m.store.DeleteAppDomains(ctx, appID); err != nil {
+		return err
+	}
+	return m.republishAll(ctx)
 }
 
 // republishAll 是 sweep 的全量重发布（HTTP 段 + 证书段；幂等）。

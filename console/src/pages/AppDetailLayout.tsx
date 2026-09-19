@@ -42,7 +42,7 @@ export function AppDetailLayout() {
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <h1 className="font-mono text-lg font-semibold">{name}</h1>
-        {query.data ? <StateBadge state={query.data.derived_state} /> : null}
+        {query.data ? <StateBadge state={query.data.derived_state ?? ""} /> : null}
       </div>
       <nav className="flex gap-1 border-b" aria-label="App sections">
         {TABS.map(({ to, label, end }) => (

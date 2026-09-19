@@ -108,12 +108,42 @@ func Diff(base, target *Spec) (*Plan, error) {
 
 	plan.HasChanges = len(plan.Services.Added) > 0 || len(plan.Services.Removed) > 0 ||
 		len(plan.Services.Updated) > 0 || len(plan.Volumes.Added) > 0 || len(plan.Volumes.Removed) > 0
-	plan.Destructive = len(plan.Services.Removed) > 0 || len(plan.Volumes.Removed) > 0
+	// 破坏性判定走单源函数（DestructiveChanges）——plan 工件与 API 面的
+	// deploy 门控共用同一口径，杜绝两处漂移。
+	plan.Destructive = DestructiveChanges(base, target)
 	plan.RequiresConfirmDestructive = plan.Destructive
 	// 计划期警告（stateful-placement §2.3）：无卷应用显式 pin 节点 →
 	// 失去自动重调度（W_PLACEMENT_STATELESS_PIN，注册码）。
 	plan.Warnings = append(plan.Warnings, placementPinWarnings(t)...)
 	return plan, nil
+}
+
+// DestructiveChanges 报告 base → target 的变更集是否含破坏性操作：基线中
+// 存在而目标缺失的服务（删除）或卷（解绑）。这是破坏性判定的唯一真源
+// （MG-C3）：Diff（→ plan artifact 的 requires_confirm_destructive）与 API 面
+// Deploy 入队门控共用本函数，消灭两处口径漂移。nil 参数视为空 Spec——
+// 空基线（首部署）无可删除对象，恒非破坏性。
+func DestructiveChanges(base, target *Spec) bool {
+	b, t := base, target
+	if b == nil {
+		b = &Spec{}
+	}
+	if t == nil {
+		t = &Spec{}
+	}
+	targetServices := serviceIndex(t)
+	for i := range b.Services {
+		if _, ok := targetServices[b.Services[i].Name]; !ok {
+			return true // 服务删除
+		}
+	}
+	targetVolumes := volumeIndex(t)
+	for _, v := range b.Volumes {
+		if !targetVolumes[v.Key] {
+			return true // 卷解绑（数据保留的例外语义由执行层兑现）
+		}
+	}
+	return false
 }
 
 // placementPinWarnings 对目标 Spec 产出计划期放置警告：应用整体无命名卷而

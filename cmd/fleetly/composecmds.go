@@ -234,7 +234,7 @@ func (c *diffCmd) Run(ctx context.Context, env *commands.Environment, args []str
 	return nil
 }
 
-// requireArgs 校验位置参数数量（usage 违规统一 UsageError→退出 2）。
+// requireArgs 校验位置参数数量（usage 违规统一 UsageError→退出 64，S17-D3）。
 func requireArgs(usage string, args []string, n int) error {
 	if len(args) != n {
 		return &commands.UsageError{Usage: usage, Err: fmt.Errorf("expected %d argument(s), got %d", n, len(args))}

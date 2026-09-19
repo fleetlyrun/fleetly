@@ -143,6 +143,117 @@ func TestDeploymentFailureRecordFields(t *testing.T) {
 	}
 }
 
+// TestDeploymentPhaseStartedAtAnchor（H11）：准备/构建预算锚点的补丁写入与
+// 回读保真；新行/存量行锚点为 NULL → 零值（消费方回落 created_at 的载体）。
+func TestDeploymentPhaseStartedAtAnchor(t *testing.T) {
+	ctx := context.Background()
+	st := newDeployStore(t)
+	app, err := st.CreateApp(ctx, "", "anchorapp")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	rec, err := st.CreateDeployment(ctx, DeployRecord{
+		AppID: app.ID, AppName: app.Name, Kind: "deploy",
+	})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	// 新行锚点未写（列 NULL）→ 零值。
+	row, err := st.GetDeployment(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if !row.PhaseStartedAt.IsZero() {
+		t.Fatalf("fresh row phase_started_at = %v, want zero（NULL → 回落语义）", row.PhaseStartedAt)
+	}
+	// 拾取补丁：CAS 同拍写锚点（queued → preparing）。
+	to := DeployPreparing
+	from := DeployQueued
+	anchor := time.Now().UTC()
+	if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{
+		Status: &to, PrevStatus: &from, PhaseStartedAt: &anchor,
+	}); err != nil {
+		t.Fatalf("claim with anchor: %v", err)
+	}
+	row, err = st.GetDeployment(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	if row.Status != DeployPreparing || !row.PhaseStartedAt.Equal(anchor) {
+		t.Fatalf("row status=%s anchor=%v, want preparing/%v", row.Status, row.PhaseStartedAt, anchor)
+	}
+}
+
+// TestTxCreateDeploymentAtomicWithEventAudit（H13 修复，state-model §2.9）：
+// Tx.CreateDeployment 与事件/审计同事务组合的原语测试——
+// ① 成功路径：建行 + deployment.queued 事件同一事务提交，两者一并可见；
+// ② fail-closed 路径：部署行 INSERT 已执行后事件写失败（故障注入：回调内
+// 取消 ctx——Tx.grabConn 见 ctx.Done 即拒绝执行后续写）→ 整体回滚，部署
+// 行不存在、事件不留痕：发布入队不存在「引擎可执行但事件/审计缺失」的
+// 中间态。
+func TestTxCreateDeploymentAtomicWithEventAudit(t *testing.T) {
+	ctx := context.Background()
+	st := newDeployStore(t)
+	app, err := st.CreateApp(ctx, "", "atomapp")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+
+	// ① 成功路径：建行与事件同事务提交。
+	var rec DeployRecord
+	if err := st.InTx(ctx, func(tx *Tx) error {
+		r, err := tx.CreateDeployment(ctx, DeployRecord{
+			AppID: app.ID, AppName: app.Name, Kind: "deploy", SpecHash: "hash1",
+		})
+		if err != nil {
+			return err
+		}
+		rec = r
+		_, err = tx.AppendEvent(ctx, Event{
+			Name: "deployment.queued", Subject: "deployment:" + r.ID,
+			Payload: `{"deployment":"` + r.ID + `","app":"` + app.Name + `"}`,
+		})
+		return err
+	}); err != nil {
+		t.Fatalf("healthy tx: %v", err)
+	}
+	if row, err := st.GetDeployment(ctx, rec.ID); err != nil || row.Status != DeployQueued {
+		t.Fatalf("deployment after commit = %+v (%v), want queued", row, err)
+	}
+	events, err := st.EventsSince(ctx, 0, 10)
+	if err != nil || len(events) != 1 || events[0].Subject != "deployment:"+rec.ID {
+		t.Fatalf("events after commit = %+v (%v), want one queued event", events, err)
+	}
+
+	// ② fail-closed：部署行 INSERT 成功 → 事件写注入失败 → 整体回滚。
+	fctx, cancel := context.WithCancel(ctx)
+	var orphanID string
+	err = st.InTx(fctx, func(tx *Tx) error {
+		r, err := tx.CreateDeployment(fctx, DeployRecord{
+			AppID: app.ID, AppName: app.Name, Kind: "deploy", SpecHash: "hash2",
+		})
+		if err != nil {
+			return err
+		}
+		orphanID = r.ID
+		cancel() // 故障注入：随后的事件写必失败（ctx 已取消）
+		_, err = tx.AppendEvent(fctx, Event{
+			Name: "deployment.queued", Subject: "deployment:" + r.ID,
+		})
+		return err
+	})
+	if err == nil {
+		t.Fatal("event write failure must fail the whole enqueue tx (fail-closed)")
+	}
+	if _, err := st.GetDeployment(ctx, orphanID); !errors.Is(err, ErrDeploymentNotFound) {
+		t.Fatalf("deployment row must roll back with event write failure, got: %v", err)
+	}
+	events, err = st.EventsSince(ctx, 0, 10)
+	if err != nil || len(events) != 1 {
+		t.Fatalf("events after rollback = %+v (%v), want only the committed one", events, err)
+	}
+}
+
 func TestAppDerivedStateCASAndConflict(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
@@ -229,4 +340,76 @@ func (s *Store) revisionIDFor(t *testing.T, ctx context.Context, appID string, s
 	var id string
 	err := s.db.QueryRowContext(ctx, q, appID, seq).Scan(&id)
 	return id, err
+}
+
+// TestLatestDeploymentsByAppBatch S18-A4：批量 per-app 最近部署窗口——逐
+// app 窗口内 created_at 倒序（与 ListAppDeployments 同序）、窗口截断生效、
+// 无部署 app 不在 map、JOIN 回填应用名、空 ID 集直接空 map 不发查询。
+func TestLatestDeploymentsByAppBatch(t *testing.T) {
+	ctx := context.Background()
+	st := newDeployStore(t)
+	a1, err := st.CreateApp(ctx, "", "batch-a")
+	if err != nil {
+		t.Fatalf("create app a: %v", err)
+	}
+	a2, err := st.CreateApp(ctx, "", "batch-b")
+	if err != nil {
+		t.Fatalf("create app b: %v", err)
+	}
+	a3, err := st.CreateApp(ctx, "", "batch-c")
+	if err != nil {
+		t.Fatalf("create app c: %v", err)
+	}
+
+	// a1：三条部署（h1 最旧 → h3 最新；同 app 顺序入队）。a2：一条。
+	for _, h := range []string{"h1", "h2", "h3"} {
+		if _, err := st.CreateDeployment(ctx, DeployRecord{
+			AppID: a1.ID, AppName: a1.Name, Kind: "deploy", SpecHash: h,
+		}); err != nil {
+			t.Fatalf("create deployment %s: %v", h, err)
+		}
+	}
+	if _, err := st.CreateDeployment(ctx, DeployRecord{
+		AppID: a2.ID, AppName: a2.Name, Kind: "deploy", SpecHash: "only",
+	}); err != nil {
+		t.Fatalf("create deployment a2: %v", err)
+	}
+
+	got, err := st.LatestDeploymentsByApp(ctx, []string{a1.ID, a2.ID, a3.ID}, 25)
+	if err != nil {
+		t.Fatalf("LatestDeploymentsByApp: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("apps with rows = %d, want 2 (a3 无部署不在 map)", len(got))
+	}
+	rowsA1 := got[a1.ID]
+	if len(rowsA1) != 3 {
+		t.Fatalf("a1 rows = %d, want 3", len(rowsA1))
+	}
+	for i, wantHash := range []string{"h3", "h2", "h1"} {
+		if rowsA1[i].SpecHash != wantHash {
+			t.Fatalf("a1 row %d spec_hash = %s, want %s (created_at DESC)", i, rowsA1[i].SpecHash, wantHash)
+		}
+		if rowsA1[i].AppName != "batch-a" {
+			t.Fatalf("a1 row %d app_name = %q, want JOIN 回填 batch-a", i, rowsA1[i].AppName)
+		}
+	}
+	if rows := got[a2.ID]; len(rows) != 1 || rows[0].SpecHash != "only" {
+		t.Fatalf("a2 rows = %+v, want single only", rows)
+	}
+
+	// 窗口截断：perApp=2 → 只保留最新两条。
+	capped, err := st.LatestDeploymentsByApp(ctx, []string{a1.ID}, 2)
+	if err != nil {
+		t.Fatalf("LatestDeploymentsByApp capped: %v", err)
+	}
+	if rows := capped[a1.ID]; len(rows) != 2 || rows[0].SpecHash != "h3" || rows[1].SpecHash != "h2" {
+		t.Fatalf("capped rows = %+v, want [h3 h2]", rows)
+	}
+
+	// 空 ID 集：空 map、无错误。
+	empty, err := st.LatestDeploymentsByApp(ctx, nil, 25)
+	if err != nil || len(empty) != 0 {
+		t.Fatalf("empty batch = (%d, %v), want (0, nil)", len(empty), err)
+	}
 }

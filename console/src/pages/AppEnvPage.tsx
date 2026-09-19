@@ -38,13 +38,13 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
   const [revealError, setRevealError] = useState<string>("");
 
   const revealMutation = useMutation({
-    mutationFn: () => getEnv(app, row.key),
+    mutationFn: () => getEnv(app, row.key ?? ""),
     onSuccess: (r) => setRevealed(r.value ?? ""),
     onError: (err) =>
       setRevealError(errorEnvelopeFrom(err).message ?? "failed to fetch value"),
   });
   const removeMutation = useMutation({
-    mutationFn: () => removeEnv(app, row.key),
+    mutationFn: () => removeEnv(app, row.key ?? ""),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["env", app] });
     },

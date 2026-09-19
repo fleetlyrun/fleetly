@@ -28,8 +28,10 @@ var errChanges = errors.New("changes detected")
 // renderCLIError 渲染动词错误（stderr 单点）。信封解码双源：本地 apperr
 // （validate/plan/diff 的 compose 违约——CLI 进程内构造）与远端 gRPC
 // status detail 信封（服务端 E_* 错误随 status 传输，apperr.FromError 还
-// 原）。无信封的原始错误照旧；Unauthenticated（401 信封退化形态）附
-// bootstrap token 的可行动提示。
+// 原）。无信封的原始错误照旧；连接/超时/鉴权三类 gRPC 错误附可行动
+// 提示（S17-D3 与 401 hint 同风格）：Unauthenticated（401 信封退化形态）
+// 附 bootstrap token 指引，Unavailable 附地址/守护进程排查，DeadlineExceeded
+// 附重试与 --timeout 指引。
 func renderCLIError(err error) string {
 	if err == nil {
 		return ""
@@ -46,9 +48,18 @@ func renderCLIError(err error) string {
 	if ae != nil {
 		return renderAppErr(ae)
 	}
-	if st, ok := status.FromError(err); ok && st.Code() == codes.Unauthenticated {
-		return err.Error() + "\n  hint: token 缺失或无效——设 --token / FLEETLY_TOKEN" +
-			"（bootstrap admin token 见 fleetlyd 首启日志；后续 token 由管理员 fleetly tokens create 签发）"
+	if st, ok := status.FromError(err); ok {
+		switch st.Code() {
+		case codes.Unauthenticated:
+			return err.Error() + "\n  hint: token 缺失或无效——设 --token / FLEETLY_TOKEN" +
+				"（bootstrap admin token 见 fleetlyd 首启日志；后续 token 由管理员 fleetly tokens create 签发）"
+		case codes.Unavailable:
+			return err.Error() + "\n  hint: fleetlyd 不可达——检查 --addr（默认 127.0.0.1:8421，env FLEETLY_ADDR）" +
+				"与守护进程状态（systemctl status fleetlyd）"
+		case codes.DeadlineExceeded:
+			return err.Error() + "\n  hint: 请求超时——fleetlyd 响应慢或网络问题，重试或加 --timeout" +
+				"（一元 RPC 缺省 30s deadline）"
+		}
 	}
 	var usage *commands.UsageError
 	if errors.As(err, &usage) {

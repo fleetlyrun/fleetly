@@ -88,6 +88,41 @@ func (s *Store) GetPlacement(ctx context.Context, appID string) (Placement, erro
 	return scanPlacement(s.db.QueryRowContext(ctx, q, appID))
 }
 
+// PlacementByApp 批量取一组应用的绑定记录。S18-A4：ListApps 派生状态的
+// N+1 收口——N 个 app 的绑定从 N 次 GetPlacement 并为一次 IN 查询。
+// 空 appIDs 直接返回空 map（不发 SQL）；map 中不出现的键 = 该 app 无
+// 绑定记录（ErrPlacementNotFound 的批量等价形态——无绑定是合法运行态，
+// 不以错误表达）。
+func (s *Store) PlacementByApp(ctx context.Context, appIDs []string) (map[string]Placement, error) {
+	out := make(map[string]Placement, len(appIDs))
+	if len(appIDs) == 0 {
+		return out, nil
+	}
+	q := `SELECT app_id, platform_node_id, state, source, label_ref, reason, etag,
+		pinned_at, created_at, updated_at
+		FROM placements WHERE app_id IN (` + placeholders(len(appIDs)) + `)`
+	args := make([]any, 0, len(appIDs))
+	for _, id := range appIDs {
+		args = append(args, id)
+	}
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("state: placements by app: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		p, err := scanPlacement(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[p.AppID] = p
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate placements by app: %w", err)
+	}
+	return out, nil
+}
+
 // GetPlacement 是事务内取绑定（供 CAS 前置读取）。
 func (t *Tx) GetPlacement(ctx context.Context, appID string) (Placement, error) {
 	const q = `SELECT app_id, platform_node_id, state, source, label_ref, reason, etag,

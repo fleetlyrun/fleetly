@@ -79,7 +79,9 @@ stage() {
         die "sha256 mismatch/absent for $_r: host=$_h dind=$_g"
     fi
     case "$_r" in
-    *.sh | *.service)
+    *.sh | *.service | *.pem)
+        # PEM 同样剥 CR：openssl 的 PEM 解析不吃 CRLF（Windows 检出风险面
+        # 同脚本；A11 双轨验签断言依赖这把测试私钥可直接签名）。
         docker exec "$DIND_NAME" sed -i 's/\r$//' "$_r" ||
             die "strip CR from $_r"
         ;;
@@ -114,6 +116,9 @@ fi
 [ -f "$ROOT/deploy/uninstall.sh" ] || die 'deploy/uninstall.sh missing'
 [ -f "$ROOT/deploy/fleetlyd.service" ] || die 'deploy/fleetlyd.service missing'
 [ -f "$ROOT/deploy/test-install.sh" ] || die 'deploy/test-install.sh missing'
+[ -f "$ROOT/deploy/upgrade.sh" ] || die 'deploy/upgrade.sh missing'
+[ -f "$ROOT/deploy/testdata/release-test-key.pem" ] ||
+    die 'deploy/testdata/release-test-key.pem missing (A11 openssl-track asserts need the test signing key)'
 
 # ----------------------------------------------------------------- dind
 docker rm -f "$DIND_NAME" >/dev/null 2>&1 || true
@@ -133,11 +138,13 @@ log "dind $DIND_NAME ready"
 
 # ----------------------------------------------------------------- 注入
 log 'staging scripts + binaries via exec+stdin'
-docker exec "$DIND_NAME" mkdir -p /tmp/install-test/bin || die 'mkdir stage'
+docker exec "$DIND_NAME" mkdir -p /tmp/install-test/bin /tmp/install-test/testdata || die 'mkdir stage'
 stage /tmp/install-test/install.sh "$ROOT/deploy/install.sh"
 stage /tmp/install-test/uninstall.sh "$ROOT/deploy/uninstall.sh"
 stage /tmp/install-test/fleetlyd.service "$ROOT/deploy/fleetlyd.service"
 stage /tmp/install-test/test-install.sh "$ROOT/deploy/test-install.sh"
+stage /tmp/install-test/upgrade.sh "$ROOT/deploy/upgrade.sh"
+stage /tmp/install-test/testdata/release-test-key.pem "$ROOT/deploy/testdata/release-test-key.pem"
 stage /tmp/install-test/bin/fleetlyd "$TI_BIN_DIR/fleetlyd"
 stage /tmp/install-test/bin/fleetly "$TI_BIN_DIR/fleetly"
 docker exec "$DIND_NAME" chmod +x /tmp/install-test/bin/fleetlyd /tmp/install-test/bin/fleetly ||

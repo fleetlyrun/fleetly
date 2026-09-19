@@ -5,6 +5,7 @@ package main
 //   - /ui/ 返回 index.html（200，text/html）；
 //   - 静态资源 /ui/assets/** 原样托管（200）；
 //   - SPA 深链 /ui/apps/xyz 回退 index.html（200）；
+//   - /ui/ 面（文档/资源/SPA 回退）响应携带 Content-Security-Policy（D4-④）；
 //   - 目录穿越形态（/ui/%2e%2e/...）404，目录外不可达；
 //   - 豁免精确到 /ui/ 前缀：/v1/apps 无 token 仍 401（信封形态）；
 //   - static_dir 缺 index.html → NewHTTPServer fail-fast；
@@ -60,7 +61,7 @@ func startConsoleHarness(t *testing.T, staticDir string) string {
 	g := gs.GetServer()
 	serverv1.RegisterSystemServiceServer(g, api.NewSystemService("dev", st,
 		func() []api.SystemComponent { return nil }, nil))
-	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st, box, "127.0.0.1:8424"))
+	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st, box, "127.0.0.1:8424", nil))
 	if err := gs.Init(nil); err != nil {
 		t.Fatalf("grpc Init: %v", err)
 	}
@@ -116,7 +117,7 @@ func TestGatewayConsoleStaticHosting(t *testing.T) {
 		return http.ErrUseLastResponse // 不跟随重定向：逐跳断言
 	}}
 
-	get := func(path string) (int, string, string) {
+	get := func(path string) (int, string, string, string) {
 		resp, err := client.Get(base + path)
 		if err != nil {
 			t.Fatalf("GET %s: %v", path, err)
@@ -131,42 +132,54 @@ func TestGatewayConsoleStaticHosting(t *testing.T) {
 				break
 			}
 		}
-		return resp.StatusCode, b.String(), resp.Header.Get("Content-Type")
+		return resp.StatusCode, b.String(), resp.Header.Get("Content-Type"), resp.Header.Get("Content-Security-Policy")
 	}
 
 	const indexHTML = "<!doctype html><html><head><title>fleetly console</title></head><body>app-shell</body></html>"
 
 	// 面 1：/ui/ 返回 index.html。
-	code, body, ctype := get("/ui/")
+	code, body, ctype, csp := get("/ui/")
 	if code != 200 || body != indexHTML || !strings.Contains(ctype, "text/html") {
 		t.Fatalf("GET /ui/ = %d %q (%s)", code, body, ctype)
 	}
+	if csp != consoleCSP {
+		t.Fatalf("GET /ui/ Content-Security-Policy = %q, want %q", csp, consoleCSP)
+	}
 
 	// 面 2：静态资源原样托管（Content-Type 按扩展名）。
-	code, body, ctype = get("/ui/assets/app-abc.js")
+	code, body, ctype, csp = get("/ui/assets/app-abc.js")
 	if code != 200 || body != "console.log('fleetly-console-bundle')" || !strings.Contains(ctype, "javascript") {
 		t.Fatalf("GET /ui/assets/app-abc.js = %d %q (%s)", code, body, ctype)
 	}
-	code, _, ctype = get("/ui/assets/app-abc.css")
+	if csp != consoleCSP {
+		t.Fatalf("GET /ui/assets/app-abc.js Content-Security-Policy = %q, want %q (静态资源同受 CSP)", csp, consoleCSP)
+	}
+	code, _, ctype, csp = get("/ui/assets/app-abc.css")
 	if code != 200 || !strings.Contains(ctype, "text/css") {
 		t.Fatalf("GET /ui/assets/app-abc.css = %d (%s)", code, ctype)
 	}
+	if csp != consoleCSP {
+		t.Fatalf("GET /ui/assets/app-abc.css Content-Security-Policy = %q, want %q", csp, consoleCSP)
+	}
 
 	// 面 3：SPA 深链回退 index.html。
-	code, body, _ = get("/ui/apps/demo")
+	code, body, _, csp = get("/ui/apps/demo")
 	if code != 200 || body != indexHTML {
 		t.Fatalf("GET /ui/apps/demo = %d %q, want 200 index.html (SPA fallback)", code, body)
+	}
+	if csp != consoleCSP {
+		t.Fatalf("GET /ui/apps/demo Content-Security-Policy = %q, want %q (SPA 回退同受 CSP)", csp, consoleCSP)
 	}
 
 	// 面 4：目录穿越 404（fs.ValidPath 拒绝 ..）。
 	const traversalPath = "/ui/%2e%2e/%2e%2e/fleetly.key"
-	code, _, _ = get(traversalPath)
+	code, _, _, _ = get(traversalPath)
 	if code != 404 {
 		t.Fatalf("GET %s = %d, want 404", traversalPath, code)
 	}
 
 	// 面 5：豁免精确到 /ui/ 前缀——/v1/apps 无 token 仍 401 退化信封。
-	code, body, _ = get("/v1/apps")
+	code, body, _, _ = get("/v1/apps")
 	if code != 401 {
 		t.Fatalf("GET /v1/apps (no token) = %d, want 401 (static hosting must not widen the exemption)", code)
 	}
@@ -174,7 +187,7 @@ func TestGatewayConsoleStaticHosting(t *testing.T) {
 		t.Fatalf("GET /v1/apps 401 body = %q, want envelope form", body)
 	}
 	// 近似前缀不分派（/ui2、/ui/.. 之外的收敛形态由 mux 兜底 404）。
-	code, _, _ = get("/uix")
+	code, _, _, _ = get("/uix")
 	if code == 200 {
 		t.Fatalf("GET /uix = 200, want non-static dispatch")
 	}

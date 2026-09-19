@@ -100,17 +100,25 @@ func TestMergeChainSystemOverPlatform(t *testing.T) {
 	}
 }
 
-// TestPendingNeverMerges 验收 3 的核心语义：合并输入只含 effective 平台层
-// ——pending 不参与当前合并（「随下次部署生效」的结构性表达；消费点在
-// T2.10 部署，由 T2.10 调 state.MarkAppEnvEffective 后重入合并）。本用例
-// 钉死契约：调用方传 effective 行为唯一正确形态（state.EffectiveAppEnv）。
-func TestPendingNeverMerges(t *testing.T) {
+// TestEngineMergeFaceIncludesPending S16-C4 契约统一：合并输入面——
+// pending/effective 是状态层概念，本层纯函数不感知；唯一合并消费方（发布
+// 引擎）传**全量**平台层行（state.ListAppEnv）：pending 参与合并、部署即
+// 消费点（成功后 MarkAppEnvEffective 提升——见 engine.go
+// platformEnvForMerge / observing.go succeedDeployment）。本用例钉死该
+// 调用面：平台层输入含尚未提升（pending）的键时同样覆盖文件层——「随
+// 本次部署生效」由引擎输入面结构性成立，而非合并函数过滤。
+func TestEngineMergeFaceIncludesPending(t *testing.T) {
 	envFile := map[string]string{"TOKEN": "file-token"}
-	// 平台层该键仅 pending（未部署消费）：合并结果仍是文件层值。
-	// （对照：effective 平台键则会覆盖——见 TestMergeChainPriorityMatrix。）
-	merged, _ := MergeChain(envFile, nil, nil)
-	if len(merged) != 1 || merged[0].Value != "file-token" || merged[0].Source != SourceEnvFile {
-		t.Fatalf("without platform layer merged = %+v", merged)
+	// 平台层该键尚为 pending（未经部署提升）：引擎面合并仍以平台层为准。
+	// （对照：平台层不含该键 → 文件层值保留，见 TestMergeChainPriorityMatrix
+	// 的 LOG_LEVEL。）
+	platform := []PlatformVar{{Key: "TOKEN", Value: "platform-token", Source: "platform"}}
+	merged, overridden := MergeChain(envFile, nil, platform)
+	if len(merged) != 1 || merged[0].Value != "platform-token" || merged[0].Source != SourcePlatform {
+		t.Fatalf("engine face merged = %+v, want platform-token/platform", merged)
+	}
+	if len(overridden) != 1 || overridden[0] != "TOKEN" {
+		t.Fatalf("overridden = %v, want [TOKEN]", overridden)
 	}
 }
 

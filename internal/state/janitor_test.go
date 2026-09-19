@@ -2,6 +2,8 @@ package state
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -32,7 +34,10 @@ func TestJanitorPrunesExpired(t *testing.T) {
 		}
 	}
 
-	jr := NewJanitor(st, DefaultEventRetentionDays, DefaultAuditRetentionDays, testLogger())
+	jr := NewJanitor(st, JanitorConfig{
+		EventRetentionDays: DefaultEventRetentionDays,
+		AuditRetentionDays: DefaultAuditRetentionDays,
+	}, testLogger())
 	eventsPruned, auditsPruned, err := jr.PruneOnce(ctx, now)
 	if err != nil {
 		t.Fatalf("prune: %v", err)
@@ -73,14 +78,14 @@ func TestJanitorPrunesExpired(t *testing.T) {
 
 // TestJanitorRetentionDefaults 非正值保留期回落默认（不允许配置关闭清理）。
 func TestJanitorRetentionDefaults(t *testing.T) {
-	jr := NewJanitor(nil, 0, -5, testLogger())
+	jr := NewJanitor(nil, JanitorConfig{}, testLogger())
 	if jr.EventRetention() != DefaultEventRetentionDays*24*time.Hour {
 		t.Fatalf("event retention = %v, want default %d days", jr.EventRetention(), DefaultEventRetentionDays)
 	}
 	if jr.AuditRetention() != DefaultAuditRetentionDays*24*time.Hour {
 		t.Fatalf("audit retention = %v, want default %d days", jr.AuditRetention(), DefaultAuditRetentionDays)
 	}
-	jr2 := NewJanitor(nil, 7, 90, testLogger())
+	jr2 := NewJanitor(nil, JanitorConfig{EventRetentionDays: 7, AuditRetentionDays: 90}, testLogger())
 	if jr2.EventRetention() != 7*24*time.Hour || jr2.AuditRetention() != 90*24*time.Hour {
 		t.Fatalf("configured retentions wrong: %v / %v", jr2.EventRetention(), jr2.AuditRetention())
 	}
@@ -100,7 +105,10 @@ func TestJanitorServiceLoop(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 
-	jr := NewJanitor(st, 1, DefaultAuditRetentionDays, testLogger()) // 1 天保留
+	jr := NewJanitor(st, JanitorConfig{
+		EventRetentionDays: 1, // 1 天保留
+		AuditRetentionDays: DefaultAuditRetentionDays,
+	}, testLogger())
 	if err := jr.Start(ctx); err != nil {
 		t.Fatalf("start janitor: %v", err)
 	}
@@ -121,5 +129,314 @@ func TestJanitorServiceLoop(t *testing.T) {
 	}
 	if err := jr.Stop(ctx); err != nil {
 		t.Fatalf("stop janitor: %v", err)
+	}
+}
+
+// ── S18-A7/A10：部署目录清理、分批删除、builds/artifacts 保留窗、非终态
+//    超龄扫描 ─────────────────────────────────────────────────────────────
+
+// backdateDeployment 直写 created_at/updated_at（测试夹具：把行龄与终态
+// 时刻拨回过去——API 层 updated_at 恒盖当前时刻、created_at 建行即定，
+// 均无法经写入通道造旧行）。
+func backdateDeployment(t *testing.T, st *Store, id string, at time.Time) {
+	t.Helper()
+	if _, err := st.db.ExecContext(context.Background(),
+		`UPDATE deployments SET created_at = ?, updated_at = ? WHERE id = ?`,
+		at.UnixNano(), at.UnixNano(), id); err != nil {
+		t.Fatalf("backdate deployment %s: %v", id, err)
+	}
+}
+
+// backdateBuild 直写 created_at（同上夹具语义；终态行另有 finished_at
+// 锚点，见 backdateBuildFinish）。
+func backdateBuild(t *testing.T, st *Store, id string, at time.Time) {
+	t.Helper()
+	if _, err := st.db.ExecContext(context.Background(),
+		`UPDATE builds SET created_at = ? WHERE id = ?`, at.UnixNano(), id); err != nil {
+		t.Fatalf("backdate build %s: %v", id, err)
+	}
+}
+
+// backdateBuildFinish 直写 finished_at（终态时刻拨回——保留窗锚点）。
+func backdateBuildFinish(t *testing.T, st *Store, id string, at time.Time) {
+	t.Helper()
+	if _, err := st.db.ExecContext(context.Background(),
+		`UPDATE builds SET finished_at = ? WHERE id = ?`, at.UnixNano(), id); err != nil {
+		t.Fatalf("backdate build finish %s: %v", id, err)
+	}
+}
+
+// ptrStatus 是测试侧状态指针便捷形态。
+func ptrStatus(s DeploymentStatus) *DeploymentStatus { return &s }
+
+// TestJanitorPrunesBatchedEvents A10①：超一批（500）的过期事件被分批循环
+// 删净（modernc SQLite 子查询 LIMIT 形态验证），窗口内记录保留。
+func TestJanitorPrunesBatchedEvents(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	old := now.Add(-40 * 24 * time.Hour)
+	// 700 条旧事件 + 1 条新事件：跨过 pruneBatchSize 边界。
+	if err := st.InTx(ctx, func(tx *Tx) error {
+		for i := 0; i < 700; i++ {
+			if _, err := tx.AppendEvent(ctx, Event{Name: "node.up", At: old}); err != nil {
+				return err
+			}
+		}
+		_, err := tx.AppendEvent(ctx, Event{Name: "node.up", At: now.Add(-time.Hour)})
+		return err
+	}); err != nil {
+		t.Fatalf("seed events: %v", err)
+	}
+	jr := NewJanitor(st, JanitorConfig{}, testLogger())
+	eventsPruned, _, err := jr.PruneOnce(ctx, now)
+	if err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if eventsPruned != 700 {
+		t.Fatalf("events pruned = %d, want 700（分批循环删净）", eventsPruned)
+	}
+	oldest, ok, err := st.OldestSeq(ctx)
+	if err != nil || !ok {
+		t.Fatalf("oldest seq: %v %v", ok, err)
+	}
+	evs, err := st.EventsSince(ctx, oldest-1, 10)
+	if err != nil {
+		t.Fatalf("events since oldest: %v", err)
+	}
+	if len(evs) != 1 {
+		t.Fatalf("remaining events = %d, want 1（窗口内保留）", len(evs))
+	}
+}
+
+// TestJanitorPrunesDeploymentDirs A7：deployments/<id>/ 目录按部署终态后
+// 30 天窗清理——终态且超窗的删；非终态（无论多旧）与窗口内终态不删；
+// 无部署行对应的孤儿目录按目录 mtime 同窗回收。
+func TestJanitorPrunesDeploymentDirs(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	old := now.Add(-40 * 24 * time.Hour)
+
+	app, err := st.CreateApp(ctx, "", "demo")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	seed := func() DeployRecord {
+		rec, err := st.CreateDeployment(ctx, DeployRecord{AppID: app.ID, AppName: "demo", Kind: "deploy"})
+		if err != nil {
+			t.Fatalf("create deployment: %v", err)
+		}
+		return rec
+	}
+	terminalOld, terminalNew, activeOld := seed(), seed(), seed()
+	for _, rec := range []DeployRecord{terminalOld, terminalNew} {
+		to := DeployFailed
+		if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{Status: &to, PrevStatus: ptrStatus(DeployQueued)}); err != nil {
+			t.Fatalf("terminalize %s: %v", rec.ID, err)
+		}
+	}
+	backdateDeployment(t, st, terminalOld.ID, old)
+	backdateDeployment(t, st, activeOld.ID, old) // 非终态旧行：不清理
+
+	root := t.TempDir()
+	mkdir := func(name string, mtime time.Time) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		file := filepath.Join(dir, "compose.yaml")
+		if err := os.WriteFile(file, []byte("name: demo\n"), 0o600); err != nil {
+			t.Fatalf("write compose: %v", err)
+		}
+		if err := os.Chtimes(file, mtime, mtime); err != nil {
+			t.Fatalf("chtimes %s: %v", file, err)
+		}
+		// 目录自身 mtime 同步拨回（孤儿目录判据按目录 mtime）。
+		if err := os.Chtimes(dir, mtime, mtime); err != nil {
+			t.Fatalf("chtimes %s: %v", dir, err)
+		}
+		return dir
+	}
+	oldDir := mkdir(terminalOld.ID, old)
+	keptTerminal := mkdir(terminalNew.ID, now)
+	keptActive := mkdir(activeOld.ID, old)
+	orphanOld := mkdir("d_orphan_old", old)
+	orphanNew := mkdir("d_orphan_new", now)
+
+	jr := NewJanitor(st, JanitorConfig{DeploymentsRoot: root}, testLogger())
+	if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Fatal("old terminal deployment dir must be pruned")
+	}
+	if _, err := os.Stat(orphanOld); !os.IsNotExist(err) {
+		t.Fatal("old orphan deployment dir must be pruned")
+	}
+	for _, kept := range []string{keptTerminal, keptActive, orphanNew} {
+		if _, err := os.Stat(kept); err != nil {
+			t.Fatalf("dir %s must survive: %v", kept, err)
+		}
+	}
+}
+
+// TestJanitorPrunesTerminalBuilds A10②：builds 终态行按 90 天窗清理
+// （finished_at 锚点）；非终态行不清理（超龄由扫描 duty 告警，不自愈）。
+func TestJanitorPrunesTerminalBuilds(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	old := now.Add(-100 * 24 * time.Hour)
+
+	app, err := st.CreateApp(ctx, "", "demo")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	seedBuild := func(service string) BuildRecord {
+		rec, err := st.CreateBuild(ctx, BuildRecord{AppID: app.ID, Service: service, Driver: DriverRailpack})
+		if err != nil {
+			t.Fatalf("create build: %v", err)
+		}
+		return rec
+	}
+	oldDone, newDone, queuedOld := seedBuild("s-old"), seedBuild("s-new"), seedBuild("s-queued")
+	for _, id := range []string{oldDone.ID, newDone.ID} {
+		if err := st.ClaimBuild(ctx, id); err != nil {
+			t.Fatalf("claim %s: %v", id, err)
+		}
+		if err := st.FinishBuildFailed(ctx, id, "E_BUILD_FAILED"); err != nil {
+			t.Fatalf("fail %s: %v", id, err)
+		}
+	}
+	backdateBuild(t, st, oldDone.ID, old)
+	backdateBuildFinish(t, st, oldDone.ID, old)
+	backdateBuild(t, st, queuedOld.ID, old)
+
+	jr := NewJanitor(st, JanitorConfig{}, testLogger())
+	if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if _, err := st.GetBuild(ctx, oldDone.ID); err == nil {
+		t.Fatal("old terminal build must be pruned")
+	}
+	for _, id := range []string{newDone.ID, queuedOld.ID} {
+		if _, err := st.GetBuild(ctx, id); err != nil {
+			t.Fatalf("build %s must survive: %v", id, err)
+		}
+	}
+}
+
+// TestJanitorPrunesArtifactsDir A10②：build artifacts 目录按 mtime 30 天窗
+// 清理；新鲜产物保留。
+func TestJanitorPrunesArtifactsDir(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	old := now.Add(-40 * 24 * time.Hour)
+
+	root := t.TempDir()
+	oldFile := filepath.Join(root, "plan-old.json")
+	newFile := filepath.Join(root, "plan-new.json")
+	for _, f := range []struct {
+		path  string
+		mtime time.Time
+	}{
+		{oldFile, old}, {newFile, now},
+	} {
+		if err := os.WriteFile(f.path, []byte("{}"), 0o600); err != nil {
+			t.Fatalf("write %s: %v", f.path, err)
+		}
+		if err := os.Chtimes(f.path, f.mtime, f.mtime); err != nil {
+			t.Fatalf("chtimes %s: %v", f.path, err)
+		}
+	}
+	jr := NewJanitor(st, JanitorConfig{ArtifactsDir: root}, testLogger())
+	if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+	if _, err := os.Stat(oldFile); !os.IsNotExist(err) {
+		t.Fatal("old artifact must be pruned")
+	}
+	if _, err := os.Stat(newFile); err != nil {
+		t.Fatalf("fresh artifact must survive: %v", err)
+	}
+}
+
+// TestJanitorStaleNonTerminalScan A10③（§9 并入）：非终态超龄行 → 事件
+// engine.stale_nonterminal / build.stale_nonterminal + 只告警不自愈（行
+// 保持原状）；正常行不触发；同生命周期重扫不重复告警（进程内记忆）。
+func TestJanitorStaleNonTerminalScan(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+
+	app, err := st.CreateApp(ctx, "", "demo")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	staleDep, err := st.CreateDeployment(ctx, DeployRecord{AppID: app.ID, AppName: "demo", Kind: "deploy"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	freshDep, err := st.CreateDeployment(ctx, DeployRecord{AppID: app.ID, AppName: "demo", Kind: "deploy"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	staleBuild, err := st.CreateBuild(ctx, BuildRecord{AppID: app.ID, Service: "web", Driver: DriverRailpack})
+	if err != nil {
+		t.Fatalf("create build: %v", err)
+	}
+	// 锚点拨回：超 2×预算（预算 1h，锚点拨回 3h 前）；fresh 行锚点不动。
+	backdateDeployment(t, st, staleDep.ID, now.Add(-3*time.Hour))
+	backdateBuild(t, st, staleBuild.ID, now.Add(-3*time.Hour))
+
+	jr := NewJanitor(st, JanitorConfig{
+		StaleDeploymentBudget: time.Hour,
+		StaleBuildBudget:      time.Hour,
+	}, testLogger())
+	if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+		t.Fatalf("prune: %v", err)
+	}
+
+	count := map[string]int{}
+	events, err := st.EventsSince(ctx, 0, 100)
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	for _, ev := range events {
+		count[ev.Name+"|"+ev.Subject]++
+		if ev.Subject == "deployment:"+freshDep.ID {
+			t.Fatalf("fresh deployment must not be reported stale: %+v", ev)
+		}
+	}
+	if count["engine.stale_nonterminal|deployment:"+staleDep.ID] != 1 {
+		t.Fatalf("stale deployment event missing/duplicated: %v", count)
+	}
+	if count["build.stale_nonterminal|build:"+staleBuild.ID] != 1 {
+		t.Fatalf("stale build event missing/duplicated: %v", count)
+	}
+	// 只告警不自愈：超龄行保持非终态原状。
+	row, err := st.GetDeployment(ctx, staleDep.ID)
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if row.Status != DeployQueued {
+		t.Fatalf("stale deployment must stay untouched (only alert), got %s", row.Status)
+	}
+	// 同生命周期内重扫：不重复告警。
+	if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+		t.Fatalf("prune again: %v", err)
+	}
+	events, err = st.EventsSince(ctx, 0, 100)
+	if err != nil {
+		t.Fatalf("events: %v", err)
+	}
+	for _, ev := range events {
+		if ev.Name == "engine.stale_nonterminal" && ev.Subject == "deployment:"+staleDep.ID {
+			if count["engine.stale_nonterminal|deployment:"+staleDep.ID] != 1 {
+				t.Fatalf("stale deployment alerted more than once")
+			}
+		}
 	}
 }

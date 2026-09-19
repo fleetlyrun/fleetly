@@ -13,6 +13,8 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -63,20 +65,46 @@ func PrincipalFromContext(ctx context.Context) (Principal, bool) {
 	return p, ok
 }
 
-// Authenticator 是 token 认证器（state 层哈希认证 + scope 判定 + per-token
-// 限流——限流在认证成功后判定，身份先于限流成立）。
+// Authenticator 是 token 认证器（state 层哈希认证 + last_used_at 节流盖写
+// + scope 判定 + per-token 限流——限流在认证成功后判定，身份先于限流成立）。
 type Authenticator struct {
 	st      *state.Store
 	limiter *rateLimiter
+	// A2（S18）：last_used_at 盖写节流——每请求同步 UPDATE tokens 是
+	// SQLite 写放大，改为进程内 map[tokenID]上次成功写时刻，距上次成功
+	// 写不足 touchEvery 跳过。map 无界增长无需防护：键空间 = 出现过的
+	// token ID，活跃 token 数受 tokens 表约束（吊销/删除后残留的少量
+	// 项是常数级观测误差，单机规模可忽略）。节流是尽力而为语义：并发
+	// 首写可能重复落一次 UPDATE（无正确性影响）；写失败不记窗口、下次
+	// 认证重试（last_used 是观测面，失败不拒绝已认证请求）。
+	touchMu    sync.Mutex
+	lastTouch  map[string]time.Time
+	touchEvery time.Duration
+	// touch 是盖写端口（缺省 st.TouchTokenUsed；测试注入计数假实现）。
+	touch func(ctx context.Context, tokenID string) error
+	// now 是可注入时钟（测试用短窗口推进时间）。
+	now func() time.Time
 }
+
+// A2 缺省节流窗口：60s 内的重复认证不重复盖 last_used_at（1 次/分钟/
+// token 的观测精度对「最近使用」语义足够）。
+const defaultTouchEvery = 60 * time.Second
 
 // NewAuthenticator 构造认证器（内置缺省参数限流器：宽松防滥用）。
 func NewAuthenticator(st *state.Store) *Authenticator {
-	return &Authenticator{st: st, limiter: newRateLimiter(0, 0)}
+	return &Authenticator{
+		st:         st,
+		limiter:    newRateLimiter(0, 0),
+		lastTouch:  make(map[string]time.Time),
+		touchEvery: defaultTouchEvery,
+		touch:      st.TouchTokenUsed,
+		now:        time.Now,
+	}
 }
 
 // Authenticate 校验 Bearer 凭据并返回身份；失败返回 grpc status（401/403
 // 信封退化形态）。required scope 判定在 authorize（拦截器按方法映射调用）。
+// 认证成功后经 A2 节流盖写 last_used_at（窗口内只写一次）。
 func (a *Authenticator) Authenticate(ctx context.Context, authorization string) (Principal, error) {
 	token := bearerToken(authorization)
 	if token == "" {
@@ -91,7 +119,26 @@ func (a *Authenticator) Authenticate(ctx context.Context, authorization string) 
 	if a.limiter != nil && !a.limiter.allow(tok.ID) {
 		return Principal{}, statusEnvelope(codes.ResourceExhausted, "rate limit exceeded for token")
 	}
+	a.touchUsed(ctx, tok.ID)
 	return Principal{TokenID: tok.ID, Scopes: strings.Split(tok.Scopes, ",")}, nil
+}
+
+// touchUsed 按 A2 节流盖写 last_used_at：距上次**成功**写不足 touchEvery
+// 跳过；写失败不拒绝请求、不记窗口（下次认证重试）。
+func (a *Authenticator) touchUsed(ctx context.Context, tokenID string) {
+	now := a.now()
+	a.touchMu.Lock()
+	if last, ok := a.lastTouch[tokenID]; ok && now.Sub(last) < a.touchEvery {
+		a.touchMu.Unlock()
+		return // 窗口内已有成功写：跳过（SQLite 写放大收口）
+	}
+	a.touchMu.Unlock()
+	if err := a.touch(ctx, tokenID); err != nil {
+		return // 尽力而为观测面：失败不落窗口
+	}
+	a.touchMu.Lock()
+	a.lastTouch[tokenID] = now
+	a.touchMu.Unlock()
 }
 
 // bearerToken 解析 "Bearer <token>" 头（大小写不敏感 scheme；其余形态

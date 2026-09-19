@@ -37,9 +37,10 @@ const defaultDeployTimeout = 15 * time.Minute
 
 // deployCmd 实现 `fleetly deploy <compose-file>`。
 type deployCmd struct {
-	jsonOut bool
-	timeout time.Duration
-	conn    connFlags
+	jsonOut            bool
+	confirmDestructive bool
+	timeout            time.Duration
+	conn               connFlags
 }
 
 func (c *deployCmd) Name() string { return "deploy" }
@@ -47,13 +48,18 @@ func (c *deployCmd) Synopsis() string {
 	return "deploy a compose file (queued via fleetlyd, waits and prints the deployment result)"
 }
 func (c *deployCmd) Usage() string {
-	return "deploy [--addr <host:port>] [--token <tok>] [--timeout <duration>] [--json] <compose-file>"
+	return "deploy [--addr <host:port>] [--token <tok>] [--timeout <duration>] [--json] [--confirm-destructive] <compose-file>"
 }
 
 func (c *deployCmd) SetFlags(fs *flag.FlagSet) {
 	c.conn.register(fs)
 	fs.DurationVar(&c.timeout, "timeout", defaultDeployTimeout, "wait limit for the deployment to finish")
 	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+	// 破坏性变更门控（MG-C3，架构 §2.4 plan/apply 语义）：服务端以最新
+	// revision 为基线判定（与 plan 的 requires_confirm_destructive 同口径）；
+	// 删除服务/解绑卷的部署须显式携带本标志，否则 E_DEPLOY_CONFIRM_REQUIRED。
+	fs.BoolVar(&c.confirmDestructive, "confirm-destructive", false,
+		"confirm destructive changes (service removal / volume unbind) required to queue the deploy")
 }
 
 func (c *deployCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
@@ -70,10 +76,11 @@ func (c *deployCmd) Run(ctx context.Context, env *commands.Environment, args []s
 	if err != nil {
 		return err
 	}
-	return c.conn.withClient(func(cl *fleetlyClient) error {
+	err = c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Deployments().Deploy(ctx, &serverv1.DeployRequest{
-			App:     spec.Name,
-			Compose: content,
+			App:                spec.Name,
+			Compose:            content,
+			ConfirmDestructive: c.confirmDestructive,
 		})
 		if err != nil {
 			return err
@@ -100,6 +107,12 @@ func (c *deployCmd) Run(ctx context.Context, env *commands.Environment, args []s
 		}
 		return nil
 	})
+	if isCleanCancel(ctx, err) {
+		// Ctrl-C/SIGTERM：等待循环取消干净退出（在途部署继续执行，
+		// fleetly deployments list 可查）——exit 0（S17-D3）。
+		return nil
+	}
+	return err
 }
 
 // waitDeployment 轮询至部署到终态或超时。超时区分「仍 queued」（daemon 未
@@ -328,7 +341,7 @@ func (c *deploymentsCancelCmd) Run(ctx context.Context, env *commands.Environmen
 	if err := requireArgs(c.Usage(), args, 1); err != nil {
 		return err
 	}
-	return c.conn.withClient(func(cl *fleetlyClient) error {
+	err := c.conn.withClient(func(cl *fleetlyClient) error {
 		id := args[0]
 		if _, err := cl.Deployments().CancelDeployment(ctx, &serverv1.CancelDeploymentRequest{Id: id}); err != nil {
 			return err // 曾健康/终态 409 信封（建议 rollback）由 renderCLIError 渲染
@@ -363,6 +376,10 @@ func (c *deploymentsCancelCmd) Run(ctx context.Context, env *commands.Environmen
 			}
 		}
 	})
+	if isCleanCancel(ctx, err) {
+		return nil // Ctrl-C/SIGTERM：等待循环取消干净退出，exit 0（S17-D3）
+	}
+	return err
 }
 
 // 编译期断言：部署命令实现 commands.Command/Flagged 契约。

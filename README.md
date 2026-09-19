@@ -81,7 +81,7 @@ deploy/           installer & systemd units (lands with T2.1)
 
 ## CLI
 
-The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`) and `--token` (env `FLEETLY_TOKEN`); the bootstrap admin token is printed **once** to the fleetlyd log on first start, further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only).
+The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`) and `--token` (env `FLEETLY_TOKEN`); the bootstrap admin token is printed **once** to the fleetlyd log on first start, further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only), `64` usage error (unknown verb, bad flags/arguments — `EX_USAGE`). Unary RPCs carry a default 30s deadline; Ctrl-C on streaming verbs (`logs follow`, `events watch`) and wait verbs (`deploy`, `build`, `rollback`) exits cleanly with code 0.
 
 ```bash
 fleetlyd &                                  # control plane (gRPC :8421, HTTP :8420, git SSH :8424)

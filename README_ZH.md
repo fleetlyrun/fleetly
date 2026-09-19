@@ -79,7 +79,7 @@ deploy/           安装器与 systemd unit（随 T2.1 落地）
 
 ## CLI
 
-CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）与 `--token`（env `FLEETLY_TOKEN`）；bootstrap admin token 在 fleetlyd 首启日志中**只打印一次**，后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）。
+CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）与 `--token`（env `FLEETLY_TOKEN`）；bootstrap admin token 在 fleetlyd 首启日志中**只打印一次**，后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）、`64` 用法错误（未知动词/flag 或参数违规，EX_USAGE 惯例）。一元 RPC 带缺省 30s deadline；流式动词（`logs follow`、`events watch`）与等待动词（`deploy`、`build`、`rollback`）上 Ctrl-C 干净退出（退出码 0）。
 
 ```bash
 fleetlyd &                                  # 控制面（gRPC :8421，HTTP :8420，git SSH :8424）

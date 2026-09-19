@@ -41,6 +41,13 @@ const (
 // 的宿主基准目录）——v0.1 单机同宿主语义：CLI 与 fleetlyd 共享文件系统，
 // 与旧 CLI 直连入队的 context 绝对路径等价；空 = 服务端临时目录（上下文
 // 随 compose 暂存形态，纯 image/无上下文构建可用）。
+//
+// 信任边界（H14 整改）：TriggerBuild 要求 admin scope——base_dir 可指向
+// 宿主任意目录，构建把整目录打进镜像，与 env 明文读取同级信任，不随
+// deploy scope 下放。且 build.context 解析后必须位于 base_dir（缺省为
+// 服务端临时目录）之内，`..` 逃逸形态拒绝（E_COMPOSE_UNSUPPORTED）；
+// 执行侧另要求 context_dir 位于平台受管根（系统 temp / git 根 /
+// build.context_roots 配置根）内，越界构建终态失败（E_BUILD_FAILED）。
 type BuildsServiceClient interface {
 	TriggerBuild(ctx context.Context, in *TriggerBuildRequest, opts ...grpc.CallOption) (*TriggerBuildResponse, error)
 	GetBuild(ctx context.Context, in *GetBuildRequest, opts ...grpc.CallOption) (*GetBuildResponse, error)
@@ -102,6 +109,13 @@ func (c *buildsServiceClient) ListBuilds(ctx context.Context, in *ListBuildsRequ
 // 的宿主基准目录）——v0.1 单机同宿主语义：CLI 与 fleetlyd 共享文件系统，
 // 与旧 CLI 直连入队的 context 绝对路径等价；空 = 服务端临时目录（上下文
 // 随 compose 暂存形态，纯 image/无上下文构建可用）。
+//
+// 信任边界（H14 整改）：TriggerBuild 要求 admin scope——base_dir 可指向
+// 宿主任意目录，构建把整目录打进镜像，与 env 明文读取同级信任，不随
+// deploy scope 下放。且 build.context 解析后必须位于 base_dir（缺省为
+// 服务端临时目录）之内，`..` 逃逸形态拒绝（E_COMPOSE_UNSUPPORTED）；
+// 执行侧另要求 context_dir 位于平台受管根（系统 temp / git 根 /
+// build.context_roots 配置根）内，越界构建终态失败（E_BUILD_FAILED）。
 type BuildsServiceServer interface {
 	TriggerBuild(context.Context, *TriggerBuildRequest) (*TriggerBuildResponse, error)
 	GetBuild(context.Context, *GetBuildRequest) (*GetBuildResponse, error)

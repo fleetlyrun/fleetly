@@ -233,6 +233,73 @@ func mustEvents(t *testing.T, h *harness) []state.Event {
 	return rows
 }
 
+// TestDriftDetectsUpdateConfigTamper A8（S18）：update config 投影补齐——
+// 外部 docker service update --update-order 篡改 → 漂移项出现
+// （update_order 字段级 diff）；受管字段 failure_action 改 rollback →
+// 专报项（update_failure_action，平台恒写 pause、实况非 pause 即篡改）。
+func TestDriftDetectsUpdateConfigTamper(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	if final := h.runToTerminal(h.enqueue(h.writeCompose(composeV1))); final.Status != state.DeploySucceeded {
+		t.Fatalf("deploy = %s (%s)", final.Status, final.ErrorCode)
+	}
+
+	// 基线：无漂移（投影含三字段后两侧同构）。
+	report, err := h.eng.DriftShow(ctx, "demo")
+	if err != nil || report.Drifted {
+		t.Fatalf("clean baseline drifted: %+v (%v)", report, err)
+	}
+
+	// 外部改 update-order（start-first → stop-first）→ 漂移项出现。
+	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+		spec.UpdateOrder = "stop-first"
+	})
+	report, err = h.eng.DriftShow(ctx, "demo")
+	if err != nil || !report.Drifted {
+		t.Fatalf("update-order tamper not detected: %+v (%v)", report, err)
+	}
+	foundOrder := false
+	for _, d := range report.Services[0].Diff {
+		if d.Field == "update_order" {
+			foundOrder = true
+			if d.Expected != "start-first" || d.Actual != "stop-first" {
+				t.Fatalf("update_order diff = %+v", d)
+			}
+		}
+	}
+	if !foundOrder {
+		t.Fatalf("no update_order diff item: %+v", report.Services[0].Diff)
+	}
+	// 事件面披露（drift_detected 载荷含字段级 diff）。
+	h.eng.DriftScan(ctx)
+	if !hasEvent(h.events(), "reconcile.drift_detected") {
+		t.Fatal("drift event missing for update-order tamper")
+	}
+
+	// 归位 order，改受管字段 failure_action → 专报项（不进期望态哈希的
+	// 受管字段走独立比对）。
+	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+		spec.UpdateOrder = "start-first"
+	})
+	h.sub.mutateUpdateFailureAction("fleetly-demo-web", "rollback")
+	report, err = h.eng.DriftShow(ctx, "demo")
+	if err != nil || !report.Drifted {
+		t.Fatalf("failure_action tamper not detected: %+v (%v)", report, err)
+	}
+	foundFA := false
+	for _, d := range report.Services[0].Diff {
+		if d.Field == "update_failure_action" {
+			foundFA = true
+			if d.Expected != "pause" || d.Actual != "rollback" {
+				t.Fatalf("update_failure_action diff = %+v", d)
+			}
+		}
+	}
+	if !foundFA {
+		t.Fatalf("no update_failure_action diff item: %+v", report.Services[0].Diff)
+	}
+}
+
 func countEvents(t *testing.T, h *harness, name string) int {
 	t.Helper()
 	n := 0

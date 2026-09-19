@@ -1,6 +1,7 @@
 package compose
 
 import (
+	"context"
 	"strings"
 	"testing"
 )
@@ -55,7 +56,7 @@ services:
   web:
     image: nginx
     configs: [app_conf]
-`, "E_COMPOSE_UNSUPPORTED", "services.web.configs", "pos_secrets"},
+`, "E_COMPOSE_UNSUPPORTED", "services.web.configs", "pos_multi_service"},
 
 		{"reject_external_network", `
 name: my-api
@@ -329,7 +330,25 @@ services:
     expose: ["80"]
 `, "E_COMPOSE_UNSUPPORTED", "services.web", "pos_build"},
 
-		{"reject_secret_not_external", `
+		// ── secrets 显式拒绝（S16-C1：v0.1 平台密钥库未接入，Load 期即拒；
+		// 顶层与服务级同拒，外部引用/本地定义等形态细分不再可达）──
+		{"reject_secrets_top_level", `
+name: my-api
+services:
+  web: { image: nginx }
+secrets:
+  db_url: { external: true }
+`, "E_COMPOSE_UNSUPPORTED", "secrets", ""},
+
+		{"reject_secrets_service_level", `
+name: my-api
+services:
+  web:
+    image: nginx
+    secrets: [db_url]
+`, "E_COMPOSE_UNSUPPORTED", "services.web.secrets", ""},
+
+		{"reject_secrets_local_file_definition", `
 name: my-api
 services:
   web:
@@ -338,19 +357,7 @@ services:
 secrets:
   db_url:
     file: ./db_url.txt
-`, "E_COMPOSE_UNSUPPORTED", "secrets.db_url.file", "pos_secrets"},
-
-		{"reject_secret_target_rename", `
-name: my-api
-services:
-  web:
-    image: nginx
-    secrets:
-      - source: db_url
-        target: renamed_url
-secrets:
-  db_url: { external: true }
-`, "E_COMPOSE_UNSUPPORTED", "services.web.secrets[0].target", "pos_secrets"},
+`, "E_COMPOSE_UNSUPPORTED", "secrets", ""},
 
 		{"reject_service_volume_tmpfs", `
 name: my-api
@@ -529,15 +536,6 @@ networks:
   backnet:
     driver: overlay
 `,
-	"pos_secrets": `
-name: my-api
-services:
-  web:
-    image: nginx
-    secrets: [db_url]
-secrets:
-  db_url: { external: true }
-`,
 	"pos_domains": `
 name: my-api
 services:
@@ -607,5 +605,64 @@ func TestValidationPositiveMatrix(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			loadOK(t, writeCompose(t, content))
 		})
+	}
+}
+
+// TestUserLabelNotPassedWarning S16-C2：非 fleetly.* 服务 label 产出 W 级
+// 警告（Kind=user_label_not_passed，随 Load warnings 通道带出）；fleetly.*
+// 平台约定 label 不触发。用户 label 仍被放行（不阻断），只是披露不透传。
+func TestUserLabelNotPassedWarning(t *testing.T) {
+	path := writeCompose(t, `
+name: my-api
+services:
+  web:
+    image: nginx
+    labels:
+      com.example.owner: platform-team
+      com.example.version: "2"
+      fleetly.domains: "api.example.com"
+`)
+	spec, warnings, err := Load(context.Background(), path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(spec.Services) != 1 {
+		t.Fatalf("services = %d, 期望 1（用户 label 放行不阻断）", len(spec.Services))
+	}
+	var hit bool
+	for _, w := range warnings {
+		if w.Kind == WarningKindUserLabelNotPassed {
+			hit = true
+			if w.Service != "web" {
+				t.Errorf("warning service = %q, 期望 web", w.Service)
+			}
+			if !strings.Contains(w.Message, "com.example.owner") || !strings.Contains(w.Message, "com.example.version") {
+				t.Errorf("warning message 未列出用户 label 键: %s", w.Message)
+			}
+			if !strings.Contains(w.Message, "不透传") {
+				t.Errorf("warning message 缺不透传说明: %s", w.Message)
+			}
+		}
+	}
+	if !hit {
+		t.Errorf("warnings 缺 %s: %+v", WarningKindUserLabelNotPassed, warnings)
+	}
+	// 对照：纯平台 label 不触发该警告（无 healthcheck 的 W_DEPLOY_NO_HEALTHCHECK
+	// 属另一通道，不在断言面）。
+	_, cleanWarnings, err := Load(context.Background(), writeCompose(t, `
+name: my-api
+services:
+  web:
+    image: nginx
+    labels:
+      fleetly.domains: "api.example.com"
+`))
+	if err != nil {
+		t.Fatalf("Load clean: %v", err)
+	}
+	for _, w := range cleanWarnings {
+		if w.Kind == WarningKindUserLabelNotPassed {
+			t.Errorf("纯平台 label 触发用户 label 警告: %+v", w)
+		}
 	}
 }

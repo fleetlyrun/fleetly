@@ -188,12 +188,15 @@ func (m *Manager) History(ctx context.Context, q HistoryQuery) ([]Entry, error) 
 	return out, nil
 }
 
-// buildLogEntries 从 builds 表产物读构建日志（source=build）。
+// buildLogEntries 从 builds 表产物读构建日志（source=build）。B3（出站
+// 字节出口收口）：出口与容器日志同管线过该 app 的 redactor——构建日志
+// 同样可能回显 secret 值（拉源 token、env 值），不得因来源不同绕过脱敏。
 func (m *Manager) buildLogEntries(ctx context.Context, app state.App, q HistoryQuery) ([]Entry, error) {
 	builds, err := m.st.ListAppBuilds(ctx, app.ID, maxBuildsPerHistory)
 	if err != nil {
 		return nil, err
 	}
+	red := m.red.forApp(ctx, app.ID)
 	var out []Entry
 	for _, b := range builds {
 		if q.Service != "" && b.Service != q.Service {
@@ -222,7 +225,7 @@ func (m *Manager) buildLogEntries(ctx context.Context, app state.App, q HistoryQ
 				App:     app.Name,
 				Service: b.Service,
 				At:      at,
-				Line:    line,
+				Line:    red.redact(line),
 				Source:  SourceBuild,
 			})
 		}

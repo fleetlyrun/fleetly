@@ -124,8 +124,11 @@ type Warning struct {
 // 警告 Kind 常量（无注册码提示的稳定标识）。
 const (
 	// WarningKindCronLabelPending：fleetly.cron* label 在 v0.1 不生效
-	// （定时任务为 v0.2 契约），服务按长驻部署。
+	//（定时任务为 v0.2 契约），服务按长驻部署。
 	WarningKindCronLabelPending = "cron_label_v02_pending"
+	// WarningKindUserLabelNotPassed：非 fleetly.* 的服务 label 平台不透传
+	//（v0.1 受控子集只消费平台约定 label；S16-C2——静默丢弃改警告披露）。
+	WarningKindUserLabelNotPassed = "user_label_not_passed"
 )
 
 // errCompose 构造带路径上下文的 E_COMPOSE_UNSUPPORTED。

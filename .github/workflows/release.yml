@@ -19,6 +19,12 @@
 #           --certificate/--bundle，cosign ≥2.6 NOf 门直接报错——已实证；
 #           b) 证明修 install.sh 一行即可验通，见 deploy/README.md 增补与
 #           遗留问题）。
+#      4b.（S14/H15）openssl 兼容轨签名：repo secret FLEETLY_RELEASE_KEY
+#      （PEM 私钥，RSA-2048）→ openssl dgst -sha256 -sign →
+#      checksums.txt.sig.pem，与 cosign bundle 并行发布（双轨并存——干净
+#      VPS 无 cosign 常态，install.sh/upgrade.sh 内嵌公钥验此产物）。secret
+#      缺席时跳过（过渡期，warn 不 fail）；一旦配置，embedded-pubkey gate
+#      强制校验脚本内嵌公钥/指纹与 secret 配对。
 #   5. ghcr 镜像：deploy/Dockerfile.fleetlyd（多阶段，golang 构建层 + alpine
 #      运行层，入口 fleetlyd）→ ghcr.io/fleetlyrun/fleetlyd:<tag>（linux/
 #      amd64；arm64 运行形态走 tarball/安装器，见遗留）+ cosign sign 镜像
@@ -28,6 +34,11 @@
 #
 # 首发实跑归 T2.26（打 tag 验收）；本文件 T2.24 落地，本地仅做 YAML 解析与
 # 命令面自查。
+#
+# F1（S20 交付/CI 修正）：本 workflow 持 id-token: write，全部 uses 必须
+# 钉 commit SHA（注释版本号便于人读；升级 action = 同时改 SHA 与版本注释）。
+# SHA 于 2026-09-19 经 GitHub API /commits/<tag> 解析并经 tags 列表 /
+# git ls-remote 交叉核验。
 
 name: release
 
@@ -64,8 +75,8 @@ jobs:
       matrix:
         arch: [amd64, arm64]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - id: ver
@@ -103,7 +114,7 @@ jobs:
             -czf "dist/fleetly_${{ steps.ver.outputs.version }}_linux_${{ matrix.arch }}.tar.gz" \
             -C dist/out fleetlyd fleetly
           sha256sum "dist/fleetly_${{ steps.ver.outputs.version }}_linux_${{ matrix.arch }}.tar.gz"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-tar-linux-${{ matrix.arch }}
           path: dist/fleetly_*.tar.gz
@@ -117,7 +128,7 @@ jobs:
       contents: read
     needs: build
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: ver
         run: |
           if [ "$EVENT" = "workflow_dispatch" ]; then V="$TAG"; else V="$GITHUB_REF_NAME"; fi
@@ -125,7 +136,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           TAG: ${{ inputs.tag }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-tar-linux-*
           merge-multiple: true
@@ -139,7 +150,7 @@ jobs:
           cd dist
           sha256sum fleetly_*.tar.gz install.sh uninstall.sh upgrade.sh > checksums.txt
           cat checksums.txt
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-checksums
           path: |
@@ -165,7 +176,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           TAG: ${{ inputs.tag }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-tar-linux-*
           merge-multiple: true
@@ -180,18 +191,18 @@ jobs:
           done
           ls -la sbom-src/*
       - name: sbom linux/amd64
-        uses: anchore/sbom-action@v0.24.2
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           artifact: dist/sbom-src/amd64
           format: spdx-json
           output-file: dist/fleetly_${{ steps.ver.outputs.version }}_linux_amd64.spdx.json
       - name: sbom linux/arm64
-        uses: anchore/sbom-action@v0.24.2
+        uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
         with:
           artifact: dist/sbom-src/arm64
           format: spdx-json
           output-file: dist/fleetly_${{ steps.ver.outputs.version }}_linux_arm64.spdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-sbom
           path: dist/*.spdx.json
@@ -199,13 +210,16 @@ jobs:
 
   # ───────────────────────────────────────────── 4. cosign keyless 签名 ──
   sign:
-    name: sign checksums (cosign keyless)
+    name: sign checksums (cosign keyless + openssl track)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       id-token: write
     needs: checksums
     steps:
+      # embedded-pubkey gate（下方 openssl 轨步骤）需要读 deploy/install.sh
+      # 与 deploy/upgrade.sh 的内嵌公钥块。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: ver
         run: |
           if [ "$EVENT" = "workflow_dispatch" ]; then V="$TAG"; else V="$GITHUB_REF_NAME"; fi
@@ -213,11 +227,11 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           TAG: ${{ inputs.tag }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: release-checksums
           path: dist
-      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
       - name: sign checksums.txt (keyless; GitHub OIDC)
@@ -260,7 +274,72 @@ jobs:
             --certificate-identity-regexp "$EXPECTED_SIGNER" \
             --certificate-oidc-issuer "$EXPECTED_ISSUER" \
             checksums.txt
-      - uses: actions/upload-artifact@v4
+      - name: sign checksums.txt (openssl track / FLEETLY_RELEASE_KEY)
+        # S14/H15：openssl 兼容轨——干净 VPS 无 cosign 常态下的消费端验签
+        # 材料（install.sh/upgrade.sh 内嵌公钥验 checksums.txt.sig.pem）。
+        # 算法 = RSA-2048 + SHA-256（dgst 轨；裁决理由见 deploy/install.sh
+        # 公钥块注释）。secret 形态 = PEM 私钥全文（配置步骤见 deploy/README.md
+        # 「release 签名密钥（openssl 轨）」小节）。secret 缺席 = 过渡期：
+        # 跳过 + 警示（job 不红）；一旦配置，下一步 gate 强制校验内嵌公钥与
+        # secret 配对（防「换了 secret 忘改脚本」的必炸 release）。
+        id: olsign
+        env:
+          RELEASE_KEY: ${{ secrets.FLEETLY_RELEASE_KEY }}
+        run: |
+          cd dist
+          if [ -z "$RELEASE_KEY" ]; then
+            echo "::warning::secret FLEETLY_RELEASE_KEY not configured — openssl-track signature SKIPPED (transitional). cosign-less hosts cannot verify such releases; S14-hardened installers will refuse them."
+            exit 0
+          fi
+          printf '%s' "$RELEASE_KEY" | openssl dgst -sha256 -sign /dev/stdin -out checksums.txt.sig.pem checksums.txt
+          test -s checksums.txt.sig.pem
+          ls -l checksums.txt.sig.pem
+          echo "signed=1" >> "$GITHUB_OUTPUT"
+      - name: verify gate C — openssl track self-verify + embedded pubkey gate
+        # 仅在 secret 已配置时生效：① 用 secret 派生公钥自验签名（与
+        # install.sh openssl 轨同一命令面）；② install.sh / upgrade.sh 内嵌
+        # 公钥块必须与 secret 派生公钥逐字一致（脚本还内嵌测试公钥 = 必炸
+        # release，此处拦下）；③ 两个脚本的 fingerprint-sha256 注释行与
+        # secret 派生指纹一致（轮换流程的锚点防漂移）。
+        env:
+          RELEASE_KEY: ${{ secrets.FLEETLY_RELEASE_KEY }}
+        run: |
+          if [ -z "$RELEASE_KEY" ]; then
+            echo 'FLEETLY_RELEASE_KEY absent — openssl-track gate skipped (transitional)'
+            exit 0
+          fi
+          cd dist
+          test -s checksums.txt.sig.pem
+          KEYF="$RUNNER_TEMP/fleetly-release.key"
+          PUBF="$RUNNER_TEMP/fleetly-release.pub"
+          printf '%s' "$RELEASE_KEY" > "$KEYF"
+          openssl pkey -in "$KEYF" -pubout -out "$PUBF"
+          # ① 自验（install.sh openssl 轨同命令面）。
+          openssl dgst -sha256 -verify "$PUBF" -signature checksums.txt.sig.pem checksums.txt
+          # ② 内嵌公钥块逐字一致。抽取口径与 test-install.sh A11 相同：锚定
+          # FLEETLY_RELEASE_PUBKEY= 赋值行（BEGIN 标记跟着赋值前缀，无法锚
+          # 定行首）到 END 标记行，剥掉首行赋值前缀。
+          for sh in install.sh upgrade.sh; do
+            sed -n "/^FLEETLY_RELEASE_PUBKEY='/,/-----END PUBLIC KEY-----/p" \
+              "$GITHUB_WORKSPACE/deploy/$sh" | sed "1s/^FLEETLY_RELEASE_PUBKEY='//" \
+              > "$RUNNER_TEMP/embedded-$sh.pub"
+            diff "$PUBF" "$RUNNER_TEMP/embedded-$sh.pub" ||
+              { echo "::error::deploy/$sh embedded FLEETLY_RELEASE_PUBKEY does not match FLEETLY_RELEASE_KEY — update the embedded key + fingerprint (see deploy/README.md release signing key section)"; exit 1; }
+          done
+          # ③ 指纹行一致。
+          FP=$(openssl pkey -pubin -in "$PUBF" -outform DER | openssl dgst -sha256 | awk '{print $NF}')
+          for sh in install.sh upgrade.sh; do
+            grep -q "fingerprint-sha256: $FP" "$GITHUB_WORKSPACE/deploy/$sh" ||
+              { echo "::error::deploy/$sh fingerprint-sha256 comment does not match FLEETLY_RELEASE_KEY ($FP)"; exit 1; }
+          done
+          rm -f "$KEYF"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: steps.olsign.outputs.signed == '1'
+        with:
+          name: release-signature-openssl
+          path: dist/checksums.txt.sig.pem
+          if-no-files-found: error
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: release-signature
           path: |
@@ -277,7 +356,7 @@ jobs:
       packages: write
       id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - id: ver
         run: |
           if [ "$EVENT" = "workflow_dispatch" ]; then V="$TAG"; else V="$GITHUB_REF_NAME"; fi
@@ -285,14 +364,14 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           TAG: ${{ inputs.tag }}
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/login-action@v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: push
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
         with:
           context: .
           file: deploy/Dockerfile.fleetlyd
@@ -304,7 +383,7 @@ jobs:
           # v0.1 容器形态是「可选运行形态」：amd64 单平台（arm64 运行形态走
           # tarball/安装器）；多平台镜像（QEMU）列遗留。
           platforms: linux/amd64
-      - uses: sigstore/cosign-installer@v4.1.2
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
         with:
           cosign-release: v3.1.3
       - name: cosign sign image (keyless, by digest)
@@ -327,7 +406,7 @@ jobs:
     needs: [build, checksums, sbom, sign, image]
     steps:
       # gh release --verify-tag 需要 git 上下文（gh 内部 shell 出 git 命令）。
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
       - id: ver
@@ -337,7 +416,7 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           TAG: ${{ inputs.tag }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: release-*
           merge-multiple: true
@@ -347,6 +426,10 @@ jobs:
           mkdir -p rel
           mv dist/fleetly_*.tar.gz rel/
           mv dist/checksums.txt dist/checksums.txt.sig dist/checksums.txt.cert rel/
+          # openssl 轨签名为条件产物（FLEETLY_RELEASE_KEY 配置即存在）。
+          if [ -f dist/checksums.txt.sig.pem ]; then
+            mv dist/checksums.txt.sig.pem rel/
+          fi
           mv dist/install.sh dist/uninstall.sh dist/upgrade.sh rel/
           mv dist/fleetly_*.spdx.json rel/
           ls -la rel/
@@ -382,6 +465,7 @@ jobs:
           | \`fleetly_${V}_linux_<arch>.tar.gz\` | fleetlyd + fleetly（包根） |
           | \`checksums.txt\` | 全部制品 sha256（安装器必验） |
           | \`checksums.txt.sig\` | Sigstore bundle 签名（cosign keyless，GitHub OIDC） |
+          | \`checksums.txt.sig.pem\` | openssl 轨签名（RSA-2048/SHA-256；S14——无 cosign 主机的安装器内嵌公钥验此件，FLEETLY_RELEASE_KEY 配置后附带） |
           | \`checksums.txt.cert\` | 签名证书（PEM） |
           | \`install.sh\` / \`uninstall.sh\` / \`upgrade.sh\` | 安装 / 卸载 / 平台自升级 |
           | \`*.spdx.json\` | SBOM（syft，SPDX JSON） |
@@ -395,6 +479,9 @@ jobs:
             --certificate-identity-regexp '^https://github\\.com/fleetlyrun/fleetly/' \\
             --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \\
             checksums.txt
+          # 无 cosign 主机（openssl 轨，S14）——公钥 = install.sh 内嵌的
+          # FLEETLY_RELEASE_PUBKEY：
+          openssl dgst -sha256 -verify release.pub -signature checksums.txt.sig.pem checksums.txt
           \`\`\`
 
           镜像：\`${{ env.GHCR_IMAGE }}:$V\`（cosign keyless 签名，同 identity 约束；
@@ -405,10 +492,15 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           V='${{ steps.ver.outputs.version }}'
+          # openssl 轨签名为条件产物——在则一并上传。
+          set -- rel/fleetly_*.tar.gz rel/checksums.txt \
+            rel/checksums.txt.sig rel/checksums.txt.cert \
+            rel/install.sh rel/uninstall.sh rel/upgrade.sh \
+            rel/*.spdx.json
+          if [ -f rel/checksums.txt.sig.pem ]; then
+            set -- "$@" rel/checksums.txt.sig.pem
+          fi
           gh release create "$V" --verify-tag \
             --title "fleetly $V" \
             --notes-file rel/notes.md
-          gh release upload "$V" rel/fleetly_*.tar.gz rel/checksums.txt \
-            rel/checksums.txt.sig rel/checksums.txt.cert \
-            rel/install.sh rel/uninstall.sh rel/upgrade.sh \
-            rel/*.spdx.json --clobber
+          gh release upload "$V" "$@" --clobber

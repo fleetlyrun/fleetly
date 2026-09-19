@@ -4,9 +4,12 @@
 //	env_file < environment（compose） < 平台 env_vars
 //
 // 同键平台层覆盖；合并结果（key + sha256 + 来源）进 desired-hash 与
-// revision 快照；`fleetly env set` 创建 pending、随下次部署生效——合并
-// 消费方（发布引擎 T2.10）只应传入 effective 平台层（state.EffectiveAppEnv），
-// pending 不参与当前合并，生效语义由此结构性成立。
+// revision 快照；`fleetly env set` 创建 pending、随下次部署生效——生效
+// 语义由**引擎调用面**结构性成立（S16-C4 契约统一，以引擎现行为准）：
+// 唯一合并消费方（发布引擎）传入全量平台层行（state.ListAppEnv，pending
+// 参与合并——部署即 pending 的消费点），部署成功后 MarkAppEnvEffective
+// 统一提升、失败不提升；pending/effective 是状态层概念，本层不感知
+// （纯函数，输入面由调用方裁决）。
 //
 // source=system 平台 env（模板自动连接串，只读展示）在本层留位：词表支持、
 // 平台层内部 system > platform，v0.1 无连接串生产者。
@@ -32,7 +35,8 @@ const (
 	SourceEnvFile Source = "envfile"
 	// SourceCompose 来自服务 environment 段。
 	SourceCompose Source = "compose"
-	// SourcePlatform 来自平台 env_vars（status=effective）。
+	// SourcePlatform 来自平台 env_vars（引擎合并面传全量行——pending 与
+	// effective 同样参与合并，S16-C4）。
 	SourcePlatform Source = "platform"
 	// SourceSystem 来自平台 system 层（模板连接串留位，只读；v0.1 无生产者）。
 	SourceSystem Source = "system"

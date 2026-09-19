@@ -98,7 +98,7 @@ export function SystemPage() {
                         {c.error}
                       </span>
                     ) : null}
-                    <HealthDot ok={c.ok} />
+                    <HealthDot ok={c.ok ?? false} />
                   </span>
                 </div>
               ))}
@@ -187,7 +187,7 @@ export function SystemPage() {
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div className="rounded-md border p-3">
                   <div className="text-xs text-muted-foreground">Traefik</div>
-                  {ingress.data.traefik.exists ? (
+                  {ingress.data.traefik?.exists ? (
                     <>
                       <code className="text-xs">{ingress.data.traefik.image}</code>
                       <div className="text-xs text-muted-foreground">
@@ -196,7 +196,7 @@ export function SystemPage() {
                     </>
                   ) : (
                     <span className="text-xs text-red-700">
-                      {ingress.data.traefik.error || "not present"}
+                      {ingress.data.traefik?.error || "not present"}
                     </span>
                   )}
                 </div>
@@ -219,7 +219,7 @@ export function SystemPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {ingress.data.certificates.map((c) => (
+                    {(ingress.data.certificates ?? []).map((c) => (
                       <TableRow key={`${c.app}:${c.domain}`}>
                         <TableCell>{c.app}</TableCell>
                         <TableCell className="font-mono text-xs">{c.domain}</TableCell>

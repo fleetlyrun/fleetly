@@ -14,11 +14,14 @@ import (
 // env_vars 表读写（architecture §2.3 权威态「env 密文」+ 变量合并链平台层，
 // 三层优先链 env_file < environment < 平台 env_vars）。
 //
-// 生效语义（v0.1，消费点在发布引擎 T2.10）：SetAppEnv 创建/更新行并把
-// status 置 pending——「随下次部署生效」；合并链（internal/envlayer）只消费
-// effective 行；MarkAppEnvEffective 由部署消费时统一提升。value 列存密文
-// （internal/secrets envelope 加密），审计/事件只落键名（state-model §2.9：
-// secret 值禁止进入事件/审计/日志）。
+// 生效语义（v0.1；S16-C4 契约统一——以引擎现行为准，与架构 §2.4 变量
+// 合并行一致）：SetAppEnv 创建/更新行并把 status 置 pending——「随下次
+// 部署生效」；发布引擎合并链（internal/envlayer）消费**全量行**
+//（ListAppEnv：pending 与 effective 都参与合并——部署是 pending 的消费
+// 点，随本次部署注入），部署成功后由 MarkAppEnvEffective 统一提升为
+// effective；失败不提升、下次部署重试。value 列存密文（internal/secrets
+// envelope 加密），审计/事件只落键名（state-model §2.9：secret 值禁止
+// 进入事件/审计/日志）。
 
 // EnvVarStatus 是 env_vars 生效状态位。
 type EnvVarStatus string
@@ -96,7 +99,8 @@ func (s *Store) SetAppEnv(ctx context.Context, appID, key, value, source string)
 			Target: "app:" + appID,
 			Result: "ok",
 			// 值永不入审计（state-model §2.9）：摘要只有键名与状态位。
-			DiffSummary: `{"key":"` + key + `","status":"pending"}`,
+			// B4：经 DiffSummary 构造（json.Marshal 转义）。
+			DiffSummary: DiffSummary("key", key, "status", "pending"),
 		})
 	})
 	if err != nil {
@@ -155,29 +159,24 @@ func (s *Store) DeleteAppEnv(ctx context.Context, appID, key string) error {
 			Action:      "app.env_removed",
 			Target:      "app:" + appID,
 			Result:      "ok",
-			DiffSummary: `{"key":"` + key + `"}`,
+			DiffSummary: DiffSummary("key", key), // B4：构造器替换手拼 JSON
 		})
 	})
 }
 
-// ListAppEnv 返回该 app 全部 env 行（含 pending，按 key 字典序）——CLI 展示
-// 与运维诊断用；合并链消费走 EffectiveAppEnv。
+// ListAppEnv 返回该 app 全部 env 行（含 pending，按 key 字典序）。消费面
+// 三处：发布引擎合并链（pending 参与合并——部署即消费点，S16-C4）、CLI/
+// API 展示（键名/来源/状态位投影）、日志脱敏值集（pending 值同样不得进
+// 日志）。
 func (s *Store) ListAppEnv(ctx context.Context, appID string) ([]EnvVar, error) {
 	const q = `SELECT ` + envVarsScanCols + ` FROM env_vars WHERE app_id = ? ORDER BY key ASC`
 	return queryEnvVars(ctx, s.db, q, appID)
 }
 
-// EffectiveAppEnv 返回该 app 已生效（status=effective）的 env 行（按 key
-// 字典序）：三层合并链的平台层输入只取这里——pending 不参与当前合并，
-// 「随下次部署生效」由此结构性成立。
-func (s *Store) EffectiveAppEnv(ctx context.Context, appID string) ([]EnvVar, error) {
-	const q = `SELECT ` + envVarsScanCols + ` FROM env_vars
-		WHERE app_id = ? AND status = 'effective' ORDER BY key ASC`
-	return queryEnvVars(ctx, s.db, q, appID)
-}
-
-// MarkAppEnvEffective 把该 app 全部 pending 行提升为 effective（部署消费点，
-// T2.10 发布引擎在 env 注入后调用），返回提升行数。幂等。
+// MarkAppEnvEffective 把该 app 全部 pending 行提升为 effective（部署成功
+// 终态后的消费点，observing.go succeedDeployment 在 env 注入并成功后调用；
+// kind=rollback 不提升——重放的 env 随快照，pending 未被本次部署消费），
+// 返回提升行数。幂等。
 func (s *Store) MarkAppEnvEffective(ctx context.Context, appID string) (int, error) {
 	var n int64
 	err := s.InTx(ctx, func(tx *Tx) error {
@@ -197,7 +196,7 @@ func (s *Store) MarkAppEnvEffective(ctx context.Context, appID string) (int, err
 				Action:      "app.env_applied",
 				Target:      "app:" + appID,
 				Result:      "ok",
-				DiffSummary: fmt.Sprintf(`{"promoted":%d}`, n),
+				DiffSummary: DiffSummary("promoted", n), // B4：构造器替换手拼 JSON（数值保持非引号形态）
 			})
 		}
 		return nil

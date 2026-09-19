@@ -49,6 +49,10 @@ type redactorRegistry struct {
 	m   map[string]redactorEntry
 	log *slog.Logger
 	now func() time.Time
+	// extra 是 B3 值集扩面的补充供给（state 之外的明文 secret 落点，如
+	// gitserver 的 post-receive 钩子 token——明文只在钩子文件，无解密面）；
+	// nil = 无扩面（测试/未装配形态）。
+	extra SecretValuesSource
 }
 
 // redactorTTL 是脱敏值集刷新周期（env set → 脱敏生效的最迟延迟）。
@@ -89,9 +93,11 @@ func (r *redactorRegistry) forApp(ctx context.Context, appID string) *redactor {
 	return ent.r
 }
 
-// build 解出该 app 全部平台 env 明文构建 redactor；box 缺失（无 env 面）
+// build 解出该 app 全部已知 secret 明文构建 redactor；box 缺失（无 env 面）
 // 返回空集；行级解密失败跳过该行（保守：其余值仍脱）。第二返回值 = 是否
-// 完整构建成功（false = 调用方沿用旧值集）。
+// 完整构建成功（false = 调用方沿用旧值集）。B3 值集扩面：除平台 env 外，
+// 并入该 app 的 webhook secret、拉源 https_token（state 密文列 + box 解密）
+// 与 extra 供给的钩子 token——同一 ≥minRedactLen 规则。
 func (r *redactorRegistry) build(ctx context.Context, appID string) (*redactor, bool) {
 	if r.box == nil {
 		return &redactor{}, true
@@ -108,9 +114,41 @@ func (r *redactorRegistry) build(ctx context.Context, appID string) (*redactor, 
 			r.log.Warn("logs: decrypt env for redaction failed (skipped)", "app_id", appID, "key", row.Key)
 			continue
 		}
-		v := string(plain)
-		if len(v) >= minRedactLen {
+		if v := string(plain); len(v) >= minRedactLen {
 			vals = append(vals, v)
+		}
+	}
+	// B3：git 触发面 secret（webhook 验签密钥 + 拉源 https_token）——
+	// GetAppGitConfig 密文列经同一 box 解密；读取/解密失败跳过（观测面
+	// 降级不阻断采集）。
+	if cfg, err := r.st.GetAppGitConfig(ctx, appID); err == nil {
+		if cfg.SecretSet && cfg.WebhookSecret != "" {
+			if plain, derr := r.box.Decrypt([]byte(cfg.WebhookSecret)); derr == nil {
+				if v := string(plain); len(v) >= minRedactLen {
+					vals = append(vals, v)
+				}
+			} else {
+				r.log.Warn("logs: decrypt webhook secret for redaction failed (skipped)", "app_id", appID)
+			}
+		}
+		if cfg.AuthKind == state.SourceAuthToken && cfg.AuthSecret != "" {
+			if plain, derr := r.box.Decrypt([]byte(cfg.AuthSecret)); derr == nil {
+				if v := string(plain); len(v) >= minRedactLen {
+					vals = append(vals, v)
+				}
+			} else {
+				r.log.Warn("logs: decrypt source token for redaction failed (skipped)", "app_id", appID)
+			}
+		}
+	} else {
+		r.log.Warn("logs: read git config for redaction failed (skipped)", "app_id", appID, "error", err.Error())
+	}
+	// B3：extra 供给（钩子 token 等 state 之外的明文落点）。
+	if r.extra != nil {
+		for _, v := range r.extra.SecretValues(ctx, appID) {
+			if len(v) >= minRedactLen {
+				vals = append(vals, v)
+			}
 		}
 	}
 	sort.Slice(vals, func(i, j int) bool { return len(vals[i]) > len(vals[j]) })

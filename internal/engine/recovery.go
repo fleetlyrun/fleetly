@@ -184,6 +184,15 @@ func (e *Engine) recoverInterrupted(ctx context.Context) {
 // Swarm pause → 失败分流；全部服务已切换 → 观察窗；无法判定 →
 // E_DEPLOY_INTERRUPTED 失败 + 归位。
 func (e *Engine) classifyRecovering(ctx context.Context, rec state.DeployRecord) error {
+	// blocked_waiting 分流（H12，场景 15「节点恢复续跑并重新起算」）：
+	// 节点 down 期间控制面重启不得丢失等待语义——不分类、不动状态，交回
+	// tick 的 evaluateReleasing → watchBoundNode 续跑（节点恢复则退出子状态
+	// 并重臂看门狗；仍 down 则继续等待）。若落入下方分类：节点不可用使任务
+	// 滞留 PENDING → default 分支误判 E_DEPLOY_INTERRUPTED 失败 + 归位，
+	// 而节点仍不可用，归位重放同样滞留——既假失败又空转底座。
+	if rec.Phase == state.PhaseBlockedWaiting {
+		return nil
+	}
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
 		return e.failUnswitchedOrSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",

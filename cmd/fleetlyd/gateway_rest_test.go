@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	gohttp "net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -80,10 +81,10 @@ func TestGatewayRESTDualFace(t *testing.T) {
 	g := gs.GetServer()
 	serverv1.RegisterSystemServiceServer(g, api.NewSystemService("dev", st,
 		func() []api.SystemComponent { return nil }, nil))
-	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st, box, "127.0.0.1:8424"))
+	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st, box, "127.0.0.1:8424", nil))
 	serverv1.RegisterDeploymentsServiceServer(g, api.NewDeploymentsService(st, nil))
 	serverv1.RegisterRevisionsServiceServer(g, api.NewRevisionsService(st))
-	serverv1.RegisterBuildsServiceServer(g, api.NewBuildsService(st))
+	serverv1.RegisterBuildsServiceServer(g, api.NewBuildsService(st, nil))
 	serverv1.RegisterDriftServiceServer(g, api.NewDriftService(st, nil))
 	serverv1.RegisterEnvServiceServer(g, api.NewEnvService(st, box))
 	serverv1.RegisterTokensServiceServer(g, api.NewTokensService(st))
@@ -265,4 +266,89 @@ func seedScopedToken(t *testing.T, st *state.Store, scope string) string {
 		t.Fatalf("seed token %s: %v", scope, err)
 	}
 	return plaintext
+}
+
+// TestGatewayAuthFailureIPLimit A3（S18）：REST 面匿名 401 per-IP 限速——
+// 生产同构装配（gRPC 拦截链 + newRootHandler 的 gateway 限速层）下：
+//   - 同 IP 10 次坏 token 请求逐次 401，第 11 次直接 429（不再触达后端）；
+//   - 不同 IP 不受牵连（仍 401 / 有效 token 200）。
+//
+// RemoteAddr 经 httptest 请求注入（真实网络面同一来源形态）。
+func TestGatewayAuthFailureIPLimit(t *testing.T) {
+	dir := t.TempDir()
+	st, err := state.Open(context.Background(), filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("state.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	box, _, err := secrets.EnsureKey(filepath.Join(dir, "test.key"))
+	if err != nil {
+		t.Fatalf("EnsureKey: %v", err)
+	}
+	adminTok := seedScopedToken(t, st, "admin")
+
+	auth := api.NewAuthenticator(st)
+	gs := lynxgrpc.NewServer(
+		lynxgrpc.WithAddr("127.0.0.1:0"),
+		lynxgrpc.WithLogger(discardLogger()),
+		lynxgrpc.WithHealthCheckers(noCheckers),
+		lynxgrpc.WithInterceptors(auth.UnaryAuthInterceptor()),
+	)
+	g := gs.GetServer()
+	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st, box, "127.0.0.1:8424", nil))
+	if err := gs.Init(nil); err != nil {
+		t.Fatalf("grpc Init: %v", err)
+	}
+	gsErr := make(chan error, 1)
+	go func() { gsErr <- gs.Start(context.Background()) }()
+	t.Cleanup(func() {
+		_ = gs.Stop(context.Background())
+		<-gsErr
+	})
+	select {
+	case <-gs.Ready():
+	case <-time.After(5 * time.Second):
+		t.Fatal("grpc server not ready within 5s")
+	}
+
+	mux, err := newGatewayMux(gs.Addr())
+	if err != nil {
+		t.Fatalf("newGatewayMux: %v", err)
+	}
+	root := newRootHandler(gohttp.NotFoundHandler(), nil, mux)
+
+	get := func(remoteAddr, token string) int {
+		req := httptest.NewRequest(gohttp.MethodGet, "/v1/apps", nil)
+		req.RemoteAddr = remoteAddr
+		if token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
+		rec := httptest.NewRecorder()
+		root.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// 同 IP（10.9.9.1）：10 次坏 token 逐次 401（每次都触达后端鉴权）。
+	for i := 0; i < 10; i++ {
+		if code := get("10.9.9.1:5555", "flt_wrong"); code != 401 {
+			t.Fatalf("bad-token request %d = %d, want 401", i+1, code)
+		}
+	}
+	// 第 11 次：429（该 IP 进入封禁窗，不再触达后端）。
+	if code := get("10.9.9.1:5555", "flt_wrong"); code != 429 {
+		t.Fatalf("11th bad-token request = %d, want 429", code)
+	}
+	// 封禁窗内同 IP 携带有效 token 也直接 429（per-IP 语义：先判封禁
+	// 再进后端——该 IP 的后续请求一律短路）。
+	if code := get("10.9.9.1:5555", adminTok); code != 429 {
+		t.Fatalf("banned IP with valid token = %d, want 429", code)
+	}
+
+	// 不同 IP 不受牵连：坏 token 仍 401、有效 token 200。
+	if code := get("10.9.9.2:5555", "flt_wrong"); code != 401 {
+		t.Fatalf("other IP bad token = %d, want 401", code)
+	}
+	if code := get("10.9.9.2:5555", adminTok); code != 200 {
+		t.Fatalf("other IP valid token = %d, want 200", code)
+	}
 }

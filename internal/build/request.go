@@ -73,6 +73,30 @@ func DecodeRequest(raw string) (Request, error) {
 	return r, nil
 }
 
+// validateContextDir 校验 ContextDir 位于受管根内（H14 宿主目录信任边界
+// 的执行侧纵深防御，Builder.Execute 在 DecodeRequest 之后调用）：
+//  1. 必须是绝对路径且与 Clean 结果一致——API 层产物经 Abs(Join(…))
+//     天然满足，直写 builds.request 的 `..` 逃逸词形在此拦截；
+//  2. 必须位于 roots 中至少一个受管根之内（containsPath 词法判定；
+//     跨卷路径对根不成立即继续比对下一根，全部不成立 = 越界）。
+//
+// roots 须为归一化后的受管根（Config.Normalize 保证非空且含系统 temp
+// 根）。校验失败不得静默放宽：调用方据此落 E_BUILD_FAILED 终态。
+func validateContextDir(dir string, roots []string) error {
+	if !filepath.IsAbs(dir) {
+		return fmtErr("上下文目录越界：context_dir %q 不是绝对路径（受管根：%s）", dir, strings.Join(roots, ", "))
+	}
+	if filepath.Clean(dir) != dir {
+		return fmtErr("上下文目录越界：context_dir %q 含未归一化段（.. 逃逸词形）", dir)
+	}
+	for _, root := range roots {
+		if root != "" && containsPath(root, dir) {
+			return nil
+		}
+	}
+	return fmtErr("上下文目录越界：context_dir %q 不在受管根（%s）之内——构建上下文必须位于平台受管目录（系统 temp / git 根 / 显式配置根）", dir, strings.Join(roots, ", "))
+}
+
 // Result 是一次构建的产出（成功路径；失败经 E_BUILD_FAILED 错误信封表达）。
 type Result struct {
 	// ImageRef 是本机镜像引用 fleetly-local/<app>:<tag>。

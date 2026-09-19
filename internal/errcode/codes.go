@@ -4,7 +4,9 @@ package errcode
 // 出处）。分布核对：release-semantics §2.7（17 E + 3 W）、stateful-placement
 // §2.8（8 E + 1 W）与 §2.9（1 E）、state-model §2.7/§2.9/§2.4/§2.2（4 E）、
 // architecture §2.4（3 码）+ §2.3（E_STATE_VERSION_CONFLICT）。
-// 计 32 个 E_ + 5 个 W_ = 37 码。
+// 计 34 个 E_ + 5 个 W_ = 39 码（文档外实现期新增两码：T2.15 的
+// E_ROUTE_PUBLISH_FAILED、MG-C3 的 E_DEPLOY_CONFIRM_REQUIRED——见各自
+// 分节注记，待 T0.5 契约冻结确认）。
 //
 // HTTP 默认映射：文档显式给定的照文档（E_DOMAIN_CONFLICT/E_STATE_VERSION_
 // CONFLICT/E_VOLUME_NODE_MISMATCH/E_PLACEMENT_MOVE_REQUIRES_ACK→409、
@@ -75,6 +77,13 @@ var builtins = []Code{
 	{ID: "E_RUNTIME_UNAVAILABLE", HTTP: 503,
 		Summary:    "Swarm/节点底座不可达或操作失败",
 		Suggestion: "检查 Docker Engine 与节点状态，底座恢复后重试；对账器会自动收敛观测缓存。"},
+
+	// ── 破坏性变更门控（MG-C3 实现期新增，architecture §2.4 plan/apply
+	//    语义「破坏性操作要求 --confirm-destructive」；文档外码单独列出，
+	//    待 T0.5 契约冻结确认）──
+	{ID: "E_DEPLOY_CONFIRM_REQUIRED", HTTP: 409,
+		Summary:    "部署含破坏性变更（服务删除/卷解绑）但未携带确认标志，拒绝入队",
+		Suggestion: "本次部署相对最新版本将删除服务或解绑卷：确认意图后加 --confirm-destructive 重试。"},
 
 	// ── 有状态放置（stateful-placement §2.8/§2.5/§2.6）──
 	{ID: "E_PLACEMENT_NODE_INVALID", HTTP: 422,

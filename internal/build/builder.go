@@ -8,6 +8,7 @@ package build
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -127,40 +128,61 @@ func (b *Builder) Execute(ctx context.Context, rec state.BuildRecord) (state.Bui
 	if rec.Status != state.BuildBuilding {
 		return rec, fmtErr("build %s must be claimed (building) before execute, got %s", rec.ID, rec.Status)
 	}
+	// 终态读写用去取消化 ctx：执行 ctx 是队列服务生存期 ctx，优雅关停的
+	// 取消可能落在 solve 完成后/失败处理中——终态落库不得随之丢失（否则
+	// builds 行永久停留 building）。WithoutCancel 保留 trace/log 上下文、
+	// 不继承取消与 deadline，正合「终态必达」语义；run/solve 本身仍用原
+	// ctx（关停即取消，正确）。
+	finCtx := context.WithoutCancel(ctx)
 	if err := b.ensureDaemonReady(ctx); err != nil {
-		return state.BuildRecord{}, b.fail(ctx, rec.ID, err)
+		return state.BuildRecord{}, b.fail(finCtx, rec.ID, err)
 	}
 	req, err := DecodeRequest(rec.Request)
 	if err != nil {
 		// 请求损坏是入队方错误：终态 failed（E_BUILD_FAILED，无日志可附）。
-		return state.BuildRecord{}, b.fail(ctx, rec.ID, err)
+		return state.BuildRecord{}, b.fail(finCtx, rec.ID, err)
+	}
+	// H14 执行侧校验（纵深防御）：ContextDir 必须位于受管根内——
+	// builds.request 是跨进程通道（CLI/API 入队之外的直写库形态同样可
+	// 达），API 层包含性校验之外的最后一道门。越界即终态失败
+	// （E_BUILD_FAILED，信息注明上下文目录越界），不静默放宽。
+	if err := validateContextDir(req.ContextDir, b.cfg.ContextRoots); err != nil {
+		return state.BuildRecord{}, b.fail(finCtx, rec.ID, err)
 	}
 
 	artDir := ArtifactsDir(b.cfg.ArtifactsDir, req.AppName, rec.ID)
 	if err := os.MkdirAll(artDir, 0o750); err != nil {
-		return state.BuildRecord{}, b.fail(ctx, rec.ID, fmtErr("create artifacts dir %s: %w", artDir, err))
+		return state.BuildRecord{}, b.fail(finCtx, rec.ID, fmtErr("create artifacts dir %s: %w", artDir, err))
 	}
 	logPath := filepath.Join(artDir, "build.log")
 	planPath := filepath.Join(artDir, "railpack-plan.json")
 
 	imageRef, err := ImageRef(req.AppName, rec.ID)
 	if err != nil {
-		return state.BuildRecord{}, b.fail(ctx, rec.ID, err)
+		return state.BuildRecord{}, b.fail(finCtx, rec.ID, err)
 	}
 
 	digest, took, buildErr := b.run(ctx, rec, req, imageRef, planPath, logPath)
 	if buildErr != nil {
-		return state.BuildRecord{}, b.fail(ctx, rec.ID, buildErr)
+		// 超时预算耗尽（队列以 WithTimeout 注入的 per-build deadline）：
+		// 失败信息注明预算供定位（预算 ≈ deadline − 认领时间，claim 盖章）。
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) && !rec.StartedAt.IsZero() {
+			if dl, ok := ctx.Deadline(); ok && dl.After(rec.StartedAt) {
+				buildErr = fmtErr("build timed out after ~%s budget (config build.timeout_seconds): %w",
+					dl.Sub(rec.StartedAt).Round(time.Second), buildErr)
+			}
+		}
+		return state.BuildRecord{}, b.fail(finCtx, rec.ID, buildErr)
 	}
 
-	if err := b.store.FinishBuildSucceeded(ctx, rec.ID, imageRef, digest, planPathFor(rec, planPath), logPath); err != nil {
+	if err := b.store.FinishBuildSucceeded(finCtx, rec.ID, imageRef, digest, planPathFor(rec, planPath), logPath); err != nil {
 		return state.BuildRecord{}, fmtErr("record build %s succeeded: %w", rec.ID, err)
 	}
 	b.log.Info("build succeeded",
 		"build", rec.ID, "app", req.AppName, "service", rec.Service,
 		"driver", string(rec.Driver), "ref", imageRef, "digest", digest,
 		"seconds", fmt.Sprintf("%.2f", took))
-	updated, err := b.store.GetBuild(ctx, rec.ID)
+	updated, err := b.store.GetBuild(finCtx, rec.ID)
 	if err != nil {
 		return state.BuildRecord{}, fmtErr("read build %s: %w", rec.ID, err)
 	}
@@ -212,8 +234,10 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 }
 
 // fail 归一失败终态：E_BUILD_FAILED 信封（stderr 尾部 + 日志路径进
-// context）+ builds failed 落库。
+// context）+ builds failed 落库。终态写一律去取消化（WithoutCancel）——
+// 失败处理常发生在执行 ctx 已取消时（超时/关停），落库必达。
 func (b *Builder) fail(ctx context.Context, buildID string, cause error) error {
+	ctx = context.WithoutCancel(ctx)
 	rec, err := b.store.GetBuild(ctx, buildID)
 	if err == nil && rec.LogPath != "" {
 		tail := tailFile(rec.LogPath)

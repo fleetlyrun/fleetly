@@ -50,9 +50,14 @@ type certMeta struct {
 // certStore 是证书目录的读写门面。
 type certStore struct {
 	dir string
+	// readFile 是写后回读出口（E5：测试注入篡改形态驱动 sha256 校验的
+	// 损坏路径；生产恒 os.ReadFile）。
+	readFile func(string) ([]byte, error)
 }
 
-func newCertStore(dir string) *certStore { return &certStore{dir: dir} }
+func newCertStore(dir string) *certStore {
+	return &certStore{dir: dir, readFile: os.ReadFile}
+}
 
 // Load 读取 app 证书（缺失返回 errors.Is(err, os.ErrNotExist)）。
 func (s *certStore) Load(app string) (*CertificatePair, error) {
@@ -82,17 +87,19 @@ func (s *certStore) Load(app string) (*CertificatePair, error) {
 	}, nil
 }
 
-// Save 落盘证书三件（crt/key/meta；先写临时文件再 rename 的原子形态的
-// Windows 简化：直接写 + 校验回读 sha256 一致——损坏即报错重试路径）。
+// Save 落盘证书三件（crt/key/meta）。E5（S19）：每文件 tmp+rename 原子
+// 换入（半写文件不再可能被 Traefik/Load 读到——原「Windows 简化：直接
+// 写」的注释承诺由 rename 原子性 + 回读校验共同兑现），写后回读内容
+// sha256 与内存值比对，不匹配即报错（调用方按既有重试语义承接）。
 func (s *certStore) Save(pair *CertificatePair) error {
 	if err := os.MkdirAll(s.dir, 0o750); err != nil {
 		return fmt.Errorf("ingress: create cert dir: %w", err)
 	}
-	if err := os.WriteFile(s.certPath(pair.App), pair.CertPEM, 0o600); err != nil {
+	if err := s.writeVerified(s.certPath(pair.App), pair.CertPEM, 0o600); err != nil {
 		return fmt.Errorf("ingress: write cert of %s: %w", pair.App, err)
 	}
 	// 私钥 0600（POSIX 面；Windows 卷 ACL 由父目录控制，goose/secrets 同款取舍）。
-	if err := os.WriteFile(s.keyPath(pair.App), pair.KeyPEM, 0o600); err != nil {
+	if err := s.writeVerified(s.keyPath(pair.App), pair.KeyPEM, 0o600); err != nil {
 		return fmt.Errorf("ingress: write key of %s: %w", pair.App, err)
 	}
 	meta := certMeta{
@@ -105,8 +112,32 @@ func (s *certStore) Save(pair *CertificatePair) error {
 	if err != nil {
 		return fmt.Errorf("ingress: encode cert meta of %s: %w", pair.App, err)
 	}
-	if err := os.WriteFile(s.metaPath(pair.App), raw, 0o600); err != nil {
+	if err := s.writeVerified(s.metaPath(pair.App), raw, 0o600); err != nil {
 		return fmt.Errorf("ingress: write cert meta of %s: %w", pair.App, err)
+	}
+	return nil
+}
+
+// writeVerified 单文件「tmp+rename 原子写 + 回读 sha256 校验」（E5）：
+// 临时文件与目标同目录（rename 同卷原子；Windows 的 os.Rename 同样覆盖
+// 既有目标）；rename 失败清理临时文件；回读内容 ≠ 内存值 = 写路径/磁盘
+// 损坏，显式报错。readFile 是回读出口（测试注入口）。
+func (s *certStore) writeVerified(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, perm); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	got, err := s.readFile(path)
+	if err != nil {
+		return fmt.Errorf("read back after write: %w", err)
+	}
+	if sha256.Sum256(got) != sha256.Sum256(data) {
+		return fmt.Errorf("content verification failed (sha256 mismatch after write)")
 	}
 	return nil
 }

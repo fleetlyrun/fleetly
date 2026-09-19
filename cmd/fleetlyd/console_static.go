@@ -19,6 +19,16 @@ import (
 // mux（无 token 仍 401）。
 const consoleUIPathPrefix = "/ui"
 
+// consoleCSP 是 /ui/ 静态面的 Content-Security-Policy（D4-④）。指令集按
+// Console 构建产物的实际加载形态定稿（2026-09-19 对 dist/ 排查）：Vite
+// 产物为外部 module script + 外部样式表（Tailwind v4 无内联样式注入），
+// 数据面 fetch/流式全走同源 /v1，图标为同源 svg——无 'unsafe-inline' 面。
+//   - connect-src 'self'：/v1 REST + NDJSON 流（VITE_API_BASE 指向跨源
+//     控制面时需放宽本指令）；
+//   - img-src 'self' data:：同源 favicon/图标，data: 为零散内联图标预留；
+//   - style-src 'self'：仅外部样式表（React 运行时改 style 走 CSSOM，不受限）。
+const consoleCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'"
+
 // newConsoleUIHandler 构造 Console SPA 静态托管 handler（/ui/ 前缀的分派
 // 目标）：
 //   - 命中目录内真实文件 → 按扩展名 Content-Type 原样托管（fs.ValidPath
@@ -33,6 +43,8 @@ func newConsoleUIHandler(dir string) (http.Handler, error) {
 	}
 	fsys := os.DirFS(dir)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// CSP 对真实文件与 SPA 回退（index.html）一律生效（见 consoleCSP 注释）。
+		w.Header().Set("Content-Security-Policy", consoleCSP)
 		name := strings.TrimPrefix(r.URL.Path, consoleUIPathPrefix)
 		name = strings.TrimPrefix(name, "/")
 		if name == "" {

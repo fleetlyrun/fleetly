@@ -166,6 +166,49 @@ services:
 	}
 }
 
+// TestDestructiveChanges 判定单源函数（MG-C3）的机制单测：服务删除 =
+// destructive；仅新增/修改 = 非；卷解绑 = 是；空基线（首部署/nil）= 非。
+// Diff 的 plan.destructive 与本函数同口径（上方 TestDiffDestructive 锁定）。
+func TestDestructiveChanges(t *testing.T) {
+	base := loadOK(t, writeCompose(t, diffTargetNewService))        // web + worker
+	removed := loadOK(t, writeCompose(t, diffTargetRemovedService)) // 仅 worker（删 web）
+	if !DestructiveChanges(base, removed) {
+		t.Error("服务删除必须是破坏性变更")
+	}
+	orig := loadOK(t, writeCompose(t, diffBase))             // web（旧镜像）
+	changed := loadOK(t, writeCompose(t, diffTargetChanged)) // 仅 web（镜像修改）
+	if DestructiveChanges(orig, changed) {
+		t.Error("仅修改服务不是破坏性变更")
+	}
+	if DestructiveChanges(changed, base) {
+		t.Error("仅新增服务（web 已在、worker 新增）不是破坏性变更")
+	}
+	if DestructiveChanges(nil, changed) {
+		t.Error("空基线（首部署）恒非破坏性")
+	}
+	if !DestructiveChanges(changed, nil) {
+		t.Error("nil 目标视为空 Spec（全量移除）应判破坏性")
+	}
+	volBase := loadOK(t, writeCompose(t, `
+name: my-api
+services:
+  web: { image: nginx, volumes: [data:/d] }
+volumes:
+  data:
+`))
+	volTarget := loadOK(t, writeCompose(t, `
+name: my-api
+services:
+  web: { image: nginx }
+`))
+	if !DestructiveChanges(volBase, volTarget) {
+		t.Error("卷解绑必须是破坏性变更")
+	}
+	if DestructiveChanges(volBase, volBase) {
+		t.Error("同形态不判破坏性")
+	}
+}
+
 // TestDiffNoChanges 同内容两份 → 无变更（退出码 0 的依据）。
 func TestDiffNoChanges(t *testing.T) {
 	plan := planOf(t, diffBase, diffBase)

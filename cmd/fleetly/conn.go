@@ -8,15 +8,50 @@ package main
 // 分支：bootstrap token 见 fleetlyd 首启日志，或由管理员 tokens create 签发）。
 
 import (
+	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"math"
 	"os"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
+
+// defaultRPCTimeout 是一元 RPC 的缺省 deadline（S17-D3）：daemon 假死时
+// 单次调用 30s 内失败，CLI 不永久挂起。流式 RPC（logs follow / events
+// watch）不设此上限——跟随/观看的收口交给信号取消；deploy/build 等待
+// 轮询的总预算由动词自身 --timeout 管，每轮单次调用仍受此上限保护。
+const defaultRPCTimeout = 30 * time.Second
+
+// defaultUnaryTimeout 是 CLI 全部一元 RPC 的缺省 deadline 拦截器（S17-D3）。
+// 分流点选在拨号层而非动词清单：gRPC 面只有「一元 / 流式」两种调用形态，
+// 拦截器恰好覆盖全部一元调用、天然不触流式——与 S17-D2 substrate 侧
+// 「非流式调用包 WithTimeout、流式保持调用方 ctx」同一模式，无需维护
+// 动词豁免清单。
+func defaultUnaryTimeout(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
+	rpcCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	defer cancel()
+	return invoker(rpcCtx, method, req, reply, cc, opts...)
+}
+
+// isCleanCancel 判定 err 是否「调用方主动取消」的干净收尾（S17-D3）：
+// 根 ctx 已 Canceled（Ctrl-C/SIGTERM 信号或父取消），且 err 是
+// context.Canceled 本尊或其 gRPC 投影（codes.Canceled——gRPC 的
+// FromContextError 不携带 cause，errors.Is 单判不可靠，需 code 双判）。
+// 流式动词与轮询等待循环据此判 exit 0；DeadlineExceeded（超时）与流上
+// 其他错误（服务端关闭/网络断——此时本方 ctx 未取消）不在此列。
+func isCleanCancel(ctx context.Context, err error) bool {
+	if err == nil || ctx == nil || ctx.Err() != context.Canceled {
+		return false
+	}
+	return errors.Is(err, context.Canceled) || status.Code(err) == codes.Canceled
+}
 
 // extraDialOptions 是测试注入点（bufconn 拨号——golden 测试在进程内起
 // 真实 api 服务）；生产恒空，不参与装配。
@@ -42,9 +77,11 @@ func (f *connFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.token, "token", os.Getenv("FLEETLY_TOKEN"), "API token (bootstrap token: fleetlyd first-start log; or fleetly tokens create)")
 }
 
-// dial 建立 SDK 客户端（连接惰性建立；Close 交还调用方）。
+// dial 建立 SDK 客户端（连接惰性建立；Close 交还调用方）。一元 RPC 的
+// 缺省 deadline 拦截器随连接挂载（S17-D3）。
 func (f *connFlags) dial() (*fleetly.Client, error) {
-	opts := []fleetly.Option{fleetly.WithAddr(f.addr), fleetly.WithDialOptions(extraDialOptions...)}
+	dialOpts := append([]grpc.DialOption{grpc.WithUnaryInterceptor(defaultUnaryTimeout)}, extraDialOptions...)
+	opts := []fleetly.Option{fleetly.WithAddr(f.addr), fleetly.WithDialOptions(dialOpts...)}
 	if f.token != "" {
 		opts = append(opts, fleetly.WithToken(f.token))
 	}

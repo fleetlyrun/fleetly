@@ -61,44 +61,50 @@ type driftNetwork struct {
 }
 
 // driftSpec 是漂移哈希的 canonical 投影（期望与实况两侧同构；字段集 =
-// state-model §2.5 受控子集）。
+// state-model §2.5 受控子集 + S18-A8 补齐的 UpdateConfig 三字段）。
 type driftSpec struct {
-	Image           string             `json:"image"`
-	Command         []string           `json:"command,omitempty"`
-	Env             []driftEnvEntry    `json:"env,omitempty"`
-	Replicas        uint64             `json:"replicas"`
-	Global          bool               `json:"global,omitempty"`
-	Mounts          []MountSpec        `json:"mounts,omitempty"`
-	Networks        []driftNetwork     `json:"networks,omitempty"`
-	ServiceLabels   map[string]string  `json:"service_labels,omitempty"`
-	ContainerLabels map[string]string  `json:"container_labels,omitempty"`
-	Constraints     []string           `json:"constraints,omitempty"`
-	Resources       *ResourcesSpec     `json:"resources,omitempty"`
-	Healthcheck     *HealthcheckSpec   `json:"healthcheck,omitempty"`
-	RestartPolicy   *RestartPolicySpec `json:"restart_policy,omitempty"`
-	StopSignal      string             `json:"stop_signal,omitempty"`
-	StopGracePeriod time.Duration      `json:"stop_grace_period,omitempty"`
-	Secrets         []SecretMount      `json:"secrets,omitempty"`
+	Image             string             `json:"image"`
+	Command           []string           `json:"command,omitempty"`
+	Env               []driftEnvEntry    `json:"env,omitempty"`
+	Replicas          uint64             `json:"replicas"`
+	Global            bool               `json:"global,omitempty"`
+	Mounts            []MountSpec        `json:"mounts,omitempty"`
+	Networks          []driftNetwork     `json:"networks,omitempty"`
+	ServiceLabels     map[string]string  `json:"service_labels,omitempty"`
+	ContainerLabels   map[string]string  `json:"container_labels,omitempty"`
+	Constraints       []string           `json:"constraints,omitempty"`
+	Resources         *ResourcesSpec     `json:"resources,omitempty"`
+	Healthcheck       *HealthcheckSpec   `json:"healthcheck,omitempty"`
+	RestartPolicy     *RestartPolicySpec `json:"restart_policy,omitempty"`
+	StopSignal        string             `json:"stop_signal,omitempty"`
+	StopGracePeriod   time.Duration      `json:"stop_grace_period,omitempty"`
+	Secrets           []SecretMount      `json:"secrets,omitempty"`
+	UpdateOrder       string             `json:"update_order"`
+	UpdateParallelism uint64             `json:"update_parallelism"`
+	UpdateDelay       time.Duration      `json:"update_delay,omitempty"`
 }
 
 // driftProjection 把 ServiceSpec 投影为漂移哈希输入（确定性：env 按 key
 // 字典序、网络按别名串字典序、label 键字典序由 canonical JSON 保证）。
 func driftProjection(s ServiceSpec) driftSpec {
 	out := driftSpec{
-		Image:           driftImage(s.Image),
-		Command:         append([]string{}, s.Command...),
-		Replicas:        s.Replicas,
-		Global:          s.Global,
-		Mounts:          append([]MountSpec{}, s.Mounts...),
-		Constraints:     append([]string{}, s.Constraints...),
-		Resources:       s.Resources,
-		Healthcheck:     s.Healthcheck,
-		RestartPolicy:   s.RestartPolicy,
-		StopSignal:      s.StopSignal,
-		StopGracePeriod: s.StopGracePeriod,
-		Secrets:         append([]SecretMount{}, s.Secrets...),
-		ContainerLabels: filterLabels(s.ContainerLabels, nil),
-		ServiceLabels:   filterLabels(s.ServiceLabels, LabelBookkeeping),
+		Image:             driftImage(s.Image),
+		Command:           append([]string{}, s.Command...),
+		Replicas:          s.Replicas,
+		Global:            s.Global,
+		Mounts:            append([]MountSpec{}, s.Mounts...),
+		Constraints:       append([]string{}, s.Constraints...),
+		Resources:         s.Resources,
+		Healthcheck:       s.Healthcheck,
+		RestartPolicy:     s.RestartPolicy,
+		StopSignal:        s.StopSignal,
+		StopGracePeriod:   s.StopGracePeriod,
+		Secrets:           append([]SecretMount{}, s.Secrets...),
+		ContainerLabels:   filterLabels(s.ContainerLabels, nil),
+		ServiceLabels:     filterLabels(s.ServiceLabels, LabelBookkeeping),
+		UpdateOrder:       s.UpdateOrder,
+		UpdateParallelism: s.UpdateParallelism,
+		UpdateDelay:       s.UpdateDelay,
 	}
 	for _, kv := range s.Env {
 		k, v, _ := strings.Cut(kv, "=")
@@ -206,8 +212,21 @@ func (e *Engine) computeAppDrift(ctx context.Context, appID, appName string) (*D
 			return nil, err
 		}
 		actual := driftProjection(serviceSpecOf(actualState))
-		if sd.Drifted = driftHash(specs[i]) != driftHash(serviceSpecOf(actualState)); sd.Drifted {
+		sd.Drifted = driftHash(specs[i]) != driftHash(serviceSpecOf(actualState))
+		if sd.Drifted {
 			sd.Diff = diffDrift(desired, actual)
+		}
+		// A8 专报：failure_action 是平台受管字段（适配器固定 pause，D-REL-1
+		// ——平台是唯一回滚决策者），不进期望态哈希；实况读回非 pause 即
+		// 受管字段被外部篡改（docker service update --update-failure-action
+		// rollback 等）→ 专报漂移项（随 reconcile.drift_detected 事件披露）。
+		// 空串 = 适配器未投影（旧形态/只读面），不误报。
+		if fa := actualState.UpdateFailureAction; fa != "" && fa != "pause" {
+			sd.Drifted = true
+			sd.Diff = append(sd.Diff, FieldDiff{
+				Field: "update_failure_action", Expected: "pause", Actual: fa})
+		}
+		if sd.Drifted {
 			report.Drifted = true
 		}
 		report.Services = append(report.Services, sd)
@@ -282,6 +301,16 @@ func diffDrift(expected, actual driftSpec) []FieldDiff {
 	}
 	if jsonStr(expected.Secrets) != jsonStr(actual.Secrets) {
 		add("secrets", jsonStr(expected.Secrets), jsonStr(actual.Secrets))
+	}
+	// A8：UpdateConfig 三字段（外部 docker service update --update-* 篡改）。
+	if expected.UpdateOrder != actual.UpdateOrder {
+		add("update_order", expected.UpdateOrder, actual.UpdateOrder)
+	}
+	if expected.UpdateParallelism != actual.UpdateParallelism {
+		add("update_parallelism", fmt.Sprint(expected.UpdateParallelism), fmt.Sprint(actual.UpdateParallelism))
+	}
+	if expected.UpdateDelay != actual.UpdateDelay {
+		add("update_delay", expected.UpdateDelay.String(), actual.UpdateDelay.String())
 	}
 	return out
 }

@@ -132,30 +132,26 @@ func scanEvent(rows scanner) (Event, error) {
 	return ev, nil
 }
 
+// pruneBatchSize 是保留期清理的单批行数上限（S18-A10：分批删除——单语句
+// 全表 DELETE 在大事件表下长时间持写锁，分批把每批锁窗口收敛）。
+const pruneBatchSize = 500
+
 // PruneExpiredEvents 删除早于 cutoff 的事件，返回清理条数（保留期清理
-// job 的执行体；job 编排在 janitor.go）。
+// job 的执行体；job 编排在 janitor.go）。S18-A10：分批循环删除（子查询
+// 限定每批 500 行——modernc SQLite 不支持 DELETE...LIMIT 语法，子查询形态
+// 承载批量语义）。
 func (s *Store) PruneExpiredEvents(ctx context.Context, cutoff time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM events WHERE at < ?`, cutoff.UnixNano())
-	if err != nil {
-		return 0, fmt.Errorf("state: prune events: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("state: read prune count: %w", err)
-	}
-	return n, nil
+	return s.deleteBatched(ctx,
+		`DELETE FROM events WHERE seq IN (
+			SELECT seq FROM events WHERE at < ? LIMIT ?)`,
+		cutoff.UnixNano(), pruneBatchSize)
 }
 
 // PruneExpiredAudits 删除早于 cutoff 的审计记录，返回清理条数
-// （审计保留期默认 1 年，state-model §2.9）。
+// （审计保留期默认 1 年，state-model §2.9）。分批形态同 PruneExpiredEvents。
 func (s *Store) PruneExpiredAudits(ctx context.Context, cutoff time.Time) (int64, error) {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM audit_log WHERE at < ?`, cutoff.UnixNano())
-	if err != nil {
-		return 0, fmt.Errorf("state: prune audits: %w", err)
-	}
-	n, err := res.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("state: read prune count: %w", err)
-	}
-	return n, nil
+	return s.deleteBatched(ctx,
+		`DELETE FROM audit_log WHERE id IN (
+			SELECT id FROM audit_log WHERE at < ? LIMIT ?)`,
+		cutoff.UnixNano(), pruneBatchSize)
 }

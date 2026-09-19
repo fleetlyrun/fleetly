@@ -7,6 +7,7 @@ import (
 	"net"
 	"os/exec"
 	"strings"
+	"time"
 
 	gossh "golang.org/x/crypto/ssh"
 )
@@ -25,6 +26,26 @@ import (
 //
 // app 名经 ValidAppName 严格校验（路径注入防线）；git 直接 exec（无
 // shell），命令形态解析拒绝任何其他词形。
+//
+// 连接治理（E6，S19）：git 子进程挂连接级 ctx——总预算 10min + 连接以
+// 任何原因关闭（客户端中途断开/网络失联）即取消，exec.CommandContext
+// 杀进程回收；WaitDelay 兜底 I/O 挂死后的 Wait 阻塞。
+
+// E6（S19）连接治理常量。
+const (
+	// gitSessionBudget 是单 SSH 连接的总预算（v0.1 常量：10 分钟覆盖最慢
+	// 的常规 clone/fetch；超出即取消——挂死传输不得常驻。连接内多 session
+	// 共享预算：git ssh 形态一连接一命令，实际不放大）。
+	gitSessionBudget = 10 * time.Minute
+	// gitWaitDelay 是 cmd.Wait 的兜底上限（Go 1.20+）：ctx 取消杀进程后，
+	// 若 stdio 对端（已失联的 channel）仍挂住管道副本，Wait 至多再等这么
+	// 久即返回——防 I/O 挂死导致 Wait 永久阻塞。
+	gitWaitDelay = 30 * time.Second
+)
+
+// gitBin 是 git 可执行名（E6 测试注入缝：假 git 进程驱动「ctx 取消 →
+// 限时回收」断言；生产恒 "git"）。
+var gitBin = "git"
 
 // ListenAndServe 监听 SSH git 面（阻塞至 ctx 取消或监听错误）；启用态由
 // lynx.Service 壳（cmd/fleetlyd）驱动。
@@ -77,6 +98,10 @@ func (s *GitTriggers) handleConn(ctx context.Context, conn net.Conn, config *gos
 		return
 	}
 	defer func() { _ = sconn.Close() }()
+	// E6：连接级 ctx——总预算 + 连接关闭即取消；exec 的 git 子进程挂在该
+	// ctx 上（CommandContext 杀进程），不再依赖客户端体面退出。
+	connCtx, cancel := connContext(ctx, sconn)
+	defer cancel()
 	go func() {
 		for req := range reqs {
 			// 全局请求（无 v0.1 语义）一律拒绝。
@@ -92,8 +117,22 @@ func (s *GitTriggers) handleConn(ctx context.Context, conn net.Conn, config *gos
 		if err != nil {
 			continue
 		}
-		go s.handleSession(ctx, sconn, ch, requests)
+		go s.handleSession(connCtx, sconn, ch, requests)
 	}
+}
+
+// connContext 构造连接级 ctx（E6）：WithTimeout 包上层 ctx（单连接总
+// 预算），并监听 sconn.Wait——连接以任何原因关闭（客户端中途断开/网络
+// 失联/对端退出）即 cancel。这是「客户端断开 → git 子进程限时回收」的
+// 取消源；Wait 在 sconn.Close（handleConn 的 defer）后必然返回，监听
+// goroutine 不泄漏。
+func connContext(ctx context.Context, sconn *gossh.ServerConn) (context.Context, context.CancelFunc) {
+	connCtx, cancel := context.WithTimeout(ctx, gitSessionBudget)
+	go func() {
+		_ = sconn.Wait()
+		cancel()
+	}()
+	return connCtx, cancel
 }
 
 // handleSession 服务一个 session 通道：只认 exec 请求（env/pty 等一律
@@ -143,7 +182,7 @@ func (s *GitTriggers) execGitCommand(ctx context.Context, sconn *gossh.ServerCon
 		}
 	}
 	gitArgs := []string{sub, repoPath}
-	cmd := exec.CommandContext(ctx, "git", gitArgs...) //nolint:gosec // G204：子命令为白名单词形、路径经 app 名严格校验
+	cmd := newGitCommand(ctx, gitArgs...)
 	cmd.Stdin = ch
 	cmd.Stdout = ch
 	cmd.Stderr = ch.Stderr()
@@ -166,6 +205,15 @@ func (s *GitTriggers) execGitCommand(ctx context.Context, sconn *gossh.ServerCon
 	}
 	s.log.Info("gitserver: git command finished", "app", app, "command", sub, "exit", code)
 	sendExitStatus(ch, code)
+}
+
+// newGitCommand 构造受连接级 ctx 治理的 git 子进程（E6）：CommandContext
+// （ctx 取消——连接断开/超时预算耗尽——即杀进程）+ WaitDelay（I/O 挂死
+// 后 Wait 的兜底回收上限）。
+func newGitCommand(ctx context.Context, args ...string) *exec.Cmd {
+	cmd := exec.CommandContext(ctx, gitBin, args...) //nolint:gosec // G204：子命令为白名单词形、路径经 app 名严格校验（E6 gitBin 为测试注入缝）
+	cmd.WaitDelay = gitWaitDelay
+	return cmd
 }
 
 // parseGitCommand 解析 SSH exec 命令形态：

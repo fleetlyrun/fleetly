@@ -121,7 +121,7 @@ func (s *Store) SetAppWebhookSecret(ctx context.Context, appID, ciphertext, acto
 			Action:       "app.webhook_secret_set",
 			Target:       "app:" + appID,
 			Result:       "ok",
-			DiffSummary:  `{"action":"` + action + `"}`,
+			DiffSummary:  DiffSummary("action", action), // B4：构造器替换手拼 JSON
 		})
 	})
 }
@@ -152,7 +152,8 @@ func (s *Store) SetAppSource(ctx context.Context, appID string, w AppSourceWrite
 	if w.URL == "" {
 		kind = string(SourceAuthNone)
 	}
-	diff := `{"url":"` + w.URL + `","branch":"` + w.Branch + `","auth_kind":"` + kind + `"}`
+	// B4：构造器替换手拼 JSON（url/branch/auth_kind 经 json.Marshal 转义）。
+	diff := DiffSummary("url", w.URL, "branch", w.Branch, "auth_kind", kind)
 	return s.InTx(ctx, func(tx *Tx) error {
 		if _, err := appExists(ctx, tx, appID); err != nil {
 			return err

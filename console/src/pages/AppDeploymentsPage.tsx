@@ -16,7 +16,7 @@ import {
   cancelDeployment,
 } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
-import type { DeploymentView } from "@/api/types";
+import type { ComposeWarning, DeploymentView } from "@/api/types";
 import { DeploymentFailureAlert, EnvelopeAlert } from "@/components/envelope-alert";
 import { StateBadge } from "@/components/state-badge";
 import { Button } from "@/components/ui/button";
@@ -53,13 +53,15 @@ function DeployCard({ app }: { app: string }) {
   const queryClient = useQueryClient();
   const [composeText, setComposeText] = useState("");
   const [trackedId, setTrackedId] = useState("");
-  const [warnings, setWarnings] = useState<{ field: string; warning: string }[]>([]);
+  // ComposeWarning 形状跟随生成类型（D4-②：手写 {field,warning} 与 proto
+  // {kind,code,service,message} 漂移，已修）。
+  const [warnings, setWarnings] = useState<ComposeWarning[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const deployMutation = useMutation({
     mutationFn: () => deploy(app, composeText),
     onSuccess: (resp) => {
-      setTrackedId(resp.deployment_id);
+      setTrackedId(resp.deployment_id ?? "");
       setWarnings(resp.warnings ?? []);
       setComposeText("");
       void queryClient.invalidateQueries({ queryKey: ["deployments", app] });
@@ -74,7 +76,7 @@ function DeployCard({ app }: { app: string }) {
     queryFn: () => getDeployment(trackedId),
     enabled: trackedId !== "",
     refetchInterval: (q) =>
-      q.state.data && TERMINAL.has(q.state.data.deployment.status)
+      q.state.data && TERMINAL.has(q.state.data.deployment.status ?? "")
         ? false
         : 2000,
   });
@@ -155,7 +157,8 @@ function DeployCard({ app }: { app: string }) {
             <ul className="mt-1 list-disc pl-4">
               {warnings.map((w, i) => (
                 <li key={i}>
-                  <code className="text-xs">{w.field}</code>: {w.warning}
+                  <code className="text-xs">{w.code || w.kind}</code>
+                  {w.service ? ` (${w.service})` : ""}: {w.message}
                 </li>
               ))}
             </ul>
@@ -172,7 +175,7 @@ function DeployCard({ app }: { app: string }) {
                   <StateBadge state={
                     trackedDeployment.phase === "blocked_waiting"
                       ? "blocked_waiting"
-                      : trackedDeployment.status
+                      : trackedDeployment.status ?? ""
                   } />
                   {trackedDeployment.error_code ? (
                     <span className="font-mono text-xs text-red-700">
@@ -187,7 +190,7 @@ function DeployCard({ app }: { app: string }) {
             {trackedDeployment?.verdict ? (
               <p className="mt-1 text-muted-foreground">{trackedDeployment.verdict}</p>
             ) : null}
-            {trackedDeployment && TERMINAL.has(trackedDeployment.status) && trackedDeployment.status === "succeeded" ? (
+            {trackedDeployment && TERMINAL.has(trackedDeployment.status ?? "") && trackedDeployment.status === "succeeded" ? (
               <p className="mt-1 flex items-center gap-1 text-emerald-700">
                 <CheckCircle2 aria-hidden className="h-4 w-4" /> Deployed
               </p>
@@ -213,7 +216,7 @@ function RollbackCard({ app }: { app: string }) {
     mutationFn: () =>
       rollbackDeployment(app, revisionId === "latest" ? undefined : revisionId),
     onSuccess: (resp) => {
-      setQueuedId(resp.deployment_id);
+      setQueuedId(resp.deployment_id ?? "");
       setError(null);
       void queryClient.invalidateQueries({ queryKey: ["deployments", app] });
     },
@@ -246,8 +249,8 @@ function RollbackCard({ app }: { app: string }) {
               <SelectContent>
                 <SelectItem value="latest">Latest successful</SelectItem>
                 {revisions.map((r) => (
-                  <SelectItem key={r.id} value={r.id}>
-                    #{r.seq} · {r.id.slice(0, 12)} · {timeAgo(r.created_at)}
+                  <SelectItem key={r.id} value={r.id ?? ""}>
+                    #{r.seq} · {(r.id ?? "").slice(0, 12)} · {timeAgo(r.created_at)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -288,14 +291,14 @@ function DeploymentRow({
 }) {
   const queryClient = useQueryClient();
   const cancelMutation = useMutation({
-    mutationFn: () => cancelDeployment(d.id),
+    mutationFn: () => cancelDeployment(d.id ?? ""),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["deployments", app] });
     },
   });
-  const cancellable = !TERMINAL.has(d.status);
+  const cancellable = !TERMINAL.has(d.status ?? "");
   const showState =
-    d.phase === "blocked_waiting" ? "blocked_waiting" : d.status;
+    d.phase === "blocked_waiting" ? "blocked_waiting" : d.status ?? "";
 
   return (
     <TableRow data-testid="deployment-row" data-status={d.status}>
@@ -317,10 +320,10 @@ function DeploymentRow({
       <TableCell className="max-w-[360px]">
         {d.status === "failed" && (d.error_code || d.verdict) ? (
           <DeploymentFailureAlert
-            errorCode={d.error_code}
-            verdict={d.verdict}
-            recovery={d.recovery}
-            deploymentId={d.id}
+            errorCode={d.error_code ?? ""}
+            verdict={d.verdict ?? ""}
+            recovery={d.recovery ?? ""}
+            deploymentId={d.id ?? ""}
           />
         ) : (
           <span className="text-xs text-muted-foreground">
@@ -354,7 +357,7 @@ export function AppDeploymentsPage() {
     refetchInterval: (q) => {
       // 存在非终态部署行时保持轮询（跟踪进行中的部署）。
       const rows = q.state.data?.deployments ?? [];
-      return rows.some((d) => !TERMINAL.has(d.status)) ? 2000 : 10000;
+      return rows.some((d) => !TERMINAL.has(d.status ?? "")) ? 2000 : 10000;
     },
   });
 

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -17,7 +16,6 @@ import (
 	"time"
 
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
-	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -31,11 +29,17 @@ import (
 //     GitHub/Gitea 同格式）；per-app secret 未配置 → 404（未配置即未启用）；
 //     错签 → 401 退化信封（FZ-2，不加新码）。签名即认证——本路径豁免
 //     Bearer 拦截，豁免精确到路径前缀 /v1/apps/{app}/webhooks/。
-//  2. 防重放（时间窗口径，绑定）：GitHub/Gitea 签名无时间戳——落地为
-//     delivery ID（X-GitHub-Delivery / X-Gitea-Delivery）TTL 缓存（默认
-//     15 分钟，webhook.replay_ttl_seconds），TTL 内重复 ID 拒绝（409）；
-//     携带时间戳头的自定义投递方（X-Fleetly-Timestamp，unix 秒）校验
-//     ±5 分钟窗（TimestampWindow）。占坑时机（一轮整改① + 二轮 R1/R2）：
+//  2. 防重放（时间窗口径，绑定）：GitHub/Gitea 官方签名无时间戳——落地
+//     为 delivery ID（X-GitHub-Delivery / X-Gitea-Delivery）TTL 缓存
+//     （默认 15 分钟，webhook.replay_ttl_seconds），TTL 内重复 ID 拒绝
+//     （409）；携带 X-Fleetly-Timestamp（unix 秒）的自定义投递方：该头
+//     强制参与签名（HMAC 覆盖 ts+"."+body——E7①，S19：剥离/替换时间戳
+//     都会破坏签名，时间戳不可被省略后重签重放）且校验 ±5 分钟窗
+//     （TimestampWindow）。边界如实记录（E7①）：provider 白名单只有
+//     github|gitea 两条官方路径、官方投递不携带该头——无该头时验签仅
+//     覆盖 body、时间窗防线不存在（官方形态的现实约束），防重放退化为
+//     delivery TTL + sha 幂等去重；自定义投递方始终携带该头即获得完整
+//     时间窗防线。占坑时机（一轮整改① + 二轮 R1/R2）：
 //     **认证链（验签 + 时间窗）全部通过才进坑**——错签/时间窗 401 路径
 //     绝不触碰缓存（公网无凭据 DoS 面：占坑的防爆破收益为零，map 填充
 //     却是无界内存）；进坑为原子「查 + 占」（Claim），同 ID 并发请求自
@@ -47,6 +51,11 @@ import (
 //     —— 该 sha 已有 enqueued/active/succeeded 部署 → 200 + duplicate
 //     回执，不建新部署。failed/cancelled 不计入（重投允许重试）。
 //  4. 分支过滤：ref ≠ refs/heads/<app 配置分支> → 200 ignored（只收不发）。
+//  5. 受理与执行分离（D1，S17 类 D）：上述 1-4（安全面）在响应前同步
+//     完成，受理即回 202 {status:"accepted"}；拉源+入队移交后台 worker
+//     （webhook_worker.go——带界队列 32，满则 503+撤坑，per-item 30min
+//     预算）。结果披露走事件流/审计（app.webhook_fetch_failed /
+//     deployment.queued）——GitHub 对 202 不重投，redeliver 靠人工。
 
 // WebhookPathPattern 是原生端点的精确路径形态（provider 白名单内联——
 // 未知 provider 一律 404，豁免面不放宽）。gateway 侧根 handler 用同一线性
@@ -179,7 +188,8 @@ type pushPayload struct {
 	After string `json:"after"`
 }
 
-// webhookReceipt 是 200 回执（status ∈ enqueued|duplicate|ignored）。
+// webhookReceipt 是回执（status ∈ accepted|duplicate|ignored；accepted 为
+// 202 受理——执行结果异步披露，其余为 200 同步终局）。
 type webhookReceipt struct {
 	Status       string `json:"status"`
 	DeploymentID string `json:"deployment_id,omitempty"`
@@ -192,6 +202,13 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	m := WebhookPathPattern.FindStringSubmatch(r.URL.Path)
 	if m == nil {
 		h.reject(w, http.StatusNotFound, "", "not found")
+		return
+	}
+	// E7②（S19）：webhook 面只收 POST——路径匹配后先于任何状态读取拒绝
+	//（GET/HEAD 等不再沿鉴权/读取路径给出差异化行为面）。
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		h.reject(w, http.StatusMethodNotAllowed, "", "method not allowed")
 		return
 	}
 	app, provider := m[1], m[2]
@@ -226,13 +243,21 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 1. 验签（强制）：secret 解密 → HMAC-SHA256 对原始 body 字节。
+	// 1. 验签（强制）：secret 解密 → HMAC-SHA256。E7①（S19）：携带
+	// X-Fleetly-Timestamp 的投递，签名材料是 ts+"."+body（时间戳参与
+	// 签名——不可剥离/替换后重签）；无该头（GitHub/Gitea 官方投递）签名
+	// 材料是原始 body 字节（官方头契约）。时间窗防线仅对携带该头的投递
+	// 生效——边界见文件头注释 2。
 	secret, err := h.src.box.Decrypt([]byte(cfg.WebhookSecret))
 	if err != nil {
 		h.reject(w, http.StatusInternalServerError, deliveryID, "webhook secret undecryptable")
 		return
 	}
-	if !verifySignature(r.Header.Get("X-Hub-Signature-256"), secret, body) {
+	signed := body
+	if ts := r.Header.Get("X-Fleetly-Timestamp"); ts != "" {
+		signed = append(append([]byte(ts), '.'), body...)
+	}
+	if !verifySignature(r.Header.Get("X-Hub-Signature-256"), secret, signed) {
 		h.audit(ctx, appRow.ID, app, deliveryID, "rejected", "bad signature", "")
 		// R1：401 路径绝不占坑——拒绝一个错签重试与查缓存开销相当，防爆破
 		// 收益为零；占坑只会把缓存变成公网无凭据可填的无界 map。
@@ -300,44 +325,29 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 5. 拉源（fetch 失败 → E_RUNTIME_UNAVAILABLE 信封，管线错误族）。
-	if err := h.src.FetchRemote(ctx, app); err != nil {
-		if !errors.Is(err, ErrFetchFailed) {
-			err = fmt.Errorf("%w: %v", ErrFetchFailed, err)
-		}
-		h.auditErr(ctx, appRow.ID, app, deliveryID, "fetch failed: "+err.Error())
-		// R2：5xx 收场撤坑——失败重投链保持通（同 ID 官方重投可重试）。
+	// 5. 受理入队（D1）：拉源与入队已移入后台 worker（webhook_worker.go）
+	// ——GitHub 投递 10s 硬超时，同步 fetch 大仓库必被杀且无限重投；受理
+	// 即回 202，结果披露走事件流/审计（fetch 失败 → app.webhook_fetch_
+	// failed + 撤坑；成功 → 既有 deployment.queued）。B2 口径不变：失败
+	// 原文只进 slog，审计 detail 只记错误码与阶段。
+	job := webhookJob{
+		appID:      appRow.ID,
+		app:        app,
+		deliveryID: deliveryID,
+		sha:        payload.After,
+		ref:        payload.Ref,
+	}
+	if !h.src.hooks.accept(job) {
+		// 队列满（背压可见）或停机排水期：撤坑 + 503——同 ID 官方重投链
+		// 保持通（R2 5xx 收场语义）。
+		h.auditErr(ctx, appRow.ID, app, deliveryID, "queue full: code=E_RUNTIME_UNAVAILABLE, stage=accept")
 		h.src.replay.Unmark(deliveryID)
-		h.envelope(w, apperr.New("E_RUNTIME_UNAVAILABLE",
-			"webhook 拉源失败（app %s，sha %s）：%s", app, payload.After, err.Error()))
+		h.reject(w, http.StatusServiceUnavailable, deliveryID,
+			"webhook queue full or draining (retry later)")
 		return
 	}
-
-	// 6. 入队（与 git push 同一 DeployFromCommit 路径；校验期警告为非阻断
-	// 标注，已随部署行落库——回执只承载部署 id 与状态）。
-	rec, _, err := h.src.DeployFromCommit(ctx, DeployInput{
-		App:         app,
-		SHA:         payload.After,
-		Ref:         payload.Ref,
-		AuditAction: "git.webhook_deploy",
-	})
-	if err != nil {
-		h.auditErr(ctx, appRow.ID, app, deliveryID, "deploy rejected: "+err.Error())
-		// R2：仅 5xx 形态撤坑（内部错误可重试）；4xx 校验拒绝（如 compose
-		// 词形错）是确定性终局，保持已占坑。
-		status := http.StatusInternalServerError
-		var ae *apperr.Error
-		if errors.As(err, &ae) {
-			status = ae.HTTPStatus()
-		}
-		if status >= http.StatusInternalServerError {
-			h.src.replay.Unmark(deliveryID)
-		}
-		h.appErr(w, err)
-		return
-	}
-	h.audit(ctx, appRow.ID, app, deliveryID, "accepted", payload.After, rec.ID)
-	h.reply(w, http.StatusOK, webhookReceipt{Status: "enqueued", DeploymentID: rec.ID})
+	h.audit(ctx, appRow.ID, app, deliveryID, "accepted", payload.After, "")
+	h.reply(w, http.StatusAccepted, webhookReceipt{Status: "accepted"})
 }
 
 // verifySignature 校验 X-Hub-Signature-256（"sha256=<hex>"；常量时间比对
@@ -372,10 +382,11 @@ func isZeroSHA(sha string) bool {
 	return sha != "" && strings.Trim(sha, "0") == ""
 }
 
-// audit 写 webhook 处置审计（系统动作；actor=system，不入事件流——事件
-// 词汇仍是既有 deployment.*）。outcome ∈ accepted|duplicate|ignored|
-// ignored_branch；outcome=rejected 走 auditErr（action=app.webhook_rejected，
-// result=error）。
+// audit 写 webhook 处置审计（系统动作；actor=system）。outcome ∈ accepted|
+// duplicate|ignored|ignored_branch；outcome=rejected 走 auditErr（action=
+// app.webhook_rejected，result=error）。事件流词汇面：受理/拒绝只入审计，
+// 执行结果事件由 worker 落（deployment.queued / app.webhook_fetch_failed，
+// D1）。
 func (h *WebhookHandler) audit(ctx context.Context, appID, app, deliveryID, outcome, detail, deploymentID string) {
 	target := "app:" + appID
 	if deploymentID != "" {
@@ -399,24 +410,17 @@ func (h *WebhookHandler) audit(ctx context.Context, appID, app, deliveryID, outc
 }
 
 // auditErr 写 webhook 拒绝审计（result=error；action 独立词根
-// app.webhook_rejected——接受/拒绝在审计可分）。
+// app.webhook_rejected——接受/拒绝在审计可分）。D1 后 worker 侧异步失败
+// 路径共用同一写入器（GitTriggers.webhookAuditErr）。
 func (h *WebhookHandler) auditErr(ctx context.Context, appID, app, deliveryID, detail string) {
-	if err := h.src.st.InTx(ctx, func(tx *state.Tx) error {
-		return tx.WriteAudit(ctx, state.AuditEntry{
-			Actor:       "system",
-			Action:      "app.webhook_rejected",
-			Target:      "app:" + appID,
-			Result:      "error",
-			DiffSummary: auditDiff(app, deliveryID, "rejected", detail),
-		})
-	}); err != nil {
-		h.log.Warn("gitserver: webhook audit write failed", "app", app, "error", err.Error())
-	}
+	h.src.webhookAuditErr(ctx, appID, app, deliveryID, detail)
 }
 
 // auditDiff 构造审计 diff 摘要（无敏感字段；delivery id 与 sha 均非密）。
+// B4：经 state.DiffSummary 构造（json.Marshal 转义），消灭手拼 JSON 的
+// 注入/破包面。
 func auditDiff(app, deliveryID, outcome, detail string) string {
-	return `{"app":"` + app + `","delivery":"` + deliveryID + `","outcome":"` + outcome + `","detail":"` + detail + `"}`
+	return state.DiffSummary("app", app, "delivery", deliveryID, "outcome", outcome, "detail", detail)
 }
 
 // reply 输出 JSON 回执。
@@ -441,26 +445,4 @@ func (h *WebhookHandler) reject(w http.ResponseWriter, code int, deliveryID, mes
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(code)
 	_, _ = w.Write(raw) //nolint:gosec // G705：输出为 protojson 序列化的固定信封（无用户可控标记）
-}
-
-// envelope 输出注册码错误信封（码的注册表 HTTP 映射决定状态码）。
-func (h *WebhookHandler) envelope(w http.ResponseWriter, e *apperr.Error) {
-	raw, err := protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: false}.Marshal(e.Envelope())
-	if err != nil {
-		http.Error(w, e.Message(), e.HTTPStatus())
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(e.HTTPStatus())
-	_, _ = w.Write(raw) //nolint:gosec // G705：同上（注册表错误信封）
-}
-
-// appErr 按 *apperr.Error（注册码信封）渲染，否则 500 退化信封。
-func (h *WebhookHandler) appErr(w http.ResponseWriter, err error) {
-	var e *apperr.Error
-	if errors.As(err, &e) {
-		h.envelope(w, e)
-		return
-	}
-	h.reject(w, http.StatusInternalServerError, "", "internal server error")
 }

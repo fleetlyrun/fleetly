@@ -8,6 +8,7 @@ package main
 
 import (
 	"log"
+	"os"
 
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/contrib/zap"
@@ -18,6 +19,12 @@ import (
 var version = "dev"
 
 func main() {
+	// F5（S20）：只读运维子命令 schema-version 在 lynx runner 之前分派——
+	// 不启动任何服务、不写库（详见 schema_version.go）。回退编排用它比对
+	// DB schema 版本与二进制支持上限（高版本守卫触发前的可行动路径）。
+	if len(os.Args) > 1 && os.Args[1] == "schema-version" {
+		os.Exit(runSchemaVersion(os.Args[2:]))
+	}
 	runner := lynx.NewRunner(func(app lynx.App) error {
 		app.SetLogger(zap.MustNewLogger(app))
 		boot, cleanup, err := wireBootstrap(app, app.Logger())

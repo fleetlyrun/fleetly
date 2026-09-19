@@ -1,0 +1,45 @@
+# deadcode 豁免清单（S16-C6；docs/design/2026-09-20-remediation-complete.md §4）
+# 门禁：.github/workflows/pr.yml 的 deadcode job——deadcode ./... 输出（路径
+# 统一正斜杠）经本清单逐行 grep -v -F 过滤后仍有残留即红。
+# 条目格式：# 开头为注释；其余每行一个固定子串——文件路径前缀（整文件
+# 豁免）或 "unreachable func: <symbol>" 精确段（单符号豁免）。
+# 新增豁免必须带理由注释（评审可追责）；首批清理见 S16-C6（SetAppServicePorts、
+# EffectiveAppEnv 已删；ingress.EmptyConfig 经 S13 接活为 view.snapshot 生产
+# 路径，不在清单；build.Queue.Enqueue 为 S18-A11 预留转正，暂不在清单——
+# 当前由测试消费，若进入本清单须注明 S18 转正票）。
+
+# ── 测试基建（deadcode 无 -test 面：仅被 _test 消费的包与构造器）──
+internal/apitest/apitest.go
+unreachable func: NewManagerWithDocker
+unreachable func: migrationHashes
+unreachable func: IsReservedLabel
+unreachable func: ContainerLabels
+unreachable func: SortedServiceLabels
+
+# ── 注册表读面（errcode/eventcode：golden 测试与诊断面消费）──
+internal/errcode/errcode.go
+internal/eventcode/eventcode.go
+
+# ── S16-C5 状态机兼容导出面：转移表真源在 internal/state/machine.go 且已
+#    在 UpdateDeployment 写路径咬合；engine 侧词表导出与穷举辅助仅
+#    machine_test 消费（两侧穷举测试钉死一致性）──
+internal/engine/machine.go
+unreachable func: LegalDeploymentTransitions
+unreachable func: AllDeploymentStatuses
+
+# ── v0.2 平台密钥库命名预置（架构 §2.4 密钥行；命名契约由 naming/secrets
+#    测试钉死；S16-C1 显式拒绝 secrets 后暂无生产调用方）──
+unreachable func: SecretName
+unreachable func: Hash8
+unreachable func: validateHash8
+unreachable func: SecretRef
+
+# ── 版本直读端口（state-model E_STATE_VERSION_CONFLICT 写前直读；
+#    测试钉死，生产接线随 S20-F5 升级回退感知）──
+unreachable func: NewVersionResolver
+unreachable func: VersionResolver.ResolveVersion
+unreachable func: VersionResolver.CheckVersion
+unreachable func: versionConflict
+
+# ── 台账行 ULID 出口留位（ingress certs/domains；state 层自持同款形态）──
+unreachable func: NewID

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -106,7 +107,7 @@ func TestQueueConcurrencyCap(t *testing.T) {
 	}
 	release := make(chan struct{})
 	exec := newBlockingExecutor(st, release)
-	queue := NewQueue(st, exec, 2, 50*time.Millisecond, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+	queue := NewQueue(st, exec, 2, 50*time.Millisecond, 0 /*超时取缺省*/, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
 	if queue.Concurrency() != 2 {
 		t.Fatalf("queue concurrency = %d, want 2", queue.Concurrency())
 	}
@@ -182,7 +183,7 @@ func TestQueueWakesOnEnqueue(t *testing.T) {
 	release := make(chan struct{})
 	close(release) // Execute 立即放行
 	exec := newBlockingExecutor(st, release)
-	queue := NewQueue(st, exec, 2, time.Hour /*tick 永不触发——全靠 wake*/, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+	queue := NewQueue(st, exec, 2, time.Hour /*tick 永不触发——全靠 wake*/, 0 /*超时取缺省*/, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -216,7 +217,7 @@ func TestQueueExecuteFailureKeepsScheduling(t *testing.T) {
 	}
 	var calls atomic.Int64
 	exec := failingExecutor{store: st, calls: &calls, until: 1}
-	queue := NewQueue(st, exec, 2, 20*time.Millisecond, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+	queue := NewQueue(st, exec, 2, 20*time.Millisecond, 0 /*超时取缺省*/, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -262,3 +263,156 @@ func (e failingExecutor) Execute(ctx context.Context, rec state.BuildRecord) (st
 type nilWriter struct{}
 
 func (nilWriter) Write(p []byte) (int, error) { return len(p), nil }
+
+// waitBuildStatus 轮询等待构建行到达期望状态（超时 fatal 带上下文说明）。
+func waitBuildStatus(t *testing.T, st *state.Store, id string, want state.BuildStatus) state.BuildRecord {
+	t.Helper()
+	deadline := time.After(10 * time.Second)
+	for {
+		row, err := st.GetBuild(context.Background(), id)
+		if err != nil {
+			t.Fatalf("get build %s: %v", id, err)
+		}
+		if row.Status == want {
+			return row
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("build %s still %s, want %s", id, row.Status, want)
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
+// assertAuditReason 断言指定构建行的 build.finish（result=error）审计 diff
+// 携带期望归因文案（builds 表只存注册表错误码，兜底/复位路径的归因落点在
+// 审计）。
+func assertAuditReason(t *testing.T, st *state.Store, buildID, wantContains string) {
+	t.Helper()
+	audits, err := st.RecentAudits(context.Background(), 50)
+	if err != nil {
+		t.Fatalf("read audits: %v", err)
+	}
+	for _, a := range audits {
+		if a.Target == "build:"+buildID && a.Action == "build.finish" && a.Result == "error" {
+			if !strings.Contains(a.DiffSummary, wantContains) {
+				t.Fatalf("audit diff = %s, want contains %q", a.DiffSummary, wantContains)
+			}
+			if a.ErrorCode != "E_BUILD_FAILED" {
+				t.Fatalf("audit error_code = %s, want E_BUILD_FAILED", a.ErrorCode)
+			}
+			return
+		}
+	}
+	t.Fatalf("no build.finish(error) audit for %s（复位/兜底未写审计？）", buildID)
+}
+
+// TestQueueStartupResetsInterruptedBuilds （MG-A3 crashpoint：重启恢复）
+// 预置遗留 building 行 + 正常 queued 行后启动队列：building 行复位为 failed
+// （E_BUILD_FAILED + finished_at + 审计中断归因），queued 行照常认领执行、
+// 不受复位误伤。
+func TestQueueStartupResetsInterruptedBuilds(t *testing.T) {
+	st := newQueueTestStore(t)
+	app, err := st.CreateApp(context.Background(), "", "queue-reset")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	// 遗留 building 行：上一进程认领后崩溃/关停（无人收敛终态）。
+	interrupted, err := st.CreateBuild(context.Background(), state.BuildRecord{
+		AppID: app.ID, Service: "web", Driver: state.DriverRailpack,
+	})
+	if err != nil {
+		t.Fatalf("create interrupted: %v", err)
+	}
+	if err := st.ClaimBuild(context.Background(), interrupted.ID); err != nil {
+		t.Fatalf("claim interrupted: %v", err)
+	}
+	// 正常 queued 行：重启后应被队列照常认领。
+	pending, err := st.CreateBuild(context.Background(), state.BuildRecord{
+		AppID: app.ID, Service: "worker", Driver: state.DriverRailpack,
+	})
+	if err != nil {
+		t.Fatalf("create pending: %v", err)
+	}
+
+	release := make(chan struct{})
+	exec := newBlockingExecutor(st, release)
+	queue := NewQueue(st, exec, 2, 20*time.Millisecond, 0, /*超时取缺省*/
+		slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = queue.Run(ctx) }()
+
+	// 遗留 building 行 → failed 终态（无人接手的行永不重跑，启动复位收敛）。
+	row := waitBuildStatus(t, st, interrupted.ID, state.BuildFailed)
+	if row.ErrorCode != "E_BUILD_FAILED" {
+		t.Fatalf("reset error_code = %s, want E_BUILD_FAILED", row.ErrorCode)
+	}
+	if row.FinishedAt.IsZero() {
+		t.Fatal("reset row must stamp finished_at")
+	}
+	assertAuditReason(t, st, interrupted.ID, "构建被中断")
+
+	// queued 行不受复位影响：照常认领为 building（执行器阻塞中）。
+	waitBuildStatus(t, st, pending.ID, state.BuildBuilding)
+
+	// 收尾放行：正常路径收敛 succeeded（复位不干扰在途执行）。
+	close(release)
+	waitBuildStatus(t, st, pending.ID, state.BuildSucceeded)
+}
+
+// hungThenOkExecutor 前 hung 次执行永不完成（阻塞到 ctx 取消后直接返回、
+// 不落终态——模拟挂起的 solve 被超时取消且执行器异常路径未收敛）；后续
+// 调用立即收敛 succeeded（验证超时后并发槽已释放）。
+type hungThenOkExecutor struct {
+	store *state.Store
+	hung  atomic.Int64
+	calls atomic.Int64
+}
+
+func (e *hungThenOkExecutor) Execute(ctx context.Context, rec state.BuildRecord) (state.BuildRecord, error) {
+	if e.calls.Add(1) <= e.hung.Load() {
+		<-ctx.Done()
+		return rec, ctx.Err()
+	}
+	if err := e.store.FinishBuildSucceeded(ctx, rec.ID, "ref", "sha256:ok", "", ""); err != nil {
+		return rec, err
+	}
+	return e.store.GetBuild(ctx, rec.ID)
+}
+
+// TestQueueBuildTimeoutConvergesFailed （MG-A3 crashpoint：执行超时）极小
+// 超时预算（1s）+ 永不完成的执行器：超时 → 队列兜底 failed 终态
+// （E_BUILD_FAILED + finished_at + 审计超时归因），并发槽随即释放（并发 1
+// 下第二条构建正常执行）。
+func TestQueueBuildTimeoutConvergesFailed(t *testing.T) {
+	st := newQueueTestStore(t)
+	app, err := st.CreateApp(context.Background(), "", "queue-timeout")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	exec := &hungThenOkExecutor{store: st}
+	exec.hung.Store(1)
+	queue := NewQueue(st, exec, 1, 20*time.Millisecond, time.Second, /*极小超时预算*/
+		slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = queue.Run(ctx) }()
+
+	// 挂起构建超时 → 兜底 failed 终态。
+	first := enqueueTestBuild(t, queue, app.ID, "web")
+	row := waitBuildStatus(t, st, first.ID, state.BuildFailed)
+	if row.ErrorCode != "E_BUILD_FAILED" {
+		t.Fatalf("timeout error_code = %s, want E_BUILD_FAILED", row.ErrorCode)
+	}
+	if row.FinishedAt.IsZero() {
+		t.Fatal("timeout row must stamp finished_at")
+	}
+	assertAuditReason(t, st, first.ID, "构建超时")
+
+	// 并发 1：槽位必须已释放——第二条构建正常收敛 succeeded。
+	second := enqueueTestBuild(t, queue, app.ID, "web")
+	waitBuildStatus(t, st, second.ID, state.BuildSucceeded)
+}

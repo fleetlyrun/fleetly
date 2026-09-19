@@ -177,3 +177,99 @@ func TestEventsWatchCursorExpired(t *testing.T) {
 		t.Fatalf("stream close err = %v, want clean EOF", err)
 	}
 }
+
+// recvFirstFrame 软等待首帧（timeout 内收到且无错 → true；超时/流错误 →
+// false，不 Fatal——供释放槽位的重试循环使用）。
+func recvFirstFrame(stream serverv1.EventsService_WatchEventsClient, timeout time.Duration) bool {
+	ch := make(chan bool, 1)
+	go func() {
+		_, err := stream.Recv()
+		ch <- err == nil
+	}()
+	select {
+	case ok := <-ch:
+		return ok
+	case <-time.After(timeout):
+		return false
+	}
+}
+
+// TestEventsWatchPerTokenLimit A5（S18）：per-token 并发 Watch 流上限——
+// 同 token 第 6 条流被拒（ResourceExhausted 信封）；不同 token 不受影响；
+// 关闭一条后槽位释放、可再开。收首帧（since_seq=0 重放既有事件）作为
+// 「服务端 handler 已占槽」的同步点。
+func TestEventsWatchPerTokenLimit(t *testing.T) {
+	env, client := newEventsEnv(t)
+	base := authCtx(context.Background(), env.admTok)
+	appendEvents(t, env.st, 1)
+
+	var cleanups []context.CancelFunc
+	defer func() {
+		for _, cancel := range cleanups {
+			cancel()
+		}
+	}()
+
+	// 同 token 开满 5 条并发流（每条收到首帧 = 服务端槽位已占）。
+	for i := 0; i < maxWatchStreamsPerToken; i++ {
+		sctx, cancel := context.WithCancel(base)
+		cleanups = append(cleanups, cancel)
+		st, err := client.WatchEvents(sctx, &serverv1.WatchEventsRequest{SinceSeq: 0})
+		if err != nil {
+			t.Fatalf("stream %d open: %v", i+1, err)
+		}
+		collectEvents(t, st, 1)
+	}
+
+	// 第 6 条：ResourceExhausted（若闸失效，handler 会进入轮询循环、Recv
+	// 无帧可收 → 超时兜底判失败）。
+	sixCtx, sixCancel := context.WithCancel(base)
+	defer sixCancel()
+	six, err := client.WatchEvents(sixCtx, &serverv1.WatchEventsRequest{SinceSeq: 0})
+	if err != nil {
+		t.Fatalf("6th stream open: %v", err)
+	}
+	errCh := make(chan error, 1)
+	go func() {
+		_, rerr := six.Recv()
+		errCh <- rerr
+	}()
+	select {
+	case rerr := <-errCh:
+		if status.Code(rerr) != codes.ResourceExhausted {
+			t.Fatalf("6th stream err = %v, want ResourceExhausted", rerr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("6th stream 未被拒（上限未生效或拒绝迟于 5s）")
+	}
+
+	// 不同 token 不受牵连：开流成功并收首帧。
+	other := seedTokenPlain(t, env.st, "admin")
+	octx, ocancel := context.WithCancel(authCtx(context.Background(), other))
+	cleanups = append(cleanups, ocancel)
+	ostream, err := client.WatchEvents(octx, &serverv1.WatchEventsRequest{SinceSeq: 0})
+	if err != nil {
+		t.Fatalf("other-token stream open: %v", err)
+	}
+	collectEvents(t, ostream, 1)
+
+	// 关闭第一条（cancel → 服务端 handler 退出、defer 释放槽位）→ 可再开
+	// （释放是异步的：软重试直到新流收到首帧）。
+	cleanups[0]()
+	deadline := time.Now().Add(5 * time.Second)
+	reopened := false
+	for time.Now().Before(deadline) {
+		nctx, ncancel := context.WithCancel(base)
+		ns, nerr := client.WatchEvents(nctx, &serverv1.WatchEventsRequest{SinceSeq: 0})
+		if nerr == nil && recvFirstFrame(ns, 2*time.Second) {
+			ncancel()
+			reopened = true
+			break
+		}
+		ncancel()
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !reopened {
+		t.Fatal("关闭一条流后槽位未释放（无法再开第 5 条）")
+	}
+}

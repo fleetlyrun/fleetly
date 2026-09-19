@@ -2,8 +2,9 @@ package ingress
 
 // 配置视图：控制面侧的「当前好配置」内存态。发布路径先合成、Validate
 // 通过才换入（Spike B 纪律：坏配置不出控制面）；Traefik 经 HTTP provider
-// 轮询 /configs 时取到的永远是视图当前值（视图为空/未发布 → 显式空 map
-// ——Traefik 拒绝该载荷并保留其侧既有配置，等价「不动」语义，实测）。
+// 轮询 /configs 时取到的永远是视图当前值（视图未发布 → 显式空 map
+// ——Traefik 拒绝该载荷并保留其侧既有配置，等价「不动」语义，实测；
+// 已发布的空路由集 → noop 兜底，H9 合法空态）。
 //
 // 控制面重启后视图由状态库域名台账重建（manager 启动 sweep）——Traefik 侧
 // 「保留旧配置」的窗口被压缩到一次轮询周期。
@@ -69,9 +70,25 @@ func (v *view) currentRevision() int64 { return v.revision.Load() }
 // snapshot 合成当前应答载荷：路由快照 + 在途挑战叠加。挑战存在时载荷
 // 追加挑战 router/service（PathPrefix 显式优先级 1000 压过 host 路由的
 // 规则长度优先级——挑战路径必须命中应答端点）。
-func (v *view) snapshot() *DynamicConfig {
+//
+// 返回值 rev 是「该载荷所含变更的 revision 上界内取值」（E2，S19）：
+// 先读 revision 再拷状态——变更时序是「改状态（持 mu）→ revision+1」，
+// 先读后拷保证 rev ≤ 载荷实际 revision（保守方向：至多低报，绝不高报）。
+// 调用方（provider）以该 rev 调 markServed；若取「当下」revision，快照
+// 之后、markServed 之前的新变更会被误记为已服务——挑战收敛门
+// awaitServed 虚假通过 = Present 放行 CA 校验时载荷尚未含挑战。
+//
+// 空态二分（H9）：routes 为 nil = 视图从未发布（控制面重启后的首拍
+// 窗口）→ 显式空 map，Traefik 拒绝并保留其侧既有配置（不制造路由撤销
+// 窗口，Spike B 实测语义）；routes 为已发布的空集（合法空态——最后一个
+// 域名/app 已撤）→ Synthesize 落 noop 兜底，旧路由被真实撤销。
+func (v *view) snapshot() (*DynamicConfig, int64) {
+	rev := v.revision.Load()
 	v.mu.RLock()
-	routes := append([]Route{}, v.routes...)
+	var routes []Route
+	if v.routes != nil {
+		routes = append([]Route{}, v.routes...)
+	}
 	challenges := make(map[string]string, len(v.challenges))
 	for k, keyAuth := range v.challenges {
 		challenges[k] = keyAuth
@@ -79,9 +96,14 @@ func (v *view) snapshot() *DynamicConfig {
 	responder := v.responderURL
 	v.mu.RUnlock()
 
-	cfg := Synthesize(routes)
+	var cfg *DynamicConfig
+	if routes == nil {
+		cfg = EmptyConfig()
+	} else {
+		cfg = Synthesize(routes)
+	}
 	if len(challenges) == 0 {
-		return cfg
+		return cfg, rev
 	}
 	cfg.HTTP.Routers[acmeChallengeRouterName] = &Router{
 		Rule:        "PathPrefix(`" + acmeChallengePathPrefix + "`)",
@@ -95,7 +117,7 @@ func (v *view) snapshot() *DynamicConfig {
 			ServersTransport: defaultServersTransportName + "@http",
 		},
 	}
-	return cfg
+	return cfg, rev
 }
 
 // addChallenge 注入挑战令牌并返回注入时的 revision（Present 等待收敛用）。
@@ -122,9 +144,11 @@ func (v *view) challengeKeyAuth(token string) (string, bool) {
 	return keyAuth, ok
 }
 
-// markServed 记录 Traefik 拉走的 revision。
-func (v *view) markServed() {
-	v.servedRevision.Store(v.currentRevision())
+// markServed 记录「本次实际下发载荷」的 revision（E2，S19）：rev 由
+// snapshot 的返回值传入——不再取「当下」revision，快照之后的新变更不会
+// 被误记为已服务（挑战收敛门 awaitServed 的虚假通过面）。
+func (v *view) markServed(rev int64) {
+	v.servedRevision.Store(rev)
 	v.servedEver.Store(true)
 }
 

@@ -17,8 +17,10 @@ import (
 //     按注册表默认映射，JSON 经 gateway marshaler 输出（UseProtoNames →
 //     snake_case 七字段）；
 //   - 无 detail（传输层/框架层错误）→ 退化信封：code 留空串（不发明文档
-//     外码、不挪用既有码语义，取舍待 T0.5 冻结确认），message 取 status
-//     原文保底，HTTP 状态由 grpc code 机械映射。
+//     外码、不挪用既有码语义），HTTP 状态由 grpc code 机械映射。B1（出站
+//     字节出口收口）：内部类 grpc code（Unknown/Internal/FailedPrecondition）
+//     的 message 替换为固定文案，原文仅落服务端日志；InvalidArgument/
+//     NotFound 等业务码原文保留。
 //
 // 非 status 错误（理论不可达：gateway 侧 err 恒为 status）按 Internal
 // 兜底并记日志，响应文案固定，不外泄内部细节。
@@ -31,6 +33,14 @@ func newGatewayErrorHandler() runtime.ErrorHandlerFunc {
 			st = status.New(codes.Internal, "internal server error")
 		}
 		envelope, httpStatus := apperr.EnvelopeFromGRPCStatus(st)
+		// B1：退化信封被替换为固定文案时（有 detail 的业务信封不会进此
+		// 分支），原文在此处进服务端日志——凭 grpc code 与时间戳关联排障，
+		// 绝不进响应体。
+		if envelope.GetCode() == "" && envelope.GetMessage() != st.Message() {
+			slog.ErrorContext(ctx, "gateway: degraded envelope message redacted",
+				"path", r.URL.Path, "method", r.Method,
+				"grpc_code", st.Code().String(), "original_message", st.Message())
+		}
 		w.Header().Set("Content-Type", marshaler.ContentType(envelope))
 		w.WriteHeader(httpStatus)
 		if body, merr := marshaler.Marshal(envelope); merr != nil {

@@ -51,7 +51,7 @@ func TestStateServicesBlockUntilShutdown(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	identity := state.NewNodeIdentity(st, noopDocker{}, logger)
 	observer := state.NewObserver(st, noopDocker{}, logger)
-	janitor := state.NewJanitor(st, 0, 0, logger)
+	janitor := state.NewJanitor(st, state.JanitorConfig{}, logger)
 
 	// lynx Runner 在进程内构造时会解析 os.Args 并做 CWD 配置发现
 	// （lynx.go initConfigure：Parse(os.Args[1:]) + AddSearchPath(".")）。

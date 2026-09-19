@@ -14,6 +14,7 @@ import {
   listHistoryLogs,
   listRevisions,
 } from "@/api/endpoints";
+import { ReconnectBackoff } from "@/api/backoff";
 import { followLogs, StreamError } from "@/api/streams";
 import type { LogEntryView } from "@/api/types";
 import { Button } from "@/components/ui/button";
@@ -31,7 +32,6 @@ import { formatTime } from "@/lib/utils";
 
 const LIVE_CAP = 2000;
 const ALL_SERVICES = "__all__";
-const RECONNECT_DELAY_MS = 1500;
 
 function entryKey(e: LogEntryView): string {
   return `${e.at ?? ""}|${e.service}|${e.source}|${e.line}`;
@@ -43,12 +43,12 @@ function useServiceNames(app: string) {
     queryKey: ["revisions", app],
     queryFn: () => listRevisions(app),
   });
-  const active = revisionsQuery.data?.revisions.find(
+  const active = (revisionsQuery.data?.revisions ?? []).find(
     (r) => r.status === "active",
   );
   const specQuery = useQuery({
     queryKey: ["revision-spec", app, active?.id],
-    queryFn: () => getRevisionSpec(app, active!.id),
+    queryFn: () => getRevisionSpec(app, active!.id ?? ""),
     enabled: active !== undefined,
   });
   return useMemo(() => {
@@ -79,14 +79,17 @@ export function AppLogsPage() {
 
   const serviceNames = useServiceNames(name);
 
+  // 重连续读的续读点：最新一条已累积日志（appendEntries 内更新，见下）。
+  const lastSeenRef = useRef<LogEntryView | null>(null);
+
+  // 只负责合并去重：source 过滤是视图语义，归 visible（存储层不丢弃，
+  // 否则实时流闭包里的旧 source 会永久吞掉新 source 的行，见 M8-3）。
   const appendEntries = useCallback((incoming: LogEntryView[]) => {
     if (incoming.length === 0) return;
     setEntries((prev) => {
       const seen = new Set(prev.slice(-LIVE_CAP).map(entryKey));
       const merged = [...prev];
       for (const e of incoming) {
-        if (e.source === "build" && source === "container") continue;
-        if (e.source === "container" && source === "build") continue;
         const k = entryKey(e);
         if (seen.has(k)) continue;
         seen.add(k);
@@ -95,17 +98,30 @@ export function AppLogsPage() {
       }
       return merged.slice(-LIVE_CAP);
     });
-  }, [source]);
+  }, []);
 
-  // 重连续读的续读点：最新一条已累积日志（appendEntries 内更新，见上）。
-  const lastSeenRef = useRef<LogEntryView | null>(null);
+  // 跨应用导航重置（H5）：路由 /apps/:name/logs 在参数变化时复用同一组件
+  // 实例，name 变化若不清空本地流状态，上一个应用的日志会混入当前应用
+  // 视图（去重键 entryKey 不含 app 名，无法靠合并去重挡住）。声明在回填
+  // effects 之前，保证 name 变化时先清空再回填新应用的历史。
+  // （props 变化重置本地 state 是 React 认可的 effect 例外场景，见
+  // react.dev/learn/you-might-not-need-an-effect#resetting-all-state-when-a-prop-changes。）
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEntries([]);
+    lastSeenRef.current = null;
+    setStreamError("");
+  }, [name]);
 
-  // 实时跟随：跟随流断开后回放历史补缺口，再重开跟随（重连退避 1.5s）。
+  // 实时跟随：跟随流断开后回放历史补缺口，再重开跟随。重连延迟走共享
+  // 指数退避（D4-③：1.5s 起 ×2、上限 30s、±20% 抖动；服务端连续立即正常
+  // 关流时降频并提示）。
   useEffect(() => {
     if (!live) return;
     let conn: { close(): void } | null = null;
     let timer: number | undefined;
     let disposed = false;
+    const backoff = new ReconnectBackoff();
 
     const open = () => {
       followLogs(name, service === ALL_SERVICES ? undefined : service, {
@@ -116,12 +132,16 @@ export function AppLogsPage() {
         onEnd: (err) => {
           if (disposed) return;
           if (err instanceof StreamError && err.status === 401) {
-            // 鉴权失效：全局监听接手（回登录页），此处不再重连。
+            // 鉴权失效：全局登出已由流式层统一触发（stream.ts 的 401
+            // 处置），此处仅展示并不再重连。
             setStreamError("stream rejected (401)");
             return;
           }
+          const delay = backoff.nextDelayMs(err === undefined);
           setStreamError(
-            err instanceof Error ? `${err.message} — reconnecting…` : "stream ended — reconnecting…",
+            `${err instanceof Error ? `${err.message} — reconnecting` : "stream ended — reconnecting"}${
+              backoff.throttled ? " (server keeps closing the stream; retries slowed)" : ""
+            }…`,
           );
           timer = window.setTimeout(() => {
             if (disposed) return;
@@ -131,22 +151,29 @@ export function AppLogsPage() {
                   service: service === ALL_SERVICES ? undefined : service,
                   since: last.at,
                 })
-                  .then((r) => appendEntries(r.entries))
+                  // 切 app/卸载竞态下不回填（与初始回填的 cancelled 守卫
+                  // 对齐），避免旧应用日志进新应用视图（M8-8）。
+                  .then((r) => {
+                    if (!disposed) appendEntries(r.entries ?? []);
+                  })
                   .catch(() => undefined)
               : Promise.resolve();
             void backfill.then(() => {
               if (!disposed) open();
             });
-          }, RECONNECT_DELAY_MS);
+          }, delay);
         },
       })
         .then((c) => {
           if (disposed) c.close();
-          else conn = c;
+          else {
+            conn = c;
+            backoff.markOpen();
+          }
         })
         .catch(() => {
           if (!disposed) {
-            timer = window.setTimeout(open, RECONNECT_DELAY_MS);
+            timer = window.setTimeout(open, backoff.nextDelayMs(false));
           }
         });
     };
@@ -168,7 +195,7 @@ export function AppLogsPage() {
       limit: 200,
     })
       .then((r) => {
-        if (!cancelled) appendEntries(r.entries);
+        if (!cancelled) appendEntries(r.entries ?? []);
       })
       .catch(() => undefined);
     return () => {
@@ -177,6 +204,7 @@ export function AppLogsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [name, service]);
 
+  // source 过滤的唯一位置（视图层）：存储保留全量，这里按当前 source 投影。
   const visible = useMemo(() => {
     return entries.filter((e) => {
       if (source === "container" && e.source === "build") return false;
@@ -202,7 +230,7 @@ export function AppLogsPage() {
       source: source === "all" ? "" : source,
     })
       .then((r) => {
-        setEntries(r.entries);
+        setEntries(r.entries ?? []);
       })
       .catch((err) =>
         setStreamError(err instanceof Error ? err.message : String(err)),

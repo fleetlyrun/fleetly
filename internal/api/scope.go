@@ -5,9 +5,12 @@ import "strings"
 // 方法级 scope 映射（T2.17 鉴权矩阵的唯一登记点）：
 //
 //	read   — 全部只读面（List/Get/Show/Watch/Follow/History/Status）
-//	deploy — 部署/回滚/取消、env 写（env-set 影响下次部署）、构建触发、
-//	         漂移收敛与 opt-in 置位（写运行域/影响下次部署语义）
-//	admin  — token 管理、env 明文读、app 删除（破坏性）
+//	deploy — 部署/回滚/取消、env 写（env-set 影响下次部署）、漂移收敛与
+//	         opt-in 置位（写运行域/影响下次部署语义）
+//	admin  — token 管理、env 明文读、app 删除（破坏性）、构建触发（H14
+//	         整改：TriggerBuild 的 base_dir 可指向宿主任意目录，构建会把
+//	         整目录打进镜像——宿主文件系统读取面与 env 明文同级信任，
+//	         不再随 deploy scope 下放）
 //
 // 纪律：新增 RPC 必须在此登记；未登记方法在拦截器按 admin 拒绝
 // （fail-closed，见 auth.go）。
@@ -42,7 +45,11 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.RevisionsService/ListRevisions":   ScopeRead,
 	"/fleetly.server.v1.RevisionsService/GetRevisionSpec": ScopeRead,
 	// BuildsService
-	"/fleetly.server.v1.BuildsService/TriggerBuild": ScopeDeploy,
+	// TriggerBuild = admin（H14 宿主目录信任边界）：base_dir 显式提供时可
+	// 指向宿主任意目录（SQLite 库、age 密钥材料同位），构建把整目录打进
+	// 镜像再经部署外带——比 deploy 多出宿主文件系统逃逸面，与 env 明文
+	// 读取（GetEnv=admin）同级信任。读面（GetBuild/ListBuilds）不变。
+	"/fleetly.server.v1.BuildsService/TriggerBuild": ScopeAdmin,
 	"/fleetly.server.v1.BuildsService/GetBuild":     ScopeRead,
 	"/fleetly.server.v1.BuildsService/ListBuilds":   ScopeRead,
 	// DriftService

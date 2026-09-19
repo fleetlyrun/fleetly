@@ -24,6 +24,23 @@ type Client struct {
 	cli *mobyclient.Client
 }
 
+// defaultCallTimeout 是非流式 Docker API 调用的统一 per-call 预算（D2，
+// S17 类 D：超时与取消闭环）：dockerd 假死（连接建立但永不响应）时兜底
+// 切断，避免 engine tick 与构建在无超时调用上无限阻塞。v0.1 为包级变量
+// 即可配（测试注入缩短预算），配置面随实际需要再引入。
+//
+// 排除面（保持调用方 ctx，不走本预算）：流式调用——Events / ServiceLogs /
+// 镜像拉取进度流（响应体即操作本体，生命周期语义由调用方管理）；健康
+// 探测——Ping（探测语义由探测方的时间预算决定）。
+var defaultCallTimeout = 30 * time.Second
+
+// withCallTimeout 给单次非流式调用包预算（D2）：调用方 ctx 已带的更早
+// deadline 不放宽（context.WithTimeout 只收紧）；多调用方法的每一次底座
+// 调用各自独立预算（重试/竞态补偿路径不互相挤占）。
+func withCallTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, defaultCallTimeout)
+}
+
 // NewClient 构造底座客户端。host 为空时按惯例解析：DOCKER_HOST 环境变量
 // 优先，缺省本机套接字（linux unix socket / Windows named pipe）。API
 // 版本协商在 moby client v0.6+ 默认开启（Engine 门禁 ≥29.8.1 由安装检查
@@ -31,8 +48,10 @@ type Client struct {
 func NewClient(host string) (*Client, error) {
 	opts := []mobyclient.Opt{mobyclient.FromEnv}
 	if host != "" {
-		// 显式配置优先于环境变量（WithHost 放前面会被 FromEnv 覆盖）。
-		opts = []mobyclient.Opt{mobyclient.WithHost(host), mobyclient.FromEnv}
+		// 显式配置优先于环境变量：opts 按序应用、后者胜出，而 FromEnv 内的
+		// WithHostFromEnv 会在 DOCKER_HOST 非空时无条件改写 host，因此必须
+		// 先应用 FromEnv、再应用 WithHost，显式 host 才能覆盖环境变量。
+		opts = []mobyclient.Opt{mobyclient.FromEnv, mobyclient.WithHost(host)}
 	}
 	cli, err := mobyclient.New(opts...)
 	if err != nil {
@@ -49,7 +68,8 @@ func (c *Client) Close() error {
 	return c.cli.Close()
 }
 
-// Ping 实现端口探测。
+// Ping 实现端口探测。D2 排除面：探测不走 per-call 预算——由调用方的
+// 探测时间预算（ctx）管理。
 func (c *Client) Ping(ctx context.Context) error {
 	if _, err := c.cli.Ping(ctx, mobyclient.PingOptions{}); err != nil {
 		return fmt.Errorf("substrate: ping: %w", err)
@@ -59,6 +79,8 @@ func (c *Client) Ping(ctx context.Context) error {
 
 // ListNodeObservations 返回全量节点快照（逐字镜像底座语义，平台不加工）。
 func (c *Client) ListNodeObservations(ctx context.Context) ([]state.SubstrateNode, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	res, err := c.cli.NodeList(ctx, mobyclient.NodeListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("substrate: node list: %w", err)
@@ -91,6 +113,8 @@ func nodeToObservation(n swarm.Node) state.SubstrateNode {
 // SelfNodeID 返回本机 Swarm node ID；未启用 Swarm 返回
 // state.ErrNotSwarmManager。
 func (c *Client) SelfNodeID(ctx context.Context) (string, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	res, err := c.cli.Info(ctx, mobyclient.InfoOptions{})
 	if err != nil {
 		return "", fmt.Errorf("substrate: info: %w", err)
@@ -104,7 +128,9 @@ func (c *Client) SelfNodeID(ctx context.Context) (string, error) {
 // UpdateNodeLabel 以乐观令牌更新节点 label：幂等（label 已是目标值时
 // no-op）；令牌失效返回 state.ErrVersionConflict。
 func (c *Client) UpdateNodeLabel(ctx context.Context, swarmNodeID, key, value string, expected state.ObjectVersion) error {
-	res, err := c.cli.NodeInspect(ctx, swarmNodeID, mobyclient.NodeInspectOptions{})
+	cctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	res, err := c.cli.NodeInspect(cctx, swarmNodeID, mobyclient.NodeInspectOptions{})
+	cancel()
 	if err != nil {
 		return mapSubstrateErr(fmt.Errorf("substrate: node inspect: %w", err))
 	}
@@ -117,10 +143,12 @@ func (c *Client) UpdateNodeLabel(ctx context.Context, swarmNodeID, key, value st
 		spec.Labels = make(map[string]string, 1)
 	}
 	spec.Labels[key] = value
-	_, err = c.cli.NodeUpdate(ctx, swarmNodeID, mobyclient.NodeUpdateOptions{
+	uctx, ucancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	_, err = c.cli.NodeUpdate(uctx, swarmNodeID, mobyclient.NodeUpdateOptions{
 		Version: swarm.Version{Index: expected.Index},
 		Spec:    spec,
 	})
+	ucancel()
 	if err != nil {
 		return mapSubstrateErr(fmt.Errorf("substrate: node update: %w", err))
 	}
@@ -129,6 +157,8 @@ func (c *Client) UpdateNodeLabel(ctx context.Context, swarmNodeID, key, value st
 
 // ResolveObjectVersion 直读底座对象版本（node/service 两类）。
 func (c *Client) ResolveObjectVersion(ctx context.Context, kind state.ObjectKind, id string) (state.ObjectVersion, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	switch kind {
 	case state.ObjectKindNode:
 		res, err := c.cli.NodeInspect(ctx, id, mobyclient.NodeInspectOptions{})
@@ -148,7 +178,8 @@ func (c *Client) ResolveObjectVersion(ctx context.Context, kind state.ObjectKind
 }
 
 // SubscribeEvents 订阅底座事件流：仅转发 node/service/task 类事件（观测
-// 缓存失效信号），channel 在 ctx 取消或流结束时关闭。
+// 缓存失效信号），channel 在 ctx 取消或流结束时关闭。D2 排除面：流式
+// 调用不走 per-call 预算——生命周期由调用方 ctx 管理。
 func (c *Client) SubscribeEvents(ctx context.Context) (<-chan state.SubstrateEvent, error) {
 	res := c.cli.Events(ctx, mobyclient.EventsListOptions{})
 	out := make(chan state.SubstrateEvent)

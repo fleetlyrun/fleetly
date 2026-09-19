@@ -67,6 +67,7 @@ func (c *Client) ManagedServiceProcesses(ctx context.Context, app string) ([]str
 // 时只取该时刻之后的行。返回 channel 在流结束、出错或 ctx 取消时关闭
 // （错误语义：日志流尽力而为，故障由采集器下轮重试，不单独暴露错误通道）。
 // 服务不存在 / 底座不可达按 state 端口哨兵归类（mapSubstrateErr）。
+// D2 排除面：流式调用不走 per-call 预算——生命周期由调用方 ctx 管理。
 func (c *Client) StreamServiceLogs(ctx context.Context, service string, since time.Time, follow bool) (<-chan LogLine, error) {
 	opts := mobyclient.ServiceLogsOptions{
 		ShowStdout: true,

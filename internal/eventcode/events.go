@@ -5,8 +5,10 @@ package eventcode
 //   - stateful-placement §2.8：placement.* 5 个、node.* 4 个、volume.* 4 个
 //   - state-model §2.9/§2.10：reconcile.drift_detected、restore.completed
 //   - architecture §4.3（cron 触发前哨「记 skipped + 事件」）：cron.skipped
+//   - 实现期新增（单独列出）：route.* 2 个、app.webhook_fetch_failed、
+//     engine.stale_nonterminal、build.stale_nonterminal（S18-A10）
 //
-// 计 35 个事件名。
+// 计 37 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "部署入队（同 app 并发互斥排队）"},
@@ -30,6 +32,9 @@ var builtins = []Event{
 	{Name: "app.degraded", Summary: "应用进入 degraded（观察窗失败/窗后不稳定/W_DEPLOY_INSTABILITY）"},
 	{Name: "app.instability_detected", Summary: "运行期检测到不稳定"},
 	{Name: "app.recovered", Summary: "应用退出 degraded，恢复 running"},
+	// S17-D1 实现期新增（评审类 D；webhook 受理转异步后拉源失败只能走
+	// 事件流披露——官方不重投 202，redeliver 靠人工）。
+	{Name: "app.webhook_fetch_failed", Summary: "webhook 受理后异步拉源失败（同 delivery 可手动 redeliver 重试）"},
 
 	// ── 放置与节点/卷（stateful-placement §2.8）──
 	{Name: "placement.bound", Summary: "应用完成节点绑定（含自动钉住）"},
@@ -60,4 +65,10 @@ var builtins = []Event{
 
 	// ── 定时任务（architecture §4.3：触发前哨「记 skipped + 事件」；cron 入 v0.2）──
 	{Name: "cron.skipped", Summary: "定时任务触发跳过（节点不 ready/控制面停机错过点/重叠 skip），不补跑"},
+
+	// S18-A10 实现期新增（评审类 A 运行时断言层，§9 裁决并入 janitor）：
+	// 非终态行超龄停留的显性化告警（只告警不自愈——恢复路径已有 S8/S9 兜底，
+	// 这层是未来新状态机漏洞的观测面）。
+	{Name: "engine.stale_nonterminal", Summary: "部署非终态停留超 2×（发布看门狗+观察窗）预算（状态机漏洞显性化，不自愈）"},
+	{Name: "build.stale_nonterminal", Summary: "构建 queued/building 停留超 2×构建超时预算（状态机漏洞显性化，不自愈）"},
 }

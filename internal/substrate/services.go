@@ -55,6 +55,8 @@ var (
 // 直用（tag 形态；镜像不被平台自动清理，builds 行留有 digest 台账）。
 // 缺失归一为 engine.ErrImageMissing。
 func (c *Client) ImageDigest(ctx context.Context, ref string) (string, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	res, err := c.cli.ImageInspect(ctx, ref)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -74,6 +76,8 @@ func (c *Client) ImageDigest(ctx context.Context, ref string) (string, error) {
 // errors.Is(err, engine.ErrNotSwarmReady)（engine 据此映射
 // E_RUNTIME_UNAVAILABLE + swarm init 建议）。
 func (c *Client) SwarmReady(ctx context.Context) error {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	res, err := c.cli.Info(ctx, mobyclient.InfoOptions{})
 	if err != nil {
 		return fmt.Errorf("substrate: info: %w", err)
@@ -87,22 +91,31 @@ func (c *Client) SwarmReady(ctx context.Context) error {
 // NetworkEnsure 确认 overlay 网络存在（幂等：已有即 no-op；缺失创建——
 // 每应用专属 overlay 网络，architecture §2.4 服务命名与网络行）。
 func (c *Client) NetworkEnsure(ctx context.Context, name string) error {
-	if _, err := c.cli.NetworkInspect(ctx, name, mobyclient.NetworkInspectOptions{}); err == nil {
+	ictx, icancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	_, err := c.cli.NetworkInspect(ictx, name, mobyclient.NetworkInspectOptions{})
+	icancel()
+	if err == nil {
 		return nil
 	} else if !errdefs.IsNotFound(err) {
 		return fmt.Errorf("substrate: network inspect %s: %w", name, err)
 	}
-	if _, err := c.cli.NetworkCreate(ctx, name, mobyclient.NetworkCreateOptions{
+	cctx, ccancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	_, cerr := c.cli.NetworkCreate(cctx, name, mobyclient.NetworkCreateOptions{
 		Driver: "overlay",
 		Labels: map[string]string{
 			state.LabelManaged: state.ManagedLabelValue,
 		},
-	}); err != nil {
+	})
+	ccancel()
+	if cerr != nil {
 		// 并发创建竞态：已存在即成功。
-		if _, ierr := c.cli.NetworkInspect(ctx, name, mobyclient.NetworkInspectOptions{}); ierr == nil {
+		rctx, rcancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+		_, ierr := c.cli.NetworkInspect(rctx, name, mobyclient.NetworkInspectOptions{})
+		rcancel()
+		if ierr == nil {
 			return nil
 		}
-		return fmt.Errorf("substrate: network create %s: %w", name, err)
+		return fmt.Errorf("substrate: network create %s: %w", name, cerr)
 	}
 	return nil
 }
@@ -224,6 +237,8 @@ func swarmHealthcheck(hc engine.HealthcheckSpec) *container.HealthConfig {
 // 调用；已存在不覆盖——按 ErrObjectConflict 语义失败暴露竞态）。
 func (c *Client) ServiceCreate(ctx context.Context, spec engine.ServiceSpec) error {
 	sw := buildSwarmSpec(spec)
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	if _, err := c.cli.ServiceCreate(ctx, mobyclient.ServiceCreateOptions{Spec: sw}); err != nil {
 		return fmt.Errorf("substrate: service create %s: %w", spec.Name, err)
 	}
@@ -240,19 +255,24 @@ func (c *Client) ServiceUpdate(ctx context.Context, name string, spec engine.Ser
 	sw := buildSwarmSpec(spec)
 	var lastErr error
 	for i := 0; i < serviceUpdateRetry; i++ {
-		res, err := c.cli.ServiceInspect(ctx, name, mobyclient.ServiceInspectOptions{})
+		ictx, icancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+		res, err := c.cli.ServiceInspect(ictx, name, mobyclient.ServiceInspectOptions{})
+		icancel()
 		if err != nil {
 			return mapSubstrateErr(fmt.Errorf("substrate: service inspect %s: %w", name, err))
 		}
-		if _, err := c.cli.ServiceUpdate(ctx, name, mobyclient.ServiceUpdateOptions{
+		uctx, ucancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+		_, uerr := c.cli.ServiceUpdate(uctx, name, mobyclient.ServiceUpdateOptions{
 			Version: swarm.Version{Index: res.Service.Version.Index},
 			Spec:    sw,
-		}); err != nil {
-			lastErr = err
-			if errdefs.IsConflict(err) {
+		})
+		ucancel()
+		if uerr != nil {
+			lastErr = uerr
+			if errdefs.IsConflict(uerr) {
 				continue // 版本令牌被并发写推进：重读重试
 			}
-			return mapSubstrateErr(fmt.Errorf("substrate: service update %s: %w", name, err))
+			return mapSubstrateErr(fmt.Errorf("substrate: service update %s: %w", name, uerr))
 		}
 		return nil
 	}
@@ -262,6 +282,8 @@ func (c *Client) ServiceUpdate(ctx context.Context, name string, spec engine.Ser
 // ServiceRemove 实现 engine.Substrate：删除服务（省略=删除；幂等——缺失
 // 视为成功，对账重放的常见形态）。
 func (c *Client) ServiceRemove(ctx context.Context, name string) error {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	if _, err := c.cli.ServiceRemove(ctx, name, mobyclient.ServiceRemoveOptions{}); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil
@@ -273,6 +295,8 @@ func (c *Client) ServiceRemove(ctx context.Context, name string) error {
 
 // ServiceInspect 实现 engine.Substrate：按名取服务实况投影。
 func (c *Client) ServiceInspect(ctx context.Context, name string) (engine.ServiceState, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	res, err := c.cli.ServiceInspect(ctx, name, mobyclient.ServiceInspectOptions{})
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -285,6 +309,8 @@ func (c *Client) ServiceInspect(ctx context.Context, name string) (engine.Servic
 
 // ServiceList 实现 engine.Substrate：按 label 选择器返回服务投影。
 func (c *Client) ServiceList(ctx context.Context, labels map[string]string) ([]engine.ServiceState, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	filters := mobyclient.Filters{}
 	for k, v := range labels {
 		filters = filters.Add("label", k+"="+v)
@@ -302,6 +328,8 @@ func (c *Client) ServiceList(ctx context.Context, labels map[string]string) ([]e
 
 // TaskList 实现 engine.Substrate：返回服务的全部任务（service ps 语义）。
 func (c *Client) TaskList(ctx context.Context, serviceName string) ([]engine.TaskState, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	res, err := c.cli.TaskList(ctx, mobyclient.TaskListOptions{
 		Filters: mobyclient.Filters{}.Add("service", serviceName),
 	})
@@ -402,6 +430,16 @@ func serviceToState(svc swarm.Service) engine.ServiceState {
 	out.Global = svc.Spec.Mode.Global != nil
 	if svc.Spec.Mode.Replicated != nil && svc.Spec.Mode.Replicated.Replicas != nil {
 		out.Replicas = *svc.Spec.Mode.Replicated.Replicas
+	}
+	// A8（S18）：Spec.UpdateConfig 补抄进漂移反解投影——order/parallelism/
+	// delay 三字段进漂移哈希（外部 docker service update --update-* 篡改
+	// 的判定面）；FailureAction 是平台受管字段（本适配器恒写 pause），读回
+	// 非 pause 即受管字段被篡改，引擎侧专报。
+	if svc.Spec.UpdateConfig != nil {
+		out.UpdateOrder = string(svc.Spec.UpdateConfig.Order)
+		out.UpdateParallelism = svc.Spec.UpdateConfig.Parallelism
+		out.UpdateDelay = svc.Spec.UpdateConfig.Delay
+		out.UpdateFailureAction = string(svc.Spec.UpdateConfig.FailureAction)
 	}
 	if svc.UpdateStatus != nil {
 		out.UpdateState = string(svc.UpdateStatus.State)

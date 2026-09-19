@@ -65,7 +65,7 @@ func (c *eventsWatchCmd) Run(ctx context.Context, env *commands.Environment, arg
 	if len(args) != 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("expected 0 arguments, got %d", len(args))}
 	}
-	return c.conn.withClient(func(cl *fleetlyClient) error {
+	err := c.conn.withClient(func(cl *fleetlyClient) error {
 		return cl.WatchEvents(ctx, c.sinceSeq, func(frame *serverv1.WatchEventsResponse) error {
 			if c.jsonOut {
 				return writeProtoJSONL(env.Stdout, frame)
@@ -88,6 +88,10 @@ func (c *eventsWatchCmd) Run(ctx context.Context, env *commands.Environment, arg
 			}
 		})
 	})
+	if isCleanCancel(ctx, err) {
+		return nil // Ctrl-C/SIGTERM：流随 ctx 取消干净收尾，exit 0（S17-D3）
+	}
+	return err
 }
 
 // 编译期断言：events 命令实现 commands.Command/Flagged 契约。

@@ -1,8 +1,12 @@
 package api
 
 import (
+	"fmt"
 	"strconv"
+	"sync"
 	"time"
+
+	"google.golang.org/grpc/codes"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/apperr"
@@ -22,7 +26,18 @@ type EventsService struct {
 	st *state.Store
 	// interval 可注入（测试加速）。
 	interval time.Duration
+	// A5（S18）：per-token 常驻流并发上限——Watch 是长驻轮询流，单 token
+	// 无上限开流会放大每流的周期 EventsSince 查询；同一 token 至多
+	// maxWatchStreamsPerToken 条并发流，超限 ResourceExhausted（429 信封
+	// 退化形态）。计数进程内有界：键空间 = 活跃 token 数（受 tokens 表
+	// 约束），槽位随流结束/ctx 取消经 defer 释放。未鉴权流（拦截器缺席
+	// 的进程内测试面）无 Principal，不计不限。
+	watchMu    sync.Mutex
+	watchSlots map[string]int
 }
+
+// maxWatchStreamsPerToken 是单 token 的并发 Watch 流上限（A5）。
+const maxWatchStreamsPerToken = 5
 
 // watchPollInterval 是事件流轮询周期。
 const watchPollInterval = time.Second
@@ -32,11 +47,41 @@ const watchBatchSize = 500
 
 // NewEventsService 构造 EventsService。
 func NewEventsService(st *state.Store) *EventsService {
-	return &EventsService{st: st, interval: watchPollInterval}
+	return &EventsService{st: st, interval: watchPollInterval, watchSlots: make(map[string]int)}
 }
 
-// WatchEvents 实现事件流。
+// acquireWatchSlot 占用一个 token 的 Watch 流槽位；已满返回 false（A5）。
+func (s *EventsService) acquireWatchSlot(tokenID string) bool {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	if s.watchSlots[tokenID] >= maxWatchStreamsPerToken {
+		return false
+	}
+	s.watchSlots[tokenID]++
+	return true
+}
+
+// releaseWatchSlot 归还槽位（计数归零即删键，防 map 无谓增长）。
+func (s *EventsService) releaseWatchSlot(tokenID string) {
+	s.watchMu.Lock()
+	defer s.watchMu.Unlock()
+	if n := s.watchSlots[tokenID]; n <= 1 {
+		delete(s.watchSlots, tokenID)
+	} else {
+		s.watchSlots[tokenID] = n - 1
+	}
+}
+
+// WatchEvents 实现事件流（入口先过 A5 per-token 并发闸：超限
+// ResourceExhausted，流结束/ctx 取消时 defer 释放槽位）。
 func (s *EventsService) WatchEvents(req *serverv1.WatchEventsRequest, stream serverv1.EventsService_WatchEventsServer) error {
+	if p, ok := PrincipalFromContext(stream.Context()); ok {
+		if !s.acquireWatchSlot(p.TokenID) {
+			return statusEnvelope(codes.ResourceExhausted,
+				fmt.Sprintf("watch streams limit reached for token (max %d concurrent)", maxWatchStreamsPerToken))
+		}
+		defer s.releaseWatchSlot(p.TokenID)
+	}
 	cursor := req.GetSinceSeq()
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()

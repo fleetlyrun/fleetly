@@ -3,6 +3,7 @@ package compose
 import (
 	"context"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -256,6 +257,42 @@ func TestGoldenNormalization(t *testing.T) {
 				t.Errorf("spec_hash 不稳定: %s vs %s", spec.SpecHash, spec2.SpecHash)
 			}
 		})
+	}
+}
+
+// TestWhitelistGolden S16-C3：受控子集白名单键集（顶层 + 服务级）落 golden
+// 快照——白名单增删忘改 golden/文档 → 本测试红（架构 §2.4 注记「支持集以
+// internal/compose/testdata/whitelist.golden 为准」）。更新方式：
+// go test ./internal/compose -run Whitelist -update。
+func TestWhitelistGolden(t *testing.T) {
+	var b strings.Builder
+	b.WriteString("# compose 受控子集白名单真源（S16-C3；架构 §2.4「支持集以本 golden 为准」）。\n")
+	b.WriteString("# 与 internal/compose/validate.go 的 topLevelWhitelist / serviceWhitelist\n")
+	b.WriteString("# 集合一致性由 TestWhitelistGolden 钉死；增删键须显式更新本文件并同步\n")
+	b.WriteString("# 架构文档 §2.4。子段白名单（build/healthcheck/deploy/...）不在本表——\n")
+	b.WriteString("# 支持面以顶层与服务级两表为纲。\n\n")
+	b.WriteString("[top_level]\n")
+	for _, k := range sortedKeys(topLevelWhitelist) {
+		fmt.Fprintf(&b, "%s\n", k)
+	}
+	b.WriteString("\n[service]\n")
+	for _, k := range sortedKeys(serviceWhitelist) {
+		fmt.Fprintf(&b, "%s\n", k)
+	}
+	raw := []byte(b.String())
+	goldenPath := filepath.Join("testdata", "whitelist.golden")
+	if *update {
+		if err := os.WriteFile(goldenPath, raw, 0o600); err != nil {
+			t.Fatalf("write whitelist golden: %v", err)
+		}
+		return
+	}
+	want, err := os.ReadFile(goldenPath) //nolint:gosec // golden 为 testdata 固定路径
+	if err != nil {
+		t.Fatalf("read whitelist golden（首跑用 -update 生成）: %v", err)
+	}
+	if string(raw) != string(want) {
+		t.Errorf("白名单与 golden 不一致（增删白名单键须显式更新 golden 并同步架构 §2.4）:\n got:\n%s\nwant:\n%s", raw, want)
 	}
 }
 

@@ -35,6 +35,13 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 // 的宿主基准目录）——v0.1 单机同宿主语义：CLI 与 fleetlyd 共享文件系统，
 // 与旧 CLI 直连入队的 context 绝对路径等价；空 = 服务端临时目录（上下文
 // 随 compose 暂存形态，纯 image/无上下文构建可用）。
+//
+// 信任边界（H14 整改）：TriggerBuild 要求 admin scope——base_dir 可指向
+// 宿主任意目录，构建把整目录打进镜像，与 env 明文读取同级信任，不随
+// deploy scope 下放。且 build.context 解析后必须位于 base_dir（缺省为
+// 服务端临时目录）之内，`..` 逃逸形态拒绝（E_COMPOSE_UNSUPPORTED）；
+// 执行侧另要求 context_dir 位于平台受管根（系统 temp / git 根 /
+// build.context_roots 配置根）内，越界构建终态失败（E_BUILD_FAILED）。
 service BuildsService {
   rpc TriggerBuild(TriggerBuildRequest) returns (TriggerBuildResponse) {
     option (google.api.http) = {
@@ -51,13 +58,15 @@ service BuildsService {
 }
 
 message TriggerBuildRequest {
-  // compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name，服务端
-  // 解析受控子集——compose 违约不动底座、不入队）。
+  // compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name——请求
+  // 无 app 字段，单源无错位面（A1 注记；若后续加 app 字段须与 Deploy 同款
+  // 一致性校验）；服务端解析受控子集——compose 违约不动底座、不入队）。
   bytes compose = 1 [(buf.validate.field).bytes.min_len = 1];
   // 只构建该 compose 服务；空 = 全部 build 模式服务。
   string service = 2;
   // 构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时
-  // 目录）。v0.1 单机同宿主语义，见 service 注释。
+  // 目录）。v0.1 单机同宿主语义，见 service 注释（H14：admin scope，且
+  // context 解析后不得越出该基准目录）。
   string base_dir = 3;
 }
 

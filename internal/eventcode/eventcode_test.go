@@ -62,6 +62,15 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 审计」。证书签发/续期不设新事件名（走审计记录）。
 	"route.published":      "T2.15 实现期新增（architecture §2.5 路由发布时机；待 T0.5 冻结确认）",
 	"route.publish_failed": "T2.15 实现期新增（architecture §2.5 路由失败单独告警；待 T0.5 冻结确认）",
+
+	// S17-D1 实现期新增（评审类 D 超时与取消闭环）：webhook 受理转异步后
+	// 拉源失败只能走事件流披露（官方不重投）。
+	"app.webhook_fetch_failed": "S17-D1 实现期新增（评审类 D；webhook 异步拉源失败披露）",
+
+	// S18-A10 实现期新增（评审类 A 运行时断言层，§9 裁决并入 janitor）：
+	// 非终态行超龄停留的显性化告警。
+	"engine.stale_nonterminal": "S18-A10 实现期新增（评审类 A；部署非终态超龄告警）",
+	"build.stale_nonterminal":  "S18-A10 实现期新增（评审类 A；构建非终态超龄告警）",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

@@ -34,7 +34,8 @@ export function AppsPage() {
     );
   }
 
-  const apps = query.data.apps;
+  // 生成类型口径：空 repeated 字段不出现在 JSON（EmitUnpopulated=false）。
+  const apps = query.data.apps ?? [];
 
   return (
     <div className="space-y-4">
@@ -59,14 +60,14 @@ export function AppsPage() {
           {apps.map((app) => (
             <Link
               key={app.id}
-              to={`/apps/${encodeURIComponent(app.name)}`}
+              to={`/apps/${encodeURIComponent(app.name ?? "")}`}
               className="group"
               data-testid="app-card"
             >
               <Card className="h-full transition-colors group-hover:border-foreground/30">
                 <CardHeader className="flex-row items-center justify-between space-y-0 pb-2">
                   <CardTitle className="text-base">{app.name}</CardTitle>
-                  <StateBadge state={app.derived_state} />
+                  <StateBadge state={app.derived_state ?? ""} />
                 </CardHeader>
                 <CardContent className="flex items-center justify-between text-xs text-muted-foreground">
                   <span>

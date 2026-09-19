@@ -1,6 +1,8 @@
 app.degraded	应用进入 degraded（观察窗失败/窗后不稳定/W_DEPLOY_INSTABILITY）
 app.instability_detected	运行期检测到不稳定
 app.recovered	应用退出 degraded，恢复 running
+app.webhook_fetch_failed	webhook 受理后异步拉源失败（同 delivery 可手动 redeliver 重试）
+build.stale_nonterminal	构建 queued/building 停留超 2×构建超时预算（状态机漏洞显性化，不自愈）
 cron.skipped	定时任务触发跳过（节点不 ready/控制面停机错过点/重叠 skip），不补跑
 deployment.cancelled	部署被取消（先归位再落 cancelled）
 deployment.failed	发布失败终态（reason=错误码）
@@ -18,6 +20,7 @@ deployment.succeeded	发布成功终态
 deployment.superseded	部署被更新目标取代（陈旧终态）
 deployment.switched	流量切换完成
 deployment.warning	发布警告（W_ 码；观察窗只告警语义）
+engine.stale_nonterminal	部署非终态停留超 2×（发布看门狗+观察窗）预算（状态机漏洞显性化，不自愈）
 node.down	节点判定 DOWN（Swarm 心跳语义）
 node.joined	节点加入集群（观测）
 node.removed	节点被移除（docker node rm 观测）

@@ -258,7 +258,7 @@
         "compose": {
           "type": "string",
           "format": "byte",
-          "title": "compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name，服务端\n解析受控子集——compose 违约不动底座、不入队）。"
+          "title": "compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name——请求\n无 app 字段，单源无错位面（A1 注记；若后续加 app 字段须与 Deploy 同款\n一致性校验）；服务端解析受控子集——compose 违约不动底座、不入队）。"
         },
         "service": {
           "type": "string",
@@ -266,7 +266,7 @@
         },
         "base_dir": {
           "type": "string",
-          "title": "构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时\n目录）。v0.1 单机同宿主语义，见 service 注释。"
+          "title": "构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时\n目录）。v0.1 单机同宿主语义，见 service 注释（H14：admin scope，且\ncontext 解析后不得越出该基准目录）。"
         }
       }
     },

@@ -3,11 +3,16 @@ package gitserver
 import (
 	"context"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
+
+// D1（S17 类 D）：webhook 受理与执行分离——GitTriggers 额外承载 webhook
+// 异步执行面（带界队列 + 单 worker，webhook_worker.go），生命周期挂
+// git.ssh 服务壳（StartWebhookWorker/StopWebhookWorker）。
 
 // GitTriggers 是 git 触发入口的门面（命名口径 UBIQUITOUS_LANGUAGE §flagged-2：
 // 承载触发面+拉源+部署入队，不只是一个「来源」，故弃 Source 旧名）：
@@ -30,6 +35,16 @@ type GitTriggers struct {
 	// 不真实触网驱动 TOFU 审计链——与 statebackup.Manager.verifyFn 同款
 	// 接缝形态）。
 	fetchFn func(ctx context.Context, plan fetchPlan) error
+	// hooks 是 webhook 异步执行面（D1，S17 类 D）：受理队列 + 单 worker，
+	// 见 webhook_worker.go。
+	hooks webhookRunner
+	// repoMu 保护 repoLocks；repoLocks 是 per-app 的仓库/钩子写入互斥
+	// （E7③，S19：EnsureBareRepo 的 stat→init→writeHook 与 writeHook 内
+	// rotateHookToken 的「list→revoke→create」存在 TOCTOU——并发同 app
+	// 下交错可致钩子内 token 与在册 token 失配（push 回调永久 401）或多
+	// 条活 token 残留）。
+	repoMu    sync.Mutex
+	repoLocks map[string]*sync.Mutex
 }
 
 // New 构造 Source（cfg 先经 Normalize；启用态完整性 Validate 由装配点
@@ -39,14 +54,17 @@ func NewGitTriggers(cfg Config, st *state.Store, box *secrets.Box, log *slog.Log
 	if log == nil {
 		log = slog.New(discardHandler{})
 	}
-	return &GitTriggers{
-		cfg:     norm,
-		st:      st,
-		box:     box,
-		log:     log,
-		replay:  newDeliveryCache(norm.ReplayTTL, time.Now),
-		fetchFn: runFetch,
+	src := &GitTriggers{
+		cfg:       norm,
+		st:        st,
+		box:       box,
+		log:       log,
+		replay:    newDeliveryCache(norm.ReplayTTL, time.Now),
+		fetchFn:   runFetch,
+		repoLocks: map[string]*sync.Mutex{}, // E7③：per-app 分段锁
 	}
+	src.hooks.init() // D1：webhook 受理队列（worker 由服务壳 Start 启动）
+	return src
 }
 
 // Config 返回归一后的配置（只读投影）。

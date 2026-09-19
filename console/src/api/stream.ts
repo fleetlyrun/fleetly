@@ -2,6 +2,9 @@
 // 分块流（每帧一个 JSON 对象 + "\n" 分隔符，grpc-gateway JSONPb.Delimiter）。
 // 解析器独立成纯函数形态（可单测），按 chunk 推进、断帧自动拼接。
 
+import { handleUnauthorized } from "./client";
+import type { ErrorEnvelope } from "./errors";
+
 /** 解析器状态机：跨 chunk 保留残帧，产出完整 JSON 帧。 */
 export class NdjsonParser<T = unknown> {
   private buf = "";
@@ -47,8 +50,9 @@ export interface StreamConnection {
 
 /**
  * 打开一条 NDJSON 流（fetch + ReadableStream）。
- * - headers 由 authStore 提供 Bearer；鉴权失败（401）经 onError 上抛
- *   ApiError，由全局未授权监听接手。
+ * - headers 由调用方提供 Bearer；鉴权失败（401）在 consume 内走
+ *   client.ts 的统一 401 处置（清凭据 + App 级未授权监听 → 回登录页），
+ *   再以 StreamError 上抛——页面只做展示，不再各自拦 401。
  * - 返回的 connection 可主动关闭（AbortController）。
  */
 export async function openNdjsonStream<T>(
@@ -79,6 +83,11 @@ async function consume<T>(
         envelope = await response.json();
       } catch {
         // 保留状态码兜底信封
+      }
+      // 流式面 401 与 api() 同源处置：全局登出在此统一触发（幂等），页面
+      // 的 401 展示分支不会重复处置。
+      if (response.status === 401) {
+        handleUnauthorized(envelope as ErrorEnvelope);
       }
       throw newStreamError(response.status, envelope);
     }

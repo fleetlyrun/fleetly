@@ -160,6 +160,71 @@ func TestOpenRefusesNewerSchema(t *testing.T) {
 	}
 }
 
+// TestSchemaVersionsReadOnly 是 F5（S20 升级回退 schema 感知）的机制验收：
+// SchemaVersions 对三种现场给出正确读数，且只读（不建库、不迁移、不触发
+// 高版本守卫——回退编排在旧二进制拒绝打开之前就能比对两侧版本）：
+//   - 库文件不存在 → db=0（不创建文件，无副作用）；
+//   - 正常迁移库 → db=max（与本二进制天花板一致）；
+//   - 未来版本库（回退现场）→ db>max 照常读出（守卫不触发）。
+func TestSchemaVersionsReadOnly(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+
+	// ① 库文件不存在：db=0，且绝不落盘建库。
+	missing := filepath.Join(dir, "missing.db")
+	dbV, maxV, err := SchemaVersions(ctx, missing)
+	if err != nil {
+		t.Fatalf("missing db: %v", err)
+	}
+	if dbV != 0 {
+		t.Errorf("missing db: db = %d, want 0", dbV)
+	}
+	if maxV <= 0 {
+		t.Errorf("missing db: max = %d, want > 0", maxV)
+	}
+	if _, statErr := os.Stat(missing); !os.IsNotExist(statErr) {
+		t.Errorf("missing db: SchemaVersions must not create the file, stat err = %v", statErr)
+	}
+
+	// ② 正常迁移库：db == max。
+	path := filepath.Join(dir, "state.db")
+	st, err := Open(ctx, path)
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatalf("close store: %v", err)
+	}
+	dbV, maxV, err = SchemaVersions(ctx, path)
+	if err != nil {
+		t.Fatalf("migrated db: %v", err)
+	}
+	if dbV != maxV {
+		t.Errorf("migrated db: db = %d, max = %d, want equal", dbV, maxV)
+	}
+
+	// ③ 回退现场（库来自更新版本）：db > max 照常读出，守卫不触发。
+	raw, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("open raw sqlite: %v", err)
+	}
+	future := maxV + 5
+	if _, err := raw.ExecContext(ctx,
+		`INSERT INTO `+gooseVersionTableName+` (version_id, is_applied) VALUES (?, 1)`, future); err != nil {
+		t.Fatalf("bump schema version: %v", err)
+	}
+	if err := raw.Close(); err != nil {
+		t.Fatalf("close raw sqlite: %v", err)
+	}
+	dbV, _, err = SchemaVersions(ctx, path)
+	if err != nil {
+		t.Fatalf("newer-schema db: %v (guard must NOT fire on the read-only path)", err)
+	}
+	if dbV != future {
+		t.Errorf("newer-schema db: db = %d, want %d", dbV, future)
+	}
+}
+
 // TestMigrationsAreAdditiveOnly 钉死「迁移只加法」纪律：
 // ① 不存在 down 迁移文件（回滚 = 恢复快照，架构 §2.8）；
 // ② 版本号连续递增（无空洞、无重复）；

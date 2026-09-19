@@ -1,10 +1,17 @@
 name: ci
 
+# F1（S20 交付/CI 修正）：全部 uses 钉 commit SHA，注释保留版本号便于人读
+#（升级 action = 同时改 SHA 与版本注释）。SHA 于 2026-09-19 经 GitHub API
+# /commits/<tag> 解析并经 tags 列表 / git ls-remote 交叉核验。
+
 on:
   pull_request:
   push:
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -14,20 +21,20 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
+        uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7.0.1
         with:
           version: v2.13.2
 
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: go test
@@ -43,8 +50,8 @@ jobs:
     #（-mod 仅允许 readonly/vendor），故生成步骤退回单 module 模式。
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: go generate
@@ -60,11 +67,11 @@ jobs:
     # genproto 产物已提交）。
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           # buf breaking 需 origin/main 可解析（torchwood 同款）。
           fetch-depth: 0
-      - uses: bufbuild/buf-setup-action@v1
+      - uses: bufbuild/buf-setup-action@a47c93e0b1648d5651a065437926377d060baa99 # v1.50.0
         with:
           version: v1.72.0
           # 带凭据调 api.github.com——匿名请求会撞 runner 共享 IP 的限流
@@ -93,12 +100,41 @@ jobs:
   vulncheck:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        # F1：钉 v1.8.0（与 go-licenses/deadcode 同待遇，不追 @latest）——
+        # 最新稳定线，go.mod 要求 go 1.26.0，与本仓 1.26.6 工具链匹配。
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+  deadcode:
+    # S16-C6（评审 2026-09-20 remediation-complete §4）：死代码门禁。
+    # deadcode（RTA；钉 v0.49.0 = go.mod 既有 golang.org/x/tools 版本）分析
+    # 主模块（go.work 下 ./... 只展开主模块；sdk/genproto 是对外消费面，
+    # 不在分析域）。豁免清单 internal/testdata/deadcode-allow.txt：# 注释行
+    # 忽略，其余每行一个固定子串（文件路径前缀或 "unreachable func:
+    # <symbol>" 精确段）；输出路径统一正斜杠后 grep -v -F 过滤，残留非空
+    # 即红——新增无人调用的符号必须显式清理或持理由入清单。
+    # 注意：RTA 对经反射可达的导出方法（如 *state.Store 方法族）不报告，
+    # 该盲区由评审纪律兜底；本门禁守住的是非反射面的无名腐烂。
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: deadcode check
+        run: |
+          set -o pipefail
+          go run golang.org/x/tools/cmd/deadcode@v0.49.0 ./... | tr '\\' '/' > deadcode.out
+          grep -v '^#' internal/testdata/deadcode-allow.txt | grep -v '^$' > allow.patterns
+          if grep -v -F -f allow.patterns deadcode.out | grep -q '^'; then
+            echo '::error::deadcode 报告了未豁免的死代码（清理，或持理由更新 internal/testdata/deadcode-allow.txt）：'
+            grep -v -F -f allow.patterns deadcode.out
+            exit 1
+          fi
 
   console:
     # T2.24 PR 轨道第 6 项（交付 §2.2）：console 门禁（typecheck+build / lint /
@@ -110,17 +146,28 @@ jobs:
       run:
         working-directory: console
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
         with:
           version: 10
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: pnpm
           cache-dependency-path: console/pnpm-lock.yaml
       - name: pnpm install (frozen lockfile)
         run: pnpm install --frozen-lockfile
+      - name: pnpm gen:api (schema.d.ts 无漂移门禁，D4-②)
+        # S17-D4-②（docs/design/2026-09-20-remediation-complete.md §5）：从
+        # genproto/fleetly/server/v1/*.swagger.json 再生成 src/api/schema.d.ts，
+        # 有 diff 即红——proto 变更后须重跑 `pnpm gen:api` 并提交产物，防止
+        # console 手写/生成类型与 proto 漂移。
+        run: |
+          pnpm gen:api
+          if ! git diff --exit-code -- src/api/schema.d.ts; then
+            echo '::error::src/api/schema.d.ts 与 genproto swagger 漂移：在 console/ 下跑 pnpm gen:api 并提交再生成产物'
+            exit 1
+          fi
       - name: pnpm build (tsc --noEmit + vite build)
         run: pnpm build
       - name: pnpm lint (eslint)
@@ -153,8 +200,8 @@ jobs:
     # protobuf 运行时等，照扫）。
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: go-licenses check (root module)
@@ -186,8 +233,8 @@ jobs:
     # 本地复跑见 e2e/README.md（与本地实跑同一条命令路径）。
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
         with:
           go-version-file: go.mod
       - name: cross build linux/amd64
@@ -224,3 +271,35 @@ jobs:
       - name: cleanup
         if: always()
         run: docker rm -f fleetly-e2e-dind
+
+  deploy-scripts:
+    # MG-E1（配对机制任务；架构评审 H6 + M9-4）：deploy/ 与 e2e/nightly/
+    # root 执行脚本的 PR 轨道门禁。此前 8 个 job 零触碰 deploy/**，唯一的
+    # 语法检查（sh -n）在 release.yml——root 执行的安装/升级脚本要等发版
+    # 才被验证。两步均为纯 shell 自检，不引入第三方 action（供应链最小化）。
+    # BOM 断言背景：BOM 前置于 shebang 时 execve 直接 ENOEXEC，而
+    # sh xxx.sh 不受影响——dind 验收（sh 调用）测不出该缺陷
+    # （2026-09-19 deploy/upgrade.sh 实录：UTF-8 BOM 随 release 制品分发）。
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: sh -n syntax check
+        run: |
+          fail=0
+          for f in deploy/*.sh e2e/nightly/*.sh; do
+            sh -n "$f" || { echo "::error file=$f::sh -n syntax check failed"; fail=1; }
+          done
+          exit "$fail"
+      - name: no-BOM check
+        run: |
+          fail=0
+          for f in deploy/*.sh e2e/nightly/*.sh; do
+            b=$(head -c 3 "$f" | od -An -tx1 | tr -d ' \n')
+            if [ "$b" = "efbbbf" ]; then
+              echo "::error file=$f::UTF-8 BOM (ef bb bf) before shebang -> execve ENOEXEC"
+              fail=1
+            fi
+          done
+          exit "$fail"

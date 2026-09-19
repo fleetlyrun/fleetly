@@ -7,3 +7,7 @@
 genproto/** text eol=lf
 # dind/POSIX 执行面脚本同样钉 LF（宿主编排已带 CR 剥离兜底，此处为仓库侧一致性）。
 *.sh text eol=lf
+# PEM 密钥/公钥同样钉 LF：openssl 的 PEM 解析不吃 CRLF，且 release.yml 的
+# embedded-pubkey gate 与 test-install.sh A11 对公钥块做逐字节比对——
+# Windows 检出转 CRLF 会同时破坏签名与一致性断言。
+*.pem text eol=lf

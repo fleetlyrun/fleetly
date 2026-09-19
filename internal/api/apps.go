@@ -23,33 +23,66 @@ type AppsService struct {
 	serverv1.UnimplementedAppsServiceServer
 	st  *state.Store
 	box *secrets.Box
+	// withdraw 是路由撤销端口（H9：app 删除管线接通——deleting 清理时
+	// 撤销该 app 全部路由）。nil = 不撤销（无 ingress 装配的测试面）。
+	withdraw RouteWithdrawer
 	// gitEndpoint 是 SSH git 面 host:port（git_remote_hint 的拼装原料；
 	// 空 = 未启用，hint 留空）。
 	gitEndpoint string
 }
 
-// NewAppsService 构造 AppsService（box 为 webhook secret 加密器；
-// gitEndpoint 供 git remote 提示）。
-func NewAppsService(st *state.Store, box *secrets.Box, gitEndpoint string) *AppsService {
-	return &AppsService{st: st, box: box, gitEndpoint: gitEndpoint}
+// RouteWithdrawer 是路由撤销端口（internal/ingress.Manager 隐式实现）：
+// 删该 app 域名台账行 + 全量重发布（空视图落 noop 兜底，旧路由在 Traefik
+// 侧真实撤销）。域名台账写入方唯一 = internal/ingress，故删除清理必须经
+// 此通道而非直写 state。
+type RouteWithdrawer interface {
+	WithdrawAppRoutes(ctx context.Context, appID string) error
 }
 
+// NewAppsService 构造 AppsService（box 为 webhook secret 加密器；
+// gitEndpoint 供 git remote 提示；withdraw 为路由撤销端口，可 nil）。
+func NewAppsService(st *state.Store, box *secrets.Box, gitEndpoint string, withdraw RouteWithdrawer) *AppsService {
+	return &AppsService{st: st, box: box, withdraw: withdraw, gitEndpoint: gitEndpoint}
+}
+
+// defaultListAppsLimit 是 ListApps 的 limit 缺省（proto 注释口径「缺省 100」；
+// S18-A4 前 limit=0 无截断，与注释契约不符）。
+const defaultListAppsLimit = 100
+
 // ListApps 列出应用（active + deleting；deleted tombstone 不进默认列表
-// ——GetApp 可显式查看，列表面向运营主视图）。
+// ——GetApp 可显式查看，列表面向运营主视图）。派生状态批量化（S18-A4）：
+// limit 截断后的 app 集合经 state 层两次 IN 查询（PlacementByApp +
+// LatestDeploymentsByApp）取全部派生输入，替代逐 app 的 GetPlacement +
+// ListAppDeployments N+1 形态。
 func (s *AppsService) ListApps(ctx context.Context, req *serverv1.ListAppsRequest) (*serverv1.ListAppsResponse, error) {
 	apps, err := s.st.ListActiveApps(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if limit := int(req.GetLimit()); limit > 0 && limit < len(apps) {
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = defaultListAppsLimit // 缺省 100（proto 注释本就如此，A4 落实）
+	}
+	if limit < len(apps) {
 		apps = apps[:limit]
+	}
+	ids := make([]string, 0, len(apps))
+	for _, app := range apps {
+		ids = append(ids, app.ID)
+	}
+	placements, err := s.st.PlacementByApp(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	deployments, err := s.st.LatestDeploymentsByApp(ctx, ids, derivedWindow)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]*serverv1.AppView, 0, len(apps))
 	for _, app := range apps {
-		derived, err := s.derivedState(ctx, app.ID)
-		if err != nil {
-			return nil, err
-		}
+		// 批量 map 缺席键 = 零值 Placement（State 空串 = 无绑定记录，
+		// 与 per-app 路径的 ErrPlacementNotFound 分支同派生语义）。
+		derived := engine.DeriveAppState(factsFromWindow(placements[app.ID], deployments[app.ID]))
 		out = append(out, &serverv1.AppView{
 			Id:           app.ID,
 			Name:         app.Name,
@@ -96,6 +129,8 @@ func (s *AppsService) GetApp(ctx context.Context, req *serverv1.GetAppRequest) (
 // DeleteApp 推进 active → deleting（tombstone 第一拍）：保留期内名字仍
 // 占用、不复活；与审计同事务 fail-closed。actor 记调用方 token（审计
 // action = api.AppsService.DeleteApp，方法级；不发明新事件）。
+// H9：deleting 第一拍提交后同步撤销路由（域名台账清理 + 全量重发布，
+// 空视图落 noop 兜底——Traefik 侧真实撤销旧路由而非 502 残留）。
 func (s *AppsService) DeleteApp(ctx context.Context, req *serverv1.DeleteAppRequest) (*serverv1.DeleteAppResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetName())
 	if err != nil {
@@ -105,7 +140,7 @@ func (s *AppsService) DeleteApp(ctx context.Context, req *serverv1.DeleteAppRequ
 		if err := tx.MarkAppDeleting(ctx, app.ID); err != nil {
 			return err
 		}
-		return tx.WriteAudit(ctx, auditEntry(ctx, "app:"+app.ID, `{"lifecycle":"deleting"}`))
+		return tx.WriteAudit(ctx, auditEntry(ctx, "app:"+app.ID, state.DiffSummary("lifecycle", "deleting"))) // B4：构造器替换手拼 JSON
 	})
 	if err != nil {
 		switch {
@@ -113,6 +148,22 @@ func (s *AppsService) DeleteApp(ctx context.Context, req *serverv1.DeleteAppRequ
 			return nil, conflict("app not deletable from current lifecycle: " + app.Name)
 		default:
 			return nil, err
+		}
+	}
+	// 路由撤销（同步清理，不引入新异步机制）：失败不回滚 lifecycle
+	// （deleting 已提交、DeleteApp 不可重入），落失败审计 + 错误返回披露
+	// ——sweep 的重发布不会重试台账删除（写入方唯一 = ingress），需运维
+	// 处置；这是评审 H9 定级下最响的告警面。
+	if s.withdraw != nil {
+		if werr := s.withdraw.WithdrawAppRoutes(ctx, app.ID); werr != nil {
+			entry := auditEntry(ctx, "app:"+app.ID, state.DiffSummary("lifecycle", "deleting", "route_withdraw", "failed")) // B4：构造器替换手拼 JSON
+			entry.Result = "error"
+			if aerr := s.st.InTx(ctx, func(tx *state.Tx) error {
+				return tx.WriteAudit(ctx, entry)
+			}); aerr != nil {
+				return nil, fmt.Errorf("app %s entered deleting; route withdrawal failed (%v) and recording the failure audit also failed: %w", app.Name, werr, aerr)
+			}
+			return nil, fmt.Errorf("app %s entered deleting but route withdrawal failed (routes remain published; see audit): %w", app.Name, werr)
 		}
 	}
 	return &serverv1.DeleteAppResponse{Name: app.Name, Lifecycle: string(state.LifecycleDeleting)}, nil
@@ -177,8 +228,18 @@ func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSour
 	if kind != state.SourceAuthNone && req.GetAuthSecret() == "" {
 		return nil, statusInvalidArgument("auth_kind " + string(kind) + " requires auth_secret (整体替换语义——无法留旧)")
 	}
+	// E7④（S19）：认证材料最小长度与 webhook secret 同标（≥16）——弱材料
+	// 即便 envelope 加密落库，认证面仍在线可穷举。
+	if kind != state.SourceAuthNone && len(req.GetAuthSecret()) < 16 {
+		return nil, statusInvalidArgument("auth_secret must be at least 16 characters")
+	}
 	if req.GetUrl() != "" && strings.ContainsAny(req.GetUrl(), " \t\n\r") {
 		return nil, statusInvalidArgument("source url must not contain whitespace")
+	}
+	// E7⑤（S19）：https_token 强制 https:// 源——http:// 明文链路会随请求
+	// 泄露 token（gitserver buildFetch 拉源前同款防线，此处配置期早拒）。
+	if kind == state.SourceAuthToken && strings.HasPrefix(req.GetUrl(), "http://") {
+		return nil, statusInvalidArgument("https_token auth requires an https:// source url")
 	}
 	app, err := resolveApp(ctx, s.st, req.GetName())
 	if err != nil {
@@ -210,7 +271,8 @@ func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSour
 }
 
 // derivedState 读面即时派生应用状态（state-model §2.10 纯函数，与引擎/CLI
-// 共用 engine.DeriveAppState 同一实现）。
+// 共用 engine.DeriveAppState 同一实现）。单 app 读面（GetApp 等）沿用
+// per-app 查询；ListApps 走 S18-A4 批量形态（factsFromWindow）。
 func (s *AppsService) derivedState(ctx context.Context, appID string) (string, error) {
 	facts, err := appFacts(ctx, s.st, appID)
 	if err != nil {
@@ -219,18 +281,31 @@ func (s *AppsService) derivedState(ctx context.Context, appID string) (string, e
 	return engine.DeriveAppState(facts), nil
 }
 
-// appFacts 读取派生输入事实（placement + 部署窗口）。
+// derivedWindow 是派生输入的部署回看窗口（与引擎 appFactsOf 同值：最近
+// 25 条内找最近一次 succeeded）。
+const derivedWindow = 25
+
+// appFacts 读取派生输入事实（placement + 部署窗口）——单 app 形态。
 func appFacts(ctx context.Context, st *state.Store, appID string) (engine.AppFacts, error) {
-	facts := engine.AppFacts{}
+	var placement state.Placement
 	if p, err := st.GetPlacement(ctx, appID); err == nil {
-		facts.PlacementState = string(p.State)
+		placement = p
 	} else if !errors.Is(err, state.ErrPlacementNotFound) {
-		return facts, err
+		return engine.AppFacts{}, err
 	}
-	rows, err := st.ListAppDeployments(ctx, appID, 25)
+	rows, err := st.ListAppDeployments(ctx, appID, derivedWindow)
 	if err != nil {
-		return facts, err
+		return engine.AppFacts{}, err
 	}
+	return factsFromWindow(placement, rows), nil
+}
+
+// factsFromWindow 从「绑定 + 最近部署窗口（created_at 倒序）」构造派生输入
+// 事实——per-app 与批量（S18-A4）两种读路径共用同一装配逻辑，杜绝两形态
+// 的派生口径漂移。placement 零值（State 空串）= 无绑定记录的合法运行态，
+// DeriveAppState 对空串与缺席同判（自由调度非 blocked）。
+func factsFromWindow(placement state.Placement, rows []state.DeployRecord) engine.AppFacts {
+	facts := engine.AppFacts{PlacementState: string(placement.State)}
 	if len(rows) > 0 {
 		facts.Latest = rows[0]
 	}
@@ -240,7 +315,7 @@ func appFacts(ctx context.Context, st *state.Store, appID string) (engine.AppFac
 			break
 		}
 	}
-	return facts, nil
+	return facts
 }
 
 // placementView 构造 placement 投影。

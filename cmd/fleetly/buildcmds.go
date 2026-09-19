@@ -68,7 +68,7 @@ func (c *buildCmd) Run(ctx context.Context, env *commands.Environment, args []st
 	if err != nil {
 		return err
 	}
-	return c.conn.withClient(func(cl *fleetlyClient) error {
+	err = c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Builds().TriggerBuild(ctx, &serverv1.TriggerBuildRequest{
 			Compose: content,
 			Service: c.service,
@@ -98,6 +98,12 @@ func (c *buildCmd) Run(ctx context.Context, env *commands.Environment, args []st
 		}
 		return nil
 	})
+	if isCleanCancel(ctx, err) {
+		// Ctrl-C/SIGTERM：等待循环取消干净退出（在途构建继续执行，
+		// fleetly builds list 可查）——exit 0（S17-D3）。
+		return nil
+	}
+	return err
 }
 
 // passthroughService 是镜像模式服务的直通报告。

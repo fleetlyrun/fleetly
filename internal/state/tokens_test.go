@@ -38,7 +38,9 @@ func TestTokenHashStorageAndAuth(t *testing.T) {
 		t.Fatalf("hash prefix = %q, want first 12 of %s", tok.HashPrefix, storedHash)
 	}
 
-	// 认证成功 + last_used 盖章。
+	// 认证成功（S18-A2 后纯认证语义：AuthenticateToken 不再盖 last_used_at
+	// ——盖写职责上移到调用方 internal/api 的认证路径，经进程内节流后调
+	// TouchTokenUsed；此处钉死两层契约：认证返回零值 + 盖写原语生效）。
 	got, err := st.AuthenticateToken(ctx, plaintext)
 	if err != nil {
 		t.Fatalf("AuthenticateToken: %v", err)
@@ -46,8 +48,24 @@ func TestTokenHashStorageAndAuth(t *testing.T) {
 	if got.ID != tok.ID {
 		t.Fatalf("authenticated id = %s, want %s", got.ID, tok.ID)
 	}
-	if got.LastUsedAt.IsZero() {
-		t.Fatal("last_used_at not touched on successful auth")
+	if !got.LastUsedAt.IsZero() {
+		t.Fatal("AuthenticateToken must not touch last_used_at (A2: touch moved to api layer)")
+	}
+	if err := st.TouchTokenUsed(ctx, tok.ID); err != nil {
+		t.Fatalf("TouchTokenUsed: %v", err)
+	}
+	touched, err := st.ListTokens(ctx)
+	if err != nil {
+		t.Fatalf("ListTokens: %v", err)
+	}
+	touchedOK := false
+	for _, r := range touched {
+		if r.ID == tok.ID && !r.LastUsedAt.IsZero() {
+			touchedOK = true
+		}
+	}
+	if !touchedOK {
+		t.Fatal("last_used_at not touched by TouchTokenUsed")
 	}
 
 	// 错误凭据 → ErrTokenInvalid（不是 ErrTokenNotFound——不泄漏存在性）。

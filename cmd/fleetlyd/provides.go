@@ -132,8 +132,23 @@ func NewObserver(app lynx.App, st *state.Store, dc state.DockerClient) *state.Ob
 }
 
 // NewJanitor 构造保留期清理守护（事件/审计过期清理，周期可配）。
+// A7/A10（S18）扩展：部署 compose 目录 30 天窗、builds 终态行 90 天、
+// artifacts 目录 30 天保留窗与非终态超龄扫描（预算从 engine/build 配置
+// 派生：2×（发布看门狗+观察窗）/ 2×构建超时）。
 func NewJanitor(app lynx.App, st *state.Store, cfg *AppConfig) *state.Janitor {
-	return state.NewJanitor(st, cfg.State.EventRetentionDays, cfg.State.AuditRetentionDays, app.Logger())
+	engineCfg := cfg.EngineSettings().Normalize()
+	buildCfg := cfg.BuildSettings()
+	return state.NewJanitor(st, state.JanitorConfig{
+		EventRetentionDays:     cfg.State.EventRetentionDays,
+		AuditRetentionDays:     cfg.State.AuditRetentionDays,
+		BuildRetentionDays:     cfg.State.BuildRetentionDays,
+		ArtifactsDir:           buildCfg.ArtifactsDir,
+		ArtifactsRetentionDays: cfg.Build.ArtifactsRetentionDays,
+		DeploymentsRoot:        cfg.DeploymentsRoot(),
+		// 部署目录 30 天窗取注册默认（DeploymentDirRetentionDays 零值回落）。
+		StaleDeploymentBudget: 2 * (engineCfg.ReleaseTimeout + engineCfg.ObserveWindow),
+		StaleBuildBudget:      2 * buildCfg.Timeout,
+	}, app.Logger())
 }
 
 // NewSecretsBox 初始化 envelope 主密钥（fail-fast：加载/权限/生成任一失败
@@ -169,10 +184,11 @@ func NewBackupManager(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets
 		version, st, app.Logger())
 }
 
-// NewBuildQueue 构建构建队列调度器（信号量并发上限 + builds 行扫描认领）。
+// NewBuildQueue 构建构建队列调度器（信号量并发上限 + builds 行扫描认领 +
+// per-build 超时预算 + 启动复位中断构建）。
 func NewBuildQueue(app lynx.App, cfg *AppConfig, st *state.Store, b *build.Builder) *build.Queue {
 	settings := cfg.BuildSettings()
-	return build.NewQueue(st, b, settings.Concurrency, settings.PollInterval, app.Logger())
+	return build.NewQueue(st, b, settings.Concurrency, settings.PollInterval, settings.Timeout, app.Logger())
 }
 
 // NewPlacementResolver 构造放置解析器（放置意图解析/绑定落库/卷登记/
@@ -220,16 +236,18 @@ func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Clie
 
 // NewLogsManager 构建日志管线管理器（T2.20：采集/Follow/History/清理；
 // logs.* 配置节，缺省回落 internal/logs）。底座端口由 substrate.Client
-// 隐式实现 logs.Port（适配器方向：substrate → logs 核心接口）。
-func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, sb *secrets.Box) *logs.Manager {
-	return logs.NewManager(cfg.LogsSettings(), st, sc, sb, app.Logger())
+// 隐式实现 logs.Port（适配器方向：substrate → logs 核心接口）。B3：注入
+// git 触发面为补充脱敏值集供给（钩子 token 明文只在钩子文件）。
+func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, sb *secrets.Box, src *gitserver.GitTriggers) *logs.Manager {
+	return logs.NewManager(cfg.LogsSettings(), st, sc, sb, app.Logger()).
+		WithSecretSource(src)
 }
 
 // NewAppsService 构造应用资源面服务（T2.17；T2.19 增补 webhook/git 触发
 // 配置面——box 加密 webhook secret 与拉源认证材料，gitEndpoint 拼 remote
-// 提示）。
-func NewAppsService(st *state.Store, sb *secrets.Box, cfg *AppConfig) *api.AppsService {
-	return api.NewAppsService(st, sb, gitEndpointForHint(cfg.GitSettings().Addr))
+// 提示；H9 增补路由撤销端口——app 删除管线经 ingress.Manager 撤销路由）。
+func NewAppsService(st *state.Store, sb *secrets.Box, cfg *AppConfig, m *ingress.Manager) *api.AppsService {
+	return api.NewAppsService(st, sb, gitEndpointForHint(cfg.GitSettings().Addr), m)
 }
 
 // gitEndpointForHint 把 SSH 监听地址归一为 remote 提示的 host:port
@@ -269,9 +287,10 @@ func NewRevisionsService(st *state.Store) *api.RevisionsService {
 	return api.NewRevisionsService(st)
 }
 
-// NewBuildsService 构造构建资源面服务（T2.18）。
-func NewBuildsService(st *state.Store) *api.BuildsService {
-	return api.NewBuildsService(st)
+// NewBuildsService 构造构建资源面服务（T2.18；A11/S18 增补队列接线——
+// TriggerBuild 经 Queue.Enqueue 入队，同进程触发立即唤醒扫描）。
+func NewBuildsService(st *state.Store, q *build.Queue) *api.BuildsService {
+	return api.NewBuildsService(st, q)
 }
 
 // NewDriftService 构造漂移面服务（T2.18；复用引擎对账原语）。

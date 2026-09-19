@@ -672,6 +672,118 @@ services:
 	}
 }
 
+// TestPrepareBudgetAnchoredAtPickupNotEnqueue（H11 机制测试）：排队时长不
+// 计入准备预算。入队已久（10min > 300s）的 queued 行被拾取——锚点随
+// queued→preparing 写入 = 拾取时刻——第一拍不得立即假失败 E_RUNTIME_UNAVAILABLE
+// （旧缺陷：预算自 created_at 起算，未触底座、无副作用的假失败，用户必须
+// 重发），链路正常走完。
+func TestPrepareBudgetAnchoredAtPickupNotEnqueue(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	rec := h.enqueue(h.writeCompose(composeV1))
+	// 排队 10min：同 app 互斥等待前序部署终态（releasing 300s + observing
+	// 60s）或控制面停机窗口的形态。
+	h.clk.Advance(10 * time.Minute)
+	h.eng.Tick(ctx)
+	row := mustGet(h, rec.ID)
+	if row.Status == state.DeployFailed {
+		t.Fatalf("long-queued deploy failed on pickup tick: %s（排队时长不得计入准备预算）",
+			row.ErrorCode)
+	}
+	if row.PhaseStartedAt.IsZero() || !row.PhaseStartedAt.After(rec.CreatedAt) {
+		t.Fatalf("phase_started_at = %v, want pick-up anchor after created_at %v",
+			row.PhaseStartedAt, rec.CreatedAt)
+	}
+	final := h.runToTerminal(rec)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("deploy = %s (%s), want succeeded（预算自拾取锚点起算）",
+			final.Status, final.ErrorCode)
+	}
+}
+
+// TestPrepareBudgetLegacyRowFallsBackToCreatedAt（H11 对照组）：迁移 00009
+// 之前的存量 preparing 行（phase_started_at 为 NULL）回落 created_at——旧
+// 语义（入队起算、超时失败）不变。
+func TestPrepareBudgetLegacyRowFallsBackToCreatedAt(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	rec := h.enqueue(h.writeCompose(composeV1))
+	// 存量行形态：升级时已在 preparing、锚点未写（NULL）。
+	if err := h.store.InTx(ctx, func(tx *state.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`UPDATE deployments SET status = 'preparing', phase_started_at = NULL WHERE id = ?`, rec.ID)
+		return err
+	}); err != nil {
+		t.Fatalf("seed legacy preparing row: %v", err)
+	}
+	h.clk.Advance(10 * time.Minute)
+	h.eng.Tick(ctx)
+	final := mustGet(h, rec.ID)
+	if final.Status != state.DeployFailed || final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
+		t.Fatalf("legacy row = %s (%s), want failed E_RUNTIME_UNAVAILABLE（锚点缺失回落 created_at，旧语义不变）",
+			final.Status, final.ErrorCode)
+	}
+	// 未触底座：无服务创建。
+	if len(h.sub.services) != 0 {
+		t.Fatalf("substrate touched on budget failure: %v", h.sub.services)
+	}
+}
+
+// TestRollbackPrepareBudgetAnchoredAtPickupRetries（H11 回滚路径机制测试）：
+// 入队已久的回滚被拾取后遇底座不可达（ErrNotSwarmReady 暂态）——预算自拾取
+// 锚点起算：预算内逐拍重试（行留 preparing、不触底座），耗尽后才以
+// E_RUNTIME_UNAVAILABLE 落 failed（rollback_failed reason=preflight）。
+func TestRollbackPrepareBudgetAnchoredAtPickupRetries(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	v1, _ := rollbackFixture(t, h)
+	rec, err := EnqueueRollback(ctx, h.store, RollbackInput{
+		AppName:          "demo",
+		TargetRevisionID: v1.RevisionID,
+	})
+	if err != nil {
+		t.Fatalf("enqueue rollback: %v", err)
+	}
+	// 排队 10min + 底座不可达。
+	h.clk.Advance(10 * time.Minute)
+	h.sub.swarmErr = ErrNotSwarmReady
+	h.eng.Tick(ctx)
+	row := mustGet(h, rec.ID)
+	// 旧缺陷：预算自 created_at 起算 → 拾取第一拍即 failed（未触底座）。
+	if row.Status != state.DeployPreparing {
+		t.Fatalf("rollback row = %s (%s), want preparing（预算内重试，不立即终态失败）",
+			row.Status, row.ErrorCode)
+	}
+	if row.PhaseStartedAt.IsZero() || !row.PhaseStartedAt.After(rec.CreatedAt) {
+		t.Fatalf("phase_started_at = %v, want pick-up anchor after created_at %v",
+			row.PhaseStartedAt, rec.CreatedAt)
+	}
+	// 暂态窗口内逐拍重试：仍非终态、无归位重放（不触底座）。
+	updatesBefore := len(h.sub.updates)
+	for i := 0; i < 3; i++ {
+		h.clk.Advance(30 * time.Second) // 自锚点累计 90s < 300s
+		h.eng.Tick(ctx)
+	}
+	row = mustGet(h, rec.ID)
+	if row.Status.Terminal() {
+		t.Fatalf("rollback terminally failed within budget: %s (%s)", row.Status, row.ErrorCode)
+	}
+	if len(h.sub.updates) != updatesBefore {
+		t.Fatalf("substrate touched during unavailable window: %v", h.sub.updates)
+	}
+	// 预算耗尽（锚点 + 301s > 300s）：E_RUNTIME_UNAVAILABLE + preflight 失败事件。
+	h.clk.Advance(301 * time.Second)
+	h.eng.Tick(ctx)
+	final := mustGet(h, rec.ID)
+	if final.Status != state.DeployFailed || final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
+		t.Fatalf("rollback = %s (%s), want failed E_RUNTIME_UNAVAILABLE（预算自锚点起算后耗尽）",
+			final.Status, final.ErrorCode)
+	}
+	if !hasEvent(h.events(), "deployment.rollback_failed") {
+		t.Fatal("missing deployment.rollback_failed（reason=preflight）")
+	}
+}
+
 func TestBoundNodeRemovedFailsDeployment(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
@@ -747,6 +859,123 @@ services:
 	}
 	if !found {
 		t.Fatal("recovery classification did not restore previous version")
+	}
+}
+
+// TestRestartRecoveryPreservesBlockedWaiting（H12 机制测试，场景 15）：节点
+// down 期间控制面重启（如升级）——releasing + phase=blocked_waiting 的行
+// 不得被启动扫描分类改写：不落 E_DEPLOY_INTERRUPTED、不归位（节点仍不可用，
+// 归位同样滞留），交回 tick 的 watchBoundNode；节点恢复后续跑并重新起算，
+// 链路走完。
+func TestRestartRecoveryPreservesBlockedWaiting(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	pathV1 := h.writeCompose(composeV1)
+	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
+		t.Fatalf("v1 = %s", final.Status)
+	}
+	// v2 发布中绑定节点 DOWN（场景 15）→ releasing + blocked_waiting。
+	pathV2 := h.writeCompose(`name: demo
+services:
+  web:
+    image: alpine:4
+    command: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 1s
+      timeout: 1s
+      retries: 2
+      start_period: 1s
+`)
+	h.sub.setMode("fleetly-demo-web", modePending)
+	rec2 := h.enqueue(pathV2)
+	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
+		h.eng.Tick(ctx)
+	}
+	h.resolver.preflightErrs = []error{placementUnavailable()}
+	h.eng.Tick(ctx)
+	row := mustGet(h, rec2.ID)
+	if row.Phase != state.PhaseBlockedWaiting {
+		t.Fatalf("phase = %q, want blocked_waiting", row.Phase)
+	}
+
+	// 控制面重启（节点仍 down）：新引擎实例的启动扫描——旧缺陷落入
+	// default 分类分支：E_DEPLOY_INTERRUPTED 假失败 + restoreSnapshot 归位。
+	eng2 := NewEngine(Config{}, h.store, h.sub, h.images, h.resolver, h.box,
+		slog.New(slog.NewTextHandler(io.Discard, nil))).WithClock(h.clk)
+	eng2.recoverInterrupted(ctx)
+	after := mustGet(h, rec2.ID)
+	if after.Status != state.DeployReleasing || after.Phase != state.PhaseBlockedWaiting {
+		t.Fatalf("restart rewrote blocked_waiting row: status=%s phase=%s（等待语义不得丢失）",
+			after.Status, after.Phase)
+	}
+	if after.ErrorCode != "" {
+		t.Fatalf("restart wrote error_code %q on blocked_waiting row", after.ErrorCode)
+	}
+
+	// 节点恢复：底座任务转健康（节点回来后 Swarm 调度启动）→ tick 续跑
+	//（resumeFromBlocked 重臂看门狗）→ 链路走完。
+	svc := h.sub.services["fleetly-demo-web"]
+	svc.update = "completed"
+	svc.tasks = h.sub.runningTasks(svc, "t-resumed")
+	final := h.runToTerminalWith(rec2, eng2)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("resumed deploy = %s (%s), want succeeded（节点恢复续跑并重新起算）",
+			final.Status, final.ErrorCode)
+	}
+	if !hasEvent(h.events(), "placement.recovered") {
+		t.Fatal("missing placement.recovered（续跑事件）")
+	}
+}
+
+// TestRestartRecoveryUndeterminableFailsInterrupted（H12 对照组）：无 phase
+// 的 releasing 行走既有分类——现场无法判定（更新中、无进展）→
+// E_DEPLOY_INTERRUPTED 失败 + 归位（§2.3）。
+func TestRestartRecoveryUndeterminableFailsInterrupted(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	pathV1 := h.writeCompose(composeV1)
+	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
+		t.Fatalf("v1 = %s", final.Status)
+	}
+	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
+	pathV2 := h.writeCompose(`name: demo
+services:
+  web:
+    image: alpine:4
+    command: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 1s
+      timeout: 1s
+      retries: 2
+      start_period: 1s
+`)
+	h.sub.setMode("fleetly-demo-web", modePending)
+	rec2 := h.enqueue(pathV2)
+	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
+		h.eng.Tick(ctx)
+	}
+	// 控制面重启：任务滞留 PENDING、更新进行中 → 无法判定 → 失败 + 归位。
+	eng2 := NewEngine(Config{}, h.store, h.sub, h.images, h.resolver, h.box,
+		slog.New(slog.NewTextHandler(io.Discard, nil))).WithClock(h.clk)
+	eng2.recoverInterrupted(ctx)
+	final := mustGet(h, rec2.ID)
+	if final.Status != state.DeployFailed || final.ErrorCode != "E_DEPLOY_INTERRUPTED" {
+		t.Fatalf("recovered deploy = %s (%s), want failed E_DEPLOY_INTERRUPTED（无 phase 行走既有分类）",
+			final.Status, final.ErrorCode)
+	}
+	if final.Recovery != state.RecoveryRestore {
+		t.Fatalf("recovery = %q, want restore", final.Recovery)
+	}
+	found := false
+	for _, u := range h.sub.updates {
+		if u[1] == v1Image {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("undeterminable classification did not restore previous version")
 	}
 }
 

@@ -84,7 +84,7 @@ func (s *Store) CreateGitKey(ctx context.Context, w GitKeyWrite) (GitKey, error)
 			Action:       "gitkey.add",
 			Target:       "gitkey:" + id,
 			Result:       "ok",
-			DiffSummary:  `{"fingerprint":"` + w.Fingerprint + `","key_type":"` + w.KeyType + `"}`,
+			DiffSummary:  DiffSummary("fingerprint", w.Fingerprint, "key_type", w.KeyType), // B4：构造器替换手拼 JSON
 		}); err != nil {
 			return err
 		}
@@ -154,7 +154,7 @@ func (s *Store) RemoveGitKey(ctx context.Context, id, actorTokenID string) error
 			Action:       "gitkey.remove",
 			Target:       "gitkey:" + id,
 			Result:       "ok",
-			DiffSummary:  `{"fingerprint":"` + fingerprint + `"}`,
+			DiffSummary:  DiffSummary("fingerprint", fingerprint), // B4：构造器替换手拼 JSON
 		})
 	})
 }

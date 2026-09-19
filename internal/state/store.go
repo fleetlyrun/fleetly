@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +71,29 @@ func (s *Store) Close() error { return s.db.Close() }
 
 // Path 返回数据库文件路径。
 func (s *Store) Path() string { return s.path }
+
+// DeploymentsRoot 返回部署 compose 持久化根目录（S18-A7：<数据根>/
+// deployments；数据根 = 状态库同目录——与 cmd 装配的 BackupRoot/GitRoot
+// 同款派生，入队点（api/gitserver）与 janitor 清理共用同一布局）。
+func DeploymentsRoot(dbPath string) string {
+	return filepath.Join(filepath.Dir(dbPath), "deployments")
+}
+
+// PersistDeploymentCompose 把部署 compose 字节持久化到
+// <root>/<deploymentID>/compose.yaml（S18-A7 入队点共享写入通道：先写
+// 文件后建行——部署行不指向缺失文件；0600 权限；OS 临时目录自此仅作解析
+// 中转，tmpfiles 清理不再影响引擎 preparing 重载与成功固化重载）。
+func PersistDeploymentCompose(root, deploymentID string, compose []byte) (string, error) {
+	dir := filepath.Join(root, deploymentID)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "", fmt.Errorf("state: mkdir deployment compose dir: %w", err)
+	}
+	path := filepath.Join(dir, "compose.yaml")
+	if err := os.WriteFile(path, compose, 0o600); err != nil {
+		return "", fmt.Errorf("state: write deployment compose: %w", err)
+	}
+	return path, nil
+}
 
 // Ping 探测数据库可用性。
 func (s *Store) Ping(ctx context.Context) error {

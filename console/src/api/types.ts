@@ -1,275 +1,79 @@
-// REST 面类型：与 proto/fleetly/server/v1/*.proto 的消息一一对应——字段名
-// 按 gateway 的 UseProtoNames 输出（snake_case，proto 声明名）。google.
-// protobuf.Timestamp 在 JSON 中是 RFC3339 字符串。
+// REST 面类型：与 proto 消息直接对应的接口一律引用 schema.d.ts 的生成类型
+// （openapi-typescript 从 genproto/fleetly/server/v1/*.swagger.json 生成，
+// `pnpm gen:api` 再生成，CI 以"再生成无 diff"门禁拦漂移——D4-②）。
+//
+// 生成类型的两个口径（与 gateway 实际输出一致，勿按直觉"纠正"）：
+//   - 字段全部可选：gateway JSON marshaler EmitUnpopulated=false，proto3
+//     零值字段不出现在 JSON 输出；
+//   - int64 一律字符串（proto3 JSON 映射），Timestamp 是 RFC3339 字符串。
+//
+// 仅 gateway 传输形态投影（NDJSON result 包裹，stream-types.ts）与页面局部
+// 视图模型保留手写——它们不在 proto 消息面内。
 
-export interface AppView {
-  id: string;
-  name: string;
-  /** active | deleting | deleted */
-  lifecycle: string;
-  /** running | degraded | blocked | down（读面即时推导） */
-  derived_state: string;
-  created_at?: string;
-  updated_at?: string;
-}
+import type { components } from "./schema";
 
-export interface ListAppsResponse {
-  apps: AppView[];
-}
+type Schemas = components["schemas"];
 
-export interface PlacementView {
-  platform_node_id: string;
-  label_ref: string;
-  /** bound | blocked | unresolved */
-  state: string;
-  reason: string;
-  source: string;
-  pinned_at?: string;
-  created_at?: string;
-  updated_at?: string;
-}
+// ── apps ────────────────────────────────────────────────────────────────
 
-export interface VolumeView {
-  key: string;
-  name: string;
-  kind: string;
-  node_id: string;
-  mount_path: string;
-  status: string;
-}
+export type AppView = Schemas["v1AppView"];
+export type ListAppsResponse = Schemas["v1ListAppsResponse"];
 
-export interface DeploymentView {
-  id: string;
-  app: string;
-  /** deploy | rollback */
-  kind: string;
-  /** queued/preparing/building/releasing/observing/succeeded/failed/cancelled */
-  status: string;
-  /** 子状态（blocked_waiting 或空） */
-  phase: string;
-  revision_id: string;
-  error_code: string;
-  verdict: string;
-  recovery: string;
-  substrate_halted: boolean;
-  first_healthy_at?: string;
-  /** proto int64 → JSON 字符串 */
-  downtime_ms: number | string;
-  created_at?: string;
-  updated_at?: string;
-  source_git_sha?: string;
-  source_git_ref?: string;
-}
+// ── placement ────────────────────────────────────────────────────────────
 
-export interface GetAppResponse {
-  id: string;
-  name: string;
-  lifecycle: string;
-  derived_state: string;
-  created_at?: string;
-  updated_at?: string;
-  placement?: PlacementView;
-  recent_deployments?: DeploymentView[];
-}
+export type PlacementView = Schemas["v1PlacementView"];
+export type VolumeView = Schemas["v1VolumeView"];
 
-export interface ComposeWarning {
-  field: string;
-  warning: string;
-}
+// ── deployments ──────────────────────────────────────────────────────────
 
-export interface DeployResponse {
-  deployment_id: string;
-  app: string;
-  status: string;
-  warnings?: ComposeWarning[];
-}
+export type DeploymentView = Schemas["v1DeploymentView"];
+export type GetAppResponse = Schemas["v1GetAppResponse"];
+export type ComposeWarning = Schemas["v1ComposeWarning"];
+export type DeployResponse = Schemas["v1DeployResponse"];
+export type ListDeploymentsResponse = Schemas["v1ListDeploymentsResponse"];
+export type CancelDeploymentResponse = Schemas["v1CancelDeploymentResponse"];
+export type RollbackDeploymentResponse = Schemas["v1RollbackDeploymentResponse"];
 
-export interface ListDeploymentsResponse {
-  deployments: DeploymentView[];
-}
+// ── revisions ────────────────────────────────────────────────────────────
 
-export interface CancelDeploymentResponse {
-  id: string;
-  status: string;
-}
+export type RevisionView = Schemas["v1RevisionView"];
+export type ListRevisionsResponse = Schemas["v1ListRevisionsResponse"];
+export type GetRevisionSpecResponse = Schemas["v1GetRevisionSpecResponse"];
 
-export interface RollbackDeploymentResponse {
-  deployment_id: string;
-  app: string;
-  status: string;
-}
+// ── env ──────────────────────────────────────────────────────────────────
 
-export interface RevisionView {
-  id: string;
-  /** proto int64 → JSON 字符串 */
-  seq: string;
-  desired_hash: string;
-  /** active = 可回滚选项；superseded = 淘汰存档 */
-  status: string;
-  verified: boolean;
-  created_at?: string;
-}
+export type EnvVarView = Schemas["v1EnvVarView"];
+export type ListEnvResponse = Schemas["v1ListEnvResponse"];
+export type GetEnvResponse = Schemas["v1GetEnvResponse"];
+export type SetEnvResponse = Schemas["v1SetEnvResponse"];
+export type RemoveEnvResponse = Schemas["v1RemoveEnvResponse"];
 
-export interface ListRevisionsResponse {
-  revisions: RevisionView[];
-}
+// ── domains ──────────────────────────────────────────────────────────────
 
-export interface GetRevisionSpecResponse {
-  revision_id: string;
-  seq: number;
-  compose: string;
-}
+export type DomainView = Schemas["v1DomainView"];
+export type ListAppDomainsResponse = Schemas["v1ListAppDomainsResponse"];
+export type DomainCheckView = Schemas["v1DomainCheckView"];
+export type VerifyAppDomainsResponse = Schemas["v1VerifyAppDomainsResponse"];
 
-export interface EnvVarView {
-  key: string;
-  /** platform | system */
-  source: string;
-  /** pending | effective */
-  status: string;
-  created_at?: string;
-  updated_at?: string;
-}
+// ── logs ─────────────────────────────────────────────────────────────────
 
-export interface ListEnvResponse {
-  env_vars: EnvVarView[];
-}
+export type LogEntryView = Schemas["v1LogEntryView"];
+export type ListHistoryLogsResponse = Schemas["v1ListHistoryLogsResponse"];
 
-export interface GetEnvResponse {
-  app: string;
-  key: string;
-  value: string;
-  status: string;
-}
+// ── system ───────────────────────────────────────────────────────────────
 
-export interface SetEnvResponse {
-  app: string;
-  key: string;
-  status: string;
-}
+export type ComponentHealth = Schemas["v1ComponentHealth"];
+export type GetSystemStatusResponse = Schemas["v1GetSystemStatusResponse"];
+export type NodeView = Schemas["v1NodeView"];
+export type ListNodesResponse = Schemas["v1ListNodesResponse"];
+export type TraefikView = Schemas["v1TraefikView"];
+export type CertLedgerView = Schemas["v1CertLedgerView"];
+export type GetIngressStatusResponse = Schemas["v1GetIngressStatusResponse"];
 
-export interface RemoveEnvResponse {
-  app: string;
-  key: string;
-  status: string;
-}
+// ── events ───────────────────────────────────────────────────────────────
 
-export interface DomainView {
-  service: string;
-  domain: string;
-  /** '' = 未同步 */
-  port: string;
-  /** '' = 尚无证书 */
-  cert_sha256: string;
-  cert_not_after?: string;
-  created_at?: string;
-}
-
-export interface ListAppDomainsResponse {
-  domains: DomainView[];
-}
-
-export interface DomainCheckView {
-  domain: string;
-  ips: string[];
-  resolved: boolean;
-  http_80: string;
-  https_443: string;
-  cert_subject: string;
-  cert_dns_names: string[];
-  cert_not_after?: string;
-  error: string;
-}
-
-export interface VerifyAppDomainsResponse {
-  checks: DomainCheckView[];
-}
-
-export interface LogEntryView {
-  app: string;
-  service: string;
-  at?: string;
-  stderr: boolean;
-  line: string;
-  /** container | build */
-  source: string;
-}
-
-export interface ListHistoryLogsResponse {
-  entries: LogEntryView[];
-}
-
-export interface ComponentHealth {
-  name: string;
-  ok: boolean;
-  error: string;
-}
-
-export interface GetSystemStatusResponse {
-  service: string;
-  version: string;
-  components: ComponentHealth[];
-}
-
-export interface NodeView {
-  swarm_node_id: string;
-  platform_id: string;
-  hostname: string;
-  state: string;
-  availability: string;
-  is_manager: boolean;
-  observed_at?: string;
-  stale: boolean;
-  labels: Record<string, string>;
-}
-
-export interface ListNodesResponse {
-  nodes: NodeView[];
-}
-
-export interface TraefikView {
-  exists: boolean;
-  image: string;
-  static_args: number;
-  error: string;
-}
-
-export interface CertLedgerView {
-  app: string;
-  domain: string;
-  cert_sha256: string;
-  cert_not_after?: string;
-}
-
-export interface GetIngressStatusResponse {
-  traefik: TraefikView;
-  config_addr: string;
-  advertise_ip: string;
-  responder: string;
-  healthz: string;
-  auth: string;
-  certificates: CertLedgerView[];
-  cert_dir: string;
-  cert_dir_apps: string[];
-  cert_dir_error: string;
-}
-
-export interface EventView {
-  /** proto int64 → JSON 字符串（proto3 JSON 映射） */
-  seq: string;
-  at?: string;
-  name: string;
-  subject: string;
-  payload: string;
-}
-
-export interface CursorExpiredView {
-  /** proto int64 → JSON 字符串 */
-  oldest_seq: string;
-  message: string;
-}
+export type EventView = Schemas["v1EventView"];
+export type CursorExpiredView = Schemas["v1CursorExpiredView"];
 
 /** WatchEvents 的 oneof frame 投影（UseProtoNames → snake_case 成员名）。 */
-export interface WatchEventsFrame {
-  event?: EventView;
-  cursor_expired?: CursorExpiredView;
-}
+export type WatchEventsFrame = Schemas["v1WatchEventsResponse"];

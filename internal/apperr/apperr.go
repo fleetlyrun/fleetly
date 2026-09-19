@@ -196,16 +196,40 @@ func FromError(err error) (*Error, bool) {
 	return FromGRPCStatus(st)
 }
 
+// RedactedDegradedMessage 是 B1（出站字节出口收口）对内部类 grpc code 的
+// 退化信封固定对外文案：无信封 detail 且 code ∈ {Unknown, Internal,
+// FailedPrecondition} 时替换 status 原文——原文可能携带 SQL 片段、绝对
+// 路径、git stderr 等内部细节，只进服务端 slog（gateway 错误处理器处落
+// 日志，凭 grpc code 与时间戳关联排障）。
+const RedactedDegradedMessage = "internal error——详情见服务端日志（凭错误码与时间戳关联）"
+
+// redactDegradedMessage 报告无信封 detail 的 grpc code 是否属于内部错误
+// 语义（B1）：Unknown（handler 裸 return 的 state/底层错误经 gRPC 传输层
+// 包装即此形态）、Internal、FailedPrecondition。InvalidArgument/NotFound/
+// Unauthenticated 等业务码多来自调用方输入侧，原文保留（有信封 detail 的
+// 业务信封本就走原逻辑，不受影响）。
+func redactDegradedMessage(c codes.Code) bool {
+	switch c {
+	case codes.Unknown, codes.Internal, codes.FailedPrecondition:
+		return true
+	}
+	return false
+}
+
 // EnvelopeFromGRPCStatus 是 gateway 错误链的统一出口：有信封 detail 时
 // 返回信封与注册表 HTTP 状态；无 detail 走退化信封——code 留空串（不发明
-// 文档外码、不挪用既有码语义），message 取 status 原文保底，HTTP 状态由
-// grpc code 机械映射。兜底形态待 T0.5 契约冻结确认。
+// 文档外码、不挪用既有码语义），HTTP 状态由 grpc code 机械映射。B1：内部
+// 类 code 的 message 替换为固定文案（原文由 gateway 错误处理器落 slog），
+// 业务码（InvalidArgument/NotFound 等）原文保留。
 func EnvelopeFromGRPCStatus(st *status.Status) (*sharedv1.ErrorResponse, int) {
 	if st == nil {
 		return &sharedv1.ErrorResponse{Message: "internal server error"}, http.StatusInternalServerError
 	}
 	if e, ok := FromGRPCStatus(st); ok {
 		return e.Envelope(), e.HTTPStatus()
+	}
+	if redactDegradedMessage(st.Code()) {
+		return &sharedv1.ErrorResponse{Message: RedactedDegradedMessage}, GRPCCodeToHTTP(st.Code())
 	}
 	return &sharedv1.ErrorResponse{Message: st.Message()}, GRPCCodeToHTTP(st.Code())
 }

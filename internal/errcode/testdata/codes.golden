@@ -4,6 +4,7 @@ E_CAPABILITY_REQUIRES_MULTI_NODE	400	https://docs.fleetly.dev/errors/E_CAPABILIT
 E_COMPOSE_MANAGED_FIELD	400	https://docs.fleetly.dev/errors/E_COMPOSE_MANAGED_FIELD	compose 受管字段取值违反平台治理（failure_action/monitor）	将 deploy.update_config.failure_action 改为 pause（或省略）、monitor 改为 5s 或省略后重试。
 E_COMPOSE_UNSAFE_STRATEGY	400	https://docs.fleetly.dev/errors/E_COMPOSE_UNSAFE_STRATEGY	显式 start-first 与平台强制 stop-first 的场景冲突（有卷/固定 host 端口/global）	将 deploy.update_config.order 改为 start-first 或省略；有卷/固定端口服务由平台强制 stop-first。
 E_COMPOSE_UNSUPPORTED	400	https://docs.fleetly.dev/errors/E_COMPOSE_UNSUPPORTED	compose 声明落在受控子集/拒绝清单之外，校验显式拒绝	移除或改写不受支持的 compose 字段后重试；受控子集与拒绝清单见错误码文档。
+E_DEPLOY_CONFIRM_REQUIRED	409	https://docs.fleetly.dev/errors/E_DEPLOY_CONFIRM_REQUIRED	部署含破坏性变更（服务删除/卷解绑）但未携带确认标志，拒绝入队	本次部署相对最新版本将删除服务或解绑卷：确认意图后加 --confirm-destructive 重试。
 E_DEPLOY_DOWNTIME_FAILED	500	https://docs.fleetly.dev/errors/E_DEPLOY_DOWNTIME_FAILED	stop-first 停机切换失败且强制归位失败（永久宕机风险路径）	修复启动失败原因后重新部署；该路径强制归位、不可回滚。
 E_DEPLOY_INTERRUPTED	500	https://docs.fleetly.dev/errors/E_DEPLOY_INTERRUPTED	发布被中断（控制面停止/节点故障），未完成状态机	重新发起部署以恢复；未切流场景流量未受影响。
 E_DEPLOY_POST_WINDOW_UNSTABLE	500	https://docs.fleetly.dev/errors/E_DEPLOY_POST_WINDOW_UNSTABLE	观察窗通过后出现不稳定判定（平台只告警、不自动回滚）	查看应用日志评估影响，建议手动回滚（平台观察窗后不自动回滚）。

@@ -51,7 +51,7 @@ export function AppOverviewPage() {
         <CardContent className="space-y-3">
           {app ? (
             <>
-              <Field label="Derived state" value={<StateBadge state={app.derived_state} />} />
+              <Field label="Derived state" value={<StateBadge state={app.derived_state ?? ""} />} />
               <Field label="Lifecycle" value={<code>{app.lifecycle}</code>} />
               <Field label="Created" value={formatTime(app.created_at)} />
               <Field label="Updated" value={`${timeAgo(app.updated_at)}`} />
@@ -75,7 +75,7 @@ export function AppOverviewPage() {
               <Field
                 label="Binding state"
                 value={
-                  <StateBadge state={placementQuery.data.placement.state} />
+                  <StateBadge state={placementQuery.data.placement.state ?? ""} />
                 }
               />
               <Field

@@ -69,6 +69,9 @@ type fakeService struct {
 	nextMode updateMode
 	// noTaskChurn 断言辅助：记录每次 update 前的任务 ID 集合。
 	created bool
+	// failureAction 是 UpdateConfig.FailureAction 的实况镜像（默认平台
+	// 受管值 pause；A8 测试经 mutateUpdateFailureAction 注入外部篡改）。
+	failureAction string
 }
 
 // fakeSubstrate 是 Substrate 端口的内存实现。
@@ -82,6 +85,12 @@ type fakeSubstrate struct {
 	// pendingModes 是服务创建/下一次更新应表现的行为（可先于服务存在设置）。
 	pendingModes map[string]updateMode
 	failUpdates  map[string]error
+	// panicOn 注入 TaskList panic（A9 tick 隔离测试：命中服务名即 panic，
+	// 模拟单条毒记录引发的引擎推进 panic）。
+	panicOn map[string]bool
+	// swarmErr 是 SwarmReady 的错误注入（底座不可达）：ErrNotSwarmReady =
+	// 暂态（引擎记警告后按各路径语义重试/推进）；其他错误 = 硬失败。
+	swarmErr error
 }
 
 func newFakeSubstrate() *fakeSubstrate {
@@ -90,10 +99,11 @@ func newFakeSubstrate() *fakeSubstrate {
 		networks:     map[string]bool{},
 		pendingModes: map[string]updateMode{},
 		failUpdates:  map[string]error{},
+		panicOn:      map[string]bool{},
 	}
 }
 
-func (f *fakeSubstrate) SwarmReady(context.Context) error { return nil }
+func (f *fakeSubstrate) SwarmReady(context.Context) error { return f.swarmErr }
 
 func (f *fakeSubstrate) NetworkEnsure(_ context.Context, name string) error {
 	f.mu.Lock()
@@ -113,6 +123,10 @@ func (f *fakeSubstrate) ServiceInspect(_ context.Context, name string) (ServiceS
 }
 
 func (f *fakeSubstrate) stateOf(svc *fakeService) ServiceState {
+	failureAction := svc.failureAction
+	if failureAction == "" {
+		failureAction = "pause" // 平台受管缺省（适配器恒写 pause）
+	}
 	out := ServiceState{
 		Name:          svc.spec.Name,
 		Version:       svc.version,
@@ -135,6 +149,11 @@ func (f *fakeSubstrate) stateOf(svc *fakeService) ServiceState {
 		Constraints:     append([]string{}, svc.spec.Constraints...),
 		StopSignal:      svc.spec.StopSignal,
 		StopGracePeriod: svc.spec.StopGracePeriod,
+		// A8（S18）：UpdateConfig 投影补齐（真实适配器同构）。
+		UpdateOrder:         svc.spec.UpdateOrder,
+		UpdateParallelism:   svc.spec.UpdateParallelism,
+		UpdateDelay:         svc.spec.UpdateDelay,
+		UpdateFailureAction: failureAction,
 	}
 	for k, v := range svc.spec.ServiceLabels {
 		out.Labels[k] = v
@@ -155,6 +174,25 @@ func (f *fakeSubstrate) mutateExternal(service string, mutate func(spec *Service
 	}
 	mutate(&svc.spec)
 	svc.version++
+}
+
+// mutateUpdateFailureAction 模拟外部篡改平台受管字段（docker service
+// update --update-failure-action rollback；A8 专报测试）——绕过平台写
+// 语义（适配器恒写 pause），只改实况镜像。
+func (f *fakeSubstrate) mutateUpdateFailureAction(service, action string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if svc, ok := f.services[service]; ok {
+		svc.failureAction = action
+		svc.version++
+	}
+}
+
+// panicOnTaskList 注入 TaskList panic（A9 测试）。
+func (f *fakeSubstrate) panicOnTaskList(service string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.panicOn[service] = true
 }
 
 func (f *fakeSubstrate) ServiceCreate(_ context.Context, spec ServiceSpec) error {
@@ -329,6 +367,9 @@ func (f *fakeSubstrate) ServiceList(_ context.Context, labels map[string]string)
 func (f *fakeSubstrate) TaskList(_ context.Context, serviceName string) ([]TaskState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.panicOn[serviceName] {
+		panic("injected substrate panic (A9 tick 隔离测试)")
+	}
 	svc, ok := f.services[serviceName]
 	if !ok {
 		return nil, nil

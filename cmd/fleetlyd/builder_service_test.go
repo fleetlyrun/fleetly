@@ -53,7 +53,7 @@ func TestBuilderServiceLifecycleAndQueueFlow(t *testing.T) {
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	builder := build.NewBuilder(build.Config{ManageDaemon: false}, st, noopImages{}, nil, logger)
-	queue := build.NewQueue(st, quickExecutor{store: st}, 2, 50*time.Millisecond, logger)
+	queue := build.NewQueue(st, quickExecutor{store: st}, 2, 50*time.Millisecond, 0 /*超时取缺省*/, logger)
 
 	// os.Args/CWD 隔离（lynx Runner 进程内构造的既定写法，见
 	// state_services_test.go）。

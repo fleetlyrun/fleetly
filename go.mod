@@ -23,6 +23,7 @@ require (
 	github.com/railwayapp/railpack v0.39.0
 	github.com/sirupsen/logrus v1.10.2
 	github.com/spf13/pflag v1.0.10
+	github.com/spf13/viper v1.21.0 // F5：fleetlyd schema-version 子命令直用（此前仅经 lynx 间接依赖）
 	github.com/tonistiigi/fsutil v0.0.0-20260819142231-83cac42c1c52
 	golang.org/x/crypto v0.56.0
 	golang.org/x/net v0.58.0
@@ -121,7 +122,6 @@ require (
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/cast v1.10.0 // indirect
-	github.com/spf13/viper v1.21.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f // indirect

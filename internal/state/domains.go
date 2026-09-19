@@ -87,17 +87,19 @@ func (t *Tx) ReplaceAppDomains(ctx context.Context, appID string, declared []Dom
 			keep[d] = svc.Service
 		}
 	}
-	rows, err := t.QueryContext(ctx, `SELECT id, service, domain FROM domains WHERE app_id = ?`, appID)
+	// 现有行需连 port 一并读出比对：service 不变但端口变化的情形也须改写，
+	// 否则迁移/改端口后台账残留旧端口，ingress 路由到错误目标（H3）。
+	rows, err := t.QueryContext(ctx, `SELECT id, service, domain, port FROM domains WHERE app_id = ?`, appID)
 	if err != nil {
 		return fmt.Errorf("state: query domains for app %s: %w", appID, err)
 	}
 	type row struct {
-		id, service, domain string
+		id, service, domain, port string
 	}
 	var existing []row
 	for rows.Next() {
 		var r row
-		if err := rows.Scan(&r.id, &r.service, &r.domain); err != nil {
+		if err := rows.Scan(&r.id, &r.service, &r.domain, &r.port); err != nil {
 			_ = rows.Close()
 			return fmt.Errorf("state: scan domain row: %w", err)
 		}
@@ -116,8 +118,8 @@ func (t *Tx) ReplaceAppDomains(ctx context.Context, appID string, declared []Dom
 	// upsert 声明集。
 	for _, r := range existing {
 		svc, ok := keep[r.domain]
-		if ok && svc == r.service {
-			continue // 未变化
+		if ok && svc == r.service && portByService[svc] == r.port {
+			continue // service 与 port 均未变化
 		}
 		if !ok {
 			if _, err := t.ExecContext(ctx, `DELETE FROM domains WHERE id = ?`, r.id); err != nil {
@@ -125,9 +127,11 @@ func (t *Tx) ReplaceAppDomains(ctx context.Context, appID string, declared []Dom
 			}
 			continue
 		}
+		// 迁移/改端口同路径：service 与 port 一并改写（port 与 INSERT 同源
+		// portByService），避免台账 service 已迁而 port 残留旧服务端口。
 		if _, err := t.ExecContext(ctx,
-			`UPDATE domains SET service = ? WHERE id = ?`, svc, r.id); err != nil {
-			return fmt.Errorf("state: move domain %s to service %s: %w", r.domain, svc, err)
+			`UPDATE domains SET service = ?, port = ? WHERE id = ?`, svc, portByService[svc], r.id); err != nil {
+			return fmt.Errorf("state: move domain %s to service %s port %s: %w", r.domain, svc, portByService[svc], err)
 		}
 	}
 	for d, svc := range keep {
@@ -143,18 +147,8 @@ func (t *Tx) ReplaceAppDomains(ctx context.Context, appID string, declared []Dom
 	return nil
 }
 
-// SetAppServicePorts 回填既有域名行的路由端口（服务端口变化时对账；幂等）。
-func (s *Store) SetAppServicePorts(ctx context.Context, appID string, portByService map[string]string) error {
-	return s.InTx(ctx, func(tx *Tx) error {
-		for svc, port := range portByService {
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE domains SET port = ? WHERE app_id = ? AND service = ?`, port, appID, svc); err != nil {
-				return fmt.Errorf("state: update domain port for service %s: %w", svc, err)
-			}
-		}
-		return nil
-	})
-}
+// SetAppServicePorts 已删除（S16-C6 首批死代码清理：无生产调用方——端口
+// 回填经 ReplaceAppDomains 整组对账承载）。
 
 // DeleteAppDomains 删除应用的全部域名台账行（应用移除/路由撤销时调用；
 // 幂等）。

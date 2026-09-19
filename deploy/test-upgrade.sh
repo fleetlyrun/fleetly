@@ -9,6 +9,9 @@
 #   $UG_STAGE/bin-vA/fleetly
 #   $UG_STAGE/bin-vB/fleetlyd   linux 二进制（版本串 = $VERSION_B；vA ≠ vB）
 #   $UG_STAGE/bin-vB/fleetly
+#   $UG_STAGE/bin-vC/fleetlyd   linux 二进制（版本串 = $VERSION_C；注入迁移
+#                               00099 的 schema-skew 变体，S4/F5/S20——CLI
+#                               由本套件在 dind 内伪造，无需真实件）
 #   $UG_STAGE/probe.tar.gz      探针应用镜像（宿主 docker save | gzip；scratch
 #                               + 静态二进制，dind 内 docker load，零 registry
 #                               依赖；镜像名 probeapp:1）
@@ -27,8 +30,14 @@
 #       运行过的可用版本，而非最初版本）+ daemon healthy + probe 仍零失败 +
 #       诊断明确（坏件不留存、previous 归位）
 #   S3  备份链：台账 kind/verify_status 全断言（无 failed 行、
-#       pre_upgrade verified、daily≥2 拍）+ 台账行数 = 备份目录数 +
-#       探针全程零失败收表
+#       pre_upgrade verified、daily≥2 拍）+ 台账行数 = 备份目录数
+#   S4  F5/S20 回退 schema 感知：vC（注入迁移 00099 的「新版本」）启动即把
+#       DB 迁到 vB 之上，伪造 CLI 版本串令 ⑦ 验证失败 → 回退路径：
+#       S4a 无 --auto-restore → die + 三步人肉指引（daemon 诚实停机、DB
+#       仍为高版本）+ 指引人工照做可恢复；S4b --auto-restore → 快照校验 +
+#       自动恢复 + 旧件拉起 + ROLLED BACK（带 auto-restore 行）
+#   收尾 探针全程零失败收表（覆盖 S1+S2+S4 全部 daemon 停启窗口——应用面
+#       与 daemon 解耦的实证）。
 #
 # 断言风格与 test-install.sh 一致（NAME: PASS/FAIL + 退出码）。
 
@@ -183,7 +192,7 @@ nl "=== T2.23 upgrade dind suite (stage=$UG_STAGE) ==="
 
 # ------------------------------------------------------------ U0 preflight
 for _f in "$INSTALL_SH" "$UPGRADE_SH" "$STAGE_BIN_A/fleetlyd" "$STAGE_BIN_A/fleetly" \
-    "$STAGE_BIN_B/fleetlyd" "$STAGE_BIN_B/fleetly" "$PROBE_TAR"; do
+    "$STAGE_BIN_B/fleetlyd" "$STAGE_BIN_B/fleetly" "$UG_STAGE/bin-vC/fleetlyd" "$PROBE_TAR"; do
     [ -s "$_f" ] || {
         nl "FATAL: staged file missing: $_f"
         exit 1
@@ -265,7 +274,8 @@ if [ "$(http_code "$HTTP/healthz/liveness")" != '200' ]; then
     fail "U2-aborted-suite" "cannot continue without a live daemon"
     finish
 fi
-TOKEN=$(grep 'bootstrap admin token' "$DLOG" 2>/dev/null | sed -e 's/.*: //' -e 's/".*//' | head -n 1)
+# B5：token 本体不再进日志——首启写入 <数据根>/bootstrap-token（0600）。
+TOKEN=$(cat /var/lib/fleetly/bootstrap-token 2>/dev/null)
 [ -n "$TOKEN" ]
 assert "U2-bootstrap-token" $?
 [ -n "$TOKEN" ] || {
@@ -468,7 +478,92 @@ DIR_COUNT=$(ls -1d /var/lib/fleetly/backups/*/ 2>/dev/null | wc -l | tr -d ' ')
 [ "$LEDGER_COUNT" = "$DIR_COUNT" ]
 assert "S3-ledger-matches-dirs" $? "ledger=$LEDGER_COUNT dirs=$DIR_COUNT"
 
-# 收尾：探针停表 + 全程零失败复核（覆盖 S1+S2 两个窗口）。
+# ------------------------------------------------------------ S4 F5 schema 感知
+# vC = 带 vB 不认识的更高版本迁移（00099，run-upgrade-test.sh 注入构建）的
+# 「新版本」；伪造 CLI 自报版本串与 daemon 实报错位 → ⑦ 验证失败（daemon
+# 本身健康、迁移已应用）→ 回退 vB 时触发 F5 schema 感知路径。
+VC_REAL="$UG_STAGE/bin-vC"
+VC_STAGE="$UG_STAGE/bin-vC-mismatch"
+mkdir -p "$VC_STAGE"
+[ -s "$VC_REAL/fleetlyd" ]
+assert "S4-vC-binary-staged" $?
+cp "$VC_REAL/fleetlyd" "$VC_STAGE/fleetlyd"
+cat >"$VC_STAGE/fleetly" <<'FAKECLI'
+#!/bin/sh
+# S4（F5/S20）测试专用伪造 CLI：upgrade.sh --bin-dir 形态经 CLI 自报
+# TARGET_VERSION——本脚本自报一个与 daemon 实报不一致的版本串，制造
+# 「daemon 健康（迁移已应用）但 ⑦ 版本验证失败」的精确回退触发现场。
+echo "fleetly v0.1.0-f5-mismatch-target"
+FAKECLI
+chmod 0755 "$VC_STAGE/fleetlyd" "$VC_STAGE/fleetly"
+assert "S4-mismatch-bin-dir-staged" $?
+
+# S4a：无 --auto-restore——schema 错配在拉起旧件之前被显式拦截（die +
+# 三步指引），daemon 诚实停机、DB 保持高版本（不替用户决定数据回滚）。
+sh "$UPGRADE_SH" --bin-dir "$VC_STAGE" --no-systemd --pid-file "$PID_FILE" \
+    --token "$TOKEN" >"/tmp/ug-s4a.log" 2>&1
+RC=$?
+[ "$RC" -ne 0 ]
+assert "S4a-upgrade-failed-rc" $? "rc=$RC (want non-zero)"
+grep -q 'schema above rollback target' "/tmp/ug-s4a.log"
+assert "S4a-schema-guard-message" $?
+grep -q 'auto-restore' "/tmp/ug-s4a.log"
+assert "S4a-manual-guidance-given" $?
+[ "$(http_code "$HTTP/healthz/liveness")" != '200' ]
+assert "S4a-daemon-left-stopped" $? "liveness=$(http_code "$HTTP/healthz/liveness")"
+SV_OUT=$(/opt/fleetly/bin/fleetlyd schema-version -c /opt/fleetly/etc/config.yaml 2>&1)
+SV_DB=$(printf '%s\n' "$SV_OUT" | sed -n 's/^db=//p')
+SV_MAX=$(printf '%s\n' "$SV_OUT" | sed -n 's/^max=//p')
+[ -n "$SV_DB" ] && [ "$SV_DB" -gt "$SV_MAX" ]
+assert "S4a-db-still-above-rollback-binary" $? "db=$SV_DB max=$SV_MAX"
+
+# 指引可行动性（S4a 的三步人肉指引照做即恢复）：取本次运行的 pre_upgrade
+# 快照（upgrade.sh ② 步日志行携带 ID——此刻 daemon 已停，不能走 CLI 台账）
+# → sha256 对照 manifest → 拷贝入库（清残留 WAL/SHM）→ 旧件拉起。
+BK4=$(sed -n 's/.*pre-upgrade backup verified: //p' "/tmp/ug-s4a.log" | head -n 1)
+[ -n "$BK4" ]
+assert "S4a-restore-snapshot-id-extracted" $? "id=$BK4"
+SNAP="/var/lib/fleetly/backups/$BK4/fleetly.db"
+MAN_SHA=$(json_str "$(cat "/var/lib/fleetly/backups/$BK4/manifest.json" 2>/dev/null || printf '{}')" sha256)
+SNAP_SHA=$(sha256sum "$SNAP" 2>/dev/null | awk '{print $1}')
+[ -n "$MAN_SHA" ] && [ "$MAN_SHA" = "$SNAP_SHA" ]
+assert "S4a-restore-snapshot-sha-ok" $? "manifest=$MAN_SHA actual=$SNAP_SHA"
+mv /var/lib/fleetly/fleetly.db /var/lib/fleetly/fleetly.db.s4a-aside
+rm -f /var/lib/fleetly/fleetly.db-wal /var/lib/fleetly/fleetly.db-shm
+cp "$SNAP" /var/lib/fleetly/fleetly.db
+(
+    cd /var/lib/fleetly
+    nohup /opt/fleetly/bin/fleetlyd -c /opt/fleetly/etc/config.yaml >>"$DLOG" 2>&1 &
+    echo $! >"$PID_FILE"
+)
+wait_liveness 90
+assert "S4a-manual-restore-daemon-up" $?
+[ "$(ping_version)" = "$VERSION_B" ]
+assert "S4a-manual-restore-vB-serving" $? "ping=$(ping_version)"
+
+# S4b：同一现场 + --auto-restore——自动闭环：快照校验 + 恢复 + 旧件拉起 +
+# ROLLED BACK 报告（报告带 auto-restore 行，诚实披露状态库已被回滚）。
+sh "$UPGRADE_SH" --bin-dir "$VC_STAGE" --no-systemd --pid-file "$PID_FILE" \
+    --token "$TOKEN" --auto-restore >"/tmp/ug-s4b.log" 2>&1
+RC=$?
+[ "$RC" -ne 0 ]
+assert "S4b-upgrade-failed-rc" $? "rc=$RC (want non-zero)"
+grep -q 'ROLLED BACK' "/tmp/ug-s4b.log"
+assert "S4b-rolled-back-reported" $?
+grep -q 'auto-restore    : yes' "/tmp/ug-s4b.log"
+assert "S4b-auto-restore-reported" $?
+wait_liveness 90
+assert "S4b-daemon-healthy-after-auto-restore" $?
+[ "$(ping_version)" = "$VERSION_B" ]
+assert "S4b-vB-serving" $? "ping=$(ping_version)"
+SV_OUT=$(/opt/fleetly/bin/fleetlyd schema-version -c /opt/fleetly/etc/config.yaml 2>&1)
+SV_DB=$(printf '%s\n' "$SV_OUT" | sed -n 's/^db=//p')
+SV_MAX=$(printf '%s\n' "$SV_OUT" | sed -n 's/^max=//p')
+[ -n "$SV_DB" ] && [ "$SV_DB" -le "$SV_MAX" ]
+assert "S4b-db-schema-restored-within-limit" $? "db=$SV_DB max=$SV_MAX"
+
+# 收尾：探针停表 + 全程零失败复核（覆盖 S1+S2+S4 全部 daemon 停启窗口
+# ——应用面（Swarm/Traefik）与 daemon 解耦的实证）。
 kill "$PROBE_PID" 2>/dev/null || true
 PN=$(probe_counters)
 PT=$(json_num "$PN" total)

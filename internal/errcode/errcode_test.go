@@ -60,6 +60,11 @@ var docCodes = map[string]string{ // code → 文档出处
 	// 不变量「路由发布失败不回滚部署、单独告警」的审计错误码落点。
 	"E_ROUTE_PUBLISH_FAILED": "T2.15 实现期新增（architecture §2.5 路由失败告警语义；待 T0.5 冻结确认）",
 
+	// MG-C3 实现期新增（文档外码单独列出，待 T0.5 契约冻结确认）：架构 §2.4
+	// plan/apply 语义「破坏性操作要求 --confirm-destructive」的 deploy 入队
+	// 门控错误码。
+	"E_DEPLOY_CONFIRM_REQUIRED": "MG-C3 实现期新增（architecture §2.4 破坏性变更确认门控；待 T0.5 冻结确认）",
+
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
 	"W_DEPLOY_NO_HEALTHCHECK":   "release-semantics §2.7/§2.8",
@@ -87,8 +92,9 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 	}
 }
 
-// TestRegisteredCountByKind 双保险：33 E + 5 W = 38（T2.15 增
-// E_ROUTE_PUBLISH_FAILED，错误码只增纪律）。
+// TestRegisteredCountByKind 双保险：34 E + 5 W = 39（T2.15 增
+// E_ROUTE_PUBLISH_FAILED、MG-C3 增 E_DEPLOY_CONFIRM_REQUIRED，错误码只增
+// 纪律）。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -98,8 +104,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 33 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 33), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 34 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 34), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

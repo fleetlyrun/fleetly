@@ -165,7 +165,10 @@ func (s *Store) HasAnyToken(ctx context.Context) (bool, error) {
 
 // AuthenticateToken 按明文认证：哈希查行 → 常量时间二次比对（belt-and-
 // suspenders：行查找按哈希等值走索引，不泄漏明文时序；二次比对保证比对
-// 通道本身常量时间）→ 吊销检查 → 盖 last_used_at。成功返回在册 token。
+// 通道本身常量时间）→ 吊销检查。成功返回在册 token。**不盖 last_used_at**
+// （S18-A2：每请求同步写是 SQLite 写放大——盖写职责上移到调用方
+// internal/api 的认证路径，经进程内节流后调 TouchTokenUsed），本层保持
+// 纯认证语义。
 func (s *Store) AuthenticateToken(ctx context.Context, plaintext string) (Token, error) {
 	hash := HashToken(plaintext)
 	row := s.db.QueryRowContext(ctx, `SELECT `+tokRowCols+` FROM tokens WHERE token_hash = ?`, hash)
@@ -181,13 +184,6 @@ func (s *Store) AuthenticateToken(ctx context.Context, plaintext string) (Token,
 	}
 	if !t.RevokedAt.IsZero() {
 		return Token{}, ErrTokenRevoked
-	}
-	now := time.Now().UTC()
-	if err := s.TouchTokenUsed(ctx, t.ID); err != nil {
-		// last_used 是尽力而为的观测面：盖失败不拒绝已认证请求。
-		_ = err
-	} else {
-		t.LastUsedAt = now
 	}
 	return t, nil
 }

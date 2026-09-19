@@ -4,8 +4,11 @@
 # 目标：干净 Linux VPS（amd64/arm64，root）上一条命令装出可运行平台：
 #   curl -fsSL https://fleetly.dev/install.sh | sh -
 # 三种获取形态（都经完整性校验或本地直取）：
-#   1. --version vX.Y.Z   从 GitHub releases 下载（checksums 必验；cosign
-#                         签名验证尽力而为——有 cosign 就验，没有则显式警告降级，
+#   1. --version vX.Y.Z   从 GitHub releases 下载（checksums 必验；签名双轨
+#                         必验其一——S14/H15：cosign bundle 轨优先，cosign
+#                         缺席（干净 VPS 常态）走 openssl 内嵌公钥轨；双轨全
+#                         部不可验即拒绝（降级即死），仅历史版本（release 未附
+#                         任何签名产物）保留带显著警示的兼容路径；
 #                         --skip-signature-verify 供调试显式跳过）
 #   2. --bin-dir <dir>    离线/开发形态：直接使用目录内已放好的 fleetlyd/fleetly
 #   3. 缺省               latest stable release
@@ -33,6 +36,39 @@ FLEETLY_GITHUB_REPO='fleetlyrun/fleetly'
 FLEETLY_MIN_ENGINE='29.8.1'
 FLEETLY_LOG_FILE='/var/log/fleetlyd.log'
 
+# ------------------------------------------- release 签名公钥（openssl 轨）
+# S14/H15 双轨验签的兜底轨：cosign 缺席（干净 VPS 常态）时，用本内嵌公钥经
+# openssl 验 checksums.txt 的 detached 签名（checksums 只防传输损坏，防不了
+# release 侧同源自一致的重打包投毒——签名才绑密钥）。
+# 算法裁决：RSA-2048 + SHA-256（openssl dgst 轨）。ed25519 更现代但
+# `openssl dgst` 不支持 Ed 系签名（须 pkeyutl -rawin，且 1.1.1/3.x 参数面
+# 分裂；实测 OpenSSL 4.0.2 的 dgst -sign 对 ed25519 仍报 unsupported），
+# 而 dgst -sha256 -sign/-verify 自 OpenSSL 1.0.x 起全版本命令面一致——
+# 兼容性优先（S14 方案冻结口径）。
+# fingerprint-sha256: 3977fefb284f721350003ab6289be6930b48c25f79d8b423113c04ff05a6beec
+# 轮换：生成新密钥对 → 替换本变量与上面指纹行（install.sh/upgrade.sh 两侧
+# 必须同步，test-install.sh A11 断言两侧逐字一致）→ 发布新安装器；旧 release
+# 的历史 .sig.pem 用旧公钥仍可验（验失败提示升级安装器即轮换语义）。
+# 结构注意：起始/结束引号各独占一行——公钥块保持干净 PEM 行。抽取比对
+# 口径（test-install.sh A11 与 release.yml embedded-pubkey gate）：锚定
+# FLEETLY_RELEASE_PUBKEY= 赋值行到 END 标记行、剥掉首行赋值前缀——替换
+# 密钥时保持该形状，否则一致性断言会红。
+# ⚠ 当前内嵌 deploy/testdata/release-test.pub.pem（测试密钥，配套私钥就在
+# 仓库内——不能当生产信任根）。正式发布前必须按 deploy/README.md
+# 「release 签名密钥（openssl 轨）」小节生成正式密钥对并替换本块与指纹行；
+# release.yml 的 embedded-pubkey gate 会在 FLEETLY_RELEASE_KEY 配置后强制
+# 校验脚本内嵌公钥与 secret 配对，忘替换的 release 会被拦下。
+FLEETLY_RELEASE_PUBKEY='-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3YszuC4EPy3gVdsQTXt+
+v3RMFs7WFH/8IUBk9DAesYcr1srGWL5IcWSmpcO+L9RE0aKoyIxNrR62LYVaJC6H
+CcS1D6Qo6ro/kkkFkkc+rRmY6GyVJg++n7af/qlT3Knq+VhdA+UOTNgzjTgohTr9
+tSFKBKT7bEmQ2JKXHWwN968Xk4EnSdNSAxQnJFUlAkKsUvNT94DpT4T+vwwW1lhj
+efQIhcO0LzphkV6TWqFgmggIZz3Nq9xejOIBRnKcUEh0iBSR3HGe6DIzX7X8KNIt
+rP8jwEqxJ/oRIryjr8sVr82I9noGFb4XMLug/mGLok+3eFw6MhgGyEt7xMiwKZif
+qQIDAQAB
+-----END PUBLIC KEY-----
+'
+
 # ------------------------------------------------------------------ 参数
 FLEETLY_VERSION=''
 BIN_DIR_SRC=''
@@ -54,7 +90,8 @@ options:
   --bin-dir <dir>           offline/dev form: use fleetlyd+fleetly already in <dir>
   --http-addr <host:port>   HTTP face bind address (default 0.0.0.0:8420)
   --no-systemd              skip systemd unit/enable/start; print manual start command
-  --skip-signature-verify   skip cosign signature verification (debug only)
+  --skip-signature-verify   skip signature verification (cosign or openssl
+                            track; debug only)
   --harden-firewall         reserved: firewall hardening lands in a later stage
   -h, --help                this help
 
@@ -99,6 +136,44 @@ http_fetch() { # <url> <outfile>   （outfile 为 - 时写 stdout）
     else
         die 'no http client found (need curl or wget)'
     fi
+}
+
+# fetch_release_sig <url> <outfile> — 签名产物下载（404 感知，S14/H15）：
+#   返回 0 = 下载成功；返回 1 = 404（release 未附该签名产物——历史版本的
+#   兼容路径信号）；其他失败（网络错、5xx、截断）= die——checksums.txt 刚从
+#   同一 origin 成功取得，签名产物此刻取不到更可能是劫持/投毒面，fail
+#   closed 不降级。curl 形态经 -w '%{http_code}' 精确分类（不带 -f：404 也是
+#   正常 HTTP 应答）；wget-only 形态下载失败后用 -S 状态行探测（busybox
+#   wget -S 的状态行走 stderr），探测不出即 die。
+fetch_release_sig() {
+    _url=$1
+    _out=$2
+    if have curl; then
+        _code=$(curl -sSL --retry 2 -o "$_out" -w '%{http_code}' "$_url" 2>/dev/null) || _code='000'
+        case "$_code" in
+        2??) return 0 ;;
+        404) rm -f "$_out"; return 1 ;;
+        *) die "signature artifact download failed (HTTP $_code): $_url" ;;
+        esac
+    fi
+    if wget -q -T 30 -O "$_out" "$_url" 2>/dev/null; then
+        return 0
+    fi
+    rm -f "$_out"
+    _st=$(wget -q -S -T 30 -O /dev/null "$_url" 2>&1 |
+        sed -n '1s/^[[:space:]]*HTTP\/[0-9.]*[[:space:]]*\([0-9][0-9][0-9]\).*/\1/p')
+    [ "$_st" = '404' ] && return 1
+    die "signature artifact download failed (HTTP ${_st:-unknown}): $_url"
+}
+
+# verify_release_sig_pem <sigfile> <datafile> — openssl 轨验签（RSA-2048 /
+# SHA-256，dgst 轨）。POSIX sh 无进程替换——内嵌公钥先落临时文件再验
+# （变量自带收尾换行，用 %s 不再补行）；验签输出（Verified OK）静音，
+# 成败经退出码表达。
+verify_release_sig_pem() {
+    _pub="$TMPD/release-pubkey.pem"
+    printf '%s' "$FLEETLY_RELEASE_PUBKEY" > "$_pub"
+    openssl dgst -sha256 -verify "$_pub" -signature "$1" "$2" >/dev/null 2>&1
 }
 
 # health_probe_host <http-addr> — 从 --http-addr 推导健康探测目标 host
@@ -267,8 +342,19 @@ else
         die "download failed: $BASE_URL/$ASSET (check the release exists and the network)"
     http_fetch "$BASE_URL/checksums.txt" "$TMPD/checksums.txt" ||
         die "download failed: $BASE_URL/checksums.txt"
-    http_fetch "$BASE_URL/checksums.txt.sig" "$TMPD/checksums.txt.sig" ||
-        warn 'checksums.txt.sig not downloadable — signature verification will be skipped'
+    # 双轨签名产物各自尝试下载（S14）：checksums.txt.sig = cosign keyless
+    # bundle；checksums.txt.sig.pem = openssl 轨 detached 签名（内容是
+    # openssl dgst 的裸 DER 签名，.pem 为产物链约定名）。非 404 失败 → die
+    # （见 fetch_release_sig）；双 404 = release 未附签名产物（历史版本）→
+    # 下方验证段的兼容警示路径。
+    HAVE_BUNDLE_SIG=0
+    HAVE_PEM_SIG=0
+    if fetch_release_sig "$BASE_URL/checksums.txt.sig" "$TMPD/checksums.txt.sig"; then
+        HAVE_BUNDLE_SIG=1
+    fi
+    if fetch_release_sig "$BASE_URL/checksums.txt.sig.pem" "$TMPD/checksums.txt.sig.pem"; then
+        HAVE_PEM_SIG=1
+    fi
 
     # 校验和必验（delivery-pipeline §2.4：curl|sh 完整性基线）。
     EXPECTED=$(grep -E "^[0-9a-f]{64}[[:space:]]+\*?$ASSET\$" "$TMPD/checksums.txt" | awk '{print $1}' | head -n 1)
@@ -278,12 +364,19 @@ else
         die "checksum mismatch for $ASSET: expected $EXPECTED, got $ACTUAL"
     log "checksum: sha256 OK ($ACTUAL)"
 
-    # 签名验证尽力而为：有 cosign 就验（失败即中止），没有则显式警告降级。
+    # 签名验证（S14/H15 双轨，降级即死）：
+    #   - cosign 在且 bundle 在 → cosign verify-blob（keyless identity 约束
+    #     不变，失败即中止）；
+    #   - 否则 .sig.pem 在 → openssl 轨（内嵌公钥，失败即中止）；
+    #   - 两者都不可验（如 cosign 缺席且 release 只附了 bundle）→ die：
+    #     checksums 与产物同 origin，防不了 release 侧自一致重打包投毒——
+    #     这正是 H15 的信任落差，不再 warn 降级；
+    #   - 仅历史版本（双轨产物均未附）保留带显著警示的兼容路径。
     if [ "$SKIP_SIG" -eq 1 ]; then
         warn 'signature verification SKIPPED by --skip-signature-verify (debug only — do not use in production)'
-    elif [ ! -f "$TMPD/checksums.txt.sig" ]; then
-        warn 'signature file unavailable — signature verification SKIPPED (degraded; delivery-pipeline section 2.4 requires signed releases)'
-    elif have cosign; then
+    elif [ "$HAVE_BUNDLE_SIG" -eq 0 ] && [ "$HAVE_PEM_SIG" -eq 0 ]; then
+        warn 'release carries NO signature artifacts (pre-S14 historical release) — signature verification SKIPPED (degraded compat path; releases carrying signatures are enforced strictly)'
+    elif have cosign && [ "$HAVE_BUNDLE_SIG" -eq 1 ]; then
         cosign verify-blob \
             --bundle "$TMPD/checksums.txt.sig" \
             --certificate-identity-regexp "^https://github.com/$FLEETLY_GITHUB_REPO/" \
@@ -291,8 +384,14 @@ else
             "$TMPD/checksums.txt" ||
             die 'cosign signature verification FAILED — refusing to install'
         log 'signature: cosign verify-blob OK'
+    elif [ "$HAVE_PEM_SIG" -eq 1 ]; then
+        have openssl ||
+            die 'openssl not found — cannot verify checksums.txt.sig.pem (install openssl — or cosign — and re-run)'
+        verify_release_sig_pem "$TMPD/checksums.txt.sig.pem" "$TMPD/checksums.txt" ||
+            die 'openssl signature verification FAILED — refusing to install (release key mismatch usually means a rotated key: update this installer from https://github.com/fleetlyrun/fleetly)'
+        log 'signature: openssl dgst verify OK (embedded release key)'
     else
-        warn 'cosign not found — signature verification SKIPPED (degraded). Install cosign to verify release signatures, or pass --skip-signature-verify to acknowledge'
+        die 'release carries no signature verifiable on this host (cosign absent and no checksums.txt.sig.pem) — install cosign for the bundle track, or update this installer; --skip-signature-verify exists for debug only'
     fi
 
     tar -xzf "$TMPD/$ASSET" -C "$TMPD" || die "extract $ASSET failed"
@@ -636,11 +735,7 @@ if [ "$HARDEN_FIREWALL" -eq 1 ]; then
 fi
 printf '\n'
 printf 'systemd         : %s\n' "$SYSTEMD_MODE"
-if [ "$SYSTEMD_MODE" = 'enabled+started' ]; then
-    printf 'bootstrap token : printed ONCE on first start -> journalctl -u fleetlyd.service | grep "bootstrap admin token"\n'
-else
-    printf 'bootstrap token : printed ONCE on first start -> grep "bootstrap admin token" <fleetlyd stdout/log>\n'
-fi
+printf 'bootstrap token : first start writes it to %s/bootstrap-token (0600, never logged — remove after first successful login)\n' "$FLEETLY_DATA_DIR"
 printf 'cli             : FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN=<token> fleetly apps list\n'
 printf 'uninstall       : sh uninstall.sh (keeps %s; --purge removes it)\n' "$FLEETLY_DATA_DIR"
 printf '================================================================\n'

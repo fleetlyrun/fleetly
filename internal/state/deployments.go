@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -15,7 +16,9 @@ import (
 // queued/preparing/building/releasing/observing/succeeded/failed/cancelled；
 // 00004 加法列承载子状态（phase=blocked_waiting）、失败分流判据
 // （first_healthy_at）、同记录恢复（recovery）、判定（verdict）、停机账
-// （downtime_ms）、看门狗/观察窗时间锚与期望态快照（desired_spec 密文）。
+// （downtime_ms）、看门狗/观察窗时间锚与期望态快照（desired_spec 密文）；
+// 00009 加法列 phase_started_at 是准备/构建预算锚点（拾取时刻，排队等待
+// 不计入预算，H11）。
 //
 // 迁移全部走 from→to 谓词 + RowsAffected 校验（与 builds 同纪律）：终态
 // 不可逆、并发扫描下恰好一个推进者胜出。事件与审计由调用方与业务写同事务
@@ -119,6 +122,11 @@ type DeployRecord struct {
 	ReleaseStartedAt   time.Time
 	WatchdogDeadlineAt time.Time
 	ObserveStartedAt   time.Time
+	// PhaseStartedAt 是准备/构建预算锚点（00009 加法列）：queued → preparing
+	// 转换（引擎拾取）时刻——排队等待不计入预算（H11）；零值（存量行未写）
+	// 时消费方回落 CreatedAt。releasing 由 ReleaseStartedAt 起算，两者互不
+	// 干扰。
+	PhaseStartedAt time.Time
 	// 期望态快照（spec_hash/env_snapshot_hash 明文哈希；desired_spec 为
 	// box envelope 密文，本层不解释）。
 	SpecHash        string
@@ -173,6 +181,7 @@ type DeploymentPatch struct {
 	ReleaseStartedAt   *time.Time
 	WatchdogDeadlineAt *time.Time
 	ObserveStartedAt   *time.Time
+	PhaseStartedAt     *time.Time
 	SpecHash           *string
 	EnvSnapshotHash    *string
 	DesiredHash        *string
@@ -184,9 +193,32 @@ type DeploymentPatch struct {
 	SourceGitRef       *string
 }
 
-// CreateDeployment 创建 queued 部署行（发布入队）。kind 取 deploy|rollback；
-// 事件/审计由调用方同事务组合（actor 语义在调用方：CLI=human、引擎=system）。
+// CreateDeployment 创建 queued 部署行（发布入队；独立事务薄壳，兼容既有
+// 调用方与测试夹具）。kind 取 deploy|rollback。部署入队需要事件/审计
+// fail-closed 同事务（state-model §2.9，H13）的调用方必须改用
+// Store.InTx + Tx.CreateDeployment 组合——本壳内的事件/审计无从共享事务。
 func (s *Store) CreateDeployment(ctx context.Context, rec DeployRecord) (DeployRecord, error) {
+	var created DeployRecord
+	if err := s.InTx(ctx, func(tx *Tx) error {
+		r, err := tx.CreateDeployment(ctx, rec)
+		if err != nil {
+			return err
+		}
+		created = r
+		return nil
+	}); err != nil {
+		return DeployRecord{}, err
+	}
+	return created, nil
+}
+
+// CreateDeployment 在事务内创建 queued 部署行（发布入队原语，H13）。
+// fail-closed 语义：入队调用方应把本 INSERT 与 deployment 事件、审计写在
+// 同一 InTx 回调内——回调内任一写失败（含事件/审计写失败）即整体回滚，
+// 部署行不落库，杜绝「部署行已存在、引擎照常执行但事件与审计缺失」的
+// 审计黑洞。kind 取 deploy|rollback（校验在此层）；actor 语义在调用方
+// （CLI=human、引擎=system）。
+func (t *Tx) CreateDeployment(ctx context.Context, rec DeployRecord) (DeployRecord, error) {
 	if rec.Kind != "deploy" && rec.Kind != "rollback" {
 		return DeployRecord{}, fmt.Errorf("state: create deployment: invalid kind %q", rec.Kind)
 	}
@@ -203,7 +235,7 @@ func (s *Store) CreateDeployment(ctx context.Context, rec DeployRecord) (DeployR
 		 spec_hash, env_snapshot_hash, desired_hash, desired_spec, compose_path,
 		 source_git_sha, source_git_ref, created_at, updated_at)
 		VALUES (?, ?, ?, 'queued', NULL, ?, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-	_, err := s.db.ExecContext(ctx, q,
+	_, err := t.ExecContext(ctx, q,
 		rec.ID, rec.AppID, rec.Kind, recoveryOf,
 		rec.SpecHash, rec.EnvSnapshotHash, rec.DesiredHash, rec.DesiredSpec, rec.ComposePath,
 		rec.SourceGitSHA, rec.SourceGitRef,
@@ -221,8 +253,8 @@ const deploymentScanCols = `d.id, d.app_id, a.name, d.kind, d.status, d.phase,
 	d.revision_id, d.recovery_of, d.substrate_halted, d.first_healthy_at,
 	d.recovery, d.verdict, d.error_code, d.downtime_ms, d.downtime_started_at,
 	d.downtime_ended_at, d.release_started_at, d.watchdog_deadline_at,
-	d.observe_started_at, d.spec_hash, d.env_snapshot_hash, d.desired_hash,
-	d.desired_spec, d.compose_path, d.cancel_requested, d.flags,
+	d.observe_started_at, d.phase_started_at, d.spec_hash, d.env_snapshot_hash,
+	d.desired_hash, d.desired_spec, d.compose_path, d.cancel_requested, d.flags,
 	d.source_git_sha, d.source_git_ref, d.created_at, d.updated_at`
 
 const deploymentScanFrom = ` FROM deployments d JOIN apps a ON a.id = d.app_id `
@@ -241,6 +273,66 @@ func (s *Store) ListAppDeployments(ctx context.Context, appID string, limit int)
 	q := `SELECT ` + deploymentScanCols + deploymentScanFrom +
 		`WHERE d.app_id = ? ORDER BY d.created_at DESC, d.id DESC LIMIT ?`
 	return queryDeployments(ctx, s.db, q, appID, limit)
+}
+
+// LatestDeploymentsByApp 批量返回一组应用各自的最近部署窗口（每 app 至多
+// perApp 条，created_at 倒序——与逐 app 调 ListAppDeployments 同序同窗）。
+// S18-A4：ListApps 派生状态的 N+1 收口——N 个 app 的派生输入从 N 次
+// per-app 查询并为一次 IN 查询（窗口截断经 ROW_NUMBER，不拉全量行）。
+// 空 appIDs 直接返回空 map（不发 SQL）；map 中不出现的键 = 该 app 无
+// 部署记录。
+func (s *Store) LatestDeploymentsByApp(ctx context.Context, appIDs []string, perApp int) (map[string][]DeployRecord, error) {
+	out := make(map[string][]DeployRecord, len(appIDs))
+	if len(appIDs) == 0 {
+		return out, nil
+	}
+	if perApp <= 0 {
+		perApp = 20
+	}
+	// 子查询产出裸列名（外层不可见 d./a. 前缀），外层投影列按
+	// scanDeployment 的位置约定取同名裸形态（前缀剥离仅作用于表别名点号，
+	// deploymentScanCols 无其他点号出现）。
+	plainCols := strings.ReplaceAll(strings.ReplaceAll(deploymentScanCols, "d.", ""), "a.", "")
+	// modernc sqlite ≥3.25 支持 ROW_NUMBER 窗口函数；rn 截断与
+	// ListAppDeployments 的 LIMIT 语义等价，外层排序保证逐 app 窗口内
+	// created_at 倒序稳定。
+	q := `SELECT ` + plainCols + ` FROM (
+			SELECT ` + deploymentScanCols + `,
+				ROW_NUMBER() OVER (PARTITION BY d.app_id ORDER BY d.created_at DESC, d.id DESC) AS rn
+			FROM deployments d JOIN apps a ON a.id = d.app_id
+			WHERE d.app_id IN (` + placeholders(len(appIDs)) + `)
+		) WHERE rn <= ? ORDER BY app_id, created_at DESC, id DESC`
+	args := make([]any, 0, len(appIDs)+1)
+	for _, id := range appIDs {
+		args = append(args, id)
+	}
+	args = append(args, perApp)
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("state: latest deployments by app: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	for rows.Next() {
+		rec, err := scanDeployment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out[rec.AppID] = append(out[rec.AppID], rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate latest deployments: %w", err)
+	}
+	return out, nil
+}
+
+// placeholders 生成长度为 n 的 "?,?,…" IN 子句占位串（n=0 返回空串，
+// 调用方自行保证非空调用）。
+func placeholders(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	p := strings.Repeat("?,", n)
+	return p[:len(p)-1]
 }
 
 // ListNonTerminalDeployments 返回全部非终态部署（重启恢复扫描）。
@@ -271,10 +363,42 @@ func (s *Store) AppHasNonTerminalDeployment(ctx context.Context, appID string) (
 }
 
 // UpdateDeployment 按补丁更新部署行。PrevStatus 非 nil 时为 CAS 迁移
-// （当前状态 ≠ PrevStatus → ErrDeploymentStateTransition，RowsAffected=0）；
-// 为 nil 时不带状态谓词（子状态/时间锚/告警位等就地更新）。updated_at 恒
-// 重盖。同一补丁内 Status 与字段一并原子生效。
+// （当前状态 ≠ PrevStatus → ErrDeploymentStateTransition，RowsAffected=0），
+// 且**先经转移表校验** PrevStatus → Status 合法（S16-C5：表外组合是确定性
+// 编码错误，拒写返回 ErrIllegalTransition——即使当前行恰好仍是 from 状态
+// 也不落库）；为 nil 时不带状态谓词（子状态/时间锚/告警位等就地更新，仅
+// 受终态不可逆守卫）。updated_at 恒重盖。同一补丁内 Status 与字段一并原子
+// 生效。
 func (s *Store) UpdateDeployment(ctx context.Context, id string, p DeploymentPatch) error {
+	return updateDeployment(ctx, s.db, id, p)
+}
+
+// UpdateDeployment 是事务内的行更新原语（S18-A6：成功终态 CAS 与 revision
+// 固化、事件、审计组合在同一 InTx——两事务间崩溃不再留下「revision 已
+// 固化、部署仍 observing」的重放窗口）。语义与 Store 同名方法逐字一致。
+func (t *Tx) UpdateDeployment(ctx context.Context, id string, p DeploymentPatch) error {
+	return updateDeployment(ctx, t.Tx, id, p)
+}
+
+// execer 是 Store 连接池与事务共有的执行面（updateDeployment 共享内核）。
+type execer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+// updateDeployment 是 Store/Tx 共享的行更新内核（见 Store.UpdateDeployment
+// 的语义说明）。
+func updateDeployment(ctx context.Context, db execer, id string, p DeploymentPatch) error {
+	if p.Status != nil {
+		if !p.Status.Valid() {
+			return fmt.Errorf("state: update deployment %s: unknown status %q", id, *p.Status)
+		}
+		// S16-C5：CAS 前按转移表校验 from→to（非法即拒写——engine/machine.go
+		// 的文档性转移表自此在写路径咬合，机器真源见 state/machine.go）。
+		if p.PrevStatus != nil && !CanTransitionDeployment(*p.PrevStatus, *p.Status) {
+			return fmt.Errorf("%w: deployments %s: %s -> %s",
+				ErrIllegalTransition, id, *p.PrevStatus, *p.Status)
+		}
+	}
 	sets := []string{"updated_at = ?"}
 	args := []any{nowNano()}
 	if p.Status != nil {
@@ -333,6 +457,10 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, p DeploymentPat
 		sets = append(sets, "observe_started_at = ?")
 		args = append(args, p.ObserveStartedAt.UnixNano())
 	}
+	if p.PhaseStartedAt != nil {
+		sets = append(sets, "phase_started_at = ?")
+		args = append(args, p.PhaseStartedAt.UnixNano())
+	}
 	if p.SpecHash != nil {
 		sets = append(sets, "spec_hash = ?")
 		args = append(args, *p.SpecHash)
@@ -384,7 +512,7 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, p DeploymentPat
 		//（succeeded/failed/cancelled 无出边，release-semantics §2.3）。
 		q += ` AND status NOT IN ('succeeded','failed','cancelled')`
 	}
-	res, err := s.db.ExecContext(ctx, q, args...)
+	res, err := db.ExecContext(ctx, q, args...)
 	if err != nil {
 		return fmt.Errorf("state: update deployment %s: %w", id, err)
 	}
@@ -410,7 +538,7 @@ func scanDeployment(row interface{ Scan(dest ...any) error }) (DeployRecord, err
 	var flags int64
 	var downtimeMS int64
 	var firstHealthy, downtimeStarted, downtimeEnded, releaseStarted,
-		watchdogDeadline, observeStarted sql.NullInt64
+		watchdogDeadline, observeStarted, phaseStarted sql.NullInt64
 	var specHash, envSnapshotHash, desiredHash, desiredSpec, composePath string
 	var sourceSHA, sourceRef string
 	var phase string
@@ -419,6 +547,7 @@ func scanDeployment(row interface{ Scan(dest ...any) error }) (DeployRecord, err
 		&revisionID, &recoveryOf, &substrateHalted, &firstHealthy,
 		&recovery, &verdict, &errorCode, &downtimeMS, &downtimeStarted,
 		&downtimeEnded, &releaseStarted, &watchdogDeadline, &observeStarted,
+		&phaseStarted,
 		&specHash, &envSnapshotHash, &desiredHash, &desiredSpec, &composePath,
 		&cancelRequested, &flags, &sourceSHA, &sourceRef, &created, &updated)
 	if err != nil {
@@ -443,6 +572,7 @@ func scanDeployment(row interface{ Scan(dest ...any) error }) (DeployRecord, err
 	r.ReleaseStartedAt = nullTime(releaseStarted)
 	r.WatchdogDeadlineAt = nullTime(watchdogDeadline)
 	r.ObserveStartedAt = nullTime(observeStarted)
+	r.PhaseStartedAt = nullTime(phaseStarted)
 	r.SpecHash = specHash
 	r.EnvSnapshotHash = envSnapshotHash
 	r.DesiredHash = desiredHash
@@ -499,4 +629,32 @@ func (s *Store) CountGitDeploymentsForSHA(ctx context.Context, appID, sha string
 		return 0, fmt.Errorf("state: count git deployments for sha: %w", err)
 	}
 	return n, nil
+}
+
+// TerminalDeploymentIDsOlderThan 返回终态早于 cutoff 的部署 ID 集合
+// （S18-A7：janitor 按「终态后 30 天窗」清理 deployments/<id>/ compose
+// 持久化目录的判据来源；updated_at 是终态写入时刻的最近似代理——终态
+// 不可逆，终态行此后只有 flag 类就地更新）。单查询全量返回，janitor 周期
+// （小时级）消费。
+func (s *Store) TerminalDeploymentIDsOlderThan(ctx context.Context, cutoff time.Time) (map[string]bool, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id FROM deployments
+		WHERE status IN ('succeeded','failed','cancelled') AND updated_at < ?`,
+		cutoff.UnixNano())
+	if err != nil {
+		return nil, fmt.Errorf("state: query terminal deployments older than cutoff: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]bool{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("state: scan terminal deployment id: %w", err)
+		}
+		out[id] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate terminal deployments: %w", err)
+	}
+	return out, nil
 }

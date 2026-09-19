@@ -55,10 +55,15 @@ ACTIVE_NET=""
 FAILED_SUITES=""
 PASSED_SUITES=""
 
-dump_and_forget() { # <dind...>  dump log tail then remove
+dump_and_forget() { # <dind...>  persist dind logs under $TMP, then print tail
+    # F2（S20）：dind 容器随即被 suite_cleanup 删除，docker logs 随容器消失
+    # ——先全量落盘取证（$TMP/dind-logs/，随失败取证目录一起上传）；打印侧
+    # 去掉原 `--tail 120 | tail -60` 的双重截断（保留一层 --tail 120）。
+    mkdir -p "$TMP/dind-logs"
     for d in $SUITE_DINDS; do
-        log "---- dind log tail: $d ----"
-        docker logs "$d" --tail 120 2>&1 | tail -60 || true
+        docker logs "$d" >"$TMP/dind-logs/$d.log" 2>&1 || true
+        log "---- dind log tail: $d (full log: $TMP/dind-logs/$d.log) ----"
+        tail -n 120 "$TMP/dind-logs/$d.log" 2>/dev/null || true
     done
 }
 suite_cleanup() {
@@ -77,7 +82,17 @@ on_exit() {
         [ "$rc" -ne 0 ] && dump_and_forget
         suite_cleanup
     fi
-    log "cleanup done (exit=$rc)"
+    # F2（S20）：失败时取证目录（$TMP：dind 全量日志 + v2 dockerd 日志 +
+    # v6 artifacts）保留至 exit 之后并打印路径——nightly.yml 的
+    # upload-artifact 失败步骤按 TMPDIR 钉定的根收取；成功才清理（此前
+    # 两种结果都遗留 mktemp 目录）。
+    if [ "$rc" -eq 0 ]; then
+        rm -rf "$TMP"
+        log "cleanup done (exit=$rc, tmp removed)"
+    else
+        log "FORENSICS KEPT at $TMP (dind logs + suite artifacts)"
+        log "cleanup done (exit=$rc, tmp kept for upload)"
+    fi
     exit "$rc"
 }
 trap on_exit EXIT INT TERM

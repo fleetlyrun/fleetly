@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -42,6 +43,28 @@ type AuditEntry struct {
 
 // TxWriteAudit 是（事务内）审计写入的错误前缀。
 const auditWritePrefix = "state: write audit"
+
+// DiffSummary 构造审计 diff 摘要 JSON 字符串（B4：审计摘要的唯一构造器
+// ——内部 json.Marshal，键值含 `"`、`\`、控制字符时按 JSON 规则转义，
+// 消灭手拼 JSON 的注入与破包面）。kvs 为 key,value 成对变参（key 取
+// string；value 支持 string/数值/布尔等可 marshal 类型）；奇数个尾参
+// 丢弃末项（防御式——调用方均为固定键值对）。marshal 失败（理论不可达）
+// 回落 "{}"。map 序列化键序确定（字典序）。
+func DiffSummary(kvs ...any) string {
+	if len(kvs)%2 != 0 {
+		kvs = kvs[:len(kvs)-1]
+	}
+	m := make(map[string]any, len(kvs)/2)
+	for i := 0; i < len(kvs); i += 2 {
+		key, _ := kvs[i].(string)
+		m[key] = kvs[i+1]
+	}
+	raw, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(raw)
+}
 
 // WriteAudit 在事务内追加审计记录：与同事务内的业务写原子生效或原子
 // 回滚。表级 CHECK（actor/action 非空、result 枚举）使非法审计行直接

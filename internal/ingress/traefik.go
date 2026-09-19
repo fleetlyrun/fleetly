@@ -318,7 +318,11 @@ func (m *Manager) EnsureTraefik(ctx context.Context) error {
 	if _, err := m.ensureCertVolume(ctx); err != nil {
 		return err
 	}
-	desired := m.buildTraefikSpec(m.responderURLValue(), token)
+	// F7（S20）：provider_endpoint 直接引用构造 spec 时使用的 responder 变量
+	// ——此前取 Args[3] 是按位猜（"--providers.http.endpoint=<url>" 在 args
+	// 中的位置），args 顺序一变日志字段即错位（曾把 pollInterval 记成端点）。
+	endpoint := m.responderURLValue()
+	desired := m.buildTraefikSpec(endpoint, token)
 	cur, err := m.docker.ServiceInspect(ctx, IngressServiceName)
 	if err != nil {
 		return err
@@ -329,7 +333,7 @@ func (m *Manager) EnsureTraefik(ctx context.Context) error {
 		}
 		m.log.Info("ingress: traefik service created", "image", m.cfg.TraefikImage,
 			"http_port", m.cfg.HTTPPort, "https_port", m.cfg.HTTPSPort,
-			"provider_endpoint", desired.TaskTemplate.ContainerSpec.Args[3])
+			"provider_endpoint", endpoint)
 		m.mu.Lock()
 		m.lastSpec = &desired
 		m.mu.Unlock()
@@ -341,12 +345,21 @@ func (m *Manager) EnsureTraefik(ctx context.Context) error {
 		m.mu.Unlock()
 		return nil
 	}
-	if err := m.docker.ServiceUpdate(ctx, IngressServiceName, cur.Version, desired); err != nil {
+	// 收敛更新不裸用 desired：期望 spec 不含 TaskTemplate.Networks（app
+	// 挂载由 attachNetwork 增量管理），整体替换会把 Traefik 从全部 app
+	// 网络上踢下线（一次漂移收敛 → 全路由 502）——以服务实况网络集为基准
+	// 合并后再提交（traefik.go 既有实机回归教训：网络目标集不能由期望
+	// spec 重建）。实况无挂载（首次创建/确未 attach）时行为不变。
+	merged := desired
+	if len(cur.Networks) > 0 {
+		merged = specWithNetworks(desired, cur.Networks)
+	}
+	if err := m.docker.ServiceUpdate(ctx, IngressServiceName, cur.Version, merged); err != nil {
 		return err
 	}
 	m.log.Info("ingress: traefik service updated to desired spec", "image", m.cfg.TraefikImage)
 	m.mu.Lock()
-	m.lastSpec = &desired
+	m.lastSpec = &merged
 	m.mu.Unlock()
 	return nil
 }
@@ -387,12 +400,12 @@ func (m *Manager) attachNetwork(ctx context.Context, appName string) error {
 	if base == nil {
 		return fmt.Errorf("ingress: no desired spec available (ensure traefik first)")
 	}
-	spec := *base
-	spec.TaskTemplate.Networks = make([]swarm.NetworkAttachmentConfig, 0, len(cur.Networks)+1)
-	for _, n := range cur.Networks {
-		spec.TaskTemplate.Networks = append(spec.TaskTemplate.Networks, swarm.NetworkAttachmentConfig{Target: n})
-	}
-	spec.TaskTemplate.Networks = append(spec.TaskTemplate.Networks, swarm.NetworkAttachmentConfig{Target: netID})
+	// 网络目标集 = 实况集 + 新网络（specWithNetworks 统一构造；以实况为
+	// 基准的理由见其注释）。
+	targets := make([]string, 0, len(cur.Networks)+1)
+	targets = append(targets, cur.Networks...)
+	targets = append(targets, netID)
+	spec := specWithNetworks(*base, targets)
 	if err := m.docker.ServiceUpdate(ctx, IngressServiceName, cur.Version, spec); err != nil {
 		return err
 	}
@@ -402,6 +415,21 @@ func (m *Manager) attachNetwork(ctx context.Context, appName string) error {
 	m.log.Info("ingress: traefik attached to app network", "network", netName, "app", appName,
 		"attached_total", len(spec.TaskTemplate.Networks))
 	return nil
+}
+
+// specWithNetworks 是网络挂载构造的单点：把目标集（ID 形态）整组写入
+// spec.TaskTemplate.Networks。调用方必须以服务实况（cur.Networks）为基准
+// 传入目标集——不能用期望 spec 重建（期望不含历史 attach，整体替换会丢失
+// 其他 app 的网络，实机验证发现的多 app 回归）。EnsureTraefik 的收敛更新
+// 分支与 attachNetwork 共用本口径（消灭两份手写漂移——正是更新分支绕开
+// 本纪律导致的全挂载丢失缺陷，架构评审 H8）。
+func specWithNetworks(base swarm.ServiceSpec, netIDs []string) swarm.ServiceSpec {
+	spec := base
+	spec.TaskTemplate.Networks = make([]swarm.NetworkAttachmentConfig, 0, len(netIDs))
+	for _, id := range netIDs {
+		spec.TaskTemplate.Networks = append(spec.TaskTemplate.Networks, swarm.NetworkAttachmentConfig{Target: id})
+	}
+	return spec
 }
 
 // buildTraefikSpec 构造入口服务的期望 swarm spec（host 80/443 + 证书目录

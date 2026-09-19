@@ -16,6 +16,9 @@ package build
 //     registry-cache 形态在 v0.1 单机上的等价物）。
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -52,6 +55,11 @@ const (
 	DefaultPollInterval = 2 * time.Second
 	// DefaultArtifactsDir 是产物归档缺省根目录（相对 daemon 工作目录）。
 	DefaultArtifactsDir = "./build-artifacts"
+	// DefaultTimeout 是单条构建执行的超时预算缺省（30min）。预算覆盖执行
+	// 全程（buildkitd 就绪收敛（自身 ≤6min）+ solve + inspect）；到点未完
+	// 成即终态 failed——挂起的执行（网络挂起/buildkitd 半死）不得永久占用
+	// 并发槽（并发 2 时两个挂起即堵死全队列）。
+	DefaultTimeout = 30 * time.Minute
 )
 
 // Config 是构建管线配置。零值经 Normalize 回落缺省。
@@ -77,6 +85,18 @@ type Config struct {
 	NanoCPUs    int64
 	// PollInterval 是队列 DB 扫描周期。
 	PollInterval time.Duration
+	// Timeout 是单条构建执行的超时预算（≤0 取缺省 30min；超时 → 终态
+	// failed（E_BUILD_FAILED），由队列在认领执行处包裹生效）。
+	Timeout time.Duration
+	// ContextRoots 是构建上下文的受管根集合（H14 宿主目录信任边界）：
+	// 执行侧只接受位于受管根内的 context_dir——builds.request 是跨进程
+	// 通道，直写库的越界请求不得把宿主任意目录整目录打进镜像。Normalize
+	// 保证系统 temp 根恒在集合内（API 层 compose 暂存/回落基准的落点，
+	// os.MkdirTemp("", …) 所在）；daemon 装配再并入 git 根（gitserver 裸
+	// 仓库根，v0.2 worktree 物化路径的前缀形态）与显式配置根。越界构建
+	// 终态失败（不静默放宽）。v0.2 挂账：CLI 同宿主构建目录（显式
+	// base_dir）改为上传/物化到受管根后，该集合即对全部入队来源完备闭合。
+	ContextRoots []string
 }
 
 // Normalize 回落全部缺省（config 缺省值单一事实源）。
@@ -111,5 +131,49 @@ func (c Config) Normalize() Config {
 	if c.PollInterval <= 0 {
 		c.PollInterval = DefaultPollInterval
 	}
+	if c.Timeout <= 0 {
+		c.Timeout = DefaultTimeout
+	}
+	c.ContextRoots = normalizeContextRoots(c.ContextRoots)
 	return c
+}
+
+// normalizeContextRoots 归一受管根集合（H14）：逐根 Abs+Clean、去重；
+// 系统 temp 根（os.TempDir——API 层 compose 暂存目录与回落基准的落点）
+// 恒在集合内（受管根的最小闭包，缺省集合即 [系统 temp 根]）。空串根
+// 丢弃；不可解析根（Abs 失败，理论不可达）同样丢弃——fail-closed 方向
+// 是收窄可用根，不中断装配。
+func normalizeContextRoots(roots []string) []string {
+	out := make([]string, 0, len(roots)+1)
+	seen := map[string]bool{}
+	add := func(raw string) {
+		if raw == "" {
+			return
+		}
+		abs, err := filepath.Abs(raw)
+		if err != nil {
+			return
+		}
+		if !seen[abs] {
+			seen[abs] = true
+			out = append(out, abs)
+		}
+	}
+	add(os.TempDir())
+	for _, r := range roots {
+		add(r)
+	}
+	return out
+}
+
+// containsPath 报告 dir 是否位于 root 之内（词法判定：filepath.Rel 无错
+// 且不以前导 .. 越出；dir == root 视为在内）。已知保真度边界（挂账
+// v0.2）：Windows 卷内大小写差异走词法精确比对，形态不一致时判外——
+// fail-closed（宁可误拒可见、不可误放）。
+func containsPath(root, dir string) bool {
+	rel, err := filepath.Rel(root, dir)
+	if err != nil {
+		return false // 跨卷等不可比较形态：对该根不成立
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

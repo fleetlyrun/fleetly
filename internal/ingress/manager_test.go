@@ -1,8 +1,8 @@
 package ingress
 
 // 管理器/端点/证书窗口测试：发布收敛（假 docker 客户端）、token 鉴权
-// 负面测试、空视图不换视图（Spike B「先校验后写」）、续期窗口判定、
-// 证书落盘/解析。
+// 负面测试、空视图落 noop 兜底（H9 合法空态 + Spike B「先校验后写」）、
+// 路由撤销链路、续期窗口判定、证书落盘/解析。
 
 import (
 	"context"
@@ -33,15 +33,16 @@ import (
 // fakeDocker 是 dockerClient 的假实现（服务/网络/卷/seed 容器内存态 +
 // 调用记录）。
 type fakeDocker struct {
-	services   map[string]ingressServiceState
-	networks   map[string]bool
-	creates    []string
-	updates    []string
-	netEns     []string
-	volumes    map[string]bool
-	seedID     string
-	copiedDirs []string
-	info       swarmInfo
+	services    map[string]ingressServiceState
+	networks    map[string]bool
+	creates     []string
+	updates     []string
+	updateSpecs []swarm.ServiceSpec
+	netEns      []string
+	volumes     map[string]bool
+	seedID      string
+	copiedDirs  []string
+	info        swarmInfo
 }
 
 func newFakeDocker() *fakeDocker {
@@ -80,6 +81,9 @@ func (f *fakeDocker) ServiceCreate(_ context.Context, spec swarm.ServiceSpec) er
 
 func (f *fakeDocker) ServiceUpdate(_ context.Context, name string, _ uint64, spec swarm.ServiceSpec) error {
 	f.updates = append(f.updates, name)
+	// 记录提交的整份 spec 载荷（网络保留断言用——收敛更新是否保留既有
+	// app 挂载只能在载荷上断言）。
+	f.updateSpecs = append(f.updateSpecs, spec)
 	cur := f.services[name]
 	cur.Version++
 	// 同构底座语义：TaskTemplate.Networks 是整组替换（非追加）。
@@ -207,7 +211,7 @@ func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 	}
 
 	// 视图：路由已合成（带 port）。
-	snap := m.vw.snapshot()
+	snap, _ := m.vw.snapshot()
 	if snap.HTTP.Routers["fleetly-demo-web-web"] == nil {
 		t.Fatalf("route not in view: %+v", snap.HTTP.Routers)
 	}
@@ -231,10 +235,12 @@ func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 	}
 }
 
-// TestPublishEmptyViewKeepsPreviousConfig 复现 Spike B 纪律：最后一个
-// 路由移除时合成结果为空 → 拒绝换视图（Traefik 侧保留旧配置；空配置
-// 不落库/不出控制面）。
-func TestPublishEmptyViewKeepsPreviousConfig(t *testing.T) {
+// TestPublishEmptyViewWithdrawsToFallback 是 H9 前身
+// TestPublishEmptyViewKeepsPreviousConfig 的语义反转：最后一个路由移除
+// （空声明集）不再是「拒绝换视图、Traefik 保留旧路由（502 残留）」，
+// 而是空视图 = noop 兜底形态真实下发——旧路由不在、兜底路由在、台账
+// 已清（撤销生效）。
+func TestPublishEmptyViewWithdrawsToFallback(t *testing.T) {
 	m, _, st := newTestManager(t)
 	ctx := context.Background()
 	app, _ := st.CreateApp(ctx, "", "solo")
@@ -244,23 +250,76 @@ func TestPublishEmptyViewKeepsPreviousConfig(t *testing.T) {
 	if err := m.PublishRoutes(ctx, in); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	if m.vw.snapshot().HTTP.Routers["fleetly-solo-web-web"] == nil {
+	if snap, _ := m.vw.snapshot(); snap.HTTP.Routers["fleetly-solo-web-web"] == nil {
 		t.Fatal("route should be in view after publish")
 	}
 
-	// 移除声明（服务删除的发布路径）：空声明集 → 台账清空 → 合成空 →
-	// 校验拒绝 → 视图保持上一份好配置。
+	// 移除声明（服务删除的发布路径）：空声明集 → 台账清空 → 合成落
+	// 兜底 → 发布成功（不再拒绝）。
 	err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "solo", Services: []ServiceRoutes{}})
-	if err == nil {
-		t.Fatal("publishing an empty route view must fail (Spike B: keep last good config)")
+	if err != nil {
+		t.Fatalf("publishing an empty route view must succeed via fallback (H9): %v", err)
 	}
-	snap := m.vw.snapshot()
-	if snap.HTTP.Routers["fleetly-solo-web-web"] == nil {
-		t.Fatal("previous good config must be retained after rejected empty publish")
+	snap, _ := m.vw.snapshot()
+	if snap.HTTP.Routers["fleetly-solo-web-web"] != nil {
+		t.Fatal("previous route must be withdrawn (absent from view)")
+	}
+	if snap.HTTP.Routers[fallbackRouterName] == nil {
+		t.Fatalf("fallback router must be served on empty view: %+v", snap.HTTP.Routers)
 	}
 	rows, _ := st.ListAppDomains(ctx, app.ID)
 	if len(rows) != 0 {
 		t.Fatalf("ledger should reflect the (empty) declared set: %+v", rows)
+	}
+}
+
+// TestWithdrawAppRoutes 撤销链路（app 删除管线的入口，H9）：发布域名
+// 路由 → WithdrawAppRoutes → 台账清空 + 视图落兜底；幂等；sweep 的全量
+// 重发布（republishAll）对空集成功（不再产生永久 warn 的拒绝路径）。
+func TestWithdrawAppRoutes(t *testing.T) {
+	m, _, st := newTestManager(t)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "gone")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "gone", Services: []ServiceRoutes{
+		{Service: "web", Port: "80", Domains: []string{"gone.example.test"}},
+	}}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	if snap, _ := m.vw.snapshot(); snap.HTTP.Routers["fleetly-gone-web-web"] == nil {
+		t.Fatal("route should be in view before withdraw")
+	}
+
+	// 撤销：台账清 + 视图落兜底。
+	if err := m.WithdrawAppRoutes(ctx, app.ID); err != nil {
+		t.Fatalf("withdraw: %v", err)
+	}
+	rows, _ := st.ListAppDomains(ctx, app.ID)
+	if len(rows) != 0 {
+		t.Fatalf("ledger rows must be deleted on withdraw: %+v", rows)
+	}
+	snap, _ := m.vw.snapshot()
+	if snap.HTTP.Routers["fleetly-gone-web-web"] != nil {
+		t.Fatal("route must be withdrawn from view")
+	}
+	if snap.HTTP.Routers[fallbackRouterName] == nil {
+		t.Fatalf("view must fall back to noop router after withdraw: %+v", snap.HTTP.Routers)
+	}
+
+	// 幂等：重复撤销无副作用。
+	if err := m.WithdrawAppRoutes(ctx, app.ID); err != nil {
+		t.Fatalf("withdraw must be idempotent: %v", err)
+	}
+	// sweep 路径（republishAll）对空路由集成功——空视图不再被 Validate
+	// 拒绝（12h sweep 不再永久 warn）。
+	if err := m.republishAll(ctx); err != nil {
+		t.Fatalf("republishAll on empty ledger must succeed via fallback: %v", err)
+	}
+	// 空输入拒绝。
+	if err := m.WithdrawAppRoutes(ctx, ""); err == nil {
+		t.Fatal("withdraw with empty app id must fail")
 	}
 }
 
@@ -390,6 +449,69 @@ func TestCertStoreRoundTripAndParse(t *testing.T) {
 	}
 }
 
+// TestCertStoreSaveAtomicReplaceAndNoResidue E5：tmp+rename 原子写语义——
+// 同名重写换入新内容（rename 覆盖既有目标，Windows 同样成立）、目录内
+// 不残留 .tmp 中间文件（半写形态不可能被 Traefik/Load 观测）。
+func TestCertStoreSaveAtomicReplaceAndNoResidue(t *testing.T) {
+	dir := t.TempDir()
+	store := newCertStore(dir)
+	certPEM, keyPEM, _ := selfSignedTestCert(t, "first.test")
+	pair, err := ParsePair("app-x", []string{"first.test"}, certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("parse pair: %v", err)
+	}
+	if err := store.Save(pair); err != nil {
+		t.Fatalf("save: %v", err)
+	}
+	// 重写（续期形态）：同名换入新内容。
+	certPEM2, keyPEM2, _ := selfSignedTestCert(t, "second.test")
+	pair2, err := ParsePair("app-x", []string{"second.test"}, certPEM2, keyPEM2)
+	if err != nil {
+		t.Fatalf("parse pair2: %v", err)
+	}
+	if err := store.Save(pair2); err != nil {
+		t.Fatalf("re-save (rename over existing): %v", err)
+	}
+	got, err := store.Load("app-x")
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if got.SHA256 != pair2.SHA256 || !sameDomainSet(got.Domains, pair2.Domains) {
+		t.Fatalf("content after re-save = %+v, want the second pair (rename must replace)", got)
+	}
+	// 无 .tmp 残留。
+	leftovers, _ := filepath.Glob(filepath.Join(dir, "*.tmp"))
+	if len(leftovers) != 0 {
+		t.Fatalf("temp file residue after atomic save: %v", leftovers)
+	}
+}
+
+// TestCertStoreSaveDetectsTampering E5 损坏注入：回读内容与内存值 sha256
+// 不一致 → Save 显式报错（兑现注释承诺；调用方按既有重试语义承接）。
+func TestCertStoreSaveDetectsTampering(t *testing.T) {
+	dir := t.TempDir()
+	store := newCertStore(dir)
+	// 回读出口注入篡改（磁盘/写路径损坏形态）。
+	store.readFile = func(path string) ([]byte, error) {
+		raw, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		tampered := append([]byte{}, raw...)
+		tampered[0] ^= 0xff
+		return tampered, nil
+	}
+	certPEM, keyPEM, _ := selfSignedTestCert(t, "tamper.test")
+	pair, err := ParsePair("tamper", []string{"tamper.test"}, certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("parse pair: %v", err)
+	}
+	err = store.Save(pair)
+	if err == nil || !strings.Contains(err.Error(), "verification failed") {
+		t.Fatalf("tampered read-back must fail Save with verification error, got %v", err)
+	}
+}
+
 // TestAttachNetworkKeepsPreviousApps 多 app 网络回归：逐个接入两个 app
 // 的网络后，实况网络集必须同时包含两者（不得互相覆盖——实机验证发现的
 // 回归，T2.15 修复钉死）。
@@ -448,6 +570,73 @@ func mustApp1(t *testing.T, st *state.Store) state.App {
 		t.Fatalf("get app1: %v", err)
 	}
 	return app
+}
+
+// TestEnsureTraefikUpdatePreservesAttachedNetworks 收敛更新保留全部既有
+// app 网络挂载（架构评审 H8）：spec 漂移（如镜像钉版变更）触发的更新不得
+// 清空 TaskTemplate.Networks——Traefik 必须同时挂在所有 app 网络上才能
+// 反代各 app 容器；一次漂移收敛断网 = 全路由 502，只有各 app 再部署才逐个
+// 恢复的实机回归钉死。
+func TestEnsureTraefikUpdatePreservesAttachedNetworks(t *testing.T) {
+	m, dc, st := newTestManager(t)
+	ctx := context.Background()
+	// 预置：两个 app 各自接入网络（经真实发布路径建起多 app 挂载态）。
+	for _, name := range []string{"app1", "app2"} {
+		appRow, err := st.CreateApp(ctx, "", name)
+		if err != nil {
+			t.Fatalf("create app: %v", err)
+		}
+		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, Services: []ServiceRoutes{
+			{Service: "web", Port: "80", Domains: []string{name + ".example.test"}},
+		}}); err != nil {
+			t.Fatalf("publish %s: %v", name, err)
+		}
+	}
+	// 制造漂移：实况镜像与期望钉版不一致（如镜像升级后的收敛场景）。
+	svc := dc.services[IngressServiceName]
+	svc.Image = "traefik:v3.4"
+	dc.services[IngressServiceName] = svc
+	if err := m.EnsureTraefik(ctx); err != nil {
+		t.Fatalf("converge traefik: %v", err)
+	}
+	// 更新已提交，且载荷是期望镜像（证明这是漂移收敛更新而非 attach）。
+	last := dc.updateSpecs[len(dc.updateSpecs)-1]
+	if last.TaskTemplate.ContainerSpec.Image != DefaultTraefikImage {
+		t.Fatalf("update payload image = %s, want %s", last.TaskTemplate.ContainerSpec.Image, DefaultTraefikImage)
+	}
+	// 核心断言：两个既有网络仍在提交载荷里、且无新增（以实况为基准合并）。
+	got := map[string]bool{}
+	for _, n := range last.TaskTemplate.Networks {
+		got[n.Target] = true
+	}
+	if len(got) != 2 || !got["netid-fleetly-app1-net"] || !got["netid-fleetly-app2-net"] {
+		t.Fatalf("update payload networks = %v, want exactly both attached app nets", last.TaskTemplate.Networks)
+	}
+	// 服务实况同构：整组替换后两网络仍在（底座视角未断网）。
+	if nets := dc.services[IngressServiceName].Networks; len(nets) != 2 {
+		t.Fatalf("service networks after converge = %v, want both preserved", nets)
+	}
+}
+
+// TestEnsureTraefikUpdateWithoutNetworks 对照位：实况无任何挂载时收敛
+// 更新不引入 Networks 字段（首次创建后未 attach 的行为不变位）。
+func TestEnsureTraefikUpdateWithoutNetworks(t *testing.T) {
+	m, dc, _ := newTestManager(t)
+	ctx := context.Background()
+	if err := m.EnsureTraefik(ctx); err != nil {
+		t.Fatalf("create traefik: %v", err)
+	}
+	// 制造漂移：实况镜像与期望钉版不一致。
+	svc := dc.services[IngressServiceName]
+	svc.Image = "traefik:v3.4"
+	dc.services[IngressServiceName] = svc
+	if err := m.EnsureTraefik(ctx); err != nil {
+		t.Fatalf("converge traefik: %v", err)
+	}
+	last := dc.updateSpecs[len(dc.updateSpecs)-1]
+	if len(last.TaskTemplate.Networks) != 0 {
+		t.Fatalf("update payload networks = %v, want none when service has no attachments", last.TaskTemplate.Networks)
+	}
 }
 
 // TestSyncCertToVolume 证书卷同步：crt/key 经 seed 容器拷入挂载目录。

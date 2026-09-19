@@ -125,9 +125,15 @@ func (m *Manager) awaitChallengePathLive(token, keyAuth string) {
 }
 
 // ensureAccount 加载（或创建）ACME 账号：私钥文件 + 注册 URI sidecar。
+// E1（S19）：m.user 缓存的读写统一走 m.mu——原「无锁读 + invalidateAccount
+// 有锁写」在 -race 下竞态；构建段（文件 IO/注册）持锁外执行，发布时
+// double-check（并发先到者胜出，后到者复用）。
 func (m *Manager) ensureAccount(ctx context.Context) (*acmeUser, error) {
-	if m.user != nil {
-		return m.user, nil
+	m.mu.Lock()
+	cached := m.user
+	m.mu.Unlock()
+	if cached != nil {
+		return cached, nil
 	}
 	keyPath := m.cfg.ACME.AccountKeyFile
 	if keyPath == "" {
@@ -146,11 +152,13 @@ func (m *Manager) ensureAccount(ctx context.Context) (*acmeUser, error) {
 	}
 	user.Reg = &reg
 
-	client, err := m.newClient(ctx, user)
-	if err != nil {
-		return nil, err
-	}
 	if reg.URI == "" {
+		// 客户端只在需要注册时构造（sidecar 命中已注册账号则不发起 CA
+		// 目录请求——E1 测试的离线前提；生产 Obtain 路径自带客户端）。
+		client, err := m.newClient(ctx, user)
+		if err != nil {
+			return nil, err
+		}
 		registered, rerr := client.Registration.Register(registration.RegisterOptions{TermsOfServiceAgreed: true})
 		if rerr != nil {
 			return nil, fmt.Errorf("ingress: acme register: %w", rerr)
@@ -164,7 +172,15 @@ func (m *Manager) ensureAccount(ctx context.Context) (*acmeUser, error) {
 			_ = os.WriteFile(sidecar, raw, 0o600)
 		}
 	}
+	m.mu.Lock()
+	if m.user != nil {
+		// 并发先到者已发布账号：复用（同私钥注册幂等，不重复建号）。
+		winner := m.user
+		m.mu.Unlock()
+		return winner, nil
+	}
 	m.user = user
+	m.mu.Unlock()
 	return user, nil
 }
 
@@ -240,6 +256,10 @@ func (m *Manager) ensureCertificate(ctx context.Context, appID, app string, doma
 	if !m.cfg.ACME.ACMEEnabled() {
 		return nil, nil
 	}
+	// E1（S19）：签发全程串行（issueMu，v0.1 单签发容量——注释见 Manager
+	// 字段）：并发调用方在此排队，后到者重读证书库命中刚落盘的证书。
+	m.issueMu.Lock()
+	defer m.issueMu.Unlock()
 	existing, err := m.certs.Load(app)
 	switch {
 	case err == nil:
@@ -276,21 +296,11 @@ func (m *Manager) obtainAndRegister(ctx context.Context, appID, app string, doma
 	if err != nil {
 		return nil, err
 	}
-	client, err := m.newClient(ctx, user)
+	certPEM, keyPEM, err := m.obtainFn(ctx, app, user, domains)
 	if err != nil {
 		return nil, err
 	}
-	if err := client.Challenge.SetHTTP01Provider(&challengeProvider{mgr: m}); err != nil {
-		return nil, fmt.Errorf("ingress: set http-01 provider: %w", err)
-	}
-	res, err := client.Certificate.Obtain(certificate.ObtainRequest{
-		Domains: append([]string{}, domains...),
-		Bundle:  true,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("ingress: acme obtain for %s: %w", app, err)
-	}
-	pair, err := ParsePair(app, domains, res.Certificate, res.PrivateKey)
+	pair, err := ParsePair(app, domains, certPEM, keyPEM)
 	if err != nil {
 		return nil, err
 	}
@@ -315,6 +325,26 @@ func (m *Manager) obtainAndRegister(ctx context.Context, appID, app string, doma
 	}
 	m.writeCertAudit(ctx, renewing, app, pair, nil)
 	return &CertificateRef{App: app, SHA256: pair.SHA256, NotAfter: pair.NotAfter.UnixNano()}, nil
+}
+
+// legoObtain 是 obtainFn 的生产实现（E1 注入缝默认值）：lego 客户端 +
+// HTTP-01 挑战 provider + Obtain，返回证书链/私钥 PEM。
+func (m *Manager) legoObtain(ctx context.Context, app string, user registration.User, domains []string) ([]byte, []byte, error) {
+	client, err := m.newClient(ctx, user)
+	if err != nil {
+		return nil, nil, err
+	}
+	if err := client.Challenge.SetHTTP01Provider(&challengeProvider{mgr: m}); err != nil {
+		return nil, nil, fmt.Errorf("ingress: set http-01 provider: %w", err)
+	}
+	res, err := client.Certificate.Obtain(certificate.ObtainRequest{
+		Domains: append([]string{}, domains...),
+		Bundle:  true,
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("ingress: acme obtain for %s: %w", app, err)
+	}
+	return res.Certificate, res.PrivateKey, nil
 }
 
 // invalidateAccount 丢弃缓存的 ACME 账号与注册 sidecar（账号失效自愈的

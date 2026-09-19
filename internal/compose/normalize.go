@@ -40,8 +40,12 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 		svc := project.Services[name]
 		prefix := "services." + name
 		// fleetly.* 保留前缀：约定键之外的占用 → E_LABEL_RESERVED（422）。
+		// 非 fleetly.* 用户 label：平台不透传（v0.1 只消费平台约定 label）——
+		// S16-C2：静默丢弃改为 W 级警告披露（每服务一条，列出键集）。
+		var userLabels []string
 		for _, k := range sortedStringKeys(svc.Labels) {
 			if !strings.HasPrefix(k, LabelNamespace) {
+				userLabels = append(userLabels, k)
 				continue
 			}
 			if !knownFleetlyLabels[k] {
@@ -50,6 +54,13 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 					name, k, LabelNamespace, strings.Join(sortedStringKeys(knownFleetlyLabels), ", ")).
 					WithContext("path", prefix+".labels."+k)
 			}
+		}
+		if len(userLabels) > 0 {
+			ws.add(Warning{
+				Kind:    WarningKindUserLabelNotPassed,
+				Service: name,
+				Message: "服务 " + name + " 声明了非平台 label（" + strings.Join(userLabels, ", ") + "）：平台不透传用户 label（v0.1），仅消费 fleetly.* 平台约定键",
+			})
 		}
 
 		// domains label（有该 label 的服务即入口）。

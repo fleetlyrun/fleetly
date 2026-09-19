@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // 仓库面测试：app 名校验、bare 仓库懒创建 + 钩子生成 + token 轮换、
@@ -125,6 +128,93 @@ func TestEnsureBareRepoAndCompose(t *testing.T) {
 	}
 	// 旧 token 已吊销（全量含吊销行的语义由 HasAnyToken 类查询承载——此处
 	// 校验在册行只有新 token 即可）。
+}
+
+// TestEnsureBareRepoConcurrentTokenConsistency E7③（S19）：并发
+// EnsureBareRepo 同 app——per-app 互斥下「钩子内 token ↔ 在册 token」恒
+// 一致（旧 TOCTOU 形态：stat 判定与 writeHook/rotateHookToken 的
+// 「list→revoke→create」交错可产生失配 token——push 回调永久 401——或多
+// 条活 token 残留）。断言两面：每次调用后钩子 token 即时有效 + 终态恰
+// 一条在册 token 且与钩子一致。
+func TestEnsureBareRepoConcurrentTokenConsistency(t *testing.T) {
+	requireGit(t)
+	src, st, _, _ := newTestSource(t, 0)
+	ctx := context.Background()
+
+	// 预置「仓库在、钩子缺失」形态：并发调用全部走 writeHook/rotate 路径
+	//（TOCTOU 的暴露面）。
+	path, _, err := src.EnsureBareRepo(ctx, "race-app")
+	if err != nil {
+		t.Fatalf("seed repo: %v", err)
+	}
+	if err := os.Remove(filepath.Join(path, "hooks", "post-receive")); err != nil {
+		t.Fatal(err)
+	}
+
+	hookPath := filepath.Join(path, "hooks", "post-receive")
+	hookTokenActive := func() bool {
+		raw, err := os.ReadFile(hookPath) //nolint:gosec // G304：包内构造路径的测试受控读取
+		if err != nil {
+			return false
+		}
+		tok := hookTokenFromScript(string(raw))
+		if tok == "" {
+			return false
+		}
+		tokens, err := st.ListTokens(ctx)
+		if err != nil {
+			return false
+		}
+		for _, tk := range tokens {
+			if tk.Name == hookTokenName("race-app") && tk.TokenHash == state.HashToken(tok) {
+				return true
+			}
+		}
+		return false
+	}
+
+	const k = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	for i := 0; i < k; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if _, _, err := src.EnsureBareRepo(ctx, "race-app"); err != nil {
+				t.Errorf("concurrent EnsureBareRepo: %v", err)
+				return
+			}
+			// 即时一致性：调用返回时钩子 token 必然在册有效（旧 TOCTOU 形态
+			// 在此处即可观测失配窗口）。
+			if !hookTokenActive() {
+				t.Errorf("hook token not active immediately after EnsureBareRepo (TOCTOU residue)")
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if t.Failed() {
+		t.Fatal("concurrent EnsureBareRepo observed hook/db token mismatch (E7③ regression)")
+	}
+
+	// 终态：恰一条在册同名 token，且与钩子文件一致。
+	if !hookTokenActive() {
+		t.Fatal("final hook token not backed by an active token row")
+	}
+	active := 0
+	tokens, err := st.ListTokens(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tk := range tokens {
+		if tk.Name == hookTokenName("race-app") {
+			active++
+		}
+	}
+	if active != 1 {
+		t.Fatalf("active hook tokens = %d, want exactly 1 (rotation must not leave live residue)", active)
+	}
 }
 
 func TestComposeFromCommit(t *testing.T) {

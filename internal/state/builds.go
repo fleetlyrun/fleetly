@@ -110,7 +110,7 @@ func (s *Store) CreateBuild(ctx context.Context, rec BuildRecord) (BuildRecord, 
 			Action:      "build.create",
 			Target:      "app:" + rec.AppID,
 			Result:      "ok",
-			DiffSummary: `{"build":"` + b.ID + `","service":"` + rec.Service + `","driver":"` + string(rec.Driver) + `"}`,
+			DiffSummary: DiffSummary("build", b.ID, "service", rec.Service, "driver", string(rec.Driver)), // B4：构造器替换手拼 JSON
 		})
 	})
 	if err != nil {
@@ -224,7 +224,7 @@ func (s *Store) NextQueuedBuilds(ctx context.Context, limit int) ([]BuildRecord,
 // 重复扫描竞争的安全路径——行级谓词保证恰好一个 claimer 胜出）。
 func (s *Store) ClaimBuild(ctx context.Context, id string) error {
 	return s.transitionBuild(ctx, id, BuildQueued, BuildBuilding, "started_at", "build.start",
-		`{"build":"`+id+`"}`)
+		DiffSummary("build", id)) // B4：构造器替换手拼 JSON
 }
 
 // FinishBuildSucceeded 推进 building → succeeded 并落镜像身份（ref + 不可变
@@ -252,7 +252,7 @@ func (s *Store) FinishBuildSucceeded(ctx context.Context, id, imageRef, imageDig
 			Action:      "build.finish",
 			Target:      "build:" + id,
 			Result:      "ok",
-			DiffSummary: `{"ref":"` + imageRef + `","digest":"` + imageDigest + `"}`,
+			DiffSummary: DiffSummary("ref", imageRef, "digest", imageDigest), // B4：构造器替换手拼 JSON
 		})
 	})
 	if err != nil {
@@ -286,7 +286,7 @@ func (s *Store) FinishBuildFailed(ctx context.Context, id, errorCode string) err
 			Target:      "build:" + id,
 			Result:      "error",
 			ErrorCode:   errorCode,
-			DiffSummary: `{"build":"` + id + `"}`,
+			DiffSummary: DiffSummary("build", id), // B4：构造器替换手拼 JSON
 		})
 	})
 	if err != nil {
@@ -326,6 +326,80 @@ func (s *Store) transitionBuild(ctx context.Context, id string, from, to BuildSt
 	return nil
 }
 
+// FailStrandedBuild 把单条 building 行收敛为 failed 终态（队列侧兜底：执行
+// 器返回后行仍停留 building——超时取消后未收敛、异常退出等路径）。CAS
+// building→failed + finished_at 盖章 + error_code，审计 build.finish
+// （result=error）同事务；reason 进审计 diff（builds 表只存注册表
+// error_code，兜底上下文——超时预算/中断原因——的可观测落点在审计）。
+func (s *Store) FailStrandedBuild(ctx context.Context, id, errorCode, reason string) error {
+	err := s.InTx(ctx, func(tx *Tx) error {
+		now := nowNano()
+		res, err := tx.ExecContext(ctx,
+			`UPDATE builds SET status = 'failed', error_code = ?, finished_at = ?
+			WHERE id = ? AND status = 'building'`,
+			errorCode, now, id)
+		if err != nil {
+			return fmt.Errorf("state: fail build %s: %w", id, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("state: read fail count: %w", err)
+		}
+		if n == 0 {
+			return ErrBuildStateTransition
+		}
+		return tx.WriteAudit(ctx, AuditEntry{
+			Actor:       "system",
+			Action:      "build.finish",
+			Target:      "build:" + id,
+			Result:      "error",
+			ErrorCode:   errorCode,
+			DiffSummary: DiffSummary("build", id, "reason", reason), // B4：构造器替换手拼 JSON
+		})
+	})
+	if err != nil {
+		return fmt.Errorf("state: fail build %s: %w", id, err)
+	}
+	return nil
+}
+
+// ResetInterruptedBuilds 复位全部 building 行为 failed 终态并返回实际复位
+// 行数（daemon 启动恢复：崩溃/关停时在途构建无人收敛——NextQueuedBuilds
+// 只扫 queued，遗留 building 行永不重跑，等它的部署在引擎侧空转到发布
+// 超时）。逐行经 FailStrandedBuild 的 CAS building→failed（行级谓词，与
+// ClaimBuild 同款竞争语义：复位时行已被并发收敛/已终态则跳过不误伤），
+// finished_at 盖章、审计 build.finish 逐行同事务；reason 进审计 diff。
+// queued 行不动（本方法只扫 building；重启后队列自然重扫认领）。
+func (s *Store) ResetInterruptedBuilds(ctx context.Context, errorCode, reason string) (int, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM builds WHERE status = 'building'`)
+	if err != nil {
+		return 0, fmt.Errorf("state: query building builds: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return 0, fmt.Errorf("state: scan building build: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("state: iterate building builds: %w", err)
+	}
+	reset := 0
+	for _, id := range ids {
+		if err := s.FailStrandedBuild(ctx, id, errorCode, reason); err != nil {
+			if errors.Is(err, ErrBuildStateTransition) {
+				continue // 行已离开 building（并发收敛竞争落败）
+			}
+			return reset, fmt.Errorf("state: reset interrupted build %s: %w", id, err)
+		}
+		reset++
+	}
+	return reset, nil
+}
+
 // FindBuildsByDigest 按不可变镜像 ID 反查登记（digest→ref 映射读通道，
 // T2.9 镜像身份；返回含该 digest 的全部成功构建行）。
 func (s *Store) FindBuildsByDigest(ctx context.Context, digest string) ([]BuildRecord, error) {
@@ -349,6 +423,66 @@ func (s *Store) FindBuildsByDigest(ctx context.Context, digest string) ([]BuildR
 		return nil, fmt.Errorf("state: iterate builds by digest: %w", err)
 	}
 	return out, nil
+}
+
+// ListNonTerminalBuilds 返回全部非终态构建行（S18-A10：janitor 非终态超龄
+// 扫描的输入——正常态由队列 worker 认领/收敛，超龄停留即状态机漏洞的显性
+// 化告警；只读不自愈）。queued 行锚点 created_at，building 行锚点 started_at。
+func (s *Store) ListNonTerminalBuilds(ctx context.Context) ([]BuildRecord, error) {
+	const q = `SELECT id, app_id, service, driver, status, image_ref, image_digest,
+		request, plan_path, log_path, error_code, created_at, started_at, finished_at
+		FROM builds WHERE status IN ('queued','building') ORDER BY created_at ASC, id ASC`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("state: query non-terminal builds: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []BuildRecord
+	for rows.Next() {
+		rec, err := scanBuild(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate non-terminal builds: %w", err)
+	}
+	return out, nil
+}
+
+// PruneTerminalBuildsOlderThan 分批删除终态早于 cutoff 的构建行（S18-A10：
+// builds 台账 90 天保留窗；finished_at 是终态时刻，零值行不删——防御存量
+// 脏数据）。分批形态与事件/审计清理一致（见 PruneExpiredEvents）。
+func (s *Store) PruneTerminalBuildsOlderThan(ctx context.Context, cutoff time.Time) (int64, error) {
+	return s.deleteBatched(ctx,
+		`DELETE FROM builds WHERE id IN (
+			SELECT id FROM builds
+			WHERE status IN ('succeeded','failed') AND finished_at > 0 AND finished_at < ?
+			LIMIT ?)`,
+		cutoff.UnixNano(), pruneBatchSize)
+}
+
+// deleteBatched 循环执行「子查询限定批量的 DELETE」直至不足一批
+// （S18-A10：单语句全表 DELETE 在大台账下长时间持写锁，分批把每批锁窗口
+// 收敛到 500 行；modernc SQLite 不支持 DELETE...LIMIT 语法，子查询形态
+// 承载批量语义）。
+func (s *Store) deleteBatched(ctx context.Context, query string, args ...any) (int64, error) {
+	var total int64
+	for {
+		res, err := s.db.ExecContext(ctx, query, args...)
+		if err != nil {
+			return total, fmt.Errorf("state: batched delete: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return total, fmt.Errorf("state: read batched delete count: %w", err)
+		}
+		total += n
+		if n < pruneBatchSize {
+			return total, nil
+		}
+	}
 }
 
 // scanBuild 从单行构造 BuildRecord（row 接口同时覆盖 *sql.Row 与 *sql.Rows）。

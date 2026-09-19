@@ -3,8 +3,9 @@ package main
 // git push(SSH) 入口服务的 lynx.Service 装配壳（T2.19，参考 ingress/
 // 节点身份的服务壳模式）：Init 阶段做配置完整性 fail-fast（Validate），
 // Start 阶段装载/生成 host key 并监听（阻塞至 ctx 取消），Stop 由 ctx
-// 取消驱动监听收口。webhook 入口不走本服务——它是 gateway 原生 HTTP
-// handler（见 gateway.go 的原生端点例外清单），随 HTTP 面启停。
+// 取消驱动监听收口。webhook 的 HTTP 入口不走本服务——它是 gateway 原生
+// handler（见 gateway.go 的原生端点例外清单），随 HTTP 面启停；但其
+// 受理后的后台 worker（D1，S17 类 D）挂本服务生命周期（见 Start/Stop）。
 //
 // enabled=false 时为 no-op 服务壳（Name 不变；Start/Stop 立即返回——
 // 显式关闭位，不静默改端口）。
@@ -18,7 +19,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 )
 
-// gitService 是 SSH git 面服务壳。
+// gitService 是 SSH git 面服务壳；D1（S17 类 D）起同时承载 webhook 后台
+// worker 的生命周期（webhook 面是 gateway 原生端点、独立于 SSH enabled
+// 开关，服务壳恒随 Start 启动 worker、Stop 排空退出）。
 type gitService struct {
 	src     *gitserver.GitTriggers
 	enabled bool
@@ -46,6 +49,9 @@ func (s *gitService) Init(_ lynx.AppContext) error {
 
 // Start 监听 SSH git 面（阻塞语义与 ingress 服务壳一致）。
 func (s *gitService) Start(ctx context.Context) error {
+	// D1：webhook 后台 worker 随本服务生命周期启动（幂等；ctx 取消进入
+	// 排空，StopWebhookWorker 是等待点）。
+	s.src.StartWebhookWorker(ctx)
 	if !s.enabled {
 		s.log.Info("gitserver: ssh git endpoint disabled (git.enabled=false)")
 		close(s.started)
@@ -68,10 +74,12 @@ func (s *gitService) Start(ctx context.Context) error {
 }
 
 // Stop 等待 Start 收口（监听关闭由 ctx 取消驱动——lynx 先 cancel 再
-// 调 Stop）。
-func (s *gitService) Stop(_ context.Context) error {
+// 调 Stop）。D1：同时等待 webhook worker 排空退出（在处理项的 per-item
+// 预算独立于取消，排空不打断；等待本身受 Stop ctx 时限约束，超时让位给
+// lynx 停机时限，进程退出兜底）。
+func (s *gitService) Stop(ctx context.Context) error {
 	<-s.started
-	return nil
+	return s.src.StopWebhookWorker(ctx)
 }
 
 // CheckHealth 委托核心（启用态配置完整性 + state 可达；禁用态恒健康）。

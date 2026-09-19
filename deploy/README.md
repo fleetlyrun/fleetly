@@ -5,7 +5,9 @@
 
 设计依据（只读）：architecture §2.6（运行时 = 单节点 Swarm，安装时隐式
 init）、§4.2（引擎门禁 / 安全默认基线 / 底座端口加固）、delivery-pipeline
-§2.4（`curl | sh` 的完整性基线：checksum 必验 + 签名尽力而为）。
+§2.4 + remediation S14/H15（`curl | sh` 的完整性基线：checksum 必验 +
+签名双轨必验其一——cosign bundle 轨优先，openssl 内嵌公钥轨兜底，降级
+即死）。
 
 ## 文件
 
@@ -17,9 +19,10 @@ init）、§4.2（引擎门禁 / 安全默认基线 / 底座端口加固）、de
 | `fleetlyd.service` | systemd unit 参考模板（与 install.sh 内嵌 heredoc 逐字一致，test-install.sh 做 diff 防漂移） |
 | `test-install.sh` | dind 内安装验收套件（A1-A9） |
 | `run-dind-test.sh` | 宿主编排：交叉编译 → 起 dind → exec+stdin 注入 → 跑安装套件 → 清理 |
-| `test-upgrade.sh` | dind 内升级验收套件（U/S 两段：正常升级零停应用 + 坏件自动回退 + 备份链） |
-| `run-upgrade-test.sh` | 升级套件宿主编排（两份版本串二进制 + 探针应用交叉编译 → dind → 套件 → 清理） |
+| `test-upgrade.sh` | dind 内升级验收套件（U/S 两段：正常升级零停应用 + 坏件自动回退 + 备份链 + S4 schema 感知回退） |
+| `run-upgrade-test.sh` | 升级套件宿主编排（vA/vB 两份版本串二进制 + vC schema-skew 变体 + 探针应用交叉编译 → dind → 套件 → 清理） |
 | `testdata/probeapp/` | 升级 E2E 探针应用（serve/hc/watch 三模式；scratch 镜像零 registry 依赖） |
+| `testdata/release-test-key.pem` / `release-test.pub.pem` | openssl 轨**测试**签名密钥对（A11 断言用；仅测试——生产密钥另持，见下文「release 签名密钥（openssl 轨）」） |
 | `Dockerfile.fleetlyd` | fleetlyd 容器形态（T2.24；多阶段构建 + alpine 运行层，入口 fleetlyd——可选运行形态，见下文） |
 
 ## 一条命令安装
@@ -39,28 +42,87 @@ sudo sh install.sh --bin-dir ./dist
 
 | 形态 | 参数 | 完整性 |
 | --- | --- | --- |
-| latest stable | （无） | checksums.txt sha256 必验；cosign 签名尽力而为 |
+| latest stable | （无） | checksums.txt sha256 必验；签名双轨必验其一（cosign bundle / openssl 内嵌公钥），降级即死 |
 | 版本钉定 | `--version vX.Y.Z` | 同上 |
 | 离线/开发 | `--bin-dir <dir>` | 本地直取（自备完整性） |
 
-下载形态的 release 契约（T2.24 制品链已落地 `.github/workflows/release.yml`）：
-release 附 `fleetly_<tag>_linux_<arch>.tar.gz`（tar 包根下有 `fleetlyd`、
-`fleetly`；安装脚本**独立制品**不打进 tar——`install.sh`/`uninstall.sh`/
-`upgrade.sh` 在 release 根）、`checksums.txt`（`<sha256>  <文件名>` 行式，
-覆盖 tar + 三个安装脚本）、`checksums.txt.sig`（**Sigstore bundle JSON**——
-cosign v3 keyless `sign-blob --bundle` 的唯一产物形态，内嵌签名 + 证书 +
-Rekor 条目；另附 `checksums.txt.cert` 供 `--certificate` 验证形态）与
-`*.spdx.json` SBOM（syft）。签名验证约束（keyless，GitHub OIDC）：
+下载形态的 release 契约（T2.24 制品链 + S14 双轨签名已落地
+`.github/workflows/release.yml`）：release 附 `fleetly_<tag>_linux_<arch>.tar.gz`
+（tar 包根下有 `fleetlyd`、`fleetly`；安装脚本**独立制品**不打进 tar——
+`install.sh`/`uninstall.sh`/`upgrade.sh` 在 release 根）、`checksums.txt`
+（`<sha256>  <文件名>` 行式，覆盖 tar + 三个安装脚本）、`checksums.txt.sig`
+（**Sigstore bundle JSON**——cosign v3 keyless `sign-blob --bundle` 的唯一
+产物形态，内嵌签名 + 证书 + Rekor 条目；另附 `checksums.txt.cert` 供
+`--certificate` 验证形态）、`checksums.txt.sig.pem`（**openssl 轨 detached
+签名**——`openssl dgst -sha256` 的裸 DER 签名，`.pem` 为产物链约定名；
+S14/H15 落地，`FLEETLY_RELEASE_KEY` secret 配置后附带）与 `*.spdx.json`
+SBOM（syft）。cosign 轨签名验证约束（keyless，GitHub OIDC）：
 `--certificate-oidc-issuer https://token.actions.githubusercontent.com`、
 `--certificate-identity-regexp ^https://github.com/fleetlyrun/fleetly/`。
 
-**验签形态（已修复）**：install.sh/upgrade.sh 的 verify 命令用
-`--bundle "$TMPD/checksums.txt.sig"`（checksums.txt.sig 是 cosign v3
-keyless `sign-blob --bundle` 的自足产物：内嵌签名 + 证书 + Rekor 证据；
-cosign ≥ 2.6 / 3.x 的 verify-blob 要求 `--key`/`--certificate`/`--bundle`
-三者有其一，release.yml 的 verify gate A 即本命令同款 identity 约束的
-bundle 形态验证）。cosign 缺失时安装器**显式警告降级**（不静默）；cosign
-在而验证失败即中止；`--skip-signature-verify` 仅调试用。
+**验签语义（S14/H15 双轨，降级即死）**：install.sh/upgrade.sh 对
+`checksums.txt` 双轨验签——① cosign 在且 `.sig`（bundle）在 → cosign
+verify-blob（上述 identity 约束，失败即中止）；② 否则 `.sig.pem` 在 →
+`openssl dgst -sha256 -verify <脚本内嵌公钥> -signature ...sig.pem
+checksums.txt`（openssl 在目标发行版近乎必装——干净 VPS 无 cosign 的常态
+走这条轨）；③ 双轨全部不可验（如 cosign 缺席且 release 只附 bundle）→
+**拒绝安装**（checksums 与产物同 origin，防不了 release 侧自一致重打包
+投毒——这正是 H15 的信任落差，不再 warn 降级）；④ 仅 S14 之前的历史
+版本（release 未附任何签名产物）保留带显著警示的兼容路径（upgrade.sh
+侧对应 `--allow-nightly` 门）。签名产物**下载失败不等于未附**：非 404
+的下载失败直接拒绝（fail closed）；`--skip-signature-verify` 仅调试用。
+
+### release 签名密钥（openssl 轨，S14/H15）
+
+openssl 轨的信任根是 install.sh/upgrade.sh 内嵌的 `FLEETLY_RELEASE_PUBKEY`
+（PEM 公钥 + `fingerprint-sha256` 指纹注释）。签名侧私钥**不落仓库**，由
+repo secret `FLEETLY_RELEASE_KEY` 承载；release.yml 在 secret 可用时对
+`checksums.txt` 追加 `openssl dgst -sha256 -sign` 签名产物
+`checksums.txt.sig.pem`（secret 缺席时跳过并警示——过渡期口径）。
+
+**算法裁决：RSA-2048 + SHA-256（`openssl dgst` 轨）**。ed25519 更现代，
+但 `openssl dgst` 不支持 Ed 系签名（Ed 系必须 `pkeyutl -rawin`，OpenSSL
+1.1.1/3.x 参数面分裂；实测 OpenSSL 4.0.2 的 `dgst -sign` 对 ed25519 仍报
+unsupported），而 `dgst -sha256 -sign/-verify` 自 OpenSSL 1.0.x 起全版本
+（含 LibreSSL）命令面一致——消费端兼容面优先（方案冻结口径）。
+
+首次配置（正式发布前必做；当前脚本内嵌的是 `deploy/testdata/` 测试密钥，
+其私钥在仓库内，不能作为生产信任根）：
+
+```sh
+# 1) 本地生成密钥对（离线保管私钥；建议入密码管理器/保险库）。
+openssl genpkey -algorithm RSA -pkeyopt rsa_keygen_bits:2048 \
+  -out fleetly-release.key.pem          # 私钥（机密，永不入仓库）
+openssl pkey -in fleetly-release.key.pem -pubout \
+  -out fleetly-release.pub.pem          # 公钥（嵌入安装脚本）
+
+# 2) 计算指纹（DER 公钥的 SHA-256，写入脚本指纹注释行）。
+openssl pkey -pubin -in fleetly-release.pub.pem -outform DER \
+  | openssl dgst -sha256
+
+# 3) 配置 secret：GitHub 仓库 Settings → Secrets and variables → Actions →
+#    New repository secret，名称 FLEETLY_RELEASE_KEY，值 = 私钥 PEM 全文
+#    （-----BEGIN PRIVATE KEY----- 到 -----END PRIVATE KEY----- 含边界行）。
+
+# 4) 替换 deploy/install.sh 与 deploy/upgrade.sh 两处的
+#    FLEETLY_RELEASE_PUBKEY 块（逐字一致）与 fingerprint-sha256 注释行，
+#    随仓库提交。
+```
+
+release.yml 的 **embedded-pubkey gate**（verify gate C）会在 secret 已配置
+时强制校验：脚本内嵌公钥/指纹必须与 secret 派生公钥配对——「配了 secret
+忘改脚本」的必炸 release（消费端全部验签失败）会在 CI 被拦下；仓库侧由
+test-install.sh 的 A11 断言守三份材料（install.sh / upgrade.sh /
+testdata 测试密钥派生公钥）一致。
+
+**轮换**：生成新密钥对 → 重复步骤 3/4（换 secret、换内嵌公钥与指纹）→
+之后的 release 用新钥签名。旧 release 的历史 `.sig.pem` 用旧公钥仍可验；
+新 release 遇到旧安装器 → 验签失败的报错文案指引用户升级安装器
+（install.sh/upgrade.sh 的 die 文案已内置该指引）。
+
+**测试密钥**：`deploy/testdata/release-test-key.pem` /
+`release-test.pub.pem` 仅供 dind 验收（test-install.sh A11 用它签出 staged
+release），明确标注仅测试用——生产签名密钥另持。
 
 ## 引擎门禁（不满足即拒绝，exit 1）
 
@@ -106,11 +168,11 @@ bundle 形态验证）。cosign 缺失时安装器**显式警告降级**（不�
 
 ## 首启 bootstrap token
 
-控制面首启（库内无任何 token 时）生成 bootstrap admin token 并**只打印
-一次**：systemd 形态
-`journalctl -u fleetlyd.service | grep "bootstrap admin token"`；手动形态
-在 daemon stdout/日志文件里 grep 同关键字。随后
-`FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN=<token> fleetly apps list` 验通。
+控制面首启（库内无任何 token 时）生成 bootstrap admin token 并写入
+`<数据根>/bootstrap-token`（缺省 `/var/lib/fleetly/bootstrap-token`，0600；
+**不打印进日志**——systemd 形态 journald 不再持久留存明文凭据）。随后
+`FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN=$(cat /var/lib/fleetly/bootstrap-token) fleetly apps list`
+验通；首次成功登录后删除该文件。文件已存在时首启不重复生成（幂等）。
 
 ## 升级（T2.23，升级双轨）
 
@@ -119,15 +181,21 @@ bundle 形态验证）。cosign 缺失时安装器**显式警告降级**（不�
 CLI 调 daemon RPC，`verify_status=verified` 才继续，否则在停 daemon 之前
 中止）→ ③ 应用健康基线（apps derived_state + 可选 `--probe-url` 采样）→
 ④ 停 fleetlyd（Swarm service 与 Traefik 独立于 daemon——应用路由继续
-服务）→ ⑤ 原子换二进制（旧件存 `fleetlyd.previous`）→ ⑥ start + liveness
+服务）→ ⑤ 原子换二进制（旧件存 `fleetlyd.previous`；F6/S20——mv 序列带
+原子性兜底，任一步失败就地归位旧件再 die）→ ⑥ start + liveness
 门 → ⑦ 升级后验证（版本号 + derived_state 与基线一致 + probe 200）→
-⑧ 任一步失败自动回退 previous 并再验证，仍失败停在最诚实状态打诊断。
+⑧ 任一步失败自动回退 previous 并再验证，仍失败停在最诚实状态打诊断
+（F6：回退段 stop 失败即 die，不 warn continue）。F5/S20：拉起旧件前经
+只读子命令 `fleetlyd schema-version` 比对 DB schema 与旧件支持上限——
+高于上限默认 die 并给三步恢复指引；`--auto-restore` 从本运行的 verified
+pre_upgrade 快照自动恢复状态库后再拉起旧件。
 
 ```sh
 sudo sh upgrade.sh --version v0.1.1        # 或缺省 latest stable（stable 渠道只接受带签名版本）
 sudo sh upgrade.sh --bin-dir /tmp/new-bin  # 离线/开发形态
 # 可选：--probe-url <url> --probe-host <host>（入口可达性采样）
 #       --allow-nightly（显式接受无签名 nightly）；--skip-backup（红色警告，破坏原子保证）
+#       --auto-restore（F5：回退遇 schema 高于旧件时，自动恢复 pre_upgrade 快照再回退）
 ```
 
 **Engine/主机轨** = 冷备 + 维护窗口（先备份 + 停应用；有状态应用停机
@@ -144,7 +212,11 @@ sh deploy/run-upgrade-test.sh
 场景：S1 正常升级（vA→vB：probe 全程零失败 = 应用不停 E2E、版本正确、
 derived_state 不变、pre_upgrade 备份 verified）；S2 坏 vB'（截断 ELF）→
 自动回退 vA、daemon healthy、probe 仍零失败；S3 备份链台账
-（kind/verify_status、manifest 密钥指纹、密钥不在备份目录）。
+（kind/verify_status、manifest 密钥指纹、密钥不在备份目录）；S4（F5/S20）
+回退 schema 感知——vC 变体（注入迁移 00099）制造「新版本已应用迁移后回退
+旧版本」的错配现场：无 `--auto-restore` 时 die + 三步人肉指引（且指引照做
+可恢复）；`--auto-restore` 时从 verified pre_upgrade 快照自动恢复状态库后
+拉起旧件（ROLLED BACK + auto-restore 报告行）。
 
 ## 卸载
 
@@ -179,7 +251,10 @@ A4 daemon 手动启动 liveness 200 + 8424/8421/8420 监听面 + SIGTERM 退出
 码 0；A5 bootstrap token 从日志抓取 → CLI `apps list`；A6 重装幂等
 （swarm 跳过 init、config 保留）；A7 假 docker（28.3.2）版本门禁拒绝；
 A8 nftables-only shim iptables 门禁拒绝；A9 卸载（数据保留/明示 +
-`--purge`）。
+`--purge`）；A10 健康探测 host 推导；A11 openssl 轨双轨验签（staged
+release + 假 curl 端到端：正例安装成功 / 篡改 checksums 验签 die /
+双产物缺历史兼容 / 仅 bundle 且无 cosign 拒绝 / skip 位保留 + 内嵌公钥
+三方一致性）。
 
 amd64 运行验证即覆盖门禁主路径；arm64 交叉编译产物存在性由构建证明
 （release.yml build matrix；arm64 QEMU 运行 smoke 成本高，T2.24 明确列
@@ -189,16 +264,26 @@ amd64 运行验证即覆盖门禁主路径；arm64 交叉编译产物存在性�
 
 `Dockerfile.fleetlyd`：多阶段（golang:1.26-alpine 构建层，`CGO_ENABLED=0`
 + `-trimpath` + `-X main.version=<tag>`）→ alpine:3.22 运行层，入口
-`fleetlyd`，数据卷 `/var/lib/fleetly`，配置 `-c /etc/fleetly/config.yaml`。
+`fleetlyd`，数据卷 `/var/lib/fleetly`。缺省不传配置文件（回落内置默认；
+F3/S20——镜像内并无 `/etc/fleetly/config.yaml`，固定 `-c` 会让容器开箱
+crash-loop）；需要显式配置时挂配置卷并覆写参数：
 
 ```sh
 docker build -f deploy/Dockerfile.fleetlyd \
   --build-arg FLEETLY_VERSION=v0.1.0 -t ghcr.io/fleetlyrun/fleetlyd:v0.1.0 .
+# 缺省形态（内置默认配置）：
 docker run -d --name fleetlyd \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v fleetly-data:/var/lib/fleetly \
   -p 8420:8420 -p 8424:8424 \
   ghcr.io/fleetlyrun/fleetlyd:v0.1.0
+# 可选：挂配置卷（键集见仓库根 config-example.yaml）：
+docker run -d --name fleetlyd \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v fleetly-data:/var/lib/fleetly \
+  -v /path/to/config.yaml:/etc/fleetly/config.yaml:ro \
+  -p 8420:8420 -p 8424:8424 \
+  ghcr.io/fleetlyrun/fleetlyd:v0.1.0 -c /etc/fleetly/config.yaml
 ```
 
 边界：**主形态仍是宿主二进制 + systemd**（install.sh）；容器形态挂宿主

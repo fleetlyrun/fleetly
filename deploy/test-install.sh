@@ -6,9 +6,14 @@
 # docker cp 在 Engine 29.x 宿主→特权 dind 会静默丢文件，禁用）：
 #   $TI_STAGE/install.sh          deploy/install.sh
 #   $TI_STAGE/uninstall.sh        deploy/uninstall.sh
+#   $TI_STAGE/upgrade.sh          deploy/upgrade.sh（A11 公钥一致性断言用）
 #   $TI_STAGE/fleetlyd.service    deploy/fleetlyd.service（unit 参考模板）
 #   $TI_STAGE/bin/fleetlyd        linux 二进制（交叉编译，CGO_ENABLED=0）
 #   $TI_STAGE/bin/fleetly         linux 二进制
+#   $TI_STAGE/testdata/release-test-key.pem
+#                                 openssl 轨测试签名私钥（A11 staged release
+#                                 签名用；deploy/testdata，仅测试——生产密钥
+#                                 另持，见 deploy/README.md release 签名密钥小节）
 #
 # 断言清单（对应 stage 验收标准）：
 #   A1  语法：install.sh / uninstall.sh / fleetlyd.service 三件套 sh -n 通过
@@ -28,6 +33,14 @@
 #   A10 探测 host 推导（整改⑤）：health_probe_host 对非回环 bind 地址打
 #       真实 host、通配/空 host 回落 127.0.0.1（非回环绑定时硬编码回环
 #       探测恒拒连——安装报红但平台在跑的假死形态）
+#   A11 openssl 轨双轨验签（S14/H15）：staged release（测试私钥签出
+#       .sig.pem）+ 假 curl（github download URL → 本地目录）端到端跑
+#       install.sh 的 release 下载形态——① 正例：无 cosign（dind 常态）
+#       openssl 轨验签通过 + 安装成功；② 篡改 checksums（内部自一致）→
+#       openssl 验签 die；③ 双签名产物均缺 → 历史版本兼容警示路径通过；
+#       ④ 仅 bundle（.sig.pem 缺）且无 cosign → die（降级即死）；⑤
+#       --skip-signature-verify 显式跳过；另断言 install.sh/upgrade.sh
+#       内嵌公钥与 testdata 测试公钥三方一致（防漂移/防脱钩）
 #
 # 断言风格与 e2e/nightly/lib.sh 一致（NAME: PASS/FAIL + 退出码），但独立
 # 存放（e2e/ 只读，本脚本不引用它）。
@@ -40,11 +53,18 @@ TI_STAGE="${TI_STAGE:-/tmp/install-test}"
 STAGE_BIN="$TI_STAGE/bin"
 INSTALL_SH="$TI_STAGE/install.sh"
 UNINSTALL_SH="$TI_STAGE/uninstall.sh"
+UPGRADE_SH="$TI_STAGE/upgrade.sh"
+TEST_SIGN_KEY="$TI_STAGE/testdata/release-test-key.pem"
 SERVICE_TPL="$TI_STAGE/fleetlyd.service"
 INSTALL_LOG="/tmp/ti-install.log"
 REINSTALL_LOG="/tmp/ti-reinstall.log"
 NEG_VER_LOG="/tmp/ti-neg-version.log"
 NEG_IPT_LOG="/tmp/ti-neg-iptables.log"
+SIG_OK_LOG="/tmp/ti-sig-ok.log"
+SIG_TAMPER_LOG="/tmp/ti-sig-tamper.log"
+SIG_NOSIG_LOG="/tmp/ti-sig-nosig.log"
+SIG_NOPEM_LOG="/tmp/ti-sig-nopem.log"
+SIG_SKIP_LOG="/tmp/ti-sig-skip.log"
 UNINSTALL_LOG="/tmp/ti-uninstall.log"
 DLOG="/tmp/ti-fleetlyd.log"
 
@@ -87,14 +107,16 @@ http_get() { # <url> — 2xx 时退出 0
 nl "=== T2.1 installer dind suite (stage=$TI_STAGE) ==="
 
 # ---------------------------------------------------- preflight + A1 语法
-for _f in "$INSTALL_SH" "$UNINSTALL_SH" "$SERVICE_TPL" "$STAGE_BIN/fleetlyd" "$STAGE_BIN/fleetly"; do
+for _f in "$INSTALL_SH" "$UNINSTALL_SH" "$UPGRADE_SH" "$SERVICE_TPL" \
+    "$TEST_SIGN_KEY" "$STAGE_BIN/fleetlyd" "$STAGE_BIN/fleetly"; do
     [ -s "$_f" ] || {
         nl "FATAL: staged file missing: $_f (host-side exec+stdin staging incomplete)"
         exit 1
     }
 done
-# 本地检出可能是 CRLF：busybox ash 无法执行带 CR 的脚本——统一就地剥离。
-sed -i 's/\r$//' "$INSTALL_SH" "$UNINSTALL_SH" "$SERVICE_TPL" 2>/dev/null || true
+# 本地检出可能是 CRLF：busybox ash 无法执行带 CR 的脚本——统一就地剥离
+# （测试签名私钥 PEM 同理：openssl 的 PEM 解析不吃 CRLF）。
+sed -i 's/\r$//' "$INSTALL_SH" "$UNINSTALL_SH" "$UPGRADE_SH" "$SERVICE_TPL" "$TEST_SIGN_KEY" 2>/dev/null || true
 
 sh -n "$INSTALL_SH"
 assert "A1-shn-install" $?
@@ -212,11 +234,11 @@ netstat -tln 2>/dev/null | grep -E '(:::|0\.0\.0\.0:|\[::\]:)8420 ' >/dev/null
 assert "A4-http-public-listening" $?
 
 # --------------------------------------------------------------- A5 CLI
-# token 行是 JSON：msg 末尾 "...: <plaintext>"}——先取最后一个 ": " 之后，
-# 再剥掉 JSON 收尾的引号与花括号。
-TOK=$(grep 'bootstrap admin token' "$DLOG" 2>/dev/null | sed -e 's/.*: //' -e 's/".*//' | head -n 1)
+# B5：token 本体不再进日志——首启写入 <数据根>/bootstrap-token（0600）；
+# 这里直接读文件（cat 剥掉行尾换行）。
+TOK=$(cat /var/lib/fleetly/bootstrap-token 2>/dev/null)
 [ -n "$TOK" ]
-assert "A5-bootstrap-token-in-log" $?
+assert "A5-bootstrap-token-file" $?
 if [ -n "$TOK" ]; then
     FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN="$TOK" /opt/fleetly/bin/fleetly apps list >"/tmp/ti-cli.out" 2>&1
     assert "A5-cli-apps-list" $? "$(cat /tmp/ti-cli.out 2>/dev/null | tail -3)"
@@ -309,6 +331,178 @@ assert "A10-empty-host-falls-back" $?
 assert "A10-ipv6-literal-kept" $?
 [ "$(health_probe_host '[::]:8420')" = '127.0.0.1' ]
 assert "A10-ipv6-wildcard-falls-back" $?
+
+# ------------------------------------- A11 openssl 轨双轨验签（S14/H15）
+# dind 形态即目标消费形态：无 cosign、无真 curl（只有 busybox wget）——
+# openssl 轨是唯一可验轨。四套 staged release（测试私钥签出 .sig.pem）+
+# 假 curl（github download URL → 本地目录，404 语义对齐真 curl）让
+# install.sh --version 端到端跑 release 下载形态（钉定版本不经 latest
+# 解析，无外网依赖）。
+have openssl
+assert "A11-openssl-present" $? 'dind 镜像需带 openssl（A11 前提；目标镜像 docker:29.8.1-dind 实证带 3.5.x）'
+if have cosign; then
+    # cosign 在场会让 cosign 轨优先于 openssl 轨，本组断言前提被破坏。
+    assert "A11-cosign-absent-premise" 1 'cosign unexpectedly present'
+else
+    assert "A11-cosign-absent-premise" 0
+fi
+
+# 内嵌公钥三方一致：install.sh == upgrade.sh == 测试私钥派生公钥（防两份
+# 脚本漂移、防测试密钥与内嵌密钥脱钩；release.yml 的 embedded-pubkey gate
+# 在 CI 侧再对生产 secret 校验一次，此处守仓库内材料）。抽取口径：锚定
+# FLEETLY_RELEASE_PUBKEY= 赋值行（BEGIN 标记必然跟着赋值前缀，无法锚定
+# 行首）到 END 标记行，再剥掉首行赋值前缀——闭引号独占一行是前提（脚本
+# 公钥块注释有结构说明）。
+extract_embedded_pubkey() { # <script>
+    sed -n "/^FLEETLY_RELEASE_PUBKEY='/,/-----END PUBLIC KEY-----/p" "$1" |
+        sed "1s/^FLEETLY_RELEASE_PUBKEY='//"
+}
+extract_embedded_pubkey "$INSTALL_SH" >/tmp/ti-pub-install.pem
+extract_embedded_pubkey "$UPGRADE_SH" >/tmp/ti-pub-upgrade.pem
+openssl pkey -in "$TEST_SIGN_KEY" -pubout -out /tmp/ti-pub-testderived.pem
+cmp -s /tmp/ti-pub-install.pem /tmp/ti-pub-testderived.pem
+assert "A11-embedded-key-matches-test-key" $?
+cmp -s /tmp/ti-pub-install.pem /tmp/ti-pub-upgrade.pem
+assert "A11-embedded-key-consistent-install-upgrade" $?
+grep -q 'fingerprint-sha256: ' "$INSTALL_SH" && grep -q 'fingerprint-sha256: ' "$UPGRADE_SH"
+assert "A11-fingerprint-comment-present" $?
+
+SIG_TAG='v0.1.0-sigtest'
+SIG_ASSET="fleetly_${SIG_TAG}_linux_amd64.tar.gz"
+
+# make_staged_release <dir> <mode> — 构造一套本地 release：
+#   good     = checksums + .sig.pem（openssl 轨正例）；
+#   tampered = 签名后向 checksums 追加 1 字节——asset 哈希行未动、内部自
+#              一致，校验和层必过（正是威胁模型：同 origin 重打包自一致
+#              投毒），签名层必须炸；
+#   nosig    = 仅 checksums（双签名产物均 404 → 历史版本兼容警示路径）；
+#   nopem    = checksums + 假 .sig bundle、无 .sig.pem（其一可用但本机无
+#              cosign → 双轨全部不可验 → 降级即死）。
+make_staged_release() {
+    _d=$1
+    _mode=$2
+    mkdir -p "$_d"
+    tar -czf "$_d/$SIG_ASSET" -C "$STAGE_BIN" fleetlyd fleetly
+    (cd "$_d" && sha256sum "$SIG_ASSET" > checksums.txt)
+    case "$_mode" in
+    good | tampered)
+        openssl dgst -sha256 -sign "$TEST_SIGN_KEY" \
+            -out "$_d/checksums.txt.sig.pem" "$_d/checksums.txt"
+        if [ "$_mode" = 'tampered' ]; then
+            printf 'x' >>"$_d/checksums.txt"
+        fi
+        ;;
+    nopem)
+        : >"$_d/checksums.txt.sig" # 内容任意：无 cosign 时不会被验
+        ;;
+    nosig) ;;
+    esac
+}
+make_staged_release /tmp/ti-rel-good good
+make_staged_release /tmp/ti-rel-tampered tampered
+make_staged_release /tmp/ti-rel-nosig nosig
+make_staged_release /tmp/ti-rel-nopem nopem
+
+# 假 curl：github release download URL → $TI_FAKE_REL_DIR 本地目录；其余
+# URL 转发 $TI_REAL_CURL（dind 无真 curl，转发目标空即模拟不可达）。404
+# 语义对齐真 curl：-w '%{http_code}' 输出 404；带 -f 时退出码 22。
+FAKE_CURL_BIN=/tmp/ti-fakebin-curl
+mkdir -p "$FAKE_CURL_BIN"
+cat >"$FAKE_CURL_BIN/curl" <<'FAKECURL'
+#!/bin/sh
+_rel=${TI_FAKE_REL_DIR:-}
+_real=${TI_REAL_CURL:-}
+_out='' _w=0 _f=0 _url='' _prev=''
+for _a in "$@"; do
+    case "$_prev" in
+    -o) _out=$_a ;;
+    -w) _w=1 ;;
+    esac
+    case "$_a" in
+    -f) _f=1 ;;
+    http://* | https://*) _url=$_a ;;
+    esac
+    _prev=$_a
+done
+case "$_url" in
+https://github.com/*/releases/download/*)
+    _base=${_url##*/}
+    if [ -n "$_rel" ] && [ -f "$_rel/$_base" ]; then
+        if [ -n "$_out" ]; then
+            cat "$_rel/$_base" >"$_out"
+        else
+            cat "$_rel/$_base"
+        fi
+        [ "$_w" -eq 1 ] && printf '200'
+        exit 0
+    fi
+    [ -n "$_out" ] && : >"$_out"
+    [ "$_w" -eq 1 ] && printf '404'
+    [ "$_f" -eq 1 ] && exit 22
+    exit 0
+    ;;
+esac
+if [ -n "$_real" ]; then
+    exec "$_real" "$@"
+fi
+[ "$_w" -eq 1 ] && printf '000'
+exit 7
+FAKECURL
+chmod +x "$FAKE_CURL_BIN/curl"
+
+# sig_install_run <rel-dir> <log> [extra install.sh args...] — 假 origin
+# （fake curl）跑 install.sh 的 release 下载形态。
+sig_install_run() {
+    _rel=$1
+    _log=$2
+    shift 2
+    TI_FAKE_REL_DIR="$_rel" TI_REAL_CURL='' PATH="$FAKE_CURL_BIN:$PATH" \
+        sh "$INSTALL_SH" --version "$SIG_TAG" --no-systemd "$@" >"$_log" 2>&1
+}
+
+# ① 正例：无 cosign（干净 VPS 主路径）→ openssl 轨验签通过 + 安装成功。
+sig_install_run /tmp/ti-rel-good "$SIG_OK_LOG"
+RC=$?
+assert "A11-openssl-track-install-rc0" "$RC" "rc=$RC"
+grep -q 'signature: openssl dgst verify OK' "$SIG_OK_LOG"
+assert "A11-openssl-track-verify-ok-line" $?
+grep -q 'checksum: sha256 OK' "$SIG_OK_LOG"
+assert "A11-openssl-track-checksum-ok-line" $?
+[ -x /opt/fleetly/bin/fleetlyd ]
+assert "A11-openssl-track-binary-installed" $?
+
+# ② 篡改：内部自一致的 checksums 追加 1 字节——校验和层必过（正是要防
+#    的同 origin 自一致重打包），openssl 验签必须 die。
+sig_install_run /tmp/ti-rel-tampered "$SIG_TAMPER_LOG"
+RC=$?
+[ "$RC" -ne 0 ]
+assert "A11-tampered-checksums-refused" $? "rc=$RC (want non-zero)"
+grep -q 'checksum: sha256 OK' "$SIG_TAMPER_LOG"
+assert "A11-tampered-passed-checksum-layer" $?
+grep -q 'openssl signature verification FAILED' "$SIG_TAMPER_LOG"
+assert "A11-tampered-caught-by-signature" $?
+
+# ③ 双签名产物均缺（S14 之前的历史版本）：兼容警示路径，安装继续。
+sig_install_run /tmp/ti-rel-nosig "$SIG_NOSIG_LOG"
+RC=$?
+assert "A11-nosig-compat-install-rc0" "$RC" "rc=$RC"
+grep -q 'degraded compat path' "$SIG_NOSIG_LOG"
+assert "A11-nosig-compat-warned" $?
+
+# ④ 仅 .sig bundle（.sig.pem 缺）且本机无 cosign：双轨全部不可验 → die。
+sig_install_run /tmp/ti-rel-nopem "$SIG_NOPEM_LOG"
+RC=$?
+[ "$RC" -ne 0 ]
+assert "A11-no-pem-no-cosign-refused" $? "rc=$RC (want non-zero)"
+grep -q 'no signature verifiable on this host' "$SIG_NOPEM_LOG"
+assert "A11-no-pem-no-cosign-reason-echoed" $?
+
+# ⑤ --skip-signature-verify 显式跳过位保留（调试用途，警告不变）。
+sig_install_run /tmp/ti-rel-nopem "$SIG_SKIP_LOG" --skip-signature-verify
+RC=$?
+assert "A11-skip-flag-installs" "$RC" "rc=$RC"
+grep -q 'SKIPPED by --skip-signature-verify' "$SIG_SKIP_LOG"
+assert "A11-skip-flag-warns" $?
 
 # --------------------------------------------------------------- A9 卸载
 sh "$UNINSTALL_SH" >"$UNINSTALL_LOG" 2>&1

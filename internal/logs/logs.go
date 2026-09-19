@@ -86,6 +86,15 @@ func (c Config) ScanInterval() time.Duration {
 	return time.Duration(c.ScanIntervalMillis) * time.Millisecond
 }
 
+// SecretValuesSource 是 B3 脱敏值集扩面的补充供给端口：返回该 app 在
+// state 密文列之外仍存明文落点的 secret 值（实现 = gitserver.GitTriggers 的
+// post-receive 钩子 token——明文只写进钩子文件；logs 不感知实现类型，
+// 装配点注入）。读取失败应返回 nil（观测面降级不阻断采集）。
+type SecretValuesSource interface {
+	// SecretValues 返回该 app 的补充脱敏明文值集（可为空）。
+	SecretValues(ctx context.Context, appID string) []string
+}
+
 // Manager 是日志管线管理器：采集循环（Start 阻塞到 ctx 取消）、Follow
 // 订阅、History 落盘检索、保留期清理。
 type Manager struct {
@@ -125,3 +134,7 @@ func NewManager(cfg Config, st *state.Store, port Port, box *secrets.Box, log *s
 
 // WithClock 覆盖时钟（测试注入）。
 func (m *Manager) WithClock(f func() time.Time) *Manager { m.clock = f; return m }
+
+// WithSecretSource 注入补充脱敏值集供给（B3；装配期调用——实现方提供
+// state 密文列之外的明文 secret 落点，如 gitserver 钩子 token）。
+func (m *Manager) WithSecretSource(s SecretValuesSource) *Manager { m.red.extra = s; return m }

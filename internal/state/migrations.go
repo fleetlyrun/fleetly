@@ -6,9 +6,11 @@ import (
 	"database/sql"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"strconv"
 	"strings"
 
@@ -140,4 +142,50 @@ func migrationHashes() (map[string]string, error) {
 		out[e.Name()] = hex.EncodeToString(h.Sum(nil))
 	}
 	return out, nil
+}
+
+// SchemaVersions 只读返回（DB 当前 schema 版本，本二进制内嵌迁移的最大
+// 版本）。不开 Store、不应用迁移、不触发 ensureMigrated 的高版本守卫——
+// 升级/回退编排（fleetlyd schema-version 子命令，F5/S20）需要在旧二进制
+// 「拒绝打开新 schema 库」之前比对两侧版本，给操作员可行动指引或自动
+// 恢复，而不是 start 失败后留下 DEGRADED 现场让人猜。
+//
+// 版本读取口径 = goose 版本表的 MAX(version_id)（本平台迁移只加法、不写
+// down 行，MAX 即已应用最高版本）。库文件不存在 / 版本表不存在（从未被
+// fleetlyd 打开过）→ dbVersion 0（空库语义，goose 首启建表落 0）。
+func SchemaVersions(ctx context.Context, path string) (dbVersion, maxVersion int64, err error) {
+	maxVersion, err = maxEmbeddedMigration()
+	if err != nil {
+		return 0, 0, err
+	}
+	if _, statErr := os.Stat(path); statErr != nil {
+		if os.IsNotExist(statErr) {
+			return 0, maxVersion, nil
+		}
+		return 0, maxVersion, fmt.Errorf("state: stat %s: %w", path, statErr)
+	}
+	db, err := sql.Open("sqlite", dsn(path))
+	if err != nil {
+		return 0, maxVersion, fmt.Errorf("state: open sqlite %s: %w", path, err)
+	}
+	defer db.Close()
+	var table string
+	scanErr := db.QueryRowContext(ctx,
+		"SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+		gooseVersionTableName).Scan(&table)
+	if scanErr != nil {
+		if errors.Is(scanErr, sql.ErrNoRows) {
+			return 0, maxVersion, nil
+		}
+		return 0, maxVersion, fmt.Errorf("state: inspect sqlite_master: %w", scanErr)
+	}
+	var v sql.NullInt64
+	if qErr := db.QueryRowContext(ctx,
+		"SELECT MAX(version_id) FROM "+gooseVersionTableName).Scan(&v); qErr != nil {
+		return 0, maxVersion, fmt.Errorf("state: read %s: %w", gooseVersionTableName, qErr)
+	}
+	if !v.Valid {
+		return 0, maxVersion, nil
+	}
+	return v.Int64, maxVersion, nil
 }

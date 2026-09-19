@@ -126,3 +126,30 @@ func TestSubscribeEventsStopsWithContext(t *testing.T) {
 		t.Fatal("channel not closed within 3s after ctx cancel")
 	}
 }
+
+// TestNewClientHostPrecedence host 优先级行为：显式 host 必须覆盖
+// DOCKER_HOST 环境变量；host 为空时回落到环境变量。观测面是 moby client
+// 公开的 DaemonHost（构造是惰性的，不发起真实连接）。
+func TestNewClientHostPrecedence(t *testing.T) {
+	const envHost = "tcp://127.0.0.1:1"
+	const explicitHost = "unix:///tmp/fleetly-test.sock"
+	t.Setenv("DOCKER_HOST", envHost)
+
+	c, err := NewClient(explicitHost)
+	if err != nil {
+		t.Fatalf("construct client with explicit host: %v", err)
+	}
+	defer func() { _ = c.Close() }()
+	if got := c.cli.DaemonHost(); got != explicitHost {
+		t.Fatalf("explicit host must take precedence over DOCKER_HOST: DaemonHost = %q, want %q", got, explicitHost)
+	}
+
+	cEnv, err := NewClient("")
+	if err != nil {
+		t.Fatalf("construct client without explicit host: %v", err)
+	}
+	defer func() { _ = cEnv.Close() }()
+	if got := cEnv.cli.DaemonHost(); got != envHost {
+		t.Fatalf("empty host must fall back to DOCKER_HOST: DaemonHost = %q, want %q", got, envHost)
+	}
+}

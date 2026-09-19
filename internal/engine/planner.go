@@ -178,8 +178,10 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 		mounts = append(mounts, MountSpec{VolumeName: vol.Name, Target: m.Target, ReadOnly: m.ReadOnly})
 	}
 
-	// secret 引用：v0.1 平台密钥库未接入（平台密钥存储随后续票）——显式
-	// 快速失败，不静默丢引用。
+	// secret 引用：v0.1 平台密钥库未接入——校验层已在 Load 期显式拒绝
+	// （S16-C1，E_COMPOSE_UNSUPPORTED），本分支理论不可达，保留作纵深
+	// （防止绕过 Load 的调用面静默丢引用）。回滚路径的防御分支见
+	// rollback.go preflightRollback。
 	if len(svc.Secrets) > 0 {
 		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE",
 			"服务 %s 声明了 secrets %s：平台密钥库 v0.1 未接入（密钥存储与 Swarm secret 下发随后续票落地）",

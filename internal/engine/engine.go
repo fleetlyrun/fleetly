@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -120,7 +121,17 @@ func (e *Engine) tick(ctx context.Context) {
 // pickQueued 拾取可启动的 queued 部署：同 app 互斥——仅当该 app 无其他
 // 在途部署时启动最早一条（第二个入队 queued 等待，release-semantics §2.5
 // 并发控制行）。
+//
+// S18-A9：panic 隔离——本函数无单条部署的失败终态可落（行尚未拾取），
+// recover 后仅记 Error 日志（含栈）不断 tick；毒数据在拾取后的
+// advanceActive 内有 per-record 兜底。
 func (e *Engine) pickQueued(ctx context.Context) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log.Error("engine: 队列拾取 panic 已捕获（tick 继续）",
+				"panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+		}
+	}()
 	queued, err := e.store.NextQueuedDeployments(ctx, 20)
 	if err != nil {
 		e.log.Warn("engine: scan queued deployments", "error", err)
@@ -172,6 +183,10 @@ func (e *Engine) onlyQueuedForApp(ctx context.Context, appID string) bool {
 }
 
 // advanceActive 推进全部在途部署一个周期。
+//
+// S18-A9：每条部署的处理包 defer recover——单条毒记录（解码 nil 指针、
+// 断言违约等）只失败该条（E_RUNTIME_UNAVAILABLE 终态 + Error 日志含栈），
+// 不 crash-loop 控制面；其余部署与后续 tick 照常推进。
 func (e *Engine) advanceActive(ctx context.Context) {
 	active, err := e.store.ListNonTerminalDeployments(ctx)
 	if err != nil {
@@ -179,33 +194,57 @@ func (e *Engine) advanceActive(ctx context.Context) {
 		return
 	}
 	for _, d := range active {
-		var err error
-		switch d.Status {
-		case state.DeployQueued:
-			// 等待互斥窗口（pickQueued 负责）。
-		case state.DeployPreparing:
-			err = e.runPreparing(ctx, d)
-		case state.DeployBuilding:
-			err = e.runBuilding(ctx, d)
-		case state.DeployReleasing:
-			err = e.evaluateReleasing(ctx, d)
-		case state.DeployObserving:
-			err = e.evaluateObserving(ctx, d)
-		}
-		if err != nil {
+		if err := e.advanceOne(ctx, d); err != nil {
 			e.log.Warn("engine: advance deployment", "deployment", d.ID, "status", d.Status, "error", err)
 		}
 	}
 }
 
+// advanceOne 推进单条在途部署一个周期（A9 panic 兜底包壳；状态分发与
+// advanceActive 原实现逐字一致）。
+func (e *Engine) advanceOne(ctx context.Context, d state.DeployRecord) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			e.log.Error("engine: 引擎推进 panic 已捕获",
+				"deployment", d.ID, "status", d.Status,
+				"panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			// 失败终态兜底：CAS 自当前快照状态出发，行已被并发推进（重启
+			// 恢复/竞争）时落败即幂等收敛；失败码固定 E_RUNTIME_UNAVAILABLE
+			//（panic 原文不进对外 detail，只进日志）。
+			if ferr := e.failTransition(ctx, d, "E_RUNTIME_UNAVAILABLE",
+				"引擎推进 panic 已捕获"); ferr != nil {
+				e.log.Warn("engine: panic 兜底失败终态未落", "deployment", d.ID, "error", ferr)
+			}
+			err = nil // 已按终态处置：不向上重复告警
+		}
+	}()
+	switch d.Status {
+	case state.DeployQueued:
+		// 等待互斥窗口（pickQueued 负责）。
+	case state.DeployPreparing:
+		err = e.runPreparing(ctx, d)
+	case state.DeployBuilding:
+		err = e.runBuilding(ctx, d)
+	case state.DeployReleasing:
+		err = e.evaluateReleasing(ctx, d)
+	case state.DeployObserving:
+		err = e.evaluateObserving(ctx, d)
+	}
+	return err
+}
+
 // startQueued 启动一条 queued 部署：queued → preparing（CAS 谓词防多实例
-// 竞争）并同 tick 执行准备。
+// 竞争）并同 tick 执行准备。CAS 补丁同拍原子写入准备/构建预算锚点
+// phase_started_at（H11）：预算自拾取时刻起算，排队等待（同 app 互斥/控制
+// 面停机窗口）不计入。
 func (e *Engine) startQueued(ctx context.Context, rec state.DeployRecord) error {
 	to := state.DeployPreparing
 	from := state.DeployQueued
+	anchor := e.now()
 	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:     &to,
-		PrevStatus: &from,
+		Status:         &to,
+		PrevStatus:     &from,
+		PhaseStartedAt: &anchor,
 	}); err != nil {
 		return fmt.Errorf("claim queued deployment: %w", err)
 	}
@@ -215,7 +254,20 @@ func (e *Engine) startQueued(ctx context.Context, rec state.DeployRecord) error 
 		return err
 	}
 	rec.Status = state.DeployPreparing
+	rec.PhaseStartedAt = anchor
 	return e.runPreparing(ctx, rec)
+}
+
+// prepareBudgetAnchor 返回准备/构建预算的起算锚点（H11）：拾取时刻
+// phase_started_at；迁移前存量行（锚点未写、零值）回落 created_at 保持旧
+// 语义。blocked_waiting 是 releasing 的子状态，锚点在其间不重置也无消费
+// （releasing 预算由 watchdog_deadline_at 起算，恢复续跑时重臂）——两者
+// 互不冲突。
+func prepareBudgetAnchor(rec state.DeployRecord) time.Time {
+	if rec.PhaseStartedAt.IsZero() {
+		return rec.CreatedAt
+	}
+	return rec.PhaseStartedAt
 }
 
 // prepareResult 是 preparing 阶段的中间产物（reload/放置/env；building 与
@@ -240,8 +292,9 @@ func (e *Engine) runPreparing(ctx context.Context, rec state.DeployRecord) error
 	if rec.CancelRequested {
 		return e.cancelTerminal(ctx, rec)
 	}
-	// 准备预算：底座不可用等暂态错误重试到 created+releaseTimeout 为止。
-	if !rec.CreatedAt.IsZero() && e.now().Sub(rec.CreatedAt) > e.cfg.ReleaseTimeout {
+	// 准备预算：底座不可用等暂态错误重试到 锚点+releaseTimeout 为止（锚点 =
+	// 拾取时刻，排队等待不计入预算，H11；存量行锚点为 0 回落 created_at）。
+	if anchor := prepareBudgetAnchor(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.ReleaseTimeout {
 		return e.failTransition(ctx, rec, "E_RUNTIME_UNAVAILABLE",
 			"准备阶段超过发布看门狗预算（底座不可用或环境异常）")
 	}
@@ -284,7 +337,8 @@ func (e *Engine) runBuilding(ctx context.Context, rec state.DeployRecord) error 
 	if rec.CancelRequested {
 		return e.cancelTerminal(ctx, rec)
 	}
-	if !rec.CreatedAt.IsZero() && e.now().Sub(rec.CreatedAt) > e.cfg.ReleaseTimeout {
+	// 构建预算同 preparing：锚点起算（拾取时刻，排队不计入，H11）。
+	if anchor := prepareBudgetAnchor(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.ReleaseTimeout {
 		return e.failTransition(ctx, rec, "E_RUNTIME_UNAVAILABLE",
 			"构建核对阶段超过发布看门狗预算")
 	}

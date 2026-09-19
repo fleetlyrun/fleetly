@@ -387,12 +387,20 @@ func (x *GetDeploymentResponse) GetDeployment() *DeploymentView {
 type DeployRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。
+	// compose 应用名与请求 app 必须一致（A1：不一致 → E_COMPOSE_UNSUPPORTED，
+	// 不误建 app、不入队）。
 	App string `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
 	// compose 文件内容字节（JSON/YAML 原文；服务端落临时文件走受控子集
 	// 校验——compose 违约不动底座、不入队）。
-	Compose       []byte `protobuf:"bytes,2,opt,name=compose,proto3" json:"compose,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Compose []byte `protobuf:"bytes,2,opt,name=compose,proto3" json:"compose,omitempty"`
+	// 破坏性变更确认门控（架构 §2.4 plan/apply 语义，MG-C3）：本次部署相对
+	// 最新 revision 的变更集含破坏性操作（服务删除/卷解绑——判定单源在
+	// compose 包，与 plan artifact 的 requires_confirm_destructive 同口径）时，
+	// 必须显式置位才放行入队；未置位返回 E_DEPLOY_CONFIRM_REQUIRED、不入队。
+	// 首发（无历史 revision）恒非破坏性，置位与否均放行。
+	ConfirmDestructive bool `protobuf:"varint,3,opt,name=confirm_destructive,json=confirmDestructive,proto3" json:"confirm_destructive,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *DeployRequest) Reset() {
@@ -437,6 +445,13 @@ func (x *DeployRequest) GetCompose() []byte {
 		return x.Compose
 	}
 	return nil
+}
+
+func (x *DeployRequest) GetConfirmDestructive() bool {
+	if x != nil {
+		return x.ConfirmDestructive
+	}
+	return false
 }
 
 // DeployFromGitRequest 携带 push 上下文（app 来自 REST 路径）。ref 形如
@@ -892,10 +907,11 @@ const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"\x15GetDeploymentResponse\x12A\n" +
 	"\n" +
 	"deployment\x18\x01 \x01(\v2!.fleetly.server.v1.DeploymentViewR\n" +
-	"deployment\"M\n" +
+	"deployment\"~\n" +
 	"\rDeployRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12!\n" +
-	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\"h\n" +
+	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\x12/\n" +
+	"\x13confirm_destructive\x18\x03 \x01(\bR\x12confirmDestructive\"h\n" +
 	"\x14DeployFromGitRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1a\n" +
 	"\x03sha\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x98\x01(R\x03sha\x12\x19\n" +

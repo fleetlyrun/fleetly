@@ -62,7 +62,7 @@ func newProviderHandler(v *view, token string) http.Handler {
 			w.WriteHeader(http.StatusUnauthorized)
 			return
 		}
-		cfg := v.snapshot()
+		cfg, rev := v.snapshot()
 		raw, err := MarshalJSONBytes(cfg)
 		if err != nil {
 			http.Error(w, "marshal config", http.StatusInternalServerError)
@@ -71,7 +71,8 @@ func newProviderHandler(v *view, token string) http.Handler {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write(raw)
-		v.markServed()
+		// E2：记录本次实际下发载荷的 revision（快照返回值，非当下值）。
+		v.markServed(rev)
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

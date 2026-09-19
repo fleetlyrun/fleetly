@@ -140,9 +140,16 @@ func countNewCrashes(tasks []TaskState, targetImage string, since time.Time) int
 }
 
 // succeedDeployment 成功终态：版本快照固化（revisions verified + 部署行
-// revision_id 回填，同事务；保留窗裁剪由 CreateRevision 同事务执行）→ 终态
+// revision_id 回填，同事务；保留窗裁剪由 CreateRevision 同事务执行）+ 终态
 // CAS + 事件 → pending env promote（随部署生效；kind=rollback 不 promote，
 // 见下）→ app 派生状态。
+//
+// S18-A6：固化与终态 CAS 并入同一 InTx，且以 (app_id, desired_hash) 为
+// 幂等键——旧形态两事务间崩溃会留下「revision 已固化、部署仍 observing」
+// 的重放窗口，重启 reopenObserveWindow 重跑窗口后再固化即产生同 hash 重复
+// 行；新形态下事务内先查同 hash 既有且为最新 active 的 revision（命中即
+// 复用，seq 不递增、不重复插入），否则插入新行，且 CAS 失败整体回滚
+// （不残留孤儿行）。
 func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, flags int64) error {
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
@@ -151,17 +158,42 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 	}
 	composeNormalized := e.composeNormalizedSnapshot(ctx, rec)
 	var revisionID string
+	to := state.DeploySucceeded
+	from := state.DeployObserving
 	err = e.store.InTx(ctx, func(tx *state.Tx) error {
-		rev, err := tx.CreateRevision(ctx, state.RevisionWrite{
-			AppID:             rec.AppID,
-			ComposeNormalized: composeNormalized,
-			Overlay:           overlayOf(specs),
-			DesiredHash:       rec.DesiredHash,
-		})
+		var rev state.Revision
+		// A6 幂等键：同 hash 既有且为最新 active 的快照直接复用（崩溃重放
+		// 形态——残行所属部署未终态，同 app 互斥保证它必然最新）；命中但
+		// 非最新（回滚/旧态重部署）或未命中走新行固化——回退版本在
+		// 「列表即选项」里前移到最新位（§2.4）。
+		existing, reusable, err := tx.ReusableRevisionByDesiredHash(ctx, rec.AppID, rec.DesiredHash)
 		if err != nil {
 			return err
 		}
+		if reusable {
+			rev = existing
+		} else {
+			rev, err = tx.CreateRevision(ctx, state.RevisionWrite{
+				AppID:             rec.AppID,
+				ComposeNormalized: composeNormalized,
+				Overlay:           overlayOf(specs),
+				DesiredHash:       rec.DesiredHash,
+			})
+			if err != nil {
+				return err
+			}
+		}
 		revisionID = rev.ID
+		// A6：终态 CAS 与固化同事务（旧形态这是第二个独立事务——崩溃窗口
+		// 所在；CAS 落败整体回滚，revision 不残留）。
+		if err := tx.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
+			Status:     &to,
+			PrevStatus: &from,
+			Flags:      &flags,
+			RevisionID: &revisionID,
+		}); err != nil {
+			return err
+		}
 		if err := tx.WriteAudit(ctx, state.AuditEntry{
 			Actor:       "system",
 			Action:      "deployment.succeeded",
@@ -185,17 +217,8 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 	if err != nil {
 		return err
 	}
-	to := state.DeploySucceeded
-	from := state.DeployObserving
-	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:     &to,
-		PrevStatus: &from,
-		Flags:      &flags,
-		RevisionID: &revisionID,
-	}); err != nil {
-		return err
-	}
 	rec.Status = state.DeploySucceeded
+	rec.RevisionID = revisionID
 
 	// pending env 随部署生效（architecture §2.4 变量合并行；
 	// MarkAppEnvEffective 自带 app.env_applied 审计与幂等）。kind=rollback

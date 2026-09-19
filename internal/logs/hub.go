@@ -66,23 +66,37 @@ func (h *hub) subscribe(app, service string) (<-chan Entry, func()) {
 	defer h.mu.Unlock()
 	h.subSeq++
 	id := h.subSeq
-	ch := make(chan Entry, 256)
-	h.subs[id] = &subscriber{app: app, service: service, ch: ch}
 	// 回放：单服务订阅回放该服务 ring；全服务订阅按 key 前缀聚合回放。
+	// 先在锁内收集全部待回放切片，按回放总量决定 channel 容量，使锁内
+	// 发送永不阻塞——否则积压超过缓冲（256）时消费方在 subscribe 返回
+	// 后才读 channel，持锁阻塞发送即死锁，ingest 同锁连带停摆（H1）。
+	// 切片收集、注册与发送全程同锁，回放与实时之间不重不漏的语义不变。
+	var replay [][]Entry
 	if service != "" {
 		if r, ok := h.streams[streamKey(app, service)]; ok {
-			for _, e := range r.snapshot() {
-				ch <- e
-			}
+			replay = append(replay, r.snapshot())
 		}
 	} else {
 		prefix := app + "\x00"
 		for key, r := range h.streams {
 			if len(key) > len(prefix) && key[:len(prefix)] == prefix {
-				for _, e := range r.snapshot() {
-					ch <- e
-				}
+				replay = append(replay, r.snapshot())
 			}
+		}
+	}
+	total := 0
+	for _, snap := range replay {
+		total += len(snap)
+	}
+	capacity := 256
+	if total > capacity {
+		capacity = total
+	}
+	ch := make(chan Entry, capacity)
+	h.subs[id] = &subscriber{app: app, service: service, ch: ch}
+	for _, snap := range replay {
+		for _, e := range snap {
+			ch <- e // 容量 >= 回放总量，锁内发送不阻塞
 		}
 	}
 	cancel := func() {

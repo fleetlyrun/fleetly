@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
@@ -119,7 +121,10 @@ func grpcEndpointFromAddr(addr string) string {
 // 其次 /ui/ 前缀的 Console 静态托管（consoleUI 为 nil 时跳过——静态托管
 // 关闭形态），两者路径形态不匹配的请求原样交回 grpc-gateway mux。各豁免
 // 面 = 各自分派面（线性词形判定，不存在「先豁免再分发」的放宽空间）。
+// REST 面（fallback）外包 A3 匿名 401 per-IP 限速（newAuthFailureLimiter
+// ——仅 gateway 面；webhook 与 /ui/ 分派不经限速层，不受影响）。
 func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.Handler) http.Handler {
+	gateway := newAuthFailureLimiter(time.Minute, 10).wrap(fallback)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if gitserver.WebhookPathPattern.MatchString(r.URL.Path) {
 			webhook.ServeHTTP(w, r)
@@ -129,6 +134,137 @@ func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.
 			consoleUI.ServeHTTP(w, r)
 			return
 		}
-		fallback.ServeHTTP(w, r)
+		gateway.ServeHTTP(w, r)
 	})
+}
+
+// ── A3（S18）：匿名 401 per-IP 限速 ─────────────────────────────────────────
+//
+// 问题：REST 面匿名请求（无 token / 错 token）没有 IP 维度限速——每个
+// 401 都伴随一次 tokens 表哈希查询，匿名扫描可制造 DB 查询风暴。gRPC
+// 直连面拿不到对端 IP，维持现状（token 熵防线：flt_ 前缀 + 192 bit 随机
+// 的暴力空间）；本层仅 REST gateway 面生效（RemoteAddr host 可得）。
+//
+// 算法：固定窗失败桶——对最终 status 401 的响应按 RemoteAddr host 计数，
+// 单 IP 单窗口（1 分钟）内第 10 次 401 后，该 IP 的后续请求直接 429
+// （不再触达后端）。内存有界：单 map + mutex + 惰性过期（map 超阈值时
+// 清除已出窗条目；键空间 = 触发过 401 的对端 IP 数，远小于任意请求集）。
+// webhook 端点不在本层覆盖面（错签名 401 走原生分派，非鉴权失败路径，
+// 按设计不受影响）；带有效 token 的请求不产生 401 计数，不受影响。
+type authFailureLimiter struct {
+	mu      sync.Mutex
+	buckets map[string]*failBucket
+	window  time.Duration
+	limit   int
+	now     func() time.Time
+}
+
+// failBucket 是单 IP 的固定窗计数。
+type failBucket struct {
+	count int
+	start time.Time
+}
+
+// authFailureMaxIPs 是惰性过期阈值（触发过 401 的 distinct IP 上界）。
+const authFailureMaxIPs = 10000
+
+// newAuthFailureLimiter 构造限速器（window/limit 生产取 1min/10）。
+func newAuthFailureLimiter(window time.Duration, limit int) *authFailureLimiter {
+	return &authFailureLimiter{
+		buckets: make(map[string]*failBucket),
+		window:  window,
+		limit:   limit,
+		now:     time.Now,
+	}
+}
+
+// wrap 把限速中间件包在 next 之外：入向先判该 IP 是否已被封禁（窗口内
+// 401 计数达上限），出向用状态记录器观测最终 status——401 计数、其余
+// 放行。
+func (l *authFailureLimiter) wrap(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ip := remoteIP(r.RemoteAddr)
+		if l.blocked(ip) {
+			http.Error(w, "too many failed authentication attempts", http.StatusTooManyRequests)
+			return
+		}
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		if rec.status == http.StatusUnauthorized {
+			l.recordFailure(ip)
+		}
+	})
+}
+
+// blocked 报告该 IP 是否仍处于封禁窗内（计数达上限且窗口未过期）。
+func (l *authFailureLimiter) blocked(ip string) bool {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	b, ok := l.buckets[ip]
+	if !ok {
+		return false
+	}
+	if l.now().Sub(b.start) >= l.window {
+		return false // 窗口已过期：放行（下次 401 时重开窗口）
+	}
+	return b.count >= l.limit
+}
+
+// recordFailure 记一次 401：出窗重开计数，在窗内累加；map 超阈值时惰性
+// 清除全部已出窗条目（内存有界）。
+func (l *authFailureLimiter) recordFailure(ip string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	now := l.now()
+	if len(l.buckets) >= authFailureMaxIPs {
+		for k, b := range l.buckets {
+			if now.Sub(b.start) >= l.window {
+				delete(l.buckets, k)
+			}
+		}
+	}
+	b, ok := l.buckets[ip]
+	if !ok || now.Sub(b.start) >= l.window {
+		l.buckets[ip] = &failBucket{count: 1, start: now}
+		return
+	}
+	b.count++
+}
+
+// remoteIP 从 RemoteAddr 取 host（去掉端口；IPv6 字面量形态由
+// SplitHostPort 正确处理）。拿不到对端 IP 的形态返回原串（计数键退化为
+// 该串，不影响有界性）。
+func remoteIP(remoteAddr string) string {
+	if host, _, err := net.SplitHostPort(remoteAddr); err == nil {
+		return host
+	}
+	return remoteAddr
+}
+
+// statusRecorder 记录最终响应 status 的 ResponseWriter 包装（A3 观测面；
+// Flush 透传——gateway 流式端点（Watch/Follow 的 chunked-JSON）依赖）。
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	wrote  bool
+}
+
+func (r *statusRecorder) WriteHeader(code int) {
+	if !r.wrote {
+		r.status = code
+		r.wrote = true
+	}
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func (r *statusRecorder) Write(b []byte) (int, error) {
+	r.wrote = true
+	return r.ResponseWriter.Write(b)
+}
+
+// Flush 透传底层 Flusher（流式响应不被缓冲截断）。
+func (r *statusRecorder) Flush() {
+	if f, ok := r.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
 }

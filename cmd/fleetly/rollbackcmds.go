@@ -52,7 +52,7 @@ func (c *rollbackCmd) Run(ctx context.Context, env *commands.Environment, args [
 	if err := requireArgs(c.Usage(), args, 1); err != nil {
 		return err
 	}
-	return c.conn.withClient(func(cl *fleetlyClient) error {
+	err := c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Deployments().RollbackDeployment(ctx, &serverv1.RollbackDeploymentRequest{
 			App:              args[0],
 			TargetRevisionId: c.to,
@@ -79,6 +79,12 @@ func (c *rollbackCmd) Run(ctx context.Context, env *commands.Environment, args [
 		}
 		return nil
 	})
+	if isCleanCancel(ctx, err) {
+		// Ctrl-C/SIGTERM：等待循环取消干净退出（在途回滚继续执行，
+		// fleetly deployments list 可查）——exit 0（S17-D3）。
+		return nil
+	}
+	return err
 }
 
 // ── fleetly revisions ───────────────────────────────────────────────────────

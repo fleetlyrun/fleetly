@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -191,3 +193,74 @@ func TestRateLimiter(t *testing.T) {
 type fakeClock struct{ cur time.Time }
 
 func (f *fakeClock) Now() time.Time { return f.cur }
+
+// TestAuthenticateTouchThrottle A2（S18）：last_used_at 盖写节流——节流窗口
+// 内多次认证只写一次（SQLite 写放大收口）；窗口过后再写；不同 token 独立
+// 节流；写失败不落窗口（下次认证重试）。touch 端口注入计数假实现 + 假时钟
+// 推进窗口。
+func TestAuthenticateTouchThrottle(t *testing.T) {
+	dir := t.TempDir()
+	st, err := state.Open(context.Background(), filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("state.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	tok := seedTokenPlain(t, st, "read")
+	other := seedTokenPlain(t, st, "read")
+
+	clk := &fakeClock{cur: time.Now()}
+	auth := NewAuthenticator(st)
+	auth.now = clk.Now
+	auth.touchEvery = time.Minute
+	var writes int
+	auth.touch = func(_ context.Context, _ string) error {
+		writes++
+		return nil
+	}
+	ctx := context.Background()
+	authOK := func(plaintext string) {
+		t.Helper()
+		if _, aerr := auth.Authenticate(ctx, "Bearer "+plaintext); aerr != nil {
+			t.Fatalf("Authenticate: %v", aerr)
+		}
+	}
+
+	// 窗口内 10 次认证：仅 1 次盖写。
+	for i := 0; i < 10; i++ {
+		authOK(tok)
+	}
+	if writes != 1 {
+		t.Fatalf("窗口内 10 次认证盖写 %d 次, 期望 1", writes)
+	}
+	// 窗口内推进（<60s）：仍跳过。
+	clk.cur = clk.cur.Add(59 * time.Second)
+	authOK(tok)
+	if writes != 1 {
+		t.Fatalf("窗口内推进后仍应跳过：盖写 %d 次", writes)
+	}
+	// 窗口过后：再写。
+	clk.cur = clk.cur.Add(2 * time.Second)
+	authOK(tok)
+	if writes != 2 {
+		t.Fatalf("窗口过后应再写：盖写 %d 次, 期望 2", writes)
+	}
+	// 不同 token 独立节流（首次认证即写）。
+	authOK(other)
+	if writes != 3 {
+		t.Fatalf("不同 token 首次认证应写：盖写 %d 次, 期望 3", writes)
+	}
+
+	// 写失败不落窗口：每次认证都重试写（两次认证 → 两次尝试）。先推进
+	// 时钟出窗，否则上一段的成功写窗口仍会跳过。
+	clk.cur = clk.cur.Add(time.Minute)
+	auth.touch = func(_ context.Context, _ string) error {
+		writes++
+		return errors.New("db locked")
+	}
+	authOK(tok)
+	authOK(tok)
+	if writes != 5 {
+		t.Fatalf("写失败不落窗口（每次认证重试）：盖写尝试 %d 次, 期望 5", writes)
+	}
+}

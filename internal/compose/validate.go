@@ -19,13 +19,22 @@ import (
 
 // topLevelWhitelist 是顶层键白名单（§2.4 支持清单；version 为 compose 规范
 // 废弃键、loader 在 schema 校验后删除，此处天然不可见；x-* 扩展键为
-// compose 标准扩展位、loader 移入 Extensions，同样不可见）。
+// compose 标准扩展位、loader 移入 Extensions，同样不可见；secrets 已移入
+// 拒绝清单——S16-C1，见 topLevelRejectList）。
 var topLevelWhitelist = map[string]bool{
 	"name":     true,
 	"services": true,
 	"networks": true,
 	"volumes":  true,
-	"secrets":  true,
+}
+
+// topLevelRejectList 是顶层键显式拒绝清单（优先于白名单缺省拒绝，message
+// 给出契约理由）。
+var topLevelRejectList = map[string]string{
+	// S16-C1：secrets 在 Load 期即拒——v0.1 平台密钥库未接入，放行只会在
+	// preparing 晚期被规划层拒绝（错误码还误导为运行时问题）；显式拒绝比
+	// 「照抄文档示例必失败」诚实。v0.2 平台密钥库接入后解除。
+	"secrets": "v0.1 平台密钥库未接入，secrets 不受支持（显式拒绝；v0.2 平台密钥库接入后开放）",
 }
 
 // serviceRejectList 是拒绝清单+危险字段的显式条目（优先于通用白名单缺省
@@ -37,6 +46,10 @@ var serviceRejectList = map[string]string{
 	"include":    "v0.1 拒绝清单字段（多文件合并不受支持）",
 	"profiles":   "v0.1 拒绝清单字段（服务按全量部署，无 profile 门控）",
 	"configs":    "v0.1 拒绝清单字段（配置注入用 environment/secrets 承载）",
+	// S16-C1：secrets 在 Load 期即拒（与顶层 topLevelRejectList 同理由）——
+	// v0.1 平台密钥库未接入，规划层晚期拒绝（E_RUNTIME_UNAVAILABLE）不可达
+	// 于此；planner.go 的快速失败分支保留作纵深。
+	"secrets": "v0.1 平台密钥库未接入，secrets 不受支持（显式拒绝；v0.2 平台密钥库接入后开放）",
 	// 危险字段（Coolify CVE-2025-34159 根因类；默认拒绝，admin 显式开启
 	// + 审计的旁路为后续票 TODO）
 	"privileged":          "危险字段：特权容器默认拒绝（admin 旁路 TODO）",
@@ -62,7 +75,6 @@ var serviceWhitelist = map[string]bool{
 	"healthcheck":       true,
 	"environment":       true,
 	"env_file":          true, // 允许但仅限非密钥（架构 §2.4 密钥行）
-	"secrets":           true,
 	"volumes":           true, // 命名卷挂载（bind/tmpfs 语义层拒绝）
 	"networks":          true, // 栈内网络
 	"deploy":            true,
@@ -124,9 +136,10 @@ var volumeLongWhitelist = map[string]bool{
 	"volume": true, "bind": true,
 }
 
-// secretLongWhitelist 是服务 secret 长语法允许的子键（target 必须等于
-// secret 名——「file target 保持 compose 名」，架构 §2.4 密钥行）。
-var secretLongWhitelist = map[string]bool{"source": true, "target": true}
+// S16-C1：secrets（服务级与顶层）在 Load 期即拒——见 serviceRejectList 与
+// topLevelRejectList 条目；secretLongWhitelist 与两个形态校验函数
+//（validateServiceSecretsDict / validateSecretsDict）随之删除（拒绝先于
+// 形态校验，无从到达）；规划层（planner.go）的晚期快速失败分支保留作纵深。
 
 // envFileLongWhitelist 是 env_file 长语法允许的子键。
 var envFileLongWhitelist = map[string]bool{"path": true, "required": true, "format": true}
@@ -172,8 +185,12 @@ func validateDict(abs string, dict map[string]any) error {
 		if strings.HasPrefix(key, "x-") {
 			continue
 		}
+		if reason, rejected := topLevelRejectList[key]; rejected {
+			return errCompose("compose 顶层字段 %q：%s", key, reason).
+				WithContext("path", key)
+		}
 		if !topLevelWhitelist[key] {
-			return errCompose("compose 顶层字段 %q 不在受控子集（支持：name/services/networks/volumes/secrets）", key).
+			return errCompose("compose 顶层字段 %q 不在受控子集（支持：name/services/networks/volumes）", key).
 				WithContext("path", key)
 		}
 	}
@@ -197,9 +214,6 @@ func validateDict(abs string, dict map[string]any) error {
 		return err
 	}
 	if err := validateVolumesDict(dict); err != nil {
-		return err
-	}
-	if err := validateSecretsDict(dict); err != nil {
 		return err
 	}
 	return nil
@@ -264,9 +278,6 @@ func validateServiceDict(name string, svc map[string]any) error {
 		return err
 	}
 	if err := validateServiceVolumesDict(name, prefix, svc["volumes"]); err != nil {
-		return err
-	}
-	if err := validateServiceSecretsDict(name, prefix, svc["secrets"]); err != nil {
 		return err
 	}
 	if err := validateServiceNetworksDict(name, prefix, svc["networks"]); err != nil {
@@ -488,42 +499,6 @@ func validateServiceVolumesDict(name, prefix string, volumesAny any) error {
 	return nil
 }
 
-// validateServiceSecretsDict 校验服务 secret 引用形态。
-func validateServiceSecretsDict(name, prefix string, secretsAny any) error {
-	if secretsAny == nil {
-		return nil
-	}
-	items, ok := secretsAny.([]any)
-	if !ok {
-		return errCompose("服务 %q 的 secrets 必须是列表", name).WithContext("path", prefix+".secrets")
-	}
-	for i, item := range items {
-		path := fmt.Sprintf("%s.secrets[%d]", prefix, i)
-		switch v := item.(type) {
-		case string:
-			continue
-		case map[string]any:
-			if err := checkSubKeysAt(name, path, "secrets", v, secretLongWhitelist); err != nil {
-				return err
-			}
-			// target 必须与 secret 名一致（canonical 化会把缺省 target 补为
-			// 挂载路径 /run/secrets/<name>，与「file target 保持 compose 名」
-			// 等价；其余改名的 target 拒绝）。
-			src, _ := v["source"].(string)
-			if tgt, present := v["target"]; present {
-				s, _ := tgt.(string)
-				if s != src && s != "/run/secrets/"+src {
-					return errCompose("服务 %q 的 secret target %q 必须与 secret 名 %q 一致（挂载文件名保持 compose 名）", name, s, src).
-						WithContext("path", path+".target")
-				}
-			}
-		default:
-			return errCompose("服务 %q 的 secrets 列表项类型不支持", name).WithContext("path", path)
-		}
-	}
-	return nil
-}
-
 // validateServiceNetworksDict 校验服务网络引用形态：短语法列表或「键为
 // 网络名、值为空」的映射（aliases/ipam 等每网络配置不在支持清单——服务
 // 别名 = compose 服务名，平台管理）。
@@ -594,38 +569,6 @@ func validateVolumesDict(dict map[string]any) error {
 				return errCompose("卷 %q 的 %q：%s", vol, key, reason).
 					WithContext("path", "volumes."+vol+"."+key)
 			}
-		}
-	}
-	return nil
-}
-
-// validateSecretsDict 校验顶层 secret 定义：仅允许平台密钥库引用形态
-// {external: true}（§2.4 密钥行：名称对应平台密钥库条目；file/driver 等
-// 本地定义形态不受支持——密钥值永不入文件）。
-func validateSecretsDict(dict map[string]any) error {
-	secretsAny, ok := dict["secrets"]
-	if !ok || secretsAny == nil {
-		return nil
-	}
-	secrets, ok := secretsAny.(map[string]any)
-	if !ok {
-		return errCompose("顶层 secrets 必须是映射").WithContext("path", "secrets")
-	}
-	for _, sec := range sortedKeys(secrets) {
-		def, ok := secrets[sec].(map[string]any)
-		if !ok {
-			return errCompose("secret %q 定义必须是 {external: true}（平台密钥库引用）", sec).
-				WithContext("path", "secrets."+sec)
-		}
-		for _, key := range sortedKeys(def) {
-			if key != "external" {
-				return errCompose("secret %q 不支持字段 %q（密钥值永不入文件；仅允许 {external: true} 平台密钥库引用）", sec, key).
-					WithContext("path", "secrets."+sec+"."+key)
-			}
-		}
-		if ext, present := def["external"]; !present || ext != true {
-			return errCompose("secret %q 必须声明 external: true（名称对应平台密钥库条目）", sec).
-				WithContext("path", "secrets."+sec+".external")
 		}
 	}
 	return nil

@@ -2,6 +2,7 @@ package logs
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -59,6 +60,100 @@ func TestHubFollowReplayAndFanout(t *testing.T) {
 		t.Fatalf("filtered line leaked: %q", e.Line)
 	case <-time.After(50 * time.Millisecond):
 	}
+}
+
+// subscribeWithTimeout 带 timeout guard 订阅：subscribe 必须在无人消费
+// channel 的情况下限时返回（H1 回放死锁回归的核心断言——消费方在
+// subscribe 返回后才开始读，防测试本身挂死 CI）。
+func subscribeWithTimeout(t *testing.T, h *hub, app, service string) (<-chan Entry, func()) {
+	t.Helper()
+	type result struct {
+		ch     <-chan Entry
+		cancel func()
+	}
+	done := make(chan result, 1)
+	go func() {
+		ch, cancel := h.subscribe(app, service)
+		done <- result{ch: ch, cancel: cancel}
+	}()
+	select {
+	case r := <-done:
+		return r.ch, r.cancel
+	case <-time.After(5 * time.Second):
+		t.Fatal("subscribe 未在 5s 内返回：回放积压超出缓冲导致持锁阻塞（H1 死锁）")
+		return nil, nil // 不可达（t.Fatal 已 Fatal）
+	}
+}
+
+// assertNoExtraReplay 断言回放完毕后 channel 无多余条目（不重）。
+func assertNoExtraReplay(t *testing.T, ch <-chan Entry) {
+	t.Helper()
+	select {
+	case e := <-ch:
+		t.Fatalf("unexpected extra replay entry: %+v", e)
+	case <-time.After(50 * time.Millisecond):
+	}
+}
+
+// TestHubReplayBacklogBeyondBuffer H1 回放死锁回归（MG-T1 容量边界）：
+// ring 积压超过订阅缓冲（256）时，subscribe 持锁回放不得阻塞——消费方
+// 在 subscribe 返回后才开始读 channel。覆盖单服务与全服务聚合两种形态，
+// 回放条数不重不漏。
+func TestHubReplayBacklogBeyondBuffer(t *testing.T) {
+	const backlog = 1000 // 与缺省 ring 深度（logs.ring_size=1000）一致，> 缓冲 256
+
+	// 单服务订阅：单流回放 1000 条，按序不重不漏。
+	t.Run("single service", func(t *testing.T) {
+		h := newHub(backlog)
+		for i := 0; i < backlog; i++ {
+			h.ingest(Entry{App: "a", Service: "web", Line: fmt.Sprintf("line-%04d", i)})
+		}
+		ch, cancel := subscribeWithTimeout(t, h, "a", "web")
+		defer cancel()
+		for i := 0; i < backlog; i++ {
+			select {
+			case e := <-ch:
+				if want := fmt.Sprintf("line-%04d", i); e.Line != want {
+					t.Fatalf("replay[%d] = %q, want %q", i, e.Line, want)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatalf("replay stalled at %d/%d", i, backlog)
+			}
+		}
+		assertNoExtraReplay(t, ch)
+	})
+
+	// 全服务订阅：两流聚合回放（600+400=1000 > 256），他 app 不混入。
+	t.Run("all services aggregated", func(t *testing.T) {
+		const webN, dbN = 600, 400
+		h := newHub(backlog)
+		for i := 0; i < webN; i++ {
+			h.ingest(Entry{App: "a", Service: "web", Line: fmt.Sprintf("web-%04d", i)})
+		}
+		for i := 0; i < dbN; i++ {
+			h.ingest(Entry{App: "a", Service: "db", Line: fmt.Sprintf("db-%04d", i)})
+		}
+		h.ingest(Entry{App: "b", Service: "web", Line: "other-app"})
+
+		ch, cancel := subscribeWithTimeout(t, h, "a", "")
+		defer cancel()
+		got := map[string]int{}
+		for i := 0; i < webN+dbN; i++ {
+			select {
+			case e := <-ch:
+				if e.App != "a" {
+					t.Fatalf("foreign app leaked into replay: %+v", e)
+				}
+				got[e.Service]++
+			case <-time.After(2 * time.Second):
+				t.Fatalf("replay stalled at %d/%d", i, webN+dbN)
+			}
+		}
+		if got["web"] != webN || got["db"] != dbN {
+			t.Fatalf("replay per-service counts = %v, want web=%d db=%d", got, webN, dbN)
+		}
+		assertNoExtraReplay(t, ch)
+	})
 }
 
 // TestRedactionNegative T2.20 验收（负面断言）：env 明文值不出现在脱敏
@@ -277,6 +372,84 @@ func TestHistoryBuildSource(t *testing.T) {
 	}
 	if rows[0].Line != "step 1/3 resolve" || rows[0].Source != SourceBuild {
 		t.Fatalf("row[0] = %+v", rows[0])
+	}
+}
+
+// TestHistoryBuildSourceRedacted B3（出站字节出口收口）验收：build 日志
+// 出口与容器日志同管线过该 app 的 redactor；值集扩面后 env 值、webhook
+// secret、拉源 https_token 出现在构建日志行时一律脱敏，未知内容原样通过。
+func TestHistoryBuildSourceRedacted(t *testing.T) {
+	mg, _, st, box := newTestManager(t)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "builder2")
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	const (
+		envSecret   = "env-secret-value-42"
+		hookSecret  = "webhook-secret-value-42"
+		tokenSecret = "https-token-value-42"
+	)
+	envCipher, err := box.Encrypt([]byte(envSecret))
+	if err != nil {
+		t.Fatalf("Encrypt env: %v", err)
+	}
+	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(envCipher), "platform"); err != nil {
+		t.Fatalf("SetAppEnv: %v", err)
+	}
+	hookCipher, err := box.Encrypt([]byte(hookSecret))
+	if err != nil {
+		t.Fatalf("Encrypt webhook secret: %v", err)
+	}
+	if err := st.SetAppWebhookSecret(ctx, app.ID, string(hookCipher), ""); err != nil {
+		t.Fatalf("SetAppWebhookSecret: %v", err)
+	}
+	tokenCipher, err := box.Encrypt([]byte(tokenSecret))
+	if err != nil {
+		t.Fatalf("Encrypt source token: %v", err)
+	}
+	if err := st.SetAppSource(ctx, app.ID, state.AppSourceWrite{
+		URL: "https://example.com/org/repo.git", Branch: "main",
+		AuthKind: state.SourceAuthToken, AuthSecret: string(tokenCipher),
+	}); err != nil {
+		t.Fatalf("SetAppSource: %v", err)
+	}
+	logPath := filepath.Join(t.TempDir(), "build.log")
+	if err := os.WriteFile(logPath, []byte(
+		"token=env-secret-value-42\nsig=webhook-secret-value-42\nauth=https-token-value-42\nplain ok\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateBuild(ctx, state.BuildRecord{
+		AppID:   app.ID,
+		Service: "web",
+		Driver:  state.DriverRailpack,
+		Status:  state.BuildQueued,
+		LogPath: logPath,
+	}); err != nil {
+		t.Fatalf("CreateBuild: %v", err)
+	}
+	rows, err := mg.History(ctx, HistoryQuery{App: "builder2", Source: SourceBuild})
+	if err != nil {
+		t.Fatalf("History: %v", err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("build history rows = %d, want 4", len(rows))
+	}
+	joined := make([]string, 0, len(rows))
+	for _, r := range rows {
+		joined = append(joined, r.Line)
+	}
+	all := strings.Join(joined, "\n")
+	for _, secret := range []string{envSecret, hookSecret, tokenSecret} {
+		if strings.Contains(all, secret) {
+			t.Fatalf("build log leaked secret %q: %q", secret, all)
+		}
+	}
+	if !strings.Contains(all, "***") {
+		t.Fatalf("redaction placeholder missing: %q", all)
+	}
+	if !strings.Contains(all, "plain ok") {
+		t.Fatalf("unknown content altered: %q", all)
 	}
 }
 

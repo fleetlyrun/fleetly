@@ -116,10 +116,10 @@ func Start(t *testing.T) *Env {
 	)
 	serverv1.RegisterSystemServiceServer(srv, api.NewSystemService("dev", st,
 		func() []api.SystemComponent { return nil }, nil))
-	serverv1.RegisterAppsServiceServer(srv, api.NewAppsService(st, box, "127.0.0.1:8424"))
+	serverv1.RegisterAppsServiceServer(srv, api.NewAppsService(st, box, "127.0.0.1:8424", nil))
 	serverv1.RegisterDeploymentsServiceServer(srv, api.NewDeploymentsService(st, nil))
 	serverv1.RegisterRevisionsServiceServer(srv, api.NewRevisionsService(st))
-	serverv1.RegisterBuildsServiceServer(srv, api.NewBuildsService(st))
+	serverv1.RegisterBuildsServiceServer(srv, api.NewBuildsService(st, nil))
 	serverv1.RegisterDriftServiceServer(srv, api.NewDriftService(st, eng))
 	serverv1.RegisterDomainsServiceServer(srv, api.NewDomainsService(st, nil))
 	serverv1.RegisterEnvServiceServer(srv, api.NewEnvService(st, box))

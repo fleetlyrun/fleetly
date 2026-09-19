@@ -1,0 +1,26 @@
+# compose 受控子集白名单真源（S16-C3；架构 §2.4「支持集以本 golden 为准」）。
+# 与 internal/compose/validate.go 的 topLevelWhitelist / serviceWhitelist
+# 集合一致性由 TestWhitelistGolden 钉死；增删键须显式更新本文件并同步
+# 架构文档 §2.4。子段白名单（build/healthcheck/deploy/...）不在本表——
+# 支持面以顶层与服务级两表为纲。
+
+[top_level]
+name
+networks
+services
+volumes
+
+[service]
+build
+command
+deploy
+env_file
+environment
+expose
+healthcheck
+image
+labels
+networks
+stop_grace_period
+stop_signal
+volumes

@@ -145,6 +145,13 @@ func (s *GitTriggers) buildFetch(ctx context.Context, appID, repoPath string) (f
 	if err := validateSourceURL(cfg.SourceURL); err != nil {
 		return fetchPlan{}, err
 	}
+	// E7⑤（S19）：https_token 认证强制 https:// 源——token 经
+	// http.extraHeader 注入后随请求上行，http:// 明文链路等于把凭据广播
+	// 给链路窃听者（api 层 SetAppSource 同款早拒；此处是拉源前的兜底
+	// 防线，覆盖存量配置行）。
+	if cfg.AuthKind == state.SourceAuthToken && strings.HasPrefix(cfg.SourceURL, "http://") {
+		return fetchPlan{}, fmt.Errorf("gitserver: https_token auth requires https:// source url (cleartext http would leak the token): %q", cfg.SourceURL)
+	}
 	branch := cfg.Branch
 	if branch == "" {
 		branch = state.DefaultGitBranch
@@ -200,19 +207,28 @@ func (s *GitTriggers) buildFetch(ctx context.Context, appID, repoPath string) (f
 }
 
 // FetchRemote 执行拉源：确保 bare 仓库在位 → 按计划 fetch。失败一律包装
-// ErrFetchFailed（调用方映射错误族信封）。
+// ErrFetchFailed（调用方映射错误族信封；errors.Is 判定不受 B2 收口影响）。
+//
+// B2（出站字节出口收口）：全路径失败原文（git stderr、仓库路径、state/
+// 底层错误细节）只进 slog Warn；返回错误只保留哨兵 + 阶段词——调用方
+// （webhook 信封/审计）不再拼接原文，杜绝内部字节外泄。
 func (s *GitTriggers) FetchRemote(ctx context.Context, app string) error {
+	// failf 记录原文（Warn，保留排障信息）并返回「哨兵 + 阶段词」形态。
+	failf := func(stage string, err error) error {
+		s.log.Warn("gitserver: fetch remote failed", "app", app, "stage", stage, "error", err.Error())
+		return fmt.Errorf("%w: stage=%s", ErrFetchFailed, stage)
+	}
 	path, _, err := s.EnsureBareRepo(ctx, app)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFetchFailed, err)
+		return failf("ensure-repo", err)
 	}
 	appRow, err := s.st.GetAppByName(ctx, app)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFetchFailed, err)
+		return failf("resolve-app", err)
 	}
 	plan, err := s.buildFetch(ctx, appRow.ID, path)
 	if err != nil {
-		return fmt.Errorf("%w: %v", ErrFetchFailed, err)
+		return failf("build-plan", err)
 	}
 	defer func() {
 		if plan.Cleanup != nil {
@@ -226,8 +242,9 @@ func (s *GitTriggers) FetchRemote(ctx context.Context, app string) error {
 		khBefore = snapshotKnownHosts(plan.KnownHostsFile)
 	}
 	if err := s.fetchFn(ctx, plan); err != nil {
-		s.log.Warn("gitserver: fetch remote failed", "app", app, "error", err.Error())
-		return fmt.Errorf("%w: %v", ErrFetchFailed, err)
+		// B2：runFetch 的错误携带 git stderr 原文（含路径/远端报错），只
+		// 在此处进日志；对外错误链由 failf 归一为哨兵 + 阶段词。
+		return failf("fetch", err)
 	}
 	if plan.KnownHostsFile != "" {
 		s.auditHostKeyFirstSeen(ctx, appRow.ID, app, plan.RemoteHost, plan.KnownHostsFile, khBefore)

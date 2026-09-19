@@ -17,6 +17,9 @@ state:
   event_retention_days: 30
   # 审计保留天数（默认 365）。
   audit_retention_days: 365
+  # builds 终态行保留天数（S18-A10；默认 90。janitor 按 finished_at 清理
+  # 终态构建台账行，非正值回落默认）。
+  build_retention_days: 90
   # 底座（Docker Engine）连接地址；留空 = DOCKER_HOST 环境变量，再缺省
   # 本机套接字（linux unix socket / Windows named pipe）。
   docker_host: ""
@@ -49,6 +52,9 @@ build:
   cache_dir: "./build-cache"
   # 构建产物归档根目录（railpack plan JSON / 构建日志，按 app/构建ID 落盘）。
   artifacts_dir: "./build-artifacts"
+  # 产物归档目录保留天数（S18-A10；默认 30。janitor 按 mtime 清理，非正值
+  # 回落默认）。
+  artifacts_retention_days: 30
   # 构建队列并发上限（缺省 2，天花板 8；架构 §4.2 容量边界）。
   concurrency: 2
   # buildkitd 容器资源限额（Spike A E4 实证缺省：1GiB / 1.5 CPU 下真实
@@ -57,6 +63,17 @@ build:
   cpus: 1.5
   # 构建队列扫描周期（秒）。
   poll_seconds: 2
+  # 单条构建执行超时预算（秒；缺省 1800 = 30min）。覆盖 buildkitd 就绪
+  # 收敛 + solve + inspect 全程；超时 → 构建终态 failed（E_BUILD_FAILED），
+  # 挂起构建不永久占用并发槽。daemon 重启/关停时在途构建复位为 failed
+  # （构建不自动重跑，请重新触发部署）。
+  timeout_seconds: 1800
+  # 构建上下文受管根的额外根列表（H14 宿主目录信任边界）。构建上下文
+  # （compose build.context 解析产物）必须位于受管根内，越界构建终态
+  # failed（E_BUILD_FAILED，信息注明上下文目录越界）。缺省集合 = 系统
+  # temp 根（恒在）+ git 裸仓库根；单机同宿主形态下 CLI 构建目录在此
+  # 显式扩根接入（触发面已收敛为 admin scope token）。
+  context_roots: []
 
 # 发布引擎（T2-5a：发布状态机/对账/窗口语义）。治理参数 v0.1 为平台默认
 # （文件缺省即文档默认；release-semantics §2.8）——这些键是部署面覆盖入口，
@@ -71,6 +88,9 @@ engine:
   replicas_below_seconds: 10
   # 引擎轮询周期秒数（poll_seconds；缺省 2）。
   poll_seconds: 2
+  # 运行域漂移检测扫描周期秒数（drift_interval_seconds；缺省 30——drift
+  # 对账 sweep 节拍，外部篡改受管字段的发现延迟上界；非正值回落默认）。
+  drift_interval_seconds: 30
 
 # 入口与证书（T2.15/T2.16：平台自管 Traefik + 配置端点 + 集中 ACME）。
 # 缺省值经 internal/ingress 归一回落（traefik:v3.5 钉版、host 80/443、
@@ -111,6 +131,20 @@ ingress:
     # ACME 账号私钥文件（空 = <cert_dir>/acme-account.key）。
     account_key_file: ""
 
+# 应用日志管线（T2.20：采集轮询 + 内存 ring 回放 + 落盘保留）。缺省值经
+# internal/logs 归一回落（fleetly-logs 目录 / 保留 7 天 / 轮询 2s / ring
+# 1000）；下列键为部署面覆盖入口。
+logs:
+  # 落盘根目录（logs.dir；缺省 ./fleetly-logs）。
+  dir: "./fleetly-logs"
+  # 落盘保留天数（logs.retention_days；缺省 7——应用日志 7 天轮转）。
+  retention_days: 7
+  # 采集轮询周期毫秒数（logs.scan_interval_millis；缺省 2000）。
+  scan_interval_millis: 2000
+  # per app-service 内存环形缓冲深度（logs.ring_size；缺省 1000——Follow
+  # 接入时的回放上限）。
+  ring_size: 1000
+
 # git push(SSH) 触发入口（T2.19）。宿主 git 为前置条件；bare 仓库按 app
 # 懒创建（<root>/<app>.git），post-receive 钩子回调控制面入队部署。
 git:
@@ -137,8 +171,9 @@ webhook:
 # token；数据面恒走 REST /v1（全部 Bearer 鉴权，不因托管放宽）。
 console:
   # SPA 构建产物目录（console/ 下 `pnpm install && pnpm build` 产出
-  # console/dist）。空 = 关闭（缺省；/ui/ 前缀不分派）。
+  # console/dist）。空 = 关闭（缺省；/ui/ 前缀不分派）；启用示例：
   # static_dir: "./console/dist"
+  static_dir: ""
 
 # 平台状态备份（T2.22，备份基线与信任闭环）：SQLite 一致性快照
 # （VACUUM INTO）→ 回读校验（integrity_check + 关键表行数）→ sha256 落

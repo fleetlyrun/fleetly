@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/oklog/ulid/v2"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/compose"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -21,14 +23,20 @@ import (
 // 端——旧 CLI 直连入库时在客户端做的 selectBuildTargets 随 CLI-over-SDK
 // 改造收编到服务端，目标裁决单一事实源随行。builds.request 跨进程执行
 // 契约不变（daemon 的 build.queue worker 消费同一 JSON 形态）。
+//
+// S18-A11：服务持 build.Queue，入队走 Queue.Enqueue（建行 + 唤醒）——
+// 同进程触发立即唤醒扫描（不等 poll interval），Queue.Enqueue 自死代码
+// 转正；queue 为 nil（进程内夹具形态）时回落直连建行，行为与旧路径一致。
 type BuildsService struct {
 	serverv1.UnimplementedBuildsServiceServer
-	st *state.Store
+	st    *state.Store
+	queue *build.Queue
 }
 
-// NewBuildsService 构造 BuildsService。
-func NewBuildsService(st *state.Store) *BuildsService {
-	return &BuildsService{st: st}
+// NewBuildsService 构造 BuildsService（queue 可 nil——未接队列面的进程内
+// 夹具形态，入队回落直连建行）。
+func NewBuildsService(st *state.Store, queue *build.Queue) *BuildsService {
+	return &BuildsService{st: st, queue: queue}
 }
 
 // TriggerBuild 解析 compose、裁决构建目标并逐服务入队（应用不存在时自动
@@ -48,11 +56,21 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 	if err != nil {
 		return nil, err // apperr（E_COMPOSE_*）原样透传
 	}
+	// A1（S18）：TriggerBuildRequest 无 app 字段（REST 面 POST /v1/builds
+	// 也不含路径段），应用名单源 = compose name——不存在「请求 app 与
+	// compose 应用名错位」的面（Deploy 侧的 A1 守卫在此无对应物）；若
+	// 后续版本给请求加 app 字段，必须与 Deploy 同款一致性校验。
 
 	// 上下文解析基准：显式 base_dir（单机同宿主语义）回落临时目录。
+	// 基准本身先解析为绝对归一形态（H14：显式 base_dir 是调用方输入，
+	// 包含性校验需要确定的锚点；临时回落形态天然绝对）。
 	base := req.GetBaseDir()
 	if base == "" {
 		base = dir
+	}
+	base, err = filepath.Abs(base)
+	if err != nil {
+		return nil, fmt.Errorf("resolve base_dir %s: %w", base, err)
 	}
 
 	app, err := ensureApp(ctx, s.st, spec.Name)
@@ -75,9 +93,9 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 			})
 			continue
 		}
-		contextDir, err := filepath.Abs(filepath.Join(base, svc.Build.Context))
+		contextDir, err := resolveBuildContext(base, svc)
 		if err != nil {
-			return nil, fmt.Errorf("resolve build context of service %s: %w", svc.Name, err)
+			return nil, err
 		}
 		// 构建 ID 在入队侧分配：request JSON 与 builds 行共用同一 ID（一次
 		// 建行原子落库；DecodeRequest 校验 build_id 非空——旧 CLI 入队同
@@ -95,6 +113,23 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 		}.Encode()
 		if err != nil {
 			return nil, err
+		}
+		// A11：入队走 Queue.Enqueue（建行 + 唤醒，单一写点——同进程触发
+		// 不等 poll interval 即被认领）；无队列面（进程内夹具）回落直连
+		// 建行，行为与旧路径一致。
+		if s.queue != nil {
+			rec, err := s.queue.Enqueue(ctx, state.BuildRecord{
+				ID:      id,
+				AppID:   app.ID,
+				Service: svc.Name,
+				Driver:  driver,
+				Request: raw,
+			})
+			if err != nil {
+				return nil, err
+			}
+			out.Builds = append(out.Builds, buildView(rec, app.Name))
+			continue
 		}
 		rec, err := s.st.CreateBuild(ctx, state.BuildRecord{
 			ID:      id,
@@ -114,6 +149,24 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 	}
 	out.Warnings = composeWarnings(warnings)
 	return out, nil
+}
+
+// resolveBuildContext 解析服务的构建上下文目录并执行包含性校验（H14
+// 宿主目录信任边界）：base 为已归一的绝对基准目录，build.context 解析后
+// 必须位于 base 之内——`..` 逃逸形态（如 ../../.. 直指宿主根、SQLite 库
+// 或密钥材料所在目录）会把宿主任意目录整目录打进镜像再经部署外带，
+// 在入队前拒绝（基准为临时回落目录时同样适用：逃逸形态不可能承载合法
+// 构建内容，只有外带语义）。复用 compose 族拒绝码 E_COMPOSE_UNSUPPORTED
+// （errcode 零新增，H14 裁决），错误信息点名服务与逃逸取值。
+func resolveBuildContext(base string, svc compose.Service) (string, error) {
+	contextDir := filepath.Join(base, svc.Build.Context) // Join 已 Clean，越界逃逸折叠为前导 ..
+	rel, err := filepath.Rel(base, contextDir)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", apperr.New("E_COMPOSE_UNSUPPORTED",
+			"服务 %s 的 build.context %q 解析后越出基准目录 %s：构建上下文必须位于 base_dir（缺省为服务端临时目录）之内（宿主目录信任边界，H14）",
+			svc.Name, svc.Build.Context, base)
+	}
+	return contextDir, nil
 }
 
 // GetBuild 单条构建（CLI build 的等待轮询源）。

@@ -152,29 +152,42 @@ type ServiceState struct {
 	Constraints     []string
 	StopSignal      string
 	StopGracePeriod time.Duration
+	// ── S18-A8：Spec.UpdateConfig 投影补齐（外部 docker service update
+	// --update-* 篡改的判定面）。Order/Parallelism/Delay 三字段随
+	// serviceSpecOf 进漂移哈希；FailureAction 是平台受管字段（适配器固定
+	// pause，不进 ServiceSpec/哈希），篡改走 drift 的专报项。──
+	UpdateOrder         string
+	UpdateParallelism   uint64
+	UpdateDelay         time.Duration
+	UpdateFailureAction string
 }
 
 // serviceSpecOf 把服务实况投影还原为 ServiceSpec 形态（漂移投影的实况侧
-// 输入；仅投影字段参与，Version/UpdateState 等观测字段不进哈希）。
+// 输入；仅投影字段参与，Version/UpdateState 等观测字段不进哈希）。A8 起
+// UpdateConfig 三字段（order/parallelism/delay）随行——外部篡改与期望态
+// 同构可比。
 func serviceSpecOf(s ServiceState) ServiceSpec {
 	return ServiceSpec{
-		Name:            s.Name,
-		Image:           s.Image,
-		Command:         s.Command,
-		Env:             s.Env,
-		ServiceLabels:   s.Labels,
-		ContainerLabels: s.ContainerLabels,
-		Global:          s.Global,
-		Replicas:        s.Replicas,
-		Networks:        s.Networks,
-		Mounts:          s.Mounts,
-		Secrets:         s.Secrets,
-		Healthcheck:     s.Healthcheck,
-		RestartPolicy:   s.RestartPolicy,
-		Resources:       s.Resources,
-		Constraints:     s.Constraints,
-		StopSignal:      s.StopSignal,
-		StopGracePeriod: s.StopGracePeriod,
+		Name:              s.Name,
+		Image:             s.Image,
+		Command:           s.Command,
+		Env:               s.Env,
+		ServiceLabels:     s.Labels,
+		ContainerLabels:   s.ContainerLabels,
+		Global:            s.Global,
+		Replicas:          s.Replicas,
+		Networks:          s.Networks,
+		Mounts:            s.Mounts,
+		Secrets:           s.Secrets,
+		Healthcheck:       s.Healthcheck,
+		RestartPolicy:     s.RestartPolicy,
+		Resources:         s.Resources,
+		Constraints:       s.Constraints,
+		StopSignal:        s.StopSignal,
+		StopGracePeriod:   s.StopGracePeriod,
+		UpdateOrder:       s.UpdateOrder,
+		UpdateParallelism: s.UpdateParallelism,
+		UpdateDelay:       s.UpdateDelay,
 	}
 }
 

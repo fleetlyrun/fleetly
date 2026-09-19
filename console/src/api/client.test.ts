@@ -91,6 +91,62 @@ describe("api client", () => {
     setUnauthorizedListener(null);
   });
 
+  it("aborts hanging requests after the 30s default timeout (D4-⑤)", async () => {
+    vi.useFakeTimers();
+    try {
+      // 挂起 fetch（真 fetch 语义：signal abort 即 reject，永不自行 settle）。
+      const fetchMock = vi.fn(
+        (_url: unknown, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(init.signal?.reason);
+            });
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const pending = api("/apps").then(
+        () => null,
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fetchMock).toHaveBeenCalled();
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      const err = await pending;
+      expect((err as { name?: string }).name).toBe("AbortError");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("combines a caller signal with the default timeout (either aborts)", async () => {
+    vi.useFakeTimers();
+    try {
+      const fetchMock = vi.fn(
+        (_url: unknown, init?: RequestInit) =>
+          new Promise((_resolve, reject) => {
+            init?.signal?.addEventListener("abort", () => {
+              reject(init.signal?.reason);
+            });
+          }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const caller = new AbortController();
+      const pending = api("/apps", { signal: caller.signal }).then(
+        () => null,
+        (e: unknown) => e,
+      );
+      await vi.advanceTimersByTimeAsync(0);
+
+      caller.abort(); // 请求方取消先于 30s 超时
+      const err = await pending;
+      expect((err as { name?: string }).name).toBe("AbortError");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("base64-encodes compose bytes for the Deploy contract", () => {
     expect(utf8ToBase64("services: {}")).toBe(
       Buffer.from("services: {}", "utf8").toString("base64"),

@@ -7,10 +7,18 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/oklog/ulid/v2"
+
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/compose"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
+
+// ErrBranchNotTracked 是分支过滤哨兵（H2：daemon 侧权威过滤）：push 的
+// ref 非该 app 配置分支（空回落缺省 main）时 DeployFromCommit 不建部署、
+// 返回它；api 面据此映射 skipped 回执，与 webhook 入口的 ignored 语义
+// 对齐（webhook 路径在上游已同词形预过滤，不会命中）。
+var ErrBranchNotTracked = errors.New("分支未配置跟踪")
 
 // DeployFromCommit 是两条 git 触发入口的汇合点：compose 字节由服务端从
 // bare 仓库 `git show <sha>:compose.{yaml,yml}` 自取（真源在 git 对象库，
@@ -19,15 +27,18 @@ import (
 //
 // 幂等口径（绑定）：git push 是显式用户动作——每次调用都建部署记录（引擎
 // 对同 spec 重放安全，Spike B2）；(app, sha) 去重仅属 webhook 入口（在其
-// 上游承载）。事件流复用既有 deployment.queued；审计 action 由入参区分
-// （git.push_deploy / git.webhook_deploy），actor 恒 system（机器动作）。
+// 上游承载）。分支过滤（push 到配置分支才触发部署）在 daemon 侧权威承载
+// ——见 checkBranchTracked。事件流复用既有 deployment.queued；审计 action
+// 由入参区分（git.push_deploy / git.webhook_deploy），actor 恒 system
+// （机器动作）。
 type DeployInput struct {
 	// App 是仓库对应的 app 名（compose name 与它不一致 → 拒绝——仓库
 	// 路径即应用身份，跨名部署会被静默错置）。
 	App string
 	// SHA 是 40 位 commit。
 	SHA string
-	// Ref 是来源引用（refs/heads/<branch>；仅记录）。
+	// Ref 是来源引用（refs/heads/<branch>；非配置分支在入口被过滤——
+	// ErrBranchNotTracked，落库值恒为配置分支）。
 	Ref string
 	// AuditAction 是部署入队审计 action 词根。
 	AuditAction string
@@ -46,6 +57,13 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 	if !ValidSHA(in.SHA) {
 		return state.DeployRecord{}, nil, fmt.Errorf("gitserver: invalid sha %q", in.SHA)
 	}
+	// 分支过滤（H2，daemon 侧权威——钩子注释承诺的过滤点在此）：SSH push
+	// 路径由此获得与 webhook 一致的语义；webhook 路径上游已同词形预过滤，
+	// 此处恒放行（现有行为不变）。置于 EnsureBareRepo 之前——被跳过的
+	// push 不产生任何副作用（不建仓库、不建部署行）。
+	if err := s.checkBranchTracked(ctx, in.App, in.Ref); err != nil {
+		return state.DeployRecord{}, nil, err
+	}
 	if _, _, err := s.EnsureBareRepo(ctx, in.App); err != nil {
 		return state.DeployRecord{}, nil, err
 	}
@@ -54,8 +72,8 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 		return state.DeployRecord{}, nil, composeReject(err)
 	}
 
-	// compose 落临时文件（引擎 preparing 重载复核同路径；临时文件生命周期
-	// = 引擎消费完成，v0.1 不做清理回收——与 API Deploy 同口径遗留记录）。
+	// compose 落临时文件走受控子集校验（A7 起 temp 仅解析中转——持久化
+	// 副本在 <数据根>/deployments/<id>/compose.yaml，见下）。
 	dir, err := os.MkdirTemp("", "fleetly-compose-")
 	if err != nil {
 		return state.DeployRecord{}, nil, fmt.Errorf("gitserver: create compose temp dir: %w", err)
@@ -79,27 +97,45 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 	if err != nil {
 		return state.DeployRecord{}, nil, err
 	}
-	rec, err := s.st.CreateDeployment(ctx, state.DeployRecord{
-		AppID:        app.ID,
-		AppName:      spec.Name,
-		Kind:         "deploy",
-		SpecHash:     spec.SpecHash,
-		ComposePath:  path,
-		SourceGitSHA: in.SHA,
-		SourceGitRef: in.Ref,
-	})
+	// A7（S18）：compose 字节持久化 <数据根>/deployments/<id>/compose.yaml
+	//（先写文件后建行；临时文件自此仅解析中转——tmpfiles 清理不再影响
+	// 引擎 preparing 与成功固化的重载；终态后由 janitor 按 30 天窗清理）。
+	deployID := ulid.Make().String()
+	persistPath, err := state.PersistDeploymentCompose(
+		state.DeploymentsRoot(s.st.Path()), deployID, composeBytes)
 	if err != nil {
 		return state.DeployRecord{}, nil, err
 	}
+	// fail-closed 单事务（H13 修复，state-model §2.9）：部署行、
+	// deployment.queued 事件与审计在同一个 InTx 内写入——回调内任一失败
+	//（含事件/审计写失败）整体回滚、部署行不落库，杜绝「引擎照常执行但
+	// 事件与审计缺失」的审计黑洞。回调内拿到的 rec（含生成的 ID/时间戳）
+	// 供事件 payload 与审计使用。
 	via := "git_push"
 	if in.AuditAction == "git.webhook_deploy" {
 		via = "webhook"
 	}
+	var rec state.DeployRecord
 	err = s.st.InTx(ctx, func(tx *state.Tx) error {
+		r, err := tx.CreateDeployment(ctx, state.DeployRecord{
+			ID:           deployID,
+			AppID:        app.ID,
+			AppName:      spec.Name,
+			Kind:         "deploy",
+			SpecHash:     spec.SpecHash,
+			ComposePath:  persistPath,
+			SourceGitSHA: in.SHA,
+			SourceGitRef: in.Ref,
+		})
+		if err != nil {
+			return err
+		}
+		rec = r
 		if _, err := tx.AppendEvent(ctx, state.Event{
 			Name:    "deployment.queued",
 			Subject: "deployment:" + rec.ID,
-			Payload: `{"deployment":"` + rec.ID + `","app":"` + spec.Name + `","source":"` + via + `"}`,
+			// B4：经 state.DiffSummary 构造（json.Marshal 转义）。
+			Payload: state.DiffSummary("deployment", rec.ID, "app", spec.Name, "source", via),
 		}); err != nil {
 			return err
 		}
@@ -109,7 +145,7 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 			Action:       in.AuditAction,
 			Target:       "deployment:" + rec.ID,
 			Result:       "ok",
-			DiffSummary:  `{"app":"` + spec.Name + `","sha":"` + in.SHA + `","ref":"` + in.Ref + `","via":"` + via + `"}`,
+			DiffSummary:  state.DiffSummary("app", spec.Name, "sha", in.SHA, "ref", in.Ref, "via", via), // B4：构造器替换手拼 JSON
 		})
 	})
 	if err != nil {
@@ -130,6 +166,32 @@ func (s *GitTriggers) DeployFromGitPush(ctx context.Context, app, sha, ref, acto
 		AuditAction:  "git.push_deploy",
 		ActorTokenID: actorTokenID,
 	})
+}
+
+// checkBranchTracked 是分支过滤的权威谓词（MG-C1）：加载 app 的 git 配置
+// 分支（与 webhook.go 同口径——GetAppGitConfig 对空分支回落
+// state.DefaultGitBranch）；app 行不存在 = 首次 push 前置形态（应用行随
+// 首次部署创建），按缺省分支处理。ref 为空 = 端口调用方未携带引用形态，
+// 不做比对（兼容进程内直连夹具）；ref 命中 refs/heads/<branch> 才放行，
+// 其余（含 refs/tags/* 等非分支引用）返回 ErrBranchNotTracked。
+func (s *GitTriggers) checkBranchTracked(ctx context.Context, app, ref string) error {
+	if ref == "" {
+		return nil
+	}
+	branch := state.DefaultGitBranch
+	if appRow, err := s.st.GetAppByName(ctx, app); err == nil {
+		cfg, err := s.st.GetAppGitConfig(ctx, appRow.ID)
+		if err != nil {
+			return err
+		}
+		branch = cfg.Branch // GetAppGitConfig 已做空分支回落
+	} else if !errors.Is(err, state.ErrAppNotFound) {
+		return err
+	}
+	if ref != "refs/heads/"+branch {
+		return ErrBranchNotTracked
+	}
+	return nil
 }
 
 // composeReject 把 composeFromCommit 的哨兵错误映射为 E_COMPOSE_UNSUPPORTED

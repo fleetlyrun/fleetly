@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -42,11 +43,15 @@ func (s *GitTriggers) repoPath(app string) string {
 //   - 仓库在、钩子缺失（仓库重建/手工误删）→ 轮换钩子 token（按名吊销
 //     旧 token）+ 重写钩子——daemon 重建仓库时轮换的绑定语义。
 //
-// 幂等；返回仓库路径与是否发生了创建。
+// 幂等；返回仓库路径与是否发生了创建。E7③（S19）：全程持 per-app 互斥
+// （stat 判定与 init/钩子写入/token 轮换之间的 TOCTOU 收口——并发同 app
+// 调用方 SSH push/webhook 拉源/管理面交错时不再产生失配 token）。
 func (s *GitTriggers) EnsureBareRepo(ctx context.Context, app string) (string, bool, error) {
 	if !ValidAppName(app) {
 		return "", false, fmt.Errorf("gitserver: invalid app name %q", app)
 	}
+	unlock := s.lockRepo(app)
+	defer unlock()
 	if err := os.MkdirAll(s.cfg.Root, 0o750); err != nil {
 		return "", false, fmt.Errorf("gitserver: create git root %s: %w", s.cfg.Root, err)
 	}
@@ -75,6 +80,20 @@ func (s *GitTriggers) EnsureBareRepo(ctx context.Context, app string) (string, b
 		return "", false, fmt.Errorf("gitserver: stat hook %s: %w", hookPath, hookErr)
 	}
 	return path, false, nil
+}
+
+// lockRepo 取 app 的仓库写入互斥并加锁（E7③）：返回解锁函数；map 自身
+// 由 repoMu 保护——分段锁不放大跨 app 的并发代价。
+func (s *GitTriggers) lockRepo(app string) func() {
+	s.repoMu.Lock()
+	mu, ok := s.repoLocks[app]
+	if !ok {
+		mu = &sync.Mutex{}
+		s.repoLocks[app] = mu
+	}
+	s.repoMu.Unlock()
+	mu.Lock()
+	return mu.Unlock
 }
 
 // writeHook 生成钩子 token（先按名吊销旧 token = 轮换）并写 post-receive
@@ -126,6 +145,46 @@ func (s *GitTriggers) rotateHookToken(ctx context.Context, app string) (string, 
 		return "", fmt.Errorf("gitserver: create hook token: %w", err)
 	}
 	return plaintext, nil
+}
+
+// hookTokenMarker 是钩子脚本中 token 赋值行的固定前缀（B3 读取面与
+// postReceiveScript 的写入面共用同一词形）。
+const hookTokenMarker = "TOKEN='"
+
+// hookTokenFromScript 从 post-receive 钩子脚本提取 token 明文（TOKEN='<token>'
+// 单引号词形）；未命中返回空串。
+func hookTokenFromScript(script string) string {
+	i := strings.Index(script, hookTokenMarker)
+	if i < 0 {
+		return ""
+	}
+	rest := script[i+len(hookTokenMarker):]
+	if j := strings.IndexByte(rest, '\''); j >= 0 {
+		return rest[:j]
+	}
+	return ""
+}
+
+// SecretValues 实现 logs.SecretValuesSource（B3 脱敏值集扩面）：钩子 token
+// 的明文只落 post-receive 钩子文件（state 仅存哈希，无解密面）——从钩子
+// 文件读取并入该 app 的日志脱敏值集。app 行/钩子文件缺失返回 nil（脱敏
+// 面降级，不阻断采集）。
+func (s *GitTriggers) SecretValues(ctx context.Context, appID string) []string {
+	app, err := s.st.GetAppByID(ctx, appID)
+	if err != nil {
+		return nil
+	}
+	if !ValidAppName(app.Name) {
+		return nil
+	}
+	raw, err := os.ReadFile(filepath.Join(s.repoPath(app.Name), "hooks", "post-receive")) //nolint:gosec // G304：路径为包内构造（app 名经白名单校验）
+	if err != nil {
+		return nil
+	}
+	if tok := hookTokenFromScript(string(raw)); tok != "" {
+		return []string{tok}
+	}
+	return nil
 }
 
 // postReceiveScript 生成 post-receive 钩子脚本（POSIX sh；Git for Windows

@@ -11,6 +11,7 @@
 | 2026-09-17 | [发布失败与回滚语义](design/2026-09-17-release-semantics.md) | 草案 | pause 冻结 + 快照单层重放、四层窗口、观察窗默认告警、失败场景矩阵与错误码 |
 | 2026-09-17 | [stateful 放置（节点约束）](design/2026-09-17-stateful-placement.md) | 草案 | 意图/绑定/执行三层、有卷自动钉住、平台节点 ID 为锚、数据安全前哨、人工 rebind、drain 维护语义 |
 | 2026-09-17 | [控制面状态模型](design/2026-09-17-state-model.md) | 草案 | 权威/派生缓存/实时直读三层、最小 label 集、孤儿保护、备份等序与 L1/L2 恢复、一键导出 |
+| 2026-09-20 | [评审遗留问题完整解决方案（S13-S20）](design/2026-09-20-remediation-complete.md) | 方案冻结 | [架构评审](reports/2026-09-19-architecture-review.md) 遗留项的决策完备方案：H9 路由撤销通道（noop@internal 兜底）、H15 双轨验签（openssl 兼容轨）、类 A-D 机制收口（出站出口/契约门禁/超时闭环）、S18-S20 中低严重度分波次方案与机制验收 |
 
 ## 调研报告（docs/research/）
 

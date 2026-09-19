@@ -171,7 +171,7 @@ export function AppDomainsPage() {
                   <TableRow key={c.domain}>
                     <TableCell className="font-mono text-xs">{c.domain}</TableCell>
                     <TableCell className="text-xs">
-                      {c.resolved ? c.ips.join(", ") : (
+                      {c.resolved ? (c.ips ?? []).join(", ") : (
                         <span className="text-red-700">{c.error || "unresolved"}</span>
                       )}
                     </TableCell>

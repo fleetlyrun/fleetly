@@ -21,6 +21,8 @@ import (
 // InspectImage 实现 build.ImageSource 端口：返回本机镜像 ID（不可变配置
 // 摘要，D9 部署引用形态）；缺失归一为 build.ErrImageNotFound。
 func (c *Client) InspectImage(ctx context.Context, ref string) (build.ImageInfo, error) {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	res, err := c.cli.ImageInspect(ctx, ref)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -36,7 +38,11 @@ func (c *Client) InspectImage(ctx context.Context, ref string) (build.ImageInfo,
 
 // LoadImage 实现 build.ImageSource 端口：把 docker-format tar 流装入本机
 // daemon（构建产物落本机；响应流必须排空——流未读完装载未完成）。
+// D2 预算边界：装载调用 + 响应排空同属一次操作，整包 per-call 预算
+// （v0.1 常量可调；超大产物场景随配置面引入再放宽）。
 func (c *Client) LoadImage(ctx context.Context, dockerTar io.Reader) error {
+	ctx, cancel := withCallTimeout(ctx) // D2：装载调用 + 排空整包预算
+	defer cancel()
 	res, err := c.cli.ImageLoad(ctx, dockerTar, mobyclient.ImageLoadWithQuiet(false))
 	if err != nil {
 		return fmt.Errorf("substrate: image load: %w", err)
@@ -49,7 +55,9 @@ func (c *Client) LoadImage(ctx context.Context, dockerTar io.Reader) error {
 }
 
 // EnsureImagePresent 实现 build.DaemonManager 端口：确保镜像在本机存在
-// （缺失时拉取并排空响应流；幂等）。
+// （缺失时拉取并排空响应流；幂等）。D2：镜像检视已含 per-call 预算
+// （InspectImage 内）；拉取是流式进度消费（响应体即操作本体），与
+// Events/Logs 同属排除面——由调用方 ctx 管理。
 func (c *Client) EnsureImagePresent(ctx context.Context, image string) error {
 	_, err := c.InspectImage(ctx, image)
 	if err == nil {
@@ -72,22 +80,30 @@ func (c *Client) EnsureImagePresent(ctx context.Context, image string) error {
 // EnsureVolumePresent 实现 build.DaemonManager 端口：确保命名卷存在
 // （幂等；卷已存在即 no-op）。
 func (c *Client) EnsureVolumePresent(ctx context.Context, name string) error {
-	if _, err := c.cli.VolumeInspect(ctx, name, mobyclient.VolumeInspectOptions{}); err == nil {
+	ictx, icancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	_, err := c.cli.VolumeInspect(ictx, name, mobyclient.VolumeInspectOptions{})
+	icancel()
+	if err == nil {
 		return nil
 	} else if !errdefs.IsNotFound(err) {
 		return fmt.Errorf("substrate: volume inspect %s: %w", name, err)
 	}
-	_, err := c.cli.VolumeCreate(ctx, mobyclient.VolumeCreateOptions{
+	cctx, ccancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	_, cerr := c.cli.VolumeCreate(cctx, mobyclient.VolumeCreateOptions{
 		Driver: "local",
 		Name:   name,
 		Labels: map[string]string{"fleetly.managed": "build-cache"},
 	})
-	if err != nil {
+	ccancel()
+	if cerr != nil {
 		// 并发创建竞态：已存在即成功。
-		if _, ierr := c.cli.VolumeInspect(ctx, name, mobyclient.VolumeInspectOptions{}); ierr == nil {
+		rctx, rcancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+		_, ierr := c.cli.VolumeInspect(rctx, name, mobyclient.VolumeInspectOptions{})
+		rcancel()
+		if ierr == nil {
 			return nil
 		}
-		return fmt.Errorf("substrate: volume create %s: %w", name, err)
+		return fmt.Errorf("substrate: volume create %s: %w", name, cerr)
 	}
 	return nil
 }
@@ -100,10 +116,12 @@ func (c *Client) EnsureContainerRunning(ctx context.Context, spec build.DaemonSp
 	if err := c.EnsureImagePresent(ctx, spec.Image); err != nil {
 		return err
 	}
-	list, err := c.cli.ContainerList(ctx, mobyclient.ContainerListOptions{
+	lctx, lcancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	list, err := c.cli.ContainerList(lctx, mobyclient.ContainerListOptions{
 		All:     true,
 		Filters: mobyclient.Filters{}.Add("name", "/"+spec.Name),
 	})
+	lcancel()
 	if err != nil {
 		return fmt.Errorf("substrate: container list %s: %w", spec.Name, err)
 	}
@@ -114,8 +132,11 @@ func (c *Client) EnsureContainerRunning(ctx context.Context, spec build.DaemonSp
 		if string(item.State) == "running" {
 			return nil // 已在运行：幂等 no-op
 		}
-		if _, err := c.cli.ContainerStart(ctx, item.ID, mobyclient.ContainerStartOptions{}); err != nil {
-			return fmt.Errorf("substrate: container start %s: %w", spec.Name, err)
+		sctx, scancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+		_, serr := c.cli.ContainerStart(sctx, item.ID, mobyclient.ContainerStartOptions{})
+		scancel()
+		if serr != nil {
+			return fmt.Errorf("substrate: container start %s: %w", spec.Name, serr)
 		}
 		return nil
 	}
@@ -137,7 +158,8 @@ func (c *Client) EnsureContainerRunning(ctx context.Context, spec build.DaemonSp
 			Target: build.InternalCacheMountPath,
 		}}
 	}
-	res, err := c.cli.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
+	cctx, ccancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	res, cerr := c.cli.ContainerCreate(cctx, mobyclient.ContainerCreateOptions{
 		Name: spec.Name,
 		Config: &container.Config{
 			Image: spec.Image,
@@ -147,11 +169,15 @@ func (c *Client) EnsureContainerRunning(ctx context.Context, spec build.DaemonSp
 		},
 		HostConfig: hostCfg,
 	})
-	if err != nil {
-		return fmt.Errorf("substrate: container create %s: %w", spec.Name, err)
+	ccancel()
+	if cerr != nil {
+		return fmt.Errorf("substrate: container create %s: %w", spec.Name, cerr)
 	}
-	if _, err := c.cli.ContainerStart(ctx, res.ID, mobyclient.ContainerStartOptions{}); err != nil {
-		return fmt.Errorf("substrate: container start %s: %w", spec.Name, err)
+	sctx, scancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+	_, serr := c.cli.ContainerStart(sctx, res.ID, mobyclient.ContainerStartOptions{})
+	scancel()
+	if serr != nil {
+		return fmt.Errorf("substrate: container start %s: %w", spec.Name, serr)
 	}
 	return nil
 }
@@ -159,6 +185,8 @@ func (c *Client) EnsureContainerRunning(ctx context.Context, spec build.DaemonSp
 // TagImage 给既有镜像打新 tag（镜像身份操作；preflight 实机工作流与镜像
 // 管理面使用）。
 func (c *Client) TagImage(ctx context.Context, source, target string) error {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	if _, err := c.cli.ImageTag(ctx, mobyclient.ImageTagOptions{Source: source, Target: target}); err != nil {
 		return fmt.Errorf("substrate: image tag %s -> %s: %w", source, target, err)
 	}
@@ -168,6 +196,8 @@ func (c *Client) TagImage(ctx context.Context, source, target string) error {
 // RemoveImage 按引用删除镜像（显式管理动作；平台永不自动调用——
 // build/imagestore.go 清理策略）。
 func (c *Client) RemoveImage(ctx context.Context, ref string) error {
+	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
 	_, err := c.cli.ImageRemove(ctx, ref, mobyclient.ImageRemoveOptions{})
 	if err != nil {
 		return fmt.Errorf("substrate: image remove %s: %w", ref, err)

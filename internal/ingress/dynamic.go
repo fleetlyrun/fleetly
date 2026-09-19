@@ -11,6 +11,12 @@ package ingress
 // 因此「非空 + 引用一致」校验的责任在控制面：Validate 拒绝键缺失/合成
 // 结果为空/悬空引用；发布路径（Manager.publish）校验不过不换视图——
 // Traefik 端永远只能取到通过校验的全量配置。
+//
+// 「合法空态」的载体（H9，方案 docs/design/2026-09-20-remediation-complete.md
+// §1/S13）：Spike B 两拒（裸 {} 清空、显式空 map 被拒保留旧配置）之外，
+// 空路由集的撤销语义由常驻兜底 router 承载——合成器在路由集为空时产出
+// 单条指向 noop@internal 的兜底路由，使「空合成」恒为 Traefik 可接受的
+// 非空配置（旧路由被真实撤销，而非 502 残留）。
 
 import (
 	"encoding/json"
@@ -117,6 +123,17 @@ type CertificateRef struct {
 // defaultServersTransportName 是平台默认 serversTransport 键。
 const defaultServersTransportName = "fleetly-default"
 
+// 兜底路由常量（H9 合法空态）：路由集为空时的常驻路由——
+//   - host 取 .invalid 保留 TLD（RFC 2606，永不可能被真实域名命中）；
+//   - service 引用 Traefik v3 内建 noop@internal（无外部端点依赖、零流量
+//     命中；以 @internal 限定名引用即 Traefik 官方的内建元素引用形态，
+//     不进 services map）。
+const (
+	fallbackRouterName = "fleetly-fallback"
+	fallbackHost       = "fleetly.invalid"
+	noopServiceRef     = "noop@internal"
+)
+
 // RouterName 返回 app 服务对应的 router/service 键（fleetly-<app>-<service>
 // ——与 Swarm 服务名同形，键空间唯一且可读）。
 func RouterName(app, service string) string {
@@ -185,14 +202,28 @@ func Synthesize(routes []Route) *DynamicConfig {
 		}
 		cfg.TLS = tls
 	}
+	// 空路由集 → 常驻兜底路由（H9）：services 留空 map（键恒在），routers
+	// 携带唯一一条 noop@internal 引用——Traefik 收到的是合法非空配置，旧
+	// 路由被真实撤销（对比：显式空 map 被拒 → 旧路由 502 残留）。挂全部
+	// 入口（web/websecure）与平台路由形态一致，命中率为零。
+	if len(routes) == 0 {
+		cfg.HTTP.Routers[fallbackRouterName] = &Router{
+			Rule:        hostRuleOf([]string{fallbackHost}),
+			EntryPoints: []string{"web", "websecure"},
+			Service:     noopServiceRef,
+		}
+	}
 	return cfg
 }
 
 // Validate 执行 Spike B 纪律校验（先校验后写）：
-//  1. http.routers/services 键必须存在且非空（裸 {} 与显式空 map 双拒）；
-//  2. 每个 router 引用的 service 必须存在（悬空引用拒绝——坏 router 会被
-//     Traefik 连同整份配置应用）；
-//  3. 每个 service 必须有非空 server URL。
+//  1. http.routers 键必须存在且非空（裸 {} 与显式空 map 双拒——空合成
+//     由兜底路由承载，恒过本条）；
+//  2. http.services 键必须存在（nil map 序列化为 null，同样是缺键形态；
+//     值可以为空 map——只有内建引用的兜底形态合法，见 isInternalService）；
+//  3. 每个 router 引用的 service 必须存在（悬空引用拒绝——坏 router 会被
+//     Traefik 连同整份配置应用；Traefik 内建服务 @internal 限定名豁免）；
+//  4. 每个 service 必须有非空 server URL。
 func Validate(cfg *DynamicConfig) error {
 	if cfg == nil || cfg.HTTP == nil {
 		return fmt.Errorf("ingress: 动态配置缺 http 段（拒绝下发，Spike B 纪律）")
@@ -202,12 +233,15 @@ func Validate(cfg *DynamicConfig) error {
 		// 合成非空（nil map 序列化为 null，同样是 Traefik 无法接受的形态）。
 		return fmt.Errorf("ingress: http.routers 缺失或为空（拒绝下发；空配置会清空 Traefik 全部路由）")
 	}
-	if len(cfg.HTTP.Services) == 0 {
-		return fmt.Errorf("ingress: http.services 缺失或为空（拒绝下发；空配置会清空 Traefik 全部路由）")
+	if cfg.HTTP.Services == nil {
+		return fmt.Errorf("ingress: http.services 键缺失（nil 序列化为 null，拒绝下发）")
 	}
 	for name, r := range cfg.HTTP.Routers {
 		if r == nil || r.Rule == "" || r.Service == "" {
 			return fmt.Errorf("ingress: router %s 形态不完整（rule/service 必填）", name)
+		}
+		if isInternalService(r.Service) {
+			continue // Traefik 内建服务（noop@internal）：不由平台 services map 承载
 		}
 		if _, ok := cfg.HTTP.Services[r.Service]; !ok {
 			return fmt.Errorf("ingress: router %s 引用不存在的 service %s（悬空引用拒绝）", name, r.Service)
@@ -238,6 +272,13 @@ func hostRuleOf(domains []string) string {
 		parts = append(parts, "Host(`"+d+"`)")
 	}
 	return strings.Join(parts, " || ")
+}
+
+// isInternalService 判定是否 Traefik 内建服务引用（@internal 限定名——
+// Traefik 官方的内建元素引用形态，如 noop@internal；不进平台 services
+// map，悬空引用校验豁免）。
+func isInternalService(service string) bool {
+	return strings.HasSuffix(service, "@internal")
 }
 
 // sortedCertApps 返回证书 app 名的字典序（tls.certificates 确定性）。

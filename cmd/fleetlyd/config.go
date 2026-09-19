@@ -11,6 +11,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
 )
 
@@ -86,6 +87,21 @@ func (c *AppConfig) BackupRoot() string {
 		return c.Backup.Dir
 	}
 	return filepath.Join(filepath.Dir(c.DBPath()), "backups")
+}
+
+// BootstrapTokenPath 返回 bootstrap token 文件路径（B5：数据根 = state 库
+// 同目录，与 BackupRoot/GitRoot 同款装配期回落）。首启种子写此文件
+// （0600），不再打印进日志/journald。
+func (c *AppConfig) BootstrapTokenPath() string {
+	return filepath.Join(filepath.Dir(c.DBPath()), "bootstrap-token")
+}
+
+// DeploymentsRoot 返回部署 compose 持久化根目录（A7，S18：<数据根>/
+// deployments——数据根 = state 库同目录，与 BackupRoot/GitRoot 同款派生；
+// 布局单一事实源在 state.DeploymentsRoot）。janitor 按 30 天窗清理终态
+// 部署的目录。
+func (c *AppConfig) DeploymentsRoot() string {
+	return state.DeploymentsRoot(c.DBPath())
 }
 
 // ConsoleConfig 是 Console 静态托管配置节（config 键 console.*，T2.21）。
@@ -186,6 +202,20 @@ type BuildConfig struct {
 	CPUS float64 `mapstructure:"cpus"`
 	// PollSeconds 是队列扫描周期秒数（build.poll_seconds；缺省 2）。
 	PollSeconds int `mapstructure:"poll_seconds"`
+	// TimeoutSeconds 是单条构建执行超时预算秒数（build.timeout_seconds；
+	// 缺省 1800=30min。超时 → 终态 failed（E_BUILD_FAILED）——挂起构建
+	// 不永久占用并发槽）。
+	TimeoutSeconds int `mapstructure:"timeout_seconds"`
+	// ArtifactsRetentionDays 是产物归档目录保留天数（build.artifacts_
+	// retention_days；缺省 30，A10/S18——janitor 按 mtime 清理）。非正值
+	// 回落默认（不允许误配成 0 静默关闭清理）。
+	ArtifactsRetentionDays int `mapstructure:"artifacts_retention_days"`
+	// ContextRoots 是构建上下文受管根的额外配置根（build.context_roots；
+	// H14 宿主目录信任边界：context_dir 必须位于受管根内，越界构建终态
+	// 失败）。缺省集合 = 系统 temp 根（build.Config.Normalize 恒并入）+
+	// git 裸仓库根（GitSettings 装配并入）；单机同宿主形态下 CLI 构建目录
+	// 在此显式扩根接入（信任由 TriggerBuild 的 admin scope 把门）。
+	ContextRoots []string `mapstructure:"context_roots"`
 }
 
 // GRPCConfig 是 gRPC 面的配置节（config 键 grpc.*）。
@@ -293,8 +323,8 @@ func (c *AppConfig) IngressSettings() ingress.Config {
 }
 
 // StateConfig 是状态层配置节（config 键 state.*）。保留期天数取非正值
-// 时回落注册默认（事件 30 天 / 审计 365 天——保留期是契约默认，不允许
-// 误配成 0 静默关闭清理）。
+// 时回落注册默认（事件 30 天 / 审计 365 天 / builds 终态行 90 天——保留期
+// 是契约默认，不允许误配成 0 静默关闭清理）。
 type StateConfig struct {
 	// DBPath 是 SQLite 状态库文件路径（state.db_path）。
 	DBPath string `mapstructure:"db_path"`
@@ -302,6 +332,9 @@ type StateConfig struct {
 	EventRetentionDays int `mapstructure:"event_retention_days"`
 	// AuditRetentionDays 是审计保留天数（state.audit_retention_days）。
 	AuditRetentionDays int `mapstructure:"audit_retention_days"`
+	// BuildRetentionDays 是 builds 终态行保留天数（state.build_retention_
+	// days；缺省 90，A10/S18——janitor 清理终态构建台账行）。
+	BuildRetentionDays int `mapstructure:"build_retention_days"`
 	// DockerHost 是底座连接地址（state.docker_host）；空 = DOCKER_HOST
 	// 环境变量，再缺省本机套接字。
 	DockerHost string `mapstructure:"docker_host"`
@@ -394,7 +427,12 @@ func (c *AppConfig) BuildSettings() build.Config {
 		MemoryBytes:         c.Build.MemoryBytes,
 		NanoCPUs:            int64(c.Build.CPUS * 1e9),
 		PollInterval:        time.Duration(c.Build.PollSeconds) * time.Second,
+		Timeout:             time.Duration(c.Build.TimeoutSeconds) * time.Second,
 		ManageDaemon:        c.Build.ManageDaemon == nil || *c.Build.ManageDaemon,
+		// 受管根（H14）：显式配置根 + git 裸仓库根（v0.2 worktree 物化
+		// 路径的前缀形态；当前 git 入口不直接产构建上下文，并入是前瞻
+		// 接线）；build.Config.Normalize 再恒并入系统 temp 根。
+		ContextRoots: append(append([]string{}, c.Build.ContextRoots...), c.GitRoot()),
 	}
 	return cfg.Normalize()
 }

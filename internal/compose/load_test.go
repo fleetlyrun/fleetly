@@ -125,8 +125,8 @@ func TestLoadArchitectureExample(t *testing.T) {
 	if strings.Join(worker.Command, " ") != "node worker.js" {
 		t.Errorf("worker.Command = %v", worker.Command)
 	}
-	if strings.Join(spec.Secrets, ",") != "database_url" {
-		t.Errorf("Secrets = %v", spec.Secrets)
+	if strings.Join(spec.Secrets, ",") != "" {
+		t.Errorf("Secrets = %v, 期望空（S16-C1：secrets 校验层显式拒绝，归一化结构性不含）", spec.Secrets)
 	}
 	if len(spec.Volumes) != 1 || spec.Volumes[0].Key != "data" {
 		t.Errorf("Volumes = %+v", spec.Volumes)
