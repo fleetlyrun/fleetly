@@ -14,17 +14,14 @@ import (
 )
 
 // failTransition 落 failed 终态（CAS：当前状态 → failed）+ deployment.failed
-// 事件 + auto_abort 审计（system + reason=错误码，release-semantics §2.7）。
-// 已终态的竞争落败返回 nil（幂等收敛）。
+// 事件（单写点同事务，T0-V2.2）+ auto_abort 审计（system + reason=错误码，
+// release-semantics §2.7）。已终态的竞争落败返回 nil（幂等收敛——转换与
+// 事件同事务回滚，不产生孤儿事件）。
 func (e *Engine) failTransition(ctx context.Context, rec state.DeployRecord, code, detail string) error {
-	to := state.DeployFailed
-	from := rec.Status
 	errorCode := code
-	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:     &to,
-		PrevStatus: &from,
-		ErrorCode:  &errorCode,
-	}); err != nil {
+	if err := e.store.EnterPhase(ctx, rec.ID, rec.Status, state.DeployFailed,
+		state.DeploymentPatch{ErrorCode: &errorCode},
+		deploymentEvent("deployment.failed", rec.ID, "code", code, "detail", detail)); err != nil {
 		if errors.Is(err, state.ErrDeploymentStateTransition) {
 			return nil // 已被并发推进（重启恢复/CLI 竞争）：终态不可逆
 		}
@@ -33,18 +30,14 @@ func (e *Engine) failTransition(ctx context.Context, rec state.DeployRecord, cod
 	rec.Status = state.DeployFailed
 	rec.ErrorCode = code
 	return e.store.InTx(ctx, func(tx *state.Tx) error {
-		if err := tx.WriteAudit(ctx, state.AuditEntry{
+		return tx.WriteAudit(ctx, state.AuditEntry{
 			Actor:       "system",
 			Action:      "deployment.auto_abort",
 			Target:      "deployment:" + rec.ID,
 			Result:      "ok",
 			ErrorCode:   code,
 			DiffSummary: state.DiffSummary("app", rec.AppName, "detail", detail), // MG-6：构造器替换手拼 JSON
-		}); err != nil {
-			return err
-		}
-		return deploymentEvent(ctx, tx, "deployment.failed", rec.ID,
-			"code", code, "detail", detail)
+		})
 	})
 }
 
@@ -55,21 +48,16 @@ func (e *Engine) failTransitionErr(ctx context.Context, rec state.DeployRecord, 
 }
 
 // cancelTerminal 未触底座阶段（queued/preparing/building）的取消：直接落
-// cancelled（无归位动作——底座未被改动）。
+// cancelled（无归位动作——底座未被改动）。终态写与 deployment.cancelled
+// 事件同一事务（单写点，T0-V2.2）；stage 审计随后同事务落账。
 func (e *Engine) cancelTerminal(ctx context.Context, rec state.DeployRecord) error {
-	to := state.DeployCancelled
 	from := rec.Status
-	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:     &to,
-		PrevStatus: &from,
-	}); err != nil {
+	if err := e.store.EnterPhase(ctx, rec.ID, from, state.DeployCancelled, state.DeploymentPatch{},
+		deploymentEvent("deployment.cancelled", rec.ID)); err != nil {
 		return err
 	}
 	rec.Status = state.DeployCancelled
 	return e.store.InTx(ctx, func(tx *state.Tx) error {
-		if err := deploymentEvent(ctx, tx, "deployment.cancelled", rec.ID); err != nil {
-			return err
-		}
 		return auditDeployment(ctx, tx, "human", "deployment.cancel", rec.ID, "ok", "",
 			`{"stage":"`+string(from)+`"}`)
 	})
@@ -84,7 +72,8 @@ func (e *Engine) cancelDeployment(ctx context.Context, rec state.DeployRecord) e
 		return err
 	}
 	recovery := state.RecoveryReplay
-	patch := state.DeploymentPatch{}
+	clear := false
+	patch := state.DeploymentPatch{CancelRequested: &clear}
 	if previous != nil {
 		if err := e.restoreSnapshot(ctx, rec, previous); err != nil {
 			return e.failTransitionErr(ctx, rec, errorf("E_ROLLBACK_FAILED",
@@ -96,20 +85,14 @@ func (e *Engine) cancelDeployment(ctx context.Context, rec state.DeployRecord) e
 			return e.failTransitionErr(ctx, rec, err)
 		}
 	}
-	clear := false
-	patch.CancelRequested = &clear
-	to := state.DeployCancelled
-	from := rec.Status
-	patch.Status = &to
-	patch.PrevStatus = &from
-	if err := e.store.UpdateDeployment(ctx, rec.ID, patch); err != nil {
+	// 终态写（含归位/请求位清零字段）与 deployment.cancelled 事件同一事务
+	//（单写点，T0-V2.2）；stage 审计随后同事务落账。
+	if err := e.store.EnterPhase(ctx, rec.ID, rec.Status, state.DeployCancelled, patch,
+		deploymentEvent("deployment.cancelled", rec.ID)); err != nil {
 		return err
 	}
 	rec.Status = state.DeployCancelled
 	if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-		if err := deploymentEvent(ctx, tx, "deployment.cancelled", rec.ID); err != nil {
-			return err
-		}
 		return auditDeployment(ctx, tx, "human", "deployment.cancel", rec.ID, "ok", "",
 			`{"stage":"releasing","restored":true}`)
 	}); err != nil {
@@ -313,9 +296,9 @@ func (e *Engine) reopenObserveWindow(ctx context.Context, rec state.DeployRecord
 	}
 	rec.ObserveStartedAt = observeStart
 	return e.store.InTx(ctx, func(tx *state.Tx) error {
-		return deploymentEvent(ctx, tx, "deployment.observe_started", rec.ID,
+		return appendEvents(ctx, tx, deploymentEvent("deployment.observe_started", rec.ID,
 			"window_seconds", fmt.Sprintf("%d", int64(e.cfg.ObserveWindow/time.Second)),
-			"reason", "control_plane_restart")
+			"reason", "control_plane_restart"))
 	})
 }
 
@@ -430,10 +413,10 @@ func (e *Engine) refreshDerivedState(ctx context.Context, appID, appName string)
 		}
 		// 事件映射（state-model §2.10）：degraded 进入/退出。
 		if next == DerivedDegraded {
-			return appEvent(ctx, tx, "app.degraded", appName)
+			return appendEvents(ctx, tx, appEvent("app.degraded", appName))
 		}
 		if cur == DerivedDegraded && next == DerivedRunning {
-			return appEvent(ctx, tx, "app.recovered", appName)
+			return appendEvents(ctx, tx, appEvent("app.recovered", appName))
 		}
 		return nil
 	})

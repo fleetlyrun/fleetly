@@ -312,24 +312,15 @@ func (e *Engine) advanceOne(ctx context.Context, d state.DeployRecord) (err erro
 }
 
 // startQueued 启动一条 queued 部署：queued → preparing（CAS 谓词防多实例
-// 竞争）并同 tick 执行准备。CAS 补丁同拍原子写入准备/构建预算基线
-// phase_started_at（H11）：预算自拾取时刻起算，排队等待（同 app 互斥/控制
-// 面停机窗口）不计入。
+// 竞争）并同 tick 执行准备。经单写点 EnterPhase（T0-V2.2）同一事务完成
+// 转移、拾取锚点（H11：预算自拾取时刻起算，排队等待不计入）与
+// deployment.release_started 事件。
 func (e *Engine) startQueued(ctx context.Context, rec state.DeployRecord) error {
-	to := state.DeployPreparing
-	from := state.DeployQueued
 	anchor := e.now()
-	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:         &to,
-		PrevStatus:     &from,
-		PhaseStartedAt: &anchor,
-	}); err != nil {
+	if err := e.store.EnterPhase(ctx, rec.ID, state.DeployQueued, state.DeployPreparing,
+		state.DeploymentPatch{PhaseStartedAt: &anchor},
+		deploymentEvent("deployment.release_started", rec.ID)); err != nil {
 		return fmt.Errorf("claim queued deployment: %w", err)
-	}
-	if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-		return deploymentEvent(ctx, tx, "deployment.release_started", rec.ID)
-	}); err != nil {
-		return err
 	}
 	rec.Status = state.DeployPreparing
 	rec.PhaseStartedAt = anchor
@@ -394,12 +385,8 @@ func (e *Engine) runPreparing(ctx context.Context, rec state.DeployRecord) error
 		}
 	}
 	if hasBuild {
-		to := state.DeployBuilding
-		from := state.DeployPreparing
-		if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-			Status:     &to,
-			PrevStatus: &from,
-		}); err != nil {
+		if err := e.store.EnterPhase(ctx, rec.ID, state.DeployPreparing, state.DeployBuilding,
+			state.DeploymentPatch{}); err != nil {
 			return err
 		}
 		rec.Status = state.DeployBuilding
@@ -531,7 +518,8 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 			continue
 		}
 		if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-			return deploymentEvent(ctx, tx, "deployment.warning", rec.ID, "code", w.Code, "service", w.Service)
+			return appendEvents(ctx, tx, deploymentEvent("deployment.warning", rec.ID,
+				"code", w.Code, "service", w.Service))
 		}); err != nil {
 			return err
 		}
@@ -539,15 +527,13 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 
 	releaseAt := e.now()
 	deadline := releaseAt.Add(e.cfg.DeployTimeout)
-	to := state.DeployReleasing
-	from := rec.Status
 	specHash := pre.spec.SpecHash
 	envHash := plan.EnvSnapshotHash
 	desiredHash := plan.DesiredHash
 	desiredSpec := string(snapshot)
-	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:             &to,
-		PrevStatus:         &from,
+	// 释放迁移经单写点（T0-V2.2）：preparing/building → releasing 与快照
+	// 字段（看门狗锚、哈希、密文快照）同事务原子生效。
+	if err := e.store.EnterPhase(ctx, rec.ID, rec.Status, state.DeployReleasing, state.DeploymentPatch{
 		ReleaseStartedAt:   &releaseAt,
 		WatchdogDeadlineAt: &deadline,
 		SpecHash:           &specHash,

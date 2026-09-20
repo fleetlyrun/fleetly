@@ -21,8 +21,10 @@ import (
 // 不计入预算，H11）。
 //
 // 迁移全部走 from→to 谓词 + RowsAffected 校验（与 builds 同纪律）：终态
-// 不可逆、并发扫描下恰好一个推进者胜出。事件与审计由调用方与业务写同事务
-// 组合（fail-closed，state-model §2.9）；本层只提供行原语。
+// 不可逆、并发扫描下恰好一个推进者胜出。转换写点 = EnterPhase（单写点，
+// 同事务完成转移校验 + 字段写 + 拾取锚点 + 事件，见函数注）；子状态/时间
+// 锚/标志位等非转换就地更新走 UpdateDeployment（不带 Status）。审计由调用
+// 方与业务写同事务组合（fail-closed，state-model §2.9）。
 
 // DeploymentStatus 是发布状态机主状态（release-semantics §2.3）。
 type DeploymentStatus string
@@ -386,6 +388,59 @@ func (s *Store) UpdateDeployment(ctx context.Context, id string, p DeploymentPat
 // 固化、部署仍 observing」的重放窗口）。语义与 Store 同名方法逐字一致。
 func (t *Tx) UpdateDeployment(ctx context.Context, id string, p DeploymentPatch) error {
 	return updateDeployment(ctx, t.Tx, id, p)
+}
+
+// EnterPhase 是部署状态转换的单一写点（v0.2 T0-V2.2，设计出处：评审报告
+// 类 A 补齐①/整改方案 §9 挂账项「EnterPhase 全量单写点」）。同一事务内
+// 完成四件事：
+//
+//  1. 转移合法性校验：CanTransitionDeployment(from, to)，表外组合拒写并
+//     返回 ErrIllegalTransition（语义与 S16-C5 逐字一致）；
+//  2. status/phase/error 等伴随字段写入：extra 补丁承载（ReleaseStartedAt/
+//     WatchdogDeadlineAt/ErrorCode/Verdict/RevisionID/Recovery…），与 CAS
+//     一并原子生效（复用 updateDeployment 内核——终态不可逆守卫与
+//     RowsAffected 竞争裁决语义不变）；extra 不得携带 Status/PrevStatus
+//     （转换边由 from/to 参数权威给出，双源即编码错误）；
+//  3. 计时相位锚点：queued → preparing（引擎拾取边）必须携带
+//     extra.PhaseStartedAt = 拾取时刻（S9/H11：预算自拾取起算、排队等待
+//     不计入；时间戳由调用方时钟提供——引擎单测的假时钟下写点自取墙钟
+//     会错位预算基准）。缺锚即拒：锚点漏写/误用因单写点不可发生。其余
+//     边不刷新锚点——准备+构建共用拾取基线（preparing→building 刷新即
+//     私自续预算）、releasing 由 watchdog_deadline_at 起算，两者互不干扰；
+//  4. 既有事件追加：events 逐条经 Tx.AppendEvent（eventcode 注册表校验）
+//     写入同一事务（Outbox，state-model §2.9）——转换落库与事件披露原子；
+//     只允许既有事件码（不新增）；CAS 落败（RowsAffected=0）时事务回滚、
+//     不产生任何事件。
+//
+// Store 形态 = 独立事务薄壳（独立转换调用方）；需要把转换与 revision 固化、
+// 审计等业务写组合在同一事务的调用方（成功终态、回滚失败终态——S18-A6）
+// 使用 Tx 形态嵌入既有 InTx。
+func (s *Store) EnterPhase(ctx context.Context, id string, from, to DeploymentStatus, extra DeploymentPatch, events ...Event) error {
+	return s.InTx(ctx, func(tx *Tx) error {
+		return tx.EnterPhase(ctx, id, from, to, extra, events...)
+	})
+}
+
+// EnterPhase 是事务内的转换写点原语（语义见 Store.EnterPhase）。
+func (t *Tx) EnterPhase(ctx context.Context, id string, from, to DeploymentStatus, extra DeploymentPatch, events ...Event) error {
+	if extra.Status != nil || extra.PrevStatus != nil {
+		return fmt.Errorf("state: enter phase %s: patch must not carry Status/PrevStatus (the from/to arguments are authoritative)", id)
+	}
+	if from == DeployQueued && to == DeployPreparing && extra.PhaseStartedAt == nil {
+		return fmt.Errorf("state: enter phase %s: queued -> preparing requires the phase_started_at anchor (S9/H11: budget starts at pickup, queue wait excluded)", id)
+	}
+	p := extra
+	p.Status = &to
+	p.PrevStatus = &from
+	if err := updateDeployment(ctx, t.Tx, id, p); err != nil {
+		return err
+	}
+	for _, ev := range events {
+		if _, err := t.AppendEvent(ctx, ev); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // execer 是 Store 连接池与事务共有的执行面（updateDeployment 共享内核）。

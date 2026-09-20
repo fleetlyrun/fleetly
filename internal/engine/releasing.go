@@ -148,11 +148,10 @@ func (e *Engine) enterBlockedWaiting(ctx context.Context, rec *state.DeployRecor
 	}
 	rec.Phase = phase
 	if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-		if err := deploymentEvent(ctx, tx, "deployment.recovery_blocked", rec.ID,
-			"reason", "bound_node_down"); err != nil {
-			return err
-		}
-		return placementEvent(ctx, tx, "placement.blocked", rec.AppName, rec.AppID, "node_down")
+		return appendEvents(ctx, tx,
+			deploymentEvent("deployment.recovery_blocked", rec.ID,
+				"reason", "bound_node_down"),
+			placementEvent("placement.blocked", rec.AppName, rec.AppID, "node_down"))
 	}); err != nil {
 		return err
 	}
@@ -173,7 +172,7 @@ func (e *Engine) resumeFromBlocked(ctx context.Context, rec *state.DeployRecord)
 	rec.Phase = phase
 	rec.WatchdogDeadlineAt = deadline
 	if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-		return placementEvent(ctx, tx, "placement.recovered", rec.AppName, rec.AppID, "node_ready")
+		return appendEvents(ctx, tx, placementEvent("placement.recovered", rec.AppName, rec.AppID, "node_ready"))
 	}); err != nil {
 		return err
 	}
@@ -181,43 +180,35 @@ func (e *Engine) resumeFromBlocked(ctx context.Context, rec *state.DeployRecord)
 }
 
 // enterObserving 切流：first_healthy_at 落定、事件 healthy/switched/
-// observe_started、观察窗起点写入。
+// observe_started、观察窗起点写入。转换经单写点（T0-V2.2）：releasing →
+// observing、切流/观察窗标记与三个披露事件同一事务（事件序列与既有形态
+// 一致：healthy → switched → observe_started）。
 func (e *Engine) enterObserving(ctx context.Context, rec state.DeployRecord) error {
 	now := e.now()
 	observeStart := now
-	to := state.DeployObserving
-	from := state.DeployReleasing
 	var firstHealthy *time.Time
-	if rec.FirstHealthyAt.IsZero() {
+	healthy := rec.FirstHealthyAt.IsZero()
+	if healthy {
 		firstHealthy = &now
 	}
-	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:           &to,
-		PrevStatus:       &from,
+	var events []state.Event
+	if healthy {
+		events = append(events,
+			deploymentEvent("deployment.healthy", rec.ID),
+			deploymentEvent("deployment.switched", rec.ID))
+	}
+	events = append(events, deploymentEvent("deployment.observe_started", rec.ID,
+		"window_seconds", fmt.Sprintf("%d", int64(e.cfg.ObserveWindow/time.Second))))
+	if err := e.store.EnterPhase(ctx, rec.ID, state.DeployReleasing, state.DeployObserving, state.DeploymentPatch{
 		FirstHealthyAt:   firstHealthy,
 		ObserveStartedAt: &observeStart,
-	}); err != nil {
+	}, events...); err != nil {
 		return err
 	}
-	healthy := rec.FirstHealthyAt.IsZero()
 	rec.Status = state.DeployObserving
 	rec.ObserveStartedAt = observeStart
-	if firstHealthy != nil {
+	if healthy {
 		rec.FirstHealthyAt = now
-	}
-	if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-		if healthy {
-			if err := deploymentEvent(ctx, tx, "deployment.healthy", rec.ID); err != nil {
-				return err
-			}
-			if err := deploymentEvent(ctx, tx, "deployment.switched", rec.ID); err != nil {
-				return err
-			}
-		}
-		return deploymentEvent(ctx, tx, "deployment.observe_started", rec.ID,
-			"window_seconds", fmt.Sprintf("%d", int64(e.cfg.ObserveWindow/time.Second)))
-	}); err != nil {
-		return err
 	}
 	// 路由发布挂点（T2.15；architecture §2.5 不变量）：严格晚于健康门
 	//（切流/observe_started 之后）——端点入集晚于 healthy 的 V1/B3 语义。
@@ -283,7 +274,7 @@ func (e *Engine) failUnswitched(ctx context.Context, rec state.DeployRecord, cod
 			return err
 		}
 		if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-			return deploymentEvent(ctx, tx, "deployment.substrate_halted", rec.ID, "code", code)
+			return appendEvents(ctx, tx, deploymentEvent("deployment.substrate_halted", rec.ID, "code", code))
 		}); err != nil {
 			return err
 		}

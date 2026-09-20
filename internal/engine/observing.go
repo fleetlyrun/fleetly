@@ -109,8 +109,8 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 			return err
 		}
 		if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-			return deploymentEvent(ctx, tx, "deployment.warning", rec.ID,
-				"code", "W_DEPLOY_INSTABILITY")
+			return appendEvents(ctx, tx, deploymentEvent("deployment.warning", rec.ID,
+				"code", "W_DEPLOY_INSTABILITY"))
 		}); err != nil {
 			return err
 		}
@@ -173,8 +173,6 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 	}
 	composeNormalized := e.composeNormalizedSnapshot(ctx, rec)
 	var revisionID string
-	to := state.DeploySucceeded
-	from := state.DeployObserving
 	err = e.store.InTx(ctx, func(tx *state.Tx) error {
 		var rev state.Revision
 		// A6 幂等键：同 hash 既有且为最新 active 的快照直接复用（崩溃重放
@@ -200,13 +198,20 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 		}
 		revisionID = rev.ID
 		// A6：终态 CAS 与固化同事务（旧形态这是第二个独立事务——崩溃窗口
-		// 所在；CAS 落败整体回滚，revision 不残留）。
-		if err := tx.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-			Status:     &to,
-			PrevStatus: &from,
+		// 所在；CAS 落败整体回滚，revision 不残留）。终态写走单写点
+		// （T0-V2.2），succeeded 事件（与回滚的 rollback_finished）随同一
+		// 事务追加。
+		events := []state.Event{deploymentEvent("deployment.succeeded", rec.ID, "revision", rev.ID)}
+		if rec.Kind == kindRollback {
+			// 回滚成功：快照重放通过完整健康门 + 观察窗，回退版本固化为
+			// 新 revision（版本历史里回滚 = 一次成功部署，§2.4）。
+			events = append(events, deploymentEvent("deployment.rollback_finished", rec.ID,
+				"revision", rev.ID))
+		}
+		if err := tx.EnterPhase(ctx, rec.ID, state.DeployObserving, state.DeploySucceeded, state.DeploymentPatch{
 			Flags:      &flags,
 			RevisionID: &revisionID,
-		}); err != nil {
+		}, events...); err != nil {
 			return err
 		}
 		if err := tx.WriteAudit(ctx, state.AuditEntry{
@@ -217,15 +222,6 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 			DiffSummary: state.DiffSummary("revision", rev.ID, "desired_hash", rec.DesiredHash), // MG-6：构造器替换手拼 JSON
 		}); err != nil {
 			return err
-		}
-		if err := deploymentEvent(ctx, tx, "deployment.succeeded", rec.ID, "revision", rev.ID); err != nil {
-			return err
-		}
-		if rec.Kind == kindRollback {
-			// 回滚成功：快照重放通过完整健康门 + 观察窗，回退版本固化为
-			// 新 revision（版本历史里回滚 = 一次成功部署，§2.4）。
-			return deploymentEvent(ctx, tx, "deployment.rollback_finished", rec.ID,
-				"revision", rev.ID)
 		}
 		return nil
 	})
@@ -349,11 +345,11 @@ func (e *Engine) watchPostWindow(ctx context.Context) {
 			return
 		}
 		if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-			if err := deploymentEvent(ctx, tx, "deployment.warning", rec.ID,
-				"code", "E_DEPLOY_POST_WINDOW_UNSTABLE"); err != nil {
+			if err := appendEvents(ctx, tx, deploymentEvent("deployment.warning", rec.ID,
+				"code", "E_DEPLOY_POST_WINDOW_UNSTABLE")); err != nil {
 				return err
 			}
-			return appEvent(ctx, tx, "app.instability_detected", rec.AppName)
+			return appendEvents(ctx, tx, appEvent("app.instability_detected", rec.AppName))
 		}); err != nil {
 			e.log.Warn("engine: emit post-window warning", "deployment", rec.ID, "error", err)
 			return

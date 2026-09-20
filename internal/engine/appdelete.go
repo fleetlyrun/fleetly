@@ -84,7 +84,7 @@ func (e *Engine) reapDeletingApp(ctx context.Context, app state.App) {
 		if err := tx.MarkAppDeleted(ctx, app.ID); err != nil {
 			return err
 		}
-		if err := appEvent(ctx, tx, "app.deleted", app.Name); err != nil {
+		if err := appendEvents(ctx, tx, appEvent("app.deleted", app.Name)); err != nil {
 			return err
 		}
 		return tx.WriteAudit(ctx, state.AuditEntry{

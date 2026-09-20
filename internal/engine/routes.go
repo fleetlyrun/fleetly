@@ -82,8 +82,8 @@ func (e *Engine) publishRoutes(ctx context.Context, rec state.DeployRecord) {
 		e.log.Warn("engine: route publish failed (deployment unaffected; "+
 			"route.publish_failed alerted)", "deployment", rec.ID, "app", rec.AppName, "error", err)
 		if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-			if err := appEvent(ctx, tx, "route.publish_failed", rec.AppName,
-				"deployment", rec.ID, "error", errMessageForEvent(err)); err != nil {
+			if err := appendEvents(ctx, tx, appEvent("route.publish_failed", rec.AppName,
+				"deployment", rec.ID, "error", errMessageForEvent(err))); err != nil {
 				return err
 			}
 			return auditDeployment(ctx, tx, "system", "route.publish", rec.ID,
@@ -95,8 +95,8 @@ func (e *Engine) publishRoutes(ctx context.Context, rec state.DeployRecord) {
 		return
 	}
 	if err := e.store.InTx(ctx, func(tx *state.Tx) error {
-		if err := appEvent(ctx, tx, "route.published", rec.AppName,
-			"deployment", rec.ID); err != nil {
+		if err := appendEvents(ctx, tx, appEvent("route.published", rec.AppName,
+			"deployment", rec.ID)); err != nil {
 			return err
 		}
 		return auditDeployment(ctx, tx, "system", "route.publish", rec.ID,

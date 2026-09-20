@@ -101,10 +101,10 @@ func EnqueueRollback(ctx context.Context, st *state.Store, in RollbackInput) (st
 			return errorf("E_RUNTIME_UNAVAILABLE", "failed to create rollback deployment: %v", err)
 		}
 		rec = r
-		if err := appendEvent(ctx, tx, "deployment.rollback_started", "deployment:"+rec.ID,
+		if err := appendEvents(ctx, tx, eventOf("deployment.rollback_started", "deployment:"+rec.ID,
 			"deployment", rec.ID, "app", app.Name,
 			"target_revision", rev.ID, "source_deployment", source.ID,
-			"recovery_of", origin.ID); err != nil {
+			"recovery_of", origin.ID)); err != nil {
 			return err
 		}
 		return tx.WriteAudit(ctx, state.AuditEntry{
@@ -216,14 +216,10 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 	}
 
 	// releasing 迁移（哈希/快照已在入队时落行；看门狗按当前平台配置起算
-	// ——治理参数取当前，§2.4）。
+	// ——治理参数取当前，§2.4）。经单写点（T0-V2.2）同事务生效。
 	releaseAt := e.now()
 	deadline := releaseAt.Add(e.cfg.DeployTimeout)
-	to := state.DeployReleasing
-	from := state.DeployPreparing
-	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
-		Status:             &to,
-		PrevStatus:         &from,
+	if err := e.store.EnterPhase(ctx, rec.ID, state.DeployPreparing, state.DeployReleasing, state.DeploymentPatch{
 		ReleaseStartedAt:   &releaseAt,
 		WatchdogDeadlineAt: &deadline,
 	}); err != nil {
@@ -313,8 +309,8 @@ func (e *Engine) failRollbackPreflight(ctx context.Context, rec state.DeployReco
 		return ferr
 	}
 	return e.store.InTx(ctx, func(tx *state.Tx) error {
-		return deploymentEvent(ctx, tx, "deployment.rollback_failed", rec.ID,
-			"reason", "preflight", "code", ae.Code())
+		return appendEvents(ctx, tx, deploymentEvent("deployment.rollback_failed", rec.ID,
+			"reason", "preflight", "code", ae.Code()))
 	})
 }
 
@@ -325,21 +321,21 @@ func (e *Engine) failRollbackPreflight(ctx context.Context, rec state.DeployReco
 func (e *Engine) failRollbackDeployment(ctx context.Context, rec state.DeployRecord, causeCode, detail string) error {
 	code := "E_ROLLBACK_FAILED"
 	msg := fmt.Sprintf("%s; rollback failed (critical, no second automatic recovery): %s", detail, causeCode)
-	to := state.DeployFailed
-	from := rec.Status
-	patch := state.DeploymentPatch{Status: &to, PrevStatus: &from, ErrorCode: &code}
-	verdict := state.VerdictUnstable
+	patch := state.DeploymentPatch{ErrorCode: &code}
 	if !rec.FirstHealthyAt.IsZero() {
+		verdict := state.VerdictUnstable
 		patch.Verdict = &verdict // 切流过：app=degraded（旧版本未接住）
 	}
-	if err := e.store.UpdateDeployment(ctx, rec.ID, patch); err != nil {
-		if errors.Is(err, state.ErrDeploymentStateTransition) {
-			return nil // 已被并发推进（重启恢复/CLI 竞争）：终态不可逆
-		}
-		return err
-	}
-	rec.Status = state.DeployFailed
+	// 终态写与 failed/rollback_failed 事件同一事务（单写点，T0-V2.2；CAS
+	// 落败整体回滚——事件与审计不先行）。
 	err := e.store.InTx(ctx, func(tx *state.Tx) error {
+		if err := tx.EnterPhase(ctx, rec.ID, rec.Status, state.DeployFailed, patch,
+			deploymentEvent("deployment.failed", rec.ID, "code", code, "detail", msg),
+			deploymentEvent("deployment.rollback_failed", rec.ID,
+				"reason", "replay", "code", causeCode)); err != nil {
+			return err // 含 CAS 落败（ErrDeploymentStateTransition 家族）——整体回滚
+		}
+		rec.Status = state.DeployFailed
 		if err := tx.WriteAudit(ctx, state.AuditEntry{
 			Actor:       "system",
 			Action:      "deployment.auto_abort",
@@ -352,14 +348,6 @@ func (e *Engine) failRollbackDeployment(ctx context.Context, rec state.DeployRec
 		}
 		if err := auditDeployment(ctx, tx, "system", "deployment.rollback", rec.ID,
 			"error", code, state.DiffSummary("cause", causeCode)); err != nil { // MG-6：构造器替换手拼 JSON
-			return err
-		}
-		if err := deploymentEvent(ctx, tx, "deployment.failed", rec.ID,
-			"code", code, "detail", msg); err != nil {
-			return err
-		}
-		if err := deploymentEvent(ctx, tx, "deployment.rollback_failed", rec.ID,
-			"reason", "replay", "code", causeCode); err != nil {
 			return err
 		}
 		// 收敛 opt-in 强制关闭（critical 后只检测不收敛；人工经
@@ -384,6 +372,9 @@ func (e *Engine) failRollbackDeployment(ctx context.Context, rec state.DeployRec
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, state.ErrDeploymentStateTransition) {
+			return nil // 已被并发推进（重启恢复/CLI 竞争）：终态不可逆（事务回滚，无审计/事件残留）
+		}
 		return err
 	}
 	return e.refreshDerivedState(ctx, rec.AppID, rec.AppName)

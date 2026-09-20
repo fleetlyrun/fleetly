@@ -41,9 +41,11 @@ func asAppErr(err error, target **apperr.Error) bool {
 	return false
 }
 
-// appendEvent 在事务内追加平台事件（Outbox：与业务写同事务；payload 由 kv
-// 构造脱敏 JSON——值只允许字符串，secret 永不进事件，state-model §2.9）。
-func appendEvent(ctx context.Context, tx *state.Tx, name, subject string, kv ...string) error {
+// eventOf 构造事件值（payload 由 kv 构造脱敏 JSON——值只允许字符串，secret
+// 永不进事件，state-model §2.9）。状态转换路径把事件值作为 state.EnterPhase
+// 的同事务入参（转换落库与事件披露原子，T0-V2.2 单写点）；非转换路径经
+// appendEvents 与业务写同事务落库。
+func eventOf(name, subject string, kv ...string) state.Event {
 	payload := map[string]string{}
 	for i := 0; i+1 < len(kv); i += 2 {
 		payload[kv[i]] = kv[i+1]
@@ -52,25 +54,32 @@ func appendEvent(ctx context.Context, tx *state.Tx, name, subject string, kv ...
 	if err != nil {
 		raw = []byte("{}")
 	}
-	_, err = tx.AppendEvent(ctx, state.Event{
-		Name:    name,
-		Subject: subject,
-		Payload: string(raw),
-	})
-	return err
+	return state.Event{Name: name, Subject: subject, Payload: string(raw)}
 }
 
-// deploymentEvent / appEvent / placementEvent 是事件主体便捷形态。
-func deploymentEvent(ctx context.Context, tx *state.Tx, name, deploymentID string, kv ...string) error {
-	return appendEvent(ctx, tx, name, "deployment:"+deploymentID, append([]string{"deployment", deploymentID}, kv...)...)
+// appendEvents 在事务内追加事件值（非转换路径的事件写点——Outbox：与业务
+// 写同事务，state-model §2.9）。
+func appendEvents(ctx context.Context, tx *state.Tx, events ...state.Event) error {
+	for _, ev := range events {
+		if _, err := tx.AppendEvent(ctx, ev); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func appEvent(ctx context.Context, tx *state.Tx, name, appName string, kv ...string) error {
-	return appendEvent(ctx, tx, name, "app:"+appName, append([]string{"app", appName}, kv...)...)
+// deploymentEvent / appEvent / placementEvent 是事件主体便捷形态（构造
+// Event 值）。
+func deploymentEvent(name, deploymentID string, kv ...string) state.Event {
+	return eventOf(name, "deployment:"+deploymentID, append([]string{"deployment", deploymentID}, kv...)...)
 }
 
-func placementEvent(ctx context.Context, tx *state.Tx, name, appName, appID, reason string) error {
-	return appendEvent(ctx, tx, name, "app:"+appName,
+func appEvent(name, appName string, kv ...string) state.Event {
+	return eventOf(name, "app:"+appName, append([]string{"app", appName}, kv...)...)
+}
+
+func placementEvent(name, appName, appID, reason string) state.Event {
+	return eventOf(name, "app:"+appName,
 		"app", appName, "app_id", appID, "reason", reason)
 }
 

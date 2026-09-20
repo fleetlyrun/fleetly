@@ -493,10 +493,10 @@ func (e *Engine) reportDrift(ctx context.Context, appID, appName string, report 
 	e.log.Warn("engine: drift detected", "app", appName, "deployment", report.DesiredDeployment,
 		"services", len(report.Services))
 	return e.store.InTx(ctx, func(tx *state.Tx) error {
-		if err := appendEvent(ctx, tx, "reconcile.drift_detected", "app:"+appName,
+		if err := appendEvents(ctx, tx, eventOf("reconcile.drift_detected", "app:"+appName,
 			"app", appName, "app_id", appID,
 			"desired_deployment", report.DesiredDeployment,
-			"diff", string(diffRaw)); err != nil {
+			"diff", string(diffRaw))); err != nil {
 			return err
 		}
 		return tx.WriteAudit(ctx, state.AuditEntry{

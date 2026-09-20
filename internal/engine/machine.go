@@ -15,7 +15,9 @@ import (
 //
 // S16-C5：转移表真源已下沉 internal/state/machine.go（state 是部署行的
 // 权威状态层）——UpdateDeployment 的 CAS 分支在写路径按表校验 from→to，
-// 非法转移拒写（state.ErrIllegalTransition）。本文件保留引擎侧 Phase 词表
+// 非法转移拒写（state.ErrIllegalTransition）。T0-V2.2 起，引擎的全部转换
+// 写点收敛 state.EnterPhase 单写点（同事务完成转移校验 + 字段写 + 拾取
+// 锚点 + 事件；引擎侧 Status 携带写清零）。本文件保留引擎侧 Phase 词表
 // 与兼容导出（转移判定委托 state 权威实现，表不两份；穷举测试
 // machine_test.go 钉死两侧一致性）。
 
