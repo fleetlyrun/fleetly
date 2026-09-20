@@ -1,6 +1,7 @@
 // 部署页：部署动作（粘贴/上传 compose → POST Deploy → 跟踪到终态）、
 // 部署历史（状态徽章含 blocked_waiting/observing 等中间态；失败行展示
-// code + verdict + recovery 同信封形态）、回滚（选 revision → Rollback）。
+// code + verdict + recovery 同信封形态）、回滚（选 revision → Rollback）、
+// 字段级 diff（行内 What changed 展开，对比上一部署的归一化快照，T0-V2.4）。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
@@ -17,6 +18,7 @@ import {
 } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
 import type { ComposeWarning, DeploymentView } from "@/api/types";
+import { DeploymentDiff } from "@/components/deployment-diff";
 import { DeploymentFailureAlert, EnvelopeAlert } from "@/components/envelope-alert";
 import { StateBadge } from "@/components/state-badge";
 import { Button } from "@/components/ui/button";
@@ -48,6 +50,23 @@ import { formatTime, timeAgo } from "@/lib/utils";
 
 /** 终态集：之外的状态轮询跟踪。 */
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
+
+/**
+ * 「上一部署」的选取（T0-V2.4）：部署历史（最新在前）中当前行之前最近一条
+ * 带 revision 的部署行。中间的失败/进行中行没有固化快照（revision 仅成功
+ * 终态写入），跳过它们——「这次部署改了什么」的对照基准是上一个真实固化的
+ * 版本，而非一条没有落盘任何变更的失败尝试。
+ */
+function previousWithRevision(
+  deployments: DeploymentView[],
+  index: number,
+): DeploymentView | undefined {
+  for (let i = index + 1; i < deployments.length; i++) {
+    const d = deployments[i];
+    if (d?.revision_id) return d;
+  }
+  return undefined;
+}
 
 function DeployCard({ app }: { app: string }) {
   const queryClient = useQueryClient();
@@ -291,9 +310,15 @@ function RollbackCard({ app }: { app: string }) {
 function DeploymentRow({
   d,
   app,
+  expanded,
+  onToggle,
+  previous,
 }: {
   d: DeploymentView;
   app: string;
+  expanded: boolean;
+  onToggle: () => void;
+  previous: DeploymentView | undefined;
 }) {
   const queryClient = useQueryClient();
   const cancelMutation = useMutation({
@@ -307,60 +332,86 @@ function DeploymentRow({
     d.phase === "blocked_waiting" ? "blocked_waiting" : d.status ?? "";
 
   return (
-    <TableRow data-testid="deployment-row" data-status={d.status}>
-      <TableCell className="whitespace-nowrap">
-        <div className="flex items-center gap-2">
-          <StateBadge state={showState} />
-          {d.kind === "rollback" ? (
-            <span className="text-xs text-muted-foreground">(rollback)</span>
-          ) : null}
-        </div>
-      </TableCell>
-      <TableCell className="font-mono text-xs">
-        <span title={d.id}>{(d.id ?? "").slice(0, 12)}</span>
-      </TableCell>
-      <TableCell
-        className="whitespace-nowrap text-xs text-muted-foreground"
-        title={d.created_at ? formatTime(d.created_at) : undefined}
-      >
-        {timeAgo(d.created_at)}
-      </TableCell>
-      <TableCell className="text-xs">
-        {d.source_git_sha ? `${d.source_git_sha.slice(0, 7)}` : "—"}
-      </TableCell>
-      <TableCell className="max-w-[360px]">
-        {d.status === "failed" && (d.error_code || d.verdict) ? (
-          <DeploymentFailureAlert
-            errorCode={d.error_code ?? ""}
-            verdict={d.verdict ?? ""}
-            recovery={d.recovery ?? ""}
-            deploymentId={d.id ?? ""}
-          />
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            {d.verdict || ""}
-            {d.recovery ? ` · ${d.recovery}` : ""}
-          </span>
-        )}
-      </TableCell>
-      <TableCell>
-        {cancellable ? (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => cancelMutation.mutate()}
-            disabled={cancelMutation.isPending}
-          >
-            Cancel
-          </Button>
-        ) : null}
-      </TableCell>
-    </TableRow>
+    <>
+      <TableRow data-testid="deployment-row" data-status={d.status}>
+        <TableCell className="whitespace-nowrap">
+          <div className="flex items-center gap-2">
+            <StateBadge state={showState} />
+            {d.kind === "rollback" ? (
+              <span className="text-xs text-muted-foreground">(rollback)</span>
+            ) : null}
+          </div>
+        </TableCell>
+        <TableCell className="font-mono text-xs">
+          <span title={d.id}>{(d.id ?? "").slice(0, 12)}</span>
+        </TableCell>
+        <TableCell
+          className="whitespace-nowrap text-xs text-muted-foreground"
+          title={d.created_at ? formatTime(d.created_at) : undefined}
+        >
+          {timeAgo(d.created_at)}
+        </TableCell>
+        <TableCell className="text-xs">
+          {d.source_git_sha ? `${d.source_git_sha.slice(0, 7)}` : "—"}
+        </TableCell>
+        <TableCell className="max-w-[360px]">
+          {d.status === "failed" && (d.error_code || d.verdict) ? (
+            <DeploymentFailureAlert
+              errorCode={d.error_code ?? ""}
+              verdict={d.verdict ?? ""}
+              recovery={d.recovery ?? ""}
+              deploymentId={d.id ?? ""}
+            />
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {d.verdict || ""}
+              {d.recovery ? ` · ${d.recovery}` : ""}
+            </span>
+          )}
+        </TableCell>
+        <TableCell>
+          <div className="flex items-center gap-1">
+            {/* 字段级 diff 展开（T0-V2.4）：仅带 revision 的行可展开——失败/
+                进行中行没有快照，展开也无从对比。 */}
+            {d.revision_id ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-expanded={expanded}
+                onClick={onToggle}
+              >
+                {expanded ? "Hide changes" : "What changed"}
+              </Button>
+            ) : null}
+            {cancellable ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => cancelMutation.mutate()}
+                disabled={cancelMutation.isPending}
+              >
+                Cancel
+              </Button>
+            ) : null}
+          </div>
+        </TableCell>
+      </TableRow>
+      {expanded ? (
+        // 展开行不带 deployment-row 锚点（行数断言只数部署行本身）。
+        <TableRow className="border-b bg-muted/30 hover:bg-muted/30">
+          <TableCell colSpan={6} className="p-4">
+            <DeploymentDiff app={app} deployment={d} previous={previous} />
+          </TableCell>
+        </TableRow>
+      ) : null}
+    </>
   );
 }
 
 export function AppDeploymentsPage() {
   const { name = "" } = useParams();
+  // 单一展开位：一次只看一条部署的 diff（再点收起）。
+  const [expandedId, setExpandedId] = useState("");
 
   const historyQuery = useQuery({
     queryKey: ["deployments", name],
@@ -415,8 +466,17 @@ export function AppDeploymentsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {deployments.map((d) => (
-                  <DeploymentRow key={d.id} d={d} app={name} />
+                {deployments.map((d, i) => (
+                  <DeploymentRow
+                    key={d.id}
+                    d={d}
+                    app={name}
+                    expanded={expandedId !== "" && expandedId === d.id}
+                    onToggle={() =>
+                      setExpandedId((cur) => (cur === d.id ? "" : d.id ?? ""))
+                    }
+                    previous={previousWithRevision(deployments, i)}
+                  />
                 ))}
               </TableBody>
             </Table>
