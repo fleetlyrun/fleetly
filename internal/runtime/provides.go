@@ -356,11 +356,11 @@ func NewTokensService(st *state.Store) *api.TokensService {
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
 // （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）外包原生
-// 端点分派（newRootHandler——webhook 与 Console /ui/ 静态托管，例外清单
-// 见 gateway.go）；/healthz/liveness 与 /healthz/readiness 由 lynxhttp.
-// Server 自行挂载，与 gateway 路由共存（torchwood 同款双面单端口形态）。
-// Console 静态托管仅在 console.static_dir 非空时挂载（缺省关闭），目录缺
-// index.html 时 fail-fast 拒绝启动。
+// 端点分派（newRootHandler——webhook、GET / 引导页与 Console /ui/ 静态
+// 托管，例外清单见 gateway.go）；/healthz/liveness 与 /healthz/readiness
+// 由 lynxhttp.Server 自行挂载，与 gateway 路由共存（torchwood 同款双面
+// 单端口形态）。Console 静态托管仅在 console.static_dir 非空时挂载（缺省
+// 关闭），目录缺 index.html 时 fail-fast 拒绝启动。
 //
 // M4-3：经 WithServerOptions 放宽 WriteTimeout（见 tuneHTTPServer——lynx
 // 缺省 60s 绝对超时会静默掐断 /v1/events/stream 与 logs stream）。

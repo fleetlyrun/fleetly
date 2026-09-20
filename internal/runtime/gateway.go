@@ -57,6 +57,10 @@ import (
 //     无服务端会话，鉴权语义在其数据面（REST /v1 全部走 Bearer）。豁免
 //     精确到 /ui/ 前缀（实现 = console_static.go，分派面 = 豁免面），
 //     非 /ui/ 路径无 token 仍 401（gateway_console_test 钉死）。
+//   - GET / —— 根路径引导页（landing.go）：裸访问控制面端口给出入口
+//     指引（Console / REST / healthz），替代 grpc-gateway 的 404 JSON。
+//     纯静态、无依赖、不读任何存储；豁免精确到 GET/HEAD 的根路径（其余
+//     方法与其余路径原样进 gateway mux）。
 //
 // 实现：newRootHandler 先按精确路径形态分派 webhook 与 /ui/ 静态 handler
 // （console handler 未启用时为 nil——分派跳过），其余一律交回 grpc-gateway
@@ -122,15 +126,17 @@ func grpcEndpointFromAddr(addr string) string {
 }
 
 // newRootHandler 组装 HTTP 面根 handler：webhook 原生端点优先精确分派，
-// 其次 /ui/ 前缀的 Console 静态托管（consoleUI 为 nil 时跳过——静态托管
-// 关闭形态），两者路径形态不匹配的请求原样交回 grpc-gateway mux。各豁免
-// 面 = 各自分派面（线性词形判定，不存在「先豁免再分发」的放宽空间）。
+// 其次 GET/HEAD 的根路径引导页（landing——无配置依赖，恒挂载）、/ui/ 前缀
+// 的 Console 静态托管（consoleUI 为 nil 时跳过——静态托管关闭形态），两者
+// 路径形态不匹配的请求原样交回 grpc-gateway mux。各豁免面 = 各自分派面
+// （线性词形判定，不存在「先豁免再分发」的放宽空间）。
 // REST 面（fallback）外包 A3 匿名 401 per-IP 限速（newAuthFailureLimiter
 // ——仅 gateway 面；webhook 与 /ui/ 分派不经限速层，不受影响）。
 // H7：全根请求体上限中间件（limitRequestBody）最外层先行——鉴权与
 // gateway 解码之前拒绝超限物化（见 maxRequestBodyBytes）。
 func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.Handler) http.Handler {
 	gateway := newAuthFailureLimiter(time.Minute, 10).wrap(fallback)
+	landing := newLandingHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// H7：请求体上限在分派（webhook/console/gateway）之前执行——
 		// gateway 解码完 body 才到 gRPC 鉴权拦截器的旧形态下，未认证方
@@ -140,6 +146,12 @@ func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.
 		}
 		if gitserver.WebhookPathPattern.MatchString(r.URL.Path) {
 			webhook.ServeHTTP(w, r)
+			return
+		}
+		// 引导页：分派面 = 豁免面 = 精确 GET/HEAD /（HEAD body 由 net/http
+		// 自行抑制，handler 不感知）。
+		if r.URL.Path == "/" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+			landing.ServeHTTP(w, r)
 			return
 		}
 		if consoleUI != nil && (r.URL.Path == consoleUIPathPrefix || strings.HasPrefix(r.URL.Path, consoleUIPathPrefix+"/")) {
