@@ -22,7 +22,9 @@ set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
 
-DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind}"
+# dind 镜像钉 digest（T0-V2.3 供应链）：默认值 tag@sha256——tag 保留作可读性，
+# digest 为准；env 覆盖仍可用（显式传入即按传入值起容器）。
+DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 DIND_NAME="${DIND_NAME:-fleetly-upgrade-test}"
 UG_SKIP_BUILD="${UG_SKIP_BUILD:-0}"
 UG_VERSION_A="${UG_VERSION_A:-v0.1.0-uga}"

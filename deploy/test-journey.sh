@@ -47,9 +47,11 @@ APP='journeyapp'
 GIT_URL="ssh://git@127.0.0.1:8424/${APP}.git"
 SRC_DIR="/tmp/journey-src"
 PEBBLE_NAME='pebble-journey'
-PEBBLE_IMG='ghcr.io/letsencrypt/pebble:latest'
+# 镜像钉 digest（T0-V2.3 供应链）：tag 保留作可读性，digest 为准；解析命令
+# docker buildx imagetools inspect（多架构 index）。
+PEBBLE_IMG='ghcr.io/letsencrypt/pebble:latest@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199'
 VERSION="${JK_VERSION:-v0.1.0-journey}"
-DIND_TAG="${JK_DIND_IMAGE:-docker:29.8.1-dind}"
+DIND_TAG="${JK_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 
 nl() { printf '[jk %s] %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 pass() { nl "$1: PASS"; }
@@ -229,12 +231,12 @@ nl "J1 install wall: $((T_INSTALL - T_INSTALL0))s"
 T_PREP0=$(date +%s)
 mkdir -p /opt/fleetly/etc
 # 预拉平台依赖镜像（cert seed 与 Traefik 服务不自动拉镜像——T2.15 已知边界）
-# 与旅程依赖（pebble CA、curl 探针、sidecar 基镜像）。
-docker pull -q alpine:3.20 >/dev/null 2>&1 || true
-docker pull -q traefik:v3.5 >/dev/null 2>&1 || true
+# 与旅程依赖（pebble CA、curl 探针、sidecar 基镜像）。全部钉 digest（T0-V2.3）。
+docker pull -q alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc >/dev/null 2>&1 || true
+docker pull -q traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2 >/dev/null 2>&1 || true
 docker pull -q "$PEBBLE_IMG" >/dev/null 2>&1
 assert "J2-pebble-image-pulled" $?
-docker pull -q curlimages/curl:latest >/dev/null 2>&1
+docker pull -q curlimages/curl:latest@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777 >/dev/null 2>&1
 assert "J2-curl-image-pulled" $?
 
 # Pebble 根证书 + 默认配置：docker create + docker cp（容器→dind 方向拷贝；
@@ -399,7 +401,8 @@ services:
     labels:
       fleetly.domains: "app.journey.test"
   sidecar:
-    image: alpine:3.20
+    # 钉 digest（T0-V2.3 供应链）：fixture 自带 sidecar 的镜像引用同受门禁。
+    image: alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
     command: ["/bin/sh", "-c", "i=0; while true; do i=$((i+1)); echo journey-sidecar-heartbeat-v1-$i; sleep 5; done"]
 EOF
 (
@@ -456,7 +459,8 @@ if [ "$_http_ok" -eq 0 ]; then
     # Traefik 运行时路由视图（内部 API 走 traefik 入口 8080，仅容器内可达）。
     [ -n "$_TR_CTR" ] && nl "traefik-api-routers: $(docker exec "$_TR_CTR" wget -q -T 5 -O - http://127.0.0.1:8080/api/http/routers 2>&1 | head -c 900)"
     [ -n "$_TR_CTR" ] && nl "traefik-api-services: $(docker exec "$_TR_CTR" wget -q -T 5 -O - http://127.0.0.1:8080/api/http/services 2>&1 | head -c 500)"
-    docker run --rm -v fleetly-ingress-certs:/c:ro alpine:3.20 ls -la /c 2>/dev/null | sed 's/^/certvol: /' || true
+    # 钉 digest（T0-V2.3 供应链）：cert 卷内容检查容器镜像。
+    docker run --rm -v fleetly-ingress-certs:/c:ro alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc ls -la /c 2>/dev/null | sed 's/^/certvol: /' || true
 fi
 
 # 4b. 证书签发就绪门（域名台账 cert_sha256 非空 = ACME 集中签发已完成）。

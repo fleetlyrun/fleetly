@@ -241,8 +241,9 @@ jobs:
         # CGO 关闭 → 静态可迁二进制，docker cp 进 Alpine 容器直接可执行。
         run: GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o dist/fleetlyd ./cmd/fleetlyd
       - name: start dind container
+        # dind 镜像钉 digest（T0-V2.3 供应链）：tag 保留作可读性，digest 为准。
         run: |
-          docker run -d --name fleetly-e2e-dind --privileged docker:29.8.1-dind
+          docker run -d --name fleetly-e2e-dind --privileged docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0
           # dind 内 dockerd 就绪门（60s）：smoke 本身不依赖 dockerd，但
           # 「特权 dind 可用」是 P2 的前提，骨架阶段顺带在此验证；后续
           # fixture 部署链（compose/Swarm 操作）依赖它。
@@ -303,6 +304,13 @@ jobs:
             fi
           done
           exit "$fail"
+      - name: container image pin check
+        # T0-V2.3 供应链：deploy/ 与 .github/workflows/ 的平台镜像引用必须钉
+        # digest（image:tag@sha256:…）。POSIX sh + GNU grep，零第三方 action
+        #（供应链最小化，与本 job 既有两步同纪律）；豁免走
+        # deploy/image-pin-allowlist.txt（须注释理由）。负路径自证与扫描口径
+        # 见脚本头注释与 docs/runbooks/image-prepull.md。
+        run: sh deploy/check-image-pins.sh
 
   antipattern-grep:
     # MG-6（评审整改 B1 批次）：两条反模式 grep 门禁（纯 POSIX sh，零第三方

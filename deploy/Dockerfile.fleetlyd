@@ -30,7 +30,11 @@
 #     -p 8420:8420 -p 8424:8424 \
 #     ghcr.io/fleetlyrun/fleetlyd:<tag> -c /etc/fleetly/config.yaml
 
-FROM golang:1.26-alpine AS build
+# 基镜像钉 digest（T0-V2.3 供应链）：tag 保留作可读性，digest 为准；
+# digest 由 docker buildx imagetools inspect 解析（多架构 index，
+# linux amd64/arm64 通吃）。升级基镜像 = 改 tag + 同步换 digest 并重跑
+# docs/runbooks/image-prepull.md 的解析/预拉流程。
+FROM golang:1.26-alpine@sha256:51a7c389a5ddaf82f527191a1e9bff9928655130a44e4975dd1d7e0acf59f1ae AS build
 ARG FLEETLY_VERSION=dev
 WORKDIR /src
 COPY go.work go.work.sum go.mod go.sum ./
@@ -43,7 +47,7 @@ RUN CGO_ENABLED=0 GOOS=linux \
       -ldflags "-s -w -X main.version=${FLEETLY_VERSION}" \
       -o /out/fleetlyd ./cmd/fleetlyd
 
-FROM alpine:3.22
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
 # 排障依赖（swarm/daemon 自检需要的基础工具；docker CLI 不进容器——平台经
 # socket 由 dockerd 服务端执行，容器内不装 docker 客户端以收窄攻击面）。
 RUN apk add --no-cache ca-certificates wget

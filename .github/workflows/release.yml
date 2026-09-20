@@ -31,6 +31,9 @@
 #      （keyless，按 digest 签）。
 #   6. GitHub Release：gh release create 附全部制品 + notes 模板（引擎支持
 #      矩阵 + 安装一条命令 + 验签指引）。
+#   7. arm64 原生冒烟（T0-V2.3）：ubuntu-24.04-arm 原生跑 build + 单测冒烟
+#      ——补 build matrix「arm64 只验产物存在」的运行验证缺口（详见
+#      smoke-arm64 job 注释与 runner 口径说明）。
 #
 # 首发实跑归 T2.26（打 tag 验收）；本文件 T2.24 落地，本地仅做 YAML 解析与
 # 命令面自查。
@@ -100,8 +103,9 @@ jobs:
               -ldflags "-s -w -X main.version=$VERSION" \
               -o "dist/out/fleetly" ./cmd/fleetly
       - name: version smoke (binary self-report)
-        # amd64 可本机直跑自报版本；arm64 只验产物存在（交叉编译证明，
-        # 运行 smoke 属 QEMU 成本，列遗留——交付 §M1 的 arm64 release smoke）。
+        # amd64 可本机直跑自报版本；arm64 的运行验证由 smoke-arm64 job 在
+        # ubuntu-24.04-arm 原生 runner 完成（T0-V2.3——此前以 QEMU 成本为由
+        # 列遗留，现原生 runner 免费可得，不再欠账）。
         run: |
           test -s dist/out/fleetlyd && test -s dist/out/fleetly
           if [ '${{ matrix.arch }}' = 'amd64' ]; then
@@ -398,13 +402,49 @@ jobs:
             --certificate-identity-regexp "$EXPECTED_SIGNER" \
             --certificate-oidc-issuer "$EXPECTED_ISSUER"
 
+  # ────────────────────────────── 6b. arm64 原生构建冒烟（T0-V2.3）────────
+  smoke-arm64:
+    # arm64 release 冒烟：此前 build matrix 的 arm64 腿只验产物存在（交叉
+    # 编译证明），运行验证以 QEMU 成本为由列遗留（交付 §M1）。本 job 在
+    # GitHub 托管 arm64 runner 上原生跑 build + 单测冒烟，arm64 二进制真机
+    # 可执行性自此有证据；红则阻断 publish（见 publish.needs）。
+    # runner 口径：ubuntu-24.04-arm 为 GitHub 托管 arm64 runner，公共仓库
+    # 免费；私有仓库按分钟计费（需 larger runner 付费配置）。本仓可见性
+    # 无法在本地判定，按公共仓库口径编写；若仓库转私有，须改自管 runner
+    # 或显式裁决撤下本 job。首发实跑（T2.26 打 tag）时复核一次。
+    # 冒烟口径：build 与 build job 同参（CGO off + trimpath；不注版本——
+    # version 命令只验证真机可执行）；单测全量但不带 -race（race 面 pr.yml
+    # 已在 amd64 门禁覆盖，arm64 关注原生执行正确性）。
+    name: arm64 smoke (native)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: build (native arm64, same flags as build job)
+        run: |
+          GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o dist/fleetlyd ./cmd/fleetlyd
+          GOARCH=arm64 CGO_ENABLED=0 go build -trimpath -o dist/fleetly ./cmd/fleetly
+      - name: binary smoke (native execution self-report)
+        run: |
+          echo "host arch: $(uname -m)"
+          [ "$(uname -m)" = "aarch64" ]
+          test -s dist/fleetlyd && test -s dist/fleetly
+          ./dist/fleetly version
+      - name: unit test smoke (full suite, no race)
+        run: go test ./... ./sdk/go/... -count=1
+
   # ────────────────────────────────────────────────── 6. GitHub Release ──
   publish:
     name: GitHub Release
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [build, checksums, sbom, sign, image]
+    needs: [build, checksums, sbom, sign, image, smoke-arm64]
     steps:
       # gh release --verify-tag 需要 git 上下文（gh 内部 shell 出 git 命令）。
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0

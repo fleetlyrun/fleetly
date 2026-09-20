@@ -224,8 +224,9 @@ fi
 mkdir -p /opt/fleetly/etc /var/lib/fleetly
 # 预拉 ingress 依赖镜像（cert seed 容器与 Traefik 服务不自动拉镜像——
 # T2.15 已知边界，sweep 周期长；测试环境在 daemon 启动前显式预备）。
-docker pull alpine:3.20 >/dev/null 2>&1 || true
-docker pull traefik:v3.5 >/dev/null 2>&1 || true
+# 钉 digest（T0-V2.3 供应链）：tag 保留作可读性，digest 为准。
+docker pull alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc >/dev/null 2>&1 || true
+docker pull traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2 >/dev/null 2>&1 || true
 cat > /opt/fleetly/etc/config.yaml <<EOF
 addr: "0.0.0.0:8420"
 grpc:

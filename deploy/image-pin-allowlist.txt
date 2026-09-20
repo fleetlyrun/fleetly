@@ -1,0 +1,10 @@
+# deploy/image-pin-allowlist.txt — 镜像钉 digest 门禁豁免清单（T0-V2.3）。
+#
+# 门禁：deploy/check-image-pins.sh（扫描范围与识别口径见该脚本头注释）。
+# 语义：非 `#` 开头、非空的每行是一个**固定子串**（grep -F 语义），命中
+# `<路径>:<引用>` 即豁免该引用（例：`deploy/foo.sh:alpine:3.20`）。
+# 纪律：只收「确需可变 tag」的引用（如故意验证「可变 tag 被拒」的负路径
+# 用例），每个条目必须同行注释理由；无理由的豁免视为门禁失效。
+#
+# 当前条目：无——deploy/ 与 .github/workflows/ 的平台镜像引用已全部
+# 钉 digest（docs/runbooks/image-prepull.md 为全集台账）。

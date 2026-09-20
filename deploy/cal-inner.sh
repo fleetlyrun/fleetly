@@ -40,7 +40,7 @@ N_APPS="${CAL_APPS:-50}"
 N_DOMAIN_APPS="${CAL_DOMAIN_APPS:-20}"
 N_BUILDS="${CAL_BUILDS:-5}"
 VERSION="${CAL_VERSION:-v0.1.0-cal}"
-DIND_TAG="${CAL_DIND_IMAGE:-docker:29.8.1-dind}"
+DIND_TAG="${CAL_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 
 APPS_DIR="$CAL_STAGE/apps"
 BLD_DIR="$CAL_STAGE/builds"
@@ -203,9 +203,11 @@ fi
 mkdir -p /opt/fleetly/etc /var/lib/fleetly
 # 预拉平台依赖镜像（cert seed 容器与 Traefik 服务不自动拉镜像——T2.15 已知
 # 边界；buildkit 镜像同理为 daemon warm 路径依赖）。并行拉取（网络瓶颈主导）。
-docker pull -q alpine:3.20 >/dev/null 2>&1 &
-docker pull -q traefik:v3.5 >/dev/null 2>&1 &
-docker pull -q moby/buildkit:v0.32.2 >/dev/null 2>&1 &
+# 镜像钉 digest（T0-V2.3 供应链）：tag 保留作可读性，digest 为准；digest 由
+# docker buildx imagetools inspect 解析（多架构 index，amd64/arm64 通吃）。
+docker pull -q alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc >/dev/null 2>&1 &
+docker pull -q traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2 >/dev/null 2>&1 &
+docker pull -q moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 >/dev/null 2>&1 &
 wait
 cat > /opt/fleetly/etc/config.yaml <<EOF
 addr: "0.0.0.0:8420"
