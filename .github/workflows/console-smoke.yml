@@ -1,0 +1,65 @@
+name: console-smoke
+
+# W1 T1-V2.6：Console Playwright 冒烟三链路（登录 / 应用详情+部署历史 /
+# 登出），目标 = 真实 staging（daemon 同源托管 /ui + /v1），非 mock。
+#
+# 仅 workflow_dispatch 手动触发：staging 是活环境，不随 push/PR 自动跑
+# （自动触发后续再议）。token 走 secrets.FLEETLY_SMOKE_TOKEN（bootstrap
+# token），不经输入框、不落日志；staging URL 三级缺省：手动输入 smoke >
+# 仓库变量 FLEETLY_SMOKE_BASE > http://dev.fleetly.run:8420。
+# 所有 uses 沿用仓库既有钉 SHA 形态（同 pr.yml/nightly.yml 注释格式）。
+
+on:
+  workflow_dispatch:
+    inputs:
+      smoke:
+        description: "Staging base URL override (empty = repo variable FLEETLY_SMOKE_BASE, else http://dev.fleetly.run:8420)"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: console-smoke-${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: console
+    env:
+      FLEETLY_SMOKE_TOKEN: ${{ secrets.FLEETLY_SMOKE_TOKEN }}
+      FLEETLY_SMOKE_BASE: ${{ inputs.smoke || vars.FLEETLY_SMOKE_BASE || 'http://dev.fleetly.run:8420' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+        with:
+          version: 10
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: console/pnpm-lock.yaml
+      - name: pnpm install (frozen lockfile)
+        run: pnpm install --frozen-lockfile
+      - name: playwright install chromium (+ OS deps)
+        run: pnpm exec playwright install --with-deps chromium
+      - name: pnpm test:smoke (三链路打真实 staging)
+        run: pnpm test:smoke
+      - name: upload smoke artifacts (evidence / failure evidence)
+        # 通过与否都传：evidence 截图三链路各一张（spec 显式落
+        # console/smoke-artifacts/），失败时另有 trace/screenshot。
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: console-smoke-artifacts
+          path: |
+            console/smoke-artifacts
+            console/playwright-report
+            console/test-results
+          if-no-files-found: ignore
+          retention-days: 14

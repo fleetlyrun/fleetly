@@ -25,7 +25,9 @@ export default tseslint.config(
     },
   },
   {
-    files: ["vite.config.ts", "eslint.config.js"],
+    // node 侧文件：Playwright 配置/冒烟 spec 读 process.env（FLEETLY_SMOKE_*），
+    // 与 vite/eslint 配置同一 globals 组（W1 T1-V2.6）。
+    files: ["vite.config.ts", "eslint.config.js", "playwright.config.ts", "tests/**/*.ts"],
     languageOptions: {
       globals: globals.node,
     },

@@ -1,0 +1,7 @@
+# 冒烟测试本机产物与密钥（W1 T1-V2.6）：token 只允许进这里列出的
+# .env*（不入库），绝不出现在任何提交文件。
+.env*
+!.env.example
+smoke-artifacts/
+test-results/
+playwright-report/

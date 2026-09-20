@@ -2,7 +2,7 @@ import { fileURLToPath, URL } from "node:url";
 
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 // 开发态：dev server 在 /ui/ 前缀下服务（与 daemon 静态托管的 URL 空间
 // 一致，深链形态两边等价）；REST /v1 经 dev proxy 转发到本机 fleetlyd
@@ -29,5 +29,9 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
+    // vitest 与 Playwright 的分工边界（W1 T1-V2.6）：tests/ 是 Playwright
+    // 冒烟（真浏览器打 staging），vitest 只收 src/** 的 jsdom 单测——
+    // 否则默认 include `**/*.spec.ts` 会把 Playwright spec 当单测加载。
+    exclude: [...configDefaults.exclude, "tests/**"],
   },
 });
