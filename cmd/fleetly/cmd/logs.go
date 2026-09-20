@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly logs 命令（T2.18 新增动词——日志管线 RPC 面自 T2.20 起已有）：
 //

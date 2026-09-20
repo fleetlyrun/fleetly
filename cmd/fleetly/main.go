@@ -1,36 +1,30 @@
+// fleetly CLI 进程入口：只保留信号挂接与版本注入（-ldflags
+// "-X main.version=..."）。全部命令定义与动词装配在子包 cmd（NewApp
+// 单点，版本经参数传入）。
 package main
 
 import (
 	"context"
-	"flag"
-	"fmt"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/lynx-go/commands"
+
+	"github.com/fleetlyrun/fleetly/cmd/fleetly/cmd"
 )
 
-// versionCmd 保留 T0.1 的动词形态（print version）。--json 输出机器形态
-// （T2.18：所有动词支持 --json 纪律）。版本是 CLI 自身版本（构建
-// -ldflags "-X main.version=..." 注入，未注入时为 dev）——daemon 版本经
-// `fleetly apps ...` 所连控制面的 SystemService.Ping/GetSystemStatus 查询。
-type versionCmd struct {
-	jsonOut bool
-}
+// version 经构建 -ldflags "-X main.version=..." 注入；未注入时为 dev。
+var version = "dev"
 
-func (c *versionCmd) Name() string     { return "version" }
-func (c *versionCmd) Synopsis() string { return "print the fleetly CLI version" }
-func (c *versionCmd) Usage() string    { return "version [--json]" }
-
-func (c *versionCmd) SetFlags(fs *flag.FlagSet) {
-	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
-}
-
-func (c *versionCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
-	if len(args) != 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("expected 0 arguments, got %d", len(args))}
-	}
-	if c.jsonOut {
-		return writeJSON(env.Stdout, map[string]string{"version": version})
-	}
-	_, err := fmt.Fprintf(env.Stdout, "fleetly %s\n", version)
-	return err
+func main() {
+	// 根 ctx 接信号（S17-D3）：Ctrl-C（os.Interrupt）/ SIGTERM 取消全部
+	// 在途动词——流式（logs follow / events watch）与轮询等待（deploy /
+	// build / rollback / deployments cancel）把取消判为干净退出（exit 0），
+	// gRPC 流随 ctx 取消正常收尾，不再靠进程硬杀撕裂。Windows 上 SIGTERM
+	// 常量定义存在但不可投递，注册无害；再次信号恢复默认终止行为。
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	env := &commands.Environment{Stdout: os.Stdout, Stderr: os.Stderr}
+	os.Exit(cmd.NewApp(version).Run(ctx, env, os.Args[1:]))
 }

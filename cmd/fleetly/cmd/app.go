@@ -6,41 +6,24 @@
 // 纯本地解析保留在 validate/plan--baseline/diff（internal/compose 纯库）。
 // 全动词支持 --json；退出码四态（S17-D3）：0=成功/无变化、1=错误、
 // 2=有变化（仅 plan/diff）、64=用法错误。
-package main
+package cmd
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/lynx-go/commands"
 )
 
-// version 经构建 -ldflags "-X main.version=..." 注入；未注入时为 dev。
-var version = "dev"
-
-func main() {
-	// 根 ctx 接信号（S17-D3）：Ctrl-C（os.Interrupt）/ SIGTERM 取消全部
-	// 在途动词——流式（logs follow / events watch）与轮询等待（deploy /
-	// build / rollback / deployments cancel）把取消判为干净退出（exit 0），
-	// gRPC 流随 ctx 取消正常收尾，不再靠进程硬杀撕裂。Windows 上 SIGTERM
-	// 常量定义存在但不可投递，注册无害；再次信号恢复默认终止行为。
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	env := &commands.Environment{Stdout: os.Stdout, Stderr: os.Stderr}
-	os.Exit(newApp().Run(ctx, env, os.Args[1:]))
-}
-
-// newApp 组装 CLI（测试同路径复用：直接对 App.Run 传参断言退出码，
+// NewApp 组装 CLI（测试同路径复用：直接对 App.Run 传参断言退出码，
 // 不起子进程、不触碰 os.Args——lynx-go/commands 不解析进程参数，无
-// fleetlyd Runner 的 os.Args/CWD 隔离问题）。
-func newApp() *commands.App {
+// fleetlyd Runner 的 os.Args/CWD 隔离问题）。version 为 CLI 自身版本
+// （main 进程经 -ldflags "-X main.version=..." 注入后传入，未注入为 dev）。
+func NewApp(version string) *commands.App {
 	app := commands.New()
 	app.Register(
-		&versionCmd{},
+		&versionCmd{version: version},
 		&validateCmd{},
 		&planCmd{},
 		&diffCmd{},

@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // backups 命令（T2.22 备份基线读面/手动触发）：经 SDK 消费平台的
 // SystemService.ListBackups（台账只读）与 TriggerBackup（手动触发一次

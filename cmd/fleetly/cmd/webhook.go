@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly apps webhook 命令（T2.19）：webhook 触发入口的 per-app 配置面
 // （admin scope）。动词面：

@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly tokens 命令（T2.18 新增动词——RPC 面自 T2.17 起已有，CLI 补齐；
 // admin scope 专用）：create / list / revoke。明文 token 仅 create 响应一

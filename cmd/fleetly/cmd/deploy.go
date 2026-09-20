@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // 部署命令（T2.18 CLI-over-SDK 改造）：`fleetly deploy <compose>` 经 RPC
 // 入队（DeploymentsService.Deploy：compose 内容字节上行，服务端受控子集

@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // 回滚与版本/漂移命令（T2.18 CLI-over-SDK 改造）：`fleetly rollback <app>`
 //（RPC 入队 kind=rollback 部署并等待终态）、`fleetly revisions list <app>`

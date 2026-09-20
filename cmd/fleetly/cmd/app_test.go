@@ -1,4 +1,4 @@
-package main
+package cmd
 
 import (
 	"bytes"
@@ -13,14 +13,18 @@ import (
 	"github.com/lynx-go/commands"
 )
 
-// runCLI 以给定参数驱动完整 CLI（同路径复用 newApp；不起子进程、不改
+// testAppVersion 是测试装配 CLI 用的版本值（与未注入 ldflags 的生产缺省
+// 一致，version 动词的 golden 快照按此值匹配）。
+const testAppVersion = "dev"
+
+// runCLI 以给定参数驱动完整 CLI（同路径复用 NewApp；不起子进程、不改
 // os.Args/CWD——lynx-go/commands 不读进程参数，无 Runner 隔离问题）。
 // 返回退出码与 stdout/stderr 内容。
 func runCLI(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	env := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
-	code := newApp().Run(context.Background(), env, args)
+	code := NewApp(testAppVersion).Run(context.Background(), env, args)
 	return code, stdout.String(), stderr.String()
 }
 

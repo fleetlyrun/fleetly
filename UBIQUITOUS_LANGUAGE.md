@@ -95,8 +95,8 @@
 | proto 请求/响应不同词族 | `SetAppSourceRequest{url,branch,auth_kind,auth_secret}` | `source_url/source_branch/source_auth_kind/source_auth_secret`；删除 `ShowAppWebhookResponse.branch`（与 source_branch 同值重复投影） | proto/fleetly/server/v1/apps.proto（reserved 6 + "branch"） |
 | 错误信封 phase 与部署子状态 phase 撞车 | `ErrorResponse.phase` | `ErrorResponse.stage`（resolve/build/deploy/serve） | proto/fleetly/shared/v1/error.proto、internal/apperr |
 | volume 节点列独名 | `VolumeView.node_id` | `platform_node_id`（与 PlacementView/DB 同族） | proto/fleetly/server/v1/placement.proto |
-| CLI 列动词孤例 | `nodes ls` | `nodes list` | cmd/fleetly/statecmds.go、golden 改 nodes_list*.golden |
-| 用户面 revision 别名 | `snapshot replay` / `version snapshots` / `revert one version` | `revision replay` / `revisions` / `rollback to the previous revision` | cmd/fleetly/rollbackcmds.go、console/src/pages/AppDeploymentsPage.tsx、README(.zh) |
+| CLI 列动词孤例 | `nodes ls` | `nodes list` | cmd/fleetly/cmd/state.go、golden 改 nodes_list*.golden |
+| 用户面 revision 别名 | `snapshot replay` / `version snapshots` / `revert one version` | `revision replay` / `revisions` / `rollback to the previous revision` | cmd/fleetly/cmd/rollback.go、console/src/pages/AppDeploymentsPage.tsx、README(.zh) |
 | README rollout | `zero-downtime rollout` | `zero-downtime release`（中文「零停机切流」） | README.md:37,109、README_ZH.md:35,107 |
 | console reconcile 写成 sync | `synced` / `not synced` | `reconciled` / `not reconciled` | console/src/pages/AppDomainsPage.tsx |
 | 事件页卡片词 | `Activity` | `Events` | console/src/pages/EventsPage.tsx |

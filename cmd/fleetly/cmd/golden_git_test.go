@@ -1,8 +1,8 @@
-package main
+package cmd
 
 // golden 快照（T2.19 新动词面）：git keys 与 apps webhook 生命周期。
 // 夹具与归一化复用 golden_test.go 的框架（startCLI/compareGolden/normalize
-// ——新增 fingerprint 归一规则）。`go test ./cmd/fleetly -run TestGolden -update`
+// ——新增 fingerprint 归一规则）。`go test ./cmd/fleetly/cmd -run TestGolden -update`
 // 再生成。
 
 import (

@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly apps 命令（T2.18 新增动词——RPC 面自 T2.17 起已有，CLI 补齐）：
 //

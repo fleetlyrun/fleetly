@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly domains 命令（T2.18 CLI-over-SDK 改造）：域名台账与验证。
 //

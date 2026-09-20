@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // golden 快照测试（T2.18 票面验收项，防 --json 输出漂移）：对每个动词的
 // --json 输出做 golden 快照（testdata/golden/）。夹具 = 进程内真实 api
@@ -85,7 +85,7 @@ func runCLIConn(t *testing.T, args ...string) (int, string, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
 	e := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
-	code := newApp().Run(context.Background(), e, args)
+	code := NewApp(testAppVersion).Run(context.Background(), e, args)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -105,7 +105,7 @@ func compareGolden(t *testing.T, name, got string) {
 	}
 	want, err := os.ReadFile(path) //nolint:gosec // G304：golden 路径为测试受控目录拼接
 	if err != nil {
-		t.Fatalf("golden %s missing (generate with go test ./cmd/fleetly -run TestGolden -update): %v\n--- got ---\n%s", path, err, got)
+		t.Fatalf("golden %s missing (generate with go test ./cmd/fleetly/cmd -run TestGolden -update): %v\n--- got ---\n%s", path, err, got)
 	}
 	if string(want) != got {
 		t.Fatalf("golden %s drifted (an intentional --json contract change requires an explicit -update regeneration):\n--- want ---\n%s\n--- got ---\n%s", path, want, got)
@@ -568,7 +568,7 @@ func TestGoldenLogsHistoryAndFollow(t *testing.T) {
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	e := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
-	code = newApp().Run(followCtx, e, []string{"logs", "follow", "--json", "my-api"})
+	code = NewApp(testAppVersion).Run(followCtx, e, []string{"logs", "follow", "--json", "my-api"})
 	if code != 1 {
 		t.Fatalf("follow: code=%d stderr=%s", code, stderr.String())
 	}
@@ -588,7 +588,7 @@ func TestGoldenEventsWatch(t *testing.T) {
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	e := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
-	code := newApp().Run(watchCtx, e, []string{"events", "watch", "--json"})
+	code := NewApp(testAppVersion).Run(watchCtx, e, []string{"events", "watch", "--json"})
 	if code != 1 {
 		t.Fatalf("watch: code=%d stderr=%s", code, stderr.String())
 	}

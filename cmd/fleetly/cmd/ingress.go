@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly ingress status 命令（T2.18 CLI-over-SDK 改造）：入口链三面状态
 // ——① Traefik 服务实况（Swarm service fleetly-ingress，服务端只读

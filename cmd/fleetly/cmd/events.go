@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly events 命令（T2.18 新增动词——事件流 RPC 面自 T2.17 起已有）：
 // `events watch` 消费平台事件流（seq 游标 server-stream）。断线重连带

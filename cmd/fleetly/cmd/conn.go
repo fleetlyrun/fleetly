@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // 远程命令的公共连接参数（T2.18 CLI-over-SDK 改造）：CLI 只经 SDK（gRPC）
 // 消费平台——不再有任何直开 DB / 直连 docker / 直读密钥的路径。--addr 与

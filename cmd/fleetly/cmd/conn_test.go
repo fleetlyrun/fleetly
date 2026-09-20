@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // S17-D3 机制测试：一元 RPC 缺省 deadline（拦截器层——fake conn 挂起 +
 // 短父 deadline → 限时失败 + 超时引导渲染）、流式/等待动词的取消干净退
@@ -88,7 +88,7 @@ func TestStreamCancelCleanExit(t *testing.T) {
 		cancel()
 		var stdout, stderr bytes.Buffer
 		env := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
-		code := newApp().Run(ctx, env, args)
+		code := NewApp(testAppVersion).Run(ctx, env, args)
 		if code != 0 {
 			t.Fatalf("%v: code=%d, want 0 (clean exit)\nstderr=%s", args, code, stderr.String())
 		}
@@ -109,7 +109,7 @@ func TestWaitVerbCancelCleanExit(t *testing.T) {
 		cancel()
 		var stdout, stderr bytes.Buffer
 		env := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
-		code := newApp().Run(ctx, env, args)
+		code := NewApp(testAppVersion).Run(ctx, env, args)
 		if code != 0 || stderr.Len() != 0 {
 			t.Fatalf("%v: code=%d stderr=%q, want 0/empty (clean exit)", args, code, stderr.String())
 		}

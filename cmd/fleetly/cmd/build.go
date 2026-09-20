@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // 构建命令（T2.18 CLI-over-SDK 改造）：`fleetly build <compose>` 经 RPC
 // 触发预构建（BuildsService.TriggerBuild：compose 内容字节上行，服务端

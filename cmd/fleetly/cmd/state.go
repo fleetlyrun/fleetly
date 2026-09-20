@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // env / placement / nodes 命令（T2.18 CLI-over-SDK 改造）：经 SDK 消费平
 // 台（EnvService/PlacementService/SystemService.ListNodes），不再直开状态

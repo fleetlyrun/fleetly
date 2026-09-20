@@ -1,4 +1,4 @@
-package main
+package cmd
 
 // fleetly git 命令（T2.19）：git push(SSH) 触发入口的公钥管理面（admin
 // scope）。动词面 = `git keys add|list|rm`：
