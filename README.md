@@ -156,13 +156,13 @@ All docs live in [`docs/`](docs/README.md) (Chinese, design-first workflow):
 
 ## Development
 
-Prerequisites: Go ≥ 1.26.6 (`GOTOOLCHAIN=auto` works), buf CLI, Docker (for e2e).
+Prerequisites: [mise](https://mise.jdx.dev/) — `mise install` provisions Go, Node, pnpm, buf and golangci-lint at the versions pinned in `mise.toml` (aligned with the CI gates); Docker is only needed for e2e (dind) and a full local loop. Without mise, install the same tools yourself (Go ≥ 1.26.6, `GOTOOLCHAIN=auto` works; buf CLI).
 
 ```bash
 go build ./...
-go test ./... ./sdk/go/... -race
-buf lint && buf generate          # generated artifacts are committed; must not drift
-golangci-lint run
+go test ./... ./sdk/go/... -race   # or: mise run test
+buf lint && buf generate          # generated artifacts are committed; must not drift; mise run generate:proto
+golangci-lint run                 # or: mise run lint
 ```
 
 Smoke E2E (runs fleetlyd inside `docker:29.8.1-dind`): see [`e2e/README.md`](e2e/README.md).

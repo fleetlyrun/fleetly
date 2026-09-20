@@ -154,13 +154,13 @@ fleetlyd -c config.yaml                       # 配置 console.static_dir: "./co
 
 ## 开发
 
-前置：Go ≥ 1.26.6（`GOTOOLCHAIN=auto` 可用）、buf CLI、Docker（e2e 用）。
+前置：[mise](https://mise.jdx.dev/)——`mise install` 按 `mise.toml` 钉版装齐 Go、Node、pnpm、buf 与 golangci-lint（版本与 CI 门禁对齐）；Docker 仅 e2e（dind）与本地完整闭环需要。不 mise 的环境按原前置自行安装（Go ≥ 1.26.6，`GOTOOLCHAIN=auto` 可用、buf CLI）。
 
 ```bash
 go build ./...
-go test ./... ./sdk/go/... -race
-buf lint && buf generate          # 生成物已提交，不得漂移
-golangci-lint run
+go test ./... ./sdk/go/... -race   # mise run test
+buf lint && buf generate          # 生成物已提交，不得漂移；mise run generate:proto
+golangci-lint run                 # mise run lint
 ```
 
 冒烟 E2E（在 `docker:29.8.1-dind` 内运行 fleetlyd）：见 [`e2e/README.md`](e2e/README.md)。

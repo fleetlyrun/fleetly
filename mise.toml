@@ -1,0 +1,69 @@
+# fleetly 开发环境与任务（mise-en-place，torchwood 同款）
+#
+#   mise install      安装 [tools] 钉版的全部开发工具
+#   mise tasks        列出全部任务
+#   mise run <task>   执行任务
+#
+# 任务统一用 sh 执行：Linux/macOS 自带，Windows 需 Git Bash 的 sh 在 PATH。
+# Docker Desktop 仅 e2e（dind）与本地完整闭环需要；纯单测无需 Docker。
+
+[tools]
+go = "1.26.6"              # go.mod `go 1.26.6`
+node = "24.21.0"           # console 工具链（CI setup-node 24 线最新；torchwood 同线）
+pnpm = "10.34.5"           # console/pnpm-lock.yaml lockfileVersion 9.0（CI action-setup 10 线）
+buf = "1.72.0"             # buf lint/generate/breaking（pr.yml buf-setup-action 同版）
+golangci-lint = "2.13.2"   # lint 门禁（pr.yml golangci-lint-action 同版）
+
+[task_config]
+shell = "sh -o errexit -c"
+
+[tasks."generate:proto"]
+description = "buf lint + buf generate（genproto/**，生成物已提交不得漂移）"
+run = ["buf lint", "buf generate"]
+
+[tasks."generate:wire"]
+description = "go generate ./...（wire 生成物同步；GOWORK=off——wire v0.7.0 内嵌 -mod=mod，go.work 工作区下非法）"
+env = { GOWORK = "off" }
+run = "go generate ./..."
+
+[tasks."console:gen-api"]
+description = "从 genproto swagger 再生成 src/api/schema.d.ts（漂移即红，D4-②）"
+dir = "console"
+run = "pnpm gen:api"
+
+[tasks.lint]
+description = "golangci-lint 全量门禁（与 CI 同版本）"
+run = "golangci-lint run"
+
+[tasks.test]
+description = "go test -race（主模块 + sdk/go，CI 同款）"
+run = "go test ./... ./sdk/go/... -race"
+
+[tasks."console:install"]
+description = "pnpm install（console/，--frozen-lockfile 由 CI 把关）"
+dir = "console"
+run = "pnpm install"
+
+[tasks."console:dev"]
+description = "console 开发服务器（vite :5173，/v1 代理到本机 fleetlyd :8420）"
+dir = "console"
+run = "pnpm run dev"
+
+[tasks."console:build"]
+description = "console 构建（tsc --noEmit + vite build -> console/dist）"
+dir = "console"
+run = "pnpm run build"
+
+[tasks."console:lint"]
+description = "console eslint"
+dir = "console"
+run = "pnpm lint"
+
+[tasks."console:test"]
+description = "console vitest run"
+dir = "console"
+run = "pnpm test"
+
+[tasks."dev:daemon"]
+description = "启动 fleetlyd（缺省即回环 8420/8421/8424；带配置：mise run dev:daemon -- -c config.yaml）"
+run = "go run ./cmd/fleetlyd"
