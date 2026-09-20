@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // Console 静态托管测试（T2.21 验收）：生产同构装配（gRPC 拦截链 + gateway
 // mux + /ui/ 静态分派）下——

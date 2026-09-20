@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // git push(SSH) 入口服务的 lynx.Service 装配壳（T2.19，参考 ingress/
 // 节点身份的服务壳模式）：Init 阶段做配置完整性 fail-fast（Validate），

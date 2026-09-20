@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // 状态层 lynx.Service 装配壳：把 internal/state 的零框架组件接入
 // boot.Bootstrap。领域代码零框架类型依赖（D20）；CheckHealth 为结构性

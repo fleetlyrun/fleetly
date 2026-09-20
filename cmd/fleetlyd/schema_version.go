@@ -33,13 +33,14 @@ import (
 
 	"github.com/spf13/viper"
 
+	"github.com/fleetlyrun/fleetly/internal/runtime"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // schemaVersionConfig 以主进程同款语义（viper + AppConfig）解析配置，取
 // db_path/backup 根/密钥路径的派生结果（缺省回落链与 daemon 装配一致——
-// DBPath/BackupRoot/KeyPath 单一事实源在 AppConfig）。
-func schemaVersionConfig(path string) (*AppConfig, error) {
+// DBPath/BackupRoot/KeyPath 单一事实源在 internal/runtime AppConfig）。
+func schemaVersionConfig(path string) (*runtime.AppConfig, error) {
 	v := viper.New()
 	if path != "" {
 		v.SetConfigFile(path)
@@ -54,7 +55,7 @@ func schemaVersionConfig(path string) (*AppConfig, error) {
 			return nil, fmt.Errorf("read config: %w", err)
 		}
 	}
-	var cfg AppConfig
+	var cfg runtime.AppConfig
 	if err := v.Unmarshal(&cfg); err != nil {
 		return nil, fmt.Errorf("unmarshal config into AppConfig: %w", err)
 	}

@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // builderService 装配测试（T2.8）：队列服务必须满足 lynx run.Group actor
 // 契约（Start 阻塞到关停）；底座（buildkitd/镜像端口）不可用只降级预热、

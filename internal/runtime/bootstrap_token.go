@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // API token 种子（T2.17 安装引导语义）：首次启动无任何 token（含已吊销
 // ——「存在过」即不算首次）时生成 bootstrap admin token 并入审计

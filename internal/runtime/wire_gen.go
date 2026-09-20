@@ -4,7 +4,7 @@
 //go:build !wireinject
 // +build !wireinject
 
-package main
+package runtime
 
 import (
 	"github.com/lynx-go/lynx"
@@ -14,7 +14,9 @@ import (
 
 // Injectors from wire.go:
 
-func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(), error) {
+// wireBootstrap 是 Wire 注入器（version 经 Bootstrap 参数进入依赖图，
+// 见 bootstrap.go 的 Version 注释）。
+func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.Bootstrap, func(), error) {
 	preStartHooks := NewPreStarts(app)
 	drainHooks := NewDrains()
 	preStopHooks := NewPreStops(app)
@@ -48,7 +50,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	manager, err := NewBackupManager(app, appConfig, store, box)
+	manager, err := NewBackupManager(app, appConfig, store, box, version)
 	if err != nil {
 		cleanup3()
 		cleanup2()
@@ -97,7 +99,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	placementService := NewPlacementService(store)
 	tokensService := NewTokensService(store)
 	gitKeysService := NewGitKeysService(store)
-	systemService := NewSystemService(store, nodeIdentity, observer, box, ingressManager, manager)
+	systemService := NewSystemService(store, nodeIdentity, observer, box, ingressManager, manager, version)
 	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, systemService)
 	if err != nil {
 		cleanup4()

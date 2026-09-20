@@ -91,7 +91,7 @@
 | 项 | 前 | 后 | 证据 |
 | --- | --- | --- | --- |
 | 部署归位值撞车 DR | `recovery="restore"` | `recovery="replay"`（state.RecoveryReplay） | internal/state/deployments.go、internal/engine/{releasing,recovery}.go |
-| 看门狗预算名实不符 | `ReleaseTimeout` / `engine.release_timeout_seconds` | `DeployTimeout` / `engine.deploy_timeout_seconds`（覆盖 preparing/building/releasing 全链） | internal/engine/ports.go、cmd/fleetlyd/config.go、config-example.yaml、deploy/*.sh |
+| 看门狗预算名实不符 | `ReleaseTimeout` / `engine.release_timeout_seconds` | `DeployTimeout` / `engine.deploy_timeout_seconds`（覆盖 preparing/building/releasing 全链） | internal/engine/ports.go、internal/runtime/config.go、config-example.yaml、deploy/*.sh |
 | proto 请求/响应不同词族 | `SetAppSourceRequest{url,branch,auth_kind,auth_secret}` | `source_url/source_branch/source_auth_kind/source_auth_secret`；删除 `ShowAppWebhookResponse.branch`（与 source_branch 同值重复投影） | proto/fleetly/server/v1/apps.proto（reserved 6 + "branch"） |
 | 错误信封 phase 与部署子状态 phase 撞车 | `ErrorResponse.phase` | `ErrorResponse.stage`（resolve/build/deploy/serve） | proto/fleetly/shared/v1/error.proto、internal/apperr |
 | volume 节点列独名 | `VolumeView.node_id` | `platform_node_id`（与 PlacementView/DB 同族） | proto/fleetly/server/v1/placement.proto |

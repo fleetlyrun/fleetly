@@ -1,4 +1,4 @@
-package main
+package runtime
 
 import (
 	"net"
@@ -15,12 +15,15 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
 )
 
-// defaultHTTPAddr / defaultGRPCAddr 分别是 HTTP 面与 gRPC 面的缺省监听
-// 地址：默认只绑回环，避免控制面未配置时暴露公网（架构 §4.2 安全默认
-// 基线）。HTTP 可用 -addr 覆盖，或经 -c config.yaml 中的 addr 键覆盖
-// （显式 flag 优先于配置文件）；gRPC 经 config.yaml 的 grpc.addr 配置。
+// DefaultHTTPAddr 是 HTTP 面的缺省监听地址（导出供 cmd/fleetlyd 的 -addr
+// flag 缺省值与本包 NewConfig 回落共用——单一事实源）：默认只绑回环，
+// 避免控制面未配置时暴露公网（架构 §4.2 安全默认基线）。可用 -addr
+// 覆盖，或经 -c config.yaml 中的 addr 键覆盖（显式 flag 优先于配置文件）。
+//
+// defaultGRPCAddr 同为 gRPC 面缺省监听地址（仅包内消费：NewConfig 回落
+// 与 gateway 转发目标推导），经 config.yaml 的 grpc.addr 配置。
 const (
-	defaultHTTPAddr = "127.0.0.1:8420"
+	DefaultHTTPAddr = "127.0.0.1:8420"
 	defaultGRPCAddr = "127.0.0.1:8421"
 	// defaultDBPath 是状态库缺省路径（config state.db_path 的回落值）。
 	defaultDBPath = "./fleetly.db"

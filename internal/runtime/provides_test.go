@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // MG-4（X-3，B6）：NewServices 停止顺序不变量的结构断言。背景：lynx 把
 // 每个服务登记为 oklog/run actor，关停时 run.Group **按注册顺序**逐个

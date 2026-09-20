@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // Console 静态托管（T2.21）：gateway 在 /ui/ 前缀托管 Console SPA 构建产物
 // （console.static_dir 指向 console/dist 时启用）。鉴权豁免**精确到 /ui/

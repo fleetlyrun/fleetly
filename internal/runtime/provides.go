@@ -1,4 +1,4 @@
-package main
+package runtime
 
 import (
 	"context"
@@ -79,7 +79,7 @@ func NewConfig(app lynx.App) (*AppConfig, error) {
 		return nil, err
 	}
 	if c.Addr == "" {
-		c.Addr = defaultHTTPAddr
+		c.Addr = DefaultHTTPAddr
 	}
 	if c.GRPC.Addr == "" {
 		c.GRPC.Addr = defaultGRPCAddr
@@ -180,9 +180,9 @@ func NewBuilder(cfg *AppConfig, st *state.Store, dc *substrate.Client, dm build.
 // NewBackupManager 构建状态备份管理器（T2.22：热备快照 + 回读校验 +
 // manifest/台账 + 每日循环；backup.* 配置节，dir 缺省回落数据根下 backups/
 // ——主密钥分离性由构造期 fail-fast 守卫）。
-func NewBackupManager(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets.Box) (*statebackup.Manager, error) {
+func NewBackupManager(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets.Box, version Version) (*statebackup.Manager, error) {
 	return statebackup.NewManager(cfg.BackupSettings(), cfg.BackupRoot(), sb.Path(),
-		version, st, app.Logger())
+		string(version), st, app.Logger())
 }
 
 // NewBuildQueue 构建构建队列调度器（信号量并发上限 + builds 行扫描认领 +
@@ -308,7 +308,7 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // ——组件集与装配壳同语义如实上报恒健康）。备份组件（T2.22）的检查器 =
 // statebackup.Manager.CheckHealth：无 verified 备份 / 最近一次 verify 失败
 // → 不健康（红色告警面：台账 failed 行 + backup.failed 审计 + 此组件）。
-func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager) *api.SystemService {
+func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -319,7 +319,7 @@ func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observe
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
 	}
-	return api.NewSystemService(version, st, components, ing).WithBackupManager(bm)
+	return api.NewSystemService(string(version), st, components, ing).WithBackupManager(bm)
 }
 
 // NewDomainsService 构造域名台账/验证面服务。

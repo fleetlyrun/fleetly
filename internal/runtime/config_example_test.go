@@ -1,4 +1,4 @@
-package main
+package runtime
 
 import (
 	"os"
@@ -107,7 +107,7 @@ func TestConfigExampleKeysSubsetOfAppConfig(t *testing.T) {
 	}
 	sort.Strings(unknown)
 	if len(unknown) > 0 {
-		t.Errorf("config-example.yaml contains keys not supported by AppConfig (typo, or the key was renamed/removed without updating the example; single source of truth for the key set = cmd/fleetlyd/config.go):\n  %s",
+		t.Errorf("config-example.yaml contains keys not supported by AppConfig (typo, or the key was renamed/removed without updating the example; single source of truth for the key set = internal/runtime/config.go):\n  %s",
 			strings.Join(unknown, "\n  "))
 	}
 

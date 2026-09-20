@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // 日志管线服务的 lynx.Service 装配壳（T2.20）：Start 阶段进入采集主循环
 //（扫描 active apps 受管服务 → 轮询 docker service logs → 脱敏 → ring +

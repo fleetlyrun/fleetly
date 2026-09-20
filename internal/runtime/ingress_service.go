@@ -1,4 +1,4 @@
-package main
+package runtime
 
 // ingress 服务的 lynx.Service 装配壳（T2.15/T2.16）：配置端点（独立内部
 // 端口——取舍见 internal/ingress/provider.go）+ Traefik 收敛/续期扫描
