@@ -12,8 +12,8 @@
 | 2026-09-17 | [stateful 放置（节点约束）](design/2026-09-17-stateful-placement.md) | 已实现（v0.1 单节点切面） | 意图/绑定/执行三层、有卷自动钉住、平台节点 ID 为锚、数据安全前哨、人工 rebind、drain 维护语义 |
 | 2026-09-17 | [控制面状态模型](design/2026-09-17-state-model.md) | 已实现（v0.1 切面） | 权威/派生缓存/实时直读三层、最小 label 集、孤儿保护、备份等序与 L1/L2 恢复、一键导出 |
 | 2026-09-20 | [评审遗留问题完整解决方案（S13-S20）](design/2026-09-20-remediation-complete.md) | 已实施 | [架构评审](reports/2026-09-19-architecture-review.md) 遗留项的决策完备方案：H9 路由撤销通道（noop@internal 兜底）、H15 双轨验签（openssl 兼容轨）、类 A-D 机制收口（出站出口/契约门禁/超时闭环）、S18-S20 中低严重度分波次方案与机制验收；2026-09-20 全部落地 |
-| 2026-09-20 | [E1 多节点包专项设计](design/2026-09-20-multi-node.md) | 草案（待裁决轮） | 拓扑与组件面（worker 零安装物）、平台三子域与安装项、join 向导（端口矩阵+token 自动 rotate）、8423 TLS 配置通道、证书内联统一、zot 部署器与镜像管线、placement 多节点三因子、节点锚定 duty、restic 迁移+rebind、HA 边界诚实口径；D-MN-1~14（4 项 ⚖️）；9 票据 + 三断言验收 |
-| 2026-09-20 | [E4 数据库托管专项设计](design/2026-09-20-managed-databases.md) | 草案（待裁决轮） | 库实例=app 形态（kind=db_instances，EnterPhase/队列/卷/审计全复用）、内置模板注册表、V2-5 共享网络时序、凭据 source=system 注入与轮换（FZ-1/R5）、备份恢复适配器（pg_dump/RDB + db_backups 台账）、secrets 全 app 开放（external-only）；D-DB-1~11（3 项 ⚖️）；含 D-REL-9 回滚 env 语义修正项（D-DB-11） |
+| 2026-09-20 | [E1 多节点包专项设计](design/2026-09-20-multi-node.md) | 已裁决（方案冻结） | 拓扑与组件面（worker 零安装物）、平台三子域与安装项、join 向导（端口矩阵+token 自动 rotate）、8423 TLS 配置通道、证书内联统一、zot 部署器与镜像管线（base_domain 配置即部署）、placement 多节点三因子、节点锚定 duty、restic 迁移+rebind、HA 边界诚实口径；D-MN-1~14 裁决轮全落定；9 票据 + 三断言验收 |
+| 2026-09-20 | [E4 数据库托管专项设计](design/2026-09-20-managed-databases.md) | 已裁决（方案冻结） | 库实例=**独立一等资源**（D-DB-1 用户终裁：自有表/API/七态生命周期 + EnterDbPhase 单写点；组件级复用放置/卷/substrate/secret/审计/备份）、内置模板注册表、V2-5 共享网络、凭据 source=system 注入与轮换（FZ-1/R5）、备份恢复适配器（pg_dump/RDB + db_backups 台账）、secrets 全 app 开放（external-only）；D-DB-1~11 裁决轮全落定；含 D-REL-9 回滚 env 语义修正（D-DB-11，已回写发布专项） |
 
 ## 调研报告（docs/research/）
 

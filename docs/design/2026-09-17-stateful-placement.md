@@ -48,7 +48,7 @@ services:
 |---|---|
 | `GET /v1/apps/{app}/placement` | source/node/state/reason/volumes |
 | `PUT /v1/apps/{app}/placement` | `{node:"srv-01"\|null, dataAck:"restored"\|"discarded", confirm}`；换点 = 破坏性 |
-| `GET /v1/nodes` | 只读节点列表（含平台 ID/显示名/状态/已钉应用）；变更用 `docker node` |
+| `GET /v1/nodes` | 只读节点列表（含平台 ID/显示名/状态/已钉应用）；变更用 `docker node`〔2026-09-20 E1 设计 D-MN-9 裁决：实际落地复用既有 `GET /v1/system/nodes`（SystemService.ListNodes + NodeView 增补 pinned_app_ids），本行路径作废——见 [多节点专项设计](2026-09-20-multi-node.md)〕 |
 | `GET /v1/volumes` | 卷与孤儿清单（删除指引到节点上手动执行） |
 
 ### 2.4 状态模型增量（SQLite，只加不减）

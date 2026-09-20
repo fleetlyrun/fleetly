@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案（待裁决轮） | 2026-09-20 | [v0.2 规划 §2 W4 / §5 E4 行 / §3 V2-5、V2-2](../plan/2026-09-20-v0.2-plan.md)；[架构 §2.3/§2.4 应用模型数据库行 / §4.3 v0.2 路线](2026-09-17-architecture.md)；[发布专项 §2.4 快照与回滚](2026-09-17-release-semantics.md)；[放置专项（卷钉住复用）](2026-09-17-stateful-placement.md)；[状态模型专项（表/台账纪律）](2026-09-17-state-model.md)；[zane-ops 调研 R5（generate_* 先例）](../research/2026-09-20-zane-ops-comparison.md)；[v0.1 冻结清单 FZ-1（source=system）](../plan/2026-09-17-v0.1-scope-freeze.md)；现状代码：internal/envlayer、internal/secrets、internal/state/{volume,env,apps,deployments}.go、internal/compose/validate.go、internal/engine/{ports,planner,rollback}.go、internal/naming |
+| 已裁决（方案冻结，2026-09-20；D-DB-1 用户终裁为独立资源类型） | 2026-09-20 | [v0.2 规划 §2 W4 / §5 E4 行 / §3 V2-5、V2-2](../plan/2026-09-20-v0.2-plan.md)；[架构 §2.3/§2.4 应用模型数据库行 / §4.3 v0.2 路线](2026-09-17-architecture.md)；[发布专项 §2.4 快照与回滚](2026-09-17-release-semantics.md)；[放置专项（卷钉住复用）](2026-09-17-stateful-placement.md)；[状态模型专项（表/台账纪律）](2026-09-17-state-model.md)；[zane-ops 调研 R5（generate_* 先例）](../research/2026-09-20-zane-ops-comparison.md)；[v0.1 冻结清单 FZ-1（source=system）](../plan/2026-09-17-v0.1-scope-freeze.md)；现状代码：internal/envlayer、internal/secrets、internal/state/{volume,env,apps,deployments}.go、internal/compose/validate.go、internal/engine/{ports,planner,rollback}.go、internal/naming |
 
 ## 1. 现状与问题
 
@@ -24,24 +24,66 @@ v0.1 收口后，「托管数据服务机制」（架构 §1.2/§2.4：模板 + 
 
 ## 2. 目标设计
 
-### 2.1 资源模型：库实例 = app 的一种形态
+### 2.1 资源模型：库实例 = 独立一等资源（D-DB-1 用户终裁）
 
-**库实例（database instance，待入术语表）是 app 资源的一个形态**：apps 表加 `kind` 列（`app` | `database`），库专属明细落新表 `db_instances`（模板、镜像 digest、设置），模板渲染产物作为「平台生成的 compose.Spec」走**既有**部署管线。状态机（`state.EnterPhase` 单写点）、per-app 部署互斥队列、放置绑定、卷注册表（`RegisterAppVolume`）、漂移检测、审计、tombstone 删除（`deleting → deleted`、卷默认保留转 orphaned）全部照用，零第二实现。
+**库实例（database instance，待入术语表）是独立一等资源**：自有表 `db_instances`、自有 API（`/v1/databases`）、自有生命周期状态机——不复用 apps 表、不产生 deployments/revisions、不走部署管线。模板渲染产物 = 平台受管的 Swarm 服务形态（ServiceSpec 投影），由库专属收敛器（provisioner）落地，不进 compose 期望态。
 
 ```
-用户/API                          平台内部                        既有机制（照用）
-CreateDatabase ──→ app 行(kind=database) + db_instances 行
-                 + 凭据生成(env_vars, source=system)
-                 ──→ 模板渲染 → compose.Spec ──→ 部署队列/EnterPhase/健康门/观察窗
-                                              ──→ 放置绑定 + 卷注册(volume.created)
-                                              ──→ Swarm service（fleetly-<db>-<service>）
-引用 app 部署 ──→ label 解析 → db_references 倒排 + system env 物化 + 网络挂载
+用户/API                                平台内部                              复用组件（包级，不依赖 app 形态）
+CreateDatabase ──→ db_instances 行(state=provisioning) + 凭据生成(密文列)
+                 ──→ 模板渲染 → ServiceSpec 投影 ──→ 放置选点/前哨(internal/placement)
+                                                 ──→ 卷登记(volumes, owner 泛化)
+                                                 ──→ substrate 服务原语(NetworkEnsure/Create/Update)
+                                                 ──→ 健康门(pg_isready/redis-cli ping) → ready
+引用 app 部署 ──→ label 解析 → db_references 倒排 + system env 物化 + 网络挂载（app 侧既有部署管线）
 ```
 
-- **deployments/revisions 复用**：库实例每次部署（创建/升级/设置变更/resume）产生正常 deployment；revision = 模板渲染快照（`source_kind=template`）——**库升级的回滚 = 既有单层重放**（回退到旧 digest 渲染），不新增机制。
-- **UI/CLI 面**：`/v1/databases` 独立资源面（list/get/create/delete/suspend/resume/settings/rotate/backup/restore）；apps 列表以 kind 徽标并集展示。CLI `fleetly databases <verb>`。API-first 铁律：REST 先行，Console/CLI 为客户端。
+**生命周期状态集（7 态）与转移表**（主状态承载可用性与生命周期；升级/备份/恢复/轮换是操作，不换主状态，见 §2.3）：
+
+| from | to | 触发 | 事件 |
+|---|---|---|---|
+| — | provisioning | CreateDatabase 受理（渲染模板、建绑定/卷/服务） | db.provision_started |
+| provisioning | ready | 健康门通过 | db.ready |
+| provisioning | failed | 收敛失败（健康门超时/镜像不可得/引擎错误）；保留现场（服务与卷不删） | db.provision_failed |
+| failed | provisioning | 显式重试（retry） | db.provision_started |
+| ready | degraded | 就绪后不健康（健康探测失败/任务崩溃循环，Swarm 自愈观测中） | db.degraded |
+| degraded | ready | 恢复（健康探测通过） | db.recovered |
+| ready / degraded | paused | Suspend（scale 0，保留服务与卷） | db.suspended |
+| paused | provisioning | Resume（重收敛） | db.resumed |
+| ready / degraded / paused / failed | deleting | Delete 受理（引用守卫 `E_DB_REFERENCED` 通过后；tombstone 第一拍） | db.delete_started |
+| deleting | deleted | reap 完成（受管对象移除；卷按选择保留转 orphaned 或显式删除） | db.deleted |
+
+- `provisioning` 兼作「重收敛态」：创建、resume、retry 共用（进入即重走服务收敛 + 健康门）；「created」不单设——受理即 provisioning。
+- `degraded` 与 `failed` 的分界：degraded = 在役不健康、自愈可期（无平台收敛动作失败）；failed = 平台收敛彻底失败、需显式 retry/人工。
+- `deleting` 无失败出边：reap duty 幂等重试直至完成（对齐 app tombstone 纪律）；卷数据永不随状态机自动删除。
+- 同实例操作互斥 = 状态机前置态前哨 + CAS（§2.3 单写点纪律），不建部署队列副本。
+
+**组件级复用清单**（包级组件，与 app 形态解耦，独立资源下照用）：
+
+| 组件 | 复用方式 |
+|---|---|
+| 放置绑定（internal/placement 选点决策/前哨 + runtime_node_refs 节点锚，D16） | 绑定内嵌 `db_instances.platform_node_id`（**不写 placements 表**——该表以 app_id 为主键）；有卷自动钉住、节点失联 → degraded/blocked 可见态同款语义 |
+| 卷注册表（volumes + 登记语义） | 表归属泛化（owner_kind ∈ {app, database}，§5.4 迁移①）后照用：数据诞生点钉住/orphaned/discarded/命名防代际全复用 |
+| substrate 服务原语（NetworkEnsure/ServiceCreate/Update/Inspect/TaskList） | 库服务即受管 Swarm service，desired-hash label 纪律照用；漂移检测默认开、收敛 per-instance opt-in（D11 口径沿用） |
+| secret 管道（age Box + SwarmSecretRef + SecretMount 注入） | 库引擎凭据经同管道投递（D-DB-10）；用户 app secrets 开放同管道（§2.7） |
+| 审计（fail-closed 同事务） | db.* 动作词表照用既有审计面 |
+| 备份基础设施（E3 restic/S3/RustFS + E5 调度核） | §2.6 全节 |
+| naming（唯一定义点纪律） | 新增库族公式（`fleetly-db-<name>-*` 前缀族，§2.4/§5.4）——新增函数非改既有公式 |
+
+**明确不复制的东西**（领域分界，D-DB-1 终裁的必然推论）：
+
+| 不复制 | 替代 |
+|---|---|
+| 部署队列（per-app 互斥 + queued 扫描） | 状态机前置态前哨 + CAS 天然互斥（操作各自声明合法前置态，并发第二笔冲突 409，§2.3） |
+| EnterPhase / deployments 表 | 库自有单写点 `EnterDbPhase`（同款纪律：同事务转移校验 + CAS + 事件，§2.3） |
+| 观察窗 / revision 快照重放回滚 | 库升级 = **受控重建 + 备份门**（§2.2）：升级前强制 pre_upgrade 备份且 verify 通过才继续；失败 = digest 归位（回写旧值重建），非版本重放 |
+| 构建管线 / compose 解析 | 模板渲染器（平台受管 ServiceSpec 投影，无用户 compose） |
+
+**名字空间独立**：库对象命名走 `fleetly-db-<name>-*` 前缀族（服务/网络/卷/secret，§2.4/§5.4），与 app 的 `fleetly-<app>-*` 对象空间解耦——app 与库实例**可重名**（对象不撞、API 路径分立 `/v1/apps` 与 `/v1/databases`）；引用方 env 前缀 `FLEETLY_DB_<NAME>` 的唯一性由 `E_DB_ENV_PREFIX_CONFLICT` 守卫（同 app 引用撞前缀才冲突）。独立前缀使跨资源名冲突不存在，零新增「名字冲突」错误码。
+
+- **UI/CLI 面**：`/v1/databases` 独立资源面（create/get/list/delete/suspend/resume/settings/upgrade/rotate/backup/restore）；Console 库实例为一等页面。CLI `fleetly databases <verb>`。API-first 铁律：REST 先行，Console/CLI 为客户端。
 - **审计面**：库操作全部入审计（`db.*` 动作词表见 §5），与业务写同事务 fail-closed 照用。
-- **术语对齐**：库实例不是「服务」不是「容器」；模板（template）= 平台内置的引擎定义；引用（reference）= 引用方 app 服务对库实例的声明关系。均标注待入 UBIQUITOUS_LANGUAGE。
+- **术语对齐**：库实例不是「服务」不是「容器」更不是 app；模板（template）= 平台内置的引擎定义；引用（reference）= 引用方 app 服务对库实例的声明关系；provisioning = 库收敛（创建/恢复/重试共用的收敛态）。均标注待入 UBIQUITOUS_LANGUAGE。
 
 ### 2.2 模板机制
 
@@ -58,32 +100,38 @@ CreateDatabase ──→ app 行(kind=database) + db_instances 行
 | 默认限额 | cpus 1.0 / memory 1Gi（创建时可覆盖） | cpus 0.5 / memory 256Mi |
 | 连接串渲染 | `postgres://fleetly:<pw>@<实例名>:5432/<dbname>` | `redis://:<pw>@<实例名>:6379/0` |
 
-- **升级语义**：平台 release 携带新 digest（minor/patch）→ 既有实例**不自动变**；`databases upgrade` 逐实例 opt-in（一次正常部署，revision 重放可回退）。平台检测到可升级 → `db.upgrade_available` 事件。主版本升级（16→17）与引擎切换不做（§7）。
+- **升级语义（受控重建 + 备份门）**：平台 release 携带新 digest（minor/patch）→ 既有实例**不自动变**；`databases upgrade` 逐实例 opt-in，流程 = ①自动 `pre_upgrade` 备份且 verify 通过才继续（失败 → `E_DB_BACKUP_FAILED` 中止，实例不动）②spec 换新 digest 受控重建（有卷强制 stop-first，停机窗口如实累计）③健康门 ④失败 = digest 归位（回写旧值重建）+ `db.upgrade_failed` + 状态落 degraded——**不是 revision 重放**（库无 revision/部署记录，D-DB-1 终裁推论）。平台检测到可升级 → `db.upgrade_available` 事件。主版本升级（16→17）与引擎切换不做（§7）。
 - **镜像受管**：用户不可改库镜像/引擎参数（设置面只有限额与备份计划）；违规 → `E_DB_TEMPLATE_UNSUPPORTED`。
 - 新引擎接入成本 = 一个模板条目 + 一个 `EngineAdapter`（§2.6）+ 备份镜像工具，与架构 §4.3「各引擎备份/恢复适配器是主要成本」一致；MySQL/Mongo 后置按需求排序。
 
-### 2.3 生命周期
+### 2.3 生命周期与操作
 
-| 操作 | 语义 | 备注 |
+**单写点纪律（与 EnterPhase 同款，T0-V2.2 纪律延伸）**：库状态机全部转换收敛 `state.EnterDbPhase` 单写点——同一事务内完成转移表校验（§2.1 转移表为唯一真源，穷举测试钉死）+ CAS（`WHERE state = <from>`）+ 字段写 + 事件；收敛器/引擎侧裸 Status 写清零。**并发操作互斥由前置态前哨 + CAS 结构性成立**：每笔操作声明合法前置态（下表），非法前置态或 CAS 失败 → 409 复用 `E_STATE_VERSION_CONFLICT`（context 带 current_state 与合法前置态清单——同族乐观冲突语义，零新增码，D-DB-8）；不建部署队列副本。
+
+| 操作 | 合法前置态 | 语义 |
 |---|---|---|
-| 创建 | app 行 + db_instances + 凭据生成 + 模板渲染部署 | 名字与 app 共享唯一名字空间（`ErrAppExists` 既有语义；DNS 名唯一性由同名字空间保证） |
-| 设置变更 | 限额/备份计划 → settings 更新；限额变更触发一次部署 | desired-hash 变化自然进漂移面 |
-| 暂停 | settings.suspended=true → 一次部署置 replicas=0（保留 service 与卷，同「首发失败 scale=0」形态） | 事件 `db.suspended`；引用方连不上是诚实暴露（错误信息即产品） |
-| 恢复 | suspended=false → 正常重部署 | 事件 `db.resumed` |
-| 升级 | digest 更新 + 一次部署 | §2.2 |
-| 删除 | tombstone 两拍照用；**有引用禁删**（`E_DB_REFERENCED` 409 + 引用清单）；卷默认保留转 orphaned，显式 `--delete-volumes` 才删数据（复用卷语义） | reap 移除受管 service 与共享网络 |
+| 创建 | — | db_instances 行（provisioning）+ 凭据生成（密文列）+ 收敛器：模板渲染 → 选点/卷登记/服务创建 → 健康门 |
+| 重试 retry | failed | → provisioning 重收敛（现场保留：服务与卷不删） |
+| 设置变更 | 任意非终态 | 限额/备份计划 → settings 更新；限额变更 = spec 重建（无备份门——无数据面变更）；主状态不变 |
+| 暂停 | ready / degraded | → paused（scale 0，保留服务与卷）；引用方连不上是诚实暴露（错误信息即产品） |
+| 恢复 | paused | → provisioning（重收敛）→ ready / degraded |
+| 升级 | ready / degraded / paused | 受控重建 + 备份门（§2.2）；主状态不变（事件承载）；paused 下仅换 spec 不重启，收敛推迟到 resume |
+| 轮换 | ready / degraded / paused | §2.5；破坏性两段式确认 |
+| 备份 | ready / degraded | §2.6 |
+| 恢复 | ready / degraded | 原地重放（confirm 破坏性确认；§2.6） |
+| 删除 | ready / degraded / paused / failed | 引用守卫：`db_references` 非空 → `E_DB_REFERENCED`（409，context 列出引用 app/服务清单）——与放置前哨（卷-节点 409）同型的数据安全前哨；通过后 → deleting（tombstone 第一拍）→ reap duty 幂等清理受管服务与共享网络 → deleted（名字保留期占用）；卷默认保留转 orphaned，显式 `--delete-volumes` 才删数据（卷语义复用） |
 
 ### 2.4 跨 app 网络：平台牵线共享网络（V2-5 落地细则）
 
-**库实例的「app 专属网络」即共享网络**：`fleetly-<db>-net`（复用 `naming.NetworkName`，零新命名公式）。库服务挂该网络，**别名 = 库实例名**（而非模板服务名——防两个 PG 实例的通用别名 `postgres` 在共享网络互撞 DNS；由模板渲染在 planner 层供给，naming 包不改）。引用方服务由平台在**其部署时**附加挂载到该网络（无附加别名，以 Swarm 服务名可达）。
+**库实例专属共享网络**：`fleetly-db-<name>-net`（naming 新增库族公式 `DBNetworkName`——独立资源独立前缀，新增函数非改既有公式；库对象名族 `fleetly-db-<name>-*` 与 app 的 `fleetly-<app>-*` 解耦，见 §2.1 名字空间独立）。库服务（`fleetly-db-<name>-<模板服务名>`）挂该网络，**别名 = 库实例名**（而非模板服务名——防两个 PG 实例的通用别名 `postgres` 在共享网络互撞 DNS；模板渲染层供给）。引用方服务由平台在**其部署时**附加挂载到该网络（无附加别名，以 Swarm 服务名可达）。
 
 | 时序点 | 行为 |
 |---|---|
-| 库首次部署 | `NetworkEnsure(fleetly-<db>-net)`（既有幂等创建，managed label） |
-| 引用 app 部署（plan 期） | 解析服务 label `fleetly.databases: "pg-prod"`（逗号分隔，多库可引）→ 逐名校验：app 存在、kind=database、lifecycle=active，否则 `E_DB_NOT_FOUND`（404，附候选清单）；**不要求 running**（建库与引用部署可并行；库未就绪/已暂停 → 计划警告 `W_DB_REFERENCE_NOT_READY`，不阻塞） |
+| 库收敛（provisioning） | `NetworkEnsure(fleetly-db-<name>-net)`（既有幂等创建，managed label） |
+| 引用 app 部署（plan 期） | 解析服务 label `fleetly.databases: "pg-prod"`（逗号分隔，多库可引）→ 逐名校验：`db_instances` 存在且 state ∉ {deleting, deleted}，否则 `E_DB_NOT_FOUND`（404，附候选清单）；**不要求 ready**（建库与引用部署可并行；未就绪/已暂停/failed → 计划警告 `W_DB_REFERENCE_NOT_READY`，不阻塞） |
 | 引用 app 部署（plan 期） | env 前缀计算：实例名 `-`→`_` 大写；同 app 引用两个前缀撞名（`pg-prod` vs `pg_prod`）→ `E_DB_ENV_PREFIX_CONFLICT`（422） |
 | 引用 app 部署（releasing 前） | `NetworkEnsure` 全部附加网络（既有调用面扩展为多网络）→ ServiceSpec.Networks += 共享网络（desired-hash 含网络，后续手动摘挂进漂移面） |
-| 引用关系登记 | planner 同事务维护 `db_references(db_app_id, app_id, service, env_prefix)` 倒排索引——**可从各 app 当前 revision 重建的派生登记**（compose 仍是唯一期望态真源）；label 移除并部署 = 行删除；引用 app 删除 = 行级联清理 |
+| 引用关系登记 | planner 同事务维护 `db_references(db_id, app_id, service, env_prefix)` 倒排索引——**可从各 app 当前 revision 重建的派生登记**（compose 仍是引用方唯一期望态真源）；label 移除并部署 = 行删除；引用 app 删除 = 行级联清理 |
 | 库删除（前置哨兵） | `db_references` 非空 → `E_DB_REFERENCED`（409，context 列出引用 app/服务清单）——与放置前哨（卷-节点 409）同型的数据安全前哨 |
 | 库删除（reap） | 引用清零后删除受管 service 与共享网络 |
 
@@ -91,7 +139,7 @@ CreateDatabase ──→ app 行(kind=database) + db_instances 行
 
 ### 2.5 凭据与连接串注入（FZ-1）
 
-- **生成时机**：创建库实例时一次（模板凭据规格），落 **DB 实例自身** 的 `env_vars`（source=system，key=`PASSWORD`，age 密文——复用 env 存储与加解密边界，不建新凭据表）。
+- **生成时机**：创建库实例时一次（模板凭据规格），落 `db_instances.credential_cipher`（age 密文列——独立资源自有存储；USER/DATABASE 由实例名与模板确定性推导，不落库）。引用方的物化行仍是 app 的 `env_vars`（source=system）——app 侧存储形态不变。
 - **注入形态**：引用方 app 部署时，planner 把连接信息**物化**为引用 app 的 `env_vars` 行（source=system，走既有 upsert → pending → 本次部署合并消费 → 成功后提升的完整链路；值变化 → 行回 pending → 随下次部署生效——与 S16-C4 天然一致）。键集（模板渲染定义）：
 
 | 引擎 | 物化键（`<NAME>` = 实例名大写下划线形） |
@@ -101,7 +149,7 @@ CreateDatabase ──→ app 行(kind=database) + db_instances 行
 
   `FLEETLY_*` 前缀为平台保留名字空间：用户 `SetEnv` 撞前缀 → `E_ENV_KEY_RESERVED`（422；同时防 system 行被用户 upsert 劫持 source——现状 `SetAppEnv` 会改写 source，此守卫是必要补丁）。
 - **可见性**：只读展示照既有 env 投影（`EnvVarView.source=system` 已支持；Console 库详情页展示连接信息，密码默认脱敏、显式展开；`fleetly databases show` 同级 admin 面）——对齐 R5 先例（生成、存平台层、对用户只读）。
-- **轮换**：**仅手动**（`databases rotate`，破坏性操作两段式确认）。流程按引擎经适配器钩子：PG = 一次性 job 执行 `ALTER USER fleetly WITH PASSWORD`（热轮换，库不重启）；Redis = 更新值 + 库实例重启（requirepass 重读）。随后：DB 侧凭据行更新 → 逐引用 app 的 system 行更新为 pending → **平台自动触发全部引用 app 重部署**（各自走正常部署队列；不重部署 = 旧密码失效即断连，无更诚实选项）→ `db.credentials_rotated` 事件 + 审计。定期自动轮换不做（§7）。
+- **轮换**：**仅手动**（`databases rotate`，破坏性操作两段式确认）。流程按引擎经适配器钩子：PG = 一次性 job 执行 `ALTER USER fleetly WITH PASSWORD`（热轮换，库不重启）；Redis = 密文列更新 + 库实例受控重启（任务重建，requirepass 重读）。随后：逐引用 app 的 system 物化行更新为 pending → **平台自动触发全部引用 app 重部署**（各自走正常部署队列；不重部署 = 旧密码失效即断连，无更诚实选项）→ `db.credentials_rotated` 事件 + 审计。定期自动轮换不做（§7）。
 - **连接串格式**：引擎标准 URI（§2.2 表）；密码字符集 [a-zA-Z0-9] 免 percent-encode。
 
 ### 2.6 备份与恢复适配器（对接 E3）
@@ -141,38 +189,39 @@ type EngineAdapter interface {
 - **唯一来源 = 平台密钥库**：新表 `app_secrets(app_id, name, value_cipher age 密文, hash8, UNIQUE(app_id,name))`；`fleetly secrets set/list/rm` + proto SecretsService（Set/List/Remove）。**不提供值读回**（忘记即轮换——比 env GetEnv 的 admin 明文路径更严一档：secret 是更敏感类；hash8 供引用比对）。轮换 = 换 hash8 换 Swarm secret 名（`naming.SecretName` 既有设计）→ 引用进 desired-hash → 随下次部署换挂——与 `secrets.SwarmSecretRef` 注释「值轮换即换名换引用，轮换天然触发重部署」逐字兑现。
 - **compose 形态收窄开放**（受控子集只增方向）：顶层 `secrets:` 仅接受 `external: true` 形态；`file:`/`environment:` 来源拒绝（`E_COMPOSE_UNSUPPORTED`——**值不进 git 仓库**是硬边界）；服务级 `secrets:` 仅短语法或 `{source, target}`（uid/gid/mode 拒绝）。声明名在库中不存在 → 部署 preflight `E_SECRET_NOT_FOUND`（422）。`validate.go` 拒绝清单移除 secrets 两项 = C1 裁决预留口的显式解除（评审门禁，§6）。
 - **注入**：planner 经 `app_secrets` 构造 `SecretMount`（SecretName=`fleetly-<app>-<name>-<hash8>`、Target=`/run/secrets/<compose 名>`）——`engine.ServiceSpec.Secrets` 与 substrate 适配**零改动**（管道已就绪，§1 事实 2）。
-- 库实例引擎凭据同库存储（internal 行，source 标注 system），与用户 secret 同一加密与轮换纪律（§2.2/§2.5）。
+- 库实例引擎凭据存 `db_instances.credential_cipher`（§2.5），经同一 Swarm secret 管道投递（D-DB-10），与用户 secret 同一加密与轮换纪律。
 
 ## 3. 关键裁决表（D-DB-*）
 
 | # | 裁决 | 理由 | 被否方案 | 终裁 |
 |---|---|---|---|---|
-| D-DB-1 | 库实例 = **app 的一种形态**（apps.kind + db_instances 明细），状态机/队列/放置/卷/审计/tombstone 全复用 | EnterPhase 单写点与 per-app 互斥队列是刚花 T0-V2.2 收敛的资产；库与 app 共享「有卷 + 钉住 + 部署记录」本质；12-20 人日预算只容复用 | 独立资源类型（新表/新 API/新状态机）：第二套「有卷有放置的东西」概念，重复实现互斥队列与 EnterPhase 语义，违约轻单核与 D13 核心收敛 | ⚖️ 留用户终裁（影响 API/UI 长期面） |
-| D-DB-2 | 模板 = **平台内置 Go 注册表**，版本与镜像 digest 随平台 release 受管；实例升级逐个 opt-in、可 revision 重放回退 | 模板耦合备份适配器与凭据规格，是代码不是数据；热更模板 = 动态插件面（D13 禁）；版本偏斜产生未测组合；供应链受控（digest 门禁 R7） | compose 文件模板库热更（插件面 + 任意镜像引用的供应链面）；用户可控镜像（备份/健康门契约失守，Dokploy 式全开放被否） | ⚖️ 留用户终裁（镜像受管 vs 用户可控是产品口径） |
-| D-DB-3 | 凭据：创建时生成、age 存 env_vars(source=system)、引用方**物化** `FLEETLY_DB_<NAME>_{URL,HOST,PORT,USER,PASSWORD,DATABASE}` 行（Redis 无 USER/DATABASE）、只读展示、**仅手动轮换**（自动触发引用 app 重部署） | 物化使 ListEnv/revision/desired-hash/pending 语义零改动兑现（envlayer 留位即为此设计）；R5 先例同构；轮换后不重部署引用方 = 必断连，自动化是唯一诚实选项 | 运行时合成不物化（投影 API 与快照链路全要另造）；定期轮换（无告警面配套前是定时炸弹） | ⚖️ 留用户终裁（键名前缀与键集是对外契约，改名窗口在落地前） |
+| D-DB-1 | 库实例 = **独立资源类型**：自有表 `db_instances`、自有 API `/v1/databases`、自有生命周期状态机（§2.1 七态 + 转移表）；组件级复用（放置/卷/substrate/secret/审计/备份/naming），不复制部署管线/EnterPhase/观察窗/回滚 | **用户终裁（2026-09-20）：领域清晰度优先**——库运维语义（provision/暂停/升级/备份门）与 app 发布语义（构建/滚动发布/观察窗/回滚）本质不同，独立状态机远简于部署管线，UI/CLI/API 面以库为一等公民 | app 形态（apps.kind + db_instances 明细）：模型复用最大化（EnterPhase/队列/放置/卷/审计/tombstone 全复用，12-20 人日预算最省），但领域混杂：库运维语义混入 app 生命周期，UI/CLI/API 面被迫走 app 抽象 | 已裁（用户终裁 2026-09-20） |
+| D-DB-2 | 模板 = **平台内置 Go 注册表**，版本与镜像 digest 随平台 release 受管；实例升级逐个 opt-in、失败 digest 归位回退（§2.2 受控重建 + 备份门） | 模板耦合备份适配器与凭据规格，是代码不是数据；热更模板 = 动态插件面（D13 禁）；版本偏斜产生未测组合；供应链受控（digest 门禁 R7） | compose 文件模板库热更（插件面 + 任意镜像引用的供应链面）；用户可控镜像（备份/健康门契约失守，Dokploy 式全开放被否） | 已裁（用户确认 2026-09-20，按原案：内置 Go 模板注册表、镜像受管） |
+| D-DB-3 | 凭据：创建时生成、age 存 env_vars(source=system)、引用方**物化** `FLEETLY_DB_<NAME>_{URL,HOST,PORT,USER,PASSWORD,DATABASE}` 行（Redis 无 USER/DATABASE）、只读展示、**仅手动轮换**（自动触发引用 app 重部署） | 物化使 ListEnv/revision/desired-hash/pending 语义零改动兑现（envlayer 留位即为此设计）；R5 先例同构；轮换后不重部署引用方 = 必断连，自动化是唯一诚实选项 | 运行时合成不物化（投影 API 与快照链路全要另造）；定期轮换（无告警面配套前是定时炸弹） | 已裁（用户确认 2026-09-20，键名 FLEETLY_DB_<NAME>_* 定案） |
 | D-DB-4 | 引用声明 = compose 服务 label `fleetly.databases`（逗号分隔） | 单一真源 = compose（期望态治理规则）；与 fleetly.domains 同载体同风格；plan/diff 天然可见 | API 旁路注册（并行期望态，违反「不建与 compose 并行的期望态」纪律——cron 同款裁决） | 已裁 |
 | D-DB-5 | 网络时序：库网络即共享网络、别名 = 实例名；引用前哨只查存在性（`E_DB_NOT_FOUND`）不查就绪（`W_DB_REFERENCE_NOT_READY` 警告）；**有引用禁删**（`E_DB_REFERENCED` 409） | 建库/引用可并行（bootstrap 顺序是用户事务，警告比阻塞诚实）；数据安全前哨与卷-节点 409 同型 | 就绪门禁（部署耦合库健康，级联阻塞）；允许删库留悬空引用（数据事故面） | 已裁 |
 | D-DB-6 | 备份：每引擎逻辑备份（pg_dump -Fc / RDB 流式）→ restic 同基础设施独立命名空间；**独立 `db_backups` 台账** + 回读校验；恢复 = 原地 + confirm；跨节点 DR 走 runbook | 见 §2.6 表（各行被否方案已列） | restic 卷快照、并入 state_backups、控制面中转、一键跨实例恢复 | 已裁 |
 | D-DB-7 | secrets 开放面 = **所有 app**，external-only 形态，平台密钥库为唯一来源，无值读回 | 机制 app 无关；file: 来源把密钥耦合进仓库；读回面扩大敏感面（忘记即轮换更安全） | 仅库实例开放（第二套语义）；file: 来源；GetSecret 明文读回 | 已裁 |
-| D-DB-8 | 错误码/事件：新增 9 码（§5）+ `db.*` 7 事件；生命周期事件**复用** `app.*`/`deployment.*` 既有族（subject 带 kind） | 只增纪律下最小新增面；库的部署成功/删除与 app 语义同构，双份事件是噪音 | 全部新族（码集膨胀）；全部复用 E_COMPOSE_*（域语义错位，误导排障） | 已裁 |
+| D-DB-8 | 错误码/事件：**错误码维持 9 码 + 1 警告（零新增）**；事件统一走自有 `db.*` 族（18 个，§5.3）= 生命周期转移事件 + 操作事件；状态机前置态/CAS 冲突复用 `E_STATE_VERSION_CONFLICT`（409，context 带 current_state 与合法前置态清单——同族乐观冲突语义） | D-DB-1 终裁（独立资源）后库无 app/deployment subject 可挂，生命周期事件必须自有族（2026-09-20 复核修订原裁「复用既有族」）；原案 7 个 db.* 事件全保留并补齐转移事件 | 复用 app.*/deployment.*（独立资源下 subject 错位、无载体）；为状态冲突新造码（E_STATE_VERSION_CONFLICT 已覆盖同族语义）；全部复用 E_COMPOSE_*（域语义错位） | 已裁（2026-09-20 复核修订） |
 | D-DB-9 | 库实例 = **用户 app 资源**，不计入 600MB 平台组件 idle 预算；默认限额 PG 1C/1Gi、Redis 0.5C/256Mi（创建可调） | 600MB 红线约束的是平台常驻组件（fleetlyd/Traefik/containerd/zot/VL/RustFS）；库是用户负载，与用户 app 同资源隔离与容量边界口径（§4.2 既有「构建与应用资源隔离」）；备份 job 为瞬态非常驻 | 库计入平台预算（把用户负载算进平台成本，口径失真）；无默认限额（单机雪邦面） | 已裁（口径确认，红线 1 复核通过：E4 零新增常驻组件） |
 | D-DB-10 | 库引擎凭据投递：Swarm secret 文件优先（PG `POSTGRES_PASSWORD_FILE` 原生支持）；Redis 走启动参数（spec 明文，与 env 同暴露类，文档明示） | 原生支持 _FILE 的引擎零成本硬化；Redis 无文件形态，硬造 wrapper 是过度设计 | 全 env（PG 有更好形态不用）；全 secret（Redis 需自造 wrapper） | 已裁 |
 | D-DB-11 | 回滚对 **source=system 行取当前值**（重放时按 key 从 env_vars 重读），不随 desired_spec 快照回放 | rollback.go 现状按密文快照整体回放合并 env——连接串含密码进快照后，轮换+回滚组合必回放旧密码断连，违反 D-REL-9；v0.1 靠「无密钥库」结构性豁免，E4 落地即失效 | 快照回放（断连事故）；轮换时改写历史快照（快照不可变纪律） | 已裁（对既有实现是**修正项**，随 E4 票据落地并回写发布专项 §2.4 一句限定） |
 
 ## 4. v0.2 切面与验收
 
-**主验收闭环**（v0.2 规划 E4 行原文口径）：建库 → app 引用连接串部署 → 备份恢复闭环。E4 对 E3 的依赖仅在备份步（第 6 步）；模板/生命周期/注入/secrets（1-5、7 步）不依赖 E3，W3 若滑动可先行。
+**主验收闭环**（v0.2 规划 E4 行原文口径）：建库 → app 引用连接串部署 → 备份恢复闭环。E4 对 E3 的依赖仅在备份步（第 6 步）；模板/生命周期/注入/secrets（1-5、7-8 步）不依赖 E3，W3 若滑动可先行。
 
 | 步 | 内容 | 验证方式 | 回滚路径 |
 |---|---|---|---|
-| 1 | 状态层迁移（apps.kind、db_instances、db_references、app_secrets、db_backups，只加法）+ `E_ENV_KEY_RESERVED` 守卫（SetAppEnv 拒 `FLEETLY_*` 用户写） | 迁移前后快照测试 + env 保留前缀负面测试 | 恢复快照（无 down migration，既有纪律） |
-| 2 | 模板注册表 + 渲染器（两模板全字段）+ EngineAdapter 接口 | 渲染确定性 golden 测试（同输入同 Spec 同 hash） | 纯新增包，移除即回零 |
-| 3 | 生命周期 API/CLI + 部署管线接入（渲染 Spec 进 planner；source_kind=template） | dind E2E：建 PG/Redis → healthy → 卷注册 → 钉住；suspend/resume | 删实例（卷默认保留） |
-| 4 | 引用与注入：label 解析、前缀冲突哨兵、db_references 维护、system env 物化、多网络 NetworkEnsure、`W_DB_REFERENCE_NOT_READY` | E2E：app 以 label 引用 → 部署 → 容器内以 URL 真连接读写 PG；删除守卫 409；**回滚后仍连通（D-DB-11 断言）** | label 移除 + 部署（引用与注入行随之清除） |
-| 5 | 轮换：rotate API + 适配器钩子 + 引用 app 自动重部署编排 | E2E：写入数据 → rotate → 引用 app 自动重部署 → 旧数据仍在且新连接成功 | 不可逆（审计 + 事件留痕；两段式确认） |
+| 1 | 状态层：volumes 归属泛化重建（owner_kind ∈ {app,database} + owner_id，00008 先例同型：建新→搬行→删旧→改名）+ `db_instances`（含状态机列与转移表）/`db_references`/`app_secrets`/`db_backups` 四新表 + `EnterDbPhase` 单写点 + `E_ENV_KEY_RESERVED` 守卫（SetAppEnv 拒 `FLEETLY_*` 用户写） | 迁移前后快照测试（既有 app 卷行零变化）+ 转移表穷举 + 非法转移拒写负面测试 + env 保留前缀负面测试 | 恢复快照（无 down migration，既有纪律） |
+| 2 | 模板注册表 + 渲染器（两模板全字段）+ EngineAdapter 接口 | 渲染确定性 golden 测试（同输入同 ServiceSpec 投影同 desired-hash） | 纯新增包，移除即回零 |
+| 3 | 生命周期 API/CLI + provision 收敛器（placement 选点/前哨、卷登记、substrate 服务创建、健康门 → ready；suspend/resume/retry；删除守卫 + reap duty） | dind E2E：建 PG/Redis → ready → 卷登记 + 钉住；suspend → paused → resume → ready；provision 失败注入 → failed → retry → ready | 删实例（卷默认保留）/恢复快照 |
+| 4 | 引用与注入：label 解析（查 db_instances）、前缀冲突哨兵、db_references 维护、system env 物化、多网络 NetworkEnsure、`W_DB_REFERENCE_NOT_READY` | E2E：app 以 label 引用 → 部署 → 容器内以 URL 真连接读写 PG；删除守卫 409；**引用方 app 回滚后仍连通（D-DB-11 断言）** | label 移除 + 部署（引用与物化行随之清除） |
+| 5 | 轮换：rotate API + 适配器钩子（凭据源 = credential_cipher）+ 引用 app 自动重部署编排 | E2E：写入数据 → rotate → 引用 app 自动重部署 → 旧数据仍在且新连接成功 | 不可逆（审计 + 事件留痕；两段式确认） |
 | 6 | 备份/恢复：dbtools 镜像（digest 钉定）+ 备份 job + db_backups 台账 + 调度核接入 + verify + 恢复 API（confirm） | E2E：写入行 → 备份 → verify=verified → 破坏性清空卷数据 → 恢复 → 行断言一致；失败路径红色告警；Redis 同型 | 恢复即逆操作；备份保留窗 prune |
-| 7 | secrets 开放：存储 + SecretsService + compose 校验收窄开放 + planner 注入 | E2E：external secret 声明 → /run/secrets 读到值；缺库 `E_SECRET_NOT_FOUND`；file: 拒绝；golden 白名单更新 | 拒绝清单还原（C1 形态） |
-| 8 | Console：库实例列表/详情（连接信息脱敏默认、备份列表、升级入口）+ secrets 页 | data-testid 锚点只增 + Playwright 冒烟扩展（沿用 W1 冒烟轨道） | 前端面独立，可单独回退 |
+| 7 | 升级：upgrade API（pre_upgrade 备份门 → digest 受控重建 → 健康门 → 失败 digest 归位）+ `db.upgrade_*` 事件 | E2E：升级成功路径；坏 digest 注入 → 归位旧版 → 状态回 degraded + `db.upgrade_failed`；备份门失败 → 实例不动 | digest 归位即内建回退 |
+| 8 | secrets 开放：存储 + SecretsService + compose 校验收窄开放 + planner 注入 | E2E：external secret 声明 → /run/secrets 读到值；缺库 `E_SECRET_NOT_FOUND`；file: 拒绝；golden 白名单更新 | 拒绝清单还原（C1 形态） |
+| 9 | Console：库实例列表/详情（连接信息脱敏默认、备份列表、升级入口）+ secrets 页 | data-testid 锚点只增 + Playwright 冒烟扩展（沿用 W1 冒烟轨道） | 前端面独立，可单独回退 |
 
 **横切验收**：600MB 复测确认平台组件无新增常驻（dbtools/restic job 为瞬态）；错误码/事件注册表 golden 快照更新过评审（只增门禁）；`buf breaking` 零破坏（新增文件与字段）；MCP 工具面预算核算（E4 相关读写工具 ≤30 预算内计入，E2 时点统一核算）。
 
@@ -191,13 +240,13 @@ service DatabaseService {
 service SecretsService { rpc SetSecret / ListSecrets / RemoveSecret }   // 无值读回
 ```
 
-`DatabaseView`：name、template、image_digest、status（复用部署派生态）、suspended、placement、volume、connection（脱敏投影 + 显式 reveal）、backup_plan。`app.*` 既有 View 加 `kind` 字段（proto 加字段零 breaking）。
+`DatabaseView`：name、template、image_digest、status（= 生命周期态，§2.1 状态集）、placement、volume、connection（脱敏投影 + 显式 reveal）、backup_plan、upgrade_available。apps 面零改动（独立资源，无 kind 字段耦合）。
 
 ### 5.2 错误码（注册表只增，9 码）
 
 | 码 | HTTP | 语义 |
 |---|---|---|
-| E_DB_NOT_FOUND | 404 | 引用/操作的目标库实例不存在或非 database 形态（附候选清单） |
+| E_DB_NOT_FOUND | 404 | 引用/操作的目标库实例不存在或已进入 deleting/deleted（附候选清单） |
 | E_DB_REFERENCED | 409 | 有引用 app 时禁删（附引用清单） |
 | E_DB_TEMPLATE_UNSUPPORTED | 400 | 模板 ID 未知 / 设置违反模板受管面 |
 | E_DB_ENV_PREFIX_CONFLICT | 422 | 同 app 引用的多库 env 前缀撞名 |
@@ -207,26 +256,33 @@ service SecretsService { rpc SetSecret / ListSecrets / RemoveSecret }   // 无�
 | E_SECRET_NOT_FOUND | 422 | compose 声明的 external secret 不在库（preflight） |
 | E_ENV_KEY_RESERVED | 422 | 用户写 `FLEETLY_*` 保留名字空间 |
 
-警告码：`W_DB_REFERENCE_NOT_READY`（引用的库未就绪/已暂停，计划警告不阻塞）。
+警告码：`W_DB_REFERENCE_NOT_READY`（引用的库未就绪/已暂停/failed，计划警告不阻塞）。状态机前置态/CAS 冲突复用既有 `E_STATE_VERSION_CONFLICT`（409，context 带 current_state 与合法前置态清单——同族乐观冲突语义；D-DB-8 复核后零新增码）。
 
-### 5.3 事件（7 个，只增）与审计
+### 5.3 事件（18 个，只增；D-DB-8 复核后统一自有族）与审计
 
-事件：`db.suspended`、`db.resumed`、`db.upgrade_available`、`db.backup_succeeded`、`db.backup_failed`、`db.restore_completed`、`db.credentials_rotated`。生命周期其余复用 `deployment.*`/`app.*`（subject=app:<id>，payload 带 kind=database）。审计动作：`db.create/delete/suspend/resume/upgrade/rotate/backup_trigger/restore`、`secret.set/removed`（human/ai_agent；system 类自动动作照「自动动作必入审计」纪律）。
+转移事件（`EnterDbPhase` 单写点随转换同事务落）：`db.provision_started`、`db.ready`、`db.provision_failed`、`db.degraded`、`db.recovered`、`db.suspended`、`db.resumed`、`db.delete_started`、`db.deleted`。操作事件（不换主状态）：`db.upgrade_available`、`db.upgrade_started`、`db.upgrade_finished`、`db.upgrade_failed`、`db.backup_succeeded`、`db.backup_failed`、`db.restore_completed`、`db.restore_failed`、`db.credentials_rotated`。不复用 `app.*`/`deployment.*`（独立资源无对应 subject）。审计动作：`db.create/retry/suspend/resume/upgrade/rotate/backup_trigger/restore/delete`、`secret.set/removed`（human/ai_agent；reap、digest 归位等 system 自动动作照「自动动作必入审计」纪律）。
 
-### 5.4 表与配置
+### 5.4 表、命名与配置
 
-迁移单条（只加法）：`apps.kind` 列 + `db_instances`、`db_references`、`app_secrets`、`db_backups` 四表（schema 见 §2 各节；db_backups 以 restic snapshot ID 寻址，verify_status 三态与 state_backups 同款）。配置键：`databases.backup_interval_hours=24`、`databases.backup_keep=7`、`databases.backup_hour_utc=3`（平台缺省，实例可覆盖）。CLI：`fleetly databases <create|get|list|delete|suspend|resume|upgrade|rotate|backup|restore|show>`、`fleetly secrets <set|list|rm>`。
+迁移两条（只加法纪律；重建表走 00008 先例「建新→搬行→删旧→改名」，无外键引用者无连带）：① `volumes` 归属泛化重建——`owner_kind TEXT NOT NULL DEFAULT 'app' CHECK (owner_kind IN ('app','database'))` + `owner_id`，唯一键 (owner_kind, owner_id, key)；既有 app 卷行零语义变化（卷登记/孤儿/丢弃/命名防代际全复用，§2.1 复用清单）。② 新表四张：
+
+- `db_instances`：id、name UNIQUE、template、image_digest、settings（限额/备份计划 JSON）、credential_cipher（age 密文）、credential_updated_at、platform_node_id（绑定内嵌，不写 placements 表）、state（§2.1 状态集）、created_at/updated_at/deleting_at/deleted_at（tombstone 时间戳）。
+- `db_references`：db_id REFERENCES db_instances、app_id REFERENCES apps、service、env_prefix，PRIMARY KEY (db_id, app_id, service)——引用方 compose 派生的倒排登记（可重建）。
+- `app_secrets`：id、app_id REFERENCES apps、name、value_cipher（age 密文）、hash8、created_at/updated_at，UNIQUE (app_id, name)。
+- `db_backups`：id、db_id REFERENCES db_instances、kind ∈ {daily, manual, pre_upgrade}、restic_snapshot（repo 内寻址，非文件路径）、size_bytes、verify_status 三态、error、created_at。
+
+naming 新增库族公式（新增函数非改既有公式，本文档为文档锚）：`DBServiceName = fleetly-db-<name>-<service>`、`DBNetworkName = fleetly-db-<name>-net`、`DBVolumeName = fleetly-db-<name>-<key>-<id8>`、`DBSecretName = fleetly-db-<name>-<secret>-<hash8>`——与 app 名族 `fleetly-<app>-*` 解耦（§2.1 名字空间独立）。配置键：`databases.backup_interval_hours=24`、`databases.backup_keep=7`、`databases.backup_hour_utc=3`（平台缺省，实例可覆盖）。CLI：`fleetly databases <create|get|list|delete|suspend|resume|upgrade|rotate|backup|restore|show>`、`fleetly secrets <set|list|rm>`。
 
 ## 6. 与既有文档一致性
 
 | 面 | 一致性核对 |
 |---|---|
-| 单写点/轻单核 | 库实例部署走既有 EnterPhase 单写点与队列；零新增常驻组件（红线 2 与 600MB 复核通过，D-DB-9）；模板为代码内注册表非动态插件（D13） |
+| 单写点/轻单核 | 库状态机自有单写点 `EnterDbPhase`（EnterPhase 同款纪律：同事务转移校验 + CAS + 事件，§2.3）；独立资源**不复制**部署队列/EnterPhase/观察窗/回滚（D-DB-1 终裁推论）；零新增常驻组件（红线 2 与 600MB 复核通过，D-DB-9）；模板为代码内注册表非动态插件（D13） |
 | 只增纪律 | 错误码/事件/迁移/白名单全为加法；**拒绝清单移除 secrets 两项 = C1 裁决预留口的显式解除**（validate.go 注释原文「v0.2 平台密钥库接入后解除」预授权；走显式评审 + golden 同步，非静默减项） |
-| 快照回滚语义 | revision 含三层合并结果（system 行 hash 已自然入快照）；**D-DB-11 修正**：回放对 source=system 行按 key 取当前值——本设计对发布专项 §2.4 的限定补写（「合并 env 按快照」增加「source=system 行除外，取当前」），实现载体 rollback.go 重放路径随 E4 票据改；卷数据/库内容不回滚（既有） |
+| 快照回滚语义 | 引用方 app 的 revision 含三层合并结果（system 物化行 hash 已自然入快照）；**D-DB-11 修正**：回放对 source=system 行按 key 取当前值——本设计对发布专项 §2.4 的限定补写（「合并 env 按快照」增加「source=system 行除外，取当前」），实现载体 rollback.go 重放路径随 E4 票据改；库实例自身无 revision/无回滚（升级失败 = digest 归位，D-DB-1 终裁推论）；卷数据/库内容不回滚（既有） |
 | 诚实契约 | 备份 verify 三态 + 失败红色告警；同节点 RustFS 库备份标注「便捷层非灾备」（V2-2 延伸）；suspend/未就绪引用如实警告；Redis 凭据 spec 明文与 overlay 网内不加密为已知边界（对齐架构 §2.3「Swarm spec env 明文」边界族，文档明示） |
 | 安全默认 | 库不发布 host 端口、无 fleetly.domains 即不进路由（「数据库默认不暴露公网」由构造满足）；凭据 age 密文；值不进事件/审计/日志（负面测试随票） |
-| 术语 | 新词条待入 UBIQUITOUS_LANGUAGE：**库实例 database instance / 模板 template / 引用 reference（数据库语境）/ 库备份 database backup（与 backup=控制面快照分立）/ 库恢复 database restore（restore 裸词仍仅指控制面 DR——本设计用带限定词第二义，需术语表裁决收录）/ 平台密钥库 platform secret store** |
+| 术语 | 新词条待入 UBIQUITOUS_LANGUAGE：**库实例 database instance / 模板 template / 引用 reference（数据库语境）/ 库备份 database backup（与 backup=控制面快照分立）/ 库恢复 database restore（restore 裸词仍仅指控制面 DR——本设计用带限定词第二义，需术语表裁决收录）/ 平台密钥库 platform secret store / provisioning 收敛（库实例状态机的重收敛态）** |
 | 依赖链 | E3（restic/S3 目标）为备份步前置（W4 排序已含）；E5 调度核共享（cron 细则同款「与平台热备、数据库备份共用同一调度核」）；放置/卷/rebind 全复用放置专项 |
 
 **发现的既有冲突（如实记录）**：① rollback.go 现状「合并 env 按密文快照回放」与发布专项 D-RL-9「secret 值取当前」在密钥库接入后冲突（v0.1 靠无密钥库结构性豁免）——D-DB-11 修正；② env.proto:27 注释「合并链只消费 effective 行」与 env.go/envlayer 实现（S16-C4：pending 参与合并）不一致——既有文档注释层小冲突，与本设计无直接关系，随 E4 票据顺手订正；③ 词汇表 backup/restore 词条与本设计的库备份/库恢复撞词——以带限定词新词条化解，待术语表裁决。
