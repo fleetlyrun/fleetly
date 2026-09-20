@@ -42,8 +42,9 @@ const (
 	// config_tls_addr；E1 多节点设计 §2.4——8423 上是全量动态配置 +
 	// 内联证书的 HTTPS 面，各节点 Traefik 的 provider endpoint 经平台
 	// 证书直连，静态 bearer token 鉴权沿用）。仅 base_domain 非空时由
-	// 控制面启用（单节点 v0.1 形态维持明文 8422，行为逐字不变）；本包
-	// 不感知 base_domain，启用判定与端点装配在后续票据（E1-3）接线。
+	// 控制面启用（单节点 v0.1 形态维持明文 8422，行为逐字不变）；启用
+	// 判定在 Manager.ConfigTLSEnabled，端点装配在 runtime ingress 服务
+	// 壳（E1-3 接线）。
 	DefaultConfigTLSAddr = "0.0.0.0:8423"
 	// DefaultRenewBefore 是证书续期窗口（到期前 30 天，T2.16 交付物）。
 	DefaultRenewBefore = 30 * 24 * time.Hour
@@ -84,16 +85,17 @@ type Config struct {
 	// 生成，与 Traefik 静态配置 --providers.http.headers 同步传递）。
 	TokenFile string
 	// CertDir 是证书存储根目录（cert_dir；控制面侧明文 PEM，文件权限
-	// 0600）。state-model §2.1：证书材料属控制面、独立备份目录。Traefik
-	// 经平台自管命名卷（CertVolume）消费证书——控制面签发后经 seed 容器
-	// 复制进卷（swarm 不接受 Windows 宿主路径 bind 挂载，实机验证结论；
-	// Linux 单机 bind 亦被卷方案统一替代——一条代码路径）。
+	// 0600）。state-model §2.1：证书材料属控制面、独立备份目录。E1-2 起
+	// 证书库是平台证书唯一真源：Traefik 的证书消费经动态配置内联下发
+	//（D-MN-4，dynamic.go TLSCertificate），v0.1 的「本地卷 + seed 容器」
+	// 分发路径已退役。
 	CertDir string
-	// CertVolume 是 Traefik 证书只读挂载的命名卷（cert_volume）。
-	CertVolume string
-	// CertSeedImage 是证书 seed 容器镜像（cert_seed_image；stopped 容器 +
-	// docker API 拷贝，卷的持久化让 Traefik 重启不丢证书）。
-	CertSeedImage string
+	// BaseDomain 是平台域名（runtime base_domain 键的透传，E1 多节点设计
+	// §2.2；ingress 侧派生面）。空 = 单节点 v0.1 形态：8423 TLS 面不启用、
+	// provider endpoint 维持明文 8422，行为逐字不变。非空 = 派生平台子域
+	//（ctrl/registry/console.<base>）+ 启用平台证书 duty 与 8423 配置端
+	// 点 TLS 面（E1-3）。本包不做 DNS 校验，字符串原样进入域名合成。
+	BaseDomain string
 	// ACME 是集中签发器配置。
 	ACME ACMEConfig
 	// RenewBefore 是续期窗口（到期前；renew_before_days）。
@@ -148,12 +150,6 @@ func (c Config) Normalize() Config {
 	}
 	if c.CertDir == "" {
 		c.CertDir = "fleetly-certs"
-	}
-	if c.CertVolume == "" {
-		c.CertVolume = "fleetly-ingress-certs"
-	}
-	if c.CertSeedImage == "" {
-		c.CertSeedImage = "alpine:3.20"
 	}
 	if c.ACME.CADirURL == "" {
 		c.ACME.CADirURL = DefaultACMECADirURL

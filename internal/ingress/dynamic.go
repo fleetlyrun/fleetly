@@ -87,13 +87,19 @@ type ForwardingTimeouts struct {
 	IdleConnTimeout string `json:"idleConnTimeout,omitempty"`
 }
 
-// TLSDynamic 是 tls 段：证书集中下发（tls.certificates 文件引用形态，
-// 文件经证书目录只读挂载到达 Traefik）。
+// TLSDynamic 是 tls 段：证书集中随配置下发（内联 PEM 形态，E1-2——
+// D-MN-4「证书分发 = 统一切动态配置内联」，v0.1 的「证书本地卷 + seed
+// 容器」路径退役）。
 type TLSDynamic struct {
 	Certificates []TLSCertificate `json:"certificates,omitempty"`
 }
 
-// TLSCertificate 是一张证书的文件引用（容器内路径）。
+// TLSCertificate 是一张证书的载荷。键名是 certFile/keyFile，但值是**内联
+// PEM 全文**而非文件路径——Traefik FileOrContent 契约（pkg/types/
+// file_or_content.go：字符串先按路径 os.Stat、失败即按内容消费；2026-09-20
+// V-MN 实测证据：设计原 certContent/keyContent 键不是契约，内联 PEM 经
+// certFile/keyFile 下发后 443 所服证书指纹与内联证书一致，证书轮换
+// pollInterval 量级生效）。
 type TLSCertificate struct {
 	CertFile string `json:"certFile"`
 	KeyFile  string `json:"keyFile"`
@@ -112,12 +118,17 @@ type Route struct {
 	Cert *CertificateRef
 }
 
-// CertificateRef 是一张已落库证书的引用（文件名 = app 名；sha256 与到期
-// 时间随台账登记）。
+// CertificateRef 是一张已落库证书的引用（app 名 + 台账字段 sha256/到期；
+// CertPEM/KeyPEM 是内联分发载荷——tls.certificates 随配置 JSON 下发，
+// E1-2：证书库落盘仍是真源，内联只是分发面）。
 type CertificateRef struct {
 	App      string
 	SHA256   string
 	NotAfter int64 // UnixNano
+	// CertPEM / KeyPEM 是证书链与私钥 PEM（Synthesize 内联进
+	// tls.certificates；发布路径从证书库现读，视图持有分发面副本）。
+	CertPEM []byte
+	KeyPEM  []byte
 }
 
 // defaultServersTransportName 是平台默认 serversTransport 键。
@@ -158,8 +169,14 @@ func Synthesize(routes []Route) *DynamicConfig {
 		},
 	}}
 	certs := map[string]CertificateRef{}
+	// distributable 统一判定「该路由可走 TLS」：Cert 引用在且携带完整内联
+	// 载荷（不可能缺 PEM：发布路径只对证书库 Load 成功的 app 挂 Cert；
+	// 防御位——半张证书不如纯 HTTP，缺载荷时 443 路由与 TLS 段一并缺席）。
+	distributable := func(r Route) bool {
+		return r.Cert != nil && len(r.Cert.CertPEM) > 0 && len(r.Cert.KeyPEM) > 0
+	}
 	for _, r := range routes {
-		if r.Cert != nil {
+		if distributable(r) {
 			certs[r.App] = *r.Cert
 		}
 	}
@@ -173,7 +190,7 @@ func Synthesize(routes []Route) *DynamicConfig {
 			EntryPoints: []string{"web"},
 			Service:     name,
 		}
-		if r.Cert != nil {
+		if distributable(r) {
 			cfg.HTTP.Routers[name+"-websecure"] = &Router{
 				Rule:        rule,
 				EntryPoints: []string{"websecure"},
@@ -193,14 +210,17 @@ func Synthesize(routes []Route) *DynamicConfig {
 		}
 	}
 	if len(certs) > 0 {
-		tls := &TLSDynamic{}
+		pairs := make([]TLSCertificate, 0, len(certs))
 		for _, app := range sortedCertApps(certs) {
-			tls.Certificates = append(tls.Certificates, TLSCertificate{
-				CertFile: TraefikCertMountPath + "/" + app + ".crt",
-				KeyFile:  TraefikCertMountPath + "/" + app + ".key",
+			c := certs[app]
+			// 内联 PEM 随配置下发（FileOrContent 契约，键名说明见
+			// TLSCertificate）。
+			pairs = append(pairs, TLSCertificate{
+				CertFile: string(c.CertPEM),
+				KeyFile:  string(c.KeyPEM),
 			})
 		}
-		cfg.TLS = tls
+		cfg.TLS = &TLSDynamic{Certificates: pairs}
 	}
 	// 空路由集 → 常驻兜底路由（H9）：services 留空 map（键恒在），routers
 	// 携带唯一一条 noop@internal 引用——Traefik 收到的是合法非空配置，旧

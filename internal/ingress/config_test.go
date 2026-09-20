@@ -35,9 +35,6 @@ func TestConfigNormalizeDefaults(t *testing.T) {
 	if cfg.CertDir != "fleetly-certs" {
 		t.Errorf("CertDir default = %q, want fleetly-certs", cfg.CertDir)
 	}
-	if cfg.CertVolume != "fleetly-ingress-certs" {
-		t.Errorf("CertVolume default = %q, want fleetly-ingress-certs", cfg.CertVolume)
-	}
 	if cfg.RenewBefore != DefaultRenewBefore {
 		t.Errorf("RenewBefore default = %s, want %s", cfg.RenewBefore, DefaultRenewBefore)
 	}

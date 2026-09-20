@@ -454,7 +454,7 @@ func NewServices(
 		// ── 第二段：写入者（入口关后排空在途）──
 		newBuilderService(q, b, app.Logger()),
 		newEngineService(eng),
-		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr),
+		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr, cfg.IngressSettings().ConfigTLSAddr),
 		newLogsService(lm),
 		// ── 第三段：资源层（最后停：backup 晚于 engine 等 post-deploy
 		//     在途快照；store 最后）──

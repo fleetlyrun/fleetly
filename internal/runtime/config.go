@@ -37,10 +37,11 @@ type AppConfig struct {
 	Addr string `mapstructure:"addr"`
 	// BaseDomain 是平台域名（config 键 base_domain；E1 多节点设计 §2.2，
 	// V2-7 可选安装项）。空 = 单节点 v0.1 形态（本地 digest、明文 8422
-	// provider、证书卷模型，行为逐字不变）；非空 = 控制面派生三平台子域
-	//（ctrl/registry/console.<base>）、启用 8423 配置端点 TLS 面、多节点
-	// join 门禁放行（D-MN-13：join 时为空即 E_MULTI_NODE_REQUIRES_BASE_
-	// DOMAIN）。当前票据（E1-1）只落配置面，启用接线在后续票据。
+	// provider，行为逐字不变）；非空 = 控制面派生三平台子域
+	//（ctrl/registry/console.<base>）、启用 8423 配置端点 TLS 面与平台
+	// 证书 duty（E1-2/E1-3：证书经动态配置内联下发、Traefik endpoint 切
+	// https://ctrl.<base>:8423）、多节点 join 门禁放行（D-MN-13：join 时
+	// 为空即 E_MULTI_NODE_REQUIRES_BASE_DOMAIN——E1-8 接线）。
 	BaseDomain string `mapstructure:"base_domain"`
 	// GRPC 是 gRPC 面配置（server.v1 服务承载于此，gateway 反向代理目标）。
 	GRPC GRPCConfig `mapstructure:"grpc"`
@@ -280,8 +281,8 @@ type IngressConfig struct {
 	// ——Traefik 任务经宿主 IP 访问，鉴权 token 强制）。
 	ConfigAddr string `mapstructure:"config_addr"`
 	// ConfigTLSAddr 是配置端点 TLS 面监听地址（config_tls_addr；默认
-	// 0.0.0.0:8423，E1 多节点设计 §2.4——仅 base_domain 非空时启用，
-	// 启用判定与端点装配在 E1-3 接线；缺省值只是配置面就绪）。
+	// 0.0.0.0:8423，E1 多节点设计 §2.4——base_domain 非空时 ingress 服务
+	// 壳在该地址起 TLS 监听（E1-3 接线）；单节点不启用，缺省值零行为）。
 	ConfigTLSAddr string `mapstructure:"config_tls_addr"`
 	// ConfigAdvertiseIP 是下发给 Traefik 的控制面可达 IP
 	//（config_advertise_ip；空 = 自动探测。Docker Desktop 形态 advertise
@@ -377,6 +378,9 @@ func (c *AppConfig) IngressSettings() ingress.Config {
 		ConfigAdvertiseIP: c.Ingress.ConfigAdvertiseIP,
 		TokenFile:         c.Ingress.TokenFile,
 		CertDir:           c.Ingress.CertDir,
+		// BaseDomain 透传（E1-3）：非空启用 8423 TLS 配置面与平台证书
+		// duty；空 = 单节点 v0.1 形态（ingress 侧零行为差异）。
+		BaseDomain: c.BaseDomain,
 		ACME: ingress.ACMEConfig{
 			Enabled:        c.Ingress.ACME.Enabled,
 			CADirURL:       c.Ingress.ACME.CADirURL,

@@ -29,7 +29,6 @@ import (
 	neturl "net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/go-acme/lego/v4/certcrypto"
@@ -275,28 +274,14 @@ func (m *Manager) ensureCertificate(ctx context.Context, appID, app string, doma
 	if err == nil {
 		return ref, nil
 	}
-	if strings.Contains(err.Error(), "accountDoesNotExist") {
-		m.log.Warn("ingress: acme account missing on CA (re-registering)", "app", app)
-		m.invalidateAccount()
-		if ref2, err2 := m.obtainAndRegister(ctx, appID, app, domains, renewing, existing); err2 == nil {
-			return ref2, nil
-		} else {
-			m.writeCertAudit(ctx, renewing, app, existing, err2)
-			return nil, err2
-		}
-	}
 	m.writeCertAudit(ctx, renewing, app, existing, err)
 	return nil, err
 }
 
-// obtainAndRegister 是一次「账号 → 客户端 → Obtain → 落盘/卷/台账」的
-// 完整签发。
+// obtainAndRegister 是一次「账号 → Obtain（含账号失效自愈）→ 落盘/
+// 台账」的完整签发（账号自愈段与平台证书共用 obtainPEMWithHeal）。
 func (m *Manager) obtainAndRegister(ctx context.Context, appID, app string, domains []string, renewing bool, existing *CertificatePair) (*CertificateRef, error) {
-	user, err := m.ensureAccount(ctx)
-	if err != nil {
-		return nil, err
-	}
-	certPEM, keyPEM, err := m.obtainFn(ctx, app, user, domains)
+	certPEM, keyPEM, err := m.obtainPEMWithHeal(ctx, app, domains)
 	if err != nil {
 		return nil, err
 	}
@@ -307,11 +292,9 @@ func (m *Manager) obtainAndRegister(ctx context.Context, appID, app string, doma
 	if err := m.certs.Save(pair); err != nil {
 		return nil, err
 	}
-	// 证书同步进 Traefik 证书卷（TLS 段文件的到达路径；失败即失败——
-	// HTTP 路由已生效，TLS 段随下次成功签发收敛）。
-	if err := m.syncCertToVolume(ctx, pair); err != nil {
-		return nil, err
-	}
+	// 证书分发经动态配置内联下发（E1-2，D-MN-4）：落盘即真源就绪，TLS 段
+	// 随调用方的 publishWithCerts 收敛进视图（不再经证书卷/seed 容器同步
+	// ——该路径已退役）。
 	// 台账登记（逐域名；行已随发布同步存在——签发晚于域名撤销的竞态
 	// 由 ErrDomainNotFound 显式跳过，不静默丢事实：日志留痕）。
 	for _, d := range domains {

@@ -93,7 +93,8 @@ worker 加入即被 `fleetly-ingress`（global）覆盖：入口冗余随之成�
 ① fleetlyd 启动（base_domain 已配置；DNS 已指向 manager）
 ② 部署 Traefik（global，静态参数含挑战路由 → http://<advertise>:8422 与 provider=https://ctrl.<base>:8423）
    —— provider 此刻不可达（无证书）：Traefik 容忍，仅静态路由（80 挑战面）可用
-③ ensure-平台证书 duty（启动重试，退避 ~30s 直到成功）：HTTP-01 → 任意节点 :80 → 静态挑战路由 → 8422 应答器 → 签发
+   〔2026-09-21 实现修正：Traefik v3 无静态 router 机制，「静态参数含挑战路由」字面不可实现——provider 首拉失败 = 零动态路由，HTTP-01 将死锁。实际次序（E1-2/E1-3 已实现）：容忍期 provider endpoint 维持明文 8422（挑战路由经动态配置 overlay 可达，与 v0.1 同机制）；平台证书就绪后 duty 触发 EnsureTraefik 收敛翻转 endpoint 至 https://ctrl.<base>:8423（sticky 不回摆）。可观测契约与原意图一致：容忍期 80 挑战面可用 / 稳态 8423 TLS / 证书就绪前 8423 握手失败〕
+③ ensure-平台证书 duty（启动重试，退避 ~30s 直到成功）：HTTP-01 → 任意节点 :80 → 动态挑战路由 → 8422 应答器 → 签发
 ④ 8423 TLS 面就绪 → Traefik 首拉成功（动态配置 + 内联证书到达全部节点）→ 子域/应用路由生效
 ⑤ zot 部署（不依赖证书：overlay 内 5000 明文）+ registry/console 路由进动态配置 → 对外可用
 ```

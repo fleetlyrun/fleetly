@@ -9,7 +9,9 @@ package ingress
 //     （Traefik 内建 @internal 引用豁免）。
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"encoding/pem"
 	"strings"
 	"testing"
 	"time"
@@ -54,10 +56,16 @@ func TestSynthesizeMapsRoutesDeterministically(t *testing.T) {
 	}
 }
 
+// TestSynthesizeTLSSegmentWhenCertReady E1-2 内联分发：证书就绪的 app 产
+// 出 443 路由 + tls.certificates 段，certFile/keyFile 键携带内联 PEM 全文
+// （V-MN 实测修正后的 FileOrContent 契约；设计原 certContent/keyContent
+// 键已证伪）。指纹断言：载荷中的证书与输入证书 DER 指纹一致（Traefik 443
+// 所服证书由此载荷决定——spike 证据的测试面等价形态）。
 func TestSynthesizeTLSSegmentWhenCertReady(t *testing.T) {
+	certPEM, keyPEM, _ := selfSignedTestCert(t, "shop.example.test")
 	routes := []Route{
 		{App: "shop", Service: "web", Port: "80", Domains: []string{"shop.example.test"},
-			Cert: &CertificateRef{App: "shop", SHA256: "aa", NotAfter: 1}},
+			Cert: &CertificateRef{App: "shop", SHA256: "aa", NotAfter: 1, CertPEM: certPEM, KeyPEM: keyPEM}},
 	}
 	cfg := Synthesize(routes)
 	if cfg.HTTP.Routers["fleetly-shop-web-websecure"] == nil {
@@ -69,13 +77,57 @@ func TestSynthesizeTLSSegmentWhenCertReady(t *testing.T) {
 	if cfg.TLS == nil || len(cfg.TLS.Certificates) != 1 {
 		t.Fatalf("tls.certificates segment missing: %+v", cfg.TLS)
 	}
-	if cfg.TLS.Certificates[0].CertFile != TraefikCertMountPath+"/shop.crt" ||
-		cfg.TLS.Certificates[0].KeyFile != TraefikCertMountPath+"/shop.key" {
-		t.Fatalf("cert file refs wrong: %+v", cfg.TLS.Certificates[0])
+	cert := cfg.TLS.Certificates[0]
+	if cert.CertFile != string(certPEM) {
+		t.Fatalf("certFile must be the inline PEM verbatim, got %.80q", cert.CertFile)
+	}
+	if cert.KeyFile != string(keyPEM) {
+		t.Fatalf("keyFile must be the inline PEM verbatim, got %.40q", cert.KeyFile)
+	}
+	// 指纹级比对（spike 证据形态）：certFile 值解析出的证书 DER sha256 ==
+	// 输入证书链首块 DER sha256。
+	block, _ := pem.Decode([]byte(cert.CertFile))
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatalf("certFile must decode to a CERTIFICATE PEM block")
+	}
+	gotSum := sha256.Sum256(block.Bytes)
+	wantBlock, _ := pem.Decode(certPEM)
+	if wantBlock == nil {
+		t.Fatalf("input cert PEM must decode")
+	}
+	wantSum := sha256.Sum256(wantBlock.Bytes)
+	if gotSum != wantSum {
+		t.Fatalf("inline cert fingerprint mismatch: got %x want %x", gotSum, wantSum)
 	}
 	// HTTP 路由并存（无重定向设计外行为）。
 	if cfg.HTTP.Routers["fleetly-shop-web-web"] == nil {
 		t.Fatalf("80 router missing when cert ready")
+	}
+	// 序列化键名契约钉死（FileOrContent 修正项——V-MN 实测：未知键使
+	// 整份动态配置 decode 被拒）。
+	raw, err := json.Marshal(cfg.TLS)
+	if err != nil {
+		t.Fatalf("marshal tls segment: %v", err)
+	}
+	if !strings.Contains(string(raw), `"certFile"`) || !strings.Contains(string(raw), `"keyFile"`) {
+		t.Fatalf("tls payload keys must be certFile/keyFile: %s", raw)
+	}
+}
+
+// TestSynthesizeSkipsCertRefWithoutPEM 防御位：Cert 引用缺 PEM（不可能形
+// 态：发布路径只对证书库 Load 成功的 app 挂 Cert）不产出半张证书的 TLS
+// 段——半张证书比整份配置被 Traefik 拒绝更糟。
+func TestSynthesizeSkipsCertRefWithoutPEM(t *testing.T) {
+	routes := []Route{
+		{App: "ghost", Service: "web", Port: "80", Domains: []string{"ghost.example.test"},
+			Cert: &CertificateRef{App: "ghost", SHA256: "aa", NotAfter: 1}},
+	}
+	cfg := Synthesize(routes)
+	if cfg.TLS != nil {
+		t.Fatalf("cert ref without PEM must not enter the TLS segment: %+v", cfg.TLS)
+	}
+	if cfg.HTTP.Routers["fleetly-ghost-web-websecure"] != nil {
+		t.Fatal("443 router must not be emitted without distributable cert material")
 	}
 }
 

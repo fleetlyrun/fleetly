@@ -9,8 +9,11 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -21,6 +24,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -30,37 +34,55 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// fakeDocker 是 dockerClient 的假实现（服务/网络/卷/seed 容器内存态 +
-// 调用记录）。
+// fakeDocker 是 dockerClient 的假实现（服务/网络内存态 + 调用记录；E1-2
+// 起无卷/seed 路径——迁移收敛面以 legacySeedPresent 模拟 v0.1 残留）。
+// mu 串行化全部方法（底座 client 是并发安全的，假实现同构——平台证书
+// duty 后台 goroutine 与测试轮询并发访问）。
 type fakeDocker struct {
+	mu          sync.Mutex
 	services    map[string]ingressServiceState
 	networks    map[string]bool
 	creates     []string
 	updates     []string
 	updateSpecs []swarm.ServiceSpec
 	netEns      []string
-	volumes     map[string]bool
-	seedID      string
-	copiedDirs  []string
 	info        swarmInfo
+	// legacySeedPresent 模拟 v0.1 证书 seed 容器残留（LegacySeedContainer
+	// Remove 消费并清零——底座语义：移除后不复存在）。
+	legacySeedPresent bool
+	seedRemoved       []string
 }
 
 func newFakeDocker() *fakeDocker {
 	return &fakeDocker{
 		services: map[string]ingressServiceState{},
 		networks: map[string]bool{},
-		volumes:  map[string]bool{},
 		info:     swarmInfo{SwarmActive: true, NodeAddr: "127.0.0.1"},
 	}
 }
 
-func (f *fakeDocker) Info(context.Context) (swarmInfo, error) { return f.info, nil }
+// serviceState 是服务实况的加锁读取出口（并发轮询场景的规范读法）。
+func (f *fakeDocker) serviceState(name string) ingressServiceState {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.services[name]
+}
+
+func (f *fakeDocker) Info(context.Context) (swarmInfo, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.info, nil
+}
 
 func (f *fakeDocker) ServiceInspect(_ context.Context, name string) (ingressServiceState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	return f.services[name], nil
 }
 
 func (f *fakeDocker) ServiceCreate(_ context.Context, spec swarm.ServiceSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.creates = append(f.creates, spec.Name)
 	f.services[spec.Name] = ingressServiceState{
 		Exists:  true,
@@ -80,13 +102,28 @@ func (f *fakeDocker) ServiceCreate(_ context.Context, spec swarm.ServiceSpec) er
 }
 
 func (f *fakeDocker) ServiceUpdate(_ context.Context, name string, _ uint64, spec swarm.ServiceSpec) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.updates = append(f.updates, name)
 	// 记录提交的整份 spec 载荷（网络保留断言用——收敛更新是否保留既有
 	// app 挂载只能在载荷上断言）。
 	f.updateSpecs = append(f.updateSpecs, spec)
 	cur := f.services[name]
 	cur.Version++
-	// 同构底座语义：TaskTemplate.Networks 是整组替换（非追加）。
+	// 同构底座语义：service update 是整份 spec 替换——镜像/参数/挂载/健康
+	// 检查/端口随载荷换入（与 ServiceCreate 同构），仅 Networks 单独记录
+	// （网络目标是整组替换语义的最常断言位）。
+	if cs := spec.TaskTemplate.ContainerSpec; cs != nil {
+		cur.Image = cs.Image
+		cur.Args = append([]string{}, cs.Args...)
+		if cs.Healthcheck != nil {
+			cur.HealthTest = append([]string{}, cs.Healthcheck.Test...)
+		}
+		cur.Mounts = append([]mount.Mount{}, cs.Mounts...)
+	}
+	if spec.EndpointSpec != nil {
+		cur.Ports = append([]swarm.PortConfig{}, spec.EndpointSpec.Ports...)
+	}
 	cur.Networks = netTargets(spec)
 	f.services[name] = cur
 	return nil
@@ -101,6 +138,8 @@ func netTargets(spec swarm.ServiceSpec) []string {
 }
 
 func (f *fakeDocker) NetworkEnsure(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.netEns = append(f.netEns, name)
 	f.networks[name] = true
 	return nil
@@ -111,21 +150,17 @@ func (f *fakeDocker) NetworkID(_ context.Context, name string) (string, error) {
 	return "netid-" + name, nil
 }
 
-func (f *fakeDocker) VolumeEnsure(_ context.Context, name string) error {
-	f.volumes[name] = true
-	return nil
-}
-
-func (f *fakeDocker) SeedContainerEnsure(_ context.Context, _, _, _, _ string) (string, error) {
-	if f.seedID == "" {
-		f.seedID = "seed-ctr-1"
+// LegacySeedContainerRemove 消费 legacySeedPresent（同构底座语义：容器
+// 不存在 = false 且无副作用；存在 = 移除并记录）。
+func (f *fakeDocker) LegacySeedContainerRemove(_ context.Context, name string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if !f.legacySeedPresent {
+		return false, nil
 	}
-	return f.seedID, nil
-}
-
-func (f *fakeDocker) CopyToDir(_ context.Context, _, dir string, _ []FileEntry) error {
-	f.copiedDirs = append(f.copiedDirs, dir)
-	return nil
+	f.legacySeedPresent = false
+	f.seedRemoved = append(f.seedRemoved, name)
+	return true, nil
 }
 
 // newTestManager 构造 ACME 关闭的测试管理器（独立 token/cert 目录）。
@@ -195,14 +230,9 @@ func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 	if len(svc.Ports) != 2 {
 		t.Fatalf("traefik ports = %+v", svc.Ports)
 	}
-	// 证书卷挂载（volume 形态、只读、挂到 /fleetly-certs）+ 证书卷与
-	// seed 容器已收敛。
-	if len(svc.Mounts) != 1 || svc.Mounts[0].Source != "fleetly-ingress-certs" ||
-		svc.Mounts[0].Target != TraefikCertMountPath || !svc.Mounts[0].ReadOnly {
-		t.Fatalf("traefik cert mount wrong: %+v", svc.Mounts)
-	}
-	if !dc.volumes["fleetly-ingress-certs"] {
-		t.Fatal("cert volume not ensured")
+	// E1-2：证书卷挂载退役（期望 spec 零挂载——证书经动态配置内联下发）。
+	if len(svc.Mounts) != 0 {
+		t.Fatalf("traefik spec must have no cert mounts since E1-2: %+v", svc.Mounts)
 	}
 
 	// app 网络接入（一次 update）。
@@ -639,23 +669,124 @@ func TestEnsureTraefikUpdateWithoutNetworks(t *testing.T) {
 	}
 }
 
-// TestSyncCertToVolume 证书卷同步：crt/key 经 seed 容器拷入挂载目录。
-func TestSyncCertToVolume(t *testing.T) {
+// TestEnsureTraefikRetiresLegacyCertDistribution E1-2 迁移收敛：既有 v0.1
+// 安装升级后的残留形态（服务实况带证书卷只读挂载 + seed 容器在）——启动
+// sweep 收敛后：① seed 容器被移除（幂等：第二次收敛不再产生移除调用）；
+// ② 收敛更新提交的 spec 无挂载（traefikSpecEqual 对挂载的差异即触发更新
+// ——旧挂载由此清除）；③ 证书数据面不被触碰（fake 无任何卷写操作出口，
+// 结构上不可能）。升级前快照是回退路径（部署面纪律，测试面钉行为）。
+func TestEnsureTraefikRetiresLegacyCertDistribution(t *testing.T) {
 	m, dc, _ := newTestManager(t)
-	certPEM, keyPEM, _ := selfSignedTestCert(t, "sync.test")
-	pair, err := ParsePair("sync", []string{"sync.test"}, certPEM, keyPEM)
+	ctx := context.Background()
+	// 先按当前形态创建服务（无挂载），再注入 v0.1 残留态。
+	if err := m.EnsureTraefik(ctx); err != nil {
+		t.Fatalf("create traefik: %v", err)
+	}
+	svc := dc.services[IngressServiceName]
+	svc.Mounts = []mount.Mount{{
+		Type:     mount.TypeVolume,
+		Source:   "fleetly-ingress-certs",
+		Target:   "/fleetly-certs",
+		ReadOnly: true,
+	}}
+	dc.services[IngressServiceName] = svc
+	dc.legacySeedPresent = true
+
+	// 首轮收敛：挂载差异触发更新 + seed 容器移除。
+	if err := m.EnsureTraefik(ctx); err != nil {
+		t.Fatalf("converge traefik with legacy residue: %v", err)
+	}
+	if got := dc.seedRemoved; len(got) != 1 || got[0] != "fleetly-ingress-cert-seeder" {
+		t.Fatalf("legacy seed removals = %v, want exactly [fleetly-ingress-cert-seeder]", got)
+	}
+	last := dc.updateSpecs[len(dc.updateSpecs)-1]
+	if len(last.TaskTemplate.ContainerSpec.Mounts) != 0 {
+		t.Fatalf("converged spec must carry no cert mounts: %+v", last.TaskTemplate.ContainerSpec.Mounts)
+	}
+	if got := dc.services[IngressServiceName].Mounts; len(got) != 0 {
+		t.Fatalf("service mounts after converge = %+v, want none (volume model retired)", got)
+	}
+
+	// 幂等：残留清零后重复收敛无更新、无再移除。
+	updates, removals := len(dc.updates), len(dc.seedRemoved)
+	if err := m.EnsureTraefik(ctx); err != nil {
+		t.Fatalf("second converge: %v", err)
+	}
+	if len(dc.updates) != updates || len(dc.seedRemoved) != removals {
+		t.Fatalf("retirement must be idempotent: updates %d->%d, removals %d->%d",
+			updates, len(dc.updates), removals, len(dc.seedRemoved))
+	}
+}
+
+// TestViewCarriesInlinePEM E1-2：证书经视图进 tls.certificates 内联下发
+// （V-MN 证据锚定：certFile/keyFile 键携内联 PEM，Traefik FileOrContent
+// 契约按内容消费；443 所服证书指纹 = 内联证书指纹）。发布路径 → 视图
+// 快照 → JSON 载荷三级断言：载荷含 certFile 键、其值可解析出与签发证书
+// DER 指纹一致的证书。
+func TestViewCarriesInlinePEM(t *testing.T) {
+	m, _, st := newTestManager(t)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "shop")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	certPEM, keyPEM, _ := selfSignedTestCert(t, "shop.example.test")
+	pair, err := ParsePair("shop", []string{"shop.example.test"}, certPEM, keyPEM)
 	if err != nil {
 		t.Fatalf("parse pair: %v", err)
 	}
-	if err := m.syncCertToVolume(context.Background(), pair); err != nil {
-		t.Fatalf("sync cert to volume: %v", err)
+	if err := m.certs.Save(pair); err != nil {
+		t.Fatalf("save pair: %v", err)
 	}
-	if dc.seedID == "" {
-		t.Fatal("seed container not ensured")
+
+	// 发布（带证书段的全量重发布）→ 视图。
+	in := PublishInput{AppID: app.ID, AppName: "shop", Services: []ServiceRoutes{
+		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
+	}}
+	if err := m.PublishRoutes(ctx, in); err != nil {
+		t.Fatalf("publish: %v", err)
 	}
-	if len(dc.copiedDirs) != 1 || dc.copiedDirs[0] != TraefikCertMountPath {
-		t.Fatalf("copy destinations = %v, want [%s]", dc.copiedDirs, TraefikCertMountPath)
+	if err := m.publishWithCerts(ctx); err != nil {
+		t.Fatalf("publish with certs: %v", err)
 	}
+	snap, _ := m.vw.snapshot()
+	if snap.TLS == nil || len(snap.TLS.Certificates) != 1 {
+		t.Fatalf("tls.certificates segment missing: %+v", snap.TLS)
+	}
+	cert := snap.TLS.Certificates[0]
+	if !strings.Contains(cert.CertFile, "-----BEGIN CERTIFICATE-----") {
+		t.Fatalf("certFile must carry inline PEM, got %.80q", cert.CertFile)
+	}
+	if !strings.Contains(cert.KeyFile, "-----BEGIN") {
+		t.Fatalf("keyFile must carry inline PEM, got %.40q", cert.KeyFile)
+	}
+	// 指纹级比对（spike 证据形态）：载荷中的证书 DER sha256 = 落盘证书
+	// DER sha256——Traefik 443 所服证书由该载荷决定，指纹一致即通道等价。
+	gotFP := pemCertFingerprint(t, []byte(cert.CertFile))
+	wantFP := pemCertFingerprint(t, certPEM)
+	if gotFP != wantFP {
+		t.Fatalf("inline cert fingerprint mismatch: got %s want %s", gotFP, wantFP)
+	}
+	// 序列化后键名契约（FileOrContent 修正项钉死）。
+	raw, err := json.Marshal(snap.TLS)
+	if err != nil {
+		t.Fatalf("marshal tls segment: %v", err)
+	}
+	if !strings.Contains(string(raw), `"certFile"`) || !strings.Contains(string(raw), `"keyFile"`) {
+		t.Fatalf("tls payload keys must be certFile/keyFile (FileOrContent contract): %s", raw)
+	}
+}
+
+// pemCertFingerprint 解析 PEM 首个 CERTIFICATE 块并返回 DER sha256（十六
+// 进制；指纹级断言出口）。
+func pemCertFingerprint(t *testing.T, pemBytes []byte) string {
+	t.Helper()
+	block, _ := pem.Decode(pemBytes)
+	if block == nil || block.Type != "CERTIFICATE" {
+		t.Fatalf("no CERTIFICATE PEM block found")
+	}
+	sum := sha256.Sum256(block.Bytes)
+	return hex.EncodeToString(sum[:])
 }
 
 // TestTokenLoadOrGenerateStable token 持久化：首启生成、重启复用同值。

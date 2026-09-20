@@ -75,6 +75,9 @@ type Manager struct {
 	// 单测注入假签发器（计数 + 自签证书）断言并发串行化与单次签发，
 	// 不依赖真实 CA。
 	obtainFn func(ctx context.Context, app string, user registration.User, domains []string) (certPEM, keyPEM []byte, err error)
+	// platformRetryInterval 是平台证书 duty 的重试退避（E1-3；零值回落
+	// platformCertRetryInterval 常量，单测注入短退避驱动重试次序断言）。
+	platformRetryInterval time.Duration
 }
 
 // NewManager 构造入口管理器（cfg 缺省回落；docker client 按
@@ -171,10 +174,23 @@ func (m *Manager) Handler(ctx context.Context) (http.Handler, error) {
 	return newProviderHandler(m.vw, token), nil
 }
 
-// Run 是周期任务：Traefik 收敛 + 全量重发布 + 证书续期扫描（sweep）。
-// 由 fleetlyd ingress 服务壳调用（ctx 取消返回）。收敛失败只降级日志
-// （下轮重试），不影响控制面其余服务。
+// TLSHandler 返回 8423 TLS 面的 HTTP handler（E1-3：仅 /configs，见
+// provider.go newTLSConfigHandler；runtime 服务壳在 ConfigTLSEnabled 时
+// 以平台证书装配 TLS 监听）。
+func (m *Manager) TLSHandler(ctx context.Context) (http.Handler, error) {
+	token, err := m.token(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return newTLSConfigHandler(m.vw, token), nil
+}
+
+// Run 是周期任务：Traefik 收敛 + 全量重发布 + 证书续期扫描（sweep）+
+// 平台证书 duty（E1-3，仅 base_domain 非空时活动）。由 fleetlyd ingress
+// 服务壳调用（ctx 取消返回）。收敛失败只降级日志（下轮重试），不影响
+// 控制面其余服务。
 func (m *Manager) Run(ctx context.Context) error {
+	go m.runPlatformCertDuty(ctx)
 	m.sweep(ctx)
 	ticker := time.NewTicker(m.cfg.RenewScanInterval)
 	defer ticker.Stop()
@@ -344,7 +360,15 @@ func (m *Manager) publishWithCerts(ctx context.Context) error {
 		}
 		for i := range withCerts {
 			if withCerts[i].App == app {
-				withCerts[i].Cert = &CertificateRef{App: app, SHA256: pair.SHA256, NotAfter: pair.NotAfter.UnixNano()}
+				// 内联分发载荷（E1-2）：PEM 现读自证书库（真源），随视图
+				// 进 tls.certificates——不再经证书卷/seed 容器分发。
+				withCerts[i].Cert = &CertificateRef{
+					App:      app,
+					SHA256:   pair.SHA256,
+					NotAfter: pair.NotAfter.UnixNano(),
+					CertPEM:  pair.CertPEM,
+					KeyPEM:   pair.KeyPEM,
+				}
 			}
 		}
 	}

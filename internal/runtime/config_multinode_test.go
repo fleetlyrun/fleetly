@@ -13,9 +13,9 @@ import (
 //   - ingress.config_tls_addr 经 IngressSettings 透传给 ingress.Config
 //     （缺省 0.0.0.0:8423 的回落单一事实源在 internal/ingress.Normalize；
 //     装配期透传纪律与 ConfigAddr 同款——不经 Normalize 的空串会漂移）。
-//   - base_domain 是透传字符串（V2-7）：空 = 单节点 v0.1 形态，无派生
-//     逻辑可测；启用接线归 E1-3/E1-8（join 门禁 E_MULTI_NODE_REQUIRES_
-//     BASE_DOMAIN）。
+//   - ingress.base_domain 经 IngressSettings 透传（E1-3 接线：启用判定
+//     在 Manager.ConfigTLSEnabled；本包不派生子域）。
+//   - base_domain 是透传字符串（V2-7）：空 = 单节点 v0.1 形态。
 
 func TestJoinTokenRotateDefaults(t *testing.T) {
 	cases := []struct {
@@ -67,5 +67,21 @@ func TestIngressSettingsPassesConfigTLSAddr(t *testing.T) {
 	empty := emptyCfg.IngressSettings()
 	if empty.ConfigTLSAddr != "0.0.0.0:8423" {
 		t.Errorf("IngressSettings().ConfigTLSAddr default = %q, want 0.0.0.0:8423 (ingress.Normalize fallback)", empty.ConfigTLSAddr)
+	}
+}
+
+// TestIngressSettingsPassesBaseDomain base_domain 透传（E1-3）：非空原样
+// 进入 ingress.Config（启用 8423 TLS 面 + 平台证书 duty 的判定输入）；空 =
+// 单节点形态（ingress 侧零行为差异）。
+func TestIngressSettingsPassesBaseDomain(t *testing.T) {
+	setCfg := AppConfig{BaseDomain: "example.com"}
+	set := setCfg.IngressSettings()
+	if set.BaseDomain != "example.com" {
+		t.Errorf("IngressSettings().BaseDomain = %q, want example.com", set.BaseDomain)
+	}
+	emptyCfg := AppConfig{}
+	empty := emptyCfg.IngressSettings()
+	if empty.BaseDomain != "" {
+		t.Errorf("IngressSettings().BaseDomain empty = %q, want empty string", empty.BaseDomain)
 	}
 }

@@ -17,8 +17,6 @@ package ingress
 // Status 投影与部署器接口）。
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -41,23 +39,15 @@ const IngressServiceName = "fleetly-ingress"
 // ingressLabelIngress 是入口服务自描述 label（CLI/运维识别）。
 const ingressLabelIngress = "fleetly.ingress"
 
-// certSeedContainerName 是证书 seed 容器名（stopped 容器承载证书卷；
-// 控制面经 docker API 拷贝证书进卷，Traefik 只读挂载同一卷）。
-const certSeedContainerName = "fleetly-ingress-cert-seeder"
-
-// ingressLabelSeeder 是 seed 容器自描述 label。
-const ingressLabelSeeder = "fleetly.ingress-cert-seeder"
+// legacyCertSeedContainerName 是 v0.1 证书 seed 容器名（退役形态，E1-2）。
+// 保留为迁移收敛的检测常量：既有单节点安装升级后，启动 sweep 检测到该
+// 容器残留即移除（幂等；分发面收敛——证书数据本体在控制面 cert_dir，
+// 不经本路径触碰）。
+const legacyCertSeedContainerName = "fleetly-ingress-cert-seeder"
 
 // traefikHealthcheckArgs 是健康检查（traefik healthcheck 子命令打内置
 // ping 端点；静态配置同步开 --ping）。
 var traefikHealthcheckArgs = []string{"CMD", "traefik", "healthcheck", "--ping"}
-
-// FileEntry 是一次容器目录拷贝的单文件载荷（证书卷同步用）。
-type FileEntry struct {
-	Name string
-	Data []byte
-	Mode int64
-}
 
 // dockerClient 是部署器对 Docker API 的最小消费面（moby client 形态；
 // 假实现注入单测——真实形态在 newRealDockerClient）。swarm.ServiceSpec
@@ -71,13 +61,9 @@ type dockerClient interface {
 	// NetworkID 解析网络名 → 底座 ID（attach 幂等判据：服务实况里的
 	// 网络目标是 ID 形态）。
 	NetworkID(ctx context.Context, name string) (string, error)
-	// VolumeEnsure 确认命名卷存在（证书卷；缺失创建，幂等）。
-	VolumeEnsure(ctx context.Context, name string) error
-	// SeedContainerEnsure 确认 stopped seed 容器存在（挂证书卷；存在
-	// 复用、缺失创建）——返回容器 ID。
-	SeedContainerEnsure(ctx context.Context, name, image, volume, targetDir string) (string, error)
-	// CopyToDir 把文件集拷入容器目录（tar 归档经 docker API）。
-	CopyToDir(ctx context.Context, containerID, dir string, files []FileEntry) error
+	// LegacySeedContainerRemove 移除 v0.1 证书 seed 容器（E1-2 迁移收敛；
+	// 不存在返回 false，幂等）。
+	LegacySeedContainerRemove(ctx context.Context, name string) (bool, error)
 }
 
 // swarmInfo 是部署器关心的 Info 投影（advertise addr + swarm active）。
@@ -206,85 +192,16 @@ func (c *realDockerClient) NetworkID(ctx context.Context, name string) (string, 
 	return res.Network.ID, nil
 }
 
-// VolumeEnsure 确认命名卷存在（缺失创建；幂等）。
-func (c *realDockerClient) VolumeEnsure(ctx context.Context, name string) error {
-	if _, err := c.cli.VolumeInspect(ctx, name, mobyclient.VolumeInspectOptions{}); err == nil {
-		return nil
-	} else if !errdefs.IsNotFound(err) {
-		return fmt.Errorf("ingress: volume inspect %s: %w", name, err)
-	}
-	if _, err := c.cli.VolumeCreate(ctx, mobyclient.VolumeCreateOptions{
-		Name:   name,
-		Driver: "local",
-		Labels: map[string]string{state.LabelManaged: state.ManagedLabelValue},
-	}); err != nil {
-		if _, ierr := c.cli.VolumeInspect(ctx, name, mobyclient.VolumeInspectOptions{}); ierr == nil {
-			return nil
+// LegacySeedContainerRemove 移除 v0.1 证书 seed 容器（E1-2 迁移收敛：
+// 分发面退役——容器是平台自建物，移除只动分发面；不存在即 no-op，幂等）。
+func (c *realDockerClient) LegacySeedContainerRemove(ctx context.Context, name string) (bool, error) {
+	if _, err := c.cli.ContainerRemove(ctx, name, mobyclient.ContainerRemoveOptions{Force: true}); err != nil {
+		if errdefs.IsNotFound(err) {
+			return false, nil
 		}
-		return fmt.Errorf("ingress: volume create %s: %w", name, err)
+		return false, fmt.Errorf("ingress: legacy seed container remove %s: %w", name, err)
 	}
-	return nil
-}
-
-// SeedContainerEnsure 确认 stopped seed 容器存在：存在即复用（镜像/卷
-// 形态由 EnsureTraefik 的幂等收敛兜底）；缺失创建（不启动——CopyToContainer
-// 对 stopped 容器有效，且不占运行时资源）。
-func (c *realDockerClient) SeedContainerEnsure(ctx context.Context, name, image, volume, targetDir string) (string, error) {
-	res, err := c.cli.ContainerInspect(ctx, name, mobyclient.ContainerInspectOptions{})
-	if err == nil {
-		return res.Container.ID, nil
-	}
-	if !errdefs.IsNotFound(err) {
-		return "", fmt.Errorf("ingress: seed container inspect %s: %w", name, err)
-	}
-	create, err := c.cli.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
-		Name: name,
-		Config: &container.Config{
-			Image:  image,
-			Cmd:    []string{"sleep", "infinity"},
-			Labels: map[string]string{state.LabelManaged: state.ManagedLabelValue, ingressLabelSeeder: "true"},
-		},
-		HostConfig: &container.HostConfig{
-			Mounts: []mount.Mount{{
-				Type:   mount.TypeVolume,
-				Source: volume,
-				Target: targetDir,
-			}},
-		},
-	})
-	if err != nil {
-		return "", fmt.Errorf("ingress: seed container create %s: %w", name, err)
-	}
-	return create.ID, nil
-}
-
-// CopyToDir 把文件集拷入容器目录（内存 tar 归档）。
-func (c *realDockerClient) CopyToDir(ctx context.Context, containerID, dir string, files []FileEntry) error {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	for _, f := range files {
-		if err := tw.WriteHeader(&tar.Header{
-			Name:   f.Name,
-			Mode:   f.Mode,
-			Size:   int64(len(f.Data)),
-			Format: tar.FormatPAX,
-		}); err != nil {
-			return fmt.Errorf("ingress: cert tar header %s: %w", f.Name, err)
-		}
-		if _, err := tw.Write(f.Data); err != nil {
-			return fmt.Errorf("ingress: cert tar write %s: %w", f.Name, err)
-		}
-	}
-	if err := tw.Close(); err != nil {
-		return fmt.Errorf("ingress: cert tar close: %w", err)
-	}
-	if _, err := c.cli.CopyToContainer(ctx, containerID, mobyclient.CopyToContainerOptions{
-		DestinationPath: dir,
-		Content:         &buf,
-	}); err != nil {
-		return fmt.Errorf("ingress: cert copy to %s: %w", dir, err)
-	}
-	return nil
+	return true, nil
 }
 
 // EnsureTraefik 幂等收敛入口服务（不存在创建；存在比对差异更新）。
@@ -310,18 +227,20 @@ func (m *Manager) EnsureTraefik(ctx context.Context) error {
 	m.mu.Unlock()
 
 	m.setResponderURL("http://" + net.JoinHostPort(advertise, fmt.Sprint(m.cfgPort())))
-	token, err := m.token(ctx)
-	if err != nil {
+	// E1-2 迁移收敛：v0.1 证书卷形态残留（seed 容器）幂等移除。旧挂载
+	// 由下方 spec 收敛自动清除（期望 spec 不含挂载，traefikSpecEqual 对
+	// 比出差异即更新）。证书数据本体在控制面 cert_dir，本步不触碰。
+	if err := m.retireLegacyCertDistribution(ctx); err != nil {
 		return err
 	}
-	// 证书卷 + seed 容器先行（Traefik 挂载的前置对象；幂等）。
-	if _, err := m.ensureCertVolume(ctx); err != nil {
+	token, err := m.token(ctx)
+	if err != nil {
 		return err
 	}
 	// F7（S20）：provider_endpoint 直接引用构造 spec 时使用的 responder 变量
 	// ——此前取 Args[3] 是按位猜（"--providers.http.endpoint=<url>" 在 args
 	// 中的位置），args 顺序一变日志字段即错位（曾把 pollInterval 记成端点）。
-	endpoint := m.responderURLValue()
+	endpoint := m.providerEndpoint(advertise)
 	desired := m.buildTraefikSpec(endpoint, token)
 	cur, err := m.docker.ServiceInspect(ctx, IngressServiceName)
 	if err != nil {
@@ -432,15 +351,35 @@ func specWithNetworks(base swarm.ServiceSpec, netIDs []string) swarm.ServiceSpec
 	return spec
 }
 
-// buildTraefikSpec 构造入口服务的期望 swarm spec（host 80/443 + 证书目录
-// 只读挂载 + HTTP provider 静态配置 + ping 健康检查）。
-func (m *Manager) buildTraefikSpec(responder, token string) swarm.ServiceSpec {
+// retireLegacyCertDistribution 是 E1-2 的迁移收敛步：v0.1「证书本地卷 +
+// seed 容器」分发形态退役——检测到 seed 容器残留即移除并日志留痕（幂等：
+// 不存在即 no-op）。旧挂载的清除在 spec 收敛（期望 spec 无挂载，差异即
+// 更新）；证书命名卷本体保留（卷内是证书副本，移除属数据面动作——「迁移
+// 只动分发面不动证书数据」，由操作者按指引自行清理）。
+func (m *Manager) retireLegacyCertDistribution(ctx context.Context) error {
+	removed, err := m.docker.LegacySeedContainerRemove(ctx, legacyCertSeedContainerName)
+	if err != nil {
+		return err
+	}
+	if removed {
+		m.log.Info("ingress: legacy cert seed container removed (volume model retired; certs are distributed inline via dynamic config since E1-2)",
+			"container", legacyCertSeedContainerName)
+	}
+	return nil
+}
+
+// buildTraefikSpec 构造入口服务的期望 swarm spec（host 80/443 + HTTP
+// provider 静态配置 + ping 健康检查；E1-2 起无证书挂载——证书经动态配置
+// 内联下发，见 dynamic.go TLSCertificate）。
+func (m *Manager) buildTraefikSpec(endpoint, token string) swarm.ServiceSpec {
 	args := []string{
 		"--entryPoints.web.address=:" + fmt.Sprint(m.cfg.HTTPPort),
 		"--entryPoints.websecure.address=:" + fmt.Sprint(m.cfg.HTTPSPort),
 		// 控制面下发（唯一配置面；Swarm/Docker 自动发现显式不启用——
-		// architecture §2.5 路由时机不变量 + Spike B 四态纪律）。
-		"--providers.http.endpoint=" + responder + "/configs",
+		// architecture §2.5 路由时机不变量 + Spike B 四态纪律）。endpoint
+		// 由 providerEndpoint 决定：单节点明文 8422；多节点证书就绪后切
+		// https://ctrl.<base>:8423（E1-3）。
+		"--providers.http.endpoint=" + endpoint + "/configs",
 		"--providers.http.pollInterval=" + m.cfg.PollInterval.String(),
 		"--providers.http.pollTimeout=5s",
 		"--providers.http.headers.Authorization=Bearer " + token,
@@ -483,47 +422,39 @@ func (m *Manager) buildTraefikSpec(responder, token string) swarm.ServiceSpec {
 			Order:         "stop-first",
 		},
 	}
-	// 证书命名卷只读挂载（tls.certificates 文件引用的到达路径；卷由
-	// seed 容器承载、控制面经 docker API 拷贝同步——swarm 不接受 Windows
-	// 宿主路径 bind，实机验证结论；卷的持久化使 Traefik 重启不丢证书）。
-	if m.cfg.CertVolume != "" {
-		spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, mount.Mount{
-			Type:     mount.TypeVolume,
-			Source:   m.cfg.CertVolume,
-			Target:   TraefikCertMountPath,
-			ReadOnly: true,
-		})
-	}
 	return spec
 }
 
-// ensureCertVolume 确保证书卷 + seed 容器就绪（EnsureTraefik 前置；幂等）。
-// 返回 seed 容器 ID（证书同步消费）。
-func (m *Manager) ensureCertVolume(ctx context.Context) (string, error) {
-	if m.cfg.CertVolume == "" {
-		return "", nil
+// providerEndpoint 计算下发给 Traefik 的静态 provider endpoint（不含
+// /configs 路径后缀）：
+//   - base_domain 为空（单节点 v0.1 形态）：http://<advertise>:8422——
+//     行为与 v0.1 逐字一致（金样：既有 gateway/ingress 测试）；
+//   - base_domain 非空且平台证书未就绪：同 8422 形态——bootstrap 容忍期
+//     （设计 §2.4 次序②③）：挑战路由经动态配置可达 8422 应答器，HTTP-01
+//     得以完成；Traefik 拿到的动态配置此窗口内不含秘密载荷以外的证书段
+//     （平台证书尚未存在）；
+//   - base_domain 非空且平台证书就绪：https://ctrl.<base>:<config_tls_addr
+//     端口>/configs——各节点 Traefik 经公信 CA 校验直连 manager 的 TLS 配
+//     置面（D-MN-3；动态配置自此含内联证书私钥，明文通道退役）。
+//
+// 就绪判定 sticky：平台证书一经落盘持续存在（续期同路径换入），endpoint
+// 不回摆。
+func (m *Manager) providerEndpoint(advertise string) string {
+	if m.ConfigTLSEnabled() && m.platformCertOnDisk() {
+		return "https://" + net.JoinHostPort("ctrl."+m.cfg.BaseDomain, configTLSPort(m.cfg.ConfigTLSAddr))
 	}
-	if err := m.docker.VolumeEnsure(ctx, m.cfg.CertVolume); err != nil {
-		return "", err
-	}
-	return m.docker.SeedContainerEnsure(ctx, certSeedContainerName, m.cfg.CertSeedImage,
-		m.cfg.CertVolume, TraefikCertMountPath)
+	return "http://" + net.JoinHostPort(advertise, fmt.Sprint(m.cfgPort()))
 }
 
-// syncCertToVolume 把一张证书（crt/key）拷入证书卷（签发/续期落盘后的
-// 同步步；TLS 段文件由此到达 Traefik）。
-func (m *Manager) syncCertToVolume(ctx context.Context, pair *CertificatePair) error {
-	seedID, err := m.ensureCertVolume(ctx)
-	if err != nil {
-		return err
+// configTLSPort 从 config_tls_addr 提取端口位（Normalize 已回落设计缺省
+// 0.0.0.0:8423，本函数只防显式畸形值——回落 8423 与缺省字面一致，字面值
+// 由 TestDefaultConfigTLSAddrIsLiteral8423 钉死）。
+func configTLSPort(addr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		return "8423"
 	}
-	if seedID == "" {
-		return nil // 证书卷未配置：TLS 段无到达路径（配置位显式关闭）
-	}
-	return m.docker.CopyToDir(ctx, seedID, TraefikCertMountPath, []FileEntry{
-		{Name: pair.App + ".crt", Data: pair.CertPEM, Mode: 0o644},
-		{Name: pair.App + ".key", Data: pair.KeyPEM, Mode: 0o600},
-	})
+	return port
 }
 
 // portUint 是端口的有界窄化（配置校验保证 1..65535；越界收敛为 0 让

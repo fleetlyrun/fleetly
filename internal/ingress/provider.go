@@ -1,12 +1,20 @@
 package ingress
 
-// 控制面配置端点（HTTP provider 面与 ACME 挑战应答面，T2.15/T2.16）：
+// 控制面配置端点（HTTP provider 面与 ACME 挑战应答面，T2.15/T2.16；
+// E1-3 增 8423 TLS 面——设计 §2.4 端口分面）：
 //
 //	GET /configs                          → 全量动态配置 JSON（Traefik 轮询；
 //	                                        鉴权 token 强制，错误恒 401）
 //	GET /healthz                          → 探活（无鉴权、无信息泄露）
 //	GET /.well-known/acme-challenge/<tok> → 挑战应答（公开路径，ACME 契约；
 //	                                        Traefik 挑战路由反代到这里）
+//
+// 8422 明文面（本文件 handler）：/configs + /healthz + 挑战应答。单节点
+// v0.1 形态下 /configs 是唯一 provider 面；多节点（base_domain 非空）
+// bootstrap 容忍期沿用，证书就绪后 Traefik 切 8423。
+// 8423 TLS 面（newTLSConfigHandler，runtime 服务壳装配监听）：只承载
+// /configs（全量动态配置 + 内联证书；含私钥，明文跨公网不可接受——
+// D-MN-3），平台证书服务、公信 CA 校验、token 鉴权沿用。
 //
 // 形态取舍：独立内部端口（默认 0.0.0.0:8422），不挂现有 gateway mux——
 // gateway 面是 gRPC/REST 契约面（127.0.0.1 回环 + 平台鉴权体系），而本
@@ -54,25 +62,7 @@ func tokenLoadOrGenerate(path string) (string, bool, error) {
 func newProviderHandler(v *view, token string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/configs", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		if !authorize(r, token) {
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		cfg, rev := v.snapshot()
-		raw, err := MarshalJSONBytes(cfg)
-		if err != nil {
-			http.Error(w, "marshal config", http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(raw)
-		// E2：记录本次实际下发载荷的 revision（快照返回值，非当下值）。
-		v.markServed(rev)
+		serveConfigs(v, token, w, r)
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -92,6 +82,42 @@ func newProviderHandler(v *view, token string) http.Handler {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(keyAuth))
+	})
+	return mux
+}
+
+// serveConfigs 是 GET /configs 的应答体（8422 明文面与 8423 TLS 面共用
+// ——同一视图、同一 token 鉴权、同一 markServed 语义：挑战收敛门依赖
+// 「Traefik 从任一面取走配置」的事实）。
+func serveConfigs(v *view, token string, w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !authorize(r, token) {
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+	cfg, rev := v.snapshot()
+	raw, err := MarshalJSONBytes(cfg)
+	if err != nil {
+		http.Error(w, "marshal config", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(raw)
+	// E2：记录本次实际下发载荷的 revision（快照返回值，非当下值）。
+	v.markServed(rev)
+}
+
+// newTLSConfigHandler 构造 8423 TLS 面的 handler（E1-3，设计 §2.4 端口
+// 分面表：该面只承载 /configs——全量动态配置 + 内联证书，静态 bearer
+// token 鉴权沿用；挑战面与 /healthz 属 8422 明文面，不在此复制）。
+func newTLSConfigHandler(v *view, token string) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/configs", func(w http.ResponseWriter, r *http.Request) {
+		serveConfigs(v, token, w, r)
 	})
 	return mux
 }
