@@ -102,3 +102,4 @@ zane-ops：自托管 PaaS，Heroku/Railway/Render 的开源替代，支持镜像
 1. E7 webshell 按 R1 细则直接出票；E4 按 R5 细化 FZ-1 落地；E6 按 R4 走 Traefik access log→SQLite 轻路径并守住 A1 资源红线；引擎加固（EnterPhase 前置重构）合并 R2 对账项。
 2. 平台双域名安装（ROOT_DOMAIN/APP_DOMAIN）印证 E1 前置「平台基础域名安装项」的必要性。
 3. 本报告只反映调研时点的 zane-ops HEAD；其 notes/（`api-tokens-plan.md` 记录的 deploy_token 权限漏洞、compose 卷 reconcile 未完成）说明重栈路线的工程债同样存在，不构成改换路线的理由。
+4. **修订（2026-09-20，V2-1 裁决后）**：用户裁决「易用性与轻量同等重要，可适当提高内存限额」——[v0.2 规划](../plan/2026-09-20-v0.2-plan.md) 红线 1 由 idle <400MB 上调至 **<600MB**，VictoriaLogs 改为**默认捆绑**（单二进制 + 控制面直推、无采集中间容器，600MB 实测门约束）。随之：R4 的访问日志载体由 SQLite 改为随 VictoriaLogs 统一入日志库；A1 的红线对象明确为「多容器重栈」（fluentd+Loki+Grafana 三件套、Temporal 级），VictoriaLogs 类轻单核组件不属此列。本报告其余结论不变（调研为时点快照，裁决演进以规划文档为准）。
