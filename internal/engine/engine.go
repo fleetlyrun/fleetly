@@ -72,6 +72,14 @@ type Engine struct {
 	// 与 recoveryNextAt 同模式：tick goroutine 专用——Run 单 goroutine 驱动，
 	// 无并发访问；重启即清零 = 重启后立即扫一拍）。
 	deleteScanNextAt time.Time
+	// substrateNextAt 是运行期存在性对账扫描的最早时刻（T0-V2.2/R2 频控，
+	// 与 deleteScanNextAt 同模式：tick goroutine 专用；重启即清零 = 重启后
+	// 立即扫一拍）。
+	substrateNextAt time.Time
+	// substrateMissingSeen 是 substrate 服务缺失上报的进程内记忆（T0-V2.2/R2：
+	// 持续缺失只报一次；服务恢复后清零可再报；重启清零 = 缺失存续时重报
+	// 一次——重复优于漏报，与 driftSeen 同语义）。
+	substrateMissingSeen map[string]bool
 	// dutyPanicOn / dutyCalls 是 safeCall 的测试注入缝（MG-5 覆盖面测试）：
 	// 前者按 duty 名注入 panic（验证包壳隔离），后者记录经 safeCall 执行的
 	// duty 名与次数（验证 duty 清单全部收口；Run goroutine 写、测试 goroutine
@@ -93,18 +101,19 @@ type PlacementResolver interface {
 func NewEngine(cfg Config, store *state.Store, sub Substrate, images ImageChecker,
 	resolver PlacementResolver, box *secrets.Box, log *slog.Logger) *Engine {
 	return &Engine{
-		cfg:           cfg.Normalize(),
-		store:         store,
-		sub:           sub,
-		images:        images,
-		resolver:      resolver,
-		box:           box,
-		clock:         realClock{},
-		log:           log,
-		waterMarks:    map[string]time.Time{},
-		driftSeen:     map[string]bool{},
-		routeBudget:   routePublishBudget,
-		recoveryStuck: map[string]bool{},
+		cfg:                  cfg.Normalize(),
+		store:                store,
+		sub:                  sub,
+		images:               images,
+		resolver:             resolver,
+		box:                  box,
+		clock:                realClock{},
+		log:                  log,
+		waterMarks:           map[string]time.Time{},
+		driftSeen:            map[string]bool{},
+		routeBudget:          routePublishBudget,
+		recoveryStuck:        map[string]bool{},
+		substrateMissingSeen: map[string]bool{},
 	}
 }
 
@@ -191,14 +200,15 @@ func (e *Engine) safeCall(name string, fn func()) {
 }
 
 // tick 是一个推进周期：恢复重试（M1-8）→ 队列拾取 → 在途推进 → 窗后巡检
-// → deleting 应用回收（H10/MG-3，时间闸降频）。全部 duty 经 safeCall 收口
-// （MG-5）。
+// → deleting 应用回收（H10/MG-3，时间闸降频）→ 运行期存在性对账
+// （T0-V2.2/R2，时间闸降频）。全部 duty 经 safeCall 收口（MG-5）。
 func (e *Engine) tick(ctx context.Context) {
 	e.safeCall("recoveryRetry", func() { e.retryRecoveryIfNeeded(ctx) })
 	e.safeCall("pickQueued", func() { e.pickQueued(ctx) })
 	e.safeCall("advanceActive", func() { e.advanceActive(ctx) })
 	e.safeCall("watchPostWindow", func() { e.watchPostWindow(ctx) })
 	e.safeCall("reapDeletingApps", func() { e.reapDeletingApps(ctx, false) })
+	e.safeCall("substrateRecon", func() { e.substrateRecon(ctx, false) })
 }
 
 // pickQueued 拾取可启动的 queued 部署：同 app 互斥——仅当该 app 无其他

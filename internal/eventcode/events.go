@@ -7,9 +7,9 @@ package eventcode
 //   - architecture §4.3（cron 触发前哨「记 skipped + 事件」）：cron.skipped
 //   - 实现期新增（单独列出）：route.* 2 个、app.webhook_fetch_failed、
 //     engine.stale_nonterminal、build.stale_nonterminal（S18-A10）、
-//     app.deleted（B6/H10，MG-3）
+//     app.deleted（B6/H10，MG-3）、app.substrate_missing（T0-V2.2，R2）
 //
-// 计 38 个事件名。
+// 计 39 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -44,6 +44,11 @@ var builtins = []Event{
 	// 终局事件——此前 api DeleteApp 只落第一拍（deleting），第二拍
 	// （deleting → deleted + 受管服务移除）无执行者，服务永久运行。
 	{Name: "app.deleted", Summary: "app deletion completed (tombstone second beat: managed services removed, name enters retention hold)"},
+	// T0-V2.2 实现期新增（调研 R2 运行期 DB↔Swarm 对账，引擎周期 duty）：
+	// 派生态声称 running 的 app 其期望服务在 substrate 整体缺失（外部
+	// docker service rm）——只披露与修正派生态（running → down），不自动
+	// 重建；判据是 service 存在性而非副本数，底座读错误不算缺失。
+	{Name: "app.substrate_missing", Summary: "app claimed running but its managed service(s) are absent from the substrate (external removal); view corrected to down"},
 
 	// ── 放置与节点/卷（stateful-placement §2.8）──
 	{Name: "placement.bound", Summary: "app node binding completed (including automatic pinning)"},

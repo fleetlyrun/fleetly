@@ -75,6 +75,11 @@ var docEvents = map[string]string{ // event → 文档出处
 	// B6/H10 实现期新增（MG-3 横切结构修复）：app 删除生命周期第二拍的
 	// 终局事件（引擎 deleting 回收 duty 发出）。
 	"app.deleted": "B6/H10 added during implementation (MG-3; app deletion second-beat terminal event)",
+
+	// T0-V2.2 实现期新增（调研 R2 运行期 DB↔Swarm 对账，引擎周期 duty）：
+	// 声称 running 的 app 其期望服务在 substrate 整体缺失的披露与派生态
+	// 修正（running → down；只披露不重建）。
+	"app.substrate_missing": "T0-V2.2 added during implementation (R2; runtime existence reconciliation: running app whose substrate service vanished — disclosed and the derived view corrected)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

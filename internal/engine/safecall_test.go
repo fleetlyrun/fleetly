@@ -27,7 +27,7 @@ import (
 
 // tickDutyManifest 是 tick 的 duty 清单（与 engine.go 的 tick 实现一一对应；
 // 源扫描测试钉死两者一致——新增 duty 不进清单/不走 safeCall 即红）。
-var tickDutyManifest = []string{"recoveryRetry", "pickQueued", "advanceActive", "watchPostWindow", "reapDeletingApps"}
+var tickDutyManifest = []string{"recoveryRetry", "pickQueued", "advanceActive", "watchPostWindow", "reapDeletingApps", "substrateRecon"}
 
 // readEngineSource 读取 engine.go 源文本（同包直读；源扫描的输入）。
 func readEngineSource(t *testing.T) string {

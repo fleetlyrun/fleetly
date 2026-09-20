@@ -96,9 +96,16 @@ type fakeSubstrate struct {
 	// 回收 duty 的底座瞬态重试路径——非 nil 即返回错误，模拟 dockerd 短暂
 	// 不可达）。
 	failServiceListErr error
+	// failInspectErr 注入 ServiceInspect 瞬态错误（T0-V2.2 存在性对账测试：
+	// 非 nil 即返回——模拟 dockerd 超时/不可达；对账 duty 必须把它与服务
+	// 缺失区分，不得发事件、不得改派生态）。
+	failInspectErr error
 	// serviceListCalls 是 ServiceList 的调用计数（H10/MG-3 频控断言：duty
 	// 时间闸内的拍子不应触达底座）。
 	serviceListCalls int
+	// inspectCalls 是 ServiceInspect 的调用计数（T0-V2.2 存在性对账频控
+	// 断言：时间闸内的拍子不应触达底座——serviceListCalls 同模式）。
+	inspectCalls int
 	// swarmErr 是 SwarmReady 的错误注入（底座不可达）：ErrNotSwarmReady =
 	// 暂态（引擎记警告后按各路径语义重试/推进）；其他错误 = 硬失败。
 	swarmErr error
@@ -126,6 +133,10 @@ func (f *fakeSubstrate) NetworkEnsure(_ context.Context, name string) error {
 func (f *fakeSubstrate) ServiceInspect(_ context.Context, name string) (ServiceState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.inspectCalls++
+	if f.failInspectErr != nil {
+		return ServiceState{}, f.failInspectErr
+	}
 	svc, ok := f.services[name]
 	if !ok {
 		return ServiceState{}, ErrServiceNotFound
