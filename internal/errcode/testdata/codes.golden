@@ -16,7 +16,7 @@ E_IMAGE_PULL_FAILED	500	https://docs.fleetly.dev/errors/E_IMAGE_PULL_FAILED	镜�
 E_IMAGE_UNAVAILABLE	500	https://docs.fleetly.dev/errors/E_IMAGE_UNAVAILABLE	回滚目标镜像已不可用（digest 失效/被清理）	回滚目标镜像已不可用：改为重放最近可用版本或重新构建后部署。
 E_LABEL_RESERVED	422	https://docs.fleetly.dev/errors/E_LABEL_RESERVED	用户占用了保留命名空间 fleetly.*	fleetly.* 为平台保留命名空间：请改用其他 label 前缀。
 E_OBSERVE_CRASH_LOOP	500	https://docs.fleetly.dev/errors/E_OBSERVE_CRASH_LOOP	观察窗判定 crash loop	观察窗内进程反复退出：查看应用日志定位崩溃原因，必要时手动回滚。
-E_OBSERVE_UNHEALTHY	500	https://docs.fleetly.dev/errors/E_OBSERVE_UNHEALTHY	观察窗判定 unhealthy	观察窗内健康判定未通过：检查应用日志与健康端点，必要时手动回滚。
+E_OBSERVE_UNHEALTHY	500	https://docs.fleetly.dev/errors/E_OBSERVE_UNHEALTHY	观察窗判定 unstable（未达 healthy）	观察窗内健康判定未通过：检查应用日志与健康端点，必要时手动回滚。
 E_PLACEMENT_LABEL_CONFLICT	422	https://docs.fleetly.dev/errors/E_PLACEMENT_LABEL_CONFLICT	同一应用多个服务的放置 label 指向不同节点	将同一应用全部服务的 fleetly.placement.node 统一为相同节点。
 E_PLACEMENT_MOVE_REQUIRES_ACK	409	https://docs.fleetly.dev/errors/E_PLACEMENT_MOVE_REQUIRES_ACK	放置 label 与当前绑定不一致：跨点移动必须显式确认（唯一路径=备份恢复迁移）	跨点移动唯一受支持路径是备份恢复迁移：通过 PUT placement 显式确认（--data-restored/--discard）。
 E_PLACEMENT_NODE_GONE	409	https://docs.fleetly.dev/errors/E_PLACEMENT_NODE_GONE	绑定节点已被移除（blocked(node_gone)；进行中部署以此失败）	恢复数据后 rebind --data-restored，或确认丢弃后 rebind --discard（admin+confirm+审计）。

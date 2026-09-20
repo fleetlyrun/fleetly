@@ -98,7 +98,7 @@ func (e *Engine) evaluateReleasing(ctx context.Context, rec state.DeployRecord) 
 			code = "E_SCHEDULER_PENDING_TIMEOUT"
 		}
 		return e.failUnswitchedOrSwitched(ctx, rec, code,
-			fmt.Sprintf("发布看门狗超时（%s）：新版本未在预算内通过健康门", e.cfg.ReleaseTimeout))
+			fmt.Sprintf("发布看门狗超时（%s）：新版本未在预算内通过健康门", e.cfg.DeployTimeout))
 	}
 
 	// 全部服务切换 → 切流点（首个目标实例健康即起算观察窗，§2.2 L3）。
@@ -163,7 +163,7 @@ func (e *Engine) enterBlockedWaiting(ctx context.Context, rec *state.DeployRecor
 // 续跑并重新起算」）、placement.recovered 事件。
 func (e *Engine) resumeFromBlocked(ctx context.Context, rec *state.DeployRecord) error {
 	phase := ""
-	deadline := e.now().Add(e.cfg.ReleaseTimeout)
+	deadline := e.now().Add(e.cfg.DeployTimeout)
 	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{
 		Phase:              &phase,
 		WatchdogDeadlineAt: &deadline,
@@ -228,7 +228,7 @@ func (e *Engine) enterObserving(ctx context.Context, rec state.DeployRecord) err
 
 // failUnswitchedOrSwitched 是失败分流唯一入口（D-REL-4，判据 =
 // first_healthy_at）：
-//   - 未切流（null）：同记录归位 recovery=restore（重放最后有效 revision；
+//   - 未切流（null）：同记录归位 recovery=replay（重放最后有效 revision；
 //     首发无版本 → scale=0 保留现场）；stop-first 停机如实累计；
 //   - 已切流：verdict=unstable 终态告警（不建新 deployment——默认只告警，
 //     D-REL-6；app=degraded）。
@@ -313,8 +313,8 @@ func (e *Engine) failUnswitched(ctx context.Context, rec state.DeployRecord, cod
 		return e.failCriticalRestore(ctx, rec, detail, err, stopFirst, restoreCode)
 	}
 
-	// 归位完成：recovery=restore 记录在同一 deployment 条目内（D-REL-7）。
-	recovery := state.RecoveryRestore
+	// 归位完成：recovery=replay 记录在同一 deployment 条目内（D-REL-7）。
+	recovery := state.RecoveryReplay
 	patch := state.DeploymentPatch{Recovery: &recovery}
 	if !rec.DowntimeStartedAt.IsZero() {
 		ended := e.now()

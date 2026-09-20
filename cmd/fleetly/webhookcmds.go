@@ -131,7 +131,7 @@ func (c *webhookShowCmd) Run(ctx context.Context, env *commands.Environment, arg
 		var b strings.Builder
 		fmt.Fprintf(&b, "app: %s\n", resp.GetName())
 		fmt.Fprintf(&b, "  webhook secret: %s\n", configuredWord(resp.GetSecretConfigured()))
-		fmt.Fprintf(&b, "  push branch: %s\n", resp.GetBranch())
+		fmt.Fprintf(&b, "  branch: %s (push/fetch)\n", resp.GetSourceBranch())
 		fmt.Fprintf(&b, "  git remote: %s\n", resp.GetGitRemoteHint())
 		fmt.Fprintf(&b, "  source url: %s\n", orDash(resp.GetSourceUrl()))
 		fmt.Fprintf(&b, "  source auth: %s\n", resp.GetSourceAuthKind())
@@ -172,8 +172,8 @@ func (c *webhookSourceSetCmd) Run(ctx context.Context, env *commands.Environment
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Apps().SetAppSource(ctx, &serverv1.SetAppSourceRequest{
-			Name: args[0], Url: args[1], Branch: c.branch,
-			AuthKind: c.authKind, AuthSecret: c.authSecret,
+			Name: args[0], SourceUrl: args[1], SourceBranch: c.branch,
+			SourceAuthKind: c.authKind, SourceAuthSecret: c.authSecret,
 		})
 		if err != nil {
 			return err
@@ -182,7 +182,7 @@ func (c *webhookSourceSetCmd) Run(ctx context.Context, env *commands.Environment
 			return writeProtoJSON(env.Stdout, resp)
 		}
 		_, err = fmt.Fprintf(env.Stdout, "source set for %s\n  url: %s\n  branch: %s\n  auth: %s\n",
-			resp.GetName(), resp.GetSourceUrl(), resp.GetSourceBranch(), resp.GetAuthKind())
+			resp.GetName(), resp.GetSourceUrl(), resp.GetSourceBranch(), resp.GetSourceAuthKind())
 		return err
 	})
 }

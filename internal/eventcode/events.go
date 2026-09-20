@@ -57,7 +57,7 @@ var builtins = []Event{
 	// 预留：节点观测事件族由节点观测器发出——v0.1 单节点无观测器循环
 	//（节点状态经放置 Preflight 直读），随 v0.2 多节点。
 	{Name: "node.joined", Summary: "节点加入集群（观测）"},
-	{Name: "node.down", Summary: "节点判定 DOWN（Swarm 心跳语义）"},
+	{Name: "node.down", Summary: "节点判定 DOWN（Swarm 失联判定）"},
 	{Name: "node.up", Summary: "节点恢复 ready"},
 	{Name: "node.removed", Summary: "节点被移除（docker node rm 观测）"},
 	{Name: "volume.created", Summary: "卷注册（数据诞生点，钉住所在节点）"},

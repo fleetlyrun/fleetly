@@ -455,7 +455,7 @@ func (s *Store) FindBuildsByDigest(ctx context.Context, digest string) ([]BuildR
 
 // ListNonTerminalBuilds 返回全部非终态构建行（S18-A10：janitor 非终态超龄
 // 扫描的输入——正常态由队列 worker 认领/收敛，超龄停留即状态机漏洞的显性
-// 化告警；只读不自愈）。queued 行锚点 created_at，building 行锚点 started_at。
+// 化告警；只读不自愈）。queued 行基线 created_at，building 行基线 started_at。
 func (s *Store) ListNonTerminalBuilds(ctx context.Context) ([]BuildRecord, error) {
 	const q = `SELECT id, app_id, service, driver, status, image_ref, image_digest,
 		request, plan_path, log_path, error_code, created_at, started_at, finished_at

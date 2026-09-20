@@ -144,12 +144,12 @@ func (c *AppConfig) LogsSettings() logs.Config {
 }
 
 // EngineConfig 是发布引擎配置节（config 键 engine.*）。默认值与
-// release-semantics §2.8 治理参数表一致（releaseTimeout=300s、观察窗 60s、
+// release-semantics §2.8 治理参数表一致（deployTimeout=300s、观察窗 60s、
 // 水位判定 10s、轮询 2s），经 engine.Config.Normalize 回落。
 type EngineConfig struct {
-	// ReleaseTimeoutSeconds 是 L2 发布看门狗秒数（engine.release_timeout_seconds；
+	// DeployTimeoutSeconds 是 L2 发布看门狗秒数（engine.deploy_timeout_seconds；
 	// 缺省 300——含 PENDING/停滞，有效值 ≥ health 预算）。
-	ReleaseTimeoutSeconds int `mapstructure:"release_timeout_seconds"`
+	DeployTimeoutSeconds int `mapstructure:"deploy_timeout_seconds"`
 	// ObserveSeconds 是 L3 观察窗秒数（engine.observe_seconds；缺省 60）。
 	ObserveSeconds int `mapstructure:"observe_seconds"`
 	// ReplicasBelowSeconds 是观察窗副本水位不足判定的持续秒数
@@ -166,7 +166,7 @@ type EngineConfig struct {
 // 缺省值经 Normalize 回落——单一事实源在 internal/engine）。
 func (c *AppConfig) EngineSettings() engine.Config {
 	return engine.Config{
-		ReleaseTimeout:   time.Duration(c.Engine.ReleaseTimeoutSeconds) * time.Second,
+		DeployTimeout:    time.Duration(c.Engine.DeployTimeoutSeconds) * time.Second,
 		ObserveWindow:    time.Duration(c.Engine.ObserveSeconds) * time.Second,
 		ReplicasBelowFor: time.Duration(c.Engine.ReplicasBelowSeconds) * time.Second,
 		PollInterval:     time.Duration(c.Engine.PollSeconds) * time.Second,

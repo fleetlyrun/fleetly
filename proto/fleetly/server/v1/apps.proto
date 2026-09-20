@@ -55,7 +55,8 @@ service AppsService {
     option (google.api.http) = { get: "/v1/apps/{name}/webhook" };
   }
   // SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；
-  // admin）。branch 同时是 git push 的触发分支（app 配置分支，默认 main）。
+  // admin）。source_branch 同时是 git push 的触发分支（app 配置分支，
+  // 默认 main）。
   // 认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。
   rpc SetAppSource(SetAppSourceRequest) returns (SetAppSourceResponse) {
     option (google.api.http) = {
@@ -138,11 +139,13 @@ message ShowAppWebhookResponse {
   bool secret_configured = 2;
   // 拉源配置（未设置时 url/branch 为空串、auth_kind = none）。
   string source_url = 3;
+  // app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。
   string source_branch = 4;
   // none | https_token | ssh_key。
   string source_auth_kind = 5;
-  // git push 触发分支（app 配置分支，默认 main）。
-  string branch = 6;
+  // 6 曾为 branch（与 source_branch 同值重复投影，2026-09-20 命名审查删除）。
+  reserved 6;
+  reserved "branch";
   // push/webhook 端点提示（SSH git URL，如 ssh://git@host:8424/<app>.git；
   // 主机位取 control-plane 可达地址的尽力形态）。
   string git_remote_hint = 7;
@@ -151,21 +154,21 @@ message ShowAppWebhookResponse {
 message SetAppSourceRequest {
   string name = 1 [(buf.validate.field).string.min_len = 1];
   // 拉源 remote URL（file:// 与 https://、ssh:// 形态）。
-  string url = 2 [(buf.validate.field).string.max_len = 2048];
-  // 触发/拉取分支（默认 main）。
-  string branch = 3 [(buf.validate.field).string = { min_len: 1, max_len: 200 }];
+  string source_url = 2 [(buf.validate.field).string.max_len = 2048];
+  // app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。
+  string source_branch = 3 [(buf.validate.field).string = { min_len: 1, max_len: 200 }];
   // 认证形态：none | https_token | ssh_key。
-  string auth_kind = 4 [(buf.validate.field).string = { in: ["none", "https_token", "ssh_key"] }];
-  // 认证材料（https_token = token 原文；ssh_key = PEM 私钥）。auth_kind =
+  string source_auth_kind = 4 [(buf.validate.field).string = { in: ["none", "https_token", "ssh_key"] }];
+  // 认证材料（https_token = token 原文；ssh_key = PEM 私钥）。source_auth_kind =
   // none 时必须为空；服务端 envelope 加密落库，明文不落、永不回读。
-  // protovalidate 形状约束在服务端用例层按 auth_kind 交叉校验（跨字段
+  // protovalidate 形状约束在服务端用例层按 source_auth_kind 交叉校验（跨字段
   // 规则—— CEL 交叉字段此处不引入，保持 proto 面最小）。
-  string auth_secret = 5 [(buf.validate.field).string.max_len = 16384];
+  string source_auth_secret = 5 [(buf.validate.field).string.max_len = 16384];
 }
 
 message SetAppSourceResponse {
   string name = 1;
   string source_url = 2;
   string source_branch = 3;
-  string auth_kind = 4;
+  string source_auth_kind = 4;
 }

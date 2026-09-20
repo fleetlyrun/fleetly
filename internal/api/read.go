@@ -41,12 +41,12 @@ func (s *PlacementService) ShowPlacement(ctx context.Context, req *serverv1.Show
 	}
 	for _, v := range volumes {
 		resp.Volumes = append(resp.Volumes, &serverv1.VolumeView{
-			Key:       v.Key,
-			Name:      v.Name,
-			Kind:      string(v.Kind),
-			NodeId:    v.PlatformNodeID,
-			MountPath: v.MountPath,
-			Status:    string(v.Status),
+			Key:            v.Key,
+			Name:           v.Name,
+			Kind:           string(v.Kind),
+			PlatformNodeId: v.PlatformNodeID,
+			MountPath:      v.MountPath,
+			Status:         string(v.Status),
 		})
 	}
 	return resp, nil

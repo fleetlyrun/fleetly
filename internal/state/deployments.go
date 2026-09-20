@@ -16,8 +16,8 @@ import (
 // queued/preparing/building/releasing/observing/succeeded/failed/cancelled；
 // 00004 加法列承载子状态（phase=blocked_waiting）、失败分流判据
 // （first_healthy_at）、同记录恢复（recovery）、判定（verdict）、停机账
-// （downtime_ms）、看门狗/观察窗时间锚与期望态快照（desired_spec 密文）；
-// 00009 加法列 phase_started_at 是准备/构建预算锚点（拾取时刻，排队等待
+// （downtime_ms）、看门狗/观察窗时间标记与期望态快照（desired_spec 密文）；
+// 00009 加法列 phase_started_at 是准备/构建预算基线（拾取时刻，排队等待
 // 不计入预算，H11）。
 //
 // 迁移全部走 from→to 谓词 + RowsAffected 校验（与 builds 同纪律）：终态
@@ -84,8 +84,9 @@ const (
 
 // deployment recovery 词表（recovery 列；同记录恢复记录，D-REL-7）。
 const (
-	// RecoveryRestore 已按最后有效 revision 归位重放（未切流失败/cancel）。
-	RecoveryRestore = "restore"
+	// RecoveryReplay 已按最后有效 revision 归位重放（未切流失败/cancel；
+	// 值取 replay——restore 专指 DR 灾难恢复，见词汇表 restore 词条）。
+	RecoveryReplay = "replay"
 	// RecoveryBlocked 恢复被阻塞（引擎不可达等；退避重试可续跑）。
 	RecoveryBlocked = "blocked"
 )
@@ -118,11 +119,11 @@ type DeployRecord struct {
 	DowntimeMS        int64
 	DowntimeStartedAt time.Time
 	DowntimeEndedAt   time.Time
-	// 看门狗/观察窗时间锚（零值 = 未进入对应阶段）。
+	// 看门狗/观察窗时间标记（零值 = 未进入对应阶段）。
 	ReleaseStartedAt   time.Time
 	WatchdogDeadlineAt time.Time
 	ObserveStartedAt   time.Time
-	// PhaseStartedAt 是准备/构建预算锚点（00009 加法列）：queued → preparing
+	// PhaseStartedAt 是准备/构建预算基线（00009 加法列）：queued → preparing
 	// 转换（引擎拾取）时刻——排队等待不计入预算（H11）；零值（存量行未写）
 	// 时消费方回落 CreatedAt。releasing 由 ReleaseStartedAt 起算，两者互不
 	// 干扰。

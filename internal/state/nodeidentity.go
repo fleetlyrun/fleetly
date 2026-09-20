@@ -13,10 +13,10 @@ import (
 
 // 节点身份（state-model §2.3）：领域身份 = 平台节点 ID（n_<ULID>，用户
 // 裁决 D-STM-8），首次启动生成并持久于 meta（二次启动复用同一 ID），
-// 随后锚写到 Swarm node label fleetly.node-id；Swarm node ID 仅存
+// 随后锚定到 Swarm node label fleetly.node-id；Swarm node ID 仅存
 // runtime_node_refs 适配器映射。
 //
-// 锚写走写前直读纪律：ResolveObjectVersion 取节点版本令牌 → 以该令牌
+// 锚定走写前直读纪律：ResolveObjectVersion 取节点版本令牌 → 以该令牌
 // 更新 label → 底座报并发冲突（ErrVersionConflict）则重取令牌重试，
 // 指数退避循环直到成功或停机（底座暂时不可达不崩溃、不放弃）。
 
@@ -66,7 +66,7 @@ func (n *NodeIdentity) PlatformID() string {
 	return n.platformID
 }
 
-// Anchored 报告身份是否已锚写到 Swarm 节点 label 并登记映射。
+// Anchored 报告身份是否已锚定到 Swarm 节点 label 并登记映射。
 func (n *NodeIdentity) Anchored() bool {
 	n.mu.Lock()
 	defer n.mu.Unlock()

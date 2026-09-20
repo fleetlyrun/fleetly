@@ -30,12 +30,12 @@ import (
 var update = flag.Bool("update", false, "rewrite golden files")
 
 // envelopeKeys 是信封契约的七字段（proto 声明名，snake_case）。
-var envelopeKeys = []string{"code", "message", "phase", "deployment_id", "suggestion", "context", "docs"}
+var envelopeKeys = []string{"code", "message", "stage", "deployment_id", "suggestion", "context", "docs"}
 
 // sampleAppErr 构造七字段全非空的样例错误（前哨 409 语义）。
 func sampleAppErr() *apperr.Error {
 	return apperr.New("E_VOLUME_NODE_MISMATCH", "卷数据节点与目标部署节点不一致").
-		WithPhase("preflight").
+		WithStage("preflight").
 		WithDeploymentID("d_01JGOLDEN").
 		WithContext("bound_node", "n_01").
 		WithContext("target_node", "n_02").
@@ -263,7 +263,7 @@ func TestRESTErrorEndToEnd(t *testing.T) {
 	var env struct {
 		Code         string            `json:"code"`
 		Message      string            `json:"message"`
-		Phase        string            `json:"phase"`
+		Stage        string            `json:"stage"`
 		DeploymentID string            `json:"deployment_id"`
 		Suggestion   string            `json:"suggestion"`
 		Context      map[string]string `json:"context"`
@@ -272,7 +272,7 @@ func TestRESTErrorEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(body, &env); err != nil {
 		t.Fatalf("decode into envelope struct: %v", err)
 	}
-	if env.Code != "E_VOLUME_NODE_MISMATCH" || env.Phase != "preflight" || env.DeploymentID != "d_01JGOLDEN" {
+	if env.Code != "E_VOLUME_NODE_MISMATCH" || env.Stage != "preflight" || env.DeploymentID != "d_01JGOLDEN" {
 		t.Fatalf("envelope fields mismatch: %+v", env)
 	}
 	if env.Context["bound_node"] != "n_01" || env.Context["target_node"] != "n_02" {

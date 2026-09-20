@@ -34,11 +34,12 @@ type view struct {
 	// challenges 是在途 ACME 挑战（token → keyAuth）；Present 注入、
 	// CleanUp 移除。挑战路由/服务在 snapshot 时叠加。
 	challenges map[string]string
-	// revision 单调递增：每次路由/挑战变更 +1；provider 记录 Traefik
-	// 最近一次取走的 revision（Present 等待收敛的依据——挑战路由必须
-	// 先于 CA 校验请求到达 Traefik）。
-	revision atomic.Int64
-	// servedRevision 是 Traefik 最近一次成功拉取的 revision。
+	// configRevision 是 ingress 配置代次，单调递增：每次路由/挑战变更 +1；
+	// provider 记录 Traefik 最近一次取走的配置代次（Present 等待收敛的
+	// 依据——挑战路由必须先于 CA 校验请求到达 Traefik）。勿与平台
+	// revision（版本快照）混用。
+	configRevision atomic.Int64
+	// servedRevision 是 Traefik 最近一次成功拉取的 ingress 配置代次。
 	servedRevision atomic.Int64
 	// servedEver 记录是否有 Traefik 来取过配置（false = 入口尚未接管）。
 	servedEver atomic.Bool
@@ -61,11 +62,11 @@ func (v *view) setRoutes(routes []Route) {
 	v.mu.Lock()
 	v.routes = append([]Route{}, routes...)
 	v.mu.Unlock()
-	v.revision.Add(1)
+	v.configRevision.Add(1)
 }
 
 // currentRevision 返回当前 revision。
-func (v *view) currentRevision() int64 { return v.revision.Load() }
+func (v *view) currentRevision() int64 { return v.configRevision.Load() }
 
 // snapshot 合成当前应答载荷：路由快照 + 在途挑战叠加。挑战存在时载荷
 // 追加挑战 router/service（PathPrefix 显式优先级 1000 压过 host 路由的
@@ -83,7 +84,7 @@ func (v *view) currentRevision() int64 { return v.revision.Load() }
 // 窗口，Spike B 实测语义）；routes 为已发布的空集（合法空态——最后一个
 // 域名/app 已撤）→ Synthesize 落 noop 兜底，旧路由被真实撤销。
 func (v *view) snapshot() (*DynamicConfig, int64) {
-	rev := v.revision.Load()
+	rev := v.configRevision.Load()
 	v.mu.RLock()
 	var routes []Route
 	if v.routes != nil {
@@ -125,7 +126,7 @@ func (v *view) addChallenge(token, keyAuth string) int64 {
 	v.mu.Lock()
 	v.challenges[token] = keyAuth
 	v.mu.Unlock()
-	return v.revision.Add(1)
+	return v.configRevision.Add(1)
 }
 
 // removeChallenge 移除挑战令牌（CleanUp；幂等）。
@@ -133,7 +134,7 @@ func (v *view) removeChallenge(token string) {
 	v.mu.Lock()
 	delete(v.challenges, token)
 	v.mu.Unlock()
-	v.revision.Add(1)
+	v.configRevision.Add(1)
 }
 
 // challengeKeyAuth 查询挑战令牌对应 keyAuth（应答端点）。

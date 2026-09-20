@@ -152,9 +152,9 @@
           "type": "string",
           "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
         },
-        "phase": {
+        "stage": {
           "type": "string",
-          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
         },
         "deployment_id": {
           "type": "string",

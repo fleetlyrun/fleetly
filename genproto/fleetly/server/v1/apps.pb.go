@@ -603,12 +603,11 @@ type ShowAppWebhookResponse struct {
 	// webhook 签名密钥已配置（secret 值永不回读）。
 	SecretConfigured bool `protobuf:"varint,2,opt,name=secret_configured,json=secretConfigured,proto3" json:"secret_configured,omitempty"`
 	// 拉源配置（未设置时 url/branch 为空串、auth_kind = none）。
-	SourceUrl    string `protobuf:"bytes,3,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
+	SourceUrl string `protobuf:"bytes,3,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
+	// app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。
 	SourceBranch string `protobuf:"bytes,4,opt,name=source_branch,json=sourceBranch,proto3" json:"source_branch,omitempty"`
 	// none | https_token | ssh_key。
 	SourceAuthKind string `protobuf:"bytes,5,opt,name=source_auth_kind,json=sourceAuthKind,proto3" json:"source_auth_kind,omitempty"`
-	// git push 触发分支（app 配置分支，默认 main）。
-	Branch string `protobuf:"bytes,6,opt,name=branch,proto3" json:"branch,omitempty"`
 	// push/webhook 端点提示（SSH git URL，如 ssh://git@host:8424/<app>.git；
 	// 主机位取 control-plane 可达地址的尽力形态）。
 	GitRemoteHint string `protobuf:"bytes,7,opt,name=git_remote_hint,json=gitRemoteHint,proto3" json:"git_remote_hint,omitempty"`
@@ -681,13 +680,6 @@ func (x *ShowAppWebhookResponse) GetSourceAuthKind() string {
 	return ""
 }
 
-func (x *ShowAppWebhookResponse) GetBranch() string {
-	if x != nil {
-		return x.Branch
-	}
-	return ""
-}
-
 func (x *ShowAppWebhookResponse) GetGitRemoteHint() string {
 	if x != nil {
 		return x.GitRemoteHint
@@ -699,18 +691,18 @@ type SetAppSourceRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// 拉源 remote URL（file:// 与 https://、ssh:// 形态）。
-	Url string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
-	// 触发/拉取分支（默认 main）。
-	Branch string `protobuf:"bytes,3,opt,name=branch,proto3" json:"branch,omitempty"`
+	SourceUrl string `protobuf:"bytes,2,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
+	// app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。
+	SourceBranch string `protobuf:"bytes,3,opt,name=source_branch,json=sourceBranch,proto3" json:"source_branch,omitempty"`
 	// 认证形态：none | https_token | ssh_key。
-	AuthKind string `protobuf:"bytes,4,opt,name=auth_kind,json=authKind,proto3" json:"auth_kind,omitempty"`
-	// 认证材料（https_token = token 原文；ssh_key = PEM 私钥）。auth_kind =
+	SourceAuthKind string `protobuf:"bytes,4,opt,name=source_auth_kind,json=sourceAuthKind,proto3" json:"source_auth_kind,omitempty"`
+	// 认证材料（https_token = token 原文；ssh_key = PEM 私钥）。source_auth_kind =
 	// none 时必须为空；服务端 envelope 加密落库，明文不落、永不回读。
-	// protovalidate 形状约束在服务端用例层按 auth_kind 交叉校验（跨字段
+	// protovalidate 形状约束在服务端用例层按 source_auth_kind 交叉校验（跨字段
 	// 规则—— CEL 交叉字段此处不引入，保持 proto 面最小）。
-	AuthSecret    string `protobuf:"bytes,5,opt,name=auth_secret,json=authSecret,proto3" json:"auth_secret,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	SourceAuthSecret string `protobuf:"bytes,5,opt,name=source_auth_secret,json=sourceAuthSecret,proto3" json:"source_auth_secret,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *SetAppSourceRequest) Reset() {
@@ -750,42 +742,42 @@ func (x *SetAppSourceRequest) GetName() string {
 	return ""
 }
 
-func (x *SetAppSourceRequest) GetUrl() string {
+func (x *SetAppSourceRequest) GetSourceUrl() string {
 	if x != nil {
-		return x.Url
+		return x.SourceUrl
 	}
 	return ""
 }
 
-func (x *SetAppSourceRequest) GetBranch() string {
+func (x *SetAppSourceRequest) GetSourceBranch() string {
 	if x != nil {
-		return x.Branch
+		return x.SourceBranch
 	}
 	return ""
 }
 
-func (x *SetAppSourceRequest) GetAuthKind() string {
+func (x *SetAppSourceRequest) GetSourceAuthKind() string {
 	if x != nil {
-		return x.AuthKind
+		return x.SourceAuthKind
 	}
 	return ""
 }
 
-func (x *SetAppSourceRequest) GetAuthSecret() string {
+func (x *SetAppSourceRequest) GetSourceAuthSecret() string {
 	if x != nil {
-		return x.AuthSecret
+		return x.SourceAuthSecret
 	}
 	return ""
 }
 
 type SetAppSourceResponse struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	SourceUrl     string                 `protobuf:"bytes,2,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
-	SourceBranch  string                 `protobuf:"bytes,3,opt,name=source_branch,json=sourceBranch,proto3" json:"source_branch,omitempty"`
-	AuthKind      string                 `protobuf:"bytes,4,opt,name=auth_kind,json=authKind,proto3" json:"auth_kind,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	SourceUrl      string                 `protobuf:"bytes,2,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
+	SourceBranch   string                 `protobuf:"bytes,3,opt,name=source_branch,json=sourceBranch,proto3" json:"source_branch,omitempty"`
+	SourceAuthKind string                 `protobuf:"bytes,4,opt,name=source_auth_kind,json=sourceAuthKind,proto3" json:"source_auth_kind,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *SetAppSourceResponse) Reset() {
@@ -839,9 +831,9 @@ func (x *SetAppSourceResponse) GetSourceBranch() string {
 	return ""
 }
 
-func (x *SetAppSourceResponse) GetAuthKind() string {
+func (x *SetAppSourceResponse) GetSourceAuthKind() string {
 	if x != nil {
-		return x.AuthKind
+		return x.SourceAuthKind
 	}
 	return ""
 }
@@ -893,30 +885,29 @@ const file_fleetly_server_v1_apps_proto_rawDesc = "" +
 	"configured\x18\x02 \x01(\bR\n" +
 	"configured\"4\n" +
 	"\x15ShowAppWebhookRequest\x12\x1b\n" +
-	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"\x87\x02\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"\xfd\x01\n" +
 	"\x16ShowAppWebhookResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12+\n" +
 	"\x11secret_configured\x18\x02 \x01(\bR\x10secretConfigured\x12\x1d\n" +
 	"\n" +
 	"source_url\x18\x03 \x01(\tR\tsourceUrl\x12#\n" +
 	"\rsource_branch\x18\x04 \x01(\tR\fsourceBranch\x12(\n" +
-	"\x10source_auth_kind\x18\x05 \x01(\tR\x0esourceAuthKind\x12\x16\n" +
-	"\x06branch\x18\x06 \x01(\tR\x06branch\x12&\n" +
-	"\x0fgit_remote_hint\x18\a \x01(\tR\rgitRemoteHint\"\xde\x01\n" +
+	"\x10source_auth_kind\x18\x05 \x01(\tR\x0esourceAuthKind\x12&\n" +
+	"\x0fgit_remote_hint\x18\a \x01(\tR\rgitRemoteHintJ\x04\b\x06\x10\aR\x06branch\"\x92\x02\n" +
 	"\x13SetAppSourceRequest\x12\x1b\n" +
-	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12\x1a\n" +
-	"\x03url\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\x03url\x12\"\n" +
-	"\x06branch\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\x06branch\x12>\n" +
-	"\tauth_kind\x18\x04 \x01(\tB!\xbaH\x1er\x1cR\x04noneR\vhttps_tokenR\assh_keyR\bauthKind\x12*\n" +
-	"\vauth_secret\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\x80\x80\x01R\n" +
-	"authSecret\"\x8b\x01\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12'\n" +
+	"\n" +
+	"source_url\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\tsourceUrl\x12/\n" +
+	"\rsource_branch\x18\x03 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xc8\x01R\fsourceBranch\x12K\n" +
+	"\x10source_auth_kind\x18\x04 \x01(\tB!\xbaH\x1er\x1cR\x04noneR\vhttps_tokenR\assh_keyR\x0esourceAuthKind\x127\n" +
+	"\x12source_auth_secret\x18\x05 \x01(\tB\t\xbaH\x06r\x04\x18\x80\x80\x01R\x10sourceAuthSecret\"\x98\x01\n" +
 	"\x14SetAppSourceResponse\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
 	"source_url\x18\x02 \x01(\tR\tsourceUrl\x12#\n" +
-	"\rsource_branch\x18\x03 \x01(\tR\fsourceBranch\x12\x1b\n" +
-	"\tauth_kind\x18\x04 \x01(\tR\bauthKind2\xfd\x05\n" +
+	"\rsource_branch\x18\x03 \x01(\tR\fsourceBranch\x12(\n" +
+	"\x10source_auth_kind\x18\x04 \x01(\tR\x0esourceAuthKind2\xfd\x05\n" +
 	"\vAppsService\x12e\n" +
 	"\bListApps\x12\".fleetly.server.v1.ListAppsRequest\x1a#.fleetly.server.v1.ListAppsResponse\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/apps\x12f\n" +

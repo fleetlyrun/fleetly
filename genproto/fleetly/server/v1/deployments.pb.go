@@ -39,7 +39,8 @@ type DeploymentView struct {
 	RevisionId string `protobuf:"bytes,6,opt,name=revision_id,json=revisionId,proto3" json:"revision_id,omitempty"`
 	ErrorCode  string `protobuf:"bytes,7,opt,name=error_code,json=errorCode,proto3" json:"error_code,omitempty"`
 	Verdict    string `protobuf:"bytes,8,opt,name=verdict,proto3" json:"verdict,omitempty"`
-	Recovery   string `protobuf:"bytes,9,opt,name=recovery,proto3" json:"recovery,omitempty"`
+	// 同记录恢复记录（replay | blocked；空 = 无）。
+	Recovery string `protobuf:"bytes,9,opt,name=recovery,proto3" json:"recovery,omitempty"`
 	// 首发失败 scale=0 保留现场。
 	SubstrateHalted bool                   `protobuf:"varint,10,opt,name=substrate_halted,json=substrateHalted,proto3" json:"substrate_halted,omitempty"`
 	FirstHealthyAt  *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=first_healthy_at,json=firstHealthyAt,proto3" json:"first_healthy_at,omitempty"`
@@ -393,7 +394,7 @@ type DeployRequest struct {
 	// compose 文件内容字节（JSON/YAML 原文；服务端落临时文件走受控子集
 	// 校验——compose 违约不动底座、不入队）。
 	Compose []byte `protobuf:"bytes,2,opt,name=compose,proto3" json:"compose,omitempty"`
-	// 破坏性变更确认门控（架构 §2.4 plan/apply 语义，MG-C3）：本次部署相对
+	// 破坏性变更确认门控（架构 §2.4 变更计划/确认语义，MG-C3）：本次部署相对
 	// 最新 revision 的变更集含破坏性操作（服务删除/卷解绑——判定单源在
 	// compose 包，与 plan artifact 的 requires_confirm_destructive 同口径）时，
 	// 必须显式置位才放行入队；未置位返回 E_DEPLOY_CONFIRM_REQUIRED、不入队。

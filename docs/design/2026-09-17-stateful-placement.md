@@ -54,9 +54,9 @@ services:
 ### 2.4 状态模型增量（SQLite，只加不减）
 
 ```sql
-placements(app PRIMARY KEY, node_id, source /* platform|label */, label_ref,
+placements(app PRIMARY KEY, platform_node_id, source /* platform|label */, label_ref,
            state /* ok|blocked|unresolved */, reason, pinned_at, updated_at, etag)
-volumes(id, app, key, kind /* named|bind */, node_id, docker_name, mount_path,
+volumes(id, app, key, kind /* named|bind */, platform_node_id, docker_name, mount_path,
         host_path, status /* active|orphaned */, created_at, UNIQUE(app, key))
 -- nodes：平台 ID/显示名/观测字段（见状态模型专项）
 -- 适配器私有：runtime_node_refs(platform_id, swarm_node_id)
@@ -107,7 +107,7 @@ deploy_preflight(app):
 
 - 错误码：`E_PLACEMENT_NODE_INVALID`、`E_PLACEMENT_NODE_NOT_FOUND`、`E_PLACEMENT_NODE_UNAVAILABLE`、`E_PLACEMENT_NODE_GONE`、`E_PLACEMENT_NO_ELIGIBLE_NODE`、`E_PLACEMENT_MOVE_REQUIRES_ACK`、`E_PLACEMENT_LABEL_CONFLICT`、`E_VOLUME_NODE_MISMATCH`。警告：`W_PLACEMENT_STATELESS_PIN`。
 - 事件：`placement.{bound,changed,blocked,recovered,unresolved}`、`node.{joined,down,up,removed}`、`volume.{created,detached,orphaned,discarded}`。
-- UI/CLI：应用详情「运行位置」卡片（节点、来源、原因、状态）；`fleetly nodes ls`、`apps placement`、`apps placement rebind`、`volumes ls --orphaned`；破坏性操作统一 `--confirm-destructive` + 回显。
+- UI/CLI：应用详情「运行位置」卡片（节点、来源、原因、状态）；`fleetly nodes list`、`fleetly placement show`；重绑与卷生命周期 CLI（`placement rebind`、`volumes list --orphaned`）随 v0.2；破坏性操作统一 `--confirm-destructive` + 回显。
 
 ### 2.9 v0.1 单节点
 

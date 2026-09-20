@@ -11,3 +11,10 @@ genproto/** text eol=lf
 # embedded-pubkey gate 与 test-install.sh A11 对公钥块做逐字节比对——
 # Windows 检出转 CRLF 会同时破坏签名与一致性断言。
 *.pem text eol=lf
+# 测试 golden 快照同样钉 LF：CLI golden 与 got 逐字节比较、migrations.golden
+# 对迁移 SQL 原始字节做 sha256——Windows 检出转 CRLF 会让本机测试误报漂移
+# （CI Linux 不受影响，但本地全绿与 CI 必须同判据）。
+*.golden text eol=lf
+# 迁移 SQL 钉 LF：migrations_test 对已应用文件原始字节 sha256（只加法纪律），
+# CRLF 检出会使全部哈希漂移；与 proto/genproto 同款「源头钉 LF」策略。
+*.sql text eol=lf

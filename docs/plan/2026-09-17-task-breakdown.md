@@ -47,7 +47,7 @@ T2 v0.1（核心；分层依赖见 §5）
 - 验收：golangci-lint + gofmt + staticcheck + gosec + govulncheck 进 PR 轨道并阻断；`go generate ./...` 后无差异（wire_gen 同步）进 PR 门禁；空跑的单测任务绿；`go build ./...` 与 `fleetly --help` 可执行。
 
 **T0.2 错误码与事件注册表** ｜ Blocked by: T0.1 ｜ 2 人日 ｜ ✅ 完成 2026-09-17（还原点 421a991；遗留裁决见冻结清单 FZ-2/3/4/5）
-- 交付：代码内注册表为唯一真源（架构 §2.8），错误信封 `{code,message,phase,deployment_id,suggestion,context,docs}` 以 proto `ErrorResponse` 定义、经 gateway `HTTPErrorHandler` 输出（发布专项 §2.7、D21）。
+- 交付：代码内注册表为唯一真源（架构 §2.8），错误信封 `{code,message,stage,deployment_id,suggestion,context,docs}` 以 proto `ErrorResponse` 定义、经 gateway `HTTPErrorHandler` 输出（发布专项 §2.7、D21）。
 - 验收：注册表只增/不复用的 CI 校验测试；首发错误码（`E_COMPOSE_*`、`E_STATE_VERSION_CONFLICT` 等 T2 首批）入表；信封序列化有 golden 测试。
 
 **T0.3 proto 契约与生成链** ｜ Blocked by: T0.1 ｜ 2-3 人日 ｜ ✅ 完成 2026-09-17（还原点 0a25e25）
@@ -132,7 +132,7 @@ T2 v0.1（核心；分层依赖见 §5）
 
 **T2.11 窗口与失败语义** ｜ Blocked by: T2.10 ｜ 5-7 人日 ★（切分建议：a L2 看门狗 / b L3 观察窗与 degraded / c 场景矩阵测试）
 - 交付：四层窗口与失败分流（发布专项 §2.2/§2.5 场景矩阵 1-14）。
-- 验收：L1 固定 5s 不暴露；L2 `releaseTimeout=300s`（blocked_waiting 暂停计时/恢复重算）；L3 观察窗 60s（崩溃循环 ≥2、窗末未恢复、副本水位按 desired；默认告警 + `app=degraded`）；失败分流按 `first_healthy_at`（未切流同记录 `recovery=restore` / 已切流 `verdict=unstable`）；首发失败 scale=0 + `substrate_halted`；stop-first 强制归位 + `downtime_ms` 如实累计；场景矩阵 1-14 每条错误码断言进 nightly。
+- 验收：L1 固定 5s 不暴露；L2 `deployTimeout=300s`（blocked_waiting 暂停计时/恢复重算）；L3 观察窗 60s（崩溃循环 ≥2、窗末未恢复、副本水位按 desired；默认告警 + `app=degraded`）；失败分流按 `first_healthy_at`（未切流同记录 `recovery=replay` / 已切流 `verdict=unstable`）；首发失败 scale=0 + `substrate_halted`；stop-first 强制归位 + `downtime_ms` 如实累计；场景矩阵 1-14 每条错误码断言进 nightly。
 
 **T2.12 快照与回滚** ｜ Blocked by: T2.10、T2.9 ｜ 4-5 人日
 - 交付：最近 5 版 + 单层重放（发布专项 §2.4）。

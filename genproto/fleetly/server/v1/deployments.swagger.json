@@ -251,7 +251,7 @@
         },
         "confirm_destructive": {
           "type": "boolean",
-          "title": "破坏性变更确认门控（架构 §2.4 plan/apply 语义，MG-C3）：本次部署相对\n最新 revision 的变更集含破坏性操作（服务删除/卷解绑——判定单源在\ncompose 包，与 plan artifact 的 requires_confirm_destructive 同口径）时，\n必须显式置位才放行入队；未置位返回 E_DEPLOY_CONFIRM_REQUIRED、不入队。\n首发（无历史 revision）恒非破坏性，置位与否均放行。"
+          "title": "破坏性变更确认门控（架构 §2.4 变更计划/确认语义，MG-C3）：本次部署相对\n最新 revision 的变更集含破坏性操作（服务删除/卷解绑——判定单源在\ncompose 包，与 plan artifact 的 requires_confirm_destructive 同口径）时，\n必须显式置位才放行入队；未置位返回 E_DEPLOY_CONFIRM_REQUIRED、不入队。\n首发（无历史 revision）恒非破坏性，置位与否均放行。"
         }
       }
     },
@@ -381,7 +381,8 @@
           "type": "string"
         },
         "recovery": {
-          "type": "string"
+          "type": "string",
+          "title": "同记录恢复记录（replay | blocked；空 = 无）。"
         },
         "substrate_halted": {
           "type": "boolean",
@@ -424,9 +425,9 @@
           "type": "string",
           "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
         },
-        "phase": {
+        "stage": {
           "type": "string",
-          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
         },
         "deployment_id": {
           "type": "string",

@@ -13,8 +13,9 @@ message ErrorResponse {
   string code = 1;
   // 人读错误信息（面向运维/集成方，不承诺文案稳定）。
   string message = 2;
-  // 失败所处发布阶段（如 resolve / build / deploy / serve）。
-  string phase = 3;
+  // 失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态
+  // phase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。
+  string stage = 3;
   // 关联的部署 ID（无关联时为空）。
   string deployment_id = 4;
   // 可执行的修复建议（面向用户展示）。

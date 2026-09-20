@@ -27,7 +27,8 @@ ALTER TABLE deployments ADD COLUMN downtime_ms INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE deployments ADD COLUMN downtime_started_at INTEGER;
 ALTER TABLE deployments ADD COLUMN downtime_ended_at INTEGER;
 
--- L2 看门狗（releaseTimeout=300s）：releasing 起点 + 当前 deadline
+-- L2 看门狗（deployTimeout=300s；2026-09-20 更名前为 releaseTimeout）：
+-- releasing 起点 + 当前 deadline
 -- （blocked_waiting 暂停计时 = 恢复时按暂停时长顺延重写）。
 ALTER TABLE deployments ADD COLUMN release_started_at INTEGER;
 ALTER TABLE deployments ADD COLUMN watchdog_deadline_at INTEGER;

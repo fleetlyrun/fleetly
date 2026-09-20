@@ -54,16 +54,16 @@ func TestDefaultsFromRegistry(t *testing.T) {
 	}
 }
 
-// TestFluentFields：phase/deployment_id/context/cause 链式附加。
+// TestFluentFields：stage/deployment_id/context/cause 链式附加。
 func TestFluentFields(t *testing.T) {
 	cause := errors.New("dial tcp 127.0.0.1:2377: connect refused")
 	e := New("E_RUNTIME_UNAVAILABLE", "底座不可达").
-		WithPhase("deploy").
+		WithStage("deploy").
 		WithDeploymentID("d_01J").
 		WithContext("node", "n_01J").
 		WithCause(cause)
 	env := e.Envelope()
-	if env.GetPhase() != "deploy" || env.GetDeploymentId() != "d_01J" {
+	if env.GetStage() != "deploy" || env.GetDeploymentId() != "d_01J" {
 		t.Fatalf("envelope = %+v", env)
 	}
 	if env.GetContext()["node"] != "n_01J" {
@@ -78,7 +78,7 @@ func TestFluentFields(t *testing.T) {
 // 还原七字段。
 func TestToFromGRPCStatusRoundTrip(t *testing.T) {
 	e := New("E_HEALTH_TIMEOUT", "健康门超时").
-		WithPhase("releasing").
+		WithStage("releasing").
 		WithDeploymentID("d_42").
 		WithContext("service", "web").
 		WithContext("budget", "300s")
@@ -91,7 +91,7 @@ func TestToFromGRPCStatusRoundTrip(t *testing.T) {
 		t.Fatal("FromGRPCStatus lost the envelope detail")
 	}
 	if got.Code() != "E_HEALTH_TIMEOUT" || got.Message() != "健康门超时" ||
-		got.phase != "releasing" || got.deploymentID != "d_42" ||
+		got.stage != "releasing" || got.deploymentID != "d_42" ||
 		got.context["service"] != "web" || got.context["budget"] != "300s" ||
 		got.suggestion == "" || got.docs == "" {
 		t.Fatalf("round trip mismatch: %+v", got)

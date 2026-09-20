@@ -6,7 +6,7 @@
 
 > Dokku's footprint, Railway's API, AI-Agent-first operations.
 
-fleetly is an ultra-lightweight open-source PaaS for small teams. Deploy `compose.yaml` apps to a cluster of 1–10 servers with zero-downtime releases, snapshot-based rollback, drift detection, and an API surface designed for both humans and AI agents — no Kubernetes required.
+fleetly is an ultra-lightweight open-source PaaS for small teams. Deploy `compose.yaml` apps to a cluster of 1–10 servers with zero-downtime releases, revision-based rollback, drift detection, and an API surface designed for both humans and AI agents — no Kubernetes required.
 
 **Status: early development.** Design is frozen and reviewed; the T0 foundation (repo, CI, proto contract chain, error-code registry, dind E2E skeleton) has landed. v0.1 is not released yet — see the [roadmap](#roadmap). Formerly known as *edgesets* and *edgefleet*.
 
@@ -34,8 +34,8 @@ The first start writes the bootstrap admin token **once** to `<data-root>/bootst
 
 | Area | Behavior | Version |
 |---|---|---|
-| Deploy | git push / webhook / API → Railpack or Dockerfile build → zero-downtime rollout → observation window | v0.1 |
-| Release safety | Swarm `failure-action=pause` + platform snapshot replay (last 5 verified revisions); never Swarm-native rollback | v0.1 |
+| Deploy | git push / webhook / API → Railpack or Dockerfile build → zero-downtime release → observation window | v0.1 |
+| Release safety | Swarm `failure-action=pause` + platform revision replay (last 5 verified revisions); never Swarm-native rollback | v0.1 |
 | Routing / TLS | Per-node Traefik with routes and certs pushed by the control plane; central ACME (HTTP-01), multi-SAN domain lists | v0.1 |
 | State | SQLite control-plane state, three-layer model (authoritative / observed cache / live read) | v0.1 |
 | Drift detection | Desired-state hash vs. reality; detection on by default, auto-converge opt-in per app | v0.1 |
@@ -94,7 +94,7 @@ fleetly deploy compose.yaml                 # enqueue and wait for the terminal 
 fleetly apps list && fleetly deployments list my-api
 fleetly logs follow --service web my-api    # live stream (--json for JSONL)
 fleetly env set my-api KEY value            # pending until next deploy
-fleetly rollback my-api                     # snapshot replay (last 5 revisions)
+fleetly rollback my-api                     # revision replay (last 5 revisions)
 fleetly drift show my-api                   # desired vs. live
 fleetly tokens create --scopes deploy --note CI   # plaintext shown once
 ```
@@ -106,7 +106,7 @@ The daemon runs an embedded SSH git endpoint (default `127.0.0.1:8424` — loopb
 ```bash
 fleetly git keys add --note laptop ~/.ssh/id_ed25519.pub   # admin scope; fingerprints at rest
 git remote add fleetly ssh://git@127.0.0.1:8424/my-api.git
-git push fleetly main                                      # → build → zero-downtime rollout
+git push fleetly main                                      # → build → zero-downtime release
 fleetly git keys list && fleetly git keys rm <id>
 ```
 

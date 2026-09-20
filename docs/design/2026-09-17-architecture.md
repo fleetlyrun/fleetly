@@ -230,7 +230,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 - Webhook 安全：强制签名校验（GitHub/Gitea 等）+ 时间窗防重放 + 按 revision 幂等去重。
 - 并发控制：同一 app 同时只允许一个进行中的部署（互斥 + 队列）。
 - 运行期语义（观察窗之后）：容器退出由 Swarm `restart-condition=any`（delay 5s）重启；平台只告警一次并建议手动回滚（不做计数升级），不自动回滚。
-- 超时与卡死：Swarm 更新在「新任务无法调度」时**没有超时**（源码 TODO）——平台以发布看门狗（`releaseTimeout=300s`）兜底；确定性预检仅限平台自身对象（绑定节点状态、镜像/secret/端口），**不做 Swarm 调度约束预检**（见 §7）。
+- 超时与卡死：Swarm 更新在「新任务无法调度」时**没有超时**（源码 TODO）——平台以发布看门狗（`deployTimeout=300s`）兜底；确定性预检仅限平台自身对象（绑定节点状态、镜像/secret/端口），**不做 Swarm 调度约束预检**（见 §7）。
 
 **默认参数（compose 字段原样映射 + 平台管理项，v0.1 除 compose 字段外不可配置）**：
 
@@ -353,7 +353,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | D14 | 应用定义与运行时模型 = Compose 规范（`compose.yaml`，docker stack 语义）；受控子集 + 最小 label 约定；不做自研 spec | 小团队无力维护自有规范；compose 的生态、官方 schema、AI Agent 训练覆盖与迁移入口现成；自研 spec 的每个字段都是永久兼容性负担（与 D13 同源）；Swarm 原生支持 stack 语义（`deploy.*` 映射、health gate、start-first） | 自研 `fleetly.yaml` + SchemaStore + 字段归属表：维护税与采用摩擦（本轮推翻）；compose 仅作迁移输入（原 D14，用户仍要学平台私有格式）；任意 compose 全量语义（depends_on/extends/profiles 等）：实现面不可控，v0.1 显式拒绝、v0.3 受控评估 |
 | D15 | 发布失败动作固定 `pause`，回滚由平台按归一化 compose + 覆盖层快照单层重放；观察窗默认只告警、rollback 为平台侧 per-app opt-in（v0.1 无文件字段）；stop-first 失败强制归位 | Swarm 原生回滚清空唯一历史槽且不覆盖 PENDING，无法兑现「任意版本重放」；pause 保留旧任务与服务 spec，恢复动作幂等可审计；默认告警与 D11「检测开、收敛 opt-in」一致，避免对无效回滚的震荡 | Swarm `failure-action=rollback`（历史槽失效、首发卡死）；两层回滚（两套判定权与审计）；窗口后自动回滚（抖动）；观察窗默认自动回滚（静默改变运行版本，用户裁决改为 opt-in） |
 | D16 | 有状态应用默认自动钉住：label `fleetly.placement.node` 可选，平台绑定（**平台节点 ID 为锚**）持久保持；节点消失不迁移不换点；跨点移动仅经备份恢复 + 显式数据处置确认 | 有卷应用被迁移会得到空卷（源码级验证），数据安全必须是默认行为；平台节点 ID 抗重名/重建（显示名仅供人/Agent 读写）；卷-节点归属前哨把空卷事故变成显式 409 | 要求显式 pin（首部署摩擦、AI Agent 易漏）；hostname/别名作身份（重名机器静默接管）；自动换点/迁移（空卷事故） |
-| D17 | 控制面状态三层：权威（SQLite，意图/历史/凭证）/ 派生缓存（观测快照，带 observed_at/stale，禁入决策）/ 实时直读（写前校验）；`nodes` 降级为观测缓存；备份等序 + 恢复期禁止自动收敛 | 双状态源无法消灭只能明确属主；把运行态当权威是漂移与误删的唯一通路；恢复期自动收敛在 DB 较旧时会静默回退部署 | 全量镜像 Swarm 状态入权威（双写者）；不落缓存（无降级读、打爆底座 API）；恢复即自动收敛（静默回退）；声称「最后心跳」（Swarm 不暴露该时间戳） |
+| D17 | 控制面状态三层：权威（SQLite，意图/历史/凭证）/ 派生缓存（观测快照，带 observed_at/stale，禁入决策）/ 实时直读（写前校验）；`nodes` 降级为观测缓存；备份等序 + 恢复期禁止自动收敛 | 双状态源无法消灭只能明确属主；把运行态当权威是漂移与误删的唯一通路；恢复期自动收敛在 DB 较旧时会静默回滚部署 | 全量镜像 Swarm 状态入权威（双写者）；不落缓存（无降级读、打爆底座 API）；恢复即自动收敛（静默回滚）；声称「最后心跳」（Swarm 不暴露该时间戳） |
 | D18 | 对标基线 = **Dokploy 体验（地板）+ Cloudflare 式体验（方向）**；复杂度纪律：Dokploy 没有且无硬承诺的机制一律不做，预算投向对标缺口（数据库托管提前、监控/通知、模板、Web 终端、Cron） | 小团队需求不极端；机制复杂度不构成 UX，对标缺口构成 UX（Dokploy 无熔断/rebalance/adopt/DR 阶梯/导出合同也做到头部体验）；我们保留的 pause+重放、plan/apply、漂移、错误透明、统一集群恰是 Dokploy 弱项 | 用内部机制做差异化（方向错误）；为「以后可能需要」预建机制（未来需求是猜测不是约束） |
 | D19 | Web 终端经**执行中继** `fleetly-exec`（Swarm global service）实现：仅挂内部系统网络、不发布端口；API 面仅 `healthz`/`exec` 且只对带 `fleetly.app` label 的容器；集群 token 经 Swarm secret；成员发现复用 Swarm（`tasks.<name>` DNS + task→NodeID 反查）；`terminal` 独立 scope + 会话限制（空闲 10m/上限 30m）+ 审计入档（2026-09-17 审核裁决） | Swarm 无 exec RPC，worker 容器终端在无远端 daemon 访问下不可达；Portainer Agent / Komodo Periphery 为同型先例；成员与分发仍归 Swarm，不违反 D12 | 通用 Docker API 代理（第二 docker.sock 面、安全事故面）；SSH 隧道（密钥分发 + NAT 脆弱，调研 §2 反模式）；per-container 终端 sidecar（侵入 compose 语义） |
 | D20 | 基础 Go 框架 = **lynx + google/wire**（2026-09-17 技术选型）：`lynx.NewRunner` 承载进程生命周期，`boot.Bootstrap` + Wire 编译期装配依赖图；lynx 用法以 **messageloop**（github.com/messageloopio/messageloop，同域生产使用）为参考实现，Wire 装配形态以 lynx-clean-template 为模板；框架层只做装配与生命周期，领域代码不依赖框架类型（可替换性边界同 §2.8） | 统一生命周期（Drain/优雅关停语义现成，与排水和维护窗口契合）；`lynx.Service` 插件化天然承载端口-适配器；Wire 编译期 DI 无运行时反射、装配错误编译期暴露；轻量取向一致（非全家桶）；Apache-2.0 且上游同域可控 | 纯手工装配（messageloop 现状：装配逻辑淤积在 setup 函数，规模上升后不可读——fleetly 自第一天用 Wire）；fx/dig（运行时反射 DI，失败后移）；kratos/go-zero（全家桶过重，违背「基础设施只复用不自研」）；自研生命周期框架（重复造轮子） |

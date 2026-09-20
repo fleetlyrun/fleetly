@@ -259,8 +259,8 @@ func (realClock) Now() time.Time { return time.Now().UTC() }
 // Config 是引擎治理参数（release-semantics §2.8：v0.1 平台默认；config 节
 // 仅作部署面覆盖入口，文件缺省即文档默认）。
 type Config struct {
-	// ReleaseTimeout 是 L2 看门狗预算（默认 300s；有效值 ≥ health 预算）。
-	ReleaseTimeout time.Duration
+	// DeployTimeout 是 L2 看门狗预算（默认 300s；有效值 ≥ health 预算）。
+	DeployTimeout time.Duration
 	// ObserveWindow 是 L3 观察窗时长（默认 60s）。
 	ObserveWindow time.Duration
 	// UnstableReplicasBelow 是副本水位的持续不足判定时长（默认 10s，
@@ -275,8 +275,8 @@ type Config struct {
 
 // Normalize 回落文档默认值。
 func (c Config) Normalize() Config {
-	if c.ReleaseTimeout <= 0 {
-		c.ReleaseTimeout = 300 * time.Second
+	if c.DeployTimeout <= 0 {
+		c.DeployTimeout = 300 * time.Second
 	}
 	if c.ObserveWindow <= 0 {
 		c.ObserveWindow = 60 * time.Second

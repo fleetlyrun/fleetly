@@ -6,8 +6,8 @@ export interface ErrorEnvelope {
   /** 稳定错误码（如 E_COMPOSE_INVALID）；退化信封形态下为空串/缺失 */
   code?: string;
   message?: string;
-  /** 失败所处发布阶段（resolve / build / deploy / serve） */
-  phase?: string;
+  /** 失败所处管线阶段（resolve / build / deploy / serve；stage ≠ 部署子状态 phase） */
+  stage?: string;
   deployment_id?: string;
   /** 可执行的修复建议 */
   suggestion?: string;

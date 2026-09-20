@@ -226,7 +226,7 @@ ingress:
   acme:
     enabled: false
 engine:
-  release_timeout_seconds: 120
+  deploy_timeout_seconds: 120
   observe_seconds: 5
   replicas_below_seconds: 5
   poll_seconds: 1

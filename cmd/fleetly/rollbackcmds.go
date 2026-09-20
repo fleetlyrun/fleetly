@@ -35,7 +35,7 @@ type rollbackCmd struct {
 
 func (c *rollbackCmd) Name() string { return "rollback" }
 func (c *rollbackCmd) Synopsis() string {
-	return "roll an app back to a revision (snapshot replay; default = latest revision)"
+	return "roll an app back to a revision (replay of a revision; default = latest revision)"
 }
 func (c *rollbackCmd) Usage() string {
 	return "rollback [--addr <host:port>] [--token <tok>] [--to <revision>] [--timeout <duration>] [--json] <app>"
@@ -103,7 +103,7 @@ func newRevisionsCmd() *revisionsCmd {
 
 func (c *revisionsCmd) Name() string { return "revisions" }
 func (c *revisionsCmd) Synopsis() string {
-	return "version snapshots in the rollback retention window (list = options)"
+	return "revisions in the rollback retention window (list = options)"
 }
 func (c *revisionsCmd) Usage() string { return "revisions <list> [flags] ..." }
 
@@ -225,7 +225,7 @@ type driftShowCmd struct {
 
 func (c *driftShowCmd) Name() string { return "show" }
 func (c *driftShowCmd) Synopsis() string {
-	return "compare desired state vs live services (field-level diff; env as key:hash)"
+	return "compare desired state vs actual (field-level diff; env as key:hash)"
 }
 func (c *driftShowCmd) Usage() string {
 	return "drift show [--addr <host:port>] [--token <tok>] [--json] <app>"

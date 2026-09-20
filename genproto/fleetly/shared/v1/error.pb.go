@@ -31,8 +31,9 @@ type ErrorResponse struct {
 	Code string `protobuf:"bytes,1,opt,name=code,proto3" json:"code,omitempty"`
 	// 人读错误信息（面向运维/集成方，不承诺文案稳定）。
 	Message string `protobuf:"bytes,2,opt,name=message,proto3" json:"message,omitempty"`
-	// 失败所处发布阶段（如 resolve / build / deploy / serve）。
-	Phase string `protobuf:"bytes,3,opt,name=phase,proto3" json:"phase,omitempty"`
+	// 失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态
+	// phase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。
+	Stage string `protobuf:"bytes,3,opt,name=stage,proto3" json:"stage,omitempty"`
 	// 关联的部署 ID（无关联时为空）。
 	DeploymentId string `protobuf:"bytes,4,opt,name=deployment_id,json=deploymentId,proto3" json:"deployment_id,omitempty"`
 	// 可执行的修复建议（面向用户展示）。
@@ -89,9 +90,9 @@ func (x *ErrorResponse) GetMessage() string {
 	return ""
 }
 
-func (x *ErrorResponse) GetPhase() string {
+func (x *ErrorResponse) GetStage() string {
 	if x != nil {
-		return x.Phase
+		return x.Stage
 	}
 	return ""
 }
@@ -132,7 +133,7 @@ const file_fleetly_shared_v1_error_proto_rawDesc = "" +
 	"\rErrorResponse\x12\x12\n" +
 	"\x04code\x18\x01 \x01(\tR\x04code\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x14\n" +
-	"\x05phase\x18\x03 \x01(\tR\x05phase\x12#\n" +
+	"\x05stage\x18\x03 \x01(\tR\x05stage\x12#\n" +
 	"\rdeployment_id\x18\x04 \x01(\tR\fdeploymentId\x12\x1e\n" +
 	"\n" +
 	"suggestion\x18\x05 \x01(\tR\n" +

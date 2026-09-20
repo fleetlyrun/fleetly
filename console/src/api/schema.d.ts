@@ -47,7 +47,8 @@ export interface paths {
         get?: never;
         /**
          * SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；
-         *     admin）。branch 同时是 git push 的触发分支（app 配置分支，默认 main）。
+         *     admin）。source_branch 同时是 git push 的触发分支（app 配置分支，
+         *     默认 main）。
          *     认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。
          */
         put: operations["AppsService_SetAppSource"];
@@ -443,18 +444,18 @@ export interface components {
     schemas: {
         AppsServiceSetAppSourceBody: {
             /** 拉源 remote URL（file:// 与 https://、ssh:// 形态）。 */
-            url?: string;
-            /** 触发/拉取分支（默认 main）。 */
-            branch?: string;
+            source_url?: string;
+            /** app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。 */
+            source_branch?: string;
             /** 认证形态：none | https_token | ssh_key。 */
-            auth_kind?: string;
+            source_auth_kind?: string;
             /**
-             * 认证材料（https_token = token 原文；ssh_key = PEM 私钥）。auth_kind =
+             * 认证材料（https_token = token 原文；ssh_key = PEM 私钥）。source_auth_kind =
              *     none 时必须为空；服务端 envelope 加密落库，明文不落、永不回读。
-             *     protovalidate 形状约束在服务端用例层按 auth_kind 交叉校验（跨字段
+             *     protovalidate 形状约束在服务端用例层按 source_auth_kind 交叉校验（跨字段
              *     规则—— CEL 交叉字段此处不引入，保持 proto 面最小）。
              */
-            auth_secret?: string;
+            source_auth_secret?: string;
         };
         AppsServiceSetAppWebhookSecretBody: {
             /**
@@ -495,6 +496,7 @@ export interface components {
             revision_id?: string;
             error_code?: string;
             verdict?: string;
+            /** 同记录恢复记录（replay | blocked；空 = 无）。 */
             recovery?: string;
             /** 首发失败 scale=0 保留现场。 */
             substrate_halted?: boolean;
@@ -527,8 +529,11 @@ export interface components {
             code?: string;
             /** 人读错误信息（面向运维/集成方，不承诺文案稳定）。 */
             message?: string;
-            /** 失败所处发布阶段（如 resolve / build / deploy / serve）。 */
-            phase?: string;
+            /**
+             * 失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态
+             *     phase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。
+             */
+            stage?: string;
             /** 关联的部署 ID（无关联时为空）。 */
             deployment_id?: string;
             /** 可执行的修复建议（面向用户展示）。 */
@@ -581,7 +586,7 @@ export interface components {
             name?: string;
             source_url?: string;
             source_branch?: string;
-            auth_kind?: string;
+            source_auth_kind?: string;
         };
         v1SetAppWebhookSecretResponse: {
             name?: string;
@@ -594,11 +599,10 @@ export interface components {
             secret_configured?: boolean;
             /** 拉源配置（未设置时 url/branch 为空串、auth_kind = none）。 */
             source_url?: string;
+            /** app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。 */
             source_branch?: string;
             /** none | https_token | ssh_key。 */
             source_auth_kind?: string;
-            /** git push 触发分支（app 配置分支，默认 main）。 */
-            branch?: string;
             /**
              * push/webhook 端点提示（SSH git URL，如 ssh://git@host:8424/<app>.git；
              *     主机位取 control-plane 可达地址的尽力形态）。
@@ -614,7 +618,7 @@ export interface components {
              */
             compose?: string;
             /**
-             * 破坏性变更确认门控（架构 §2.4 plan/apply 语义，MG-C3）：本次部署相对
+             * 破坏性变更确认门控（架构 §2.4 变更计划/确认语义，MG-C3）：本次部署相对
              *     最新 revision 的变更集含破坏性操作（服务删除/卷解绑——判定单源在
              *     compose 包，与 plan artifact 的 requires_confirm_destructive 同口径）时，
              *     必须显式置位才放行入队；未置位返回 E_DEPLOY_CONFIRM_REQUIRED、不入队。
@@ -1001,7 +1005,8 @@ export interface components {
             key?: string;
             name?: string;
             kind?: string;
-            node_id?: string;
+            /** 平台节点 ID（与 PlacementView.platform_node_id 同词族）。 */
+            platform_node_id?: string;
             mount_path?: string;
             status?: string;
         };
@@ -1250,7 +1255,11 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description 应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。 */
+                /**
+                 * @description 应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。
+                 *     compose 应用名与请求 app 必须一致（A1：不一致 → E_COMPOSE_UNSUPPORTED，
+                 *     不误建 app、不入队）。
+                 */
                 app: string;
             };
             cookie?: never;

@@ -312,7 +312,7 @@ func (e *Engine) advanceOne(ctx context.Context, d state.DeployRecord) (err erro
 }
 
 // startQueued 启动一条 queued 部署：queued → preparing（CAS 谓词防多实例
-// 竞争）并同 tick 执行准备。CAS 补丁同拍原子写入准备/构建预算锚点
+// 竞争）并同 tick 执行准备。CAS 补丁同拍原子写入准备/构建预算基线
 // phase_started_at（H11）：预算自拾取时刻起算，排队等待（同 app 互斥/控制
 // 面停机窗口）不计入。
 func (e *Engine) startQueued(ctx context.Context, rec state.DeployRecord) error {
@@ -336,12 +336,12 @@ func (e *Engine) startQueued(ctx context.Context, rec state.DeployRecord) error 
 	return e.runPreparing(ctx, rec)
 }
 
-// prepareBudgetAnchor 返回准备/构建预算的起算锚点（H11）：拾取时刻
-// phase_started_at；迁移前存量行（锚点未写、零值）回落 created_at 保持旧
-// 语义。blocked_waiting 是 releasing 的子状态，锚点在其间不重置也无消费
+// prepareBudgetBaseline 返回准备/构建预算的起算基线（H11）：拾取时刻
+// phase_started_at；迁移前存量行（基线未写、零值）回落 created_at 保持旧
+// 语义。blocked_waiting 是 releasing 的子状态，基线在其间不重置也无消费
 // （releasing 预算由 watchdog_deadline_at 起算，恢复续跑时重臂）——两者
 // 互不冲突。
-func prepareBudgetAnchor(rec state.DeployRecord) time.Time {
+func prepareBudgetBaseline(rec state.DeployRecord) time.Time {
 	if rec.PhaseStartedAt.IsZero() {
 		return rec.CreatedAt
 	}
@@ -370,9 +370,9 @@ func (e *Engine) runPreparing(ctx context.Context, rec state.DeployRecord) error
 	if rec.CancelRequested {
 		return e.cancelTerminal(ctx, rec)
 	}
-	// 准备预算：底座不可用等暂态错误重试到 锚点+releaseTimeout 为止（锚点 =
+	// 准备预算：底座不可用等暂态错误重试到 基线+deployTimeout 为止（基线 =
 	// 拾取时刻，排队等待不计入预算，H11；存量行锚点为 0 回落 created_at）。
-	if anchor := prepareBudgetAnchor(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.ReleaseTimeout {
+	if anchor := prepareBudgetBaseline(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.DeployTimeout {
 		return e.failTransition(ctx, rec, "E_RUNTIME_UNAVAILABLE",
 			"准备阶段超过发布看门狗预算（底座不可用或环境异常）")
 	}
@@ -416,7 +416,7 @@ func (e *Engine) runBuilding(ctx context.Context, rec state.DeployRecord) error 
 		return e.cancelTerminal(ctx, rec)
 	}
 	// 构建预算同 preparing：锚点起算（拾取时刻，排队不计入，H11）。
-	if anchor := prepareBudgetAnchor(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.ReleaseTimeout {
+	if anchor := prepareBudgetBaseline(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.DeployTimeout {
 		return e.failTransition(ctx, rec, "E_RUNTIME_UNAVAILABLE",
 			"构建核对阶段超过发布看门狗预算")
 	}
@@ -538,7 +538,7 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	}
 
 	releaseAt := e.now()
-	deadline := releaseAt.Add(e.cfg.ReleaseTimeout)
+	deadline := releaseAt.Add(e.cfg.DeployTimeout)
 	to := state.DeployReleasing
 	from := rec.Status
 	specHash := pre.spec.SpecHash

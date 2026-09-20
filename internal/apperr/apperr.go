@@ -1,7 +1,7 @@
 // Package apperr 是携带 fleetly 错误信封的应用错误类型。
 //
 // 错误信封契约（发布专项 §2.7、proto/fleetly/shared/v1/error.proto）：
-// {code, message, phase, deployment_id, suggestion, context, docs} 七字段；
+// {code, message, stage, deployment_id, suggestion, context, docs} 七字段；
 // code 必须来自 errcode 注册表（唯一真源，只增不复用）。gRPC 侧以
 // status detail（*sharedv1.ErrorResponse）携带信封；REST 侧由 gateway
 // HTTPErrorHandler 解出信封渲染 snake_case JSON。
@@ -27,7 +27,7 @@ import (
 type Error struct {
 	code         string
 	message      string
-	phase        string
+	stage        string
 	deploymentID string
 	suggestion   string
 	docs         string
@@ -55,8 +55,8 @@ func New(code, messageFormat string, args ...any) *Error {
 	}
 }
 
-// WithPhase 附加发布阶段（如 resolve/build/deploy/serve）。
-func (e *Error) WithPhase(phase string) *Error { e.phase = phase; return e }
+// WithStage 附加失败所处管线阶段（如 resolve/build/deploy/serve）。
+func (e *Error) WithStage(stage string) *Error { e.stage = stage; return e }
 
 // WithDeploymentID 关联部署 ID。
 func (e *Error) WithDeploymentID(id string) *Error { e.deploymentID = id; return e }
@@ -124,7 +124,7 @@ func (e *Error) Envelope() *sharedv1.ErrorResponse {
 	return &sharedv1.ErrorResponse{
 		Code:         e.code,
 		Message:      e.message,
-		Phase:        e.phase,
+		Stage:        e.stage,
 		DeploymentId: e.deploymentID,
 		Suggestion:   e.suggestion,
 		Context:      e.context,
@@ -165,7 +165,7 @@ func FromGRPCStatus(st *status.Status) (*Error, bool) {
 		e := &Error{
 			code:         env.GetCode(),
 			message:      env.GetMessage(),
-			phase:        env.GetPhase(),
+			stage:        env.GetStage(),
 			deploymentID: env.GetDeploymentId(),
 			suggestion:   env.GetSuggestion(),
 			docs:         env.GetDocs(),

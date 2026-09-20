@@ -141,30 +141,30 @@ func TestSetAppSourceValidation(t *testing.T) {
 
 	// E7④：https_token 配对时 auth_secret ≥16。
 	_, err := svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
-		Name: "srcapp", Url: "https://example.com/acme/web.git",
-		AuthKind: "https_token", AuthSecret: "short",
+		Name: "srcapp", SourceUrl: "https://example.com/acme/web.git",
+		SourceAuthKind: "https_token", SourceAuthSecret: "short",
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("short auth_secret err = %v, want InvalidArgument", err)
 	}
 	// E7⑤：https_token 拒绝 http:// 明文源。
 	_, err = svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
-		Name: "srcapp", Url: "http://example.com/acme/web.git",
-		AuthKind: "https_token", AuthSecret: "long-enough-token-16",
+		Name: "srcapp", SourceUrl: "http://example.com/acme/web.git",
+		SourceAuthKind: "https_token", SourceAuthSecret: "long-enough-token-16",
 	})
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("http + https_token err = %v, want InvalidArgument", err)
 	}
 	// 合法形态：https + 16+ 材料。
 	if _, err := svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
-		Name: "srcapp", Url: "https://example.com/acme/web.git",
-		AuthKind: "https_token", AuthSecret: "long-enough-token-16",
+		Name: "srcapp", SourceUrl: "https://example.com/acme/web.git",
+		SourceAuthKind: "https_token", SourceAuthSecret: "long-enough-token-16",
 	}); err != nil {
 		t.Fatalf("valid https_token source rejected: %v", err)
 	}
 	// http:// + none 仍允许（匿名明文拉取是合法形态）。
 	if _, err := svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
-		Name: "srcapp", Url: "http://example.com/acme/web.git", AuthKind: "none",
+		Name: "srcapp", SourceUrl: "http://example.com/acme/web.git", SourceAuthKind: "none",
 	}); err != nil {
 		t.Fatalf("http + none must stay allowed: %v", err)
 	}

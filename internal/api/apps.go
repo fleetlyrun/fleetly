@@ -206,7 +206,6 @@ func (s *AppsService) ShowAppWebhook(ctx context.Context, req *serverv1.ShowAppW
 		SourceUrl:        cfg.SourceURL,
 		SourceBranch:     cfg.Branch,
 		SourceAuthKind:   string(cfg.AuthKind),
-		Branch:           cfg.Branch,
 	}
 	if s.gitEndpoint != "" {
 		resp.GitRemoteHint = "ssh://git@" + s.gitEndpoint + "/" + app.Name + ".git"
@@ -218,27 +217,27 @@ func (s *AppsService) ShowAppWebhook(ctx context.Context, req *serverv1.ShowAppW
 // 整体替换语义（每次调用写全量字段）；认证材料必须与 auth_kind 同调提供
 // ——材料经 envelope 加密落库，读回面无明文，因此无法「留旧」。
 func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSourceRequest) (*serverv1.SetAppSourceResponse, error) {
-	kind := state.SourceAuthKind(req.GetAuthKind())
+	kind := state.SourceAuthKind(req.GetSourceAuthKind())
 	if !kind.Valid() {
-		return nil, statusInvalidArgument("auth_kind must be none|https_token|ssh_key")
+		return nil, statusInvalidArgument("source_auth_kind must be none|https_token|ssh_key")
 	}
-	if kind == state.SourceAuthNone && req.GetAuthSecret() != "" {
-		return nil, statusInvalidArgument("auth_secret requires auth_kind https_token or ssh_key")
+	if kind == state.SourceAuthNone && req.GetSourceAuthSecret() != "" {
+		return nil, statusInvalidArgument("source_auth_secret requires source_auth_kind https_token or ssh_key")
 	}
-	if kind != state.SourceAuthNone && req.GetAuthSecret() == "" {
-		return nil, statusInvalidArgument("auth_kind " + string(kind) + " requires auth_secret (整体替换语义——无法留旧)")
+	if kind != state.SourceAuthNone && req.GetSourceAuthSecret() == "" {
+		return nil, statusInvalidArgument("source_auth_kind " + string(kind) + " requires source_auth_secret (整体替换语义——无法留旧)")
 	}
 	// E7④（S19）：认证材料最小长度与 webhook secret 同标（≥16）——弱材料
 	// 即便 envelope 加密落库，认证面仍在线可穷举。
-	if kind != state.SourceAuthNone && len(req.GetAuthSecret()) < 16 {
-		return nil, statusInvalidArgument("auth_secret must be at least 16 characters")
+	if kind != state.SourceAuthNone && len(req.GetSourceAuthSecret()) < 16 {
+		return nil, statusInvalidArgument("source_auth_secret must be at least 16 characters")
 	}
-	if req.GetUrl() != "" && strings.ContainsAny(req.GetUrl(), " \t\n\r") {
+	if req.GetSourceUrl() != "" && strings.ContainsAny(req.GetSourceUrl(), " \t\n\r") {
 		return nil, statusInvalidArgument("source url must not contain whitespace")
 	}
 	// E7⑤（S19）：https_token 强制 https:// 源——http:// 明文链路会随请求
 	// 泄露 token（gitserver buildFetch 拉源前同款防线，此处配置期早拒）。
-	if kind == state.SourceAuthToken && strings.HasPrefix(req.GetUrl(), "http://") {
+	if kind == state.SourceAuthToken && strings.HasPrefix(req.GetSourceUrl(), "http://") {
 		return nil, statusInvalidArgument("https_token auth requires an https:// source url")
 	}
 	app, err := resolveApp(ctx, s.st, req.GetName())
@@ -246,16 +245,16 @@ func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSour
 		return nil, err
 	}
 	secretCipher := ""
-	if req.GetAuthSecret() != "" {
-		cipher, encErr := s.box.Encrypt([]byte(req.GetAuthSecret()))
+	if req.GetSourceAuthSecret() != "" {
+		cipher, encErr := s.box.Encrypt([]byte(req.GetSourceAuthSecret()))
 		if encErr != nil {
 			return nil, fmt.Errorf("encrypt source auth secret: %w", encErr)
 		}
 		secretCipher = string(cipher)
 	}
 	if err := s.st.SetAppSource(ctx, app.ID, state.AppSourceWrite{
-		URL:          req.GetUrl(),
-		Branch:       req.GetBranch(),
+		URL:          req.GetSourceUrl(),
+		Branch:       req.GetSourceBranch(),
 		AuthKind:     kind,
 		AuthSecret:   secretCipher,
 		ActorTokenID: callerTokenID(ctx),
@@ -263,10 +262,10 @@ func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSour
 		return nil, err
 	}
 	return &serverv1.SetAppSourceResponse{
-		Name:         app.Name,
-		SourceUrl:    req.GetUrl(),
-		SourceBranch: req.GetBranch(),
-		AuthKind:     string(kind),
+		Name:           app.Name,
+		SourceUrl:      req.GetSourceUrl(),
+		SourceBranch:   req.GetSourceBranch(),
+		SourceAuthKind: string(kind),
 	}, nil
 }
 

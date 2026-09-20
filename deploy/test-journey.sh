@@ -286,7 +286,7 @@ ingress:
     ca_pool_file: "/var/lib/fleetly/pebble-root.pem"
     email: "ops@journey.test"
 engine:
-  release_timeout_seconds: 180
+  deploy_timeout_seconds: 180
   observe_seconds: 5
   replicas_below_seconds: 5
   poll_seconds: 1

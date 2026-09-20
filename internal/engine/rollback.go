@@ -190,9 +190,9 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 	if rec.CancelRequested {
 		return e.cancelTerminal(ctx, rec)
 	}
-	// 回滚准备预算同 deploying 路径：锚点（拾取时刻）起算，排队等待不计入
-	//（H11）；存量行锚点为 0 回落 created_at 保持旧语义。
-	if anchor := prepareBudgetAnchor(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.ReleaseTimeout {
+	// 回滚准备预算同 deploying 路径：基线（拾取时刻）起算，排队等待不计入
+	//（H11）；存量行基线为 0 回落 created_at 保持旧语义。
+	if anchor := prepareBudgetBaseline(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.DeployTimeout {
 		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE",
 			"回滚准备超过发布看门狗预算（底座不可用或环境异常）"))
 	}
@@ -218,7 +218,7 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 	// releasing 迁移（哈希/快照已在入队时落行；看门狗按当前平台配置起算
 	// ——治理参数取当前，§2.4）。
 	releaseAt := e.now()
-	deadline := releaseAt.Add(e.cfg.ReleaseTimeout)
+	deadline := releaseAt.Add(e.cfg.DeployTimeout)
 	to := state.DeployReleasing
 	from := state.DeployPreparing
 	if err := e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{

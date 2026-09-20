@@ -83,7 +83,7 @@ func (e *Engine) cancelDeployment(ctx context.Context, rec state.DeployRecord) e
 	if err != nil {
 		return err
 	}
-	recovery := state.RecoveryRestore
+	recovery := state.RecoveryReplay
 	patch := state.DeploymentPatch{}
 	if previous != nil {
 		if err := e.restoreSnapshot(ctx, rec, previous); err != nil {

@@ -67,7 +67,7 @@ export function AppDomainsPage() {
               Domains
             </CardTitle>
             <CardDescription>
-              Declared in compose; synced by the platform at release time.
+              Declared in compose; reconciled by the platform at release time.
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
@@ -124,7 +124,7 @@ export function AppDomainsPage() {
                   <TableRow key={`${d.service}:${d.domain}`}>
                     <TableCell className="font-mono text-xs">{d.domain}</TableCell>
                     <TableCell>{d.service}</TableCell>
-                    <TableCell>{d.port || <span className="text-muted-foreground">not synced</span>}</TableCell>
+                    <TableCell>{d.port || <span className="text-muted-foreground">not reconciled</span>}</TableCell>
                     <TableCell className="text-xs">
                       {d.cert_sha256 ? (
                         <span className="space-y-0.5">

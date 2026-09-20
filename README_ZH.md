@@ -4,7 +4,7 @@
 
 > Dokku 的资源占用，Railway 的 API，AI Agent 优先的操作方式。
 
-fleetly 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用部署到 1~10 台服务器的集群上，获得零停机发布、快照回滚、漂移检测，以及一套同时为人类与 AI Agent 设计的 API 面——不需要 Kubernetes。
+fleetly 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用部署到 1~10 台服务器的集群上，获得零停机发布、版本回滚、漂移检测，以及一套同时为人类与 AI Agent 设计的 API 面——不需要 Kubernetes。
 
 **当前状态：早期开发中。** 设计已定稿并通过评审；T0 地基（仓库、CI 门禁、proto 契约链、错误码注册表、dind E2E 骨架）已落地。v0.1 尚未发布——见[路线图](#路线图)。曾用名 *edgesets* 与 *edgefleet*。
 
@@ -32,8 +32,8 @@ sudo sh install.sh --bin-dir ./dist                              # 离线 / 开�
 
 | 领域 | 行为 | 版本 |
 |---|---|---|
-| 部署 | git push / webhook / API → Railpack 或 Dockerfile 构建 → 零停机上线 → 观察窗 | v0.1 |
-| 发布安全 | Swarm `failure-action=pause` + 平台快照重放（最近 5 个已验证版本）；不用 Swarm 原生回滚 | v0.1 |
+| 部署 | git push / webhook / API → Railpack 或 Dockerfile 构建 → 零停机切流 → 观察窗 | v0.1 |
+| 发布安全 | Swarm `failure-action=pause` + 平台版本重放（保留最近 5 个已验证版本）；不用 Swarm 原生回滚 | v0.1 |
 | 路由 / TLS | 每节点 Traefik，路由与证书由控制面下发；集中 ACME（HTTP-01）、多 SAN 域名列表 | v0.1 |
 | 状态 | SQLite 控制面状态，三层模型（权威 / 观测缓存 / 实时直读） | v0.1 |
 | 漂移检测 | 期望态 hash 对现实；检测默认开、自动收敛 per-app opt-in | v0.1 |
@@ -92,7 +92,7 @@ fleetly deploy compose.yaml                 # 入队并等待终态
 fleetly apps list && fleetly deployments list my-api
 fleetly logs follow --service web my-api    # 实时流（--json 为 JSONL）
 fleetly env set my-api KEY value            # 随下次部署生效
-fleetly rollback my-api                     # 快照重放（最近 5 版）
+fleetly rollback my-api                     # 版本重放（最近 5 版）
 fleetly drift show my-api                   # 期望态 vs 实况
 fleetly tokens create --scopes deploy --note CI   # 明文仅此一次显示
 ```
@@ -104,7 +104,7 @@ fleetly tokens create --scopes deploy --note CI   # 明文仅此一次显示
 ```bash
 fleetly git keys add --note laptop ~/.ssh/id_ed25519.pub   # admin scope；库内只落指纹
 git remote add fleetly ssh://git@127.0.0.1:8424/my-api.git
-git push fleetly main                                      # → 构建 → 零停机上线
+git push fleetly main                                      # → 构建 → 零停机切流
 fleetly git keys list && fleetly git keys rm <id>
 ```
 

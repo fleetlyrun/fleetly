@@ -134,15 +134,16 @@ func (x *PlacementView) GetUpdatedAt() *timestamppb.Timestamp {
 // VolumeView 是卷注册表行投影（volumes 表；orphaned 状态位经 status 透出
 // ——删除应用保留卷）。
 type VolumeView struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Key           string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
-	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	Kind          string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
-	NodeId        string                 `protobuf:"bytes,4,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
-	MountPath     string                 `protobuf:"bytes,5,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
-	Status        string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Key   string                 `protobuf:"bytes,1,opt,name=key,proto3" json:"key,omitempty"`
+	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Kind  string                 `protobuf:"bytes,3,opt,name=kind,proto3" json:"kind,omitempty"`
+	// 平台节点 ID（与 PlacementView.platform_node_id 同词族）。
+	PlatformNodeId string `protobuf:"bytes,4,opt,name=platform_node_id,json=platformNodeId,proto3" json:"platform_node_id,omitempty"`
+	MountPath      string `protobuf:"bytes,5,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
+	Status         string `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *VolumeView) Reset() {
@@ -196,9 +197,9 @@ func (x *VolumeView) GetKind() string {
 	return ""
 }
 
-func (x *VolumeView) GetNodeId() string {
+func (x *VolumeView) GetPlatformNodeId() string {
 	if x != nil {
-		return x.NodeId
+		return x.PlatformNodeId
 	}
 	return ""
 }
@@ -338,13 +339,13 @@ const file_fleetly_server_v1_placement_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x96\x01\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xa7\x01\n" +
 	"\n" +
 	"VolumeView\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
-	"\x04kind\x18\x03 \x01(\tR\x04kind\x12\x17\n" +
-	"\anode_id\x18\x04 \x01(\tR\x06nodeId\x12\x1d\n" +
+	"\x04kind\x18\x03 \x01(\tR\x04kind\x12(\n" +
+	"\x10platform_node_id\x18\x04 \x01(\tR\x0eplatformNodeId\x12\x1d\n" +
 	"\n" +
 	"mount_path\x18\x05 \x01(\tR\tmountPath\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\"1\n" +

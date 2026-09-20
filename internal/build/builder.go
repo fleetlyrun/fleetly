@@ -307,7 +307,7 @@ func (b *Builder) fail(ctx context.Context, buildID string, cause error) error {
 		}
 	}
 	appErr := apperr.New("E_BUILD_FAILED", "构建失败：%v", cause).
-		WithPhase("build").
+		WithStage("build").
 		WithCause(cause)
 	if err == nil {
 		if rec.LogPath != "" {

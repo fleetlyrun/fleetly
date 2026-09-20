@@ -55,7 +55,8 @@ message VolumeView {
   string key = 1;
   string name = 2;
   string kind = 3;
-  string node_id = 4;
+  // 平台节点 ID（与 PlacementView.platform_node_id 同词族）。
+  string platform_node_id = 4;
   string mount_path = 5;
   string status = 6;
 }

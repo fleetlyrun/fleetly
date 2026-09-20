@@ -109,7 +109,7 @@ function DeployCard({ app }: { app: string }) {
         </CardTitle>
         <CardDescription>
           Paste compose YAML or upload the file. The app is created on first
-          deploy; changes roll out zero-downtime.
+          deploy; changes deploy with zero downtime.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -238,8 +238,8 @@ function RollbackCard({ app }: { app: string }) {
           Rollback
         </CardTitle>
         <CardDescription>
-          Snapshot replay (last 5 successful revisions). Empty target = revert
-          one version.
+          Revision replay (last 5 verified revisions). Empty target = rollback
+          to the previous revision.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -248,7 +248,7 @@ function RollbackCard({ app }: { app: string }) {
             <Label htmlFor="rollback-revision">Target revision</Label>
             <Select value={revisionId} onValueChange={setRevisionId}>
               <SelectTrigger id="rollback-revision">
-                <SelectValue placeholder="Latest successful (revert one)" />
+                <SelectValue placeholder="Latest verified (previous revision)" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="latest">Latest successful</SelectItem>

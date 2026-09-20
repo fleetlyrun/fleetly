@@ -60,8 +60,8 @@ func TestPreflightImageMissing(t *testing.T) {
 	if appErr.Context()["warning"] != WarningRollbackImageRisk {
 		t.Fatalf("context warning = %q, want W_ROLLBACK_IMAGE_RISK", appErr.Context()["warning"])
 	}
-	if appErr.Envelope().GetPhase() != "preflight" {
-		t.Fatalf("phase = %q, want preflight", appErr.Envelope().GetPhase())
+	if appErr.Envelope().GetStage() != "preflight" {
+		t.Fatalf("stage = %q, want preflight", appErr.Envelope().GetStage())
 	}
 	if got.Available || got.Digest != "" || got.Warning != WarningRollbackImageRisk {
 		t.Fatalf("result = %+v", got)

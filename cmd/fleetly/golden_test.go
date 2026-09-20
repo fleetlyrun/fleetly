@@ -365,21 +365,21 @@ func TestGoldenPlacementShow(t *testing.T) {
 	compareGolden(t, "placement_bound", out)
 }
 
-// TestGoldenNodesLs nodes ls --json（观测缓存；空与单节点两态）。
-func TestGoldenNodesLs(t *testing.T) {
+// TestGoldenNodesList nodes list --json（观测缓存；空与单节点两态）。
+func TestGoldenNodesList(t *testing.T) {
 	env := startCLI(t)
-	code, out, errOut := runCLIConn(t, "nodes", "ls", "--json")
+	code, out, errOut := runCLIConn(t, "nodes", "list", "--json")
 	if code != 0 {
 		t.Fatalf("code=%d stderr=%s", code, errOut)
 	}
-	compareGolden(t, "nodes_ls_empty", out)
+	compareGolden(t, "nodes_list_empty", out)
 
 	env.SeedNode(t)
-	code, out, _ = runCLIConn(t, "nodes", "ls", "--json")
+	code, out, _ = runCLIConn(t, "nodes", "list", "--json")
 	if code != 0 {
 		t.Fatalf("code=%d", code)
 	}
-	compareGolden(t, "nodes_ls", out)
+	compareGolden(t, "nodes_list", out)
 }
 
 // TestGoldenBackupsList backups list --json（台账空态 + verified/failed

@@ -65,7 +65,7 @@ type JanitorConfig struct {
 	DeploymentsRoot string
 	// DeploymentDirRetentionDays 是部署目录在终态后的保留天数（缺省 30）。
 	DeploymentDirRetentionDays int
-	// StaleDeploymentBudget 是部署非终态超龄判定预算（2×（ReleaseTimeout+
+	// StaleDeploymentBudget 是部署非终态超龄判定预算（2×（DeployTimeout+
 	// ObserveWindow），装配自 engine 配置；≤0 跳过部署扫描）。
 	StaleDeploymentBudget time.Duration
 	// StaleBuildBudget 是构建非终态超龄判定预算（2×构建超时，装配自
@@ -278,11 +278,11 @@ func (j *Janitor) pruneDeploymentDirs(ctx context.Context, now time.Time) {
 }
 
 // scanStaleNonTerminal 非终态超龄扫描（S18-A10，§9 裁决并入 janitor）：
-// deployments 停留非终态超 2×（ReleaseTimeout+ObserveWindow）、builds
+// deployments 停留非终态超 2×（DeployTimeout+ObserveWindow）、builds
 // 停留 queued/building 超 2×构建超时 → 事件 + Error 日志。只告警不自愈
-// （恢复路径已有 S8/S9 兜底；这层是未来新状态机漏洞的显性化）。锚点取
+// （恢复路径已有 S8/S9 兜底；这层是未来新状态机漏洞的显性化）。基线取
 // 行内最新阶段时间（phase_started_at / release_started_at /
-// observe_started_at / created_at 最大值）——正常推进的行锚点随阶段刷新，
+// observe_started_at / created_at 最大值）——正常推进的行基线随阶段刷新，
 // 恒不误报。
 func (j *Janitor) scanStaleNonTerminal(ctx context.Context, now time.Time) {
 	if j.cfg.StaleDeploymentBudget > 0 {

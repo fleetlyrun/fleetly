@@ -102,9 +102,9 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedDegraded,
 		},
 		{
-			name: "归位成功的失败（restore，无 verdict）→ running（旧版本服务中）",
+			name: "归位成功的失败（replay，无 verdict）→ running（旧版本服务中）",
 			f: AppFacts{
-				Latest:          latest(func(r *state.DeployRecord) { r.Recovery = state.RecoveryRestore }),
+				Latest:          latest(func(r *state.DeployRecord) { r.Recovery = state.RecoveryReplay }),
 				LatestSucceeded: succeeded(nil),
 			},
 			want: DerivedRunning,

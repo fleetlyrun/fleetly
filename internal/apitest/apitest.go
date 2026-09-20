@@ -235,7 +235,7 @@ func (e *Env) SeedPlacement(t *testing.T, appName string) string {
 	return platformID
 }
 
-// SeedNode 播种一条节点观测缓存行（nodes ls 夹具）。
+// SeedNode 播种一条节点观测缓存行（nodes list 夹具）。
 func (e *Env) SeedNode(t *testing.T) {
 	t.Helper()
 	err := e.Store.SyncNodeObservations(context.Background(), []state.SubstrateNode{{

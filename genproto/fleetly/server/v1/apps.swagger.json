@@ -109,7 +109,7 @@
     },
     "/v1/apps/{name}/source": {
       "put": {
-        "summary": "SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；\nadmin）。branch 同时是 git push 的触发分支（app 配置分支，默认 main）。\n认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。",
+        "summary": "SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；\nadmin）。source_branch 同时是 git push 的触发分支（app 配置分支，\n默认 main）。\n认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。",
         "operationId": "AppsService_SetAppSource",
         "responses": {
           "200": {
@@ -222,21 +222,21 @@
     "AppsServiceSetAppSourceBody": {
       "type": "object",
       "properties": {
-        "url": {
+        "source_url": {
           "type": "string",
           "title": "拉源 remote URL（file:// 与 https://、ssh:// 形态）。"
         },
-        "branch": {
+        "source_branch": {
           "type": "string",
-          "title": "触发/拉取分支（默认 main）。"
+          "title": "app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。"
         },
-        "auth_kind": {
+        "source_auth_kind": {
           "type": "string",
           "title": "认证形态：none | https_token | ssh_key。"
         },
-        "auth_secret": {
+        "source_auth_secret": {
           "type": "string",
-          "title": "认证材料（https_token = token 原文；ssh_key = PEM 私钥）。auth_kind =\nnone 时必须为空；服务端 envelope 加密落库，明文不落、永不回读。\nprotovalidate 形状约束在服务端用例层按 auth_kind 交叉校验（跨字段\n规则—— CEL 交叉字段此处不引入，保持 proto 面最小）。"
+          "title": "认证材料（https_token = token 原文；ssh_key = PEM 私钥）。source_auth_kind =\nnone 时必须为空；服务端 envelope 加密落库，明文不落、永不回读。\nprotovalidate 形状约束在服务端用例层按 source_auth_kind 交叉校验（跨字段\n规则—— CEL 交叉字段此处不引入，保持 proto 面最小）。"
         }
       }
     },
@@ -318,7 +318,8 @@
           "type": "string"
         },
         "recovery": {
-          "type": "string"
+          "type": "string",
+          "title": "同记录恢复记录（replay | blocked；空 = 无）。"
         },
         "substrate_halted": {
           "type": "boolean",
@@ -361,9 +362,9 @@
           "type": "string",
           "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
         },
-        "phase": {
+        "stage": {
           "type": "string",
-          "title": "失败所处发布阶段（如 resolve / build / deploy / serve）。"
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
         },
         "deployment_id": {
           "type": "string",
@@ -484,7 +485,7 @@
         "source_branch": {
           "type": "string"
         },
-        "auth_kind": {
+        "source_auth_kind": {
           "type": "string"
         }
       }
@@ -516,15 +517,12 @@
           "title": "拉源配置（未设置时 url/branch 为空串、auth_kind = none）。"
         },
         "source_branch": {
-          "type": "string"
+          "type": "string",
+          "title": "app 配置分支（默认 main）：push 触发与 webhook 拉取共用此分支。"
         },
         "source_auth_kind": {
           "type": "string",
           "title": "none | https_token | ssh_key。"
-        },
-        "branch": {
-          "type": "string",
-          "title": "git push 触发分支（app 配置分支，默认 main）。"
         },
         "git_remote_hint": {
           "type": "string",

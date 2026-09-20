@@ -147,7 +147,7 @@ func NewJanitor(app lynx.App, st *state.Store, cfg *AppConfig) *state.Janitor {
 		ArtifactsRetentionDays: cfg.Build.ArtifactsRetentionDays,
 		DeploymentsRoot:        cfg.DeploymentsRoot(),
 		// 部署目录 30 天窗取注册默认（DeploymentDirRetentionDays 零值回落）。
-		StaleDeploymentBudget: 2 * (engineCfg.ReleaseTimeout + engineCfg.ObserveWindow),
+		StaleDeploymentBudget: 2 * (engineCfg.DeployTimeout + engineCfg.ObserveWindow),
 		StaleBuildBudget:      2 * buildCfg.Timeout,
 	}, app.Logger())
 }

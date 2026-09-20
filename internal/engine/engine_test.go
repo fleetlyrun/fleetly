@@ -331,8 +331,8 @@ services:
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_HEALTH_TIMEOUT" {
 		t.Fatalf("v2 deploy = %s (%s), want failed E_HEALTH_TIMEOUT", final.Status, final.ErrorCode)
 	}
-	if final.Recovery != state.RecoveryRestore {
-		t.Fatalf("recovery = %q, want restore（未切流同记录归位）", final.Recovery)
+	if final.Recovery != state.RecoveryReplay {
+		t.Fatalf("recovery = %q, want replay（未切流同记录归位）", final.Recovery)
 	}
 	if !final.FirstHealthyAt.IsZero() {
 		t.Fatal("first_healthy_at set on unswitched failure")
@@ -524,7 +524,7 @@ services:
 	if final.Status != state.DeployCancelled {
 		t.Fatalf("status = %s (%s), want cancelled", final.Status, final.ErrorCode)
 	}
-	if final.Recovery != state.RecoveryRestore {
+	if final.Recovery != state.RecoveryReplay {
 		t.Fatalf("recovery = %q, want restore", final.Recovery)
 	}
 	found := false
@@ -598,7 +598,7 @@ services:
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_SCHEDULER_PENDING_TIMEOUT" {
 		t.Fatalf("deploy = %s (%s), want failed E_SCHEDULER_PENDING_TIMEOUT", final.Status, final.ErrorCode)
 	}
-	if final.Recovery != state.RecoveryRestore {
+	if final.Recovery != state.RecoveryReplay {
 		t.Fatalf("recovery = %q, want restore", final.Recovery)
 	}
 	found := false
@@ -674,7 +674,7 @@ services:
 }
 
 // TestPrepareBudgetAnchoredAtPickupNotEnqueue（H11 机制测试）：排队时长不
-// 计入准备预算。入队已久（10min > 300s）的 queued 行被拾取——锚点随
+// 计入准备预算。入队已久（10min > 300s）的 queued 行被拾取——基线随
 // queued→preparing 写入 = 拾取时刻——第一拍不得立即假失败 E_RUNTIME_UNAVAILABLE
 // （旧缺陷：预算自 created_at 起算，未触底座、无副作用的假失败，用户必须
 // 重发），链路正常走完。
@@ -697,7 +697,7 @@ func TestPrepareBudgetAnchoredAtPickupNotEnqueue(t *testing.T) {
 	}
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("deploy = %s (%s), want succeeded（预算自拾取锚点起算）",
+		t.Fatalf("deploy = %s (%s), want succeeded（预算自拾取基线起算）",
 			final.Status, final.ErrorCode)
 	}
 }
@@ -709,7 +709,7 @@ func TestPrepareBudgetLegacyRowFallsBackToCreatedAt(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	rec := h.enqueue(h.writeCompose(composeV1))
-	// 存量行形态：升级时已在 preparing、锚点未写（NULL）。
+	// 存量行形态：升级时已在 preparing、基线未写（NULL）。
 	if err := h.store.InTx(ctx, func(tx *state.Tx) error {
 		_, err := tx.ExecContext(ctx,
 			`UPDATE deployments SET status = 'preparing', phase_started_at = NULL WHERE id = ?`, rec.ID)
@@ -721,7 +721,7 @@ func TestPrepareBudgetLegacyRowFallsBackToCreatedAt(t *testing.T) {
 	h.eng.Tick(ctx)
 	final := mustGet(h, rec.ID)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
-		t.Fatalf("legacy row = %s (%s), want failed E_RUNTIME_UNAVAILABLE（锚点缺失回落 created_at，旧语义不变）",
+		t.Fatalf("legacy row = %s (%s), want failed E_RUNTIME_UNAVAILABLE（基线缺失回落 created_at，旧语义不变）",
 			final.Status, final.ErrorCode)
 	}
 	// 未触底座：无服务创建。
@@ -732,7 +732,7 @@ func TestPrepareBudgetLegacyRowFallsBackToCreatedAt(t *testing.T) {
 
 // TestRollbackPrepareBudgetAnchoredAtPickupRetries（H11 回滚路径机制测试）：
 // 入队已久的回滚被拾取后遇底座不可达（ErrNotSwarmReady 暂态）——预算自拾取
-// 锚点起算：预算内逐拍重试（行留 preparing、不触底座），耗尽后才以
+// 基线起算：预算内逐拍重试（行留 preparing、不触底座），耗尽后才以
 // E_RUNTIME_UNAVAILABLE 落 failed（rollback_failed reason=preflight）。
 func TestRollbackPrepareBudgetAnchoredAtPickupRetries(t *testing.T) {
 	h := newHarness(t)
@@ -762,7 +762,7 @@ func TestRollbackPrepareBudgetAnchoredAtPickupRetries(t *testing.T) {
 	// 暂态窗口内逐拍重试：仍非终态、无归位重放（不触底座）。
 	updatesBefore := len(h.sub.updates)
 	for i := 0; i < 3; i++ {
-		h.clk.Advance(30 * time.Second) // 自锚点累计 90s < 300s
+		h.clk.Advance(30 * time.Second) // 自基线累计 90s < 300s
 		h.eng.Tick(ctx)
 	}
 	row = mustGet(h, rec.ID)
@@ -772,12 +772,12 @@ func TestRollbackPrepareBudgetAnchoredAtPickupRetries(t *testing.T) {
 	if len(h.sub.updates) != updatesBefore {
 		t.Fatalf("substrate touched during unavailable window: %v", h.sub.updates)
 	}
-	// 预算耗尽（锚点 + 301s > 300s）：E_RUNTIME_UNAVAILABLE + preflight 失败事件。
+	// 预算耗尽（基线 + 301s > 300s）：E_RUNTIME_UNAVAILABLE + preflight 失败事件。
 	h.clk.Advance(301 * time.Second)
 	h.eng.Tick(ctx)
 	final := mustGet(h, rec.ID)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
-		t.Fatalf("rollback = %s (%s), want failed E_RUNTIME_UNAVAILABLE（预算自锚点起算后耗尽）",
+		t.Fatalf("rollback = %s (%s), want failed E_RUNTIME_UNAVAILABLE（预算自基线起算后耗尽）",
 			final.Status, final.ErrorCode)
 	}
 	if !hasEvent(h.events(), "deployment.rollback_failed") {
@@ -849,7 +849,7 @@ services:
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_HEALTH_TIMEOUT" {
 		t.Fatalf("recovered deploy = %s (%s), want classified failure E_HEALTH_TIMEOUT", final.Status, final.ErrorCode)
 	}
-	if final.Recovery != state.RecoveryRestore {
+	if final.Recovery != state.RecoveryReplay {
 		t.Fatalf("recovery = %q, want restore", final.Recovery)
 	}
 	found := false
@@ -966,7 +966,7 @@ services:
 		t.Fatalf("recovered deploy = %s (%s), want failed E_DEPLOY_INTERRUPTED（无 phase 行走既有分类）",
 			final.Status, final.ErrorCode)
 	}
-	if final.Recovery != state.RecoveryRestore {
+	if final.Recovery != state.RecoveryReplay {
 		t.Fatalf("recovery = %q, want restore", final.Recovery)
 	}
 	found := false
@@ -1171,7 +1171,7 @@ volumes:
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_TASK_START_FAILED" {
 		t.Fatalf("deploy = %s (%s), want failed E_TASK_START_FAILED", final.Status, final.ErrorCode)
 	}
-	if final.Recovery != state.RecoveryRestore {
+	if final.Recovery != state.RecoveryReplay {
 		t.Fatalf("recovery = %q, want restore（stop-first 强制归位）", final.Recovery)
 	}
 	// 停机账（§2.6 如实累计）：起止时间戳齐备，ms 与起止差一致。假时钟单
@@ -1367,7 +1367,7 @@ services:
 	}
 	// 失败分流生效：未切流 → recovery=restore + v1 快照重放（web 被归位回
 	// v1 镜像——旧缺陷直接 failed，无归位动作）。
-	if final.Recovery != state.RecoveryRestore {
+	if final.Recovery != state.RecoveryReplay {
 		t.Fatalf("recovery = %q, want restore（对账失败走失败分流）", final.Recovery)
 	}
 	restored := false

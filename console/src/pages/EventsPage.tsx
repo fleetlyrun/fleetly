@@ -128,7 +128,7 @@ export function EventsPage() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-sm font-medium text-muted-foreground">
-            Activity ({events.length})
+            Events ({events.length})
           </CardTitle>
         </CardHeader>
         <CardContent>

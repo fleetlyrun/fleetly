@@ -22,7 +22,7 @@ deployment.superseded	部署被更新目标取代（陈旧终态）
 deployment.switched	流量切换完成
 deployment.warning	发布警告（W_ 码；观察窗只告警语义）
 engine.stale_nonterminal	部署非终态停留超 2×（发布看门狗+观察窗）预算（状态机漏洞显性化，不自愈）
-node.down	节点判定 DOWN（Swarm 心跳语义）
+node.down	节点判定 DOWN（Swarm 失联判定）
 node.joined	节点加入集群（观测）
 node.removed	节点被移除（docker node rm 观测）
 node.up	节点恢复 ready

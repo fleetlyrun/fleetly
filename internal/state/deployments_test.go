@@ -1,7 +1,7 @@
 package state
 
 // deployments 行驱动测试：状态词表、CAS 迁移（终态不可逆、竞争恰好一个
-// 胜出）、互斥查询、标志位与时间锚、派生状态 CAS 与 revisions seq 分配。
+// 胜出）、互斥查询、标志位与时间标记、派生状态 CAS 与 revisions seq 分配。
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func TestDeploymentLifecycleAndCAS(t *testing.T) {
 		t.Fatalf("double claim err = %v, want ErrDeploymentStateTransition", err)
 	}
 
-	// 字段补丁（无状态谓词）：期望态哈希与看门狗锚。
+	// 字段补丁（无状态谓词）：期望态哈希与看门狗时间标记。
 	now := time.Now().UTC()
 	deadline := now.Add(300 * time.Second)
 	specHash := "hash1"
@@ -115,7 +115,7 @@ func TestDeploymentFailureRecordFields(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 	verdict := VerdictUnstable
-	recovery := RecoveryRestore
+	recovery := RecoveryReplay
 	halted := true
 	started := time.Now().UTC()
 	if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{
@@ -128,7 +128,7 @@ func TestDeploymentFailureRecordFields(t *testing.T) {
 		t.Fatalf("patch failure fields: %v", err)
 	}
 	row, _ := st.GetDeployment(ctx, rec.ID)
-	if row.Verdict != VerdictUnstable || row.Recovery != RecoveryRestore || !row.SubstrateHalted {
+	if row.Verdict != VerdictUnstable || row.Recovery != RecoveryReplay || !row.SubstrateHalted {
 		t.Fatalf("row = %+v", row)
 	}
 	if row.Flags != DeployFlagPostWindowAlerted {
@@ -143,9 +143,9 @@ func TestDeploymentFailureRecordFields(t *testing.T) {
 	}
 }
 
-// TestDeploymentPhaseStartedAtAnchor（H11）：准备/构建预算锚点的补丁写入与
-// 回读保真；新行/存量行锚点为 NULL → 零值（消费方回落 created_at 的载体）。
-func TestDeploymentPhaseStartedAtAnchor(t *testing.T) {
+// TestDeploymentPhaseStartedAtBaseline（H11）：准备/构建预算基线的补丁写入与
+// 回读保真；新行/存量行基线为 NULL → 零值（消费方回落 created_at 的载体）。
+func TestDeploymentPhaseStartedAtBaseline(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
 	app, err := st.CreateApp(ctx, "", "anchorapp")
@@ -158,7 +158,7 @@ func TestDeploymentPhaseStartedAtAnchor(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create deployment: %v", err)
 	}
-	// 新行锚点未写（列 NULL）→ 零值。
+	// 新行基线未写（列 NULL）→ 零值。
 	row, err := st.GetDeployment(ctx, rec.ID)
 	if err != nil {
 		t.Fatalf("get: %v", err)
@@ -166,7 +166,7 @@ func TestDeploymentPhaseStartedAtAnchor(t *testing.T) {
 	if !row.PhaseStartedAt.IsZero() {
 		t.Fatalf("fresh row phase_started_at = %v, want zero（NULL → 回落语义）", row.PhaseStartedAt)
 	}
-	// 拾取补丁：CAS 同拍写锚点（queued → preparing）。
+	// 拾取补丁：CAS 同拍写基线（queued → preparing）。
 	to := DeployPreparing
 	from := DeployQueued
 	anchor := time.Now().UTC()

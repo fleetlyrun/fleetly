@@ -11,7 +11,7 @@ package main
 // 走 env get 显式路径。
 //
 // 动词形态（lynx-go/commands 嵌套子命令）：env set/get/list/rm、
-// placement show、nodes ls——外层动词经 subDispatchUsage 收口复用内层
+// placement show、nodes list——外层动词经 subDispatchUsage 收口复用内层
 // App 的分发机器（README「嵌套子动词」模式；嵌套 miss 保 64，见 app.go）。
 
 import (
@@ -280,28 +280,28 @@ func (c *placementShowCmd) Run(ctx context.Context, env *commands.Environment, a
 		}
 		p := resp.GetPlacement()
 		type volumeView struct {
-			Key       string `json:"key"`
-			Name      string `json:"name"`
-			Kind      string `json:"kind"`
-			NodeID    string `json:"node_id,omitempty"`
-			MountPath string `json:"mount_path,omitempty"`
-			Status    string `json:"status"`
+			Key        string `json:"key"`
+			Name       string `json:"name"`
+			Kind       string `json:"kind"`
+			PlatformID string `json:"platform_node_id,omitempty"`
+			MountPath  string `json:"mount_path,omitempty"`
+			Status     string `json:"status"`
 		}
 		out := struct {
-			App        string       `json:"app"`
-			Bound      bool         `json:"bound"`
-			NodeID     string       `json:"node_id,omitempty"`
-			State      string       `json:"state,omitempty"`
-			Source     string       `json:"source,omitempty"`
-			LabelRef   string       `json:"label_ref,omitempty"`
-			Reason     string       `json:"reason,omitempty"`
-			PinnedAt   string       `json:"pinned_at,omitempty"`
-			Constraint string       `json:"constraint,omitempty"`
-			Volumes    []volumeView `json:"volumes"`
+			App            string       `json:"app"`
+			Bound          bool         `json:"bound"`
+			PlatformNodeID string       `json:"platform_node_id,omitempty"`
+			State          string       `json:"state,omitempty"`
+			Source         string       `json:"source,omitempty"`
+			LabelRef       string       `json:"label_ref,omitempty"`
+			Reason         string       `json:"reason,omitempty"`
+			PinnedAt       string       `json:"pinned_at,omitempty"`
+			Constraint     string       `json:"constraint,omitempty"`
+			Volumes        []volumeView `json:"volumes"`
 		}{App: args[0], Volumes: []volumeView{}}
 		if p != nil {
 			out.Bound = p.GetState() == "bound"
-			out.NodeID = p.GetPlatformNodeId()
+			out.PlatformNodeID = p.GetPlatformNodeId()
 			out.State = p.GetState()
 			out.Source = p.GetSource()
 			out.LabelRef = p.GetLabelRef()
@@ -310,14 +310,14 @@ func (c *placementShowCmd) Run(ctx context.Context, env *commands.Environment, a
 				out.PinnedAt = t.AsTime().Format("2006-01-02T15:04:05Z07:00")
 			}
 			// 有卷 + 已绑定 → 约束编译结果（执行层随部署下发）。
-			if len(resp.GetVolumes()) > 0 && out.NodeID != "" {
-				out.Constraint = placement.ConstraintFor(out.NodeID)
+			if len(resp.GetVolumes()) > 0 && out.PlatformNodeID != "" {
+				out.Constraint = placement.ConstraintFor(out.PlatformNodeID)
 			}
 		}
 		for _, v := range resp.GetVolumes() {
 			out.Volumes = append(out.Volumes, volumeView{
 				Key: v.GetKey(), Name: v.GetName(), Kind: v.GetKind(),
-				NodeID: v.GetNodeId(), MountPath: v.GetMountPath(), Status: v.GetStatus(),
+				PlatformID: v.GetPlatformNodeId(), MountPath: v.GetMountPath(), Status: v.GetStatus(),
 			})
 		}
 		if c.jsonOut {
@@ -326,7 +326,7 @@ func (c *placementShowCmd) Run(ctx context.Context, env *commands.Environment, a
 		var b strings.Builder
 		fmt.Fprintf(&b, "app %s\n", args[0])
 		if p != nil {
-			fmt.Fprintf(&b, "  placement: node %s (state=%s source=%s", out.NodeID, out.State, out.Source)
+			fmt.Fprintf(&b, "  placement: node %s (state=%s source=%s", out.PlatformNodeID, out.State, out.Source)
 			if out.LabelRef != "" {
 				fmt.Fprintf(&b, " label=%s", out.LabelRef)
 			}
@@ -344,8 +344,8 @@ func (c *placementShowCmd) Run(ctx context.Context, env *commands.Environment, a
 			b.WriteString("  volumes:\n")
 			for _, v := range out.Volumes {
 				fmt.Fprintf(&b, "    %s %s (%s, %s", v.Key, v.Name, v.Kind, v.Status)
-				if v.NodeID != "" {
-					fmt.Fprintf(&b, " @%s", v.NodeID)
+				if v.PlatformID != "" {
+					fmt.Fprintf(&b, " @%s", v.PlatformID)
 				}
 				if v.MountPath != "" {
 					fmt.Fprintf(&b, " -> %s", v.MountPath)
@@ -360,52 +360,52 @@ func (c *placementShowCmd) Run(ctx context.Context, env *commands.Environment, a
 
 // ── fleetly nodes ───────────────────────────────────────────────────────────
 
-// nodesCmd 是外层动词 `nodes`：分发 ls（只读观测面）。
+// nodesCmd 是外层动词 `nodes`：分发 list（只读观测面）。
 type nodesCmd struct {
 	sub *commands.App
 }
 
 func newNodesCmd() *nodesCmd {
 	sub := commands.New()
-	sub.Register(&nodesLsCmd{})
+	sub.Register(&nodesListCmd{})
 	sub.VerbTitle = "nodes subcommands:"
 	return &nodesCmd{sub: sub}
 }
 
 func (c *nodesCmd) Name() string     { return "nodes" }
 func (c *nodesCmd) Synopsis() string { return "cluster nodes (read-only observation cache)" }
-func (c *nodesCmd) Usage() string    { return "nodes <ls> [flags]" }
+func (c *nodesCmd) Usage() string    { return "nodes <list> [flags]" }
 
 func (c *nodesCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *nodesCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (ls)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list)")}
 	}
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
-// nodesLsCmd 实现 `fleetly nodes ls`：观测缓存只读列表（展示/诊断专用，
+// nodesListCmd 实现 `fleetly nodes list`：观测缓存只读列表（展示/诊断专用，
 // state-model §2.2 禁止用于决策；节点变更用 docker node 原生命令）。
-type nodesLsCmd struct {
+type nodesListCmd struct {
 	jsonOut bool
 	conn    connFlags
 }
 
-func (c *nodesLsCmd) Name() string { return "ls" }
-func (c *nodesLsCmd) Synopsis() string {
+func (c *nodesListCmd) Name() string { return "list" }
+func (c *nodesListCmd) Synopsis() string {
 	return "list cluster nodes (observation cache; not for decisions)"
 }
-func (c *nodesLsCmd) Usage() string {
-	return "nodes ls [--addr <host:port>] [--token <tok>] [--json]"
+func (c *nodesListCmd) Usage() string {
+	return "nodes list [--addr <host:port>] [--token <tok>] [--json]"
 }
 
-func (c *nodesLsCmd) SetFlags(fs *flag.FlagSet) {
+func (c *nodesListCmd) SetFlags(fs *flag.FlagSet) {
 	c.conn.register(fs)
 	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
 }
 
-func (c *nodesLsCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+func (c *nodesListCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) != 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("expected 0 arguments, got %d", len(args))}
 	}
@@ -491,6 +491,6 @@ var (
 	_ commands.Flagged = &envRmCmd{}
 	_ commands.Command = &placementShowCmd{}
 	_ commands.Flagged = &placementShowCmd{}
-	_ commands.Command = &nodesLsCmd{}
-	_ commands.Flagged = &nodesLsCmd{}
+	_ commands.Command = &nodesListCmd{}
+	_ commands.Flagged = &nodesListCmd{}
 )

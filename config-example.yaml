@@ -79,17 +79,17 @@ build:
 # （文件缺省即文档默认；release-semantics §2.8）——这些键是部署面覆盖入口，
 # 不构成 per-app 可配置承诺。
 engine:
-  # L2 发布看门狗秒数（release_timeout_seconds；缺省 300，含 PENDING/停滞，
+  # L2 发布看门狗秒数（deploy_timeout_seconds；缺省 300，含 PENDING/停滞，
   # 有效值 ≥ health 预算；blocked_waiting 期间暂停计时）。
-  release_timeout_seconds: 300
+  deploy_timeout_seconds: 300
   # L3 观察窗秒数（observe_seconds；缺省 60，默认只告警）。
   observe_seconds: 60
   # 观察窗副本水位不足判定的持续秒数（replicas_below_seconds；缺省 10）。
   replicas_below_seconds: 10
   # 引擎轮询周期秒数（poll_seconds；缺省 2）。
   poll_seconds: 2
-  # 运行域漂移检测扫描周期秒数（drift_interval_seconds；缺省 30——drift
-  # 对账 sweep 节拍，外部篡改受管字段的发现延迟上界；非正值回落默认）。
+  # 运行域漂移检测扫描周期秒数（drift_interval_seconds；缺省 30——漂移检测
+  # 扫描节拍，外部篡改受管字段的发现延迟上界；非正值回落默认）。
   drift_interval_seconds: 30
 
 # 入口与证书（T2.15/T2.16：平台自管 Traefik + 配置端点 + 集中 ACME）。

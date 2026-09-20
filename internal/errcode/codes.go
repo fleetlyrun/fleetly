@@ -57,7 +57,7 @@ var builtins = []Code{
 		Summary:    "观察窗判定 crash loop",
 		Suggestion: "观察窗内进程反复退出：查看应用日志定位崩溃原因，必要时手动回滚。"},
 	{ID: "E_OBSERVE_UNHEALTHY", HTTP: 500,
-		Summary:    "观察窗判定 unhealthy",
+		Summary:    "观察窗判定 unstable（未达 healthy）",
 		Suggestion: "观察窗内健康判定未通过：检查应用日志与健康端点，必要时手动回滚。"},
 	{ID: "E_DEPLOY_INTERRUPTED", HTTP: 500,
 		Summary:    "发布被中断（控制面停止/节点故障），未完成状态机",

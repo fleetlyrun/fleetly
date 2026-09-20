@@ -17,7 +17,7 @@ export function EnvelopeAlert({
   message,
   suggestion,
   docs,
-  phase,
+  stage,
   deploymentId,
   className,
 }: {
@@ -25,7 +25,7 @@ export function EnvelopeAlert({
   message?: string;
   suggestion?: string;
   docs?: string;
-  phase?: string;
+  stage?: string;
   deploymentId?: string;
   className?: string;
 }) {
@@ -52,8 +52,8 @@ export function EnvelopeAlert({
                 error
               </span>
             )}
-            {phase ? (
-              <span className="text-xs text-red-700">phase: {phase}</span>
+            {stage ? (
+              <span className="text-xs text-red-700">stage: {stage}</span>
             ) : null}
             {deploymentId ? (
               <span className="font-mono text-xs text-red-700">
@@ -98,7 +98,7 @@ export function EnvelopeAlertFrom({
       message={envelope.message}
       suggestion={envelope.suggestion}
       docs={envelope.docs}
-      phase={envelope.phase}
+      stage={envelope.stage}
       deploymentId={envelope.deployment_id}
       className={className}
     />
