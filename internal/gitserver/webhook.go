@@ -317,7 +317,11 @@ func (h *WebhookHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 4. 幂等去重：该 sha 已有 enqueued/active/succeeded 部署 → duplicate。
+	// 4. 幂等去重（快路径预查）：该 sha 已有 enqueued/active/succeeded
+	// 部署 → duplicate（不进后台队列）。M3-4：并发重投的 check-then-
+	// insert 竞态在入队事务内复查兜底（DeployFromCommit DedupeSHA——
+	// 两路同时过了本预查时，后到事务返回 ErrDuplicateGitDeployment，
+	// worker 侧落 duplicate 终局）。
 	n, err := h.src.st.CountGitDeploymentsForSHA(ctx, appRow.ID, payload.After)
 	if err == nil && n > 0 {
 		h.audit(ctx, appRow.ID, app, deliveryID, "duplicate", payload.After, "")

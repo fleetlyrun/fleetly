@@ -49,11 +49,29 @@ export interface StreamConnection {
 }
 
 /**
+ * 读空闲看门狗超时（M9-2）：N 秒无帧即 abort + onEnd（走调用方的退避
+ * 重连路径）。半开连接（TCP 未断但对端已死）下 reader.read() 永不
+ * settle，没有该看门狗则流永久挂起且退避机制失效。导出常量供测试
+ * 以 fake timers 推进。
+ */
+export const STREAM_IDLE_TIMEOUT_MS = 30_000;
+
+function newIdleTimeoutError(): StreamError {
+  return new StreamError(0, {
+    code: "E_STREAM_IDLE_TIMEOUT",
+    message: `no frames received for ${STREAM_IDLE_TIMEOUT_MS}ms — closing half-open connection`,
+  });
+}
+
+/**
  * 打开一条 NDJSON 流（fetch + ReadableStream）。
  * - headers 由调用方提供 Bearer；鉴权失败（401）在 consume 内走
  *   client.ts 的统一 401 处置（清凭据 + App 级未授权监听 → 回登录页），
  *   再以 StreamError 上抛——页面只做展示，不再各自拦 401。
  * - 返回的 connection 可主动关闭（AbortController）。
+ * - 读空闲看门狗：STREAM_IDLE_TIMEOUT_MS 内无新 chunk 即 abort 并以
+ *   StreamError(E_STREAM_IDLE_TIMEOUT) 触发 onEnd（区别于主动关闭的
+ *   静默返回）。
  */
 export async function openNdjsonStream<T>(
   url: string,
@@ -72,6 +90,8 @@ async function consume<T>(
   handlers: StreamHandlers<T>,
 ) {
   const parser = new NdjsonParser<T>();
+  // 看门狗触发标记（外层 catch 需读——区分主动关闭与超时断流）。
+  let idleFired = false;
   try {
     const response = await fetch(url, {
       headers,
@@ -93,19 +113,50 @@ async function consume<T>(
     }
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
-        handlers.onFrame(frame);
+    // 看门狗状态：每次收到 chunk 重置；触发时置位 idleFired。
+    let idleTimer: ReturnType<typeof setTimeout> | undefined;
+    let idleRace: Promise<never> | null = null;
+    const clearIdleWatchdog = () => {
+      if (idleTimer !== undefined) clearTimeout(idleTimer);
+      idleTimer = undefined;
+      idleRace = null;
+    };
+    const armIdleWatchdog = () => {
+      clearIdleWatchdog();
+      idleRace = new Promise<never>((_, reject) => {
+        idleTimer = setTimeout(() => {
+          idleFired = true;
+          // 拆底层连接（真实 fetch body 会随之 error）；半开形态下即便
+          // read 不响应 abort，race 兜底保证 onEnd 必达。
+          controller.abort();
+          reject(newIdleTimeoutError());
+        }, STREAM_IDLE_TIMEOUT_MS);
+      });
+    };
+    try {
+      for (;;) {
+        armIdleWatchdog();
+        const readP = reader.read();
+        // race 落败方（abort 后的 AbortError）迟到 reject 不至于变成
+        // unhandled rejection。
+        readP.catch(() => undefined);
+        const { done, value } = await Promise.race([readP, idleRace!]);
+        clearIdleWatchdog();
+        if (done) break;
+        for (const frame of parser.push(decoder.decode(value, { stream: true }))) {
+          handlers.onFrame(frame);
+        }
       }
+    } finally {
+      clearIdleWatchdog();
     }
     for (const frame of parser.flush()) {
       handlers.onFrame(frame);
     }
     handlers.onEnd?.();
   } catch (err) {
-    if (controller.signal.aborted) return; // 主动关闭：非异常
+    // 主动关闭：非异常（看门狗触发的 abort 除外——那是需要重连的断流）。
+    if (controller.signal.aborted && !idleFired) return;
     handlers.onEnd?.(err);
   }
 }

@@ -303,3 +303,37 @@ jobs:
             fi
           done
           exit "$fail"
+
+  antipattern-grep:
+    # MG-6（评审整改 B1 批次）：两条反模式 grep 门禁（纯 POSIX sh，零第三方
+    # action）。审计摘要与临时目录两类缺陷的复发面在此拦截：
+    #   门禁 A（手拼审计 JSON）：审计 diff_summary 禁止字符串拼接构造——
+    #   %q 是 Go 转义非 JSON 转义、backtick 插值零转义，值内引号/控制字符
+    #   即破包（注入与破包面）。唯一合法构造器是 state.DiffSummary
+    #   （内部 json.Marshal）。`DiffSummary: ` 后接 backtick 字面量应零命中。
+    #   门禁 B（临时目录无清理）：凡含 os.MkdirTemp 的 .go 文件必须自证
+    #   回收——文件内 os.RemoveAll（含 defer）或 `// tmpdir: owned-by <owner>`
+    #   注释声明归属（需存活到异步 worker 的目录走注释轨，回收归终态清理）。
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: gate A - audit diff summary must go through state.DiffSummary
+        run: |
+          hits=$(grep -rn 'DiffSummary: `' internal cmd --include='*.go' || true)
+          if [ -n "$hits" ]; then
+            echo '::error::手拼审计 JSON（DiffSummary 接 backtick 字面量）——改用 state.DiffSummary(kvs...) 构造器（json.Marshal 转义）：'
+            printf '%s\n' "$hits"
+            exit 1
+          fi
+      - name: gate B - os.MkdirTemp files must clean up or declare ownership
+        run: |
+          fail=0
+          for f in $(grep -rl 'os\.MkdirTemp' internal cmd --include='*.go' || true); do
+            if ! grep -q 'os\.RemoveAll\|tmpdir: owned-by' "$f"; then
+              echo "::error file=$f::os.MkdirTemp 所在文件既无 os.RemoveAll 也无 // tmpdir: owned-by <owner> 归属注释"
+              fail=1
+            fi
+          done
+          exit "$fail"

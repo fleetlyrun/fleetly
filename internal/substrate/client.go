@@ -30,7 +30,8 @@ type Client struct {
 // 即可配（测试注入缩短预算），配置面随实际需要再引入。
 //
 // 排除面（保持调用方 ctx，不走本预算）：流式调用——Events / ServiceLogs /
-// 镜像拉取进度流（响应体即操作本体，生命周期语义由调用方管理）；健康
+// 镜像拉取进度流 / 镜像装载流（ImageLoad：装载 goroutine 与 solve 共生命
+// 周期，响应体即操作本体，生命周期语义由调用方管理——H6 修正）；健康
 // 探测——Ping（探测语义由探测方的时间预算决定）。
 var defaultCallTimeout = 30 * time.Second
 

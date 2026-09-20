@@ -7,6 +7,7 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -1089,6 +1090,49 @@ func TestEnvPendingPromotedOnSuccess(t *testing.T) {
 	}
 }
 
+// TestEnvChangedHookFiresOnPromote H9：部署成功且实际提升 pending env
+// （n>0）时触发 env 变更挂钩（日志脱敏值集失效联动）；二次成功部署无
+// pending（n=0）不重复触发。
+func TestEnvChangedHookFiresOnPromote(t *testing.T) {
+	h := newHarness(t)
+	fired := make(chan string, 4)
+	h.eng.WithEnvChangedHook(func(appID string) { fired <- appID })
+	ctx := context.Background()
+	app, err := ensureAppForTest(ctx, h.store, "demo")
+	if err != nil {
+		t.Fatalf("ensure app: %v", err)
+	}
+	ct, err := h.box.Encrypt([]byte("v=1-with-promote"))
+	if err != nil {
+		t.Fatalf("encrypt: %v", err)
+	}
+	if _, err := h.store.SetAppEnv(ctx, app.ID, "DEMO_TOKEN", string(ct), "platform"); err != nil {
+		t.Fatalf("set env: %v", err)
+	}
+	path := h.writeCompose(composeV1)
+	if final := h.runToTerminal(h.enqueue(path)); final.Status != state.DeploySucceeded {
+		t.Fatalf("deploy = %s (%s)", final.Status, final.ErrorCode)
+	}
+	select {
+	case got := <-fired:
+		if got != app.ID {
+			t.Fatalf("hook payload appID = %s, want %s", got, app.ID)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("env changed hook did not fire on promote")
+	}
+	// 二次部署：无 pending（n=0）不触发。
+	pathV2 := h.writeCompose(composeV1)
+	if final := h.runToTerminal(h.enqueue(pathV2)); final.Status != state.DeploySucceeded {
+		t.Fatalf("second deploy = %s (%s)", final.Status, final.ErrorCode)
+	}
+	select {
+	case got := <-fired:
+		t.Fatalf("hook fired with no pending env promoted: %s", got)
+	case <-time.After(300 * time.Millisecond):
+	}
+}
+
 func TestStopFirstDowntimeAccounted(t *testing.T) {
 	h := newHarness(t)
 	// 有卷服务：order 强制 stop-first（配置在 fixture 中声明命名卷）。
@@ -1207,6 +1251,263 @@ services:
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_BUILD_FAILED" {
 		t.Fatalf("deploy = %s (%s), want failed E_BUILD_FAILED（无匹配构建）", final.Status, final.ErrorCode)
+	}
+}
+
+// TestBlockedWaitingHoldsAcrossDeadlineWithPersistentDown 场景 15 回归
+// （B4/MG-2/H2）：绑定节点持续 DOWN（持续前哨失败，非一次性）越过
+// WatchdogDeadlineAt 再 +10min——L2 看门狗暂停计时：部署不失败、phase 维持
+// blocked_waiting；节点恢复后 resumeFromBlocked 重置 deadline 并续跑到终态。
+// 旧缺陷被一次性 fake 掩盖（下一拍即恢复，看门狗判定不可达）：blocked 维持
+// 态的评估继续下行到无 phase 守卫的看门狗判定，每拍触发
+// E_SCHEDULER_PENDING_TIMEOUT 假失败。
+func TestBlockedWaitingHoldsAcrossDeadlineWithPersistentDown(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	pathV1 := h.writeCompose(composeV1)
+	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
+		t.Fatalf("v1 = %s", final.Status)
+	}
+	// v2 发布中绑定节点 DOWN（场景 15）→ blocked_waiting。
+	pathV2 := h.writeCompose(`name: demo
+services:
+  web:
+    image: alpine:4
+    command: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 1s
+      timeout: 1s
+      retries: 2
+      start_period: 1s
+`)
+	h.sub.setMode("fleetly-demo-web", modePending)
+	rec2 := h.enqueue(pathV2)
+	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
+		h.eng.Tick(ctx)
+	}
+	// 持续 DOWN：persistentPreflightFail 每拍都失败（区别于一次性队列）。
+	h.resolver.persistentPreflightFail = placementUnavailable()
+	h.eng.Tick(ctx)
+	row := mustGet(h, rec2.ID)
+	if row.Phase != state.PhaseBlockedWaiting {
+		t.Fatalf("phase = %q, want blocked_waiting", row.Phase)
+	}
+	deadline := row.WatchdogDeadlineAt
+
+	// 越过 deadline + 10min，逐拍维持：不失败、phase 不变（看门狗暂停）。
+	h.clk.Advance(deadline.Sub(h.clk.Now()) + 10*time.Minute)
+	for i := 0; i < 3; i++ {
+		h.eng.Tick(ctx)
+	}
+	row = mustGet(h, rec2.ID)
+	if row.Status != state.DeployReleasing || row.Phase != state.PhaseBlockedWaiting {
+		t.Fatalf("persistent down: status=%s phase=%s error=%s（看门狗必须在 blocked 维持态暂停计时）",
+			row.Status, row.Phase, row.ErrorCode)
+	}
+	if hasEvent(h.events(), "deployment.failed") {
+		t.Fatal("deployment.failed emitted during blocked_waiting（假失败）")
+	}
+
+	// 节点恢复 + 任务转健康：resumeFromBlocked 重置 deadline 并续跑到成功。
+	h.resolver.persistentPreflightFail = nil
+	svc := h.sub.services["fleetly-demo-web"]
+	svc.update = "completed"
+	svc.message = ""
+	svc.tasks = h.sub.runningTasks(svc, "t-new")
+	h.eng.Tick(ctx)
+	row = mustGet(h, rec2.ID)
+	if row.Phase != "" {
+		t.Fatalf("phase = %q after resume, want cleared", row.Phase)
+	}
+	if !row.WatchdogDeadlineAt.After(deadline) {
+		t.Fatalf("deadline not re-armed after resume: %v -> %v", deadline, row.WatchdogDeadlineAt)
+	}
+	final := h.runToTerminal(rec2)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("final = %s (%s), want succeeded（恢复续跑重新起算）", final.Status, final.ErrorCode)
+	}
+}
+
+// TestReconcileFailureRoutesThroughFailureDispatch M1-2 回归：releasing 对账
+// 执行失败（半应用现场——web 已更新、worker 创建失败）必须走失败分流
+// （D-REL-4 唯一入口）：未切流 → 同记录归位重放（最后有效版本），而非直接
+// 落 failed 留下无人处置的半应用现场。
+func TestReconcileFailureRoutesThroughFailureDispatch(t *testing.T) {
+	h := newHarness(t)
+	if final := h.runToTerminal(h.enqueue(h.writeCompose(composeV1))); final.Status != state.DeploySucceeded {
+		t.Fatalf("v1 = %s", final.Status)
+	}
+	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
+
+	// v2 双服务：web 更新成功、worker 创建失败（对账中途失败）。
+	h.sub.failUpdates["fleetly-demo-worker"] = errors.New("injected reconcile failure: worker create")
+	pathV2 := h.writeCompose(`name: demo
+services:
+  web:
+    image: alpine:4
+    command: ["sleep", "infinity"]
+    healthcheck:
+      test: ["CMD", "true"]
+      interval: 1s
+      timeout: 1s
+      retries: 2
+      start_period: 1s
+  worker:
+    image: alpine:3
+    command: ["sleep", "infinity"]
+`)
+	rec2 := h.enqueue(pathV2)
+	final := h.runToTerminal(rec2)
+	if final.Status != state.DeployFailed {
+		t.Fatalf("status = %s, want failed", final.Status)
+	}
+	if final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
+		t.Fatalf("error_code = %s, want E_RUNTIME_UNAVAILABLE（底层 err 归一）", final.ErrorCode)
+	}
+	// 失败分流生效：未切流 → recovery=restore + v1 快照重放（web 被归位回
+	// v1 镜像——旧缺陷直接 failed，无归位动作）。
+	if final.Recovery != state.RecoveryRestore {
+		t.Fatalf("recovery = %q, want restore（对账失败走失败分流）", final.Recovery)
+	}
+	restored := false
+	for _, u := range h.sub.updates {
+		if u[0] == "fleetly-demo-web" && u[1] == v1Image {
+			restored = true
+		}
+	}
+	if !restored {
+		t.Fatalf("reconcile failure did not restore previous version: %v", h.sub.updates)
+	}
+}
+
+// TestFirstDeployReconcileFailureScalesToZero M1-2 首发分支：无版本可归位 →
+// scale=0 保留现场（substrate_halted + app down），而非直接 failed 无处置。
+func TestFirstDeployReconcileFailureScalesToZero(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	h.sub.failUpdates["fleetly-demo-worker"] = errors.New("injected reconcile failure: worker create")
+	path := h.writeCompose(`name: demo
+services:
+  web:
+    image: alpine:3
+    command: ["sleep", "infinity"]
+  worker:
+    image: alpine:3
+    command: ["sleep", "infinity"]
+`)
+	rec := h.enqueue(path)
+	final := h.runToTerminal(rec)
+	if final.Status != state.DeployFailed {
+		t.Fatalf("status = %s, want failed", final.Status)
+	}
+	if !final.SubstrateHalted {
+		t.Fatal("substrate_halted not set（首发失败 scale=0 保留现场）")
+	}
+	// 已创建的 web 副本清零（worker 未创建：ServiceInspect NotFound 跳过）。
+	svc, err := h.sub.ServiceInspect(ctx, "fleetly-demo-web")
+	if err != nil {
+		t.Fatalf("web service should exist (scale=0 保留现场): %v", err)
+	}
+	if svc.Replicas != 0 {
+		t.Fatalf("web replicas = %d, want 0", svc.Replicas)
+	}
+	if !hasEvent(h.events(), "deployment.substrate_halted") {
+		t.Fatal("missing deployment.substrate_halted event")
+	}
+	got, _ := h.eng.AppDerivedState(ctx, rec.AppID)
+	if got != DerivedDown {
+		t.Fatalf("app state = %s, want down（首发失败无期望实例）", got)
+	}
+}
+
+// TestRecoveryRetriesWhenSwarmUnavailableAtStartup M1-8 回归：启动恢复遇
+// SwarmReady 失败不再一次性尽力——tick 以 30s 频控重试；底座恢复后观察窗
+// 部署被正确 reopen（完整窗口），而非带陈旧 ObserveStartedAt 直接判窗末。
+func TestRecoveryRetriesWhenSwarmUnavailableAtStartup(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	rec := h.enqueue(h.writeCompose(composeV1))
+	obs := h.runToStatus(t, rec, state.DeployObserving)
+	before := obs.ObserveStartedAt
+
+	// 控制面重启 + 底座不可达：启动扫描登记重试（不放弃）。
+	eng2 := NewEngine(Config{}, h.store, h.sub, h.images, h.resolver, h.box,
+		slog.New(slog.NewTextHandler(io.Discard, nil))).WithClock(h.clk)
+	h.sub.swarmErr = ErrNotSwarmReady
+	eng2.recoverInterrupted(ctx)
+	if !eng2.recoveryPending {
+		t.Fatal("recovery not marked pending after swarm-unavailable startup")
+	}
+
+	// 频控未到（< 30s）：tick 不重试；窗口陈旧化推进越过原窗末——若恢复
+	// 缺失（旧缺陷），下一拍即以陈旧 ObserveStartedAt 判窗末。
+	h.clk.Advance(10 * time.Second)
+	eng2.Tick(ctx)
+	row := mustGet(h, rec.ID)
+	if row.Status != state.DeployObserving {
+		t.Fatalf("status = %s, want observing（频控窗内不重试、也不误判窗末）", row.Status)
+	}
+
+	// 越过 30s 频控 + 底座恢复：重试成功 → 观察窗完整重开。
+	h.sub.swarmErr = nil
+	h.clk.Advance(h.eng.cfg.ObserveWindow + time.Second)
+	eng2.Tick(ctx)
+	row = mustGet(h, rec.ID)
+	if !row.ObserveStartedAt.After(before) {
+		t.Fatalf("observe window not reopened on retry: %v -> %v", before, row.ObserveStartedAt)
+	}
+	reopened := row.ObserveStartedAt
+	// 重开后的窗口内不判窗末（新窗口起点 + 60s 才到窗末）。
+	h.clk.Advance(30 * time.Second)
+	eng2.Tick(ctx)
+	row = mustGet(h, rec.ID)
+	if row.Status != state.DeployObserving {
+		t.Fatalf("status = %s, want observing（重开窗口内不得以陈旧窗口判窗末）", row.Status)
+	}
+	_ = reopened
+	final := h.runToTerminalWith(rec, eng2)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("final = %s (%s), want succeeded（重开窗口走满后成功）", final.Status, final.ErrorCode)
+	}
+	if eng2.recoveryPending {
+		t.Fatal("recovery still pending after successful retry")
+	}
+}
+
+// TestObserveIgnoresPreSwitchCrashes M1-16 回归：任务在过健康门切流之前
+// 崩溃 2 次、随后健康切流——观察窗不得把发布期崩溃计入窗口（窗口自切流点
+// first_healthy_at 起算）而误判 E_OBSERVE_CRASH_LOOP。
+func TestObserveIgnoresPreSwitchCrashes(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	// 首更新滞留 PENDING：部署停在 releasing（健康门未过，未切流）。
+	h.sub.setMode("fleetly-demo-web", modePending)
+	rec := h.enqueue(h.writeCompose(composeV1))
+	h.eng.Tick(ctx)
+	row := mustGet(h, rec.ID)
+	if row.Status != state.DeployReleasing {
+		t.Fatalf("status = %s after first tick, want releasing", row.Status)
+	}
+	// 发布期崩溃 2 次（时间戳晚于 ReleaseStartedAt、早于切流点）。
+	h.clk.Advance(time.Second)
+	h.sub.crashNewRunning("fleetly-demo-web", 2, h.clk.Now())
+	// 健康门通过 → 切流（FirstHealthyAt 晚于崩溃时间戳）→ 观察窗首拍即
+	// 旧缺陷的误判点（since=ReleaseStartedAt 把 2 次发布期崩溃计入窗口 →
+	// E_OBSERVE_CRASH_LOOP）。
+	svc := h.sub.services["fleetly-demo-web"]
+	svc.update = "completed"
+	svc.message = ""
+	svc.tasks = h.sub.runningTasks(svc, "t-new")
+	h.clk.Advance(2 * time.Second)
+	h.eng.Tick(ctx)
+	row = mustGet(h, rec.ID)
+	if row.Status != state.DeployObserving {
+		t.Fatalf("status = %s, want observing（健康切流）", row.Status)
+	}
+	final := h.runToTerminal(rec)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("deploy = %s (%s), want succeeded（发布期崩溃不计入观察窗）", final.Status, final.ErrorCode)
 	}
 }
 

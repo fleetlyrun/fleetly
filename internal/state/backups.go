@@ -142,15 +142,15 @@ func mapVerifyResult(verify string) string {
 }
 
 // backupAuditSummary 生成审计 diff 摘要（脱敏：路径/kind/结论/错误原文；
-// 不含密钥与数据内容）。
+// 不含密钥与数据内容）。MG-6：经 DiffSummary 构造——%q 是 Go 转义非
+// JSON 转义（错误原文含引号/控制字符时会产出破包 JSON），json.Marshal
+// 才是唯一正确转义。
 func backupAuditSummary(w BackupWrite) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, `{"kind":%q,"verify":%q`, w.Kind, w.Verify)
+	kvs := []any{"kind", w.Kind, "verify", w.Verify}
 	if w.Error != "" {
-		fmt.Fprintf(&b, `,"error":%q`, w.Error)
+		kvs = append(kvs, "error", w.Error)
 	}
-	b.WriteString("}")
-	return b.String()
+	return DiffSummary(kvs...)
 }
 
 // validBackupKind 报告 kind 是否在注册词表（含历史兼容值）。

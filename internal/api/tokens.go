@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -74,13 +75,28 @@ func (s *TokensService) ListTokens(ctx context.Context, _ *serverv1.ListTokensRe
 	return &serverv1.ListTokensResponse{Tokens: out}, nil
 }
 
-// RevokeToken 吊销（幂等；不存在 404）。
+// RevokeToken 吊销（幂等；不存在 404）。M4-6 最后管理员守卫：吊销后平台
+// 必须仍存在 ≥1 枚未吊销 admin token——依次吊销全部 admin 会使平台锁死
+// （重启也不补种 bootstrap：HasAnyToken 已见 token 行，一次性语义），最后
+// 一枚的吊销被守卫拒绝（E_TOKEN_LAST_ADMIN 409，提示先创建新 token）。
+// 守卫判定与吊销在 state 层同一事务内闭合（RevokeTokenGuardLastAdmin）。
 func (s *TokensService) RevokeToken(ctx context.Context, req *serverv1.RevokeTokenRequest) (*serverv1.RevokeTokenResponse, error) {
-	if err := s.st.RevokeToken(ctx, req.GetId(), callerTokenID(ctx)); err != nil {
-		if errors.Is(err, state.ErrTokenNotFound) {
+	err := s.st.RevokeTokenGuardLastAdmin(ctx, req.GetId(), callerTokenID(ctx), func(scopes string) bool {
+		return containsScope(scopes, ScopeAdmin)
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, state.ErrTokenNotFound):
 			return nil, notFound("token not found: " + req.GetId())
+		case errors.Is(err, state.ErrTokenLastAdmin):
+			return nil, apperr.New("E_TOKEN_LAST_ADMIN",
+				"token %s 是最后一枚未吊销的 admin token，吊销后平台将无法管理（重启也不补种引导 token）",
+				req.GetId()).
+				WithContext("token", req.GetId()).
+				WithContext("reason", "last_admin")
+		default:
+			return nil, err
 		}
-		return nil, err
 	}
 	return &serverv1.RevokeTokenResponse{Id: req.GetId(), RevokedAt: "revoked"}, nil
 }

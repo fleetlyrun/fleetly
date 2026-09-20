@@ -1,17 +1,16 @@
 package gitserver
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/fleetlyrun/fleetly/internal/execrun"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -122,7 +121,8 @@ type fetchPlan struct {
 	Args []string
 	// Env 是追加的环境变量（GIT_TERMINAL_PROMPT=0 恒在）。
 	Env []string
-	// Cleanup 释放临时资源（ssh_key 临时私钥文件）；可为 nil。
+	// Cleanup 释放临时资源（ssh_key 临时私钥目录整目录回收，M5-8）；可为
+	// nil。FetchRemote 以 defer 无条件执行（成功/失败路径零残留）。
 	Cleanup func()
 	// KnownHostsFile 是 ssh_key 形态下 GIT_SSH_COMMAND 钉住的 known_hosts
 	// 目标文件（整改④：TOFU 首连指纹入审计的观测对象）；非 ssh 形态为空。
@@ -192,14 +192,27 @@ func (s *GitTriggers) buildFetch(ctx context.Context, appID, repoPath string) (f
 		if derr != nil {
 			return fetchPlan{}, derr
 		}
-		plan.Cleanup = func() { _ = os.Remove(keyFile) }
+		// M5-8：临时材料整目录回收（key 落在 MkdirTemp 专属目录内，只删
+		// key 文件会留空目录残留）；FetchRemote 的 defer 无条件执行（成功/
+		// 失败路径都到）， Cleanup 语义 = 目录级零残留。
+		dir := filepath.Dir(keyFile)
+		plan.Cleanup = func() { _ = os.RemoveAll(dir) }
 		// UserKnownHostsFile 钉住收录目标（整改④的观测面）：accept-new 的
 		// TOFU 收录落在平台数据根内（daemon 可控、可审计），而非 ssh 默认
 		// 的 ~/.ssh/known_hosts（systemd ProtectHome 下不可写且无从对账）。
 		plan.KnownHostsFile = knownHosts
+		// M5-10：路径加引号——GIT_SSH_COMMAND 经 shell 解析（含选项词形即
+		// 走 sh -c），无引号的含空格路径（Windows 用户名/配置数据根）直接
+		// 碎裂成多个参数。shellQuote 产出 POSIX 单引号词形（内嵌单引号按
+		// '\'' 闭合重开，唯一万能转义）。
+		// H3：SSH 传输层超时三件套——无这些选项时网络半开（NAT 静默丢包）
+		// 形态下 ssh 挂死至 TCP 保活缺省（小时级），拉源预算全耗在死连接
+		// 上：ConnectTimeout 限定建连、ServerAlive* 探活 3×30s 内判死链。
 		plan.Env = append(plan.Env,
-			"GIT_SSH_COMMAND=ssh -i "+keyFile+" -o UserKnownHostsFile="+knownHosts+
-				" -o StrictHostKeyChecking=accept-new -o BatchMode=yes")
+			"GIT_SSH_COMMAND=ssh -i "+shellQuote(keyFile)+
+				" -o UserKnownHostsFile="+shellQuote(knownHosts)+
+				" -o StrictHostKeyChecking=accept-new -o BatchMode=yes"+
+				" -o ConnectTimeout=15 -o ServerAliveInterval=30 -o ServerAliveCountMax=3")
 	case state.SourceAuthNone:
 		// 匿名拉取，无附加材料。
 	}
@@ -253,16 +266,26 @@ func (s *GitTriggers) FetchRemote(ctx context.Context, app string) error {
 }
 
 // runFetch 执行拉源计划（cwd = bare 仓库；env 追加在进程环境之上）。
+//
+// MG-1：git 子进程经 execrun 统一生命周期封装——WaitDelay + unix 组杀兜底
+// 「孙进程（fetch→ssh）持有 stderr 管道写端」的 Wait 永久阻塞（H3：拉源
+// 路径与 E6 SSH 路径同款挂死形态，此前裸 exec.CommandContext 漏网）。
 func runFetch(ctx context.Context, plan fetchPlan) error {
-	cmd := exec.CommandContext(ctx, "git", plan.Args...) //nolint:gosec // G204：参数为包内构造词形（-c 协议禁用对 + fetch + 白名单校验过的 url/refspec）
-	cmd.Dir = plan.RepoPath
-	cmd.Env = append(os.Environ(), plan.Env...)
-	var errOut bytes.Buffer
-	cmd.Stderr = &errOut
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git fetch: %w: %s", err, errOut.String())
+	stderr, err := execrun.Run(ctx, "git", plan.Args, execrun.Options{ //nolint:gosec // G204：参数为包内构造词形（-c 协议禁用对 + fetch + 白名单校验过的 url/refspec）
+		Dir: plan.RepoPath,
+		Env: plan.Env,
+	})
+	if err != nil {
+		return fmt.Errorf("git fetch: %w: %s", err, stderr)
 	}
 	return nil
+}
+
+// shellQuote 产出 POSIX shell 安全的单引号词形（M5-10：GIT_SSH_COMMAND
+// 经 shell 解析，路径无引号时含空格即碎裂；内嵌单引号按 '\” 形态闭合
+// 重开——POSIX sh 的唯一万能转义）。
+func shellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 // snapshotKnownHosts 读取 known_hosts 目标文件的行集（④ 整改的对照基准；
@@ -310,22 +333,15 @@ func (s *GitTriggers) auditHostKeyFirstSeen(ctx context.Context, appID, app, hos
 		return
 	}
 	sort.Strings(added)
-	var b strings.Builder
-	fmt.Fprintf(&b, `{"app":%q,"host":%q,"added":[`, app, host)
-	for i, line := range added {
-		if i > 0 {
-			b.WriteByte(',')
-		}
-		fmt.Fprintf(&b, "%q", line)
-	}
-	b.WriteString("]}")
+	// MG-6：构造器替换手拼 JSON——%q 是 Go 转义非 JSON 转义（host key 行
+	// 含特殊字符时会破包）；added 数组序经 sort 保持确定。
 	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
 		return tx.WriteAudit(ctx, state.AuditEntry{
 			Actor:       "system",
 			Action:      "git.hostkey_first_seen",
 			Target:      "app:" + appID,
 			Result:      "ok",
-			DiffSummary: b.String(),
+			DiffSummary: state.DiffSummary("app", app, "host", host, "added", added),
 		})
 	}); err != nil {
 		s.log.Warn("gitserver: hostkey first-seen audit write failed", "app", app, "error", err.Error())
@@ -335,7 +351,8 @@ func (s *GitTriggers) auditHostKeyFirstSeen(ctx context.Context, appID, app, hos
 		"app", app, "host", host, "known_hosts", knownHostsFile, "added", len(added))
 }
 
-// writeTempKey 把私钥材料写临时文件（0600；调用方 Cleanup 删除）。
+// writeTempKey 把私钥材料写进专属临时目录（MkdirTemp）下的 key 文件
+// （0600；调用方 Cleanup 以 os.RemoveAll 整目录删除——M5-8 目录零残留）。
 func writeTempKey(key []byte) (string, error) {
 	dir, err := os.MkdirTemp("", "fleetly-gitkey-")
 	if err != nil {

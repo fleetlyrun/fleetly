@@ -6,6 +6,7 @@ package state
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"testing"
@@ -286,5 +287,121 @@ func TestResetInterruptedBuilds(t *testing.T) {
 	// 兜底路径误伤）。
 	if err := st.FailStrandedBuild(context.Background(), queued.ID, "E_BUILD_FAILED", "x"); !errors.Is(err, ErrBuildStateTransition) {
 		t.Fatalf("fail stranded on queued = %v, want ErrBuildStateTransition", err)
+	}
+}
+
+// TestSetBuildLogPath M2-5：building 行的 log_path 回填——产物目录就位即写
+// （失败终态也携带日志路径），行级谓词限定 building（queued/终态行静默
+// 跳过、不覆盖成功终态的权威值），失败终态保留回填值。
+func TestSetBuildLogPath(t *testing.T) {
+	st := newTestStore(t)
+	app := createBuildTestApp(t, st, "build-logpath")
+	queued := createTestBuild(t, st, app.ID, "web")
+	claimed := createTestBuild(t, st, app.ID, "api")
+	if err := st.ClaimBuild(context.Background(), claimed.ID); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	// queued 行：谓词未命中，静默跳过（best-effort 回填不报错）。
+	if err := st.SetBuildLogPath(context.Background(), queued.ID, "/q.log"); err != nil {
+		t.Fatalf("set on queued: %v", err)
+	}
+	if row, err := st.GetBuild(context.Background(), queued.ID); err != nil || row.LogPath != "" {
+		t.Fatalf("queued row log_path = %q (%v), want empty", row.LogPath, err)
+	}
+
+	// building 行：回填生效。
+	const want = "/artifacts/app/01BUILD/build.log"
+	if err := st.SetBuildLogPath(context.Background(), claimed.ID, want); err != nil {
+		t.Fatalf("set on building: %v", err)
+	}
+	if row, err := st.GetBuild(context.Background(), claimed.ID); err != nil || row.LogPath != want {
+		t.Fatalf("building row log_path = %q (%v), want %q", row.LogPath, err, want)
+	}
+
+	// 失败终态保留回填值（M2-5 的失败取证通道）。
+	if err := st.FinishBuildFailed(context.Background(), claimed.ID, "E_BUILD_FAILED"); err != nil {
+		t.Fatalf("finish failed: %v", err)
+	}
+	if row, err := st.GetBuild(context.Background(), claimed.ID); err != nil || row.LogPath != want {
+		t.Fatalf("failed row log_path = %q (%v), want %q（终态不得清除回填）", row.LogPath, err, want)
+	}
+
+	// 终态后回填：谓词未命中，不覆盖。
+	if err := st.SetBuildLogPath(context.Background(), claimed.ID, "/other.log"); err != nil {
+		t.Fatalf("set on terminal: %v", err)
+	}
+	if row, err := st.GetBuild(context.Background(), claimed.ID); err != nil || row.LogPath != want {
+		t.Fatalf("terminal row log_path = %q (%v), want %q（终态行不得被覆盖）", row.LogPath, err, want)
+	}
+}
+
+// TestCreateBuildAsAuditAttribution M4-8 回归：CreateBuildAs 的调用方归因
+// 注入——audit 非 nil 时 build.create 审计行带调用方 token/actor（H14
+// 敏感写面的行为人记录）；nil 时回落 system 归因（与旧 CreateBuild 行为
+// 逐字一致）。
+func TestCreateBuildAsAuditAttribution(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	app := createBuildTestApp(t, st, "build-attrib")
+
+	// 调用方归因：actor=human + ActorTokenID=调用方 token（与 api 层
+	// TriggerBuild 同形态：ID 在入队侧分配，request 与审计共用）。
+	const attributedID = "01ATTRIBBUILD0000000000000"
+	attributed, err := st.CreateBuildAs(ctx, BuildRecord{
+		ID: attributedID, AppID: app.ID, Service: "web", Driver: DriverRailpack, Request: `{"build_id":"a"}`,
+	}, &AuditEntry{
+		Actor:        "human",
+		ActorTokenID: "01CALLER000000000000000000",
+		Action:       "build.create",
+		Target:       "app:" + app.ID,
+		Result:       "ok",
+		DiffSummary:  DiffSummary("build", attributedID, "service", "web"),
+	})
+	if err != nil {
+		t.Fatalf("CreateBuildAs: %v", err)
+	}
+	// 缺省归因：actor=system（内部路径）。
+	plain, err := st.CreateBuildAs(ctx, BuildRecord{
+		AppID: app.ID, Service: "api", Driver: DriverRailpack, Request: `{"build_id":"b"}`,
+	}, nil)
+	if err != nil {
+		t.Fatalf("CreateBuildAs default: %v", err)
+	}
+
+	audits, err := st.RecentAudits(ctx, 10)
+	if err != nil {
+		t.Fatalf("RecentAudits: %v", err)
+	}
+	// actor_token_id 不在只读投影（AuditRecord）内——经行内查询取回
+	//（归因断言的核心字段）。
+	tokenIDOf := func(a AuditRecord) string {
+		var actorTokenID sql.NullString
+		if err := st.db.QueryRowContext(ctx,
+			`SELECT actor_token_id FROM audit_log WHERE id = ?`, a.ID).Scan(&actorTokenID); err != nil {
+			t.Fatalf("scan actor_token_id of audit %s: %v", a.ID, err)
+		}
+		return actorTokenID.String
+	}
+	var gotAttributed, gotPlain bool
+	for _, a := range audits {
+		if a.Action != "build.create" {
+			continue
+		}
+		if strings.Contains(a.DiffSummary, attributed.ID) {
+			gotAttributed = true
+			if a.Actor != "human" || tokenIDOf(a) != "01CALLER000000000000000000" {
+				t.Fatalf("attributed audit actor=%q actor_token_id=%q, want human/01CALLER…", a.Actor, tokenIDOf(a))
+			}
+		}
+		if strings.Contains(a.DiffSummary, plain.ID) {
+			gotPlain = true
+			if a.Actor != "system" || tokenIDOf(a) != "" {
+				t.Fatalf("default audit actor=%q actor_token_id=%q, want system/空", a.Actor, tokenIDOf(a))
+			}
+		}
+	}
+	if !gotAttributed || !gotPlain {
+		t.Fatalf("build.create audits missing: attributed=%v plain=%v", gotAttributed, gotPlain)
 	}
 }

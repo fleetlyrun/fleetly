@@ -48,7 +48,7 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 			spec:       spec,
 			desired:    desiredReplicasOf(spec),
 			running:    countNewRunning(tasks, spec.Image),
-			crashCount: countNewCrashes(tasks, spec.Image, rec.ReleaseStartedAt),
+			crashCount: countNewCrashes(tasks, spec.Image, crashWindowStart(rec)),
 		})
 	}
 
@@ -116,6 +116,21 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 		}
 	}
 	return e.succeedDeployment(ctx, rec, flags)
+}
+
+// crashWindowStart 返回观察窗崩溃计数的起算点（M1-16）：max(发布开始,
+// 切流点)——切流（first_healthy_at，场景 7 的「窗内」语义）之后的退出才算
+// 观察窗崩溃；发布期（releasing）的任务失败属发布判定域（健康门/L2 看门
+// 狗），不计入观察窗（旧缺陷：start-first 形态在过健康门前崩溃 2 次、随后
+// 健康切流——窗口首拍即误判 E_OBSERVE_CRASH_LOOP）。
+// FirstHealthyAt 早于 ReleaseStartedAt（防御形态：字段未落/回滚重放）时取
+// 发布起点——保持 57a5c98 的跨部署划界修复（上一部署的同镜像崩溃史早于
+// 本部署发布起点，不进本窗）。
+func crashWindowStart(rec state.DeployRecord) time.Time {
+	if rec.FirstHealthyAt.After(rec.ReleaseStartedAt) {
+		return rec.FirstHealthyAt
+	}
+	return rec.ReleaseStartedAt
 }
 
 // countNewCrashes 统计目标版本任务的退出次数（failed/rejected/complete）。
@@ -199,7 +214,7 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 			Action:      "deployment.succeeded",
 			Target:      "deployment:" + rec.ID,
 			Result:      "ok",
-			DiffSummary: `{"revision":"` + rev.ID + `","desired_hash":"` + rec.DesiredHash + `"}`,
+			DiffSummary: state.DiffSummary("revision", rev.ID, "desired_hash", rec.DesiredHash), // MG-6：构造器替换手拼 JSON
 		}); err != nil {
 			return err
 		}
@@ -225,8 +240,15 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 	// 跳过：回滚重放的 env 随快照（D-REL-9「非密钥 env 随快照回滚」），
 	// pending 平台层未被本次部署消费——留待下次显式部署生效，不虚报生效。
 	if rec.Kind != kindRollback {
-		if _, err := e.store.MarkAppEnvEffective(ctx, rec.AppID); err != nil {
+		promoted, err := e.store.MarkAppEnvEffective(ctx, rec.AppID)
+		if err != nil {
 			return err
+		}
+		// H9：本部署实际提升了 pending env（值集已变）→ 联动失效日志脱敏
+		// 值集缓存，把「新 secret 值在 30s TTL 窗内被明文采集落盘」的暴露
+		// 窗收敛到下一次重建。n=0（无 pending）与失败部署（不提升）不触发。
+		if promoted > 0 && e.envChanged != nil {
+			e.envChanged(rec.AppID)
 		}
 	}
 	if err := e.refreshDerivedState(ctx, rec.AppID, rec.AppName); err != nil {

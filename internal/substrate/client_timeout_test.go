@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -73,10 +74,10 @@ func TestNonStreamingCallDeadlineBound(t *testing.T) {
 		{"NetworkEnsure(Inspect+Create)", func(ctx context.Context) error { return c.NetworkEnsure(ctx, "net-x") }},
 		{"SwarmReady(Info)", func(ctx context.Context) error { return c.SwarmReady(ctx) }},
 		{"ImageDigest(ImageInspect)", func(ctx context.Context) error { _, err := c.ImageDigest(ctx, "nginx:1"); return err }},
-		// images.go：InspectImage / LoadImage / Volume / Container / Tag /
-		// Remove。LoadImage 以挂起 reader 驱动（装载调用挂住）。
+		// images.go：InspectImage / Volume / Container / Tag / Remove。
+		// LoadImage 不在本表——H6 修正后属 D2 排除面（装载与 solve 共生命
+		// 周期，预算由调用方 ctx 管理，见 TestLoadImageUsesCallerContext）。
 		{"InspectImage(ImageInspect)", func(ctx context.Context) error { _, err := c.InspectImage(ctx, "nginx:1"); return err }},
-		{"LoadImage(ImageLoad)", func(ctx context.Context) error { return c.LoadImage(ctx, hangingReader{}) }},
 		{"EnsureVolumePresent(Inspect+Create)", func(ctx context.Context) error { return c.EnsureVolumePresent(ctx, "vol") }},
 		{"TagImage", func(ctx context.Context) error { return c.TagImage(ctx, "a:1", "b:2") }},
 		{"RemoveImage", func(ctx context.Context) error { return c.RemoveImage(ctx, "a:1") }},
@@ -97,12 +98,30 @@ func TestNonStreamingCallDeadlineBound(t *testing.T) {
 	}
 }
 
-// hangingReader 是永不产出字节的 tar 流（ImageLoad 挂起注入面）。
-type hangingReader struct{}
+// TestLoadImageUsesCallerContext D2 排除面（H6 修正）：LoadImage 不再自带
+// per-call 30s 预算——装载流与 solve 共生命周期（导出器在 solve 末尾才产
+// 流，per-call 预算会全程消耗在等 solve 上，>30s 冷构建在完成构建工作后
+// 才失败），装载时长由调用方 ctx（构建路径 = per-build timeout_seconds）
+// 治理。挂起 daemon + 即时 reader：POST 挂住，500ms 调用方 deadline 内
+// 以 DeadlineExceeded 终结（既未被 30s 预算接管、也非无限挂起——与
+// TestPingUsesCallerContext 同款口径）。
+func TestLoadImageUsesCallerContext(t *testing.T) {
+	c := newHangingDockerAPI(t)
 
-func (hangingReader) Read([]byte) (int, error) {
-	time.Sleep(10 * time.Second) // 挂住：无数据可读（预算先到即切断）
-	return 0, nil
+	orig := defaultCallTimeout
+	defaultCallTimeout = 30 * time.Second // 显式钉回缺省（防同包前序注入污染）
+	t.Cleanup(func() { defaultCallTimeout = orig })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := c.LoadImage(ctx, strings.NewReader("docker-archive-bytes"))
+	if elapsed := time.Since(start); elapsed > 2*time.Second {
+		t.Fatalf("image load not bounded by caller context: elapsed %v", elapsed)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("want context.DeadlineExceeded (caller ctx), got %v", err)
+	}
 }
 
 // TestPingUsesCallerContext D2 排除面钉死：Ping（健康探测）不走 per-call

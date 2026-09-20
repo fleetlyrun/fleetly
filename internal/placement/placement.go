@@ -182,29 +182,43 @@ func (r *Resolver) Apply(ctx context.Context, in Input) (Decision, error) {
 	}
 
 	if d.Bind && !d.KeptExisting {
-		p, err := r.store.BindPlacement(ctx, state.PlacementWrite{
-			AppID:          d.AppID,
-			PlatformNodeID: d.PlatformNodeID,
-			Source:         d.Source,
-			LabelRef:       d.LabelRef,
-			State:          state.PlacementBound,
-			Pinned:         true,
-		})
-		if err != nil {
-			return Decision{}, fmt.Errorf("placement: persist binding: %w", err)
-		}
-		err = r.store.InTx(ctx, func(tx *state.Tx) error {
+		// 绑定写 + placement.bound 事件 + 审计同一事务（M1-12 修复：事件
+		// 此前只在注释与注册表里承诺、从未发出——stateful-placement §2.8
+		// 的「绑定 = 系统自动动作必入审计与事件」两侧齐备）。
+		var bound state.Placement
+		err := r.store.InTx(ctx, func(tx *state.Tx) error {
+			p, err := tx.BindPlacement(ctx, state.PlacementWrite{
+				AppID:          d.AppID,
+				PlatformNodeID: d.PlatformNodeID,
+				Source:         d.Source,
+				LabelRef:       d.LabelRef,
+				State:          state.PlacementBound,
+				Pinned:         true,
+			})
+			if err != nil {
+				return err
+			}
+			bound = p
+			if _, err := tx.AppendEvent(ctx, state.Event{
+				Name:    "placement.bound",
+				Subject: "app:" + d.AppID,
+				Payload: `{"app_id":"` + d.AppID + `","node":"` + p.PlatformNodeID +
+					`","source":"` + string(p.Source) + `"}`,
+			}); err != nil {
+				return err
+			}
 			return tx.WriteAudit(ctx, state.AuditEntry{
 				Actor:       "system",
 				Action:      "placement.bound",
 				Target:      "app:" + d.AppID,
 				Result:      "ok",
-				DiffSummary: `{"node":"` + p.PlatformNodeID + `","source":"` + string(p.Source) + `"}`,
+				DiffSummary: state.DiffSummary("node", p.PlatformNodeID, "source", string(p.Source)), // MG-6：构造器替换手拼 JSON
 			})
 		})
 		if err != nil {
-			return Decision{}, fmt.Errorf("placement: audit binding: %w", err)
+			return Decision{}, fmt.Errorf("placement: persist binding: %w", err)
 		}
+		_ = bound // 节点/来源仅供同事务载荷；裁决书以 Decision 返回
 	}
 
 	// 卷注册表登记（docker_name = 命名约定值，state-model §2.4）。

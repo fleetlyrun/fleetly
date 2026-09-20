@@ -24,7 +24,7 @@
 
 ```sh
 # root、daemon 在跑（脚本自检）；API token（pre_upgrade 备份用）
-export FLEETLY_TOKEN=<token>      # bootstrap token: journalctl -u fleetlyd | grep "bootstrap admin token"
+export FLEETLY_TOKEN=<token>      # bootstrap token: <数据根>/bootstrap-token（缺省 /var/lib/fleetly/bootstrap-token，0600、不进日志；首登后删除）
 ```
 
 ### 1.2 执行（三种获取形态）
@@ -48,7 +48,10 @@ sudo sh upgrade.sh --bin-dir /tmp/new-bin
 - `--allow-nightly`：显式接受无签名 nightly 目标（红色警告降级）；
 - `--skip-signature-verify`：跳过 cosign（仅调试）；
 - `--skip-backup`：跳过升级前快照（**破坏原子升级保证**，红色警告——
-  只在密钥/台账确认不可用的极端场景使用）。
+  只在密钥/台账确认不可用的极端场景使用）；
+- `--auto-restore`：回退时状态库 schema 高于回退二进制上限，从本运行的
+  verified pre_upgrade 快照自动恢复状态库再拉起旧件（缺省 die + 三步
+  人肉指引——见 §4.2）。
 
 ### 1.3 脚本做了什么（八步序列）
 
@@ -138,15 +141,28 @@ Docker 29.x 有破坏式变更史（引擎门禁下限 29.8.1 即此缘故）。
 
 ### 4.2 回退序列（upgrade.sh 失败自动回退时的完整口径）
 
-1. `upgrade.sh` 回退只换二进制（`fleetlyd.previous` 归位），**不自动恢复
-   快照**——数据回滚必须由操作员显式决定，脚本无权代做；
-2. 回退后 start 前脚本打印一行 schema 提示；若旧 daemon 启动即报 schema
-   版本错误，说明新 daemon 已迁移 schema，此时按 backup-restore.md §4/§5
-   **先恢复 §1 序列第 2 步的 pre_upgrade 快照，再用旧二进制启动**；
-3. 升级成功（未回退）则无需任何动作——新 schema 与新二进制配套。
+`upgrade.sh` 的回退段是 **schema 感知**的（F5/S20 整改后口径——start 前
+探测、显式裁决，不再依赖「拉起后报错」）：
+
+1. 换二进制（`fleetlyd.previous` 归位）后、start 之前，脚本以
+   `fleetlyd schema-version` 探测状态库 schema 版本（db）与回退二进制的
+   支持上限（max）并比对；
+2. db > max（新 daemon 已迁移 schema）时**默认 die**——保持 fleetlyd
+   停止状态，给三步人肉指引：① 保持停机（此刻已停，别 start）；
+   ② 核验并恢复本次升级的 pre_upgrade 快照（对 manifest 校 sha256 与
+   主密钥指纹、清掉 `-wal/-shm` 残留后覆盖状态库，见 backup-restore.md
+   §4/§5）；③ 再以旧二进制拉起（或重跑 upgrade.sh）；
+3. `--auto-restore` 是第②步的显式授权自动形态：脚本代做「校验快照
+   （verified + sha256 + 主密钥指纹，任一不过即 die）→ 现库旁存
+   `<db>.pre-schema-restore.<时间戳>`（只增不销毁）→ 快照入库 → 复核
+   schema ≤ 旧件上限 → 拉起旧件」，回退报告标记 `auto-restore: yes`；
+4. 探测失败（回退二进制早于 `schema-version` 子命令）不阻断：warn 放行，
+   最终防线仍是旧 daemon 启动时的高版本守卫（§4.1）；
+5. 升级成功（未回退）则无需任何动作——新 schema 与新二进制配套。
 
 操作口径一句话：**升级窗口内「二进制版本」与「schema 版本」必须同进同
-退；快照是 schema 的回退载体，`fleetlyd.previous` 只是代码的。**
+退；快照是 schema 的回退载体，`fleetlyd.previous` 只是代码的；二者错配
+时脚本宁可 die，不替操作员默判。**
 
 ### 4.3 与冷备轨的边界
 

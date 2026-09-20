@@ -5,7 +5,8 @@ package main
 // --token 是远程动词的公共 flag（env 覆盖 FLEETLY_ADDR / FLEETLY_TOKEN）；
 // token 缺失时不在客户端伪造鉴权表象——照常发起请求，由服务端 401 显式
 // 拒绝，CLI 渲染信封并附可行动提示（renderCLIError 的 Unauthenticated
-// 分支：bootstrap token 见 fleetlyd 首启日志，或由管理员 tokens create 签发）。
+// 分支：bootstrap token 见 <数据根>/bootstrap-token 文件（B5：一次写入、
+// 不进日志、首登后删除），或由管理员 tokens create 签发）。
 
 import (
 	"context"
@@ -70,20 +71,28 @@ type connFlags struct {
 	token string
 }
 
-// register 把 --addr/--token 挂进动词 flag 集（缺省回落环境变量——CI/
-// 脚本形态无需逐命令传参）。
+// register 把 --addr/--token 挂进动词 flag 集（--addr 缺省回落环境变量
+// ——CI/脚本形态无需逐命令传参）。--token 的默认值必须保持空串（H1）：
+// std flag 的 -h/help 会把非空默认值明文打进 stdout，帮助输出常被贴进
+// 工单/CI 日志/AI 会话——env 回落挪到消费点 dial() 里做，-h 面永不出现
+// token 本体。
 func (f *connFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.addr, "addr", envOrDefault("FLEETLY_ADDR", fleetly.DefaultAddr), "fleetlyd gRPC address")
-	fs.StringVar(&f.token, "token", os.Getenv("FLEETLY_TOKEN"), "API token (bootstrap token: fleetlyd first-start log; or fleetly tokens create)")
+	fs.StringVar(&f.token, "token", "", "API token (env: FLEETLY_TOKEN; bootstrap token: see <data-root>/bootstrap-token)")
 }
 
 // dial 建立 SDK 客户端（连接惰性建立；Close 交还调用方）。一元 RPC 的
-// 缺省 deadline 拦截器随连接挂载（S17-D3）。
+// 缺省 deadline 拦截器随连接挂载（S17-D3）。token 在此消费点回落
+// FLEETLY_TOKEN（H1：flag 默认值置空防 -h 回显，env 语义不变）。
 func (f *connFlags) dial() (*fleetly.Client, error) {
+	token := f.token
+	if token == "" {
+		token = os.Getenv("FLEETLY_TOKEN")
+	}
 	dialOpts := append([]grpc.DialOption{grpc.WithUnaryInterceptor(defaultUnaryTimeout)}, extraDialOptions...)
 	opts := []fleetly.Option{fleetly.WithAddr(f.addr), fleetly.WithDialOptions(dialOpts...)}
-	if f.token != "" {
-		opts = append(opts, fleetly.WithToken(f.token))
+	if token != "" {
+		opts = append(opts, fleetly.WithToken(token))
 	}
 	return fleetly.NewClient(opts...)
 }

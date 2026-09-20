@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"runtime/debug"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
@@ -44,12 +45,40 @@ type Engine struct {
 	// 热备快照，异步不阻塞部署主链；nil = 未接备份面。由 WithPostDeployHook
 	// 注入，fleetlyd 装配 statebackup.Manager）。
 	postDeploy PostDeployHook
+	// envChanged 是 env 变更生效后的联动挂钩（H9：观察窗成功的 pending env
+	// 提升点触发日志脱敏值集失效；nil = 未接。engine 不 import logs——经
+	// fleetlyd 装配层注入回调，挂点模式同 postDeploy）。
+	envChanged EnvChangedHook
 	// waterMarks 是副本水位不足判定的进程内计时（观察窗辅助信号；引擎
 	// 重启后重摆——窗口本身持久化，重启代价可接受）。
 	waterMarks map[string]time.Time
 	// driftSeen 是漂移上报的进程内迁移记忆（no-drift → drift 只报一次；
 	// 重启清零 = 漂移存续时重报一次，漏报劣于重复）。
 	driftSeen map[string]bool
+	// routeBudget 是单次路由发布的 tick 预算（H11/M1 相关评审 H11 项；
+	// 缺省 routePublishBudget，字段化为单测注入缝——见 routes.go）。
+	routeBudget time.Duration
+	// ── M1-8：重启恢复的重试态（tick goroutine 专用——Run 单 goroutine
+	// 驱动 tick 与恢复，无并发访问；重启即清零，重试幂等见 recovery.go）──
+	// recoveryPending 报告启动恢复未完成（SwarmReady 未就绪/扫描失败），
+	// 由 tick 以 30s 频控整轮重试。
+	recoveryPending bool
+	// recoveryStuck 是单记录瞬态失败（底座读失败等）的待重试集合；重试轮
+	// 只处理仍卡住的记录，避免反复重开已恢复记录的观察窗。
+	recoveryStuck map[string]bool
+	// recoveryNextAt 是下一次恢复重试的最早时刻（频控）。
+	recoveryNextAt time.Time
+	// deleteScanNextAt 是 deleting 应用回收扫描的最早时刻（H10/MG-3 频控，
+	// 与 recoveryNextAt 同模式：tick goroutine 专用——Run 单 goroutine 驱动，
+	// 无并发访问；重启即清零 = 重启后立即扫一拍）。
+	deleteScanNextAt time.Time
+	// dutyPanicOn / dutyCalls 是 safeCall 的测试注入缝（MG-5 覆盖面测试）：
+	// 前者按 duty 名注入 panic（验证包壳隔离），后者记录经 safeCall 执行的
+	// duty 名与次数（验证 duty 清单全部收口；Run goroutine 写、测试 goroutine
+	// 读——dutyMu 保护）。生产恒为 nil/不读。
+	dutyMu      sync.Mutex
+	dutyPanicOn map[string]bool
+	dutyCalls   map[string]int
 }
 
 // PlacementResolver 是引擎对放置层的消费端口（internal/placement.Resolver
@@ -64,16 +93,18 @@ type PlacementResolver interface {
 func NewEngine(cfg Config, store *state.Store, sub Substrate, images ImageChecker,
 	resolver PlacementResolver, box *secrets.Box, log *slog.Logger) *Engine {
 	return &Engine{
-		cfg:        cfg.Normalize(),
-		store:      store,
-		sub:        sub,
-		images:     images,
-		resolver:   resolver,
-		box:        box,
-		clock:      realClock{},
-		log:        log,
-		waterMarks: map[string]time.Time{},
-		driftSeen:  map[string]bool{},
+		cfg:           cfg.Normalize(),
+		store:         store,
+		sub:           sub,
+		images:        images,
+		resolver:      resolver,
+		box:           box,
+		clock:         realClock{},
+		log:           log,
+		waterMarks:    map[string]time.Time{},
+		driftSeen:     map[string]bool{},
+		routeBudget:   routePublishBudget,
+		recoveryStuck: map[string]bool{},
 	}
 }
 
@@ -88,10 +119,18 @@ type PostDeployHook func(rec state.DeployRecord)
 // 只落备份台账与告警，绝不回滚/阻塞已成功的部署）。
 func (e *Engine) WithPostDeployHook(fn PostDeployHook) *Engine { e.postDeploy = fn; return e }
 
+// EnvChangedHook 是 env 生效/变更后的联动挂钩签名（载荷 = appID；H9）。
+type EnvChangedHook func(appID string)
+
+// WithEnvChangedHook 注入 env 变更挂钩（H9：pending env 提升点触发日志
+// 脱敏值集失效——装配层接到 logs.Manager.InvalidateRedaction。挂钩同步
+// 执行，实现必须非阻塞（实现方只做缓存删除），失败不得影响部署终态）。
+func (e *Engine) WithEnvChangedHook(fn EnvChangedHook) *Engine { e.envChanged = fn; return e }
+
 // Run 启动引擎主循环：启动扫描（控制面重启分类恢复）→ 周期 tick + 漂移
 // 扫描。ctx 取消返回 nil（lynx actor 契约由服务壳负责阻塞语义）。
 func (e *Engine) Run(ctx context.Context) error {
-	e.recoverInterrupted(ctx)
+	e.safeCall("recoverInterrupted", func() { e.recoverInterrupted(ctx) })
 	ticker := time.NewTicker(e.cfg.PollInterval)
 	defer ticker.Stop()
 	driftTicker := time.NewTicker(e.cfg.DriftInterval)
@@ -101,9 +140,9 @@ func (e *Engine) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			e.tick(ctx)
+			e.safeCall("tick", func() { e.tick(ctx) })
 		case <-driftTicker.C:
-			e.driftScan(ctx)
+			e.safeCall("driftScan", func() { e.driftScan(ctx) })
 		}
 	}
 }
@@ -111,11 +150,55 @@ func (e *Engine) Run(ctx context.Context) error {
 // Tick 单步推进（测试与诊断入口；生产由 Run 驱动）。
 func (e *Engine) Tick(ctx context.Context) { e.tick(ctx) }
 
-// tick 是一个推进周期：队列拾取 → 在途推进 → 窗后巡检。
+// dutyCallCount 是测试注入缝的读面（dutyMu 保护；测试外恒为零值——
+// MG-5 测试专用，不进业务路径）。
+func (e *Engine) dutyCallCount(name string) int {
+	e.dutyMu.Lock()
+	defer e.dutyMu.Unlock()
+	return e.dutyCalls[name]
+}
+
+// safeCall 是 tick 路径 duty 的统一 panic 包壳（MG-5/M1-7）：defer recover
+// → Error 日志（含栈）+ 跳过本拍——单个 duty 的 panic 不打死 tick 循环
+// （毒数据/适配器违约只损失一拍，其余 duty 与后续 tick 照常）。
+// advanceOne 另有 per-record 兜底（panic → 该部署 E_RUNTIME_UNAVAILABLE
+// 终态），与本包壳分层：记录级处置在先、duty 级兜底在后。
+//
+// 契约：tick 与 drift ticker 的全部 duty 调用点必须经本包壳收口（新增
+// duty 不走 safeCall 即违反 MG-5 覆盖面断言——safecall_test.go 的源扫描
+// 测试钉死该契约）。dutyPanicOn/dutyCalls 是测试注入缝，生产恒 nil。
+func (e *Engine) safeCall(name string, fn func()) {
+	// recover 先装（含测试注入路径——包壳对入口注入同样兜底）。
+	defer func() {
+		if r := recover(); r != nil {
+			e.log.Error("engine: duty panic 已捕获（本拍跳过，tick 继续）",
+				"duty", name, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+		}
+	}()
+	e.dutyMu.Lock()
+	if e.dutyPanicOn != nil && e.dutyPanicOn[name] {
+		if e.dutyCalls != nil {
+			e.dutyCalls[name]++
+		}
+		e.dutyMu.Unlock()
+		panic("injected duty panic (MG-5 测试): " + name)
+	}
+	if e.dutyCalls != nil {
+		e.dutyCalls[name]++
+	}
+	e.dutyMu.Unlock()
+	fn()
+}
+
+// tick 是一个推进周期：恢复重试（M1-8）→ 队列拾取 → 在途推进 → 窗后巡检
+// → deleting 应用回收（H10/MG-3，时间闸降频）。全部 duty 经 safeCall 收口
+// （MG-5）。
 func (e *Engine) tick(ctx context.Context) {
-	e.pickQueued(ctx)
-	e.advanceActive(ctx)
-	e.watchPostWindow(ctx)
+	e.safeCall("recoveryRetry", func() { e.retryRecoveryIfNeeded(ctx) })
+	e.safeCall("pickQueued", func() { e.pickQueued(ctx) })
+	e.safeCall("advanceActive", func() { e.advanceActive(ctx) })
+	e.safeCall("watchPostWindow", func() { e.watchPostWindow(ctx) })
+	e.safeCall("reapDeletingApps", func() { e.reapDeletingApps(ctx, false) })
 }
 
 // pickQueued 拾取可启动的 queued 部署：同 app 互斥——仅当该 app 无其他
@@ -123,15 +206,10 @@ func (e *Engine) tick(ctx context.Context) {
 // 并发控制行）。
 //
 // S18-A9：panic 隔离——本函数无单条部署的失败终态可落（行尚未拾取），
-// recover 后仅记 Error 日志（含栈）不断 tick；毒数据在拾取后的
-// advanceActive 内有 per-record 兜底。
+// 原内联 recover 已收口到 tick 的 safeCall("pickQueued")（MG-5 统一包壳，
+// 行为等价：Error 日志含栈、不断 tick）；毒数据在拾取后的 advanceActive
+// 内有 per-record 兜底。
 func (e *Engine) pickQueued(ctx context.Context) {
-	defer func() {
-		if r := recover(); r != nil {
-			e.log.Error("engine: 队列拾取 panic 已捕获（tick 继续）",
-				"panic", fmt.Sprint(r), "stack", string(debug.Stack()))
-		}
-	}()
 	queued, err := e.store.NextQueuedDeployments(ctx, 20)
 	if err != nil {
 		e.log.Warn("engine: scan queued deployments", "error", err)
@@ -484,9 +562,15 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	rec.ReleaseStartedAt = releaseAt
 	rec.WatchdogDeadlineAt = deadline
 
-	// 对账执行（新增/更新/删除）。
+	// 对账执行（新增/更新/删除）。失败走失败分流（M1-2，D-REL-4 唯一
+	// 入口）：对账是半应用现场（部分服务已创建/更新/删除），直接落 failed
+	// 会留下无人处置的中间态——未切流（first_healthy_at 未落定）分支自动
+	// 套用归位重放（非首发）或 scale=0 保留现场（首发）；底层 err 摘要进
+	// detail（错误码经 appErrOf 归一为注册码）。
 	if err := e.applyDesired(ctx, rec, plan.Services, false); err != nil {
-		return e.failTransitionErr(ctx, rec, err)
+		ae := appErrOf(err, rec.ID)
+		return e.failUnswitchedOrSwitched(ctx, rec, ae.Code(),
+			fmt.Sprintf("发布对账执行失败（半应用现场已按失败分流处置——归位/scale=0）：%s", ae.Message()))
 	}
 	return nil
 }

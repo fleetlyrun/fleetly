@@ -226,7 +226,7 @@ func (c *deploymentsCmd) Run(ctx context.Context, env *commands.Environment, arg
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list|cancel)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // deploymentsListCmd 实现 `fleetly deployments list <app>`。

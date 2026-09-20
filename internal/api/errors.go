@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 
-	"google.golang.org/grpc/codes"
-
+	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // 状态层哨兵 → gRPC status 的统一映射（api 面错误语义的唯一登记点）。
@@ -23,9 +24,24 @@ func notFound(message string) error {
 	return statusEnvelope(codes.NotFound, message)
 }
 
-// conflict 构造退化信封冲突（409）。
+// conflict 构造业务冲突信封（409）。X-5：携带最小 ErrorResponse detail
+// （{"conflict": message}——B1 脱敏判定只认「无 detail」形态，携带 detail
+// 即声明 message 是服务端构造的业务文案而非底层错误透传，REST 面原文
+// 保留；无 detail 的 FailedPrecondition 会被误伤成固定文案 "internal
+// error"）。空码 + FailedPrecondition 经 EnvelopeFromGRPCStatus 机械映射
+// 回 409；gRPC/CLI 面原文与 detail 同上。
 func conflict(message string) error {
-	return statusEnvelope(codes.FailedPrecondition, message)
+	st := status.New(codes.FailedPrecondition, message)
+	withDetail, err := st.WithDetails(&sharedv1.ErrorResponse{
+		Message: message,
+		Context: map[string]string{"conflict": message},
+	})
+	if err != nil {
+		// detail 附加失败（理论不可达：proto 类型已注册）退化为纯 status
+		// ——REST 面走退化信封路径（B1 兜底仍在）。
+		return st.Err()
+	}
+	return withDetail.Err()
 }
 
 // statusInvalidArgument 构造退化信封无效请求（400——客户端可修正的输入

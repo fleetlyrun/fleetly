@@ -267,10 +267,9 @@ func (s *authorizedStream) Context() context.Context { return s.ctx }
 
 // statusEnvelope 构造退化信封错误：**不附加 ErrorResponse detail**——
 // gateway 侧 EnvelopeFromGRPCStatus 对无 detail status 走退化路径（code
-// 留空 + GRPCCodeToHTTP 机械映射 401/403/429），与 FZ-2 口径一致。若在
-// 此附加 code 空的信封 detail，反而会被注册表映射兜底成 500（detail 内
-// code 空时 HTTPStatus 无从判定）——因此退化形态 = 纯 status，信封由
-// gateway 渲染。
+// 留空 + GRPCCodeToHTTP 机械映射 401/403/429），与 FZ-2 口径一致。X-5 起
+// 空码 detail 信封（conflict() 的业务冲突通道）按 grpc code 机械映射——
+// 但鉴权错误保持纯 status 形态（无 detail 即无多余字节，语义不变）。
 func statusEnvelope(c codes.Code, message string) error {
 	return status.Error(c, message)
 }

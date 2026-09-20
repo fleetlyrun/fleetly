@@ -109,21 +109,23 @@ func (d *diskStore) query(ctx context.Context, app, service, source string, sinc
 	return out, nil
 }
 
-// daysInWindow 列出窗口覆盖且实际存在的日期文件名（升序）。
+// daysInWindow 列出窗口覆盖且实际存在的日期文件名（升序）。M7-3：since
+// 零值 = 不设下界（query 契约「零值 = 不设界」）——start 置空串，列出
+// ≤ until 的全部保留日文件；旧实现把起点折叠到 until 当日，since 缺省的
+// 检索只命中单日文件，既往历史全部丢失（api ListHistoryLogs 缺省不传
+// since，默认路径即受害形态）。M7-14：until 统一 UTC 归一后再格式化
+// （本地时区与 UTC 跨日时，本地形态的 end 会把 until 当日的 UTC 文件
+// 错排除在界外）。
 func daysInWindow(appDir string, since, until time.Time) ([]string, error) {
-	first := until.UTC()
+	start := ""
 	if !since.IsZero() {
-		first = since.UTC()
+		start = since.UTC().Format(dayFormat)
 	}
-	// 起点日期 = max(since, until-7d 界外不用管——文件存在性为准)；这里
-	// 直接从 since（或 until）所在日逐日推进到 until，窗口跨 7 天保留期
-	// 之外自然读不到文件（已清理）。
+	end := until.UTC().Format(dayFormat)
 	names, err := listDayFiles(appDir)
 	if err != nil {
 		return nil, err
 	}
-	start := first.Format(dayFormat)
-	end := until.Format(dayFormat)
 	var out []string
 	for _, n := range names {
 		if n >= start && n <= end {

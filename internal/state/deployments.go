@@ -161,6 +161,12 @@ var (
 	// ErrDeploymentStateTransition 表示部署状态迁移非法（终态不可逆、
 	// 竞争落败等——调用方重读状态后裁决）。
 	ErrDeploymentStateTransition = errors.New("invalid deployment state transition")
+	// ErrDuplicateGitDeployment 表示同一 (app, sha) 已有 enqueued/active/
+	// succeeded 部署、本次入队被判重拒绝（M3-4：webhook sha 幂等去重的
+	// 事务内复查哨兵——check-then-insert 竞态在入队事务原语内闭合，
+	// 并发重投只建一行）。消费方把它映射为 duplicate 回执（200），非错误
+	// 面披露。
+	ErrDuplicateGitDeployment = errors.New("duplicate git deployment for sha")
 )
 
 // DeploymentPatch 是一次行更新承载的可选字段（零值 = 不写；时间字段用
@@ -366,9 +372,10 @@ func (s *Store) AppHasNonTerminalDeployment(ctx context.Context, appID string) (
 // （当前状态 ≠ PrevStatus → ErrDeploymentStateTransition，RowsAffected=0），
 // 且**先经转移表校验** PrevStatus → Status 合法（S16-C5：表外组合是确定性
 // 编码错误，拒写返回 ErrIllegalTransition——即使当前行恰好仍是 from 状态
-// 也不落库）；为 nil 时不带状态谓词（子状态/时间锚/告警位等就地更新，仅
-// 受终态不可逆守卫）。updated_at 恒重盖。同一补丁内 Status 与字段一并原子
-// 生效。
+// 也不落库）；携带 Status 而 PrevStatus 为 nil 时拒绝（M3-2：状态写必须
+// 带 from 谓词，引擎单写点纪律）；两者皆 nil 时不带状态谓词（子状态/时间
+// 锚/告警位等就地更新，仅受终态不可逆守卫）。updated_at 恒重盖。同一补丁
+// 内 Status 与字段一并原子生效。
 func (s *Store) UpdateDeployment(ctx context.Context, id string, p DeploymentPatch) error {
 	return updateDeployment(ctx, s.db, id, p)
 }
@@ -392,9 +399,18 @@ func updateDeployment(ctx context.Context, db execer, id string, p DeploymentPat
 		if !p.Status.Valid() {
 			return fmt.Errorf("state: update deployment %s: unknown status %q", id, *p.Status)
 		}
+		// M3-2：状态写必须携带 PrevStatus（引擎单写点纪律）。裸状态写
+		//（无 from 谓词）绕过转移表校验（CanTransitionDeployment）与 CAS
+		// 竞争保护，只受终态不可逆守卫——任何调用点都不该以该形态改写
+		// 主状态（全调用面复核：engine/api 现网状态写恒带 PrevStatus）。
+		// 仅就地更新子状态/时间锚/标志位（CancelRequested/Flags 等）的
+		// patch 不带 Status，不受影响。
+		if p.PrevStatus == nil {
+			return fmt.Errorf("state: update deployment %s: 状态写必须携带 PrevStatus（引擎单写点纪律，裸状态写绕过转移表）", id)
+		}
 		// S16-C5：CAS 前按转移表校验 from→to（非法即拒写——engine/machine.go
 		// 的文档性转移表自此在写路径咬合，机器真源见 state/machine.go）。
-		if p.PrevStatus != nil && !CanTransitionDeployment(*p.PrevStatus, *p.Status) {
+		if !CanTransitionDeployment(*p.PrevStatus, *p.Status) {
 			return fmt.Errorf("%w: deployments %s: %s -> %s",
 				ErrIllegalTransition, id, *p.PrevStatus, *p.Status)
 		}
@@ -623,9 +639,30 @@ func queryDeployments(ctx context.Context, db *sql.DB, query string, args ...any
 func (s *Store) CountGitDeploymentsForSHA(ctx context.Context, appID, sha string) (int64, error) {
 	const q = `SELECT COUNT(1) FROM deployments
 		WHERE app_id = ? AND source_git_sha = ?
-		AND status IN ('queued','preparing','building','releasing','observing','succeeded')`
+		AND status IN ` + gitSHADupStatuses
 	var n int64
 	if err := s.db.QueryRowContext(ctx, q, appID, sha).Scan(&n); err != nil {
+		return 0, fmt.Errorf("state: count git deployments for sha: %w", err)
+	}
+	return n, nil
+}
+
+// gitSHADupStatuses 是 sha 去重计入的状态集（与 CountGitDeploymentsForSHA
+// 同口径；Tx 事务内复查共用，两处必须一起改）。
+const gitSHADupStatuses = `('queued','preparing','building','releasing','observing','succeeded')`
+
+// CountGitDeploymentsForSHA 是事务内的同口径复查（M3-4：webhook sha 幂等
+// 去重的竞态闭合——COUNT 与 INSERT 必须同事务。Store 层各事务以 BEGIN
+// IMMEDIATE 起手取写锁（见 store.go dsn），两路并发同 sha 入队在写锁上
+// 串行化，后到事务的 COUNT 必然看到先行事务已提交的行 → 返回
+// ErrDuplicateGitDeployment 判据由调用方在建行前消费）。词法口径与
+// Store.CountGitDeploymentsForSHA 逐字一致。
+func (t *Tx) CountGitDeploymentsForSHA(ctx context.Context, appID, sha string) (int64, error) {
+	const q = `SELECT COUNT(1) FROM deployments
+		WHERE app_id = ? AND source_git_sha = ?
+		AND status IN ` + gitSHADupStatuses
+	var n int64
+	if err := t.QueryRowContext(ctx, q, appID, sha).Scan(&n); err != nil {
 		return 0, fmt.Errorf("state: count git deployments for sha: %w", err)
 	}
 	return n, nil

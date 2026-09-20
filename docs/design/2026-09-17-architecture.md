@@ -196,7 +196,7 @@ volumes:
 
 **子集与拒绝清单**（显式报错 `E_COMPOSE_UNSUPPORTED`，不静默）：
 - 支持：多服务（web/worker 等）、`build`/`image`、`healthcheck`、`environment`/`env_file`、命名卷与栈内网络、`deploy.*`（除受管字段）、`stop_signal`/`stop_grace_period`。**支持集以 `internal/compose/testdata/whitelist.golden` 为准**（顶层 + 服务级白名单键集的 golden 快照，与校验代码集合一致性由测试钉死——白名单增删忘改文档/golden 即测试红；2026-09-20 评审 C3）。
-- v0.1 拒绝：`depends_on`、`extends`、`include`、`profiles`、`configs`、`secrets`（评审 C1：平台密钥库未接入，显式拒绝）、外部网络、`network_mode: host`；v0.3 受控扩展。
+- v0.1 拒绝：`depends_on`、`extends`、`include`、`profiles`、`configs`、`secrets`（评审 C1：平台密钥库未接入，显式拒绝）、外部网络、`network_mode: host`；`deploy.mode: global` 亦在 Load 期显式拒绝（`E_COMPOSE_UNSUPPORTED`——2026-09-20 评审 M1-4：单节点下 global 的副本语义与失败停机语义（scale=0 对 global 无效）未实现，v0.2 多节点开放）；v0.3 受控扩展。
 - 危险字段（`privileged`/`cap_add`/`pid`/`devices`/docker.sock 挂载/宿主路径 bind）默认拒绝，需 admin scope 显式开启并写审计（Coolify CVE-2025-34159 的根因即低权路径挂载宿主根）。
 
 `fleetly init` 生成 `compose.yaml`（已有 compose 文件则直接接管）；`fleetly plan/apply/diff` 以**归一化 compose 差异**为核心；对账器持续检测漂移（检测默认开、收敛 per-app opt-in，见 D11）。

@@ -1,4 +1,5 @@
 app.degraded	应用进入 degraded（观察窗失败/窗后不稳定/W_DEPLOY_INSTABILITY）
+app.deleted	应用删除完成（tombstone 第二拍：受管服务已移除，名字进入保留期占用）
 app.instability_detected	运行期检测到不稳定
 app.recovered	应用退出 degraded，恢复 running
 app.webhook_fetch_failed	webhook 受理后异步拉源失败（同 delivery 可手动 redeliver 重试）

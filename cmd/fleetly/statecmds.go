@@ -11,8 +11,8 @@ package main
 // 走 env get 显式路径。
 //
 // 动词形态（lynx-go/commands 嵌套子命令）：env set/get/list/rm、
-// placement show、nodes ls——外层动词经内层 App 的 SubDispatch 复用
-// 同一分发机器（README「嵌套子动词」模式）。
+// placement show、nodes ls——外层动词经 subDispatchUsage 收口复用内层
+// App 的分发机器（README「嵌套子动词」模式；嵌套 miss 保 64，见 app.go）。
 
 import (
 	"context"
@@ -50,7 +50,7 @@ func (c *envCmd) Run(ctx context.Context, env *commands.Environment, args []stri
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (set|get|list|rm)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // envSetCmd 实现 `fleetly env set <app> <key> <value>`：明文经 RPC 上行
@@ -246,7 +246,7 @@ func (c *placementCmd) Run(ctx context.Context, env *commands.Environment, args 
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (show)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // placementShowCmd 实现 `fleetly placement show <app>`：绑定记录 + 卷注册
@@ -382,7 +382,7 @@ func (c *nodesCmd) Run(ctx context.Context, env *commands.Environment, args []st
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (ls)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // nodesLsCmd 实现 `fleetly nodes ls`：观测缓存只读列表（展示/诊断专用，

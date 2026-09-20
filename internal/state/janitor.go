@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -228,6 +229,12 @@ func (j *Janitor) pruneDirByMtime(dir string, cutoff time.Time) {
 // <DeploymentsRoot>/<id>/ 按部署终态后 30 天窗；非终态行恒不清理——
 // 引擎仍要重载复核；无部署行对应的孤儿目录按目录 mtime 同窗回收——
 // 入队建行失败/历史残留的兜底）。
+//
+// MG-3（B6）资源台账兜底对账说明：PersistDeploymentCompose 先写目录后建
+// 行（store.go——部署行不指向缺失文件），「行建失败/进程在两步间崩溃」
+// 留下的目录即本函数的孤儿分支对象——目录存在 + GetDeployment 返回
+// ErrDeploymentNotFound → 按 mtime 过窗回收（该形态理论已覆盖，
+// janitor_test.go 的 d_orphan_old 用例钉死）；台账外资源不再静默累积。
 func (j *Janitor) pruneDeploymentDirs(ctx context.Context, now time.Time) {
 	if j.cfg.DeploymentsRoot == "" {
 		return
@@ -252,8 +259,17 @@ func (j *Janitor) pruneDeploymentDirs(ctx context.Context, now time.Time) {
 			continue
 		}
 		// 孤儿目录（无部署行 / 行非终态）：非终态行不清理；无行对应的
-		// 目录按 mtime 同窗回收。
+		// 目录按 mtime 同窗回收。M3-1：仅 ErrDeploymentNotFound 走孤儿
+		// 回收分支——GetDeployment 的其他错误（库故障/ctx 取消等）对
+		// 「该目录是否有部署行」不构成证据，误当孤儿会连带删除在役部署
+		// 的 compose 持久化目录（引擎 preparing 重载即失败）；记 Warn
+		// 跳过，下一轮扫描再判。
 		if _, err := j.store.GetDeployment(ctx, e.Name()); err != nil {
+			if !errors.Is(err, ErrDeploymentNotFound) {
+				j.log.Warn("janitor: probe deployment failed, skip dir this round",
+					"dir", path, "error", err.Error())
+				continue
+			}
 			if info, ierr := e.Info(); ierr == nil && info.ModTime().Before(cutoff) {
 				_ = os.RemoveAll(path)
 			}

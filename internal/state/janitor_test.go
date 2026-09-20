@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -278,6 +279,61 @@ func TestJanitorPrunesDeploymentDirs(t *testing.T) {
 		if _, err := os.Stat(kept); err != nil {
 			t.Fatalf("dir %s must survive: %v", kept, err)
 		}
+	}
+}
+
+// TestJanitorOrphanProbeErrorSkipsDir M3-1 回归：GetDeployment 的非
+// ErrDeploymentNotFound 错误（行存在但扫描失败——库故障/脏数据等真实
+// 错误形态）不得走孤儿回收分支——「读取失败」不是「无部署行」的证据，
+// 误删会连带删除在役部署的 compose 持久化目录。注入方式：把行的
+// substrate_halted 列写为非整数文本（SQLite 动态类型允许），scanDeployment
+// 的 int64 扫描即失败。断言该目录原样保留、真孤儿目录仍被回收（对照）。
+func TestJanitorOrphanProbeErrorSkipsDir(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	old := now.Add(-40 * 24 * time.Hour)
+
+	app, err := st.CreateApp(ctx, "", "probe-app")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	rec, err := st.CreateDeployment(ctx, DeployRecord{AppID: app.ID, AppName: "probe-app", Kind: "deploy"})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	// 行存在但不可扫描：substrate_halted（INTEGER 列）写文本值——
+	// GetDeployment 返回 scan 错误（非 ErrDeploymentNotFound）。
+	if _, err := st.db.ExecContext(ctx,
+		`UPDATE deployments SET substrate_halted = 'corrupted-text' WHERE id = ?`, rec.ID); err != nil {
+		t.Fatalf("corrupt row: %v", err)
+	}
+	if _, err := st.GetDeployment(ctx, rec.ID); err == nil || errors.Is(err, ErrDeploymentNotFound) {
+		t.Fatalf("corrupted row must produce non-NotFound probe error, got %v", err)
+	}
+
+	root := t.TempDir()
+	mkdir := func(name string, mtime time.Time) string {
+		dir := filepath.Join(root, name)
+		if err := os.MkdirAll(dir, 0o750); err != nil {
+			t.Fatalf("mkdir %s: %v", dir, err)
+		}
+		if err := os.Chtimes(dir, mtime, mtime); err != nil {
+			t.Fatalf("chtimes %s: %v", dir, err)
+		}
+		return dir
+	}
+	probeErrDir := mkdir(rec.ID, old)       // 行在但探测失败：不得回收
+	orphanDir := mkdir("d_orphan_old", old) // 无行真孤儿：正常回收
+
+	jr := NewJanitor(st, JanitorConfig{DeploymentsRoot: root}, testLogger())
+	jr.pruneDeploymentDirs(ctx, now)
+
+	if _, err := os.Stat(probeErrDir); err != nil {
+		t.Fatalf("dir with probe error must survive (M3-1): %v", err)
+	}
+	if _, err := os.Stat(orphanDir); !os.IsNotExist(err) {
+		t.Fatalf("true orphan dir must be pruned: %v", err)
 	}
 }
 

@@ -535,7 +535,7 @@ if [ "$SKIP_BACKUP" -eq 1 ]; then
     warn 'PRE-UPGRADE BACKUP SKIPPED by --skip-backup — this breaks the atomic-upgrade guarantee (red alarm; rollback binary kept, but state is unprotected)'
 else
     have_cli || die 'fleetly CLI not found — cannot trigger the pre-upgrade backup (install.sh symlinks it; or pass --cli)'
-    [ -n "$API_TOKEN" ] || die 'no API token for the pre-upgrade backup — pass --token or set FLEETLY_TOKEN (bootstrap token: fleetlyd first-start log), or pass --skip-backup to explicitly upgrade unprotected'
+    [ -n "$API_TOKEN" ] || die 'no API token for the pre-upgrade backup — pass --token or set FLEETLY_TOKEN (bootstrap token: <data-root>/bootstrap-token, default /var/lib/fleetly/bootstrap-token; never logged), or pass --skip-backup to explicitly upgrade unprotected'
     log 'step 2/8: pre-upgrade hot snapshot (kind=pre_upgrade)...'
     BACKUP_JSON=$(FLEETLY_ADDR="$API_ADDR" FLEETLY_TOKEN="$API_TOKEN" "$CLI_PATH" backups create --kind pre_upgrade --json 2>"$TMPD/backup.err") ||
         die "pre-upgrade backup RPC failed: $(cat "$TMPD/backup.err")"

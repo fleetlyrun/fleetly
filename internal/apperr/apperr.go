@@ -217,16 +217,25 @@ func redactDegradedMessage(c codes.Code) bool {
 }
 
 // EnvelopeFromGRPCStatus 是 gateway 错误链的统一出口：有信封 detail 时
-// 返回信封与注册表 HTTP 状态；无 detail 走退化信封——code 留空串（不发明
-// 文档外码、不挪用既有码语义），HTTP 状态由 grpc code 机械映射。B1：内部
-// 类 code 的 message 替换为固定文案（原文由 gateway 错误处理器落 slog），
-// 业务码（InvalidArgument/NotFound 等）原文保留。
+// 返回信封与 HTTP 状态——注册码（code 非空）按注册表映射；**空码 detail
+// 信封**（X-5：api 层业务冲突通道主动构造的退化信封，如 conflict() 的
+// 409）按传输 grpc code 机械映射（GRPCCodeToHTTP）——HTTPStatus 对空码
+// 无从判定（回落 500），而空码信封的存在本身即证明 message 是服务端
+// 构造的业务文案、不是底层错误透传，HTTP 语义由构造方选定的 grpc code
+// 承载。无 detail 走退化信封——code 留空串（不发明文档外码、不挪用既有
+// 码语义），HTTP 状态由 grpc code 机械映射。B1：内部类 code 的 message
+// 替换为固定文案（原文由 gateway 错误处理器落 slog），业务码
+// （InvalidArgument/NotFound 等）原文保留——**脱敏判定只认「无 detail」
+// 形态**（底层错误透传不携带信封 detail），携带 detail 的空码信封不脱敏。
 func EnvelopeFromGRPCStatus(st *status.Status) (*sharedv1.ErrorResponse, int) {
 	if st == nil {
 		return &sharedv1.ErrorResponse{Message: "internal server error"}, http.StatusInternalServerError
 	}
 	if e, ok := FromGRPCStatus(st); ok {
-		return e.Envelope(), e.HTTPStatus()
+		if e.code != "" {
+			return e.Envelope(), e.HTTPStatus()
+		}
+		return e.Envelope(), GRPCCodeToHTTP(st.Code())
 	}
 	if redactDegradedMessage(st.Code()) {
 		return &sharedv1.ErrorResponse{Message: RedactedDegradedMessage}, GRPCCodeToHTTP(st.Code())

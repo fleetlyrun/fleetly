@@ -41,6 +41,15 @@ func (e *Engine) evaluateReleasing(ctx context.Context, rec state.DeployRecord) 
 	if err := e.watchBoundNode(ctx, &rec); err != nil {
 		return err
 	}
+	// blocked 维持态提前返回（MG-2，场景 15「暂停计时、恢复续跑重新起算」）：
+	// 本拍 Preflight 仍失败、部署处于 blocked_waiting——L2 看门狗暂停计时，
+	// 下方看门狗判定对本部署不可达（旧缺陷：评估继续下行，节点持续 DOWN
+	// 越过 deadline 后每拍触发 E_SCHEDULER_PENDING_TIMEOUT 假失败，把
+	// 「等待节点恢复」误判成「发布超时」）。节点恢复拍由 watchBoundNode 内
+	// resumeFromBlocked 清除 phase 并重臂看门狗后，评估才继续下行。
+	if rec.Phase == state.PhaseBlockedWaiting {
+		return nil
+	}
 
 	// 逐服务实况 → 判定。
 	anyPaused := false

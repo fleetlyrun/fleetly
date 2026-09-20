@@ -95,12 +95,9 @@ export function EventsPage() {
             backoff.markOpen();
             setConnected(true);
           }
-        })
-        .catch(() => {
-          if (!disposed) {
-            timer = window.setTimeout(open, backoff.nextDelayMs(false));
-          }
         });
+      // openNdjsonStream 恒 resolve（连接级错误一律经 onEnd 回调上抛），
+      // 重连的唯一路径是上面的 onEnd 分支——无需 .catch 兜底（M9-13）。
     };
     open();
 

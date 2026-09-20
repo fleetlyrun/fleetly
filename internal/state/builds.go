@@ -96,8 +96,18 @@ var (
 )
 
 // CreateBuild 创建 queued 构建记录（构建入队；id 留空自动生成 ULID）。
-// 审计 build.create 与建行同事务（fail-closed）。
+// 审计 build.create 与建行同事务（fail-closed），归因固定 system（内部
+// 队列/复位路径）。调用方触发（API TriggerBuild）的归因见 CreateBuildAs。
 func (s *Store) CreateBuild(ctx context.Context, rec BuildRecord) (BuildRecord, error) {
+	return s.CreateBuildAs(ctx, rec, nil)
+}
+
+// CreateBuildAs 是 CreateBuild 的审计归因扩展（M4-8）：audit 非 nil 时
+// build.create 审计行由调用方注入——TriggerBuild 的入队审计带调用方
+// token（H14 敏感写面：base_dir 可指宿主任意目录，行为人必须可追溯）；
+// nil 时回落 CreateBuild 既有 system 归因（与旧行为逐字一致）。建行与
+// 审计仍同事务 fail-closed。
+func (s *Store) CreateBuildAs(ctx context.Context, rec BuildRecord, audit *AuditEntry) (BuildRecord, error) {
 	var created BuildRecord
 	err := s.InTx(ctx, func(tx *Tx) error {
 		b, err := tx.CreateBuild(ctx, rec)
@@ -105,13 +115,17 @@ func (s *Store) CreateBuild(ctx context.Context, rec BuildRecord) (BuildRecord, 
 			return err
 		}
 		created = b
-		return tx.WriteAudit(ctx, AuditEntry{
+		entry := AuditEntry{
 			Actor:       "system",
 			Action:      "build.create",
 			Target:      "app:" + rec.AppID,
 			Result:      "ok",
 			DiffSummary: DiffSummary("build", b.ID, "service", rec.Service, "driver", string(rec.Driver)), // B4：构造器替换手拼 JSON
-		})
+		}
+		if audit != nil {
+			entry = *audit // 调用方归因（action/target 结构由调用方完整给出）
+		}
+		return tx.WriteAudit(ctx, entry)
 	})
 	if err != nil {
 		return BuildRecord{}, err
@@ -225,6 +239,20 @@ func (s *Store) NextQueuedBuilds(ctx context.Context, limit int) ([]BuildRecord,
 func (s *Store) ClaimBuild(ctx context.Context, id string) error {
 	return s.transitionBuild(ctx, id, BuildQueued, BuildBuilding, "started_at", "build.start",
 		DiffSummary("build", id)) // B4：构造器替换手拼 JSON
+}
+
+// SetBuildLogPath 回填 building 行的 log_path（M2-5：构建产物目录就位即写
+// ——log_path 原先唯一写点在 FinishBuildSucceeded，失败终态行恒空，失败
+// 取证（日志尾部 + log_path context）落空）。行级谓词限定 building：终态
+// 行不动（成功终态的 log_path 由 FinishBuildSucceeded 权威写入）；0 行更新
+// （行已终态/不存在）静默成功——回填是 best-effort 观测面而非状态机事件，
+// 无审计、不因竞态报错。
+func (s *Store) SetBuildLogPath(ctx context.Context, id, logPath string) error {
+	if _, err := s.db.ExecContext(ctx,
+		`UPDATE builds SET log_path = ? WHERE id = ? AND status = 'building'`, logPath, id); err != nil {
+		return fmt.Errorf("state: set build %s log path: %w", id, err)
+	}
+	return nil
 }
 
 // FinishBuildSucceeded 推进 building → succeeded 并落镜像身份（ref + 不可变

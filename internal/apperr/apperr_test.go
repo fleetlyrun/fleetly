@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"testing"
 
+	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
 	"github.com/fleetlyrun/fleetly/internal/errcode"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -132,6 +133,39 @@ func TestEnvelopeFromGRPCStatusRegistryHTTP(t *testing.T) {
 	env, httpStatus := EnvelopeFromGRPCStatus(st)
 	if env.GetCode() != "E_EVENT_CURSOR_EXPIRED" || httpStatus != 410 {
 		t.Fatalf("code=%q http=%d, want E_EVENT_CURSOR_EXPIRED/410（文档显式）", env.GetCode(), httpStatus)
+	}
+}
+
+// TestEnvelopeFromGRPCStatusEmptyCodeDetail X-5：空码 detail 信封（api 层
+// 业务冲突通道构造的退化信封，如 conflict() 的 409）——HTTP 按传输 grpc
+// code 机械映射（不再被 HTTPStatus 的空码 500 兜底误伤）、message 原文
+// 保留（携带 detail 即业务文案，不走 B1 脱敏——脱敏只认「无 detail」形态）。
+func TestEnvelopeFromGRPCStatusEmptyCodeDetail(t *testing.T) {
+	st := status.New(codes.FailedPrecondition, "app not deletable from current lifecycle: demo")
+	withDetail, err := st.WithDetails(&sharedv1.ErrorResponse{
+		Message: "app not deletable from current lifecycle: demo",
+		Context: map[string]string{"conflict": "app not deletable from current lifecycle: demo"},
+	})
+	if err != nil {
+		t.Fatalf("WithDetails: %v", err)
+	}
+	env, httpStatus := EnvelopeFromGRPCStatus(withDetail)
+	if env.GetCode() != "" {
+		t.Fatalf("empty-code envelope code = %q, want empty", env.GetCode())
+	}
+	if httpStatus != http.StatusConflict {
+		t.Fatalf("empty-code detail envelope HTTP = %d, want 409 (grpc code 机械映射)", httpStatus)
+	}
+	if env.GetMessage() != "app not deletable from current lifecycle: demo" {
+		t.Fatalf("message = %q, want business copy preserved (X-5)", env.GetMessage())
+	}
+	if env.GetMessage() == RedactedDegradedMessage {
+		t.Fatal("detail envelope must not be redacted (B1 只脱无 detail 形态)")
+	}
+	// 同码无 detail 形态仍走 B1 脱敏（防线不削弱）。
+	redacted, _ := EnvelopeFromGRPCStatus(status.New(codes.FailedPrecondition, "raw sql SELECT"))
+	if redacted.GetMessage() != RedactedDegradedMessage {
+		t.Fatal("no-detail FailedPrecondition must stay redacted (B1 防线)")
 	}
 }
 

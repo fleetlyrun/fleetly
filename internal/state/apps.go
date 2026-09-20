@@ -168,6 +168,27 @@ func (s *Store) MarkAppDeleted(ctx context.Context, appID string) error {
 	return s.transitionApp(ctx, appID, LifecycleDeleting, LifecycleDeleted, "deleted_at")
 }
 
+// MarkAppDeleted 是事务内 tombstone 第二拍（H10/MG-3：与终局事件/审计
+// 同事务组合的形态——引擎 deleting 回收 duty 在受管服务全部移除后原子
+// 落终态，进程在「迁移已落、事件未发」之间崩溃的披露缺口不存在）。
+func (t *Tx) MarkAppDeleted(ctx context.Context, appID string) error {
+	res, err := t.ExecContext(ctx,
+		`UPDATE apps SET lifecycle = ?, updated_at = ?, deleted_at = ?
+		WHERE id = ? AND lifecycle = ?`,
+		string(LifecycleDeleted), nowNano(), nowNano(), appID, string(LifecycleDeleting))
+	if err != nil {
+		return fmt.Errorf("state: update app lifecycle: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("state: read lifecycle update count: %w", err)
+	}
+	if n == 0 {
+		return ErrInvalidLifecycleTransition
+	}
+	return nil
+}
+
 // transitionApp 执行 from → to 的生命周期迁移并盖对应时间位列。
 func (s *Store) transitionApp(ctx context.Context, appID string, from, to AppLifecycle, stampCol string) error {
 	err := s.InTx(ctx, func(tx *Tx) error {

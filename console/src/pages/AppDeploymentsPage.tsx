@@ -75,14 +75,18 @@ function DeployCard({ app }: { app: string }) {
     queryKey: ["deployment", trackedId],
     queryFn: () => getDeployment(trackedId),
     enabled: trackedId !== "",
+    // 空数据形态（查询失败/未返回）下 data 可能缺 deployment 成员——
+    // 可选链守卫避免 refetchInterval 回调内 TypeError（M9-7）。
     refetchInterval: (q) =>
-      q.state.data && TERMINAL.has(q.state.data.deployment.status ?? "")
-        ? false
-        : 2000,
+      TERMINAL.has(q.state.data?.deployment?.status ?? "") ? false : 2000,
   });
   const trackedDeployment = tracked.data?.deployment;
-  const trackedError =
-    deployMutation.isError ? errorEnvelopeFrom(deployMutation.error) : null;
+  // 跟踪轮询失败的展示（M9-5）：持续失败不再永远转圈——错误信封一等渲染。
+  const trackedError = tracked.isError
+    ? errorEnvelopeFrom(tracked.error)
+    : deployMutation.isError
+      ? errorEnvelopeFrom(deployMutation.error)
+      : null;
 
   function onFile(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -183,7 +187,7 @@ function DeployCard({ app }: { app: string }) {
                     </span>
                   ) : null}
                 </>
-              ) : (
+              ) : tracked.isError ? null : (
                 <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
               )}
             </div>

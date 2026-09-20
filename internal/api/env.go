@@ -19,11 +19,24 @@ type EnvService struct {
 	serverv1.UnimplementedEnvServiceServer
 	st  *state.Store
 	box *secrets.Box
+	// onEnvChanged 是 env 写路径成功后的联动回调（H9：即时失效日志脱敏
+	// 值集——30s TTL 窗内新 secret 值会被明文采集并按天落盘保留 7 天，
+	// 写点失效把暴露窗收敛到单次重建。nil = 未接（单测/降级形态）；api
+	// 不直接依赖 logs.Manager，装配层注入闭包）。
+	onEnvChanged func(appID string)
 }
 
 // NewEnvService 构造 EnvService。
 func NewEnvService(st *state.Store, box *secrets.Box) *EnvService {
 	return &EnvService{st: st, box: box}
+}
+
+// WithEnvChangedHook 注入 env 写路径联动回调（H9 装配点：fleetlyd 接到
+// logs.Manager.InvalidateRedaction）。回调在写事务提交成功后同步执行，
+// 实现必须非阻塞（实现方只做缓存删除）。
+func (s *EnvService) WithEnvChangedHook(fn func(appID string)) *EnvService {
+	s.onEnvChanged = fn
+	return s
 }
 
 // SetEnv 设置平台 env（pending；值密文落库，审计在 state 层 fail-closed）。
@@ -38,6 +51,10 @@ func (s *EnvService) SetEnv(ctx context.Context, req *serverv1.SetEnvRequest) (*
 	}
 	if _, err := s.st.SetAppEnv(ctx, app.ID, req.GetKey(), string(ciphertext), "platform"); err != nil {
 		return nil, err
+	}
+	// H9：值集已变（新 secret 已可随下次部署生效）→ 即时失效脱敏缓存。
+	if s.onEnvChanged != nil {
+		s.onEnvChanged(app.ID)
 	}
 	return &serverv1.SetEnvResponse{App: app.Name, Key: req.GetKey(), Status: string(state.EnvStatusPending)}, nil
 }
@@ -102,6 +119,11 @@ func (s *EnvService) RemoveEnv(ctx context.Context, req *serverv1.RemoveEnvReque
 			return nil, notFound("env var not found: " + req.GetKey())
 		}
 		return nil, err
+	}
+	// H9：删除同样改变值集（旧值不应继续被脱敏之外的语义影响——值集按
+	// 当前 state 重建）→ 即时失效。
+	if s.onEnvChanged != nil {
+		s.onEnvChanged(app.ID)
 	}
 	return &serverv1.RemoveEnvResponse{App: app.Name, Key: req.GetKey(), Status: string(state.EnvStatusPending)}, nil
 }

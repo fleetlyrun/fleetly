@@ -157,6 +157,24 @@ func newSolveRunner(host string, loader ImageSource) *solveRunner {
 	return &solveRunner{host: host, loader: loader}
 }
 
+// defaultDaemonProbe 构造就绪探测的缺省实现（M2-8）：对 buildkit_host 做
+// 一次 Info 拨号——连接即达成 connhelper/gRPC 通道，Info 即服务面。每次
+// 拨号独立建立/释放（无长连接复用，探测与 solve 的连接互不共享）；拨号
+// 预算由 probeDaemonReady 的 attempt ctx 给定。
+func defaultDaemonProbe(host string) func(context.Context) error {
+	return func(ctx context.Context) error {
+		c, err := bkclient.New(ctx, host)
+		if err != nil {
+			return fmtErr("probe buildkit at %s: %w", host, err)
+		}
+		defer func() { _ = c.Close() }()
+		if _, err := c.Info(ctx); err != nil {
+			return fmtErr("probe buildkit at %s: %w", host, err)
+		}
+		return nil
+	}
+}
+
 // solveLLB 执行 LLB 直驱 solve（railpack 路径）。
 func (r *solveRunner) solveLLB(ctx context.Context, opts bkclient.SolveOpt, def *llb.Definition, logw io.Writer) error {
 	return r.run(ctx, opts, def, logw)
@@ -175,7 +193,8 @@ func (r *solveRunner) run(ctx context.Context, opts bkclient.SolveOpt, def *llb.
 	}
 	defer func() { _ = c.Close() }()
 	// 连接门（connhelper 的 docker exec 在容器缺失/未运行时才在此暴露）：
-	// fail-fast 给出可行动错误。
+	// fail-fast 给出可行动错误。自管容器形态下冷启动就绪窗口已由
+	// ensureDaemonReady 的就绪探测（M2-8）吸收，此处到达即应可服务。
 	if _, err := c.Info(ctx); err != nil {
 		return fmtErr("buildkit unreachable at %s（自管容器应经 fleetlyd EnsureRunning 拉起；外部端点检查配置 build.buildkit_host）: %w", r.host, err)
 	}
@@ -235,6 +254,10 @@ func wireDockerExport(opts *bkclient.SolveOpt, pw io.WriteCloser) bool {
 // writeSolveLog 把 SolveStatus 流渲染为确定性文本日志（时间偏移 + 顶点
 // 名称 + 步骤输出流；纯文本无 tty 控制序列，面向人与 diff）。写目标为
 // 内存 bufio（错误在 Flush 汇聚，写函数无返回错误的必要）。
+//
+// 消费契约（H5，MG-1）：ctx 取消只标记截断，不得弃读 statusCh——buildkit
+// 状态泵是无 ctx 保护的阻塞发送，弃读即泵死锁、Solve 永不返回（并发槽
+// 永久占用）。截断后丢弃式排空到 ch 关闭才返回（见循环内注释）。
 func writeSolveLog(ctx context.Context, ch <-chan *bkclient.SolveStatus, w io.Writer) {
 	start := time.Now()
 	bw := bufio.NewWriter(w)
@@ -251,6 +274,16 @@ func writeSolveLog(ctx context.Context, ch <-chan *bkclient.SolveStatus, w io.Wr
 		select {
 		case <-ctx.Done():
 			printf("%slog truncated (context done)\n", stamp())
+			// H5（MG-1 消费契约）：buildkit 客户端的状态泵是无 ctx 保护的阻塞
+			// 发送（moby/buildkit v0.32.2 client/solve.go:393-394 直接
+			// `statusChan <- …`），且泵跑在 Solve 的 errgroup 里、
+			// `defer close(statusCh)` 要等 Solve 返回才执行。消费端在 ctx
+			// 取消即弃读 → 泵永久阻塞在发送上 → eg.Wait 不返回 → Solve 不
+			// 返回 → 并发槽永久占用。契约：标记截断后必须丢弃式排空（读到
+			// ch 关闭为止）——ctx 已取消时 gRPC 流随之断开，泵很快经 Recv
+			// 错误退出、Solve 返回并关闭 ch，本函数随即返回。
+			for range ch {
+			}
 			return
 		case st, ok := <-ch:
 			if !ok {

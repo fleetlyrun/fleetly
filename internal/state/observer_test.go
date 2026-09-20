@@ -22,10 +22,10 @@ func TestObserverSyncAndHealth(t *testing.T) {
 	}
 	defer func() { _ = ob.Stop(ctx) }()
 
-	// 首拍成功：缓存行 + 健康置位。
+	// 首拍成功：缓存行 + 健康置位（两步窗口同下——条件并等两者）。
 	waitFor(t, 3*time.Second, func() bool {
 		rows, err := st.ListCachedNodes(ctx)
-		return err == nil && len(rows) == 1 && !rows[0].Stale
+		return err == nil && len(rows) == 1 && !rows[0].Stale && ob.CheckHealth() == nil
 	}, "first resync should populate cache")
 	if ob.CheckHealth() != nil {
 		t.Fatalf("checker must be healthy after successful sync: %v", ob.CheckHealth())
@@ -42,12 +42,14 @@ func TestObserverSyncAndHealth(t *testing.T) {
 		t.Fatal("checker must be unhealthy while substrate unreachable")
 	}
 
-	// 恢复：stale 清零、checker 回健康（指数退避不阻断恢复）。
+	// 恢复：stale 清零、checker 回健康（指数退避不阻断恢复）。健康位与
+	// 行写入是两步（syncOnce 先落行、resync 后置 syncOK）——等待条件必须
+	// 同时覆盖两者，避免在窗口内断言（-race 高负载下窗口可观测）。
 	fake.setPingErr(nil)
 	ob.Invalidate()
 	waitFor(t, 5*time.Second, func() bool {
 		rows, err := st.ListCachedNodes(ctx)
-		return err == nil && len(rows) == 1 && !rows[0].Stale
+		return err == nil && len(rows) == 1 && !rows[0].Stale && ob.CheckHealth() == nil
 	}, "recovered substrate must clear stale")
 	if ob.CheckHealth() != nil {
 		t.Fatalf("checker must recover: %v", ob.CheckHealth())

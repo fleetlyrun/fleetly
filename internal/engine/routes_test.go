@@ -234,3 +234,49 @@ func recWithComposePath(rec state.DeployRecord, path string) state.DeployRecord 
 	rec.ComposePath = path
 	return rec
 }
+
+// blockingPublisher 是慢于预算的协作型发布器（尊重 ctx 取消——ACME 签发
+// 卡顿的形态抽象：block 远超预算，靠预算 ctx 兜底返回）。
+type blockingPublisher struct {
+	calls int
+	block time.Duration
+}
+
+func (b *blockingPublisher) PublishRoutes(ctx context.Context, _ RoutePublishInput) error {
+	b.calls++
+	select {
+	case <-time.After(b.block):
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// TestRoutePublishBudgetBoundsTick H11 回归（B4）：发布器慢于预算（网络面
+// 卡顿形态）——publishRoutes 在预算内返回（tick 不被拖住、全平台部署推进
+// 不停摆）、超预算按既有 route.publish_failed 语义告警（部署照常 succeeded）。
+func TestRoutePublishBudgetBoundsTick(t *testing.T) {
+	h := newHarness(t)
+	pub := &blockingPublisher{block: 30 * time.Second}
+	h.eng.routeBudget = 200 * time.Millisecond // 预算注入（生产缺省 30s）
+	h.eng = h.eng.WithRoutePublisher(pub)
+	path := h.writeCompose(composeWithDomains)
+	rec := h.enqueue(path)
+
+	start := time.Now()
+	final := h.runToTerminal(rec)
+	elapsed := time.Since(start)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("deployment status = %s, want succeeded（发布超预算不得失败部署）", final.Status)
+	}
+	// 两个挂点（首健康 + 终态）各耗尽 200ms 预算：tick 未被 30s 阻塞拖住。
+	if elapsed >= 5*time.Second {
+		t.Fatalf("tick 被慢发布器拖住 %s（预算未生效）", elapsed)
+	}
+	if pub.calls != 2 {
+		t.Fatalf("publisher calls = %d, want 2（gate + terminal）", pub.calls)
+	}
+	if n := countEvents(t, h, "route.publish_failed"); n != 2 {
+		t.Fatalf("route.publish_failed count = %d, want 2（每次超预算挂点各一条）", n)
+	}
+}

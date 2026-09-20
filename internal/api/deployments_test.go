@@ -241,6 +241,49 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 	}
 }
 
+// TestDeployTempDirCleanedUp MG-6 回归：Deploy 的解析中转临时目录
+// （os.MkdirTemp("fleetly-compose-")）随请求回收（defer os.RemoveAll）——
+// 成功与被拒两条路径都不留孤儿 tmp（持久化副本在 <数据根>/deployments/
+// <id>/compose.yaml，tmp 不是契约面）。
+func TestDeployTempDirCleanedUp(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	deploys := serverv1.NewDeploymentsServiceClient(env.conn)
+
+	countTmp := func() int {
+		entries, err := os.ReadDir(os.TempDir())
+		if err != nil {
+			t.Fatalf("read temp dir: %v", err)
+		}
+		n := 0
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "fleetly-compose-") {
+				n++
+			}
+		}
+		return n
+	}
+
+	before := countTmp()
+	// 被拒路径（compose 名与请求 app 错位——在 ensureApp 之前返回）。
+	if _, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+		App:     "nomatch",
+		Compose: []byte("name: otherapp\nservices:\n  web:\n    image: nginx:alpine\n"),
+	}); err == nil {
+		t.Fatal("app-name mismatch deploy must be rejected")
+	}
+	// 成功路径（入队）。
+	if _, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+		App:     "tmpclean",
+		Compose: []byte("name: tmpclean\nservices:\n  web:\n    image: nginx:alpine\n"),
+	}); err != nil {
+		t.Fatalf("normal deploy: %v", err)
+	}
+	if after := countTmp(); after != before {
+		t.Fatalf("解析中转临时目录未回收: fleetly-compose-* 目录数 %d → %d", before, after)
+	}
+}
+
 // TestDeployAppNameMismatchRejected A1（S18）：compose 应用名与请求 app 不
 // 一致 → E_COMPOSE_UNSUPPORTED（信封携带 expected/actual 上下文），且不
 // 误建 app、不入队（拒绝发生在 ensureApp 之前）；一致 → 正常入队。

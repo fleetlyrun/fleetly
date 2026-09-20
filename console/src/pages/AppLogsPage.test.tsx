@@ -136,6 +136,13 @@ async function emitLive(e: LogEntryView) {
   });
 }
 
+/** 等微批 flush（~100ms 定时，M9-3）落地后再断言。 */
+async function flushLiveBuffer() {
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 150));
+  });
+}
+
 describe("AppLogsPage cross-app state", () => {
   it("clears foo's entries when the route param changes foo → bar (H5)", async () => {
     historyByApp.foo = [entry("foo", "foo-line-1"), entry("foo", "foo-line-2")];
@@ -164,8 +171,9 @@ describe("AppLogsPage source filtering", () => {
 
     // source=all：container 与 build 行都可见（均已入 state）。
     await emitLive(entry("foo", "c-line-1", "container"));
-    expect(screen.getByText("c-line-1")).toBeInTheDocument();
     await emitLive(entry("foo", "b-line-1", "build"));
+    await flushLiveBuffer();
+    expect(screen.getByText("c-line-1")).toBeInTheDocument();
     expect(screen.getByText("b-line-1")).toBeInTheDocument();
 
     // 切 source=container：build 行从视图消失，container 行仍在。
@@ -182,8 +190,9 @@ describe("AppLogsPage source filtering", () => {
       expect(apiMocks.followLogs).toHaveBeenCalledTimes(2),
     );
     await emitLive(entry("foo", "c-line-2", "container"));
-    expect(screen.getByText("c-line-2")).toBeInTheDocument();
     await emitLive(entry("foo", "b-line-2", "build"));
+    await flushLiveBuffer();
+    expect(screen.getByText("c-line-2")).toBeInTheDocument();
     expect(screen.queryByText("b-line-2")).not.toBeInTheDocument();
 
     // 切回 source=all：此前被视图过滤的 build 行重新出现——证明它们
@@ -191,5 +200,39 @@ describe("AppLogsPage source filtering", () => {
     await selectSource(user, "All");
     expect(await screen.findByText("b-line-1")).toBeInTheDocument();
     expect(screen.getByText("b-line-2")).toBeInTheDocument();
+  });
+});
+
+describe("AppLogsPage live stream ingestion (M9-3 / M9-4)", () => {
+  it("keeps duplicate lines with identical at/service/line (M9-4)", async () => {
+    renderLogsPage("/apps/foo/logs");
+    await waitFor(() => expect(apiMocks.followLogs).toHaveBeenCalled());
+
+    // 同一毫秒、同服务、同内容的两行都是合法日志——不得被去重键吞掉
+    //（entry 带帧内序号；修复前 entryKey 碰撞导致第二行被吞）。
+    await emitLive(entry("foo", "dup-line"));
+    await emitLive(entry("foo", "dup-line"));
+    await flushLiveBuffer();
+
+    expect(screen.getAllByText("dup-line")).toHaveLength(2);
+  });
+
+  it("delivers a high-frequency burst completely and in stable order via the micro-batch (M9-3)", async () => {
+    renderLogsPage("/apps/foo/logs");
+    await waitFor(() => expect(apiMocks.followLogs).toHaveBeenCalled());
+
+    // 高频突发：50 行同一批次进入缓冲，~100ms 一次 flush 合并落地。
+    const lines = Array.from({ length: 50 }, (_, i) => `burst-${i}`);
+    await act(async () => {
+      for (const line of lines) liveHandlers!.onEntry(entry("foo", line));
+    });
+    await flushLiveBuffer();
+
+    // 全部到达且 DOM 顺序 = 追加顺序（微批不重排、不丢行）。
+    const container = screen.getByTestId("log-stream");
+    const rendered = Array.from(
+      container.querySelectorAll("div.whitespace-pre-wrap"),
+    ).map((d) => (d.textContent ?? "").match(/burst-(\d+)/)?.[1]);
+    expect(rendered).toEqual(lines.map((_, i) => String(i)));
   });
 });

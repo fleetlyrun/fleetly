@@ -58,6 +58,26 @@ func (h *hub) ingest(e Entry) {
 	h.mu.Unlock()
 }
 
+// evictApps 删除指定 app 集的全部 per-service ring（M7-6 生命周期回收：
+// 淘汰计时在 manager 侧统一判定，hub 不引入时钟/active 集依赖——本方法
+// 只做纯删除）。订阅者不受影响：subs 独立保留，ring 没了只影响新订阅者
+// 的回放（为空），实时扇出继续；app 回归后首条日志即重建 ring（首启语义）。
+func (h *hub) evictApps(apps []string) {
+	if len(apps) == 0 {
+		return
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for _, app := range apps {
+		prefix := app + "\x00"
+		for key := range h.streams {
+			if len(key) > len(prefix) && key[:len(prefix)] == prefix {
+				delete(h.streams, key)
+			}
+		}
+	}
+}
+
 // subscribe 注册订阅者并回放既有 ring（该 app，或指定 service）；返回的
 // channel 由 unsubscribe/cancel 关闭。回放与注册同锁完成，回放与实时之间
 // 不重不漏（回放快照后追加的条目才会走扇出）。

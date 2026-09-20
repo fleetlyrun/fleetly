@@ -310,3 +310,69 @@ func countEvents(t *testing.T, h *harness, name string) int {
 	}
 	return n
 }
+
+// TestDriftGlobalServiceNoFalsePositive M1-3 回归（B4）：global 服务（存量
+// 快照形态——v0.1 已在校验层拒绝新部署声明 mode: global，本测试防存量
+// 数据/回滚路径）成功在位后 driftScan 零漂移——期望侧副本（规划层对
+// global 写缺省 1）与实况侧（Swarm global 服务 Mode.Replicated 为 nil、
+// 副本读回 0）在漂移投影层归一同值（副本数对 global 非受管字段）。
+func TestDriftGlobalServiceNoFalsePositive(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	app, err := ensureAppForTest(ctx, h.store, "demo")
+	if err != nil {
+		t.Fatalf("ensure app: %v", err)
+	}
+
+	// 期望侧：规划层对 global 服务的产出形态（副本缺省 1 + stop-first）。
+	spec := ServiceSpec{
+		Name:              "fleetly-demo-agent",
+		Image:             "alpine:3",
+		Global:            true,
+		Replicas:          1,
+		ServiceLabels:     map[string]string{state.LabelManaged: "true", state.LabelApp: "demo", state.LabelProcess: "agent"},
+		ContainerLabels:   map[string]string{state.LabelApp: "demo"},
+		Networks:          []NetworkAttach{{Name: "fleetly-demo-net", Aliases: []string{"agent"}}},
+		UpdateOrder:       "stop-first",
+		UpdateParallelism: 1,
+	}
+	// 底座实况：global 服务（实况投影 Replicas=0——与真实适配器
+	// serviceToState 的 Mode.Global → 0 同构，见 fakes_test.globalReplicasOf）。
+	if err := h.sub.ServiceCreate(ctx, spec); err != nil {
+		t.Fatalf("seed global service: %v", err)
+	}
+	// 期望态来源：succeeded 部署行 + 密文快照（绕过引擎主链——受控子集已
+	// 拒 global，只有存量行能到达该形态）。
+	raw, err := canonicalJSON([]ServiceSpec{spec})
+	if err != nil {
+		t.Fatalf("canonical json: %v", err)
+	}
+	ct, err := h.box.Encrypt(raw)
+	if err != nil {
+		t.Fatalf("encrypt snapshot: %v", err)
+	}
+	rec, err := h.store.CreateDeployment(ctx, state.DeployRecord{
+		AppID: app.ID, AppName: "demo", Kind: "deploy", DesiredSpec: string(ct),
+	})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+	if err := h.store.InTx(ctx, func(tx *state.Tx) error {
+		_, err := tx.ExecContext(ctx,
+			`UPDATE deployments SET status = 'succeeded', desired_hash = ? WHERE id = ?`,
+			spec.DesiredHash(), rec.ID)
+		return err
+	}); err != nil {
+		t.Fatalf("seed succeeded row: %v", err)
+	}
+
+	// 投影归一断言：两侧哈希一致（旧缺陷：期望 1 vs 实况 0 永久假阳性）。
+	h.eng.DriftScan(ctx)
+	if hasEvent(h.events(), "reconcile.drift_detected") {
+		t.Fatal("global 服务的副本口径差被误报为漂移（M1-3 假阳性）")
+	}
+	report, err := h.eng.DriftShow(ctx, "demo")
+	if err != nil || report.Drifted {
+		t.Fatalf("drift show = %+v (%v), want no drift（global 副本口径归一）", report, err)
+	}
+}

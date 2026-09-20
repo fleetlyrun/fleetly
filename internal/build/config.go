@@ -92,7 +92,7 @@ type Config struct {
 	// 执行侧只接受位于受管根内的 context_dir——builds.request 是跨进程
 	// 通道，直写库的越界请求不得把宿主任意目录整目录打进镜像。Normalize
 	// 保证系统 temp 根恒在集合内（API 层 compose 暂存/回落基准的落点，
-	// os.MkdirTemp("", …) 所在）；daemon 装配再并入 git 根（gitserver 裸
+	// MkdirTemp("", …) 所在）；daemon 装配再并入 git 根（gitserver 裸
 	// 仓库根，v0.2 worktree 物化路径的前缀形态）与显式配置根。越界构建
 	// 终态失败（不静默放宽）。v0.2 挂账：CLI 同宿主构建目录（显式
 	// base_dir）改为上传/物化到受管根后，该集合即对全部入队来源完备闭合。

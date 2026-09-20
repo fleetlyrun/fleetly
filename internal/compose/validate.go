@@ -101,9 +101,9 @@ var healthcheckWhitelist = map[string]bool{
 
 // deployWhitelist：deploy.* 除受管字段外照用（release-semantics §2.8 列举：
 // parallelism/delay/restart_policy/resources/replicas/placement），加上
-// update_config 与 mode（global 语义见 E_COMPOSE_UNSAFE_STRATEGY 摘要）。
-// endpoint_mode/rollback_config/labels 不在列举内（rollback 平台侧 opt-in、
-// 永不使用 Swarm 原生回滚，D-REL-1）。
+// update_config 与 mode（mode=global 的取值级拒绝见 validateDeployDict，
+// M1-4：v0.1 单节点不支持 global）。endpoint_mode/rollback_config/labels
+// 不在列举内（rollback 平台侧 opt-in、永不使用 Swarm 原生回滚，D-REL-1）。
 var deployWhitelist = map[string]bool{
 	"mode":           true,
 	"replicas":       true,
@@ -304,6 +304,19 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 		return err
 	}
 
+	// M1-4（v0.1 诚实裁决）：deploy.mode: global 显式拒绝——单节点拓扑下
+	// global 的副本语义（每节点一实例，单机即恒 1）与失败停机语义（scale=0
+	// 对 global 无效，首发失败后崩溃循环不会停）均未实现；放行只会得到
+	// 无法停机的失败现场（对齐 C1 secrets 先例：Load 期即拒优于发布期晚败
+	// 且误导）。v0.2 多节点开放后解除。
+	if mode, present := deploy["mode"]; present {
+		if s, _ := mode.(string); s == "global" {
+			return apperr.New("E_COMPOSE_UNSUPPORTED",
+				"服务 %q 声明 deploy.mode: global：v0.1 单节点不支持 global 模式（副本语义与失败停机语义未实现；v0.2 开放，请用 replicated + replicas 表达）", name).
+				WithContext("path", prefix+".deploy.mode")
+		}
+	}
+
 	if ucAny, ok := deploy["update_config"]; ok && ucAny != nil {
 		uc, ok := ucAny.(map[string]any)
 		if !ok {
@@ -330,15 +343,12 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 		}
 		// 更新顺序安全性：有卷服务强制 stop-first（发布降级边界：双任务并发
 		// 挂同一本地卷有数据风险），显式 start-first 冲突 → UNSAFE_STRATEGY。
+		//（global + start-first 的同型检查已随 M1-4 删除——mode: global 在
+		// 本函数更早处整体拒绝，该分支不可达。）
 		if order, present := uc["order"]; present {
 			if s, _ := order.(string); s == "start-first" && serviceHasVolumes(svcDict) {
 				return apperr.New("E_COMPOSE_UNSAFE_STRATEGY",
 					"服务 %q 声明了命名卷挂载，显式 start-first 与平台强制 stop-first 冲突（双任务并发挂同一本地卷有数据风险）", name).
-					WithContext("path", prefix+".deploy.update_config.order")
-			}
-			if s, _ := order.(string); s == "start-first" && deploy["mode"] == "global" {
-				return apperr.New("E_COMPOSE_UNSAFE_STRATEGY",
-					"服务 %q 为 global 模式，显式 start-first 与平台强制 stop-first 冲突（同节点端口/状态冲突无校验）", name).
 					WithContext("path", prefix+".deploy.update_config.order")
 			}
 		}

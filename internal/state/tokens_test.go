@@ -141,3 +141,67 @@ func TestTokenAuditFailClosed(t *testing.T) {
 		t.Fatalf("audit missing: create=%v revoke=%v", created, revoked)
 	}
 }
+
+// isAdminScopes 是守卫测试的 scope 判定注入（与 api.containsScope 的
+// admin 蕴含语义一致：scopes 含 admin 词即 admin）。
+func isAdminScopes(scopes string) bool {
+	for _, s := range strings.Split(scopes, ",") {
+		if strings.TrimSpace(s) == "admin" {
+			return true
+		}
+	}
+	return false
+}
+
+// TestRevokeTokenGuardLastAdmin M4-6 回归：最后管理员守卫——吊销后不存在
+// 任何未吊销 admin token 时拒绝（ErrTokenLastAdmin，事务回滚吊销不生效）；
+// 存在第二枚 admin（或吊销非 admin token）时放行；幂等面（已吊销目标）
+// 与不存在面不受守卫影响。
+func TestRevokeTokenGuardLastAdmin(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	// 唯一 admin：吊销被拒，行仍在册。
+	only, err := st.CreateToken(ctx, TokenWrite{Hash: HashToken("flt_only_admin"), Name: "only", Scopes: "admin"})
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+	if err := st.RevokeTokenGuardLastAdmin(ctx, only.ID, "", isAdminScopes); !errors.Is(err, ErrTokenLastAdmin) {
+		t.Fatalf("revoke last admin err = %v, want ErrTokenLastAdmin", err)
+	}
+	if rows, err := st.ListTokens(ctx); err != nil || len(rows) != 1 {
+		t.Fatalf("last admin must remain registered after guard rejection: rows=%d err=%v", len(rows), err)
+	}
+
+	// 存在第二枚 admin：两枚均可吊销（吊销第一枚后第二枚成为「最后一枚」，
+	// 第三枚 read token 不解除守卫）。
+	second, err := st.CreateToken(ctx, TokenWrite{Hash: HashToken("flt_second_admin"), Name: "second", Scopes: "read,admin"})
+	if err != nil {
+		t.Fatalf("CreateToken second: %v", err)
+	}
+	reader, err := st.CreateToken(ctx, TokenWrite{Hash: HashToken("flt_reader"), Name: "reader", Scopes: "read"})
+	if err != nil {
+		t.Fatalf("CreateToken reader: %v", err)
+	}
+	if err := st.RevokeTokenGuardLastAdmin(ctx, only.ID, "caller-tok", isAdminScopes); err != nil {
+		t.Fatalf("revoke with second admin present: %v", err)
+	}
+
+	// 非 admin token 的吊销不受守卫影响（admin 仍在册）。
+	if err := st.RevokeTokenGuardLastAdmin(ctx, reader.ID, "caller-tok", isAdminScopes); err != nil {
+		t.Fatalf("revoke non-admin token: %v", err)
+	}
+
+	// 只剩第二枚 admin：吊销被拒（read token 不算 admin——守卫只认 admin）。
+	if err := st.RevokeTokenGuardLastAdmin(ctx, second.ID, "", isAdminScopes); !errors.Is(err, ErrTokenLastAdmin) {
+		t.Fatalf("revoke final admin err = %v, want ErrTokenLastAdmin", err)
+	}
+
+	// 幂等/不存在面：已吊销目标幂等成功；不存在 ErrTokenNotFound。
+	if err := st.RevokeTokenGuardLastAdmin(ctx, only.ID, "", isAdminScopes); err != nil {
+		t.Fatalf("revoke already-revoked must be idempotent success: %v", err)
+	}
+	if err := st.RevokeTokenGuardLastAdmin(ctx, "missing-token", "", isAdminScopes); !errors.Is(err, ErrTokenNotFound) {
+		t.Fatalf("revoke missing err = %v, want ErrTokenNotFound", err)
+	}
+}

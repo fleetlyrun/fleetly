@@ -460,3 +460,258 @@ func TestConfigNormalize(t *testing.T) {
 		t.Fatalf("normalize = %+v", c)
 	}
 }
+
+// TestDiskQuerySinceZeroScansAllDays M7-3 回归：since 零值 = 不设下界
+// （query 契约）——保留期内全部日期文件都被扫描；旧实现把起点折叠到
+// until 当日，since 缺省的检索（api ListHistoryLogs 默认路径）只命中单日
+// 文件、丢失既往历史。
+func TestDiskQuerySinceZeroScansAllDays(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "logs")
+	d := newDiskStore(dir)
+	ctx := context.Background()
+	day1 := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	day2 := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	if err := d.append(ctx, Entry{App: "a", Service: "web", At: day1, Line: "day-10"}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	if err := d.append(ctx, Entry{App: "a", Service: "web", At: day2, Line: "day-11"}); err != nil {
+		t.Fatalf("append: %v", err)
+	}
+	// since/until 均零值（缺省检索形态）：两天都被扫描。
+	rows, err := d.query(ctx, "a", "", "", time.Time{}, time.Time{}, 10)
+	if err != nil {
+		t.Fatalf("query: %v", err)
+	}
+	if len(rows) != 2 || rows[0].Line != "day-10" || rows[1].Line != "day-11" {
+		t.Fatalf("rows = %+v, want both days scanned", rows)
+	}
+	// since 设界语义不变：只扫窗口内文件。
+	rows, err = d.query(ctx, "a", "", "", day2, time.Time{}, 10)
+	if err != nil {
+		t.Fatalf("query with since: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Line != "day-11" {
+		t.Fatalf("rows with since = %+v, want day-11 only", rows)
+	}
+}
+
+// TestReadPlainLinesKeepsTail M7-5 回归：build 日志取文件的**最后** limit
+// 行（构建失败的关键信息在尾部）；limit 大于行数时全量语义不变。
+func TestReadPlainLinesKeepsTail(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "build.log")
+	var sb strings.Builder
+	for i := 0; i < 30; i++ {
+		fmt.Fprintf(&sb, "step-%02d\n", i)
+	}
+	if err := os.WriteFile(path, []byte(sb.String()), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	lines, err := readPlainLines(path, 10)
+	if err != nil {
+		t.Fatalf("readPlainLines: %v", err)
+	}
+	if len(lines) != 10 {
+		t.Fatalf("lines = %d, want 10", len(lines))
+	}
+	if lines[0] != "step-20" || lines[9] != "step-29" {
+		t.Fatalf("tail lines = [%s .. %s], want [step-20 .. step-29]", lines[0], lines[9])
+	}
+	// limit 覆盖全量（> 行数）：不丢行。
+	all, err := readPlainLines(path, 100)
+	if err != nil {
+		t.Fatalf("readPlainLines full: %v", err)
+	}
+	if len(all) != 30 || all[0] != "step-00" || all[29] != "step-29" {
+		t.Fatalf("full read = %d lines, want 30 in order", len(all))
+	}
+}
+
+// TestRedactorInvalidateRebuildsOnEnvChange H9 回归：TTL 窗口内 env 换值
+// 后主动失效，下一次 forApp 重建即含新值（新值脱敏、旧值放行——值集按
+// 当前 state 重建）。失效前缓存命中仍持旧值集（缺陷形态：新 secret 明文
+// 采集落盘）。
+func TestRedactorInvalidateRebuildsOnEnvChange(t *testing.T) {
+	mg, _, st, box := newTestManager(t)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "redactinv")
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	const (
+		oldSecret = "old-secret-value-11"
+		newSecret = "new-secret-value-22"
+	)
+	ct, err := box.Encrypt([]byte(oldSecret))
+	if err != nil {
+		t.Fatalf("Encrypt: %v", err)
+	}
+	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(ct), "platform"); err != nil {
+		t.Fatalf("SetAppEnv: %v", err)
+	}
+	red := mg.red.forApp(ctx, app.ID) // 建缓存
+	if got := red.redact("k=" + oldSecret); !strings.Contains(got, "***") {
+		t.Fatalf("precondition: old value should be redacted: %q", got)
+	}
+	// TTL 窗口内换值（同 key upsert；测试真实耗时必然 << 30s）。
+	ct2, err := box.Encrypt([]byte(newSecret))
+	if err != nil {
+		t.Fatalf("Encrypt 2: %v", err)
+	}
+	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(ct2), "platform"); err != nil {
+		t.Fatalf("SetAppEnv 2: %v", err)
+	}
+	// 未失效：缓存命中，仍持旧值集——新值泄漏（H9 缺陷形态的前提钉死）。
+	stale := mg.red.forApp(ctx, app.ID)
+	if got := stale.redact("k=" + newSecret); strings.Contains(got, "***") {
+		t.Fatalf("precondition failed: cache rebuilt without invalidate (TTL expired?)")
+	}
+	// 失效 → 重建：新值脱敏、旧值不再脱。
+	mg.InvalidateRedaction(app.ID)
+	fresh := mg.red.forApp(ctx, app.ID)
+	if got := fresh.redact("k=" + newSecret); !strings.Contains(got, "***") || strings.Contains(got, newSecret) {
+		t.Fatalf("new secret not redacted after invalidate: %q", got)
+	}
+	if got := fresh.redact("k=" + oldSecret); strings.Contains(got, "***") {
+		t.Fatalf("old secret still redacted after rebuild: %q", got)
+	}
+}
+
+// TestZeroAtLinesDoNotAdvanceCursor M7-4 回归：无时间戳续行（零 At）不推进
+// 采集游标——游标只随可信时间戳行推进到 ts-line-2；续行以零值 At 投递
+// （不取墙钟，否则墙钟会把游标拨到 now 造成下轮跳批丢行）。
+func TestZeroAtLinesDoNotAdvanceCursor(t *testing.T) {
+	mg, port, st, _ := newTestManager(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if _, err := st.CreateApp(ctx, "", "contapp"); err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	port.setApp("contapp", "web")
+	base := time.Now().Add(-time.Hour)
+	mg.WithClock(func() time.Time { return base })
+	port.emit("fleetly-contapp-web",
+		substrate.LogLine{At: base.Add(time.Millisecond), Line: "ts-line"},
+		substrate.LogLine{Line: "continuation"}, // 零 At 续行（时间戳解析失败形态）
+		substrate.LogLine{At: base.Add(2 * time.Millisecond), Line: "ts-line-2"},
+	)
+	ch, stop := mg.Follow(ctx, "contapp", "web")
+	defer stop()
+
+	mg.scanOnce(ctx)
+
+	cur, ok := mg.streams[streamKey("contapp", "web")]
+	if !ok {
+		t.Fatal("stream cursor missing after first poll")
+	}
+	if want := base.Add(2 * time.Millisecond); !cur.lastAt.Equal(want) {
+		t.Fatalf("cursor = %v, want 最后一个可信时间戳 %v（零 At 续行不得推进游标）", cur.lastAt, want)
+	}
+	// 续行照常投递且 At 为零值。
+	zeroSeen := false
+	for i := 0; i < 3; i++ {
+		select {
+		case e := <-ch:
+			if e.Line == "continuation" {
+				zeroSeen = e.At.IsZero()
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("entry %d not delivered", i)
+		}
+	}
+	if !zeroSeen {
+		t.Fatal("continuation line missing or delivered with non-zero At")
+	}
+}
+
+// TestPollWatchdogAbandonsStuckRound MG-1 纵深防御回归：底座流挂死（永不
+// 发送也永不关闭）时，单轮看门狗超时放弃本轮——scanOnce 必须限时返回
+// （采集循环/落盘/prune 不被单条流拖死），游标保留供下轮重试。
+func TestPollWatchdogAbandonsStuckRound(t *testing.T) {
+	mg, port, st, _ := newTestManager(t)
+	mg.pollWatchdogOverride = 50 * time.Millisecond
+	ctx := context.Background()
+	if _, err := st.CreateApp(ctx, "", "stuckapp"); err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	port.setApp("stuckapp", "web")
+	port.stuck["fleetly-stuckapp-web"] = true
+
+	done := make(chan struct{})
+	go func() {
+		mg.scanOnce(ctx)
+		close(done)
+	}()
+	select {
+	case <-done:
+		if _, ok := mg.streams[streamKey("stuckapp", "web")]; !ok {
+			t.Fatal("cursor missing（首轮游标应在看门狗触发前登记）")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("scanOnce 未返回：挂死流未被看门狗放弃（MG-1 纵深防御回归）")
+	}
+}
+
+// TestStreamStateEvictedAfterAppGone M7-6 回归：app 消失（active →
+// deleting，不再进 active 集）连续超过淘汰窗后，其采集游标与 hub ring 被
+// 回收；窗内不误杀；旁观活跃 app 不受影响；淘汰后新建 app 采集正常（首启
+// 语义）。app 名在 tombstone 保留期内不可复用（state.ErrAppExists），「app
+// 回归」以新建 app 等价验证。
+func TestStreamStateEvictedAfterAppGone(t *testing.T) {
+	mg, port, st, _ := newTestManager(t)
+	ctx := context.Background()
+	gone, err := st.CreateApp(ctx, "", "goneapp")
+	if err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	if _, err := st.CreateApp(ctx, "", "keeperapp"); err != nil {
+		t.Fatalf("CreateApp keeper: %v", err)
+	}
+	port.setApp("goneapp", "web")
+	port.setApp("keeperapp", "web")
+	now := time.Now().Truncate(time.Second)
+	mg.WithClock(func() time.Time { return now })
+	port.emit("fleetly-goneapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "gone-line"})
+	port.emit("fleetly-keeperapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "keeper-line"})
+
+	mg.scanOnce(ctx) // 两 app 均活跃：游标 + ring 建立
+	goneKey := streamKey("goneapp", "web")
+	keeperKey := streamKey("keeperapp", "web")
+	if mg.streams[goneKey] == nil || mg.hub.streams[goneKey] == nil {
+		t.Fatal("precondition: gone app cursor/ring missing")
+	}
+
+	// app 消失（tombstone 第一拍）→ 首轮 scanOnce 记 miss 起点。
+	if err := st.MarkAppDeleting(ctx, gone.ID); err != nil {
+		t.Fatalf("MarkAppDeleting: %v", err)
+	}
+	mg.scanOnce(ctx)
+	// 窗内（未超 streamEvictAfter）：不淘汰。
+	now = now.Add(time.Minute)
+	mg.scanOnce(ctx)
+	if _, ok := mg.streams[goneKey]; !ok {
+		t.Fatal("evicted before window elapsed")
+	}
+	// 超窗：游标与 ring 均回收。
+	now = now.Add(streamEvictAfter)
+	mg.scanOnce(ctx)
+	if _, ok := mg.streams[goneKey]; ok {
+		t.Fatal("cursor not evicted after app gone beyond window")
+	}
+	if _, ok := mg.hub.streams[goneKey]; ok {
+		t.Fatal("ring not evicted after app gone beyond window")
+	}
+	// 旁观活跃 app 不受影响。
+	if mg.streams[keeperKey] == nil || mg.hub.streams[keeperKey] == nil {
+		t.Fatal("bystander app state unexpectedly evicted")
+	}
+	// 淘汰后新建 app（首启语义）：采集正常。
+	if _, err := st.CreateApp(ctx, "", "freshapp"); err != nil {
+		t.Fatalf("CreateApp fresh: %v", err)
+	}
+	port.setApp("freshapp", "web")
+	port.emit("fleetly-freshapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "fresh-line"})
+	mg.scanOnce(ctx)
+	if mg.streams[streamKey("freshapp", "web")] == nil || mg.hub.streams[streamKey("freshapp", "web")] == nil {
+		t.Fatal("fresh app not collected after eviction")
+	}
+}

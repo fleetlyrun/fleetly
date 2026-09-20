@@ -44,6 +44,9 @@ func NewBuildsService(st *state.Store, queue *build.Queue) *BuildsService {
 func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerBuildRequest) (*serverv1.TriggerBuildResponse, error) {
 	// compose 内容落临时文件（受控子集校验同 Deploy：临时文件生命周期 =
 	// 本次解析，构建执行消费的是 request 里的 context 目录而非该文件）。
+	// tmpdir: owned-by build worker（终态后回收，见 janitor/构建归档）——
+	// MG-6：base_dir 空回落本目录时，context 目录需存活到异步 worker 执行，
+	// 不能随请求 RemoveAll；回收归构建终态清理轨。
 	dir, err := os.MkdirTemp("", "fleetly-compose-")
 	if err != nil {
 		return nil, fmt.Errorf("create compose temp dir: %w", err)
@@ -116,7 +119,17 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 		}
 		// A11：入队走 Queue.Enqueue（建行 + 唤醒，单一写点——同进程触发
 		// 不等 poll interval 即被认领）；无队列面（进程内夹具）回落直连
-		// 建行，行为与旧路径一致。
+		// 建行，行为与旧路径一致。M4-8：入队审计带调用方归因（caller
+		// token + actor=human，与 Deploy 的 auditEntry 模式对齐——H14
+		// 敏感写面上行为人必须可追溯，不再恒 actor=system）。
+		audit := state.AuditEntry{
+			Actor:        "human",
+			ActorTokenID: callerTokenID(ctx),
+			Action:       "build.create",
+			Target:       "app:" + app.ID,
+			Result:       "ok",
+			DiffSummary:  state.DiffSummary("build", id, "service", svc.Name, "driver", string(driver)), // B4：构造器替换手拼 JSON
+		}
 		if s.queue != nil {
 			rec, err := s.queue.Enqueue(ctx, state.BuildRecord{
 				ID:      id,
@@ -124,20 +137,20 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 				Service: svc.Name,
 				Driver:  driver,
 				Request: raw,
-			})
+			}, audit)
 			if err != nil {
 				return nil, err
 			}
 			out.Builds = append(out.Builds, buildView(rec, app.Name))
 			continue
 		}
-		rec, err := s.st.CreateBuild(ctx, state.BuildRecord{
+		rec, err := s.st.CreateBuildAs(ctx, state.BuildRecord{
 			ID:      id,
 			AppID:   app.ID,
 			Service: svc.Name,
 			Driver:  driver,
 			Request: raw,
-		})
+		}, &audit)
 		if err != nil {
 			return nil, err
 		}

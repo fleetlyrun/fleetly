@@ -112,8 +112,9 @@ func EnqueueRollback(ctx context.Context, st *state.Store, in RollbackInput) (st
 			Action: "deployment.rollback",
 			Target: "deployment:" + rec.ID,
 			Result: "ok",
-			DiffSummary: `{"app":"` + app.Name + `","target_revision":"` + rev.ID +
-				`","source_deployment":"` + source.ID + `","recovery_of":"` + origin.ID + `"}`,
+			// MG-6：构造器替换手拼 JSON。
+			DiffSummary: state.DiffSummary("app", app.Name, "target_revision", rev.ID,
+				"source_deployment", source.ID, "recovery_of", origin.ID),
 		})
 	}); err != nil {
 		return state.DeployRecord{}, err
@@ -345,12 +346,12 @@ func (e *Engine) failRollbackDeployment(ctx context.Context, rec state.DeployRec
 			Target:      "deployment:" + rec.ID,
 			Result:      "ok",
 			ErrorCode:   code,
-			DiffSummary: `{"app":"` + rec.AppName + `","kind":"` + rec.Kind + `","cause":"` + causeCode + `"}`,
+			DiffSummary: state.DiffSummary("app", rec.AppName, "kind", rec.Kind, "cause", causeCode), // MG-6：构造器替换手拼 JSON
 		}); err != nil {
 			return err
 		}
 		if err := auditDeployment(ctx, tx, "system", "deployment.rollback", rec.ID,
-			"error", code, `{"cause":"`+causeCode+`"}`); err != nil {
+			"error", code, state.DiffSummary("cause", causeCode)); err != nil { // MG-6：构造器替换手拼 JSON
 			return err
 		}
 		if err := deploymentEvent(ctx, tx, "deployment.failed", rec.ID,
@@ -377,7 +378,7 @@ func (e *Engine) failRollbackDeployment(ctx context.Context, rec state.DeployRec
 				Target:      "app:" + rec.AppName,
 				Result:      "ok",
 				ErrorCode:   code,
-				DiffSummary: `{"reason":"rollback_failed","deployment":"` + rec.ID + `"}`,
+				DiffSummary: state.DiffSummary("reason", "rollback_failed", "deployment", rec.ID), // MG-6：构造器替换手拼 JSON
 			})
 		}
 		return nil

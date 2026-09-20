@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -323,5 +324,80 @@ func TestCLIUsageExitCodes(t *testing.T) {
 	code, _, _ = runCLI(t, "plan", "--baseline", writeFixture(t, cliOther), writeFixture(t, cliValid))
 	if code != 2 {
 		t.Fatalf("changes: code=%d, 期望 2", code)
+	}
+}
+
+// TestCLINestedUnknownSubcommandExitCode H12 回归：嵌套未知子命令与顶层
+// 未知动词同为用法错误（exit 64，README 退出码契约）——框架 SubDispatch
+// 会把内层 miss 重写成 plain error（丢类型 → 顶层 exitCodeFor 判不中 →
+// exit 1），外层动词统一经 subDispatchUsage（app.go）收口保住用法类语
+// 义：64 + "unknown subcommand" 文案 + 外层动词的 usage 提示行。
+func TestCLINestedUnknownSubcommandExitCode(t *testing.T) {
+	for _, args := range [][]string{
+		{"apps", "frobnicate"},        // 单层嵌套（apps 收口）
+		{"tokens", "frobnicate"},      // 第二条外层动词（同一收口的复抽）
+		{"git", "frobnicate"},         // 外层 miss（git 的内层表无此动词）
+		{"git", "keys", "frobnicate"}, // 两层嵌套（git → keys → miss）
+	} {
+		code, _, errOut := runCLI(t, args...)
+		if code != 64 {
+			t.Fatalf("%v: code=%d, 期望 64（嵌套未知子命令 = 用法错误）\nstderr=%s", args, code, errOut)
+		}
+		if !strings.Contains(errOut, `unknown subcommand "frobnicate"`) {
+			t.Errorf("%v: stderr 缺 unknown subcommand 文案:\n%s", args, errOut)
+		}
+		if !strings.Contains(errOut, "usage:") {
+			t.Errorf("%v: stderr 缺 usage 提示行:\n%s", args, errOut)
+		}
+	}
+}
+
+// TestREADMEExamplesFlagsBeforePositional H13 回归：README 的 CLI 示例
+// 必须是 flags 前置形态——std flag 在首个位置参数处停止解析，flags 后置
+// 会被原样留在位置参数里（requireArgs 随即报参数数量违规）。逐条以
+// ParseFlags 钉死 README 改过的三条示例（logs follow / git keys add /
+// apps webhook set-source），并对照演示后置形态确属非法。
+func TestREADMEExamplesFlagsBeforePositional(t *testing.T) {
+	app := commands.New()
+	env := &commands.Environment{Stdout: io.Discard, Stderr: io.Discard}
+
+	// `fleetly logs follow --service web my-api`
+	logs := &logsFollowCmd{}
+	rest, err := app.ParseFlags(logs, env, []string{"--service", "web", "my-api"})
+	if err != nil {
+		t.Fatalf("logs follow 解析失败: %v", err)
+	}
+	if logs.service != "web" || len(rest) != 1 || rest[0] != "my-api" {
+		t.Fatalf("logs follow: service=%q rest=%v, 期望 web / [my-api]", logs.service, rest)
+	}
+
+	// `fleetly git keys add --note laptop ~/.ssh/id_ed25519.pub`
+	keys := &gitKeysAddCmd{}
+	rest, err = app.ParseFlags(keys, env, []string{"--note", "laptop", "~/.ssh/id_ed25519.pub"})
+	if err != nil {
+		t.Fatalf("git keys add 解析失败: %v", err)
+	}
+	if keys.note != "laptop" || len(rest) != 1 || rest[0] != "~/.ssh/id_ed25519.pub" {
+		t.Fatalf("git keys add: note=%q rest=%v, 期望 laptop / [~/.ssh/id_ed25519.pub]", keys.note, rest)
+	}
+
+	// `fleetly apps webhook set-source --branch main --auth-kind none my-api https://…`
+	src := &webhookSourceSetCmd{}
+	rest, err = app.ParseFlags(src, env, []string{"--branch", "main", "--auth-kind", "none",
+		"my-api", "https://github.com/acme/web.git"})
+	if err != nil {
+		t.Fatalf("apps webhook set-source 解析失败: %v", err)
+	}
+	if src.branch != "main" || src.authKind != "none" || len(rest) != 2 ||
+		rest[0] != "my-api" || rest[1] != "https://github.com/acme/web.git" {
+		t.Fatalf("set-source: branch=%q authKind=%q rest=%v, 期望 main/none/[my-api url]", src.branch, src.authKind, rest)
+	}
+
+	// 对照：flags 后置（README 修正前的形态）解析停在首个位置参数——flag
+	// 未消费、残留 3 个位置参数（requireArgs 将判参数数量违规，exit 64）。
+	after := &logsFollowCmd{}
+	rest, err = app.ParseFlags(after, env, []string{"my-api", "--service", "web"})
+	if err != nil || after.service != "" || len(rest) != 3 {
+		t.Fatalf("后置形态语义不符预期: err=%v service=%q rest=%v（期望 nil/空/3 残留）", err, after.service, rest)
 	}
 }

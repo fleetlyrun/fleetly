@@ -4,9 +4,9 @@ package errcode
 // 出处）。分布核对：release-semantics §2.7（17 E + 3 W）、stateful-placement
 // §2.8（8 E + 1 W）与 §2.9（1 E）、state-model §2.7/§2.9/§2.4/§2.2（4 E）、
 // architecture §2.4（3 码）+ §2.3（E_STATE_VERSION_CONFLICT）。
-// 计 34 个 E_ + 5 个 W_ = 39 码（文档外实现期新增两码：T2.15 的
-// E_ROUTE_PUBLISH_FAILED、MG-C3 的 E_DEPLOY_CONFIRM_REQUIRED——见各自
-// 分节注记，待 T0.5 契约冻结确认）。
+// 计 35 个 E_ + 5 个 W_ = 40 码（文档外实现期新增三码：T2.15 的
+// E_ROUTE_PUBLISH_FAILED、MG-C3 的 E_DEPLOY_CONFIRM_REQUIRED、M4-6 的
+// E_TOKEN_LAST_ADMIN——见各自分节注记，待 T0.5 契约冻结确认）。
 //
 // HTTP 默认映射：文档显式给定的照文档（E_DOMAIN_CONFLICT/E_STATE_VERSION_
 // CONFLICT/E_VOLUME_NODE_MISMATCH/E_PLACEMENT_MOVE_REQUIRES_ACK→409、
@@ -101,6 +101,8 @@ var builtins = []Code{
 	{ID: "E_PLACEMENT_NO_ELIGIBLE_NODE", HTTP: 503,
 		Summary:    "自动选点无候选（无 ready 节点满足条件）",
 		Suggestion: "检查节点 ready 状态与放置约束，恢复候选节点后重试。"},
+	// 预留：v0.1 单机无第二候选（MoveBinding 走 E_CAPABILITY_REQUIRES_
+	// MULTI_NODE 守卫拒绝）；带确认换点随 v0.2 rebind/备份恢复迁移接线。
 	{ID: "E_PLACEMENT_MOVE_REQUIRES_ACK", HTTP: 409,
 		Summary:    "放置 label 与当前绑定不一致：跨点移动必须显式确认（唯一路径=备份恢复迁移）",
 		Suggestion: "跨点移动唯一受支持路径是备份恢复迁移：通过 PUT placement 显式确认（--data-restored/--discard）。"},
@@ -115,6 +117,7 @@ var builtins = []Code{
 		Suggestion: "该操作需要多节点拓扑；v0.1 为单节点，多节点能力随 v0.2 提供。"},
 
 	// ── 备份与恢复（state-model §2.7）──
+	// 预留：恢复器未实现（横切评审确认；usage_test 的豁免清单同理由）。
 	{ID: "E_BACKUP_KEY_MISSING", HTTP: 500,
 		Summary:    "恢复校验失败：校验和/主密钥指纹不匹配，拒绝半恢复",
 		Suggestion: "提供正确的备份集与主密钥；恢复流程拒绝半恢复，不要手工拼凑状态。"},
@@ -139,6 +142,12 @@ var builtins = []Code{
 	{ID: "E_STATE_VERSION_CONFLICT", HTTP: 409,
 		Summary:    "写前直读乐观并发冲突（对象版本令牌失效）",
 		Suggestion: "对象已被并发修改：重新读取最新状态后以新版本令牌重试。"},
+
+	// ── token 管理（M4-6 实现期新增，评审整改 B5；文档外码单独列出，
+	//    待 T0.5 契约冻结确认）──
+	{ID: "E_TOKEN_LAST_ADMIN", HTTP: 409,
+		Summary:    "最后管理员守卫：吊销将使平台不存在任何未吊销 admin token，拒绝自锁",
+		Suggestion: "这是最后一枚未吊销的 admin token：请先创建新的 admin token 再吊销本枚（否则平台将无法管理，重启也不补种引导 token）。"},
 
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",

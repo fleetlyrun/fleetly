@@ -34,6 +34,9 @@ func main() {
 		// Wire 的 cleanup（释放 DI 底层资源）挂 OnPostStop：所有服务 Stop、
 		// 总线关停之后才执行，自带 CleanupTimeout 预算。不要放 OnPreStop——
 		// 它先于服务 Stop 执行，排水/关停期间在途请求还要用这些资源。
+		// MG-4（X-3，B6）：服务 Stop 顺序 = NewServices 注册顺序（入口面
+		// → 写入者 → 资源层三段不变量，见 provides.go 的 NewServices 注释）；
+		// store 连接池在此处（全部 Stop 之后）才释放。
 		app.OnPostStop(cleanup)
 		boot.Apply(app)
 		return nil

@@ -31,6 +31,7 @@ E_RUNTIME_UNAVAILABLE	503	https://docs.fleetly.dev/errors/E_RUNTIME_UNAVAILABLE	
 E_SCHEDULER_PENDING_TIMEOUT	500	https://docs.fleetly.dev/errors/E_SCHEDULER_PENDING_TIMEOUT	任务滞留 PENDING 超过发布看门狗（调度约束/资源不足/节点不可用）	检查节点资源与放置约束（绑定节点是否 ready），释放资源或调整约束后重试。
 E_STATE_VERSION_CONFLICT	409	https://docs.fleetly.dev/errors/E_STATE_VERSION_CONFLICT	写前直读乐观并发冲突（对象版本令牌失效）	对象已被并发修改：重新读取最新状态后以新版本令牌重试。
 E_TASK_START_FAILED	500	https://docs.fleetly.dev/errors/E_TASK_START_FAILED	新任务启动失败（镜像入口/资源限额/运行时错误）	查看任务日志定位启动失败原因，修复后重试。
+E_TOKEN_LAST_ADMIN	409	https://docs.fleetly.dev/errors/E_TOKEN_LAST_ADMIN	最后管理员守卫：吊销将使平台不存在任何未吊销 admin token，拒绝自锁	这是最后一枚未吊销的 admin token：请先创建新的 admin token 再吊销本枚（否则平台将无法管理，重启也不补种引导 token）。
 E_VOLUME_NODE_MISMATCH	409	https://docs.fleetly.dev/errors/E_VOLUME_NODE_MISMATCH	卷数据节点 ≠ 目标部署节点（数据安全前哨，把空卷事故变成 409）	声明数据处置后重试：--data-restored（恢复流程已重建）或 --discard（admin+confirm，旧卷转孤儿）。
 W_DEPLOY_INSTABILITY	0	https://docs.fleetly.dev/errors/W_DEPLOY_INSTABILITY	观察窗后不稳定告警（app degraded 的来源之一）	运行期出现不稳定：查看应用日志评估，平台只告警一次、建议手动回滚（不做计数升级）。
 W_DEPLOY_NO_HEALTHCHECK	0	https://docs.fleetly.dev/errors/W_DEPLOY_NO_HEALTHCHECK	服务未声明 healthcheck，health_gate=none（健康门跳过）	建议为服务补充 healthcheck；未声明时健康门跳过、发布直通。

@@ -19,8 +19,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// daemonEnsureInterval 是 buildkitd 就绪收敛的重试间隔。
-const daemonEnsureInterval = 15 * time.Second
+// daemonEnsureInterval 是 buildkitd 就绪收敛的重试间隔（v0.1 常量值；包级
+// 变量形态供测试注入缩短——与 substrate.defaultCallTimeout 同款接缝）。
+var daemonEnsureInterval = 15 * time.Second
+
+// daemonProbeInterval 是 buildkitd 就绪探测的重试间隔（M2-8；兼作单次探测
+// 的拨号预算——黑洞端点下挂满一个间隔即判失败进下一轮）。包级变量形态
+// 供测试注入缩短。
+var daemonProbeInterval = 2 * time.Second
 
 // Executor 是构建队列消费的执行契约（单测注入假执行器测并发上限）。
 type Executor interface {
@@ -30,14 +36,18 @@ type Executor interface {
 }
 
 // Builder 依赖：配置 + 状态库 + 本机镜像端口 + buildkitd 编排端口 + solve
-// 执行器。
+// 执行器 + 就绪探测。
 type Builder struct {
 	cfg    Config
 	store  *state.Store
 	images ImageSource
 	daemon DaemonManager
 	solver *solveRunner
-	log    *slog.Logger
+	// probe 是 buildkitd 就绪探测（M2-8：EnsureContainerRunning 成功 ≠
+	// gRPC 可服务，首建冷启动存在监听就绪窗口）。缺省对 buildkit_host 做
+	// Info 拨号（defaultDaemonProbe）；包内测试注入假 probe 断言重试语义。
+	probe func(ctx context.Context) error
+	log   *slog.Logger
 }
 
 // NewBuilder 构建构建执行器。daemon 可为 nil（装配测试干跑；自管容器形态
@@ -50,6 +60,7 @@ func NewBuilder(cfg Config, store *state.Store, images ImageSource, daemon Daemo
 		images: images,
 		daemon: daemon,
 		solver: newSolveRunner(cfg.BuildkitHost, images),
+		probe:  defaultDaemonProbe(cfg.BuildkitHost),
 		log:    log,
 	}
 }
@@ -77,7 +88,8 @@ func (b *Builder) DaemonSpec() (DaemonSpec, bool) {
 
 // executeBudget 是执行前 buildkitd 就绪收敛的重试预算（首建等钉版镜像
 // 拉取——冷拉取受网络主导，Spike A 实测量级分钟；6 分钟覆盖慢网）。
-const executeEnsureBudget = 6 * time.Minute
+// 包级变量形态供测试注入缩短（与 substrate.defaultCallTimeout 同款接缝）。
+var executeEnsureBudget = 6 * time.Minute
 
 // ensureDaemonReady 同步收敛平台自管 buildkitd（ManageDaemon=false 或
 // daemon 端口为空 = no-op）。带重试预算的幂等收敛：镜像拉取中/容器重启
@@ -91,6 +103,10 @@ func (b *Builder) ensureDaemonReady(ctx context.Context) error {
 	deadline := time.Now().Add(executeEnsureBudget)
 	var lastErr error
 	for {
+		// M2-4：每轮清零 lastErr——上一轮的瞬时错误（首建镜像拉取抖动等）
+		// 不得毒化本轮。不清零时 `lastErr == nil` 的门条件永不成立：后续
+		// 轮次 EnsureVolumePresent 成功也被跳过，空转整个预算后失败。
+		lastErr = nil
 		if spec.CacheVolume != "" {
 			if err := b.daemon.EnsureVolumePresent(ctx, spec.CacheVolume); err != nil {
 				lastErr = err
@@ -98,6 +114,11 @@ func (b *Builder) ensureDaemonReady(ctx context.Context) error {
 		}
 		if lastErr == nil {
 			if err := b.daemon.EnsureContainerRunning(ctx, spec); err != nil {
+				lastErr = err
+			}
+		}
+		if lastErr == nil {
+			if err := b.probeDaemonReady(ctx, deadline); err != nil {
 				lastErr = err
 			}
 		}
@@ -110,11 +131,43 @@ func (b *Builder) ensureDaemonReady(ctx context.Context) error {
 		if !time.Now().Before(deadline) {
 			return fmtErr("buildkitd not ready within %s: %w", executeEnsureBudget, lastErr)
 		}
-		b.log.Warn("buildkitd not ready, retrying", "container", spec.Name, "error", lastErr)
+		b.log.Warn("buildkitd not ready, retrying", "container", spec.Name, "error", lastErr.Error())
 		select {
 		case <-ctx.Done():
 			return lastErr
 		case <-time.After(daemonEnsureInterval):
+		}
+	}
+}
+
+// probeDaemonReady 就绪探测（M2-8）：容器 start 成功 ≠ buildkitd 可服务
+// ——gRPC 监听就绪存在窗口（首建冷启动数秒），solve 前的 Info 连接门无
+// 重试，冷窗口内的构建被误判 E_BUILD_FAILED。探测经 Builder.probe 注入
+// （缺省 = 对 buildkit_host 做 Info 拨号），每 daemonProbeInterval 一次、
+// 至剩余预算耗尽——未就绪保持等待而非失败（把可重试的就绪窗口当永久
+// 错误是 M2-8 的缺陷形态）。
+func (b *Builder) probeDaemonReady(ctx context.Context, deadline time.Time) error {
+	var lastErr error
+	for {
+		// 单次探测自带拨号预算（daemonProbeInterval）：黑洞端点（防火墙
+		// 静默丢包）下挂满一个间隔即判失败，不占住探测节奏。
+		attemptCtx, cancel := context.WithTimeout(ctx, daemonProbeInterval)
+		lastErr = b.probe(attemptCtx)
+		cancel()
+		if lastErr == nil {
+			return nil
+		}
+		if ctx.Err() != nil {
+			return lastErr
+		}
+		if !time.Now().Before(deadline) {
+			return fmtErr("buildkitd not ready within %s: %w", executeEnsureBudget, lastErr)
+		}
+		b.log.Warn("buildkitd probe not ready, waiting", "error", lastErr.Error())
+		select {
+		case <-ctx.Done():
+			return lastErr
+		case <-time.After(daemonProbeInterval):
 		}
 	}
 }
@@ -156,6 +209,14 @@ func (b *Builder) Execute(ctx context.Context, rec state.BuildRecord) (state.Bui
 	}
 	logPath := filepath.Join(artDir, "build.log")
 	planPath := filepath.Join(artDir, "railpack-plan.json")
+	// M2-5：产物目录就位即回填 log_path——builds.log_path 原先唯一写点在
+	// FinishBuildSucceeded，失败终态行恒空 → fail() 的日志尾部取证与
+	// log_path context 全部落空。回填后失败路径同样携带日志（尾部 + 路径）；
+	// 写入 best-effort（观测面，失败仅告警不中断构建），终态谓词保证不
+	// 触碰已终态行（成功终态的 log_path 仍由 FinishBuildSucceeded 权威写）。
+	if err := b.store.SetBuildLogPath(finCtx, rec.ID, logPath); err != nil {
+		b.log.Warn("record build log path", "build", rec.ID, "error", err.Error())
+	}
 
 	imageRef, err := ImageRef(req.AppName, rec.ID)
 	if err != nil {

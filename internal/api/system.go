@@ -136,7 +136,7 @@ func (s *SystemService) TriggerBackup(ctx context.Context, req *serverv1.Trigger
 	}
 	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
 		return tx.WriteAudit(ctx, auditEntry(ctx, "backup:"+rec.ID,
-			`{"kind":"`+rec.Kind+`","verify":"`+rec.VerifyStatus+`"}`))
+			state.DiffSummary("kind", rec.Kind, "verify", rec.VerifyStatus))) // MG-6：构造器替换手拼 JSON
 	}); err != nil {
 		return nil, err
 	}

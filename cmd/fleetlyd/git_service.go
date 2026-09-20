@@ -76,7 +76,9 @@ func (s *gitService) Start(ctx context.Context) error {
 // Stop 等待 Start 收口（监听关闭由 ctx 取消驱动——lynx 先 cancel 再
 // 调 Stop）。D1：同时等待 webhook worker 排空退出（在处理项的 per-item
 // 预算独立于取消，排空不打断；等待本身受 Stop ctx 时限约束，超时让位给
-// lynx 停机时限，进程退出兜底）。
+// lynx 停机时限，进程退出兜底）。X-6/MG-4：排空预算尽（webhookDrainBudget，
+// 3s < lynx StopTimeout 5s）时队列剩余项在 worker 侧落披露审计
+// （app.webhook_interrupted）后丢弃——停机丢失可对账、可手动 redeliver。
 func (s *gitService) Stop(ctx context.Context) error {
 	<-s.started
 	return s.src.StopWebhookWorker(ctx)

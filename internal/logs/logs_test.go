@@ -17,12 +17,16 @@ type fakePort struct {
 	mu       sync.Mutex
 	services map[string][]string // app -> services
 	lines    map[string][]substrate.LogLine
+	// stuck 标记的流：StreamServiceLogs 返回永不发送也永不关闭的 channel
+	//（MG-1 看门狗测试：模拟底座流挂死——同款缺陷的注入形态）。
+	stuck map[string]bool
 }
 
 func newFakePort() *fakePort {
 	return &fakePort{
 		services: map[string][]string{},
 		lines:    map[string][]substrate.LogLine{},
+		stuck:    map[string]bool{},
 	}
 }
 
@@ -47,12 +51,19 @@ func (f *fakePort) ManagedServiceProcesses(_ context.Context, app string) ([]str
 func (f *fakePort) StreamServiceLogs(_ context.Context, service string, since time.Time, _ bool) (<-chan substrate.LogLine, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.stuck[service] {
+		// 挂死流：无生产者、永不关闭——消费者只能靠看门狗脱身。
+		return make(chan substrate.LogLine), nil
+	}
 	out := make(chan substrate.LogLine)
 	go func() {
 		defer close(out)
 		for _, l := range f.lines[service] {
-			// 轮询游标语义：只投递 since 之后的行。
-			if !since.IsZero() && !l.At.After(since) {
+			// 轮询游标语义：只投递 since 之后的行。零 At（时间戳不可解析
+			// 形态）不参与过滤：真实 docker 侧按自身时间戳过滤，我侧
+			// splitTimestamp 失败只是本地视图（fake 无法建模 docker 侧
+			// 时间），按必达透传。
+			if !since.IsZero() && !l.At.IsZero() && !l.At.After(since) {
 				continue
 			}
 			out <- l

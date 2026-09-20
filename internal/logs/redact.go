@@ -55,7 +55,9 @@ type redactorRegistry struct {
 	extra SecretValuesSource
 }
 
-// redactorTTL 是脱敏值集刷新周期（env set → 脱敏生效的最迟延迟）。
+// redactorTTL 是脱敏值集刷新周期——未挂钩写路径的兜底生效延迟（H9：env
+// 写点与部署 env 提升点已即时 invalidate 联动，TTL 只兜未挂钩的间接变更
+// 路径，如 app 删除连带 env 清理等；最迟一个 TTL 收敛）。
 const redactorTTL = 30 * time.Second
 
 // secretBox 是脱敏所需的解密端口（实现 = secrets.Box；测试可注入）。
@@ -91,6 +93,16 @@ func (r *redactorRegistry) forApp(ctx context.Context, appID string) *redactor {
 	r.m[appID] = ent
 	r.mu.Unlock()
 	return ent.r
+}
+
+// invalidate 删除该 app 的缓存项（H9）：env 写路径与部署 env 提升点即时
+// 联动——30s TTL 窗内旧值集仍生效会让新 secret 值被明文采集并按天落盘
+// 保留 7 天，写点失效把暴露窗收敛到下一次 forApp 重建。未挂钩的写路径
+// 仍由 TTL 兜底。
+func (r *redactorRegistry) invalidate(appID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.m, appID)
 }
 
 // build 解出该 app 全部已知 secret 明文构建 redactor；box 缺失（无 env 面）

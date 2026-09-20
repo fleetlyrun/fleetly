@@ -38,11 +38,12 @@ func (c *Client) InspectImage(ctx context.Context, ref string) (build.ImageInfo,
 
 // LoadImage 实现 build.ImageSource 端口：把 docker-format tar 流装入本机
 // daemon（构建产物落本机；响应流必须排空——流未读完装载未完成）。
-// D2 预算边界：装载调用 + 响应排空同属一次操作，整包 per-call 预算
-// （v0.1 常量可调；超大产物场景随配置面引入再放宽）。
+// D2 预算口径（H6 修正）：装载是流式操作（响应体即操作本体），与镜像
+// 拉取同属 per-call 预算的排除面——装载 goroutine 在 Solve 之前启动，
+// docker 导出器在 solve 末尾才产流，自带的 30s per-call 预算全程消耗在
+// 等 solve 上，>30s 的冷构建全部在完成构建工作后才失败。装载时长由
+// 调用方 ctx 管理（构建路径 = per-build timeout_seconds，缺省 30min）。
 func (c *Client) LoadImage(ctx context.Context, dockerTar io.Reader) error {
-	ctx, cancel := withCallTimeout(ctx) // D2：装载调用 + 排空整包预算
-	defer cancel()
 	res, err := c.cli.ImageLoad(ctx, dockerTar, mobyclient.ImageLoadWithQuiet(false))
 	if err != nil {
 		return fmt.Errorf("substrate: image load: %w", err)

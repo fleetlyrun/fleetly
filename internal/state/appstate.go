@@ -78,6 +78,32 @@ func (s *Store) ListActiveApps(ctx context.Context) ([]App, error) {
 	return out, nil
 }
 
+// ListAppsByLifecycle 返回指定生命周期状态位的全部应用（created_at 升序；
+// H10/MG-3：引擎 deleting 回收 duty 的候选集查询——tombstone 第二拍的
+// 执行者据此发现待收敛应用）。lifecycle 必须是 AppLifecycle 词表值，
+// 调用方（引擎 duty）直接传常量，本函数不做词表校验（空集 = 无待收敛）。
+func (s *Store) ListAppsByLifecycle(ctx context.Context, lifecycle AppLifecycle) ([]App, error) {
+	const q = `SELECT id, name, lifecycle, created_at, updated_at, deleting_at, deleted_at
+		FROM apps WHERE lifecycle = ? ORDER BY created_at ASC, id ASC`
+	rows, err := s.db.QueryContext(ctx, q, string(lifecycle))
+	if err != nil {
+		return nil, fmt.Errorf("state: list apps by lifecycle: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []App
+	for rows.Next() {
+		a, err := scanApp(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, a)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate apps: %w", err)
+	}
+	return out, nil
+}
+
 // SetAppDerivedStateIfCAS 派生状态翻转（CAS）：当前值 ≠ expected 时返回
 // ErrAppDerivedStateConflict（并发翻转已发生，调用方重读重算、不重发事件）。
 // 与事件写入同事务组合由调用方完成（传入同一 tx）。

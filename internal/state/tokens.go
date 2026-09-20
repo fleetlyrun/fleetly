@@ -51,6 +51,11 @@ var (
 	ErrTokenRevoked = errors.New("token revoked")
 	// ErrTokenInvalid 表示凭据不匹配（哈希查无此行或常量时间比对失败）。
 	ErrTokenInvalid = errors.New("token invalid")
+	// ErrTokenLastAdmin 表示最后管理员守卫拒绝（M4-6）：本次吊销会使
+	// 平台不存在任何未吊销 admin token——依次吊销全部 admin 后平台锁死
+	// （重启不补种 bootstrap：HasAnyToken 已见 token 行，一次性语义），
+	// 在吊销事务内拒绝。调用方映射为 409 业务冲突信封。
+	ErrTokenLastAdmin = errors.New("last admin token")
 )
 
 // HashToken 计算明文 token 的存储哈希（sha256 hex，64 字符）——落库与认证
@@ -112,7 +117,7 @@ func (s *Store) CreateToken(ctx context.Context, w TokenWrite) (Token, error) {
 			Action:       "token.create",
 			Target:       "token:" + id,
 			Result:       "ok",
-			DiffSummary:  `{"scopes":"` + w.Scopes + `"}`,
+			DiffSummary:  DiffSummary("scopes", w.Scopes), // MG-6：构造器替换手拼 JSON
 		}); err != nil {
 			return err
 		}
@@ -222,6 +227,75 @@ func (s *Store) RevokeToken(ctx context.Context, id, actorTokenID string) error 
 				return fmt.Errorf("state: probe token: %w", err)
 			}
 			return nil // 已吊销：幂等成功
+		}
+		return tx.WriteAudit(ctx, AuditEntry{
+			Actor:        "human",
+			ActorTokenID: actorTokenID,
+			Action:       "token.revoke",
+			Target:       "token:" + id,
+			Result:       "ok",
+		})
+	})
+}
+
+// RevokeTokenGuardLastAdmin 是带最后管理员守卫的吊销（M4-6）：吊销生效后
+// 仍须存在 ≥1 枚未吊销 admin token，否则整笔回滚返回 ErrTokenLastAdmin
+// （幂等面与 RevokeToken 一致：目标已吊销 = 幂等成功，不触发守卫——没有
+// 新的吊销发生；不存在仍 ErrTokenNotFound）。守卫判定与吊销在同一事务内
+// （先 UPDATE 再复查剩余在册行，不满足即返回错误回滚），消除「检查与吊销
+// 分离」的竞态窗。isAdmin 由调用方注入（scope 蕴含判定 admin ⊃ deploy ⊃
+// read 属 api 层语义，本层不解释 scopes 词表——本层只提供原子性）。
+func (s *Store) RevokeTokenGuardLastAdmin(ctx context.Context, id, actorTokenID string, isAdmin func(scopes string) bool) error {
+	return s.InTx(ctx, func(tx *Tx) error {
+		now := nowNano()
+		res, err := tx.ExecContext(ctx,
+			`UPDATE tokens SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL`, now, id)
+		if err != nil {
+			return fmt.Errorf("state: revoke token: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("state: read revoke count: %w", err)
+		}
+		if n == 0 {
+			// 区分「已吊销（幂等成功）」与「不存在」（与 RevokeToken 同形）。
+			var one int
+			err := tx.QueryRowContext(ctx, `SELECT 1 FROM tokens WHERE id = ?`, id).Scan(&one)
+			if err != nil {
+				if errors.Is(err, sql.ErrNoRows) {
+					return ErrTokenNotFound
+				}
+				return fmt.Errorf("state: probe token: %w", err)
+			}
+			return nil // 已吊销：幂等成功（无新吊销，守卫不适用）
+		}
+		// 守卫复查：吊销已生效（同事务可见），清点剩余在册行中是否仍有
+		// admin scope。查询失败同样回滚（fail-closed：无法证明安全即拒绝
+		// 吊销，而不是放行后可能锁死平台）。rows 在审计写之前显式关闭
+		//（Tx 单连接：开放游标上的后续 Exec 会与游标交错）。
+		rows, err := tx.QueryContext(ctx, `SELECT scopes FROM tokens WHERE revoked_at IS NULL`)
+		if err != nil {
+			return fmt.Errorf("state: scan remaining tokens for last-admin guard: %w", err)
+		}
+		hasAdmin := false
+		for rows.Next() {
+			var scopes string
+			if err := rows.Scan(&scopes); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("state: scan remaining token scopes: %w", err)
+			}
+			if isAdmin(scopes) {
+				hasAdmin = true
+				break
+			}
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return fmt.Errorf("state: iterate remaining tokens: %w", err)
+		}
+		_ = rows.Close()
+		if !hasAdmin {
+			return ErrTokenLastAdmin // 事务回滚：吊销不生效
 		}
 		return tx.WriteAudit(ctx, AuditEntry{
 			Actor:        "human",

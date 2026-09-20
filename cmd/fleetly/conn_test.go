@@ -116,6 +116,43 @@ func TestWaitVerbCancelCleanExit(t *testing.T) {
 	}
 }
 
+// TestTokenFlagHelpNoEnvEcho H1 回归：--token 的 flag 默认值必须为空串
+// ——std flag 的 -h/help 会把非空默认值（PrintDefaults 的 "(default …)"）
+// 明文打进 stdout，帮助输出常被贴进工单/CI 日志/AI 会话。设 FLEETLY_
+// TOKEN 后打印动词帮助（动词级 -h 与顶层 help <verb> 两个帮助面），断言
+// 输出不含 token 本体——env 回落挪到消费点 dial()（golden 测试的 env
+// 链路覆盖行为等价）。同时钉住帮助文案口径：指路 env 与 bootstrap-token
+// 文件（B5 后 token 不进日志，旧"首启日志"指引自 B1 起废除）。
+func TestTokenFlagHelpNoEnvEcho(t *testing.T) {
+	const secret = "flt_h1_no_env_echo_regression"
+	t.Setenv("FLEETLY_TOKEN", secret)
+	// 帮助面 ①：动词级 -h（apps list 带 conn flags）。
+	code, out, _ := runCLI(t, "apps", "list", "-h")
+	if code != 0 {
+		t.Fatalf("apps list -h: code=%d, 期望 0（-h 是帮助退出）", code)
+	}
+	if strings.Contains(out, secret) {
+		t.Fatalf("动词级 -h 回显了 FLEETLY_TOKEN 本体:\n%s", out)
+	}
+	// 帮助面 ②：顶层 help <verb>（deploy 带 conn flags）。
+	code, out, _ = runCLI(t, "help", "deploy")
+	if code != 0 {
+		t.Fatalf("help deploy: code=%d, 期望 0", code)
+	}
+	if strings.Contains(out, secret) {
+		t.Fatalf("help <verb> 回显了 FLEETLY_TOKEN 本体:\n%s", out)
+	}
+	// 文案口径：指路 env 与 bootstrap-token 文件，不出现已废除的日志通道。
+	for _, want := range []string{"FLEETLY_TOKEN", "bootstrap-token"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("token 帮助文案缺 %q 指引:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "first-start log") || strings.Contains(out, "首启日志") {
+		t.Errorf("token 帮助文案仍指向已废除的日志通道:\n%s", out)
+	}
+}
+
 // TestRenderUnavailableHint Unavailable（fleetlyd 未起/addr 错）的引导
 // 渲染：与 401 hint 同风格的可行动提示（地址/环境变量/守护进程状态）。
 func TestRenderUnavailableHint(t *testing.T) {

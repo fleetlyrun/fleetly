@@ -17,6 +17,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/compose"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -48,6 +49,18 @@ type RoutePublisher interface {
 // WithRoutePublisher 注入发布器（链式；nil 显式表示不发布）。
 func (e *Engine) WithRoutePublisher(p RoutePublisher) *Engine { e.routes = p; return e }
 
+// routePublishBudget 是单次路由发布的 tick 预算（H11 评审项：网络面慢不
+// 再冻结全平台）：发布器内含 ingress 的证书签发（ACME 网络往返，CA 慢时
+// 以分钟计），同步跑在引擎 tick goroutine 上——无预算时一次慢签发会拖停
+// 全部部署推进并触发他人看门狗误判。预算内未完成按既有 route.publish_failed
+// 语义告警（E_ROUTE_PUBLISH_FAILED 事件路径不变，部署不受影响）；恢复上界
+// 由 ingress sweep 承担（renewDue 续期扫描周期 12h + 下次部署的幂等重发布，
+// 两者都走同一 PublishRoutes 收敛路径）。
+//
+// v0.2 注记：完整异步化（发布挪出 tick goroutine，独立重试队列）留待
+// v0.2；本预算是对协作型发布器（尊重 ctx 取消）的硬上界。
+const routePublishBudget = 30 * time.Second
+
 // publishRoutes 是发布挂点（enterObserving 首健康后与 succeedDeployment
 // 终态各调用一次——首次满足「晚于健康门」，二次承担重试与移除同步）。
 // 发布失败不改变部署状态机的任何字段。
@@ -56,7 +69,16 @@ func (e *Engine) publishRoutes(ctx context.Context, rec state.DeployRecord) {
 		return
 	}
 	in := e.routePublishInput(ctx, rec)
-	if err := e.routes.PublishRoutes(ctx, in); err != nil {
+	// H11：发布调用包 tick 预算（routePublishBudget；单测经 routeBudget
+	// 字段注入短预算）——预算耗尽返回的 ctx.Err 以发布失败语义处置。
+	budget := e.routeBudget
+	if budget <= 0 {
+		budget = routePublishBudget
+	}
+	pctx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	err := e.routes.PublishRoutes(pctx, in)
+	if err != nil {
 		e.log.Warn("engine: route publish failed (deployment unaffected; "+
 			"route.publish_failed alerted)", "deployment", rec.ID, "app", rec.AppName, "error", err)
 		if err := e.store.InTx(ctx, func(tx *state.Tx) error {
@@ -66,7 +88,7 @@ func (e *Engine) publishRoutes(ctx context.Context, rec state.DeployRecord) {
 			}
 			return auditDeployment(ctx, tx, "system", "route.publish", rec.ID,
 				"error", "E_ROUTE_PUBLISH_FAILED",
-				`{"app":"`+rec.AppName+`","error":"`+errMessageForEvent(err)+`"}`)
+				state.DiffSummary("app", rec.AppName, "error", errMessageForEvent(err))) // MG-6：构造器替换手拼 JSON
 		}); err != nil {
 			e.log.Warn("engine: record route publish failure", "deployment", rec.ID, "error", err)
 		}
@@ -78,7 +100,7 @@ func (e *Engine) publishRoutes(ctx context.Context, rec state.DeployRecord) {
 			return err
 		}
 		return auditDeployment(ctx, tx, "system", "route.publish", rec.ID,
-			"ok", "", `{"app":"`+rec.AppName+`","services":"`+fmt.Sprint(len(in.Services))+`"}`)
+			"ok", "", state.DiffSummary("app", rec.AppName, "services", len(in.Services))) // MG-6：构造器替换手拼 JSON（计数保持原生数值）
 	}); err != nil {
 		e.log.Warn("engine: record route published", "deployment", rec.ID, "error", err)
 	}

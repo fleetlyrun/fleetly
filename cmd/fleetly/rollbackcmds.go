@@ -113,7 +113,7 @@ func (c *revisionsCmd) Run(ctx context.Context, env *commands.Environment, args 
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // revisionsListCmd 实现 `fleetly revisions list <app>`。
@@ -214,7 +214,7 @@ func (c *driftCmd) Run(ctx context.Context, env *commands.Environment, args []st
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (show|converge|enable|disable)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // driftShowCmd 实现 `fleetly drift show <app>`。

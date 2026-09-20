@@ -33,8 +33,23 @@ import { formatTime } from "@/lib/utils";
 const LIVE_CAP = 2000;
 const ALL_SERVICES = "__all__";
 
-function entryKey(e: LogEntryView): string {
-  return `${e.at ?? ""}|${e.service}|${e.source}|${e.line}`;
+// 微批 flush 周期（M9-3）：实时行先入缓冲，~100ms 合并一次 appendEntries
+//（一次 setState + 一次渲染），高频流不再逐行 setState。
+const FLUSH_INTERVAL_MS = 100;
+
+// 帧内序号（M9-4）：本地单调计数器在入存储时给每行盖章——同一时间戳 +
+// 同内容的合法重复行不再被去重键吞掉（渲染 key 与去重键随之唯一）。
+let entrySeq = 0;
+type StampedLogEntry = LogEntryView & { __seq?: number };
+
+function stampSeq(e: LogEntryView): StampedLogEntry {
+  const stamped = e as StampedLogEntry;
+  if (stamped.__seq === undefined) stamped.__seq = ++entrySeq;
+  return stamped;
+}
+
+function entryKey(e: StampedLogEntry): string {
+  return `${e.at ?? ""}|${e.service}|${e.source}|${e.line}|${e.__seq ?? ""}`;
 }
 
 /** 服务名清单：从最近 active revision 的 canonical JSON compose 提取。 */
@@ -82,23 +97,80 @@ export function AppLogsPage() {
   // 重连续读的续读点：最新一条已累积日志（appendEntries 内更新，见下）。
   const lastSeenRef = useRef<LogEntryView | null>(null);
 
+  // 去重键的会话级存储（M9-3）：键集合 + 与 entries 窗口同序的键环。键随
+  // 窗口滑动同步淘汰——语义与"每次从窗口重建"等价但 O(1) 摊销（修复前：
+  // 每次 appendEntries 重建 2000 键的 Set，高频流下每行 O(cap)）。
+  const seenKeysRef = useRef<Set<string>>(new Set());
+  const keyRingRef = useRef<string[]>([]);
+
+  /** 全量替换 entries（换源/检索）时同步重建去重窗口。 */
+  const resetSeenKeys = useCallback((windowed: StampedLogEntry[]) => {
+    const seen = new Set<string>();
+    const ring: string[] = [];
+    for (const e of windowed) {
+      const k = entryKey(e);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      ring.push(k);
+    }
+    seenKeysRef.current = seen;
+    keyRingRef.current = ring;
+  }, []);
+
   // 只负责合并去重：source 过滤是视图语义，归 visible（存储层不丢弃，
   // 否则实时流闭包里的旧 source 会永久吞掉新 source 的行，见 M8-3）。
+  // 去重/盖章在 setState updater 外做（StrictMode 下 updater 可能双调，
+  // ref 变异不得放进 updater）。
   const appendEntries = useCallback((incoming: LogEntryView[]) => {
     if (incoming.length === 0) return;
-    setEntries((prev) => {
-      const seen = new Set(prev.slice(-LIVE_CAP).map(entryKey));
-      const merged = [...prev];
-      for (const e of incoming) {
-        const k = entryKey(e);
-        if (seen.has(k)) continue;
-        seen.add(k);
-        lastSeenRef.current = e;
-        merged.push(e);
-      }
-      return merged.slice(-LIVE_CAP);
-    });
+    const seen = seenKeysRef.current;
+    const ring = keyRingRef.current;
+    const fresh: StampedLogEntry[] = [];
+    for (const e of incoming) {
+      const stamped = stampSeq(e);
+      const k = entryKey(stamped);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      ring.push(k);
+      fresh.push(stamped);
+    }
+    if (fresh.length === 0) return;
+    lastSeenRef.current = fresh[fresh.length - 1];
+    // 键环随 entries 窗口同步淘汰最老的键（Set 与窗口严格一致）。
+    const overflow = ring.length - LIVE_CAP;
+    if (overflow > 0) {
+      for (const k of ring.splice(0, overflow)) seen.delete(k);
+    }
+    setEntries((prev) => [...prev, ...fresh].slice(-LIVE_CAP));
   }, []);
+
+  // 微批缓冲（M9-3）：缓冲与计时器是组件级 ref（跨流重连存活）。换源
+  // （name/service）路径同步丢弃，卸载/重开流时先 flush。
+  const pendingRef = useRef<LogEntryView[]>([]);
+  const flushTimerRef = useRef<number | null>(null);
+
+  const flushPending = useCallback(() => {
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+    const batch = pendingRef.current;
+    pendingRef.current = [];
+    appendEntries(batch);
+  }, [appendEntries]);
+
+  const bufferEntry = useCallback(
+    (e: LogEntryView) => {
+      pendingRef.current.push(e);
+      if (flushTimerRef.current === null) {
+        flushTimerRef.current = window.setTimeout(() => {
+          flushTimerRef.current = null;
+          flushPending();
+        }, FLUSH_INTERVAL_MS);
+      }
+    },
+    [flushPending],
+  );
 
   // 跨应用导航重置（H5）：路由 /apps/:name/logs 在参数变化时复用同一组件
   // 实例，name 变化若不清空本地流状态，上一个应用的日志会混入当前应用
@@ -111,7 +183,18 @@ export function AppLogsPage() {
     setEntries([]);
     lastSeenRef.current = null;
     setStreamError("");
-  }, [name]);
+    // 换应用：去重键窗口与未 flush 的缓冲一并丢弃（旧应用的行不得混入）。
+    resetSeenKeys([]);
+    pendingRef.current = [];
+    if (flushTimerRef.current !== null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = null;
+    }
+  }, [name, resetSeenKeys]);
+
+  // 卸载时落盘缓冲（M9-3）：流重开/换源的 flush 在流 effect 清理里，这里
+  // 兜住 paused 状态下卸载的形态。
+  useEffect(() => () => flushPending(), [flushPending]);
 
   // 实时跟随：跟随流断开后回放历史补缺口，再重开跟随。重连延迟走共享
   // 指数退避（D4-③：1.5s 起 ×2、上限 30s、±20% 抖动；服务端连续立即正常
@@ -127,7 +210,7 @@ export function AppLogsPage() {
       followLogs(name, service === ALL_SERVICES ? undefined : service, {
         onEntry: (entry) => {
           setStreamError("");
-          appendEntries([entry]);
+          bufferEntry(entry);
         },
         onEnd: (err) => {
           if (disposed) return;
@@ -170,12 +253,9 @@ export function AppLogsPage() {
             conn = c;
             backoff.markOpen();
           }
-        })
-        .catch(() => {
-          if (!disposed) {
-            timer = window.setTimeout(open, backoff.nextDelayMs(false));
-          }
         });
+      // openNdjsonStream 恒 resolve（连接级错误一律经 onEnd 回调上抛），
+      // 重连的唯一路径是上面的 onEnd 分支——无需 .catch 兜底（M9-13）。
     };
     open();
 
@@ -183,9 +263,12 @@ export function AppLogsPage() {
       disposed = true;
       if (timer !== undefined) window.clearTimeout(timer);
       conn?.close();
+      // 卸载/重开流前先落盘缓冲中的行（换 name 时随后的重置 effect 会
+      // 清空；真卸载时 React 丢弃 setEntries，无副作用）。
+      flushPending();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [live, name, service]);
+  }, [live, name, service, bufferEntry, flushPending]);
 
   // 初始历史回填（最近 200 条），给跟随流一个上下文头部。
   useEffect(() => {
@@ -230,12 +313,15 @@ export function AppLogsPage() {
       source: source === "all" ? "" : source,
     })
       .then((r) => {
-        setEntries(r.entries ?? []);
+        // 检索结果是全量替换（非合并）：entries 与去重键窗口同步重建。
+        const windowed = (r.entries ?? []).slice(-LIVE_CAP).map(stampSeq);
+        resetSeenKeys(windowed);
+        setEntries(windowed);
       })
       .catch((err) =>
         setStreamError(err instanceof Error ? err.message : String(err)),
       );
-  }, [name, service, since, until, source]);
+  }, [name, service, since, until, source, resetSeenKeys]);
 
   return (
     <div className="space-y-4">
@@ -254,6 +340,10 @@ export function AppLogsPage() {
                 onValueChange={(v) => {
                   setService(v);
                   setEntries([]);
+                  // 换服务：去重键窗口与未 flush 的缓冲同步丢弃
+                  //（旧服务的行不得混入新服务视图）。
+                  resetSeenKeys([]);
+                  pendingRef.current = [];
                 }}
               >
                 <SelectTrigger id="log-service">

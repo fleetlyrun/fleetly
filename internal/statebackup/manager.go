@@ -37,6 +37,13 @@ type Manager struct {
 	// VACUUM INTO 浪费 IO 且台账顺序难读；排队执行）。
 	mu sync.Mutex
 
+	// inflight 计数在途的 post-deploy 备份挂钩（X-7/MG-3，B6）：engine
+	// 成功路径以 `go postDeploy(rec)` 逸出主链，此前 Stop 只等 daily 循环
+	// ——关停时在途 VACUUM 与 Store.Close（OnPostStop 释放连接池）竞态。
+	// RunPostDeploy 进入时 Add、完成 Done；Stop 在循环退出后等待在途
+	//（带预算，见 postDeployStopBudget）。
+	inflight sync.WaitGroup
+
 	stopOnce sync.Once
 	stop     chan struct{}
 	done     chan struct{}
@@ -116,8 +123,11 @@ func (m *Manager) RunPreUpgrade(ctx context.Context) (state.StateBackup, error) 
 
 // RunPostDeploy 是引擎成功路径的挂钩形态（engine.PostDeployHook 签名）：
 // 异步执行（部署主链不等备份），带独立预算；失败只落台账/审计 + 日志，
-// 永不 panic 打穿引擎 tick。
+// 永不 panic 打穿引擎 tick。X-7/MG-3：进入/退出经 inflight 计数——Stop
+// 据此等待在途快照收口（与 Store.Close 的竞态消除）。
 func (m *Manager) RunPostDeploy(rec state.DeployRecord) {
+	m.inflight.Add(1)
+	defer m.inflight.Done()
 	ctx, cancel := context.WithTimeout(context.Background(), m.cfg.TriggerTimeout)
 	defer cancel()
 	if _, err := m.Trigger(ctx, state.BackupKindPostDeploy); err != nil {
@@ -245,6 +255,12 @@ const backupDBName = "fleetly.db"
 // 诊断，但不占 kind 配额、也非无限保留——超出保留最近 N 条，更旧的删行。
 const failedLedgerKeep = 10
 
+// orphanGracePeriod 是孤儿备份目录回收的宽容期（X-7/MG-3）：runOnce 的
+// 顺序是「先建目录 → VACUUM → 校验 → 落台账」——台账行落定前的目录没有
+// 行可对账，只有 mtime 年龄可判；24h 宽容期保证任何在途备份（单次预算
+// ≤5min）绝不误伤。
+const orphanGracePeriod = 24 * time.Hour
+
 // prune 保留期清理（一轮整改⑥ per-kind 配额 + 二轮 R3 failed 分账）：
 //   - verified 行：每种 kind 各自保留最近 keep 份（keep 语义与配置键不变）
 //     ——跨 kind 全局配额会让部署频繁的一天把 daily/pre_upgrade 全部挤出，
@@ -294,6 +310,59 @@ func (m *Manager) prune(ctx context.Context) {
 		}
 		m.log.Info("backup: retention pruned", "id", victim.ID, "kind", victim.Kind)
 	}
+	// 孤儿目录扫描（X-7/MG-3）：台账外的半成品目录兜底对账。
+	m.pruneOrphanDirs(ctx, rows)
+}
+
+// pruneOrphanDirs 孤儿备份目录回收（X-7/MG-3，B6：资源台账兜底对账——
+// 台账外资源不再静默累积）：备份根下无台账行对应的 ULID 目录（「建目录 →
+// 落台账」之间行建失败/进程崩溃的半成品——prune 只按台账行清目录，这类
+// 目录此前永不回收），mtime 超过宽容期（避开在途写入）→ 删除目录 + 审计
+// backup.pruned_orphan（action 对齐 backup.pruned 风格——删必留痕）。
+// 非 ULID 词形的目录不动（运维自置内容不猜）。
+func (m *Manager) pruneOrphanDirs(ctx context.Context, rows []state.StateBackup) {
+	ledger := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		ledger[r.ID] = true
+	}
+	entries, err := os.ReadDir(m.cfg.Dir)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			m.log.Warn("backup: orphan dir scan failed", "error", err)
+		}
+		return
+	}
+	cutoff := time.Now().Add(-orphanGracePeriod)
+	for _, e := range entries {
+		name := e.Name()
+		if !e.IsDir() || ledger[name] {
+			continue
+		}
+		if _, perr := ulid.Parse(name); perr != nil {
+			continue // 非 ULID 词形：备份根下的运维自置内容，不猜不动
+		}
+		info, ierr := e.Info()
+		if ierr != nil || info.ModTime().After(cutoff) {
+			continue // 宽容期内：可能是在途备份的半成品
+		}
+		if rerr := os.RemoveAll(filepath.Join(m.cfg.Dir, name)); rerr != nil {
+			m.log.Warn("backup: orphan dir remove failed", "dir", name, "error", rerr)
+			continue
+		}
+		if aerr := m.store.InTx(ctx, func(tx *state.Tx) error {
+			return tx.WriteAudit(ctx, state.AuditEntry{
+				Actor:  "system",
+				Action: "backup.pruned_orphan",
+				Target: "backup:" + name,
+				Result: "ok",
+				DiffSummary: state.DiffSummary("id", name,
+					"reason", "orphan dir without ledger row"),
+			})
+		}); aerr != nil {
+			m.log.Warn("backup: orphan prune audit write failed", "dir", name, "error", aerr)
+		}
+		m.log.Info("backup: orphan dir pruned (no ledger row)", "dir", name)
+	}
 }
 
 // ── 每日守护循环（Janitor 同款形态）────────────────────────────────────────
@@ -306,10 +375,37 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop 停止每日循环并等待退出（在途备份由 Trigger 自身预算收敛）。
-func (m *Manager) Stop(_ context.Context) error {
+// postDeployStopBudget 是 Stop 等待在途 post-deploy 备份的预算上界
+// （X-7/MG-3）：60s 覆盖 v0.1 规模库的 VACUUM + 校验（亚秒级）且留足
+// Stop 场景的现实耐心；调用方 ctx 剩余预算更小时取小。
+const postDeployStopBudget = 60 * time.Second
+
+// Stop 停止每日循环并等待退出。X-7/MG-3（B6）：循环退出后**等待在途的
+// post-deploy 备份**（引擎成功路径逸出的异步 goroutine——此前无人等它，
+// 关停时在途 VACUUM 与 Store.Close 竞态）；预算取 min(调用方 ctx 剩余
+// 预算, postDeployStopBudget)，预算尽让位返回（在途 goroutine 随进程
+// 退出兜底，台账会缺一行——诚实失败，非静默绿色）。
+func (m *Manager) Stop(ctx context.Context) error {
 	m.stopOnce.Do(func() { close(m.stop) })
 	<-m.done
+	waited := make(chan struct{})
+	go func() {
+		m.inflight.Wait()
+		close(waited)
+	}()
+	budget := postDeployStopBudget
+	if dl, ok := ctx.Deadline(); ok {
+		if remain := time.Until(dl); remain < budget {
+			budget = remain
+		}
+	}
+	select {
+	case <-waited:
+	case <-time.After(budget):
+		m.log.Warn("backup: stop timed out waiting for in-flight post-deploy backup (abandoned; process exit bounds it)")
+	case <-ctx.Done():
+		m.log.Warn("backup: stop ctx cancelled while waiting for in-flight post-deploy backup (abandoned; process exit bounds it)")
+	}
 	return nil
 }
 

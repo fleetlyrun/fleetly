@@ -161,8 +161,10 @@ func TestResolveVolumesAutoBindSelf(t *testing.T) {
 	if vols[0].Name != wantName || vols[0].PlatformNodeID != h.platformID {
 		t.Fatalf("volume = %+v, want name %s node %s", vols[0], wantName, h.platformID)
 	}
-	// 事件：volume.created；审计：placement.bound。
+	// 事件：volume.created + placement.bound（M1-12 补发——绑定与事件/审计
+	// 同事务，stateful-placement §2.8）；审计：placement.bound。
 	assertEvent(t, h.store, "volume.created")
+	assertEvent(t, h.store, "placement.bound")
 	assertAudit(t, h.store, "placement.bound")
 
 	// 幂等：重复 Apply 不重写绑定（KeptExisting）。

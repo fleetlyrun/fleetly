@@ -26,9 +26,11 @@ var ErrBranchNotTracked = errors.New("分支未配置跟踪")
 // 后入队部署，deployments.source_git_* 记录来源。
 //
 // 幂等口径（绑定）：git push 是显式用户动作——每次调用都建部署记录（引擎
-// 对同 spec 重放安全，Spike B2）；(app, sha) 去重仅属 webhook 入口（在其
-// 上游承载）。分支过滤（push 到配置分支才触发部署）在 daemon 侧权威承载
-// ——见 checkBranchTracked。事件流复用既有 deployment.queued；审计 action
+// 对同 spec 重放安全，Spike B2）；(app, sha) 去重仅属 webhook 入口，受理侧
+// 预查在 ServeHTTP、竞态兜底在本函数入队事务内（M3-4：DedupeSHA 置位时
+// COUNT 与 INSERT 同事务，命中返回 state.ErrDuplicateGitDeployment）。分支
+// 过滤（push 到配置分支才触发部署）在 daemon 侧权威承载——见
+// checkBranchTracked。事件流复用既有 deployment.queued；审计 action
 // 由入参区分（git.push_deploy / git.webhook_deploy），actor 恒 system
 // （机器动作）。
 type DeployInput struct {
@@ -45,6 +47,12 @@ type DeployInput struct {
 	// ActorTokenID 是入队调用方 token（钩子 token id；webhook 进程内路径
 	// 为空）。
 	ActorTokenID string
+	// DedupeSHA 置位时入队事务内做 (app, sha) 幂等复查（M3-4）：该 sha
+	// 已有 enqueued/active/succeeded 部署 → 整笔回滚返回
+	// state.ErrDuplicateGitDeployment。仅 webhook 入口置位（受理侧的
+	// check-then-insert 竞态在此闭合）；SSH push 路径恒不置位——git push
+	// 是显式用户动作，每次调用都建部署（幂等口径绑定，见上）。
+	DedupeSHA bool
 }
 
 // DeployFromCommit 执行读源 → 校验 → 入队；返回 queued 部署记录与校验
@@ -78,6 +86,9 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 	if err != nil {
 		return state.DeployRecord{}, nil, fmt.Errorf("gitserver: create compose temp dir: %w", err)
 	}
+	// MG-6：解析中转目录随请求回收——持久化副本已另落 <数据根>/deployments/
+	// <id>/compose.yaml，本目录不存活到函数外，不留孤儿 tmp。
+	defer os.RemoveAll(dir)
 	path := filepath.Join(dir, "compose.yaml")
 	if err := os.WriteFile(path, composeBytes, 0o600); err != nil { //nolint:gosec // G306：compose 内容非密钥，0600 保守
 		return state.DeployRecord{}, nil, fmt.Errorf("gitserver: write compose temp file: %w", err)
@@ -117,6 +128,20 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 	}
 	var rec state.DeployRecord
 	err = s.st.InTx(ctx, func(tx *state.Tx) error {
+		// M3-4：webhook 入口的 (app, sha) 幂等复查并入本事务（受理侧
+		// ServeHTTP 的预查是快路径，此处闭合 check-then-insert 竞态——
+		// 并发重投两路都过了预查时，写锁串行化下后到事务在此判重）。
+		// 各写事务 BEGIN IMMEDIATE 起手（见 state dsn），COUNT 与 INSERT
+		// 同事务即原子。SSH push 路径不置位，行为不变。
+		if in.DedupeSHA {
+			n, err := tx.CountGitDeploymentsForSHA(ctx, app.ID, in.SHA)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				return state.ErrDuplicateGitDeployment
+			}
+		}
 		r, err := tx.CreateDeployment(ctx, state.DeployRecord{
 			ID:           deployID,
 			AppID:        app.ID,

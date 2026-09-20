@@ -3,6 +3,7 @@ package gitserver
 import (
 	"context"
 	"errors"
+	"os"
 	"strings"
 	"testing"
 
@@ -23,6 +24,10 @@ func TestDeployFromGitPush(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitRun(t, sourceDir, "push", "--quiet", src.repoPath("my-api"), "main")
+
+	// MG-6 回归前置采样：解析中转临时目录（os.MkdirTemp("fleetly-compose-")）
+	// 必须随请求回收——结束时对照，不留孤儿 tmp。
+	tmpBefore := countComposeTempDirs(t)
 
 	// 首次 push → queued 部署 + 来源字段。
 	rec, warnings, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "")
@@ -56,6 +61,29 @@ func TestDeployFromGitPush(t *testing.T) {
 	if rec2.ID == rec.ID {
 		t.Fatal("second push reused deployment id (去重语义泄漏到 push 路径)")
 	}
+
+	// MG-6 回归：两次 push 的解析中转目录均已回收（defer os.RemoveAll——
+	// 持久化副本在 <数据根>/deployments/<id>/compose.yaml，tmp 不是契约面）。
+	if after := countComposeTempDirs(t); after != tmpBefore {
+		t.Fatalf("解析中转临时目录未回收: fleetly-compose-* 目录数 %d → %d", tmpBefore, after)
+	}
+}
+
+// countComposeTempDirs 数系统 temp 里 fleetly-compose- 前缀目录数（MG-6
+// 临时目录回收断言的采样点；只数前缀，不触碰其他测试的临时物）。
+func countComposeTempDirs(t *testing.T) int {
+	t.Helper()
+	entries, err := os.ReadDir(os.TempDir())
+	if err != nil {
+		t.Fatalf("read temp dir: %v", err)
+	}
+	n := 0
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), "fleetly-compose-") {
+			n++
+		}
+	}
+	return n
 }
 
 func TestDeployFromCommitRejections(t *testing.T) {
@@ -204,5 +232,51 @@ func TestDeployFromCommitFailClosedAtomic(t *testing.T) {
 	}
 	if events, eerr := st.EventsSince(ctx, 0, 10); eerr != nil || len(events) != 1 {
 		t.Fatalf("events after healthy enqueue = %d (%v), want 1", len(events), eerr)
+	}
+}
+
+// TestDeployFromCommitDedupeSHA M3-4 回归：DedupeSHA 置位（webhook 入口）
+// 时入队事务内做 (app, sha) 幂等复查——首创建行、重投返回
+// ErrDuplicateGitDeployment 且不建新行；不置位（SSH push 路径）恒建新行
+// （幂等口径绑定，行为不变）。并发双投的竞态闭合在 state 层测试
+// （TestGitSHADedupConcurrentSingleRow）钉死。
+func TestDeployFromCommitDedupeSHA(t *testing.T) {
+	requireGit(t)
+	src, st, _, _ := newTestSource(t, 0)
+	ctx := context.Background()
+
+	sourceDir, sha := newSourceRepo(t, composeFixture)
+	if _, _, err := src.EnsureBareRepo(ctx, "my-api"); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, sourceDir, "push", "--quiet", src.repoPath("my-api"), "main")
+	dedupeInput := DeployInput{
+		App: "my-api", SHA: sha, Ref: "refs/heads/main",
+		AuditAction: "git.webhook_deploy", DedupeSHA: true,
+	}
+	// 首发：建行（app 行随之自动创建）。
+	if _, _, err := src.DeployFromCommit(ctx, dedupeInput); err != nil {
+		t.Fatalf("first dedupe enqueue: %v", err)
+	}
+	app, err := st.GetAppByName(ctx, "my-api")
+	if err != nil {
+		t.Fatalf("GetAppByName: %v", err)
+	}
+	// 重投（判重命中）：ErrDuplicateGitDeployment、不建新行。
+	if _, _, err := src.DeployFromCommit(ctx, dedupeInput); !errors.Is(err, state.ErrDuplicateGitDeployment) {
+		t.Fatalf("second dedupe enqueue err = %v, want ErrDuplicateGitDeployment", err)
+	}
+	if n, qerr := st.CountGitDeploymentsForSHA(ctx, app.ID, sha); qerr != nil || n != 1 {
+		t.Fatalf("git deployments for sha = %d (%v), want 1", n, qerr)
+	}
+	// 不置位（SSH push 语义）：显式用户动作恒建新行。
+	pushInput := DeployInput{
+		App: "my-api", SHA: sha, Ref: "refs/heads/main", AuditAction: "git.push_deploy",
+	}
+	if _, _, err := src.DeployFromCommit(ctx, pushInput); err != nil {
+		t.Fatalf("push-path enqueue (no dedupe): %v", err)
+	}
+	if n, qerr := st.CountGitDeploymentsForSHA(ctx, app.ID, sha); qerr != nil || n != 2 {
+		t.Fatalf("git deployments after push-path = %d (%v), want 2", n, qerr)
 	}
 }

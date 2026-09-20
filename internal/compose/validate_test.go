@@ -167,7 +167,9 @@ volumes:
   data:
 `, "E_COMPOSE_UNSAFE_STRATEGY", "services.web.deploy.update_config.order", "pos_stop_first_with_volume"},
 
-		{"reject_start_first_global", `
+		// ── global 模式显式拒绝（M1-4：v0.1 单节点不支持——副本/失败停机
+		//    语义未实现；v0.2 开放，对齐 C1 secrets 先例）──
+		{"reject_mode_global", `
 name: my-api
 services:
   agent:
@@ -175,8 +177,8 @@ services:
     deploy:
       mode: global
       update_config:
-        order: start-first
-`, "E_COMPOSE_UNSAFE_STRATEGY", "services.agent.deploy.update_config.order", "pos_global"},
+        order: stop-first
+`, "E_COMPOSE_UNSUPPORTED", "services.agent.deploy.mode", ""},
 
 		// ── 域名契约（E_DOMAIN_CONFLICT / E_DOMAIN_UNSUPPORTED）──
 		{"reject_domain_wildcard", `
@@ -578,16 +580,6 @@ services:
         constraints:
           - node.labels.fleetly.rack == r1
           - node.labels.fleetly.zone != z9
-`,
-	"pos_global": `
-name: my-api
-services:
-  agent:
-    image: nginx
-    deploy:
-      mode: global
-      update_config:
-        order: stop-first
 `,
 	"pos_stop_signal": `
 name: my-api

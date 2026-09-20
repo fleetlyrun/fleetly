@@ -9,7 +9,9 @@ package build
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -65,8 +67,15 @@ func NewQueue(store *state.Store, exec Executor, concurrency int, pollInterval, 
 func (q *Queue) Concurrency() int { return cap(q.sem) }
 
 // Enqueue 入队一条构建（builds queued 行 + 唤醒信号加速同进程拾取）。
-func (q *Queue) Enqueue(ctx context.Context, rec state.BuildRecord) (state.BuildRecord, error) {
-	created, err := q.store.CreateBuild(ctx, rec)
+// audit（可选，至多一枚）透传给 state 层 build.create 审计的调用方归因
+// （M4-8：TriggerBuild 带 API 调用方 token；缺省 = system 归因，与内部
+// 入队路径一致）。variadic 形态保持既有调用点签名兼容。
+func (q *Queue) Enqueue(ctx context.Context, rec state.BuildRecord, audit ...state.AuditEntry) (state.BuildRecord, error) {
+	var entry *state.AuditEntry
+	if len(audit) > 0 {
+		entry = &audit[0]
+	}
+	created, err := q.store.CreateBuildAs(ctx, rec, entry)
 	if err != nil {
 		return state.BuildRecord{}, fmtErr("enqueue build: %w", err)
 	}
@@ -154,24 +163,66 @@ func (q *Queue) drainOnce(ctx context.Context) {
 		claimed, err := q.store.GetBuild(ctx, rec.ID)
 		if err != nil {
 			<-q.sem
-			q.log.Error("read claimed build", "build", rec.ID, "error", err)
+			q.log.Error("read claimed build", "build", rec.ID, "error", err.Error())
+			// M2-6：认领后行读取失败（瞬时错误）不得滞留 building——此路径
+			// 无执行 goroutine 也无失败兜底，行将滞留到重启（期间无人接手、
+			// 等它的部署空转到发布超时）。直接收敛 failed 终态。
+			q.convergeClaimedUnreadable(ctx, rec.ID)
 			return
 		}
 		go func(claimed state.BuildRecord) {
-			defer func() { <-q.sem }()
-			q.Wake() // 槽位释放后立即补位扫描（避免等 tick）
+			// M2-10：槽位释放与补位唤醒同在收尾 defer——先 <-sem 释放、再
+			// Wake。原形态在持槽期（goroutine 启动时）发送 Wake：唤醒的
+			// drainOnce 撞满信号量立即返回，是无效信号；真正的补位时机是
+			// 槽位释放之后（完成一条立即补位，不再等 poll tick）。
+			defer func() {
+				<-q.sem
+				q.Wake()
+			}()
 			// per-build 超时预算（config build.timeout_seconds，缺省 30min）：
 			// 挂起的执行（网络挂起/buildkitd 半死）到点取消——信号量槽不再被
 			// 永久占用（并发 2 时两个挂起即堵死全队列）。执行器契约：ctx
 			// 取消即返回（buildkit 客户端随 ctx 终止 solve）。
 			execCtx, cancel := context.WithTimeout(ctx, q.timeout)
 			defer cancel()
+			// M2-7：panic 边界（MG-1 同族——外部输入驱动的执行路径必须有
+			// panic 边界，对齐 engine A9 先例）：builds.request 是跨进程输入，
+			// 单条恶意/异常构建触发的 panic 不得打崩 fleetlyd 调度——记
+			// Error（含栈）+ 兜底收敛 failed，调度继续。
+			defer func() {
+				if r := recover(); r != nil {
+					q.log.Error("execute build panicked",
+						"build", claimed.ID,
+						"panic", fmt.Sprintf("%v", r),
+						"stack", string(debug.Stack()))
+					q.convergeStranded(execCtx, claimed.ID)
+				}
+			}()
 			if _, err := q.exec.Execute(execCtx, claimed); err != nil {
-				q.log.Error("execute build", "build", claimed.ID, "error", err)
+				q.log.Error("execute build", "build", claimed.ID, "error", err.Error())
 				q.convergeStranded(execCtx, claimed.ID)
 			}
 		}(claimed)
 	}
+}
+
+// claimedUnreadableReason 是认领后行读取失败兜底收敛的审计归因（M2-6）。
+const claimedUnreadableReason = "构建认领后行读取失败（瞬时错误，未执行即收敛）"
+
+// convergeClaimedUnreadable 收敛「已认领但行读取失败」的 building 行
+// （M2-6）：FailStrandedBuild 的行级 CAS 保证行已并发离开 building（终态/
+// 复位竞争）时跳过不误伤；终态写用 WithoutCancel——读取失败的诱因可能是
+// ctx 层瞬时故障，兜底写必达。
+func (q *Queue) convergeClaimedUnreadable(ctx context.Context, buildID string) {
+	finCtx := context.WithoutCancel(ctx)
+	if err := q.store.FailStrandedBuild(finCtx, buildID, errCodeBuildFailed, claimedUnreadableReason); err != nil {
+		if errors.Is(err, state.ErrBuildStateTransition) {
+			return // 行已离开 building（并发收敛竞争落败）
+		}
+		q.log.Error("converge claimed-unreadable build", "build", buildID, "error", err.Error())
+		return
+	}
+	q.log.Warn("converged claimed-unreadable build to failed", "build", buildID, "reason", claimedUnreadableReason)
 }
 
 // convergeStranded 兜底终态：执行器返回错误后行仍停留 building（超时取消

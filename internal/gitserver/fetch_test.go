@@ -2,6 +2,7 @@ package gitserver
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -115,15 +116,37 @@ func TestBuildFetchAuthKinds(t *testing.T) {
 	if plan.RemoteHost != "example.com:2222" {
 		t.Fatalf("remote host = %q, want example.com:2222", plan.RemoteHost)
 	}
+	var sshCmd, keyFile string
 	for _, e := range plan.Env {
 		if strings.HasPrefix(e, "GIT_SSH_COMMAND=ssh -i ") {
-			keyFile := strings.SplitN(strings.TrimPrefix(e, "GIT_SSH_COMMAND=ssh -i "), " ", 2)[0]
-			if !fileExists(keyFile) {
-				t.Errorf("temp key file missing: %s", keyFile)
-			}
+			sshCmd = strings.TrimPrefix(e, "GIT_SSH_COMMAND=")
+			quoted := strings.SplitN(strings.TrimPrefix(e, "GIT_SSH_COMMAND=ssh -i "), " ", 2)[0]
+			keyFile = strings.Trim(quoted, "'")
 		}
 	}
+	if keyFile == "" || !fileExists(keyFile) {
+		t.Errorf("temp key file missing: %q", keyFile)
+	}
+	// M5-10：keyFile 与 known_hosts 都必须是单引号词形（含空格路径不碎裂）。
+	if !strings.Contains(sshCmd, "-i '"+keyFile+"'") {
+		t.Errorf("ssh -i 未用引号词形：%s", sshCmd)
+	}
+	if !strings.Contains(sshCmd, "-o UserKnownHostsFile='") {
+		t.Errorf("UserKnownHostsFile 未用引号词形：%s", sshCmd)
+	}
+	// H3：SSH 传输层超时三件套在位。
+	for _, want := range []string{
+		"-o ConnectTimeout=15", "-o ServerAliveInterval=30", "-o ServerAliveCountMax=3",
+	} {
+		if !strings.Contains(sshCmd, want) {
+			t.Errorf("ssh 命令缺少超时选项 %q：%s", want, sshCmd)
+		}
+	}
+	// M5-8：Cleanup 是目录级回收——key 所在临时目录整体消失。
 	plan.Cleanup()
+	if _, err := os.Stat(filepath.Dir(keyFile)); !os.IsNotExist(err) {
+		t.Errorf("temp key dir 残留：%s", filepath.Dir(keyFile))
+	}
 }
 
 // TestBuildFetchHTTPSOnlyForTokenAuth E7⑤（S19）：https_token 认证强制
@@ -351,6 +374,57 @@ func TestFetchHostKeyAuditSkippedForNonSSH(t *testing.T) {
 	for _, a := range audits {
 		if a.Action == "git.hostkey_first_seen" {
 			t.Fatal("non-ssh fetch must not write hostkey audit")
+		}
+	}
+}
+
+// gitKeyTempDirs 返回当前残留的 fleetly-gitkey-* 临时目录集（M5-8 零残留
+// 断言的 MkdirTemp 计数法：对比 fetch 前后集合，新目录即残留）。
+func gitKeyTempDirs(t *testing.T) map[string]struct{} {
+	t.Helper()
+	matches, err := filepath.Glob(filepath.Join(os.TempDir(), "fleetly-gitkey-*"))
+	if err != nil {
+		t.Fatalf("glob gitkey temp dirs: %v", err)
+	}
+	out := make(map[string]struct{}, len(matches))
+	for _, m := range matches {
+		out[m] = struct{}{}
+	}
+	return out
+}
+
+// TestFetchSSHKeyFailureLeavesNoTempResidue M5-8/M5-10/H3 回归：ssh_key 拉源
+// 失败（fetch 执行步骤注入失败）后，临时私钥目录必须整目录零残留——
+// Cleanup 经 FetchRemote 的 defer 无条件执行（成功/失败路径都到），且回收
+// 粒度是目录（os.RemoveAll）而非单个 key 文件。
+func TestFetchSSHKeyFailureLeavesNoTempResidue(t *testing.T) {
+	requireGit(t) // EnsureBareRepo 经 execGit 真实建仓
+	src, st, box, _ := newTestSource(t, 0)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "ssh-residue")
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyCipher, err := box.Encrypt([]byte("-----BEGIN OPENSSH PRIVATE KEY-----\nTEST\n-----END OPENSSH PRIVATE KEY-----\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.SetAppSource(ctx, app.ID, state.AppSourceWrite{
+		URL: "ssh://git@example.com/acme/web.git", Branch: "main",
+		AuthKind: state.SourceAuthSSHKey, AuthSecret: string(keyCipher),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before := gitKeyTempDirs(t)
+	src.fetchFn = func(context.Context, fetchPlan) error { return errors.New("simulated fetch failure") }
+
+	if err := src.FetchRemote(ctx, "ssh-residue"); err == nil || !errors.Is(err, ErrFetchFailed) {
+		t.Fatalf("fetch err = %v, want ErrFetchFailed", err)
+	}
+	after := gitKeyTempDirs(t)
+	for dir := range after {
+		if _, ok := before[dir]; !ok {
+			t.Errorf("失败拉源后临时私钥目录残留（Cleanup 未整目录回收）：%s", dir)
 		}
 	}
 }

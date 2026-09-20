@@ -6,6 +6,7 @@ import { Boxes, LogOut, Radio, Server } from "lucide-react";
 import { useAuth } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { queryClient } from "@/query";
 
 const NAV_ITEMS = [
   { to: "/apps", label: "Applications", icon: Boxes },
@@ -51,6 +52,10 @@ export function Layout() {
             size="sm"
             className="w-full justify-start text-muted-foreground"
             onClick={() => {
+              // 登出同时清 react-query 缓存（M9-9）：上一操作员的 apps/
+              // deployments 等服务端状态不得泄给下一个会话（token 换人后
+              // 直接复用旧缓存会闪现他人数据）。
+              queryClient.clear();
               logout();
               navigate("/login");
             }}

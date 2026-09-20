@@ -248,7 +248,8 @@ dind 会 exit 0 但文件不落盘，e2e/README.md 已知问题；二进制不 s
 A2 `--bin-dir --no-systemd` 正路径安装（目录/二进制/配置/unit 同源/
 符号链接/报告字段）；A3 隐式 swarm init（active + advertise 私网）；
 A4 daemon 手动启动 liveness 200 + 8424/8421/8420 监听面 + SIGTERM 退出
-码 0；A5 bootstrap token 从日志抓取 → CLI `apps list`；A6 重装幂等
+码 0；A5 bootstrap token 从 `<数据根>/bootstrap-token` 文件读取（B5：
+不进日志）→ CLI `apps list`；A6 重装幂等
 （swarm 跳过 init、config 保留）；A7 假 docker（28.3.2）版本门禁拒绝；
 A8 nftables-only shim iptables 门禁拒绝；A9 卸载（数据保留/明示 +
 `--purge`）；A10 健康探测 host 推导；A11 openssl 轨双轨验签（staged
@@ -296,8 +297,10 @@ docker.socket（容器内进程获得宿主 dockerd root 等价权限——与�
 
 - release 制品链已落地（`.github/workflows/release.yml`，T2.24）：tar +
   checksums + SBOM + cosign keyless 签名 + ghcr 镜像 + GitHub Release。
-  **install.sh 的 cosign verify 命令缺 `--certificate`/`--bundle`，装了
-  cosign 的环境会失败关闭**——一行修复待 T2.26（见上方「已知缺口」）。
+  install.sh/upgrade.sh 的 cosign 验签为 `--bundle` 轨（`verify-blob
+  --bundle` + keyless identity 约束，见上方「验签语义」），release.yml
+  gate A 以同款命令面验证签名产物；gate B（detached signature +
+  `--certificate`）是同一签名材料的补充验证形态。
 - `--harden-firewall`（自动 iptables 放行规则）为 architecture §4.2
   预留，本阶段只提示不写规则。
 - unit 以 root 运行（需要 docker.sock；专用用户 + docker 组收敛属后续

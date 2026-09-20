@@ -41,7 +41,7 @@ func (c *appsCmd) Run(ctx context.Context, env *commands.Environment, args []str
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list|get|delete|webhook)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // appsListCmd 实现 `fleetly apps list`。

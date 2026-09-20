@@ -123,19 +123,80 @@ func streamLogs(ctx context.Context, src io.Reader, out chan<- LogLine) {
 	<-copyDone
 }
 
+// 单行投递上限与截断标记（MG-1）。
+const (
+	// maxLineLen 是单行投递上限（字节，含 Docker 时间戳头部）：超长行截断
+	// 保留前缀 + truncatedSuffix 标记后照常投递——截断优于断流。
+	maxLineLen = 1024 * 1024
+	// truncatedSuffix 是截断行的尾部标记。
+	truncatedSuffix = "...[truncated]"
+)
+
 // scanLines 逐行剥离 Docker 时间戳头部并投递；ctx 取消即停止读（管道
 // 随 stdcopy goroutine 结束而关闭）。
+//
+// MG-1（排水契约）：本函数（连同 stderr 路）是 stdcopy 多路复用器写入
+// io.Pipe 的唯一读者——无论行多长都必须持续排水。旧实现 bufio.Scanner
+// 单行超 1MiB 即 Scan 返回 false 提前退出，StdCopy 从此阻塞在无读者的
+// 管道写上，streamLogs 永不返回，采集/落盘/prune 全线停摆（静默）。
+// 因此弃 Scanner 改 bufio.Reader 手动按行读：任意长度行不终止流，超长
+// 行截断到 maxLineLen 并加标记后照常投递，剩余字节循环读丢弃至换行
+// （内存驻留恒有界，不随行长增长）。
 func scanLines(ctx context.Context, r io.Reader, stderr bool, out chan<- LogLine) {
-	sc := bufio.NewScanner(r)
-	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024) // 单行上限 1MiB（超长行报错终结本轮，下轮重试）
-	for sc.Scan() {
-		line := sc.Text()
-		at, rest := splitTimestamp(line)
-		select {
-		case <-ctx.Done():
-			return
-		case out <- LogLine{At: at, Stderr: stderr, Line: rest}:
+	br := bufio.NewReaderSize(r, 64*1024)
+	for {
+		line, truncated, err := readLineTruncating(br, maxLineLen)
+		if truncated && line != "" {
+			line += truncatedSuffix
 		}
+		if line != "" || err == nil {
+			// 空完整行（连续 \n）照常投递（对齐 Scanner 语义）；err != nil
+			// 且无内容 = 流尽。
+			at, rest := splitTimestamp(line)
+			select {
+			case <-ctx.Done():
+				return
+			case out <- LogLine{At: at, Stderr: stderr, Line: rest}:
+			}
+		}
+		if err != nil {
+			return // io.EOF 或读错误：日志流尽力而为，由采集方下轮重试。
+		}
+	}
+}
+
+// readLineTruncating 读出一行（以 \n 终结，或流尽/读错误截尾）。行内容
+// 超过 max 字节时只保留前 max 字节（truncated=true），剩余字节继续排水
+// 丢弃直至换行。err 语义对齐 bufio：io.EOF = 流尽（返回内容为无换行的
+// 末行，仍有效）；其余读错误原样透出，返回内容同样有效。
+// 用 ReadSlice（而非 ReadString/ReadBytes——两者会把整行累积进单块内存，
+// 行长多大就分配多大）：每段至多读缓冲大小，截断后只排水不驻留。
+func readLineTruncating(br *bufio.Reader, max int) (string, bool, error) {
+	var sb strings.Builder
+	truncated := false
+	for {
+		chunk, err := br.ReadSlice('\n') // 段 ≤ 缓冲大小；ErrBufferFull = 行超缓冲未终结
+		if !truncated {
+			if room := max - sb.Len(); len(chunk) > room {
+				if room > 0 {
+					sb.Write(chunk[:room])
+				}
+				truncated = true
+			} else {
+				sb.Write(chunk)
+			}
+		} // 截断后的剩余段：只排水不驻留。
+		if err == bufio.ErrBufferFull {
+			continue // 行未终结（缓冲填满）：继续读下一段。
+		}
+		if err != nil {
+			return sb.String(), truncated, err
+		}
+		if truncated {
+			// 本段以 \n 结尾 = 行终结；保留段在截断点之前，不含结尾换行。
+			return sb.String(), true, nil
+		}
+		return strings.TrimSuffix(sb.String(), "\n"), false, nil
 	}
 }
 

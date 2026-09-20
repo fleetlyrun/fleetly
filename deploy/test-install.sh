@@ -24,7 +24,8 @@
 #       为私网 IP（dind 环境判定）
 #   A4  daemon 手动启动（--no-systemd 口径）→ /healthz/liveness 200；
 #       git SSH 8424 监听；gRPC 8421 只绑回环
-#   A5  CLI 可连：bootstrap token 从 daemon 日志抓取 → fleetly apps list
+#   A5  CLI 可连：bootstrap token 从 <数据根>/bootstrap-token 文件读取
+#       （B5：token 不进日志）→ fleetly apps list
 #   A6  重装幂等：已有 swarm → 跳过 init 不报错；已有 config 保留
 #   A7  门禁负路径（版本）：假 docker（28.3.2）→ 拒绝、退出非零、输出原因
 #   A8  门禁负路径（iptables）：nftables-only shim → 拒绝、退出非零

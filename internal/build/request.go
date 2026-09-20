@@ -77,8 +77,18 @@ func DecodeRequest(raw string) (Request, error) {
 // 的执行侧纵深防御，Builder.Execute 在 DecodeRequest 之后调用）：
 //  1. 必须是绝对路径且与 Clean 结果一致——API 层产物经 Abs(Join(…))
 //     天然满足，直写 builds.request 的 `..` 逃逸词形在此拦截；
-//  2. 必须位于 roots 中至少一个受管根之内（containsPath 词法判定；
-//     跨卷路径对根不成立即继续比对下一根，全部不成立 = 越界）。
+//  2. 必须位于 roots 中至少一个受管根之内（containsPath 判定；跨卷路径
+//     对根不成立即继续比对下一根，全部不成立 = 越界）。
+//
+// H8（MG-1 同族：词法校验拦不住符号链接）：dir 与各受管 root 在比对前均
+// 经 filepath.EvalSymlinks 解析——受管根内的 symlink 指向根外目录时，
+// 解析后的真实路径对全部根做包含性判定即不成立（拒绝），且**已解析的
+// dir 不做任何词法兜底比对**（词形命中会把 symlink 逃逸重新放进来）。
+// dir 解析失败（目录不存在）保持原词法错误语义（用词法路径比对——存在
+// 性校验不属本函数职责，缺失目录由构建执行期失败收敛；不存在路径上的
+// 「词法在内」是惰性形态，无外带能力）。root 解析失败（根不存在）跳过
+// 该根的解析态比对。与 fsutil.NewFS 对 root 的 EvalSymlinks 行为对齐
+// （执行侧快照遍历的是解析后真源，校验面必须同一真源口径）。
 //
 // roots 须为归一化后的受管根（Config.Normalize 保证非空且含系统 temp
 // 根）。校验失败不得静默放宽：调用方据此落 E_BUILD_FAILED 终态。
@@ -89,8 +99,27 @@ func validateContextDir(dir string, roots []string) error {
 	if filepath.Clean(dir) != dir {
 		return fmtErr("上下文目录越界：context_dir %q 含未归一化段（.. 逃逸词形）", dir)
 	}
+	// H8：解析符号链后的真实路径参与比对；解析失败（目录不存在）回落
+	// 词法路径（unresolved 标记——见函数头注记的语义边界）。
+	resolved, resolveErr := filepath.EvalSymlinks(dir)
+	if resolveErr != nil {
+		resolved = dir
+	}
 	for _, root := range roots {
-		if root != "" && containsPath(root, dir) {
+		if root == "" {
+			continue
+		}
+		// 受管根 best-effort 解析：根不存在（EvalSymlinks 失败）跳过该根
+		// 的解析态比对——真实存在的 dir 不可能位于不存在的根之内。
+		resolvedRoot, rootErr := filepath.EvalSymlinks(root)
+		if rootErr == nil && containsPath(resolvedRoot, resolved) {
+			return nil
+		}
+		// 未解析（不存在）dir 的词法兜底：对词法根（与未解析根）比对。
+		// macOS 形态（os.TempDir 的 /var 前缀解析为 /private/var）下，
+		// 不存在路径的词形与解析后根恒不匹配，需要词法面收口；已解析
+		// dir 不进此分支（防 symlink 逃逸经词形重新放行）。
+		if resolveErr != nil && containsPath(root, dir) {
 			return nil
 		}
 	}

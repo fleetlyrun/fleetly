@@ -413,3 +413,122 @@ func TestLatestDeploymentsByAppBatch(t *testing.T) {
 		t.Fatalf("empty batch = (%d, %v), want (0, nil)", len(empty), err)
 	}
 }
+
+// TestDeploymentStatusWriteRequiresPrevStatus M3-2 回归：裸状态写（Status
+// 无 PrevStatus）必须拒绝——该形态绕过转移表校验与 CAS 竞争保护；仅就地
+// 字段 patch（Flags/CancelRequested，无 Status）不受影响。
+func TestDeploymentStatusWriteRequiresPrevStatus(t *testing.T) {
+	ctx := context.Background()
+	st := newDeployStore(t)
+	app, err := st.CreateApp(ctx, "", "prev-status-app")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	rec, err := st.CreateDeployment(ctx, DeployRecord{
+		AppID: app.ID, AppName: app.Name, Kind: "deploy",
+	})
+	if err != nil {
+		t.Fatalf("create deployment: %v", err)
+	}
+
+	// 裸状态写（即使目标状态与当前行状态相同）：拒绝。
+	same := DeployQueued
+	if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{Status: &same}); err == nil {
+		t.Fatal("bare status write (no PrevStatus) must be rejected (M3-2)")
+	}
+	other := DeployPreparing
+	if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{Status: &other}); err == nil {
+		t.Fatal("bare status write to different status must be rejected (M3-2)")
+	}
+	// 行状态未被裸写改动。
+	got, err := st.GetDeployment(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("get deployment: %v", err)
+	}
+	if got.Status != DeployQueued {
+		t.Fatalf("status = %s, want queued (裸写不得生效)", got.Status)
+	}
+
+	// 仅字段 patch（无 Status）：不受影响——CancelRequested / Flags 就地更新。
+	set := true
+	if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{CancelRequested: &set}); err != nil {
+		t.Fatalf("CancelRequested-only patch: %v", err)
+	}
+	flags := DeployFlagInstabilityWarning
+	if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{Flags: &flags}); err != nil {
+		t.Fatalf("Flags-only patch: %v", err)
+	}
+	got, err = st.GetDeployment(ctx, rec.ID)
+	if err != nil {
+		t.Fatalf("re-get deployment: %v", err)
+	}
+	if !got.CancelRequested || got.Flags != DeployFlagInstabilityWarning {
+		t.Fatalf("field patch not applied: cancel=%v flags=%d", got.CancelRequested, got.Flags)
+	}
+
+	// 带 PrevStatus 的合法 CAS：不受影响。
+	from := DeployQueued
+	to := DeployPreparing
+	if err := st.UpdateDeployment(ctx, rec.ID, DeploymentPatch{Status: &to, PrevStatus: &from}); err != nil {
+		t.Fatalf("CAS with PrevStatus: %v", err)
+	}
+}
+
+// TestGitSHADedupConcurrentSingleRow M3-4 回归：并发两路同 sha 入队（各在
+// 自身事务内 COUNT 复查 + INSERT——与 DeployFromCommit 的 DedupeSHA 事务
+// 形态一致），断言仅落一行部署（BEGIN IMMEDIATE 写锁串行化下，后到事务
+// 的 COUNT 看到先行事务已提交的行并放弃）。
+func TestGitSHADedupConcurrentSingleRow(t *testing.T) {
+	ctx := context.Background()
+	st := newDeployStore(t)
+	app, err := st.CreateApp(ctx, "", "dedup-app")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	const sha = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+
+	// enqueueDedup 复刻 DeployFromCommit 的 M3-4 事务原语形态（COUNT 复查
+	// + CreateDeployment 同 InTx；命中判重返回 ErrDuplicateGitDeployment）。
+	enqueueDedup := func() error {
+		return st.InTx(ctx, func(tx *Tx) error {
+			n, err := tx.CountGitDeploymentsForSHA(ctx, app.ID, sha)
+			if err != nil {
+				return err
+			}
+			if n > 0 {
+				return ErrDuplicateGitDeployment
+			}
+			_, err = tx.CreateDeployment(ctx, DeployRecord{
+				AppID: app.ID, AppName: app.Name, Kind: "deploy",
+				SourceGitSHA: sha, SourceGitRef: "refs/heads/main",
+			})
+			return err
+		})
+	}
+
+	const rounds = 8
+	errs := make(chan error, rounds)
+	for i := 0; i < rounds; i++ {
+		go func() { errs <- enqueueDedup() }()
+	}
+	wins, dups := 0, 0
+	for i := 0; i < rounds; i++ {
+		if err := <-errs; err == nil {
+			wins++
+		} else if errors.Is(err, ErrDuplicateGitDeployment) {
+			dups++
+		} else {
+			t.Fatalf("unexpected enqueue error: %v", err)
+		}
+	}
+	if wins != 1 || dups != rounds-1 {
+		t.Fatalf("wins = %d, dups = %d, want 1 win / %d dups (仅一行落库)", wins, dups, rounds-1)
+	}
+	n, err := st.CountGitDeploymentsForSHA(ctx, app.ID, sha)
+	if err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("deployments for sha = %d, want 1", n)
+	}
+}

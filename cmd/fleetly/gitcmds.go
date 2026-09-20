@@ -44,7 +44,7 @@ func (c *gitCmd) Run(ctx context.Context, env *commands.Environment, args []stri
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (keys)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // gitKeysCmd 是中层动词 `git keys`：分发 add/list/rm。
@@ -69,7 +69,7 @@ func (c *gitKeysCmd) Run(ctx context.Context, env *commands.Environment, args []
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (add|list|rm)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // gitKeysAddCmd 实现 `fleetly git keys add <path-or-key>`：位置参数是

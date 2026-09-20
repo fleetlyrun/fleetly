@@ -88,6 +88,17 @@ type fakeSubstrate struct {
 	// panicOn 注入 TaskList panic（A9 tick 隔离测试：命中服务名即 panic，
 	// 模拟单条毒记录引发的引擎推进 panic）。
 	panicOn map[string]bool
+	// panicServiceList 注入 ServiceList panic（MG-5 测试：driftScan →
+	// computeAppDrift → ServiceList 的真实毒点——Run 栈上的 drift 分支
+	// 原无 recover）。
+	panicServiceList bool
+	// failServiceListErr 注入 ServiceList 瞬态错误（H10/MG-3 测试：deleting
+	// 回收 duty 的底座瞬态重试路径——非 nil 即返回错误，模拟 dockerd 短暂
+	// 不可达）。
+	failServiceListErr error
+	// serviceListCalls 是 ServiceList 的调用计数（H10/MG-3 频控断言：duty
+	// 时间闸内的拍子不应触达底座）。
+	serviceListCalls int
 	// swarmErr 是 SwarmReady 的错误注入（底座不可达）：ErrNotSwarmReady =
 	// 暂态（引擎记警告后按各路径语义重试/推进）；其他错误 = 硬失败。
 	swarmErr error
@@ -132,7 +143,7 @@ func (f *fakeSubstrate) stateOf(svc *fakeService) ServiceState {
 		Version:       svc.version,
 		Labels:        map[string]string{},
 		Image:         svc.spec.Image,
-		Replicas:      svc.spec.Replicas,
+		Replicas:      globalReplicasOf(svc.spec),
 		UpdateState:   svc.update,
 		UpdateMessage: svc.message,
 		// spec 侧深投影（真实适配器同构：漂移反解的实况侧输入）。
@@ -160,6 +171,16 @@ func (f *fakeSubstrate) stateOf(svc *fakeService) ServiceState {
 	}
 	out.DesiredHash = svc.spec.ServiceLabels[state.LabelDesiredHash]
 	return out
+}
+
+// globalReplicasOf 是实况投影的副本语义（与真实适配器 serviceToState 同构，
+// M1-3 测试引入）：Swarm global 服务的 Mode.Replicated 为 nil → Replicas
+// 读回 0（spec 侧写的期望副本不参与 global 实况）；replicated 照抄。
+func globalReplicasOf(spec ServiceSpec) uint64 {
+	if spec.Global {
+		return 0
+	}
+	return spec.Replicas
 }
 
 // mutateExternal 模拟外部操作（手动 docker service update --env 等）：绕过
@@ -345,6 +366,13 @@ func (f *fakeSubstrate) ServiceRemove(_ context.Context, name string) error {
 func (f *fakeSubstrate) ServiceList(_ context.Context, labels map[string]string) ([]ServiceState, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.panicServiceList {
+		panic("injected substrate panic (MG-5 driftScan 隔离测试)")
+	}
+	if f.failServiceListErr != nil {
+		return nil, f.failServiceListErr
+	}
+	f.serviceListCalls++
 	names := make([]string, 0, len(f.services))
 	for name := range f.services {
 		names = append(names, name)
@@ -411,9 +439,14 @@ func (f *fakeSubstrate) crashNewRunning(service string, n int, at time.Time) {
 // Preflight 错误序列驱动 blocked_waiting / node_gone / 前哨失败路径；Apply
 // 同构真实放置层——卷注册表登记）。
 type fakeResolver struct {
-	store         *state.Store
-	preflightErrs []error // 依次弹出（nil = 通过）；弹尽后恒 nil
-	applyCalls    int
+	store *state.Store
+	// preflightErrs 依次弹出（nil = 通过）；弹尽后恒 nil。
+	preflightErrs []error
+	// persistentPreflightFail 是「持续模式」开关（MG-2 回归测试引入）：非 nil
+	// 时 Preflight 恒返回该错误——模拟绑定节点持续 DOWN 多拍越过看门狗
+	// deadline 的形态（一次性队列会立即转入恢复拍，掩盖看门狗暂停缺陷）。
+	persistentPreflightFail error
+	applyCalls              int
 }
 
 func (f *fakeResolver) Resolve(_ context.Context, in placement.Input) (placement.Decision, error) {
@@ -443,6 +476,10 @@ func (f *fakeResolver) Apply(ctx context.Context, in placement.Input) (placement
 }
 
 func (f *fakeResolver) Preflight(context.Context, string) error {
+	// 持续模式优先（不受一次性队列消费影响；清空即恢复）。
+	if f.persistentPreflightFail != nil {
+		return f.persistentPreflightFail
+	}
 	if len(f.preflightErrs) == 0 {
 		return nil
 	}

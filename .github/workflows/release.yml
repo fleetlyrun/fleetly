@@ -14,11 +14,11 @@
 #   4. cosign keyless 签名（id-token: write，GitHub OIDC）：
 #      sign-blob --bundle → checksums.txt.sig（Sigstore bundle JSON，v3
 #      唯一签名产物形态）+ 提取 checksums.txt.cert。双验证门：
-#        a) --bundle checksums.txt.sig + install.sh 同款 identity 约束；
-#        b) install.sh 命令面 + --certificate（install.sh 原命令缺
-#           --certificate/--bundle，cosign ≥2.6 NOf 门直接报错——已实证；
-#           b) 证明修 install.sh 一行即可验通，见 deploy/README.md 增补与
-#           遗留问题）。
+#        a) --bundle 轨（gate A）：--bundle checksums.txt.sig + keyless
+#           identity 约束——install.sh 现行命令面的逐字复验；
+#        b) --certificate 轨（gate B）：detached signature + 从 bundle
+#           提取的证书——同一签名材料的补充验证形态，证明产物在两种
+#           cosign 验证轨道下均成立。
 #      4b.（S14/H15）openssl 兼容轨签名：repo secret FLEETLY_RELEASE_KEY
 #      （PEM 私钥，RSA-2048）→ openssl dgst -sha256 -sign →
 #      checksums.txt.sig.pem，与 cosign bundle 并行发布（双轨并存——干净
@@ -261,10 +261,11 @@ jobs:
             --certificate-identity-regexp "$EXPECTED_SIGNER" \
             --certificate-oidc-issuer "$EXPECTED_ISSUER" \
             checksums.txt
-      - name: verify gate B — install.sh command face + --certificate
-        # install.sh 的 cosign 命令缺 --certificate/--bundle（cosign ≥2.6 的
-        # NOf 门必拒，已实证）——本门证明：补上 --certificate 后 install.sh
-        # 的命令面原样验通（identity regexp 与 issuer 与 install.sh 逐字一致）。
+      - name: verify gate B — --certificate track (supplementary form)
+        # --certificate 轨（detached signature + bundle 提取证书）——与
+        # gate A 的 --bundle 轨互为补充的验证形态：证明同一签名材料在两种
+        # cosign 验证轨道下都验通。install.sh 现行面为 --bundle 轨（gate A
+        # 覆盖，identity regexp / issuer 与 install.sh 逐字一致）。
         run: |
           cd dist
           jq -r '.messageSignature.signature' checksums.txt.sig > detached.b64

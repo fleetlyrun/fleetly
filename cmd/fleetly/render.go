@@ -52,7 +52,7 @@ func renderCLIError(err error) string {
 		switch st.Code() {
 		case codes.Unauthenticated:
 			return err.Error() + "\n  hint: token 缺失或无效——设 --token / FLEETLY_TOKEN" +
-				"（bootstrap admin token 见 fleetlyd 首启日志；后续 token 由管理员 fleetly tokens create 签发）"
+				"（bootstrap admin token 见 <数据根>/bootstrap-token 文件（B5：一次写入、不进日志、首登后删除）；后续 token 由管理员 fleetly tokens create 签发）"
 		case codes.Unavailable:
 			return err.Error() + "\n  hint: fleetlyd 不可达——检查 --addr（默认 127.0.0.1:8421，env FLEETLY_ADDR）" +
 				"与守护进程状态（systemctl status fleetlyd）"

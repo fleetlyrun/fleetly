@@ -362,6 +362,138 @@ func TestQueueStartupResetsInterruptedBuilds(t *testing.T) {
 	waitBuildStatus(t, st, pending.ID, state.BuildSucceeded)
 }
 
+// TestConvergeClaimedUnreadable M2-6：认领后行读取失败路径的兜底收敛语义
+// ——滞留 building 行收敛 failed（E_BUILD_FAILED + finished_at + 审计归因
+// 「认领后读取失败」），FailStrandedBuild 的行级 CAS 幂等（行已终态后二
+// 次调用不误伤、不改写 finished_at）。触发面（GetBuild 瞬时错误）由
+// drainOnce 的错误分支接入；*state.Store 为具体类型无法注入单次失败，
+// 本测试钉死收敛语义本身。
+func TestConvergeClaimedUnreadable(t *testing.T) {
+	st := newQueueTestStore(t)
+	app, err := st.CreateApp(context.Background(), "", "queue-unreadable")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	rec := enqueueTestBuild(t, NewQueue(st, nil, 1, time.Hour, 0,
+		slog.New(slog.NewTextHandler(&nilWriter{}, nil))), app.ID, "web")
+	if err := st.ClaimBuild(context.Background(), rec.ID); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+
+	q := NewQueue(st, nil, 1, time.Hour, 0, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+	q.convergeClaimedUnreadable(context.Background(), rec.ID)
+	row := waitBuildStatus(t, st, rec.ID, state.BuildFailed)
+	if row.ErrorCode != "E_BUILD_FAILED" {
+		t.Fatalf("error_code = %s, want E_BUILD_FAILED", row.ErrorCode)
+	}
+	if row.FinishedAt.IsZero() {
+		t.Fatal("converged row must stamp finished_at")
+	}
+	assertAuditReason(t, st, rec.ID, "认领后行读取失败")
+
+	// CAS 幂等：终态行不误伤（finished_at 不被二次收敛改写）。
+	q.convergeClaimedUnreadable(context.Background(), rec.ID)
+	again, err := st.GetBuild(context.Background(), rec.ID)
+	if err != nil {
+		t.Fatalf("get build: %v", err)
+	}
+	if again.Status != state.BuildFailed || !again.FinishedAt.Equal(row.FinishedAt) {
+		t.Fatalf("二次收敛误伤终态行：status=%s finished_at=%v（want 不变）", again.Status, again.FinishedAt)
+	}
+}
+
+// panicThenOkExecutor 首次 Execute panic（单条恶意构建注入面），后续正常
+// 收敛 succeeded——验证调度存活。
+type panicThenOkExecutor struct {
+	store *state.Store
+	calls atomic.Int64
+}
+
+func (e *panicThenOkExecutor) Execute(ctx context.Context, rec state.BuildRecord) (state.BuildRecord, error) {
+	if e.calls.Add(1) == 1 {
+		panic("injected panic: malicious build input")
+	}
+	if err := e.store.FinishBuildSucceeded(ctx, rec.ID, "ref", "sha256:ok", "", ""); err != nil {
+		return rec, err
+	}
+	return e.store.GetBuild(ctx, rec.ID)
+}
+
+// TestQueuePanickingBuildDoesNotKillScheduler M2-7（MG-1 同族：外部输入驱动
+// 的执行路径必须有 panic 边界）：执行器 panic 的构建单条收敛 failed，调度
+// 循环存活，后续构建照常执行。
+func TestQueuePanickingBuildDoesNotKillScheduler(t *testing.T) {
+	st := newQueueTestStore(t)
+	app, err := st.CreateApp(context.Background(), "", "queue-panic")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	exec := &panicThenOkExecutor{store: st}
+	queue := NewQueue(st, exec, 2, 20*time.Millisecond, 0, /*超时取缺省*/
+		slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = queue.Run(ctx) }()
+
+	// 首条：panic → 兜底收敛 failed（不滞留 building、不打崩进程）。
+	first := enqueueTestBuild(t, queue, app.ID, "web")
+	row := waitBuildStatus(t, st, first.ID, state.BuildFailed)
+	if row.ErrorCode != "E_BUILD_FAILED" {
+		t.Fatalf("panic row error_code = %s, want E_BUILD_FAILED", row.ErrorCode)
+	}
+	assertAuditReason(t, st, first.ID, "构建执行器异常退出")
+
+	// 次条：调度存活，照常执行收敛 succeeded。
+	second := enqueueTestBuild(t, queue, app.ID, "worker")
+	waitBuildStatus(t, st, second.ID, state.BuildSucceeded)
+}
+
+// TestQueueWakeFiresAfterSlotRelease M2-10：满槽时完成一条，排队行必须在
+// poll 周期内被认领——补位信号来自「槽位释放之后」的 Wake，而非入队/启动
+// 时的无效唤醒（tick 设 1h：永不触发，补位只能走释放后 Wake；回归形态下
+// 第二条要等 tick 即超时失败）。
+func TestQueueWakeFiresAfterSlotRelease(t *testing.T) {
+	st := newQueueTestStore(t)
+	app, err := st.CreateApp(context.Background(), "", "queue-wake-slot")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	release := make(chan struct{})
+	exec := newBlockingExecutor(st, release)
+	// 并发 1 + tick 1h：唯一补位路径 = 完成后的「释放 + Wake」defer。
+	queue := NewQueue(st, exec, 1, time.Hour, 0, /*超时取缺省*/
+		slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = queue.Run(ctx) }()
+
+	first := enqueueTestBuild(t, queue, app.ID, "web")
+	select {
+	case <-exec.waitStarted(first.ID):
+	case <-time.After(5 * time.Second):
+		t.Fatal("first build 未开跑")
+	}
+	// 满槽期入队第二条：Enqueue 的 Wake 是无效信号（drainOnce 撞满信号量即
+	// 返回），必须保持 queued。
+	second := enqueueTestBuild(t, queue, app.ID, "worker")
+	time.Sleep(200 * time.Millisecond)
+	if row, err := st.GetBuild(context.Background(), second.ID); err != nil || row.Status != state.BuildQueued {
+		t.Fatalf("second = %v/%v, want queued（满槽期不得提前认领）", row.Status, err)
+	}
+
+	// 放行首条：完成 → 槽位释放 → Wake → 第二条在 tick（1h）之前被认领。
+	close(release)
+	select {
+	case <-exec.waitStarted(second.ID):
+	case <-time.After(5 * time.Second):
+		t.Fatal("第二条未在槽位释放后被认领（Wake 时机错误：等 tick 形态——M2-10）")
+	}
+	waitBuildStatus(t, st, first.ID, state.BuildSucceeded)
+	waitBuildStatus(t, st, second.ID, state.BuildSucceeded)
+}
+
 // hungThenOkExecutor 前 hung 次执行永不完成（阻塞到 ctx 取消后直接返回、
 // 不落终态——模拟挂起的 solve 被超时取消且执行器异常路径未收敛）；后续
 // 调用立即收敛 succeeded（验证超时后并发槽已释放）。

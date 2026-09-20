@@ -1,12 +1,18 @@
 // 登录页：token 粘贴表单（v0.1 单操作员口径，无 OAuth）。提交后以
 // GET /v1/apps 验证凭据（read scope 即可），401 → 渲染错误信封
 // （code + message + suggestion），成功 → 进入来源页或应用列表。
+// 时序纪律（M9-1）：先校验后持久化——校验期间 token 只进 API 层的
+// localStorage（listApps 需要 Bearer），auth 状态不翻转（Gate 不卸载
+// 本页）；校验通过才 login() 持久化 + 进入，失败则清除凭据并停留展示
+// 错误信封（修复前 authed 先翻 → LoginPage 被 Gate 卸载，catch 的
+// setError 永不可达，且无效 token 已持久化）。
 
 import { AlertCircle, Loader2 } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 
 import { listApps } from "@/api/endpoints";
+import { clearToken, setToken } from "@/api/client";
 import { errorEnvelopeFrom } from "@/api/errors";
 import { useAuth } from "@/auth";
 import { EnvelopeAlert } from "@/components/envelope-alert";
@@ -48,14 +54,25 @@ export function LoginPage({
     e.preventDefault();
     onAuthErrorSeen?.();
     if (!token.trim() || busy) return;
+    const trimmed = token.trim();
     setBusy(true);
     setError(null);
-    login(token);
+    // 仅写 API 层凭据（校验请求要带 Bearer）；authed 不翻——Gate 仍渲染
+    // 本页，失败信封可达（M9-1）。
+    setToken(trimmed);
     try {
       // 凭据校验 = 用 read 面最便宜的列表请求打一发真实鉴权。
       await listApps();
+      // 校验通过才真正持久化登录态（login 幂等地再写一次 token 并翻
+      // authed；同一批次内 Gate 切换到应用路由，本页随之卸载）。
+      login(trimmed);
       navigate(from ?? "/apps", { replace: true });
     } catch (err) {
+      // 失败：清除未通过校验的凭据（401 路径 handleUnauthorized 已清，
+      // 这里兜底网络/5xx 形态），并压掉 Gate 级 401 横幅——本页的信封
+      // （含 suggestion）是唯一展示面。
+      clearToken();
+      onAuthErrorSeen?.();
       setError({
         message: err instanceof Error ? err.message : String(err),
         envelope: errorEnvelopeFrom(err),

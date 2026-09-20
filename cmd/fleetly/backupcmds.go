@@ -45,7 +45,7 @@ func (c *backupsCmd) Run(ctx context.Context, env *commands.Environment, args []
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list|create)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // backupView 是台账行的机器/人读共用形态。

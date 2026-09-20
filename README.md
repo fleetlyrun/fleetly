@@ -20,7 +20,7 @@ curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
 sudo sh install.sh --bin-dir ./dist                              # offline / dev form
 ```
 
-The first start prints a bootstrap admin token **once** to the fleetlyd log. Uninstall keeps application data (`--purge` removes it). Upgrading the control plane is one command with a pre-upgrade snapshot and automatic rollback (`sudo sh upgrade.sh --version vX.Y.Z`); Engine/host upgrades are a separate cold-backup procedure — see [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md). Forms, gate list, port table, and dind verification: [`deploy/README.md`](deploy/README.md). (Release artifacts land with the release pipeline — until then the offline `--bin-dir` form is the working path.)
+The first start writes the bootstrap admin token **once** to `<data-root>/bootstrap-token` (0600, never logged; remove the file after the first successful login). Uninstall keeps application data (`--purge` removes it). Upgrading the control plane is one command with a pre-upgrade snapshot and automatic rollback (`sudo sh upgrade.sh --version vX.Y.Z`); Engine/host upgrades are a separate cold-backup procedure — see [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md). Forms, gate list, port table, and dind verification: [`deploy/README.md`](deploy/README.md). (Release artifacts land with the release pipeline — until then the offline `--bin-dir` form is the working path.)
 
 ## Why fleetly
 
@@ -81,7 +81,7 @@ deploy/           installer & systemd units (lands with T2.1)
 
 ## CLI
 
-The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`) and `--token` (env `FLEETLY_TOKEN`); the bootstrap admin token is printed **once** to the fleetlyd log on first start, further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only), `64` usage error (unknown verb, bad flags/arguments — `EX_USAGE`). Unary RPCs carry a default 30s deadline; Ctrl-C on streaming verbs (`logs follow`, `events watch`) and wait verbs (`deploy`, `build`, `rollback`) exits cleanly with code 0.
+The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`) and `--token` (env `FLEETLY_TOKEN`); the bootstrap admin token is written **once** to `<data-root>/bootstrap-token` on first start (never logged; delete after first login), further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only), `64` usage error (unknown verb, bad flags/arguments — `EX_USAGE`). Flags must precede positional arguments (Go std `flag` semantics). Unary RPCs carry a default 30s deadline; Ctrl-C on streaming verbs (`logs follow`, `events watch`) and wait verbs (`deploy`, `build`, `rollback`) exits cleanly with code 0.
 
 ```bash
 fleetlyd &                                  # control plane (gRPC :8421, HTTP :8420, git SSH :8424)
@@ -92,7 +92,7 @@ fleetly validate compose.yaml               # controlled-subset validation (loca
 fleetly plan compose.yaml                   # diff vs latest revision via API; exit 2 = changes
 fleetly deploy compose.yaml                 # enqueue and wait for the terminal state
 fleetly apps list && fleetly deployments list my-api
-fleetly logs follow my-api --service web    # live stream (--json for JSONL)
+fleetly logs follow --service web my-api    # live stream (--json for JSONL)
 fleetly env set my-api KEY value            # pending until next deploy
 fleetly rollback my-api                     # snapshot replay (last 5 revisions)
 fleetly drift show my-api                   # desired vs. live
@@ -104,7 +104,7 @@ fleetly tokens create --scopes deploy --note CI   # plaintext shown once
 The daemon runs an embedded SSH git endpoint (default `127.0.0.1:8424` — loopback by default; expose it on a VPS by setting `git.addr` and firewalling accordingly). Register your public key, then push to the app's bare repo; `compose.yaml`/`compose.yml` at the repo root is the deploy unit, and pushes to the app's configured branch (default `main`) trigger a deployment.
 
 ```bash
-fleetly git keys add ~/.ssh/id_ed25519.pub --note laptop   # admin scope; fingerprints at rest
+fleetly git keys add --note laptop ~/.ssh/id_ed25519.pub   # admin scope; fingerprints at rest
 git remote add fleetly ssh://git@127.0.0.1:8424/my-api.git
 git push fleetly main                                      # → build → zero-downtime rollout
 fleetly git keys list && fleetly git keys rm <id>
@@ -116,8 +116,8 @@ Configure the per-app signing secret (never echoed again), point the webhook at 
 
 ```bash
 fleetly apps webhook set-secret my-api <secret>            # ≥16 chars; admin scope
-fleetly apps webhook set-source my-api https://github.com/acme/web.git \
-    --branch main --auth-kind none                          # or https_token / ssh_key
+fleetly apps webhook set-source --branch main --auth-kind none \
+    my-api https://github.com/acme/web.git                  # or https_token / ssh_key
 fleetly apps webhook show my-api                           # no sensitive projection
 ```
 
@@ -167,7 +167,7 @@ golangci-lint run
 
 Smoke E2E (runs fleetlyd inside `docker:29.8.1-dind`): see [`e2e/README.md`](e2e/README.md).
 
-Contribution discipline: this project is design-first — behavior changes start as doc changes (review rounds), then land as vertical slices tracked in the task breakdown. Error codes and events are append-only registries.
+Contribution discipline: this project is design-first — behavior changes start as doc changes (review rounds), then land as vertical slices tracked in the task breakdown. Error codes and events are append-only registries. Remediation acceptance must include a write-back check of related docs/comments: grep the changed keyword across `docs/`, `deploy/`, and code comments to confirm runbooks, scripts, and help text no longer describe the pre-fix behavior (drift is a defect, not a style issue).
 
 ## License
 

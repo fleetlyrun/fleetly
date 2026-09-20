@@ -66,9 +66,9 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 		cleanup()
 		return nil, nil, err
 	}
-	engine := NewEngine(app, appConfig, store, client, resolver, box, ingressManager, manager)
 	gitTriggers := NewGitTriggers(appConfig, store, box, app)
 	logsManager := NewLogsManager(app, appConfig, store, client, box, gitTriggers)
+	engine := NewEngine(app, appConfig, store, client, resolver, box, ingressManager, manager, logsManager)
 	server, err := NewHTTPServer(app, appConfig, gitTriggers)
 	if err != nil {
 		cleanup4()
@@ -91,7 +91,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger) (*boot.Bootstrap, func(),
 	buildsService := NewBuildsService(store, queue)
 	driftService := NewDriftService(store, engine)
 	domainsService := NewDomainsService(store, ingressManager)
-	envService := NewEnvService(store, box)
+	envService := NewEnvService(store, box, logsManager)
 	apiLogsService := NewLogsService(store, logsManager)
 	eventsService := NewEventsService(store)
 	placementService := NewPlacementService(store)

@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -81,5 +82,44 @@ func TestAuditErrorResultPath(t *testing.T) {
 	}
 	if len(audits) != 1 || audits[0].Result != "error" {
 		t.Fatalf("audits = %+v, want one error-result row", audits)
+	}
+}
+
+// TestDiffSummaryHostileInputIsAlwaysValidJSON MG-6 回归：审计 diff 摘要的
+// 唯一构造器是 DiffSummary（json.Marshal 转义）——值含引号/反斜杠/控制
+// 字符/换行时仍必须是可解析 JSON 且值原样往返。手拼形态（backtick 插值
+// 零转义、%q 是 Go 转义非 JSON 转义）在此输入上破包——pr.yml 的
+// antipattern-grep 门禁 A 在源面拦新发，本测试在行为面钉机制。
+func TestDiffSummaryHostileInputIsAlwaysValidJSON(t *testing.T) {
+	hostile := "quote\" backslash\\ ctrl\u0001 newline\n end"
+	for _, tc := range []struct {
+		name string
+		got  string
+		want map[string]any
+	}{
+		{"DiffSummary 字符串值", DiffSummary("k", hostile), map[string]any{"k": hostile}},
+		{"backupAuditSummary 错误原文（原 %q 手拼位）", backupAuditSummary(BackupWrite{
+			Kind: "daily", Verify: BackupVerifyFailed, Error: hostile,
+		}), map[string]any{"kind": "daily", "verify": "failed", "error": hostile}},
+	} {
+		if !json.Valid([]byte(tc.got)) {
+			t.Fatalf("%s: 摘要不是合法 JSON: %q", tc.name, tc.got)
+		}
+		var back map[string]any
+		if err := json.Unmarshal([]byte(tc.got), &back); err != nil {
+			t.Fatalf("%s: 解析失败: %v (%q)", tc.name, err, tc.got)
+		}
+		if len(back) != len(tc.want) {
+			t.Fatalf("%s: 键集不符: %v vs %v", tc.name, back, tc.want)
+		}
+		for k, v := range tc.want {
+			if back[k] != v {
+				t.Fatalf("%s: 键 %s 值未原样往返: %q vs %q", tc.name, k, back[k], v)
+			}
+		}
+	}
+	// 布尔/数值保持原生 JSON 字面量（非字符串化）。
+	if got := DiffSummary("enabled", true, "services", 3); got != `{"enabled":true,"services":3}` {
+		t.Fatalf("原生类型形态不符: %s", got)
 	}
 }

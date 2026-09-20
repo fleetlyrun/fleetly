@@ -1,13 +1,25 @@
 // 部署历史测试：失败行展示错误信封形态（error_code + verdict + recovery
-// 可见）；中间态徽章（observing/blocked_waiting）一等渲染。
+// 可见）；中间态徽章（observing/blocked_waiting）一等渲染。跟踪轮询持续
+// 失败（M9-5）：错误信封一等渲染而非永远转圈；refetchInterval 回调对空
+// data 形态可选链守卫（M9-7）。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppDeploymentsPage } from "@/pages/AppDeploymentsPage";
 import { setToken } from "@/api/client";
+
+function ok(body: unknown) {
+  return {
+    ok: true,
+    status: 200,
+    statusText: "",
+    json: () => Promise.resolve(body),
+  };
+}
 
 function stubFetch(deployments: unknown[]) {
   return vi.fn().mockImplementation((url: string) => {
@@ -114,5 +126,58 @@ describe("AppDeploymentsPage failure envelope", () => {
     const states = badges.map((b) => b.getAttribute("data-state"));
     expect(states).toContain("observing");
     expect(states).toContain("blocked_waiting");
+  });
+});
+
+describe("AppDeploymentsPage deployment tracking (M9-5 / M9-7)", () => {
+  it("renders the error envelope when the tracked deployment poll keeps failing (no infinite spinner)", async () => {
+    setToken("flt_test");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string, init?: { method?: string }) => {
+        const u = String(url);
+        // Deploy 提交成功入队 → 开始跟踪。
+        if (init?.method === "POST" && u.includes("/apps/demo/deployments")) {
+          return Promise.resolve(
+            ok({ deployment_id: "dep_track", warnings: [] }),
+          );
+        }
+        // 跟踪轮询持续 500（空 data 形态——refetchInterval 回调不得抛
+        // TypeError，页面不得永远转圈）。
+        if (u.includes("/deployments/dep_track")) {
+          return Promise.resolve({
+            ok: false,
+            status: 500,
+            statusText: "",
+            json: () =>
+              Promise.resolve({
+                code: "E_INTERNAL",
+                message: "tracking unavailable",
+                suggestion: "check daemon logs",
+              }),
+          });
+        }
+        return Promise.resolve(ok({ deployments: [], revisions: [] }));
+      }),
+    );
+
+    renderPage();
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Compose YAML"),
+      "services:\n  web:\n    image: nginx:1.27-alpine\n",
+    );
+    await user.click(screen.getByRole("button", { name: "Deploy" }));
+
+    await waitFor(() => {
+      const envelope = screen.getByTestId("error-envelope");
+      expect(envelope).toHaveTextContent("E_INTERNAL");
+      expect(envelope).toHaveTextContent("tracking unavailable");
+      expect(envelope).toHaveTextContent("check daemon logs");
+    });
+    // 跟踪块仍在（部署 ID 可见），只是状态以错误信封呈现。
+    expect(screen.getByTestId("deployment-tracker")).toHaveTextContent(
+      "dep_track",
+    );
   });
 });

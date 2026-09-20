@@ -37,7 +37,7 @@ func (c *eventsCmd) Run(ctx context.Context, env *commands.Environment, args []s
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (watch)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // eventsWatchCmd 实现 `fleetly events watch [--since-seq N]`。

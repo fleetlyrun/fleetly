@@ -11,6 +11,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/signal"
 	"syscall"
@@ -88,4 +89,21 @@ func exitCodeFor(err error) int {
 		return exitUsage
 	}
 	return commands.ExitError
+}
+
+// subDispatchUsage 是外层动词的内层分派收口（H12）：不直接用框架的
+// SubDispatch——它会把内层 UnknownVerbError 重写成 plain error（丢失
+// 类型），顶层 exitCodeFor 的类型断言因此判不中，嵌套未知子命令退化为
+// exit 1，违背 README 契约（嵌套 miss 与顶层 miss 同为 64）。这里直接
+// 走内层 Dispatch 保留错误类型，再按类型识别内层 miss 并包成 UsageError
+// （携带外层动词的 usage）：退出码回到 64、"usage:" 提示行照常输出
+// （与 missing subcommand 同形态），错误文案保持 "unknown subcommand %q"
+// 原语义。全部外层动词统一走此收口——分派语义单点可审计。
+func subDispatchUsage(c commands.Command, sub *commands.App, ctx context.Context, env *commands.Environment, args []string) error {
+	err := sub.Dispatch(ctx, env, args)
+	var unknown *commands.UnknownVerbError
+	if errors.As(err, &unknown) {
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("unknown subcommand %q", unknown.Name)}
+	}
+	return err
 }

@@ -18,7 +18,7 @@ curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
 sudo sh install.sh --bin-dir ./dist                              # 离线 / 开发形态
 ```
 
-首启日志会**只打印一次** bootstrap admin token。卸载默认保留应用数据（`--purge` 才删）。控制面升级一条命令、自带升级前快照与失败自动回退（`sudo sh upgrade.sh --version vX.Y.Z`）；Engine/主机升级是另一条冷备轨——见 [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md)。三形态、门禁清单、端口面表与 dind 验收见 [`deploy/README.md`](deploy/README.md)。（release 制品链随发布流水线落地；在那之前离线 `--bin-dir` 形态是可用路径。）
+首启会把 bootstrap admin token **一次性写入** `<数据根>/bootstrap-token` 文件（0600、不进日志；首次成功登录后删除该文件）。卸载默认保留应用数据（`--purge` 才删）。控制面升级一条命令、自带升级前快照与失败自动回退（`sudo sh upgrade.sh --version vX.Y.Z`）；Engine/主机升级是另一条冷备轨——见 [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md)。三形态、门禁清单、端口面表与 dind 验收见 [`deploy/README.md`](deploy/README.md)。（release 制品链随发布流水线落地；在那之前离线 `--bin-dir` 形态是可用路径。）
 
 ## 为什么是 fleetly
 
@@ -79,7 +79,7 @@ deploy/           安装器与 systemd unit（随 T2.1 落地）
 
 ## CLI
 
-CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）与 `--token`（env `FLEETLY_TOKEN`）；bootstrap admin token 在 fleetlyd 首启日志中**只打印一次**，后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）、`64` 用法错误（未知动词/flag 或参数违规，EX_USAGE 惯例）。一元 RPC 带缺省 30s deadline；流式动词（`logs follow`、`events watch`）与等待动词（`deploy`、`build`、`rollback`）上 Ctrl-C 干净退出（退出码 0）。
+CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）与 `--token`（env `FLEETLY_TOKEN`）；bootstrap admin token 在首启时**一次性写入** `<数据根>/bootstrap-token` 文件（不进日志；首登后删除），后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）、`64` 用法错误（未知动词/flag 或参数违规，EX_USAGE 惯例）。flags 需置于位置参数之前（Go std `flag` 语义）。一元 RPC 带缺省 30s deadline；流式动词（`logs follow`、`events watch`）与等待动词（`deploy`、`build`、`rollback`）上 Ctrl-C 干净退出（退出码 0）。
 
 ```bash
 fleetlyd &                                  # 控制面（gRPC :8421，HTTP :8420，git SSH :8424）
@@ -90,7 +90,7 @@ fleetly validate compose.yaml               # 受控子集校验（本地）
 fleetly plan compose.yaml                   # 经 API 与最近版本快照比对；退出 2 = 有变化
 fleetly deploy compose.yaml                 # 入队并等待终态
 fleetly apps list && fleetly deployments list my-api
-fleetly logs follow my-api --service web    # 实时流（--json 为 JSONL）
+fleetly logs follow --service web my-api    # 实时流（--json 为 JSONL）
 fleetly env set my-api KEY value            # 随下次部署生效
 fleetly rollback my-api                     # 快照重放（最近 5 版）
 fleetly drift show my-api                   # 期望态 vs 实况
@@ -102,7 +102,7 @@ fleetly tokens create --scopes deploy --note CI   # 明文仅此一次显示
 守护进程内嵌 SSH git 端点（默认 `127.0.0.1:8424`——安全默认只绑回环；VPS 上对外时改 `git.addr` 并配防火墙）。注册公钥后向应用 bare 仓库推送：仓库根的 `compose.yaml`/`compose.yml` 即部署单元，推送到应用配置分支（默认 `main`）触发部署。
 
 ```bash
-fleetly git keys add ~/.ssh/id_ed25519.pub --note laptop   # admin scope；库内只落指纹
+fleetly git keys add --note laptop ~/.ssh/id_ed25519.pub   # admin scope；库内只落指纹
 git remote add fleetly ssh://git@127.0.0.1:8424/my-api.git
 git push fleetly main                                      # → 构建 → 零停机上线
 fleetly git keys list && fleetly git keys rm <id>
@@ -114,8 +114,8 @@ fleetly git keys list && fleetly git keys rm <id>
 
 ```bash
 fleetly apps webhook set-secret my-api <secret>            # ≥16 字符；admin scope
-fleetly apps webhook set-source my-api https://github.com/acme/web.git \
-    --branch main --auth-kind none                          # 或 https_token / ssh_key
+fleetly apps webhook set-source --branch main --auth-kind none \
+    my-api https://github.com/acme/web.git                  # 或 https_token / ssh_key
 fleetly apps webhook show my-api                           # 无敏感投影
 ```
 
@@ -165,7 +165,7 @@ golangci-lint run
 
 冒烟 E2E（在 `docker:29.8.1-dind` 内运行 fleetlyd）：见 [`e2e/README.md`](e2e/README.md)。
 
-贡献纪律：本项目设计先行——行为变更先落文档（走评审轮），再按任务分解的垂直切片落地。错误码与事件是只增注册表。
+贡献纪律：本项目设计先行——行为变更先落文档（走评审轮），再按任务分解的垂直切片落地。错误码与事件是只增注册表。整改的机制验收必须包含关联文档/注释回写核对：对改动关键词在 `docs/`、`deploy/` 与代码注释里做 grep，确认 runbook、脚本与帮助文案不再描述修复前的行为（漂移即缺陷，不是风格问题）。
 
 ## 许可证
 

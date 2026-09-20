@@ -108,8 +108,14 @@ type Manager struct {
 	dsk     *diskStore
 	red     *redactorRegistry
 	streams map[string]*stream // 采集游标表（key = streamKey；mu 保护）
-	mu      sync.Mutex
-	log     *slog.Logger
+	// appMiss 是 app 不在 active 集的首见时刻（M7-6 延迟淘汰计时；mu
+	// 保护）——连续 miss 超过 streamEvictAfter 即回收该 app 的游标与 ring。
+	appMiss map[string]time.Time
+	// pollWatchdogOverride 是单轮看门狗期限覆盖（MG-1 纵深防御的测试注入
+	// 位；零值 = 按 cfg 计算 max(3×扫描周期, 30s)）。
+	pollWatchdogOverride time.Duration
+	mu                   sync.Mutex
+	log                  *slog.Logger
 }
 
 // NewManager 构造日志管线管理器（不启动采集；Run 承载循环）。
@@ -128,6 +134,7 @@ func NewManager(cfg Config, st *state.Store, port Port, box *secrets.Box, log *s
 		dsk:     newDiskStore(norm.Dir),
 		red:     newRedactorRegistry(st, box, log),
 		streams: make(map[string]*stream),
+		appMiss: make(map[string]time.Time),
 		log:     log,
 	}
 }
@@ -138,3 +145,10 @@ func (m *Manager) WithClock(f func() time.Time) *Manager { m.clock = f; return m
 // WithSecretSource 注入补充脱敏值集供给（B3；装配期调用——实现方提供
 // state 密文列之外的明文 secret 落点，如 gitserver 钩子 token）。
 func (m *Manager) WithSecretSource(s SecretValuesSource) *Manager { m.red.extra = s; return m }
+
+// InvalidateRedaction 主动失效某 app 的脱敏值集缓存（H9）：env 写路径
+// （api set/remove）与部署 env 提升点（engine 观察窗成功）联动调用，把
+// 「新 secret 值在 TTL 窗内被明文采集并按天落盘保留 7 天」的暴露窗收敛
+// 到下一次 forApp 重建。幂等；未知 appID 无害。未挂钩的写路径仍由 TTL
+// 兜底（redact.go redactorTTL 注释）。
+func (m *Manager) InvalidateRedaction(appID string) { m.red.invalidate(appID) }

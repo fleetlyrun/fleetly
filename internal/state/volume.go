@@ -104,7 +104,7 @@ func (s *Store) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, b
 			Target: "volume:" + w.Name,
 			Result: "ok",
 			// 摘要只含事实字段，无卷数据概念。
-			DiffSummary: `{"app":"` + w.AppID + `","key":"` + w.Key + `"}`,
+			DiffSummary: DiffSummary("app", w.AppID, "key", w.Key), // MG-6：构造器替换手拼 JSON
 		})
 	})
 	if err != nil {

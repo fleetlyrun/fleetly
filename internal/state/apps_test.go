@@ -109,3 +109,89 @@ func TestAppNameOccupiedWhileDeleting(t *testing.T) {
 		t.Fatalf("create while deleting must be ErrAppExists, got: %v", err)
 	}
 }
+
+// TestListAppsByLifecycle 按生命周期位查询（H10/MG-3：引擎 deleting 回收
+// duty 的候选集——只返回指定位的应用，空集返回空切片语义）。
+func TestListAppsByLifecycle(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	demo, err := st.CreateApp(ctx, "", "demo")
+	if err != nil {
+		t.Fatalf("create demo: %v", err)
+	}
+	other, err := st.CreateApp(ctx, "", "other")
+	if err != nil {
+		t.Fatalf("create other: %v", err)
+	}
+	if err := st.MarkAppDeleting(ctx, demo.ID); err != nil {
+		t.Fatalf("mark deleting: %v", err)
+	}
+
+	deleting, err := st.ListAppsByLifecycle(ctx, LifecycleDeleting)
+	if err != nil {
+		t.Fatalf("list deleting: %v", err)
+	}
+	if len(deleting) != 1 || deleting[0].ID != demo.ID {
+		t.Fatalf("deleting set = %+v, want only demo", deleting)
+	}
+	active, err := st.ListAppsByLifecycle(ctx, LifecycleActive)
+	if err != nil {
+		t.Fatalf("list active: %v", err)
+	}
+	if len(active) != 1 || active[0].ID != other.ID {
+		t.Fatalf("active set = %+v, want only other", active)
+	}
+	// deleted 位当前为空集（空切片非 nil 语义可接受，长度必须为 0）。
+	deleted, err := st.ListAppsByLifecycle(ctx, LifecycleDeleted)
+	if err != nil {
+		t.Fatalf("list deleted: %v", err)
+	}
+	if len(deleted) != 0 {
+		t.Fatalf("deleted set = %+v, want empty", deleted)
+	}
+}
+
+// TestTxMarkAppDeletedTransactional 事务内 tombstone 第二拍（H10/MG-3：
+// 引擎 duty 与终局事件/审计同事务的组合原语）——非法迁移（active 直达
+// deleted）在事务形态下同样被拒，事务整体回滚。
+func TestTxMarkAppDeletedTransactional(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	app, err := st.CreateApp(ctx, "", "demo")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	// active 直达 deleted：拒绝（与 Store 形态同守卫）。
+	if err := st.InTx(ctx, func(tx *Tx) error {
+		return tx.MarkAppDeleted(ctx, app.ID)
+	}); !errors.Is(err, ErrInvalidLifecycleTransition) {
+		t.Fatalf("tx active→deleted must be rejected, got: %v", err)
+	}
+	// deleting → deleted：事务内成功，行迁移可见。
+	if err := st.MarkAppDeleting(ctx, app.ID); err != nil {
+		t.Fatalf("mark deleting: %v", err)
+	}
+	if err := st.InTx(ctx, func(tx *Tx) error {
+		if err := tx.MarkAppDeleted(ctx, app.ID); err != nil {
+			return err
+		}
+		return tx.WriteAudit(ctx, AuditEntry{
+			Actor: "system", Action: "app.deleted", Target: "app:" + app.Name, Result: "ok",
+		})
+	}); err != nil {
+		t.Fatalf("tx mark deleted: %v", err)
+	}
+	got, err := st.GetAppByName(ctx, "demo")
+	if err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	if got.Lifecycle != LifecycleDeleted || got.DeletedAt.IsZero() {
+		t.Fatalf("lifecycle = %s deleted_at zero=%v, want deleted with stamp", got.Lifecycle, got.DeletedAt.IsZero())
+	}
+	// 重复迁移（deleted → deleted）被拒：duty 重放的幂等跳过依据。
+	if err := st.InTx(ctx, func(tx *Tx) error {
+		return tx.MarkAppDeleted(ctx, app.ID)
+	}); !errors.Is(err, ErrInvalidLifecycleTransition) {
+		t.Fatalf("tx deleted→deleted must be rejected, got: %v", err)
+	}
+}

@@ -71,6 +71,10 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 非终态行超龄停留的显性化告警。
 	"engine.stale_nonterminal": "S18-A10 实现期新增（评审类 A；部署非终态超龄告警）",
 	"build.stale_nonterminal":  "S18-A10 实现期新增（评审类 A；构建非终态超龄告警）",
+
+	// B6/H10 实现期新增（MG-3 横切结构修复）：app 删除生命周期第二拍的
+	// 终局事件（引擎 deleting 回收 duty 发出）。
+	"app.deleted": "B6/H10 实现期新增（MG-3；app 删除第二拍终局）",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

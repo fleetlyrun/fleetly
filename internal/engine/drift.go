@@ -87,10 +87,21 @@ type driftSpec struct {
 // driftProjection 把 ServiceSpec 投影为漂移哈希输入（确定性：env 按 key
 // 字典序、网络按别名串字典序、label 键字典序由 canonical JSON 保证）。
 func driftProjection(s ServiceSpec) driftSpec {
+	// M1-3：global 服务的副本数归一——Swarm global 模式无受管 Replicas
+	// 语义（期望侧规划写副本缺省值、实况侧 Mode.Global 读回 0——适配器
+	// serviceToState 对 global 恒 0），两侧若照抄会永久假阳性漂移。归一取
+	// 1：与 desiredReplicasOf 的观察语义一致（单机 global 按一实例计），
+	// 且 diffDrift 的 replicas 项两侧同值不产出（副本数对 global 非受管
+	// 字段；v0.1 已在校验层拒绝新部署声明 mode: global，本归一防存量
+	// 快照/回滚路径的漂移误报）。
+	replicas := s.Replicas
+	if s.Global {
+		replicas = 1
+	}
 	out := driftSpec{
 		Image:             driftImage(s.Image),
 		Command:           append([]string{}, s.Command...),
-		Replicas:          s.Replicas,
+		Replicas:          replicas,
 		Global:            s.Global,
 		Mounts:            append([]MountSpec{}, s.Mounts...),
 		Constraints:       append([]string{}, s.Constraints...),
@@ -539,7 +550,7 @@ func (e *Engine) convergeApp(ctx context.Context, appID, appName, actor string) 
 			Action:      "reconcile.converge",
 			Target:      "app:" + appName,
 			Result:      "ok",
-			DiffSummary: `{"deployment":"` + source.ID + `","desired_hash":"` + source.DesiredHash + `"}`,
+			DiffSummary: state.DiffSummary("deployment", source.ID, "desired_hash", source.DesiredHash), // MG-6：构造器替换手拼 JSON
 		})
 	}); err != nil {
 		return state.DeployRecord{}, err
@@ -569,7 +580,7 @@ func (e *Engine) SetDriftConverge(ctx context.Context, appName string, on bool, 
 			Action:      action,
 			Target:      "app:" + app.Name,
 			Result:      "ok",
-			DiffSummary: `{"enabled":` + boolJSON(on) + `}`,
+			DiffSummary: state.DiffSummary("enabled", on), // MG-6：构造器替换手拼 JSON（布尔保持原生字面量）
 		})
 	})
 }
@@ -586,12 +597,4 @@ func (e *Engine) GetDriftConverge(ctx context.Context, appName string) (bool, er
 // apperrConflict 是 409 语义信封（在途部署拒绝收敛）。
 func apperrConflict(format string, args ...any) error {
 	return errorf("E_STATE_VERSION_CONFLICT", format, args...)
-}
-
-// boolJSON 是布尔的 JSON 字面量（审计 diff 摘要用）。
-func boolJSON(b bool) string {
-	if b {
-		return "true"
-	}
-	return "false"
 }

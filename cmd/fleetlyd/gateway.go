@@ -9,6 +9,7 @@ import (
 	"time"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -31,7 +32,9 @@ import (
 //   - SystemService（Ping 豁免鉴权；Status/Nodes/Ingress 为 read）
 //   - AppsService / DeploymentsService / RevisionsService / BuildsService
 //   - DriftService / DomainsService / EnvService / PlacementService
-//   - TokensService
+//   - TokensService / GitKeysService（M4-2 补齐：SSH 公钥管理面与 token
+//     管理面同属 Console 消费的 admin 资源面，此前只在 gRPC 侧注册，
+//     REST 面 404——与新GRPCServer 的注册清单对齐）
 //   - LogsService（Follow = chunked-JSON 流；Console SSE 直接消费）
 //   - EventsService（Watch = chunked-JSON 流，seq 游标 + 过期信封帧）
 //
@@ -79,6 +82,7 @@ func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 		serverv1.RegisterEventsServiceHandlerFromEndpoint,
 		serverv1.RegisterPlacementServiceHandlerFromEndpoint,
 		serverv1.RegisterTokensServiceHandlerFromEndpoint,
+		serverv1.RegisterGitKeysServiceHandlerFromEndpoint, // M4-2：与 gRPC 侧注册清单对齐
 	} {
 		if err := register(context.Background(), mux, grpcEndpoint, opts); err != nil {
 			return nil, err
@@ -123,9 +127,17 @@ func grpcEndpointFromAddr(addr string) string {
 // 面 = 各自分派面（线性词形判定，不存在「先豁免再分发」的放宽空间）。
 // REST 面（fallback）外包 A3 匿名 401 per-IP 限速（newAuthFailureLimiter
 // ——仅 gateway 面；webhook 与 /ui/ 分派不经限速层，不受影响）。
+// H7：全根请求体上限中间件（limitRequestBody）最外层先行——鉴权与
+// gateway 解码之前拒绝超限物化（见 maxRequestBodyBytes）。
 func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.Handler) http.Handler {
 	gateway := newAuthFailureLimiter(time.Minute, 10).wrap(fallback)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// H7：请求体上限在分派（webhook/console/gateway）之前执行——
+		// gateway 解码完 body 才到 gRPC 鉴权拦截器的旧形态下，未认证方
+		// 可物化任意大内存；上限前置后 413 早于一切 body 消费。
+		if !limitRequestBody(w, r) {
+			return
+		}
 		if gitserver.WebhookPathPattern.MatchString(r.URL.Path) {
 			webhook.ServeHTTP(w, r)
 			return
@@ -136,6 +148,54 @@ func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.
 		}
 		gateway.ServeHTTP(w, r)
 	})
+}
+
+// ── H7（S18）：REST/HTTP 面请求体上限 ────────────────────────────────────────
+//
+// 问题：gateway 面的 REST 请求体没有上限——grpc-gateway 解码完整 body 后
+// 才进入 gRPC auth 拦截器，未认证方可让进程物化数 GB 内存（webhook 原生
+// 端点自带 25MiB LimitReader，见 gitserver maxWebhookBody；gRPC 直连面有
+// 框架缺省 4MiB recv 上限；唯独 gateway REST 面裸奔）。
+//
+// 防线形态（root handler 最外层，先于分派与鉴权）：
+//   - 声明了 Content-Length 且超限 → 直接 413 信封（不触达任何 handler，
+//     body 不读——连接由调用方自裁）；
+//   - 其余请求统一包 http.MaxBytesReader（32MiB）：谎报/缺省长度
+//     （chunked）的慢速物化在读第 N+1 字节时被截断，MaxBytesReader 同步
+//     关闭连接（服务端不再排空剩余 body），内存物化以常数为上界。
+//
+// 上限取 32MiB：口径对齐 webhook 面 25MiB（GitHub push 大投递防御）取整档
+// 上浮一档——REST 面载荷是 JSON 包裹的 compose 字节（Deploy/TriggerBuild），
+// 与 webhook 同源同量级；32MiB 覆盖最大合法 compose 同时把未认证物化面
+// 压到常数。/ui/ 静态与 webhook 面统一包裹（GET 无 body 无害；webhook
+// 自身 25MiB LimitReader 先于此层生效，双层取小不冲突）。
+const maxRequestBodyBytes = 32 << 20 // 32MiB
+
+// limitRequestBody 是 H7 的入向守卫：超限返回 false（413 信封已写，调用方
+// 停止分派）；未超限把 r.Body 包上 MaxBytesReader 后返回 true。
+// 413 信封用 shared ErrorResponse 的 protojson 形态（与 webhook reject、
+// gateway 错误处理器同款退化信封——code 留空，message 保底）。
+func limitRequestBody(w http.ResponseWriter, r *http.Request) bool {
+	if r.ContentLength > maxRequestBodyBytes {
+		writeRequestBodyTooLarge(w)
+		return false
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+	return true
+}
+
+// writeRequestBodyTooLarge 输出 413 退化信封（与 FZ-2 口径一致：code 空、
+// message 保底，无内部细节）。
+func writeRequestBodyTooLarge(w http.ResponseWriter) {
+	env := &sharedv1.ErrorResponse{Message: "request body exceeds limit (32MiB)"}
+	raw, err := protojson.MarshalOptions{UseProtoNames: true, EmitUnpopulated: false}.Marshal(env)
+	if err != nil {
+		http.Error(w, "request body exceeds limit", http.StatusRequestEntityTooLarge)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusRequestEntityTooLarge)
+	_, _ = w.Write(raw) //nolint:gosec // G705：protojson 固定信封，无用户可控标记
 }
 
 // ── A3（S18）：匿名 401 per-IP 限速 ─────────────────────────────────────────

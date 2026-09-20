@@ -136,7 +136,7 @@ func (n *NodeIdentity) Anchor(ctx context.Context) error {
 				Action:      "node.identity_anchored",
 				Target:      "node:" + n.platformID,
 				Result:      "ok",
-				DiffSummary: `{"swarm_node_id":"` + swarmNodeID + `"}`,
+				DiffSummary: DiffSummary("swarm_node_id", swarmNodeID), // MG-6：构造器替换手拼 JSON
 			})
 		})
 		if err != nil {

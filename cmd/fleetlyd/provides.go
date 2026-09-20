@@ -4,6 +4,7 @@ import (
 	"context"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/google/wire"
 	"github.com/lynx-go/lynx"
@@ -226,12 +227,15 @@ func (p ingressPublisher) PublishRoutes(ctx context.Context, in engine.RoutePubl
 // engine.Substrate + engine.ImageChecker（适配器方向：substrate → engine
 // 核心接口）；路由发布端口由 ingress.Manager 经载荷适配实现（T2.15——
 // 健康门后挂点）。
-func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box, m *ingress.Manager, bm *statebackup.Manager) *engine.Engine {
+func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box, m *ingress.Manager, bm *statebackup.Manager, lm *logs.Manager) *engine.Engine {
 	return engine.NewEngine(cfg.EngineSettings(), st, sc, sc, pl, box, app.Logger()).
 		WithRoutePublisher(ingressPublisher{m: m}).
 		// 备份挂钩（T2.22）：每次部署成功后异步触发一次热备快照
 		// （kind=post_deploy；失败只落台账/审计/组件三面红，不影响部署）。
-		WithPostDeployHook(bm.RunPostDeploy)
+		WithPostDeployHook(bm.RunPostDeploy).
+		// H9：部署 env 提升点联动失效日志脱敏值集（观察窗成功 + 实际
+		// 提升 pending 时触发；回调只做缓存删除，非阻塞）。
+		WithEnvChangedHook(lm.InvalidateRedaction)
 }
 
 // NewLogsManager 构建日志管线管理器（T2.20：采集/Follow/History/清理；
@@ -323,9 +327,11 @@ func NewDomainsService(st *state.Store, m *ingress.Manager) *api.DomainsService 
 	return api.NewDomainsService(st, m)
 }
 
-// NewEnvService 构造平台 env 面服务（值加密边界在服务实现内）。
-func NewEnvService(st *state.Store, sb *secrets.Box) *api.EnvService {
-	return api.NewEnvService(st, sb)
+// NewEnvService 构造平台 env 面服务（值加密边界在服务实现内）。H9：注入
+// env 写路径联动回调（set/remove 成功后即时失效日志脱敏值集，把 secret
+// 明文采集暴露窗从 TTL 30s 收敛到单次重建）。
+func NewEnvService(st *state.Store, sb *secrets.Box, lm *logs.Manager) *api.EnvService {
+	return api.NewEnvService(st, sb).WithEnvChangedHook(lm.InvalidateRedaction)
 }
 
 // NewLogsService 构造日志面服务（T2.20：Follow/History 接管线管理器）。
@@ -355,6 +361,9 @@ func NewTokensService(st *state.Store) *api.TokensService {
 // Server 自行挂载，与 gateway 路由共存（torchwood 同款双面单端口形态）。
 // Console 静态托管仅在 console.static_dir 非空时挂载（缺省关闭），目录缺
 // index.html 时 fail-fast 拒绝启动。
+//
+// M4-3：经 WithServerOptions 放宽 WriteTimeout（见 tuneHTTPServer——lynx
+// 缺省 60s 绝对超时会静默掐断 /v1/events/stream 与 logs stream）。
 func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers) (*lynxhttp.Server, error) {
 	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
 	if err != nil {
@@ -372,15 +381,53 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers) (*l
 		lynxhttp.WithAddr(cfg.Addr),
 		lynxhttp.WithHealthCheckers(app.HealthCheckers),
 		lynxhttp.WithLogger(app.Logger("logger", "http-requestlog")),
+		lynxhttp.WithServerOptions(tuneHTTPServer),
 	), nil
 }
 
-// NewServices 聚合全部受托管服务：状态层五服务（store/identity/observer/
-// janitor/backup）、构建队列、发布引擎、入口与日志采集服务先于 HTTP/gRPC
-// 注册——lynx 按注册顺序启动，store 的 Init 在装配期（Register 阶段）完成
-// 迁移，Start 阶段顺序无实质依赖，注册顺序表达「状态与队列、引擎、入口、
-// 日志采集先于 API 面」（ingress 在 engine 之后：引擎 tick 触发发布时
-// 配置端点已监听）。
+// streamWriteTimeout 是长驻流式端点的 WriteTimeout（M4-3）：15 分钟——
+// /v1/events/stream（Watch）与 logs Follow 是无界流，lynx 缺省 60s 绝对
+// WriteTimeout 每 60s 把连接静默掐断一次（客户端无任何信令），Console
+// 断线重连退避虽能兜住但掐断频率不可接受。15min 覆盖长驻观察会话；到期
+// 掐断由客户端重连（seq 游标/Follow 位点续传）消化，连接不应无限存活。
+const streamWriteTimeout = 15 * time.Minute
+
+// tuneHTTPServer 是 M4-3 的底层 *http.Server 调优钩子（lynxhttp 在内部
+// 超时配置之后应用 ServerOptions，只覆写 WriteTimeout）：
+//   - ReadHeaderTimeout / ReadTimeout 保持 lynx 缺省 60s 不动——慢速攻击
+//     （slowloris）防线维持紧口径；body 物化面由 H7 的 MaxBytesReader
+//     （32MiB）单独设界，ReadTimeout 对合法上传的约束因此可接受
+//     （REST 载荷 JSON+compose、webhook 投递 10s 内完成是现实基线）；
+//   - WriteTimeout 放宽到 streamWriteTimeout（15min），覆盖流式端点。
+func tuneHTTPServer(srv *http.Server) {
+	srv.WriteTimeout = streamWriteTimeout
+}
+
+// NewServices 聚合全部受托管服务。MG-4（X-3，B6）停止不变量——注册顺序
+// 即停止顺序：lynx 把每个服务登记为 oklog/run actor，run.Group 在关停时
+// **按注册顺序逐个调用 interrupt**，而 lynx 的 interrupt 包壳阻塞在该服务
+// 的 Stop 上——首注册者最先停。Start 则是并发触达（run.Group 为每个 actor
+// 起 goroutine，无跨服务等待），不存在硬性启动顺序；Init 严格按注册序，
+// 但全部 Init 相互独立（store 迁移在 wire 装配期完成，非 Init 阶段）。
+//
+// 三段停止不变量（顺序不可倒置）：
+//  1. 入口面最先停（HTTP/gRPC/git SSH + webhook worker）——SIGTERM 后
+//     立即拒绝新工作（连接排水），消灭「Deploy/TriggerBuild 仍假成功入队
+//     但引擎/队列已死」的窗口。webhook worker 的排空也在本段：drain 中
+//     处理的 job 写部署行，此时引擎已停、行只会排队待重启恢复——可接受；
+//  2. 写入者随后（build queue → engine → ingress → 日志采集）——入口已
+//     关，写入者安心排空在途（队列认领、状态机 tick、路由发布、日志尾随）。
+//     ingress 在 engine 之后保持原相对序（引擎 tick 触发发布时配置端点
+//     已监听的弱偏置；Traefik 对配置端点不可达保留旧配置，先停无害）；
+//  3. 资源层最后（identity/observer/janitor → backup → secrets → store）
+//     ——backup 必须晚于 engine：post-deploy 备份挂钩是引擎成功路径逸出
+//     的异步 goroutine，backup.Stop 等待在途快照收口（X-7）；store 最后
+//     （其 Stop 无资源动作，连接池由 Wire cleanup 在 OnPostStop 释放——
+//     晚于全部服务 Stop，排水期在途请求仍可读库）。
+//
+// lynx 集成级 SIGTERM 端到端测试（真进程信号→逐服务 Stop 时序）成本过高
+// 不做，挂账：顺序契约由 TestNewServicesStopOrder（结构断言）+ lynx 自身
+// ordered/stopRange 语义共同钉住。
 func NewServices(
 	app lynx.App,
 	st *state.Store,
@@ -400,19 +447,23 @@ func NewServices(
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
 	return []lynx.Service{
-		newStoreService(st),
+		// ── 第一段：入口面（最先注册 = 最先停：拒绝新工作）──
+		hs,
+		gs,
+		newGitService(src, app, cfg.GitSettings().Enabled, cfg.GitSettings().Addr),
+		// ── 第二段：写入者（入口关后排空在途）──
+		newBuilderService(q, b, app.Logger()),
+		newEngineService(eng),
+		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr),
+		newLogsService(lm),
+		// ── 第三段：资源层（最后停：backup 晚于 engine 等 post-deploy
+		//     在途快照；store 最后）──
 		newIdentityService(id),
 		newObserverService(ob),
 		newJanitorService(jr),
 		newBackupService(bm),
 		newSecretsService(sb),
-		newBuilderService(q, b, app.Logger()),
-		newEngineService(eng),
-		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr),
-		newLogsService(lm),
-		newGitService(src, app, cfg.GitSettings().Enabled, cfg.GitSettings().Addr),
-		hs,
-		gs,
+		newStoreService(st),
 	}
 }
 

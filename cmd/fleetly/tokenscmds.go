@@ -37,7 +37,7 @@ func (c *tokensCmd) Run(ctx context.Context, env *commands.Environment, args []s
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (create|list|revoke)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // tokensCreateCmd 实现 `fleetly tokens create --scopes <s1,s2> [--note]`。

@@ -43,7 +43,7 @@ func (c *ingressCmd) Run(ctx context.Context, env *commands.Environment, args []
 	if len(args) == 0 {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (status)")}
 	}
-	return c.sub.SubDispatch(ctx, env, args)
+	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
 // ingressStatusCmd 实现 `fleetly ingress status [--json]`。

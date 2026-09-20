@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -57,6 +58,13 @@ func (m *Manager) scanOnce(ctx context.Context) {
 		m.log.Warn("logs: list apps failed", "error", err.Error())
 		return
 	}
+	active := make(map[string]struct{}, len(apps))
+	for _, app := range apps {
+		active[app.Name] = struct{}{}
+	}
+	// M7-6：先对账已消失 app 的延迟淘汰（连续 miss 超窗 → 游标 + ring
+	// 回收），再推进活跃面采集。
+	m.evictStaleStreamState(active)
 	for _, app := range apps {
 		services, err := m.port.ManagedServiceProcesses(ctx, app.Name)
 		if err != nil {
@@ -97,26 +105,51 @@ func (m *Manager) pollStream(ctx context.Context, app state.App, service string,
 		m.log.Debug("logs: stream open failed", "app", app.Name, "service", service, "error", err.Error())
 		return
 	}
+	// MG-1 纵深防御：单轮看门狗。scanLines 修复后底座流恒会排水结束，此处
+	// 只兜「底座/管线再出同款永不返回缺陷」的极端面——超时记 Error 并放弃
+	// 本轮（下一轮重开流重试），采集循环/落盘/prune 不再被单条流拖死。权衡：
+	// 放弃后底座侧流 goroutine 可能挂在无读者的 channel 发送上，泄漏到 ctx
+	// 取消（进程停机）——跳过一轮的代价优于全管线停摆，且正常路径（流必
+	// 结束）不会触发，故选最小实现：只告警 + 弃轮，不主动断流。
+	watchdog := time.NewTimer(m.pollWatchdog())
+	defer watchdog.Stop()
 	var last time.Time
-	for line := range lines {
-		at := line.At
-		if at.IsZero() {
-			at = m.clock()
-		}
-		if at.After(last) {
-			last = at
-		}
-		e := Entry{
-			App:     app.Name,
-			Service: service,
-			At:      at,
-			Stderr:  line.Stderr,
-			Line:    red.redact(line.Line),
-			Source:  SourceContainer,
-		}
-		m.hub.ingest(e)
-		if err := m.dsk.append(ctx, e); err != nil {
-			m.log.Warn("logs: disk append failed", "app", app.Name, "error", err.Error())
+deliver:
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-watchdog.C:
+			m.log.Error("logs: poll round exceeded watchdog deadline, abandoning this round",
+				"app", app.Name, "service", service)
+			return
+		case line, ok := <-lines:
+			if !ok {
+				break deliver // 流自然结束。
+			}
+			at := line.At
+			if at.IsZero() {
+				// M7-4：无时间戳续行不推进游标——旧实现以墙钟代投，会把
+				// cur.lastAt 拨到 now，下一轮 since 越过同批未投递行（跳批
+				// 丢行）。行本身以零值 At 投递（视图层容忍 e.at 可空，console
+				// 端 `e.at ?? ""`；落盘侧落入零日文件 00010101.jsonl，检索
+				// 与保留期清理语义均覆盖）。取舍：若全批皆零 At，last 保持
+				// 不动，下轮重复拉取该批——重复优于丢失，行内容相同幂等。
+			} else if at.After(last) {
+				last = at // 游标只随可信时间戳行推进。
+			}
+			e := Entry{
+				App:     app.Name,
+				Service: service,
+				At:      at,
+				Stderr:  line.Stderr,
+				Line:    red.redact(line.Line),
+				Source:  SourceContainer,
+			}
+			m.hub.ingest(e)
+			if err := m.dsk.append(ctx, e); err != nil {
+				m.log.Warn("logs: disk append failed", "app", app.Name, "error", err.Error())
+			}
 		}
 	}
 	if !last.IsZero() {
@@ -125,6 +158,71 @@ func (m *Manager) pollStream(ctx context.Context, app state.App, service string,
 			cur.lastAt = last
 		}
 		m.mu.Unlock()
+	}
+}
+
+// minPollWatchdog 是单轮拉取看门狗的期限下限（MG-1 纵深防御）。
+const minPollWatchdog = 30 * time.Second
+
+// pollWatchdog 返回本轮看门狗期限：max(3×扫描周期, 30s)——既覆盖慢轮询
+// 周期下的正常整轮时长，又有绝对下限防扫描周期配置过小时看门狗过敏。
+// pollWatchdogOverride 是测试注入位（同包私有，缩短真实等待）。
+func (m *Manager) pollWatchdog() time.Duration {
+	if m.pollWatchdogOverride > 0 {
+		return m.pollWatchdogOverride
+	}
+	d := 3 * m.cfg.ScanInterval()
+	if d < minPollWatchdog {
+		d = minPollWatchdog
+	}
+	return d
+}
+
+// streamEvictAfter 是 app 消失后采集状态的延迟淘汰窗（M7-6）：窗内 app
+// 回归则撤销计时保留状态（采集连续性优先）；超窗删除该 app 全部
+// per-service 游标与 ring——app 回归等价首启语义（游标自发现时刻重建，
+// 历史由落盘承载，代价可接受）。不淘汰则 hub.streams/m.streams 只增不删，
+// 随 app 创建/删除更迭无限累积（ring 每流 ringSize 条）。
+const streamEvictAfter = 5 * time.Minute
+
+// evictStaleStreamState 执行一轮淘汰对账（scanOnce 头部调用）：非 active
+// app 记 miss 首见时刻；连续 miss 超过 streamEvictAfter 的 app 删除其全部
+// 游标（m.streams 按 app 前缀）并同步清 hub 侧 ring。active 判定以本轮
+// ListActiveApps 快照为准。
+func (m *Manager) evictStaleStreamState(active map[string]struct{}) {
+	now := m.clock()
+	m.mu.Lock()
+	// 计时更新：活跃 app 撤销 miss 计时；非活跃 app 记首见 miss 时刻。
+	for _, cur := range m.streams {
+		if _, ok := active[cur.app]; ok {
+			delete(m.appMiss, cur.app)
+			continue
+		}
+		if _, seen := m.appMiss[cur.app]; !seen {
+			m.appMiss[cur.app] = now
+		}
+	}
+	// 淘汰：连续 miss 超窗 → 删该 app 全部游标（各服务键在迭代中一并命中）。
+	var evicted []string
+	for key, cur := range m.streams {
+		if _, ok := active[cur.app]; ok {
+			continue
+		}
+		if first, miss := m.appMiss[cur.app]; miss && now.Sub(first) >= streamEvictAfter {
+			delete(m.streams, key)
+			if !slices.Contains(evicted, cur.app) {
+				evicted = append(evicted, cur.app)
+			}
+		}
+	}
+	// 删尽的 app 清计时（app 再消失等价首次发现，重新起算）。
+	for _, app := range evicted {
+		delete(m.appMiss, app)
+	}
+	m.mu.Unlock()
+	if len(evicted) > 0 {
+		m.hub.evictApps(evicted)
+		m.log.Info("logs: evicted stream state for inactive apps", "apps", strings.Join(evicted, ","))
 	}
 }
 
@@ -233,7 +331,11 @@ func (m *Manager) buildLogEntries(ctx context.Context, app state.App, q HistoryQ
 	return out, nil
 }
 
-// readPlainLines 读取纯文本日志文件（builds 产物形态），至多 limit 行。
+// readPlainLines 读取纯文本日志文件的**最后** limit 行（M7-5：构建失败的
+// 关键信息——错误摘要/退出原因——在文件尾部，头部截断使诊断面不可达，且
+// 与容器源「超 limit 取最新 limit 条」语义相反）。滑窗实现：总驻留 ≤ limit
+// 行，文件多大都不全量进内存；单行仍受 1MiB 扫描上限（builds 产物行不会
+// 接近该量级，维持原语义不在本轮扩面）。
 func readPlainLines(path string, limit int) ([]string, error) {
 	f, err := os.Open(path) //nolint:gosec // G304：路径来自 builds 表登记（写侧平台受管）
 	if err != nil {
@@ -243,11 +345,17 @@ func readPlainLines(path string, limit int) ([]string, error) {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
-	var out []string
+	var win []string
 	sc := bufio.NewScanner(f)
 	sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	for sc.Scan() && (limit <= 0 || len(out) < limit) {
-		out = append(out, strings.TrimRight(sc.Text(), "\r"))
+	for sc.Scan() {
+		line := strings.TrimRight(sc.Text(), "\r")
+		if limit > 0 && len(win) == limit {
+			copy(win, win[1:]) // 挤掉最旧（滑窗）
+			win[limit-1] = line
+			continue
+		}
+		win = append(win, line)
 	}
-	return out, sc.Err()
+	return win, sc.Err()
 }

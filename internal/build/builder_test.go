@@ -212,6 +212,72 @@ func TestBuilderExecuteContextOutsideManagedRootsFails(t *testing.T) {
 	}
 }
 
+// TestBuilderFailedBuildRecordsLogPath M2-5：失败构建也落 log_path——产物
+// 目录就位即回填（SetBuildLogPath），solve 失败后行携带 log_path、错误
+// 信封 context 带 log_path 键（原先唯一写点在 FinishBuildSucceeded，失败
+// 行恒空、失败取证落空）。buildkit 端点指向拒绝连接的本地端口：solve 在
+// 连接门快速失败（失败注入面，不依赖 docker/buildkit 环境）。
+func TestBuilderFailedBuildRecordsLogPath(t *testing.T) {
+	st := newQueueTestStore(t)
+	app, err := st.CreateApp(context.Background(), "", "builder-logpath")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	artifacts := filepath.Join(t.TempDir(), "artifacts")
+	b := NewBuilder(Config{
+		ArtifactsDir: artifacts,
+		BuildkitHost: "tcp://127.0.0.1:1", // 连接拒绝：solve 连接门快速失败
+	}, st, errImages{}, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	raw, err := Request{
+		BuildID: "logpath-build-1", AppID: app.ID, AppName: "builder-logpath",
+		Service: "web", Driver: state.DriverDockerfile,
+		ContextDir: t.TempDir(), Dockerfile: "Dockerfile",
+	}.Encode()
+	if err != nil {
+		t.Fatalf("encode request: %v", err)
+	}
+	rec, err := st.CreateBuild(context.Background(), state.BuildRecord{
+		AppID: app.ID, Service: "web", Driver: state.DriverDockerfile, Request: raw,
+	})
+	if err != nil {
+		t.Fatalf("create record: %v", err)
+	}
+	if err := st.ClaimBuild(context.Background(), rec.ID); err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	rec, err = st.GetBuild(context.Background(), rec.ID)
+	if err != nil {
+		t.Fatalf("reload claimed record: %v", err)
+	}
+
+	_, execErr := b.Execute(context.Background(), rec)
+	if execErr == nil {
+		t.Fatal("solve 必须失败（端点拒绝连接）")
+	}
+	var appErr *apperr.Error
+	if !errors.As(execErr, &appErr) || appErr.Code() != "E_BUILD_FAILED" {
+		t.Fatalf("error = %v, want E_BUILD_FAILED envelope", execErr)
+	}
+	wantLog := filepath.Join(artifacts, "builder-logpath", rec.ID, "build.log")
+	if got := appErr.Context()["log_path"]; got != wantLog {
+		t.Fatalf("envelope log_path = %q, want %q（失败信封必须携带日志路径）", got, wantLog)
+	}
+	row, err := st.GetBuild(context.Background(), rec.ID)
+	if err != nil {
+		t.Fatalf("get build: %v", err)
+	}
+	if row.Status != state.BuildFailed {
+		t.Fatalf("row status = %s, want failed", row.Status)
+	}
+	if row.LogPath != wantLog {
+		t.Fatalf("row log_path = %q, want %q（M2-5：失败行也必须携带 log_path）", row.LogPath, wantLog)
+	}
+	if _, err := os.Stat(wantLog); err != nil {
+		t.Fatalf("build.log 未落盘: %v", err)
+	}
+}
+
 // TestValidateContextDir 受管根校验的词法面：受管根内放行；相对路径、
 // 未归一化（.. 逃逸词形）、受管根外拒绝。
 func TestValidateContextDir(t *testing.T) {
@@ -249,6 +315,50 @@ func TestValidateContextDir(t *testing.T) {
 	}
 	if err := validateContextDir(outside, multi); err == nil {
 		t.Fatal("outside all roots must be rejected")
+	}
+}
+
+// TestValidateContextDirSymlinkEscape H8 回归（MG-1 同族）：受管根内的
+// symlink 指向根外目录——纯词法 containsPath 判「在内」，EvalSymlinks 解析
+// 后的真源对全部根不成立 → 拒绝。对照：根内真实目录放行、指向根内的
+// symlink 放行。Windows 上 os.Symlink 需要特权/开发者模式——创建失败即
+// 跳过（Linux CI 上生效；注意 Windows junction 不是替代注入物：
+// filepath.EvalSymlinks 不解析 junction（Lstat 不标 ModeSymlink），与
+// fsutil.NewFS 的同款行为一致）。
+func TestValidateContextDirSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	inside := filepath.Join(root, "real-ctx")
+	if err := os.MkdirAll(inside, 0o750); err != nil {
+		t.Fatalf("mkdir inside: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(outside, "secret"), 0o750); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	escapeLink := filepath.Join(root, "escape-link")
+	if err := os.Symlink(filepath.Join(outside, "secret"), escapeLink); err != nil {
+		t.Skipf("os.Symlink unavailable on this host (privilege required on Windows): %v", err)
+	}
+	inLink := filepath.Join(root, "inner-link")
+	if err := os.Symlink(inside, inLink); err != nil {
+		t.Skipf("os.Symlink unavailable on this host: %v", err)
+	}
+	// 受管根集只含 root（不带 normalizeContextRoots 的系统 temp 根——temp
+	// 根恒在受管集内是设计事实，本用例的两个 TempDir 都会落在其中；此处
+	// 验证的是包含性判定逻辑本身，用显式根集隔离该噪声）。
+	roots := []string{filepath.Clean(root)}
+
+	// 对照：根内真实目录放行（EvalSymlinks 解析后仍在根内）。
+	if err := validateContextDir(inside, roots); err != nil {
+		t.Fatalf("real dir inside root rejected: %v", err)
+	}
+	// 链接逃逸：拒绝（词法在内、真源在外）。
+	if err := validateContextDir(escapeLink, roots); err == nil {
+		t.Fatal("symlink escaping managed root must be rejected (H8)")
+	}
+	// 指向根内目录的链接放行——解析后仍在根内。
+	if err := validateContextDir(inLink, roots); err != nil {
+		t.Fatalf("symlink resolving inside root rejected: %v", err)
 	}
 }
 

@@ -39,7 +39,7 @@ func (e *Engine) failTransition(ctx context.Context, rec state.DeployRecord, cod
 			Target:      "deployment:" + rec.ID,
 			Result:      "ok",
 			ErrorCode:   code,
-			DiffSummary: `{"app":"` + rec.AppName + `","detail":"` + jsonEscape(detail) + `"}`,
+			DiffSummary: state.DiffSummary("app", rec.AppName, "detail", detail), // MG-6：构造器替换手拼 JSON
 		}); err != nil {
 			return err
 		}
@@ -151,33 +151,82 @@ func (e *Engine) CancelRequest(ctx context.Context, rec state.DeployRecord) erro
 	return e.store.UpdateDeployment(ctx, rec.ID, state.DeploymentPatch{CancelRequested: &set})
 }
 
+// errRecoveryTransient 是恢复扫描内的底座瞬态标记（M1-8）：classify/
+// reopen 遇底座读失败时返回（区别于「已处置」的 nil）——上层登记该记录
+// 待重试，而不是把瞬态当完成吞掉（旧缺陷：一次性尽力，无人重试）。
+var errRecoveryTransient = errors.New("engine: recovery deferred (substrate transient)")
+
 // recoverInterrupted 控制面重启的启动扫描（§2.3）：非终态 deployment 分类
 // 恢复——健康 → 重开完整观察窗；paused/failed → 分类 + 归位；无法判定 →
-// 失败（E_DEPLOY_INTERRUPTED）+ 人工。底座未就绪时静默（下一 tick 重试，
-// 由准备预算看门）。
+// 失败（E_DEPLOY_INTERRUPTED）+ 人工。底座未就绪时静默（M1-8 起不再是一次
+// 性尽力：SwarmReady/扫描失败与单记录瞬态失败都登记重试，由 tick 内
+// retryRecoveryIfNeeded 以 30s 频控重试至完成；恢复动作本身幂等——分类落
+// 终态后行不在非终态集、观察窗重开是确定性收敛，重放安全）。
 func (e *Engine) recoverInterrupted(ctx context.Context) {
 	if err := e.sub.SwarmReady(ctx); err != nil {
+		e.armRecoveryRetry(nil)
 		return
 	}
 	rows, err := e.store.ListNonTerminalDeployments(ctx)
 	if err != nil {
 		e.log.Warn("engine: recovery scan", "error", err)
+		e.armRecoveryRetry(nil)
 		return
 	}
+	// 重试轮只处理仍卡住的记录（首轮 recoveryStuck 为空 = 全量）：避免
+	// 反复重开已恢复记录的观察窗（别的记录瞬态失败不该拖长无辜窗口）。
+	stuck := map[string]bool{}
 	for _, rec := range rows {
+		if len(e.recoveryStuck) > 0 && !e.recoveryStuck[rec.ID] {
+			continue
+		}
 		switch rec.Status {
 		case state.DeployQueued, state.DeployPreparing, state.DeployBuilding:
 			// 底座未被改动：tick 幂等重入。
 		case state.DeployReleasing:
 			if err := e.classifyRecovering(ctx, rec); err != nil {
 				e.log.Warn("engine: recovery classification", "deployment", rec.ID, "error", err)
+				stuck[rec.ID] = true
 			}
 		case state.DeployObserving:
 			if err := e.reopenObserveWindow(ctx, rec); err != nil {
 				e.log.Warn("engine: reopen observe window", "deployment", rec.ID, "error", err)
+				stuck[rec.ID] = true
 			}
 		}
 	}
+	e.recoveryStuck = stuck
+	if len(stuck) > 0 {
+		e.armRecoveryRetry(stuck)
+		return
+	}
+	e.recoveryPending = false // 扫描完成（无卡住记录）：重试停摆
+}
+
+// armRecoveryRetry 登记恢复未完成（M1-8）：nil 表示整轮重来（SwarmReady/
+// 扫描失败）；非 nil 集合是单记录瞬态失败的定向重试。频控 30s（Warn 已在
+// 调用点/重试点记，无硬性次数上限——底座长时间不可用时靠频控限噪）。
+func (e *Engine) armRecoveryRetry(stuck map[string]bool) {
+	if stuck != nil {
+		e.recoveryStuck = stuck
+	}
+	e.recoveryPending = true
+	e.recoveryNextAt = e.now().Add(recoveryRetryInterval)
+}
+
+// recoveryRetryInterval 是重启恢复重试的频控间隔（M1-8：无硬性次数上限，
+// 间隔限噪；恢复动作幂等，重复执行只做确定性收敛）。
+const recoveryRetryInterval = 30 * time.Second
+
+// retryRecoveryIfNeeded 是 tick 的恢复重试 duty（M1-8）：恢复未完成且频控
+// 窗已过 → 重跑 recoverInterrupted（幂等：整轮或定向卡住记录）。
+func (e *Engine) retryRecoveryIfNeeded(ctx context.Context) {
+	if !e.recoveryPending || e.now().Before(e.recoveryNextAt) {
+		return
+	}
+	e.log.Warn("engine: retrying interrupted-recovery (M1-8; substrate was unavailable at startup)",
+		"stuck", len(e.recoveryStuck))
+	e.recoverInterrupted(ctx)
 }
 
 // classifyRecovering 对重启时处于 releasing 的部署分类（场景 11）：
@@ -209,11 +258,11 @@ func (e *Engine) classifyRecovering(ctx context.Context, rec state.DeployRecord)
 				allSwitched = false
 				break
 			}
-			return nil // 底座暂态：下一 tick 由看门狗兜底
+			return errRecoveryTransient // 底座暂态：M1-8 登记重试（看门狗兜底不覆盖重启分类）
 		}
 		tasks, err := e.sub.TaskList(ctx, spec.Name)
 		if err != nil {
-			return nil
+			return errRecoveryTransient // M1-8：底座暂态登记重试（无人重试即窗口丢失）
 		}
 		if svc.UpdateState == "paused" {
 			anyPaused = true
@@ -248,7 +297,10 @@ func (e *Engine) reopenObserveWindow(ctx context.Context, rec state.DeployRecord
 	for i := range specs {
 		tasks, err := e.sub.TaskList(ctx, specs[i].Name)
 		if err != nil {
-			return nil // 底座暂态
+			// M1-8：底座暂态不再静默吞掉（旧形态 return nil = 恢复「完成」，
+			// 无人重试——观察窗带陈旧 ObserveStartedAt 直接判窗末）；登记
+			// 该记录待重试，重开完整窗口。
+			return errRecoveryTransient
 		}
 		if countNewRunning(tasks, specs[i].Image) < desiredReplicasOf(specs[i]) {
 			return e.failSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",
@@ -398,31 +450,4 @@ func (e *Engine) AppDerivedState(ctx context.Context, appID string) (string, err
 		return "", err
 	}
 	return DeriveAppState(facts), nil
-}
-
-// jsonEscape 把任意串安全嵌入 JSON 字符串值（审计 diff 摘要用）。
-func jsonEscape(s string) string {
-	raw, err := canonicalJSON(map[string]string{"v": s})
-	if err != nil {
-		return ""
-	}
-	// 去掉 {"v": 与收尾 }：canonical JSON 保证值内引号已转义。
-	const prefix = `{"v":`
-	out := string(raw)
-	out = trimPrefix(out, prefix)
-	return trimSuffix(out, "}")
-}
-
-func trimPrefix(s, p string) string {
-	if len(s) >= len(p) && s[:len(p)] == p {
-		return s[len(p):]
-	}
-	return s
-}
-
-func trimSuffix(s, p string) string {
-	if len(s) >= len(p) && s[len(s)-len(p):] == p {
-		return s[:len(s)-len(p)]
-	}
-	return s
 }
