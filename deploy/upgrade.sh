@@ -61,19 +61,19 @@ STOP_GRACE=35
 # （openssl dgst 轨——dgst 不支持 Ed 系签名、pkeyutl 参数面随版本分裂，
 # dgst-RSA 自 1.0.x 起全版本一致，兼容性优先；完整裁决理由与轮换流程见
 # deploy/install.sh 同名公钥块注释）。
-# fingerprint-sha256: 3977fefb284f721350003ab6289be6930b48c25f79d8b423113c04ff05a6beec
+# fingerprint-sha256: 929f85cfef85a5df55586bfbd3f225d4568aa7905192a7f904be09d78b2cfcf9
 # ⚠ 本块必须与 install.sh 的 FLEETLY_RELEASE_PUBKEY 逐字一致（test-install.sh
-# A11 断言）；当前内嵌测试密钥，发布前替换口径见 deploy/README.md。
+# A11 断言）；当前内嵌生产密钥（2026-09-20 首配），轮换流程见 deploy/README.md。
 # 结构注意：起始/结束引号各独占一行——公钥块保持干净 PEM 行（抽取比对
 # 口径与 install.sh 注释同：锚定赋值行、剥前缀，替换密钥时保持该形状）。
 FLEETLY_RELEASE_PUBKEY='-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3YszuC4EPy3gVdsQTXt+
-v3RMFs7WFH/8IUBk9DAesYcr1srGWL5IcWSmpcO+L9RE0aKoyIxNrR62LYVaJC6H
-CcS1D6Qo6ro/kkkFkkc+rRmY6GyVJg++n7af/qlT3Knq+VhdA+UOTNgzjTgohTr9
-tSFKBKT7bEmQ2JKXHWwN968Xk4EnSdNSAxQnJFUlAkKsUvNT94DpT4T+vwwW1lhj
-efQIhcO0LzphkV6TWqFgmggIZz3Nq9xejOIBRnKcUEh0iBSR3HGe6DIzX7X8KNIt
-rP8jwEqxJ/oRIryjr8sVr82I9noGFb4XMLug/mGLok+3eFw6MhgGyEt7xMiwKZif
-qQIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArGQp1Sv65HxB7kMVKcsf
+78orC+mgEf0rGZ3SozVtZrXjgDONDSTjMHxojmn44ZsLyz1wE825qSlRQniLZa79
+9lFykr18xMeFmdvXIfW/EhMKqy9CEXr+vLYMrSSps+m/pol/LIsmHicndDFZNOnj
+jqQ/G48fep3Buohi0dCSxXdceAPDwG75hirqXifaY7tt7rV/RgrpTO0qdtaIWw0N
+BAJmEDFomEH7Sgm1zVom73OLqkgKe5qCItnfPu2SJdBVDNPLsrxzmGZWC1EOtpHV
+L79PwgMLPHGVDDt7rMdFwHSdvoHikWvGODX7cj7CWVhs7X+0I82HfIOqqXUWQDH6
+WwIDAQAB
 -----END PUBLIC KEY-----
 '
 

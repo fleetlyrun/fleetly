@@ -65,9 +65,26 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 | F4 | **digest 形态 pull 不落 tag**：运行时 spec 按 tag 引用镜像，digest pull 后须显式 `docker tag` | 预拉台账（image-prepull.md）已隐含；runbook 本节显式化 |
 | F5 | CLI flag 顺序纪律（FZ-11）在真实使用中即踩（flag 必须先于位置参数） | 既有纪律，交互提示可随 v0.2 CLI 打磨 |
 | F6 | CLI 等待期被杀（Ctrl-C/会话断开）服务端照常完成——异步语义正确，但操作者感知与实际状态可能不一致 | 观察项；Console/事件流已可核对状态 |
+| F7 | **degraded 无周期自愈**：`refreshDerivedState` 仅部署路径触发（observing/recovery/releasing），swarm 混乱窗降级后要等下一次部署动作才翻回 running（实测 20 分钟不自愈，经重部署恢复） | v0.1.x/v0.2 候选：周期性派生刷新（可挂 drift tick 或复用 W0 substrate recon 模式扩展 degraded→running 方向） |
 
-## 5. 剩余步骤（W1 未完）
+## 5. V5 真路径演练(T1-V2.4,2026-09-20 实录)
 
-- T1-V2.4 V5 真路径演练（单 manager 故障 + `--force-new-cluster` 恢复；演练前 fresh pre 备份）
-- T1-V2.6 Console Playwright smoke（目标：真 staging 的 /ui/）
-- T1-V2.5 发布检查单回填 + v0.1.0 正式 tag（裁决 V2-4：dogfooding 验收后）
+程序依据 Spike C §5(停止态冷备 → 毁 → 回填 → 自举/force-new-cluster);单 manager 真 VPS 首跑:
+
+| 步骤 | 实录 | 结果 |
+|---|---|---|
+| 灾前 | `fleetly backups create`(manual verified)+ 停 fleetlyd/docker + 停止态 `cp -a /var/lib/docker/swarm`(sha256 记档) | ✅ 冷备 = raft/wal-v3-encrypted + certificates + state.json(Docker 29 布局) |
+| 灾难+恢复① | `rm -rf swarm` → 回填 → start docker | ✅ Swarm active、**NodeID 与死前一致**、三服务 1/1、80/443 回监听 |
+| force-new-cluster | 无 `--advertise-addr` 失败(eth0 双地址歧义);失败尝试把 manager 留在半死态(Is Manager=true 但 RPC 死);**二次冷备恢复收拾**;再从健康态带 `--advertise-addr 10.48.0.6` 执行 | ✅ rc=0、同 NodeID、**join token 轮换**(SWMTKN-1-2n92…≠旧);服务全回 |
+| 控制面恢复 | start fleetlyd → 恢复分类 | ✅ healthz 200、应用行完好、台账完好 |
+| 应用观测 | 混乱窗容器重启 → `deployment.warning → app.instability_detected → app.degraded`(如实);**degraded 无周期自愈**(见 F7),经 CLI 重部署 + git push 各恢复一应用,`app.recovered` 落事件 | ✅ 双应用 running |
+| 外部验证 | hello/demo HTTPS 200(外部;VPS 侧 hairpin 探测 000 属本机 NAT 怪癖,外部不受影响) | ✅ |
+| 计时 | 停机→恢复健康全验证 ≈ 4 分钟(预算 10 分钟,L1 口径) | ✅ PASS |
+
+**runbook 固化(真 VPS 教训)**:①冷备必须停止态做;②单 manager 回填即自举,force-new-cluster 仅在需要轮换 join token 时执行,**必须带 --advertise-addr 且从健康态执行**(半死态执行先二次冷备恢复);③恢复后 join token 已变,加节点用新 token;④degraded 状态需部署动作驱动恢复(F7)。
+
+## 6. 剩余步骤(W1 未完)
+
+- ~~T1-V2.4 V5 真路径演练~~ ✅(本节,2026-09-20)
+- T1-V2.6 Console Playwright smoke(进行中)
+- T1-V2.5 发布检查单回填 + v0.1.0 正式 tag(裁决 V2-4:dogfooding 验收后)

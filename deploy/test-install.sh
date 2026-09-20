@@ -348,9 +348,12 @@ else
     assert "A11-cosign-absent-premise" 0
 fi
 
-# 内嵌公钥三方一致：install.sh == upgrade.sh == 测试私钥派生公钥（防两份
-# 脚本漂移、防测试密钥与内嵌密钥脱钩；release.yml 的 embedded-pubkey gate
-# 在 CI 侧再对生产 secret 校验一次，此处守仓库内材料）。抽取口径：锚定
+# 内嵌公钥一致性（仓库原件口径）：install.sh == upgrade.sh 逐字一致 + 指纹
+# 注释行在 + **指纹自洽**（注释值 == 内嵌公钥 DER SHA-256——防换钥忘改注释）。
+# 仓库原件内嵌的是**生产**公钥（2026-09-20 首配起）；staged release 用测试
+# 私钥签名，故四套流程跑之前先做**夹具手术**：把 $TI_STAGE 两份脚本的内嵌
+# 公钥替换为测试公钥（A11 测的是 openssl 轨机制，不测钥归属；生产配对由
+# release.yml 的 embedded-pubkey gate 对 secret 校验）。抽取口径：锚定
 # FLEETLY_RELEASE_PUBKEY= 赋值行（BEGIN 标记必然跟着赋值前缀，无法锚定
 # 行首）到 END 标记行，再剥掉首行赋值前缀——闭引号独占一行是前提（脚本
 # 公钥块注释有结构说明）。
@@ -361,12 +364,38 @@ extract_embedded_pubkey() { # <script>
 extract_embedded_pubkey "$INSTALL_SH" >/tmp/ti-pub-install.pem
 extract_embedded_pubkey "$UPGRADE_SH" >/tmp/ti-pub-upgrade.pem
 openssl pkey -in "$TEST_SIGN_KEY" -pubout -out /tmp/ti-pub-testderived.pem
-cmp -s /tmp/ti-pub-install.pem /tmp/ti-pub-testderived.pem
-assert "A11-embedded-key-matches-test-key" $?
 cmp -s /tmp/ti-pub-install.pem /tmp/ti-pub-upgrade.pem
 assert "A11-embedded-key-consistent-install-upgrade" $?
 grep -q 'fingerprint-sha256: ' "$INSTALL_SH" && grep -q 'fingerprint-sha256: ' "$UPGRADE_SH"
 assert "A11-fingerprint-comment-present" $?
+_fp_comment=$(grep -o 'fingerprint-sha256: [0-9a-f]*' "$INSTALL_SH" | head -1 | cut -d' ' -f2)
+_fp_actual=$(openssl pkey -pubin -in /tmp/ti-pub-install.pem -outform DER |
+    openssl dgst -sha256 | sed 's/^.*)= *//')
+[ "$_fp_comment" = "$_fp_actual" ]
+assert "A11-embedded-fingerprint-selfconsistent" $?
+
+# 夹具手术：staged 副本内嵌公钥 ← 测试公钥（保持赋值行/闭引号结构；原闭引号
+# 行被注入块取代——tail 起点跳过它，并以守卫确认其确为独占一行的一撇）。
+inject_test_pubkey() { # <script>
+    _s=$1
+    _start=$(grep -n "^FLEETLY_RELEASE_PUBKEY='" "$_s" | head -1 | cut -d: -f1)
+    _end=$(grep -n -- '-----END PUBLIC KEY-----' "$_s" | head -1 | cut -d: -f1)
+    [ -n "$_start" ] && [ -n "$_end" ] && [ "$_end" -gt "$_start" ] || return 1
+    [ "$(sed -n "$((_end + 1))p" "$_s")" = "'" ] || return 1
+    {
+        head -n $((_start - 1)) "$_s"
+        printf "FLEETLY_RELEASE_PUBKEY='"
+        cat /tmp/ti-pub-testderived.pem
+        printf "'\n"
+        tail -n +$((_end + 2)) "$_s"
+    } >"$_s.new" && mv "$_s.new" "$_s"
+}
+inject_test_pubkey "$INSTALL_SH"
+assert "A11-staged-surgery-install" $?
+inject_test_pubkey "$UPGRADE_SH"
+assert "A11-staged-surgery-upgrade" $?
+extract_embedded_pubkey "$INSTALL_SH" | cmp -s - /tmp/ti-pub-testderived.pem
+assert "A11-staged-embeds-test-key" $?
 
 SIG_TAG='v0.1.0-sigtest'
 SIG_ASSET="fleetly_${SIG_TAG}_linux_amd64.tar.gz"

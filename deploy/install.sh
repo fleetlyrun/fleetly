@@ -45,7 +45,7 @@ FLEETLY_LOG_FILE='/var/log/fleetlyd.log'
 # 分裂；实测 OpenSSL 4.0.2 的 dgst -sign 对 ed25519 仍报 unsupported），
 # 而 dgst -sha256 -sign/-verify 自 OpenSSL 1.0.x 起全版本命令面一致——
 # 兼容性优先（S14 方案冻结口径）。
-# fingerprint-sha256: 3977fefb284f721350003ab6289be6930b48c25f79d8b423113c04ff05a6beec
+# fingerprint-sha256: 929f85cfef85a5df55586bfbd3f225d4568aa7905192a7f904be09d78b2cfcf9
 # 轮换：生成新密钥对 → 替换本变量与上面指纹行（install.sh/upgrade.sh 两侧
 # 必须同步，test-install.sh A11 断言两侧逐字一致）→ 发布新安装器；旧 release
 # 的历史 .sig.pem 用旧公钥仍可验（验失败提示升级安装器即轮换语义）。
@@ -53,19 +53,18 @@ FLEETLY_LOG_FILE='/var/log/fleetlyd.log'
 # 口径（test-install.sh A11 与 release.yml embedded-pubkey gate）：锚定
 # FLEETLY_RELEASE_PUBKEY= 赋值行到 END 标记行、剥掉首行赋值前缀——替换
 # 密钥时保持该形状，否则一致性断言会红。
-# ⚠ 当前内嵌 deploy/testdata/release-test.pub.pem（测试密钥，配套私钥就在
-# 仓库内——不能当生产信任根）。正式发布前必须按 deploy/README.md
-# 「release 签名密钥（openssl 轨）」小节生成正式密钥对并替换本块与指纹行；
-# release.yml 的 embedded-pubkey gate 会在 FLEETLY_RELEASE_KEY 配置后强制
-# 校验脚本内嵌公钥与 secret 配对，忘替换的 release 会被拦下。
+# 当前内嵌 **生产**密钥（2026-09-20 首配，v0.1.0 发布前；私钥仅存 repo
+# secret FLEETLY_RELEASE_KEY，配置与轮换流程见 deploy/README.md「release
+# 签名密钥（openssl 轨）」）。release.yml 的 embedded-pubkey gate 强制校验
+# 本块与 secret 配对——换 secret 忘换本块的 release 会被拦下。
 FLEETLY_RELEASE_PUBKEY='-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA3YszuC4EPy3gVdsQTXt+
-v3RMFs7WFH/8IUBk9DAesYcr1srGWL5IcWSmpcO+L9RE0aKoyIxNrR62LYVaJC6H
-CcS1D6Qo6ro/kkkFkkc+rRmY6GyVJg++n7af/qlT3Knq+VhdA+UOTNgzjTgohTr9
-tSFKBKT7bEmQ2JKXHWwN968Xk4EnSdNSAxQnJFUlAkKsUvNT94DpT4T+vwwW1lhj
-efQIhcO0LzphkV6TWqFgmggIZz3Nq9xejOIBRnKcUEh0iBSR3HGe6DIzX7X8KNIt
-rP8jwEqxJ/oRIryjr8sVr82I9noGFb4XMLug/mGLok+3eFw6MhgGyEt7xMiwKZif
-qQIDAQAB
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArGQp1Sv65HxB7kMVKcsf
+78orC+mgEf0rGZ3SozVtZrXjgDONDSTjMHxojmn44ZsLyz1wE825qSlRQniLZa79
+9lFykr18xMeFmdvXIfW/EhMKqy9CEXr+vLYMrSSps+m/pol/LIsmHicndDFZNOnj
+jqQ/G48fep3Buohi0dCSxXdceAPDwG75hirqXifaY7tt7rV/RgrpTO0qdtaIWw0N
+BAJmEDFomEH7Sgm1zVom73OLqkgKe5qCItnfPu2SJdBVDNPLsrxzmGZWC1EOtpHV
+L79PwgMLPHGVDDt7rMdFwHSdvoHikWvGODX7cj7CWVhs7X+0I82HfIOqqXUWQDH6
+WwIDAQAB
 -----END PUBLIC KEY-----
 '
 
