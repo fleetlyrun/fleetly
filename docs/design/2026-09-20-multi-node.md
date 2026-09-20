@@ -85,7 +85,7 @@ worker 加入即被 `fleetly-ingress`（global）覆盖：入口冗余随之成�
 - base_domain 为空（单节点 v0.1 形态）：provider endpoint 维持 `http://<advertise>:8422/configs`，行为与现状逐字一致。
 - base_domain 非空：Traefik 静态参数改为 `--providers.http.endpoint=https://ctrl.<base>:8423/configs`（+ 公信 CA 校验，无需自定义 CA 池）。
 
-**证书分发模型切换（多节点硬前提）**：动态配置 `tls.certificates` 改用**内联内容**（certContent/keyContent，PEM 随配置 JSON 下发），v0.1 的「证书本地卷 + seed 容器」路径退役（单节点亦统一，消灭双轨）；既有单节点安装的迁移（卷内证书导入台账 + 挂载收敛移除）进票据分解，v0.1.x 升级前快照为回退路径。落盘仍为 `ingress.cert_dir` PEM 0600 + 独立备份边界（状态模型 §2.1 不变）。
+**证书分发模型切换（多节点硬前提）**：动态配置 `tls.certificates` 改用**内联内容**（~~certContent/keyContent~~ **certFile/keyFile 键名携带内联 PEM**〔2026-09-20 V-MN 实测修正：FileOrContent 契约，见 §4.2 前置门注记〕，PEM 随配置 JSON 下发），v0.1 的「证书本地卷 + seed 容器」路径退役（单节点亦统一，消灭双轨）；既有单节点安装的迁移（卷内证书导入台账 + 挂载收敛移除）进票据分解，v0.1.x 升级前快照为回退路径。落盘仍为 `ingress.cert_dir` PEM 0600 + 独立备份边界（状态模型 §2.1 不变）。
 
 **Bootstrap 次序（无循环依赖）**：
 
@@ -227,7 +227,7 @@ Console 节点页固定卡片 + join 向导终态页 + `fleetly nodes join-guide
 | D-MN-1 | join 安全通道 = 标准 swarm join-token 手动复制 + 节点锚定完成后**自动 rotate**（`join.token_rotate=auto` 默认；批量场景 manual） | Swarm 原生无 join 钩子，平台无法拦截成一次性语义；auto-rotate 把泄露窗口收敛到分钟级，且零新机制 | 自研一次性短时效 token broker（需要平台没有的远端接入通道，违反 D12/D18）；长期不 rotate（token 泄露 = 永久 join 能力） | — |
 | D-MN-2 | worker 组件面 = 零 fleetly 安装物（Engine + Traefik global 任务；exec 中继 W5 经 global 自然覆盖） | 成员管理/心跳/分发全归 Swarm（D12）；「加节点」的全部动作 = join + 防火墙/DNS | worker 侧 agent/配置文件（自研 node 协议回潮，D12 明确否决）；worker 跑 fleetlyd 副本（多写点，红线 2） | — |
 | D-MN-3 | Traefik 配置通道 = `https://ctrl.<base>:8423/configs`（fleetlyd 自持 TLS、平台证书、A 记录仅指 manager、不经 Traefik）；8422 保留明文挑战面 | 冷启动无循环（Traefik 容忍 provider 不可达 + 静态挑战路由明文无秘密）；多节点动态配置含内联证书私钥，明文跨公文不可接受（架构 §2.6「跨公网走平台域名 HTTPS」的落地形态） | 穿 Traefik 443 反代（冷启动循环：无配置则无路由则无配置）；明文 8422 公网（私钥泄露）；overlay 内通道（fleetlyd 是 host 进程进不了 overlay；容器化控制面 = 部署形态重构，超 E1 范围） | 已裁（2026-09-20 追认：8423 直连形态即「平台域名 HTTPS」表述的落地） |
-| D-MN-4 | 证书分发 = 统一切动态配置内联（certContent/keyContent），v0.1 卷 + seed 容器退役（含既有安装迁移票） | 命名卷是 per-node 本地卷，证书到不了 worker——provider 是唯一配置通道；统一单轨消灭单/多节点双模型漂移 | 双轨并存（单节点卷/多节点内联，两套分发长期漂移）；per-node 卷同步（无远端通道） | — |
+| D-MN-4 | 证书分发 = 统一切动态配置内联（~~certContent/keyContent~~ **certFile/keyFile 键携带内联 PEM**——V-MN 实测修正，§4.2 注记），v0.1 卷 + seed 容器退役（含既有安装迁移票） | 命名卷是 per-node 本地卷，证书到不了 worker——provider 是唯一配置通道；统一单轨消灭单/多节点双模型漂移 | 双轨并存（单节点卷/多节点内联，两套分发长期漂移）；per-node 卷同步（无远端通道） | — |
 | D-MN-5 | zot = Swarm service 钉 manager + 本地卷 + `fleetly-system` overlay + Basic Auth（平台生成凭据，`--with-registry-auth` 分发）；**`base_domain` 配置即部署** | join 前已就绪（避免 join→首部署间多一步依赖）；zot 是 placement 绑定的第一个平台级用户（同一锚）；Basic Auth + 经 443 公网暴露面收敛 | 仅多节点时部署（join 流多一步部署依赖、单/多管线分叉）；无鉴权 zot（公网任意推拉镜像）；自签 + insecure-registries（架构已否：需远端 daemon 配置通道） | 已裁（2026-09-20：配置即部署） |
 | D-MN-6 | 证书次序 = ensure-平台证书 duty（启动重试）先行，Traefik 空配置容忍期仅静态路由；zot 部署不依赖证书 | 打破次序循环的唯一无状态排列；平台证书（多 SAN： ctrl+registry+console）一次签发覆盖三子域，续期同批 | 等首个应用域名证书顺带（次序耦合到用户行为）；每子域独立证书（LE 请求配额浪费、续期风暴——每节点独立 ACME 被否理由的同族） | — |
 | D-MN-7 | placement 候选集 = 底座直读全量节点快照；label 值域 = 唯一显示名或平台 ID（歧义 → INVALID + 提示平台 ID）；选点三因子（数据引力 > 已钉数 > 平台 ID 序） | 决策路径禁读观测缓存（状态模型 §2.2 逐字）；三因子可解释可测试（D-PLC-7 沿用，仅末位从「名称序」明确为「平台 ID 序」——显示名可重名） | 读 nodes 缓存做决策（违反读契约）；多因子加权评分（无实测收益，D-PLC-7 已否） | — |
@@ -263,7 +263,7 @@ Console 节点页固定卡片 + join 向导终态页 + `fleetly nodes join-guide
 | B | 无状态节点 drain 新连接零失败 | 摘 DNS（TTL 生效后）→ `docker node update --availability drain` → 外部探测循环（带 A 记录重试语义）**新连接 0 失败**；在途连接允许中断一次（如实记录）；回岗后任务回迁不受阻（无自动回迁，Swarm 语义） |
 | C | 有状态节点 drain→回岗自动回绑 | 写入数据 marker → drain → 应用 `blocked`（`placement.blocked` + 任务 PENDING）→ availability active → `placement.recovered` 自动回绑 → marker 读出一致（本地卷数据不丢） |
 
-前置门（Spike 验证项，V-MN）：Traefik http provider + 动态配置内联证书（certContent/keyContent）组合验证——不通过则 §2.4 证书通道需复议（盲点 §之首）。
+前置门（Spike 验证项，V-MN）：Traefik http provider + 动态配置内联证书（certContent/keyContent）组合验证——不通过则 §2.4 证书通道需复议（盲点 §之首）。〔2026-09-20 实测：**PASS（通道成立、键名修正）**，复跑 `sh deploy/spike-v-mn.sh`（本地 docker，traefik:v3.5@sha256:16acb89c… 钉版实测 Traefik 3.5.6）。指纹级证据三段：① 设计原文字面键 `certContent/keyContent` **不是** Traefik 契约——未知字段使整份动态配置 decode 被拒（路由 404、443 仍服缺省自签证书）；② 真实契约 = `certFile/keyFile`（`FileOrContent` 类型：字符串不是既有文件路径即按 PEM 内容消费，源读 pkg/tls/certificate.go + pkg/types/file_or_content.go 与实测一致）——内联 PEM 经 http provider 下发后 443 所服证书指纹与内联证书一致（openssl s_client 比对，2s 收敛，路由 200）；③ 证书轮换：配置换入第二套内联证书后 **4s 内新指纹生效**（pollInterval=1s）。结论：§2.4「内联内容随配置 JSON 下发」的通道设计成立，E1-2 的实现措辞按 `certFile/keyFile` 键名修正。〕
 
 ## 5. 契约面
 

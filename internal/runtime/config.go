@@ -35,6 +35,13 @@ type AppConfig struct {
 	// Addr 是 HTTP 面（框架 healthz 端点 + grpc-gateway 挂载的 REST /v1/**）
 	// 的监听地址。
 	Addr string `mapstructure:"addr"`
+	// BaseDomain 是平台域名（config 键 base_domain；E1 多节点设计 §2.2，
+	// V2-7 可选安装项）。空 = 单节点 v0.1 形态（本地 digest、明文 8422
+	// provider、证书卷模型，行为逐字不变）；非空 = 控制面派生三平台子域
+	//（ctrl/registry/console.<base>）、启用 8423 配置端点 TLS 面、多节点
+	// join 门禁放行（D-MN-13：join 时为空即 E_MULTI_NODE_REQUIRES_BASE_
+	// DOMAIN）。当前票据（E1-1）只落配置面，启用接线在后续票据。
+	BaseDomain string `mapstructure:"base_domain"`
 	// GRPC 是 gRPC 面配置（server.v1 服务承载于此，gateway 反向代理目标）。
 	GRPC GRPCConfig `mapstructure:"grpc"`
 	// State 是状态层配置（config 键 state.*）。
@@ -51,6 +58,13 @@ type AppConfig struct {
 	// Traefik 部署 + 配置端点 + 集中 ACME——缺省值经 ingress.Config.
 	// Normalize 回落，单一事实源在 internal/ingress）。
 	Ingress IngressConfig `mapstructure:"ingress"`
+	// Registry 是平台 registry（zot）配置节（config 键 registry.*；E1
+	// 多节点设计 §2.5。缺省零值 = 部署器未接线时的显式空缺——zot 镜像
+	// 钉版缺省随 E1-4 部署器票据落定，届时以 image-prepull 台账增行）。
+	Registry RegistryConfig `mapstructure:"registry"`
+	// Join 是节点加入配置节（config 键 join.*；E1 多节点设计 §2.3/
+	// D-MN-1）。
+	Join JoinConfig `mapstructure:"join"`
 	// Logs 是日志管线配置节（config 键 logs.*，T2.20；缺省值经 logs.
 	// Config.Normalize 回落——单一事实源在 internal/logs）。
 	Logs LogsConfig `mapstructure:"logs"`
@@ -265,6 +279,10 @@ type IngressConfig struct {
 	// ConfigAddr 是控制面配置端点监听地址（config_addr；默认 0.0.0.0:8422
 	// ——Traefik 任务经宿主 IP 访问，鉴权 token 强制）。
 	ConfigAddr string `mapstructure:"config_addr"`
+	// ConfigTLSAddr 是配置端点 TLS 面监听地址（config_tls_addr；默认
+	// 0.0.0.0:8423，E1 多节点设计 §2.4——仅 base_domain 非空时启用，
+	// 启用判定与端点装配在 E1-3 接线；缺省值只是配置面就绪）。
+	ConfigTLSAddr string `mapstructure:"config_tls_addr"`
 	// ConfigAdvertiseIP 是下发给 Traefik 的控制面可达 IP
 	//（config_advertise_ip；空 = 自动探测。Docker Desktop 形态 advertise
 	// addr 是 VM 内部 IP，须显式配置宿主可达地址）。
@@ -299,6 +317,51 @@ type IngressACMEConfig struct {
 	AccountKeyFile string `mapstructure:"account_key_file"`
 }
 
+// RegistryConfig 是平台 registry（zot）配置节（config 键 registry.*，E1
+// 多节点设计 §2.5：Swarm service 钉 manager + 本地卷 + fleetly-system
+// overlay + Basic Auth）。E1-1 只落配置面（键位只增、缺省零值不改任何
+// v0.1 行为）；服务名/卷名/overlay 名（fleetly-registry、fleetly-registry-
+// data、fleetly-system）是平台常量，不走配置。
+type RegistryConfig struct {
+	// Image 是 zot 镜像引用（registry.image；钉版形态 name:tag@sha256:…）。
+	// 空 = 未配置（E1-4 部署器票据落定钉版缺省并接入 R7 门禁与镜像台账；
+	// 在此留空避免缺省引用先于 digest 台账存在）。
+	Image string `mapstructure:"image"`
+	// AuthFile 是 registry Basic Auth 凭据文件路径（registry.auth_file；
+	// 空 = RegistryAuthFile() 回落 <数据根>/fleetly-registry.auth——与
+	// ingress token 同形：平台生成随机 user/pass 落 0600 文件，不入
+	// SQLite；轮换 = 重新生成 + 服务重建，设计 §2.5）。
+	AuthFile string `mapstructure:"auth_file"`
+}
+
+// JoinConfig 是节点加入配置节（config 键 join.*，E1 多节点设计 §2.3）。
+type JoinConfig struct {
+	// TokenRotate 是 worker join-token 自动轮换开关（join.token_rotate；
+	// auto|manual，缺省 auto——D-MN-1：锚定完成后自动 rotate 把泄露窗口
+	// 收敛到分钟级；批量加节点场景配 manual，全部完成后手动
+	// fleetly nodes rotate-token）。
+	TokenRotate string `mapstructure:"token_rotate"`
+}
+
+// JoinTokenRotate 返回归一后的 join token 轮换策略（缺省/未知值一律
+// auto——保守缺省：自动轮换是安全默认，manual 是显式 opt-out）。
+func (c *AppConfig) JoinTokenRotate() string {
+	if c.Join.TokenRotate == "manual" {
+		return "manual"
+	}
+	return "auto"
+}
+
+// RegistryAuthFile 返回 registry 凭据文件路径，未配置时回落数据根下
+// fleetly-registry.auth（数据根 = state 库同目录，与 BootstrapTokenPath
+// 同款装配期回落）。
+func (c *AppConfig) RegistryAuthFile() string {
+	if c.Registry.AuthFile != "" {
+		return c.Registry.AuthFile
+	}
+	return filepath.Join(filepath.Dir(c.DBPath()), "fleetly-registry.auth")
+}
+
 // IngressSettings 把 ingress.* 配置节翻译为入口适配器核心配置（ingress.
 // Config，缺省值经 Normalize 回落——单一事实源在 internal/ingress）。归一
 // 必须发生在装配入口：ingress 服务的配置端点监听地址取自此处的 ConfigAddr
@@ -310,6 +373,7 @@ func (c *AppConfig) IngressSettings() ingress.Config {
 		HTTPPort:          c.Ingress.HTTPPort,
 		HTTPSPort:         c.Ingress.HTTPSPort,
 		ConfigAddr:        c.Ingress.ConfigAddr,
+		ConfigTLSAddr:     c.Ingress.ConfigTLSAddr,
 		ConfigAdvertiseIP: c.Ingress.ConfigAdvertiseIP,
 		TokenFile:         c.Ingress.TokenFile,
 		CertDir:           c.Ingress.CertDir,

@@ -104,6 +104,11 @@ ingress:
   # 控制面配置端点（Traefik HTTP provider 的拉取目标；独立内部端口，
   # 不与 REST/gateway 面混挂）。鉴权 token 强制（首启生成至 token_file）。
   config_addr: "0.0.0.0:8422"
+  # 配置端点 TLS 面（E1 多节点设计 §2.4）：8423 上是全量动态配置 + 内联
+  # 证书的 HTTPS 面（平台证书 SAN 含 ctrl.<base>），各节点 Traefik 的
+  # provider endpoint 直连目标。仅 base_domain 非空时启用（单节点 v0.1
+  # 形态维持明文 8422，行为逐字不变）；缺省值只是配置面就绪。
+  config_tls_addr: "0.0.0.0:8423"
   # 下发给 Traefik 的控制面可达 IP；留空 = 自动探测（Swarm advertise
   # addr 优先，出口本地地址兜底）。Docker Desktop 形态 advertise addr 是
   # VM 内部 IP——须显式配置为宿主可达地址（如宿主局域网 IP）。
@@ -130,6 +135,35 @@ ingress:
     ca_pool_file: ""
     # ACME 账号私钥文件（空 = <cert_dir>/acme-account.key）。
     account_key_file: ""
+
+# 多节点（E1，v0.2 W2）：平台域名 + 节点加入 + 平台 registry（键位口径见
+# docs/design/2026-09-20-multi-node.md §2.2/§2.3/§2.5）。全部键缺省 =
+# 单节点 v0.1 形态，行为逐字不变。
+
+# 平台域名（V2-7 可选安装项；多节点 join 启用时必填——D-MN-13）。填写后
+# 控制面派生三平台子域 ctrl/registry/console.<base>（A 记录矩阵见设计
+# §2.2：ctrl 仅指 manager、registry/console 全部节点），并启用 8423 配置
+# 端点 TLS 面。空 = 单节点（明文 8422 provider、本地 digest，逐字 v0.1）。
+base_domain: ""
+
+# 节点加入（设计 §2.3；D-MN-1）：worker join-token 轮换策略。
+join:
+  # auto = 节点锚定完成后自动 rotate（缺省——泄露窗口收敛到分钟级）；
+  # manual = 批量加节点场景显式 opt-out，全部完成后手动
+  # `fleetly nodes rotate-token`。
+  token_rotate: auto
+
+# 平台 registry（zot，设计 §2.5）：Swarm service 钉 manager + 本地命名卷
+# fleetly-registry-data + overlay fleetly-system + Basic Auth；服务名/
+# 卷名/网络名是平台常量，不走配置。
+registry:
+  # zot 镜像引用（钉版形态 name:tag@sha256:…）。空 = 部署器缺省（E1-4
+  # 票据落定钉版，并接入 deploy/check-image-pins.sh 与镜像台账）。
+  image: ""
+  # registry Basic Auth 凭据文件路径。空 = <数据根>/fleetly-registry.auth
+  # （平台生成随机 user/pass，0600，与 ingress token 同形、不入 SQLite；
+  # 轮换 = 重新生成 + zot 配置更新 + 服务重建）。
+  auth_file: ""
 
 # 应用日志管线（T2.20：采集轮询 + 内存 ring 回放 + 落盘保留）。缺省值经
 # internal/logs 归一回落（fleetly-logs 目录 / 保留 7 天 / 轮询 2s / ring

@@ -38,6 +38,13 @@ const (
 	DefaultServersTransportIdleTimeout = 15 * time.Second
 	// DefaultServersTransportDialTimeout 是后端拨号超时（保守值）。
 	DefaultServersTransportDialTimeout = 5 * time.Second
+	// DefaultConfigTLSAddr 是配置端点 TLS 面的监听地址（ingress.
+	// config_tls_addr；E1 多节点设计 §2.4——8423 上是全量动态配置 +
+	// 内联证书的 HTTPS 面，各节点 Traefik 的 provider endpoint 经平台
+	// 证书直连，静态 bearer token 鉴权沿用）。仅 base_domain 非空时由
+	// 控制面启用（单节点 v0.1 形态维持明文 8422，行为逐字不变）；本包
+	// 不感知 base_domain，启用判定与端点装配在后续票据（E1-3）接线。
+	DefaultConfigTLSAddr = "0.0.0.0:8423"
 	// DefaultRenewBefore 是证书续期窗口（到期前 30 天，T2.16 交付物）。
 	DefaultRenewBefore = 30 * 24 * time.Hour
 	// DefaultRenewScanInterval 是续期扫描周期。
@@ -63,6 +70,11 @@ type Config struct {
 	// ——Traefik 任务（容器 netns）须经宿主 IP 访问；鉴权 token 强制，
 	// 非回环绑定的暴露面由 token 承担（取舍见 provider.go 注释）。
 	ConfigAddr string
+	// ConfigTLSAddr 是配置端点 TLS 面的监听地址（config_tls_addr；默认
+	// 0.0.0.0:8423，E1 多节点设计 §2.4）。多节点形态下承载 /configs 的
+	// HTTPS 面（全量动态配置 + 内联证书，平台证书 SAN 含 ctrl.<base>）；
+	// 单节点（base_domain 空）不启用，缺省值仅是配置面就绪、零行为变化。
+	ConfigTLSAddr string
 	// ConfigAdvertiseIP 是下发给 Traefik 的控制面可达 IP
 	//（config_advertise_ip；空 = 自动探测：Swarm advertise addr 优先，
 	// 出口本地地址兜底）。Docker Desktop 形态 advertise addr 是 VM 内部
@@ -127,6 +139,9 @@ func (c Config) Normalize() Config {
 	}
 	if c.ConfigAddr == "" {
 		c.ConfigAddr = "0.0.0.0:8422"
+	}
+	if c.ConfigTLSAddr == "" {
+		c.ConfigTLSAddr = DefaultConfigTLSAddr
 	}
 	if c.TokenFile == "" {
 		c.TokenFile = "fleetly-ingress.token"
