@@ -35,35 +35,35 @@ export function EnvelopeAlert({
       role="alert"
       data-testid="error-envelope"
       className={cn(
-        "rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-900",
+        "rounded-md border border-red-500/30 bg-red-500/5 p-3 text-sm text-red-800 dark:text-red-300",
         className,
       )}
     >
       <div className="flex items-start gap-2">
-        <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-red-600" />
+        <AlertTriangle aria-hidden className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" />
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             {code ? (
-              <code className="rounded bg-red-100 px-1.5 py-0.5 font-mono text-xs font-bold text-red-800">
+              <code className="rounded bg-red-500/10 px-1.5 py-0.5 font-mono text-xs font-bold text-red-700 dark:text-red-300">
                 {code}
               </code>
             ) : (
-              <span className="text-xs font-semibold uppercase tracking-wide text-red-700">
+              <span className="text-xs font-semibold uppercase tracking-wide text-red-700 dark:text-red-300">
                 error
               </span>
             )}
             {stage ? (
-              <span className="text-xs text-red-700">stage: {stage}</span>
+              <span className="text-xs text-red-700 dark:text-red-300">stage: {stage}</span>
             ) : null}
             {deploymentId ? (
-              <span className="font-mono text-xs text-red-700">
+              <span className="font-mono text-xs text-red-700 dark:text-red-300">
                 {deploymentId}
               </span>
             ) : null}
           </div>
           {message ? <div className="break-words">{message}</div> : null}
           {suggestion ? (
-            <div className="break-words text-red-800">
+            <div className="break-words text-red-800 dark:text-red-200">
               <span className="font-semibold">Suggestion: </span>
               {suggestion}
             </div>
@@ -73,7 +73,7 @@ export function EnvelopeAlert({
               href={docUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 text-xs text-red-700 underline underline-offset-2"
+              className="inline-flex items-center gap-1 text-xs text-red-700 underline underline-offset-2 dark:text-red-300"
             >
               docs <ExternalLink aria-hidden className="h-3 w-3" />
             </a>

@@ -4,7 +4,7 @@
 // 「待下次部署生效」分组与 effective 分开呈现。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Eye, EyeOff, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Eye, EyeOff, KeyRound, Clock, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
 
@@ -85,7 +85,7 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
           </span>
         )}
         {revealError ? (
-          <span className="ml-2 text-xs text-red-700">{revealError}</span>
+          <span className="ml-2 text-xs text-red-600 dark:text-red-400">{revealError}</span>
         ) : null}
       </TableCell>
       <TableCell className="text-xs">{row.source}</TableCell>
@@ -96,7 +96,7 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-red-700"
+          className="h-7 w-7 text-red-600 dark:text-red-400"
           aria-label={`Remove ${row.key}`}
           onClick={() => removeMutation.mutate()}
           disabled={removeMutation.isPending}
@@ -211,55 +211,49 @@ export function AppEnvPage() {
     );
 
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Set environment variable
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <KeyRound aria-hidden className="h-4 w-4 text-muted-foreground" />
+            Environment variables
           </CardTitle>
-          <CardDescription>
+          <CardDescription className="mt-1">
             Values are envelope-encrypted at rest; changes take effect on the
             next deployment.
           </CardDescription>
-        </CardHeader>
-        <CardContent>
+        </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7"
+          aria-label="Refresh env"
+          onClick={() => void query.refetch()}
+        >
+          <RefreshCw aria-hidden className="h-3.5 w-3.5" />
+        </Button>
+      </CardHeader>
+      <CardContent className="divide-y pt-0">
+        <section className="py-4">
           <SetEnvForm app={name} />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
-          <CardTitle
-            className="text-sm font-medium text-amber-700"
+        </section>
+        <section className="py-4">
+          <h3
+            className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400"
             data-testid="env-pending-heading"
           >
+            <Clock aria-hidden className="h-3.5 w-3.5" />
             Pending — takes effect on next deploy ({pending.length})
-          </CardTitle>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            aria-label="Refresh env"
-            onClick={() => void query.refetch()}
-          >
-            <RefreshCw aria-hidden className="h-3.5 w-3.5" />
-          </Button>
-        </CardHeader>
-        <CardContent>
+          </h3>
           {renderTable(pending, "No pending changes.")}
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
+        </section>
+        <section className="py-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
             Effective ({effective.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+          </h3>
           {renderTable(effective, "No effective variables.")}
-        </CardContent>
-      </Card>
-    </div>
+        </section>
+      </CardContent>
+    </Card>
   );
 }

@@ -3,7 +3,7 @@
 // internal/ingress（部署声明路径），Console 只读不写。
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { RefreshCw, ShieldCheck } from "lucide-react";
+import { RefreshCw, ShieldCheck, Globe } from "lucide-react";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -61,12 +61,14 @@ export function AppDomainsPage() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="flex-row items-center justify-between space-y-0 pb-3">
+        <CardHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
           <div>
-            <CardTitle className="text-sm font-medium text-muted-foreground">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              <Globe aria-hidden className="h-4 w-4 text-muted-foreground" />
               Domains
+              <span className="font-normal text-muted-foreground">({domains.length})</span>
             </CardTitle>
-            <CardDescription>
+            <CardDescription className="mt-1">
               Declared in compose; reconciled by the platform at release time.
             </CardDescription>
           </div>
@@ -128,7 +130,7 @@ export function AppDomainsPage() {
                     <TableCell className="text-xs">
                       {d.cert_sha256 ? (
                         <span className="space-y-0.5">
-                          <div className="flex items-center gap-1 text-emerald-700">
+                          <div className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                             <ShieldCheck aria-hidden className="h-3.5 w-3.5" />
                             issued · expires {formatTime(d.cert_not_after)}
                           </div>
@@ -172,7 +174,7 @@ export function AppDomainsPage() {
                     <TableCell className="font-mono text-xs">{c.domain}</TableCell>
                     <TableCell className="text-xs">
                       {c.resolved ? (c.ips ?? []).join(", ") : (
-                        <span className="text-red-700">{c.error || "unresolved"}</span>
+                        <span className="text-red-600 dark:text-red-400">{c.error || "unresolved"}</span>
                       )}
                     </TableCell>
                     <TableCell className="text-xs">{c.http_80 || "—"}</TableCell>

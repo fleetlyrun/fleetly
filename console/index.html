@@ -8,6 +8,16 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // 主题防闪：React 挂载前按持久化偏好挂 .dark（无偏好跟随系统）。
+      // 偏好键与 ThemeToggle 组件约定一致（fleetly.console.theme）。
+      try {
+        var t = localStorage.getItem("fleetly.console.theme");
+        if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches)) {
+          document.documentElement.classList.add("dark");
+        }
+      } catch (e) {}
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

@@ -5,7 +5,7 @@
 // 再重开跟随流。游标语义在事件流（seq）实现，见 EventsPage。
 
 import { useQuery } from "@tanstack/react-query";
-import { Pause, Play, RefreshCw, ScrollText } from "lucide-react";
+import { Pause, Play, RefreshCw, ScrollText, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -326,12 +326,26 @@ export function AppLogsPage() {
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Streaming logs
+        <CardHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Terminal aria-hidden className="h-4 w-4 text-muted-foreground" />
+            Logs
           </CardTitle>
+          {streamError ? (
+            <span className="text-xs text-amber-600 dark:text-amber-400">{streamError}</span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <span
+                aria-hidden
+                className={`h-2 w-2 rounded-full ${
+                  live ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
+                }`}
+              />
+              {live ? "following" : "paused"}
+            </span>
+          )}
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-48 space-y-1.5">
               <Label htmlFor="log-service">Service</Label>
@@ -394,19 +408,12 @@ export function AppLogsPage() {
               <ScrollText aria-hidden className="h-3.5 w-3.5" />
               {autoScroll ? "Auto-scroll on" : "Auto-scroll off"}
             </Button>
-            {streamError ? (
-              <span className="text-xs text-amber-700">{streamError}</span>
-            ) : (
-              <span className="text-xs text-emerald-700">
-                {live ? "following" : "paused"}
-              </span>
-            )}
           </div>
 
           <div
             ref={scrollRef}
             data-testid="log-stream"
-            className="h-[420px] overflow-auto rounded-md bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100"
+            className="h-[440px] overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100"
           >
             {visible.length === 0 ? (
               <p className="text-zinc-500">
@@ -437,12 +444,10 @@ export function AppLogsPage() {
       </Card>
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            History search
-          </CardTitle>
+        <CardHeader className="border-b pb-3">
+          <CardTitle className="text-sm font-semibold">History search</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="pt-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="log-since">Since</Label>

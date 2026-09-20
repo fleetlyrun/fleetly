@@ -5,7 +5,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useParams } from "react-router-dom";
-import { CheckCircle2, FileUp, Loader2, Undo2 } from "lucide-react";
+import { CheckCircle2, FileUp, Loader2, Rocket, Undo2 } from "lucide-react";
 
 import {
   deploy,
@@ -103,8 +103,9 @@ function DeployCard({ app }: { app: string }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+      <CardHeader className="border-b pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <Rocket aria-hidden className="h-4 w-4 text-muted-foreground" />
           Deploy compose
         </CardTitle>
         <CardDescription>
@@ -156,7 +157,7 @@ function DeployCard({ app }: { app: string }) {
         ) : null}
 
         {warnings.length > 0 ? (
-          <div className="rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-300">
             <div className="font-semibold">Compose warnings</div>
             <ul className="mt-1 list-disc pl-4">
               {warnings.map((w, i) => (
@@ -182,7 +183,7 @@ function DeployCard({ app }: { app: string }) {
                       : trackedDeployment.status ?? ""
                   } />
                   {trackedDeployment.error_code ? (
-                    <span className="font-mono text-xs text-red-700">
+                    <span className="font-mono text-xs text-red-600 dark:text-red-400">
                       {trackedDeployment.error_code}
                     </span>
                   ) : null}
@@ -195,7 +196,7 @@ function DeployCard({ app }: { app: string }) {
               <p className="mt-1 text-muted-foreground">{trackedDeployment.verdict}</p>
             ) : null}
             {trackedDeployment && TERMINAL.has(trackedDeployment.status ?? "") && trackedDeployment.status === "succeeded" ? (
-              <p className="mt-1 flex items-center gap-1 text-emerald-700">
+              <p className="mt-1 flex items-center gap-1 text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 aria-hidden className="h-4 w-4" /> Deployed
               </p>
             ) : null}
@@ -233,8 +234,9 @@ function RollbackCard({ app }: { app: string }) {
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-sm font-medium text-muted-foreground">
+      <CardHeader className="border-b pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <Undo2 aria-hidden className="h-4 w-4 text-muted-foreground" />
           Rollback
         </CardTitle>
         <CardDescription>
@@ -314,9 +316,14 @@ function DeploymentRow({
           ) : null}
         </div>
       </TableCell>
-      <TableCell className="font-mono text-xs">{d.id}</TableCell>
-      <TableCell className="whitespace-nowrap text-xs">
-        {formatTime(d.created_at)}
+      <TableCell className="font-mono text-xs">
+        <span title={d.id}>{(d.id ?? "").slice(0, 12)}</span>
+      </TableCell>
+      <TableCell
+        className="whitespace-nowrap text-xs text-muted-foreground"
+        title={d.created_at ? formatTime(d.created_at) : undefined}
+      >
+        {timeAgo(d.created_at)}
       </TableCell>
       <TableCell className="text-xs">
         {d.source_git_sha ? `${d.source_git_sha.slice(0, 7)}` : "—"}
@@ -381,22 +388,26 @@ export function AppDeploymentsPage() {
 
   return (
     <div className="space-y-4">
-      <DeployCard app={name} />
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+        <DeployCard app={name} />
+        <RollbackCard app={name} />
+      </div>
       <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Deployment history
+        <CardHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
+          <CardTitle className="text-sm font-semibold">
+            Deployment history{" "}
+            <span className="font-normal text-muted-foreground">({deployments.length})</span>
           </CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           {deployments.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No deployments yet.</p>
+            <p className="p-5 text-sm text-muted-foreground">No deployments yet.</p>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>Status</TableHead>
-                  <TableHead>ID</TableHead>
+                  <TableHead>State</TableHead>
+                  <TableHead>Deployment</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Git</TableHead>
                   <TableHead>Detail</TableHead>
@@ -412,7 +423,6 @@ export function AppDeploymentsPage() {
           )}
         </CardContent>
       </Card>
-      <RollbackCard app={name} />
     </div>
   );
 }

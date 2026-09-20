@@ -7,10 +7,11 @@
 // 未知状态按中性灰兜底——不发明词表外的展示语义。
 
 import { cn } from "@/lib/utils";
+import { StatusDot } from "@/components/status-dot";
 
 export type StateTone = "green" | "amber" | "red" | "neutral-blue" | "gray";
 
-const TONE_CLASSES: Record<StateTone, string> = {
+export const TONE_CLASSES: Record<StateTone, string> = {
   green: "bg-emerald-500",
   amber: "bg-amber-500",
   red: "bg-red-500",
@@ -18,7 +19,7 @@ const TONE_CLASSES: Record<StateTone, string> = {
   gray: "bg-zinc-400",
 };
 
-const INTERMEDIATE = new Set([
+export const INTERMEDIATE = new Set([
   "queued",
   "preparing",
   "building",
@@ -64,10 +65,7 @@ export function StateBadge({
         className,
       )}
     >
-      <span
-        aria-hidden
-        className={cn("h-2 w-2 rounded-full", TONE_CLASSES[stateTone(state)])}
-      />
+      <StatusDot state={state} />
       {state || "unknown"}
     </span>
   );

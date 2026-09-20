@@ -6,7 +6,7 @@
    StateBadge 组件内按 fleetly 口径映射（running=绿 / degraded=琥珀 /
    blocked、failed=红 / 中间态=中性蓝灰）。 */
 :root {
-  --radius: 0.5rem;
+  --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);

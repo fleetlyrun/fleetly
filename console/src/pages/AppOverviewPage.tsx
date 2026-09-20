@@ -1,7 +1,9 @@
 // 概览页：基本信息 + 放置/卷概览（服务/副本拓扑的 v0.1 投影面——compose
-// 服务明细在 revision spec，此处呈现平台观测面）。
+// 服务明细在 revision spec，此处呈现平台观测面）。三卡片分区：Application /
+// Placement / Volumes。
 
 import { useQuery } from "@tanstack/react-query";
+import { Layers, MapPin, PackageOpen } from "lucide-react";
 import { useParams } from "react-router-dom";
 
 import { getApp, getPlacement } from "@/api/endpoints";
@@ -39,22 +41,23 @@ export function AppOverviewPage() {
   });
 
   const app = appQuery.data;
+  const placement = placementQuery.data?.placement;
+  const volumes = placementQuery.data?.volumes ?? [];
 
   return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Application
-          </CardTitle>
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+          <Layers aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">Application</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
+        <CardContent className="space-y-3 pt-4">
           {app ? (
             <>
               <Field label="Derived state" value={<StateBadge state={app.derived_state ?? ""} />} />
               <Field label="Lifecycle" value={<code>{app.lifecycle}</code>} />
-              <Field label="Created" value={formatTime(app.created_at)} />
-              <Field label="Updated" value={`${timeAgo(app.updated_at)}`} />
+              <Field label="Created" value={<span title={app.created_at}>{formatTime(app.created_at)}</span>} />
+              <Field label="Updated" value={<span title={app.updated_at}>{timeAgo(app.updated_at)}</span>} />
               <Field label="ID" value={<code className="text-xs">{app.id}</code>} />
             </>
           ) : (
@@ -64,42 +67,44 @@ export function AppOverviewPage() {
       </Card>
 
       <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Placement & volumes
-          </CardTitle>
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+          <MapPin aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">Placement</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-3">
-          {placementQuery.data?.placement ? (
-            <div className="space-y-3">
+        <CardContent className="space-y-3 pt-4">
+          {placement ? (
+            <>
               <Field
                 label="Binding state"
-                value={
-                  <StateBadge state={placementQuery.data.placement.state ?? ""} />
-                }
+                value={<StateBadge state={placement.state ?? ""} />}
               />
               <Field
                 label="Node"
                 value={
                   <code className="text-xs">
-                    {placementQuery.data.placement.label_ref ||
-                      placementQuery.data.placement.platform_node_id}
+                    {placement.label_ref || placement.platform_node_id}
                   </code>
                 }
               />
-              {placementQuery.data.placement.reason ? (
-                <Field
-                  label="Reason"
-                  value={placementQuery.data.placement.reason}
-                />
+              {placement.reason ? (
+                <Field label="Reason" value={placement.reason} />
               ) : null}
-            </div>
+            </>
           ) : (
             <p className="text-sm text-muted-foreground">
               No placement binding (stateful placement not declared).
             </p>
           )}
-          {placementQuery.data?.volumes?.length ? (
+        </CardContent>
+      </Card>
+
+      {volumes.length > 0 ? (
+        <Card className="md:col-span-2">
+          <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+            <PackageOpen aria-hidden className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-semibold">Volumes</CardTitle>
+          </CardHeader>
+          <CardContent className="pt-4">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -110,7 +115,7 @@ export function AppOverviewPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {placementQuery.data.volumes.map((v) => (
+                {volumes.map((v) => (
                   <TableRow key={v.key}>
                     <TableCell className="font-mono text-xs">{v.key}</TableCell>
                     <TableCell>{v.kind}</TableCell>
@@ -120,9 +125,9 @@ export function AppOverviewPage() {
                 ))}
               </TableBody>
             </Table>
-          ) : null}
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }

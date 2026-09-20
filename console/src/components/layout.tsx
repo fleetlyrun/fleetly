@@ -1,56 +1,169 @@
-// Console 壳：侧边导航 + 内容区。导航 = v0.1 功能面（应用 / 系统 / 事件）。
+// Console 壳（dokploy 式）：可折叠侧边栏（分组导航 + 版本/操作员页脚）
+// + 顶栏（折叠钮 / 面包屑 / 时钟 / 主题）+ 内容区。导航 = v0.1 功能面
+// （应用 / 事件 / 系统）。折叠偏好持久化 localStorage；小屏首帧默认折叠。
 
+import { useQuery } from "@tanstack/react-query";
+import {
+  Boxes,
+  House,
+  LogOut,
+  PanelLeft,
+  Radio,
+  Server,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
-import { Boxes, LogOut, Radio, Server } from "lucide-react";
 
+import { getSystemStatus } from "@/api/endpoints";
 import { useAuth } from "@/auth";
+import { Breadcrumbs } from "@/components/breadcrumbs";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { TimeBadge } from "@/components/time-badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { queryClient } from "@/query";
 
-const NAV_ITEMS = [
-  { to: "/apps", label: "Applications", icon: Boxes },
-  { to: "/system", label: "System", icon: Server },
-  { to: "/events", label: "Events", icon: Radio },
+const COLLAPSE_KEY = "fleetly.console.sidebar-collapsed";
+
+const NAV_MAIN = [{ to: "/", label: "Home", icon: House, end: true }];
+const NAV_PLATFORM = [
+  { to: "/apps", label: "Applications", icon: Boxes, end: false },
+  { to: "/events", label: "Events", icon: Radio, end: false },
+  { to: "/system", label: "System", icon: Server, end: false },
 ];
+
+function useSidebarCollapsed() {
+  // 无持久化偏好时按视口宽度定初值（窄屏折叠；宽屏展开）。一次性求值，
+  // 不进 effect（setState-in-effect 纪律）。
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const stored = localStorage.getItem(COLLAPSE_KEY);
+      if (stored !== null) return stored === "1";
+    } catch {
+      // 存储不可用——回落视口判定。
+    }
+    return typeof window !== "undefined" && window.innerWidth < 768;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(COLLAPSE_KEY, collapsed ? "1" : "0");
+    } catch {
+      // 忽略。
+    }
+  }, [collapsed]);
+
+  return [collapsed, () => setCollapsed((v) => !v)] as const;
+}
+
+function NavItem({
+  to,
+  label,
+  icon: Icon,
+  end,
+  collapsed,
+}: {
+  to: string;
+  label: string;
+  icon: typeof Boxes;
+  end?: boolean;
+  collapsed: boolean;
+}) {
+  return (
+    <NavLink
+      to={to}
+      end={end}
+      title={collapsed ? label : undefined}
+      className={({ isActive }) =>
+        cn(
+          "flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+          isActive && "bg-accent text-foreground",
+          collapsed && "justify-center px-0",
+        )
+      }
+    >
+      <Icon aria-hidden className="h-4 w-4 shrink-0" />
+      {!collapsed && label}
+    </NavLink>
+  );
+}
 
 export function Layout() {
   const { logout } = useAuth();
   const navigate = useNavigate();
+  const [collapsed, toggleCollapsed] = useSidebarCollapsed();
+
+  // 版本号：侧边栏页脚（与 System 页共享查询缓存；静默失败即隐藏）。
+  const { data: status } = useQuery({
+    queryKey: ["system", "status"],
+    queryFn: getSystemStatus,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const version = status?.version ? `v${status.version}` : "";
 
   return (
     <div className="flex min-h-screen">
-      <aside className="flex w-56 shrink-0 flex-col border-r bg-muted/40">
-        <div className="flex items-center gap-2 px-4 py-4">
-          <span className="flex h-7 w-7 items-center justify-center rounded-md bg-primary font-bold text-primary-foreground">
+      <aside
+        className={cn(
+          "sticky top-0 flex h-screen shrink-0 flex-col border-r bg-muted/30 transition-[width] duration-200",
+          collapsed ? "w-14" : "w-60",
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-14 shrink-0 items-center border-b",
+            collapsed ? "justify-center" : "gap-2.5 px-4",
+          )}
+        >
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
             f
           </span>
-          <span className="text-sm font-semibold tracking-wide">
-            fleetly console
-          </span>
+          {!collapsed ? (
+            <span className="min-w-0 leading-tight">
+              <span className="block truncate text-sm font-semibold">fleetly</span>
+              <span className="block text-[10px] uppercase tracking-widest text-muted-foreground">
+                console
+              </span>
+            </span>
+          ) : null}
         </div>
-        <nav className="flex-1 space-y-1 px-2" aria-label="Main">
-          {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) =>
-                cn(
-                  "flex items-center gap-2 rounded-md px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-accent hover:text-foreground",
-                  isActive && "bg-accent text-foreground",
-                )
-              }
-            >
-              <Icon aria-hidden className="h-4 w-4" />
-              {label}
-            </NavLink>
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3" aria-label="Main">
+          {NAV_MAIN.map((item) => (
+            <NavItem key={item.to} {...item} collapsed={collapsed} />
+          ))}
+          {!collapsed ? (
+            <div className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
+              Platform
+            </div>
+          ) : (
+            <div className="pb-1 pt-4" />
+          )}
+          {NAV_PLATFORM.map((item) => (
+            <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
         </nav>
-        <div className="border-t p-2">
+
+        <div className="shrink-0 space-y-1 border-t p-2">
+          {!collapsed && version ? (
+            <div className="px-2 pb-1 text-[10px] text-muted-foreground">
+              Version {version}
+            </div>
+          ) : null}
+          {!collapsed ? (
+            <div className="rounded-md border bg-background px-2 py-1.5">
+              <div className="text-xs font-medium leading-tight">Operator</div>
+              <div className="text-[10px] leading-tight text-muted-foreground">
+                token auth
+              </div>
+            </div>
+          ) : null}
           <Button
             variant="ghost"
             size="sm"
-            className="w-full justify-start text-muted-foreground"
+            title={collapsed ? "Sign out" : undefined}
+            className={cn("w-full justify-start text-muted-foreground", collapsed && "justify-center px-0")}
             onClick={() => {
               // 登出同时清 react-query 缓存（M9-9）：上一操作员的 apps/
               // deployments 等服务端状态不得泄给下一个会话（token 换人后
@@ -60,14 +173,32 @@ export function Layout() {
               navigate("/login");
             }}
           >
-            <LogOut aria-hidden className="h-4 w-4" />
-            Sign out
+            <LogOut aria-hidden className="h-4 w-4 shrink-0" />
+            {!collapsed && "Sign out"}
           </Button>
         </div>
       </aside>
-      <main className="min-w-0 flex-1 p-6">
-        <Outlet />
-      </main>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b bg-background/95 px-4 backdrop-blur">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={toggleCollapsed}
+          >
+            <PanelLeft aria-hidden className="h-4 w-4" />
+          </Button>
+          <Breadcrumbs />
+          <div className="ml-auto flex items-center gap-1.5">
+            <TimeBadge />
+            <ThemeToggle />
+          </div>
+        </header>
+        <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 md:p-6">
+          <Outlet />
+        </main>
+      </div>
     </div>
   );
 }

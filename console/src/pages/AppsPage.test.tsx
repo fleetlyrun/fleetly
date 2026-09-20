@@ -1,5 +1,5 @@
 // 应用列表测试：状态徽章渲染（degraded/blocked 一等展示 + 颜色语义）、
-// 点击进详情路由形态。
+// 行点击进详情路由形态。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -68,8 +68,8 @@ describe("AppsPage state badges", () => {
 
     await waitFor(() => screen.getByText("api"));
     const badgeFor = (name: string) => {
-      const card = screen.getByText(name).closest("a")!;
-      return card.querySelector('[data-testid="state-badge"]')!;
+      const row = screen.getByText(name).closest("tr")!;
+      return row.querySelector('[data-testid="state-badge"]')!;
     };
     // degraded → 琥珀点（bg-amber-500）；blocked → 红点（bg-red-500）。
     expect(badgeFor("api").innerHTML).toContain("bg-amber-500");
@@ -77,7 +77,7 @@ describe("AppsPage state badges", () => {
     expect(badgeFor("web").innerHTML).toContain("bg-emerald-500");
   });
 
-  it("navigates to the app detail on card click", async () => {
+  it("navigates to the app detail on name click", async () => {
     setToken("flt_test");
     vi.stubGlobal("fetch", stubFetchApps());
     const user = userEvent.setup();

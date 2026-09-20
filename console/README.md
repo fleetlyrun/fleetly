@@ -27,8 +27,10 @@ console/
       streams.ts    #   followLogs / watchEvents
       stream-types.ts # 流帧类型（{"entry":…} / {"event":…|{"cursor_expired":…}）
       types.ts      #   proto 投影类型（UseProtoNames → snake_case）
-    pages/          # 登录 / 应用列表 / 详情（概览·部署·日志·env·域名）/ 系统 / 事件
-    components/     # 壳布局 + StateBadge（状态色语义）+ EnvelopeAlert（信封渲染）+ shadcn ui
+    pages/          # 首页仪表盘 / 应用列表 / 详情（概览·部署·日志·env·域名）/ 系统 / 事件
+    components/     # 壳布局（可折叠侧边栏+面包屑+时钟+主题）+ StateBadge（状态色语义）
+                    # + EnvelopeAlert（信封渲染）+ StatCard/EmptyState/PillTabs 等原子 + shadcn ui
+    hooks/          # use-event-stream（事件流订阅，首页活动流与事件页共用）
     auth.tsx        # token 登录态（localStorage 持久）
   tests → src/**/*.test.{ts,tsx}（vitest + @testing-library/react）
 ```
@@ -38,6 +40,7 @@ console/
 | 页面 | 端点（proto/fleetly/server/v1 派生） |
 | --- | --- |
 | 登录（凭据校验） | GET /v1/apps |
+| 首页仪表盘 | GET /v1/apps、GET /v1/system/status、GET /v1/system/nodes、GET /v1/events/stream（统计与活动流均为客户端派生，不新增端点） |
 | 应用列表 | GET /v1/apps |
 | 概览 | GET /v1/apps/{app}、GET /v1/apps/{app}/placement |
 | 部署（动作+历史+回滚） | POST /v1/apps/{app}/deployments（compose bytes=base64）、GET /v1/apps/{app}/deployments、GET /v1/deployments/{id}（轮询至终态）、POST /v1/deployments/{id}/cancel、POST /v1/apps/{app}/rollbacks、GET /v1/apps/{app}/revisions |
@@ -72,10 +75,14 @@ pnpm test           # vitest run（stubbed fetch，不起真服务）
 
 - **状态色**：running/succeeded=绿、degraded=琥珀、blocked/failed/down=红、
   中间态（queued/preparing/building/releasing/observing/blocked_waiting）=
-  中性蓝/灰。见 `src/components/state-badge.tsx`。
+  中性蓝/灰。见 `src/components/state-badge.tsx`（色点原子在
+  `status-dot.tsx`，表格/feed/统计卡共用）。
 - **错误信封**：所有 HTTP 错误与失败部署行经 `EnvelopeAlert` 渲染
   code + message + suggestion + docs（不做裸 toast）。
 - **env pending**：Set/Remove 均置 pending（随下次部署生效），「待生效」
   与 effective 分组分开呈现；值恒脱敏，展开才取明文（admin）。
 - **断线续读**：日志以最后时间戳回放历史后重开跟随流（FollowLogs 契约无
   游标）；事件以 seq 游标续读，`cursor_expired` 帧触发重同步。
+- **主题**：亮/暗两态，偏好持久化 localStorage（`fleetly.console.theme`），
+  首帧防闪脚本在 `index.html`；侧边栏折叠偏好
+  （`fleetly.console.sidebar-collapsed`）同途。

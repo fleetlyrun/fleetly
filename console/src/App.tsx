@@ -14,6 +14,7 @@ import {
 import { AuthProvider, useAuth } from "@/auth";
 import { setUnauthorizedListener } from "@/api/client";
 import { Layout } from "@/components/layout";
+import { HomePage } from "@/pages/HomePage";
 import { AppsPage } from "@/pages/AppsPage";
 import { AppDetailLayout } from "@/pages/AppDetailLayout";
 import { AppOverviewPage } from "@/pages/AppOverviewPage";
@@ -60,7 +61,7 @@ function Gate() {
     <QueryClientProvider client={queryClient}>
       <Routes>
         <Route element={<RequireAuth><Layout /></RequireAuth>}>
-          <Route path="/" element={<Navigate to="/apps" replace />} />
+          <Route path="/" element={<HomePage />} />
           <Route path="/apps" element={<AppsPage />} />
           <Route path="/apps/:name" element={<AppDetailLayout />}>
             <Route index element={<AppOverviewPage />} />
@@ -71,7 +72,7 @@ function Gate() {
           </Route>
           <Route path="/system" element={<SystemPage />} />
           <Route path="/events" element={<EventsPage />} />
-          <Route path="*" element={<Navigate to="/apps" replace />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>
     </QueryClientProvider>

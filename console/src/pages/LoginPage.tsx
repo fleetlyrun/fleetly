@@ -45,8 +45,8 @@ export function LoginPage({
 
   useEffect(() => {
     if (authed && !error) {
-      // 已持有有效 token（如从 401 回退）直达列表。
-      navigate("/apps", { replace: true });
+      // 已持有有效 token（如从 401 回退）直达首页。
+      navigate("/", { replace: true });
     }
   }, [authed, error, navigate]);
 
@@ -66,7 +66,7 @@ export function LoginPage({
       // 校验通过才真正持久化登录态（login 幂等地再写一次 token 并翻
       // authed；同一批次内 Gate 切换到应用路由，本页随之卸载）。
       login(trimmed);
-      navigate(from ?? "/apps", { replace: true });
+      navigate(from ?? "/", { replace: true });
     } catch (err) {
       // 失败：清除未通过校验的凭据（401 路径 handleUnauthorized 已清，
       // 这里兜底网络/5xx 形态），并压掉 Gate 级 401 横幅——本页的信封
@@ -86,7 +86,17 @@ export function LoginPage({
     <div className="flex min-h-screen items-center justify-center bg-muted/30 p-6">
       <Card className="w-full max-w-md">
         <CardHeader>
-          <CardTitle className="text-xl">fleetly console</CardTitle>
+          <div className="mb-1 flex items-center gap-2.5">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
+              f
+            </span>
+            <div className="leading-tight">
+              <CardTitle className="text-base">fleetly</CardTitle>
+              <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                console
+              </span>
+            </div>
+          </div>
           <CardDescription>
             Paste an API token to sign in. Create one with{" "}
             <code className="rounded bg-muted px-1 py-0.5 text-xs">
@@ -113,7 +123,7 @@ export function LoginPage({
             {authError ? (
               <div
                 role="alert"
-                className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900"
+                className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-800 dark:text-amber-300"
               >
                 <AlertCircle aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
                 {authError}

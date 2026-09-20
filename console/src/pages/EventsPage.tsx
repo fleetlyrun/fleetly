@@ -1,173 +1,147 @@
-// 事件流（全局 activity）：WatchEvents NDJSON 流 + seq 游标断线续读。
-// 游标过期（cursor_expired 帧）→ 以 oldest_seq 重拉全量。事件行可展开
+// 事件流（全局 activity）：WatchEvents NDJSON 流 + seq 游标断线续读
+// （订阅逻辑在 use-event-stream hook，与 Home 活动流共用）。行可展开
 // payload JSON（脱敏由采集端保证——state-model §2.9）。
 
-import { RefreshCw } from "lucide-react";
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Search } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
 
-import { ReconnectBackoff } from "@/api/backoff";
-import { watchEvents } from "@/api/streams";
+import { eventTone, useEventStream } from "@/hooks/use-event-stream";
+import { EmptyState } from "@/components/empty-state";
+import { PageHeader } from "@/components/page-header";
+import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { formatTime } from "@/lib/utils";
 import type { EventView } from "@/api/types";
 
-const EVENT_CAP = 500;
-
-/** 已解包（去掉 gateway result 层）的事件帧投影。 */
-type InnerEventFrame = { event?: EventView; cursor_expired?: import("@/api/types").CursorExpiredView };
-
 export function EventsPage() {
-  const [events, setEvents] = useState<EventView[]>([]);
-  const [connected, setConnected] = useState(false);
-  const [notice, setNotice] = useState("");
-  const cursorRef = useRef(0); // 重连续读点（仅在回调中写；渲染派生值见 lastSeq）
+  const { events, connected, notice, lastSeq, clear } = useEventStream();
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [filter, setFilter] = useState("");
 
-  // 渲染面派生游标（不读 ref）。生成类型口径：零值/缺省 seq 回落 "0"。
-  const lastSeq = events.length > 0 ? (events[events.length - 1].seq ?? "0") : "0";
-
-  const mergeFrames = useCallback((frames: InnerEventFrame[]) => {
-    for (const frame of frames) {
-      if (frame.cursor_expired) {
-        // 断档信号：seq ≤ oldest_seq-1 已被清理——以 oldest_seq 重拉。
-        //（oldest_seq 是 proto int64 的 JSON 字符串形态）
-        const oldest = Number(frame.cursor_expired.oldest_seq);
-        setNotice(
-          `event cursor expired (oldest kept seq ${frame.cursor_expired.oldest_seq}) — resyncing`,
-        );
-        cursorRef.current = Math.max(0, oldest - 1);
-        setEvents([]);
-        continue;
-      }
-      if (frame.event) {
-        setNotice("");
-        const incoming = frame.event;
-        setEvents((prev) => {
-          if (prev.some((e) => e.seq === incoming.seq)) return prev;
-          return [...prev, incoming].slice(-EVENT_CAP);
-        });
-        cursorRef.current = Number(incoming.seq ?? 0);
-      }
-    }
-  }, []);
-
-  // 重连延迟走共享指数退避（D4-③：1.5s 起 ×2、上限 30s、±20% 抖动；服务
-  // 端连续立即正常关流时降频并提示）。
-  useEffect(() => {
-    let conn: { close(): void } | null = null;
-    let timer: number | undefined;
-    let disposed = false;
-    const backoff = new ReconnectBackoff();
-
-    const open = () => {
-      watchEvents(cursorRef.current, {
-        onFrame: (frame) => mergeFrames([frame]),
-        onEnd: (err) => {
-          if (disposed) return;
-          setConnected(false);
-          if (err && err instanceof Error && "status" in err && (err as { status?: number }).status === 401) {
-            // 全局登出已由流式层统一触发（stream.ts 的 401 处置），
-            // 此处仅展示并不再重连。
-            setNotice("stream rejected (401)");
-            return;
-          }
-          const delay = backoff.nextDelayMs(err === undefined);
-          setNotice(
-            `stream ended — reconnecting with seq cursor${
-              backoff.throttled ? " (server keeps closing the stream; retries slowed)" : ""
-            }…`,
-          );
-          timer = window.setTimeout(() => {
-            if (!disposed) open();
-          }, delay);
-        },
-      })
-        .then((c) => {
-          if (disposed) c.close();
-          else {
-            conn = c;
-            backoff.markOpen();
-            setConnected(true);
-          }
-        });
-      // openNdjsonStream 恒 resolve（连接级错误一律经 onEnd 回调上抛），
-      // 重连的唯一路径是上面的 onEnd 分支——无需 .catch 兜底（M9-13）。
-    };
-    open();
-
-    return () => {
-      disposed = true;
-      if (timer !== undefined) window.clearTimeout(timer);
-      conn?.close();
-    };
-  }, [mergeFrames]);
+  // 客户端过滤（事件名/主题包含匹配）；新到事件实时进出视图。
+  const visible = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    const ordered = [...events].reverse();
+    if (!needle) return ordered;
+    return ordered.filter(
+      (e) =>
+        (e.name ?? "").toLowerCase().includes(needle) ||
+        (e.subject ?? "").toLowerCase().includes(needle),
+    );
+  }, [events, filter]);
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold">Events</h1>
-        <div className="flex items-center gap-3">
-          {notice ? <span className="text-xs text-amber-700">{notice}</span> : (
-              <span className={`text-xs ${connected ? "text-emerald-700" : "text-muted-foreground"}`}>
+      <PageHeader
+        title="Events"
+        description="Platform activity stream (live)."
+        actions={
+          <>
+            {notice ? (
+              <span className="text-xs text-amber-600 dark:text-amber-400">{notice}</span>
+            ) : (
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <span
+                  aria-hidden
+                  className={`h-2 w-2 rounded-full ${
+                    connected ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
+                  }`}
+                />
                 {connected ? `streaming (cursor seq ${lastSeq})` : "connecting…"}
               </span>
-          )}
-          <Button variant="outline" size="sm" onClick={() => setEvents([])}>
-            <RefreshCw aria-hidden className="h-3.5 w-3.5" />
-            Clear view
-          </Button>
-        </div>
-      </div>
+            )}
+            <Button variant="outline" size="sm" onClick={clear}>
+              Clear view
+            </Button>
+          </>
+        }
+      />
 
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Events ({events.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
+          <div className="border-b px-4 py-3">
+            <div className="relative">
+              <Search
+                aria-hidden
+                className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+              />
+              <Input
+                aria-label="Filter events"
+                placeholder="Filter by name or subject…"
+                className="w-72 pl-8"
+                value={filter}
+                onChange={(e) => setFilter(e.target.value)}
+              />
+            </div>
+          </div>
+
           {events.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              No events received yet. Deploy something or wait for platform
-              activity.
-            </p>
+            <EmptyState
+              icon={Search}
+              title="No events received yet."
+              hint="Deploy something or wait for platform activity — events stream in live."
+            />
+          ) : visible.length === 0 ? (
+            <EmptyState
+              icon={Search}
+              title="No events match the filter."
+              hint="Broaden the filter to see more of the stream."
+            />
           ) : (
             <ul className="divide-y text-sm" data-testid="events-list">
-              {[...events].reverse().map((e) => (
-                <Fragment key={e.seq}>
-                  <li className="flex cursor-pointer flex-wrap items-center gap-2 py-2"
-                      onClick={() => setExpanded((x) => (x === e.seq ? null : e.seq ?? ""))}>
-                    <span className="font-mono text-xs text-muted-foreground">
-                      #{e.seq}
-                    </span>
-                    <span className="font-medium">{e.name}</span>
-                    <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                      {e.subject}
-                    </code>
-                    <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
-                      {formatTime(e.at)}
-                    </span>
-                  </li>
-                  {expanded === e.seq ? (
-                    <li className="pb-2">
-                      <pre className="max-h-56 overflow-auto rounded-md bg-zinc-950 p-3 font-mono text-xs text-zinc-100">
-                        {prettyPayload(e.payload ?? "")}
-                      </pre>
-                    </li>
-                  ) : null}
-                </Fragment>
+              {visible.map((e) => (
+                <EventRow
+                  key={e.seq}
+                  event={e}
+                  expanded={expanded === e.seq}
+                  onToggle={() => setExpanded((x) => (x === e.seq ? null : e.seq ?? ""))}
+                />
               ))}
             </ul>
           )}
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function EventRow({
+  event,
+  expanded,
+  onToggle,
+}: {
+  event: EventView;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <Fragment>
+      <li
+        className="flex cursor-pointer flex-wrap items-center gap-2.5 px-4 py-2.5 transition-colors hover:bg-muted/40"
+        onClick={onToggle}
+      >
+        <span className="w-14 shrink-0 font-mono text-xs text-muted-foreground">
+          #{event.seq}
+        </span>
+        <StatusDot tone={eventTone(event.name)} />
+        <span className="font-medium">{event.name}</span>
+        <code className="truncate rounded bg-muted px-1.5 py-0.5 text-xs">
+          {event.subject}
+        </code>
+        <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
+          {formatTime(event.at)}
+        </span>
+      </li>
+      {expanded ? (
+        <li className="px-4 pb-3">
+          <pre className="max-h-56 overflow-auto rounded-md bg-zinc-950 p-3 font-mono text-xs text-zinc-100">
+            {prettyPayload(event.payload ?? "")}
+          </pre>
+        </li>
+      ) : null}
+    </Fragment>
   );
 }
 
