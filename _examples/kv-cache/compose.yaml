@@ -1,0 +1,21 @@
+# 内部缓存服务：redis + 命名卷持久化 + command 覆写，无 expose（仅栈内互访，
+# 不对外发布——同 app 内其他服务按 compose 语义用短名 redis 直连）。
+# 卷挂载使发布走 stop-first + 失败强制归位（有状态服务语义）。
+name: kv-cache
+services:
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 256M }
+volumes:
+  data:

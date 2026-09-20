@@ -1,0 +1,25 @@
+# 有状态数据库：postgres + 命名卷（数据不随部署/回滚变动，删除仅显式操作）。
+# 口令管理（v0.1 无平台密钥库，compose 顶层 secrets 会被显式拒绝）：
+#   演示用 compose 内字面值；生产建议 fleetly env set stateful-db POSTGRES_PASSWORD <值>
+#   ——平台层 env 覆盖 compose 层，随下次部署生效且不回显。
+name: stateful-db
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: demo
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: changeme-only-for-local-demo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d demo"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 512M }
+volumes:
+  pgdata:

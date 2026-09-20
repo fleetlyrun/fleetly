@@ -1,0 +1,15 @@
+# 最小无状态 HTTP 服务：单服务、纯 image（无构建）、无域名（仅集群内可达）。
+# v0.1 镜像模式不代拉——先 docker pull traefik/whoami:v1.10 到节点本机。
+# 部署：fleetly deploy compose.yaml
+name: hello-web
+services:
+  web:
+    image: traefik/whoami:v1.10
+    expose: ["80"]                       # 路由目标端口；未配 fleetly.domains 时不对外发布
+    # 对外发布时加平台约定 label（换成本机可达的域名；本地无公网 DNS/ACME 时仅路由生效、证书不签发）：
+    # labels:
+    #   fleetly.domains: "hello.example.com"
+    # 无 healthcheck → health_gate=none（部署结果里会带一条警告，属预期）。
+    deploy:
+      resources:
+        limits: { cpus: "0.25", memory: 64M }

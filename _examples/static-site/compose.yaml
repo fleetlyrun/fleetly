@@ -1,0 +1,20 @@
+# 静态站点：nginx 直接用官方镜像（免构建），带健康检查与入口域名。
+# fleetly.domains 是「有该 label 的服务即入口」的平台约定——把占位域名换成
+# 你自己的；本地演示环境没有公网 DNS/ACME，路由会建立但证书签发会停在
+# pending（不影响部署终态）。
+name: static-site
+services:
+  web:
+    image: nginx:1.27-alpine
+    expose: ["80"]
+    labels:
+      fleetly.domains: "site.example.com"
+    healthcheck:                          # nginx:alpine 自带 busybox wget
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:80/ || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 128M }
