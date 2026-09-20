@@ -70,7 +70,7 @@ func TestBuilderExecuteCorruptRequestFailsWithEnvelope(t *testing.T) {
 		t.Fatalf("code = %s, want E_BUILD_FAILED", appErr.Code())
 	}
 	if appErr.Envelope().GetSuggestion() == "" {
-		t.Fatal("envelope must carry registry suggestion（验收：失败带建议）")
+		t.Fatal("envelope must carry registry suggestion (acceptance: failure carries a suggestion)")
 	}
 	row, err := st.GetBuild(context.Background(), rec.ID)
 	if err != nil {
@@ -99,7 +99,7 @@ func TestBuilderExecuteUnclaimedRejected(t *testing.T) {
 		t.Fatalf("create build: %v", err)
 	}
 	if _, err := b.Execute(context.Background(), rec); err == nil {
-		t.Fatal("queued record must not be executable（claim 是契约前提）")
+		t.Fatal("queued record must not be executable (claim is a contract precondition)")
 	}
 }
 
@@ -148,7 +148,7 @@ func TestBuilderTerminalWriteSurvivesCancelledContext(t *testing.T) {
 		t.Fatalf("get build: %v", err)
 	}
 	if row.Status != state.BuildFailed || row.ErrorCode != "E_BUILD_FAILED" {
-		t.Fatalf("row = %s/%s, want failed/E_BUILD_FAILED（终态写不得随 ctx 取消丢失）", row.Status, row.ErrorCode)
+		t.Fatalf("row = %s/%s, want failed/E_BUILD_FAILED (terminal write must not be lost to ctx cancellation)", row.Status, row.ErrorCode)
 	}
 	if row.FinishedAt.IsZero() {
 		t.Fatal("cancelled-context failure must stamp finished_at")
@@ -200,7 +200,7 @@ func TestBuilderExecuteContextOutsideManagedRootsFails(t *testing.T) {
 	if !errors.As(execErr, &appErr) || appErr.Code() != "E_BUILD_FAILED" {
 		t.Fatalf("error = %v, want E_BUILD_FAILED envelope", execErr)
 	}
-	if !strings.Contains(execErr.Error(), "上下文目录越界") {
+	if !strings.Contains(execErr.Error(), "context directory outside managed roots") {
 		t.Fatalf("error = %v, want out-of-managed-roots message", execErr)
 	}
 	row, err := st.GetBuild(context.Background(), rec.ID)
@@ -253,7 +253,7 @@ func TestBuilderFailedBuildRecordsLogPath(t *testing.T) {
 
 	_, execErr := b.Execute(context.Background(), rec)
 	if execErr == nil {
-		t.Fatal("solve 必须失败（端点拒绝连接）")
+		t.Fatal("solve must fail (endpoint refuses connection)")
 	}
 	var appErr *apperr.Error
 	if !errors.As(execErr, &appErr) || appErr.Code() != "E_BUILD_FAILED" {
@@ -261,7 +261,7 @@ func TestBuilderFailedBuildRecordsLogPath(t *testing.T) {
 	}
 	wantLog := filepath.Join(artifacts, "builder-logpath", rec.ID, "build.log")
 	if got := appErr.Context()["log_path"]; got != wantLog {
-		t.Fatalf("envelope log_path = %q, want %q（失败信封必须携带日志路径）", got, wantLog)
+		t.Fatalf("envelope log_path = %q, want %q (failure envelope must carry the log path)", got, wantLog)
 	}
 	row, err := st.GetBuild(context.Background(), rec.ID)
 	if err != nil {
@@ -271,10 +271,10 @@ func TestBuilderFailedBuildRecordsLogPath(t *testing.T) {
 		t.Fatalf("row status = %s, want failed", row.Status)
 	}
 	if row.LogPath != wantLog {
-		t.Fatalf("row log_path = %q, want %q（M2-5：失败行也必须携带 log_path）", row.LogPath, wantLog)
+		t.Fatalf("row log_path = %q, want %q (M2-5: failed rows must also carry log_path)", row.LogPath, wantLog)
 	}
 	if _, err := os.Stat(wantLog); err != nil {
-		t.Fatalf("build.log 未落盘: %v", err)
+		t.Fatalf("build.log not written: %v", err)
 	}
 }
 

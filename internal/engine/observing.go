@@ -26,7 +26,7 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
 		return e.failSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",
-			"期望态快照不可读：人工处置")
+			"desired-state snapshot unreadable: manual intervention required")
 	}
 
 	now := e.now()
@@ -56,7 +56,7 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 	for _, o := range obs {
 		if o.crashCount >= 2 {
 			return e.failSwitched(ctx, rec, "E_OBSERVE_CRASH_LOOP",
-				fmt.Sprintf("服务 %s 观察窗内崩溃循环（退出 %d 次）", o.spec.Name, o.crashCount))
+				fmt.Sprintf("crash loop in the observe window for service %s (%d exits)", o.spec.Name, o.crashCount))
 		}
 	}
 
@@ -79,7 +79,7 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 	}
 	if below {
 		return e.failSwitched(ctx, rec, "E_OBSERVE_UNHEALTHY",
-			fmt.Sprintf("观察窗内副本水位持续不足（≥%ds）", int64(e.cfg.ReplicasBelowFor/time.Second)))
+			fmt.Sprintf("replica watermark below target for ≥%ds in the observe window", int64(e.cfg.ReplicasBelowFor/time.Second)))
 	}
 
 	if now.Before(windowEnd) {
@@ -99,7 +99,7 @@ func (e *Engine) evaluateObserving(ctx context.Context, rec state.DeployRecord) 
 	}
 	if !atWater {
 		return e.failSwitched(ctx, rec, "E_OBSERVE_UNHEALTHY",
-			"观察窗结束副本水位未恢复（窗末 unhealthy，场景 8）")
+			"replica watermark not recovered at observe window end (unhealthy at window end, scenario 8)")
 	}
 	// 单次退出且窗末自愈 → 警告通过（场景 9，W_DEPLOY_INSTABILITY）。
 	flags := rec.Flags
@@ -169,7 +169,7 @@ func (e *Engine) succeedDeployment(ctx context.Context, rec state.DeployRecord, 
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
 		return e.failSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",
-			"期望态快照不可读：人工处置")
+			"desired-state snapshot unreadable: manual intervention required")
 	}
 	composeNormalized := e.composeNormalizedSnapshot(ctx, rec)
 	var revisionID string
@@ -286,7 +286,7 @@ func (e *Engine) composeNormalizedSnapshot(ctx context.Context, rec state.Deploy
 		App:             rec.AppName,
 		SpecHash:        rec.SpecHash,
 		EnvSnapshotHash: rec.EnvSnapshotHash,
-		Note:            "compose 文件在成功时不可重载，快照退化为哈希摘要（详见遗留记录）",
+		Note:            "compose file could not be reloaded at success time; snapshot degraded to a hash digest (see the legacy record)",
 	})
 	if err != nil {
 		return "{}"

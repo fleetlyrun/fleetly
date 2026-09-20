@@ -50,9 +50,9 @@ func railpackPlan(ctx context.Context, req Request) (*llb.Definition, string, []
 		// 失败原因在 BuildResult.Logs（railpack 失败形态：Success=false +
 		// 诊断日志、err 为 nil）；尾部拼接进错误信息供 E_BUILD_FAILED 带出。
 		if detail := railpackLogTail(result.Logs); detail != "" {
-			return nil, "", nil, fmtErr("railpack: plan generation failed: %s（服务语言/框架不在 railpack 检出范围？改用 build.dockerfile 兜底）", detail)
+			return nil, "", nil, fmtErr("railpack: plan generation failed: %s (service language/framework not detected by railpack? fall back to build.dockerfile)", detail)
 		}
-		return nil, "", nil, fmtErr("railpack: plan generation not successful（服务语言/框架不在 railpack 检出范围？改用 build.dockerfile 兜底）")
+		return nil, "", nil, fmtErr("railpack: plan generation not successful (service language/framework not detected by railpack? fall back to build.dockerfile)")
 	}
 
 	planJSON, err := archivePlanJSON(result.Plan)

@@ -55,19 +55,19 @@ func TestRunReturnsWithinBudgetOnContextTimeout(t *testing.T) {
 	start := time.Now()
 	_, err := Run(ctx, name, args, Options{WaitDelay: 2 * time.Second})
 	if elapsed := time.Since(start); elapsed > 3*time.Second {
-		t.Fatalf("Run 未在 ctx 预算 + WaitDelay 内返回：elapsed %v（I/O 挂死回收失效？）", elapsed)
+		t.Fatalf("Run did not return within ctx budget + WaitDelay: elapsed %v (hung-process reaping broken?)", elapsed)
 	}
 	if err == nil {
-		t.Fatal("挂起子进程被 ctx 超时后，Run 必须返回错误")
+		t.Fatal("Run must return an error after the hung child is killed by ctx timeout")
 	}
 	if ctx.Err() == nil {
-		t.Fatalf("ctx 未到期却收到错误 %v（错误归因错位）", err)
+		t.Fatalf("got error %v before ctx expiry (error misattributed)", err)
 	}
 	// 错误可判：进程被杀 → *exec.ExitError；取消后进程体面退出的竞态 →
 	// ctx 错误。两者之外即异常形态。
 	var exitErr *exec.ExitError
 	if !errors.Is(err, context.DeadlineExceeded) && !errors.As(err, &exitErr) {
-		t.Fatalf("错误形态不可判（既非 ctx 错误也非 ExitError）：%T %v", err, err)
+		t.Fatalf("error shape unclassifiable (neither ctx error nor ExitError): %T %v", err, err)
 	}
 }
 
@@ -90,6 +90,6 @@ func TestRunAppliesDirAndEnv(t *testing.T) {
 		t.Fatalf("Run: %v", err)
 	}
 	if got := string(stderr); !strings.Contains(got, "dir-is-"+filepath.Base(dir)) {
-		t.Fatalf("stderr = %q, want env marker echoed（Env 未生效）", got)
+		t.Fatalf("stderr = %q, want env marker echoed (Env not applied)", got)
 	}
 }

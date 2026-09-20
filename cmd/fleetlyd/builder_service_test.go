@@ -108,7 +108,7 @@ func TestBuilderServiceLifecycleAndQueueFlow(t *testing.T) {
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("build stuck at %s（服务内队列未拾取？）", row.Status)
+			t.Fatalf("build stuck at %s (in-process queue never picked it up?)", row.Status)
 		case <-time.After(50 * time.Millisecond):
 		}
 	}

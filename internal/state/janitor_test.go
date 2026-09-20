@@ -44,10 +44,10 @@ func TestJanitorPrunesExpired(t *testing.T) {
 		t.Fatalf("prune: %v", err)
 	}
 	if eventsPruned != 2 {
-		t.Fatalf("events pruned = %d, want 2 (40 天前的两条)", eventsPruned)
+		t.Fatalf("events pruned = %d, want 2 (two rows older than 40 days)", eventsPruned)
 	}
 	if auditsPruned != 1 {
-		t.Fatalf("audits pruned = %d, want 1 (400 天前的一条)", auditsPruned)
+		t.Fatalf("audits pruned = %d, want 1 (one row older than 400 days)", auditsPruned)
 	}
 
 	// 窗口内记录保持：从头游标因断档 410（见下方断言），从清理边界后
@@ -195,7 +195,7 @@ func TestJanitorPrunesBatchedEvents(t *testing.T) {
 		t.Fatalf("prune: %v", err)
 	}
 	if eventsPruned != 700 {
-		t.Fatalf("events pruned = %d, want 700（分批循环删净）", eventsPruned)
+		t.Fatalf("events pruned = %d, want 700 (batched loop removes all)", eventsPruned)
 	}
 	oldest, ok, err := st.OldestSeq(ctx)
 	if err != nil || !ok {
@@ -206,7 +206,7 @@ func TestJanitorPrunesBatchedEvents(t *testing.T) {
 		t.Fatalf("events since oldest: %v", err)
 	}
 	if len(evs) != 1 {
-		t.Fatalf("remaining events = %d, want 1（窗口内保留）", len(evs))
+		t.Fatalf("remaining events = %d, want 1 (kept within the window)", len(evs))
 	}
 }
 

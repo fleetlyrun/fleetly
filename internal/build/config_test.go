@@ -41,7 +41,7 @@ func TestConfigContextRootsNormalize(t *testing.T) {
 	extra := t.TempDir()
 	got := (Config{ContextRoots: []string{extra, extra, "", tempRoot}}).Normalize().ContextRoots
 	if len(got) != 2 {
-		t.Fatalf("explicit ContextRoots = %v, want temp+extra 去重后 2 根", got)
+		t.Fatalf("explicit ContextRoots = %v, want 2 roots after deduplicating temp+extra", got)
 	}
 	hasTemp, hasExtra := false, false
 	for _, r := range got {

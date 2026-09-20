@@ -20,10 +20,10 @@ import (
 func Load(ctx context.Context, path string) (*Spec, []Warning, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
-		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose 路径解析失败 %s: %v", path, err).WithCause(err)
+		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "failed to resolve compose path %s: %v", path, err).WithCause(err)
 	}
 	if _, err := os.Stat(abs); err != nil {
-		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose 文件不可读 %s: %v", path, err).WithCause(err)
+		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "cannot read compose file %s: %v", path, err).WithCause(err)
 	}
 
 	details := types.ConfigDetails{
@@ -48,7 +48,7 @@ func Load(ctx context.Context, path string) (*Spec, []Warning, error) {
 		withSubsetOptions(),
 	)
 	if err != nil {
-		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose 解析失败（%s）：%v", filepath.Base(abs), err).WithCause(err)
+		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "failed to parse compose (%s): %v", filepath.Base(abs), err).WithCause(err)
 	}
 
 	if err := validateDict(abs, dict); err != nil {
@@ -62,7 +62,7 @@ func Load(ctx context.Context, path string) (*Spec, []Warning, error) {
 	opts := loader.ToOptions(&details, []func(*loader.Options){withSubsetOptions()})
 	project, err := loader.ModelToProject(dict, opts, details)
 	if err != nil {
-		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose 解析失败（%s）：%v", filepath.Base(abs), err).WithCause(err)
+		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "failed to parse compose (%s): %v", filepath.Base(abs), err).WithCause(err)
 	}
 
 	spec, warnings, err := normalize(abs, project)
@@ -71,7 +71,7 @@ func Load(ctx context.Context, path string) (*Spec, []Warning, error) {
 	}
 	spec.Name = specName
 	if err := spec.hashSpec(); err != nil {
-		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "归一化哈希计算失败: %v", err).WithCause(err)
+		return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED", "failed to compute normalized hash: %v", err).WithCause(err)
 	}
 	return spec, warnings, nil
 }

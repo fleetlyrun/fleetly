@@ -24,7 +24,7 @@ const errCodeBuildFailed = "E_BUILD_FAILED"
 
 // buildInterruptedReason 是启动复位 building 行的审计 reason 文案（崩溃/
 // 关停遗留行的失败归因）。
-const buildInterruptedReason = "构建被中断（daemon 重启/关停）"
+const buildInterruptedReason = "build interrupted (daemon restart/shutdown)"
 
 // Queue 是构建队列调度器（dispatcher 单 goroutine + 信号量限并发执行）。
 type Queue struct {
@@ -207,7 +207,7 @@ func (q *Queue) drainOnce(ctx context.Context) {
 }
 
 // claimedUnreadableReason 是认领后行读取失败兜底收敛的审计归因（M2-6）。
-const claimedUnreadableReason = "构建认领后行读取失败（瞬时错误，未执行即收敛）"
+const claimedUnreadableReason = "row read failed after build claim (transient error; converged without executing)"
 
 // convergeClaimedUnreadable 收敛「已认领但行读取失败」的 building 行
 // （M2-6）：FailStrandedBuild 的行级 CAS 保证行已并发离开 building（终态/
@@ -242,11 +242,11 @@ func (q *Queue) convergeStranded(execCtx context.Context, buildID string) {
 	var reason string
 	switch {
 	case errors.Is(execCtx.Err(), context.DeadlineExceeded):
-		reason = "构建超时：超出 " + q.timeout.String() + " 预算（config build.timeout_seconds）"
+		reason = "build timed out: exceeded " + q.timeout.String() + " budget (config build.timeout_seconds)"
 	case execCtx.Err() != nil:
-		reason = "构建被中断（daemon 关停，执行器未收敛终态）"
+		reason = "build interrupted (daemon shutdown; executor did not converge a terminal state)"
 	default:
-		reason = "构建执行器异常退出（未收敛终态）"
+		reason = "build executor exited abnormally (no terminal state)"
 	}
 	if err := q.store.FailStrandedBuild(finCtx, buildID, errCodeBuildFailed, reason); err != nil {
 		q.log.Error("converge stranded build", "build", buildID, "error", err)

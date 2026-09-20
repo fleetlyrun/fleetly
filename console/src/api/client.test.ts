@@ -152,8 +152,8 @@ describe("api client", () => {
       Buffer.from("services: {}", "utf8").toString("base64"),
     );
     // 非 ASCII（UTF-8 多字节）不炸。
-    expect(utf8ToBase64("記録")).toBe(
-      Buffer.from("記録", "utf8").toString("base64"),
+    expect(utf8ToBase64("créé ✓")).toBe(
+      Buffer.from("créé ✓", "utf8").toString("base64"),
     );
   });
 });

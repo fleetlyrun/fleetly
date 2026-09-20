@@ -107,7 +107,7 @@ func TestConfigExampleKeysSubsetOfAppConfig(t *testing.T) {
 	}
 	sort.Strings(unknown)
 	if len(unknown) > 0 {
-		t.Errorf("config-example.yaml 含 AppConfig 不支持的键（拼写错误，或键已改名/移除而例文未跟；键集单一事实源 = cmd/fleetlyd/config.go）：\n  %s",
+		t.Errorf("config-example.yaml contains keys not supported by AppConfig (typo, or the key was renamed/removed without updating the example; single source of truth for the key set = cmd/fleetlyd/config.go):\n  %s",
 			strings.Join(unknown, "\n  "))
 	}
 
@@ -120,5 +120,5 @@ func TestConfigExampleKeysSubsetOfAppConfig(t *testing.T) {
 		}
 	}
 	sort.Strings(missing)
-	t.Logf("AppConfig 支持、但 config-example.yaml 未列出的键（允许缺失——缺省即文档默认；快照供审）：%v", missing)
+	t.Logf("keys supported by AppConfig but absent from config-example.yaml (missing is allowed — defaults are the documented defaults; snapshot for review): %v", missing)
 }

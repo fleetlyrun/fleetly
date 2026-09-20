@@ -87,7 +87,7 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		svc := &in.Spec.Services[i]
 		image, ok := in.Images[svc.Name]
 		if !ok || image == "" {
-			return nil, errorf("E_BUILD_FAILED", "服务 %s 缺少镜像引用（构建/直通阶段未产出）", svc.Name)
+			return nil, errorf("E_BUILD_FAILED", "service %s is missing an image reference (not produced by the build/passthrough stage)", svc.Name)
 		}
 		spec, merged, err := buildServiceSpec(in, svc, image, volByKey)
 		if err != nil {
@@ -108,7 +108,7 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 	// 快照；归位重放时由对账层以当前发布归属重写服务 label，任务零替换）。
 	desiredJSON, err := canonicalJSON(services)
 	if err != nil {
-		return nil, errorf("E_RUNTIME_UNAVAILABLE", "期望态序列化失败: %v", err)
+		return nil, errorf("E_RUNTIME_UNAVAILABLE", "failed to serialize desired state: %v", err)
 	}
 	for i := range services {
 		if services[i].ServiceLabels == nil {
@@ -141,15 +141,15 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey map[string]state.Volume) (ServiceSpec, []envlayer.Merged, error) {
 	swarmName, err := naming.ServiceName(in.AppName, svc.Name)
 	if err != nil {
-		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "服务 %s 命名失败: %v", svc.Name, err)
+		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "naming failed for service %s: %v", svc.Name, err)
 	}
 	alias, err := naming.NetworkAlias(svc.Name)
 	if err != nil {
-		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "服务 %s 别名失败: %v", svc.Name, err)
+		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "alias failed for service %s: %v", svc.Name, err)
 	}
 	netName, err := naming.NetworkName(in.AppName)
 	if err != nil {
-		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "应用 %s 网络命名失败: %v", in.AppName, err)
+		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "network naming failed for app %s: %v", in.AppName, err)
 	}
 
 	// env 三层合并（文件层明文 × effective 平台层）。
@@ -173,7 +173,7 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 		vol, ok := volByKey[m.Volume]
 		if !ok || vol.Name == "" {
 			return ServiceSpec{}, nil, errorf("E_PLACEMENT_NODE_UNAVAILABLE",
-				"服务 %s 的卷 %s 未在卷注册表登记（放置 Apply 先于规划执行）", svc.Name, m.Volume)
+				"volume %s of service %s is not registered in the volume registry (placement Apply must run before planning)", svc.Name, m.Volume)
 		}
 		mounts = append(mounts, MountSpec{VolumeName: vol.Name, Target: m.Target, ReadOnly: m.ReadOnly})
 	}
@@ -184,7 +184,7 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 	// rollback.go preflightRollback。
 	if len(svc.Secrets) > 0 {
 		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE",
-			"服务 %s 声明了 secrets %s：平台密钥库 v0.1 未接入（密钥存储与 Swarm secret 下发随后续票落地）",
+			"service %s declares secrets %s: the v0.1 platform secret store is not wired in (secret storage and Swarm secret delivery land in a follow-up ticket)",
 			svc.Name, strings.Join(svc.Secrets, ", "))
 	}
 

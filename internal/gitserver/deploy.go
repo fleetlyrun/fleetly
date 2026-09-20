@@ -18,7 +18,7 @@ import (
 // ref 非该 app 配置分支（空回落缺省 main）时 DeployFromCommit 不建部署、
 // 返回它；api 面据此映射 skipped 回执，与 webhook 入口的 ignored 语义
 // 对齐（webhook 路径在上游已同词形预过滤，不会命中）。
-var ErrBranchNotTracked = errors.New("分支未配置跟踪")
+var ErrBranchNotTracked = errors.New("branch is not tracked")
 
 // DeployFromCommit 是两条 git 触发入口的汇合点：compose 字节由服务端从
 // bare 仓库 `git show <sha>:compose.{yaml,yml}` 自取（真源在 git 对象库，
@@ -99,7 +99,7 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 	}
 	if spec.Name != in.App {
 		return state.DeployRecord{}, nil, apperr.New("E_COMPOSE_UNSUPPORTED",
-			"compose name %q 与仓库 app 名 %q 不一致：仓库路径即应用身份，请对齐 compose 的 name 字段",
+			"compose name %q does not match the repo app name %q: the repo path is the app identity; align the compose name field",
 			spec.Name, in.App)
 	}
 

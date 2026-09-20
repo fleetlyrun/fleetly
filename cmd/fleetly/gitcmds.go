@@ -103,7 +103,7 @@ func (c *gitKeysAddCmd) Run(ctx context.Context, env *commands.Environment, args
 		b, err := osReadFile(line)
 		if err != nil {
 			// 文件不存在且形态不像路径时给出可行动提示。
-			return fmt.Errorf("read %s: %w（位置参数应为公钥文件路径，或以 ssh- 开头的公钥本体）", line, err)
+			return fmt.Errorf("read %s: %w (the positional argument should be a public key file path, or a public key body starting with ssh-)", line, err)
 		}
 		line = strings.TrimSpace(string(b))
 	}
@@ -162,7 +162,7 @@ func (c *gitKeysListCmd) Run(ctx context.Context, env *commands.Environment, arg
 			return writeProtoJSON(env.Stdout, resp)
 		}
 		if len(resp.GetKeys()) == 0 {
-			_, err := fmt.Fprintln(env.Stdout, "no git keys（fleetly git keys add 注册公钥后即可 git push 部署）")
+			_, err := fmt.Fprintln(env.Stdout, "no git keys (register one with 'fleetly git keys add', then deploy with git push)")
 			return err
 		}
 		var b strings.Builder

@@ -77,7 +77,7 @@ func TestUpdateDeploymentRejectsIllegalTransition(t *testing.T) {
 		t.Fatalf("observing -> queued err = %v, want ErrIllegalTransition", err)
 	}
 	if !errors.Is(err, ErrDeploymentStateTransition) {
-		t.Fatalf("ErrIllegalTransition 应属 ErrDeploymentStateTransition 家族: %v", err)
+		t.Fatalf("ErrIllegalTransition should belong to the ErrDeploymentStateTransition family: %v", err)
 	}
 	// 行未被改动（仍 observing）。
 	row, err := st.GetDeployment(ctx, rec.ID)

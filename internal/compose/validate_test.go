@@ -431,7 +431,7 @@ services:
 			ae := loadErr(t, tc.compose, tc.wantCode)
 			if tc.wantPath != "" {
 				if path := ae.Context()["path"]; !strings.HasPrefix(path, tc.wantPath) {
-					t.Errorf("context.path = %q, 期望前缀 %q", path, tc.wantPath)
+					t.Errorf("context.path = %q, want prefix %q", path, tc.wantPath)
 				}
 			}
 		})
@@ -619,25 +619,25 @@ services:
 		t.Fatalf("Load: %v", err)
 	}
 	if len(spec.Services) != 1 {
-		t.Fatalf("services = %d, 期望 1（用户 label 放行不阻断）", len(spec.Services))
+		t.Fatalf("services = %d, want 1 (user labels are admitted without blocking)", len(spec.Services))
 	}
 	var hit bool
 	for _, w := range warnings {
 		if w.Kind == WarningKindUserLabelNotPassed {
 			hit = true
 			if w.Service != "web" {
-				t.Errorf("warning service = %q, 期望 web", w.Service)
+				t.Errorf("warning service = %q, want web", w.Service)
 			}
 			if !strings.Contains(w.Message, "com.example.owner") || !strings.Contains(w.Message, "com.example.version") {
-				t.Errorf("warning message 未列出用户 label 键: %s", w.Message)
+				t.Errorf("warning message does not list user label keys: %s", w.Message)
 			}
-			if !strings.Contains(w.Message, "不透传") {
-				t.Errorf("warning message 缺不透传说明: %s", w.Message)
+			if !strings.Contains(w.Message, "does not pass through") {
+				t.Errorf("warning message missing the pass-through disclaimer: %s", w.Message)
 			}
 		}
 	}
 	if !hit {
-		t.Errorf("warnings 缺 %s: %+v", WarningKindUserLabelNotPassed, warnings)
+		t.Errorf("warnings missing %s: %+v", WarningKindUserLabelNotPassed, warnings)
 	}
 	// 对照：纯平台 label 不触发该警告（无 healthcheck 的 W_DEPLOY_NO_HEALTHCHECK
 	// 属另一通道，不在断言面）。
@@ -654,7 +654,7 @@ services:
 	}
 	for _, w := range cleanWarnings {
 		if w.Kind == WarningKindUserLabelNotPassed {
-			t.Errorf("纯平台 label 触发用户 label 警告: %+v", w)
+			t.Errorf("platform-only labels triggered the user label warning: %+v", w)
 		}
 	}
 }

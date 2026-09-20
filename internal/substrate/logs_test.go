@@ -78,20 +78,20 @@ func TestStreamLogsSurvivesHugeLine(t *testing.T) {
 	select {
 	case <-streamDone:
 	case <-time.After(10 * time.Second):
-		t.Fatal("streamLogs 未在 10s 内返回：超长行令读侧提前退出，StdCopy 阻塞在无读者的管道写（MG-1 回归）")
+		t.Fatal("streamLogs did not return within 10s: oversized line makes the read side exit early and StdCopy block on a pipe write with no reader (MG-1 regression)")
 	}
 	close(out)
 	<-gotDone
 
 	if len(got) != 2 {
-		t.Fatalf("lines = %d, want 2（截断行 + 后续行不丢）", len(got))
+		t.Fatalf("lines = %d, want 2 (truncated line + following line must survive)", len(got))
 	}
 	first := got[0]
 	if !strings.HasSuffix(first.Line, truncatedSuffix) {
 		t.Fatalf("truncated marker missing (len=%d)", len(first.Line))
 	}
 	if want := maxLineLen - len(header) + len(truncatedSuffix); len(first.Line) != want {
-		t.Fatalf("truncated line len = %d, want %d（前缀截到 %d + 标记）", len(first.Line), want, maxLineLen)
+		t.Fatalf("truncated line len = %d, want %d (prefix capped at %d + marker)", len(first.Line), want, maxLineLen)
 	}
 	if first.At.IsZero() {
 		t.Fatal("timestamp header lost in truncation")

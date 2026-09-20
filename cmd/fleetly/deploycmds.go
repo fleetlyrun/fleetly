@@ -101,7 +101,7 @@ func (c *deployCmd) Run(ctx context.Context, env *commands.Environment, args []s
 		}
 		if final.GetStatus() != "succeeded" {
 			if code := final.GetErrorCode(); code != "" {
-				return fmt.Errorf("deployment %s failed: %s（%s）", final.GetId(), code, final.GetPhase())
+				return fmt.Errorf("deployment %s failed: %s (%s)", final.GetId(), code, final.GetPhase())
 			}
 			return fmt.Errorf("deployment %s ended as %s", final.GetId(), final.GetStatus())
 		}
@@ -141,9 +141,9 @@ func waitDeployment(ctx context.Context, env *commands.Environment, cl *fleetlyC
 		select {
 		case <-deadline.C:
 			if rec.GetStatus() == "queued" {
-				return rec, fmt.Errorf("deployment stayed queued for %s——fleetlyd 未运行？部署由 fleetlyd 的 engine.release 服务执行（本命令只入队与等待）", timeout)
+				return rec, fmt.Errorf("deployment stayed queued for %s — is fleetlyd running? deployments are executed by fleetlyd's engine.release service (this command only enqueues and waits)", timeout)
 			}
-			return rec, fmt.Errorf("deployment did not finish within %s（在途部署继续执行，fleetly deployments list 可查）", timeout)
+			return rec, fmt.Errorf("deployment did not finish within %s (in-flight deployments keep running; check 'fleetly deployments list')", timeout)
 		case <-ctx.Done():
 			return rec, ctx.Err()
 		case <-time.After(deployPollInterval):
@@ -189,7 +189,7 @@ func emitDeployment(env *commands.Environment, jsonOut bool, rec *serverv1.Deplo
 		fmt.Fprintf(&b, "  downtime: %dms\n", rec.GetDowntimeMs())
 	}
 	if rec.GetSubstrateHalted() {
-		b.WriteString("  substrate_halted: true（首发失败 scale=0 保留现场）\n")
+		b.WriteString("  substrate_halted: true (failed first deploy; kept at scale=0 for inspection)\n")
 	}
 	if rec.GetRevisionId() != "" {
 		fmt.Fprintf(&b, "  revision: %s\n", rec.GetRevisionId())
@@ -271,7 +271,7 @@ func (c *deploymentsListCmd) Run(ctx context.Context, env *commands.Environment,
 			return writeJSON(env.Stdout, out)
 		}
 		if len(rows) == 0 {
-			_, err := fmt.Fprintf(env.Stdout, "%s: no deployments（fleetly deploy <compose> 发起部署）\n", app.appName)
+			_, err := fmt.Fprintf(env.Stdout, "%s: no deployments (run 'fleetly deploy <compose>' to deploy)\n", app.appName)
 			return err
 		}
 		if _, err := fmt.Fprintf(env.Stdout, "app %s: %s\n", app.appName, app.derivedState); err != nil {
@@ -369,7 +369,7 @@ func (c *deploymentsCancelCmd) Run(ctx context.Context, env *commands.Environmen
 			}
 			select {
 			case <-deadline.C:
-				return fmt.Errorf("cancel not consumed within 60s——fleetlyd 未运行？（cancel_requested 已置位，引擎启动后执行）")
+				return fmt.Errorf("cancel not consumed within 60s — is fleetlyd running? (cancel_requested is set; it is executed once the engine starts)")
 			case <-ctx.Done():
 				return ctx.Err()
 			case <-time.After(deployPollInterval):

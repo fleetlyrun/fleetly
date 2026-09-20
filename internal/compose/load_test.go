@@ -43,7 +43,7 @@ func loadOK(t *testing.T, path string) *Spec {
 	t.Helper()
 	spec, _, err := Load(context.Background(), path)
 	if err != nil {
-		t.Fatalf("Load(%s) 意外失败: %v", path, err)
+		t.Fatalf("Load(%s) failed unexpectedly: %v", path, err)
 	}
 	return spec
 }
@@ -53,14 +53,14 @@ func loadErr(t *testing.T, content, wantCode string) *apperr.Error {
 	t.Helper()
 	spec, _, err := Load(context.Background(), writeCompose(t, content))
 	if err == nil {
-		t.Fatalf("Load 意外成功（期望 %s）：%+v", wantCode, spec)
+		t.Fatalf("Load unexpectedly succeeded (want %s): %+v", wantCode, spec)
 	}
 	var ae *apperr.Error
 	if !asAppErr(err, &ae) {
-		t.Fatalf("错误类型不是 *apperr.Error: %T %v", err, err)
+		t.Fatalf("error type is not *apperr.Error: %T %v", err, err)
 	}
 	if ae.Code() != wantCode {
-		t.Fatalf("错误码 = %s, 期望 %s（message: %s）", ae.Code(), wantCode, ae.Message())
+		t.Fatalf("error code = %s, want %s (message: %s)", ae.Code(), wantCode, ae.Message())
 	}
 	return ae
 }
@@ -89,17 +89,17 @@ func TestLoadArchitectureExample(t *testing.T) {
 		t.Fatalf("load §2.4 example: %v", err)
 	}
 	if spec.Name != "my-api" {
-		t.Errorf("Name = %q, 期望 my-api", spec.Name)
+		t.Errorf("Name = %q, want my-api", spec.Name)
 	}
 	if len(spec.Services) != 2 {
-		t.Fatalf("services = %d, 期望 2", len(spec.Services))
+		t.Fatalf("services = %d, want 2", len(spec.Services))
 	}
 	web := spec.Services[0]
 	if web.Name != "web" {
-		t.Fatalf("首个服务 = %q, 期望 web（字典序）", web.Name)
+		t.Fatalf("first service = %q, want web (lexicographic order)", web.Name)
 	}
 	if web.Build == nil || web.Build.Context != "." || web.Build.Dockerfile != "" {
-		t.Errorf("web.Build = %+v, 期望 {context:.}（无 dockerfile → Railpack 模式）", web.Build)
+		t.Errorf("web.Build = %+v, want {context:.} (no dockerfile → Railpack mode)", web.Build)
 	}
 	if len(web.Expose) != 1 || web.Expose[0] != "8080" {
 		t.Errorf("web.Expose = %v", web.Expose)
@@ -115,24 +115,24 @@ func TestLoadArchitectureExample(t *testing.T) {
 	}
 	if web.Deploy.Resources == nil || web.Deploy.Resources.Limits == nil ||
 		web.Deploy.Resources.Limits.CPUS != 0.5 || web.Deploy.Resources.Limits.MemoryBytes != 268435456 {
-		t.Errorf("web 资源限额 = %+v, 期望 0.5 CPU / 256M", web.Deploy.Resources)
+		t.Errorf("web resource limits = %+v, want 0.5 CPU / 256M", web.Deploy.Resources)
 	}
 	// 受管字段校验通过后不进快照（failure_action 恒为 pause 平台常量）。
 	if web.Deploy.UpdateConfig.Order != "" && rawJSONContains(t, spec, "failure_action") {
-		t.Errorf("归一化结果不应携带受管字段 failure_action")
+		t.Errorf("normalized output must not carry the managed field failure_action")
 	}
 	worker := spec.Services[1]
 	if strings.Join(worker.Command, " ") != "node worker.js" {
 		t.Errorf("worker.Command = %v", worker.Command)
 	}
 	if strings.Join(spec.Secrets, ",") != "" {
-		t.Errorf("Secrets = %v, 期望空（S16-C1：secrets 校验层显式拒绝，归一化结构性不含）", spec.Secrets)
+		t.Errorf("Secrets = %v, want empty (S16-C1: secrets are explicitly rejected at the validation layer, structurally absent from normalization)", spec.Secrets)
 	}
 	if len(spec.Volumes) != 1 || spec.Volumes[0].Key != "data" {
 		t.Errorf("Volumes = %+v", spec.Volumes)
 	}
 	if spec.SpecHash == "" {
-		t.Error("spec_hash 未计算")
+		t.Error("spec_hash not computed")
 	}
 	// worker 无 healthcheck → W_DEPLOY_NO_HEALTHCHECK 警告（注册码）。
 	var hasHC bool
@@ -142,7 +142,7 @@ func TestLoadArchitectureExample(t *testing.T) {
 		}
 	}
 	if !hasHC {
-		t.Errorf("warnings 缺少 worker 的 W_DEPLOY_NO_HEALTHCHECK: %+v", warnings)
+		t.Errorf("warnings missing W_DEPLOY_NO_HEALTHCHECK for worker: %+v", warnings)
 	}
 }
 

@@ -129,23 +129,23 @@ func TestBuildFetchAuthKinds(t *testing.T) {
 	}
 	// M5-10：keyFile 与 known_hosts 都必须是单引号词形（含空格路径不碎裂）。
 	if !strings.Contains(sshCmd, "-i '"+keyFile+"'") {
-		t.Errorf("ssh -i 未用引号词形：%s", sshCmd)
+		t.Errorf("ssh -i not in quoted form: %s", sshCmd)
 	}
 	if !strings.Contains(sshCmd, "-o UserKnownHostsFile='") {
-		t.Errorf("UserKnownHostsFile 未用引号词形：%s", sshCmd)
+		t.Errorf("UserKnownHostsFile not in quoted form: %s", sshCmd)
 	}
 	// H3：SSH 传输层超时三件套在位。
 	for _, want := range []string{
 		"-o ConnectTimeout=15", "-o ServerAliveInterval=30", "-o ServerAliveCountMax=3",
 	} {
 		if !strings.Contains(sshCmd, want) {
-			t.Errorf("ssh 命令缺少超时选项 %q：%s", want, sshCmd)
+			t.Errorf("ssh command missing timeout option %q: %s", want, sshCmd)
 		}
 	}
 	// M5-8：Cleanup 是目录级回收——key 所在临时目录整体消失。
 	plan.Cleanup()
 	if _, err := os.Stat(filepath.Dir(keyFile)); !os.IsNotExist(err) {
-		t.Errorf("temp key dir 残留：%s", filepath.Dir(keyFile))
+		t.Errorf("temp key dir left behind: %s", filepath.Dir(keyFile))
 	}
 }
 
@@ -424,7 +424,7 @@ func TestFetchSSHKeyFailureLeavesNoTempResidue(t *testing.T) {
 	after := gitKeyTempDirs(t)
 	for dir := range after {
 		if _, ok := before[dir]; !ok {
-			t.Errorf("失败拉源后临时私钥目录残留（Cleanup 未整目录回收）：%s", dir)
+			t.Errorf("temp private key dir left behind after a failed fetch (Cleanup did not reclaim the whole directory): %s", dir)
 		}
 	}
 }

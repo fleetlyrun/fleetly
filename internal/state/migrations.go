@@ -96,9 +96,9 @@ func ensureMigrated(ctx context.Context, db *sql.DB) (int64, error) {
 	}
 	if dbVersion > maxVersion {
 		return 0, fmt.Errorf(
-			"state: 数据库来自更新版本（schema %d > 本二进制已知最大迁移 %d）；"+
-				"回退二进制前须按快照恢复状态库，见 docs/runbooks/backup-restore.md "+
-				"（升级回退语义见 docs/runbooks/upgrade.md）",
+			"state: database is from a newer version (schema %d is above the highest migration known to this binary, %d); "+
+				"restore the state store from a backup snapshot before rolling the binary back, see docs/runbooks/backup-restore.md "+
+				"(upgrade rollback semantics: docs/runbooks/upgrade.md)",
 			dbVersion, maxVersion)
 	}
 	if _, err := provider.Up(ctx); err != nil {

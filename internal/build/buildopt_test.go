@@ -58,11 +58,11 @@ func assertNoAttestationRequest(t *testing.T, opts bkclient.SolveOpt) {
 		t.Fatalf("exports = %d, want exactly 1 (docker exporter)", len(opts.Exports))
 	}
 	if opts.Exports[0].Type != exporterDocker {
-		t.Fatalf("exporter = %q, want %q（docker 导出器 + 客户端管道结构性无 attestation）",
+		t.Fatalf("exporter = %q, want %q (docker exporter + client-side pipe is structurally attestation-free)",
 			opts.Exports[0].Type, exporterDocker)
 	}
 	if opts.Exports[0].Output != nil {
-		t.Fatal("export Output must be wired only at run time（buildopt 层保持纯构造）")
+		t.Fatal("export Output must be wired only at run time (the buildopt layer stays a pure constructor)")
 	}
 	for _, e := range opts.Exports {
 		for k := range e.Attrs {
@@ -124,7 +124,7 @@ func TestRailpackSolveOptionsProvenanceOff(t *testing.T) {
 		t.Fatalf("frontend = %q, want empty (LLB direct)", opts.Frontend)
 	}
 	if opts.Exports[0].Attrs["containerimage.config"] == "" {
-		t.Fatal("railpack export must carry containerimage.config（镜像配置已知）")
+		t.Fatal("railpack export must carry containerimage.config (image config is known)")
 	}
 	if opts.Exports[0].Attrs["name"] != "fleetly-local/my-api:tag1" {
 		t.Fatalf("export name = %q", opts.Exports[0].Attrs["name"])

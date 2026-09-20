@@ -105,10 +105,10 @@ func compareGolden(t *testing.T, name, got string) {
 	}
 	want, err := os.ReadFile(path) //nolint:gosec // G304：golden 路径为测试受控目录拼接
 	if err != nil {
-		t.Fatalf("golden %s 缺失（go test ./cmd/fleetly -run TestGolden -update 生成）: %v\n--- got ---\n%s", path, err, got)
+		t.Fatalf("golden %s missing (generate with go test ./cmd/fleetly -run TestGolden -update): %v\n--- got ---\n%s", path, err, got)
 	}
 	if string(want) != got {
-		t.Fatalf("golden %s 漂移（--json 输出契约变更须显式 -update 再生成）:\n--- want ---\n%s\n--- got ---\n%s", path, want, got)
+		t.Fatalf("golden %s drifted (an intentional --json contract change requires an explicit -update regeneration):\n--- want ---\n%s\n--- got ---\n%s", path, want, got)
 	}
 }
 
@@ -189,7 +189,7 @@ func TestGoldenPlanFirstDeploy(t *testing.T) {
 		t.Fatalf("code=%d stderr=%s", code, errOut)
 	}
 	if !strings.Contains(out, `"web"`) {
-		t.Fatalf("plan artifact 缺新增服务 web:\n%s", out)
+		t.Fatalf("plan artifact missing new service web:\n%s", out)
 	}
 	compareGolden(t, "plan_first_deploy", out)
 }
@@ -244,13 +244,13 @@ func TestGoldenDeployLifecycle(t *testing.T) {
 
 	code, out, errOut := runCLIConn(t, "deploy", "--timeout", "1200ms", "--json", composeFile)
 	if code != 1 {
-		t.Fatalf("deploy queued-timeout: code=%d, 期望 1\nstdout=%s\nstderr=%s", code, out, errOut)
+		t.Fatalf("deploy queued-timeout: code=%d, want 1\nstdout=%s\nstderr=%s", code, out, errOut)
 	}
 	compareGolden(t, "deploy_queued_timeout", out)
 
 	// 人读失败形态：stderr 带可行动提示（daemon 未运行的归因）。
-	if !strings.Contains(errOut, "fleetlyd 未运行") {
-		t.Fatalf("deploy 超时 stderr 缺可行动提示: %q", errOut)
+	if !strings.Contains(errOut, "is fleetlyd running") {
+		t.Fatalf("deploy timeout stderr missing actionable hint: %q", errOut)
 	}
 
 	// deployments list --json：入队的 queued 行可查。
@@ -276,17 +276,17 @@ services:
 `)
 	code, out, errOut := runCLIConn(t, "deploy", "--json", bad)
 	if code != 1 {
-		t.Fatalf("code=%d, 期望 1\nstdout=%s", code, out)
+		t.Fatalf("code=%d, want 1\nstdout=%s", code, out)
 	}
 	for _, want := range []string{"E_COMPOSE_MANAGED_FIELD", "suggestion:", "docs:"} {
 		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr 缺 %q:\n%s", want, errOut)
+			t.Errorf("stderr missing %q:\n%s", want, errOut)
 		}
 	}
 	// 违约不入队：应用行不存在（随首次部署创建的语义未被触发）。
 	code, out, _ = runCLIConn(t, "apps", "list", "--json")
 	if code != 0 || !strings.Contains(out, `"apps": []`) {
-		t.Fatalf("违约部署不得建应用行: code=%d out=%s", code, out)
+		t.Fatalf("invalid deploy must not create the app row: code=%d out=%s", code, out)
 	}
 }
 
@@ -325,7 +325,7 @@ func TestGoldenEnvLifecycle(t *testing.T) {
 		t.Fatalf("list: code=%d stderr=%s", code, errOut)
 	}
 	if strings.Contains(out, "postgres://secret-conn") {
-		t.Fatal("env list 泄露值（脱敏破防）")
+		t.Fatal("env list leaks the value (redaction broken)")
 	}
 	compareGolden(t, "env_list", out)
 
@@ -520,12 +520,12 @@ func TestGoldenTokensLifecycle(t *testing.T) {
 	t.Setenv("FLEETLY_TOKEN", created.Token)
 	code, out, _ = runCLIConn(t, "apps", "list", "--json")
 	if code != 0 {
-		t.Fatalf("新 token apps list: code=%d out=%s", code, out)
+		t.Fatalf("new token apps list: code=%d out=%s", code, out)
 	}
 	// read scope 写 token 管理面 → 403 信封、退出 1。
 	code, _, errOut = runCLIConn(t, "tokens", "create", "--json", "--scopes", "read")
 	if code != 1 || !strings.Contains(errOut, "scope insufficient") {
-		t.Fatalf("read token 建 token 应 403: code=%d stderr=%q", code, errOut)
+		t.Fatalf("read token creating a token should 403: code=%d stderr=%q", code, errOut)
 	}
 
 	// revoke 需要 admin——切回 admin token 执行。
@@ -573,7 +573,7 @@ func TestGoldenLogsHistoryAndFollow(t *testing.T) {
 		t.Fatalf("follow: code=%d stderr=%s", code, stderr.String())
 	}
 	if got := stdout.String(); strings.Count(got, "\n") != 1 {
-		t.Fatalf("follow JSONL 应恰一帧: %q", got)
+		t.Fatalf("follow JSONL should be exactly one frame: %q", got)
 	}
 	compareGolden(t, "logs_follow", stdout.String())
 }
@@ -593,7 +593,7 @@ func TestGoldenEventsWatch(t *testing.T) {
 		t.Fatalf("watch: code=%d stderr=%s", code, stderr.String())
 	}
 	if got := stdout.String(); strings.Count(got, "\n") != 1 {
-		t.Fatalf("watch JSONL 应恰一帧: %q", got)
+		t.Fatalf("watch JSONL should be exactly one frame: %q", got)
 	}
 	compareGolden(t, "events_watch", stdout.String())
 }
@@ -605,11 +605,11 @@ func TestCLITokenMissingHint(t *testing.T) {
 	t.Setenv("FLEETLY_TOKEN", "")
 	code, _, errOut := runCLIConn(t, "apps", "list", "--json")
 	if code != 1 {
-		t.Fatalf("code=%d, 期望 1", code)
+		t.Fatalf("code=%d, want 1", code)
 	}
 	for _, want := range []string{"missing bearer token", "hint:", "bootstrap admin token"} {
 		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr 缺 %q:\n%s", want, errOut)
+			t.Errorf("stderr missing %q:\n%s", want, errOut)
 		}
 	}
 }
@@ -632,11 +632,11 @@ func TestCLIRollbackNoTarget(t *testing.T) {
 	env.CreateApp(t, "my-api")
 	code, _, errOut := runCLIConn(t, "rollback", "--json", "my-api")
 	if code != 1 {
-		t.Fatalf("code=%d, 期望 1", code)
+		t.Fatalf("code=%d, want 1", code)
 	}
 	for _, want := range []string{"E_ROLLBACK_NO_TARGET", "suggestion:", "docs:"} {
 		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr 缺 %q:\n%s", want, errOut)
+			t.Errorf("stderr missing %q:\n%s", want, errOut)
 		}
 	}
 }

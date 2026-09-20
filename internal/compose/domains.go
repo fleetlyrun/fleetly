@@ -55,16 +55,16 @@ func parseDomainsLabel(service, value string) ([]string, error) {
 		d := strings.TrimSpace(raw)
 		pathCtx := fmt.Sprintf("services.%s.labels.%s[%d]", service, LabelDomains, i)
 		if d == "" {
-			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 的域名列表含空条目", service).
+			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "domain list of service %q contains an empty entry", service).
 				WithContext("path", pathCtx).WithContext("reason", "empty_entry")
 		}
 		if strings.HasPrefix(d, "*") {
-			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 的域名 %q 为通配符（通配符证书需 DNS-01，v0.2 起支持）", service, d).
+			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "domain %q of service %q is a wildcard (wildcard certificates require DNS-01, supported from v0.2)", service, d).
 				WithContext("path", pathCtx).WithContext("reason", "wildcard")
 		}
 		ascii, err := idnaProfile.ToASCII(strings.ToLower(d))
 		if err != nil {
-			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 的域名 %q 形态不受支持: %v", service, d, err).
+			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "domain %q of service %q has an unsupported form: %v", service, d, err).
 				WithContext("path", pathCtx).WithContext("reason", "invalid_form")
 		}
 		if !seen[ascii] {
@@ -73,7 +73,7 @@ func parseDomainsLabel(service, value string) ([]string, error) {
 		}
 	}
 	if len(domains) > maxDomainsPerService {
-		return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "服务 %q 声明了 %d 个域名，超出每服务上限 %d", service, len(domains), maxDomainsPerService).
+		return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "service %q declares %d domains, exceeding the per-service limit of %d", service, len(domains), maxDomainsPerService).
 			WithContext("path", fmt.Sprintf("services.%s.labels.%s", service, LabelDomains)).
 			WithContext("reason", "per_service_limit")
 	}
@@ -90,7 +90,7 @@ func checkDomainContracts(serviceDomains map[string][]string) error {
 		total += len(serviceDomains[svc])
 		for _, d := range serviceDomains[svc] {
 			if prev, ok := owner[d]; ok {
-				return apperr.New("E_DOMAIN_CONFLICT", "域名 %q 同时出现在服务 %q 与 %q（同应用内域名归属唯一）", d, prev, svc).
+				return apperr.New("E_DOMAIN_CONFLICT", "domain %q appears in both service %q and %q (a domain belongs to exactly one service within an app)", d, prev, svc).
 					WithContext("domain", d).
 					WithContext("services", prev+","+svc)
 			}
@@ -98,7 +98,7 @@ func checkDomainContracts(serviceDomains map[string][]string) error {
 		}
 	}
 	if total > maxDomainsPerApp {
-		return apperr.New("E_DOMAIN_UNSUPPORTED", "应用共声明 %d 个域名，超出每应用上限 %d", total, maxDomainsPerApp).
+		return apperr.New("E_DOMAIN_UNSUPPORTED", "the app declares %d domains in total, exceeding the per-app limit of %d", total, maxDomainsPerApp).
 			WithContext("path", "services.*.labels."+LabelDomains).
 			WithContext("reason", "per_app_limit")
 	}
@@ -125,7 +125,7 @@ func checkPlacementLabel(values map[string]string) error {
 		}
 		if v != firstVal {
 			return apperr.New("E_PLACEMENT_LABEL_CONFLICT",
-				"服务 %q 与 %q 的 placement.node 指向不同节点（%q vs %q）——放置粒度为 app 级，同一应用的全部服务必须同节点", firstSvc, svc, firstVal, v).
+				"placement.node of service %q and %q points to different nodes (%q vs %q) — placement granularity is app-level: all services of an app must pin the same node", firstSvc, svc, firstVal, v).
 				WithContext("services", firstSvc+","+svc)
 		}
 	}
@@ -140,18 +140,18 @@ func checkPlacementLabel(values map[string]string) error {
 func validatePlacementNodeRef(service, ref string) error {
 	pathCtx := "services." + service + ".labels." + LabelPlacementNode
 	if ref == "" {
-		return apperr.New("E_PLACEMENT_NODE_INVALID", "服务 %q 的 placement.node 为空（hostname 或 n_<ULID>）", service).
+		return apperr.New("E_PLACEMENT_NODE_INVALID", "placement.node of service %q is empty (expected a hostname or n_<ULID>)", service).
 			WithContext("path", pathCtx)
 	}
 	if strings.HasPrefix(ref, "n_") {
 		if _, err := ulid.Parse(strings.TrimPrefix(ref, "n_")); err != nil {
-			return apperr.New("E_PLACEMENT_NODE_INVALID", "服务 %q 的 placement.node %q 不是合法节点 ID（要求 n_<ULID> 形态）", service, ref).
+			return apperr.New("E_PLACEMENT_NODE_INVALID", "placement.node %q of service %q is not a valid node ID (expected the n_<ULID> form)", service, ref).
 				WithContext("path", pathCtx)
 		}
 		return nil
 	}
 	if strings.ContainsAny(ref, " \t\r\n") {
-		return apperr.New("E_PLACEMENT_NODE_INVALID", "服务 %q 的 placement.node %q 含空白字符（hostname 或 n_<ULID>）", service, ref).
+		return apperr.New("E_PLACEMENT_NODE_INVALID", "placement.node %q of service %q contains whitespace (expected a hostname or n_<ULID>)", service, ref).
 			WithContext("path", pathCtx)
 	}
 	return nil

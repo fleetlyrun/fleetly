@@ -33,13 +33,13 @@ type serviceEnv struct {
 func extractServiceEnvs(composePath string) (map[string]serviceEnv, error) {
 	raw, err := os.ReadFile(composePath) //nolint:gosec // G304：路径为部署记录里的 compose 绝对路径（入队时受控子集校验过）
 	if err != nil {
-		return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose 文件不可读 %s: %v", composePath, err).WithCause(err)
+		return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose file unreadable %s: %v", composePath, err).WithCause(err)
 	}
 	var doc struct {
 		Services map[string]any `yaml:"services"`
 	}
 	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose 解析失败（%s）：%v", filepath.Base(composePath), err).WithCause(err)
+		return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "compose parse failed (%s): %v", filepath.Base(composePath), err).WithCause(err)
 	}
 	out := map[string]serviceEnv{}
 	workDir := filepath.Dir(composePath)
@@ -58,10 +58,10 @@ func extractServiceEnvs(composePath string) (map[string]serviceEnv, error) {
 			kvs, err := parseEnvFileKV(path)
 			if err != nil {
 				if ef.required && os.IsNotExist(err) {
-					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "服务 %q 的 env_file %s 不可读: %v", name, ef.path, err).WithCause(err)
+					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "service %q env_file %s unreadable: %v", name, ef.path, err).WithCause(err)
 				}
 				if ef.required {
-					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "服务 %q 的 env_file %s 解析失败: %v", name, ef.path, err).WithCause(err)
+					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "service %q env_file %s failed to parse: %v", name, ef.path, err).WithCause(err)
 				}
 				continue // required: false 显式缺省容忍（与归一化层一致）
 			}
@@ -80,7 +80,7 @@ func extractServiceEnvs(composePath string) (map[string]serviceEnv, error) {
 			for _, k := range keys {
 				val, ok := stringish(v[k])
 				if !ok {
-					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "服务 %q 的 environment 条目 %q 未给字面值", name, k).
+					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "service %q environment entry %q does not provide a literal value", name, k).
 						WithContext("path", "services."+name+".environment."+k)
 				}
 				env.Compose[k] = val
@@ -89,7 +89,7 @@ func extractServiceEnvs(composePath string) (map[string]serviceEnv, error) {
 			for _, item := range v {
 				s, ok := item.(string)
 				if !ok || !strings.Contains(s, "=") {
-					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "服务 %q 的 environment 条目 %q 未给字面值", name, s).
+					return nil, apperr.New("E_COMPOSE_UNSUPPORTED", "service %q environment entry %q does not provide a literal value", name, s).
 						WithContext("path", "services."+name+".environment")
 				}
 				k, val, _ := strings.Cut(s, "=")

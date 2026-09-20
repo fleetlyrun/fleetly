@@ -171,7 +171,7 @@ func (c *revisionsListCmd) Run(ctx context.Context, env *commands.Environment, a
 			return writeJSON(env.Stdout, out)
 		}
 		if len(out.Revisions) == 0 {
-			_, err := fmt.Fprintf(env.Stdout, "%s: no revisions（尚无成功部署；可回滚目标 = 最近 %d 次成功部署）\n",
+			_, err := fmt.Fprintf(env.Stdout, "%s: no revisions (no successful deployments yet; rollback targets = the last %d successful deployments)\n",
 				args[0], revisionKeepVersions)
 			return err
 		}
@@ -249,11 +249,11 @@ func (c *driftShowCmd) Run(ctx context.Context, env *commands.Environment, args 
 			return writeProtoJSON(env.Stdout, resp)
 		}
 		if resp.GetDesiredDeployment() == "" {
-			_, err := fmt.Fprintf(env.Stdout, "%s: no succeeded deployment（无期望态可比对）\n", resp.GetApp())
+			_, err := fmt.Fprintf(env.Stdout, "%s: no succeeded deployment (no desired state to compare against)\n", resp.GetApp())
 			return err
 		}
 		if !resp.GetDrifted() {
-			_, err := fmt.Fprintf(env.Stdout, "%s: no drift（期望与实况一致，基准 %s）\n",
+			_, err := fmt.Fprintf(env.Stdout, "%s: no drift (actual matches desired; baseline %s)\n",
 				resp.GetApp(), resp.GetDesiredDeployment())
 			return err
 		}
@@ -262,9 +262,9 @@ func (c *driftShowCmd) Run(ctx context.Context, env *commands.Environment, args 
 		for _, s := range resp.GetServices() {
 			switch {
 			case s.GetMissing():
-				fmt.Fprintf(&b, "  %s: MISSING（期望服务不存在）\n", s.GetService())
+				fmt.Fprintf(&b, "  %s: MISSING (in the desired state, absent from runtime)\n", s.GetService())
 			case s.GetExtra():
-				fmt.Fprintf(&b, "  %s: EXTRA（期望集之外的多余受管服务）\n", s.GetService())
+				fmt.Fprintf(&b, "  %s: EXTRA (managed service outside the desired set)\n", s.GetService())
 			case s.GetDrifted():
 				fmt.Fprintf(&b, "  %s:\n", s.GetService())
 				for _, d := range s.GetDiff() {

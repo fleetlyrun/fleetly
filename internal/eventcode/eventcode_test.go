@@ -60,21 +60,21 @@ var docEvents = map[string]string{ // event → 文档出处
 	// T2.15 实现期新增（文档外事件名单独列出，待 T0.5 契约冻结确认）：架构
 	// §2.5 不变量「路由发布严格晚于健康门；发布失败不回滚部署、单独告警 +
 	// 审计」。证书签发/续期不设新事件名（走审计记录）。
-	"route.published":      "T2.15 实现期新增（architecture §2.5 路由发布时机；待 T0.5 冻结确认）",
-	"route.publish_failed": "T2.15 实现期新增（architecture §2.5 路由失败单独告警；待 T0.5 冻结确认）",
+	"route.published":      "T2.15 added during implementation (architecture §2.5 route publish timing; pending T0.5 freeze confirmation)",
+	"route.publish_failed": "T2.15 added during implementation (architecture §2.5 route failure alerts separately; pending T0.5 freeze confirmation)",
 
 	// S17-D1 实现期新增（评审类 D 超时与取消闭环）：webhook 受理转异步后
 	// 拉源失败只能走事件流披露（官方不重投）。
-	"app.webhook_fetch_failed": "S17-D1 实现期新增（评审类 D；webhook 异步拉源失败披露）",
+	"app.webhook_fetch_failed": "S17-D1 added during implementation (review class D; disclosure of webhook async source-fetch failure)",
 
 	// S18-A10 实现期新增（评审类 A 运行时断言层，§9 裁决并入 janitor）：
 	// 非终态行超龄停留的显性化告警。
-	"engine.stale_nonterminal": "S18-A10 实现期新增（评审类 A；部署非终态超龄告警）",
-	"build.stale_nonterminal":  "S18-A10 实现期新增（评审类 A；构建非终态超龄告警）",
+	"engine.stale_nonterminal": "S18-A10 added during implementation (review class A; over-age alert for non-terminal deploys)",
+	"build.stale_nonterminal":  "S18-A10 added during implementation (review class A; over-age alert for non-terminal builds)",
 
 	// B6/H10 实现期新增（MG-3 横切结构修复）：app 删除生命周期第二拍的
 	// 终局事件（引擎 deleting 回收 duty 发出）。
-	"app.deleted": "B6/H10 实现期新增（MG-3；app 删除第二拍终局）",
+	"app.deleted": "B6/H10 added during implementation (MG-3; app deletion second-beat terminal event)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。
@@ -85,12 +85,12 @@ func TestDocEventSetMatchesRegistry(t *testing.T) {
 	}
 	for _, name := range regNames {
 		if _, ok := docEvents[name]; !ok {
-			t.Errorf("registry event %q 不在文档清单内（文档外事件名须单独列出并标注待 T0.5 冻结确认）", name)
+			t.Errorf("registry event %q not in the doc list (out-of-doc event names must be listed separately and marked pending T0.5 freeze confirmation)", name)
 		}
 	}
 	for name, source := range docEvents {
 		if _, ok := Default().Get(name); !ok {
-			t.Errorf("doc event %q（%s）未录入注册表：遗漏", name, source)
+			t.Errorf("doc event %q (%s) missing from the registry: omission", name, source)
 		}
 	}
 }

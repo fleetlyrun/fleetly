@@ -72,6 +72,6 @@ func TestDeployPersistsComposeUnderDataRoot(t *testing.T) {
 		t.Fatalf("reload persisted compose: %v", err)
 	}
 	if spec.SpecHash != rec.SpecHash {
-		t.Fatalf("reloaded spec_hash = %s, want %s（入队时哈希）", spec.SpecHash, rec.SpecHash)
+		t.Fatalf("reloaded spec_hash = %s, want %s (hash at enqueue time)", spec.SpecHash, rec.SpecHash)
 	}
 }

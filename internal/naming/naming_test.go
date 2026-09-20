@@ -61,7 +61,7 @@ func TestNamesMatchDesignDocs(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			if tc.got != tc.want {
-				t.Fatalf("got %q, want %q（设计文档原文）", tc.got, tc.want)
+				t.Fatalf("got %q, want %q (design doc verbatim)", tc.got, tc.want)
 			}
 		})
 	}
@@ -94,7 +94,7 @@ func TestServiceLabelsMinimalSet(t *testing.T) {
 		state.LabelDeployment: "dep_01",
 	}
 	if len(labels) != len(want) {
-		t.Fatalf("label count = %d, want %d (最小集)", len(labels), len(want))
+		t.Fatalf("label count = %d, want %d (minimal set)", len(labels), len(want))
 	}
 	for k, v := range want {
 		if labels[k] != v {

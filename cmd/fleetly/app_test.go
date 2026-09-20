@@ -106,18 +106,18 @@ func TestCLIValidateExitCodes(t *testing.T) {
 
 	code, _, errOut := runCLI(t, "validate", writeFixture(t, cliInvalid))
 	if code != 1 {
-		t.Fatalf("invalid compose: code=%d, 期望 1", code)
+		t.Fatalf("invalid compose: code=%d, want 1", code)
 	}
 	for _, want := range []string{"E_COMPOSE_MANAGED_FIELD", "suggestion:", "docs:"} {
 		if !strings.Contains(errOut, want) {
-			t.Errorf("stderr 缺 %q:\n%s", want, errOut)
+			t.Errorf("stderr missing %q:\n%s", want, errOut)
 		}
 	}
 
 	// 不存在的文件 → 1。
 	code, _, _ = runCLI(t, "validate", filepath.Join(t.TempDir(), "nope.yaml"))
 	if code != 1 {
-		t.Fatalf("missing file: code=%d, 期望 1", code)
+		t.Fatalf("missing file: code=%d, want 1", code)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestCLIValidateJSON(t *testing.T) {
 		Services int    `json:"services"`
 	}
 	if err := json.Unmarshal([]byte(out), &result); err != nil {
-		t.Fatalf("stdout 不是 JSON: %v\n%s", err, out)
+		t.Fatalf("stdout is not JSON: %v\n%s", err, out)
 	}
 	if !result.Valid || result.Name != "my-api" || result.SpecHash == "" || result.Services != 1 {
 		t.Errorf("validate JSON = %+v", result)
@@ -150,16 +150,16 @@ func TestCLIPlanThreeState(t *testing.T) {
 	// 自基线（同文件）→ 无变化 → 0。
 	code, out, _ := runCLI(t, "plan", "--baseline", good, good)
 	if code != 0 {
-		t.Fatalf("no changes: code=%d, 期望 0\n%s", code, out)
+		t.Fatalf("no changes: code=%d, want 0\n%s", code, out)
 	}
 	if !strings.Contains(out, "no changes") {
-		t.Errorf("无变化报告缺 no changes:\n%s", out)
+		t.Errorf("no-change report missing \"no changes\":\n%s", out)
 	}
 
 	// 异基线 → 有变化 → 2。
 	code, _, _ = runCLI(t, "plan", "--baseline", writeFixture(t, cliOther), good)
 	if code != 2 {
-		t.Fatalf("changed: code=%d, 期望 2", code)
+		t.Fatalf("changed: code=%d, want 2", code)
 	}
 
 	// 校验失败 → 1（stderr 出错误码）。
@@ -197,7 +197,7 @@ func TestCLIPlanJSONArtifact(t *testing.T) {
 		} `json:"services"`
 	}
 	if err := json.Unmarshal([]byte(out), &plan); err != nil {
-		t.Fatalf("artifact 不是 JSON: %v\n%s", err, out)
+		t.Fatalf("artifact is not JSON: %v\n%s", err, out)
 	}
 	if plan.SpecHash == "" || !plan.HasChanges {
 		t.Errorf("artifact = %+v", plan)
@@ -213,12 +213,12 @@ func TestCLIPlanJSONArtifact(t *testing.T) {
 		}
 	}
 	if !foundEnvHash {
-		t.Errorf("缺 environment.DB_CREDENTIAL 差分: %+v", plan.Services.Updated[0].Fields)
+		t.Errorf("missing environment.DB_CREDENTIAL diff: %+v", plan.Services.Updated[0].Fields)
 	}
 	// 负面测试：明文值（新值与基线旧值）不得出现在 stdout/stderr 任一流。
 	if strings.Contains(out, "super-secret-plaintext") || strings.Contains(errOut, "super-secret-plaintext") ||
 		strings.Contains(out, "old-plaintext") || strings.Contains(errOut, "old-plaintext") {
-		t.Error("plan 输出泄露 env 明文值")
+		t.Error("plan output leaks the env plaintext value")
 	}
 }
 
@@ -243,16 +243,16 @@ func TestCLIPlanDestructive(t *testing.T) {
 		t.Fatalf("artifact: %v", err)
 	}
 	if len(plan.Services.Removed) != 1 || plan.Services.Removed[0] != "worker" {
-		t.Fatalf("Removed = %v, 期望 [worker]", plan.Services.Removed)
+		t.Fatalf("Removed = %v, want [worker]", plan.Services.Removed)
 	}
 	if !plan.Destructive || !plan.RequiresConfirmDestructive {
-		t.Errorf("破坏性标记缺失: %+v", plan)
+		t.Errorf("destructive flags missing: %+v", plan)
 	}
 
 	// 人读报告带 --confirm-destructive 提示。
 	code, out, _ = runCLI(t, "plan", "--baseline", base, target)
 	if code != 2 || !strings.Contains(out, "--confirm-destructive") {
-		t.Fatalf("人读破坏性提示缺失: code=%d\n%s", code, out)
+		t.Fatalf("human-readable destructive hint missing: code=%d\n%s", code, out)
 	}
 }
 
@@ -269,13 +269,13 @@ func TestCLIPlanOutputArtifact(t *testing.T) {
 	}
 	raw, err := os.ReadFile(artifactPath) //nolint:gosec // artifact 为本测试 --output 落盘的临时路径
 	if err != nil {
-		t.Fatalf("artifact 未落盘: %v", err)
+		t.Fatalf("artifact not written: %v", err)
 	}
 	var plan struct {
 		SpecHash string `json:"spec_hash"`
 	}
 	if err := json.Unmarshal(raw, &plan); err != nil || plan.SpecHash == "" {
-		t.Fatalf("落盘 artifact 非法: %v %s", err, raw)
+		t.Fatalf("written artifact invalid: %v %s", err, raw)
 	}
 }
 
@@ -288,7 +288,7 @@ func TestCLIDiffThreeState(t *testing.T) {
 	}
 	code, _, _ = runCLI(t, "diff", a, writeFixture(t, cliOther))
 	if code != 2 {
-		t.Fatalf("different: code=%d, 期望 2", code)
+		t.Fatalf("different: code=%d, want 2", code)
 	}
 	code, _, errOut := runCLI(t, "diff", a, writeFixture(t, cliInvalid))
 	if code != 1 || !strings.Contains(errOut, "E_COMPOSE_MANAGED_FIELD") {
@@ -297,7 +297,7 @@ func TestCLIDiffThreeState(t *testing.T) {
 	// 参数数量违规 → 用法错误（64，S17-D3）。
 	code, _, _ = runCLI(t, "diff", a)
 	if code != 64 {
-		t.Fatalf("usage: code=%d, 期望 64", code)
+		t.Fatalf("usage: code=%d, want 64", code)
 	}
 }
 
@@ -308,22 +308,22 @@ func TestCLIUsageExitCodes(t *testing.T) {
 	// 未知动词 → 64。
 	code, _, _ := runCLI(t, "no-such-verb")
 	if code != 64 {
-		t.Fatalf("unknown verb: code=%d, 期望 64", code)
+		t.Fatalf("unknown verb: code=%d, want 64", code)
 	}
 	// flag 解析失败 → 64。
 	code, _, _ = runCLI(t, "validate", "--nope", writeFixture(t, cliValid))
 	if code != 64 {
-		t.Fatalf("bad flag: code=%d, 期望 64", code)
+		t.Fatalf("bad flag: code=%d, want 64", code)
 	}
 	// 位置参数缺失 → 64。
 	code, _, _ = runCLI(t, "validate")
 	if code != 64 {
-		t.Fatalf("missing arg: code=%d, 期望 64", code)
+		t.Fatalf("missing arg: code=%d, want 64", code)
 	}
 	// 对照：plan 有变化仍是 2（不与用法错误混用）。
 	code, _, _ = runCLI(t, "plan", "--baseline", writeFixture(t, cliOther), writeFixture(t, cliValid))
 	if code != 2 {
-		t.Fatalf("changes: code=%d, 期望 2", code)
+		t.Fatalf("changes: code=%d, want 2", code)
 	}
 }
 
@@ -341,13 +341,13 @@ func TestCLINestedUnknownSubcommandExitCode(t *testing.T) {
 	} {
 		code, _, errOut := runCLI(t, args...)
 		if code != 64 {
-			t.Fatalf("%v: code=%d, 期望 64（嵌套未知子命令 = 用法错误）\nstderr=%s", args, code, errOut)
+			t.Fatalf("%v: code=%d, want 64 (nested unknown subcommand = usage error)\nstderr=%s", args, code, errOut)
 		}
 		if !strings.Contains(errOut, `unknown subcommand "frobnicate"`) {
-			t.Errorf("%v: stderr 缺 unknown subcommand 文案:\n%s", args, errOut)
+			t.Errorf("%v: stderr missing \"unknown subcommand\" text:\n%s", args, errOut)
 		}
 		if !strings.Contains(errOut, "usage:") {
-			t.Errorf("%v: stderr 缺 usage 提示行:\n%s", args, errOut)
+			t.Errorf("%v: stderr missing usage hint line:\n%s", args, errOut)
 		}
 	}
 }
@@ -365,20 +365,20 @@ func TestREADMEExamplesFlagsBeforePositional(t *testing.T) {
 	logs := &logsFollowCmd{}
 	rest, err := app.ParseFlags(logs, env, []string{"--service", "web", "my-api"})
 	if err != nil {
-		t.Fatalf("logs follow 解析失败: %v", err)
+		t.Fatalf("logs follow parse failed: %v", err)
 	}
 	if logs.service != "web" || len(rest) != 1 || rest[0] != "my-api" {
-		t.Fatalf("logs follow: service=%q rest=%v, 期望 web / [my-api]", logs.service, rest)
+		t.Fatalf("logs follow: service=%q rest=%v, want web / [my-api]", logs.service, rest)
 	}
 
 	// `fleetly git keys add --note laptop ~/.ssh/id_ed25519.pub`
 	keys := &gitKeysAddCmd{}
 	rest, err = app.ParseFlags(keys, env, []string{"--note", "laptop", "~/.ssh/id_ed25519.pub"})
 	if err != nil {
-		t.Fatalf("git keys add 解析失败: %v", err)
+		t.Fatalf("git keys add parse failed: %v", err)
 	}
 	if keys.note != "laptop" || len(rest) != 1 || rest[0] != "~/.ssh/id_ed25519.pub" {
-		t.Fatalf("git keys add: note=%q rest=%v, 期望 laptop / [~/.ssh/id_ed25519.pub]", keys.note, rest)
+		t.Fatalf("git keys add: note=%q rest=%v, want laptop / [~/.ssh/id_ed25519.pub]", keys.note, rest)
 	}
 
 	// `fleetly apps webhook set-source --branch main --auth-kind none my-api https://…`
@@ -386,11 +386,11 @@ func TestREADMEExamplesFlagsBeforePositional(t *testing.T) {
 	rest, err = app.ParseFlags(src, env, []string{"--branch", "main", "--auth-kind", "none",
 		"my-api", "https://github.com/acme/web.git"})
 	if err != nil {
-		t.Fatalf("apps webhook set-source 解析失败: %v", err)
+		t.Fatalf("apps webhook set-source parse failed: %v", err)
 	}
 	if src.branch != "main" || src.authKind != "none" || len(rest) != 2 ||
 		rest[0] != "my-api" || rest[1] != "https://github.com/acme/web.git" {
-		t.Fatalf("set-source: branch=%q authKind=%q rest=%v, 期望 main/none/[my-api url]", src.branch, src.authKind, rest)
+		t.Fatalf("set-source: branch=%q authKind=%q rest=%v, want main/none/[my-api url]", src.branch, src.authKind, rest)
 	}
 
 	// 对照：flags 后置（README 修正前的形态）解析停在首个位置参数——flag
@@ -398,6 +398,6 @@ func TestREADMEExamplesFlagsBeforePositional(t *testing.T) {
 	after := &logsFollowCmd{}
 	rest, err = app.ParseFlags(after, env, []string{"my-api", "--service", "web"})
 	if err != nil || after.service != "" || len(rest) != 3 {
-		t.Fatalf("后置形态语义不符预期: err=%v service=%q rest=%v（期望 nil/空/3 残留）", err, after.service, rest)
+		t.Fatalf("trailing-flags form behaves unexpectedly: err=%v service=%q rest=%v (want nil/empty/3 leftovers)", err, after.service, rest)
 	}
 }

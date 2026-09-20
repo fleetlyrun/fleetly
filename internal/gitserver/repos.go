@@ -237,21 +237,21 @@ func (s *GitTriggers) composeFromCommit(ctx context.Context, app, sha string) ([
 	ymlBytes, ymlErr := gitShow(ctx, path, sha, "compose.yml")
 	switch {
 	case yamlErr == nil && ymlErr == nil:
-		return nil, fmt.Errorf("gitserver: %w: app %s at %s 同时存在 compose.yaml 与 compose.yml（歧义，拒绝部署）",
+		return nil, fmt.Errorf("gitserver: %w: app %s at %s has both compose.yaml and compose.yml (ambiguous; refusing to deploy)",
 			errComposeRejected, app, sha)
 	case yamlErr == nil:
 		return yamlBytes, nil
 	case ymlErr == nil:
 		return ymlBytes, nil
 	default:
-		return nil, fmt.Errorf("gitserver: %w: app %s at %s 仓库根未找到 compose.yaml / compose.yml",
+		return nil, fmt.Errorf("gitserver: %w: app %s at %s: no compose.yaml / compose.yml at the repo root",
 			errComposeRejected, app, sha)
 	}
 }
 
 // errComposeRejected 是 compose 读取失败的包内哨兵（api/webhook 层映射为
 // E_COMPOSE_UNSUPPORTED——errcode 零新增，复用既有 compose 码族）。
-var errComposeRejected = fmt.Errorf("compose 不可用")
+var errComposeRejected = fmt.Errorf("compose unavailable")
 
 // gitShow 执行 git show <sha>:<file>（cwd = bare 仓库）。
 func gitShow(ctx context.Context, repoPath, sha, file string) ([]byte, error) {

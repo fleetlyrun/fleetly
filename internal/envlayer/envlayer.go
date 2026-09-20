@@ -164,7 +164,7 @@ func PlatformOverrideWarnings(spec *compose.Spec, platform []PlatformVar) []comp
 				out = append(out, compose.Warning{
 					Code:    "W_ENV_PLATFORM_OVERRIDE",
 					Service: svc.Name,
-					Message: "键 " + e.Key + " 在 compose 层（来源 " + e.Source + "）与平台 env_vars 同名：合并以平台层为准，compose 值被覆盖",
+					Message: "key " + e.Key + " at compose layer (source " + e.Source + ") also present in platform env_vars: platform layer wins the merge, compose value is overridden",
 				})
 			}
 		}

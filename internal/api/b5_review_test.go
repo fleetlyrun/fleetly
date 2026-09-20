@@ -112,7 +112,7 @@ func TestTriggerBuildAuditAttribution(t *testing.T) {
 		}
 		found = true
 		if a.Actor != "human" {
-			t.Fatalf("build.create audit actor = %q, want human (调用方归因，M4-8)", a.Actor)
+			t.Fatalf("build.create audit actor = %q, want human (caller attribution, M4-8)", a.Actor)
 		}
 	}
 	if !found {

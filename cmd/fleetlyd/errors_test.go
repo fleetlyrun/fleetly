@@ -34,7 +34,7 @@ var envelopeKeys = []string{"code", "message", "stage", "deployment_id", "sugges
 
 // sampleAppErr 构造七字段全非空的样例错误（前哨 409 语义）。
 func sampleAppErr() *apperr.Error {
-	return apperr.New("E_VOLUME_NODE_MISMATCH", "卷数据节点与目标部署节点不一致").
+	return apperr.New("E_VOLUME_NODE_MISMATCH", "volume data node does not match the target deployment node").
 		WithStage("preflight").
 		WithDeploymentID("d_01JGOLDEN").
 		WithContext("bound_node", "n_01").
@@ -55,7 +55,7 @@ func TestGatewayErrorEnvelopeGolden(t *testing.T) {
 	newGatewayErrorHandler()(context.Background(), nil, newJSONMarshaler(), rec, req, st.Err())
 
 	if rec.Code != http.StatusConflict {
-		t.Fatalf("HTTP status = %d, want 409（注册表：前哨 409）", rec.Code)
+		t.Fatalf("HTTP status = %d, want 409 (registry: preflight maps to 409)", rec.Code)
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
 		t.Fatalf("Content-Type = %q, want application/json", ct)
@@ -72,7 +72,7 @@ func TestGatewayErrorEnvelopeGolden(t *testing.T) {
 	}
 	for _, k := range envelopeKeys {
 		if _, ok := raw[k]; !ok {
-			t.Fatalf("key %q missing in %s（信封必须 snake_case 七字段）", k, body)
+			t.Fatalf("key %q missing in %s (envelope must be the seven snake_case fields)", k, body)
 		}
 	}
 
@@ -109,7 +109,7 @@ func TestGatewayDegradedEnvelope(t *testing.T) {
 	newGatewayErrorHandler()(context.Background(), nil, newJSONMarshaler(), rec, req, err)
 
 	if rec.Code != http.StatusNotFound {
-		t.Fatalf("HTTP status = %d, want 404（grpc code 机械映射）", rec.Code)
+		t.Fatalf("HTTP status = %d, want 404 (mechanical grpc code mapping)", rec.Code)
 	}
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
@@ -150,7 +150,7 @@ func TestValidateStatusErrorEnvelope(t *testing.T) {
 		t.Fatalf("status lost envelope detail: %v", st)
 	}
 	if decoded.Code() != "" {
-		t.Fatalf("validation envelope code = %q, want empty（不新码）", decoded.Code())
+		t.Fatalf("validation envelope code = %q, want empty (no invented codes)", decoded.Code())
 	}
 	if decoded.Context()["service"] == "" || decoded.Context()["version"] == "" {
 		// protovalidate 违规的 field path 是消息相对路径（FieldPathString），
@@ -257,7 +257,7 @@ func TestRESTErrorEndToEnd(t *testing.T) {
 	}
 	for _, k := range envelopeKeys {
 		if _, ok := raw[k]; !ok {
-			t.Fatalf("key %q missing in %s（REST 错误响应必须是 ErrorResponse 信封）", k, body)
+			t.Fatalf("key %q missing in %s (REST error response must be an ErrorResponse envelope)", k, body)
 		}
 	}
 	var env struct {

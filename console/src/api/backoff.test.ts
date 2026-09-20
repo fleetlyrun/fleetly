@@ -13,7 +13,7 @@ afterEach(() => vi.useRealTimers());
 const mid = () => 0.5;
 
 describe("ReconnectBackoff", () => {
-  it("指数退避：1.5s 起 ×2，夹 30s 上限（连续错误断流）", () => {
+  it("exponential backoff: starts at 1.5s, ×2, capped at 30s (consecutive error disconnects)", () => {
     const b = new ReconnectBackoff({}, mid);
     expect(b.nextDelayMs(false)).toBe(1500);
     expect(b.nextDelayMs(false)).toBe(3000);
@@ -24,7 +24,7 @@ describe("ReconnectBackoff", () => {
     expect(b.nextDelayMs(false)).toBe(30000);
   });
 
-  it("抖动 ±20%：延迟落在 [0.8d, 1.2d]", () => {
+  it("jitter ±20%: delay lands in [0.8d, 1.2d]", () => {
     const low = new ReconnectBackoff({ baseMs: 1000, maxMs: 30_000 }, () => 0);
     expect(low.nextDelayMs(false)).toBe(800);
     const high = new ReconnectBackoff({ baseMs: 1000 }, () => 0.99);
@@ -33,7 +33,7 @@ describe("ReconnectBackoff", () => {
     expect(d).toBeLessThanOrEqual(1200);
   });
 
-  it("健康连接不累积退避：开流 ≥30s 后的断开归零重来", () => {
+  it("healthy connections do not accumulate backoff: disconnect after ≥30s open resets the sequence", () => {
     const b = new ReconnectBackoff({}, mid);
     expect(b.nextDelayMs(false)).toBe(1500);
     b.markOpen();
@@ -41,14 +41,14 @@ describe("ReconnectBackoff", () => {
     expect(b.nextDelayMs(false)).toBe(1500); // 归零后从 1.5s 重新起步
   });
 
-  it("短命连接仍累积：开流后立即断开不归零", () => {
+  it("short-lived connections still accumulate: disconnect right after open does not reset", () => {
     const b = new ReconnectBackoff({}, mid);
     expect(b.nextDelayMs(false)).toBe(1500);
     b.markOpen(); // 立即断开（fake clock 未推进）
     expect(b.nextDelayMs(false)).toBe(3000);
   });
 
-  it("服务端连续 5 次正常关流 → 降频（退避翻倍，上限放宽到 60s）", () => {
+  it("5 consecutive server clean closes → throttle (backoff doubles, cap relaxed to 60s)", () => {
     const b = new ReconnectBackoff({}, mid);
     expect(b.nextDelayMs(true)).toBe(1500);
     expect(b.nextDelayMs(true)).toBe(3000);
@@ -61,7 +61,7 @@ describe("ReconnectBackoff", () => {
     expect(b.nextDelayMs(true)).toBe(60_000);
   });
 
-  it("错误断流解除降频（真断流按正常频率重连）", () => {
+  it("error disconnect clears the throttle (true disconnects reconnect at normal cadence)", () => {
     const b = new ReconnectBackoff({}, mid);
     for (let i = 0; i < 5; i++) b.nextDelayMs(true);
     expect(b.throttled).toBe(true);

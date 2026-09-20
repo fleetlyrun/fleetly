@@ -164,7 +164,7 @@ func TestDeploymentPhaseStartedAtBaseline(t *testing.T) {
 		t.Fatalf("get: %v", err)
 	}
 	if !row.PhaseStartedAt.IsZero() {
-		t.Fatalf("fresh row phase_started_at = %v, want zero（NULL → 回落语义）", row.PhaseStartedAt)
+		t.Fatalf("fresh row phase_started_at = %v, want zero (NULL → fallback semantics)", row.PhaseStartedAt)
 	}
 	// 拾取补丁：CAS 同拍写基线（queued → preparing）。
 	to := DeployPreparing
@@ -380,7 +380,7 @@ func TestLatestDeploymentsByAppBatch(t *testing.T) {
 		t.Fatalf("LatestDeploymentsByApp: %v", err)
 	}
 	if len(got) != 2 {
-		t.Fatalf("apps with rows = %d, want 2 (a3 无部署不在 map)", len(got))
+		t.Fatalf("apps with rows = %d, want 2 (a3 has no deployments and is not in the map)", len(got))
 	}
 	rowsA1 := got[a1.ID]
 	if len(rowsA1) != 3 {
@@ -391,7 +391,7 @@ func TestLatestDeploymentsByAppBatch(t *testing.T) {
 			t.Fatalf("a1 row %d spec_hash = %s, want %s (created_at DESC)", i, rowsA1[i].SpecHash, wantHash)
 		}
 		if rowsA1[i].AppName != "batch-a" {
-			t.Fatalf("a1 row %d app_name = %q, want JOIN 回填 batch-a", i, rowsA1[i].AppName)
+			t.Fatalf("a1 row %d app_name = %q, want JOIN backfill batch-a", i, rowsA1[i].AppName)
 		}
 	}
 	if rows := got[a2.ID]; len(rows) != 1 || rows[0].SpecHash != "only" {
@@ -446,7 +446,7 @@ func TestDeploymentStatusWriteRequiresPrevStatus(t *testing.T) {
 		t.Fatalf("get deployment: %v", err)
 	}
 	if got.Status != DeployQueued {
-		t.Fatalf("status = %s, want queued (裸写不得生效)", got.Status)
+		t.Fatalf("status = %s, want queued (bare write must not take effect)", got.Status)
 	}
 
 	// 仅字段 patch（无 Status）：不受影响——CancelRequested / Flags 就地更新。
@@ -522,7 +522,7 @@ func TestGitSHADedupConcurrentSingleRow(t *testing.T) {
 		}
 	}
 	if wins != 1 || dups != rounds-1 {
-		t.Fatalf("wins = %d, dups = %d, want 1 win / %d dups (仅一行落库)", wins, dups, rounds-1)
+		t.Fatalf("wins = %d, dups = %d, want 1 win / %d dups (only one row persisted)", wins, dups, rounds-1)
 	}
 	n, err := st.CountGitDeploymentsForSHA(ctx, app.ID, sha)
 	if err != nil {

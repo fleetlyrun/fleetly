@@ -79,7 +79,7 @@ func (c *webhookSecretSetCmd) Run(ctx context.Context, env *commands.Environment
 		return err
 	}
 	if len(args[1]) < 16 {
-		return fmt.Errorf("secret must be at least 16 characters（验签是 webhook 端点的唯一认证）")
+		return fmt.Errorf("secret must be at least 16 characters (signature verification is the webhook endpoint's only authentication)")
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Apps().SetAppWebhookSecret(ctx, &serverv1.SetAppWebhookSecretRequest{
@@ -91,7 +91,7 @@ func (c *webhookSecretSetCmd) Run(ctx context.Context, env *commands.Environment
 		if c.jsonOut {
 			return writeProtoJSON(env.Stdout, resp)
 		}
-		_, err = fmt.Fprintf(env.Stdout, "webhook secret set for %s（configured=%v；值加密落库、永不回读）\n",
+		_, err = fmt.Fprintf(env.Stdout, "webhook secret set for %s (configured=%v; the value is stored encrypted and never read back)\n",
 			resp.GetName(), resp.GetConfigured())
 		return err
 	})
@@ -160,7 +160,7 @@ func (c *webhookSourceSetCmd) Usage() string {
 
 func (c *webhookSourceSetCmd) SetFlags(fs *flag.FlagSet) {
 	c.conn.register(fs)
-	fs.StringVar(&c.branch, "branch", "main", "push/fetch branch (app 配置分支，默认 main)")
+	fs.StringVar(&c.branch, "branch", "main", "push/fetch branch (the app's configured branch, default main)")
 	fs.StringVar(&c.authKind, "auth-kind", "none", "auth kind: none | https_token | ssh_key")
 	fs.StringVar(&c.authSecret, "auth-secret", "", "auth material (token or PEM private key; encrypted at rest, never echoed)")
 	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
@@ -192,7 +192,7 @@ func configuredWord(v bool) string {
 	if v {
 		return "configured"
 	}
-	return "not configured（端点未启用）"
+	return "not configured (endpoint disabled)"
 }
 
 func orDash(s string) string {

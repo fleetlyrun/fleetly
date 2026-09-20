@@ -142,7 +142,7 @@ volumes:
 	}
 	svc := plan.Services[0]
 	if svc.UpdateOrder != "stop-first" {
-		t.Fatalf("volume service order = %s, want stop-first（平台强制）", svc.UpdateOrder)
+		t.Fatalf("volume service order = %s, want stop-first (platform-enforced)", svc.UpdateOrder)
 	}
 	if len(svc.Mounts) != 1 || svc.Mounts[0].VolumeName != "fleetly-app1-data-test" {
 		t.Fatalf("mounts = %+v", svc.Mounts)
@@ -176,6 +176,6 @@ volumes:
 	})
 	var ae *apperr.Error
 	if !asAppErr(err, &ae) || ae == nil || ae.Code() != "E_PLACEMENT_NODE_UNAVAILABLE" {
-		t.Fatalf("err = %v, want E_PLACEMENT_NODE_UNAVAILABLE（卷未登记快速失败）", err)
+		t.Fatalf("err = %v, want E_PLACEMENT_NODE_UNAVAILABLE (fast-fail on unregistered volume)", err)
 	}
 }

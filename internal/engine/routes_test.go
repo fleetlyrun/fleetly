@@ -225,7 +225,7 @@ func TestRouteInputLedgerFallback(t *testing.T) {
 		t.Fatalf("compose-sourced input wrong: %+v", in2.Services)
 	}
 	if strings.Contains(composeWithDomains, "ports") {
-		t.Fatal("fixture must not use ports (v0.1 受控子集拒绝)")
+		t.Fatal("fixture must not use ports (rejected by the v0.1 controlled subset)")
 	}
 }
 
@@ -267,16 +267,16 @@ func TestRoutePublishBudgetBoundsTick(t *testing.T) {
 	final := h.runToTerminal(rec)
 	elapsed := time.Since(start)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("deployment status = %s, want succeeded（发布超预算不得失败部署）", final.Status)
+		t.Fatalf("deployment status = %s, want succeeded (over-budget publishing must not fail the deployment)", final.Status)
 	}
 	// 两个挂点（首健康 + 终态）各耗尽 200ms 预算：tick 未被 30s 阻塞拖住。
 	if elapsed >= 5*time.Second {
-		t.Fatalf("tick 被慢发布器拖住 %s（预算未生效）", elapsed)
+		t.Fatalf("tick was held up by the slow publisher for %s (budget not effective)", elapsed)
 	}
 	if pub.calls != 2 {
 		t.Fatalf("publisher calls = %d, want 2（gate + terminal）", pub.calls)
 	}
 	if n := countEvents(t, h, "route.publish_failed"); n != 2 {
-		t.Fatalf("route.publish_failed count = %d, want 2（每次超预算挂点各一条）", n)
+		t.Fatalf("route.publish_failed count = %d, want 2 (one per over-budget hook)", n)
 	}
 }

@@ -66,23 +66,23 @@ func (r *Registry) register(c Code) error {
 		r.codes = make(map[string]Code)
 	}
 	if !codePattern.MatchString(c.ID) {
-		return fmt.Errorf("errcode: 非法错误码格式 %q（要求 ^[EW]_[A-Z0-9]+(_[A-Z0-9]+)*$，拒绝小写/缺前缀/空段）", c.ID)
+		return fmt.Errorf("errcode: invalid code format %q (want ^[EW]_[A-Z0-9]+(_[A-Z0-9]+)*$; lowercase/missing prefix/empty segment rejected)", c.ID)
 	}
 	if _, dup := r.codes[c.ID]; dup {
-		return fmt.Errorf("errcode: 错误码 %s 重复注册（注册表只增、码永不复用）", c.ID)
+		return fmt.Errorf("errcode: code %s already registered (registry is append-only; codes are never reused)", c.ID)
 	}
 	isWarning := strings.HasPrefix(c.ID, "W_")
 	if isWarning && c.HTTP != 0 {
-		return fmt.Errorf("errcode: 警告码 %s 不得携带默认 HTTP 状态（got %d，警告不作为 HTTP 错误出现）", c.ID, c.HTTP)
+		return fmt.Errorf("errcode: warning code %s must not carry a default HTTP status (got %d; warnings are never returned as HTTP errors)", c.ID, c.HTTP)
 	}
 	if !isWarning && (c.HTTP < 400 || c.HTTP > 599) {
-		return fmt.Errorf("errcode: 错误码 %s 默认 HTTP 状态须为 4xx/5xx（got %d）", c.ID, c.HTTP)
+		return fmt.Errorf("errcode: error code %s default HTTP status must be 4xx/5xx (got %d)", c.ID, c.HTTP)
 	}
 	if c.Suggestion == "" {
-		return fmt.Errorf("errcode: %s 缺少默认 suggestion 占位", c.ID)
+		return fmt.Errorf("errcode: %s missing default suggestion text", c.ID)
 	}
 	if c.Summary == "" {
-		return fmt.Errorf("errcode: %s 缺少 summary 说明", c.ID)
+		return fmt.Errorf("errcode: %s missing summary", c.ID)
 	}
 	r.codes[c.ID] = c
 	return nil

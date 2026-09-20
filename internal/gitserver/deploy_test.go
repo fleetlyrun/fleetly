@@ -59,13 +59,13 @@ func TestDeployFromGitPush(t *testing.T) {
 		t.Fatalf("second push: %v", err)
 	}
 	if rec2.ID == rec.ID {
-		t.Fatal("second push reused deployment id (去重语义泄漏到 push 路径)")
+		t.Fatal("second push reused deployment id (dedupe semantics leaked into the push path)")
 	}
 
 	// MG-6 回归：两次 push 的解析中转目录均已回收（defer os.RemoveAll——
 	// 持久化副本在 <数据根>/deployments/<id>/compose.yaml，tmp 不是契约面）。
 	if after := countComposeTempDirs(t); after != tmpBefore {
-		t.Fatalf("解析中转临时目录未回收: fleetly-compose-* 目录数 %d → %d", tmpBefore, after)
+		t.Fatalf("parse scratch temp dirs not reclaimed: fleetly-compose-* dir count %d → %d", tmpBefore, after)
 	}
 }
 

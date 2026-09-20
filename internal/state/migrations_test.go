@@ -128,7 +128,7 @@ func TestOpenRefusesNewerSchema(t *testing.T) {
 		t.Fatal("Open must refuse a database from a newer schema (silent no-op path exists!)")
 	}
 	for _, want := range []string{
-		"更新版本",
+		"newer version",
 		strconv.FormatInt(future, 10),
 		strconv.FormatInt(maxKnown, 10),
 		"backup-restore",
@@ -242,7 +242,7 @@ func TestMigrationsAreAdditiveOnly(t *testing.T) {
 			continue
 		}
 		if strings.HasSuffix(e.Name(), ".down.sql") {
-			t.Fatalf("down migration found: %s（回滚 = 恢复快照，禁止 down 迁移）", e.Name())
+			t.Fatalf("down migration found: %s (rollback = restore from snapshot; down migrations are forbidden)", e.Name())
 		}
 		names = append(names, e.Name())
 	}
@@ -304,7 +304,7 @@ func TestMigrationsAreAdditiveOnly(t *testing.T) {
 		got = append(got, name+" "+hashes[name])
 	}
 	if strings.Join(got, "\n") != strings.Join(want, "\n") {
-		t.Fatalf("applied migration content changed (只加法纪律：已应用文件禁止改写):\n got:\n  %s\nwant:\n  %s",
+		t.Fatalf("applied migration content changed (add-only discipline: applied files must not be rewritten):\n got:\n  %s\nwant:\n  %s",
 			strings.Join(got, "\n  "), strings.Join(want, "\n  "))
 	}
 }

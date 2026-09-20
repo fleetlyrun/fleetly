@@ -48,13 +48,13 @@ func (r *Registry) register(e Event) error {
 		r.events = make(map[string]Event)
 	}
 	if !namePattern.MatchString(e.Name) {
-		return fmt.Errorf("eventcode: 非法事件名格式 %q（要求 ^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$）", e.Name)
+		return fmt.Errorf("eventcode: invalid event name format %q (want ^[a-z][a-z0-9_]*\\.[a-z][a-z0-9_]*$)", e.Name)
 	}
 	if _, dup := r.events[e.Name]; dup {
-		return fmt.Errorf("eventcode: 事件名 %s 重复注册（注册表只增、名永不复用）", e.Name)
+		return fmt.Errorf("eventcode: event name %s already registered (registry is append-only; names are never reused)", e.Name)
 	}
 	if e.Summary == "" {
-		return fmt.Errorf("eventcode: %s 缺少 summary 说明", e.Name)
+		return fmt.Errorf("eventcode: %s missing summary", e.Name)
 	}
 	r.events[e.Name] = e
 	return nil

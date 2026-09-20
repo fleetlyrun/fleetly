@@ -77,7 +77,7 @@ func (c *tokensCreateCmd) Run(ctx context.Context, env *commands.Environment, ar
 			return writeProtoJSON(env.Stdout, resp)
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "token created: %s（仅此一次显示，请妥善保存——服务端只存哈希）\n", resp.GetToken())
+		fmt.Fprintf(&b, "token created: %s (shown only once, store it safely — the server keeps only a hash)\n", resp.GetToken())
 		fmt.Fprintf(&b, "  id: %s\n  scopes: %s\n", resp.GetId(), strings.Join(resp.GetScopes(), ","))
 		if resp.GetNote() != "" {
 			fmt.Fprintf(&b, "  note: %s\n", resp.GetNote())
@@ -120,7 +120,7 @@ func (c *tokensListCmd) Run(ctx context.Context, env *commands.Environment, args
 			return writeProtoJSON(env.Stdout, resp)
 		}
 		if len(resp.GetTokens()) == 0 {
-			_, err := fmt.Fprintln(env.Stdout, "no tokens（fleetly tokens create 签发）")
+			_, err := fmt.Fprintln(env.Stdout, "no tokens (issue one with 'fleetly tokens create')")
 			return err
 		}
 		var b strings.Builder

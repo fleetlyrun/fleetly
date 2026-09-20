@@ -182,19 +182,19 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 	}
 	e, ok := apperr.FromError(err)
 	if !ok {
-		t.Fatalf("拒绝错误未携带信封: %v", err)
+		t.Fatalf("rejection error carries no envelope: %v", err)
 	}
 	if e.Code() != "E_DEPLOY_CONFIRM_REQUIRED" {
-		t.Fatalf("信封 code = %q, 期望 E_DEPLOY_CONFIRM_REQUIRED", e.Code())
+		t.Fatalf("envelope code = %q, want E_DEPLOY_CONFIRM_REQUIRED", e.Code())
 	}
 	if e.HTTPStatus() != 409 {
-		t.Errorf("HTTP 映射 = %d, 期望 409", e.HTTPStatus())
+		t.Errorf("HTTP mapping = %d, want 409", e.HTTPStatus())
 	}
 	if sug := e.Envelope().GetSuggestion(); !strings.Contains(sug, "--confirm-destructive") {
-		t.Errorf("建议文案缺 --confirm-destructive 重试指引: %q", sug)
+		t.Errorf("suggestion text missing the --confirm-destructive retry hint: %q", sug)
 	}
 	if n := deploymentRowCount(t, env.st, "gateapp"); n != 0 {
-		t.Fatalf("被拒部署不得入队：部署行 = %d", n)
+		t.Fatalf("rejected deploy must not enqueue: deployment rows = %d", n)
 	}
 
 	// 同一 compose、带 confirm：入队成功（queued + 部署行 1）。
@@ -210,7 +210,7 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 		t.Fatalf("confirmed receipt = %+v", dr)
 	}
 	if n := deploymentRowCount(t, env.st, "gateapp"); n != 1 {
-		t.Fatalf("确认后应入队：部署行 = %d, 期望 1", n)
+		t.Fatalf("after confirm it should enqueue: deployment rows = %d, want 1", n)
 	}
 
 	// 仅修改（无服务删除）：不需要 confirm 即入队（部署行 2）。
@@ -225,7 +225,7 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 		t.Fatalf("modify-only receipt = %+v", dr2)
 	}
 	if n := deploymentRowCount(t, env.st, "gateapp"); n != 2 {
-		t.Fatalf("无服务删除应入队：部署行 = %d, 期望 2", n)
+		t.Fatalf("no service removal should enqueue: deployment rows = %d, want 2", n)
 	}
 
 	// 首发（无历史 revision）：无基线可比，恒放行。
@@ -280,7 +280,7 @@ func TestDeployTempDirCleanedUp(t *testing.T) {
 		t.Fatalf("normal deploy: %v", err)
 	}
 	if after := countTmp(); after != before {
-		t.Fatalf("解析中转临时目录未回收: fleetly-compose-* 目录数 %d → %d", before, after)
+		t.Fatalf("parse-time staging temp dirs not reclaimed: fleetly-compose-* dir count %d → %d", before, after)
 	}
 }
 
@@ -303,24 +303,24 @@ func TestDeployAppNameMismatchRejected(t *testing.T) {
 	}
 	e, ok := apperr.FromError(err)
 	if !ok {
-		t.Fatalf("拒绝错误未携带信封: %v", err)
+		t.Fatalf("rejection error carries no envelope: %v", err)
 	}
 	if e.Code() != "E_COMPOSE_UNSUPPORTED" {
-		t.Fatalf("信封 code = %q, 期望 E_COMPOSE_UNSUPPORTED", e.Code())
+		t.Fatalf("envelope code = %q, want E_COMPOSE_UNSUPPORTED", e.Code())
 	}
 	if e.Context()["expected"] != "urlapp" || e.Context()["actual"] != "composeapp" {
-		t.Fatalf("信封上下文 = %v, 期望 expected=urlapp actual=composeapp", e.Context())
+		t.Fatalf("envelope context = %v, want expected=urlapp actual=composeapp", e.Context())
 	}
 
 	// 不误建：两个名字的 app 行都不存在。
 	for _, name := range []string{"urlapp", "composeapp"} {
 		if _, gerr := env.st.GetAppByName(ctx, name); !errors.Is(gerr, state.ErrAppNotFound) {
-			t.Fatalf("被拒请求不得误建 app %s: %v", name, gerr)
+			t.Fatalf("rejected request must not create app %s: %v", name, gerr)
 		}
 	}
 	// 不入队：无任何在途部署行。
 	if rows, lerr := env.st.ListNonTerminalDeployments(ctx); lerr != nil || len(rows) != 0 {
-		t.Fatalf("被拒请求不得入队: rows=%d err=%v", len(rows), lerr)
+		t.Fatalf("rejected request must not enqueue: rows=%d err=%v", len(rows), lerr)
 	}
 
 	// 一致：正常入队（queued + 部署行 1）。
@@ -335,6 +335,6 @@ func TestDeployAppNameMismatchRejected(t *testing.T) {
 		t.Fatalf("matching receipt = %+v", dr)
 	}
 	if n := deploymentRowCount(t, env.st, "composeapp"); n != 1 {
-		t.Fatalf("一致时应入队：部署行 = %d, 期望 1", n)
+		t.Fatalf("matching names should enqueue: deployment rows = %d, want 1", n)
 	}
 }

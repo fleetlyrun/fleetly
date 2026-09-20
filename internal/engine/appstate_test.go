@@ -35,33 +35,33 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 		want string
 	}{
 		{
-			name: "无部署记录 → down",
+			name: "no deployment records → down",
 			f:    AppFacts{},
 			want: DerivedDown,
 		},
 		{
-			name: "首发失败 scale=0 → down（场景 14）",
+			name: "first deploy failed with scale=0 → down (scenario 14)",
 			f: AppFacts{
 				Latest: latest(func(r *state.DeployRecord) { r.SubstrateHalted = true }),
 			},
 			want: DerivedDown,
 		},
 		{
-			name: "首发未切流失败（无版本归位）→ down",
+			name: "first deploy failed before switch (no revision to replay) → down",
 			f: AppFacts{
 				Latest: latest(nil),
 			},
 			want: DerivedDown,
 		},
 		{
-			name: "首发已切流观察窗失败（unstable）→ degraded（新版本仍服务）",
+			name: "first deploy switched, observe window failed (unstable) → degraded (new version still serving)",
 			f: AppFacts{
 				Latest: latest(func(r *state.DeployRecord) { r.FirstHealthyAt = now; r.Verdict = state.VerdictUnstable }),
 			},
 			want: DerivedDegraded,
 		},
 		{
-			name: "有有效版本 + 绑定 blocked → blocked（优先于 degraded）",
+			name: "valid revision + placement blocked → blocked (takes precedence over degraded)",
 			f: AppFacts{
 				PlacementState:  string(state.PlacementBlocked),
 				Latest:          latest(func(r *state.DeployRecord) { r.Verdict = state.VerdictUnstable }),
@@ -70,7 +70,7 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedBlocked,
 		},
 		{
-			name: "有有效版本 + 绑定 unresolved → blocked",
+			name: "valid revision + placement unresolved → blocked",
 			f: AppFacts{
 				PlacementState:  string(state.PlacementUnresolved),
 				LatestSucceeded: succeeded(nil),
@@ -78,7 +78,7 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedBlocked,
 		},
 		{
-			name: "有有效版本 + 观察窗失败 unstable → degraded（场景 7/8）",
+			name: "valid revision + observe window failed unstable → degraded (scenario 7/8)",
 			f: AppFacts{
 				Latest:          latest(func(r *state.DeployRecord) { r.FirstHealthyAt = now; r.Verdict = state.VerdictUnstable }),
 				LatestSucceeded: succeeded(nil),
@@ -86,7 +86,7 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedDegraded,
 		},
 		{
-			name: "窗后不稳定（成功部署 post-window 告警位）→ degraded（场景 10）",
+			name: "post-window instability (succeeded deploy with post-window alert flag) → degraded (scenario 10)",
 			f: AppFacts{
 				Latest:          succeeded(func(r *state.DeployRecord) {}),
 				LatestSucceeded: succeeded(func(r *state.DeployRecord) { r.Flags = state.DeployFlagPostWindowAlerted }),
@@ -94,7 +94,7 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedDegraded,
 		},
 		{
-			name: "警告通过（W_DEPLOY_INSTABILITY 位）→ degraded（场景 9，§2.10）",
+			name: "warning pass (W_DEPLOY_INSTABILITY flag) → degraded (scenario 9, §2.10)",
 			f: AppFacts{
 				Latest:          succeeded(func(r *state.DeployRecord) { r.Flags = state.DeployFlagInstabilityWarning }),
 				LatestSucceeded: succeeded(func(r *state.DeployRecord) { r.Flags = state.DeployFlagInstabilityWarning }),
@@ -102,7 +102,7 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedDegraded,
 		},
 		{
-			name: "归位成功的失败（replay，无 verdict）→ running（旧版本服务中）",
+			name: "failed after successful replay recovery (replay, no verdict) → running (old version serving)",
 			f: AppFacts{
 				Latest:          latest(func(r *state.DeployRecord) { r.Recovery = state.RecoveryReplay }),
 				LatestSucceeded: succeeded(nil),
@@ -110,7 +110,7 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedRunning,
 		},
 		{
-			name: "成功部署、无异常位 → running",
+			name: "succeeded deploy, no abnormal flags → running",
 			f: AppFacts{
 				Latest:          succeeded(nil),
 				LatestSucceeded: succeeded(nil),
@@ -118,7 +118,7 @@ func TestDeriveAppStatePriorityTable(t *testing.T) {
 			want: DerivedRunning,
 		},
 		{
-			name: "down 与 blocked 并存 → down 优先",
+			name: "down and blocked coexist → down wins",
 			f: AppFacts{
 				PlacementState: string(state.PlacementBlocked),
 				Latest:         latest(func(r *state.DeployRecord) { r.SubstrateHalted = true }),

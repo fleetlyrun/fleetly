@@ -51,14 +51,14 @@ func renderCLIError(err error) string {
 	if st, ok := status.FromError(err); ok {
 		switch st.Code() {
 		case codes.Unauthenticated:
-			return err.Error() + "\n  hint: token 缺失或无效——设 --token / FLEETLY_TOKEN" +
-				"（bootstrap admin token 见 <数据根>/bootstrap-token 文件（B5：一次写入、不进日志、首登后删除）；后续 token 由管理员 fleetly tokens create 签发）"
+			return err.Error() + "\n  hint: token missing or invalid — set --token / FLEETLY_TOKEN" +
+				" (the bootstrap admin token is in the <data root>/bootstrap-token file (written once, never logged, deleted after first login); further tokens are issued by an admin via 'fleetly tokens create')"
 		case codes.Unavailable:
-			return err.Error() + "\n  hint: fleetlyd 不可达——检查 --addr（默认 127.0.0.1:8421，env FLEETLY_ADDR）" +
-				"与守护进程状态（systemctl status fleetlyd）"
+			return err.Error() + "\n  hint: fleetlyd unreachable — check --addr (default 127.0.0.1:8421, env FLEETLY_ADDR)" +
+				" and the daemon status (systemctl status fleetlyd)"
 		case codes.DeadlineExceeded:
-			return err.Error() + "\n  hint: 请求超时——fleetlyd 响应慢或网络问题，重试或加 --timeout" +
-				"（一元 RPC 缺省 30s deadline）"
+			return err.Error() + "\n  hint: request timed out — fleetlyd is slow to respond or a network issue; retry or add --timeout" +
+				" (unary RPCs default to a 30s deadline)"
 		}
 	}
 	var usage *commands.UsageError

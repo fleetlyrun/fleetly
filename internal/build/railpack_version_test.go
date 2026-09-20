@@ -27,11 +27,11 @@ func TestRailpackVersionPinnedMatchesGoMod(t *testing.T) {
 		}
 	}
 	if found == "" {
-		t.Fatalf("go.mod has no railpack require line（依赖被移除？构建层无法交付）")
+		t.Fatalf("go.mod has no railpack require line (dependency removed? the build layer cannot deliver)")
 	}
 	want := needle + RailpackVersion
 	if found != want {
-		t.Fatalf("railpack pin drift: go.mod says %q, code const says %q（两侧必须同票升级）",
+		t.Fatalf("railpack pin drift: go.mod says %q, code const says %q (both sides must upgrade in the same change)",
 			found, want)
 	}
 }

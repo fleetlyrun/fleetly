@@ -240,7 +240,7 @@ func TestEventsWatchPerTokenLimit(t *testing.T) {
 			t.Fatalf("6th stream err = %v, want ResourceExhausted", rerr)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("6th stream 未被拒（上限未生效或拒绝迟于 5s）")
+		t.Fatal("6th stream was not rejected (cap not enforced or rejection took longer than 5s)")
 	}
 
 	// 不同 token 不受牵连：开流成功并收首帧。
@@ -270,6 +270,6 @@ func TestEventsWatchPerTokenLimit(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	if !reopened {
-		t.Fatal("关闭一条流后槽位未释放（无法再开第 5 条）")
+		t.Fatal("slot not released after closing one stream (cannot open the 5th again)")
 	}
 }

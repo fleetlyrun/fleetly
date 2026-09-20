@@ -94,7 +94,7 @@ func (c *appsListCmd) Run(ctx context.Context, env *commands.Environment, args [
 			return writeJSON(env.Stdout, map[string]any{"apps": rows})
 		}
 		if len(rows) == 0 {
-			_, err := fmt.Fprintln(env.Stdout, "no apps（fleetly deploy <compose> 发起首次部署）")
+			_, err := fmt.Fprintln(env.Stdout, "no apps (run 'fleetly deploy <compose>' for the first deploy)")
 			return err
 		}
 		var b strings.Builder
@@ -186,7 +186,7 @@ func (c *appsDeleteCmd) Run(ctx context.Context, env *commands.Environment, args
 		if c.jsonOut {
 			return writeJSON(env.Stdout, map[string]any{"app": resp.GetName(), "lifecycle": resp.GetLifecycle()})
 		}
-		_, err = fmt.Fprintf(env.Stdout, "%s → %s（保留期内名字不释放；恢复 = 重新部署同名应用）\n", resp.GetName(), resp.GetLifecycle())
+		_, err = fmt.Fprintf(env.Stdout, "%s → %s (name stays reserved during retention; to restore, redeploy the same app name)\n", resp.GetName(), resp.GetLifecycle())
 		return err
 	})
 }

@@ -40,7 +40,7 @@ func (r *VersionResolver) ResolveVersion(ctx context.Context, kind ObjectKind, i
 	if err != nil {
 		if errors.Is(err, ErrObjectNotFound) {
 			return ObjectVersion{}, versionConflict(kind, id, "object_not_found",
-				"底座对象已不存在：可能在写前被并发删除，请刷新对象状态后重试")
+				"the substrate object no longer exists: it may have been deleted concurrently before the write; refresh the object state and retry")
 		}
 		return ObjectVersion{}, fmt.Errorf("state: resolve %s %s version: %w", kind, id, err)
 	}
@@ -56,8 +56,8 @@ func (r *VersionResolver) CheckVersion(ctx context.Context, kind ObjectKind, id 
 	}
 	if current.Index != expected.Index {
 		return versionConflict(kind, id, "version_mismatch",
-			"对象已被并发修改（期望版本 "+strconv.FormatUint(expected.Index, 10)+
-				"，底座当前版本 "+strconv.FormatUint(current.Index, 10)+"）：请重新读取后以新令牌重试")
+			"the object was modified concurrently (expected version "+strconv.FormatUint(expected.Index, 10)+
+				", substrate current version "+strconv.FormatUint(current.Index, 10)+"): re-read and retry with a fresh token")
 	}
 	return nil
 }

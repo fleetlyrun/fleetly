@@ -80,7 +80,7 @@ func subscribeWithTimeout(t *testing.T, h *hub, app, service string) (<-chan Ent
 	case r := <-done:
 		return r.ch, r.cancel
 	case <-time.After(5 * time.Second):
-		t.Fatal("subscribe 未在 5s 内返回：回放积压超出缓冲导致持锁阻塞（H1 死锁）")
+		t.Fatal("subscribe did not return within 5s: replay backlog beyond buffer blocks while holding the lock (H1 deadlock)")
 		return nil, nil // 不可达（t.Fatal 已 Fatal）
 	}
 }
@@ -604,7 +604,7 @@ func TestZeroAtLinesDoNotAdvanceCursor(t *testing.T) {
 		t.Fatal("stream cursor missing after first poll")
 	}
 	if want := base.Add(2 * time.Millisecond); !cur.lastAt.Equal(want) {
-		t.Fatalf("cursor = %v, want 最后一个可信时间戳 %v（零 At 续行不得推进游标）", cur.lastAt, want)
+		t.Fatalf("cursor = %v, want last trusted timestamp %v (continuation lines with zero At must not advance the cursor)", cur.lastAt, want)
 	}
 	// 续行照常投递且 At 为零值。
 	zeroSeen := false
@@ -644,10 +644,10 @@ func TestPollWatchdogAbandonsStuckRound(t *testing.T) {
 	select {
 	case <-done:
 		if _, ok := mg.streams[streamKey("stuckapp", "web")]; !ok {
-			t.Fatal("cursor missing（首轮游标应在看门狗触发前登记）")
+			t.Fatal("cursor missing (first-round cursor should be registered before the watchdog fires)")
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("scanOnce 未返回：挂死流未被看门狗放弃（MG-1 纵深防御回归）")
+		t.Fatal("scanOnce did not return: stuck stream not abandoned by the watchdog (MG-1 defense-in-depth regression)")
 	}
 }
 

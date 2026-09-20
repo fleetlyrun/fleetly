@@ -32,7 +32,7 @@ func TestEncryptDecryptRoundtrip(t *testing.T) {
 		t.Fatalf("encrypt: %v", err)
 	}
 	if bytes.Contains(ciphertext, plaintext) {
-		t.Fatal("ciphertext contains plaintext（envelope 破防）")
+		t.Fatal("ciphertext contains plaintext (envelope broken)")
 	}
 	got, err := box.Decrypt(ciphertext)
 	if err != nil {
@@ -96,7 +96,7 @@ func TestKeyPersistenceAndFormat(t *testing.T) {
 		t.Fatalf("key file not an age X25519 identity: %q", line[:min(len(line), 20)])
 	}
 	if _, created2, err := EnsureKey(path); err != nil || created2 {
-		t.Fatalf("second ensure: created=%v err=%v（应复用）", created2, err)
+		t.Fatalf("second ensure: created=%v err=%v (should reuse)", created2, err)
 	}
 	_ = box
 }
@@ -117,7 +117,7 @@ func TestCorruptKeyRejected(t *testing.T) {
 // 用例在 Windows 上跳过（CI linux 腿真实执行）。
 func TestWeakPermissionsRejected(t *testing.T) {
 	if runtime.GOOS == "windows" {
-		t.Skip("windows 不承载 POSIX 文件权限语义（checkKeyPermissions 如实降级）")
+		t.Skip("windows has no POSIX file permission semantics (checkKeyPermissions degrades accordingly)")
 	}
 	path := newKeyFile(t)
 	if _, _, err := EnsureKey(path); err != nil {

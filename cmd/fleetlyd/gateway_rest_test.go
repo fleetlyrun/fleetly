@@ -164,7 +164,7 @@ func TestGatewayRESTDualFace(t *testing.T) {
 		t.Fatalf("envelope missing message: %s", body)
 	}
 	if c, _ := env["code"].(string); c != "" {
-		t.Fatalf("degraded envelope code = %q, want empty (FZ-2 口径)", c)
+		t.Fatalf("degraded envelope code = %q, want empty (FZ-2 contract)", c)
 	}
 
 	// --- 面 2：admin token 走通三个读面。---

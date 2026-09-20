@@ -171,7 +171,7 @@ func (e *Engine) safeCall(name string, fn func()) {
 	// recover 先装（含测试注入路径——包壳对入口注入同样兜底）。
 	defer func() {
 		if r := recover(); r != nil {
-			e.log.Error("engine: duty panic 已捕获（本拍跳过，tick 继续）",
+			e.log.Error("engine: duty panic recovered (skipping this tick, tick continues)",
 				"duty", name, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 		}
 	}()
@@ -181,7 +181,7 @@ func (e *Engine) safeCall(name string, fn func()) {
 			e.dutyCalls[name]++
 		}
 		e.dutyMu.Unlock()
-		panic("injected duty panic (MG-5 测试): " + name)
+		panic("injected duty panic (MG-5 test): " + name)
 	}
 	if e.dutyCalls != nil {
 		e.dutyCalls[name]++
@@ -283,15 +283,15 @@ func (e *Engine) advanceActive(ctx context.Context) {
 func (e *Engine) advanceOne(ctx context.Context, d state.DeployRecord) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			e.log.Error("engine: 引擎推进 panic 已捕获",
+			e.log.Error("engine: engine advance panic recovered",
 				"deployment", d.ID, "status", d.Status,
 				"panic", fmt.Sprint(r), "stack", string(debug.Stack()))
 			// 失败终态兜底：CAS 自当前快照状态出发，行已被并发推进（重启
 			// 恢复/竞争）时落败即幂等收敛；失败码固定 E_RUNTIME_UNAVAILABLE
 			//（panic 原文不进对外 detail，只进日志）。
 			if ferr := e.failTransition(ctx, d, "E_RUNTIME_UNAVAILABLE",
-				"引擎推进 panic 已捕获"); ferr != nil {
-				e.log.Warn("engine: panic 兜底失败终态未落", "deployment", d.ID, "error", ferr)
+				"engine advance panic recovered"); ferr != nil {
+				e.log.Warn("engine: panic fallback failed to record terminal state", "deployment", d.ID, "error", ferr)
 			}
 			err = nil // 已按终态处置：不向上重复告警
 		}
@@ -374,7 +374,7 @@ func (e *Engine) runPreparing(ctx context.Context, rec state.DeployRecord) error
 	// 拾取时刻，排队等待不计入预算，H11；存量行锚点为 0 回落 created_at）。
 	if anchor := prepareBudgetBaseline(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.DeployTimeout {
 		return e.failTransition(ctx, rec, "E_RUNTIME_UNAVAILABLE",
-			"准备阶段超过发布看门狗预算（底座不可用或环境异常）")
+			"preparing phase exceeded the deploy watchdog budget (substrate unavailable or environment error)")
 	}
 	if err := e.requireSwarm(ctx, rec); err != nil {
 		return err // 暂态：下一 tick 重试（预算由上守）
@@ -418,7 +418,7 @@ func (e *Engine) runBuilding(ctx context.Context, rec state.DeployRecord) error 
 	// 构建预算同 preparing：锚点起算（拾取时刻，排队不计入，H11）。
 	if anchor := prepareBudgetBaseline(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.DeployTimeout {
 		return e.failTransition(ctx, rec, "E_RUNTIME_UNAVAILABLE",
-			"构建核对阶段超过发布看门狗预算")
+			"building phase exceeded the deploy watchdog budget")
 	}
 	if err := e.requireSwarm(ctx, rec); err != nil {
 		return err
@@ -439,7 +439,7 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 	}
 	if spec.SpecHash != rec.SpecHash {
 		return nil, errorf("E_COMPOSE_UNSUPPORTED",
-			"compose 文件自入队后被改写（spec_hash %s → %s）：请取消后重新部署",
+			"compose file changed since enqueue (spec_hash %s → %s): cancel and redeploy",
 			rec.SpecHash, spec.SpecHash)
 	}
 
@@ -472,7 +472,7 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 		// 键集交叉核对：提取器与归一化形态必须同源（文件被换写的防御）。
 		if !envKeySetsMatch(svc.Environment, se.File, se.Compose) {
 			return nil, errorf("E_COMPOSE_UNSUPPORTED",
-				"服务 %s 的 env 键集与归一化形态不一致（compose 文件可能被并发改写）", svc.Name)
+				"env key set of service %s does not match the normalized form (compose file may have been rewritten concurrently)", svc.Name)
 		}
 	}
 
@@ -502,7 +502,7 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	}
 	volumes, err := e.store.ListAppVolumes(ctx, rec.AppID)
 	if err != nil {
-		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "读取卷注册表失败: %v", err))
+		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "failed to read volume registry: %v", err))
 	}
 	plan, err := BuildPlan(PlanInput{
 		AppID:        rec.AppID,
@@ -522,7 +522,7 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 
 	snapshot, err := e.box.Encrypt(plan.DesiredSpecJSON)
 	if err != nil {
-		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "期望态快照加密失败: %v", err))
+		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "failed to encrypt desired-state snapshot: %v", err))
 	}
 
 	// 规划警告（W_ENV_PLATFORM_OVERRIDE 等）以 deployment.warning 事件披露。
@@ -570,7 +570,7 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	if err := e.applyDesired(ctx, rec, plan.Services, false); err != nil {
 		ae := appErrOf(err, rec.ID)
 		return e.failUnswitchedOrSwitched(ctx, rec, ae.Code(),
-			fmt.Sprintf("发布对账执行失败（半应用现场已按失败分流处置——归位/scale=0）：%s", ae.Message()))
+			fmt.Sprintf("release reconcile failed (half-applied state routed per failure policy — replay/scale=0): %s", ae.Message()))
 	}
 	return nil
 }
@@ -587,16 +587,16 @@ func (e *Engine) resolveImage(ctx context.Context, rec state.DeployRecord, svc *
 		if err != nil {
 			if errors.Is(err, ErrImageMissing) {
 				return "", errorf("E_IMAGE_PULL_FAILED",
-					"服务 %s 的镜像 %s 本机不可得（v0.1 单节点以本机镜像部署；请先 pull 或 build）", svc.Name, ref)
+					"image %s of service %s not available locally (v0.1 is single-node and deploys local images; pull or build it first)", svc.Name, ref)
 			}
-			return "", errorf("E_RUNTIME_UNAVAILABLE", "镜像检查失败 %s: %v", ref, err)
+			return "", errorf("E_RUNTIME_UNAVAILABLE", "image check failed %s: %v", ref, err)
 		}
 		return pinDigest(ref, digest), nil
 	}
 
 	builds, err := e.store.ListAppBuilds(ctx, rec.AppID, 50)
 	if err != nil {
-		return "", errorf("E_RUNTIME_UNAVAILABLE", "读取构建历史失败: %v", err)
+		return "", errorf("E_RUNTIME_UNAVAILABLE", "failed to read build history: %v", err)
 	}
 	for _, b := range builds {
 		if b.Service != svc.Name || b.Status != state.BuildSucceeded || b.ImageDigest == "" {
@@ -616,12 +616,12 @@ func (e *Engine) resolveImage(ctx context.Context, rec state.DeployRecord, svc *
 			if errors.Is(err, ErrImageMissing) {
 				continue // 构建产物已被清理：尝试更早的成功构建
 			}
-			return "", errorf("E_RUNTIME_UNAVAILABLE", "镜像检查失败 %s: %v", b.ImageRef, err)
+			return "", errorf("E_RUNTIME_UNAVAILABLE", "image check failed %s: %v", b.ImageRef, err)
 		}
 		return pinDigest(b.ImageRef, digest), nil
 	}
 	return "", errorf("E_BUILD_FAILED",
-		"服务 %s 无匹配当前 compose（spec_hash %.12s）的可用构建：先执行 fleetly build 再部署",
+		"service %s has no available build matching the current compose (spec_hash %.12s): run fleetly build before deploying",
 		svc.Name, rec.SpecHash)
 }
 
@@ -640,7 +640,7 @@ func (e *Engine) requireSwarm(ctx context.Context, rec state.DeployRecord) error
 			e.log.Warn("engine: swarm not ready, retrying next tick", "deployment", rec.ID)
 			return nil
 		}
-		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "底座检查失败: %v", err))
+		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "substrate check failed: %v", err))
 	}
 	return nil
 }
@@ -653,14 +653,14 @@ func (e *Engine) requireSwarm(ctx context.Context, rec state.DeployRecord) error
 func (e *Engine) platformEnvForMerge(ctx context.Context, appID string) ([]envlayer.PlatformVar, error) {
 	rows, err := e.store.ListAppEnv(ctx, appID)
 	if err != nil {
-		return nil, errorf("E_RUNTIME_UNAVAILABLE", "读取平台 env 失败: %v", err)
+		return nil, errorf("E_RUNTIME_UNAVAILABLE", "failed to read platform env: %v", err)
 	}
 	out := make([]envlayer.PlatformVar, 0, len(rows))
 	for _, row := range rows {
 		plain, err := e.box.Decrypt([]byte(row.Value))
 		if err != nil {
 			return nil, errorf("E_RUNTIME_UNAVAILABLE",
-				"平台 env %s 解密失败（主密钥不匹配或密文损坏）", row.Key)
+				"failed to decrypt platform env %s (master key mismatch or corrupted ciphertext)", row.Key)
 		}
 		out = append(out, envlayer.PlatformVar{Key: row.Key, Value: string(plain), Source: row.Source})
 	}

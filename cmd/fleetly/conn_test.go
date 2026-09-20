@@ -29,7 +29,7 @@ func TestUnaryTimeoutInterceptor(t *testing.T) {
 		return nil
 	}
 	if err := defaultUnaryTimeout(context.Background(), "/x", nil, nil, nil, probe); err != nil || !sawDeadline {
-		t.Fatalf("缺省 deadline 未挂载: err=%v saw=%v", err, sawDeadline)
+		t.Fatalf("default deadline not attached: err=%v saw=%v", err, sawDeadline)
 	}
 
 	// 挂起调用 + 更早的父 deadline → 限时失败（不等待 30s 缺省值）。
@@ -42,14 +42,14 @@ func TestUnaryTimeoutInterceptor(t *testing.T) {
 	start := time.Now()
 	err := defaultUnaryTimeout(parent, "/x", nil, nil, nil, hang)
 	if elapsed := time.Since(start); elapsed > 5*time.Second {
-		t.Fatalf("挂起调用未按父 deadline 限时失败: %v", elapsed)
+		t.Fatalf("hanging call did not fail on the parent deadline: %v", elapsed)
 	}
 	if status.Code(err) != codes.DeadlineExceeded {
-		t.Fatalf("挂起调用错误非 DeadlineExceeded: %v", err)
+		t.Fatalf("hanging call error is not DeadlineExceeded: %v", err)
 	}
-	for _, want := range []string{"请求超时", "--timeout"} {
+	for _, want := range []string{"request timed out", "--timeout"} {
 		if !strings.Contains(renderCLIError(err), want) {
-			t.Errorf("DeadlineExceeded 渲染缺 %q:\n%s", want, renderCLIError(err))
+			t.Errorf("DeadlineExceeded render missing %q:\n%s", want, renderCLIError(err))
 		}
 	}
 }
@@ -60,19 +60,19 @@ func TestIsCleanCancel(t *testing.T) {
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 	if !isCleanCancel(canceled, context.Canceled) {
-		t.Error("Canceled 本尊应判干净")
+		t.Error("context.Canceled itself should count as clean")
 	}
 	if !isCleanCancel(canceled, status.FromContextError(context.Canceled).Err()) {
-		t.Error("gRPC 投影（codes.Canceled）应判干净")
+		t.Error("gRPC projection (codes.Canceled) should count as clean")
 	}
 	if isCleanCancel(context.Background(), status.Error(codes.Canceled, "server canceled")) {
-		t.Error("根 ctx 未取消（服务端取消）不得判干净")
+		t.Error("server-side cancel with a live root ctx must not count as clean")
 	}
 	if isCleanCancel(canceled, context.DeadlineExceeded) {
-		t.Error("DeadlineExceeded 不得判干净")
+		t.Error("DeadlineExceeded must not count as clean")
 	}
 	if isCleanCancel(canceled, nil) {
-		t.Error("无错误不得判干净")
+		t.Error("nil error must not count as clean")
 	}
 }
 
@@ -90,10 +90,10 @@ func TestStreamCancelCleanExit(t *testing.T) {
 		env := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
 		code := newApp().Run(ctx, env, args)
 		if code != 0 {
-			t.Fatalf("%v: code=%d, 期望 0（干净退出）\nstderr=%s", args, code, stderr.String())
+			t.Fatalf("%v: code=%d, want 0 (clean exit)\nstderr=%s", args, code, stderr.String())
 		}
 		if stderr.Len() != 0 {
-			t.Fatalf("%v: 干净退出不得渲染错误: %q", args, stderr.String())
+			t.Fatalf("%v: clean exit must not render an error: %q", args, stderr.String())
 		}
 	}
 }
@@ -111,7 +111,7 @@ func TestWaitVerbCancelCleanExit(t *testing.T) {
 		env := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
 		code := newApp().Run(ctx, env, args)
 		if code != 0 || stderr.Len() != 0 {
-			t.Fatalf("%v: code=%d stderr=%q, 期望 0/空（干净退出）", args, code, stderr.String())
+			t.Fatalf("%v: code=%d stderr=%q, want 0/empty (clean exit)", args, code, stderr.String())
 		}
 	}
 }
@@ -129,27 +129,27 @@ func TestTokenFlagHelpNoEnvEcho(t *testing.T) {
 	// 帮助面 ①：动词级 -h（apps list 带 conn flags）。
 	code, out, _ := runCLI(t, "apps", "list", "-h")
 	if code != 0 {
-		t.Fatalf("apps list -h: code=%d, 期望 0（-h 是帮助退出）", code)
+		t.Fatalf("apps list -h: code=%d, want 0 (-h is a help exit)", code)
 	}
 	if strings.Contains(out, secret) {
-		t.Fatalf("动词级 -h 回显了 FLEETLY_TOKEN 本体:\n%s", out)
+		t.Fatalf("verb-level -h echoed the FLEETLY_TOKEN value:\n%s", out)
 	}
 	// 帮助面 ②：顶层 help <verb>（deploy 带 conn flags）。
 	code, out, _ = runCLI(t, "help", "deploy")
 	if code != 0 {
-		t.Fatalf("help deploy: code=%d, 期望 0", code)
+		t.Fatalf("help deploy: code=%d, want 0", code)
 	}
 	if strings.Contains(out, secret) {
-		t.Fatalf("help <verb> 回显了 FLEETLY_TOKEN 本体:\n%s", out)
+		t.Fatalf("help <verb> echoed the FLEETLY_TOKEN value:\n%s", out)
 	}
 	// 文案口径：指路 env 与 bootstrap-token 文件，不出现已废除的日志通道。
 	for _, want := range []string{"FLEETLY_TOKEN", "bootstrap-token"} {
 		if !strings.Contains(out, want) {
-			t.Errorf("token 帮助文案缺 %q 指引:\n%s", want, out)
+			t.Errorf("token help text missing %q guidance:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "first-start log") || strings.Contains(out, "首启日志") {
-		t.Errorf("token 帮助文案仍指向已废除的日志通道:\n%s", out)
+	if strings.Contains(out, "first-start log") {
+		t.Errorf("token help text still points to the retired log channel:\n%s", out)
 	}
 }
 
@@ -157,9 +157,9 @@ func TestTokenFlagHelpNoEnvEcho(t *testing.T) {
 // 渲染：与 401 hint 同风格的可行动提示（地址/环境变量/守护进程状态）。
 func TestRenderUnavailableHint(t *testing.T) {
 	got := renderCLIError(status.Error(codes.Unavailable, "connection error: dial 127.0.0.1:8421: connect: connection refused"))
-	for _, want := range []string{"fleetlyd 不可达", "--addr", "127.0.0.1:8421", "FLEETLY_ADDR", "systemctl status fleetlyd"} {
+	for _, want := range []string{"fleetlyd unreachable", "--addr", "127.0.0.1:8421", "FLEETLY_ADDR", "systemctl status fleetlyd"} {
 		if !strings.Contains(got, want) {
-			t.Errorf("Unavailable 渲染缺 %q:\n%s", want, got)
+			t.Errorf("Unavailable render missing %q:\n%s", want, got)
 		}
 	}
 }

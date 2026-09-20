@@ -134,7 +134,7 @@ func TestDriftDetectionEmitsEventOnceAndDoesNotConvergeByDefault(t *testing.T) {
 	// 同一漂移存续：不重复发事件（迁移判定）。
 	h.eng.DriftScan(ctx)
 	if n := countEvents(t, h, "reconcile.drift_detected"); n != 1 {
-		t.Fatalf("drift event count = %d, want 1（只报迁移）", n)
+		t.Fatalf("drift event count = %d, want 1 (only the transition is reported)", n)
 	}
 
 	// opt-in 默认关：漂移不被自动收敛（外部改动保持原样）。
@@ -369,10 +369,10 @@ func TestDriftGlobalServiceNoFalsePositive(t *testing.T) {
 	// 投影归一断言：两侧哈希一致（旧缺陷：期望 1 vs 实况 0 永久假阳性）。
 	h.eng.DriftScan(ctx)
 	if hasEvent(h.events(), "reconcile.drift_detected") {
-		t.Fatal("global 服务的副本口径差被误报为漂移（M1-3 假阳性）")
+		t.Fatal("global service replica-semantics difference was misreported as drift (M1-3 false positive)")
 	}
 	report, err := h.eng.DriftShow(ctx, "demo")
 	if err != nil || report.Drifted {
-		t.Fatalf("drift show = %+v (%v), want no drift（global 副本口径归一）", report, err)
+		t.Fatalf("drift show = %+v (%v), want no drift (global replica semantics normalized)", report, err)
 	}
 }

@@ -523,7 +523,7 @@ func (e *Engine) ConvergeApp(ctx context.Context, appName, actor string) (state.
 	}
 	if has {
 		return state.DeployRecord{}, apperrConflict(
-			"应用 %s 存在在途部署：等部署终态后再收敛", app.Name)
+			"app %s has a deployment in flight: wait for it to reach a terminal state before converging", app.Name)
 	}
 	if actor == "" {
 		actor = "human"

@@ -279,7 +279,7 @@ func TestListAppsLimitDefaultAndBatchDerived(t *testing.T) {
 			t.Fatalf("GetApp %s: %v", name, derr)
 		}
 		if detail.GetDerivedState() != want {
-			t.Fatalf("GetApp derived %s = %s, want %s (批量/单读面不同源)", name, detail.GetDerivedState(), want)
+			t.Fatalf("GetApp derived %s = %s, want %s (batch and single-read surfaces use different sources)", name, detail.GetDerivedState(), want)
 		}
 	}
 }

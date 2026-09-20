@@ -35,10 +35,10 @@ func TestBuildSwarmSpecManagedFields(t *testing.T) {
 		t.Fatal("update config missing")
 	}
 	if string(uc.FailureAction) != "pause" {
-		t.Fatalf("failure_action = %s, want pause（平台固定，D-REL-1）", uc.FailureAction)
+		t.Fatalf("failure_action = %s, want pause (platform-fixed, D-REL-1)", uc.FailureAction)
 	}
 	if uc.Monitor != 5*time.Second {
-		t.Fatalf("monitor = %s, want 5s（平台固定，不放大）", uc.Monitor)
+		t.Fatalf("monitor = %s, want 5s (platform-fixed, not scaled up)", uc.Monitor)
 	}
 	if uc.Parallelism != 1 || string(uc.Order) != "start-first" {
 		t.Fatalf("parallelism/order = %d/%s", uc.Parallelism, uc.Order)

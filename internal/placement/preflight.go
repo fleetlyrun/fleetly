@@ -34,7 +34,7 @@ func (r *Resolver) Preflight(ctx context.Context, appID string) error {
 	}
 	if p.State == state.PlacementBlocked || p.State == state.PlacementUnresolved {
 		return apperr.New("E_PLACEMENT_NODE_UNAVAILABLE",
-			"应用绑定当前不可用（state=%s reason=%s）：新部署快速失败，不排队", p.State, p.Reason).
+			"app binding is currently unavailable (state=%s reason=%s): new deploys fail fast instead of queueing", p.State, p.Reason).
 			WithContext("node", p.PlatformNodeID).
 			WithContext("state", string(p.State))
 	}
@@ -48,7 +48,7 @@ func (r *Resolver) Preflight(ctx context.Context, appID string) error {
 		// 映射缺失 = 身份锚未完成/节点重建中：无法验证即视为不可用
 		//（保守：不猜测，快速失败）。
 		return apperr.New("E_PLACEMENT_NODE_UNAVAILABLE",
-			"绑定节点 %s 缺少底座映射（身份锚未完成或节点重建中）", p.PlatformNodeID).
+			"bound node %s is missing its substrate mapping (identity anchoring incomplete or node being rebuilt)", p.PlatformNodeID).
 			WithContext("node", p.PlatformNodeID)
 	} else if err != nil {
 		return fmt.Errorf("placement: read runtime node ref: %w", err)
@@ -57,7 +57,7 @@ func (r *Resolver) Preflight(ctx context.Context, appID string) error {
 	switch {
 	case errors.Is(err, errNodeMissing):
 		return apperr.New("E_PLACEMENT_NODE_GONE",
-			"绑定节点 %s（%s）已不在底座节点快照中：人工恢复数据后 rebind，或确认丢弃",
+			"bound node %s (%s) is no longer in the substrate node snapshot: restore the data manually and rebind, or confirm discard",
 			p.PlatformNodeID, ref.SwarmNodeID).
 			WithContext("node", p.PlatformNodeID)
 	case err != nil:
@@ -65,7 +65,7 @@ func (r *Resolver) Preflight(ctx context.Context, appID string) error {
 	}
 	if !ready(n) {
 		return apperr.New("E_PLACEMENT_NODE_UNAVAILABLE",
-			"绑定节点 %s 非 ready（state=%s availability=%s）：等待恢复或确认数据后 rebind",
+			"bound node %s is not ready (state=%s availability=%s): wait for recovery, or rebind after confirming the data",
 			n.Hostname, n.State, n.Availability).
 			WithContext("node", p.PlatformNodeID).
 			WithContext("hostname", n.Hostname)
@@ -96,7 +96,7 @@ func (r *Resolver) VerifyVolumesOnNode(ctx context.Context, appID, targetPlatfor
 	}
 	sort.Strings(mismatched)
 	return apperr.New("E_VOLUME_NODE_MISMATCH",
-		"卷数据节点 ≠ 部署目标节点 %s：%s——声明数据处置（data-restored/discard）后重试",
+		"volume data node ≠ deploy target node %s: %s — declare a data disposition (data-restored/discard) and retry",
 		targetPlatformNodeID, strings.Join(mismatched, ", ")).
 		WithContext("node", targetPlatformNodeID).
 		WithContext("volumes", strings.Join(mismatched, ","))

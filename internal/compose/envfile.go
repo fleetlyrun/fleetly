@@ -27,17 +27,17 @@ func parseEnvFile(service, path string, content []byte) (map[string]string, erro
 		line = strings.TrimPrefix(line, "export ")
 		key, value, found := strings.Cut(line, "=")
 		if !found {
-			return nil, errCompose("服务 %q 的 env_file %s 行格式非法（要求 KEY=VALUE）", service, lineCtx).
+			return nil, errCompose("invalid line format in env_file %s of service %q (expected KEY=VALUE)", service, lineCtx).
 				WithContext("path", lineCtx)
 		}
 		key = strings.TrimSpace(key)
 		value = strings.TrimSpace(value)
 		if key == "" {
-			return nil, errCompose("服务 %q 的 env_file %s 键名为空", service, lineCtx).
+			return nil, errCompose("empty key name in env_file %s of service %q", service, lineCtx).
 				WithContext("path", lineCtx)
 		}
 		if strings.ContainsAny(key, " \t") {
-			return nil, errCompose("服务 %q 的 env_file %s 键名含空白", service, lineCtx).
+			return nil, errCompose("key name contains whitespace in env_file %s of service %q", service, lineCtx).
 				WithContext("path", lineCtx)
 		}
 		out[key] = unquoteLiteral(value)

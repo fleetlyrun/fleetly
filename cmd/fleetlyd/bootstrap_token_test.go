@@ -80,7 +80,7 @@ func TestBootstrapTokenWrittenToFileNotLogged(t *testing.T) {
 		if rows2, lerr := st2.ListTokens(context.Background()); lerr != nil || len(rows2) != 0 {
 			t.Fatalf("existing token file must short-circuit generation, rows = %d err = %v", len(rows2), lerr)
 		}
-		if strings.Contains(buf.String()[len(before):], "已生成并写入") {
+		if strings.Contains(buf.String()[len(before):], "generated and written to file") {
 			t.Fatalf("existing token file must short-circuit generation log: %q", buf.String()[len(before):])
 		}
 	}

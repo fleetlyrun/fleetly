@@ -63,20 +63,20 @@ func TestTickDutiesAllGoThroughSafeCall(t *testing.T) {
 
 	// duty 总数与清单一致（多出的 safeCall 调用点也要进清单受管）。
 	if got := strings.Count(tickBody, "e.safeCall("); got != len(tickDutyManifest) {
-		t.Fatalf("tick 内 safeCall 调用点 = %d, 清单 = %d（两侧必须同步维护）", got, len(tickDutyManifest))
+		t.Fatalf("safeCall call sites in tick = %d, manifest = %d (both sides must be kept in sync)", got, len(tickDutyManifest))
 	}
 	for _, duty := range tickDutyManifest {
 		if !strings.Contains(tickBody, fmt.Sprintf("e.safeCall(%q, func() {", duty)) {
-			t.Errorf("tick 的 duty %q 未经 safeCall 收口（MG-5 契约：新增 duty 必须走 helper 并进 tickDutyManifest）", duty)
+			t.Errorf("duty %q in tick does not go through safeCall (MG-5 contract: new duties must use the helper and join tickDutyManifest)", duty)
 		}
 	}
 	// Run 的 drift 分支：driftScan 必须经 safeCall（tick 与 drift ticker 的
 	// 全部 duty 调用点收口，M1-7）。
 	if !strings.Contains(runBody, `e.safeCall("driftScan", func() { e.driftScan(ctx) })`) {
-		t.Error(`Run 的 driftTicker 分支未经 safeCall("driftScan", ...) 收口`)
+		t.Error(`Run's driftTicker branch does not go through safeCall("driftScan", ...)`)
 	}
 	if strings.Count(runBody, "e.driftScan(ctx)") != 1 {
-		t.Error("Run 内 e.driftScan(ctx) 出现次数 != 1（只应存在于 safeCall 包壳内）")
+		t.Error("e.driftScan(ctx) appears != 1 times in Run (it should only exist inside the safeCall wrapper)")
 	}
 }
 
@@ -95,7 +95,7 @@ func TestTickSingleDutyPanicIsolated(t *testing.T) {
 					continue
 				}
 				if h.eng.dutyCallCount(other) == 0 {
-					t.Fatalf("duty %q panic 后其余 duty %q 未执行（tick 循环被打死）", duty, other)
+					t.Fatalf("after duty %q panicked, other duty %q did not run (tick loop was killed)", duty, other)
 				}
 			}
 		})
@@ -124,16 +124,16 @@ func TestWatchPostWindowPanicDoesNotKillTick(t *testing.T) {
 	h.eng.Tick(ctx)
 	row := mustGet(h, rec2.ID)
 	if row.Status == state.DeployQueued {
-		t.Fatal("pickQueued skipped: 第二条部署仍 queued（tick 被 watchPostWindow panic 打死）")
+		t.Fatal("pickQueued skipped: second deployment still queued (tick was killed by the watchPostWindow panic)")
 	}
 	if row.Status == state.DeployFailed {
-		t.Fatalf("rec2 被误判失败 %s（毒点只应命中 demo 的巡检面）", row.ErrorCode)
+		t.Fatalf("rec2 misjudged as failed %s (the poison point should only hit demo's patrol surface)", row.ErrorCode)
 	}
 	// 清毒：后续拍照常收敛（部署成功 + 巡检告警补上）。
 	h.sub.panicOn = map[string]bool{}
 	final := h.runToTerminal(rec2)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("rec2 = %s (%s), want succeeded（tick 存活）", final.Status, final.ErrorCode)
+		t.Fatalf("rec2 = %s (%s), want succeeded (tick survived)", final.Status, final.ErrorCode)
 	}
 }
 
@@ -162,23 +162,23 @@ func TestDriftScanPanicDoesNotKillRunLoop(t *testing.T) {
 	for (eng.dutyCallCount("driftScan") < 2 || eng.dutyCallCount("tick") < 2) && time.Now().Before(deadline) {
 		select {
 		case err := <-done:
-			t.Fatalf("Run 提前退出（drift panic 打穿循环）: %v", err)
+			t.Fatalf("Run exited early (drift panic broke through the loop): %v", err)
 		case <-time.After(2 * time.Millisecond):
 		}
 	}
 	if got := eng.dutyCallCount("driftScan"); got < 2 {
-		t.Fatalf("driftScan 仅执行 %d 拍（panic 打死了 Run 循环）", got)
+		t.Fatalf("driftScan ran only %d beats (panic killed the Run loop)", got)
 	}
 	if got := eng.dutyCallCount("tick"); got < 2 {
-		t.Fatalf("tick 仅执行 %d 拍（drift panic 打死了 Run 循环）", got)
+		t.Fatalf("tick ran only %d beats (drift panic killed the Run loop)", got)
 	}
 	cancel()
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("Run 返回错误: %v", err)
+			t.Fatalf("Run returned an error: %v", err)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("Run 未随 ctx 取消退出")
+		t.Fatal("Run did not exit on ctx cancellation")
 	}
 }

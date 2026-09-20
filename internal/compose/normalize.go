@@ -50,7 +50,7 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 			}
 			if !knownFleetlyLabels[k] {
 				return nil, nil, apperr.New("E_LABEL_RESERVED",
-					"服务 %q 占用平台保留 label %q（保留命名空间 %s*，约定键：%s 等）",
+					"service %q uses the reserved platform label %q (reserved namespace %s*, convention keys such as %s)",
 					name, k, LabelNamespace, strings.Join(sortedStringKeys(knownFleetlyLabels), ", ")).
 					WithContext("path", prefix+".labels."+k)
 			}
@@ -59,7 +59,7 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 			ws.add(Warning{
 				Kind:    WarningKindUserLabelNotPassed,
 				Service: name,
-				Message: "服务 " + name + " 声明了非平台 label（" + strings.Join(userLabels, ", ") + "）：平台不透传用户 label（v0.1），仅消费 fleetly.* 平台约定键",
+				Message: "service " + name + " declares non-platform labels (" + strings.Join(userLabels, ", ") + "): the platform does not pass through user labels (v0.1) and only consumes fleetly.* platform convention keys",
 			})
 		}
 
@@ -86,7 +86,7 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 				ws.add(Warning{
 					Kind:    WarningKindCronLabelPending,
 					Service: name,
-					Message: "服务 " + name + " 声明了 " + k + "（定时任务为 v0.2 契约，v0.1 按长驻服务部署）",
+					Message: "service " + name + " declares " + k + " (scheduled jobs are a v0.2 contract; v0.1 deploys the service as long-running)",
 				})
 				break
 			}
@@ -134,7 +134,7 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 			ws.add(Warning{
 				Code:    "W_DEPLOY_NO_HEALTHCHECK",
 				Service: services[i].Name,
-				Message: "服务 " + services[i].Name + " 未声明 healthcheck：health_gate=none（发布健康门退化为退出/副本水位判定，故障暴露更晚）",
+				Message: "service " + services[i].Name + " declares no healthcheck: health_gate=none (the health gate degrades to exit/replica-count checks, so failures surface later)",
 			})
 		}
 	}
@@ -195,12 +195,12 @@ func normalizeService(workDir, name string, svc *types.ServiceConfig, ws *warnin
 		// 危险挂载语义（Coolify CVE-2025-34159 根因类）：宿主 bind 与
 		// docker.sock 一律拒绝（admin 显式开启 + 审计为后续票 TODO）。
 		if v.Type == "bind" {
-			return out, errCompose("服务 %q 的卷挂载 %s:%s 为宿主路径 bind（危险字段默认拒绝；数据持久化用命名卷）", name, v.Source, v.Target).
+			return out, errCompose("volume mount %s:%s of service %q is a host-path bind (dangerous fields are denied by default; use named volumes for data persistence)", name, v.Source, v.Target).
 				WithContext("path", "services."+name+".volumes").
 				WithContext("reason", "host_bind")
 		}
 		if isDockerSockTarget(v.Target) {
-			return out, errCompose("服务 %q 的卷挂载目标 %s 命中 Docker 守护进程套接字（危险字段默认拒绝）", name, v.Target).
+			return out, errCompose("volume mount target %s of service %q hits the Docker daemon socket (dangerous fields are denied by default)", name, v.Target).
 				WithContext("path", "services."+name+".volumes").
 				WithContext("reason", "docker_sock")
 		}
@@ -217,7 +217,7 @@ func normalizeService(workDir, name string, svc *types.ServiceConfig, ws *warnin
 		// 多副本共享——双任务并发挂同一卷有数据风险；replicas 0/1 合法，
 		// 上限校验收敛在 >1，省略 = 平台按 1 处理）。
 		if r := svc.Deploy.Replicas; r != nil && *r > 1 && len(svc.Volumes) > 0 {
-			return out, errCompose("服务 %q 挂载命名卷且 replicas=%d（本地卷不能多副本共享，replicas 必须 ≤1）", name, *r).
+			return out, errCompose("service %q mounts named volumes with replicas=%d (local volumes cannot be shared across replicas; replicas must be ≤1)", name, *r).
 				WithContext("path", "services."+name+".deploy.replicas")
 		}
 		out.Deploy = normalizeDeploy(svc.Deploy)
@@ -284,7 +284,7 @@ func mergeEnvironment(workDir, name string, svc *types.ServiceConfig) ([]EnvVar,
 			if !bool(ef.Required) {
 				continue // required: false 显式缺省容忍
 			}
-			return nil, errCompose("服务 %q 的 env_file %s 不可读: %v", name, ef.Path, err).
+			return nil, errCompose("env_file %s of service %q is not readable: %v", name, ef.Path, err).
 				WithContext("path", "services."+name+".env_file")
 		}
 		kvs, err := parseEnvFile(name, ef.Path, content)
@@ -298,7 +298,7 @@ func mergeEnvironment(workDir, name string, svc *types.ServiceConfig) ([]EnvVar,
 	for k, v := range svc.Environment {
 		if v == nil {
 			// dict 层已拒绝裸键；typed 兜底（防御性，理论不可达）。
-			return nil, errCompose("服务 %q 的 environment 条目 %q 未给字面值", name, k).
+			return nil, errCompose("environment entry %q of service %q has no literal value", name, k).
 				WithContext("path", "services."+name+".environment."+k)
 		}
 		merged[k] = EnvVar{Key: k, Hash: sha256Hex(*v), Source: EnvSourceEnvironment}

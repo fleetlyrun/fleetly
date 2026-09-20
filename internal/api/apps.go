@@ -174,7 +174,7 @@ func (s *AppsService) DeleteApp(ctx context.Context, req *serverv1.DeleteAppRequ
 // 层同事务 fail-closed。secret 缺失的端点是 404 语义（未配置即未启用）。
 func (s *AppsService) SetAppWebhookSecret(ctx context.Context, req *serverv1.SetAppWebhookSecretRequest) (*serverv1.SetAppWebhookSecretResponse, error) {
 	if len(req.GetSecret()) < 16 {
-		return nil, statusInvalidArgument("webhook secret must be at least 16 characters (验签是该端点的唯一认证)")
+		return nil, statusInvalidArgument("webhook secret must be at least 16 characters (signature verification is this endpoint's only authentication)")
 	}
 	app, err := resolveApp(ctx, s.st, req.GetName())
 	if err != nil {
@@ -225,7 +225,7 @@ func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSour
 		return nil, statusInvalidArgument("source_auth_secret requires source_auth_kind https_token or ssh_key")
 	}
 	if kind != state.SourceAuthNone && req.GetSourceAuthSecret() == "" {
-		return nil, statusInvalidArgument("source_auth_kind " + string(kind) + " requires source_auth_secret (整体替换语义——无法留旧)")
+		return nil, statusInvalidArgument("source_auth_kind " + string(kind) + " requires source_auth_secret (whole-replacement semantics — the old value cannot be kept)")
 	}
 	// E7④（S19）：认证材料最小长度与 webhook secret 同标（≥16）——弱材料
 	// 即便 envelope 加密落库，认证面仍在线可穷举。

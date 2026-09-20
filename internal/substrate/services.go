@@ -83,7 +83,7 @@ func (c *Client) SwarmReady(ctx context.Context) error {
 		return fmt.Errorf("substrate: info: %w", err)
 	}
 	if res.Info.Swarm.NodeID == "" || res.Info.Swarm.LocalNodeState != swarm.LocalNodeStateActive {
-		return fmt.Errorf("%w: swarm 未初始化（安装器负责 docker swarm init；手动环境先执行 docker swarm init）", engine.ErrNotSwarmReady)
+		return fmt.Errorf("%w: swarm not initialized (the installer runs docker swarm init; run docker swarm init first on manual setups)", engine.ErrNotSwarmReady)
 	}
 	return nil
 }

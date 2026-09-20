@@ -48,7 +48,7 @@ func TestNoHeartbeatWording(t *testing.T) {
 		content := string(raw)
 		for _, word := range banned {
 			if strings.Contains(content, word) {
-				t.Errorf("%s contains banned wording %q（平台不承诺节点心跳时间戳，用 last_seen_at 观测语义）", f, word)
+				t.Errorf("%s contains banned wording %q (the platform does not promise node heartbeat timestamps; use last_seen_at observation semantics)", f, word)
 			}
 		}
 	}

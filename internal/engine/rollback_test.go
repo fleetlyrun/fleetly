@@ -92,7 +92,7 @@ func TestRollbackReplaysSnapshotWithEnv(t *testing.T) {
 	}
 	for _, kv := range svc.spec.Env {
 		if strings.HasPrefix(kv, "ROLLBACK_PROBE=") {
-			t.Fatalf("v2 env survived rollback: %s（env 随快照回滚）", kv)
+			t.Fatalf("v2 env survived rollback: %s (env rolls back with the snapshot)", kv)
 		}
 	}
 	// 目标版本固化为新 revision（回滚 = 一次成功部署；哈希与 v1 一致——
@@ -105,12 +105,12 @@ func TestRollbackReplaysSnapshotWithEnv(t *testing.T) {
 		t.Fatalf("revisions = %d rows newest=%s, want 3 rows newest=%s", len(rows), rows[0].ID, final.RevisionID)
 	}
 	if rows[0].DesiredHash != v1.DesiredHash {
-		t.Fatalf("rollback revision hash = %s, want v1 %s（重放哈希稳定）", rows[0].DesiredHash, v1.DesiredHash)
+		t.Fatalf("rollback revision hash = %s, want v1 %s (replay hash stable)", rows[0].DesiredHash, v1.DesiredHash)
 	}
 	// pending env 未被回滚消费。
 	pending, err := h.store.GetAppEnv(ctx, app.ID, "PLATFORM_PENDING")
 	if err != nil || pending.Status != state.EnvStatusPending {
-		t.Fatalf("pending env after rollback = %+v (%v), want pending（回滚不 promote）", pending, err)
+		t.Fatalf("pending env after rollback = %+v (%v), want pending (rollback does not promote)", pending, err)
 	}
 	// 事件链 + 审计（actor=human 透传）。
 	names := h.events()
@@ -155,7 +155,7 @@ func TestRollbackDefaultTargetAndNoTarget(t *testing.T) {
 		t.Fatalf("default target = %s, want v2 image %s", specs[0].Image, v2Specs[0].Image)
 	}
 	if rec.RecoveryOf != v2.ID {
-		t.Fatalf("recovery_of = %s, want v2 %s（回退对象 = 现行版本）", rec.RecoveryOf, v2.ID)
+		t.Fatalf("recovery_of = %s, want v2 %s (reverts the current revision)", rec.RecoveryOf, v2.ID)
 	}
 
 	// 未知 revision。
@@ -197,7 +197,7 @@ func TestRollbackPreflightImageMissing(t *testing.T) {
 		t.Fatalf("rollback = %s (%s), want failed E_IMAGE_UNAVAILABLE", final.Status, final.ErrorCode)
 	}
 	if !hasEvent(h.events(), "deployment.rollback_failed") {
-		t.Fatal("missing deployment.rollback_failed（preflight 失败也是回滚失败）")
+		t.Fatal("missing deployment.rollback_failed (a preflight failure is also a rollback failure)")
 	}
 	// 不动底座：服务实况仍是 v2 镜像。
 	v2Specs := decodeForTest(t, h, v2)
@@ -207,7 +207,7 @@ func TestRollbackPreflightImageMissing(t *testing.T) {
 	// preflight 失败不关收敛 opt-in（app 未被动过）。
 	on, err := h.store.GetAppDriftConverge(ctx, v2.AppID)
 	if err != nil || on {
-		t.Fatalf("drift converge = %v (%v), want false（preflight 失败不强制关）", on, err)
+		t.Fatalf("drift converge = %v (%v), want false (preflight failure does not force-disable)", on, err)
 	}
 	// E_IMAGE_UNAVAILABLE 信封携带 W_ROLLBACK_IMAGE_RISK（经
 	// build.PreflightImage 的 context.warning 透传）。
@@ -248,7 +248,7 @@ func TestRollbackFailureNoSecondAutoAndConvergeForceOff(t *testing.T) {
 		t.Fatalf("rollback = %s (%s), want failed E_ROLLBACK_FAILED", final.Status, final.ErrorCode)
 	}
 	if final.Recovery != "" {
-		t.Fatalf("recovery = %s, want empty（回滚失败不再二次自动恢复）", final.Recovery)
+		t.Fatalf("recovery = %s, want empty (rollback failure gets no second automatic recovery)", final.Recovery)
 	}
 	// 不再二次自动：失败后没有任何进一步的 ServiceUpdate（updates 的最后
 	// 一次即失败的那次回放，目标 v1 镜像）。
@@ -310,7 +310,7 @@ func TestRollbackObserveWindowFailureAlsoClosesConverge(t *testing.T) {
 	h.sub.crashNewRunning("fleetly-demo-web", 2, h.clk.Now())
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_ROLLBACK_FAILED" {
-		t.Fatalf("rollback = %s (%s), want failed E_ROLLBACK_FAILED（切流后失败同归回滚失败）", final.Status, final.ErrorCode)
+		t.Fatalf("rollback = %s (%s), want failed E_ROLLBACK_FAILED (post-switch failure still counts as a rollback failure)", final.Status, final.ErrorCode)
 	}
 	if final.Verdict != state.VerdictUnstable {
 		t.Fatalf("verdict = %q, want unstable", final.Verdict)

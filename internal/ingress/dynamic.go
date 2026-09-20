@@ -226,34 +226,34 @@ func Synthesize(routes []Route) *DynamicConfig {
 //  4. 每个 service 必须有非空 server URL。
 func Validate(cfg *DynamicConfig) error {
 	if cfg == nil || cfg.HTTP == nil {
-		return fmt.Errorf("ingress: 动态配置缺 http 段（拒绝下发，Spike B 纪律）")
+		return fmt.Errorf("ingress: dynamic config missing http section (rejected, Spike B discipline)")
 	}
 	if len(cfg.HTTP.Routers) == 0 {
 		// 键缺失（nil map）与空 map 同判——Spike B 纪律：键必须存在且
 		// 合成非空（nil map 序列化为 null，同样是 Traefik 无法接受的形态）。
-		return fmt.Errorf("ingress: http.routers 缺失或为空（拒绝下发；空配置会清空 Traefik 全部路由）")
+		return fmt.Errorf("ingress: http.routers missing or empty (rejected; an empty config would wipe all Traefik routes)")
 	}
 	if cfg.HTTP.Services == nil {
-		return fmt.Errorf("ingress: http.services 键缺失（nil 序列化为 null，拒绝下发）")
+		return fmt.Errorf("ingress: http.services key missing (nil serializes to null, rejected)")
 	}
 	for name, r := range cfg.HTTP.Routers {
 		if r == nil || r.Rule == "" || r.Service == "" {
-			return fmt.Errorf("ingress: router %s 形态不完整（rule/service 必填）", name)
+			return fmt.Errorf("ingress: router %s incomplete (rule/service required)", name)
 		}
 		if isInternalService(r.Service) {
 			continue // Traefik 内建服务（noop@internal）：不由平台 services map 承载
 		}
 		if _, ok := cfg.HTTP.Services[r.Service]; !ok {
-			return fmt.Errorf("ingress: router %s 引用不存在的 service %s（悬空引用拒绝）", name, r.Service)
+			return fmt.Errorf("ingress: router %s references nonexistent service %s (dangling reference rejected)", name, r.Service)
 		}
 	}
 	for name, s := range cfg.HTTP.Services {
 		if s == nil || s.LoadBalancer == nil || len(s.LoadBalancer.Servers) == 0 {
-			return fmt.Errorf("ingress: service %s 无后端（空 LB 拒绝）", name)
+			return fmt.Errorf("ingress: service %s has no backends (empty LB rejected)", name)
 		}
 		for i, srv := range s.LoadBalancer.Servers {
 			if srv.URL == "" {
-				return fmt.Errorf("ingress: service %s 第 %d 个后端 URL 为空", name, i)
+				return fmt.Errorf("ingress: service %s backend #%d URL is empty", name, i)
 			}
 		}
 	}

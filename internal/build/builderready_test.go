@@ -65,10 +65,10 @@ func TestEnsureDaemonReadyRetriesAfterTransientError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := b.EnsureDaemonReady(ctx); err != nil {
-		t.Fatalf("瞬时错误后应在预算内收敛成功: %v", err)
+		t.Fatalf("should converge successfully within budget after a transient error: %v", err)
 	}
 	if n := daemon.volCalls.Load(); n < 2 {
-		t.Fatalf("volume calls = %d, want >=2（瞬时错误后必须重试而非空转预算）", n)
+		t.Fatalf("volume calls = %d, want >=2 (must retry after a transient error instead of spinning out the budget)", n)
 	}
 }
 
@@ -89,7 +89,7 @@ func TestEnsureDaemonReadyProbesUntilReady(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	if err := b.EnsureDaemonReady(ctx); err != nil {
-		t.Fatalf("probe 前两次失败后应在预算内收敛成功: %v", err)
+		t.Fatalf("should converge successfully within budget after the first two probe failures: %v", err)
 	}
 	if n := probeCalls.Load(); n != 3 {
 		t.Fatalf("probe calls = %d, want 3", n)
@@ -114,13 +114,13 @@ func TestEnsureDaemonReadyWaitsThroughProbeFailures(t *testing.T) {
 	start := time.Now()
 	err := b.EnsureDaemonReady(ctx)
 	if err == nil {
-		t.Fatal("持续未就绪必须在预算耗尽后失败")
+		t.Fatal("persistent not-ready must fail only after the budget is exhausted")
 	}
 	// 预算前不得失败（等待而非立即终态失败），预算后不久必须失败。
 	if elapsed := time.Since(start); elapsed < 150*time.Millisecond {
-		t.Fatalf("未在预算内保持等待即失败：elapsed %v", elapsed)
+		t.Fatalf("failed before waiting out the budget: elapsed %v", elapsed)
 	}
 	if n := probeCalls.Load(); n < 2 {
-		t.Fatalf("probe calls = %d, want >=2（等待期内必须持续探测）", n)
+		t.Fatalf("probe calls = %d, want >=2 (must keep probing while waiting)", n)
 	}
 }

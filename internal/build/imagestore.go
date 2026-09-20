@@ -52,7 +52,7 @@ func PreflightImage(ctx context.Context, images ImageSource, ref string) (Prefli
 		return PreflightResult{Ref: ref}, err
 	}
 	appErr := apperr.New("E_IMAGE_UNAVAILABLE",
-		"镜像 %s 在本机不可用（可能已被清理）；部署/回滚引用以 digest 为准，镜像缺失时该引用无法解析", ref).
+		"image %s is unavailable locally (it may have been pruned); deploy/rollback references are digest-based and cannot be resolved while the image is missing", ref).
 		WithStage("preflight").
 		WithContext("warning", WarningRollbackImageRisk).
 		WithCause(err)

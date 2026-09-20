@@ -46,7 +46,7 @@ func bootstrapAdminToken(log *slog.Logger, path string, st *state.Store) error {
 	// 但文件存在的形态（用户手动清库）复用文件内凭据的哈希语义由登录面
 	// 裁决，这里只保证不二次签发。
 	if _, err := os.Stat(path); err == nil {
-		log.Info("bootstrap token 文件已存在，跳过生成（首次成功登录后请删除）", "path", path)
+		log.Info("bootstrap token file already exists, skipping generation (delete it after the first successful login)", "path", path)
 		return nil
 	}
 	plaintext, err := api.GenerateBootstrapAdminToken(context.Background(), st, "bootstrap admin (initial install)")
@@ -56,7 +56,7 @@ func bootstrapAdminToken(log *slog.Logger, path string, st *state.Store) error {
 	if err := writeBootstrapTokenFile(path, plaintext); err != nil {
 		return fmt.Errorf("write bootstrap token file %s: %w", path, err)
 	}
-	log.Info("bootstrap admin token 已生成并写入文件（不打印本体；首次成功登录后请删除该文件）", "path", path)
+	log.Info("bootstrap admin token generated and written to file (secret not printed; delete the file after the first successful login)", "path", path)
 	return nil
 }
 

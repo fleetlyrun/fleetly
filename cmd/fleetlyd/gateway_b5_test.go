@@ -52,7 +52,7 @@ func TestGatewayRequestBodyLimit(t *testing.T) {
 		t.Fatalf("oversized body status = %d, want 413", rec.Code)
 	}
 	if reached {
-		t.Fatal("oversized request must be rejected before reaching gateway handler (H7 鉴权前置)")
+		t.Fatal("oversized request must be rejected before reaching gateway handler (H7 auth runs first)")
 	}
 	var env map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
@@ -79,7 +79,7 @@ func TestGatewayRequestBodyLimit(t *testing.T) {
 	rec2 := httptest.NewRecorder()
 	root2.ServeHTTP(rec2, req2)
 	if !reached {
-		t.Fatal("chunked request should dispatch to gateway (预检不拦未声明长度)")
+		t.Fatal("chunked request should dispatch to gateway (the preflight does not block undeclared lengths)")
 	}
 	if readErr == nil || !strings.Contains(readErr.Error(), "too large") {
 		t.Fatalf("chunked oversized body read err = %v, want MaxBytesReader truncation", readErr)
@@ -149,11 +149,11 @@ func TestGatewayGitKeysRegistered(t *testing.T) {
 
 	// 无 token：401（路由存在、进鉴权链——未注册形态是 404）。
 	if code, body := get(""); code != 401 {
-		t.Fatalf("no-token GET /v1/git/keys = %d (%s), want 401 (路由已注册)", code, body)
+		t.Fatalf("no-token GET /v1/git/keys = %d (%s), want 401 (route registered)", code, body)
 	}
 	// admin token：200 走通（M4-2）。
 	if code, body := get(adminTok); code != 200 {
-		t.Fatalf("admin GET /v1/git/keys = %d (%s), want 200 (M4-2 gateway 注册)", code, body)
+		t.Fatalf("admin GET /v1/git/keys = %d (%s), want 200 (M4-2 gateway registration)", code, body)
 	}
 }
 
@@ -170,7 +170,7 @@ func TestTuneHTTPServerWriteTimeout(t *testing.T) {
 	}
 	tuneHTTPServer(srv)
 	if srv.WriteTimeout < 15*time.Minute {
-		t.Fatalf("WriteTimeout = %v, want >= 15min (M4-3 流式端点)", srv.WriteTimeout)
+		t.Fatalf("WriteTimeout = %v, want >= 15min (M4-3 streaming endpoints)", srv.WriteTimeout)
 	}
 	if srv.ReadHeaderTimeout != 60*time.Second || srv.ReadTimeout != 60*time.Second {
 		t.Fatalf("read-side timeouts must stay tight: header=%v read=%v",

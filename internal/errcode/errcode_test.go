@@ -50,7 +50,7 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_BACKUP_KEY_MISSING":     "state-model §2.7",
 	"E_EVENT_CURSOR_EXPIRED":   "state-model §2.9",
 	"E_LABEL_RESERVED":         "state-model §2.4",
-	"E_STATE_VERSION_CONFLICT": "state-model §2.2（architecture §2.3 同）",
+	"E_STATE_VERSION_CONFLICT": "state-model §2.2 (same as architecture §2.3)",
 
 	// architecture.md §2.4（2 E，E_COMPOSE_* 与 release-semantics 重复不另计）
 	"E_DOMAIN_CONFLICT":    "architecture §2.4",
@@ -58,17 +58,17 @@ var docCodes = map[string]string{ // code → 文档出处
 
 	// T2.15 实现期新增（文档外码单独列出，待 T0.5 契约冻结确认）：架构 §2.5
 	// 不变量「路由发布失败不回滚部署、单独告警」的审计错误码落点。
-	"E_ROUTE_PUBLISH_FAILED": "T2.15 实现期新增（architecture §2.5 路由失败告警语义；待 T0.5 冻结确认）",
+	"E_ROUTE_PUBLISH_FAILED": "T2.15 added during implementation (architecture §2.5 route-failure alert semantics; pending T0.5 freeze confirmation)",
 
 	// MG-C3 实现期新增（文档外码单独列出，待 T0.5 契约冻结确认）：架构 §2.4
 	// plan/apply 语义「破坏性操作要求 --confirm-destructive」的 deploy 入队
 	// 门控错误码。
-	"E_DEPLOY_CONFIRM_REQUIRED": "MG-C3 实现期新增（architecture §2.4 破坏性变更确认门控；待 T0.5 冻结确认）",
+	"E_DEPLOY_CONFIRM_REQUIRED": "MG-C3 added during implementation (architecture §2.4 destructive-change confirmation gate; pending T0.5 freeze confirmation)",
 
 	// M4-6 实现期新增（评审整改 B5，文档外码单独列出，待 T0.5 契约冻结
 	// 确认）：RevokeToken 最后管理员守卫——吊销最后一枚未吊销 admin token
 	// 会使平台锁死（重启不补种 bootstrap），409 拒绝。
-	"E_TOKEN_LAST_ADMIN": "M4-6 实现期新增（评审整改 B5：token 最后管理员守卫；待 T0.5 冻结确认）",
+	"E_TOKEN_LAST_ADMIN": "M4-6 added during implementation (review remediation B5: token last-admin guard; pending T0.5 freeze confirmation)",
 
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
@@ -87,12 +87,12 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 	}
 	for _, id := range regIDs {
 		if _, ok := docCodes[id]; !ok {
-			t.Errorf("registry code %q 不在文档清单内（文档外码须单独列出并标注待 T0.5 冻结确认）", id)
+			t.Errorf("registry code %q not in the doc list (out-of-doc codes must be listed separately and marked pending T0.5 freeze confirmation)", id)
 		}
 	}
 	for id, source := range docCodes {
 		if _, ok := Default().Get(id); !ok {
-			t.Errorf("doc code %q（%s）未录入注册表：遗漏", id, source)
+			t.Errorf("doc code %q (%s) missing from the registry: omission", id, source)
 		}
 	}
 }
@@ -189,7 +189,7 @@ func TestDocumentedHTTPMappings(t *testing.T) {
 			t.Fatalf("%s not registered", id)
 		}
 		if c.HTTP != httpStatus {
-			t.Errorf("%s HTTP = %d, want %d（文档显式）", id, c.HTTP, httpStatus)
+			t.Errorf("%s HTTP = %d, want %d (documented explicitly)", id, c.HTTP, httpStatus)
 		}
 	}
 }

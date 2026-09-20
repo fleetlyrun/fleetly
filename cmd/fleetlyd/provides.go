@@ -164,7 +164,7 @@ func NewSecretsBox(app lynx.App, cfg *AppConfig) (*secrets.Box, error) {
 	}
 	if created {
 		app.Logger().Warn("master key generated at " + box.Path() +
-			" —妥善保存并与备份分离（丢失后平台 env 密文不可解）")
+			" — store it safely and keep it separate from backups (platform env ciphertext cannot be decrypted if it is lost)")
 	}
 	return box, nil
 }

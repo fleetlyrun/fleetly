@@ -36,7 +36,7 @@ func TestWriteSolveLogDrainsStatusChannelUntilClose(t *testing.T) {
 	// 断言一：cancel 后、ch 关闭前仍在排空等待——旧形态毫秒级即返回。
 	select {
 	case <-done:
-		t.Fatal("writeSolveLog 在 ch 关闭前返回（ctx.Done 分支未排空 statusCh——H5：buildkit 状态泵将永久阻塞）")
+		t.Fatal("writeSolveLog returned before ch was closed (ctx.Done branch does not drain statusCh — H5: the buildkit status pump would block forever)")
 	case <-time.After(200 * time.Millisecond):
 	}
 
@@ -50,6 +50,6 @@ func TestWriteSolveLogDrainsStatusChannelUntilClose(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("writeSolveLog 未在 ch 关闭后返回（排空路径阻塞——H5）")
+		t.Fatal("writeSolveLog did not return after ch was closed (drain path blocked — H5)")
 	}
 }

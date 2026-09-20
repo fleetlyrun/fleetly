@@ -86,7 +86,7 @@ func TestEnsureBareRepoAndCompose(t *testing.T) {
 		t.Fatal("hook missing callback endpoint")
 	}
 	if !strings.Contains(hook, "TOKEN='flthk_") {
-		t.Fatal("hook missing hook token (flthk_ 形态)")
+		t.Fatal("hook missing hook token (flthk_ form)")
 	}
 	// 钩子 token 入 tokens 表（deploy scope、系统 actor、按名可识别）。
 	tokens, err := st.ListTokens(ctx)

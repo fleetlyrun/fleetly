@@ -115,7 +115,7 @@ func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployReq
 	// H14 同裁决）。
 	if req.GetApp() != "" && spec.Name != req.GetApp() {
 		return nil, apperr.New("E_COMPOSE_UNSUPPORTED",
-			"compose 应用名 %q 与请求目标 app %q 不一致（compose 应用名与请求 app 必须一致）",
+			"compose application name %q does not match the requested target app %q (the compose application name and the requested app must match)",
 			spec.Name, req.GetApp()).
 			WithContext("expected", req.GetApp()).
 			WithContext("actual", spec.Name)
@@ -210,7 +210,7 @@ func (s *DeploymentsService) guardDestructiveDeploy(ctx context.Context, app sta
 		return nil
 	}
 	return apperr.New("E_DEPLOY_CONFIRM_REQUIRED",
-		"app %s 本次部署相对最新版本含破坏性变更（服务删除/卷解绑），未携带 confirm_destructive，拒绝入队", app.Name).
+		"app %s: this deploy introduces destructive changes relative to the latest revision (service removal / volume unbinding); confirm_destructive was not set, rejecting enqueue", app.Name).
 		WithContext("app", app.Name).
 		WithContext("baseline_revision_id", revs[0].ID)
 }
@@ -335,7 +335,7 @@ func (s *DeploymentsService) RollbackDeployment(ctx context.Context, req *server
 // 走 E_STATE_VERSION_CONFLICT 注册码——语义匹配，不新增码）。
 func apperrConflict(rec state.DeployRecord) error {
 	return apperr.New("E_STATE_VERSION_CONFLICT",
-		"deployment %s 已切流或已是终态（%s），不可 cancel：曾健康请改用 rollback", rec.ID, rec.Status).
+		"deployment %s has already switched flow or reached a terminal state (%s) and cannot be cancelled: use rollback instead if it was healthy", rec.ID, rec.Status).
 		WithContext("deployment", rec.ID).
 		WithContext("reason", "already_switched")
 }

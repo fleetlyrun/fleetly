@@ -34,35 +34,35 @@ var topLevelRejectList = map[string]string{
 	// S16-C1：secrets 在 Load 期即拒——v0.1 平台密钥库未接入，放行只会在
 	// preparing 晚期被规划层拒绝（错误码还误导为运行时问题）；显式拒绝比
 	// 「照抄文档示例必失败」诚实。v0.2 平台密钥库接入后解除。
-	"secrets": "v0.1 平台密钥库未接入，secrets 不受支持（显式拒绝；v0.2 平台密钥库接入后开放）",
+	"secrets": "secrets are unsupported in v0.1: the platform secret store is not wired up yet (explicitly rejected; opened up once the v0.2 secret store lands)",
 }
 
 // serviceRejectList 是拒绝清单+危险字段的显式条目（优先于通用白名单缺省
 // 拒绝，message 给出契约理由）。reason 前缀约定见各条目。
 var serviceRejectList = map[string]string{
 	// v0.1 拒绝清单（架构 §2.4）
-	"depends_on": "v0.1 拒绝清单字段（编排顺序由平台发布管线管理）",
-	"extends":    "v0.1 拒绝清单字段（服务复用不受支持）",
-	"include":    "v0.1 拒绝清单字段（多文件合并不受支持）",
-	"profiles":   "v0.1 拒绝清单字段（服务按全量部署，无 profile 门控）",
-	"configs":    "v0.1 拒绝清单字段（配置注入用 environment/secrets 承载）",
+	"depends_on": "rejected field in v0.1 (orchestration order is managed by the platform release pipeline)",
+	"extends":    "rejected field in v0.1 (service reuse is unsupported)",
+	"include":    "rejected field in v0.1 (multi-file merge is unsupported)",
+	"profiles":   "rejected field in v0.1 (services deploy in full; no profile gating)",
+	"configs":    "rejected field in v0.1 (config injection is carried by environment/secrets)",
 	// S16-C1：secrets 在 Load 期即拒（与顶层 topLevelRejectList 同理由）——
 	// v0.1 平台密钥库未接入，规划层晚期拒绝（E_RUNTIME_UNAVAILABLE）不可达
 	// 于此；planner.go 的快速失败分支保留作纵深。
-	"secrets": "v0.1 平台密钥库未接入，secrets 不受支持（显式拒绝；v0.2 平台密钥库接入后开放）",
+	"secrets": "secrets are unsupported in v0.1: the platform secret store is not wired up yet (explicitly rejected; opened up once the v0.2 secret store lands)",
 	// 危险字段（Coolify CVE-2025-34159 根因类；默认拒绝，admin 显式开启
 	// + 审计的旁路为后续票 TODO）
-	"privileged":          "危险字段：特权容器默认拒绝（admin 旁路 TODO）",
-	"cap_add":             "危险字段：内核能力提升默认拒绝（admin 旁路 TODO）",
-	"cap_drop":            "危险字段家族：内核能力操作默认拒绝（admin 旁路 TODO）",
-	"pid":                 "危险字段：宿主 PID 命名空间默认拒绝（admin 旁路 TODO）",
-	"devices":             "危险字段：设备挂载默认拒绝（admin 旁路 TODO）",
-	"device_cgroup_rules": "危险字段：设备 cgroup 规则默认拒绝（admin 旁路 TODO）",
-	"network_mode":        "network_mode: host 等宿主网络模式在拒绝清单（服务一律经 app 专属网络）",
-	"ports":               "宿主端口发布不在 v0.1 受控子集（路由用 expose + fleetly.domains）",
-	"external_links":      "v0.1 拒绝清单字段（跨栈链接不受支持）",
-	"links":               "legacy 链接不在受控子集（服务互访用 compose 服务名）",
-	"container_name":      "容器名由平台管理（Swarm 服务名 fleetly-<app>-<service>）",
+	"privileged":          "dangerous field: privileged containers are denied by default (admin bypass TODO)",
+	"cap_add":             "dangerous field: Linux capability escalation is denied by default (admin bypass TODO)",
+	"cap_drop":            "dangerous field family: Linux capability operations are denied by default (admin bypass TODO)",
+	"pid":                 "dangerous field: host PID namespace is denied by default (admin bypass TODO)",
+	"devices":             "dangerous field: device mounts are denied by default (admin bypass TODO)",
+	"device_cgroup_rules": "dangerous field: device cgroup rules are denied by default (admin bypass TODO)",
+	"network_mode":        "host network modes such as network_mode: host are on the reject list (services always go through the app-dedicated network)",
+	"ports":               "host port publishing is not in the v0.1 controlled subset (route via expose + fleetly.domains)",
+	"external_links":      "rejected field in v0.1 (cross-stack links are unsupported)",
+	"links":               "legacy links are not in the controlled subset (services reach each other by compose service name)",
+	"container_name":      "container names are managed by the platform (Swarm service name fleetly-<app>-<service>)",
 }
 
 // serviceWhitelist 是服务级键白名单（§2.4 支持清单逐项）。
@@ -149,14 +149,14 @@ var envFileLongWhitelist = map[string]bool{"path": true, "required": true, "form
 // 其余 compose 标准网络键（driver/driver_opts/ipam/internal/attachable/
 // labels）按「栈内网络」支持面放行。
 var networkDefReject = map[string]string{
-	"external": "外部网络在 v0.1 拒绝清单（app 专属 overlay 网络由平台创建）",
-	"name":     "网络资源名由平台管理，不接受 name 覆写",
+	"external": "external networks are on the v0.1 reject list (the app-dedicated overlay network is created by the platform)",
+	"name":     "network resource names are managed by the platform; name overrides are not accepted",
 }
 
 // volumeDefReject：顶层卷定义拒绝的键（卷由平台卷注册表管理）。
 var volumeDefReject = map[string]string{
-	"external": "外部卷不受支持（应用卷由平台按 app 创建并登记）",
-	"name":     "卷资源名由平台管理（fleetly-<app>-<key>），不接受 name 覆写",
+	"external": "external volumes are unsupported (app volumes are created and registered per app by the platform)",
+	"name":     "volume resource names are managed by the platform (fleetly-<app>-<key>); name overrides are not accepted",
 }
 
 // specNamePattern 校验顶层 name 形态（与 compose 项目名字符集一致）。
@@ -174,10 +174,10 @@ func validateDict(abs string, dict map[string]any) error {
 	// 项目名字符集一致，保证 Swarm/卷/网络命名安全）。
 	name, _ := dict["name"].(string)
 	if name == "" {
-		return errCompose("compose 缺少顶层 name（应用标识，如 name: my-api）").WithContext("path", "name")
+		return errCompose("compose is missing the top-level name (the app identity, e.g. name: my-api)").WithContext("path", "name")
 	}
 	if !validSpecName(name) {
-		return errCompose("compose 顶层 name %q 非法（要求 ^[a-z0-9][a-z0-9_-]*$：小写字母/数字开头，仅小写字母/数字/-/_）", name).
+		return errCompose("invalid top-level compose name %q (must match ^[a-z0-9][a-z0-9_-]*$: starts with a lowercase letter or digit, only lowercase letters/digits/-/_ allowed)", name).
 			WithContext("path", "name")
 	}
 
@@ -186,24 +186,24 @@ func validateDict(abs string, dict map[string]any) error {
 			continue
 		}
 		if reason, rejected := topLevelRejectList[key]; rejected {
-			return errCompose("compose 顶层字段 %q：%s", key, reason).
+			return errCompose("compose top-level field %q: %s", key, reason).
 				WithContext("path", key)
 		}
 		if !topLevelWhitelist[key] {
-			return errCompose("compose 顶层字段 %q 不在受控子集（支持：name/services/networks/volumes）", key).
+			return errCompose("compose top-level field %q is not in the controlled subset (supported: name/services/networks/volumes)", key).
 				WithContext("path", key)
 		}
 	}
 
 	servicesDict, _ := dict["services"].(map[string]any)
 	if len(servicesDict) == 0 {
-		return errCompose("compose 未声明任何服务（services 不能为空）").WithContext("path", "services")
+		return errCompose("compose declares no services (services must not be empty)").WithContext("path", "services")
 	}
 
 	for _, name := range sortedKeys(servicesDict) {
 		svcDict, ok := servicesDict[name].(map[string]any)
 		if !ok {
-			return errCompose("服务 %q 定义必须是映射", name).WithContext("path", "services."+name)
+			return errCompose("definition of service %q must be a mapping", name).WithContext("path", "services."+name)
 		}
 		if err := validateServiceDict(name, svcDict); err != nil {
 			return err
@@ -227,11 +227,11 @@ func validateServiceDict(name string, svc map[string]any) error {
 			continue
 		}
 		if reason, rejected := serviceRejectList[key]; rejected {
-			return errCompose("服务 %q 使用不受支持的字段 %q：%s", name, key, reason).
+			return errCompose("service %q uses an unsupported field %q: %s", name, key, reason).
 				WithContext("path", prefix+"."+key)
 		}
 		if !serviceWhitelist[key] {
-			return errCompose("服务 %q 的字段 %q 不在受控子集支持清单", name, key).
+			return errCompose("field %q of service %q is not in the controlled-subset support list", name, key).
 				WithContext("path", prefix+"."+key)
 		}
 	}
@@ -241,7 +241,7 @@ func validateServiceDict(name string, svc map[string]any) error {
 	_, hasImage := svc["image"]
 	_, hasBuild := svc["build"]
 	if !hasImage && !hasBuild {
-		return errCompose("服务 %q 未声明 image 或 build（无运行体）", name).WithContext("path", prefix)
+		return errCompose("service %q declares neither image nor build (nothing to run)", name).WithContext("path", prefix)
 	}
 
 	if buildDict, ok := svc["build"].(map[string]any); ok {
@@ -259,7 +259,7 @@ func validateServiceDict(name string, svc map[string]any) error {
 		// 显式拒绝。
 		for _, k := range sortedKeys(envDict) {
 			if envDict[k] == nil {
-				return errCompose("服务 %q 的 environment 条目 %q 未给字面值（fleetly 关闭变量插值与环境透传）", name, k).
+				return errCompose("environment entry %q of service %q has no literal value (fleetly disables variable interpolation and environment pass-through)", name, k).
 					WithContext("path", prefix+".environment."+k)
 			}
 		}
@@ -269,7 +269,7 @@ func validateServiceDict(name string, svc map[string]any) error {
 		for i, e := range envList {
 			s, _ := e.(string)
 			if !strings.Contains(s, "=") {
-				return errCompose("服务 %q 的 environment 条目 %q 未给字面值（fleetly 关闭变量插值与环境透传）", name, s).
+				return errCompose("environment entry %q of service %q has no literal value (fleetly disables variable interpolation and environment pass-through)", name, s).
 					WithContext("path", fmt.Sprintf("%s.environment[%d]", prefix, i))
 			}
 		}
@@ -298,7 +298,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 	}
 	deploy, ok := deployAny.(map[string]any)
 	if !ok {
-		return errCompose("服务 %q 的 deploy 必须是映射", name).WithContext("path", prefix+".deploy")
+		return errCompose("deploy of service %q must be a mapping", name).WithContext("path", prefix+".deploy")
 	}
 	if err := checkSubKeys(name, prefix+".deploy", "deploy", deploy, deployWhitelist); err != nil {
 		return err
@@ -312,7 +312,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 	if mode, present := deploy["mode"]; present {
 		if s, _ := mode.(string); s == "global" {
 			return apperr.New("E_COMPOSE_UNSUPPORTED",
-				"服务 %q 声明 deploy.mode: global：v0.1 单节点不支持 global 模式（副本语义与失败停机语义未实现；v0.2 开放，请用 replicated + replicas 表达）", name).
+				"service %q declares deploy.mode: global: single-node v0.1 does not support global mode (replica semantics and fail-stop semantics are unimplemented; available in v0.2 — use replicated + replicas instead)", name).
 				WithContext("path", prefix+".deploy.mode")
 		}
 	}
@@ -320,7 +320,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 	if ucAny, ok := deploy["update_config"]; ok && ucAny != nil {
 		uc, ok := ucAny.(map[string]any)
 		if !ok {
-			return errCompose("服务 %q 的 deploy.update_config 必须是映射", name).
+			return errCompose("deploy.update_config of service %q must be a mapping", name).
 				WithContext("path", prefix+".deploy.update_config")
 		}
 		if err := checkSubKeys(name, prefix+".deploy.update_config", "update_config", uc, updateConfigWhitelist); err != nil {
@@ -330,14 +330,14 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 		if fa, present := uc["failure_action"]; present {
 			if s, _ := fa.(string); s != "pause" {
 				return apperr.New("E_COMPOSE_MANAGED_FIELD",
-					"服务 %q 的 deploy.update_config.failure_action=%q 违反平台治理（必须为 pause 或省略——发布失败动作由平台固定 pause）", name, fmt.Sprint(fa)).
+					"deploy.update_config.failure_action=%q of service %q violates platform governance (must be pause or omitted — the release failure action is fixed to pause by the platform)", name, fmt.Sprint(fa)).
 					WithContext("path", prefix+".deploy.update_config.failure_action")
 			}
 		}
 		if mon, present := uc["monitor"]; present {
 			if s, _ := mon.(string); s != "5s" {
 				return apperr.New("E_COMPOSE_MANAGED_FIELD",
-					"服务 %q 的 deploy.update_config.monitor=%q 违反平台治理（必须为 5s 或省略——更新监控窗由平台固定）", name, fmt.Sprint(mon)).
+					"deploy.update_config.monitor=%q of service %q violates platform governance (must be 5s or omitted — the update monitor window is fixed by the platform)", name, fmt.Sprint(mon)).
 					WithContext("path", prefix+".deploy.update_config.monitor")
 			}
 		}
@@ -348,7 +348,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 		if order, present := uc["order"]; present {
 			if s, _ := order.(string); s == "start-first" && serviceHasVolumes(svcDict) {
 				return apperr.New("E_COMPOSE_UNSAFE_STRATEGY",
-					"服务 %q 声明了命名卷挂载，显式 start-first 与平台强制 stop-first 冲突（双任务并发挂同一本地卷有数据风险）", name).
+					"service %q mounts named volumes; explicit start-first conflicts with the platform-enforced stop-first (two tasks mounting the same local volume concurrently risk data corruption)", name).
 					WithContext("path", prefix+".deploy.update_config.order")
 			}
 		}
@@ -357,7 +357,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 	if resAny, ok := deploy["resources"]; ok && resAny != nil {
 		res, ok := resAny.(map[string]any)
 		if !ok {
-			return errCompose("服务 %q 的 deploy.resources 必须是映射", name).
+			return errCompose("deploy.resources of service %q must be a mapping", name).
 				WithContext("path", prefix+".deploy.resources")
 		}
 		if err := checkSubKeys(name, prefix+".deploy.resources", "resources", res, resourcesWhitelist); err != nil {
@@ -366,7 +366,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 		if limitsAny, ok := res["limits"]; ok && limitsAny != nil {
 			limits, ok := limitsAny.(map[string]any)
 			if !ok {
-				return errCompose("服务 %q 的 deploy.resources.limits 必须是映射", name).
+				return errCompose("deploy.resources.limits of service %q must be a mapping", name).
 					WithContext("path", prefix+".deploy.resources.limits")
 			}
 			if err := checkSubKeys(name, prefix+".deploy.resources.limits", "limits", limits, resourceLimitsWhitelist); err != nil {
@@ -378,7 +378,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 	if rpAny, ok := deploy["restart_policy"]; ok && rpAny != nil {
 		rp, ok := rpAny.(map[string]any)
 		if !ok {
-			return errCompose("服务 %q 的 deploy.restart_policy 必须是映射", name).
+			return errCompose("deploy.restart_policy of service %q must be a mapping", name).
 				WithContext("path", prefix+".deploy.restart_policy")
 		}
 		if err := checkSubKeys(name, prefix+".deploy.restart_policy", "restart_policy", rp, restartPolicyWhitelist); err != nil {
@@ -389,7 +389,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 	if placeAny, ok := deploy["placement"]; ok && placeAny != nil {
 		place, ok := placeAny.(map[string]any)
 		if !ok {
-			return errCompose("服务 %q 的 deploy.placement 必须是映射", name).
+			return errCompose("deploy.placement of service %q must be a mapping", name).
 				WithContext("path", prefix+".deploy.placement")
 		}
 		if err := checkSubKeys(name, prefix+".deploy.placement", "placement", place, placementWhitelist); err != nil {
@@ -399,7 +399,7 @@ func validateDeployDict(name, prefix string, svcDict map[string]any) error {
 			for i, c := range constraints {
 				expr, _ := c.(string)
 				if !placementConstraintAllowed(expr) {
-					return errCompose("服务 %q 的放置约束 %q 超出命名空间（仅允许 node.labels.fleetly.*）", name, expr).
+					return errCompose("placement constraint %q of service %q is outside the allowed namespace (only node.labels.fleetly.*)", name, expr).
 						WithContext("path", fmt.Sprintf("%s.deploy.placement.constraints[%d]", prefix, i))
 				}
 			}
@@ -451,14 +451,14 @@ func validateEnvFileDict(name, prefix string, envFileAny any) error {
 	items, ok := envFileAny.([]any)
 	if !ok {
 		// canonical 化后理论上不可达；兜底拒绝异常形态。
-		return errCompose("服务 %q 的 env_file 形态不支持（字符串或列表）", name).
+		return errCompose("unsupported env_file form for service %q (expected a string or a list)", name).
 			WithContext("path", prefix+".env_file")
 	}
 	for i, item := range items {
 		path := fmt.Sprintf("%s.env_file[%d]", prefix, i)
 		m, ok := item.(map[string]any)
 		if !ok {
-			return errCompose("服务 %q 的 env_file 列表项类型不支持", name).WithContext("path", path)
+			return errCompose("unsupported env_file list item type for service %q", name).WithContext("path", path)
 		}
 		if err := checkSubKeysAt(name, path, "env_file", m, envFileLongWhitelist); err != nil {
 			return err
@@ -478,7 +478,7 @@ func validateServiceVolumesDict(name, prefix string, volumesAny any) error {
 	}
 	items, ok := volumesAny.([]any)
 	if !ok {
-		return errCompose("服务 %q 的 volumes 必须是列表", name).WithContext("path", prefix+".volumes")
+		return errCompose("volumes of service %q must be a list", name).WithContext("path", prefix+".volumes")
 	}
 	for i, item := range items {
 		path := fmt.Sprintf("%s.volumes[%d]", prefix, i)
@@ -489,22 +489,22 @@ func validateServiceVolumesDict(name, prefix string, volumesAny any) error {
 			if len(parts) == 3 {
 				mode := strings.TrimSpace(parts[2])
 				if mode != "ro" && mode != "rw" {
-					return errCompose("服务 %q 的卷挂载选项 %q 不支持（仅 ro/rw）", name, parts[2]).WithContext("path", path)
+					return errCompose("unsupported volume mount option %q for service %q (only ro/rw)", name, parts[2]).WithContext("path", path)
 				}
 			}
 		case map[string]any:
 			if err := checkSubKeysAt(name, path, "volumes", v, volumeLongWhitelist); err != nil {
 				return err
 			}
-			if t, present := v["type"]; present {
-				if s, _ := t.(string); s != "volume" {
-					return errCompose("服务 %q 的卷挂载 type=%q 不受支持（v0.1 仅命名卷；bind/tmpfs 拒绝）", name, fmt.Sprint(t)).
-						WithContext("path", path+".type")
+				if t, present := v["type"]; present {
+					if s, _ := t.(string); s != "volume" {
+						return errCompose("unsupported volume mount type=%q for service %q (v0.1 allows named volumes only; bind/tmpfs are rejected)", name, fmt.Sprint(t)).
+							WithContext("path", path+".type")
+					}
 				}
+			default:
+				return errCompose("unsupported volume mount entry type for service %q", name).WithContext("path", path)
 			}
-		default:
-			return errCompose("服务 %q 的卷挂载项类型不支持", name).WithContext("path", path)
-		}
 	}
 	return nil
 }
@@ -523,14 +523,14 @@ func validateServiceNetworksDict(name, prefix string, networksAny any) error {
 		for _, net := range sortedKeys(v) {
 			if conf := v[net]; conf != nil {
 				if m, ok := conf.(map[string]any); !ok || len(m) > 0 {
-					return errCompose("服务 %q 的网络 %q 携带配置（aliases/ipam 等不在支持清单；服务别名由平台按 compose 服务名管理）", name, net).
+					return errCompose("network %q of service %q carries configuration (aliases/ipam etc. are not in the support list; service aliases are managed by the platform from compose service names)", name, net).
 						WithContext("path", prefix+".networks."+net)
 				}
 			}
 		}
 		return nil
 	default:
-		return errCompose("服务 %q 的 networks 形态不支持", name).WithContext("path", prefix+".networks")
+		return errCompose("unsupported networks form for service %q", name).WithContext("path", prefix+".networks")
 	}
 }
 
@@ -542,7 +542,7 @@ func validateNetworksDict(dict map[string]any) error {
 	}
 	nets, ok := netsAny.(map[string]any)
 	if !ok {
-		return errCompose("顶层 networks 必须是映射").WithContext("path", "networks")
+		return errCompose("top-level networks must be a mapping").WithContext("path", "networks")
 	}
 	for _, net := range sortedKeys(nets) {
 		def, ok := nets[net].(map[string]any)
@@ -551,7 +551,7 @@ func validateNetworksDict(dict map[string]any) error {
 		}
 		for _, key := range sortedKeys(def) {
 			if reason, rejected := networkDefReject[key]; rejected {
-				return errCompose("网络 %q 的 %q：%s", net, key, reason).
+				return errCompose("network %q, field %q: %s", net, key, reason).
 					WithContext("path", "networks."+net+"."+key)
 			}
 		}
@@ -567,7 +567,7 @@ func validateVolumesDict(dict map[string]any) error {
 	}
 	vols, ok := volsAny.(map[string]any)
 	if !ok {
-		return errCompose("顶层 volumes 必须是映射").WithContext("path", "volumes")
+		return errCompose("top-level volumes must be a mapping").WithContext("path", "volumes")
 	}
 	for _, vol := range sortedKeys(vols) {
 		def, ok := vols[vol].(map[string]any)
@@ -576,7 +576,7 @@ func validateVolumesDict(dict map[string]any) error {
 		}
 		for _, key := range sortedKeys(def) {
 			if reason, rejected := volumeDefReject[key]; rejected {
-				return errCompose("卷 %q 的 %q：%s", vol, key, reason).
+				return errCompose("volume %q, field %q: %s", vol, key, reason).
 					WithContext("path", "volumes."+vol+"."+key)
 			}
 		}
@@ -596,7 +596,7 @@ func checkSubKeysAt(name, path, section string, dict map[string]any, whitelist m
 			continue
 		}
 		if !whitelist[key] {
-			return errCompose("服务 %q 的 %s.%s 不在受控子集支持清单", name, section, key).
+			return errCompose("%s.%s of service %q is not in the controlled-subset support list", name, section, key).
 				WithContext("path", path+"."+key)
 		}
 	}

@@ -18,34 +18,34 @@ import (
 var eventExemptions = map[string]string{
 	// 预留：系统性失败恢复排队（release-semantics §2.7）——v0.1 失败分流
 	// 不建新 deployment（D-REL-6 默认只告警），自动恢复动作随 v0.2 恢复器。
-	"deployment.recovery_scheduled": "预留：自动恢复排队事件，随 v0.2 恢复器接线",
+	"deployment.recovery_scheduled": "reserved: auto-recovery queueing event, wired with the v0.2 restorer",
 	// 预留：部署被更新目标取代（陈旧终态）——v0.1 同 app 互斥排队
 	//（§2.5），不存在「在途部署被新目标取代」的路径；superseded 随并发
 	// 部署策略（v0.2）开放。
-	"deployment.superseded": "预留：同 app 互斥排队下无取代路径，随 v0.2 并发策略",
+	"deployment.superseded": "reserved: no supersede path under per-app exclusive queueing; opens with the v0.2 concurrency policy",
 	// 预留：绑定变更事件只在显式确认的迁移路径（rebind/move）发出——
 	// v0.1 单机无第二候选（MultiNodeUnsupported 守卫），rebind CLI 属 v0.2。
-	"placement.changed": "预留：rebind/迁移路径 v0.2（单机无第二候选）",
+	"placement.changed": "reserved: rebind/migration path in v0.2 (single node has no second candidate)",
 	// 预留：DR 后绑定无法判定的显式放置要求——DR 恢复阶梯 L1/L2 的 v0.2
 	// 面（单机 v0.1 无 DR 绑定歧义场景）。
-	"placement.unresolved": "预留：DR 后绑定判定，随 v0.2 恢复阶梯",
+	"placement.unresolved": "reserved: post-DR binding decision, with the v0.2 recovery ladder",
 	// 预留：节点观测事件族（joined/down/up/removed）由节点观测器发出——
 	// v0.1 单节点无节点观测器循环（节点状态经放置 Preflight 直读）；观测
 	// 器随 v0.2 多节点接入。
-	"node.joined":  "预留：节点观测器 v0.2（单机无节点观测循环）",
-	"node.down":    "预留：节点观测器 v0.2（单机经放置 Preflight 直读）",
-	"node.up":      "预留：节点观测器 v0.2",
-	"node.removed": "预留：节点观测器 v0.2",
+	"node.joined":  "reserved: node observer in v0.2 (single node has no observer loop)",
+	"node.down":    "reserved: node observer in v0.2 (single node reads node state directly via placement Preflight)",
+	"node.up":      "reserved: node observer in v0.2",
+	"node.removed": "reserved: node observer in v0.2",
 	// 预留：卷声明移除（detached）与显式丢弃（discarded）的事件面——
 	// v0.1 对账只动服务面，卷声明移除的显性化与 admin 丢弃 CLI 随卷生命
 	// 周期票（v0.2 discard/orphan 面一起接线）。
-	"volume.detached":  "预留：卷声明移除显性化，随 v0.2 卷生命周期票",
-	"volume.discarded": "预留：admin 丢弃 CLI v0.2",
+	"volume.detached":  "reserved: surfacing volume-declaration removal, with the v0.2 volume lifecycle ticket",
+	"volume.discarded": "reserved: admin discard CLI in v0.2",
 	// 预留：控制面恢复流程完成事件——恢复器（state-model §2.7 恢复阶梯）
 	// 未实现（同 E_BACKUP_KEY_MISSING 的预留裁决）。
-	"restore.completed": "预留：恢复器未实现（同 E_BACKUP_KEY_MISSING）",
+	"restore.completed": "reserved: restorer not implemented (same as E_BACKUP_KEY_MISSING)",
 	// 预留：cron 触发跳过事件——cron 整体入 v0.2（architecture §4.3）。
-	"cron.skipped": "预留：cron v0.2",
+	"cron.skipped": "reserved: cron in v0.2",
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除
@@ -85,7 +85,7 @@ func productionSources(t *testing.T) map[string]string {
 		}
 	}
 	if len(out) == 0 {
-		t.Fatal("no production sources scanned（扫描基座失效）")
+		t.Fatal("no production sources scanned (scan harness broken)")
 	}
 	return out
 }
@@ -107,7 +107,7 @@ func TestRegistryEventsReferencedInProduction(t *testing.T) {
 			}
 		}
 		if found == "" {
-			t.Errorf("事件 %s 注册后零生产引用（真实漏发则补实现；确属预留则在 eventExemptions 与注册表行注明理由）", ev.Name)
+			t.Errorf("event %s has zero production references since registration (add the missing emit if real; if genuinely reserved, note the reason in eventExemptions and on the registry row)", ev.Name)
 		}
 	}
 }
@@ -118,7 +118,7 @@ func TestRegistryEventsReferencedInProduction(t *testing.T) {
 func TestEventExemptionsStillRegistered(t *testing.T) {
 	for name := range eventExemptions {
 		if _, ok := Default().Get(name); !ok {
-			t.Errorf("豁免清单项 %s 不在注册表（清单与注册表脱节）", name)
+			t.Errorf("exemption entry %s not in the registry (exemption list out of sync with registry)", name)
 		}
 	}
 }

@@ -87,7 +87,7 @@ func TestTriggerBuildContextContainment(t *testing.T) {
 	if status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("escaping context code = %v (%v), want InvalidArgument (E_COMPOSE_UNSUPPORTED)", status.Code(err), err)
 	}
-	if !strings.Contains(err.Error(), "E_COMPOSE_UNSUPPORTED") && !strings.Contains(err.Error(), "越出基准目录") {
+	if !strings.Contains(err.Error(), "E_COMPOSE_UNSUPPORTED") && !strings.Contains(err.Error(), "outside the base directory") {
 		t.Fatalf("escaping context error = %v, want containment message", err)
 	}
 	// 不入队（拒绝发生在建行之前）。
@@ -197,9 +197,9 @@ func TestTriggerBuildWakesQueueImmediately(t *testing.T) {
 	select {
 	case at := <-exec.called:
 		if elapsed := at.Sub(start); elapsed >= 20*time.Second {
-			t.Fatalf("claim latency %v ≥ poll interval 20s（唤醒通道未生效）", elapsed)
+			t.Fatalf("claim latency %v ≥ poll interval 20s (wakeup channel not effective)", elapsed)
 		}
 	case <-time.After(5 * time.Second):
-		t.Fatal("executor not called within 5s：同进程触发未被唤醒（在等 poll interval）")
+		t.Fatal("executor not called within 5s: same-process trigger was not woken (still waiting on the poll interval)")
 	}
 }

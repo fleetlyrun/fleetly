@@ -88,7 +88,7 @@ func (e *Engine) cancelDeployment(ctx context.Context, rec state.DeployRecord) e
 	if previous != nil {
 		if err := e.restoreSnapshot(ctx, rec, previous); err != nil {
 			return e.failTransitionErr(ctx, rec, errorf("E_ROLLBACK_FAILED",
-				"取消的归位重放失败（critical，不再二次自动）：%v", err))
+				"cancel replay recovery failed (critical, no second automatic recovery): %v", err))
 		}
 		patch.Recovery = &recovery
 	} else if specs, derr := e.decodeSpecs(rec); derr == nil {
@@ -128,7 +128,7 @@ func (e *Engine) rejectCancel(ctx context.Context, rec state.DeployRecord) error
 	return e.store.InTx(ctx, func(tx *state.Tx) error {
 		return auditDeployment(ctx, tx, "human", "deployment.cancel", rec.ID,
 			"error", "E_STATE_VERSION_CONFLICT",
-			`{"reason":"already_switched","message":"deployment 曾健康（已切流），不可 cancel；建议改用 rollback"}`)
+			`{"reason":"already_switched","message":"deployment was healthy (already switched), cannot cancel; use rollback instead"}`)
 	})
 }
 
@@ -137,13 +137,13 @@ func (e *Engine) rejectCancel(ctx context.Context, rec state.DeployRecord) error
 func (e *Engine) CancelRequest(ctx context.Context, rec state.DeployRecord) error {
 	if !rec.FirstHealthyAt.IsZero() || rec.Status == state.DeployObserving {
 		return apperr.New("E_STATE_VERSION_CONFLICT",
-			"deployment %s 已切流（曾健康），不可 cancel（409）：建议改用 rollback", rec.ID).
+			"deployment %s already switched (was healthy), cannot cancel (409): use rollback instead", rec.ID).
 			WithContext("deployment", rec.ID).
 			WithContext("reason", "already_switched")
 	}
 	if rec.Status.Terminal() {
 		return apperr.New("E_STATE_VERSION_CONFLICT",
-			"deployment %s 已是终态（%s），不可 cancel", rec.ID, rec.Status).
+			"deployment %s is already terminal (%s), cannot cancel", rec.ID, rec.Status).
 			WithContext("deployment", rec.ID).
 			WithContext("reason", "terminal")
 	}
@@ -245,7 +245,7 @@ func (e *Engine) classifyRecovering(ctx context.Context, rec state.DeployRecord)
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
 		return e.failUnswitchedOrSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",
-			"控制面重启后期望态快照不可读：人工处置")
+			"desired-state snapshot unreadable after control-plane restart: manual intervention required")
 	}
 	anyPaused := false
 	allSwitched := len(specs) > 0
@@ -276,13 +276,13 @@ func (e *Engine) classifyRecovering(ctx context.Context, rec state.DeployRecord)
 	switch {
 	case anyPaused:
 		code, detail := e.classifyUpdateFailure(ctx, specs)
-		return e.failUnswitchedOrSwitched(ctx, rec, code, "控制面重启后分类恢复："+detail)
+		return e.failUnswitchedOrSwitched(ctx, rec, code, "classified recovery after control-plane restart: "+detail)
 	case allSwitched:
 		return e.enterObserving(ctx, rec)
 	default:
 		// 无法判定（更新中/无进展）→ 失败 + 人工（§2.3；E_DEPLOY_INTERRUPTED）。
 		return e.failUnswitchedOrSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",
-			"控制面重启后部署现场无法判定（更新中或无进展）：人工确认后重新发起部署")
+			"deployment state indeterminate after control-plane restart (updating or no progress): confirm manually and start a new deployment")
 	}
 }
 
@@ -292,7 +292,7 @@ func (e *Engine) reopenObserveWindow(ctx context.Context, rec state.DeployRecord
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
 		return e.failSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",
-			"控制面重启后期望态快照不可读：人工处置")
+			"desired-state snapshot unreadable after control-plane restart: manual intervention required")
 	}
 	for i := range specs {
 		tasks, err := e.sub.TaskList(ctx, specs[i].Name)
@@ -304,7 +304,7 @@ func (e *Engine) reopenObserveWindow(ctx context.Context, rec state.DeployRecord
 		}
 		if countNewRunning(tasks, specs[i].Image) < desiredReplicasOf(specs[i]) {
 			return e.failSwitched(ctx, rec, "E_DEPLOY_INTERRUPTED",
-				"控制面重启后观察窗现场不健康（副本水位不齐）：人工确认后重新发起部署")
+				"observe window state unhealthy after control-plane restart (replica watermarks not met): confirm manually and start a new deployment")
 		}
 	}
 	observeStart := e.now()

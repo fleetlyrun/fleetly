@@ -303,10 +303,10 @@ func (b *Builder) fail(ctx context.Context, buildID string, cause error) error {
 	if err == nil && rec.LogPath != "" {
 		tail := tailFile(rec.LogPath)
 		if tail != "" {
-			cause = fmt.Errorf("%w\n--- 构建日志尾部 ---\n%s", cause, tail)
+			cause = fmt.Errorf("%w\n--- build log tail ---\n%s", cause, tail)
 		}
 	}
-	appErr := apperr.New("E_BUILD_FAILED", "构建失败：%v", cause).
+	appErr := apperr.New("E_BUILD_FAILED", "build failed: %v", cause).
 		WithStage("build").
 		WithCause(cause)
 	if err == nil {

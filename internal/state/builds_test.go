@@ -156,7 +156,7 @@ func TestBuildAuditTrailFollowsTransitions(t *testing.T) {
 	}
 	for i, w := range want {
 		if actions[i] != w {
-			t.Fatalf("audit action[%d] = %s, want %s（RecentAudits 倒序）", i, actions[i], w)
+			t.Fatalf("audit action[%d] = %s, want %s (RecentAudits is newest-first)", i, actions[i], w)
 		}
 	}
 }
@@ -234,13 +234,13 @@ func TestResetInterruptedBuilds(t *testing.T) {
 		t.Fatalf("finish terminal: %v", err)
 	}
 
-	const reason = "构建被中断（daemon 重启/关停）"
+	const reason = "build interrupted (daemon restart/shutdown)"
 	n, err := st.ResetInterruptedBuilds(context.Background(), "E_BUILD_FAILED", reason)
 	if err != nil {
 		t.Fatalf("reset: %v", err)
 	}
 	if n != 1 {
-		t.Fatalf("reset count = %d, want 1（只复位 building 行）", n)
+		t.Fatalf("reset count = %d, want 1 (only building rows are reset)", n)
 	}
 
 	row, err := st.GetBuild(context.Background(), interrupted.ID)
@@ -257,7 +257,7 @@ func TestResetInterruptedBuilds(t *testing.T) {
 		t.Fatalf("queued row = %s (%v), want queued untouched", qrow.Status, err)
 	}
 	if trow, err := st.GetBuild(context.Background(), terminal.ID); err != nil || trow.Status != BuildSucceeded {
-		t.Fatalf("terminal row = %s (%v), want succeeded untouched（终态不可逆）", trow.Status, err)
+		t.Fatalf("terminal row = %s (%v), want succeeded untouched (terminal states are irreversible)", trow.Status, err)
 	}
 
 	// 复位归因进审计 diff（builds 表只存错误码，归因落点在审计）。
@@ -324,7 +324,7 @@ func TestSetBuildLogPath(t *testing.T) {
 		t.Fatalf("finish failed: %v", err)
 	}
 	if row, err := st.GetBuild(context.Background(), claimed.ID); err != nil || row.LogPath != want {
-		t.Fatalf("failed row log_path = %q (%v), want %q（终态不得清除回填）", row.LogPath, err, want)
+		t.Fatalf("failed row log_path = %q (%v), want %q (terminal states must not clear the backfill)", row.LogPath, err, want)
 	}
 
 	// 终态后回填：谓词未命中，不覆盖。
@@ -332,7 +332,7 @@ func TestSetBuildLogPath(t *testing.T) {
 		t.Fatalf("set on terminal: %v", err)
 	}
 	if row, err := st.GetBuild(context.Background(), claimed.ID); err != nil || row.LogPath != want {
-		t.Fatalf("terminal row log_path = %q (%v), want %q（终态行不得被覆盖）", row.LogPath, err, want)
+		t.Fatalf("terminal row log_path = %q (%v), want %q (terminal rows must not be overwritten)", row.LogPath, err, want)
 	}
 }
 
@@ -397,7 +397,7 @@ func TestCreateBuildAsAuditAttribution(t *testing.T) {
 		if strings.Contains(a.DiffSummary, plain.ID) {
 			gotPlain = true
 			if a.Actor != "system" || tokenIDOf(a) != "" {
-				t.Fatalf("default audit actor=%q actor_token_id=%q, want system/空", a.Actor, tokenIDOf(a))
+				t.Fatalf("default audit actor=%q actor_token_id=%q, want system/empty", a.Actor, tokenIDOf(a))
 			}
 		}
 	}

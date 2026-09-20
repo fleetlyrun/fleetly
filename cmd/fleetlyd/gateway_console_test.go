@@ -152,7 +152,7 @@ func TestGatewayConsoleStaticHosting(t *testing.T) {
 		t.Fatalf("GET /ui/assets/app-abc.js = %d %q (%s)", code, body, ctype)
 	}
 	if csp != consoleCSP {
-		t.Fatalf("GET /ui/assets/app-abc.js Content-Security-Policy = %q, want %q (静态资源同受 CSP)", csp, consoleCSP)
+		t.Fatalf("GET /ui/assets/app-abc.js Content-Security-Policy = %q, want %q (static assets are covered by the CSP too)", csp, consoleCSP)
 	}
 	code, _, ctype, csp = get("/ui/assets/app-abc.css")
 	if code != 200 || !strings.Contains(ctype, "text/css") {
@@ -168,7 +168,7 @@ func TestGatewayConsoleStaticHosting(t *testing.T) {
 		t.Fatalf("GET /ui/apps/demo = %d %q, want 200 index.html (SPA fallback)", code, body)
 	}
 	if csp != consoleCSP {
-		t.Fatalf("GET /ui/apps/demo Content-Security-Policy = %q, want %q (SPA 回退同受 CSP)", csp, consoleCSP)
+		t.Fatalf("GET /ui/apps/demo Content-Security-Policy = %q, want %q (the SPA fallback is covered by the CSP too)", csp, consoleCSP)
 	}
 
 	// 面 4：目录穿越 404（fs.ValidPath 拒绝 ..）。

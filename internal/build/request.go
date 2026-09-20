@@ -94,10 +94,10 @@ func DecodeRequest(raw string) (Request, error) {
 // 根）。校验失败不得静默放宽：调用方据此落 E_BUILD_FAILED 终态。
 func validateContextDir(dir string, roots []string) error {
 	if !filepath.IsAbs(dir) {
-		return fmtErr("上下文目录越界：context_dir %q 不是绝对路径（受管根：%s）", dir, strings.Join(roots, ", "))
+		return fmtErr("context directory outside managed roots: context_dir %q is not an absolute path (managed roots: %s)", dir, strings.Join(roots, ", "))
 	}
 	if filepath.Clean(dir) != dir {
-		return fmtErr("上下文目录越界：context_dir %q 含未归一化段（.. 逃逸词形）", dir)
+		return fmtErr("context directory outside managed roots: context_dir %q contains unclean segments (.. escape form)", dir)
 	}
 	// H8：解析符号链后的真实路径参与比对；解析失败（目录不存在）回落
 	// 词法路径（unresolved 标记——见函数头注记的语义边界）。
@@ -123,7 +123,7 @@ func validateContextDir(dir string, roots []string) error {
 			return nil
 		}
 	}
-	return fmtErr("上下文目录越界：context_dir %q 不在受管根（%s）之内——构建上下文必须位于平台受管目录（系统 temp / git 根 / 显式配置根）", dir, strings.Join(roots, ", "))
+	return fmtErr("context directory outside managed roots: context_dir %q is not within a managed root (%s) — the build context must live under platform-managed directories (system temp / git root / explicitly configured roots)", dir, strings.Join(roots, ", "))
 }
 
 // Result 是一次构建的产出（成功路径；失败经 E_BUILD_FAILED 错误信封表达）。
@@ -153,7 +153,7 @@ func DriverFor(svc compose.Service) (state.Driver, bool, error) {
 	case svc.Image != "":
 		return state.DriverPassthrough, false, nil
 	default:
-		return "", false, fmt.Errorf("build: service %s has neither build nor image (受控子集校验应已拒绝)", svc.Name)
+		return "", false, fmt.Errorf("build: service %s has neither build nor image (controlled-subset validation should have rejected this)", svc.Name)
 	}
 }
 

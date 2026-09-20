@@ -176,7 +176,7 @@ func resolveBuildContext(base string, svc compose.Service) (string, error) {
 	rel, err := filepath.Rel(base, contextDir)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", apperr.New("E_COMPOSE_UNSUPPORTED",
-			"服务 %s 的 build.context %q 解析后越出基准目录 %s：构建上下文必须位于 base_dir（缺省为服务端临时目录）之内（宿主目录信任边界，H14）",
+			"service %s: build.context %q resolves outside the base directory %s: the build context must stay within base_dir (defaults to the server-side temp directory) (host directory trust boundary, H14)",
 			svc.Name, svc.Build.Context, base)
 	}
 	return contextDir, nil

@@ -80,7 +80,7 @@ func (c *eventsWatchCmd) Run(ctx context.Context, env *commands.Environment, arg
 				_, err := fmt.Fprintf(env.Stdout, "#%d %s %s %s\n", ev.GetSeq(), at, ev.GetName(), ev.GetSubject())
 				return err
 			case *serverv1.WatchEventsResponse_CursorExpired:
-				_, err := fmt.Fprintf(env.Stdout, "cursor expired（seq ≤ %d 已被保留策略清理；以 --since-seq %d 重新拉全量）: %s\n",
+				_, err := fmt.Fprintf(env.Stdout, "cursor expired (seq ≤ %d pruned by the retention policy; re-pull the full stream with --since-seq %d): %s\n",
 					f.CursorExpired.GetOldestSeq()-1, f.CursorExpired.GetOldestSeq(), f.CursorExpired.GetMessage())
 				return err
 			default:

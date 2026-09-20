@@ -64,19 +64,19 @@ services:
 func TestDiffFirstDeploy(t *testing.T) {
 	plan := planOf(t, "", diffTargetChanged)
 	if !plan.HasChanges {
-		t.Fatal("首部署应有变更")
+		t.Fatal("first deploy should have changes")
 	}
 	if len(plan.Services.Added) != 1 || plan.Services.Added[0] != "web" {
-		t.Errorf("Added = %v, 期望 [web]", plan.Services.Added)
+		t.Errorf("Added = %v, want [web]", plan.Services.Added)
 	}
 	if plan.Destructive || plan.RequiresConfirmDestructive {
-		t.Error("首部署不是破坏性操作")
+		t.Error("first deploy is not destructive")
 	}
 	if plan.BaseSpecHash != "" {
-		t.Errorf("空基线 BaseSpecHash 应为空, got %q", plan.BaseSpecHash)
+		t.Errorf("BaseSpecHash should be empty for an empty baseline, got %q", plan.BaseSpecHash)
 	}
 	if plan.SpecHash == "" {
-		t.Error("SpecHash 未填")
+		t.Error("SpecHash not populated")
 	}
 }
 
@@ -85,14 +85,14 @@ func TestDiffFirstDeploy(t *testing.T) {
 func TestDiffFieldLevel(t *testing.T) {
 	plan := planOf(t, diffBase, diffTargetChanged)
 	if !plan.HasChanges {
-		t.Fatal("应有变更")
+		t.Fatal("expected changes")
 	}
 	if len(plan.Services.Updated) != 1 {
 		t.Fatalf("Updated = %+v", plan.Services.Updated)
 	}
 	u := plan.Services.Updated[0]
 	if u.Name != "web" {
-		t.Fatalf("更新服务 = %q", u.Name)
+		t.Fatalf("updated service = %q", u.Name)
 	}
 	paths := map[string]FieldChange{}
 	for _, f := range u.Fields {
@@ -100,14 +100,14 @@ func TestDiffFieldLevel(t *testing.T) {
 	}
 	img, ok := paths["image"]
 	if !ok {
-		t.Fatalf("缺 image 字段差分: %+v", u.Fields)
+		t.Fatalf("missing image field diff: %+v", u.Fields)
 	}
 	if img.From != "nginx:1.26" || img.To != "nginx:1.27" {
-		t.Errorf("image 差分 = %+v", img)
+		t.Errorf("image diff = %+v", img)
 	}
 	envPath, ok := paths["environment.FOO"]
 	if !ok {
-		t.Fatalf("缺 environment.FOO 差分: %+v", u.Fields)
+		t.Fatalf("missing environment.FOO field diff: %+v", u.Fields)
 	}
 	// env 差分值为 hash 对象（含 hash/source），不含明文。
 	for _, side := range []any{envPath.From, envPath.To} {
@@ -115,19 +115,19 @@ func TestDiffFieldLevel(t *testing.T) {
 		var m map[string]any
 		_ = json.Unmarshal(raw, &m)
 		if _, has := m["hash"]; !has {
-			t.Errorf("env 差分侧缺 hash 字段: %s", raw)
+			t.Errorf("env diff side missing hash field: %s", raw)
 		}
 		if s := string(raw); strings.Contains(s, "secret-value") {
-			t.Errorf("env 差分泄露明文值: %s", s)
+			t.Errorf("env diff leaks plaintext value: %s", s)
 		}
 	}
 	if _, ok := paths["environment.KEEP"]; ok {
-		t.Error("未变更的 KEEP 不应出现在差分")
+		t.Error("unchanged KEEP should not appear in the diff")
 	}
 	// 完整 artifact JSON 同样不含明文（负面测试：脱敏结构性成立）。
 	raw, _ := json.Marshal(plan)
 	if strings.Contains(string(raw), "secret-value") {
-		t.Errorf("plan artifact 泄露 env 明文: %s", raw)
+		t.Errorf("plan artifact leaks env plaintext: %s", raw)
 	}
 }
 
@@ -136,10 +136,10 @@ func TestDiffFieldLevel(t *testing.T) {
 func TestDiffDestructive(t *testing.T) {
 	plan := planOf(t, diffTargetNewService, diffTargetRemovedService)
 	if len(plan.Services.Removed) != 1 || plan.Services.Removed[0] != "web" {
-		t.Fatalf("Removed = %v, 期望 [web]", plan.Services.Removed)
+		t.Fatalf("Removed = %v, want [web]", plan.Services.Removed)
 	}
 	if !plan.Destructive || !plan.RequiresConfirmDestructive {
-		t.Errorf("服务删除必须标记破坏性: destructive=%v requires=%v", plan.Destructive, plan.RequiresConfirmDestructive)
+		t.Errorf("service removal must be flagged destructive: destructive=%v requires=%v", plan.Destructive, plan.RequiresConfirmDestructive)
 	}
 
 	volBase := `
@@ -159,10 +159,10 @@ services:
 		t.Fatalf("Volumes.Removed = %v", plan.Volumes.Removed)
 	}
 	if !plan.Destructive {
-		t.Error("卷解绑必须标记破坏性")
+		t.Error("volume unbind must be flagged destructive")
 	}
 	if !strings.Contains(plan.RenderText(), "--confirm-destructive") {
-		t.Error("人读报告应提示 --confirm-destructive")
+		t.Error("human-readable report should mention --confirm-destructive")
 	}
 }
 
@@ -173,21 +173,21 @@ func TestDestructiveChanges(t *testing.T) {
 	base := loadOK(t, writeCompose(t, diffTargetNewService))        // web + worker
 	removed := loadOK(t, writeCompose(t, diffTargetRemovedService)) // 仅 worker（删 web）
 	if !DestructiveChanges(base, removed) {
-		t.Error("服务删除必须是破坏性变更")
+		t.Error("service removal must be a destructive change")
 	}
 	orig := loadOK(t, writeCompose(t, diffBase))             // web（旧镜像）
 	changed := loadOK(t, writeCompose(t, diffTargetChanged)) // 仅 web（镜像修改）
 	if DestructiveChanges(orig, changed) {
-		t.Error("仅修改服务不是破坏性变更")
+		t.Error("service update only is not a destructive change")
 	}
 	if DestructiveChanges(changed, base) {
-		t.Error("仅新增服务（web 已在、worker 新增）不是破坏性变更")
+		t.Error("service addition only (web already present, worker added) is not a destructive change")
 	}
 	if DestructiveChanges(nil, changed) {
-		t.Error("空基线（首部署）恒非破坏性")
+		t.Error("empty baseline (first deploy) is never destructive")
 	}
 	if !DestructiveChanges(changed, nil) {
-		t.Error("nil 目标视为空 Spec（全量移除）应判破坏性")
+		t.Error("nil target treated as an empty Spec (full removal) should be judged destructive")
 	}
 	volBase := loadOK(t, writeCompose(t, `
 name: my-api
@@ -202,10 +202,10 @@ services:
   web: { image: nginx }
 `))
 	if !DestructiveChanges(volBase, volTarget) {
-		t.Error("卷解绑必须是破坏性变更")
+		t.Error("volume unbind must be a destructive change")
 	}
 	if DestructiveChanges(volBase, volBase) {
-		t.Error("同形态不判破坏性")
+		t.Error("identical specs must not be judged destructive")
 	}
 }
 
@@ -213,13 +213,13 @@ services:
 func TestDiffNoChanges(t *testing.T) {
 	plan := planOf(t, diffBase, diffBase)
 	if plan.HasChanges {
-		t.Fatalf("同内容不应有变更: %+v", plan)
+		t.Fatalf("identical content should yield no changes: %+v", plan)
 	}
 	if plan.Destructive {
-		t.Error("无变更不应标记破坏性")
+		t.Error("no changes must not be flagged destructive")
 	}
 	if !strings.Contains(plan.RenderText(), "no changes") {
-		t.Errorf("人读报告应输出 no changes: %s", plan.RenderText())
+		t.Errorf("human-readable report should output no changes: %s", plan.RenderText())
 	}
 }
 
@@ -232,7 +232,7 @@ func TestDiffNilBase(t *testing.T) {
 		t.Fatalf("Diff(nil, x): %v", err)
 	}
 	if !plan.HasChanges || len(plan.Services.Added) != 1 {
-		t.Fatalf("nil 基线应视为首部署: %+v", plan)
+		t.Fatalf("nil baseline should be treated as a first deploy: %+v", plan)
 	}
 }
 
@@ -245,11 +245,11 @@ func TestPlanArtifactETag(t *testing.T) {
 		t.Fatalf("Diff: %v", err)
 	}
 	if plan.SpecHash != target.SpecHash {
-		t.Errorf("etag = %s, 目标 spec_hash = %s", plan.SpecHash, target.SpecHash)
+		t.Errorf("etag = %s, target spec_hash = %s", plan.SpecHash, target.SpecHash)
 	}
 	plan2, _ := Diff(nil, target)
 	if plan.SpecHash != plan2.SpecHash {
-		t.Error("plan etag 不稳定")
+		t.Error("plan etag is unstable")
 	}
 }
 
@@ -272,7 +272,7 @@ services:
 		}
 	}
 	if !found {
-		t.Fatalf("缺 W_PLACEMENT_STATELESS_PIN: %+v", plan.Warnings)
+		t.Fatalf("missing W_PLACEMENT_STATELESS_PIN: %+v", plan.Warnings)
 	}
 
 	volumed := `
@@ -289,7 +289,7 @@ volumes:
 	plan = planOf(t, "", volumed)
 	for _, w := range plan.Warnings {
 		if w.Code == "W_PLACEMENT_STATELESS_PIN" {
-			t.Errorf("有卷应用不应提示 stateless pin: %+v", plan.Warnings)
+			t.Errorf("app with volumes should not get the stateless pin hint: %+v", plan.Warnings)
 		}
 	}
 }
@@ -314,10 +314,10 @@ services:
 	text := plan.RenderText()
 	for _, want := range []string{"+ service worker2", "- service worker", "~ service web", "environment.FOO"} {
 		if !strings.Contains(text, want) {
-			t.Errorf("渲染缺 %q:\n%s", want, text)
+			t.Errorf("rendering missing %q:\n%s", want, text)
 		}
 	}
 	if strings.Contains(text, "secret-value") {
-		t.Error("人读渲染泄露 env 明文")
+		t.Error("human-readable rendering leaks env plaintext")
 	}
 }

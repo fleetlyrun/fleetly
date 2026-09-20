@@ -42,7 +42,7 @@ func TestGitCommandCancelledByConnContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cmd := newGitCommand(ctx, "git-upload-pack", "/unused/repo")
 	if cmd.WaitDelay != gitWaitDelay {
-		t.Fatalf("WaitDelay = %v, want %v (E6: I/O 挂死后 Wait 的兜底上限)", cmd.WaitDelay, gitWaitDelay)
+		t.Fatalf("WaitDelay = %v, want %v (E6: backstop bound on Wait after I/O hangs)", cmd.WaitDelay, gitWaitDelay)
 	}
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start fake git: %v", err)

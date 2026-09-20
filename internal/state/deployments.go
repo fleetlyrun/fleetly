@@ -407,7 +407,7 @@ func updateDeployment(ctx context.Context, db execer, id string, p DeploymentPat
 		// 仅就地更新子状态/时间锚/标志位（CancelRequested/Flags 等）的
 		// patch 不带 Status，不受影响。
 		if p.PrevStatus == nil {
-			return fmt.Errorf("state: update deployment %s: 状态写必须携带 PrevStatus（引擎单写点纪律，裸状态写绕过转移表）", id)
+			return fmt.Errorf("state: update deployment %s: status writes must carry PrevStatus (engine single-writer discipline; a bare status write bypasses the transition table)", id)
 		}
 		// S16-C5：CAS 前按转移表校验 from→to（非法即拒写——engine/machine.go
 		// 的文档性转移表自此在写路径咬合，机器真源见 state/machine.go）。

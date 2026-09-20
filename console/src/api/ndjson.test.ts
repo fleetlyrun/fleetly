@@ -21,7 +21,7 @@ describe("NdjsonParser", () => {
     expect(p.flush()).toHaveLength(0);
   });
 
-  it("reassembles a frame split across chunks (断帧拼接)", () => {
+  it("reassembles a frame split across chunks (frame split across chunk boundary)", () => {
     const p = new NdjsonParser<Frame>();
     expect(p.push('{"entry":{"li')).toHaveLength(0);
     expect(p.push('ne":"split"}}\n')).toHaveLength(1);

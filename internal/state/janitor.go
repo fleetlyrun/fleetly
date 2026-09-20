@@ -338,7 +338,7 @@ func (j *Janitor) reportStale(ctx context.Context, now time.Time, name, subject 
 		return
 	}
 	j.staleSeen[subject] = true
-	j.log.Error("janitor: 非终态记录超龄停留（状态机漏洞显性化，不自愈）",
+	j.log.Error("janitor: non-terminal record overstayed past its budget (surfaces a state-machine hole; no self-healing)",
 		"event", name, "subject", subject)
 	// DiffSummary 构造器复用为事件 payload 的安全 JSON 化（B4 同源）。
 	kvs := make([]any, 0, len(kv))

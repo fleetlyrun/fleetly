@@ -159,11 +159,11 @@ func specHashOf(path string) string {
 
 // placementUnavailable / placementGone 构造放置前哨错误（场景 15/16）。
 func placementUnavailable() error {
-	return apperr.New("E_PLACEMENT_NODE_UNAVAILABLE", "绑定节点非 ready（测试注入）")
+	return apperr.New("E_PLACEMENT_NODE_UNAVAILABLE", "bound node not ready (test injection)")
 }
 
 func placementGone() error {
-	return apperr.New("E_PLACEMENT_NODE_GONE", "绑定节点已移除（测试注入）")
+	return apperr.New("E_PLACEMENT_NODE_GONE", "bound node removed (test injection)")
 }
 
 // compose fixtures（受控子集内的最小形态；alpine + 真 healthcheck 语义由
@@ -291,7 +291,7 @@ func TestDeployMutexSecondStaysQueued(t *testing.T) {
 		t.Fatalf("first deployment still queued: %s", row1.Status)
 	}
 	if row2.Status != state.DeployQueued {
-		t.Fatalf("second deployment status = %s, want queued（互斥等待）", row2.Status)
+		t.Fatalf("second deployment status = %s, want queued (mutex wait)", row2.Status)
 	}
 }
 
@@ -332,7 +332,7 @@ services:
 		t.Fatalf("v2 deploy = %s (%s), want failed E_HEALTH_TIMEOUT", final.Status, final.ErrorCode)
 	}
 	if final.Recovery != state.RecoveryReplay {
-		t.Fatalf("recovery = %q, want replay（未切流同记录归位）", final.Recovery)
+		t.Fatalf("recovery = %q, want replay (unswitched same-record recovery)", final.Recovery)
 	}
 	if !final.FirstHealthyAt.IsZero() {
 		t.Fatal("first_healthy_at set on unswitched failure")
@@ -377,11 +377,11 @@ func TestFirstDeployFailureScalesToZero(t *testing.T) {
 		t.Fatalf("deploy = %s (%s), want failed E_TASK_START_FAILED", final.Status, final.ErrorCode)
 	}
 	if !final.SubstrateHalted {
-		t.Fatal("substrate_halted not set（首发失败 scale=0 保留现场）")
+		t.Fatal("substrate_halted not set (first deploy failure keeps the scene at scale=0)")
 	}
 	svc, err := h.sub.ServiceInspect(ctx, "fleetly-demo-web")
 	if err != nil {
-		t.Fatalf("service should exist (scale=0 保留现场): %v", err)
+		t.Fatalf("service should exist (scene kept at scale=0): %v", err)
 	}
 	if svc.Replicas != 0 {
 		t.Fatalf("replicas = %d, want 0", svc.Replicas)
@@ -391,7 +391,7 @@ func TestFirstDeployFailureScalesToZero(t *testing.T) {
 	}
 	got, _ := h.eng.AppDerivedState(ctx, rec.AppID)
 	if got != DerivedDown {
-		t.Fatalf("app state = %s, want down（无有效版本）", got)
+		t.Fatalf("app state = %s, want down (no valid revision)", got)
 	}
 }
 
@@ -442,7 +442,7 @@ func TestObserveIgnoresPriorDeploymentCrashHistory(t *testing.T) {
 	rec2 := h.enqueue(h.writeCompose(composeV1))
 	row := h.runToTerminal(rec2)
 	if row.Status != state.DeploySucceeded {
-		t.Fatalf("second deploy = %s (%s), want succeeded（旧崩溃史不应误判崩溃循环）", row.Status, row.ErrorCode)
+		t.Fatalf("second deploy = %s (%s), want succeeded (prior crash history must not misread as a crash loop)", row.Status, row.ErrorCode)
 	}
 }
 
@@ -476,7 +476,7 @@ func TestObserveSingleCrashSelfHealsWarns(t *testing.T) {
 	h.sub.crashNewRunning("fleetly-demo-web", 1, h.clk.Now())
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("status = %s (%s), want succeeded（警告通过）", final.Status, final.ErrorCode)
+		t.Fatalf("status = %s (%s), want succeeded (warning pass)", final.Status, final.ErrorCode)
 	}
 	if final.Flags&state.DeployFlagInstabilityWarning == 0 {
 		t.Fatal("instability warning flag not set")
@@ -688,7 +688,7 @@ func TestPrepareBudgetAnchoredAtPickupNotEnqueue(t *testing.T) {
 	h.eng.Tick(ctx)
 	row := mustGet(h, rec.ID)
 	if row.Status == state.DeployFailed {
-		t.Fatalf("long-queued deploy failed on pickup tick: %s（排队时长不得计入准备预算）",
+		t.Fatalf("long-queued deploy failed on pickup tick: %s (queue time must not count into the preparing budget)",
 			row.ErrorCode)
 	}
 	if row.PhaseStartedAt.IsZero() || !row.PhaseStartedAt.After(rec.CreatedAt) {
@@ -697,7 +697,7 @@ func TestPrepareBudgetAnchoredAtPickupNotEnqueue(t *testing.T) {
 	}
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("deploy = %s (%s), want succeeded（预算自拾取基线起算）",
+		t.Fatalf("deploy = %s (%s), want succeeded (budget counts from the pickup baseline)",
 			final.Status, final.ErrorCode)
 	}
 }
@@ -721,7 +721,7 @@ func TestPrepareBudgetLegacyRowFallsBackToCreatedAt(t *testing.T) {
 	h.eng.Tick(ctx)
 	final := mustGet(h, rec.ID)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
-		t.Fatalf("legacy row = %s (%s), want failed E_RUNTIME_UNAVAILABLE（基线缺失回落 created_at，旧语义不变）",
+		t.Fatalf("legacy row = %s (%s), want failed E_RUNTIME_UNAVAILABLE (missing baseline falls back to created_at, legacy semantics unchanged)",
 			final.Status, final.ErrorCode)
 	}
 	// 未触底座：无服务创建。
@@ -752,7 +752,7 @@ func TestRollbackPrepareBudgetAnchoredAtPickupRetries(t *testing.T) {
 	row := mustGet(h, rec.ID)
 	// 旧缺陷：预算自 created_at 起算 → 拾取第一拍即 failed（未触底座）。
 	if row.Status != state.DeployPreparing {
-		t.Fatalf("rollback row = %s (%s), want preparing（预算内重试，不立即终态失败）",
+		t.Fatalf("rollback row = %s (%s), want preparing (retry within budget, no immediate terminal failure)",
 			row.Status, row.ErrorCode)
 	}
 	if row.PhaseStartedAt.IsZero() || !row.PhaseStartedAt.After(rec.CreatedAt) {
@@ -777,7 +777,7 @@ func TestRollbackPrepareBudgetAnchoredAtPickupRetries(t *testing.T) {
 	h.eng.Tick(ctx)
 	final := mustGet(h, rec.ID)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
-		t.Fatalf("rollback = %s (%s), want failed E_RUNTIME_UNAVAILABLE（预算自基线起算后耗尽）",
+		t.Fatalf("rollback = %s (%s), want failed E_RUNTIME_UNAVAILABLE (budget counted from the baseline and exhausted)",
 			final.Status, final.ErrorCode)
 	}
 	if !hasEvent(h.events(), "deployment.rollback_failed") {
@@ -907,7 +907,7 @@ services:
 	eng2.recoverInterrupted(ctx)
 	after := mustGet(h, rec2.ID)
 	if after.Status != state.DeployReleasing || after.Phase != state.PhaseBlockedWaiting {
-		t.Fatalf("restart rewrote blocked_waiting row: status=%s phase=%s（等待语义不得丢失）",
+		t.Fatalf("restart rewrote blocked_waiting row: status=%s phase=%s (waiting semantics must not be lost)",
 			after.Status, after.Phase)
 	}
 	if after.ErrorCode != "" {
@@ -921,11 +921,11 @@ services:
 	svc.tasks = h.sub.runningTasks(svc, "t-resumed")
 	final := h.runToTerminalWith(rec2, eng2)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("resumed deploy = %s (%s), want succeeded（节点恢复续跑并重新起算）",
+		t.Fatalf("resumed deploy = %s (%s), want succeeded (node recovery resumes and re-arms the budget)",
 			final.Status, final.ErrorCode)
 	}
 	if !hasEvent(h.events(), "placement.recovered") {
-		t.Fatal("missing placement.recovered（续跑事件）")
+		t.Fatal("missing placement.recovered (resume event)")
 	}
 }
 
@@ -963,7 +963,7 @@ services:
 	eng2.recoverInterrupted(ctx)
 	final := mustGet(h, rec2.ID)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_DEPLOY_INTERRUPTED" {
-		t.Fatalf("recovered deploy = %s (%s), want failed E_DEPLOY_INTERRUPTED（无 phase 行走既有分类）",
+		t.Fatalf("recovered deploy = %s (%s), want failed E_DEPLOY_INTERRUPTED (phase-less row follows the existing classification)",
 			final.Status, final.ErrorCode)
 	}
 	if final.Recovery != state.RecoveryReplay {
@@ -1075,7 +1075,7 @@ func TestEnvPendingPromotedOnSuccess(t *testing.T) {
 		t.Fatalf("get env: %v", err)
 	}
 	if row.Status != state.EnvStatusEffective {
-		t.Fatalf("env status = %s, want effective（随部署生效）", row.Status)
+		t.Fatalf("env status = %s, want effective (takes effect with the deploy)", row.Status)
 	}
 	// 合并结果注入容器 env（key 在列；值不进断言输出）。
 	env := h.sub.services["fleetly-demo-web"].spec.Env
@@ -1151,7 +1151,7 @@ volumes:
 	}
 	spec := h.sub.services["fleetly-demo-db"].spec
 	if spec.UpdateOrder != "stop-first" {
-		t.Fatalf("volume service order = %q, want stop-first（平台强制）", spec.UpdateOrder)
+		t.Fatalf("volume service order = %q, want stop-first (platform-enforced)", spec.UpdateOrder)
 	}
 	v1Image := spec.Image
 
@@ -1172,7 +1172,7 @@ volumes:
 		t.Fatalf("deploy = %s (%s), want failed E_TASK_START_FAILED", final.Status, final.ErrorCode)
 	}
 	if final.Recovery != state.RecoveryReplay {
-		t.Fatalf("recovery = %q, want restore（stop-first 强制归位）", final.Recovery)
+		t.Fatalf("recovery = %q, want restore (stop-first forces recovery)", final.Recovery)
 	}
 	// 停机账（§2.6 如实累计）：起止时间戳齐备，ms 与起止差一致。假时钟单
 	// tick 内不流动 → 差值为 0 合法；实机 stop-first 归位 10–12s 量级
@@ -1182,7 +1182,7 @@ volumes:
 	}
 	want := final.DowntimeEndedAt.Sub(final.DowntimeStartedAt).Milliseconds()
 	if final.DowntimeMS != want {
-		t.Fatalf("downtime_ms = %d, want %d（= ended-started，如实累计）", final.DowntimeMS, want)
+		t.Fatalf("downtime_ms = %d, want %d (= ended-started, accounted truthfully)", final.DowntimeMS, want)
 	}
 	found := false
 	for _, u := range h.sub.updates {
@@ -1209,7 +1209,7 @@ func TestPostWindowUnstableAlertsOnce(t *testing.T) {
 	h.eng.Tick(ctx)
 	got, _ := h.eng.AppDerivedState(ctx, rec.AppID)
 	if got != DerivedDegraded {
-		t.Fatalf("app state = %s, want degraded（窗后不稳定）", got)
+		t.Fatalf("app state = %s, want degraded (post-window instability)", got)
 	}
 	names := h.events()
 	if !hasEvent(names, "app.instability_detected") || !hasEvent(names, "deployment.warning") {
@@ -1250,7 +1250,7 @@ services:
 	rec := h.enqueue(path)
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_BUILD_FAILED" {
-		t.Fatalf("deploy = %s (%s), want failed E_BUILD_FAILED（无匹配构建）", final.Status, final.ErrorCode)
+		t.Fatalf("deploy = %s (%s), want failed E_BUILD_FAILED (no matching build)", final.Status, final.ErrorCode)
 	}
 }
 
@@ -1302,11 +1302,11 @@ services:
 	}
 	row = mustGet(h, rec2.ID)
 	if row.Status != state.DeployReleasing || row.Phase != state.PhaseBlockedWaiting {
-		t.Fatalf("persistent down: status=%s phase=%s error=%s（看门狗必须在 blocked 维持态暂停计时）",
+		t.Fatalf("persistent down: status=%s phase=%s error=%s (watchdog must pause its clock in the blocked maintained state)",
 			row.Status, row.Phase, row.ErrorCode)
 	}
 	if hasEvent(h.events(), "deployment.failed") {
-		t.Fatal("deployment.failed emitted during blocked_waiting（假失败）")
+		t.Fatal("deployment.failed emitted during blocked_waiting (spurious failure)")
 	}
 
 	// 节点恢复 + 任务转健康：resumeFromBlocked 重置 deadline 并续跑到成功。
@@ -1325,7 +1325,7 @@ services:
 	}
 	final := h.runToTerminal(rec2)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("final = %s (%s), want succeeded（恢复续跑重新起算）", final.Status, final.ErrorCode)
+		t.Fatalf("final = %s (%s), want succeeded (recovery resumes with a re-armed budget)", final.Status, final.ErrorCode)
 	}
 }
 
@@ -1363,12 +1363,12 @@ services:
 		t.Fatalf("status = %s, want failed", final.Status)
 	}
 	if final.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
-		t.Fatalf("error_code = %s, want E_RUNTIME_UNAVAILABLE（底层 err 归一）", final.ErrorCode)
+		t.Fatalf("error_code = %s, want E_RUNTIME_UNAVAILABLE (underlying err normalized)", final.ErrorCode)
 	}
 	// 失败分流生效：未切流 → recovery=restore + v1 快照重放（web 被归位回
 	// v1 镜像——旧缺陷直接 failed，无归位动作）。
 	if final.Recovery != state.RecoveryReplay {
-		t.Fatalf("recovery = %q, want restore（对账失败走失败分流）", final.Recovery)
+		t.Fatalf("recovery = %q, want restore (reconcile failure routed through failure dispatch)", final.Recovery)
 	}
 	restored := false
 	for _, u := range h.sub.updates {
@@ -1402,12 +1402,12 @@ services:
 		t.Fatalf("status = %s, want failed", final.Status)
 	}
 	if !final.SubstrateHalted {
-		t.Fatal("substrate_halted not set（首发失败 scale=0 保留现场）")
+		t.Fatal("substrate_halted not set (first deploy failure keeps the scene at scale=0)")
 	}
 	// 已创建的 web 副本清零（worker 未创建：ServiceInspect NotFound 跳过）。
 	svc, err := h.sub.ServiceInspect(ctx, "fleetly-demo-web")
 	if err != nil {
-		t.Fatalf("web service should exist (scale=0 保留现场): %v", err)
+		t.Fatalf("web service should exist (scene kept at scale=0): %v", err)
 	}
 	if svc.Replicas != 0 {
 		t.Fatalf("web replicas = %d, want 0", svc.Replicas)
@@ -1417,7 +1417,7 @@ services:
 	}
 	got, _ := h.eng.AppDerivedState(ctx, rec.AppID)
 	if got != DerivedDown {
-		t.Fatalf("app state = %s, want down（首发失败无期望实例）", got)
+		t.Fatalf("app state = %s, want down (first deploy failure leaves no desired instances)", got)
 	}
 }
 
@@ -1446,7 +1446,7 @@ func TestRecoveryRetriesWhenSwarmUnavailableAtStartup(t *testing.T) {
 	eng2.Tick(ctx)
 	row := mustGet(h, rec.ID)
 	if row.Status != state.DeployObserving {
-		t.Fatalf("status = %s, want observing（频控窗内不重试、也不误判窗末）", row.Status)
+		t.Fatalf("status = %s, want observing (inside rate-control window: no retry, no stale window-end misread)", row.Status)
 	}
 
 	// 越过 30s 频控 + 底座恢复：重试成功 → 观察窗完整重开。
@@ -1463,12 +1463,12 @@ func TestRecoveryRetriesWhenSwarmUnavailableAtStartup(t *testing.T) {
 	eng2.Tick(ctx)
 	row = mustGet(h, rec.ID)
 	if row.Status != state.DeployObserving {
-		t.Fatalf("status = %s, want observing（重开窗口内不得以陈旧窗口判窗末）", row.Status)
+		t.Fatalf("status = %s, want observing (a reopened window must not be judged at its end from the stale window)", row.Status)
 	}
 	_ = reopened
 	final := h.runToTerminalWith(rec, eng2)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("final = %s (%s), want succeeded（重开窗口走满后成功）", final.Status, final.ErrorCode)
+		t.Fatalf("final = %s (%s), want succeeded (reopened window runs to completion)", final.Status, final.ErrorCode)
 	}
 	if eng2.recoveryPending {
 		t.Fatal("recovery still pending after successful retry")
@@ -1503,11 +1503,11 @@ func TestObserveIgnoresPreSwitchCrashes(t *testing.T) {
 	h.eng.Tick(ctx)
 	row = mustGet(h, rec.ID)
 	if row.Status != state.DeployObserving {
-		t.Fatalf("status = %s, want observing（健康切流）", row.Status)
+		t.Fatalf("status = %s, want observing (healthy switch)", row.Status)
 	}
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeploySucceeded {
-		t.Fatalf("deploy = %s (%s), want succeeded（发布期崩溃不计入观察窗）", final.Status, final.ErrorCode)
+		t.Fatalf("deploy = %s (%s), want succeeded (releasing-phase crashes do not count into the observe window)", final.Status, final.ErrorCode)
 	}
 }
 

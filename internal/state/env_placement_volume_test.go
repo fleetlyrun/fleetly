@@ -147,7 +147,7 @@ func TestEnvAuditNoValue(t *testing.T) {
 	}
 	for _, s := range summaries {
 		if strings.Contains(s, cipher) {
-			t.Errorf("audit diff_summary 泄露密文: %s", s)
+			t.Errorf("audit diff_summary leaks ciphertext: %s", s)
 		}
 	}
 }

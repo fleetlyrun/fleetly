@@ -92,10 +92,10 @@ func TestSucceedRevisionIdempotentAfterCrashBetweenTx(t *testing.T) {
 		}
 	}
 	if sameHash != 1 {
-		t.Fatalf("revisions with same desired_hash = %d, want 1（重放不产生重复行）", sameHash)
+		t.Fatalf("revisions with same desired_hash = %d, want 1 (replay must not produce duplicate rows)", sameHash)
 	}
 	if len(revs) != 1 || revs[0].Seq != 1 {
-		t.Fatalf("revisions = %+v, want single seq-1 row（seq 不递增）", revs)
+		t.Fatalf("revisions = %+v, want single seq-1 row (seq must not increment)", revs)
 	}
 	// 事件不重复（一次固化一次 succeeded）。
 	if n := countEvents(t, h, "deployment.succeeded"); n != 1 {

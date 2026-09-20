@@ -137,7 +137,7 @@ func TestQueueConcurrencyCap(t *testing.T) {
 		t.Fatalf("scan queued: %v", err)
 	}
 	if len(queued) != 3 {
-		t.Fatalf("queued rows = %d, want 3（并发上限内的行不得提前认领）", len(queued))
+		t.Fatalf("queued rows = %d, want 3 (rows beyond the concurrency cap must not be claimed early)", len(queued))
 	}
 	if peak := exec.maxSeen.Load(); peak > 2 {
 		t.Fatalf("in-flight peak = %d, want <= 2", peak)
@@ -201,7 +201,7 @@ func TestQueueWakesOnEnqueue(t *testing.T) {
 		}
 		select {
 		case <-deadline:
-			t.Fatalf("build still %s after wake enqueue（wake 信号失效？）", row.Status)
+			t.Fatalf("build still %s after wake-on-enqueue (wake signal broken?)", row.Status)
 		case <-time.After(20 * time.Millisecond):
 		}
 	}
@@ -304,7 +304,7 @@ func assertAuditReason(t *testing.T, st *state.Store, buildID, wantContains stri
 			return
 		}
 	}
-	t.Fatalf("no build.finish(error) audit for %s（复位/兜底未写审计？）", buildID)
+	t.Fatalf("no build.finish(error) audit for %s (reset/fallback did not write an audit?)", buildID)
 }
 
 // TestQueueStartupResetsInterruptedBuilds （MG-A3 crashpoint：重启恢复）
@@ -352,7 +352,7 @@ func TestQueueStartupResetsInterruptedBuilds(t *testing.T) {
 	if row.FinishedAt.IsZero() {
 		t.Fatal("reset row must stamp finished_at")
 	}
-	assertAuditReason(t, st, interrupted.ID, "构建被中断")
+	assertAuditReason(t, st, interrupted.ID, "build interrupted")
 
 	// queued 行不受复位影响：照常认领为 building（执行器阻塞中）。
 	waitBuildStatus(t, st, pending.ID, state.BuildBuilding)
@@ -389,7 +389,7 @@ func TestConvergeClaimedUnreadable(t *testing.T) {
 	if row.FinishedAt.IsZero() {
 		t.Fatal("converged row must stamp finished_at")
 	}
-	assertAuditReason(t, st, rec.ID, "认领后行读取失败")
+	assertAuditReason(t, st, rec.ID, "row read failed after build claim")
 
 	// CAS 幂等：终态行不误伤（finished_at 不被二次收敛改写）。
 	q.convergeClaimedUnreadable(context.Background(), rec.ID)
@@ -398,7 +398,7 @@ func TestConvergeClaimedUnreadable(t *testing.T) {
 		t.Fatalf("get build: %v", err)
 	}
 	if again.Status != state.BuildFailed || !again.FinishedAt.Equal(row.FinishedAt) {
-		t.Fatalf("二次收敛误伤终态行：status=%s finished_at=%v（want 不变）", again.Status, again.FinishedAt)
+		t.Fatalf("second convergence clobbered a terminal row: status=%s finished_at=%v (want unchanged)", again.Status, again.FinishedAt)
 	}
 }
 
@@ -442,7 +442,7 @@ func TestQueuePanickingBuildDoesNotKillScheduler(t *testing.T) {
 	if row.ErrorCode != "E_BUILD_FAILED" {
 		t.Fatalf("panic row error_code = %s, want E_BUILD_FAILED", row.ErrorCode)
 	}
-	assertAuditReason(t, st, first.ID, "构建执行器异常退出")
+	assertAuditReason(t, st, first.ID, "build executor exited abnormally")
 
 	// 次条：调度存活，照常执行收敛 succeeded。
 	second := enqueueTestBuild(t, queue, app.ID, "worker")
@@ -473,14 +473,14 @@ func TestQueueWakeFiresAfterSlotRelease(t *testing.T) {
 	select {
 	case <-exec.waitStarted(first.ID):
 	case <-time.After(5 * time.Second):
-		t.Fatal("first build 未开跑")
+		t.Fatal("first build never started")
 	}
 	// 满槽期入队第二条：Enqueue 的 Wake 是无效信号（drainOnce 撞满信号量即
 	// 返回），必须保持 queued。
 	second := enqueueTestBuild(t, queue, app.ID, "worker")
 	time.Sleep(200 * time.Millisecond)
 	if row, err := st.GetBuild(context.Background(), second.ID); err != nil || row.Status != state.BuildQueued {
-		t.Fatalf("second = %v/%v, want queued（满槽期不得提前认领）", row.Status, err)
+		t.Fatalf("second = %v/%v, want queued (must not be claimed while the slot is full)", row.Status, err)
 	}
 
 	// 放行首条：完成 → 槽位释放 → Wake → 第二条在 tick（1h）之前被认领。
@@ -488,7 +488,7 @@ func TestQueueWakeFiresAfterSlotRelease(t *testing.T) {
 	select {
 	case <-exec.waitStarted(second.ID):
 	case <-time.After(5 * time.Second):
-		t.Fatal("第二条未在槽位释放后被认领（Wake 时机错误：等 tick 形态——M2-10）")
+		t.Fatal("second build was not claimed after slot release (wake fired at the wrong time: waiting for tick — M2-10)")
 	}
 	waitBuildStatus(t, st, first.ID, state.BuildSucceeded)
 	waitBuildStatus(t, st, second.ID, state.BuildSucceeded)
@@ -542,7 +542,7 @@ func TestQueueBuildTimeoutConvergesFailed(t *testing.T) {
 	if row.FinishedAt.IsZero() {
 		t.Fatal("timeout row must stamp finished_at")
 	}
-	assertAuditReason(t, st, first.ID, "构建超时")
+	assertAuditReason(t, st, first.ID, "build timed out")
 
 	// 并发 1：槽位必须已释放——第二条构建正常收敛 succeeded。
 	second := enqueueTestBuild(t, queue, app.ID, "web")

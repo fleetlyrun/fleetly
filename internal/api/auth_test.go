@@ -231,24 +231,24 @@ func TestAuthenticateTouchThrottle(t *testing.T) {
 		authOK(tok)
 	}
 	if writes != 1 {
-		t.Fatalf("窗口内 10 次认证盖写 %d 次, 期望 1", writes)
+		t.Fatalf("10 authentications within the window overwrote %d times, want 1", writes)
 	}
 	// 窗口内推进（<60s）：仍跳过。
 	clk.cur = clk.cur.Add(59 * time.Second)
 	authOK(tok)
 	if writes != 1 {
-		t.Fatalf("窗口内推进后仍应跳过：盖写 %d 次", writes)
+		t.Fatalf("advance within the window should still skip: overwrote %d times", writes)
 	}
 	// 窗口过后：再写。
 	clk.cur = clk.cur.Add(2 * time.Second)
 	authOK(tok)
 	if writes != 2 {
-		t.Fatalf("窗口过后应再写：盖写 %d 次, 期望 2", writes)
+		t.Fatalf("after the window it should write again: overwrote %d times, want 2", writes)
 	}
 	// 不同 token 独立节流（首次认证即写）。
 	authOK(other)
 	if writes != 3 {
-		t.Fatalf("不同 token 首次认证应写：盖写 %d 次, 期望 3", writes)
+		t.Fatalf("a different token should write on first authentication: overwrote %d times, want 3", writes)
 	}
 
 	// 写失败不落窗口：每次认证都重试写（两次认证 → 两次尝试）。先推进
@@ -261,6 +261,6 @@ func TestAuthenticateTouchThrottle(t *testing.T) {
 	authOK(tok)
 	authOK(tok)
 	if writes != 5 {
-		t.Fatalf("写失败不落窗口（每次认证重试）：盖写尝试 %d 次, 期望 5", writes)
+		t.Fatalf("write failure must not open the window (retry on every authentication): %d write attempts, want 5", writes)
 	}
 }

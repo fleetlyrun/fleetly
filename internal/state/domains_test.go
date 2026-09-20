@@ -63,7 +63,7 @@ func TestReplaceAppDomainsLedgerReconcile(t *testing.T) {
 		t.Fatalf("domain c port not recorded: %+v", got)
 	}
 	if _, ok := byDomain["a.example.test"]; ok {
-		t.Fatalf("omitted domain a must be deleted (省略=删除), still present")
+		t.Fatalf("omitted domain a must be deleted (omission = deletion), still present")
 	}
 
 	// 幂等：同声明重放零变化。

@@ -33,7 +33,7 @@ func (e *Engine) evaluateReleasing(ctx context.Context, rec state.DeployRecord) 
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
 		return e.failTransitionErr(ctx, rec, errorf("E_DEPLOY_INTERRUPTED",
-			"期望态快照不可读（%v）：人工处置", err))
+			"desired-state snapshot unreadable (%v): manual intervention required", err))
 	}
 
 	// 绑定节点观测（场景 15/16）：DOWN → blocked_waiting（看门狗暂停、可
@@ -98,7 +98,7 @@ func (e *Engine) evaluateReleasing(ctx context.Context, rec state.DeployRecord) 
 			code = "E_SCHEDULER_PENDING_TIMEOUT"
 		}
 		return e.failUnswitchedOrSwitched(ctx, rec, code,
-			fmt.Sprintf("发布看门狗超时（%s）：新版本未在预算内通过健康门", e.cfg.DeployTimeout))
+			fmt.Sprintf("deploy watchdog timeout (%s): new version did not pass the health gate within budget", e.cfg.DeployTimeout))
 	}
 
 	// 全部服务切换 → 切流点（首个目标实例健康即起算观察窗，§2.2 L3）。
@@ -129,7 +129,7 @@ func (e *Engine) watchBoundNode(ctx context.Context, rec *state.DeployRecord) er
 		return e.enterBlockedWaiting(ctx, rec)
 	case "E_PLACEMENT_NODE_GONE":
 		return e.failUnswitchedOrSwitched(ctx, *rec, "E_PLACEMENT_NODE_GONE",
-			"绑定节点已被移除（数据安全优先；应用保持 blocked(node_gone) 等人工 rebind）")
+			"bound node was removed (data safety first; app stays blocked(node_gone) awaiting manual rebind)")
 	default:
 		// 卷前哨等确定性失败：直接走失败分流。
 		return e.failUnswitchedOrSwitched(ctx, *rec, ae.Code(), ae.Message())
@@ -340,7 +340,7 @@ func (e *Engine) failCriticalRestore(ctx context.Context, rec state.DeployRecord
 	} else if stopFirst {
 		final = "E_DEPLOY_DOWNTIME_FAILED"
 	}
-	msg := fmt.Sprintf("%s；归位重放失败（critical，不再二次自动恢复）：%v", detail, restoreErr)
+	msg := fmt.Sprintf("%s; replay recovery failed (critical, no second automatic recovery): %v", detail, restoreErr)
 	if err := e.failTransition(ctx, rec, final, msg); err != nil {
 		return err
 	}
@@ -423,17 +423,17 @@ func (e *Engine) classifyUpdateFailure(ctx context.Context, specs []ServiceSpec)
 			switch {
 			case strings.Contains(msg, "health"):
 				return "E_HEALTH_TIMEOUT",
-					fmt.Sprintf("服务 %s 新任务健康门不通过：%s", specs[i].Name, t.Err)
+					fmt.Sprintf("new task of service %s failed the health gate: %s", specs[i].Name, t.Err)
 			case strings.Contains(msg, "pull"), strings.Contains(msg, "image"), strings.Contains(msg, "manifest"):
 				return "E_IMAGE_PULL_FAILED",
-					fmt.Sprintf("服务 %s 新任务镜像不可得：%s", specs[i].Name, t.Err)
+					fmt.Sprintf("image of the new task for service %s is unavailable: %s", specs[i].Name, t.Err)
 			default:
 				return "E_TASK_START_FAILED",
-					fmt.Sprintf("服务 %s 新任务启动失败：%s", specs[i].Name, t.Err)
+					fmt.Sprintf("new task of service %s failed to start: %s", specs[i].Name, t.Err)
 			}
 		}
 	}
-	return "E_TASK_START_FAILED", "更新被 Swarm 冻结（failure_action=pause），未见任务级失败原因"
+	return "E_TASK_START_FAILED", "update frozen by Swarm (failure_action=pause); no task-level failure reason observed"
 }
 
 // transientOr 底座读失败的暂态处理：底座不可用不落终态，交给看门狗预算

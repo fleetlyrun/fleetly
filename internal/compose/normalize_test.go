@@ -13,7 +13,7 @@ import (
 // golden 测试支持 -update：go test ./internal/compose -run Golden -update
 // 重新落盘期望产物（与 buf generate 后 diff 门禁同一纪律：产物提交、
 // 变更须显式评审）。
-var update = flag.Bool("update", false, "重写 golden 文件")
+var update = flag.Bool("update", false, "rewrite golden files")
 
 // TestInterpolationDisabled 验收 3：${VAR} 插值关闭——compose 里写 ${FOO}
 // → 归一化结果为字面 "${FOO}"（env hash 与值形态双重断言）。
@@ -30,7 +30,7 @@ services:
 	spec := loadOK(t, writeCompose(t, content))
 	svc := spec.Services[0]
 	if len(svc.Environment) != 2 {
-		t.Fatalf("environment 条目 = %d, 期望 2", len(svc.Environment))
+		t.Fatalf("environment entries = %d, want 2", len(svc.Environment))
 	}
 	if svc.Environment[0].Key != "LITERAL" {
 		t.Fatalf("env[0].Key = %q", svc.Environment[0].Key)
@@ -38,14 +38,14 @@ services:
 	// "${FOO}" 的 sha256——若发生插值/环境透传，hash 必然不同。
 	wantHash := sha256Hash(t, "${FOO}")
 	if svc.Environment[0].Hash != wantHash {
-		t.Errorf("LITERAL hash = %s, 期望字面 ${FOO} 的 %s（插值未关闭或透传）", svc.Environment[0].Hash, wantHash)
+		t.Errorf("LITERAL hash = %s, want %s for literal ${FOO} (interpolation not disabled or value passed through)", svc.Environment[0].Hash, wantHash)
 	}
 	mixedHash := sha256Hash(t, "prefix-${FOO}-suffix")
 	if svc.Environment[1].Hash != mixedHash {
-		t.Errorf("MIXED hash = %s, 期望 %s", svc.Environment[1].Hash, mixedHash)
+		t.Errorf("MIXED hash = %s, want %s", svc.Environment[1].Hash, mixedHash)
 	}
 	if rawJSONContains(t, spec, "${FOO}") {
-		t.Error("归一化 JSON 不应包含明文 env 值（即使值为字面 ${FOO}）")
+		t.Error("normalized JSON must not contain plaintext env values (even when the value is the literal ${FOO})")
 	}
 }
 
@@ -70,10 +70,10 @@ services:
 		t.Fatalf("environment = %+v", env)
 	}
 	if env[0].Hash != sha256Hash(t, "${SECRET_FROM_DOTENV}") {
-		t.Errorf(".env 插值未被关闭：hash = %s", env[0].Hash)
+		t.Errorf(".env interpolation not disabled: hash = %s", env[0].Hash)
 	}
 	if rawJSONContains(t, spec, "leaked-value") {
-		t.Error("归一化结果泄露 .env 值")
+		t.Error("normalized output leaks the .env value")
 	}
 }
 
@@ -95,7 +95,7 @@ services:
       ONLY_ENV: literal
 `,
 		"base.env": `
-# 注释与空行
+# comments and blank lines
 BASE_ONLY=base_value
 SHARED=from_base
 EXPORTED=exported_value
@@ -112,19 +112,19 @@ SHARED=from_override_file
 		got[e.Key] = e
 	}
 	if len(env) != 5 {
-		t.Fatalf("environment 条目 = %d (%v), 期望 5", len(env), env)
+		t.Fatalf("environment entries = %d (%v), want 5", len(env), env)
 	}
 	assertEnv := func(key, wantHashOf, wantSource string) {
 		t.Helper()
 		e, ok := got[key]
 		if !ok {
-			t.Fatalf("缺 env 键 %s: %+v", key, env)
+			t.Fatalf("missing env key %s: %+v", key, env)
 		}
 		if want := sha256Hash(t, wantHashOf); e.Hash != want {
-			t.Errorf("env %s hash = %s, 期望字面 %q 的 %s", key, e.Hash, wantHashOf, want)
+			t.Errorf("env %s hash = %s, want %s for literal %q", key, e.Hash, want, wantHashOf)
 		}
 		if e.Source != wantSource {
-			t.Errorf("env %s source = %s, 期望 %s", key, e.Source, wantSource)
+			t.Errorf("env %s source = %s, want %s", key, e.Source, wantSource)
 		}
 	}
 	assertEnv("BASE_ONLY", "base_value", EnvSourceEnvFile)
@@ -148,7 +148,7 @@ services:
 	})
 	_, _, err := Load(context.Background(), reject)
 	if err == nil || !strings.Contains(err.Error(), "missing.env") {
-		t.Fatalf("期望 env_file 缺失报错, got %v", err)
+		t.Fatalf("expected an error for a missing required env_file, got %v", err)
 	}
 
 	okay := writeComposeWith(t, map[string]string{
@@ -184,10 +184,10 @@ B=${A}-world
 	spec := loadOK(t, path)
 	env := spec.Services[0].Environment
 	if len(env) != 2 {
-		t.Fatalf("environment = %+v, 期望 2 条", env)
+		t.Fatalf("environment = %+v, want 2 entries", env)
 	}
 	if env[1].Key != "B" || env[1].Hash != sha256Hash(t, "${A}-world") {
-		t.Errorf("env_file 内插值未按字面: %+v", env[1])
+		t.Errorf("interpolation inside env_file not kept literal: %+v", env[1])
 	}
 }
 
@@ -205,7 +205,7 @@ services:
 	domains := spec.Services[0].Domains
 	want := "app.example.com,xn--bcher-kva.de"
 	if strings.Join(domains, ",") != want {
-		t.Errorf("domains = %v, 期望 %v", domains, want)
+		t.Errorf("domains = %v, want %v", domains, want)
 	}
 }
 
@@ -243,10 +243,10 @@ func TestGoldenNormalization(t *testing.T) {
 			}
 			want, err := os.ReadFile(goldenPath) //nolint:gosec // golden 为 testdata 固定路径
 			if err != nil {
-				t.Fatalf("read golden（首跑用 -update 生成）: %v", err)
+				t.Fatalf("read golden (generate it on a first run with -update): %v", err)
 			}
 			if string(raw) != string(want) {
-				t.Errorf("golden 不一致：\n got: %s\nwant: %s", raw, want)
+				t.Errorf("golden mismatch:\n got: %s\nwant: %s", raw, want)
 			}
 			// spec_hash 稳定性：同文件两次加载 hash 一致。
 			spec2, _, err := Load(context.Background(), tc.fixture)
@@ -254,7 +254,7 @@ func TestGoldenNormalization(t *testing.T) {
 				t.Fatalf("reload: %v", err)
 			}
 			if spec2.SpecHash != spec.SpecHash {
-				t.Errorf("spec_hash 不稳定: %s vs %s", spec.SpecHash, spec2.SpecHash)
+				t.Errorf("spec_hash unstable: %s vs %s", spec.SpecHash, spec2.SpecHash)
 			}
 		})
 	}
@@ -289,10 +289,10 @@ func TestWhitelistGolden(t *testing.T) {
 	}
 	want, err := os.ReadFile(goldenPath) //nolint:gosec // golden 为 testdata 固定路径
 	if err != nil {
-		t.Fatalf("read whitelist golden（首跑用 -update 生成）: %v", err)
+		t.Fatalf("read whitelist golden (generate it on a first run with -update): %v", err)
 	}
 	if string(raw) != string(want) {
-		t.Errorf("白名单与 golden 不一致（增删白名单键须显式更新 golden 并同步架构 §2.4）:\n got:\n%s\nwant:\n%s", raw, want)
+		t.Errorf("whitelist does not match golden (adding/removing whitelist keys requires explicitly updating the golden and syncing architecture §2.4):\n got:\n%s\nwant:\n%s", raw, want)
 	}
 }
 
@@ -317,7 +317,7 @@ services:
       Z: "1"
 `))
 	if a.SpecHash != b.SpecHash {
-		t.Errorf("书写顺序影响 spec_hash: %s vs %s", a.SpecHash, b.SpecHash)
+		t.Errorf("key write order affects spec_hash: %s vs %s", a.SpecHash, b.SpecHash)
 	}
 }
 

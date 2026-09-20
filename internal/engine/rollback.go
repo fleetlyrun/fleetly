@@ -54,10 +54,10 @@ func EnqueueRollback(ctx context.Context, st *state.Store, in RollbackInput) (st
 	if err != nil {
 		if errors.Is(err, state.ErrAppNotFound) {
 			return state.DeployRecord{}, errorf("E_ROLLBACK_NO_TARGET",
-				"应用 %s 不存在：没有可回滚的版本（回滚目标 = revisions 保留窗内最近 5 次成功部署）", in.AppName).
+				"app %s does not exist: nothing to roll back to (rollback targets = the last 5 successful deployments kept in the revisions retention window)", in.AppName).
 				WithContext("app", in.AppName)
 		}
-		return state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "读取应用失败: %v", err)
+		return state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "failed to read app: %v", err)
 	}
 
 	rev, err := resolveRollbackTarget(ctx, st, app.ID, in.TargetRevisionID)
@@ -98,7 +98,7 @@ func EnqueueRollback(ctx context.Context, st *state.Store, in RollbackInput) (st
 			ComposePath:     source.ComposePath,
 		})
 		if err != nil {
-			return errorf("E_RUNTIME_UNAVAILABLE", "创建回滚部署失败: %v", err)
+			return errorf("E_RUNTIME_UNAVAILABLE", "failed to create rollback deployment: %v", err)
 		}
 		rec = r
 		if err := appendEvent(ctx, tx, "deployment.rollback_started", "deployment:"+rec.ID,
@@ -128,11 +128,11 @@ func resolveRollbackTarget(ctx context.Context, st *state.Store, appID, revision
 	if revisionID == "" {
 		rows, err := st.ListRevisions(ctx, appID)
 		if err != nil {
-			return state.Revision{}, errorf("E_RUNTIME_UNAVAILABLE", "读取版本列表失败: %v", err)
+			return state.Revision{}, errorf("E_RUNTIME_UNAVAILABLE", "failed to list revisions: %v", err)
 		}
 		if len(rows) == 0 {
 			return state.Revision{}, errorf("E_ROLLBACK_NO_TARGET",
-				"应用没有可回滚的版本（revisions 保留窗为空——尚无成功部署）").WithContext("app_id", appID)
+				"app has no revisions to roll back to (revisions retention window is empty — no successful deployments yet)").WithContext("app_id", appID)
 		}
 		return rows[0], nil
 	}
@@ -140,11 +140,11 @@ func resolveRollbackTarget(ctx context.Context, st *state.Store, appID, revision
 	if err != nil {
 		if errors.Is(err, state.ErrRevisionNotFound) {
 			return state.Revision{}, errorf("E_ROLLBACK_NO_TARGET",
-				"版本 %s 不在可回滚集合内（保留窗只列最近 %d 次成功部署；列表见 fleetly revisions list）",
+				"revision %s is not in the rollback set (the retention window lists only the last %d successful deployments; see fleetly revisions list)",
 				revisionID, state.RevisionKeepVersions).
 				WithContext("revision", revisionID)
 		}
-		return state.Revision{}, errorf("E_RUNTIME_UNAVAILABLE", "读取版本失败: %v", err)
+		return state.Revision{}, errorf("E_RUNTIME_UNAVAILABLE", "failed to read revision: %v", err)
 	}
 	return rev, nil
 }
@@ -156,7 +156,7 @@ func resolveRollbackTarget(ctx context.Context, st *state.Store, appID, revision
 func rollbackDeployments(ctx context.Context, st *state.Store, appID, revisionID string) (state.DeployRecord, state.DeployRecord, error) {
 	rows, err := st.ListAppDeployments(ctx, appID, 50)
 	if err != nil {
-		return state.DeployRecord{}, state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "读取部署历史失败: %v", err)
+		return state.DeployRecord{}, state.DeployRecord{}, errorf("E_RUNTIME_UNAVAILABLE", "failed to read deployment history: %v", err)
 	}
 	var origin, source state.DeployRecord
 	for _, r := range rows {
@@ -173,7 +173,7 @@ func rollbackDeployments(ctx context.Context, st *state.Store, appID, revisionID
 	}
 	if source.ID == "" {
 		return state.DeployRecord{}, state.DeployRecord{}, errorf("E_ROLLBACK_NO_TARGET",
-			"版本 %s 缺少可重放的部署快照（历史记录缺失或损坏）", revisionID).
+			"revision %s has no replayable deployment snapshot (history record missing or corrupted)", revisionID).
 			WithContext("revision", revisionID)
 	}
 	if origin.ID == "" {
@@ -194,20 +194,20 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 	//（H11）；存量行基线为 0 回落 created_at 保持旧语义。
 	if anchor := prepareBudgetBaseline(rec); !anchor.IsZero() && e.now().Sub(anchor) > e.cfg.DeployTimeout {
 		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE",
-			"回滚准备超过发布看门狗预算（底座不可用或环境异常）"))
+			"rollback preparing exceeded the deploy watchdog budget (substrate unavailable or environment error)"))
 	}
 	if err := e.sub.SwarmReady(ctx); err != nil {
 		if errors.Is(err, ErrNotSwarmReady) {
 			e.log.Warn("engine: swarm not ready, retrying rollback next tick", "deployment", rec.ID)
 			return nil // 暂态：下一 tick 重试（预算由上守）
 		}
-		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "底座检查失败: %v", err))
+		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "substrate check failed: %v", err))
 	}
 
 	specs, err := e.decodeSpecs(rec)
 	if err != nil || len(specs) == 0 {
 		return e.failRollbackPreflight(ctx, rec, errorf("E_ROLLBACK_FAILED",
-			"回滚期望态快照不可读（%v）：目标版本不可重放", err))
+			"rollback desired-state snapshot unreadable (%v): target revision is not replayable", err))
 	}
 
 	// preflight 四项（§2.4）——任一失败不动底座。
@@ -258,7 +258,7 @@ func (e *Engine) preflightRollback(ctx context.Context, rec state.DeployRecord, 
 		// 4. compose 合法（关键执行面复核）。
 		if !strings.HasPrefix(spec.Name, "fleetly-") || spec.Image == "" {
 			return errorf("E_ROLLBACK_FAILED",
-				"快照服务 %s 关键面不合法（命名空间/镜像引用缺失）：目标版本不可重放", spec.Name)
+				"snapshot service %s fails key-surface validation (namespace/image reference missing): target revision is not replayable", spec.Name)
 		}
 		// 1. 镜像可得（v0.1 本机 inspect；缺失 → E_IMAGE_UNAVAILABLE +
 		//    W_ROLLBACK_IMAGE_RISK）。
@@ -267,12 +267,12 @@ func (e *Engine) preflightRollback(ctx context.Context, rec state.DeployRecord, 
 			if asAppErr(err, &ae) && ae != nil {
 				return ae
 			}
-			return errorf("E_RUNTIME_UNAVAILABLE", "镜像检查失败 %s: %v", spec.Image, err)
+			return errorf("E_RUNTIME_UNAVAILABLE", "image check failed %s: %v", spec.Image, err)
 		}
 		// 3. secret 存在（防御分支：v0.1 快照不含 secret——出现即不可重放）。
 		if len(spec.Secrets) > 0 {
 			return errorf("E_ROLLBACK_FAILED",
-				"快照服务 %s 携带 secret 引用：v0.1 平台密钥库未接入，无法校验 secret 存在性", spec.Name)
+				"snapshot service %s carries secret references: the v0.1 platform secret store is not wired in, so secret existence cannot be verified", spec.Name)
 		}
 	}
 	// 2. 约束可满足（放置前哨：绑定节点 ready / 卷归属一致；取当前绑定）。
@@ -324,7 +324,7 @@ func (e *Engine) failRollbackPreflight(ctx context.Context, rec state.DeployReco
 // 人工重置 + rollback_failed 事件与审计（cause 码随 payload）。
 func (e *Engine) failRollbackDeployment(ctx context.Context, rec state.DeployRecord, causeCode, detail string) error {
 	code := "E_ROLLBACK_FAILED"
-	msg := fmt.Sprintf("%s；回滚失败（critical，不再二次自动恢复）：%s", detail, causeCode)
+	msg := fmt.Sprintf("%s; rollback failed (critical, no second automatic recovery): %s", detail, causeCode)
 	to := state.DeployFailed
 	from := rec.Status
 	patch := state.DeploymentPatch{Status: &to, PrevStatus: &from, ErrorCode: &code}

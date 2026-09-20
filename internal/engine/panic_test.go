@@ -59,7 +59,7 @@ func TestTickPanicIsolatedPerDeployment(t *testing.T) {
 		t.Fatalf("get A: %v", err)
 	}
 	if rowA.Status != state.DeployFailed {
-		t.Fatalf("A status = %s, want failed（panic 兜底终态）", rowA.Status)
+		t.Fatalf("A status = %s, want failed (panic fallback terminal state)", rowA.Status)
 	}
 	if rowA.ErrorCode != "E_RUNTIME_UNAVAILABLE" {
 		t.Fatalf("A error_code = %q, want E_RUNTIME_UNAVAILABLE", rowA.ErrorCode)
@@ -74,7 +74,7 @@ func TestTickPanicIsolatedPerDeployment(t *testing.T) {
 
 	// 引擎存活：后续 tick 把 B 正常推进到成功终态。
 	if final := h.runToTerminal(recB); final.Status != state.DeploySucceeded {
-		t.Fatalf("B final = %s (%s), want succeeded（tick 存活）", final.Status, final.ErrorCode)
+		t.Fatalf("B final = %s (%s), want succeeded (tick survived)", final.Status, final.ErrorCode)
 	}
 	// A 的失败事件披露（deployment.failed，code=E_RUNTIME_UNAVAILABLE）。
 	found := false

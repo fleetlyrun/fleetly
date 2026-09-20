@@ -36,11 +36,11 @@ func TestNewPanicsOnWarningCode(t *testing.T) {
 // TestDefaultsFromRegistry：suggestion/docs 取注册表默认；code/message 保真。
 func TestDefaultsFromRegistry(t *testing.T) {
 	c, _ := errcode.Get("E_VOLUME_NODE_MISMATCH")
-	e := New("E_VOLUME_NODE_MISMATCH", "卷数据节点 ≠ 目标节点 (volume=%s)", "v_abc")
+	e := New("E_VOLUME_NODE_MISMATCH", "volume data node ≠ target node (volume=%s)", "v_abc")
 	if e.Code() != "E_VOLUME_NODE_MISMATCH" {
 		t.Fatalf("code = %q", e.Code())
 	}
-	if e.Message() != "卷数据节点 ≠ 目标节点 (volume=v_abc)" {
+	if e.Message() != "volume data node ≠ target node (volume=v_abc)" {
 		t.Fatalf("message = %q", e.Message())
 	}
 	if e.suggestion != c.Suggestion || e.docs != c.Docs() {
@@ -49,7 +49,7 @@ func TestDefaultsFromRegistry(t *testing.T) {
 	if e.HTTPStatus() != 409 { // 文档显式：前哨 409
 		t.Fatalf("HTTPStatus = %d, want 409", e.HTTPStatus())
 	}
-	if e.Error() != "E_VOLUME_NODE_MISMATCH: 卷数据节点 ≠ 目标节点 (volume=v_abc)" {
+	if e.Error() != "E_VOLUME_NODE_MISMATCH: volume data node ≠ target node (volume=v_abc)" {
 		t.Fatalf("Error() = %q", e.Error())
 	}
 }
@@ -57,7 +57,7 @@ func TestDefaultsFromRegistry(t *testing.T) {
 // TestFluentFields：stage/deployment_id/context/cause 链式附加。
 func TestFluentFields(t *testing.T) {
 	cause := errors.New("dial tcp 127.0.0.1:2377: connect refused")
-	e := New("E_RUNTIME_UNAVAILABLE", "底座不可达").
+	e := New("E_RUNTIME_UNAVAILABLE", "substrate unreachable").
 		WithStage("deploy").
 		WithDeploymentID("d_01J").
 		WithContext("node", "n_01J").
@@ -77,7 +77,7 @@ func TestFluentFields(t *testing.T) {
 // TestToFromGRPCStatusRoundTrip：ToGRPCStatus → status detail → FromGRPCStatus
 // 还原七字段。
 func TestToFromGRPCStatusRoundTrip(t *testing.T) {
-	e := New("E_HEALTH_TIMEOUT", "健康门超时").
+	e := New("E_HEALTH_TIMEOUT", "health gate timeout").
 		WithStage("releasing").
 		WithDeploymentID("d_42").
 		WithContext("service", "web").
@@ -90,7 +90,7 @@ func TestToFromGRPCStatusRoundTrip(t *testing.T) {
 	if !ok {
 		t.Fatal("FromGRPCStatus lost the envelope detail")
 	}
-	if got.Code() != "E_HEALTH_TIMEOUT" || got.Message() != "健康门超时" ||
+	if got.Code() != "E_HEALTH_TIMEOUT" || got.Message() != "health gate timeout" ||
 		got.stage != "releasing" || got.deploymentID != "d_42" ||
 		got.context["service"] != "web" || got.context["budget"] != "300s" ||
 		got.suggestion == "" || got.docs == "" {
@@ -117,7 +117,7 @@ func TestFromGRPCStatusWithoutDetail(t *testing.T) {
 func TestEnvelopeFromGRPCStatusDegraded(t *testing.T) {
 	env, httpStatus := EnvelopeFromGRPCStatus(status.New(codes.NotFound, "missing"))
 	if env.GetCode() != "" {
-		t.Fatalf("degraded code = %q, want empty string（不得发明清单外码）", env.GetCode())
+		t.Fatalf("degraded code = %q, want empty string (must not invent out-of-list codes)", env.GetCode())
 	}
 	if env.GetMessage() != "missing" {
 		t.Fatalf("degraded message = %q", env.GetMessage())
@@ -129,10 +129,10 @@ func TestEnvelopeFromGRPCStatusDegraded(t *testing.T) {
 
 // TestEnvelopeFromGRPCStatusRegistryHTTP：有信封 detail 时 HTTP 按注册表。
 func TestEnvelopeFromGRPCStatusRegistryHTTP(t *testing.T) {
-	st := New("E_EVENT_CURSOR_EXPIRED", "游标早于保留期").ToGRPCStatus()
+	st := New("E_EVENT_CURSOR_EXPIRED", "cursor predates the retention window").ToGRPCStatus()
 	env, httpStatus := EnvelopeFromGRPCStatus(st)
 	if env.GetCode() != "E_EVENT_CURSOR_EXPIRED" || httpStatus != 410 {
-		t.Fatalf("code=%q http=%d, want E_EVENT_CURSOR_EXPIRED/410（文档显式）", env.GetCode(), httpStatus)
+		t.Fatalf("code=%q http=%d, want E_EVENT_CURSOR_EXPIRED/410 (documented explicitly)", env.GetCode(), httpStatus)
 	}
 }
 
@@ -154,18 +154,18 @@ func TestEnvelopeFromGRPCStatusEmptyCodeDetail(t *testing.T) {
 		t.Fatalf("empty-code envelope code = %q, want empty", env.GetCode())
 	}
 	if httpStatus != http.StatusConflict {
-		t.Fatalf("empty-code detail envelope HTTP = %d, want 409 (grpc code 机械映射)", httpStatus)
+		t.Fatalf("empty-code detail envelope HTTP = %d, want 409 (mechanical mapping from grpc code)", httpStatus)
 	}
 	if env.GetMessage() != "app not deletable from current lifecycle: demo" {
 		t.Fatalf("message = %q, want business copy preserved (X-5)", env.GetMessage())
 	}
 	if env.GetMessage() == RedactedDegradedMessage {
-		t.Fatal("detail envelope must not be redacted (B1 只脱无 detail 形态)")
+		t.Fatal("detail envelope must not be redacted (B1 redacts only the no-detail form)")
 	}
 	// 同码无 detail 形态仍走 B1 脱敏（防线不削弱）。
 	redacted, _ := EnvelopeFromGRPCStatus(status.New(codes.FailedPrecondition, "raw sql SELECT"))
 	if redacted.GetMessage() != RedactedDegradedMessage {
-		t.Fatal("no-detail FailedPrecondition must stay redacted (B1 防线)")
+		t.Fatal("no-detail FailedPrecondition must stay redacted (B1 defense line)")
 	}
 }
 

@@ -43,7 +43,7 @@ func waitForInterruptedAudits(t *testing.T, st *state.Store, want int) []state.A
 			return got
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("interrupted audits = %d, want %d（披露看门狗未生效）", len(got), want)
+			t.Fatalf("interrupted audits = %d, want %d (disclosure watchdog did not fire)", len(got), want)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -112,7 +112,7 @@ func TestWebhookShutdownDisclosesQueuedJobs(t *testing.T) {
 	cancel()
 	disclosed := waitForInterruptedAudits(t, st, 2)
 	if len(disclosed) != 2 {
-		t.Fatalf("interrupted audits = %d, want exactly 2（在处理项 d-shutdown-1 不得误披露）", len(disclosed))
+		t.Fatalf("interrupted audits = %d, want exactly 2 (in-flight delivery d-shutdown-1 must not be mis-disclosed)", len(disclosed))
 	}
 	joined := disclosed[0].DiffSummary + disclosed[1].DiffSummary
 	if !strings.Contains(joined, "d-shutdown-2") || !strings.Contains(joined, "d-shutdown-3") {

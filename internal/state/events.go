@@ -33,7 +33,7 @@ type Event struct {
 // E_EVENT_CURSOR_EXPIRED 显式暴露。与业务写同事务 = Outbox 模式。
 func (t *Tx) AppendEvent(ctx context.Context, e Event) (int64, error) {
 	if _, ok := eventcode.Get(e.Name); !ok {
-		panic("state: 事件名 " + e.Name + " 未在 eventcode 注册表注册（只允许注册表内事件）")
+		panic("state: event name " + e.Name + " is not registered in the eventcode registry (only registry events are allowed)")
 	}
 	payload := e.Payload
 	if payload == "" {
@@ -113,7 +113,7 @@ func (s *Store) OldestSeq(ctx context.Context) (int64, bool, error) {
 // oldest_seq，供调用方重新对齐游标。
 func cursorExpired(oldest int64) *apperr.Error {
 	return apperr.New("E_EVENT_CURSOR_EXPIRED",
-		"事件游标早于保留期：seq ≤ %d 的事件已按保留策略清理", oldest-1).
+		"event cursor is older than the retention window: events with seq ≤ %d have been pruned per the retention policy", oldest-1).
 		WithContext("oldest_seq", strconv.FormatInt(oldest, 10))
 }
 

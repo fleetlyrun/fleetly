@@ -169,7 +169,7 @@ func placementPinWarnings(target *Spec) []Warning {
 			out = append(out, Warning{
 				Code:    "W_PLACEMENT_STATELESS_PIN",
 				Service: svc.Name,
-				Message: "服务 " + svc.Name + " 显式钉住节点 " + svc.PlacementNode + "（应用无命名卷，将失去自动重调度；节点故障时平台不迁移）",
+				Message: "service " + svc.Name + " pins node " + svc.PlacementNode + " explicitly (the app has no named volumes and will lose automatic rescheduling; the platform does not migrate it on node failure)",
 			})
 		}
 	}

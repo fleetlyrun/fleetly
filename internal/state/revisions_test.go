@@ -68,7 +68,7 @@ func TestRevisionRetentionWindowTrimsOldest(t *testing.T) {
 		t.Fatalf("list revisions: %v", err)
 	}
 	if len(rows) != RevisionKeepVersions {
-		t.Fatalf("list = %d rows, want %d（保留窗裁剪）", len(rows), RevisionKeepVersions)
+		t.Fatalf("list = %d rows, want %d (retention window trimming)", len(rows), RevisionKeepVersions)
 	}
 	if rows[0].Seq != 6 || rows[0].Status != RevisionStatusActive {
 		t.Fatalf("newest = seq %d status %s, want seq 6 active", rows[0].Seq, rows[0].Status)

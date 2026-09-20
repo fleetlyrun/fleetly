@@ -18,11 +18,11 @@ import (
 var codeExemptions = map[string]string{
 	// 预留：恢复器校验失败码（备份集/主密钥指纹不匹配拒绝半恢复）——
 	// 恢复器未实现（横切评审确认的预留码，state-model §2.7）。
-	"E_BACKUP_KEY_MISSING": "预留：恢复器未实现（横切评审确认）",
+	"E_BACKUP_KEY_MISSING": "reserved: restorer not implemented (confirmed by cross-cutting review)",
 	// 预留：跨点移动确认门控码——v0.1 单机无第二候选，MoveBinding 直接
 	// E_CAPABILITY_REQUIRES_MULTI_NODE 守卫拒绝；带确认的换点（rebind）
 	// 随 v0.2 多节点 + 备份恢复迁移路径接线。
-	"E_PLACEMENT_MOVE_REQUIRES_ACK": "预留：rebind/换点确认流 v0.2（单机守卫拒绝）",
+	"E_PLACEMENT_MOVE_REQUIRES_ACK": "reserved: rebind/move confirmation flow in v0.2 (single-node guard rejects)",
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除
@@ -62,7 +62,7 @@ func productionSources(t *testing.T) map[string]string {
 		}
 	}
 	if len(out) == 0 {
-		t.Fatal("no production sources scanned（扫描基座失效）")
+		t.Fatal("no production sources scanned (scan harness broken)")
 	}
 	return out
 }
@@ -84,7 +84,7 @@ func TestRegistryCodesReferencedInProduction(t *testing.T) {
 			}
 		}
 		if found == "" {
-			t.Errorf("错误码 %s 注册后零生产引用（真实漏发则补实现；确属预留则在 codeExemptions 与注册表行注明理由）", c.ID)
+			t.Errorf("code %s has zero production references since registration (add the missing emit if real; if genuinely reserved, note the reason in codeExemptions and on the registry row)", c.ID)
 		}
 	}
 }
@@ -94,7 +94,7 @@ func TestRegistryCodesReferencedInProduction(t *testing.T) {
 func TestCodeExemptionsStillRegistered(t *testing.T) {
 	for id := range codeExemptions {
 		if _, ok := Default().Get(id); !ok {
-			t.Errorf("豁免清单项 %s 不在注册表（清单与注册表脱节）", id)
+			t.Errorf("exemption entry %s not in the registry (exemption list out of sync with registry)", id)
 		}
 	}
 }

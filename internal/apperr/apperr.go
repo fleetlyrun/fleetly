@@ -42,10 +42,10 @@ type Error struct {
 func New(code, messageFormat string, args ...any) *Error {
 	c, ok := errcode.Get(code)
 	if !ok {
-		panic(fmt.Sprintf("apperr: 错误码 %q 未注册（信封 code 只允许注册表内码）", code))
+		panic(fmt.Sprintf("apperr: code %q not registered (envelope code must come from the registry)", code))
 	}
 	if strings.HasPrefix(code, "W_") {
-		panic(fmt.Sprintf("apperr: 警告码 %s 不得构造为错误（警告不作为 HTTP/gRPC 错误返回）", code))
+		panic(fmt.Sprintf("apperr: warning code %s must not be constructed as an error (warnings are never returned as HTTP/gRPC errors)", code))
 	}
 	return &Error{
 		code:       c.ID,
@@ -201,7 +201,7 @@ func FromError(err error) (*Error, bool) {
 // FailedPrecondition} 时替换 status 原文——原文可能携带 SQL 片段、绝对
 // 路径、git stderr 等内部细节，只进服务端 slog（gateway 错误处理器处落
 // 日志，凭 grpc code 与时间戳关联排障）。
-const RedactedDegradedMessage = "internal error——详情见服务端日志（凭错误码与时间戳关联）"
+const RedactedDegradedMessage = "internal error — see server logs for details (correlate by error code and timestamp)"
 
 // redactDegradedMessage 报告无信封 detail 的 grpc code 是否属于内部错误
 // 语义（B1）：Unknown（handler 裸 return 的 state/底层错误经 gRPC 传输层

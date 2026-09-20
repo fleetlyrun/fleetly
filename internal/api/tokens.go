@@ -90,7 +90,7 @@ func (s *TokensService) RevokeToken(ctx context.Context, req *serverv1.RevokeTok
 			return nil, notFound("token not found: " + req.GetId())
 		case errors.Is(err, state.ErrTokenLastAdmin):
 			return nil, apperr.New("E_TOKEN_LAST_ADMIN",
-				"token %s 是最后一枚未吊销的 admin token，吊销后平台将无法管理（重启也不补种引导 token）",
+				"token %s is the last non-revoked admin token; revoking it would leave the platform unmanageable (a restart does not re-seed the bootstrap token)",
 				req.GetId()).
 				WithContext("token", req.GetId()).
 				WithContext("reason", "last_admin")

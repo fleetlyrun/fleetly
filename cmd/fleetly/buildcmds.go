@@ -91,7 +91,7 @@ func (c *buildCmd) Run(ctx context.Context, env *commands.Environment, args []st
 		for _, r := range results {
 			if r.GetStatus() != "succeeded" {
 				if r.GetErrorCode() != "" {
-					return fmt.Errorf("build %s (%s) failed: %s（构建日志 %s）", r.GetId(), r.GetService(), r.GetErrorCode(), r.GetLogPath())
+					return fmt.Errorf("build %s (%s) failed: %s (build log %s)", r.GetId(), r.GetService(), r.GetErrorCode(), r.GetLogPath())
 				}
 				return fmt.Errorf("build %s (%s) ended as %s", r.GetId(), r.GetService(), r.GetStatus())
 			}
@@ -135,9 +135,9 @@ func (c *buildCmd) wait(ctx context.Context, env *commands.Environment, cl *flee
 				}
 			}
 			if n == len(pending) {
-				return out, fmt.Errorf("builds stayed queued for %s——fleetlyd 未运行？构建由 fleetlyd 的 build.queue 服务执行（本命令只入队与等待）", timeout)
+				return out, fmt.Errorf("builds stayed queued for %s — is fleetlyd running? builds are executed by fleetlyd's build.queue service (this command only enqueues and waits)", timeout)
 			}
-			return out, fmt.Errorf("builds did not finish within %s（在途构建继续执行，fleetly builds list 可查）", timeout)
+			return out, fmt.Errorf("builds did not finish within %s (in-flight builds keep running; check 'fleetly builds list')", timeout)
 		case <-ctx.Done():
 			return out, ctx.Err()
 		case <-time.After(buildPollInterval):
@@ -187,7 +187,7 @@ func (c *buildCmd) emit(env *commands.Environment, appName string, results []*se
 		return writeJSON(env.Stdout, out)
 	}
 	for _, p := range passthrough {
-		if _, err := fmt.Fprintf(env.Stdout, "service %s: image mode（无构建直通）%s\n", p.Service, p.Image); err != nil {
+		if _, err := fmt.Fprintf(env.Stdout, "service %s: image mode (no build, passthrough) %s\n", p.Service, p.Image); err != nil {
 			return err
 		}
 	}
@@ -266,7 +266,7 @@ func (c *buildsListCmd) Run(ctx context.Context, env *commands.Environment, args
 			return writeJSON(env.Stdout, out)
 		}
 		if len(resp.GetBuilds()) == 0 {
-			_, err = fmt.Fprintf(env.Stdout, "%s: no builds（fleetly build <compose> 发起构建）\n", args[0])
+			_, err = fmt.Fprintf(env.Stdout, "%s: no builds (run 'fleetly build <compose>' to trigger a build)\n", args[0])
 			return err
 		}
 		for _, rec := range resp.GetBuilds() {

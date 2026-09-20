@@ -105,7 +105,7 @@ func (r *Resolver) Resolve(ctx context.Context, in Input) (Decision, error) {
 	if in.LabelRef != "" && !labelRefersTo(self, in.LabelRef) {
 		// 名→ID 解析失败：422 + 候选清单（stateful-placement §2.2）。
 		return Decision{}, apperr.New("E_PLACEMENT_NODE_NOT_FOUND",
-			"放置 label %q 不匹配任何节点（v0.1 单机候选：%s）", in.LabelRef, self.describe()).
+			"placement label %q does not match any node (v0.1 single-node candidate: %s)", in.LabelRef, self.describe()).
 			WithContext("label_ref", in.LabelRef).
 			WithContext("candidates", self.describe())
 	}
@@ -139,8 +139,8 @@ func (r *Resolver) Resolve(ctx context.Context, in Input) (Decision, error) {
 			d.Warnings = append(d.Warnings, compose.Warning{
 				Code:    "W_PLACEMENT_STATELESS_PIN",
 				Service: in.AppName,
-				Message: "服务 " + in.AppName + " 显式钉住节点 " + in.LabelRef +
-					"（应用无命名卷，将失去自动重调度；节点故障时平台不迁移）",
+				Message: "service " + in.AppName + " explicitly pins node " + in.LabelRef +
+					" (app has no named volumes and will lose automatic rescheduling; the platform does not migrate on node failure)",
 			})
 		}
 		return d, nil
@@ -150,7 +150,7 @@ func (r *Resolver) Resolve(ctx context.Context, in Input) (Decision, error) {
 	// 候选 = 节点 ready（§2.5）：本机非 ready 无候选。
 	if !self.ready {
 		return Decision{}, apperr.New("E_PLACEMENT_NO_ELIGIBLE_NODE",
-			"自动选点无候选（v0.1 单机，本机 %s 非 ready：state=%s availability=%s）",
+			"no candidate for automatic placement (v0.1 single node; local node %s is not ready: state=%s availability=%s)",
 			self.hostname, self.state, self.availability).
 			WithContext("node", self.describe())
 	}
@@ -301,7 +301,7 @@ func (r *Resolver) self(ctx context.Context) (selfNode, error) {
 	}
 	if len(nodes) == 0 {
 		return selfNode{}, apperr.New("E_PLACEMENT_NO_ELIGIBLE_NODE",
-			"自动选点无候选（直读底座节点快照为空）")
+			"no candidate for automatic placement (direct substrate node snapshot is empty)")
 	}
 	n := nodes[0]
 	if n.SwarmNodeID != swarmNodeID {
@@ -337,7 +337,7 @@ func validateLabelRef(ref string) error {
 	}
 	if trimmed != ref {
 		return apperr.New("E_PLACEMENT_NODE_INVALID",
-			"放置 label %q 含首尾空白（可写节点显示名或平台节点 ID）", ref).
+			"placement label %q has leading or trailing whitespace (writable node display name or platform node ID)", ref).
 			WithContext("label_ref", ref)
 	}
 	for _, r := range ref {
@@ -346,7 +346,7 @@ func validateLabelRef(ref string) error {
 			r == '.', r == '_', r == '-':
 		default:
 			return apperr.New("E_PLACEMENT_NODE_INVALID",
-				"放置 label %q 含非法字符 %q（可写节点显示名或平台节点 ID）", ref, string(r)).
+				"placement label %q contains invalid character %q (writable node display name or platform node ID)", ref, string(r)).
 				WithContext("label_ref", ref)
 		}
 	}
@@ -365,7 +365,7 @@ func ConstraintFor(platformNodeID string) string {
 func GuardMultiNode(nodeCount int) error {
 	if nodeCount > 1 {
 		return apperr.New("E_CAPABILITY_REQUIRES_MULTI_NODE",
-			"检测到 %d 个节点：该操作在 v0.1 单节点拓扑上不可用（多节点能力随 v0.2）", nodeCount)
+			"detected %d nodes: this operation is unavailable on the v0.1 single-node topology (multi-node support arrives with v0.2)", nodeCount)
 	}
 	return nil
 }
@@ -374,7 +374,7 @@ func GuardMultiNode(nodeCount int) error {
 // 第二候选等——单机实现直接拒绝）。
 func MultiNodeUnsupported(op string) error {
 	return apperr.New("E_CAPABILITY_REQUIRES_MULTI_NODE",
-		"%s 需要多节点拓扑：v0.1 为单节点，多节点能力随 v0.2 提供", op)
+		"%s requires a multi-node topology: v0.1 is single-node; multi-node support arrives with v0.2", op)
 }
 
 // MoveBinding 是显式换点（破坏性确认路径，§2.1 绑定变更四类操作之一）。

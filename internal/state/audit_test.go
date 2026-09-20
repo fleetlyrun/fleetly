@@ -97,29 +97,29 @@ func TestDiffSummaryHostileInputIsAlwaysValidJSON(t *testing.T) {
 		got  string
 		want map[string]any
 	}{
-		{"DiffSummary 字符串值", DiffSummary("k", hostile), map[string]any{"k": hostile}},
-		{"backupAuditSummary 错误原文（原 %q 手拼位）", backupAuditSummary(BackupWrite{
+		{"DiffSummary string value", DiffSummary("k", hostile), map[string]any{"k": hostile}},
+		{"backupAuditSummary raw error text (former %q hand-concatenation spot)", backupAuditSummary(BackupWrite{
 			Kind: "daily", Verify: BackupVerifyFailed, Error: hostile,
 		}), map[string]any{"kind": "daily", "verify": "failed", "error": hostile}},
 	} {
 		if !json.Valid([]byte(tc.got)) {
-			t.Fatalf("%s: 摘要不是合法 JSON: %q", tc.name, tc.got)
+			t.Fatalf("%s: summary is not valid JSON: %q", tc.name, tc.got)
 		}
 		var back map[string]any
 		if err := json.Unmarshal([]byte(tc.got), &back); err != nil {
-			t.Fatalf("%s: 解析失败: %v (%q)", tc.name, err, tc.got)
+			t.Fatalf("%s: unmarshal failed: %v (%q)", tc.name, err, tc.got)
 		}
 		if len(back) != len(tc.want) {
-			t.Fatalf("%s: 键集不符: %v vs %v", tc.name, back, tc.want)
+			t.Fatalf("%s: key set mismatch: %v vs %v", tc.name, back, tc.want)
 		}
 		for k, v := range tc.want {
 			if back[k] != v {
-				t.Fatalf("%s: 键 %s 值未原样往返: %q vs %q", tc.name, k, back[k], v)
+				t.Fatalf("%s: key %s value did not round-trip verbatim: %q vs %q", tc.name, k, back[k], v)
 			}
 		}
 	}
 	// 布尔/数值保持原生 JSON 字面量（非字符串化）。
 	if got := DiffSummary("enabled", true, "services", 3); got != `{"enabled":true,"services":3}` {
-		t.Fatalf("原生类型形态不符: %s", got)
+		t.Fatalf("native type shape mismatch: %s", got)
 	}
 }

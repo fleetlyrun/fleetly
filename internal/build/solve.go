@@ -196,7 +196,7 @@ func (r *solveRunner) run(ctx context.Context, opts bkclient.SolveOpt, def *llb.
 	// fail-fast 给出可行动错误。自管容器形态下冷启动就绪窗口已由
 	// ensureDaemonReady 的就绪探测（M2-8）吸收，此处到达即应可服务。
 	if _, err := c.Info(ctx); err != nil {
-		return fmtErr("buildkit unreachable at %s（自管容器应经 fleetlyd EnsureRunning 拉起；外部端点检查配置 build.buildkit_host）: %w", r.host, err)
+		return fmtErr("buildkit unreachable at %s (self-managed containers should be brought up via fleetlyd EnsureRunning; for external endpoints check build.buildkit_host): %w", r.host, err)
 	}
 
 	// docker 导出管道：导出流（docker-format tar）→ 本机 daemon。管道在

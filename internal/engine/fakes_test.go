@@ -367,7 +367,7 @@ func (f *fakeSubstrate) ServiceList(_ context.Context, labels map[string]string)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.panicServiceList {
-		panic("injected substrate panic (MG-5 driftScan 隔离测试)")
+		panic("injected substrate panic (MG-5 driftScan isolation test)")
 	}
 	if f.failServiceListErr != nil {
 		return nil, f.failServiceListErr
@@ -396,7 +396,7 @@ func (f *fakeSubstrate) TaskList(_ context.Context, serviceName string) ([]TaskS
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.panicOn[serviceName] {
-		panic("injected substrate panic (A9 tick 隔离测试)")
+		panic("injected substrate panic (A9 tick isolation test)")
 	}
 	svc, ok := f.services[serviceName]
 	if !ok {
