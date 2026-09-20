@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §4.1/§6；[Swarm 评估报告](../research/2026-09-17-swarm-substrate-assessment.md) V1-V7；执行层：GitHub Actions |
+| 已实现（M1） | 2026-09-20 | **v0.1 收口**：PR/nightly/release 三轨道就绪（还原点 683709e），证据见 [v0.1 验收记录 §5](../reports/2026-09-19-v0.1-acceptance.md)；CI 门禁经评审整改加固（action 钉 SHA 等，[整改方案 S20](2026-09-20-remediation-complete.md)）；§2.6 M2（真 VPS dogfooding/TLS 真路径/资源趋势）后置至 v0.2 E8（[v0.2 规划](../plan/2026-09-20-v0.2-plan.md)）。[平台架构设计](2026-09-17-architecture.md) §4.1/§6；[Swarm 评估报告](../research/2026-09-17-swarm-substrate-assessment.md) V1-V7；执行层：GitHub Actions |
 
 ## 1. 现状与问题
 

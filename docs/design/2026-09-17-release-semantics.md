@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.5（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §1/§6；[交付流水线](2026-09-17-delivery-pipeline.md) §6；来源：独立设计×交叉验证（§8），用户裁决见 §3 D-REL-6；2026-09-17 审核裁决轮：env 快照按三层合并结果（架构 §2.4）、`blocked_waiting` 入状态机、`deployment.cancelled` 事件命名对齐；2026-09-17 Spike B 回写：B2/B3 关闭、归位禁 `--force`、stop-first 停机实测 10–12s |
+| 已实现（v0.1 切面） | 2026-09-20 | **v0.1 收口**：v0.1 切面逐项验收（[切面冻结清单 §2.1](../plan/2026-09-17-v0.1-scope-freeze.md) + [验收记录 §3](../reports/2026-09-19-v0.1-acceptance.md)）；MCP 只读查询/degraded 一等 UI/多副本水位粗判为 v0.2 后置项（[v0.2 规划](../plan/2026-09-20-v0.2-plan.md)）。[平台架构设计](2026-09-17-architecture.md) §2.5（应用模型 = Compose 规范）；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md) §1/§6；[交付流水线](2026-09-17-delivery-pipeline.md) §6；来源：独立设计×交叉验证（§8），用户裁决见 §3 D-REL-6；2026-09-17 审核裁决轮：env 快照按三层合并结果（架构 §2.4）、`blocked_waiting` 入状态机、`deployment.cancelled` 事件命名对齐；2026-09-17 Spike B 回写：B2/B3 关闭、归位禁 `--force`、stop-first 停机实测 10–12s |
 
 ## 1. 现状与问题
 

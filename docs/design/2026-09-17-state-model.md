@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 草案 | 2026-09-17 | [平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8），机制面经 D18 精简；2026-09-17 审核裁决轮：冷备触发时机改为主机/Engine 升级（fleetlyd 升级走热备+原子化）、证书材料改控制面集中签发、对象命名补记、D-STM-2 措辞修正 |
+| 已实现（v0.1 切面） | 2026-09-20 | **v0.1 收口**：v0.1 切面逐项验收（[切面冻结清单 §2.3](../plan/2026-09-17-v0.1-scope-freeze.md) + [验收记录 §3/§4](../reports/2026-09-19-v0.1-acceptance.md)）；L1 演练已落档 runbook；完整 resync 刷新器/orphans 表/cron_runs/导出 tar/多节点 nodes 接入为 v0.2 后置项（[v0.2 规划](../plan/2026-09-20-v0.2-plan.md)）。[平台架构设计](2026-09-17-architecture.md) §2.3/§2.6/§2.8（应用模型 = Compose 规范）、D18 对标纪律；[Swarm 底座评估](../research/2026-09-17-swarm-substrate-assessment.md)；[放置设计](2026-09-17-stateful-placement.md)；来源：独立设计×交叉验证（§8），机制面经 D18 精简；2026-09-17 审核裁决轮：冷备触发时机改为主机/Engine 升级（fleetlyd 升级走热备+原子化）、证书材料改控制面集中签发、对象命名补记、D-STM-2 措辞修正 |
 
 ## 1. 现状与问题
 
