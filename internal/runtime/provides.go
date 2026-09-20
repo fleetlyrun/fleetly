@@ -137,9 +137,13 @@ func NewNodeIdentity(app lynx.App, st *state.Store, dc state.DockerClient) *stat
 }
 
 // NewObserver 构造节点观测缓存刷新器（30s 全量 resync + 事件驱动失效，
-// 底座不可达置 stale + 指数退避）。
+// 底座不可达置 stale + 指数退避），并挂观测拍后处理 = 集群锚定 duty
+// （ClusterAnchor：worker 身份收编 + node.* 差分事件，multi-node §2.7
+// E1-6）。观测同步本体语义逐字不变；挂钩自吞错误、不推翻同步成功。
 func NewObserver(app lynx.App, st *state.Store, dc state.DockerClient) *state.Observer {
-	return state.NewObserver(st, dc, app.Logger())
+	ob := state.NewObserver(st, dc, app.Logger())
+	anchor := state.NewClusterAnchor(st, dc, app.Logger())
+	return ob.WithPostSync(anchor.PostSync)
 }
 
 // NewJanitor 构造保留期清理守护（事件/审计过期清理，周期可配）。
@@ -318,7 +322,9 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // ——组件集与装配壳同语义如实上报恒健康）。备份组件（T2.22）的检查器 =
 // statebackup.Manager.CheckHealth：无 verified 备份 / 最近一次 verify 失败
 // → 不健康（红色告警面：台账 failed 行 + backup.failed 审计 + 此组件）。
-func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, version Version) *api.SystemService {
+// E1-8：join 向导面随 cfg.BaseDomain 与 substrate join 端口接线（base_domain
+// 空 = 单节点形态，GetJoinGuide 以 D-MN-13 门禁 409 拒绝、不触底座）。
+func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, sc *substrate.Client, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -329,7 +335,8 @@ func NewSystemService(st *state.Store, id *state.NodeIdentity, ob *state.Observe
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
 	}
-	return api.NewSystemService(string(version), st, components, ing).WithBackupManager(bm)
+	return api.NewSystemService(string(version), st, components, ing).WithBackupManager(bm).
+		WithJoinGuide(cfg.BaseDomain, sc)
 }
 
 // NewDomainsService 构造域名台账/验证面服务。
@@ -354,9 +361,10 @@ func NewEventsService(st *state.Store) *api.EventsService {
 	return api.NewEventsService(st)
 }
 
-// NewPlacementService 构造放置绑定只读面服务。
-func NewPlacementService(st *state.Store) *api.PlacementService {
-	return api.NewPlacementService(st)
+// NewPlacementService 构造放置面服务（T2.17 只读 + E1-7 显式换点/卷清单/
+// 迁移 runbook——换点裁决经 placement.Resolver，api 面只做解析与投影）。
+func NewPlacementService(st *state.Store, res *placement.Resolver) *api.PlacementService {
+	return api.NewPlacementService(st, res)
 }
 
 // NewTokensService 构造 token 管理面服务。

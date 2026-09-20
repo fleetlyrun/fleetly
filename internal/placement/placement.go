@@ -1,13 +1,17 @@
 // Package placement 是放置解析与绑定生命周期（stateful-placement 专项的
-// v0.1 单机切面，T2.14）：
+// 概念模型三层；v0.2 E1-7 起多节点化——multi-node §2.6/D-MN-7）：
 //
 //   - 概念模型三层（§2.1）：意图 = 服务 label fleetly.placement.node；
 //     绑定 = placements 记录（平台节点 ID 为锚）；执行 = 适配器编译为
 //     节点 label 约束（本包 ConstraintFor）。
 //   - 不变量（§2.1）：绑定优先于 label 的缺失；有卷应用不存在「无绑定」
 //     的合法运行态；绑定节点不可用时不迁移、不换点。
-//   - 单机切面（§2.9）：同一字段、同一代码路径，候选集只有一项（本机）；
-//     多节点操作一律 E_CAPABILITY_REQUIRES_MULTI_NODE，不静默成功。
+//   - 多节点切面（multi-node §2.6）：候选集 = 底座直读全量节点快照
+//     （D-MN-7：决策路径禁读观测缓存）；label 值域 = 唯一显示名或平台 ID
+//     （歧义 → INVALID + 提示平台 ID）；自动选点三因子 = 数据引力 >
+//     已钉数少 > 平台 ID 字典序。v0.1 的单机守卫（GuardMultiNode/
+//     MultiNodeUnsupported）退役：候选集唯一（本机）时自动绑定行为与
+//     v0.1 等价——E_CAPABILITY_REQUIRES_MULTI_NODE 码保留注册表、永不复用。
 //
 // 本包零框架依赖；底座访问经 state.DockerClient 端口（写前直读纪律：
 // 决策路径直读底座，禁读观测缓存，state-model §2.2）。
@@ -26,7 +30,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// Resolver 是放置解析器（单机同路径）。
+// Resolver 是放置解析器。
 type Resolver struct {
 	store  *state.Store
 	docker state.DockerClient
@@ -75,25 +79,40 @@ type Decision struct {
 	Warnings []compose.Warning
 }
 
-// selfNode 是单机候选（本机）的直读快照。
-type selfNode struct {
-	platformID   string
+// candidate 是一个候选节点（底座直读快照项，multi-node §2.6）。
+type candidate struct {
+	platformID   string // fleetly.node-id label 值；未锚定为空
 	swarmNodeID  string
 	hostname     string
-	ready        bool
 	state        string
 	availability string
 }
 
-// Resolve 解析放置（不落库）：单机同路径，候选集 = 本机（§2.9）。
+// ready 是底座 ready 语义：state=ready 且 availability=active（drain/pause
+// 均不可部署——放置专项 §2.6 drain 同 DOWN）。
+func (c candidate) ready() bool {
+	return c.state == "ready" && c.availability == "active"
+}
+
+// describe 是候选项的人读形态（候选清单：名 + 平台 ID）。
+func (c candidate) describe() string {
+	return c.hostname + " (" + c.platformID + ")"
+}
+
+// Resolve 解析放置（不落库）：候选集 = 底座直读全量节点快照（D-MN-7）。
 //
-//	已有绑定 → 保持（绑定优先）
-//	无绑定且无卷 → 不钉（自由调度）；显式 pin 出 W_PLACEMENT_STATELESS_PIN
-//	无绑定且有卷 → 自动绑定本机（label 引导时来源记 label）
-//	label 解析失败 → E_PLACEMENT_NODE_NOT_FOUND（422 + 候选清单）/ INVALID
-//	拓扑非单节点 → E_CAPABILITY_REQUIRES_MULTI_NODE（v0.1 守卫，不静默）
+//	label pin → 在候选集中解析（唯一显示名或平台 ID）；失败 →
+//	  E_PLACEMENT_NODE_NOT_FOUND（422 + 全量候选清单）
+//	已有绑定 → 保持（绑定优先于 label 的缺失）
+//	无绑定且无卷 → 不钉（自由调度）；显式 pin → W_PLACEMENT_STATELESS_PIN
+//	无绑定且有卷 → 自动选点：候选 = 已锚定 + ready + active；
+//	  评分 = 数据引力（卷注册表所在节点）> 已钉应用数少（placements 权威
+//	  计数）> 平台 ID 字典序（multi-node §2.6/D-MN-7 三因子）
+//	无候选 → E_PLACEMENT_NO_ELIGIBLE_NODE
+//
+// 候选集唯一 = 本机时行为与 v0.1 单机切面等价（同码路径、同结果）。
 func (r *Resolver) Resolve(ctx context.Context, in Input) (Decision, error) {
-	self, err := r.self(ctx)
+	cands, err := r.candidates(ctx)
 	if err != nil {
 		return Decision{}, err
 	}
@@ -102,15 +121,13 @@ func (r *Resolver) Resolve(ctx context.Context, in Input) (Decision, error) {
 	if err := validateLabelRef(in.LabelRef); err != nil {
 		return Decision{}, err
 	}
-	if in.LabelRef != "" && !labelRefersTo(self, in.LabelRef) {
-		// 名→ID 解析失败：422 + 候选清单（stateful-placement §2.2）。
-		return Decision{}, apperr.New("E_PLACEMENT_NODE_NOT_FOUND",
-			"placement label %q does not match any node (v0.1 single-node candidate: %s)", in.LabelRef, self.describe()).
-			WithContext("label_ref", in.LabelRef).
-			WithContext("candidates", self.describe())
+	pinned, err := r.resolveRef(ctx, cands, in.LabelRef)
+	if err != nil {
+		return Decision{}, err
 	}
 
-	// 已有绑定 → 保持（label 只作展示，不触发迁移——跨点确认属 v0.2）。
+	// 已有绑定 → 保持（label 只作展示，不触发迁移——跨点唯一路径 = 显式
+	// 换点 Rebind，multi-node §2.6）。
 	existing, err := r.store.GetPlacement(ctx, in.AppID)
 	switch {
 	case err == nil:
@@ -132,7 +149,7 @@ func (r *Resolver) Resolve(ctx context.Context, in Input) (Decision, error) {
 		return Decision{}, fmt.Errorf("placement: read placement: %w", err)
 	}
 
-	// 无绑定且无卷 → 不钉（自由调度）；显式 pin 出计划警告（§2.3）。
+	// 无绑定且无卷 → 不钉（自由调度）；显式 pin 出计划警告（放置专项 §2.3）。
 	if len(in.Volumes) == 0 {
 		d := Decision{AppID: in.AppID, LabelRef: in.LabelRef}
 		if in.LabelRef != "" {
@@ -146,25 +163,82 @@ func (r *Resolver) Resolve(ctx context.Context, in Input) (Decision, error) {
 		return d, nil
 	}
 
-	// 无绑定且有卷 → 自动绑定本机（强制钉住，平台自动无需声明；§2.3）。
-	// 候选 = 节点 ready（§2.5）：本机非 ready 无候选。
-	if !self.ready {
+	// 无绑定且有卷 → 自动选点（三因子，multi-node §2.6）。
+	return r.autoPick(ctx, cands, pinned, in)
+}
+
+// autoPick 执行绑定选点：候选池 = 已锚定 + ready + active。显式 pin 已
+// 解析成功时以 pin 目标为准（目标不在池内 = 节点未就绪/未锚定 →
+// E_PLACEMENT_NO_ELIGIBLE_NODE，v0.1 同码同语义）；自动选点走三因子：
+// 数据引力（卷注册表所在节点）> 已钉应用数少（placements 权威计数）>
+// 平台 ID 字典序（multi-node §2.6/D-MN-7）。
+func (r *Resolver) autoPick(ctx context.Context, cands []candidate, pinned *candidate, in Input) (Decision, error) {
+	pool := make([]candidate, 0, len(cands))
+	for _, c := range cands {
+		if c.platformID != "" && c.ready() {
+			pool = append(pool, c)
+		}
+	}
+	if pinned != nil {
+		// 显式 pin：目标必须在合格池内（v0.1 语义平移——非 ready 不绑定）。
+		for _, c := range pool {
+			if c.platformID == pinned.platformID {
+				return Decision{
+					AppID:          in.AppID,
+					Bind:           true,
+					PlatformNodeID: c.platformID,
+					Source:         state.PlacementSourceLabel,
+					LabelRef:       in.LabelRef,
+					Constraint:     ConstraintFor(c.platformID),
+				}, nil
+			}
+		}
 		return Decision{}, apperr.New("E_PLACEMENT_NO_ELIGIBLE_NODE",
-			"no candidate for automatic placement (v0.1 single node; local node %s is not ready: state=%s availability=%s)",
-			self.hostname, self.state, self.availability).
-			WithContext("node", self.describe())
+			"pinned node %s is not eligible for placement (anchored+ready+active required; state=%s availability=%s)",
+			pinned.describe(), pinned.state, pinned.availability).
+			WithContext("candidates", describeCandidates(cands))
 	}
-	source := state.PlacementSourcePlatform
-	if in.LabelRef != "" {
-		source = state.PlacementSourceLabel
+	if len(pool) == 0 {
+		return Decision{}, apperr.New("E_PLACEMENT_NO_ELIGIBLE_NODE",
+			"no candidate for automatic placement (anchored+ready+active set is empty; direct snapshot has %d node(s))", len(cands)).
+			WithContext("candidates", describeCandidates(cands))
 	}
+
+	// 数据引力：应用卷注册表（权威 SQLite）所在节点优先（§2.5 数据引力）。
+	gravity := map[string]bool{}
+	if vols, err := r.store.ListAppVolumes(ctx, in.AppID); err != nil {
+		return Decision{}, fmt.Errorf("placement: read volume registry: %w", err)
+	} else {
+		for _, v := range vols {
+			if v.Status == state.VolumeActive && v.PlatformNodeID != "" {
+				gravity[v.PlatformNodeID] = true
+			}
+		}
+	}
+	// 已钉数：placements 权威表计数（非观测缓存）。
+	pinnedCount, err := r.store.PlacementCountByNode(ctx)
+	if err != nil {
+		return Decision{}, fmt.Errorf("placement: read pinned counts: %w", err)
+	}
+	// 三因子排序（稳定：同分节点由平台 ID 字典序定序，可解释可测试）。
+	sort.SliceStable(pool, func(i, j int) bool {
+		a, b := pool[i], pool[j]
+		if ga, gb := gravity[a.platformID], gravity[b.platformID]; ga != gb {
+			return ga // 数据引力优先
+		}
+		if pinnedCount[a.platformID] != pinnedCount[b.platformID] {
+			return pinnedCount[a.platformID] < pinnedCount[b.platformID] // 已钉数少优先
+		}
+		return a.platformID < b.platformID // 平台 ID 字典序
+	})
+	chosen := pool[0]
 	return Decision{
 		AppID:          in.AppID,
 		Bind:           true,
-		PlatformNodeID: self.platformID,
-		Source:         source,
+		PlatformNodeID: chosen.platformID,
+		Source:         state.PlacementSourcePlatform,
 		LabelRef:       in.LabelRef,
-		Constraint:     ConstraintFor(self.platformID),
+		Constraint:     ConstraintFor(chosen.platformID),
 	}, nil
 }
 
@@ -221,22 +295,19 @@ func (r *Resolver) Apply(ctx context.Context, in Input) (Decision, error) {
 		_ = bound // 节点/来源仅供同事务载荷；裁决书以 Decision 返回
 	}
 
-	// 卷注册表登记（docker_name = 命名约定值，state-model §2.4）。
-	if err := r.registerVolumes(ctx, in); err != nil {
+	// 卷注册表登记（docker_name = 命名约定值，state-model §2.4）；数据
+	// 诞生点 = 绑定节点（多节点下可能是任一候选，multi-node §2.6）。
+	if err := r.registerVolumes(ctx, in, d.PlatformNodeID); err != nil {
 		return Decision{}, err
 	}
 	return d, nil
 }
 
 // registerVolumes 把应用声明的命名卷登记进卷注册表；新卷发 volume.created
-// 事件（数据诞生点）。platform 节点 = 本机（单机切面）。
-func (r *Resolver) registerVolumes(ctx context.Context, in Input) error {
+// 事件（数据诞生点）。platform 节点 = 当前绑定锚（多节点语义）。
+func (r *Resolver) registerVolumes(ctx context.Context, in Input, platformNodeID string) error {
 	if len(in.Volumes) == 0 {
 		return nil
-	}
-	self, err := r.self(ctx)
-	if err != nil {
-		return err
 	}
 	for _, m := range sortedMounts(in.Volumes) {
 		dockerName, err := naming.VolumeName(in.AppName, m.Key, in.AppID)
@@ -248,7 +319,7 @@ func (r *Resolver) registerVolumes(ctx context.Context, in Input) error {
 			Key:            m.Key,
 			Name:           dockerName,
 			Kind:           state.VolumeKindNamed,
-			PlatformNodeID: self.platformID,
+			PlatformNodeID: platformNodeID,
 			MountPath:      m.Target,
 		})
 		if err != nil {
@@ -259,7 +330,7 @@ func (r *Resolver) registerVolumes(ctx context.Context, in Input) error {
 				_, err := tx.AppendEvent(ctx, state.Event{
 					Name:    "volume.created",
 					Subject: "volume:" + dockerName,
-					Payload: `{"app":"` + in.AppID + `","key":"` + m.Key + `","node":"` + self.platformID + `"}`,
+					Payload: `{"app":"` + in.AppID + `","key":"` + m.Key + `","node":"` + platformNodeID + `"}`,
 				})
 				return err
 			}); err != nil {
@@ -278,54 +349,67 @@ func sortedMounts(in []VolumeMount) []VolumeMount {
 	return out
 }
 
-// self 直读本机候选（决策路径禁读观测缓存，state-model §2.2）：Swarm 自省
-// → 平台 ID（meta）→ 全量节点快照取 hostname/ready。拓扑非单节点即守卫。
-func (r *Resolver) self(ctx context.Context) (selfNode, error) {
-	platformID, err := r.store.GetMeta(ctx, state.MetaKeyPlatformNodeID)
-	if err != nil {
-		return selfNode{}, fmt.Errorf("placement: read platform node id: %w", err)
-	}
-	if platformID == "" {
-		return selfNode{}, errors.New("placement: platform node id not ensured (fleetlyd identity missing)")
-	}
-	swarmNodeID, err := r.docker.SelfNodeID(ctx)
-	if err != nil {
-		return selfNode{}, fmt.Errorf("placement: self node id: %w", err)
-	}
+// candidates 直读全量候选节点（决策路径禁读观测缓存，state-model §2.2；
+// multi-node §2.6/D-MN-7）：每项 = swarm node ID、平台 ID（fleetly.node-id
+// label，未锚定为空）、hostname、ready 性。空快照返回空集非错误——无候选
+// 的裁决由各调用点给出契约错误。
+func (r *Resolver) candidates(ctx context.Context) ([]candidate, error) {
 	nodes, err := r.docker.ListNodeObservations(ctx)
 	if err != nil {
-		return selfNode{}, fmt.Errorf("placement: list nodes: %w", err)
+		return nil, fmt.Errorf("placement: list nodes: %w", err)
 	}
-	if err := GuardMultiNode(len(nodes)); err != nil {
-		return selfNode{}, err
+	out := make([]candidate, 0, len(nodes))
+	for _, n := range nodes {
+		out = append(out, candidate{
+			platformID:   n.Labels[state.LabelNodeID],
+			swarmNodeID:  n.SwarmNodeID,
+			hostname:     n.Hostname,
+			state:        n.State,
+			availability: n.Availability,
+		})
 	}
-	if len(nodes) == 0 {
-		return selfNode{}, apperr.New("E_PLACEMENT_NO_ELIGIBLE_NODE",
-			"no candidate for automatic placement (direct substrate node snapshot is empty)")
-	}
-	n := nodes[0]
-	if n.SwarmNodeID != swarmNodeID {
-		return selfNode{}, fmt.Errorf("placement: self node %s not in direct snapshot", swarmNodeID)
-	}
-	return selfNode{
-		platformID:   platformID,
-		swarmNodeID:  swarmNodeID,
-		hostname:     n.Hostname,
-		ready:        n.State == "ready" && n.Availability == "active",
-		state:        n.State,
-		availability: n.Availability,
-	}, nil
+	return out, nil
 }
 
-// describe 是候选项的人读形态（候选清单：名 + 平台 ID）。
-func (s selfNode) describe() string {
-	return s.hostname + " (" + s.platformID + ")"
+// resolveRef 把 label 原值解析为候选（multi-node §2.6 label 值域）：
+// 平台 ID（n_<ULID>）、唯一显示名（集群内必须唯一——同名即歧义 →
+// E_PLACEMENT_NODE_INVALID 422 + 提示改用平台 ID）、底座节点 ID 形态
+// 宽松接受（无害，v0.1 行为平移）。空值 = 未声明，返回 nil 非 error。
+func (r *Resolver) resolveRef(_ context.Context, cands []candidate, ref string) (*candidate, error) {
+	if ref == "" {
+		return nil, nil
+	}
+	var hits []candidate
+	for _, c := range cands {
+		if ref == c.platformID || ref == c.hostname || ref == c.swarmNodeID {
+			hits = append(hits, c)
+		}
+	}
+	switch len(hits) {
+	case 1:
+		return &hits[0], nil
+	case 0:
+		return nil, apperr.New("E_PLACEMENT_NODE_NOT_FOUND",
+			"placement label %q does not match any node (candidates: %s)", ref, describeCandidates(cands)).
+			WithContext("label_ref", ref).
+			WithContext("candidates", describeCandidates(cands))
+	default:
+		return nil, apperr.New("E_PLACEMENT_NODE_INVALID",
+			"placement label %q is ambiguous: %d nodes share this display name — use the platform node ID instead (candidates: %s)",
+			ref, len(hits), describeCandidates(hits)).
+			WithContext("label_ref", ref).
+			WithContext("candidates", describeCandidates(hits))
+	}
 }
 
-// labelRefersTo 报告 label 原值是否指向候选节点（平台 ID / 显示名 / 底座
-// 节点 ID 均可——§2.2 显示名仅供读写，解析在适配器层收敛到平台 ID）。
-func labelRefersTo(s selfNode, ref string) bool {
-	return ref == s.platformID || ref == s.hostname || ref == s.swarmNodeID
+// describeCandidates 是候选清单的人读形态（错误信息的可行动面）。
+func describeCandidates(cands []candidate) string {
+	parts := make([]string, 0, len(cands))
+	for _, c := range cands {
+		parts = append(parts, c.describe())
+	}
+	sort.Strings(parts)
+	return strings.Join(parts, ", ")
 }
 
 // validateLabelRef 拒绝形态非法的 label 值（空串视为未声明；含空白或越界
@@ -358,27 +442,4 @@ func validateLabelRef(ref string) error {
 // fleetly.node-id = 平台节点 ID。
 func ConstraintFor(platformNodeID string) string {
 	return "node.labels." + state.LabelNodeID + " == " + platformNodeID
-}
-
-// GuardMultiNode 是多节点操作守卫：节点数 > 1 即 v0.1 不支持（不静默成功，
-// §2.9 多节点操作返回 E_CAPABILITY_REQUIRES_MULTI_NODE）。
-func GuardMultiNode(nodeCount int) error {
-	if nodeCount > 1 {
-		return apperr.New("E_CAPABILITY_REQUIRES_MULTI_NODE",
-			"detected %d nodes: this operation is unavailable on the v0.1 single-node topology (multi-node support arrives with v0.2)", nodeCount)
-	}
-	return nil
-}
-
-// MultiNodeUnsupported 是「结构性多节点操作」的静态守卫（换点 API、选点
-// 第二候选等——单机实现直接拒绝）。
-func MultiNodeUnsupported(op string) error {
-	return apperr.New("E_CAPABILITY_REQUIRES_MULTI_NODE",
-		"%s requires a multi-node topology: v0.1 is single-node; multi-node support arrives with v0.2", op)
-}
-
-// MoveBinding 是显式换点（破坏性确认路径，§2.1 绑定变更四类操作之一）。
-// v0.1 单机无第二候选：守卫拒绝，不静默、不改状态（rebind CLI 属 v0.2）。
-func (r *Resolver) MoveBinding(_ context.Context, _ string, _ string, _ string, _ bool) error {
-	return MultiNodeUnsupported("placement move/rebind")
 }

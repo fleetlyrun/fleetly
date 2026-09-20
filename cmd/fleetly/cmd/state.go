@@ -224,27 +224,28 @@ func (c *envRmCmd) Run(ctx context.Context, env *commands.Environment, args []st
 
 // ── fleetly placement ───────────────────────────────────────────────────────
 
-// placementCmd 是外层动词 `placement`：分发 show（rebind 属 v0.2，不加）。
+// placementCmd 是外层动词 `placement`：分发 show/rebind/migrate（rebind 与
+// migrate 在 multinode.go——E1-7 显式换点与迁移 runbook）。
 type placementCmd struct {
 	sub *commands.App
 }
 
 func newPlacementCmd() *placementCmd {
 	sub := commands.New()
-	sub.Register(&placementShowCmd{})
+	sub.Register(&placementShowCmd{}, &placementRebindCmd{}, &placementMigrateCmd{})
 	sub.VerbTitle = "placement subcommands:"
 	return &placementCmd{sub: sub}
 }
 
 func (c *placementCmd) Name() string     { return "placement" }
-func (c *placementCmd) Synopsis() string { return "app placement bindings (single-node view)" }
-func (c *placementCmd) Usage() string    { return "placement <show> [flags] <app>" }
+func (c *placementCmd) Synopsis() string { return "app placement bindings (multi-node view)" }
+func (c *placementCmd) Usage() string    { return "placement <show|rebind|migrate> [flags] <app>" }
 
 func (c *placementCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *placementCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (show)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (show|rebind|migrate)")}
 	}
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
@@ -360,27 +361,30 @@ func (c *placementShowCmd) Run(ctx context.Context, env *commands.Environment, a
 
 // ── fleetly nodes ───────────────────────────────────────────────────────────
 
-// nodesCmd 是外层动词 `nodes`：分发 list（只读观测面）。
+// nodesCmd 是外层动词 `nodes`：分发 list/join-guide/rotate-token（join 向导
+// 与 token 轮换在 multinode.go——E1-8）。
 type nodesCmd struct {
 	sub *commands.App
 }
 
 func newNodesCmd() *nodesCmd {
 	sub := commands.New()
-	sub.Register(&nodesListCmd{})
+	sub.Register(&nodesListCmd{}, &nodesJoinGuideCmd{}, &nodesRotateTokenCmd{})
 	sub.VerbTitle = "nodes subcommands:"
 	return &nodesCmd{sub: sub}
 }
 
-func (c *nodesCmd) Name() string     { return "nodes" }
-func (c *nodesCmd) Synopsis() string { return "cluster nodes (read-only observation cache)" }
-func (c *nodesCmd) Usage() string    { return "nodes <list> [flags]" }
+func (c *nodesCmd) Name() string { return "nodes" }
+func (c *nodesCmd) Synopsis() string {
+	return "cluster nodes (read-only observation cache + join wizard)"
+}
+func (c *nodesCmd) Usage() string { return "nodes <list|join-guide|rotate-token> [flags]" }
 
 func (c *nodesCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *nodesCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (list|join-guide|rotate-token)")}
 	}
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }

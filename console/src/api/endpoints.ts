@@ -9,6 +9,7 @@ import type {
   GetAppResponse,
   GetEnvResponse,
   GetIngressStatusResponse,
+  GetJoinGuideResponse,
   GetRevisionSpecResponse,
   GetSystemStatusResponse,
   ListAppDomainsResponse,
@@ -21,6 +22,7 @@ import type {
   PlacementView,
   RemoveEnvResponse,
   RollbackDeploymentResponse,
+  RotateJoinTokenResponse,
   SetEnvResponse,
   VerifyAppDomainsResponse,
   VolumeView,
@@ -169,6 +171,25 @@ export function getSystemStatus() {
 
 export function listNodes() {
   return api<ListNodesResponse>("/system/nodes");
+}
+
+/** join 向导（E1-8；admin scope——响应含 join token 材料）。 */
+export function getJoinGuide(workerIp?: string, managerAddr?: string) {
+  const query: Record<string, string> = {};
+  if (workerIp) query.worker_ip = workerIp;
+  if (managerAddr) query.manager_addr = managerAddr;
+  const qs = new URLSearchParams(query).toString();
+  return api<GetJoinGuideResponse>(
+    `/system/nodes/join-guide${qs ? `?${qs}` : ""}`,
+  );
+}
+
+/** 轮换 swarm join token（E1-8，D-MN-1；旧 token 即刻失效）。 */
+export function rotateJoinToken(role: "worker" | "manager" = "worker") {
+  return api<RotateJoinTokenResponse>("/system/nodes/join-token:rotate", {
+    method: "POST",
+    json: { role },
+  });
 }
 
 export function getIngressStatus() {

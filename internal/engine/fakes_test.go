@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -36,12 +37,25 @@ func (c *fakeClock) Advance(d time.Duration) {
 	c.now = c.now.Add(d)
 }
 
-// fakeImages 是可控镜像可见性。
+// fakeImages 是可控镜像可见性。registryErrs 命中的 ref 返回 registry 前哨
+// 信封（E_REGISTRY_UNAVAILABLE——substrate 适配器对平台 registry 引用的
+// 真实行为同构，D-MN-11）；failOther 命中的 ref 返回普通传输类失败（既有
+// E_RUNTIME_UNAVAILABLE 包装路径的对照），供 resolveImage 透传测试。
 type fakeImages struct {
-	missing map[string]bool
+	missing      map[string]bool
+	registryErrs map[string]bool
+	failOther    map[string]bool
 }
 
 func (f *fakeImages) ImageDigest(_ context.Context, ref string) (string, error) {
+	if f.registryErrs[ref] {
+		return "", apperr.New("E_REGISTRY_UNAVAILABLE",
+			"platform registry did not answer while checking %s (deploy preflight fails fast; no queueing)", ref).
+			WithStage("preflight")
+	}
+	if f.failOther[ref] {
+		return "", context.DeadlineExceeded
+	}
 	if f.missing[ref] {
 		return "", ErrImageMissing
 	}

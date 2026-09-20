@@ -334,6 +334,22 @@ func placementView(p state.Placement) *serverv1.PlacementView {
 	return v
 }
 
+// volumeView 构造卷注册表投影（E1-7 增补 prev_platform_node_id 与 residual
+// 派生标记——multi-node §2.8：prev 非空的 active 行 = 源节点存在待清理
+// 残留副本，只指引不代删，D18）。
+func volumeView(v state.Volume) *serverv1.VolumeView {
+	return &serverv1.VolumeView{
+		Key:                v.Key,
+		Name:               v.Name,
+		Kind:               string(v.Kind),
+		PlatformNodeId:     v.PlatformNodeID,
+		MountPath:          v.MountPath,
+		Status:             string(v.Status),
+		PrevPlatformNodeId: v.PrevPlatformNodeID,
+		Residual:           v.Status == state.VolumeActive && v.PrevPlatformNodeID != "",
+	}
+}
+
 // deploymentViews 构造部署投影列表。
 func deploymentViews(rows []state.DeployRecord) []*serverv1.DeploymentView {
 	out := make([]*serverv1.DeploymentView, 0, len(rows))

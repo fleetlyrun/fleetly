@@ -75,6 +75,10 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_REGISTRY_UNAVAILABLE": "multi-node §5.2 (D-MN-11: registry-mode deploy preflight, registry unreachable)",
 	"E_REGISTRY_PUSH_FAILED": "multi-node §5.2 (D-MN-11: push to the platform registry failed)",
 
+	// multi-node.md §5.2（1 E，D-MN-13）：join 门禁——base_domain 缺失即
+	// 多节点未启用，join 面显式拒绝（409）。
+	"E_MULTI_NODE_REQUIRES_BASE_DOMAIN": "multi-node §5.2 (D-MN-13: join gate, base_domain missing)",
+
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
 	"W_DEPLOY_NO_HEALTHCHECK":   "release-semantics §2.7/§2.8",
@@ -102,10 +106,10 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 	}
 }
 
-// TestRegisteredCountByKind 双保险：37 E + 5 W = 42（T2.15 增
+// TestRegisteredCountByKind 双保险：38 E + 5 W = 43（T2.15 增
 // E_ROUTE_PUBLISH_FAILED、MG-C3 增 E_DEPLOY_CONFIRM_REQUIRED、M4-6 增
-// E_TOKEN_LAST_ADMIN、E1-5 增 E_REGISTRY_UNAVAILABLE/E_REGISTRY_PUSH_FAILED
-// ——错误码只增纪律）。
+// E_TOKEN_LAST_ADMIN、E1-5 增 E_REGISTRY_UNAVAILABLE/E_REGISTRY_PUSH_FAILED、
+// E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN——错误码只增纪律）。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -115,8 +119,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 37 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 37), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 38 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 38), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 
@@ -188,8 +192,9 @@ func TestDocumentedHTTPMappings(t *testing.T) {
 		"E_PLACEMENT_LABEL_CONFLICT":    422, // stateful-placement §2.2
 		"E_PLACEMENT_NODE_INVALID":      422, // stateful-placement §2.2（解析失败 422+候选）
 		"E_PLACEMENT_NODE_NOT_FOUND":    422, // stateful-placement §2.5
-		"E_REGISTRY_UNAVAILABLE":        503, // multi-node §5.2（D-MN-11 前哨快速失败）
-		"E_REGISTRY_PUSH_FAILED":        500, // multi-node §5.2（D-MN-11 推送失败）
+		"E_REGISTRY_UNAVAILABLE":            503, // multi-node §5.2（D-MN-11 前哨快速失败）
+		"E_REGISTRY_PUSH_FAILED":            500, // multi-node §5.2（D-MN-11 推送失败）
+		"E_MULTI_NODE_REQUIRES_BASE_DOMAIN": 409, // multi-node §5.2（D-MN-13 join 门禁）
 	}
 	for id, httpStatus := range want {
 		c, ok := Default().Get(id)

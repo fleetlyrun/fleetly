@@ -44,10 +44,142 @@
         "tags": [
           "PlacementService"
         ]
+      },
+      "put": {
+        "summary": "UpdatePlacement 显式换点（E1-7，multi-node §2.6；admin scope——破坏性\n确认路径）。目标节点存在且 ready（直读）；有卷应用 data_ack 必填\n（restored|discarded，缺省 → E_VOLUME_NODE_MISMATCH——前哨语义前置）；\ndiscarded 需 confirm（→ E_PLACEMENT_MOVE_REQUIRES_ACK）。落库同事务\n（绑定换绑 + 卷行 prev 登记 + placement.changed + 审计）；换点不自动\n部署，由用户发起部署收敛。",
+        "operationId": "PlacementService_UpdatePlacement",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdatePlacementResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/PlacementServiceUpdatePlacementBody"
+            }
+          }
+        ],
+        "tags": [
+          "PlacementService"
+        ]
+      }
+    },
+    "/v1/apps/{app}/placement/migrate-plan": {
+      "get": {
+        "summary": "GetPlacementMigrationPlan restic 迁移 runbook（E1-7，multi-node §2.8/\nD-MN-10；read scope）：服务端生成步骤文档（真实卷名/节点名填充），\nrestic 备份/恢复由用户在两节点执行——平台不编排远端数据移动。",
+        "operationId": "PlacementService_GetPlacementMigrationPlan",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetPlacementMigrationPlanResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "to",
+            "description": "目标节点（唯一显示名或平台 ID）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "PlacementService"
+        ]
+      }
+    },
+    "/v1/volumes": {
+      "get": {
+        "summary": "ListVolumes 跨 app 卷清单（E1-7，multi-node §2.8；read scope）：active\n在册行、orphaned 孤儿行（删除应用保留）与残留指引（prev_platform_\nnode_id 非空的 active 行派生 residual 标记）。status 过滤缺省输出全部；\n不建生命周期 API、不做远端删除（D18）。",
+        "operationId": "PlacementService_ListVolumes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListVolumesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "description": "状态过滤（active|orphaned|discarded；空 = 输出全部）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "residual",
+            "description": "残留过滤（true = 只输出 residual 行）。",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "PlacementService"
+        ]
       }
     }
   },
   "definitions": {
+    "PlacementServiceUpdatePlacementBody": {
+      "type": "object",
+      "properties": {
+        "node": {
+          "type": "string",
+          "title": "目标节点（唯一显示名或平台 ID）。"
+        },
+        "data_ack": {
+          "type": "string",
+          "title": "数据处置声明：\"\"（无卷应用）| restored | discarded。"
+        },
+        "confirm": {
+          "type": "boolean",
+          "title": "破坏性确认（data_ack=discarded 时必填——源节点数据成为残留）。"
+        }
+      },
+      "title": "UpdatePlacementRequest 是显式换点请求（admin scope；破坏性确认路径）。"
+    },
     "v1ErrorResponse": {
       "type": "object",
       "properties": {
@@ -84,6 +216,69 @@
         }
       },
       "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetPlacementMigrationPlanResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "from_node": {
+          "type": "string",
+          "title": "源/目标节点人读形态（hostname (platform ID)）。"
+        },
+        "to_node": {
+          "type": "string"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1VolumeView"
+          },
+          "title": "涉及的 active 卷。"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MigrationStep"
+          },
+          "title": "顺序步骤（停写 → restic 备份/恢复 → rebind → deploy 收敛 → 残留清理）。"
+        },
+        "warnings": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "计划级警示（如目标节点当前非 ready）。"
+        }
+      }
+    },
+    "v1ListVolumesResponse": {
+      "type": "object",
+      "properties": {
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1VolumeView"
+          },
+          "title": "应用显示名（已删除应用回退显示 app id——与证书台账同口径）。"
+        }
+      }
+    },
+    "v1MigrationStep": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string"
+        },
+        "detail": {
+          "type": "string"
+        }
+      },
+      "title": "MigrationStep 是迁移 runbook 的一步（title 短语 + 可复制 detail）。"
     },
     "v1PlacementView": {
       "type": "object",
@@ -141,6 +336,24 @@
         }
       }
     },
+    "v1UpdatePlacementResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "placement": {
+          "$ref": "#/definitions/v1PlacementView"
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1VolumeView"
+          }
+        }
+      }
+    },
     "v1VolumeView": {
       "type": "object",
       "properties": {
@@ -162,6 +375,14 @@
         },
         "status": {
           "type": "string"
+        },
+        "prev_platform_node_id": {
+          "type": "string",
+          "title": "数据原在节点（E1-7 迁移 00010：显式换点登记的源节点；空 = 从未跨\n节点迁移）。指向源节点的残留副本清理指引。"
+        },
+        "residual": {
+          "type": "boolean",
+          "title": "残留标记（prev_platform_node_id 非空的 active 行派生 = 源节点有\n待清理副本，docker volume rm 后平台对账消失；只指引不代删——D18）。"
         }
       },
       "title": "VolumeView 是卷注册表行投影（volumes 表；orphaned 状态位经 status 透出\n——删除应用保留卷）。"

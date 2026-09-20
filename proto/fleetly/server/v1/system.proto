@@ -59,6 +59,25 @@ service SystemService {
       body: "*"
     };
   }
+  // GetJoinGuide join 向导（E1-8，multi-node §2.3/D-MN-13；admin scope
+  // ——响应含 join token 材料）。base_domain 为空 → E_MULTI_NODE_REQUIRES_
+  // BASE_DOMAIN（409，D-MN-13：多节点未启用显式拒绝）。服务端生成 join
+  // 命令、按 worker_ip 的精确防火墙放行规则（只生成不自动应用）、DNS
+  // 步骤与完成判据；防火墙规则文本附「--harden-firewall 自动应用维持
+  // reserved」口径（平台不静默改用户防火墙）。
+  rpc GetJoinGuide(GetJoinGuideRequest) returns (GetJoinGuideResponse) {
+    option (google.api.http) = { get: "/v1/system/nodes/join-guide" };
+  }
+  // RotateJoinToken 轮换 swarm join token（E1-8，D-MN-1：锚定完成后自动
+  // rotate 把泄露窗口收敛到分钟级；批量场景 manual 后手动执行）。role
+  // 缺省 worker；rotate 后旧 token 立即失效。经底座 swarm 面执行，轮换
+  // 记审计（node.join_token_rotated，§5.3——审计不设事件）。
+  rpc RotateJoinToken(RotateJoinTokenRequest) returns (RotateJoinTokenResponse) {
+    option (google.api.http) = {
+      post: "/v1/system/nodes/join-token:rotate"
+      body: "*"
+    };
+  }
 }
 
 message PingRequest {}
@@ -123,10 +142,84 @@ message NodeView {
   google.protobuf.Timestamp observed_at = 7;
   bool stale = 8;
   map<string, string> labels = 9;
+  // 绑定其上的应用 ID 清单（E1-8，multi-node §2.7/D-MN-9：读时 join
+  // placements 权威表，无迁移——UI「已钉应用」交叉引用面）。
+  repeated string pinned_app_ids = 10;
 }
 
 message ListNodesResponse {
   repeated NodeView nodes = 1;
+}
+
+message GetJoinGuideRequest {
+  // worker 节点的公网 IP（防火墙规则按它生成精确放行文本；空 = 输出
+  // 规则模板、IP 位以 <worker-ip> 占位）。
+  string worker_ip = 1;
+  // manager 可达地址覆盖（advertise 为私网而 worker 跨公网的场景；空 =
+  // 取 swarm advertise addr）。
+  string manager_addr = 2;
+}
+
+// FirewallRule 是一条防火墙放行规则文本（方向 + 端口/协议 + 用途 + 可
+// 复制命令；只生成不自动应用——平台不静默改用户防火墙，multi-node §2.3）。
+message FirewallRule {
+  // 方向词表：worker_to_manager / bidirectional / public_to_all。
+  string direction = 1;
+  // 端口/协议（如 2377/tcp、7946/tcp+udp、4789/udp、8423/tcp、80,443/tcp）。
+  string port = 2;
+  // 用途（集群管理 / gossip / overlay VXLAN / Traefik 配置端点 TLS / 应用入口）。
+  string purpose = 3;
+  // 规则文本（manager 侧或 worker 侧可复制的 iptables 命令/说明）。
+  string rule = 4;
+  // 规则应用在哪一侧（manager / worker / both）。
+  string side = 5;
+}
+
+// JoinGuideView 是 join 向导输出（服务端生成，multi-node §2.3）。
+message JoinGuideView {
+  // 完整 join 命令（docker swarm join --token SWMTKN-… <manager-addr>:2377）。
+  string join_command = 1;
+  // manager 可达地址（swarm advertise addr 或请求覆盖值）。
+  string manager_addr = 2;
+  // worker join token（admin scope 的 token 材料；向导后按 join.token_
+  // rotate=auto 自动轮换的口径见 D-MN-1）。
+  string worker_token = 3;
+  // 平台域名（DNS 步骤的主体）。
+  string base_domain = 4;
+  // manager 侧放行规则（按 worker_ip 生成）。
+  repeated FirewallRule manager_firewall_rules = 5;
+  // worker 侧放行规则。
+  repeated FirewallRule worker_firewall_rules = 6;
+  // worker 前置门禁命令（docker version ≥29.8.1 + iptables legacy 判定
+  // ——与 install.sh 同判据的命令形态；复制到 worker 执行）。
+  repeated string worker_preflight_commands = 7;
+  // DNS 步骤（既有应用/平台子域 A 记录追加 worker IP；ctrl.<base> 保持
+  // 仅 manager；fleetly domains verify 复核）。
+  repeated string dns_steps = 8;
+  // 完成判据（向导自动推进面：节点观测拍出现 → 锚定 node.joined →
+  // ready + Traefik 任务 running）。
+  repeated string completion_checks = 9;
+}
+
+message GetJoinGuideResponse {
+  JoinGuideView guide = 1;
+}
+
+message RotateJoinTokenRequest {
+  // 轮换目标 token 的角色：worker（缺省）| manager。
+  string role = 1 [(buf.validate.field).string = {
+    in: [
+      "",
+      "worker",
+      "manager"
+    ]
+  }];
+}
+
+message RotateJoinTokenResponse {
+  // 轮换后的角色与新 token（旧 token 立即失效；admin scope 材料）。
+  string role = 1;
+  string token = 2;
 }
 
 message GetIngressStatusRequest {}

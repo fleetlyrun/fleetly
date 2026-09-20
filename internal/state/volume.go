@@ -47,11 +47,16 @@ type Volume struct {
 	Name           string
 	Kind           VolumeKind
 	PlatformNodeID string
-	MountPath      string
-	HostPath       string
-	Status         VolumeStatus
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	// PrevPlatformNodeID 是上一次显式换点（rebind）前的数据节点（multi-node
+	// §2.8 迁移 00010）：非空 = 源节点存在残留卷副本，清单面派生 residual
+	// 清理指引；空 = 卷从未跨节点迁移（现状语义）。数据本体不随换点迁移
+	// ——平台不编排远端数据移动（D-MN-10）。
+	PrevPlatformNodeID string
+	MountPath          string
+	HostPath           string
+	Status             VolumeStatus
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // ErrVolumeNotFound 表示注册表中无该卷。
@@ -162,6 +167,15 @@ func (s *Store) ListAppVolumes(ctx context.Context, appID string) ([]Volume, err
 	return queryVolumes(ctx, s.db, q, appID)
 }
 
+// ListAllVolumes 返回跨 app 全部卷（multi-node §2.8 ListVolumes 只读面的
+// 数据源：active 在册行、orphaned 孤儿行——删除应用默认保留、residual
+// 派生标记由消费方按 prev_platform_node_id 计算； discarded 行同样如实
+// 列出）。按 updated_at 降序、name 升序稳定排序。
+func (s *Store) ListAllVolumes(ctx context.Context) ([]Volume, error) {
+	const q = `SELECT ` + volumeScanCols + ` FROM volumes ORDER BY name ASC`
+	return queryVolumes(ctx, s.db, q)
+}
+
 // MarkAppVolumesOrphaned 把该 app 全部 active 卷置 orphaned（应用删除默认
 // 保留卷语义；调用方在 tombstone 流程触发）。返回置孤儿卷数。幂等。
 func (s *Store) MarkAppVolumesOrphaned(ctx context.Context, appID string) (int, error) {
@@ -194,18 +208,41 @@ func (s *Store) MarkAppVolumesOrphaned(ctx context.Context, appID string) (int, 
 	return int(n), nil
 }
 
+// RebindAppVolumes 是事务内卷换绑：app 的全部 active 卷 platform_node_id
+// → 目标节点，原节点登记进 prev_platform_node_id（multi-node §2.6 换点
+// 落库面；restored/discarded 两种数据处置都登记 prev——源节点副本都是
+// 待清理残留）。幂等：已在目标节点的卷行不动（prev 不被同节点重绑洗写）。
+// 返回发生迁移的卷数。
+func (t *Tx) RebindAppVolumes(ctx context.Context, appID, targetPlatformNodeID string) (int64, error) {
+	res, err := t.ExecContext(ctx,
+		`UPDATE volumes SET
+			prev_platform_node_id = platform_node_id,
+			platform_node_id = ?,
+			updated_at = ?
+		WHERE app_id = ? AND status = 'active' AND platform_node_id <> ? AND platform_node_id <> ''`,
+		targetPlatformNodeID, nowNano(), appID, targetPlatformNodeID)
+	if err != nil {
+		return 0, fmt.Errorf("state: rebind volumes: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("state: read rebind count: %w", err)
+	}
+	return n, nil
+}
+
 // volumeScanCols 是卷行查询列清单（新增列只加在此与扫描函数）。
-const volumeScanCols = `id, app_id, key, name, kind, platform_node_id, mount_path,
-	host_path, status, created_at, updated_at`
+const volumeScanCols = `id, app_id, key, name, kind, platform_node_id,
+	prev_platform_node_id, mount_path, host_path, status, created_at, updated_at`
 
 // scanVolume 从单行构造 Volume。
 func scanVolume(row interface{ Scan(dest ...any) error }) (Volume, error) {
 	var v Volume
 	var kind, status string
-	var nodeID sql.NullString
+	var nodeID, prevNodeID sql.NullString
 	var created, updated int64
 	if err := row.Scan(&v.ID, &v.AppID, &v.Key, &v.Name, &kind, &nodeID,
-		&v.MountPath, &v.HostPath, &status, &created, &updated); err != nil {
+		&prevNodeID, &v.MountPath, &v.HostPath, &status, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Volume{}, ErrVolumeNotFound
 		}
@@ -215,6 +252,9 @@ func scanVolume(row interface{ Scan(dest ...any) error }) (Volume, error) {
 	v.Status = VolumeStatus(status)
 	if nodeID.Valid {
 		v.PlatformNodeID = nodeID.String
+	}
+	if prevNodeID.Valid {
+		v.PrevPlatformNodeID = prevNodeID.String
 	}
 	v.CreatedAt = time.Unix(0, created).UTC()
 	v.UpdatedAt = time.Unix(0, updated).UTC()

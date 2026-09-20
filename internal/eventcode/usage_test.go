@@ -29,18 +29,14 @@ var eventExemptions = map[string]string{
 	// 预留：DR 后绑定无法判定的显式放置要求——DR 恢复阶梯 L1/L2 的 v0.2
 	// 面（单机 v0.1 无 DR 绑定歧义场景）。
 	"placement.unresolved": "reserved: post-DR binding decision, with the v0.2 recovery ladder",
-	// 预留：节点观测事件族（joined/down/up/removed）由节点观测器发出——
-	// v0.1 单节点无节点观测器循环（节点状态经放置 Preflight 直读）；观测
-	// 器随 v0.2 多节点接入。
-	"node.joined":  "reserved: node observer in v0.2 (single node has no observer loop)",
-	"node.down":    "reserved: node observer in v0.2 (single node reads node state directly via placement Preflight)",
-	"node.up":      "reserved: node observer in v0.2",
-	"node.removed": "reserved: node observer in v0.2",
-	// 预留：卷声明移除（detached）与显式丢弃（discarded）的事件面——
-	// v0.1 对账只动服务面，卷声明移除的显性化与 admin 丢弃 CLI 随卷生命
-	// 周期票（v0.2 discard/orphan 面一起接线）。
-	"volume.detached":  "reserved: surfacing volume-declaration removal, with the v0.2 volume lifecycle ticket",
-	"volume.discarded": "reserved: admin discard CLI in v0.2",
+	// 预留：节点观测事件族（joined/down/up/removed）v0.1 零引用——v0.2
+	// 多节点（E1-6）已由锚定 duty 差分发出（internal/state/clusteranchor.go），
+	// 豁免条目随之移除；保留本注释作为词面纪律的变迁记录。
+	// placement.changed / volume.discarded 的豁免同样移除：显式换点 Rebind
+	//（E1-7，internal/placement/rebind.go）成为真实发出来源。
+	// 预留：卷声明移除（detached）的显性化——v0.1 对账只动服务面，卷声明
+	// 移除的显性化随卷生命周期票接线。
+	"volume.detached": "reserved: surfacing volume-declaration removal, with the v0.2 volume lifecycle ticket",
 	// 预留：控制面恢复流程完成事件——恢复器（state-model §2.7 恢复阶梯）
 	// 未实现（同 E_BACKUP_KEY_MISSING 的预留裁决）。
 	"restore.completed": "reserved: restorer not implemented (same as E_BACKUP_KEY_MISSING)",

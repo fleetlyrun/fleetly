@@ -217,6 +217,30 @@ func (s *Store) GetRuntimeNodeRef(ctx context.Context, platformID string) (Runti
 	return r, nil
 }
 
+// GetRuntimeNodeRefBySwarmID 按 swarm node ID 反查映射（锚定 duty 的冲突
+// 判定面：label 缺失时判断该底座节点是否已有平台身份占用）。未锚定返回
+// ErrRefNotFound。
+func (s *Store) GetRuntimeNodeRefBySwarmID(ctx context.Context, swarmNodeID string) (RuntimeNodeRef, error) {
+	const q = `SELECT platform_id, swarm_node_id, created_at, updated_at, anchored_at
+		FROM runtime_node_refs WHERE swarm_node_id = ?`
+	var r RuntimeNodeRef
+	var created, updated int64
+	var anchored sql.NullInt64
+	err := s.db.QueryRowContext(ctx, q, swarmNodeID).Scan(&r.PlatformID, &r.SwarmNodeID, &created, &updated, &anchored)
+	if err == sql.ErrNoRows {
+		return RuntimeNodeRef{}, ErrRefNotFound
+	}
+	if err != nil {
+		return RuntimeNodeRef{}, fmt.Errorf("state: get runtime node ref by swarm id: %w", err)
+	}
+	r.CreatedAt = time.Unix(0, created).UTC()
+	r.UpdatedAt = time.Unix(0, updated).UTC()
+	if anchored.Valid {
+		r.AnchoredAt = time.Unix(0, anchored.Int64).UTC()
+	}
+	return r, nil
+}
+
 func boolToInt(b bool) int {
 	if b {
 		return 1

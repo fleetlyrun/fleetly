@@ -19,19 +19,38 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	PlacementService_ShowPlacement_FullMethodName = "/fleetly.server.v1.PlacementService/ShowPlacement"
+	PlacementService_ShowPlacement_FullMethodName             = "/fleetly.server.v1.PlacementService/ShowPlacement"
+	PlacementService_UpdatePlacement_FullMethodName           = "/fleetly.server.v1.PlacementService/UpdatePlacement"
+	PlacementService_ListVolumes_FullMethodName               = "/fleetly.server.v1.PlacementService/ListVolumes"
+	PlacementService_GetPlacementMigrationPlan_FullMethodName = "/fleetly.server.v1.PlacementService/GetPlacementMigrationPlan"
 )
 
 // PlacementServiceClient is the client API for PlacementService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// PlacementService 是放置绑定只读面（T2.17；stateful-placement §2.8）。
-// PlacementView 同时被 apps 详情复用（同包导入）。T2.18 起详情响应附带
-// 卷注册表——卷的钉住语义由放置绑定决定（有卷应用自动钉住到本机），与
-// 绑定同源同面展示（放置卡片的数据面，stateful-placement §2.3）。
+// PlacementService 是放置绑定读写面（T2.17 只读；E1-7 起扩容显式换点与
+// 卷清单——multi-node §2.6/§2.8，D-MN-10 平台半）。PlacementView 同时被
+// apps 详情复用（同包导入）。T2.18 起详情响应附带卷注册表——卷的钉住
+// 语义由放置绑定决定（有卷应用自动钉住），与绑定同源同面展示。
 type PlacementServiceClient interface {
 	ShowPlacement(ctx context.Context, in *ShowPlacementRequest, opts ...grpc.CallOption) (*ShowPlacementResponse, error)
+	// UpdatePlacement 显式换点（E1-7，multi-node §2.6；admin scope——破坏性
+	// 确认路径）。目标节点存在且 ready（直读）；有卷应用 data_ack 必填
+	// （restored|discarded，缺省 → E_VOLUME_NODE_MISMATCH——前哨语义前置）；
+	// discarded 需 confirm（→ E_PLACEMENT_MOVE_REQUIRES_ACK）。落库同事务
+	// （绑定换绑 + 卷行 prev 登记 + placement.changed + 审计）；换点不自动
+	// 部署，由用户发起部署收敛。
+	UpdatePlacement(ctx context.Context, in *UpdatePlacementRequest, opts ...grpc.CallOption) (*UpdatePlacementResponse, error)
+	// ListVolumes 跨 app 卷清单（E1-7，multi-node §2.8；read scope）：active
+	// 在册行、orphaned 孤儿行（删除应用保留）与残留指引（prev_platform_
+	// node_id 非空的 active 行派生 residual 标记）。status 过滤缺省输出全部；
+	// 不建生命周期 API、不做远端删除（D18）。
+	ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error)
+	// GetPlacementMigrationPlan restic 迁移 runbook（E1-7，multi-node §2.8/
+	// D-MN-10；read scope）：服务端生成步骤文档（真实卷名/节点名填充），
+	// restic 备份/恢复由用户在两节点执行——平台不编排远端数据移动。
+	GetPlacementMigrationPlan(ctx context.Context, in *GetPlacementMigrationPlanRequest, opts ...grpc.CallOption) (*GetPlacementMigrationPlanResponse, error)
 }
 
 type placementServiceClient struct {
@@ -52,16 +71,62 @@ func (c *placementServiceClient) ShowPlacement(ctx context.Context, in *ShowPlac
 	return out, nil
 }
 
+func (c *placementServiceClient) UpdatePlacement(ctx context.Context, in *UpdatePlacementRequest, opts ...grpc.CallOption) (*UpdatePlacementResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdatePlacementResponse)
+	err := c.cc.Invoke(ctx, PlacementService_UpdatePlacement_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *placementServiceClient) ListVolumes(ctx context.Context, in *ListVolumesRequest, opts ...grpc.CallOption) (*ListVolumesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListVolumesResponse)
+	err := c.cc.Invoke(ctx, PlacementService_ListVolumes_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *placementServiceClient) GetPlacementMigrationPlan(ctx context.Context, in *GetPlacementMigrationPlanRequest, opts ...grpc.CallOption) (*GetPlacementMigrationPlanResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetPlacementMigrationPlanResponse)
+	err := c.cc.Invoke(ctx, PlacementService_GetPlacementMigrationPlan_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // PlacementServiceServer is the server API for PlacementService service.
 // All implementations must embed UnimplementedPlacementServiceServer
 // for forward compatibility.
 //
-// PlacementService 是放置绑定只读面（T2.17；stateful-placement §2.8）。
-// PlacementView 同时被 apps 详情复用（同包导入）。T2.18 起详情响应附带
-// 卷注册表——卷的钉住语义由放置绑定决定（有卷应用自动钉住到本机），与
-// 绑定同源同面展示（放置卡片的数据面，stateful-placement §2.3）。
+// PlacementService 是放置绑定读写面（T2.17 只读；E1-7 起扩容显式换点与
+// 卷清单——multi-node §2.6/§2.8，D-MN-10 平台半）。PlacementView 同时被
+// apps 详情复用（同包导入）。T2.18 起详情响应附带卷注册表——卷的钉住
+// 语义由放置绑定决定（有卷应用自动钉住），与绑定同源同面展示。
 type PlacementServiceServer interface {
 	ShowPlacement(context.Context, *ShowPlacementRequest) (*ShowPlacementResponse, error)
+	// UpdatePlacement 显式换点（E1-7，multi-node §2.6；admin scope——破坏性
+	// 确认路径）。目标节点存在且 ready（直读）；有卷应用 data_ack 必填
+	// （restored|discarded，缺省 → E_VOLUME_NODE_MISMATCH——前哨语义前置）；
+	// discarded 需 confirm（→ E_PLACEMENT_MOVE_REQUIRES_ACK）。落库同事务
+	// （绑定换绑 + 卷行 prev 登记 + placement.changed + 审计）；换点不自动
+	// 部署，由用户发起部署收敛。
+	UpdatePlacement(context.Context, *UpdatePlacementRequest) (*UpdatePlacementResponse, error)
+	// ListVolumes 跨 app 卷清单（E1-7，multi-node §2.8；read scope）：active
+	// 在册行、orphaned 孤儿行（删除应用保留）与残留指引（prev_platform_
+	// node_id 非空的 active 行派生 residual 标记）。status 过滤缺省输出全部；
+	// 不建生命周期 API、不做远端删除（D18）。
+	ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error)
+	// GetPlacementMigrationPlan restic 迁移 runbook（E1-7，multi-node §2.8/
+	// D-MN-10；read scope）：服务端生成步骤文档（真实卷名/节点名填充），
+	// restic 备份/恢复由用户在两节点执行——平台不编排远端数据移动。
+	GetPlacementMigrationPlan(context.Context, *GetPlacementMigrationPlanRequest) (*GetPlacementMigrationPlanResponse, error)
 	mustEmbedUnimplementedPlacementServiceServer()
 }
 
@@ -74,6 +139,15 @@ type UnimplementedPlacementServiceServer struct{}
 
 func (UnimplementedPlacementServiceServer) ShowPlacement(context.Context, *ShowPlacementRequest) (*ShowPlacementResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ShowPlacement not implemented")
+}
+func (UnimplementedPlacementServiceServer) UpdatePlacement(context.Context, *UpdatePlacementRequest) (*UpdatePlacementResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdatePlacement not implemented")
+}
+func (UnimplementedPlacementServiceServer) ListVolumes(context.Context, *ListVolumesRequest) (*ListVolumesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListVolumes not implemented")
+}
+func (UnimplementedPlacementServiceServer) GetPlacementMigrationPlan(context.Context, *GetPlacementMigrationPlanRequest) (*GetPlacementMigrationPlanResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetPlacementMigrationPlan not implemented")
 }
 func (UnimplementedPlacementServiceServer) mustEmbedUnimplementedPlacementServiceServer() {}
 func (UnimplementedPlacementServiceServer) testEmbeddedByValue()                          {}
@@ -114,6 +188,60 @@ func _PlacementService_ShowPlacement_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _PlacementService_UpdatePlacement_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdatePlacementRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlacementServiceServer).UpdatePlacement(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlacementService_UpdatePlacement_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlacementServiceServer).UpdatePlacement(ctx, req.(*UpdatePlacementRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlacementService_ListVolumes_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListVolumesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlacementServiceServer).ListVolumes(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlacementService_ListVolumes_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlacementServiceServer).ListVolumes(ctx, req.(*ListVolumesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlacementService_GetPlacementMigrationPlan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetPlacementMigrationPlanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlacementServiceServer).GetPlacementMigrationPlan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlacementService_GetPlacementMigrationPlan_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlacementServiceServer).GetPlacementMigrationPlan(ctx, req.(*GetPlacementMigrationPlanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // PlacementService_ServiceDesc is the grpc.ServiceDesc for PlacementService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -124,6 +252,18 @@ var PlacementService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ShowPlacement",
 			Handler:    _PlacementService_ShowPlacement_Handler,
+		},
+		{
+			MethodName: "UpdatePlacement",
+			Handler:    _PlacementService_UpdatePlacement_Handler,
+		},
+		{
+			MethodName: "ListVolumes",
+			Handler:    _PlacementService_ListVolumes_Handler,
+		},
+		{
+			MethodName: "GetPlacementMigrationPlan",
+			Handler:    _PlacementService_GetPlacementMigrationPlan_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

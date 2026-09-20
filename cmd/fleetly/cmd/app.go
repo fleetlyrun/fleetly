@@ -41,6 +41,7 @@ func NewApp(version string) *commands.App {
 		newTokensCmd(),
 		newPlacementCmd(),
 		newNodesCmd(),
+		newVolumesCmd(),
 		newDomainsCmd(),
 		newIngressCmd(),
 		newGitCmd(),

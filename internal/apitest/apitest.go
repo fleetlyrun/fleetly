@@ -81,6 +81,31 @@ func (f *fakeLogPort) ManagedServiceProcesses(_ context.Context, _ string) ([]st
 // Start 起一个完整服务面（除 ingress.Manager——nil 端口形态，入口面如实
 // 报告不可用）并返回连接与 admin token；生命周期挂 t.Cleanup。
 func Start(t *testing.T) *Env {
+	return start(t, "", nil)
+}
+
+// StartWithJoin 起完整服务面并为 SystemService 注入 join 向导面（E1-8
+// CLI 测试形态：base_domain 非空 + fake join token 端口——CLI 端到端走
+// guide/rotate 路径，不触真实底座）。fake 端口行为：manager addr 固定
+// 198.51.100.10；rotate 返回确定性新 token。
+func StartWithJoin(t *testing.T) *Env {
+	return start(t, "example.test", fakeJoinPort{})
+}
+
+// fakeJoinPort 是 join 向导面的确定性测试替身（api.JoinTokenPort 结构
+// 同形实现——端口在 api 定义，apitest 侧最小实现）。
+type fakeJoinPort struct{}
+
+func (fakeJoinPort) SwarmJoinInfo(context.Context) (string, string, error) {
+	return "198.51.100.10", "swmtkn-apitest-worker-token", nil
+}
+
+func (fakeJoinPort) SwarmRotateJoinToken(_ context.Context, role string) (string, error) {
+	return "swmtkn-rotated-" + role, nil
+}
+
+// start 是 Start/StartWithJoin 的共用装配核。
+func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env {
 	t.Helper()
 	dir := t.TempDir()
 	st, err := state.Open(context.Background(), filepath.Join(dir, "test.db"))
@@ -114,8 +139,12 @@ func Start(t *testing.T) *Env {
 		grpc.ChainUnaryInterceptor(auth.UnaryAuthInterceptor()),
 		grpc.ChainStreamInterceptor(auth.StreamAuthInterceptor()),
 	)
-	serverv1.RegisterSystemServiceServer(srv, api.NewSystemService("dev", st,
-		func() []api.SystemComponent { return nil }, nil))
+	systemSvc := api.NewSystemService("dev", st,
+		func() []api.SystemComponent { return nil }, nil)
+	if joinPort != nil {
+		systemSvc = systemSvc.WithJoinGuide(joinBaseDomain, joinPort)
+	}
+	serverv1.RegisterSystemServiceServer(srv, systemSvc)
 	serverv1.RegisterAppsServiceServer(srv, api.NewAppsService(st, box, "127.0.0.1:8424", nil))
 	serverv1.RegisterDeploymentsServiceServer(srv, api.NewDeploymentsService(st, nil))
 	serverv1.RegisterRevisionsServiceServer(srv, api.NewRevisionsService(st))
@@ -125,7 +154,9 @@ func Start(t *testing.T) *Env {
 	serverv1.RegisterEnvServiceServer(srv, api.NewEnvService(st, box))
 	serverv1.RegisterLogsServiceServer(srv, api.NewLogsService(st, mgr))
 	serverv1.RegisterEventsServiceServer(srv, api.NewEventsService(st))
-	serverv1.RegisterPlacementServiceServer(srv, api.NewPlacementService(st))
+	// 放置面：nil resolver = 只读降级形态（apitest 只装配读面；写面 RPC
+	// 如实报不可用——生产装配在 internal/runtime/provides.go）。
+	serverv1.RegisterPlacementServiceServer(srv, api.NewPlacementService(st, nil))
 	serverv1.RegisterTokensServiceServer(srv, api.NewTokensService(st))
 	serverv1.RegisterGitKeysServiceServer(srv, api.NewGitKeysService(st))
 

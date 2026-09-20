@@ -25,6 +25,8 @@ const (
 	SystemService_GetIngressStatus_FullMethodName = "/fleetly.server.v1.SystemService/GetIngressStatus"
 	SystemService_ListBackups_FullMethodName      = "/fleetly.server.v1.SystemService/ListBackups"
 	SystemService_TriggerBackup_FullMethodName    = "/fleetly.server.v1.SystemService/TriggerBackup"
+	SystemService_GetJoinGuide_FullMethodName     = "/fleetly.server.v1.SystemService/GetJoinGuide"
+	SystemService_RotateJoinToken_FullMethodName  = "/fleetly.server.v1.SystemService/RotateJoinToken"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -52,6 +54,18 @@ type SystemServiceClient interface {
 	// 与升级编排 pre_upgrade 快照共用同一同步入口；响应即落账后的台账行，
 	// verify_status=failed 时调用方必须视为备份失败而非请求失败歧义态）。
 	TriggerBackup(ctx context.Context, in *TriggerBackupRequest, opts ...grpc.CallOption) (*TriggerBackupResponse, error)
+	// GetJoinGuide join 向导（E1-8，multi-node §2.3/D-MN-13；admin scope
+	// ——响应含 join token 材料）。base_domain 为空 → E_MULTI_NODE_REQUIRES_
+	// BASE_DOMAIN（409，D-MN-13：多节点未启用显式拒绝）。服务端生成 join
+	// 命令、按 worker_ip 的精确防火墙放行规则（只生成不自动应用）、DNS
+	// 步骤与完成判据；防火墙规则文本附「--harden-firewall 自动应用维持
+	// reserved」口径（平台不静默改用户防火墙）。
+	GetJoinGuide(ctx context.Context, in *GetJoinGuideRequest, opts ...grpc.CallOption) (*GetJoinGuideResponse, error)
+	// RotateJoinToken 轮换 swarm join token（E1-8，D-MN-1：锚定完成后自动
+	// rotate 把泄露窗口收敛到分钟级；批量场景 manual 后手动执行）。role
+	// 缺省 worker；rotate 后旧 token 立即失效。经底座 swarm 面执行，轮换
+	// 记审计（node.join_token_rotated，§5.3——审计不设事件）。
+	RotateJoinToken(ctx context.Context, in *RotateJoinTokenRequest, opts ...grpc.CallOption) (*RotateJoinTokenResponse, error)
 }
 
 type systemServiceClient struct {
@@ -122,6 +136,26 @@ func (c *systemServiceClient) TriggerBackup(ctx context.Context, in *TriggerBack
 	return out, nil
 }
 
+func (c *systemServiceClient) GetJoinGuide(ctx context.Context, in *GetJoinGuideRequest, opts ...grpc.CallOption) (*GetJoinGuideResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetJoinGuideResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetJoinGuide_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) RotateJoinToken(ctx context.Context, in *RotateJoinTokenRequest, opts ...grpc.CallOption) (*RotateJoinTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateJoinTokenResponse)
+	err := c.cc.Invoke(ctx, SystemService_RotateJoinToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
@@ -147,6 +181,18 @@ type SystemServiceServer interface {
 	// 与升级编排 pre_upgrade 快照共用同一同步入口；响应即落账后的台账行，
 	// verify_status=failed 时调用方必须视为备份失败而非请求失败歧义态）。
 	TriggerBackup(context.Context, *TriggerBackupRequest) (*TriggerBackupResponse, error)
+	// GetJoinGuide join 向导（E1-8，multi-node §2.3/D-MN-13；admin scope
+	// ——响应含 join token 材料）。base_domain 为空 → E_MULTI_NODE_REQUIRES_
+	// BASE_DOMAIN（409，D-MN-13：多节点未启用显式拒绝）。服务端生成 join
+	// 命令、按 worker_ip 的精确防火墙放行规则（只生成不自动应用）、DNS
+	// 步骤与完成判据；防火墙规则文本附「--harden-firewall 自动应用维持
+	// reserved」口径（平台不静默改用户防火墙）。
+	GetJoinGuide(context.Context, *GetJoinGuideRequest) (*GetJoinGuideResponse, error)
+	// RotateJoinToken 轮换 swarm join token（E1-8，D-MN-1：锚定完成后自动
+	// rotate 把泄露窗口收敛到分钟级；批量场景 manual 后手动执行）。role
+	// 缺省 worker；rotate 后旧 token 立即失效。经底座 swarm 面执行，轮换
+	// 记审计（node.join_token_rotated，§5.3——审计不设事件）。
+	RotateJoinToken(context.Context, *RotateJoinTokenRequest) (*RotateJoinTokenResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -174,6 +220,12 @@ func (UnimplementedSystemServiceServer) ListBackups(context.Context, *ListBackup
 }
 func (UnimplementedSystemServiceServer) TriggerBackup(context.Context, *TriggerBackupRequest) (*TriggerBackupResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TriggerBackup not implemented")
+}
+func (UnimplementedSystemServiceServer) GetJoinGuide(context.Context, *GetJoinGuideRequest) (*GetJoinGuideResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetJoinGuide not implemented")
+}
+func (UnimplementedSystemServiceServer) RotateJoinToken(context.Context, *RotateJoinTokenRequest) (*RotateJoinTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateJoinToken not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -304,6 +356,42 @@ func _SystemService_TriggerBackup_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_GetJoinGuide_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetJoinGuideRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetJoinGuide(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetJoinGuide_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetJoinGuide(ctx, req.(*GetJoinGuideRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_RotateJoinToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateJoinTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).RotateJoinToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_RotateJoinToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).RotateJoinToken(ctx, req.(*RotateJoinTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -334,6 +422,14 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TriggerBackup",
 			Handler:    _SystemService_TriggerBackup_Handler,
+		},
+		{
+			MethodName: "GetJoinGuide",
+			Handler:    _SystemService_GetJoinGuide_Handler,
+		},
+		{
+			MethodName: "RotateJoinToken",
+			Handler:    _SystemService_RotateJoinToken_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

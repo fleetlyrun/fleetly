@@ -45,10 +45,12 @@ var docEvents = map[string]string{ // event → 文档出处
 	"node.down":            "stateful-placement §2.8",
 	"node.up":              "stateful-placement §2.8",
 	"node.removed":         "stateful-placement §2.8",
-	"volume.created":       "stateful-placement §2.8",
-	"volume.detached":      "stateful-placement §2.8",
-	"volume.orphaned":      "stateful-placement §2.8",
-	"volume.discarded":     "stateful-placement §2.8",
+	// multi-node.md §2.7/§5.3：availability 转移事件（v0.2 新增码）。
+	"node.availability_changed": "multi-node §2.7/§5.3 (v0.2: active/drain/pause transition, drain maintenance-window narrative)",
+	"volume.created":            "stateful-placement §2.8",
+	"volume.detached":           "stateful-placement §2.8",
+	"volume.orphaned":           "stateful-placement §2.8",
+	"volume.discarded":          "stateful-placement §2.8",
 
 	// state-model.md §2.9（对账漂移）/ §2.7（恢复完成）
 	"reconcile.drift_detected": "state-model §2.9",

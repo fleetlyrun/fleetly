@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/compose"
 	"github.com/fleetlyrun/fleetly/internal/envlayer"
@@ -571,6 +572,16 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	return nil
 }
 
+// registryPreflightErr 报告 err 是否已是 registry 前哨信封
+// （E_REGISTRY_UNAVAILABLE——registry 模式部署前哨的归一产物，multi-node
+// 设计 §5.2/D-MN-11）：是则 resolveImage 原样透传，不再被 E_RUNTIME_UNAVAILABLE
+// 包装（deploy 路径前哨码面保真——修复建议分层「registry 错 → 查 zot/网络/
+// 凭据」不被通用码冲掉）；其余错误维持既有包装语义。
+func registryPreflightErr(err error) bool {
+	var ae *apperr.Error
+	return asAppErr(err, &ae) && ae != nil && ae.Code() == "E_REGISTRY_UNAVAILABLE"
+}
+
 // resolveImage 裁决单个服务的镜像引用（digest 钉定，D9）：
 //   - image 模式：compose 值直通 + 本机 digest 钉定（缺失 →
 //     E_IMAGE_PULL_FAILED，场景 3）；
@@ -584,6 +595,9 @@ func (e *Engine) resolveImage(ctx context.Context, rec state.DeployRecord, svc *
 			if errors.Is(err, ErrImageMissing) {
 				return "", errorf("E_IMAGE_PULL_FAILED",
 					"image %s of service %s not available locally (v0.1 is single-node and deploys local images; pull or build it first)", svc.Name, ref)
+			}
+			if registryPreflightErr(err) {
+				return "", err // registry 前哨信封透传（码面保真，multi-node §5.2）
 			}
 			return "", errorf("E_RUNTIME_UNAVAILABLE", "image check failed %s: %v", ref, err)
 		}
@@ -611,6 +625,9 @@ func (e *Engine) resolveImage(ctx context.Context, rec state.DeployRecord, svc *
 		if err != nil {
 			if errors.Is(err, ErrImageMissing) {
 				continue // 构建产物已被清理：尝试更早的成功构建
+			}
+			if registryPreflightErr(err) {
+				return "", err // registry 前哨信封透传（码面保真，multi-node §5.2）
 			}
 			return "", errorf("E_RUNTIME_UNAVAILABLE", "image check failed %s: %v", b.ImageRef, err)
 		}

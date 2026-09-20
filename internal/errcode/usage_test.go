@@ -19,10 +19,13 @@ var codeExemptions = map[string]string{
 	// 预留：恢复器校验失败码（备份集/主密钥指纹不匹配拒绝半恢复）——
 	// 恢复器未实现（横切评审确认的预留码，state-model §2.7）。
 	"E_BACKUP_KEY_MISSING": "reserved: restorer not implemented (confirmed by cross-cutting review)",
-	// 预留：跨点移动确认门控码——v0.1 单机无第二候选，MoveBinding 直接
-	// E_CAPABILITY_REQUIRES_MULTI_NODE 守卫拒绝；带确认的换点（rebind）
-	// 随 v0.2 多节点 + 备份恢复迁移路径接线。
-	"E_PLACEMENT_MOVE_REQUIRES_ACK": "reserved: rebind/move confirmation flow in v0.2 (single-node guard rejects)",
+	// 退役面 + 保留码（E1-7 追认）：v0.1 的多节点操作守卫路径已删除
+	//（internal/placement 的 GuardMultiNode/MultiNodeUnsupported 与
+	// MoveBinding 静态守卫——多节点解析/显式换点 Rebind 取代）；码保留
+	// 注册表、永不复用，零引用属退役而非死注册（multi-node §5.2）。
+	"E_CAPABILITY_REQUIRES_MULTI_NODE": "retired guard path (E1-7); code retained in the registry forever, never reused",
+	// E_PLACEMENT_MOVE_REQUIRES_ACK 的 v0.1 豁免已移除：显式换点 Rebind
+	// 的 confirm 门（E1-7）成为真实引用点（internal/placement/rebind.go）。
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除

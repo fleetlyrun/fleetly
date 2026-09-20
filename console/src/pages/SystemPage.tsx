@@ -17,6 +17,7 @@ import {
   EnvelopeAlert,
   EnvelopeAlertFrom,
 } from "@/components/envelope-alert";
+import { JoinWizard } from "@/components/join-wizard";
 import { PageHeader } from "@/components/page-header";
 import { PillTabs } from "@/components/pill-tabs";
 import { StatCard } from "@/components/stat-card";
@@ -25,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -42,6 +44,21 @@ const TABS = [
   { key: "components", label: "Components" },
   { key: "nodes", label: "Nodes" },
   { key: "ingress", label: "Ingress" },
+];
+
+// HA 边界诚实口径（multi-node §2.9：节点页固定卡片，架构 §2.6 口径的
+// UI 化——「2 台 ≠ 全面 HA」必须显式呈现，防止有状态单点被当产品缺陷）。
+const HA_GET = [
+  "Stateless process-level HA: loss of contact judged in ~13s, reschedule completes in ~19s; the app is briefly unavailable during the rescheduling window.",
+  "Nodes can be drained for maintenance with zero failed new connections (connection-level retry; in-flight connections may break once — remove DNS records first).",
+  "Control-plane failure does not affect running apps (apps do not depend on the control plane at runtime).",
+];
+const HA_NOT = [
+  "Management-plane HA (1 manager; with quorum=2 losing any node takes management down — 2-manager setups are not offered, 3 managers are required).",
+  "Stateful HA (local volumes do not follow rescheduling; a database on a lost node stays unavailable until backup-restore + rebind).",
+  "Image-distribution HA (zot is pinned to the manager; new pulls/rollbacks fail while it is down — running apps are unaffected).",
+  "Config-channel HA (each node's Traefik freezes its last good config while the manager is unreachable — ingress keeps serving, config stops changing).",
+  "Health-driven failover / VIP at the ingress (redundancy = connection-level retry only).",
 ];
 
 function HealthDot({ ok }: { ok: boolean }) {
@@ -203,61 +220,106 @@ export function SystemPage() {
       ) : null}
 
       {tab === "nodes" ? (
-        <Card>
-          <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
-            <HardDrive aria-hidden className="h-4 w-4 text-muted-foreground" />
-            <CardTitle className="text-sm font-semibold">Nodes</CardTitle>
-          </CardHeader>
-          <CardContent className="pt-4">
-            {nodes.isError ? (
-              <EnvelopeAlert
-                code={errorEnvelopeFrom(nodes.error).code}
-                message={errorEnvelopeFrom(nodes.error).message}
-                suggestion={errorEnvelopeFrom(nodes.error).suggestion}
-              />
-            ) : nodeList.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No nodes observed yet (Docker Swarm idle or unreachable).
-              </p>
-            ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Hostname</TableHead>
-                    <TableHead>State</TableHead>
-                    <TableHead>Availability</TableHead>
-                    <TableHead>Manager</TableHead>
-                    <TableHead>Platform ID</TableHead>
-                    <TableHead>Observed</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {nodeList.map((n) => (
-                    <TableRow key={n.swarm_node_id}>
-                      <TableCell>{n.hostname}</TableCell>
-                      <TableCell className="text-xs">
-                        {n.state}
-                        {n.stale ? (
-                          <span className="ml-1 text-amber-600 dark:text-amber-400">(stale)</span>
-                        ) : null}
-                      </TableCell>
-                      <TableCell className="text-xs">{n.availability}</TableCell>
-                      <TableCell className="text-xs">
-                        {n.is_manager ? "yes" : "no"}
-                      </TableCell>
-                      <TableCell className="font-mono text-xs">
-                        {n.platform_id || "—"}
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
-                        {formatTime(n.observed_at)}
-                      </TableCell>
+        <div className="space-y-4">
+          <JoinWizard />
+
+          <Card>
+            <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+              <HardDrive aria-hidden className="h-4 w-4 text-muted-foreground" />
+              <CardTitle className="text-sm font-semibold">Nodes</CardTitle>
+            </CardHeader>
+            <CardContent className="pt-4">
+              {nodes.isError ? (
+                <EnvelopeAlert
+                  code={errorEnvelopeFrom(nodes.error).code}
+                  message={errorEnvelopeFrom(nodes.error).message}
+                  suggestion={errorEnvelopeFrom(nodes.error).suggestion}
+                />
+              ) : nodeList.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No nodes observed yet (Docker Swarm idle or unreachable).
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Hostname</TableHead>
+                      <TableHead>State</TableHead>
+                      <TableHead>Availability</TableHead>
+                      <TableHead>Manager</TableHead>
+                      <TableHead>Platform ID</TableHead>
+                      <TableHead>Pinned apps</TableHead>
+                      <TableHead>Observed</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            )}
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {nodeList.map((n) => (
+                      <TableRow key={n.swarm_node_id}>
+                        <TableCell>{n.hostname}</TableCell>
+                        <TableCell className="text-xs">
+                          {n.state}
+                          {n.stale ? (
+                            <span className="ml-1 text-amber-600 dark:text-amber-400">(stale)</span>
+                          ) : null}
+                        </TableCell>
+                        <TableCell className="text-xs">{n.availability}</TableCell>
+                        <TableCell className="text-xs">
+                          {n.is_manager ? "yes" : "no"}
+                        </TableCell>
+                        <TableCell className="font-mono text-xs">
+                          {n.platform_id || "—"}
+                        </TableCell>
+                        <TableCell className="text-xs">
+                          {(n.pinned_app_ids?.length ?? 0) > 0
+                            ? `${n.pinned_app_ids?.length} app${(n.pinned_app_ids?.length ?? 0) > 1 ? "s" : ""}`
+                            : "—"}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
+                          {formatTime(n.observed_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+              <CardTitle className="text-sm font-semibold">
+                High-availability boundary
+              </CardTitle>
+              <CardDescription className="ml-auto text-xs">
+                What 2 nodes get — and what they do not. 2 nodes ≠ full HA.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="pt-4" data-testid="ha-boundary">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-emerald-600 dark:text-emerald-400">
+                    You get
+                  </div>
+                  <ul className="list-disc space-y-2 pl-5 text-xs">
+                    {HA_GET.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-red-600 dark:text-red-400">
+                    You do not get
+                  </div>
+                  <ul className="list-disc space-y-2 pl-5 text-xs">
+                    {HA_NOT.map((line) => (
+                      <li key={line}>{line}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
       ) : null}
 
       {tab === "ingress" ? (

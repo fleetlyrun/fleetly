@@ -22,13 +22,38 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   }
 };
 
-// PlacementService 是放置绑定只读面（T2.17；stateful-placement §2.8）。
-// PlacementView 同时被 apps 详情复用（同包导入）。T2.18 起详情响应附带
-// 卷注册表——卷的钉住语义由放置绑定决定（有卷应用自动钉住到本机），与
-// 绑定同源同面展示（放置卡片的数据面，stateful-placement §2.3）。
+// PlacementService 是放置绑定读写面（T2.17 只读；E1-7 起扩容显式换点与
+// 卷清单——multi-node §2.6/§2.8，D-MN-10 平台半）。PlacementView 同时被
+// apps 详情复用（同包导入）。T2.18 起详情响应附带卷注册表——卷的钉住
+// 语义由放置绑定决定（有卷应用自动钉住），与绑定同源同面展示。
 service PlacementService {
   rpc ShowPlacement(ShowPlacementRequest) returns (ShowPlacementResponse) {
     option (google.api.http) = { get: "/v1/apps/{app}/placement" };
+  }
+  // UpdatePlacement 显式换点（E1-7，multi-node §2.6；admin scope——破坏性
+  // 确认路径）。目标节点存在且 ready（直读）；有卷应用 data_ack 必填
+  // （restored|discarded，缺省 → E_VOLUME_NODE_MISMATCH——前哨语义前置）；
+  // discarded 需 confirm（→ E_PLACEMENT_MOVE_REQUIRES_ACK）。落库同事务
+  // （绑定换绑 + 卷行 prev 登记 + placement.changed + 审计）；换点不自动
+  // 部署，由用户发起部署收敛。
+  rpc UpdatePlacement(UpdatePlacementRequest) returns (UpdatePlacementResponse) {
+    option (google.api.http) = {
+      put: "/v1/apps/{app}/placement"
+      body: "*"
+    };
+  }
+  // ListVolumes 跨 app 卷清单（E1-7，multi-node §2.8；read scope）：active
+  // 在册行、orphaned 孤儿行（删除应用保留）与残留指引（prev_platform_
+  // node_id 非空的 active 行派生 residual 标记）。status 过滤缺省输出全部；
+  // 不建生命周期 API、不做远端删除（D18）。
+  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse) {
+    option (google.api.http) = { get: "/v1/volumes" };
+  }
+  // GetPlacementMigrationPlan restic 迁移 runbook（E1-7，multi-node §2.8/
+  // D-MN-10；read scope）：服务端生成步骤文档（真实卷名/节点名填充），
+  // restic 备份/恢复由用户在两节点执行——平台不编排远端数据移动。
+  rpc GetPlacementMigrationPlan(GetPlacementMigrationPlanRequest) returns (GetPlacementMigrationPlanResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app}/placement/migrate-plan" };
   }
 }
 
@@ -59,6 +84,79 @@ message VolumeView {
   string platform_node_id = 4;
   string mount_path = 5;
   string status = 6;
+  // 数据原在节点（E1-7 迁移 00010：显式换点登记的源节点；空 = 从未跨
+  // 节点迁移）。指向源节点的残留副本清理指引。
+  string prev_platform_node_id = 7;
+  // 残留标记（prev_platform_node_id 非空的 active 行派生 = 源节点有
+  // 待清理副本，docker volume rm 后平台对账消失；只指引不代删——D18）。
+  bool residual = 8;
+}
+
+// UpdatePlacementRequest 是显式换点请求（admin scope；破坏性确认路径）。
+message UpdatePlacementRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // 目标节点（唯一显示名或平台 ID）。
+  string node = 2 [(buf.validate.field).string.min_len = 1];
+  // 数据处置声明：""（无卷应用）| restored | discarded。
+  string data_ack = 3 [(buf.validate.field).string = {
+    in: [
+      "",
+      "restored",
+      "discarded"
+    ]
+  }];
+  // 破坏性确认（data_ack=discarded 时必填——源节点数据成为残留）。
+  bool confirm = 4;
+}
+
+message UpdatePlacementResponse {
+  string app = 1;
+  PlacementView placement = 2;
+  repeated VolumeView volumes = 3;
+}
+
+message ListVolumesRequest {
+  // 状态过滤（active|orphaned|discarded；空 = 输出全部）。
+  string status = 1 [(buf.validate.field).string = {
+    in: [
+      "",
+      "active",
+      "orphaned",
+      "discarded"
+    ]
+  }];
+  // 残留过滤（true = 只输出 residual 行）。
+  bool residual = 2;
+}
+
+message ListVolumesResponse {
+  // 应用显示名（已删除应用回退显示 app id——与证书台账同口径）。
+  repeated VolumeView volumes = 1;
+}
+
+message GetPlacementMigrationPlanRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // 目标节点（唯一显示名或平台 ID）。
+  string to = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// MigrationStep 是迁移 runbook 的一步（title 短语 + 可复制 detail）。
+message MigrationStep {
+  string title = 1;
+  string detail = 2;
+}
+
+message GetPlacementMigrationPlanResponse {
+  string app = 1;
+  // 源/目标节点人读形态（hostname (platform ID)）。
+  string from_node = 2;
+  string to_node = 3;
+  // 涉及的 active 卷。
+  repeated VolumeView volumes = 4;
+  // 顺序步骤（停写 → restic 备份/恢复 → rebind → deploy 收敛 → 残留清理）。
+  repeated MigrationStep steps = 5;
+  // 计划级警示（如目标节点当前非 ready）。
+  repeated string warnings = 6;
 }
 
 message ShowPlacementRequest {

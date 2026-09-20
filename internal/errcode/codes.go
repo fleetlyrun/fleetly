@@ -101,20 +101,26 @@ var builtins = []Code{
 	{ID: "E_PLACEMENT_NO_ELIGIBLE_NODE", HTTP: 503,
 		Summary:    "no candidate for automatic placement (no ready node satisfies the constraints)",
 		Suggestion: "Check node readiness and placement constraints; retry after a candidate node recovers."},
-	// 预留：v0.1 单机无第二候选（MoveBinding 走 E_CAPABILITY_REQUIRES_
-	// MULTI_NODE 守卫拒绝）；带确认换点随 v0.2 rebind/备份恢复迁移接线。
+	// 预留→退役面（E1-7 追认）：v0.1 单机无第二候选（MoveBinding 守卫
+	// 拒绝）；v0.2 多节点落地后守卫路径退役，码保留注册表、永不复用，
+	// summary 已由「v0.1 single-node」措辞维护为拓扑/配置语义（multi-node
+	// §5.2 退役面 + 保留码，注册表文案维护、非码变更）。
 	{ID: "E_PLACEMENT_MOVE_REQUIRES_ACK", HTTP: 409,
-		Summary:    "placement label differs from the current binding: cross-node moves require explicit confirmation (only path = backup-restore migration)",
-		Suggestion: "The only supported path for a cross-node move is backup-restore migration: confirm explicitly via PUT placement (--data-restored/--discard)."},
+		Summary:    "cross-node placement moves require explicit confirmation (data disposition and/or destructive-confirm missing)",
+		Suggestion: "A cross-node move is only valid with an explicit data disposition: --data-restored after the restore flow, or --discard with --confirm-destructive (admin+confirm+audited)."},
 	{ID: "E_PLACEMENT_LABEL_CONFLICT", HTTP: 422,
 		Summary:    "placement labels of multiple services in one app point to different nodes",
 		Suggestion: "Set fleetly.placement.node to the same node for all services of the app."},
 	{ID: "E_VOLUME_NODE_MISMATCH", HTTP: 409,
 		Summary:    "volume data node ≠ target deploy node (data-safety sentinel that turns the empty-volume incident into a 409)",
 		Suggestion: "Declare a data disposition and retry: --data-restored (rebuilt by the restore flow) or --discard (admin+confirm; the old volume becomes orphaned)."},
+	// 退役面 + 保留码（E1-7 追认，multi-node §5.2）：v0.1 的多节点操作
+	// 守卫路径已随 E1-7 删除；码保留注册表（永不复用、永不删码），summary
+	// 由「v0.1 single-node」措辞维护为拓扑/配置语义（注册表文案维护、
+	// 非码变更，契约轮追认口径——阶段 3 E1-5 同款）。
 	{ID: "E_CAPABILITY_REQUIRES_MULTI_NODE", HTTP: 400,
-		Summary:    "multi-node operations are unavailable on a single-node topology (v0.1) and never silently succeed",
-		Suggestion: "This operation requires a multi-node topology; v0.1 is single-node and multi-node support ships with v0.2."},
+		Summary:    "multi-node operations are unavailable on the current topology or configuration (retired guard path; the code is retained and never reused)",
+		Suggestion: "This operation requires a multi-node topology with the platform base domain configured; multi-node support ships with v0.2 (see the join guide: fleetly nodes join-guide)."},
 
 	// ── 备份与恢复（state-model §2.7）──
 	// 预留：恢复器未实现（横切评审确认；usage_test 的豁免清单同理由）。
@@ -137,6 +143,13 @@ var builtins = []Code{
 	{ID: "E_REGISTRY_PUSH_FAILED", HTTP: 500,
 		Summary:    "pushing the build result to the platform registry failed (network/credentials/registry fault)",
 		Suggestion: "The push to registry.<base> failed: check that the fleetly-registry service is healthy and the platform registry credentials (registry.auth_file) are current, then run the build again."},
+
+	// ── 多节点 join 门禁（E1 多节点设计 §5.2/D-MN-13，2026-09-20 冻结，
+	//    E1-8 接线）：base_domain 缺失即多节点未启用——join 面显式拒绝、
+	//    不静默降级（provider 通道/zot 均不可用，join 后入口残缺）──
+	{ID: "E_MULTI_NODE_REQUIRES_BASE_DOMAIN", HTTP: 409,
+		Summary:    "multi-node is not enabled: the platform base domain is not configured (join face refuses instead of silently degrading)",
+		Suggestion: "Configure base_domain (installer --base-domain) before joining nodes: the config endpoint (8423 TLS), platform subdomains and the zot registry all derive from it."},
 
 	// ── 入口路由（T2.15；架构 §2.5/§2.6：路由发布严格晚于健康门，发布
 	//    失败不回滚部署、单独告警——deployment 仍可成功，错误落审计与本码）──

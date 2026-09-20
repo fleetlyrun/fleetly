@@ -142,8 +142,14 @@ type VolumeView struct {
 	PlatformNodeId string `protobuf:"bytes,4,opt,name=platform_node_id,json=platformNodeId,proto3" json:"platform_node_id,omitempty"`
 	MountPath      string `protobuf:"bytes,5,opt,name=mount_path,json=mountPath,proto3" json:"mount_path,omitempty"`
 	Status         string `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// 数据原在节点（E1-7 迁移 00010：显式换点登记的源节点；空 = 从未跨
+	// 节点迁移）。指向源节点的残留副本清理指引。
+	PrevPlatformNodeId string `protobuf:"bytes,7,opt,name=prev_platform_node_id,json=prevPlatformNodeId,proto3" json:"prev_platform_node_id,omitempty"`
+	// 残留标记（prev_platform_node_id 非空的 active 行派生 = 源节点有
+	// 待清理副本，docker volume rm 后平台对账消失；只指引不代删——D18）。
+	Residual      bool `protobuf:"varint,8,opt,name=residual,proto3" json:"residual,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *VolumeView) Reset() {
@@ -218,6 +224,445 @@ func (x *VolumeView) GetStatus() string {
 	return ""
 }
 
+func (x *VolumeView) GetPrevPlatformNodeId() string {
+	if x != nil {
+		return x.PrevPlatformNodeId
+	}
+	return ""
+}
+
+func (x *VolumeView) GetResidual() bool {
+	if x != nil {
+		return x.Residual
+	}
+	return false
+}
+
+// UpdatePlacementRequest 是显式换点请求（admin scope；破坏性确认路径）。
+type UpdatePlacementRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// 目标节点（唯一显示名或平台 ID）。
+	Node string `protobuf:"bytes,2,opt,name=node,proto3" json:"node,omitempty"`
+	// 数据处置声明：""（无卷应用）| restored | discarded。
+	DataAck string `protobuf:"bytes,3,opt,name=data_ack,json=dataAck,proto3" json:"data_ack,omitempty"`
+	// 破坏性确认（data_ack=discarded 时必填——源节点数据成为残留）。
+	Confirm       bool `protobuf:"varint,4,opt,name=confirm,proto3" json:"confirm,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdatePlacementRequest) Reset() {
+	*x = UpdatePlacementRequest{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdatePlacementRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdatePlacementRequest) ProtoMessage() {}
+
+func (x *UpdatePlacementRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdatePlacementRequest.ProtoReflect.Descriptor instead.
+func (*UpdatePlacementRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *UpdatePlacementRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *UpdatePlacementRequest) GetNode() string {
+	if x != nil {
+		return x.Node
+	}
+	return ""
+}
+
+func (x *UpdatePlacementRequest) GetDataAck() string {
+	if x != nil {
+		return x.DataAck
+	}
+	return ""
+}
+
+func (x *UpdatePlacementRequest) GetConfirm() bool {
+	if x != nil {
+		return x.Confirm
+	}
+	return false
+}
+
+type UpdatePlacementResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	Placement     *PlacementView         `protobuf:"bytes,2,opt,name=placement,proto3" json:"placement,omitempty"`
+	Volumes       []*VolumeView          `protobuf:"bytes,3,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdatePlacementResponse) Reset() {
+	*x = UpdatePlacementResponse{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdatePlacementResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdatePlacementResponse) ProtoMessage() {}
+
+func (x *UpdatePlacementResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdatePlacementResponse.ProtoReflect.Descriptor instead.
+func (*UpdatePlacementResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *UpdatePlacementResponse) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *UpdatePlacementResponse) GetPlacement() *PlacementView {
+	if x != nil {
+		return x.Placement
+	}
+	return nil
+}
+
+func (x *UpdatePlacementResponse) GetVolumes() []*VolumeView {
+	if x != nil {
+		return x.Volumes
+	}
+	return nil
+}
+
+type ListVolumesRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 状态过滤（active|orphaned|discarded；空 = 输出全部）。
+	Status string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
+	// 残留过滤（true = 只输出 residual 行）。
+	Residual      bool `protobuf:"varint,2,opt,name=residual,proto3" json:"residual,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListVolumesRequest) Reset() {
+	*x = ListVolumesRequest{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVolumesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVolumesRequest) ProtoMessage() {}
+
+func (x *ListVolumesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVolumesRequest.ProtoReflect.Descriptor instead.
+func (*ListVolumesRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ListVolumesRequest) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *ListVolumesRequest) GetResidual() bool {
+	if x != nil {
+		return x.Residual
+	}
+	return false
+}
+
+type ListVolumesResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 应用显示名（已删除应用回退显示 app id——与证书台账同口径）。
+	Volumes       []*VolumeView `protobuf:"bytes,1,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListVolumesResponse) Reset() {
+	*x = ListVolumesResponse{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListVolumesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListVolumesResponse) ProtoMessage() {}
+
+func (x *ListVolumesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListVolumesResponse.ProtoReflect.Descriptor instead.
+func (*ListVolumesResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListVolumesResponse) GetVolumes() []*VolumeView {
+	if x != nil {
+		return x.Volumes
+	}
+	return nil
+}
+
+type GetPlacementMigrationPlanRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// 目标节点（唯一显示名或平台 ID）。
+	To            string `protobuf:"bytes,2,opt,name=to,proto3" json:"to,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPlacementMigrationPlanRequest) Reset() {
+	*x = GetPlacementMigrationPlanRequest{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPlacementMigrationPlanRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlacementMigrationPlanRequest) ProtoMessage() {}
+
+func (x *GetPlacementMigrationPlanRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlacementMigrationPlanRequest.ProtoReflect.Descriptor instead.
+func (*GetPlacementMigrationPlanRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetPlacementMigrationPlanRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *GetPlacementMigrationPlanRequest) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+// MigrationStep 是迁移 runbook 的一步（title 短语 + 可复制 detail）。
+type MigrationStep struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Title         string                 `protobuf:"bytes,1,opt,name=title,proto3" json:"title,omitempty"`
+	Detail        string                 `protobuf:"bytes,2,opt,name=detail,proto3" json:"detail,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MigrationStep) Reset() {
+	*x = MigrationStep{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MigrationStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MigrationStep) ProtoMessage() {}
+
+func (x *MigrationStep) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MigrationStep.ProtoReflect.Descriptor instead.
+func (*MigrationStep) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *MigrationStep) GetTitle() string {
+	if x != nil {
+		return x.Title
+	}
+	return ""
+}
+
+func (x *MigrationStep) GetDetail() string {
+	if x != nil {
+		return x.Detail
+	}
+	return ""
+}
+
+type GetPlacementMigrationPlanResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// 源/目标节点人读形态（hostname (platform ID)）。
+	FromNode string `protobuf:"bytes,2,opt,name=from_node,json=fromNode,proto3" json:"from_node,omitempty"`
+	ToNode   string `protobuf:"bytes,3,opt,name=to_node,json=toNode,proto3" json:"to_node,omitempty"`
+	// 涉及的 active 卷。
+	Volumes []*VolumeView `protobuf:"bytes,4,rep,name=volumes,proto3" json:"volumes,omitempty"`
+	// 顺序步骤（停写 → restic 备份/恢复 → rebind → deploy 收敛 → 残留清理）。
+	Steps []*MigrationStep `protobuf:"bytes,5,rep,name=steps,proto3" json:"steps,omitempty"`
+	// 计划级警示（如目标节点当前非 ready）。
+	Warnings      []string `protobuf:"bytes,6,rep,name=warnings,proto3" json:"warnings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetPlacementMigrationPlanResponse) Reset() {
+	*x = GetPlacementMigrationPlanResponse{}
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetPlacementMigrationPlanResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetPlacementMigrationPlanResponse) ProtoMessage() {}
+
+func (x *GetPlacementMigrationPlanResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetPlacementMigrationPlanResponse.ProtoReflect.Descriptor instead.
+func (*GetPlacementMigrationPlanResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *GetPlacementMigrationPlanResponse) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *GetPlacementMigrationPlanResponse) GetFromNode() string {
+	if x != nil {
+		return x.FromNode
+	}
+	return ""
+}
+
+func (x *GetPlacementMigrationPlanResponse) GetToNode() string {
+	if x != nil {
+		return x.ToNode
+	}
+	return ""
+}
+
+func (x *GetPlacementMigrationPlanResponse) GetVolumes() []*VolumeView {
+	if x != nil {
+		return x.Volumes
+	}
+	return nil
+}
+
+func (x *GetPlacementMigrationPlanResponse) GetSteps() []*MigrationStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+func (x *GetPlacementMigrationPlanResponse) GetWarnings() []string {
+	if x != nil {
+		return x.Warnings
+	}
+	return nil
+}
+
 type ShowPlacementRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
@@ -227,7 +672,7 @@ type ShowPlacementRequest struct {
 
 func (x *ShowPlacementRequest) Reset() {
 	*x = ShowPlacementRequest{}
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -239,7 +684,7 @@ func (x *ShowPlacementRequest) String() string {
 func (*ShowPlacementRequest) ProtoMessage() {}
 
 func (x *ShowPlacementRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[2]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -252,7 +697,7 @@ func (x *ShowPlacementRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowPlacementRequest.ProtoReflect.Descriptor instead.
 func (*ShowPlacementRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{2}
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ShowPlacementRequest) GetApp() string {
@@ -275,7 +720,7 @@ type ShowPlacementResponse struct {
 
 func (x *ShowPlacementResponse) Reset() {
 	*x = ShowPlacementResponse{}
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[3]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -287,7 +732,7 @@ func (x *ShowPlacementResponse) String() string {
 func (*ShowPlacementResponse) ProtoMessage() {}
 
 func (x *ShowPlacementResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_placement_proto_msgTypes[3]
+	mi := &file_fleetly_server_v1_placement_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -300,7 +745,7 @@ func (x *ShowPlacementResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ShowPlacementResponse.ProtoReflect.Descriptor instead.
 func (*ShowPlacementResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{3}
+	return file_fleetly_server_v1_placement_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ShowPlacementResponse) GetApp() string {
@@ -339,7 +784,7 @@ const file_fleetly_server_v1_placement_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xa7\x01\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xf6\x01\n" +
 	"\n" +
 	"VolumeView\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x12\n" +
@@ -348,15 +793,47 @@ const file_fleetly_server_v1_placement_proto_rawDesc = "" +
 	"\x10platform_node_id\x18\x04 \x01(\tR\x0eplatformNodeId\x12\x1d\n" +
 	"\n" +
 	"mount_path\x18\x05 \x01(\tR\tmountPath\x12\x16\n" +
-	"\x06status\x18\x06 \x01(\tR\x06status\"1\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\x121\n" +
+	"\x15prev_platform_node_id\x18\a \x01(\tR\x12prevPlatformNodeId\x12\x1a\n" +
+	"\bresidual\x18\b \x01(\bR\bresidual\"\xa3\x01\n" +
+	"\x16UpdatePlacementRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1b\n" +
+	"\x04node\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04node\x127\n" +
+	"\bdata_ack\x18\x03 \x01(\tB\x1c\xbaH\x19r\x17R\x00R\brestoredR\tdiscardedR\adataAck\x12\x18\n" +
+	"\aconfirm\x18\x04 \x01(\bR\aconfirm\"\xa4\x01\n" +
+	"\x17UpdatePlacementResponse\x12\x10\n" +
+	"\x03app\x18\x01 \x01(\tR\x03app\x12>\n" +
+	"\tplacement\x18\x02 \x01(\v2 .fleetly.server.v1.PlacementViewR\tplacement\x127\n" +
+	"\avolumes\x18\x03 \x03(\v2\x1d.fleetly.server.v1.VolumeViewR\avolumes\"n\n" +
+	"\x12ListVolumesRequest\x12<\n" +
+	"\x06status\x18\x01 \x01(\tB$\xbaH!r\x1fR\x00R\x06activeR\borphanedR\tdiscardedR\x06status\x12\x1a\n" +
+	"\bresidual\x18\x02 \x01(\bR\bresidual\"N\n" +
+	"\x13ListVolumesResponse\x127\n" +
+	"\avolumes\x18\x01 \x03(\v2\x1d.fleetly.server.v1.VolumeViewR\avolumes\"V\n" +
+	" GetPlacementMigrationPlanRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x17\n" +
+	"\x02to\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02to\"=\n" +
+	"\rMigrationStep\x12\x14\n" +
+	"\x05title\x18\x01 \x01(\tR\x05title\x12\x16\n" +
+	"\x06detail\x18\x02 \x01(\tR\x06detail\"\xf8\x01\n" +
+	"!GetPlacementMigrationPlanResponse\x12\x10\n" +
+	"\x03app\x18\x01 \x01(\tR\x03app\x12\x1b\n" +
+	"\tfrom_node\x18\x02 \x01(\tR\bfromNode\x12\x17\n" +
+	"\ato_node\x18\x03 \x01(\tR\x06toNode\x127\n" +
+	"\avolumes\x18\x04 \x03(\v2\x1d.fleetly.server.v1.VolumeViewR\avolumes\x126\n" +
+	"\x05steps\x18\x05 \x03(\v2 .fleetly.server.v1.MigrationStepR\x05steps\x12\x1a\n" +
+	"\bwarnings\x18\x06 \x03(\tR\bwarnings\"1\n" +
 	"\x14ShowPlacementRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\"\xa2\x01\n" +
 	"\x15ShowPlacementResponse\x12\x10\n" +
 	"\x03app\x18\x01 \x01(\tR\x03app\x12>\n" +
 	"\tplacement\x18\x02 \x01(\v2 .fleetly.server.v1.PlacementViewR\tplacement\x127\n" +
-	"\avolumes\x18\x03 \x03(\v2\x1d.fleetly.server.v1.VolumeViewR\avolumes2\x99\x01\n" +
+	"\avolumes\x18\x03 \x03(\v2\x1d.fleetly.server.v1.VolumeViewR\avolumes2\xd4\x04\n" +
 	"\x10PlacementService\x12\x84\x01\n" +
-	"\rShowPlacement\x12'.fleetly.server.v1.ShowPlacementRequest\x1a(.fleetly.server.v1.ShowPlacementResponse\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/apps/{app}/placementB\x98\x01\x92ARRP\n" +
+	"\rShowPlacement\x12'.fleetly.server.v1.ShowPlacementRequest\x1a(.fleetly.server.v1.ShowPlacementResponse\" \x82\xd3\xe4\x93\x02\x1a\x12\x18/v1/apps/{app}/placement\x12\x8d\x01\n" +
+	"\x0fUpdatePlacement\x12).fleetly.server.v1.UpdatePlacementRequest\x1a*.fleetly.server.v1.UpdatePlacementResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\x1a\x18/v1/apps/{app}/placement\x12q\n" +
+	"\vListVolumes\x12%.fleetly.server.v1.ListVolumesRequest\x1a&.fleetly.server.v1.ListVolumesResponse\"\x13\x82\xd3\xe4\x93\x02\r\x12\v/v1/volumes\x12\xb5\x01\n" +
+	"\x19GetPlacementMigrationPlan\x123.fleetly.server.v1.GetPlacementMigrationPlanRequest\x1a4.fleetly.server.v1.GetPlacementMigrationPlanResponse\"-\x82\xd3\xe4\x93\x02'\x12%/v1/apps/{app}/placement/migrate-planB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -373,27 +850,45 @@ func file_fleetly_server_v1_placement_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_placement_proto_rawDescData
 }
 
-var file_fleetly_server_v1_placement_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_fleetly_server_v1_placement_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_fleetly_server_v1_placement_proto_goTypes = []any{
-	(*PlacementView)(nil),         // 0: fleetly.server.v1.PlacementView
-	(*VolumeView)(nil),            // 1: fleetly.server.v1.VolumeView
-	(*ShowPlacementRequest)(nil),  // 2: fleetly.server.v1.ShowPlacementRequest
-	(*ShowPlacementResponse)(nil), // 3: fleetly.server.v1.ShowPlacementResponse
-	(*timestamppb.Timestamp)(nil), // 4: google.protobuf.Timestamp
+	(*PlacementView)(nil),                     // 0: fleetly.server.v1.PlacementView
+	(*VolumeView)(nil),                        // 1: fleetly.server.v1.VolumeView
+	(*UpdatePlacementRequest)(nil),            // 2: fleetly.server.v1.UpdatePlacementRequest
+	(*UpdatePlacementResponse)(nil),           // 3: fleetly.server.v1.UpdatePlacementResponse
+	(*ListVolumesRequest)(nil),                // 4: fleetly.server.v1.ListVolumesRequest
+	(*ListVolumesResponse)(nil),               // 5: fleetly.server.v1.ListVolumesResponse
+	(*GetPlacementMigrationPlanRequest)(nil),  // 6: fleetly.server.v1.GetPlacementMigrationPlanRequest
+	(*MigrationStep)(nil),                     // 7: fleetly.server.v1.MigrationStep
+	(*GetPlacementMigrationPlanResponse)(nil), // 8: fleetly.server.v1.GetPlacementMigrationPlanResponse
+	(*ShowPlacementRequest)(nil),              // 9: fleetly.server.v1.ShowPlacementRequest
+	(*ShowPlacementResponse)(nil),             // 10: fleetly.server.v1.ShowPlacementResponse
+	(*timestamppb.Timestamp)(nil),             // 11: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_placement_proto_depIdxs = []int32{
-	4, // 0: fleetly.server.v1.PlacementView.pinned_at:type_name -> google.protobuf.Timestamp
-	4, // 1: fleetly.server.v1.PlacementView.created_at:type_name -> google.protobuf.Timestamp
-	4, // 2: fleetly.server.v1.PlacementView.updated_at:type_name -> google.protobuf.Timestamp
-	0, // 3: fleetly.server.v1.ShowPlacementResponse.placement:type_name -> fleetly.server.v1.PlacementView
-	1, // 4: fleetly.server.v1.ShowPlacementResponse.volumes:type_name -> fleetly.server.v1.VolumeView
-	2, // 5: fleetly.server.v1.PlacementService.ShowPlacement:input_type -> fleetly.server.v1.ShowPlacementRequest
-	3, // 6: fleetly.server.v1.PlacementService.ShowPlacement:output_type -> fleetly.server.v1.ShowPlacementResponse
-	6, // [6:7] is the sub-list for method output_type
-	5, // [5:6] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	11, // 0: fleetly.server.v1.PlacementView.pinned_at:type_name -> google.protobuf.Timestamp
+	11, // 1: fleetly.server.v1.PlacementView.created_at:type_name -> google.protobuf.Timestamp
+	11, // 2: fleetly.server.v1.PlacementView.updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 3: fleetly.server.v1.UpdatePlacementResponse.placement:type_name -> fleetly.server.v1.PlacementView
+	1,  // 4: fleetly.server.v1.UpdatePlacementResponse.volumes:type_name -> fleetly.server.v1.VolumeView
+	1,  // 5: fleetly.server.v1.ListVolumesResponse.volumes:type_name -> fleetly.server.v1.VolumeView
+	1,  // 6: fleetly.server.v1.GetPlacementMigrationPlanResponse.volumes:type_name -> fleetly.server.v1.VolumeView
+	7,  // 7: fleetly.server.v1.GetPlacementMigrationPlanResponse.steps:type_name -> fleetly.server.v1.MigrationStep
+	0,  // 8: fleetly.server.v1.ShowPlacementResponse.placement:type_name -> fleetly.server.v1.PlacementView
+	1,  // 9: fleetly.server.v1.ShowPlacementResponse.volumes:type_name -> fleetly.server.v1.VolumeView
+	9,  // 10: fleetly.server.v1.PlacementService.ShowPlacement:input_type -> fleetly.server.v1.ShowPlacementRequest
+	2,  // 11: fleetly.server.v1.PlacementService.UpdatePlacement:input_type -> fleetly.server.v1.UpdatePlacementRequest
+	4,  // 12: fleetly.server.v1.PlacementService.ListVolumes:input_type -> fleetly.server.v1.ListVolumesRequest
+	6,  // 13: fleetly.server.v1.PlacementService.GetPlacementMigrationPlan:input_type -> fleetly.server.v1.GetPlacementMigrationPlanRequest
+	10, // 14: fleetly.server.v1.PlacementService.ShowPlacement:output_type -> fleetly.server.v1.ShowPlacementResponse
+	3,  // 15: fleetly.server.v1.PlacementService.UpdatePlacement:output_type -> fleetly.server.v1.UpdatePlacementResponse
+	5,  // 16: fleetly.server.v1.PlacementService.ListVolumes:output_type -> fleetly.server.v1.ListVolumesResponse
+	8,  // 17: fleetly.server.v1.PlacementService.GetPlacementMigrationPlan:output_type -> fleetly.server.v1.GetPlacementMigrationPlanResponse
+	14, // [14:18] is the sub-list for method output_type
+	10, // [10:14] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_placement_proto_init() }
@@ -407,7 +902,7 @@ func file_fleetly_server_v1_placement_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_placement_proto_rawDesc), len(file_fleetly_server_v1_placement_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   4,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

@@ -205,6 +205,58 @@ func (t *Tx) BindPlacement(ctx context.Context, w PlacementWrite) (Placement, er
 	return t.GetPlacement(ctx, w.AppID)
 }
 
+// PlacementCountByNode 返回平台节点 ID → 已钉应用数（placements 权威表
+// 计数，multi-node §2.6 选点三因子第二因子的数据面——「已钉数少」优先；
+// 权威 SQLite，非观测缓存）。绑定全状态计入（blocked/unresolved 仍是该
+// 节点的占用——节点恢复后回岗）。空表返回空 map。
+func (s *Store) PlacementCountByNode(ctx context.Context) (map[string]int, error) {
+	const q = `SELECT platform_node_id, COUNT(*) FROM placements
+		WHERE platform_node_id <> '' GROUP BY platform_node_id`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("state: placement count by node: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int{}
+	for rows.Next() {
+		var nodeID string
+		var n int
+		if err := rows.Scan(&nodeID, &n); err != nil {
+			return nil, fmt.Errorf("state: scan placement count: %w", err)
+		}
+		out[nodeID] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate placement counts: %w", err)
+	}
+	return out, nil
+}
+
+// PlacementAppsByNode 返回平台节点 ID → 绑定其上的 app_id 清单（字典序；
+// multi-node §2.7 NodeView.pinned_app_ids 交叉引用面的数据源——读时 join
+// placements 权威表，无迁移）。绑定全状态、非空锚计入；空表返回空 map。
+func (s *Store) PlacementAppsByNode(ctx context.Context) (map[string][]string, error) {
+	const q = `SELECT platform_node_id, app_id FROM placements
+		WHERE platform_node_id <> '' ORDER BY platform_node_id ASC, app_id ASC`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("state: placement apps by node: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string][]string{}
+	for rows.Next() {
+		var nodeID, appID string
+		if err := rows.Scan(&nodeID, &appID); err != nil {
+			return nil, fmt.Errorf("state: scan placement app: %w", err)
+		}
+		out[nodeID] = append(out[nodeID], appID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate placement apps: %w", err)
+	}
+	return out, nil
+}
+
 // scanPlacement 从单行构造 Placement。
 func scanPlacement(row interface{ Scan(dest ...any) error }) (Placement, error) {
 	var p Placement

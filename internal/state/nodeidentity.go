@@ -153,26 +153,9 @@ func (n *NodeIdentity) Anchor(ctx context.Context) error {
 // updateNodeLabelWithRetry 以写前直读纪律写节点身份 label：每次重试先
 // 重取底座对象版本作乐观令牌；底座并发冲突（ErrVersionConflict）或
 // 幂等重放安全——label 目标值即平台 ID，重复写无副作用。
+// 实现与 ClusterAnchor 共用包级 helper（锚定 label 写入的唯一路径）。
 func (n *NodeIdentity) updateNodeLabelWithRetry(ctx context.Context, swarmNodeID, key, value string) error {
-	var lastErr error
-	for i := 0; i < labelWriteRetries; i++ {
-		// 写前直读：直读底座节点版本作乐观令牌（state-model §2.2 读契约）。
-		version, err := n.docker.ResolveObjectVersion(ctx, ObjectKindNode, swarmNodeID)
-		if err != nil {
-			return fmt.Errorf("state: resolve node version: %w", err)
-		}
-		err = n.docker.UpdateNodeLabel(ctx, swarmNodeID, key, value, version)
-		if err == nil {
-			return nil
-		}
-		if !errors.Is(err, ErrVersionConflict) {
-			return fmt.Errorf("state: update node label %s: %w", key, err)
-		}
-		lastErr = err
-		n.log.Warn("node label write hit concurrent modification, retrying with fresh version token",
-			"swarm_node_id", swarmNodeID, "attempt", i+1)
-	}
-	return fmt.Errorf("state: update node label %s after %d attempts: %w", key, labelWriteRetries, lastErr)
+	return updateNodeLabelWithRetry(ctx, n.docker, n.log, swarmNodeID, key, value)
 }
 
 // Start 启动锚定守护：EnsurePlatformID 已在装配期完成（Init 阶段

@@ -6,20 +6,29 @@ import (
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
+	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
-// 只读资源面：Placement / Revisions / Domains（T2.17）。
+// 只读资源面：Placement / Revisions / Domains（T2.17）。E1-7 起 Placement
+// 扩容显式换点（UpdatePlacement）与跨 app 卷清单（ListVolumes）、迁移
+// runbook（GetPlacementMigrationPlan）——multi-node §2.6/§2.8。
 
-// PlacementService 实现 server.v1.PlacementService。
+// PlacementService 实现 server.v1.PlacementService。res 是放置解析器
+// （E1-7：换点裁决在 internal/placement——目标校验/数据处置门/同事务落库；
+// api 面只做应用解析与投影；nil resolver = 测试形态的只读降级面——写面
+// RPC 如实报不可用）。
 type PlacementService struct {
 	serverv1.UnimplementedPlacementServiceServer
-	st *state.Store
+	st  *state.Store
+	res *placement.Resolver
 }
 
 // NewPlacementService 构造 PlacementService。
-func NewPlacementService(st *state.Store) *PlacementService {
-	return &PlacementService{st: st}
+func NewPlacementService(st *state.Store, res *placement.Resolver) *PlacementService {
+	return &PlacementService{st: st, res: res}
 }
 
 // ShowPlacement 放置绑定视图（未绑定时 placement 不输出）+ 卷注册表
@@ -40,16 +49,97 @@ func (s *PlacementService) ShowPlacement(ctx context.Context, req *serverv1.Show
 		return nil, err
 	}
 	for _, v := range volumes {
-		resp.Volumes = append(resp.Volumes, &serverv1.VolumeView{
-			Key:            v.Key,
-			Name:           v.Name,
-			Kind:           string(v.Kind),
-			PlatformNodeId: v.PlatformNodeID,
-			MountPath:      v.MountPath,
-			Status:         string(v.Status),
-		})
+		resp.Volumes = append(resp.Volumes, volumeView(v))
 	}
 	return resp, nil
+}
+
+// UpdatePlacement 显式换点（E1-7，multi-node §2.6；admin scope——破坏性
+// 确认路径）：裁决在 internal/placement.Rebind（目标校验 + data_ack 门 +
+// 同事务落库/事件/审计），换点不自动部署。
+func (s *PlacementService) UpdatePlacement(ctx context.Context, req *serverv1.UpdatePlacementRequest) (*serverv1.UpdatePlacementResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if s.res == nil {
+		return nil, status.Error(codes.Unavailable, "placement resolver unavailable (not assembled)")
+	}
+	res, err := s.res.Rebind(ctx, placement.RebindInput{
+		AppID:   app.ID,
+		Node:    req.GetNode(),
+		DataAck: req.GetDataAck(),
+		Confirm: req.GetConfirm(),
+		Actor:   "human",
+	})
+	if err != nil {
+		return nil, err
+	}
+	out := &serverv1.UpdatePlacementResponse{
+		App:        app.Name,
+		Placement:  placementView(res.Placement),
+		Volumes:    []*serverv1.VolumeView{},
+	}
+	for _, v := range res.Volumes {
+		out.Volumes = append(out.Volumes, volumeView(v))
+	}
+	return out, nil
+}
+
+// ListVolumes 跨 app 卷清单（E1-7，multi-node §2.8；read scope）：active/
+// orphaned/discarded 行 + residual 派生标记（prev_platform_node_id 非空的
+// active 行 = 源节点有待清理副本）。status 过滤缺省输出全部；不建生命
+// 周期 API、不做远端删除（D18）。卷归属可从命名约定名读取
+//（fleetly-<app>-<key>-<appid8>，state-model §2.4）。
+func (s *PlacementService) ListVolumes(ctx context.Context, req *serverv1.ListVolumesRequest) (*serverv1.ListVolumesResponse, error) {
+	rows, err := s.st.ListAllVolumes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := &serverv1.ListVolumesResponse{Volumes: []*serverv1.VolumeView{}}
+	for _, v := range rows {
+		if filter := req.GetStatus(); filter != "" && string(v.Status) != filter {
+			continue
+		}
+		residual := v.Status == state.VolumeActive && v.PrevPlatformNodeID != ""
+		if req.GetResidual() && !residual {
+			continue
+		}
+		out.Volumes = append(out.Volumes, volumeView(v))
+	}
+	return out, nil
+}
+
+// GetPlacementMigrationPlan restic 迁移 runbook（E1-7，multi-node §2.8/
+// D-MN-10）：服务端生成步骤文档（真实卷名/节点名填充）；只读面，不触发
+// 任何状态变更。
+func (s *PlacementService) GetPlacementMigrationPlan(ctx context.Context, req *serverv1.GetPlacementMigrationPlanRequest) (*serverv1.GetPlacementMigrationPlanResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if s.res == nil {
+		return nil, status.Error(codes.Unavailable, "placement resolver unavailable (not assembled)")
+	}
+	plan, err := s.res.MigrationPlan(ctx, app.ID, app.Name, req.GetTo())
+	if err != nil {
+		return nil, err
+	}
+	out := &serverv1.GetPlacementMigrationPlanResponse{
+		App:      app.Name,
+		FromNode: plan.FromNode,
+		ToNode:   plan.ToNode,
+		Volumes:  []*serverv1.VolumeView{},
+		Steps:    []*serverv1.MigrationStep{},
+		Warnings: plan.Warnings,
+	}
+	for _, v := range plan.Volumes {
+		out.Volumes = append(out.Volumes, volumeView(v))
+	}
+	for _, st := range plan.Steps {
+		out.Steps = append(out.Steps, &serverv1.MigrationStep{Title: st.Title, Detail: st.Detail})
+	}
+	return out, nil
 }
 
 // RevisionsService 实现 server.v1.RevisionsService。

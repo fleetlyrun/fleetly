@@ -330,28 +330,24 @@ func TestResolveNotReadyNoCandidate(t *testing.T) {
 	}
 }
 
-// TestMultiNodeGuard 验收 4：拓扑非单节点 → E_CAPABILITY_REQUIRES_MULTI_NODE；
-// MoveBinding/守卫函数同码。
-func TestMultiNodeGuard(t *testing.T) {
+// TestMultiNodeGuardRetired 守卫退役的否定面断言（multi-node §2.6 E1-7）：
+// E_CAPABILITY_REQUIRES_MULTI_NODE 守卫路径已删除——拓扑多节点不再在
+// Resolve 层被拒（多节点解析语义见 rebind_test.go / resolve_multi_test.go）；
+// MoveBinding 静态守卫由显式换点 Rebind 取代。码保留注册表（永不复用），
+// 零生产引用由 errcode usage 豁免清单承接（退役面追认口径）。
+func TestMultiNodeGuardRetired(t *testing.T) {
 	h := newHarness(t)
 	h.setSelf("ready", "active", state.SubstrateNode{
 		SwarmNodeID: "swarm-2", Hostname: "srv-02", State: "ready", Availability: "active",
 	})
-	_, err := h.resolver.Resolve(context.Background(), h.input())
-	var ae *apperr.Error
-	if !errors.As(err, &ae) || ae.Code() != "E_CAPABILITY_REQUIRES_MULTI_NODE" {
-		t.Fatalf("resolve err = %v, want E_CAPABILITY_REQUIRES_MULTI_NODE", err)
+	// 多节点快照不再触发 E_CAPABILITY_REQUIRES_MULTI_NODE：解析继续
+	//（本机已锚定 → 候选池唯一 → 自动绑定本机，与 v0.1 单机行为等价）。
+	d, err := h.resolver.Resolve(context.Background(), h.input())
+	if err != nil {
+		t.Fatalf("resolve on multi-node snapshot: %v", err)
 	}
-
-	// 换点路径静态守卫。
-	if err := h.resolver.MoveBinding(context.Background(), h.appID, "srv-02", "restored", true); !errors.As(err, &ae) || ae.Code() != "E_CAPABILITY_REQUIRES_MULTI_NODE" {
-		t.Fatalf("move err = %v, want guard code", err)
-	}
-	if err := GuardMultiNode(2); !errors.As(err, &ae) || ae.Code() != "E_CAPABILITY_REQUIRES_MULTI_NODE" {
-		t.Fatalf("guard err = %v", err)
-	}
-	if err := GuardMultiNode(1); err != nil {
-		t.Fatalf("single node guarded: %v", err)
+	if !d.Bind || d.PlatformNodeID != h.platformID {
+		t.Fatalf("decision = %+v, want bind to %s (single anchored candidate = self)", d, h.platformID)
 	}
 }
 

@@ -390,6 +390,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/system/nodes/join-guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetJoinGuide join 向导（E1-8，multi-node §2.3/D-MN-13；admin scope
+         *     ——响应含 join token 材料）。base_domain 为空 → E_MULTI_NODE_REQUIRES_
+         *     BASE_DOMAIN（409，D-MN-13：多节点未启用显式拒绝）。服务端生成 join
+         *     命令、按 worker_ip 的精确防火墙放行规则（只生成不自动应用）、DNS
+         *     步骤与完成判据；防火墙规则文本附「--harden-firewall 自动应用维持
+         *     reserved」口径（平台不静默改用户防火墙）。
+         */
+        get: operations["SystemService_GetJoinGuide"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/system/nodes/join-token:rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RotateJoinToken 轮换 swarm join token（E1-8，D-MN-1：锚定完成后自动
+         *     rotate 把泄露窗口收敛到分钟级；批量场景 manual 后手动执行）。role
+         *     缺省 worker；rotate 后旧 token 立即失效。经底座 swarm 面执行，轮换
+         *     记审计（node.join_token_rotated，§5.3——审计不设事件）。
+         */
+        post: operations["SystemService_RotateJoinToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/system/ping": {
         parameters: {
             query?: never;
@@ -430,6 +476,57 @@ export interface paths {
             cookie?: never;
         };
         get: operations["PlacementService_ShowPlacement"];
+        /**
+         * UpdatePlacement 显式换点（E1-7，multi-node §2.6；admin scope——破坏性
+         *     确认路径）。目标节点存在且 ready（直读）；有卷应用 data_ack 必填
+         *     （restored|discarded，缺省 → E_VOLUME_NODE_MISMATCH——前哨语义前置）；
+         *     discarded 需 confirm（→ E_PLACEMENT_MOVE_REQUIRES_ACK）。落库同事务
+         *     （绑定换绑 + 卷行 prev 登记 + placement.changed + 审计）；换点不自动
+         *     部署，由用户发起部署收敛。
+         */
+        put: operations["PlacementService_UpdatePlacement"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/placement/migrate-plan": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetPlacementMigrationPlan restic 迁移 runbook（E1-7，multi-node §2.8/
+         *     D-MN-10；read scope）：服务端生成步骤文档（真实卷名/节点名填充），
+         *     restic 备份/恢复由用户在两节点执行——平台不编排远端数据移动。
+         */
+        get: operations["PlacementService_GetPlacementMigrationPlan"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/volumes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListVolumes 跨 app 卷清单（E1-7，multi-node §2.8；read scope）：active
+         *     在册行、orphaned 孤儿行（删除应用保留）与残留指引（prev_platform_
+         *     node_id 非空的 active 行派生 residual 标记）。status 过滤缺省输出全部；
+         *     不建生命周期 API、不做远端删除（D18）。
+         */
+        get: operations["PlacementService_ListVolumes"];
         put?: never;
         post?: never;
         delete?: never;
@@ -906,6 +1003,22 @@ export interface components {
             ok?: boolean;
             error?: string;
         };
+        /**
+         * FirewallRule 是一条防火墙放行规则文本（方向 + 端口/协议 + 用途 + 可
+         *     复制命令；只生成不自动应用——平台不静默改用户防火墙，multi-node §2.3）。
+         */
+        v1FirewallRule: {
+            /** 方向词表：worker_to_manager / bidirectional / public_to_all。 */
+            direction?: string;
+            /** 端口/协议（如 2377/tcp、7946/tcp+udp、4789/udp、8423/tcp、80,443/tcp）。 */
+            port?: string;
+            /** 用途（集群管理 / gossip / overlay VXLAN / Traefik 配置端点 TLS / 应用入口）。 */
+            purpose?: string;
+            /** 规则文本（manager 侧或 worker 侧可复制的 iptables 命令/说明）。 */
+            rule?: string;
+            /** 规则应用在哪一侧（manager / worker / both）。 */
+            side?: string;
+        };
         v1GetIngressStatusResponse: {
             traefik?: components["schemas"]["v1TraefikView"];
             /** 控制面配置端点监听地址（ingress.config_addr 配置原值）。 */
@@ -931,11 +1044,47 @@ export interface components {
             cert_dir_apps?: string[];
             cert_dir_error?: string;
         };
+        v1GetJoinGuideResponse: {
+            guide?: components["schemas"]["v1JoinGuideView"];
+        };
         v1GetSystemStatusResponse: {
             service?: string;
             version?: string;
             components?: components["schemas"]["v1ComponentHealth"][];
             backup?: components["schemas"]["v1BackupHealth"];
+        };
+        /** JoinGuideView 是 join 向导输出（服务端生成，multi-node §2.3）。 */
+        v1JoinGuideView: {
+            /** 完整 join 命令（docker swarm join --token SWMTKN-… <manager-addr>:2377）。 */
+            join_command?: string;
+            /** manager 可达地址（swarm advertise addr 或请求覆盖值）。 */
+            manager_addr?: string;
+            /**
+             * worker join token（admin scope 的 token 材料；向导后按 join.token_
+             *     rotate=auto 自动轮换的口径见 D-MN-1）。
+             */
+            worker_token?: string;
+            /** 平台域名（DNS 步骤的主体）。 */
+            base_domain?: string;
+            /** manager 侧放行规则（按 worker_ip 生成）。 */
+            manager_firewall_rules?: components["schemas"]["v1FirewallRule"][];
+            /** worker 侧放行规则。 */
+            worker_firewall_rules?: components["schemas"]["v1FirewallRule"][];
+            /**
+             * worker 前置门禁命令（docker version ≥29.8.1 + iptables legacy 判定
+             *     ——与 install.sh 同判据的命令形态；复制到 worker 执行）。
+             */
+            worker_preflight_commands?: string[];
+            /**
+             * DNS 步骤（既有应用/平台子域 A 记录追加 worker IP；ctrl.<base> 保持
+             *     仅 manager；fleetly domains verify 复核）。
+             */
+            dns_steps?: string[];
+            /**
+             * 完成判据（向导自动推进面：节点观测拍出现 → 锚定 node.joined →
+             *     ready + Traefik 任务 running）。
+             */
+            completion_checks?: string[];
         };
         v1ListBackupsResponse: {
             backups?: components["schemas"]["v1BackupView"][];
@@ -963,12 +1112,26 @@ export interface components {
             labels?: {
                 [key: string]: string;
             };
+            /**
+             * 绑定其上的应用 ID 清单（E1-8，multi-node §2.7/D-MN-9：读时 join
+             *     placements 权威表，无迁移——UI「已钉应用」交叉引用面）。
+             */
+            pinned_app_ids?: string[];
         };
         v1PingResponse: {
             /** 应答服务名（恒 "fleetlyd"）。 */
             service?: string;
             /** 服务版本（构建 -ldflags 注入，未注入时为 "dev"）。 */
             version?: string;
+        };
+        v1RotateJoinTokenRequest: {
+            /** 轮换目标 token 的角色：worker（缺省）| manager。 */
+            role?: string;
+        };
+        v1RotateJoinTokenResponse: {
+            /** 轮换后的角色与新 token（旧 token 立即失效；admin scope 材料）。 */
+            role?: string;
+            token?: string;
         };
         /**
          * TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists
@@ -991,10 +1154,45 @@ export interface components {
         v1TriggerBackupResponse: {
             backup?: components["schemas"]["v1BackupView"];
         };
+        /** UpdatePlacementRequest 是显式换点请求（admin scope；破坏性确认路径）。 */
+        PlacementServiceUpdatePlacementBody: {
+            /** 目标节点（唯一显示名或平台 ID）。 */
+            node?: string;
+            /** 数据处置声明：""（无卷应用）| restored | discarded。 */
+            data_ack?: string;
+            /** 破坏性确认（data_ack=discarded 时必填——源节点数据成为残留）。 */
+            confirm?: boolean;
+        };
+        v1GetPlacementMigrationPlanResponse: {
+            app?: string;
+            /** 源/目标节点人读形态（hostname (platform ID)）。 */
+            from_node?: string;
+            to_node?: string;
+            /** 涉及的 active 卷。 */
+            volumes?: components["schemas"]["v1VolumeView"][];
+            /** 顺序步骤（停写 → restic 备份/恢复 → rebind → deploy 收敛 → 残留清理）。 */
+            steps?: components["schemas"]["v1MigrationStep"][];
+            /** 计划级警示（如目标节点当前非 ready）。 */
+            warnings?: string[];
+        };
+        v1ListVolumesResponse: {
+            /** 应用显示名（已删除应用回退显示 app id——与证书台账同口径）。 */
+            volumes?: components["schemas"]["v1VolumeView"][];
+        };
+        /** MigrationStep 是迁移 runbook 的一步（title 短语 + 可复制 detail）。 */
+        v1MigrationStep: {
+            title?: string;
+            detail?: string;
+        };
         v1ShowPlacementResponse: {
             app?: string;
             placement?: components["schemas"]["v1PlacementView"];
             /** 卷注册表（无卷应用为空集）。 */
+            volumes?: components["schemas"]["v1VolumeView"][];
+        };
+        v1UpdatePlacementResponse: {
+            app?: string;
+            placement?: components["schemas"]["v1PlacementView"];
             volumes?: components["schemas"]["v1VolumeView"][];
         };
         /**
@@ -1009,6 +1207,16 @@ export interface components {
             platform_node_id?: string;
             mount_path?: string;
             status?: string;
+            /**
+             * 数据原在节点（E1-7 迁移 00010：显式换点登记的源节点；空 = 从未跨
+             *     节点迁移）。指向源节点的残留副本清理指引。
+             */
+            prev_platform_node_id?: string;
+            /**
+             * 残留标记（prev_platform_node_id 非空的 active 行派生 = 源节点有
+             *     待清理副本，docker volume rm 后平台对账消失；只指引不代删——D18）。
+             */
+            residual?: boolean;
         };
     };
     responses: never;
@@ -1919,6 +2127,79 @@ export interface operations {
             };
         };
     };
+    SystemService_GetJoinGuide: {
+        parameters: {
+            query?: {
+                /**
+                 * @description worker 节点的公网 IP（防火墙规则按它生成精确放行文本；空 = 输出
+                 *     规则模板、IP 位以 <worker-ip> 占位）。
+                 */
+                worker_ip?: string;
+                /**
+                 * @description manager 可达地址覆盖（advertise 为私网而 worker 跨公网的场景；空 =
+                 *     取 swarm advertise addr）。
+                 */
+                manager_addr?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetJoinGuideResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_RotateJoinToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1RotateJoinTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RotateJoinTokenResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     SystemService_Ping: {
         parameters: {
             query?: never;
@@ -1995,6 +2276,109 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1ShowPlacementResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    PlacementService_UpdatePlacement: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PlacementServiceUpdatePlacementBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdatePlacementResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    PlacementService_GetPlacementMigrationPlan: {
+        parameters: {
+            query?: {
+                /** @description 目标节点（唯一显示名或平台 ID）。 */
+                to?: string;
+            };
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetPlacementMigrationPlanResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    PlacementService_ListVolumes: {
+        parameters: {
+            query?: {
+                /** @description 状态过滤（active|orphaned|discarded；空 = 输出全部）。 */
+                status?: string;
+                /** @description 残留过滤（true = 只输出 residual 行）。 */
+                residual?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListVolumesResponse"];
                 };
             };
             /** @description An unexpected error response. */

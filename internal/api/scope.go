@@ -19,6 +19,10 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.SystemService/GetSystemStatus":  ScopeRead,
 	"/fleetly.server.v1.SystemService/ListNodes":        ScopeRead,
 	"/fleetly.server.v1.SystemService/GetIngressStatus": ScopeRead,
+	// join 向导面（E1-8，multi-node §2.3）：guide 响应含 join token 材料 =
+	// admin；token 轮换 = admin（安全面写操作，D-MN-1）。
+	"/fleetly.server.v1.SystemService/GetJoinGuide":    ScopeAdmin,
+	"/fleetly.server.v1.SystemService/RotateJoinToken": ScopeAdmin,
 	// 备份面（T2.22）：台账只读；手动触发 = 写面语义（与升级编排的
 	// pre_upgrade 快照共用入口），取 deploy scope。
 	"/fleetly.server.v1.SystemService/ListBackups":   ScopeRead,
@@ -71,7 +75,12 @@ var methodScopes = map[string]string{
 	// EventsService
 	"/fleetly.server.v1.EventsService/WatchEvents": ScopeRead,
 	// PlacementService
-	"/fleetly.server.v1.PlacementService/ShowPlacement": ScopeRead,
+	// ShowPlacement/ListVolumes/GetPlacementMigrationPlan = read（只读面，
+	// E1-7）；UpdatePlacement = admin（破坏性确认路径，multi-node §2.6）。
+	"/fleetly.server.v1.PlacementService/ShowPlacement":             ScopeRead,
+	"/fleetly.server.v1.PlacementService/UpdatePlacement":           ScopeAdmin,
+	"/fleetly.server.v1.PlacementService/ListVolumes":               ScopeRead,
+	"/fleetly.server.v1.PlacementService/GetPlacementMigrationPlan": ScopeRead,
 	// TokensService（管理面整体 admin）
 	"/fleetly.server.v1.TokensService/CreateToken": ScopeAdmin,
 	"/fleetly.server.v1.TokensService/ListTokens":  ScopeAdmin,

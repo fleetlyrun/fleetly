@@ -114,6 +114,78 @@
         ]
       }
     },
+    "/v1/system/nodes/join-guide": {
+      "get": {
+        "summary": "GetJoinGuide join 向导（E1-8，multi-node §2.3/D-MN-13；admin scope\n——响应含 join token 材料）。base_domain 为空 → E_MULTI_NODE_REQUIRES_\nBASE_DOMAIN（409，D-MN-13：多节点未启用显式拒绝）。服务端生成 join\n命令、按 worker_ip 的精确防火墙放行规则（只生成不自动应用）、DNS\n步骤与完成判据；防火墙规则文本附「--harden-firewall 自动应用维持\nreserved」口径（平台不静默改用户防火墙）。",
+        "operationId": "SystemService_GetJoinGuide",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetJoinGuideResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "worker_ip",
+            "description": "worker 节点的公网 IP（防火墙规则按它生成精确放行文本；空 = 输出\n规则模板、IP 位以 \u003cworker-ip\u003e 占位）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "manager_addr",
+            "description": "manager 可达地址覆盖（advertise 为私网而 worker 跨公网的场景；空 =\n取 swarm advertise addr）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
+    "/v1/system/nodes/join-token:rotate": {
+      "post": {
+        "summary": "RotateJoinToken 轮换 swarm join token（E1-8，D-MN-1：锚定完成后自动\nrotate 把泄露窗口收敛到分钟级；批量场景 manual 后手动执行）。role\n缺省 worker；rotate 后旧 token 立即失效。经底座 swarm 面执行，轮换\n记审计（node.join_token_rotated，§5.3——审计不设事件）。",
+        "operationId": "SystemService_RotateJoinToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RotateJoinTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RotateJoinTokenRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
     "/v1/system/ping": {
       "get": {
         "operationId": "SystemService_Ping",
@@ -296,6 +368,32 @@
       },
       "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
     },
+    "v1FirewallRule": {
+      "type": "object",
+      "properties": {
+        "direction": {
+          "type": "string",
+          "title": "方向词表：worker_to_manager / bidirectional / public_to_all。"
+        },
+        "port": {
+          "type": "string",
+          "title": "端口/协议（如 2377/tcp、7946/tcp+udp、4789/udp、8423/tcp、80,443/tcp）。"
+        },
+        "purpose": {
+          "type": "string",
+          "title": "用途（集群管理 / gossip / overlay VXLAN / Traefik 配置端点 TLS / 应用入口）。"
+        },
+        "rule": {
+          "type": "string",
+          "title": "规则文本（manager 侧或 worker 侧可复制的 iptables 命令/说明）。"
+        },
+        "side": {
+          "type": "string",
+          "title": "规则应用在哪一侧（manager / worker / both）。"
+        }
+      },
+      "title": "FirewallRule 是一条防火墙放行规则文本（方向 + 端口/协议 + 用途 + 可\n复制命令；只生成不自动应用——平台不静默改用户防火墙，multi-node §2.3）。"
+    },
     "v1GetIngressStatusResponse": {
       "type": "object",
       "properties": {
@@ -344,6 +442,14 @@
         }
       }
     },
+    "v1GetJoinGuideResponse": {
+      "type": "object",
+      "properties": {
+        "guide": {
+          "$ref": "#/definitions/v1JoinGuideView"
+        }
+      }
+    },
     "v1GetSystemStatusResponse": {
       "type": "object",
       "properties": {
@@ -365,6 +471,65 @@
           "title": "状态备份健康视图（T2.22）：最近一次台账行的投影。从未备份 → 不输出\n（backup 组件的 ComponentHealth 行会以 ok=false 显式表达不健康）。"
         }
       }
+    },
+    "v1JoinGuideView": {
+      "type": "object",
+      "properties": {
+        "join_command": {
+          "type": "string",
+          "title": "完整 join 命令（docker swarm join --token SWMTKN-… \u003cmanager-addr\u003e:2377）。"
+        },
+        "manager_addr": {
+          "type": "string",
+          "title": "manager 可达地址（swarm advertise addr 或请求覆盖值）。"
+        },
+        "worker_token": {
+          "type": "string",
+          "title": "worker join token（admin scope 的 token 材料；向导后按 join.token_\nrotate=auto 自动轮换的口径见 D-MN-1）。"
+        },
+        "base_domain": {
+          "type": "string",
+          "title": "平台域名（DNS 步骤的主体）。"
+        },
+        "manager_firewall_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FirewallRule"
+          },
+          "title": "manager 侧放行规则（按 worker_ip 生成）。"
+        },
+        "worker_firewall_rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1FirewallRule"
+          },
+          "title": "worker 侧放行规则。"
+        },
+        "worker_preflight_commands": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "worker 前置门禁命令（docker version ≥29.8.1 + iptables legacy 判定\n——与 install.sh 同判据的命令形态；复制到 worker 执行）。"
+        },
+        "dns_steps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "DNS 步骤（既有应用/平台子域 A 记录追加 worker IP；ctrl.\u003cbase\u003e 保持\n仅 manager；fleetly domains verify 复核）。"
+        },
+        "completion_checks": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "完成判据（向导自动推进面：节点观测拍出现 → 锚定 node.joined →\nready + Traefik 任务 running）。"
+        }
+      },
+      "title": "JoinGuideView 是 join 向导输出（服务端生成，multi-node §2.3）。"
     },
     "v1ListBackupsResponse": {
       "type": "object",
@@ -424,6 +589,13 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "pinned_app_ids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "绑定其上的应用 ID 清单（E1-8，multi-node §2.7/D-MN-9：读时 join\nplacements 权威表，无迁移——UI「已钉应用」交叉引用面）。"
         }
       },
       "title": "NodeView 是节点观测缓存行的只读投影（state-model §2.2：缓存禁止用于\n决策，展示/诊断专用；节点变更用 docker node 原生命令）。观测数据带\nobserved_at/stale——状态诚实契约（architecture §4.2 横切硬指标）；\nnodes 不提供「最后心跳」字段。"
@@ -438,6 +610,27 @@
         "version": {
           "type": "string",
           "title": "服务版本（构建 -ldflags 注入，未注入时为 \"dev\"）。"
+        }
+      }
+    },
+    "v1RotateJoinTokenRequest": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "title": "轮换目标 token 的角色：worker（缺省）| manager。"
+        }
+      }
+    },
+    "v1RotateJoinTokenResponse": {
+      "type": "object",
+      "properties": {
+        "role": {
+          "type": "string",
+          "title": "轮换后的角色与新 token（旧 token 立即失效；admin scope 材料）。"
+        },
+        "token": {
+          "type": "string"
         }
       }
     },

@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
@@ -20,7 +22,8 @@ import (
 )
 
 // SystemService 实现 server.v1.SystemService：进程级系统信息（Ping/Status，
-// T0.3/T2.17）+ 集群级观察面（ListNodes/GetIngressStatus，T2.18）。
+// T0.3/T2.17）+ 集群级观察面（ListNodes/GetIngressStatus，T2.18）+ join
+// 向导面（E1-8，multi-node §2.3）。
 //
 // ingress 依赖以 IngressStatusSource 端口注入（实现 = *ingress.Manager）：
 // 入口探测在服务端执行——CLI 不再直连 docker / 读本地 token 文件 / 探测
@@ -37,6 +40,24 @@ type SystemService struct {
 	// backup 是状态备份管理器（T2.22；nil = 备份面未装配——ListBackups/
 	// GetSystemStatus 的备份视图走台账仍可用，TriggerBackup 如实报不可用）。
 	backup *statebackup.Manager
+	// baseDomain 是平台域名（multi-node §2.2；E1-8 join 门禁 D-MN-13 的
+	// 判定面：空 = 多节点未启用）。
+	baseDomain string
+	// join 是 swarm join-token 面端口（实现 = *substrate.Client；nil =
+	// 未装配——GetJoinGuide 在 base_domain 缺失时先以 409 拒绝、不触底座，
+	// RotateJoinToken 如实报不可用）。
+	join JoinTokenPort
+}
+
+// JoinTokenPort 是 swarm join-token 面端口（multi-node §2.3；*substrate.
+// Client 隐式实现——端口在 api 定义、适配在 substrate，方向纪律同
+// IngressStatusSource）。
+type JoinTokenPort interface {
+	// SwarmJoinInfo 返回 manager advertise addr 与 worker join token。
+	SwarmJoinInfo(ctx context.Context) (string, string, error)
+	// SwarmRotateJoinToken 轮换指定角色（worker|manager）的 join token
+	// 并返回新 token（rotate 后旧 token 立即失效）。
+	SwarmRotateJoinToken(ctx context.Context, role string) (string, error)
 }
 
 // SystemComponent 是带名的健康组件（CheckHealth 复用面）。
@@ -55,6 +76,15 @@ type IngressStatusSource interface {
 // components 为装配点命名的健康组件集；ing 可为 nil——入口面未装配形态）。
 func NewSystemService(version string, st *state.Store, components func() []SystemComponent, ing IngressStatusSource) *SystemService {
 	return &SystemService{version: version, st: st, components: components, ing: ing}
+}
+
+// WithJoinGuide 注入 join 向导面（E1-8；链式装配）。baseDomain 为空 =
+// 单节点形态（GetJoinGuide 以 E_MULTI_NODE_REQUIRES_BASE_DOMAIN 409 拒绝
+// ——D-MN-13）；jp 可为 nil（join 底座面未装配）。
+func (s *SystemService) WithJoinGuide(baseDomain string, jp JoinTokenPort) *SystemService {
+	s.baseDomain = baseDomain
+	s.join = jp
+	return s
 }
 
 // WithBackupManager 注入状态备份管理器（T2.22；链式装配，nil 合法——
@@ -158,9 +188,15 @@ func backupView(r state.StateBackup) *serverv1.BackupView {
 }
 
 // ListNodes 节点观测缓存只读列表（state-model §2.2：缓存禁止用于决策，
-// 展示/诊断专用；节点变更用 docker node 原生命令）。
+// 展示/诊断专用；节点变更用 docker node 原生命令）。NodeView 增补
+// pinned_app_ids（E1-8，multi-node §2.7/D-MN-9：读时 join placements
+// 权威表，UI「已钉应用」交叉引用——无迁移）。
 func (s *SystemService) ListNodes(ctx context.Context, req *serverv1.ListNodesRequest) (*serverv1.ListNodesResponse, error) {
 	nodes, err := s.st.ListCachedNodes(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pinned, err := s.st.PlacementAppsByNode(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -175,13 +211,155 @@ func (s *SystemService) ListNodes(ctx context.Context, req *serverv1.ListNodesRe
 			ObservedAt:   tstamp(n.ObservedAt),
 			Stale:        n.Stale,
 			Labels:       n.Labels,
+			PinnedAppIds: []string{},
 		}
 		if id := n.Labels[state.LabelNodeID]; id != "" {
 			v.PlatformId = id
+			v.PinnedAppIds = pinned[id]
 		}
 		out = append(out, v)
 	}
 	return &serverv1.ListNodesResponse{Nodes: out}, nil
+}
+
+// GetJoinGuide join 向导（E1-8，multi-node §2.3）：join 命令 + 按 worker_ip
+// 的精确放行规则（只生成不自动应用）+ worker 前置门禁命令 + DNS 步骤 +
+// 完成判据。前哨：base_domain 为空 → E_MULTI_NODE_REQUIRES_BASE_DOMAIN
+// （409，D-MN-13——多节点未启用显式拒绝，不静默降级）。admin scope（响应
+// 含 token 材料）由拦截器链把门。
+func (s *SystemService) GetJoinGuide(ctx context.Context, req *serverv1.GetJoinGuideRequest) (*serverv1.GetJoinGuideResponse, error) {
+	if s.baseDomain == "" {
+		// D-MN-13：配置缺失显式拒绝——provider 通道/zot 均不可用，join 后
+		// 入口残缺；隐式猜测即事故面。
+		return nil, apperr.New("E_MULTI_NODE_REQUIRES_BASE_DOMAIN",
+			"multi-node is not enabled: base_domain is not configured (the config endpoint, platform subdomains and the registry all derive from it)")
+	}
+	if s.join == nil {
+		return nil, status.Error(codes.Unavailable, "swarm join face unavailable (not assembled)")
+	}
+	addr, workerToken, err := s.join.SwarmJoinInfo(ctx)
+	if err != nil {
+		if errors.Is(err, state.ErrNotSwarmManager) {
+			return nil, status.Error(codes.FailedPrecondition,
+				"swarm mode not active: join guide requires an initialized swarm (run docker swarm init on the manager)")
+		}
+		return nil, err
+	}
+	if req.GetManagerAddr() != "" {
+		// 跨公网场景覆盖（advertise 为私网时，安装报告已警示的暴露面口径）。
+		addr = req.GetManagerAddr()
+	}
+	workerIP := req.GetWorkerIp()
+	if workerIP == "" {
+		workerIP = "<worker-ip>"
+	}
+	managerIP := hostOfAddr(addr)
+	if managerIP == "" {
+		managerIP = "<manager-ip>"
+	}
+	return &serverv1.GetJoinGuideResponse{Guide: buildJoinGuide(s.baseDomain, addr, workerToken, workerIP, managerIP)}, nil
+}
+
+// buildJoinGuide 生成 JoinGuideView（规则/步骤文本为英文文案纪律；平台
+// 只生成规则文本、不自动应用——--harden-firewall 自动应用维持 reserved）。
+func buildJoinGuide(baseDomain, addr, workerToken, workerIP, managerIP string) *serverv1.JoinGuideView {
+	g := &serverv1.JoinGuideView{
+		JoinCommand:  "docker swarm join --token " + workerToken + " " + addr + ":2377",
+		ManagerAddr:  addr,
+		WorkerToken:  workerToken,
+		BaseDomain:   baseDomain,
+		ManagerFirewallRules: []*serverv1.FirewallRule{
+			{Direction: "worker_to_manager", Port: "2377/tcp", Purpose: "cluster management (swarm join)",
+				Side: "manager", Rule: "iptables -A INPUT -p tcp -s " + workerIP + " --dport 2377 -j ACCEPT"},
+			{Direction: "worker_to_manager", Port: "7946/tcp", Purpose: "gossip",
+				Side: "manager", Rule: "iptables -A INPUT -p tcp -s " + workerIP + " --dport 7946 -j ACCEPT"},
+			{Direction: "worker_to_manager", Port: "7946/udp", Purpose: "gossip",
+				Side: "manager", Rule: "iptables -A INPUT -p udp -s " + workerIP + " --dport 7946 -j ACCEPT"},
+			{Direction: "bidirectional", Port: "4789/udp", Purpose: "overlay VXLAN",
+				Side: "manager", Rule: "iptables -A INPUT -p udp -s " + workerIP + " --dport 4789 -j ACCEPT"},
+			{Direction: "worker_to_manager", Port: "8423/tcp", Purpose: "Traefik config endpoint TLS face (token-authenticated)",
+				Side: "manager", Rule: "iptables -A INPUT -p tcp -s " + workerIP + " --dport 8423 -j ACCEPT"},
+			{Direction: "public_to_all", Port: "80,443/tcp", Purpose: "app ingress (Traefik host ports)",
+				Side: "manager", Rule: "existing baseline: already open on every node — no change"},
+		},
+		WorkerFirewallRules: []*serverv1.FirewallRule{
+			{Direction: "bidirectional", Port: "7946/tcp", Purpose: "gossip",
+				Side: "worker", Rule: "iptables -A INPUT -p tcp -s " + managerIP + " --dport 7946 -j ACCEPT"},
+			{Direction: "bidirectional", Port: "7946/udp", Purpose: "gossip",
+				Side: "worker", Rule: "iptables -A INPUT -p udp -s " + managerIP + " --dport 7946 -j ACCEPT"},
+			{Direction: "bidirectional", Port: "4789/udp", Purpose: "overlay VXLAN",
+				Side: "worker", Rule: "iptables -A INPUT -p udp -s " + managerIP + " --dport 4789 -j ACCEPT"},
+			{Direction: "public_to_all", Port: "80,443/tcp", Purpose: "app ingress (Traefik host ports)",
+				Side: "worker", Rule: "existing baseline: already open on every node — no change"},
+		},
+		WorkerPreflightCommands: []string{
+			"docker version --format '{{.Server.Version}}'   # must be >= 29.8.1",
+			"iptables --version   # legacy iptables required (nftables-only hosts are not supported by the installer gate)",
+		},
+		DnsSteps: []string{
+			"Add A records for the application domains and the platform subdomains to include the worker IP " + workerIP + " (TTL <= 300s): registry." + baseDomain + ", console." + baseDomain + ", and every app domain.",
+			"ctrl." + baseDomain + " keeps pointing at the manager only — do NOT add the worker IP to it.",
+			"Run fleetly domains verify after DNS propagation.",
+		},
+		CompletionChecks: []string{
+			"The observation beat lists the new node: fleetly nodes list",
+			"Anchoring completes automatically: node.joined event with a non-empty platform_id",
+			"The node reports state=ready availability=active",
+			"The Traefik (fleetly-ingress) task is running on the node",
+			"The worker join token is rotated afterwards (join.token_rotate=auto; rotate manually with fleetly nodes rotate-token in manual mode)",
+		},
+	}
+	return g
+}
+
+// hostOfAddr 取地址的 host 段（manager-addr 覆盖值可能是 host:port 形态；
+// 无 port 段原样返回）。
+func hostOfAddr(addr string) string {
+	if host, _, err := net.SplitHostPort(addr); err == nil {
+		return host
+	}
+	return addr
+}
+
+// RotateJoinToken 轮换 swarm join token（E1-8，D-MN-1）：role 缺省 worker；
+// rotate 后旧 token 立即失效。审计动作 node.join_token_rotated（§5.3：
+// join-token rotate 记审计、不设事件）。admin scope 由拦截器链把门。
+func (s *SystemService) RotateJoinToken(ctx context.Context, req *serverv1.RotateJoinTokenRequest) (*serverv1.RotateJoinTokenResponse, error) {
+	if s.join == nil {
+		return nil, status.Error(codes.Unavailable, "swarm join face unavailable (not assembled)")
+	}
+	role := req.GetRole()
+	if role == "" {
+		role = "worker"
+	}
+	token, err := s.join.SwarmRotateJoinToken(ctx, role)
+	if err != nil {
+		if errors.Is(err, state.ErrNotSwarmManager) {
+			return nil, status.Error(codes.FailedPrecondition,
+				"swarm mode not active: token rotation requires an initialized swarm")
+		}
+		return nil, err
+	}
+	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
+		actorTokenID := ""
+		if p, ok := PrincipalFromContext(ctx); ok {
+			actorTokenID = p.TokenID
+		}
+		// 审计动作 = §5.3 登记的 node.join_token_rotated（join-token rotate
+		// 记审计、不设事件；auditEntry 的默认 action 是 api.<Service>.<Method>
+		// ——此处显式覆盖为产品语义词根）。
+		return tx.WriteAudit(ctx, state.AuditEntry{
+			Actor:        "human",
+			ActorTokenID: actorTokenID,
+			Action:       "node.join_token_rotated",
+			Target:       "node:swarm",
+			Result:       "ok",
+			DiffSummary:  state.DiffSummary("role", role),
+		})
+	}); err != nil {
+		return nil, err
+	}
+	return &serverv1.RotateJoinTokenResponse{Role: role, Token: token}, nil
 }
 
 // GetIngressStatus 入口链三面状态（T2.18）：① Traefik 服务实况（Swarm

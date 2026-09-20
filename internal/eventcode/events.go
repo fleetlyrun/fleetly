@@ -52,24 +52,29 @@ var builtins = []Event{
 
 	// ── 放置与节点/卷（stateful-placement §2.8）──
 	{Name: "placement.bound", Summary: "app node binding completed (including automatic pinning)"},
-	// 预留：绑定变更只在显式确认的迁移路径发出——单机无第二候选
-	//（MoveBinding 守卫拒绝），rebind 随 v0.2（usage_test 豁免清单同理由）。
+	// v0.2 E1-7 接线：显式换点 Rebind（multi-node §2.6）发出——绑定换绑、
+	// 卷行 prev 登记、事件与审计同事务。
 	{Name: "placement.changed", Summary: "binding changed (via the explicitly confirmed migration path)"},
 	{Name: "placement.blocked", Summary: "bound node unavailable/removed; app blocked"},
 	{Name: "placement.recovered", Summary: "bound node recovered; binding re-established automatically"},
 	// 预留：DR 后绑定判定要求显式放置——随 v0.2 恢复阶梯（单机无场景）。
 	{Name: "placement.unresolved", Summary: "binding undecidable after DR; explicit placement required (no guessing)"},
-	// 预留：节点观测事件族由节点观测器发出——v0.1 单节点无观测器循环
-	//（节点状态经放置 Preflight 直读），随 v0.2 多节点。
+	// v0.2 E1-6 接线：节点观测事件族由锚定 duty 差分发出（v0.1 的「不产生
+	// 产品事件」注记解除，multi-node §2.7）。
 	{Name: "node.joined", Summary: "node joined the cluster (observed)"},
 	{Name: "node.down", Summary: "node judged DOWN (Swarm loss-of-contact verdict)"},
 	{Name: "node.up", Summary: "node back to ready"},
 	{Name: "node.removed", Summary: "node removed (observed docker node rm)"},
+	// v0.2 多节点（multi-node §2.7/§5.3）实现期接入：availability 转移
+	//（active↔drain/pause）是 drain 维护窗口叙事的事件载体（载荷 old/new）。
+	{Name: "node.availability_changed", Summary: "node availability changed (active/drain/pause transition; drain maintenance-window narrative; payload carries old/new)"},
 	{Name: "volume.created", Summary: "volume registered (data birthplace; pins the hosting node)"},
-	// 预留：卷声明移除的显性化与 admin 丢弃 CLI 随 v0.2 卷生命周期票
-	//（v0.1 对账只动服务面；usage_test 豁免清单同理由）。
+	// 预留：卷声明移除的显性化随 v0.2 卷生命周期票（usage_test 豁免清单
+	// 同理由）。
 	{Name: "volume.detached", Summary: "volume detached (volume declaration removed; data is not deleted with the declaration)"},
 	{Name: "volume.orphaned", Summary: "volume orphaned (old volume kept by default after app deletion / after --discard)"},
+	// v0.2 E1-7 接线：换点 discarded 处置声明（admin+confirm）由显式换点
+	// 路径发出。
 	{Name: "volume.discarded", Summary: "volume explicitly discarded (admin+confirm+audited)"},
 
 	// ── 对账（state-model §2.9 对账/漂移）──

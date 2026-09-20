@@ -23,6 +23,7 @@ deployment.superseded	deploy superseded by a newer target (stale terminal state)
 deployment.switched	traffic switch completed
 deployment.warning	deploy warning (W_ code; observe window alert-only semantics)
 engine.stale_nonterminal	deploy stayed non-terminal past 2x the (deploy watchdog + observe window) budget (surfaces state-machine bugs; no self-healing)
+node.availability_changed	node availability changed (active/drain/pause transition; drain maintenance-window narrative; payload carries old/new)
 node.down	node judged DOWN (Swarm loss-of-contact verdict)
 node.joined	node joined the cluster (observed)
 node.removed	node removed (observed docker node rm)

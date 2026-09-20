@@ -96,10 +96,10 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	envService := NewEnvService(store, box, logsManager)
 	apiLogsService := NewLogsService(store, logsManager)
 	eventsService := NewEventsService(store)
-	placementService := NewPlacementService(store)
+	placementService := NewPlacementService(store, resolver)
 	tokensService := NewTokensService(store)
 	gitKeysService := NewGitKeysService(store)
-	systemService := NewSystemService(store, nodeIdentity, observer, box, ingressManager, manager, version)
+	systemService := NewSystemService(appConfig, store, nodeIdentity, observer, box, ingressManager, manager, client, version)
 	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, systemService)
 	if err != nil {
 		cleanup4()

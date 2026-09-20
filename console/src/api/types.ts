@@ -24,6 +24,13 @@ export type ListAppsResponse = Schemas["v1ListAppsResponse"];
 export type PlacementView = Schemas["v1PlacementView"];
 export type VolumeView = Schemas["v1VolumeView"];
 
+// ── join wizard（E1-8，multi-node §2.3）──────────────────────────────────
+
+export type JoinGuideView = Schemas["v1JoinGuideView"];
+export type GetJoinGuideResponse = Schemas["v1GetJoinGuideResponse"];
+export type RotateJoinTokenResponse = Schemas["v1RotateJoinTokenResponse"];
+export type FirewallRule = Schemas["v1FirewallRule"];
+
 // ── deployments ──────────────────────────────────────────────────────────
 
 export type DeploymentView = Schemas["v1DeploymentView"];

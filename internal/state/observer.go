@@ -16,8 +16,10 @@ import (
 // observed_at/stale 随每次写入维护。启动先做一次全量同步（成功前
 // readiness 报不健康——「启动先全量同步再服务」）。
 //
-// 定位纪律：nodes 表是观测缓存，禁止用于决策；本刷新器不产生产品事件
-// （节点状态叙事属 events 表，产品事件接入随后续票）。
+// 定位纪律：nodes 表是观测缓存，禁止用于决策。v0.1 注记「本刷新器不产
+// 生产品事件」自 v0.2 起解除：每拍同步成功后运行 PostSync 挂钩（锚定
+// duty ClusterAnchor——收编 + node.* 差分事件，multi-node §2.7）；挂钩
+// 缺省为 nil（未装配 = 零行为差异，观测同步语义逐字不变）。
 
 const (
 	// ObservationInterval 是全量 resync 周期（state-model §2.2：统一 30s）。
@@ -33,12 +35,18 @@ const (
 	observationBackoffMax     = 10 * time.Minute
 )
 
+// PostSyncFunc 是观测拍后处理挂钩：prev = 同步前的缓存行（差分基线），
+// next = 本次全量快照。nil 挂钩 = 缺省无后处理。
+type PostSyncFunc func(ctx context.Context, prev []CachedNode, next []SubstrateNode)
+
 // Observer 维护 nodes 观测缓存。CheckHealth 结构性实现 lynx.Checker：
 // 最近一次全量同步成功即健康。
 type Observer struct {
 	store  *Store
 	docker DockerClient
 	log    *slog.Logger
+	// postSync 是观测拍后处理挂钩（WithPostSync 注入；nil = 无后处理）。
+	postSync PostSyncFunc
 
 	syncOK atomic.Bool
 
@@ -46,6 +54,12 @@ type Observer struct {
 	stopOnce   sync.Once
 	stop       chan struct{}
 	done       chan struct{}
+}
+
+// WithPostSync 挂观测拍后处理（链式装配；每次成功同步后调用一次）。
+func (o *Observer) WithPostSync(fn PostSyncFunc) *Observer {
+	o.postSync = fn
+	return o
 }
 
 // NewObserver 构造观测缓存刷新器。
@@ -198,7 +212,9 @@ func (o *Observer) drainInvalidate() {
 }
 
 // syncOnce 执行一次全量同步：Ping 先行（不可达快速失败，不产生半程
-// 写入），随后取全量快照并同事务落库。
+// 写入），随后取全量快照并同事务落库；挂钩已装配时先读差分基线（同步
+// 前的缓存行），落库成功后运行后处理（锚定 duty + node.* 差分事件——
+// 挂钩自吞错误，不推翻同步成功）。
 func (o *Observer) syncOnce(ctx context.Context) error {
 	pingCtx, cancel := context.WithTimeout(ctx, observationSyncTimeout)
 	defer cancel()
@@ -211,8 +227,18 @@ func (o *Observer) syncOnce(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("list node observations: %w", err)
 	}
+	var prev []CachedNode
+	if o.postSync != nil {
+		// 差分基线（SyncNodeObservations 会覆写缓存表，须在其前读取）。
+		if prev, err = o.store.ListCachedNodes(snapCtx); err != nil {
+			return fmt.Errorf("read previous node observations: %w", err)
+		}
+	}
 	if err := o.store.SyncNodeObservations(snapCtx, nodes, time.Now().UTC()); err != nil {
 		return err
+	}
+	if o.postSync != nil {
+		o.postSync(snapCtx, prev, nodes)
 	}
 	return nil
 }
