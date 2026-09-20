@@ -127,6 +127,17 @@ var builtins = []Code{
 		Summary:    "event cursor predates the retention window (30 days); explicit gap",
 		Suggestion: "Re-fetch all events starting from the oldest_seq in the response."},
 
+	// ── 多节点 registry（E1 多节点设计 §5.2/D-MN-11，2026-09-20 冻结）：
+	//    registry 模式部署前哨与推送的分层归因——registry 错 → 查 zot/网络/
+	//    凭据，镜像缺 → 重建；快速失败不排队。manifest 缺失复用
+	//    E_IMAGE_UNAVAILABLE（语义同「回滚目标不可得」），不另立新码 ──
+	{ID: "E_REGISTRY_UNAVAILABLE", HTTP: 503,
+		Summary:    "registry-mode deploy preflight: the platform registry is unreachable (fail fast, no queueing)",
+		Suggestion: "The platform registry did not answer: check the fleetly-registry service on the manager and the registry.<base> route (Traefik); deploys fail fast until the registry responds."},
+	{ID: "E_REGISTRY_PUSH_FAILED", HTTP: 500,
+		Summary:    "pushing the build result to the platform registry failed (network/credentials/registry fault)",
+		Suggestion: "The push to registry.<base> failed: check that the fleetly-registry service is healthy and the platform registry credentials (registry.auth_file) are current, then run the build again."},
+
 	// ── 入口路由（T2.15；架构 §2.5/§2.6：路由发布严格晚于健康门，发布
 	//    失败不回滚部署、单独告警——deployment 仍可成功，错误落审计与本码）──
 	{ID: "E_ROUTE_PUBLISH_FAILED", HTTP: 503,

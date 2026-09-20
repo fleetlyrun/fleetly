@@ -61,6 +61,9 @@ type dockerClient interface {
 	// NetworkID 解析网络名 → 底座 ID（attach 幂等判据：服务实况里的
 	// 网络目标是 ID 形态）。
 	NetworkID(ctx context.Context, name string) (string, error)
+	// VolumeEnsure 确认命名卷存在（幂等；E1-4 registry 数据卷的前置对象
+	// ——swarm 对 task 卷挂载亦有按节点创建语义，显式收敛使部署器自证）。
+	VolumeEnsure(ctx context.Context, name string) error
 	// LegacySeedContainerRemove 移除 v0.1 证书 seed 容器（E1-2 迁移收敛；
 	// 不存在返回 false，幂等）。
 	LegacySeedContainerRemove(ctx context.Context, name string) (bool, error)
@@ -82,6 +85,11 @@ type ingressServiceState struct {
 	Networks   []string
 	Mounts     []mount.Mount
 	HealthTest []string
+	// Constraints / Replicas 是 registry 部署器的收敛比对位（E1-4）：
+	// manager 钉定约束与 replicated 副本数（0 = global/未设——traefik 是
+	// global，本字段不参与其比对）。
+	Constraints []string
+	Replicas    uint64
 }
 
 // realDockerClient 是 dockerClient 的 moby 实现。
@@ -137,6 +145,12 @@ func (c *realDockerClient) ServiceInspect(ctx context.Context, name string) (ing
 		}
 		out.Mounts = append([]mount.Mount{}, cs.Mounts...)
 	}
+	if pl := svc.Spec.TaskTemplate.Placement; pl != nil {
+		out.Constraints = append([]string{}, pl.Constraints...)
+	}
+	if svc.Spec.Mode.Replicated != nil && svc.Spec.Mode.Replicated.Replicas != nil {
+		out.Replicas = *svc.Spec.Mode.Replicated.Replicas
+	}
 	if svc.Spec.EndpointSpec != nil {
 		out.Ports = append([]swarm.PortConfig{}, svc.Spec.EndpointSpec.Ports...)
 	}
@@ -190,6 +204,27 @@ func (c *realDockerClient) NetworkID(ctx context.Context, name string) (string, 
 		return "", fmt.Errorf("ingress: network inspect %s: %w", name, err)
 	}
 	return res.Network.ID, nil
+}
+
+// VolumeEnsure 确认命名卷存在（幂等；E1-4 registry 数据卷前置对象——已有
+// 即 no-op、缺失创建、并发竞态已存在即成功；与 substrate 同语义）。
+func (c *realDockerClient) VolumeEnsure(ctx context.Context, name string) error {
+	if _, err := c.cli.VolumeInspect(ctx, name, mobyclient.VolumeInspectOptions{}); err == nil {
+		return nil
+	} else if !errdefs.IsNotFound(err) {
+		return fmt.Errorf("ingress: volume inspect %s: %w", name, err)
+	}
+	if _, err := c.cli.VolumeCreate(ctx, mobyclient.VolumeCreateOptions{
+		Driver: "local",
+		Name:   name,
+		Labels: map[string]string{state.LabelManaged: state.ManagedLabelValue},
+	}); err != nil {
+		if _, ierr := c.cli.VolumeInspect(ctx, name, mobyclient.VolumeInspectOptions{}); ierr == nil {
+			return nil // 并发创建竞态：已存在即成功
+		}
+		return fmt.Errorf("ingress: volume create %s: %w", name, err)
+	}
+	return nil
 }
 
 // LegacySeedContainerRemove 移除 v0.1 证书 seed 容器（E1-2 迁移收敛：
@@ -286,7 +321,7 @@ func (m *Manager) EnsureTraefik(ctx context.Context) error {
 // attachNetwork 确保 Traefik 接入 app 专属 overlay 网络（幂等：已接入
 // no-op；新增网络一次 service update——任务重建一次，入口配置即回）。
 // 网络目标集以服务实况（cur.Networks）为基准追加——不能用 lastSpec 重建
-// （lastSpec 不含历史 attach，会互相覆盖丢失其他 app 的网络，实机验证
+//（lastSpec 不含历史 attach，会互相覆盖丢失其他 app 的网络，实机验证
 // 发现的多 app 回归）。幂等判据用网络 ID（swarm 把 attach 目标归一为
 // ID——名字比对永不命中，产生重复 attach，实机验证发现的第二处）。
 func (m *Manager) attachNetwork(ctx context.Context, appName string) error {
@@ -294,6 +329,14 @@ func (m *Manager) attachNetwork(ctx context.Context, appName string) error {
 	if err != nil {
 		return err
 	}
+	return m.attachNetworkByName(ctx, netName)
+}
+
+// attachNetworkByName 是网络接入的通用形态（E1-4：平台 overlay
+// fleetly-system 由 registry 部署 duty 接入 Traefik——registry 路由段
+// 的后端 VIP 只在同网络内可达）。语义与 attachNetwork 一致：幂等、以
+// 服务实况网络集为基准、ID 判据。
+func (m *Manager) attachNetworkByName(ctx context.Context, netName string) error {
 	if err := m.docker.NetworkEnsure(ctx, netName); err != nil {
 		return err
 	}
@@ -331,7 +374,7 @@ func (m *Manager) attachNetwork(ctx context.Context, appName string) error {
 	m.mu.Lock()
 	m.lastSpec = &spec
 	m.mu.Unlock()
-	m.log.Info("ingress: traefik attached to app network", "network", netName, "app", appName,
+	m.log.Info("ingress: traefik attached to overlay network", "network", netName,
 		"attached_total", len(spec.TaskTemplate.Networks))
 	return nil
 }

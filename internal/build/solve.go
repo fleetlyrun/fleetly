@@ -20,11 +20,14 @@ import (
 	"io"
 	"time"
 
+	"github.com/docker/cli/cli/config/configfile"
+	dockerconfigtypes "github.com/docker/cli/cli/config/types"
 	bkclient "github.com/moby/buildkit/client"
 	_ "github.com/moby/buildkit/client/connhelper/dockercontainer" // docker-container:// connhelper
 	_ "github.com/moby/buildkit/client/connhelper/npipe"           // npipe://（外部 buildkitd on Windows）
 	"github.com/moby/buildkit/client/llb"
 	"github.com/moby/buildkit/session"
+	"github.com/moby/buildkit/session/auth/authprovider"
 	"github.com/moby/buildkit/session/filesync"
 	secretsprovider "github.com/moby/buildkit/session/secrets/secretsprovider"
 	"github.com/tonistiigi/fsutil"
@@ -32,6 +35,11 @@ import (
 
 // exporterDocker 是 buildkit docker 导出器类型串。
 const exporterDocker = bkclient.ExporterDocker
+
+// solveDigestKey 是 image 导出器在 solve 响应中回填 manifest digest 的键
+//（registry 模式推送后 buildkitd 回填 `sha256:<hex>`——builds.image_digest
+// 的记账来源，设计 §2.5「digest 取自 solve 响应」）。
+const solveDigestKey = "containerimage.digest"
 
 // secretStampBuildArg 是 Dockerfile 兜底路径的 secrets-hash 缓存戳 ARG 名
 // （Spike A E2c：纯 BuildKit 对 `RUN --mount=type=secret` 不失效——hash 戳
@@ -75,6 +83,40 @@ func secretsSessionAttachable(secrets map[string]string) (session.Attachable, er
 		values[k] = []byte(v)
 	}
 	return secretsprovider.FromMap(values), nil
+}
+
+// applyRegistryPush 把 solve 选项改写为 registry 推送形态（E1-5，设计
+// §2.5「solve 输出 type=image,…,push=true」）：
+//   - 导出替换：docker 导出器（tar → 本机 daemon）→ image 导出器
+//     `name=<ref>,push=true`（产物进平台 registry，本机不装载——多节点
+//     形态下 zot 是唯一产物真源）；
+//   - 凭据注入：Basic Auth 凭据经 buildkit session auth provider 交给
+//     buildkitd 完成推送登录（buildkit push 的原生凭据通道；凭据不出
+//     本进程日志、不进镜像层）；
+//   - 本地层缓存（CacheExports）保持——构建缓存维持本地的设计裁决（§2.5
+//     「构建缓存：维持本地缓存」）不受推送形态影响。
+//
+// ref 是完整推送引用 `registry.<base>/apps/<app>:b<buildid>`。
+func applyRegistryPush(opts *bkclient.SolveOpt, ref, host, user, pass string) error {
+	if opts == nil || ref == "" || host == "" || user == "" || pass == "" {
+		return fmtErr("registry push options incomplete (ref/host/credentials all required)")
+	}
+	opts.Exports = []bkclient.ExportEntry{{
+		Type: bkclient.ExporterImage,
+		Attrs: map[string]string{
+			"name": ref,
+			"push": "true",
+		},
+	}}
+	opts.Session = append(opts.Session, authprovider.NewDockerAuthProvider(
+		authprovider.DockerAuthProviderConfig{
+			AuthConfigProvider: authprovider.LoadAuthConfig(&configfile.ConfigFile{
+				AuthConfigs: map[string]dockerconfigtypes.AuthConfig{
+					host: {Username: user, Password: pass, ServerAddress: host},
+				},
+			}),
+		}))
+	return nil
 }
 
 // dockerfileFrontendAttrs 构造 dockerfile.v0 前端 attrs（纯函数）：filename
@@ -175,28 +217,32 @@ func defaultDaemonProbe(host string) func(context.Context) error {
 	}
 }
 
-// solveLLB 执行 LLB 直驱 solve（railpack 路径）。
-func (r *solveRunner) solveLLB(ctx context.Context, opts bkclient.SolveOpt, def *llb.Definition, logw io.Writer) error {
+// solveLLB 执行 LLB 直驱 solve（railpack 路径），返回 solve 响应回填的
+// manifest digest（无 image 导出时为空串）。
+func (r *solveRunner) solveLLB(ctx context.Context, opts bkclient.SolveOpt, def *llb.Definition, logw io.Writer) (string, error) {
 	return r.run(ctx, opts, def, logw)
 }
 
-// solveFrontend 执行前端 solve（dockerfile.v0 路径；opts.Frontend 必须已设）。
-func (r *solveRunner) solveFrontend(ctx context.Context, opts bkclient.SolveOpt, logw io.Writer) error {
+// solveFrontend 执行前端 solve（dockerfile.v0 路径；opts.Frontend 必须已设），
+// 返回 solve 响应回填的 manifest digest。
+func (r *solveRunner) solveFrontend(ctx context.Context, opts bkclient.SolveOpt, logw io.Writer) (string, error) {
 	return r.run(ctx, opts, nil, logw)
 }
 
-// run 连接 buildkit、执行 solve、渲染日志、装载导出流。
-func (r *solveRunner) run(ctx context.Context, opts bkclient.SolveOpt, def *llb.Definition, logw io.Writer) error {
+// run 连接 buildkit、执行 solve、渲染日志、装载导出流，返回 solve 响应中
+// image 导出器回填的 manifest digest（registry 推送路径的记账来源；docker
+// 导出路径响应无该键，返回空串——本机 digest 由调用方 inspect 取得）。
+func (r *solveRunner) run(ctx context.Context, opts bkclient.SolveOpt, def *llb.Definition, logw io.Writer) (string, error) {
 	c, err := bkclient.New(ctx, r.host)
 	if err != nil {
-		return fmtErr("connect buildkit at %s: %w", r.host, err)
+		return "", fmtErr("connect buildkit at %s: %w", r.host, err)
 	}
 	defer func() { _ = c.Close() }()
 	// 连接门（connhelper 的 docker exec 在容器缺失/未运行时才在此暴露）：
 	// fail-fast 给出可行动错误。自管容器形态下冷启动就绪窗口已由
 	// ensureDaemonReady 的就绪探测（M2-8）吸收，此处到达即应可服务。
 	if _, err := c.Info(ctx); err != nil {
-		return fmtErr("buildkit unreachable at %s (self-managed containers should be brought up via fleetlyd EnsureRunning; for external endpoints check build.buildkit_host): %w", r.host, err)
+		return "", fmtErr("buildkit unreachable at %s (self-managed containers should be brought up via fleetlyd EnsureRunning; for external endpoints check build.buildkit_host): %w", r.host, err)
 	}
 
 	// docker 导出管道：导出流（docker-format tar）→ 本机 daemon。管道在
@@ -222,7 +268,7 @@ func (r *solveRunner) run(ctx context.Context, opts bkclient.SolveOpt, def *llb.
 		writeSolveLog(ctx, statusCh, logw)
 	}()
 
-	_, err = c.Solve(ctx, def, opts, statusCh)
+	resp, err := c.Solve(ctx, def, opts, statusCh)
 
 	<-logDone // Solve 返回（含错误路径）后 ch 关闭，日志渲染收尾
 	if exportWired {
@@ -232,9 +278,12 @@ func (r *solveRunner) run(ctx context.Context, opts bkclient.SolveOpt, def *llb.
 		}
 	}
 	if err != nil {
-		return fmtErr("solve: %w", err)
+		return "", fmtErr("solve: %w", err)
 	}
-	return nil
+	if resp == nil {
+		return "", nil
+	}
+	return resp.ExporterResponse[solveDigestKey], nil
 }
 
 // wireDockerExport 在 opts.Exports 里找到 docker 导出条目并接入输出管道；

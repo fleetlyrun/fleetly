@@ -186,11 +186,13 @@ func (m *Manager) TLSHandler(ctx context.Context) (http.Handler, error) {
 }
 
 // Run 是周期任务：Traefik 收敛 + 全量重发布 + 证书续期扫描（sweep）+
-// 平台证书 duty（E1-3，仅 base_domain 非空时活动）。由 fleetlyd ingress
-// 服务壳调用（ctx 取消返回）。收敛失败只降级日志（下轮重试），不影响
-// 控制面其余服务。
+// 平台证书 duty（E1-3，仅 base_domain 非空时活动）+ registry 部署 duty
+//（E1-4，仅 base_domain 非空时活动——与证书 duty 无次序依赖，设计 §2.4
+// 次序⑤）。由 fleetlyd ingress 服务壳调用（ctx 取消返回）。收敛失败只
+// 降级日志（下轮重试），不影响控制面其余服务。
 func (m *Manager) Run(ctx context.Context) error {
 	go m.runPlatformCertDuty(ctx)
+	go m.runRegistryDuty(ctx)
 	m.sweep(ctx)
 	ticker := time.NewTicker(m.cfg.RenewScanInterval)
 	defer ticker.Stop()
@@ -269,6 +271,18 @@ func (m *Manager) routesFromStore(ctx context.Context) ([]Route, error) {
 	return routesFromLedger(ctx, m.store, rows)
 }
 
+// withPlatformRoutes 追加平台路由段（E1-4：base_domain 非空时 registry
+// 路由进动态配置——Host(`registry.<base>`) → fleetly-registry:5000，设计
+// §2.5 路由行「控制面自有，不属任何 app」；平台证书就绪后经
+// publishWithCerts 的按 app 挂证书循环自动获得 443 路由与内联证书段）。
+// base_domain 为空 = 空集（单节点 v0.1 形态逐字不变）。
+func (m *Manager) withPlatformRoutes(routes []Route) []Route {
+	if !m.ConfigTLSEnabled() {
+		return routes
+	}
+	return append(routes, m.platformRegistryRoute())
+}
+
 // publish 换入全量视图（HTTP 路由形态）：从台账构建路由集 → 合成 →
 // Validate → 换入。校验不过（键缺失/悬空引用类坏形态）= 不换视图、不落
 // 库（Spike B 纪律）。空路由集经兜底路由恒过（H9 合法空态——撤销即真实
@@ -278,11 +292,14 @@ func (m *Manager) publish(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	cfg := Synthesize(routes)
+	// 平台路由段随路由集进视图（快照在取数时重合成——路由集必须含
+	// registry 路由段，动态配置才会携带）。
+	full := m.withPlatformRoutes(routes)
+	cfg := Synthesize(full)
 	if err := Validate(cfg); err != nil {
 		return err
 	}
-	m.vw.setRoutes(routes)
+	m.vw.setRoutes(full)
 	return nil
 }
 
@@ -341,12 +358,15 @@ func (m *Manager) PublishRoutes(ctx context.Context, in PublishInput) error {
 }
 
 // publishWithCerts 全量重发布（带证书段）：证书库就绪的 app 路由挂
-// CertificateRef（443 路由 + tls.certificates）；无证书 app 仅 HTTP。
+// CertificateRef（443 路由 + tls.certificates）；无证书 app 仅 HTTP。平台
+// 路由段（E1-4）同盘：registry 路由的 App 是平台证书保留名，平台证书
+// 落库后由既有按 app 挂证书循环自动获得 443 路由与内联证书段（零特判）。
 func (m *Manager) publishWithCerts(ctx context.Context) error {
 	routes, err := m.routesFromStore(ctx)
 	if err != nil {
 		return err
 	}
+	routes = m.withPlatformRoutes(routes)
 	withCerts := make([]Route, 0, len(routes))
 	apps := map[string]bool{}
 	for _, r := range routes {

@@ -70,6 +70,11 @@ var docCodes = map[string]string{ // code → 文档出处
 	// 会使平台锁死（重启不补种 bootstrap），409 拒绝。
 	"E_TOKEN_LAST_ADMIN": "M4-6 added during implementation (review remediation B5: token last-admin guard; pending T0.5 freeze confirmation)",
 
+	// multi-node.md §5.2（2 E，D-MN-11）：registry 模式部署前哨与推送的
+	// 分层归因码（manifest 缺失复用 E_IMAGE_UNAVAILABLE，不另立新码）。
+	"E_REGISTRY_UNAVAILABLE": "multi-node §5.2 (D-MN-11: registry-mode deploy preflight, registry unreachable)",
+	"E_REGISTRY_PUSH_FAILED": "multi-node §5.2 (D-MN-11: push to the platform registry failed)",
+
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
 	"W_DEPLOY_NO_HEALTHCHECK":   "release-semantics §2.7/§2.8",
@@ -97,9 +102,10 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 	}
 }
 
-// TestRegisteredCountByKind 双保险：35 E + 5 W = 40（T2.15 增
+// TestRegisteredCountByKind 双保险：37 E + 5 W = 42（T2.15 增
 // E_ROUTE_PUBLISH_FAILED、MG-C3 增 E_DEPLOY_CONFIRM_REQUIRED、M4-6 增
-// E_TOKEN_LAST_ADMIN，错误码只增纪律）。
+// E_TOKEN_LAST_ADMIN、E1-5 增 E_REGISTRY_UNAVAILABLE/E_REGISTRY_PUSH_FAILED
+// ——错误码只增纪律）。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -109,8 +115,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 35 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 35), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 37 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 37), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 
@@ -182,6 +188,8 @@ func TestDocumentedHTTPMappings(t *testing.T) {
 		"E_PLACEMENT_LABEL_CONFLICT":    422, // stateful-placement §2.2
 		"E_PLACEMENT_NODE_INVALID":      422, // stateful-placement §2.2（解析失败 422+候选）
 		"E_PLACEMENT_NODE_NOT_FOUND":    422, // stateful-placement §2.5
+		"E_REGISTRY_UNAVAILABLE":        503, // multi-node §5.2（D-MN-11 前哨快速失败）
+		"E_REGISTRY_PUSH_FAILED":        500, // multi-node §5.2（D-MN-11 推送失败）
 	}
 	for id, httpStatus := range want {
 		c, ok := Default().Get(id)

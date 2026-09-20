@@ -29,6 +29,7 @@ fork 镜像 + `canary` 可变 tag——供应链反面教材（docs/research/
 | 7 | `moby/buildkit:v0.32.2` | `28a89871…bb41d8` | fleetly-buildkit 构建器 warm 路径依赖 | deploy/cal-inner.sh |
 | 8 | `ghcr.io/letsencrypt/pebble:latest` | `ddf23064…78199` | ACME 测试 CA（journey 链路代演） | deploy/test-journey.sh（`PEBBLE_IMG`） |
 | 9 | `curlimages/curl:latest` | `58adaa4e…166777` | HTTPS 探针（journey J4） | deploy/test-journey.sh |
+| 10 | `ghcr.io/project-zot/zot:v2.1.21` | `6b69512c…f48c8` | 平台 registry（zot，E1-4 部署器钉版缺省；多节点 manager 平台组件） | internal/ingress/registry.go `DefaultZotImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步） |
 
 台账与实际引用集的一致性以门禁扫描为准：
 
@@ -36,7 +37,9 @@ fork 镜像 + `canary` 可变 tag——供应链反面教材（docs/research/
 sh deploy/check-image-pins.sh -l    # 列出全部识别到的引用与钉定状态
 ```
 
-（2026-09-20 实跑：23 处引用全部钉定，对应上表 9 个镜像。）
+（2026-09-20 实跑：23 处引用全部钉定，对应上表 9 个镜像；#10 zot 为
+E1-4 起的 Go 常量钉版引用，不在门禁扫描口径内，改动须同步本表——
+见该行引用位置注记。）
 
 ## 2. digest 解析与独立复验
 
@@ -73,6 +76,7 @@ for ref in \
   golang:1.26-alpine@sha256:51a7c389a5ddaf82f527191a1e9bff9928655130a44e4975dd1d7e0acf59f1ae \
   traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2 \
   moby/buildkit:v0.32.2@sha256:28a898719c18a33f4e8000685287fa36fd0dd9560c6440227d3a732d79bb41d8 \
+  ghcr.io/project-zot/zot:v2.1.21@sha256:6b69512c00dceaad05b1144e6079aac6aa7309d7fd200f9947ecb1de09cf48c8 \
   ghcr.io/letsencrypt/pebble:latest@sha256:ddf230642b1a584f519f32e347de1b05a6e4c1f6c35c1863b33effeab5f78199 \
   curlimages/curl:latest@sha256:58adaa4e8dca9c988bae2aba4ab3434a0bb2da16bbe3f92dec39ec7785166777
 do docker pull -q "$ref" || exit 1; done

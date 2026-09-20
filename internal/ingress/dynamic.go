@@ -116,6 +116,11 @@ type Route struct {
 	// Cert 标记该 app 证书是否已就绪（就绪则 443 路由 + tls.certificates
 	// 下发；未就绪只发 80 路由）。
 	Cert *CertificateRef
+	// Name 是 router/service 键的显式覆写（空 = RouterName(app, service)）。
+	// 平台路由段使用（E1-4：registry 路由段的键 = fleetly-registry——swarm
+	// 服务名即后端 DNS 名，与 app 路由「键 = 服务名」的后端公式同构）；
+	// app 路由恒空（v0.1 形态不变）。
+	Name string
 }
 
 // CertificateRef 是一张已落库证书的引用（app 名 + 台账字段 sha256/到期；
@@ -181,7 +186,13 @@ func Synthesize(routes []Route) *DynamicConfig {
 		}
 	}
 	for _, r := range routes {
-		name := RouterName(r.App, r.Service)
+		// 键解析：Name 覆写优先（平台路由段），否则 app×service 公式。
+		// 后端 URL = 键 + ":" + port——键即 swarm 服务的 overlay DNS 名
+		//（app 与平台路由段同构）。
+		name := r.Name
+		if name == "" {
+			name = RouterName(r.App, r.Service)
+		}
 		rule := hostRuleOf(r.Domains)
 		// 80 入口（web）：无证书时的唯一入口；有证书时与 443 并存
 		//（HTTP/HTTPS 同服，重定向不做——v0.1 不发明设计外行为）。

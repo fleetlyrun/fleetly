@@ -92,10 +92,22 @@ type Config struct {
 	CertDir string
 	// BaseDomain 是平台域名（runtime base_domain 键的透传，E1 多节点设计
 	// §2.2；ingress 侧派生面）。空 = 单节点 v0.1 形态：8423 TLS 面不启用、
-	// provider endpoint 维持明文 8422，行为逐字不变。非空 = 派生平台子域
-	//（ctrl/registry/console.<base>）+ 启用平台证书 duty 与 8423 配置端
-	// 点 TLS 面（E1-3）。本包不做 DNS 校验，字符串原样进入域名合成。
+	// provider endpoint 维持明文 8422、zot 部署器不活动、无平台路由段，
+	// 行为逐字不变。非空 = 派生平台子域（ctrl/registry/console.<base>）+
+	// 启用平台证书 duty 与 8423 配置端点 TLS 面（E1-3）+ zot registry 部署
+	// 与 registry.<base> 路由段（E1-4，D-MN-5 配置即部署）。本包不做 DNS
+	// 校验，字符串原样进入域名合成。
 	BaseDomain string
+	// RegistryImage 是 zot 镜像引用（registry.image 配置键的透传，E1-4）。
+	// 空 = 回落钉版缺省 DefaultZotImage（多架构 index digest 钉定——R7
+	// 纪律，digest 台账见 docs/runbooks/image-prepull.md；升级 = 换版票）。
+	RegistryImage string
+	// RegistryAuthFile 是 registry 凭据文件路径（registry.auth_file 装配期
+	// 回落后的绝对路径；`<user>:<password>` 单行 0600——与 ingress token
+	// 同形的平台生成文件，不入 SQLite；设计 §2.5）。zot 部署器读写（生成
+	// + 派生 htpasswd/zot 配置工件）；空 = 回落相对缺省 fleetly-registry
+	// .auth（生产装配恒注入数据根形态）。
+	RegistryAuthFile string
 	// ACME 是集中签发器配置。
 	ACME ACMEConfig
 	// RenewBefore 是续期窗口（到期前；renew_before_days）。
@@ -150,6 +162,12 @@ func (c Config) Normalize() Config {
 	}
 	if c.CertDir == "" {
 		c.CertDir = "fleetly-certs"
+	}
+	if c.RegistryImage == "" {
+		c.RegistryImage = DefaultZotImage
+	}
+	if c.RegistryAuthFile == "" {
+		c.RegistryAuthFile = "fleetly-registry.auth"
 	}
 	if c.ACME.CADirURL == "" {
 		c.ACME.CADirURL = DefaultACMECADirURL

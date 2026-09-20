@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -83,5 +84,62 @@ func TestIngressSettingsPassesBaseDomain(t *testing.T) {
 	empty := emptyCfg.IngressSettings()
 	if empty.BaseDomain != "" {
 		t.Errorf("IngressSettings().BaseDomain empty = %q, want empty string", empty.BaseDomain)
+	}
+}
+
+// E1-4/E1-5 registry 装配接线测试：base_domain 是 registry host 派生与
+// 构建管线模式切换的唯一开关（空 = 本地模式 v0.1 逐字等价）。
+
+func TestRegistryHostDerivedFromBaseDomain(t *testing.T) {
+	set := AppConfig{BaseDomain: "example.com"}
+	if got := set.RegistryHost(); got != "registry.example.com" {
+		t.Errorf("RegistryHost() = %q, want registry.example.com", got)
+	}
+	empty := AppConfig{}
+	if got := empty.RegistryHost(); got != "" {
+		t.Errorf("RegistryHost() empty base = %q, want empty string", got)
+	}
+}
+
+func TestBuildSettingsRegistryMode(t *testing.T) {
+	// base_domain 非空：构建管线切 registry 模式（host 派生 + 凭据文件
+	// 回落数据根形态——构建执行时点现读）。
+	setCfg := AppConfig{
+		BaseDomain: "example.com",
+		State:      StateConfig{DBPath: "/var/lib/fleetly/fleetly.db"},
+	}
+	b := setCfg.BuildSettings()
+	if b.RegistryHost != "registry.example.com" {
+		t.Errorf("BuildSettings().RegistryHost = %q", b.RegistryHost)
+	}
+	if want := filepath.Join("/var/lib/fleetly", "fleetly-registry.auth"); b.RegistryAuthFile != want {
+		t.Errorf("BuildSettings().RegistryAuthFile = %q, want %q", b.RegistryAuthFile, want)
+	}
+	// base_domain 空：本地模式（零 registry 字段——v0.1 管线逐字不变）。
+	empty := AppConfig{State: StateConfig{DBPath: "/var/lib/fleetly/fleetly.db"}}
+	eb := empty.BuildSettings()
+	if eb.RegistryHost != "" || eb.RegistryAuthFile != "" {
+		t.Errorf("local-mode build settings must not carry registry fields, got host=%q auth=%q",
+			eb.RegistryHost, eb.RegistryAuthFile)
+	}
+}
+
+func TestIngressSettingsRegistryFields(t *testing.T) {
+	setCfg := AppConfig{
+		BaseDomain: "example.com",
+		State:      StateConfig{DBPath: "/var/lib/fleetly/fleetly.db"},
+	}
+	ing := setCfg.IngressSettings()
+	if want := filepath.Join("/var/lib/fleetly", "fleetly-registry.auth"); ing.RegistryAuthFile != want {
+		t.Errorf("IngressSettings().RegistryAuthFile = %q, want %q", ing.RegistryAuthFile, want)
+	}
+	// registry.image 显式配置优先（钉版换版票的配置面）。
+	setCfg.Registry.Image = "ghcr.io/project-zot/zot:v9.9.9@sha256:" + strings.Repeat("a", 64)
+	if got := setCfg.IngressSettings().RegistryImage; got != setCfg.Registry.Image {
+		t.Errorf("IngressSettings().RegistryImage = %q, want explicit override", got)
+	}
+	// 未配置 = ingress.Normalize 回落钉版缺省（digest 台账为真源）。
+	if got := ing.RegistryImage; !strings.HasPrefix(got, "ghcr.io/project-zot/zot:") || !strings.Contains(got, "@sha256:") {
+		t.Errorf("IngressSettings().RegistryImage default = %q, want pinned zot digest form", got)
 	}
 }

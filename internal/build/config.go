@@ -97,6 +97,18 @@ type Config struct {
 	// 终态失败（不静默放宽）。v0.2 挂账：CLI 同宿主构建目录（显式
 	// base_dir）改为上传/物化到受管根后，该集合即对全部入队来源完备闭合。
 	ContextRoots []string
+	// RegistryHost 是平台 registry 主机（registry.<base>；E1-5，base_domain
+	// 派生，装配期注入）。空 = 本地模式：v0.1 本地 digest 管线逐字不变
+	//（无推送、本地 fleetly-local/<app> 引用）。非空 = registry 模式：构建
+	// 产物 push 到 <host>/apps/<app>:b<buildid>，builds.image_ref 记
+	// <host>/apps/<app>@sha256:<digest>（设计 §2.5/D-MN-11）。
+	RegistryHost string
+	// RegistryAuthFile 是平台 registry 凭据文件路径（registry.auth_file；
+	// `<user>:<password>` 单行 0600，ingress 部署器生成）。registry 模式
+	// 构建执行时读取（凭据可能晚于装配期才生成——zot 部署 duty 的产物），
+	// 经 buildkit session 注入推送凭据；文件缺失/损坏 → 构建终态失败
+	//（E_REGISTRY_PUSH_FAILED）。
+	RegistryAuthFile string
 }
 
 // Normalize 回落全部缺省（config 缺省值单一事实源）。

@@ -27,6 +27,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	mobyclient "github.com/moby/moby/client"
 
+	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -49,12 +50,28 @@ var (
 )
 
 // ImageDigest 实现 engine.ImageChecker：返回用于 digest 钉定的不可变摘要。
-// 优先取 RepoDigests 的清单摘要（swarm 分发解析只接受 manifest digest——
-// 实测钉配置 ID 会得到 "manifest schema unsupported" 任务拒绝）；本机构建
-// 镜像（buildkit tar 装载、免 registry）无清单摘要，返回空串由引擎按引用
-// 直用（tag 形态；镜像不被平台自动清理，builds 行留有 digest 台账）。
-// 缺失归一为 engine.ErrImageMissing。
+//   - 平台 registry 引用（`registry.<base>/apps/<app>@sha256:<hex>`，装配了
+//     平台 registry 适配时）：部署前哨双模式的 registry 腿（D-MN-11）——
+//     manifest HEAD 现场核验（build.PreflightRegistry 归一信封：registry
+//     不可达 → E_REGISTRY_UNAVAILABLE 503；manifest 缺失 → ErrImageNotFound
+//     家族，回滚前哨经 build.PreflightImage 归一 E_IMAGE_UNAVAILABLE）；
+//     命中返回 manifest digest，引擎对已含 @ 的引用原样钉定（spec 得到
+//     `registry.<base>/apps/<app>@sha256:<digest>`，worker 经
+//     --with-registry-auth 拉取）。
+//   - 其余引用（v0.1 本地面）：本机 inspect，优先取 RepoDigests 的清单
+//     摘要（swarm 分发解析只接受 manifest digest——实测钉配置 ID 会得到
+//     "manifest schema unsupported" 任务拒绝）；本机构建镜像（buildkit tar
+//     装载、免 registry）无清单摘要，返回空串由引擎按引用直用（tag 形态；
+//     镜像不被平台自动清理，builds 行留有 digest 台账）。缺失归一为
+//     engine.ErrImageMissing。
 func (c *Client) ImageDigest(ctx context.Context, ref string) (string, error) {
+	if c.platformRegistryEnabled() && build.IsRegistryImageRef(ref, c.registryHost) {
+		res, err := build.PreflightRegistry(ctx, c, ref)
+		if err != nil {
+			return "", err
+		}
+		return res.Digest, nil
+	}
 	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
 	defer cancel()
 	res, err := c.cli.ImageInspect(ctx, ref)
@@ -234,12 +251,20 @@ func swarmHealthcheck(hc engine.HealthcheckSpec) *container.HealthConfig {
 }
 
 // ServiceCreate 实现 engine.Substrate：创建服务（调用方对账保证仅缺失时
-// 调用；已存在不覆盖——按 ErrObjectConflict 语义失败暴露竞态）。
+// 调用；已存在不覆盖——按 ErrObjectConflict 语义失败暴露竞态）。平台
+// registry 引用的镜像附带 X-Registry-Auth（--with-registry-auth 语义，
+// E1-5：Swarm 把凭据分发到拉取节点）；其余镜像零凭据面。
 func (c *Client) ServiceCreate(ctx context.Context, spec engine.ServiceSpec) error {
 	sw := buildSwarmSpec(spec)
+	opts := mobyclient.ServiceCreateOptions{Spec: sw}
+	auth, err := c.registryAuthForImage(spec.Image)
+	if err != nil {
+		return err
+	}
+	opts.EncodedRegistryAuth = auth
 	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
 	defer cancel()
-	if _, err := c.cli.ServiceCreate(ctx, mobyclient.ServiceCreateOptions{Spec: sw}); err != nil {
+	if _, err := c.cli.ServiceCreate(ctx, opts); err != nil {
 		return fmt.Errorf("substrate: service create %s: %w", spec.Name, err)
 	}
 	return nil
@@ -250,9 +275,15 @@ func (c *Client) ServiceCreate(ctx context.Context, spec engine.ServiceSpec) err
 const serviceUpdateRetry = 3
 
 // ServiceUpdate 实现 engine.Substrate：读当前版本 → 以目标 spec 推进。
-// ForceUpdate 恒不递增（归位零成本，Spike B2）。并发冲突短重试。
+// ForceUpdate 恒不递增（归位零成本，Spike B2）。并发冲突短重试。平台
+// registry 引用的镜像附带 X-Registry-Auth（与 ServiceCreate 同语义，E1-5
+// ——回滚/重放路径的 service update 同样要能把凭据交给拉取节点）。
 func (c *Client) ServiceUpdate(ctx context.Context, name string, spec engine.ServiceSpec) error {
 	sw := buildSwarmSpec(spec)
+	auth, err := c.registryAuthForImage(spec.Image)
+	if err != nil {
+		return err
+	}
 	var lastErr error
 	for i := 0; i < serviceUpdateRetry; i++ {
 		ictx, icancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
@@ -263,8 +294,9 @@ func (c *Client) ServiceUpdate(ctx context.Context, name string, spec engine.Ser
 		}
 		uctx, ucancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
 		_, uerr := c.cli.ServiceUpdate(uctx, name, mobyclient.ServiceUpdateOptions{
-			Version: swarm.Version{Index: res.Service.Version.Index},
-			Spec:    sw,
+			Version:             swarm.Version{Index: res.Service.Version.Index},
+			Spec:                sw,
+			EncodedRegistryAuth: auth,
 		})
 		ucancel()
 		if uerr != nil {

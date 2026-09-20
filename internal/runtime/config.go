@@ -363,6 +363,25 @@ func (c *AppConfig) RegistryAuthFile() string {
 	return filepath.Join(filepath.Dir(c.DBPath()), "fleetly-registry.auth")
 }
 
+// RegistryHost 返回平台 registry 主机（registry.<base>；base_domain 派生，
+// E1-5）。空 = 单节点本地模式（构建不推送、镜像本地 digest 引用——v0.1
+// 逐字等价）。单点派生公式在此（与 IngressSettings 的平台子域派生同源）。
+func (c *AppConfig) RegistryHost() string {
+	if c.BaseDomain == "" {
+		return ""
+	}
+	return "registry." + c.BaseDomain
+}
+
+// registryAuthFileForBuild 是构建管线的凭据文件下发面：仅 registry 模式
+// 携带（本地模式 build.Config 零 registry 字段——v0.1 等价的装配面保证）。
+func registryAuthFileForBuild(c *AppConfig) string {
+	if c.BaseDomain == "" {
+		return ""
+	}
+	return c.RegistryAuthFile()
+}
+
 // IngressSettings 把 ingress.* 配置节翻译为入口适配器核心配置（ingress.
 // Config，缺省值经 Normalize 回落——单一事实源在 internal/ingress）。归一
 // 必须发生在装配入口：ingress 服务的配置端点监听地址取自此处的 ConfigAddr
@@ -381,6 +400,12 @@ func (c *AppConfig) IngressSettings() ingress.Config {
 		// BaseDomain 透传（E1-3）：非空启用 8423 TLS 配置面与平台证书
 		// duty；空 = 单节点 v0.1 形态（ingress 侧零行为差异）。
 		BaseDomain: c.BaseDomain,
+		// zot 部署面（E1-4）：镜像钉版（registry.image 显式配置优先，空 =
+		// ingress.Normalize 回落钉版缺省 DefaultZotImage）与凭据文件绝对
+		// 路径（RegistryAuthFile 装配期回落数据根形态）。base_domain 空
+		// 时部署器不活动，字段闲置无害。
+		RegistryImage:    c.Registry.Image,
+		RegistryAuthFile: c.RegistryAuthFile(),
 		ACME: ingress.ACMEConfig{
 			Enabled:        c.Ingress.ACME.Enabled,
 			CADirURL:       c.Ingress.ACME.CADirURL,
@@ -500,6 +525,13 @@ func (c *AppConfig) BuildSettings() build.Config {
 		PollInterval:        time.Duration(c.Build.PollSeconds) * time.Second,
 		Timeout:             time.Duration(c.Build.TimeoutSeconds) * time.Second,
 		ManageDaemon:        c.Build.ManageDaemon == nil || *c.Build.ManageDaemon,
+		// registry 模式（E1-5）：base_domain 非空时产物推送 zot 并按
+		// registry digest 引用记账；凭据文件经 RegistryAuthFile 回落（构建
+		// 执行时点现读——凭据可能由 zot 部署 duty 晚于装配期生成）。空
+		// base_domain = 本地模式（零额外字段，v0.1 管线逐字不变——凭据
+		// 路径仅在 registry 模式下发）。
+		RegistryHost:     c.RegistryHost(),
+		RegistryAuthFile: registryAuthFileForBuild(c),
 		// 受管根（H14）：显式配置根 + git 裸仓库根（v0.2 worktree 物化
 		// 路径的前缀形态；当前 git 入口不直接产构建上下文，并入是前瞻
 		// 接线）；build.Config.Normalize 再恒并入系统 temp 根。

@@ -99,11 +99,21 @@ func NewStore(cfg *AppConfig) (*state.Store, func(), error) {
 
 // NewSubstrateClient 构造底座适配器客户端（moby/client）。它是多个端口
 // 的实现载体：state.DockerClient（节点观测/身份）与 build 包端口（镜像
-// inspect/load、buildkitd 容器编排）；连接资源由 Wire cleanup 释放。
+// inspect/load、buildkitd 容器编排、registry manifest HEAD 前哨）；
+// 连接资源由 Wire cleanup 释放。base_domain 非空时装配平台 registry 适配
+// （E1-4/E1-5）：registry 模式镜像引用经 manifest HEAD 前哨核验、service
+// 写自动附带 --with-registry-auth 凭据（惰性现读 registry.auth_file——
+// 凭据可能由 zot 部署 duty 晚于装配期生成）；单节点不装配（零行为差异）。
 func NewSubstrateClient(cfg *AppConfig) (*substrate.Client, func(), error) {
 	c, err := substrate.NewClient(cfg.State.DockerHost)
 	if err != nil {
 		return nil, nil, err
+	}
+	if host := cfg.RegistryHost(); host != "" {
+		authFile := cfg.RegistryAuthFile()
+		c.WithPlatformRegistry(host, func() (build.RegistryCredentials, error) {
+			return build.LoadRegistryCredentials(authFile)
+		})
 	}
 	return c, func() { _ = c.Close() }, nil
 }

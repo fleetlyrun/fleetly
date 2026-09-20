@@ -10,10 +10,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"time"
+
+	bkclient "github.com/moby/buildkit/client"
+	"github.com/moby/buildkit/client/llb"
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -35,6 +39,15 @@ type Executor interface {
 	Execute(ctx context.Context, rec state.BuildRecord) (state.BuildRecord, error)
 }
 
+// solveExecutor 是 solve 层的包内执行契约（builder 与 buildkit 连接细节
+// 的隔离缝；单测注入假执行器断言 registry 模式的推送记账/失败归因，不触
+// buildkit）。返回的 digest 是 solve 响应回填的 manifest digest（无 image
+// 导出时为空串——本机模式由调用方 inspect 取本机 digest）。
+type solveExecutor interface {
+	solveLLB(ctx context.Context, opts bkclient.SolveOpt, def *llb.Definition, logw io.Writer) (string, error)
+	solveFrontend(ctx context.Context, opts bkclient.SolveOpt, logw io.Writer) (string, error)
+}
+
 // Builder 依赖：配置 + 状态库 + 本机镜像端口 + buildkitd 编排端口 + solve
 // 执行器 + 就绪探测。
 type Builder struct {
@@ -42,7 +55,7 @@ type Builder struct {
 	store  *state.Store
 	images ImageSource
 	daemon DaemonManager
-	solver *solveRunner
+	solver solveExecutor
 	// probe 是 buildkitd 就绪探测（M2-8：EnsureContainerRunning 成功 ≠
 	// gRPC 可服务，首建冷启动存在监听就绪窗口）。缺省对 buildkit_host 做
 	// Info 拨号（defaultDaemonProbe）；包内测试注入假 probe 断言重试语义。
@@ -225,6 +238,12 @@ func (b *Builder) Execute(ctx context.Context, rec state.BuildRecord) (state.Bui
 
 	digest, took, buildErr := b.run(ctx, rec, req, imageRef, planPath, logPath)
 	if buildErr != nil {
+		// registry 模式失败归因（D-MN-11 分层建议）：推送类失败 →
+		// E_REGISTRY_PUSH_FAILED（查 registry/网络/凭据）；其余（构建本体
+		// 错误）维持 E_BUILD_FAILED（改代码）。本地模式不经分类器。
+		if b.registryMode() {
+			buildErr = ClassifyRegistryPushError(buildErr)
+		}
 		// 超时预算耗尽（队列以 WithTimeout 注入的 per-build deadline）：
 		// 失败信息注明预算供定位（预算 ≈ deadline − 认领时间，claim 盖章）。
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) && !rec.StartedAt.IsZero() {
@@ -236,12 +255,25 @@ func (b *Builder) Execute(ctx context.Context, rec state.BuildRecord) (state.Bui
 		return state.BuildRecord{}, b.fail(finCtx, rec.ID, buildErr)
 	}
 
-	if err := b.store.FinishBuildSucceeded(finCtx, rec.ID, imageRef, digest, planPathFor(rec, planPath), logPath); err != nil {
+	// builds.image_ref 记账形态（设计 §2.5）：本地模式 = fleetly-local/<app>:
+	// <tag>（v0.1 逐字不变）；registry 模式 = registry.<base>/apps/<app>@
+	// sha256:<manifest digest>——引擎按引用直入 service spec（digest 钉定，
+	// worker 经 --with-registry-auth 拉取），digest 列同记 manifest digest。
+	recordedRef := imageRef
+	if b.registryMode() {
+		recordedRef, err = RegistryDigestRef(b.cfg.RegistryHost, req.AppName, digest)
+		if err != nil {
+			return state.BuildRecord{}, b.fail(finCtx, rec.ID, err)
+		}
+		digest = normalizeDigest(digest)
+	}
+
+	if err := b.store.FinishBuildSucceeded(finCtx, rec.ID, recordedRef, digest, planPathFor(rec, planPath), logPath); err != nil {
 		return state.BuildRecord{}, fmtErr("record build %s succeeded: %w", rec.ID, err)
 	}
 	b.log.Info("build succeeded",
 		"build", rec.ID, "app", req.AppName, "service", rec.Service,
-		"driver", string(rec.Driver), "ref", imageRef, "digest", digest,
+		"driver", string(rec.Driver), "ref", recordedRef, "digest", digest,
 		"seconds", fmt.Sprintf("%.2f", took))
 	updated, err := b.store.GetBuild(finCtx, rec.ID)
 	if err != nil {
@@ -250,7 +282,42 @@ func (b *Builder) Execute(ctx context.Context, rec state.BuildRecord) (state.Bui
 	return updated, nil
 }
 
-// run 分派驱动执行构建，返回镜像 ID digest 与耗时。
+// registryMode 报告构建管线是否处于 registry 推送形态（RegistryHost 非空，
+// base_domain 派生——E1-5；空 = 本地模式，v0.1 管线逐字不变）。
+func (b *Builder) registryMode() bool { return b.cfg.RegistryHost != "" }
+
+// applyRegistryMode 把 registry 模式叠加到 solve 选项上（推送引用 + buildkit
+// session 凭据注入）。凭据文件读取在执行时点（凭据可能晚于 Builder 装配才
+// 由 zot 部署 duty 生成）；缺失/损坏即推送失败（E_REGISTRY_PUSH_FAILED），
+// 不静默空凭据。
+func (b *Builder) applyRegistryMode(opts *bkclient.SolveOpt, req Request) error {
+	if !b.registryMode() {
+		return nil
+	}
+	creds, err := LoadRegistryCredentials(b.cfg.RegistryAuthFile)
+	if err != nil {
+		return registryPushFailed("registry credentials unavailable: %v", err)
+	}
+	pushRef, err := RegistryBuildRef(b.cfg.RegistryHost, req.AppName, req.BuildID)
+	if err != nil {
+		return err // 命名契约错误属构建输入问题：维持 E_BUILD_FAILED 归因
+	}
+	return applyRegistryPush(opts, pushRef, b.cfg.RegistryHost, creds.User, creds.Password)
+}
+
+// registryPushFailed 构造推送失败信封（E_REGISTRY_PUSH_FAILED，500——设计
+// §5.2/D-MN-11：网络/凭据/registry 故障的分层归因）。
+func registryPushFailed(format string, args ...any) error {
+	return apperr.New("E_REGISTRY_PUSH_FAILED", "pushing build result to the platform registry failed: "+format, args...).
+		WithStage("push")
+}
+
+// run 分派驱动执行构建，返回镜像 digest 与耗时：
+//   - 本地模式：buildkit docker 导出 + 本机装载，digest = 本机镜像 ID
+//     （inspect 取得，`sha256:<hex>` 配置摘要，v0.1 语义不变）；
+//   - registry 模式：buildkit image 导出 push=true 直推平台 registry，
+//     digest = solve 响应回填的 manifest digest（本机不装载——zot 是产物
+//     唯一真源；空 digest = 推送未回填，按推送失败记账拒绝）。
 func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, imageRef, planPath, logPath string) (string, float64, error) {
 	started := time.Now()
 	logf, err := os.Create(logPath) //nolint:gosec // G304：logPath 是平台配置产物目录下的受控派生路径（config build.artifacts_dir）
@@ -259,6 +326,7 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 	}
 	defer func() { _ = logf.Close() }()
 
+	var pushDigest string
 	switch rec.Driver {
 	case state.DriverRailpack:
 		def, imageConfig, planJSON, err := railpackPlan(ctx, req)
@@ -272,7 +340,11 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 		if err != nil {
 			return "", 0, err
 		}
-		if err := b.solver.solveLLB(ctx, opts, def, logf); err != nil {
+		if err := b.applyRegistryMode(&opts, req); err != nil {
+			return "", 0, err
+		}
+		pushDigest, err = b.solver.solveLLB(ctx, opts, def, logf)
+		if err != nil {
 			return "", 0, err
 		}
 	case state.DriverDockerfile:
@@ -280,11 +352,22 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 		if err != nil {
 			return "", 0, err
 		}
-		if err := b.solver.solveFrontend(ctx, opts, logf); err != nil {
+		if err := b.applyRegistryMode(&opts, req); err != nil {
+			return "", 0, err
+		}
+		pushDigest, err = b.solver.solveFrontend(ctx, opts, logf)
+		if err != nil {
 			return "", 0, err
 		}
 	default:
 		return "", 0, fmtErr("unsupported build driver %q", rec.Driver)
+	}
+
+	if b.registryMode() {
+		if pushDigest == "" {
+			return "", 0, registryPushFailed("solve response carried no manifest digest (push accounting requires it)")
+		}
+		return pushDigest, time.Since(started).Seconds(), nil
 	}
 
 	info, err := b.images.InspectImage(ctx, imageRef)
@@ -294,9 +377,13 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 	return info.ID, time.Since(started).Seconds(), nil
 }
 
-// fail 归一失败终态：E_BUILD_FAILED 信封（stderr 尾部 + 日志路径进
-// context）+ builds failed 落库。终态写一律去取消化（WithoutCancel）——
-// 失败处理常发生在执行 ctx 已取消时（超时/关停），落库必达。
+// fail 归一失败终态：默认 E_BUILD_FAILED 信封（T2.8 契约：stderr 尾部 +
+// 日志路径进 context）+ builds failed 落库。失败归因保留（D-MN-11 分层
+// 建议）：registry 推送失败等已归一为专属注册码的错误信封原样保留——
+// E_REGISTRY_PUSH_FAILED 的「查 registry/凭据」建议不得被 E_BUILD_FAILED
+// 的「改代码」建议覆盖；信封即 cause（日志尾部经 cause 包装链随行），
+// builds 行 error_code 落保留后的码。终态写一律去取消化（WithoutCancel）
+// ——失败处理常发生在执行 ctx 已取消时（超时/关停），落库必达。
 func (b *Builder) fail(ctx context.Context, buildID string, cause error) error {
 	ctx = context.WithoutCancel(ctx)
 	rec, err := b.store.GetBuild(ctx, buildID)
@@ -309,11 +396,15 @@ func (b *Builder) fail(ctx context.Context, buildID string, cause error) error {
 	appErr := apperr.New("E_BUILD_FAILED", "build failed: %v", cause).
 		WithStage("build").
 		WithCause(cause)
+	var coded *apperr.Error
+	if errors.As(cause, &coded) && coded.Code() != "E_BUILD_FAILED" {
+		appErr = coded.WithCause(cause)
+	}
 	if err == nil {
 		if rec.LogPath != "" {
 			appErr = appErr.WithContext("log_path", rec.LogPath)
 		}
-		if ferr := b.store.FinishBuildFailed(ctx, buildID, "E_BUILD_FAILED"); ferr != nil {
+		if ferr := b.store.FinishBuildFailed(ctx, buildID, appErr.Code()); ferr != nil {
 			b.log.Error("record build failure", "build", buildID, "error", ferr)
 		}
 	}

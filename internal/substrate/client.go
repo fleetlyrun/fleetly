@@ -16,12 +16,22 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	mobyclient "github.com/moby/moby/client"
 
+	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // Client 是 state.DockerClient 的 moby/client 实现。
 type Client struct {
 	cli *mobyclient.Client
+
+	// registryHost / registryCreds 是平台 registry 适配的装配面（E1-4/E1-5，
+	// WithPlatformRegistry 注入；单节点不装配 = 零行为差异）。host 是
+	// registry.<base>（镜像引用前缀判定 + manifest HEAD 基址）；creds 是
+	// 凭据惰性读取函数（registry.auth_file 现读——zot 部署 duty 可能晚于
+	// 装配期生成凭据，且轮换后新部署即刻生效）。写操作只在镜像引用命中
+	// 平台 registry 时消费凭据（--with-registry-auth 语义，不向全集群广播）。
+	registryHost  string
+	registryCreds func() (build.RegistryCredentials, error)
 }
 
 // defaultCallTimeout 是非流式 Docker API 调用的统一 per-call 预算（D2，

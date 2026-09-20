@@ -46,6 +46,7 @@ type fakeDocker struct {
 	updates     []string
 	updateSpecs []swarm.ServiceSpec
 	netEns      []string
+	volumeEns   []string
 	info        swarmInfo
 	// legacySeedPresent 模拟 v0.1 证书 seed 容器残留（LegacySeedContainer
 	// Remove 消费并清零——底座语义：移除后不复存在）。
@@ -89,14 +90,33 @@ func (f *fakeDocker) ServiceCreate(_ context.Context, spec swarm.ServiceSpec) er
 		Version: 1,
 		Image:   spec.TaskTemplate.ContainerSpec.Image,
 		Args:    append([]string{}, spec.TaskTemplate.ContainerSpec.Args...),
-		Ports:   append([]swarm.PortConfig{}, spec.EndpointSpec.Ports...),
-		Mounts:  append([]mount.Mount{}, spec.TaskTemplate.ContainerSpec.Mounts...),
+		Ports: func() []swarm.PortConfig {
+			// registry 服务不发布宿主端口（EndpointSpec 缺省）——同构底座语义。
+			if spec.EndpointSpec == nil {
+				return nil
+			}
+			return append([]swarm.PortConfig{}, spec.EndpointSpec.Ports...)
+		}(),
+		Mounts: append([]mount.Mount{}, spec.TaskTemplate.ContainerSpec.Mounts...),
 		HealthTest: func() []string {
 			if spec.TaskTemplate.ContainerSpec.Healthcheck != nil {
 				return spec.TaskTemplate.ContainerSpec.Healthcheck.Test
 			}
 			return nil
 		}(),
+		Constraints: func() []string {
+			if spec.TaskTemplate.Placement == nil {
+				return nil
+			}
+			return append([]string{}, spec.TaskTemplate.Placement.Constraints...)
+		}(),
+		Replicas: func() uint64 {
+			if spec.Mode.Replicated == nil || spec.Mode.Replicated.Replicas == nil {
+				return 0
+			}
+			return *spec.Mode.Replicated.Replicas
+		}(),
+		Networks: netTargets(spec),
 	}
 	return nil
 }
@@ -112,7 +132,7 @@ func (f *fakeDocker) ServiceUpdate(_ context.Context, name string, _ uint64, spe
 	cur.Version++
 	// 同构底座语义：service update 是整份 spec 替换——镜像/参数/挂载/健康
 	// 检查/端口随载荷换入（与 ServiceCreate 同构），仅 Networks 单独记录
-	// （网络目标是整组替换语义的最常断言位）。
+	//（网络目标是整组替换语义的最常断言位）。
 	if cs := spec.TaskTemplate.ContainerSpec; cs != nil {
 		cur.Image = cs.Image
 		cur.Args = append([]string{}, cs.Args...)
@@ -120,6 +140,12 @@ func (f *fakeDocker) ServiceUpdate(_ context.Context, name string, _ uint64, spe
 			cur.HealthTest = append([]string{}, cs.Healthcheck.Test...)
 		}
 		cur.Mounts = append([]mount.Mount{}, cs.Mounts...)
+	}
+	if spec.TaskTemplate.Placement != nil {
+		cur.Constraints = append([]string{}, spec.TaskTemplate.Placement.Constraints...)
+	}
+	if spec.Mode.Replicated != nil && spec.Mode.Replicated.Replicas != nil {
+		cur.Replicas = *spec.Mode.Replicated.Replicas
 	}
 	if spec.EndpointSpec != nil {
 		cur.Ports = append([]swarm.PortConfig{}, spec.EndpointSpec.Ports...)
@@ -148,6 +174,14 @@ func (f *fakeDocker) NetworkEnsure(_ context.Context, name string) error {
 func (f *fakeDocker) NetworkID(_ context.Context, name string) (string, error) {
 	// 同构底座语义：ID 形态与名字不同（swarm 归一），幂等判据走 ID。
 	return "netid-" + name, nil
+}
+
+// VolumeEnsure 记录卷收敛调用（同构底座语义：存在即 no-op，缺失创建）。
+func (f *fakeDocker) VolumeEnsure(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.volumeEns = append(f.volumeEns, name)
+	return nil
 }
 
 // LegacySeedContainerRemove 消费 legacySeedPresent（同构底座语义：容器
