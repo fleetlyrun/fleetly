@@ -46,7 +46,7 @@ JTBD：让 ≤5 个开发，在不雇运维、不学 k8s 的前提下，把生�
 
 - **CI/CD**：CD（push/webhook → 构建 → 零停机上线 → 回滚）为平台闭环内置；CI（测试/lint）由 Git 托管方承担，平台以 webhook 状态门禁集成（CI 未过不发布）；**不自研 CI 引擎**（§7 明确不做）。
 - **数据库**：产品是**托管数据服务机制**（模板 + 卷钉住 + 备份/恢复适配器 + 连接串注入），库清单是数据——目标模板 = Postgres/Redis/MySQL/MongoDB；PG/Redis 首发，MySQL/Mongo 紧随按需求排序（各引擎备份/恢复适配器是主要成本；v0.2 顺序见 §4.3）。
-- **S3**：v0.2 只支持 S3 兼容**外部端点** + 本地路径兜底；内置 S3 打包为触发式（需求证据 → RustFS 评估，D4）。对外文案写「支持 S3 兼容端点」，**不得写「内置 S3」**。
+- **S3**：v0.2 只支持 S3 兼容**外部端点** + 本地路径兜底；内置 S3 打包为触发式（需求证据 → RustFS 评估，D4）。对外文案写「支持 S3 兼容端点」，**不得写「内置 S3」**。〔2026-09-20 V2-2：RustFS 1.0 GA 触发引入为 **opt-in 管理组件**——对外可写「可选自托管 S3 兼容存储（RustFS）」；仍不得表述为默认内置 S3，同节点备份不得表述为灾备，见 [v0.2 规划](../plan/2026-09-20-v0.2-plan.md)〕
 - **稳定性表述**：不以「基于 Swarm」作为稳定性论据；对外口径 = 变化慢的底座 + 平台护栏（锁版本 + 升级回归矩阵、pause + 快照重放、升级原子化、备份回读校验）+ 诚实边界（无官方 LTS、Engine 破坏式升级风险及缓解，D12/§2.6）。
 - **AI 排序**：AI Agent 是差异化的锋面（获客/传播），信任（升级可回退、备份可恢复、错误可诊断）是成交与留存的地板；对外演示必须走完一次真实「故障 → 诊断 → 修复」闭环；v0.1 不得宣传 v0.2 的 AI 能力（时间线见下）。
 
@@ -340,7 +340,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | D1 | 自研 Go 控制面 | AI/Agent Native 与 UI/MCP 承诺需要结构化状态与 API-first 地基；统一集群需求已排除 dokku | 包装 dokku：无结构化状态、解析层长期维护税、单机；纯 k8s/Tsuru：过重，违背 10 台定位；Coolify 二次开发：PHP/Laravel + 自身过重 |
 | D2 | 统一集群，底座 = Docker Swarm（引擎内置）；控制面运行于 manager，不自研分布式核心 | 三条硬约束（不自研分布式核心 / 轻量 / 五年可用）加权下 Swarm 得分最高：零新增组件、调度与成员管理全内置、health gate 与失败不切流原生可用（源码级验证）；专项评估见 [Swarm 评估报告](../research/2026-09-17-swarm-substrate-assessment.md) | 自研 node 协议：分布式核心工作量集中且最难测试（本轮推翻）；机队模式：无统一调度；Nomad：官方小集群 sizing 8-16GB 级 + BSL 许可；k3s：2C/2GB 起 + 用户拒绝 K8s（保留为可选 driver） |
 | D3 | Console 端用 React SPA | 生态与组件库最丰富、人才与参考实现最多，长期维护与招人成本最低；MIT | Go 模板 + HTMX：更轻、单二进制，但交互上限低；Svelte / Solid：运行时更小、signals 模型更契合高频流式渲染，但生态规模小；本轮按团队选型定为 React，console 与 API 严格解耦故后续仍可换 |
-| D4 | S3 做 provider 抽象，**v0.2 只支持外部端点**；不打包 S3 服务（RustFS 为将来候选，触发式引入）〔2026-09-17 D4 复议〕 | Dokploy 地板即外部 endpoints 形态（AWS/B2/R2/MinIO/Wasabi，Rclone 备份）；「MinIO 归档空位」是市场机会非约束；provider 抽象保留切换能力 | 打包 RustFS：许可与 UI 均优，但无需求证据前打包 = 过度设计（奥卡姆裁决 F5）；Garage：AGPL，仅外部端点；SeaweedFS：运维面大 |
+| D4 | S3 做 provider 抽象，**v0.2 只支持外部端点**；不打包 S3 服务（RustFS 为将来候选，触发式引入）〔2026-09-17 D4 复议；**2026-09-20 V2-2：触发条件成立——RustFS 1.0 GA + 用户裁决引入，形态 opt-in 管理组件**（`s3.backend=rustfs`，默认装不捆绑；同节点备份诚实标注便捷层非灾备，DR 仍指向外部端点/跨节点），见 [v0.2 规划](../plan/2026-09-20-v0.2-plan.md)〕 | Dokploy 地板即外部 endpoints 形态（AWS/B2/R2/MinIO/Wasabi，Rclone 备份）；「MinIO 归档空位」是市场机会非约束；provider 抽象保留切换能力 | 打包 RustFS：许可与 UI 均优，但无需求证据前打包 = 过度设计（奥卡姆裁决 F5）；Garage：AGPL，仅外部端点；SeaweedFS：运维面大 |
 | D5 | 开源核心 + 商业版，核心 Apache-2.0 | 专利授权、商业友好；核心保持完整可自用，不做 MinIO 式"先送后收" | MIT：缺少专利条款；AGPL：限制商业路径 |
 | D6 | 构建用 Railpack + BuildKit，Dockerfile 兜底 | 自研构建系统是无底洞；Nixpacks 已转维护模式，Railpack 是其官方继任且为 Go 库可复用 | 自研 buildpack 体系；herokuish：bash + 与 dokku 生态绑定 |
 | D7 | 状态用 SQLite | 零运维、单文件、支持 10 台规模足够；备份即复制文件 | etcd：为分布式一致性设计，杀鸡用牛刀；Postgres：平台自身变重 |
