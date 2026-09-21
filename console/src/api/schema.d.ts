@@ -586,6 +586,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app}/cron-runs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListCronRuns 读运行台账（scheduled_at 倒序；service 空 = 该 app 全部
+         *     schedule 的行；保留窗每 schedule 最近 20 条，janitor 清理）。
+         */
+        get: operations["CronService_ListCronRuns"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/services/{service}/trigger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * TriggerCronRun 手动触发一次（走与到点触发完全相同的链路：重叠 skip、
+         *     绑定节点前哨、一次性 job 创建、cron_runs 行与事件；本路径追加审计
+         *     cron.manual_triggered）。重叠/节点不可用不报错——响应携带 skipped 行
+         *     与原因（与调度器处置一致）。
+         */
+        post: operations["CronService_TriggerCronRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1377,6 +1419,45 @@ export interface components {
              *     待清理副本，docker volume rm 后平台对账消失；只指引不代删——D18）。
              */
             residual?: boolean;
+        };
+        CronServiceTriggerCronRunBody: Record<string, never>;
+        /**
+         * CronRunView 是一次 cron 触发的台账投影（状态词表 started | succeeded |
+         *     failed | timeout | skipped；skipped 行带 skip_reason：
+         *     overlap | node_unavailable | missed_downtime | interrupted）。
+         */
+        v1CronRunView: {
+            id?: string;
+            service?: string;
+            expression?: string;
+            /**
+             * 命中的 cron 点（手动触发 = 触发时刻）。
+             * Format: date-time
+             */
+            scheduled_at?: string;
+            /**
+             * job 启动时刻（skipped 行不输出）。
+             * Format: date-time
+             */
+            started_at?: string;
+            /**
+             * 终态收口时刻（在途/skipped 行不输出）。
+             * Format: date-time
+             */
+            finished_at?: string;
+            status?: string;
+            skip_reason?: string;
+            /** 一次性 job 服务名（skipped 行不输出）。 */
+            job_service?: string;
+            /** 失败/超时原因摘要。 */
+            error?: string;
+        };
+        v1ListCronRunsResponse: {
+            app?: string;
+            runs?: components["schemas"]["v1CronRunView"][];
+        };
+        v1TriggerCronRunResponse: {
+            run?: components["schemas"]["v1CronRunView"];
         };
     };
     responses: never;
@@ -2634,6 +2715,80 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1ListVolumesResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    CronService_ListCronRuns: {
+        parameters: {
+            query?: {
+                /** @description 收窄到单 schedule（空 = 全部）。 */
+                service?: string;
+                /** @description 行数上限（缺省 20；≤20 的量级面，无分页游标）。 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListCronRunsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    CronService_TriggerCronRun: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 应用名（compose 应用名）。 */
+                app: string;
+                /** @description compose 服务名（必须声明 fleetly.cron，否则 404 语义）。 */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CronServiceTriggerCronRunBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TriggerCronRunResponse"];
                 };
             };
             /** @description An unexpected error response. */

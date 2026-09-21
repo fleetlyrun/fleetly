@@ -135,6 +135,50 @@ fleetlyd -c config.yaml                       # with console.static_dir: "./cons
 
 The console covers app list/detail (derived-state badges), deploys with live terminal-state tracking, rollback, streaming logs (NDJSON follow + history search), env management (pending changes grouped as "takes effect on next deploy"), domains with verify, system health, and the platform event stream. See [console/README.md](console/README.md).
 
+### Object storage backups (S3)
+
+Control-plane state backups can be uploaded to an S3-compatible endpoint (see the [backup/restore runbook](docs/runbooks/backup-restore.md)). Settings are runtime config (no restart); a save is full-replace (PUT semantics — the request *is* the whole configuration), and the secret is write-only: the read face shows a fingerprint, never the plaintext.
+
+```bash
+fleetly s3 set --mode external --endpoint-url https://s3.example.test \
+    --bucket fleetly-backups --region us-east-1 \
+    --access-key-id AKIDEXAMPLE --secret-access-key <secret> --path-style
+fleetly s3 test        # real probe: put → get → delete, per-step ok/duration (candidate config can be tested before saving)
+fleetly s3 show        # redacted projection
+fleetly s3 status      # mode, endpoint, managed-service deployment state
+```
+
+`--mode rustfs` enables the platform-managed RustFS (single shared bucket on the internal network; optional public subdomain `s3.<base_domain>` via `--public-exposed`). The honesty note is permanent: on-host RustFS is a **convenience layer** (protection against accidental deletion / single-file corruption), **not disaster recovery** — if the host is lost, these backups are lost with it.
+
+Apps opt in per service with the `fleetly.s3` label; the next deploy injects the S3 system env (`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_PATH_STYLE`) and, in rustfs mode, attaches the internal network:
+
+```yaml
+services:
+  worker:
+    image: ghcr.io/acme/worker:1
+    labels:
+      fleetly.s3: "true"   # unset s3.mode → the deploy is rejected (E_S3_NOT_CONFIGURED)
+```
+
+### Scheduled jobs (cron)
+
+Declare a scheduled service with the `fleetly.cron` label family. Cron services are one-shot jobs, not long-running services — they must not set `deploy.replicas`, are never counted toward the app's running state, and appear as `scheduled` in the console:
+
+```yaml
+services:
+  cleanup:
+    image: ghcr.io/acme/cleanup:1
+    labels:
+      fleetly.cron: "*/5 * * * *"              # exactly the 5-field standard crontab form
+      fleetly.cron.timezone: "Asia/Shanghai"   # optional; default UTC
+      fleetly.cron.timeout: "30m"              # optional watchdog budget; default 10m
+```
+
+```bash
+fleetly cron trigger my-api cleanup   # manual run — same path as scheduled fires; audited; overlap/node down → skipped with reason
+fleetly cron runs my-api              # run ledger: status / scheduled / started / finished / skip_reason / error
+```
+
 ## Documentation
 
 All docs live in [`docs/`](docs/README.md) (Chinese, design-first workflow):

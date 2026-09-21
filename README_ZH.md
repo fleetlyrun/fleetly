@@ -133,6 +133,50 @@ fleetlyd -c config.yaml                       # 配置 console.static_dir: "./co
 
 覆盖：应用列表/详情（派生状态徽章）、部署（跟踪到终态）与回滚、实时日志（NDJSON 跟随 + 历史检索）、env 管理（pending 变更独立分组「待下次部署生效」）、域名管理与 verify、系统健康、平台事件流。详见 [console/README.md](console/README.md)。
 
+### 对象存储备份（S3）
+
+控制面状态备份可上传到 S3 兼容端点（恢复流程见[备份恢复 runbook](docs/runbooks/backup-restore.md)）。设置为运行期配置（无需重启）；保存即全量替换（PUT 语义——请求即新配置整体），secret 只写：读面只见指纹，永不回明文。
+
+```bash
+fleetly s3 set --mode external --endpoint-url https://s3.example.test \
+    --bucket fleetly-backups --region us-east-1 \
+    --access-key-id AKIDEXAMPLE --secret-access-key <secret> --path-style
+fleetly s3 test        # 真实探针：put → get → delete，分步 ok/耗时（候选配置可先测后存）
+fleetly s3 show        # 脱敏投影
+fleetly s3 status      # 模式、端点、托管服务部署态
+```
+
+`--mode rustfs` 启用平台托管 RustFS（内部网络单桶；可经 `--public-exposed` 开公网子域 `s3.<base_domain>`）。诚实口径常驻：本机 RustFS 是**便捷层**（防误删/防单文件损坏），**不是灾备**——主机整体损毁时这些备份随主机一同丢失。
+
+应用按服务粒度以 `fleetly.s3` label 选择接入；下次部署时平台注入 S3 system env（`S3_ENDPOINT`、`S3_BUCKET`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`、`S3_PATH_STYLE`），rustfs 模式同时挂接内部网络：
+
+```yaml
+services:
+  worker:
+    image: ghcr.io/acme/worker:1
+    labels:
+      fleetly.s3: "true"   # s3.mode=unset 时部署被诚实拒绝（E_S3_NOT_CONFIGURED）
+```
+
+### 定时任务（cron）
+
+以 `fleetly.cron` label 家族声明定时服务。cron 服务是一次性 job，不是长驻服务——不得设置 `deploy.replicas`，不计入应用 running 态，Console 中如实标注 `scheduled`：
+
+```yaml
+services:
+  cleanup:
+    image: ghcr.io/acme/cleanup:1
+    labels:
+      fleetly.cron: "*/5 * * * *"              # 恰为五段标准 crontab 式
+      fleetly.cron.timezone: "Asia/Shanghai"   # 可选；缺省 UTC
+      fleetly.cron.timeout: "30m"              # 可选；看门狗预算，缺省 10m
+```
+
+```bash
+fleetly cron trigger my-api cleanup   # 手动触发——与到点触发同链路；写审计；重叠/节点不可用 → skipped 并带原因
+fleetly cron runs my-api              # 运行台账：status / scheduled / started / finished / skip_reason / error
+```
+
 ## 文档
 
 全部文档在 [`docs/`](docs/README.md)（中文，设计先行的工作流）：

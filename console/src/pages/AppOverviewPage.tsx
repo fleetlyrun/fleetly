@@ -1,13 +1,21 @@
-// 概览页：基本信息 + 放置/卷概览（服务/副本拓扑的 v0.1 投影面——compose
-// 服务明细在 revision spec，此处呈现平台观测面）。三卡片分区：Application /
-// Placement / Volumes。
+// 概览页：基本信息 + 服务清单（cron 服务标注 scheduled——compose 声明但
+// 非长驻，不冒充长驻态）+ 放置/卷概览（服务拓扑明细在 revision spec）+
+// cron 区块（运行台账 + 手动触发）。三/四卡片分区：Application /
+// Placement / Services / Volumes / Scheduled jobs。
 
 import { useQuery } from "@tanstack/react-query";
-import { Layers, MapPin, PackageOpen } from "lucide-react";
+import { Boxes, Layers, MapPin, PackageOpen } from "lucide-react";
 import { useParams } from "react-router-dom";
 
-import { getApp, getPlacement } from "@/api/endpoints";
+import {
+  getApp,
+  getPlacement,
+  getRevisionSpec,
+  listRevisions,
+} from "@/api/endpoints";
 import { formatTime, timeAgo } from "@/lib/utils";
+import { CronSection } from "@/components/cron-section";
+import { StatusDot } from "@/components/status-dot";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StateBadge } from "@/components/state-badge";
 import {
@@ -18,6 +26,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { extractServiceNames } from "@/lib/compose-cron";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -39,6 +48,22 @@ export function AppOverviewPage() {
     queryKey: ["placement", name],
     queryFn: () => getPlacement(name),
   });
+
+  // 服务清单：最近 active revision 的归一化快照（与 cron 区块同源同查询）。
+  const revisionsQuery = useQuery({
+    queryKey: ["revisions", name],
+    queryFn: () => listRevisions(name),
+  });
+  const active = (revisionsQuery.data?.revisions ?? []).find(
+    (r) => r.status === "active",
+  );
+  const specQuery = useQuery({
+    queryKey: ["revision-spec", name, active?.id],
+    queryFn: () => getRevisionSpec(name, active!.id ?? ""),
+    enabled: active !== undefined,
+  });
+  const services = extractServiceNames(specQuery.data?.compose);
+  const hasCron = services !== null && services.some((s) => s.isCron);
 
   const app = appQuery.data;
   const placement = placementQuery.data?.placement;
@@ -98,6 +123,55 @@ export function AppOverviewPage() {
         </CardContent>
       </Card>
 
+      <Card className="md:col-span-2">
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+          <Boxes aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">Services</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4" data-testid="services-list">
+          {services === null ? (
+            <p className="text-xs text-muted-foreground">
+              Revision spec is unreadable — services cannot be listed.
+            </p>
+          ) : services.length === 0 ? (
+            <p className="text-xs text-muted-foreground">
+              No revision deployed yet.
+            </p>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Service</TableHead>
+                  <TableHead>Mode</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {services.map((s) => (
+                  <TableRow key={s.name}>
+                    <TableCell className="font-mono text-xs">{s.name}</TableCell>
+                    <TableCell>
+                      {s.isCron ? (
+                        // cron 服务 = 按点触发的一次性 job：如实标注 scheduled，
+                        // 不冒充长驻 running 态（架构 §4.3）。
+                        <span
+                          data-testid="service-scheduled-badge"
+                          className="inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-xs font-semibold"
+                        >
+                          <StatusDot tone="neutral-blue" />
+                          scheduled
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">long-running</span>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </CardContent>
+      </Card>
+
       {volumes.length > 0 ? (
         <Card className="md:col-span-2">
           <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
@@ -128,6 +202,8 @@ export function AppOverviewPage() {
           </CardContent>
         </Card>
       ) : null}
+
+      {hasCron ? <CronSection app={name} /> : null}
     </div>
   );
 }

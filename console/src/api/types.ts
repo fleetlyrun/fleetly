@@ -77,6 +77,29 @@ export type TraefikView = Schemas["v1TraefikView"];
 export type CertLedgerView = Schemas["v1CertLedgerView"];
 export type GetIngressStatusResponse = Schemas["v1GetIngressStatusResponse"];
 
+// ── backups（T2.22 台账 + E3-3 上传轨）───────────────────────────────────
+
+export type BackupView = Schemas["v1BackupView"];
+export type ListBackupsResponse = Schemas["v1ListBackupsResponse"];
+export type TriggerBackupResponse = Schemas["v1TriggerBackupResponse"];
+
+// ── S3 设置面（E3 对象存储 §5.1/E3-2）────────────────────────────────────
+
+export type S3SettingsView = Schemas["v1S3SettingsView"];
+export type GetS3SettingsResponse = Schemas["v1GetS3SettingsResponse"];
+export type UpdateS3SettingsRequest = Schemas["v1UpdateS3SettingsRequest"];
+export type UpdateS3SettingsResponse = Schemas["v1UpdateS3SettingsResponse"];
+export type TestS3ConnectionRequest = Schemas["v1TestS3ConnectionRequest"];
+export type TestS3ConnectionResponse = Schemas["v1TestS3ConnectionResponse"];
+export type S3ConnectionTestResult = Schemas["v1S3ConnectionTestResult"];
+export type S3ProbeStep = Schemas["v1S3ProbeStep"];
+
+// ── cron（E5 Cron，架构 §4.3）────────────────────────────────────────────
+
+export type CronRunView = Schemas["v1CronRunView"];
+export type ListCronRunsResponse = Schemas["v1ListCronRunsResponse"];
+export type TriggerCronRunResponse = Schemas["v1TriggerCronRunResponse"];
+
 // ── events ───────────────────────────────────────────────────────────────
 
 export type EventView = Schemas["v1EventView"];

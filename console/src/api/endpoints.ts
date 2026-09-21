@@ -11,8 +11,11 @@ import type {
   GetIngressStatusResponse,
   GetJoinGuideResponse,
   GetRevisionSpecResponse,
+  GetS3SettingsResponse,
   GetSystemStatusResponse,
   ListAppDomainsResponse,
+  ListBackupsResponse,
+  ListCronRunsResponse,
   ListDeploymentsResponse,
   ListEnvResponse,
   ListHistoryLogsResponse,
@@ -24,6 +27,12 @@ import type {
   RollbackDeploymentResponse,
   RotateJoinTokenResponse,
   SetEnvResponse,
+  TestS3ConnectionRequest,
+  TestS3ConnectionResponse,
+  TriggerBackupResponse,
+  TriggerCronRunResponse,
+  UpdateS3SettingsRequest,
+  UpdateS3SettingsResponse,
   VerifyAppDomainsResponse,
   VolumeView,
 } from "./types";
@@ -194,6 +203,68 @@ export function rotateJoinToken(role: "worker" | "manager" = "worker") {
 
 export function getIngressStatus() {
   return api<GetIngressStatusResponse>("/system/ingress");
+}
+
+// ── backups（状态备份台账，T2.22/E3-3）──────────────────────────────────
+
+/** 台账只读面（created_at 倒序）。 */
+export function listBackups() {
+  return api<ListBackupsResponse>("/system/backups");
+}
+
+/** 手动触发一次状态备份（响应即落账后的台账行）。 */
+export function triggerBackup() {
+  return api<TriggerBackupResponse>("/system/backups", {
+    method: "POST",
+    json: { kind: "manual" },
+  });
+}
+
+// ── S3 设置面（E3 对象存储 §5.1/E3-2，admin scope）──────────────────────
+
+/** 设置只读投影：secret 只回 fingerprint，读面永无明文。 */
+export function getS3Settings() {
+  return api<GetS3SettingsResponse>("/system/s3");
+}
+
+/** 全量保存（PUT 语义：请求即新状态；secret 明文只写）。 */
+export function updateS3Settings(req: UpdateS3SettingsRequest) {
+  return api<UpdateS3SettingsResponse>("/system/s3", { method: "PUT", json: req });
+}
+
+/**
+ * 连接探针（put→get→delete 单轮真实读写）：传候选配置即「先测后存」；
+ * 全空 = 测已存配置。
+ */
+export function testS3Connection(req: TestS3ConnectionRequest) {
+  return api<TestS3ConnectionResponse>("/system/s3:test", {
+    method: "POST",
+    json: req,
+  });
+}
+
+// ── cron（E5 Cron，架构 §4.3）───────────────────────────────────────────
+
+/**
+ * 手动触发一次（与到点触发同链路：重叠/节点不可用不报错——响应携带
+ * skipped 行与原因）。
+ */
+export function triggerCronRun(app: string, service: string) {
+  return api<TriggerCronRunResponse>(
+    `/apps/${encodeURIComponent(app)}/services/${encodeURIComponent(service)}/trigger`,
+    { method: "POST", json: {} },
+  );
+}
+
+/** 运行台账（scheduled_at 倒序；service 空 = 该 app 全部 schedule 的行）。 */
+export function listCronRuns(app: string, service?: string, limit = 20) {
+  const query: Record<string, string> = {};
+  if (service) query.service = service;
+  if (limit !== undefined) query.limit = String(limit);
+  const qs = new URLSearchParams(query).toString();
+  return api<ListCronRunsResponse>(
+    `/apps/${encodeURIComponent(app)}/cron-runs${qs ? `?${qs}` : ""}`,
+  );
 }
 
 export function getPlacement(app: string) {

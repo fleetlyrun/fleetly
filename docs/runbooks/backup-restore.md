@@ -1,7 +1,8 @@
 # Runbook：控制面状态备份与恢复（L1/L2）
 
 适用：fleetly v0.1（单节点）。设计依据：state-model §2.7（备份、等序原则
-与恢复）、architecture §4.2（平台状态备份基线 + 状态诚实契约）。
+与恢复）、architecture §4.2（平台状态备份基线 + 状态诚实契约）、
+object-storage 专项 §2.3/§5（E3 远端上传轨与恢复）。
 
 ---
 
@@ -41,7 +42,10 @@ FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN=<token> fleetly backups list
 
 1. 最近一行 `verified`，且 `created_at` 在 24h 内（daily 拍子正常）；
 2. 无 `failed` 行持续存在（出现即按 §3 处理——**不要无视红色**）；
-3. 抽一份最新备份做完整性核对：
+3. `s3.mode ≠ unset` 时：最近一行 `upload_status` 为 `ok`（`failed` 行 =
+   上传轨红，`backup.upload_failed` 事件 + 系统状态 `state.backup` 组件
+   同步变红——本地 verify 结论不受影响，处置见 §3 与 §5）；
+4. 抽一份最新备份做完整性核对：
 
 ```sh
 BK=/var/lib/fleetly/backups/<id>
@@ -73,7 +77,7 @@ sha256sum /var/lib/fleetly/fleetly.key   # 与最新备份 manifest 的 key_fing
    - 磁盘满 → 清理 `/var/lib/fleetly` 膨胀项（构建缓存/旧日志）后
      `fleetly backups create` 重试；
    - `integrity_check` 报错 → 主库疑似损坏，**立即**按 §4 恢复到最近
-     `verified` 备份（先按 §5 做一次离线快照抄底现状）；
+     `verified` 备份（先按 §4 步骤 ③ 做一次离线快照抄底现状）；
    - ledger/审计写失败 → 数据库连接/权限问题，修好后再触发。
 3. 修复后手动触发并确认 verified：
    `FLEETLY_TOKEN=<tok> fleetly backups create` → 输出含 `verify=verified`。
@@ -105,13 +109,108 @@ chown root:root /var/lib/fleetly/fleetly.db && chmod 0600 /var/lib/fleetly/fleet
 systemctl start fleetlyd
 ```
 
+本地恢复完成后，若 s3.mode ≠ unset，继续 §5.3 的备份链闭环核对
+（口令在恢复后的库里，链路自证）。
+
 **L2（仅 DB 恢复到新集群）**：新机装平台 → 上述 ②–④ 回填 → 应用按
 `apps`/`domains` 台账人工重部署 → 显式处理绑定差异（放置绑定随 DB 回来，
 节点 ID 不匹配的走 `rebind`）。恢复期**禁止自动收敛**（等序原则：DB 旧于
 raft 时，自动收敛会静默回滚部署）；恢复后先只读观察、比对
 `fleetly apps list` 与底座实况的差异清单，人工处理后再恢复正常操作。
 
-## 5. 验证清单（恢复完成判定）
+## 5. 从 S3 恢复（E3-3 上传轨：远端快照取回）
+
+适用场景：本地备份目录丢失/损坏（误删、磁盘局部故障），但 `fleetly.key`
+与一份**含 S3 配置的库**仍可复原。每份远端快照的内容 = 一个备份目录
+（`fleetly.db` + `manifest.json`，与 §0 布局一致）——取回后按 §4 同样
+核对（sha256 / key 指纹）再回填。
+
+### 5.0 恢复顺序固定：先 key 与库，再口令，再远端
+
+- repo 位置（两种 mode 同一路径形态）：
+  `s3:<endpoint_url>/<bucket>/statebackups`。external 模式 endpoint/bucket
+  取 `fleetly s3 show`；rustfs（托管）模式为
+  `s3:http://rustfs:9000/fleetly/statebackups`（仅平台内网可达）。
+- **repo 口令不在任何配置文件里**：上传轨首次上传时惰性生成（32B 随机
+  hex），以 envelope 密文（标准 age 形态）存于库内 `platform_settings`
+  键 `s3.restic_password`——只有 `fleetly.key` 能解密（无 CLI/API 读面，
+  密钥纪律如此）。
+- 因此顺序必须为：① 找回 `fleetly.key`（§2 的离线托管件）→ ② 按 §4 恢复
+  任一**晚于 s3 配置**的库副本（口令密文随之回来）→ ③ 从恢复后的库解出
+  口令（§5.1）→ ④ restic 取回快照（§5.2）→ ⑤ 按 §4 回填并按 §5.3 核对
+  备份链闭环。
+
+### 5.1 取回 repo 口令（在恢复后的库上）
+
+```sh
+# ① 从恢复后的库导出口令密文（age 密文 TEXT 形态）
+sqlite3 /var/lib/fleetly/fleetly.db \
+  "SELECT value FROM platform_settings WHERE key = 's3.restic_password'" \
+  > /tmp/restic_password.age
+
+# ② 用主密钥解密（标准 age；用 age CLI 或等价实现）
+age -d -i /var/lib/fleetly/fleetly.key -o /tmp/restic_password.txt /tmp/restic_password.age
+export RESTIC_PASSWORD=$(cat /tmp/restic_password.txt)
+
+# ③ 立即收尾：口令不落 history/磁盘
+rm -f /tmp/restic_password.age /tmp/restic_password.txt
+```
+
+### 5.2 restic 取回快照（钉版镜像，与上传轨同版）
+
+```sh
+RESTIC_IMAGE=restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510
+
+# rustfs 模式：repo 目标与网络挂接（endpoint 是网络 alias，须挂内部网）
+export RESTIC_REPOSITORY=s3:http://rustfs:9000/fleetly/statebackups
+NET_ARGS="--network fleetly-rustfs-net"
+# external 模式：repo 目标按 s3 show，出网即可（注释掉上一行 NET_ARGS）
+# export RESTIC_REPOSITORY=s3:https://s3.example.test/fleetly-backups/statebackups
+
+# 列出远端快照（自建/托管端点均显式 path-style，与上传轨 -o 参数一致）
+docker run --rm $NET_ARGS \
+  -e RESTIC_REPOSITORY -e RESTIC_PASSWORD \
+  "$RESTIC_IMAGE" -o s3.bucket-lookup=path snapshots --json
+
+# 取回最新快照（或以 snapshots 输出里的短 id 指定）
+mkdir -p /var/lib/fleetly/restore
+docker run --rm $NET_ARGS \
+  -e RESTIC_REPOSITORY -e RESTIC_PASSWORD \
+  -v /var/lib/fleetly/restore:/restore \
+  "$RESTIC_IMAGE" -o s3.bucket-lookup=path restore latest --target /restore
+```
+
+取回目录内即 `<id>/fleetly.db` + `<id>/manifest.json`——按 §4 步骤 ②③④
+核对与回填（sha256、key 指纹、抄底现状、`-wal/-shm` 清理）。回填的库中
+`s3.restic_password` 密文与现用口令一致（同一 repo），上传轨闭环不受影响。
+
+### 5.3 恢复后备份链闭环核对点
+
+```sh
+systemctl start fleetlyd
+FLEETLY_TOKEN=<tok> fleetly s3 status          # mode/endpoint/部署态符合预期
+FLEETLY_TOKEN=<tok> fleetly backups create     # verify=verified 且 upload_status=ok
+FLEETLY_TOKEN=<tok> fleetly backups list       # 台账两列结论如实（§1 判定）
+```
+
+- 新 `manual` 行 `verified` **且** `upload_status=ok` = 恢复后的库 → 上传
+  轨 → 远端 repo 全链重新闭环（口令解密、凭证、网络、桶权限全部自证）；
+- `upload_status=failed` 且错误含 `restic` 字样 = repo 侧问题（口令/凭证/
+  网络），按 `fleetlyd` 日志（secret 已擦除）归因后重试。
+
+### 5.4 诚实口径（防误删 ≠ 灾备）
+
+- **本机 RustFS（s3.mode=rustfs）= 便捷层**：防误删、防单文件损坏。主机
+  整体损毁时 key、库与 RustFS 数据**一同丢失**——repo 口令不可解，远端份
+  同样不可用。它不是灾备，Console 的 S3 卡也常驻同口径标注。
+- **external 端点 = 灾备向**：主机损毁后可恢复的前提是两件离线托管件同时
+  存在——`fleetly.key`（§2）+ 任一含 `s3.restic_password` 密文的库副本
+  （如最近一次异地抄送的 `/var/lib/fleetly/fleetly.db` 离线拷贝）。二者缺
+  一，远端 repo 在密码学上不可达（口令不重建、不旁路）。
+- 跨节点互备（库副本的自动化异地托管）挂账 v0.2（object-storage §6）；
+  兑现前，灾备 = 上面的两件离线托管件 + external 端点，由操作者纪律保证。
+
+## 6. 验证清单（恢复完成判定）
 
 ```sh
 systemctl status fleetlyd --no-pager                    # active (running)
@@ -124,10 +223,11 @@ docker service ls                                       # 应用服务未被改�
 附加核对：新 daemon 首启会立即产生一条 `daily` 备份（verified）——这条
 出现 = 备份链在恢复后的库上重新闭环。
 
-## 6. 边界（如实告知）
+## 7. 边界（如实告知）
 
 - 单节点 v0.1 整机磁盘丢失 = 应用与数据同时丢失，控制面 DR 不覆盖；
-  备份应**异机存放**（当前版本备份目录在本机，异机上传随 v0.2 S3 目标）。
+  远端上传轨（E3-3）缓解单机磁盘故障，但**主机整体损毁的恢复边界见
+  §5.4 诚实口径**——本机 RustFS 不改变该边界。
 - daemon 在备份写入中途被杀死（崩溃/强杀）可能留下没有台账行的半成品
   目录（`backups/<id>/` 无 manifest）——它不是备份，恢复时永远以台账行
   为准；半成品目录可手动删除。

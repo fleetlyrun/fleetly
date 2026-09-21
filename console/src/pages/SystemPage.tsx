@@ -1,5 +1,7 @@
-// 系统页（只读）：统计卡行（控制面/组件/节点/备份健康——BackupHealth 字段
-// 旧版未呈现，此处一等展示）+ 分段页签三区（Components / Nodes / Ingress）。
+// 系统页（只读为主）：统计卡行（控制面/组件/节点/备份健康——BackupHealth
+// 字段旧版未呈现，此处一等展示）+ 分段页签四区（Components / Nodes /
+// Ingress / Storage——Storage 承载备份台账（含远端上传结论）与 S3 设置卡，
+// E3-8）。
 
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -13,6 +15,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { getIngressStatus, getSystemStatus, listNodes } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
+import { BackupsCard } from "@/components/backups-card";
 import {
   EnvelopeAlert,
   EnvelopeAlertFrom,
@@ -20,6 +23,7 @@ import {
 import { JoinWizard } from "@/components/join-wizard";
 import { PageHeader } from "@/components/page-header";
 import { PillTabs } from "@/components/pill-tabs";
+import { S3SettingsCard } from "@/components/s3-settings-card";
 import { StatCard } from "@/components/stat-card";
 import { StatusDot } from "@/components/status-dot";
 import { Button } from "@/components/ui/button";
@@ -44,6 +48,7 @@ const TABS = [
   { key: "components", label: "Components" },
   { key: "nodes", label: "Nodes" },
   { key: "ingress", label: "Ingress" },
+  { key: "storage", label: "Storage" },
 ];
 
 // HA 边界诚实口径（multi-node §2.9：节点页固定卡片，架构 §2.6 口径的
@@ -169,6 +174,13 @@ export function SystemPage() {
         onValueChange={(key) => setSearchParams(key === "components" ? {} : { tab: key })}
         items={TABS}
       />
+
+      {tab === "storage" ? (
+        <div className="space-y-4">
+          <BackupsCard />
+          <S3SettingsCard />
+        </div>
+      ) : null}
 
       {tab === "components" ? (
         <Card>
