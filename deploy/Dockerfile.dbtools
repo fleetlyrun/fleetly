@@ -1,0 +1,26 @@
+# fleetly dbtools —— 库备份/恢复作业镜像（E4 D-DB-6「执行体」裁决：
+# 一次性 Swarm job 的运行载体 = 引擎工具 + restic，digest 钉定随平台发布；
+# managed-databases 设计 §2.6）。
+#
+# 组合纪律：
+#   - 全部 FROM 逐 digest 钉定（deploy/check-image-pins.sh 门禁域 = Dockerfile*）；
+#   - 纯 COPY 无 RUN —— 多架构构建按目标平台自动解析各阶段（无需 QEMU），
+#     构建零执行 = 构建环境零信任要求；
+#   - alpine 全家（musl 同族）：redis-cli 从 redis:7-alpine 拷入 postgres
+#     alpine 基底可运行；restic 为 Go 静态二进制，任意基底可运行。
+#   - 工具面（引擎适配器的命令词表，internal/database S5 消费）：
+#       pg_dump / pg_restore / psql   （postgres 基底自带，/usr/local/bin）
+#       redis-cli                     （/usr/local/bin/redis-cli）
+#       restic                        （/usr/bin/restic → /usr/local/bin）
+#
+# 发布：release.yml dbtools job（随平台 release 重建并钉新 digest）；本地
+# 引导/演练构建用 buildx --push（见 runbook）。
+
+FROM restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510 AS restic
+
+FROM redis:7-alpine@sha256:858f009f9709ce576febc734aa78b8f6d624b82571f9ddb6bda4377c833b3499 AS redis
+
+FROM postgres:16-alpine@sha256:721873c34ceb9f8d8fc265984940dc982404c105f19ad51be9fdc5970a6080ea
+
+COPY --from=restic /usr/bin/restic /usr/local/bin/restic
+COPY --from=redis /usr/local/bin/redis-cli /usr/local/bin/redis-cli

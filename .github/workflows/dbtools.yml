@@ -1,0 +1,72 @@
+# dbtools 镜像发布（E4 D-DB-6「执行体」：库备份/恢复 job 的运行载体 =
+# 引擎工具 + restic，digest 钉定随平台发布）。
+#
+# 两个入口：
+#   - workflow_call：release.yml 随平台 release 调用（tag = 平台版本）；
+#   - workflow_dispatch：手动/引导发布（新 digest 引导、演练期补发）。
+# Go 侧消费 = internal/database 的 DefaultDatabaseToolsImage（digest 钉定，
+# check-image-pins 互补钉死）；镜像内容三上游全 digest 钉定（Dockerfile.dbtools
+# 在门禁扫描域内）。签名与验证门与 fleetlyd 镜像同款（keyless by digest）。
+
+name: dbtools image
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "image tag to publish (e.g. v0.2.0)"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "image tag to publish (e.g. v0.2.0-dbtools.1)"
+        required: true
+        type: string
+
+env:
+  DBTOOLS_IMAGE: ghcr.io/fleetlyrun/dbtools
+  EXPECTED_SIGNER: ^https://github\.com/fleetlyrun/fleetly/
+  EXPECTED_ISSUER: https://token.actions.githubusercontent.com
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build-push:
+    name: ghcr image + cosign sign
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: deploy
+          file: deploy/Dockerfile.dbtools
+          push: true
+          tags: |
+            ${{ env.DBTOOLS_IMAGE }}:${{ inputs.tag }}
+          # 纯 COPY 构建无需 QEMU；dbtools 是 job 执行体（远端节点也要拉），
+          # 与模板镜像同双平台。
+          platforms: linux/amd64,linux/arm64
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: cosign sign image (keyless, by digest)
+        run: |
+          cosign sign --yes \
+            '${{ env.DBTOOLS_IMAGE }}@${{ steps.push.outputs.digest }}'
+      - name: cosign verify image gate
+        run: |
+          cosign verify \
+            '${{ env.DBTOOLS_IMAGE }}@${{ steps.push.outputs.digest }}' \
+            --certificate-identity-regexp "$EXPECTED_SIGNER" \
+            --certificate-oidc-issuer "$EXPECTED_ISSUER"
