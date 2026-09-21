@@ -51,6 +51,11 @@ type Engine struct {
 	// 提升点触发日志脱敏值集失效；nil = 未接。engine 不 import logs——经
 	// fleetlyd 装配层注入回调，挂点模式同 postDeploy）。
 	envChanged EnvChangedHook
+	// dbTemplate 是库模板连接信息端口（E4 managed-databases；nil = 未接线
+	// ——带 fleetly.databases label 的部署规划期显式失败）。dbtemplate 在
+	// engine 之上（渲染投影消费 engine.ServiceSpec），只能端口注入不能反向
+	// import——适配器在装配层落（WithDatabaseTemplate）。
+	dbTemplate DatabaseTemplatePort
 	// waterMarks 是副本水位不足判定的进程内计时（观察窗辅助信号；引擎
 	// 重启后重摆——窗口本身持久化，重启代价可接受）。
 	waterMarks map[string]time.Time
@@ -137,6 +142,11 @@ type EnvChangedHook func(appID string)
 // 脱敏值集失效——装配层接到 logs.Manager.InvalidateRedaction。挂钩同步
 // 执行，实现必须非阻塞（实现方只做缓存删除），失败不得影响部署终态）。
 func (e *Engine) WithEnvChangedHook(fn EnvChangedHook) *Engine { e.envChanged = fn; return e }
+
+// WithDatabaseTemplate 注入库模板连接信息端口（E4：dbtemplate.EnvPrefix /
+// dbtemplate.ConnectionVars 的装配层适配——dbtemplate 在 engine 之上，只能
+// 注入）。
+func (e *Engine) WithDatabaseTemplate(p DatabaseTemplatePort) *Engine { e.dbTemplate = p; return e }
 
 // Run 启动引擎主循环：启动扫描（控制面重启分类恢复）→ 周期 tick + 漂移
 // 扫描。ctx 取消返回 nil（lynx actor 契约由服务壳负责阻塞语义）。
@@ -363,6 +373,13 @@ type prepareResult struct {
 	// system env 与 rustfs 网络牵线；nil/false = 本发布无注入面）。
 	s3Env       map[string][]envlayer.PlatformVar
 	attachRustfs bool
+	// dbNetworks 是库引用的网络牵线面（E4：fleetly.databases label 服务 →
+	// 库共享网络名列表；nil = 本发布无库引用）。
+	dbNetworks map[string][]string
+	// warnings 是 preparing 期产出的计划警告（E4 库引用
+	// W_DB_REFERENCE_NOT_READY 等）——随 planAndRelease 以 deployment.warning
+	// 事件披露（与 plan.Warnings 同管道）。
+	warnings []compose.Warning
 }
 
 // runPreparing 执行准备阶段：底座就绪 → compose 重载 → 放置解析/绑定/前哨
@@ -487,10 +504,6 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 		}
 	}
 
-	platform, err := e.platformEnvForMerge(ctx, rec.AppID)
-	if err != nil {
-		return nil, err
-	}
 	// S3 注入面（E3-4）：label fleetly.s3=true 的服务解析 system env 与
 	// 网络牵线。托管凭据未备便是暂态（duty 生成拍未到）——返回哨兵，调用
 	// 方停留 preparing 下一拍重试（预算由 preparing 看门狗守门）。
@@ -502,6 +515,19 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 		}
 		return nil, err
 	}
+	// 库引用面（E4 managed-databases §2.4/§2.5）：label fleetly.databases
+	// 的服务解析引用（存在性/前缀冲突哨兵 + 未就绪警告）、物化 system env
+	// 连接串（upsert → pending——必须先于 platformEnvForMerge 读取，物化行
+	// 才能随本次部署合并消费）并产出库共享网络牵线。
+	dbNetworks, dbWarnings, err := e.resolveDatabaseReferences(ctx, rec.AppID, rec.AppName, spec)
+	if err != nil {
+		return nil, err
+	}
+	// 平台层读取（含上一步物化的 pending 行——pending 参与合并，S16-C4）。
+	platform, err := e.platformEnvForMerge(ctx, rec.AppID)
+	if err != nil {
+		return nil, err
+	}
 	return &prepareResult{
 		spec:         spec,
 		fileEnv:      fileEnv,
@@ -510,6 +536,8 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 		decision:     decision,
 		s3Env:        s3Env,
 		attachRustfs: attachRustfs,
+		dbNetworks:   dbNetworks,
+		warnings:     dbWarnings,
 	}, nil
 }
 
@@ -538,6 +566,7 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 		PlatformEnv:         pre.platformEnv,
 		SystemEnv:           pre.s3Env,
 		AttachRustfsNetwork: pre.attachRustfs,
+		DBNetworks:          pre.dbNetworks,
 		Images:              images,
 		Decision:            pre.decision,
 		Volumes:             volumes,
@@ -551,7 +580,20 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "failed to encrypt desired-state snapshot: %v", err))
 	}
 
-	// 规划警告（W_ENV_PLATFORM_OVERRIDE 等）以 deployment.warning 事件披露。
+	// 规划警告（preparing 期产出 + plan 期产出；W_ENV_PLATFORM_OVERRIDE /
+	// W_DB_REFERENCE_NOT_READY 等）以 deployment.warning 事件披露（payload
+	// 只含 code/service——message 不进事件，明文纪律的结构性保障）。
+	for _, w := range pre.warnings {
+		if w.Code == "" {
+			continue
+		}
+		if err := e.store.InTx(ctx, func(tx *state.Tx) error {
+			return appendEvents(ctx, tx, deploymentEvent("deployment.warning", rec.ID,
+				"code", w.Code, "service", w.Service))
+		}); err != nil {
+			return err
+		}
+	}
 	for _, w := range plan.Warnings {
 		if w.Code == "" {
 			continue
@@ -732,8 +774,10 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 	if err := e.sub.NetworkEnsure(ctx, netName); err != nil {
 		return appErrOf(err, rec.ID)
 	}
-	// E3-4 rustfs 牵线网络：期望 spec 引用的平台侧网络一并确认（幂等——
-	// rustfs duty 未建网时兜底创建，应用发布不因组件收敛时序失败）。
+	// 期望 spec 引用的平台侧网络一并确认（幂等创建）：E3-4 rustfs 牵线与
+	// E4 库共享网络（fleetly-db-<name>-net，fleetly.databases 引用面）同经
+	// 此循环——应用发布不因组件收敛时序失败（设计 §2.4 时序行 3：
+	// NetworkEnsure 全部附加网络）。
 	extraNets := map[string]bool{}
 	for i := range desired {
 		for _, n := range desired[i].Networks {

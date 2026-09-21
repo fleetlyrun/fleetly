@@ -56,7 +56,7 @@ queued → preparing → building → releasing → observing → succeeded
 
 - **`revisions` 表**（每 app 每次成功部署一条）：`number`、`compose_normalized`（归一化 compose：受控子集内的服务与卷定义；**env 按三层合并结果快照**〔`key:sha256` + 来源标注，链式规则见架构 §2.4 变量合并〕，按字面值、无插值）、平台覆盖层（镜像 digest、secret 引用、路由绑定、节点绑定）、`spec_hash`（按合并结果计算）、`source_kind/source_ref`、`status ∈ {candidate|active|superseded}`。
 - **保留与可重放集合**：固定保留最近 5 次**成功**部署；列表即选项（列不出来的不可回滚，没有额外的状态机与错误码）；回滚目标越界 → `E_ROLLBACK_NO_TARGET`。
-- **重放语义**：compose 字段按快照回放（**非密钥 env 随快照回滚**；env 变更必须经部署固化为新版本，天然形成可回滚点）；治理参数（observe/onUnstable/keepVersions）取**当前平台配置**（前瞻设置不随版本回滚）；**secret 值永远取当前**（回滚不撤销密钥轮换，文档明示）；卷数据、DB 迁移、DNS 不回滚。
+- **重放语义**：compose 字段按快照回放（**非密钥 env 随快照回滚**；env 变更必须经部署固化为新版本，天然形成可回滚点；**`source=system` 行除外——按 key 取当前值，不随快照回放**〔E4 D-DB-11 修正，与 D-REL-9 secret 纪律同族；凭据轮换后重放不得复活旧密码，v0.2 起生效〕）；治理参数（observe/onUnstable/keepVersions）取**当前平台配置**（前瞻设置不随版本回滚）；**secret 值永远取当前**（回滚不撤销密钥轮换，文档明示）；卷数据、DB 迁移、DNS 不回滚。
 - **preflight**：镜像可得性（v0.1 本地 inspect / v0.2 registry HEAD）、约束可满足、secret 存在、compose 合法（受控子集/受管字段）——任一失败在动底座之前失败。v0.1 无 registry 时镜像被清理 → `E_IMAGE_UNAVAILABLE` + `W_ROLLBACK_IMAGE_RISK`（提示保留镜像或重建）。
 - 归位零成本：`IsTaskDirty` 按 task spec 深度相等判断，同内容重放不重建任务——**2026-09-17 Spike B2 已实测验证**：旧 task id 跨「失败 + 同内容重放」不变、零新增任务；字段脏检矩阵：container-label/env/restart-policy 变更与 `--force` 触发任务重建，service-label/update-config 不触发。**平台纪律：归位重放禁用 `--force`**。
 

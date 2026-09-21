@@ -57,6 +57,11 @@ type PlanInput struct {
 	// label 的服务附加 fleetly-rustfs-net；external 模式 false——应用自行
 	// 出网）。
 	AttachRustfsNetwork bool
+	// DBNetworks 是库引用的网络牵线面（E4 managed-databases §2.4：带
+	// fleetly.databases label 的服务 → 引用实例的共享网络名列表，无别名
+	// ——以 Swarm 服务名可达；desired-hash 含网络）。列表按键名字典序
+	//（resolveDatabaseReferences 产出顺序确定）。
+	DBNetworks map[string][]string
 	// Images 是服务 → digest 钉定镜像引用（building 阶段产出）。
 	Images map[string]string
 	// Decision 是放置裁决（绑定约束编译结果）。
@@ -243,10 +248,15 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 
 	// 网络接入：per-app 专属网络（别名 = compose 服务名）+ E3-4 rustfs
 	// 牵线（仅 rustfs 模式且带 fleetly.s3 label 的服务——应用→RustFS 内网
-	// 单向可达；external 模式不加，应用自行出网）。
+	// 单向可达；external 模式不加，应用自行出网）+ E4 库共享网络（带
+	// fleetly.databases label 的服务逐实例附加，**无别名**——引用方以
+	// Swarm 服务名可达；managed-databases §2.4）。
 	networks := []NetworkAttach{{Name: netName, Aliases: []string{alias}}}
 	if svc.S3 && in.AttachRustfsNetwork {
 		networks = append(networks, NetworkAttach{Name: state.RustfsNetworkName})
+	}
+	for _, dbNet := range in.DBNetworks[svc.Name] {
+		networks = append(networks, NetworkAttach{Name: dbNet})
 	}
 
 	spec := ServiceSpec{

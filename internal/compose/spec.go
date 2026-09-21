@@ -82,6 +82,13 @@ type Service struct {
 	// 装配），由调度器按点创建一次性 Swarm job。进归一化快照与 spec_hash
 	//——调度集组装从 revision 的 compose_normalized 快照现读（internal/cron）。
 	Cron *CronSchedule `json:"cron,omitempty"`
+	// Databases 是 fleetly.databases label 的归一化结果（E4 托管数据库，
+	// managed-databases §2.4/D-DB-4）：引用的库实例名列表（trim/排序——
+	// 逗号分隔书写形态与顺序无关，快照取字典序）。非空 = 该服务引用库
+	// 实例：发布引擎解析引用（存在性哨兵 + 前缀冲突哨兵）、物化 system
+	// env 连接串并附加库共享网络。进归一化快照与 spec_hash——label 变更
+	// 即期望态变更，随下次部署生效（引用登记由发布引擎从本声明重建）。
+	Databases []string `json:"databases,omitempty"`
 
 	Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
 	// Environment 是 env 合并结果（env_file < environment），按 key 排序；

@@ -31,6 +31,13 @@ const (
 	// 现而 s3.mode=unset → 部署规划期 E_S3_NOT_CONFIGURED（诚实拒绝）。
 	LabelS3 = "fleetly.s3"
 
+	// LabelDatabases 是库引用声明 label（E4 托管数据库，managed-databases
+	// §2.4/D-DB-4）：值为逗号分隔的库实例名列表（单一真源 = compose——
+	// 与 fleetly.domains 同载体同风格；不建与 compose 并行的期望态）。发布
+	// 引擎解析：实例存在性哨兵（E_DB_NOT_FOUND）、env 前缀冲突哨兵
+	//（E_DB_ENV_PREFIX_CONFLICT）、未就绪计划警告（W_DB_REFERENCE_NOT_READY）。
+	LabelDatabases = "fleetly.databases"
+
 	// LabelNamespace 是平台保留 label 命名空间前缀：用户占用约定键之外的
 	// fleetly.* 键 → E_LABEL_RESERVED（422）。
 	LabelNamespace = "fleetly."
@@ -41,7 +48,8 @@ const (
 )
 
 // knownFleetlyLabels 是平台承认的平台约定键全集（cron 家族自 E5 Cron 起
-// 生效——值契约见 parseCronSchedule；s3 为 E3-4 起的生效契约键）。
+// 生效——值契约见 parseCronSchedule；s3 为 E3-4 起的生效契约键；databases
+// 为 E4 起的生效契约键——值契约见 parseDatabasesLabel）。
 var knownFleetlyLabels = map[string]bool{
 	LabelDomains:       true,
 	LabelPlacementNode: true,
@@ -49,6 +57,7 @@ var knownFleetlyLabels = map[string]bool{
 	LabelCronTimezone:  true,
 	LabelCronTimeout:   true,
 	LabelS3:            true,
+	LabelDatabases:     true,
 }
 
 // parseS3Label 校验 fleetly.s3 label 值并给出开关结论（E3-4）：契约形态
@@ -65,6 +74,45 @@ func parseS3Label(service, value string) error {
 		service, LabelS3, value, "true").
 		WithContext("path", "services."+service+".labels."+LabelS3).
 		WithContext("reason", "invalid_value")
+}
+
+// parseDatabasesLabel 解析 fleetly.databases label 值（E4 托管数据库，
+// managed-databases §2.4/D-DB-4）：逗号分隔的库实例名列表 → trim 归一化、
+// 排序（书写顺序不影响 spec_hash）。形态契约：
+//   - 空条目（空串/纯空白）拒绝；
+//   - 每个名字必须匹配库实例名字符集 ^[a-z0-9][a-z0-9_-]*$（与 compose
+//     顶层 name / 库实例名同规则——state.ValidateDatabaseName 的同一形态，
+//     compose 层复用 specNamePattern）；
+//   - 同服务重复引用同名实例拒绝（重复声明是「以为引了两次」的歧义形态，
+//     fail-loud 比静默去重诚实）。
+//
+// 形态违规 → E_COMPOSE_UNSUPPORTED（label 值形态是 compose 书写面契约；
+// 实例存在性属引擎规划期前哨——E_DB_NOT_FOUND，解析层不拥有库清单）。
+// 返回排序后的实例名列表。
+func parseDatabasesLabel(service, value string) ([]string, error) {
+	rawItems := strings.Split(value, ",")
+	names := make([]string, 0, len(rawItems))
+	seen := map[string]bool{}
+	for i, raw := range rawItems {
+		name := strings.TrimSpace(raw)
+		pathCtx := fmt.Sprintf("services.%s.labels.%s[%d]", service, LabelDatabases, i)
+		if name == "" {
+			return nil, errCompose("database reference list of service %q contains an empty entry (%q expects a comma-separated list of database instance names)", service, LabelDatabases).
+				WithContext("path", pathCtx).WithContext("reason", "empty_entry")
+		}
+		if !validSpecName(name) {
+			return nil, errCompose("database reference %q of service %q has an invalid name (%s must match ^[a-z0-9][a-z0-9_-]*$: starts with a lowercase letter or digit, only lowercase letters/digits/-/_ allowed)", name, service, LabelDatabases).
+				WithContext("path", pathCtx).WithContext("reason", "invalid_name")
+		}
+		if seen[name] {
+			return nil, errCompose("service %q references database instance %q more than once (duplicate entries in %s are rejected; declare each instance once)", service, name, LabelDatabases).
+				WithContext("path", pathCtx).WithContext("reason", "duplicate_entry")
+		}
+		seen[name] = true
+		names = append(names, name)
+	}
+	sortStrings(names)
+	return names, nil
 }
 
 // parseCronSchedule 解析 fleetly.cron label 家族（E5 Cron，架构 §4.3 声明

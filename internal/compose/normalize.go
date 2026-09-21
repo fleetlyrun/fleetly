@@ -84,6 +84,18 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 			s3 = true
 		}
 
+		// databases label（E4 托管数据库引用声明，managed-databases §2.4/
+		// D-DB-4）：逗号分隔实例名 → trim/排序归一化；形态违规（空条目/
+		// 字符集/重复）在解析期即拒（fail-loud，同 parseS3Label 纪律）。
+		var databases []string
+		if v, ok := svc.Labels[LabelDatabases]; ok {
+			parsed, err := parseDatabasesLabel(name, v)
+			if err != nil {
+				return nil, nil, err
+			}
+			databases = parsed
+		}
+
 		// placement label：语法 + 跨服务一致性。
 		if v, ok := svc.Labels[LabelPlacementNode]; ok {
 			placementRefs[name] = strings.TrimSpace(v)
@@ -131,6 +143,7 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 		normalized.PlacementNode = placementRefs[name]
 		normalized.S3 = s3
 		normalized.Cron = cronSchedule
+		normalized.Databases = databases
 		services = append(services, normalized)
 	}
 

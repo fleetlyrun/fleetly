@@ -31,7 +31,9 @@ const (
 //
 // EnvService 是平台层环境变量面（T2.17；三层合并链的平台层）。生效语义：
 // Set/Remove 都把行置 pending——「随下次部署生效」，pending 语义经 status
-// 字段透出（console 可见「待生效」）；合并链只消费 effective 行。
+// 字段透出（console 可见「待生效」）；合并链消费全量行（pending 与
+// effective 都参与合并——部署是 pending 的消费点，部署成功后统一提升为
+// effective，S16-C4 契约统一）。
 //
 // 取舍注记（T2.17 设计裁决）：GetEnv 返回**明文**，需要 admin scope（与
 // CLI `fleetly env get` 同级敏感操作，鉴权矩阵在拦截器链强制）；List 恒
@@ -97,7 +99,9 @@ func (c *envServiceClient) RemoveEnv(ctx context.Context, in *RemoveEnvRequest, 
 //
 // EnvService 是平台层环境变量面（T2.17；三层合并链的平台层）。生效语义：
 // Set/Remove 都把行置 pending——「随下次部署生效」，pending 语义经 status
-// 字段透出（console 可见「待生效」）；合并链只消费 effective 行。
+// 字段透出（console 可见「待生效」）；合并链消费全量行（pending 与
+// effective 都参与合并——部署是 pending 的消费点，部署成功后统一提升为
+// effective，S16-C4 契约统一）。
 //
 // 取舍注记（T2.17 设计裁决）：GetEnv 返回**明文**，需要 admin scope（与
 // CLI `fleetly env get` 同级敏感操作，鉴权矩阵在拦截器链强制）；List 恒

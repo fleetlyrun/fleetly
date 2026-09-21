@@ -184,6 +184,23 @@ func (s *Store) DeleteAppEnv(ctx context.Context, appID, key string) error {
 	})
 }
 
+// DeleteAppEnv 是事务内的 env 行删除原语（供与引用登记等业务写组合在同一
+// 事务——E4 planner 的物化行清理：label 移除后同事务删除失配的 system
+// 物化行，managed-databases §2.4）。与 Store 形态的差异：幂等（无行时返回
+// false 不报错）、不在本层写审计（组合事务的调用方决定审计粒度——planner
+// 的派生登记维护不逐键落审计，登记语义随部署记录）。
+func (t *Tx) DeleteAppEnv(ctx context.Context, appID, key string) (bool, error) {
+	res, err := t.ExecContext(ctx, `DELETE FROM env_vars WHERE app_id = ? AND key = ?`, appID, key)
+	if err != nil {
+		return false, fmt.Errorf("state: delete env %s: %w", key, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("state: read env delete count: %w", err)
+	}
+	return n > 0, nil
+}
+
 // ListAppEnv 返回该 app 全部 env 行（含 pending，按 key 字典序）。消费面
 // 三处：发布引擎合并链（pending 参与合并——部署即消费点，S16-C4）、CLI/
 // API 展示（键名/来源/状态位投影）、日志脱敏值集（pending 值同样不得进

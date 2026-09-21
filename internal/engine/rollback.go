@@ -4,7 +4,11 @@ package engine
 //   - 回滚目标 = revisions 保留窗内最近 5 次成功部署（列表即选项）；越界 /
 //     不存在 / 归属不符 → E_ROLLBACK_NO_TARGET；
 //   - 重放语义：compose 字段与合并 env 按快照（执行形态 = 目标 succeeded
-//     deployment 行的 desired_spec 密文——合并 env 明文只在密文里）；治理
+//     deployment 行的 desired_spec 密文——合并 env 明文只在密文里）；
+//     **source=system 行除外**（E4 托管数据库 D-DB-11 修正）：连接串等平台
+//     物化行不随快照回放——重放时按 key 从 env_vars 现读当前解密值（凭据
+//     轮换后回滚不再复活旧密码，D-REL-9 同族）；键已不在 env_vars 的保留
+//     快照值（物化归一发生在下一次常规部署）；治理
 //     参数（看门狗/观察窗）取当前引擎配置；secret 值取当前（v0.1 平台
 //     密钥库未接入，快照不含 secret——结构性地满足「回滚不撤销密钥轮换」，
 //     密钥票落地后此处语义不变）；卷数据/DB 迁移/DNS 不回滚；
@@ -27,6 +31,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/envlayer"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -204,6 +209,9 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 		return e.failRollbackPreflight(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "substrate check failed: %v", err))
 	}
 
+	// D-DB-11（E4 托管数据库）：快照的合并 env 对 source=system 行按 key
+	// 取当前值——代换已下沉 restoreSnapshot 共享原语（归位/回滚/漂移收敛
+	// 全路径统一），此处不再单独修正。
 	specs, err := e.decodeSpecs(rec)
 	if err != nil || len(specs) == 0 {
 		return e.failRollbackPreflight(ctx, rec, errorf("E_ROLLBACK_FAILED",
@@ -231,6 +239,52 @@ func (e *Engine) runRollbackPreparing(ctx context.Context, rec state.DeployRecor
 	if err := e.restoreSnapshot(ctx, rec, specs); err != nil {
 		ae := appErrOf(err, rec.ID)
 		return e.failRollbackDeployment(ctx, rec, ae.Code(), ae.Message())
+	}
+	return nil
+}
+
+// replaySystemEnvCurrent 是 D-DB-11 的重放修正（E4 托管数据库 §6 冲突 ①，
+// 对发布专项 D-REL-9 的兑现）：快照的合并 env 中，凡 key 当前存在于
+// env_vars 且 source=system 的条目，值替换为当前解密值——凭据轮换（S4
+// rotate 更新 system 物化行）后重放不复活旧密码。边界（诚实口径）：键已
+// 不在 env_vars（引用移除后的清理拍等）的条目保留快照原值——重物化归一
+// 发生在下一次常规部署（prepareInputs 重物化 + 合并），重放路径不做物化。
+// 调用点 = restoreSnapshot 共享原语头部：kind=rollback 回滚、失败归位
+//（recovery=replay）、release 失败回退、漂移收敛四条重放路径统一过此
+// 修正（验收裁决：D-REL-9 是全路径纪律，不设单路径豁免）。
+//
+// 解密失败 = 密钥/密文损坏：显式失败（E_RUNTIME_UNAVAILABLE）不静默降级
+// ——带着错值重放比失败更危险。
+func (e *Engine) replaySystemEnvCurrent(ctx context.Context, rec state.DeployRecord, specs []ServiceSpec) error {
+	rows, err := e.store.ListAppEnv(ctx, rec.AppID)
+	if err != nil {
+		return errorf("E_RUNTIME_UNAVAILABLE", "failed to read env rows for rollback replay: %v", err)
+	}
+	current := make(map[string]string, len(rows))
+	for _, row := range rows {
+		if row.Source != string(envlayer.SourceSystem) {
+			continue
+		}
+		plain, derr := e.box.Decrypt([]byte(row.Value))
+		if derr != nil {
+			return errorf("E_RUNTIME_UNAVAILABLE",
+				"failed to decrypt system env %s for rollback replay (master key mismatch or corrupted ciphertext)", row.Key)
+		}
+		current[row.Key] = string(plain)
+	}
+	if len(current) == 0 {
+		return nil
+	}
+	for i := range specs {
+		for j, kv := range specs[i].Env {
+			key, _, ok := strings.Cut(kv, "=")
+			if !ok {
+				continue
+			}
+			if v, hit := current[key]; hit {
+				specs[i].Env[j] = key + "=" + v
+			}
+		}
 	}
 	return nil
 }

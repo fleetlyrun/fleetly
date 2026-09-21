@@ -346,7 +346,14 @@ func (e *Engine) failCriticalRestore(ctx context.Context, rec state.DeployRecord
 // 重放路径恒下发 ServiceUpdate（applyDesired force=true）：desired-hash
 // label 是上次平台写的存根，外部改动不清理它——相等不代表实况未被篡改；
 // 同内容 ServiceUpdate 不触发任务重建（Spike B2 零替换语义不受影响）。
+// D-DB-11（E4 托管数据库）：进入对账前对 source=system env 行按 key 取
+// 当前值修正快照——归位/回滚/漂移收敛全部重放路径统一兑现 D-REL-9
+//「secret 值永远取当前」（replaySystemEnvCurrent，rollback.go）。
 func (e *Engine) restoreSnapshot(ctx context.Context, rec state.DeployRecord, snapshot []ServiceSpec) error {
+	// D-DB-11：system env 当前值代换（轮换后重放不复活旧密码）。
+	if err := e.replaySystemEnvCurrent(ctx, rec, snapshot); err != nil {
+		return err
+	}
 	// 快照里的服务 label 补当前发布归属（服务 label 更新不触发任务替换）。
 	for i := range snapshot {
 		if snapshot[i].ServiceLabels == nil {

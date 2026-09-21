@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/cron"
 	"github.com/fleetlyrun/fleetly/internal/database"
+	"github.com/fleetlyrun/fleetly/internal/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
@@ -293,7 +294,22 @@ func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Clie
 		WithPostDeployHook(bm.RunPostDeploy).
 		// H9：部署 env 提升点联动失效日志脱敏值集（观察窗成功 + 实际
 		// 提升 pending 时触发；回调只做缓存删除，非阻塞）。
-		WithEnvChangedHook(lm.InvalidateRedaction)
+		WithEnvChangedHook(lm.InvalidateRedaction).
+		// E4 managed-databases：库模板连接信息端口（fleetly.databases 引用
+		// 面的物化键值与前缀唯一定义点在 dbtemplate——渲染投影消费
+		// engine.ServiceSpec，dbtemplate 在 engine 之上，只能装配层注入）。
+		WithDatabaseTemplate(dbTemplatePort{})
+}
+
+// dbTemplatePort 是引擎对库模板连接信息面的装配层适配（engine.DatabaseTemplatePort；
+// 薄委托到 dbtemplate.EnvPrefix / dbtemplate.ConnectionVars——前缀与连接串
+// 键值的唯一定义点保持单源）。
+type dbTemplatePort struct{}
+
+func (dbTemplatePort) EnvPrefix(instance string) string { return dbtemplate.EnvPrefix(instance) }
+
+func (dbTemplatePort) ConnectionVars(templateID, instance, password string) (map[string]string, error) {
+	return dbtemplate.ConnectionVars(templateID, instance, password)
 }
 
 // NewLogsManager 构建日志管线管理器（T2.20：采集/Follow/History/清理；

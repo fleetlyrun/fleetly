@@ -80,8 +80,13 @@ func (e *Engine) reapDeletingApp(ctx context.Context, app state.App) {
 	}
 	// 全部受管服务已移除 → tombstone 第二拍 + 终局事件（app.deleted，注册
 	// 表词）与审计同事务（fail-closed；CAS 失败 = 并发已推进，幂等跳过）。
+	// E4 managed-databases §2.4「引用 app 删除 = 行级联清理」：db_references
+	// 倒排随 tombstone 第二拍同事务清空（库删除守卫的引用面不再悬挂）。
 	err = e.store.InTx(ctx, func(tx *state.Tx) error {
 		if err := tx.MarkAppDeleted(ctx, app.ID); err != nil {
+			return err
+		}
+		if _, err := tx.DeleteDatabaseReferencesForApp(ctx, app.ID); err != nil {
 			return err
 		}
 		if err := appendEvents(ctx, tx, appEvent("app.deleted", app.Name)); err != nil {
