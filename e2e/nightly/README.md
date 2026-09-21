@@ -72,6 +72,12 @@ bash e2e/nightly/resource-sample.sh     # 资源采样（单 dind；RS_OUT_DIR �
   `deploy/run-dind-test.sh`（T2.23 / T2.1 验收入 nightly）。
 - `conformance-builder`：`bash e2e/nightly/conformance-builder.sh`，CB-*
   断言行与场景 B 结论收进 job summary。
+- `conformance-objectstore`（E3-7，2026-09-21）：起 pinned RustFS 容器
+  （digest 台账 image-prepull #12）→ env 注入跑
+  `go test ./internal/objectstore/ -run TestConformance`——FZ-7 闭环
+  （本地 env 未设 = skip，零成本）。
+- `s3-rustfs-e2e`（E3-7 挂接，2026-09-21）：`sh e2e/s3-rustfs.sh`——E3-4/5
+  对象存储端到端（单 dind，编排自足）。
 - `resource-sample`：`bash e2e/nightly/resource-sample.sh`，Markdown 表进
   job summary，`sample.json` 附加 artifact（actions/upload-artifact）。
 - 失败时 run.sh / 各编排脚本自身 dump dind 日志尾部；workflow 另有
@@ -90,10 +96,12 @@ daemon `--bin-dir --no-systemd` 起服，Traefik 就绪后走 CLI）：
 | B 无 Dockerfile（railpack） | go.mod + main.go（stdlib-only） | `CB-B1` 驱动裁决 = railpack（**判定线，必须过**）；`CB-B2` 终态；`CB-B3` 终态证据（成功带 digest、失败带 E_BUILD_FAILED）；`CB-B4` plan 归档（成功时）。构建本身受外网/工具链下载影响，成功或失败都合法——`CB-B-OUTCOME` 结论行进 job summary |
 | C 坏 Dockerfile | COPY 不存在的文件 | `CB-C1..C6`：build rc≠0 / builds 行 failed / E_BUILD_FAILED / deploy rc≠0 / 部署行 failed / E_BUILD_FAILED |
 
-**ObjectStore conformance 记 N/A（T2.24 裁决落档）**：ObjectStore 组件
-v0.1 未落地（minio-go 在代码库零使用、无真实消费者），以 MinIO/RustFS
-容器代演没有验证对象；等 v0.2 备份上传统一落地后再进 conformance。
-本阶段 Builder conformance 必落地（如上）。
+**ObjectStore conformance N/A 记已清偿（E3-7，2026-09-21，FZ-7 闭环）**：
+上文 N/A 的前提（组件未落地、无真实消费者）随 E3-1/E3-3/E3-4 消除——
+`internal/objectstore` 是备份上传轨/凭证注入的唯一 S3 客户端面，conformance
+以 nightly `conformance-objectstore` job 落地（真 RustFS 全操作面断言；
+测试文件 `internal/objectstore/conformance_test.go`）。本阶段 Builder
+conformance 如上不变。
 
 ## 资源基线采样（T2.24；T2.25 前置）
 

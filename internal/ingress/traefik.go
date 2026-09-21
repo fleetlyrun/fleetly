@@ -339,7 +339,9 @@ func (m *Manager) attachNetwork(ctx context.Context, appName string) error {
 // attachNetworkByName 是网络接入的通用形态（E1-4：平台 overlay
 // fleetly-system 由 registry 部署 duty 接入 Traefik——registry 路由段
 // 的后端 VIP 只在同网络内可达）。语义与 attachNetwork 一致：幂等、以
-// 服务实况网络集为基准、ID 判据。
+// 服务实况网络集为基准、ID 判据。网络不存在时**代建**（普通 overlay——
+// 仅限允许代建的平台网络；attachable 语义的网络走
+// attachPlatformNetworkIfPresent，s3public.go）。
 func (m *Manager) attachNetworkByName(ctx context.Context, netName string) error {
 	if err := m.docker.NetworkEnsure(ctx, netName); err != nil {
 		return err
@@ -348,6 +350,16 @@ func (m *Manager) attachNetworkByName(ctx context.Context, netName string) error
 	if err != nil {
 		return err
 	}
+	return m.attachNetworkID(ctx, netName, netID)
+}
+
+// attachNetworkID 是网络挂接的幂等核（attachNetworkByName 与
+// attachPlatformNetworkIfPresent 的共用段——E3-6 拆出，消灭第三份手写
+// 合并逻辑）：幂等判据用网络 ID（swarm 把 attach 目标归一为 ID——名字比
+// 对永不命中，产生重复 attach，实机验证发现的第二处）；网络目标集以服务
+// 实况（cur.Networks）为基准追加——不能用 lastSpec 重建（lastSpec 不含
+// 历史 attach，会互相覆盖丢失其他 app 的网络，实机验证发现的多 app 回归）。
+func (m *Manager) attachNetworkID(ctx context.Context, netName, netID string) error {
 	cur, err := m.docker.ServiceInspect(ctx, IngressServiceName)
 	if err != nil {
 		return err

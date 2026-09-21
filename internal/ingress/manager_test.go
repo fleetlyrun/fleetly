@@ -52,13 +52,17 @@ type fakeDocker struct {
 	// Remove 消费并清零——底座语义：移除后不复存在）。
 	legacySeedPresent bool
 	seedRemoved       []string
+	// netMissing 模拟网络缺位（NetworkID 对名单内名字返回错误——E3-6：
+	// 「rustfs duty 尚未建网」的 attach 负路径底座语义）。
+	netMissing map[string]bool
 }
 
 func newFakeDocker() *fakeDocker {
 	return &fakeDocker{
-		services: map[string]ingressServiceState{},
-		networks: map[string]bool{},
-		info:     swarmInfo{SwarmActive: true, NodeAddr: "127.0.0.1"},
+		services:   map[string]ingressServiceState{},
+		networks:   map[string]bool{},
+		netMissing: map[string]bool{},
+		info:       swarmInfo{SwarmActive: true, NodeAddr: "127.0.0.1"},
 	}
 }
 
@@ -174,6 +178,11 @@ func (f *fakeDocker) NetworkEnsure(_ context.Context, name string) error {
 }
 
 func (f *fakeDocker) NetworkID(_ context.Context, name string) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.netMissing[name] {
+		return "", errors.New("network not found: " + name)
+	}
 	// 同构底座语义：ID 形态与名字不同（swarm 归一），幂等判据走 ID。
 	return "netid-" + name, nil
 }

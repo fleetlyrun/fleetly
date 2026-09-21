@@ -76,6 +76,8 @@ RustFS **默认仅内网**（overlay 网络，无公网面）——W3 全部在 
 
 `internal/objectstore` 的封闭操作面（§2.1）对 RustFS 实例跑通 = conformance：CI dind job 起 `rustfs/rustfs:<钉版>` → 全操作面断言（ensure/put/get/stat/delete/list + 探针协议 + path-style 行为）。**语义**：平台对「S3 兼容端点」的全部依赖面被 RustFS 证真——外部端点（AWS/MinIO/B2…）由用户侧 `TestConnection` 自测覆盖，CI 不mock外部云。FZ-7 就此闭环（v0.1 记 N/A 的条件消除：minio-go 有了真实消费者）。
 
+> **实现落点（2026-09-21，E3-7 完成，FZ-7 已闭环）**：测试 = `internal/objectstore/conformance_test.go`（env 门控 `FLEETLY_CONFORMANCE_S3_ENDPOINT` 等，本地未设即 skip 零成本；CI 注入）；CI = nightly.yml 的 `conformance-objectstore` job（runner 宿主起 `rustfs/rustfs:1.0.0` 钉 digest 容器 → env 注入跑 conformance）+ `s3-rustfs-e2e` job（`e2e/s3-rustfs.sh` 端到端挂接）；PR 轨不加（镜像拉取时长，红线 1 纪律）。设计原稿「CI dind job」微调为 runner 宿主容器——conformance 是纯客户端面，无需集群底座（E3-5 实证 fleetlyd 宿主不可达 overlay 的教训只约束平台内网探针路径，不约束 CI 客户端直连面）。
+
 ## 3. 关键裁决（D-S3-*）
 
 | # | 裁决 | 理由与代价 |

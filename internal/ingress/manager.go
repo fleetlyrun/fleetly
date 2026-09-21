@@ -78,6 +78,9 @@ type Manager struct {
 	// platformRetryInterval 是平台证书 duty 的重试退避（E1-3；零值回落
 	// platformCertRetryInterval 常量，单测注入短退避驱动重试次序断言）。
 	platformRetryInterval time.Duration
+	// s3PublicScanInterval 是 s3 公网开关 duty 的稳态扫描周期（E3-6；零值
+	// 回落 s3PublicScanInterval 常量，单测注入短周期驱动开关收敛断言）。
+	s3PublicScanInterval time.Duration
 }
 
 // NewManager 构造入口管理器（cfg 缺省回落；docker client 按
@@ -193,6 +196,7 @@ func (m *Manager) TLSHandler(ctx context.Context) (http.Handler, error) {
 func (m *Manager) Run(ctx context.Context) error {
 	go m.runPlatformCertDuty(ctx)
 	go m.runRegistryDuty(ctx)
+	go m.runS3PublicDuty(ctx)
 	m.sweep(ctx)
 	ticker := time.NewTicker(m.cfg.RenewScanInterval)
 	defer ticker.Stop()
@@ -271,17 +275,9 @@ func (m *Manager) routesFromStore(ctx context.Context) ([]Route, error) {
 	return routesFromLedger(ctx, m.store, rows)
 }
 
-// withPlatformRoutes 追加平台路由段（E1-4：base_domain 非空时 registry
-// 路由进动态配置——Host(`registry.<base>`) → fleetly-registry:5000，设计
-// §2.5 路由行「控制面自有，不属任何 app」；平台证书就绪后经
-// publishWithCerts 的按 app 挂证书循环自动获得 443 路由与内联证书段）。
-// base_domain 为空 = 空集（单节点 v0.1 形态逐字不变）。
-func (m *Manager) withPlatformRoutes(routes []Route) []Route {
-	if !m.ConfigTLSEnabled() {
-		return routes
-	}
-	return append(routes, m.platformRegistryRoute())
-}
+// withPlatformRoutes（E1-4 registry 路由段 + E3-6 s3 公网路由段）定义于
+// s3public.go——平台路由段的组装单点（ctx 感知：s3 公网开关每次发布现读
+// 设置）。
 
 // publish 换入全量视图：**统一带证书段**（F10 修复，2026-09-21 真机发现：
 // 无证书段的 publish 会把既有 websecure/内联证书整体擦出视图——无域名
@@ -350,14 +346,15 @@ func (m *Manager) PublishRoutes(ctx context.Context, in PublishInput) error {
 
 // publishWithCerts 全量重发布（带证书段）：证书库就绪的 app 路由挂
 // CertificateRef（443 路由 + tls.certificates）；无证书 app 仅 HTTP。平台
-// 路由段（E1-4）同盘：registry 路由的 App 是平台证书保留名，平台证书
-// 落库后由既有按 app 挂证书循环自动获得 443 路由与内联证书段（零特判）。
+// 路由段（E1-4/E3-6）同盘：registry 与（公网开关开启时的）s3.<base> 路由
+// 的 App 都是平台证书保留名，平台证书落库后由既有按 app 挂证书循环自动
+// 获得 443 路由与内联证书段（零特判）。
 func (m *Manager) publishWithCerts(ctx context.Context) error {
 	routes, err := m.routesFromStore(ctx)
 	if err != nil {
 		return err
 	}
-	routes = m.withPlatformRoutes(routes)
+	routes = m.withPlatformRoutes(ctx, routes)
 	withCerts := make([]Route, 0, len(routes))
 	apps := map[string]bool{}
 	for _, r := range routes {

@@ -211,6 +211,14 @@ func TestPlatformCertDutyRetryThenEndpointSwitch(t *testing.T) {
 	}
 	// 终态⑤（F8，2026-09-21 真机发现钉住）：证书就绪同拍视图已重发布——
 	// websecure 证书段在线（内联 PEM），指纹与平台证书一致；不等 12h sweep。
+	// await 形态：endpoint 翻转与视图换入是 duty 内先后两步（重发布含台账
+	// 与设置现读的数次查询），轮询窗口内到达即符合 F8 语义；超时 = 重发布
+	// 缺失，F8 回归（S4 注：E3-6 在 publishWithCerts 增加了 s3 设置现读，
+	// 拉长了翻转→换入间隙，即时快照假设在本机高频轮询下曾偶发踩空）。
+	awaitUntil(t, "F8: view republished with tls.certificates after cert converged", 5*time.Second, func() bool {
+		snap, _ := m.vw.snapshot()
+		return snap.TLS != nil && len(snap.TLS.Certificates) > 0
+	})
 	snap, _ := m.vw.snapshot()
 	if snap.TLS == nil || len(snap.TLS.Certificates) == 0 {
 		t.Fatalf("F8: view carries no tls.certificates after platform cert converged")

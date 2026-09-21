@@ -34,8 +34,11 @@ const platformCertApp = "_fleetly-platform"
 // 覆盖（单测）。
 const platformCertRetryInterval = 30 * time.Second
 
-// PlatformDomains 返回平台证书的 SAN 域名集（D-MN-6：ctrl/registry/
-// console.<base>）。base_domain 为空时无意义（duty 不启动）。
+// PlatformDomains 返回平台证书的**基础** SAN 域名集（D-MN-6：ctrl/registry/
+// console.<base>）。base_domain 为空时无意义（duty 不启动）。公网子域开关
+// （E3-6，s3.public_exposed）开启时实际签发集条件增第四 SAN s3.<base>——
+// 生产签发路径走 platformDomainsWithS3（期望态函数，现读 s3 设置）；本函数
+// 是基础集（诊断/测试出口），不读设置。
 func (m *Manager) PlatformDomains() []string {
 	return []string{
 		"ctrl." + m.cfg.BaseDomain,
@@ -78,7 +81,13 @@ func (m *Manager) PlatformTLSCertificate() (*tls.Certificate, error) {
 func (m *Manager) ensurePlatformCertificate(ctx context.Context, renewing bool) (*CertificatePair, error) {
 	m.issueMu.Lock()
 	defer m.issueMu.Unlock()
-	domains := m.PlatformDomains()
+	// SAN 期望态集（E3-6：公网开关条件增第四 SAN）——设置读取失败显式失败
+	// 退避重试（不得回落基础集：签发是不可逆消耗 LE 限额的动作，按残缺集
+	// 签发会先缩 SAN 再补签，两次真实签发换一次抖动）。
+	domains, err := m.platformDomainsWithS3(ctx)
+	if err != nil {
+		return nil, err
+	}
 	existing, err := m.certs.Load(platformCertApp)
 	switch {
 	case err == nil:
@@ -131,6 +140,17 @@ func (m *Manager) runPlatformCertDuty(ctx context.Context) {
 	}
 	converged := false
 	for {
+		// SAN 期望态集现读（E3-6：公网开关条件增第四 SAN；读取失败按退避
+		// 重试——不得按残缺集做续期判定，理由见 ensurePlatformCertificate）。
+		domains, err := m.platformDomainsWithS3(ctx)
+		if err != nil {
+			m.log.Warn("ingress: platform certificate domain set unreadable (retrying)",
+				"error", err, "retry_in", retry.String())
+			if !sleepCtx(ctx, retry) {
+				return
+			}
+			continue
+		}
 		pair, err := m.certs.Load(platformCertApp)
 		switch {
 		case err == nil:
@@ -143,7 +163,7 @@ func (m *Manager) runPlatformCertDuty(ctx context.Context) {
 			}
 			continue
 		}
-		if pair == nil || needsRenewal(pair, m.PlatformDomains(), m.nowFunc(), m.cfg.RenewBefore) {
+		if pair == nil || needsRenewal(pair, domains, m.nowFunc(), m.cfg.RenewBefore) {
 			if _, err := m.ensurePlatformCertificate(ctx, pair != nil); err != nil {
 				m.log.Warn("ingress: platform certificate issue deferred (retrying)",
 					"error", err, "retry_in", retry.String())

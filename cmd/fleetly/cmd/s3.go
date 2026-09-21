@@ -385,8 +385,13 @@ func (c *s3StatusCmd) Run(ctx context.Context, env *commands.Environment, args [
 		if deployment != "" {
 			fmt.Fprintf(&b, "deployment: %s\n", deployment)
 		}
+		// 公网面行（E3-6，D-S3-9 诚实口径）：开启时显示 s3.<base> 端点形态
+		// + 「公网可达面 +1，鉴权 = RustFS 凭证」提示——8423 的教训不重演：
+		// 该暴露是用户显式选择，CLI 面如实复述其含义。base_domain 由 daemon
+		// 配置持有，读面无此字段（proto 未含），端点以 <base> 形态展示。
 		if st.GetPublicExposed() {
-			b.WriteString("public exposed: true (s3.<base> reachable; auth = storage credentials)\n")
+			b.WriteString("public endpoint: s3.<base> (websecure TLS -> managed RustFS; internal endpoint http://rustfs:9000 unchanged)\n")
+			b.WriteString("public exposure: publicly reachable surface +1; authentication = RustFS credentials\n")
 		}
 		_, err = fmt.Fprint(env.Stdout, b.String())
 		return err
