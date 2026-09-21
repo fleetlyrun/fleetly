@@ -313,6 +313,15 @@ message BackupView {
   string error = 7;
   // 台账落账时刻。
   google.protobuf.Timestamp created_at = 8;
+  // 远端上传结论（E3-3 上传轨）：none（未上传——s3.mode=unset 合法态或
+  // 上传步未执行）/ ok / failed。本地 verify 语义不变（上传失败不回写
+  // verify_status）。
+  string upload_status = 9;
+  // 最近一次上传尝试的完成时刻（ok/failed 都记；从未尝试不输出）。
+  google.protobuf.Timestamp uploaded_at = 10;
+  // 上传失败原因摘要（截断上界在存储层；不含 secret——restic env 凭证
+  // 材料禁止进台账/事件/读面）。
+  string upload_error = 11;
 }
 
 message ListBackupsResponse {

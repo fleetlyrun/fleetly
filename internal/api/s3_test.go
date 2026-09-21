@@ -421,3 +421,59 @@ func TestS3ConnectionProbe(t *testing.T) {
 		t.Fatalf("stored-config probe = %+v, want ok", res.GetResult())
 	}
 }
+
+// TestS3ResticPasswordInternalKey E3-3/D-S3-5 负面测试：restic repo 口令
+// 是 platform_settings 内部键——S3 读面（S3SettingsView）结构上不携带它
+//（无字段可泄），且保存/读取循环后口令密文不被触碰、不进任何响应文本。
+func TestS3ResticPasswordInternalKey(t *testing.T) {
+	cl, st, admin, _ := newS3TestEnv(t, "")
+	ctx := context.Background()
+	// 测试标记值（密文替身，非真实凭据——G101 为标识符词面误报）。
+	const passwordMarker = "restic-PW-PLAINTEXT-a1b2c3d4e5f6" //nolint:gosec // G101
+
+	// 保存 external 配置（读面基线：指纹对应该配置的 secret）。
+	up, err := cl.UpdateS3Settings(authCtx(ctx, admin), &serverv1.UpdateS3SettingsRequest{
+		Mode: state.S3ModeExternal, EndpointUrl: "https://s3.example.com", Bucket: "fleetly",
+		AccessKeyId: "AKIDEXAMPLE", SecretAccessKey: "view-secret-PLAIN", PathStyle: true,
+	})
+	if err != nil {
+		t.Fatalf("UpdateS3Settings: %v", err)
+	}
+
+	// 惰性生成的存储形态（模拟上传轨已落库的口令密文——密文入参，state
+	// 层不解释；此处以明文标记作密文替身，同 state 包测试口径）。
+	if err := st.SaveResticPasswordCiphertext(ctx, passwordMarker); err != nil {
+		t.Fatalf("SaveResticPasswordCiphertext: %v", err)
+	}
+
+	// 读面：取值不因内部键而变化（updated_at 随保存变化，不参与比对）；
+	// 口令材料零出现。
+	got, err := cl.GetS3Settings(authCtx(ctx, admin), &serverv1.GetS3SettingsRequest{})
+	if err != nil {
+		t.Fatalf("GetS3Settings: %v", err)
+	}
+	v := got.GetSettings()
+	if v.GetMode() != up.GetSettings().GetMode() ||
+		v.GetEndpointUrl() != up.GetSettings().GetEndpointUrl() ||
+		v.GetBucket() != up.GetSettings().GetBucket() ||
+		v.GetAccessKeyId() != up.GetSettings().GetAccessKeyId() ||
+		v.GetSecretFingerprint() != up.GetSettings().GetSecretFingerprint() ||
+		v.GetPathStyle() != up.GetSettings().GetPathStyle() {
+		t.Fatalf("settings view drifted after internal-key write:\n got %+v\nwant %+v", v, up.GetSettings())
+	}
+	if strings.Contains(got.String(), passwordMarker) {
+		t.Fatal("get response leaks restic password material")
+	}
+
+	// PUT 保存一轮后口令条目不被触碰（内部键不在 PUT 全量键集）。
+	if _, err := cl.UpdateS3Settings(authCtx(ctx, admin), &serverv1.UpdateS3SettingsRequest{
+		Mode: state.S3ModeExternal, EndpointUrl: "https://s3.example.com", Bucket: "fleetly",
+		AccessKeyId: "AKIDEXAMPLE", SecretAccessKey: "view-secret-PLAIN-2", PathStyle: true,
+	}); err != nil {
+		t.Fatalf("UpdateS3Settings (second): %v", err)
+	}
+	pw, found, err := st.LoadResticPasswordCiphertext(ctx)
+	if err != nil || !found || pw != passwordMarker {
+		t.Fatalf("restic password after PUT: found=%v value=%q err=%v, want untouched", found, pw, err)
+	}
+}

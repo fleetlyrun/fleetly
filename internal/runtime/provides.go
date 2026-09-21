@@ -197,10 +197,17 @@ func NewBuilder(cfg *AppConfig, st *state.Store, dc *substrate.Client, dm build.
 
 // NewBackupManager 构建状态备份管理器（T2.22：热备快照 + 回读校验 +
 // manifest/台账 + 每日循环；backup.* 配置节，dir 缺省回落数据根下 backups/
-// ——主密钥分离性由构造期 fail-fast 守卫）。
-func NewBackupManager(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets.Box, version Version) (*statebackup.Manager, error) {
-	return statebackup.NewManager(cfg.BackupSettings(), cfg.BackupRoot(), sb.Path(),
+// ——主密钥分离性由构造期 fail-fast 守卫）。E3-3：上传轨接线——restic
+// 钉版容器一次性执行端口由 substrate 客户端实现（Docker API create/
+// start/wait/rm），envelope 加解密器承担 restic repo 口令的解密与惰性
+// 生成落库（D-S3-5）；上传轨开关 = s3.mode（unset 即停，运行期设置现读）。
+func NewBackupManager(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets.Box, sc *substrate.Client, version Version) (*statebackup.Manager, error) {
+	mgr, err := statebackup.NewManager(cfg.BackupSettings(), cfg.BackupRoot(), sb.Path(),
 		string(version), st, app.Logger())
+	if err != nil {
+		return nil, err
+	}
+	return mgr.WithUpload(sc, sb), nil
 }
 
 // NewBuildQueue 构建构建队列调度器（信号量并发上限 + builds 行扫描认领 +

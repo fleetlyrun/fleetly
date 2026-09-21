@@ -30,6 +30,7 @@ fork 镜像 + `canary` 可变 tag——供应链反面教材（docs/research/
 | 8 | `ghcr.io/letsencrypt/pebble:latest` | `ddf23064…78199` | ACME 测试 CA（journey 链路代演） | deploy/test-journey.sh（`PEBBLE_IMG`） |
 | 9 | `curlimages/curl:latest` | `58adaa4e…166777` | HTTPS 探针（journey J4） | deploy/test-journey.sh |
 | 10 | `ghcr.io/project-zot/zot:v2.1.21` | `6b69512c…f48c8` | 平台 registry（zot，E1-4 部署器钉版缺省；多节点 manager 平台组件） | internal/ingress/registry.go `DefaultZotImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步） |
+| 11 | `restic/restic:0.19.1` | `136600b6…d510` | 状态备份远端上传轨（restic 钉版容器一次性执行，E3-3/D-S3-3；首次上传按需拉取，预拉可选） | internal/statebackup/restic.go `DefaultResticImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；2026-09-21 解析） |
 
 台账与实际引用集的一致性以门禁扫描为准：
 

@@ -88,6 +88,13 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 布尔开关不带走秘密；发出来源 = platform_settings 的 S3 设置保存事务
 	//（internal/state/s3settings.go，与业务写同事务 = Outbox 模式）。
 	"s3.updated": "E3 object-storage §5.3 added during implementation (settings change; payload carries mode/toggles, never credentials)",
+
+	// E3 对象存储 §2.3/D-S3-4 实现期新增（W3-S2/E3-3 上传轨接线）：上传
+	// 失败与恢复绿配对事件——发出来源 = 备份 Manager 上传步
+	//（internal/statebackup/restic.go）；payload 带 backup id 与擦除后的
+	// 错误摘要，绝不带 restic env 凭证材料。
+	"backup.upload_failed":    "E3 object-storage §2.3/D-S3-4 added during implementation (W3-S2 upload track; local snapshot unaffected, payload carries backup id + redacted error summary)",
+	"backup.upload_recovered": "E3 object-storage §2.3/D-S3-4 added during implementation (W3-S2 upload track; red-to-green closure after a failed upload)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

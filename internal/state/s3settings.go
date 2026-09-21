@@ -33,6 +33,14 @@ const (
 	S3KeySecretAccessKey = "s3.secret_access_key"
 	S3KeyPathStyle       = "s3.path_style"
 	S3KeyPublicExposed   = "s3.public_exposed"
+
+	// S3KeyResticPassword 是 restic repo 口令的**内部键**（E3-3/D-S3-5，
+	// 设计 §2.3）：存 envelope 密文（internal/secrets），上传轨惰性生成。
+	// 内部键不属于八键 typed 设置面（SaveS3Settings 的 PUT 全量键集不含
+	// 它、LoadS3Settings 的投影不读它）——它没有用户可见的读写面，只被
+	// 上传轨消费（与 s3.* 用户设置同用 platform_settings 存储是物理复用，
+	// 非语义同族）。词表只增纪律下登记于此（键名常量唯一登记点）。
+	S3KeyResticPassword = "s3.restic_password" //nolint:gosec // G101：设置键名字面量，非凭据材料
 )
 
 // s3.mode 词表（§2.2）：缺省 unset。
@@ -40,6 +48,14 @@ const (
 	S3ModeUnset    = "unset"
 	S3ModeExternal = "external"
 	S3ModeRustfs   = "rustfs"
+)
+
+// rustfs 模式的服务端派生端点（设计 §2.5：fleetlyd 所在网络内
+// http://rustfs:9000，path-style；平台单桶）。S3 各消费面共用（api 探针
+// storedS3Endpoint、备份上传轨 resticTarget——E3-3），单一事实源在本包。
+const (
+	RustfsEndpointURL = "http://rustfs:9000"
+	RustfsBucketName  = "fleetly"
 )
 
 // s3SettingsKeys 是保存时全量落库的键清单（PUT 语义：每次保存写全八键，

@@ -188,9 +188,10 @@ func (s *SystemService) TriggerBackup(ctx context.Context, req *serverv1.Trigger
 	return &serverv1.TriggerBackupResponse{Backup: backupView(rec)}, nil
 }
 
-// backupView 把台账行投影为只读视图。
+// backupView 把台账行投影为只读视图（E3-3：上传结论三面随行——
+// upload_status/uploaded_at/upload_error；uploaded_at 零值不输出）。
 func backupView(r state.StateBackup) *serverv1.BackupView {
-	return &serverv1.BackupView{
+	v := &serverv1.BackupView{
 		Id:           r.ID,
 		Kind:         r.Kind,
 		Path:         r.Path,
@@ -199,7 +200,13 @@ func backupView(r state.StateBackup) *serverv1.BackupView {
 		VerifyStatus: r.VerifyStatus,
 		Error:        r.Error,
 		CreatedAt:    tstamp(r.CreatedAt),
+		UploadStatus: r.UploadStatus,
+		UploadError:  r.UploadError,
 	}
+	if !r.UploadedAt.IsZero() {
+		v.UploadedAt = tstamp(r.UploadedAt)
+	}
+	return v
 }
 
 // ListNodes 节点观测缓存只读列表（state-model §2.2：缓存禁止用于决策，
@@ -525,13 +532,9 @@ func listCertDirApps(dir string) ([]string, error) {
 //（读面 fingerprint），持久层 envelope 加密；探针语义 = 能认证/能写/能读
 // 回（§2.1 诚实契约）。
 
-// rustfsEndpointURL / rustfsBucketName 是 rustfs 模式的服务端派生端点
-// （设计 §2.5：fleetlyd 所在网络内 http://rustfs:9000，path-style；平台
-// 单桶）。外部模式的端点/桶来自设置值。
-const (
-	rustfsEndpointURL = "http://rustfs:9000"
-	rustfsBucketName  = "fleetly"
-)
+// rustfsEndpointURL / rustfsBucketName 已收口为 state 包常量
+//（state.RustfsEndpointURL / state.RustfsBucketName——备份上传轨 E3-3
+// 与探针共用，单一事实源在 internal/state）。
 
 // GetS3Settings 对象存储设置只读面：secret 只回 fingerprint（明文 sha256
 // 前 8），绝不回明文。s3.mode=unset 时其余字段为空。
@@ -665,8 +668,8 @@ func (s *SystemService) storedS3Endpoint(ctx context.Context) (objectstore.Endpo
 		return ep, true, nil
 	case state.S3ModeRustfs:
 		return objectstore.Endpoint{
-			URL:       rustfsEndpointURL,
-			Bucket:    rustfsBucketName,
+			URL:       state.RustfsEndpointURL,
+			Bucket:    state.RustfsBucketName,
 			PathStyle: true,
 		}, true, nil
 	default:

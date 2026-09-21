@@ -7,9 +7,10 @@ package eventcode
 //   - architecture §4.3（cron 触发前哨「记 skipped + 事件」）：cron.skipped
 //   - 实现期新增（单独列出）：route.* 2 个、app.webhook_fetch_failed、
 //     engine.stale_nonterminal、build.stale_nonterminal（S18-A10）、
-//     app.deleted（B6/H10，MG-3）、app.substrate_missing（T0-V2.2，R2）
+//     app.deleted（B6/H10，MG-3）、app.substrate_missing（T0-V2.2，R2）、
+//     backup.upload_failed / backup.upload_recovered（E3-3，W3-S2）
 //
-// 计 44 个事件名。
+// 计 46 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -107,4 +108,14 @@ var builtins = []Event{
 	// s3settings.go，与业务写同事务 = Outbox 模式）。payload 只带模式与
 	// 布尔开关，绝不带凭证材料（state-model §2.9 secret 值禁止进事件）。
 	{Name: "s3.updated", Summary: "object storage settings changed (payload carries the mode and toggles, never credentials)"},
+
+	// ── 状态备份上传轨（E3-3，§2.3/D-S3-4；W3-S2 接线）──
+	// 发出来源：备份 Manager 上传步（internal/statebackup/restic.go）。
+	// 口径：restic backup 成功但回读校验失败/容器执行失败 → failed；本地
+	// 份不受影响（verify_status 不回写）。payload 带 backup id 与错误摘要
+	//（scrubText 擦除后），绝不带 restic env 凭证材料。
+	{Name: "backup.upload_failed", Summary: "remote state backup upload failed (local snapshot unaffected; payload carries the backup id and a redacted error summary, never credentials)"},
+	// 恢复绿：上一份上传 failed、本份 ok 时发出（配对 failed 形成红→绿
+	// 闭环）。payload 带 backup id。
+	{Name: "backup.upload_recovered", Summary: "remote state backup upload recovered (previous upload had failed; payload carries the backup id)"},
 }

@@ -1330,7 +1330,16 @@ type BackupView struct {
 	// 校验失败原因原文（verified 行为空）。
 	Error string `protobuf:"bytes,7,opt,name=error,proto3" json:"error,omitempty"`
 	// 台账落账时刻。
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// 远端上传结论（E3-3 上传轨）：none（未上传——s3.mode=unset 合法态或
+	// 上传步未执行）/ ok / failed。本地 verify 语义不变（上传失败不回写
+	// verify_status）。
+	UploadStatus string `protobuf:"bytes,9,opt,name=upload_status,json=uploadStatus,proto3" json:"upload_status,omitempty"`
+	// 最近一次上传尝试的完成时刻（ok/failed 都记；从未尝试不输出）。
+	UploadedAt *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=uploaded_at,json=uploadedAt,proto3" json:"uploaded_at,omitempty"`
+	// 上传失败原因摘要（截断上界在存储层；不含 secret——restic env 凭证
+	// 材料禁止进台账/事件/读面）。
+	UploadError   string `protobuf:"bytes,11,opt,name=upload_error,json=uploadError,proto3" json:"upload_error,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1419,6 +1428,27 @@ func (x *BackupView) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *BackupView) GetUploadStatus() string {
+	if x != nil {
+		return x.UploadStatus
+	}
+	return ""
+}
+
+func (x *BackupView) GetUploadedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UploadedAt
+	}
+	return nil
+}
+
+func (x *BackupView) GetUploadError() string {
+	if x != nil {
+		return x.UploadError
+	}
+	return ""
 }
 
 type ListBackupsResponse struct {
@@ -2300,7 +2330,7 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\rcert_dir_apps\x18\t \x03(\tR\vcertDirApps\x12$\n" +
 	"\x0ecert_dir_error\x18\n" +
 	" \x01(\tR\fcertDirError\"\x14\n" +
-	"\x12ListBackupsRequest\"\xf1\x01\n" +
+	"\x12ListBackupsRequest\"\xf6\x02\n" +
 	"\n" +
 	"BackupView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
@@ -2312,7 +2342,12 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\rverify_status\x18\x06 \x01(\tR\fverifyStatus\x12\x14\n" +
 	"\x05error\x18\a \x01(\tR\x05error\x129\n" +
 	"\n" +
-	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"N\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12#\n" +
+	"\rupload_status\x18\t \x01(\tR\fuploadStatus\x12;\n" +
+	"\vuploaded_at\x18\n" +
+	" \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"uploadedAt\x12!\n" +
+	"\fupload_error\x18\v \x01(\tR\vuploadError\"N\n" +
 	"\x13ListBackupsResponse\x127\n" +
 	"\abackups\x18\x01 \x03(\v2\x1d.fleetly.server.v1.BackupViewR\abackups\"\\\n" +
 	"\x14TriggerBackupRequest\x12D\n" +
@@ -2452,40 +2487,41 @@ var file_fleetly_server_v1_system_proto_depIdxs = []int32{
 	16, // 10: fleetly.server.v1.GetIngressStatusResponse.traefik:type_name -> fleetly.server.v1.TraefikView
 	17, // 11: fleetly.server.v1.GetIngressStatusResponse.certificates:type_name -> fleetly.server.v1.CertLedgerView
 	34, // 12: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
-	20, // 13: fleetly.server.v1.ListBackupsResponse.backups:type_name -> fleetly.server.v1.BackupView
-	20, // 14: fleetly.server.v1.TriggerBackupResponse.backup:type_name -> fleetly.server.v1.BackupView
-	34, // 15: fleetly.server.v1.S3SettingsView.updated_at:type_name -> google.protobuf.Timestamp
-	25, // 16: fleetly.server.v1.GetS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
-	25, // 17: fleetly.server.v1.UpdateS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
-	30, // 18: fleetly.server.v1.S3ConnectionTestResult.steps:type_name -> fleetly.server.v1.S3ProbeStep
-	31, // 19: fleetly.server.v1.TestS3ConnectionResponse.result:type_name -> fleetly.server.v1.S3ConnectionTestResult
-	0,  // 20: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
-	2,  // 21: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
-	6,  // 22: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
-	15, // 23: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
-	19, // 24: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
-	22, // 25: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
-	9,  // 26: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
-	13, // 27: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
-	24, // 28: fleetly.server.v1.SystemService.GetS3Settings:input_type -> fleetly.server.v1.GetS3SettingsRequest
-	27, // 29: fleetly.server.v1.SystemService.UpdateS3Settings:input_type -> fleetly.server.v1.UpdateS3SettingsRequest
-	29, // 30: fleetly.server.v1.SystemService.TestS3Connection:input_type -> fleetly.server.v1.TestS3ConnectionRequest
-	1,  // 31: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
-	4,  // 32: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
-	8,  // 33: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
-	18, // 34: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
-	21, // 35: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
-	23, // 36: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
-	12, // 37: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
-	14, // 38: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
-	26, // 39: fleetly.server.v1.SystemService.GetS3Settings:output_type -> fleetly.server.v1.GetS3SettingsResponse
-	28, // 40: fleetly.server.v1.SystemService.UpdateS3Settings:output_type -> fleetly.server.v1.UpdateS3SettingsResponse
-	32, // 41: fleetly.server.v1.SystemService.TestS3Connection:output_type -> fleetly.server.v1.TestS3ConnectionResponse
-	31, // [31:42] is the sub-list for method output_type
-	20, // [20:31] is the sub-list for method input_type
-	20, // [20:20] is the sub-list for extension type_name
-	20, // [20:20] is the sub-list for extension extendee
-	0,  // [0:20] is the sub-list for field type_name
+	34, // 13: fleetly.server.v1.BackupView.uploaded_at:type_name -> google.protobuf.Timestamp
+	20, // 14: fleetly.server.v1.ListBackupsResponse.backups:type_name -> fleetly.server.v1.BackupView
+	20, // 15: fleetly.server.v1.TriggerBackupResponse.backup:type_name -> fleetly.server.v1.BackupView
+	34, // 16: fleetly.server.v1.S3SettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 17: fleetly.server.v1.GetS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
+	25, // 18: fleetly.server.v1.UpdateS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
+	30, // 19: fleetly.server.v1.S3ConnectionTestResult.steps:type_name -> fleetly.server.v1.S3ProbeStep
+	31, // 20: fleetly.server.v1.TestS3ConnectionResponse.result:type_name -> fleetly.server.v1.S3ConnectionTestResult
+	0,  // 21: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
+	2,  // 22: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
+	6,  // 23: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
+	15, // 24: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
+	19, // 25: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
+	22, // 26: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
+	9,  // 27: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
+	13, // 28: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
+	24, // 29: fleetly.server.v1.SystemService.GetS3Settings:input_type -> fleetly.server.v1.GetS3SettingsRequest
+	27, // 30: fleetly.server.v1.SystemService.UpdateS3Settings:input_type -> fleetly.server.v1.UpdateS3SettingsRequest
+	29, // 31: fleetly.server.v1.SystemService.TestS3Connection:input_type -> fleetly.server.v1.TestS3ConnectionRequest
+	1,  // 32: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
+	4,  // 33: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
+	8,  // 34: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
+	18, // 35: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
+	21, // 36: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
+	23, // 37: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
+	12, // 38: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
+	14, // 39: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
+	26, // 40: fleetly.server.v1.SystemService.GetS3Settings:output_type -> fleetly.server.v1.GetS3SettingsResponse
+	28, // 41: fleetly.server.v1.SystemService.UpdateS3Settings:output_type -> fleetly.server.v1.UpdateS3SettingsResponse
+	32, // 42: fleetly.server.v1.SystemService.TestS3Connection:output_type -> fleetly.server.v1.TestS3ConnectionResponse
+	32, // [32:43] is the sub-list for method output_type
+	21, // [21:32] is the sub-list for method input_type
+	21, // [21:21] is the sub-list for extension type_name
+	21, // [21:21] is the sub-list for extension extendee
+	0,  // [0:21] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_system_proto_init() }

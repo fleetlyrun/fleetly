@@ -48,7 +48,8 @@ func (c *backupsCmd) Run(ctx context.Context, env *commands.Environment, args []
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
-// backupView 是台账行的机器/人读共用形态。
+// backupView 是台账行的机器/人读共用形态（E3-3：上传结论三面随行——
+// upload_status/uploaded_at/upload_error；uploaded_at 为空 = 从未尝试）。
 type backupView struct {
 	ID           string `json:"id"`
 	Kind         string `json:"kind"`
@@ -58,6 +59,9 @@ type backupView struct {
 	VerifyStatus string `json:"verify_status"`
 	Error        string `json:"error,omitempty"`
 	CreatedAt    string `json:"created_at"`
+	UploadStatus string `json:"upload_status"`
+	UploadedAt   string `json:"uploaded_at,omitempty"`
+	UploadError  string `json:"upload_error,omitempty"`
 }
 
 // backupsListCmd 实现 `fleetly backups list`：台账倒序列表。
@@ -95,6 +99,10 @@ func (c *backupsListCmd) Run(ctx context.Context, env *commands.Environment, arg
 				SHA256: b.GetSha256(), SizeBytes: b.GetSizeBytes(),
 				VerifyStatus: b.GetVerifyStatus(), Error: b.GetError(),
 				CreatedAt: tstampRFC3339(b.GetCreatedAt()),
+				// 上传结论三面（E3-3）：none = 未上传（s3.mode=unset 合法态）。
+				UploadStatus: b.GetUploadStatus(),
+				UploadedAt:   tstampRFC3339(b.GetUploadedAt()),
+				UploadError:  b.GetUploadError(),
 			})
 		}
 		if c.jsonOut {
@@ -110,6 +118,13 @@ func (c *backupsListCmd) Run(ctx context.Context, env *commands.Environment, arg
 				v.ID, v.Kind, v.CreatedAt, v.SizeBytes, v.SHA256, v.VerifyStatus)
 			if v.Error != "" {
 				fmt.Fprintf(&b, " error:%s", v.Error)
+			}
+			fmt.Fprintf(&b, " upload:%s", v.UploadStatus)
+			if v.UploadedAt != "" {
+				fmt.Fprintf(&b, " uploaded_at:%s", v.UploadedAt)
+			}
+			if v.UploadError != "" {
+				fmt.Fprintf(&b, " upload_error:%s", v.UploadError)
 			}
 			b.WriteString("\n")
 		}
@@ -129,7 +144,7 @@ type backupsCreateCmd struct {
 
 func (c *backupsCreateCmd) Name() string { return "create" }
 func (c *backupsCreateCmd) Synopsis() string {
-	return "trigger a state backup now (waits for verified read-back)"
+	return "trigger a state backup now (waits for verified read-back and the remote upload verdict)"
 }
 func (c *backupsCreateCmd) Usage() string {
 	return "backups create [--kind manual|pre_upgrade] [--addr <host:port>] [--token <tok>] [--json]"
@@ -156,12 +171,18 @@ func (c *backupsCreateCmd) Run(ctx context.Context, env *commands.Environment, a
 			SHA256: b.GetSha256(), SizeBytes: b.GetSizeBytes(),
 			VerifyStatus: b.GetVerifyStatus(), Error: b.GetError(),
 			CreatedAt: tstampRFC3339(b.GetCreatedAt()),
+			UploadStatus: b.GetUploadStatus(),
+			UploadedAt:   tstampRFC3339(b.GetUploadedAt()),
+			UploadError:  b.GetUploadError(),
 		}
 		if c.jsonOut {
 			return writeJSON(env.Stdout, map[string]any{"backup": view})
 		}
-		_, err = fmt.Fprintf(env.Stdout, "backup %s created (kind=%s, %d bytes, sha256 %.12s, verify=%s)\n",
-			view.ID, view.Kind, view.SizeBytes, view.SHA256, view.VerifyStatus)
+		_, err = fmt.Fprintf(env.Stdout, "backup %s created (kind=%s, %d bytes, sha256 %.12s, verify=%s, upload=%s)\n",
+			view.ID, view.Kind, view.SizeBytes, view.SHA256, view.VerifyStatus, view.UploadStatus)
+		if err == nil && view.UploadError != "" {
+			_, err = fmt.Fprintf(env.Stdout, "upload failed: %s\n", view.UploadError)
+		}
 		return err
 	})
 }

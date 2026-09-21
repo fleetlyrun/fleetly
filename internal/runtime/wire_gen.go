@@ -50,7 +50,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 		cleanup()
 		return nil, nil, err
 	}
-	manager, err := NewBackupManager(app, appConfig, store, box, version)
+	manager, err := NewBackupManager(app, appConfig, store, box, client, version)
 	if err != nil {
 		cleanup3()
 		cleanup2()

@@ -17,6 +17,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -51,6 +52,24 @@ type Manager struct {
 	// verifyFn 是回读校验步骤（测试注入点；nil = 真实校验。签名收窄为
 	// 「快照路径 → 校验产物」，注入失败即 verify 失败路径）。
 	verifyFn func(dbPath string) (snapshotFacts, error)
+
+	// ── 上传轨（E3-3，WithUpload 装配；nil = 未接线——upload_status 如实
+	// 保持 none，见 uploadSnapshot）──
+	// runner 是 restic 钉版容器一次性执行端口（生产实现 = substrate.Client）。
+	runner ResticRunner
+	// box 是 envelope 加解密器（restic repo 口令的加解密与惰性生成，D-S3-5；
+	// 与主密钥文件分离语义见 resticPassword 注）。
+	box *secrets.Box
+}
+
+// WithUpload 装配上传轨（E3-3；链式构造，nil 合法——上传轨未接线的测试/
+// 精简形态，upload_status 保持 none 如实可见）。runner 为 restic 钉版容器
+// 执行器（生产 = *substrate.Client 的 RunRestic）；box 为 envelope 加解密
+// 器（restic repo 口令的解密与惰性生成落库）。
+func (m *Manager) WithUpload(runner ResticRunner, box *secrets.Box) *Manager {
+	m.runner = runner
+	m.box = box
+	return m
 }
 
 // NewManager 构造备份管理器。dir 由装配点回落缺省（state 库同目录 backups）；
@@ -124,11 +143,13 @@ func (m *Manager) RunPreUpgrade(ctx context.Context) (state.StateBackup, error) 
 // RunPostDeploy 是引擎成功路径的挂钩形态（engine.PostDeployHook 签名）：
 // 异步执行（部署主链不等备份），带独立预算；失败只落台账/审计 + 日志，
 // 永不 panic 打穿引擎 tick。X-7/MG-3：进入/退出经 inflight 计数——Stop
-// 据此等待在途快照收口（与 Store.Close 的竞态消除）。
+// 据此等待在途快照收口（与 Store.Close 的竞态消除）。E3-3：预算 = 本地
+// 快照轨（TriggerTimeout）+ 上传轨（uploadTimeout）——外层只作上界护栏，
+// 两段各自预算在 Trigger 内生效。
 func (m *Manager) RunPostDeploy(rec state.DeployRecord) {
 	m.inflight.Add(1)
 	defer m.inflight.Done()
-	ctx, cancel := context.WithTimeout(context.Background(), m.cfg.TriggerTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), m.cfg.TriggerTimeout+uploadTimeout)
 	defer cancel()
 	if _, err := m.Trigger(ctx, state.BackupKindPostDeploy); err != nil {
 		m.log.Error("backup: post-deploy backup failed", "app", rec.AppName,
@@ -137,20 +158,27 @@ func (m *Manager) RunPostDeploy(rec state.DeployRecord) {
 }
 
 // Trigger 同步执行一次备份（kind 必须是注册词表；manual/pre_upgrade 的
-// 同步语义供 RPC 与升级脚本直接等待结果）。
+// 同步语义供 RPC 与升级脚本直接等待结果）。E3-3：同步语义延伸到上传步
+// ——响应携带上传结论（verified 行回读上传后的最终台账投影）；本地快照
+// 轨走 TriggerTimeout 预算、上传轨独立 uploadTimeout 预算（WithTimeout
+// 只收紧不放宽：调用方 ctx 更短时以其为准）。
 func (m *Manager) Trigger(ctx context.Context, kind string) (state.StateBackup, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	upCtx, upCancel := context.WithTimeout(ctx, uploadTimeout)
+	defer upCancel()
 	ctx, cancel := context.WithTimeout(ctx, m.cfg.TriggerTimeout)
 	defer cancel()
-	return m.runOnce(ctx, kind)
+	return m.runOnce(ctx, upCtx, kind)
 }
 
-// runOnce 是单次备份的完整链路（mu 已持有）：
-// 建目录 → VACUUM INTO → 回读校验 → sha256/指纹 → manifest → 台账+审计 →
-// （成功时）保留期清理。任何一步失败都收敛为「台账 failed 行 + 红色告警
-// 三件套」（审计随台账同事务；组件健康读台账；错误日志由本函数写出）。
-func (m *Manager) runOnce(ctx context.Context, kind string) (state.StateBackup, error) {
+// runOnce 是单次备份的完整链路（mu 已持有；ctx = 本地快照轨预算，
+// upCtx = 上传轨预算）：建目录 → VACUUM INTO → 回读校验 → sha256/指纹 →
+// manifest → 台账+审计 → （成功时）保留期清理 → （成功时）restic 上传步
+// （E3-3 追加步：本地信任闭环不改写，任何上传失败只红上传面）。任何本地
+// 步失败都收敛为「台账 failed 行 + 红色告警三件套」（审计随台账同事务；
+// 组件健康读台账；错误日志由本函数写出）。
+func (m *Manager) runOnce(ctx, upCtx context.Context, kind string) (state.StateBackup, error) {
 	id := ulid.Make().String()
 	dir := filepath.Join(m.cfg.Dir, id)
 	dbPath := filepath.Join(dir, "fleetly.db")
@@ -243,7 +271,15 @@ func (m *Manager) runOnce(ctx context.Context, kind string) (state.StateBackup, 
 	}
 	m.log.Info("backup: verified snapshot recorded", "id", id, "kind", kind,
 		"size_bytes", w.Size, "sha256", sum[:12], "schema_version", facts.SchemaVersion)
+	// 保留期清理先于上传（既有时点不变）：本地配额与台账/目录对账用本地
+	// 预算 ctx（上传可达 10m，本地 ctx 届时会死）；本次刚落的行是最新
+	// verified，永不入淘汰集（prune 按 keep 保留各 kind 最近份）。孤儿目录
+	// 宽容期（24h）远大于上传预算，在途目录无误伤面。
 	m.prune(ctx)
+	// 上传步（E3-3）：verify 成功落账之后的追加步，独立预算（D-S3-4）。
+	// 失败只红上传面（upload_status/事件/组件），不影响本次备份的成功语义
+	// ——返回值携带上传后的最终台账投影（Trigger 同步响应据此反映）。
+	rec = m.uploadSnapshot(upCtx, rec)
 	return rec, nil
 }
 
@@ -410,7 +446,11 @@ func (m *Manager) Stop(ctx context.Context) error {
 }
 
 // CheckHealth 是 system status backup 组件的检查器（红色告警的第三面）：
-// 无任何备份记录 / 最近一次 verify 失败 → 不健康（错误原文可行动）。
+// 无任何备份记录 / 最近一次 verify 失败 → 不健康（错误原文可行动）；
+// E3-3：最近一次本地 verified 但远端上传 failed → 不健康（degraded——
+// 口径「local snapshot ok, remote upload failed」；本地 verify 语义不变，
+// 上传失败不回写 verify_status）。upload_status=none 不红（s3.mode=unset
+// 是合法态 / 上传步时序窗口内的中间态）。
 func (m *Manager) CheckHealth() error {
 	latest, err := m.store.LatestStateBackup(context.Background())
 	if err != nil {
@@ -425,6 +465,14 @@ func (m *Manager) CheckHealth() error {
 			msg = "verify_status=" + latest.VerifyStatus
 		}
 		return fmt.Errorf("statebackup: last backup %s (%s) is NOT verified: %s",
+			latest.ID, latest.Kind, msg)
+	}
+	if latest.UploadStatus == state.BackupUploadFailed {
+		msg := latest.UploadError
+		if msg == "" {
+			msg = "upload_error missing (ledger row incomplete)"
+		}
+		return fmt.Errorf("statebackup: last backup %s (%s): local snapshot ok, remote upload failed: %s",
 			latest.ID, latest.Kind, msg)
 	}
 	return nil

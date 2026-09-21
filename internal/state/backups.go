@@ -32,6 +32,15 @@ const (
 	BackupVerifyFailed   = "failed"
 )
 
+// upload_status 词表（E3-3 上传轨，设计 §2.3/D-S3-4）。none = 未上传——
+// 既含 s3.mode=unset 的合法态（外部端点未配置不算失败、不红），也含上传
+// 步尚未执行的 verified 行（落账先于上传，时序窗口内的中间态）。
+const (
+	BackupUploadNone   = "none"
+	BackupUploadOK     = "ok"
+	BackupUploadFailed = "failed"
+)
+
 // StateBackup 是 state_backups 台账行的只读投影。
 type StateBackup struct {
 	// ID 记录 ID（ULID；与备份目录名一致——<backup.dir>/<ID>/fleetly.db）。
@@ -52,6 +61,16 @@ type StateBackup struct {
 	Error string
 	// CreatedAt 是台账落账时刻（UTC）。
 	CreatedAt time.Time
+	// UploadStatus 是远端（restic repo）上传结论：none / ok / failed
+	//（E3-3 上传轨；本地 verify 语义不变——上传失败不回写 verify_status）。
+	UploadStatus string
+	// UploadedAt 是最近一次上传尝试的完成时刻（UTC；零值 = 从未尝试——
+	// upload_status=none 的行）。ok/failed 都更新：failed 行的操作者同样
+	// 需要知道尝试时点，错误详情在 UploadError。
+	UploadedAt time.Time
+	// UploadError 是上传失败原因摘要（截断上界见 UpdateStateBackupUpload；
+	// 不含 secret——restic env 凭证值禁止进台账/事件/日志，state-model §2.9）。
+	UploadError string
 }
 
 // BackupWrite 是一次备份的落账载荷（RecordStateBackup 消费）。
@@ -108,10 +127,11 @@ func (s *Store) RecordStateBackup(ctx context.Context, w BackupWrite) (StateBack
 	}
 	err := s.InTx(ctx, func(tx *Tx) error {
 		const q = `INSERT INTO state_backups
-			(id, created_at, kind, path, sha256, size_bytes, verify_status, error)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+			(id, created_at, kind, path, sha256, size_bytes, verify_status, error, upload_status)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
 		if _, err := tx.ExecContext(ctx, q,
-			id, at.UnixNano(), w.Kind, w.Path, w.SHA256, w.Size, w.Verify, w.Error); err != nil {
+			id, at.UnixNano(), w.Kind, w.Path, w.SHA256, w.Size, w.Verify, w.Error,
+			BackupUploadNone); err != nil {
 			return fmt.Errorf("state: insert state_backup: %w", err)
 		}
 		return tx.WriteAudit(ctx, AuditEntry{
@@ -130,6 +150,9 @@ func (s *Store) RecordStateBackup(ctx context.Context, w BackupWrite) (StateBack
 	return StateBackup{
 		ID: id, Kind: w.Kind, Path: w.Path, SHA256: w.SHA256,
 		SizeBytes: w.Size, VerifyStatus: w.Verify, Error: w.Error, CreatedAt: at,
+		// 落账即初始态：上传轨从 none 起步（上传步随后经
+		// UpdateStateBackupUpload 推进）。
+		UploadStatus: BackupUploadNone,
 	}, nil
 }
 
@@ -166,7 +189,8 @@ func validBackupKind(kind string) bool {
 // ListStateBackups 按 created_at 倒序返回最近 n 条台账（n<=0 = 全部——
 // 台账量级 = 保留份数 + 失败行，天花板低）。
 func (s *Store) ListStateBackups(ctx context.Context, n int) ([]StateBackup, error) {
-	const qAll = `SELECT id, created_at, kind, path, sha256, size_bytes, verify_status, error
+	const qAll = `SELECT id, created_at, kind, path, sha256, size_bytes, verify_status, error,
+		upload_status, uploaded_at, upload_error
 		FROM state_backups ORDER BY created_at DESC, id DESC`
 	const qLim = qAll + ` LIMIT ?`
 	var (
@@ -186,17 +210,79 @@ func (s *Store) ListStateBackups(ctx context.Context, n int) ([]StateBackup, err
 	for rows.Next() {
 		var r StateBackup
 		var atNano int64
+		var uploadedAtNano *int64
+		var uploadError *string
 		if err := rows.Scan(&r.ID, &atNano, &r.Kind, &r.Path, &r.SHA256, &r.SizeBytes,
-			&r.VerifyStatus, &r.Error); err != nil {
+			&r.VerifyStatus, &r.Error,
+			&r.UploadStatus, &uploadedAtNano, &uploadError); err != nil {
 			return nil, fmt.Errorf("state: scan state_backup: %w", err)
 		}
 		r.CreatedAt = time.Unix(0, atNano).UTC()
+		if uploadedAtNano != nil {
+			r.UploadedAt = time.Unix(0, *uploadedAtNano).UTC()
+		}
+		if uploadError != nil {
+			r.UploadError = *uploadError
+		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("state: iterate state_backups: %w", err)
 	}
 	return out, nil
+}
+
+// uploadErrorMaxBytes 是 upload_error 的截断上界（合理长度：错误摘要可
+// 定位即可，不收整段 restic 输出——输出尾部可能携带路径/端点等现场信息，
+// 4KiB 上界兼顾归因与台账卫生）。
+const uploadErrorMaxBytes = 4096
+
+// UpdateStateBackupUpload 落一次上传尝试的结论（E3-3）：status 必须是
+// ok|failed；failed 行必须带 upload_error（截断到 uploadErrorMaxBytes——
+// 调用方负责不含 secret，存储层兜底截断防整段输出入库）。uploaded_at
+// 记录本次尝试完成时刻（ok/failed 都更新，见 StateBackup.UploadedAt 注）。
+func (s *Store) UpdateStateBackupUpload(ctx context.Context, id, status, errText string) error {
+	if status != BackupUploadOK && status != BackupUploadFailed {
+		return fmt.Errorf("state: update backup upload: status must be ok|failed, got %q", status)
+	}
+	if status == BackupUploadFailed && strings.TrimSpace(errText) == "" {
+		return fmt.Errorf("state: update backup upload: failed status requires error detail")
+	}
+	if len(errText) > uploadErrorMaxBytes {
+		errText = errText[:uploadErrorMaxBytes]
+	}
+	now := nowNano()
+	err := s.InTx(ctx, func(tx *Tx) error {
+		res, err := tx.ExecContext(ctx,
+			`UPDATE state_backups SET upload_status = ?, uploaded_at = ?, upload_error = ? WHERE id = ?`,
+			status, now, errText, id)
+		if err != nil {
+			return fmt.Errorf("state: update state_backup upload: %w", err)
+		}
+		if n, err := res.RowsAffected(); err == nil && n == 0 {
+			return fmt.Errorf("state: update state_backup upload: row %s not found", id)
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// GetStateBackup 按 id 读单条台账行（上传步回读更新后的行投影用；缺失
+// 返回 ErrObjectNotFound 语义的显式错误）。
+func (s *Store) GetStateBackup(ctx context.Context, id string) (StateBackup, error) {
+	rows, err := s.ListStateBackups(ctx, 0)
+	if err != nil {
+		return StateBackup{}, err
+	}
+	for _, r := range rows {
+		if r.ID == id {
+			return r, nil
+		}
+	}
+	return StateBackup{}, fmt.Errorf("state: get state_backup %s: %w", id, ErrObjectNotFound)
 }
 
 // LatestStateBackup 返回最近一条台账（无备份记录 → nil, nil——调用方据此

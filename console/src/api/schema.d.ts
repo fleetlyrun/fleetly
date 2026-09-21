@@ -1032,6 +1032,22 @@ export interface components {
              * Format: date-time
              */
             created_at?: string;
+            /**
+             * 远端上传结论（E3-3 上传轨）：none（未上传——s3.mode=unset 合法态或
+             *     上传步未执行）/ ok / failed。本地 verify 语义不变（上传失败不回写
+             *     verify_status）。
+             */
+            upload_status?: string;
+            /**
+             * 最近一次上传尝试的完成时刻（ok/failed 都记；从未尝试不输出）。
+             * Format: date-time
+             */
+            uploaded_at?: string;
+            /**
+             * 上传失败原因摘要（截断上界在存储层；不含 secret——restic env 凭证
+             *     材料禁止进台账/事件/读面）。
+             */
+            upload_error?: string;
         };
         /**
          * CertLedgerView 是证书台账行投影（domains 表 cert 列对照；app 为显示名，
