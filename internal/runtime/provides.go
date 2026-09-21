@@ -328,6 +328,9 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // → 不健康（红色告警面：台账 failed 行 + backup.failed 审计 + 此组件）。
 // E1-8：join 向导面随 cfg.BaseDomain 与 substrate join 端口接线（base_domain
 // 空 = 单节点形态，GetJoinGuide 以 D-MN-13 门禁 409 拒绝、不触底座）。
+// E3-2：S3 设置面随 envelope 加解密器接线（secret 密文落库/指纹读面/探针
+// 解密）；baseDomain 同供 s3.public_exposed 门禁（E_S3_PUBLIC_REQUIRES_
+// BASE_DOMAIN）。
 func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, sc *substrate.Client, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
@@ -340,7 +343,8 @@ func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, o
 		}
 	}
 	return api.NewSystemService(string(version), st, components, ing).WithBackupManager(bm).
-		WithJoinGuide(cfg.BaseDomain, sc)
+		WithJoinGuide(cfg.BaseDomain, sc).
+		WithSecretsBox(sb)
 }
 
 // NewDomainsService 构造域名台账/验证面服务。

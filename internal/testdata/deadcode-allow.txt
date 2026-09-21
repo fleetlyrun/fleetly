@@ -43,3 +43,12 @@ unreachable func: versionConflict
 
 # ── 台账行 ULID 出口留位（ingress certs/domains；state 层自持同款形态）──
 unreachable func: NewID
+
+# ── E3 对象存储封闭操作面（设计 §2.1/D-S3-1：操作面即 conformance 面，
+#    minio-go 封装单包）。E3-2 票只引入封闭面与探针（TestConnection 内
+#    消费 Put/Get/Delete，经 api.TestS3Connection 可达）；EnsureBucket/
+#    Stat/List 的生产消费点随 E3-3 备份上传轨（List）与 E3-5 RustFS duty
+#    （EnsureBucket）接线，此处为 conformance 面（单元测试消费）先行 ──
+unreachable func: Client.EnsureBucket
+unreachable func: Client.Stat
+unreachable func: Client.List

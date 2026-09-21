@@ -4,9 +4,11 @@ package errcode
 // 出处）。分布核对：release-semantics §2.7（17 E + 3 W）、stateful-placement
 // §2.8（8 E + 1 W）与 §2.9（1 E）、state-model §2.7/§2.9/§2.4/§2.2（4 E）、
 // architecture §2.4（3 码）+ §2.3（E_STATE_VERSION_CONFLICT）。
-// 计 35 个 E_ + 5 个 W_ = 40 码（文档外实现期新增三码：T2.15 的
+// 计 42 个 E_ + 5 个 W_ = 47 码（文档外实现期新增码：T2.15 的
 // E_ROUTE_PUBLISH_FAILED、MG-C3 的 E_DEPLOY_CONFIRM_REQUIRED、M4-6 的
-// E_TOKEN_LAST_ADMIN——见各自分节注记，待 T0.5 契约冻结确认）。
+// E_TOKEN_LAST_ADMIN、multi-node E1-5 的 E_REGISTRY_* 两码、E1-8 的
+// E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 的 E_S3_* 四码——见各自分节
+// 注记，待 T0.5 契约冻结确认）。
 //
 // HTTP 默认映射：文档显式给定的照文档（E_DOMAIN_CONFLICT/E_STATE_VERSION_
 // CONFLICT/E_VOLUME_NODE_MISMATCH/E_PLACEMENT_MOVE_REQUIRES_ACK→409、
@@ -161,6 +163,24 @@ var builtins = []Code{
 	{ID: "E_LABEL_RESERVED", HTTP: 422,
 		Summary:    "user occupied the reserved namespace fleetly.*",
 		Suggestion: "fleetly.* is a platform-reserved namespace: use a different label prefix."},
+
+	// ── 对象存储 S3 面（E3 对象存储专项设计 §5.2，2026-09-21 裁决轮落定；
+	//    注册表只增）──
+	// E_S3_NOT_CONFIGURED 为预留码：E3-2 只注册不消费，消费者在 E3-4
+	//（label fleetly.s3=true 注入前哨——s3.mode=unset 时 plan 阶段诚实拒绝，
+	// 设计 §2.4）；usage_test 豁免清单同理由。
+	{ID: "E_S3_NOT_CONFIGURED", HTTP: 409,
+		Summary:    "a service declares label fleetly.s3=true but object storage is not configured (s3.mode=unset); deploy plan refuses instead of injecting empty env",
+		Suggestion: "Configure object storage first: run 'fleetly s3 set' (or the Console S3 settings card) to set s3.mode=external or rustfs, then deploy again."},
+	{ID: "E_S3_CONFIG_CONFLICT", HTTP: 409,
+		Summary:    "s3 settings conflict: mode=external requires endpoint/bucket/keys while mode=rustfs requires them empty (two mutually exclusive fact sources; silent overwrite is rejected)",
+		Suggestion: "s3.mode=external and s3.mode=rustfs are mutually exclusive: clear the external endpoint fields before switching to rustfs, or fill them all before switching to external."},
+	{ID: "E_S3_TEST_FAILED", HTTP: 503,
+		Summary:    "S3 connection test failed (probe put→get→delete; the failed step and the underlying error travel in the envelope context; this is a reachable-endpoint fault, not a TCP probe)",
+		Suggestion: "Fix the endpoint/credentials per the failed probe step (put=auth/write, get=readback, delete=cleanup) and test again; the honest contract is: test passed = can authenticate, can write, can read back."},
+	{ID: "E_S3_PUBLIC_REQUIRES_BASE_DOMAIN", HTTP: 409,
+		Summary:    "s3.public_exposed requires a platform base domain (public subdomain s3.<base> derivation); refused in the single-node form without one",
+		Suggestion: "Configure base_domain (installer --base-domain) before exposing RustFS on the public subdomain s3.<base>; keep public_exposed=false for internal-only access."},
 
 	// ── 状态与并发（state-model §2.2、architecture §2.3）──
 	{ID: "E_STATE_VERSION_CONFLICT", HTTP: 409,

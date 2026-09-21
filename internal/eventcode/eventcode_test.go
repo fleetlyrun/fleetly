@@ -82,6 +82,12 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 声称 running 的 app 其期望服务在 substrate 整体缺失的披露与派生态
 	// 修正（running → down；只披露不重建）。
 	"app.substrate_missing": "T0-V2.2 added during implementation (R2; runtime existence reconciliation: running app whose substrate service vanished — disclosed and the derived view corrected)",
+
+	// E3 对象存储 §5.3 实现期新增（2026-09-21 裁决轮落定，文档外事件名
+	// 单独列出，待 T0.5 契约冻结确认）：设置变更事件——payload 带模式与
+	// 布尔开关不带走秘密；发出来源 = platform_settings 的 S3 设置保存事务
+	//（internal/state/s3settings.go，与业务写同事务 = Outbox 模式）。
+	"s3.updated": "E3 object-storage §5.3 added during implementation (settings change; payload carries mode/toggles, never credentials)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

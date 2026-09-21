@@ -14,9 +14,9 @@
 
 ## 2. 目标设计
 
-### 2.1 provider 抽象（internal/objstore）
+### 2.1 provider 抽象（internal/objectstore）
 
-新包 `internal/objstore`：S3 兼容端点的平台唯一客户端面（minio-go 封装，其余代码不直接 import minio-go）。
+新包 `internal/objectstore`：S3 兼容端点的平台唯一客户端面（minio-go 封装，其余代码不直接 import minio-go）。（2026-09-21 实现修正：包名原稿 `objstore`，AGENTS.md 命名规则裁定缩写不可接受，落为 `objectstore`。）
 
 - `Endpoint` 描述符：`URL`（scheme+host+port，如 `https://s3.amazonaws.com` 或 `http://rustfs:9000`）、`Region`、`Bucket`、`AccessKey`/`SecretKey`（明文只在内存存活，持久层走 envelope，见 §2.2）、`PathStyle`（bool；RustFS/MinIO 类自建端点必须 true，AWS 虚拟主机式 false）。
 - 操作面 = 平台实际用到的封闭集：`EnsureBucket`（缺省建桶，幂等）、`Put`/`Get`/`Stat`/`Delete`/`List`（前缀列举）。不做 presign/multipart/生命周期等大面——**操作面即 conformance 面**（§2.7）。
@@ -74,13 +74,13 @@ RustFS **默认仅内网**（overlay 网络，无公网面）——W3 全部在 
 
 ### 2.7 FZ-7 conformance（CI，RustFS 代演）
 
-`internal/objstore` 的封闭操作面（§2.1）对 RustFS 实例跑通 = conformance：CI dind job 起 `rustfs/rustfs:<钉版>` → 全操作面断言（ensure/put/get/stat/delete/list + 探针协议 + path-style 行为）。**语义**：平台对「S3 兼容端点」的全部依赖面被 RustFS 证真——外部端点（AWS/MinIO/B2…）由用户侧 `TestConnection` 自测覆盖，CI 不mock外部云。FZ-7 就此闭环（v0.1 记 N/A 的条件消除：minio-go 有了真实消费者）。
+`internal/objectstore` 的封闭操作面（§2.1）对 RustFS 实例跑通 = conformance：CI dind job 起 `rustfs/rustfs:<钉版>` → 全操作面断言（ensure/put/get/stat/delete/list + 探针协议 + path-style 行为）。**语义**：平台对「S3 兼容端点」的全部依赖面被 RustFS 证真——外部端点（AWS/MinIO/B2…）由用户侧 `TestConnection` 自测覆盖，CI 不mock外部云。FZ-7 就此闭环（v0.1 记 N/A 的条件消除：minio-go 有了真实消费者）。
 
 ## 3. 关键裁决（D-S3-*）
 
 | # | 裁决 | 理由与代价 |
 |---|---|---|
-| D-S3-1 | S3 客户端面收敛单包 `internal/objstore`（minio-go 不外漏） | 依赖复核轮已裁 minio-go；单包边界使 conformance 面=操作面可枚举 |
+| D-S3-1 | S3 客户端面收敛单包 `internal/objectstore`（minio-go 不外漏） | 依赖复核轮已裁 minio-go；单包边界使 conformance 面=操作面可枚举 |
 | D-S3-2 | 端点配置落**库内运行期设置**（platform_settings KV + envelope），不落 config.yaml | V2-1 易用性：Console 配置→测试→生效无需重启；domains/env 同类先例 |
 | D-S3-3 | restic 执行形态 = **钉版容器一次性执行**（Docker API create/start/wait/rm） | restic 无库形态；不嵌二进制；供应链钉版纪律统一；镜像入 image-prepull 台账 |
 | D-S3-4 | 上传是本地 verify 后的**追加步**，本地核不动；台账增 upload_status 三态 | 信任闭环（T2.22）不重写；「没上传」结构性可见（红），不静默 |
@@ -95,7 +95,7 @@ RustFS **默认仅内网**（overlay 网络，无公网面）——W3 全部在 
 
 | 票 | 内容 | 验证方式 | 回滚 |
 |---|---|---|---|
-| E3-1 | `internal/objstore` + minio-go 引入 + TestConnection 探针 + 单元测试（httptest 假 S3） | go test；探针负路径（错凭据/断端点） | 还原点提交 |
+| E3-1 | `internal/objectstore` + minio-go 引入 + TestConnection 探针 + 单元测试（httptest 假 S3） | go test；探针负路径（错凭据/断端点） | 还原点提交 |
 | E3-2 | platform_settings KV 表 + s3.* 设置 CRUD + envelope + API/CLI（`fleetly s3 set/show/test`）+ proto 加法 | API 集成测试 + 审计断言 | 迁移前滚回（goose down） |
 | E3-3 | state_backups 上传列 + restic 容器执行器 + 上传/回读/forget + backup.upload_failed 事件 + 红健康 | 单元（fake 执行器）+ dind 端到端（备份→断本地→远端仍在） | 上传轨开关 = s3.mode unset 即停 |
 | E3-4 | label 注入（system env + 网络牵线 + E_S3_NOT_CONFIGURED） | 引擎单测 + dind：注入后容器内 env/连通断言 | label 移除即回 |

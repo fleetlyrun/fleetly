@@ -1555,6 +1555,649 @@ func (x *TriggerBackupResponse) GetBackup() *BackupView {
 	return nil
 }
 
+type GetS3SettingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetS3SettingsRequest) Reset() {
+	*x = GetS3SettingsRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetS3SettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetS3SettingsRequest) ProtoMessage() {}
+
+func (x *GetS3SettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetS3SettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetS3SettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{24}
+}
+
+// S3SettingsView 是 s3.* 设置的只读投影。secret 只回 fingerprint（明文
+// sha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateS3Settings
+// 承载 secret 明文，TLS 传输面 + envelope 持久层）。
+type S3SettingsView struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 模式词表：unset（缺省，未配置）| external（外部 S3 端点）| rustfs
+	// （托管 RustFS，opt-in）。
+	Mode string `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	// S3 端点 URL（含 scheme，如 https://s3.amazonaws.com；rustfs 模式下
+	// 服务端派生 http://rustfs:9000）。
+	EndpointUrl string `protobuf:"bytes,2,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
+	Region      string `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	Bucket      string `protobuf:"bytes,4,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	AccessKeyId string `protobuf:"bytes,5,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	// secret 指纹（sha256 前 8 hex），非 secret 本体。
+	SecretFingerprint string `protobuf:"bytes,6,opt,name=secret_fingerprint,json=secretFingerprint,proto3" json:"secret_fingerprint,omitempty"`
+	// path-style 寻址（RustFS/MinIO 类自建端点 true，AWS 虚拟主机式 false）。
+	PathStyle bool `protobuf:"varint,7,opt,name=path_style,json=pathStyle,proto3" json:"path_style,omitempty"`
+	// 公网子域开关（仅 rustfs 模式可开；开启后 s3.<base> 公网可达）。
+	PublicExposed bool `protobuf:"varint,8,opt,name=public_exposed,json=publicExposed,proto3" json:"public_exposed,omitempty"`
+	// 最近一次保存时刻（从未保存 → 不输出）。
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S3SettingsView) Reset() {
+	*x = S3SettingsView{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S3SettingsView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S3SettingsView) ProtoMessage() {}
+
+func (x *S3SettingsView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S3SettingsView.ProtoReflect.Descriptor instead.
+func (*S3SettingsView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *S3SettingsView) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *S3SettingsView) GetEndpointUrl() string {
+	if x != nil {
+		return x.EndpointUrl
+	}
+	return ""
+}
+
+func (x *S3SettingsView) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *S3SettingsView) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *S3SettingsView) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *S3SettingsView) GetSecretFingerprint() string {
+	if x != nil {
+		return x.SecretFingerprint
+	}
+	return ""
+}
+
+func (x *S3SettingsView) GetPathStyle() bool {
+	if x != nil {
+		return x.PathStyle
+	}
+	return false
+}
+
+func (x *S3SettingsView) GetPublicExposed() bool {
+	if x != nil {
+		return x.PublicExposed
+	}
+	return false
+}
+
+func (x *S3SettingsView) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type GetS3SettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *S3SettingsView        `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetS3SettingsResponse) Reset() {
+	*x = GetS3SettingsResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetS3SettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetS3SettingsResponse) ProtoMessage() {}
+
+func (x *GetS3SettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetS3SettingsResponse.ProtoReflect.Descriptor instead.
+func (*GetS3SettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *GetS3SettingsResponse) GetSettings() *S3SettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type UpdateS3SettingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 模式词表（空 = unset）。external↔rustfs 互斥校验见 rpc 注记。
+	Mode        string `protobuf:"bytes,1,opt,name=mode,proto3" json:"mode,omitempty"`
+	EndpointUrl string `protobuf:"bytes,2,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
+	Region      string `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	Bucket      string `protobuf:"bytes,4,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	AccessKeyId string `protobuf:"bytes,5,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	// secret 明文（只写字段；读面只见 fingerprint）。PUT 语义：留空 = 无
+	// secret（切换到 rustfs/unset 时随全量覆写自然清空外部凭证）。
+	SecretAccessKey string `protobuf:"bytes,6,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
+	PathStyle       bool   `protobuf:"varint,7,opt,name=path_style,json=pathStyle,proto3" json:"path_style,omitempty"`
+	PublicExposed   bool   `protobuf:"varint,8,opt,name=public_exposed,json=publicExposed,proto3" json:"public_exposed,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *UpdateS3SettingsRequest) Reset() {
+	*x = UpdateS3SettingsRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateS3SettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateS3SettingsRequest) ProtoMessage() {}
+
+func (x *UpdateS3SettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateS3SettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateS3SettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *UpdateS3SettingsRequest) GetMode() string {
+	if x != nil {
+		return x.Mode
+	}
+	return ""
+}
+
+func (x *UpdateS3SettingsRequest) GetEndpointUrl() string {
+	if x != nil {
+		return x.EndpointUrl
+	}
+	return ""
+}
+
+func (x *UpdateS3SettingsRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *UpdateS3SettingsRequest) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *UpdateS3SettingsRequest) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *UpdateS3SettingsRequest) GetSecretAccessKey() string {
+	if x != nil {
+		return x.SecretAccessKey
+	}
+	return ""
+}
+
+func (x *UpdateS3SettingsRequest) GetPathStyle() bool {
+	if x != nil {
+		return x.PathStyle
+	}
+	return false
+}
+
+func (x *UpdateS3SettingsRequest) GetPublicExposed() bool {
+	if x != nil {
+		return x.PublicExposed
+	}
+	return false
+}
+
+type UpdateS3SettingsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 保存后的设置投影（与 GetS3Settings 同一脱敏读面）。
+	Settings      *S3SettingsView `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateS3SettingsResponse) Reset() {
+	*x = UpdateS3SettingsResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateS3SettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateS3SettingsResponse) ProtoMessage() {}
+
+func (x *UpdateS3SettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateS3SettingsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateS3SettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *UpdateS3SettingsResponse) GetSettings() *S3SettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type TestS3ConnectionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 候选配置（未保存也能测）：任一字段非零即视为候选配置；全空 = 测已存
+	// 配置（s3.mode=unset 时已存配置不存在，拒绝）。
+	EndpointUrl     string `protobuf:"bytes,1,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
+	Region          string `protobuf:"bytes,2,opt,name=region,proto3" json:"region,omitempty"`
+	Bucket          string `protobuf:"bytes,3,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	AccessKeyId     string `protobuf:"bytes,4,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	SecretAccessKey string `protobuf:"bytes,5,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
+	PathStyle       bool   `protobuf:"varint,6,opt,name=path_style,json=pathStyle,proto3" json:"path_style,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *TestS3ConnectionRequest) Reset() {
+	*x = TestS3ConnectionRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestS3ConnectionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestS3ConnectionRequest) ProtoMessage() {}
+
+func (x *TestS3ConnectionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestS3ConnectionRequest.ProtoReflect.Descriptor instead.
+func (*TestS3ConnectionRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *TestS3ConnectionRequest) GetEndpointUrl() string {
+	if x != nil {
+		return x.EndpointUrl
+	}
+	return ""
+}
+
+func (x *TestS3ConnectionRequest) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *TestS3ConnectionRequest) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *TestS3ConnectionRequest) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *TestS3ConnectionRequest) GetSecretAccessKey() string {
+	if x != nil {
+		return x.SecretAccessKey
+	}
+	return ""
+}
+
+func (x *TestS3ConnectionRequest) GetPathStyle() bool {
+	if x != nil {
+		return x.PathStyle
+	}
+	return false
+}
+
+// S3ProbeStep 是探针单步结果（put/get/delete；诚实契约：失败步可定位）。
+type S3ProbeStep struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 步骤名：put | get | delete。
+	Step string `protobuf:"bytes,1,opt,name=step,proto3" json:"step,omitempty"`
+	Ok   bool   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	// 该步耗时（毫秒）。
+	DurationMs int64 `protobuf:"varint,3,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	// 失败时的底层错误摘要（不含 secret 材料）。
+	Error         string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S3ProbeStep) Reset() {
+	*x = S3ProbeStep{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S3ProbeStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S3ProbeStep) ProtoMessage() {}
+
+func (x *S3ProbeStep) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S3ProbeStep.ProtoReflect.Descriptor instead.
+func (*S3ProbeStep) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *S3ProbeStep) GetStep() string {
+	if x != nil {
+		return x.Step
+	}
+	return ""
+}
+
+func (x *S3ProbeStep) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *S3ProbeStep) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *S3ProbeStep) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// S3ConnectionTestResult 是探针结构化结果：endpoint 回显脱敏（secret 不
+// 回显）、各步耗时、失败步。ok=false 时 failed_step 指向首个失败步。
+type S3ConnectionTestResult struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Ok            bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	EndpointUrl   string                 `protobuf:"bytes,2,opt,name=endpoint_url,json=endpointUrl,proto3" json:"endpoint_url,omitempty"`
+	Region        string                 `protobuf:"bytes,3,opt,name=region,proto3" json:"region,omitempty"`
+	Bucket        string                 `protobuf:"bytes,4,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	PathStyle     bool                   `protobuf:"varint,5,opt,name=path_style,json=pathStyle,proto3" json:"path_style,omitempty"`
+	Steps         []*S3ProbeStep         `protobuf:"bytes,6,rep,name=steps,proto3" json:"steps,omitempty"`
+	FailedStep    string                 `protobuf:"bytes,7,opt,name=failed_step,json=failedStep,proto3" json:"failed_step,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *S3ConnectionTestResult) Reset() {
+	*x = S3ConnectionTestResult{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *S3ConnectionTestResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*S3ConnectionTestResult) ProtoMessage() {}
+
+func (x *S3ConnectionTestResult) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use S3ConnectionTestResult.ProtoReflect.Descriptor instead.
+func (*S3ConnectionTestResult) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *S3ConnectionTestResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *S3ConnectionTestResult) GetEndpointUrl() string {
+	if x != nil {
+		return x.EndpointUrl
+	}
+	return ""
+}
+
+func (x *S3ConnectionTestResult) GetRegion() string {
+	if x != nil {
+		return x.Region
+	}
+	return ""
+}
+
+func (x *S3ConnectionTestResult) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *S3ConnectionTestResult) GetPathStyle() bool {
+	if x != nil {
+		return x.PathStyle
+	}
+	return false
+}
+
+func (x *S3ConnectionTestResult) GetSteps() []*S3ProbeStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+func (x *S3ConnectionTestResult) GetFailedStep() string {
+	if x != nil {
+		return x.FailedStep
+	}
+	return ""
+}
+
+type TestS3ConnectionResponse struct {
+	state         protoimpl.MessageState  `protogen:"open.v1"`
+	Result        *S3ConnectionTestResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestS3ConnectionResponse) Reset() {
+	*x = TestS3ConnectionResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestS3ConnectionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestS3ConnectionResponse) ProtoMessage() {}
+
+func (x *TestS3ConnectionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestS3ConnectionResponse.ProtoReflect.Descriptor instead.
+func (*TestS3ConnectionResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *TestS3ConnectionResponse) GetResult() *S3ConnectionTestResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
 var File_fleetly_server_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_system_proto_rawDesc = "" +
@@ -1675,7 +2318,60 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\x14TriggerBackupRequest\x12D\n" +
 	"\x04kind\x18\x01 \x01(\tB0\xbaH-r+R\x00R\x06manualR\x05dailyR\vpre_upgradeR\vpost_deployR\x04kind\"N\n" +
 	"\x15TriggerBackupResponse\x125\n" +
-	"\x06backup\x18\x01 \x01(\v2\x1d.fleetly.server.v1.BackupViewR\x06backup2\x92\b\n" +
+	"\x06backup\x18\x01 \x01(\v2\x1d.fleetly.server.v1.BackupViewR\x06backup\"\x16\n" +
+	"\x14GetS3SettingsRequest\"\xcb\x02\n" +
+	"\x0eS3SettingsView\x12\x12\n" +
+	"\x04mode\x18\x01 \x01(\tR\x04mode\x12!\n" +
+	"\fendpoint_url\x18\x02 \x01(\tR\vendpointUrl\x12\x16\n" +
+	"\x06region\x18\x03 \x01(\tR\x06region\x12\x16\n" +
+	"\x06bucket\x18\x04 \x01(\tR\x06bucket\x12\"\n" +
+	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12-\n" +
+	"\x12secret_fingerprint\x18\x06 \x01(\tR\x11secretFingerprint\x12\x1d\n" +
+	"\n" +
+	"path_style\x18\a \x01(\bR\tpathStyle\x12%\n" +
+	"\x0epublic_exposed\x18\b \x01(\bR\rpublicExposed\x129\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"V\n" +
+	"\x15GetS3SettingsResponse\x12=\n" +
+	"\bsettings\x18\x01 \x01(\v2!.fleetly.server.v1.S3SettingsViewR\bsettings\"\xb8\x02\n" +
+	"\x17UpdateS3SettingsRequest\x124\n" +
+	"\x04mode\x18\x01 \x01(\tB \xbaH\x1dr\x1bR\x00R\x05unsetR\bexternalR\x06rustfsR\x04mode\x12!\n" +
+	"\fendpoint_url\x18\x02 \x01(\tR\vendpointUrl\x12\x16\n" +
+	"\x06region\x18\x03 \x01(\tR\x06region\x12\x16\n" +
+	"\x06bucket\x18\x04 \x01(\tR\x06bucket\x12\"\n" +
+	"\raccess_key_id\x18\x05 \x01(\tR\vaccessKeyId\x12*\n" +
+	"\x11secret_access_key\x18\x06 \x01(\tR\x0fsecretAccessKey\x12\x1d\n" +
+	"\n" +
+	"path_style\x18\a \x01(\bR\tpathStyle\x12%\n" +
+	"\x0epublic_exposed\x18\b \x01(\bR\rpublicExposed\"Y\n" +
+	"\x18UpdateS3SettingsResponse\x12=\n" +
+	"\bsettings\x18\x01 \x01(\v2!.fleetly.server.v1.S3SettingsViewR\bsettings\"\xdb\x01\n" +
+	"\x17TestS3ConnectionRequest\x12!\n" +
+	"\fendpoint_url\x18\x01 \x01(\tR\vendpointUrl\x12\x16\n" +
+	"\x06region\x18\x02 \x01(\tR\x06region\x12\x16\n" +
+	"\x06bucket\x18\x03 \x01(\tR\x06bucket\x12\"\n" +
+	"\raccess_key_id\x18\x04 \x01(\tR\vaccessKeyId\x12*\n" +
+	"\x11secret_access_key\x18\x05 \x01(\tR\x0fsecretAccessKey\x12\x1d\n" +
+	"\n" +
+	"path_style\x18\x06 \x01(\bR\tpathStyle\"h\n" +
+	"\vS3ProbeStep\x12\x12\n" +
+	"\x04step\x18\x01 \x01(\tR\x04step\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x1f\n" +
+	"\vduration_ms\x18\x03 \x01(\x03R\n" +
+	"durationMs\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xf1\x01\n" +
+	"\x16S3ConnectionTestResult\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12!\n" +
+	"\fendpoint_url\x18\x02 \x01(\tR\vendpointUrl\x12\x16\n" +
+	"\x06region\x18\x03 \x01(\tR\x06region\x12\x16\n" +
+	"\x06bucket\x18\x04 \x01(\tR\x06bucket\x12\x1d\n" +
+	"\n" +
+	"path_style\x18\x05 \x01(\bR\tpathStyle\x124\n" +
+	"\x05steps\x18\x06 \x03(\v2\x1e.fleetly.server.v1.S3ProbeStepR\x05steps\x12\x1f\n" +
+	"\vfailed_step\x18\a \x01(\tR\n" +
+	"failedStep\"]\n" +
+	"\x18TestS3ConnectionResponse\x12A\n" +
+	"\x06result\x18\x01 \x01(\v2).fleetly.server.v1.S3ConnectionTestResultR\x06result2\xa2\v\n" +
 	"\rSystemService\x12`\n" +
 	"\x04Ping\x12\x1e.fleetly.server.v1.PingRequest\x1a\x1f.fleetly.server.v1.PingResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/ping\x12\x83\x01\n" +
 	"\x0fGetSystemStatus\x12).fleetly.server.v1.GetSystemStatusRequest\x1a*.fleetly.server.v1.GetSystemStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12p\n" +
@@ -1684,7 +2380,10 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\vListBackups\x12%.fleetly.server.v1.ListBackupsRequest\x1a&.fleetly.server.v1.ListBackupsResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/backups\x12\x81\x01\n" +
 	"\rTriggerBackup\x12'.fleetly.server.v1.TriggerBackupRequest\x1a(.fleetly.server.v1.TriggerBackupResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/system/backups\x12\x84\x01\n" +
 	"\fGetJoinGuide\x12&.fleetly.server.v1.GetJoinGuideRequest\x1a'.fleetly.server.v1.GetJoinGuideResponse\"#\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/system/nodes/join-guide\x12\x97\x01\n" +
-	"\x0fRotateJoinToken\x12).fleetly.server.v1.RotateJoinTokenRequest\x1a*.fleetly.server.v1.RotateJoinTokenResponse\"-\x82\xd3\xe4\x93\x02':\x01*\"\"/v1/system/nodes/join-token:rotateB\x98\x01\x92ARRP\n" +
+	"\x0fRotateJoinToken\x12).fleetly.server.v1.RotateJoinTokenRequest\x1a*.fleetly.server.v1.RotateJoinTokenResponse\"-\x82\xd3\xe4\x93\x02':\x01*\"\"/v1/system/nodes/join-token:rotate\x12y\n" +
+	"\rGetS3Settings\x12'.fleetly.server.v1.GetS3SettingsRequest\x1a(.fleetly.server.v1.GetS3SettingsResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/system/s3\x12\x85\x01\n" +
+	"\x10UpdateS3Settings\x12*.fleetly.server.v1.UpdateS3SettingsRequest\x1a+.fleetly.server.v1.UpdateS3SettingsResponse\"\x18\x82\xd3\xe4\x93\x02\x12:\x01*\x1a\r/v1/system/s3\x12\x8a\x01\n" +
+	"\x10TestS3Connection\x12*.fleetly.server.v1.TestS3ConnectionRequest\x1a+.fleetly.server.v1.TestS3ConnectionResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/system/s3:testB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -1701,7 +2400,7 @@ func file_fleetly_server_v1_system_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_system_proto_rawDescData
 }
 
-var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
 var file_fleetly_server_v1_system_proto_goTypes = []any{
 	(*PingRequest)(nil),              // 0: fleetly.server.v1.PingRequest
 	(*PingResponse)(nil),             // 1: fleetly.server.v1.PingResponse
@@ -1727,46 +2426,66 @@ var file_fleetly_server_v1_system_proto_goTypes = []any{
 	(*ListBackupsResponse)(nil),      // 21: fleetly.server.v1.ListBackupsResponse
 	(*TriggerBackupRequest)(nil),     // 22: fleetly.server.v1.TriggerBackupRequest
 	(*TriggerBackupResponse)(nil),    // 23: fleetly.server.v1.TriggerBackupResponse
-	nil,                              // 24: fleetly.server.v1.NodeView.LabelsEntry
-	(*timestamppb.Timestamp)(nil),    // 25: google.protobuf.Timestamp
+	(*GetS3SettingsRequest)(nil),     // 24: fleetly.server.v1.GetS3SettingsRequest
+	(*S3SettingsView)(nil),           // 25: fleetly.server.v1.S3SettingsView
+	(*GetS3SettingsResponse)(nil),    // 26: fleetly.server.v1.GetS3SettingsResponse
+	(*UpdateS3SettingsRequest)(nil),  // 27: fleetly.server.v1.UpdateS3SettingsRequest
+	(*UpdateS3SettingsResponse)(nil), // 28: fleetly.server.v1.UpdateS3SettingsResponse
+	(*TestS3ConnectionRequest)(nil),  // 29: fleetly.server.v1.TestS3ConnectionRequest
+	(*S3ProbeStep)(nil),              // 30: fleetly.server.v1.S3ProbeStep
+	(*S3ConnectionTestResult)(nil),   // 31: fleetly.server.v1.S3ConnectionTestResult
+	(*TestS3ConnectionResponse)(nil), // 32: fleetly.server.v1.TestS3ConnectionResponse
+	nil,                              // 33: fleetly.server.v1.NodeView.LabelsEntry
+	(*timestamppb.Timestamp)(nil),    // 34: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_system_proto_depIdxs = []int32{
 	3,  // 0: fleetly.server.v1.GetSystemStatusResponse.components:type_name -> fleetly.server.v1.ComponentHealth
 	5,  // 1: fleetly.server.v1.GetSystemStatusResponse.backup:type_name -> fleetly.server.v1.BackupHealth
-	25, // 2: fleetly.server.v1.BackupHealth.last_backup_at:type_name -> google.protobuf.Timestamp
-	25, // 3: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
-	24, // 4: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
+	34, // 2: fleetly.server.v1.BackupHealth.last_backup_at:type_name -> google.protobuf.Timestamp
+	34, // 3: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
+	33, // 4: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
 	7,  // 5: fleetly.server.v1.ListNodesResponse.nodes:type_name -> fleetly.server.v1.NodeView
 	10, // 6: fleetly.server.v1.JoinGuideView.manager_firewall_rules:type_name -> fleetly.server.v1.FirewallRule
 	10, // 7: fleetly.server.v1.JoinGuideView.worker_firewall_rules:type_name -> fleetly.server.v1.FirewallRule
 	11, // 8: fleetly.server.v1.GetJoinGuideResponse.guide:type_name -> fleetly.server.v1.JoinGuideView
-	25, // 9: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
+	34, // 9: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
 	16, // 10: fleetly.server.v1.GetIngressStatusResponse.traefik:type_name -> fleetly.server.v1.TraefikView
 	17, // 11: fleetly.server.v1.GetIngressStatusResponse.certificates:type_name -> fleetly.server.v1.CertLedgerView
-	25, // 12: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
+	34, // 12: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
 	20, // 13: fleetly.server.v1.ListBackupsResponse.backups:type_name -> fleetly.server.v1.BackupView
 	20, // 14: fleetly.server.v1.TriggerBackupResponse.backup:type_name -> fleetly.server.v1.BackupView
-	0,  // 15: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
-	2,  // 16: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
-	6,  // 17: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
-	15, // 18: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
-	19, // 19: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
-	22, // 20: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
-	9,  // 21: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
-	13, // 22: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
-	1,  // 23: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
-	4,  // 24: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
-	8,  // 25: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
-	18, // 26: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
-	21, // 27: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
-	23, // 28: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
-	12, // 29: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
-	14, // 30: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
-	23, // [23:31] is the sub-list for method output_type
-	15, // [15:23] is the sub-list for method input_type
-	15, // [15:15] is the sub-list for extension type_name
-	15, // [15:15] is the sub-list for extension extendee
-	0,  // [0:15] is the sub-list for field type_name
+	34, // 15: fleetly.server.v1.S3SettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 16: fleetly.server.v1.GetS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
+	25, // 17: fleetly.server.v1.UpdateS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
+	30, // 18: fleetly.server.v1.S3ConnectionTestResult.steps:type_name -> fleetly.server.v1.S3ProbeStep
+	31, // 19: fleetly.server.v1.TestS3ConnectionResponse.result:type_name -> fleetly.server.v1.S3ConnectionTestResult
+	0,  // 20: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
+	2,  // 21: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
+	6,  // 22: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
+	15, // 23: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
+	19, // 24: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
+	22, // 25: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
+	9,  // 26: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
+	13, // 27: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
+	24, // 28: fleetly.server.v1.SystemService.GetS3Settings:input_type -> fleetly.server.v1.GetS3SettingsRequest
+	27, // 29: fleetly.server.v1.SystemService.UpdateS3Settings:input_type -> fleetly.server.v1.UpdateS3SettingsRequest
+	29, // 30: fleetly.server.v1.SystemService.TestS3Connection:input_type -> fleetly.server.v1.TestS3ConnectionRequest
+	1,  // 31: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
+	4,  // 32: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
+	8,  // 33: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
+	18, // 34: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
+	21, // 35: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
+	23, // 36: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
+	12, // 37: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
+	14, // 38: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
+	26, // 39: fleetly.server.v1.SystemService.GetS3Settings:output_type -> fleetly.server.v1.GetS3SettingsResponse
+	28, // 40: fleetly.server.v1.SystemService.UpdateS3Settings:output_type -> fleetly.server.v1.UpdateS3SettingsResponse
+	32, // 41: fleetly.server.v1.SystemService.TestS3Connection:output_type -> fleetly.server.v1.TestS3ConnectionResponse
+	31, // [31:42] is the sub-list for method output_type
+	20, // [20:31] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_system_proto_init() }
@@ -1780,7 +2499,7 @@ func file_fleetly_server_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_system_proto_rawDesc), len(file_fleetly_server_v1_system_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   25,
+			NumMessages:   34,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

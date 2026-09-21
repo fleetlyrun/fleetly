@@ -79,6 +79,16 @@ var docCodes = map[string]string{ // code → 文档出处
 	// 多节点未启用，join 面显式拒绝（409）。
 	"E_MULTI_NODE_REQUIRES_BASE_DOMAIN": "multi-node §5.2 (D-MN-13: join gate, base_domain missing)",
 
+	// E3 对象存储 §5.2 实现期新增（2026-09-21 裁决轮落定，文档外码单独
+	// 列出，待 T0.5 契约冻结确认）：E_S3_NOT_CONFIGURED 为预留码（E3-2
+	// 只注册不消费，消费者 E3-4 注入前哨）；E_S3_TEST_FAILED = 探针失败
+	//（detail/context 带失败步）；E_S3_PUBLIC_REQUIRES_BASE_DOMAIN = 公网
+	// 子域开关在无平台域名形态下拒绝。
+	"E_S3_NOT_CONFIGURED":              "E3 object-storage §5.2 (reserved; consumed by the E3-4 label-injection sentinel)",
+	"E_S3_CONFIG_CONFLICT":             "E3 object-storage §5.2 (mode vs explicit fields mutual exclusion)",
+	"E_S3_TEST_FAILED":                 "E3 object-storage §5.2 (connection probe failed; failed step in the envelope context)",
+	"E_S3_PUBLIC_REQUIRES_BASE_DOMAIN": "E3 object-storage §5.2 (public subdomain toggle without a base domain)",
+
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
 	"W_DEPLOY_NO_HEALTHCHECK":   "release-semantics §2.7/§2.8",
@@ -106,10 +116,11 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 	}
 }
 
-// TestRegisteredCountByKind 双保险：38 E + 5 W = 43（T2.15 增
+// TestRegisteredCountByKind 双保险：42 E + 5 W = 47（T2.15 增
 // E_ROUTE_PUBLISH_FAILED、MG-C3 增 E_DEPLOY_CONFIRM_REQUIRED、M4-6 增
 // E_TOKEN_LAST_ADMIN、E1-5 增 E_REGISTRY_UNAVAILABLE/E_REGISTRY_PUSH_FAILED、
-// E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN——错误码只增纪律）。
+// E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 增 E_S3_* 四码——错误码
+// 只增纪律）。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -119,8 +130,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 38 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 38), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 42 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 42), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 
@@ -183,15 +194,15 @@ func TestHTTPMappingInvariants(t *testing.T) {
 // TestDocumentedHTTPMappings 文档显式给定的 HTTP 映射照文档。
 func TestDocumentedHTTPMappings(t *testing.T) {
 	want := map[string]int{
-		"E_DOMAIN_CONFLICT":             409, // architecture §2.4
-		"E_STATE_VERSION_CONFLICT":      409, // state-model §2.2
-		"E_VOLUME_NODE_MISMATCH":        409, // stateful-placement §2.8（前哨 409）
-		"E_PLACEMENT_MOVE_REQUIRES_ACK": 409, // stateful-placement §2.2
-		"E_EVENT_CURSOR_EXPIRED":        410, // state-model §2.9
-		"E_LABEL_RESERVED":              422, // state-model §2.4
-		"E_PLACEMENT_LABEL_CONFLICT":    422, // stateful-placement §2.2
-		"E_PLACEMENT_NODE_INVALID":      422, // stateful-placement §2.2（解析失败 422+候选）
-		"E_PLACEMENT_NODE_NOT_FOUND":    422, // stateful-placement §2.5
+		"E_DOMAIN_CONFLICT":                 409, // architecture §2.4
+		"E_STATE_VERSION_CONFLICT":          409, // state-model §2.2
+		"E_VOLUME_NODE_MISMATCH":            409, // stateful-placement §2.8（前哨 409）
+		"E_PLACEMENT_MOVE_REQUIRES_ACK":     409, // stateful-placement §2.2
+		"E_EVENT_CURSOR_EXPIRED":            410, // state-model §2.9
+		"E_LABEL_RESERVED":                  422, // state-model §2.4
+		"E_PLACEMENT_LABEL_CONFLICT":        422, // stateful-placement §2.2
+		"E_PLACEMENT_NODE_INVALID":          422, // stateful-placement §2.2（解析失败 422+候选）
+		"E_PLACEMENT_NODE_NOT_FOUND":        422, // stateful-placement §2.5
 		"E_REGISTRY_UNAVAILABLE":            503, // multi-node §5.2（D-MN-11 前哨快速失败）
 		"E_REGISTRY_PUSH_FAILED":            500, // multi-node §5.2（D-MN-11 推送失败）
 		"E_MULTI_NODE_REQUIRES_BASE_DOMAIN": 409, // multi-node §5.2（D-MN-13 join 门禁）

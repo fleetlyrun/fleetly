@@ -27,6 +27,9 @@ const (
 	SystemService_TriggerBackup_FullMethodName    = "/fleetly.server.v1.SystemService/TriggerBackup"
 	SystemService_GetJoinGuide_FullMethodName     = "/fleetly.server.v1.SystemService/GetJoinGuide"
 	SystemService_RotateJoinToken_FullMethodName  = "/fleetly.server.v1.SystemService/RotateJoinToken"
+	SystemService_GetS3Settings_FullMethodName    = "/fleetly.server.v1.SystemService/GetS3Settings"
+	SystemService_UpdateS3Settings_FullMethodName = "/fleetly.server.v1.SystemService/UpdateS3Settings"
+	SystemService_TestS3Connection_FullMethodName = "/fleetly.server.v1.SystemService/TestS3Connection"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -66,6 +69,22 @@ type SystemServiceClient interface {
 	// 缺省 worker；rotate 后旧 token 立即失效。经底座 swarm 面执行，轮换
 	// 记审计（node.join_token_rotated，§5.3——审计不设事件）。
 	RotateJoinToken(ctx context.Context, in *RotateJoinTokenRequest, opts ...grpc.CallOption) (*RotateJoinTokenResponse, error)
+	// GetS3Settings 对象存储设置只读面（E3 对象存储 §5.1/E3-2；admin scope
+	// ——端点/桶/凭证指纹属平台敏感配置）。secret 只回 fingerprint（sha256
+	// 前 8），绝不回明文；s3.mode=unset 时其余字段为空。
+	GetS3Settings(ctx context.Context, in *GetS3SettingsRequest, opts ...grpc.CallOption) (*GetS3SettingsResponse, error)
+	// UpdateS3Settings 全量保存对象存储设置（PUT 语义：请求即新状态，空字段
+	// 即清空——避免「改 mode 残留旧凭证」的静默状态；secret_access_key 为
+	// 明文字段，只写不读，传输面 TLS 承载机密性，持久层 envelope 加密）。
+	// 互斥校验 fail-fast：mode=external 必填四项；mode=rustfs 四项必须为空；
+	// public_exposed=true 仅 rustfs 且需 base_domain（E_S3_PUBLIC_REQUIRES_
+	// BASE_DOMAIN）。保存落审计 + 事件 s3.updated（payload 带模式不带走秘密）。
+	UpdateS3Settings(ctx context.Context, in *UpdateS3SettingsRequest, opts ...grpc.CallOption) (*UpdateS3SettingsResponse, error)
+	// TestS3Connection S3 连接探针（E3 对象存储 §2.1 诚实契约：put→get→
+	// delete 一枚探针对象并逐字节比对——通过 = 能认证/能写/能读回，不是 TCP
+	// 探活）。可带候选配置（未保存也能测）；全部候选字段为空 = 测已存配置。
+	// 探针失败以 E_S3_TEST_FAILED 报错，失败步与底层错误摘要进信封 context。
+	TestS3Connection(ctx context.Context, in *TestS3ConnectionRequest, opts ...grpc.CallOption) (*TestS3ConnectionResponse, error)
 }
 
 type systemServiceClient struct {
@@ -156,6 +175,36 @@ func (c *systemServiceClient) RotateJoinToken(ctx context.Context, in *RotateJoi
 	return out, nil
 }
 
+func (c *systemServiceClient) GetS3Settings(ctx context.Context, in *GetS3SettingsRequest, opts ...grpc.CallOption) (*GetS3SettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetS3SettingsResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetS3Settings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) UpdateS3Settings(ctx context.Context, in *UpdateS3SettingsRequest, opts ...grpc.CallOption) (*UpdateS3SettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateS3SettingsResponse)
+	err := c.cc.Invoke(ctx, SystemService_UpdateS3Settings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) TestS3Connection(ctx context.Context, in *TestS3ConnectionRequest, opts ...grpc.CallOption) (*TestS3ConnectionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestS3ConnectionResponse)
+	err := c.cc.Invoke(ctx, SystemService_TestS3Connection_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
@@ -193,6 +242,22 @@ type SystemServiceServer interface {
 	// 缺省 worker；rotate 后旧 token 立即失效。经底座 swarm 面执行，轮换
 	// 记审计（node.join_token_rotated，§5.3——审计不设事件）。
 	RotateJoinToken(context.Context, *RotateJoinTokenRequest) (*RotateJoinTokenResponse, error)
+	// GetS3Settings 对象存储设置只读面（E3 对象存储 §5.1/E3-2；admin scope
+	// ——端点/桶/凭证指纹属平台敏感配置）。secret 只回 fingerprint（sha256
+	// 前 8），绝不回明文；s3.mode=unset 时其余字段为空。
+	GetS3Settings(context.Context, *GetS3SettingsRequest) (*GetS3SettingsResponse, error)
+	// UpdateS3Settings 全量保存对象存储设置（PUT 语义：请求即新状态，空字段
+	// 即清空——避免「改 mode 残留旧凭证」的静默状态；secret_access_key 为
+	// 明文字段，只写不读，传输面 TLS 承载机密性，持久层 envelope 加密）。
+	// 互斥校验 fail-fast：mode=external 必填四项；mode=rustfs 四项必须为空；
+	// public_exposed=true 仅 rustfs 且需 base_domain（E_S3_PUBLIC_REQUIRES_
+	// BASE_DOMAIN）。保存落审计 + 事件 s3.updated（payload 带模式不带走秘密）。
+	UpdateS3Settings(context.Context, *UpdateS3SettingsRequest) (*UpdateS3SettingsResponse, error)
+	// TestS3Connection S3 连接探针（E3 对象存储 §2.1 诚实契约：put→get→
+	// delete 一枚探针对象并逐字节比对——通过 = 能认证/能写/能读回，不是 TCP
+	// 探活）。可带候选配置（未保存也能测）；全部候选字段为空 = 测已存配置。
+	// 探针失败以 E_S3_TEST_FAILED 报错，失败步与底层错误摘要进信封 context。
+	TestS3Connection(context.Context, *TestS3ConnectionRequest) (*TestS3ConnectionResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -226,6 +291,15 @@ func (UnimplementedSystemServiceServer) GetJoinGuide(context.Context, *GetJoinGu
 }
 func (UnimplementedSystemServiceServer) RotateJoinToken(context.Context, *RotateJoinTokenRequest) (*RotateJoinTokenResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RotateJoinToken not implemented")
+}
+func (UnimplementedSystemServiceServer) GetS3Settings(context.Context, *GetS3SettingsRequest) (*GetS3SettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetS3Settings not implemented")
+}
+func (UnimplementedSystemServiceServer) UpdateS3Settings(context.Context, *UpdateS3SettingsRequest) (*UpdateS3SettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateS3Settings not implemented")
+}
+func (UnimplementedSystemServiceServer) TestS3Connection(context.Context, *TestS3ConnectionRequest) (*TestS3ConnectionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestS3Connection not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -392,6 +466,60 @@ func _SystemService_RotateJoinToken_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_GetS3Settings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetS3SettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetS3Settings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetS3Settings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetS3Settings(ctx, req.(*GetS3SettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_UpdateS3Settings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateS3SettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).UpdateS3Settings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_UpdateS3Settings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).UpdateS3Settings(ctx, req.(*UpdateS3SettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_TestS3Connection_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestS3ConnectionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).TestS3Connection(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_TestS3Connection_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).TestS3Connection(ctx, req.(*TestS3ConnectionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -430,6 +558,18 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RotateJoinToken",
 			Handler:    _SystemService_RotateJoinToken_Handler,
+		},
+		{
+			MethodName: "GetS3Settings",
+			Handler:    _SystemService_GetS3Settings_Handler,
+		},
+		{
+			MethodName: "UpdateS3Settings",
+			Handler:    _SystemService_UpdateS3Settings_Handler,
+		},
+		{
+			MethodName: "TestS3Connection",
+			Handler:    _SystemService_TestS3Connection_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

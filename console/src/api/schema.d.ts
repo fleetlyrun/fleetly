@@ -452,6 +452,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/system/s3": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetS3Settings 对象存储设置只读面（E3 对象存储 §5.1/E3-2；admin scope
+         *     ——端点/桶/凭证指纹属平台敏感配置）。secret 只回 fingerprint（sha256
+         *     前 8），绝不回明文；s3.mode=unset 时其余字段为空。
+         */
+        get: operations["SystemService_GetS3Settings"];
+        /**
+         * UpdateS3Settings 全量保存对象存储设置（PUT 语义：请求即新状态，空字段
+         *     即清空——避免「改 mode 残留旧凭证」的静默状态；secret_access_key 为
+         *     明文字段，只写不读，传输面 TLS 承载机密性，持久层 envelope 加密）。
+         *     互斥校验 fail-fast：mode=external 必填四项；mode=rustfs 四项必须为空；
+         *     public_exposed=true 仅 rustfs 且需 base_domain（E_S3_PUBLIC_REQUIRES_
+         *     BASE_DOMAIN）。保存落审计 + 事件 s3.updated（payload 带模式不带走秘密）。
+         */
+        put: operations["SystemService_UpdateS3Settings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/system/s3:test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * TestS3Connection S3 连接探针（E3 对象存储 §2.1 诚实契约：put→get→
+         *     delete 一枚探针对象并逐字节比对——通过 = 能认证/能写/能读回，不是 TCP
+         *     探活）。可带候选配置（未保存也能测）；全部候选字段为空 = 测已存配置。
+         *     探针失败以 E_S3_TEST_FAILED 报错，失败步与底层错误摘要进信封 context。
+         */
+        post: operations["SystemService_TestS3Connection"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/system/status": {
         parameters: {
             query?: never;
@@ -1047,6 +1098,9 @@ export interface components {
         v1GetJoinGuideResponse: {
             guide?: components["schemas"]["v1JoinGuideView"];
         };
+        v1GetS3SettingsResponse: {
+            settings?: components["schemas"]["v1S3SettingsView"];
+        };
         v1GetSystemStatusResponse: {
             service?: string;
             version?: string;
@@ -1134,6 +1188,78 @@ export interface components {
             token?: string;
         };
         /**
+         * S3ConnectionTestResult 是探针结构化结果：endpoint 回显脱敏（secret 不
+         *     回显）、各步耗时、失败步。ok=false 时 failed_step 指向首个失败步。
+         */
+        v1S3ConnectionTestResult: {
+            ok?: boolean;
+            endpoint_url?: string;
+            region?: string;
+            bucket?: string;
+            path_style?: boolean;
+            steps?: components["schemas"]["v1S3ProbeStep"][];
+            failed_step?: string;
+        };
+        /** S3ProbeStep 是探针单步结果（put/get/delete；诚实契约：失败步可定位）。 */
+        v1S3ProbeStep: {
+            /** 步骤名：put | get | delete。 */
+            step?: string;
+            ok?: boolean;
+            /**
+             * 该步耗时（毫秒）。
+             * Format: int64
+             */
+            duration_ms?: string;
+            /** 失败时的底层错误摘要（不含 secret 材料）。 */
+            error?: string;
+        };
+        /**
+         * S3SettingsView 是 s3.* 设置的只读投影。secret 只回 fingerprint（明文
+         *     sha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateS3Settings
+         *     承载 secret 明文，TLS 传输面 + envelope 持久层）。
+         */
+        v1S3SettingsView: {
+            /**
+             * 模式词表：unset（缺省，未配置）| external（外部 S3 端点）| rustfs
+             *     （托管 RustFS，opt-in）。
+             */
+            mode?: string;
+            /**
+             * S3 端点 URL（含 scheme，如 https://s3.amazonaws.com；rustfs 模式下
+             *     服务端派生 http://rustfs:9000）。
+             */
+            endpoint_url?: string;
+            region?: string;
+            bucket?: string;
+            access_key_id?: string;
+            /** secret 指纹（sha256 前 8 hex），非 secret 本体。 */
+            secret_fingerprint?: string;
+            /** path-style 寻址（RustFS/MinIO 类自建端点 true，AWS 虚拟主机式 false）。 */
+            path_style?: boolean;
+            /** 公网子域开关（仅 rustfs 模式可开；开启后 s3.<base> 公网可达）。 */
+            public_exposed?: boolean;
+            /**
+             * 最近一次保存时刻（从未保存 → 不输出）。
+             * Format: date-time
+             */
+            updated_at?: string;
+        };
+        v1TestS3ConnectionRequest: {
+            /**
+             * 候选配置（未保存也能测）：任一字段非零即视为候选配置；全空 = 测已存
+             *     配置（s3.mode=unset 时已存配置不存在，拒绝）。
+             */
+            endpoint_url?: string;
+            region?: string;
+            bucket?: string;
+            access_key_id?: string;
+            secret_access_key?: string;
+            path_style?: boolean;
+        };
+        v1TestS3ConnectionResponse: {
+            result?: components["schemas"]["v1S3ConnectionTestResult"];
+        };
+        /**
          * TraefikView 是入口服务实况投影（Swarm service inspect；不可达时 exists
          *     = false 且 error 为探测原文）。
          */
@@ -1153,6 +1279,24 @@ export interface components {
         };
         v1TriggerBackupResponse: {
             backup?: components["schemas"]["v1BackupView"];
+        };
+        v1UpdateS3SettingsRequest: {
+            /** 模式词表（空 = unset）。external↔rustfs 互斥校验见 rpc 注记。 */
+            mode?: string;
+            endpoint_url?: string;
+            region?: string;
+            bucket?: string;
+            access_key_id?: string;
+            /**
+             * secret 明文（只写字段；读面只见 fingerprint）。PUT 语义：留空 = 无
+             *     secret（切换到 rustfs/unset 时随全量覆写自然清空外部凭证）。
+             */
+            secret_access_key?: string;
+            path_style?: boolean;
+            public_exposed?: boolean;
+        };
+        v1UpdateS3SettingsResponse: {
+            settings?: components["schemas"]["v1S3SettingsView"];
         };
         /** UpdatePlacementRequest 是显式换点请求（admin scope；破坏性确认路径）。 */
         PlacementServiceUpdatePlacementBody: {
@@ -2216,6 +2360,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1PingResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_GetS3Settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetS3SettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_UpdateS3Settings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1UpdateS3SettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateS3SettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_TestS3Connection: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1TestS3ConnectionRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TestS3ConnectionResponse"];
                 };
             };
             /** @description An unexpected error response. */

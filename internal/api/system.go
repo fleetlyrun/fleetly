@@ -2,6 +2,8 @@ package api
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,8 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
+	"github.com/fleetlyrun/fleetly/internal/objectstore"
+	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
 	"google.golang.org/grpc/codes"
@@ -47,6 +51,9 @@ type SystemService struct {
 	// 未装配——GetJoinGuide 在 base_domain 缺失时先以 409 拒绝、不触底座，
 	// RotateJoinToken 如实报不可用）。
 	join JoinTokenPort
+	// box 是 envelope 加解密器（E3-2 S3 设置面：secret 密文落库/读面解密
+	// 出指纹/探针解密已存凭证；nil = 未装配——S3 三面如实报不可用）。
+	box *secrets.Box
 }
 
 // JoinTokenPort 是 swarm join-token 面端口（multi-node §2.3；*substrate.
@@ -91,6 +98,14 @@ func (s *SystemService) WithJoinGuide(baseDomain string, jp JoinTokenPort) *Syst
 // 测试/精简形态的备份面缺省）。
 func (s *SystemService) WithBackupManager(m *statebackup.Manager) *SystemService {
 	s.backup = m
+	return s
+}
+
+// WithSecretsBox 注入 envelope 加解密器（E3-2 S3 设置面；链式装配，nil
+// 合法——S3 三面如实报不可用）。secret 明文只在服务端内存存活：写入即
+// envelope 加密落库，读面只出指纹，探针解密已存凭证在服务端完成。
+func (s *SystemService) WithSecretsBox(box *secrets.Box) *SystemService {
+	s.box = box
 	return s
 }
 
@@ -264,10 +279,10 @@ func (s *SystemService) GetJoinGuide(ctx context.Context, req *serverv1.GetJoinG
 // 只生成规则文本、不自动应用——--harden-firewall 自动应用维持 reserved）。
 func buildJoinGuide(baseDomain, addr, workerToken, workerIP, managerIP string) *serverv1.JoinGuideView {
 	g := &serverv1.JoinGuideView{
-		JoinCommand:  "docker swarm join --token " + workerToken + " " + addr + ":2377",
-		ManagerAddr:  addr,
-		WorkerToken:  workerToken,
-		BaseDomain:   baseDomain,
+		JoinCommand: "docker swarm join --token " + workerToken + " " + addr + ":2377",
+		ManagerAddr: addr,
+		WorkerToken: workerToken,
+		BaseDomain:  baseDomain,
 		ManagerFirewallRules: []*serverv1.FirewallRule{
 			{Direction: "worker_to_manager", Port: "2377/tcp", Purpose: "cluster management (swarm join)",
 				Side: "manager", Rule: "iptables -A INPUT -p tcp -s " + workerIP + " --dport 2377 -j ACCEPT"},
@@ -503,4 +518,210 @@ func listCertDirApps(dir string) ([]string, error) {
 		}
 	}
 	return apps, nil
+}
+
+// ── 对象存储 S3 设置面（E3 对象存储 §5.1/E3-2，admin scope）──────────────
+// 设置落库内运行期设置（platform_settings，D-S3-2）；secret 明文只写不读
+//（读面 fingerprint），持久层 envelope 加密；探针语义 = 能认证/能写/能读
+// 回（§2.1 诚实契约）。
+
+// rustfsEndpointURL / rustfsBucketName 是 rustfs 模式的服务端派生端点
+// （设计 §2.5：fleetlyd 所在网络内 http://rustfs:9000，path-style；平台
+// 单桶）。外部模式的端点/桶来自设置值。
+const (
+	rustfsEndpointURL = "http://rustfs:9000"
+	rustfsBucketName  = "fleetly"
+)
+
+// GetS3Settings 对象存储设置只读面：secret 只回 fingerprint（明文 sha256
+// 前 8），绝不回明文。s3.mode=unset 时其余字段为空。
+func (s *SystemService) GetS3Settings(ctx context.Context, req *serverv1.GetS3SettingsRequest) (*serverv1.GetS3SettingsResponse, error) {
+	if s.box == nil {
+		return nil, status.Error(codes.Unavailable, "secrets box unavailable (not assembled)")
+	}
+	in, err := s.st.LoadS3Settings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	view, err := s.s3SettingsView(in)
+	if err != nil {
+		return nil, err
+	}
+	return &serverv1.GetS3SettingsResponse{Settings: view}, nil
+}
+
+// UpdateS3Settings 全量保存（PUT 语义：请求即新状态）。secret_access_key
+// 明文入站（TLS 传输面）→ envelope 加密落库；互斥校验 fail-fast 在 state
+// 层（E_S3_CONFIG_CONFLICT / E_S3_PUBLIC_REQUIRES_BASE_DOMAIN，信封原样
+// 透传）；保存 + 审计 + 事件 s3.updated 同事务（payload 带模式不带走秘密）。
+func (s *SystemService) UpdateS3Settings(ctx context.Context, req *serverv1.UpdateS3SettingsRequest) (*serverv1.UpdateS3SettingsResponse, error) {
+	if s.box == nil {
+		return nil, status.Error(codes.Unavailable, "secrets box unavailable (not assembled)")
+	}
+	secretCT := ""
+	if req.GetSecretAccessKey() != "" {
+		ct, err := s.box.Encrypt([]byte(req.GetSecretAccessKey()))
+		if err != nil {
+			return nil, err
+		}
+		secretCT = string(ct)
+	}
+	in := state.S3Settings{
+		Mode:            state.NormalizeMode(req.GetMode()),
+		EndpointURL:     strings.TrimSpace(req.GetEndpointUrl()),
+		Region:          strings.TrimSpace(req.GetRegion()),
+		Bucket:          strings.TrimSpace(req.GetBucket()),
+		AccessKeyID:     strings.TrimSpace(req.GetAccessKeyId()),
+		SecretAccessKey: secretCT,
+		PathStyle:       req.GetPathStyle(),
+		PublicExposed:   req.GetPublicExposed(),
+	}
+	opts := state.S3SaveOptions{BaseDomain: s.baseDomain, Actor: "human"}
+	if p, ok := PrincipalFromContext(ctx); ok {
+		opts.ActorTokenID = p.TokenID
+	}
+	if err := s.st.SaveS3Settings(ctx, in, opts); err != nil {
+		return nil, err
+	}
+	view, err := s.s3SettingsView(in)
+	if err != nil {
+		return nil, err
+	}
+	return &serverv1.UpdateS3SettingsResponse{Settings: view}, nil
+}
+
+// TestS3Connection S3 连接探针：候选配置（未保存也能测）或已存配置
+// （全部候选字段为空时）。探针失败以 E_S3_TEST_FAILED 报错——失败步与
+// 底层错误摘要进信封 context（secret 材料不进错误文本：minio-go 错误不
+// 回显凭证，信封 context 只带 endpoint/bucket/失败步）。
+func (s *SystemService) TestS3Connection(ctx context.Context, req *serverv1.TestS3ConnectionRequest) (*serverv1.TestS3ConnectionResponse, error) {
+	if s.box == nil {
+		return nil, status.Error(codes.Unavailable, "secrets box unavailable (not assembled)")
+	}
+	candidate := objectstore.Endpoint{
+		URL:       strings.TrimSpace(req.GetEndpointUrl()),
+		Region:    strings.TrimSpace(req.GetRegion()),
+		Bucket:    strings.TrimSpace(req.GetBucket()),
+		AccessKey: strings.TrimSpace(req.GetAccessKeyId()),
+		SecretKey: req.GetSecretAccessKey(),
+		PathStyle: req.GetPathStyle(),
+	}
+	ep := candidate
+	if candidate.URL == "" && candidate.Region == "" && candidate.Bucket == "" &&
+		candidate.AccessKey == "" && candidate.SecretKey == "" && !candidate.PathStyle {
+		// 无候选配置 → 测已存配置（每次现读，不缓存长驻）。
+		stored, found, err := s.storedS3Endpoint(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !found {
+			return nil, statusInvalidArgument(
+				"no S3 settings saved yet (s3.mode=unset): pass a candidate configuration to test")
+		}
+		ep = stored
+	}
+	res := objectstore.TestConnection(ctx, ep)
+	if !res.OK {
+		lastErr := ""
+		for _, st := range res.Steps {
+			if !st.OK {
+				lastErr = st.Err
+			}
+		}
+		return nil, apperr.New("E_S3_TEST_FAILED",
+			"s3 connection test failed at step %s: %s", res.FailedStep, lastErr).
+			WithContext("endpoint", res.EndpointURL).
+			WithContext("bucket", res.Bucket).
+			WithContext("failed_step", res.FailedStep)
+	}
+	return &serverv1.TestS3ConnectionResponse{Result: s3ProbeView(res)}, nil
+}
+
+// storedS3Endpoint 把已存设置解析为探针端点（found=false = unset 无可测
+// 配置）。external：设置值直出（secret 解密）；rustfs：服务端派生
+// http://rustfs:9000 + path-style + 平台单桶——凭据随 E3-5 duty 落密钥库
+// 后接入，本票形态下探针会如实以认证失败收口（RustFS 未部署即不可用）。
+func (s *SystemService) storedS3Endpoint(ctx context.Context) (objectstore.Endpoint, bool, error) {
+	in, err := s.st.LoadS3Settings(ctx)
+	if err != nil {
+		return objectstore.Endpoint{}, false, err
+	}
+	switch in.Mode {
+	case state.S3ModeExternal:
+		ep := objectstore.Endpoint{
+			URL:       in.EndpointURL,
+			Region:    in.Region,
+			Bucket:    in.Bucket,
+			AccessKey: in.AccessKeyID,
+			PathStyle: in.PathStyle,
+		}
+		if in.SecretAccessKey != "" {
+			plain, err := s.box.Decrypt([]byte(in.SecretAccessKey))
+			if err != nil {
+				return objectstore.Endpoint{}, false, fmt.Errorf("decrypt stored s3 secret: %w", err)
+			}
+			ep.SecretKey = string(plain)
+		}
+		return ep, true, nil
+	case state.S3ModeRustfs:
+		return objectstore.Endpoint{
+			URL:       rustfsEndpointURL,
+			Bucket:    rustfsBucketName,
+			PathStyle: true,
+		}, true, nil
+	default:
+		return objectstore.Endpoint{}, false, nil
+	}
+}
+
+// s3SettingsView 把设置构造为脱敏读面投影（secret 解密出指纹，明文不出
+// 服务端边界）。
+func (s *SystemService) s3SettingsView(in state.S3Settings) (*serverv1.S3SettingsView, error) {
+	v := &serverv1.S3SettingsView{
+		Mode:          in.Mode,
+		EndpointUrl:   in.EndpointURL,
+		Region:        in.Region,
+		Bucket:        in.Bucket,
+		AccessKeyId:   in.AccessKeyID,
+		PathStyle:     in.PathStyle,
+		PublicExposed: in.PublicExposed,
+		UpdatedAt:     tstamp(in.UpdatedAt),
+	}
+	if in.SecretAccessKey != "" {
+		plain, err := s.box.Decrypt([]byte(in.SecretAccessKey))
+		if err != nil {
+			return nil, fmt.Errorf("decrypt stored s3 secret: %w", err)
+		}
+		v.SecretFingerprint = secretFingerprint(plain)
+	}
+	return v, nil
+}
+
+// s3ProbeView 把探针结果投影为契约面。
+func s3ProbeView(res objectstore.ProbeResult) *serverv1.S3ConnectionTestResult {
+	out := &serverv1.S3ConnectionTestResult{
+		Ok:          res.OK,
+		EndpointUrl: res.EndpointURL,
+		Region:      res.Region,
+		Bucket:      res.Bucket,
+		PathStyle:   res.PathStyle,
+		FailedStep:  res.FailedStep,
+		Steps:       make([]*serverv1.S3ProbeStep, 0, len(res.Steps)),
+	}
+	for _, st := range res.Steps {
+		out.Steps = append(out.Steps, &serverv1.S3ProbeStep{
+			Step:       st.Step,
+			Ok:         st.OK,
+			DurationMs: st.Duration.Milliseconds(),
+			Error:      st.Err,
+		})
+	}
+	return out
+}
+
+// secretFingerprint 是 secret 的展示指纹（明文 sha256 前 8 hex——与 swarm
+// secret 引用 hash8 同口径；只判「是不是那个 secret」，不回传材料）。
+func secretFingerprint(plain []byte) string {
+	sum := sha256.Sum256(plain)
+	return hex.EncodeToString(sum[:8])
 }

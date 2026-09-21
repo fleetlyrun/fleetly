@@ -9,7 +9,7 @@ package eventcode
 //     engine.stale_nonterminal、build.stale_nonterminal（S18-A10）、
 //     app.deleted（B6/H10，MG-3）、app.substrate_missing（T0-V2.2，R2）
 //
-// 计 39 个事件名。
+// 计 44 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -100,4 +100,11 @@ var builtins = []Event{
 	// 这层是未来新状态机漏洞的观测面）。
 	{Name: "engine.stale_nonterminal", Summary: "deploy stayed non-terminal past 2x the (deploy watchdog + observe window) budget (surfaces state-machine bugs; no self-healing)"},
 	{Name: "build.stale_nonterminal", Summary: "build stayed queued/building past 2x the build timeout budget (surfaces state-machine bugs; no self-healing)"},
+
+	// ── 对象存储 S3 面（E3 对象存储专项设计 §5.3，2026-09-21 裁决轮落定，
+	//    注册表只增；本票接线 s3.updated，rustfs duty 差分事件随 E3-5）──
+	// 发出来源：platform_settings 的 S3 设置保存事务（internal/state/
+	// s3settings.go，与业务写同事务 = Outbox 模式）。payload 只带模式与
+	// 布尔开关，绝不带凭证材料（state-model §2.9 secret 值禁止进事件）。
+	{Name: "s3.updated", Summary: "object storage settings changed (payload carries the mode and toggles, never credentials)"},
 }

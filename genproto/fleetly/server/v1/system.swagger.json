@@ -208,6 +208,93 @@
         ]
       }
     },
+    "/v1/system/s3": {
+      "get": {
+        "summary": "GetS3Settings 对象存储设置只读面（E3 对象存储 §5.1/E3-2；admin scope\n——端点/桶/凭证指纹属平台敏感配置）。secret 只回 fingerprint（sha256\n前 8），绝不回明文；s3.mode=unset 时其余字段为空。",
+        "operationId": "SystemService_GetS3Settings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetS3SettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      },
+      "put": {
+        "summary": "UpdateS3Settings 全量保存对象存储设置（PUT 语义：请求即新状态，空字段\n即清空——避免「改 mode 残留旧凭证」的静默状态；secret_access_key 为\n明文字段，只写不读，传输面 TLS 承载机密性，持久层 envelope 加密）。\n互斥校验 fail-fast：mode=external 必填四项；mode=rustfs 四项必须为空；\npublic_exposed=true 仅 rustfs 且需 base_domain（E_S3_PUBLIC_REQUIRES_\nBASE_DOMAIN）。保存落审计 + 事件 s3.updated（payload 带模式不带走秘密）。",
+        "operationId": "SystemService_UpdateS3Settings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateS3SettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UpdateS3SettingsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
+    "/v1/system/s3:test": {
+      "post": {
+        "summary": "TestS3Connection S3 连接探针（E3 对象存储 §2.1 诚实契约：put→get→\ndelete 一枚探针对象并逐字节比对——通过 = 能认证/能写/能读回，不是 TCP\n探活）。可带候选配置（未保存也能测）；全部候选字段为空 = 测已存配置。\n探针失败以 E_S3_TEST_FAILED 报错，失败步与底层错误摘要进信封 context。",
+        "operationId": "SystemService_TestS3Connection",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TestS3ConnectionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TestS3ConnectionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
     "/v1/system/status": {
       "get": {
         "operationId": "SystemService_GetSystemStatus",
@@ -450,6 +537,14 @@
         }
       }
     },
+    "v1GetS3SettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1S3SettingsView"
+        }
+      }
+    },
     "v1GetSystemStatusResponse": {
       "type": "object",
       "properties": {
@@ -634,6 +729,131 @@
         }
       }
     },
+    "v1S3ConnectionTestResult": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "endpoint_url": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "path_style": {
+          "type": "boolean"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1S3ProbeStep"
+          }
+        },
+        "failed_step": {
+          "type": "string"
+        }
+      },
+      "title": "S3ConnectionTestResult 是探针结构化结果：endpoint 回显脱敏（secret 不\n回显）、各步耗时、失败步。ok=false 时 failed_step 指向首个失败步。"
+    },
+    "v1S3ProbeStep": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "string",
+          "title": "步骤名：put | get | delete。"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "type": "string",
+          "format": "int64",
+          "title": "该步耗时（毫秒）。"
+        },
+        "error": {
+          "type": "string",
+          "title": "失败时的底层错误摘要（不含 secret 材料）。"
+        }
+      },
+      "title": "S3ProbeStep 是探针单步结果（put/get/delete；诚实契约：失败步可定位）。"
+    },
+    "v1S3SettingsView": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "title": "模式词表：unset（缺省，未配置）| external（外部 S3 端点）| rustfs\n（托管 RustFS，opt-in）。"
+        },
+        "endpoint_url": {
+          "type": "string",
+          "title": "S3 端点 URL（含 scheme，如 https://s3.amazonaws.com；rustfs 模式下\n服务端派生 http://rustfs:9000）。"
+        },
+        "region": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "access_key_id": {
+          "type": "string"
+        },
+        "secret_fingerprint": {
+          "type": "string",
+          "title": "secret 指纹（sha256 前 8 hex），非 secret 本体。"
+        },
+        "path_style": {
+          "type": "boolean",
+          "title": "path-style 寻址（RustFS/MinIO 类自建端点 true，AWS 虚拟主机式 false）。"
+        },
+        "public_exposed": {
+          "type": "boolean",
+          "title": "公网子域开关（仅 rustfs 模式可开；开启后 s3.\u003cbase\u003e 公网可达）。"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "最近一次保存时刻（从未保存 → 不输出）。"
+        }
+      },
+      "title": "S3SettingsView 是 s3.* 设置的只读投影。secret 只回 fingerprint（明文\nsha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateS3Settings\n承载 secret 明文，TLS 传输面 + envelope 持久层）。"
+    },
+    "v1TestS3ConnectionRequest": {
+      "type": "object",
+      "properties": {
+        "endpoint_url": {
+          "type": "string",
+          "title": "候选配置（未保存也能测）：任一字段非零即视为候选配置；全空 = 测已存\n配置（s3.mode=unset 时已存配置不存在，拒绝）。"
+        },
+        "region": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "access_key_id": {
+          "type": "string"
+        },
+        "secret_access_key": {
+          "type": "string"
+        },
+        "path_style": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1TestS3ConnectionResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/v1S3ConnectionTestResult"
+        }
+      }
+    },
     "v1TraefikView": {
       "type": "object",
       "properties": {
@@ -667,6 +887,46 @@
       "properties": {
         "backup": {
           "$ref": "#/definitions/v1BackupView"
+        }
+      }
+    },
+    "v1UpdateS3SettingsRequest": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "title": "模式词表（空 = unset）。external↔rustfs 互斥校验见 rpc 注记。"
+        },
+        "endpoint_url": {
+          "type": "string"
+        },
+        "region": {
+          "type": "string"
+        },
+        "bucket": {
+          "type": "string"
+        },
+        "access_key_id": {
+          "type": "string"
+        },
+        "secret_access_key": {
+          "type": "string",
+          "title": "secret 明文（只写字段；读面只见 fingerprint）。PUT 语义：留空 = 无\nsecret（切换到 rustfs/unset 时随全量覆写自然清空外部凭证）。"
+        },
+        "path_style": {
+          "type": "boolean"
+        },
+        "public_exposed": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1UpdateS3SettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1S3SettingsView",
+          "title": "保存后的设置投影（与 GetS3Settings 同一脱敏读面）。"
         }
       }
     }

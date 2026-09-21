@@ -27,6 +27,12 @@ var methodScopes = map[string]string{
 	// pre_upgrade 快照共用入口），取 deploy scope。
 	"/fleetly.server.v1.SystemService/ListBackups":   ScopeRead,
 	"/fleetly.server.v1.SystemService/TriggerBackup": ScopeDeploy,
+	// S3 设置面（E3-2，对象存储 §5.1）：整体 admin——端点/桶/凭证指纹属
+	// 平台敏感配置，secret 明文只写（Update）与凭证解密（Test）是平台
+	// 信任面，与 env 明文读同级，不随 deploy/read 下放。
+	"/fleetly.server.v1.SystemService/GetS3Settings":    ScopeAdmin,
+	"/fleetly.server.v1.SystemService/UpdateS3Settings": ScopeAdmin,
+	"/fleetly.server.v1.SystemService/TestS3Connection": ScopeAdmin,
 	// AppsService
 	"/fleetly.server.v1.AppsService/ListApps":  ScopeRead,
 	"/fleetly.server.v1.AppsService/GetApp":    ScopeRead,
