@@ -96,7 +96,7 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 | **auto-rotate(D-MN-1)** | 日志 `worker join token auto-rotated after new node anchoring, minted:1` | ✅ 真机首跑 |
 | 断言 A(拓扑) | 双节点 Ready、节点观测缓存双行 | ✅ |
 | 断言 C(有状态 drain) | drain→任务受阻(Pending);回岗→**自动回绑 node2**;**marker 数据完好**(真卷带部署后缀 `statedata-01M30X6G`) | ✅(事件面见 F11) |
-| 断言 B(无状态 drain) | 待云防火墙放行 8423(worker Traefik 配置面)后执行 | ⏳ |
+| 断言 B(无状态 drain) | **PASS**:node2 连续 87 探测 × drain 窗口全 200(零新连接失败);诚实注记:断言 C 先行 drain 已把副本迁至 manager(无自动回迁,by design),B 验证入口面;「drain 下任务迁移」半面由 dind B2/B3 覆盖 | ✅ |
 
 **预算实测(D-MN-12 口径,2026-09-21)**:manager 全栈 idle **≈424MB < 600MB** ✓(fleetlyd 64 + dockerd 202 + containerd 64 + Traefik 29 + zot 51 + buildkit 14);worker 侧单列 ≈201MB(dockerd 120 + containerd 65 + Traefik 16,零 fleetly 组件)。
 
@@ -105,7 +105,7 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 | # | 发现 | 处置 |
 |---|---|---|
 | F8 | 平台证书签发落在启动发布之后,websecure/内联证书要等 12h sweep 才进视图(冷启动后平台子域 443 长期缺席) | **已修**(a70625c:证书就绪同拍触发重发布,指纹级断言) |
-| F9 | worker Traefik 配置饥饿:swarm ingress mesh 把外部请求负载到各节点 Traefik,worker 拉 `ctrl.<base>:8423`(公网解析)被云防火墙拦 → 间歇性证书错误;join 向导防火墙矩阵本就列了 8423——实证其为**必需**项 | 运维口径:join 前放行 worker→manager 8423(向导矩阵为真源) |
+| F9 | worker Traefik 配置饥饿:动态配置含全平台 TLS 私钥,公网 8423 暴露应压到零 | **已修(修订二,bf9bf67)**:provider endpoint 直用 advertise VPC IP(`https://10.124.0.3:8423`)+ insecureSkipVerify(传输 TLS+token 保,服务器认证由 VPC 边界承担);extra_hosts 通道被真机证伪(**Docker 29.8.1 swarm 任务不应用 ContainerSpec.Hosts**,普通 --add-host 正常)——内部 CA + tls.ca 硬化挂 v0.2.x |
 | F10 | **publish 无证书段形态会擦掉全平台 TLS**:无域名应用部署/签发竞态后下一拍,全量视图换入把既有 websecure+证书整体擦出(hello/demo 实测被擦) | **已修**(8c3a086:publish 统一带证书段;回归测试钉住) |
 | F11 | settled 应用的 drain 无 `placement.blocked/recovered` 事件(发射点仅在 releasing 窗)——部署窗内 drain 有事件(dind C3/C6 证),settled 后只有任务层 Pending | v0.2.x 跟进票:周期性绑定节点可用性守护(事件流诚实面补齐) |
 | 观察 | 残卷:node2 上存在无后缀 `statedata` 空卷(真卷带部署后缀)——卷命名/清理的巡检项 | 随 F11 票或孤儿卷清理指引核对 |
