@@ -377,8 +377,9 @@ func (m *Manager) watchHealthy(ctx context.Context, inst *state.DatabaseInstance
 		m.log.Warn("database: watch deferred (credential undecryptable)", "instance", inst.Name, "error", err)
 		return
 	}
-	// 服务收敛（无 secret 清场——在役期凭据不变；secret 引用随 desired-hash
-	// 比对自然覆盖轮换场景，轮换编排本身在 S4）。
+	// 服务收敛（轮换感知，S4：在役期凭据可经 RotateCredentials 变更——
+	// secret 引用随 desired-hash 比对自然换挂；换名后旧值 secret 由
+	// removeStaleCredentialSecrets best-effort 清场，材料不残留）。
 	secretIDs := map[string]string{}
 	if tpl.CredentialDelivery == dbtemplate.CredentialSecretFile {
 		secretName, err := naming.DBSecretName(inst.Name, pgSecretKey, naming.Hash8(password))
@@ -399,6 +400,11 @@ func (m *Manager) watchHealthy(ctx context.Context, inst *state.DatabaseInstance
 			}
 		}
 		secretIDs[secretName] = id
+		// 旧值 secret 清场（轮换换名后——best-effort：in-use 如实报错降级
+		// 日志，下一拍重走；与 provisioning 路径同款纪律）。
+		if err := m.removeStaleCredentialSecrets(ctx, inst.Name, secretName); err != nil {
+			m.log.Warn("database: stale credential secret cleanup deferred", "instance", inst.Name, "error", err)
+		}
 	}
 	desired, err := renderService(inst, password, 1)
 	if err != nil {

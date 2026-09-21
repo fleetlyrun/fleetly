@@ -677,6 +677,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/databases/{name}/credentials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * RevealDatabaseCredentials 连接信息显式展开（admin scope；§2.5「Console
+         *     库详情页展示连接信息，密码默认脱敏、显式展开」的 API 面——含密码明文
+         *     与完整 URL；审计 db.reveal 承载敏感访问留痕，不产生事件）。
+         */
+        get: operations["DatabaseService_RevealDatabaseCredentials"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/databases/{name}/resume": {
         parameters: {
             query?: never;
@@ -708,6 +729,29 @@ export interface paths {
          *     失败的唯一出边）。
          */
         post: operations["DatabaseService_RetryDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RotateDatabaseCredentials 凭据轮换（E4 managed-databases §2.5，S4）：
+         *     破坏性两段式（confirm = 实例名）。合法前置态 ready/degraded/paused
+         *     （§2.3 操作表；PG 暂停期拒绝——postgres 需运行中实例才能 ALTER USER，
+         *     如实报 409 并提示先 resume）。引擎侧成功后：引用方 system 物化行回
+         *     pending + 平台自动触发全部引用 app 重部署（各自走正常部署队列）。
+         */
+        post: operations["DatabaseService_RotateDatabaseCredentials"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1585,6 +1629,13 @@ export interface components {
         };
         DatabaseServiceResumeDatabaseBody: Record<string, never>;
         DatabaseServiceRetryDatabaseBody: Record<string, never>;
+        /**
+         * RotateDatabaseCredentialsRequest 是凭据轮换受理（破坏性两段式：confirm =
+         *     实例名原样回传，mismatch → 400——与 DeleteDatabase 同型的数据安全面）。
+         */
+        DatabaseServiceRotateDatabaseCredentialsBody: {
+            confirm?: string;
+        };
         DatabaseServiceSuspendDatabaseBody: Record<string, never>;
         DatabaseServiceUpdateDatabaseSettingsBody: {
             limits?: components["schemas"]["v1DatabaseLimits"];
@@ -1698,6 +1749,33 @@ export interface components {
         };
         v1RetryDatabaseResponse: {
             database?: components["schemas"]["v1DatabaseView"];
+        };
+        /**
+         * RevealDatabaseCredentialsResponse 是连接信息的显式展开投影（§2.5 键集
+         *     全量 + 密码明文——admin scope 专用面；值只出现在本响应，不进日志/事件/
+         *     审计，审计 db.reveal 只记访问事实）。
+         */
+        v1RevealDatabaseCredentialsResponse: {
+            name?: string;
+            template?: string;
+            host?: string;
+            /** Format: int32 */
+            port?: number;
+            /** PG 有 user/database；Redis 不输出（空串）。 */
+            user?: string;
+            database?: string;
+            /** 密码明文（显式展开面的设计内例外；凭据字符集 [a-zA-Z0-9]）。 */
+            password?: string;
+            /** 标准 URI（密码段为明文——与 GetEnv 明文读同级的 admin 面）。 */
+            url?: string;
+        };
+        v1RotateDatabaseCredentialsResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
+            /**
+             * 平台自动重部署的引用 app 名单（各自走正常部署队列；credential_updated_at
+             *     展示随 database.credential_updated_at 刷新）。
+             */
+            redeployed_apps?: string[];
         };
         v1SuspendDatabaseResponse: {
             database?: components["schemas"]["v1DatabaseView"];
@@ -3183,6 +3261,37 @@ export interface operations {
             };
         };
     };
+    DatabaseService_RevealDatabaseCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RevealDatabaseCredentialsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     DatabaseService_ResumeDatabase: {
         parameters: {
             query?: never;
@@ -3240,6 +3349,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RetryDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_RotateDatabaseCredentials: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceRotateDatabaseCredentialsBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RotateDatabaseCredentialsResponse"];
                 };
             };
             /** @description An unexpected error response. */

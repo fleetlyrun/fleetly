@@ -28,7 +28,10 @@ func TestBuildSwarmSpecManagedFields(t *testing.T) {
 		},
 		RestartPolicy: &engine.RestartPolicySpec{Condition: "any", Delay: 5 * time.Second},
 	}
-	sw := buildSwarmSpec(spec)
+	sw, err := buildSwarmSpec(spec, nil)
+	if err != nil {
+		t.Fatalf("buildSwarmSpec: %v", err)
+	}
 
 	uc := sw.UpdateConfig
 	if uc == nil {
@@ -63,13 +66,19 @@ func TestBuildSwarmSpecManagedFields(t *testing.T) {
 
 func TestBuildSwarmSpecDefaultsAndGlobal(t *testing.T) {
 	// 无 restart_policy → 平台缺省 condition=any/delay=5s（architecture §2.5）。
-	sw := buildSwarmSpec(engine.ServiceSpec{Name: "s", Image: "img", Replicas: 1})
+	sw, err := buildSwarmSpec(engine.ServiceSpec{Name: "s", Image: "img", Replicas: 1}, nil)
+	if err != nil {
+		t.Fatalf("buildSwarmSpec: %v", err)
+	}
 	rp := sw.TaskTemplate.RestartPolicy
 	if rp == nil || string(rp.Condition) != "any" || rp.Delay == nil || *rp.Delay != 5*time.Second {
 		t.Fatalf("default restart policy = %+v", rp)
 	}
 
-	g := buildSwarmSpec(engine.ServiceSpec{Name: "g", Image: "img", Global: true, UpdateOrder: "stop-first"})
+	g, err := buildSwarmSpec(engine.ServiceSpec{Name: "g", Image: "img", Global: true, UpdateOrder: "stop-first"}, nil)
+	if err != nil {
+		t.Fatalf("buildSwarmSpec global: %v", err)
+	}
 	if g.Mode.Global == nil {
 		t.Fatal("global mode missing")
 	}
@@ -83,13 +92,16 @@ func TestBuildSwarmSpecDefaultsAndGlobal(t *testing.T) {
 // daemon 拒绝）、重启策略 none（失败即 failed，不重试）。
 func TestBuildSwarmSpecReplicatedJob(t *testing.T) {
 	// cron 包的 job 模板显式带 condition=none。
-	j := buildSwarmSpec(engine.ServiceSpec{
+	j, err := buildSwarmSpec(engine.ServiceSpec{
 		Name:          "fleetly-cron-demo-task-abc",
 		Image:         "repo/task@sha256:def",
 		Job:           true,
 		Replicas:      1,
 		RestartPolicy: &engine.RestartPolicySpec{Condition: "none"},
-	})
+	}, nil)
+	if err != nil {
+		t.Fatalf("buildSwarmSpec: %v", err)
+	}
 	if j.Mode.ReplicatedJob == nil || j.Mode.ReplicatedJob.TotalCompletions == nil || *j.Mode.ReplicatedJob.TotalCompletions != 1 {
 		t.Fatalf("replicated-job mode wrong: %+v", j.Mode)
 	}
@@ -103,7 +115,10 @@ func TestBuildSwarmSpecReplicatedJob(t *testing.T) {
 		t.Fatalf("restart condition = %+v, want none", j.TaskTemplate.RestartPolicy)
 	}
 	// nil 重启策略 → 适配器补 none（不落到长驻缺省 any）。
-	j2 := buildSwarmSpec(engine.ServiceSpec{Name: "j2", Image: "img", Job: true, Replicas: 1})
+	j2, err := buildSwarmSpec(engine.ServiceSpec{Name: "j2", Image: "img", Job: true, Replicas: 1}, nil)
+	if err != nil {
+		t.Fatalf("buildSwarmSpec j2: %v", err)
+	}
 	if j2.TaskTemplate.RestartPolicy == nil || string(j2.TaskTemplate.RestartPolicy.Condition) != "none" {
 		t.Fatalf("default job restart condition = %+v, want none", j2.TaskTemplate.RestartPolicy)
 	}

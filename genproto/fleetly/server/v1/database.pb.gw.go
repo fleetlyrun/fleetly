@@ -369,6 +369,90 @@ func local_request_DatabaseService_UpdateDatabaseSettings_0(ctx context.Context,
 	return msg, metadata, err
 }
 
+func request_DatabaseService_RotateDatabaseCredentials_0(ctx context.Context, marshaler runtime.Marshaler, client DatabaseServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RotateDatabaseCredentialsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["name"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "name")
+	}
+	protoReq.Name, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "name", err)
+	}
+	msg, err := client.RotateDatabaseCredentials(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_DatabaseService_RotateDatabaseCredentials_0(ctx context.Context, marshaler runtime.Marshaler, server DatabaseServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RotateDatabaseCredentialsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	val, ok := pathParams["name"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "name")
+	}
+	protoReq.Name, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "name", err)
+	}
+	msg, err := server.RotateDatabaseCredentials(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_DatabaseService_RevealDatabaseCredentials_0(ctx context.Context, marshaler runtime.Marshaler, client DatabaseServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RevealDatabaseCredentialsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["name"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "name")
+	}
+	protoReq.Name, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "name", err)
+	}
+	msg, err := client.RevealDatabaseCredentials(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_DatabaseService_RevealDatabaseCredentials_0(ctx context.Context, marshaler runtime.Marshaler, server DatabaseServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq RevealDatabaseCredentialsRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	val, ok := pathParams["name"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "name")
+	}
+	protoReq.Name, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "name", err)
+	}
+	msg, err := server.RevealDatabaseCredentials(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 // RegisterDatabaseServiceHandlerServer registers the http handlers for service DatabaseService to "mux".
 // UnaryRPC     :call DatabaseServiceServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -534,6 +618,46 @@ func RegisterDatabaseServiceHandlerServer(ctx context.Context, mux *runtime.Serv
 			return
 		}
 		forward_DatabaseService_UpdateDatabaseSettings_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPost, pattern_DatabaseService_RotateDatabaseCredentials_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials", runtime.WithHTTPPathPattern("/v1/databases/{name}/rotate"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_DatabaseService_RotateDatabaseCredentials_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatabaseService_RotateDatabaseCredentials_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_DatabaseService_RevealDatabaseCredentials_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials", runtime.WithHTTPPathPattern("/v1/databases/{name}/credentials"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_DatabaseService_RevealDatabaseCredentials_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatabaseService_RevealDatabaseCredentials_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -711,27 +835,65 @@ func RegisterDatabaseServiceHandlerClient(ctx context.Context, mux *runtime.Serv
 		}
 		forward_DatabaseService_UpdateDatabaseSettings_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodPost, pattern_DatabaseService_RotateDatabaseCredentials_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials", runtime.WithHTTPPathPattern("/v1/databases/{name}/rotate"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_DatabaseService_RotateDatabaseCredentials_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatabaseService_RotateDatabaseCredentials_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodGet, pattern_DatabaseService_RevealDatabaseCredentials_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials", runtime.WithHTTPPathPattern("/v1/databases/{name}/credentials"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_DatabaseService_RevealDatabaseCredentials_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DatabaseService_RevealDatabaseCredentials_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
 var (
-	pattern_DatabaseService_CreateDatabase_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
-	pattern_DatabaseService_GetDatabase_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "name"}, ""))
-	pattern_DatabaseService_ListDatabases_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
-	pattern_DatabaseService_DeleteDatabase_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "name"}, ""))
-	pattern_DatabaseService_SuspendDatabase_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "suspend"}, ""))
-	pattern_DatabaseService_ResumeDatabase_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "resume"}, ""))
-	pattern_DatabaseService_RetryDatabase_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "retry"}, ""))
-	pattern_DatabaseService_UpdateDatabaseSettings_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "settings"}, ""))
+	pattern_DatabaseService_CreateDatabase_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
+	pattern_DatabaseService_GetDatabase_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "name"}, ""))
+	pattern_DatabaseService_ListDatabases_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "databases"}, ""))
+	pattern_DatabaseService_DeleteDatabase_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2}, []string{"v1", "databases", "name"}, ""))
+	pattern_DatabaseService_SuspendDatabase_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "suspend"}, ""))
+	pattern_DatabaseService_ResumeDatabase_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "resume"}, ""))
+	pattern_DatabaseService_RetryDatabase_0             = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "retry"}, ""))
+	pattern_DatabaseService_UpdateDatabaseSettings_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "settings"}, ""))
+	pattern_DatabaseService_RotateDatabaseCredentials_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "rotate"}, ""))
+	pattern_DatabaseService_RevealDatabaseCredentials_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "databases", "name", "credentials"}, ""))
 )
 
 var (
-	forward_DatabaseService_CreateDatabase_0         = runtime.ForwardResponseMessage
-	forward_DatabaseService_GetDatabase_0            = runtime.ForwardResponseMessage
-	forward_DatabaseService_ListDatabases_0          = runtime.ForwardResponseMessage
-	forward_DatabaseService_DeleteDatabase_0         = runtime.ForwardResponseMessage
-	forward_DatabaseService_SuspendDatabase_0        = runtime.ForwardResponseMessage
-	forward_DatabaseService_ResumeDatabase_0         = runtime.ForwardResponseMessage
-	forward_DatabaseService_RetryDatabase_0          = runtime.ForwardResponseMessage
-	forward_DatabaseService_UpdateDatabaseSettings_0 = runtime.ForwardResponseMessage
+	forward_DatabaseService_CreateDatabase_0            = runtime.ForwardResponseMessage
+	forward_DatabaseService_GetDatabase_0               = runtime.ForwardResponseMessage
+	forward_DatabaseService_ListDatabases_0             = runtime.ForwardResponseMessage
+	forward_DatabaseService_DeleteDatabase_0            = runtime.ForwardResponseMessage
+	forward_DatabaseService_SuspendDatabase_0           = runtime.ForwardResponseMessage
+	forward_DatabaseService_ResumeDatabase_0            = runtime.ForwardResponseMessage
+	forward_DatabaseService_RetryDatabase_0             = runtime.ForwardResponseMessage
+	forward_DatabaseService_UpdateDatabaseSettings_0    = runtime.ForwardResponseMessage
+	forward_DatabaseService_RotateDatabaseCredentials_0 = runtime.ForwardResponseMessage
+	forward_DatabaseService_RevealDatabaseCredentials_0 = runtime.ForwardResponseMessage
 )

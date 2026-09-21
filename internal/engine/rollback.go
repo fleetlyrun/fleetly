@@ -294,8 +294,11 @@ func (e *Engine) replaySystemEnvCurrent(ctx context.Context, rec state.DeployRec
 //     W_ROLLBACK_IMAGE_RISK——v0.1 无 registry，镜像被清理时提示保留或重建）；
 //  2. 约束可满足：放置前哨（绑定节点 ready / 卷归属一致——取当前平台
 //     绑定状态，不放快照）；
-//  3. secret 存在：v0.1 平台密钥库未接入，校验层显式拒绝 secrets（S16-C1），
-//     快照结构性不含 secret（见本文件头「secret 值取当前」注）；防御分支兜底。
+//  3. secret 存在：快照可携带 SecretMount（E4 managed-databases §2.7 起，
+//     名内嵌值指纹）——逐名对 app_secrets 现值解析（名 = fleetly-<app>-
+//     <name>-<hash8>，值轮换即换名），可解析 → applyDesired 幂等确保在位；
+//     悬空（轮换/移除已发生）→ E_SECRET_NOT_FOUND 诚实失败（快照不可变
+//     纪律，不做静默改写——D-REL-9 同族）；
 //  4. compose 合法：取舍——信任归一化快照（目标 compose 在原部署入队时
 //     已过受控子集校验，快照是其 canonical 投影），只复核关键执行面
 //     （服务集非空、服务名在平台命名空间内、镜像引用非空）。不做反解析：
@@ -319,11 +322,11 @@ func (e *Engine) preflightRollback(ctx context.Context, rec state.DeployRecord, 
 			}
 			return errorf("E_RUNTIME_UNAVAILABLE", "image check failed %s: %v", spec.Image, err)
 		}
-		// 3. secret 存在（防御分支：v0.1 快照不含 secret——出现即不可重放）。
-		if len(spec.Secrets) > 0 {
-			return errorf("E_ROLLBACK_FAILED",
-				"snapshot service %s carries secret references: the v0.1 platform secret store is not wired in, so secret existence cannot be verified", spec.Name)
-		}
+	}
+	// 3. secret 存在（挂载名 → app_secrets 现值解析；快照携带 secret 为
+	//    E4 起的合法形态——验证替代原 v0.1 整体拒绝）。
+	if err := e.ensureSnapshotSecrets(ctx, rec, specs); err != nil {
+		return err
 	}
 	// 2. 约束可满足（放置前哨：绑定节点 ready / 卷归属一致；取当前绑定）。
 	if err := e.resolver.Preflight(ctx, rec.AppID); err != nil {

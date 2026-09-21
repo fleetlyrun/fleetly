@@ -31,6 +31,7 @@ import (
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/database"
 	"github.com/fleetlyrun/fleetly/internal/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
@@ -48,18 +49,28 @@ type ProvisionKicker interface {
 	Kick()
 }
 
+// CredentialRotator 是凭据轮换编排的消费端口（S4；实现方 = internal/
+// database.Manager——引擎侧动作与底座紧邻，api 只受理/守卫/审计）。
+// 返回重部署的引用 app 名单；编排错误由 database 包定义类型化哨兵
+// （Prestate/Paused/Conflict/Stage），本层统一映射注册表码。
+type CredentialRotator interface {
+	RotateCredentials(ctx context.Context, name string) ([]string, error)
+}
+
 // DatabaseService 实现 server.v1.DatabaseService。
 type DatabaseService struct {
 	serverv1.UnimplementedDatabaseServiceServer
-	st   *state.Store
-	box  *secrets.Box
-	kick ProvisionKicker
+	st      *state.Store
+	box     *secrets.Box
+	kick    ProvisionKicker
+	rotator CredentialRotator
 }
 
 // NewDatabaseService 构造 DatabaseService（box 是凭据生成/指纹的加解密器；
-// kick 可 nil——受理后即时收敛拍，缺省时收敛由 duty 周期拍兜底）。
-func NewDatabaseService(st *state.Store, box *secrets.Box, kick ProvisionKicker) *DatabaseService {
-	return &DatabaseService{st: st, box: box, kick: kick}
+// kick 可 nil——受理后即时收敛拍，缺省时收敛由 duty 周期拍兜底；rotator
+// 可 nil——轮换 RPC 未装配时显式报错，不静默退化）。
+func NewDatabaseService(st *state.Store, box *secrets.Box, kick ProvisionKicker, rotator CredentialRotator) *DatabaseService {
+	return &DatabaseService{st: st, box: box, kick: kick, rotator: rotator}
 }
 
 // kickOnce 受理成功后的即时收敛请求（失败静默——kick 只是提前，不承载正
@@ -326,6 +337,125 @@ func (s *DatabaseService) UpdateDatabaseSettings(ctx context.Context, req *serve
 		return nil, err
 	}
 	return &serverv1.UpdateDatabaseSettingsResponse{Database: view}, nil
+}
+
+// RotateDatabaseCredentials 凭据轮换受理（破坏性两段式 confirm；编排 =
+// CredentialRotator 端口，引擎侧动作在 internal/database）：
+//   - 编排错误映射：前置态违规 / PG 暂停拒绝 / 并发 CAS 落败 →
+//     E_STATE_VERSION_CONFLICT 族 409（同族乐观冲突语义，D-DB-8）；
+//     中途失败 → E_DB_ROTATE_FAILED 500（context 带已完成阶段——人工收尾）。
+//   - 成功：db.rotate 审计（diff 只带 app 名单与指纹级事实，凭据材料零
+//     出现）+ db.credentials_rotated 事件（database 包内落）。
+func (s *DatabaseService) RotateDatabaseCredentials(ctx context.Context, req *serverv1.RotateDatabaseCredentialsRequest) (*serverv1.RotateDatabaseCredentialsResponse, error) {
+	inst, err := s.getMutableInstance(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if req.GetConfirm() != inst.Name {
+		return nil, statusInvalidArgument(
+			"destructive operation: pass confirm=\"" + inst.Name + "\" to accept credential rotation (referencing apps are auto-redeployed; the rotation cannot be undone)")
+	}
+	if s.rotator == nil {
+		return nil, fmt.Errorf("database rotation orchestrator is not wired (assembly bug)")
+	}
+	redeployed, err := s.rotator.RotateCredentials(ctx, inst.Name)
+	if err != nil {
+		return nil, s.mapRotationErr(err)
+	}
+	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
+		return tx.WriteAudit(ctx, databaseAudit(ctx, "db.rotate", "database:"+inst.ID,
+			state.DiffSummary("template", inst.Template, "redeployed_apps", strings.Join(redeployed, ","))))
+	}); err != nil {
+		return nil, err
+	}
+	s.kickOnce()
+	view, err := s.viewAfter(ctx, inst.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &serverv1.RotateDatabaseCredentialsResponse{Database: view, RedeployedApps: redeployed}, nil
+}
+
+// mapRotationErr 是轮换编排错误 → 注册表码的映射面（database 包类型化
+// 哨兵 → api 权威语义；message 全程无凭据材料——编排层已保证）。哨兵类型
+// 随编排实现在 internal/database（端口在本包、错误类型属实现包——编排是
+// 底座邻接动作，信封语义归 api 权威，类型归实现包所有）。
+func (s *DatabaseService) mapRotationErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, state.ErrDatabaseNotFound):
+		return mapDatabaseErr(err)
+	case errors.Is(err, database.ErrPGRotationPaused):
+		return apperr.New("E_STATE_VERSION_CONFLICT",
+			"%s (resume the database first, then rotate)", err.Error()).
+			WithContext("current_state", "paused").
+			WithContext("legal_prestates", "ready, degraded")
+	case errors.Is(err, database.ErrRotationConflict):
+		return apperr.New("E_STATE_VERSION_CONFLICT",
+			"database credentials were rotated concurrently — re-read the current state and retry if needed").
+			WithContext("conflict", "credential_updated_at changed")
+	}
+	var prestate *database.RotationPrestateError
+	if errors.As(err, &prestate) {
+		return apperr.New("E_STATE_VERSION_CONFLICT", "%s", err.Error()).
+			WithContext("current_state", prestate.Current).
+			WithContext("legal_prestates", "ready, degraded, paused")
+	}
+	var stage *database.RotationStageError
+	if errors.As(err, &stage) {
+		return apperr.New("E_DB_ROTATE_FAILED", "%s", err.Error()).
+			WithContext("stage", stage.Stage)
+	}
+	return err
+}
+
+// RevealDatabaseCredentials 连接信息显式展开（§2.5「密码默认脱敏、显式
+// 展开」的 API 面；admin scope 在拦截器链强制）。设计审计词表未列 reveal
+// ——按「敏感访问必留痕」补 db.reveal 审计（访问事实 + 指纹，值零出现）；
+// 不产生事件（操作非状态转移）。
+func (s *DatabaseService) RevealDatabaseCredentials(ctx context.Context, req *serverv1.RevealDatabaseCredentialsRequest) (*serverv1.RevealDatabaseCredentialsResponse, error) {
+	inst, err := s.getMutableInstance(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if inst.CredentialCipher == "" {
+		return nil, databaseNotFound(inst.Name, "no credential stored")
+	}
+	plain, err := s.box.Decrypt([]byte(inst.CredentialCipher))
+	if err != nil {
+		return nil, fmt.Errorf("decrypt credential of database %s: %w", inst.Name, err)
+	}
+	vars, err := dbtemplate.ConnectionVars(inst.Template, inst.Name, string(plain))
+	if err != nil {
+		return nil, err
+	}
+	tpl, err := dbtemplate.Get(inst.Template)
+	if err != nil {
+		return nil, err
+	}
+	prefix := dbtemplate.EnvPrefix(inst.Name)
+	out := &serverv1.RevealDatabaseCredentialsResponse{
+		Name:     inst.Name,
+		Template: inst.Template,
+		Host:     vars[prefix+"_HOST"],
+		Port:     int32(tpl.EnginePort),
+		Password: string(plain),
+		Url:      vars[prefix+"_URL"],
+	}
+	if user, ok := vars[prefix+"_USER"]; ok {
+		out.User = user
+	}
+	if pgDatabaseName, ok := vars[prefix+"_DATABASE"]; ok {
+		out.Database = pgDatabaseName
+	}
+	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
+		return tx.WriteAudit(ctx, databaseAudit(ctx, "db.reveal", "database:"+inst.ID,
+			state.DiffSummary("template", inst.Template, "fingerprint", naming.Hash8(string(plain)))))
+	}); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ── 内部协作者 ──────────────────────────────────────────────────────────────

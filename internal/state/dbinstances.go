@@ -358,6 +358,44 @@ func (s *Store) UpdateDatabaseCredential(ctx context.Context, id, cipher string)
 	})
 }
 
+// RotateDatabaseCredentialCAS 是轮换落库的乐观并发形态（S4）：密文列 +
+// credential_updated_at 同拍重盖，CAS 锚 = 调用方先前读到的
+// credential_updated_at——并发轮换的第二笔落败（RowsAffected=0 → 返回
+// false），api 层映射 E_STATE_VERSION_CONFLICT 族（同族乐观冲突语义，
+// D-DB-8）。prevUpdatedAt 零值锚定 NULL（创建态从未轮换——列可空，
+// `= NULL` 恒假，必须显式 IS NULL 谓词）。凭据明文不落库、不进日志/事件。
+func (s *Store) RotateDatabaseCredentialCAS(ctx context.Context, id string, prevUpdatedAt time.Time, cipher string) (bool, error) {
+	if cipher == "" {
+		return false, errors.New("state: rotate database credential: cipher is empty")
+	}
+	var ok bool
+	err := s.InTx(ctx, func(tx *Tx) error {
+		if _, err := tx.GetDatabaseInstance(ctx, id); err != nil {
+			return err
+		}
+		now := nowNano()
+		prev := int64(0)
+		if !prevUpdatedAt.IsZero() {
+			prev = prevUpdatedAt.UnixNano()
+		}
+		const q = `UPDATE db_instances SET credential_cipher = ?, credential_updated_at = ?, updated_at = ?
+			WHERE id = ? AND (credential_updated_at = ? OR (? = 0 AND credential_updated_at IS NULL))`
+		res, err := tx.ExecContext(ctx, q, cipher, now, now, id, prev, prev)
+		if err != nil {
+			return fmt.Errorf("state: rotate database credential %s: %w", id, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("state: read database credential rotate count %s: %w", id, err)
+		}
+		ok = n > 0
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return ok, nil
+}
 // SetDatabaseNodeBinding 内嵌放置绑定（D-DB-1：绑定进 db_instances 行、
 // 不写 placements 表）。空串 = 解绑（数据安全由调用方裁决——绑定变更/
 // rebind 编排在后续票据落地）。

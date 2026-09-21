@@ -21,6 +21,8 @@ import (
 	"fmt"
 
 	"github.com/containerd/errdefs"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	mobyclient "github.com/moby/moby/client"
 
@@ -112,6 +114,25 @@ type dockerPort interface {
 	VolumeRemove(ctx context.Context, name string) error
 	// TaskList 返回服务的全部任务观测（含历史；健康门轮询的数据源）。
 	TaskList(ctx context.Context, service string) ([]TaskObservation, error)
+	// ContainerRun 启动一次性容器并等待退出（轮换的 ALTER USER 执行体，
+	// S4）：create（入库共享网络）→ start → wait(next-exit) → remove。返回
+	// 退出码；env/cmd 的凭据材料只进创建载荷，绝不进日志/错误文本。
+	ContainerRun(ctx context.Context, in ContainerRunInput) (int, error)
+}
+
+// ContainerRunInput 是一次性容器的运行参数（轮换 job 的最小面：库共享
+// 网络内以服务名可达实例；镜像 = 实例模板钉定镜像——工具随引擎镜像）。
+type ContainerRunInput struct {
+	// Name 是容器名（fleetly-db-<instance>-rotate-<id8>——managed 面可识别）。
+	Name string
+	// Image 是钉定镜像引用。
+	Image string
+	// Cmd 是容器命令（psql ...）。
+	Cmd []string
+	// Env 是 KEY=VALUE 环境集（PGPASSWORD=<旧密码> 等）。
+	Env []string
+	// Network 是容器接入的 overlay 网络（库共享网络）。
+	Network string
 }
 
 // realDockerClient 是 dockerPort 的 moby 实现（连接形态与 rustfs 部署器
@@ -320,4 +341,60 @@ func (c *realDockerClient) TaskList(ctx context.Context, service string) ([]Task
 		out = append(out, obs)
 	}
 	return out, nil
+}
+
+// ContainerRun 一次性容器执行体（轮换 job，S4）：create → start → wait →
+// remove（remove 失败不掩盖主结果——残留由外部 `docker rm` 兜底，容器名
+// 可识别）。输出不采集（psql 失败文本可能回显语句材料——退出码 + 阶段
+// 上下文已是诚实诊断的最小面，明文纪律优先）。
+func (c *realDockerClient) ContainerRun(ctx context.Context, in ContainerRunInput) (int, error) {
+	create, err := c.cli.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
+		Name: in.Name,
+		Config: &container.Config{
+			Image:  in.Image,
+			Cmd:    in.Cmd,
+			Env:    in.Env,
+			Labels: map[string]string{state.LabelManaged: state.ManagedLabelValue},
+		},
+		NetworkingConfig: &network.NetworkingConfig{
+			EndpointsConfig: map[string]*network.EndpointSettings{
+				in.Network: {},
+			},
+		},
+	})
+	if err != nil {
+		return -1, fmt.Errorf("database: rotation container create %s: %w", in.Name, err)
+	}
+	if _, err := c.cli.ContainerStart(ctx, create.ID, mobyclient.ContainerStartOptions{}); err != nil {
+		_ = c.removeContainer(ctx, create.ID)
+		return -1, fmt.Errorf("database: rotation container start %s: %w", in.Name, err)
+	}
+	wait := c.cli.ContainerWait(ctx, create.ID, mobyclient.ContainerWaitOptions{
+		Condition: container.WaitConditionNextExit,
+	})
+	select {
+	case err := <-wait.Error:
+		_ = c.removeContainer(ctx, create.ID)
+		return -1, fmt.Errorf("database: rotation container wait %s: %w", in.Name, err)
+	case resp := <-wait.Result:
+		if resp.Error != nil {
+			_ = c.removeContainer(ctx, create.ID)
+			return -1, fmt.Errorf("database: rotation container %s: %s", in.Name, resp.Error.Message)
+		}
+		_, _ = c.cli.ContainerRemove(ctx, create.ID, mobyclient.ContainerRemoveOptions{})
+		return int(resp.StatusCode), nil
+	case <-ctx.Done():
+		_ = c.removeContainer(ctx, create.ID)
+		return -1, fmt.Errorf("database: rotation container %s: %w", in.Name, ctx.Err())
+	}
+}
+
+// removeContainer 移除一次性容器（幂等 best-effort；错误只进返回值由调用
+// 方静默忽略——清场失败不掩盖主诊断）。
+func (c *realDockerClient) removeContainer(ctx context.Context, id string) error {
+	_, err := c.cli.ContainerRemove(ctx, id, mobyclient.ContainerRemoveOptions{Force: true})
+	if errdefs.IsNotFound(err) {
+		return nil
+	}
+	return err
 }

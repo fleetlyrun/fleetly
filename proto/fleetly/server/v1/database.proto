@@ -94,6 +94,23 @@ service DatabaseService {
       body: "*"
     };
   }
+  // RotateDatabaseCredentials 凭据轮换（E4 managed-databases §2.5，S4）：
+  // 破坏性两段式（confirm = 实例名）。合法前置态 ready/degraded/paused
+  //（§2.3 操作表；PG 暂停期拒绝——postgres 需运行中实例才能 ALTER USER，
+  // 如实报 409 并提示先 resume）。引擎侧成功后：引用方 system 物化行回
+  // pending + 平台自动触发全部引用 app 重部署（各自走正常部署队列）。
+  rpc RotateDatabaseCredentials(RotateDatabaseCredentialsRequest) returns (RotateDatabaseCredentialsResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases/{name}/rotate"
+      body: "*"
+    };
+  }
+  // RevealDatabaseCredentials 连接信息显式展开（admin scope；§2.5「Console
+  // 库详情页展示连接信息，密码默认脱敏、显式展开」的 API 面——含密码明文
+  // 与完整 URL；审计 db.reveal 承载敏感访问留痕，不产生事件）。
+  rpc RevealDatabaseCredentials(RevealDatabaseCredentialsRequest) returns (RevealDatabaseCredentialsResponse) {
+    option (google.api.http) = { get: "/v1/databases/{name}/credentials" };
+  }
 }
 
 message CreateDatabaseRequest {
@@ -193,6 +210,41 @@ message DatabaseBackupPlan {
   int32 interval_hours = 1;
   int32 keep = 2;
   int32 hour_utc = 3;
+}
+
+// RotateDatabaseCredentialsRequest 是凭据轮换受理（破坏性两段式：confirm =
+// 实例名原样回传，mismatch → 400——与 DeleteDatabase 同型的数据安全面）。
+message RotateDatabaseCredentialsRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string confirm = 2;
+}
+
+message RotateDatabaseCredentialsResponse {
+  DatabaseView database = 1;
+  // 平台自动重部署的引用 app 名单（各自走正常部署队列；credential_updated_at
+  // 展示随 database.credential_updated_at 刷新）。
+  repeated string redeployed_apps = 2;
+}
+
+message RevealDatabaseCredentialsRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+// RevealDatabaseCredentialsResponse 是连接信息的显式展开投影（§2.5 键集
+// 全量 + 密码明文——admin scope 专用面；值只出现在本响应，不进日志/事件/
+// 审计，审计 db.reveal 只记访问事实）。
+message RevealDatabaseCredentialsResponse {
+  string name = 1;
+  string template = 2;
+  string host = 3;
+  int32 port = 4;
+  // PG 有 user/database；Redis 不输出（空串）。
+  string user = 5;
+  string database = 6;
+  // 密码明文（显式展开面的设计内例外；凭据字符集 [a-zA-Z0-9]）。
+  string password = 7;
+  // 标准 URI（密码段为明文——与 GetEnv 明文读同级的 admin 面）。
+  string url = 8;
 }
 
 // DatabaseView 是库实例投影（状态 = 生命周期态；连接信息脱敏——密码明文

@@ -113,6 +113,17 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.DatabaseService/ResumeDatabase":          ScopeAdmin,
 	"/fleetly.server.v1.DatabaseService/RetryDatabase":           ScopeAdmin,
 	"/fleetly.server.v1.DatabaseService/UpdateDatabaseSettings":  ScopeAdmin,
+	// E4 W4-S4（managed-databases §2.5）：rotate = 破坏性两段式数据安全操作
+	// （引用 app 被自动重部署），admin 与 delete 同级；reveal = 密码明文显式
+	// 展开（admin 更严面——与 env GetEnv 同级信任）。
+	"/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials":    ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials":    ScopeAdmin,
+	// SecretsService（E4 W4-S4，D-DB-7）：set/remove = admin（密钥写面与
+	// webhook secret/env 明文同级信任）；list = read（只出名称/指纹——与
+	// ListEnv 同口径，值零出现）。
+	"/fleetly.server.v1.SecretsService/SetSecret":    ScopeAdmin,
+	"/fleetly.server.v1.SecretsService/ListSecrets":  ScopeRead,
+	"/fleetly.server.v1.SecretsService/RemoveSecret": ScopeAdmin,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

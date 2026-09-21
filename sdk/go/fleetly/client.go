@@ -58,6 +58,7 @@ type Client struct {
 	gitkey serverv1.GitKeysServiceClient
 	cron   serverv1.CronServiceClient
 	dbs    serverv1.DatabaseServiceClient
+	secs   serverv1.SecretsServiceClient
 }
 
 // NewClient 建立 gRPC 连接（默认 127.0.0.1:8421，明文；连接惰性建立，
@@ -97,6 +98,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		gitkey: serverv1.NewGitKeysServiceClient(conn),
 		cron:   serverv1.NewCronServiceClient(conn),
 		dbs:    serverv1.NewDatabaseServiceClient(conn),
+		secs:   serverv1.NewSecretsServiceClient(conn),
 	}, nil
 }
 
@@ -155,8 +157,13 @@ func (c *Client) GitKeys() serverv1.GitKeysServiceClient { return c.gitkey }
 // Cron 取定时任务面（E5 Cron：手动触发 + 运行台账读面）。
 func (c *Client) Cron() serverv1.CronServiceClient { return c.cron }
 
-// Databases 取库实例资源面（E4 数据库托管：生命周期 RPC + 脱敏连接视图）。
+// Databases 取库实例资源面（E4 数据库托管：生命周期 + rotate/reveal RPC +
+// 脱敏连接视图）。
 func (c *Client) Databases() serverv1.DatabaseServiceClient { return c.dbs }
+
+// Secrets 取平台密钥库面（E4 managed-databases §2.7，D-DB-7：external
+// secret 写面——无值读回，list 只出名称/指纹）。
+func (c *Client) Secrets() serverv1.SecretsServiceClient { return c.secs }
 
 // Ping 探测控制面存活并取回 service / version（豁免鉴权——装面前的
 // 存活检查路径）。

@@ -123,8 +123,9 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	gitKeysService := NewGitKeysService(store)
 	cronService := NewCronService(store, cronManager)
 	apiDatabaseService := NewDatabaseService(store, box, databaseManager)
+	apiSecretsService := NewSecretsService(store, box)
 	systemService := NewSystemService(appConfig, store, nodeIdentity, observer, box, ingressManager, manager, rustfsManager, client, version)
-	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, cronService, apiDatabaseService, systemService)
+	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, cronService, apiDatabaseService, apiSecretsService, systemService)
 	if err != nil {
 		cleanup6()
 		cleanup5()

@@ -13,7 +13,6 @@ package engine
 
 import (
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/compose"
@@ -62,6 +61,12 @@ type PlanInput struct {
 	// ——以 Swarm 服务名可达；desired-hash 含网络）。列表按键名字典序
 	//（resolveDatabaseReferences 产出顺序确定）。
 	DBNetworks map[string][]string
+	// SecretMounts 是服务级 secret 挂载面（E4 managed-databases §2.7：带
+	// compose secrets 声明的服务 → 已解析的 SecretMount 列表——声明名在
+	// app_secrets 缺失时 resolveSecretMounts 已在 preparing 期
+	// E_SECRET_NOT_FOUND 拒绝，此处只做纯装配，键缺省 = 该服务无挂载）。
+	// 按 target 字典序（desired-hash 确定性）。
+	SecretMounts map[string][]SecretMount
 	// Images 是服务 → digest 钉定镜像引用（building 阶段产出）。
 	Images map[string]string
 	// Decision 是放置裁决（绑定约束编译结果）。
@@ -229,15 +234,11 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 		mounts = append(mounts, MountSpec{VolumeName: vol.Name, Target: m.Target, ReadOnly: m.ReadOnly})
 	}
 
-	// secret 引用：v0.1 平台密钥库未接入——校验层已在 Load 期显式拒绝
-	// （S16-C1，E_COMPOSE_UNSUPPORTED），本分支理论不可达，保留作纵深
-	// （防止绕过 Load 的调用面静默丢引用）。回滚路径的防御分支见
-	// rollback.go preflightRollback。
-	if len(svc.Secrets) > 0 {
-		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE",
-			"service %s declares secrets %s: the v0.1 platform secret store is not wired in (secret storage and Swarm secret delivery land in a follow-up ticket)",
-			svc.Name, strings.Join(svc.Secrets, ", "))
-	}
+	// secret 挂载（E4 managed-databases §2.7）：在字面量内装配（见 spec
+	// 构造处 Secrets 字段——resolveSecretMounts 已在 preparing 期完成存在性
+	// 哨兵与底座确保，E_SECRET_NOT_FOUND fail-fast；本层纯装配，值只以
+	// Swarm secret 名引用进投影与 desired-hash——换名即换 hash，轮换随
+	// 下次部署换挂——明文零出现）。
 
 	// 更新顺序：有卷 / global 强制 stop-first；其余 compose 声明照用（缺省
 	// start-first）。
@@ -272,6 +273,7 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 		Replicas:          composeReplicas(svc),
 		Networks:          networks,
 		Mounts:            mounts,
+		Secrets:           append([]SecretMount{}, in.SecretMounts[svc.Name]...),
 		Healthcheck:       composeHealthcheck(svc.Healthcheck),
 		UpdateOrder:       order,
 		UpdateParallelism: composeParallelism(svc),

@@ -56,6 +56,10 @@ type Engine struct {
 	// engine 之上（渲染投影消费 engine.ServiceSpec），只能端口注入不能反向
 	// import——适配器在装配层落（WithDatabaseTemplate）。
 	dbTemplate DatabaseTemplatePort
+	// secretEnsure 是 Swarm secret 对象的确保端口（E4 managed-databases
+	// §2.7 compose secrets 注入链；nil = 未接线——带 secret 声明的部署
+	// 规划期显式失败）。实现 = substrate.Client（WithSecretEnsurer）。
+	secretEnsure SecretEnsurer
 	// waterMarks 是副本水位不足判定的进程内计时（观察窗辅助信号；引擎
 	// 重启后重摆——窗口本身持久化，重启代价可接受）。
 	waterMarks map[string]time.Time
@@ -147,6 +151,11 @@ func (e *Engine) WithEnvChangedHook(fn EnvChangedHook) *Engine { e.envChanged = 
 // dbtemplate.ConnectionVars 的装配层适配——dbtemplate 在 engine 之上，只能
 // 注入）。
 func (e *Engine) WithDatabaseTemplate(p DatabaseTemplatePort) *Engine { e.dbTemplate = p; return e }
+
+// WithSecretEnsurer 注入 Swarm secret 确保端口（E4 managed-databases §2.7
+// compose secrets 注入链；实现 = substrate.Client——底座原语随底座适配器
+// 落，装配层接线）。
+func (e *Engine) WithSecretEnsurer(s SecretEnsurer) *Engine { e.secretEnsure = s; return e }
 
 // Run 启动引擎主循环：启动扫描（控制面重启分类恢复）→ 周期 tick + 漂移
 // 扫描。ctx 取消返回 nil（lynx actor 契约由服务壳负责阻塞语义）。
@@ -376,6 +385,9 @@ type prepareResult struct {
 	// dbNetworks 是库引用的网络牵线面（E4：fleetly.databases label 服务 →
 	// 库共享网络名列表；nil = 本发布无库引用）。
 	dbNetworks map[string][]string
+	// secretMounts 是服务级 secret 挂载面（E4 §2.7：compose secrets 声明 →
+	// 已解析的 SecretMount 列表；nil = 本发布无 secret 声明）。
+	secretMounts map[string][]SecretMount
 	// warnings 是 preparing 期产出的计划警告（E4 库引用
 	// W_DB_REFERENCE_NOT_READY 等）——随 planAndRelease 以 deployment.warning
 	// 事件披露（与 plan.Warnings 同管道）。
@@ -523,6 +535,13 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 	if err != nil {
 		return nil, err
 	}
+	// secret 挂载面（E4 managed-databases §2.7）：compose secrets 声明 →
+	// app_secrets 存在性哨兵（E_SECRET_NOT_FOUND fail-fast）+ Swarm secret
+	// 确保 + SecretMount 装配（值零进规划产物）。
+	secretMounts, err := e.resolveSecretMounts(ctx, rec.AppID, rec.AppName, spec)
+	if err != nil {
+		return nil, err
+	}
 	// 平台层读取（含上一步物化的 pending 行——pending 参与合并，S16-C4）。
 	platform, err := e.platformEnvForMerge(ctx, rec.AppID)
 	if err != nil {
@@ -537,6 +556,7 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 		s3Env:        s3Env,
 		attachRustfs: attachRustfs,
 		dbNetworks:   dbNetworks,
+		secretMounts: secretMounts,
 		warnings:     dbWarnings,
 	}, nil
 }
@@ -567,6 +587,7 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 		SystemEnv:           pre.s3Env,
 		AttachRustfsNetwork: pre.attachRustfs,
 		DBNetworks:          pre.dbNetworks,
+		SecretMounts:        pre.secretMounts,
 		Images:              images,
 		Decision:            pre.decision,
 		Volumes:             volumes,
@@ -765,6 +786,13 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 	}
 	if len(desired) == 0 {
 		return nil
+	}
+	// secret 底座对象确保（E4 managed-databases §2.7）：快照重放路径（回滚/
+	// 归位/漂移收敛——不经 prepareInputs）的挂载名先对 app_secrets 现值解析
+	// 并确保在位；发布路径的 ensure 已在 resolveSecretMounts 完成，此处幂等
+	// 重入无害（inspect 命中即跳过）。解析失败（轮换悬空）→ E_SECRET_NOT_FOUND。
+	if err := e.ensureSnapshotSecrets(ctx, rec, desired); err != nil {
+		return appErrOf(err, rec.ID)
 	}
 	// per-app 网络先行（服务创建的前置对象）。
 	netName, err := networkNameOf(rec.AppName)

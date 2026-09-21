@@ -88,6 +88,7 @@ func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 		serverv1.RegisterTokensServiceHandlerFromEndpoint,
 		serverv1.RegisterGitKeysServiceHandlerFromEndpoint, // M4-2：与 gRPC 侧注册清单对齐
 		serverv1.RegisterDatabaseServiceHandlerFromEndpoint, // E4 W4-S2：库实例资源面（生命周期 RPC；连接投影脱敏）
+		serverv1.RegisterSecretsServiceHandlerFromEndpoint,  // E4 W4-S4：平台密钥库面（D-DB-7；无值读回——list 只出名称/指纹）
 	} {
 		if err := register(context.Background(), mux, grpcEndpoint, opts); err != nil {
 			return nil, err

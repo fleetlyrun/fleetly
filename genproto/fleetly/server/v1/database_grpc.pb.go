@@ -19,14 +19,16 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	DatabaseService_CreateDatabase_FullMethodName         = "/fleetly.server.v1.DatabaseService/CreateDatabase"
-	DatabaseService_GetDatabase_FullMethodName            = "/fleetly.server.v1.DatabaseService/GetDatabase"
-	DatabaseService_ListDatabases_FullMethodName          = "/fleetly.server.v1.DatabaseService/ListDatabases"
-	DatabaseService_DeleteDatabase_FullMethodName         = "/fleetly.server.v1.DatabaseService/DeleteDatabase"
-	DatabaseService_SuspendDatabase_FullMethodName        = "/fleetly.server.v1.DatabaseService/SuspendDatabase"
-	DatabaseService_ResumeDatabase_FullMethodName         = "/fleetly.server.v1.DatabaseService/ResumeDatabase"
-	DatabaseService_RetryDatabase_FullMethodName          = "/fleetly.server.v1.DatabaseService/RetryDatabase"
-	DatabaseService_UpdateDatabaseSettings_FullMethodName = "/fleetly.server.v1.DatabaseService/UpdateDatabaseSettings"
+	DatabaseService_CreateDatabase_FullMethodName            = "/fleetly.server.v1.DatabaseService/CreateDatabase"
+	DatabaseService_GetDatabase_FullMethodName               = "/fleetly.server.v1.DatabaseService/GetDatabase"
+	DatabaseService_ListDatabases_FullMethodName             = "/fleetly.server.v1.DatabaseService/ListDatabases"
+	DatabaseService_DeleteDatabase_FullMethodName            = "/fleetly.server.v1.DatabaseService/DeleteDatabase"
+	DatabaseService_SuspendDatabase_FullMethodName           = "/fleetly.server.v1.DatabaseService/SuspendDatabase"
+	DatabaseService_ResumeDatabase_FullMethodName            = "/fleetly.server.v1.DatabaseService/ResumeDatabase"
+	DatabaseService_RetryDatabase_FullMethodName             = "/fleetly.server.v1.DatabaseService/RetryDatabase"
+	DatabaseService_UpdateDatabaseSettings_FullMethodName    = "/fleetly.server.v1.DatabaseService/UpdateDatabaseSettings"
+	DatabaseService_RotateDatabaseCredentials_FullMethodName = "/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials"
+	DatabaseService_RevealDatabaseCredentials_FullMethodName = "/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials"
 )
 
 // DatabaseServiceClient is the client API for DatabaseService service.
@@ -75,6 +77,16 @@ type DatabaseServiceClient interface {
 	// 状态不变；限额变更 = spec 重建由收敛器在下一拍承载）。镜像/引擎参数
 	// 受管（违规模板字段不存在于请求——E_DB_TEMPLATE_UNSUPPORTED 面）。
 	UpdateDatabaseSettings(ctx context.Context, in *UpdateDatabaseSettingsRequest, opts ...grpc.CallOption) (*UpdateDatabaseSettingsResponse, error)
+	// RotateDatabaseCredentials 凭据轮换（E4 managed-databases §2.5，S4）：
+	// 破坏性两段式（confirm = 实例名）。合法前置态 ready/degraded/paused
+	// （§2.3 操作表；PG 暂停期拒绝——postgres 需运行中实例才能 ALTER USER，
+	// 如实报 409 并提示先 resume）。引擎侧成功后：引用方 system 物化行回
+	// pending + 平台自动触发全部引用 app 重部署（各自走正常部署队列）。
+	RotateDatabaseCredentials(ctx context.Context, in *RotateDatabaseCredentialsRequest, opts ...grpc.CallOption) (*RotateDatabaseCredentialsResponse, error)
+	// RevealDatabaseCredentials 连接信息显式展开（admin scope；§2.5「Console
+	// 库详情页展示连接信息，密码默认脱敏、显式展开」的 API 面——含密码明文
+	// 与完整 URL；审计 db.reveal 承载敏感访问留痕，不产生事件）。
+	RevealDatabaseCredentials(ctx context.Context, in *RevealDatabaseCredentialsRequest, opts ...grpc.CallOption) (*RevealDatabaseCredentialsResponse, error)
 }
 
 type databaseServiceClient struct {
@@ -165,6 +177,26 @@ func (c *databaseServiceClient) UpdateDatabaseSettings(ctx context.Context, in *
 	return out, nil
 }
 
+func (c *databaseServiceClient) RotateDatabaseCredentials(ctx context.Context, in *RotateDatabaseCredentialsRequest, opts ...grpc.CallOption) (*RotateDatabaseCredentialsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateDatabaseCredentialsResponse)
+	err := c.cc.Invoke(ctx, DatabaseService_RotateDatabaseCredentials_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databaseServiceClient) RevealDatabaseCredentials(ctx context.Context, in *RevealDatabaseCredentialsRequest, opts ...grpc.CallOption) (*RevealDatabaseCredentialsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevealDatabaseCredentialsResponse)
+	err := c.cc.Invoke(ctx, DatabaseService_RevealDatabaseCredentials_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatabaseServiceServer is the server API for DatabaseService service.
 // All implementations must embed UnimplementedDatabaseServiceServer
 // for forward compatibility.
@@ -211,6 +243,16 @@ type DatabaseServiceServer interface {
 	// 状态不变；限额变更 = spec 重建由收敛器在下一拍承载）。镜像/引擎参数
 	// 受管（违规模板字段不存在于请求——E_DB_TEMPLATE_UNSUPPORTED 面）。
 	UpdateDatabaseSettings(context.Context, *UpdateDatabaseSettingsRequest) (*UpdateDatabaseSettingsResponse, error)
+	// RotateDatabaseCredentials 凭据轮换（E4 managed-databases §2.5，S4）：
+	// 破坏性两段式（confirm = 实例名）。合法前置态 ready/degraded/paused
+	// （§2.3 操作表；PG 暂停期拒绝——postgres 需运行中实例才能 ALTER USER，
+	// 如实报 409 并提示先 resume）。引擎侧成功后：引用方 system 物化行回
+	// pending + 平台自动触发全部引用 app 重部署（各自走正常部署队列）。
+	RotateDatabaseCredentials(context.Context, *RotateDatabaseCredentialsRequest) (*RotateDatabaseCredentialsResponse, error)
+	// RevealDatabaseCredentials 连接信息显式展开（admin scope；§2.5「Console
+	// 库详情页展示连接信息，密码默认脱敏、显式展开」的 API 面——含密码明文
+	// 与完整 URL；审计 db.reveal 承载敏感访问留痕，不产生事件）。
+	RevealDatabaseCredentials(context.Context, *RevealDatabaseCredentialsRequest) (*RevealDatabaseCredentialsResponse, error)
 	mustEmbedUnimplementedDatabaseServiceServer()
 }
 
@@ -244,6 +286,12 @@ func (UnimplementedDatabaseServiceServer) RetryDatabase(context.Context, *RetryD
 }
 func (UnimplementedDatabaseServiceServer) UpdateDatabaseSettings(context.Context, *UpdateDatabaseSettingsRequest) (*UpdateDatabaseSettingsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateDatabaseSettings not implemented")
+}
+func (UnimplementedDatabaseServiceServer) RotateDatabaseCredentials(context.Context, *RotateDatabaseCredentialsRequest) (*RotateDatabaseCredentialsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateDatabaseCredentials not implemented")
+}
+func (UnimplementedDatabaseServiceServer) RevealDatabaseCredentials(context.Context, *RevealDatabaseCredentialsRequest) (*RevealDatabaseCredentialsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevealDatabaseCredentials not implemented")
 }
 func (UnimplementedDatabaseServiceServer) mustEmbedUnimplementedDatabaseServiceServer() {}
 func (UnimplementedDatabaseServiceServer) testEmbeddedByValue()                         {}
@@ -410,6 +458,42 @@ func _DatabaseService_UpdateDatabaseSettings_Handler(srv interface{}, ctx contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatabaseService_RotateDatabaseCredentials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateDatabaseCredentialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabaseServiceServer).RotateDatabaseCredentials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabaseService_RotateDatabaseCredentials_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabaseServiceServer).RotateDatabaseCredentials(ctx, req.(*RotateDatabaseCredentialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabaseService_RevealDatabaseCredentials_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevealDatabaseCredentialsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabaseServiceServer).RevealDatabaseCredentials(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabaseService_RevealDatabaseCredentials_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabaseServiceServer).RevealDatabaseCredentials(ctx, req.(*RevealDatabaseCredentialsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatabaseService_ServiceDesc is the grpc.ServiceDesc for DatabaseService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -448,6 +532,14 @@ var DatabaseService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateDatabaseSettings",
 			Handler:    _DatabaseService_UpdateDatabaseSettings_Handler,
+		},
+		{
+			MethodName: "RotateDatabaseCredentials",
+			Handler:    _DatabaseService_RotateDatabaseCredentials_Handler,
+		},
+		{
+			MethodName: "RevealDatabaseCredentials",
+			Handler:    _DatabaseService_RevealDatabaseCredentials_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

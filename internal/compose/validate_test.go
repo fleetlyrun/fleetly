@@ -332,34 +332,85 @@ services:
     expose: ["80"]
 `, "E_COMPOSE_UNSUPPORTED", "services.web", "pos_build"},
 
-		// ── secrets 显式拒绝（S16-C1：v0.1 平台密钥库未接入，Load 期即拒；
-		// 顶层与服务级同拒，外部引用/本地定义等形态细分不再可达）──
-		{"reject_secrets_top_level", `
+		// ── secrets 受控开放（E4 W4-S4，managed-databases §2.7/D-DB-7：C1
+		// 预授权的显式解除——external-only 形态放行，值进仓库的来源仍拒）──
+		{"reject_secret_file_source", `
 name: my-api
 services:
   web: { image: nginx }
 secrets:
-  db_url: { external: true }
-`, "E_COMPOSE_UNSUPPORTED", "secrets", ""},
-
-		{"reject_secrets_service_level", `
-name: my-api
-services:
-  web:
-    image: nginx
-    secrets: [db_url]
-`, "E_COMPOSE_UNSUPPORTED", "services.web.secrets", ""},
-
-		{"reject_secrets_local_file_definition", `
-name: my-api
-services:
-  web:
-    image: nginx
-    secrets: [db_url]
-secrets:
   db_url:
     file: ./db_url.txt
-`, "E_COMPOSE_UNSUPPORTED", "secrets", ""},
+`, "E_COMPOSE_UNSUPPORTED", "secrets.db_url.file", ""},
+
+		{"reject_secret_environment_source", `
+name: my-api
+services:
+  web: { image: nginx }
+secrets:
+  db_url:
+    environment: DB_URL
+`, "E_COMPOSE_UNSUPPORTED", "secrets.db_url.environment", ""},
+
+		{"reject_secret_missing_external", `
+name: my-api
+services:
+  web: { image: nginx }
+secrets:
+  db_url: {}
+`, "E_COMPOSE_UNSUPPORTED", "", ""}, // loader 层即拒（one of file|environment must be set）——形态守卫在 parse 期，path 不经本包 context
+
+		{"reject_secret_external_not_boolean", `
+name: my-api
+services:
+  web: { image: nginx }
+secrets:
+  db_url: { external: "true" }
+`, "E_COMPOSE_UNSUPPORTED", "secrets.db_url.external", ""},
+
+		{"reject_secret_driver_source", `
+name: my-api
+services:
+  web: { image: nginx }
+secrets:
+  db_url: { driver: secretfs }
+`, "E_COMPOSE_UNSUPPORTED", "secrets.db_url.driver", ""},
+
+		{"reject_service_secret_uid", `
+name: my-api
+services:
+  web:
+    image: nginx
+    secrets: [{ source: db_url, uid: "1000" }]
+secrets:
+  db_url: { external: true }
+`, "E_COMPOSE_UNSUPPORTED", "services.web.secrets[0].uid", ""},
+
+		{"reject_service_secret_mode", `
+name: my-api
+services:
+  web:
+    image: nginx
+    secrets: [{ source: db_url, mode: 0400 }]
+secrets:
+  db_url: { external: true }
+`, "E_COMPOSE_UNSUPPORTED", "services.web.secrets[0].mode", ""},
+
+		{"reject_service_secret_undeclared_reference", `
+name: my-api
+services:
+  web:
+    image: nginx
+    secrets: [db_url]
+`, "E_COMPOSE_UNSUPPORTED", "services.web.secrets[0]", ""},
+
+		{"reject_secret_bad_name", `
+name: my-api
+services:
+  web: { image: nginx }
+secrets:
+  "db/url": { external: true }
+`, "E_COMPOSE_UNSUPPORTED", "", ""}, // compose schema 的键模式校验在 parse 期即拒（additionalProperties not allowed）
 
 		{"reject_service_volume_tmpfs", `
 name: my-api
@@ -588,6 +639,26 @@ services:
     image: nginx
     stop_signal: SIGINT
     stop_grace_period: 30s
+`,
+	// secrets 受控开放正例（E4 W4-S4，D-DB-7）：external-only 声明 + 短/长
+	// 语法服务引用必须通过——「接受面」与拒绝面对照。
+	"pos_secret_external_short": `
+name: my-api
+services:
+  web:
+    image: nginx
+    secrets: [db_url]
+secrets:
+  db_url: { external: true }
+`,
+	"pos_secret_external_long": `
+name: my-api
+services:
+  web:
+    image: nginx
+    secrets: [{ source: db_url, target: db_url.txt }]
+secrets:
+  db_url: { name: whatever, external: true }
 `,
 }
 

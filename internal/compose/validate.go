@@ -19,23 +19,26 @@ import (
 
 // topLevelWhitelist 是顶层键白名单（§2.4 支持清单；version 为 compose 规范
 // 废弃键、loader 在 schema 校验后删除，此处天然不可见；x-* 扩展键为
-// compose 标准扩展位、loader 移入 Extensions，同样不可见；secrets 已移入
-// 拒绝清单——S16-C1，见 topLevelRejectList）。
+// compose 标准扩展位、loader 移入 Extensions，同样不可见；secrets 自 E4
+// managed-databases 起入白名单——受控形态见 validateSecretsDict）。
 var topLevelWhitelist = map[string]bool{
 	"name":     true,
 	"services": true,
 	"networks": true,
 	"volumes":  true,
+	"secrets":  true,
 }
 
 // topLevelRejectList 是顶层键显式拒绝清单（优先于白名单缺省拒绝，message
 // 给出契约理由）。
-var topLevelRejectList = map[string]string{
-	// S16-C1：secrets 在 Load 期即拒——v0.1 平台密钥库未接入，放行只会在
-	// preparing 晚期被规划层拒绝（错误码还误导为运行时问题）；显式拒绝比
-	// 「照抄文档示例必失败」诚实。v0.2 平台密钥库接入后解除。
-	"secrets": "secrets are unsupported in v0.1: the platform secret store is not wired up yet (explicitly rejected; opened up once the v0.2 secret store lands)",
-}
+//
+// S16-C1 裁决预留口的显式解除（managed-databases §2.7/§6 只增纪律行）：
+// `secrets` 两项拒绝条目（顶层 + 服务级）随 E4 W4-S4 移除——原条目注释
+// 「v0.2 平台密钥库接入后解除」即本解除的预授权；平台密钥库
+// （app_secrets + SecretsService，D-DB-7）已接入，开放面收窄为 external-
+// true 形态（值不进 git 仓库是硬边界，file:/environment: 仍拒——拒绝
+// 语义移入 validateSecretsDict 的形态校验，不再是整键拒绝）。
+var topLevelRejectList = map[string]string{}
 
 // serviceRejectList 是拒绝清单+危险字段的显式条目（优先于通用白名单缺省
 // 拒绝，message 给出契约理由）。reason 前缀约定见各条目。
@@ -46,10 +49,10 @@ var serviceRejectList = map[string]string{
 	"include":    "rejected field in v0.1 (multi-file merge is unsupported)",
 	"profiles":   "rejected field in v0.1 (services deploy in full; no profile gating)",
 	"configs":    "rejected field in v0.1 (config injection is carried by environment/secrets)",
-	// S16-C1：secrets 在 Load 期即拒（与顶层 topLevelRejectList 同理由）——
-	// v0.1 平台密钥库未接入，规划层晚期拒绝（E_RUNTIME_UNAVAILABLE）不可达
-	// 于此；planner.go 的快速失败分支保留作纵深。
-	"secrets": "secrets are unsupported in v0.1: the platform secret store is not wired up yet (explicitly rejected; opened up once the v0.2 secret store lands)",
+	// S16-C1 的 secrets 拒绝条目已随 E4 W4-S4 移除（C1 预授权的显式解除，
+	// 见 topLevelRejectList 注释）；secrets 入 serviceWhitelist，受控形态
+	// 校验在 validateServiceSecretsDict（短语法 / {source,target}，
+	// uid/gid/mode 拒绝）。
 	// 危险字段（Coolify CVE-2025-34159 根因类；默认拒绝，admin 显式开启
 	// + 审计的旁路为后续票 TODO）
 	"privileged":          "dangerous field: privileged containers are denied by default (admin bypass TODO)",
@@ -80,6 +83,7 @@ var serviceWhitelist = map[string]bool{
 	"deploy":            true,
 	"stop_signal":       true,
 	"stop_grace_period": true,
+	"secrets":           true, // E4 W4-S4：external secret 挂载（受控形态见 validateServiceSecretsDict）
 }
 
 // buildWhitelist：build 段仅保留平台消费子键（§2.4 build 注释只定义
@@ -136,10 +140,133 @@ var volumeLongWhitelist = map[string]bool{
 	"volume": true, "bind": true,
 }
 
-// S16-C1：secrets（服务级与顶层）在 Load 期即拒——见 serviceRejectList 与
-// topLevelRejectList 条目；secretLongWhitelist 与两个形态校验函数
-//（validateServiceSecretsDict / validateSecretsDict）随之删除（拒绝先于
-// 形态校验，无从到达）；规划层（planner.go）的晚期快速失败分支保留作纵深。
+// secrets 开放（managed-databases §2.7，D-DB-7，E4 W4-S4）：顶层 `secrets:`
+// 仅接受 `{name?, external: true}` 形态（external 必须是字面布尔 true——
+// 平台密钥库是唯一值来源，值进 git 仓库是硬边界）；服务级 `secrets:` 仅
+// 短语法字符串或 `{source, target}`（uid/gid/mode 拒绝——文件属主/权限
+// 由平台固定 0:0/0444）。声明名 / 引用名的字符集校验 = 合法的
+// /run/secrets/<name> 文件名（compose 标识符字符集）。
+
+// secretLongWhitelist 是服务级 secret 长语法允许的子键。
+var secretLongWhitelist = map[string]bool{"source": true, "target": true}
+
+// topLevelSecretWhitelist 是顶层 secret 定义允许的子键（external-only；
+// name 是 external 形态的合法伴随键，平台忽略之——Swarm secret 名由平台
+// 按 fleetly-<app>-<name>-<hash8> 命名）。
+var topLevelSecretWhitelist = map[string]bool{"name": true, "external": true}
+
+// validSecretName 判定 secret 声明名是否合法（/run/secrets/<name> 文件名
+// 安全 + naming.SecretName 组件字符集 [A-Za-z0-9._-]；首字符限字母数字，
+// 防点文件/分隔符歧义）。
+func validSecretName(name string) bool {
+	if name == "" || len(name) > 63 {
+		return false
+	}
+	for i, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case i > 0 && (r == '_' || r == '-' || r == '.'):
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// validateSecretsDict 校验顶层 secrets 定义：external-only。file:/environment:
+// 等任何取值来源拒绝（值不进仓库是硬边界，managed-databases §2.7）；缺
+// external 或 external 非布尔 true 拒绝（平台不做本地 secret 生命周期）。
+func validateSecretsDict(dict map[string]any) error {
+	secsAny, ok := dict["secrets"]
+	if !ok || secsAny == nil {
+		return nil
+	}
+	secs, ok := secsAny.(map[string]any)
+	if !ok {
+		return errCompose("top-level secrets must be a mapping").WithContext("path", "secrets")
+	}
+	for _, name := range sortedKeys(secs) {
+		path := "secrets." + name
+		if !validSecretName(name) {
+			return errCompose("secret name %q is not a valid secret identifier (must match ^[A-Za-z0-9][A-Za-z0-9._-]*$, max 63 chars: it names the /run/secrets/<name> file inside the container)", name).
+				WithContext("path", path)
+		}
+		def, ok := secs[name].(map[string]any)
+		if !ok || def == nil {
+			// `secrets: {name:}` 裸键（缺 external）——compose schema 允许、
+			// 平台拒绝：无 external 即本地生命周期，平台不承载。
+			return errCompose("secret %q must declare external: true (values come from the platform secret store: set them with the secrets API; local file/environment sources are a hard boundary)", name).
+				WithContext("path", path)
+		}
+		for _, key := range sortedKeys(def) {
+			if strings.HasPrefix(key, "x-") {
+				continue
+			}
+			if !topLevelSecretWhitelist[key] {
+				return errCompose("secret %q, field %q: secret values never live in the repository (file/environment sources are a hard boundary; the platform secret store is the only source — declare external: true and set the value via the secrets API)", name, key).
+					WithContext("path", path+"."+key)
+			}
+		}
+		ext, present := def["external"]
+		if !present {
+			return errCompose("secret %q must declare external: true (values come from the platform secret store; declare the name only and set the value via the secrets API)", name).
+				WithContext("path", path+".external")
+		}
+		if b, isBool := ext.(bool); !isBool || !b {
+			return errCompose("secret %q declares external=%v: only the literal boolean true is accepted (external names a value held by the platform secret store, not a local resource)", name, fmt.Sprint(ext)).
+				WithContext("path", path+".external")
+		}
+	}
+	return nil
+}
+
+// validateServiceSecretsDict 校验服务级 secrets 挂载形态：短语法字符串
+// （source=target）或 {source, target} 长语法；uid/gid/mode 拒绝（文件
+// 属主与权限由平台固定 0:0/0444——与卷挂载的平台受管口径同型）。
+func validateServiceSecretsDict(name, prefix string, secretsAny any) error {
+	if secretsAny == nil {
+		return nil
+	}
+	items, ok := secretsAny.([]any)
+	if !ok {
+		return errCompose("secrets of service %q must be a list", name).WithContext("path", prefix+".secrets")
+	}
+	for i, item := range items {
+		path := fmt.Sprintf("%s.secrets[%d]", prefix, i)
+		switch v := item.(type) {
+		case string:
+			if !validSecretName(v) {
+				return errCompose("secret reference %q of service %q is not a valid secret identifier (must match ^[A-Za-z0-9][A-Za-z0-9._-]*$, max 63 chars)", name, v).
+					WithContext("path", path)
+			}
+		case map[string]any:
+			for _, key := range sortedKeys(v) {
+				if strings.HasPrefix(key, "x-") {
+					continue
+				}
+				if !secretLongWhitelist[key] {
+					return errCompose("secret mount of service %q, field %q: uid/gid/mode are managed by the platform (files are mounted root-owned 0444); only source and target are accepted", name, key).
+						WithContext("path", path+"."+key)
+				}
+			}
+			source, _ := v["source"].(string)
+			if !validSecretName(source) {
+				return errCompose("secret mount of service %q has an invalid or missing source (must match ^[A-Za-z0-9][A-Za-z0-9._-]*$, max 63 chars)", name).
+					WithContext("path", path+".source")
+			}
+			if target, present := v["target"]; present {
+				t, _ := target.(string)
+				if t == "" {
+					return errCompose("secret mount target of service %q must be a non-empty file name (mounted as /run/secrets/<target>)", name).
+						WithContext("path", path+".target")
+				}
+			}
+		default:
+			return errCompose("unsupported secrets entry type for service %q", name).WithContext("path", path)
+		}
+	}
+	return nil
+}
 
 // envFileLongWhitelist 是 env_file 长语法允许的子键。
 var envFileLongWhitelist = map[string]bool{"path": true, "required": true, "format": true}
@@ -190,7 +317,7 @@ func validateDict(abs string, dict map[string]any) error {
 				WithContext("path", key)
 		}
 		if !topLevelWhitelist[key] {
-			return errCompose("compose top-level field %q is not in the controlled subset (supported: name/services/networks/volumes)", key).
+			return errCompose("compose top-level field %q is not in the controlled subset (supported: name/services/networks/volumes/secrets)", key).
 				WithContext("path", key)
 		}
 	}
@@ -198,6 +325,15 @@ func validateDict(abs string, dict map[string]any) error {
 	servicesDict, _ := dict["services"].(map[string]any)
 	if len(servicesDict) == 0 {
 		return errCompose("compose declares no services (services must not be empty)").WithContext("path", "services")
+	}
+
+	// 顶层 secrets 声明名集合（服务级引用完整性哨兵的判定面；external-only
+	// 形态校验在 validateSecretsDict）。
+	declaredSecrets := map[string]bool{}
+	if secs, ok := dict["secrets"].(map[string]any); ok {
+		for name := range secs {
+			declaredSecrets[name] = true
+		}
 	}
 
 	for _, name := range sortedKeys(servicesDict) {
@@ -208,12 +344,32 @@ func validateDict(abs string, dict map[string]any) error {
 		if err := validateServiceDict(name, svcDict); err != nil {
 			return err
 		}
+		// 引用完整性哨兵：服务级 secret 的 source 必须在顶层 secrets 声明
+		//（compose 引用语义；平台侧值的解析在发布引擎——app_secrets 缺失
+		// → 部署 preflight E_SECRET_NOT_FOUND，此处只校验声明面自洽）。
+		items, _ := svcDict["secrets"].([]any)
+		for i, item := range items {
+			source := ""
+			switch v := item.(type) {
+			case string:
+				source = v
+			case map[string]any:
+				source, _ = v["source"].(string)
+			}
+			if !declaredSecrets[source] {
+				return errCompose("service %q references secret %q which is not declared in the top-level secrets section (declare it as %q: {external: true} and set the value via the secrets API)", name, source, source).
+					WithContext("path", fmt.Sprintf("services.%s.secrets[%d]", name, i))
+			}
+		}
 	}
 
 	if err := validateNetworksDict(dict); err != nil {
 		return err
 	}
 	if err := validateVolumesDict(dict); err != nil {
+		return err
+	}
+	if err := validateSecretsDict(dict); err != nil {
 		return err
 	}
 	return nil
@@ -281,6 +437,9 @@ func validateServiceDict(name string, svc map[string]any) error {
 		return err
 	}
 	if err := validateServiceNetworksDict(name, prefix, svc["networks"]); err != nil {
+		return err
+	}
+	if err := validateServiceSecretsDict(name, prefix, svc["secrets"]); err != nil {
 		return err
 	}
 	if err := validateDeployDict(name, prefix, svc); err != nil {
@@ -496,15 +655,15 @@ func validateServiceVolumesDict(name, prefix string, volumesAny any) error {
 			if err := checkSubKeysAt(name, path, "volumes", v, volumeLongWhitelist); err != nil {
 				return err
 			}
-				if t, present := v["type"]; present {
-					if s, _ := t.(string); s != "volume" {
-						return errCompose("unsupported volume mount type=%q for service %q (v0.1 allows named volumes only; bind/tmpfs are rejected)", name, fmt.Sprint(t)).
-							WithContext("path", path+".type")
-					}
+			if t, present := v["type"]; present {
+				if s, _ := t.(string); s != "volume" {
+					return errCompose("unsupported volume mount type=%q for service %q (v0.1 allows named volumes only; bind/tmpfs are rejected)", name, fmt.Sprint(t)).
+						WithContext("path", path+".type")
 				}
-			default:
-				return errCompose("unsupported volume mount entry type for service %q", name).WithContext("path", path)
 			}
+		default:
+			return errCompose("unsupported volume mount entry type for service %q", name).WithContext("path", path)
+		}
 	}
 	return nil
 }

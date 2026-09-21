@@ -921,6 +921,264 @@ func (x *DatabaseBackupPlan) GetHourUtc() int32 {
 	return 0
 }
 
+// RotateDatabaseCredentialsRequest 是凭据轮换受理（破坏性两段式：confirm =
+// 实例名原样回传，mismatch → 400——与 DeleteDatabase 同型的数据安全面）。
+type RotateDatabaseCredentialsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Confirm       string                 `protobuf:"bytes,2,opt,name=confirm,proto3" json:"confirm,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateDatabaseCredentialsRequest) Reset() {
+	*x = RotateDatabaseCredentialsRequest{}
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateDatabaseCredentialsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateDatabaseCredentialsRequest) ProtoMessage() {}
+
+func (x *RotateDatabaseCredentialsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateDatabaseCredentialsRequest.ProtoReflect.Descriptor instead.
+func (*RotateDatabaseCredentialsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RotateDatabaseCredentialsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RotateDatabaseCredentialsRequest) GetConfirm() string {
+	if x != nil {
+		return x.Confirm
+	}
+	return ""
+}
+
+type RotateDatabaseCredentialsResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Database *DatabaseView          `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	// 平台自动重部署的引用 app 名单（各自走正常部署队列；credential_updated_at
+	// 展示随 database.credential_updated_at 刷新）。
+	RedeployedApps []string `protobuf:"bytes,2,rep,name=redeployed_apps,json=redeployedApps,proto3" json:"redeployed_apps,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *RotateDatabaseCredentialsResponse) Reset() {
+	*x = RotateDatabaseCredentialsResponse{}
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateDatabaseCredentialsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateDatabaseCredentialsResponse) ProtoMessage() {}
+
+func (x *RotateDatabaseCredentialsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateDatabaseCredentialsResponse.ProtoReflect.Descriptor instead.
+func (*RotateDatabaseCredentialsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RotateDatabaseCredentialsResponse) GetDatabase() *DatabaseView {
+	if x != nil {
+		return x.Database
+	}
+	return nil
+}
+
+func (x *RotateDatabaseCredentialsResponse) GetRedeployedApps() []string {
+	if x != nil {
+		return x.RedeployedApps
+	}
+	return nil
+}
+
+type RevealDatabaseCredentialsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevealDatabaseCredentialsRequest) Reset() {
+	*x = RevealDatabaseCredentialsRequest{}
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevealDatabaseCredentialsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevealDatabaseCredentialsRequest) ProtoMessage() {}
+
+func (x *RevealDatabaseCredentialsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevealDatabaseCredentialsRequest.ProtoReflect.Descriptor instead.
+func (*RevealDatabaseCredentialsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RevealDatabaseCredentialsRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+// RevealDatabaseCredentialsResponse 是连接信息的显式展开投影（§2.5 键集
+// 全量 + 密码明文——admin scope 专用面；值只出现在本响应，不进日志/事件/
+// 审计，审计 db.reveal 只记访问事实）。
+type RevealDatabaseCredentialsResponse struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	Name     string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Template string                 `protobuf:"bytes,2,opt,name=template,proto3" json:"template,omitempty"`
+	Host     string                 `protobuf:"bytes,3,opt,name=host,proto3" json:"host,omitempty"`
+	Port     int32                  `protobuf:"varint,4,opt,name=port,proto3" json:"port,omitempty"`
+	// PG 有 user/database；Redis 不输出（空串）。
+	User     string `protobuf:"bytes,5,opt,name=user,proto3" json:"user,omitempty"`
+	Database string `protobuf:"bytes,6,opt,name=database,proto3" json:"database,omitempty"`
+	// 密码明文（显式展开面的设计内例外；凭据字符集 [a-zA-Z0-9]）。
+	Password string `protobuf:"bytes,7,opt,name=password,proto3" json:"password,omitempty"`
+	// 标准 URI（密码段为明文——与 GetEnv 明文读同级的 admin 面）。
+	Url           string `protobuf:"bytes,8,opt,name=url,proto3" json:"url,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevealDatabaseCredentialsResponse) Reset() {
+	*x = RevealDatabaseCredentialsResponse{}
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevealDatabaseCredentialsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevealDatabaseCredentialsResponse) ProtoMessage() {}
+
+func (x *RevealDatabaseCredentialsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevealDatabaseCredentialsResponse.ProtoReflect.Descriptor instead.
+func (*RevealDatabaseCredentialsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetTemplate() string {
+	if x != nil {
+		return x.Template
+	}
+	return ""
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetUser() string {
+	if x != nil {
+		return x.User
+	}
+	return ""
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetDatabase() string {
+	if x != nil {
+		return x.Database
+	}
+	return ""
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *RevealDatabaseCredentialsResponse) GetUrl() string {
+	if x != nil {
+		return x.Url
+	}
+	return ""
+}
+
 // DatabaseView 是库实例投影（状态 = 生命周期态；连接信息脱敏——密码明文
 // 零离开存储，url 已掩码、password_fingerprint 供「是不是那个 secret」比
 // 对；显式 reveal 面随 S4/S6）。last_error 是最近一次收敛失败原因（failed
@@ -953,7 +1211,7 @@ type DatabaseView struct {
 
 func (x *DatabaseView) Reset() {
 	*x = DatabaseView{}
-	mi := &file_fleetly_server_v1_database_proto_msgTypes[18]
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -965,7 +1223,7 @@ func (x *DatabaseView) String() string {
 func (*DatabaseView) ProtoMessage() {}
 
 func (x *DatabaseView) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_database_proto_msgTypes[18]
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -978,7 +1236,7 @@ func (x *DatabaseView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseView.ProtoReflect.Descriptor instead.
 func (*DatabaseView) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{18}
+	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *DatabaseView) GetId() string {
@@ -1091,7 +1349,7 @@ type DatabaseVolumeView struct {
 
 func (x *DatabaseVolumeView) Reset() {
 	*x = DatabaseVolumeView{}
-	mi := &file_fleetly_server_v1_database_proto_msgTypes[19]
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1103,7 +1361,7 @@ func (x *DatabaseVolumeView) String() string {
 func (*DatabaseVolumeView) ProtoMessage() {}
 
 func (x *DatabaseVolumeView) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_database_proto_msgTypes[19]
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1116,7 +1374,7 @@ func (x *DatabaseVolumeView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseVolumeView.ProtoReflect.Descriptor instead.
 func (*DatabaseVolumeView) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{19}
+	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *DatabaseVolumeView) GetName() string {
@@ -1161,7 +1419,7 @@ type DatabaseConnectionView struct {
 
 func (x *DatabaseConnectionView) Reset() {
 	*x = DatabaseConnectionView{}
-	mi := &file_fleetly_server_v1_database_proto_msgTypes[20]
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1173,7 +1431,7 @@ func (x *DatabaseConnectionView) String() string {
 func (*DatabaseConnectionView) ProtoMessage() {}
 
 func (x *DatabaseConnectionView) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_database_proto_msgTypes[20]
+	mi := &file_fleetly_server_v1_database_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1186,7 +1444,7 @@ func (x *DatabaseConnectionView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DatabaseConnectionView.ProtoReflect.Descriptor instead.
 func (*DatabaseConnectionView) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{20}
+	return file_fleetly_server_v1_database_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *DatabaseConnectionView) GetHost() string {
@@ -1286,7 +1544,24 @@ const file_fleetly_server_v1_database_proto_rawDesc = "" +
 	"\x12DatabaseBackupPlan\x12%\n" +
 	"\x0einterval_hours\x18\x01 \x01(\x05R\rintervalHours\x12\x12\n" +
 	"\x04keep\x18\x02 \x01(\x05R\x04keep\x12\x19\n" +
-	"\bhour_utc\x18\x03 \x01(\x05R\ahourUtc\"\x99\x05\n" +
+	"\bhour_utc\x18\x03 \x01(\x05R\ahourUtc\"Y\n" +
+	" RotateDatabaseCredentialsRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12\x18\n" +
+	"\aconfirm\x18\x02 \x01(\tR\aconfirm\"\x89\x01\n" +
+	"!RotateDatabaseCredentialsResponse\x12;\n" +
+	"\bdatabase\x18\x01 \x01(\v2\x1f.fleetly.server.v1.DatabaseViewR\bdatabase\x12'\n" +
+	"\x0fredeployed_apps\x18\x02 \x03(\tR\x0eredeployedApps\"?\n" +
+	" RevealDatabaseCredentialsRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"\xd9\x01\n" +
+	"!RevealDatabaseCredentialsResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\btemplate\x18\x02 \x01(\tR\btemplate\x12\x12\n" +
+	"\x04host\x18\x03 \x01(\tR\x04host\x12\x12\n" +
+	"\x04port\x18\x04 \x01(\x05R\x04port\x12\x12\n" +
+	"\x04user\x18\x05 \x01(\tR\x04user\x12\x1a\n" +
+	"\bdatabase\x18\x06 \x01(\tR\bdatabase\x12\x1a\n" +
+	"\bpassword\x18\a \x01(\tR\bpassword\x12\x10\n" +
+	"\x03url\x18\b \x01(\tR\x03url\"\x99\x05\n" +
 	"\fDatabaseView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1a\n" +
@@ -1319,7 +1594,7 @@ const file_fleetly_server_v1_database_proto_rawDesc = "" +
 	"\x04user\x18\x03 \x01(\tR\x04user\x12\x1a\n" +
 	"\bdatabase\x18\x04 \x01(\tR\bdatabase\x12\x10\n" +
 	"\x03url\x18\x05 \x01(\tR\x03url\x121\n" +
-	"\x14password_fingerprint\x18\x06 \x01(\tR\x13passwordFingerprint2\xe9\b\n" +
+	"\x14password_fingerprint\x18\x06 \x01(\tR\x13passwordFingerprint2\xcd\v\n" +
 	"\x0fDatabaseService\x12\x7f\n" +
 	"\x0eCreateDatabase\x12(.fleetly.server.v1.CreateDatabaseRequest\x1a).fleetly.server.v1.CreateDatabaseResponse\"\x18\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/databases\x12z\n" +
 	"\vGetDatabase\x12%.fleetly.server.v1.GetDatabaseRequest\x1a&.fleetly.server.v1.GetDatabaseResponse\"\x1c\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/databases/{name}\x12y\n" +
@@ -1328,7 +1603,9 @@ const file_fleetly_server_v1_database_proto_rawDesc = "" +
 	"\x0fSuspendDatabase\x12).fleetly.server.v1.SuspendDatabaseRequest\x1a*.fleetly.server.v1.SuspendDatabaseResponse\"'\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/databases/{name}/suspend\x12\x8d\x01\n" +
 	"\x0eResumeDatabase\x12(.fleetly.server.v1.ResumeDatabaseRequest\x1a).fleetly.server.v1.ResumeDatabaseResponse\"&\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/databases/{name}/resume\x12\x89\x01\n" +
 	"\rRetryDatabase\x12'.fleetly.server.v1.RetryDatabaseRequest\x1a(.fleetly.server.v1.RetryDatabaseResponse\"%\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/databases/{name}/retry\x12\xa7\x01\n" +
-	"\x16UpdateDatabaseSettings\x120.fleetly.server.v1.UpdateDatabaseSettingsRequest\x1a1.fleetly.server.v1.UpdateDatabaseSettingsResponse\"(\x82\xd3\xe4\x93\x02\":\x01*\x1a\x1d/v1/databases/{name}/settingsB\x98\x01\x92ARRP\n" +
+	"\x16UpdateDatabaseSettings\x120.fleetly.server.v1.UpdateDatabaseSettingsRequest\x1a1.fleetly.server.v1.UpdateDatabaseSettingsResponse\"(\x82\xd3\xe4\x93\x02\":\x01*\x1a\x1d/v1/databases/{name}/settings\x12\xae\x01\n" +
+	"\x19RotateDatabaseCredentials\x123.fleetly.server.v1.RotateDatabaseCredentialsRequest\x1a4.fleetly.server.v1.RotateDatabaseCredentialsResponse\"&\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/databases/{name}/rotate\x12\xb0\x01\n" +
+	"\x19RevealDatabaseCredentials\x123.fleetly.server.v1.RevealDatabaseCredentialsRequest\x1a4.fleetly.server.v1.RevealDatabaseCredentialsResponse\"(\x82\xd3\xe4\x93\x02\"\x12 /v1/databases/{name}/credentialsB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -1345,71 +1622,80 @@ func file_fleetly_server_v1_database_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_database_proto_rawDescData
 }
 
-var file_fleetly_server_v1_database_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
+var file_fleetly_server_v1_database_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_fleetly_server_v1_database_proto_goTypes = []any{
-	(*CreateDatabaseRequest)(nil),          // 0: fleetly.server.v1.CreateDatabaseRequest
-	(*CreateDatabaseResponse)(nil),         // 1: fleetly.server.v1.CreateDatabaseResponse
-	(*GetDatabaseRequest)(nil),             // 2: fleetly.server.v1.GetDatabaseRequest
-	(*GetDatabaseResponse)(nil),            // 3: fleetly.server.v1.GetDatabaseResponse
-	(*ListDatabasesRequest)(nil),           // 4: fleetly.server.v1.ListDatabasesRequest
-	(*ListDatabasesResponse)(nil),          // 5: fleetly.server.v1.ListDatabasesResponse
-	(*DeleteDatabaseRequest)(nil),          // 6: fleetly.server.v1.DeleteDatabaseRequest
-	(*DeleteDatabaseResponse)(nil),         // 7: fleetly.server.v1.DeleteDatabaseResponse
-	(*SuspendDatabaseRequest)(nil),         // 8: fleetly.server.v1.SuspendDatabaseRequest
-	(*SuspendDatabaseResponse)(nil),        // 9: fleetly.server.v1.SuspendDatabaseResponse
-	(*ResumeDatabaseRequest)(nil),          // 10: fleetly.server.v1.ResumeDatabaseRequest
-	(*ResumeDatabaseResponse)(nil),         // 11: fleetly.server.v1.ResumeDatabaseResponse
-	(*RetryDatabaseRequest)(nil),           // 12: fleetly.server.v1.RetryDatabaseRequest
-	(*RetryDatabaseResponse)(nil),          // 13: fleetly.server.v1.RetryDatabaseResponse
-	(*UpdateDatabaseSettingsRequest)(nil),  // 14: fleetly.server.v1.UpdateDatabaseSettingsRequest
-	(*UpdateDatabaseSettingsResponse)(nil), // 15: fleetly.server.v1.UpdateDatabaseSettingsResponse
-	(*DatabaseLimits)(nil),                 // 16: fleetly.server.v1.DatabaseLimits
-	(*DatabaseBackupPlan)(nil),             // 17: fleetly.server.v1.DatabaseBackupPlan
-	(*DatabaseView)(nil),                   // 18: fleetly.server.v1.DatabaseView
-	(*DatabaseVolumeView)(nil),             // 19: fleetly.server.v1.DatabaseVolumeView
-	(*DatabaseConnectionView)(nil),         // 20: fleetly.server.v1.DatabaseConnectionView
-	(*timestamppb.Timestamp)(nil),          // 21: google.protobuf.Timestamp
+	(*CreateDatabaseRequest)(nil),             // 0: fleetly.server.v1.CreateDatabaseRequest
+	(*CreateDatabaseResponse)(nil),            // 1: fleetly.server.v1.CreateDatabaseResponse
+	(*GetDatabaseRequest)(nil),                // 2: fleetly.server.v1.GetDatabaseRequest
+	(*GetDatabaseResponse)(nil),               // 3: fleetly.server.v1.GetDatabaseResponse
+	(*ListDatabasesRequest)(nil),              // 4: fleetly.server.v1.ListDatabasesRequest
+	(*ListDatabasesResponse)(nil),             // 5: fleetly.server.v1.ListDatabasesResponse
+	(*DeleteDatabaseRequest)(nil),             // 6: fleetly.server.v1.DeleteDatabaseRequest
+	(*DeleteDatabaseResponse)(nil),            // 7: fleetly.server.v1.DeleteDatabaseResponse
+	(*SuspendDatabaseRequest)(nil),            // 8: fleetly.server.v1.SuspendDatabaseRequest
+	(*SuspendDatabaseResponse)(nil),           // 9: fleetly.server.v1.SuspendDatabaseResponse
+	(*ResumeDatabaseRequest)(nil),             // 10: fleetly.server.v1.ResumeDatabaseRequest
+	(*ResumeDatabaseResponse)(nil),            // 11: fleetly.server.v1.ResumeDatabaseResponse
+	(*RetryDatabaseRequest)(nil),              // 12: fleetly.server.v1.RetryDatabaseRequest
+	(*RetryDatabaseResponse)(nil),             // 13: fleetly.server.v1.RetryDatabaseResponse
+	(*UpdateDatabaseSettingsRequest)(nil),     // 14: fleetly.server.v1.UpdateDatabaseSettingsRequest
+	(*UpdateDatabaseSettingsResponse)(nil),    // 15: fleetly.server.v1.UpdateDatabaseSettingsResponse
+	(*DatabaseLimits)(nil),                    // 16: fleetly.server.v1.DatabaseLimits
+	(*DatabaseBackupPlan)(nil),                // 17: fleetly.server.v1.DatabaseBackupPlan
+	(*RotateDatabaseCredentialsRequest)(nil),  // 18: fleetly.server.v1.RotateDatabaseCredentialsRequest
+	(*RotateDatabaseCredentialsResponse)(nil), // 19: fleetly.server.v1.RotateDatabaseCredentialsResponse
+	(*RevealDatabaseCredentialsRequest)(nil),  // 20: fleetly.server.v1.RevealDatabaseCredentialsRequest
+	(*RevealDatabaseCredentialsResponse)(nil), // 21: fleetly.server.v1.RevealDatabaseCredentialsResponse
+	(*DatabaseView)(nil),                      // 22: fleetly.server.v1.DatabaseView
+	(*DatabaseVolumeView)(nil),                // 23: fleetly.server.v1.DatabaseVolumeView
+	(*DatabaseConnectionView)(nil),            // 24: fleetly.server.v1.DatabaseConnectionView
+	(*timestamppb.Timestamp)(nil),             // 25: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_database_proto_depIdxs = []int32{
 	16, // 0: fleetly.server.v1.CreateDatabaseRequest.limits:type_name -> fleetly.server.v1.DatabaseLimits
 	17, // 1: fleetly.server.v1.CreateDatabaseRequest.backup_plan:type_name -> fleetly.server.v1.DatabaseBackupPlan
-	18, // 2: fleetly.server.v1.CreateDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
-	18, // 3: fleetly.server.v1.GetDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
-	18, // 4: fleetly.server.v1.ListDatabasesResponse.databases:type_name -> fleetly.server.v1.DatabaseView
-	18, // 5: fleetly.server.v1.SuspendDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
-	18, // 6: fleetly.server.v1.ResumeDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
-	18, // 7: fleetly.server.v1.RetryDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
+	22, // 2: fleetly.server.v1.CreateDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
+	22, // 3: fleetly.server.v1.GetDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
+	22, // 4: fleetly.server.v1.ListDatabasesResponse.databases:type_name -> fleetly.server.v1.DatabaseView
+	22, // 5: fleetly.server.v1.SuspendDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
+	22, // 6: fleetly.server.v1.ResumeDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
+	22, // 7: fleetly.server.v1.RetryDatabaseResponse.database:type_name -> fleetly.server.v1.DatabaseView
 	16, // 8: fleetly.server.v1.UpdateDatabaseSettingsRequest.limits:type_name -> fleetly.server.v1.DatabaseLimits
 	17, // 9: fleetly.server.v1.UpdateDatabaseSettingsRequest.backup_plan:type_name -> fleetly.server.v1.DatabaseBackupPlan
-	18, // 10: fleetly.server.v1.UpdateDatabaseSettingsResponse.database:type_name -> fleetly.server.v1.DatabaseView
-	19, // 11: fleetly.server.v1.DatabaseView.volume:type_name -> fleetly.server.v1.DatabaseVolumeView
-	20, // 12: fleetly.server.v1.DatabaseView.connection:type_name -> fleetly.server.v1.DatabaseConnectionView
-	17, // 13: fleetly.server.v1.DatabaseView.backup_plan:type_name -> fleetly.server.v1.DatabaseBackupPlan
-	16, // 14: fleetly.server.v1.DatabaseView.limits:type_name -> fleetly.server.v1.DatabaseLimits
-	21, // 15: fleetly.server.v1.DatabaseView.created_at:type_name -> google.protobuf.Timestamp
-	21, // 16: fleetly.server.v1.DatabaseView.updated_at:type_name -> google.protobuf.Timestamp
-	21, // 17: fleetly.server.v1.DatabaseView.credential_updated_at:type_name -> google.protobuf.Timestamp
-	0,  // 18: fleetly.server.v1.DatabaseService.CreateDatabase:input_type -> fleetly.server.v1.CreateDatabaseRequest
-	2,  // 19: fleetly.server.v1.DatabaseService.GetDatabase:input_type -> fleetly.server.v1.GetDatabaseRequest
-	4,  // 20: fleetly.server.v1.DatabaseService.ListDatabases:input_type -> fleetly.server.v1.ListDatabasesRequest
-	6,  // 21: fleetly.server.v1.DatabaseService.DeleteDatabase:input_type -> fleetly.server.v1.DeleteDatabaseRequest
-	8,  // 22: fleetly.server.v1.DatabaseService.SuspendDatabase:input_type -> fleetly.server.v1.SuspendDatabaseRequest
-	10, // 23: fleetly.server.v1.DatabaseService.ResumeDatabase:input_type -> fleetly.server.v1.ResumeDatabaseRequest
-	12, // 24: fleetly.server.v1.DatabaseService.RetryDatabase:input_type -> fleetly.server.v1.RetryDatabaseRequest
-	14, // 25: fleetly.server.v1.DatabaseService.UpdateDatabaseSettings:input_type -> fleetly.server.v1.UpdateDatabaseSettingsRequest
-	1,  // 26: fleetly.server.v1.DatabaseService.CreateDatabase:output_type -> fleetly.server.v1.CreateDatabaseResponse
-	3,  // 27: fleetly.server.v1.DatabaseService.GetDatabase:output_type -> fleetly.server.v1.GetDatabaseResponse
-	5,  // 28: fleetly.server.v1.DatabaseService.ListDatabases:output_type -> fleetly.server.v1.ListDatabasesResponse
-	7,  // 29: fleetly.server.v1.DatabaseService.DeleteDatabase:output_type -> fleetly.server.v1.DeleteDatabaseResponse
-	9,  // 30: fleetly.server.v1.DatabaseService.SuspendDatabase:output_type -> fleetly.server.v1.SuspendDatabaseResponse
-	11, // 31: fleetly.server.v1.DatabaseService.ResumeDatabase:output_type -> fleetly.server.v1.ResumeDatabaseResponse
-	13, // 32: fleetly.server.v1.DatabaseService.RetryDatabase:output_type -> fleetly.server.v1.RetryDatabaseResponse
-	15, // 33: fleetly.server.v1.DatabaseService.UpdateDatabaseSettings:output_type -> fleetly.server.v1.UpdateDatabaseSettingsResponse
-	26, // [26:34] is the sub-list for method output_type
-	18, // [18:26] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	22, // 10: fleetly.server.v1.UpdateDatabaseSettingsResponse.database:type_name -> fleetly.server.v1.DatabaseView
+	22, // 11: fleetly.server.v1.RotateDatabaseCredentialsResponse.database:type_name -> fleetly.server.v1.DatabaseView
+	23, // 12: fleetly.server.v1.DatabaseView.volume:type_name -> fleetly.server.v1.DatabaseVolumeView
+	24, // 13: fleetly.server.v1.DatabaseView.connection:type_name -> fleetly.server.v1.DatabaseConnectionView
+	17, // 14: fleetly.server.v1.DatabaseView.backup_plan:type_name -> fleetly.server.v1.DatabaseBackupPlan
+	16, // 15: fleetly.server.v1.DatabaseView.limits:type_name -> fleetly.server.v1.DatabaseLimits
+	25, // 16: fleetly.server.v1.DatabaseView.created_at:type_name -> google.protobuf.Timestamp
+	25, // 17: fleetly.server.v1.DatabaseView.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 18: fleetly.server.v1.DatabaseView.credential_updated_at:type_name -> google.protobuf.Timestamp
+	0,  // 19: fleetly.server.v1.DatabaseService.CreateDatabase:input_type -> fleetly.server.v1.CreateDatabaseRequest
+	2,  // 20: fleetly.server.v1.DatabaseService.GetDatabase:input_type -> fleetly.server.v1.GetDatabaseRequest
+	4,  // 21: fleetly.server.v1.DatabaseService.ListDatabases:input_type -> fleetly.server.v1.ListDatabasesRequest
+	6,  // 22: fleetly.server.v1.DatabaseService.DeleteDatabase:input_type -> fleetly.server.v1.DeleteDatabaseRequest
+	8,  // 23: fleetly.server.v1.DatabaseService.SuspendDatabase:input_type -> fleetly.server.v1.SuspendDatabaseRequest
+	10, // 24: fleetly.server.v1.DatabaseService.ResumeDatabase:input_type -> fleetly.server.v1.ResumeDatabaseRequest
+	12, // 25: fleetly.server.v1.DatabaseService.RetryDatabase:input_type -> fleetly.server.v1.RetryDatabaseRequest
+	14, // 26: fleetly.server.v1.DatabaseService.UpdateDatabaseSettings:input_type -> fleetly.server.v1.UpdateDatabaseSettingsRequest
+	18, // 27: fleetly.server.v1.DatabaseService.RotateDatabaseCredentials:input_type -> fleetly.server.v1.RotateDatabaseCredentialsRequest
+	20, // 28: fleetly.server.v1.DatabaseService.RevealDatabaseCredentials:input_type -> fleetly.server.v1.RevealDatabaseCredentialsRequest
+	1,  // 29: fleetly.server.v1.DatabaseService.CreateDatabase:output_type -> fleetly.server.v1.CreateDatabaseResponse
+	3,  // 30: fleetly.server.v1.DatabaseService.GetDatabase:output_type -> fleetly.server.v1.GetDatabaseResponse
+	5,  // 31: fleetly.server.v1.DatabaseService.ListDatabases:output_type -> fleetly.server.v1.ListDatabasesResponse
+	7,  // 32: fleetly.server.v1.DatabaseService.DeleteDatabase:output_type -> fleetly.server.v1.DeleteDatabaseResponse
+	9,  // 33: fleetly.server.v1.DatabaseService.SuspendDatabase:output_type -> fleetly.server.v1.SuspendDatabaseResponse
+	11, // 34: fleetly.server.v1.DatabaseService.ResumeDatabase:output_type -> fleetly.server.v1.ResumeDatabaseResponse
+	13, // 35: fleetly.server.v1.DatabaseService.RetryDatabase:output_type -> fleetly.server.v1.RetryDatabaseResponse
+	15, // 36: fleetly.server.v1.DatabaseService.UpdateDatabaseSettings:output_type -> fleetly.server.v1.UpdateDatabaseSettingsResponse
+	19, // 37: fleetly.server.v1.DatabaseService.RotateDatabaseCredentials:output_type -> fleetly.server.v1.RotateDatabaseCredentialsResponse
+	21, // 38: fleetly.server.v1.DatabaseService.RevealDatabaseCredentials:output_type -> fleetly.server.v1.RevealDatabaseCredentialsResponse
+	29, // [29:39] is the sub-list for method output_type
+	19, // [19:29] is the sub-list for method input_type
+	19, // [19:19] is the sub-list for extension type_name
+	19, // [19:19] is the sub-list for extension extendee
+	0,  // [0:19] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_database_proto_init() }
@@ -1423,7 +1709,7 @@ func file_fleetly_server_v1_database_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_database_proto_rawDesc), len(file_fleetly_server_v1_database_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   21,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

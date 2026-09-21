@@ -26,7 +26,8 @@ type databasesCmd struct {
 func newDatabasesCmd() *databasesCmd {
 	sub := commands.New()
 	sub.Register(&databaseCreateCmd{}, &databaseGetCmd{}, &databaseListCmd{}, &databaseDeleteCmd{},
-		&databaseSuspendCmd{}, &databaseResumeCmd{}, &databaseRetryCmd{}, &databaseSettingsCmd{})
+		&databaseSuspendCmd{}, &databaseResumeCmd{}, &databaseRetryCmd{}, &databaseSettingsCmd{},
+		&databaseRotateCmd{}, &databaseRevealCmd{})
 	sub.VerbTitle = "databases subcommands:"
 	return &databasesCmd{sub: sub}
 }
@@ -36,14 +37,14 @@ func (c *databasesCmd) Synopsis() string {
 	return "create and manage managed database instances (lifecycle, settings; connection secrets are masked)"
 }
 func (c *databasesCmd) Usage() string {
-	return "databases <create|get|list|delete|suspend|resume|retry|settings> [flags] ..."
+	return "databases <create|get|list|delete|suspend|resume|retry|settings|rotate|reveal> [flags] ..."
 }
 
 func (c *databasesCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *databasesCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (create|get|list|delete|suspend|resume|retry|settings)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (create|get|list|delete|suspend|resume|retry|settings|rotate|reveal)")}
 	}
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
@@ -385,6 +386,95 @@ func (c *databaseSettingsCmd) Run(ctx context.Context, env *commands.Environment
 		_, err = fmt.Fprintf(env.Stdout, "settings updated for %s (cpu=%v memory=%d status=%s)\n",
 			args[0], resp.GetDatabase().GetLimits().GetCpuSeconds(),
 			resp.GetDatabase().GetLimits().GetMemoryBytes(), resp.GetDatabase().GetStatus())
+		return err
+	})
+}
+
+// databaseRotateCmd 实现 `fleetly databases rotate <name> --confirm <name>`
+// （E4 W4-S4，managed-databases §2.5：破坏性两段式——CLI 侧与 API 同面保留
+// 显式 confirm，不自动代答；轮换不可逆且引用 app 被自动重部署）。
+type databaseRotateCmd struct {
+	confirm string
+	conn    connFlags
+}
+
+func (c *databaseRotateCmd) Name() string { return "rotate" }
+func (c *databaseRotateCmd) Synopsis() string {
+	return "rotate database credentials (destructive, two-phase confirm; referencing apps are auto-redeployed)"
+}
+func (c *databaseRotateCmd) Usage() string {
+	return "databases rotate --confirm <name> [--addr <host:port>] [--token <tok>] <name>"
+}
+
+func (c *databaseRotateCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.StringVar(&c.confirm, "confirm", "", "pass the instance name to confirm rotation (two-phase destructive confirm)")
+}
+
+func (c *databaseRotateCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Databases().RotateDatabaseCredentials(ctx, &serverv1.RotateDatabaseCredentialsRequest{
+			Name:    args[0],
+			Confirm: c.confirm,
+		})
+		if err != nil {
+			return err
+		}
+		apps := strings.Join(resp.GetRedeployedApps(), ", ")
+		if apps == "" {
+			apps = "(no referencing apps)"
+		}
+		_, err = fmt.Fprintf(env.Stdout, "database %s credentials rotated (fingerprint %s); referencing apps requeued for redeploy: %s\n",
+			args[0], resp.GetDatabase().GetConnection().GetPasswordFingerprint(), apps)
+		return err
+	})
+}
+
+// databaseRevealCmd 实现 `fleetly databases reveal <name>`（§2.5 显式展开
+// 面——输出含密码明文与完整 URL；服务端已落 db.reveal 审计）。
+type databaseRevealCmd struct {
+	jsonOut bool
+	conn    connFlags
+}
+
+func (c *databaseRevealCmd) Name() string { return "reveal" }
+func (c *databaseRevealCmd) Synopsis() string {
+	return "reveal database connection credentials in plaintext (admin; the access is audited)"
+}
+func (c *databaseRevealCmd) Usage() string {
+	return "databases reveal [--addr <host:port>] [--token <tok>] [--json] <name>"
+}
+
+func (c *databaseRevealCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *databaseRevealCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Databases().RevealDatabaseCredentials(ctx, &serverv1.RevealDatabaseCredentialsRequest{Name: args[0]})
+		if err != nil {
+			return err
+		}
+		if c.jsonOut {
+			return writeJSON(env.Stdout, resp)
+		}
+		var b strings.Builder
+		fmt.Fprintf(&b, "database %s (template %s)\n", resp.GetName(), resp.GetTemplate())
+		fmt.Fprintf(&b, "  host: %s\n  port: %d\n", resp.GetHost(), resp.GetPort())
+		if resp.GetUser() != "" {
+			fmt.Fprintf(&b, "  user: %s\n  database: %s\n", resp.GetUser(), resp.GetDatabase())
+		}
+		fmt.Fprintf(&b, "  password: %s\n", resp.GetPassword())
+		fmt.Fprintf(&b, "  url: %s\n", resp.GetUrl())
+		fmt.Fprintf(&b, "  note: this access has been recorded in the audit log\n")
+		_, err = fmt.Fprint(env.Stdout, b.String())
 		return err
 	})
 }

@@ -28,7 +28,10 @@ type Spec struct {
 	Services []Service `json:"services"`
 	Volumes  []Volume  `json:"volumes,omitempty"`
 	Networks []string  `json:"networks,omitempty"`
-	Secrets  []string  `json:"secrets,omitempty"`
+	// Secrets 是顶层 secrets 声明名的排序集合（E4 managed-databases §2.7：
+	// 仅 {external: true} 形态——平台密钥库是唯一值来源，归一化形态只留
+	// 声明名，值零出现）。
+	Secrets []string `json:"secrets,omitempty"`
 	// SpecHash 是 CanonicalJSON 的 sha256 hex（载入时填定）。
 	SpecHash string `json:"spec_hash"`
 }
@@ -94,7 +97,11 @@ type Service struct {
 	// Environment 是 env 合并结果（env_file < environment），按 key 排序；
 	// 只含 key+hash+source，值永不进归一化形态（脱敏结构性成立）。
 	Environment []EnvVar `json:"environment,omitempty"`
-	Secrets     []string `json:"secrets,omitempty"`
+	// Secrets 是服务级 secret 挂载（E4 managed-databases §2.7：external
+	// secret 引用，source 必须在顶层 secrets 声明；target 缺省 = source——
+	// 归一化时显式落位）。按 source 排序。声明名进快照与 spec_hash；值
+	// 永不进归一化形态（值在平台密钥库，发布引擎按名装载）。
+	Secrets []ServiceSecret `json:"secrets,omitempty"`
 	// Volumes 是命名卷挂载（v0.1 受控子集：仅命名卷；bind/tmpfs 拒绝），
 	// 保持声明顺序（挂载点集合有语义）。
 	Volumes  []Mount  `json:"volumes,omitempty"`
@@ -136,6 +143,15 @@ type Mount struct {
 	Volume   string `json:"volume"`
 	Target   string `json:"target"`
 	ReadOnly bool   `json:"read_only,omitempty"`
+}
+
+// ServiceSecret 是一次服务级 secret 挂载引用（E4 managed-databases §2.7，
+// D-DB-7）：Source 是平台密钥库声明名（顶层 secrets 的 external 条目），
+// Target 是容器内文件名（/run/secrets/<target>；缺省 = Source，归一化时
+// 显式落位）。uid/gid/mode 平台受管（0:0/0444），不进归一化形态。
+type ServiceSecret struct {
+	Source string `json:"source"`
+	Target string `json:"target"`
 }
 
 // Deploy 是归一化后的 deploy 段（受管字段 failure_action/monitor 校验通过

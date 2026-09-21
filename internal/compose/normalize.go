@@ -173,6 +173,9 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 	}
 	sort.Strings(secrets)
 
+	// 服务级 secret 引用的完整性哨兵在 dict 层（validateDict：声明面自洽
+	// 先于 typed 解析——compose-go 的引用校验报错不带平台路径上下文）。
+
 	// ── 无 healthcheck 警告（health_gate=none 显式降级，release-semantics
 	// §2.8 健康门解析）──
 	for i := range services {
@@ -233,9 +236,13 @@ func normalizeService(workDir, name string, svc *types.ServiceConfig, ws *warnin
 	out.Environment = env
 
 	for _, s := range svc.Secrets {
-		out.Secrets = append(out.Secrets, s.Source)
+		target := s.Target
+		if target == "" {
+			target = s.Source
+		}
+		out.Secrets = append(out.Secrets, ServiceSecret{Source: s.Source, Target: target})
 	}
-	sort.Strings(out.Secrets)
+	sort.Slice(out.Secrets, func(i, j int) bool { return out.Secrets[i].Source < out.Secrets[j].Source })
 
 	for _, v := range svc.Volumes {
 		// 危险挂载语义（Coolify CVE-2025-34159 根因类）：宿主 bind 与

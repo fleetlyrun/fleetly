@@ -138,8 +138,12 @@ func (c *Client) NetworkEnsure(ctx context.Context, name string) error {
 }
 
 // buildSwarmSpec 把引擎核心 ServiceSpec 翻译为 swarm.ServiceSpec（第三方
-// 类型不越过本函数）。
-func buildSwarmSpec(spec engine.ServiceSpec) swarm.ServiceSpec {
+// 类型不越过本函数）。secretIDs 是「secret 名 → 底座对象 ID」的已解析引用
+// 集（EnsureSecret 确保在位后按名解析——SecretReference 必须携带 SecretID
+// 与完整 File UID/GID/Mode：W3 真机教训，留空会让 swarm agent 在任务启动
+// 期 strconv 解析空串直接失败；internal/database 收敛器同注）。缺 ID 的
+// 声明 = 引擎未先行确保（对账层编码错误），显式报错。
+func buildSwarmSpec(spec engine.ServiceSpec, secretIDs map[string]string) (swarm.ServiceSpec, error) {
 	container := &swarm.ContainerSpec{
 		Image:  spec.Image,
 		Labels: spec.ContainerLabels,
@@ -167,9 +171,16 @@ func buildSwarmSpec(spec engine.ServiceSpec) swarm.ServiceSpec {
 		})
 	}
 	for _, s := range spec.Secrets {
+		id, ok := secretIDs[s.SecretName]
+		if !ok {
+			return swarm.ServiceSpec{}, fmt.Errorf("substrate: secret %s not ensured before service convergence (engine ordering bug)", s.SecretName)
+		}
 		container.Secrets = append(container.Secrets, &swarm.SecretReference{
+			SecretID:   id,
 			SecretName: s.SecretName,
-			File:       &swarm.SecretReferenceFileTarget{Name: s.Target},
+			// UID/GID/Mode 显式置零值安全形态（0:0/0444——docker CLI 同款缺
+			// 省；留空会让 swarm agent 启动期解析失败，W3 真机实证）。
+			File: &swarm.SecretReferenceFileTarget{Name: s.Target, UID: "0", GID: "0", Mode: 0o444},
 		})
 	}
 
@@ -249,7 +260,30 @@ func buildSwarmSpec(spec engine.ServiceSpec) swarm.ServiceSpec {
 			Order:         swarm.UpdateOrder(spec.UpdateOrder),
 		}
 	}
-	return serviceSpec
+	return serviceSpec, nil
+}
+
+// resolveSecretIDs 按名解析服务 spec 引用的 Swarm secret 对象 ID（服务
+// create/update 前置：引擎已先行 EnsureSecret——此处缺失 = 引擎未确保或
+// 对象被外部清理，如实报错不静默丢引用）。
+func (c *Client) resolveSecretIDs(ctx context.Context, spec engine.ServiceSpec) (map[string]string, error) {
+	if len(spec.Secrets) == 0 {
+		return nil, nil
+	}
+	ids := make(map[string]string, len(spec.Secrets))
+	for _, s := range spec.Secrets {
+		if _, done := ids[s.SecretName]; done {
+			continue
+		}
+		sctx, scancel := withCallTimeout(ctx) // D2：非流式 per-call 超时（逐调用）
+		res, err := c.cli.SecretInspect(sctx, s.SecretName, mobyclient.SecretInspectOptions{})
+		scancel()
+		if err != nil {
+			return nil, fmt.Errorf("substrate: secret %s inspect: %w (the engine must ensure secrets before service convergence)", s.SecretName, err)
+		}
+		ids[s.SecretName] = res.Secret.ID
+	}
+	return ids, nil
 }
 
 // swarmHealthcheck 翻译健康检查（平台缺省已由引擎规划层补齐）。
@@ -271,7 +305,14 @@ func swarmHealthcheck(hc engine.HealthcheckSpec) *container.HealthConfig {
 // registry 引用的镜像附带 X-Registry-Auth（--with-registry-auth 语义，
 // E1-5：Swarm 把凭据分发到拉取节点）；其余镜像零凭据面。
 func (c *Client) ServiceCreate(ctx context.Context, spec engine.ServiceSpec) error {
-	sw := buildSwarmSpec(spec)
+	secretIDs, err := c.resolveSecretIDs(ctx, spec)
+	if err != nil {
+		return err
+	}
+	sw, err := buildSwarmSpec(spec, secretIDs)
+	if err != nil {
+		return err
+	}
 	opts := mobyclient.ServiceCreateOptions{Spec: sw}
 	auth, err := c.registryAuthForImage(spec.Image)
 	if err != nil {
@@ -295,7 +336,14 @@ const serviceUpdateRetry = 3
 // registry 引用的镜像附带 X-Registry-Auth（与 ServiceCreate 同语义，E1-5
 // ——回滚/重放路径的 service update 同样要能把凭据交给拉取节点）。
 func (c *Client) ServiceUpdate(ctx context.Context, name string, spec engine.ServiceSpec) error {
-	sw := buildSwarmSpec(spec)
+	secretIDs, err := c.resolveSecretIDs(ctx, spec)
+	if err != nil {
+		return err
+	}
+	sw, err := buildSwarmSpec(spec, secretIDs)
+	if err != nil {
+		return err
+	}
 	auth, err := c.registryAuthForImage(spec.Image)
 	if err != nil {
 		return err

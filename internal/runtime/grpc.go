@@ -43,6 +43,7 @@ func NewGRPCServer(
 	gitkeys *api.GitKeysService,
 	cronSvc *api.CronService,
 	dbs *api.DatabaseService,
+	secretsSvc *api.SecretsService,
 	sys *api.SystemService,
 ) (*lynxgrpc.Server, error) {
 	validator, err := protovalidate.New()
@@ -79,6 +80,7 @@ func NewGRPCServer(
 	serverv1.RegisterGitKeysServiceServer(g, gitkeys)
 	serverv1.RegisterCronServiceServer(g, cronSvc)
 	serverv1.RegisterDatabaseServiceServer(g, dbs)
+	serverv1.RegisterSecretsServiceServer(g, secretsSvc) // E4 W4-S4：平台密钥库面（D-DB-7，无值读回）
 	return srv, nil
 }
 

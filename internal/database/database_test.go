@@ -44,6 +44,11 @@ type fakeDocker struct {
 
 	// failRemove 让服务移除失败一次（幂等重试路径）。
 	failRemove map[string]int
+
+	// rotateRuns 记录一次性容器执行（轮换 job 断言面：cmd/env 携带新旧
+	// 密码的形态——exitCode 是注入的作业退出码）。
+	rotateRuns []ContainerRunInput
+	rotateExit int
 }
 
 func newFakeDocker() *fakeDocker {
@@ -151,6 +156,11 @@ func (f *fakeDocker) VolumeRemove(_ context.Context, name string) error {
 
 func (f *fakeDocker) TaskList(_ context.Context, service string) ([]TaskObservation, error) {
 	return f.tasks[service], nil
+}
+
+func (f *fakeDocker) ContainerRun(_ context.Context, in ContainerRunInput) (int, error) {
+	f.rotateRuns = append(f.rotateRuns, in)
+	return f.rotateExit, nil
 }
 
 // fakePlacement 是 PlacementSelector 的假实现（固定节点）。

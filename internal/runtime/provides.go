@@ -59,6 +59,7 @@ var ProviderSet = wire.NewSet(
 	NewAppsService,
 	NewCronService,
 	NewDatabaseService,
+	NewSecretsService,
 	NewDeploymentsService,
 	NewRevisionsService,
 	NewBuildsService,
@@ -298,7 +299,10 @@ func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Clie
 		// E4 managed-databases：库模板连接信息端口（fleetly.databases 引用
 		// 面的物化键值与前缀唯一定义点在 dbtemplate——渲染投影消费
 		// engine.ServiceSpec，dbtemplate 在 engine 之上，只能装配层注入）。
-		WithDatabaseTemplate(dbTemplatePort{})
+		WithDatabaseTemplate(dbTemplatePort{}).
+		// E4 W4-S4：Swarm secret 确保端口（compose secrets 注入链的底座
+		// 原语——ensure 幂等由 substrate.Client.EnsureSecret 承载）。
+		WithSecretEnsurer(sc)
 }
 
 // dbTemplatePort 是引擎对库模板连接信息面的装配层适配（engine.DatabaseTemplatePort；
@@ -345,9 +349,17 @@ func NewCronService(st *state.Store, cm *cron.Manager) *api.CronService {
 
 // NewDatabaseService 构造库实例资源面服务（E4 W4-S2：受理/守卫/脱敏投影
 // ——box 承载凭据生成与指纹；kicker = database.Manager——受理后即时触发
-// 收敛拍，收敛本体由 duty 异步承载）。
+// 收敛拍，收敛本体由 duty 异步承载。W4-S4 增补 rotator = 同一 Manager——
+// 轮换编排（引擎侧 job/收敛触发/引用重部署）在底座邻接层，api 只受理与
+// 审计）。
 func NewDatabaseService(st *state.Store, sb *secrets.Box, dm *database.Manager) *api.DatabaseService {
-	return api.NewDatabaseService(st, sb, dm)
+	return api.NewDatabaseService(st, sb, dm, dm)
+}
+
+// NewSecretsService 构造平台密钥库资源面服务（E4 W4-S4，D-DB-7：external
+// secret 的唯一写入口——box 加密落库，无值读回面）。
+func NewSecretsService(st *state.Store, sb *secrets.Box) *api.SecretsService {
+	return api.NewSecretsService(st, sb)
 }
 
 // gitEndpointForHint 把 SSH 监听地址归一为 remote 提示的 host:port

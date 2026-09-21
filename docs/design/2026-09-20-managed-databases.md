@@ -149,7 +149,7 @@ CreateDatabase ──→ db_instances 行(state=provisioning) + 凭据生成(密
 
   `FLEETLY_*` 前缀为平台保留名字空间：用户 `SetEnv` 撞前缀 → `E_ENV_KEY_RESERVED`（422；同时防 system 行被用户 upsert 劫持 source——现状 `SetAppEnv` 会改写 source，此守卫是必要补丁）。
 - **可见性**：只读展示照既有 env 投影（`EnvVarView.source=system` 已支持；Console 库详情页展示连接信息，密码默认脱敏、显式展开；`fleetly databases show` 同级 admin 面）——对齐 R5 先例（生成、存平台层、对用户只读）。
-- **轮换**：**仅手动**（`databases rotate`，破坏性操作两段式确认）。流程按引擎经适配器钩子：PG = 一次性 job 执行 `ALTER USER fleetly WITH PASSWORD`（热轮换，库不重启）；Redis = 密文列更新 + 库实例受控重启（任务重建，requirepass 重读）。随后：逐引用 app 的 system 物化行更新为 pending → **平台自动触发全部引用 app 重部署**（各自走正常部署队列；不重部署 = 旧密码失效即断连，无更诚实选项）→ `db.credentials_rotated` 事件 + 审计。定期自动轮换不做（§7）。
+- **轮换**：**仅手动**（`databases rotate`，破坏性操作两段式确认）。流程按引擎经适配器钩子：PG = 一次性 job 执行 `ALTER USER fleetly WITH PASSWORD`（热轮换，库不重启；**引擎级限定（W4-S4 落地注记）：PG 暂停态拒绝轮换**——initdb 只在首启读密码文件，暂停实例无法 ALTER，如实 409 提示先 resume，不受理假轮换）；Redis = 密文列更新 + 库实例受控重启（任务重建，requirepass 重读；暂停态允许——spec 更新，resume 时以新密码重建任务）。随后：逐引用 app 的 system 物化行更新为 pending → **平台自动触发全部引用 app 重部署**（各自走正常部署队列；不重部署 = 旧密码失效即断连，无更诚实选项）→ `db.credentials_rotated` 事件 + 审计。定期自动轮换不做（§7）。
 - **连接串格式**：引擎标准 URI（§2.2 表）；密码字符集 [a-zA-Z0-9] 免 percent-encode。
 
 ### 2.6 备份与恢复适配器（对接 E3）

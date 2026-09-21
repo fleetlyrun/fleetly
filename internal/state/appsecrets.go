@@ -154,19 +154,25 @@ func (s *Store) ListAppSecrets(ctx context.Context, appID string) ([]AppSecret, 
 // RemoveAppSecret 删除单条（幂等：不存在返回 ErrAppSecretNotFound）。
 func (s *Store) RemoveAppSecret(ctx context.Context, appID, name string) error {
 	return s.InTx(ctx, func(tx *Tx) error {
-		res, err := tx.ExecContext(ctx, `DELETE FROM app_secrets WHERE app_id = ? AND name = ?`, appID, name)
-		if err != nil {
-			return fmt.Errorf("state: delete app secret %s: %w", name, err)
-		}
-		n, err := res.RowsAffected()
-		if err != nil {
-			return fmt.Errorf("state: read app secret delete count: %w", err)
-		}
-		if n == 0 {
-			return ErrAppSecretNotFound
-		}
-		return nil
+		return tx.RemoveAppSecret(ctx, appID, name)
 	})
+}
+
+// RemoveAppSecret 是事务内删除（供与审计同事务 fail-closed 组合——api 面
+// 「审计黑洞零容忍」纪律的密钥库行写点；不存在返回 ErrAppSecretNotFound）。
+func (t *Tx) RemoveAppSecret(ctx context.Context, appID, name string) error {
+	res, err := t.ExecContext(ctx, `DELETE FROM app_secrets WHERE app_id = ? AND name = ?`, appID, name)
+	if err != nil {
+		return fmt.Errorf("state: delete app secret %s: %w", name, err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("state: read app secret delete count: %w", err)
+	}
+	if n == 0 {
+		return ErrAppSecretNotFound
+	}
+	return nil
 }
 
 // appSecretScanCols 是密钥库行查询列清单（新增列只加在此与扫描函数）。

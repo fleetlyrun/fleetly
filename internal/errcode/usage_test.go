@@ -32,16 +32,16 @@ var codeExemptions = map[string]string{
 	// E4 数据库托管（managed-databases 设计 §5.2，S1 阶段注册）：S2 已接线
 	// 三码的豁免移除——E_DB_NOT_FOUND / E_DB_REFERENCED = 生命周期 API 删除
 	// 守卫（internal/api/databases.go）；E_DB_TEMPLATE_UNSUPPORTED = 创建
-	// 模板校验（同文件）。E_DB_ENV_PREFIX_CONFLICT 仍豁免：引用 plan 哨兵
-	// 随 S3。E_DB_BACKUP_FAILED/E_DB_RESTORE_FAILED/E_DB_ROTATE_FAILED 仍
-	// 豁免：备份恢复轮换适配器随 S4-S5。E_SECRET_NOT_FOUND 仍豁免：compose
-	// secrets preflight 随 S4。E_ENV_KEY_RESERVED 不豁免：保留前缀守卫已在
-	// S1 接线（internal/state/env.go SetAppEnv）。
-	"E_DB_ENV_PREFIX_CONFLICT": "reserved: wired with the E4 reference plan sentinel (stage S3)",
-	"E_DB_BACKUP_FAILED":       "reserved: wired with the E4 backup adapter (stage S4-S5)",
-	"E_DB_RESTORE_FAILED":      "reserved: wired with the E4 restore path (stage S4-S5)",
-	"E_DB_ROTATE_FAILED":       "reserved: wired with the E4 rotation path (stage S4-S5)",
-	"E_SECRET_NOT_FOUND":       "reserved: wired with the E4 compose secrets preflight (stage S4)",
+	// 模板校验（同文件）。S3 已接线 E_DB_ENV_PREFIX_CONFLICT（引用 plan
+	// 哨兵，internal/engine/dbinject.go）。S4 已接线 E_DB_ROTATE_FAILED
+	// （轮换编排中途失败，internal/api/databases.go mapRotationErr）与
+	// E_SECRET_NOT_FOUND（compose secrets preflight，
+	// internal/engine/secretinject.go + 回滚 preflight）。E_DB_BACKUP_FAILED/
+	// E_DB_RESTORE_FAILED 仍豁免：备份恢复适配器随 S5。
+	// E_ENV_KEY_RESERVED 不豁免：保留前缀守卫已在 S1 接线
+	//（internal/state/env.go SetAppEnv）。
+	"E_DB_BACKUP_FAILED":  "reserved: wired with the E4 backup adapter (stage S5)",
+	"E_DB_RESTORE_FAILED": "reserved: wired with the E4 restore path (stage S5)",
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除
