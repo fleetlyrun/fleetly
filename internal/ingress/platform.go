@@ -4,7 +4,8 @@ package ingress
 // base_domain 非空时，启动即确保平台证书签发（多 SAN 一张：ctrl/registry/
 // console.<base>，一次签发覆盖三子域、续期同批），重试直至成功——证书就
 // 续前 provider endpoint 维持明文 8422（Traefik 容忍期只有挑战面在用），
-// 就绪后翻转 https://ctrl.<base>:8423（见 traefik.go providerEndpoint）并
+// 就绪后翻转 https://<advertise>:8423（见 traefik.go providerEndpoint，F9
+// 修订二：VPC IP 直连形态）并
 // 由 runtime 装配壳在 8423 起 TLS 监听（证书未就绪时握手失败 = 「8423 尚
 // 不可用」，次序③④）。
 //
@@ -157,7 +158,7 @@ func (m *Manager) runPlatformCertDuty(ctx context.Context) {
 			continue
 		}
 		if !converged {
-			// 证书在盘：翻转 provider endpoint 至 https://ctrl.<base>:8423
+			// 证书在盘：翻转 provider endpoint 至 https://<advertise>:8423
 			//（幂等；swarm 未就绪/版本冲突按退避重试——与 sweep 的降级
 			// 语义同构）。8423 监听本身由 runtime 服务壳装配。
 			if err := m.EnsureTraefik(ctx); err != nil {
@@ -179,7 +180,7 @@ func (m *Manager) runPlatformCertDuty(ctx context.Context) {
 			}
 			m.log.Info("ingress: platform certificate ready; traefik provider endpoint switched to the TLS config face",
 				"base_domain", m.cfg.BaseDomain,
-				"endpoint", "https://ctrl."+m.cfg.BaseDomain+":"+configTLSPort(m.cfg.ConfigTLSAddr)+"/configs")
+				"endpoint", m.providerEndpoint(m.advertiseIP)+"/configs")
 		}
 		// 健康守望：睡一个续期扫描周期后复查续期窗口。
 		if !sleepCtx(ctx, m.cfg.RenewScanInterval) {

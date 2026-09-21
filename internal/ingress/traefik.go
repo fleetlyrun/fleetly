@@ -415,16 +415,6 @@ func (m *Manager) retireLegacyCertDistribution(ctx context.Context) error {
 	return nil
 }
 
-// providerHosts 返回 provider endpoint 主机名的 /etc/hosts 钉定条目
-// （F9：多节点形态 ctrl.<base> → advertise 地址；单节点/advertise 未知为
-// 空——单节点 endpoint 本就是 IP 直连，无需钉定）。
-func (m *Manager) providerHosts() []string {
-	if m.cfg.BaseDomain == "" || m.advertiseIP == "" {
-		return nil
-	}
-	return []string{"ctrl." + m.cfg.BaseDomain + ":" + m.advertiseIP}
-}
-
 // buildTraefikSpec 构造入口服务的期望 swarm spec（host 80/443 + HTTP
 // provider 静态配置 + ping 健康检查；E1-2 起无证书挂载——证书经动态配置
 // 内联下发，见 dynamic.go TLSCertificate）。
@@ -440,6 +430,11 @@ func (m *Manager) buildTraefikSpec(endpoint, token string) swarm.ServiceSpec {
 		"--providers.http.pollInterval=" + m.cfg.PollInterval.String(),
 		"--providers.http.pollTimeout=5s",
 		"--providers.http.headers.Authorization=Bearer " + token,
+		// F9 修订二：多节点 endpoint 是 advertise IP（VPC），IP 端点无 SAN
+		// 可校验——Traefik 侧跳过服务器认证（传输仍 TLS 加密 + token；
+		// 服务器认证由 VPC 边界承担，内部 CA 硬化挂 v0.2.x）。单节点 8422
+		// 明文形态无 TLS，参数无效但无害（Traefik 容忍）。
+		"--providers.http.tls.insecureSkipVerify=true",
 		// ping 健康面（healthcheck 子命令消费；容器内 8080，不发布）。
 		"--ping=true",
 		"--log.level=INFO",
@@ -457,13 +452,6 @@ func (m *Manager) buildTraefikSpec(endpoint, token string) swarm.ServiceSpec {
 			ContainerSpec: &swarm.ContainerSpec{
 				Image: m.cfg.TraefikImage,
 				Args:  args,
-				// F9 修正（2026-09-21）：多节点 provider 面走 VPC——endpoint
-				// 主机名 ctrl.<base> 经容器 /etc/hosts 钉到 advertise（VPC）
-				// 地址。URL 主机名不变（TLS SAN 校验对 ctrl.<base> 依然成立），
-				// 解析不出公网：动态配置含全平台 TLS 私钥（内联 keyFile），
-				// 公网 8423 零暴露（通道防护 = TLS + ingress token 双层，
-				// 网络层再加 VPC 收敛）。单节点（base_domain 空）无此条目。
-				Hosts: m.providerHosts(),
 				Healthcheck: &container.HealthConfig{
 					Test:        traefikHealthcheckArgs,
 					Interval:    10 * time.Second,
@@ -497,15 +485,19 @@ func (m *Manager) buildTraefikSpec(endpoint, token string) swarm.ServiceSpec {
 //     （设计 §2.4 次序②③）：挑战路由经动态配置可达 8422 应答器，HTTP-01
 //     得以完成；Traefik 拿到的动态配置此窗口内不含秘密载荷以外的证书段
 //     （平台证书尚未存在）；
-//   - base_domain 非空且平台证书就绪：https://ctrl.<base>:<config_tls_addr
-//     端口>/configs——各节点 Traefik 经公信 CA 校验直连 manager 的 TLS 配
-//     置面（D-MN-3；动态配置自此含内联证书私钥，明文通道退役）。
+//   - base_domain 非空且平台证书就绪：https://<advertise>:<config_tls_addr
+//     端口>/configs + tls.insecureSkipVerify（F9 修订二，2026-09-21 真机：
+//     Docker 29.8.1 的 swarm 任务不应用 ContainerSpec.Hosts，extra_hosts
+//     钉定通道不可靠；endpoint 直用 advertise【VPC】IP——公网 8423 零暴
+//     露【动态配置含全平台 TLS 私钥】；传输 TLS 加密 + ingress token 双
+//     保，服务器认证由 VPC 边界承担【IP 端点无法 SAN 校验】；内部 CA +
+//     tls.ca 挂 v0.2.x 硬化票）。
 //
 // 就绪判定 sticky：平台证书一经落盘持续存在（续期同路径换入），endpoint
 // 不回摆。
 func (m *Manager) providerEndpoint(advertise string) string {
 	if m.ConfigTLSEnabled() && m.platformCertOnDisk() {
-		return "https://" + net.JoinHostPort("ctrl."+m.cfg.BaseDomain, configTLSPort(m.cfg.ConfigTLSAddr))
+		return "https://" + net.JoinHostPort(advertise, configTLSPort(m.cfg.ConfigTLSAddr))
 	}
 	return "http://" + net.JoinHostPort(advertise, fmt.Sprint(m.cfgPort()))
 }

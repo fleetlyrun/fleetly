@@ -192,7 +192,7 @@ func TestPlatformCertDutyRetryThenEndpointSwitch(t *testing.T) {
 	}
 	// 终态③：provider endpoint 翻转（容忍期为 8422 明文——语义对照）。
 	awaitUntil(t, "provider endpoint switch to TLS face", 5*time.Second, func() bool {
-		return traefikEndpointArg(t, dc) == "https://ctrl.example.test:8423/configs"
+		return traefikEndpointArg(t, dc) == "https://127.0.0.1:8423/configs"
 	})
 	// 终态④：TLS 握手材料就绪（GetCertificate 出口形态）。
 	cert, err := m.PlatformTLSCertificate()
@@ -238,36 +238,46 @@ func TestPlatformCertDutyRetryThenEndpointSwitch(t *testing.T) {
 	}
 }
 
-// TestProviderHostsPinnedToAdvertise F9（2026-09-21 真机发现）：多节点形态
-// provider 主机名 ctrl.<base> 经容器 /etc/hosts 钉到 advertise 地址
-// （VPC）——endpoint URL 主机名不变（TLS SAN 校验成立），解析不出公网，
-// 公网 8423 零暴露；单节点（base_domain 空）无条目（endpoint 本就是 IP）。
-func TestProviderHostsPinnedToAdvertise(t *testing.T) {
-	// 多节点：spec 携带 ctrl.<base>:<advertise>。
+// TestProviderEndpointVPCIPForm F9 修订二（2026-09-21 真机）：多节点就绪后
+// endpoint = https://<advertise>:8423（VPC IP 直连，公网 8423 零暴露）+
+// tls.insecureSkipVerify 参数（IP 端点无 SAN 可校验；传输加密 + token 保
+// 留）；容器 spec 不携带 Hosts（Docker 29.8.1 swarm 任务不应用该字段，
+// extra_hosts 通道不可靠）。单节点：8422 明文 + 无 skip 参数差异断言由既有
+// 金样测试承担。
+func TestProviderEndpointVPCIPForm(t *testing.T) {
 	m, dc, _, _ := newPlatformTestManager(t, "example.test")
+	// 平台证书在盘 → endpoint 就绪形态。
+	certPEM, keyPEM := selfSignedTestCertMultiSAN(t, []string{"ctrl.example.test"})
+	pair, err := ParsePair(platformCertApp, []string{"ctrl.example.test"}, certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("parse pair: %v", err)
+	}
+	if err := m.certs.Save(pair); err != nil {
+		t.Fatalf("save pair: %v", err)
+	}
 	if err := m.EnsureTraefik(context.Background()); err != nil {
 		t.Fatalf("ensure traefik: %v", err)
 	}
 	dc.mu.Lock()
-	st, ok := dc.services[IngressServiceName]
+	st := dc.services[IngressServiceName]
 	dc.mu.Unlock()
-	if !ok {
+	if !st.Exists {
 		t.Fatal("ingress service not created")
 	}
-	want := []string{"ctrl.example.test:127.0.0.1"}
-	if len(st.Hosts) != 1 || st.Hosts[0] != want[0] {
-		t.Fatalf("provider hosts = %v, want %v (F9: VPC pinning)", st.Hosts, want)
+	if got := traefikEndpointArg(t, dc); got != "https://127.0.0.1:8423/configs" {
+		t.Fatalf("endpoint = %s, want https://127.0.0.1:8423/configs (F9: VPC IP form)", got)
 	}
-	// 单节点：无条目。
-	m2, dc2, _, _ := newPlatformTestManager(t, "")
-	if err := m2.EnsureTraefik(context.Background()); err != nil {
-		t.Fatalf("ensure traefik (single-node): %v", err)
+	foundSkip := false
+	for _, a := range st.Args {
+		if a == "--providers.http.tls.insecureSkipVerify=true" {
+			foundSkip = true
+		}
 	}
-	dc2.mu.Lock()
-	st2 := dc2.services[IngressServiceName]
-	dc2.mu.Unlock()
-	if len(st2.Hosts) != 0 {
-		t.Fatalf("single-node must not carry provider hosts, got %v", st2.Hosts)
+	if !foundSkip {
+		t.Fatal("F9: insecureSkipVerify arg missing (IP endpoint cannot SAN-verify)")
+	}
+	if len(st.Hosts) != 0 {
+		t.Fatalf("F9: spec must not rely on extra_hosts (unreliable on 29.8.1 swarm tasks), got %v", st.Hosts)
 	}
 }
 
