@@ -811,6 +811,65 @@ func TestViewCarriesInlinePEM(t *testing.T) {
 	}
 }
 
+// TestDomainlessPublishKeepsTLSegments F10（2026-09-21 真机发现）：无域名
+// 应用的发布（publish 全量换视图）不得把既有应用的 websecure 路由与
+// tls.certificates 段擦出视图——publish 统一走带证书重发布后，任何全量
+// 视图换入都保留盘上证书。回归形态：修复前 websecure 计数归零（全平台
+// TLS 消失到下次带证书重发布）。
+func TestDomainlessPublishKeepsTLSegments(t *testing.T) {
+	m, _, st := newTestManager(t)
+	ctx := context.Background()
+	// app A：带域名 + 证书（既有 TLS 面）。
+	appA, err := st.CreateApp(ctx, "", "shop")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	certPEM, keyPEM, _ := selfSignedTestCert(t, "shop.example.test")
+	pair, err := ParsePair("shop", []string{"shop.example.test"}, certPEM, keyPEM)
+	if err != nil {
+		t.Fatalf("parse pair: %v", err)
+	}
+	if err := m.certs.Save(pair); err != nil {
+		t.Fatalf("save pair: %v", err)
+	}
+	inA := PublishInput{AppID: appA.ID, AppName: "shop", Services: []ServiceRoutes{
+		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
+	}}
+	if err := m.PublishRoutes(ctx, inA); err != nil {
+		t.Fatalf("publish A: %v", err)
+	}
+	snapA, _ := m.vw.snapshot()
+	if snapA.TLS == nil || len(snapA.TLS.Certificates) != 1 {
+		t.Fatalf("precondition: A carries TLS segment, got %+v", snapA.TLS)
+	}
+	// app B：无域名（内部应用）发布——全量视图换入不得擦掉 A 的 TLS。
+	appB, err := st.CreateApp(ctx, "", "internal")
+	if err != nil {
+		t.Fatalf("create app B: %v", err)
+	}
+	inB := PublishInput{AppID: appB.ID, AppName: "internal", Services: []ServiceRoutes{
+		{Service: "svc", Port: "8080"},
+	}}
+	if err := m.PublishRoutes(ctx, inB); err != nil {
+		t.Fatalf("publish B (domainless): %v", err)
+	}
+	snapB, _ := m.vw.snapshot()
+	if snapB.TLS == nil || len(snapB.TLS.Certificates) != 1 {
+		t.Fatalf("F10: domainless publish wiped TLS segments: %+v", snapB.TLS)
+	}
+	hasWebsecure := false
+	for _, r := range snapB.HTTP.Routers {
+		for _, ep := range r.EntryPoints {
+			if ep == "websecure" {
+				hasWebsecure = true
+			}
+		}
+	}
+	if !hasWebsecure {
+		t.Fatalf("F10: domainless publish wiped websecure routers: %+v", snapB.HTTP.Routers)
+	}
+}
+
 // pemCertFingerprint 解析 PEM 首个 CERTIFICATE 块并返回 DER sha256（十六
 // 进制；指纹级断言出口）。
 func pemCertFingerprint(t *testing.T, pemBytes []byte) string {

@@ -283,24 +283,15 @@ func (m *Manager) withPlatformRoutes(routes []Route) []Route {
 	return append(routes, m.platformRegistryRoute())
 }
 
-// publish 换入全量视图（HTTP 路由形态）：从台账构建路由集 → 合成 →
-// Validate → 换入。校验不过（键缺失/悬空引用类坏形态）= 不换视图、不落
+// publish 换入全量视图：**统一带证书段**（F10 修复，2026-09-21 真机发现：
+// 无证书段的 publish 会把既有 websecure/内联证书整体擦出视图——无域名
+// 应用部署、签发竞态后的下一拍都会让全平台 TLS 消失到下次带证书重发布；
+// publishWithCerts 对无证书 app 本就自动降级 HTTP-only，全量视图无理由
+// 存在无证书形态）。校验不过（键缺失/悬空引用类坏形态）= 不换视图、不落
 // 库（Spike B 纪律）。空路由集经兜底路由恒过（H9 合法空态——撤销即真实
 // 下发空态，而非拒绝后残留旧路由）。
 func (m *Manager) publish(ctx context.Context) error {
-	routes, err := m.routesFromStore(ctx)
-	if err != nil {
-		return err
-	}
-	// 平台路由段随路由集进视图（快照在取数时重合成——路由集必须含
-	// registry 路由段，动态配置才会携带）。
-	full := m.withPlatformRoutes(routes)
-	cfg := Synthesize(full)
-	if err := Validate(cfg); err != nil {
-		return err
-	}
-	m.vw.setRoutes(full)
-	return nil
+	return m.publishWithCerts(ctx)
 }
 
 // PublishRoutes 实现 engine.RoutePublisher：域名台账对账 → Traefik 收敛
