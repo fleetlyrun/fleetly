@@ -459,8 +459,9 @@ if [ "$_http_ok" -eq 0 ]; then
     # Traefik 运行时路由视图（内部 API 走 traefik 入口 8080，仅容器内可达）。
     [ -n "$_TR_CTR" ] && nl "traefik-api-routers: $(docker exec "$_TR_CTR" wget -q -T 5 -O - http://127.0.0.1:8080/api/http/routers 2>&1 | head -c 900)"
     [ -n "$_TR_CTR" ] && nl "traefik-api-services: $(docker exec "$_TR_CTR" wget -q -T 5 -O - http://127.0.0.1:8080/api/http/services 2>&1 | head -c 500)"
-    # 钉 digest（T0-V2.3 供应链）：cert 卷内容检查容器镜像。
-    docker run --rm -v fleetly-ingress-certs:/c:ro alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc ls -la /c 2>/dev/null | sed 's/^/certvol: /' || true
+    # E1-2 后证书走 cert_dir 形态（卷+seed 已退役）——诊断直探控制面侧
+    # PEM 目录（dind 内数据根可探；目录缺失 = 入口未部署，非诊断错误）。
+    nl "certdir: $(ls -la /var/lib/fleetly/fleetly-certs 2>/dev/null | tail -n 8 | tr '\n' ' ')"
 fi
 
 # 4b. 证书签发就绪门（域名台账 cert_sha256 非空 = ACME 集中签发已完成）。

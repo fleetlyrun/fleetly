@@ -41,7 +41,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 		return nil, nil, err
 	}
 	nodeIdentity := NewNodeIdentity(app, store, dockerClient)
-	observer := NewObserver(app, store, dockerClient)
+	observer := NewObserver(app, appConfig, store, dockerClient, client)
 	janitor := NewJanitor(app, store, appConfig)
 	box, err := NewSecretsBox(app, appConfig)
 	if err != nil {

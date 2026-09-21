@@ -354,6 +354,35 @@ jobs:
         if: always()
         run: docker ps -aq --filter name=fleetly-install-test | xargs -r docker rm -f
 
+  multinode-rehearsal:
+    # E1-9 多节点演练的 dind 双节点形态（multi-node §4.2 三断言 dind 适配 +
+    # D-MN-1 auto-rotate 端到端：join→锚定→token 自动轮换→旧 token 拒绝）。
+    # 编排自足：e2e/multinode-rehearsal.sh（mgr+w1 双 dind 私网组网，镜像钉
+    # digest；zot/DNS/预算断言面在 dind 无输入，脚本内 SKIP 行标注归真 VPS
+    # 形态）。多节点 dind 在共享 runner 上的稳定性按交付 §5 风险跟踪（同
+    # v6-placement）：正常断言挂法（红即暴露，不用 continue-on-error 掩盖），
+    # 连续失败开 issue 而非重试掩盖。
+    name: multinode rehearsal (dual-dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run multinode rehearsal (dual dind)
+        run: sh e2e/multinode-rehearsal.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-rehearsal- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-rehearsal- | xargs -r docker rm -f
+          docker network rm fleetly-rehearsal-br || true
+
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:
     # Builder conformance（ObjectStore 部分记 N/A：组件 v0.1 未落地、无真实

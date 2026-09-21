@@ -306,7 +306,7 @@ func buildJoinGuide(baseDomain, addr, workerToken, workerIP, managerIP string) *
 			"Anchoring completes automatically: node.joined event with a non-empty platform_id",
 			"The node reports state=ready availability=active",
 			"The Traefik (fleetly-ingress) task is running on the node",
-			"The worker join token is rotated afterwards (join.token_rotate=auto; rotate manually with fleetly nodes rotate-token in manual mode)",
+			"Once anchoring completes, the worker join token rotates automatically (join.token_rotate=auto, the default) — the token you joined with stops working; in manual mode rotate it yourself with fleetly nodes rotate-token after all nodes have joined",
 		},
 	}
 	return g

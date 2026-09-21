@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strconv"
+	"sync/atomic"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -30,12 +32,45 @@ import (
 // node.removed（快照消失）、node.availability_changed（active↔drain/pause，
 // 载荷 old/new）。逐转移发事件、不做防抖（诚实：每拍转移都可见）——v0.2
 // 起解除「observer 不产生产品事件」的 v0.1 注记。
+//
+// auto-rotate 触发链（D-MN-1，WithTokenRotate 注入）：本拍出现新铸造节点
+// 且 join.token_rotate=auto 时，异步轮换 worker join token（审计
+// node.join_token_rotated；不阻塞观测拍、失败不重试、无新锚定不空转）。
 
 // ClusterAnchor 是集群锚定与节点事件 duty。
 type ClusterAnchor struct {
 	store  *Store
 	docker DockerClient
 	log    *slog.Logger
+	// D-MN-1 auto-rotate 触发链（回调注入，state 不依赖 substrate——轮换
+	// 端口由装配层注入，*substrate.Client 隐式实现）：
+	//   rotator 为 nil = 未接线（单节点/测试形态零行为）；
+	//   rotateMode 只认 "auto"（manual/未知值一律不触发——manual 是显式
+	//   opt-out，缺省安全侧；归一化在 runtime 装配层 JoinTokenRotate()）；
+	//   rotateInFlight 是在飞护栏：轮换还在跑时同拍/邻拍的再触发跳过
+	//   （两次并发 SwarmUpdate 抢版本令牌徒增冲突，护栏让旋转串行收敛）。
+	rotator        JoinTokenRotator
+	rotateMode     string
+	rotateInFlight atomic.Bool
+}
+
+// JoinTokenRotator 是 swarm join-token 轮换端口（D-MN-1 auto-rotate 触发链
+// 的注入面；*substrate.Client 隐式实现——端口在 state 定义、适配在
+// substrate，方向纪律同 DockerClient）。
+type JoinTokenRotator interface {
+	// SwarmRotateJoinToken 轮换指定角色（worker|manager）的 join token 并
+	// 返回新 token（rotate 后旧 token 立即失效）。
+	SwarmRotateJoinToken(ctx context.Context, role string) (string, error)
+}
+
+// WithTokenRotate 接线 auto-rotate 触发链（D-MN-1，链式装配）：mode 取
+// 配置 join.token_rotate 的归一值（auto|manual）；r 为轮换端口（nil =
+// 未接线）。manual 或未接线 = 关闭位——本 duty 的其余语义（收编/事件）
+// 不受影响。
+func (a *ClusterAnchor) WithTokenRotate(mode string, r JoinTokenRotator) *ClusterAnchor {
+	a.rotateMode = mode
+	a.rotator = r
+	return a
 }
 
 // NewClusterAnchor 构造锚定 duty。
@@ -44,12 +79,15 @@ func NewClusterAnchor(store *Store, d DockerClient, log *slog.Logger) *ClusterAn
 }
 
 // PostSync 是 Observer 的观测拍后处理入口（WithPostSync 注入）：锚定收编
-// + 快照差分事件。失败只日志告警、不推翻观测同步——锚定与事件均为幂等
-// 收敛语义，下一拍自动重试。
+// + 快照差分事件 + auto-rotate 触发。失败只日志告警、不推翻观测同步——
+// 锚定与事件均为幂等收敛语义，下一拍自动重试。
 func (a *ClusterAnchor) PostSync(ctx context.Context, prev []CachedNode, next []SubstrateNode) {
-	if _, err := a.Reconcile(ctx, prev, next); err != nil {
+	res, err := a.Reconcile(ctx, prev, next)
+	if err != nil {
 		a.log.Warn("cluster anchor reconcile failed (retries on next observation beat)", "error", err)
+		return
 	}
+	a.maybeRotateToken(ctx, res)
 }
 
 // ReconcileResult 是一拍收编与差分的账目（测试与运维面）。
@@ -91,6 +129,50 @@ func (a *ClusterAnchor) Reconcile(ctx context.Context, prev []CachedNode, next [
 
 	a.diffEvents(ctx, prev, next, &res)
 	return res, nil
+}
+
+// maybeRotateToken 是 D-MN-1 的 auto-rotate 触发链：本拍有新铸造节点
+// （Minted 非空——identity_created 审计发生）且 mode=auto 时，异步轮换
+// worker join token。语义纪律：
+//   - 不阻塞观测拍：轮换在独立 goroutine 执行，PostSync 立即返回；
+//   - 不重试风暴：失败只告警，不排队不重试——下一拍再有新锚定才会再次
+//     触发（无新锚定 = 不空转；泄露窗口收敛到「下一个节点加入」的粒度，
+//     与 D-MN-1 的分钟级目标一致）；在飞护栏挡住并发双轮换；
+//   - ctx 脱钩观测拍（拍 ctx 携带同步超时、随拍结束取消）：WithoutCancel
+//     保留 trace/log 值、剥离取消与 deadline——轮换寿命自持到完成。
+func (a *ClusterAnchor) maybeRotateToken(beatCtx context.Context, res ReconcileResult) {
+	if a.rotator == nil || a.rotateMode != "auto" || len(res.Minted) == 0 {
+		return
+	}
+	if !a.rotateInFlight.CompareAndSwap(false, true) {
+		a.log.Warn("join token rotate already in flight, skipping this trigger (the next anchored node re-arms it)")
+		return
+	}
+	ctx := context.WithoutCancel(beatCtx)
+	minted := len(res.Minted)
+	go func() {
+		defer a.rotateInFlight.Store(false)
+		if _, err := a.rotator.SwarmRotateJoinToken(ctx, "worker"); err != nil {
+			a.log.Warn("auto join-token rotate failed after new node anchoring (no retry; re-armed by the next anchored node)",
+				"error", err, "minted", minted)
+			return
+		}
+		// 审计动作 node.join_token_rotated（§5.3：rotate 记审计、不设事件
+		// ；actor=system 与人工路径 RotateJoinToken 的 actor=human 区分）。
+		// 审计失败不影响轮换事实（token 已换），只告警。
+		if err := a.store.InTx(ctx, func(tx *Tx) error {
+			return tx.WriteAudit(ctx, AuditEntry{
+				Actor:       "system",
+				Action:      "node.join_token_rotated",
+				Target:      "node:swarm",
+				Result:      "ok",
+				DiffSummary: DiffSummary("role", "worker", "trigger", "auto", "minted", strconv.Itoa(minted)),
+			})
+		}); err != nil {
+			a.log.Warn("auto join-token rotate audit write failed", "error", err)
+		}
+		a.log.Info("worker join token auto-rotated after new node anchoring (D-MN-1)", "minted", minted)
+	}()
 }
 
 // anchorNode 收编单节点（铸造 / 反建 / 冲突披露三态）。

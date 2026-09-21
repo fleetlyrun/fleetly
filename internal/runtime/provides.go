@@ -139,10 +139,14 @@ func NewNodeIdentity(app lynx.App, st *state.Store, dc state.DockerClient) *stat
 // NewObserver 构造节点观测缓存刷新器（30s 全量 resync + 事件驱动失效，
 // 底座不可达置 stale + 指数退避），并挂观测拍后处理 = 集群锚定 duty
 // （ClusterAnchor：worker 身份收编 + node.* 差分事件，multi-node §2.7
-// E1-6）。观测同步本体语义逐字不变；挂钩自吞错误、不推翻同步成功。
-func NewObserver(app lynx.App, st *state.Store, dc state.DockerClient) *state.Observer {
+// E1-6）+ auto-rotate 触发链（D-MN-1：mode 取 join.token_rotate 归一值
+// ——auto 缺省，manual 显式 opt-out；轮换端口 = substrate 客户端，state
+// 层不依赖 substrate 的方向纪律由端口注入维持）。观测同步本体语义逐字
+// 不变；挂钩自吞错误、不推翻同步成功。
+func NewObserver(app lynx.App, cfg *AppConfig, st *state.Store, dc state.DockerClient, sc *substrate.Client) *state.Observer {
 	ob := state.NewObserver(st, dc, app.Logger())
-	anchor := state.NewClusterAnchor(st, dc, app.Logger())
+	anchor := state.NewClusterAnchor(st, dc, app.Logger()).
+		WithTokenRotate(cfg.JoinTokenRotate(), sc)
 	return ob.WithPostSync(anchor.PostSync)
 }
 
