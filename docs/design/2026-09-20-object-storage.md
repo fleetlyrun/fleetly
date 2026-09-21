@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 说明 |
 |---|---|---|
-| **裁决轮完成（2026-09-21，用户三裁）**：D-S3-9 = 内网 + **可选公网子域 s3.\<base\>**（W3 实现开关）；D-CR-1 = robfig/cron/v3；D-S3-2 = 库内运行期设置 | 2026-09-21 | W3 = E3（本文）+ E5 Cron（细则已冻结于 [architecture §4.3](2026-09-17-architecture.md)，本文 §8 只补契约面与落点，不重开细则）；裁决输入：[v0.2 规划 §2 W3 行](../plan/2026-09-20-v0.2-plan.md)、V2-2（RustFS opt-in 用户直裁）、D4（S3 外部端点，奥卡姆复议后形态）、FZ-7（conformance 记 N/A v0.1，随本票落地）；zane-ops 对照不涉对象存储 |
+| **已实现+真机验证（2026-09-21，W3 收官）**：E3-1~E3-8 全落、E5 Cron 全落；staging 真机演练全过（[runbook §8](../runbooks/vps-dogfooding.md)），预算复测 rustfs 启用态 429MB<600MB；真机发现 W3-F1（restic init 幂等,已修 cdb76e9）/W3-F2（环境滤 UDP,跨节点 overlay 不可用,待用户放行）/W3-F3（收敛窗上传诚实红,改进票）。裁决记录：D-S3-9 = 内网 + 可选公网子域；D-CR-1 = robfig/cron/v3；D-S3-2 = 库内运行期设置 | 2026-09-21 | W3 = E3（本文）+ E5 Cron（细则已冻结于 [architecture §4.3](2026-09-17-architecture.md)，本文 §8 只补契约面与落点，不重开细则）；裁决输入：[v0.2 规划 §2 W3 行](../plan/2026-09-20-v0.2-plan.md)、V2-2（RustFS opt-in 用户直裁）、D4（S3 外部端点，奥卡姆复议后形态）、FZ-7（conformance 记 N/A v0.1，随本票落地）；zane-ops 对照不涉对象存储 |
 
 ## 1. 现状与问题
 

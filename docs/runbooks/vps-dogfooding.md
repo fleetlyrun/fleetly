@@ -109,3 +109,37 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 | F10 | **publish 无证书段形态会擦掉全平台 TLS**:无域名应用部署/签发竞态后下一拍,全量视图换入把既有 websecure+证书整体擦出(hello/demo 实测被擦) | **已修**(8c3a086:publish 统一带证书段;回归测试钉住) |
 | F11 | settled 应用的 drain 无 `placement.blocked/recovered` 事件(发射点仅在 releasing 窗)——部署窗内 drain 有事件(dind C3/C6 证),settled 后只有任务层 Pending | v0.2.x 跟进票:周期性绑定节点可用性守护(事件流诚实面补齐) |
 | 观察 | 残卷:node2 上存在无后缀 `statedata` 空卷(真卷带部署后缀)——卷命名/清理的巡检项 | 随 F11 票或孤儿卷清理指引核对 |
+
+## 8. W3 对象存储+Cron 实机演练(2026-09-21 实录)
+
+形态:manager 升级 main 构建(c0dddc5+bdd7665 前身,scp 二进制+console dist 替换重启);预拉钉版镜像(rustfs 1.0.0/restic 0.19.1,digest+tag 双记)。演练应用 w3rehearse2(web 有卷钉 manager + `fleetly.s3=true`;task `fleetly.cron: "* * * * *"`)。
+
+| 断言/能力 | 实录 | 结果 |
+|---|---|---|
+| rustfs 启用→duty 收敛 | `s3 set --mode rustfs` 后 20s 服务 1/1;`s3.rustfs_deployed` 事件 | ✅ |
+| 平台探针(rustfs 面) | `s3 test` 四步 init/backup/snapshots/forget 全绿(修 W3-F1 后二次探针亦绿) | ✅(修后) |
+| 备份上传轨 | manual 备份 `upload=ok`(restic 仓库读回校验);二次上传幂等(W3-F1b 修后);`backup.upload_failed`→`backup.upload_recovered` 事件链真机闭环(见 W3-F3) | ✅ |
+| 凭证注入+网络牵线 | web 容器 6 键 `S3_*` env 全注(endpoint/bucket/双键/path-style 值正确);`nslookup rustfs`→VIP 10.0.6.2;`wget`→HTTP 403(RustFS 应答匿名拒) | ✅ |
+| cron 到点触发 | 每分钟火,`cron_runs` succeeded 行成串;job 服务完成即删(零残留) | ✅ |
+| cron 日志入管线 | `logs history --service task` 连续 marker 行([task/out] 归属) | ✅ |
+| 手动触发 | `cron trigger` 同路径行 started→succeeded + 审计 | ✅ |
+| 公网子域开关 | 开:`s3.dev.fleetly.run` 443→403(TLS 真 LE,平台证书重签**四 SAN** 含 s3.dev);关:28s 路由摘除+证书重签回缩**三 SAN**+traefik 摘网(ID 形态断言) | ✅(真 LE 双向) |
+| 诚实标注 | `s3 status` 常驻「便捷层非灾备」文案+部署态行 | ✅ |
+| 禁用留卷 | `s3 set --mode unset`→服务移除+`fleetly-rustfs-data` 卷保留+`s3.rustfs_removed` 事件;此后备份 `upload=none`(合法停摆不红) | ✅ |
+| **预算复测(rustfs 启用态)** | docker 重启取干净基线:全栈 idle **≈429MB < 600MB** ✓——fleetlyd 64.4 + dockerd 129.0 + containerd 66.5 + traefik 21.0 + zot 53.4 + **rustfs 75.5** + buildkit 15.4(dockerd 重启前 churn 漂移至 298MB,属 job churn 累积非 rustfs 归因) | ✅ |
+
+### W3 真机发现(W3-F1~F3)
+
+| # | 发现 | 处置 |
+|---|---|---|
+| W3-F1 | restic init 不幂等的两处同族:第二次探针(rustfs.RunProbe init 步)与第二次上传(statebackup 惰性 init)撞「repository master key and config already initialized」——restic 0.19.1 第二种文案,本地 fake 只建模了 `config file already exists` 故首跑未暴露 | **已修**(cdb76e9:统一 initAlreadyInitialized 双文案豁免;认证类错误不豁免;三组回归钉住;真机二次全绿) |
+| W3-F2 | **跨节点 overlay 数据面整体不通(环境级)**:node2 上跨节点服务 DNS NXDOMAIN+VIP 不可达;两机 overlay netns 的 vxlan FDB 均无远端 VTEP;定向探测 **UDP 4789 VPC/公网两路均零到达(node2 eth1 tcpdump 0 包),同路径 TCP 7946/22 全通**——VPC/云防火墙滤 UDP。W2 断言未暴露因 ingress=宿主端口、provider=VPC TCP,从未压 overlay 数据面 | **环境侧待办**:VPC 放行节点对 UDP 4789/7946(用户操作);W3 演练改钉 manager 完成(代码面网络挂接已被容器网络 attachment 证明);跨节点 S3/服务互访在放行前不可用,诚实记录 |
+| W3-F3 | docker 重启收敛窗内 daily 备份上传诚实红(rustfs 任务未就绪 DNS no such host)→下一份手动备份 ok + `backup.upload_recovered`——失败可见/恢复闭环符合设计 | 设计内行为;改进票:上传失败当日短退避重试(v0.2.x 候选) |
+
+### W3 演练杂记(shell/CLI 坑,复用要点)
+
+- 本仓 CLI 旗标必须在位置参数前(`logs history --service task <app>`,反序解析报错/空输出)。
+- `docker ps` 双 label 值过滤在本 daemon 返回空(单滤正常)——容器定位用单滤+name 兜底。
+- 无卷应用 `fleetly.placement.node` 不钉(设计冻结语义,W_PLACEMENT_STATELESS_PIN 只警告);演练钉 manager 需给应用命名卷。
+- 平台证书开关往返 = 两次 LE 生产 order(配额注意);演练已用 2 枚。
+
