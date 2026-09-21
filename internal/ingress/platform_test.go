@@ -238,6 +238,39 @@ func TestPlatformCertDutyRetryThenEndpointSwitch(t *testing.T) {
 	}
 }
 
+// TestProviderHostsPinnedToAdvertise F9（2026-09-21 真机发现）：多节点形态
+// provider 主机名 ctrl.<base> 经容器 /etc/hosts 钉到 advertise 地址
+// （VPC）——endpoint URL 主机名不变（TLS SAN 校验成立），解析不出公网，
+// 公网 8423 零暴露；单节点（base_domain 空）无条目（endpoint 本就是 IP）。
+func TestProviderHostsPinnedToAdvertise(t *testing.T) {
+	// 多节点：spec 携带 ctrl.<base>:<advertise>。
+	m, dc, _, _ := newPlatformTestManager(t, "example.test")
+	if err := m.EnsureTraefik(context.Background()); err != nil {
+		t.Fatalf("ensure traefik: %v", err)
+	}
+	dc.mu.Lock()
+	st, ok := dc.services[IngressServiceName]
+	dc.mu.Unlock()
+	if !ok {
+		t.Fatal("ingress service not created")
+	}
+	want := []string{"ctrl.example.test:127.0.0.1"}
+	if len(st.Hosts) != 1 || st.Hosts[0] != want[0] {
+		t.Fatalf("provider hosts = %v, want %v (F9: VPC pinning)", st.Hosts, want)
+	}
+	// 单节点：无条目。
+	m2, dc2, _, _ := newPlatformTestManager(t, "")
+	if err := m2.EnsureTraefik(context.Background()); err != nil {
+		t.Fatalf("ensure traefik (single-node): %v", err)
+	}
+	dc2.mu.Lock()
+	st2 := dc2.services[IngressServiceName]
+	dc2.mu.Unlock()
+	if len(st2.Hosts) != 0 {
+		t.Fatalf("single-node must not carry provider hosts, got %v", st2.Hosts)
+	}
+}
+
 // TestPlatformCertDutyInertWhenBaseDomainEmpty base_domain 为空 = duty 惰性：
 // 零签发、零 endpoint 变化（单节点 v0.1 形态逐字等价——验收 2 的空侧）。
 func TestPlatformCertDutyInertWhenBaseDomainEmpty(t *testing.T) {

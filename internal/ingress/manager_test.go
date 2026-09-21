@@ -90,6 +90,7 @@ func (f *fakeDocker) ServiceCreate(_ context.Context, spec swarm.ServiceSpec) er
 		Version: 1,
 		Image:   spec.TaskTemplate.ContainerSpec.Image,
 		Args:    append([]string{}, spec.TaskTemplate.ContainerSpec.Args...),
+		Hosts:   append([]string{}, spec.TaskTemplate.ContainerSpec.Hosts...),
 		Ports: func() []swarm.PortConfig {
 			// registry 服务不发布宿主端口（EndpointSpec 缺省）——同构底座语义。
 			if spec.EndpointSpec == nil {
@@ -136,6 +137,7 @@ func (f *fakeDocker) ServiceUpdate(_ context.Context, name string, _ uint64, spe
 	if cs := spec.TaskTemplate.ContainerSpec; cs != nil {
 		cur.Image = cs.Image
 		cur.Args = append([]string{}, cs.Args...)
+		cur.Hosts = append([]string{}, cs.Hosts...)
 		if cs.Healthcheck != nil {
 			cur.HealthTest = append([]string{}, cs.Healthcheck.Test...)
 		}

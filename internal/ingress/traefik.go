@@ -90,6 +90,9 @@ type ingressServiceState struct {
 	// global，本字段不参与其比对）。
 	Constraints []string
 	Replicas    uint64
+	// Hosts 是容器 /etc/hosts 注入（F9 修正，2026-09-21：provider 面走
+	// VPC——ctrl.<base> 钉到 advertise 地址，公网 8423 零暴露）。
+	Hosts []string
 }
 
 // realDockerClient 是 dockerClient 的 moby 实现。
@@ -140,6 +143,7 @@ func (c *realDockerClient) ServiceInspect(ctx context.Context, name string) (ing
 	if cs := svc.Spec.TaskTemplate.ContainerSpec; cs != nil {
 		out.Image = cs.Image
 		out.Args = append([]string{}, cs.Args...)
+		out.Hosts = append([]string{}, cs.Hosts...)
 		if cs.Healthcheck != nil {
 			out.HealthTest = append([]string{}, cs.Healthcheck.Test...)
 		}
@@ -411,6 +415,16 @@ func (m *Manager) retireLegacyCertDistribution(ctx context.Context) error {
 	return nil
 }
 
+// providerHosts 返回 provider endpoint 主机名的 /etc/hosts 钉定条目
+// （F9：多节点形态 ctrl.<base> → advertise 地址；单节点/advertise 未知为
+// 空——单节点 endpoint 本就是 IP 直连，无需钉定）。
+func (m *Manager) providerHosts() []string {
+	if m.cfg.BaseDomain == "" || m.advertiseIP == "" {
+		return nil
+	}
+	return []string{"ctrl." + m.cfg.BaseDomain + ":" + m.advertiseIP}
+}
+
 // buildTraefikSpec 构造入口服务的期望 swarm spec（host 80/443 + HTTP
 // provider 静态配置 + ping 健康检查；E1-2 起无证书挂载——证书经动态配置
 // 内联下发，见 dynamic.go TLSCertificate）。
@@ -443,6 +457,13 @@ func (m *Manager) buildTraefikSpec(endpoint, token string) swarm.ServiceSpec {
 			ContainerSpec: &swarm.ContainerSpec{
 				Image: m.cfg.TraefikImage,
 				Args:  args,
+				// F9 修正（2026-09-21）：多节点 provider 面走 VPC——endpoint
+				// 主机名 ctrl.<base> 经容器 /etc/hosts 钉到 advertise（VPC）
+				// 地址。URL 主机名不变（TLS SAN 校验对 ctrl.<base> 依然成立），
+				// 解析不出公网：动态配置含全平台 TLS 私钥（内联 keyFile），
+				// 公网 8423 零暴露（通道防护 = TLS + ingress token 双层，
+				// 网络层再加 VPC 收敛）。单节点（base_domain 空）无此条目。
+				Hosts: m.providerHosts(),
 				Healthcheck: &container.HealthConfig{
 					Test:        traefikHealthcheckArgs,
 					Interval:    10 * time.Second,
@@ -517,6 +538,9 @@ func traefikSpecEqual(cur ingressServiceState, desired swarm.ServiceSpec) bool {
 		return false
 	}
 	if !sameStrings(cur.Args, cs.Args) {
+		return false
+	}
+	if !sameStrings(cur.Hosts, cs.Hosts) {
 		return false
 	}
 	if !sameStrings(cur.HealthTest, cs.Healthcheck.Test) {
