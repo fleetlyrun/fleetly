@@ -35,7 +35,7 @@ func (f *fakeRotator) RotateCredentials(_ context.Context, _ string) ([]string, 
 	return f.apps, f.err
 }
 
-// newRotateTestEnv 起带 fake rotator 的 DatabaseService bufconn 环境。
+// newRotateTestEnv 起带 fake rotator/ops 的 DatabaseService bufconn 环境。
 func newRotateTestEnv(t *testing.T, rotator CredentialRotator) (*state.Store, *secrets.Box, serverv1.DatabaseServiceClient, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -50,10 +50,37 @@ func newRotateTestEnv(t *testing.T, rotator CredentialRotator) (*state.Store, *s
 	}
 	auth := NewAuthenticator(st)
 	srv := newAuthServer(auth)
-	serverv1.RegisterDatabaseServiceServer(srv, NewDatabaseService(st, box, nil, rotator))
+	serverv1.RegisterDatabaseServiceServer(srv, NewDatabaseService(st, box, nil, rotator, &fakeOps{}))
 	conn := serveBufconn(t, srv)
 	token := seedTokenPlain(t, st, "admin")
 	return st, box, serverv1.NewDatabaseServiceClient(conn), token
+}
+
+// fakeOps 是 BackupOrchestrator 端口的测试替身（S5 编排本体在 internal/
+// database 单测；本面只验映射与受理语义——calls 记录受理转发）。
+type fakeOps struct {
+	err        error
+	upgradeOld string
+	upgradeNew string
+	calls      []opsCall
+}
+
+// opsCall 是一次编排端口的受理转发记录（op + 目标实例名）。
+type opsCall struct{ op, name string }
+
+func (f *fakeOps) TriggerBackup(_ context.Context, name string) error {
+	f.calls = append(f.calls, opsCall{"backup", name})
+	return f.err
+}
+
+func (f *fakeOps) RestoreBackup(_ context.Context, name, _ string) error {
+	f.calls = append(f.calls, opsCall{"restore", name})
+	return f.err
+}
+
+func (f *fakeOps) Upgrade(_ context.Context, name string) (string, string, error) {
+	f.calls = append(f.calls, opsCall{"upgrade", name})
+	return f.upgradeOld, f.upgradeNew, f.err
 }
 
 // mustReady 推进实例到 ready（模拟 duty 健康门）。
@@ -210,7 +237,7 @@ func TestSecretSurfacesScopeAdminOnly(t *testing.T) {
 	}
 	auth := NewAuthenticator(st)
 	srv := newAuthServer(auth)
-	dbs := NewDatabaseService(st, box, nil, &fakeRotator{})
+	dbs := NewDatabaseService(st, box, nil, &fakeRotator{}, &fakeOps{})
 	serverv1.RegisterDatabaseServiceServer(srv, dbs)
 	serverv1.RegisterSecretsServiceServer(srv, NewSecretsService(st, box))
 	conn := serveBufconn(t, srv)

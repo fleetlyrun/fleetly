@@ -50,16 +50,12 @@ var eventExemptions = map[string]string{
 	// duty，internal/database/converge.go）+ db.suspended/db.resumed（受理，
 	// internal/api/databases.go）+ db.delete_started（删除守卫通过后，同上）。
 	// db.credentials_rotated 的豁免已在 S4 移除：发出来源 = 轮换编排成功尾
-	// （internal/database/rotate.go RotateCredentials）。操作事件其余 8 仍
-	// 豁免：升级/备份恢复适配器随 S5 接线。注册表行已注明出处。
-	"db.upgrade_available": "reserved: emitted by the E4 template digest watch (stage S5)",
-	"db.upgrade_started":   "reserved: emitted by the E4 upgrade orchestration (stage S5)",
-	"db.upgrade_finished":  "reserved: emitted by the E4 upgrade orchestration (stage S5)",
-	"db.upgrade_failed":    "reserved: emitted by the E4 upgrade rollback path (stage S5)",
-	"db.backup_succeeded":  "reserved: emitted by the E4 backup adapter (stage S5)",
-	"db.backup_failed":     "reserved: emitted by the E4 backup adapter (stage S5)",
-	"db.restore_completed": "reserved: emitted by the E4 restore path (stage S5)",
-	"db.restore_failed":    "reserved: emitted by the E4 restore path (stage S5)",
+	//（internal/database/rotate.go RotateCredentials）。S5 已接线操作事件
+	// 其余 8 的豁免移除：db.upgrade_available（可升级公告 duty，
+	// internal/database/upgrade.go）+ db.upgrade_started/finished/failed
+	//（升级编排，同文件）+ db.backup_succeeded/db.backup_failed（备份编排，
+	// internal/database/backup.go）+ db.restore_completed/db.restore_failed
+	//（恢复编排，internal/database/restore.go）。注册表行已注明出处。
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除

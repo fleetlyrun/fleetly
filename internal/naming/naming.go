@@ -199,6 +199,39 @@ func IsDbServiceName(name string) bool {
 	return strings.HasPrefix(name, dbNamePrefix)
 }
 
+// dbJobNamePrefix 是库备份/恢复/校验一次性 job 服务名的固定前缀（E4 S5，
+// cron 前缀纪律同款）：完整名 `fleetly-dbjob-<instance>-<purpose>-<ulid8>`。
+// **独立于库服务前缀 fleetly-db-**——一次性 job 服务的瞬时性必须可按名
+// 识别：cron 孤儿清扫（internal/cron sweepOrphanJobs 只认 fleetly-cron-）、
+// 引擎对账（按 app label 列举，job 服务不带 app label）、库收敛拍（只
+// inspect 实例自己的服务名）与日志管线（CronJobServiceStates 只认
+// fleetly-cron-）都按前缀/label 边界忽略它——前缀不独立会被某一方的
+// 清扫误伤（在途备份 job 被删 = 备份静默丢失）。ulid8 使同实例重叠触发
+// 的命名天然不冲突（重叠受理由操作互斥哨兵拒绝，此处只兜底）。
+const dbJobNamePrefix = namePrefix + "dbjob-"
+
+// DBJobName 返回库一次性 job 的 Swarm 服务名
+// `fleetly-dbjob-<instance>-<purpose>-<ulid8>`（purpose = backup/verify/
+// restore/prune 语义段；ulid8 = run ULID 前 8 位）。
+func DBJobName(instance, purpose, runID string) (string, error) {
+	if err := validateComponent("instance", instance); err != nil {
+		return "", err
+	}
+	if err := validateComponent("purpose", purpose); err != nil {
+		return "", err
+	}
+	if len(runID) < 8 {
+		return "", fmt.Errorf("naming: run id %q shorter than 8 chars", runID)
+	}
+	return dbJobNamePrefix + instance + "-" + purpose + "-" + runID[:8], nil
+}
+
+// IsDBJobName 报告 Swarm 服务名是否为库一次性 job 服务（清扫/采集面的
+// 瞬时性识别谓词，CronJobName 同款纪律）。
+func IsDBJobName(name string) bool {
+	return strings.HasPrefix(name, dbJobNamePrefix)
+}
+
 // instanceID8 返回资源平台 ID 的前 8 位（库卷命名尾缀；AppID8 的泛化形
 // ——ULID 前 8 位已含高精度时间戳成分）。
 func instanceID8(id string) (string, error) {

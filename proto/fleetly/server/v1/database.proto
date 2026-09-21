@@ -111,6 +111,44 @@ service DatabaseService {
   rpc RevealDatabaseCredentials(RevealDatabaseCredentialsRequest) returns (RevealDatabaseCredentialsResponse) {
     option (google.api.http) = { get: "/v1/databases/{name}/credentials" };
   }
+  // TriggerDatabaseBackup 手动备份受理（E4 S5，managed-databases §2.6）：
+  // 异步受理（job 分钟级——响应即 accepted，结论经台账与 db.backup_* 事件
+  // 披露；在途备份无台账行）。合法前置态 ready/degraded（§2.3 操作表）；
+  // per 实例操作互斥（备份/恢复/升级并发第二笔 → 409）。s3.mode=unset →
+  // E_S3_NOT_CONFIGURED（409——诚实拒绝，与注入前哨同码同语义）。
+  rpc TriggerDatabaseBackup(TriggerDatabaseBackupRequest) returns (TriggerDatabaseBackupResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases/{name}/backups"
+      body: "*"
+    };
+  }
+  // ListDatabaseBackups 备份台账列表（created_at 降序——恢复目标选择与
+  // Console 备份列表的数据源；kind/snapshot/size/verify_status/error 全量
+  // 事实面）。
+  rpc ListDatabaseBackups(ListDatabaseBackupsRequest) returns (ListDatabaseBackupsResponse) {
+    option (google.api.http) = { get: "/v1/databases/{name}/backups" };
+  }
+  // RestoreDatabaseBackup 原地恢复受理（破坏性两段式 confirm + 快照归属
+  // 守卫：只重放本实例台账内的快照）。停库重放：实例 scale 0 → job 挂卷
+  // rw 重放 → 重部署（异步——结论经 db.restore_* 事件披露；恢复中断 =
+  // 实例保持停止 + E_DB_RESTORE_FAILED 事件的 critical 口径，§2.6）。
+  rpc RestoreDatabaseBackup(RestoreDatabaseBackupRequest) returns (RestoreDatabaseBackupResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases/{name}/restore"
+      body: "*"
+    };
+  }
+  // UpgradeDatabase 受控升级受理（E4 S5，managed-databases §2.2）：①
+  // pre_upgrade 备份门（verify 通过才继续——失败实例不动）②digest 换新
+  // 受控重建 ③健康门 ④失败 = digest 归位 + db.upgrade_failed + 状态落
+  // degraded。异步受理（备份门与健康门是分钟级）；paused = 仅换 spec 不
+  // 重启（resume 时以新版本重建）。合法前置态 ready/degraded/paused。
+  rpc UpgradeDatabase(UpgradeDatabaseRequest) returns (UpgradeDatabaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases/{name}/upgrade"
+      body: "*"
+    };
+  }
 }
 
 message CreateDatabaseRequest {
@@ -272,6 +310,9 @@ message DatabaseView {
   google.protobuf.Timestamp credential_updated_at = 13;
   // 最近一次收敛失败原因（failed/deleting 前的现场快照；空 = 无失败现场）。
   string last_error = 14;
+  // 可升级位（E4 S5，§2.2 升级语义）：instance.image_digest ≠ 模板当前钉
+  // 定镜像 = true（升级逐实例 opt-in——既有实例不自动变）。
+  bool upgrade_available = 15;
 }
 
 message DatabaseVolumeView {
@@ -295,4 +336,83 @@ message DatabaseConnectionView {
   string url = 5;
   // 密码指纹（sha256 前 8 hex——只判「是不是那个值」，材料零出现）。
   string password_fingerprint = 6;
+}
+
+// ── E4 S5：备份/恢复/升级面（managed-databases §5.1 契约加法）────────────
+
+message TriggerDatabaseBackupRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // 备份类别（缺省 manual；API 面只受理 manual——daily/pre_upgrade 是平台
+  // 调度与升级门的内部类别）。
+  string kind = 2;
+}
+
+// 异步受理响应：job 分钟级——结论经台账（ListDatabaseBackups）与
+// db.backup_succeeded / db.backup_failed 事件披露；在途备份无台账行。
+message TriggerDatabaseBackupResponse {
+  string name = 1;
+  string kind = 2;
+  // 恒为 "accepted"。
+  string status = 3;
+}
+
+message ListDatabaseBackupsRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // 行数上限（缺省 20）。
+  int32 limit = 2 [(buf.validate.field).int32 = { gte: 0, lte: 1000 }];
+}
+
+message ListDatabaseBackupsResponse {
+  repeated DatabaseBackupView backups = 1;
+}
+
+// DatabaseBackupView 是一行备份台账投影（§2.6 台账裁决的全量事实面）。
+message DatabaseBackupView {
+  string id = 1;
+  // 备份类别（daily|manual|pre_upgrade）。
+  string kind = 2;
+  // restic repo 内 snapshot 标识（db/<instance>/ 命名空间寻址，非文件路径）。
+  string snapshot = 3;
+  // 导出流字节量（0 = 未记录）。
+  int64 size_bytes = 4;
+  // 回读校验状态（unverified|verified|failed——「备份假成功」零容忍）。
+  string verify_status = 5;
+  // 失败/校验失败原因摘要（单行；凭据材料零出现）。
+  string error = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message RestoreDatabaseBackupRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // 恢复目标（restic snapshot 标识——必须在本实例台账内，跨实例误指 422）。
+  string snapshot = 2 [(buf.validate.field).string.min_len = 1];
+  // 破坏性确认 = 实例名原样回传（mismatch → 400——原地重放覆盖数据卷上
+  // 的现库，与 DeleteDatabase 同型的数据安全面）。
+  string confirm = 3;
+}
+
+// 异步受理响应：停库重放分钟级——结论经 db.restore_completed /
+// db.restore_failed 事件与实例 last_error 披露；恢复中断 = 实例保持停止
+// （人工 runbook 随事件/错误文本）。
+message RestoreDatabaseBackupResponse {
+  string name = 1;
+  string snapshot = 2;
+  // 恒为 "accepted"。
+  string status = 3;
+}
+
+message UpgradeDatabaseRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // 破坏性确认 = 实例名原样回传（mismatch → 400——受控重建有停机窗口，
+  // 且失败路径触发 digest 归位重建）。
+  string confirm = 2;
+}
+
+// 异步受理响应：备份门与健康门是分钟级——结论经 db.upgrade_started/
+// finished/failed 事件披露。view = 受理时刻投影（upgrade_available 尚为
+// true；digest 切换随编排推进）。
+message UpgradeDatabaseResponse {
+  DatabaseView database = 1;
+  // 恒为 "accepted"。
+  string status = 2;
 }

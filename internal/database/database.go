@@ -92,6 +92,26 @@ type Manager struct {
 	// 身丢失只损失一次超时判定的起点，重启后重记，不产生错误转移）。
 	provisioningSince map[string]time.Time
 
+	// ── S5 操作面（备份/恢复/升级编排）──
+	// opsMu 串行化 per 实例操作互斥哨兵的占用/释放（API 受理 goroutine 与
+	// 收敛拍并发——与 mu 分立：mu 串行化收敛拍，opsMu 串行化哨兵位）。
+	opsMu sync.Mutex
+	// inflightOps 是 per 实例在途操作哨兵（instanceID → backup/restore/
+	// upgrade——并发第二笔 409 的判据 + 收敛拍跳过实例的判据）。
+	inflightOps map[string]string
+	// opsWG 计数在途操作 goroutine（Stop 排水——操作链写 store，关停竞态
+	// 与 statebackup inflight 同款治理）。
+	opsWG sync.WaitGroup
+	// dailyAttempt 记实例最近一次调度备份尝试时刻（进程内——失败不被日
+	// 窗反复重放；重启重记至多多试一次）。
+	dailyAttempt map[string]time.Time
+	// upgradeAdvertised 记实例最近公告的目标 digest（进程内去重——重启重
+	// 公告一次，诚实冗余优于静默）。
+	upgradeAdvertised map[string]string
+	// upgradeWatch 是升级健康门观察窗（平台缺省 upgradeWatchWindow；单测
+	// 注入短窗——async 编排的失败路径不能等真实预算）。
+	upgradeWatch time.Duration
+
 	// now 是时钟出口（单测注入超时路径）。
 	now func() time.Time
 
@@ -122,6 +142,10 @@ func NewManagerWithDocker(cfg Config, store *state.Store, box *secrets.Box, sele
 		docker:            dc,
 		log:               log,
 		provisioningSince: map[string]time.Time{},
+		inflightOps:       map[string]string{},
+		dailyAttempt:      map[string]time.Time{},
+		upgradeAdvertised: map[string]string{},
+		upgradeWatch:      upgradeWatchWindow,
 		now:               time.Now,
 		stop:              make(chan struct{}),
 		kick:              make(chan struct{}, 1),
@@ -139,13 +163,25 @@ func (m *Manager) Start(ctx context.Context) error {
 	return nil
 }
 
-// Stop 停止收敛循环并等待退出（在途一拍收口后返回；收敛幂等——控制面
-// 重启自然续跑）。
+// Stop 停止收敛循环并等待退出（在途一拍收口后返回）；随后带预算排空在途
+// 操作（备份/恢复/升级 goroutine——各自 ctx 有界，预算只防失控卡死；超
+// 预算残留由进程退出如实暴露，store 关闭次序归装配层）。
 func (m *Manager) Stop(_ context.Context) error {
 	m.stopOnce.Do(func() { close(m.stop) })
 	<-m.done
+	drained := make(chan struct{})
+	go func() { m.opsWG.Wait(); close(drained) }()
+	select {
+	case <-drained:
+	case <-time.After(opsStopDrainBudget):
+		m.log.Warn("database: in-flight operations did not drain within budget (process exit will surface the residue)")
+	}
 	return nil
 }
+
+// opsStopDrainBudget 是 Stop 排空在途操作的等待预算（所有操作链 ctx 自带
+// 预算——该值只兜底失控阻塞，不覆盖正常时长）。
+const opsStopDrainBudget = 30 * time.Second
 
 // Kick 请求立即一拍（非阻塞——已有待处理 kick 时合并；API 生命周期受理
 // 后调用，收敛时延不等下一拍）。
@@ -197,6 +233,10 @@ func (m *Manager) beat(ctx context.Context) {
 	for i := range rows {
 		m.convergeInstance(ctx, &rows[i])
 	}
+	// S5 拍尾 duty：备份调度（§5.4 per 实例计划）与可升级公告（操作事件
+	// 面——读台账 + 事件追加，不触底座收敛）。
+	m.dutyBackupScheduling(ctx, rows)
+	m.dutyUpgradeAdvertisement(ctx, rows)
 	m.gcProvisioningTimers(rows)
 }
 
@@ -209,6 +249,12 @@ func (m *Manager) convergeInstance(ctx context.Context, inst *state.DatabaseInst
 				"instance", inst.Name, "panic", fmt.Sprint(r))
 		}
 	}()
+	// 操作互斥：备份/恢复/升级在途的实例本拍让位（恢复的 scale-0 与升级
+	// 的重建期，收敛器不得以副本水位/健康观察干扰在途编排——操作链自己
+	// 维护期望形态，收口后下一拍恢复常规收敛）。
+	if m.opBusy(inst.ID) {
+		return
+	}
 	switch inst.State {
 	case state.DatabaseProvisioning:
 		m.convergeProvisioning(ctx, inst)
@@ -284,7 +330,11 @@ func (m *Manager) decryptCredential(inst *state.DatabaseInstance) (string, error
 }
 
 // renderService 渲染实例的期望投影（副本数按态覆写：paused=0、其余=1；
-// 模板渲染保持纯——暂停语义不入 dbtemplate）。
+// 模板渲染保持纯——暂停语义不入 dbtemplate）。镜像取实例行 digest 列而非
+// 模板当前值——这是**升级载体**（§2.2）：升级 = 实例 digest 换新 → 渲染投
+// 影随行 → desired-hash 差异驱动受控重建；模板镜像只在创建受理时作为初值
+// 落列。digest 列空 = 编码错误（创建期强制非空），回落模板值保持渲染可
+// 用（不影响既有哈希判据的正确性——列非空恒成立）。
 func renderService(inst *state.DatabaseInstance, password string, replicas uint64) (engine.ServiceSpec, error) {
 	spec, err := dbtemplate.Render(dbtemplate.RenderInput{
 		Instance:   inst.Name,
@@ -298,6 +348,9 @@ func renderService(inst *state.DatabaseInstance, password string, replicas uint6
 	})
 	if err != nil {
 		return engine.ServiceSpec{}, err
+	}
+	if inst.ImageDigest != "" {
+		spec.Image = inst.ImageDigest
 	}
 	spec.Replicas = replicas
 	return spec, nil

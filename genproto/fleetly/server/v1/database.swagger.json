@@ -154,6 +154,82 @@
         ]
       }
     },
+    "/v1/databases/{name}/backups": {
+      "get": {
+        "summary": "ListDatabaseBackups 备份台账列表（created_at 降序——恢复目标选择与\nConsole 备份列表的数据源；kind/snapshot/size/verify_status/error 全量\n事实面）。",
+        "operationId": "DatabaseService_ListDatabaseBackups",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDatabaseBackupsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "行数上限（缺省 20）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      },
+      "post": {
+        "summary": "TriggerDatabaseBackup 手动备份受理（E4 S5，managed-databases §2.6）：\n异步受理（job 分钟级——响应即 accepted，结论经台账与 db.backup_* 事件\n披露；在途备份无台账行）。合法前置态 ready/degraded（§2.3 操作表）；\nper 实例操作互斥（备份/恢复/升级并发第二笔 → 409）。s3.mode=unset →\nE_S3_NOT_CONFIGURED（409——诚实拒绝，与注入前哨同码同语义）。",
+        "operationId": "DatabaseService_TriggerDatabaseBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TriggerDatabaseBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabaseServiceTriggerDatabaseBackupBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    },
     "/v1/databases/{name}/credentials": {
       "get": {
         "summary": "RevealDatabaseCredentials 连接信息显式展开（admin scope；§2.5「Console\n库详情页展示连接信息，密码默认脱敏、显式展开」的 API 面——含密码明文\n与完整 URL；审计 db.reveal 承载敏感访问留痕，不产生事件）。",
@@ -178,6 +254,45 @@
             "in": "path",
             "required": true,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    },
+    "/v1/databases/{name}/restore": {
+      "post": {
+        "summary": "RestoreDatabaseBackup 原地恢复受理（破坏性两段式 confirm + 快照归属\n守卫：只重放本实例台账内的快照）。停库重放：实例 scale 0 → job 挂卷\nrw 重放 → 重部署（异步——结论经 db.restore_* 事件披露；恢复中断 =\n实例保持停止 + E_DB_RESTORE_FAILED 事件的 critical 口径，§2.6）。",
+        "operationId": "DatabaseService_RestoreDatabaseBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RestoreDatabaseBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabaseServiceRestoreDatabaseBackupBody"
+            }
           }
         ],
         "tags": [
@@ -379,9 +494,61 @@
           "DatabaseService"
         ]
       }
+    },
+    "/v1/databases/{name}/upgrade": {
+      "post": {
+        "summary": "UpgradeDatabase 受控升级受理（E4 S5，managed-databases §2.2）：①\npre_upgrade 备份门（verify 通过才继续——失败实例不动）②digest 换新\n受控重建 ③健康门 ④失败 = digest 归位 + db.upgrade_failed + 状态落\ndegraded。异步受理（备份门与健康门是分钟级）；paused = 仅换 spec 不\n重启（resume 时以新版本重建）。合法前置态 ready/degraded/paused。",
+        "operationId": "DatabaseService_UpgradeDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpgradeDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabaseServiceUpgradeDatabaseBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
     }
   },
   "definitions": {
+    "DatabaseServiceRestoreDatabaseBackupBody": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "type": "string",
+          "title": "恢复目标（restic snapshot 标识——必须在本实例台账内，跨实例误指 422）。"
+        },
+        "confirm": {
+          "type": "string",
+          "title": "破坏性确认 = 实例名原样回传（mismatch → 400——原地重放覆盖数据卷上\n的现库，与 DeleteDatabase 同型的数据安全面）。"
+        }
+      }
+    },
     "DatabaseServiceResumeDatabaseBody": {
       "type": "object"
     },
@@ -400,6 +567,15 @@
     "DatabaseServiceSuspendDatabaseBody": {
       "type": "object"
     },
+    "DatabaseServiceTriggerDatabaseBackupBody": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "type": "string",
+          "title": "备份类别（缺省 manual；API 面只受理 manual——daily/pre_upgrade 是平台\n调度与升级门的内部类别）。"
+        }
+      }
+    },
     "DatabaseServiceUpdateDatabaseSettingsBody": {
       "type": "object",
       "properties": {
@@ -410,6 +586,15 @@
         "backup_plan": {
           "$ref": "#/definitions/v1DatabaseBackupPlan",
           "title": "备份计划（备份调度执行体随 S5 票据；本面先行受理与展示）。"
+        }
+      }
+    },
+    "DatabaseServiceUpgradeDatabaseBody": {
+      "type": "object",
+      "properties": {
+        "confirm": {
+          "type": "string",
+          "title": "破坏性确认 = 实例名原样回传（mismatch → 400——受控重建有停机窗口，\n且失败路径触发 digest 归位重建）。"
         }
       }
     },
@@ -459,6 +644,40 @@
         }
       },
       "title": "DatabaseBackupPlan 是备份计划（§5.4 配置键 databases.backup_* 的 per\n实例覆盖；0 值字段 = 平台缺省）。"
+    },
+    "v1DatabaseBackupView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "title": "备份类别（daily|manual|pre_upgrade）。"
+        },
+        "snapshot": {
+          "type": "string",
+          "title": "restic repo 内 snapshot 标识（db/\u003cinstance\u003e/ 命名空间寻址，非文件路径）。"
+        },
+        "size_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "导出流字节量（0 = 未记录）。"
+        },
+        "verify_status": {
+          "type": "string",
+          "title": "回读校验状态（unverified|verified|failed——「备份假成功」零容忍）。"
+        },
+        "error": {
+          "type": "string",
+          "title": "失败/校验失败原因摘要（单行；凭据材料零出现）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "DatabaseBackupView 是一行备份台账投影（§2.6 台账裁决的全量事实面）。"
     },
     "v1DatabaseConnectionView": {
       "type": "object",
@@ -556,6 +775,10 @@
         "last_error": {
           "type": "string",
           "title": "最近一次收敛失败原因（failed/deleting 前的现场快照；空 = 无失败现场）。"
+        },
+        "upgrade_available": {
+          "type": "boolean",
+          "title": "可升级位（E4 S5，§2.2 升级语义）：instance.image_digest ≠ 模板当前钉\n定镜像 = true（升级逐实例 opt-in——既有实例不自动变）。"
         }
       },
       "title": "DatabaseView 是库实例投影（状态 = 生命周期态；连接信息脱敏——密码明文\n零离开存储，url 已掩码、password_fingerprint 供「是不是那个 secret」比\n对；显式 reveal 面随 S4/S6）。last_error 是最近一次收敛失败原因（failed\n诊断面；'' = 无失败现场）。"
@@ -631,6 +854,18 @@
         }
       }
     },
+    "v1ListDatabaseBackupsResponse": {
+      "type": "object",
+      "properties": {
+        "backups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DatabaseBackupView"
+          }
+        }
+      }
+    },
     "v1ListDatabasesResponse": {
       "type": "object",
       "properties": {
@@ -642,6 +877,22 @@
           }
         }
       }
+    },
+    "v1RestoreDatabaseBackupResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "snapshot": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "恒为 \"accepted\"。"
+        }
+      },
+      "title": "异步受理响应：停库重放分钟级——结论经 db.restore_completed /\ndb.restore_failed 事件与实例 last_error 披露；恢复中断 = 实例保持停止\n（人工 runbook 随事件/错误文本）。"
     },
     "v1ResumeDatabaseResponse": {
       "type": "object",
@@ -716,6 +967,22 @@
         }
       }
     },
+    "v1TriggerDatabaseBackupResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "恒为 \"accepted\"。"
+        }
+      },
+      "title": "异步受理响应：job 分钟级——结论经台账（ListDatabaseBackups）与\ndb.backup_succeeded / db.backup_failed 事件披露；在途备份无台账行。"
+    },
     "v1UpdateDatabaseSettingsResponse": {
       "type": "object",
       "properties": {
@@ -723,6 +990,19 @@
           "$ref": "#/definitions/v1DatabaseView"
         }
       }
+    },
+    "v1UpgradeDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1DatabaseView"
+        },
+        "status": {
+          "type": "string",
+          "title": "恒为 \"accepted\"。"
+        }
+      },
+      "title": "异步受理响应：备份门与健康门是分钟级——结论经 db.upgrade_started/\nfinished/failed 事件披露。view = 受理时刻投影（upgrade_available 尚为\ntrue；digest 切换随编排推进）。"
     }
   }
 }

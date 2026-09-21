@@ -76,6 +76,49 @@ func TestDbServiceNamePredicate(t *testing.T) {
 	}
 }
 
+// TestDbJobNameAndPredicate DBJobName / IsDBJobName（S5 一次性 job 前缀纪
+// 律）：独立 fleetly-dbjob- 前缀族（**不**落在 fleetly-db- 服务族内——
+// cron 孤儿清扫/引擎对账/收敛拍/日志管线按前缀与 label 边界豁免瞬时 job，
+// 前缀不独立会被误伤）；ulid8 尾缀使重叠触发命名天然不冲突。
+func TestDbJobNameAndPredicate(t *testing.T) {
+	name, err := DBJobName("pg-prod", "backup", "01JABCDEFGH")
+	if err != nil {
+		t.Fatalf("DBJobName: %v", err)
+	}
+	if name != "fleetly-dbjob-pg-prod-backup-01JABCDE" {
+		t.Errorf("DBJobName = %q, want the dbjob prefix family form", name)
+	}
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{"db job", name, true},
+		{"verify job", "fleetly-dbjob-pg-prod-verify-01JABCDE", true},
+		{"db service (must NOT match — different family)", "fleetly-db-pg-prod-postgres", false},
+		{"cron job", "fleetly-cron-my-api-web-01JABCDE", false},
+		{"prefix inside name", "x-fleetly-dbjob-a", false},
+		{"empty", "", false},
+	}
+	for _, tc := range tests {
+		if got := IsDBJobName(tc.in); got != tc.want {
+			t.Errorf("IsDBJobName(%q) = %v, want %v", tc.in, got, tc.want)
+		}
+	}
+	for _, tc := range []struct {
+		name string
+		fn   func() (string, error)
+	}{
+		{"empty instance", func() (string, error) { return DBJobName("", "backup", "01JABCDEFGH") }},
+		{"empty purpose", func() (string, error) { return DBJobName("pg-prod", "", "01JABCDEFGH") }},
+		{"short run id", func() (string, error) { return DBJobName("pg-prod", "backup", "01JA") }},
+	} {
+		if _, err := tc.fn(); err == nil {
+			t.Errorf("%s: expected error", tc.name)
+		}
+	}
+}
+
 // TestDbNameValidation 库族命名的非法成分拒绝（复用 validateComponent
 // 词表：空串、越界字符、分隔层级注入、短 ID、非法 hash8）。
 func TestDbNameValidation(t *testing.T) {

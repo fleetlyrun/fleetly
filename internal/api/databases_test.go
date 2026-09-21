@@ -37,7 +37,7 @@ func newDatabaseTestEnv(t *testing.T) (*state.Store, *secrets.Box, serverv1.Data
 	}
 	auth := NewAuthenticator(st)
 	srv := newAuthServer(auth)
-	serverv1.RegisterDatabaseServiceServer(srv, NewDatabaseService(st, box, nil, nil))
+	serverv1.RegisterDatabaseServiceServer(srv, NewDatabaseService(st, box, nil, nil, nil))
 	conn := serveBufconn(t, srv)
 	token := seedTokenPlain(t, st, "admin")
 	return st, box, serverv1.NewDatabaseServiceClient(conn), token

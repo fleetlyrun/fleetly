@@ -37,8 +37,9 @@ const (
 	BackupPreUpgrade BackupKind = "pre_upgrade"
 )
 
-// BackupInput 是一次逻辑备份的输入（字段集随 S5 备份票据落地收窄/扩充——
-// 接口先钉、实现后定，避免反向锁死 E3 装配面）。
+// BackupInput 是一次逻辑备份的输入（S5 收窄定型：编排层解析全部事实与
+// 材料——repo 目标、放置绑定、解密后的凭据明文——适配器只拼装 job 载荷；
+// 凭据明文字段只存活于内存 → job env，零落日志/事件/错误）。
 type BackupInput struct {
 	// Instance/TemplateID 是目标实例名与模板 ID（引擎工具集与端口由模板定）。
 	Instance   string
@@ -53,18 +54,47 @@ type BackupInput struct {
 	// Repository 是 restic 仓库目标（E3 基础设施：外部 S3 端点或 opt-in
 	// RustFS）；repo 内命名空间 db/<instance>/ 由适配器拼装。
 	Repository string
+	// Password 是实例引擎凭据明文（pg_dump PGPASSWORD / redis REDISCLI_AUTH
+	// ——只进 job env）。
+	Password string
+	// ResticPassword 是 repo 口令明文（与控制面上传轨同一把——只进 job env）。
+	ResticPassword string
+	// S3AccessKeyID/S3SecretKey/S3Region 是解密后的端点凭证（只进 job env）。
+	S3AccessKeyID string
+	S3SecretKey   string
+	S3Region      string
+	// S3PathStyle 是 path-style 寻址位（true → restic 扩展选项
+	// `-o s3.bucket-lookup=path`——statebackup 上传轨同口径）。
+	S3PathStyle bool
+	// AttachRustfsNetwork 表示 job 需挂接 fleetly-rustfs-net（rustfs 模式
+	// 的托管端点只在该网可解析）。
+	AttachRustfsNetwork bool
 }
 
 // BackupOutcome 是一次备份的产出（落 db_backups 台账：restic_snapshot 寻址
-// 非文件路径）。
+// 非文件路径）。S5 扩充：快照的执行上下文随行——Verify 的回读在**同一**
+// repo/节点/网络重放（校验是备份的影子作业，材料不二次解析）。
 type BackupOutcome struct {
 	// SnapshotID 是 restic repo 内 snapshot 标识。
 	SnapshotID string
 	// SizeBytes 是导出流字节量。
 	SizeBytes int64
+	// ── Verify 回读上下文（备份时已裁决的事实）──
+	Instance            string
+	TemplateID          string
+	BindNodeID          string
+	Repository          string
+	ResticPassword      string
+	S3AccessKeyID       string
+	S3SecretKey         string
+	S3Region            string
+	S3PathStyle         bool
+	AttachRustfsNetwork bool
 }
 
-// RestoreInput 是一次原地恢复的输入（confirm 破坏性确认在 API 层，S2/S4）。
+// RestoreInput 是一次原地恢复的输入（confirm 破坏性确认在 API 层，S2/S4；
+// S5 收窄定型：VolumeTarget 是数据卷挂载点（模板 VolumeMountPath——恢复
+// job 挂卷 rw 重放），材料字段语义同 BackupInput）。
 type RestoreInput struct {
 	Instance   string
 	TemplateID string
@@ -73,6 +103,16 @@ type RestoreInput struct {
 	Repository string
 	// SnapshotID 是恢复目标（restic snapshot 标识）。
 	SnapshotID string
+	// VolumeTarget 是数据卷在 job 容器内的挂载点。
+	VolumeTarget string
+	// ResticPassword 是 repo 口令明文（只进 job env）。
+	ResticPassword string
+	// S3AccessKeyID/S3SecretKey/S3Region 是解密后的端点凭证（只进 job env）。
+	S3AccessKeyID string
+	S3SecretKey   string
+	S3Region      string
+	S3PathStyle         bool
+	AttachRustfsNetwork bool
 }
 
 // RotateInput 是一次凭据热轮换的输入（§2.5：PG = 一次性 job 执行 ALTER

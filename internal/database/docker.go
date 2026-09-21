@@ -19,9 +19,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
+	"time"
 
 	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	mobyclient "github.com/moby/moby/client"
@@ -118,7 +122,66 @@ type dockerPort interface {
 	// S4）：create（入库共享网络）→ start → wait(next-exit) → remove。返回
 	// 退出码；env/cmd 的凭据材料只进创建载荷，绝不进日志/错误文本。
 	ContainerRun(ctx context.Context, in ContainerRunInput) (int, error)
+	// JobRun 运行一次性 Swarm job 并等待其完成（S5 备份/恢复/校验执行体，
+	// §2.6「执行体」行：replicated-job TotalCompletions=1、restart-policy
+	// none、放置约束钉实例绑定节点——cron 一次性 job 同款语义）。完成判定
+	// 以任务终态为准（complete=成功；failed/rejected/shutdown=失败），终态
+	// 任务的 stdout/stderr 有界采集（restic --json 的结构化输出来源；命令
+	// 词表保证凭据零输出），随后删除 job 服务（best-effort，失败不掩盖主
+	// 结果——残留由 IsDBJobName 前缀可识别，人工可清）。ctx 取消/超预算 =
+	// 失败返回（job 服务同拍删除）。
+	JobRun(ctx context.Context, in JobRunInput) (JobRunOutcome, error)
 }
+
+// JobMount 是一次性 job 的卷挂载（restore 的 rw 数据卷挂载面）。
+type JobMount struct {
+	// VolumeName 是 docker 卷名。
+	VolumeName string
+	// Target 是容器内挂载点。
+	Target string
+	// ReadOnly 是只读挂载位（restore 必须 rw=false——重放写数据卷）。
+	ReadOnly bool
+}
+
+// JobRunInput 是一次性 Swarm job 的运行参数（adapters 的命令拼装产物；
+// 凭据材料只在 Env——dockerPort 实现零日志纪律与 ContainerRun 同款）。
+type JobRunInput struct {
+	// Name 是 job 服务名（fleetly-dbjob-*——naming.DBJobName 产物，清扫
+	// 各方按前缀豁免的识别面）。
+	Name string
+	// Image 是钉定镜像引用（DefaultDatabaseToolsImage）。
+	Image string
+	// Cmd 是容器命令（["sh","-c",script] 形态）。
+	Cmd []string
+	// Env 是 KEY=VALUE 环境集（RESTIC_*/AWS_*/PGPASSWORD/HOME）。
+	Env []string
+	// Networks 是挂接的 overlay 网络名（实例共享网络 + rustfs 模式的
+	// fleetly-rustfs-net）。
+	Networks []string
+	// Mounts 是卷挂载（restore 挂数据卷 rw；backup 不挂卷——网络导出）。
+	Mounts []JobMount
+	// Constraints 是放置约束（["node.id == <绑定节点>"]——远端 local 卷
+	// 不可经 manager 读的既有硬约束，备份/恢复 job 同钉）。
+	Constraints []string
+	// Labels 是服务 label（managed + fleetly.db 归属）。
+	Labels map[string]string
+}
+
+// JobRunOutcome 是一次性 job 的终态产出（任务侧结论 + 有界输出采集）。
+type JobRunOutcome struct {
+	// State 是任务终态（complete / failed）。
+	State string
+	// Err 是任务失败原因（任务 Err 字段逐字；complete 时为空）。
+	Err string
+	// Stdout 是 stdout+stderr 的有界采集文本（restic --json 解析面；命令
+	// 词表保证无凭据——pg_dump 走管道不进日志、restic 进度只含路径）。
+	Stdout string
+	// ExitCode 是任务容器退出码（-1 = 未知——任务被拒绝/底座错误无退出码）。
+	ExitCode int
+}
+
+// Success 报告任务是否以 complete 终态成功收场。
+func (o JobRunOutcome) Success() bool { return o.State == "complete" }
 
 // ContainerRunInput 是一次性容器的运行参数（轮换 job 的最小面：库共享
 // 网络内以服务名可达实例；镜像 = 实例模板钉定镜像——工具随引擎镜像）。
@@ -397,4 +460,154 @@ func (c *realDockerClient) removeContainer(ctx context.Context, id string) error
 		return nil
 	}
 	return err
+}
+
+// jobPollInterval 是 job 任务终态的轮询节奏（replicated-job 无 wait 原语
+// ——cron 用台账拍等价物；这里 1s 轮询 = 秒级完成感知，远低于任一 job 的
+// 执行时长量级）。
+const jobPollInterval = time.Second
+
+// jobLogCap 是任务输出的采集上限（restic --json 的 summary 在最后一行，
+// 状态消息可多行——1 MiB 有界防失控；超出只损失头部进度行，不损失结论）。
+const jobLogCap = 1 << 20
+
+// JobRun 一次性 Swarm job 执行体（端口契约见 dockerPort.JobRun）：建服务
+//（replicated-job TotalCompletions=1 + restart none + 放置约束 + 卷挂载）
+// → 轮询任务终态 → 有界采集终态任务日志 → 删服务。凭据材料零落日志：
+// 本函数不打印 spec/env，采集输出由命令词表保证（见 JobRunOutcome.Stdout）。
+func (c *realDockerClient) JobRun(ctx context.Context, in JobRunInput) (JobRunOutcome, error) {
+	spec := swarm.ServiceSpec{
+		Annotations: swarm.Annotations{Name: in.Name, Labels: in.Labels},
+		TaskTemplate: swarm.TaskSpec{
+			ContainerSpec: &swarm.ContainerSpec{
+				Image:  in.Image,
+				// 本 API 代的 ContainerSpec 拆分 Command（可执行）与 Args
+				//（参数）——["sh","-c",script] 形态按首元素/余量切分；镜像
+				// ENTRYPOINT（dbtools = 官方 postgres 入口脚本）对非 postgres
+				// 首参 exec "$@" 透传，root 身份执行（恢复脚本的降权在脚本
+				// 内 gosu/su-exec 探测——见 restoreJobScript 注）。
+				Command: in.Cmd[:1],
+				Args:    append([]string(nil), in.Cmd[1:]...),
+				Env:     in.Env,
+				Labels:  map[string]string{state.LabelManaged: state.ManagedLabelValue},
+			},
+			// 失败即 failed 终态、不重试（cron 一次性 job 同口径——备份的
+			// 重试语义归编排层：诚实红 + 下一计划窗重试，盲目重启会放大
+			// 半程产物）。
+			RestartPolicy: &swarm.RestartPolicy{Condition: swarm.RestartPolicyConditionNone},
+		},
+		// 一次性 replicated-job（substrate 的 Job 翻译同款：TotalCompletions=1
+		// / MaxConcurrent=1）。
+		Mode: swarm.ServiceMode{
+			ReplicatedJob: &swarm.ReplicatedJob{
+				MaxConcurrent:    ptrOne(),
+				TotalCompletions: ptrOne(),
+			},
+		},
+	}
+	for _, m := range in.Mounts {
+		spec.TaskTemplate.ContainerSpec.Mounts = append(spec.TaskTemplate.ContainerSpec.Mounts, mount.Mount{
+			Type:     mount.TypeVolume,
+			Source:   m.VolumeName,
+			Target:   m.Target,
+			ReadOnly: m.ReadOnly,
+		})
+	}
+	for _, n := range in.Networks {
+		spec.TaskTemplate.Networks = append(spec.TaskTemplate.Networks,
+			swarm.NetworkAttachmentConfig{Target: n})
+	}
+	if len(in.Constraints) > 0 {
+		spec.TaskTemplate.Placement = &swarm.Placement{Constraints: in.Constraints}
+	}
+	if _, err := c.cli.ServiceCreate(ctx, mobyclient.ServiceCreateOptions{Spec: spec}); err != nil {
+		return JobRunOutcome{}, fmt.Errorf("database: job service create %s: %w", in.Name, err)
+	}
+	outcome := c.awaitJob(ctx, in.Name)
+	// 服务删除 best-effort（终态已取得——清场失败只留 IsDBJobName 可识别
+	// 残留，不掩盖主结果）。
+	if _, err := c.cli.ServiceRemove(ctx, in.Name, mobyclient.ServiceRemoveOptions{}); err != nil && !errdefs.IsNotFound(err) {
+		if outcome.Err == "" && outcome.State == "complete" {
+			outcome.Err = fmt.Sprintf("job service cleanup failed: %v", err)
+		}
+	}
+	return outcome, nil
+}
+
+// awaitJob 轮询服务任务至终态并采集输出（complete=成功；failed/rejected/
+// shutdown=失败——shutdown 是重启策略 none 下的异常下线，诚实判败）。
+func (c *realDockerClient) awaitJob(ctx context.Context, service string) JobRunOutcome {
+	ticker := time.NewTicker(jobPollInterval)
+	defer ticker.Stop()
+	for {
+		res, err := c.cli.TaskList(ctx, mobyclient.TaskListOptions{
+			Filters: mobyclient.Filters{}.Add("service", service),
+		})
+		if err == nil {
+			for _, t := range res.Items {
+				switch t.Status.State {
+				case swarm.TaskStateComplete:
+					return c.collectJobOutcome(ctx, t, "complete", "")
+				case swarm.TaskStateFailed, swarm.TaskStateRejected, swarm.TaskStateShutdown:
+					reason := strings.TrimSpace(t.Status.Err)
+					if reason == "" {
+						reason = "task state " + string(t.Status.State)
+					}
+					return c.collectJobOutcome(ctx, t, "failed", singleLine(reason))
+				}
+			}
+		}
+		// 底座读失败/任务未终态：等下一轮；ctx 超预算在此退出（job 服务
+		// 删除由调用方收口）。
+		select {
+		case <-ctx.Done():
+			return JobRunOutcome{State: "failed", Err: singleLine("job budget exceeded (" + ctx.Err().Error() + ")"), ExitCode: -1}
+		case <-ticker.C:
+		}
+	}
+}
+
+// collectJobOutcome 采集终态任务的输出（stdout+stderr，有界）并归一结论。
+func (c *realDockerClient) collectJobOutcome(ctx context.Context, t swarm.Task, state, jobErr string) JobRunOutcome {
+	out := JobRunOutcome{State: state, Err: jobErr, ExitCode: -1}
+	if cs := t.Status.ContainerStatus; cs != nil {
+		out.ExitCode = int(cs.ExitCode)
+	}
+	if t.ID != "" {
+		res, err := c.cli.TaskLogs(ctx, t.ID, mobyclient.TaskLogsOptions{ShowStdout: true, ShowStderr: true})
+		if err == nil {
+			raw, _ := io.ReadAll(io.LimitReader(res, jobLogCap))
+			_ = res.Close()
+			out.Stdout = stripDockerLogHeaders(raw)
+		}
+	}
+	return out
+}
+
+// stripDockerLogHeaders 剥离 docker 多路复用流的 8 字节帧头（stdout/stderr
+// 流交混时的 raw 形态——JSON 行解析对帧头零容忍，逐帧重拼）。
+func stripDockerLogHeaders(raw []byte) string {
+	var b strings.Builder
+	for i := 0; i+8 <= len(raw); {
+		stream := raw[i]
+		n := int(raw[i+4])<<24 | int(raw[i+5])<<16 | int(raw[i+6])<<8 | int(raw[i+7])
+		i += 8
+		if n < 0 || i+n > len(raw) {
+			break // 非多路复用形态（已是裸文本）——原样返回剩余
+		}
+		if stream == 1 || stream == 2 {
+			b.Write(raw[i : i+n])
+		}
+		i += n
+	}
+	if b.Len() == 0 && len(raw) > 0 {
+		return string(raw) // 无帧头 = 裸文本流（TTY 形态）
+	}
+	return b.String()
+}
+
+// ptrOne 返回 1 的指针（replicated-job 计数字面量——Go 无常量指针）。
+func ptrOne() *uint64 {
+	one := uint64(1)
+	return &one
 }

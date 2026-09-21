@@ -29,6 +29,10 @@ const (
 	DatabaseService_UpdateDatabaseSettings_FullMethodName    = "/fleetly.server.v1.DatabaseService/UpdateDatabaseSettings"
 	DatabaseService_RotateDatabaseCredentials_FullMethodName = "/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials"
 	DatabaseService_RevealDatabaseCredentials_FullMethodName = "/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials"
+	DatabaseService_TriggerDatabaseBackup_FullMethodName     = "/fleetly.server.v1.DatabaseService/TriggerDatabaseBackup"
+	DatabaseService_ListDatabaseBackups_FullMethodName       = "/fleetly.server.v1.DatabaseService/ListDatabaseBackups"
+	DatabaseService_RestoreDatabaseBackup_FullMethodName     = "/fleetly.server.v1.DatabaseService/RestoreDatabaseBackup"
+	DatabaseService_UpgradeDatabase_FullMethodName           = "/fleetly.server.v1.DatabaseService/UpgradeDatabase"
 )
 
 // DatabaseServiceClient is the client API for DatabaseService service.
@@ -87,6 +91,27 @@ type DatabaseServiceClient interface {
 	// 库详情页展示连接信息，密码默认脱敏、显式展开」的 API 面——含密码明文
 	// 与完整 URL；审计 db.reveal 承载敏感访问留痕，不产生事件）。
 	RevealDatabaseCredentials(ctx context.Context, in *RevealDatabaseCredentialsRequest, opts ...grpc.CallOption) (*RevealDatabaseCredentialsResponse, error)
+	// TriggerDatabaseBackup 手动备份受理（E4 S5，managed-databases §2.6）：
+	// 异步受理（job 分钟级——响应即 accepted，结论经台账与 db.backup_* 事件
+	// 披露；在途备份无台账行）。合法前置态 ready/degraded（§2.3 操作表）；
+	// per 实例操作互斥（备份/恢复/升级并发第二笔 → 409）。s3.mode=unset →
+	// E_S3_NOT_CONFIGURED（409——诚实拒绝，与注入前哨同码同语义）。
+	TriggerDatabaseBackup(ctx context.Context, in *TriggerDatabaseBackupRequest, opts ...grpc.CallOption) (*TriggerDatabaseBackupResponse, error)
+	// ListDatabaseBackups 备份台账列表（created_at 降序——恢复目标选择与
+	// Console 备份列表的数据源；kind/snapshot/size/verify_status/error 全量
+	// 事实面）。
+	ListDatabaseBackups(ctx context.Context, in *ListDatabaseBackupsRequest, opts ...grpc.CallOption) (*ListDatabaseBackupsResponse, error)
+	// RestoreDatabaseBackup 原地恢复受理（破坏性两段式 confirm + 快照归属
+	// 守卫：只重放本实例台账内的快照）。停库重放：实例 scale 0 → job 挂卷
+	// rw 重放 → 重部署（异步——结论经 db.restore_* 事件披露；恢复中断 =
+	// 实例保持停止 + E_DB_RESTORE_FAILED 事件的 critical 口径，§2.6）。
+	RestoreDatabaseBackup(ctx context.Context, in *RestoreDatabaseBackupRequest, opts ...grpc.CallOption) (*RestoreDatabaseBackupResponse, error)
+	// UpgradeDatabase 受控升级受理（E4 S5，managed-databases §2.2）：①
+	// pre_upgrade 备份门（verify 通过才继续——失败实例不动）②digest 换新
+	// 受控重建 ③健康门 ④失败 = digest 归位 + db.upgrade_failed + 状态落
+	// degraded。异步受理（备份门与健康门是分钟级）；paused = 仅换 spec 不
+	// 重启（resume 时以新版本重建）。合法前置态 ready/degraded/paused。
+	UpgradeDatabase(ctx context.Context, in *UpgradeDatabaseRequest, opts ...grpc.CallOption) (*UpgradeDatabaseResponse, error)
 }
 
 type databaseServiceClient struct {
@@ -197,6 +222,46 @@ func (c *databaseServiceClient) RevealDatabaseCredentials(ctx context.Context, i
 	return out, nil
 }
 
+func (c *databaseServiceClient) TriggerDatabaseBackup(ctx context.Context, in *TriggerDatabaseBackupRequest, opts ...grpc.CallOption) (*TriggerDatabaseBackupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TriggerDatabaseBackupResponse)
+	err := c.cc.Invoke(ctx, DatabaseService_TriggerDatabaseBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databaseServiceClient) ListDatabaseBackups(ctx context.Context, in *ListDatabaseBackupsRequest, opts ...grpc.CallOption) (*ListDatabaseBackupsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDatabaseBackupsResponse)
+	err := c.cc.Invoke(ctx, DatabaseService_ListDatabaseBackups_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databaseServiceClient) RestoreDatabaseBackup(ctx context.Context, in *RestoreDatabaseBackupRequest, opts ...grpc.CallOption) (*RestoreDatabaseBackupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RestoreDatabaseBackupResponse)
+	err := c.cc.Invoke(ctx, DatabaseService_RestoreDatabaseBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databaseServiceClient) UpgradeDatabase(ctx context.Context, in *UpgradeDatabaseRequest, opts ...grpc.CallOption) (*UpgradeDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpgradeDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabaseService_UpgradeDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DatabaseServiceServer is the server API for DatabaseService service.
 // All implementations must embed UnimplementedDatabaseServiceServer
 // for forward compatibility.
@@ -253,6 +318,27 @@ type DatabaseServiceServer interface {
 	// 库详情页展示连接信息，密码默认脱敏、显式展开」的 API 面——含密码明文
 	// 与完整 URL；审计 db.reveal 承载敏感访问留痕，不产生事件）。
 	RevealDatabaseCredentials(context.Context, *RevealDatabaseCredentialsRequest) (*RevealDatabaseCredentialsResponse, error)
+	// TriggerDatabaseBackup 手动备份受理（E4 S5，managed-databases §2.6）：
+	// 异步受理（job 分钟级——响应即 accepted，结论经台账与 db.backup_* 事件
+	// 披露；在途备份无台账行）。合法前置态 ready/degraded（§2.3 操作表）；
+	// per 实例操作互斥（备份/恢复/升级并发第二笔 → 409）。s3.mode=unset →
+	// E_S3_NOT_CONFIGURED（409——诚实拒绝，与注入前哨同码同语义）。
+	TriggerDatabaseBackup(context.Context, *TriggerDatabaseBackupRequest) (*TriggerDatabaseBackupResponse, error)
+	// ListDatabaseBackups 备份台账列表（created_at 降序——恢复目标选择与
+	// Console 备份列表的数据源；kind/snapshot/size/verify_status/error 全量
+	// 事实面）。
+	ListDatabaseBackups(context.Context, *ListDatabaseBackupsRequest) (*ListDatabaseBackupsResponse, error)
+	// RestoreDatabaseBackup 原地恢复受理（破坏性两段式 confirm + 快照归属
+	// 守卫：只重放本实例台账内的快照）。停库重放：实例 scale 0 → job 挂卷
+	// rw 重放 → 重部署（异步——结论经 db.restore_* 事件披露；恢复中断 =
+	// 实例保持停止 + E_DB_RESTORE_FAILED 事件的 critical 口径，§2.6）。
+	RestoreDatabaseBackup(context.Context, *RestoreDatabaseBackupRequest) (*RestoreDatabaseBackupResponse, error)
+	// UpgradeDatabase 受控升级受理（E4 S5，managed-databases §2.2）：①
+	// pre_upgrade 备份门（verify 通过才继续——失败实例不动）②digest 换新
+	// 受控重建 ③健康门 ④失败 = digest 归位 + db.upgrade_failed + 状态落
+	// degraded。异步受理（备份门与健康门是分钟级）；paused = 仅换 spec 不
+	// 重启（resume 时以新版本重建）。合法前置态 ready/degraded/paused。
+	UpgradeDatabase(context.Context, *UpgradeDatabaseRequest) (*UpgradeDatabaseResponse, error)
 	mustEmbedUnimplementedDatabaseServiceServer()
 }
 
@@ -292,6 +378,18 @@ func (UnimplementedDatabaseServiceServer) RotateDatabaseCredentials(context.Cont
 }
 func (UnimplementedDatabaseServiceServer) RevealDatabaseCredentials(context.Context, *RevealDatabaseCredentialsRequest) (*RevealDatabaseCredentialsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RevealDatabaseCredentials not implemented")
+}
+func (UnimplementedDatabaseServiceServer) TriggerDatabaseBackup(context.Context, *TriggerDatabaseBackupRequest) (*TriggerDatabaseBackupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TriggerDatabaseBackup not implemented")
+}
+func (UnimplementedDatabaseServiceServer) ListDatabaseBackups(context.Context, *ListDatabaseBackupsRequest) (*ListDatabaseBackupsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDatabaseBackups not implemented")
+}
+func (UnimplementedDatabaseServiceServer) RestoreDatabaseBackup(context.Context, *RestoreDatabaseBackupRequest) (*RestoreDatabaseBackupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RestoreDatabaseBackup not implemented")
+}
+func (UnimplementedDatabaseServiceServer) UpgradeDatabase(context.Context, *UpgradeDatabaseRequest) (*UpgradeDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpgradeDatabase not implemented")
 }
 func (UnimplementedDatabaseServiceServer) mustEmbedUnimplementedDatabaseServiceServer() {}
 func (UnimplementedDatabaseServiceServer) testEmbeddedByValue()                         {}
@@ -494,6 +592,78 @@ func _DatabaseService_RevealDatabaseCredentials_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DatabaseService_TriggerDatabaseBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TriggerDatabaseBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabaseServiceServer).TriggerDatabaseBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabaseService_TriggerDatabaseBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabaseServiceServer).TriggerDatabaseBackup(ctx, req.(*TriggerDatabaseBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabaseService_ListDatabaseBackups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDatabaseBackupsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabaseServiceServer).ListDatabaseBackups(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabaseService_ListDatabaseBackups_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabaseServiceServer).ListDatabaseBackups(ctx, req.(*ListDatabaseBackupsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabaseService_RestoreDatabaseBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RestoreDatabaseBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabaseServiceServer).RestoreDatabaseBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabaseService_RestoreDatabaseBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabaseServiceServer).RestoreDatabaseBackup(ctx, req.(*RestoreDatabaseBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabaseService_UpgradeDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpgradeDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabaseServiceServer).UpgradeDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabaseService_UpgradeDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabaseServiceServer).UpgradeDatabase(ctx, req.(*UpgradeDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DatabaseService_ServiceDesc is the grpc.ServiceDesc for DatabaseService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -540,6 +710,22 @@ var DatabaseService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RevealDatabaseCredentials",
 			Handler:    _DatabaseService_RevealDatabaseCredentials_Handler,
+		},
+		{
+			MethodName: "TriggerDatabaseBackup",
+			Handler:    _DatabaseService_TriggerDatabaseBackup_Handler,
+		},
+		{
+			MethodName: "ListDatabaseBackups",
+			Handler:    _DatabaseService_ListDatabaseBackups_Handler,
+		},
+		{
+			MethodName: "RestoreDatabaseBackup",
+			Handler:    _DatabaseService_RestoreDatabaseBackup_Handler,
+		},
+		{
+			MethodName: "UpgradeDatabase",
+			Handler:    _DatabaseService_UpgradeDatabase_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -10,6 +10,7 @@ package database
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
@@ -49,6 +50,13 @@ type fakeDocker struct {
 	// 密码的形态——exitCode 是注入的作业退出码）。
 	rotateRuns []ContainerRunInput
 	rotateExit int
+
+	// jobRuns 记录一次性 Swarm job 执行（S5 备份/恢复/校验/清理的断言面：
+	// 镜像/挂载/网络/约束/env 的载荷形态）。
+	jobRuns []JobRunInput
+	// jobOutFn 按 job 载荷注入结论（nil = complete 空输出；测试按 Cmd 脚本
+	// 内容分支——backup 注 restic --json summary，restore/verify 注失败）。
+	jobOutFn func(in JobRunInput) JobRunOutcome
 }
 
 func newFakeDocker() *fakeDocker {
@@ -163,6 +171,26 @@ func (f *fakeDocker) ContainerRun(_ context.Context, in ContainerRunInput) (int,
 	return f.rotateExit, nil
 }
 
+func (f *fakeDocker) JobRun(_ context.Context, in JobRunInput) (JobRunOutcome, error) {
+	f.jobRuns = append(f.jobRuns, in)
+	if f.jobOutFn != nil {
+		return f.jobOutFn(in), nil
+	}
+	return JobRunOutcome{State: "complete", ExitCode: 0}, nil
+}
+
+// jobsWithPurpose 按目的段筛 job 记录（fleetly-dbjob-<instance>-<purpose>-
+// <ulid8> 命名——名字是载荷可识别性的契约面）。
+func (f *fakeDocker) jobsWithPurpose(purpose string) []JobRunInput {
+	var out []JobRunInput
+	for _, j := range f.jobRuns {
+		if strings.Contains(j.Name, "-"+purpose+"-") {
+			out = append(out, j)
+		}
+	}
+	return out
+}
+
 // fakePlacement 是 PlacementSelector 的假实现（固定节点）。
 type fakePlacement struct{ node string }
 
@@ -198,9 +226,57 @@ func newHarness(t *testing.T) *harness {
 	fd := newFakeDocker()
 	mgr := NewManagerWithDocker(Config{TickInterval: time.Hour, ProvisionTimeout: time.Hour},
 		st, box, fakePlacement{node: "n_node"}, fd, slog.New(slog.DiscardHandler))
+	mgr.upgradeWatch = 100 * time.Millisecond // 升级健康门观察窗（单测短窗）
 	h := &harness{t: t, st: st, box: box, docker: fd, mgr: mgr, now: time.Now()}
 	mgr.WithClock(func() time.Time { return h.now })
 	return h
+}
+
+// waitUntil 轮询断言条件（异步编排 goroutine 的收口等待——超时 fail）。
+func waitUntil(t *testing.T, budget time.Duration, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out after %s waiting for %s", budget, what)
+}
+
+// saveS3Settings 落库 external 模式的 S3 设置与 restic repo 口令（备份链
+// 材料解析的最小前置——sk/repopass 经 envelope 加密落库）。
+func (h *harness) saveS3Settings() {
+	h.t.Helper()
+	sk, err := h.box.Encrypt([]byte("test-s3-secret"))
+	if err != nil {
+		h.t.Fatalf("encrypt s3 secret: %v", err)
+	}
+	if err := h.st.SaveS3Settings(context.Background(), state.S3Settings{
+		Mode:            state.S3ModeExternal,
+		EndpointURL:     "http://s3.test:9000",
+		Bucket:          "testbucket",
+		AccessKeyID:     "testak",
+		SecretAccessKey: string(sk),
+		PathStyle:       true,
+	}, state.S3SaveOptions{Actor: "human"}); err != nil {
+		h.t.Fatalf("save s3 settings: %v", err)
+	}
+	pw, err := h.box.Encrypt([]byte("test-repo-pass"))
+	if err != nil {
+		h.t.Fatalf("encrypt restic password: %v", err)
+	}
+	if err := h.st.SaveResticPasswordCiphertext(context.Background(), string(pw)); err != nil {
+		h.t.Fatalf("save restic password: %v", err)
+	}
+}
+
+// resticSummaryOutput 是备份 job 的 restic --json 输出假体（summary 行 +
+// 前置状态行——parseResticSummary 的解析面）。
+func resticSummaryOutput(snap string, bytes int64) string {
+	return "{\"message_type\":\"status\",\"current_files\":1}\n" +
+		"{\"message_type\":\"summary\",\"snapshot_id\":\"" + snap + "\",\"total_bytes\":" + fmt.Sprint(bytes) + "}\n"
 }
 
 // createInstance 走与 API create 同构造的实例行（生成凭据 + 加密落库）。

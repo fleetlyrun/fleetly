@@ -52,9 +52,24 @@ type ProvisionKicker interface {
 // CredentialRotator 是凭据轮换编排的消费端口（S4；实现方 = internal/
 // database.Manager——引擎侧动作与底座紧邻，api 只受理/守卫/审计）。
 // 返回重部署的引用 app 名单；编排错误由 database 包定义类型化哨兵
-// （Prestate/Paused/Conflict/Stage），本层统一映射注册表码。
+//（Prestate/Paused/Conflict/Stage），本层统一映射注册表码。
 type CredentialRotator interface {
 	RotateCredentials(ctx context.Context, name string) ([]string, error)
+}
+
+// BackupOrchestrator 是备份/恢复/升级编排的消费端口（S5；实现方 =
+// internal/database.Manager——job 编排与底座紧邻，api 只受理/守卫/审计）。
+// 三个受理面全部异步（job 分钟级——受理即 accepted，结论经台账与 db.*
+// 事件披露）；前置态/互斥/归属守卫在编排层同步裁决后以类型化哨兵回传，
+// 本层统一映射注册表码。
+type BackupOrchestrator interface {
+	// TriggerBackup 异步受理一次手动备份（kind=manual）。
+	TriggerBackup(ctx context.Context, name string) error
+	// RestoreBackup 异步受理一次原地恢复（快照归属守卫在编排层）。
+	RestoreBackup(ctx context.Context, name, snapshotID string) error
+	// Upgrade 异步受理一次受控升级；返回 (旧 digest, 新 digest) 供响应与
+	// 审计。
+	Upgrade(ctx context.Context, name string) (string, string, error)
 }
 
 // DatabaseService 实现 server.v1.DatabaseService。
@@ -64,13 +79,15 @@ type DatabaseService struct {
 	box     *secrets.Box
 	kick    ProvisionKicker
 	rotator CredentialRotator
+	ops     BackupOrchestrator
 }
 
 // NewDatabaseService 构造 DatabaseService（box 是凭据生成/指纹的加解密器；
 // kick 可 nil——受理后即时收敛拍，缺省时收敛由 duty 周期拍兜底；rotator
-// 可 nil——轮换 RPC 未装配时显式报错，不静默退化）。
-func NewDatabaseService(st *state.Store, box *secrets.Box, kick ProvisionKicker, rotator CredentialRotator) *DatabaseService {
-	return &DatabaseService{st: st, box: box, kick: kick, rotator: rotator}
+// 可 nil——轮换 RPC 未装配时显式报错，不静默退化；ops 同理——备份/恢复/
+// 升级 RPC 未装配时显式报错）。
+func NewDatabaseService(st *state.Store, box *secrets.Box, kick ProvisionKicker, rotator CredentialRotator, ops BackupOrchestrator) *DatabaseService {
+	return &DatabaseService{st: st, box: box, kick: kick, rotator: rotator, ops: ops}
 }
 
 // kickOnce 受理成功后的即时收敛请求（失败静默——kick 只是提前，不承载正
@@ -458,6 +475,169 @@ func (s *DatabaseService) RevealDatabaseCredentials(ctx context.Context, req *se
 	return out, nil
 }
 
+// TriggerDatabaseBackup 手动备份受理（E4 S5，§2.6）：异步受理——编排层
+// 同步裁决前置态/互斥/S3 配置（类型化哨兵 → 注册表码映射），job 链异步执
+// 行，结论经台账与本事件的披露面回读。审计 db.backup_trigger（kind 只为
+// manual——daily/pre_upgrade 是平台内部类别，不从 API 受理）。
+func (s *DatabaseService) TriggerDatabaseBackup(ctx context.Context, req *serverv1.TriggerDatabaseBackupRequest) (*serverv1.TriggerDatabaseBackupResponse, error) {
+	switch k := req.GetKind(); k {
+	case "", "manual":
+	default:
+		return nil, statusInvalidArgument(fmt.Sprintf(
+			"backup kind %q is platform-internal; the API accepts manual backups only (omit kind or pass \"manual\")", k))
+	}
+	inst, err := s.getMutableInstance(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if s.ops == nil {
+		return nil, fmt.Errorf("database backup orchestrator is not wired (assembly bug)")
+	}
+	if err := s.ops.TriggerBackup(ctx, inst.Name); err != nil {
+		return nil, s.mapOperationErr(err)
+	}
+	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
+		return tx.WriteAudit(ctx, databaseAudit(ctx, "db.backup_trigger", "database:"+inst.ID,
+			state.DiffSummary("kind", "manual")))
+	}); err != nil {
+		return nil, err
+	}
+	return &serverv1.TriggerDatabaseBackupResponse{
+		Name:   inst.Name,
+		Kind:   "manual",
+		Status: "accepted",
+	}, nil
+}
+
+// ListDatabaseBackups 备份台账列表（created_at 降序——恢复目标选择与备份
+// 健康面的只读数据源）。
+func (s *DatabaseService) ListDatabaseBackups(ctx context.Context, req *serverv1.ListDatabaseBackupsRequest) (*serverv1.ListDatabaseBackupsResponse, error) {
+	inst, err := s.getMutableInstance(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	limit := int(req.GetLimit())
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := s.st.ListDatabaseBackups(ctx, inst.ID, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*serverv1.DatabaseBackupView, 0, len(rows))
+	for _, r := range rows {
+		v := &serverv1.DatabaseBackupView{
+			Id:           r.ID,
+			Kind:         string(r.Kind),
+			Snapshot:     r.ResticSnapshot,
+			SizeBytes:    r.SizeBytes,
+			VerifyStatus: string(r.VerifyStatus),
+			Error:        r.Error,
+			CreatedAt:    timestamppb.New(r.CreatedAt),
+		}
+		out = append(out, v)
+	}
+	return &serverv1.ListDatabaseBackupsResponse{Backups: out}, nil
+}
+
+// RestoreDatabaseBackup 原地恢复受理（破坏性两段式 confirm + 快照归属守
+// 卫在编排层）：异步受理——停库重放分钟级，结论经 db.restore_* 事件披露。
+// 审计 db.restore（快照标识进 diff——恢复是数据安全动作，目标必须留痕）。
+func (s *DatabaseService) RestoreDatabaseBackup(ctx context.Context, req *serverv1.RestoreDatabaseBackupRequest) (*serverv1.RestoreDatabaseBackupResponse, error) {
+	inst, err := s.getMutableInstance(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if req.GetConfirm() != inst.Name {
+		return nil, statusInvalidArgument(
+			"destructive operation: pass confirm=\"" + inst.Name + "\" to accept an in-place restore (the current data on the volume is overwritten by the replayed snapshot)")
+	}
+	if s.ops == nil {
+		return nil, fmt.Errorf("database restore orchestrator is not wired (assembly bug)")
+	}
+	if err := s.ops.RestoreBackup(ctx, inst.Name, req.GetSnapshot()); err != nil {
+		return nil, s.mapOperationErr(err)
+	}
+	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
+		return tx.WriteAudit(ctx, databaseAudit(ctx, "db.restore", "database:"+inst.ID,
+			state.DiffSummary("snapshot", req.GetSnapshot(), "from_state", string(inst.State))))
+	}); err != nil {
+		return nil, err
+	}
+	return &serverv1.RestoreDatabaseBackupResponse{
+		Name:     inst.Name,
+		Snapshot: req.GetSnapshot(),
+		Status:   "accepted",
+	}, nil
+}
+
+// UpgradeDatabase 受控升级受理（破坏性两段式 confirm；编排 = BackupOrchestrator
+// 的升级面）：备份门/受控重建/健康门/归位在 internal/database 异步编排，
+// 结论经 db.upgrade_* 事件披露。审计 db.upgrade（新旧 digest 进 diff——升
+// 级是受管面的显式 opt-in 动作）。
+func (s *DatabaseService) UpgradeDatabase(ctx context.Context, req *serverv1.UpgradeDatabaseRequest) (*serverv1.UpgradeDatabaseResponse, error) {
+	inst, err := s.getMutableInstance(ctx, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	if req.GetConfirm() != inst.Name {
+		return nil, statusInvalidArgument(
+			"destructive operation: pass confirm=\"" + inst.Name + "\" to accept a controlled upgrade (stop-first rebuild with a downtime window; failure rolls the digest back and lands the instance degraded)")
+	}
+	if s.ops == nil {
+		return nil, fmt.Errorf("database upgrade orchestrator is not wired (assembly bug)")
+	}
+	oldDigest, newDigest, err := s.ops.Upgrade(ctx, inst.Name)
+	if err != nil {
+		return nil, s.mapOperationErr(err)
+	}
+	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
+		return tx.WriteAudit(ctx, databaseAudit(ctx, "db.upgrade", "database:"+inst.ID,
+			state.DiffSummary("old_digest", oldDigest, "new_digest", newDigest)))
+	}); err != nil {
+		return nil, err
+	}
+	view, err := s.viewAfter(ctx, inst.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &serverv1.UpgradeDatabaseResponse{Database: view, Status: "accepted"}, nil
+}
+
+// mapOperationErr 是备份/恢复/升级编排错误 → 注册表码的映射面（database
+// 包类型化哨兵 → api 权威语义；message 全程无凭据材料——编排层已保证）。
+func (s *DatabaseService) mapOperationErr(err error) error {
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, state.ErrDatabaseNotFound):
+		return mapDatabaseErr(err)
+	case errors.Is(err, database.ErrBackupS3NotConfigured):
+		return apperr.New("E_S3_NOT_CONFIGURED", "%s (configure object storage with 'fleetly s3 set' or the Console S3 settings card, then retry)", err.Error()).
+			WithContext("reason", "s3.mode=unset")
+	}
+	var prestate *database.OperationPrestateError
+	if errors.As(err, &prestate) {
+		return apperr.New("E_STATE_VERSION_CONFLICT", "%s", err.Error()).
+			WithContext("current_state", prestate.Current).
+			WithContext("legal_prestates", prestate.Legal)
+	}
+	var inflight database.ErrOperationInFlight
+	if errors.As(err, &inflight) {
+		return apperr.New("E_STATE_VERSION_CONFLICT", "%s", err.Error()).
+			WithContext("conflict", "operation in flight").
+			WithContext("current_operation", inflight.Current)
+	}
+	var notAvailable database.ErrUpgradeNotAvailable
+	if errors.As(err, &notAvailable) {
+		return apperr.New("E_STATE_VERSION_CONFLICT", "%s", err.Error()).
+			WithContext("current_state", "up_to_date").
+			WithContext("instance_digest", notAvailable.Current).
+			WithContext("template_digest", notAvailable.Template)
+	}
+	return err
+}
+
 // ── 内部协作者 ──────────────────────────────────────────────────────────────
 
 // getMutableInstance 取非终态实例（deleting/deleted 的操作目标 → 404——
@@ -561,7 +741,8 @@ func templateIDList() string {
 }
 
 // databaseView 构造脱敏投影：解密凭据只为指纹（naming.Hash8——「是不是那
-// 个值」的比对面），明文零离开本函数内存链。
+// 个值」的比对面），明文零离开本函数内存链。upgrade_available = 实例
+// digest ≠ 模板当前钉定镜像（§2.2：既有实例不自动变，升级逐实例 opt-in）。
 func (s *DatabaseService) databaseView(ctx context.Context, inst state.DatabaseInstance) (*serverv1.DatabaseView, error) {
 	fingerprint := ""
 	if inst.CredentialCipher != "" {
@@ -571,16 +752,21 @@ func (s *DatabaseService) databaseView(ctx context.Context, inst state.DatabaseI
 		}
 		fingerprint = naming.Hash8(string(plain))
 	}
+	upgradeAvailable := false
+	if tpl, err := dbtemplate.Get(inst.Template); err == nil {
+		upgradeAvailable = inst.ImageDigest != "" && inst.ImageDigest != tpl.Image
+	}
 	v := &serverv1.DatabaseView{
-		Id:          inst.ID,
-		Name:        inst.Name,
-		Template:    inst.Template,
-		ImageDigest: inst.ImageDigest,
-		Status:      string(inst.State),
-		Placement:   inst.PlatformNodeID,
-		LastError:   inst.LastError,
-		CreatedAt:   timestamppb.New(inst.CreatedAt),
-		UpdatedAt:   timestamppb.New(inst.UpdatedAt),
+		Id:               inst.ID,
+		Name:             inst.Name,
+		Template:         inst.Template,
+		ImageDigest:      inst.ImageDigest,
+		Status:           string(inst.State),
+		Placement:        inst.PlatformNodeID,
+		LastError:        inst.LastError,
+		UpgradeAvailable: upgradeAvailable,
+		CreatedAt:        timestamppb.New(inst.CreatedAt),
+		UpdatedAt:        timestamppb.New(inst.UpdatedAt),
 		Limits: &serverv1.DatabaseLimits{
 			CpuSeconds:  inst.Settings.CPUSeconds,
 			MemoryBytes: inst.Settings.MemoryBytes,

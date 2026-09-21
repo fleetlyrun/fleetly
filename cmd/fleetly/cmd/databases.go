@@ -27,7 +27,8 @@ func newDatabasesCmd() *databasesCmd {
 	sub := commands.New()
 	sub.Register(&databaseCreateCmd{}, &databaseGetCmd{}, &databaseListCmd{}, &databaseDeleteCmd{},
 		&databaseSuspendCmd{}, &databaseResumeCmd{}, &databaseRetryCmd{}, &databaseSettingsCmd{},
-		&databaseRotateCmd{}, &databaseRevealCmd{})
+		&databaseRotateCmd{}, &databaseRevealCmd{},
+		&databaseBackupCmd{}, &databaseBackupsCmd{}, &databaseRestoreCmd{}, &databaseUpgradeCmd{})
 	sub.VerbTitle = "databases subcommands:"
 	return &databasesCmd{sub: sub}
 }
@@ -37,14 +38,14 @@ func (c *databasesCmd) Synopsis() string {
 	return "create and manage managed database instances (lifecycle, settings; connection secrets are masked)"
 }
 func (c *databasesCmd) Usage() string {
-	return "databases <create|get|list|delete|suspend|resume|retry|settings|rotate|reveal> [flags] ..."
+	return "databases <create|get|list|delete|suspend|resume|retry|settings|rotate|reveal|backup|backups|restore|upgrade> [flags] ..."
 }
 
 func (c *databasesCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *databasesCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (create|get|list|delete|suspend|resume|retry|settings|rotate|reveal)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (create|get|list|delete|suspend|resume|retry|settings|rotate|reveal|backup|backups|restore|upgrade)")}
 	}
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
@@ -479,6 +480,190 @@ func (c *databaseRevealCmd) Run(ctx context.Context, env *commands.Environment, 
 	})
 }
 
+// ── E4 W4-S5：备份/恢复/升级子命令（managed-databases §2.6）────────────────
+
+// databaseBackupCmd 实现 `fleetly databases backup <name>`（手动备份受理
+// ——异步：job 分钟级，结论经 `databases backups <name>` 台账与平台事件
+// 披露）。
+type databaseBackupCmd struct {
+	conn connFlags
+}
+
+func (c *databaseBackupCmd) Name() string { return "backup" }
+func (c *databaseBackupCmd) Synopsis() string {
+	return "trigger a manual database backup (async; check progress with 'databases backups <name>' and platform events)"
+}
+func (c *databaseBackupCmd) Usage() string {
+	return "databases backup [--addr <host:port>] [--token <tok>] <name>"
+}
+
+func (c *databaseBackupCmd) SetFlags(fs *flag.FlagSet) { c.conn.register(fs) }
+
+func (c *databaseBackupCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Databases().TriggerDatabaseBackup(ctx, &serverv1.TriggerDatabaseBackupRequest{Name: args[0]})
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(env.Stdout, "database %s backup accepted (kind %s); the ledger row appears when the job finishes — events carry success/failure\n",
+			resp.GetName(), resp.GetKind())
+		return err
+	})
+}
+
+// databaseBackupsCmd 实现 `fleetly databases backups <name>`（台账列表——
+// kind/snapshot/size/verify_status 全量事实面）。
+type databaseBackupsCmd struct {
+	limit   int
+	jsonOut bool
+	conn    connFlags
+}
+
+func (c *databaseBackupsCmd) Name() string { return "backups" }
+func (c *databaseBackupsCmd) Synopsis() string {
+	return "list database backups (newest first; verify_status is the honesty gate — failed rows mean the backup must not be trusted)"
+}
+func (c *databaseBackupsCmd) Usage() string {
+	return "databases backups [--limit n] [--addr <host:port>] [--token <tok>] [--json] <name>"
+}
+
+func (c *databaseBackupsCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.IntVar(&c.limit, "limit", 20, "maximum rows to list")
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *databaseBackupsCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Databases().ListDatabaseBackups(ctx, &serverv1.ListDatabaseBackupsRequest{
+			Name:  args[0],
+			Limit: int32(c.limit),
+		})
+		if err != nil {
+			return err
+		}
+		if c.jsonOut {
+			return writeJSON(env.Stdout, resp)
+		}
+		if len(resp.GetBackups()) == 0 {
+			_, err := fmt.Fprintln(env.Stdout, "no backups recorded (trigger one with: fleetly databases backup <name>)")
+			return err
+		}
+		for _, b := range resp.GetBackups() {
+			line := fmt.Sprintf("%s  %-11s %-12s %d bytes  verify=%s %s",
+				b.GetId(), b.GetKind(), shortSnapshot(b.GetSnapshot()), b.GetSizeBytes(),
+				b.GetVerifyStatus(), tstampRFC3339(b.GetCreatedAt()))
+			if b.GetError() != "" {
+				line += "  error=" + b.GetError()
+			}
+			if _, err := fmt.Fprintln(env.Stdout, line); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
+// shortSnapshot 是 snapshot id 的列表展示形态（长 id 截尾——寻址仍以完整
+// id；JSON 输出带全量）。
+func shortSnapshot(s string) string {
+	if len(s) > 16 {
+		return s[:16] + "..."
+	}
+	return s
+}
+
+// databaseRestoreCmd 实现 `fleetly databases restore <name> --snapshot <id>
+// --confirm <name>`（破坏性两段式——原地重放覆盖数据卷上的现库；confirm
+// 与 API 同面显式回传，不自动代答）。
+type databaseRestoreCmd struct {
+	snapshot string
+	confirm  string
+	conn     connFlags
+}
+
+func (c *databaseRestoreCmd) Name() string { return "restore" }
+func (c *databaseRestoreCmd) Synopsis() string {
+	return "restore a database in place from a backup snapshot (DESTRUCTIVE: the current data on the volume is overwritten; the instance is stopped and replayed)"
+}
+func (c *databaseRestoreCmd) Usage() string {
+	return "databases restore --snapshot <id> --confirm <name> [--addr <host:port>] [--token <tok>] <name>"
+}
+
+func (c *databaseRestoreCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.StringVar(&c.snapshot, "snapshot", "", "restic snapshot id to restore (list with: databases backups <name>)")
+	fs.StringVar(&c.confirm, "confirm", "", "pass the instance name to confirm the destructive restore")
+}
+
+func (c *databaseRestoreCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	if c.snapshot == "" {
+		return fmt.Errorf("--snapshot is required (list candidates with: fleetly databases backups %s)", args[0])
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Databases().RestoreDatabaseBackup(ctx, &serverv1.RestoreDatabaseBackupRequest{
+			Name:     args[0],
+			Snapshot: c.snapshot,
+			Confirm:  c.confirm,
+		})
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(env.Stdout, "database %s restore accepted (snapshot %s); the instance is stopped while the snapshot is replayed — completion and failure surface via events\n",
+			resp.GetName(), resp.GetSnapshot())
+		return err
+	})
+}
+
+// databaseUpgradeCmd 实现 `fleetly databases upgrade <name> --confirm <name>`
+// （受控升级受理——pre_upgrade 备份门 → digest 受控重建 → 健康门；失败 =
+// digest 归位 + degraded。confirm 与 API 同面显式回传）。
+type databaseUpgradeCmd struct {
+	confirm string
+	conn    connFlags
+}
+
+func (c *databaseUpgradeCmd) Name() string { return "upgrade" }
+func (c *databaseUpgradeCmd) Synopsis() string {
+	return "upgrade a database to the current template image (pre-upgrade backup gate, controlled rebuild with a downtime window; failure rolls the digest back)"
+}
+func (c *databaseUpgradeCmd) Usage() string {
+	return "databases upgrade --confirm <name> [--addr <host:port>] [--token <tok>] <name>"
+}
+
+func (c *databaseUpgradeCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.StringVar(&c.confirm, "confirm", "", "pass the instance name to confirm the controlled rebuild")
+}
+
+func (c *databaseUpgradeCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Databases().UpgradeDatabase(ctx, &serverv1.UpgradeDatabaseRequest{
+			Name:    args[0],
+			Confirm: c.confirm,
+		})
+		if err != nil {
+			return err
+		}
+		v := resp.GetDatabase()
+		_, err = fmt.Fprintf(env.Stdout, "database %s upgrade accepted (pre-upgrade backup gate runs first); %s -> template image, progress via events\n",
+			v.GetName(), shortSnapshot(v.GetImageDigest()))
+		return err
+	})
+}
+
 // renderDatabase 是详情的人读形态（连接段恒为掩码口径）。
 func renderDatabase(v *serverv1.DatabaseView) string {
 	var b strings.Builder
@@ -500,6 +685,9 @@ func renderDatabase(v *serverv1.DatabaseView) string {
 	backup := v.GetBackupPlan()
 	fmt.Fprintf(&b, "  backup: interval=%dh keep=%d hour_utc=%d\n",
 		backup.GetIntervalHours(), backup.GetKeep(), backup.GetHourUtc())
+	if v.GetUpgradeAvailable() {
+		fmt.Fprintf(&b, "  upgrade: available (run 'fleetly databases upgrade %s --confirm %s')\n", v.GetName(), v.GetName())
+	}
 	if v.GetLastError() != "" {
 		fmt.Fprintf(&b, "  last_error: %s\n", v.GetLastError())
 	}
@@ -513,6 +701,7 @@ type databaseJSON struct {
 	Template            string                           `json:"template"`
 	Status              string                           `json:"status"`
 	ImageDigest         string                           `json:"image_digest"`
+	UpgradeAvailable    bool                             `json:"upgrade_available,omitempty"`
 	Placement           string                           `json:"placement,omitempty"`
 	Volume              *serverv1.DatabaseVolumeView     `json:"volume,omitempty"`
 	Connection          *serverv1.DatabaseConnectionView `json:"connection,omitempty"`
@@ -526,17 +715,18 @@ type databaseJSON struct {
 
 func toDatabaseJSON(v *serverv1.DatabaseView) databaseJSON {
 	out := databaseJSON{
-		ID:          v.GetId(),
-		Name:        v.GetName(),
-		Template:    v.GetTemplate(),
-		Status:      v.GetStatus(),
-		ImageDigest: v.GetImageDigest(),
-		Placement:   v.GetPlacement(),
-		Volume:      v.GetVolume(),
-		Connection:  v.GetConnection(),
-		Limits:      v.GetLimits(),
-		BackupPlan:  v.GetBackupPlan(),
-		LastError:   v.GetLastError(),
+		ID:               v.GetId(),
+		Name:             v.GetName(),
+		Template:         v.GetTemplate(),
+		Status:           v.GetStatus(),
+		ImageDigest:      v.GetImageDigest(),
+		UpgradeAvailable: v.GetUpgradeAvailable(),
+		Placement:        v.GetPlacement(),
+		Volume:           v.GetVolume(),
+		Connection:       v.GetConnection(),
+		Limits:           v.GetLimits(),
+		BackupPlan:       v.GetBackupPlan(),
+		LastError:        v.GetLastError(),
 	}
 	if ts := v.GetCredentialUpdatedAt(); ts != nil {
 		out.CredentialUpdatedAt = tstampRFC3339(ts)

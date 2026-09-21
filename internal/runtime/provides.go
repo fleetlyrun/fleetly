@@ -351,9 +351,10 @@ func NewCronService(st *state.Store, cm *cron.Manager) *api.CronService {
 // ——box 承载凭据生成与指纹；kicker = database.Manager——受理后即时触发
 // 收敛拍，收敛本体由 duty 异步承载。W4-S4 增补 rotator = 同一 Manager——
 // 轮换编排（引擎侧 job/收敛触发/引用重部署）在底座邻接层，api 只受理与
-// 审计）。
+// 审计。W4-S5 增补 ops = 同一 Manager——备份/恢复/升级编排（一次性 job/
+// 备份门/健康门/归位）同款形态）。
 func NewDatabaseService(st *state.Store, sb *secrets.Box, dm *database.Manager) *api.DatabaseService {
-	return api.NewDatabaseService(st, sb, dm, dm)
+	return api.NewDatabaseService(st, sb, dm, dm, dm)
 }
 
 // NewSecretsService 构造平台密钥库资源面服务（E4 W4-S4，D-DB-7：external

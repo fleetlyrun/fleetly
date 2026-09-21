@@ -100,7 +100,7 @@ CreateDatabase ──→ db_instances 行(state=provisioning) + 凭据生成(密
 | 默认限额 | cpus 1.0 / memory 1Gi（创建时可覆盖） | cpus 0.5 / memory 256Mi |
 | 连接串渲染 | `postgres://fleetly:<pw>@<实例名>:5432/<dbname>` | `redis://:<pw>@<实例名>:6379/0` |
 
-- **升级语义（受控重建 + 备份门）**：平台 release 携带新 digest（minor/patch）→ 既有实例**不自动变**；`databases upgrade` 逐实例 opt-in，流程 = ①自动 `pre_upgrade` 备份且 verify 通过才继续（失败 → `E_DB_BACKUP_FAILED` 中止，实例不动）②spec 换新 digest 受控重建（有卷强制 stop-first，停机窗口如实累计）③健康门 ④失败 = digest 归位（回写旧值重建）+ `db.upgrade_failed` + 状态落 degraded——**不是 revision 重放**（库无 revision/部署记录，D-DB-1 终裁推论）。平台检测到可升级 → `db.upgrade_available` 事件。主版本升级（16→17）与引擎切换不做（§7）。
+- **升级语义（受控重建 + 备份门）**：平台 release 携带新 digest（minor/patch）→ 既有实例**不自动变**；`databases upgrade` 逐实例 opt-in，流程 = ①自动 `pre_upgrade` 备份且 verify 通过才继续（失败 → `E_DB_BACKUP_FAILED` 中止，实例不动）②spec 换新 digest 受控重建（有卷强制 stop-first，停机窗口如实累计）③健康门 ④失败 = digest 归位（回写旧值重建）+ `db.upgrade_failed` + 状态落 degraded——**不是 revision 重放**（库无 revision/部署记录，D-DB-1 终裁推论）。平台检测到可升级 → `db.upgrade_available` 事件。主版本升级（16→17）与引擎切换不做（§7）。**暂停实例的备份门（W4-S5 落地注记）**：停摆引擎构造性无法执行 pg_dump/RDB 导出，降格为「台账内存在本实例 verified 备份」的存在性检查——无已验证备份 → 如实拒绝并指引先恢复再升级（不做假备份门）。**恢复的凭据语义边界（W4-S5 落地注记）**：原地恢复重放的是备份时刻的库内密码——若备份后轮换过凭据，恢复后库内密码与权威态密文错位（`databases reveal` 可对账），runbook 记人工收尾（恢复后再 rotate 一次即对齐）。
 - **镜像受管**：用户不可改库镜像/引擎参数（设置面只有限额与备份计划）；违规 → `E_DB_TEMPLATE_UNSUPPORTED`。
 - 新引擎接入成本 = 一个模板条目 + 一个 `EngineAdapter`（§2.6）+ 备份镜像工具，与架构 §4.3「各引擎备份/恢复适配器是主要成本」一致；MySQL/Mongo 后置按需求排序。
 

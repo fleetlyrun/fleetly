@@ -177,6 +177,43 @@ func (s *Store) UpdateDatabaseBackupVerifyStatus(ctx context.Context, id string,
 	})
 }
 
+// GetDatabaseBackupBySnapshot 按 (库实例, restic snapshot) 取备份行（恢复
+// 受理的快照归属守卫——只重放本实例台账内的快照，跨实例误指在此拦下）。
+// 不存在返回 ErrDatabaseBackupNotFound。
+func (s *Store) GetDatabaseBackupBySnapshot(ctx context.Context, dbID, snapshot string) (DatabaseBackup, error) {
+	const q = `SELECT ` + dbBackupScanCols + ` FROM db_backups WHERE db_id = ? AND restic_snapshot = ?
+		ORDER BY created_at DESC, id DESC LIMIT 1`
+	return scanDatabaseBackup(s.db.QueryRowContext(ctx, q, dbID, snapshot))
+}
+
+// PruneDatabaseBackups 保留对齐的台账镜像（S5 备份编排尾部）：删除该实例
+// 台账中最旧的行、保留最新 keep 条（created_at 降序锚定）。返回删除行数
+// （0 = 无可删）。keep ≤ 0 不删（调用方回落平台缺省）。
+func (s *Store) PruneDatabaseBackups(ctx context.Context, dbID string, keep int) (int64, error) {
+	if keep <= 0 {
+		return 0, fmt.Errorf("state: prune database backups: keep %d must be positive", keep)
+	}
+	var removed int64
+	err := s.InTx(ctx, func(tx *Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM db_backups WHERE db_id = ? AND id NOT IN (
+			SELECT id FROM db_backups WHERE db_id = ? ORDER BY created_at DESC, id DESC LIMIT ?)`,
+			dbID, dbID, keep)
+		if err != nil {
+			return fmt.Errorf("state: prune database backups %s: %w", dbID, err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("state: read database backup prune count %s: %w", dbID, err)
+		}
+		removed = n
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	return removed, nil
+}
+
 // dbBackupScanCols 是备份台账行查询列清单（新增列只加在此与扫描函数）。
 const dbBackupScanCols = `id, db_id, kind, restic_snapshot, size_bytes, verify_status, error, created_at`
 

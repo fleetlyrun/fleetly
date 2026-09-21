@@ -34,14 +34,15 @@ var codeExemptions = map[string]string{
 	// 守卫（internal/api/databases.go）；E_DB_TEMPLATE_UNSUPPORTED = 创建
 	// 模板校验（同文件）。S3 已接线 E_DB_ENV_PREFIX_CONFLICT（引用 plan
 	// 哨兵，internal/engine/dbinject.go）。S4 已接线 E_DB_ROTATE_FAILED
-	// （轮换编排中途失败，internal/api/databases.go mapRotationErr）与
+	//（轮换编排中途失败，internal/api/databases.go mapRotationErr）与
 	// E_SECRET_NOT_FOUND（compose secrets preflight，
-	// internal/engine/secretinject.go + 回滚 preflight）。E_DB_BACKUP_FAILED/
-	// E_DB_RESTORE_FAILED 仍豁免：备份恢复适配器随 S5。
+	// internal/engine/secretinject.go + 回滚 preflight）。S5 已接线
+	// E_DB_BACKUP_FAILED/E_DB_RESTORE_FAILED 的豁免移除：备份 job/校验失败
+	// 与恢复中途失败（internal/database/backup.go runBackup + restore.go
+	// restoreAbort——异步编排的失败信封在底座邻接层构造，s3inject 用 apperr
+	// 同款纪律）。
 	// E_ENV_KEY_RESERVED 不豁免：保留前缀守卫已在 S1 接线
 	//（internal/state/env.go SetAppEnv）。
-	"E_DB_BACKUP_FAILED":  "reserved: wired with the E4 backup adapter (stage S5)",
-	"E_DB_RESTORE_FAILED": "reserved: wired with the E4 restore path (stage S5)",
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除

@@ -118,6 +118,14 @@ var methodScopes = map[string]string{
 	// 展开（admin 更严面——与 env GetEnv 同级信任）。
 	"/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials":    ScopeAdmin,
 	"/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials":    ScopeAdmin,
+	// E4 W4-S5（managed-databases §2.6）：备份列表 = read（台账只读事实面）；
+	// 备份触发/恢复/升级 = admin（恢复与升级是破坏性两段式数据安全操作——
+	// 原地重放覆盖数据卷、受控重建有停机窗口，与 delete 同级；备份触发直写
+	// 远端 repo，写面语义与平台备份 TriggerBackup 同口径）。
+	"/fleetly.server.v1.DatabaseService/ListDatabaseBackups":    ScopeRead,
+	"/fleetly.server.v1.DatabaseService/TriggerDatabaseBackup":  ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/RestoreDatabaseBackup":  ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/UpgradeDatabase":        ScopeAdmin,
 	// SecretsService（E4 W4-S4，D-DB-7）：set/remove = admin（密钥写面与
 	// webhook secret/env 明文同级信任）；list = read（只出名称/指纹——与
 	// ListEnv 同口径，值零出现）。
