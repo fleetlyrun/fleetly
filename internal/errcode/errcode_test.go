@@ -89,6 +89,21 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_S3_TEST_FAILED":                 "E3 object-storage §5.2 (connection probe failed; failed step in the envelope context)",
 	"E_S3_PUBLIC_REQUIRES_BASE_DOMAIN": "E3 object-storage §5.2 (public subdomain toggle without a base domain)",
 
+	// E4 数据库托管（managed-databases 设计 §5.2，2026-09-20 冻结，注册表
+	// 只增；D-DB-8 零新增码纪律 = 状态机冲突复用 E_STATE_VERSION_CONFLICT，
+	// 本组 9 码是设计裁决的封闭清单）。E_ENV_KEY_RESERVED 已随 S1 守卫接线
+	//（internal/state/env.go）；其余 8 码的生产引用随 S2-S5 票据落地
+	//（usage_test 豁免清单同步注记）。
+	"E_DB_NOT_FOUND":            "E4 managed-databases §5.2 (reference/operation target missing or deleting/deleted)",
+	"E_DB_REFERENCED":           "E4 managed-databases §5.2 (delete refused while references exist)",
+	"E_DB_TEMPLATE_UNSUPPORTED": "E4 managed-databases §5.2 (unknown template / settings violate the managed surface)",
+	"E_DB_ENV_PREFIX_CONFLICT":  "E4 managed-databases §5.2 (same-app reference env prefix collision)",
+	"E_DB_BACKUP_FAILED":        "E4 managed-databases §5.2 (backup job failed)",
+	"E_DB_RESTORE_FAILED":       "E4 managed-databases §5.2 (restore failed)",
+	"E_DB_ROTATE_FAILED":        "E4 managed-databases §5.2 (rotation failed mid-flight)",
+	"E_SECRET_NOT_FOUND":        "E4 managed-databases §5.2 (compose-declared external secret missing; preflight)",
+	"E_ENV_KEY_RESERVED":        "E4 managed-databases §5.2 (reserved FLEETLY_ env namespace; wired with the S1 SetAppEnv guard)",
+
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
 	"W_DEPLOY_NO_HEALTHCHECK":   "release-semantics §2.7/§2.8",
@@ -119,8 +134,8 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // TestRegisteredCountByKind 双保险：42 E + 5 W = 47（T2.15 增
 // E_ROUTE_PUBLISH_FAILED、MG-C3 增 E_DEPLOY_CONFIRM_REQUIRED、M4-6 增
 // E_TOKEN_LAST_ADMIN、E1-5 增 E_REGISTRY_UNAVAILABLE/E_REGISTRY_PUSH_FAILED、
-// E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 增 E_S3_* 四码——错误码
-// 只增纪律）。
+// E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 增 E_S3_* 四码、E4-S1 增
+// managed-databases §5.2 九码——错误码只增纪律）。E4 后 = 51 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -130,8 +145,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 42 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 42), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 51 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 51), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 
@@ -206,6 +221,16 @@ func TestDocumentedHTTPMappings(t *testing.T) {
 		"E_REGISTRY_UNAVAILABLE":            503, // multi-node §5.2（D-MN-11 前哨快速失败）
 		"E_REGISTRY_PUSH_FAILED":            500, // multi-node §5.2（D-MN-11 推送失败）
 		"E_MULTI_NODE_REQUIRES_BASE_DOMAIN": 409, // multi-node §5.2（D-MN-13 join 门禁）
+		// E4 managed-databases §5.2（9 码的 HTTP 映射为文档显式给定）。
+		"E_DB_NOT_FOUND":            404,
+		"E_DB_REFERENCED":           409,
+		"E_DB_TEMPLATE_UNSUPPORTED": 400,
+		"E_DB_ENV_PREFIX_CONFLICT":  422,
+		"E_DB_BACKUP_FAILED":        500,
+		"E_DB_RESTORE_FAILED":       500,
+		"E_DB_ROTATE_FAILED":        500,
+		"E_SECRET_NOT_FOUND":        422,
+		"E_ENV_KEY_RESERVED":        422,
 	}
 	for id, httpStatus := range want {
 		c, ok := Default().Get(id)

@@ -10,12 +10,29 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// volumes 表读写（stateful-placement §2.4 卷注册表）：卷数据生命周期归
-// 平台账——数据诞生点钉住所在节点（平台节点 ID 为锚）、命名约定名
-// `fleetly-<app>-<key>-<appid8>` 防代际静默复用（无 label 用命名约定，
-// state-model §2.4）。status: active（在册）/ orphaned（应用删除默认保留、
-// 可发现）/ discarded（显式丢弃）。删除应用默认保留卷、删除仅显式
-// --delete-volumes（v0.2）或孤儿清理——平台永不自动删卷数据。
+// volumes 表读写（stateful-placement §2.4 卷注册表 + managed-databases
+// 设计 §5.4 迁移①归属泛化）：卷数据生命周期归平台账——数据诞生点钉住
+// 所在节点（平台节点 ID 为锚）、命名约定名 `fleetly-<app>-<key>-<appid8>`
+// 防代际静默复用（无 label 用命名约定，state-model §2.4）。status: active
+// （在册）/ orphaned（应用删除默认保留、可发现）/ discarded（显式丢弃）。
+// 删除应用默认保留卷、删除仅显式 --delete-volumes（v0.2）或孤儿清理——
+// 平台永不自动删卷数据。
+//
+// 归属泛化（E4，D-DB-1 库实例独立资源）：owner_kind ∈ {app, database} +
+// owner_id 取代 app_id 成为核心键（UNIQUE(owner_kind, owner_id, key)）。
+// 核心 API 按 owner 二元组寻址（RegisterVolume/GetVolume/…）；app 形态的
+// 既有调用面（internal/placement、internal/engine、internal/api）经同名
+// App 包装函数零改动复用——包装即固定 owner_kind='app'，无行为变化。
+
+// VolumeOwnerKind 是卷归属词表（managed-databases §5.4 迁移①）。
+type VolumeOwnerKind string
+
+const (
+	// VolumeOwnerApp 应用卷（既有形态；迁移前的存量行全部属于本类）。
+	VolumeOwnerApp VolumeOwnerKind = "app"
+	// VolumeOwnerDatabase 库实例数据卷（E4：数据诞生点钉住语义同款复用）。
+	VolumeOwnerDatabase VolumeOwnerKind = "database"
+)
 
 // VolumeStatus 是卷注册表状态位。
 type VolumeStatus string
@@ -41,8 +58,11 @@ const (
 
 // Volume 是卷注册表行投影。Name 即设计表的 docker_name（命名约定值）。
 type Volume struct {
-	ID             string
-	AppID          string
+	ID string
+	// OwnerKind/OwnerID 是卷归属二元组（E4 泛化：app 或 database 资源的
+	// 平台 ID——与 v0.1 的 app_id 列一一对应的泛化形态）。
+	OwnerKind      VolumeOwnerKind
+	OwnerID        string
 	Key            string
 	Name           string
 	Kind           VolumeKind
@@ -62,10 +82,21 @@ type Volume struct {
 // ErrVolumeNotFound 表示注册表中无该卷。
 var ErrVolumeNotFound = errors.New("volume not found")
 
-// VolumeWrite 是一次卷登记写入（按 app_id+key 唯一 upsert）。Name 必须
-// 由调用方按命名约定生成（internal/naming.VolumeName）——本层不解释命名。
+// VolumeWrite 是一次卷登记写入（按 owner 二元组 + key 唯一 upsert）。Name
+// 必须由调用方按命名约定生成（internal/naming 的 VolumeName/DBVolumeName）
+// ——本层不解释命名。
+//
+// 归属填写（E4 兼容口径）：新调用面显式填 OwnerKind+OwnerID；既有 app 面
+// 可继续只填 AppID（OwnerKind 空时回落 VolumeOwnerApp——迁移①的 SQL
+// DEFAULT 'app' 在 Go 侧的同款回落，行为零变化）。
 type VolumeWrite struct {
-	AppID          string
+	// AppID 是 app 归属的兼容别名（等价 OwnerKind='app' + OwnerID=AppID）；
+	// 与 OwnerID 同时给出时以 OwnerID 为准。
+	AppID string
+	// OwnerKind 归属类别；空值回落 VolumeOwnerApp（见结构注）。
+	OwnerKind VolumeOwnerKind
+	// OwnerID 是归属资源的平台 ID（app ID 或库实例 ID）。
+	OwnerID        string
 	Key            string
 	Name           string
 	Kind           VolumeKind
@@ -74,13 +105,37 @@ type VolumeWrite struct {
 	HostPath       string
 }
 
-// RegisterAppVolume 登记卷（重新声明转 active——孤儿卷被应用重新声明即
-// 复活；数据不随声明删除，name/node 等事实字段以最新声明为准）。created_at
-// 首次落账后保持（防代际静默复用的叙事锚）。返回 isNew：首次登记为 true
-// （调用方据此发 volume.created 事件——数据诞生点）。
-func (s *Store) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, bool, error) {
-	if w.AppID == "" || w.Key == "" || w.Name == "" {
-		return Volume{}, false, errors.New("state: volume write requires app_id, key and name")
+// resolveOwner 归一化归属二元组（AppID 兼容回落 + 词表校验）。就地修正
+// w.OwnerKind/OwnerID。
+func (w *VolumeWrite) resolveOwner() error {
+	if w.OwnerKind == "" {
+		w.OwnerKind = VolumeOwnerApp
+	}
+	if w.OwnerID == "" {
+		w.OwnerID = w.AppID
+	}
+	switch w.OwnerKind {
+	case VolumeOwnerApp, VolumeOwnerDatabase:
+	default:
+		return fmt.Errorf("state: volume owner_kind %q not in {app, database}", w.OwnerKind)
+	}
+	if w.OwnerID == "" {
+		return errors.New("state: volume write requires owner (owner_id or app_id), key and name")
+	}
+	return nil
+}
+
+// RegisterVolume 登记卷（核心形态，按 owner 二元组寻址；重新声明转
+// active——孤儿卷被重新声明即复活；数据不随声明删除，name/node 等事实
+// 字段以最新声明为准）。created_at 首次落账后保持（防代际静默复用的叙事
+// 锚）。返回 isNew：首次登记为 true（调用方据此发 volume.created 事件
+// ——数据诞生点）。
+func (s *Store) RegisterVolume(ctx context.Context, w VolumeWrite) (Volume, bool, error) {
+	if err := w.resolveOwner(); err != nil {
+		return Volume{}, false, err
+	}
+	if w.Key == "" || w.Name == "" {
+		return Volume{}, false, errors.New("state: volume write requires owner, key and name")
 	}
 	if w.Kind == "" {
 		w.Kind = VolumeKindNamed
@@ -91,14 +146,14 @@ func (s *Store) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, b
 	var out Volume
 	var isNew bool
 	err := s.InTx(ctx, func(tx *Tx) error {
-		_, err := tx.GetAppVolume(ctx, w.AppID, w.Key)
+		_, err := tx.GetVolume(ctx, w.OwnerKind, w.OwnerID, w.Key)
 		switch {
 		case errors.Is(err, ErrVolumeNotFound):
 			isNew = true
 		case err != nil:
 			return err
 		}
-		row, err := tx.RegisterAppVolume(ctx, w)
+		row, err := tx.RegisterVolume(ctx, w)
 		if err != nil {
 			return err
 		}
@@ -109,13 +164,19 @@ func (s *Store) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, b
 			Target: "volume:" + w.Name,
 			Result: "ok",
 			// 摘要只含事实字段，无卷数据概念。
-			DiffSummary: DiffSummary("app", w.AppID, "key", w.Key), // MG-6：构造器替换手拼 JSON
+			DiffSummary: DiffSummary("owner_kind", string(w.OwnerKind), "owner_id", w.OwnerID, "key", w.Key), // MG-6：构造器替换手拼 JSON
 		})
 	})
 	if err != nil {
 		return Volume{}, false, fmt.Errorf("state: register volume %s: %w", w.Key, err)
 	}
 	return out, isNew, nil
+}
+
+// RegisterAppVolume 登记应用卷（E4 泛化前的既有形态：固定 owner_kind=
+// 'app' 的 RegisterVolume 包装——placement/engine 调用面零改动）。
+func (s *Store) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, bool, error) {
+	return s.RegisterVolume(ctx, w)
 }
 
 // Validate 校验 VolumeWrite 词表（kind 必须在册）。
@@ -128,13 +189,16 @@ func (w VolumeWrite) Validate() error {
 	}
 }
 
-// RegisterAppVolume 是事务内卷登记（供与事件等同事务组合）。
-func (t *Tx) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, error) {
+// RegisterVolume 是事务内卷登记（供与事件等同事务组合）。
+func (t *Tx) RegisterVolume(ctx context.Context, w VolumeWrite) (Volume, error) {
+	if err := w.resolveOwner(); err != nil {
+		return Volume{}, err
+	}
 	now := nowNano()
 	const q = `INSERT INTO volumes
-		(id, app_id, key, name, kind, platform_node_id, mount_path, host_path, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
-		ON CONFLICT(app_id, key) DO UPDATE SET
+		(id, owner_kind, owner_id, key, name, kind, platform_node_id, mount_path, host_path, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+		ON CONFLICT(owner_kind, owner_id, key) DO UPDATE SET
 			name = excluded.name,
 			kind = excluded.kind,
 			platform_node_id = excluded.platform_node_id,
@@ -142,48 +206,71 @@ func (t *Tx) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, erro
 			host_path = excluded.host_path,
 			status = 'active',
 			updated_at = excluded.updated_at`
-	if _, err := t.ExecContext(ctx, q, ulid.Make().String(), w.AppID, w.Key, w.Name,
+	if _, err := t.ExecContext(ctx, q, ulid.Make().String(), string(w.OwnerKind), w.OwnerID, w.Key, w.Name,
 		string(w.Kind), w.PlatformNodeID, w.MountPath, w.HostPath, now, now); err != nil {
 		return Volume{}, fmt.Errorf("state: upsert volume: %w", err)
 	}
-	return t.GetAppVolume(ctx, w.AppID, w.Key)
+	return t.GetVolume(ctx, w.OwnerKind, w.OwnerID, w.Key)
 }
 
-// GetAppVolume 取单卷；不存在返回 ErrVolumeNotFound。
+// RegisterAppVolume 是事务内的应用卷登记（RegisterVolume 的 app 形态包装）。
+func (t *Tx) RegisterAppVolume(ctx context.Context, w VolumeWrite) (Volume, error) {
+	return t.RegisterVolume(ctx, w)
+}
+
+// GetVolume 取单卷（owner 二元组寻址）；不存在返回 ErrVolumeNotFound。
+func (s *Store) GetVolume(ctx context.Context, ownerKind VolumeOwnerKind, ownerID, key string) (Volume, error) {
+	const q = `SELECT ` + volumeScanCols + ` FROM volumes WHERE owner_kind = ? AND owner_id = ? AND key = ?`
+	return scanVolume(s.db.QueryRowContext(ctx, q, string(ownerKind), ownerID, key))
+}
+
+// GetVolume 是事务内取单卷（写后回读）。
+func (t *Tx) GetVolume(ctx context.Context, ownerKind VolumeOwnerKind, ownerID, key string) (Volume, error) {
+	const q = `SELECT ` + volumeScanCols + ` FROM volumes WHERE owner_kind = ? AND owner_id = ? AND key = ?`
+	return scanVolume(t.QueryRowContext(ctx, q, string(ownerKind), ownerID, key))
+}
+
+// GetAppVolume 取应用单卷（GetVolume 的 app 形态包装；不存在返回
+// ErrVolumeNotFound）。
 func (s *Store) GetAppVolume(ctx context.Context, appID, key string) (Volume, error) {
-	const q = `SELECT ` + volumeScanCols + ` FROM volumes WHERE app_id = ? AND key = ?`
-	return scanVolume(s.db.QueryRowContext(ctx, q, appID, key))
+	return s.GetVolume(ctx, VolumeOwnerApp, appID, key)
 }
 
-// GetAppVolume 是事务内取单卷（写后回读）。
+// GetAppVolume 是事务内取应用单卷（GetVolume 的 app 形态包装）。
 func (t *Tx) GetAppVolume(ctx context.Context, appID, key string) (Volume, error) {
-	const q = `SELECT ` + volumeScanCols + ` FROM volumes WHERE app_id = ? AND key = ?`
-	return scanVolume(t.QueryRowContext(ctx, q, appID, key))
+	return t.GetVolume(ctx, VolumeOwnerApp, appID, key)
 }
 
-// ListAppVolumes 返回该 app 全部卷（按 key 字典序）。
+// ListOwnerVolumes 返回该归属（app 或库实例）的全部卷（按 key 字典序）。
+func (s *Store) ListOwnerVolumes(ctx context.Context, ownerKind VolumeOwnerKind, ownerID string) ([]Volume, error) {
+	const q = `SELECT ` + volumeScanCols + ` FROM volumes WHERE owner_kind = ? AND owner_id = ? ORDER BY key ASC`
+	return queryVolumes(ctx, s.db, q, string(ownerKind), ownerID)
+}
+
+// ListAppVolumes 返回该 app 全部卷（ListOwnerVolumes 的 app 形态包装）。
 func (s *Store) ListAppVolumes(ctx context.Context, appID string) ([]Volume, error) {
-	const q = `SELECT ` + volumeScanCols + ` FROM volumes WHERE app_id = ? ORDER BY key ASC`
-	return queryVolumes(ctx, s.db, q, appID)
+	return s.ListOwnerVolumes(ctx, VolumeOwnerApp, appID)
 }
 
-// ListAllVolumes 返回跨 app 全部卷（multi-node §2.8 ListVolumes 只读面的
+// ListAllVolumes 返回跨归属全部卷（multi-node §2.8 ListVolumes 只读面的
 // 数据源：active 在册行、orphaned 孤儿行——删除应用默认保留、residual
 // 派生标记由消费方按 prev_platform_node_id 计算； discarded 行同样如实
-// 列出）。按 updated_at 降序、name 升序稳定排序。
+// 列出。E4 起含 database 归属行——OwnerKind/OwnerID 随行投影，消费方按
+// 归属分面）。按 name 升序稳定排序。
 func (s *Store) ListAllVolumes(ctx context.Context) ([]Volume, error) {
 	const q = `SELECT ` + volumeScanCols + ` FROM volumes ORDER BY name ASC`
 	return queryVolumes(ctx, s.db, q)
 }
 
-// MarkAppVolumesOrphaned 把该 app 全部 active 卷置 orphaned（应用删除默认
-// 保留卷语义；调用方在 tombstone 流程触发）。返回置孤儿卷数。幂等。
-func (s *Store) MarkAppVolumesOrphaned(ctx context.Context, appID string) (int, error) {
+// MarkOwnerVolumesOrphaned 把该归属（app 或库实例）全部 active 卷置
+// orphaned（应用删除默认保留卷语义的泛化形态；调用方在 tombstone 流程
+// 触发）。返回置孤儿卷数。幂等。
+func (s *Store) MarkOwnerVolumesOrphaned(ctx context.Context, ownerKind VolumeOwnerKind, ownerID string) (int, error) {
 	var n int64
 	err := s.InTx(ctx, func(tx *Tx) error {
 		res, err := tx.ExecContext(ctx,
 			`UPDATE volumes SET status = 'orphaned', updated_at = ?
-			WHERE app_id = ? AND status = 'active'`, nowNano(), appID)
+			WHERE owner_kind = ? AND owner_id = ? AND status = 'active'`, nowNano(), string(ownerKind), ownerID)
 		if err != nil {
 			return fmt.Errorf("state: orphan volumes: %w", err)
 		}
@@ -195,7 +282,7 @@ func (s *Store) MarkAppVolumesOrphaned(ctx context.Context, appID string) (int, 
 			return tx.WriteAudit(ctx, AuditEntry{
 				Actor:       "system",
 				Action:      "volume.orphaned",
-				Target:      "app:" + appID,
+				Target:      string(ownerKind) + ":" + ownerID,
 				Result:      "ok",
 				DiffSummary: fmt.Sprintf(`{"count":%d}`, n),
 			})
@@ -208,19 +295,26 @@ func (s *Store) MarkAppVolumesOrphaned(ctx context.Context, appID string) (int, 
 	return int(n), nil
 }
 
-// RebindAppVolumes 是事务内卷换绑：app 的全部 active 卷 platform_node_id
-// → 目标节点，原节点登记进 prev_platform_node_id（multi-node §2.6 换点
-// 落库面；restored/discarded 两种数据处置都登记 prev——源节点副本都是
-// 待清理残留）。幂等：已在目标节点的卷行不动（prev 不被同节点重绑洗写）。
-// 返回发生迁移的卷数。
-func (t *Tx) RebindAppVolumes(ctx context.Context, appID, targetPlatformNodeID string) (int64, error) {
+// MarkAppVolumesOrphaned 把该 app 全部 active 卷置 orphaned（应用删除默认
+// 保留卷语义；MarkOwnerVolumesOrphaned 的 app 形态包装）。
+func (s *Store) MarkAppVolumesOrphaned(ctx context.Context, appID string) (int, error) {
+	return s.MarkOwnerVolumesOrphaned(ctx, VolumeOwnerApp, appID)
+}
+
+// RebindVolumes 是事务内卷换绑（泛化形态）：该归属的全部 active 卷
+// platform_node_id → 目标节点，原节点登记进 prev_platform_node_id
+//（multi-node §2.6 换点落库面；restored/discarded 两种数据处置都登记
+// prev——源节点副本都是待清理残留）。幂等：已在目标节点的卷行不动（prev
+// 不被同节点重绑洗写）。返回发生迁移的卷数。
+func (t *Tx) RebindVolumes(ctx context.Context, ownerKind VolumeOwnerKind, ownerID, targetPlatformNodeID string) (int64, error) {
 	res, err := t.ExecContext(ctx,
 		`UPDATE volumes SET
 			prev_platform_node_id = platform_node_id,
 			platform_node_id = ?,
 			updated_at = ?
-		WHERE app_id = ? AND status = 'active' AND platform_node_id <> ? AND platform_node_id <> ''`,
-		targetPlatformNodeID, nowNano(), appID, targetPlatformNodeID)
+		WHERE owner_kind = ? AND owner_id = ? AND status = 'active'
+		  AND platform_node_id <> ? AND platform_node_id <> ''`,
+		targetPlatformNodeID, nowNano(), string(ownerKind), ownerID, targetPlatformNodeID)
 	if err != nil {
 		return 0, fmt.Errorf("state: rebind volumes: %w", err)
 	}
@@ -231,23 +325,29 @@ func (t *Tx) RebindAppVolumes(ctx context.Context, appID, targetPlatformNodeID s
 	return n, nil
 }
 
+// RebindAppVolumes 是事务内应用卷换绑（RebindVolumes 的 app 形态包装）。
+func (t *Tx) RebindAppVolumes(ctx context.Context, appID, targetPlatformNodeID string) (int64, error) {
+	return t.RebindVolumes(ctx, VolumeOwnerApp, appID, targetPlatformNodeID)
+}
+
 // volumeScanCols 是卷行查询列清单（新增列只加在此与扫描函数）。
-const volumeScanCols = `id, app_id, key, name, kind, platform_node_id,
+const volumeScanCols = `id, owner_kind, owner_id, key, name, kind, platform_node_id,
 	prev_platform_node_id, mount_path, host_path, status, created_at, updated_at`
 
 // scanVolume 从单行构造 Volume。
 func scanVolume(row interface{ Scan(dest ...any) error }) (Volume, error) {
 	var v Volume
-	var kind, status string
+	var kind, status, ownerKind string
 	var nodeID, prevNodeID sql.NullString
 	var created, updated int64
-	if err := row.Scan(&v.ID, &v.AppID, &v.Key, &v.Name, &kind, &nodeID,
+	if err := row.Scan(&v.ID, &ownerKind, &v.OwnerID, &v.Key, &v.Name, &kind, &nodeID,
 		&prevNodeID, &v.MountPath, &v.HostPath, &status, &created, &updated); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Volume{}, ErrVolumeNotFound
 		}
 		return Volume{}, fmt.Errorf("state: scan volume: %w", err)
 	}
+	v.OwnerKind = VolumeOwnerKind(ownerKind)
 	v.Kind = VolumeKind(kind)
 	v.Status = VolumeStatus(status)
 	if nodeID.Valid {

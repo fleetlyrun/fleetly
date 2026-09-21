@@ -187,6 +187,38 @@ var builtins = []Code{
 		Summary:    "read-before-write optimistic concurrency conflict (object version token invalid)",
 		Suggestion: "The object was modified concurrently: re-read the latest state and retry with the new version token."},
 
+	// ── 数据库托管 E4（managed-databases 设计 §5.2，2026-09-20 冻结；注册表
+	//    只增。D-DB-8：状态机前置态/CAS 冲突复用 E_STATE_VERSION_CONFLICT
+	//    不另立码。S1 阶段注册 + E_ENV_KEY_RESERVED 随守卫接线；其余码的
+	//    生产引用随 S2-S5 票据落地，usage_test 豁免清单同步注记）──
+	{ID: "E_DB_NOT_FOUND", HTTP: 404,
+		Summary:    "the referenced/operated database instance does not exist or has entered deleting/deleted (candidate list attached)",
+		Suggestion: "Check the database instance name against the database list; references are validated for existence only (not readiness — a not-ready database yields a plan warning instead)."},
+	{ID: "E_DB_REFERENCED", HTTP: 409,
+		Summary:    "database deletion refused while app references exist (reference list attached; data-safety sentinel)",
+		Suggestion: "Remove the fleetly.databases labels from the referencing apps and redeploy them first (the reference list in the error context names every blocking app/service)."},
+	{ID: "E_DB_TEMPLATE_UNSUPPORTED", HTTP: 400,
+		Summary:    "unknown template id or a settings change violates the template-managed surface (image/engine parameters are not user-editable)",
+		Suggestion: "Use one of the built-in template ids (postgres-16, redis-7) and limit settings changes to resource limits and the backup plan."},
+	{ID: "E_DB_ENV_PREFIX_CONFLICT", HTTP: 422,
+		Summary:    "two databases referenced by the same app derive the same env prefix (e.g. pg-prod vs pg_prod)",
+		Suggestion: "Rename one of the database instances (or reference only one per colliding pair in this app): env prefixes are derived from instance names by uppercasing with '-' mapped to '_'."},
+	{ID: "E_DB_BACKUP_FAILED", HTTP: 500,
+		Summary:    "database backup job failed (resource-terminal class; surfaced primarily in the backup ledger and events)",
+		Suggestion: "Check the db_backups ledger error column and the db.backup_failed event for the failure summary; fix the cause and trigger the backup again."},
+	{ID: "E_DB_RESTORE_FAILED", HTTP: 500,
+		Summary:    "database restore failed (an interrupted in-place restore is a critical alert, not a retry-quietly path)",
+		Suggestion: "Follow the restore runbook: verify the instance state and volume data, then re-run the restore from the same snapshot after fixing the cause."},
+	{ID: "E_DB_ROTATE_FAILED", HTTP: 500,
+		Summary:    "credential rotation failed mid-flight (the completed stages are attached; manual completion may be required)",
+		Suggestion: "Check the attached completed stages and the instance state, finish the remaining stage manually or retry the rotation, then verify the referencing apps redeploy."},
+	{ID: "E_SECRET_NOT_FOUND", HTTP: 422,
+		Summary:    "a compose-declared external secret is not in the platform secret store (deploy preflight)",
+		Suggestion: "Create the secret first (fleetly secrets set) with the exact declared name, then deploy again; compose secrets must declare external: true."},
+	{ID: "E_ENV_KEY_RESERVED", HTTP: 422,
+		Summary:    "user wrote into the reserved FLEETLY_ env namespace (template connection-string materialization keys)",
+		Suggestion: "FLEETLY_* env keys are platform-reserved (database connection materialization): rename the key without the FLEETLY_ prefix; system-source platform writes are unaffected."},
+
 	// ── token 管理（M4-6 实现期新增，评审整改 B5；文档外码单独列出，
 	//    待 T0.5 契约冻结确认）──
 	{ID: "E_TOKEN_LAST_ADMIN", HTTP: 409,

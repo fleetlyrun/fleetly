@@ -124,6 +124,90 @@ func IsCronJobName(name string) bool {
 	return strings.HasPrefix(name, cronJobNamePrefix)
 }
 
+// 库族命名公式（E4 数据库托管，managed-databases §5.4 文档锚逐字；新增
+// 函数非改既有公式——与 app 名族 `fleetly-<app>-*` 解耦的独立前缀族，
+// 库实例与 app 可重名、对象不撞，§2.1 名字空间独立）：
+//
+//	库服务名   fleetly-db-<name>-<service>
+//	库网络名   fleetly-db-<name>-net           （每实例专属共享 overlay）
+//	库卷名     fleetly-db-<name>-<key>-<id8>   （id8 = 实例 ID 前 8）
+//	库 secret 名 fleetly-db-<name>-<secret>-<hash8>
+//
+// 前缀族常量 dbNamePrefix 同时是引擎对账的识别面（IsDbServiceName——库
+// 服务不受发布对账「省略=删除」扫描管辖，后续阶段消费）。
+const (
+	// dbNamePrefix 是库族对象名的固定前缀（fleetly-db-）。
+	dbNamePrefix = namePrefix + "db-"
+)
+
+// DBServiceName 返回库服务名 `fleetly-db-<name>-<service>`（name = 库实例
+// 名，service = 模板服务名——模板渲染层供给，internal/dbtemplate）。
+func DBServiceName(name, service string) (string, error) {
+	if err := validateComponent("name", name); err != nil {
+		return "", err
+	}
+	if err := validateComponent("service", service); err != nil {
+		return "", err
+	}
+	return dbNamePrefix + name + "-" + service, nil
+}
+
+// DBNetworkName 返回库实例专属共享 overlay 网络名 `fleetly-db-<name>-net`
+// （库服务挂该网络、别名 = 实例名；引用方服务部署时由平台附加挂载）。
+func DBNetworkName(name string) (string, error) {
+	if err := validateComponent("name", name); err != nil {
+		return "", err
+	}
+	return dbNamePrefix + name + "-net", nil
+}
+
+// DBVolumeName 返回库数据卷名 `fleetly-db-<name>-<key>-<id8>`（id8 = 库
+// 实例平台 ID 前 8 位——防代际静默复用，与 app 卷的 appid8 同纪律）。
+func DBVolumeName(name, key, instanceID string) (string, error) {
+	if err := validateComponent("name", name); err != nil {
+		return "", err
+	}
+	if err := validateComponent("key", key); err != nil {
+		return "", err
+	}
+	id8, err := instanceID8(instanceID)
+	if err != nil {
+		return "", err
+	}
+	return dbNamePrefix + name + "-" + key + "-" + id8, nil
+}
+
+// DBSecretName 返回库 secret 名 `fleetly-db-<name>-<secret>-<hash8>`
+// （hash8 = 值 sha256 前 8——值轮换即换名换引用，app secret 同纪律）。
+func DBSecretName(name, secret, hash8 string) (string, error) {
+	if err := validateComponent("name", name); err != nil {
+		return "", err
+	}
+	if err := validateComponent("secret", secret); err != nil {
+		return "", err
+	}
+	if err := validateHash8(hash8); err != nil {
+		return "", err
+	}
+	return dbNamePrefix + name + "-" + secret + "-" + hash8, nil
+}
+
+// IsDbServiceName 报告 Swarm 服务名是否为库族服务（fleetly-db- 前缀——
+// 引擎对账的删除扫描与 reconcile 按此前缀豁免库服务：库收敛器自管，
+// 不受发布对账「省略=删除」管辖）。
+func IsDbServiceName(name string) bool {
+	return strings.HasPrefix(name, dbNamePrefix)
+}
+
+// instanceID8 返回资源平台 ID 的前 8 位（库卷命名尾缀；AppID8 的泛化形
+// ——ULID 前 8 位已含高精度时间戳成分）。
+func instanceID8(id string) (string, error) {
+	if len(id) < 8 {
+		return "", fmt.Errorf("naming: instance id %q shorter than 8 chars", id)
+	}
+	return id[:8], nil
+}
+
 // AppID8 返回 app 平台 ID 的前 8 位（卷命名防撞尾缀）。ULID 为 26 位，
 // 前 8 位已含高精度时间戳成分。
 func AppID8(appID string) (string, error) {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/oklog/ulid/v2"
 )
 
@@ -32,6 +33,13 @@ const (
 	// EnvStatusEffective 已随部署生效（合并链可消费）。
 	EnvStatusEffective EnvVarStatus = "effective"
 )
+
+// ReservedEnvPrefix 是平台保留 env 键前缀（managed-databases 设计 §2.5，
+// E4/FZ-1：`FLEETLY_`，大小写敏感——模板连接串物化键 FLEETLY_DB_<NAME>_*
+// 的名字空间；用户 platform 写撞前缀 → E_ENV_KEY_RESERVED，system 物化
+// 写放行）。与 label 保留前缀 fleetly.*（E_LABEL_RESERVED）同型的平台
+// 保留名字空间纪律。
+const ReservedEnvPrefix = "FLEETLY_"
 
 // envVarsScanCols 是 env 行查询列清单（新增列只加在此与扫描函数）。
 const envVarsScanCols = `id, app_id, key, value, source, status, created_at, updated_at`
@@ -76,6 +84,13 @@ func ValidateEnvKey(key string) error {
 // 为 pending（既有 effective 行被覆盖同样回到 pending——生效语义 = 下次部署
 // 消费）。审计同事务 fail-closed，diff 摘要只含键名与状态，不含值。
 // source 取 platform / system；留空回落 platform。
+//
+// 保留名字空间守卫（managed-databases 设计 §2.5，E4/FZ-1）：source=platform
+// 的用户写撞 `FLEETLY_` 前缀（大小写敏感）→ E_ENV_KEY_RESERVED（422）。前缀
+// 是平台保留名字空间（模板连接串物化键 FLEETLY_DB_<NAME>_*），守卫同时封死
+// 「system 行被用户 upsert 劫持 source」路径——现状 upsert 会改写 source，
+// 若无本守卫，用户对 FLEETLY_* 键的 platform 写将顶掉 S4 物化的 system 行。
+// source=system 的写是平台内部物化（DB 连接串等），任意键放行。
 func (s *Store) SetAppEnv(ctx context.Context, appID, key, value, source string) (EnvVar, error) {
 	if err := ValidateEnvKey(key); err != nil {
 		return EnvVar{}, fmt.Errorf("state: %w", err)
@@ -85,6 +100,11 @@ func (s *Store) SetAppEnv(ctx context.Context, appID, key, value, source string)
 	}
 	if source != "platform" && source != "system" {
 		return EnvVar{}, fmt.Errorf("state: env source %q not in {platform, system}", source)
+	}
+	if source == "platform" && strings.HasPrefix(key, ReservedEnvPrefix) {
+		return EnvVar{}, apperr.New("E_ENV_KEY_RESERVED",
+			"env key %q uses the reserved FLEETLY_ prefix (platform-managed namespace; user writes are rejected)", key).
+			WithContext("key", key)
 	}
 	var out EnvVar
 	err := s.InTx(ctx, func(tx *Tx) error {

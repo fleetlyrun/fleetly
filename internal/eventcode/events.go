@@ -11,8 +11,13 @@ package eventcode
 //     backup.upload_failed / backup.upload_recovered（E3-3，W3-S2）、
 //     cron.triggered / cron.succeeded / cron.failed / cron.timed_out
 //     （FZ-4 钉名，E5 Cron，W3-S5 接线）
+//   - E4 数据库托管（managed-databases §5.3，D-DB-8 复核后统一自有族）：
+//     db.* 18 个 = 转移事件 9（EnterDbPhase 单写点随转换同事务落）+
+//     操作事件 9（操作不换主状态）。不复用 app.*/deployment.*——独立
+//     资源无对应 subject。S1 注册；发出来源随 S2-S5 票据接线
+//     （usage_test 豁免清单同步注记）。
 //
-// 计 52 个事件名。
+// 计 52 + 18 = 70 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -133,4 +138,30 @@ var builtins = []Event{
 	// 恢复绿：上一份上传 failed、本份 ok 时发出（配对 failed 形成红→绿
 	// 闭环）。payload 带 backup id。
 	{Name: "backup.upload_recovered", Summary: "remote state backup upload recovered (previous upload had failed; payload carries the backup id)"},
+
+	// ── 数据库托管 E4（managed-databases §5.3，D-DB-8：统一自有 db.* 族，
+	//    只增；S1 注册、发出来源随 S2-S5 票据接线）。转移事件随
+	//    EnterDbPhase 单写点与转换同事务落库（Outbox）；操作事件不换主
+	//    状态。payload 只带实例名/模板/状态/错误摘要等事实字段，凭据明文
+	//    与连接串密码永不进事件（state-model §2.9 secret 纪律）──
+	// 转移事件（§2.1 转移表逐行）：
+	{Name: "db.provision_started", Summary: "database provisioning/convergence started (create, resume or retry acceptance; state -> provisioning)"},
+	{Name: "db.ready", Summary: "database passed the health gate (provisioning -> ready)"},
+	{Name: "db.provision_failed", Summary: "database convergence failed (health gate timeout / image unavailable / engine error; scene preserved, explicit retry required)"},
+	{Name: "db.degraded", Summary: "database in service turned unhealthy (health probe failing / task crash loop; swarm self-healing observed)"},
+	{Name: "db.recovered", Summary: "database recovered (health probe passing again; degraded -> ready)"},
+	{Name: "db.suspended", Summary: "database suspended (scale 0, services and volumes retained)"},
+	{Name: "db.resumed", Summary: "database resume accepted (paused -> provisioning reconvergence)"},
+	{Name: "db.delete_started", Summary: "database deletion accepted (reference guard passed; tombstone first beat)"},
+	{Name: "db.deleted", Summary: "database deletion completed (managed objects reaped; name enters retention hold; volumes orphaned by default)"},
+	// 操作事件（不换主状态）：
+	{Name: "db.upgrade_available", Summary: "newer template image digest available for the database template (opt-in upgrade advertised)"},
+	{Name: "db.upgrade_started", Summary: "database upgrade started (pre_upgrade backup gate begins; controlled rebuild)"},
+	{Name: "db.upgrade_finished", Summary: "database upgrade finished (new digest converged and healthy)"},
+	{Name: "db.upgrade_failed", Summary: "database upgrade failed (digest rolled back to the previous value; state degraded)"},
+	{Name: "db.backup_succeeded", Summary: "database backup succeeded (ledger row written; verify pending)"},
+	{Name: "db.backup_failed", Summary: "database backup failed (failure summary in payload, never credentials)"},
+	{Name: "db.restore_completed", Summary: "database restore completed in place (confirm-gated destructive operation)"},
+	{Name: "db.restore_failed", Summary: "database restore failed (critical alert; in-place replay interrupted)"},
+	{Name: "db.credentials_rotated", Summary: "database credentials rotated (manual two-phase confirm; referencing apps auto-redeploy follows)"},
 }

@@ -135,7 +135,7 @@ volumes:
 		Images: map[string]string{"db": "repo/db:1@sha256:ddd"},
 		Decision: placement.Decision{Bind: true, PlatformNodeID: "n_test",
 			Constraint: "node.labels.fleetly.node-id == n_test"},
-		Volumes: []state.Volume{{AppID: "app1id", Key: "data", Name: "fleetly-app1-data-test"}},
+		Volumes: []state.Volume{{OwnerKind: state.VolumeOwnerApp, OwnerID: "app1id", Key: "data", Name: "fleetly-app1-data-test"}},
 	})
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)

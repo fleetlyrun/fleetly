@@ -62,10 +62,10 @@ var docEvents = map[string]string{ // event → 文档出处
 	// E5 Cron 实现期新增（object-storage 设计 §8 事件面 + FZ-4 钉名，W3-S5
 	// 接线）：发出来源 = internal/cron 触发链与完成检测——事件与 cron_runs
 	// 台账行同事务（Outbox）。cron.timed_out 为 FZ-4 钉名。
-	"cron.triggered":  "E5 Cron added during implementation (object-storage §8; W3-S5; one-shot job created on schedule or manual trigger)",
-	"cron.succeeded":  "E5 Cron added during implementation (object-storage §8; W3-S5; run completed, job service removed)",
-	"cron.failed":     "E5 Cron added during implementation (object-storage §8; W3-S5; run failed, no retry)",
-	"cron.timed_out":  "E5 Cron added during implementation (object-storage §8; FZ-4 pinned name; watchdog budget exceeded, job service removed)",
+	"cron.triggered": "E5 Cron added during implementation (object-storage §8; W3-S5; one-shot job created on schedule or manual trigger)",
+	"cron.succeeded": "E5 Cron added during implementation (object-storage §8; W3-S5; run completed, job service removed)",
+	"cron.failed":    "E5 Cron added during implementation (object-storage §8; W3-S5; run failed, no retry)",
+	"cron.timed_out": "E5 Cron added during implementation (object-storage §8; FZ-4 pinned name; watchdog budget exceeded, job service removed)",
 
 	// T2.15 实现期新增（文档外事件名单独列出，待 T0.5 契约冻结确认）：架构
 	// §2.5 不变量「路由发布严格晚于健康门；发布失败不回滚部署、单独告警 +
@@ -109,6 +109,28 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 错误摘要，绝不带 restic env 凭证材料。
 	"backup.upload_failed":    "E3 object-storage §2.3/D-S3-4 added during implementation (W3-S2 upload track; local snapshot unaffected, payload carries backup id + redacted error summary)",
 	"backup.upload_recovered": "E3 object-storage §2.3/D-S3-4 added during implementation (W3-S2 upload track; red-to-green closure after a failed upload)",
+
+	// E4 数据库托管（managed-databases §5.3，D-DB-8 复核后统一自有 db.*
+	// 族，注册表只增）：转移事件 9（EnterDbPhase 单写点随转换同事务落）+
+	// 操作事件 9（不换主状态）。S1 注册；发出来源随 S2-S5 票据接线。
+	"db.provision_started":   "E4 managed-databases §5.3 (transition event; provisioning acceptance for create/resume/retry)",
+	"db.ready":               "E4 managed-databases §5.3 (transition event; health gate passed)",
+	"db.provision_failed":    "E4 managed-databases §5.3 (transition event; convergence failed, scene preserved)",
+	"db.degraded":            "E4 managed-databases §5.3 (transition event; in-service unhealthy)",
+	"db.recovered":           "E4 managed-databases §5.3 (transition event; degraded -> ready)",
+	"db.suspended":           "E4 managed-databases §5.3 (transition event; ready/degraded -> paused)",
+	"db.resumed":             "E4 managed-databases §5.3 (transition event; paused -> provisioning)",
+	"db.delete_started":      "E4 managed-databases §5.3 (transition event; reference guard passed, tombstone first beat)",
+	"db.deleted":             "E4 managed-databases §5.3 (transition event; reap completed, name enters retention hold)",
+	"db.upgrade_available":   "E4 managed-databases §5.3 (operation event; opt-in upgrade advertised)",
+	"db.upgrade_started":     "E4 managed-databases §5.3 (operation event; controlled rebuild with backup gate)",
+	"db.upgrade_finished":    "E4 managed-databases §5.3 (operation event; upgrade converged and healthy)",
+	"db.upgrade_failed":      "E4 managed-databases §5.3 (operation event; digest rolled back, state degraded)",
+	"db.backup_succeeded":    "E4 managed-databases §5.3 (operation event; ledger row written)",
+	"db.backup_failed":       "E4 managed-databases §5.3 (operation event; never credentials in payload)",
+	"db.restore_completed":   "E4 managed-databases §5.3 (operation event; in-place restore finished)",
+	"db.restore_failed":      "E4 managed-databases §5.3 (operation event; interrupted in-place restore alerts critically)",
+	"db.credentials_rotated": "E4 managed-databases §5.3 (operation event; referencing apps auto-redeploy follows)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。
