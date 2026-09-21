@@ -83,8 +83,29 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 
 **runbook 固化(真 VPS 教训)**:①冷备必须停止态做;②单 manager 回填即自举,force-new-cluster 仅在需要轮换 join token 时执行,**必须带 --advertise-addr 且从健康态执行**(半死态执行先二次冷备恢复);③恢复后 join token 已变,加节点用新 token;④degraded 状态需部署动作驱动恢复(F7)。
 
-## 6. 剩余步骤(W1 未完)
+## 7. W2 多节点实机演练(E1-9,2026-09-21 实录)
 
-- ~~T1-V2.4 V5 真路径演练~~ ✅(本节,2026-09-20)
-- T1-V2.6 Console Playwright smoke(进行中)
-- T1-V2.5 发布检查单回填 + v0.1.0 正式 tag(裁决 V2-4:dogfooding 验收后)
+拓扑:manager = 本机(升级 main 构建 + `base_domain: dev.fleetly.run`);worker = fleetly-node2.deeploop.net(143.198.234.68 / VPC 10.124.0.5)。**组网实证**:两台共享 VPC 是 **eth1 的 10.124.0.0/20**(ARP REACHABLE);eth0 的 10.48.0.x 是两个 VPC 的同网段假象(ARP FAILED)——manager advertise 经 `swarm init --force-new-cluster --advertise-addr 10.124.0.3` 切换(V5 路径复用)。
+
+| 断言/能力 | 实录 | 结果 |
+|---|---|---|
+| 平台证书 duty | LE 生产,`_fleetly-platform` 多 SAN(ctrl/registry/console) issuer=CN=YE2;8423 TLS 面服务 | ✅ |
+| zot 部署器 | fleetly-registry 1/1(v2.1.21 钉版);registry.dev 443 → 401 Basic Auth 挑战 | ✅ |
+| join 向导 | `nodes join-guide` 完整输出(join 命令/防火墙矩阵/DNS 步骤);node2 join 成功 | ✅ |
+| 锚定 duty | node2 自动铸造平台 ID `n_01M30WZY…` + `node.joined` 事件 | ✅ |
+| **auto-rotate(D-MN-1)** | 日志 `worker join token auto-rotated after new node anchoring, minted:1` | ✅ 真机首跑 |
+| 断言 A(拓扑) | 双节点 Ready、节点观测缓存双行 | ✅ |
+| 断言 C(有状态 drain) | drain→任务受阻(Pending);回岗→**自动回绑 node2**;**marker 数据完好**(真卷带部署后缀 `statedata-01M30X6G`) | ✅(事件面见 F11) |
+| 断言 B(无状态 drain) | 待云防火墙放行 8423(worker Traefik 配置面)后执行 | ⏳ |
+
+**预算实测(D-MN-12 口径,2026-09-21)**:manager 全栈 idle **≈424MB < 600MB** ✓(fleetlyd 64 + dockerd 202 + containerd 64 + Traefik 29 + zot 51 + buildkit 14);worker 侧单列 ≈201MB(dockerd 120 + containerd 65 + Traefik 16,零 fleetly 组件)。
+
+### W2 真机发现(F8-F11)
+
+| # | 发现 | 处置 |
+|---|---|---|
+| F8 | 平台证书签发落在启动发布之后,websecure/内联证书要等 12h sweep 才进视图(冷启动后平台子域 443 长期缺席) | **已修**(a70625c:证书就绪同拍触发重发布,指纹级断言) |
+| F9 | worker Traefik 配置饥饿:swarm ingress mesh 把外部请求负载到各节点 Traefik,worker 拉 `ctrl.<base>:8423`(公网解析)被云防火墙拦 → 间歇性证书错误;join 向导防火墙矩阵本就列了 8423——实证其为**必需**项 | 运维口径:join 前放行 worker→manager 8423(向导矩阵为真源) |
+| F10 | **publish 无证书段形态会擦掉全平台 TLS**:无域名应用部署/签发竞态后下一拍,全量视图换入把既有 websecure+证书整体擦出(hello/demo 实测被擦) | **已修**(8c3a086:publish 统一带证书段;回归测试钉住) |
+| F11 | settled 应用的 drain 无 `placement.blocked/recovered` 事件(发射点仅在 releasing 窗)——部署窗内 drain 有事件(dind C3/C6 证),settled 后只有任务层 Pending | v0.2.x 跟进票:周期性绑定节点可用性守护(事件流诚实面补齐) |
+| 观察 | 残卷:node2 上存在无后缀 `statedata` 空卷(真卷带部署后缀)——卷命名/清理的巡检项 | 随 F11 票或孤儿卷清理指引核对 |
