@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api"
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/cron"
+	"github.com/fleetlyrun/fleetly/internal/database"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
@@ -43,6 +44,7 @@ var ProviderSet = wire.NewSet(
 	NewSecretsBox,
 	NewBackupManager,
 	NewRustfsManager,
+	NewDatabaseManager,
 	NewBuilder,
 	NewBuildQueue,
 	NewPlacementResolver,
@@ -55,6 +57,7 @@ var ProviderSet = wire.NewSet(
 	NewSystemService,
 	NewAppsService,
 	NewCronService,
+	NewDatabaseService,
 	NewDeploymentsService,
 	NewRevisionsService,
 	NewBuildsService,
@@ -205,6 +208,18 @@ func NewRustfsManager(app lynx.App, st *state.Store, sb *secrets.Box, sc *substr
 	return mgr.WithProbeRunner(sc), cleanup, nil
 }
 
+// NewDatabaseManager 构建库实例收敛 duty 管理器（E4 W4-S2，managed-
+// databases §2.1/§2.3 的 provisioner：按生命周期态分派收敛——provisioning
+// 建现场过健康门、ready/degraded 健康观察、paused 保持 scale-0、deleting
+// 幂等 reap；状态写全部经 state.EnterDbPhase 单写点）。自建 Docker 连接
+//（rustfs Manager 同款形态——引擎凭据 secret 的 SecretReference 翻译需要
+// 底座对象 ID 与完整 File UID/GID/Mode，通用投影装不下），cleanup 释放；
+// 放置裁决消费 placement.Resolver（接口在 internal/database 定义，方向
+// 纪律同 cron 的 NodePreflight）。
+func NewDatabaseManager(app lynx.App, st *state.Store, sb *secrets.Box, pl *placement.Resolver) (*database.Manager, func(), error) {
+	return database.NewManager(database.Config{}, st, sb, pl, app.Logger())
+}
+
 // NewBuilder 构建构建执行器（build.Builder：railpack/dockerfile 双驱动 +
 // buildkit solve + 产物归档 + 执行前 buildkitd 就绪收敛）。镜像端口与容器
 // 编排由 substrate.Client 隐式实现 build 包端口（适配器方向：
@@ -310,6 +325,13 @@ func NewAppsService(st *state.Store, sb *secrets.Box, cfg *AppConfig, m *ingress
 // cron.manual_triggered 审计；runs 读面直读台账）。
 func NewCronService(st *state.Store, cm *cron.Manager) *api.CronService {
 	return api.NewCronService(st, cm)
+}
+
+// NewDatabaseService 构造库实例资源面服务（E4 W4-S2：受理/守卫/脱敏投影
+// ——box 承载凭据生成与指纹；kicker = database.Manager——受理后即时触发
+// 收敛拍，收敛本体由 duty 异步承载）。
+func NewDatabaseService(st *state.Store, sb *secrets.Box, dm *database.Manager) *api.DatabaseService {
+	return api.NewDatabaseService(st, sb, dm)
 }
 
 // gitEndpointForHint 把 SSH 监听地址归一为 remote 提示的 host:port
@@ -514,6 +536,7 @@ func NewServices(
 	src *gitserver.GitTriggers,
 	cfg *AppConfig,
 	rm *rustfs.Manager,
+	dm *database.Manager,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
@@ -528,14 +551,15 @@ func NewServices(
 		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr, cfg.IngressSettings().ConfigTLSAddr),
 		newLogsService(lm),
 		// ── 第三段：资源层（最后停：backup 晚于 engine 等 post-deploy
-		//     在途快照；rustfs duty 同层——在途收敛拍随 ctx 排水；cron 调度
-		//     器同层——触发链与收口拍随 ctx 排水，残留 job 由下次启动首拍
-		//     收口兜底；store 最后）──
+		//     在途快照；rustfs/database 收敛 duty 同层——在途收敛拍随 ctx
+		//     排水；cron 调度器同层——触发链与收口拍随 ctx 排水，残留 job
+		//     由下次启动首拍收口兜底；store 最后）──
 		newIdentityService(id),
 		newObserverService(ob),
 		newJanitorService(jr),
 		newBackupService(bm),
 		newRustfsService(rm),
+		newDatabaseService(dm),
 		newCronSchedulerService(cm),
 		newSecretsService(sb),
 		newStoreService(st),

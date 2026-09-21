@@ -43,19 +43,14 @@ var eventExemptions = map[string]string{
 	// cron.skipped 的预留豁免已移除：E5 Cron（W3-S5）触发链成为真实发出来
 	// 源——internal/cron（overlap/node_unavailable/missed_downtime/interrupted
 	// 四类 skip 路径）。
-	// E4 数据库托管（managed-databases §5.3，S1 阶段注册）：db.* 18 事件
-	// 全部预留——发出来源随 S2-S5 票据接线：转移事件 9 由 EnterDbPhase
-	// 调用方（生命周期 API/provision 收敛器，S2-S3）发出；操作事件 9 随
-	// 升级/备份恢复/轮换适配器（S4-S5）接线。注册表行已注明出处。
-	"db.provision_started":   "reserved: emitted by the E4 lifecycle/provisioner (stage S2-S3)",
-	"db.ready":               "reserved: emitted by the E4 health gate (stage S3)",
-	"db.provision_failed":    "reserved: emitted by the E4 health gate timeout path (stage S3)",
-	"db.degraded":            "reserved: emitted by the E4 health watch duty (stage S3)",
-	"db.recovered":           "reserved: emitted by the E4 health watch duty (stage S3)",
-	"db.suspended":           "reserved: emitted by the E4 suspend API (stage S2-S3)",
-	"db.resumed":             "reserved: emitted by the E4 resume API (stage S2-S3)",
-	"db.delete_started":      "reserved: emitted by the E4 delete API after the reference guard (stage S2-S3)",
-	"db.deleted":             "reserved: emitted by the E4 reap duty (stage S3)",
+	// E4 数据库托管（managed-databases §5.3，S1 阶段注册）：db.* 18 事件中
+	// 转移事件 9 的豁免已在 S2 移除——发出来源 = EnterDbPhase 单写点的调用
+	// 方：db.provision_started（受理/重试，internal/api/databases.go）+
+	// db.ready/db.provision_failed/db.degraded/db.recovered/db.deleted（收敛
+	// duty，internal/database/converge.go）+ db.suspended/db.resumed（受理，
+	// internal/api/databases.go）+ db.delete_started（删除守卫通过后，同上）。
+	// 操作事件 9 仍豁免：升级/备份恢复/轮换适配器随 S4-S5 接线。注册表行已
+	// 注明出处。
 	"db.upgrade_available":   "reserved: emitted by the E4 template digest watch (stage S5)",
 	"db.upgrade_started":     "reserved: emitted by the E4 upgrade orchestration (stage S5)",
 	"db.upgrade_finished":    "reserved: emitted by the E4 upgrade orchestration (stage S5)",

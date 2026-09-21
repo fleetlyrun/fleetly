@@ -30,6 +30,13 @@ const (
 	// cron_runs.id——残留 job 服务与台账行的对账锚）。
 	LabelCronRun = "fleetly.cron.run"
 
+	// LabelDatabase 标记库实例归属（E4 数据库托管，managed-databases §2.1
+	// D-DB-1：库服务/网络/卷/secret 的自描述 marker，值 = 库实例名）。与
+	// LabelApp 平行的独立归属锚——库实例与 app 可重名、对象前缀族解耦
+	//（fleetly-db-*），label 面同样独立；库收敛器（internal/database）
+	// 与 secret 清场按此 label 选择。
+	LabelDatabase = "fleetly.db"
+
 	// LabelNodeID 是节点身份锚（node label，值 = 平台节点 ID n_<ULID>，
 	// state-model §2.3）。
 	LabelNodeID = "fleetly.node-id"

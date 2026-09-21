@@ -1,0 +1,246 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 system.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// DatabaseService 是库实例资源面（E4 数据库托管，managed-databases §5.1
+// 契约加法的 S2 子集：生命周期生命周期 7 RPC——create/get/list/delete/
+// suspend/resume/retry/settings）。独立成 service 的理由与 CronService 同
+// 型：库实例是独立一等资源（D-DB-1 用户终裁）——自有表、自有生命周期状
+// 态机、不复用 apps 部署管线；并入 AppsService 会把两个领域混进一个资源面。
+//
+// S4/S5 域的 RPC（UpgradeDatabase/RotateDatabaseCredentials/
+// TriggerDatabaseBackup/ListDatabaseBackups/RestoreDatabaseBackup）随各自
+// 票据追加——本文件只加法，零 breaking。
+//
+// 错误语义（managed-databases §5.2，D-DB-8 零新增码）：
+//   E_DB_NOT_FOUND            404（目标不存在或已进入 deleting/deleted）
+//   E_DB_REFERENCED           409（有引用 app 禁删，context 带引用清单）
+//   E_DB_TEMPLATE_UNSUPPORTED 400（模板 ID 未知 / 设置违反受管面）
+//   E_STATE_VERSION_CONFLICT  409（前置态/CAS 冲突——context 带
+//                               current_state 与合法前置态清单）
+service DatabaseService {
+  // CreateDatabase 创建库实例（受理即 provisioning——无 created 态；凭据
+  // 生成一次、age 密文落库；收敛器异步建现场过健康门 → ready）。
+  rpc CreateDatabase(CreateDatabaseRequest) returns (CreateDatabaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases"
+      body: "*"
+    };
+  }
+  // GetDatabase 库实例详情（连接信息脱敏投影——密码明文零离开存储；显式
+  // reveal 面随 S4/S6 轮换与 Console 票据）。
+  rpc GetDatabase(GetDatabaseRequest) returns (GetDatabaseResponse) {
+    option (google.api.http) = { get: "/v1/databases/{name}" };
+  }
+  // ListDatabases 库实例列表（name 字典序；deleted tombstone 不进默认列表
+  // ——与 apps 列表同口径）。
+  rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {
+    option (google.api.http) = { get: "/v1/databases" };
+  }
+  // DeleteDatabase 删除受理（引用守卫通过后 → deleting tombstone 第一拍；
+  // reap duty 幂等清理受管对象。confirm = 实例名——数据安全两段式确认；
+  // delete_volumes 默认 false = 卷保留转 orphaned，true = 删数据卷不可逆）。
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (DeleteDatabaseResponse) {
+    option (google.api.http) = { delete: "/v1/databases/{name}" };
+  }
+  // SuspendDatabase 暂停（scale 0 保留服务与卷；引用方连不上是诚实暴露）。
+  rpc SuspendDatabase(SuspendDatabaseRequest) returns (SuspendDatabaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases/{name}/suspend"
+      body: "*"
+    };
+  }
+  // ResumeDatabase 恢复（paused → provisioning 重收敛 → ready/degraded）。
+  rpc ResumeDatabase(ResumeDatabaseRequest) returns (ResumeDatabaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases/{name}/resume"
+      body: "*"
+    };
+  }
+  // RetryDatabase 显式重试（failed → provisioning 重收敛；现场保留语义下
+  // 失败的唯一出边）。
+  rpc RetryDatabase(RetryDatabaseRequest) returns (RetryDatabaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/databases/{name}/retry"
+      body: "*"
+    };
+  }
+  // UpdateDatabaseSettings 设置变更（限额 + 备份计划；任意非终态准入、主
+  // 状态不变；限额变更 = spec 重建由收敛器在下一拍承载）。镜像/引擎参数
+  // 受管（违规模板字段不存在于请求——E_DB_TEMPLATE_UNSUPPORTED 面）。
+  rpc UpdateDatabaseSettings(UpdateDatabaseSettingsRequest) returns (UpdateDatabaseSettingsResponse) {
+    option (google.api.http) = {
+      put: "/v1/databases/{name}/settings"
+      body: "*"
+    };
+  }
+}
+
+message CreateDatabaseRequest {
+  // 库实例名（^[a-z0-9][a-z0-9_-]*$——与 app 名同字符集规则；对象前缀族
+  // fleetly-db-* 与 app 名族解耦，app 与库实例可重名）。
+  string name = 1 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9_-]*$"];
+  // 模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。
+  string template = 2 [(buf.validate.field).string.min_len = 1];
+  // 资源限额（零值字段回落模板缺省——PG 1C/1Gi、Redis 0.5C/256Mi）。
+  DatabaseLimits limits = 3;
+  // 备份计划（零值字段回落平台缺省 24h/7 份/03:00 UTC）。
+  DatabaseBackupPlan backup_plan = 4;
+}
+
+message CreateDatabaseResponse {
+  DatabaseView database = 1;
+}
+
+message GetDatabaseRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetDatabaseResponse {
+  DatabaseView database = 1;
+}
+
+message ListDatabasesRequest {
+  // 行数上限（缺省 100）。
+  int32 limit = 1 [(buf.validate.field).int32 = { gte: 0, lte: 1000 }];
+}
+
+message ListDatabasesResponse {
+  repeated DatabaseView databases = 1;
+}
+
+message DeleteDatabaseRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // 破坏性确认 = 实例名原样回传（mismatch → 400——与卷-节点 409 前哨同
+  // 型的数据安全面；引用 app 在册 → 409 E_DB_REFERENCED 先行）。
+  string confirm = 2;
+  // 删除数据卷（默认 false = 保留转 orphaned；true = 不可逆删除）。
+  bool delete_volumes = 3;
+}
+
+message DeleteDatabaseResponse {
+  string name = 1;
+  string status = 2;
+}
+
+message SuspendDatabaseRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message SuspendDatabaseResponse {
+  DatabaseView database = 1;
+}
+
+message ResumeDatabaseRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ResumeDatabaseResponse {
+  DatabaseView database = 1;
+}
+
+message RetryDatabaseRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message RetryDatabaseResponse {
+  DatabaseView database = 1;
+}
+
+message UpdateDatabaseSettingsRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // 资源限额（零值字段回落模板缺省；limits 变更 = spec 重建由收敛器承载）。
+  DatabaseLimits limits = 2;
+  // 备份计划（备份调度执行体随 S5 票据；本面先行受理与展示）。
+  DatabaseBackupPlan backup_plan = 3;
+}
+
+message UpdateDatabaseSettingsResponse {
+  DatabaseView database = 1;
+}
+
+// DatabaseLimits 是资源限额（仅 limits——镜像/引擎参数受管）。
+message DatabaseLimits {
+  // CPU 限额（核数；0 = 模板缺省）。
+  double cpu_seconds = 1;
+  // 内存限额（字节；0 = 模板缺省）。
+  int64 memory_bytes = 2;
+}
+
+// DatabaseBackupPlan 是备份计划（§5.4 配置键 databases.backup_* 的 per
+// 实例覆盖；0 值字段 = 平台缺省）。
+message DatabaseBackupPlan {
+  int32 interval_hours = 1;
+  int32 keep = 2;
+  int32 hour_utc = 3;
+}
+
+// DatabaseView 是库实例投影（状态 = 生命周期态；连接信息脱敏——密码明文
+// 零离开存储，url 已掩码、password_fingerprint 供「是不是那个 secret」比
+// 对；显式 reveal 面随 S4/S6）。last_error 是最近一次收敛失败原因（failed
+// 诊断面；'' = 无失败现场）。
+message DatabaseView {
+  string id = 1;
+  string name = 2;
+  string template = 3;
+  string image_digest = 4;
+  // 生命周期状态位（provisioning|ready|failed|degraded|paused|deleting|deleted）。
+  string status = 5;
+  // 放置绑定（平台节点 ID；空 = 未绑定——provisioning 首拍前）。
+  string placement = 6;
+  // 数据卷投影（name = docker 卷名；status = active|orphaned|discarded；
+  // 空 = 尚未登记）。
+  DatabaseVolumeView volume = 7;
+  // 连接信息脱敏投影。
+  DatabaseConnectionView connection = 8;
+  DatabaseBackupPlan backup_plan = 9;
+  DatabaseLimits limits = 10;
+  google.protobuf.Timestamp created_at = 11;
+  google.protobuf.Timestamp updated_at = 12;
+  google.protobuf.Timestamp credential_updated_at = 13;
+  // 最近一次收敛失败原因（failed/deleting 前的现场快照；空 = 无失败现场）。
+  string last_error = 14;
+}
+
+message DatabaseVolumeView {
+  string name = 1;
+  string status = 2;
+  // 数据节点（卷钉住语义——与 placement 一致）。
+  string platform_node_id = 3;
+}
+
+// DatabaseConnectionView 是连接信息脱敏投影（§2.5 键集的只读面）。url 中
+// 密码段恒为固定掩码（********）——明文零离开存储；host = 实例名 DNS 别名
+//（引用方 app 内即以此可达）。
+message DatabaseConnectionView {
+  string host = 1;
+  int32 port = 2;
+  // PG 有 user/database；Redis 不输出（0 值 + 空串在 EmitUnpopulated=false
+  // 下不出现）。
+  string user = 3;
+  string database = 4;
+  // 掩码 URL（postgres://fleetly:********@<host>:5432/<db> / redis://:********@<host>:6379/0）。
+  string url = 5;
+  // 密码指纹（sha256 前 8 hex——只判「是不是那个值」，材料零出现）。
+  string password_fingerprint = 6;
+}

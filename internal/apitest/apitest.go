@@ -165,6 +165,10 @@ func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env
 	serverv1.RegisterPlacementServiceServer(srv, api.NewPlacementService(st, nil))
 	serverv1.RegisterTokensServiceServer(srv, api.NewTokensService(st))
 	serverv1.RegisterGitKeysServiceServer(srv, api.NewGitKeysService(st))
+	// 库实例面（E4 W4-S2）：CLI golden/冒烟测试同路径消费（受理面——收敛
+	// 行为在 internal/database 单测，本环境不装配 duty；kicker nil = 收敛由
+	// 周期拍兜底的降级形态，与生产 nil-safety 同语义）。
+	serverv1.RegisterDatabaseServiceServer(srv, api.NewDatabaseService(st, box, nil))
 
 	lis := bufconn.Listen(1024 * 1024)
 	go func() { _ = srv.Serve(lis) }()

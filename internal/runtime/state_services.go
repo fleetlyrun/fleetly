@@ -14,6 +14,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/cron"
+	"github.com/fleetlyrun/fleetly/internal/database"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
@@ -174,6 +175,28 @@ func (s cronSchedulerService) Start(ctx context.Context) error {
 	return nil
 }
 func (s cronSchedulerService) Stop(ctx context.Context) error { return s.m.Stop(ctx) }
+
+// databaseService 是库实例收敛 duty 服务壳（E4 W4-S2）：Start 阶段进入收敛
+// 循环（provisioning 建现场过健康门 / ready-degraded 健康观察 / paused 保
+// 持 scale-0 / deleting 幂等 reap；tick 拍 + API 受理后的 kick 拍）。Start
+// 阻塞到关停（actor 契约同上），Stop 等待在途一拍收口（收敛幂等——重启续
+// 跑；failed/deleted 实例的现场跨重启由库承载）。
+type databaseService struct {
+	m *database.Manager
+}
+
+func newDatabaseService(m *database.Manager) lynx.Service { return databaseService{m: m} }
+
+func (s databaseService) Name() string                 { return "database.converge" }
+func (s databaseService) Init(_ lynx.AppContext) error { return nil }
+func (s databaseService) Start(ctx context.Context) error {
+	if err := s.m.Start(ctx); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return nil
+}
+func (s databaseService) Stop(ctx context.Context) error { return s.m.Stop(ctx) }
 
 // secretsService 是平台密钥服务壳：主密钥已在装配期（NewSecretsBox →
 // EnsureKey）fail-fast 加载/生成，Init 无动作；CheckHealth 持续上报密钥

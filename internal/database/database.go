@@ -1,0 +1,308 @@
+package database
+
+// Manager 与收敛主循环（managed-databases §2.1/§2.3 的 provisioner 落地）：
+// tick 扫描拍驱动的按态收敛——provisioning 建现场过健康门、ready/degraded
+// 观察健康、paused 保持 scale-0、deleting 幂等 reap。状态写唯一通道 =
+// state.EnterDbPhase 单写点；收敛器自己的判定材料（选点、卷、secret、spec
+// 幂等比对）全部可重入——任一拍中途失败，下一拍整体重走（与 rustfs/引擎
+// 收敛同款「失败退避、幂等重试」节奏）。
+//
+// 事件驱动 kick：API 受理生命周期操作（create/resume/retry/suspend）后
+// Kick() 立即触发一拍——受理到收敛的时延从 tick 周期收敛到毫秒级；kick
+// 只是提前，不改变幂等语义（错过 kick 也由下一拍兜底）。
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"sync"
+	"time"
+
+	"github.com/fleetlyrun/fleetly/internal/dbtemplate"
+	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/placement"
+	"github.com/fleetlyrun/fleetly/internal/secrets"
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// 平台缺省参数（对齐 rustfs duty 的退避/扫描节奏与库健康门的预算形态）。
+const (
+	// DefaultTickInterval 是收敛扫描拍周期（provisioning 受理→服务创建的
+	// 无 kick 时延上界；ready 观察拍的抖动下界——swarm 健康位自身已是
+	// 5s×3 的持续证据，10s 拍不引入额外迟钝）。
+	DefaultTickInterval = 10 * time.Second
+	// DefaultProvisionTimeout 是 provisioning 健康门总预算（首次创建含
+	// 镜像分发：start_period 30s + 探测窗 15s + 分发余量；超时即判失败
+	// ——保留现场、显式 retry）。任务硬失败（failed/rejected）不等预算
+	// 立即判败。
+	DefaultProvisionTimeout = 5 * time.Minute
+)
+
+// PlacementSelector 是收敛器对放置裁决的消费端口（实现方 = internal/
+// placement.Resolver——接口在本包定义以便单测注入；api 定义端口同纪律：
+// 核心不感知实现类型）。
+type PlacementSelector interface {
+	ResolveDatabase(ctx context.Context, in DatabaseInput) (DatabaseDecision, error)
+}
+
+// DatabaseInput/DatabaseDecision 是 placement 包类型的本包别名（消费面
+// 读感统一；方向纪律：database → placement 单向）。
+type (
+	DatabaseInput    = placement.DatabaseInput
+	DatabaseDecision = placement.DatabaseDecision
+)
+
+// Config 是收敛器参数（缺省回落平台默认）。
+type Config struct {
+	// TickInterval 是扫描拍周期（缺省 10s）。
+	TickInterval time.Duration
+	// ProvisionTimeout 是 provisioning 健康门总预算（缺省 5m）。
+	ProvisionTimeout time.Duration
+}
+
+// Normalize 回落文档默认值。
+func (c Config) Normalize() Config {
+	if c.TickInterval <= 0 {
+		c.TickInterval = DefaultTickInterval
+	}
+	if c.ProvisionTimeout <= 0 {
+		c.ProvisionTimeout = DefaultProvisionTimeout
+	}
+	return c
+}
+
+// Manager 是库实例收敛 duty 管理器（rustfs Manager 同款装配形态：自建
+// Docker 连接，cleanup 释放；零框架依赖——lynx 服务壳在 internal/runtime）。
+type Manager struct {
+	cfg       Config
+	store     *state.Store
+	box       *secrets.Box
+	placement PlacementSelector
+	docker    dockerPort
+	log       *slog.Logger
+
+	// mu 串行化 beat 与 Stop（kick 触发的即时拍与周期拍不并发——单写点
+	// 纪律在收敛器侧的延伸：同一实例的收敛拍严格串行）。
+	mu sync.Mutex
+
+	// provisioningSince 记录实例进入 provisioning 的首见时刻（健康门超时
+	// 判定的进程内计时锚；原因与失败结论落 last_error 持久列——计时器本
+	// 身丢失只损失一次超时判定的起点，重启后重记，不产生错误转移）。
+	provisioningSince map[string]time.Time
+
+	// now 是时钟出口（单测注入超时路径）。
+	now func() time.Time
+
+	stopOnce sync.Once
+	stop     chan struct{}
+	done     chan struct{}
+	kick     chan struct{}
+}
+
+// NewManager 构造 duty 管理器（自建 Docker 连接；cleanup 释放——rustfs
+// NewManager 同款形态）。
+func NewManager(cfg Config, store *state.Store, box *secrets.Box, selector PlacementSelector, log *slog.Logger) (*Manager, func(), error) {
+	dc, err := newRealDockerClient("")
+	if err != nil {
+		return nil, nil, err
+	}
+	m := NewManagerWithDocker(cfg, store, box, selector, dc, log)
+	return m, func() { _ = dc.Close() }, nil
+}
+
+// NewManagerWithDocker 以注入的 dockerPort 构造（单测）。
+func NewManagerWithDocker(cfg Config, store *state.Store, box *secrets.Box, selector PlacementSelector, dc dockerPort, log *slog.Logger) *Manager {
+	return &Manager{
+		cfg:               cfg.Normalize(),
+		store:             store,
+		box:               box,
+		placement:         selector,
+		docker:            dc,
+		log:               log,
+		provisioningSince: map[string]time.Time{},
+		now:               time.Now,
+		stop:              make(chan struct{}),
+		kick:              make(chan struct{}, 1),
+	}
+}
+
+// WithClock 注入时钟（单测）。
+func (m *Manager) WithClock(now func() time.Time) *Manager { m.now = now; return m }
+
+// Start 非阻塞启动收敛循环（启动即扫一拍——重启续跑；此后周期拍与 kick
+// 拍并行驱动，拍本体在 mu 内串行）。
+func (m *Manager) Start(ctx context.Context) error {
+	m.done = make(chan struct{})
+	go m.loop(ctx)
+	return nil
+}
+
+// Stop 停止收敛循环并等待退出（在途一拍收口后返回；收敛幂等——控制面
+// 重启自然续跑）。
+func (m *Manager) Stop(_ context.Context) error {
+	m.stopOnce.Do(func() { close(m.stop) })
+	<-m.done
+	return nil
+}
+
+// Kick 请求立即一拍（非阻塞——已有待处理 kick 时合并；API 生命周期受理
+// 后调用，收敛时延不等下一拍）。
+func (m *Manager) Kick() {
+	select {
+	case m.kick <- struct{}{}:
+	default:
+	}
+}
+
+func (m *Manager) loop(ctx context.Context) {
+	defer close(m.done)
+	ticker := time.NewTicker(m.cfg.TickInterval)
+	defer ticker.Stop()
+	for {
+		m.beat(ctx)
+		select {
+		case <-ctx.Done():
+			return
+		case <-m.stop:
+			return
+		case <-m.kick:
+		case <-ticker.C:
+		}
+	}
+}
+
+// beat 是一个收敛拍：swarm 就绪前哨 → 全量实例按态分派。单实例失败不中
+// 断其余实例（每拍重试各自消化），整体失败（swarm 未就绪/读库失败）只
+// 日志退避。
+func (m *Manager) beat(ctx context.Context) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	active, err := m.docker.Info(ctx)
+	if err != nil {
+		m.log.Warn("database: swarm probe failed (retrying)", "error", err)
+		return
+	}
+	if !active {
+		m.log.Warn("database: docker engine is not an active swarm manager (retrying)")
+		return
+	}
+	rows, err := m.store.ListDatabaseInstances(ctx)
+	if err != nil {
+		m.log.Warn("database: list instances failed (retrying)", "error", err)
+		return
+	}
+	for i := range rows {
+		m.convergeInstance(ctx, &rows[i])
+	}
+	m.gcProvisioningTimers(rows)
+}
+
+// convergeInstance 是按生命周期态的收敛分派（§2.3 操作表的单写点协作面
+// ——每个分支只做本态的义务，转移全部经 EnterDbPhase）。
+func (m *Manager) convergeInstance(ctx context.Context, inst *state.DatabaseInstance) {
+	defer func() {
+		if r := recover(); r != nil {
+			m.log.Error("database: converge panic (bug; instance left for next beat)",
+				"instance", inst.Name, "panic", fmt.Sprint(r))
+		}
+	}()
+	switch inst.State {
+	case state.DatabaseProvisioning:
+		m.convergeProvisioning(ctx, inst)
+	case state.DatabaseReady, state.DatabaseDegraded:
+		m.watchHealthy(ctx, inst)
+	case state.DatabasePaused:
+		m.convergePaused(ctx, inst)
+	case state.DatabaseDeleting:
+		m.reapDeleting(ctx, inst)
+	case state.DatabaseFailed:
+		// 保留现场（服务与卷不删，§2.1）——收敛器零动作，等显式 retry。
+	case state.DatabaseDeleted:
+		// 终态：无义务。
+	default:
+		m.log.Warn("database: unknown instance state (skipped)", "instance", inst.Name, "state", string(inst.State))
+	}
+}
+
+// gcProvisioningTimers 清理已离开 provisioning 的计时锚（进程内 map 不随
+// 状态表自动失效——每拍对账一次，量级 = 实例数，代价可忽略）。
+func (m *Manager) gcProvisioningTimers(rows []state.DatabaseInstance) {
+	inProvisioning := map[string]bool{}
+	for _, r := range rows {
+		if r.State == state.DatabaseProvisioning {
+			inProvisioning[r.ID] = true
+		}
+	}
+	for id := range m.provisioningSince {
+		if !inProvisioning[id] {
+			delete(m.provisioningSince, id)
+		}
+	}
+}
+
+// emitEvent 追加平台事件（rustfs 同款：Outbox 单写、失败只日志——事件披
+// 露不阻断收敛）。payload 只带事实字段，凭据材料零出现。
+func (m *Manager) emitEvent(ctx context.Context, name, subject string, payload map[string]string) {
+	raw, err := json.Marshal(payload)
+	if err != nil {
+		raw = []byte("{}")
+	}
+	err = m.store.InTx(ctx, func(tx *state.Tx) error {
+		_, err := tx.AppendEvent(ctx, state.Event{Name: name, Subject: subject, Payload: string(raw)})
+		return err
+	})
+	if err != nil {
+		m.log.Warn("database: event append failed", "event", name, "error", err)
+	}
+}
+
+// writeAudit 系统自动动作的审计（reap 等——「自动动作必入审计」纪律；
+// fail-closed 由调用方决定是否阻断收敛路径）。
+func (m *Manager) writeAudit(ctx context.Context, action, target string, diff string) error {
+	return m.store.InTx(ctx, func(tx *state.Tx) error {
+		return tx.WriteAudit(ctx, state.AuditEntry{
+			Actor:       "system",
+			Action:      action,
+			Target:      target,
+			Result:      "ok",
+			DiffSummary: diff,
+		})
+	})
+}
+
+// decryptCredential 解密实例引擎凭据（明文只存活于内存链；零日志/错误
+// 文本拼接）。
+func (m *Manager) decryptCredential(inst *state.DatabaseInstance) (string, error) {
+	plain, err := m.box.Decrypt([]byte(inst.CredentialCipher))
+	if err != nil {
+		return "", fmt.Errorf("database: decrypt credential of %s: %w", inst.Name, err)
+	}
+	return string(plain), nil
+}
+
+// renderService 渲染实例的期望投影（副本数按态覆写：paused=0、其余=1；
+// 模板渲染保持纯——暂停语义不入 dbtemplate）。
+func renderService(inst *state.DatabaseInstance, password string, replicas uint64) (engine.ServiceSpec, error) {
+	spec, err := dbtemplate.Render(dbtemplate.RenderInput{
+		Instance:   inst.Name,
+		InstanceID: inst.ID,
+		TemplateID: inst.Template,
+		Limits: dbtemplate.Limits{
+			CPUSeconds:  inst.Settings.CPUSeconds,
+			MemoryBytes: inst.Settings.MemoryBytes,
+		},
+		Credentials: dbtemplate.Credentials{Password: password},
+	})
+	if err != nil {
+		return engine.ServiceSpec{}, err
+	}
+	spec.Replicas = replicas
+	return spec, nil
+}
+
+// errIsNotFound 报告错误是否「实例不存在」（Get 的哨兵归一——实例被并发
+// 删除时收敛拍静默让位）。
+func errIsNotFound(err error) bool { return errors.Is(err, state.ErrDatabaseNotFound) }

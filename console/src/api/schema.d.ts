@@ -628,6 +628,130 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/databases": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListDatabases 库实例列表（name 字典序；deleted tombstone 不进默认列表
+         *     ——与 apps 列表同口径）。
+         */
+        get: operations["DatabaseService_ListDatabases"];
+        put?: never;
+        /**
+         * CreateDatabase 创建库实例（受理即 provisioning——无 created 态；凭据
+         *     生成一次、age 密文落库；收敛器异步建现场过健康门 → ready）。
+         */
+        post: operations["DatabaseService_CreateDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetDatabase 库实例详情（连接信息脱敏投影——密码明文零离开存储；显式
+         *     reveal 面随 S4/S6 轮换与 Console 票据）。
+         */
+        get: operations["DatabaseService_GetDatabase"];
+        put?: never;
+        post?: never;
+        /**
+         * DeleteDatabase 删除受理（引用守卫通过后 → deleting tombstone 第一拍；
+         *     reap duty 幂等清理受管对象。confirm = 实例名——数据安全两段式确认；
+         *     delete_volumes 默认 false = 卷保留转 orphaned，true = 删数据卷不可逆）。
+         */
+        delete: operations["DatabaseService_DeleteDatabase"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** ResumeDatabase 恢复（paused → provisioning 重收敛 → ready/degraded）。 */
+        post: operations["DatabaseService_ResumeDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RetryDatabase 显式重试（failed → provisioning 重收敛；现场保留语义下
+         *     失败的唯一出边）。
+         */
+        post: operations["DatabaseService_RetryDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * UpdateDatabaseSettings 设置变更（限额 + 备份计划；任意非终态准入、主
+         *     状态不变；限额变更 = spec 重建由收敛器在下一拍承载）。镜像/引擎参数
+         *     受管（违规模板字段不存在于请求——E_DB_TEMPLATE_UNSUPPORTED 面）。
+         */
+        put: operations["DatabaseService_UpdateDatabaseSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** SuspendDatabase 暂停（scale 0 保留服务与卷；引用方连不上是诚实暴露）。 */
+        post: operations["DatabaseService_SuspendDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1458,6 +1582,128 @@ export interface components {
         };
         v1TriggerCronRunResponse: {
             run?: components["schemas"]["v1CronRunView"];
+        };
+        DatabaseServiceResumeDatabaseBody: Record<string, never>;
+        DatabaseServiceRetryDatabaseBody: Record<string, never>;
+        DatabaseServiceSuspendDatabaseBody: Record<string, never>;
+        DatabaseServiceUpdateDatabaseSettingsBody: {
+            limits?: components["schemas"]["v1DatabaseLimits"];
+            backup_plan?: components["schemas"]["v1DatabaseBackupPlan"];
+        };
+        v1CreateDatabaseRequest: {
+            /**
+             * 库实例名（^[a-z0-9][a-z0-9_-]*$——与 app 名同字符集规则；对象前缀族
+             *     fleetly-db-* 与 app 名族解耦，app 与库实例可重名）。
+             */
+            name?: string;
+            /** 模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。 */
+            template?: string;
+            limits?: components["schemas"]["v1DatabaseLimits"];
+            backup_plan?: components["schemas"]["v1DatabaseBackupPlan"];
+        };
+        v1CreateDatabaseResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
+        };
+        /**
+         * DatabaseBackupPlan 是备份计划（§5.4 配置键 databases.backup_* 的 per
+         *     实例覆盖；0 值字段 = 平台缺省）。
+         */
+        v1DatabaseBackupPlan: {
+            /** Format: int32 */
+            interval_hours?: number;
+            /** Format: int32 */
+            keep?: number;
+            /** Format: int32 */
+            hour_utc?: number;
+        };
+        /**
+         * DatabaseConnectionView 是连接信息脱敏投影（§2.5 键集的只读面）。url 中
+         *     密码段恒为固定掩码（********）——明文零离开存储；host = 实例名 DNS 别名
+         *     （引用方 app 内即以此可达）。
+         */
+        v1DatabaseConnectionView: {
+            host?: string;
+            /** Format: int32 */
+            port?: number;
+            /**
+             * PG 有 user/database；Redis 不输出（0 值 + 空串在 EmitUnpopulated=false
+             *     下不出现）。
+             */
+            user?: string;
+            database?: string;
+            /** 掩码 URL（postgres://fleetly:********@<host>:5432/<db> / redis://:********@<host>:6379/0）。 */
+            url?: string;
+            /** 密码指纹（sha256 前 8 hex——只判「是不是那个值」，材料零出现）。 */
+            password_fingerprint?: string;
+        };
+        /** DatabaseLimits 是资源限额（仅 limits——镜像/引擎参数受管）。 */
+        v1DatabaseLimits: {
+            /**
+             * CPU 限额（核数；0 = 模板缺省）。
+             * Format: double
+             */
+            cpu_seconds?: number;
+            /**
+             * 内存限额（字节；0 = 模板缺省）。
+             * Format: int64
+             */
+            memory_bytes?: string;
+        };
+        /**
+         * DatabaseView 是库实例投影（状态 = 生命周期态；连接信息脱敏——密码明文
+         *     零离开存储，url 已掩码、password_fingerprint 供「是不是那个 secret」比
+         *     对；显式 reveal 面随 S4/S6）。last_error 是最近一次收敛失败原因（failed
+         *     诊断面；'' = 无失败现场）。
+         */
+        v1DatabaseView: {
+            id?: string;
+            name?: string;
+            template?: string;
+            image_digest?: string;
+            /** 生命周期状态位（provisioning|ready|failed|degraded|paused|deleting|deleted）。 */
+            status?: string;
+            /** 放置绑定（平台节点 ID；空 = 未绑定——provisioning 首拍前）。 */
+            placement?: string;
+            volume?: components["schemas"]["v1DatabaseVolumeView"];
+            connection?: components["schemas"]["v1DatabaseConnectionView"];
+            backup_plan?: components["schemas"]["v1DatabaseBackupPlan"];
+            limits?: components["schemas"]["v1DatabaseLimits"];
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+            /** Format: date-time */
+            credential_updated_at?: string;
+            /** 最近一次收敛失败原因（failed/deleting 前的现场快照；空 = 无失败现场）。 */
+            last_error?: string;
+        };
+        v1DatabaseVolumeView: {
+            name?: string;
+            status?: string;
+            /** 数据节点（卷钉住语义——与 placement 一致）。 */
+            platform_node_id?: string;
+        };
+        v1DeleteDatabaseResponse: {
+            name?: string;
+            status?: string;
+        };
+        v1GetDatabaseResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
+        };
+        v1ListDatabasesResponse: {
+            databases?: components["schemas"]["v1DatabaseView"][];
+        };
+        v1ResumeDatabaseResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
+        };
+        v1RetryDatabaseResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
+        };
+        v1SuspendDatabaseResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
+        };
+        v1UpdateDatabaseSettingsResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
         };
     };
     responses: never;
@@ -2789,6 +3035,281 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TriggerCronRunResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_ListDatabases: {
+        parameters: {
+            query?: {
+                /** @description 行数上限（缺省 100）。 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListDatabasesResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_CreateDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateDatabaseRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_GetDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_DeleteDatabase: {
+        parameters: {
+            query?: {
+                /**
+                 * @description 破坏性确认 = 实例名原样回传（mismatch → 400——与卷-节点 409 前哨同
+                 *     型的数据安全面；引用 app 在册 → 409 E_DB_REFERENCED 先行）。
+                 */
+                confirm?: string;
+                /** @description 删除数据卷（默认 false = 保留转 orphaned；true = 不可逆删除）。 */
+                delete_volumes?: boolean;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_ResumeDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceResumeDatabaseBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ResumeDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_RetryDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceRetryDatabaseBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RetryDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_UpdateDatabaseSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceUpdateDatabaseSettingsBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateDatabaseSettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_SuspendDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceSuspendDatabaseBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SuspendDatabaseResponse"];
                 };
             };
             /** @description An unexpected error response. */

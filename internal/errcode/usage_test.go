@@ -29,21 +29,19 @@ var codeExemptions = map[string]string{
 	// E_S3_NOT_CONFIGURED 的预留豁免已移除：label fleetly.s3=true 注入
 	// 前哨（E3-4，W3-S3）成为真实引用点——internal/engine/s3inject.go
 	//（s3.mode=unset 时 plan 阶段诚实拒绝，设计 §2.4）。
-	// E4 数据库托管（managed-databases 设计 §5.2，S1 阶段注册）：8 码
-	// 预留——生产引用随 S2-S5 票据接线（E_DB_NOT_FOUND/E_DB_REFERENCED/
-	// E_DB_TEMPLATE_UNSUPPORTED/E_DB_ENV_PREFIX_CONFLICT = 生命周期 API/
-	// 引用管线 S2-S3；E_DB_BACKUP_FAILED/E_DB_RESTORE_FAILED/E_DB_ROTATE_
-	// FAILED = 备份恢复轮换适配器 S4-S5；E_SECRET_NOT_FOUND = compose
-	// secrets preflight S2）。E_ENV_KEY_RESERVED 不豁免：保留前缀守卫
-	// 已在 S1 接线（internal/state/env.go SetAppEnv）。
-	"E_DB_NOT_FOUND":            "reserved: wired with the E4 lifecycle/reference API (stage S2-S3)",
-	"E_DB_REFERENCED":           "reserved: wired with the E4 database delete guard (stage S2-S3)",
-	"E_DB_TEMPLATE_UNSUPPORTED": "reserved: wired with the E4 database create/settings API (stage S2)",
-	"E_DB_ENV_PREFIX_CONFLICT":  "reserved: wired with the E4 reference plan sentinel (stage S3)",
-	"E_DB_BACKUP_FAILED":        "reserved: wired with the E4 backup adapter (stage S4-S5)",
-	"E_DB_RESTORE_FAILED":       "reserved: wired with the E4 restore path (stage S4-S5)",
-	"E_DB_ROTATE_FAILED":        "reserved: wired with the E4 rotation path (stage S4-S5)",
-	"E_SECRET_NOT_FOUND":        "reserved: wired with the E4 compose secrets preflight (stage S2)",
+	// E4 数据库托管（managed-databases 设计 §5.2，S1 阶段注册）：S2 已接线
+	// 三码的豁免移除——E_DB_NOT_FOUND / E_DB_REFERENCED = 生命周期 API 删除
+	// 守卫（internal/api/databases.go）；E_DB_TEMPLATE_UNSUPPORTED = 创建
+	// 模板校验（同文件）。E_DB_ENV_PREFIX_CONFLICT 仍豁免：引用 plan 哨兵
+	// 随 S3。E_DB_BACKUP_FAILED/E_DB_RESTORE_FAILED/E_DB_ROTATE_FAILED 仍
+	// 豁免：备份恢复轮换适配器随 S4-S5。E_SECRET_NOT_FOUND 仍豁免：compose
+	// secrets preflight 随 S4。E_ENV_KEY_RESERVED 不豁免：保留前缀守卫已在
+	// S1 接线（internal/state/env.go SetAppEnv）。
+	"E_DB_ENV_PREFIX_CONFLICT": "reserved: wired with the E4 reference plan sentinel (stage S3)",
+	"E_DB_BACKUP_FAILED":       "reserved: wired with the E4 backup adapter (stage S4-S5)",
+	"E_DB_RESTORE_FAILED":      "reserved: wired with the E4 restore path (stage S4-S5)",
+	"E_DB_ROTATE_FAILED":       "reserved: wired with the E4 rotation path (stage S4-S5)",
+	"E_SECRET_NOT_FOUND":       "reserved: wired with the E4 compose secrets preflight (stage S4)",
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除

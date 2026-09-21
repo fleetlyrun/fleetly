@@ -100,6 +100,19 @@ var methodScopes = map[string]string{
 	// 的是应用自身的 compose 声明，不新增权限面）；台账读面 = read。
 	"/fleetly.server.v1.CronService/TriggerCronRun": ScopeDeploy,
 	"/fleetly.server.v1.CronService/ListCronRuns":   ScopeRead,
+	// DatabaseService（E4 数据库托管，managed-databases §2.3）：get/list =
+	// read（连接投影脱敏——明文 reveal 属 admin 更严面，随 S4/S6）；生命周期
+	// 与设置写面（create/delete/suspend/resume/retry/settings）= admin
+	// ——delete 是数据安全破坏性操作（引用守卫 + confirm 两段式），settings
+	// 直改资源限额/备份计划，与 app 删除同级信任，不随 deploy 下放。
+	"/fleetly.server.v1.DatabaseService/GetDatabase":             ScopeRead,
+	"/fleetly.server.v1.DatabaseService/ListDatabases":           ScopeRead,
+	"/fleetly.server.v1.DatabaseService/CreateDatabase":          ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/DeleteDatabase":          ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/SuspendDatabase":         ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/ResumeDatabase":          ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/RetryDatabase":           ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/UpdateDatabaseSettings":  ScopeAdmin,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

@@ -1,0 +1,600 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/database.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "DatabaseService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/databases": {
+      "get": {
+        "summary": "ListDatabases 库实例列表（name 字典序；deleted tombstone 不进默认列表\n——与 apps 列表同口径）。",
+        "operationId": "DatabaseService_ListDatabases",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDatabasesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "limit",
+            "description": "行数上限（缺省 100）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      },
+      "post": {
+        "summary": "CreateDatabase 创建库实例（受理即 provisioning——无 created 态；凭据\n生成一次、age 密文落库；收敛器异步建现场过健康门 → ready）。",
+        "operationId": "DatabaseService_CreateDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateDatabaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    },
+    "/v1/databases/{name}": {
+      "get": {
+        "summary": "GetDatabase 库实例详情（连接信息脱敏投影——密码明文零离开存储；显式\nreveal 面随 S4/S6 轮换与 Console 票据）。",
+        "operationId": "DatabaseService_GetDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteDatabase 删除受理（引用守卫通过后 → deleting tombstone 第一拍；\nreap duty 幂等清理受管对象。confirm = 实例名——数据安全两段式确认；\ndelete_volumes 默认 false = 卷保留转 orphaned，true = 删数据卷不可逆）。",
+        "operationId": "DatabaseService_DeleteDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "confirm",
+            "description": "破坏性确认 = 实例名原样回传（mismatch → 400——与卷-节点 409 前哨同\n型的数据安全面；引用 app 在册 → 409 E_DB_REFERENCED 先行）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "delete_volumes",
+            "description": "删除数据卷（默认 false = 保留转 orphaned；true = 不可逆删除）。",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    },
+    "/v1/databases/{name}/resume": {
+      "post": {
+        "summary": "ResumeDatabase 恢复（paused → provisioning 重收敛 → ready/degraded）。",
+        "operationId": "DatabaseService_ResumeDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResumeDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabaseServiceResumeDatabaseBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    },
+    "/v1/databases/{name}/retry": {
+      "post": {
+        "summary": "RetryDatabase 显式重试（failed → provisioning 重收敛；现场保留语义下\n失败的唯一出边）。",
+        "operationId": "DatabaseService_RetryDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RetryDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabaseServiceRetryDatabaseBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    },
+    "/v1/databases/{name}/settings": {
+      "put": {
+        "summary": "UpdateDatabaseSettings 设置变更（限额 + 备份计划；任意非终态准入、主\n状态不变；限额变更 = spec 重建由收敛器在下一拍承载）。镜像/引擎参数\n受管（违规模板字段不存在于请求——E_DB_TEMPLATE_UNSUPPORTED 面）。",
+        "operationId": "DatabaseService_UpdateDatabaseSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateDatabaseSettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabaseServiceUpdateDatabaseSettingsBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    },
+    "/v1/databases/{name}/suspend": {
+      "post": {
+        "summary": "SuspendDatabase 暂停（scale 0 保留服务与卷；引用方连不上是诚实暴露）。",
+        "operationId": "DatabaseService_SuspendDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SuspendDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabaseServiceSuspendDatabaseBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabaseService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "DatabaseServiceResumeDatabaseBody": {
+      "type": "object"
+    },
+    "DatabaseServiceRetryDatabaseBody": {
+      "type": "object"
+    },
+    "DatabaseServiceSuspendDatabaseBody": {
+      "type": "object"
+    },
+    "DatabaseServiceUpdateDatabaseSettingsBody": {
+      "type": "object",
+      "properties": {
+        "limits": {
+          "$ref": "#/definitions/v1DatabaseLimits",
+          "title": "资源限额（零值字段回落模板缺省；limits 变更 = spec 重建由收敛器承载）。"
+        },
+        "backup_plan": {
+          "$ref": "#/definitions/v1DatabaseBackupPlan",
+          "title": "备份计划（备份调度执行体随 S5 票据；本面先行受理与展示）。"
+        }
+      }
+    },
+    "v1CreateDatabaseRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "库实例名（^[a-z0-9][a-z0-9_-]*$——与 app 名同字符集规则；对象前缀族\nfleetly-db-* 与 app 名族解耦，app 与库实例可重名）。"
+        },
+        "template": {
+          "type": "string",
+          "title": "模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。"
+        },
+        "limits": {
+          "$ref": "#/definitions/v1DatabaseLimits",
+          "title": "资源限额（零值字段回落模板缺省——PG 1C/1Gi、Redis 0.5C/256Mi）。"
+        },
+        "backup_plan": {
+          "$ref": "#/definitions/v1DatabaseBackupPlan",
+          "title": "备份计划（零值字段回落平台缺省 24h/7 份/03:00 UTC）。"
+        }
+      }
+    },
+    "v1CreateDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1DatabaseView"
+        }
+      }
+    },
+    "v1DatabaseBackupPlan": {
+      "type": "object",
+      "properties": {
+        "interval_hours": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "keep": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "hour_utc": {
+          "type": "integer",
+          "format": "int32"
+        }
+      },
+      "title": "DatabaseBackupPlan 是备份计划（§5.4 配置键 databases.backup_* 的 per\n实例覆盖；0 值字段 = 平台缺省）。"
+    },
+    "v1DatabaseConnectionView": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "user": {
+          "type": "string",
+          "title": "PG 有 user/database；Redis 不输出（0 值 + 空串在 EmitUnpopulated=false\n下不出现）。"
+        },
+        "database": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "title": "掩码 URL（postgres://fleetly:********@\u003chost\u003e:5432/\u003cdb\u003e / redis://:********@\u003chost\u003e:6379/0）。"
+        },
+        "password_fingerprint": {
+          "type": "string",
+          "title": "密码指纹（sha256 前 8 hex——只判「是不是那个值」，材料零出现）。"
+        }
+      },
+      "title": "DatabaseConnectionView 是连接信息脱敏投影（§2.5 键集的只读面）。url 中\n密码段恒为固定掩码（********）——明文零离开存储；host = 实例名 DNS 别名\n（引用方 app 内即以此可达）。"
+    },
+    "v1DatabaseLimits": {
+      "type": "object",
+      "properties": {
+        "cpu_seconds": {
+          "type": "number",
+          "format": "double",
+          "title": "CPU 限额（核数；0 = 模板缺省）。"
+        },
+        "memory_bytes": {
+          "type": "string",
+          "format": "int64",
+          "title": "内存限额（字节；0 = 模板缺省）。"
+        }
+      },
+      "title": "DatabaseLimits 是资源限额（仅 limits——镜像/引擎参数受管）。"
+    },
+    "v1DatabaseView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "template": {
+          "type": "string"
+        },
+        "image_digest": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "生命周期状态位（provisioning|ready|failed|degraded|paused|deleting|deleted）。"
+        },
+        "placement": {
+          "type": "string",
+          "title": "放置绑定（平台节点 ID；空 = 未绑定——provisioning 首拍前）。"
+        },
+        "volume": {
+          "$ref": "#/definitions/v1DatabaseVolumeView",
+          "title": "数据卷投影（name = docker 卷名；status = active|orphaned|discarded；\n空 = 尚未登记）。"
+        },
+        "connection": {
+          "$ref": "#/definitions/v1DatabaseConnectionView",
+          "title": "连接信息脱敏投影。"
+        },
+        "backup_plan": {
+          "$ref": "#/definitions/v1DatabaseBackupPlan"
+        },
+        "limits": {
+          "$ref": "#/definitions/v1DatabaseLimits"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "credential_updated_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "last_error": {
+          "type": "string",
+          "title": "最近一次收敛失败原因（failed/deleting 前的现场快照；空 = 无失败现场）。"
+        }
+      },
+      "title": "DatabaseView 是库实例投影（状态 = 生命周期态；连接信息脱敏——密码明文\n零离开存储，url 已掩码、password_fingerprint 供「是不是那个 secret」比\n对；显式 reveal 面随 S4/S6）。last_error 是最近一次收敛失败原因（failed\n诊断面；'' = 无失败现场）。"
+    },
+    "v1DatabaseVolumeView": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "platform_node_id": {
+          "type": "string",
+          "title": "数据节点（卷钉住语义——与 placement 一致）。"
+        }
+      }
+    },
+    "v1DeleteDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1DatabaseView"
+        }
+      }
+    },
+    "v1ListDatabasesResponse": {
+      "type": "object",
+      "properties": {
+        "databases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DatabaseView"
+          }
+        }
+      }
+    },
+    "v1ResumeDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1DatabaseView"
+        }
+      }
+    },
+    "v1RetryDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1DatabaseView"
+        }
+      }
+    },
+    "v1SuspendDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1DatabaseView"
+        }
+      }
+    },
+    "v1UpdateDatabaseSettingsResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1DatabaseView"
+        }
+      }
+    }
+  }
+}

@@ -124,7 +124,7 @@ func TestNewServicesStopOrder(t *testing.T) {
 	gs := lynxgrpc.NewServer(lynxgrpc.WithAddr("127.0.0.1:0"))
 
 	services := NewServices(app, st, id, ob, jr, bm, box, q, builder, eng,
-		ing, lm, cm, src, cfg, nil, hs, gs)
+		ing, lm, cm, src, cfg, nil, nil, hs, gs)
 	names := make([]string, 0, len(services))
 	for _, s := range services {
 		names = append(names, s.Name())
@@ -139,9 +139,9 @@ func TestNewServicesStopOrder(t *testing.T) {
 		// 第二段：写入者（入口关后排空在途）。
 		"build.queue", "engine.release", "ingress.traefik", "logs.collector",
 		// 第三段：资源层（最后停；backup 晚于 engine 等 post-deploy
-		// 在途快照，rustfs duty / cron 调度器同层，store 殿后）。
+		// 在途快照，rustfs/database 收敛 duty、cron 调度器同层，store 殿后）。
 		"state.identity", "state.observer", "state.janitor",
-		"state.backup", "objectstore.rustfs", "cron.schedule", "state.secrets", "state.store",
+		"state.backup", "objectstore.rustfs", "database.converge", "cron.schedule", "state.secrets", "state.store",
 	}
 	if len(names) != len(want) {
 		t.Fatalf("services = %v, want %v", names, want)

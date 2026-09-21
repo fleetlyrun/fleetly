@@ -301,6 +301,32 @@ func (s *Store) MarkAppVolumesOrphaned(ctx context.Context, appID string) (int, 
 	return s.MarkOwnerVolumesOrphaned(ctx, VolumeOwnerApp, appID)
 }
 
+// MarkOwnerVolumesDiscarded 是事务内卷显式丢弃（owner 二元组寻址）：该归属
+// 全部非 discarded 卷置 discarded（E4 库实例 delete_volumes=true 的 reap
+// 路径——底座卷由调用方先行移除，台账随后如实落账；幂等）。返回置
+// discarded 卷数。调用方负责随写审计（显式丢弃 = 数据安全动作）。
+func (t *Tx) MarkOwnerVolumesDiscarded(ctx context.Context, ownerKind VolumeOwnerKind, ownerID string) (int64, error) {
+	switch ownerKind {
+	case VolumeOwnerApp, VolumeOwnerDatabase:
+	default:
+		return 0, fmt.Errorf("state: volume owner_kind %q not in {app, database}", ownerKind)
+	}
+	if ownerID == "" {
+		return 0, errors.New("state: discard volumes requires owner_id")
+	}
+	res, err := t.ExecContext(ctx,
+		`UPDATE volumes SET status = 'discarded', updated_at = ?
+		WHERE owner_kind = ? AND owner_id = ? AND status <> 'discarded'`, nowNano(), string(ownerKind), ownerID)
+	if err != nil {
+		return 0, fmt.Errorf("state: discard volumes: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("state: read discard count: %w", err)
+	}
+	return n, nil
+}
+
 // RebindVolumes 是事务内卷换绑（泛化形态）：该归属的全部 active 卷
 // platform_node_id → 目标节点，原节点登记进 prev_platform_node_id
 //（multi-node §2.6 换点落库面；restored/discarded 两种数据处置都登记

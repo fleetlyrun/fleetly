@@ -169,6 +169,14 @@ type DatabaseInstance struct {
 	State          DatabaseState
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// LastError 是最近一次收敛失败的人读原因快照（迁移 00016；收敛器落
+	// failed 时写入、retry 重收敛过健康门落 ready 时清空——诊断面跨重启
+	// 存续。单行化、零凭据材料；'' = 当前无失败现场）。
+	LastError string
+	// DeleteVolumes 是删除受理时的卷处置选择（迁移 00016；delete API 落
+	// deleting 同事务置位——reap 按位处置：false = 保留转 orphaned（默认），
+	// true = 删底座卷 + 台账记 discarded）。
+	DeleteVolumes bool
 	// DeletingAt/DeletedAt 是 tombstone 两拍时间锚（零值 = 未进入；INTEGER
 	// 列 UnixNano，与 apps 表同型）。
 	DeletingAt time.Time
@@ -451,9 +459,80 @@ func (t *Tx) EnterDbPhase(ctx context.Context, id string, from, to DatabaseState
 	return nil
 }
 
+// SetDatabaseLastError 记录/清除最近一次收敛失败的人读原因（迁移 00016）：
+// 收敛器落 failed 前后写诊断快照、重收敛过健康门落 ready 时以空串清除。
+// reason 单行化由调用方保证（收敛器归一）；本层只管原样落列——零凭据
+// 材料纪律在写入方（internal/database）钉死。幂等：同值重写无害。
+func (s *Store) SetDatabaseLastError(ctx context.Context, id, reason string) error {
+	return s.InTx(ctx, func(tx *Tx) error {
+		return tx.SetDatabaseLastError(ctx, id, reason)
+	})
+}
+
+// SetDatabaseLastError 是事务内的失败原因写点（供与 EnterDbPhase 同事务
+// 组合——failed 转移与原因落列原子生效）。
+func (t *Tx) SetDatabaseLastError(ctx context.Context, id, reason string) error {
+	if _, err := t.GetDatabaseInstance(ctx, id); err != nil {
+		return err
+	}
+	const q = `UPDATE db_instances SET last_error = ?, updated_at = ? WHERE id = ?`
+	if _, err := t.ExecContext(ctx, q, reason, nowNano(), id); err != nil {
+		return fmt.Errorf("state: set database last error %s: %w", id, err)
+	}
+	return nil
+}
+
+// SetDatabaseDeleteVolumes 是事务内的卷处置选择落位（delete API 受理：与
+// →deleting 转移、审计同一事务——reap duty 读到的处置选择与 tombstone
+// 第一拍原子一致，跨重启存续）。
+func (t *Tx) SetDatabaseDeleteVolumes(ctx context.Context, id string, deleteVolumes bool) error {
+	if _, err := t.GetDatabaseInstance(ctx, id); err != nil {
+		return err
+	}
+	v := 0
+	if deleteVolumes {
+		v = 1
+	}
+	const q = `UPDATE db_instances SET delete_volumes = ?, updated_at = ? WHERE id = ?`
+	if _, err := t.ExecContext(ctx, q, v, nowNano(), id); err != nil {
+		return fmt.Errorf("state: set database delete volumes %s: %w", id, err)
+	}
+	return nil
+}
+
+// DatabaseBindingCountByNode 返回平台节点 ID → 在役库实例绑定数（E4 放置
+// 选点的「已钉数」因子的库侧计数——placements 表以 app_id 为主键装不下库
+// 绑定，绑定内嵌 db_instances.platform_node_id，D-DB-1；deleting/deleted
+// 行不计——tombstone 不占容量账）。与 PlacementCountByNode 相加即节点的
+// 全量已钉数（app + database 两类有状态绑定）。
+func (s *Store) DatabaseBindingCountByNode(ctx context.Context) (map[string]int, error) {
+	const q = `SELECT platform_node_id, COUNT(*) FROM db_instances
+		WHERE platform_node_id <> '' AND state NOT IN ('deleting', 'deleted')
+		GROUP BY platform_node_id`
+	rows, err := s.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("state: count database bindings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	out := map[string]int{}
+	for rows.Next() {
+		var node string
+		var n int
+		if err := rows.Scan(&node, &n); err != nil {
+			return nil, fmt.Errorf("state: scan database binding count: %w", err)
+		}
+		out[node] = n
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate database binding counts: %w", err)
+	}
+	return out, nil
+}
+
 // dbInstanceScanCols 是库实例行查询列清单（新增列只加在此与扫描函数）。
 const dbInstanceScanCols = `id, name, template, image_digest, settings, credential_cipher,
-	credential_updated_at, platform_node_id, state, created_at, updated_at, deleting_at, deleted_at`
+	credential_updated_at, platform_node_id, state, last_error, delete_volumes,
+	created_at, updated_at, deleting_at, deleted_at`
 
 // scanDatabaseInstance 从单行构造 DatabaseInstance（row 接口同时覆盖
 // *sql.Row 与 *sql.Rows）。settings 列经 string 中转后 json.Unmarshal
@@ -463,10 +542,11 @@ func scanDatabaseInstance(row interface{ Scan(dest ...any) error }) (DatabaseIns
 	var d DatabaseInstance
 	var state, settings string
 	var credentialUpdated, deleting, deleted sql.NullInt64
+	var deleteVolumes int
 	var created, updated int64
 	if err := row.Scan(&d.ID, &d.Name, &d.Template, &d.ImageDigest, &settings,
 		&d.CredentialCipher, &credentialUpdated, &d.PlatformNodeID, &state,
-		&created, &updated, &deleting, &deleted); err != nil {
+		&d.LastError, &deleteVolumes, &created, &updated, &deleting, &deleted); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DatabaseInstance{}, ErrDatabaseNotFound
 		}
@@ -476,6 +556,7 @@ func scanDatabaseInstance(row interface{ Scan(dest ...any) error }) (DatabaseIns
 		return DatabaseInstance{}, fmt.Errorf("state: unmarshal database settings %s: %w", d.ID, err)
 	}
 	d.State = DatabaseState(state)
+	d.DeleteVolumes = deleteVolumes != 0
 	if credentialUpdated.Valid {
 		d.CredentialUpdatedAt = time.Unix(0, credentialUpdated.Int64).UTC()
 	}
