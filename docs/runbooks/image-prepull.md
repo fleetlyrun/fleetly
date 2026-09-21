@@ -31,6 +31,7 @@ fork 镜像 + `canary` 可变 tag——供应链反面教材（docs/research/
 | 9 | `curlimages/curl:latest` | `58adaa4e…166777` | HTTPS 探针（journey J4） | deploy/test-journey.sh |
 | 10 | `ghcr.io/project-zot/zot:v2.1.21` | `6b69512c…f48c8` | 平台 registry（zot，E1-4 部署器钉版缺省；多节点 manager 平台组件） | internal/ingress/registry.go `DefaultZotImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步） |
 | 11 | `restic/restic:0.19.1` | `136600b6…d510` | 状态备份远端上传轨（restic 钉版容器一次性执行，E3-3/D-S3-3；首次上传按需拉取，预拉可选） | internal/statebackup/restic.go `DefaultResticImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；2026-09-21 解析） |
+| 12 | `rustfs/rustfs:1.0.0` | `8cc98017…d1ff` | 托管 RustFS（opt-in 管理组件，E3-5/D-S3-10；s3.mode=rustfs 时 duty 按需拉取，预拉可选；多架构 OCI index amd64/arm64） | internal/rustfs/spec.go `DefaultRustFSImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；2026-09-21 解析：1.0.0 为最新 1.0.x stable（2026-09-16 发布，与 latest tag 当前所指同 digest）） |
 
 台账与实际引用集的一致性以门禁扫描为准：
 

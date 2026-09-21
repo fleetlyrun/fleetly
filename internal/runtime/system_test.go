@@ -54,7 +54,7 @@ func TestPingGRPCToREST(t *testing.T) {
 	// SystemService 组件集为空快照（Ping/双面测试不依赖健康汇总面）；
 	// 实现在 internal/api（T2.18 起），nil ingress 端口 = 入口面未装配形态。
 	serverv1.RegisterSystemServiceServer(gs.GetServer(), api.NewSystemService("dev", nil,
-		func() []api.SystemComponent { return nil }, nil))
+		func() []api.SystemComponent { return nil }, nil, nil))
 	if err := gs.Init(nil); err != nil {
 		t.Fatalf("grpc Init: %v", err)
 	}

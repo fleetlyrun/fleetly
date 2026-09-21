@@ -74,6 +74,16 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 		}
 		serviceDomains[name] = domains
 
+		// s3 label（E3-4 凭证注入开关）：值契约 = 字面 "true"；非法值在
+		// 解析期即拒（fail-loud，不静默当未启用）。
+		s3 := false
+		if v, ok := svc.Labels[LabelS3]; ok {
+			if err := parseS3Label(name, strings.TrimSpace(v)); err != nil {
+				return nil, nil, err
+			}
+			s3 = true
+		}
+
 		// placement label：语法 + 跨服务一致性。
 		if v, ok := svc.Labels[LabelPlacementNode]; ok {
 			placementRefs[name] = strings.TrimSpace(v)
@@ -98,6 +108,7 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 		}
 		normalized.Domains = domains
 		normalized.PlacementNode = placementRefs[name]
+		normalized.S3 = s3
 		services = append(services, normalized)
 	}
 

@@ -57,7 +57,7 @@ compose 服务 label `fleetly.s3=true` → 发布引擎为**该服务**注入一
 `s3.mode=rustfs` 保存 → 部署 duty（zot 部署器同款：幂等比对、spec 漂移即收敛）：
 
 - **服务**：swarm service `fleetly-rustfs`，单副本；镜像 `rustfs/rustfs:1.0.x` 钉 digest（Go 常量 `DefaultRustFSImage` + image-prepull 台账双锚）；卷 `fleetly-rustfs-data` **钉住 manager**（数据重力：控制面状态备份的便捷目标在控制面同机；节点选择器与 zot 同口径）；内部 overlay 网络 `fleetly-rustfs-net`（不发布任何 host 端口）。
-- **凭据**：root access/secret key 平台生成，存密钥库（envelope），经 Swarm secret 注入服务；`TestConnection` 走同一路径（endpoint=`http://rustfs:9000`，path-style=true，内部经 fleetlyd 所在网络可达性自测——fleetlyd 自身 attach `fleetly-rustfs-net`？否：**探测容器**一次性 attach 该网执行 §2.1 探针，与上传轨 restic 容器同形态）。
+- **凭据**：root access/secret key 平台生成，存密钥库（envelope），经 Swarm secret 注入服务；`TestConnection` 走同一路径（endpoint=`http://rustfs:9000`，path-style=true）。**实现修正（2026-09-21，E3-5 实机证伪）**：fleetlyd 宿主进程**不可达** overlay 网络内的 `http://rustfs:9000`（overlay 对宿主不路由，dind 实证）——探针/建桶改由**一次性 restic 容器**（attach `fleetly-rustfs-net`）执行四步协议：init（鉴权+建桶+写）→ backup → snapshots 回读断言 → forget（删除）；objectstore 进程内探针仅适用 external 模式。固定探针仓库在桶内残留一次性仓库头（≈2KB）。
 - **桶**：启用即 `EnsureBucket(fleetly)`（statebackups 前缀之外，应用注入面共用单桶——应用级桶/凭证是 v0.2.x+ 议题，见 §7）。
 - **禁用**：`s3.mode` 改回 unset → duty 移除服务，**卷保留**（volume.detached 同型数据安全语义）+ Console 指引「数据仍在卷 `fleetly-rustfs-data`，确认放弃再 docker volume rm」。再启用：复用卷，凭据重生成（RustFS 凭据是运行时配置不烙进数据）。
 - **资源**：内存限额 256MB（对齐 zot 口径）；**启用时计入 600MB 预算复测**（V2-2 裁决原文；实测 idle 进 runbook §7 复测记录）。

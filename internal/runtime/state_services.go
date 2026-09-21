@@ -14,6 +14,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
@@ -130,6 +131,26 @@ func (s backupService) Start(ctx context.Context) error {
 	return nil
 }
 func (s backupService) Stop(ctx context.Context) error { return s.bm.Stop(ctx) }
+
+// rustfsService 是托管 RustFS duty 服务壳（E3-5）：Start 阶段进入常驻收敛
+// 循环（mode=rustfs 幂等部署/漂移收敛；mode 离开移除服务保留卷；失败退避
+// 重试）。Start 阻塞到关停（actor 契约同上），Stop 无资源动作（循环随
+// 服务 ctx 退出；收敛幂等，控制面重启自然续跑）。健康面由 SystemService
+// 组件 objectstore.rustfs（duty Manager.CheckHealth）承载。
+type rustfsService struct {
+	m *rustfs.Manager
+}
+
+func newRustfsService(m *rustfs.Manager) lynx.Service { return rustfsService{m: m} }
+
+func (s rustfsService) Name() string                 { return "objectstore.rustfs" }
+func (s rustfsService) Init(_ lynx.AppContext) error { return nil }
+func (s rustfsService) Start(ctx context.Context) error {
+	return s.m.Run(ctx)
+}
+
+// Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑）。
+func (s rustfsService) Stop(_ context.Context) error { return nil }
 
 // secretsService 是平台密钥服务壳：主密钥已在装配期（NewSecretsBox →
 // EnsureKey）fail-fast 加载/生成，Init 无动作；CheckHealth 持续上报密钥

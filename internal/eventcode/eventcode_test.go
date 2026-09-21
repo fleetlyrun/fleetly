@@ -89,6 +89,12 @@ var docEvents = map[string]string{ // event → 文档出处
 	//（internal/state/s3settings.go，与业务写同事务 = Outbox 模式）。
 	"s3.updated": "E3 object-storage §5.3 added during implementation (settings change; payload carries mode/toggles, never credentials)",
 
+	// E3 对象存储 §5.3 rustfs duty 差分事件（W3-S3/E3-5 接线）：发出来源 =
+	// internal/rustfs 收敛拍（创建/漂移更新 → deployed，mode 离开 → removed
+	// 且卷保留）；payload 不含任何凭据材料。
+	"s3.rustfs_deployed": "E3 object-storage §5.3 added during implementation (W3-S3 rustfs duty converge diff; payload carries service/image/reason, never credentials)",
+	"s3.rustfs_removed":  "E3 object-storage §5.3 added during implementation (W3-S3 rustfs duty converge diff; data volume retained)",
+
 	// E3 对象存储 §2.3/D-S3-4 实现期新增（W3-S2/E3-3 上传轨接线）：上传
 	// 失败与恢复绿配对事件——发出来源 = 备份 Manager 上传步
 	//（internal/statebackup/restic.go）；payload 带 backup id 与擦除后的

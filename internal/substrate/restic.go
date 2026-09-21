@@ -18,6 +18,7 @@ import (
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	mobyclient "github.com/moby/moby/client"
 
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
@@ -38,15 +39,38 @@ const resticMaxLogFrame = 16 << 20
 
 // RunRestic 实现 statebackup.ResticRunner 端口：以钉版镜像一次性执行
 // restic 命令。生命周期 = EnsureImagePresent（缺失时拉取，流式进度不设
-// per-call 预算）→ ContainerCreate（只读 bind + env）→ ContainerStart →
-// ContainerWait（NextExit；随调用方 ctx 取消——上传预算超时会在这里
-// 切断）→ 读日志（退出后仍可读）→ defer ContainerRemove(Force) 清理。
-// 返回值 output 是 stdout 全文（restic --json 的结构化消息来源）；err
-// 非 nil 时携带 stderr 尾部摘要（不含 env 值——本包不拼接任何环境变量
+// per-call 预算）→ ContainerCreate（只读 bind + env + 可选网络挂接）→
+// ContainerStart → ContainerWait（NextExit；随调用方 ctx 取消——上传预算
+// 超时会在这里切断）→ 读日志（退出后仍可读）→ defer ContainerRemove(Force)
+// 清理。返回值 output 是 stdout 全文（restic --json 的结构化消息来源）；
+// err 非 nil 时携带 stderr 尾部摘要（不含 env 值——本包不拼接任何环境变量
 // 进错误文本）。
 func (c *Client) RunRestic(ctx context.Context, spec statebackup.ResticSpec) (string, error) {
 	if err := c.EnsureImagePresent(ctx, spec.Image); err != nil {
 		return "", fmt.Errorf("substrate: restic image: %w", err)
+	}
+	// 只读 bind：上传轨对本地备份目录零写权（本地信任闭环不被
+	// 远端路径意外改写——设计 §2.3「备份核一字不动」的容器面）。
+	// HostMountDir/ContainerMountDir 为空 = 无 bind（探针容器形态，
+	// E3-5：restic 在容器文件系统内自足执行，不消费宿主目录）。
+	hostCfg := &container.HostConfig{
+		AutoRemove: false, // 日志需在退出后读取；清理走下方 defer
+	}
+	if spec.HostMountDir != "" && spec.ContainerMountDir != "" {
+		hostCfg.Mounts = []mount.Mount{{
+			Type:     mount.TypeBind,
+			Source:   spec.HostMountDir,
+			Target:   spec.ContainerMountDir,
+			ReadOnly: true,
+		}}
+	}
+	var netCfg *network.NetworkingConfig
+	if len(spec.Networks) > 0 {
+		endpoints := make(map[string]*network.EndpointSettings, len(spec.Networks))
+		for _, name := range spec.Networks {
+			endpoints[name] = &network.EndpointSettings{}
+		}
+		netCfg = &network.NetworkingConfig{EndpointsConfig: endpoints}
 	}
 	res, err := c.cli.ContainerCreate(ctx, mobyclient.ContainerCreateOptions{
 		Config: &container.Config{
@@ -60,19 +84,8 @@ func (c *Client) RunRestic(ctx context.Context, spec statebackup.ResticSpec) (st
 			},
 			User: "0", // restic 只读消费 bind 挂载，root 缺省形态即可（与镜像缺省一致，显式写出防镜像变更漂移）
 		},
-		HostConfig: &container.HostConfig{
-			// 只读 bind：上传轨对本地备份目录零写权（本地信任闭环不被
-			// 远端路径意外改写——设计 §2.3「备份核一字不动」的容器面）。
-			Mounts: []mount.Mount{{
-				Type:     mount.TypeBind,
-				Source:   spec.HostMountDir,
-				Target:   spec.ContainerMountDir,
-				ReadOnly: true,
-			}},
-			// 网络缺省 = bridge（external 模式出网即可；rustfs 模式由
-			// E3-5 接线平台内网形态——设计 §2.3）。
-			AutoRemove: false, // 日志需在退出后读取；清理走下方 defer
-		},
+		HostConfig:       hostCfg,
+		NetworkingConfig: netCfg,
 	})
 	if err != nil {
 		return "", fmt.Errorf("substrate: restic container create: %w", err)

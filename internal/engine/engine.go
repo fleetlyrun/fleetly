@@ -358,6 +358,10 @@ type prepareResult struct {
 	composeEnv  map[string]map[string]string
 	platformEnv []envlayer.PlatformVar
 	decision    placement.Decision
+	// s3Env / attachRustfs 是 S3 注入面（E3-4：fleetly.s3=true 服务的
+	// system env 与 rustfs 网络牵线；nil/false = 本发布无注入面）。
+	s3Env       map[string][]envlayer.PlatformVar
+	attachRustfs bool
 }
 
 // runPreparing 执行准备阶段：底座就绪 → compose 重载 → 放置解析/绑定/前哨
@@ -384,6 +388,11 @@ func (e *Engine) runPreparing(ctx context.Context, rec state.DeployRecord) error
 
 	pre, err := e.prepareInputs(ctx, rec)
 	if err != nil {
+		if errors.Is(err, errS3WaitingRustfsCredentials) {
+			// 暂态（rustfs 托管凭据生成拍未到）：停留 preparing 下一拍重试，
+			// 预算由既有 preparing 看门狗守门（与 swarm 未就绪同型）。
+			return nil
+		}
 		return e.failTransitionErr(ctx, rec, err)
 	}
 
@@ -423,6 +432,9 @@ func (e *Engine) runBuilding(ctx context.Context, rec state.DeployRecord) error 
 	}
 	pre, err := e.prepareInputs(ctx, rec)
 	if err != nil {
+		if errors.Is(err, errS3WaitingRustfsCredentials) {
+			return nil // 暂态：停留 building 下一拍重试（同 preparing 哨兵）
+		}
 		return e.failTransitionErr(ctx, rec, err)
 	}
 	return e.planAndRelease(ctx, rec, pre)
@@ -478,12 +490,25 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 	if err != nil {
 		return nil, err
 	}
+	// S3 注入面（E3-4）：label fleetly.s3=true 的服务解析 system env 与
+	// 网络牵线。托管凭据未备便是暂态（duty 生成拍未到）——返回哨兵，调用
+	// 方停留 preparing 下一拍重试（预算由 preparing 看门狗守门）。
+	s3Env, attachRustfs, err := e.resolveS3Injection(ctx, spec)
+	if err != nil {
+		if errors.Is(err, errS3WaitingRustfsCredentials) {
+			e.log.Warn("engine: s3 injection waiting for managed rustfs credentials (retrying next tick)", "deployment", rec.ID)
+			return nil, err
+		}
+		return nil, err
+	}
 	return &prepareResult{
-		spec:        spec,
-		fileEnv:     fileEnv,
-		composeEnv:  composeEnv,
-		platformEnv: platform,
-		decision:    decision,
+		spec:         spec,
+		fileEnv:      fileEnv,
+		composeEnv:   composeEnv,
+		platformEnv:  platform,
+		decision:     decision,
+		s3Env:        s3Env,
+		attachRustfs: attachRustfs,
 	}, nil
 }
 
@@ -503,16 +528,18 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 		return e.failTransitionErr(ctx, rec, errorf("E_RUNTIME_UNAVAILABLE", "failed to read volume registry: %v", err))
 	}
 	plan, err := BuildPlan(PlanInput{
-		AppID:        rec.AppID,
-		AppName:      rec.AppName,
-		DeploymentID: rec.ID,
-		Spec:         pre.spec,
-		FileEnv:      pre.fileEnv,
-		ComposeEnv:   pre.composeEnv,
-		PlatformEnv:  pre.platformEnv,
-		Images:       images,
-		Decision:     pre.decision,
-		Volumes:      volumes,
+		AppID:               rec.AppID,
+		AppName:             rec.AppName,
+		DeploymentID:        rec.ID,
+		Spec:                pre.spec,
+		FileEnv:             pre.fileEnv,
+		ComposeEnv:          pre.composeEnv,
+		PlatformEnv:         pre.platformEnv,
+		SystemEnv:           pre.s3Env,
+		AttachRustfsNetwork: pre.attachRustfs,
+		Images:              images,
+		Decision:            pre.decision,
+		Volumes:             volumes,
 	})
 	if err != nil {
 		return e.failTransitionErr(ctx, rec, err)
@@ -703,6 +730,21 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 	}
 	if err := e.sub.NetworkEnsure(ctx, netName); err != nil {
 		return appErrOf(err, rec.ID)
+	}
+	// E3-4 rustfs 牵线网络：期望 spec 引用的平台侧网络一并确认（幂等——
+	// rustfs duty 未建网时兜底创建，应用发布不因组件收敛时序失败）。
+	extraNets := map[string]bool{}
+	for i := range desired {
+		for _, n := range desired[i].Networks {
+			if n.Name != netName {
+				extraNets[n.Name] = true
+			}
+		}
+	}
+	for name := range extraNets {
+		if err := e.sub.NetworkEnsure(ctx, name); err != nil {
+			return appErrOf(err, rec.ID)
+		}
 	}
 
 	existing, err := e.sub.ServiceList(ctx, map[string]string{

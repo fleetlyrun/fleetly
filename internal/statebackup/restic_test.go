@@ -30,6 +30,8 @@ type fakeRestic struct {
 func (f *fakeRestic) RunRestic(_ context.Context, spec ResticSpec) (string, error) {
 	f.calls = append(f.calls, spec)
 	switch resticCommand(spec.Args) {
+	case "init":
+		return "", nil
 	case "backup":
 		return f.backupOutput, f.backupErr
 	case "snapshots":
@@ -130,11 +132,11 @@ func TestUploadHappyPath(t *testing.T) {
 		t.Fatalf("CheckHealth after ok upload: %v", err)
 	}
 
-	// 三段调用：backup → snapshots → forget。
-	if len(fr.calls) != 3 {
-		t.Fatalf("runner calls = %d, want 3 (backup, snapshots, forget)", len(fr.calls))
+	// 四段调用：init（惰性自举）→ backup → snapshots → forget。
+	if len(fr.calls) != 4 {
+		t.Fatalf("runner calls = %d, want 4 (init, backup, snapshots, forget)", len(fr.calls))
 	}
-	backup, snapshots, forget := fr.calls[0], fr.calls[1], fr.calls[2]
+	backup, snapshots, forget := fr.calls[1], fr.calls[2], fr.calls[3]
 
 	// 镜像钉版（D-S3-3 双锚的常量锚）。
 	for i, spec := range fr.calls {
@@ -342,8 +344,10 @@ func TestResticPasswordIdempotent(t *testing.T) {
 		t.Fatalf("upload status = %s/%s, want ok/ok", first.UploadStatus, second.UploadStatus)
 	}
 	// 备份目录互不相同：两次 RESTIC_PASSWORD 必须一致（生成一次，复用）。
+	// 调用序（每次触发 = init/backup/snapshots/forget）：pw1 取首轮 init、
+	// pw2 取次轮 init。
 	pw1 := fr.calls[0].Env["RESTIC_PASSWORD"]
-	pw2 := fr.calls[3].Env["RESTIC_PASSWORD"]
+	pw2 := fr.calls[4].Env["RESTIC_PASSWORD"]
 	if pw1 == "" || pw1 != pw2 {
 		t.Fatalf("RESTIC_PASSWORD drifted between runs (%d vs %d chars) — generation must be idempotent", len(pw1), len(pw2))
 	}
@@ -496,5 +500,87 @@ func TestParseResticOutput(t *testing.T) {
 	}
 	if snapshotsContain("not json", fakeSnap) {
 		t.Fatal("unparseable readback must not count as contained (honest guard)")
+	}
+}
+
+// saveRustfsSettings 落一份 rustfs 模式设置（外部四字段为空——互斥校验），
+// 并把托管凭据密文预置入库（模拟 E3-5 duty 已生成；密文入参与生产一致）。
+func saveRustfsSettings(t *testing.T, st *state.Store, box *secrets.Box) {
+	t.Helper()
+	if err := st.SaveS3Settings(context.Background(), state.S3Settings{Mode: state.S3ModeRustfs},
+		state.S3SaveOptions{Actor: "system"}); err != nil {
+		t.Fatalf("SaveS3Settings(rustfs): %v", err)
+	}
+	actCT, err := box.Encrypt([]byte("RUSTFS-AK-PLAIN"))
+	if err != nil {
+		t.Fatalf("encrypt access: %v", err)
+	}
+	secCT, err := box.Encrypt([]byte("rustfs-sk-plain"))
+	if err != nil {
+		t.Fatalf("encrypt secret: %v", err)
+	}
+	if err := st.SaveRustfsCredentialsCiphertext(context.Background(), string(actCT), string(secCT)); err != nil {
+		t.Fatalf("SaveRustfsCredentialsCiphertext: %v", err)
+	}
+}
+
+// TestUploadRustfsModeUsesManagedCredentials rustfs 上传接线（E3-5）：托管
+// 凭据解密进 env、restic 容器挂接 fleetly-rustfs-net（E3-5 网络形态）、
+// 派生 repo 端点 + path-style。
+func TestUploadRustfsModeUsesManagedCredentials(t *testing.T) {
+	fr := &fakeRestic{
+		backupOutput:    snapLine,
+		snapshotsOutput: snapsJSON,
+	}
+	mgr, st := newUploadTestManager(t, fr)
+	saveRustfsSettings(t, st, managerBox(mgr))
+
+	rec, err := mgr.Trigger(context.Background(), state.BackupKindManual)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	if rec.UploadStatus != state.BackupUploadOK {
+		t.Fatalf("upload_status = %s, want ok (managed credentials wired)", rec.UploadStatus)
+	}
+	if resticCommand(fr.calls[0].Args) != "init" {
+		t.Fatalf("first call = %v, want lazy repo init", fr.calls[0].Args)
+	}
+	backup := fr.calls[1]
+	if wantRepo := "s3:" + state.RustfsEndpointURL + "/" + state.RustfsBucketName + "/statebackups"; backup.Env["RESTIC_REPOSITORY"] != wantRepo {
+		t.Errorf("RESTIC_REPOSITORY = %q, want %q", backup.Env["RESTIC_REPOSITORY"], wantRepo)
+	}
+	if backup.Env["AWS_ACCESS_KEY_ID"] != "RUSTFS-AK-PLAIN" {
+		t.Errorf("AWS_ACCESS_KEY_ID = %q, want decrypted managed access key", backup.Env["AWS_ACCESS_KEY_ID"])
+	}
+	if backup.Env["AWS_SECRET_ACCESS_KEY"] != "rustfs-sk-plain" {
+		t.Errorf("AWS_SECRET_ACCESS_KEY mismatch (want decrypted managed secret)")
+	}
+	if len(backup.Networks) != 1 || backup.Networks[0] != state.RustfsNetworkName {
+		t.Errorf("networks = %v, want [%s] (restic must ride the rustfs overlay)", backup.Networks, state.RustfsNetworkName)
+	}
+}
+
+// TestUploadRustfsModeWithoutCredentials 托管凭据未备便（duty 生成拍未到）
+// → 上传如实 failed，错误指明缺凭据（不静默跳过——诚实红，下次触发自然重试）。
+func TestUploadRustfsModeWithoutCredentials(t *testing.T) {
+	fr := &fakeRestic{}
+	mgr, st := newUploadTestManager(t, fr)
+	if err := st.SaveS3Settings(context.Background(), state.S3Settings{Mode: state.S3ModeRustfs},
+		state.S3SaveOptions{Actor: "system"}); err != nil {
+		t.Fatalf("SaveS3Settings(rustfs): %v", err)
+	}
+
+	rec, err := mgr.Trigger(context.Background(), state.BackupKindManual)
+	if err != nil {
+		t.Fatalf("Trigger: %v", err)
+	}
+	if rec.UploadStatus != state.BackupUploadFailed {
+		t.Fatalf("upload_status = %s, want failed (credentials missing is an honest red)", rec.UploadStatus)
+	}
+	if !strings.Contains(rec.UploadError, "not provisioned yet") {
+		t.Fatalf("upload_error = %q, want missing-credentials attribution", rec.UploadError)
+	}
+	if len(fr.calls) != 0 {
+		t.Fatalf("runner calls = %d, want 0 (fail before any container runs)", len(fr.calls))
 	}
 }

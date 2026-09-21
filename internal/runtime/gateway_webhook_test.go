@@ -80,7 +80,7 @@ func TestGatewayWebhookNativeEndpoints(t *testing.T) {
 	)
 	g := gs.GetServer()
 	serverv1.RegisterSystemServiceServer(g, api.NewSystemService("dev", st,
-		func() []api.SystemComponent { return nil }, nil))
+		func() []api.SystemComponent { return nil }, nil, nil))
 	serverv1.RegisterAppsServiceServer(g, api.NewAppsService(st, box, "127.0.0.1:8424", nil))
 	serverv1.RegisterDeploymentsServiceServer(g, api.NewDeploymentsService(st, nil))
 	serverv1.RegisterTokensServiceServer(g, api.NewTokensService(st))

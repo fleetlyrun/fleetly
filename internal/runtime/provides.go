@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/placement"
+	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
@@ -40,6 +41,7 @@ var ProviderSet = wire.NewSet(
 	NewJanitor,
 	NewSecretsBox,
 	NewBackupManager,
+	NewRustfsManager,
 	NewBuilder,
 	NewBuildQueue,
 	NewPlacementResolver,
@@ -185,6 +187,19 @@ func NewSecretsBox(app lynx.App, cfg *AppConfig) (*secrets.Box, error) {
 			" — store it safely and keep it separate from backups (platform env ciphertext cannot be decrypted if it is lost)")
 	}
 	return box, nil
+}
+
+// NewRustfsManager 构建托管 RustFS duty 管理器（E3-5，D-S3-7：s3.mode=
+// rustfs 时幂等部署/收敛 fleetly-rustfs，mode 离开时移除服务保留卷；
+// 常驻收敛循环由服务壳 Start 承载，资源层——晚于 engine 停）。自建
+// Docker 连接（zot 部署器同款形态），cleanup 释放；探针/建桶容器执行器
+// = substrate 客户端（statebackup.ResticRunner 端口，与上传轨同源）。
+func NewRustfsManager(app lynx.App, st *state.Store, sb *secrets.Box, sc *substrate.Client) (*rustfs.Manager, func(), error) {
+	mgr, cleanup, err := rustfs.NewManager(st, sb, app.Logger())
+	if err != nil {
+		return nil, nil, err
+	}
+	return mgr.WithProbeRunner(sc), cleanup, nil
 }
 
 // NewBuilder 构建构建执行器（build.Builder：railpack/dockerfile 双驱动 +
@@ -337,8 +352,10 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // 空 = 单节点形态，GetJoinGuide 以 D-MN-13 门禁 409 拒绝、不触底座）。
 // E3-2：S3 设置面随 envelope 加解密器接线（secret 密文落库/指纹读面/探针
 // 解密）；baseDomain 同供 s3.public_exposed 门禁（E_S3_PUBLIC_REQUIRES_
-// BASE_DOMAIN）。
-func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, sc *substrate.Client, version Version) *api.SystemService {
+// BASE_DOMAIN）。E3-5：托管 RustFS 组件（objectstore.rustfs）与 TestConnection
+// 的 rustfs 分支随 duty 管理器接线——mode=rustfs 且服务未在位 = 红（收敛
+// 过渡态如实可见）；mode 非 rustfs = 无所欠恒绿。
+func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -346,10 +363,11 @@ func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, o
 			{Name: "state.observer", Check: ob.CheckHealth},
 			{Name: "state.secrets", Check: sb.CheckHealth},
 			{Name: "state.backup", Check: bm.CheckHealth},
+			{Name: "objectstore.rustfs", Check: rm.CheckHealth},
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
 	}
-	return api.NewSystemService(string(version), st, components, ing).WithBackupManager(bm).
+	return api.NewSystemService(string(version), st, components, ing, rm).WithBackupManager(bm).
 		WithJoinGuide(cfg.BaseDomain, sc).
 		WithSecretsBox(sb)
 }
@@ -476,6 +494,7 @@ func NewServices(
 	lm *logs.Manager,
 	src *gitserver.GitTriggers,
 	cfg *AppConfig,
+	rm *rustfs.Manager,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
@@ -490,11 +509,13 @@ func NewServices(
 		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr, cfg.IngressSettings().ConfigTLSAddr),
 		newLogsService(lm),
 		// ── 第三段：资源层（最后停：backup 晚于 engine 等 post-deploy
-		//     在途快照；store 最后）──
+		//     在途快照；rustfs duty 同层——在途收敛拍随 ctx 排水；store
+		//     最后）──
 		newIdentityService(id),
 		newObserverService(ob),
 		newJanitorService(jr),
 		newBackupService(bm),
+		newRustfsService(rm),
 		newSecretsService(sb),
 		newStoreService(st),
 	}

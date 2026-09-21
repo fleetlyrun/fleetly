@@ -166,9 +166,9 @@ var builtins = []Code{
 
 	// ── 对象存储 S3 面（E3 对象存储专项设计 §5.2，2026-09-21 裁决轮落定；
 	//    注册表只增）──
-	// E_S3_NOT_CONFIGURED 为预留码：E3-2 只注册不消费，消费者在 E3-4
-	//（label fleetly.s3=true 注入前哨——s3.mode=unset 时 plan 阶段诚实拒绝，
-	// 设计 §2.4）；usage_test 豁免清单同理由。
+	// E_S3_NOT_CONFIGURED 已随 E3-4 接线（label fleetly.s3=true 注入前哨
+	// ——s3.mode=unset 时 plan 阶段诚实拒绝，设计 §2.4；消费点 =
+	// internal/engine/s3inject.go resolveS3Injection）。
 	{ID: "E_S3_NOT_CONFIGURED", HTTP: 409,
 		Summary:    "a service declares label fleetly.s3=true but object storage is not configured (s3.mode=unset); deploy plan refuses instead of injecting empty env",
 		Suggestion: "Configure object storage first: run 'fleetly s3 set' (or the Console S3 settings card) to set s3.mode=external or rustfs, then deploy again."},

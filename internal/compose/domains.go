@@ -18,6 +18,11 @@ const (
 	LabelCron          = "fleetly.cron"
 	LabelCronTimezone  = "fleetly.cron.timezone"
 	LabelCronTimeout   = "fleetly.cron.timeout"
+	// LabelS3 是对象存储凭证注入开关（E3 对象存储 §2.4/D-S3-6）：值为
+	// "true" 的服务由发布引擎注入 S3 system env（source=system——env 三层
+	// 合并链的最高层）；rustfs 模式额外牵线平台内部网络（E3-4）。label 出
+	// 现而 s3.mode=unset → 部署规划期 E_S3_NOT_CONFIGURED（诚实拒绝）。
+	LabelS3 = "fleetly.s3"
 
 	// LabelNamespace 是平台保留 label 命名空间前缀：用户占用约定键之外的
 	// fleetly.* 键 → E_LABEL_RESERVED（422）。
@@ -28,14 +33,31 @@ const (
 	maxDomainsPerApp     = 10
 )
 
-// knownFleetlyLabels 是 v0.1 承认的平台约定键全集（cron 家族为 v0.2 契约，
-// v0.1 出现时给警告级提示而非拒绝）。
+// knownFleetlyLabels 是平台承认的平台约定键全集（cron 家族为 v0.2 契约，
+// v0.1 出现时给警告级提示而非拒绝；s3 为 E3-4 起的生效契约键）。
 var knownFleetlyLabels = map[string]bool{
 	LabelDomains:       true,
 	LabelPlacementNode: true,
 	LabelCron:          true,
 	LabelCronTimezone:  true,
 	LabelCronTimeout:   true,
+	LabelS3:            true,
+}
+
+// parseS3Label 校验 fleetly.s3 label 值并给出开关结论（E3-4）：契约形态
+// 是字面 "true"（设计 §2.4 的唯一书写形态）；其他值一律拒绝——静默容忍
+// "false"/拼写错误（如 "ture"）会制造「以为关了/以为开了」的悬案，fail
+// -loud 比猜意图诚实。错误码取保留命名空间的既有码（值违反键契约 =
+// 该键没有被正确使用；不发明新码，注册表只增纪律）。
+func parseS3Label(service, value string) error {
+	if value == "true" {
+		return nil
+	}
+	return apperr.New("E_LABEL_RESERVED",
+		"service %q declares label %q with value %q (the only accepted value is %q)",
+		service, LabelS3, value, "true").
+		WithContext("path", "services."+service+".labels."+LabelS3).
+		WithContext("reason", "invalid_value")
 }
 
 // idnaProfile 是域名归一化档案：IDN → punycode（架构 §2.4 域名行）。Lookup

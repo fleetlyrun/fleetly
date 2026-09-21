@@ -26,10 +26,9 @@ var codeExemptions = map[string]string{
 	"E_CAPABILITY_REQUIRES_MULTI_NODE": "retired guard path (E1-7); code retained in the registry forever, never reused",
 	// E_PLACEMENT_MOVE_REQUIRES_ACK 的 v0.1 豁免已移除：显式换点 Rebind
 	// 的 confirm 门（E1-7）成为真实引用点（internal/placement/rebind.go）。
-	// 预留：label 注入前哨码（E3 对象存储 §5.2/E3-4）——E3-2 只注册不
-	// 消费；消费者在 E3-4（label fleetly.s3=true 而 s3.mode=unset 时 plan
-	// 阶段诚实拒绝，设计 §2.4）。
-	"E_S3_NOT_CONFIGURED": "reserved: label-injection sentinel, wired with E3-4 (design §2.4)",
+	// E_S3_NOT_CONFIGURED 的预留豁免已移除：label fleetly.s3=true 注入
+	// 前哨（E3-4，W3-S3）成为真实引用点——internal/engine/s3inject.go
+	//（s3.mode=unset 时 plan 阶段诚实拒绝，设计 §2.4）。
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除

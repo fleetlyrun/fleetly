@@ -49,6 +49,14 @@ type PlanInput struct {
 	// PlatformEnv 是已生效（effective）平台 env（三层合并的第三层输入；
 	// pending 不参与合并——「随下次部署生效」由部署成功后的 promote 承载）。
 	PlatformEnv []envlayer.PlatformVar
+	// SystemEnv 是 system 层 env 的按服务注入面（E3-4：fleetly.s3=true
+	// 服务的 S3 凭证组；键缺省 = 该服务无注入面）。system > platform >
+	// 文件层；随三层合并参与快照与 desired-hash（脱敏形态）。
+	SystemEnv map[string][]envlayer.PlatformVar
+	// AttachRustfsNetwork 是 rustfs 模式网络牵线开关（E3-4：带 fleetly.s3
+	// label 的服务附加 fleetly-rustfs-net；external 模式 false——应用自行
+	// 出网）。
+	AttachRustfsNetwork bool
 	// Images 是服务 → digest 钉定镜像引用（building 阶段产出）。
 	Images map[string]string
 	// Decision 是放置裁决（绑定约束编译结果）。
@@ -98,7 +106,7 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		plan.Warnings = append(plan.Warnings, envlayer.PlatformOverrideWarnings(&compose.Spec{
 			Name:     in.Spec.Name,
 			Services: []compose.Service{*svc},
-		}, in.PlatformEnv)...)
+		}, platformVarsFor(in, svc.Name))...)
 	}
 	sort.Slice(services, func(i, j int) bool { return services[i].Name < services[j].Name })
 	plan.Services = services
@@ -136,6 +144,21 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 	return plan, nil
 }
 
+// platformVarsFor 返回单个服务的平台层合并输入（app 全量行 + 本服务的
+// system 层行——E3-4 注入面；system > platform 的覆盖序由 MergeChain 内部
+// 保证）。警告面同盘：PlatformOverrideWarnings 用同一行集，system 键命中
+// 文件层同键时产出 W_ENV_PLATFORM_OVERRIDE 既有警告。
+func platformVarsFor(in PlanInput, service string) []envlayer.PlatformVar {
+	sys, ok := in.SystemEnv[service]
+	if !ok || len(sys) == 0 {
+		return in.PlatformEnv
+	}
+	out := make([]envlayer.PlatformVar, 0, len(in.PlatformEnv)+len(sys))
+	out = append(out, in.PlatformEnv...)
+	out = append(out, sys...)
+	return out
+}
+
 // buildServiceSpec 规划单个服务（返回 spec 与合并结果；spec 此时不带服务
 // label——调用方统一附加）。
 func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey map[string]state.Volume) (ServiceSpec, []envlayer.Merged, error) {
@@ -152,7 +175,8 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "network naming failed for app %s: %v", in.AppName, err)
 	}
 
-	// env 三层合并（文件层明文 × effective 平台层）。
+	// env 三层合并（文件层明文 × effective 平台层 × system 层——system 层
+	// 仅对带 fleetly.s3 label 的服务注入，E3-4）。
 	fileEnv := in.FileEnv[svc.Name]
 	composeEnv := in.ComposeEnv[svc.Name]
 	if fileEnv == nil {
@@ -161,7 +185,8 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 	if composeEnv == nil {
 		composeEnv = map[string]string{}
 	}
-	merged, _ := envlayer.MergeChain(fileEnv, composeEnv, in.PlatformEnv)
+	platform := platformVarsFor(in, svc.Name)
+	merged, _ := envlayer.MergeChain(fileEnv, composeEnv, platform)
 	envList := make([]string, 0, len(merged))
 	for _, m := range merged {
 		envList = append(envList, m.Key+"="+m.Value)
@@ -195,6 +220,14 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 		order = "stop-first"
 	}
 
+	// 网络接入：per-app 专属网络（别名 = compose 服务名）+ E3-4 rustfs
+	// 牵线（仅 rustfs 模式且带 fleetly.s3 label 的服务——应用→RustFS 内网
+	// 单向可达；external 模式不加，应用自行出网）。
+	networks := []NetworkAttach{{Name: netName, Aliases: []string{alias}}}
+	if svc.S3 && in.AttachRustfsNetwork {
+		networks = append(networks, NetworkAttach{Name: state.RustfsNetworkName})
+	}
+
 	spec := ServiceSpec{
 		Name:    swarmName,
 		Image:   image,
@@ -206,7 +239,7 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 		ServiceLabels:     namingServiceLabels(in.AppName, svc.Name, in.DeploymentID),
 		Global:            svc.Deploy != nil && svc.Deploy.Mode == "global",
 		Replicas:          composeReplicas(svc),
-		Networks:          []NetworkAttach{{Name: netName, Aliases: []string{alias}}},
+		Networks:          networks,
 		Mounts:            mounts,
 		Healthcheck:       composeHealthcheck(svc.Healthcheck),
 		UpdateOrder:       order,

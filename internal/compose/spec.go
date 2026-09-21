@@ -73,6 +73,10 @@ type Service struct {
 	// PlacementNode 是 fleetly.placement.node label 的字面值（放置意图；
 	// 名或 n_<ULID> 的解析/绑定校验属放置层，语法校验见 validate.go）。
 	PlacementNode string `json:"placement_node,omitempty"`
+	// S3 是 fleetly.s3=true 开关（E3-4）：true = 发布引擎为该服务注入
+	// S3 system env（rustfs 模式附加平台内部网络）。进归一化快照与
+	// spec_hash——label 变更即期望态变更，随下次部署生效。
+	S3 bool `json:"s3,omitempty"`
 
 	Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
 	// Environment 是 env 合并结果（env_file < environment），按 key 排序；

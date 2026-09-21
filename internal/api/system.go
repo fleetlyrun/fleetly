@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/objectstore"
+	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
@@ -54,6 +55,10 @@ type SystemService struct {
 	// box 是 envelope 加解密器（E3-2 S3 设置面：secret 密文落库/读面解密
 	// 出指纹/探针解密已存凭证；nil = 未装配——S3 三面如实报不可用）。
 	box *secrets.Box
+	// rustfs 是托管 RustFS duty 管理器（E3-5：TestConnection 的 rustfs
+	// 分支经它解析派生端点与托管凭据；nil = 未装配——rustfs 探针如实报
+	// 不可用）。
+	rustfs *rustfs.Manager
 }
 
 // JoinTokenPort 是 swarm join-token 面端口（multi-node §2.3；*substrate.
@@ -80,9 +85,10 @@ type IngressStatusSource interface {
 }
 
 // NewSystemService 构造 SystemService（version 由构建 -ldflags 注入；
-// components 为装配点命名的健康组件集；ing 可为 nil——入口面未装配形态）。
-func NewSystemService(version string, st *state.Store, components func() []SystemComponent, ing IngressStatusSource) *SystemService {
-	return &SystemService{version: version, st: st, components: components, ing: ing}
+// components 为装配点命名的健康组件集；ing 可为 nil——入口面未装配形态；
+// rustfsMgr 可为 nil——托管 RustFS 面未装配形态）。
+func NewSystemService(version string, st *state.Store, components func() []SystemComponent, ing IngressStatusSource, rustfsMgr *rustfs.Manager) *SystemService {
+	return &SystemService{version: version, st: st, components: components, ing: ing, rustfs: rustfsMgr}
 }
 
 // WithJoinGuide 注入 join 向导面（E1-8；链式装配）。baseDomain 为空 =
@@ -164,7 +170,11 @@ func (s *SystemService) ListBackups(ctx context.Context, req *serverv1.ListBacku
 
 // TriggerBackup 手动触发一次状态备份（同步：响应即落账后的台账行；
 // verify_status=failed 时以 FailedPrecondition 返回且台账行保留失败事实
-// ——调用方看得见失败，绝不渲染成成功）。
+// ——调用方看得见失败，绝不渲染成成功）。备份本体与审计运行在脱钩
+// 客户端取消的 ctx 上（WithoutCancel——备份预算由 Manager 自身的
+// TriggerTimeout 守门）：慢后端（rustfs 首传含 4 段 restic 容器执行）下
+// CLI 缺省 30s deadline 不再掐死备份本体——客户端只失去本次同步响应，
+// 台账照常落账（ListBackups 复核）。
 func (s *SystemService) TriggerBackup(ctx context.Context, req *serverv1.TriggerBackupRequest) (*serverv1.TriggerBackupResponse, error) {
 	if s.backup == nil {
 		return nil, status.Error(codes.Unavailable, "backup manager unavailable (not assembled)")
@@ -173,14 +183,15 @@ func (s *SystemService) TriggerBackup(ctx context.Context, req *serverv1.Trigger
 	if kind == "" {
 		kind = state.BackupKindManual
 	}
-	rec, err := s.backup.Trigger(ctx, kind)
+	detached := context.WithoutCancel(ctx)
+	rec, err := s.backup.Trigger(detached, kind)
 	if err != nil {
 		// 失败行已落台账（backup.failed 审计随行）——错误原文回传，调用方
 		// 可经 ListBackups 复核失败事实。
 		return nil, status.Error(codes.FailedPrecondition, err.Error())
 	}
-	if err := s.st.InTx(ctx, func(tx *state.Tx) error {
-		return tx.WriteAudit(ctx, auditEntry(ctx, "backup:"+rec.ID,
+	if err := s.st.InTx(detached, func(tx *state.Tx) error {
+		return tx.WriteAudit(detached, auditEntry(detached, "backup:"+rec.ID,
 			state.DiffSummary("kind", rec.Kind, "verify", rec.VerifyStatus))) // MG-6：构造器替换手拼 JSON
 	}); err != nil {
 		return nil, err
@@ -596,7 +607,9 @@ func (s *SystemService) UpdateS3Settings(ctx context.Context, req *serverv1.Upda
 // TestS3Connection S3 连接探针：候选配置（未保存也能测）或已存配置
 // （全部候选字段为空时）。探针失败以 E_S3_TEST_FAILED 报错——失败步与
 // 底层错误摘要进信封 context（secret 材料不进错误文本：minio-go 错误不
-// 回显凭证，信封 context 只带 endpoint/bucket/失败步）。
+// 回显凭证，信封 context 只带 endpoint/bucket/失败步）。rustfs 已存配置
+// 的探针 = 探测容器形态（E3-5：一次性 restic 容器 attach 托管网络执行
+// 真实往返——宿主进程不可达 overlay，容器内 DNS 才可达服务）。
 func (s *SystemService) TestS3Connection(ctx context.Context, req *serverv1.TestS3ConnectionRequest) (*serverv1.TestS3ConnectionResponse, error) {
 	if s.box == nil {
 		return nil, status.Error(codes.Unavailable, "secrets box unavailable (not assembled)")
@@ -613,6 +626,14 @@ func (s *SystemService) TestS3Connection(ctx context.Context, req *serverv1.Test
 	if candidate.URL == "" && candidate.Region == "" && candidate.Bucket == "" &&
 		candidate.AccessKey == "" && candidate.SecretKey == "" && !candidate.PathStyle {
 		// 无候选配置 → 测已存配置（每次现读，不缓存长驻）。
+		in, err := s.st.LoadS3Settings(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if state.NormalizeMode(in.Mode) == state.S3ModeRustfs {
+			// 托管面探针：探测容器内执行（E3-5）。
+			return s.runRustfsProbe(ctx)
+		}
 		stored, found, err := s.storedS3Endpoint(ctx)
 		if err != nil {
 			return nil, err
@@ -640,10 +661,55 @@ func (s *SystemService) TestS3Connection(ctx context.Context, req *serverv1.Test
 	return &serverv1.TestS3ConnectionResponse{Result: s3ProbeView(res)}, nil
 }
 
+// runRustfsProbe 执行托管 RustFS 探针（E3-5）：一次性 restic 容器 attach
+// fleetly-rustfs-net，经托管凭据做认证/写/读回/删除四步真实往返。探针
+// 失败以 E_S3_TEST_FAILED 报错（失败步 + 擦除凭据后的错误摘要进 context
+// ——诚实契约与 in-process 探针同构）。
+func (s *SystemService) runRustfsProbe(ctx context.Context) (*serverv1.TestS3ConnectionResponse, error) {
+	if s.rustfs == nil {
+		return nil, status.Error(codes.Unavailable,
+			"managed rustfs face not assembled (probe unavailable in this build)")
+	}
+	pr, err := s.rustfs.RunProbe(ctx)
+	if err != nil {
+		return nil, err
+	}
+	res := &serverv1.S3ConnectionTestResult{
+		Ok:          pr.OK,
+		EndpointUrl: state.RustfsEndpointURL,
+		Bucket:      state.RustfsBucketName,
+		PathStyle:   true,
+		FailedStep:  pr.FailedStep,
+		Steps:       make([]*serverv1.S3ProbeStep, 0, len(pr.Steps)),
+	}
+	for _, st := range pr.Steps {
+		res.Steps = append(res.Steps, &serverv1.S3ProbeStep{
+			Step:       st.Step,
+			Ok:         st.OK,
+			DurationMs: st.Duration.Milliseconds(),
+			Error:      st.Err,
+		})
+	}
+	if !pr.OK {
+		lastErr := ""
+		for _, st := range pr.Steps {
+			if !st.OK {
+				lastErr = st.Err
+			}
+		}
+		return nil, apperr.New("E_S3_TEST_FAILED",
+			"s3 connection test failed at step %s: %s", pr.FailedStep, lastErr).
+			WithContext("endpoint", state.RustfsEndpointURL).
+			WithContext("bucket", state.RustfsBucketName).
+			WithContext("failed_step", pr.FailedStep)
+	}
+	return &serverv1.TestS3ConnectionResponse{Result: res}, nil
+}
+
 // storedS3Endpoint 把已存设置解析为探针端点（found=false = unset 无可测
-// 配置）。external：设置值直出（secret 解密）；rustfs：服务端派生
-// http://rustfs:9000 + path-style + 平台单桶——凭据随 E3-5 duty 落密钥库
-// 后接入，本票形态下探针会如实以认证失败收口（RustFS 未部署即不可用）。
+// 配置）。external：设置值直出（secret 解密）。rustfs 不经本函数——托管
+// 面探针由 runRustfsProbe 以探测容器执行（internal/rustfs.RunProbe，
+// E3-5；宿主进程不可达 overlay，容器内才可达服务）。
 func (s *SystemService) storedS3Endpoint(ctx context.Context) (objectstore.Endpoint, bool, error) {
 	in, err := s.st.LoadS3Settings(ctx)
 	if err != nil {
@@ -666,12 +732,6 @@ func (s *SystemService) storedS3Endpoint(ctx context.Context) (objectstore.Endpo
 			ep.SecretKey = string(plain)
 		}
 		return ep, true, nil
-	case state.S3ModeRustfs:
-		return objectstore.Endpoint{
-			URL:       state.RustfsEndpointURL,
-			Bucket:    state.RustfsBucketName,
-			PathStyle: true,
-		}, true, nil
 	default:
 		return objectstore.Endpoint{}, false, nil
 	}

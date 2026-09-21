@@ -81,7 +81,7 @@ func tStore(t *testing.T) *state.Store {
 // E_MULTI_NODE_REQUIRES_BASE_DOMAIN（D-MN-13），且不触底座。
 func TestGetJoinGuideRequiresBaseDomain(t *testing.T) {
 	st := tStore(t)
-	svc := NewSystemService("dev", st, nil, nil).WithJoinGuide("", &fakeJoin{})
+	svc := NewSystemService("dev", st, nil, nil, nil).WithJoinGuide("", &fakeJoin{})
 	srv := newAuthServer(NewAuthenticator(st))
 	serverv1.RegisterSystemServiceServer(srv, svc)
 	conn := serveBufconn(t, srv)
@@ -104,7 +104,7 @@ func TestGetJoinGuideRequiresBaseDomain(t *testing.T) {
 func TestGetJoinGuideContent(t *testing.T) {
 	st := tStore(t)
 	fj := &fakeJoin{addr: "198.51.100.10", token: "swmtkn-test-token"}
-	svc := NewSystemService("dev", st, nil, nil).WithJoinGuide("example.test", fj)
+	svc := NewSystemService("dev", st, nil, nil, nil).WithJoinGuide("example.test", fj)
 	srv := newAuthServer(NewAuthenticator(st))
 	serverv1.RegisterSystemServiceServer(srv, svc)
 	conn := serveBufconn(t, srv)
@@ -170,7 +170,7 @@ func TestGetJoinGuideContent(t *testing.T) {
 func TestRotateJoinTokenAudited(t *testing.T) {
 	st := tStore(t)
 	fj := &fakeJoin{}
-	svc := NewSystemService("dev", st, nil, nil).WithJoinGuide("example.test", fj)
+	svc := NewSystemService("dev", st, nil, nil, nil).WithJoinGuide("example.test", fj)
 	srv := newAuthServer(NewAuthenticator(st))
 	serverv1.RegisterSystemServiceServer(srv, svc)
 	conn := serveBufconn(t, srv)
@@ -228,7 +228,7 @@ func TestListNodesPinnedAppIds(t *testing.T) {
 		t.Fatalf("bind: %v", err)
 	}
 
-	svc := NewSystemService("dev", st, nil, nil).WithJoinGuide("example.test", &fakeJoin{})
+	svc := NewSystemService("dev", st, nil, nil, nil).WithJoinGuide("example.test", &fakeJoin{})
 	srv := newAuthServer(NewAuthenticator(st))
 	serverv1.RegisterSystemServiceServer(srv, svc)
 	conn := serveBufconn(t, srv)

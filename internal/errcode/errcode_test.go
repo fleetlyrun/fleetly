@@ -80,11 +80,11 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_MULTI_NODE_REQUIRES_BASE_DOMAIN": "multi-node §5.2 (D-MN-13: join gate, base_domain missing)",
 
 	// E3 对象存储 §5.2 实现期新增（2026-09-21 裁决轮落定，文档外码单独
-	// 列出，待 T0.5 契约冻结确认）：E_S3_NOT_CONFIGURED 为预留码（E3-2
-	// 只注册不消费，消费者 E3-4 注入前哨）；E_S3_TEST_FAILED = 探针失败
-	//（detail/context 带失败步）；E_S3_PUBLIC_REQUIRES_BASE_DOMAIN = 公网
-	// 子域开关在无平台域名形态下拒绝。
-	"E_S3_NOT_CONFIGURED":              "E3 object-storage §5.2 (reserved; consumed by the E3-4 label-injection sentinel)",
+	// 列出，待 T0.5 契约冻结确认）：E_S3_NOT_CONFIGURED = label 注入前哨
+	//（E3-4/W3-S3 接线消费——s3.mode=unset 时 plan 阶段拒绝）；E_S3_TEST_
+	// FAILED = 探针失败（detail/context 带失败步）；E_S3_PUBLIC_REQUIRES_
+	// BASE_DOMAIN = 公网子域开关在无平台域名形态下拒绝。
+	"E_S3_NOT_CONFIGURED":              "E3 object-storage §5.2 (label-injection sentinel; wired with E3-4)",
 	"E_S3_CONFIG_CONFLICT":             "E3 object-storage §5.2 (mode vs explicit fields mutual exclusion)",
 	"E_S3_TEST_FAILED":                 "E3 object-storage §5.2 (connection probe failed; failed step in the envelope context)",
 	"E_S3_PUBLIC_REQUIRES_BASE_DOMAIN": "E3 object-storage §5.2 (public subdomain toggle without a base domain)",

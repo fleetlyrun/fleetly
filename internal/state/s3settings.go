@@ -52,10 +52,16 @@ const (
 
 // rustfs 模式的服务端派生端点（设计 §2.5：fleetlyd 所在网络内
 // http://rustfs:9000，path-style；平台单桶）。S3 各消费面共用（api 探针
-// storedS3Endpoint、备份上传轨 resticTarget——E3-3），单一事实源在本包。
+// storedS3Endpoint、备份上传轨 resticTarget——E3-3，凭证注入引擎面——E3-4），
+// 单一事实源在本包。RustfsNetworkName 是托管 RustFS 的内部 overlay 网络
+//（E3-5 duty 创建，attachable——restic 上传轨一次性容器经它入网）；
+// 应用注入面（E3-4）与上传轨消费同名网络。端点 host 段 `rustfs` 是
+// network alias（internal/rustfs duty 的服务 alias），两者必须一致——
+// internal/rustfs 的测试钉住该不变量。
 const (
 	RustfsEndpointURL = "http://rustfs:9000"
 	RustfsBucketName  = "fleetly"
+	RustfsNetworkName = "fleetly-rustfs-net"
 )
 
 // s3SettingsKeys 是保存时全量落库的键清单（PUT 语义：每次保存写全八键，

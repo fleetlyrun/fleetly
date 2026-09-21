@@ -42,7 +42,7 @@ func newS3TestEnv(t *testing.T, baseDomain string) (serverv1.SystemServiceClient
 	admin := seedTokenPlain(t, st, "admin")
 	read := seedTokenPlain(t, st, "read")
 
-	svc := NewSystemService("dev", st, nil, nil).
+	svc := NewSystemService("dev", st, nil, nil, nil).
 		WithJoinGuide(baseDomain, nil).
 		WithSecretsBox(box)
 	srv := newAuthServer(NewAuthenticator(st))

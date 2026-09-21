@@ -10,7 +10,7 @@ package eventcode
 //     app.deleted（B6/H10，MG-3）、app.substrate_missing（T0-V2.2，R2）、
 //     backup.upload_failed / backup.upload_recovered（E3-3，W3-S2）
 //
-// 计 46 个事件名。
+// 计 48 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -103,11 +103,19 @@ var builtins = []Event{
 	{Name: "build.stale_nonterminal", Summary: "build stayed queued/building past 2x the build timeout budget (surfaces state-machine bugs; no self-healing)"},
 
 	// ── 对象存储 S3 面（E3 对象存储专项设计 §5.3，2026-09-21 裁决轮落定，
-	//    注册表只增；本票接线 s3.updated，rustfs duty 差分事件随 E3-5）──
+	//    注册表只增；s3.updated 由 E3-2 接线，rustfs duty 差分事件由 E3-5
+	//    接线——W3-S3）──
 	// 发出来源：platform_settings 的 S3 设置保存事务（internal/state/
 	// s3settings.go，与业务写同事务 = Outbox 模式）。payload 只带模式与
 	// 布尔开关，绝不带凭证材料（state-model §2.9 secret 值禁止进事件）。
 	{Name: "s3.updated", Summary: "object storage settings changed (payload carries the mode and toggles, never credentials)"},
+	// E3-5 rustfs duty 差分事件（node.* 同型；发出来源 = internal/rustfs
+	// 的收敛拍——服务缺失创建/spec 漂移更新发 deployed（payload 带 reason
+	// created|updated），mode 离开 rustfs 服务移除发 removed（payload 带
+	// volume_retained=true——数据卷保留语义的显性化面）。payload 不含任何
+	// 凭据材料（凭据指纹只在日志面）。
+	{Name: "s3.rustfs_deployed", Summary: "managed RustFS deployed or converged to the desired spec (payload carries service/image/reason, never credentials)"},
+	{Name: "s3.rustfs_removed", Summary: "managed RustFS removed after s3.mode left rustfs (data volume retained; payload carries volume_retained=true)"},
 
 	// ── 状态备份上传轨（E3-3，§2.3/D-S3-4；W3-S2 接线）──
 	// 发出来源：备份 Manager 上传步（internal/statebackup/restic.go）。

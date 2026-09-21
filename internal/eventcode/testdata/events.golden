@@ -39,6 +39,8 @@ reconcile.drift_detected	drift detected between desired and actual state (includ
 restore.completed	control plane restore completed (after exiting read-only observation)
 route.publish_failed	app ingress route publish failed (deploy unaffected; alerts separately)
 route.published	app ingress routes published (after the health gate passed, all dynamic config converged)
+s3.rustfs_deployed	managed RustFS deployed or converged to the desired spec (payload carries service/image/reason, never credentials)
+s3.rustfs_removed	managed RustFS removed after s3.mode left rustfs (data volume retained; payload carries volume_retained=true)
 s3.updated	object storage settings changed (payload carries the mode and toggles, never credentials)
 volume.created	volume registered (data birthplace; pins the hosting node)
 volume.detached	volume detached (volume declaration removed; data is not deleted with the declaration)
