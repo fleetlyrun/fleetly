@@ -13,10 +13,12 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"encoding/hex"
 	"encoding/pem"
 	"errors"
 	"io"
@@ -206,6 +208,18 @@ func TestPlatformCertDutyRetryThenEndpointSwitch(t *testing.T) {
 	}
 	if !sameDomainSet(leaf.DNSNames, m.PlatformDomains()) {
 		t.Fatalf("served leaf SANs = %v, want %v", leaf.DNSNames, m.PlatformDomains())
+	}
+	// 终态⑤（F8，2026-09-21 真机发现钉住）：证书就绪同拍视图已重发布——
+	// websecure 证书段在线（内联 PEM），指纹与平台证书一致；不等 12h sweep。
+	snap, _ := m.vw.snapshot()
+	if snap.TLS == nil || len(snap.TLS.Certificates) == 0 {
+		t.Fatalf("F8: view carries no tls.certificates after platform cert converged")
+	}
+	viewFP := pemCertFingerprint(t, []byte(snap.TLS.Certificates[0].CertFile))
+	diskSum := sha256.Sum256(cert.Certificate[0])
+	if viewFP != hex.EncodeToString(diskSum[:]) {
+		t.Fatalf("F8: published view cert fingerprint %s != platform leaf fingerprint %s",
+			viewFP, hex.EncodeToString(diskSum[:]))
 	}
 
 	// 审计留痕：issued 成功行（失败尝试各带 error 行——审计即事实）。

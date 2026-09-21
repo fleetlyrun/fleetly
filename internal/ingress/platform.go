@@ -169,6 +169,14 @@ func (m *Manager) runPlatformCertDuty(ctx context.Context) {
 				continue
 			}
 			converged = true
+			// 证书就绪后立即重发布视图（F8 修复，2026-09-21 真机发现）：签发/
+			// 落盘常发生在启动发布之后，websecure 路由与内联证书段若等 12h
+			// sweep 才进视图，平台子域 443 在冷启动后长时间缺席（registry 404/
+			// 默认自签证书）。翻转 endpoint 的同一拍同步刷视图，幂等。
+			if err := m.republishAll(ctx); err != nil {
+				m.log.Warn("ingress: post-cert view republish deferred (picked up by next sweep)",
+					"error", err)
+			}
 			m.log.Info("ingress: platform certificate ready; traefik provider endpoint switched to the TLS config face",
 				"base_domain", m.cfg.BaseDomain,
 				"endpoint", "https://ctrl."+m.cfg.BaseDomain+":"+configTLSPort(m.cfg.ConfigTLSAddr)+"/configs")
