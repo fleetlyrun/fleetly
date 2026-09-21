@@ -40,8 +40,9 @@ var eventExemptions = map[string]string{
 	// 预留：控制面恢复流程完成事件——恢复器（state-model §2.7 恢复阶梯）
 	// 未实现（同 E_BACKUP_KEY_MISSING 的预留裁决）。
 	"restore.completed": "reserved: restorer not implemented (same as E_BACKUP_KEY_MISSING)",
-	// 预留：cron 触发跳过事件——cron 整体入 v0.2（architecture §4.3）。
-	"cron.skipped": "reserved: cron in v0.2",
+	// cron.skipped 的预留豁免已移除：E5 Cron（W3-S5）触发链成为真实发出来
+	// 源——internal/cron（overlap/node_unavailable/missed_downtime/interrupted
+	// 四类 skip 路径）。
 }
 
 // productionSources 收集 internal 与 cmd 下的生产 .go 文件文本（排除

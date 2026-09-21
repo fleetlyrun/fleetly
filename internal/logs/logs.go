@@ -16,6 +16,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
@@ -47,6 +48,19 @@ type Port interface {
 	StreamServiceLogs(ctx context.Context, service string, since time.Time, follow bool) (<-chan substrate.LogLine, error)
 	// ManagedServiceProcesses 返回应用的受管 compose 服务名集。
 	ManagedServiceProcesses(ctx context.Context, app string) ([]string, error)
+	// CronJobServiceStates 返回该 app 当前存活的一次性 cron job 服务实况投影
+	//（fleetly-cron- 前缀受管服务，E5 Cron「日志进现有采集」）。实现只负责
+	// 忠实列出；归属映射解析（job 名 + 受管 label → compose 服务）由 logs 层
+	// cronJobRefOf 纯函数承载（可 hermetic 测试）。
+	CronJobServiceStates(ctx context.Context, app string) ([]engine.ServiceState, error)
+}
+
+// CronJobRef 是一次性 cron job 服务的日志采集归属：JobService 是 Swarm 服务
+// 名（流打开目标），Service 是归属 compose 服务名（ring/落盘/History/Follow
+// 的 (app, service) 键——job 行与长驻服务同面合流）。
+type CronJobRef struct {
+	JobService string
+	Service    string
 }
 
 // Config 是日志管线配置（config 键 logs.*）。零值经 Normalize 回落缺省。

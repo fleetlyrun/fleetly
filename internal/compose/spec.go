@@ -77,6 +77,11 @@ type Service struct {
 	// S3 system env（rustfs 模式附加平台内部网络）。进归一化快照与
 	// spec_hash——label 变更即期望态变更，随下次部署生效。
 	S3 bool `json:"s3,omitempty"`
+	// Cron 是 fleetly.cron label 家族的归一化结果（E5 Cron，架构 §4.3）。
+	// 非 nil = 该服务是 cron schedule：不按长驻部署（发布引擎跳过其服务
+	// 装配），由调度器按点创建一次性 Swarm job。进归一化快照与 spec_hash
+	//——调度集组装从 revision 的 compose_normalized 快照现读（internal/cron）。
+	Cron *CronSchedule `json:"cron,omitempty"`
 
 	Healthcheck *Healthcheck `json:"healthcheck,omitempty"`
 	// Environment 是 env 合并结果（env_file < environment），按 key 排序；
@@ -176,4 +181,14 @@ type Placement struct {
 type Volume struct {
 	Key    string `json:"key"`
 	Driver string `json:"driver,omitempty"`
+}
+
+// CronSchedule 是 fleetly.cron label 家族的归一化值（E5 Cron，架构 §4.3
+// 声明行）。表达式恰为五段标准式（cron.ParseStandard 契约，六段含秒的
+// 书写在解析期即拒）；时区缺省 UTC（Timezone 空 = UTC）；Timeout 是看门狗
+// 预算的归一化字符串（time.Duration.String() 形态，空 = 平台默认 10m）。
+type CronSchedule struct {
+	Expression string `json:"expression"`
+	Timezone   string `json:"timezone,omitempty"`
+	Timeout    string `json:"timeout,omitempty"`
 }

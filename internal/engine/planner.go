@@ -82,6 +82,13 @@ type Plan struct {
 
 // BuildPlan 执行期望态规划。失败（服务无镜像/卷无登记/命名非法）返回
 // apperr 信封错误。
+//
+// E5 Cron 口径（架构 §4.3 声明行「声明只在 compose，不建并行期望态」）：
+// cron 服务（fleetly.cron label）进快照为 Job 模板（执行形态——镜像 digest
+// 钉定/env 三层合并/网络/卷/资源限额/绑定约束与长驻服务同源编译，Job=true），
+// 但不进 plan.Services（长驻对账集）——「只声明不部署」的装配面跳过由
+// decodeSpecs 的 Job 过滤与对账单源保证。plan 对 cron 服务以警告如实披露
+// （无注册码，Kind 标识）。
 func BuildPlan(in PlanInput) (*Plan, error) {
 	volByKey := map[string]state.Volume{}
 	for _, v := range in.Volumes {
@@ -89,6 +96,7 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 	}
 
 	plan := &Plan{}
+	all := make([]ServiceSpec, 0, len(in.Spec.Services))
 	services := make([]ServiceSpec, 0, len(in.Spec.Services))
 	envByService := map[string][]envSnapshotEntry{}
 	for i := range in.Spec.Services {
@@ -101,20 +109,33 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		if err != nil {
 			return nil, err
 		}
-		services = append(services, spec)
+		if svc.Cron != nil {
+			spec.Job = true
+			plan.Warnings = append(plan.Warnings, compose.Warning{
+				Kind:    compose.WarningKindCronServiceScheduled,
+				Service: svc.Name,
+				Message: "service " + svc.Name + " declares the cron schedule " + svc.Cron.Expression +
+					" (declared-only: not deployed as a long-running service; the cron scheduler creates one-shot jobs on schedule)",
+			})
+		} else {
+			services = append(services, spec)
+		}
+		all = append(all, spec)
 		envByService[svc.Name] = envEntriesOf(merged)
 		plan.Warnings = append(plan.Warnings, envlayer.PlatformOverrideWarnings(&compose.Spec{
 			Name:     in.Spec.Name,
 			Services: []compose.Service{*svc},
 		}, platformVarsFor(in, svc.Name))...)
 	}
+	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
 	sort.Slice(services, func(i, j int) bool { return services[i].Name < services[j].Name })
 	plan.Services = services
 	plan.EnvSnapshotHash = canonicalHash(envByService)
 
 	// 快照与期望态哈希先于服务 label 附加（label 含部署 ID——不进哈希与
 	// 快照；归位重放时由对账层以当前发布归属重写服务 label，任务零替换）。
-	desiredJSON, err := canonicalJSON(services)
+	// 快照含 Job 模板（E5 Cron 调度集的执行形态来源，decodeSpecs 对外过滤）。
+	desiredJSON, err := canonicalJSON(all)
 	if err != nil {
 		return nil, errorf("E_RUNTIME_UNAVAILABLE", "failed to serialize desired state: %v", err)
 	}
@@ -137,8 +158,8 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		EnvSnapshotHash: plan.EnvSnapshotHash,
 		Services:        map[string]string{},
 	}
-	for i := range services {
-		summary.Services[services[i].Name] = services[i].DesiredHash()
+	for i := range all {
+		summary.Services[all[i].Name] = all[i].DesiredHash()
 	}
 	plan.DesiredHash = canonicalHash(summary)
 	return plan, nil

@@ -8,9 +8,11 @@ package eventcode
 //   - 实现期新增（单独列出）：route.* 2 个、app.webhook_fetch_failed、
 //     engine.stale_nonterminal、build.stale_nonterminal（S18-A10）、
 //     app.deleted（B6/H10，MG-3）、app.substrate_missing（T0-V2.2，R2）、
-//     backup.upload_failed / backup.upload_recovered（E3-3，W3-S2）
+//     backup.upload_failed / backup.upload_recovered（E3-3，W3-S2）、
+//     cron.triggered / cron.succeeded / cron.failed / cron.timed_out
+//     （FZ-4 钉名，E5 Cron，W3-S5 接线）
 //
-// 计 48 个事件名。
+// 计 52 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -92,9 +94,14 @@ var builtins = []Event{
 	{Name: "route.published", Summary: "app ingress routes published (after the health gate passed, all dynamic config converged)"},
 	{Name: "route.publish_failed", Summary: "app ingress route publish failed (deploy unaffected; alerts separately)"},
 
-	// ── 定时任务（architecture §4.3：触发前哨「记 skipped + 事件」）──
-	// 预留：cron 整体入 v0.2（usage_test 豁免清单同理由）。
-	{Name: "cron.skipped", Summary: "cron trigger skipped (node not ready / control plane down at the tick / overlapping skip); no catch-up run"},
+	// ── 定时任务（E5 Cron，架构 §4.3 细则 + object-storage 设计 §8 事件面；
+	//    W3-S5 接线。发出来源 = internal/cron 触发链与完成检测——事件与
+	//    cron_runs 台账行同事务（Outbox）。FZ-4 钉名：cron.timed_out）──
+	{Name: "cron.triggered", Summary: "cron schedule fired: one-shot swarm job created (payload carries app/service/run id/job service; scheduled_at is the hit cron point)"},
+	{Name: "cron.succeeded", Summary: "cron run completed (task complete; job service removed)"},
+	{Name: "cron.failed", Summary: "cron run failed (task failed/rejected; no retry — restart-condition=none; job service removed)"},
+	{Name: "cron.timed_out", Summary: "cron run exceeded its watchdog budget (default 10m, fleetly.cron.timeout label overrides; job service removed)"},
+	{Name: "cron.skipped", Summary: "cron trigger skipped (overlap / node unavailable / missed during downtime / interrupted by restart); no catch-up run"},
 
 	// S18-A10 实现期新增（评审类 A 运行时断言层，§9 裁决并入 janitor）：
 	// 非终态行超龄停留的显性化告警（只告警不自愈——恢复路径已有 S8/S9 兜底，

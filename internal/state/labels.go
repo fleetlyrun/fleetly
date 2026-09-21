@@ -26,6 +26,9 @@ const (
 	LabelDesiredHash = "fleetly.desired-hash"
 	// LabelCron 标记定时任务 schedule（v0.2 契约，常量先行，state-model §2.4）。
 	LabelCron = "fleetly.cron"
+	// LabelCronRun 标记一次性 cron job 服务归属的运行行（E5 Cron；值 =
+	// cron_runs.id——残留 job 服务与台账行的对账锚）。
+	LabelCronRun = "fleetly.cron.run"
 
 	// LabelNodeID 是节点身份锚（node label，值 = 平台节点 ID n_<ULID>，
 	// state-model §2.3）。

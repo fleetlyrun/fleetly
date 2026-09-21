@@ -1,0 +1,223 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/cron.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "CronService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps/{app}/cron-runs": {
+      "get": {
+        "summary": "ListCronRuns 读运行台账（scheduled_at 倒序；service 空 = 该 app 全部\nschedule 的行；保留窗每 schedule 最近 20 条，janitor 清理）。",
+        "operationId": "CronService_ListCronRuns",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListCronRunsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "service",
+            "description": "收窄到单 schedule（空 = 全部）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "行数上限（缺省 20；≤20 的量级面，无分页游标）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "CronService"
+        ]
+      }
+    },
+    "/v1/apps/{app}/services/{service}/trigger": {
+      "post": {
+        "summary": "TriggerCronRun 手动触发一次（走与到点触发完全相同的链路：重叠 skip、\n绑定节点前哨、一次性 job 创建、cron_runs 行与事件；本路径追加审计\ncron.manual_triggered）。重叠/节点不可用不报错——响应携带 skipped 行\n与原因（与调度器处置一致）。",
+        "operationId": "CronService_TriggerCronRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TriggerCronRunResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "description": "应用名（compose 应用名）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "service",
+            "description": "compose 服务名（必须声明 fleetly.cron，否则 404 语义）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/CronServiceTriggerCronRunBody"
+            }
+          }
+        ],
+        "tags": [
+          "CronService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "CronServiceTriggerCronRunBody": {
+      "type": "object"
+    },
+    "v1CronRunView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "expression": {
+          "type": "string"
+        },
+        "scheduled_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "命中的 cron 点（手动触发 = 触发时刻）。"
+        },
+        "started_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "job 启动时刻（skipped 行不输出）。"
+        },
+        "finished_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "终态收口时刻（在途/skipped 行不输出）。"
+        },
+        "status": {
+          "type": "string"
+        },
+        "skip_reason": {
+          "type": "string"
+        },
+        "job_service": {
+          "type": "string",
+          "title": "一次性 job 服务名（skipped 行不输出）。"
+        },
+        "error": {
+          "type": "string",
+          "title": "失败/超时原因摘要。"
+        }
+      },
+      "title": "CronRunView 是一次 cron 触发的台账投影（状态词表 started | succeeded |\nfailed | timeout | skipped；skipped 行带 skip_reason：\noverlap | node_unavailable | missed_downtime | interrupted）。"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1ListCronRunsResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1CronRunView"
+          }
+        }
+      }
+    },
+    "v1TriggerCronRunResponse": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/v1CronRunView",
+          "title": "触发结果行（status=started 或 skipped；与到点触发同构）。"
+        }
+      }
+    }
+  }
+}

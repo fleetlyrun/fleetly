@@ -78,6 +78,12 @@ func (f *fakeLogPort) ManagedServiceProcesses(_ context.Context, _ string) ([]st
 	return []string{"web"}, nil
 }
 
+// CronJobServiceStates 实现 logs.Port 增补面（E5 Cron）：API 测试装配无 cron
+// job 场景，恒空集。
+func (f *fakeLogPort) CronJobServiceStates(_ context.Context, _ string) ([]engine.ServiceState, error) {
+	return nil, nil
+}
+
 // Start 起一个完整服务面（除 ingress.Manager——nil 端口形态，入口面如实
 // 报告不可用）并返回连接与 admin token；生命周期挂 t.Cleanup。
 func Start(t *testing.T) *Env {

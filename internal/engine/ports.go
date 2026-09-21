@@ -31,6 +31,12 @@ type ServiceSpec struct {
 	ContainerLabels map[string]string `json:"container_labels,omitempty"`
 	// Global 是 global 模式（compose deploy.mode=global）；false = replicated。
 	Global bool `json:"global,omitempty"`
+	// Job 是一次性 replicated-job 模式（E5 Cron，架构 §4.3 执行行）：带该
+	// 标记的 spec 不参与长驻对账（decodeSpecs 对外投影过滤 Job——发布/漂移/
+	// 存在性对账只见长驻集），由 cron 调度器克隆为 job 服务（改名
+	// fleetly-cron-*、replicas 1、restart-condition=none）按点创建。快照
+	// （desired_spec 密文）保留 Job 模板——调度集的执行形态来源。
+	Job bool `json:"job,omitempty"`
 	// Replicas 是期望副本（replicated 模式；0 = scale-0 保留现场）。
 	Replicas uint64 `json:"replicas"`
 	// Networks 是服务接入网络（per-app 专属网络 + 别名 = compose 服务名）。

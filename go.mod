@@ -40,6 +40,8 @@ replace github.com/fleetlyrun/fleetly/genproto => ./genproto
 require (
 	github.com/docker/cli v29.7.2+incompatible
 	github.com/fleetlyrun/fleetly/sdk/go v0.0.0-20260920151618-0ea0ebf6cf4a
+	github.com/minio/minio-go/v7 v7.3.0
+	github.com/robfig/cron/v3 v3.0.1
 )
 
 require (
@@ -105,7 +107,6 @@ require (
 	github.com/miekg/dns v1.1.72 // indirect
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
-	github.com/minio/minio-go/v7 v7.3.0 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect

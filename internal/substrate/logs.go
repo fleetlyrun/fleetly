@@ -14,6 +14,8 @@ import (
 	"github.com/moby/moby/api/pkg/stdcopy"
 	mobyclient "github.com/moby/moby/client"
 
+	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -58,6 +60,29 @@ func (c *Client) ManagedServiceProcesses(ctx context.Context, app string) ([]str
 		out = append(out, name)
 	}
 	sort.Strings(out)
+	return out, nil
+}
+
+// CronJobServiceStates 实现 logs.Port（E5 Cron 留存行「日志进现有采集」）：
+// 列出该 app 当前存活的一次性 cron job 服务实况投影（fleetly-cron- 前缀的
+// 受管服务）。归属解析（job 名 + 受管 label → compose 服务）不在本层——
+// logs.cronJobRefOf 以 label 为权威承载（job 服务名含 app/service 成分，
+// 字符串反解在含 '-' 时有歧义）。
+func (c *Client) CronJobServiceStates(ctx context.Context, app string) ([]engine.ServiceState, error) {
+	rows, err := c.ServiceList(ctx, map[string]string{
+		state.LabelManaged: state.ManagedLabelValue,
+		state.LabelApp:     app,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("substrate: service list for app %s: %w", app, err)
+	}
+	out := make([]engine.ServiceState, 0, len(rows))
+	for _, r := range rows {
+		if !naming.IsCronJobName(r.Name) {
+			continue
+		}
+		out = append(out, r)
+	}
 	return out, nil
 }
 

@@ -14,9 +14,8 @@ import (
 )
 
 // Load 读取并解析 compose 文件，执行受控子集校验后返回归一化 Spec 与
-// 警告标注（警告不阻断校验：W_DEPLOY_NO_HEALTHCHECK、cron label 的 v0.2
-// 生效提示等）。任何失败都经 apperr 携带注册表错误码（suggestion/docs 由
-// 注册表默认带出）。
+// 警告标注（警告不阻断校验：W_DEPLOY_NO_HEALTHCHECK 等）。任何失败都经
+// apperr 携带注册表错误码（suggestion/docs 由注册表默认带出）。
 func Load(ctx context.Context, path string) (*Spec, []Warning, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -123,12 +122,13 @@ type Warning struct {
 
 // 警告 Kind 常量（无注册码提示的稳定标识）。
 const (
-	// WarningKindCronLabelPending：fleetly.cron* label 在 v0.1 不生效
-	//（定时任务为 v0.2 契约），服务按长驻部署。
-	WarningKindCronLabelPending = "cron_label_v02_pending"
 	// WarningKindUserLabelNotPassed：非 fleetly.* 的服务 label 平台不透传
 	//（v0.1 受控子集只消费平台约定 label；S16-C2——静默丢弃改警告披露）。
 	WarningKindUserLabelNotPassed = "user_label_not_passed"
+	// WarningKindCronServiceScheduled：服务带 fleetly.cron 声明（E5 Cron）
+	// ——只声明不部署长驻服务的 plan 披露口径（调度器按点建一次性 job；
+	// 无注册 W 码，Kind 标识）。
+	WarningKindCronServiceScheduled = "cron_service_scheduled"
 )
 
 // errCompose 构造带路径上下文的 E_COMPOSE_UNSUPPORTED。

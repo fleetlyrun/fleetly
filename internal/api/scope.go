@@ -96,6 +96,10 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.GitKeysService/AddGitKey":    ScopeAdmin,
 	"/fleetly.server.v1.GitKeysService/ListGitKeys":  ScopeAdmin,
 	"/fleetly.server.v1.GitKeysService/RemoveGitKey": ScopeAdmin,
+	// CronService（E5 Cron）：手动触发 = 写面语义（与 Deploy 同级——触发
+	// 的是应用自身的 compose 声明，不新增权限面）；台账读面 = read。
+	"/fleetly.server.v1.CronService/TriggerCronRun": ScopeDeploy,
+	"/fleetly.server.v1.CronService/ListCronRuns":   ScopeRead,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

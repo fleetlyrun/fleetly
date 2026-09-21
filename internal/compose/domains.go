@@ -4,7 +4,14 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
+	// time/tzdata 内嵌 IANA 时区库：cron 时区 label（fleetly.cron.timezone）
+	// 的 LoadLocation 在 scratch/alpine 等无系统 zoneinfo 形态下仍可解析
+	//（E5 Cron；~450KB 二进制体积换可移植性）。
+	_ "time/tzdata"
+
+	"github.com/robfig/cron/v3"
 	"github.com/oklog/ulid/v2"
 	"golang.org/x/net/idna"
 
@@ -33,8 +40,8 @@ const (
 	maxDomainsPerApp     = 10
 )
 
-// knownFleetlyLabels 是平台承认的平台约定键全集（cron 家族为 v0.2 契约，
-// v0.1 出现时给警告级提示而非拒绝；s3 为 E3-4 起的生效契约键）。
+// knownFleetlyLabels 是平台承认的平台约定键全集（cron 家族自 E5 Cron 起
+// 生效——值契约见 parseCronSchedule；s3 为 E3-4 起的生效契约键）。
 var knownFleetlyLabels = map[string]bool{
 	LabelDomains:       true,
 	LabelPlacementNode: true,
@@ -58,6 +65,54 @@ func parseS3Label(service, value string) error {
 		service, LabelS3, value, "true").
 		WithContext("path", "services."+service+".labels."+LabelS3).
 		WithContext("reason", "invalid_value")
+}
+
+// parseCronSchedule 解析 fleetly.cron label 家族（E5 Cron，架构 §4.3 声明
+// 行）：表达式经 cron.ParseStandard（恰五段标准式——六段含秒与非法式在
+// 解析期即拒，契约天然成立）、时区经 time.LoadLocation、超时经
+// time.ParseDuration（须 > 0）。校验落 compose 归一化期（fail-loud：非法
+// 值在 Load 即拒，不静默当未声明——与 parseS3Label 同一纪律）。错误码取
+// 保留命名空间既有码（值违反键契约 = 该键没有被正确使用；注册表只增）。
+// 时区数据库经 time/tzdata 内嵌（本包 import，scratch/dind 形态无系统
+// zoneinfo 也可解析）。
+func parseCronSchedule(service string, labels map[string]string) (*CronSchedule, error) {
+	expr := strings.TrimSpace(labels[LabelCron])
+	sched, err := cron.ParseStandard(expr)
+	if err != nil {
+		return nil, apperr.New("E_LABEL_RESERVED",
+			"service %q declares label %q with an invalid expression %q: %v (the platform contract is the 5-field standard crontab form, e.g. \"*/5 * * * *\"; 6-field expressions with seconds are rejected)",
+			service, LabelCron, labels[LabelCron], err).
+			WithContext("path", "services."+service+".labels."+LabelCron).
+			WithContext("reason", "invalid_expression")
+	}
+	_ = sched // 值契约校验用；下次触发计算由调度器重新解析（internal/cron）
+
+	out := &CronSchedule{Expression: expr}
+	if raw, ok := labels[LabelCronTimezone]; ok {
+		tz := strings.TrimSpace(raw)
+		loc, err := time.LoadLocation(tz)
+		if err != nil {
+			return nil, apperr.New("E_LABEL_RESERVED",
+				"service %q declares label %q with an unknown timezone %q: %v (IANA location names such as \"Asia/Shanghai\"; defaults to UTC when omitted)",
+				service, LabelCronTimezone, raw, err).
+				WithContext("path", "services."+service+".labels."+LabelCronTimezone).
+				WithContext("reason", "invalid_timezone")
+		}
+		out.Timezone = loc.String()
+	}
+	if raw, ok := labels[LabelCronTimeout]; ok {
+		v := strings.TrimSpace(raw)
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return nil, apperr.New("E_LABEL_RESERVED",
+				"service %q declares label %q with an invalid timeout %q (a positive Go duration such as \"30m\"; defaults to the platform watchdog budget when omitted)",
+				service, LabelCronTimeout, raw).
+				WithContext("path", "services."+service+".labels."+LabelCronTimeout).
+				WithContext("reason", "invalid_timeout")
+		}
+		out.Timeout = d.String()
+	}
+	return out, nil
 }
 
 // idnaProfile 是域名归一化档案：IDN → punycode（架构 §2.4 域名行）。Lookup

@@ -13,6 +13,7 @@ import (
 	"github.com/lynx-go/lynx"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/cron"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
@@ -151,6 +152,28 @@ func (s rustfsService) Start(ctx context.Context) error {
 
 // Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑）。
 func (s rustfsService) Stop(_ context.Context) error { return nil }
+
+// cronSchedulerService 是定时任务调度服务壳（E5 Cron）：Start 阶段进入扫描
+// 循环（启动首拍完成在途残留收口与错过点披露，此后每拍到点触发/完成检测
+// /孤儿清扫）。Start 阻塞到关停（actor 契约同上），Stop 等待循环退出（在
+// 途 job 的看门狗随拍停止——进程退出后的残留由下次启动首拍收口兜底，台账
+// 不丢）。
+type cronSchedulerService struct {
+	m *cron.Manager
+}
+
+func newCronSchedulerService(m *cron.Manager) lynx.Service { return cronSchedulerService{m: m} }
+
+func (s cronSchedulerService) Name() string                 { return "cron.schedule" }
+func (s cronSchedulerService) Init(_ lynx.AppContext) error { return nil }
+func (s cronSchedulerService) Start(ctx context.Context) error {
+	if err := s.m.Start(ctx); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return nil
+}
+func (s cronSchedulerService) Stop(ctx context.Context) error { return s.m.Stop(ctx) }
 
 // secretsService 是平台密钥服务壳：主密钥已在装配期（NewSecretsBox →
 // EnsureKey）fail-fast 加载/生成，Init 无动作；CheckHealth 持续上报密钥

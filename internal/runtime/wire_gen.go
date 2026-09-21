@@ -71,6 +71,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	gitTriggers := NewGitTriggers(appConfig, store, box, app)
 	logsManager := NewLogsManager(app, appConfig, store, client, box, gitTriggers)
 	engine := NewEngine(app, appConfig, store, client, resolver, box, ingressManager, manager, logsManager)
+	cronManager := NewCronManager(app, store, box, client, resolver)
 	rustfsManager, cleanup5, err := NewRustfsManager(app, store, box, client)
 	if err != nil {
 		cleanup4()
@@ -109,8 +110,9 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	placementService := NewPlacementService(store, resolver)
 	tokensService := NewTokensService(store)
 	gitKeysService := NewGitKeysService(store)
+	cronService := NewCronService(store, cronManager)
 	systemService := NewSystemService(appConfig, store, nodeIdentity, observer, box, ingressManager, manager, rustfsManager, client, version)
-	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, systemService)
+	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, cronService, systemService)
 	if err != nil {
 		cleanup5()
 		cleanup4()
@@ -119,7 +121,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(app, store, nodeIdentity, observer, janitor, manager, box, queue, builder, engine, ingressManager, logsManager, gitTriggers, appConfig, rustfsManager, server, grpcServer)
+	v := NewServices(app, store, nodeIdentity, observer, janitor, manager, box, queue, builder, engine, ingressManager, logsManager, cronManager, gitTriggers, appConfig, rustfsManager, server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -76,29 +77,111 @@ func (m *Manager) scanOnce(ctx context.Context) {
 		for _, svc := range services {
 			m.pollStream(ctx, app, svc, red)
 		}
+		// E5 Cron：一次性 cron job 服务（fleetly-cron- 前缀，服务名不进
+		// 命名公式发现面）的日志同管线采集，归属 (app, compose 服务)。
+		m.pollCronJobs(ctx, app, red)
 	}
 }
 
-// pollStream 拉取单条流的本轮增量并入库（ring + 落盘 + 扇出）。
+// pollStream 拉取长驻服务的单条流（compose 服务名 → 命名公式 swarm 名）。
 func (m *Manager) pollStream(ctx context.Context, app state.App, service string, red *redactor) {
-	m.mu.Lock()
-	key := streamKey(app.Name, service)
-	cur, ok := m.streams[key]
-	if !ok {
-		// 首轮游标冻结在发现时刻（不回灌历史——历史由既有落盘承载；
-		// 首启无落盘则从零开始积累，属 v0.1 明确语义）。游标只随「实际
-		// 收到的行」推进：无行时窗口保持增长，行不会因轮询跳拍而漏采。
-		cur = &stream{app: app.Name, appID: app.ID, service: service, lastAt: m.clock()}
-		m.streams[key] = cur
-	}
-	since := cur.lastAt
-	m.mu.Unlock()
-
 	swarmName, err := naming.ServiceName(app.Name, service)
 	if err != nil {
 		m.log.Warn("logs: swarm service name resolve failed", "app", app.Name, "service", service, "error", err.Error())
 		return
 	}
+	m.pollStreamNamed(ctx, app, service, swarmName, streamKey(app.Name, service), red, false)
+}
+
+// cronCursorKey 是 cron job 采集游标键（与长驻 (app, service) 键隔离——同
+// 一 (app, service) 的长驻流与历次触发的 job 流各自独立记账；键保留 app
+// 前缀，app 级延迟淘汰〔M7-6〕自然覆盖）。
+func cronCursorKey(app, jobService string) string {
+	return app + "\x00cron\x00" + jobService
+}
+
+func cronCursorPrefix(app string) string { return app + "\x00cron\x00" }
+
+// cronJobRefOf 把一次性 cron job 服务的实况投影解析为采集归属（映射解析的
+// 单测面）：swarm 服务名必须带 fleetly-cron- 前缀，归属 app/process 以受管
+// label 为权威——job 服务名的字符串反解在 app/service 含 '-' 时有歧义，
+// label 是唯一权威；app 谓词拦下 label 漂移的误归属。
+func cronJobRefOf(app string, s engine.ServiceState) (CronJobRef, bool) {
+	if !naming.IsCronJobName(s.Name) {
+		return CronJobRef{}, false
+	}
+	if s.Labels[state.LabelApp] != app {
+		return CronJobRef{}, false
+	}
+	service := s.Labels[state.LabelProcess]
+	if service == "" {
+		return CronJobRef{}, false
+	}
+	return CronJobRef{JobService: s.Name, Service: service}, true
+}
+
+// pollCronJobs 采集该 app 的一次性 cron job 服务日志（E5 Cron 留存行「日志
+// 进现有采集」的兑现；架构 §4.3 验收五项之「日志」）：job 服务存活期（触发
+// → 完成删除，秒级到拍级）内尽力采集——发现即从零全量回读（一次性作业的
+// 历史即全部，长驻服务「发现时刻起采、不回灌历史」的口径不适用），行按
+// (app, compose 服务) 归属与长驻同面（ring/落盘/History/Follow 同键合流）；
+// 服务删除后流自然断、游标当轮回收，无悬挂 goroutine（pollStreamNamed 同
+// 步排空 + MG-1 看门狗兜底）。
+func (m *Manager) pollCronJobs(ctx context.Context, app state.App, red *redactor) {
+	states, err := m.port.CronJobServiceStates(ctx, app.Name)
+	if err != nil {
+		// 底座暂态：跳过本轮，游标保留（服务若已删，下一轮发现集为空时回收）。
+		m.log.Debug("logs: cron job discovery failed", "app", app.Name, "error", err.Error())
+		return
+	}
+	seen := make(map[string]bool, len(states))
+	for _, s := range states {
+		ref, ok := cronJobRefOf(app.Name, s)
+		if !ok {
+			continue
+		}
+		key := cronCursorKey(app.Name, ref.JobService)
+		seen[key] = true
+		m.pollStreamNamed(ctx, app, ref.Service, ref.JobService, key, red, true)
+	}
+	m.evictCronCursors(app.Name, seen)
+}
+
+// evictCronCursors 回收已消失 job 服务的采集游标：本轮发现集之外的 cron 游
+// 标 = 服务已被调度器删除（完成收口）或残留清扫——游标失去客体，立即回收
+// 不悬挂（app 级延迟淘汰继续作为整体兜底；hub ring 归 (app,service) 键，
+// 与长驻服务共享，不在此列清理范围）。
+func (m *Manager) evictCronCursors(app string, seen map[string]bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	prefix := cronCursorPrefix(app)
+	for key := range m.streams {
+		if strings.HasPrefix(key, prefix) && !seen[key] {
+			delete(m.streams, key)
+		}
+	}
+}
+
+// pollStreamNamed 拉取单条流（swarm 服务名 swarmName）的本轮增量并入库
+// （ring + 落盘 + 扇出）。cursorKey 是采集游标键（长驻 = (app,service)；
+// cron job 另带 job 服务名维度）；fromStart 报告新游标是否从零起算——cron
+// job = true（一次性作业全量回读），长驻服务保持 M7「发现时刻起采」口径。
+func (m *Manager) pollStreamNamed(ctx context.Context, app state.App, service, swarmName, cursorKey string, red *redactor, fromStart bool) {
+	m.mu.Lock()
+	cur, ok := m.streams[cursorKey]
+	if !ok {
+		anchor := m.clock()
+		if fromStart {
+			// 首拍零点全量回读：since 零值 = 底座不设过滤起点（job 从服务
+			// 创建起的全部输出；行短量小，一次性语义天然有界）。
+			anchor = time.Time{}
+		}
+		cur = &stream{app: app.Name, appID: app.ID, service: service, lastAt: anchor}
+		m.streams[cursorKey] = cur
+	}
+	since := cur.lastAt
+	m.mu.Unlock()
+
 	lines, err := m.port.StreamServiceLogs(ctx, swarmName, since, false)
 	if err != nil {
 		// 服务不存在（未部署/已删）安静跳过；其余底座暂态 debug 级。

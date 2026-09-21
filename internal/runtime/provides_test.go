@@ -24,6 +24,7 @@ import (
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/cron"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
@@ -117,12 +118,13 @@ func TestNewServicesStopOrder(t *testing.T) {
 		placement.NewResolver(st, sc), box, app.Logger())
 	src := gitserver.NewGitTriggers(gitserver.Config{}, st, box, logger)
 	lm := logs.NewManager(logs.Config{}, st, sc, box, logger)
+	cm := cron.NewManager(cron.Config{}, st, box, sc, placement.NewResolver(st, sc), logger)
 	cfg := &AppConfig{}
 	hs := lynxhttp.NewServer(http.NotFoundHandler(), lynxhttp.WithAddr("127.0.0.1:0"))
 	gs := lynxgrpc.NewServer(lynxgrpc.WithAddr("127.0.0.1:0"))
 
 	services := NewServices(app, st, id, ob, jr, bm, box, q, builder, eng,
-		ing, lm, src, cfg, nil, hs, gs)
+		ing, lm, cm, src, cfg, nil, hs, gs)
 	names := make([]string, 0, len(services))
 	for _, s := range services {
 		names = append(names, s.Name())
@@ -137,9 +139,9 @@ func TestNewServicesStopOrder(t *testing.T) {
 		// 第二段：写入者（入口关后排空在途）。
 		"build.queue", "engine.release", "ingress.traefik", "logs.collector",
 		// 第三段：资源层（最后停；backup 晚于 engine 等 post-deploy
-		// 在途快照，rustfs duty 与 backup 同层，store 殿后）。
+		// 在途快照，rustfs duty / cron 调度器同层，store 殿后）。
 		"state.identity", "state.observer", "state.janitor",
-		"state.backup", "objectstore.rustfs", "state.secrets", "state.store",
+		"state.backup", "objectstore.rustfs", "cron.schedule", "state.secrets", "state.store",
 	}
 	if len(names) != len(want) {
 		t.Fatalf("services = %v, want %v", names, want)

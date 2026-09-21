@@ -77,3 +77,34 @@ func TestBuildSwarmSpecDefaultsAndGlobal(t *testing.T) {
 		t.Fatalf("global order = %s, want stop-first", g.UpdateConfig.Order)
 	}
 }
+
+// TestBuildSwarmSpecReplicatedJob 一次性 job 翻译（E5 Cron）：replicated-job
+// 模式（TotalCompletions=1/MaxConcurrent=1）、无 UpdateConfig（job 模式被
+// daemon 拒绝）、重启策略 none（失败即 failed，不重试）。
+func TestBuildSwarmSpecReplicatedJob(t *testing.T) {
+	// cron 包的 job 模板显式带 condition=none。
+	j := buildSwarmSpec(engine.ServiceSpec{
+		Name:          "fleetly-cron-demo-task-abc",
+		Image:         "repo/task@sha256:def",
+		Job:           true,
+		Replicas:      1,
+		RestartPolicy: &engine.RestartPolicySpec{Condition: "none"},
+	})
+	if j.Mode.ReplicatedJob == nil || j.Mode.ReplicatedJob.TotalCompletions == nil || *j.Mode.ReplicatedJob.TotalCompletions != 1 {
+		t.Fatalf("replicated-job mode wrong: %+v", j.Mode)
+	}
+	if j.Mode.ReplicatedJob.MaxConcurrent == nil || *j.Mode.ReplicatedJob.MaxConcurrent != 1 {
+		t.Fatalf("max-concurrent wrong: %+v", j.Mode.ReplicatedJob)
+	}
+	if j.UpdateConfig != nil {
+		t.Fatalf("job spec must not carry update config: %+v", j.UpdateConfig)
+	}
+	if j.TaskTemplate.RestartPolicy == nil || string(j.TaskTemplate.RestartPolicy.Condition) != "none" {
+		t.Fatalf("restart condition = %+v, want none", j.TaskTemplate.RestartPolicy)
+	}
+	// nil 重启策略 → 适配器补 none（不落到长驻缺省 any）。
+	j2 := buildSwarmSpec(engine.ServiceSpec{Name: "j2", Image: "img", Job: true, Replicas: 1})
+	if j2.TaskTemplate.RestartPolicy == nil || string(j2.TaskTemplate.RestartPolicy.Condition) != "none" {
+		t.Fatalf("default job restart condition = %+v, want none", j2.TaskTemplate.RestartPolicy)
+	}
+}

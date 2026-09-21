@@ -6,11 +6,6 @@
   "volumes": 0,
   "warnings": [
     {
-      "kind": "cron_label_v02_pending",
-      "service": "web",
-      "message": "service web declares fleetly.cron (scheduled jobs are a v0.2 contract; v0.1 deploys the service as long-running)"
-    },
-    {
       "code": "W_DEPLOY_NO_HEALTHCHECK",
       "service": "web",
       "message": "service web declares no healthcheck: health_gate=none (the health gate degrades to exit/replica-count checks, so failures surface later)"

@@ -56,6 +56,7 @@ type Client struct {
 	place  serverv1.PlacementServiceClient
 	tokens serverv1.TokensServiceClient
 	gitkey serverv1.GitKeysServiceClient
+	cron   serverv1.CronServiceClient
 }
 
 // NewClient 建立 gRPC 连接（默认 127.0.0.1:8421，明文；连接惰性建立，
@@ -93,6 +94,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		place:  serverv1.NewPlacementServiceClient(conn),
 		tokens: serverv1.NewTokensServiceClient(conn),
 		gitkey: serverv1.NewGitKeysServiceClient(conn),
+		cron:   serverv1.NewCronServiceClient(conn),
 	}, nil
 }
 
@@ -147,6 +149,9 @@ func (c *Client) Tokens() serverv1.TokensServiceClient { return c.tokens }
 
 // GitKeys 取 git 公钥管理面（admin scope，T2.19）。
 func (c *Client) GitKeys() serverv1.GitKeysServiceClient { return c.gitkey }
+
+// Cron 取定时任务面（E5 Cron：手动触发 + 运行台账读面）。
+func (c *Client) Cron() serverv1.CronServiceClient { return c.cron }
 
 // Ping 探测控制面存活并取回 service / version（豁免鉴权——装面前的
 // 存活检查路径）。

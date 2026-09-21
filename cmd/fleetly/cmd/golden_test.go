@@ -143,8 +143,9 @@ func TestGoldenVersion(t *testing.T) {
 	compareGolden(t, "version", out)
 }
 
-// TestGoldenValidate validate --json：干净夹具与 cron-label 警告夹具各一
-// （警告随 --json artifact 带出）。
+// TestGoldenValidate validate --json：干净夹具与 cron-label 夹具各一。
+// E5 Cron 起 fleetly.cron 为生效契约——合法声明不再产 v0.1 的「v0.2 生效」
+// 警告（夹具仅剩无 healthcheck 的既有警告），--json artifact 如实反映。
 func TestGoldenValidate(t *testing.T) {
 	clean := writeCLIFixture(t, cliWebApp)
 	code, out, errOut := runCLIConn(t, "validate", "--json", clean)
@@ -153,7 +154,7 @@ func TestGoldenValidate(t *testing.T) {
 	}
 	compareGolden(t, "validate", out)
 
-	warned := writeCLIFixture(t, `
+	cronFixture := writeCLIFixture(t, `
 name: my-api
 services:
   web:
@@ -161,11 +162,11 @@ services:
     labels:
       fleetly.cron: "*/5 * * * *"
 `)
-	code, out, _ = runCLIConn(t, "validate", "--json", warned)
+	code, out, _ = runCLIConn(t, "validate", "--json", cronFixture)
 	if code != 0 {
-		t.Fatalf("warned: code=%d", code)
+		t.Fatalf("cron: code=%d", code)
 	}
-	compareGolden(t, "validate_cron_warning", out)
+	compareGolden(t, "validate_cron_live", out)
 }
 
 // TestGoldenDiff diff --json（本地归一化差异；有变化 → 退出 2）。

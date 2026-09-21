@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
@@ -20,6 +21,11 @@ type fakePort struct {
 	// stuck 标记的流：StreamServiceLogs 返回永不发送也永不关闭的 channel
 	//（MG-1 看门狗测试：模拟底座流挂死——同款缺陷的注入形态）。
 	stuck map[string]bool
+	// cronJobs 是 app -> 一次性 cron job 服务实况投影（E5 Cron 采集路径
+	// 测试的发现面注入）。
+	cronJobs map[string][]engine.ServiceState
+	// cronErr 非 nil 时 CronJobServiceStates 返回该错误（底座暂态注入）。
+	cronErr error
 }
 
 func newFakePort() *fakePort {
@@ -27,7 +33,26 @@ func newFakePort() *fakePort {
 		services: map[string][]string{},
 		lines:    map[string][]substrate.LogLine{},
 		stuck:    map[string]bool{},
+		cronJobs: map[string][]engine.ServiceState{},
 	}
+}
+
+func (f *fakePort) setCronJobs(app string, states ...engine.ServiceState) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cronJobs[app] = states
+}
+
+func (f *fakePort) failCronDiscovery(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cronErr = err
+}
+
+func (f *fakePort) CronJobServiceStates(_ context.Context, app string) ([]engine.ServiceState, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cronJobs[app], f.cronErr
 }
 
 func (f *fakePort) setApp(app string, services ...string) {

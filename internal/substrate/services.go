@@ -219,19 +219,35 @@ func buildSwarmSpec(spec engine.ServiceSpec) swarm.ServiceSpec {
 			Labels: spec.ServiceLabels,
 		},
 		TaskTemplate: task,
-		UpdateConfig: &swarm.UpdateConfig{
+	}
+	if spec.Job {
+		// 一次性 replicated-job（E5 Cron，架构 §4.3 执行行）：TotalCompletions=1
+		// 的单发任务、MaxConcurrent=1（与平台重叠 skip〔max-concurrent 1〕
+		// 同口径）；job 模式不接受 UpdateConfig（daemon 拒绝）——不写；重启
+		// 策略缺省按 none（失败即 failed 终态，不重试；无 delay 残留）。
+		one := uint64(1)
+		serviceSpec.Mode = swarm.ServiceMode{
+			ReplicatedJob: &swarm.ReplicatedJob{MaxConcurrent: &one, TotalCompletions: &one},
+		}
+		if spec.RestartPolicy == nil {
+			serviceSpec.TaskTemplate.RestartPolicy = &swarm.RestartPolicy{Condition: swarm.RestartPolicyConditionNone}
+		}
+	} else {
+		// 长驻服务（global/replicated）：UpdateConfig 照常下发（受管字段
+		// failure_action=pause/monitor=5s 由适配器固定）。
+		if spec.Global {
+			serviceSpec.Mode = swarm.ServiceMode{Global: &swarm.GlobalService{}}
+		} else {
+			replicas := spec.Replicas
+			serviceSpec.Mode = swarm.ServiceMode{Replicated: &swarm.ReplicatedService{Replicas: &replicas}}
+		}
+		serviceSpec.UpdateConfig = &swarm.UpdateConfig{
 			Parallelism:   spec.UpdateParallelism,
 			Delay:         spec.UpdateDelay,
 			FailureAction: managedFailureAction,
 			Monitor:       managedMonitor,
 			Order:         swarm.UpdateOrder(spec.UpdateOrder),
-		},
-	}
-	if spec.Global {
-		serviceSpec.Mode = swarm.ServiceMode{Global: &swarm.GlobalService{}}
-	} else {
-		replicas := spec.Replicas
-		serviceSpec.Mode = swarm.ServiceMode{Replicated: &swarm.ReplicatedService{Replicas: &replicas}}
+		}
 	}
 	return serviceSpec
 }

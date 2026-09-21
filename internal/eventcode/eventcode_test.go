@@ -59,6 +59,14 @@ var docEvents = map[string]string{ // event → 文档出处
 	// architecture.md §4.3（cron 触发前哨「记 skipped + 事件」，v0.2）
 	"cron.skipped": "architecture §4.3",
 
+	// E5 Cron 实现期新增（object-storage 设计 §8 事件面 + FZ-4 钉名，W3-S5
+	// 接线）：发出来源 = internal/cron 触发链与完成检测——事件与 cron_runs
+	// 台账行同事务（Outbox）。cron.timed_out 为 FZ-4 钉名。
+	"cron.triggered":  "E5 Cron added during implementation (object-storage §8; W3-S5; one-shot job created on schedule or manual trigger)",
+	"cron.succeeded":  "E5 Cron added during implementation (object-storage §8; W3-S5; run completed, job service removed)",
+	"cron.failed":     "E5 Cron added during implementation (object-storage §8; W3-S5; run failed, no retry)",
+	"cron.timed_out":  "E5 Cron added during implementation (object-storage §8; FZ-4 pinned name; watchdog budget exceeded, job service removed)",
+
 	// T2.15 实现期新增（文档外事件名单独列出，待 T0.5 契约冻结确认）：架构
 	// §2.5 不变量「路由发布严格晚于健康门；发布失败不回滚部署、单独告警 +
 	// 审计」。证书签发/续期不设新事件名（走审计记录）。

@@ -14,6 +14,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/api"
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/cron"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
@@ -49,9 +50,11 @@ var ProviderSet = wire.NewSet(
 	NewEngine,
 	NewDaemonManager,
 	NewLogsManager,
+	NewCronManager,
 	NewAuthenticator,
 	NewSystemService,
 	NewAppsService,
+	NewCronService,
 	NewDeploymentsService,
 	NewRevisionsService,
 	NewBuildsService,
@@ -287,11 +290,26 @@ func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate
 		WithSecretSource(src)
 }
 
+// NewCronManager 构建定时任务调度器（E5 Cron，架构 §4.3 细则：tick 循环
+// 扫描拍 10s、看门狗默认 10m——平台常量，无配置面；调度集每拍现读 state）。
+// 底座服务/任务面由 substrate.Client 隐式实现 engine.Substrate（与引擎同源
+// 适配器）；节点前哨复用放置解析器（placement.Preflight——绑定节点不 ready
+// 即 skip(node_unavailable)）。
+func NewCronManager(app lynx.App, st *state.Store, sb *secrets.Box, sc *substrate.Client, pl *placement.Resolver) *cron.Manager {
+	return cron.NewManager(cron.Config{}, st, sb, sc, pl, app.Logger())
+}
+
 // NewAppsService 构造应用资源面服务（T2.17；T2.19 增补 webhook/git 触发
 // 配置面——box 加密 webhook secret 与拉源认证材料，gitEndpoint 拼 remote
 // 提示；H9 增补路由撤销端口——app 删除管线经 ingress.Manager 撤销路由）。
 func NewAppsService(st *state.Store, sb *secrets.Box, cfg *AppConfig, m *ingress.Manager) *api.AppsService {
 	return api.NewAppsService(st, sb, gitEndpointForHint(cfg.GitSettings().Addr), m)
+}
+
+// NewCronService 构造定时任务面服务（E5 Cron：手动触发走调度器同链路 +
+// cron.manual_triggered 审计；runs 读面直读台账）。
+func NewCronService(st *state.Store, cm *cron.Manager) *api.CronService {
+	return api.NewCronService(st, cm)
 }
 
 // gitEndpointForHint 把 SSH 监听地址归一为 remote 提示的 host:port
@@ -492,6 +510,7 @@ func NewServices(
 	eng *engine.Engine,
 	ing *ingress.Manager,
 	lm *logs.Manager,
+	cm *cron.Manager,
 	src *gitserver.GitTriggers,
 	cfg *AppConfig,
 	rm *rustfs.Manager,
@@ -509,13 +528,15 @@ func NewServices(
 		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr, cfg.IngressSettings().ConfigTLSAddr),
 		newLogsService(lm),
 		// ── 第三段：资源层（最后停：backup 晚于 engine 等 post-deploy
-		//     在途快照；rustfs duty 同层——在途收敛拍随 ctx 排水；store
-		//     最后）──
+		//     在途快照；rustfs duty 同层——在途收敛拍随 ctx 排水；cron 调度
+		//     器同层——触发链与收口拍随 ctx 排水，残留 job 由下次启动首拍
+		//     收口兜底；store 最后）──
 		newIdentityService(id),
 		newObserverService(ob),
 		newJanitorService(jr),
 		newBackupService(bm),
 		newRustfsService(rm),
+		newCronSchedulerService(cm),
 		newSecretsService(sb),
 		newStoreService(st),
 	}

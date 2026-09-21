@@ -7,7 +7,11 @@ app.webhook_fetch_failed	async source fetch failed after webhook acceptance (ret
 backup.upload_failed	remote state backup upload failed (local snapshot unaffected; payload carries the backup id and a redacted error summary, never credentials)
 backup.upload_recovered	remote state backup upload recovered (previous upload had failed; payload carries the backup id)
 build.stale_nonterminal	build stayed queued/building past 2x the build timeout budget (surfaces state-machine bugs; no self-healing)
-cron.skipped	cron trigger skipped (node not ready / control plane down at the tick / overlapping skip); no catch-up run
+cron.failed	cron run failed (task failed/rejected; no retry — restart-condition=none; job service removed)
+cron.skipped	cron trigger skipped (overlap / node unavailable / missed during downtime / interrupted by restart); no catch-up run
+cron.succeeded	cron run completed (task complete; job service removed)
+cron.timed_out	cron run exceeded its watchdog budget (default 10m, fleetly.cron.timeout label overrides; job service removed)
+cron.triggered	cron schedule fired: one-shot swarm job created (payload carries app/service/run id/job service; scheduled_at is the hit cron point)
 deployment.cancelled	deploy cancelled (replays the prior state first, then lands cancelled)
 deployment.failed	deploy failed (terminal state; reason=error code)
 deployment.healthy	new revision passed the health gate

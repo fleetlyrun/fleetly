@@ -95,6 +95,35 @@ func NetworkAlias(service string) (string, error) {
 	return service, nil
 }
 
+// cronJobNamePrefix 是一次性 cron job 服务名的固定前缀（E5 Cron）：完整名
+// `fleetly-cron-<app>-<service>-<ulid8>`。前缀隔离了长驻服务的
+// `fleetly-<app>-<service>` 命名空间——引擎对账（省略=删除的删除扫描）与
+// 启动残留收口都以该前缀识别 job 服务的瞬时性（在途 job 不得被发布对账
+// 误删；ulid8 使同 schedule 的重叠触发命名天然不冲突）。
+const cronJobNamePrefix = namePrefix + "cron-"
+
+// CronJobName 返回一次性 cron job 的 Swarm 服务名
+// `fleetly-cron-<app>-<service>-<ulid8>`（ulid8 = 触发 run 的 ULID 前 8 位
+// ——同 schedule 串行〔max-concurrent 1〕下的唯一性兜底）。
+func CronJobName(app, service, runID string) (string, error) {
+	if err := validateComponent("app", app); err != nil {
+		return "", err
+	}
+	if err := validateComponent("service", service); err != nil {
+		return "", err
+	}
+	if len(runID) < 8 {
+		return "", fmt.Errorf("naming: run id %q shorter than 8 chars", runID)
+	}
+	return cronJobNamePrefix + app + "-" + service + "-" + runID[:8], nil
+}
+
+// IsCronJobName 报告 Swarm 服务名是否为一次性 cron job 服务（引擎对账的
+// 删除扫描与残留收口按此前缀排除/识别瞬时 job 服务）。
+func IsCronJobName(name string) bool {
+	return strings.HasPrefix(name, cronJobNamePrefix)
+}
+
 // AppID8 返回 app 平台 ID 的前 8 位（卷命名防撞尾缀）。ULID 为 26 位，
 // 前 8 位已含高精度时间戳成分。
 func AppID8(appID string) (string, error) {

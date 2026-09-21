@@ -13,14 +13,14 @@ import (
 
 // normalize 把 compose-go typed 工程转换为归一化 Spec，并执行需要 typed
 // 信息的第二层校验：
-//   - 平台 label 契约（domains/placement/cron/fleetly.* 保留前缀）；
+//   - 平台 label 契约（domains/placement/cron/s3/fleetly.* 保留前缀）；
 //   - 危险挂载语义（宿主 bind、docker.sock——dict 层白名单之外的补刀）；
 //   - 有卷服务 replicas 校验（本地卷不能多副本共享，stateful-placement
-//     §2.3）；
+//     §2.3）与 cron 服务 replicas=0/省略契约（E5 Cron，架构 §4.3）；
 //   - env_file 合并（来源标注 env_file < environment）。
 //
-// 同时产出非阻断警告（无 healthcheck、cron label v0.2 生效提示、无卷显式
-// 钉节点的计划警告在 plan 层产出）。
+// 同时产出非阻断警告（无 healthcheck、无卷显式钉节点的计划警告在 plan
+// 层产出）。
 func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 	workDir := filepath.Dir(abs)
 	ws := &warnings{}
@@ -89,16 +89,37 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 			placementRefs[name] = strings.TrimSpace(v)
 		}
 
-		// cron 家族：v0.1 不生效 → 警告级提示（v0.2 生效；不发明新码，
-		// Kind 标识）。
-		for _, k := range []string{LabelCron, LabelCronTimezone, LabelCronTimeout} {
-			if _, ok := svc.Labels[k]; ok {
-				ws.add(Warning{
-					Kind:    WarningKindCronLabelPending,
-					Service: name,
-					Message: "service " + name + " declares " + k + " (scheduled jobs are a v0.2 contract; v0.1 deploys the service as long-running)",
-				})
-				break
+		// cron label 家族（E5 Cron，架构 §4.3 声明行）：值契约在归一化期
+		// 校验（表达式五段标准式/时区/超时；fail-loud 即拒），主 label 存在
+		// 时 service.Cron 非空——发布引擎跳过其长驻装配，调度器按点建一次性
+		// job。孤儿时区/超时 label（无 fleetly.cron）同样拒绝：静默无机会
+		// 生效的声明是「以为配了」的悬案，与 parseS3Label 同纪律。
+		var cronSchedule *CronSchedule
+		if _, ok := svc.Labels[LabelCron]; ok {
+			cs, err := parseCronSchedule(name, svc.Labels)
+			if err != nil {
+				return nil, nil, err
+			}
+			cronSchedule = cs
+			// replicas 契约（架构 §4.3）：cron 服务是一次性 job，replicas
+			// 必须 0/省略——>0 声明的是平台无法兑现的期望（job 模式无长驻
+			// 副本语义），E_COMPOSE_UNSUPPORTED reason 细分在 Load 期即拒。
+			if svc.Deploy != nil && svc.Deploy.Replicas != nil && *svc.Deploy.Replicas > 0 {
+				return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED",
+					"service %q declares deploy.replicas=%d together with the %q label (cron services run as one-shot jobs: replicas must be 0 or omitted)",
+					name, *svc.Deploy.Replicas, LabelCron).
+					WithContext("path", prefix+".deploy.replicas").
+					WithContext("reason", "cron_replicas")
+			}
+		} else {
+			for _, k := range []string{LabelCronTimezone, LabelCronTimeout} {
+				if _, ok := svc.Labels[k]; ok {
+					return nil, nil, apperr.New("E_LABEL_RESERVED",
+						"service %q declares label %q without %q (timezone/timeout refine a cron schedule; without the schedule label they would never take effect)",
+						name, k, LabelCron).
+						WithContext("path", prefix+".labels."+k).
+						WithContext("reason", "cron_without_schedule")
+				}
 			}
 		}
 
@@ -109,6 +130,7 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 		normalized.Domains = domains
 		normalized.PlacementNode = placementRefs[name]
 		normalized.S3 = s3
+		normalized.Cron = cronSchedule
 		services = append(services, normalized)
 	}
 

@@ -41,6 +41,7 @@ func NewGRPCServer(
 	placement *api.PlacementService,
 	tokens *api.TokensService,
 	gitkeys *api.GitKeysService,
+	cronSvc *api.CronService,
 	sys *api.SystemService,
 ) (*lynxgrpc.Server, error) {
 	validator, err := protovalidate.New()
@@ -75,6 +76,7 @@ func NewGRPCServer(
 	serverv1.RegisterPlacementServiceServer(g, placement)
 	serverv1.RegisterTokensServiceServer(g, tokens)
 	serverv1.RegisterGitKeysServiceServer(g, gitkeys)
+	serverv1.RegisterCronServiceServer(g, cronSvc)
 	return srv, nil
 }
 

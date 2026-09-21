@@ -51,9 +51,11 @@ func (e *Engine) evaluateReleasing(ctx context.Context, rec state.DeployRecord) 
 		return nil
 	}
 
-	// 逐服务实况 → 判定。
+	// 逐服务实况 → 判定。E5 Cron：全 cron 应用（无长驻服务，Job 模板已被
+	// decodeSpecs 过滤）specs 为空——allSwitched 判真直接进观察窗（发布
+	// 语义上「没有长驻服务要等健康」，只声明的 cron 面不阻塞部署终态）。
 	anyPaused := false
-	allSwitched := len(specs) > 0
+	allSwitched := true
 	anyNewRan := false
 	for i := range specs {
 		spec := specs[i]
@@ -101,8 +103,9 @@ func (e *Engine) evaluateReleasing(ctx context.Context, rec state.DeployRecord) 
 			fmt.Sprintf("deploy watchdog timeout (%s): new version did not pass the health gate within budget", e.cfg.DeployTimeout))
 	}
 
-	// 全部服务切换 → 切流点（首个目标实例健康即起算观察窗，§2.2 L3）。
-	if allSwitched && len(specs) > 0 {
+	// 全部服务切换 → 切流点（首个目标实例健康即起算观察窗，§2.2 L3；
+	// specs 为空 = 全 cron 应用，无长驻服务可等，同样进观察窗）。
+	if allSwitched {
 		return e.enterObserving(ctx, rec)
 	}
 	return nil
@@ -356,7 +359,8 @@ func (e *Engine) restoreSnapshot(ctx context.Context, rec state.DeployRecord, sn
 }
 
 // lastActiveSnapshot 取最近一次 succeeded deployment 的期望快照（最后有效
-// revision 的执行形态；无 → nil）。
+// revision 的执行形态；无 → nil）。E5 Cron：与 decodeSpecs 同口径——Job
+// 模板（cron 一次性服务）不进归位重放的期望集（长驻对账只见长驻服务）。
 func (e *Engine) lastActiveSnapshot(ctx context.Context, rec state.DeployRecord) ([]ServiceSpec, error) {
 	rows, err := e.store.ListAppDeployments(ctx, rec.AppID, 25)
 	if err != nil {
@@ -370,9 +374,16 @@ func (e *Engine) lastActiveSnapshot(ctx context.Context, rec state.DeployRecord)
 		if err != nil {
 			return nil, fmt.Errorf("engine: decrypt snapshot of %s: %w", r.ID, err)
 		}
-		var specs []ServiceSpec
-		if err := json.Unmarshal(plain, &specs); err != nil {
+		var all []ServiceSpec
+		if err := json.Unmarshal(plain, &all); err != nil {
 			return nil, fmt.Errorf("engine: decode snapshot of %s: %w", r.ID, err)
+		}
+		specs := make([]ServiceSpec, 0, len(all))
+		for _, s := range all {
+			if s.Job {
+				continue
+			}
+			specs = append(specs, s)
 		}
 		return specs, nil
 	}

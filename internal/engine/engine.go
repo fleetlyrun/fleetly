@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/compose"
 	"github.com/fleetlyrun/fleetly/internal/envlayer"
+	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -786,8 +787,14 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 		}
 	}
 	// 省略=删除（compose 移除服务 → 删 Swarm service；卷数据不删）。
+	// E5 Cron：一次性 job 服务（fleetly-cron-* 前缀）不在此对账域——它们是
+	// 调度器的瞬时对象（在途 job 被发布对账误删 = 运行静默丢失），生命周期
+	// 归 internal/cron（完成删除 + 启动残留收口）。
 	for _, s := range existing {
 		if !desiredNames[s.Name] {
+			if naming.IsCronJobName(s.Name) {
+				continue
+			}
 			if err := e.sub.ServiceRemove(ctx, s.Name); err != nil {
 				return appErrOf(err, rec.ID)
 			}
@@ -825,9 +832,20 @@ func (e *Engine) decodeSpecs(rec state.DeployRecord) ([]ServiceSpec, error) {
 	if err != nil {
 		return nil, fmt.Errorf("engine: decrypt desired-spec %s: %w", rec.ID, err)
 	}
-	var specs []ServiceSpec
-	if err := json.Unmarshal(plain, &specs); err != nil {
+	var all []ServiceSpec
+	if err := json.Unmarshal(plain, &all); err != nil {
 		return nil, fmt.Errorf("engine: decode desired-spec %s: %w", rec.ID, err)
+	}
+	// E5 Cron：Job 模板（一次性 cron 服务的执行形态，E5 执行行）不出本投影
+	// ——发布对账/回滚重放/漂移/存在性对账/释放判定的期望集恒为长驻服务。
+	// Job spec 由 cron 调度器（internal/cron，自有解密读面）按点克隆执行；
+	// 快照内保留模板是「spec/快照照记」的口径。
+	specs := make([]ServiceSpec, 0, len(all))
+	for _, s := range all {
+		if s.Job {
+			continue
+		}
+		specs = append(specs, s)
 	}
 	return specs, nil
 }

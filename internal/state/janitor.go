@@ -172,6 +172,13 @@ func (j *Janitor) PruneOnce(ctx context.Context, now time.Time) (events int64, a
 	} else if n > 0 {
 		j.log.Info("janitor: pruned terminal builds", "builds_pruned", n)
 	}
+	// E5 Cron 留存窗（架构 §4.3 留存行）：cron_runs 每 schedule 最近 20 条。
+	// 台账是运行历史而非恢复点，全量保留只会稀释读面——清窗失败只告警。
+	if n, err := j.store.PruneCronRunsKeepPerSchedule(ctx, CronRunKeeper); err != nil {
+		j.log.Error("janitor: prune cron runs failed", "error", err)
+	} else if n > 0 {
+		j.log.Info("janitor: pruned cron runs", "runs_pruned", n)
+	}
 	j.pruneArtifacts(now)
 	j.pruneDeploymentDirs(ctx, now)
 	j.scanStaleNonTerminal(ctx, now)
