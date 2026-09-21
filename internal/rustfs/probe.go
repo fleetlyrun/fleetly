@@ -137,11 +137,18 @@ func (m *Manager) RunProbe(ctx context.Context) (ProbeResult, error) {
 		return ps.OK
 	}
 
-	// ① init：鉴权 + 建仓库头（幂等——重跑探针时仓库已存在；repo 经
-	// RESTIC_REPOSITORY env 携带，init 不收位置参数）。
+	// ① init：鉴权 + 建仓库头。幂等豁免：仓库已初始化（W3-F1 真机发现——
+	// 第二次探针撞 repository already initialized；auth 正确性由后续 backup
+	// 步证明，init 步只保证「仓库存在且可鉴权接触」）。
 	if !run("init", nil, nil, "init", "--repository-version", "2") {
-		res.OK = false
-		return res, nil
+		last := res.Steps[len(res.Steps)-1]
+		if !initAlreadyInitialized(last.Err) {
+			res.OK = false
+			return res, nil
+		}
+		// 已初始化 = 幂等通过（改判本步 OK，保留原摘要供运维归因）。
+		res.Steps[len(res.Steps)-1].OK = true
+		res.FailedStep = ""
 	}
 	// ② backup：写一枚临时快照（/etc——restic 镜像内临时系统目录，非敏感）。
 	var backupOut string
@@ -177,8 +184,8 @@ func (m *Manager) RunProbe(ctx context.Context) (ProbeResult, error) {
 }
 
 // EnsureBucketViaProbe 以探针容器的 init 步确保平台单桶存在（服务就绪后
-// 的一次性收敛步骤；幂等——桶与探针仓库已存在时以「config file already
-// exists」形态通过）。宿主进程不可达 overlay——建桶必须经容器。
+// 的一次性收敛步骤；幂等——桶与探针仓库已存在时以已初始化形态通过）。
+// 宿主进程不可达 overlay——建桶必须经容器。
 func (m *Manager) EnsureBucketViaProbe(ctx context.Context) error {
 	creds, err := m.loadCredentials(ctx)
 	if err != nil {
@@ -191,10 +198,19 @@ func (m *Manager) EnsureBucketViaProbe(ctx context.Context) error {
 	if err == nil {
 		return nil
 	}
-	if strings.Contains(err.Error(), "config file already exists") {
+	if initAlreadyInitialized(err.Error()) {
 		return nil // 仓库已初始化 = 桶已存在（幂等）
 	}
 	return fmt.Errorf("rustfs: probe bucket ensure failed: %s", scrubCredentials(err.Error(), creds))
+}
+
+// initAlreadyInitialized 判定 restic init 的「仓库已初始化」错误形态
+//（W3-F1：restic 0.19.1 有两种文案——"config file already exists" 与
+// "repository master key and config already initialized"；真机第二次探针
+// 撞后者）。认证错误不含这些子串，不会被误豁免。
+func initAlreadyInitialized(errText string) bool {
+	return strings.Contains(errText, "config file already exists") ||
+		strings.Contains(errText, "already initialized")
 }
 
 // parseProbeSnapshotID 解析 restic backup --json 的 summary 消息（与

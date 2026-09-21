@@ -269,11 +269,14 @@ func (m *Manager) uploadSnapshot(ctx context.Context, rec state.StateBackup) sta
 
 	// ⓪ 仓库惰性初始化（首传自举；两种 mode 同一路径形态）。仓库不存在
 	// 时 restic backup 必然失败——init 前置使「首传即成」成立；已初始化
-	// 时 restic 以「config file already exists」报错，幂等通过。口令 =
+	// 时幂等通过（W3-F1 同族真机发现：restic 0.19.1 对已初始化仓库有两种
+	// 文案——"config file already exists" 与 "repository master key and
+	// config already initialized"，后者见真机 RustFS 第二次上传）。口令 =
 	// resticPassword（同一把，D-S3-5）；repo 经 RESTIC_REPOSITORY env 携带
 	//（init 不收位置参数）。
 	if _, ierr := m.runner.RunRestic(ctx, spec("init", "--repository-version", "2")); ierr != nil &&
-		!strings.Contains(ierr.Error(), "config file already exists") {
+		!strings.Contains(ierr.Error(), "config file already exists") &&
+		!strings.Contains(ierr.Error(), "already initialized") {
 		return m.uploadFail(ctx, rec, scrub, fmt.Errorf("restic init: %w", ierr))
 	}
 

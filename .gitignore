@@ -62,3 +62,4 @@ bootstrap-token
 /fleetly-logs/
 /fleetly-certs/
 /deployments/
+.w3out/  

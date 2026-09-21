@@ -680,6 +680,37 @@ func TestRunProbeSteps(t *testing.T) {
 			t.Fatalf("probe = %+v, want ok with 4 steps", pr)
 		}
 	})
+	// W3-F1 回归（真机发现）：第二次探针的 init 撞「repository already
+	// initialized」——幂等改判本步 OK，四步全绿（auth 由 backup 步证明）。
+	t.Run("init-already-initialized-idempotent", func(t *testing.T) {
+		for _, msg := range []string{
+			"substrate: restic init failed (exit 1): Fatal: Fatal: create key in repository at s3:http://rustfs:9000/fleetly/fleetly-probe failed: repository master key and config already initialized",
+			"substrate: restic init failed (exit 1): config file already exists",
+		} {
+			fr := &fakeProbeRunner{initErr: errors.New(msg),
+				backupOutput:    `{"message_type":"summary","snapshot_id":"abc123"}`,
+				snapshotsOutput: `[{"id":"abc123"}]`}
+			h.mgr.WithProbeRunner(fr)
+			pr, err := h.mgr.RunProbe(context.Background())
+			if err != nil {
+				t.Fatalf("RunProbe (already initialized): %v", err)
+			}
+			if !pr.OK || pr.FailedStep != "" || len(pr.Steps) != 4 || !pr.Steps[0].OK {
+				t.Fatalf("probe = %+v, want ok with idempotent init step (%s)", pr, msg)
+			}
+		}
+	})
+	// init 的其他错误（如认证失败）不被幂等豁免误吞。
+	t.Run("init-auth-failure-not-exempt", func(t *testing.T) {
+		fr := &fakeProbeRunner{initErr: errors.New("substrate: restic init failed (exit 1): Fatal: unable to open config file: Stat: The Access Key Id you provided does not exist"),
+			backupOutput:    `{"message_type":"summary","snapshot_id":"abc123"}`,
+			snapshotsOutput: `[{"id":"abc123"}]`}
+		h.mgr.WithProbeRunner(fr)
+		pr, err := h.mgr.RunProbe(context.Background())
+		if err != nil || pr.OK || pr.FailedStep != "init" {
+			t.Fatalf("probe = %+v err=%v, want failed at init (auth)", pr, err)
+		}
+	})
 	t.Run("backup-no-snapshot-id", func(t *testing.T) {
 		fr := &fakeProbeRunner{backupOutput: `{"message_type":"summary"}`}
 		h.mgr.WithProbeRunner(fr)

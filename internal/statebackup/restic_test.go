@@ -20,6 +20,7 @@ import (
 type fakeRestic struct {
 	calls []ResticSpec
 
+	initErr         error
 	backupOutput    string
 	backupErr       error
 	snapshotsOutput string
@@ -31,7 +32,7 @@ func (f *fakeRestic) RunRestic(_ context.Context, spec ResticSpec) (string, erro
 	f.calls = append(f.calls, spec)
 	switch resticCommand(spec.Args) {
 	case "init":
-		return "", nil
+		return "", f.initErr
 	case "backup":
 		return f.backupOutput, f.backupErr
 	case "snapshots":
@@ -107,6 +108,44 @@ const (
 // TestUploadHappyPath 成功路径：backup → snapshots 回读含该 id → 台账 ok
 // → forget 被调（keep 对齐）；命令构造逐项断言（镜像钉版/repo URL/env
 // 组装/只读挂载/keep 传递）；Trigger 同步响应携带上传结论。
+// TestUploadInitAlreadyInitialized W3-F1 同族回归（真机发现）：第二次上传的
+// 惰性 init 撞「repository master key and config already initialized」——
+// 幂等通过，上传照常 ok；init 的其他错误（认证类）不被豁免误吞。
+func TestUploadInitAlreadyInitialized(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		initErr error
+		wantOK  bool
+	}{
+		{name: "already-initialized-wording", wantOK: true,
+			initErr: fmt.Errorf("substrate: restic init failed (exit 1): Fatal: Fatal: create key in repository at s3:http://rustfs:9000/fleetly/statebackups failed: repository master key and config already initialized")},
+		{name: "config-exists-wording", wantOK: true,
+			initErr: fmt.Errorf("substrate: restic init failed (exit 1): config file already exists")},
+		{name: "auth-failure-not-exempt", wantOK: false,
+			initErr: fmt.Errorf("substrate: restic init failed (exit 1): Fatal: unable to open config file: Stat: The Access Key Id you provided does not exist")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fr := &fakeRestic{
+				initErr:         tc.initErr,
+				backupOutput:    `{"message_type":"summary","snapshot_id":"abc123"}`,
+				snapshotsOutput: `[{"id":"abc123"}]`,
+			}
+			mgr, st := newUploadTestManager(t, fr)
+			saveExternalSettings(t, st, managerBox(mgr), fakeAKSK)
+			rec, err := mgr.Trigger(context.Background(), state.BackupKindManual)
+			if err != nil {
+				t.Fatalf("Trigger: %v", err)
+			}
+			if tc.wantOK && rec.UploadStatus != state.BackupUploadOK {
+				t.Fatalf("upload_status = %s, want ok (idempotent init)", rec.UploadStatus)
+			}
+			if !tc.wantOK && rec.UploadStatus != state.BackupUploadFailed {
+				t.Fatalf("upload_status = %s, want failed (init error not exempted)", rec.UploadStatus)
+			}
+		})
+	}
+}
+
 func TestUploadHappyPath(t *testing.T) {
 	fr := &fakeRestic{
 		backupOutput:    "other line\n" + snapLine + "\n",
