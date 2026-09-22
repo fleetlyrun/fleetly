@@ -28,8 +28,10 @@ import (
 // 出现在 `restic snapshots --json <id>` 的回读列表里才记 upload_status=ok
 // ——「绿色成功但实际没上传」的路径结构性不存在（与本地 verify 同型纪律）。
 // 上传失败 = upload_status=failed + 事件 backup.upload_failed + system
-// status backup 组件红；本地份不受影响（verify_status 不回写）。上一份
-// failed、本份 ok 时发 backup.upload_recovered（恢复绿）。
+// status backup 组件红；本地份不受影响（verify_status 不回写）。失败后当
+// 日短退避重试（W3-F3 改进票，uploadretry.go：5m/15m/1h 至多 3 次——中间
+// 失败只 Debug 日志，事件流不刷屏）；上一份 failed、本份 ok 时发
+// backup.upload_recovered（恢复绿；失败行的重试成功同发）。
 //
 // 开关 = s3.mode：unset 即不上传（upload_status 保持 none——外部端点未
 // 配置是合法态，不算失败不红）。rustfs 模式上传经平台托管凭据（E3-5
@@ -189,7 +191,12 @@ func shortFingerprint(plain string) string {
 // 应携带上传预算）。返回回读台账后的最终行投影（Trigger 的同步响应据此
 // 反映上传结论）。本函数绝不推翻本地 verified 结论——任何上传失败只红
 // 上传面（upload_status / 事件 / 组件），不影响函数签名上的备份成功语义。
-func (m *Manager) uploadSnapshot(ctx context.Context, rec state.StateBackup) state.StateBackup {
+//
+// retry 区分首传与退避重试（W3-F3 改进票）：首传失败 = backup.upload_
+// failed 事件（诚实红的唯一落点）；重试失败只 Debug 日志 + 台账 upload_
+// error 刷新（行保持 failed，事件流不刷屏）；重试成功 = ok + backup.
+// upload_recovered（行自身 failed → ok 的恢复绿，不依赖前行的失败状态）。
+func (m *Manager) uploadSnapshot(ctx context.Context, rec state.StateBackup, retry bool) state.StateBackup {
 	out := rec
 	finalRow := func() state.StateBackup {
 		if r, err := m.store.GetStateBackup(ctx, rec.ID); err == nil {
@@ -200,11 +207,11 @@ func (m *Manager) uploadSnapshot(ctx context.Context, rec state.StateBackup) sta
 
 	in, err := m.store.LoadS3Settings(ctx)
 	if err != nil {
-		return m.uploadFail(ctx, rec, nil, fmt.Errorf("load s3 settings: %w", err))
+		return m.uploadFail(ctx, rec, nil, retry, fmt.Errorf("load s3 settings: %w", err))
 	}
 	repo, pathStyle, _, found, err := resticTarget(in)
 	if err != nil {
-		return m.uploadFail(ctx, rec, nil, err)
+		return m.uploadFail(ctx, rec, nil, retry, err)
 	}
 	if !found {
 		// s3.mode=unset：合法态——不上传、不算失败、不红（设计 §2.3：
@@ -222,11 +229,11 @@ func (m *Manager) uploadSnapshot(ctx context.Context, rec state.StateBackup) sta
 	// 口令（惰性生成）与凭证解密。
 	password, err := m.resticPassword(ctx)
 	if err != nil {
-		return m.uploadFail(ctx, rec, nil, err)
+		return m.uploadFail(ctx, rec, nil, retry, err)
 	}
 	creds, err := m.resticCredentials(ctx, in)
 	if err != nil {
-		return m.uploadFail(ctx, rec, nil, err)
+		return m.uploadFail(ctx, rec, nil, retry, err)
 	}
 	scrub := []string{password, creds.AccessKeyID, creds.SecretKey}
 
@@ -277,38 +284,39 @@ func (m *Manager) uploadSnapshot(ctx context.Context, rec state.StateBackup) sta
 	if _, ierr := m.runner.RunRestic(ctx, spec("init", "--repository-version", "2")); ierr != nil &&
 		!strings.Contains(ierr.Error(), "config file already exists") &&
 		!strings.Contains(ierr.Error(), "already initialized") {
-		return m.uploadFail(ctx, rec, scrub, fmt.Errorf("restic init: %w", ierr))
+		return m.uploadFail(ctx, rec, scrub, retry, fmt.Errorf("restic init: %w", ierr))
 	}
 
 	// ① 上传本体（输出含 summary.snapshot_id——restic 0.19 --json 契约）。
 	outStr, err := m.runner.RunRestic(ctx, spec("backup", containerMountDir, "--json"))
 	if err != nil {
-		return m.uploadFail(ctx, rec, scrub, fmt.Errorf("restic backup: %w", err))
+		return m.uploadFail(ctx, rec, scrub, retry, fmt.Errorf("restic backup: %w", err))
 	}
 	snapID := parseBackupSnapshotID(outStr)
 	if snapID == "" {
-		return m.uploadFail(ctx, rec, scrub, errors.New(
+		return m.uploadFail(ctx, rec, scrub, retry, errors.New(
 			"restic backup produced no snapshot id (summary message missing or snapshot creation skipped)"))
 	}
 
 	// ② 回读校验（D-S3-4 诚实契约）：该 id 必须在远端 snapshots 列表中。
 	snapsOut, err := m.runner.RunRestic(ctx, spec("snapshots", "--json", snapID))
 	if err != nil {
-		return m.uploadFail(ctx, rec, scrub, fmt.Errorf("restic snapshots readback: %w", err))
+		return m.uploadFail(ctx, rec, scrub, retry, fmt.Errorf("restic snapshots readback: %w", err))
 	}
 	if !snapshotsContain(snapsOut, snapID) {
-		return m.uploadFail(ctx, rec, scrub, fmt.Errorf(
+		return m.uploadFail(ctx, rec, scrub, retry, fmt.Errorf(
 			"restic readback: snapshot %s not listed in remote repository (green-but-not-uploaded guard)", snapID))
 	}
 
-	// ③ 结论落账：ok（+ 恢复绿事件）。
+	// ③ 结论落账：ok（+ 恢复绿事件——前行 failed 或本行是失败重试，二者
+	// 任一即红→绿闭环）。
 	if err := m.store.UpdateStateBackupUpload(ctx, rec.ID, state.BackupUploadOK, ""); err != nil {
 		m.log.Error("backup: upload ok but ledger update failed", "id", rec.ID, "error", err)
 		return finalRow()
 	}
 	m.log.Info("backup: uploaded and read-back verified", "id", rec.ID,
 		"snapshot", snapID, "repo_path_suffix", repoPathSuffix)
-	if prev == state.BackupUploadFailed {
+	if prev == state.BackupUploadFailed || retry {
 		m.emitEvent(ctx, "backup.upload_recovered", rec.ID,
 			state.DiffSummary("backup_id", rec.ID))
 	}
@@ -384,20 +392,29 @@ func (m *Manager) previousUploadStatus(ctx context.Context, id string) string {
 	return state.BackupUploadNone
 }
 
-// uploadFail 落上传失败三件套：台账 failed 行 + 事件 backup.upload_failed
-// + （组件面）健康红（CheckHealth 读台账）。scrub 为已知 secret 值集
-//（可空——凭证解密之前的失败没有可擦材料），错误摘要经擦除后入台账/事件。
-func (m *Manager) uploadFail(ctx context.Context, rec state.StateBackup, scrub []string, err error) state.StateBackup {
+// uploadFail 落上传失败面：台账 failed 行 + （首传时）事件 backup.upload_
+// failed + （组件面）健康红（CheckHealth 读台账）。重试路径（W3-F3 退避
+// 重试）不重发事件——只 Debug 日志 + 刷新台账 upload_error（行保持 failed，
+// 事件流不刷屏）。scrub 为已知 secret 值集（可空——凭证解密之前的失败没
+// 有可擦材料），错误摘要经擦除后入台账/事件。
+func (m *Manager) uploadFail(ctx context.Context, rec state.StateBackup, scrub []string, retry bool, err error) state.StateBackup {
 	summary := scrubText(err.Error(), scrub)
 	if uerr := m.store.UpdateStateBackupUpload(ctx, rec.ID, state.BackupUploadFailed, summary); uerr != nil {
 		m.log.Error("backup: upload failed AND ledger update failed", "id", rec.ID,
 			"upload_error", summary, "ledger_error", uerr.Error())
 	}
-	m.emitEvent(ctx, "backup.upload_failed", rec.ID,
-		state.DiffSummary("backup_id", rec.ID, "error", summary))
-	m.log.Error("backup: remote upload failed (upload_status=failed recorded; "+
-		"local snapshot unaffected; system status backup component is degraded until next ok upload)",
-		"id", rec.ID, "error", summary)
+	if retry {
+		// 重试中间失败：台账保持 failed（错误原文刷新供诊断），事件面静默
+		// ——诚实红的首次落点在首传，这里只留运行面踪迹。
+		m.log.Debug("backup: upload retry attempt failed (row stays failed, no event)",
+			"id", rec.ID, "error", summary)
+	} else {
+		m.emitEvent(ctx, "backup.upload_failed", rec.ID,
+			state.DiffSummary("backup_id", rec.ID, "error", summary))
+		m.log.Error("backup: remote upload failed (upload_status=failed recorded; "+
+			"local snapshot unaffected; system status backup component is degraded until next ok upload)",
+			"id", rec.ID, "error", summary)
+	}
 	out := rec
 	if r, rerr := m.store.GetStateBackup(ctx, rec.ID); rerr == nil {
 		out = r

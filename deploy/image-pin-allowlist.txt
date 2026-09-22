@@ -12,7 +12,14 @@
 # 以「<路径>:<引用>`」为键——Go 常量条目登记在此是为可变引用留有理由
 # 注记的台账；收紧时同步钉 Go 常量 digest。
 #
-# 当前条目：无。
+# 当前条目（1）：
+ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1
+# S2 v0.2.x 中间态（Go 常量 internal/database DefaultDatabaseToolsImage 的
+# tag 引用待 CI 首推 debian 基底重建的真 digest——dispatch
+# .github/workflows/dbtools.yml tag=v0.2.1-dbtools.1；e2e/databases.sh
+# 无凭据路径以同 tag 本地构建承接，见该脚本头注）。首推完成后钉回
+# tag@digest 双锚（Go 常量 + e2e 常量）并摘除本条——先例见下行历史条目
+#（fleetly-exec v0.2.0-exec.1）与 docs/runbooks/image-prepull.md 台账 #13。
 #
 # 历史条目（已收紧摘除，留档备查）：
 # ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1

@@ -39,24 +39,30 @@
 #   DB_VERSION     注入的版本串（默认 v0.2.0-db-e2e）
 #
 # 私有镜像注意（dbtools）：备份 job 与 dbapp 的运行载体 ghcr.io/fleetlyrun/
-# dbtools 是 PRIVATE ghcr 包，且钉定引用是 name:tag@digest 形态——digest 的
-# 本地解析依赖真实 pull 落下的 RepoDigests（docker save|load 的镜像没有该
-# 记录，钉定 ref 永远无法本地解析），所以必须在 dind 内登录后直拉：
-#   CI    job 以 GITHUB_TOKEN（packages: read）登录取见 .github/workflows/
-#         nightly.yml 的 databases-e2e；
-#   本地  导出 DB_GHCR_USER / DB_GHCR_TOKEN（与 docker login ghcr.io 同凭据）
-#         后再跑本脚本；缺凭据时 fail-fast 并给指引。
+# dbtools 是 PRIVATE ghcr 包。S2 v0.2.x 中间态（CI 首推 v0.2.1-dbtools.1
+# 之前 digest 不存在，平台 Go 常量为 tag 引用）取两段式：
+#   有 DB_GHCR_USER/DB_GHCR_TOKEN → dind 内登录 + 直拉真镜像（tag 引用，
+#     CI 首推后可用；digest 首推完成后再钉回 tag@digest 形态）；
+#   无凭据 → dind 内本地构建同名 tag（预拉 postgres:16/restic/redis:7 钉
+#     定基础镜像后 docker build——debian 基底必须先有基础镜像在本地，
+#     build 才能离解析；本地构建的 swarm 服务引用同名 tag 即本地解析）。
+#   CI（nightly databases-e2e）恒有 GITHUB_TOKEN，走直拉腿。
 set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
 
 # ── 镜像钉 digest（T0-V2.3 供应链；台账见 docs/runbooks/image-prepull.md，
-# postgres/alpine 与 internal/dbtemplate、check-image-pins 同源钉定）。
+# postgres/redis/restic 与 internal/dbtemplate、Dockerfile.dbtools 同源钉定；
+# dbtools 本体 = v0.2.1-dbtools.1 中间态 tag 引用——CI 首推后钉回 digest，
+# 豁免台账 deploy/image-pin-allowlist.txt）。
 DIND_IMAGE="${DB_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 PG_IMG='postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6'
-# dbtools（私有 ghcr 包）：internal/database DefaultDatabaseToolsImage 同串。
-DBTOOLS_IMG='ghcr.io/fleetlyrun/dbtools:v0.2.0-dbtools.1@sha256:64c367ff56ca1111c122d079e5692f9a7da95b7909a4ee56a8ec62a019d599fe'
+REDIS_IMG='redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f'
+RESTIC_IMG='restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510'
+# dbtools（私有 ghcr 包）：internal/database DefaultDatabaseToolsImage 同串
+# （中间态 tag 引用；本地构建腿以同名 tag 承接）。
+DBTOOLS_IMG='ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1'
 DB_SKIP_BUILD="${DB_SKIP_BUILD:-0}"
 DB_BIN_DIR="${DB_BIN_DIR:-}"
 DB_VERSION="${DB_VERSION:-v0.2.0-db-e2e}"
@@ -155,7 +161,7 @@ stage() {
     gsz=$(docker exec "$d" sh -c "wc -c < '$r'" | tr -d ' ')
     [ "$hsz" = "$gsz" ] || fatal "size mismatch for $r: host=$hsz dind=$gsz"
     case "$r" in
-    *.sh | *.yaml | *.yml)
+    *.sh | *.yaml | *.yml | *Dockerfile*)
         docker exec "$d" sed -i 's/\r$//' "$r" || fatal "strip CR from $r"
         ;;
     esac
@@ -265,7 +271,9 @@ EOF
 stage "$DIND" "$TMP/config.yaml" /opt/fleetly/etc/config.yaml
 
 nl 'pre-pulling fixture images (public pinned digests; 3 attempts each)'
-for img in "$ALPINE_IMG" "$PG_IMG"; do
+# PG/REDIS/RESTIC 同时是本地构建 dbtools（无凭据腿）的基底/COPY 来源——
+# 预拉后 dind 内 build 离线可解析 FROM 与 COPY --from。
+for img in "$ALPINE_IMG" "$PG_IMG" "$REDIS_IMG" "$RESTIC_IMG"; do
     ok=0
     for attempt in 1 2 3; do
         if docker exec "$DIND" docker pull -q "$img" >/dev/null; then
@@ -278,20 +286,27 @@ for img in "$ALPINE_IMG" "$PG_IMG"; do
     [ "$ok" -eq 1 ] || fatal "pull $img (3 attempts exhausted)"
 done
 
-# dbtools（私有 ghcr 包）：dind 内登录 + 直拉。钉定 ref 是 tag@digest 形态，
-# 只有真实 pull 会落下 RepoDigests——save|load 拷贝解析不了这个引用（已在
-# docker 29.8.1 实测：load 后即使 docker tag 补名，@digest 仍 No such
-# image）。凭据经 exec env 注入，不落 argv 之外的面。
+# dbtools（私有 ghcr 包）两段式获取：有凭据 → dind 内登录 + 直拉真镜像
+# （tag 引用，CI 首推后可用）；无凭据 → dind 内本地构建同名 tag（基础
+# 镜像已预拉——debian 基底 build 的 FROM/COPY --from 全部本地解析）。
+# 凭据经 exec env 注入，不落 argv 之外的面。直拉腿保留 save|load 警示：
+# digest 钉定引用（tag@digest）的本地解析依赖真实 pull 落下的 RepoDigests
+# （docker 29.8.1 实测，load 后补名也解析不了）。
 if [ -n "${DB_GHCR_USER:-}" ] && [ -n "${DB_GHCR_TOKEN:-}" ]; then
     docker exec -e GHCR_USER="$DB_GHCR_USER" -e GHCR_TOKEN="$DB_GHCR_TOKEN" \
         "$DIND" sh -c 'printf %s "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null' ||
         fatal 'docker login ghcr.io (inside dind) failed'
     docker exec "$DIND" docker pull -q "$DBTOOLS_IMG" >/dev/null ||
-        fatal "pull $DBTOOLS_IMG (inside dind) failed — check the ghcr credential and its packages:read access to this private image"
+        fatal "pull $DBTOOLS_IMG (inside dind) failed — check the ghcr credential and its packages:read access to this private image (the v0.2.1-dbtools.1 tag exists only after the CI first push)"
     docker exec "$DIND" docker logout ghcr.io >/dev/null 2>&1 || true
     nl "dbtools image pulled inside dind ($DBTOOLS_IMG)"
 else
-    fatal "dbtools ($DBTOOLS_IMG) is a PRIVATE ghcr package: set DB_GHCR_USER/DB_GHCR_TOKEN (a ghcr credential with packages:read on fleetlyrun/dbtools) so the dind can pull it directly; in CI the databases-e2e job passes GITHUB_TOKEN automatically"
+    nl "dbtools: no ghcr credentials — building $DBTOOLS_IMG locally inside dind (debian base; intermediate-state leg)"
+    docker exec "$DIND" mkdir -p /tmp/dbtools-build || fatal 'mkdir dbtools build dir'
+    stage "$DIND" "$ROOT/deploy/Dockerfile.dbtools" /tmp/dbtools-build/Dockerfile.dbtools
+    docker exec "$DIND" docker build -q -t "$DBTOOLS_IMG" -f /tmp/dbtools-build/Dockerfile.dbtools /tmp/dbtools-build >/dev/null ||
+        fatal "local build of $DBTOOLS_IMG failed (base images must be pullable; postgres:16/restic/redis:7 are pre-pinned above)"
+    nl "dbtools image built locally inside dind ($DBTOOLS_IMG)"
 fi
 
 docker exec "$DIND" docker swarm init --advertise-addr eth0 >/dev/null || fatal 'swarm init'
@@ -482,6 +497,9 @@ else
 fi
 
 # ───────────────── D8(D7): 破坏性清空 → 恢复 → 行回来
+# 恢复 = 单 job（v0.2.1-dbtools.1 debian 基底：dbtools 内 restic 取回 +
+# 临时 postgres 重放；W4 双 job 形态随跨 libc 重放风险消除而回退）。断言
+# 语义不变：恢复后行集回到备份时点（点时语义）+ 实例 ready。
 nl '=== D10: destructive clear, then in-place restore brings the rows back ==='
 db_psql 'DELETE FROM w4' >/dev/null || fatal 'psql DELETE'
 CNT=$(db_rowcount)
@@ -491,7 +509,17 @@ assert "DB-D10 DESTRUCTIVE_CLEAR" $? "after DELETE the count must be 0, got '$CN
 SNAP=$(fcli databases backups --json "$DB" 2>/dev/null |
     grep -o '"snapshot": *"[^"]*"' | head -n 1 | sed 's/.*: *"//; s/"$//')
 [ -n "$SNAP" ] || fatal 'no snapshot id in the ledger'
-fcli databases restore --snapshot "$SNAP" --confirm "$DB" "$DB" >/dev/null 2>&1 || fatal 'databases restore (accept)'
+# 受理轮询而非一次尝试：备份操作的互斥哨兵覆盖到 prune 尾部（台账 verified
+# 行先于 endOp 可见）——受理撞在途操作（409 族）时随 prune 收口自然放行。
+# 单 job 恢复 + debian 基底下每任务一次 registry 探测，时序比 alpine 时代
+# 后移数秒，一次尝试不再稳收。
+restore_accepted() {
+    fcli databases restore --snapshot "$SNAP" --confirm "$DB" "$DB" >/dev/null 2>&1
+}
+if ! poll_until 60 restore_accepted; then
+    fcli databases restore --snapshot "$SNAP" --confirm "$DB" "$DB" 2>&1 | tail -3 || true
+    fatal 'databases restore (accept) never accepted within 60s'
+fi
 restore_done() {
     db_ready && [ "$(db_rowcount)" = "1" ]
 }

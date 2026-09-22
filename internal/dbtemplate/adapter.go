@@ -105,11 +105,6 @@ type RestoreInput struct {
 	SnapshotID string
 	// VolumeTarget 是数据卷在 job 容器内的挂载点。
 	VolumeTarget string
-	// ImageDigest 是实例的钉定引擎镜像（W4-S6：PG 重放必须由引擎**自己的**
-	// 二进制执行——dbtools 是 alpine/musl 基底，glibc 集群的 collation 解析
-	// 与文本序在 musl 下不可复现，跨 libc 重放有索引序损坏风险。恢复拆双
-	// job：dbtools 只取回 dump 落卷，引擎镜像起临时实例重放）。
-	ImageDigest string
 	// ResticPassword 是 repo 口令明文（只进 job env）。
 	ResticPassword string
 	// S3AccessKeyID/S3SecretKey/S3Region 是解密后的端点凭证（只进 job env）。

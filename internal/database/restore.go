@@ -142,7 +142,9 @@ func (m *Manager) runRestore(ctx context.Context, inst *state.DatabaseInstance, 
 	}
 
 	// ② 停库重放（job 钉绑定节点挂数据卷 rw——远端 local 卷不可经 manager
-	// 读的既有硬约束下的唯一执行位置）。
+	// 读的既有硬约束下的唯一执行位置。单 job：dbtools 自 v0.2.1-dbtools.1
+	// 起是 debian/glibc 基底，restic 取回与临时实例重放同 job 完成——双
+	// job 形态随 musl/glibc 跨 libc 重放风险的消除而回退）。
 	restoreErr := m.Restore(ctx, dbtemplate.RestoreInput{
 		Instance:            inst.Name,
 		TemplateID:          inst.Template,
@@ -151,7 +153,6 @@ func (m *Manager) runRestore(ctx context.Context, inst *state.DatabaseInstance, 
 		BindNodeID:          inst.PlatformNodeID,
 		Repository:          target.Repository,
 		SnapshotID:          snapshotID,
-		ImageDigest:         inst.ImageDigest,
 		ResticPassword:      target.ResticPass,
 		S3AccessKeyID:       target.AccessKeyID,
 		S3SecretKey:         target.SecretKey,

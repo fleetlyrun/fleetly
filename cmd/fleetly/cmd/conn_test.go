@@ -54,6 +54,46 @@ func TestUnaryTimeoutInterceptor(t *testing.T) {
 	}
 }
 
+// TestUnaryTimeoutLongBudgetOverride 长预算覆盖（W3 遗留票收口）：同步
+// TriggerBackup（响应含远端上传结论，服务端合法耗时 ≈ TriggerTimeout 5m
+// + uploadTimeout 10m）的客户端 deadline 取 16min 覆盖值——长上传不再被
+// 30s 缺省掐死；其余方法（含 DatabaseService 的异步受理 TriggerBackup
+// ——快回）仍走 30s 缺省；父 ctx 更早 deadline 时不放宽（min 语义同缺省）。
+func TestUnaryTimeoutLongBudgetOverride(t *testing.T) {
+	if got := unaryTimeoutFor(triggerBackupMethod); got != 16*time.Minute {
+		t.Fatalf("TriggerBackup unary timeout = %s, want 16m (5m snapshot + 10m upload + margin)", got)
+	}
+	saw := time.Duration(0)
+	probe := func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+		dl, ok := ctx.Deadline()
+		if ok {
+			saw = time.Until(dl)
+		}
+		return nil
+	}
+	if err := defaultUnaryTimeout(context.Background(), triggerBackupMethod, nil, nil, nil, probe); err != nil {
+		t.Fatalf("TriggerBackup call: %v", err)
+	}
+	if saw < 15*time.Minute {
+		t.Fatalf("TriggerBackup deadline ≈ %s, want ≈ 16m (long-upload relief)", saw)
+	}
+	// 异步受理的同名动词（databases backup → DatabaseService）不吃覆盖。
+	if got := unaryTimeoutFor("/fleetly.server.v1.DatabaseService/TriggerBackup"); got != defaultRPCTimeout {
+		t.Fatalf("DatabaseService/TriggerBackup timeout = %s, want the 30s default (async accept)", got)
+	}
+	// min 语义：父 ctx 更早 deadline 时不放宽。
+	parent, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_ = defaultUnaryTimeout(parent, triggerBackupMethod, nil, nil, nil, func(ctx context.Context, _ string, _, _ any, _ *grpc.ClientConn, _ ...grpc.CallOption) error {
+		<-ctx.Done()
+		return status.FromContextError(ctx.Err()).Err()
+	})
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Fatalf("override ignored the earlier parent deadline: %v", elapsed)
+	}
+}
+
 // TestIsCleanCancel 干净取消判定的边界：Canceled 本尊与 gRPC 投影（根 ctx
 // 已取消）为干净；根 ctx 未取消的服务端 Canceled、超时、无错误均不干净。
 func TestIsCleanCancel(t *testing.T) {

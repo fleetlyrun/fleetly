@@ -60,6 +60,13 @@ type Manager struct {
 	// box 是 envelope 加解密器（restic repo 口令的加解密与惰性生成，D-S3-5；
 	// 与主密钥文件分离语义见 resticPassword 注）。
 	box *secrets.Box
+
+	// ── 上传失败当日退避重试（W3-F3 改进票，uploadretry.go）──
+	// retryMu 串行化重试队列；retries 是进程内队列（重启即清的边界见该
+	// 文件头注）。nowFn 是时间源注入点（测试钉退避时刻；nil = time.Now）。
+	retryMu sync.Mutex
+	retries map[string]uploadRetryEntry
+	nowFn   func() time.Time
 }
 
 // WithUpload 装配上传轨（E3-3；链式构造，nil 合法——上传轨未接线的测试/
@@ -279,7 +286,12 @@ func (m *Manager) runOnce(ctx, upCtx context.Context, kind string) (state.StateB
 	// 上传步（E3-3）：verify 成功落账之后的追加步，独立预算（D-S3-4）。
 	// 失败只红上传面（upload_status/事件/组件），不影响本次备份的成功语义
 	// ——返回值携带上传后的最终台账投影（Trigger 同步响应据此反映）。
-	rec = m.uploadSnapshot(upCtx, rec)
+	rec = m.uploadSnapshot(upCtx, rec, false)
+	// 首传失败 → 当日退避重试（W3-F3 改进票：5m/15m/1h 至多 3 次；队列
+	// 语义与诚实面见 uploadretry.go）。
+	if rec.UploadStatus == state.BackupUploadFailed {
+		m.enqueueUploadRetry(rec)
+	}
 	return rec, nil
 }
 
@@ -485,7 +497,9 @@ func (m *Manager) loop(ctx context.Context) {
 		m.log.Warn("backup: daily run failed", "error", err)
 	}
 	ticker := time.NewTicker(m.cfg.Interval)
+	retryTicker := time.NewTicker(uploadRetryScan)
 	defer ticker.Stop()
+	defer retryTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -496,6 +510,10 @@ func (m *Manager) loop(ctx context.Context) {
 			if _, err := m.RunDaily(ctx); err != nil {
 				m.log.Warn("backup: daily run failed", "error", err)
 			}
+		case <-retryTicker.C:
+			// 上传失败退避重试巡检拍（W3-F3 改进票）：到期条目逐条起
+			// goroutine（inflight 计数——Stop 等待在途重试收口）。
+			m.runUploadRetries()
 		}
 	}
 }

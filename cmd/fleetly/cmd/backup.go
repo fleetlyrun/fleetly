@@ -135,7 +135,10 @@ func (c *backupsListCmd) Run(ctx context.Context, env *commands.Environment, arg
 
 // backupsCreateCmd 实现 `fleetly backups create [--kind <k>]`：手动触发
 // 一次热备快照（同步；verify 失败 → 退出 1，错误原文带出——升级编排的
-// pre_upgrade 快照走同一入口）。
+// pre_upgrade 快照走同一入口）。本 RPC 的客户端 deadline 经长预算覆盖放
+// 宽至 16min（conn.go：服务端合法耗时 = 快照 5min + 上传 10min——长上传
+// 不再被 30s 缺省掐死；Ctrl-C 仍即时取消，服务端 WithoutCancel 下备份本
+// 体不受客户端断连影响）。
 type backupsCreateCmd struct {
 	kind    string
 	jsonOut bool

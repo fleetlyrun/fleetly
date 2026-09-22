@@ -1,8 +1,8 @@
 package database
 
 // 原地恢复编排的单测（S5 验收 3）：job 载荷断言（rw 数据卷挂载 + 钉绑定
-// 节点 + temp-postgres/RDB 重放命令词表）、scale 0 → job → scale 1 全链、
-// 快照归属守卫、中途失败 = 实例保持停止 + last_error + db.restore_failed
+// 节点 + 单 job 取回/重放命令词表）、scale 0 → job → scale 1 全链、快照归
+// 属守卫、中途失败 = 实例保持停止 + last_error + db.restore_failed
 // + E_DB_RESTORE_FAILED 信封（实例主状态不变的口径断言）。
 
 import (
@@ -34,21 +34,18 @@ func seedReadyWithLedger(t *testing.T, h *harness, name, template, snapshot stri
 }
 
 // TestRestoreFlowScaleZeroToJobToResume 恢复全链（验收 3）：快照归属守卫
-// 通过 → 副本 0 → 双 job（dbtools fetch 落卷 dump + 引擎镜像重放）→ 副本 1
-// → restore_completed 事件；实例主状态全程 ready（操作不换主状态，§2.1）。
+// 通过 → 副本 0 → 单恢复 job（dbtools：restic 取回落卷 + 临时 postgres
+// 重放同 job——v0.2.1-dbtools.1 起基底与引擎同源 glibc）→ 副本 1 →
+// restore_completed 事件；实例主状态全程 ready（操作不换主状态，§2.1）。
 func TestRestoreFlowScaleZeroToJobToResume(t *testing.T) {
 	h := newHarness(t)
 	inst := seedReadyWithLedger(t, h, "pg-rs", dbtemplate.TemplatePostgres16, "snap-restore-1")
 	h.saveS3Settings()
-	var fetchJob, replayJob *JobRunInput
+	var restoreJob *JobRunInput
 	h.docker.jobOutFn = func(in JobRunInput) JobRunOutcome {
 		if strings.Contains(strings.Join(in.Cmd, " "), "pg_restore") {
 			j := in
-			replayJob = &j
-		}
-		if strings.Contains(strings.Join(in.Cmd, " "), "fleetly-replay.dump") && !strings.Contains(strings.Join(in.Cmd, " "), "pg_restore") {
-			j := in
-			fetchJob = &j
+			restoreJob = &j
 		}
 		return JobRunOutcome{State: "complete", ExitCode: 0}
 	}
@@ -66,41 +63,28 @@ func TestRestoreFlowScaleZeroToJobToResume(t *testing.T) {
 		return false
 	})
 
-	// 双 job 载荷：fetch（dbtools：restic dump 落卷根暂存文件）+ 重放（
-	// 实例引擎镜像：temp postgres + pg_restore——跨 libc 不可重放，重放必
-	// 须由引擎自己的二进制执行）。
-	if fetchJob == nil || replayJob == nil {
-		t.Fatalf("jobs = fetch:%v replay:%v, want both", fetchJob != nil, replayJob != nil)
+	// 单 job 载荷：镜像 = dbtools（debian/glibc 基底，与引擎同源——不再
+	// 需要引擎镜像承载重放，双 job 形态已回退）。
+	if restoreJob == nil {
+		t.Fatal("no restore job ran")
 	}
-	if fetchJob.Image != DefaultDatabaseToolsImage {
-		t.Errorf("fetch image = %s, want the dbtools image", fetchJob.Image)
+	if restoreJob.Image != DefaultDatabaseToolsImage {
+		t.Errorf("restore image = %s, want the dbtools image (single-job restore)", restoreJob.Image)
 	}
-	if replayJob.Image != inst.ImageDigest {
-		t.Errorf("replay image = %s, want the instance's pinned engine image (musl/glibc replay hazard)", replayJob.Image)
-	}
-	m := fetchJob.Mounts[0]
+	m := restoreJob.Mounts[0]
 	volWant := "fleetly-db-pg-rs-data-" + inst.ID[:8]
 	if m.VolumeName != volWant || m.Target != "/var/lib/postgresql/data" || m.ReadOnly {
-		t.Errorf("fetch mount = %+v, want %s rw at /var/lib/postgresql/data", m, volWant)
+		t.Errorf("restore mount = %+v, want %s rw at /var/lib/postgresql/data", m, volWant)
 	}
-	if replayJob.Mounts[0].ReadOnly {
-		t.Error("replay mount must be rw")
+	if len(restoreJob.Constraints) != 1 || restoreJob.Constraints[0] != "node.labels.fleetly.node-id == n_node" {
+		t.Errorf("restore constraints = %v, want the platform node-label pin (swarm node.id never equals the platform id; remote local volume is unreadable via manager)", restoreJob.Constraints)
 	}
-	if len(fetchJob.Constraints) != 1 || fetchJob.Constraints[0] != "node.labels.fleetly.node-id == n_node" {
-		t.Errorf("fetch constraints = %v, want the platform node-label pin (swarm node.id never equals the platform id; remote local volume is unreadable via manager)", fetchJob.Constraints)
-	}
-	if len(replayJob.Constraints) != 1 || replayJob.Constraints[0] != "node.labels.fleetly.node-id == n_node" {
-		t.Errorf("replay constraints = %v, want the platform node-label pin", replayJob.Constraints)
-	}
-	// fetch 词表：restic dump 落卷根暂存文件（engine-replay 的材料契约）。
-	fetchScript := strings.Join(fetchJob.Cmd, " ")
-	if !strings.Contains(fetchScript, "dump snap-restore-1 db/pg-rs/db.dump > /var/lib/postgresql/data/fleetly-replay.dump") {
-		t.Errorf("fetch script %q missing the dump-to-volume word", fetchScript)
-	}
-	// 重放词表：temp postgres + drop/create + pg_restore 取卷上 dump +
-	// 同 uid pg_ctl 停服 + 暂存文件清场；命令零 restic、零凭据。
-	replayScript := strings.Join(replayJob.Cmd, " ")
+	// 词表：restic dump 落卷根暂存文件 + temp postgres + drop/create +
+	// pg_restore 取卷上 dump + 同 uid pg_ctl 停服 + 暂存文件清场；命令零
+	// 凭据（PG 走 socket trust）。
+	script := strings.Join(restoreJob.Cmd, " ")
 	for _, want := range []string{
+		"dump snap-restore-1 db/pg-rs/db.dump > /var/lib/postgresql/data/fleetly-replay.dump",
 		`PGUID=$(stat -c %u "$PGDATA")`,
 		`DROP DATABASE IF EXISTS "pg_rs"`,
 		`CREATE DATABASE "pg_rs"`,
@@ -108,8 +92,8 @@ func TestRestoreFlowScaleZeroToJobToResume(t *testing.T) {
 		`pg_ctl -D "$PGDATA" -m fast stop`,
 		`rm -f /var/lib/postgresql/data/fleetly-replay.dump`,
 	} {
-		if !strings.Contains(replayScript, want) {
-			t.Errorf("restore script missing %q: %s", want, replayScript)
+		if !strings.Contains(script, want) {
+			t.Errorf("restore script missing %q: %s", want, script)
 		}
 	}
 	// scale 轨迹：副本 0（重放窗口）→ 副本 1（重部署）。

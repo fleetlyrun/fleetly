@@ -32,13 +32,38 @@ import (
 // 轮询的总预算由动词自身 --timeout 管，每轮单次调用仍受此上限保护。
 const defaultRPCTimeout = 30 * time.Second
 
-// defaultUnaryTimeout 是 CLI 全部一元 RPC 的缺省 deadline 拦截器（S17-D3）。
-// 分流点选在拨号层而非动词清单：gRPC 面只有「一元 / 流式」两种调用形态，
-// 拦截器恰好覆盖全部一元调用、天然不触流式——与 S17-D2 substrate 侧
-// 「非流式调用包 WithTimeout、流式保持调用方 ctx」同一模式，无需维护
-// 动词豁免清单。
+// longUnaryTimeout 是「响应时长由服务端长预算决定」的一元 RPC 的 deadline
+// 覆盖（W3 遗留票：TriggerBackup CLI 30s unary deadline 长上传客户端超时
+// ——v0.2.x S2 收口）。唯一条目 = SystemService/TriggerBackup（手动状态
+// 备份的**同步**入口：响应即落账后的台账行，服务端合法耗时 = 本地快照轨
+// TriggerTimeout 5min + 上传轨 uploadTimeout 10min ≈ 15min；30s 缺省把
+// 长上传中的完成中备份渲染成客户端红色超时——服务端 WithoutCancel 下备
+// 份本体照常完成，但 CLI 面仍误报）。覆盖值 = 服务端上界 15min + 1min
+// 裕量；daemon 假死保护语义不变（仍限时），Ctrl-C 干净取消不受影响
+//（isCleanCancel 同路径）。分方法覆盖是对 S17-D3「拨号层拦截、不维护动
+// 词豁免清单」裁决的一次**显式修订**：该裁决的动机是免维护清单，而本条
+// 目的语义不同——不是豁免超时，是把 deadline 对齐服务端声明预算；单条目
+// 注释锚定服务端常量（internal/statebackup config.go/restic.go），改动
+// 须同步。
+const triggerBackupMethod = "/fleetly.server.v1.SystemService/TriggerBackup"
+
+const triggerBackupUnaryTimeout = 16 * time.Minute
+
+// unaryTimeoutFor 返回一个一元 RPC 的生效 deadline（长预算覆盖表优先，
+// 其余回落缺省 30s）。
+func unaryTimeoutFor(method string) time.Duration {
+	if method == triggerBackupMethod {
+		return triggerBackupUnaryTimeout
+	}
+	return defaultRPCTimeout
+}
+
+// defaultUnaryTimeout 是 CLI 全部一元 RPC 的缺省 deadline 拦截器（S17-D3，
+// 修订见 longUnaryTimeout 注）。分流点选在拨号层而非动词清单：gRPC 面只
+// 有「一元 / 流式」两种调用形态，拦截器恰好覆盖全部一元调用、天然不触
+// 流式；方法级覆盖仅上表一条（响应时长由服务端长预算决定的同步 RPC）。
 func defaultUnaryTimeout(ctx context.Context, method string, req, reply any, cc *grpc.ClientConn, invoker grpc.UnaryInvoker, opts ...grpc.CallOption) error {
-	rpcCtx, cancel := context.WithTimeout(ctx, defaultRPCTimeout)
+	rpcCtx, cancel := context.WithTimeout(ctx, unaryTimeoutFor(method))
 	defer cancel()
 	return invoker(rpcCtx, method, req, reply, cc, opts...)
 }
