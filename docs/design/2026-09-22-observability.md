@@ -95,7 +95,7 @@ S1 e2e 实测 VL idle 增量；staging 演练全栈复测（rustfs 启用态 429
 
 ### 4.3 预算复测
 
-启用态全栈实测进 runbook（§10 演练）；>600MB → 收紧组件限额复测；仍超 → 回设计方案裁组件（cAdvisor 首裁——最大头，裁后容器指标降级为 manager 本地）。
+**预算口径修订（用户裁决 2026-09-23）：opt-in 组件不占 600MB 预算顶**——预算门管辖**默认捆绑面**（fleetlyd + dockerd/containerd + traefik + zot + VictoriaLogs，实测 ≈492MB<600MB ✓）；metrics 三件套（及 rustfs 等 opt-in 管理组件）启用态的实测占用**如实记录、不设顶**（启用是用户显式选择，占用在 Console/`metrics status`/runbook 明示——metrics-on ≈671MB 的记录语义从「超顶违规」改为「opt-in 面实测占用」）。原「>600MB → 收紧限额 → 裁组件」的降级链就此作废；VM `-memory.allowedPercent` 调优降为可选优化票（挂账保留）。
 
 ## 5. 通知（V2-6：Webhook 首发）
 
