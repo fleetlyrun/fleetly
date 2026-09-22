@@ -208,7 +208,10 @@ func TestQueueWakesOnEnqueue(t *testing.T) {
 }
 
 // TestQueueExecuteFailureKeepsScheduling 执行失败（含 panic 防御外的一般
-// 错误）不影响后续调度。
+// 错误）不影响后续调度。并发 = 1（串行）：失败者 = 先入队者由次序确定
+// ——并发 2 时「前 until 次失败」的计数器定失败者与调度次序竞态（v0.2.0
+// 发布门 arm64 原生机实证翻转：first=succeeded second=failed），串行化
+// 后断言确定性成立，且「失败不阻塞后续调度」的测试意图不变。
 func TestQueueExecuteFailureKeepsScheduling(t *testing.T) {
 	st := newQueueTestStore(t)
 	app, err := st.CreateApp(context.Background(), "", "queue-fail")
@@ -217,7 +220,7 @@ func TestQueueExecuteFailureKeepsScheduling(t *testing.T) {
 	}
 	var calls atomic.Int64
 	exec := failingExecutor{store: st, calls: &calls, until: 1}
-	queue := NewQueue(st, exec, 2, 20*time.Millisecond, 0 /*超时取缺省*/, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
+	queue := NewQueue(st, exec, 1, 20*time.Millisecond, 0 /*超时取缺省*/, slog.New(slog.NewTextHandler(&nilWriter{}, nil)))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
