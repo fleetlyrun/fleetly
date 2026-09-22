@@ -55,9 +55,10 @@ describe("MetricsSettingsCard", () => {
       expect(screen.getByTestId("metrics-status-card").textContent).toContain("metrics.mode: unset"),
     );
     expect(screen.getByTestId("metrics-status-card").textContent).toContain("retention 14 days");
-    // 诚实文案常驻（跨节点 overlay 数据面）。
+    // 诚实文案常驻（§6 挂账票修订：VPC/LAN 直连 + 采集面暴露口径）。
     const text = screen.getByTestId("metrics-status-card").textContent ?? "";
-    expect(text).toContain("overlay data plane");
+    expect(text).toContain("direct node addresses (VPC/LAN)");
+    expect(text).toContain("blocked by the node firewall");
 
     fireEvent.click(screen.getByRole("button", { name: "Enable" }));
     await waitFor(() => {

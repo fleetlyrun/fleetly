@@ -1,7 +1,7 @@
 // metrics 设置卡（E6 W5-S3，D-W5-2 opt-in；SystemPage Metrics 页签）：
 // 模式开关（on 部署三件套 / unset 移除——数据卷保留）+ 栈状态视图
 //（三件部署态 + 「N/M nodes reporting」诚实口径）+ 常驻诚实标注
-//（跨节点采集依赖 overlay 数据面——worker 指标缺席不谎报）。
+//（跨节点采集走节点地址 VPC/LAN 直连 + 采集面暴露口径——不谎报）。
 //
 // 锚点（只增）：metrics-status-card / metrics-mode-toggle。
 
@@ -23,11 +23,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 
-// 诚实口径常驻文案（与 CLI `metrics status` note 同源——多节点部署下
-// VM 只采 manager 本地回环，worker 指标缺席；overlay 数据面（W3-F2）
-// 放行后跨节点采集随设计修订票接线）。
+// 诚实口径常驻文案（与 CLI `metrics status` note 同源——§6 挂账票修订后
+// 跨节点采集 = VM 经节点 advertise 地址直连（VPC/LAN），不依赖 overlay
+// 数据面；采集端口对节点全部接口开放 = 采集面是内网面，公网访问由节点
+// 防火墙负责；节点缺席只剩「不 Ready」与「VPC 不可达」两种因由）。
 const CROSS_NODE_NOTE =
-  "Cross-node collection is pending the overlay data plane: only the manager node reports (N/M below). Worker collectors run but their samples are not scraped yet — this is disclosed, not hidden.";
+  "Cross-node collection goes over direct node addresses (VPC/LAN), not the overlay data plane. " +
+  "Collector ports listen on all node interfaces — the scrape face is an intranet face; public access is " +
+  "expected to be blocked by the node firewall. A node below full count is not Ready or unreachable from the manager.";
 
 export function MetricsSettingsCard() {
   const queryClient = useQueryClient();

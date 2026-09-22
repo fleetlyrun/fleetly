@@ -116,7 +116,7 @@ S1 e2e 实测 VL idle 增量；staging 演练全栈复测（rustfs 启用态 429
 
 ## 6. 挂账与不做
 
-- **跨节点 metrics 采集修订票（W5-S3 落地衍生，2026-09-22）**：现行拓扑（三件 host 网络+回环）只覆盖 manager 节点；worker 指标需 per-node 可路由 targets（advertise/VPC IP 绑定——global spec 单一形态不可表达 per-node 地址，需采集器自适应或 duty 按节点集动态再生 scrape config）+ VM 访问面联合裁决——v0.2.x 设计票。
+- **跨节点 metrics 采集修订票（W5-S3 落地衍生，2026-09-22）→ 已实施（v0.2.x 收尾 S1，2026-09-23）**：采集器改绑 0.0.0.0（host 网络任务、公网访问由节点防火墙负责的诚实口径三处同锚：spec 注释/status note/Console 文案）+ duty 按 Ready∩active 节点集动态再生 scrape config（内容寻址换名→VM 引用更新→旧对象 GC；空集退避不闪断）——**跨节点走 VPC/LAN 直连，不依赖 overlay 数据面（W3-F2 免疫）**；VM 查询面保持 manager 回环。e2e 增 A20-A23（绑定面/节点地址可达/config targets/status note），23/23。staging 多节点序列验证待 worker 归队。
 - **cAdvisor 应用归因标签恢复**：docker29 snapshotter 形态 swarm 标签缺席（上游限制）；S7 真机演练 probe image/name 标签形态，image 标签若在（fleetly-local/<app>: / registry.<base>/apps/<app>@）可即刻切 Console PromQL 到 image 前缀匹配；根治随 cAdvisor 上游。
 - **§6.A FTS5 兜底（设计附录，条件实现）**：600MB 门失败时——jsonl 模式 + FTS5 虚表索引 JSONL 日文件 + SearchLogs 后端切换开关（`logs.search_backend`）；平时不实现。
 - 全局跨应用日志检索页：v0.2.x。

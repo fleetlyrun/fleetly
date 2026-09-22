@@ -3,7 +3,8 @@ package metrics
 // 托管 metrics duty 的 Docker API 消费面（internal/victorialogs docker.go
 // 同款形态——端口在本包定义、moby 实现在本文件、假实现注入单测）。相对
 // victorialogs 的增面：swarm **config 对象**四面（抓取配置的内容寻址分发，
-// 见 spec.go 头注记）与 ServiceState 的 global/Configs 投影。第三方
+// 见 spec.go 头注记）、ServiceState 的 global/Configs 投影与
+// ReadyNodeAddresses 节点地址投影（动态 targets 的节点注册表读面）。第三方
 // （moby/swarm）类型不出本包的端口消费面——swarm.ServiceSpec 是部署器
 // 构造载荷，只进不出（出口只有投影与 error）。
 //
@@ -53,6 +54,14 @@ type dockerPort interface {
 	// swarm scope 对象名，2026-09-22 dind 实证）。解析失败返回错误，duty
 	// 退避重试。
 	NetworkName(ctx context.Context, target string) (string, error)
+	// ReadyNodeAddresses 返回可抓取节点的 advertise 地址集（§6 挂账票的
+	// 动态 targets 投影面）：State=ready 且 availability=active 的节点取
+	// Status.Addr（worker 的节点注册地址 / manager 的 advertise 地址——
+	// VM 经它直连采集器；Status.Addr 罕见缺省时回落 ManagerStatus.Addr）。
+	// availability 非 active（drain/pause）不入选——global 采集器不在其上
+	// 运行，抓了必 down。返回已去重的原序清单（渲染序的排序在 spec 层
+	// scrapeAddrs）。读取失败返回错误，duty 退避重试。
+	ReadyNodeAddresses(ctx context.Context) ([]string, error)
 	// ConfigListNames 列出带本包自描述 label 的 config 对象名（GC 面）。
 	ConfigListNames(ctx context.Context) ([]string, error)
 	// ConfigRemove 删除 config 对象（幂等：缺失视为成功）。
@@ -226,6 +235,40 @@ func (c *realDockerClient) NetworkName(ctx context.Context, target string) (stri
 		return "", fmt.Errorf("metrics: network inspect %s: %w", target, err)
 	}
 	return res.Network.Name, nil
+}
+
+// ReadyNodeAddresses 实现 dockerPort 的动态 targets 投影（moby NodeList
+// 直读——substrate 的 SubstrateNode 投影无地址列、state 的 nodes 缓存是
+// 展示专用契约且无地址；本包最小投影自持，见端口注记）。
+func (c *realDockerClient) ReadyNodeAddresses(ctx context.Context) ([]string, error) {
+	res, err := c.cli.NodeList(ctx, mobyclient.NodeListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("metrics: node list: %w", err)
+	}
+	return readyNodeAddresses(res.Items), nil
+}
+
+// readyNodeAddresses 是 NodeList 条目 → 可抓取 advertise 地址集的纯投影
+//（单测矩阵在 docker_test.go）：State=ready 且 availability=active 入选；
+// Status.Addr 罕见缺省时回落 ManagerStatus.Addr；无地址的 Ready 节点不可
+// 直连，如实跳过。去重与排序在 spec 层 scrapeAddrs（渲染规范化），此处
+// 保留底座原序。
+func readyNodeAddresses(nodes []swarm.Node) []string {
+	out := make([]string, 0, len(nodes))
+	for _, n := range nodes {
+		if n.Status.State != swarm.NodeStateReady || n.Spec.Availability != swarm.NodeAvailabilityActive {
+			continue
+		}
+		addr := n.Status.Addr
+		if addr == "" && n.ManagerStatus != nil {
+			addr = n.ManagerStatus.Addr
+		}
+		if addr == "" {
+			continue
+		}
+		out = append(out, addr)
+	}
+	return out
 }
 
 func (c *realDockerClient) ConfigListNames(ctx context.Context) ([]string, error) {

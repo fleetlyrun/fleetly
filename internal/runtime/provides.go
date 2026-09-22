@@ -694,7 +694,10 @@ func NewLogsService(st *state.Store, mg *logs.Manager, vl *victorialogs.Backend,
 // NewMetricsService 构造 metrics 面服务（E6 W5-S3，D-W5-2 opt-in：PromQL
 // 查询透传面 + 状态视图 + 模式切换；注入 VM 消费端与 duty 管理器——nil
 // 形态如实报不可用/unknown。retention 对齐 metrics.* 配置节；集群节点
-// 总数 = 观测缓存计数——「N/M nodes reporting」的分母）。
+// 总数 = 观测缓存计数（展示/诊断读面，非决策路径）——「N/M nodes
+// reporting」的分母；§6 挂账票修订后分母口径与抓取目标集一致 = Ready 且
+// availability=active（drain/pause 节点无 global 采集器，不进分母——
+// 分子分母同拓扑，N<M 只剩「不 Ready」与「VPC 不可达」两种因由）。
 func NewMetricsService(cfg *AppConfig, st *state.Store, mb *metrics.Backend, mm *metrics.Manager) *api.MetricsService {
 	return api.NewMetricsService(st).WithBackend(mb, mm).
 		WithRetentionDays(cfg.MetricsSettings().RetentionDays).
@@ -703,7 +706,13 @@ func NewMetricsService(cfg *AppConfig, st *state.Store, mb *metrics.Backend, mm 
 			if err != nil {
 				return 0, err
 			}
-			return len(nodes), nil
+			total := 0
+			for _, n := range nodes {
+				if n.State == "ready" && n.Availability == "active" {
+					total++
+				}
+			}
+			return total, nil
 		})
 }
 

@@ -160,8 +160,10 @@ func (s *MetricsService) GetMetricsStatus(ctx context.Context, _ *serverv1.GetMe
 		}
 	}
 	if in.Mode == state.MetricsModeOn && s.mb != nil {
-		// 上报节点数 = VM 实抓的 cAdvisor 目标数（设计 §4.1「N/M 诚实口径」；
-		// VM 不可达/栈未收敛 = 0——配合 components 解读，不谎报全量）。
+		// 上报节点数 = VM 实抓的 cAdvisor 目标数（设计 §4.1「N/M 诚实口径」
+		// + §6 挂账票修订：分子分母同拓扑——分母为 Ready 节点集（装配点
+		// 注入），分子为 advertise 直连实抓数；VM 不可达/栈未收敛 = 0——
+		// 配合 components 解读，不谎报全量）。
 		if n, err := s.mb.CountInstant(ctx, nodesReportingPromQL); err == nil {
 			resp.NodesReporting = int32(n) //nolint:gosec // G115：节点计数，量级极小
 		}

@@ -5,27 +5,39 @@ package metrics
 // internal/victorialogs spec 同款纪律）：不存在创建、存在比对（镜像/参数/
 // 挂载/网络/约束/副本/限额/抓取配置引用）漂移即更新。
 //
-// 部署拓扑（设计 §4.1 + 一处**已记录的实现偏离**，D-W5-4 同族取证）：
+// 部署拓扑（设计 §4.1 + §6 挂账票「跨节点 metrics 采集修订」的 v0.2.x S1
+// 收口，2026-09-23；两处**已记录的实现偏离**，D-W5-4 同族取证）：
 //   - 设计字面 = VM host-mode 端口发布回环 8428 + cAdvisor/node_exporter 挂
 //     内部 overlay 网络 `fleetly-metrics-net` + VM 抓 `tasks.fleetly-*`
 //     （overlay DNS RR）。实现时点核实两处基座事实：
 //     ①Engine API 对 swarm 服务端口的 HostIp 静默丢弃（W5-S1 dind 实证，
-//     spec.go 头注记同源）——host-mode 发布绑 *:8428 = 公网暴露，回环不变
-//     量不成立；②host 网络任务不能挂 overlay（S1 已实证）——VM 在宿主
-//     网络命名空间内既解析不了 `tasks.*`（Docker 内嵌 DNS 不服务宿主）也
-//     路由不到 overlay 任务 IP，抓取面为空。
-//   - 落地 = **三件全部 host 网络任务 + 各自进程原生回环监听**（W5-S1
-//     D-W5-4 的等价承载形态）：VM `-httpListenAddr=127.0.0.1:8428`、
-//     cAdvisor `-listen_ip=127.0.0.1 -port=8080`、node_exporter
-//     `--web.listen-address=127.0.0.1:9100`（flag 名逐一经官方镜像
-//     -help 实测核实，2026-09-22）。回环不变量（零公网面）比设计字面更
-//     严格地成立；VM 抓取 targets = 宿主回环 8080/9100（同命名空间直连）。
-//   - **跨节点采集诚实边界**：回环 = 每节点各管各的，VM（钉 manager）只
-//     采到 manager 节点序列；worker 节点指标缺席（global 任务在位但不被
-//     抓）——`metrics status` / Console 以「N/M nodes reporting」如实
-//     披露，不谎报。跨节点采集依赖 overlay 数据面（W3-F2）与 VM 访问面
-//     的联合裁决，随设计修订票补（见 victorialogs spec 头注记的同族
-//     「留位网络」处理——`fleetly-metrics-net` 本阶段不创建）。
+//     victorialogs spec 头注记同源）——host-mode 发布绑 *:8428 = 公网暴露；
+//     ②host 网络任务不能挂 overlay（S1 已实证）——VM 在宿主网络命名空间
+//     内既解析不了 `tasks.*`（Docker 内嵌 DNS 不服务宿主）也路由不到
+//     overlay 任务 IP，抓取面为空。→ 三件全部 host 网络任务。
+//   - W5-S3 落地形态（三件回环监听）只覆盖 manager 节点（worker 采集器
+//     在位但不被抓，`N/M nodes reporting` 诚实披露）→ 本票修订（§6 挂账
+//     原文方向）：**采集器改绑 0.0.0.0**（cAdvisor `-listen_ip=0.0.0.0
+//     -port=8080`、node_exporter `--web.listen-address=0.0.0.0:9100`——
+//     flag 名经官方镜像 -help 实测核实，2026-09-22），VM（钉 manager）经
+//     各节点 advertise 地址直连抓取——**VPC/LAN TCP 直连，不依赖 overlay
+//     数据面**（W3-F2 免疫；与 exec relay 反向常连同理）。
+//   - **暴露面诚实口径（spec 注释 / `metrics status` note / Console 文案
+//     三处同锚）**：采集端口对节点全部网络接口开放（含公网接口）——
+//     **metrics 采集面 = 内网面，公网访问由节点/云防火墙负责**（与
+//     traefik 80/443 的 host-mode 发布同级暴露，但无鉴权——依赖宿主防火
+//     墙拦公网、VPC 对内互通）。VM 自身保持回环
+//     （`-httpListenAddr=127.0.0.1:8428`——查询面只在 manager 本地，零
+//     公网面不变量对 VM 依旧成立）。
+//   - **动态抓取面**：duty 每拍从底座节点注册表读全部 Ready 节点的
+//     advertise 地址（dockerPort.ReadyNodeAddresses——Status.Addr，缺省
+//     回落 ManagerStatus.Addr；availability 非 active〔drain/pause〕的
+//     节点不入选——global 采集器不在其上运行，抓了必 down），scrape
+//     config 的 static_targets = 每节点 `<addr>:8080` + `<addr>:9100`。
+//     节点集变化 → 配置内容 sha 变 → 内容寻址 config 名变 → 服务引用
+//     比对触发 VM 滚动更新 → 旧 config GC（既有机制复用，内容从静态变
+//     动态）。空 Ready 集 = 异常显式失败退避重试（上一版配置原地保持，
+//     不闪断抓取面）。
 //
 // 抓取配置分发（设计 §4.1 的 `-prometheus.config` 内联形态不可实现——
 // 实测 VM v1.152.0 无该 flag，单机版抓取配置 flag 是 **`-promscrape.
@@ -41,7 +53,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -81,12 +95,19 @@ const (
 	// QueryPort 是 VM HTTP API 端口（VM 缺省 8428：query/ingest/health 同
 	// 端口；host 网络 + 回环监听的目标地址）。
 	QueryPort = 8428
-	// CAdvisorPort / NodeExporterPort 是采集器的回环监听端口（cAdvisor
-	// 官方缺省 8080、node_exporter 官方缺省 9100——端口未改只收编）。
+	// CAdvisorPort / NodeExporterPort 是采集器的监听端口（cAdvisor 官方
+	// 缺省 8080、node_exporter 官方缺省 9100——端口未改只收编；绑定面
+	// 0.0.0.0，抓取目标 = 节点 advertise 地址 + 本端口）。
 	CAdvisorPort     = 8080
 	NodeExporterPort = 9100
-	// hostIP 是回环监听绑定地址（D-W5-4：127.0.0.1 = 零公网面）。
+	// hostIP 是 VM 查询面的回环绑定地址（D-W5-4：127.0.0.1 = 零公网面；
+	// 只用于 VM——采集器的绑定面见 bindAllIP）。
 	hostIP = "127.0.0.1"
+	// bindAllIP 是采集器（cAdvisor/node_exporter）的绑定地址（§6 挂账票
+	// 修订：0.0.0.0 = 对节点全部网络接口开放——VM 经节点 advertise 地址
+	// 直连抓取；**采集面 = 内网面，公网访问由节点/云防火墙负责**，见文件
+	// 头诚实口径注记。VM 不用此值——查询面保持回环）。
+	bindAllIP = "0.0.0.0"
 	// vmMemoryBytes 是 VM 内存限额起步值（设计 §4.1：128MB，实测校准门
 	// 挂账——先测 idle 再定）。
 	vmMemoryBytes = int64(128) << 20
@@ -156,52 +177,80 @@ func retentionArg(days int) string {
 }
 
 // scrapeConfigYAML 构造 VM 抓取配置（确定性渲染——内容寻址命名的哈希基）：
-// 静态 targets = 宿主回环上的 cAdvisor/node_exporter（同命名空间直连；
-// 跨节点采集的诚实边界见文件头注记）。
-func scrapeConfigYAML() string {
+// static_targets = 每个 Ready 节点 advertise 地址上的 cAdvisor/node_exporter
+// （VPC/LAN 直连——采集器绑 0.0.0.0；跨节点拓扑见文件头注记）。地址序经
+// scrapeAddrs 规范化（排序去重），同节点集恒渲染同内容。
+func scrapeConfigYAML(readyAddrs []string) string {
 	return `global:
   scrape_interval: 15s
 scrape_configs:
   - job_name: fleetly-cadvisor
     static_configs:
-      - targets: ["` + loopbackTarget(CAdvisorPort) + `"]
+      - targets: ` + targetsBlock(readyAddrs, CAdvisorPort) + `
   - job_name: fleetly-node-exporter
     static_configs:
-      - targets: ["` + loopbackTarget(NodeExporterPort) + `"]
+      - targets: ` + targetsBlock(readyAddrs, NodeExporterPort) + `
 `
 }
 
-// loopbackTarget 渲染 host:port 回环目标（scrape 配置与 spec 注释同锚）。
-func loopbackTarget(port int) string {
-	return fmt.Sprintf("%s:%d", hostIP, port)
+// targetsBlock 渲染一个 static_configs 的 targets 行（host:port 逗号列表；
+// 空地址集渲染空列表——converge 对空集先行短路报错，本形态仅供单测矩阵
+// 与渲染完备性）。
+func targetsBlock(addrs []string, port int) string {
+	parts := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		parts = append(parts, fmt.Sprintf("%q", fmt.Sprintf("%s:%d", a, port)))
+	}
+	return "[" + strings.Join(parts, ", ") + "]"
+}
+
+// scrapeAddrs 把 Ready 节点地址集规范化为确定性渲染序：排序（底座清单
+// 顺序不保证——同节点集必须恒定渲染同内容，内容寻址才稳）+ 去重（同址
+// 双登记的异常形态不放大进抓取配置）。
+func scrapeAddrs(addrs []string) []string {
+	seen := make(map[string]struct{}, len(addrs))
+	out := make([]string, 0, len(addrs))
+	for _, a := range addrs {
+		if a == "" {
+			continue
+		}
+		if _, dup := seen[a]; dup {
+			continue
+		}
+		seen[a] = struct{}{}
+		out = append(out, a)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // scrapeConfigName 是抓取配置的 swarm config 对象名（内容寻址：内容变 =
 // 名变 = 新对象；服务 spec 以名引用，specEqual 比对捕获漂移）。
-func scrapeConfigName() string {
-	sum := sha256.Sum256([]byte(scrapeConfigYAML()))
+func scrapeConfigName(readyAddrs []string) string {
+	sum := sha256.Sum256([]byte(scrapeConfigYAML(readyAddrs)))
 	return scrapeConfigPrefix + hex.EncodeToString(sum[:4])
 }
 
 // buildScrapeConfigSpec 构造抓取配置的期望 swarm.ConfigSpec。
-func buildScrapeConfigSpec() swarm.ConfigSpec {
+func buildScrapeConfigSpec(readyAddrs []string) swarm.ConfigSpec {
 	return swarm.ConfigSpec{
 		Annotations: swarm.Annotations{
-			Name: scrapeConfigName(),
+			Name: scrapeConfigName(readyAddrs),
 			Labels: map[string]string{
 				state.LabelManaged: state.ManagedLabelValue,
 				scrapeLabel:        "true",
 			},
 		},
-		Data: []byte(scrapeConfigYAML()),
+		Data: []byte(scrapeConfigYAML(readyAddrs)),
 	}
 }
 
 // buildVictoriaSpec 构造托管 VictoriaMetrics 服务的期望 swarm spec
-// （replicated-1 + manager 约束 + host 网络任务（回环监听）+ 数据卷 +
-// 抓取配置引用 + 内存限额 128MB；无端口发布面——host 网络任务的进程自绑
-// 127.0.0.1，EndpointSpec 恒空）。
-func buildVictoriaSpec(platformID string, retentionDays int) swarm.ServiceSpec {
+//（replicated-1 + manager 约束 + host 网络任务（回环监听——查询面只在
+// manager 本地）+ 数据卷 + 抓取配置引用（按 Ready 节点集内容寻址）+ 内存
+// 限额 128MB；无端口发布面——host 网络任务的进程自绑 127.0.0.1，
+// EndpointSpec 恒空）。
+func buildVictoriaSpec(platformID string, retentionDays int, readyAddrs []string) swarm.ServiceSpec {
 	one := uint64(1)
 	spec := swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
@@ -224,7 +273,7 @@ func buildVictoriaSpec(platformID string, retentionDays int) swarm.ServiceSpec {
 					{Type: mount.TypeVolume, Source: VolumeName, Target: dataMountPath},
 				},
 				Configs: []*swarm.ConfigReference{{
-					ConfigName: scrapeConfigName(),
+					ConfigName: scrapeConfigName(readyAddrs),
 					File: &swarm.ConfigReferenceFileTarget{
 						Name: scrapeConfigMountPath,
 						UID:  "0", GID: "0", Mode: 0o444,
@@ -232,8 +281,8 @@ func buildVictoriaSpec(platformID string, retentionDays int) swarm.ServiceSpec {
 				}},
 			},
 			// host 网络：任务共享宿主网络命名空间，-httpListenAddr 把监听
-			// 面收缩到宿主回环（零公网面）；抓取 targets 同命名空间回环
-			// 直连（跨节点边界见文件头注记）。
+			// 面收缩到宿主回环（查询面零公网面）；抓取出站 = 节点 advertise
+			// 地址直连（动态 targets 见文件头注记）。
 			Networks: []swarm.NetworkAttachmentConfig{{
 				Target: hostNetworkName,
 			}},
@@ -255,9 +304,9 @@ func buildVictoriaSpec(platformID string, retentionDays int) swarm.ServiceSpec {
 }
 
 // buildCAdvisorSpec 构造托管 cAdvisor 的期望 spec（global——每节点一任务；
-// host 网络 + 回环监听（零公网面，`-listen_ip` 经官方镜像 -help 实测核实）
-// + 官方容器形态的宿主只读挂载 + 限额 192MB；无 overlay——跨节点边界见
-// 文件头注记）。
+// host 网络 + **0.0.0.0 绑定**（§6 挂账票修订——VM 经节点 advertise 地址
+// 直连抓取；采集面 = 内网面、公网由节点防火墙负责，见文件头诚实口径）
+// + 官方容器形态的宿主只读挂载 + 限额 192MB；无 overlay）。
 func buildCAdvisorSpec() swarm.ServiceSpec {
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
@@ -280,7 +329,7 @@ func buildCAdvisorSpec() swarm.ServiceSpec {
 				// 带 /bin/sh（健康检查 CMD-SHELL 同依赖）。
 				Command: []string{"/bin/sh", "-c"},
 				Args: []string{
-					`exec /usr/bin/cadvisor -logtostderr -listen_ip=` + hostIP +
+					`exec /usr/bin/cadvisor -logtostderr -listen_ip=` + bindAllIP +
 						` -port=` + strconv.Itoa(CAdvisorPort) +
 						// 只报 docker 容器（+root）——cgroup 序列基数与
 						// housekeeping 负载的保守化（预算门 §4.3 先手减载；
@@ -299,7 +348,8 @@ func buildCAdvisorSpec() swarm.ServiceSpec {
 				// 显式健康检查（覆盖镜像自带的 localhost 探针——镜像缺省
 				// wget 在双栈解析下走 ::1，而 -listen_ip=127.0.0.1 只绑 IPv4
 				// 回环 → 探针恒败 → swarm 按 unhealthy 杀任务重启循环；
-				// 2026-09-22 dind 实证。显式 127.0.0.1 探针同一不变量）。
+				// 2026-09-22 dind 实证。绑定面放宽到 0.0.0.0 后 127.0.0.1
+				// 探针依旧可达〔0.0.0.0 含回环〕——探针保持回环形态不变）。
 				Healthcheck: &container.HealthConfig{
 					Test: []string{
 						"CMD-SHELL",
@@ -323,8 +373,8 @@ func buildCAdvisorSpec() swarm.ServiceSpec {
 }
 
 // buildNodeExporterSpec 构造托管 node_exporter 的期望 spec（global；host
-// 网络 + 回环监听 + 官方容器形态的宿主只读挂载与 --path.* 参数 + 限额
-// 64MB）。
+// 网络 + **0.0.0.0 绑定**（同 cAdvisor——采集面 = 内网面）+ 官方容器形态
+// 的宿主只读挂载与 --path.* 参数 + 限额 64MB）。
 func buildNodeExporterSpec() swarm.ServiceSpec {
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
@@ -341,7 +391,7 @@ func buildNodeExporterSpec() swarm.ServiceSpec {
 					"--path.rootfs=/host",
 					"--path.procfs=/host/proc",
 					"--path.sysfs=/host/sys",
-					fmt.Sprintf("--web.listen-address=%s:%d", hostIP, NodeExporterPort),
+					fmt.Sprintf("--web.listen-address=%s:%d", bindAllIP, NodeExporterPort),
 				},
 				Mounts: []mount.Mount{
 					bindRO("/", "/host"),
@@ -367,8 +417,9 @@ func bindRO(source, target string) mount.Mount {
 
 // specEqual 幂等比对（镜像/参数/挂载/网络/约束/副本/限额/抓取配置引用
 // ——服务的全部执行面都由期望 spec 权威表达；label 不参与，服务名即身份。
-// 参数含 -httpListenAddr / -listen_ip / --web.listen-address 回环监听——
-// 零公网面不变量漂移必被本比对捕获）。
+// 参数含 -httpListenAddr 回环监听（VM 查询面零公网面）与采集器
+// -listen_ip / --web.listen-address 的 0.0.0.0 绑定——绑定面漂移必被本
+// 比对捕获）。
 func specEqual(cur ServiceState, desired swarm.ServiceSpec) bool {
 	cs := desired.TaskTemplate.ContainerSpec
 	if cur.Image != cs.Image {

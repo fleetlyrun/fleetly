@@ -6,11 +6,12 @@
 //
 //  1. duty（本文件 + spec.go + docker.go，victorialogs/rustfs manager 同款
 //     形态）：设置驱动——metrics.mode=on 时幂等部署/收敛三件 Swarm 服务
-//     （钉版镜像、VM 卷钉 manager、三件全部 host 网络任务 + 进程原生回环
-//     监听〔零公网面不变量，D-W5-4 等价承载；跨节点采集诚实边界见 spec.go
-//     头注记〕、-retentionPeriod 对齐 metrics.retention_days）；切回 unset
-//     时三件服务移除 + 抓取 config 清场，**数据卷保留**（rustfs 禁用同型
-//     数据安全语义）。常驻收敛循环（失败退避重试、收敛后按扫描周期复检
+//     （钉版镜像、VM 卷钉 manager、三件全部 host 网络任务；VM 进程原生
+//     回环监听〔查询面零公网面，D-W5-4 等价承载〕、采集器绑 0.0.0.0——
+//     VM 经节点 advertise 地址直连抓取，动态 targets 见 spec.go 头注记；
+//     -retentionPeriod 对齐 metrics.retention_days）；切回 unset 时三件
+//     服务移除 + 抓取 config 清场，**数据卷保留**（rustfs 禁用同型数据
+//     安全语义）。常驻收敛循环（失败退避重试、收敛后按扫描周期复检
 //     漂移），差分事件 metrics.stack_deployed / metrics.stack_removed
 //     （注册表只增；payload 不含任何敏感材料——全链无凭据面）。
 //
@@ -118,8 +119,8 @@ func (m *Manager) Run(ctx context.Context) error {
 			m.log.Warn("metrics: converge deferred (retrying)", "error", err, "retry_in", retry.String())
 		case oc == outcomeDeployed && !converged:
 			converged = true
-			m.log.Info("metrics: converged (managed metrics stack deployed; loopback-only host tasks, "+
-				"the data volume persists across mode switch)", "services",
+			m.log.Info("metrics: converged (managed metrics stack deployed; VM query face loopback-only, "+
+				"collectors reachable on the node VPC/LAN face; the data volume persists across mode switch)", "services",
 				VictoriaServiceName+","+CAdvisorServiceName+","+NodeExporterServiceName, "volume", VolumeName)
 		case oc == outcomeIdle && !converged:
 			converged = true
@@ -157,10 +158,11 @@ func (m *Manager) Ensure(ctx context.Context) (outcome, error) {
 	return outcomeDeployed, m.converge(ctx)
 }
 
-// converge 三件部署/漂移收敛（设计 §4.1；victorialogs converge 同构，无
-// 凭据面）：抓取 config → 数据卷 → 期望 spec（VM 钉 manager + 限额 + host
-// 网络回环监听 + retention 参数 + 抓取配置引用；cAdvisor/node_exporter
-// global）→ inspect 缺失创建/漂移更新 → 旧抓取 config GC。
+// converge 三件部署/漂移收敛（设计 §4.1 + §6 挂账票动态 targets 修订；
+// victorialogs converge 同构，无凭据面）：Ready 节点集 → 抓取 config（内容
+// 寻址，节点集变化即换版）→ 数据卷 → 期望 spec（VM 钉 manager + 限额 +
+// host 网络回环监听 + retention 参数 + 抓取配置引用；cAdvisor/node_exporter
+// global、0.0.0.0 绑定）→ inspect 缺失创建/漂移更新 → 旧抓取 config GC。
 func (m *Manager) converge(ctx context.Context) error {
 	active, err := m.docker.Info(ctx)
 	if err != nil {
@@ -178,24 +180,37 @@ func (m *Manager) converge(ctx context.Context) error {
 	if platformID == "" {
 		return errors.New("metrics: platform node id not ensured yet (identity duty pending; the pin constraint requires it)")
 	}
-	// ① 抓取配置（swarm config 对象，内容寻址——服务引用它的名字，内容
-	//    变更经新对象 + 服务更新收敛）。返回底座对象 ID——服务 spec 的
-	//    ConfigReference 需要 ID+名双写（只写名 = "malformed config
-	//    reference"，W3 secret-ID 同族教训，2026-09-22 dind 实证）。
-	scrapeSpec := buildScrapeConfigSpec()
+	// ⓪ Ready 节点集（动态 targets 的源头——每拍重算，advertise 地址
+	//    VPC/LAN 直连，不依赖 overlay 数据面）。空集 = 异常态显式失败
+	//    退避重试：上一版抓取配置原地保持（不闪断抓取面；活跃 manager
+	//    上自身节点恒在清单，空集只见于底座异常）。
+	readyAddrs, err := m.docker.ReadyNodeAddresses(ctx)
+	if err != nil {
+		return fmt.Errorf("metrics: ready node addresses: %w", err)
+	}
+	if len(readyAddrs) == 0 {
+		return errors.New("metrics: no ready nodes found (scrape targets deferred; the previous scrape config is kept)")
+	}
+	// ① 抓取配置（swarm config 对象，内容寻址——服务引用它的名字，节点集
+	//    变化 → 内容 sha 变 → 新对象 + 服务更新收敛）。返回底座对象 ID——
+	//    服务 spec 的 ConfigReference 需要 ID+名双写（只写名 = "malformed
+	//    config reference"，W3 secret-ID 同族教训，2026-09-22 dind 实证）。
+	//    渲染序 = scrapeAddrs 规范化（排序去重——同节点集恒同名）。
+	renderAddrs := scrapeAddrs(readyAddrs)
+	scrapeSpec := buildScrapeConfigSpec(renderAddrs)
 	scrapeID, err := m.docker.ConfigEnsure(ctx, scrapeSpec.Name, scrapeSpec)
 	if err != nil {
 		return err
 	}
-	// 网络目标锚（"host" 名在服务创建时被 engine 归一为网络 ID 存储——
-	// 幂等比对前把实况目标解析回名，同锚比较）。
 	// ② 数据卷（本地命名卷——数据重力钉 manager）。
 	if err := m.docker.VolumeEnsure(ctx, VolumeName); err != nil {
 		return err
 	}
 	// ③ 三件期望 spec → 幂等收敛（采集器先于 VM——服务创建次序即切片序）。
+	//    网络目标锚（"host" 名在服务创建时被 engine 归一为 ID 存储——
+	//    幂等比对前把实况目标解析回名，同锚比较）。
 	desired := map[string]swarm.ServiceSpec{
-		VictoriaServiceName:     buildVictoriaSpec(platformID, m.retentionDays),
+		VictoriaServiceName:     buildVictoriaSpec(platformID, m.retentionDays, renderAddrs),
 		CAdvisorServiceName:     buildCAdvisorSpec(),
 		NodeExporterServiceName: buildNodeExporterSpec(),
 	}
@@ -203,7 +218,7 @@ func (m *Manager) converge(ctx context.Context) error {
 		want := desired[name]
 		// 抓取配置引用在收敛期补 ConfigID（spec 构造保持纯函数——ID 是
 		// 底座会话事实，不入权威字面）。
-		anchorSpec(&want, scrapeID)
+		anchorSpec(&want, scrapeSpec.Name, scrapeID)
 		cur, err := m.docker.ServiceInspect(ctx, name)
 		if err != nil {
 			return err
@@ -257,10 +272,11 @@ const hostNetworkName = "host"
 // anchorSpec 把底座会话事实锚入期望 spec：抓取配置引用补 ConfigID
 //（ConfigName 保持——实况投影按名比对；只写名会被 swarm 以 "malformed
 // config reference" 拒绝，W3 secret-ID 同族教训，2026-09-22 dind 实证）。
-func anchorSpec(spec *swarm.ServiceSpec, scrapeID string) {
+// 名取自本拍渲染的内容寻址对象名（节点集变化即换名——比对面一致）。
+func anchorSpec(spec *swarm.ServiceSpec, scrapeName, scrapeID string) {
 	if cs := spec.TaskTemplate.ContainerSpec; cs != nil {
 		for _, ref := range cs.Configs {
-			if ref.ConfigName == scrapeConfigName() {
+			if ref.ConfigName == scrapeName {
 				ref.ConfigID = scrapeID
 			}
 		}

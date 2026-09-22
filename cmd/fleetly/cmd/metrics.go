@@ -1,10 +1,10 @@
 package cmd
 
-// fleetly metrics 命令（E6 观测专项设计 §4/§4.2，W5-S3；D-W5-2 opt-in）：
+//	fleetly metrics 命令（E6 观测专项设计 §4/§4.2，W5-S3；D-W5-2 opt-in）：
 //
 //	status  —— 托管三件套状态视图（模式/三件部署态/节点上报比/retention——
-//	           「N/M nodes reporting」的诚实口径：跨节点采集依赖 overlay
-//	           数据面，worker 缺席时不谎报）；
+//	           「N/M nodes reporting」的诚实口径：跨节点采集走节点 advertise
+//	           地址直连（VPC/LAN），缺席 = 节点不 Ready 或防火墙拦 VPC）；
 //	mode    —— 模式切换（unset|on；保存即生效——duty 收敛部署/移除，
 //	           数据卷保留）；
 //	query   —— PromQL 区间查询（透传——操作员工具，不做查询沙箱；
@@ -94,10 +94,20 @@ func (c *metricsStatusCmd) Run(ctx context.Context, env *commands.Environment, _
 			fmt.Fprintf(&b, "component %s: %s\n", comp.GetName(), state)
 		}
 		fmt.Fprintf(&b, "nodes_reporting: %d/%d\n", st.GetNodesReporting(), st.GetNodesTotal())
-		if st.GetMode() == "on" && st.GetNodesReporting() < st.GetNodesTotal() {
-			// 诚实口径（设计 §4.1）：worker 节点指标缺席不谎报——跨节点采集
-			// 依赖 overlay 数据面（W3-F2）。
-			b.WriteString("note: cross-node collection is pending the overlay data plane; worker metrics are absent (manager reports normally)\n")
+		if st.GetMode() == "on" {
+			// 暴露面诚实口径（spec 注释 / Console 文案三处同锚）：采集端口
+			// 绑 0.0.0.0 对节点全部接口开放——采集面 = 内网面，公网访问由
+			// 节点/云防火墙负责。
+			b.WriteString("note: collector ports listen on all node interfaces (VPC/LAN face); " +
+				"the scrape face is an intranet face — public access is expected to be blocked by the node firewall\n")
+			if st.GetNodesReporting() < st.GetNodesTotal() {
+				// 诚实口径（设计 §4.1 + §6 挂账票修订）：跨节点采集走节点
+				// advertise 地址直连（VPC/LAN，不依赖 overlay 数据面）——
+				// 缺席只剩两种因由：节点不 Ready，或 manager 不可达它
+				//（防火墙拦 VPC 内 8080/9100）。不谎报全量。
+				b.WriteString("note: cross-node collection goes over direct node addresses (VPC/LAN), not the overlay data plane; " +
+					"a node below full count is not Ready or unreachable from the manager (check the node firewall for tcp/8080 and tcp/9100)\n")
+			}
 		}
 		_, err = fmt.Fprint(env.Stdout, b.String())
 		return err

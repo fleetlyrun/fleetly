@@ -13,13 +13,14 @@
 #   A3 三件收敛（fleetly-cadvisor / fleetly-node-exporter / fleetly-
 #      victoriametrics 全部 Running；首跑含镜像拉取，重试窗放宽）。
 #   A4 VM 回环健康（host 网络任务 + -httpListenAddr=127.0.0.1:8428——
-#      D-W5-4 等价承载形态，见 internal/metrics/spec.go 头注记）。
-#   A5 采集器回环在位（cAdvisor 127.0.0.1:8080 / node_exporter
-#      127.0.0.1:9100 的 /metrics 可达——同命名空间，零公网面）。
+#      D-W5-4 等价承载形态，见 internal/metrics/spec.go 头注记；查询面
+#      零公网面不变量本票修订后仍钉死）。
+#   A5 采集器回环在位（cAdvisor 8080 / node_exporter 9100 的 /metrics 经
+#      127.0.0.1 可达——0.0.0.0 绑定含回环，同命名空间冒烟）。
 #   A6 VM 抓取收敛：`metrics status` nodes_reporting 1/1（up 计数的诚实
 #      口径——单节点 dind = 1 节点全报）。
 #   A7 指标查询面（PromQL 透传——操作员工具）：up 序列含 cadvisor 与
-#      node_exporter 两个 job（实例为 127.0.0.1 回环目标）。
+#      node_exporter 两个 job（实例为节点 advertise 地址目标）。
 #   A8 节点维度序列（node_load1 非空）。
 #   A9 容器维度序列（container_memory_usage_bytes 非空）。
 #   A10 应用归属标签实测形态：swarm service 维度 = container_label_com_
@@ -31,6 +32,17 @@
 #      事件语义（status 读 unset）。
 #   A14 关闭后查询诚实报错：`metrics query` → E_METRICS_NOT_ENABLED
 #      （不返回空序列冒充有数）。
+#
+# §6 挂账票「跨节点 metrics 采集修订」新增断言（2026-09-23）：
+#   A20 采集器绑定面 = 0.0.0.0（cAdvisor -listen_ip / node_exporter
+#      --web.listen-address 服务 spec 字面钉死）+ VM -httpListenAddr 恒
+#      回环 8428（绑定面分野双向钉死）。
+#   A21 经节点 advertise 地址直连采集器 /metrics 可达（manager → 节点
+#      地址 = 跨节点抓取路径的单机缩影——VPC/LAN 直连，不依赖 overlay）。
+#   A22 VM 的抓取 config 对象内容含 advertise 地址 targets（动态 targets
+#      ——<addr>:8080 + <addr>:9100；单节点 dind = 1 节点）。
+#   A23 `metrics status` on 态出现新诚实 note（采集面 = 内网面，公网访问
+#      由节点防火墙负责——spec 注释 / status note / Console 文案三处同锚）。
 #
 # 断言风格与 e2e/logs-victorialogs.sh 一致（MET-x: PASS/FAIL 行 + NL_FAIL
 # 计数 + finish）。
@@ -350,7 +362,7 @@ else
     assert "MET-A6 VM_LOOPBACK_HEALTH_OK" 1 "VM /health unreachable on 127.0.0.1:8428"
 fi
 
-# ───────── A7: 采集器回环在位（cAdvisor/node_exporter 各自回环监听）
+# ───────── A7: 采集器在位（0.0.0.0 绑定含回环——127.0.0.1 /metrics 冒烟）
 collectors_ok() {
     msh 'wget -q -T 3 -O /dev/null http://127.0.0.1:8080/metrics' 2>/dev/null &&
         msh 'wget -q -T 3 -O /dev/null http://127.0.0.1:9100/metrics' 2>/dev/null
@@ -377,7 +389,8 @@ fi
 
 # ───────── A9: 查询面（PromQL 透传）：up 序列双 job + 节点/容器维度
 # （CLI 约定：旗标在位置参数前；query_range 数据在首批抓取后 ~1 分钟内
-# 才可见——与 A8 的瞬时计数不同，区间面带重试窗）
+# 才可见——与 A8 的瞬时计数不同，区间面带重试窗；up 实例 = 节点 advertise
+# 地址目标——§6 挂账票修订后的动态 targets 形态）
 nl '=== A9: SearchMetrics via CLI hits both scrape jobs ==='
 up_both_ok() {
     fcli metrics query --json 'up' 2>/dev/null | grep -q 'fleetly-cadvisor' &&
@@ -398,6 +411,66 @@ if poll_until 120 node_series_ok; then
 else
     fcli metrics query --json 'node_load1' || true
     assert "MET-A10 NODE_DIMENSION_SERIES" 1 "node dimension series never appeared"
+fi
+
+# ───────── A20–A22: §6 挂账票修订面（绑定 0.0.0.0 / advertise 直连 /
+# 动态 targets——设计 docs/design/2026-09-22-observability.md §6 挂账票）
+nl '=== A20-A22: revised bind face + node-addr scrape targets ==='
+# manager advertise 地址（swarm init --advertise-addr eth0 → 10.217.0.10）。
+MET_MGR_ADDR=$(m docker node inspect self --format '{{.Status.Addr}}')
+[ -n "$MET_MGR_ADDR" ] || fatal 'empty manager advertise addr'
+
+# A20 服务 spec 绑定面：采集器 0.0.0.0（跨节点抓取面）+ VM 恒回环
+#（查询面零公网面——绑定面分野双向钉死）。
+bind_face_ok() {
+    msh "docker service inspect fleetly-cadvisor --format '{{.Spec.TaskTemplate.ContainerSpec.Args}}'" |
+        grep -F -q -- '-listen_ip=0.0.0.0' &&
+        msh "docker service inspect fleetly-node-exporter --format '{{.Spec.TaskTemplate.ContainerSpec.Args}}'" |
+            grep -F -q -- '--web.listen-address=0.0.0.0:9100' &&
+        msh "docker service inspect fleetly-victoriametrics --format '{{.Spec.TaskTemplate.ContainerSpec.Args}}'" |
+            grep -F -q -- '-httpListenAddr=127.0.0.1:8428'
+}
+if poll_until 30 bind_face_ok; then
+    assert "MET-A20 COLLECTOR_BIND_ALL_INTERFACES" 0
+else
+    msh "docker service inspect fleetly-cadvisor --format '{{.Spec.TaskTemplate.ContainerSpec.Args}}'" || true
+    msh "docker service inspect fleetly-node-exporter --format '{{.Spec.TaskTemplate.ContainerSpec.Args}}'" || true
+    msh "docker service inspect fleetly-victoriametrics --format '{{.Spec.TaskTemplate.ContainerSpec.Args}}'" || true
+    assert "MET-A20 COLLECTOR_BIND_ALL_INTERFACES" 1 "collector/VM bind face args drifted from the revised topology"
+fi
+
+# A21 经节点 advertise 地址直连采集器（manager → 节点地址 = 跨节点抓取
+# 路径的单机缩影；宿主命名空间 wget 节点 IP:8080/9100）。
+node_addr_reachable_ok() {
+    msh "wget -q -T 3 -O /dev/null http://$MET_MGR_ADDR:8080/metrics" 2>/dev/null &&
+        msh "wget -q -T 3 -O /dev/null http://$MET_MGR_ADDR:9100/metrics" 2>/dev/null
+}
+if poll_until 60 node_addr_reachable_ok; then
+    assert "MET-A21 COLLECTORS_NODE_ADDR_REACHABLE" 0
+else
+    msh "wget -S -T 3 -O /dev/null http://$MET_MGR_ADDR:8080/metrics" || true
+    msh "wget -S -T 3 -O /dev/null http://$MET_MGR_ADDR:9100/metrics" || true
+    assert "MET-A21 COLLECTORS_NODE_ADDR_REACHABLE" 1 "collector /metrics not reachable via the node advertise addr"
+fi
+
+# A22 动态 targets：抓取 config 对象内容含 advertise 地址 targets（内容
+# 寻址对象名 fleetly-vm-scrape-<sha8>。内容提取 = {{printf "%s" .Spec.Data}}
+# ——docker 29 CLI 的裸 {{.Spec.Data}} 把 []byte 打成十进制字节表，base64
+# 直解不通，printf %s 直出原文，2026-09-23 宿主实测）。
+scrape_config_targets_ok() {
+    name=$(msh "docker config ls --format '{{.Name}}'" | grep '^fleetly-vm-scrape-' | head -n1)
+    [ -n "$name" ] || return 1
+    content=$(msh "docker config inspect --format '{{printf \"%s\" .Spec.Data}}' '$name'")
+    [ -n "$content" ] || return 1
+    printf '%s' "$content" | grep -F -q "$MET_MGR_ADDR:8080" &&
+        printf '%s' "$content" | grep -F -q "$MET_MGR_ADDR:9100"
+}
+if poll_until 60 scrape_config_targets_ok; then
+    assert "MET-A22 SCRAPE_CONFIG_NODE_ADDR_TARGETS" 0
+else
+    msh "docker config ls" || true
+    msh "docker config inspect --format '{{printf \"%s\" .Spec.Data}}' \$(docker config ls --format '{{.Name}}' | grep '^fleetly-vm-scrape-' | head -n1)" || true
+    assert "MET-A22 SCRAPE_CONFIG_NODE_ADDR_TARGETS" 1 "scrape config content never carried the advertise-addr targets"
 fi
 
 # 部署 whoami 应用产生真实容器指标（应用归属标签实测形态的载体）。
@@ -490,6 +563,20 @@ if poll_until 30 status_on_ok; then
 else
     fcli metrics status || true
     assert "MET-A15 STATUS_ON_FULL_VIEW" 1 "metrics status not fully green while on"
+fi
+
+# ───────── A23: `metrics status` 新诚实 note（on 态常驻——采集面 = 内网
+# 面，公网访问由节点防火墙负责；spec 注释 / status note / Console 文案
+# 三处同锚。单节点 1/1 下缺席分支 note 不出现——文案分支的另一面）。
+exposure_note_ok() {
+    fcli metrics status 2>/dev/null | grep -q 'note: collector ports listen on all node interfaces' &&
+        fcli metrics status 2>/dev/null | grep -q 'blocked by the node firewall'
+}
+if poll_until 30 exposure_note_ok; then
+    assert "MET-A23 STATUS_EXPOSURE_NOTE" 0
+else
+    fcli metrics status || true
+    assert "MET-A23 STATUS_EXPOSURE_NOTE" 1 "the honest exposure note is missing from metrics status (on)"
 fi
 
 # ───────── A16: mode set unset（三件移除 + 卷保留 + removed 事件）

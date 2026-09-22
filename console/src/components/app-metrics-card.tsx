@@ -175,8 +175,9 @@ export function AppMetricsCard({ app }: AppMetricsCardProps) {
         <CardContent className="space-y-3 pt-4">
           <p className="text-sm text-muted-foreground">
             Container metrics are opt-in. Enabling deploys a managed VictoriaMetrics /
-            cAdvisor / node-exporter stack (loopback-only; ≈110–165 MB memory) and adds
-            resource charts plus per-replica watermarks here.
+            cAdvisor / node-exporter stack (VictoriaMetrics query face is loopback-only
+            on the manager; collectors are reachable over the node VPC/LAN face;
+            ≈110–165 MB memory) and adds resource charts plus per-replica watermarks here.
           </p>
           {enable.isError ? (
             <EnvelopeAlertFrom envelope={errorEnvelopeFrom(enable.error)} />
