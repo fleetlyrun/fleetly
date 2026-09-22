@@ -9,6 +9,36 @@ addr: "127.0.0.1:8420"
 grpc:
   addr: "127.0.0.1:8421"
 
+# 控制面 TLS（V2-8，web 终端专项设计 §3.1）：8420（REST/gateway + /ui +
+# healthz）与 8421（gRPC）双面同证书 TLS 化。off（缺省）= 今日明文行为
+# 逐字不变（单节点 localhost 形态不受影响）。不做 mTLS/客户端证书——
+# Bearer token 仍是唯一认证。
+control_plane:
+  tls:
+    # TLS 模式：
+    #   off      明文（缺省/留空）。
+    #   platform 复用平台证书（_fleetly-platform 多 SAN 单证书：ctrl/
+    #            registry/console.<base>；LE 签发与续期由平台证书 duty 承
+    #            接）。要求 base_domain 非空（否则启动报错）。证书续期落
+    #            盘后热重载（约 60s 内生效，新连接用新证书）。证书就绪前
+    #            TLS 面照常监听、握手失败（等待签发的诚实形态，日志有
+    #            warn/ready 锚点）。
+    #   manual   显式证书对（cert_file/key_file；启动即校验可读，缺失报
+    #            错）。证书更换需重启生效。
+    mode: off
+    # manual 模式的证书链 PEM 与私钥 PEM 路径（platform 模式忽略）。
+    cert_file: ""
+    key_file: ""
+    # 最低 TLS 协议版本：tls1.2（缺省）| tls1.3。
+    min_version: tls1.2
+
+# TLS on 后的访问口径（CLI/SDK/Console）：
+#   CLI/SDK —— --tls（校验证书，ServerName = 所拨主机名）/ --tls-insecure
+#   （显式跳过校验）或 env FLEETLY_TLS=true|insecure；两旗标互斥。
+#   Console —— 经 https://<SAN 主机>:8420 访问（platform 模式即
+#   https://console.<base>:8420，需 DNS A 记录指到 manager）。IP 直连会有
+#   证书名不匹配（浏览器例外，或换用 SAN 主机名）。
+
 # 状态层（SQLite 权威态 + 底座观测缓存）。
 state:
   # 状态库文件路径（启动即建库并应用迁移）。

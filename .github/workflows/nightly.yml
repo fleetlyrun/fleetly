@@ -606,6 +606,36 @@ jobs:
           docker ps -aq --filter name=fleetly-n-e2e- | xargs -r docker rm -f
           docker network rm fleetly-n-br || true
 
+  control-plane-tls-e2e:
+    # V2-8 控制面 TLS 端到端（E7 同批，e2e/control-plane-tls.sh 单 dind；
+    # web 终端专项设计 §3.4，notifications 同骨架——编排自足、镜像钉
+    # digest）。manual 模式自签证书（宿主 openssl，SAN=ctrl.test.local+
+    # IP:127.0.0.1；校验信任面 = Go SSL_CERT_FILE 标准行为）：TLS-1 HTTP 面
+    # （liveness+landing）→ TLS-2 gRPC 面 --tls-insecure 读+写 → TLS-3 明文
+    # 双面拒绝 → TLS-4 --tls 经 SAN 主机名校验通过 → TLS-5 SAN 外主机名拒 →
+    # TLS-6 旗标互斥 → TLS-7 platform 空 base_domain loud-fail → TLS-8 off
+    # 模式回归（明文逐字可回）。
+    name: control-plane tls e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run control-plane tls e2e (dind)
+        run: sh e2e/control-plane-tls.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-t-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-t-e2e- | xargs -r docker rm -f
+          docker network rm fleetly-t-br || true
+
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:
     # Builder conformance（ObjectStore 部分已随 E3-7 落地为

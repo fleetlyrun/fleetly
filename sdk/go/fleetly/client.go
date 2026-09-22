@@ -7,9 +7,11 @@ package fleetly
 
 import (
 	"context"
+	"crypto/tls"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 )
 
@@ -24,10 +26,43 @@ type clientConfig struct {
 	addr        string
 	token       string
 	dialOptions []grpc.DialOption
+	// tlsCfg 是显式 TLS 客户端配置（WithTLS；nil = 未显式给全量配置）。
+	tlsCfg *tls.Config
+	// tlsInsecure 是「TLS 拨号但跳过证书校验」开关（WithTLSInsecure）。
+	tlsInsecure bool
 }
 
 // WithAddr 覆盖 gRPC 目标地址（默认 127.0.0.1:8421）。
 func WithAddr(addr string) Option { return func(c *clientConfig) { c.addr = addr } }
+
+// WithTLS 启用 TLS 拨号并校验服务端证书：cfg 至少装配信任面（RootCAs 指向
+// 控制面证书的 CA——platform 模式即 LE 根，私 CA 场景经 ca_pool_file 体系；
+// 或系统信任池）。ServerName 缺省取拨号地址的 host 位（tls.Config 零值语
+// 义）——拨 IP 直连时按需显式设 cfg.ServerName 为证书 SAN 名（如
+// ctrl.<base>）。与 WithTLSInsecure 同传时本选项优先（全量配置更明确）。
+func WithTLS(cfg *tls.Config) Option { return func(c *clientConfig) { c.tlsCfg = cfg } }
+
+// WithTLSInsecure 启用 TLS 拨号但跳过证书校验（staging 自签/IP 直连的显式
+// 旁路——等价 WithTLS(&tls.Config{InsecureSkipVerify: true})，传输仍加密，
+// 只是不验链；不要对公网控制面使用）。
+func WithTLSInsecure() Option { return func(c *clientConfig) { c.tlsInsecure = true } }
+
+// transportCredentials 按解析序装配传输凭据：显式 TLS 配置 > insecure 开关
+// > 明文（缺省——存量单节点回环形态逐字兼容）。
+func (c *clientConfig) transportCredentials() credentials.TransportCredentials {
+	switch {
+	case c.tlsCfg != nil:
+		return credentials.NewTLS(c.tlsCfg)
+	case c.tlsInsecure:
+		return credentials.NewTLS(&tls.Config{InsecureSkipVerify: true}) //nolint:gosec // G402：WithTLSInsecure 的显式语义
+	default:
+		return insecure.NewCredentials()
+	}
+}
+
+// tlsSelected 报告拨号是否走 TLS（明文 = false）——Bearer 凭据的
+// RequireTransportSecurity 跟随之（见 bearerCredentials）。
+func (c *clientConfig) tlsSelected() bool { return c.tlsCfg != nil || c.tlsInsecure }
 
 // WithToken 设置 Bearer token：经 PerRPCCredentials 挂进每个请求的
 // authorization metadata（含流式首帧）。token 只进请求 metadata，不进
@@ -63,21 +98,24 @@ type Client struct {
 	secs    serverv1.SecretsServiceClient
 }
 
-// NewClient 建立 gRPC 连接（默认 127.0.0.1:8421，明文；连接惰性建立，
-// TLS 随鉴权阶段〔D21 拦截器链〕引入）。调用方负责 Close。
+// NewClient 建立 gRPC 连接（默认 127.0.0.1:8421，明文——TLS 经 WithTLS/
+// WithTLSInsecure 显式启用，V2-8；连接惰性建立）。调用方负责 Close。
 func NewClient(opts ...Option) (*Client, error) {
 	cfg := clientConfig{addr: DefaultAddr}
 	for _, opt := range opts {
 		opt(&cfg)
 	}
 	dialOpts := append(
-		[]grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())},
+		[]grpc.DialOption{grpc.WithTransportCredentials(cfg.transportCredentials())},
 		cfg.dialOptions...,
 	)
 	// token 非空才挂凭据——空 token 让服务端以 401 显式拒绝（信封退化
-	// 形态），客户端侧不伪造「已鉴权」表象。
+	// 形态），客户端侧不伪造「已鉴权」表象。凭据的 RequireTransportSecurity
+	// 跟随拨号面：TLS 拨号 = true（凭据拒绝经明文连接发送），明文拨号 =
+	// false（存量兼容——gRPC 会对「要求安全却走明文」的请求面直接失败，
+	// 不存在静默降级）。
 	if cfg.token != "" {
-		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(bearerCredentials(cfg.token)))
+		dialOpts = append(dialOpts, grpc.WithPerRPCCredentials(bearerCredentials{token: cfg.token, requireTLS: cfg.tlsSelected()}))
 	}
 	conn, err := grpc.NewClient(cfg.addr, dialOpts...)
 	if err != nil {
@@ -108,16 +146,22 @@ func NewClient(opts ...Option) (*Client, error) {
 
 // bearerCredentials 是 Bearer token 的 PerRPCCredentials 实现：每个请求
 // （一元与流式）自动携带 authorization metadata。
-type bearerCredentials string
-
-func (b bearerCredentials) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
-	return map[string]string{"authorization": "Bearer " + string(b)}, nil
+type bearerCredentials struct {
+	token string
+	// requireTLS 报告凭据是否只经 TLS 连接发送（V2-8，设计 §3.2）：跟随
+	// 拨号面——TLS 拨号（WithTLS/WithTLSInsecure）= true，gRPC 传输层据此
+	// 拒绝把凭据发上明文连接（安全面由传输凭据与凭据声明一致性强制，不靠
+	// 调用方自律）；明文拨号（缺省）= false——v0.1 控制面缺省明文回环
+	//（fleetlyd 默认只绑 127.0.0.1）的存量形态逐字兼容。
+	requireTLS bool
 }
 
-// RequireTransportSecurity 报告凭据是否要求 TLS：false——v0.1 控制面缺省
-// 明文回环（fleetlyd 默认只绑 127.0.0.1），TLS 随鉴权阶段引入后由调用方
-// 经 WithDialOptions 切换。
-func (b bearerCredentials) RequireTransportSecurity() bool { return false }
+func (b bearerCredentials) GetRequestMetadata(_ context.Context, _ ...string) (map[string]string, error) {
+	return map[string]string{"authorization": "Bearer " + b.token}, nil
+}
+
+// RequireTransportSecurity 报告凭据是否要求 TLS：跟随拨号面（见字段注释）。
+func (b bearerCredentials) RequireTransportSecurity() bool { return b.requireTLS }
 
 // System 取系统/集群观察面（Ping/Status/Nodes/Ingress）。
 func (c *Client) System() serverv1.SystemServiceClient { return c.system }

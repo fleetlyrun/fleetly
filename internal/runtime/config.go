@@ -1,7 +1,10 @@
 package runtime
 
 import (
+	"crypto/tls"
+	"fmt"
 	"net"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -80,6 +83,9 @@ type AppConfig struct {
 	Webhook WebhookConfig `mapstructure:"webhook"`
 	// Console 是 Console 端静态托管配置节（config 键 console.*，T2.21）。
 	Console ConsoleConfig `mapstructure:"console"`
+	// ControlPlane 是控制面自身配置节（config 键 control_plane.*，E7 同批
+	// V2-8；本节只承载 TLS 基座——8420/8421 双面的服务端证书面）。
+	ControlPlane ControlPlaneConfig `mapstructure:"control_plane"`
 	// Backup 是状态备份配置节（config 键 backup.*，T2.22；缺省值经
 	// statebackup.Config.Normalize 回落——单一事实源在 internal/statebackup）。
 	Backup BackupConfig `mapstructure:"backup"`
@@ -135,6 +141,101 @@ type ConsoleConfig struct {
 	// console/dist（`pnpm build` 产物）时 gateway 在 /ui/ 前缀托管静态文件
 	// 并做 SPA 回退（未命中文件的路径一律回 index.html）。
 	StaticDir string `mapstructure:"static_dir"`
+}
+
+// ControlPlaneConfig 是控制面自身配置节（config 键 control_plane.*，E7
+// 同批 V2-8：控制面 TLS 专项设计 §3.1）。静态配置项——mode 改动需重启。
+type ControlPlaneConfig struct {
+	// TLS 是控制面 TLS 配置子节（config 键 control_plane.tls.*）。
+	TLS ControlPlaneTLSConfig `mapstructure:"tls"`
+}
+
+// ControlPlaneTLSConfig 是控制面双面（8420 HTTP / 8421 gRPC）TLS 配置
+//（E7 同批 V2-8，设计 §3.1：off = 今日行为零变化；platform 复用平台证书
+// ——LE 签发/续期由平台证书 duty 既有机制承接；manual = 显式证书文件对）。
+// 不含 mTLS/客户端证书（v0.2 不做——Bearer 仍是唯一认证）。
+type ControlPlaneTLSConfig struct {
+	// Mode 是 TLS 模式（control_plane.tls.mode）：off（缺省/空串，明文）|
+	// platform（复用平台证书，需 base_domain 非空）| manual（cert_file/
+	// key_file 显式证书对）。
+	Mode string `mapstructure:"mode"`
+	// CertFile 是 manual 模式的证书链 PEM 路径（control_plane.tls.cert_file）。
+	CertFile string `mapstructure:"cert_file"`
+	// KeyFile 是 manual 模式的私钥 PEM 路径（control_plane.tls.key_file）。
+	KeyFile string `mapstructure:"key_file"`
+	// MinVersion 是最低 TLS 版本（control_plane.tls.min_version）：空串 =
+	// tls1.2（缺省）；取值 tls1.2 | tls1.3。
+	MinVersion string `mapstructure:"min_version"`
+}
+
+// 控制面 TLS 模式常量（ControlPlaneTLSConfig.Mode 的归一取值）。
+const (
+	ControlPlaneTLSOff      = "off"
+	ControlPlaneTLSPlatform = "platform"
+	ControlPlaneTLSManual   = "manual"
+)
+
+// TLSMode 返回归一后的控制面 TLS 模式：空串回落 off（缺省 = 今日明文行为
+// 逐字不变）；未知值原样返回（由 ValidateControlPlaneTLS 启动期 loud-fail
+// ——校验与归一分离，本方法不做报错）。
+func (c *AppConfig) TLSMode() string {
+	switch c.ControlPlane.TLS.Mode {
+	case "":
+		return ControlPlaneTLSOff
+	default:
+		return c.ControlPlane.TLS.Mode
+	}
+}
+
+// TLSMinVersion 返回最低 TLS 协议版本（tls.Config.MinVersion 用）：空串 =
+// TLS 1.2（缺省基线，gosec 口径）；未知值返回 0（由 ValidateControlPlaneTLS
+// 报错拦截——0 不是合法 tls.Config 版本常量，防御性不至于静默放行）。
+func (c *AppConfig) TLSMinVersion() uint16 {
+	switch c.ControlPlane.TLS.MinVersion {
+	case "", "tls1.2":
+		return tls.VersionTLS12
+	case "tls1.3":
+		return tls.VersionTLS13
+	default:
+		return 0
+	}
+}
+
+// ValidateControlPlaneTLS 校验控制面 TLS 配置（启动期 loud-fail，装配期
+// NewControlPlaneTLS 调用）：mode 取值合法；platform 需 base_domain 非空
+//（平台证书 duty 依赖它签发/落盘）；manual 需 cert_file/key_file 双路径
+// 且文件可读。off（缺省）无约束——cert_file 等键在 off 下被忽略（不报错，
+// 键位只增惯例下的宽容口径）。
+func (c *AppConfig) ValidateControlPlaneTLS() error {
+	switch mode := c.TLSMode(); mode {
+	case ControlPlaneTLSOff:
+		return nil
+	case ControlPlaneTLSPlatform:
+		if c.BaseDomain == "" {
+			return fmt.Errorf("control_plane.tls.mode=platform requires base_domain to be set (the platform certificate duty issues and stores the certificate under it)")
+		}
+		if c.TLSMinVersion() == 0 {
+			return fmt.Errorf("control_plane.tls.min_version: unknown value %q (supported: tls1.2, tls1.3)", c.ControlPlane.TLS.MinVersion)
+		}
+		return nil
+	case ControlPlaneTLSManual:
+		if c.ControlPlane.TLS.CertFile == "" || c.ControlPlane.TLS.KeyFile == "" {
+			return fmt.Errorf("control_plane.tls.mode=manual requires control_plane.tls.cert_file and control_plane.tls.key_file")
+		}
+		for _, path := range []string{c.ControlPlane.TLS.CertFile, c.ControlPlane.TLS.KeyFile} {
+			f, err := os.Open(path) //nolint:gosec // G304：路径为操作者配置文件的显式配置项
+			if err != nil {
+				return fmt.Errorf("control_plane.tls: %w", err)
+			}
+			_ = f.Close()
+		}
+		if c.TLSMinVersion() == 0 {
+			return fmt.Errorf("control_plane.tls.min_version: unknown value %q (supported: tls1.2, tls1.3)", c.ControlPlane.TLS.MinVersion)
+		}
+		return nil
+	default:
+		return fmt.Errorf("control_plane.tls.mode: unknown value %q (supported: off, platform, manual)", mode)
+	}
 }
 
 // LogsConfig 是日志管线配置节（config 键 logs.*）。字段与 internal/logs.

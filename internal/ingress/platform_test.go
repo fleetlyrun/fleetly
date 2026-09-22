@@ -429,3 +429,34 @@ func TestTLSHandshakeGatedByCert(t *testing.T) {
 		t.Fatalf("served cert SANs = %v, want %v", peer[0].DNSNames, m.PlatformDomains())
 	}
 }
+
+// TestPlatformCertPathsAndTLSName S6 预留钩子（E7 §3.3 参数面，W5-S5 只导
+// 出不消费）：路径指向平台证书库的 crt/key 真源文件、TLS 名 = ctrl.<base>；
+// base_domain 为空显式报错（与 ConfigTLSEnabled 门禁同口径）。
+func TestPlatformCertPathsAndTLSName(t *testing.T) {
+	m, _, _, _ := newPlatformTestManager(t, "example.test")
+	certFile, keyFile, err := m.PlatformCertPaths()
+	if err != nil {
+		t.Fatalf("PlatformCertPaths: %v", err)
+	}
+	wantCert := filepath.Join(m.cfg.CertDir, "_fleetly-platform.crt")
+	wantKey := filepath.Join(m.cfg.CertDir, "_fleetly-platform.key")
+	if certFile != wantCert || keyFile != wantKey {
+		t.Fatalf("platform cert paths = (%s, %s), want (%s, %s)", certFile, keyFile, wantCert, wantKey)
+	}
+	name, err := m.PlatformTLSName()
+	if err != nil {
+		t.Fatalf("PlatformTLSName: %v", err)
+	}
+	if name != "ctrl.example.test" {
+		t.Fatalf("platform TLS name = %q, want %q", name, "ctrl.example.test")
+	}
+
+	empty, _, _, _ := newPlatformTestManager(t, "")
+	if _, _, err := empty.PlatformCertPaths(); err == nil {
+		t.Fatal("PlatformCertPaths with empty base_domain must fail")
+	}
+	if _, err := empty.PlatformTLSName(); err == nil {
+		t.Fatal("PlatformTLSName with empty base_domain must fail")
+	}
+}

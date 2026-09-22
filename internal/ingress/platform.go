@@ -74,6 +74,28 @@ func (m *Manager) PlatformTLSCertificate() (*tls.Certificate, error) {
 	return &cert, nil
 }
 
+// PlatformCertPaths 返回平台证书的落盘文件路径（cert/key PEM，cert_dir
+// 真源——路径公式单源在 certStore）。控制面 TLS platform 模式（V2-8）的
+// 证书读取入口；E7 §3.3 的 exec relay duty（S6）同样经此取路径下发给
+// relay 任务做拨号参数。base_domain 为空返回错误（无平台证书可言——调用
+// 方先以 ConfigTLSEnabled/自身配置门禁把关）。
+func (m *Manager) PlatformCertPaths() (certFile, keyFile string, err error) {
+	if !m.ConfigTLSEnabled() {
+		return "", "", fmt.Errorf("ingress: platform certificate paths unavailable (base_domain is not configured)")
+	}
+	return m.certs.certPath(platformCertApp), m.certs.keyPath(platformCertApp), nil
+}
+
+// PlatformTLSName 返回平台证书 SAN 中承载控制面的主机名（ctrl.<base>）：
+// exec relay（S6，设计 §3.3）拨 advertise IP 但按此名做 TLS 校验的
+// ServerName 下发源。base_domain 为空返回错误（同 PlatformCertPaths 口径）。
+func (m *Manager) PlatformTLSName() (string, error) {
+	if !m.ConfigTLSEnabled() {
+		return "", fmt.Errorf("ingress: platform TLS name unavailable (base_domain is not configured)")
+	}
+	return "ctrl." + m.cfg.BaseDomain, nil
+}
+
 // ensurePlatformCertificate 确保平台证书就绪：缺/进续期窗口才签发，已健
 // 康直接返回既有证书对。签发共用 issueMu 互斥 + obtainFn 注入缝 + 账号
 // 自愈（obtainPEMWithHeal）；失败写 cert 审计 error 行（renewing 区分

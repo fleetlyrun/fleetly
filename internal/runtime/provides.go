@@ -84,6 +84,7 @@ var ProviderSet = wire.NewSet(
 	NewGitTriggers,
 	NewGitKeysService,
 	NewGRPCServer,
+	NewControlPlaneTLS,
 	NewHTTPServer,
 	NewServices,
 	NewServiceFactories,
@@ -643,7 +644,7 @@ func NewTokensService(st *state.Store) *api.TokensService {
 //
 // M4-3：经 WithServerOptions 放宽 WriteTimeout（见 tuneHTTPServer——lynx
 // 缺省 60s 绝对超时会静默掐断 /v1/events/stream 与 logs stream）。
-func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers) (*lynxhttp.Server, error) {
+func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl *ControlPlaneTLS) (*lynxhttp.Server, error) {
 	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
 	if err != nil {
 		return nil, err
@@ -656,12 +657,19 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers) (*l
 		}
 	}
 	root := newRootHandler(gitserver.NewWebhookHandler(src), consoleUI, mux)
-	return lynxhttp.NewServer(root,
+	opts := []lynxhttp.Option{
 		lynxhttp.WithAddr(cfg.Addr),
 		lynxhttp.WithHealthCheckers(app.HealthCheckers),
 		lynxhttp.WithLogger(app.Logger("logger", "http-requestlog")),
 		lynxhttp.WithServerOptions(tuneHTTPServer),
-	), nil
+	}
+	// V2-8（E7 同批）：control_plane.tls 非 off 时 HTTP 面 TLS 化（gateway +
+	// native 端点 + /ui + healthz 同证书——双面单端口形态不变，只是传输层
+	// 换 TLS）。off（缺省）不加选项 = 今日明文行为逐字不变。
+	if ctl != nil {
+		opts = append(opts, lynxhttp.WithTLSConfig(ctl.TLSConfig()))
+	}
+	return lynxhttp.NewServer(root, opts...), nil
 }
 
 // streamWriteTimeout 是长驻流式端点的 WriteTimeout（M4-3）：15 分钟——

@@ -28,6 +28,7 @@ import (
 func NewGRPCServer(
 	app lynx.App,
 	cfg *AppConfig,
+	ctl *ControlPlaneTLS,
 	auth *api.Authenticator,
 	apps *api.AppsService,
 	deploys *api.DeploymentsService,
@@ -52,7 +53,10 @@ func NewGRPCServer(
 	if err != nil {
 		return nil, fmt.Errorf("construct protovalidate validator: %w", err)
 	}
-	srv := lynxgrpc.NewServer(
+	// V2-8（E7 同批）：control_plane.tls 非 off 时 gRPC 面 TLS 化——证书经
+	// GetCertificate 闭包供给（platform 模式热重载 / manual 装配期加载，
+	// 见 tls.go）。off（缺省）不加 TLS 选项 = 今日明文行为逐字不变。
+	opts := []lynxgrpc.Option{
 		lynxgrpc.WithAddr(cfg.GRPCAddr()),
 		lynxgrpc.WithLogger(app.Logger()),
 		lynxgrpc.WithHealthCheckers(app.HealthCheckers),
@@ -65,7 +69,11 @@ func NewGRPCServer(
 		lynxgrpc.WithStreamInterceptors(
 			auth.StreamAuthInterceptor(),
 		),
-	)
+	}
+	if ctl != nil {
+		opts = append(opts, lynxgrpc.WithTLSConfig(ctl.TLSConfig()))
+	}
+	srv := lynxgrpc.NewServer(opts...)
 	g := srv.GetServer()
 	serverv1.RegisterSystemServiceServer(g, sys)
 	serverv1.RegisterAppsServiceServer(g, apps)

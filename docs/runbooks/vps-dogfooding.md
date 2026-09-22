@@ -181,4 +181,22 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 - 演练应用退出码敏感:`sleep 60` 在部署观察窗内退出 0→`E_OBSERVE_UNHEALTHY`;常驻容器用 `sleep infinity`。
 - 复杂远程操作一律脚本化(scp+sh)——cmd→ssh→sh 三层引号不可手工内联。
 
+## 10. 控制面 TLS 开启与 Console 访问口径(W5-S5,2026-09-22)
+
+控制面双面(8420 HTTP / 8421 gRPC)默认明文;开启 TLS 改 `control_plane.tls.mode`(web 终端专项设计 §3.1,键位注释见 config-example.yaml):
+
+- **platform 模式**(推荐,`base_domain` 非空时):复用平台证书(LE 签发/续期由平台证书 duty 承接),证书续期落盘后约 60s 内热重载(新连接用新证书);证书就绪前 TLS 面照常监听、握手失败(日志有 warn/ready 锚点),等待签发的空窗属正常。
+- **manual 模式**:自备证书对(`cert_file`/`key_file`),启动即校验可读,缺失报错拒绝启动;证书更换需重启生效。
+- 最低协议版本 `control_plane.tls.min_version`(缺省 tls1.2)。不做 mTLS/客户端证书——Bearer token 仍是唯一认证。
+
+**TLS on 后的访问口径**:
+
+| 面 | 地址/用法 |
+|---|---|
+| Console | `https://<SAN 主机>:8420/ui/`(platform 模式即 `https://console.<base>:8420`——需 DNS A 记录指到 manager;IP 直连会有证书名不匹配,浏览器例外或换 SAN 主机名) |
+| REST /v1 | 同上 `https://<SAN 主机>:8420/v1/**`(Bearer 不变) |
+| CLI | `--tls`(校验,ServerName=所拨主机名)/`--tls-insecure`(显式跳过校验)/env `FLEETLY_TLS=true\|insecure`;两旗标互斥;缺省明文(存量兼容) |
+| SDK | `WithTLS(*tls.Config)` / `WithTLSInsecure()`;TLS 拨号时 Bearer 凭据自动要求传输安全 |
+
+
 

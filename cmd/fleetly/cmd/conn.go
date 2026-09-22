@@ -10,11 +10,13 @@ package cmd
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"flag"
 	"fmt"
 	"math"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -69,28 +71,72 @@ type timestampProto = timestamppb.Timestamp
 type connFlags struct {
 	addr  string
 	token string
+	// tlsModeFlag / tlsInsecureFlag 是 --tls / --tls-insecure 的旗标位
+	//（V2-8，E7 同批）：显式旗标优先于 FLEETLY_TLS env；两旗标互斥。
+	tlsFlag         bool
+	tlsInsecureFlag bool
 }
 
-// register 把 --addr/--token 挂进动词 flag 集（--addr 缺省回落环境变量
-// ——CI/脚本形态无需逐命令传参）。--token 的默认值必须保持空串（H1）：
-// std flag 的 -h/help 会把非空默认值明文打进 stdout，帮助输出常被贴进
-// 工单/CI 日志/AI 会话——env 回落挪到消费点 dial() 里做，-h 面永不出现
-// token 本体。
+// register 把 --addr/--token/--tls/--tls-insecure 挂进动词 flag 集（--addr
+// 缺省回落环境变量——CI/脚本形态无需逐命令传参）。--token 的默认值必须
+// 保持空串（H1）：std flag 的 -h/help 会把非空默认值明文打进 stdout，帮助
+// 输出常被贴进工单/CI 日志/AI 会话——env 回落挪到消费点 dial() 里做，-h
+// 面永不出现 token 本体。--tls/--tls-insecure 缺省 false（缺省明文——存量
+// 单节点 localhost 形态逐字兼容）；FLEETLY_TLS 在消费点解析（与 token 同
+// 款纪律：旗标 > env）。
 func (f *connFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.addr, "addr", envOrDefault("FLEETLY_ADDR", fleetly.DefaultAddr), "fleetlyd gRPC address")
 	fs.StringVar(&f.token, "token", "", "API token (env: FLEETLY_TOKEN; bootstrap token: see <data-root>/bootstrap-token)")
+	fs.BoolVar(&f.tlsFlag, "tls", false, "dial the control plane over TLS and verify the server certificate (ServerName = host in --addr; env: FLEETLY_TLS=true)")
+	fs.BoolVar(&f.tlsInsecureFlag, "tls-insecure", false, "dial over TLS but skip certificate verification (explicit opt-out; mutually exclusive with --tls; env: FLEETLY_TLS=insecure)")
+}
+
+// resolveTLS 解析 --tls/--tls-insecure 与 FLEETLY_TLS env（旗标 > env）：
+// 返回客户端 tls.Config（nil = 明文拨号，存量兼容）。校验失败（两旗标同
+// 传 / env 值非法）返回可行动错误——不静默降级到明文（把「想加密却没加密」
+// 假装成功比失败更糟）。
+func (f *connFlags) resolveTLS() (*tls.Config, error) {
+	switch {
+	case f.tlsFlag && f.tlsInsecureFlag:
+		return nil, fmt.Errorf("--tls and --tls-insecure are mutually exclusive")
+	case f.tlsFlag:
+		return &tls.Config{MinVersion: tls.VersionTLS12}, nil
+	case f.tlsInsecureFlag:
+		// 显式旁路校验（staging 自签/IP 直连形态）：ServerName 仍随拨号
+		// 主机名，只是不验链。
+		return &tls.Config{InsecureSkipVerify: true}, nil //nolint:gosec // G402：--tls-insecure 是显式旗标语义
+	}
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("FLEETLY_TLS"))) {
+	case "":
+		return nil, nil
+	case "true":
+		return &tls.Config{MinVersion: tls.VersionTLS12}, nil
+	case "insecure":
+		return &tls.Config{InsecureSkipVerify: true}, nil //nolint:gosec // G402：FLEETLY_TLS=insecure 的显式语义
+	default:
+		return nil, fmt.Errorf("FLEETLY_TLS: invalid value %q (supported: true, insecure)", os.Getenv("FLEETLY_TLS"))
+	}
 }
 
 // dial 建立 SDK 客户端（连接惰性建立；Close 交还调用方）。一元 RPC 的
 // 缺省 deadline 拦截器随连接挂载（S17-D3）。token 在此消费点回落
-// FLEETLY_TOKEN（H1：flag 默认值置空防 -h 回显，env 语义不变）。
+// FLEETLY_TOKEN（H1：flag 默认值置空防 -h 回显，env 语义不变）。TLS 面
+// 在此解析（--tls/--tls-insecure 旗标 + FLEETLY_TLS env，见 resolveTLS）
+// ——TLS 拨号时 SDK 侧凭据自动要求传输安全（RequireTransportSecurity 跟随）。
 func (f *connFlags) dial() (*fleetly.Client, error) {
 	token := f.token
 	if token == "" {
 		token = os.Getenv("FLEETLY_TOKEN")
 	}
+	tlsCfg, err := f.resolveTLS()
+	if err != nil {
+		return nil, err
+	}
 	dialOpts := append([]grpc.DialOption{grpc.WithUnaryInterceptor(defaultUnaryTimeout)}, extraDialOptions...)
 	opts := []fleetly.Option{fleetly.WithAddr(f.addr), fleetly.WithDialOptions(dialOpts...)}
+	if tlsCfg != nil {
+		opts = append(opts, fleetly.WithTLS(tlsCfg))
+	}
 	if token != "" {
 		opts = append(opts, fleetly.WithToken(token))
 	}
