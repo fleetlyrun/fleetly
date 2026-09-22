@@ -154,6 +154,17 @@ func (m *Manager) converge(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	// 实况网络挂载目标（创建期被 engine 归一为网络 ID——"host" 亦然）解析
+	// 回名后同锚比对；解析失败显式退避重试，不误判漂移（W5-S3 门上移植自
+	// internal/metrics——此前每拍 ID≠名恒判漂移：ServiceUpdate 空转 + deployed
+	// 事件每拍重发）。
+	for i, t := range cur.Networks {
+		n, err := m.docker.NetworkName(ctx, t)
+		if err != nil {
+			return err
+		}
+		cur.Networks[i] = n
+	}
 	switch {
 	case !cur.Exists:
 		if err := m.docker.ServiceCreate(ctx, desired); err != nil {

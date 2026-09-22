@@ -545,6 +545,36 @@ jobs:
           docker ps -aq --filter name=fleetly-vl- | xargs -r docker rm -f
           docker network rm fleetly-vl-br || true
 
+  metrics-e2e:
+    # E6 W5-S3 托管 metrics 三件套端到端（e2e/metrics.sh 单 dind；
+    # D-W5-2 opt-in，logs-victorialogs 同骨架——编排自足、镜像钉 digest 与
+    # internal/metrics spec 常量及 image-prepull 台账 #15/#16/#17 多锚同源）：
+    # A1 缺省零常驻（unset 生效）→ A3 mode set on → A4 三件收敛 → A6 VM
+    # 回环健康 → A7 采集器回环 → A8 抓取收敛（nodes_reporting 1/1）→
+    # A9-A14 查询面（up 双 job / 节点维度 / 容器维度 / swarm service 归属
+    # 标签实测形态 / CLI 人读形态）→ A16-A18 unset 移除 + 卷保留 +
+    # stack_removed → A19 关闭后 E_METRICS_NOT_ENABLED 诚实报错。
+    name: metrics e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run metrics e2e (dind)
+        run: sh e2e/metrics.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-m-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-m- | xargs -r docker rm -f
+          docker network rm fleetly-m-br || true
+
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:
     # Builder conformance（ObjectStore 部分已随 E3-7 落地为

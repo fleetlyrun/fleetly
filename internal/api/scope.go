@@ -86,6 +86,13 @@ var methodScopes = map[string]string{
 	// SetDriftConverge 的 opt-in 置位同级；无凭据材料，不到 admin）。
 	"/fleetly.server.v1.LogsService/GetLogsBackend": ScopeRead,
 	"/fleetly.server.v1.LogsService/SetLogsBackend": ScopeDeploy,
+	// MetricsService（E6 W5-S3，D-W5-2 opt-in）：查询与状态 = read
+	//（PromQL 透传是操作员工具——设计 §4.2；能看日志检索就能查指标）；
+	// 模式切换 = deploy（写运行域语义——opt-in 置位触发三件套部署/移除，
+	// 与 SetLogsBackend 同级理由；无凭据材料，不到 admin）。
+	"/fleetly.server.v1.MetricsService/SearchMetrics":    ScopeRead,
+	"/fleetly.server.v1.MetricsService/GetMetricsStatus": ScopeRead,
+	"/fleetly.server.v1.MetricsService/SetMetricsMode":   ScopeDeploy,
 	// EventsService
 	"/fleetly.server.v1.EventsService/WatchEvents": ScopeRead,
 	// PlacementService
@@ -113,27 +120,27 @@ var methodScopes = map[string]string{
 	// 与设置写面（create/delete/suspend/resume/retry/settings）= admin
 	// ——delete 是数据安全破坏性操作（引用守卫 + confirm 两段式），settings
 	// 直改资源限额/备份计划，与 app 删除同级信任，不随 deploy 下放。
-	"/fleetly.server.v1.DatabaseService/GetDatabase":             ScopeRead,
-	"/fleetly.server.v1.DatabaseService/ListDatabases":           ScopeRead,
-	"/fleetly.server.v1.DatabaseService/CreateDatabase":          ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/DeleteDatabase":          ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/SuspendDatabase":         ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/ResumeDatabase":          ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/RetryDatabase":           ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/UpdateDatabaseSettings":  ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/GetDatabase":            ScopeRead,
+	"/fleetly.server.v1.DatabaseService/ListDatabases":          ScopeRead,
+	"/fleetly.server.v1.DatabaseService/CreateDatabase":         ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/DeleteDatabase":         ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/SuspendDatabase":        ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/ResumeDatabase":         ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/RetryDatabase":          ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/UpdateDatabaseSettings": ScopeAdmin,
 	// E4 W4-S4（managed-databases §2.5）：rotate = 破坏性两段式数据安全操作
 	// （引用 app 被自动重部署），admin 与 delete 同级；reveal = 密码明文显式
 	// 展开（admin 更严面——与 env GetEnv 同级信任）。
-	"/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials":    ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials":    ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/RotateDatabaseCredentials": ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/RevealDatabaseCredentials": ScopeAdmin,
 	// E4 W4-S5（managed-databases §2.6）：备份列表 = read（台账只读事实面）；
 	// 备份触发/恢复/升级 = admin（恢复与升级是破坏性两段式数据安全操作——
 	// 原地重放覆盖数据卷、受控重建有停机窗口，与 delete 同级；备份触发直写
 	// 远端 repo，写面语义与平台备份 TriggerBackup 同口径）。
-	"/fleetly.server.v1.DatabaseService/ListDatabaseBackups":    ScopeRead,
-	"/fleetly.server.v1.DatabaseService/TriggerDatabaseBackup":  ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/RestoreDatabaseBackup":  ScopeAdmin,
-	"/fleetly.server.v1.DatabaseService/UpgradeDatabase":        ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/ListDatabaseBackups":   ScopeRead,
+	"/fleetly.server.v1.DatabaseService/TriggerDatabaseBackup": ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/RestoreDatabaseBackup": ScopeAdmin,
+	"/fleetly.server.v1.DatabaseService/UpgradeDatabase":       ScopeAdmin,
 	// SecretsService（E4 W4-S4，D-DB-7）：set/remove = admin（密钥写面与
 	// webhook secret/env 明文同级信任）；list = read（只出名称/指纹——与
 	// ListEnv 同口径，值零出现）。

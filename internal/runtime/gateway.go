@@ -83,6 +83,7 @@ func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 		serverv1.RegisterDomainsServiceHandlerFromEndpoint,
 		serverv1.RegisterEnvServiceHandlerFromEndpoint,
 		serverv1.RegisterLogsServiceHandlerFromEndpoint,
+		serverv1.RegisterMetricsServiceHandlerFromEndpoint, // E6 W5-S3：metrics opt-in 面（PromQL 查询/状态/模式切换）
 		serverv1.RegisterEventsServiceHandlerFromEndpoint,
 		serverv1.RegisterPlacementServiceHandlerFromEndpoint,
 		serverv1.RegisterTokensServiceHandlerFromEndpoint,

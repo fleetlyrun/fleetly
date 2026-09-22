@@ -106,6 +106,10 @@ var docCodes = map[string]string{ // code → 文档出处
 
 	// E6 观测（observability 设计 §3.1，W5-S1 接线，注册表只增）。
 	"E_LOGS_BACKEND_UNAVAILABLE": "E6 observability §3.1 (search face unavailable: backend=jsonl or VictoriaLogs unreachable; live tail unaffected)",
+	// E6 观测（observability 设计 §4.2，W5-S3 接线，注册表只增）：opt-in
+	// 查询面的两处诚实分支。
+	"E_METRICS_NOT_ENABLED":          "E6 observability §4.2 (metrics.mode unset — the query face is opt-in and has nothing to report)",
+	"E_METRICS_BACKEND_UNAVAILABLE":  "E6 observability §4.2 (VictoriaMetrics unreachable on the loopback face; scrape face unaffected)",
 
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
@@ -138,8 +142,9 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // E_ROUTE_PUBLISH_FAILED、MG-C3 增 E_DEPLOY_CONFIRM_REQUIRED、M4-6 增
 // E_TOKEN_LAST_ADMIN、E1-5 增 E_REGISTRY_UNAVAILABLE/E_REGISTRY_PUSH_FAILED、
 // E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 增 E_S3_* 四码、E4-S1 增
-// managed-databases §5.2 九码、E6 W5-S1 增 E_LOGS_BACKEND_UNAVAILABLE——
-// 错误码只增纪律）。E6 后 = 52 E + 5 W。
+// managed-databases §5.2 九码、E6 W5-S1 增 E_LOGS_BACKEND_UNAVAILABLE、
+// E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE——
+// 错误码只增纪律）。E6 S3 后 = 54 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -149,8 +154,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 52 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 52), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 54 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 54), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

@@ -14,6 +14,7 @@ import {
   listRevisions,
 } from "@/api/endpoints";
 import { formatTime, timeAgo } from "@/lib/utils";
+import { AppMetricsCard } from "@/components/app-metrics-card";
 import { CronSection } from "@/components/cron-section";
 import { DegradedExplanationCardLive } from "@/components/degraded-explanation-card";
 import { StatusDot } from "@/components/status-dot";
@@ -151,6 +152,7 @@ export function AppOverviewPage() {
                 <TableRow>
                   <TableHead>Service</TableHead>
                   <TableHead>Mode</TableHead>
+                  <TableHead>Replicas</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -170,6 +172,17 @@ export function AppOverviewPage() {
                         </span>
                       ) : (
                         <span className="text-xs text-muted-foreground">long-running</span>
+                      )}
+                    </TableCell>
+                    {/* 声明副本数常驻显示（W5-S3 挂账收敛；compose 缺省 1，
+                        global = 每节点一任务。实际每副本水位在 Resources 卡）。 */}
+                    <TableCell>
+                      {s.isCron ? (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      ) : (
+                        <span className="text-xs" data-testid="service-replicas">
+                          {s.replicas === "global" ? "global (per node)" : s.replicas}
+                        </span>
                       )}
                     </TableCell>
                   </TableRow>
@@ -212,6 +225,12 @@ export function AppOverviewPage() {
       ) : null}
 
       {hasCron ? <CronSection app={name} /> : null}
+
+      {/* 资源卡（E6 W5-S3）：mode=on → 容器曲线 + 每副本水位；unset →
+          opt-in 引导 + 开关。 */}
+      <div className="md:col-span-2">
+        <AppMetricsCard app={name} />
+      </div>
     </div>
   );
 }

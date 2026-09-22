@@ -10,6 +10,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
+	"github.com/fleetlyrun/fleetly/internal/metrics"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
@@ -69,6 +70,9 @@ type AppConfig struct {
 	// Logs 是日志管线配置节（config 键 logs.*，T2.20；缺省值经 logs.
 	// Config.Normalize 回落——单一事实源在 internal/logs）。
 	Logs LogsConfig `mapstructure:"logs"`
+	// Metrics 是托管 metrics 栈配置节（config 键 metrics.*，E6 W5-S3；
+	// D-W5-2 opt-in——mode 是运行期设置不走本节，本节只承载 retention）。
+	Metrics MetricsConfig `mapstructure:"metrics"`
 	// Git 是 git push(SSH) 触发入口配置节（config 键 git.*，T2.19；缺省值
 	// 经 gitserver.Config.Normalize 回落——单一事实源在 internal/gitserver）。
 	Git GitConfig `mapstructure:"git"`
@@ -158,6 +162,24 @@ func (c *AppConfig) LogsSettings() logs.Config {
 		RetentionDays:      c.Logs.RetentionDays,
 		ScanIntervalMillis: c.Logs.ScanIntervalMillis,
 		RingSize:           c.Logs.RingSize,
+	}.Normalize()
+}
+
+// MetricsConfig 是托管 metrics 栈配置节（config 键 metrics.*，E6 W5-S3）。
+// metrics.mode 是运行期设置（platform_settings，D-W5-2 opt-in）不走本节；
+// 本节只承载 VM 数据保留天数（缺省 14——单一事实源在 internal/metrics
+// DefaultRetentionDays）。
+type MetricsConfig struct {
+	// RetentionDays 是 VM -retentionPeriod 对齐天数（metrics.retention_days；
+	// 缺省 14）。非正值回落缺省（不允许误配成 0 静默关闭保留）。
+	RetentionDays int `mapstructure:"retention_days"`
+}
+
+// MetricsSettings 把 metrics.* 配置节翻译为 metrics 栈核心配置（metrics.
+// Config，缺省值经 Normalize 回落——单一事实源在 internal/metrics）。
+func (c *AppConfig) MetricsSettings() metrics.Config {
+	return metrics.Config{
+		RetentionDays: c.Metrics.RetentionDays,
 	}.Normalize()
 }
 

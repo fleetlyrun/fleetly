@@ -57,6 +57,7 @@ func (f *fakeDocker) ServiceCreate(_ context.Context, spec swarm.ServiceSpec) er
 	f.created = append(f.created, spec.Annotations.Name)
 	cur := ServiceState{Exists: true, Version: 1}
 	cur.fillFrom(spec)
+	cur.normalizeNetworkIDs()
 	f.services[spec.Annotations.Name] = cur
 	return nil
 }
@@ -68,8 +69,27 @@ func (f *fakeDocker) ServiceUpdate(_ context.Context, name string, _ uint64, spe
 	cur := f.services[name]
 	cur.Version++
 	cur.fillFrom(spec)
+	cur.normalizeNetworkIDs()
 	f.services[name] = cur
 	return nil
+}
+
+// normalizeNetworkIDs 模拟 engine 创建期行为：网络挂载目标按名归一为网络
+// ID 存储（"host" 亦然——W5-S3 真机/dind 实证）。duty 的幂等比对必须经
+// NetworkName 解析回名同锚比较（见 converge 注记）。
+func (s *ServiceState) normalizeNetworkIDs() {
+	for i, t := range s.Networks {
+		s.Networks[i] = "netid:" + t
+	}
+}
+
+// NetworkName 把 ID 形态目标解析回名（realDockerClient 同语义的假件；
+// 非 ID 形态原样透传——容错对齐 NetworkInspect 的 by-name 命中）。
+func (f *fakeDocker) NetworkName(_ context.Context, target string) (string, error) {
+	if name, ok := strings.CutPrefix(target, "netid:"); ok {
+		return name, nil
+	}
+	return target, nil
 }
 
 func (f *fakeDocker) ServiceRemove(_ context.Context, name string) error {

@@ -364,6 +364,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/metrics/mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * SetMetricsMode 切换 metrics 模式（unset | on）：保存即生效——duty 收敛
+         *     部署/移除（数据卷保留），deploy scope（同 SetLogsBackend 分级理由）。
+         */
+        put: operations["MetricsService_SetMetricsMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/metrics/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * SearchMetrics 执行 PromQL 区间查询（read scope）：127.0.0.1:8428
+         *     /api/v1/query_range 的规范化投影（label 集 + {t,v} 点集）。
+         */
+        get: operations["MetricsService_SearchMetrics"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/metrics/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetMetricsStatus 托管 metrics 栈状态视图（read scope）：模式 / 三件
+         *     部署态 / 节点上报比 / retention——「N/M nodes reporting」的诚实口径。
+         */
+        get: operations["MetricsService_GetMetricsStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/stream": {
         parameters: {
             query?: never;
@@ -1399,6 +1459,72 @@ export interface components {
         };
         v1SetLogsBackendResponse: {
             view?: components["schemas"]["v1LogsBackendView"];
+        };
+        /**
+         * GetMetricsStatusResponse 是状态视图（设计 §4.1/§4.2 诚实口径）：mode /
+         *     三件部署态 / 节点上报比（以实际抓到的 cAdvisor 目标数计——跨节点采集
+         *     依赖 overlay 数据面，worker 节点缺席时不谎报 M/M）/ retention。
+         */
+        v1GetMetricsStatusResponse: {
+            /**
+             * 生效模式：unset | on（缺省 unset；未显式设置时 mode 已投影为缺省值，
+             *     set 标志区分「缺省生效」）。
+             */
+            mode?: string;
+            /** 该键是否被显式保存过（false = 缺省态生效）。 */
+            mode_set?: boolean;
+            /** 三件部署态（cAdvisor / node_exporter / VictoriaMetrics 固定序）。 */
+            components?: components["schemas"]["v1MetricsComponentView"][];
+            /**
+             * 正在向 VM 上报的节点数（up{job="fleetly-cadvisor"} 计数；VM 不可达
+             *     = 0——配合 components 部署态解读，不单独谎报）。
+             * Format: int32
+             */
+            nodes_reporting?: number;
+            /**
+             * 集群节点总数（观测缓存投影）。
+             * Format: int32
+             */
+            nodes_total?: number;
+            /**
+             * VM -retentionPeriod 对齐天数（config 键 metrics.retention_days）。
+             * Format: int32
+             */
+            retention_days?: number;
+        };
+        /** MetricsComponentView 是单件托管服务的部署态投影。 */
+        v1MetricsComponentView: {
+            name?: string;
+            /** 服务是否在位（mode=on 且 false = duty 收敛中——过渡态红面）。 */
+            exists?: boolean;
+            /** 实况镜像引用（不在位为空）。 */
+            image?: string;
+        };
+        /** MetricsPoint 是单个采样点（t = unix 秒；v = 采样值）。 */
+        v1MetricsPoint: {
+            /** Format: int64 */
+            t?: string;
+            /** Format: double */
+            v?: number;
+        };
+        /**
+         * MetricsSeries 是一条时序（label 集原样透传——含 __name__ 原始指标名；
+         *     函数产出的序列无该 label，透传不补造）。
+         */
+        v1MetricsSeries: {
+            metric?: {
+                [key: string]: string;
+            };
+            points?: components["schemas"]["v1MetricsPoint"][];
+        };
+        v1SearchMetricsResponse: {
+            series?: components["schemas"]["v1MetricsSeries"][];
+        };
+        v1SetMetricsModeRequest: {
+            mode?: string;
+        };
+        v1SetMetricsModeResponse: {
+            status?: components["schemas"]["v1GetMetricsStatusResponse"];
         };
         /**
          * CursorExpiredView 是游标过期断档帧：seq ≤ (oldest_seq - 1) 的事件已被
@@ -3000,6 +3126,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1SetLogsBackendResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    MetricsService_SetMetricsMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1SetMetricsModeRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetMetricsModeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    MetricsService_SearchMetrics: {
+        parameters: {
+            query?: {
+                /** @description PromQL 表达式——**透传**（不转义、不校验语法、无沙箱；VM 裁决）。 */
+                query?: string;
+                /** @description 时间窗下界；缺省 = 现在回望 1 小时。 */
+                time_start?: string;
+                /** @description 时间窗上界；缺省 = 现在。 */
+                time_end?: string;
+                /** @description 步长秒数（缺省 60）。 */
+                step_seconds?: number;
+                /** @description 返回序列数上限（缺省 200，天花板 1000——规范化面截断）。 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SearchMetricsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    MetricsService_GetMetricsStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetMetricsStatusResponse"];
                 };
             };
             /** @description An unexpected error response. */

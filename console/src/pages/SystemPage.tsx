@@ -21,6 +21,7 @@ import {
   EnvelopeAlertFrom,
 } from "@/components/envelope-alert";
 import { JoinWizard } from "@/components/join-wizard";
+import { MetricsSettingsCard } from "@/components/metrics-settings-card";
 import { PageHeader } from "@/components/page-header";
 import { PillTabs } from "@/components/pill-tabs";
 import { S3SettingsCard } from "@/components/s3-settings-card";
@@ -48,6 +49,7 @@ const TABS = [
   { key: "components", label: "Components" },
   { key: "nodes", label: "Nodes" },
   { key: "ingress", label: "Ingress" },
+  { key: "metrics", label: "Metrics" },
   { key: "storage", label: "Storage" },
 ];
 
@@ -174,6 +176,12 @@ export function SystemPage() {
         onValueChange={(key) => setSearchParams(key === "components" ? {} : { tab: key })}
         items={TABS}
       />
+
+      {tab === "metrics" ? (
+        // metrics 设置卡（E6 W5-S3，D-W5-2 opt-in）：模式开关 + 栈状态 +
+        // 诚实「worker 节点需 overlay 数据面」文案。
+        <MetricsSettingsCard />
+      ) : null}
 
       {tab === "storage" ? (
         <div className="space-y-4">

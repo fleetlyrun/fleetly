@@ -90,8 +90,20 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 		cleanup()
 		return nil, nil, err
 	}
-	databaseManager, cleanup7, err := NewDatabaseManager(app, store, box, resolver)
+	metricsBackend := NewMetricsBackend()
+	metricsManager, cleanup7, err := NewMetricsManager(app, appConfig, store, metricsBackend)
 	if err != nil {
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	databaseManager, cleanup8, err := NewDatabaseManager(app, store, box, resolver)
+	if err != nil {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -102,6 +114,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	}
 	server, err := NewHTTPServer(app, appConfig, gitTriggers)
 	if err != nil {
+		cleanup8()
 		cleanup7()
 		cleanup6()
 		cleanup5()
@@ -113,6 +126,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	}
 	authenticator, err := NewAuthenticator(app, appConfig, store)
 	if err != nil {
+		cleanup8()
 		cleanup7()
 		cleanup6()
 		cleanup5()
@@ -130,6 +144,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	domainsService := NewDomainsService(store, ingressManager)
 	envService := NewEnvService(store, box, logsManager)
 	apiLogsService := NewLogsService(store, logsManager, backend, victorialogsManager)
+	apiMetricsService := NewMetricsService(appConfig, store, metricsBackend, metricsManager)
 	eventsService := NewEventsService(store)
 	placementService := NewPlacementService(store, resolver)
 	tokensService := NewTokensService(store)
@@ -137,9 +152,10 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	cronService := NewCronService(store, cronManager)
 	apiDatabaseService := NewDatabaseService(store, box, databaseManager)
 	apiSecretsService := NewSecretsService(store, box)
-	systemService := NewSystemService(appConfig, store, nodeIdentity, observer, box, ingressManager, manager, rustfsManager, client, logsManager, victorialogsManager, version)
-	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, eventsService, placementService, tokensService, gitKeysService, cronService, apiDatabaseService, apiSecretsService, systemService)
+	systemService := NewSystemService(appConfig, store, nodeIdentity, observer, box, ingressManager, manager, rustfsManager, client, logsManager, victorialogsManager, metricsManager, version)
+	grpcServer, err := NewGRPCServer(app, appConfig, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, apiMetricsService, eventsService, placementService, tokensService, gitKeysService, cronService, apiDatabaseService, apiSecretsService, systemService)
 	if err != nil {
+		cleanup8()
 		cleanup7()
 		cleanup6()
 		cleanup5()
@@ -149,10 +165,11 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(app, store, nodeIdentity, observer, janitor, manager, box, queue, builder, engine, ingressManager, logsManager, cronManager, gitTriggers, appConfig, rustfsManager, victorialogsManager, databaseManager, server, grpcServer)
+	v := NewServices(app, store, nodeIdentity, observer, janitor, manager, box, queue, builder, engine, ingressManager, logsManager, cronManager, gitTriggers, appConfig, rustfsManager, victorialogsManager, metricsManager, databaseManager, server, grpcServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {
+		cleanup8()
 		cleanup7()
 		cleanup6()
 		cleanup5()

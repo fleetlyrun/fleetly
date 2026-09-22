@@ -42,23 +42,24 @@ func WithDialOptions(opts ...grpc.DialOption) Option {
 // Client 是 fleetlyd gRPC 面的客户端封装：单连接复用，goroutine 安全。
 // 各服务面经同名访问器取用（返回 proto 生成客户端——方法契约即 proto）。
 type Client struct {
-	conn   *grpc.ClientConn
-	system serverv1.SystemServiceClient
-	apps   serverv1.AppsServiceClient
-	deploy serverv1.DeploymentsServiceClient
-	revs   serverv1.RevisionsServiceClient
-	builds serverv1.BuildsServiceClient
-	drift  serverv1.DriftServiceClient
-	doms   serverv1.DomainsServiceClient
-	env    serverv1.EnvServiceClient
-	logs   serverv1.LogsServiceClient
-	events serverv1.EventsServiceClient
-	place  serverv1.PlacementServiceClient
-	tokens serverv1.TokensServiceClient
-	gitkey serverv1.GitKeysServiceClient
-	cron   serverv1.CronServiceClient
-	dbs    serverv1.DatabaseServiceClient
-	secs   serverv1.SecretsServiceClient
+	conn    *grpc.ClientConn
+	system  serverv1.SystemServiceClient
+	apps    serverv1.AppsServiceClient
+	deploy  serverv1.DeploymentsServiceClient
+	revs    serverv1.RevisionsServiceClient
+	builds  serverv1.BuildsServiceClient
+	drift   serverv1.DriftServiceClient
+	doms    serverv1.DomainsServiceClient
+	env     serverv1.EnvServiceClient
+	logs    serverv1.LogsServiceClient
+	metrics serverv1.MetricsServiceClient
+	events  serverv1.EventsServiceClient
+	place   serverv1.PlacementServiceClient
+	tokens  serverv1.TokensServiceClient
+	gitkey  serverv1.GitKeysServiceClient
+	cron    serverv1.CronServiceClient
+	dbs     serverv1.DatabaseServiceClient
+	secs    serverv1.SecretsServiceClient
 }
 
 // NewClient 建立 gRPC 连接（默认 127.0.0.1:8421，明文；连接惰性建立，
@@ -82,23 +83,24 @@ func NewClient(opts ...Option) (*Client, error) {
 		return nil, err
 	}
 	return &Client{
-		conn:   conn,
-		system: serverv1.NewSystemServiceClient(conn),
-		apps:   serverv1.NewAppsServiceClient(conn),
-		deploy: serverv1.NewDeploymentsServiceClient(conn),
-		revs:   serverv1.NewRevisionsServiceClient(conn),
-		builds: serverv1.NewBuildsServiceClient(conn),
-		drift:  serverv1.NewDriftServiceClient(conn),
-		doms:   serverv1.NewDomainsServiceClient(conn),
-		env:    serverv1.NewEnvServiceClient(conn),
-		logs:   serverv1.NewLogsServiceClient(conn),
-		events: serverv1.NewEventsServiceClient(conn),
-		place:  serverv1.NewPlacementServiceClient(conn),
-		tokens: serverv1.NewTokensServiceClient(conn),
-		gitkey: serverv1.NewGitKeysServiceClient(conn),
-		cron:   serverv1.NewCronServiceClient(conn),
-		dbs:    serverv1.NewDatabaseServiceClient(conn),
-		secs:   serverv1.NewSecretsServiceClient(conn),
+		conn:    conn,
+		system:  serverv1.NewSystemServiceClient(conn),
+		apps:    serverv1.NewAppsServiceClient(conn),
+		deploy:  serverv1.NewDeploymentsServiceClient(conn),
+		revs:    serverv1.NewRevisionsServiceClient(conn),
+		builds:  serverv1.NewBuildsServiceClient(conn),
+		drift:   serverv1.NewDriftServiceClient(conn),
+		doms:    serverv1.NewDomainsServiceClient(conn),
+		env:     serverv1.NewEnvServiceClient(conn),
+		logs:    serverv1.NewLogsServiceClient(conn),
+		metrics: serverv1.NewMetricsServiceClient(conn),
+		events:  serverv1.NewEventsServiceClient(conn),
+		place:   serverv1.NewPlacementServiceClient(conn),
+		tokens:  serverv1.NewTokensServiceClient(conn),
+		gitkey:  serverv1.NewGitKeysServiceClient(conn),
+		cron:    serverv1.NewCronServiceClient(conn),
+		dbs:     serverv1.NewDatabaseServiceClient(conn),
+		secs:    serverv1.NewSecretsServiceClient(conn),
 	}, nil
 }
 
@@ -140,7 +142,12 @@ func (c *Client) Domains() serverv1.DomainsServiceClient { return c.doms }
 func (c *Client) Env() serverv1.EnvServiceClient { return c.env }
 
 // Logs 取应用日志面。
+// Logs 取日志面客户端（Follow/History/SearchLogs/backend 视图）。
 func (c *Client) Logs() serverv1.LogsServiceClient { return c.logs }
+
+// Metrics 取 metrics 面客户端（E6 W5-S3：SearchMetrics/GetMetricsStatus/
+// SetMetricsMode）。
+func (c *Client) Metrics() serverv1.MetricsServiceClient { return c.metrics }
 
 // Events 取事件流面。
 func (c *Client) Events() serverv1.EventsServiceClient { return c.events }

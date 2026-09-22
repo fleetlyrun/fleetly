@@ -13,6 +13,7 @@ import type {
   GetEnvResponse,
   GetIngressStatusResponse,
   GetJoinGuideResponse,
+  GetMetricsStatusResponse,
   GetRevisionSpecResponse,
   GetS3SettingsResponse,
   GetSystemStatusResponse,
@@ -28,6 +29,7 @@ import type {
   ListRevisionsResponse,
   ListSecretsResponse,
   ListAppsResponse,
+  MetricsMode,
   PlacementView,
   RemoveEnvResponse,
   RemoveSecretResponse,
@@ -39,8 +41,10 @@ import type {
   RotateDatabaseCredentialsResponse,
   RotateJoinTokenResponse,
   SearchLogsResponse,
+  SearchMetricsResponse,
   SearchSource,
   SetEnvResponse,
+  SetMetricsModeResponse,
   SetSecretResponse,
   SuspendDatabaseResponse,
   TestS3ConnectionRequest,
@@ -222,6 +226,39 @@ export function searchLogs(
   return api<SearchLogsResponse>(
     `/apps/${encodeURIComponent(app)}/logs/search${qs ? `?${qs}` : ""}`,
   );
+}
+
+// ── metrics（E6 W5-S3，D-W5-2 opt-in）────────────────────────────────────
+
+/**
+ * 托管 metrics 栈状态视图：模式 / 三件部署态 / 「N/M nodes reporting」
+ * 诚实口径 / retention。
+ */
+export function getMetricsStatus() {
+  return api<GetMetricsStatusResponse>("/metrics/status");
+}
+
+/**
+ * PromQL 区间查询（透传——操作员工具，无查询沙箱；设计 §4.2 诚实口径）。
+ * query 为 PromQL 原文；step_seconds 缺省 60；limit 缺省 200。VM 不可达 /
+ * metrics.mode=unset → 服务端信封诚实报错（E_METRICS_*）。
+ */
+export function searchMetrics(
+  query: string,
+  opts: { since?: string; until?: string; step_seconds?: number; limit?: number } = {},
+) {
+  const p: Record<string, string> = { query };
+  if (opts.since) p.time_start = opts.since;
+  if (opts.until) p.time_end = opts.until;
+  if (opts.step_seconds !== undefined) p.step_seconds = String(opts.step_seconds);
+  if (opts.limit !== undefined) p.limit = String(opts.limit);
+  const qs = new URLSearchParams(p).toString();
+  return api<SearchMetricsResponse>(`/metrics/search?${qs}`);
+}
+
+/** 模式切换（deploy scope）：保存即生效——duty 收敛部署/移除，卷保留。 */
+export function setMetricsMode(mode: MetricsMode) {
+  return api<SetMetricsModeResponse>("/metrics/mode", { method: "PUT", json: { mode } });
 }
 
 // ── system ──────────────────────────────────────────────────────────────

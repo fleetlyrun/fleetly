@@ -90,6 +90,12 @@ func (f *fakeVLManager) ServiceRemove(_ context.Context, _ string) error {
 
 func (f *fakeVLManager) VolumeEnsure(_ context.Context, _ string) error { return nil }
 
+// NetworkName 恒等透传（W5-S3 门上 dockerPort 增面——duty 网络目标反解；
+// 本假件不覆盖该路径）。
+func (f *fakeVLManager) NetworkName(_ context.Context, target string) (string, error) {
+	return target, nil
+}
+
 // TestSearchLogsJSONLModeSameCode jsonl 模式 → E_LOGS_BACKEND_UNAVAILABLE
 //（诚实：不支持，不返回空列表冒充——设计 §3.1）。
 func TestSearchLogsJSONLModeSameCode(t *testing.T) {

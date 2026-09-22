@@ -37,6 +37,7 @@ func NewGRPCServer(
 	domains *api.DomainsService,
 	env *api.EnvService,
 	logsSvc *api.LogsService,
+	metricsSvc *api.MetricsService,
 	events *api.EventsService,
 	placement *api.PlacementService,
 	tokens *api.TokensService,
@@ -74,6 +75,7 @@ func NewGRPCServer(
 	serverv1.RegisterDomainsServiceServer(g, domains)
 	serverv1.RegisterEnvServiceServer(g, env)
 	serverv1.RegisterLogsServiceServer(g, logsSvc)
+	serverv1.RegisterMetricsServiceServer(g, metricsSvc) // E6 W5-S3：metrics opt-in 面（查询/状态/模式）
 	serverv1.RegisterEventsServiceServer(g, events)
 	serverv1.RegisterPlacementServiceServer(g, placement)
 	serverv1.RegisterTokensServiceServer(g, tokens)

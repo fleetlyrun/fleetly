@@ -138,6 +138,11 @@ var docEvents = map[string]string{ // event → 文档出处
 	"logs.victorialogs_removed":  "E6 observability §2.2 (backend left victorialogs; data volume retained)",
 	"logs.ingest_degraded":       "E6 observability §2.3 (ingest streak enter edge, debounced; live tail unaffected)",
 	"logs.ingest_recovered":      "E6 observability §2.3 (ingest streak exit edge, debounced)",
+	// E6 观测（observability §4/§7，W5-S3 接线）：metrics.* 3 项——D-W5-2
+	// opt-in 的设置/收敛/清场事件面。
+	"metrics.mode_updated":  "E6 observability §4.1 (settings save transaction; opt-in switch deploys or removes the managed stack, volume retained)",
+	"metrics.stack_deployed": "E6 observability §4.1 (duty converge diff; payload carries service/image/reason)",
+	"metrics.stack_removed":  "E6 observability §4.1 (mode left on; data volume retained)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

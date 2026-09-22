@@ -233,6 +233,19 @@ var builtins = []Code{
 		Summary:    "the unified log search face is unavailable (logs.backend=jsonl has no search face, or VictoriaLogs did not answer; live log tail is unaffected)",
 		Suggestion: "Check the current backend with 'fleetly logs backend show'. If it is jsonl, switch to victorialogs to enable search; if VictoriaLogs is unreachable, check the fleetly-victorialogs service — search recovers automatically once it answers (the degradation streak and dropped counter are surfaced in the same view)."},
 
+	// ── 观测/metrics 查询面（E6 观测专项设计 §4.2，W5-S3；注册表只增）──
+	// 消费点：SearchMetrics 的两处诚实分支（internal/api/metrics.go）——
+	// ① metrics.mode 未开（opt-in 默认关——不返回空序列冒充有数）；
+	// ② VictoriaMetrics 不可达（查询面降级，采集面不受影响）。PromQL 透传
+	// 是操作员工具：坏表达式由 VM 拒绝，走退化信封 InvalidArgument（不走
+	// 本码族——详见 api 层）。
+	{ID: "E_METRICS_NOT_ENABLED", HTTP: 409,
+		Summary:    "metrics collection is not enabled (metrics.mode=unset): the query face is opt-in and has nothing to report",
+		Suggestion: "Enable the metrics stack with 'fleetly metrics mode set on' (or the Console metrics card). Once the three managed services converge, SearchMetrics starts serving; the data volume survives disabling, so history resumes from where it stopped."},
+	{ID: "E_METRICS_BACKEND_UNAVAILABLE", HTTP: 503,
+		Summary:    "the metrics query face is unavailable (VictoriaMetrics did not answer on the loopback face; the scrape face is unaffected)",
+		Suggestion: "Check the managed services with 'fleetly metrics status'. If the stack is still converging, wait for the services to appear; if VictoriaMetrics is running, verify the 127.0.0.1 loopback probe — the query face recovers automatically once it answers."},
+
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",
 		Summary:    "post-observe-window instability alert (one source of app degraded)",

@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/cron"
 	"github.com/fleetlyrun/fleetly/internal/database"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/metrics"
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -177,6 +178,28 @@ func (s victorialogsService) Start(ctx context.Context) error {
 // Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑；
 // 批量器 flush 循环同 ctx 排水，关停前 best-effort 排空在途行）。
 func (s victorialogsService) Stop(_ context.Context) error { return nil }
+
+// metricsService 是托管 metrics 三件套 duty 服务壳（E6 W5-S3，设计 §4.1，
+// D-W5-2 opt-in）：Start 阶段进入常驻收敛循环（metrics.mode=on 时幂等部署/
+// 漂移收敛三件——VM 单副本钉 manager/卷/host 网络回环监听 8428/retention
+// 对齐 + 抓取 config 对象；cAdvisor 与 node_exporter global；切回 unset 三
+// 件移除保留卷；失败退避重试）。Start 阻塞到关停（actor 契约同上），Stop
+// 无资源动作。健康面由 SystemService 组件 metrics（三件部署检查 + VM 回环
+// 拨测组合，装配点命名）承载。
+type metricsService struct {
+	m *metrics.Manager
+}
+
+func newMetricsService(m *metrics.Manager) lynx.Service { return metricsService{m: m} }
+
+func (s metricsService) Name() string                 { return "metrics.stack" }
+func (s metricsService) Init(_ lynx.AppContext) error { return nil }
+func (s metricsService) Start(ctx context.Context) error {
+	return s.m.Run(ctx)
+}
+
+// Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑）。
+func (s metricsService) Stop(_ context.Context) error { return nil }
 
 // cronSchedulerService 是定时任务调度服务壳（E5 Cron）：Start 阶段进入扫描
 // 循环（启动首拍完成在途残留收口与错过点披露，此后每拍到点触发/完成检测

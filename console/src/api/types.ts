@@ -72,6 +72,18 @@ export type SearchLogsResponse = Schemas["v1SearchLogsResponse"];
 /** 检索来源过滤词表（proto sources repeated string 的消费侧词表）。 */
 export type SearchSource = "container" | "build" | "access";
 
+// ── metrics（E6 W5-S3，D-W5-2 opt-in）────────────────────────────────────
+
+export type MetricsComponentView = Schemas["v1MetricsComponentView"];
+export type MetricsPoint = Schemas["v1MetricsPoint"];
+export type MetricsSeries = Schemas["v1MetricsSeries"];
+export type SearchMetricsResponse = Schemas["v1SearchMetricsResponse"];
+export type GetMetricsStatusResponse = Schemas["v1GetMetricsStatusResponse"];
+export type SetMetricsModeResponse = Schemas["v1SetMetricsModeResponse"];
+
+/** metrics.mode 词表（proto SetMetricsModeRequest.mode 消费侧词表）。 */
+export type MetricsMode = "unset" | "on";
+
 // ── system ───────────────────────────────────────────────────────────────
 
 export type ComponentHealth = Schemas["v1ComponentHealth"];

@@ -179,6 +179,15 @@ logs:
   # 接入时的回放上限）。
   ring_size: 1000
 
+# 托管 metrics 栈（E6 W5-S3；D-W5-2 opt-in）。metrics.mode 是运行期设置
+#（`fleetly metrics mode set <unset|on>` / Console metrics 卡），不在本
+# 配置节——缺省 unset（零新增常驻），显式 on 后 duty 部署三件套
+#（VictoriaMetrics 单机版 + cAdvisor + node_exporter，全部回环监听）。
+metrics:
+  # VictoriaMetrics 数据保留天数（metrics.retention_days；缺省 14——
+  # 对齐 -retentionPeriod；非正值回落缺省）。
+  retention_days: 14
+
 # git push(SSH) 触发入口（T2.19）。宿主 git 为前置条件；bare 仓库按 app
 # 懒创建（<root>/<app>.git），post-receive 钩子回调控制面入队部署。
 git:

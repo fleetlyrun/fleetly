@@ -22,6 +22,10 @@ interface ComposeSpecShape {
       timezone?: string;
       timeout?: string;
     } | null;
+    deploy?: {
+      mode?: string;
+      replicas?: number;
+    } | null;
   }[];
 }
 
@@ -55,11 +59,13 @@ export function extractCronServices(
 
 /**
  * 服务清单抽取（同名快照的全体服务）：App 详情「Services」卡用——cron
- * 服务必须标注 scheduled 而非长驻态（不冒充 running）。
+ * 服务必须标注 scheduled 而非长驻态（不冒充 running）。W5-S3 挂账收敛：
+ * 声明副本数常驻显示（deploy.replicas，compose 缺省 1；mode=global 以
+ * "global" 表达——每节点一任务，无固定副本语义）。
  */
 export function extractServiceNames(
   composeJSON: string | undefined,
-): { name: string; isCron: boolean }[] | null {
+): { name: string; isCron: boolean; replicas: number | "global" }[] | null {
   if (!composeJSON) return [];
   let spec: ComposeSpecShape;
   try {
@@ -68,10 +74,14 @@ export function extractServiceNames(
     return null;
   }
   const services = Array.isArray(spec.services) ? spec.services : [];
-  const out: { name: string; isCron: boolean }[] = [];
+  const out: { name: string; isCron: boolean; replicas: number | "global" }[] = [];
   for (const s of services) {
     if (!s || typeof s.name !== "string") continue;
-    out.push({ name: s.name, isCron: Boolean(s.cron) });
+    out.push({
+      name: s.name,
+      isCron: Boolean(s.cron),
+      replicas: s.deploy?.mode === "global" ? "global" : (s.deploy?.replicas ?? 1),
+    });
   }
   return out;
 }

@@ -182,4 +182,18 @@ var builtins = []Event{
 	// 错误摘要，无任何日志行内容/凭据材料）。
 	{Name: "logs.ingest_degraded", Summary: "log ingestion to VictoriaLogs degraded (backend unreachable; live tail unaffected; payload carries dropped_total and a single-line error summary)"},
 	{Name: "logs.ingest_recovered", Summary: "log ingestion to VictoriaLogs recovered (degradation streak exited)"},
+
+	// ── 观测/metrics 三件套（E6 观测专项设计 §4/§7，W5-S3 接线；注册表
+	//    只增。D-W5-2 opt-in——缺省零常驻，启用/停用是显式操作）──
+	// 发出来源：SaveMetricsSettings 保存事务（internal/state/
+	// metricssettings.go，与业务写同事务 = Outbox；payload 只带模式值，
+	// 词表内枚举）。
+	{Name: "metrics.mode_updated", Summary: "metrics mode setting changed (payload carries the mode value; switching on deploys the managed VictoriaMetrics/cAdvisor/node-exporter stack, switching off removes the services — the data volume is retained)"},
+	// 发出来源：metrics duty 收敛拍差分（internal/metrics/metrics.go——服务
+	// 缺失创建/spec 漂移更新各发一条 deployed（payload 带 service/image/
+	// reason created|updated），mode 离开 on 三件移除发 removed（payload 带
+	// volume_retained=true——数据卷保留语义的显性化面）。全链无凭据面，
+	// payload 零敏感材料。
+	{Name: "metrics.stack_deployed", Summary: "managed metrics stack service deployed or converged to the desired spec (payload carries service/image/reason)"},
+	{Name: "metrics.stack_removed", Summary: "managed metrics stack removed after metrics.mode left on (data volume retained; payload carries volume_retained=true)"},
 }

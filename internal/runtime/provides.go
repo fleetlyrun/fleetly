@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
+	"github.com/fleetlyrun/fleetly/internal/metrics"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
@@ -49,6 +50,8 @@ var ProviderSet = wire.NewSet(
 	NewRustfsManager,
 	NewVictorialogsBackend,
 	NewVictorialogsManager,
+	NewMetricsBackend,
+	NewMetricsManager,
 	NewDatabaseManager,
 	NewBuilder,
 	NewBuildQueue,
@@ -71,6 +74,7 @@ var ProviderSet = wire.NewSet(
 	NewDomainsService,
 	NewEnvService,
 	NewLogsService,
+	NewMetricsService,
 	NewEventsService,
 	NewPlacementService,
 	NewTokensService,
@@ -235,6 +239,32 @@ func NewVictorialogsManager(app lynx.App, cfg *AppConfig, st *state.Store, vl *v
 	}
 	if vl != nil {
 		mgr = mgr.WithHealth(vl.Ping)
+	}
+	return mgr, cleanup, nil
+}
+
+// NewMetricsBackend 构造 VM 回环查询消费端（E6 W5-S3：SearchMetrics 的
+// 查询后端与 duty 健康拨测共用——指向 127.0.0.1:8428，D-W5-4 等价承载
+// 形态的宿主可达面；无状态，无资源释放）。
+func NewMetricsBackend() *metrics.Backend {
+	return metrics.NewBackend()
+}
+
+// NewMetricsManager 构建托管 metrics 三件套 duty 管理器（E6 W5-S3，设计
+// §4.1，D-W5-2 opt-in：metrics.mode=on 时幂等部署/收敛三件——VM 单副本钉
+// manager/卷/host 网络回环监听 8428/-retentionPeriod 对齐 metrics.
+// retention_days/-promscrape.config 经 swarm config 对象分发；cAdvisor 与
+// node_exporter global。切回 unset 三件移除保留卷。常驻收敛循环由服务壳
+// Start 承载，资源层——晚于 engine 停）。自建 Docker 连接（victorialogs
+// Manager 同款形态），cleanup 释放；健康拨测 = Backend.Ping（宿主回环
+// 直达——无探针容器）。
+func NewMetricsManager(app lynx.App, cfg *AppConfig, st *state.Store, mb *metrics.Backend) (*metrics.Manager, func(), error) {
+	mgr, cleanup, err := metrics.NewManager(st, cfg.MetricsSettings().RetentionDays, app.Logger())
+	if err != nil {
+		return nil, nil, err
+	}
+	if mb != nil {
+		mgr = mgr.WithHealth(mb.Ping)
 	}
 	return mgr, cleanup, nil
 }
@@ -464,7 +494,7 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // 过渡态如实可见）；mode 非 rustfs = 无所欠恒绿。E6 W5-S1：victorialogs
 // 组件随 duty 管理器与日志管线接线（设计 §2.3：healthy = duty 部署符合
 // 预期且 ingest streak 无降级；降级时 Error 带丢弃计数——诚实红面）。
-func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, version Version) *api.SystemService {
+func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, mm *metrics.Manager, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -490,6 +520,15 @@ func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, o
 					return nil
 				},
 			},
+			// E6 W5-S3：metrics 组件（设计 §4.1——mode=on 且三件未收敛/
+			// VM 拨测不可达时红；mode 非 on = 无所欠恒绿，opt-in 缺省零
+			// 常驻的诚实表达）。
+			{Name: "metrics", Check: func() error {
+				if mm == nil {
+					return nil
+				}
+				return mm.CheckHealth()
+			}},
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
 	}
@@ -530,6 +569,22 @@ func NewEnvService(st *state.Store, sb *secrets.Box, lm *logs.Manager) *api.EnvS
 // 的部署态——nil 形态如实报不可用/unknown）。
 func NewLogsService(st *state.Store, mg *logs.Manager, vl *victorialogs.Backend, vm *victorialogs.Manager) *api.LogsService {
 	return api.NewLogsService(st, mg).WithVictorialogs(vl, vm)
+}
+
+// NewMetricsService 构造 metrics 面服务（E6 W5-S3，D-W5-2 opt-in：PromQL
+// 查询透传面 + 状态视图 + 模式切换；注入 VM 消费端与 duty 管理器——nil
+// 形态如实报不可用/unknown。retention 对齐 metrics.* 配置节；集群节点
+// 总数 = 观测缓存计数——「N/M nodes reporting」的分母）。
+func NewMetricsService(cfg *AppConfig, st *state.Store, mb *metrics.Backend, mm *metrics.Manager) *api.MetricsService {
+	return api.NewMetricsService(st).WithBackend(mb, mm).
+		WithRetentionDays(cfg.MetricsSettings().RetentionDays).
+		WithNodesTotal(func(ctx context.Context) (int, error) {
+			nodes, err := st.ListCachedNodes(ctx)
+			if err != nil {
+				return 0, err
+			}
+			return len(nodes), nil
+		})
 }
 
 // NewEventsService 构造事件流面服务（seq 游标）。
@@ -640,6 +695,7 @@ func NewServices(
 	cfg *AppConfig,
 	rm *rustfs.Manager,
 	vm *victorialogs.Manager,
+	mm *metrics.Manager,
 	dm *database.Manager,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
@@ -664,6 +720,7 @@ func NewServices(
 		newBackupService(bm),
 		newRustfsService(rm),
 		newVictorialogsService(vm),
+		newMetricsService(mm),
 		newDatabaseService(dm),
 		newCronSchedulerService(cm),
 		newSecretsService(sb),

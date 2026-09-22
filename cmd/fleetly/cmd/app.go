@@ -37,6 +37,7 @@ func NewApp(version string) *commands.App {
 		newDriftCmd(),
 		newEnvCmd(),
 		newLogsCmd(),
+		newMetricsCmd(),
 		newEventsCmd(),
 		newTokensCmd(),
 		newPlacementCmd(),
