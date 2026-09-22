@@ -580,3 +580,20 @@ jobs:
       - name: cleanup
         if: always()
         run: docker ps -aq --filter name=fleetly-resource-sample | xargs -r docker rm -f
+
+  # 飞书通知（共用 .github/actions/feishu-notify）：nightly 红即阻断发版
+  # 证据，失败必须当天可见；成功静默（日常绿是预期态）。v5 占位恒 skipped
+  # 不计失败；engine-matrix 任一格红即整体 failure。
+  notify:
+    name: Feishu notify
+    needs: [v1-health-gate, v2-digest-nopull, v3-routing, v4-conn-governance, v6-placement, v5-recovery-drill, engine-matrix, upgrade-e2e, install-suite, multinode-rehearsal, conformance-objectstore, s3-rustfs-e2e, databases-e2e, conformance-builder, resource-sample]
+    if: ${{ !cancelled() && failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/feishu-notify
+        with:
+          status: failure
+          detail: v1=${{ needs.v1-health-gate.result }} v2=${{ needs.v2-digest-nopull.result }} v3=${{ needs.v3-routing.result }} v4=${{ needs.v4-conn-governance.result }} v6=${{ needs.v6-placement.result }} v5=${{ needs.v5-recovery-drill.result }} engine-matrix=${{ needs.engine-matrix.result }} upgrade-e2e=${{ needs.upgrade-e2e.result }} install-suite=${{ needs.install-suite.result }} multinode=${{ needs.multinode-rehearsal.result }} objectstore=${{ needs.conformance-objectstore.result }} s3-e2e=${{ needs.s3-rustfs-e2e.result }} databases-e2e=${{ needs.databases-e2e.result }} conformance-builder=${{ needs.conformance-builder.result }} resource-sample=${{ needs.resource-sample.result }}
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}

@@ -63,3 +63,19 @@ jobs:
             console/test-results
           if-no-files-found: ignore
           retention-days: 14
+
+  # 飞书通知（共用 .github/actions/feishu-notify）：手动冒烟打真实 staging，
+  # 只在失败时推送（成功 = staging 正常，静默）。
+  notify:
+    name: Feishu notify
+    needs: [smoke]
+    if: ${{ !cancelled() && failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/feishu-notify
+        with:
+          status: failure
+          detail: smoke=${{ needs.smoke.result }}
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}

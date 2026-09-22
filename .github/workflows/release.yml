@@ -415,6 +415,9 @@ jobs:
     uses: ./.github/workflows/dbtools.yml
     with:
       tag: ${{ inputs.tag || github.ref_name }}
+    # dbtools.yml 内的飞书通知需要 FEISHU_WEBHOOK_URL；workflow_call 默认
+    # 不透传 secrets，这里显式继承。
+    secrets: inherit
     permissions:
       contents: read
       packages: write
@@ -563,3 +566,20 @@ jobs:
             --title "fleetly $V" \
             --notes-file rel/notes.md
           gh release upload "$V" "$@" --clobber
+
+  # 飞书通知（共用 .github/actions/feishu-notify）：发版链路成败都推。
+  # dbtools-image 不进 publish.needs（镜像失败各自红，不拖累制品链），
+  # 但通知要覆盖它——needs 全量收口，任何一环红即报失败。
+  notify:
+    name: Feishu notify
+    needs: [build, checksums, sbom, sign, image, dbtools-image, smoke-arm64, publish]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/feishu-notify
+        with:
+          status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          detail: build=${{ needs.build.result }} checksums=${{ needs.checksums.result }} sbom=${{ needs.sbom.result }} sign=${{ needs.sign.result }} image=${{ needs.image.result }} dbtools-image=${{ needs.dbtools-image.result }} smoke-arm64=${{ needs.smoke-arm64.result }} publish=${{ needs.publish.result }}
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}

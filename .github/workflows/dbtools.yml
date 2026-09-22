@@ -70,3 +70,20 @@ jobs:
             '${{ env.DBTOOLS_IMAGE }}@${{ steps.push.outputs.digest }}' \
             --certificate-identity-regexp "$EXPECTED_SIGNER" \
             --certificate-oidc-issuer "$EXPECTED_ISSUER"
+
+  # 飞书通知（共用 .github/actions/feishu-notify）：镜像发布成败都推。
+  # 注意：workflow_call 入口被 release.yml 调用时默认拿不到 secrets——
+  # 调用点已配 secrets: inherit；手动 dispatch 天然可见。
+  notify:
+    name: Feishu notify
+    needs: [build-push]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/feishu-notify
+        with:
+          status: ${{ contains(needs.*.result, 'failure') && 'failure' || 'success' }}
+          detail: build-push=${{ needs.build-push.result }} tag=${{ inputs.tag }}
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}

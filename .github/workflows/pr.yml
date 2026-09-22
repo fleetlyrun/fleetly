@@ -345,3 +345,19 @@ jobs:
             fi
           done
           exit "$fail"
+
+  # 飞书通知（共用 .github/actions/feishu-notify）：CI 只在失败时推送——
+  # 成功是常态噪音；fork PR 拿不到 secrets，action 内部自动跳过。
+  notify:
+    name: Feishu notify
+    needs: [lint, test, generate-sync, proto, vulncheck, deadcode, console, license-guard, e2e, deploy-scripts, antipattern-grep]
+    if: ${{ !cancelled() && failure() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: ./.github/actions/feishu-notify
+        with:
+          status: failure
+          detail: lint=${{ needs.lint.result }} test=${{ needs.test.result }} generate-sync=${{ needs.generate-sync.result }} proto=${{ needs.proto.result }} vulncheck=${{ needs.vulncheck.result }} deadcode=${{ needs.deadcode.result }} console=${{ needs.console.result }} license-guard=${{ needs.license-guard.result }} e2e=${{ needs.e2e.result }} deploy-scripts=${{ needs.deploy-scripts.result }} antipattern-grep=${{ needs.antipattern-grep.result }}
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
