@@ -532,3 +532,59 @@ func TestGitSHADedupConcurrentSingleRow(t *testing.T) {
 		t.Fatalf("deployments for sha = %d, want 1", n)
 	}
 }
+
+// TestLatestSucceededDeploymentID W5-S2 访问日志部署归因的查询面：只认
+// succeeded（在途/失败/取消不参与——归因的是**正在服务**的版本）；多代
+// succeeded 取最近（created_at DESC, id DESC）；无成功部署返回空串不报错。
+func TestLatestSucceededDeploymentID(t *testing.T) {
+	ctx := context.Background()
+	st := newDeployStore(t)
+	app, err := st.CreateApp(ctx, "", "attrapp")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	// 无任何部署：空串。
+	id, err := st.LatestSucceededDeploymentID(ctx, app.ID)
+	if err != nil || id != "" {
+		t.Fatalf("empty store: id=%q err=%v, want empty, nil", id, err)
+	}
+
+	advance := func(depID string, chain []DeploymentStatus) {
+		t.Helper()
+		if _, err := st.CreateDeployment(ctx, DeployRecord{ID: depID, AppID: app.ID, Kind: "deploy"}); err != nil {
+			t.Fatalf("create %s: %v", depID, err)
+		}
+		prev := DeployQueued
+		for _, next := range chain {
+			n, p := next, prev
+			if err := st.UpdateDeployment(ctx, depID, DeploymentPatch{Status: &n, PrevStatus: &p}); err != nil {
+				t.Fatalf("%s: %s -> %s: %v", depID, prev, next, err)
+			}
+			prev = next
+		}
+	}
+	// 第一代 succeeded；随后一次 failed（不覆盖归因）；再一代 succeeded。
+	advance("dep-a", []DeploymentStatus{DeployPreparing, DeployBuilding, DeployReleasing, DeployObserving, DeploySucceeded})
+	advance("dep-f", []DeploymentStatus{DeployPreparing, DeployBuilding, DeployFailed})
+	id, err = st.LatestSucceededDeploymentID(ctx, app.ID)
+	if err != nil || id != "dep-a" {
+		t.Fatalf("after first success: id=%q err=%v, want dep-a", id, err)
+	}
+	advance("dep-b", []DeploymentStatus{DeployPreparing, DeployBuilding, DeployReleasing, DeployObserving, DeploySucceeded})
+	id, err = st.LatestSucceededDeploymentID(ctx, app.ID)
+	if err != nil || id != "dep-b" {
+		t.Fatalf("after second success: id=%q err=%v, want dep-b (newest wins)", id, err)
+	}
+	// 在途部署（releasing）不改变归因。
+	advance("dep-c", []DeploymentStatus{DeployPreparing, DeployBuilding, DeployReleasing})
+	id, err = st.LatestSucceededDeploymentID(ctx, app.ID)
+	if err != nil || id != "dep-b" {
+		t.Fatalf("with in-flight release: id=%q err=%v, want dep-b (in-flight excluded)", id, err)
+	}
+	// cancelled 终态同样不参与。
+	advance("dep-x", []DeploymentStatus{DeployPreparing, DeployCancelled})
+	id, err = st.LatestSucceededDeploymentID(ctx, app.ID)
+	if err != nil || id != "dep-b" {
+		t.Fatalf("after cancel: id=%q err=%v, want dep-b", id, err)
+	}
+}

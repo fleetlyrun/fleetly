@@ -63,7 +63,9 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 }
 
-// scanOnce 执行一轮扫描：发现服务集并逐流轮询拉取增量。
+// scanOnce 执行一轮扫描：发现服务集并逐流轮询拉取增量。轮内顺路构造访问
+// 日志的路由键候选集（active apps × 各自受管服务按 ingress 公式），尾部
+// 以同一候选集采集平台入口的访问流（W5-S2；backend=victorialogs 时生效）。
 func (m *Manager) scanOnce(ctx context.Context) {
 	apps, err := m.st.ListActiveApps(ctx)
 	if err != nil {
@@ -77,6 +79,7 @@ func (m *Manager) scanOnce(ctx context.Context) {
 	// M7-6：先对账已消失 app 的延迟淘汰（连续 miss 超窗 → 游标 + ring
 	// 回收），再推进活跃面采集。
 	m.evictStaleStreamState(active)
+	candidates := make(map[string]accessTarget)
 	for _, app := range apps {
 		services, err := m.port.ManagedServiceProcesses(ctx, app.Name)
 		if err != nil {
@@ -86,12 +89,14 @@ func (m *Manager) scanOnce(ctx context.Context) {
 		}
 		red := m.red.forApp(ctx, app.ID)
 		for _, svc := range services {
+			candidates[accessRouterName(app.Name, svc)] = accessTarget{app: app, service: svc}
 			m.pollStream(ctx, app, svc, red)
 		}
 		// E5 Cron：一次性 cron job 服务（fleetly-cron- 前缀，服务名不进
 		// 命名公式发现面）的日志同管线采集，归属 (app, compose 服务)。
 		m.pollCronJobs(ctx, app, red)
 	}
+	m.pollAccess(ctx, candidates)
 }
 
 // pollStream 拉取长驻服务的单条流（compose 服务名 → 命名公式 swarm 名）。

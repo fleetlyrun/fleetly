@@ -205,6 +205,40 @@ func TestSearchLogsCursorInvalid(t *testing.T) {
 	}
 }
 
+// TestSearchLogsAccessFieldsProjected W5-S2：访问行的结构化字段透传
+//（白名单内回读、白名单外不透传——入湖/读侧双保险的第二道）。
+func TestSearchLogsAccessFieldsProjected(t *testing.T) {
+	st := openLogsStore(t)
+	ctx := context.Background()
+	if _, err := st.CreateApp(ctx, "", "app"); err != nil {
+		t.Fatalf("CreateApp: %v", err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/x-ndjson")
+		fmt.Fprint(w, `{"_msg":"GET 200 h / 1ms","_time":"2026-09-21T10:00:00Z","app":"app","service":"web","source":"access",`+
+			`"method":"GET","status":"200","route":"fleetly-app-web-websecure@http","deployment_id":"dep-9","rogue":"x"}`+"\n")
+	}))
+	t.Cleanup(srv.Close)
+	vl := victorialogs.NewBackendWithBase(srv.URL)
+	svc := newLogsSvc(st, vl, nil)
+
+	resp, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app", Sources: []string{"access"}})
+	if err != nil {
+		t.Fatalf("SearchLogs: %v", err)
+	}
+	if len(resp.GetRows()) != 1 {
+		t.Fatalf("rows = %d, want 1", len(resp.GetRows()))
+	}
+	fields := resp.GetRows()[0].GetFields()
+	if fields["method"] != "GET" || fields["status"] != "200" ||
+		fields["route"] != "fleetly-app-web-websecure@http" || fields["deployment_id"] != "dep-9" {
+		t.Fatalf("fields = %v", fields)
+	}
+	if _, ok := fields["rogue"]; ok {
+		t.Fatal("non-whitelisted field must not be projected to the consumer")
+	}
+}
+
 // TestGetSetLogsBackend 视图与切换：缺省视图（victorialogs/未显式设置/
 // 部署态 pending〔服务缺失〕）→ set jsonl（removed）→ 服务在位 deployed。
 func TestGetSetLogsBackend(t *testing.T) {

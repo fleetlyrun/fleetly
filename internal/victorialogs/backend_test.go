@@ -110,18 +110,27 @@ func TestBuildLogsQLFilters(t *testing.T) {
 	if q, err := BuildLogsQL(nil, nil, nil, ""); err != nil || q != "*" {
 		t.Fatalf("match-all query = %q err=%v, want *", q, err)
 	}
-	// 白名单负向：服务名/应用名/来源越界拒绝（ErrBadQuery 哨兵）。
+	// 白名单负向：服务名/应用名/来源越界拒绝（ErrBadQuery 哨兵）。S2 起
+	// access 进入来源词表（与采集面同拍放行），越界样本改用未放行值。
 	for _, tc := range []struct {
 		apps, services, sources []string
 	}{
 		{apps: []string{"Bad_Name"}},
 		{apps: []string{"ok"}, services: []string{"a b"}},
-		{apps: []string{"ok"}, services: []string{"ok"}, sources: []string{"access"}},
+		{apps: []string{"ok"}, services: []string{"ok"}, sources: []string{"network"}},
 		{sources: []string{"container; drop"}},
 	} {
 		if _, err := BuildLogsQL(tc.apps, tc.services, tc.sources, ""); !errors.Is(err, ErrBadQuery) {
 			t.Errorf("BuildLogsQL(%v,%v,%v) err = %v, want ErrBadQuery", tc.apps, tc.services, tc.sources, err)
 		}
+	}
+	// source=access 已入词表（W5-S2 访问日志采集同拍放行）。
+	q, err = BuildLogsQL([]string{"demo"}, nil, []string{"access"}, "")
+	if err != nil {
+		t.Fatalf("BuildLogsQL access source: %v", err)
+	}
+	if q != `{app=~"^(demo)$",source=~"^(access)$"}` {
+		t.Fatalf("access filter query = %q", q)
 	}
 }
 
@@ -194,9 +203,74 @@ func TestIngestBulkPayload(t *testing.T) {
 	}
 }
 
+// TestIngestBulkAccessFields W5-S2：访问行的结构化 Fields 展开为入湖行
+// 顶层字段（白名单内）；白名单外键不入湖；读侧 parseLogRows 按同一词表
+// 回读 Fields（container 行 Fields 恒空——往返闭环钉住）。
+func TestIngestBulkAccessFields(t *testing.T) {
+	var gotBody string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		raw, _ := io.ReadAll(r.Body)
+		gotBody = string(raw)
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+	b := NewBackend()
+	b.base = srv.URL
+
+	at := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
+	entries := []logs.Entry{
+		{App: "demo", Service: "web", Source: logs.SourceAccess, Line: "GET 200 h / 1ms", At: at,
+			Fields: map[string]string{
+				"method": "GET", "status": "200", "host": "h", "path": "/",
+				"route": "fleetly-demo-web-web@http", "duration_ms": "1",
+				"client_ip": "10.0.0.1", "deployment_id": "dep-1",
+				"rogue_key": "drop-me", // 白名单外——不入湖
+			}},
+	}
+	if err := b.IngestBulk(context.Background(), entries); err != nil {
+		t.Fatalf("IngestBulk: %v", err)
+	}
+	lines := strings.Split(strings.TrimRight(gotBody, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("payload lines = %d, want 2", len(lines))
+	}
+	for _, want := range []string{
+		`"method":"GET"`, `"status":"200"`, `"host":"h"`, `"path":"/"`,
+		`"route":"fleetly-demo-web-web@http"`, `"duration_ms":"1"`,
+		`"client_ip":"10.0.0.1"`, `"deployment_id":"dep-1"`,
+	} {
+		if !strings.Contains(lines[1], want) {
+			t.Errorf("access row %s missing %s", lines[1], want)
+		}
+	}
+	if strings.Contains(lines[1], "rogue_key") {
+		t.Errorf("non-whitelisted key leaked into the bulk row: %s", lines[1])
+	}
+	// 读侧回读：行流 JSON（与入湖行同形）→ LogRow.Fields 按词表取回。
+	rowJSON := `{"_time":"2026-09-21T08:00:00Z","_msg":"GET 200 h / 1ms","app":"demo","service":"web","source":"access",` +
+		`"method":"GET","status":"200","host":"h","path":"/","route":"fleetly-demo-web-web@http",` +
+		`"duration_ms":"1","client_ip":"10.0.0.1","deployment_id":"dep-1","rogue_key":"drop-me"}` + "\n" +
+		`{"_time":"2026-09-21T08:00:01Z","_msg":"plain","app":"demo","service":"web","source":"container"}` + "\n"
+	rows, err := parseLogRows(strings.NewReader(rowJSON))
+	if err != nil {
+		t.Fatalf("parseLogRows: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].Fields["deployment_id"] != "dep-1" || rows[0].Fields["method"] != "GET" {
+		t.Fatalf("access row fields = %v", rows[0].Fields)
+	}
+	if _, ok := rows[0].Fields["rogue_key"]; ok {
+		t.Fatal("non-whitelisted key must not be read back")
+	}
+	if rows[1].Fields != nil {
+		t.Fatalf("container row fields = %v, want nil", rows[1].Fields)
+	}
+}
+
 // TestIngestBulkEmptyNoop 空批零请求（防呆——不发空 bulk）。
-func TestIngestBulkEmptyNoop(t *testing.T) {
-	called := false
+func TestIngestBulkEmptyNoop(t *testing.T) {	called := false
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		called = true
 		w.WriteHeader(http.StatusOK)

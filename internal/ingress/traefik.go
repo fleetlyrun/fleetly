@@ -449,6 +449,12 @@ func (m *Manager) buildTraefikSpec(endpoint, token string) swarm.ServiceSpec {
 		"--providers.http.tls.insecureSkipVerify=true",
 		// ping 健康面（healthcheck 子命令消费；容器内 8080，不发布）。
 		"--ping=true",
+		// 访问日志（E6 观测专项设计 §3.2，W5-S2）：JSON 行含 RouterName
+		// 等结构化字段——hub 平台采集（internal/logs access 采集器）反解
+		// app/service 的输入面。存量部署经 spec 漂移比对自动收敛（args
+		// 全量比对，改参数即触发一次 service update）。
+		"--accesslog=true",
+		"--accesslog.format=json",
 		"--log.level=INFO",
 		"--api.dashboard=false",
 	}

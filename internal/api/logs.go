@@ -167,6 +167,7 @@ func (s *LogsService) SearchLogs(ctx context.Context, req *serverv1.SearchLogsRe
 			Source:  r.Source,
 			Stderr:  r.Stderr,
 			Msg:     r.Msg,
+			Fields:  searchRowFields(r.Fields),
 		})
 	}
 	resp := &serverv1.SearchLogsResponse{Rows: out}
@@ -174,6 +175,24 @@ func (s *LogsService) SearchLogs(ctx context.Context, req *serverv1.SearchLogsRe
 		resp.NextCursor = encodeSearchCursor(offset + len(out))
 	}
 	return resp, nil
+}
+
+// searchRowFields 投影访问行的结构化字段（白名单键双保险——入湖侧已过滤，
+// 读侧再过一次同一词表，未知键不透传给消费者）。
+func searchRowFields(fields map[string]string) map[string]string {
+	if len(fields) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(fields))
+	for k, v := range fields {
+		if logs.AllowedAccessFieldKey(k) {
+			out[k] = v
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // encodeSearchCursor 签发分页游标（偏移量的 base64url 不透明形态——

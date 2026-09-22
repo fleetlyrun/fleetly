@@ -284,6 +284,25 @@ func (s *Store) ListAppDeployments(ctx context.Context, appID string, limit int)
 	return queryDeployments(ctx, s.db, q, appID, limit)
 }
 
+// LatestSucceededDeploymentID 返回该 app 最近一次 succeeded 部署的 ID
+//（W5-S2 访问日志部署归因的 state 侧查询面；排序与 ListAppDeployments 同
+// 口径：created_at DESC, id DESC——同毫秒入队的次序以 id 兜底）。无成功
+// 部署返回空串（调用方按「无归因」诚实呈现，不伪造）。非 succeeded 的
+// 在途/失败部署不参与——访问日志归因的是**正在服务**的版本，切流前的
+// releasing 不改变服务面。
+func (s *Store) LatestSucceededDeploymentID(ctx context.Context, appID string) (string, error) {
+	const q = `SELECT id FROM deployments WHERE app_id = ? AND status = 'succeeded'
+		ORDER BY created_at DESC, id DESC LIMIT 1`
+	var id string
+	if err := s.db.QueryRowContext(ctx, q, appID).Scan(&id); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", fmt.Errorf("state: latest succeeded deployment for app: %w", err)
+	}
+	return id, nil
+}
+
 // LatestDeploymentsByApp 批量返回一组应用各自的最近部署窗口（每 app 至多
 // perApp 条，created_at 倒序——与逐 app 调 ListAppDeployments 同序同窗）。
 // S18-A4：ListApps 派生状态的 N+1 收口——N 个 app 的派生输入从 N 次

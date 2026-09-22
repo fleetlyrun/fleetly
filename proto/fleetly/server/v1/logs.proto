@@ -118,7 +118,8 @@ message SearchLogsRequest {
   google.protobuf.Timestamp time_end = 5;
   // compose 服务名过滤集。
   repeated string services = 6;
-  // 来源过滤集：container | build（access 随 S2 访问日志采集进入词表）。
+  // 来源过滤集：container | build | access（access 随 W5-S2 访问日志
+  // 采集进入词表）。
   repeated string sources = 7;
   // 返回上限（缺省 200，天花板 1000）。
   int32 limit = 8 [(buf.validate.field).int32 = { gte: 0, lte: 1000 }];
@@ -136,6 +137,11 @@ message SearchLogRow {
   string source = 4;
   bool stderr = 5;
   string msg = 6;
+  // 访问行（source=access）的结构化字段透传（W5-S2 设计 §3.2：method/
+  // status/host/path/route/duration_ms/client_ip/deployment_id——入湖
+  // 白名单词表内回读；deployment_id 为滚动窗内**近似**归因，多副本滚动
+  // 窗内外流量可能分属新旧两代部署）。container/build 行为空。
+  map<string, string> fields = 7;
 }
 
 message SearchLogsResponse {

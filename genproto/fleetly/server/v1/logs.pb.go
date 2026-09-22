@@ -357,7 +357,8 @@ type SearchLogsRequest struct {
 	TimeEnd *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=time_end,json=timeEnd,proto3" json:"time_end,omitempty"`
 	// compose 服务名过滤集。
 	Services []string `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"`
-	// 来源过滤集：container | build（access 随 S2 访问日志采集进入词表）。
+	// 来源过滤集：container | build | access（access 随 W5-S2 访问日志
+	// 采集进入词表）。
 	Sources []string `protobuf:"bytes,7,rep,name=sources,proto3" json:"sources,omitempty"`
 	// 返回上限（缺省 200，天花板 1000）。
 	Limit int32 `protobuf:"varint,8,opt,name=limit,proto3" json:"limit,omitempty"`
@@ -464,13 +465,18 @@ func (x *SearchLogsRequest) GetCursor() string {
 // SearchLogRow 是检索命中的单行（字段与入湖行对齐：_time/_msg/app/
 // service/source/stderr——E6 设计 §3.1 行集契约）。
 type SearchLogRow struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	At            *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
-	App           string                 `protobuf:"bytes,2,opt,name=app,proto3" json:"app,omitempty"`
-	Service       string                 `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
-	Source        string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
-	Stderr        bool                   `protobuf:"varint,5,opt,name=stderr,proto3" json:"stderr,omitempty"`
-	Msg           string                 `protobuf:"bytes,6,opt,name=msg,proto3" json:"msg,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	At      *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	App     string                 `protobuf:"bytes,2,opt,name=app,proto3" json:"app,omitempty"`
+	Service string                 `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	Source  string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
+	Stderr  bool                   `protobuf:"varint,5,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	Msg     string                 `protobuf:"bytes,6,opt,name=msg,proto3" json:"msg,omitempty"`
+	// 访问行（source=access）的结构化字段透传（W5-S2 设计 §3.2：method/
+	// status/host/path/route/duration_ms/client_ip/deployment_id——入湖
+	// 白名单词表内回读；deployment_id 为滚动窗内**近似**归因，多副本滚动
+	// 窗内外流量可能分属新旧两代部署）。container/build 行为空。
+	Fields        map[string]string `protobuf:"bytes,7,rep,name=fields,proto3" json:"fields,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -545,6 +551,13 @@ func (x *SearchLogRow) GetMsg() string {
 		return x.Msg
 	}
 	return ""
+}
+
+func (x *SearchLogRow) GetFields() map[string]string {
+	if x != nil {
+		return x.Fields
+	}
+	return nil
 }
 
 type SearchLogsResponse struct {
@@ -646,7 +659,8 @@ type LogsBackendView struct {
 	// 该键是否被显式保存过（false = 缺省态生效）。
 	BackendSet bool `protobuf:"varint,2,opt,name=backend_set,json=backendSet,proto3" json:"backend_set,omitempty"`
 	// 部署态（backend=victorialogs 时）：deployed（服务在位）| pending
-	// （duty 收敛中）| removed（backend=jsonl 或服务已移除）。
+	// （duty 收敛中）| removed（backend=jsonl 或服务已移除）；面未装配
+	// （测试形态）= unknown。
 	Deployment string `protobuf:"bytes,3,opt,name=deployment,proto3" json:"deployment,omitempty"`
 	// 入湖 streak 是否降级中（VL 不可达——检索降级，直播不受影响）。
 	IngestDegraded bool `protobuf:"varint,4,opt,name=ingest_degraded,json=ingestDegraded,proto3" json:"ingest_degraded,omitempty"`
@@ -900,14 +914,18 @@ const file_fleetly_server_v1_logs_proto_rawDesc = "" +
 	"\asources\x18\a \x03(\tR\asources\x12 \n" +
 	"\x05limit\x18\b \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\x05limit\x12\x16\n" +
-	"\x06cursor\x18\t \x01(\tR\x06cursor\"\xa8\x01\n" +
+	"\x06cursor\x18\t \x01(\tR\x06cursor\"\xa8\x02\n" +
 	"\fSearchLogRow\x12*\n" +
 	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x10\n" +
 	"\x03app\x18\x02 \x01(\tR\x03app\x12\x18\n" +
 	"\aservice\x18\x03 \x01(\tR\aservice\x12\x16\n" +
 	"\x06source\x18\x04 \x01(\tR\x06source\x12\x16\n" +
 	"\x06stderr\x18\x05 \x01(\bR\x06stderr\x12\x10\n" +
-	"\x03msg\x18\x06 \x01(\tR\x03msg\"j\n" +
+	"\x03msg\x18\x06 \x01(\tR\x03msg\x12C\n" +
+	"\x06fields\x18\a \x03(\v2+.fleetly.server.v1.SearchLogRow.FieldsEntryR\x06fields\x1a9\n" +
+	"\vFieldsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"j\n" +
 	"\x12SearchLogsResponse\x123\n" +
 	"\x04rows\x18\x01 \x03(\v2\x1f.fleetly.server.v1.SearchLogRowR\x04rows\x12\x1f\n" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
@@ -953,7 +971,7 @@ func file_fleetly_server_v1_logs_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_logs_proto_rawDescData
 }
 
-var file_fleetly_server_v1_logs_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_fleetly_server_v1_logs_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_fleetly_server_v1_logs_proto_goTypes = []any{
 	(*FollowLogsRequest)(nil),       // 0: fleetly.server.v1.FollowLogsRequest
 	(*ListHistoryLogsRequest)(nil),  // 1: fleetly.server.v1.ListHistoryLogsRequest
@@ -968,36 +986,38 @@ var file_fleetly_server_v1_logs_proto_goTypes = []any{
 	(*GetLogsBackendResponse)(nil),  // 10: fleetly.server.v1.GetLogsBackendResponse
 	(*SetLogsBackendRequest)(nil),   // 11: fleetly.server.v1.SetLogsBackendRequest
 	(*SetLogsBackendResponse)(nil),  // 12: fleetly.server.v1.SetLogsBackendResponse
-	(*timestamppb.Timestamp)(nil),   // 13: google.protobuf.Timestamp
+	nil,                             // 13: fleetly.server.v1.SearchLogRow.FieldsEntry
+	(*timestamppb.Timestamp)(nil),   // 14: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_logs_proto_depIdxs = []int32{
-	13, // 0: fleetly.server.v1.ListHistoryLogsRequest.since:type_name -> google.protobuf.Timestamp
-	13, // 1: fleetly.server.v1.ListHistoryLogsRequest.until:type_name -> google.protobuf.Timestamp
-	13, // 2: fleetly.server.v1.LogEntryView.at:type_name -> google.protobuf.Timestamp
+	14, // 0: fleetly.server.v1.ListHistoryLogsRequest.since:type_name -> google.protobuf.Timestamp
+	14, // 1: fleetly.server.v1.ListHistoryLogsRequest.until:type_name -> google.protobuf.Timestamp
+	14, // 2: fleetly.server.v1.LogEntryView.at:type_name -> google.protobuf.Timestamp
 	2,  // 3: fleetly.server.v1.FollowLogsResponse.entry:type_name -> fleetly.server.v1.LogEntryView
 	2,  // 4: fleetly.server.v1.ListHistoryLogsResponse.entries:type_name -> fleetly.server.v1.LogEntryView
-	13, // 5: fleetly.server.v1.SearchLogsRequest.time_start:type_name -> google.protobuf.Timestamp
-	13, // 6: fleetly.server.v1.SearchLogsRequest.time_end:type_name -> google.protobuf.Timestamp
-	13, // 7: fleetly.server.v1.SearchLogRow.at:type_name -> google.protobuf.Timestamp
-	6,  // 8: fleetly.server.v1.SearchLogsResponse.rows:type_name -> fleetly.server.v1.SearchLogRow
-	13, // 9: fleetly.server.v1.LogsBackendView.ingest_degraded_since:type_name -> google.protobuf.Timestamp
-	9,  // 10: fleetly.server.v1.GetLogsBackendResponse.view:type_name -> fleetly.server.v1.LogsBackendView
-	9,  // 11: fleetly.server.v1.SetLogsBackendResponse.view:type_name -> fleetly.server.v1.LogsBackendView
-	0,  // 12: fleetly.server.v1.LogsService.FollowLogs:input_type -> fleetly.server.v1.FollowLogsRequest
-	1,  // 13: fleetly.server.v1.LogsService.ListHistoryLogs:input_type -> fleetly.server.v1.ListHistoryLogsRequest
-	5,  // 14: fleetly.server.v1.LogsService.SearchLogs:input_type -> fleetly.server.v1.SearchLogsRequest
-	8,  // 15: fleetly.server.v1.LogsService.GetLogsBackend:input_type -> fleetly.server.v1.GetLogsBackendRequest
-	11, // 16: fleetly.server.v1.LogsService.SetLogsBackend:input_type -> fleetly.server.v1.SetLogsBackendRequest
-	3,  // 17: fleetly.server.v1.LogsService.FollowLogs:output_type -> fleetly.server.v1.FollowLogsResponse
-	4,  // 18: fleetly.server.v1.LogsService.ListHistoryLogs:output_type -> fleetly.server.v1.ListHistoryLogsResponse
-	7,  // 19: fleetly.server.v1.LogsService.SearchLogs:output_type -> fleetly.server.v1.SearchLogsResponse
-	10, // 20: fleetly.server.v1.LogsService.GetLogsBackend:output_type -> fleetly.server.v1.GetLogsBackendResponse
-	12, // 21: fleetly.server.v1.LogsService.SetLogsBackend:output_type -> fleetly.server.v1.SetLogsBackendResponse
-	17, // [17:22] is the sub-list for method output_type
-	12, // [12:17] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	14, // 5: fleetly.server.v1.SearchLogsRequest.time_start:type_name -> google.protobuf.Timestamp
+	14, // 6: fleetly.server.v1.SearchLogsRequest.time_end:type_name -> google.protobuf.Timestamp
+	14, // 7: fleetly.server.v1.SearchLogRow.at:type_name -> google.protobuf.Timestamp
+	13, // 8: fleetly.server.v1.SearchLogRow.fields:type_name -> fleetly.server.v1.SearchLogRow.FieldsEntry
+	6,  // 9: fleetly.server.v1.SearchLogsResponse.rows:type_name -> fleetly.server.v1.SearchLogRow
+	14, // 10: fleetly.server.v1.LogsBackendView.ingest_degraded_since:type_name -> google.protobuf.Timestamp
+	9,  // 11: fleetly.server.v1.GetLogsBackendResponse.view:type_name -> fleetly.server.v1.LogsBackendView
+	9,  // 12: fleetly.server.v1.SetLogsBackendResponse.view:type_name -> fleetly.server.v1.LogsBackendView
+	0,  // 13: fleetly.server.v1.LogsService.FollowLogs:input_type -> fleetly.server.v1.FollowLogsRequest
+	1,  // 14: fleetly.server.v1.LogsService.ListHistoryLogs:input_type -> fleetly.server.v1.ListHistoryLogsRequest
+	5,  // 15: fleetly.server.v1.LogsService.SearchLogs:input_type -> fleetly.server.v1.SearchLogsRequest
+	8,  // 16: fleetly.server.v1.LogsService.GetLogsBackend:input_type -> fleetly.server.v1.GetLogsBackendRequest
+	11, // 17: fleetly.server.v1.LogsService.SetLogsBackend:input_type -> fleetly.server.v1.SetLogsBackendRequest
+	3,  // 18: fleetly.server.v1.LogsService.FollowLogs:output_type -> fleetly.server.v1.FollowLogsResponse
+	4,  // 19: fleetly.server.v1.LogsService.ListHistoryLogs:output_type -> fleetly.server.v1.ListHistoryLogsResponse
+	7,  // 20: fleetly.server.v1.LogsService.SearchLogs:output_type -> fleetly.server.v1.SearchLogsResponse
+	10, // 21: fleetly.server.v1.LogsService.GetLogsBackend:output_type -> fleetly.server.v1.GetLogsBackendResponse
+	12, // 22: fleetly.server.v1.LogsService.SetLogsBackend:output_type -> fleetly.server.v1.SetLogsBackendResponse
+	18, // [18:23] is the sub-list for method output_type
+	13, // [13:18] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_logs_proto_init() }
@@ -1011,7 +1031,7 @@ func file_fleetly_server_v1_logs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_logs_proto_rawDesc), len(file_fleetly_server_v1_logs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

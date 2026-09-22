@@ -38,6 +38,8 @@ import type {
   RollbackDeploymentResponse,
   RotateDatabaseCredentialsResponse,
   RotateJoinTokenResponse,
+  SearchLogsResponse,
+  SearchSource,
   SetEnvResponse,
   SetSecretResponse,
   SuspendDatabaseResponse,
@@ -164,7 +166,8 @@ export function verifyDomains(app: string) {
   );
 }
 
-// ── logs（历史检索；实时跟随走 stream.ts 的 NDJSON 流）─────────────────
+// ── logs（历史检索走 /logs；实时跟随走 stream.ts 的 NDJSON 流；日志库
+// 统一检索走 /logs/search——W5-S2）──────────────────────────────────────
 
 export function listHistoryLogs(
   app: string,
@@ -185,6 +188,39 @@ export function listHistoryLogs(
   const qs = new URLSearchParams(query).toString();
   return api<ListHistoryLogsResponse>(
     `/apps/${encodeURIComponent(app)}/logs${qs ? `?${qs}` : ""}`,
+  );
+}
+
+/**
+ * 日志库统一检索（VictoriaLogs LogsQL 后端）：时间倒序 + 游标分页（服务端
+ * 签发 next_cursor）。sources/services 为可选过滤集（重复 query key 形态
+ * ——gateway 对 repeated 字段同时接受重复键与 CSV）。VL 不可达 / jsonl 模
+ * 式 → E_LOGS_BACKEND_UNAVAILABLE 信封（诚实报错，不返回空列表冒充）。
+ */
+export function searchLogs(
+  app: string,
+  opts: {
+    keyword?: string;
+    services?: string[];
+    sources?: SearchSource[];
+    since?: string;
+    until?: string;
+    limit?: number;
+    cursor?: string;
+  } = {},
+) {
+  const query: Record<string, string> = {};
+  if (opts.keyword) query.keyword = opts.keyword;
+  if (opts.since) query.time_start = opts.since;
+  if (opts.until) query.time_end = opts.until;
+  if (opts.limit !== undefined) query.limit = String(opts.limit);
+  if (opts.cursor) query.cursor = opts.cursor;
+  const params = new URLSearchParams(query);
+  for (const s of opts.services ?? []) params.append("services", s);
+  for (const s of opts.sources ?? []) params.append("sources", s);
+  const qs = params.toString();
+  return api<SearchLogsResponse>(
+    `/apps/${encodeURIComponent(app)}/logs/search${qs ? `?${qs}` : ""}`,
   );
 }
 

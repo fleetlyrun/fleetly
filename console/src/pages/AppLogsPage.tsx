@@ -1,11 +1,13 @@
-// 日志页：实时跟随（NDJSON 流）+ 历史检索（时间窗/limit/source）。
+// 日志页：实时跟随（NDJSON 流）+ 历史检索（时间窗/limit/source）+ 日志库
+// 统一检索（W5-S2：SearchLogs——关键词/时间窗快捷项/服务/来源 chips/游标
+// 加载更多；两态切换，默认直播行为不变）。
 //
 // 断线续读口径：FollowLogs 契约无游标参数（proto/logs.proto），重连策略
 // = 记录最后一条日志的时间戳 → 先以 since=<last_ts> 回放历史补缺口 →
 // 再重开跟随流。游标语义在事件流（seq）实现，见 EventsPage。
 
 import { useQuery } from "@tanstack/react-query";
-import { Pause, Play, RefreshCw, ScrollText, Terminal } from "lucide-react";
+import { Pause, Play, RefreshCw, ScrollText, Search, Terminal } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 
@@ -13,10 +15,12 @@ import {
   getRevisionSpec,
   listHistoryLogs,
   listRevisions,
+  searchLogs,
 } from "@/api/endpoints";
 import { ReconnectBackoff } from "@/api/backoff";
+import { errorEnvelopeFrom } from "@/api/errors";
 import { followLogs, StreamError } from "@/api/streams";
-import type { LogEntryView } from "@/api/types";
+import type { LogEntryView, SearchLogRow, SearchSource } from "@/api/types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -32,6 +36,17 @@ import { formatTime } from "@/lib/utils";
 
 const LIVE_CAP = 2000;
 const ALL_SERVICES = "__all__";
+
+// 检索时间窗快捷项（W5-S2 设计 §3.3）：ms 值给相对窗计算。
+const SEARCH_WINDOWS: { key: string; label: string; ms: number }[] = [
+  { key: "15m", label: "15m", ms: 15 * 60_000 },
+  { key: "1h", label: "1h", ms: 60 * 60_000 },
+  { key: "6h", label: "6h", ms: 6 * 60 * 60_000 },
+  { key: "24h", label: "24h", ms: 24 * 60 * 60_000 },
+  { key: "7d", label: "7d", ms: 7 * 24 * 60 * 60_000 },
+];
+
+const SEARCH_PAGE_LIMIT = 200;
 
 // 微批 flush 周期（M9-3）：实时行先入缓冲，~100ms 合并一次 appendEntries
 //（一次 setState + 一次渲染），高频流不再逐行 setState。
@@ -88,9 +103,24 @@ export function AppLogsPage() {
   const [streamError, setStreamError] = useState<string>("");
   const [autoScroll, setAutoScroll] = useState(true);
 
+  // 两态切换（W5-S2 设计 §3.3）：live = 现有直播视图（行为不变）；search =
+  // 日志库统一检索（SearchLogs——VL 后端）。
+  const [mode, setMode] = useState<"live" | "search">("live");
+
   // 历史检索窗（可选；空 = 最近 limit 条）。
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
+
+  // 检索态输入与结果（SearchLogs 面状态）。
+  const [keyword, setKeyword] = useState("");
+  const [windowKey, setWindowKey] = useState<string>("1h");
+  const [searchService, setSearchService] = useState<string>(ALL_SERVICES);
+  const [searchSources, setSearchSources] = useState<SearchSource[]>([]);
+  const [results, setResults] = useState<SearchLogRow[]>([]);
+  const [nextCursor, setNextCursor] = useState<string>("");
+  const [searchError, setSearchError] = useState<string>("");
+  const [searching, setSearching] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const serviceNames = useServiceNames(name);
 
@@ -323,6 +353,60 @@ export function AppLogsPage() {
       );
   }, [name, service, since, until, source, resetSeenKeys]);
 
+  // ── 检索态（SearchLogs，W5-S2）─────────────────────────────────────────
+
+  const runSearch = useCallback(
+    (cursor?: string) => {
+      setSearching(true);
+      setHasSearched(true);
+      const win = SEARCH_WINDOWS.find((w) => w.key === windowKey) ?? {
+        key: "1h",
+        label: "1h",
+        ms: 60 * 60_000,
+      };
+      searchLogs(name, {
+        keyword: keyword.trim() || undefined,
+        services: searchService === ALL_SERVICES ? undefined : [searchService],
+        sources: searchSources.length > 0 ? searchSources : undefined,
+        since: new Date(Date.now() - win.ms).toISOString(),
+        limit: SEARCH_PAGE_LIMIT,
+        cursor: cursor || undefined,
+      })
+        .then((r) => {
+          setResults((prev) => (cursor ? [...prev, ...(r.rows ?? [])] : r.rows ?? []));
+          setNextCursor(r.next_cursor ?? "");
+          setSearchError("");
+        })
+        .catch((err) => {
+          const env = errorEnvelopeFrom(err);
+          // 诚实错误态：E_LOGS_BACKEND_UNAVAILABLE（jsonl 模式 / VL 不可达）
+          // 引导 `fleetly logs backend`——不冒充空结果。
+          setSearchError(
+            [
+              env.code ? `${env.code}: ${env.message ?? ""}` : env.message || "search failed",
+              env.suggestion,
+              "Inspect the log backend with `fleetly logs backend show`; the log-store search requires logs.backend=victorialogs (live tail is unaffected).",
+            ]
+              .filter(Boolean)
+              .join(" — "),
+          );
+        })
+        .finally(() => setSearching(false));
+    },
+    [name, keyword, windowKey, searchService, searchSources],
+  );
+
+  const loadMore = useCallback(() => {
+    if (!nextCursor) return;
+    runSearch(nextCursor);
+  }, [nextCursor, runSearch]);
+
+  const toggleSource = useCallback((s: SearchSource) => {
+    setSearchSources((prev) =>
+      prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s],
+    );
+  }, []);
+
   return (
     <div className="space-y-4">
       <Card>
@@ -331,21 +415,47 @@ export function AppLogsPage() {
             <Terminal aria-hidden className="h-4 w-4 text-muted-foreground" />
             Logs
           </CardTitle>
-          {streamError ? (
-            <span className="text-xs text-amber-600 dark:text-amber-400">{streamError}</span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <span
-                aria-hidden
-                className={`h-2 w-2 rounded-full ${
-                  live ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
-                }`}
-              />
-              {live ? "following" : "paused"}
-            </span>
-          )}
+          <div className="flex items-center gap-3">
+            {/* 两态切换（W5-S2）：默认直播；Search 进入日志库统一检索。 */}
+            <div className="flex overflow-hidden rounded-md border" role="group" aria-label="Logs view mode">
+              <Button
+                variant={mode === "live" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none border-0"
+                onClick={() => setMode("live")}
+              >
+                Live
+              </Button>
+              <Button
+                data-testid="logs-search-toggle"
+                variant={mode === "search" ? "secondary" : "ghost"}
+                size="sm"
+                className="rounded-none border-0"
+                onClick={() => setMode("search")}
+              >
+                <Search aria-hidden className="h-3.5 w-3.5" />
+                Search
+              </Button>
+            </div>
+            {mode === "live" ? (
+              streamError ? (
+                <span className="text-xs text-amber-600 dark:text-amber-400">{streamError}</span>
+              ) : (
+                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <span
+                    aria-hidden
+                    className={`h-2 w-2 rounded-full ${
+                      live ? "bg-emerald-500 animate-pulse" : "bg-zinc-400"
+                    }`}
+                  />
+                  {live ? "following" : "paused"}
+                </span>
+              )
+            ) : null}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3 pt-4">
+        {mode === "live" ? (
+          <CardContent className="space-y-3 pt-4">
           <div className="flex flex-wrap items-end gap-3">
             <div className="w-48 space-y-1.5">
               <Label htmlFor="log-service">Service</Label>
@@ -441,8 +551,159 @@ export function AppLogsPage() {
             )}
           </div>
         </CardContent>
+        ) : (
+        <CardContent className="space-y-3 pt-4">
+          {/* 检索态（W5-S2 设计 §3.3）：关键词 + 时间窗快捷项 + 服务 +
+              来源 chips → SearchLogs；结果时间倒序（VL 原生序）+ 游标加载
+              更多；VL 不可达/jsonl 模式 = 诚实错误态。 */}
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="min-w-64 flex-1 space-y-1.5">
+              <Label htmlFor="logs-search-input">Keyword</Label>
+              <Input
+                id="logs-search-input"
+                data-testid="logs-search-input"
+                placeholder="Search as a literal phrase…"
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !searching) runSearch();
+                }}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="logs-search-window">Window</Label>
+              <div className="flex overflow-hidden rounded-md border" role="group" aria-label="Search time window">
+                {SEARCH_WINDOWS.map((w) => (
+                  <Button
+                    key={w.key}
+                    data-testid="logs-search-window"
+                    data-window={w.key}
+                    variant={windowKey === w.key ? "secondary" : "ghost"}
+                    size="sm"
+                    className="rounded-none border-0"
+                    onClick={() => setWindowKey(w.key)}
+                  >
+                    {w.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+            <div className="w-48 space-y-1.5">
+              <Label htmlFor="logs-search-service">Service</Label>
+              <Select
+                value={searchService}
+                onValueChange={setSearchService}
+              >
+                <SelectTrigger id="logs-search-service">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={ALL_SERVICES}>All services</SelectItem>
+                  {serviceNames.map((s) => (
+                    <SelectItem key={s} value={s}>
+                      {s}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Source</Label>
+              <div className="flex items-center gap-1.5">
+                {(["container", "build", "access"] as SearchSource[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    data-testid={`logs-search-source-${s}`}
+                    aria-pressed={searchSources.includes(s)}
+                    onClick={() => toggleSource(s)}
+                    className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+                      searchSources.includes(s)
+                        ? "border-sky-500 bg-sky-500/10 text-sky-600 dark:text-sky-400"
+                        : "text-muted-foreground hover:bg-muted/60"
+                    }`}
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <Button
+              data-testid="logs-search-submit"
+              size="sm"
+              disabled={searching}
+              onClick={() => runSearch()}
+            >
+              <Search aria-hidden className="h-3.5 w-3.5" />
+              {searching ? "Searching…" : "Search"}
+            </Button>
+          </div>
+
+          {searchError ? (
+            <div
+              data-testid="logs-search-error"
+              className="rounded-md border border-amber-500/50 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-400"
+            >
+              {searchError}
+            </div>
+          ) : null}
+
+          <div
+            data-testid="logs-search-results"
+            className="h-[440px] overflow-auto rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100"
+          >
+            {results.length === 0 && !searchError ? (
+              <p className="text-zinc-500">
+                {hasSearched
+                  ? "No matches in the searched window."
+                  : "No matches yet. Run a search over the log store…"}
+              </p>
+            ) : (
+              results.map((r, i) => (
+                <div
+                  key={`${r.at ?? ""}|${r.service}|${r.source}|${r.msg}|${i}`}
+                  className="whitespace-pre-wrap break-all"
+                >
+                  <span className="text-amber-300">
+                    {r.at ? formatTime(r.at) : "—"}{" "}
+                  </span>
+                  <span className="text-sky-400">{r.service}</span>
+                  {r.source ? (
+                    <span className="text-violet-400"> [{r.source}] </span>
+                  ) : (
+                    " "
+                  )}
+                  {r.msg}
+                  {r.source === "access" && r.fields ? (
+                    <span className="text-zinc-500">
+                      {" "}
+                      {"{"}
+                      {Object.entries(r.fields)
+                        .map(([k, v]) => `${k}=${v}`)
+                        .join(" ")}
+                      {"}"}
+                    </span>
+                  ) : null}
+                </div>
+              ))
+            )}
+          </div>
+          {nextCursor ? (
+            <Button
+              data-testid="logs-search-load-more"
+              variant="outline"
+              size="sm"
+              disabled={searching}
+              onClick={loadMore}
+            >
+              Load more
+            </Button>
+          ) : null}
+        </CardContent>
+        )}
       </Card>
 
+      {mode === "live" ? (
       <Card>
         <CardHeader className="border-b pb-3">
           <CardTitle className="text-sm font-semibold">History search</CardTitle>
@@ -474,6 +735,7 @@ export function AppLogsPage() {
           </div>
         </CardContent>
       </Card>
+      ) : null}
     </div>
   );
 }

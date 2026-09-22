@@ -44,11 +44,12 @@ func loopbackBase() string {
 // 类既有约束；首位收紧为字母数字，拒绝纯符号形态）。
 var servicePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
-// allowedSources 是来源白名单词表（S1 采集面：container|build；access 随
-// S2 访问日志采集进入词表——诚实边界，不预放行）。
+// allowedSources 是来源白名单词表（S1：container|build；S2 起访问日志
+// source=access 进入词表——与采集面同拍放行，诚实边界不预放行）。
 var allowedSources = map[string]bool{
 	logs.SourceContainer: true,
 	logs.SourceBuild:     true,
+	logs.SourceAccess:    true,
 }
 
 // EscapeLogsQLPhrase 把任意字符串转义为 LogsQL 双引号字面量短语的内容体
@@ -88,6 +89,9 @@ type LogRow struct {
 	Source  string
 	Stderr  bool
 	Msg     string
+	// Fields 是 access 行的结构化字段回读（白名单键内取回；container/
+	// build 行为 nil）。
+	Fields map[string]string
 }
 
 // Backend 是 VL 的 HTTP 消费端（无状态；hub 批量器与 SearchLogs 共用）。
@@ -132,8 +136,11 @@ func (b *Backend) Ping(ctx context.Context) error {
 
 // IngestBulk 实现日志管线 IngestBackend 端口（internal/logs）：把一批已
 // 脱敏行以 ES bulk 形态入湖（_stream_fields=app,service,source；行字段
-// _time/_msg/app/service/source/stderr——设计 §2.3）。非 2xx 一律按失败
-// 返回（含响应体前 256B 摘要——批量器 streak 面的取证材料）。
+// _time/_msg/app/service/source/stderr——设计 §3.1 行集契约；W5-S2：access
+// 行的结构化 Fields 展开为同层行字段（键经 logs.AllowedAccessFieldKey 白名
+// 单过滤——method/status/host/path/route/duration_ms/client_ip/deployment_id
+// 之外的键不入湖）。非 2xx 一律按失败返回（含响应体前 256B 摘要——批量器
+// streak 面的取证材料）。
 func (b *Backend) IngestBulk(ctx context.Context, entries []logs.Entry) error {
 	if len(entries) == 0 {
 		return nil
@@ -152,6 +159,13 @@ func (b *Backend) IngestBulk(ctx context.Context, entries []logs.Entry) error {
 		raw, err := json.Marshal(row)
 		if err != nil {
 			return fmt.Errorf("victorialogs: marshal bulk row: %w", err)
+		}
+		if len(e.Fields) > 0 {
+			// 访问行：结构化字段展开为行顶层键（VL 扁平文档模型——嵌套
+			// 对象无独立查询语义，顶层键才可被 LogsQL 过滤与读侧取回）。
+			if raw, err = expandAccessFields(raw, e.Fields); err != nil {
+				return err
+			}
 		}
 		buf.Write(raw)
 		buf.WriteByte('\n')
@@ -185,6 +199,26 @@ type bulkRow struct {
 	Stderr  bool   `json:"stderr,omitempty"`
 }
 
+// expandAccessFields 把访问行的结构化字段并入入湖行 JSON（顶层键展开；
+// 白名单外键静默丢弃——两侧同一词表防任意键扩散进 VL 行 schema）。
+func expandAccessFields(raw []byte, fields map[string]string) ([]byte, error) {
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		return nil, fmt.Errorf("victorialogs: expand access fields: %w", err)
+	}
+	for k, v := range fields {
+		if !logs.AllowedAccessFieldKey(k) {
+			continue
+		}
+		obj[k] = v
+	}
+	out, err := json.Marshal(obj)
+	if err != nil {
+		return nil, fmt.Errorf("victorialogs: marshal expanded bulk row: %w", err)
+	}
+	return out, nil
+}
+
 // ErrBadQuery 是查询输入非法（白名单/转义前置校验失败）的哨兵——api 层
 // 映射 InvalidArgument。
 var ErrBadQuery = errors.New("victorialogs: invalid search query")
@@ -206,7 +240,7 @@ func BuildLogsQL(apps, services, sources []string, keyword string) (string, erro
 	}
 	for _, v := range sources {
 		if !allowedSources[v] {
-			return "", fmt.Errorf("%w: source %q not in {container, build}", ErrBadQuery, v)
+			return "", fmt.Errorf("%w: source %q not in {container, build, access}", ErrBadQuery, v)
 		}
 	}
 	var parts []string
@@ -316,7 +350,8 @@ func parseLogRows(r io.Reader) ([]LogRow, error) {
 }
 
 // logRowOf 把 VL 行 JSON 投影为 LogRow（字段缺失容忍——检索面诚实呈现
-// 已有维度；_time 解析失败 = 零值行，视图层容忍）。
+// 已有维度；_time 解析失败 = 零值行，视图层容忍）。access 行的结构化字段
+// 按白名单键回读（入湖与读侧同一词表——logs.AllowedAccessFieldKey）。
 func logRowOf(raw map[string]any) LogRow {
 	row := LogRow{
 		At:      parseVLTime(raw["_time"]),
@@ -325,6 +360,17 @@ func logRowOf(raw map[string]any) LogRow {
 		Source:  rawString(raw["source"]),
 		Msg:     rawString(raw["_msg"]),
 		Stderr:  rawBool(raw["stderr"]),
+	}
+	for key := range raw {
+		if !logs.AllowedAccessFieldKey(key) {
+			continue
+		}
+		if v := rawString(raw[key]); v != "" {
+			if row.Fields == nil {
+				row.Fields = make(map[string]string)
+			}
+			row.Fields[key] = v
+		}
 	}
 	return row
 }

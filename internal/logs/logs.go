@@ -30,8 +30,14 @@ type Entry struct {
 	At      time.Time `json:"at"`
 	Stderr  bool      `json:"stderr,omitempty"`
 	Line    string    `json:"line"`
-	// Source ∈ container | build（History 按 source 区分检索）。
+	// Source ∈ container | build | access（History/SearchLogs 按 source
+	// 区分检索）。
 	Source string `json:"source"`
+	// Fields 是 access 行的结构化附加字段（键词表见 AccessFieldKeys；
+	// W5-S2 设计 §3.2：method/status/host/path/route/duration_ms/client_ip/
+	// deployment_id）。container/build 行恒 nil——直播面（ring/Follow）与
+	// JSONL 落盘不消费该字段，只有入湖批量器展开成 VL 行字段。
+	Fields map[string]string `json:"fields,omitempty"`
 }
 
 // 日志来源词表。
@@ -40,7 +46,51 @@ const (
 	SourceContainer = "container"
 	// SourceBuild 是构建日志（builds 表 log_path 产物）来源。
 	SourceBuild = "build"
+	// SourceAccess 是入口访问日志（traefik access JSON 采集，W5-S2）来源。
+	// 只进入湖批量器：不进 ring（直播面不加噪——FollowLogs 零改动）、不落
+	// JSONL（量级与用途不同，检索面只在日志库）。
+	SourceAccess = "access"
 )
+
+// 访问行结构化字段键（W5-S2 设计 §3.2；入湖白名单词表——键不在词表内的
+// Fields 条目不入湖不透传，防任意键扩散进 VL 行 schema）。
+const (
+	// FieldMethod 是 HTTP 方法（GET/POST/...）。
+	FieldMethod = "method"
+	// FieldStatus 是下游响应码（DownstreamStatus）。
+	FieldStatus = "status"
+	// FieldHost 是请求 Host（RequestHost）。
+	FieldHost = "host"
+	// FieldPath 是请求 URI（RequestURI；可能含 query——经 redactor 脱敏）。
+	FieldPath = "path"
+	// FieldRoute 是命中的 traefik RouterName 原文（反解前的取证材料）。
+	FieldRoute = "route"
+	// FieldDurationMS 是请求耗时的毫秒整数值（traefik Duration 纳秒折算）。
+	FieldDurationMS = "duration_ms"
+	// FieldClientIP 是客户端 IP（ClientAddr 剥端口）。
+	FieldClientIP = "client_ip"
+	// FieldDeploymentID 是部署归因（该 app 当前生效部署的 ID——滚动窗内
+	// **近似**语义：多副本滚动窗内外流量可能分属新旧两代部署，字段注释与
+	// 设计文档均不声称精确；精确到 task 的蓝绿归因挂 v0.3）。
+	FieldDeploymentID = "deployment_id"
+)
+
+// accessFieldKeys 是访问行字段的入湖/透传白名单（序列化与读侧解析共用
+// 同一词表——未知键两端一致拒绝）。
+var accessFieldKeys = map[string]bool{
+	FieldMethod:       true,
+	FieldStatus:       true,
+	FieldHost:         true,
+	FieldPath:         true,
+	FieldRoute:        true,
+	FieldDurationMS:   true,
+	FieldClientIP:     true,
+	FieldDeploymentID: true,
+}
+
+// AllowedAccessFieldKey 报告键是否在访问行字段白名单内（victorialogs 入湖
+// 序列化与 SearchLogs 读侧解析共用）。
+func AllowedAccessFieldKey(key string) bool { return accessFieldKeys[key] }
 
 // Port 是日志采集的底座端口（实现 = substrate.Client；cmd 装配注入，
 // 测试用 fake）。
@@ -141,6 +191,16 @@ type Manager struct {
 	// 每扫描拍由 LoadLogsSettings 现读刷新（设置保存即生效，读侧不缓存
 	// 长驻——s3settings 同口径）；false = 纯 jsonl 形态（落盘照旧）。
 	vlIngest atomic.Bool
+
+	// 访问日志采集状态（W5-S2，access.go；mu 保护——与游标表同锁）：
+	// accStarted/accSince 是入口服务流的首轮锚点与 since 游标（独立于
+	// per-app 游标表——app 级延迟淘汰不适用平台服务）；accSkipped 是非
+	// 访问行/反解失败行的累计跳过计数（诚实观测面）；dep 是部署归因的
+	// 短 TTL 缓存（自有锁）。
+	accStarted bool
+	accSince   time.Time
+	accSkipped uint64
+	dep        *depAttributor
 }
 
 // NewManager 构造日志管线管理器（不启动采集；Run 承载循环）。
@@ -160,6 +220,7 @@ func NewManager(cfg Config, st *state.Store, port Port, box *secrets.Box, log *s
 		red:     newRedactorRegistry(st, box, log),
 		streams: make(map[string]*stream),
 		appMiss: make(map[string]time.Time),
+		dep:     newDepAttributor(st),
 		log:     log,
 	}
 }

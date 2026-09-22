@@ -11,6 +11,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { listApps } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
 import type { AppView } from "@/api/types";
+import { DegradedExplanationCard } from "@/components/degraded-explanation-card";
 import { EnvelopeAlert } from "@/components/envelope-alert";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
@@ -89,6 +90,14 @@ function AppRow({ app }: { app: AppView }) {
             <span className="block truncate font-mono text-xs text-muted-foreground">
               {app.id}
             </span>
+            {/* degraded 一等 UI（W5-S2）：行内常驻解释（compact 卡）——
+                不再是只有 badge 的二等态；点击链接进事件流（行点击语义
+                不受影响——链接 stopPropagation）。 */}
+            {app.derived_state === "degraded" ? (
+              <div onClick={(e) => e.stopPropagation()}>
+                <DegradedExplanationCard app={name} compact />
+              </div>
+            ) : null}
           </span>
         </div>
       </TableCell>

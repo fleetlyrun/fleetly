@@ -300,6 +300,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app}/logs/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * SearchLogs 统一检索（E6 观测专项设计 §3.1，W5-S1）：日志库
+         *     （VictoriaLogs）LogsQL 检索面。keyword 构造为转义后的字面量短语
+         *     （用户输入永不裸拼进查询串）；VL 不可达或当前 backend=jsonl 时以
+         *     E_LOGS_BACKEND_UNAVAILABLE 诚实报错（不返回空列表冒充）。检索面只
+         *     覆盖入湖窗口内的日志（切换前的 JSONL 历史不在检索面——设计 §2.3
+         *     「检索不跨界」的诚实边界）。
+         */
+        get: operations["LogsService_SearchLogs"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{app}/logs/stream": {
         parameters: {
             query?: never;
@@ -309,6 +333,30 @@ export interface paths {
         };
         get: operations["LogsService_FollowLogs"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/logs-backend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetLogsBackend 日志后端视图（W5-S1：mode / 是否显式设置 / 部署态 /
+         *     ingest streak / 丢弃计数——CLI `logs backend show` 与 Console 卡共面）。
+         */
+        get: operations["LogsService_GetLogsBackend"];
+        /**
+         * SetLogsBackend 切换日志后端（victorialogs | jsonl）：保存即生效——
+         *     duty 收敛部署/移除（卷保留），采集路由下拍切换。
+         */
+        put: operations["LogsService_SetLogsBackend"];
         post?: never;
         delete?: never;
         options?: never;
@@ -1272,6 +1320,9 @@ export interface components {
         v1FollowLogsResponse: {
             entry?: components["schemas"]["v1LogEntryView"];
         };
+        v1GetLogsBackendResponse: {
+            view?: components["schemas"]["v1LogsBackendView"];
+        };
         v1ListHistoryLogsResponse: {
             entries?: components["schemas"]["v1LogEntryView"][];
         };
@@ -1284,6 +1335,70 @@ export interface components {
             stderr?: boolean;
             line?: string;
             source?: string;
+        };
+        /**
+         * LogsBackendView 是日志后端视图（E6 设计 §2.2/§2.3 诚实口径：模式、
+         *     是否显式设置、部署态、ingest streak、丢弃计数常驻可见）。
+         */
+        v1LogsBackendView: {
+            /**
+             * 生效模式：victorialogs | jsonl（缺省 victorialogs——V2-1 默认捆绑；
+             *     未显式设置时 mode 已投影为缺省值，set 标志区分「缺省生效」）。
+             */
+            backend?: string;
+            /** 该键是否被显式保存过（false = 缺省态生效）。 */
+            backend_set?: boolean;
+            /**
+             * 部署态（backend=victorialogs 时）：deployed（服务在位）| pending
+             *     （duty 收敛中）| removed（backend=jsonl 或服务已移除）；面未装配
+             *     （测试形态）= unknown。
+             */
+            deployment?: string;
+            /** 入湖 streak 是否降级中（VL 不可达——检索降级，直播不受影响）。 */
+            ingest_degraded?: boolean;
+            /**
+             * 降级 streak 起点（未降级不输出）。
+             * Format: date-time
+             */
+            ingest_degraded_since?: string;
+            /**
+             * 进程启动以来溢出丢弃的累计行数。
+             * Format: uint64
+             */
+            dropped_total?: string;
+        };
+        /**
+         * SearchLogRow 是检索命中的单行（字段与入湖行对齐：_time/_msg/app/
+         *     service/source/stderr——E6 设计 §3.1 行集契约）。
+         */
+        v1SearchLogRow: {
+            /** Format: date-time */
+            at?: string;
+            app?: string;
+            service?: string;
+            source?: string;
+            stderr?: boolean;
+            msg?: string;
+            /**
+             * 访问行（source=access）的结构化字段透传（W5-S2 设计 §3.2：method/
+             *     status/host/path/route/duration_ms/client_ip/deployment_id——入湖
+             *     白名单词表内回读；deployment_id 为滚动窗内**近似**归因，多副本滚动
+             *     窗内外流量可能分属新旧两代部署）。container/build 行为空。
+             */
+            fields?: {
+                [key: string]: string;
+            };
+        };
+        v1SearchLogsResponse: {
+            rows?: components["schemas"]["v1SearchLogRow"][];
+            /** 下一页游标（空 = 没有更多命中）。 */
+            next_cursor?: string;
+        };
+        v1SetLogsBackendRequest: {
+            backend?: string;
+        };
+        v1SetLogsBackendResponse: {
+            view?: components["schemas"]["v1LogsBackendView"];
         };
         /**
          * CursorExpiredView 是游标过期断档帧：seq ≤ (oldest_seq - 1) 的事件已被
@@ -2743,6 +2858,63 @@ export interface operations {
             };
         };
     };
+    LogsService_SearchLogs: {
+        parameters: {
+            query?: {
+                /**
+                 * @description 可选的 app 过滤集（预留跨应用语义；当前检索面为单 app，额外值不
+                 *     放行——诚实边界）。
+                 */
+                apps?: string[];
+                /** @description 全文关键词（构造为转义后的 LogsQL 字面量短语——注入安全硬性条款）。 */
+                keyword?: string;
+                /** @description 时间窗下界；缺省 = 不设下界（保留窗即 VL -retentionPeriod）。 */
+                time_start?: string;
+                /** @description 时间窗上界；缺省 = 现在。 */
+                time_end?: string;
+                /** @description compose 服务名过滤集。 */
+                services?: string[];
+                /**
+                 * @description 来源过滤集：container | build | access（access 随 W5-S2 访问日志
+                 *     采集进入词表）。
+                 */
+                sources?: string[];
+                /** @description 返回上限（缺省 200，天花板 1000）。 */
+                limit?: number;
+                /**
+                 * @description 分页游标（服务端签发的下一页凭证；空 = 第一页）。游标分页自最新
+                 *     命中向后走（VL limit/offset 语义）。
+                 */
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SearchLogsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     LogsService_FollowLogs: {
         parameters: {
             query?: {
@@ -2766,6 +2938,68 @@ export interface operations {
                     "application/json": {
                         result?: components["schemas"]["v1FollowLogsResponse"];
                     };
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    LogsService_GetLogsBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetLogsBackendResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    LogsService_SetLogsBackend: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1SetLogsBackendRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetLogsBackendResponse"];
                 };
             };
             /** @description An unexpected error response. */

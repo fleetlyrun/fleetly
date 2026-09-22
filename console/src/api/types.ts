@@ -66,6 +66,11 @@ export type VerifyAppDomainsResponse = Schemas["v1VerifyAppDomainsResponse"];
 
 export type LogEntryView = Schemas["v1LogEntryView"];
 export type ListHistoryLogsResponse = Schemas["v1ListHistoryLogsResponse"];
+export type SearchLogRow = Schemas["v1SearchLogRow"];
+export type SearchLogsResponse = Schemas["v1SearchLogsResponse"];
+
+/** 检索来源过滤词表（proto sources repeated string 的消费侧词表）。 */
+export type SearchSource = "container" | "build" | "access";
 
 // ── system ───────────────────────────────────────────────────────────────
 

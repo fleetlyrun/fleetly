@@ -4,6 +4,7 @@
 
 import { Search } from "lucide-react";
 import { Fragment, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { eventTone, useEventStream } from "@/hooks/use-event-stream";
 import { EmptyState } from "@/components/empty-state";
@@ -18,7 +19,10 @@ import type { EventView } from "@/api/types";
 export function EventsPage() {
   const { events, connected, notice, lastSeq, clear } = useEventStream();
   const [expanded, setExpanded] = useState<string | null>(null);
-  const [filter, setFilter] = useState("");
+  // 深链预填（W5-S2 degraded 解释卡入口）：?q=app:<name> 初始化过滤——
+  // 链接直达「该 app 的事件流」；随后仍可自由改过滤。
+  const [searchParams] = useSearchParams();
+  const [filter, setFilter] = useState(searchParams.get("q") ?? "");
 
   // 客户端过滤（事件名/主题包含匹配）；新到事件实时进出视图。
   const visible = useMemo(() => {

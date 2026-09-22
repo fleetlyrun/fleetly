@@ -15,6 +15,7 @@ import {
 } from "@/api/endpoints";
 import { formatTime, timeAgo } from "@/lib/utils";
 import { CronSection } from "@/components/cron-section";
+import { DegradedExplanationCardLive } from "@/components/degraded-explanation-card";
 import { StatusDot } from "@/components/status-dot";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { StateBadge } from "@/components/state-badge";
@@ -71,6 +72,13 @@ export function AppOverviewPage() {
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {/* degraded 一等 UI（W5-S2）：派生状态 degraded 时常驻解释卡（事件
+          订阅只在 degraded 态挂载——ready 零额外流）。 */}
+      {app?.derived_state === "degraded" ? (
+        <div className="md:col-span-2">
+          <DegradedExplanationCardLive app={name} />
+        </div>
+      ) : null}
       <Card>
         <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
           <Layers aria-hidden className="h-4 w-4 text-muted-foreground" />
