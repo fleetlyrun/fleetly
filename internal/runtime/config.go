@@ -86,9 +86,26 @@ type AppConfig struct {
 	// ControlPlane 是控制面自身配置节（config 键 control_plane.*，E7 同批
 	// V2-8；本节只承载 TLS 基座——8420/8421 双面的服务端证书面）。
 	ControlPlane ControlPlaneConfig `mapstructure:"control_plane"`
+	// Terminal 是 Web 终端功能配置节（config 键 terminal.*，E7 W5-S6）。
+	Terminal TerminalConfig `mapstructure:"terminal"`
 	// Backup 是状态备份配置节（config 键 backup.*，T2.22；缺省值经
 	// statebackup.Config.Normalize 回落——单一事实源在 internal/statebackup）。
 	Backup BackupConfig `mapstructure:"backup"`
+}
+
+// TerminalConfig 是 Web 终端功能配置节（config 键 terminal.*，E7 W5-S6）。
+// 静态配置项——改动需重启。安全基线：admin-only（terminal 独立 scope）+
+// 限额（per-token 2 / 全局 8）+ 会话时限已足，不另设 opt-in——缺省 true。
+type TerminalConfig struct {
+	// Enabled 报告是否启用 Web 终端（terminal.enabled；缺省 true）。false =
+	// duty 移除 relay 服务 + API 报 E_TERMINAL_DISABLED（Console 面板按
+	// 禁用态渲染）。
+	Enabled *bool `mapstructure:"enabled"`
+}
+
+// TerminalEnabled 返回归一后的终端开关（nil = 缺省启用）。
+func (c *AppConfig) TerminalEnabled() bool {
+	return c.Terminal.Enabled == nil || *c.Terminal.Enabled
 }
 
 // BackupConfig 是状态备份配置节（config 键 backup.*，T2.22）。dir 留空时

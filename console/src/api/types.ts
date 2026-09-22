@@ -100,6 +100,11 @@ export type ListWebhookDeliveriesResponse = Schemas["v1ListWebhookDeliveriesResp
 /** 投递状态词表（proto status 过滤消费侧词表；failed = 终态）。 */
 export type WebhookDeliveryStatus = "pending" | "ok" | "failed";
 
+// ── terminal（E7 W5-S6 Web 终端；web-terminal §2.5）──────────────────────
+
+export type CreateTerminalTicketResponse = Schemas["v1CreateTerminalTicketResponse"];
+export type GetTerminalStatusResponse = Schemas["v1GetTerminalStatusResponse"];
+
 // ── system ───────────────────────────────────────────────────────────────
 
 export type ComponentHealth = Schemas["v1ComponentHealth"];

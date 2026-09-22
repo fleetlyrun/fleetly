@@ -47,6 +47,7 @@ func NewGRPCServer(
 	cronSvc *api.CronService,
 	dbs *api.DatabaseService,
 	secretsSvc *api.SecretsService,
+	execSvc *api.ExecService,
 	sys *api.SystemService,
 ) (*lynxgrpc.Server, error) {
 	validator, err := protovalidate.New()
@@ -84,8 +85,9 @@ func NewGRPCServer(
 	serverv1.RegisterDomainsServiceServer(g, domains)
 	serverv1.RegisterEnvServiceServer(g, env)
 	serverv1.RegisterLogsServiceServer(g, logsSvc)
-	serverv1.RegisterMetricsServiceServer(g, metricsSvc) // E6 W5-S3：metrics opt-in 面（查询/状态/模式）
+	serverv1.RegisterMetricsServiceServer(g, metricsSvc)             // E6 W5-S3：metrics opt-in 面（查询/状态/模式）
 	serverv1.RegisterNotificationsServiceServer(g, notificationsSvc) // E6 W5-S4：通知 Webhook 面（端点/台账/测试）
+	serverv1.RegisterExecServiceServer(g, execSvc)                   // E7 W5-S6：Web 终端受理面（ticket/状态；terminal scope）
 	serverv1.RegisterEventsServiceServer(g, events)
 	serverv1.RegisterPlacementServiceServer(g, placement)
 	serverv1.RegisterTokensServiceServer(g, tokens)

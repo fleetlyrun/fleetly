@@ -1,0 +1,90 @@
+# exec relay 镜像发布（E7 D-W5-3 反向常连：Web 终端执行中继的运行载体，
+# W5-S6）。
+#
+# 两个入口（dbtools.yml 同款形态）：
+#   - workflow_call：release.yml 随平台 release 调用（tag = 平台版本）；
+#   - workflow_dispatch：手动/引导发布（新 digest 引导、演练期补发）。
+# Go 侧消费 = internal/execrelay 的 DefaultExecRelayImage（CI 首推后钉
+# digest 收紧——首推前 Go 常量为 tag 引用，豁免清单有据）。二进制在宿主
+# 侧交叉编译（amd64+arm64，CGO off + trimpath），镜像构建 = 纯 COPY 进
+# 钉版 alpine（deploy/Dockerfile.exec——多架构免 QEMU、构建零执行）。
+# 签名与验证门与 fleetlyd/dbtools 镜像同款（keyless by digest）。
+
+name: exec image
+
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: "image tag to publish (e.g. v0.2.0)"
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "image tag to publish (e.g. v0.2.0-exec.1)"
+        required: true
+        type: string
+
+env:
+  EXEC_IMAGE: ghcr.io/fleetlyrun/fleetly-exec
+  EXPECTED_SIGNER: ^https://github\.com/fleetlyrun/fleetly/
+  EXPECTED_ISSUER: https://token.actions.githubusercontent.com
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
+
+jobs:
+  build-push:
+    name: ghcr image + cosign sign
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      # 宿主侧交叉编译 relay 静态二进制（amd64+arm64；CGO off + trimpath，
+      # 与 fleetlyd release 构建同参）。产物按 TARGETARCH 命名置于 staging
+      # 目录 = 构建上下文（上下文最小集：二进制 + Dockerfile——纯 COPY
+      # 构建，无其他输入；buildx 双平台各构建一次，Dockerfile 经 TARGETARCH
+      # 构建参数选 COPY 输入）。
+      - name: cross-compile fleetly-exec (linux amd64+arm64)
+        run: |
+          mkdir -p staging
+          GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w" -o staging/fleetly-exec-amd64 ./cmd/fleetly-exec
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w" -o staging/fleetly-exec-arm64 ./cmd/fleetly-exec
+          cp deploy/Dockerfile.exec staging/Dockerfile.exec
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: staging
+          file: staging/Dockerfile.exec
+          push: true
+          tags: |
+            ${{ env.EXEC_IMAGE }}:${{ inputs.tag }}
+          # 纯 COPY 构建无需 QEMU；relay 是 job 执行体性质的节点常驻组件
+          #（每节点一任务），与 dbtools 同双平台。
+          platforms: linux/amd64,linux/arm64
+      - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
+      - name: cosign sign image (keyless, by digest)
+        run: |
+          cosign sign --yes \
+            '${{ env.EXEC_IMAGE }}@${{ steps.push.outputs.digest }}'
+      - name: cosign verify image gate
+        run: |
+          cosign verify \
+            '${{ env.EXEC_IMAGE }}@${{ steps.push.outputs.digest }}' \
+            --certificate-identity-regexp "$EXPECTED_SIGNER" \
+            --certificate-oidc-issuer "$EXPECTED_ISSUER"

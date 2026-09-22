@@ -139,9 +139,16 @@ func TestAuthPingExempt(t *testing.T) {
 	if s, ok := RequiredScope("/fleetly.server.v1.DeploymentsService/RollbackDeployment"); !ok || s != ScopeDeploy {
 		t.Fatalf("RollbackDeployment scope = %q ok=%v, want deploy", s, ok)
 	}
+	// E7 W5-S6：ExecService 整体 terminal scope（方法级登记）。
+	for _, m := range []string{"CreateTerminalTicket", "GetTerminalStatus"} {
+		if s, ok := RequiredScope("/fleetly.server.v1.ExecService/" + m); !ok || s != ScopeTerminal {
+			t.Fatalf("ExecService.%s scope = %q ok=%v, want terminal", m, s, ok)
+		}
+	}
 }
 
-// TestScopeContainment scope 蕴含语义（admin ⊃ deploy ⊃ read）。
+// TestScopeContainment scope 蕴含语义（admin ⊃ deploy ⊃ read ⊕ terminal
+// ——terminal 独立：read/deploy 不蕴含，仅 admin 蕴含；E7 W5-S6）。
 func TestScopeContainment(t *testing.T) {
 	cases := []struct {
 		scopes, need string
@@ -157,6 +164,13 @@ func TestScopeContainment(t *testing.T) {
 		{"read", ScopeDeploy, false},
 		{"read,deploy", ScopeAdmin, false},
 		{"", ScopeRead, false},
+		// E7 terminal：默认仅 admin——read/deploy 不蕴含；显式授予可用。
+		{"admin", ScopeTerminal, true},
+		{"deploy", ScopeTerminal, false},
+		{"read", ScopeTerminal, false},
+		{"terminal", ScopeTerminal, true},
+		{"terminal", ScopeRead, false},
+		{"terminal,deploy", ScopeTerminal, true},
 	}
 	for _, c := range cases {
 		if got := containsScope(c.scopes, c.need); got != c.want {

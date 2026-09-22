@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/database"
 	"github.com/fleetlyrun/fleetly/internal/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/execrelay"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
@@ -63,6 +64,11 @@ var ProviderSet = wire.NewSet(
 	NewLogsManager,
 	NewCronManager,
 	NewNotifyManager,
+	NewExecRelayTaskSource,
+	NewExecRelayHub,
+	NewExecRelayManager,
+	NewExecService,
+	NewTerminalNativeHandler,
 	NewAuthenticator,
 	NewSystemService,
 	NewAppsService,
@@ -415,6 +421,86 @@ func NewCronManager(app lynx.App, st *state.Store, sb *secrets.Box, sc *substrat
 	return cron.NewManager(cron.Config{}, st, sb, sc, pl, app.Logger())
 }
 
+// execRelayTaskSource 是 execrelay.TaskSource 的装配层适配（substrate.
+// Client 的 TaskRuntimes/NodeHostnames 投影 → execrelay.TaskRuntime——
+// 底座类型不出 substrate、核心类型不出 execrelay，转换只在此处）。
+type execRelayTaskSource struct {
+	sc *substrate.Client
+}
+
+// ListTaskRuntimes 实现 execrelay.TaskSource。
+func (s execRelayTaskSource) ListTaskRuntimes(ctx context.Context, service string) ([]execrelay.TaskRuntime, error) {
+	tasks, err := s.sc.TaskRuntimes(ctx, service)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]execrelay.TaskRuntime, 0, len(tasks))
+	for _, t := range tasks {
+		out = append(out, execrelay.TaskRuntime{
+			ID: t.ID, NodeID: t.NodeID, ContainerID: t.ContainerID, Slot: t.Slot,
+			State: t.State, DesiredState: t.DesiredState, Timestamp: t.Timestamp,
+		})
+	}
+	return out, nil
+}
+
+// NodeHostnames 实现 execrelay.TaskSource（成员发现的节点反查面）。
+func (s execRelayTaskSource) NodeHostnames(ctx context.Context) (map[string]string, error) {
+	return s.sc.NodeHostnames(ctx)
+}
+
+// NewExecRelayTaskSource 构造 hub 的任务投影端口（substrate 客户端适配）。
+func NewExecRelayTaskSource(sc *substrate.Client) execrelay.TaskSource {
+	return execRelayTaskSource{sc: sc}
+}
+
+// NewExecRelayHub 构造终端 hub（E7 W5-S6：relay 连接表 + 会话桥接 + 限额
+// + terminal.opened/closed 审计/事件；功能开关与控制面 HTTP 端口经
+// AppConfig 静态注入——nil Enabled 供给 = 恒开，测试形态）。
+func NewExecRelayHub(app lynx.App, cfg *AppConfig, st *state.Store, tasks execrelay.TaskSource) *execrelay.Hub {
+	enabled := cfg.TerminalEnabled()
+	return execrelay.NewHub(execrelay.HubConfig{
+		Store:   st,
+		Tasks:   tasks,
+		Tickets: execrelay.NewTicketStore(0),
+		Log:     app.Logger(),
+		Enabled: func() bool { return enabled },
+	})
+}
+
+// NewExecRelayManager 构建托管 relay duty 管理器（E7 W5-S6，web-terminal
+// §2.1：terminal.enabled=true 时幂等收敛 global 服务 fleetly-exec；false 时
+// 移除。集群 token secret 首拍生成、哈希落 meta。wss 校验名 = 平台 TLS 模式
+// 为 platform 时下发的 ctrl.<base>——off/manual 诚实降级为 ws:// 明文，设计
+// §3.3。自建 Docker 连接，cleanup 释放；常驻收敛循环由服务壳承载——资源层，
+// 晚于 engine 停）。
+func NewExecRelayManager(app lynx.App, cfg *AppConfig, st *state.Store, ing *ingress.Manager) (*execrelay.Manager, func(), error) {
+	tlsName := ""
+	if cfg.TLSMode() == ControlPlaneTLSPlatform {
+		name, err := ing.PlatformTLSName()
+		if err != nil {
+			return nil, nil, fmt.Errorf("execrelay: resolve control TLS name: %w", err)
+		}
+		tlsName = name
+	}
+	httpPort := portOfAddr(cfg.Addr, DefaultHTTPAddr)
+	mgr, cleanup, err := execrelay.NewManager(st, cfg.TerminalEnabled(), httpPort, tlsName, app.Logger())
+	if err != nil {
+		return nil, nil, err
+	}
+	return mgr, cleanup, nil
+}
+
+// portOfAddr 取监听地址的端口段（空/无端口回落 defaultAddr 的端口——
+// FLEETLY_CONTROL_ADDR 的端口段与 HTTP 面同源）。
+func portOfAddr(addr, defaultAddr string) string {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil || port == "" {
+		_, port, _ = net.SplitHostPort(defaultAddr)
+	}
+	return port
+}
+
 // NewAppsService 构造应用资源面服务（T2.17；T2.19 增补 webhook/git 触发
 // 配置面——box 加密 webhook secret 与拉源认证材料，gitEndpoint 拼 remote
 // 提示；H9 增补路由撤销端口——app 删除管线经 ingress.Manager 撤销路由）。
@@ -509,7 +595,7 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // 预期且 ingest streak 无降级；降级时 Error 带丢弃计数——诚实红面）。E6
 // W5-S4：notifications 组件随投递器接线（设计 §5.2——启用端点连续终败即
 // 红，Error 带端点名与最近错误；无终败 = 无所欠恒绿）。
-func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, mm *metrics.Manager, nm *notify.Manager, version Version) *api.SystemService {
+func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, mm *metrics.Manager, nm *notify.Manager, erm *execrelay.Manager, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -552,6 +638,15 @@ func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, o
 					return nil
 				}
 				return nm.CheckHealth()
+			}},
+			// E7 W5-S6：execrelay 组件（terminal.enabled=true 时 relay 服务
+			// 应在位——缺失即收敛未完成；false = 无所欠恒绿，victorialogs
+			// 组件同口径）。
+			{Name: "execrelay", Check: func() error {
+				if erm == nil {
+					return nil
+				}
+				return erm.CheckHealth()
 			}},
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
@@ -623,6 +718,19 @@ func NewNotificationsService(st *state.Store, sb *secrets.Box) *api.Notification
 	return api.NewNotificationsService(st, sb)
 }
 
+// NewExecService 构造 Web 终端受理面服务（E7 W5-S6：ticket 签发 + 状态
+// 视图——整体 terminal scope；注入 relay duty 管理器承接 status 部署态）。
+func NewExecService(st *state.Store, hub *execrelay.Hub, erm *execrelay.Manager) *api.ExecService {
+	return api.NewExecService(st, hub).WithDutyManager(erm)
+}
+
+// NewTerminalNativeHandler 构造 Web 终端 native 端点 handler（E7 W5-S6：
+// GET /internal/exec-relay 的 relay 反向常连 + GET /v1/terminal 的浏览器
+// WS——newRootHandler 的精确路径分派面，例外清单见 gateway.go）。
+func NewTerminalNativeHandler(app lynx.App, hub *execrelay.Hub) *execrelay.NativeHandler {
+	return execrelay.NewNativeHandler(execrelay.NativeConfig{Hub: hub, Log: app.Logger()})
+}
+
 // NewPlacementService 构造放置面服务（T2.17 只读 + E1-7 显式换点/卷清单/
 // 迁移 runbook——换点裁决经 placement.Resolver，api 面只做解析与投影）。
 func NewPlacementService(st *state.Store, res *placement.Resolver) *api.PlacementService {
@@ -644,7 +752,7 @@ func NewTokensService(st *state.Store) *api.TokensService {
 //
 // M4-3：经 WithServerOptions 放宽 WriteTimeout（见 tuneHTTPServer——lynx
 // 缺省 60s 绝对超时会静默掐断 /v1/events/stream 与 logs stream）。
-func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl *ControlPlaneTLS) (*lynxhttp.Server, error) {
+func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl *ControlPlaneTLS, terminal *execrelay.NativeHandler) (*lynxhttp.Server, error) {
 	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
 	if err != nil {
 		return nil, err
@@ -656,7 +764,7 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl
 			return nil, err
 		}
 	}
-	root := newRootHandler(gitserver.NewWebhookHandler(src), consoleUI, mux)
+	root := newRootHandler(gitserver.NewWebhookHandler(src), consoleUI, terminal, mux)
 	opts := []lynxhttp.Option{
 		lynxhttp.WithAddr(cfg.Addr),
 		lynxhttp.WithHealthCheckers(app.HealthCheckers),
@@ -736,6 +844,7 @@ func NewServices(
 	vm *victorialogs.Manager,
 	mm *metrics.Manager,
 	dm *database.Manager,
+	erm *execrelay.Manager,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
 ) []lynx.Service {
@@ -762,6 +871,7 @@ func NewServices(
 		newVictorialogsService(vm),
 		newMetricsService(mm),
 		newDatabaseService(dm),
+		newExecRelayService(erm),
 		newCronSchedulerService(cm),
 		newSecretsService(sb),
 		newStoreService(st),

@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 说明 |
 |---|---|---|
-| **已裁决（方案冻结，2026-09-22，W5-S0）** | 2026-09-22 | 裁决输入：[架构 D19](2026-09-17-architecture.md)（执行中继原始裁决，本票 **D-W5-3 修订其通道机制字面**、安全面条款全部保留）、V2-8（CLI TLS 与 E7 同批，规划 §3）、R1 细则（zane-ops webshell 调研 §7：PTY+exec+白名单照抄，补齐空闲超时/审计/连接上限）、[v0.2 规划 §2 W5 行](../plan/2026-09-20-v0.2-plan.md)。**D-W5-3**（反向常连）= 用户授权按设计合理性定夺（2026-09-22，用户并认领解决 W3-F2 UDP 放行）；D-W5-1（MCP 暂缓）与 D-W5-2/D-W5-4 见 [observability 专项](2026-09-22-observability.md) |
+| **实现中（W5-S5 TLS 基座 + W5-S6 终端已落地，2026-09-22）**；S6 落地注记：①exec 反向通道拨 **8420（HTTP 面）** 非 §3.3 字面 8421——native WS 端点在 gateway 面（8421 是 gRPC 面无法承载 WS 升级），§3.3 字面随修订；②注册帧成员发现按「节点 hostname 反查为主 + 容器 ID 前缀匹配补充」（swarm 任务容器 hostname = 节点 hostname 非容器 ID，dind 实证）；③exec 镜像 **tag 中间态**（ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1 无 digest——CI 首推前 digest 不存在；image-pin 豁免清单有据，收紧票=钉 digest+摘豁免+台账）；④terminal.enabled 缺省 true；manual/off TLS 形态 relay 降级 ws:// 明文（诚实标注），platform 模式拨 IP 按 ctrl.<base> SAN 校验无 insecure skip | 2026-09-22 | 裁决输入：[架构 D19](2026-09-17-architecture.md)（执行中继原始裁决，本票 **D-W5-3 修订其通道机制字面**、安全面条款全部保留）、V2-8（CLI TLS 与 E7 同批，规划 §3）、R1 细则（zane-ops webshell 调研 §7：PTY+exec+白名单照抄，补齐空闲超时/审计/连接上限）、[v0.2 规划 §2 W5 行](../plan/2026-09-20-v0.2-plan.md)。**D-W5-3**（反向常连）= 用户授权按设计合理性定夺（2026-09-22，用户并认领解决 W3-F2 UDP 放行）；D-W5-1（MCP 暂缓）与 D-W5-2/D-W5-4 见 [observability 专项](2026-09-22-observability.md) |
 
 ## 1. 现状与问题
 

@@ -39,6 +39,17 @@ control_plane:
 #   https://console.<base>:8420，需 DNS A 记录指到 manager）。IP 直连会有
 #   证书名不匹配（浏览器例外，或换用 SAN 主机名）。
 
+# Web 终端（E7，W5-S6）：AppDetail 的终端面板（fleetly-exec 执行中继 + PTY
+# + xterm）。静态配置项——改动需重启。
+terminal:
+  # 是否启用 Web 终端（缺省 true）。安全基线 = terminal 独立 scope（默认仅
+  # admin；`fleetly tokens create --scopes terminal` 可独立授予）+ 并发限额
+  # （per-token 2 / 全局 8）+ 会话时限（空闲 10min / 硬上限 30min）。
+  # false = duty 移除 fleetly-exec 服务、ticket 受理报 E_TERMINAL_DISABLED；
+  # 集群 token secret 保留（重启用同一 token 身份；运维轮换路径见
+  # docs/runbooks/web-terminal.md）。
+  enabled: true
+
 # 状态层（SQLite 权威态 + 底座观测缓存）。
 state:
   # 状态库文件路径（启动即建库并应用迁移）。

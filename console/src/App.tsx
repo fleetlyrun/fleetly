@@ -23,6 +23,7 @@ import { AppLogsPage } from "@/pages/AppLogsPage";
 import { AppEnvPage } from "@/pages/AppEnvPage";
 import { AppSecretsPage } from "@/pages/AppSecretsPage";
 import { AppDomainsPage } from "@/pages/AppDomainsPage";
+import { AppTerminalPage } from "@/pages/AppTerminalPage";
 import { DatabasesPage } from "@/pages/DatabasesPage";
 import { DatabaseDetailPage } from "@/pages/DatabaseDetailPage";
 import { EventsPage } from "@/pages/EventsPage";
@@ -73,6 +74,7 @@ function Gate() {
             <Route path="env" element={<AppEnvPage />} />
             <Route path="secrets" element={<AppSecretsPage />} />
             <Route path="domains" element={<AppDomainsPage />} />
+            <Route path="terminal" element={<AppTerminalPage />} />
           </Route>
           <Route path="/databases" element={<DatabasesPage />} />
           <Route path="/databases/:name" element={<DatabaseDetailPage />} />

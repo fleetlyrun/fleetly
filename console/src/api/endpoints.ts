@@ -5,6 +5,7 @@ import { api, utf8ToBase64 } from "./client";
 import type {
   CancelDeploymentResponse,
   CreateDatabaseResponse,
+  CreateTerminalTicketResponse,
   CreateWebhookEndpointResponse,
   DeleteDatabaseResponse,
   DeleteWebhookEndpointResponse,
@@ -19,6 +20,7 @@ import type {
   GetRevisionSpecResponse,
   GetS3SettingsResponse,
   GetSystemStatusResponse,
+  GetTerminalStatusResponse,
   GetWebhookEndpointResponse,
   ListAppDomainsResponse,
   ListBackupsResponse,
@@ -566,4 +568,19 @@ export function removeSecret(app: string, name: string) {
     `/apps/${encodeURIComponent(app)}/secrets/${encodeURIComponent(name)}`,
     { method: "DELETE" },
   );
+}
+
+// ── terminal（E7 W5-S6 Web 终端；web-terminal §2.5）──────────────────────
+// WS 数据面不走 REST（native 端点 /v1/terminal?ticket=...，帧协议在
+// execrelay）——本文件只承接 ticket 受理与状态两个 proto 面 RPC。
+
+export function createTerminalTicket(app: string, service: string) {
+  return api<CreateTerminalTicketResponse>("/terminal/tickets", {
+    method: "POST",
+    json: { app, service },
+  });
+}
+
+export function getTerminalStatus() {
+  return api<GetTerminalStatusResponse>("/terminal/status");
 }

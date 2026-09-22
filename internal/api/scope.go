@@ -159,6 +159,12 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.NotificationsService/DeleteWebhookEndpoint": ScopeAdmin,
 	"/fleetly.server.v1.NotificationsService/RotateWebhookSecret":   ScopeAdmin,
 	"/fleetly.server.v1.NotificationsService/TestWebhook":           ScopeAdmin,
+	// ExecService（E7 W5-S6，web-terminal §2.4）：**整体 terminal scope**——
+	// 独立 scope（默认仅 admin；read/deploy 不蕴含；admin 蕴含，auth.go
+	// containsScope）。终端是任意命令执行面，权限与 deploy 的「发布自身声
+	// 明」不同级，独立授予（D19 原文：terminal 独立 scope）。
+	"/fleetly.server.v1.ExecService/CreateTerminalTicket": ScopeTerminal,
+	"/fleetly.server.v1.ExecService/GetTerminalStatus":    ScopeTerminal,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

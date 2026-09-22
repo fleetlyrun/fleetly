@@ -58,7 +58,9 @@ func (c *tokensCreateCmd) Usage() string {
 
 func (c *tokensCreateCmd) SetFlags(fs *flag.FlagSet) {
 	c.conn.register(fs)
-	fs.StringVar(&c.scopes, "scopes", "read", "comma-separated scopes (read/deploy/admin; admin implies deploy implies read)")
+	// E7 W5-S6：词表增补 terminal（Web 终端独立 scope——默认仅 admin，
+	// read/deploy 不蕴含；admin 蕴含一切）。
+	fs.StringVar(&c.scopes, "scopes", "read", "comma-separated scopes (read/deploy/terminal/admin; admin implies deploy, read and terminal; terminal is the web-terminal scope, not implied by read/deploy)")
 	fs.StringVar(&c.note, "note", "", "human-readable note (e.g. \"CI deploy\")")
 	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
 }

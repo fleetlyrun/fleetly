@@ -143,6 +143,10 @@ var docEvents = map[string]string{ // event → 文档出处
 	"metrics.mode_updated":  "E6 observability §4.1 (settings save transaction; opt-in switch deploys or removes the managed stack, volume retained)",
 	"metrics.stack_deployed": "E6 observability §4.1 (duty converge diff; payload carries service/image/reason)",
 	"metrics.stack_removed":  "E6 observability §4.1 (mode left on; data volume retained)",
+	// E7 Web 终端（web-terminal §2.4，W5-S6 接线）：terminal.* 2 项——会话
+	// 起止的审计/事件双落面；payload 只带元数据，会话内容零出现。
+	"terminal.opened": "E7 web-terminal §2.4 (hub session acceptance, same-transaction with the audit row; metadata only, never session content)",
+	"terminal.closed": "E7 web-terminal §2.4 (hub session close, same-transaction with the audit row; duration/reason metadata, never session content)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

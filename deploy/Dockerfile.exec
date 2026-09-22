@@ -1,0 +1,36 @@
+# fleetly-exec —— Web 终端执行中继镜像（E7 D-W5-3 反向常连，W5-S6；
+# dbtools「第二枚第一方平台镜像」同款组合纪律，deploy/Dockerfile.dbtools
+# 为先例）。
+#
+# 组合纪律：
+#   - 全部 FROM 逐 digest 钉定（deploy/check-image-pins.sh 门禁域 = Dockerfile*；
+#     digest 复用 Dockerfile.fleetlyd 已解析进台账的同版 alpine——
+#     docs/runbooks/image-prepull.md 为全集台账）；
+#   - 纯 COPY 无 RUN —— 多架构构建按目标平台自动解析（无需 QEMU），构建
+#     零执行 = 构建环境零信任要求；
+#   - 运行层取 alpine（非 scratch）：relay 的 wss 校验信任根 = Go crypto/
+#     x509 系统池——scratch 无 CA 包会让生产 wss 面（LE 签发的平台证书）
+#     校验失败；alpine 自带 ca-certificates 根集且仍免 QEMU。二进制是
+#     CGO_ENABLED=0 静态产物，musl 兼容。
+#
+# 二进制来源：CI exec.yml 在 build-push 前宿主侧交叉编译 linux/amd64+arm64
+#（-trimpath -ldflags "-s -w"），按 TARGETARCH 命名置于构建上下文根
+#（fleetly-exec-amd64 / fleetly-exec-arm64——buildx 双平台各构建一次，
+# TARGETARCH 构建参数选 COPY 输入；单平台本地构建需传
+# --build-arg TARGETARCH=amd64）。本地引导/演练同法（先交叉编译再
+# docker build；e2e/e2e/terminal.sh 的 dind 内本地构建即此形态——镜像首推
+# 前的诚实中间态，Go 常量 tag 引用 + 豁免清单有据）。
+#
+# 发布：release.yml exec-image job（随平台 release 重建，tag = 平台版本）+
+# workflow_dispatch 手动引导；签名/验证门与 fleetlyd/dbtools 镜像同款
+#（keyless cosign by digest）。Go 侧消费 = internal/execrelay
+# DefaultExecRelayImage（CI 首推后钉 digest 收紧）。
+
+FROM alpine:3.22@sha256:5291449c3df73caf6ed85e649dec1b9e818b39a5d8c871e97afc13e9cd5e8fa8
+ARG TARGETARCH
+# --chmod 显式置可执行位：构建上下文的文件权限不可假设（e2e exec+stdin
+# staging 形态落 0644——缺 --chmod 时任务启动即 "permission denied"，
+# 2026-09-22 dind 实证）。
+COPY --chmod=0755 fleetly-exec-${TARGETARCH} /fleetly-exec
+
+ENTRYPOINT ["/fleetly-exec"]

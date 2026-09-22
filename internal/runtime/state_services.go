@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/cron"
 	"github.com/fleetlyrun/fleetly/internal/database"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/execrelay"
 	"github.com/fleetlyrun/fleetly/internal/metrics"
 	"github.com/fleetlyrun/fleetly/internal/notify"
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
@@ -201,6 +202,27 @@ func (s metricsService) Start(ctx context.Context) error {
 
 // Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑）。
 func (s metricsService) Stop(_ context.Context) error { return nil }
+
+// execRelayService 是托管 exec relay duty 服务壳（E7 W5-S6，web-terminal
+// §2.1 D-W5-3）：Start 阶段进入常驻收敛循环（terminal.enabled=true 时幂等
+// 部署/漂移收敛 global 服务 fleetly-exec——host 网络 + docker.sock RO 挂载
+// + 集群 token secret（首拍生成 48B、哈希落 meta）；false 时移除服务；
+// 失败退避重试）。Start 阻塞到关停（actor 契约同上），Stop 无资源动作。
+// 健康面由 SystemService 组件 execrelay（部署检查，装配点命名）承载。
+type execRelayService struct {
+	m *execrelay.Manager
+}
+
+func newExecRelayService(m *execrelay.Manager) lynx.Service { return execRelayService{m: m} }
+
+func (s execRelayService) Name() string                 { return "execrelay" }
+func (s execRelayService) Init(_ lynx.AppContext) error { return nil }
+func (s execRelayService) Start(ctx context.Context) error {
+	return s.m.Run(ctx)
+}
+
+// Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑）。
+func (s execRelayService) Stop(_ context.Context) error { return nil }
 
 // notifyService 是通知投递器服务壳（E6 W5-S4，observability §5.2）：Start
 // 阶段进入游标轮询主循环（EventsSince 消费 → 订阅匹配 → 签名 POST + 退避

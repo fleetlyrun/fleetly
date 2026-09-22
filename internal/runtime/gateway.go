@@ -10,6 +10,7 @@ import (
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
+	"github.com/fleetlyrun/fleetly/internal/execrelay"
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
@@ -37,6 +38,8 @@ import (
 //     REST 面 404——与新GRPCServer 的注册清单对齐）
 //   - LogsService（Follow = chunked-JSON 流；Console SSE 直接消费）
 //   - EventsService（Watch = chunked-JSON 流，seq 游标 + 过期信封帧）
+//   - ExecService（E7 W5-S6：ticket 受理面 + 状态视图；WS 数据面不走
+//     gateway——/v1/terminal 的 GET 是原生 WS 端点，见下方例外清单）
 //
 // gRPC-only 清单：**v0.1 为空**——所有服务均挂 gateway（写操作挂 gateway
 // 供 Console 使用；Follow/Watch 的 JSON 帧形态适宜 REST）。若后续出现
@@ -61,10 +64,17 @@ import (
 //     指引（Console / REST / healthz），替代 grpc-gateway 的 404 JSON。
 //     纯静态、无依赖、不读任何存储；豁免精确到 GET/HEAD 的根路径（其余
 //     方法与其余路径原样进 gateway mux）。
+//   - GET /internal/exec-relay 与 GET /v1/terminal —— Web 终端 WS 升级
+//     （E7 W5-S6，internal/execrelay NativeHandler 同一 handler 分派两个
+//     精确路径）：前者 = relay 反向常连（集群 token Bearer），后者 = 浏览
+//     器接入（一次性 ticket——长效 token 不进 URL）。WS 二进制帧不是
+//     proto/JSON，无法走 gateway 反代形态；豁免精确到两条 GET 精确路径
+//     （分派面 = 豁免面；POST /v1/terminal/tickets 仍走 gateway → gRPC
+//     拦截器链的 terminal scope）。
 //
 // 实现：newRootHandler 先按精确路径形态分派 webhook 与 /ui/ 静态 handler
-// （console handler 未启用时为 nil——分派跳过），其余一律交回 grpc-gateway
-// mux。
+// （console handler 未启用时为 nil——分派跳过）、终端 native 端点（terminal
+// handler 未启用时为 nil），其余一律交回 grpc-gateway mux。
 func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, newJSONMarshaler()),
@@ -83,12 +93,13 @@ func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 		serverv1.RegisterDomainsServiceHandlerFromEndpoint,
 		serverv1.RegisterEnvServiceHandlerFromEndpoint,
 		serverv1.RegisterLogsServiceHandlerFromEndpoint,
-		serverv1.RegisterMetricsServiceHandlerFromEndpoint, // E6 W5-S3：metrics opt-in 面（PromQL 查询/状态/模式切换）
+		serverv1.RegisterMetricsServiceHandlerFromEndpoint,       // E6 W5-S3：metrics opt-in 面（PromQL 查询/状态/模式切换）
 		serverv1.RegisterNotificationsServiceHandlerFromEndpoint, // E6 W5-S4：通知 Webhook 面（端点/台账/测试）
+		serverv1.RegisterExecServiceHandlerFromEndpoint,          // E7 W5-S6：Web 终端受理面（ticket/状态；WS 数据面走原生端点）
 		serverv1.RegisterEventsServiceHandlerFromEndpoint,
 		serverv1.RegisterPlacementServiceHandlerFromEndpoint,
 		serverv1.RegisterTokensServiceHandlerFromEndpoint,
-		serverv1.RegisterGitKeysServiceHandlerFromEndpoint, // M4-2：与 gRPC 侧注册清单对齐
+		serverv1.RegisterGitKeysServiceHandlerFromEndpoint,  // M4-2：与 gRPC 侧注册清单对齐
 		serverv1.RegisterDatabaseServiceHandlerFromEndpoint, // E4 W4-S2：库实例资源面（生命周期 RPC；连接投影脱敏）
 		serverv1.RegisterSecretsServiceHandlerFromEndpoint,  // E4 W4-S4：平台密钥库面（D-DB-7；无值读回——list 只出名称/指纹）
 	} {
@@ -138,12 +149,12 @@ func grpcEndpointFromAddr(addr string) string {
 // ——仅 gateway 面；webhook 与 /ui/ 分派不经限速层，不受影响）。
 // H7：全根请求体上限中间件（limitRequestBody）最外层先行——鉴权与
 // gateway 解码之前拒绝超限物化（见 maxRequestBodyBytes）。
-func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.Handler) http.Handler {
+func newRootHandler(webhook http.Handler, consoleUI http.Handler, terminal http.Handler, fallback http.Handler) http.Handler {
 	gateway := newAuthFailureLimiter(time.Minute, 10).wrap(fallback)
 	landing := newLandingHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// H7：请求体上限在分派（webhook/console/gateway）之前执行——
-		// gateway 解码完 body 才到 gRPC 鉴权拦截器的旧形态下，未认证方
+		// H7：请求体上限在分派（webhook/console/terminal/gateway）之前执行
+		// ——gateway 解码完 body 才到 gRPC 鉴权拦截器的旧形态下，未认证方
 		// 可物化任意大内存；上限前置后 413 早于一切 body 消费。
 		if !limitRequestBody(w, r) {
 			return
@@ -160,6 +171,12 @@ func newRootHandler(webhook http.Handler, consoleUI http.Handler, fallback http.
 		}
 		if consoleUI != nil && (r.URL.Path == consoleUIPathPrefix || strings.HasPrefix(r.URL.Path, consoleUIPathPrefix+"/")) {
 			consoleUI.ServeHTTP(w, r)
+			return
+		}
+		// Web 终端 native WS 端点（E7 W5-S6）：handler 内部按两条精确 GET
+		// 路径分派，其余路径 404 原样交回 gateway（nil = 未装配——永不分派）。
+		if terminal != nil && (r.URL.Path == execrelay.RelayPath || r.URL.Path == execrelay.TerminalWSPath) {
+			terminal.ServeHTTP(w, r)
 			return
 		}
 		gateway.ServeHTTP(w, r)

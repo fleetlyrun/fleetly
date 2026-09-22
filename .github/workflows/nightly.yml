@@ -636,6 +636,36 @@ jobs:
           docker ps -aq --filter name=fleetly-t-e2e- | xargs -r docker rm -f
           docker network rm fleetly-t-br || true
 
+  terminal-e2e:
+    # Web 终端端到端（E7 W5-S6，e2e/terminal.sh 单 dind；web-terminal 专项
+    # 设计 §2 + §4 安全面套件，control-plane-tls 同骨架——编排自足）。relay
+    # duty 收敛 → status RPC 反向常连证据 → 受管应用部署 → 真 PTY 回显
+    #（alpine 无 bash → 白名单探测退 sh）→ read token 取票拒 → terminal
+    # scope 独立 token 全会话走通 → ticket 重放拒 → per-token 并发上限
+    # （双 hold 占满 + 第 3 条 close 429）→ terminal.opened/closed 事件 →
+    # 会话内容零泄漏负向。fleetly-exec 镜像在 dind 内本地构建（CI 首推前的
+    # 诚实中间态——tag 对齐 Go 常量，见脚本头注记）。
+    name: terminal e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run terminal e2e (dind)
+        run: sh e2e/terminal.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-t-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-t-e2e- | xargs -r docker rm -f
+          docker network rm fleetly-t-br || true
+
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:
     # Builder conformance（ObjectStore 部分已随 E3-7 落地为

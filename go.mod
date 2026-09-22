@@ -38,6 +38,7 @@ require (
 replace github.com/fleetlyrun/fleetly/genproto => ./genproto
 
 require (
+	github.com/coder/websocket v1.8.15
 	github.com/docker/cli v29.7.2+incompatible
 	github.com/fleetlyrun/fleetly/sdk/go v0.0.0-20260920151618-0ea0ebf6cf4a
 	github.com/minio/minio-go/v7 v7.3.0

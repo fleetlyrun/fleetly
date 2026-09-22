@@ -266,6 +266,14 @@ var builtins = []Code{
 		Summary:    "a webhook event pattern is invalid (patterns must be a non-empty list of 1..128 chars from [a-z0-9._-*]; '*' is the wildcard)",
 		Suggestion: "Use event-name glob patterns like \"deployment.*\", \"cron.failed\" or \"*\" (matches everything); see 'fleetly events watch' for the event vocabulary the patterns match against."},
 
+	// ── Web 终端面（E7 设计 §2.4/§2.5，W5-S6；注册表只增）──
+	// 消费点：ExecService.CreateTerminalTicket 与 native WS 端点的功能开关
+	// 门（config terminal.enabled=false——duty 移除 relay 服务、API 拒绝
+	// 签发，Console 面板显示禁用态）。
+	{ID: "E_TERMINAL_DISABLED", HTTP: 409,
+		Summary:    "the web terminal feature is disabled (terminal.enabled=false): no exec relay is deployed and no terminal tickets are issued",
+		Suggestion: "Enable the feature by setting terminal.enabled: true in the control plane config and restarting fleetlyd; the exec relay duty converges the fleetly-exec service on every node automatically."},
+
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",
 		Summary:    "post-observe-window instability alert (one source of app degraded)",

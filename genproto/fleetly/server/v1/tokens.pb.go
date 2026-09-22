@@ -27,8 +27,9 @@ const (
 
 type CreateTokenRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// scope 集（read / deploy / admin；admin 蕴含 deploy 蕴含 read；重复项
-	// 服务端归一去重）。
+	// scope 集（read / deploy / terminal / admin；admin 蕴含 deploy 蕴含 read
+	// ⊕ terminal——terminal 为独立 scope，read/deploy 不蕴含（E7 W5-S6）；
+	// 重复项服务端归一去重）。
 	Scopes []string `protobuf:"bytes,1,rep,name=scopes,proto3" json:"scopes,omitempty"`
 	// 备注（人读；如 "CI 部署"）。字段名 note（name 列承载，兼容既有表结构）。
 	Note          string `protobuf:"bytes,2,opt,name=note,proto3" json:"note,omitempty"`
@@ -434,9 +435,9 @@ var File_fleetly_server_v1_tokens_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_tokens_proto_rawDesc = "" +
 	"\n" +
-	"\x1efleetly/server/v1/tokens.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"m\n" +
-	"\x12CreateTokenRequest\x129\n" +
-	"\x06scopes\x18\x01 \x03(\tB!\xbaH\x1e\x92\x01\x1b\b\x01\"\x17r\x15R\x04readR\x06deployR\x05adminR\x06scopes\x12\x1c\n" +
+	"\x1efleetly/server/v1/tokens.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"w\n" +
+	"\x12CreateTokenRequest\x12C\n" +
+	"\x06scopes\x18\x01 \x03(\tB+\xbaH(\x92\x01%\b\x01\"!r\x1fR\x04readR\x06deployR\bterminalR\x05adminR\x06scopes\x12\x1c\n" +
 	"\x04note\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xc8\x01R\x04note\"\xa2\x01\n" +
 	"\x13CreateTokenResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +

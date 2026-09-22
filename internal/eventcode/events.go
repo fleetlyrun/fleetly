@@ -196,4 +196,13 @@ var builtins = []Event{
 	// payload 零敏感材料。
 	{Name: "metrics.stack_deployed", Summary: "managed metrics stack service deployed or converged to the desired spec (payload carries service/image/reason)"},
 	{Name: "metrics.stack_removed", Summary: "managed metrics stack removed after metrics.mode left on (data volume retained; payload carries volume_retained=true)"},
+
+	// ── Web 终端（E7 设计 §2.4，W5-S6 接线；注册表只增）──
+	// 发出来源：控制面 hub（internal/execrelay hub.go——会话受理与收尾，
+	// 与审计 terminal.opened/closed 同事务 = Outbox；subject = app:<name>）。
+	// payload 只带元数据（app/service/container/node/token/session/时长/
+	// 关闭码/原因）——**会话内容（PTY 字节）零出现**（明文纪律，设计 §2.4
+	// 「payload 不含会话内容」）。
+	{Name: "terminal.opened", Summary: "web terminal session opened (payload carries app/service/container/node/token metadata only, never session content)"},
+	{Name: "terminal.closed", Summary: "web terminal session closed (payload carries duration, close code and reason; metadata only, never session content)"},
 }

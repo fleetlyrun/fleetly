@@ -20,6 +20,7 @@ const TABS = [
   { key: "env", label: "Env" },
   { key: "secrets", label: "Secrets" },
   { key: "domains", label: "Domains" },
+  { key: "terminal", label: "Terminal" },
 ];
 
 export function AppDetailLayout() {

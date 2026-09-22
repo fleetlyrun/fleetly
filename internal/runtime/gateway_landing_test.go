@@ -20,7 +20,7 @@ func TestLandingPageDispatch(t *testing.T) {
 		fallbackHits++
 		http.NotFound(w, r)
 	})
-	root := newRootHandler(nil, nil, fallback)
+	root := newRootHandler(nil, nil, nil, fallback)
 
 	// 面 1：GET / → 200 引导页（Console 未启用也照常），含三处入口指引。
 	rec := httptest.NewRecorder()

@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 metrics.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// ExecService 是 Web 终端受理面（E7，设计 docs/design/2026-09-22-web-terminal.md
+// §2.3/§2.5，W5-S6）。**整个服务面 terminal scope**（独立 scope，默认仅
+// admin——read/deploy 不蕴含；admin 蕴含 terminal，auth.go containsScope）。
+//
+// ticket 流（§2.5「浏览器无自定义 WS 头的诚实解」）：
+//   1. CreateTerminalTicket（Bearer + terminal scope，body 指定 app/service）
+//      → 一次性 60s ticket（绑 token + app + service）；
+//   2. `GET /v1/terminal?ticket=...`（native 端点 WS 升级，coder/websocket）
+//      —— 长效 token 不进 URL；ticket 即认领凭据。
+// WS 数据面不走 proto（二进制帧协议见 internal/execrelay/protocol.go——
+// 长度前缀 + 类型字节，帧形态按设计 §2.3）。
+//
+// 明文纪律：本面零会话内容——ticket 是随机一次性凭据，payload/审计/事件
+// 只带元数据（actor/token/app/service/container/node/时长）。
+service ExecService {
+  // CreateTerminalTicket 签发 Web 终端接入 ticket（terminal scope）：一次性
+  // 60s，绑定调用 token 与 app/service 对。terminal 功能关闭（terminal.
+  // enabled=false）→ E_TERMINAL_DISABLED。
+  rpc CreateTerminalTicket(CreateTerminalTicketRequest) returns (CreateTerminalTicketResponse) {
+    option (google.api.http) = { post: "/v1/terminal/tickets" body: "*" };
+  }
+  // GetTerminalStatus 终端功能状态视图（terminal scope）：功能开关 / relay
+  // 部署态 / 已连接节点数 / 活跃会话数——Console 面板的常驻状态行来源。
+  rpc GetTerminalStatus(GetTerminalStatusRequest) returns (GetTerminalStatusResponse) {
+    option (google.api.http) = { get: "/v1/terminal/status" };
+  }
+}
+
+message CreateTerminalTicketRequest {
+  // 目标应用名。
+  string app = 1 [(buf.validate.field).string = { min_len: 1, max_len: 256 }];
+  // 目标服务名（app 内 compose 服务名；多副本时由控制面择 running 任务，
+  // 副本细节对操作员透明——设计 §2.3）。
+  string service = 2 [(buf.validate.field).string = { min_len: 1, max_len: 256 }];
+}
+
+message CreateTerminalTicketResponse {
+  // 一次性 ticket（随机 128bit URL-safe；60s 过期、单次使用）。
+  string ticket = 1;
+  // 过期时刻（UTC）。
+  google.protobuf.Timestamp expires_at = 2;
+  // WS 接入路径（相对 gateway 同源；Console 拼协议与 host）：
+  // `/v1/terminal?ticket=<ticket>`。
+  string websocket_path = 3;
+  // 有效秒数（60——与 expires_at 冗余的诚实倒计时面）。
+  int32 expires_in_seconds = 4;
+}
+
+message GetTerminalStatusRequest {}
+
+message GetTerminalStatusResponse {
+  // 终端功能是否启用（config terminal.enabled；false = duty 不部署 relay，
+  // CreateTerminalTicket 报 E_TERMINAL_DISABLED）。
+  bool enabled = 1;
+  // fleetly-exec relay 服务部署态（global 服务在位与否）。
+  bool relay_deployed = 2;
+  // relay 实况镜像引用（不在位为空）。
+  string relay_image = 3;
+  // 已连接 relay 节点数（连接表大小——node liveness = 连接存在）。
+  int32 nodes_connected = 4;
+  // 活跃终端会话数（全局——上限 8，per-token 上限 2）。
+  int32 active_sessions = 5;
+}

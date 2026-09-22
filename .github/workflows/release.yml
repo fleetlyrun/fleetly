@@ -423,6 +423,23 @@ jobs:
       packages: write
       id-token: write
 
+  # ────────────────────────────── 5c. exec relay 镜像（E7 D-W5-3，W5-S6）────
+  exec-image:
+    # Web 终端执行中继镜像随平台 release 同版发布（E7 设计 §2.2「第二个第
+    # 一方平台镜像」：Go 侧消费 = internal/execrelay DefaultExecRelayImage，
+    # CI 首推后钉 digest 收紧）。可复用工作流 = .github/workflows/exec.yml
+    # 的 workflow_call 入口（签名/验证门与 fleetlyd/dbtools 镜像同款）。
+    # 与 image/dbtools job 同为镜像发布面：不进 publish.needs——镜像失败
+    # 各自红，不拖累制品链。
+    name: exec image (workflow_call)
+    uses: ./.github/workflows/exec.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
   # ────────────────────────────── 6b. arm64 原生构建冒烟（T0-V2.3）────────
   smoke-arm64:
     # arm64 release 冒烟：此前 build matrix 的 arm64 腿只验产物存在（交叉

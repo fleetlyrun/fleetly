@@ -117,6 +117,10 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_WEBHOOK_NOT_FOUND":      "E6 observability §5 (W5-S4 webhook endpoint absent: envelope projection of the state sentinel, 404)",
 	"E_WEBHOOK_NAME_CONFLICT":  "E6 observability §5 (W5-S4 endpoint names are unique: envelope projection of the state sentinel, 409)",
 	"E_WEBHOOK_PATTERN_INVALID": "E6 observability §5 (W5-S4 subscription glob pattern rejected by the whitelist: non-empty [a-z0-9._-*], 422)",
+	// E7 Web 终端（web-terminal 设计 §2.4/§2.5，W5-S6 接线，注册表只增）：
+	// 功能开关门——terminal.enabled=false 时 ticket 受理与 WS 接入的诚实
+	// 拒绝（internal/api/terminal.go / internal/execrelay hub.go）。
+	"E_TERMINAL_DISABLED": "E7 web-terminal §2.4 (W5-S6 feature gate: terminal.enabled=false deploys no exec relay and refuses ticket issuance, 409)",
 
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
@@ -151,7 +155,8 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 增 E_S3_* 四码、E4-S1 增
 // managed-databases §5.2 九码、E6 W5-S1 增 E_LOGS_BACKEND_UNAVAILABLE、
 // E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE、
-// E6 W5-S4 增 E_WEBHOOK_* 三码——错误码只增纪律）。E6 S4 后 = 57 E + 5 W。
+// E6 W5-S4 增 E_WEBHOOK_* 三码、E7 W5-S6 增 E_TERMINAL_DISABLED——错误码
+// 只增纪律）。E7 S6 后 = 58 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -161,8 +166,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 57 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 57), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 58 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 58), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

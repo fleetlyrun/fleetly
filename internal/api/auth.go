@@ -24,15 +24,21 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// scope 词表（state-model §2.9 / architecture §4.2：read/deploy/admin）。
+// scope 词表（state-model §2.9 / architecture §4.2：read/deploy/admin；
+// E7 W5-S6 增补 terminal——Web 终端独立 scope，词表见 scope.go 消费面）。
 const (
 	ScopeRead   = "read"
 	ScopeDeploy = "deploy"
 	ScopeAdmin  = "admin"
+	// ScopeTerminal 是 Web 终端的独立 scope（E7 设计 §2.4：默认仅 admin
+	// ——read/deploy **不**蕴含 terminal，独立 token 需显式 --scopes
+	// terminal；admin 蕴含一切——下方 containsScope 的 admin 分支天然覆盖）。
+	ScopeTerminal = "terminal"
 )
 
 // containsScope 报告 scope 集（逗号分隔存储形态）是否蕴含所需 scope
-// （admin ⊃ deploy ⊃ read）。
+//（admin ⊃ deploy ⊃ read ⊕ terminal——terminal 与 read/deploy 平行，仅
+// admin 蕴含它：E7 设计 §2.4「默认仅 admin」的执行点）。
 func containsScope(scopes, need string) bool {
 	for _, s := range strings.Split(scopes, ",") {
 		switch strings.TrimSpace(s) {
@@ -44,6 +50,10 @@ func containsScope(scopes, need string) bool {
 			}
 		case ScopeRead:
 			if need == ScopeRead {
+				return true
+			}
+		case ScopeTerminal:
+			if need == ScopeTerminal {
 				return true
 			}
 		}

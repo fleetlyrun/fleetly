@@ -1129,6 +1129,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/terminal/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetTerminalStatus 终端功能状态视图（terminal scope）：功能开关 / relay
+         *     部署态 / 已连接节点数 / 活跃会话数——Console 面板的常驻状态行来源。
+         */
+        get: operations["ExecService_GetTerminalStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/terminal/tickets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * CreateTerminalTicket 签发 Web 终端接入 ticket（terminal scope）：一次性
+         *     60s，绑定调用 token 与 app/service 对。terminal 功能关闭（terminal.
+         *     enabled=false）→ E_TERMINAL_DISABLED。
+         */
+        post: operations["ExecService_CreateTerminalTicket"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2489,6 +2530,55 @@ export interface components {
             created_at?: string;
             /** Format: date-time */
             updated_at?: string;
+        };
+        v1CreateTerminalTicketRequest: {
+            /** 目标应用名。 */
+            app?: string;
+            /**
+             * 目标服务名（app 内 compose 服务名；多副本时由控制面择 running 任务，
+             *     副本细节对操作员透明——设计 §2.3）。
+             */
+            service?: string;
+        };
+        v1CreateTerminalTicketResponse: {
+            /** 一次性 ticket（随机 128bit URL-safe；60s 过期、单次使用）。 */
+            ticket?: string;
+            /**
+             * 过期时刻（UTC）。
+             * Format: date-time
+             */
+            expires_at?: string;
+            /**
+             * WS 接入路径（相对 gateway 同源；Console 拼协议与 host）：
+             *     `/v1/terminal?ticket=<ticket>`。
+             */
+            websocket_path?: string;
+            /**
+             * 有效秒数（60——与 expires_at 冗余的诚实倒计时面）。
+             * Format: int32
+             */
+            expires_in_seconds?: number;
+        };
+        v1GetTerminalStatusResponse: {
+            /**
+             * 终端功能是否启用（config terminal.enabled；false = duty 不部署 relay，
+             *     CreateTerminalTicket 报 E_TERMINAL_DISABLED）。
+             */
+            enabled?: boolean;
+            /** fleetly-exec relay 服务部署态（global 服务在位与否）。 */
+            relay_deployed?: boolean;
+            /** relay 实况镜像引用（不在位为空）。 */
+            relay_image?: string;
+            /**
+             * 已连接 relay 节点数（连接表大小——node liveness = 连接存在）。
+             * Format: int32
+             */
+            nodes_connected?: number;
+            /**
+             * 活跃终端会话数（全局——上限 8，per-token 上限 2）。
+             * Format: int32
+             */
+            active_sessions?: number;
         };
     };
     responses: never;
@@ -4885,6 +4975,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TestWebhookResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ExecService_GetTerminalStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetTerminalStatusResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ExecService_CreateTerminalTicket: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateTerminalTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateTerminalTicketResponse"];
                 };
             };
             /** @description An unexpected error response. */

@@ -1,0 +1,178 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/terminal.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "ExecService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/terminal/status": {
+      "get": {
+        "summary": "GetTerminalStatus 终端功能状态视图（terminal scope）：功能开关 / relay\n部署态 / 已连接节点数 / 活跃会话数——Console 面板的常驻状态行来源。",
+        "operationId": "ExecService_GetTerminalStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetTerminalStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "ExecService"
+        ]
+      }
+    },
+    "/v1/terminal/tickets": {
+      "post": {
+        "summary": "CreateTerminalTicket 签发 Web 终端接入 ticket（terminal scope）：一次性\n60s，绑定调用 token 与 app/service 对。terminal 功能关闭（terminal.\nenabled=false）→ E_TERMINAL_DISABLED。",
+        "operationId": "ExecService_CreateTerminalTicket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateTerminalTicketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateTerminalTicketRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ExecService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1CreateTerminalTicketRequest": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "title": "目标应用名。"
+        },
+        "service": {
+          "type": "string",
+          "title": "目标服务名（app 内 compose 服务名；多副本时由控制面择 running 任务，\n副本细节对操作员透明——设计 §2.3）。"
+        }
+      }
+    },
+    "v1CreateTerminalTicketResponse": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "title": "一次性 ticket（随机 128bit URL-safe；60s 过期、单次使用）。"
+        },
+        "expires_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "过期时刻（UTC）。"
+        },
+        "websocket_path": {
+          "type": "string",
+          "title": "WS 接入路径（相对 gateway 同源；Console 拼协议与 host）：\n`/v1/terminal?ticket=\u003cticket\u003e`。"
+        },
+        "expires_in_seconds": {
+          "type": "integer",
+          "format": "int32",
+          "title": "有效秒数（60——与 expires_at 冗余的诚实倒计时面）。"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetTerminalStatusResponse": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean",
+          "title": "终端功能是否启用（config terminal.enabled；false = duty 不部署 relay，\nCreateTerminalTicket 报 E_TERMINAL_DISABLED）。"
+        },
+        "relay_deployed": {
+          "type": "boolean",
+          "title": "fleetly-exec relay 服务部署态（global 服务在位与否）。"
+        },
+        "relay_image": {
+          "type": "string",
+          "title": "relay 实况镜像引用（不在位为空）。"
+        },
+        "nodes_connected": {
+          "type": "integer",
+          "format": "int32",
+          "title": "已连接 relay 节点数（连接表大小——node liveness = 连接存在）。"
+        },
+        "active_sessions": {
+          "type": "integer",
+          "format": "int32",
+          "title": "活跃终端会话数（全局——上限 8，per-token 上限 2）。"
+        }
+      }
+    }
+  }
+}

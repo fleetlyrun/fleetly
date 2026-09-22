@@ -88,7 +88,7 @@ func startConsoleHarness(t *testing.T, staticDir string) string {
 			t.Fatalf("newConsoleUIHandler: %v", err)
 		}
 	}
-	return startRootHTTP(t, newRootHandler(nil, consoleUI, mux))
+	return startRootHTTP(t, newRootHandler(nil, consoleUI, nil, mux))
 }
 
 func writeConsoleDist(t *testing.T) string {
@@ -206,7 +206,7 @@ func TestConsoleStaticDirValidation(t *testing.T) {
 	fallback := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 	})
-	root := newRootHandler(nil, nil, fallback)
+	root := newRootHandler(nil, nil, nil, fallback)
 	rec := httptest.NewRecorder()
 	root.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ui/", nil))
 	if rec.Code != 404 {
@@ -216,7 +216,7 @@ func TestConsoleStaticDirValidation(t *testing.T) {
 	// webhook 分派不受第三个 handler 影响（既有豁免面不变）。
 	hit := false
 	webhook := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hit = true })
-	root = newRootHandler(webhook, nil, fallback)
+	root = newRootHandler(webhook, nil, nil, fallback)
 	rec = httptest.NewRecorder()
 	root.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/v1/apps/demo/webhooks/github", nil))
 	if !hit {

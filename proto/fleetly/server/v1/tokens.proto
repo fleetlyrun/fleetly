@@ -44,11 +44,12 @@ service TokensService {
 }
 
 message CreateTokenRequest {
-  // scope 集（read / deploy / admin；admin 蕴含 deploy 蕴含 read；重复项
-  // 服务端归一去重）。
+  // scope 集（read / deploy / terminal / admin；admin 蕴含 deploy 蕴含 read
+  // ⊕ terminal——terminal 为独立 scope，read/deploy 不蕴含（E7 W5-S6）；
+  // 重复项服务端归一去重）。
   repeated string scopes = 1 [(buf.validate.field).repeated = {
     min_items: 1,
-    items: { string: { in: ["read", "deploy", "admin"] } }
+    items: { string: { in: ["read", "deploy", "terminal", "admin"] } }
   }];
   // 备注（人读；如 "CI 部署"）。字段名 note（name 列承载，兼容既有表结构）。
   string note = 2 [(buf.validate.field).string.max_len = 200];

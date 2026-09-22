@@ -72,6 +72,8 @@ route.published	app ingress routes published (after the health gate passed, all 
 s3.rustfs_deployed	managed RustFS deployed or converged to the desired spec (payload carries service/image/reason, never credentials)
 s3.rustfs_removed	managed RustFS removed after s3.mode left rustfs (data volume retained; payload carries volume_retained=true)
 s3.updated	object storage settings changed (payload carries the mode and toggles, never credentials)
+terminal.closed	web terminal session closed (payload carries duration, close code and reason; metadata only, never session content)
+terminal.opened	web terminal session opened (payload carries app/service/container/node/token metadata only, never session content)
 volume.created	volume registered (data birthplace; pins the hosting node)
 volume.detached	volume detached (volume declaration removed; data is not deleted with the declaration)
 volume.discarded	volume explicitly discarded (admin+confirm+audited)

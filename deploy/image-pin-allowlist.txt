@@ -6,5 +6,15 @@
 # 纪律：只收「确需可变 tag」的引用（如故意验证「可变 tag 被拒」的负路径
 # 用例），每个条目必须同行注释理由；无理由的豁免视为门禁失效。
 #
-# 当前条目：无——deploy/ 与 .github/workflows/ 的平台镜像引用已全部
-# 钉 digest（docs/runbooks/image-prepull.md 为全集台账）。
+# 注意：Go 常量引用（internal/execrelay DefaultExecRelayImage 等）不在本
+# 门禁扫描域（域 = deploy/*.sh、Dockerfile*、testdata Dockerfile、
+# .github/workflows/*.yml），但 check-image-pins 的 -l 列表模式与豁免匹配
+# 以「<路径>:<引用>」为键——Go 常量条目登记在此是为「tag 引用中间态」
+# 留一份有理由注记的台账；收紧票摘除时同步钉 Go 常量 digest。
+#
+# 当前条目：
+ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1
+# E7 W5-S6：exec 镜像尚未经 CI exec.yml 首推（ghcr 权限在 CI——本地无法
+# 推），真 digest 不存在；Go 常量暂以 tag 引用为诚实中间态，e2e 以 dind
+# 内本地构建同名 tag 承接（deploy/Dockerfile.exec，二进制宿主侧交叉编译）。
+# CI 首推后由收紧票「钉 digest + 摘豁免 + image-prepull 台账增行」。
