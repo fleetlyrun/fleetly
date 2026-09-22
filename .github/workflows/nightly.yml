@@ -643,11 +643,15 @@ jobs:
     #（alpine 无 bash → 白名单探测退 sh）→ read token 取票拒 → terminal
     # scope 独立 token 全会话走通 → ticket 重放拒 → per-token 并发上限
     # （双 hold 占满 + 第 3 条 close 429）→ terminal.opened/closed 事件 →
-    # 会话内容零泄漏负向。fleetly-exec 镜像在 dind 内本地构建（CI 首推前的
-    # 诚实中间态——tag 对齐 Go 常量，见脚本头注记）。
+    # 会话内容零泄漏负向。fleetly-exec 镜像 = 私有 ghcr 包，dind 内经
+    # GITHUB_TOKEN 登录直拉 tag@digest 全引用（2026-09-22 CI 首推后收紧，
+    # databases-e2e 的 DB_GHCR_* 同款纪律——本地构建解析不了钉定引用）。
     name: terminal e2e (dind)
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    env:
+      TERM_GHCR_USER: ${{ github.actor }}
+      TERM_GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0

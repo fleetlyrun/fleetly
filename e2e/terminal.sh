@@ -3,11 +3,11 @@
 # docs/design/2026-09-22-web-terminal.md §2 + §4 安全面套件；control-plane-tls.sh
 # 同骨架——单 dind、编排自足、镜像钉 digest）：
 #
-#   镜像中间态（诚实口径）：fleetly-exec 镜像尚未经 CI exec.yml 首推
-#   （ghcr 权限在 CI），e2e 在 dind 内**本地构建**同名镜像
-#   ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1（tag 与 Go 常量对齐；
-#   deploy/Dockerfile.exec + 宿主侧交叉编译的 fleetly-exec-amd64 进上下文
-#   ——TARGETARCH 选 COPY 输入），duty 即可正常收敛。
+#   镜像（钉定口径，2026-09-22 CI 首推后收紧）：fleetly-exec 是**私有 ghcr
+#   包**，dind 内登录直拉 tag@digest 全引用（与 Go 常量逐字一致——真实
+#   pull 才落 RepoDigests，save|load/本地构建解析不了 digest 引用；databases.sh
+#   的 DB_GHCR_* 同款纪律）。凭据经 TERM_GHCR_USER/TERM_GHCR_TOKEN 注入
+#   （CI 的 GITHUB_TOKEN 自动具备 packages:read）。
 #
 #   T-1  relay duty 收敛：fleetly-exec global 服务 running（每节点一任务）。
 #   T-2  terminal status RPC：enabled + relay 已连接（nodes_connected ≥ 1
@@ -40,8 +40,9 @@
 # env:
 #   T_DIND_IMAGE   dind 镜像（默认 docker:29.8.1-dind，钉 digest 与 CI 一致）
 #   T_SKIP_BUILD   1 = 跳过交叉编译，改用 T_BIN_DIR 下的现成二进制
-#   T_BIN_DIR      T_SKIP_BUILD=1 时的二进制来源（fleetlyd/fleetly/fleetly-exec/termclient）
+#   T_BIN_DIR      T_SKIP_BUILD=1 时的二进制来源（fleetlyd/fleetly/termclient）
 #   T_VERSION      注入的版本串（默认 v0.2.0-terminal-e2e）
+#   TERM_GHCR_USER / TERM_GHCR_TOKEN  私有 exec 镜像的 ghcr 凭据（packages:read；CI 自动注入）
 set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
@@ -56,8 +57,9 @@ T_VERSION="${T_VERSION:-v0.2.0-terminal-e2e}"
 BR_NET=fleetly-t-br
 BR_SUBNET=10.220.0.0/24
 DIND=fleetly-t-e2e-dind
-# Go 常量 DefaultExecRelayImage 的名字部分（tag 对齐——duty 期望即本引用）。
-EXEC_IMAGE_TAG='ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1'
+# Go 常量 DefaultExecRelayImage 的逐字形态（tag@digest 全引用——真实 pull
+# 落 RepoDigests 后 duty 的钉定引用才可解析）。
+EXEC_IMAGE='ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1@sha256:4de40017c620b55b76048c3369f64b3a747c875a4f7bf21ac8c6f88bc4b0793b'
 
 APP=termapp
 SVC=web
@@ -172,7 +174,7 @@ command -v go >/dev/null 2>&1 || T_SKIP_BUILD=1
 
 # ─────────────────────────────────────────────────────────────── 构建
 if [ "$T_SKIP_BUILD" != '1' ]; then
-    tl "cross-compiling linux/amd64 fleetlyd+fleetly+fleetly-exec+termclient ($T_VERSION)"
+    tl "cross-compiling linux/amd64 fleetlyd+fleetly+termclient ($T_VERSION)"
     (
         cd "$ROOT" &&
             GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
@@ -183,9 +185,6 @@ if [ "$T_SKIP_BUILD" != '1' ]; then
                 -o "$TMP/fleetly" ./cmd/fleetly &&
             GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
                 go build -trimpath -ldflags "-s -w" \
-                -o "$TMP/fleetly-exec-amd64" ./cmd/fleetly-exec &&
-            GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
-                go build -trimpath -ldflags "-s -w" \
                 -o "$TMP/termclient" ./e2e/termclient
     ) || fatal 'go build failed'
     T_BIN_DIR="$TMP"
@@ -193,7 +192,7 @@ else
     T_BIN_DIR="${T_BIN_DIR:?T_SKIP_BUILD=1 requires T_BIN_DIR}"
     tl "using prebuilt binaries from $T_BIN_DIR"
 fi
-for b in fleetlyd fleetly fleetly-exec-amd64 termclient; do
+for b in fleetlyd fleetly termclient; do
     [ -f "$T_BIN_DIR/$b" ] || fatal "$b missing in $T_BIN_DIR"
 done
 
@@ -223,23 +222,27 @@ while ! docker exec "$DIND" docker info >/dev/null 2>&1; do
 done
 tl "dind $DIND ready (engine $(docker exec "$DIND" docker version --format '{{.Server.Version}}' 2>/dev/null))"
 
-tl 'staging binaries + dockerfile + compose (exec+stdin)'
-docker exec "$DIND" mkdir -p /opt/fleetly/bin /opt/fleetly/etc /opt/fleetly/exec-ctx /var/lib/fleetly || fatal 'mkdir stage'
+tl 'staging binaries + compose (exec+stdin)'
+docker exec "$DIND" mkdir -p /opt/fleetly/bin /opt/fleetly/etc /var/lib/fleetly || fatal 'mkdir stage'
 stage "$DIND" "$T_BIN_DIR/fleetlyd" /opt/fleetly/bin/fleetlyd
 stage "$DIND" "$T_BIN_DIR/fleetly" /opt/fleetly/bin/fleetly
-stage "$DIND" "$T_BIN_DIR/fleetly-exec-amd64" /opt/fleetly/exec-ctx/fleetly-exec-amd64
 stage "$DIND" "$T_BIN_DIR/termclient" /opt/fleetly/bin/termclient
-stage "$DIND" "$ROOT/deploy/Dockerfile.exec" /opt/fleetly/exec-ctx/Dockerfile.exec
 docker exec "$DIND" chmod +x /opt/fleetly/bin/fleetlyd /opt/fleetly/bin/fleetly /opt/fleetly/bin/termclient || fatal 'chmod'
-# exec 上下文二进制也置可执行（Dockerfile COPY --chmod=0755 双保险——
-# 本地 buildx 版本不支持 --chmod 时不至于再翻车）。
-docker exec "$DIND" chmod +x /opt/fleetly/exec-ctx/fleetly-exec-amd64 || fatal 'chmod exec'
 
-# fleetly-exec 镜像本地构建（dind 内；tag 对齐 Go 常量——中间态见文件头）。
-tl "building $EXEC_IMAGE_TAG inside dind (local image, no push)"
-msh "cd /opt/fleetly/exec-ctx && docker build --build-arg TARGETARCH=amd64 -t $EXEC_IMAGE_TAG -f Dockerfile.exec ." >/dev/null 2>&1 ||
-    fatal 'local exec image build failed'
-tl 'exec image built (single-arch amd64; digest pinning lands after the CI first push)'
+# fleetly-exec 镜像：私有 ghcr 包 dind 内登录直拉（digest 全引用；databases.sh
+# 的 DB_GHCR_* 同款纪律——真实 pull 才落 RepoDigests，本地构建解析不了钉定
+# 引用）。凭据经 exec env 注入，不落 argv 之外的面。
+if [ -n "${TERM_GHCR_USER:-}" ] && [ -n "${TERM_GHCR_TOKEN:-}" ]; then
+    docker exec -e GHCR_USER="$TERM_GHCR_USER" -e GHCR_TOKEN="$TERM_GHCR_TOKEN" \
+        "$DIND" sh -c 'printf %s "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null' ||
+        fatal 'docker login ghcr.io (inside dind) failed'
+    docker exec "$DIND" docker pull -q "$EXEC_IMAGE" >/dev/null ||
+        fatal "pull $EXEC_IMAGE (inside dind) failed — check the ghcr credential and its packages:read access to fleetlyrun/fleetly-exec"
+    docker exec "$DIND" docker logout ghcr.io >/dev/null 2>&1 || true
+    tl "exec image pulled inside dind ($EXEC_IMAGE)"
+else
+    fatal "fleetly-exec ($EXEC_IMAGE) is a PRIVATE ghcr package: set TERM_GHCR_USER/TERM_GHCR_TOKEN (a ghcr credential with packages:read on fleetlyrun/fleetly-exec) so the dind can pull it directly; in CI the terminal-e2e job passes GITHUB_TOKEN automatically"
+fi
 
 # fleetlyd 配置（TLS off = ws:// 明文形态——exec 通道明文降级面；离线 dind
 # ACME/git 关闭）。

@@ -6,7 +6,7 @@
 
 fleetly 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用部署到 1~10 台服务器的集群上，获得零停机发布、版本回滚、漂移检测，以及一套同时为人类与 AI Agent 设计的 API 面——不需要 Kubernetes。
 
-**当前状态：早期开发中。** 设计已定稿并通过评审；T0 地基（仓库、CI 门禁、proto 契约链、错误码注册表、dind E2E 骨架）已落地。v0.1 尚未发布——见[路线图](#路线图)。曾用名 *edgesets* 与 *edgefleet*。
+**当前状态：v0.2 已发布（v0.1.0 / v0.2.0）。** 设计已定稿并通过评审；每一波实现均带 dind E2E 与真实 VPS 演练记录。单机形态（v0.1）与生产基线（v0.2：多节点、托管数据库、统一日志检索、通知、Web 终端、控制面 TLS）均已交付——见[路线图](#路线图)。曾用名 *edgesets* 与 *edgefleet*。
 
 ## 安装
 
@@ -14,7 +14,7 @@ fleetly 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用
 
 ```sh
 curl -fsSL https://fleetly.dev/install.sh | sudo sh -            # 最新 stable
-curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
+curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.2.0
 sudo sh install.sh --bin-dir ./dist                              # 离线 / 开发形态
 ```
 
@@ -38,9 +38,14 @@ sudo sh install.sh --bin-dir ./dist                              # 离线 / 开�
 | 状态 | SQLite 控制面状态，三层模型（权威 / 观测缓存 / 实时直读） | v0.1 |
 | 漂移检测 | 期望态 hash 对现实；检测默认开、自动收敛 per-app opt-in | v0.1 |
 | 多节点 | `docker swarm join`、镜像仓库（zot）、有状态钉住、诚实的 HA 边界 | v0.2 |
-| AI Agent | MCP server，精选工具面（≤30 工具）、scope token、破坏性操作两段式确认 | v0.2 |
-| 数据服务 | 托管 Postgres/Redis 模板 + 逐引擎备份适配器 + 连接串注入 | v0.2 |
-| 其他 | Cron（Swarm job）、指标（VictoriaMetrics）、Web 终端（执行中继，D19） | v0.2+ |
+| 数据服务 | 托管 Postgres/Redis 模板 + 备份/恢复/升级 + 连接串注入 + 平台密钥库 | v0.2 |
+| 可观测 | VictoriaLogs 默认捆绑 + 统一日志检索（运行/构建/访问日志同库）+ opt-in 指标（VictoriaMetrics/cAdvisor/node_exporter） | v0.2 |
+| 通知 | Webhook 端点 + 事件模式订阅 + HMAC 签名投递 + 重试台账 | v0.2 |
+| Web 终端 | 执行中继（`fleetly-exec` 反向常连）+ shell 白名单 + 会话限额 + terminal scope + 审计 | v0.2 |
+| 控制面 TLS | off / 平台证书 / 手工三态，双面（gRPC + HTTP）同证书，CLI/SDK TLS | v0.2 |
+| S3 备份 | 外部端点或 opt-in 托管 RustFS（同节点 = 便捷层，非灾备） | v0.2 |
+| Cron | Swarm job 形态 cron + 台账 + 看门狗 | v0.2 |
+| AI Agent | MCP server，精选工具面（≤30 工具）、scope token、破坏性操作两段式确认 | v0.3 |
 
 ## 诚实的边界
 

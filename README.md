@@ -8,7 +8,7 @@
 
 fleetly is an ultra-lightweight open-source PaaS for small teams. Deploy `compose.yaml` apps to a cluster of 1–10 servers with zero-downtime releases, revision-based rollback, drift detection, and an API surface designed for both humans and AI agents — no Kubernetes required.
 
-**Status: early development.** Design is frozen and reviewed; the T0 foundation (repo, CI, proto contract chain, error-code registry, dind E2E skeleton) has landed. v0.1 is not released yet — see the [roadmap](#roadmap). Formerly known as *edgesets* and *edgefleet*.
+**Status: v0.2 released (v0.1.0 / v0.2.0).** Design frozen and reviewed; every wave is implemented with dind E2E + staged-on-real-VPS rehearsal records. Single-node (v0.1) and the production baseline (v0.2: multi-node, managed databases, unified log search, notifications, web terminal, control-plane TLS) are shipped — see the [roadmap](#roadmap). Formerly known as *edgesets* and *edgefleet*.
 
 ## Install
 
@@ -16,7 +16,7 @@ One command on a clean Linux VPS (amd64/arm64, root) installs a running platform
 
 ```sh
 curl -fsSL https://fleetly.dev/install.sh | sudo sh -            # latest stable
-curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.1.0
+curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.2.0
 sudo sh install.sh --bin-dir ./dist                              # offline / dev form
 ```
 
@@ -40,9 +40,14 @@ The first start writes the bootstrap admin token **once** to `<data-root>/bootst
 | State | SQLite control-plane state, three-layer model (authoritative / observed cache / live read) | v0.1 |
 | Drift detection | Desired-state hash vs. reality; detection on by default, auto-converge opt-in per app | v0.1 |
 | Multi-node | `docker swarm join`, image registry (zot), stateful pinning, honest HA boundaries | v0.2 |
-| AI agents | MCP server with a curated toolset (≤30 tools), scoped tokens, two-step destructive confirmation | v0.2 |
-| Data services | Managed Postgres/Redis templates + per-engine backup adapters + connection-string injection | v0.2 |
-| Extras | Cron (Swarm jobs), metrics (VictoriaMetrics), Web terminal (exec relay, D19) | v0.2+ |
+| Data services | Managed Postgres/Redis templates + per-engine backup/restore/upgrade + connection-string injection + platform secret store | v0.2 |
+| Observability | VictoriaLogs bundled by default + unified search (runtime/build/access logs, one store) + opt-in metrics (VictoriaMetrics/cAdvisor/node_exporter) | v0.2 |
+| Notifications | Webhook endpoints with event-pattern subscriptions, HMAC-signed deliveries, retry ledger | v0.2 |
+| Web terminal | Exec relay (`fleetly-exec`, reverse channel) with shell allowlist, session limits, terminal scope, audit | v0.2 |
+| Control-plane TLS | off / platform-cert / manual modes on both faces (gRPC + HTTP), CLI/SDK TLS | v0.2 |
+| S3 backups | External endpoints or opt-in managed RustFS (same-node = convenience, not DR) | v0.2 |
+| Cron | Swarm-job cron with ledger + watchdog | v0.2 |
+| AI agents | MCP server with a curated toolset (≤30 tools), scoped tokens, two-step destructive confirmation | v0.3 |
 
 ## Honest boundaries
 
