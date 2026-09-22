@@ -227,7 +227,14 @@ func newHarness(t *testing.T) *harness {
 	mgr := NewManagerWithDocker(Config{TickInterval: time.Hour, ProvisionTimeout: time.Hour},
 		st, box, fakePlacement{node: "n_node"}, fd, slog.New(slog.DiscardHandler))
 	mgr.upgradeWatch = 100 * time.Millisecond // 升级健康门观察窗（单测短窗）
-	h := &harness{t: t, st: st, box: box, docker: fd, mgr: mgr, now: time.Now()}
+	// now 钉定到本日 12:30 UTC 的确定性形态：缺省备份计划 hour_utc=3 的
+	// 调度 duty 会在真实 03:xx UTC（本地 UTC+8 的 11 点档）萡入测试时给
+	// ready 实例触发计划备份、占用操作互斥，后续收敛拍整体让位——2026-09-22
+	// W5-S1 验收门复现的定时炸弹（其余时刻全绿故 W4 门未暴露）。需要窗口
+	// 语义的测试显式设置 h.now（TestBackupSchedulingWindowAndPrune）。
+	nowUTC := time.Now().UTC()
+	h := &harness{t: t, st: st, box: box, docker: fd, mgr: mgr,
+		now: time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 12, 30, 0, 0, time.UTC)}
 	mgr.WithClock(func() time.Time { return h.now })
 	return h
 }
