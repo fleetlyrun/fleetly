@@ -143,3 +143,42 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 - 无卷应用 `fleetly.placement.node` 不钉(设计冻结语义,W_PLACEMENT_STATELESS_PIN 只警告);演练钉 manager 需给应用命名卷。
 - 平台证书开关往返 = 两次 LE 生产 order(配额注意);演练已用 2 枚。
 
+## 9. W4 数据库托管实机演练(2026-09-22 实录)
+
+形态:manager 升级 W4 main 构建(4298163,scp 二进制+console dist 替换重启);镜像预拉三枚——postgres:16/redis:7 公网按 tag 直拉(RepoDigest 落 index digest,与 `DefaultPostgresImage`/`DefaultRedisImage` 钉版逐字一致)、**dbtools 私有 ghcr 包经 SSH 管道喂 token 登录→按 tag 拉→登出(凭据零落盘)**;rustfs 沿用 W3 启用态(备份目标就绪)。演练实例 pgprod2(postgres-16)+引用应用 w4app(dbtools 当 psql 客户端)。
+
+### 断言链(v3 全量实录)
+
+| 断言 | 实录 | 结果 |
+|---|---|---|
+| A1 建库→健康门 | create 受理→**9s** ready(真 postgres 容器+pg_isready swarm 健康闭环) | ✅ |
+| A2 卷/绑定/reveal | `fleetly-db-pgprod2-data-*` 卷登记;placement=manager 平台 ID;reveal 取得密码(审计留痕) | ✅ |
+| A3 引用部署 | writer 应用(写循环)部署成功;服务 env 含 `FLEETLY_DB_PGPROD2_URL`(真密码);**15 行真实写入** | ✅ |
+| A4 备份→verify | manual 备份受理→6s `verify_status=verified`(restic 真链路→rustfs,同 repo `db/<instance>/` 命名空间) | ✅ |
+| A5 破坏清空→原地恢复 | truncate(基线 17)→count=0→restore confirm→**恢复至 15 行=备份时点状态**(写入器在备份后又写 2 行——**点时语义精确证明**,脚本断言按备份时点重判后 ✅);全程主状态 ready | ✅ |
+| A6 轮换 | 密码变化;引用 app **自动重部署**且服务 env 换新密码;聚焦复测:rotate **同秒**新密码 psql 连通(t+0s),任务重建亚秒收敛 | ✅(复测洗清 v3 首测时序伪影) |
+| A7 secrets | set→external 声明部署→`/run/secrets/mytoken` **逐字**;rm→悬空部署 `E_SECRET_NOT_FOUND` 诚实失败 | ✅ |
+| A8 暂停/恢复 | suspend→服务 0/0;resume→ready(16s) | ✅ |
+| A9 删除守卫/reap | 有引用删除→`E_DB_REFERENCED` 409;摘引用重部署→删除→deleted+服务移除+**数据卷 orphaned 保留** | ✅ |
+| A10 预算 | fleetlyd idle 76.9MB(W3 64.4+12.5,database duty 增量);平台零新增常驻组件(D-DB-9:库/作业=用户负载);rustfs 演练后 116.8MiB(restic 负载后,限 256MiB 内) | ✅(轻量口径) |
+| Console | /ui 前缀路由 `/ui/databases` 200,新 bundle 含 databases 面 | ✅ |
+
+**v3 结果:35/35(含两处重判)**。v1/v2 的 19+35 处 FAIL 全数归因脚本伤(JSON 取值路径/heredoc 转义/sleep 60 观察窗/缺顶层 secrets 声明/rm 无 confirm 旗标/清场撞 deleted 名字保留期),平台面零缺陷。
+
+### W4 真机发现与注记
+
+| # | 发现 | 处置 |
+|---|---|---|
+| W4-N1 | **digest 直拉镜像经 save/load 丢 tag 引用**(只剩 untagged 条目,平台 tag@digest 引用无法解析):`docker pull name@sha256:` 后 save 的 tar 里 RepoTags 为空 | 预拉正道=**VPS 上按 tag 直拉**(RepoDigest 落 index digest);私有包经 SSH 管道喂 token 登录拉取后登出。已记 image-prepull.md |
+| W4-N2 | PG 轮换触发库任务快速重建(Swarm secret 不可变→换值必换名→spec 变更):真机实测亚秒收敛、新密码同秒可用,连接无感 | 设计 §2.5 措辞已修正(「库不重启」准确口径=引擎数据面不停机,非任务零重建);非缺陷 |
+| W4-N3 | 恢复点时语义:恢复回到**备份时刻**状态(备份后至清空前的写入不保留) | 设计内行为;演练断言应以备份时点为期望值(runbook 固化本行) |
+| 观察 | app 删除 reap 后偶见一个 stray 任务容器 Up(service 已移除)——`docker rm -f` 收掉 | 巡检项,随 F11/孤儿清理票核对 |
+
+### W4 演练杂记(复用要点)
+
+- `fleetly databases get --json` 是**顶层视图**(status/placement/connection 直取,无 database 包裹);reveal --json 原生 protojson(`password` 直取);backups --json 键=`snapshot`/`verify_status`。
+- 库实例名保留期:deleted 行占用名——**清场后重建须换名**(pgprod→pgprod2),或先行接受唯一冲突诚实拒绝。
+- 演练应用退出码敏感:`sleep 60` 在部署观察窗内退出 0→`E_OBSERVE_UNHEALTHY`;常驻容器用 `sleep infinity`。
+- 复杂远程操作一律脚本化(scp+sh)——cmd→ssh→sh 三层引号不可手工内联。
+
+

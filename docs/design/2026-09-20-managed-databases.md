@@ -1,8 +1,8 @@
 # fleetly E4 数据库托管专项设计
 
-| 状态 | 日期 | 关联 |
+| 状态 | 日期 | 说明 |
 |---|---|---|
-| 已裁决（方案冻结，2026-09-20；D-DB-1 用户终裁为独立资源类型） | 2026-09-20 | [v0.2 规划 §2 W4 / §5 E4 行 / §3 V2-5、V2-2](../plan/2026-09-20-v0.2-plan.md)；[架构 §2.3/§2.4 应用模型数据库行 / §4.3 v0.2 路线](2026-09-17-architecture.md)；[发布专项 §2.4 快照与回滚](2026-09-17-release-semantics.md)；[放置专项（卷钉住复用）](2026-09-17-stateful-placement.md)；[状态模型专项（表/台账纪律）](2026-09-17-state-model.md)；[zane-ops 调研 R5（generate_* 先例）](../research/2026-09-20-zane-ops-comparison.md)；[v0.1 冻结清单 FZ-1（source=system）](../plan/2026-09-17-v0.1-scope-freeze.md)；现状代码：internal/envlayer、internal/secrets、internal/state/{volume,env,apps,deployments}.go、internal/compose/validate.go、internal/engine/{ports,planner,rollback}.go、internal/naming |
+| **已实现+真机验证（2026-09-22，W4 收官）**：六阶段落地（状态层/模板层 → 收敛器+生命周期 → 引用注入+D-DB-11 → secrets+轮换 → 备份恢复升级 → Console+e2e）；dind e2e 27/27（逼出修复 5 处）+ staging 真机 35/35（runbook §9）；dbtools 首个第一方平台镜像已发布签名。落地注记已回写：PG 暂停轮换拒绝（§2.5）、恢复凭据边界（§2.2）、轮换任务重建措辞（§2.5） | 2026-09-22 | 原裁决轮 2026-09-20：[v0.2 规划 §2 W4 行 / §5 E4 行 / §3 V2-5、V2-2](../plan/2026-09-20-v0.2-plan.md)；[架构 §2.3/§2.4 应用模型数据库行 / §4.3 v0.2 路线](2026-09-17-architecture.md)；[发布专项 §2.4 快照与回滚](2026-09-17-release-semantics.md)（D-DB-11 限定已回写）；[放置专项（卷钉住复用）](2026-09-17-stateful-placement.md)；[状态模型专项（表/台账纪律）](2026-09-17-state-model.md)；[zane-ops 调研 R5（generate_* 先例）](../research/2026-09-20-zane-ops-comparison.md)；[v0.1 冻结清单 FZ-1（source=system）](../plan/2026-09-17-v0.1-scope-freeze.md) |
 
 ## 1. 现状与问题
 
@@ -149,7 +149,7 @@ CreateDatabase ──→ db_instances 行(state=provisioning) + 凭据生成(密
 
   `FLEETLY_*` 前缀为平台保留名字空间：用户 `SetEnv` 撞前缀 → `E_ENV_KEY_RESERVED`（422；同时防 system 行被用户 upsert 劫持 source——现状 `SetAppEnv` 会改写 source，此守卫是必要补丁）。
 - **可见性**：只读展示照既有 env 投影（`EnvVarView.source=system` 已支持；Console 库详情页展示连接信息，密码默认脱敏、显式展开；`fleetly databases show` 同级 admin 面）——对齐 R5 先例（生成、存平台层、对用户只读）。
-- **轮换**：**仅手动**（`databases rotate`，破坏性操作两段式确认）。流程按引擎经适配器钩子：PG = 一次性 job 执行 `ALTER USER fleetly WITH PASSWORD`（热轮换，库不重启；**引擎级限定（W4-S4 落地注记）：PG 暂停态拒绝轮换**——initdb 只在首启读密码文件，暂停实例无法 ALTER，如实 409 提示先 resume，不受理假轮换）；Redis = 密文列更新 + 库实例受控重启（任务重建，requirepass 重读；暂停态允许——spec 更新，resume 时以新密码重建任务）。随后：逐引用 app 的 system 物化行更新为 pending → **平台自动触发全部引用 app 重部署**（各自走正常部署队列；不重部署 = 旧密码失效即断连，无更诚实选项）→ `db.credentials_rotated` 事件 + 审计。定期自动轮换不做（§7）。
+- **轮换**：**仅手动**（`databases rotate`，破坏性操作两段式确认）。流程按引擎经适配器钩子：PG = 一次性 job 执行 `ALTER USER fleetly WITH PASSWORD`（引擎级热换——真机实测 rotate 同秒新密码即连通；**W4 真机注记：Swarm secret 不可变 → 换值必换名 → spec 变更触发库任务快速重建（实测亚秒收敛，连接无感窗口），「库不重启」的准确口径 = 引擎数据面不停机、非任务零重建**；**引擎级限定（W4-S4 落地注记）：PG 暂停态拒绝轮换**——initdb 只在首启读密码文件，暂停实例无法 ALTER，如实 409 提示先 resume，不受理假轮换）；Redis = 密文列更新 + 库实例受控重启（任务重建，requirepass 重读；暂停态允许——spec 更新，resume 时以新密码重建任务）。随后：逐引用 app 的 system 物化行更新为 pending → **平台自动触发全部引用 app 重部署**（各自走正常部署队列；不重部署 = 旧密码失效即断连，无更诚实选项）→ `db.credentials_rotated` 事件 + 审计。定期自动轮换不做（§7）。
 - **连接串格式**：引擎标准 URI（§2.2 表）；密码字符集 [a-zA-Z0-9] 免 percent-encode。
 
 ### 2.6 备份与恢复适配器（对接 E3）
