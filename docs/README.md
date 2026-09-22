@@ -13,7 +13,9 @@
 | 2026-09-17 | [控制面状态模型](design/2026-09-17-state-model.md) | 已实现（v0.1 切面） | 权威/派生缓存/实时直读三层、最小 label 集、孤儿保护、备份等序与 L1/L2 恢复、一键导出 |
 | 2026-09-20 | [评审遗留问题完整解决方案（S13-S20）](design/2026-09-20-remediation-complete.md) | 已实施 | [架构评审](reports/2026-09-19-architecture-review.md) 遗留项的决策完备方案：H9 路由撤销通道（noop@internal 兜底）、H15 双轨验签（openssl 兼容轨）、类 A-D 机制收口（出站出口/契约门禁/超时闭环）、S18-S20 中低严重度分波次方案与机制验收；2026-09-20 全部落地 |
 | 2026-09-20 | [E1 多节点包专项设计](design/2026-09-20-multi-node.md) | 已裁决（方案冻结） | 拓扑与组件面（worker 零安装物）、平台三子域与安装项、join 向导（端口矩阵+token 自动 rotate）、8423 TLS 配置通道、证书内联统一、zot 部署器与镜像管线（base_domain 配置即部署）、placement 多节点三因子、节点锚定 duty、restic 迁移+rebind、HA 边界诚实口径；D-MN-1~14 裁决轮全落定；9 票据 + 三断言验收 |
-| 2026-09-20 | [E4 数据库托管专项设计](design/2026-09-20-managed-databases.md) | 已裁决（方案冻结） | 库实例=**独立一等资源**（D-DB-1 用户终裁：自有表/API/七态生命周期 + EnterDbPhase 单写点；组件级复用放置/卷/substrate/secret/审计/备份）、内置模板注册表、V2-5 共享网络、凭据 source=system 注入与轮换（FZ-1/R5）、备份恢复适配器（pg_dump/RDB + db_backups 台账）、secrets 全 app 开放（external-only）；D-DB-1~11 裁决轮全落定；含 D-REL-9 回滚 env 语义修正（D-DB-11，已回写发布专项） |
+| 2026-09-20 | [E4 数据库托管专项设计](design/2026-09-20-managed-databases.md) | 已实现+真机验证（W4） | 库实例=**独立一等资源**（D-DB-1 用户终裁：自有表/API/七态生命周期 + EnterDbPhase 单写点；组件级复用放置/卷/substrate/secret/审计/备份）、内置模板注册表、V2-5 共享网络、凭据 source=system 注入与轮换（FZ-1/R5）、备份恢复适配器（pg_dump/RDB + db_backups 台账）、secrets 全 app 开放（external-only）；D-DB-1~11 裁决轮全落定；含 D-REL-9 回滚 env 语义修正（D-DB-11，已回写发布专项） |
+| 2026-09-22 | [E6 观测专项设计](design/2026-09-22-observability.md) | 已裁决（方案冻结） | VictoriaLogs 默认捆绑（V2-1：duty 收敛+回环发布 D-W5-4+hub ES bulk 直推+直播面分离）+ 统一检索（SearchLogs+注入安全负向+访问日志 RouterName 归因）+ metrics **opt-in**（D-W5-2：VM/cAdvisor/node_exporter+uPlot 图表+多副本水位显示）+ 通知 Webhook 首发（V2-6：订阅 glob/HMAC 验签/退避重试/台账/零自激励事件）；E2 MCP 暂缓出 v0.2（D-W5-1） |
+| 2026-09-22 | [E7 Web 终端+控制面 TLS 专项设计](design/2026-09-22-web-terminal.md) | 已裁决（方案冻结） | fleetly-exec global service 执行中继：**反向常连通道**（D-W5-3 修订 D19 字面——宿主不可路由 overlay 的结构性解法；安全面条款全保：API 收窄+label 卫兵+集群 token+时限+terminal scope+审计）+ 第二第一方镜像 + xterm UI + ticket 流；控制面 TLS（V2-8：off/platform/manual 三态+双面同证书+CLI/SDK+exec 通道 wss） |
 
 ## 调研报告（docs/research/）
 
