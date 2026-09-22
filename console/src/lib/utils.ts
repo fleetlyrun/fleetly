@@ -28,3 +28,18 @@ export function formatTime(iso: string | undefined): string {
   if (Number.isNaN(d.getTime())) return "—";
   return d.toLocaleString();
 }
+
+// 字节量的操作者可读形态（备份台账 size_bytes——proto int64 在 JSON 面是
+// 字符串，调用方负责归一；0/缺失 = 未记录，按「—」呈现而非 0 B）。
+export function formatBytes(value: string | number | undefined): string {
+  const n = typeof value === "string" ? Number(value) : value;
+  if (n === undefined || Number.isNaN(n) || n <= 0) return "—";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let v = n;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u += 1;
+  }
+  return `${v >= 100 || u === 0 ? Math.round(v) : v.toFixed(1)} ${units[u]}`;
+}

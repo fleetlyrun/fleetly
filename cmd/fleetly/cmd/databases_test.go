@@ -58,4 +58,18 @@ func TestCLIDatabasesSmoke(t *testing.T) {
 	if code != 1 || !strings.Contains(errOut, "E_DB_NOT_FOUND") {
 		t.Fatalf("missing get: code=%d stderr=%q", code, errOut)
 	}
+
+	// show（managed-databases §5.4 动词表的 get 同义动词）：与 get 同投影
+	// 同退出码——掩码 URL 在位，明文零出现。
+	code, out, errOut = runCLIConn(t, "databases", "show", "--json", "pg-cli")
+	if code != 0 {
+		t.Fatalf("show: code=%d stderr=%s", code, errOut)
+	}
+	if !strings.Contains(out, "********") {
+		t.Fatalf("show output missing masked url:\n%s", out)
+	}
+	code, _, errOut = runCLIConn(t, "databases", "show", "nope")
+	if code != 1 || !strings.Contains(errOut, "E_DB_NOT_FOUND") {
+		t.Fatalf("missing show: code=%d stderr=%q", code, errOut)
+	}
 }

@@ -32,6 +32,7 @@ const SPEC_FILES = [
   "placement.swagger.json",
   "cron.swagger.json",
   "database.swagger.json",
+  "secrets.swagger.json",
 ];
 
 const merged = {

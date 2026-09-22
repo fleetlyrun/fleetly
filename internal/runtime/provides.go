@@ -302,7 +302,10 @@ func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Clie
 		WithDatabaseTemplate(dbTemplatePort{}).
 		// E4 W4-S4：Swarm secret 确保端口（compose secrets 注入链的底座
 		// 原语——ensure 幂等由 substrate.Client.EnsureSecret 承载）。
-		WithSecretEnsurer(sc)
+		WithSecretEnsurer(sc).
+		// E4 W4-S6：Swarm secret 清场端口（app 删除 reap 的扫尾面——按归属
+		// label 扫描移除，best-effort 不阻塞删除收敛）。
+		WithSecretReaper(sc)
 }
 
 // dbTemplatePort 是引擎对库模板连接信息面的装配层适配（engine.DatabaseTemplatePort；

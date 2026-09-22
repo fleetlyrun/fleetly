@@ -199,8 +199,11 @@ func (m *Manager) rotatePostgresCredential(ctx context.Context, inst *state.Data
 		Name: jobName,
 		// 容器名不含凭据材料；env 只带旧密码（认证面），新密码进命令字面量
 		// ——两者都只进容器创建载荷（dockerPort 实现零日志）。
-		Image:   image,
-		Cmd:     []string{"psql", "-h", inst.Name, "-U", "fleetly", "-v", "ON_ERROR_STOP=1", "-c", "ALTER USER fleetly WITH PASSWORD '" + new + "'"},
+		Image: image,
+		// -d postgres 显式指库（W4-S6 e2e 实测修正）：psql 缺 -d 时按用户名
+		// 连库（fleetly），实例只有模板库与实例库——连接即「database does
+		// not exist」退败（exit 2）。ALTER USER 是集群级操作，维护库执行。
+		Cmd:     []string{"psql", "-h", inst.Name, "-U", "fleetly", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", "ALTER USER fleetly WITH PASSWORD '" + new + "'"},
 		Env:     []string{"PGPASSWORD=" + old},
 		Network: netName,
 	})

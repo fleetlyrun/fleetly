@@ -18,6 +18,7 @@ const TABS = [
   { key: "deployments", label: "Deployments" },
   { key: "logs", label: "Logs" },
   { key: "env", label: "Env" },
+  { key: "secrets", label: "Secrets" },
   { key: "domains", label: "Domains" },
 ];
 

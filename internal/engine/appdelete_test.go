@@ -10,6 +10,9 @@ package engine
 import (
 	"context"
 	"errors"
+	"sort"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -208,4 +211,101 @@ func serviceNames(f *fakeSubstrate) []string {
 		out = append(out, name)
 	}
 	return out
+}
+
+// fakeSecretReaper 是 SecretReaper 端口的内存假实现（app 删除 secret 扫尾
+// 测试注入；按 label 等值过滤，记录移除序）。
+type fakeSecretReaper struct {
+	mu      sync.Mutex
+	secrets map[string]map[string]string // name → labels
+	removed []string
+}
+
+func newFakeSecretReaper() *fakeSecretReaper {
+	return &fakeSecretReaper{secrets: map[string]map[string]string{}}
+}
+
+func (f *fakeSecretReaper) SecretList(_ context.Context, labels map[string]string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var out []string
+	for name, lbs := range f.secrets {
+		match := true
+		for k, v := range labels {
+			if lbs[k] != v {
+				match = false
+				break
+			}
+		}
+		if match {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out, nil
+}
+
+func (f *fakeSecretReaper) SecretRemove(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.secrets, name)
+	f.removed = append(f.removed, name)
+	return nil
+}
+
+func (f *fakeSecretReaper) add(name string, labels map[string]string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.secrets[name] = labels
+}
+
+// TestReapDeletingAppsSweepsAppSecrets 删除扫尾：服务全部移除后，按归属
+// label（fleetly.managed+fleetly.app）登记的 Swarm secret 一并清场；他 app
+// 的 secret 与库凭据 secret（fleetly.db 归属，非本 app label）不受牵连。
+func TestReapDeletingAppsSweepsAppSecrets(t *testing.T) {
+	h := deletingAppWithServices(t)
+	ctx := context.Background()
+	reaper := newFakeSecretReaper()
+	reaper.add("fleetly-demo-apikey-1a2b3c4d", secretLabels("demo"))
+	reaper.add("fleetly-demo-tls-9f8e7d6c", secretLabels("demo"))
+	reaper.add("fleetly-other-key-11223344", secretLabels("other"))
+	reaper.add("fleetly-db-pgprod-password-55667788", map[string]string{
+		"fleetly.managed": "true",
+		"fleetly.db":      "pgprod",
+	})
+	h.eng.WithSecretReaper(reaper)
+
+	h.eng.ReapDeletingApps(ctx)
+
+	if got := mustLifecycle(t, h, "demo"); got != state.LifecycleDeleted {
+		t.Fatalf("lifecycle = %s, want deleted", got)
+	}
+	reaper.mu.Lock()
+	removed := append([]string(nil), reaper.removed...)
+	left := len(reaper.secrets)
+	reaper.mu.Unlock()
+	if len(removed) != 2 {
+		t.Fatalf("removed secrets = %v, want exactly the two demo-app secrets", removed)
+	}
+	for _, name := range removed {
+		if !strings.Contains(name, "demo") {
+			t.Fatalf("foreign secret %s removed", name)
+		}
+	}
+	if left != 2 {
+		t.Fatalf("%d secrets remain, want the other-app + database secrets untouched", left)
+	}
+}
+
+// TestReapDeletingAppsSecretSweepNotWired 端口未接线：删除照常收敛
+//（best-effort 纪律——扫尾缺席不阻塞 tombstone 第二拍）。
+func TestReapDeletingAppsSecretSweepNotWired(t *testing.T) {
+	h := deletingAppWithServices(t)
+	ctx := context.Background()
+
+	h.eng.ReapDeletingApps(ctx)
+
+	if got := mustLifecycle(t, h, "demo"); got != state.LifecycleDeleted {
+		t.Fatalf("lifecycle = %s, want deleted (sweep absence must not block deletion)", got)
+	}
 }

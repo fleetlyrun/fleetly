@@ -34,17 +34,21 @@ func seedReadyWithLedger(t *testing.T, h *harness, name, template, snapshot stri
 }
 
 // TestRestoreFlowScaleZeroToJobToResume 恢复全链（验收 3）：快照归属守卫
-// 通过 → 副本 0 → 重放 job（rw 挂卷 + 钉节点）→ 副本 1 → restore_completed
-// 事件；实例主状态全程 ready（操作不换主状态，§2.1）。
+// 通过 → 副本 0 → 双 job（dbtools fetch 落卷 dump + 引擎镜像重放）→ 副本 1
+// → restore_completed 事件；实例主状态全程 ready（操作不换主状态，§2.1）。
 func TestRestoreFlowScaleZeroToJobToResume(t *testing.T) {
 	h := newHarness(t)
 	inst := seedReadyWithLedger(t, h, "pg-rs", dbtemplate.TemplatePostgres16, "snap-restore-1")
 	h.saveS3Settings()
-	var restoreJob *JobRunInput
+	var fetchJob, replayJob *JobRunInput
 	h.docker.jobOutFn = func(in JobRunInput) JobRunOutcome {
 		if strings.Contains(strings.Join(in.Cmd, " "), "pg_restore") {
 			j := in
-			restoreJob = &j
+			replayJob = &j
+		}
+		if strings.Contains(strings.Join(in.Cmd, " "), "fleetly-replay.dump") && !strings.Contains(strings.Join(in.Cmd, " "), "pg_restore") {
+			j := in
+			fetchJob = &j
 		}
 		return JobRunOutcome{State: "complete", ExitCode: 0}
 	}
@@ -62,34 +66,50 @@ func TestRestoreFlowScaleZeroToJobToResume(t *testing.T) {
 		return false
 	})
 
-	// job 载荷：rw 数据卷挂载 + 钉绑定节点 + 重放命令词表。
-	if restoreJob == nil {
-		t.Fatal("no restore job recorded")
+	// 双 job 载荷：fetch（dbtools：restic dump 落卷根暂存文件）+ 重放（
+	// 实例引擎镜像：temp postgres + pg_restore——跨 libc 不可重放，重放必
+	// 须由引擎自己的二进制执行）。
+	if fetchJob == nil || replayJob == nil {
+		t.Fatalf("jobs = fetch:%v replay:%v, want both", fetchJob != nil, replayJob != nil)
 	}
-	if len(restoreJob.Mounts) != 1 {
-		t.Fatalf("mounts = %v, want exactly the data volume", restoreJob.Mounts)
+	if fetchJob.Image != DefaultDatabaseToolsImage {
+		t.Errorf("fetch image = %s, want the dbtools image", fetchJob.Image)
 	}
-	m := restoreJob.Mounts[0]
+	if replayJob.Image != inst.ImageDigest {
+		t.Errorf("replay image = %s, want the instance's pinned engine image (musl/glibc replay hazard)", replayJob.Image)
+	}
+	m := fetchJob.Mounts[0]
 	volWant := "fleetly-db-pg-rs-data-" + inst.ID[:8]
 	if m.VolumeName != volWant || m.Target != "/var/lib/postgresql/data" || m.ReadOnly {
-		t.Errorf("mount = %+v, want %s rw at /var/lib/postgresql/data", m, volWant)
+		t.Errorf("fetch mount = %+v, want %s rw at /var/lib/postgresql/data", m, volWant)
 	}
-	if len(restoreJob.Constraints) != 1 || restoreJob.Constraints[0] != "node.id == n_node" {
-		t.Errorf("constraints = %v, want the pinned node (remote local volume is unreadable via manager)", restoreJob.Constraints)
+	if replayJob.Mounts[0].ReadOnly {
+		t.Error("replay mount must be rw")
 	}
-	if restoreJob.Image != DefaultDatabaseToolsImage {
-		t.Errorf("image = %s, want the dbtools image", restoreJob.Image)
+	if len(fetchJob.Constraints) != 1 || fetchJob.Constraints[0] != "node.labels.fleetly.node-id == n_node" {
+		t.Errorf("fetch constraints = %v, want the platform node-label pin (swarm node.id never equals the platform id; remote local volume is unreadable via manager)", fetchJob.Constraints)
 	}
-	script := strings.Join(restoreJob.Cmd, " ")
+	if len(replayJob.Constraints) != 1 || replayJob.Constraints[0] != "node.labels.fleetly.node-id == n_node" {
+		t.Errorf("replay constraints = %v, want the platform node-label pin", replayJob.Constraints)
+	}
+	// fetch 词表：restic dump 落卷根暂存文件（engine-replay 的材料契约）。
+	fetchScript := strings.Join(fetchJob.Cmd, " ")
+	if !strings.Contains(fetchScript, "dump snap-restore-1 db/pg-rs/db.dump > /var/lib/postgresql/data/fleetly-replay.dump") {
+		t.Errorf("fetch script %q missing the dump-to-volume word", fetchScript)
+	}
+	// 重放词表：temp postgres + drop/create + pg_restore 取卷上 dump +
+	// 同 uid pg_ctl 停服 + 暂存文件清场；命令零 restic、零凭据。
+	replayScript := strings.Join(replayJob.Cmd, " ")
 	for _, want := range []string{
-		"dump snap-restore-1 db/pg-rs/db.dump",
+		`PGUID=$(stat -c %u "$PGDATA")`,
 		`DROP DATABASE IF EXISTS "pg_rs"`,
 		`CREATE DATABASE "pg_rs"`,
-		`pg_restore -h /var/run/postgresql -U fleetly -d "pg_rs" --no-owner`,
-		"pg_ctl -D \"$PGDATA\" -m fast stop",
+		`pg_restore -h /var/run/postgresql -U fleetly -d "pg_rs" --no-owner /var/lib/postgresql/data/fleetly-replay.dump`,
+		`pg_ctl -D "$PGDATA" -m fast stop`,
+		`rm -f /var/lib/postgresql/data/fleetly-replay.dump`,
 	} {
-		if !strings.Contains(script, want) {
-			t.Errorf("restore script missing %q: %s", want, script)
+		if !strings.Contains(replayScript, want) {
+			t.Errorf("restore script missing %q: %s", want, replayScript)
 		}
 	}
 	// scale 轨迹：副本 0（重放窗口）→ 副本 1（重部署）。

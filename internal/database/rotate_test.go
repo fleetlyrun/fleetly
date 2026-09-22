@@ -131,6 +131,11 @@ func TestRotatePostgresReady(t *testing.T) {
 	if !strings.Contains(joined, "-h pg1") || !strings.Contains(joined, "-U fleetly") {
 		t.Errorf("job cmd = %q, want alias reachability (-h pg1) and the template user", joined)
 	}
+	// 显式维护库（W4-S6 e2e 实测修正：psql 缺 -d 按用户名连库——实例无该
+	// 库，连接即退败；ALTER USER 是集群级操作，维护库执行）。
+	if !strings.Contains(joined, "-d postgres") {
+		t.Errorf("job cmd = %q, want the explicit maintenance database (-d postgres)", joined)
+	}
 	// NEW 密码 = job SQL 中的字面量 = 落库密文的解密值（一致性三角）。
 	newPW := jobPassword(joined)
 	if newPW == "" || newPW == oldPW {

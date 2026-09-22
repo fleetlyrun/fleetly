@@ -677,6 +677,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/databases/{name}/backups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListDatabaseBackups 备份台账列表（created_at 降序——恢复目标选择与
+         *     Console 备份列表的数据源；kind/snapshot/size/verify_status/error 全量
+         *     事实面）。
+         */
+        get: operations["DatabaseService_ListDatabaseBackups"];
+        put?: never;
+        /**
+         * TriggerDatabaseBackup 手动备份受理（E4 S5，managed-databases §2.6）：
+         *     异步受理（job 分钟级——响应即 accepted，结论经台账与 db.backup_* 事件
+         *     披露；在途备份无台账行）。合法前置态 ready/degraded（§2.3 操作表）；
+         *     per 实例操作互斥（备份/恢复/升级并发第二笔 → 409）。s3.mode=unset →
+         *     E_S3_NOT_CONFIGURED（409——诚实拒绝，与注入前哨同码同语义）。
+         */
+        post: operations["DatabaseService_TriggerDatabaseBackup"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/databases/{name}/credentials": {
         parameters: {
             query?: never;
@@ -692,6 +720,28 @@ export interface paths {
         get: operations["DatabaseService_RevealDatabaseCredentials"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RestoreDatabaseBackup 原地恢复受理（破坏性两段式 confirm + 快照归属
+         *     守卫：只重放本实例台账内的快照）。停库重放：实例 scale 0 → job 挂卷
+         *     rw 重放 → 重部署（异步——结论经 db.restore_* 事件披露；恢复中断 =
+         *     实例保持停止 + E_DB_RESTORE_FAILED 事件的 critical 口径，§2.6）。
+         */
+        post: operations["DatabaseService_RestoreDatabaseBackup"];
         delete?: never;
         options?: never;
         head?: never;
@@ -791,6 +841,74 @@ export interface paths {
         /** SuspendDatabase 暂停（scale 0 保留服务与卷；引用方连不上是诚实暴露）。 */
         post: operations["DatabaseService_SuspendDatabase"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/databases/{name}/upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * UpgradeDatabase 受控升级受理（E4 S5，managed-databases §2.2）：①
+         *     pre_upgrade 备份门（verify 通过才继续——失败实例不动）②digest 换新
+         *     受控重建 ③健康门 ④失败 = digest 归位 + db.upgrade_failed + 状态落
+         *     degraded。异步受理（备份门与健康门是分钟级）；paused = 仅换 spec 不
+         *     重启（resume 时以新版本重建）。合法前置态 ready/degraded/paused。
+         */
+        post: operations["DatabaseService_UpgradeDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/secrets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListSecrets 该 app 全部 secret（按 name 字典序；只投影名称/指纹/时间锚
+         *     ——值与密文零出现）。
+         */
+        get: operations["SecretsService_ListSecrets"];
+        put?: never;
+        /**
+         * SetSecret 写入（覆盖即轮换）：值经 age envelope 加密落 app_secrets；
+         *     审计 secret.set（diff 只带名称与 hash8 指纹——值零出现）。
+         */
+        post: operations["SecretsService_SetSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/secrets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * RemoveSecret 删除单条（幂等不做：不存在 404；审计 secret.removed）。
+         *     已被运行中服务引用的 removal 不追写部署——引用方下次部署 preflight
+         *     E_SECRET_NOT_FOUND 诚实失败（移除声明再部署的既有语义）。
+         */
+        delete: operations["SecretsService_RemoveSecret"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1627,6 +1745,15 @@ export interface components {
         v1TriggerCronRunResponse: {
             run?: components["schemas"]["v1CronRunView"];
         };
+        DatabaseServiceRestoreDatabaseBackupBody: {
+            /** 恢复目标（restic snapshot 标识——必须在本实例台账内，跨实例误指 422）。 */
+            snapshot?: string;
+            /**
+             * 破坏性确认 = 实例名原样回传（mismatch → 400——原地重放覆盖数据卷上
+             *     的现库，与 DeleteDatabase 同型的数据安全面）。
+             */
+            confirm?: string;
+        };
         DatabaseServiceResumeDatabaseBody: Record<string, never>;
         DatabaseServiceRetryDatabaseBody: Record<string, never>;
         /**
@@ -1637,9 +1764,23 @@ export interface components {
             confirm?: string;
         };
         DatabaseServiceSuspendDatabaseBody: Record<string, never>;
+        DatabaseServiceTriggerDatabaseBackupBody: {
+            /**
+             * 备份类别（缺省 manual；API 面只受理 manual——daily/pre_upgrade 是平台
+             *     调度与升级门的内部类别）。
+             */
+            kind?: string;
+        };
         DatabaseServiceUpdateDatabaseSettingsBody: {
             limits?: components["schemas"]["v1DatabaseLimits"];
             backup_plan?: components["schemas"]["v1DatabaseBackupPlan"];
+        };
+        DatabaseServiceUpgradeDatabaseBody: {
+            /**
+             * 破坏性确认 = 实例名原样回传（mismatch → 400——受控重建有停机窗口，
+             *     且失败路径触发 digest 归位重建）。
+             */
+            confirm?: string;
         };
         v1CreateDatabaseRequest: {
             /**
@@ -1666,6 +1807,25 @@ export interface components {
             keep?: number;
             /** Format: int32 */
             hour_utc?: number;
+        };
+        /** DatabaseBackupView 是一行备份台账投影（§2.6 台账裁决的全量事实面）。 */
+        v1DatabaseBackupView: {
+            id?: string;
+            /** 备份类别（daily|manual|pre_upgrade）。 */
+            kind?: string;
+            /** restic repo 内 snapshot 标识（db/<instance>/ 命名空间寻址，非文件路径）。 */
+            snapshot?: string;
+            /**
+             * 导出流字节量（0 = 未记录）。
+             * Format: int64
+             */
+            size_bytes?: string;
+            /** 回读校验状态（unverified|verified|failed——「备份假成功」零容忍）。 */
+            verify_status?: string;
+            /** 失败/校验失败原因摘要（单行；凭据材料零出现）。 */
+            error?: string;
+            /** Format: date-time */
+            created_at?: string;
         };
         /**
          * DatabaseConnectionView 是连接信息脱敏投影（§2.5 键集的只读面）。url 中
@@ -1727,6 +1887,11 @@ export interface components {
             credential_updated_at?: string;
             /** 最近一次收敛失败原因（failed/deleting 前的现场快照；空 = 无失败现场）。 */
             last_error?: string;
+            /**
+             * 可升级位（E4 S5，§2.2 升级语义）：instance.image_digest ≠ 模板当前钉
+             *     定镜像 = true（升级逐实例 opt-in——既有实例不自动变）。
+             */
+            upgrade_available?: boolean;
         };
         v1DatabaseVolumeView: {
             name?: string;
@@ -1741,8 +1906,22 @@ export interface components {
         v1GetDatabaseResponse: {
             database?: components["schemas"]["v1DatabaseView"];
         };
+        v1ListDatabaseBackupsResponse: {
+            backups?: components["schemas"]["v1DatabaseBackupView"][];
+        };
         v1ListDatabasesResponse: {
             databases?: components["schemas"]["v1DatabaseView"][];
+        };
+        /**
+         * 异步受理响应：停库重放分钟级——结论经 db.restore_completed /
+         *     db.restore_failed 事件与实例 last_error 披露；恢复中断 = 实例保持停止
+         *     （人工 runbook 随事件/错误文本）。
+         */
+        v1RestoreDatabaseBackupResponse: {
+            name?: string;
+            snapshot?: string;
+            /** 恒为 "accepted"。 */
+            status?: string;
         };
         v1ResumeDatabaseResponse: {
             database?: components["schemas"]["v1DatabaseView"];
@@ -1780,8 +1959,70 @@ export interface components {
         v1SuspendDatabaseResponse: {
             database?: components["schemas"]["v1DatabaseView"];
         };
+        /**
+         * 异步受理响应：job 分钟级——结论经台账（ListDatabaseBackups）与
+         *     db.backup_succeeded / db.backup_failed 事件披露；在途备份无台账行。
+         */
+        v1TriggerDatabaseBackupResponse: {
+            name?: string;
+            kind?: string;
+            /** 恒为 "accepted"。 */
+            status?: string;
+        };
         v1UpdateDatabaseSettingsResponse: {
             database?: components["schemas"]["v1DatabaseView"];
+        };
+        /**
+         * 异步受理响应：备份门与健康门是分钟级——结论经 db.upgrade_started/
+         *     finished/failed 事件披露。view = 受理时刻投影（upgrade_available 尚为
+         *     true；digest 切换随编排推进）。
+         */
+        v1UpgradeDatabaseResponse: {
+            database?: components["schemas"]["v1DatabaseView"];
+            /** 恒为 "accepted"。 */
+            status?: string;
+        };
+        SecretsServiceSetSecretBody: {
+            /**
+             * secret 声明名（compose 服务级 secrets 引用的短名；合法 /run/secrets/<name>
+             *     文件名字符集 ^[A-Za-z0-9][A-Za-z0-9._-]*$——与 internal/compose 的
+             *     secret 名校验同规则，注释锚互指）。
+             */
+            name?: string;
+            /**
+             * 值（明文；age 加密在服务端。上限 64KiB sanity——Swarm secret 单对象
+             *     上界 500KB 的宽松内档；长度进形状层即拒，不落日志）。
+             */
+            value?: string;
+        };
+        v1ListSecretsResponse: {
+            secrets?: components["schemas"]["v1SecretView"][];
+        };
+        v1RemoveSecretResponse: {
+            app?: string;
+            name?: string;
+        };
+        /**
+         * SecretView 是平台密钥库条目的只读投影（值/密文/明文零出现——D-DB-7
+         *     无值读回；hash8 是唯一的值比对面）。
+         */
+        v1SecretView: {
+            name?: string;
+            hash8?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        v1SetSecretResponse: {
+            app?: string;
+            name?: string;
+            /** 值指纹（sha256 前 8 hex——「是不是那个值」比对面；值材料零出现）。 */
+            hash8?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
         };
     };
     responses: never;
@@ -3261,6 +3502,75 @@ export interface operations {
             };
         };
     };
+    DatabaseService_ListDatabaseBackups: {
+        parameters: {
+            query?: {
+                /** @description 行数上限（缺省 20）。 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListDatabaseBackupsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_TriggerDatabaseBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceTriggerDatabaseBackupBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TriggerDatabaseBackupResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     DatabaseService_RevealDatabaseCredentials: {
         parameters: {
             query?: never;
@@ -3279,6 +3589,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RevealDatabaseCredentialsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_RestoreDatabaseBackup: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceRestoreDatabaseBackupBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RestoreDatabaseBackupResponse"];
                 };
             };
             /** @description An unexpected error response. */
@@ -3454,6 +3799,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1SuspendDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DatabaseService_UpgradeDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatabaseServiceUpgradeDatabaseBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpgradeDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SecretsService_ListSecrets: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListSecretsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SecretsService_SetSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 归属 app 名。 */
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SecretsServiceSetSecretBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetSecretResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SecretsService_RemoveSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RemoveSecretResponse"];
                 };
             };
             /** @description An unexpected error response. */

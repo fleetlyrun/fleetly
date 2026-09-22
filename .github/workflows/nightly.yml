@@ -35,6 +35,10 @@
 #   - s3-rustfs-e2e：E3 对象存储端到端（e2e/s3-rustfs.sh，单 dind；E3-4/5
 #     真机闭环 + E3-6 公网开关断言面在单测——dind 无 base_domain 形态无公
 #     网面，e2e 断言范围见脚本头注释）。
+#   - databases-e2e：E4 数据库托管端到端（e2e/databases.sh，单 dind；
+#     s3-rustfs-e2e 同骨架——建库健康门/卷放置/备份恢复/轮换重部署/密钥库
+#     挂载/删除守卫全链；dbtools 私有镜像经 GITHUB_TOKEN 登录 ghcr 后由脚
+#     本 save|load 注入 dind）。
 #
 # 每个步骤与本地可跑脚本一致：bash e2e/nightly/run.sh <suite> /
 # sh deploy/run-*.sh / bash e2e/nightly/conformance-builder.sh /
@@ -53,6 +57,7 @@ on:
 
 permissions:
   contents: read
+  packages: read # databases-e2e 的 GITHUB_TOKEN 需拉私有 dbtools ghcr 包
 
 concurrency:
   # 定时与手动触发不互相取消（红即阻断发版证据，不允许重试掩盖）
@@ -468,6 +473,43 @@ jobs:
         run: |
           docker ps -aq --filter name=fleetly-s3- | xargs -r docker rm -f
           docker network rm fleetly-s3-br || true
+
+  databases-e2e:
+    # E4 数据库托管端到端（e2e/databases.sh 单 dind；s3-rustfs-e2e 同骨架
+    # ——编排自足、镜像钉 digest 在脚本头常量）：D1-D2 建库健康门 + 卷/放
+    # 置 → D4-D5 rustfs 备份目标 → D6-D8 引用 app（fleetly.databases label
+    # + dbtools psql 引导）与 FLEETLY_DB_* 注入 → D9 备份 verified →
+    # D10-D11 破坏清空/原地恢复 → D12-D15 轮换 + 引用 app 自动重部署 +
+    # 新凭据写路径 → D16-D20 平台密钥库（挂载/移除诚实失败/重设恢复）→
+    # D21-D22 暂停恢复 → D23-D27 删除守卫 + 默认留卷删除。
+    # 与其他 e2e job 的唯一编排差异：dbtools 是 PRIVATE ghcr 包，且钉定
+    # ref 是 tag@digest 形态——必须由真实 pull 落下 RepoDigests 才能本地
+    # 解析（save|load 拷贝解析不了），故凭据经 DB_GHCR_USER/DB_GHCR_TOKEN
+    # 传入脚本、由 dind 内 docker login + 直拉完成注入（GITHUB_TOKEN 对同
+    # org 私有包具备 packages: read，已加进 workflow 级 permissions）。
+    name: databases e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      DB_GHCR_USER: ${{ github.actor }}
+      DB_GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run databases e2e (dind)
+        run: sh e2e/databases.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-db-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-db-e2e- | xargs -r docker rm -f
+          docker network rm fleetly-db-br || true
 
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:

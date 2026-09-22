@@ -48,8 +48,8 @@ func TestBackupJobSpecAssertions(t *testing.T) {
 	if j.Image != DefaultDatabaseToolsImage {
 		t.Errorf("image = %s, want the digest-pinned dbtools image", j.Image)
 	}
-	if len(j.Constraints) != 1 || j.Constraints[0] != "node.id == n_node" {
-		t.Errorf("constraints = %v, want pinned to the bound node", j.Constraints)
+	if len(j.Constraints) != 1 || j.Constraints[0] != "node.labels.fleetly.node-id == n_node" {
+		t.Errorf("constraints = %v, want the platform node-label pin (swarm node.id never equals the platform id)", j.Constraints)
 	}
 	if !h.docker.networks["fleetly-db-pg-bk-net"] {
 		t.Errorf("instance shared network %v not attached", j.Networks)
@@ -78,6 +78,12 @@ func TestBackupJobSpecAssertions(t *testing.T) {
 	}
 	if !strings.Contains(envStr, "RESTIC_PASSWORD=test-repo-pass") || !strings.Contains(envStr, "AWS_ACCESS_KEY_ID=testak") || !strings.Contains(envStr, "AWS_SECRET_ACCESS_KEY=test-s3-secret") {
 		t.Errorf("restic env incomplete: %s", envStr)
+	}
+	// repo 目标必须进 env（W4-S6 e2e 实测修正：缺 RESTIC_REPOSITORY = restic
+	// 以「Please specify repository location」退败——fake 底座不看 env 真实
+	// 性，只有这里能钉）。
+	if !strings.Contains(envStr, "RESTIC_REPOSITORY=s3:http://s3.test:9000/testbucket/statebackups") {
+		t.Errorf("RESTIC_REPOSITORY env missing: %s", envStr)
 	}
 	// 外部 S3（path_style）不经 rustfs 网络。
 	for _, e := range j.Env {

@@ -100,6 +100,35 @@ export type CronRunView = Schemas["v1CronRunView"];
 export type ListCronRunsResponse = Schemas["v1ListCronRunsResponse"];
 export type TriggerCronRunResponse = Schemas["v1TriggerCronRunResponse"];
 
+// ── databases（E4 数据库托管，managed-databases §5.1）────────────────────
+
+export type DatabaseView = Schemas["v1DatabaseView"];
+export type DatabaseVolumeView = Schemas["v1DatabaseVolumeView"];
+export type DatabaseConnectionView = Schemas["v1DatabaseConnectionView"];
+export type DatabaseLimits = Schemas["v1DatabaseLimits"];
+export type DatabaseBackupPlan = Schemas["v1DatabaseBackupPlan"];
+export type ListDatabasesResponse = Schemas["v1ListDatabasesResponse"];
+export type GetDatabaseResponse = Schemas["v1GetDatabaseResponse"];
+export type CreateDatabaseResponse = Schemas["v1CreateDatabaseResponse"];
+export type DeleteDatabaseResponse = Schemas["v1DeleteDatabaseResponse"];
+export type SuspendDatabaseResponse = Schemas["v1SuspendDatabaseResponse"];
+export type ResumeDatabaseResponse = Schemas["v1ResumeDatabaseResponse"];
+export type RetryDatabaseResponse = Schemas["v1RetryDatabaseResponse"];
+export type RotateDatabaseCredentialsResponse = Schemas["v1RotateDatabaseCredentialsResponse"];
+export type RevealDatabaseCredentialsResponse = Schemas["v1RevealDatabaseCredentialsResponse"];
+export type DatabaseBackupView = Schemas["v1DatabaseBackupView"];
+export type ListDatabaseBackupsResponse = Schemas["v1ListDatabaseBackupsResponse"];
+export type TriggerDatabaseBackupResponse = Schemas["v1TriggerDatabaseBackupResponse"];
+export type RestoreDatabaseBackupResponse = Schemas["v1RestoreDatabaseBackupResponse"];
+export type UpgradeDatabaseResponse = Schemas["v1UpgradeDatabaseResponse"];
+
+// ── platform secrets（E4 §2.7 平台密钥库；无值读回面）────────────────────
+
+export type SecretView = Schemas["v1SecretView"];
+export type ListSecretsResponse = Schemas["v1ListSecretsResponse"];
+export type SetSecretResponse = Schemas["v1SetSecretResponse"];
+export type RemoveSecretResponse = Schemas["v1RemoveSecretResponse"];
+
 // ── events ───────────────────────────────────────────────────────────────
 
 export type EventView = Schemas["v1EventView"];

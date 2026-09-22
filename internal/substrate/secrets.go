@@ -53,3 +53,38 @@ func (c *Client) EnsureSecret(ctx context.Context, name string, data []byte, lab
 	}
 	return created.ID, nil
 }
+
+// SecretList 按 label 选择器返回 secret 名（清场路径的选择面——app 删除
+// reap 按 fleetly.managed+fleetly.app 扫尾，database/rustfs 同族口径）。
+func (c *Client) SecretList(ctx context.Context, labels map[string]string) ([]string, error) {
+	filters := mobyclient.Filters{}
+	for k, v := range labels {
+		filters = filters.Add("label", k+"="+v)
+	}
+	lctx, lcancel := withCallTimeout(ctx)
+	res, err := c.cli.SecretList(lctx, mobyclient.SecretListOptions{Filters: filters})
+	lcancel()
+	if err != nil {
+		return nil, fmt.Errorf("substrate: secret list: %w", err)
+	}
+	out := make([]string, 0, len(res.Items))
+	for _, s := range res.Items {
+		out = append(out, s.Spec.Name)
+	}
+	return out, nil
+}
+
+// SecretRemove 删除 secret（幂等：缺失视为成功；in-use 返回错误由调用方
+// 降级日志——best-effort 清场不阻塞调用方主链路）。
+func (c *Client) SecretRemove(ctx context.Context, name string) error {
+	rctx, rcancel := withCallTimeout(ctx)
+	_, err := c.cli.SecretRemove(rctx, name, mobyclient.SecretRemoveOptions{})
+	rcancel()
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("substrate: secret remove %s: %w", name, err)
+	}
+	return nil
+}

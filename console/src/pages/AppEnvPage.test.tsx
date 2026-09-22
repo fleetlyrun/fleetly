@@ -78,4 +78,27 @@ describe("AppEnvPage pending grouping", () => {
     expect(screen.getByText("••••••••")).toBeInTheDocument();
     expect(screen.queryByText("s3cr3t-value")).not.toBeInTheDocument();
   });
+
+  it("badges source=system rows (FLEETLY_DB_* materialized vars) distinctly", async () => {
+    setToken("flt_test");
+    vi.stubGlobal(
+      "fetch",
+      stubFetchEnv([
+        { key: "LOG_LEVEL", source: "platform", status: "effective" },
+        {
+          key: "FLEETLY_DB_PG_PROD_URL",
+          source: "system",
+          status: "effective",
+        },
+      ]),
+    );
+
+    renderPage();
+
+    await waitFor(() => screen.getByText("FLEETLY_DB_PG_PROD_URL"));
+    // system 物化行（E4 库连接串）独有徽章；platform 行保持普通文本。
+    const badges = screen.getAllByTestId("env-system-badge");
+    expect(badges).toHaveLength(1);
+    expect(badges[0].closest("tr")?.getAttribute("data-key")).toBe("FLEETLY_DB_PG_PROD_URL");
+  });
 });

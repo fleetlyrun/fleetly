@@ -21,7 +21,10 @@ import { AppOverviewPage } from "@/pages/AppOverviewPage";
 import { AppDeploymentsPage } from "@/pages/AppDeploymentsPage";
 import { AppLogsPage } from "@/pages/AppLogsPage";
 import { AppEnvPage } from "@/pages/AppEnvPage";
+import { AppSecretsPage } from "@/pages/AppSecretsPage";
 import { AppDomainsPage } from "@/pages/AppDomainsPage";
+import { DatabasesPage } from "@/pages/DatabasesPage";
+import { DatabaseDetailPage } from "@/pages/DatabaseDetailPage";
 import { EventsPage } from "@/pages/EventsPage";
 import { LoginPage } from "@/pages/LoginPage";
 import { SystemPage } from "@/pages/SystemPage";
@@ -68,8 +71,11 @@ function Gate() {
             <Route path="deployments" element={<AppDeploymentsPage />} />
             <Route path="logs" element={<AppLogsPage />} />
             <Route path="env" element={<AppEnvPage />} />
+            <Route path="secrets" element={<AppSecretsPage />} />
             <Route path="domains" element={<AppDomainsPage />} />
           </Route>
+          <Route path="/databases" element={<DatabasesPage />} />
+          <Route path="/databases/:name" element={<DatabaseDetailPage />} />
           <Route path="/system" element={<SystemPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

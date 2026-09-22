@@ -105,7 +105,7 @@ rm -f /var/lib/fleetly/fleetly.db-wal /var/lib/fleetly/fleetly.db-shm
 cp "$BK/fleetly.db" /var/lib/fleetly/fleetly.db
 chown root:root /var/lib/fleetly/fleetly.db && chmod 0600 /var/lib/fleetly/fleetly.db
 
-# ⑤ 启动 + 验证清单（§6）
+# ⑤ 启动 + 验证清单（§7）
 systemctl start fleetlyd
 ```
 
@@ -210,7 +210,84 @@ FLEETLY_TOKEN=<tok> fleetly backups list       # 台账两列结论如实（§1 
 - 跨节点互备（库副本的自动化异地托管）挂账 v0.2（object-storage §6）；
   兑现前，灾备 = 上面的两件离线托管件 + external 端点，由操作者纪律保证。
 
-## 6. 验证清单（恢复完成判定）
+## 6. 库备份与恢复（E4 managed-databases，W4-S5/S6）
+
+适用：托管库实例（`db_instances`）的数据备份/恢复。与 §0-§5 的**控制面
+状态备份**是两套独立机制（独立表 `db_backups`、独立 repo 命名空间
+`db/<instance>/`、独立恢复语义）——词形相近，处置路径互不通用。设计依据：
+managed-databases §2.6（备份/恢复适配器）、§2.5（轮换）。
+
+### 6.0 机制速览
+
+- **内容**：逻辑备份（PG = `pg_dump -Fc`；Redis = RDB 流式导出），由
+  一次性 Swarm job 执行（dbtools 镜像，digest 钉定；挂实例数据卷、钉绑定
+  节点），入平台 restic repo（与状态备份同一 repo 基础设施、
+  `db/<instance>/` 独立命名空间）。
+- **触发**：`daily`（per 实例计划，缺省每日 03:00 UTC、保留 7 份）、
+  `manual`（`fleetly databases backup <name>` 或 Console 备份卡
+  「Back up now」）、`pre_upgrade`（升级备份门内部类别）。
+- **诚实契约**：每次备份立即回读校验（restic 读回 + 引擎级头部校验），
+  结论落 `db_backups.verify_status`（`verified`/`failed`）。**failed 行 =
+  备份不可信**——恢复目标选择永远跳过 failed 行；无 verified 备份的实例
+  不可升级（备份门如实拒绝）。在途备份无台账行——受理响应只是 accepted，
+  结论看台账与 `db.backup_*` 事件。
+- **前置态**：备份与恢复都要求实例 ready/degraded（paused/failed 如实
+  409）。s3.mode=unset 时备份受理诚实拒绝（E_S3_NOT_CONFIGURED）——先在
+  System → Storage 配置目标。
+
+### 6.1 巡检与手动备份
+
+```sh
+FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN=<tok> fleetly databases backups <name> --json
+# 最新行 verify_status=verified 且 created_at 在计划窗口内；failed 行出现
+# 即按事件 db.backup_failed 的 error 摘要归因（凭据材料零出现）。
+```
+
+手动触发：`fleetly databases backup <name>`（异步受理）→ 轮询台账至
+verified。Console：库详情页 Backups 卡。
+
+**首次启用前置**：库备份与控制面状态备份共享同一 restic repo——repo
+口令由控制面上传轨**首次上传时**惰性生成。全新平台先做一次
+`fleetly backups create`（结论 upload ok = 口令在位 + 目标可写），再做
+库备份；否则库备份受理后的异步链会以
+「restic repository password is not provisioned yet」诚实失败（事件面
+可行动文本指到此步）。
+
+### 6.2 恢复（原地重放，破坏性两段式）
+
+`fleetly databases restore <name> --snapshot <id> --confirm <name>`
+（Console：备份卡逐行 Restore → 输入实例名确认）。流程 = 实例 scale 0 →
+job 挂卷只读改写重放 → 重部署 → 健康门 → ready。恢复期间引用方 app
+**连不上是诚实暴露**（pg 断连错误即产品）；分钟级。
+
+**凭据边界（务必知晓）**：恢复重放的是**备份时刻的库内密码**。若备份后
+做过 `databases rotate`，恢复完成后的库内密码与平台权威态密文错位——
+`fleetly databases show <name>` 的 `password_fingerprint` 是比对锚（它
+是平台侧现值的指纹）。处置：恢复后**再 rotate 一次**（两段式 confirm），
+引用 app 自动重部署后全链对齐。未做过轮换的实例无此收尾。
+
+### 6.3 恢复中断（critical）人工收尾
+
+恢复中断 = 实例保持停止 + `db.restore_failed`（critical 口径）+ last_error
+带现场。人工步骤：
+
+1. `fleetly databases retry <name>` 先尝试重收敛（多数瞬态可恢复——job
+   重跑是幂等重放）；
+2. retry 无法收敛（卷上数据半成品）→ 换目标快照再 restore 一次（较新或
+   较旧的 verified 行均可——原地重放会覆盖半成品）；
+3. 仍失败 → 按删除/重建路径处理（`databases delete` 默认**保留卷**转
+   orphaned，人工确认无需取证后 `--delete-volumes` 或手动清卷），并以最
+   近 verified 备份重建后重放。
+
+### 6.4 诚实口径（同节点 RustFS ≠ 灾备）
+
+`s3.mode=rustfs` 时库备份与状态备份同一约束：**同节点 RustFS = 便捷层
+（防误删/单文件损坏），不是灾备**——主机整体损毁时实例数据卷与备份一同
+丢失。灾备向配置 = external S3 端点（§5.4 同口径；Console 备份卡与 S3
+设置卡常驻同文案标注）。跨节点 DR：建新库 + 手动重放 + rebind 的 runbook
+组合（managed-databases §2.6「恢复」行），不做一键跨实例恢复。
+
+## 7. 验证清单（恢复完成判定）
 
 ```sh
 systemctl status fleetlyd --no-pager                    # active (running)
@@ -223,7 +300,7 @@ docker service ls                                       # 应用服务未被改�
 附加核对：新 daemon 首启会立即产生一条 `daily` 备份（verified）——这条
 出现 = 备份链在恢复后的库上重新闭环。
 
-## 7. 边界（如实告知）
+## 8. 边界（如实告知）
 
 - 单节点 v0.1 整机磁盘丢失 = 应用与数据同时丢失，控制面 DR 不覆盖；
   远端上传轨（E3-3）缓解单机磁盘故障，但**主机整体损毁的恢复边界见

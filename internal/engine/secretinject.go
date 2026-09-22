@@ -47,6 +47,23 @@ type SecretEnsurer interface {
 	EnsureSecret(ctx context.Context, name string, data []byte, labels map[string]string) (string, error)
 }
 
+// SecretReaper 是引擎对 Swarm secret 对象的清场端口（E4 S4 遗留接线，W4-S6
+// 落地）：app 删除 reap 的扫尾面——按归属 label 选择、按名移除（幂等：
+// 缺失视为成功）。与 SecretEnsurer 分立的理由：职责方向不同（装载 vs 清场）
+// 且 ensure 早已在役、reaper 是纯加法；实现同 = substrate.Client
+//（WithSecretReaper 注入）。nil = 未接线——reap 扫尾如实跳过并告警，
+// 不阻塞删除收敛。
+type SecretReaper interface {
+	// SecretList 按 label 选择器返回 secret 名（清场选择面）。
+	SecretList(ctx context.Context, labels map[string]string) ([]string, error)
+	// SecretRemove 删除 secret（幂等：缺失视为成功；in-use 返回错误）。
+	SecretRemove(ctx context.Context, name string) error
+}
+
+// WithSecretReaper 注入 Swarm secret 清场端口（app 删除 reap 的扫尾面；
+// 实现 = substrate.Client，装配层接线）。
+func (e *Engine) WithSecretReaper(r SecretReaper) *Engine { e.secretReap = r; return e }
+
 // resolveSecretMounts 解析本次发布的 secret 挂载面（preparing 现读密钥库，
 // 不缓存长驻）。返回：服务 → SecretMount 列表（按 target 字典序——
 // desired-hash 确定性）；无任何声明的 app 返回 nil（零写入零底座副作用）。

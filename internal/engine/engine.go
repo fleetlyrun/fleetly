@@ -60,6 +60,10 @@ type Engine struct {
 	// §2.7 compose secrets 注入链；nil = 未接线——带 secret 声明的部署
 	// 规划期显式失败）。实现 = substrate.Client（WithSecretEnsurer）。
 	secretEnsure SecretEnsurer
+	// secretReap 是 Swarm secret 对象的清场端口（app 删除 reap 的扫尾面，
+	// nil = 未接线——reap 扫尾如实跳过告警）。实现 = substrate.Client
+	//（WithSecretReaper）。
+	secretReap SecretReaper
 	// waterMarks 是副本水位不足判定的进程内计时（观察窗辅助信号；引擎
 	// 重启后重摆——窗口本身持久化，重启代价可接受）。
 	waterMarks map[string]time.Time

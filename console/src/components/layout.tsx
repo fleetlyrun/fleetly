@@ -5,6 +5,7 @@
 import { useQuery } from "@tanstack/react-query";
 import {
   Boxes,
+  Database,
   House,
   LogOut,
   PanelLeft,
@@ -28,6 +29,7 @@ const COLLAPSE_KEY = "fleetly.console.sidebar-collapsed";
 const NAV_MAIN = [{ to: "/", label: "Home", icon: House, end: true }];
 const NAV_PLATFORM = [
   { to: "/apps", label: "Applications", icon: Boxes, end: false },
+  { to: "/databases", label: "Databases", icon: Database, end: false },
   { to: "/events", label: "Events", icon: Radio, end: false },
   { to: "/system", label: "System", icon: Server, end: false },
 ];

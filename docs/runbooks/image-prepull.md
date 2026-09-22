@@ -32,6 +32,7 @@ fork 镜像 + `canary` 可变 tag——供应链反面教材（docs/research/
 | 10 | `ghcr.io/project-zot/zot:v2.1.21` | `6b69512c…f48c8` | 平台 registry（zot，E1-4 部署器钉版缺省；多节点 manager 平台组件） | internal/ingress/registry.go `DefaultZotImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步） |
 | 11 | `restic/restic:0.19.1` | `136600b6…d510` | 状态备份远端上传轨（restic 钉版容器一次性执行，E3-3/D-S3-3；首次上传按需拉取，预拉可选） | internal/statebackup/restic.go `DefaultResticImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；2026-09-21 解析） |
 | 12 | `rustfs/rustfs:1.0.0` | `8cc98017…d1ff` | 托管 RustFS（opt-in 管理组件，E3-5/D-S3-10；s3.mode=rustfs 时 duty 按需拉取，预拉可选；多架构 OCI index amd64/arm64） | internal/rustfs/spec.go `DefaultRustFSImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；2026-09-21 解析：1.0.0 为最新 1.0.x stable（2026-09-16 发布，与 latest tag 当前所指同 digest）） |
+| 13 | `ghcr.io/fleetlyrun/dbtools:v0.2.0-dbtools.1` | `64c367ff…99fe` | 库备份/恢复/校验一次性 job 的执行体（引擎工具 + restic，E4 D-DB-6；备份受理时按需拉取，预拉可选；多架构 amd64/arm64；**PRIVATE ghcr 包**） | internal/database/adapters.go `DefaultDatabaseToolsImage`（Go 常量字面，同上双锚口径，改动须同步；发布 = .github/workflows/dbtools.yml，随平台 release 由 release.yml `dbtools-image` job 同版调用）。私有包预拉注意：须先认证（`docker login ghcr.io`；CI nightly databases-e2e 以 GITHUB_TOKEN + packages:read 在 dind 内直拉）。**不要用宿主 save|load 拷贝替代直拉**——digest 钉定引用（tag@digest）的本地解析依赖真实 pull 落下的 RepoDigests，load 进来的镜像没有该记录，引用无法解析（docker 29.8.1 实测，见 e2e/databases.sh 头注） |
 
 台账与实际引用集的一致性以门禁扫描为准：
 

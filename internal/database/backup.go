@@ -364,7 +364,7 @@ func (m *Manager) pruneBackups(ctx context.Context, inst *state.DatabaseInstance
 		instance: out.Instance,
 		purpose:  "prune",
 		script:   script,
-		env:      toolsJobEnv("", out.ResticPassword, out.S3AccessKeyID, out.S3SecretKey, out.S3Region),
+		env:      toolsJobEnv("", out.Repository, out.ResticPassword, out.S3AccessKeyID, out.S3SecretKey, out.S3Region),
 		networks: jobNetworks(out.AttachRustfsNetwork, net),
 		timeout:  pruneJobTimeout,
 		bindNode: out.BindNodeID,

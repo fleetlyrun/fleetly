@@ -88,7 +88,21 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
           <span className="ml-2 text-xs text-red-600 dark:text-red-400">{revealError}</span>
         ) : null}
       </TableCell>
-      <TableCell className="text-xs">{row.source}</TableCell>
+      <TableCell className="text-xs">
+        {row.source === "system" ? (
+          // source=system = 平台物化行（E4 managed-databases：FLEETLY_DB_* 连
+          // 接串族）——值由库实例轮换自动跟进，用户不可写（保留前缀守卫），
+          // 与用户 env 的视觉区分是诚实展示的一部分。
+          <span
+            data-testid="env-system-badge"
+            className="inline-flex items-center rounded-md border px-1.5 py-0.5 text-xs font-medium text-muted-foreground"
+          >
+            system
+          </span>
+        ) : (
+          row.source
+        )}
+      </TableCell>
       <TableCell className="whitespace-nowrap text-xs text-muted-foreground">
         updated {timeAgo(row.updated_at)}
       </TableCell>

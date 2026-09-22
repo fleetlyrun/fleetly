@@ -150,42 +150,68 @@ func verifyJobScript(in dbtemplate.BackupOutcome) ([]string, error) {
 // 绑定节点挂数据卷 rw——「远端 local 卷不可经 manager 读」约束下的唯一
 // 执行位置）。
 //
-//	PG：dbtools 是 postgres 基底——job 内起 temp postgres（挂卷上的既有数
-//	据目录，PGDATA=pgdata 子目录与实例 env 同约定；实例服务 scale 0 期无
-//	端口/锁冲突）→ unix socket trust 下 drop/create → restic dump |
-//	pg_restore --no-owner → pg_ctl fast stop。降权工具 gosu/su-exec 运行时
-//	探测（官方 alpine 基底代际差异；postgres 二进制拒以 root 运行）。
-//	Redis：RDB 落卷 + AOF 目录清除（若在——下次启动按 RDB 装载）。
-func restoreJobScript(in dbtemplate.RestoreInput) ([]string, error) {
+// W4-S6 重构为**双 job**（Restore 编排）：① dbtools（restic 载体）把快照
+// dump 落到卷根的暂存文件；② **实例引擎镜像**起临时 postgres 重放。拆分
+// 理由：dbtools 是 alpine/musl 基底，实例引擎是 Debian/glibc——musl 二进
+// 制对 glibc 集群既不能解析 collation version（CREATE DATABASE 即
+// ERROR），更存在跨 libc 文本序的索引损坏风险；快照重放必须由引擎自己的
+// 二进制执行。Redis（RDB 落卷，无引擎参与）保持单 dbtools job。
+//
+// 引擎镜像重放 job 的次级修正（同次 e2e 实测链）：降权 uid 从数据目录属
+// 主探测（dbtools/引擎镜像的 postgres uid 与卷上文件属主对齐以数据目录为
+// 准，gosu/su-exec 均接受数字 uid）；临时实例拉起带 kill -0 看护重启（
+// scale 0 与 job 之间无任务全停等待窗，旧引擎下线期一次性起动必失败）；
+// pg_ctl 停临时实例与起动同 uid（root 形态失败会经 set -e 误判重放失败）。
+const replayDumpFilename = "fleetly-replay.dump"
+
+func restoreFetchJobScript(in dbtemplate.RestoreInput) ([]string, error) {
 	filename, err := backupFilename(in.TemplateID)
 	if err != nil {
 		return nil, err
 	}
 	repoPath := "db/" + in.Instance + "/" + filename
+	return []string{"sh", "-c",
+		fmt.Sprintf("%s dump %s %s > %s",
+			resticCmd(in.S3PathStyle), in.SnapshotID, repoPath,
+			in.VolumeTarget+"/"+replayDumpFilename)}, nil
+}
+
+// restoreReplayJobScript 拼装引擎镜像侧的重放命令（PG 专用——Redis 无引
+// 擎参与，restoreFetchJobScript 单 job 落卷即完成）。命令形态与 fetch 前
+// 置的材料契约：快照 dump 已由前置 job 落在卷根 replayDumpFilename。
+func restoreReplayJobScript(in dbtemplate.RestoreInput) ([]string, error) {
+	dumpPath := in.VolumeTarget + "/" + replayDumpFilename
 	switch in.TemplateID {
 	case dbtemplate.TemplatePostgres16:
 		db := dbtemplate.DatabaseName(in.Instance)
 		script := strings.Join([]string{
 			"set -e",
-			`if command -v gosu >/dev/null 2>&1; then RUNAS="gosu postgres"; elif command -v su-exec >/dev/null 2>&1; then RUNAS="su-exec postgres"; else echo "no privilege-drop tool in job image" >&2; exit 64; fi`,
+			`if command -v gosu >/dev/null 2>&1; then PRIVDROP="gosu"; elif command -v su-exec >/dev/null 2>&1; then PRIVDROP="su-exec"; else echo "no privilege-drop tool in job image" >&2; exit 64; fi`,
 			`PGDATA=/var/lib/postgresql/data/pgdata; export PGDATA`,
-			`$RUNAS postgres &`,
-			`i=0; until pg_isready -h /var/run/postgresql -U fleetly >/dev/null 2>&1; do i=$((i+1)); if [ "$i" -gt 60 ]; then echo "temporary postgres did not become ready" >&2; exit 65; fi; sleep 1; done`,
+			// 降权 uid 从数据目录属主探测（gosu/su-exec 均接受数字 uid——
+			// 引擎镜像的 postgres passwd 条目与卷上文件属主一致，探测只是
+			// 免假设的收口）。
+			`PGUID=$(stat -c %u "$PGDATA")`,
+			`$PRIVDROP "$PGUID" postgres &`,
+			`PGPID=$!`,
+			`i=0`,
+			`until pg_isready -h /var/run/postgresql -U fleetly >/dev/null 2>&1; do`,
+			`  i=$((i+1))`,
+			`  if [ "$i" -gt 90 ]; then echo "temporary postgres did not become ready" >&2; exit 65; fi`,
+			`  if ! kill -0 "$PGPID" 2>/dev/null; then sleep 2; $PRIVDROP "$PGUID" postgres & PGPID=$!; fi`,
+			`  sleep 1`,
+			`done`,
 			fmt.Sprintf(`psql -h /var/run/postgresql -U fleetly -d postgres -v ON_ERROR_STOP=1 -c 'DROP DATABASE IF EXISTS "%s";' -c 'CREATE DATABASE "%s";'`, db, db),
-			fmt.Sprintf(`%s dump %s %s | pg_restore -h /var/run/postgresql -U fleetly -d "%s" --no-owner`,
-				resticCmd(in.S3PathStyle), in.SnapshotID, repoPath, db),
-			`pg_ctl -D "$PGDATA" -m fast stop`,
-		}, "\n")
-		return []string{"sh", "-c", script}, nil
-	case dbtemplate.TemplateRedis7:
-		script := strings.Join([]string{
-			"set -e",
-			fmt.Sprintf("%s dump %s %s > /data/dump.rdb", resticCmd(in.S3PathStyle), in.SnapshotID, repoPath),
-			"rm -rf /data/appendonlydir",
+			fmt.Sprintf(`pg_restore -h /var/run/postgresql -U fleetly -d "%s" --no-owner %s`, db, dumpPath),
+			// 停临时实例与起动同 uid（pg_ctl 拒以 root 运行——`set -e` 下
+			// 根形态失败会让成功的重放被误判为失败）。
+			`$PRIVDROP "$PGUID" pg_ctl -D "$PGDATA" -m fast stop`,
+			// 暂存 dump 清场（卷根文件不属集群数据——残留只会误导人工排查）。
+			fmt.Sprintf(`rm -f %s`, dumpPath),
 		}, "\n")
 		return []string{"sh", "-c", script}, nil
 	default:
-		return nil, fmt.Errorf("database: template %q has no restore adapter", in.TemplateID)
+		return nil, fmt.Errorf("database: template %q has no engine-replay path (only postgres replays via the engine image)", in.TemplateID)
 	}
 }
 
@@ -227,7 +253,7 @@ func (m *Manager) Backup(ctx context.Context, in dbtemplate.BackupInput) (dbtemp
 		instance:   in.Instance,
 		purpose:    "backup",
 		script:     script,
-		env:        toolsJobEnv(in.Password, in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
+		env:        toolsJobEnv(in.Password, in.Repository, in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
 		networks:   jobNetworks(in.AttachRustfsNetwork, net),
 		timeout:    backupJobTimeout,
 		bindNode:   in.BindNodeID,
@@ -260,7 +286,7 @@ func (m *Manager) Verify(ctx context.Context, in dbtemplate.BackupOutcome) error
 		instance: in.Instance,
 		purpose:  "verify",
 		script:   script,
-		env:      toolsJobEnv("", in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
+		env:      toolsJobEnv("", in.Repository, in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
 		networks: jobNetworks(in.AttachRustfsNetwork, net),
 		timeout:  verifyJobTimeout,
 		bindNode: in.BindNodeID,
@@ -275,33 +301,102 @@ func (m *Manager) Verify(ctx context.Context, in dbtemplate.BackupOutcome) error
 }
 
 // Restore 原地恢复（dbtemplate.EngineAdapter 契约）：纯执行体——scale 0/
-// 事件/失败口径归 restore.go 编排；本方法只跑重放 job。
+// 事件/失败口径归 restore.go 编排；本方法只跑重放 job。PG = 双 job（
+// dbtools 取回 dump 落卷 → 实例引擎镜像起临时 postgres 重放——跨 libc 不
+// 可重放，见 restoreJobScript 注）；Redis = 单 dbtools job（RDB 落卷）。
 func (m *Manager) Restore(ctx context.Context, in dbtemplate.RestoreInput) error {
-	script, err := restoreJobScript(in)
-	if err != nil {
-		return err
-	}
 	net, err := naming.DBNetworkName(in.Instance)
 	if err != nil {
 		return err
 	}
-	outcome, err := m.runToolsJob(ctx, toolsJobInput{
+	if in.TemplateID != dbtemplate.TemplatePostgres16 {
+		script, err := restoreRedisFetchScript(in)
+		if err != nil {
+			return err
+		}
+		// Redis：fetch 即重放完成（RDB 落卷 + AOF 目录清除在 fetch script
+		// 的卷内收尾——redis:7-alpine 与 dbtools 同基底，无跨 libc 面）。
+		outcome, err := m.runToolsJob(ctx, toolsJobInput{
+			instance: in.Instance,
+			purpose:  "restore",
+			script:   script,
+			env:      toolsJobEnv("", in.Repository, in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
+			networks: jobNetworks(in.AttachRustfsNetwork, net),
+			mounts:   []JobMount{{VolumeName: in.VolumeName, Target: in.VolumeTarget, ReadOnly: false}},
+			timeout:  restoreJobTimeout,
+			bindNode: in.BindNodeID,
+		})
+		if err != nil {
+			return err
+		}
+		if !outcome.Success() {
+			return fmt.Errorf("restore job failed: %s", jobFailureText(outcome))
+		}
+		return nil
+	}
+	// ── PG 双 job ──
+	fetchScript, err := restoreFetchJobScript(in)
+	if err != nil {
+		return err
+	}
+	materials := toolsJobEnv("", in.Repository, in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region)
+	mounts := []JobMount{{VolumeName: in.VolumeName, Target: in.VolumeTarget, ReadOnly: false}}
+	nets := jobNetworks(in.AttachRustfsNetwork, net)
+	fetch, err := m.runToolsJob(ctx, toolsJobInput{
 		instance: in.Instance,
-		purpose:  "restore",
-		script:   script,
-		env:      toolsJobEnv("", in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
-		networks: jobNetworks(in.AttachRustfsNetwork, net),
-		mounts:   []JobMount{{VolumeName: in.VolumeName, Target: in.VolumeTarget, ReadOnly: false}},
+		purpose:  "restorefetch",
+		script:   fetchScript,
+		env:      materials,
+		networks: nets,
+		mounts:   mounts,
 		timeout:  restoreJobTimeout,
 		bindNode: in.BindNodeID,
 	})
 	if err != nil {
 		return err
 	}
-	if !outcome.Success() {
-		return fmt.Errorf("restore job failed: %s", jobFailureText(outcome))
+	if !fetch.Success() {
+		return fmt.Errorf("restore fetch job failed: %s", jobFailureText(fetch))
+	}
+	replayScript, err := restoreReplayJobScript(in)
+	if err != nil {
+		return err
+	}
+	// 重放 job 载体 = 实例钉定引擎镜像（无 restic 依赖——dump 已在卷上）。
+	replay, err := m.runToolsJob(ctx, toolsJobInput{
+		instance: in.Instance,
+		purpose:  "restore",
+		script:   replayScript,
+		networks: nets,
+		mounts:   mounts,
+		timeout:  restoreJobTimeout,
+		bindNode: in.BindNodeID,
+		image:    in.ImageDigest,
+	})
+	if err != nil {
+		return err
+	}
+	if !replay.Success() {
+		return fmt.Errorf("restore replay job failed: %s", jobFailureText(replay))
 	}
 	return nil
+}
+
+// restoreRedisFetchScript 是 Redis 的单 job 恢复命令（RDB 落卷 + AOF 目录
+// 清除——下次启动按 RDB 装载；dbtools 与 redis:7-alpine 同基底，无跨 libc
+// 面，无需引擎镜像参与）。
+func restoreRedisFetchScript(in dbtemplate.RestoreInput) ([]string, error) {
+	filename, err := backupFilename(in.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+	repoPath := "db/" + in.Instance + "/" + filename
+	script := strings.Join([]string{
+		"set -e",
+		fmt.Sprintf("%s dump %s %s > /data/dump.rdb", resticCmd(in.S3PathStyle), in.SnapshotID, repoPath),
+		"rm -rf /data/appendonlydir",
+	}, "\n")
+	return []string{"sh", "-c", script}, nil
 }
 
 // RotateCredential 引擎侧热轮换（dbtemplate.EngineAdapter 契约——薄委托
@@ -343,41 +438,96 @@ type toolsJobInput struct {
 	mounts   []JobMount
 	timeout  time.Duration
 	bindNode string
+	// image 是 job 载体覆盖（空 = DefaultDatabaseToolsImage；restore 的
+	// 引擎重放 job 以实例钉定引擎镜像承载——跨 libc 不可重放，见
+	// restoreJobScript 注）。
+	image string
+}
+
+// restic 同仓写锁互斥的有界重试（W4-S6 e2e 实测）：库备份与控制面状态备
+// 份共享同一 restic repo，而引擎的 post_deploy 钩子会在每次应用部署成功后
+// 触发一次状态备份——与手动/计划库备份天然并发，先到者持独占写锁，后到者
+// 以「unable to create lock in backend」退败。restic 无内建等锁，job 侧以
+// 撞锁文本为条件做有界退避重试（12 × 10s ≈ 2 分钟容忍窗，落在各步预算内
+// ——backupJobTimeout 等常量本就为「镜像分发 + 工具执行」留了余量）；非
+// 撞锁失败零重试（诚实失败原则：真失败快速红，不烧预算）。
+const (
+	repoLockRetryAttempts = 12
+	repoLockRetryDelay    = 10 * time.Second
+)
+
+// isRepoLockConflict 报告一次 job 产出是否为 restic 撞锁退败（重试判据；
+// 文本来自 restic exit_error 的稳定措辞）。
+func isRepoLockConflict(out JobRunOutcome, err error) bool {
+	return strings.Contains(jobFailureText(out), "unable to create lock")
 }
 
 // runToolsJob 构造并执行一次工具 job（命名/label/env 公共面在此归一；
 // HOME=/tmp 兜底 restic 的缓存目录解析——job 以任意用户身份运行时
 // os.UserCacheDir 的 HOME 依赖不作假设；凭据材料在 env 由调用方注入，
-// 本函数零展开）。
+// 本函数零展开）。撞 restic 互斥写锁时有界重试（见 repoLockRetryAttempts）。
 func (m *Manager) runToolsJob(ctx context.Context, in toolsJobInput) (JobRunOutcome, error) {
-	name, err := naming.DBJobName(in.instance, in.purpose, ulid.Make().String())
-	if err != nil {
-		return JobRunOutcome{}, err
-	}
 	jctx, cancel := context.WithTimeout(ctx, in.timeout)
 	defer cancel()
 	env := append([]string{"HOME=/tmp"}, in.env...)
-	return m.docker.JobRun(jctx, JobRunInput{
-		Name:        name,
-		Image:       DefaultDatabaseToolsImage,
-		Cmd:         in.script,
-		Env:         env,
-		Networks:    in.networks,
-		Mounts:      in.mounts,
-		Constraints: []string{"node.id == " + in.bindNode},
-		Labels: map[string]string{
-			state.LabelManaged:  state.ManagedLabelValue,
-			state.LabelDatabase: in.instance,
-		},
-	})
+
+	run := func() (JobRunOutcome, error) {
+		image := in.image
+		if image == "" {
+			image = DefaultDatabaseToolsImage
+		}
+		name, err := naming.DBJobName(in.instance, in.purpose, ulid.Make().String())
+		if err != nil {
+			return JobRunOutcome{}, err
+		}
+		// 放置钉定 = 平台节点身份 label 约束（node.labels.fleetly.node-id ==
+		// <平台ID n_<ULID>>；placement.ConstraintFor 同公式的就地形态——
+		// database 不反依赖 placement。W4-S6 e2e 实测修正：此前误用
+		// `node.id == <平台ID>`——swarm node.id 是引擎侧节点 ID，与平台 ID
+		// 恒不相等，job 永远 PENDING（"scheduling constraints not satisfied"）。
+		// fake 底座不校验约束真实性，单测抓不到——真机闭环兜住的典型）。
+		return m.docker.JobRun(jctx, JobRunInput{
+			Name:        name,
+			Image:       image,
+			Cmd:         in.script,
+			Env:         env,
+			Networks:    in.networks,
+			Mounts:      in.mounts,
+			Constraints: []string{"node.labels." + state.LabelNodeID + " == " + in.bindNode},
+			Labels: map[string]string{
+				state.LabelManaged:  state.ManagedLabelValue,
+				state.LabelDatabase: in.instance,
+			},
+		})
+	}
+
+	out, err := run()
+	for attempt := 1; err == nil && !out.Success() && isRepoLockConflict(out, err) && attempt < repoLockRetryAttempts; attempt++ {
+		m.log.Info("database: tools job hit a restic repo lock (concurrent control-plane backup); retrying",
+			"instance", in.instance, "purpose", in.purpose, "attempt", attempt)
+		select {
+		case <-jctx.Done():
+			return out, err
+		case <-time.After(repoLockRetryDelay):
+		}
+		out, err = run()
+	}
+	return out, err
 }
 
 // toolsJobEnv 组装工具 job 的 env 集（凭据材料只进 env；KEY 集恒定——
-// 空值省略，命令词表与 env 键集一一对应）。
-func toolsJobEnv(enginePassword, resticPassword, accessKey, secretKey, region string) []string {
+// 空值省略，命令词表与 env 键集一一对应）。RESTIC_REPOSITORY 由编排层解析
+// 的 repo 目标携带——W4-S6 e2e 实测修正：此前漏设，restic 以
+// 「Please specify repository location」诚实退败（词表与 env 键集声称
+// 一一对应，缺这一键 = 备份/校验/恢复永远无 repo 可寻址；fake 底座不看
+// env 真实性，单测抓不到）。
+func toolsJobEnv(enginePassword, resticRepository, resticPassword, accessKey, secretKey, region string) []string {
 	var env []string
 	if enginePassword != "" {
 		env = append(env, "PGPASSWORD="+enginePassword, "REDISCLI_AUTH="+enginePassword)
+	}
+	if resticRepository != "" {
+		env = append(env, "RESTIC_REPOSITORY="+resticRepository)
 	}
 	env = append(env,
 		"RESTIC_PASSWORD="+resticPassword,

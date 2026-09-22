@@ -78,6 +78,13 @@ func (e *Engine) reapDeletingApp(ctx context.Context, app state.App) {
 			return
 		}
 	}
+	// Swarm secret 扫尾（E4 W4-S4 遗留接线，W4-S6 落地）：引用服务已全部
+	// 移除后才扫——in-use secret 删除会被引擎拒绝。按归属 label
+	//（fleetly.managed+fleetly.app，secretLabels 同选择器）best-effort 清
+	// 场：单条失败不阻塞 tombstone 第二拍（阻塞会让 app 永久卡 deleting，
+	// 而孤儿 secret 只是无害的底座残留——诚实告警优于删除不可用），下拍
+	// 重扫幂等重试直至清完。
+	e.reapAppSecrets(ctx, app.Name)
 	// 全部受管服务已移除 → tombstone 第二拍 + 终局事件（app.deleted，注册
 	// 表词）与审计同事务（fail-closed；CAS 失败 = 并发已推进，幂等跳过）。
 	// E4 managed-databases §2.4「引用 app 删除 = 行级联清理」：db_references
@@ -109,4 +116,31 @@ func (e *Engine) reapDeletingApp(ctx context.Context, app state.App) {
 	}
 	e.log.Info("engine: app deleted (tombstone second beat)", "app", app.Name,
 		"services_removed", len(existing))
+}
+
+// reapAppSecrets 收敛单个 deleting 应用的 Swarm secret 残留（best-effort，
+// internal/database removeStaleCredentialSecrets 同族口径）：按归属 label
+// 扫描 → 逐条移除；端口未接线/扫描失败/单条移除失败都只落 warn 日志，绝
+// 不阻塞删除收敛（阻塞代价 = app 永久卡 deleting；残留代价 = 无害孤儿对
+// 象 + 一条告警，两害取轻）。幂等：重复扫描对已删除名零操作。
+func (e *Engine) reapAppSecrets(ctx context.Context, appName string) {
+	if e.secretReap == nil {
+		e.log.Warn("engine: deleting-app secret sweep skipped (secret reaper port not wired)",
+			"app", appName)
+		return
+	}
+	names, err := e.secretReap.SecretList(ctx, secretLabels(appName))
+	if err != nil {
+		e.log.Warn("engine: deleting-app secret scan", "app", appName, "error", err)
+		return
+	}
+	for _, name := range names {
+		if err := e.secretReap.SecretRemove(ctx, name); err != nil {
+			e.log.Warn("engine: deleting-app secret remove", "app", appName,
+				"secret", name, "error", err)
+			continue
+		}
+		e.log.Info("engine: app swarm secret removed (app delete reap)",
+			"app", appName, "secret", name)
+	}
 }

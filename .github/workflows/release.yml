@@ -402,6 +402,24 @@ jobs:
             --certificate-identity-regexp "$EXPECTED_SIGNER" \
             --certificate-oidc-issuer "$EXPECTED_ISSUER"
 
+  # ────────────────────────────── 5b. dbtools 镜像（E4 D-DB-6，W4-S6）────
+  dbtools-image:
+    # dbtools 备份/恢复作业镜像随平台 release 同版发布（E4 managed-databases
+    # D-DB-6「执行体」：镜像 digest 钉定随平台 release——Go 侧消费 =
+    # internal/database DefaultDatabaseToolsImage，check-image-pins 互补钉
+    # 死）。可复用工作流 = .github/workflows/dbtools.yml 的 workflow_call
+    # 入口（签名/验证门与 fleetlyd 镜像同款）。与 image job 同为镜像发布
+    # 面：不进 publish.needs——镜像发布不阻断 GitHub Release 装配（与
+    # image job 对 publish 的关系等价或更弱，镜像失败各自红，不拖累制品链）。
+    name: dbtools image (workflow_call)
+    uses: ./.github/workflows/dbtools.yml
+    with:
+      tag: ${{ inputs.tag || github.ref_name }}
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+
   # ────────────────────────────── 6b. arm64 原生构建冒烟（T0-V2.3）────────
   smoke-arm64:
     # arm64 release 冒烟：此前 build matrix 的 arm64 腿只验产物存在（交叉

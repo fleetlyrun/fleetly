@@ -1,7 +1,7 @@
 package cmd
 
 // 库实例命令（E4 数据库托管，W4-S2 生命周期面）：`fleetly databases
-// <create|get|list|delete|suspend|resume|retry|settings>`。全部经 RPC
+// <create|get|show|list|delete|suspend|resume|retry|settings>`。全部经 RPC
 //（CLI-over-SDK 纪律）；连接信息为服务端脱敏投影——密码明文零出现
 //（掩码 URL + 指纹），显式 reveal 不在 CLI 面（S4/S6）。删除在 CLI 侧
 // 自动回传 confirm=<名>（REST 面保持显式 confirm 参数）；--delete-volumes
@@ -25,7 +25,7 @@ type databasesCmd struct {
 
 func newDatabasesCmd() *databasesCmd {
 	sub := commands.New()
-	sub.Register(&databaseCreateCmd{}, &databaseGetCmd{}, &databaseListCmd{}, &databaseDeleteCmd{},
+	sub.Register(&databaseCreateCmd{}, &databaseGetCmd{}, &databaseShowCmd{}, &databaseListCmd{}, &databaseDeleteCmd{},
 		&databaseSuspendCmd{}, &databaseResumeCmd{}, &databaseRetryCmd{}, &databaseSettingsCmd{},
 		&databaseRotateCmd{}, &databaseRevealCmd{},
 		&databaseBackupCmd{}, &databaseBackupsCmd{}, &databaseRestoreCmd{}, &databaseUpgradeCmd{})
@@ -38,14 +38,14 @@ func (c *databasesCmd) Synopsis() string {
 	return "create and manage managed database instances (lifecycle, settings; connection secrets are masked)"
 }
 func (c *databasesCmd) Usage() string {
-	return "databases <create|get|list|delete|suspend|resume|retry|settings|rotate|reveal|backup|backups|restore|upgrade> [flags] ..."
+	return "databases <create|get|show|list|delete|suspend|resume|retry|settings|rotate|reveal|backup|backups|restore|upgrade> [flags] ..."
 }
 
 func (c *databasesCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *databasesCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (create|get|list|delete|suspend|resume|retry|settings|rotate|reveal|backup|backups|restore|upgrade)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (create|get|show|list|delete|suspend|resume|retry|settings|rotate|reveal|backup|backups|restore|upgrade)")}
 	}
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
@@ -165,6 +165,30 @@ func (c *databaseGetCmd) Run(ctx context.Context, env *commands.Environment, arg
 		_, err = fmt.Fprint(env.Stdout, renderDatabase(resp.GetDatabase()))
 		return err
 	})
+}
+
+// databaseShowCmd 实现 `fleetly databases show <name>`（managed-databases
+// §5.4 动词表的同义动词——与 get 完全同义的别名：共享 get 的 flag 集、
+// RPC 与渲染，只换动词名。不建别名机制，最小加法直挂同实现）。
+type databaseShowCmd struct {
+	databaseGetCmd
+}
+
+func (c *databaseShowCmd) Name() string { return "show" }
+func (c *databaseShowCmd) Synopsis() string {
+	return c.databaseGetCmd.Synopsis()
+}
+func (c *databaseShowCmd) Usage() string {
+	return "databases show [--addr <host:port>] [--token <tok>] [--json] <name>"
+}
+
+// Run 先按 show 的 usage 校验参数形状，再直通 get 实现（flag 集与渲染共享；
+// get 内层的形状校验此处恒已满足）。
+func (c *databaseShowCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	return c.databaseGetCmd.Run(ctx, env, args)
 }
 
 // databaseListCmd 实现 `fleetly databases list`。

@@ -4,9 +4,12 @@
 import { api, utf8ToBase64 } from "./client";
 import type {
   CancelDeploymentResponse,
+  CreateDatabaseResponse,
+  DeleteDatabaseResponse,
   DeployResponse,
   DeploymentView,
   GetAppResponse,
+  GetDatabaseResponse,
   GetEnvResponse,
   GetIngressStatusResponse,
   GetJoinGuideResponse,
@@ -16,21 +19,34 @@ import type {
   ListAppDomainsResponse,
   ListBackupsResponse,
   ListCronRunsResponse,
+  ListDatabaseBackupsResponse,
   ListDeploymentsResponse,
+  ListDatabasesResponse,
   ListEnvResponse,
   ListHistoryLogsResponse,
   ListNodesResponse,
   ListRevisionsResponse,
+  ListSecretsResponse,
   ListAppsResponse,
   PlacementView,
   RemoveEnvResponse,
+  RemoveSecretResponse,
+  RestoreDatabaseBackupResponse,
+  ResumeDatabaseResponse,
+  RetryDatabaseResponse,
+  RevealDatabaseCredentialsResponse,
   RollbackDeploymentResponse,
+  RotateDatabaseCredentialsResponse,
   RotateJoinTokenResponse,
   SetEnvResponse,
+  SetSecretResponse,
+  SuspendDatabaseResponse,
   TestS3ConnectionRequest,
   TestS3ConnectionResponse,
   TriggerBackupResponse,
   TriggerCronRunResponse,
+  TriggerDatabaseBackupResponse,
+  UpgradeDatabaseResponse,
   UpdateS3SettingsRequest,
   UpdateS3SettingsResponse,
   VerifyAppDomainsResponse,
@@ -273,4 +289,114 @@ export function getPlacement(app: string) {
     placement?: PlacementView;
     volumes?: VolumeView[];
   }>(`/apps/${encodeURIComponent(app)}/placement`);
+}
+
+// ── databases（E4 数据库托管，managed-databases §5.1/§5.2）───────────────
+
+export function listDatabases() {
+  return api<ListDatabasesResponse>("/databases");
+}
+
+export function getDatabase(name: string) {
+  return api<GetDatabaseResponse>(`/databases/${encodeURIComponent(name)}`);
+}
+
+export function createDatabase(req: {
+  name: string;
+  template: string;
+  limits?: { cpu_seconds?: number; memory_bytes?: string };
+}) {
+  return api<CreateDatabaseResponse>("/databases", { method: "POST", json: req });
+}
+
+export function deleteDatabase(name: string, opts: { confirm: string; delete_volumes: boolean }) {
+  return api<DeleteDatabaseResponse>(`/databases/${encodeURIComponent(name)}`, {
+    method: "DELETE",
+    json: opts,
+  });
+}
+
+export function suspendDatabase(name: string) {
+  return api<SuspendDatabaseResponse>(`/databases/${encodeURIComponent(name)}/suspend`, {
+    method: "POST",
+    json: {},
+  });
+}
+
+export function resumeDatabase(name: string) {
+  return api<ResumeDatabaseResponse>(`/databases/${encodeURIComponent(name)}/resume`, {
+    method: "POST",
+    json: {},
+  });
+}
+
+export function retryDatabase(name: string) {
+  return api<RetryDatabaseResponse>(`/databases/${encodeURIComponent(name)}/retry`, {
+    method: "POST",
+    json: {},
+  });
+}
+
+export function rotateDatabaseCredentials(name: string, confirm: string) {
+  return api<RotateDatabaseCredentialsResponse>(`/databases/${encodeURIComponent(name)}/rotate`, {
+    method: "POST",
+    json: { confirm },
+  });
+}
+
+/**
+ * 连接信息显式展开（admin 面动作；密码明文只出现在本响应——显式 reveal
+ * 才取，取到即前台展示、隐藏即弃，不做任何持久化）。
+ */
+export function revealDatabaseCredentials(name: string) {
+  return api<RevealDatabaseCredentialsResponse>(
+    `/databases/${encodeURIComponent(name)}/credentials`,
+  );
+}
+
+export function listDatabaseBackups(name: string, limit = 20) {
+  return api<ListDatabaseBackupsResponse>(
+    `/databases/${encodeURIComponent(name)}/backups?limit=${limit}`,
+  );
+}
+
+export function triggerDatabaseBackup(name: string) {
+  return api<TriggerDatabaseBackupResponse>(`/databases/${encodeURIComponent(name)}/backups`, {
+    method: "POST",
+    json: { kind: "manual" },
+  });
+}
+
+export function restoreDatabaseBackup(name: string, snapshot: string, confirm: string) {
+  return api<RestoreDatabaseBackupResponse>(`/databases/${encodeURIComponent(name)}/restore`, {
+    method: "POST",
+    json: { snapshot, confirm },
+  });
+}
+
+export function upgradeDatabase(name: string, confirm: string) {
+  return api<UpgradeDatabaseResponse>(`/databases/${encodeURIComponent(name)}/upgrade`, {
+    method: "POST",
+    json: { confirm },
+  });
+}
+
+// ── platform secrets（E4 §2.7 平台密钥库；无值读回）─────────────────────
+
+export function listSecrets(app: string) {
+  return api<ListSecretsResponse>(`/apps/${encodeURIComponent(app)}/secrets`);
+}
+
+export function setSecret(app: string, name: string, value: string) {
+  return api<SetSecretResponse>(`/apps/${encodeURIComponent(app)}/secrets`, {
+    method: "POST",
+    json: { app, name, value },
+  });
+}
+
+export function removeSecret(app: string, name: string) {
+  return api<RemoveSecretResponse>(
+    `/apps/${encodeURIComponent(app)}/secrets/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+  );
 }
