@@ -5,7 +5,9 @@ import { api, utf8ToBase64 } from "./client";
 import type {
   CancelDeploymentResponse,
   CreateDatabaseResponse,
+  CreateWebhookEndpointResponse,
   DeleteDatabaseResponse,
+  DeleteWebhookEndpointResponse,
   DeployResponse,
   DeploymentView,
   GetAppResponse,
@@ -17,6 +19,7 @@ import type {
   GetRevisionSpecResponse,
   GetS3SettingsResponse,
   GetSystemStatusResponse,
+  GetWebhookEndpointResponse,
   ListAppDomainsResponse,
   ListBackupsResponse,
   ListCronRunsResponse,
@@ -28,6 +31,8 @@ import type {
   ListNodesResponse,
   ListRevisionsResponse,
   ListSecretsResponse,
+  ListWebhookDeliveriesResponse,
+  ListWebhookEndpointsResponse,
   ListAppsResponse,
   MetricsMode,
   PlacementView,
@@ -40,6 +45,7 @@ import type {
   RollbackDeploymentResponse,
   RotateDatabaseCredentialsResponse,
   RotateJoinTokenResponse,
+  RotateWebhookSecretResponse,
   SearchLogsResponse,
   SearchMetricsResponse,
   SearchSource,
@@ -49,14 +55,17 @@ import type {
   SuspendDatabaseResponse,
   TestS3ConnectionRequest,
   TestS3ConnectionResponse,
+  TestWebhookResponse,
   TriggerBackupResponse,
   TriggerCronRunResponse,
   TriggerDatabaseBackupResponse,
   UpgradeDatabaseResponse,
   UpdateS3SettingsRequest,
   UpdateS3SettingsResponse,
+  UpdateWebhookEndpointResponse,
   VerifyAppDomainsResponse,
   VolumeView,
+  WebhookDeliveryStatus,
 } from "./types";
 
 // ── apps ────────────────────────────────────────────────────────────────
@@ -259,6 +268,91 @@ export function searchMetrics(
 /** 模式切换（deploy scope）：保存即生效——duty 收敛部署/移除，卷保留。 */
 export function setMetricsMode(mode: MetricsMode) {
   return api<SetMetricsModeResponse>("/metrics/mode", { method: "PUT", json: { mode } });
+}
+
+// ── notifications（E6 W5-S4 通知 Webhook；observability §5）──────────────
+
+/** 端点清单（无敏感投影——secret 只出指纹）。 */
+export function listWebhookEndpoints() {
+  return api<ListWebhookEndpointsResponse>("/notifications/endpoints");
+}
+
+/** 单端点视图。 */
+export function getWebhookEndpoint(id: string) {
+  return api<GetWebhookEndpointResponse>(
+    `/notifications/endpoints/${encodeURIComponent(id)}`,
+  );
+}
+
+/**
+ * 创建端点（admin scope）：签名密钥明文仅在响应出现一次，读面只出指纹。
+ * url 用 http/https（内网 receiver 允许 http——Console 出警示文案）。
+ */
+export function createWebhookEndpoint(input: {
+  name: string;
+  url: string;
+  event_patterns: string[];
+  enabled?: boolean;
+}) {
+  return api<CreateWebhookEndpointResponse>("/notifications/endpoints", {
+    method: "POST",
+    json: input,
+  });
+}
+
+/**
+ * 部分更新（admin scope）：未提供的字段不变；event_patterns 空 = 不变、
+ * 非空 = 整体替换。
+ */
+export function updateWebhookEndpoint(
+  id: string,
+  patch: {
+    name?: string;
+    url?: string;
+    event_patterns?: string[];
+    enabled?: boolean;
+  },
+) {
+  return api<UpdateWebhookEndpointResponse>(
+    `/notifications/endpoints/${encodeURIComponent(id)}`,
+    { method: "PUT", json: patch },
+  );
+}
+
+/** 删除端点（admin scope）：投递台账行随之清理。 */
+export function deleteWebhookEndpoint(id: string) {
+  return api<DeleteWebhookEndpointResponse>(
+    `/notifications/endpoints/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** 轮换签名密钥（admin scope）：新明文仅本次响应可见。 */
+export function rotateWebhookSecret(id: string) {
+  return api<RotateWebhookSecretResponse>(
+    `/notifications/endpoints/${encodeURIComponent(id)}/rotate-secret`,
+    { method: "POST", json: {} },
+  );
+}
+
+/** 发送 type=test 载荷（admin scope；验证连通与验签配置，同步结论）。 */
+export function testWebhook(id: string) {
+  return api<TestWebhookResponse>(
+    `/notifications/endpoints/${encodeURIComponent(id)}/test`,
+    { method: "POST", json: {} },
+  );
+}
+
+/** 投递台账（按端点/状态过滤，最新在前——重试与终败的诚实可见面）。 */
+export function listWebhookDeliveries(
+  opts: { endpoint_id?: string; status?: WebhookDeliveryStatus; limit?: number } = {},
+) {
+  const p: Record<string, string> = {};
+  if (opts.endpoint_id) p.endpoint_id = opts.endpoint_id;
+  if (opts.status) p.status = opts.status;
+  if (opts.limit !== undefined) p.limit = String(opts.limit);
+  const qs = new URLSearchParams(p).toString();
+  return api<ListWebhookDeliveriesResponse>(`/notifications/deliveries${qs ? `?${qs}` : ""}`);
 }
 
 // ── system ──────────────────────────────────────────────────────────────

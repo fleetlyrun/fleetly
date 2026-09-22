@@ -7,8 +7,9 @@ package errcode
 // 计 42 个 E_ + 5 个 W_ = 47 码（文档外实现期新增码：T2.15 的
 // E_ROUTE_PUBLISH_FAILED、MG-C3 的 E_DEPLOY_CONFIRM_REQUIRED、M4-6 的
 // E_TOKEN_LAST_ADMIN、multi-node E1-5 的 E_REGISTRY_* 两码、E1-8 的
-// E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 的 E_S3_* 四码——见各自分节
-// 注记，待 T0.5 契约冻结确认）。
+// E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 的 E_S3_* 四码、E6 W5-S4 的
+// E_WEBHOOK_* 三码——见各自分节注记，待 T0.5 契约冻结确认；现 57 E +
+// 5 W = 62 码）。
 //
 // HTTP 默认映射：文档显式给定的照文档（E_DOMAIN_CONFLICT/E_STATE_VERSION_
 // CONFLICT/E_VOLUME_NODE_MISMATCH/E_PLACEMENT_MOVE_REQUIRES_ACK→409、
@@ -245,6 +246,25 @@ var builtins = []Code{
 	{ID: "E_METRICS_BACKEND_UNAVAILABLE", HTTP: 503,
 		Summary:    "the metrics query face is unavailable (VictoriaMetrics did not answer on the loopback face; the scrape face is unaffected)",
 		Suggestion: "Check the managed services with 'fleetly metrics status'. If the stack is still converging, wait for the services to appear; if VictoriaMetrics is running, verify the 127.0.0.1 loopback probe — the query face recovers automatically once it answers."},
+
+	// ── 通知 Webhook 面（E6 观测专项设计 §5，W5-S4；注册表只增，族按需
+	//    注册）──
+	// 消费点：internal/api/notifications.go 的端点读取/更新/删除/轮换/测试
+	// 路径（state 层哨兵 ErrWebhookNotFound 的信封化投影，404）。
+	{ID: "E_WEBHOOK_NOT_FOUND", HTTP: 404,
+		Summary:    "the webhook endpoint referenced by the operation does not exist (or was already deleted)",
+		Suggestion: "List the endpoints with 'fleetly notifications endpoint list' and retry with an existing name or id. Deleting an endpoint also removes its delivery ledger rows."},
+	// 消费点：CreateWebhookEndpoint / UpdateWebhookEndpoint 的重名守卫
+	//（state 层哨兵 ErrWebhookNameConflict 的信封化投影，409）。
+	{ID: "E_WEBHOOK_NAME_CONFLICT", HTTP: 409,
+		Summary:    "a webhook endpoint with the same name already exists (endpoint names are unique)",
+		Suggestion: "Pick another endpoint name (or delete the old endpoint first); names are the operator-facing handle used by the CLI and Console."},
+	// 消费点：订阅模式集校验（internal/state/webhooks.go
+	// ValidateWebhookPatterns——非空数组 + 白名单字符 + `*` 通配；422 语义
+	// 违约与 E_ENV_KEY_RESERVED 同级）。
+	{ID: "E_WEBHOOK_PATTERN_INVALID", HTTP: 422,
+		Summary:    "a webhook event pattern is invalid (patterns must be a non-empty list of 1..128 chars from [a-z0-9._-*]; '*' is the wildcard)",
+		Suggestion: "Use event-name glob patterns like \"deployment.*\", \"cron.failed\" or \"*\" (matches everything); see 'fleetly events watch' for the event vocabulary the patterns match against."},
 
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",

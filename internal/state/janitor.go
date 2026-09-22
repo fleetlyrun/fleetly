@@ -179,6 +179,14 @@ func (j *Janitor) PruneOnce(ctx context.Context, now time.Time) (events int64, a
 	} else if n > 0 {
 		j.log.Info("janitor: pruned cron runs", "runs_pruned", n)
 	}
+	// E6 W5-S4 通知投递台账留存窗（observability §5.2：7d——投递事实只保
+	// 一周，与事件 30d 窗解耦）。清窗失败只告警，不中断后续 duties。
+	if n, err := j.store.PruneExpiredWebhookDeliveries(ctx,
+		now.Add(-time.Duration(DefaultWebhookDeliveryRetentionDays)*24*time.Hour)); err != nil {
+		j.log.Error("janitor: prune webhook deliveries failed", "error", err)
+	} else if n > 0 {
+		j.log.Info("janitor: pruned webhook deliveries", "deliveries_pruned", n)
+	}
 	j.pruneArtifacts(now)
 	j.pruneDeploymentDirs(ctx, now)
 	j.scanStaleNonTerminal(ctx, now)

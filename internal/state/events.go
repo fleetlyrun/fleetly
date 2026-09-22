@@ -109,6 +109,23 @@ func (s *Store) OldestSeq(ctx context.Context) (int64, bool, error) {
 	return v.Int64, true, nil
 }
 
+// MaxEventSeq 返回现存事件的最大 seq（AUTOINCREMENT 语义下 ≥ 已发出的
+// 最大 seq——被保留期清理删除后不复用）；事件表为空时返回 (0, false)。
+// 消费方：通知投递器（internal/notify）在游标过期（E_EVENT_CURSOR_EXPIRED
+// 间隙）时对齐到当前最大 seq 继续——诚实跳过间隙事件，不回放不可达历史。
+// 纯只读投影，事件面语义零改动。
+func (s *Store) MaxEventSeq(ctx context.Context) (int64, bool, error) {
+	const q = `SELECT MAX(seq) FROM events`
+	var v sql.NullInt64
+	if err := s.db.QueryRowContext(ctx, q).Scan(&v); err != nil {
+		return 0, false, fmt.Errorf("state: read max event seq: %w", err)
+	}
+	if !v.Valid {
+		return 0, false, nil
+	}
+	return v.Int64, true, nil
+}
+
 // cursorExpired 构造 E_EVENT_CURSOR_EXPIRED（410）应用错误：context 附
 // oldest_seq，供调用方重新对齐游标。
 func cursorExpired(oldest int64) *apperr.Error {

@@ -17,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/database"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/metrics"
+	"github.com/fleetlyrun/fleetly/internal/notify"
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -200,6 +201,27 @@ func (s metricsService) Start(ctx context.Context) error {
 
 // Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑）。
 func (s metricsService) Stop(_ context.Context) error { return nil }
+
+// notifyService 是通知投递器服务壳（E6 W5-S4，observability §5.2）：Start
+// 阶段进入游标轮询主循环（EventsSince 消费 → 订阅匹配 → 签名 POST + 退避
+// 重试），Run 返回前 drain 在途尝试（ctx 取消 → 关队列 → 等在途 HTTP 收口
+// ——投递 ≤10s 自有预算）。健康面由 SystemService 组件 notifications（启用
+// 端点连续终败判红）承载。
+type notifyService struct {
+	m *notify.Manager
+}
+
+func newNotifyService(m *notify.Manager) lynx.Service { return notifyService{m: m} }
+
+func (s notifyService) Name() string                 { return "notify.webhook" }
+func (s notifyService) Init(_ lynx.AppContext) error { return nil }
+func (s notifyService) Start(ctx context.Context) error {
+	return s.m.Run(ctx)
+}
+
+// Stop 无资源动作：Run 随服务 ctx 取消返回（返回前已在 Run 内 drain 在途
+// 尝试——drain 语义属投递器自身生命周期，不占服务 Stop 预算）。
+func (s notifyService) Stop(_ context.Context) error { return nil }
 
 // cronSchedulerService 是定时任务调度服务壳（E5 Cron）：Start 阶段进入扫描
 // 循环（启动首拍完成在途残留收口与错过点披露，此后每拍到点触发/完成检测

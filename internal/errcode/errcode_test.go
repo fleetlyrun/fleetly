@@ -108,8 +108,15 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_LOGS_BACKEND_UNAVAILABLE": "E6 observability §3.1 (search face unavailable: backend=jsonl or VictoriaLogs unreachable; live tail unaffected)",
 	// E6 观测（observability 设计 §4.2，W5-S3 接线，注册表只增）：opt-in
 	// 查询面的两处诚实分支。
-	"E_METRICS_NOT_ENABLED":          "E6 observability §4.2 (metrics.mode unset — the query face is opt-in and has nothing to report)",
-	"E_METRICS_BACKEND_UNAVAILABLE":  "E6 observability §4.2 (VictoriaMetrics unreachable on the loopback face; scrape face unaffected)",
+	"E_METRICS_NOT_ENABLED":         "E6 observability §4.2 (metrics.mode unset — the query face is opt-in and has nothing to report)",
+	"E_METRICS_BACKEND_UNAVAILABLE": "E6 observability §4.2 (VictoriaMetrics unreachable on the loopback face; scrape face unaffected)",
+	// E6 观测（observability 设计 §5，W5-S4 接线，注册表只增）：通知
+	// Webhook 面的族码——NotFound/NameConflict 为 state 哨兵的信封化投影
+	//（internal/api/notifications.go），PatternInvalid 为订阅模式白名单校验
+	//（internal/state/webhooks.go ValidateWebhookPatterns）。
+	"E_WEBHOOK_NOT_FOUND":      "E6 observability §5 (W5-S4 webhook endpoint absent: envelope projection of the state sentinel, 404)",
+	"E_WEBHOOK_NAME_CONFLICT":  "E6 observability §5 (W5-S4 endpoint names are unique: envelope projection of the state sentinel, 409)",
+	"E_WEBHOOK_PATTERN_INVALID": "E6 observability §5 (W5-S4 subscription glob pattern rejected by the whitelist: non-empty [a-z0-9._-*], 422)",
 
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
@@ -138,13 +145,13 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 	}
 }
 
-// TestRegisteredCountByKind 双保险：42 E + 5 W = 47（T2.15 增
+// TestRegisteredCountByKind 双保险：E + 5 W 计数钉死（T2.15 增
 // E_ROUTE_PUBLISH_FAILED、MG-C3 增 E_DEPLOY_CONFIRM_REQUIRED、M4-6 增
 // E_TOKEN_LAST_ADMIN、E1-5 增 E_REGISTRY_UNAVAILABLE/E_REGISTRY_PUSH_FAILED、
 // E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 增 E_S3_* 四码、E4-S1 增
 // managed-databases §5.2 九码、E6 W5-S1 增 E_LOGS_BACKEND_UNAVAILABLE、
-// E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE——
-// 错误码只增纪律）。E6 S3 后 = 54 E + 5 W。
+// E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE、
+// E6 W5-S4 增 E_WEBHOOK_* 三码——错误码只增纪律）。E6 S4 后 = 57 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -154,8 +161,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 54 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 54), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 57 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 57), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

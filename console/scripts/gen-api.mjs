@@ -34,6 +34,7 @@ const SPEC_FILES = [
   "cron.swagger.json",
   "database.swagger.json",
   "secrets.swagger.json",
+  "notifications.swagger.json",
 ];
 
 const merged = {

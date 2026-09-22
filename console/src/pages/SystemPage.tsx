@@ -22,6 +22,7 @@ import {
 } from "@/components/envelope-alert";
 import { JoinWizard } from "@/components/join-wizard";
 import { MetricsSettingsCard } from "@/components/metrics-settings-card";
+import { NotificationsSettingsCard } from "@/components/notifications-settings-card";
 import { PageHeader } from "@/components/page-header";
 import { PillTabs } from "@/components/pill-tabs";
 import { S3SettingsCard } from "@/components/s3-settings-card";
@@ -50,6 +51,7 @@ const TABS = [
   { key: "nodes", label: "Nodes" },
   { key: "ingress", label: "Ingress" },
   { key: "metrics", label: "Metrics" },
+  { key: "notifications", label: "Notifications" },
   { key: "storage", label: "Storage" },
 ];
 
@@ -181,6 +183,12 @@ export function SystemPage() {
         // metrics 设置卡（E6 W5-S3，D-W5-2 opt-in）：模式开关 + 栈状态 +
         // 诚实「worker 节点需 overlay 数据面」文案。
         <MetricsSettingsCard />
+      ) : null}
+
+      {tab === "notifications" ? (
+        // notifications 设置卡（E6 W5-S4 通知 Webhook）：端点清单 + 创建
+        //（secret 一次性弹显）+ 投递台账抽屉 + 终败红态。
+        <NotificationsSettingsCard />
       ) : null}
 
       {tab === "storage" ? (

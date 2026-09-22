@@ -84,6 +84,22 @@ export type SetMetricsModeResponse = Schemas["v1SetMetricsModeResponse"];
 /** metrics.mode 词表（proto SetMetricsModeRequest.mode 消费侧词表）。 */
 export type MetricsMode = "unset" | "on";
 
+// ── notifications（E6 W5-S4 通知 Webhook；observability §5）──────────────
+
+export type WebhookEndpointView = Schemas["v1WebhookEndpointView"];
+export type ListWebhookEndpointsResponse = Schemas["v1ListWebhookEndpointsResponse"];
+export type GetWebhookEndpointResponse = Schemas["v1GetWebhookEndpointResponse"];
+export type CreateWebhookEndpointResponse = Schemas["v1CreateWebhookEndpointResponse"];
+export type UpdateWebhookEndpointResponse = Schemas["v1UpdateWebhookEndpointResponse"];
+export type DeleteWebhookEndpointResponse = Schemas["v1DeleteWebhookEndpointResponse"];
+export type RotateWebhookSecretResponse = Schemas["v1RotateWebhookSecretResponse"];
+export type TestWebhookResponse = Schemas["v1TestWebhookResponse"];
+export type WebhookDeliveryView = Schemas["v1WebhookDeliveryView"];
+export type ListWebhookDeliveriesResponse = Schemas["v1ListWebhookDeliveriesResponse"];
+
+/** 投递状态词表（proto status 过滤消费侧词表；failed = 终态）。 */
+export type WebhookDeliveryStatus = "pending" | "ok" | "failed";
+
 // ── system ───────────────────────────────────────────────────────────────
 
 export type ComponentHealth = Schemas["v1ComponentHealth"];

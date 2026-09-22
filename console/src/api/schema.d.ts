@@ -1022,6 +1022,113 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/notifications/deliveries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListWebhookDeliveries 投递台账（read scope）：按端点/状态过滤，最新
+         *     在前——重试路径与终败的诚实可见面。
+         */
+        get: operations["NotificationsService_ListWebhookDeliveries"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/endpoints": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListWebhookEndpoints 端点清单（read scope；无敏感投影）。 */
+        get: operations["NotificationsService_ListWebhookEndpoints"];
+        put?: never;
+        /**
+         * CreateWebhookEndpoint 创建端点（admin scope）：密钥平台生成，**明文
+         *     仅本次响应可见**——丢失只能 rotate-secret 重置。
+         */
+        post: operations["NotificationsService_CreateWebhookEndpoint"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/endpoints/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GetWebhookEndpoint 单端点视图（read scope）。 */
+        get: operations["NotificationsService_GetWebhookEndpoint"];
+        /**
+         * UpdateWebhookEndpoint 部分更新（admin scope）：可选字段语义——未提供
+         *     的字段不变（event_patterns 空 = 不变，非空 = 整体替换）。
+         */
+        put: operations["NotificationsService_UpdateWebhookEndpoint"];
+        post?: never;
+        /**
+         * DeleteWebhookEndpoint 删除端点（admin scope）：投递台账行随之清理
+         *     （同事务）；游标不动（订阅面变化不影响消费位）。
+         */
+        delete: operations["NotificationsService_DeleteWebhookEndpoint"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/endpoints/{id}/rotate-secret": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * RotateWebhookSecret 轮换签名密钥（admin scope）：新密钥**明文仅本次
+         *     响应可见**；在途投递行按新密钥继续（接收方需同步换验签密钥）。
+         */
+        post: operations["NotificationsService_RotateWebhookSecret"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/endpoints/{id}/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * TestWebhook 发送 type=test 载荷（admin scope；设计 §5.2）：结构同真实
+         *     事件、验签同链路——验证连通与验签配置。同步等待单次投递结果（10s
+         *     预算）；不落台账（连通性检查不是投递事实）。
+         */
+        post: operations["NotificationsService_TestWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2260,6 +2367,124 @@ export interface components {
             name?: string;
             /** 值指纹（sha256 前 8 hex——「是不是那个值」比对面；值材料零出现）。 */
             hash8?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        NotificationsServiceRotateWebhookSecretBody: Record<string, never>;
+        NotificationsServiceTestWebhookBody: Record<string, never>;
+        NotificationsServiceUpdateWebhookEndpointBody: {
+            /** 改名（可选）。 */
+            name?: string;
+            /** 改 URL（可选）。 */
+            url?: string;
+            /**
+             * 改订阅模式集（可选——repeated 无 optional 语义：空 = 不变，非空 =
+             *     整体替换且过白名单校验）。
+             */
+            event_patterns?: string[];
+            /** 启停（可选——enabled 订阅开关；停用端点暂停投递不删台账）。 */
+            enabled?: boolean;
+        };
+        v1CreateWebhookEndpointRequest: {
+            /** 端点名（唯一；1..64，字母数字开头）。 */
+            name?: string;
+            /** 接收端 URL（http/https；host 必填；不带 userinfo）。 */
+            url?: string;
+            /** 订阅模式集（非空；每项 1..128 chars of [a-z0-9._-*]；服务端去重保序）。 */
+            event_patterns?: string[];
+            /** 创建即启用（缺省 true）。 */
+            enabled?: boolean;
+        };
+        v1CreateWebhookEndpointResponse: {
+            endpoint?: components["schemas"]["v1WebhookEndpointView"];
+            /** 签名密钥明文（32B base64）——**仅本次响应可见**。 */
+            secret?: string;
+        };
+        v1DeleteWebhookEndpointResponse: {
+            id?: string;
+        };
+        v1GetWebhookEndpointResponse: {
+            endpoint?: components["schemas"]["v1WebhookEndpointView"];
+        };
+        v1ListWebhookDeliveriesResponse: {
+            deliveries?: components["schemas"]["v1WebhookDeliveryView"][];
+        };
+        v1ListWebhookEndpointsResponse: {
+            endpoints?: components["schemas"]["v1WebhookEndpointView"][];
+        };
+        v1RotateWebhookSecretResponse: {
+            /** 新签名密钥明文（32B base64）——**仅本次响应可见**。 */
+            secret?: string;
+            /** 新密钥指纹（读面对齐）。 */
+            secret_fingerprint?: string;
+        };
+        /** TestWebhookResponse 是 type=test 载荷的同步投递结论（设计 §5.2）。 */
+        v1TestWebhookResponse: {
+            /** 2xx 到手 = true。 */
+            ok?: boolean;
+            /**
+             * HTTP 响应码（传输失败 = 0）。
+             * Format: int32
+             */
+            status_code?: number;
+            /** 失败摘要（单行化；成功为空）。 */
+            error?: string;
+        };
+        v1UpdateWebhookEndpointResponse: {
+            endpoint?: components["schemas"]["v1WebhookEndpointView"];
+        };
+        /**
+         * WebhookDeliveryView 是投递台账行的投影：状态/尝试数/响应码/下次重试——
+         *     重试路径与终败的诚实可见面（投递失败不产生事件，台账即事实源）。
+         */
+        v1WebhookDeliveryView: {
+            id?: string;
+            /**
+             * 触发投递的事件 seq。
+             * Format: int64
+             */
+            event_seq?: string;
+            endpoint_id?: string;
+            /** pending | ok | failed（failed = 终态：3 次尝试耗尽）。 */
+            status?: string;
+            /** Format: int32 */
+            attempts?: number;
+            /**
+             * 最近一次 HTTP 响应码（传输失败不出现在 JSON 中——proto3 零值语义）。
+             * Format: int32
+             */
+            response_code?: number;
+            /** 最近一次失败摘要（成功为空）。 */
+            last_error?: string;
+            /**
+             * 下次重试时刻（终态/等待首发的行不输出）。
+             * Format: date-time
+             */
+            next_retry_at?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        /**
+         * WebhookEndpointView 是端点行的无敏感投影：密钥只出指纹（明文与密文
+         *     永不回读）。
+         */
+        v1WebhookEndpointView: {
+            id?: string;
+            name?: string;
+            /**
+             * 接收端 URL（操作员自配——单操作员信任模型，无 SSRF 过滤，设计 §5.1
+             *     诚实口径；https 建议但不强制）。
+             */
+            url?: string;
+            /** 订阅模式集（事件名 glob；`*` = 全订）。 */
+            event_patterns?: string[];
+            enabled?: boolean;
+            /** 签名密钥指纹（明文 sha256 前 8 hex——只判「是不是那个 secret」）。 */
+            secret_fingerprint?: string;
             /** Format: date-time */
             created_at?: string;
             /** Format: date-time */
@@ -4395,6 +4620,271 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1RemoveSecretResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_ListWebhookDeliveries: {
+        parameters: {
+            query?: {
+                /** @description 按端点过滤（空 = 全部端点）。 */
+                endpoint_id?: string;
+                /** @description 按状态过滤（pending | ok | failed；空 = 全部）。 */
+                status?: string;
+                /** @description 返回行数上限（缺省 50，天花板 500）。 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListWebhookDeliveriesResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_ListWebhookEndpoints: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListWebhookEndpointsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_CreateWebhookEndpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateWebhookEndpointRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateWebhookEndpointResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_GetWebhookEndpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetWebhookEndpointResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_UpdateWebhookEndpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationsServiceUpdateWebhookEndpointBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateWebhookEndpointResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_DeleteWebhookEndpoint: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteWebhookEndpointResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_RotateWebhookSecret: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationsServiceRotateWebhookSecretBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RotateWebhookSecretResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_TestWebhook: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NotificationsServiceTestWebhookBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TestWebhookResponse"];
                 };
             };
             /** @description An unexpected error response. */

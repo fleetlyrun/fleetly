@@ -1,0 +1,566 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/notifications.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "NotificationsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/notifications/deliveries": {
+      "get": {
+        "summary": "ListWebhookDeliveries 投递台账（read scope）：按端点/状态过滤，最新\n在前——重试路径与终败的诚实可见面。",
+        "operationId": "NotificationsService_ListWebhookDeliveries",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListWebhookDeliveriesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "endpoint_id",
+            "description": "按端点过滤（空 = 全部端点）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "description": "按状态过滤（pending | ok | failed；空 = 全部）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "description": "返回行数上限（缺省 50，天花板 500）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      }
+    },
+    "/v1/notifications/endpoints": {
+      "get": {
+        "summary": "ListWebhookEndpoints 端点清单（read scope；无敏感投影）。",
+        "operationId": "NotificationsService_ListWebhookEndpoints",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListWebhookEndpointsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "NotificationsService"
+        ]
+      },
+      "post": {
+        "summary": "CreateWebhookEndpoint 创建端点（admin scope）：密钥平台生成，**明文\n仅本次响应可见**——丢失只能 rotate-secret 重置。",
+        "operationId": "NotificationsService_CreateWebhookEndpoint",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateWebhookEndpointResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateWebhookEndpointRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      }
+    },
+    "/v1/notifications/endpoints/{id}": {
+      "get": {
+        "summary": "GetWebhookEndpoint 单端点视图（read scope）。",
+        "operationId": "NotificationsService_GetWebhookEndpoint",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetWebhookEndpointResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteWebhookEndpoint 删除端点（admin scope）：投递台账行随之清理\n（同事务）；游标不动（订阅面变化不影响消费位）。",
+        "operationId": "NotificationsService_DeleteWebhookEndpoint",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteWebhookEndpointResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      },
+      "put": {
+        "summary": "UpdateWebhookEndpoint 部分更新（admin scope）：可选字段语义——未提供\n的字段不变（event_patterns 空 = 不变，非空 = 整体替换）。",
+        "operationId": "NotificationsService_UpdateWebhookEndpoint",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateWebhookEndpointResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NotificationsServiceUpdateWebhookEndpointBody"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      }
+    },
+    "/v1/notifications/endpoints/{id}/rotate-secret": {
+      "post": {
+        "summary": "RotateWebhookSecret 轮换签名密钥（admin scope）：新密钥**明文仅本次\n响应可见**；在途投递行按新密钥继续（接收方需同步换验签密钥）。",
+        "operationId": "NotificationsService_RotateWebhookSecret",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RotateWebhookSecretResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NotificationsServiceRotateWebhookSecretBody"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      }
+    },
+    "/v1/notifications/endpoints/{id}/test": {
+      "post": {
+        "summary": "TestWebhook 发送 type=test 载荷（admin scope；设计 §5.2）：结构同真实\n事件、验签同链路——验证连通与验签配置。同步等待单次投递结果（10s\n预算）；不落台账（连通性检查不是投递事实）。",
+        "operationId": "NotificationsService_TestWebhook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TestWebhookResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NotificationsServiceTestWebhookBody"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "NotificationsServiceRotateWebhookSecretBody": {
+      "type": "object"
+    },
+    "NotificationsServiceTestWebhookBody": {
+      "type": "object"
+    },
+    "NotificationsServiceUpdateWebhookEndpointBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "改名（可选）。"
+        },
+        "url": {
+          "type": "string",
+          "title": "改 URL（可选）。"
+        },
+        "event_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "改订阅模式集（可选——repeated 无 optional 语义：空 = 不变，非空 =\n整体替换且过白名单校验）。"
+        },
+        "enabled": {
+          "type": "boolean",
+          "title": "启停（可选——enabled 订阅开关；停用端点暂停投递不删台账）。"
+        }
+      }
+    },
+    "v1CreateWebhookEndpointRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "端点名（唯一；1..64，字母数字开头）。"
+        },
+        "url": {
+          "type": "string",
+          "title": "接收端 URL（http/https；host 必填；不带 userinfo）。"
+        },
+        "event_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "订阅模式集（非空；每项 1..128 chars of [a-z0-9._-*]；服务端去重保序）。"
+        },
+        "enabled": {
+          "type": "boolean",
+          "title": "创建即启用（缺省 true）。"
+        }
+      }
+    },
+    "v1CreateWebhookEndpointResponse": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "$ref": "#/definitions/v1WebhookEndpointView"
+        },
+        "secret": {
+          "type": "string",
+          "title": "签名密钥明文（32B base64）——**仅本次响应可见**。"
+        }
+      }
+    },
+    "v1DeleteWebhookEndpointResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetWebhookEndpointResponse": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "$ref": "#/definitions/v1WebhookEndpointView"
+        }
+      }
+    },
+    "v1ListWebhookDeliveriesResponse": {
+      "type": "object",
+      "properties": {
+        "deliveries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WebhookDeliveryView"
+          }
+        }
+      }
+    },
+    "v1ListWebhookEndpointsResponse": {
+      "type": "object",
+      "properties": {
+        "endpoints": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1WebhookEndpointView"
+          }
+        }
+      }
+    },
+    "v1RotateWebhookSecretResponse": {
+      "type": "object",
+      "properties": {
+        "secret": {
+          "type": "string",
+          "title": "新签名密钥明文（32B base64）——**仅本次响应可见**。"
+        },
+        "secret_fingerprint": {
+          "type": "string",
+          "title": "新密钥指纹（读面对齐）。"
+        }
+      }
+    },
+    "v1TestWebhookResponse": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "title": "2xx 到手 = true。"
+        },
+        "status_code": {
+          "type": "integer",
+          "format": "int32",
+          "title": "HTTP 响应码（传输失败 = 0）。"
+        },
+        "error": {
+          "type": "string",
+          "title": "失败摘要（单行化；成功为空）。"
+        }
+      },
+      "title": "TestWebhookResponse 是 type=test 载荷的同步投递结论（设计 §5.2）。"
+    },
+    "v1UpdateWebhookEndpointResponse": {
+      "type": "object",
+      "properties": {
+        "endpoint": {
+          "$ref": "#/definitions/v1WebhookEndpointView"
+        }
+      }
+    },
+    "v1WebhookDeliveryView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "event_seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "触发投递的事件 seq。"
+        },
+        "endpoint_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "title": "pending | ok | failed（failed = 终态：3 次尝试耗尽）。"
+        },
+        "attempts": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "response_code": {
+          "type": "integer",
+          "format": "int32",
+          "title": "最近一次 HTTP 响应码（传输失败不出现在 JSON 中——proto3 零值语义）。"
+        },
+        "last_error": {
+          "type": "string",
+          "title": "最近一次失败摘要（成功为空）。"
+        },
+        "next_retry_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "下次重试时刻（终态/等待首发的行不输出）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "WebhookDeliveryView 是投递台账行的投影：状态/尝试数/响应码/下次重试——\n重试路径与终败的诚实可见面（投递失败不产生事件，台账即事实源）。"
+    },
+    "v1WebhookEndpointView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "title": "接收端 URL（操作员自配——单操作员信任模型，无 SSRF 过滤，设计 §5.1\n诚实口径；https 建议但不强制）。"
+        },
+        "event_patterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "订阅模式集（事件名 glob；`*` = 全订）。"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "secret_fingerprint": {
+          "type": "string",
+          "title": "签名密钥指纹（明文 sha256 前 8 hex——只判「是不是那个 secret」）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "WebhookEndpointView 是端点行的无敏感投影：密钥只出指纹（明文与密文\n永不回读）。"
+    }
+  }
+}

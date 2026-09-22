@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
 	"github.com/fleetlyrun/fleetly/internal/metrics"
+	"github.com/fleetlyrun/fleetly/internal/notify"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
@@ -61,6 +62,7 @@ var ProviderSet = wire.NewSet(
 	NewDaemonManager,
 	NewLogsManager,
 	NewCronManager,
+	NewNotifyManager,
 	NewAuthenticator,
 	NewSystemService,
 	NewAppsService,
@@ -75,6 +77,7 @@ var ProviderSet = wire.NewSet(
 	NewEnvService,
 	NewLogsService,
 	NewMetricsService,
+	NewNotificationsService,
 	NewEventsService,
 	NewPlacementService,
 	NewTokensService,
@@ -393,6 +396,15 @@ func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate
 		WithIngestBackend(vl)
 }
 
+// NewNotifyManager 构建通知投递器（E6 W5-S4，observability §5.2：webhook_state
+// 游标经 EventsSince 消费 → 订阅匹配 → 签名 POST + 退避重试。进程内消费者
+// ——与 WatchEvents 平行，不经 token/流机制；常驻循环由服务壳 Start 承载，
+// 资源层停机时 drain 在途尝试）。box 供台账投递时的密钥解密；零外部资源
+//（HTTP 客户端无连接池清理面），无 cleanup。
+func NewNotifyManager(app lynx.App, st *state.Store, sb *secrets.Box) *notify.Manager {
+	return notify.NewManager(st, sb, notify.Config{}, app.Logger())
+}
+
 // NewCronManager 构建定时任务调度器（E5 Cron，架构 §4.3 细则：tick 循环
 // 扫描拍 10s、看门狗默认 10m——平台常量，无配置面；调度集每拍现读 state）。
 // 底座服务/任务面由 substrate.Client 隐式实现 engine.Substrate（与引擎同源
@@ -493,8 +505,10 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // 的 rustfs 分支随 duty 管理器接线——mode=rustfs 且服务未在位 = 红（收敛
 // 过渡态如实可见）；mode 非 rustfs = 无所欠恒绿。E6 W5-S1：victorialogs
 // 组件随 duty 管理器与日志管线接线（设计 §2.3：healthy = duty 部署符合
-// 预期且 ingest streak 无降级；降级时 Error 带丢弃计数——诚实红面）。
-func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, mm *metrics.Manager, version Version) *api.SystemService {
+// 预期且 ingest streak 无降级；降级时 Error 带丢弃计数——诚实红面）。E6
+// W5-S4：notifications 组件随投递器接线（设计 §5.2——启用端点连续终败即
+// 红，Error 带端点名与最近错误；无终败 = 无所欠恒绿）。
+func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, mm *metrics.Manager, nm *notify.Manager, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -528,6 +542,15 @@ func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, o
 					return nil
 				}
 				return mm.CheckHealth()
+			}},
+			// E6 W5-S4：notifications 组件（设计 §5.2——启用端点连续终败
+			// 即红，Error 带端点名与最近错误；通知自身零事件，红面只经
+			// 此组件与台账可见）。
+			{Name: "notifications", Check: func() error {
+				if nm == nil {
+					return nil
+				}
+				return nm.CheckHealth()
 			}},
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
@@ -590,6 +613,13 @@ func NewMetricsService(cfg *AppConfig, st *state.Store, mb *metrics.Backend, mm 
 // NewEventsService 构造事件流面服务（seq 游标）。
 func NewEventsService(st *state.Store) *api.EventsService {
 	return api.NewEventsService(st)
+}
+
+// NewNotificationsService 构造通知 Webhook 订阅/投递面服务（E6 W5-S4：
+// 端点 CRUD + 台账读面 + TestWebhook——box 承载 secret envelope 加解密，
+// 投递本体由 notify.Manager 常驻循环承载）。
+func NewNotificationsService(st *state.Store, sb *secrets.Box) *api.NotificationsService {
+	return api.NewNotificationsService(st, sb)
 }
 
 // NewPlacementService 构造放置面服务（T2.17 只读 + E1-7 显式换点/卷清单/
@@ -691,6 +721,7 @@ func NewServices(
 	ing *ingress.Manager,
 	lm *logs.Manager,
 	cm *cron.Manager,
+	nm *notify.Manager,
 	src *gitserver.GitTriggers,
 	cfg *AppConfig,
 	rm *rustfs.Manager,
@@ -710,6 +741,7 @@ func NewServices(
 		newEngineService(eng),
 		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr, cfg.IngressSettings().ConfigTLSAddr),
 		newLogsService(lm),
+		newNotifyService(nm),
 		// ── 第三段：资源层（最后停：backup 晚于 engine 等 post-deploy
 		//     在途快照；rustfs/victorialogs/database 收敛 duty 同层——在途
 		//     收敛拍随 ctx 排水；cron 调度器同层——触发链与收口拍随 ctx

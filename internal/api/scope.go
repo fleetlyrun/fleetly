@@ -147,6 +147,18 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.SecretsService/SetSecret":    ScopeAdmin,
 	"/fleetly.server.v1.SecretsService/ListSecrets":  ScopeRead,
 	"/fleetly.server.v1.SecretsService/RemoveSecret": ScopeAdmin,
+	// NotificationsService（E6 W5-S4，observability §5）：读面 = read（端点
+	// 视图与投递台账是事实面——指纹非凭据，与 token 哈希前缀同口径）；写面
+	// = admin（端点是平台级凭据面——创建/更新/删除/轮换/测试与 s3 设置同
+	// 级；secret 明文只在创建/轮换响应一次性返回）。
+	"/fleetly.server.v1.NotificationsService/ListWebhookEndpoints":  ScopeRead,
+	"/fleetly.server.v1.NotificationsService/GetWebhookEndpoint":    ScopeRead,
+	"/fleetly.server.v1.NotificationsService/ListWebhookDeliveries": ScopeRead,
+	"/fleetly.server.v1.NotificationsService/CreateWebhookEndpoint": ScopeAdmin,
+	"/fleetly.server.v1.NotificationsService/UpdateWebhookEndpoint": ScopeAdmin,
+	"/fleetly.server.v1.NotificationsService/DeleteWebhookEndpoint": ScopeAdmin,
+	"/fleetly.server.v1.NotificationsService/RotateWebhookSecret":   ScopeAdmin,
+	"/fleetly.server.v1.NotificationsService/TestWebhook":           ScopeAdmin,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

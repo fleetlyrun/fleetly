@@ -575,6 +575,37 @@ jobs:
           docker ps -aq --filter name=fleetly-m- | xargs -r docker rm -f
           docker network rm fleetly-m-br || true
 
+  notifications-e2e:
+    # E6 W5-S4 通知 Webhook 端到端（e2e/notifications.sh 单 dind；
+    # observability §5 真机闭环，metrics 同骨架——编排自足、镜像钉 digest）：
+    # receiver = dind 内 busybox nc 接收循环（请求原文落盘；fleetlyd 同
+    # netns 直达 127.0.0.1），验签由宿主侧 python 独立重算 HMAC（非 grep
+    # 签名存在——§7 S4 验收原文）。N1 端点创建 secret 一次性 → N2-N5
+    # deployment.* 订阅命中 + 双端点独立 HMAC 验签 → N6 模式纪律（logs.*
+    # 不误投 ops）→ N7 不可达端口重试路径（attempts 增长 → 3 次终败）→
+    # N8 notifications 组件红 → N9 停用恢复绿 → N10 type=test 载荷 →
+    # N11 台账 response_code → N12 零 notify.* 事件（无回环红线）。
+    name: notifications e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run notifications e2e (dind)
+        run: sh e2e/notifications.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-n-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-n-e2e- | xargs -r docker rm -f
+          docker network rm fleetly-n-br || true
+
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:
     # Builder conformance（ObjectStore 部分已随 E3-7 落地为

@@ -29,6 +29,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/logs"
+	"github.com/fleetlyrun/fleetly/internal/notify"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -119,12 +120,13 @@ func TestNewServicesStopOrder(t *testing.T) {
 	src := gitserver.NewGitTriggers(gitserver.Config{}, st, box, logger)
 	lm := logs.NewManager(logs.Config{}, st, sc, box, logger)
 	cm := cron.NewManager(cron.Config{}, st, box, sc, placement.NewResolver(st, sc), logger)
+	nm := notify.NewManager(st, box, notify.Config{}, logger)
 	cfg := &AppConfig{}
 	hs := lynxhttp.NewServer(http.NotFoundHandler(), lynxhttp.WithAddr("127.0.0.1:0"))
 	gs := lynxgrpc.NewServer(lynxgrpc.WithAddr("127.0.0.1:0"))
 
 	services := NewServices(app, st, id, ob, jr, bm, box, q, builder, eng,
-		ing, lm, cm, src, cfg, nil, nil, nil, nil, hs, gs)
+		ing, lm, cm, nm, src, cfg, nil, nil, nil, nil, hs, gs)
 	names := make([]string, 0, len(services))
 	for _, s := range services {
 		names = append(names, s.Name())
@@ -137,10 +139,10 @@ func TestNewServicesStopOrder(t *testing.T) {
 		// lynx 服务壳名：http/grpc（lynx 内建），git.ssh。
 		"http", "grpc", "git.ssh",
 		// 第二段：写入者（入口关后排空在途）。
-		"build.queue", "engine.release", "ingress.traefik", "logs.collector",
+		"build.queue", "engine.release", "ingress.traefik", "logs.collector", "notify.webhook",
 		// 第三段：资源层（最后停；backup 晚于 engine 等 post-deploy
-		// 在途快照，rustfs/victorialogs/metrics/database 收敛 duty、cron 调度器
-		// 同层，store 殿后）。
+		// 在途快照，rustfs/victorialogs/metrics/database 收敛 duty、cron 调度器、
+		// 通知投递器同层，store 殿后）。
 		"state.identity", "state.observer", "state.janitor",
 		"state.backup", "objectstore.rustfs", "logs.victorialogs", "metrics.stack", "database.converge", "cron.schedule", "state.secrets", "state.store",
 	}
