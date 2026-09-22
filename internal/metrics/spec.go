@@ -41,6 +41,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -269,31 +270,25 @@ func buildCAdvisorSpec() swarm.ServiceSpec {
 		TaskTemplate: swarm.TaskSpec{
 			ContainerSpec: &swarm.ContainerSpec{
 				Image: DefaultCAdvisorImage,
+				// 经 /bin/sh -c 自适应启动（2026-09-22 staging 实证补丁）：
+				// containerd socket 的宿主形态有两种——dockerd 自管（dind：
+				// /var/run/docker/containerd/containerd.sock）与系统 containerd
+				//（多数宿主：/var/run/containerd/containerd.sock）。单值 flag
+				// 无法在一枚 global spec 里覆盖两种宿主，启动期按存在性择一
+				//（/var/run 已只读挂载，两种路径容器内均可见——staging 实证：
+				// 系统形态 socket 在、私有路径缺；dind 恰反）。镜像基于 alpine
+				// 带 /bin/sh（健康检查 CMD-SHELL 同依赖）。
+				Command: []string{"/bin/sh", "-c"},
 				Args: []string{
-					"-listen_ip=" + hostIP,
-					fmt.Sprintf("-port=%d", CAdvisorPort),
-					// 只报 docker 容器（+root）——cgroup 序列基数与 housekeeping
-					// 负载的保守化（预算门 §4.3 的先手减载；平台全部负载都是
-					// docker 容器，无序列损失）。
-					"-docker_only",
-					// containerd 客户端显式指向 dockerd 托管 socket（docker 29
-					// containerd-snapshotter 形态下，docker 容器工厂经它列举
-					// 容器；缺省路径 /run/containerd/containerd.sock 只在「外挂
-					// containerd」的宿主存在，dockerd 自管形态的真实路径是
-					// /var/run/docker/containerd/containerd.sock——本 spec 已挂
-					// /var/run 只读，socket 天然在容器内可见。2026-09-22 dind
-					// 实证：不指路则工厂注册失败，-docker_only 退化成只报
-					// root）+ moby 命名空间（dockerd 的容器都在 moby，cAdvisor
-					// 缺省读 k8s.io）。
-					// **已知上游限制（2026-09-22 dind 实测）**：snapshotter 形
-					// 态下 containerd 元数据只带 engine bundle-path 扩展，
-					// container_label_com_docker_swarm_* 归属标签缺席——按
-					// 服务维度分组的 Console 图表在该形态下为空（诚实空态 +
-					// 降级说明），原始容器序列仍可经 CLI 查询面消费；标签
-					// 恢复随 cAdvisor 上游修复（e2e/metrics.sh A13 探针记录
-					// 真实形态）。
-					"-containerd=/var/run/docker/containerd/containerd.sock",
-					"-containerd-namespace=moby",
+					`exec /usr/bin/cadvisor -logtostderr -listen_ip=` + hostIP +
+						` -port=` + strconv.Itoa(CAdvisorPort) +
+						// 只报 docker 容器（+root）——cgroup 序列基数与
+						// housekeeping 负载的保守化（预算门 §4.3 先手减载；
+						// 平台全部负载都是 docker 容器，无序列损失）+ moby
+						// 命名空间（dockerd 的容器都在 moby，cAdvisor 缺省读
+						// k8s.io）。
+						` -docker_only -containerd="$([ -S /var/run/docker/containerd/containerd.sock ] && echo /var/run/docker/containerd/containerd.sock || echo /var/run/containerd/containerd.sock)"` +
+						` -containerd-namespace=moby`,
 				},
 				Mounts: []mount.Mount{
 					bindRO("/", "/rootfs"),

@@ -198,5 +198,31 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 | CLI | `--tls`(校验,ServerName=所拨主机名)/`--tls-insecure`(显式跳过校验)/env `FLEETLY_TLS=true\|insecure`;两旗标互斥;缺省明文(存量兼容) |
 | SDK | `WithTLS(*tls.Config)` / `WithTLSInsecure()`;TLS 拨号时 Bearer 凭据自动要求传输安全 |
 
+## 11. W5 观测/通知/终端/TLS 实机演练(2026-09-22 实录)
+
+形态:manager 升级 W5 构建(S1~S6 全量,scp 二进制+console dist 替换重启;镜像预拉 VL/VM/cAdvisor(gcr)/node_exporter + exec 镜像 CI 首推后直拉)。**staging 现保持态:TLS platform 模式开(8420/8421 双面,平台证书三 SAN console/ctrl/registry.dev)+VL 默认捆绑 on+终端 relay on(wss 反向常连)+metrics off(opt-in 缺省)+rustfs on(W3 起)**。
+
+| 断言/能力 | 实录 | 结果 |
+|---|---|---|
+| VL 默认捆绑升级即生效 | 未显式设置的存量安装升级后 duty 自动部署 fleetly-victorialogs 1/1;`logs backend show` = victorialogs(default)/deployed/**ingest ok**/dropped 0;`logs.victorialogs_deployed` 事件 #348 | ✅ |
+| 检索面 | 容器日志 `logs search --keyword` 命中(echo 循环 marker 3 行带时间戳);REST SearchLogs 同源 | ✅ |
+| 访问日志归因(R4 载体=VL) | curl hello.dev 域名 → access 行带 method/status/host/path/route/client_ip/duration_ms/**deployment_id**(命中该 app 最近 succeeded 部署) | ✅ |
+| Web 终端(D-W5-3 反向常连) | relay global 1/1;`nodes_connected:1`;termclient 真 PTY `echo` 回显 MATCH;terminal.opened/closed 事件;会话内容零泄漏(事件流 grep 0);打错 app 名(无运行任务)=诚实 500 非 5xx 假成功 | ✅ |
+| TLS platform 真证书 | 8420/8421 双面 TLS(平台证书 LE 三 SAN);https+SAN+平台 CA 三端点 200(liveness/landing/`/ui/`);明文双面拒;CLI off-host(SSH 隧道)+`--tls-insecure` apps list 通——**token 全程加密**;exec relay 自动 wss 化(spec 漂移收敛 FLEETLY_CONTROL_TLS_NAME) | ✅ |
+| 通知(V2-6) | 端点创建(patterns `deployment.*`,secret 一次性返回+指纹常驻);真实部署事件投递到达(python3 receiver 落盘请求原文);**HMAC 重算 5/5**(轮换 secret 后 python 独立复算);台账 ok 行 response_code 200;test 载荷到达;零 notify.* 事件(回环红线) | ✅ |
+| metrics opt-in(D-W5-2) | `metrics mode set on` → 三件 3/1 收敛;VM 回环查询 up=1×2;`nodes_reporting: 1/2` 诚实(worker=Down node2);**S3 缺陷真机暴露并修复**:cadvisor 单值 containerd socket 参数在系统 containerd 宿主失效(dind=dockerd 私有 socket,本机=/run/containerd)→ 改 `/bin/sh -c` 自适选择一(双路径都在 /var/run 挂载内);修复后每容器序列恢复+image 标签在(swarm 归属标签仍缺=上游限制,共享镜像时 image 不足以归因 app,Console 降级口径维持) | ✅(含 1 修复) |
+| **预算实测(steady-state 口径)** | 默认面(VL on+rustfs on+exec on,metrics off):平台容器 297MB+dockerd/containerd ≈195MB ≈ **492MB<600MB ✓**(VL 仅 12.7MB——V2-1 默认捆绑的成本实证);**metrics on 态 ≈671MB 超顶**(VM 113.9+cadvisor 36.2+node-exporter 18.6)——D-W5-2 opt-in 裁决被实测验证:启用即用户显式接受;VM allowedPercent 收紧挂账 | ✅(诚实) |
+| **W5 门上真机修复二件** | ①cadvisor socket 自适应(见上行);②**gateway TLS 回拨缺陷**:TLS 形态下 gateway 对 8421 明文回拨使全量 REST /v1 断(e2e 只测 CLI 直连+native 端点未拦住,staging 实证「error reading server preface」)→ 回拨凭据跟随 TLS 形态(回环自拨+进程信任锚)+单测正负向+e2e TLS-9 断言;修复后 staging REST/terminal/status 200+relay wss 连接 | ✅ |
+
+**W5 演练发现(W5-F1/F2)与用户动作项**:
+
+| # | 发现/待办 | 处置 |
+|---|---|---|
+| W5-F1 | 云安全组未放行 8421 公网(仅 80/443/8420/22)——公网 CLI TLS 直连暂不可达,本次经 SSH 隧道验证;TLS 就绪后放行 8421 是安全的(token 已加密) | **用户动作项**:安全组放行 8421/TCP(可选——或维持 SSH 隧道形态) |
+| W5-F2 | console.dev/ctrl.dev 无公网 DNS 记录(hosts 是 127.0.1.1 占位)——Console 经 `https://fleetly-dev.deeploop.net:8420/ui/`(浏览器证书例外)可达;域名化访问需 A 记录 | **用户动作项**:加 `console.dev.fleetly.run`(及可选 `ctrl.dev`)A 记录指 staging 公网 IP |
+| 挂账 | metrics-on 超顶(671MB)的组件收紧票(VM `-memory.allowedPercent`/cadvisor 限额) | v0.2.x 候选 |
+| 挂账 | exec 镜像 digest 已钉(CI 首推 run 35754500342,staging RepoDigest 一致);换版走 exec.yml 同款 dispatch | 已闭环 |
+| 挂账 | 跨节点 metrics/终端 worker 面:node2 仍 Down+UDP 未放行(W3-F2 延续);relay 反向常连设计在 VPC TCP 上不受影响,worker 归队即可验 | 用户动作项(与 W3-F2 同源) |
+
 
 

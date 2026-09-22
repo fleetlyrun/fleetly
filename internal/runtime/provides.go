@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"net"
 	"net/http"
@@ -753,7 +754,14 @@ func NewTokensService(st *state.Store) *api.TokensService {
 // M4-3：经 WithServerOptions 放宽 WriteTimeout（见 tuneHTTPServer——lynx
 // 缺省 60s 绝对超时会静默掐断 /v1/events/stream 与 logs stream）。
 func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl *ControlPlaneTLS, terminal *execrelay.NativeHandler) (*lynxhttp.Server, error) {
-	mux, err := newGatewayMux(grpcEndpointFromAddr(cfg.GRPCAddr()))
+	// 回拨凭据跟随控制面 TLS 形态（W5-S5 缺陷修复：TLS 形态下明文回拨使
+	// 全量 REST /v1 断——见 newGatewayMuxWithTLS 注记；回环自拨 + 进程自
+	// 身信任锚的 InsecureSkipVerify，外部面 TLS 由监听器强制）。
+	var gwTLS *tls.Config
+	if cfg.TLSMode() != ControlPlaneTLSOff {
+		gwTLS = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true}
+	}
+	mux, err := newGatewayMuxWithTLS(grpcEndpointFromAddr(cfg.GRPCAddr()), gwTLS)
 	if err != nil {
 		return nil, err
 	}

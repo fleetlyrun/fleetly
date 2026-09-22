@@ -49,14 +49,10 @@ const (
 
 // DefaultExecRelayImage 是 relay 的平台镜像引用（E7 设计 §2.2——第二个第
 // 一方平台镜像：deploy/Dockerfile.exec 纯 COPY 多架构免 QEMU + CI exec.yml
-// cosign 签名，dbtools 同款链路）。
-//
-// **供应链中间态（诚实记录）**：当前是**纯 tag 引用（无 digest）**——镜像
-// 尚未经 CI exec.yml 首推，digest 尚不存在；本引用已列入
-// deploy/image-pin-allowlist.txt 豁免清单（条目理由：待 CI 首推后钉 digest
-// 收紧）。CI 首推真 digest 后由收紧票完成「digest 钉死 + 豁免摘除」——与
-// e2e 本地构建打同名 tag 的形态对齐（tag 部分即收敛锚）。
-const DefaultExecRelayImage = "ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1"
+// cosign 签名，dbtools 同款链路）。CI 首推 2026-09-22（run 35754500342），
+// digest 已钉（多架构 index；staging 实拉 RepoDigest 一致）——中间态豁免
+// 已摘除，供应链纪律与平台其余镜像同构。
+const DefaultExecRelayImage = "ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1@sha256:4de40017c620b55b76048c3369f64b3a747c875a4f7bf21ac8c6f88bc4b0793b"
 
 // buildSpec 构造 relay 服务的期望 swarm spec（global + host 网络 + docker
 // sock RO 挂载 + 集群 token secret + advertise env）。secretID 是底座 secret

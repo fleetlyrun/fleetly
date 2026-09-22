@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"net/http"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/grpc-ecosystem/grpc-gateway/v2/runtime"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/encoding/protojson"
 )
@@ -76,13 +78,30 @@ import (
 // （console handler 未启用时为 nil——分派跳过）、终端 native 端点（terminal
 // handler 未启用时为 nil），其余一律交回 grpc-gateway mux。
 func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
+	return newGatewayMuxWithTLS(grpcEndpoint, nil)
+}
+
+// newGatewayMuxWithTLS 是 newGatewayMux 的 TLS 形态（W5-S5 缺陷修复，
+// 2026-09-22 staging 门上实证）：control_plane.tls 开启时 gRPC 面对 TLS，
+// 回拨必须用 TLS 凭据——原明文 insecure 回拨在 TLS 形态下全量 REST /v1
+// 断（「error reading server preface」——e2e 只测了 CLI 直连与 native
+// 端点，漏了回拨路径，真机补获）。tlsCfg 仅限**本进程回环自拨**：
+// InsecureSkipVerify 的信任锚是进程自身（外部面的 TLS 由监听器强制），
+// 对自己的 8421 做完整校验需要 CA 链装载，属自证循环——诚实跳过并在此
+// 注明；transport 加密本身照常生效。
+func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (*runtime.ServeMux, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, newJSONMarshaler()),
 		runtime.WithMarshalerOption("*/*", newJSONMarshaler()),
 		runtime.WithMarshalerOption("application/json", newJSONMarshaler()),
 		runtime.WithErrorHandler(newGatewayErrorHandler()),
 	)
-	opts := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	var opts []grpc.DialOption
+	if tlsCfg != nil {
+		opts = []grpc.DialOption{grpc.WithTransportCredentials(credentials.NewTLS(tlsCfg))}
+	} else {
+		opts = []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials())}
+	}
 	for _, register := range []func(context.Context, *runtime.ServeMux, string, []grpc.DialOption) error{
 		serverv1.RegisterSystemServiceHandlerFromEndpoint,
 		serverv1.RegisterAppsServiceHandlerFromEndpoint,

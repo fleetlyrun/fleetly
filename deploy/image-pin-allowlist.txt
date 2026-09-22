@@ -9,12 +9,12 @@
 # 注意：Go 常量引用（internal/execrelay DefaultExecRelayImage 等）不在本
 # 门禁扫描域（域 = deploy/*.sh、Dockerfile*、testdata Dockerfile、
 # .github/workflows/*.yml），但 check-image-pins 的 -l 列表模式与豁免匹配
-# 以「<路径>:<引用>」为键——Go 常量条目登记在此是为「tag 引用中间态」
-# 留一份有理由注记的台账；收紧票摘除时同步钉 Go 常量 digest。
+# 以「<路径>:<引用>`」为键——Go 常量条目登记在此是为可变引用留有理由
+# 注记的台账；收紧时同步钉 Go 常量 digest。
 #
-# 当前条目：
-ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1
-# E7 W5-S6：exec 镜像尚未经 CI exec.yml 首推（ghcr 权限在 CI——本地无法
-# 推），真 digest 不存在；Go 常量暂以 tag 引用为诚实中间态，e2e 以 dind
-# 内本地构建同名 tag 承接（deploy/Dockerfile.exec，二进制宿主侧交叉编译）。
-# CI 首推后由收紧票「钉 digest + 摘豁免 + image-prepull 台账增行」。
+# 当前条目：无。
+#
+# 历史条目（已收紧摘除，留档备查）：
+# ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1
+# E7 W5-S6 中间态（tag 引用待 CI 首推真 digest）；2026-09-22 CI 首推完成
+# （run 35754500342）——Go 常量已钉 sha256:4de40017…，豁免摘除。

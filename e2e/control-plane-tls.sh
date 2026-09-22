@@ -312,6 +312,20 @@ else
     assert "TLS-2b GRPC_INSECURE_TLS_WRITE_BACKEND_SET" 1 "logs backend set over --tls-insecure failed"
 fi
 
+# ───────── TLS-9: REST /v1 回拨路径（W5-S5 缺陷修复回归，2026-09-22
+# staging 实证补获：TLS 形态下 gateway 明文回拨使全量 REST /v1 断——CLI
+# 直连与 native 端点各自全绿也拦不住这一条，必须显式断言 gateway 往返）。
+tls9_rest_ok() {
+    msh 'wget -q -T 5 -O /tmp/tls9-body --no-check-certificate https://127.0.0.1:8420/v1/system/ping' 2>/dev/null &&
+        m grep -q '"service"' /tmp/tls9-body 2>/dev/null
+}
+if poll_until 30 tls9_rest_ok; then
+    assert "TLS-9 REST_V1_TLS_DIALBACK_OK" 0
+else
+    m cat /tmp/tls9-body 2>/dev/null || true
+    assert "TLS-9 REST_V1_TLS_DIALBACK_OK" 1 "REST /v1 round-trip through the TLS gateway dialback failed"
+fi
+
 # ───────── TLS-3: 明文被双面拒绝
 msh 'wget -q -T 3 -O /dev/null http://127.0.0.1:8420/healthz/liveness' 2>/dev/null
 [ $? -ne 0 ]

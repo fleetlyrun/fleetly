@@ -121,20 +121,28 @@ func TestBuildCollectorSpecsInvariants(t *testing.T) {
 	if ccs.Image != DefaultCAdvisorImage {
 		t.Fatalf("cadvisor image = %s", ccs.Image)
 	}
-	// 参数五件：回环监听/端口/-docker_only/containerd 客户端指路（docker 29
-	// snapshotter 形态的容器列举面——dockerd 托管 socket 在 /var/run 挂载内
-	// 天然可见）/ moby 命名空间。
-	wantCadArgs := []string{
-		"-listen_ip=127.0.0.1", "-port=8080", "-docker_only",
-		"-containerd=/var/run/docker/containerd/containerd.sock",
+	// 启动形态（2026-09-22 staging 补丁）：/bin/sh -c 单串自适选拿 containerd
+	// socket——宿主两种形态（dockerd 自管 / 系统 containerd）启动期择一，
+	// 关键不变量=两路径都出现在选择式里 + 回环监听 + -docker_only + moby
+	// 命名空间（sh 形态下不做逐元素比对——壳层字符串整体钉死）。
+	if len(ccs.Command) != 2 || ccs.Command[0] != "/bin/sh" || ccs.Command[1] != "-c" {
+		t.Fatalf("cadvisor command = %v, want [/bin/sh -c]", ccs.Command)
+	}
+	if len(ccs.Args) != 1 {
+		t.Fatalf("cadvisor args = %v, want single shell payload", ccs.Args)
+	}
+	sh := ccs.Args[0]
+	for _, frag := range []string{
+		"exec /usr/bin/cadvisor -logtostderr",
+		"-listen_ip=127.0.0.1",
+		"-port=8080",
+		"-docker_only",
+		`[ -S /var/run/docker/containerd/containerd.sock ]`,
+		"/var/run/containerd/containerd.sock",
 		"-containerd-namespace=moby",
-	}
-	if len(ccs.Args) != len(wantCadArgs) {
-		t.Fatalf("cadvisor args = %v, want %v", ccs.Args, wantCadArgs)
-	}
-	for i := range wantCadArgs {
-		if ccs.Args[i] != wantCadArgs[i] {
-			t.Fatalf("cadvisor args[%d] = %s, want %s", i, ccs.Args[i], wantCadArgs[i])
+	} {
+		if !strings.Contains(sh, frag) {
+			t.Fatalf("cadvisor shell payload missing %q: %s", frag, sh)
 		}
 	}
 	wantCadMounts := [][2]string{
