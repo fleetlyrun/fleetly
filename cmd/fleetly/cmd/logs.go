@@ -27,14 +27,14 @@ type logsCmd struct {
 
 func newLogsCmd() *logsCmd {
 	sub := commands.New()
-	sub.Register(&logsFollowCmd{}, &logsHistoryCmd{})
+	sub.Register(&logsFollowCmd{}, &logsHistoryCmd{}, newLogsBackendCmd())
 	sub.VerbTitle = "logs subcommands:"
 	return &logsCmd{sub: sub}
 }
 
 func (c *logsCmd) Name() string     { return "logs" }
 func (c *logsCmd) Synopsis() string { return "app logs (live follow + history search)" }
-func (c *logsCmd) Usage() string    { return "logs <follow|history> [flags] <app>" }
+func (c *logsCmd) Usage() string    { return "logs <follow|history|backend> [flags] [args]" }
 
 func (c *logsCmd) SetFlags(_ *flag.FlagSet) {}
 
@@ -154,6 +154,128 @@ func emitLogEntry(env *commands.Environment, jsonOut bool, e *serverv1.LogEntryV
 	return err
 }
 
+// logsBackendCmd 实现 `fleetly logs backend <show|set>`（E6 W5-S1，设计
+// §2.2）：show 输出后端模式/是否显式设置/部署态/ingest streak/丢弃计数；
+// set 切换 backend（保存即生效——duty 收敛部署或移除，数据卷保留）。
+type logsBackendCmd struct {
+	sub *commands.App
+}
+
+func newLogsBackendCmd() *logsBackendCmd {
+	sub := commands.New()
+	sub.Register(&logsBackendShowCmd{}, &logsBackendSetCmd{})
+	sub.VerbTitle = "backend subcommands:"
+	return &logsBackendCmd{sub: sub}
+}
+
+func (c *logsBackendCmd) Name() string { return "backend" }
+func (c *logsBackendCmd) Synopsis() string {
+	return "log backend view and switch (victorialogs | jsonl)"
+}
+func (c *logsBackendCmd) Usage() string {
+	return "logs backend <show|set> [flags] [victorialogs|jsonl]"
+}
+
+func (c *logsBackendCmd) SetFlags(_ *flag.FlagSet) {}
+
+func (c *logsBackendCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if len(args) == 0 {
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (show|set)")}
+	}
+	return subDispatchUsage(c, c.sub, ctx, env, args)
+}
+
+// logsBackendShowCmd 实现 `fleetly logs backend show`。
+type logsBackendShowCmd struct {
+	jsonOut bool
+	conn    connFlags
+}
+
+func (c *logsBackendShowCmd) Name() string { return "show" }
+func (c *logsBackendShowCmd) Synopsis() string {
+	return "show the active log backend, deployment state, ingest streak and dropped counter"
+}
+func (c *logsBackendShowCmd) Usage() string {
+	return "logs backend show [--addr <host:port>] [--token <tok>] [--json]"
+}
+
+func (c *logsBackendShowCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *logsBackendShowCmd) Run(ctx context.Context, env *commands.Environment, _ []string) error {
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Logs().GetLogsBackend(ctx, &serverv1.GetLogsBackendRequest{})
+		if err != nil {
+			return err
+		}
+		if c.jsonOut {
+			return writeProtoJSON(env.Stdout, resp)
+		}
+		v := resp.GetView()
+		var b strings.Builder
+		fmt.Fprintf(&b, "backend: %s", v.GetBackend())
+		if !v.GetBackendSet() {
+			b.WriteString(" (default; not explicitly set)")
+		}
+		b.WriteString("\n")
+		fmt.Fprintf(&b, "deployment: %s\n", v.GetDeployment())
+		if v.GetIngestDegraded() {
+			since := ""
+			if t := v.GetIngestDegradedSince(); t != nil {
+				since = " since " + t.AsTime().Format(time.RFC3339)
+			}
+			fmt.Fprintf(&b, "ingest: degraded%s (search degraded; live tail unaffected)\n", since)
+		} else {
+			b.WriteString("ingest: ok\n")
+		}
+		fmt.Fprintf(&b, "dropped_total: %d\n", v.GetDroppedTotal())
+		_, err = fmt.Fprint(env.Stdout, b.String())
+		return err
+	})
+}
+
+// logsBackendSetCmd 实现 `fleetly logs backend set <victorialogs|jsonl>`
+//（位置参数在后，旗标在前——本仓 CLI 约定）。
+type logsBackendSetCmd struct {
+	jsonOut bool
+	conn    connFlags
+}
+
+func (c *logsBackendSetCmd) Name() string { return "set" }
+func (c *logsBackendSetCmd) Synopsis() string {
+	return "switch the log backend (deploying or removing the managed VictoriaLogs; the data volume is retained)"
+}
+func (c *logsBackendSetCmd) Usage() string {
+	return "logs backend set [--addr <host:port>] [--token <tok>] [--json] <victorialogs|jsonl>"
+}
+
+func (c *logsBackendSetCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *logsBackendSetCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if err := requireArgs(c.Usage(), args, 1); err != nil {
+		return err
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Logs().SetLogsBackend(ctx, &serverv1.SetLogsBackendRequest{Backend: args[0]})
+		if err != nil {
+			return err
+		}
+		if c.jsonOut {
+			return writeProtoJSON(env.Stdout, resp)
+		}
+		v := resp.GetView()
+		_, err = fmt.Fprintf(env.Stdout,
+			"backend set to %s (deployment: %s; the duty converges the managed service shortly)\n",
+			v.GetBackend(), v.GetDeployment())
+		return err
+	})
+}
+
 // 编译期断言：logs 命令实现 commands.Command/Flagged 契约。
 var (
 	_ commands.Command = &logsCmd{}
@@ -162,4 +284,10 @@ var (
 	_ commands.Flagged = &logsFollowCmd{}
 	_ commands.Command = &logsHistoryCmd{}
 	_ commands.Flagged = &logsHistoryCmd{}
+	_ commands.Command = &logsBackendCmd{}
+	_ commands.Flagged = &logsBackendCmd{}
+	_ commands.Command = &logsBackendShowCmd{}
+	_ commands.Flagged = &logsBackendShowCmd{}
+	_ commands.Command = &logsBackendSetCmd{}
+	_ commands.Flagged = &logsBackendSetCmd{}
 )

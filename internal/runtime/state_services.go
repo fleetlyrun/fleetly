@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
+	"github.com/fleetlyrun/fleetly/internal/victorialogs"
 )
 
 // storeService 是状态库服务壳：迁移已在装配期（state.Open）完成，Init
@@ -153,6 +154,29 @@ func (s rustfsService) Start(ctx context.Context) error {
 
 // Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑）。
 func (s rustfsService) Stop(_ context.Context) error { return nil }
+
+// victorialogsService 是托管 VictoriaLogs duty 服务壳（E6 W5-S1，设计
+// §2.1）：Start 阶段进入常驻收敛循环（logs.backend=victorialogs〔缺省〕
+// 幂等部署/漂移收敛——单副本钉 manager/卷/内部网络/host-mode 回环发布
+// 9428/-retentionPeriod 对齐 logs.retention_days；切回 jsonl 移除服务
+// 保留卷；失败退避重试）。Start 阻塞到关停（actor 契约同上），Stop 无
+// 资源动作。健康面由 SystemService 组件 victorialogs（部署检查 +
+// ingest streak 组合，装配点命名）承载。
+type victorialogsService struct {
+	m *victorialogs.Manager
+}
+
+func newVictorialogsService(m *victorialogs.Manager) lynx.Service { return victorialogsService{m: m} }
+
+func (s victorialogsService) Name() string                 { return "logs.victorialogs" }
+func (s victorialogsService) Init(_ lynx.AppContext) error { return nil }
+func (s victorialogsService) Start(ctx context.Context) error {
+	return s.m.Run(ctx)
+}
+
+// Stop 无资源动作：Run 随服务 ctx 取消返回（duty 收敛全部幂等——重启续跑；
+// 批量器 flush 循环同 ctx 排水，关停前 best-effort 排空在途行）。
+func (s victorialogsService) Stop(_ context.Context) error { return nil }
 
 // cronSchedulerService 是定时任务调度服务壳（E5 Cron）：Start 阶段进入扫描
 // 循环（启动首拍完成在途残留收口与错过点披露，此后每拍到点触发/完成检测

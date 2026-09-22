@@ -131,6 +131,13 @@ var docEvents = map[string]string{ // event → 文档出处
 	"db.restore_completed":   "E4 managed-databases §5.3 (operation event; in-place restore finished)",
 	"db.restore_failed":      "E4 managed-databases §5.3 (operation event; interrupted in-place restore alerts critically)",
 	"db.credentials_rotated": "E4 managed-databases §5.3 (operation event; referencing apps auto-redeploy follows)",
+	// E6 观测（observability §2/§7，W5-S1 接线）：logs.* 5 项——设计 §7
+	//「事件码只增（logs.* 5 项）」的全集。
+	"logs.backend_updated":      "E6 observability §2.2 (settings save transaction; switch triggers the duty deploy/remove)",
+	"logs.victorialogs_deployed": "E6 observability §2.1 (duty converge diff; payload carries service/image/reason)",
+	"logs.victorialogs_removed":  "E6 observability §2.2 (backend left victorialogs; data volume retained)",
+	"logs.ingest_degraded":       "E6 observability §2.3 (ingest streak enter edge, debounced; live tail unaffected)",
+	"logs.ingest_recovered":      "E6 observability §2.3 (ingest streak exit edge, debounced)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

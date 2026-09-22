@@ -61,6 +61,9 @@ type Builder struct {
 	// Info 拨号（defaultDaemonProbe）；包内测试注入假 probe 断言重试语义。
 	probe func(ctx context.Context) error
 	log   *slog.Logger
+	// logSink 是构建日志行的下游分流目标（W5-S1；nil = 未装配——日志
+	// 只写 build.log 文件，v0.1 行为逐字不变）。
+	logSink BuildLogSink
 }
 
 // NewBuilder 构建构建执行器。daemon 可为 nil（装配测试干跑；自管容器形态
@@ -80,6 +83,10 @@ func NewBuilder(cfg Config, store *state.Store, images ImageSource, daemon Daemo
 
 // Config 返回归一化后的配置（服务装配与诊断用）。
 func (b *Builder) Config() Config { return b.cfg }
+
+// WithBuildLogSink 注入构建日志行的下游分流目标（W5-S1；链式装配，nil
+// 合法 = 不分流）。
+func (b *Builder) WithBuildLogSink(s BuildLogSink) *Builder { b.logSink = s; return b }
 
 // CacheLocalPath 返回 buildkit local cache 的宿主数据根（客户端侧路径）。
 func (b *Builder) CacheLocalPath() string { return b.cfg.CacheDir }
@@ -325,6 +332,9 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 		return "", 0, fmtErr("create build log %s: %w", logPath, err)
 	}
 	defer func() { _ = logf.Close() }()
+	// W5-S1：日志行分流（文件写入逐字不变；分流喂入湖批量器 source=build
+	// ——设计 §2.3 同一咽喉点接入；sink 未装配 = 纯透传零差异）。
+	logw := newLogTee(logf, b.logSink, rec.AppID, req.AppName, rec.Service)
 
 	var pushDigest string
 	switch rec.Driver {
@@ -343,7 +353,7 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 		if err := b.applyRegistryMode(&opts, req); err != nil {
 			return "", 0, err
 		}
-		pushDigest, err = b.solver.solveLLB(ctx, opts, def, logf)
+		pushDigest, err = b.solver.solveLLB(ctx, opts, def, logw)
 		if err != nil {
 			return "", 0, err
 		}
@@ -355,7 +365,7 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 		if err := b.applyRegistryMode(&opts, req); err != nil {
 			return "", 0, err
 		}
-		pushDigest, err = b.solver.solveFrontend(ctx, opts, logf)
+		pushDigest, err = b.solver.solveFrontend(ctx, opts, logw)
 		if err != nil {
 			return "", 0, err
 		}

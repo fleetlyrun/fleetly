@@ -340,6 +340,528 @@ func (x *ListHistoryLogsResponse) GetEntries() []*LogEntryView {
 	return nil
 }
 
+// SearchLogsRequest 统一检索输入（E6 设计 §3.1）。app 为路径参数（v0.2
+// 只做 app 级检索——全局跨应用检索页挂账 v0.2.x）；apps/services/sources
+// 为可选过滤集（空 = 不过滤该维度）。
+type SearchLogsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// 可选的 app 过滤集（预留跨应用语义；当前检索面为单 app，额外值不
+	// 放行——诚实边界）。
+	Apps []string `protobuf:"bytes,2,rep,name=apps,proto3" json:"apps,omitempty"`
+	// 全文关键词（构造为转义后的 LogsQL 字面量短语——注入安全硬性条款）。
+	Keyword string `protobuf:"bytes,3,opt,name=keyword,proto3" json:"keyword,omitempty"`
+	// 时间窗下界；缺省 = 不设下界（保留窗即 VL -retentionPeriod）。
+	TimeStart *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=time_start,json=timeStart,proto3" json:"time_start,omitempty"`
+	// 时间窗上界；缺省 = 现在。
+	TimeEnd *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=time_end,json=timeEnd,proto3" json:"time_end,omitempty"`
+	// compose 服务名过滤集。
+	Services []string `protobuf:"bytes,6,rep,name=services,proto3" json:"services,omitempty"`
+	// 来源过滤集：container | build（access 随 S2 访问日志采集进入词表）。
+	Sources []string `protobuf:"bytes,7,rep,name=sources,proto3" json:"sources,omitempty"`
+	// 返回上限（缺省 200，天花板 1000）。
+	Limit int32 `protobuf:"varint,8,opt,name=limit,proto3" json:"limit,omitempty"`
+	// 分页游标（服务端签发的下一页凭证；空 = 第一页）。游标分页自最新
+	// 命中向后走（VL limit/offset 语义）。
+	Cursor        string `protobuf:"bytes,9,opt,name=cursor,proto3" json:"cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchLogsRequest) Reset() {
+	*x = SearchLogsRequest{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchLogsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchLogsRequest) ProtoMessage() {}
+
+func (x *SearchLogsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchLogsRequest.ProtoReflect.Descriptor instead.
+func (*SearchLogsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *SearchLogsRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *SearchLogsRequest) GetApps() []string {
+	if x != nil {
+		return x.Apps
+	}
+	return nil
+}
+
+func (x *SearchLogsRequest) GetKeyword() string {
+	if x != nil {
+		return x.Keyword
+	}
+	return ""
+}
+
+func (x *SearchLogsRequest) GetTimeStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.TimeStart
+	}
+	return nil
+}
+
+func (x *SearchLogsRequest) GetTimeEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.TimeEnd
+	}
+	return nil
+}
+
+func (x *SearchLogsRequest) GetServices() []string {
+	if x != nil {
+		return x.Services
+	}
+	return nil
+}
+
+func (x *SearchLogsRequest) GetSources() []string {
+	if x != nil {
+		return x.Sources
+	}
+	return nil
+}
+
+func (x *SearchLogsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+func (x *SearchLogsRequest) GetCursor() string {
+	if x != nil {
+		return x.Cursor
+	}
+	return ""
+}
+
+// SearchLogRow 是检索命中的单行（字段与入湖行对齐：_time/_msg/app/
+// service/source/stderr——E6 设计 §3.1 行集契约）。
+type SearchLogRow struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	At            *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=at,proto3" json:"at,omitempty"`
+	App           string                 `protobuf:"bytes,2,opt,name=app,proto3" json:"app,omitempty"`
+	Service       string                 `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	Source        string                 `protobuf:"bytes,4,opt,name=source,proto3" json:"source,omitempty"`
+	Stderr        bool                   `protobuf:"varint,5,opt,name=stderr,proto3" json:"stderr,omitempty"`
+	Msg           string                 `protobuf:"bytes,6,opt,name=msg,proto3" json:"msg,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchLogRow) Reset() {
+	*x = SearchLogRow{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchLogRow) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchLogRow) ProtoMessage() {}
+
+func (x *SearchLogRow) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchLogRow.ProtoReflect.Descriptor instead.
+func (*SearchLogRow) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *SearchLogRow) GetAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.At
+	}
+	return nil
+}
+
+func (x *SearchLogRow) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *SearchLogRow) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *SearchLogRow) GetSource() string {
+	if x != nil {
+		return x.Source
+	}
+	return ""
+}
+
+func (x *SearchLogRow) GetStderr() bool {
+	if x != nil {
+		return x.Stderr
+	}
+	return false
+}
+
+func (x *SearchLogRow) GetMsg() string {
+	if x != nil {
+		return x.Msg
+	}
+	return ""
+}
+
+type SearchLogsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Rows  []*SearchLogRow        `protobuf:"bytes,1,rep,name=rows,proto3" json:"rows,omitempty"`
+	// 下一页游标（空 = 没有更多命中）。
+	NextCursor    string `protobuf:"bytes,2,opt,name=next_cursor,json=nextCursor,proto3" json:"next_cursor,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SearchLogsResponse) Reset() {
+	*x = SearchLogsResponse{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SearchLogsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SearchLogsResponse) ProtoMessage() {}
+
+func (x *SearchLogsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SearchLogsResponse.ProtoReflect.Descriptor instead.
+func (*SearchLogsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *SearchLogsResponse) GetRows() []*SearchLogRow {
+	if x != nil {
+		return x.Rows
+	}
+	return nil
+}
+
+func (x *SearchLogsResponse) GetNextCursor() string {
+	if x != nil {
+		return x.NextCursor
+	}
+	return ""
+}
+
+type GetLogsBackendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLogsBackendRequest) Reset() {
+	*x = GetLogsBackendRequest{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLogsBackendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLogsBackendRequest) ProtoMessage() {}
+
+func (x *GetLogsBackendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLogsBackendRequest.ProtoReflect.Descriptor instead.
+func (*GetLogsBackendRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{8}
+}
+
+// LogsBackendView 是日志后端视图（E6 设计 §2.2/§2.3 诚实口径：模式、
+// 是否显式设置、部署态、ingest streak、丢弃计数常驻可见）。
+type LogsBackendView struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 生效模式：victorialogs | jsonl（缺省 victorialogs——V2-1 默认捆绑；
+	// 未显式设置时 mode 已投影为缺省值，set 标志区分「缺省生效」）。
+	Backend string `protobuf:"bytes,1,opt,name=backend,proto3" json:"backend,omitempty"`
+	// 该键是否被显式保存过（false = 缺省态生效）。
+	BackendSet bool `protobuf:"varint,2,opt,name=backend_set,json=backendSet,proto3" json:"backend_set,omitempty"`
+	// 部署态（backend=victorialogs 时）：deployed（服务在位）| pending
+	// （duty 收敛中）| removed（backend=jsonl 或服务已移除）。
+	Deployment string `protobuf:"bytes,3,opt,name=deployment,proto3" json:"deployment,omitempty"`
+	// 入湖 streak 是否降级中（VL 不可达——检索降级，直播不受影响）。
+	IngestDegraded bool `protobuf:"varint,4,opt,name=ingest_degraded,json=ingestDegraded,proto3" json:"ingest_degraded,omitempty"`
+	// 降级 streak 起点（未降级不输出）。
+	IngestDegradedSince *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=ingest_degraded_since,json=ingestDegradedSince,proto3" json:"ingest_degraded_since,omitempty"`
+	// 进程启动以来溢出丢弃的累计行数。
+	DroppedTotal  uint64 `protobuf:"varint,6,opt,name=dropped_total,json=droppedTotal,proto3" json:"dropped_total,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogsBackendView) Reset() {
+	*x = LogsBackendView{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogsBackendView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogsBackendView) ProtoMessage() {}
+
+func (x *LogsBackendView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogsBackendView.ProtoReflect.Descriptor instead.
+func (*LogsBackendView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *LogsBackendView) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+func (x *LogsBackendView) GetBackendSet() bool {
+	if x != nil {
+		return x.BackendSet
+	}
+	return false
+}
+
+func (x *LogsBackendView) GetDeployment() string {
+	if x != nil {
+		return x.Deployment
+	}
+	return ""
+}
+
+func (x *LogsBackendView) GetIngestDegraded() bool {
+	if x != nil {
+		return x.IngestDegraded
+	}
+	return false
+}
+
+func (x *LogsBackendView) GetIngestDegradedSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.IngestDegradedSince
+	}
+	return nil
+}
+
+func (x *LogsBackendView) GetDroppedTotal() uint64 {
+	if x != nil {
+		return x.DroppedTotal
+	}
+	return 0
+}
+
+type GetLogsBackendResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	View          *LogsBackendView       `protobuf:"bytes,1,opt,name=view,proto3" json:"view,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetLogsBackendResponse) Reset() {
+	*x = GetLogsBackendResponse{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetLogsBackendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetLogsBackendResponse) ProtoMessage() {}
+
+func (x *GetLogsBackendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetLogsBackendResponse.ProtoReflect.Descriptor instead.
+func (*GetLogsBackendResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *GetLogsBackendResponse) GetView() *LogsBackendView {
+	if x != nil {
+		return x.View
+	}
+	return nil
+}
+
+type SetLogsBackendRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Backend       string                 `protobuf:"bytes,1,opt,name=backend,proto3" json:"backend,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetLogsBackendRequest) Reset() {
+	*x = SetLogsBackendRequest{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetLogsBackendRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetLogsBackendRequest) ProtoMessage() {}
+
+func (x *SetLogsBackendRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetLogsBackendRequest.ProtoReflect.Descriptor instead.
+func (*SetLogsBackendRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SetLogsBackendRequest) GetBackend() string {
+	if x != nil {
+		return x.Backend
+	}
+	return ""
+}
+
+type SetLogsBackendResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	View          *LogsBackendView       `protobuf:"bytes,1,opt,name=view,proto3" json:"view,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetLogsBackendResponse) Reset() {
+	*x = SetLogsBackendResponse{}
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetLogsBackendResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetLogsBackendResponse) ProtoMessage() {}
+
+func (x *SetLogsBackendResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_logs_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetLogsBackendResponse.ProtoReflect.Descriptor instead.
+func (*SetLogsBackendResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_logs_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *SetLogsBackendResponse) GetView() *LogsBackendView {
+	if x != nil {
+		return x.View
+	}
+	return nil
+}
+
 var File_fleetly_server_v1_logs_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_logs_proto_rawDesc = "" +
@@ -366,11 +888,55 @@ const file_fleetly_server_v1_logs_proto_rawDesc = "" +
 	"\x12FollowLogsResponse\x125\n" +
 	"\x05entry\x18\x01 \x01(\v2\x1f.fleetly.server.v1.LogEntryViewR\x05entry\"T\n" +
 	"\x17ListHistoryLogsResponse\x129\n" +
-	"\aentries\x18\x01 \x03(\v2\x1f.fleetly.server.v1.LogEntryViewR\aentries2\x96\x02\n" +
+	"\aentries\x18\x01 \x03(\v2\x1f.fleetly.server.v1.LogEntryViewR\aentries\"\xbe\x02\n" +
+	"\x11SearchLogsRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x12\n" +
+	"\x04apps\x18\x02 \x03(\tR\x04apps\x12\x18\n" +
+	"\akeyword\x18\x03 \x01(\tR\akeyword\x129\n" +
+	"\n" +
+	"time_start\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\ttimeStart\x125\n" +
+	"\btime_end\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\atimeEnd\x12\x1a\n" +
+	"\bservices\x18\x06 \x03(\tR\bservices\x12\x18\n" +
+	"\asources\x18\a \x03(\tR\asources\x12 \n" +
+	"\x05limit\x18\b \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\x05limit\x12\x16\n" +
+	"\x06cursor\x18\t \x01(\tR\x06cursor\"\xa8\x01\n" +
+	"\fSearchLogRow\x12*\n" +
+	"\x02at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\x02at\x12\x10\n" +
+	"\x03app\x18\x02 \x01(\tR\x03app\x12\x18\n" +
+	"\aservice\x18\x03 \x01(\tR\aservice\x12\x16\n" +
+	"\x06source\x18\x04 \x01(\tR\x06source\x12\x16\n" +
+	"\x06stderr\x18\x05 \x01(\bR\x06stderr\x12\x10\n" +
+	"\x03msg\x18\x06 \x01(\tR\x03msg\"j\n" +
+	"\x12SearchLogsResponse\x123\n" +
+	"\x04rows\x18\x01 \x03(\v2\x1f.fleetly.server.v1.SearchLogRowR\x04rows\x12\x1f\n" +
+	"\vnext_cursor\x18\x02 \x01(\tR\n" +
+	"nextCursor\"\x17\n" +
+	"\x15GetLogsBackendRequest\"\x8a\x02\n" +
+	"\x0fLogsBackendView\x12\x18\n" +
+	"\abackend\x18\x01 \x01(\tR\abackend\x12\x1f\n" +
+	"\vbackend_set\x18\x02 \x01(\bR\n" +
+	"backendSet\x12\x1e\n" +
+	"\n" +
+	"deployment\x18\x03 \x01(\tR\n" +
+	"deployment\x12'\n" +
+	"\x0fingest_degraded\x18\x04 \x01(\bR\x0eingestDegraded\x12N\n" +
+	"\x15ingest_degraded_since\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\x13ingestDegradedSince\x12#\n" +
+	"\rdropped_total\x18\x06 \x01(\x04R\fdroppedTotal\"P\n" +
+	"\x16GetLogsBackendResponse\x126\n" +
+	"\x04view\x18\x01 \x01(\v2\".fleetly.server.v1.LogsBackendViewR\x04view\"M\n" +
+	"\x15SetLogsBackendRequest\x124\n" +
+	"\abackend\x18\x01 \x01(\tB\x1a\xbaH\x17r\x15R\fvictorialogsR\x05jsonlR\abackend\"P\n" +
+	"\x16SetLogsBackendResponse\x126\n" +
+	"\x04view\x18\x01 \x01(\v2\".fleetly.server.v1.LogsBackendViewR\x04view2\x9b\x05\n" +
 	"\vLogsService\x12\x7f\n" +
 	"\n" +
 	"FollowLogs\x12$.fleetly.server.v1.FollowLogsRequest\x1a%.fleetly.server.v1.FollowLogsResponse\"\"\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/apps/{app}/logs/stream0\x01\x12\x85\x01\n" +
-	"\x0fListHistoryLogs\x12).fleetly.server.v1.ListHistoryLogsRequest\x1a*.fleetly.server.v1.ListHistoryLogsResponse\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/apps/{app}/logsB\x98\x01\x92ARRP\n" +
+	"\x0fListHistoryLogs\x12).fleetly.server.v1.ListHistoryLogsRequest\x1a*.fleetly.server.v1.ListHistoryLogsResponse\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/apps/{app}/logs\x12}\n" +
+	"\n" +
+	"SearchLogs\x12$.fleetly.server.v1.SearchLogsRequest\x1a%.fleetly.server.v1.SearchLogsResponse\"\"\x82\xd3\xe4\x93\x02\x1c\x12\x1a/v1/apps/{app}/logs/search\x12\x7f\n" +
+	"\x0eGetLogsBackend\x12(.fleetly.server.v1.GetLogsBackendRequest\x1a).fleetly.server.v1.GetLogsBackendResponse\"\x18\x82\xd3\xe4\x93\x02\x12\x12\x10/v1/logs-backend\x12\x82\x01\n" +
+	"\x0eSetLogsBackend\x12(.fleetly.server.v1.SetLogsBackendRequest\x1a).fleetly.server.v1.SetLogsBackendResponse\"\x1b\x82\xd3\xe4\x93\x02\x15:\x01*\x1a\x10/v1/logs-backendB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -387,30 +953,51 @@ func file_fleetly_server_v1_logs_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_logs_proto_rawDescData
 }
 
-var file_fleetly_server_v1_logs_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_fleetly_server_v1_logs_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_fleetly_server_v1_logs_proto_goTypes = []any{
 	(*FollowLogsRequest)(nil),       // 0: fleetly.server.v1.FollowLogsRequest
 	(*ListHistoryLogsRequest)(nil),  // 1: fleetly.server.v1.ListHistoryLogsRequest
 	(*LogEntryView)(nil),            // 2: fleetly.server.v1.LogEntryView
 	(*FollowLogsResponse)(nil),      // 3: fleetly.server.v1.FollowLogsResponse
 	(*ListHistoryLogsResponse)(nil), // 4: fleetly.server.v1.ListHistoryLogsResponse
-	(*timestamppb.Timestamp)(nil),   // 5: google.protobuf.Timestamp
+	(*SearchLogsRequest)(nil),       // 5: fleetly.server.v1.SearchLogsRequest
+	(*SearchLogRow)(nil),            // 6: fleetly.server.v1.SearchLogRow
+	(*SearchLogsResponse)(nil),      // 7: fleetly.server.v1.SearchLogsResponse
+	(*GetLogsBackendRequest)(nil),   // 8: fleetly.server.v1.GetLogsBackendRequest
+	(*LogsBackendView)(nil),         // 9: fleetly.server.v1.LogsBackendView
+	(*GetLogsBackendResponse)(nil),  // 10: fleetly.server.v1.GetLogsBackendResponse
+	(*SetLogsBackendRequest)(nil),   // 11: fleetly.server.v1.SetLogsBackendRequest
+	(*SetLogsBackendResponse)(nil),  // 12: fleetly.server.v1.SetLogsBackendResponse
+	(*timestamppb.Timestamp)(nil),   // 13: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_logs_proto_depIdxs = []int32{
-	5, // 0: fleetly.server.v1.ListHistoryLogsRequest.since:type_name -> google.protobuf.Timestamp
-	5, // 1: fleetly.server.v1.ListHistoryLogsRequest.until:type_name -> google.protobuf.Timestamp
-	5, // 2: fleetly.server.v1.LogEntryView.at:type_name -> google.protobuf.Timestamp
-	2, // 3: fleetly.server.v1.FollowLogsResponse.entry:type_name -> fleetly.server.v1.LogEntryView
-	2, // 4: fleetly.server.v1.ListHistoryLogsResponse.entries:type_name -> fleetly.server.v1.LogEntryView
-	0, // 5: fleetly.server.v1.LogsService.FollowLogs:input_type -> fleetly.server.v1.FollowLogsRequest
-	1, // 6: fleetly.server.v1.LogsService.ListHistoryLogs:input_type -> fleetly.server.v1.ListHistoryLogsRequest
-	3, // 7: fleetly.server.v1.LogsService.FollowLogs:output_type -> fleetly.server.v1.FollowLogsResponse
-	4, // 8: fleetly.server.v1.LogsService.ListHistoryLogs:output_type -> fleetly.server.v1.ListHistoryLogsResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	13, // 0: fleetly.server.v1.ListHistoryLogsRequest.since:type_name -> google.protobuf.Timestamp
+	13, // 1: fleetly.server.v1.ListHistoryLogsRequest.until:type_name -> google.protobuf.Timestamp
+	13, // 2: fleetly.server.v1.LogEntryView.at:type_name -> google.protobuf.Timestamp
+	2,  // 3: fleetly.server.v1.FollowLogsResponse.entry:type_name -> fleetly.server.v1.LogEntryView
+	2,  // 4: fleetly.server.v1.ListHistoryLogsResponse.entries:type_name -> fleetly.server.v1.LogEntryView
+	13, // 5: fleetly.server.v1.SearchLogsRequest.time_start:type_name -> google.protobuf.Timestamp
+	13, // 6: fleetly.server.v1.SearchLogsRequest.time_end:type_name -> google.protobuf.Timestamp
+	13, // 7: fleetly.server.v1.SearchLogRow.at:type_name -> google.protobuf.Timestamp
+	6,  // 8: fleetly.server.v1.SearchLogsResponse.rows:type_name -> fleetly.server.v1.SearchLogRow
+	13, // 9: fleetly.server.v1.LogsBackendView.ingest_degraded_since:type_name -> google.protobuf.Timestamp
+	9,  // 10: fleetly.server.v1.GetLogsBackendResponse.view:type_name -> fleetly.server.v1.LogsBackendView
+	9,  // 11: fleetly.server.v1.SetLogsBackendResponse.view:type_name -> fleetly.server.v1.LogsBackendView
+	0,  // 12: fleetly.server.v1.LogsService.FollowLogs:input_type -> fleetly.server.v1.FollowLogsRequest
+	1,  // 13: fleetly.server.v1.LogsService.ListHistoryLogs:input_type -> fleetly.server.v1.ListHistoryLogsRequest
+	5,  // 14: fleetly.server.v1.LogsService.SearchLogs:input_type -> fleetly.server.v1.SearchLogsRequest
+	8,  // 15: fleetly.server.v1.LogsService.GetLogsBackend:input_type -> fleetly.server.v1.GetLogsBackendRequest
+	11, // 16: fleetly.server.v1.LogsService.SetLogsBackend:input_type -> fleetly.server.v1.SetLogsBackendRequest
+	3,  // 17: fleetly.server.v1.LogsService.FollowLogs:output_type -> fleetly.server.v1.FollowLogsResponse
+	4,  // 18: fleetly.server.v1.LogsService.ListHistoryLogs:output_type -> fleetly.server.v1.ListHistoryLogsResponse
+	7,  // 19: fleetly.server.v1.LogsService.SearchLogs:output_type -> fleetly.server.v1.SearchLogsResponse
+	10, // 20: fleetly.server.v1.LogsService.GetLogsBackend:output_type -> fleetly.server.v1.GetLogsBackendResponse
+	12, // 21: fleetly.server.v1.LogsService.SetLogsBackend:output_type -> fleetly.server.v1.SetLogsBackendResponse
+	17, // [17:22] is the sub-list for method output_type
+	12, // [12:17] is the sub-list for method input_type
+	12, // [12:12] is the sub-list for extension type_name
+	12, // [12:12] is the sub-list for extension extendee
+	0,  // [0:12] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_logs_proto_init() }
@@ -424,7 +1011,7 @@ func file_fleetly_server_v1_logs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_logs_proto_rawDesc), len(file_fleetly_server_v1_logs_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

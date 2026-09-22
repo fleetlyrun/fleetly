@@ -76,8 +76,16 @@ var methodScopes = map[string]string{
 	// GetEnv（明文）= admin——取舍注记见 env.proto。
 	"/fleetly.server.v1.EnvService/GetEnv": ScopeAdmin,
 	// LogsService
+	// SearchLogs（E6 W5-S1）：read——与 FollowLogs 同级（能看直播就能看
+	// 检索，E6 设计 §3.1 权限原文）。
 	"/fleetly.server.v1.LogsService/FollowLogs":      ScopeRead,
 	"/fleetly.server.v1.LogsService/ListHistoryLogs": ScopeRead,
+	"/fleetly.server.v1.LogsService/SearchLogs":      ScopeRead,
+	// 日志后端面（E6 W5-S1）：show = read（运行视图）；set = deploy
+	//（写运行域语义——切换触发 duty 收敛与采集路由翻转，与
+	// SetDriftConverge 的 opt-in 置位同级；无凭据材料，不到 admin）。
+	"/fleetly.server.v1.LogsService/GetLogsBackend": ScopeRead,
+	"/fleetly.server.v1.LogsService/SetLogsBackend": ScopeDeploy,
 	// EventsService
 	"/fleetly.server.v1.EventsService/WatchEvents": ScopeRead,
 	// PlacementService

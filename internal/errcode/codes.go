@@ -225,6 +225,14 @@ var builtins = []Code{
 		Summary:    "last-admin guard: revoking would leave no unrevoked admin token on the platform; self-lockout rejected",
 		Suggestion: "This is the last unrevoked admin token: create a new admin token before revoking this one (otherwise the platform becomes unmanageable, and the bootstrap token is not reseeded on restart)."},
 
+	// ── 观测/日志库（E6 观测专项设计 §3.1，W5-S1；注册表只增）──
+	// 消费点：SearchLogs 的两处诚实分支（internal/api/logs.go）——① 当前
+	// backend=jsonl（检索面只在日志库，不返回空列表冒充）；② VictoriaLogs
+	// 不可达（检索降级，直播面不受影响——A3 直读不动条款）。
+	{ID: "E_LOGS_BACKEND_UNAVAILABLE", HTTP: 503,
+		Summary:    "the unified log search face is unavailable (logs.backend=jsonl has no search face, or VictoriaLogs did not answer; live log tail is unaffected)",
+		Suggestion: "Check the current backend with 'fleetly logs backend show'. If it is jsonl, switch to victorialogs to enable search; if VictoriaLogs is unreachable, check the fleetly-victorialogs service — search recovers automatically once it answers (the degradation streak and dropped counter are surfaced in the same view)."},
+
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",
 		Summary:    "post-observe-window instability alert (one source of app degraded)",

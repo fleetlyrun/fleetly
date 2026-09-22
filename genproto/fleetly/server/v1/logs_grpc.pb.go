@@ -21,6 +21,9 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	LogsService_FollowLogs_FullMethodName      = "/fleetly.server.v1.LogsService/FollowLogs"
 	LogsService_ListHistoryLogs_FullMethodName = "/fleetly.server.v1.LogsService/ListHistoryLogs"
+	LogsService_SearchLogs_FullMethodName      = "/fleetly.server.v1.LogsService/SearchLogs"
+	LogsService_GetLogsBackend_FullMethodName  = "/fleetly.server.v1.LogsService/GetLogsBackend"
+	LogsService_SetLogsBackend_FullMethodName  = "/fleetly.server.v1.LogsService/SetLogsBackend"
 )
 
 // LogsServiceClient is the client API for LogsService service.
@@ -42,6 +45,19 @@ const (
 type LogsServiceClient interface {
 	FollowLogs(ctx context.Context, in *FollowLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FollowLogsResponse], error)
 	ListHistoryLogs(ctx context.Context, in *ListHistoryLogsRequest, opts ...grpc.CallOption) (*ListHistoryLogsResponse, error)
+	// SearchLogs 统一检索（E6 观测专项设计 §3.1，W5-S1）：日志库
+	// （VictoriaLogs）LogsQL 检索面。keyword 构造为转义后的字面量短语
+	// （用户输入永不裸拼进查询串）；VL 不可达或当前 backend=jsonl 时以
+	// E_LOGS_BACKEND_UNAVAILABLE 诚实报错（不返回空列表冒充）。检索面只
+	// 覆盖入湖窗口内的日志（切换前的 JSONL 历史不在检索面——设计 §2.3
+	// 「检索不跨界」的诚实边界）。
+	SearchLogs(ctx context.Context, in *SearchLogsRequest, opts ...grpc.CallOption) (*SearchLogsResponse, error)
+	// GetLogsBackend 日志后端视图（W5-S1：mode / 是否显式设置 / 部署态 /
+	// ingest streak / 丢弃计数——CLI `logs backend show` 与 Console 卡共面）。
+	GetLogsBackend(ctx context.Context, in *GetLogsBackendRequest, opts ...grpc.CallOption) (*GetLogsBackendResponse, error)
+	// SetLogsBackend 切换日志后端（victorialogs | jsonl）：保存即生效——
+	// duty 收敛部署/移除（卷保留），采集路由下拍切换。
+	SetLogsBackend(ctx context.Context, in *SetLogsBackendRequest, opts ...grpc.CallOption) (*SetLogsBackendResponse, error)
 }
 
 type logsServiceClient struct {
@@ -81,6 +97,36 @@ func (c *logsServiceClient) ListHistoryLogs(ctx context.Context, in *ListHistory
 	return out, nil
 }
 
+func (c *logsServiceClient) SearchLogs(ctx context.Context, in *SearchLogsRequest, opts ...grpc.CallOption) (*SearchLogsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SearchLogsResponse)
+	err := c.cc.Invoke(ctx, LogsService_SearchLogs_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *logsServiceClient) GetLogsBackend(ctx context.Context, in *GetLogsBackendRequest, opts ...grpc.CallOption) (*GetLogsBackendResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetLogsBackendResponse)
+	err := c.cc.Invoke(ctx, LogsService_GetLogsBackend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *logsServiceClient) SetLogsBackend(ctx context.Context, in *SetLogsBackendRequest, opts ...grpc.CallOption) (*SetLogsBackendResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetLogsBackendResponse)
+	err := c.cc.Invoke(ctx, LogsService_SetLogsBackend_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LogsServiceServer is the server API for LogsService service.
 // All implementations must embed UnimplementedLogsServiceServer
 // for forward compatibility.
@@ -100,6 +146,19 @@ func (c *logsServiceClient) ListHistoryLogs(ctx context.Context, in *ListHistory
 type LogsServiceServer interface {
 	FollowLogs(*FollowLogsRequest, grpc.ServerStreamingServer[FollowLogsResponse]) error
 	ListHistoryLogs(context.Context, *ListHistoryLogsRequest) (*ListHistoryLogsResponse, error)
+	// SearchLogs 统一检索（E6 观测专项设计 §3.1，W5-S1）：日志库
+	// （VictoriaLogs）LogsQL 检索面。keyword 构造为转义后的字面量短语
+	// （用户输入永不裸拼进查询串）；VL 不可达或当前 backend=jsonl 时以
+	// E_LOGS_BACKEND_UNAVAILABLE 诚实报错（不返回空列表冒充）。检索面只
+	// 覆盖入湖窗口内的日志（切换前的 JSONL 历史不在检索面——设计 §2.3
+	// 「检索不跨界」的诚实边界）。
+	SearchLogs(context.Context, *SearchLogsRequest) (*SearchLogsResponse, error)
+	// GetLogsBackend 日志后端视图（W5-S1：mode / 是否显式设置 / 部署态 /
+	// ingest streak / 丢弃计数——CLI `logs backend show` 与 Console 卡共面）。
+	GetLogsBackend(context.Context, *GetLogsBackendRequest) (*GetLogsBackendResponse, error)
+	// SetLogsBackend 切换日志后端（victorialogs | jsonl）：保存即生效——
+	// duty 收敛部署/移除（卷保留），采集路由下拍切换。
+	SetLogsBackend(context.Context, *SetLogsBackendRequest) (*SetLogsBackendResponse, error)
 	mustEmbedUnimplementedLogsServiceServer()
 }
 
@@ -115,6 +174,15 @@ func (UnimplementedLogsServiceServer) FollowLogs(*FollowLogsRequest, grpc.Server
 }
 func (UnimplementedLogsServiceServer) ListHistoryLogs(context.Context, *ListHistoryLogsRequest) (*ListHistoryLogsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListHistoryLogs not implemented")
+}
+func (UnimplementedLogsServiceServer) SearchLogs(context.Context, *SearchLogsRequest) (*SearchLogsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SearchLogs not implemented")
+}
+func (UnimplementedLogsServiceServer) GetLogsBackend(context.Context, *GetLogsBackendRequest) (*GetLogsBackendResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetLogsBackend not implemented")
+}
+func (UnimplementedLogsServiceServer) SetLogsBackend(context.Context, *SetLogsBackendRequest) (*SetLogsBackendResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetLogsBackend not implemented")
 }
 func (UnimplementedLogsServiceServer) mustEmbedUnimplementedLogsServiceServer() {}
 func (UnimplementedLogsServiceServer) testEmbeddedByValue()                     {}
@@ -166,6 +234,60 @@ func _LogsService_ListHistoryLogs_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LogsService_SearchLogs_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SearchLogsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogsServiceServer).SearchLogs(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogsService_SearchLogs_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogsServiceServer).SearchLogs(ctx, req.(*SearchLogsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LogsService_GetLogsBackend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetLogsBackendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogsServiceServer).GetLogsBackend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogsService_GetLogsBackend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogsServiceServer).GetLogsBackend(ctx, req.(*GetLogsBackendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _LogsService_SetLogsBackend_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetLogsBackendRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogsServiceServer).SetLogsBackend(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogsService_SetLogsBackend_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogsServiceServer).SetLogsBackend(ctx, req.(*SetLogsBackendRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LogsService_ServiceDesc is the grpc.ServiceDesc for LogsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -176,6 +298,18 @@ var LogsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListHistoryLogs",
 			Handler:    _LogsService_ListHistoryLogs_Handler,
+		},
+		{
+			MethodName: "SearchLogs",
+			Handler:    _LogsService_SearchLogs_Handler,
+		},
+		{
+			MethodName: "GetLogsBackend",
+			Handler:    _LogsService_GetLogsBackend_Handler,
+		},
+		{
+			MethodName: "SetLogsBackend",
+			Handler:    _LogsService_SetLogsBackend_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

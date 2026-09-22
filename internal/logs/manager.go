@@ -27,8 +27,18 @@ type stream struct {
 
 // Run 是采集主循环（lynx 服务壳 Start 消费）：周期扫描 active apps 的
 // 受管服务 → 逐流轮询 docker service logs（follow=false + since 游标）→
-// 脱敏 → ring + 落盘 + 扇出。ctx 取消即返回。首轮前做一次落盘清理。
+// 脱敏 → ring + 入湖/落盘 + 扇出。ctx 取消即返回。首轮前做一次落盘清理
+//（读/prune 路径与后端无关——切换前的旧文件继续按保留窗老化，设计 §2.3
+//「检索不跨界」的诚实边界）。W5-S1：入湖批量器 flush 循环随本循环拉起
+//（同 ctx 退出）；logs.backend 门每扫描拍现读刷新。
 func (m *Manager) Run(ctx context.Context) error {
+	if m.ing != nil {
+		go func() {
+			if err := m.ing.Run(ctx); err != nil {
+				m.log.Warn("logs: ingest flush loop exited", "error", err.Error())
+			}
+		}()
+	}
 	if _, err := m.dsk.prune(ctx, time.Duration(m.cfg.RetentionDays)*24*time.Hour); err != nil {
 		m.log.Warn("logs: initial prune failed", "error", err.Error())
 	}
@@ -47,6 +57,7 @@ func (m *Manager) Run(ctx context.Context) error {
 				m.log.Info("logs: pruned expired log files", "files", n)
 			}
 		case <-ticker.C:
+			m.refreshBackendGate(ctx)
 			m.scanOnce(ctx)
 		}
 	}
@@ -229,8 +240,15 @@ deliver:
 				Line:    red.redact(line.Line),
 				Source:  SourceContainer,
 			}
+			// 直播面（ring + 扇出）零改动——A3 直读不动条款：入湖/落盘的
+			// 路由选择发生在直播面之后（E6 设计 §2.4：VL 故障 = 检索降级，
+			// 直播照常）。
 			m.hub.ingest(e)
-			if err := m.dsk.append(ctx, e); err != nil {
+			if m.vlEnabled() {
+				// victorialogs 模式：入湖（行已脱敏——redact 之后接入），
+				// JSONL 落盘停止（设计 §2.3「双写不留，磁盘不翻倍」）。
+				m.ing.Add(e)
+			} else if err := m.dsk.append(ctx, e); err != nil {
 				m.log.Warn("logs: disk append failed", "app", app.Name, "error", err.Error())
 			}
 		}
@@ -314,6 +332,35 @@ func (m *Manager) evictStaleStreamState(active map[string]struct{}) {
 // 客户端重新 Follow）。
 func (m *Manager) Follow(ctx context.Context, app, service string) (<-chan Entry, func()) {
 	return m.hub.follow(ctx, app, service)
+}
+
+// redactBudget 是 IngestBuildLine 的脱敏值集读取预算（redactor 缓存命中
+// 时无 IO；未命中重建的兜底期限）。
+const redactBudget = 3 * time.Second
+
+// IngestBuildLine 把一条构建日志行接入入湖批量器（W5-S1，设计 §2.3
+//「build 日志与写入咽喉点接入，source=build」；实现 build.BuildLogSink
+// 端口——方向纪律：build 定义端口、logs 实现，build 不反向感知 logs）。
+// 咽喉点 = build.log 文件的行级写入（internal/build logTee 分流），本方法
+// 在消费侧行同款脱敏（red.forApp——构建日志同可能回显 secret 值，与
+// buildLogEntries 读侧脱敏同一纪律），只进批量器：不进 ring（直播面不加
+// 噪——FollowLogs 零改动），不落 JSONL（build 行从未落盘，jsonl 模式下
+// 构建日志仍以 builds 表 log_path 产物为检索面）。backend 非 victorialogs
+// 时静默 no-op。
+func (m *Manager) IngestBuildLine(appID, app, service string, at time.Time, line string) {
+	if m.ing == nil || !m.vlEnabled() {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), redactBudget)
+	defer cancel()
+	red := m.red.forApp(ctx, appID)
+	m.ing.Add(Entry{
+		App:     app,
+		Service: service,
+		At:      at,
+		Line:    red.redact(line),
+		Source:  SourceBuild,
+	})
 }
 
 // HistoryQuery 是历史检索参数（app 必填；service/source 空 = 不过滤）。

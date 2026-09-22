@@ -39,6 +39,10 @@
 #     s3-rustfs-e2e 同骨架——建库健康门/卷放置/备份恢复/轮换重部署/密钥库
 #     挂载/删除守卫全链；dbtools 私有镜像经 GITHUB_TOKEN 登录 ghcr 后由脚
 #     本 save|load 注入 dind）。
+#   - logs-victorialogs-e2e：E6 W5-S1 VictoriaLogs 默认捆绑端到端
+#     （e2e/logs-victorialogs.sh，单 dind；s3-rustfs 同骨架）：duty 缺省
+#     收敛/回环健康/入湖可查（SearchLogs 命中）/keyword 过滤/注入负向/
+#     降级 streak + 直播不受影响/backend 切换（卷保留）+ 复切收敛。
 #
 # 每个步骤与本地可跑脚本一致：bash e2e/nightly/run.sh <suite> /
 # sh deploy/run-*.sh / bash e2e/nightly/conformance-builder.sh /
@@ -510,6 +514,36 @@ jobs:
         run: |
           docker ps -aq --filter name=fleetly-db-e2e- | xargs -r docker rm -f
           docker network rm fleetly-db-br || true
+
+  logs-victorialogs-e2e:
+    # E6 W5-S1 VictoriaLogs 端到端（e2e/logs-victorialogs.sh 单 dind；
+    # s3-rustfs 同骨架——编排自足、镜像钉 digest 在脚本头常量，与
+    # internal/victorialogs spec 常量及 image-prepull 台账 #14 三锚同源）：
+    # A1 缺省即部署（V2-1 默认捆绑）+ deployed 事件 → A2/A3 回环健康 +
+    # backend show → A5 部署应用 → SearchLogs 命中 marker → A7 keyword
+    # 过滤（诚实空结果）→ A8 注入负向（恶意 keyword 不 5xx 不逃逸）→
+    # A9-A10 停 VL → ingest_degraded 事件 + Follow 直播不受影响 →
+    # A11-A17 backend 切换 jsonl（服务移除/卷保留/removed 事件）+ 复切收敛。
+    name: logs/victorialogs e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run logs/victorialogs e2e (dind)
+        run: sh e2e/logs-victorialogs.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-vl-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-vl- | xargs -r docker rm -f
+          docker network rm fleetly-vl-br || true
 
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:

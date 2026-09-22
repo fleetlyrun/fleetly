@@ -164,4 +164,22 @@ var builtins = []Event{
 	{Name: "db.restore_completed", Summary: "database restore completed in place (confirm-gated destructive operation)"},
 	{Name: "db.restore_failed", Summary: "database restore failed (critical alert; in-place replay interrupted)"},
 	{Name: "db.credentials_rotated", Summary: "database credentials rotated (manual two-phase confirm; referencing apps auto-redeploy follows)"},
+
+	// ── 观测/日志库（E6 观测专项设计 §2/§7，W5-S1 接线；注册表只增。
+	//    设计 §7「logs.* 5 项」的全集）──
+	// 发出来源：SaveLogsSettings 保存事务（internal/state/logsettings.go，
+	// 与业务写同事务 = Outbox；payload 只带后端值，词表内枚举）。
+	{Name: "logs.backend_updated", Summary: "log backend setting changed (payload carries the backend value; switch triggers the duty to deploy or remove VictoriaLogs, the data volume is retained)"},
+	// 发出来源：victorialogs duty 收敛拍差分（internal/victorialogs/
+	// victorialogs.go——服务缺失创建/spec 漂移更新发 deployed（payload 带
+	// reason created|updated），backend 离开 victorialogs 服务移除发
+	// removed（payload 带 volume_retained=true）。VL 无凭据面，payload
+	// 零敏感材料）。
+	{Name: "logs.victorialogs_deployed", Summary: "managed VictoriaLogs deployed or converged to the desired spec (payload carries service/image/reason)"},
+	{Name: "logs.victorialogs_removed", Summary: "managed VictoriaLogs removed after logs.backend left victorialogs (data volume retained; payload carries volume_retained=true)"},
+	// 发出来源：hub 入湖批量器 streak 翻转沿（internal/logs/ingest.go——
+	// 去抖：状态翻转才发，不逐行红；payload 带 dropped_total 与单行化
+	// 错误摘要，无任何日志行内容/凭据材料）。
+	{Name: "logs.ingest_degraded", Summary: "log ingestion to VictoriaLogs degraded (backend unreachable; live tail unaffected; payload carries dropped_total and a single-line error summary)"},
+	{Name: "logs.ingest_recovered", Summary: "log ingestion to VictoriaLogs recovered (degradation streak exited)"},
 }

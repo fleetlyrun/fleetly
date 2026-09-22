@@ -84,6 +84,108 @@
         ]
       }
     },
+    "/v1/apps/{app}/logs/search": {
+      "get": {
+        "summary": "SearchLogs 统一检索（E6 观测专项设计 §3.1，W5-S1）：日志库\n（VictoriaLogs）LogsQL 检索面。keyword 构造为转义后的字面量短语\n（用户输入永不裸拼进查询串）；VL 不可达或当前 backend=jsonl 时以\nE_LOGS_BACKEND_UNAVAILABLE 诚实报错（不返回空列表冒充）。检索面只\n覆盖入湖窗口内的日志（切换前的 JSONL 历史不在检索面——设计 §2.3\n「检索不跨界」的诚实边界）。",
+        "operationId": "LogsService_SearchLogs",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SearchLogsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "apps",
+            "description": "可选的 app 过滤集（预留跨应用语义；当前检索面为单 app，额外值不\n放行——诚实边界）。",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          },
+          {
+            "name": "keyword",
+            "description": "全文关键词（构造为转义后的 LogsQL 字面量短语——注入安全硬性条款）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "time_start",
+            "description": "时间窗下界；缺省 = 不设下界（保留窗即 VL -retentionPeriod）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "time_end",
+            "description": "时间窗上界；缺省 = 现在。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "services",
+            "description": "compose 服务名过滤集。",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          },
+          {
+            "name": "sources",
+            "description": "来源过滤集：container | build（access 随 S2 访问日志采集进入词表）。",
+            "in": "query",
+            "required": false,
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "collectionFormat": "multi"
+          },
+          {
+            "name": "limit",
+            "description": "返回上限（缺省 200，天花板 1000）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "cursor",
+            "description": "分页游标（服务端签发的下一页凭证；空 = 第一页）。游标分页自最新\n命中向后走（VL limit/offset 语义）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "LogsService"
+        ]
+      }
+    },
     "/v1/apps/{app}/logs/stream": {
       "get": {
         "operationId": "LogsService_FollowLogs",
@@ -120,6 +222,60 @@
             "in": "query",
             "required": false,
             "type": "string"
+          }
+        ],
+        "tags": [
+          "LogsService"
+        ]
+      }
+    },
+    "/v1/logs-backend": {
+      "get": {
+        "summary": "GetLogsBackend 日志后端视图（W5-S1：mode / 是否显式设置 / 部署态 /\ningest streak / 丢弃计数——CLI `logs backend show` 与 Console 卡共面）。",
+        "operationId": "LogsService_GetLogsBackend",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetLogsBackendResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "LogsService"
+        ]
+      },
+      "put": {
+        "summary": "SetLogsBackend 切换日志后端（victorialogs | jsonl）：保存即生效——\nduty 收敛部署/移除（卷保留），采集路由下拍切换。",
+        "operationId": "LogsService_SetLogsBackend",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetLogsBackendResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetLogsBackendRequest"
+            }
           }
         ],
         "tags": [
@@ -174,6 +330,14 @@
         }
       }
     },
+    "v1GetLogsBackendResponse": {
+      "type": "object",
+      "properties": {
+        "view": {
+          "$ref": "#/definitions/v1LogsBackendView"
+        }
+      }
+    },
     "v1ListHistoryLogsResponse": {
       "type": "object",
       "properties": {
@@ -210,6 +374,95 @@
         }
       },
       "title": "LogEntryView 是单条日志投影。source ∈ container | build。"
+    },
+    "v1LogsBackendView": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string",
+          "title": "生效模式：victorialogs | jsonl（缺省 victorialogs——V2-1 默认捆绑；\n未显式设置时 mode 已投影为缺省值，set 标志区分「缺省生效」）。"
+        },
+        "backend_set": {
+          "type": "boolean",
+          "title": "该键是否被显式保存过（false = 缺省态生效）。"
+        },
+        "deployment": {
+          "type": "string",
+          "title": "部署态（backend=victorialogs 时）：deployed（服务在位）| pending\n（duty 收敛中）| removed（backend=jsonl 或服务已移除）。"
+        },
+        "ingest_degraded": {
+          "type": "boolean",
+          "title": "入湖 streak 是否降级中（VL 不可达——检索降级，直播不受影响）。"
+        },
+        "ingest_degraded_since": {
+          "type": "string",
+          "format": "date-time",
+          "title": "降级 streak 起点（未降级不输出）。"
+        },
+        "dropped_total": {
+          "type": "string",
+          "format": "uint64",
+          "title": "进程启动以来溢出丢弃的累计行数。"
+        }
+      },
+      "title": "LogsBackendView 是日志后端视图（E6 设计 §2.2/§2.3 诚实口径：模式、\n是否显式设置、部署态、ingest streak、丢弃计数常驻可见）。"
+    },
+    "v1SearchLogRow": {
+      "type": "object",
+      "properties": {
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "app": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "stderr": {
+          "type": "boolean"
+        },
+        "msg": {
+          "type": "string"
+        }
+      },
+      "title": "SearchLogRow 是检索命中的单行（字段与入湖行对齐：_time/_msg/app/\nservice/source/stderr——E6 设计 §3.1 行集契约）。"
+    },
+    "v1SearchLogsResponse": {
+      "type": "object",
+      "properties": {
+        "rows": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SearchLogRow"
+          }
+        },
+        "next_cursor": {
+          "type": "string",
+          "title": "下一页游标（空 = 没有更多命中）。"
+        }
+      }
+    },
+    "v1SetLogsBackendRequest": {
+      "type": "object",
+      "properties": {
+        "backend": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SetLogsBackendResponse": {
+      "type": "object",
+      "properties": {
+        "view": {
+          "$ref": "#/definitions/v1LogsBackendView"
+        }
+      }
     }
   }
 }

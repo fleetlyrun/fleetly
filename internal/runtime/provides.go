@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"fmt"
 	"net"
 	"net/http"
 	"time"
@@ -27,6 +28,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/statebackup"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
+	"github.com/fleetlyrun/fleetly/internal/victorialogs"
 )
 
 //go:generate go run -mod=mod github.com/google/wire/cmd/wire
@@ -45,6 +47,8 @@ var ProviderSet = wire.NewSet(
 	NewSecretsBox,
 	NewBackupManager,
 	NewRustfsManager,
+	NewVictorialogsBackend,
+	NewVictorialogsManager,
 	NewDatabaseManager,
 	NewBuilder,
 	NewBuildQueue,
@@ -210,6 +214,31 @@ func NewRustfsManager(app lynx.App, st *state.Store, sb *secrets.Box, sc *substr
 	return mgr.WithProbeRunner(sc), cleanup, nil
 }
 
+// NewVictorialogsBackend 构造 VL 回环消费端（E6 W5-S1：hub 入湖传输面与
+// SearchLogs 查询后端共用——指向 127.0.0.1:9428，D-W5-4 host-mode 回环
+// 发布的宿主可达面；无状态，无资源释放）。
+func NewVictorialogsBackend() *victorialogs.Backend {
+	return victorialogs.NewBackend()
+}
+
+// NewVictorialogsManager 构建托管 VictoriaLogs duty 管理器（E6 W5-S1，
+// 设计 §2.1：logs.backend=victorialogs〔缺省〕时幂等部署/收敛
+// fleetly-victorialogs——单副本钉 manager、卷/内部网络/host-mode 回环发布
+// 9428、-retentionPeriod 对齐 logs.retention_days；切回 jsonl 移除服务
+// 保留卷。常驻收敛循环由服务壳 Start 承载，资源层——晚于 engine 停）。
+// 自建 Docker 连接（rustfs Manager 同款形态），cleanup 释放；健康拨测 =
+// Backend.Ping（宿主回环直达——无探针容器，与 rustfs 的差异点）。
+func NewVictorialogsManager(app lynx.App, cfg *AppConfig, st *state.Store, vl *victorialogs.Backend) (*victorialogs.Manager, func(), error) {
+	mgr, cleanup, err := victorialogs.NewManager(st, cfg.LogsSettings().RetentionDays, app.Logger())
+	if err != nil {
+		return nil, nil, err
+	}
+	if vl != nil {
+		mgr = mgr.WithHealth(vl.Ping)
+	}
+	return mgr, cleanup, nil
+}
+
 // NewDatabaseManager 构建库实例收敛 duty 管理器（E4 W4-S2，managed-
 // databases §2.1/§2.3 的 provisioner：按生命周期态分派收敛——provisioning
 // 建现场过健康门、ready/degraded 健康观察、paused 保持 scale-0、deleting
@@ -225,9 +254,12 @@ func NewDatabaseManager(app lynx.App, st *state.Store, sb *secrets.Box, pl *plac
 // NewBuilder 构建构建执行器（build.Builder：railpack/dockerfile 双驱动 +
 // buildkit solve + 产物归档 + 执行前 buildkitd 就绪收敛）。镜像端口与容器
 // 编排由 substrate.Client 隐式实现 build 包端口（适配器方向：
-// substrate → build 核心接口）。
-func NewBuilder(cfg *AppConfig, st *state.Store, dc *substrate.Client, dm build.DaemonManager, app lynx.App) *build.Builder {
-	return build.NewBuilder(cfg.BuildSettings(), st, dc, dm, app.Logger())
+// substrate → build 核心接口）。W5-S1：注入构建日志行分流目标 =
+// logs.Manager（build.log 行级 tee——文件写入逐字不变，分流喂入湖批量器
+// source=build；lm 未装配时 WithBuildLogSink(nil) 为零差异透传）。
+func NewBuilder(cfg *AppConfig, st *state.Store, dc *substrate.Client, dm build.DaemonManager, app lynx.App, lm *logs.Manager) *build.Builder {
+	return build.NewBuilder(cfg.BuildSettings(), st, dc, dm, app.Logger()).
+		WithBuildLogSink(lm)
 }
 
 // NewBackupManager 构建状态备份管理器（T2.22：热备快照 + 回读校验 +
@@ -322,10 +354,13 @@ func (dbTemplatePort) ConnectionVars(templateID, instance, password string) (map
 // NewLogsManager 构建日志管线管理器（T2.20：采集/Follow/History/清理；
 // logs.* 配置节，缺省回落 internal/logs）。底座端口由 substrate.Client
 // 隐式实现 logs.Port（适配器方向：substrate → logs 核心接口）。B3：注入
-// git 触发面为补充脱敏值集供给（钩子 token 明文只在钩子文件）。
-func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, sb *secrets.Box, src *gitserver.GitTriggers) *logs.Manager {
+// git 触发面为补充脱敏值集供给（钩子 token 明文只在钩子文件）。W5-S1：
+// 注入入湖传输面 = VL 回环消费端（E6 设计 §2.3——批量器在 logs.Manager
+// 内部，flush/溢出/streak 面承载于此；vl.backend 门每拍设置现读）。
+func NewLogsManager(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, sb *secrets.Box, src *gitserver.GitTriggers, vl *victorialogs.Backend) *logs.Manager {
 	return logs.NewManager(cfg.LogsSettings(), st, sc, sb, app.Logger()).
-		WithSecretSource(src)
+		WithSecretSource(src).
+		WithIngestBackend(vl)
 }
 
 // NewCronManager 构建定时任务调度器（E5 Cron，架构 §4.3 细则：tick 循环
@@ -426,8 +461,10 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // 解密）；baseDomain 同供 s3.public_exposed 门禁（E_S3_PUBLIC_REQUIRES_
 // BASE_DOMAIN）。E3-5：托管 RustFS 组件（objectstore.rustfs）与 TestConnection
 // 的 rustfs 分支随 duty 管理器接线——mode=rustfs 且服务未在位 = 红（收敛
-// 过渡态如实可见）；mode 非 rustfs = 无所欠恒绿。
-func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, version Version) *api.SystemService {
+// 过渡态如实可见）；mode 非 rustfs = 无所欠恒绿。E6 W5-S1：victorialogs
+// 组件随 duty 管理器与日志管线接线（设计 §2.3：healthy = duty 部署符合
+// 预期且 ingest streak 无降级；降级时 Error 带丢弃计数——诚实红面）。
+func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -436,12 +473,44 @@ func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, o
 			{Name: "state.secrets", Check: sb.CheckHealth},
 			{Name: "state.backup", Check: bm.CheckHealth},
 			{Name: "objectstore.rustfs", Check: rm.CheckHealth},
+			{
+				Name: "victorialogs",
+				Check: func() error {
+					if vm != nil {
+						if err := vm.CheckHealth(); err != nil {
+							return err
+						}
+					}
+					if lm.IngestDegraded() {
+						return &ingestDegradedError{
+							since:   lm.IngestStreakSince(),
+							dropped: lm.IngestDroppedTotal(),
+						}
+					}
+					return nil
+				},
+			},
 			{Name: "ingress.traefik", Check: func() error { return nil }},
 		}
 	}
 	return api.NewSystemService(string(version), st, components, ing, rm).WithBackupManager(bm).
 		WithJoinGuide(cfg.BaseDomain, sc).
 		WithSecretsBox(sb)
+}
+
+// ingestDegradedError 是日志入湖降级的组件健康错误（Error 文本带丢弃
+// 计数与 streak 起点——设计 §2.3「降级时 Error 带丢弃计数」）。
+type ingestDegradedError struct {
+	since   time.Time
+	dropped uint64
+}
+
+func (e *ingestDegradedError) Error() string {
+	msg := fmt.Sprintf("log ingestion to VictoriaLogs is degraded (live tail unaffected; dropped_total=%d", e.dropped)
+	if !e.since.IsZero() {
+		msg += ", since=" + e.since.UTC().Format(time.RFC3339)
+	}
+	return msg + ")"
 }
 
 // NewDomainsService 构造域名台账/验证面服务。
@@ -457,8 +526,10 @@ func NewEnvService(st *state.Store, sb *secrets.Box, lm *logs.Manager) *api.EnvS
 }
 
 // NewLogsService 构造日志面服务（T2.20：Follow/History 接管线管理器）。
-func NewLogsService(st *state.Store, mg *logs.Manager) *api.LogsService {
-	return api.NewLogsService(st, mg)
+// W5-S1：注入 VL 消费端与 duty 管理器（SearchLogs 检索面 + backend 视图
+// 的部署态——nil 形态如实报不可用/unknown）。
+func NewLogsService(st *state.Store, mg *logs.Manager, vl *victorialogs.Backend, vm *victorialogs.Manager) *api.LogsService {
+	return api.NewLogsService(st, mg).WithVictorialogs(vl, vm)
 }
 
 // NewEventsService 构造事件流面服务（seq 游标）。
@@ -568,6 +639,7 @@ func NewServices(
 	src *gitserver.GitTriggers,
 	cfg *AppConfig,
 	rm *rustfs.Manager,
+	vm *victorialogs.Manager,
 	dm *database.Manager,
 	hs *lynxhttp.Server,
 	gs *lynxgrpc.Server,
@@ -583,14 +655,15 @@ func NewServices(
 		newIngressService(ing, app, cfg.IngressSettings().ConfigAddr, cfg.IngressSettings().ConfigTLSAddr),
 		newLogsService(lm),
 		// ── 第三段：资源层（最后停：backup 晚于 engine 等 post-deploy
-		//     在途快照；rustfs/database 收敛 duty 同层——在途收敛拍随 ctx
-		//     排水；cron 调度器同层——触发链与收口拍随 ctx 排水，残留 job
-		//     由下次启动首拍收口兜底；store 最后）──
+		//     在途快照；rustfs/victorialogs/database 收敛 duty 同层——在途
+		//     收敛拍随 ctx 排水；cron 调度器同层——触发链与收口拍随 ctx
+		//     排水，残留 job 由下次启动首拍收口兜底；store 最后）──
 		newIdentityService(id),
 		newObserverService(ob),
 		newJanitorService(jr),
 		newBackupService(bm),
 		newRustfsService(rm),
+		newVictorialogsService(vm),
 		newDatabaseService(dm),
 		newCronSchedulerService(cm),
 		newSecretsService(sb),

@@ -14,6 +14,7 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/engine"
@@ -130,6 +131,16 @@ type Manager struct {
 	pollWatchdogOverride time.Duration
 	mu                   sync.Mutex
 	log                  *slog.Logger
+
+	// ing 是日志库入湖批量器（W5-S1，E6 设计 §2.3；nil = 未装配——纯
+	// jsonl 形态，采集/落盘路径零差异）。传输面经 WithIngestBackend 注入
+	//（实现 = victorialogs.Backend；方向纪律：logs 定义 IngestBackend
+	// 端口，不反向感知 VL 组件包）。
+	ing *Ingester
+	// vlIngest 是「入湖启用」门（backend=victorialogs 且 ing 已装配）。
+	// 每扫描拍由 LoadLogsSettings 现读刷新（设置保存即生效，读侧不缓存
+	// 长驻——s3settings 同口径）；false = 纯 jsonl 形态（落盘照旧）。
+	vlIngest atomic.Bool
 }
 
 // NewManager 构造日志管线管理器（不启动采集；Run 承载循环）。
@@ -159,6 +170,59 @@ func (m *Manager) WithClock(f func() time.Time) *Manager { m.clock = f; return m
 // WithSecretSource 注入补充脱敏值集供给（B3；装配期调用——实现方提供
 // state 密文列之外的明文 secret 落点，如 gitserver 钩子 token）。
 func (m *Manager) WithSecretSource(s SecretValuesSource) *Manager { m.red.extra = s; return m }
+
+// WithIngestBackend 注入日志库入湖传输面（W5-S1；装配期调用）。nil 合法
+//（纯 jsonl 形态——单测/精简装配，行为与 v0.1 逐字一致）。注入即构造
+// 批量器（flush 循环由 Run 拉起；启用门每拍由设置现读刷新）。
+func (m *Manager) WithIngestBackend(b IngestBackend) *Manager {
+	if b == nil {
+		return m
+	}
+	m.ing = NewIngester(b, m.st, m.log)
+	return m
+}
+
+// vlEnabled 报告当前拍是否应入湖（backend=victorialogs 且批量器已装配）。
+func (m *Manager) vlEnabled() bool { return m.vlIngest.Load() }
+
+// refreshBackendGate 现读 logs.backend 刷新启用门（每扫描拍一次；读取
+// 失败保持当前门——底座暂态不该翻转采集路由，warn 记录下拍再试）。
+func (m *Manager) refreshBackendGate(ctx context.Context) {
+	if m.ing == nil {
+		return
+	}
+	in, err := m.st.LoadLogsSettings(ctx)
+	if err != nil {
+		m.log.Warn("logs: load logs.backend failed (keeping current ingest route)", "error", err.Error())
+		return
+	}
+	m.vlIngest.Store(in.Backend == state.LogsBackendVictorialogs)
+}
+
+// IngestDegraded 报告入湖 streak 是否降级中（system status 组件面；未
+// 装配批量器或零值 Manager = 恒 false——纯 jsonl 形态无降级面）。
+func (m *Manager) IngestDegraded() bool {
+	if m == nil || m.ing == nil {
+		return false
+	}
+	return m.ing.Degraded()
+}
+
+// IngestDroppedTotal 返回溢出丢弃累计行数（诚实面的常驻计数）。
+func (m *Manager) IngestDroppedTotal() uint64 {
+	if m == nil || m.ing == nil {
+		return 0
+	}
+	return m.ing.DroppedTotal()
+}
+
+// IngestStreakSince 返回降级 streak 起点（零值 = 未降级）。
+func (m *Manager) IngestStreakSince() time.Time {
+	if m == nil || m.ing == nil {
+		return time.Time{}
+	}
+	return m.ing.StreakSince()
+}
 
 // InvalidateRedaction 主动失效某 app 的脱敏值集缓存（H9）：env 写路径
 // （api set/remove）与部署 env 提升点（engine 观察窗成功）联动调用，把
