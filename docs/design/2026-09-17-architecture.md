@@ -344,7 +344,7 @@ push/webhook → 源获取 → 构建(Railpack/BuildKit，带缓存)
 | D5 | 开源核心 + 商业版，核心 Apache-2.0 | 专利授权、商业友好；核心保持完整可自用，不做 MinIO 式"先送后收" | MIT：缺少专利条款；AGPL：限制商业路径 |
 | D6 | 构建用 Railpack + BuildKit，Dockerfile 兜底 | 自研构建系统是无底洞；Nixpacks 已转维护模式，Railpack 是其官方继任且为 Go 库可复用 | 自研 buildpack 体系；herokuish：bash + 与 dokku 生态绑定 |
 | D7 | 状态用 SQLite | 零运维、单文件、支持 10 台规模足够；备份即复制文件 | etcd：为分布式一致性设计，杀鸡用牛刀；Postgres：平台自身变重 |
-| D8 | MCP server 移至 v0.2（**2026-09-22 修订（D-W5-1，用户直裁）：再暂缓至 v0.3——「CLI 目前基本够用」；D10 纪律条款随迁不落空，见 [observability 专项 §6](2026-09-22-observability.md)**） | v0.1 收敛范围；API-first 下 MCP 是服务层之上的薄适配层，晚一期不欠技术债 | v0.1 即交付 MCP：会挤占部署闭环的联调时间 |
+| D8 | MCP server 移至 v0.2（**2026-09-22 修订〔D-W5-1，用户直裁〕：暂缓至 v0.3；2026-09-23 再修订〔V3-2，用户直裁〕：继续降低优先级——退出 v0.3 主线，v0.3 先团队/RBAC 后生产深化；D10 纪律条款继续随迁挂账，重启时机随真实需求**，见 [v0.3 规划 §1](../plan/2026-09-23-v0.3-plan.md)） | v0.1 收敛范围；API-first 下 MCP 是服务层之上的薄适配层，晚一期不欠技术债 | v0.1 即交付 MCP：会挤占部署闭环的联调时间 |
 | D9 | 镜像从 v0.1 起用不可变 digest | v0.2 多节点分发改造若发生在部署管线中途，代价远大于一开始就用 digest | tag 引用：早期省事，后期改管线 |
 | D10 | 工具面精选（MCP ≤30 工具 + action 枚举 + scope） | Dokploy 546 工具/74k tokens 反面教材；精选是业界公开收敛（Dokploy 546→27、Railway 远程 7、Coolify 只读起步、Portainer 98→15）。配套机制：破坏性操作两段式（预览→确认），`confirm` 字段从 input schema 隐藏防模型自填；scope 在**执行层**强制（每次 tools/call，非仅 tools/list 过滤）；每次调用写审计；响应默认脱敏与截断；提供只读 token 模板 | 由 OpenAPI 自动生成全量工具：上下文灾难 + 坏 schema 可致客户端整体拒收（Anthropic 案例）；仅 tools/list 过滤做权限：可被 tools/call 绕过（CVE-2026-46519） |
 | D11 | 漂移检测默认开、自动收敛 per-app opt-in | 检测是用户与 AI Agent 都需要的事实来源；PaaS 阵营无人做全（差异化空白区），K8s GitOps 证明需求同时暴露 self-heal 事故（ArgoCD #13598）；Terraform #35382 证明「检测」与「变更」应解耦 | 全自动收敛：事故中会被用户强制关闭且「Synced ≠ desired」；不做检测：与对账式原则矛盾，放弃差异化 |
