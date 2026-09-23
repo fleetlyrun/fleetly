@@ -205,3 +205,73 @@ func TestRevokeTokenGuardLastAdmin(t *testing.T) {
 		t.Fatalf("revoke missing err = %v, want ErrTokenNotFound", err)
 	}
 }
+
+// TestTokenUserAndProjectBinding（v0.3 W1，RBAC 设计 §2.3）：CreateToken/
+// ListTokens 落 user_id/project_id 两列（'' = NULL）；机具令牌（user NULL）
+// 投影两列为空且不受 users 表影响；PAT 认证投影带 UserID，属主禁用 →
+// ErrTokenInvalid 同码拒认（不泄漏存在性），解禁恢复；吊销面语义不变。
+func TestTokenUserAndProjectBinding(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	u, err := st.CreateUser(ctx, UserWrite{Email: "pat@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	// 用户 PAT：user/project 维度往返。
+	pat, err := st.CreateToken(ctx, TokenWrite{Hash: HashToken("flt_user_pat"), Name: "cli pat", Scopes: "read,deploy", UserID: u.ID, ProjectID: "01PROJ1"})
+	if err != nil {
+		t.Fatalf("CreateToken PAT: %v", err)
+	}
+	if pat.UserID != u.ID || pat.ProjectID != "01PROJ1" {
+		t.Fatalf("PAT projection = %+v, want user %s project 01PROJ1", pat, u.ID)
+	}
+	got, err := st.AuthenticateToken(ctx, "flt_user_pat")
+	if err != nil || got.UserID != u.ID || got.ProjectID != "01PROJ1" {
+		t.Fatalf("AuthenticateToken PAT: %v (%+v)", err, got)
+	}
+
+	// 机具令牌（user NULL）：投影两列为空，认证不查 users 侧。
+	machine, err := st.CreateToken(ctx, TokenWrite{Hash: HashToken("flt_machine"), Name: "ci", Scopes: "admin"})
+	if err != nil {
+		t.Fatalf("CreateToken machine: %v", err)
+	}
+	if machine.UserID != "" || machine.ProjectID != "" {
+		t.Fatalf("machine token must have empty user/project: %+v", machine)
+	}
+	if got, err := st.AuthenticateToken(ctx, "flt_machine"); err != nil || got.UserID != "" {
+		t.Fatalf("machine token auth: %v (%+v)", err, got)
+	}
+
+	// 列表投影带两列。
+	rows, err := st.ListTokens(ctx)
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("ListTokens: %v (n=%d)", err, len(rows))
+	}
+
+	// 属主禁用 → PAT 拒认（ErrTokenInvalid 同码），机具令牌不受影响；
+	// 解禁 → PAT 恢复。
+	if err := st.DisableUser(ctx, u.ID, "", ""); err != nil {
+		t.Fatalf("DisableUser: %v", err)
+	}
+	if _, err := st.AuthenticateToken(ctx, "flt_user_pat"); !errors.Is(err, ErrTokenInvalid) {
+		t.Fatalf("disabled owner PAT err = %v, want ErrTokenInvalid", err)
+	}
+	if _, err := st.AuthenticateToken(ctx, "flt_machine"); err != nil {
+		t.Fatalf("machine token must be unaffected by user disable: %v", err)
+	}
+	if err := st.EnableUser(ctx, u.ID, "", ""); err != nil {
+		t.Fatalf("EnableUser: %v", err)
+	}
+	if got, err := st.AuthenticateToken(ctx, "flt_user_pat"); err != nil || got.ID != pat.ID {
+		t.Fatalf("PAT auth after re-enable: %v", err)
+	}
+
+	// 幂等/吊销面回归（新维度列不改变既有语义）。
+	if err := st.RevokeToken(ctx, pat.ID, ""); err != nil {
+		t.Fatalf("RevokeToken: %v", err)
+	}
+	if _, err := st.AuthenticateToken(ctx, "flt_user_pat"); !errors.Is(err, ErrTokenRevoked) {
+		t.Fatalf("revoked PAT err = %v, want ErrTokenRevoked", err)
+	}
+}

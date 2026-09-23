@@ -187,6 +187,14 @@ func (j *Janitor) PruneOnce(ctx context.Context, now time.Time) (events int64, a
 	} else if n > 0 {
 		j.log.Info("janitor: pruned webhook deliveries", "deliveries_pruned", n)
 	}
+	// v0.3 W1 过期会话清扫（RBAC 设计 §2.2）：会话行是 cookie 凭据，过期
+	// 即死（认证路径本就拒认）——清扫只回收表空间。清窗失败只告警，不中
+	// 断后续 duties。
+	if n, err := j.store.SweepExpiredSessions(ctx, now); err != nil {
+		j.log.Error("janitor: sweep expired sessions failed", "error", err)
+	} else if n > 0 {
+		j.log.Info("janitor: swept expired sessions", "sessions_pruned", n)
+	}
 	j.pruneArtifacts(now)
 	j.pruneDeploymentDirs(ctx, now)
 	j.scanStaleNonTerminal(ctx, now)

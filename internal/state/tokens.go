@@ -20,6 +20,13 @@ import (
 // scope 词表（read/deploy/admin）不进数据库约束——scopes 列存逗号分隔词表，
 // 语义与蕴含判定（admin ⊃ deploy ⊃ read）在 internal/api 承载；本层只做
 // 非空防御。
+//
+// 用户化扩展（v0.3 W1 建列，RBAC 设计 §2.3）：user_id（NULL = 平台机具
+// 令牌——平台级凭据的设计语义；非空 = 用户 PAT）与 project_id（NULL =
+// 不绑定）加列后，CreateToken/ListTokens 投影与 AuthenticateToken 认证
+// 原语带出两列；PAT 认证联动属主禁用态（AuthenticateToken 内 users JOIN，
+// disabled_at 非空 → ErrTokenInvalid 同码拒认）。scopes 语义迁移（用户
+// 自服务面）与角色双门是 W2 API 票面，不在本层。
 
 // Token 是一条 API token 行（只读投影；明文不存在于任何通道）。
 type Token struct {
@@ -32,7 +39,12 @@ type Token struct {
 	Scopes string
 	// HashPrefix 是 TokenHash 前 12 hex（识别用，非凭据）。
 	HashPrefix string
-	CreatedAt  time.Time
+	// UserID 是属主用户（'' = 平台机具令牌——设计 §2.3：平台管理员显式
+	// 创建的平台级凭据；非空 = 用户 PAT，认证路径联动用户禁用态）。
+	UserID string
+	// ProjectID 是绑定项目（'' = 不绑定；role 双门的收窄维度，设计 §2.3）。
+	ProjectID string
+	CreatedAt time.Time
 	// LastUsedAt 零值 = 从未使用。
 	LastUsedAt time.Time
 	// RevokedAt 零值 = 在册。
@@ -41,7 +53,7 @@ type Token struct {
 
 // tokRowCols 是 token 行查询列清单（命名避开 "token" 前缀——gosec G101
 // 对凭据样常量名误报；列清单本身非凭据）。
-const tokRowCols = `id, token_hash, name, scopes, created_at, last_used_at, revoked_at`
+const tokRowCols = `id, token_hash, name, scopes, created_at, last_used_at, revoked_at, user_id, project_id`
 
 // token 相关哨兵错误。
 var (
@@ -82,6 +94,11 @@ type TokenWrite struct {
 	// Actor 是审计主体（human/ai_agent/system；空回落 human——系统代签发
 	// 的 token 如 git push 钩子回调 token 传 system，T2.19）。
 	Actor string
+	// UserID 是属主用户（'' = 平台机具令牌；非空 = 用户 PAT——设计 §2.3。
+	// 存在性校验在上层，本层是纯写通道）。
+	UserID string
+	// ProjectID 是绑定项目（'' = 不绑定）。
+	ProjectID string
 }
 
 // CreateToken 在事务内落一条 token 行（哈希形态入参）并与审计同事务
@@ -104,8 +121,9 @@ func (s *Store) CreateToken(ctx context.Context, w TokenWrite) (Token, error) {
 	var out Token
 	err := s.InTx(ctx, func(tx *Tx) error {
 		now := nowNano()
-		const q = `INSERT INTO tokens (id, token_hash, name, scopes, created_at) VALUES (?, ?, ?, ?, ?)`
-		if _, err := tx.ExecContext(ctx, q, id, w.Hash, w.Name, w.Scopes, now); err != nil {
+		const q = `INSERT INTO tokens (id, token_hash, name, scopes, created_at, user_id, project_id)
+			VALUES (?, ?, ?, ?, ?, ?, ?)`
+		if _, err := tx.ExecContext(ctx, q, id, w.Hash, w.Name, w.Scopes, now, nullableText(w.UserID), nullableText(w.ProjectID)); err != nil {
 			if isUniqueViolation(err) {
 				return fmt.Errorf("state: create token: duplicate hash (token already exists)")
 			}
@@ -170,15 +188,22 @@ func (s *Store) HasAnyToken(ctx context.Context) (bool, error) {
 
 // AuthenticateToken 按明文认证：哈希查行 → 常量时间二次比对（belt-and-
 // suspenders：行查找按哈希等值走索引，不泄漏明文时序；二次比对保证比对
-// 通道本身常量时间）→ 吊销检查。成功返回在册 token。**不盖 last_used_at**
-// （S18-A2：每请求同步写是 SQLite 写放大——盖写职责上移到调用方
-// internal/api 的认证路径，经进程内节流后调 TouchTokenUsed），本层保持
-// 纯认证语义。
+// 通道本身常量时间）→ 吊销检查 → 属主禁用检查（LEFT JOIN users：user PAT
+// 的属主 disabled_at 非空 → ErrTokenInvalid 同码拒认——设计 §2.1/§2.3
+// 禁用联动，不泄漏存在性；机具令牌 user NULL 无属主行，不触发本检查）。
+// 成功返回在册 token。**不盖 last_used_at**（S18-A2：每请求同步写是 SQLite
+// 写放大——盖写职责上移到调用方 internal/api 的认证路径，经进程内节流后
+// 调 TouchTokenUsed），本层保持纯认证语义。
 func (s *Store) AuthenticateToken(ctx context.Context, plaintext string) (Token, error) {
 	hash := HashToken(plaintext)
-	row := s.db.QueryRowContext(ctx, `SELECT `+tokRowCols+` FROM tokens WHERE token_hash = ?`, hash)
-	t, err := scanToken(row)
-	if err != nil {
+	// 列清单带表别名限定（JOIN users 后 id 等列名有歧义；列序与
+	// tokRowCols 一致）。
+	row := s.db.QueryRowContext(ctx, `SELECT t.id, t.token_hash, t.name, t.scopes, t.created_at, t.last_used_at, t.revoked_at, t.user_id, t.project_id, u.disabled_at
+		FROM tokens t LEFT JOIN users u ON u.id = t.user_id
+		WHERE t.token_hash = ?`, hash)
+	var t Token
+	var ownerDisabled sql.NullInt64
+	if err := scanTokenInto(row, &t, &ownerDisabled); err != nil {
 		if errors.Is(err, ErrTokenNotFound) {
 			return Token{}, ErrTokenInvalid
 		}
@@ -189,6 +214,11 @@ func (s *Store) AuthenticateToken(ctx context.Context, plaintext string) (Token,
 	}
 	if !t.RevokedAt.IsZero() {
 		return Token{}, ErrTokenRevoked
+	}
+	if ownerDisabled.Valid {
+		// 属主用户已禁用：PAT 联动拒认（ErrTokenInvalid 同码——与查无此
+		// token 不可区分，不泄漏账号状态）。
+		return Token{}, ErrTokenInvalid
 	}
 	return t, nil
 }
@@ -307,17 +337,39 @@ func (s *Store) RevokeTokenGuardLastAdmin(ctx context.Context, id, actorTokenID 
 	})
 }
 
+// nullableText 是 '' ↔ SQL NULL 的写入口径（'' = 列不归属，落 NULL）。
+func nullableText(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
+}
+
 // scanToken 从单行构造 Token。
 func scanToken(row interface{ Scan(dest ...any) error }) (Token, error) {
 	var t Token
-	var lastUsed, revoked sql.NullInt64
-	var created int64
-	if err := row.Scan(&t.ID, &t.TokenHash, &t.Name, &t.Scopes, &created, &lastUsed, &revoked); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Token{}, ErrTokenNotFound
-		}
-		return Token{}, fmt.Errorf("state: scan token: %w", err)
+	if err := scanTokenInto(row, &t); err != nil {
+		return Token{}, err
 	}
+	return t, nil
+}
+
+// scanTokenInto 把 token 行列扫入 t（extra 追加列由调用方提供，如
+// AuthenticateToken 的属主禁用列）。
+func scanTokenInto(row interface{ Scan(dest ...any) error }, t *Token, extra ...any) error {
+	var lastUsed, revoked sql.NullInt64
+	var userID, projectID sql.NullString
+	var created int64
+	dest := []any{&t.ID, &t.TokenHash, &t.Name, &t.Scopes, &created, &lastUsed, &revoked, &userID, &projectID}
+	dest = append(dest, extra...)
+	if err := row.Scan(dest...); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrTokenNotFound
+		}
+		return fmt.Errorf("state: scan token: %w", err)
+	}
+	t.UserID = userID.String
+	t.ProjectID = projectID.String
 	t.CreatedAt = time.Unix(0, created).UTC()
 	if lastUsed.Valid {
 		t.LastUsedAt = time.Unix(0, lastUsed.Int64).UTC()
@@ -328,5 +380,5 @@ func scanToken(row interface{ Scan(dest ...any) error }) (Token, error) {
 	if len(t.TokenHash) >= 12 {
 		t.HashPrefix = t.TokenHash[:12]
 	}
-	return t, nil
+	return nil
 }
