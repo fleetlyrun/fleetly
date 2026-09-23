@@ -224,5 +224,19 @@ Console 入口：`http://dev.fleetly.run:8420/ui/`（8420 为明文 HTTP——�
 | 挂账 | exec 镜像 digest 已钉(CI 首推 run 35754500342,staging RepoDigest 一致);换版走 exec.yml 同款 dispatch | 已闭环 |
 | 挂账 | 跨节点 metrics/终端 worker 面:node2 仍 Down+UDP 未放行(W3-F2 延续);relay 反向常连设计在 VPC TCP 上不受影响,worker 归队即可验 | 用户动作项(与 W3-F2 同源) |
 
+## 12. v0.2.x 收尾波实机验证(2026-09-23 实录)
+
+staging 升级收尾波构建(7dc5d2e 同源)后逐票验证:
+
+| 断言/能力 | 实录 | 结果 |
+|---|---|---|
+| 保留字拒绝(收尾 S3) | `fleetly deploy` app 名 `rustfs` → **E_APP_NAME_RESERVED 结构化报错**(撞键证据+保留字全集+建议;命名审计证实 cron/db/dbjob 前缀族有破坏性撞键) | ✅ |
+| F11 settled-drain 披露+自愈(收尾 S3) | 节点 `--availability drain` → 事件 **#393 app.degraded app:stateful-drain**(水位 payload)+派生态 running→degraded;恢复 active → **#397 app.recovered** 自愈;二次 drain → **#399 再披露**(可重触发)→ 回 running。判据=期望实例>0 且 running 任务=0;外部 `scale=0`(spec 副本=0)不误报(护栏实测) | ✅ |
+| 验证脚本教训 | 首两轮 "MISSING" 系**脚本盲**——events watch 循环漏 `--tls-insecure`(明文拨 TLS 口 → stderr 被丢弃的盲管道),事件一直在;平台零缺陷 | 记档 |
+| s3 status 实值渲染 | staging `s3.public_exposed=off`(W3 演练保持态)→ 无公网行=设计内(渲染面单测覆盖:开=实值/关=无行) | ✅(口径) |
+| 收尾波整体回归 | logs e2e 26/26(引擎改动回归);dbtools digest 直拉 e2e 27/27(debian 基底+单 job 恢复真数据闭环);metrics e2e 23/23 | ✅ |
+
+挂账(收尾波新增):8423 根治=内部 CA+swarm secret 分发+IP SAN 证书(设计级立项,依赖链钉在 traefik.go TODO(harden-8423));VM `-memory.allowedPercent` 可选优化;存量保留字 app 的重部署边界(新部署拒绝,存量视图不受影响)。
+
 
 
