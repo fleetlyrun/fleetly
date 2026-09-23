@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| **已冻结（裁决轮完成 2026-09-23：内裁四项 + 用户直裁四票；评审补充 D-W0-9 同名项目解析——D-W0-1~9 全落）** | 2026-09-23 | [v0.3 规划](../plan/2026-09-23-v0.3-plan.md) §2 W0 / §3 六问；[架构文档](2026-09-17-architecture.md) §4.2 安全基线 / D21；[v0.2 观测设计](2026-09-22-observability.md)（terminal scope 先例） |
+| **已冻结（裁决轮完成 2026-09-23：内裁四项 + 用户直裁四票；评审补充 D-W0-9 同名项目解析、D-W0-2 修订项目角色队内覆写形——D-W0-1~9 全落）** | 2026-09-23 | [v0.3 规划](../plan/2026-09-23-v0.3-plan.md) §2 W0 / §3 六问；[架构文档](2026-09-17-architecture.md) §4.2 安全基线 / D21；[v0.2 观测设计](2026-09-22-observability.md)（terminal scope 先例） |
 
 ## 0. 输入与定位
 
@@ -99,6 +99,11 @@ CREATE TABLE projects (
     id TEXT PRIMARY KEY, team_id TEXT NOT NULL, slug TEXT NOT NULL,
     name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL, UNIQUE (team_id, slug));
+CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3.3）
+    project_id TEXT NOT NULL, user_id TEXT NOT NULL,
+    role TEXT NOT NULL CHECK (role IN ('admin','developer','viewer')),
+    created_at INTEGER NOT NULL,
+    UNIQUE (project_id, user_id));      -- 仅限团队成员（写入校验+移出团队联动清理）
 ```
 
 - **注册默认建队（R3）**：注册成功即在「个人 Team」下落位——slug 取 email 本地部分（冲突加 `-2` 序号），owner 一人；每个项目落进个人队默认 Project `default`（无项目参数的首次 Deploy 缺省进它，可显式指定）。Team 数量与项目数量 v0.3 不设限（商业分界见 §13 Q3）。
@@ -134,14 +139,17 @@ CREATE TABLE projects (
 | SearchLogs | app 约束强制（§4.2） | ✓ | ✓ | ✓ | ✓ |
 | WatchEvents | app 主体按项目过滤；系统事件任何已认证 read | | | | |
 
-### 3.3 Project 层角色裁决（R8，用户委托）
+### 3.3 Project 层角色（R8；D-W0-2 修订 2026-09-23：做队内覆写形）
 
-**裁决 D-W0-2：v0.3 不做 Project 层用户角色（单层 = 团队角色），Project 是资源隔离/编组单位而非权限主体。** 理由：
+**修订裁决 D-W0-2（用户直裁 2026-09-23，成本复盘后）**：Project 层角色随 W2 一起做，取**队内覆写形（B 形）**——GitLab 全量形（A 形：跨团队 outsiders + 可见性级联 + 项目级邀请）继续挂账。初裁「不做」的理由中否 A 的部分继续成立（成本全局、双来源权限难归因）；B 形以「可见性零级联」绕开成本大头，且 Console 项目页与 00018 迁移 W2 正在写，顺手成本 ≈ +3~4 人日，低于事后翻新（5~6 人日）。
 
-1. **隔离职责已卸载给底座**：跨 app 互访由每 app 专属 overlay 结构性阻断（§4.1 设计发现），Project 无需再承担安全职能；权限主体收敛到团队一层，模型最简。
-2. **双层角色（GitLab 形态）的收益场景是「大组织按仓库细分外包/新人权限」**；fleetly 目标客群（小团队自托管）占比低，而成本是全局的：每个资源 API 双解析（团队角色 ∩ 项目角色）、Console 两套权限 UI、邀请流程×2、审计语义×2。
-3. **「部分人只能看生产」的第一期表达**：Team 数量不限 → 用两个 Team（prod-team / dev-team）表达权限分组（资源本就分属不同环境），Console 团队切换器承接。
-4. **预留不改现值**：不建 project_members 表（YAGNI）；但角色解析收口到单点函数 `ResolvePermission(user, project) → role`（§4.2），未来加项目层时只动该函数 + 一张表，影响面局部。
+**B 形语义**：
+
+- `project_members(project_id, user_id, role, created_at, UNIQUE(project_id, user_id))`——**仅限已是团队成员的用户**（写入时校验；移出团队时联动清理其在该团队全部 project_members 行）。
+- **有行则覆写、双向生效**（团队 developer 在某项目降为 viewer；团队 viewer 在某项目升为 developer）；**无行则用团队角色**；role ∈ {admin, developer, viewer}——**owner 不可覆写**（owner 是团队级概念，恒在全部项目保有 owner 权）。
+- **可见性零级联**：可见项目集仍 = 团队归属（降权成员仍能只读团队全部项目——「对团队成员完全隐藏某项目」= A 形的私有项目，挂账 §12）。
+- 管理：团队 admin/owner 经 ProjectsService 成员面增删改（**覆写角色不授予成员管理权**——权限怪圈防线：项目内被覆写为 admin 者也不能改任何覆写行）；审计与事件 `project.member_role_changed / project.member_removed`。
+- 解析：ResolvePermission 先查 project_members、无行走 team_members（§4.2，仍是单点）。
 
 ### 3.4 资源归属与存量迁移
 
@@ -164,7 +172,7 @@ CREATE TABLE projects (
 鉴权链扩展（auth.go 拦截器内，顺序不变）：
 
 1. **token scope 门**（现有，逐字不动）：Bearer/session → Principal 扩展为 `{TokenID, UserID, SessionID, Scopes}`。
-2. **角色门（新）**：仅资源方法（apps/databases/domains/env/secrets/builds/cron/logs/exec 资源面）触发——请求里的资源名 → 行 → project_id → team → `team_members.role`；机具令牌（user NULL）资源面维持全库（legacy 兼容）；user 会话/PAT 按角色蕴含判定方法所需层级（read/deploy/admin 映射自 §3.2 矩阵）；**project NULL（升级窗口残留，正常不可达）→ 仅平台管理员（fail-closed 兜底）**。解析收口单点 `ResolvePermission`（含未来 project_members 预留位），fail-closed：解析不出即拒。
+2. **角色门（新）**：仅资源方法（apps/databases/domains/env/secrets/builds/cron/logs/exec 资源面）触发——请求里的资源名 → 行 → project_id → `ResolvePermission`（先查 project_members 覆写行、无行走 team_members，§3.3）；机具令牌（user NULL）资源面维持全库（legacy 兼容）；user 会话/PAT 按角色蕴含判定方法所需层级（read/deploy/admin 映射自 §3.2 矩阵）；**project NULL（升级窗口残留，正常不可达）→ 仅平台管理员（fail-closed 兜底）**。解析收口单点 `ResolvePermission`，fail-closed：解析不出即拒。
 3. **平台面方法**（System/Nodes/S3/Notifications 设置/Users/审计）：user principal 要求 is_platform_admin（§3.2 透明度例外除外）；机具令牌维持 scope 门现状。
 
 - **列表过滤**：ListApps/ListDatabases/ListDeployments 等按「用户可见项目集」过滤 + `?project=` 收窄；机具令牌与平台管理员全库。
@@ -179,7 +187,7 @@ CREATE TABLE projects (
 | AuthService | Register / Login / Logout / LogoutAll / Me（含团队与角色投影）/ AcceptInvite / GetRegistrationState（登录页开关注册入口） | W1 |
 | UsersService（平台） | ListUsers / CreateUser / DisableUser / EnableUser / ResetUserPassword / GrantPlatformAdmin / RevokePlatformAdmin / SetRegistration（open\|closed） | W1 |
 | TeamsService | CreateTeam / ListTeams（我所在 + 平台全量）/ GetTeam / UpdateTeam / DeleteTeam；ListMembers / SetMemberRole / RemoveMember；CreateInvite / ListInvites / RevokeInvite | W2 |
-| ProjectsService | CreateProject / ListProjects / GetProject / UpdateProject / DeleteProject；MoveApp / MoveDatabase（资源改派面，平台管理员——D-W0-5 认领后唯一归属变更通道） | W2 |
+| ProjectsService | CreateProject / ListProjects / GetProject / UpdateProject / DeleteProject；ListProjectMembers / SetProjectMemberRole / RemoveProjectMember（队内覆写面，团队 admin/owner，§3.3）；MoveApp / MoveDatabase（资源改派面，平台管理员——D-W0-5 认领后唯一归属变更通道） | W2 |
 | AuditService | ListAudit（actor/action/时间/result 过滤 + 分页，平台管理员）；CLI `fleetly audit export --csv`（D-W0-6 读面） | W3 |
 | SystemService 增量 | GetSystemStatus 增 git SSH host key SHA256 指纹字段（FZ-12 披露面，D-W0-8） | W3 |
 | 既有资源 API | Deploy/CreateDatabase 请求增 project 字段（裸名或 `team/project` 限定形，D-W0-9 解析规则）；List* 增 project 过滤（同解析规则）；TokensService/GitKeysService 语义随迁（§2.3） | W2 |
@@ -189,8 +197,8 @@ CREATE TABLE projects (
 ## 6. 审计与事件衔接（W3 铺垫）
 
 - **actor 增维**：AuditEntry.Actor 对用户操作填 `user:<id>`（Console 读面解析 email 展示）；ActorTokenID 保留（PAT 面）；会话操作带 request_id 关联。登录失败入审计（result=error，不落口令）。
-- **新动作**：`auth.registered / auth.login / auth.login_failed / auth.logout`、`user.created / disabled / password_reset / platform_admin_granted`、`team.created / deleted / member_added / member_role_changed / member_removed / invite_created / invite_accepted / invite_revoked`、`project.created / deleted / app_moved`、`auth.registration_changed`。
-- **事件**（只增注册表）：`user.registered / team.created / team.member_changed / invite.accepted / project.created / project.deleted`（metadata-only，零 secret——通知反环路红线沿用）。
+- **新动作**：`auth.registered / auth.login / auth.login_failed / auth.logout`、`user.created / disabled / password_reset / platform_admin_granted`、`team.created / deleted / member_added / member_role_changed / member_removed / invite_created / invite_accepted / invite_revoked`、`project.created / deleted / member_role_changed / member_removed / app_moved`、`auth.registration_changed`。
+- **事件**（只增注册表）：`user.registered / team.created / team.member_changed / invite.accepted / project.created / project.deleted / project.member_changed`（metadata-only，零 secret——通知反环路红线沿用）。
 - **留存与读面（裁决 D-W0-6）**：留存收敛为 platform_settings `audit.retention_days`（默认 90，现 365 常量改为缺省值，janitor 消费设置）；读面 = Console 审计页（平台管理员，过滤/分页）+ CLI 导出 CSV。
 - **FZ-12（裁决 D-W0-8）**：host key 文件持久化现状保持；GetSystemStatus 披露 SHA256 指纹；host key 装载时对比存量指纹、变更（文件重建/换钥）发 `git.hostkey_changed` 事件 + 审计；CLI `fleetly git fingerprint` 直出指纹；known_hosts 钉定为客户端文档指引（不代管下发）。
 
@@ -206,7 +214,7 @@ CREATE TABLE projects (
 
 - 新表：users / sessions / teams / team_members / team_invites / projects；加列：apps.project_id、databases.project_id、tokens.user_id、tokens.project_id、git_keys.user_id；索引：team_members(team_id/user_id)、projects(team_id)、apps(project_id)、databases(project_id)、tokens(user_id)、sessions(user_id/expires_at)。外键关系应用层维护（与既有表一致，SQLite 不开硬约束）。
 - **兼容矩阵**：旧 CLI（Bearer）不变；Console 旧 token 粘贴继续；bootstrap/存量机具令牌全语义不变（资源面全库，标 legacy）；事件 golden 只增不改（新事件 metadata-only）；既有 e2e 全量以机具令牌跑——**语义零破坏是 W2 验收门**。
-- **e2e 新增**：`auth.sh`（注册/首用户=平台管理员+自动全量认领断言/注册开关/登录注销/限流/PAT 自服务/口令重置）、`rbac.sh`（角色矩阵抽检：viewer 拒部署、developer 开终端拒 env 明文、跨项目库引用拒绝、MoveApp 改派后归属与权限随迁、列表过滤、机具令牌 legacy 全库）。
+- **e2e 新增**：`auth.sh`（注册/首用户=平台管理员+自动全量认领断言/注册开关/登录注销/限流/PAT 自服务/口令重置）、`rbac.sh`（角色矩阵抽检：viewer 拒部署、developer 开终端拒 env 明文、跨项目库引用拒绝、**项目覆写抽检**〔团队 developer 某项目降 viewer 拒部署 / 团队 viewer 某项目升 developer 可部署 / owner 恒不覆写 / 移出团队联动清覆写〕、MoveApp 改派后归属与权限随迁、列表过滤、机具令牌 legacy 全库）。
 - **staging 演练要点**：升级→首用户注册（自动认领存量 app/库，权限即刻生效）→邀请第二用户→角色抽检→跨项目隔离验证（A 项目 app 引 B 项目库 = 拒绝）→旧 token 全程可用回归。
 
 ## 9. 性能与预算
@@ -223,19 +231,19 @@ CREATE TABLE projects (
 | 波次 | 本设计切面 |
 |---|---|
 | W1 身份与认证 | §2 全部 + §5 AuthService/UsersService + §7 登录/注册/PAT 页 + CLI auth/上下文 + 审计 actor 增维 + e2e auth.sh |
-| W2 角色与授权 | §3/§4 全部 + §5 Teams/Projects 服务 + Tokens/GitKeys 语义迁移 + Console 切换器/成员/邀请/认领向导 + e2e rbac.sh + 全量回归 |
+| W2 角色与授权 | §3/§4 全部（含 project_members 队内覆写，D-W0-2 修订） + §5 Teams/Projects 服务 + Tokens/GitKeys 语义迁移 + Console 切换器/成员/邀请/项目覆写成员 tab/资源改派 + e2e rbac.sh + 全量回归 |
 | W3 审计与留存 | §6 留存设置化（audit.retention_days 默认 90）+ 双读面（Console 审计页 + CLI 导出 CSV）+ FZ-12（指纹披露 + git.hostkey_changed 变更事件 + CLI 核对） |
 
 ## 12. 挂账（v0.3 范围外，重启随需求）
 
-project_members（GitLab 双层）；device flow 登录；email 验证/邮件邀请发送（随 W4 Email 通道）；找回口令自助（现为平台管理员重置）；per-project 命名空间（SaaS 化专项）；CSRF double-submit token；角色解析缓存；SearchMetrics 按项目收口（标签级 enforcement）；SSO/LDAP（商业企业件候选，随 §13 Q3 分界）；审计外发 SIEM。
+项目级角色全量 A 形（跨团队 outsiders、可见性级联、项目级邀请、对团队成员隐藏私有项目）；device flow 登录；email 验证/邮件邀请发送（随 W4 Email 通道）；找回口令自助（现为平台管理员重置）；per-project 命名空间（SaaS 化专项）；CSRF double-submit token；角色解析缓存；SearchMetrics 按项目收口（标签级 enforcement）；SSO/LDAP（商业企业件候选，随 §13 Q3 分界）；审计外发 SIEM。
 
 ## 13. 裁决记录
 
 | # | 议题 | 状态 |
 |---|---|---|
 | D-W0-1 | 认证形态（规划 §3 Q1）：口令+服务端会话（Console）+ PAT（CLI/CI）；CLI 登录 = 粘贴 PAT，device flow 挂账 | **已裁**（本设计 §2，用户补充需求即选型输入） |
-| D-W0-2 | Project 层角色（规划 §3 Q2 后半，用户委托）：**不做**，单层团队角色 + ResolvePermission 单点预留 | **已裁**（§3.3 四条理由） |
+| D-W0-2 | Project 层角色：初裁不做（2026-09-23 用户委托）→ **修订为做队内覆写形 B**（2026-09-23 用户成本复盘后直裁：仅限团队成员、双向覆写、owner 不可覆写、可见性零级联，约 +3~4 人日进 W2）；A 形全量挂账 | **已裁（修订版，§3.3）** |
 | D-W0-3 | 角色集（用户委托重设计）：viewer/developer/admin/owner 四档 + 平台管理员标志分离；terminal 归 developer+ | **已裁**（§3.2） |
 | D-W0-4 | App 名全局唯一保持（Project 非命名空间） | **已裁**（§3.4） |
 | D-W0-5 | 存量单操作员迁移（规划 §3 Q6）：**首用户自动全量认领**（用户直裁，非推荐项——「首注册者即操作员」前提与风险由裁决接受，操作指引见 §3.4） | **已裁**（§3.4） |
