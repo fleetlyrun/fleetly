@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| **已冻结（裁决轮完成 2026-09-23：内裁四项 + 用户直裁四票；评审补充 D-W0-9 同名项目解析、D-W0-2 修订项目角色队内覆写形、D-W0-4 修订 app/库名 team 内唯一、D-W0-5 修订 fresh-install 前提〔无迁移负担〕——D-W0-1~9 全落）** | 2026-09-23 | [v0.3 规划](../plan/2026-09-23-v0.3-plan.md) §2 W0 / §3 六问；[架构文档](2026-09-17-architecture.md) §4.2 安全基线 / D21；[v0.2 观测设计](2026-09-22-observability.md)（terminal scope 先例） |
+| **已冻结（裁决轮完成 2026-09-23：内裁四项 + 用户直裁四票；评审补充 D-W0-9 同名项目解析、D-W0-2 修订项目角色队内覆写形、D-W0-4 二修 app/库名 project 内唯一〔三段命名〕、D-W0-5 修订 fresh-install 前提〔无迁移负担〕——D-W0-1~9 全落）** | 2026-09-23 | [v0.3 规划](../plan/2026-09-23-v0.3-plan.md) §2 W0 / §3 六问；[架构文档](2026-09-17-architecture.md) §4.2 安全基线 / D21；[v0.2 观测设计](2026-09-22-observability.md)（terminal scope 先例） |
 
 ## 0. 输入与定位
 
@@ -85,7 +85,7 @@ tokens 表加列：`user_id`（NULL = 平台机具令牌，**bootstrap token 及
 
 ```sql
 CREATE TABLE teams (
-    id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE,  -- [a-z0-9]{2,32} 单词制全局唯一（D-W0-4 修订：slug 进底座命名公式,禁连字符=拼接无歧义;8 保留字同 v0.2 app 名旧清单守前缀族——E_TEAM_SLUG_RESERVED）
+    id TEXT PRIMARY KEY, slug TEXT NOT NULL UNIQUE,  -- [a-z0-9]{2,32} 单词制全局唯一（D-W0-4：slug 进底座命名公式,禁连字符=拼接无歧义;8 保留字守前缀族——E_TEAM_SLUG_RESERVED）;slug 不可变（UpdateTeam 仅改显示名）
     name TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
 CREATE TABLE team_members (
     team_id TEXT NOT NULL, user_id TEXT NOT NULL,
@@ -98,7 +98,8 @@ CREATE TABLE team_invites (
     created_by TEXT NOT NULL, created_at INTEGER NOT NULL,
     accepted_at INTEGER, revoked_at INTEGER);
 CREATE TABLE projects (
-    id TEXT PRIMARY KEY, team_id TEXT NOT NULL, slug TEXT NOT NULL,
+    id TEXT PRIMARY KEY, team_id TEXT NOT NULL,
+    slug TEXT NOT NULL,  -- [a-z0-9]{2,32} 单词制、不可变（D-W0-4 二修：进底座命名公式三段第二位）;team 内唯一
     name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
     created_at INTEGER NOT NULL, UNIQUE (team_id, slug));
 CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3.3）
@@ -158,7 +159,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 - `apps.project_id` / `databases.project_id` 与各自 `team_id` 列，自 00018 起 **NOT NULL**（净新增面，无存量行——fresh-install 前提见下条）。新建资源（首次 Deploy / CreateDatabase）必须携带 project（缺省 = 当前上下文个人队默认项目）。
 - **无迁移负担前提（裁决 D-W0-5 修订，用户澄清 2026-09-23「现役仅一处 staging、可清空重建」）**：v0.3 为 **fresh-install 版本**——不设 v0.2→v0.3 升级路径，认领/收编/NULL 窗口等兼容机制全部不建（§8）；staging 演练按清空重建执行。资源改派（MoveApp / MoveDatabase，平台管理员）保留为日常整理面（改派只动归属，不触底座名，§4.3）。
 - **同名项目跨团队允许（裁决 D-W0-9，2026-09-23 用户评审补充）**：projects 唯一性维持 `UNIQUE(team_id, slug)`——「每个团队各有 default/prod」是自然心智（GitLab group 命名空间同构），**不取全局唯一**（否则 `default` 即稀缺，与注册默认项目设计直接冲突）。引用解析规则：**限定形 `team-slug/project-slug` 恒可解析**；裸名仅在解析域内唯一时可用（解析域 = 调用方可见项目集；CLI 带上下文时 = 上下文团队内），歧义 → `E_PROJECT_AMBIGUOUS`（错误文案列出候选 `team/project` 供限定）；CLI 上下文存储、Console 路由、审计与事件 target 一律用 ID（`project:<id>`，免疫重名），展示层跨团队视图（平台管理员列表/审计页）显示限定形。
-- **App/库名唯一性降为 team 内唯一（裁决 D-W0-4 修订 2026-09-23，用户直裁「不可能强制全局唯一」）**：apps/databases 增 `team_id` 列 + `UNIQUE(team_id, name)`——两个团队各有一个 `web` 合法；同团队跨项目亦不可重名（团队内协调，环境区分用 web-prod/web-dev 心智）。底座命名公式的全局唯一性由 team 段承载（公式表与升级收编见 §4.3）；**project 段不进命名**——MoveApp 只动归属、零底座扰动（跨项目改派不触发换名重部署）。app/库名引用解析同 D-W0-9：限定形 `team/app`、`team/db` 恒可解析，裸名仅解析域内唯一（歧义 `E_APP_AMBIGUOUS` 列候选）。
+- **App/库名唯一性降为 project 内唯一（裁决 D-W0-4 二次修订 2026-09-23：初裁全局唯一 → 一修 team 内唯一 → 二修用户裁定 project 段拼进命名）**：apps/databases 增 `project_id`、`team_id`（冗余：角色解析与团队面列表加速）列 + `UNIQUE(project_id, name)`——**每个项目各有自己的 `web`/`api`/`db`**（GitLab 形态完成；prod 与 dev 项目同名应用天然合法）。底座命名三段 `team-prj-app` 承载全局唯一（公式表见 §4.3）。代价如实：**MoveApp/MoveDatabase 跨项目改派 = 换名重部署**（无卷服务建新删旧近零中断、有卷短暂停机窗口——罕见管理动作，GitLab 项目转移/GitHub 仓库转移换路径同惯例；跨团队改派另须过目标项目唯一性检查）。app/库名引用解析同 D-W0-9：限定形 `team/prj/app`、`team/prj/db` 恒可解析，裸名仅解析域内唯一（CLI 上下文钉 team+project 后裸名无歧义；歧义 `E_APP_AMBIGUOUS` 列候选）。
 - 域名绑 app 不变（域名全局唯一性天然跨项目不撞）。
 
 ## 4. 隔离与准入（R6/R7 的执行面）
@@ -166,7 +167,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 ### 4.1 网络层（现状即隔离——设计发现）
 
 - 每 app 专属 overlay + Traefik 逐网附着 + app 间 L3 互不可见：**跨 Project 应用互访在 v0.2 底座已被结构性阻断**，本项目零新增网络机制。
-- **项目不进底座命名；团队段进（D-W0-4 修订）**：命名公式的全局唯一性改由 team 段承载（公式表与升级收编见 §4.3）；同名项目（D-W0-9）在网络层零影响面依旧成立——无任何 swarm 对象名含 project 段。隔离执行者仍是 **app 级**专属网络（比项目级更细：同项目 app 默认亦不互通）；**不做「项目网络」（fleetly-prj-* 形态）**——project slug 仅 team 内唯一（进网络名须再限定），且会引入「同项目默认互通」改变默认隔离 posture；同项目 app 互访若有需求，将来以显式 opt-in 挂账（§12）。
+- **命名三段 team-prj-app（D-W0-4 二修）**：全局唯一由 team·prj 段承载（公式表见 §4.3）；同名项目（D-W0-9）在底座命名零冲突（project slug 单词制 + team 段限定）。隔离执行者仍是 **app 级**专属网络（比项目级更细：同项目 app 默认亦不互通）；**不做「项目网络」（fleetly-prj-* 形态）**——同项目默认互通会改变默认隔离 posture；同项目 app 互访若有需求，将来以显式 opt-in 挂账（§12）。
 - **E4 库网络是唯一跨 app 连通通道**，准入守门（W2 增补，v0.2 单操作员无此校验）：部署受理时解析 app 引用的库实例，校验 `db.project_id == app.project_id`，跨项目 → 拒绝（E_DB_PROJECT_MISMATCH，部署失败带明确文案）。
 - 平台网挂接面（traefik↔fleetly-system/rustfs 等）不随项目暴露，维持平台组件专属。
 
@@ -179,29 +180,29 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 3. **平台面方法**（System/Nodes/S3/Notifications 设置/Users/审计）：user principal 要求 is_platform_admin（§3.2 透明度例外除外）；机具令牌维持 scope 门现状。
 
 - **列表过滤**：ListApps/ListDatabases/ListDeployments 等按「用户可见项目集」过滤 + `?project=` 收窄；机具令牌与平台管理员全库。
-- **SearchLogs 强制 app 约束**：非平台管理员的 LogsQL 查询必须含 `app="team/app"` 限定形流选择器（标签值同口径，§4.3；选择器抽取校验；无选择器/多 app 跨团队 → 拒绝并指引）。SearchMetrics 同能力做不到（任意标签选择器），v0.3 平台管理员专属（§3.2 矩阵注）。
+- **SearchLogs 强制 app 约束**：非平台管理员的 LogsQL 查询必须含 `app="team/prj/app"` 三段限定形流选择器（标签值同口径，§4.3；选择器抽取校验；无选择器/多 app 跨团队 → 拒绝并指引）。SearchMetrics 同能力做不到（任意标签选择器），v0.3 平台管理员专属（§3.2 矩阵注）。
 - **WatchEvents 过滤**：app 主体事件按可见项目集服务端过滤；系统事件（节点/平台组件）任何已认证 read 可见。
 - CLI/API/Console 三面同一拦截器与解析函数，无旁路。
 
 ### 4.3 底座命名公式修订（D-W0-4 修订的执行面）
 
-**公式表（v0.3 起；team = team slug 单词制 [a-z0-9]{2,32}）**：
+**公式表（v0.3 起；team/prj = 团队与项目 slug，均单词制 [a-z0-9]{2,32} 且不可变）**：
 
 | 对象 | v0.2 公式 | v0.3 公式 | 说明 |
 |---|---|---|---|
-| Swarm 服务名 | `fleetly-<app>-<service>` | `fleetly-<team>-<app>-<service>` | 全局唯一由 team 段保证 |
-| app 网络 | `fleetly-<app>-net` | `fleetly-<team>-<app>-net` | 同上 |
-| app secret | `fleetly-<app>-<name>-<hash8>` | `fleetly-<team>-<app>-<name>-<hash8>` | 内容寻址，换名随下次部署自然发生（新名创建+旧名清扫） |
+| Swarm 服务名 | `fleetly-<app>-<service>` | `fleetly-<team>-<prj>-<app>-<service>` | 全局唯一由 team·prj 段保证（app 名 project 内唯一） |
+| app 网络 | `fleetly-<app>-net` | `fleetly-<team>-<prj>-<app>-net` | 同上 |
+| app secret | `fleetly-<app>-<name>-<hash8>` | `fleetly-<team>-<prj>-<app>-<name>-<hash8>` | 内容寻址，MoveApp 换名随重部署自然发生（新名创建+旧名清扫） |
 | app 卷 | `fleetly-<app>-<key>-<appid8>` | **不变** | appid8（app ULID 前 8 位）已天然全局防撞——**零卷迁移/零数据搬移** |
-| cron job | `fleetly-cron-<app>-<svc>-<ulid8>` | `fleetly-cron-<team>-<app>-<svc>-<ulid8>` | 前缀族不变（IsCronJobName 沿用） |
-| 库服务/网络 | `fleetly-db-<name>-<service>` / `fleetly-db-<name>-net` | `fleetly-db-<team>-<name>-<service>` / `fleetly-db-<team>-<name>-net` | 前缀族不变（IsDbServiceName 沿用） |
+| cron job | `fleetly-cron-<app>-<svc>-<ulid8>` | `fleetly-cron-<team>-<prj>-<app>-<svc>-<ulid8>` | 前缀族不变（IsCronJobName 沿用） |
+| 库服务/网络 | `fleetly-db-<name>-<service>` / `fleetly-db-<name>-net` | `fleetly-db-<team>-<prj>-<name>-<service>` / `fleetly-db-<team>-<prj>-<name>-net` | 前缀族不变（IsDbServiceName 沿用） |
 | 库卷 | `fleetly-db-<name>-<key>-<id8>` | **不变** | id8 同上天然防撞 |
-| 路由键 | `fleetly-<app>-<svc>` | `fleetly-<team>-<app>-<svc>` | traefik 动态配置键空间；access-log RouterName 反解为 spec 候选集匹配，公式变更内部消化 |
+| 路由键 | `fleetly-<app>-<svc>` | `fleetly-<team>-<prj>-<app>-<svc>` | traefik 动态配置键空间；access-log RouterName 反解为 spec 候选集匹配，公式变更内部消化 |
 
-- **label 集 +`fleetly.team`**（服务创建时写入；对账/清扫/管理查询的识别面）。架构与 state-model 的公式表、naming 表驱动测试随 W1 首票同步修订（文档先行纪律）。
-- **保留字迁移**：8 保留字（cron/db/dbjob/rustfs/registry/acme/metrics/victorialogs）从 app 名清单迁到 **team slug 清单**——app 名从此不再紧邻 `fleetly-` 前缀（结构性安全，E_APP_NAME_RESERVED 退役）；team slug 顶到该位置必须守前缀族与平台固定名（E_TEAM_SLUG_RESERVED）。
+- **label 集 +`fleetly.team` / `fleetly.project`**（服务创建时写入；对账/清扫/管理查询的识别面）。架构与 state-model 的公式表、naming 表驱动测试随 W1 首票同步修订（文档先行纪律）。
+- **保留字迁移**：8 保留字（cron/db/dbjob/rustfs/registry/acme/metrics/victorialogs）从 app 名清单迁到 **team slug 清单**——app 名从此不再紧邻 `fleetly-` 前缀（结构性安全，E_APP_NAME_RESERVED 退役）；team slug 顶到该位置必须守前缀族与平台固定名（E_TEAM_SLUG_RESERVED）。project 段居第二位不邻前缀族（`fleetly-acme-db-…` 撞不上 `fleetly-db-`）——不新增保留约束。
 - **已知段内歧义（v0.2 既有类，如实记录）**：同团队 `app=a, service=b-c` 与 `app=a-b, service=c` 推导同名服务——docker 创建失败显性暴露（非静默串线），admission 预检挂账（§12）；跨团队拼接歧义由 team slug 单词制结构性消灭。
-- **流标签口径**：日志流标签 `app` 的值改为限定形 `team/app`（ingest 写入与 SearchLogs 校验同口径，D-W0-9 解析规则复用）；metrics 容器/服务名随公式自然 team 化。
+- **流标签口径**：日志流标签 `app` 的值改为三段限定形 `team/prj/app`（ingest 写入与 SearchLogs 校验同口径，D-W0-9 解析规则复用）；metrics 容器/服务名随公式自然分段化。
 
 ## 5. API 面（proto 增量，W1/W2 分批）
 
@@ -210,7 +211,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 | AuthService | Register / Login / Logout / LogoutAll / Me（含团队与角色投影）/ AcceptInvite / GetRegistrationState（登录页开关注册入口） | W1 |
 | UsersService（平台） | ListUsers / CreateUser / DisableUser / EnableUser / ResetUserPassword / GrantPlatformAdmin / RevokePlatformAdmin / SetRegistration（open\|closed） | W1 |
 | TeamsService | CreateTeam / ListTeams（我所在 + 平台全量）/ GetTeam / UpdateTeam / DeleteTeam；ListMembers / SetMemberRole / RemoveMember；CreateInvite / ListInvites / RevokeInvite | W2 |
-| ProjectsService | CreateProject / ListProjects / GetProject / UpdateProject / DeleteProject；ListProjectMembers / SetProjectMemberRole / RemoveProjectMember（队内覆写面，团队 admin/owner，§3.3）；MoveApp / MoveDatabase（资源改派面，平台管理员——D-W0-5 认领后唯一归属变更通道） | W2 |
+| ProjectsService | CreateProject / ListProjects / GetProject / UpdateProject（slug 不可变）/ DeleteProject；ListProjectMembers / SetProjectMemberRole / RemoveProjectMember（队内覆写面，团队 admin/owner，§3.3）；MoveApp / MoveDatabase（资源改派面，平台管理员；**改派 = 换名重部署**〔D-W0-4 二修〕，跨团队改派须过目标项目唯一性检查） | W2 |
 | AuditService | ListAudit（actor/action/时间/result 过滤 + 分页，平台管理员）；CLI `fleetly audit export --csv`（D-W0-6 读面） | W3 |
 | SystemService 增量 | GetSystemStatus 增 git SSH host key SHA256 指纹字段（FZ-12 披露面，D-W0-8） | W3 |
 | 既有资源 API | Deploy/CreateDatabase 请求增 project 字段（裸名或 `team/project` 限定形，D-W0-9 解析规则）；List* 增 project 过滤（同解析规则）；TokensService/GitKeysService 语义随迁（§2.3） | W2 |
@@ -236,11 +237,11 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 ## 8. 迁移与兼容（fresh-install 版本，D-W0-5 修订）
 
 - **前提**：现役部署仅一处 staging 且可清空重建（用户澄清 2026-09-23）——v0.2→v0.3 **不提供升级路径**，不为假想安装者保留兼容面；v0.2.x 对外为终点版，未来若出现真实外部安装者再评估升级专项。staging 演练按**清空重建**执行。
-- **00018 一号迁移（净新增面）**：新表 users / sessions / teams / team_members / team_invites / projects / project_members（队内覆写，§3.3）；apps/databases 增 project_id、team_id（**NOT NULL**——空表加列经表重建实现，实现票细节）与 `UNIQUE(team_id, name)`；tokens 增 user_id、project_id；git_keys 增 user_id；索引：team_members(team_id/user_id)、projects(team_id)、project_members(project_id)、apps(project_id/team_id)、databases(project_id/team_id)、tokens(user_id)、sessions(user_id/expires_at)。外键关系应用层维护（与既有表一致，SQLite 不开硬约束）。迁移历史保持追加制（fresh 安装顺序跑全链，毫秒级——不做基线重写）。
-- **命名公式（§4.3）自 v0.3 首次部署即新形**——无旧名对象、无收编 duty；CLI/Console 服务名展示随公式；**既有 e2e 脚本中 `fleetly-<app>-<svc>` 形服务名断言按 fixture 团队前缀清扫**（W2 票内完成，验收 = 全量 e2e 绿）。
+- **00018 一号迁移（净新增面）**：新表 users / sessions / teams / team_members / team_invites / projects / project_members（队内覆写，§3.3）；apps/databases 增 project_id、team_id（**NOT NULL**——空表加列经表重建实现，实现票细节）与 `UNIQUE(project_id, name)`（D-W0-4 二修）；tokens 增 user_id、project_id；git_keys 增 user_id；索引：team_members(team_id/user_id)、projects(team_id)、project_members(project_id)、apps(project_id/team_id)、databases(project_id/team_id)、tokens(user_id)、sessions(user_id/expires_at)。外键关系应用层维护（与既有表一致，SQLite 不开硬约束）。迁移历史保持追加制（fresh 安装顺序跑全链，毫秒级——不做基线重写）。
+- **命名公式（§4.3）自 v0.3 首次部署即新形**——无旧名对象、无收编 duty；CLI/Console 服务名展示随公式；**既有 e2e 脚本中 `fleetly-<app>-<svc>` 形服务名断言按 fixture 团队+项目前缀清扫**（W2 票内完成，验收 = 全量 e2e 绿）。
 - **事件 golden** 只增不改（新事件 metadata-only）。
-- **e2e 新增**：`auth.sh`（注册/首用户=平台管理员+个人队默认项目/注册开关/登录注销/限流/PAT 自服务/口令重置/**bootstrap token 首用户注册即吊销**）、`rbac.sh`（角色矩阵抽检：viewer 拒部署、developer 开终端拒 env 明文、跨项目库引用拒绝、**项目覆写抽检**〔团队 developer 某项目降 viewer 拒部署 / 团队 viewer 某项目升 developer 可部署 / owner 恒不覆写 / 移出团队联动清覆写〕、MoveApp 改派后归属与权限随迁、列表过滤、机具令牌全库）。
-- **staging 演练要点**：清空重建（fresh v0.3 安装）→首用户注册（平台管理员+个人队；bootstrap token 即时吊销验证）→邀请第二用户→角色抽检→跨项目隔离验证（A 项目 app 引 B 项目库 = 拒绝）→**同团队重名抽检（第二团队建同名 app 成功）**。
+- **e2e 新增**：`auth.sh`（注册/首用户=平台管理员+个人队默认项目/注册开关/登录注销/限流/PAT 自服务/口令重置/**bootstrap token 首用户注册即吊销**）、`rbac.sh`（角色矩阵抽检：viewer 拒部署、developer 开终端拒 env 明文、跨项目库引用拒绝、**项目覆写抽检**〔团队 developer 某项目降 viewer 拒部署 / 团队 viewer 某项目升 developer 可部署 / owner 恒不覆写 / 移出团队联动清覆写〕、MoveApp 改派后归属与权限随迁（含换名重部署断言）、列表过滤、机具令牌全库）。
+- **staging 演练要点**：清空重建（fresh v0.3 安装）→首用户注册（平台管理员+个人队；bootstrap token 即时吊销验证）→邀请第二用户→角色抽检→跨项目隔离验证（A 项目 app 引 B 项目库 = 拒绝）→**重名抽检（第二团队建同名 app 成功；同团队跨项目同名 app 亦成功）**。
 
 ## 9. 性能与预算
 
@@ -270,7 +271,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 | D-W0-1 | 认证形态（规划 §3 Q1）：口令+服务端会话（Console）+ PAT（CLI/CI）；CLI 登录 = 粘贴 PAT，device flow 挂账 | **已裁**（本设计 §2，用户补充需求即选型输入） |
 | D-W0-2 | Project 层角色：初裁不做（2026-09-23 用户委托）→ **修订为做队内覆写形 B**（2026-09-23 用户成本复盘后直裁：仅限团队成员、双向覆写、owner 不可覆写、可见性零级联，约 +3~4 人日进 W2）；A 形全量挂账 | **已裁（修订版，§3.3）** |
 | D-W0-3 | 角色集（用户委托重设计）：viewer/developer/admin/owner 四档 + 平台管理员标志分离；terminal 归 developer+ | **已裁**（§3.2） |
-| D-W0-4 | 命名唯一性：初裁 app 名全局唯一 → **修订为 app/库名 team 内唯一**（2026-09-23 用户直裁「不可能强制全局唯一」）：命名公式插 team 段（slug 单词制）、app 卷/库卷公式不变（ULID 尾缀天然防撞 = 零数据迁移）、保留字迁 team slug、升级收编 duty 与 `team/app` 限定形引用（§4.3） | **已裁（修订版，§3.4/§4.3）** |
+| D-W0-4 | 命名唯一性：初裁 app 名全局唯一 → 一修 team 内唯一 → **二修 project 段拼进命名（2026-09-23 用户裁定）**：app/库名 **project 内唯一**（UNIQUE(project_id,name)，每项目各有 web/api/db），命名三段 `fleetly-<team>-<prj>-<app>-<service>`（两 slug 单词制+不可变），卷/库卷公式不变（ULID 尾缀防撞），保留字迁 team slug（project 段居第二位不邻前缀族），MoveApp=换名重部署（罕见管理动作，披露停机），`team/prj/app` 限定形引用 | **已裁（二次修订版，§3.4/§4.3）** |
 | D-W0-5 | 存量单操作员迁移：初裁首用户自动全量认领 → **修订：无迁移负担**（用户澄清 2026-09-23「现役仅一处 staging、可清空重建」）——认领/收编/NULL 窗口全撤，v0.3 = fresh-install 版本（无 v0.2 升级路径），bootstrap token 首用户注册即自动吊销 | **已裁（修订版，§3.4/§8）** |
 | D-W0-6 | 审计留存与读面（规划 §3 Q3）：90 天可调（platform_settings）+ Console 审计页 + CLI 导出 CSV | **已裁**（§6） |
 | D-W0-7 | 商业分界（规划 §3 Q5）：**开源全功能**——自托管不设团队/项目/成员上限（红线直译）；付费 = 托管云 + 企业件（SSO/LDAP、审计外发 SIEM、合规报告、优先支持）；对 v0.3 实现零约束 | **已裁**（落点 = 发布口径，v0.3 发布时 README 明示） |
