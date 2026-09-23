@@ -156,7 +156,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 - `apps.project_id` / `databases.project_id` 加列（NULL 仅存在于「升级后 → 首用户注册前」窗口——该窗口内只有机具令牌在操作，资源面全库语义不变）。新建资源（首次 Deploy / CreateDatabase）必须携带 project（缺省 = 当前上下文个人队默认项目）。
 - **首用户自动全量认领（裁决 D-W0-5，用户直裁 2026-09-23）**：首个用户注册在**同一事务**内完成——建用户（平台管理员）+ 建个人 Team + 建默认 Project `default` + `UPDATE apps / databases SET project_id … WHERE project_id IS NULL` 全量划入 + 审计（auth.registered / project.created / app_moved 与 db_moved 汇总条目带数量）。无未认领中间态、无认领向导，升级零中断。**操作指引（诚实记录）**：升级后应立即注册首用户——「升级 → 注册」之间若注册窗口暴露公网，首个注册者将获得平台管理员与全部存量资源（该前提由裁决接受；缓解 = 该窗口内保持实例私网/仅操作员可达）。资源后续改派走 MoveApp / MoveDatabase（ProjectsService，平台管理员）。
 - **同名项目跨团队允许（裁决 D-W0-9，2026-09-23 用户评审补充）**：projects 唯一性维持 `UNIQUE(team_id, slug)`——「每个团队各有 default/prod」是自然心智（GitLab group 命名空间同构），**不取全局唯一**（否则 `default` 即稀缺，与注册默认项目设计直接冲突）。引用解析规则：**限定形 `team-slug/project-slug` 恒可解析**；裸名仅在解析域内唯一时可用（解析域 = 调用方可见项目集；CLI 带上下文时 = 上下文团队内），歧义 → `E_PROJECT_AMBIGUOUS`（错误文案列出候选 `team/project` 供限定）；CLI 上下文存储、Console 路由、审计与事件 target 一律用 ID（`project:<id>`，免疫重名），展示层跨团队视图（平台管理员列表/审计页）显示限定形。
-- **App 名保持全局唯一（裁决 D-W0-4）**：服务/卷/secret/网络/路由公式全部以 app 名为参数（§1），per-project 命名空间化 = 全部存量对象换名重部署 + 保留字/路由键公式重写的迁移海啸；收益仅「两个团队各有一个 `web`」，自托管单集群场景低频。代价如实记录：跨团队重名 → 部署失败 E_APP_NAME_TAKEN（文案建议带团队前缀命名）。多租户 SaaS 化（v0.4+）再议命名空间迁移专项（挂账 §14）。
+- **App 名保持全局唯一（裁决 D-W0-4）**：服务/卷/secret/网络/路由公式全部以 app 名为参数（§1），per-project 命名空间化 = 全部存量对象换名重部署 + 保留字/路由键公式重写的迁移海啸；收益仅「两个团队各有一个 `web`」，自托管单集群场景低频。代价如实记录：跨团队重名 → 部署失败 E_APP_NAME_TAKEN（文案建议带团队前缀命名）。**库实例名同纪律**：库服务/网络/卷/secret 公式全部以库名为参数（§1），跨项目重名库在创建时即拒。多租户 SaaS 化（v0.4+）再议命名空间迁移专项（挂账 §12）。
 - 域名绑 app 不变（域名全局唯一性天然跨项目不撞）。
 
 ## 4. 隔离与准入（R6/R7 的执行面）
@@ -164,6 +164,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 ### 4.1 网络层（现状即隔离——设计发现）
 
 - 每 app 专属 overlay + Traefik 逐网附着 + app 间 L3 互不可见：**跨 Project 应用互访在 v0.2 底座已被结构性阻断**，本项目零新增网络机制。
+- **项目/团队不进底座命名**（2026-09-23 评审澄清）：无任何 swarm 对象名（服务/网络/卷/secret/路由键）含 project 或 team 段——同名项目（D-W0-9）在网络层零影响面；跨团队同名 app/库分别被全局唯一性挡在创建时（D-W0-4：E_APP_NAME_TAKEN / 库创建同名拒），`fleetly-<app>-net` 与 `fleetly-db-<name>-net` 不可能撞名。**不做「项目网络」（fleetly-prj-* 形态）**：project slug 仅 team 内唯一（进网络名须带 team 段），且会引入「同项目默认互通」改变默认隔离 posture——隔离执行者是 **app 级**专属网络（比项目级更细：同项目 app 默认亦不互通）；同项目 app 互访若有需求，将来以显式 opt-in 挂账（§12）。
 - **E4 库网络是唯一跨 app 连通通道**，准入守门（W2 增补，v0.2 单操作员无此校验）：部署受理时解析 app 引用的库实例，校验 `db.project_id == app.project_id`，跨项目 → 拒绝（E_DB_PROJECT_MISMATCH，部署失败带明确文案）。
 - 平台网挂接面（traefik↔fleetly-system/rustfs 等）不随项目暴露，维持平台组件专属。
 
@@ -236,7 +237,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 
 ## 12. 挂账（v0.3 范围外，重启随需求）
 
-项目级角色全量 A 形（跨团队 outsiders、可见性级联、项目级邀请、对团队成员隐藏私有项目）；device flow 登录；email 验证/邮件邀请发送（随 W4 Email 通道）；找回口令自助（现为平台管理员重置）；per-project 命名空间（SaaS 化专项）；CSRF double-submit token；角色解析缓存；SearchMetrics 按项目收口（标签级 enforcement）；SSO/LDAP（商业企业件候选，随 §13 Q3 分界）；审计外发 SIEM。
+项目级角色全量 A 形（跨团队 outsiders、可见性级联、项目级邀请、对团队成员隐藏私有项目）；同项目 app 互访的显式 opt-in（项目网络 fleetly-prj-* 形态，需求出现再启）；device flow 登录；email 验证/邮件邀请发送（随 W4 Email 通道）；找回口令自助（现为平台管理员重置）；per-project 命名空间（SaaS 化专项）；CSRF double-submit token；角色解析缓存；SearchMetrics 按项目收口（标签级 enforcement）；SSO/LDAP（商业企业件候选，随 §13 Q3 分界）；审计外发 SIEM。
 
 ## 13. 裁决记录
 
