@@ -146,3 +146,32 @@ func must(t *testing.T, fn func() (string, error)) string {
 	}
 	return got
 }
+
+// TestReservedAppNames 保留字清单钉死（W3 撞键票审计结论，2026-09-21）：
+// 八个保留名各带撞键证据；清单字典序稳定（错误文案可重放）；非保留名
+// （近名形态与普通名）不误伤。
+func TestReservedAppNames(t *testing.T) {
+	want := []string{"acme", "cron", "db", "dbjob", "metrics", "registry", "rustfs", "victorialogs"}
+	got := ReservedAppNames()
+	if len(got) != len(want) {
+		t.Fatalf("reserved set = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("reserved set = %v, want sorted %v", got, want)
+		}
+	}
+	for _, name := range want {
+		if !IsReservedAppName(name) {
+			t.Errorf("IsReservedAppName(%q) = false, want true", name)
+		}
+		if ReservedAppNameReason(name) == "" {
+			t.Errorf("ReservedAppNameReason(%q) empty: every reserved name must carry its collision evidence", name)
+		}
+	}
+	for _, name := range []string{"demo", "ingress", "exec", "system", "console", "victoriametrics", "cadvisor", "node-exporter", "cronapp", "dbapp"} {
+		if IsReservedAppName(name) {
+			t.Errorf("IsReservedAppName(%q) = true, audit proved no collision (reserved set must stay minimal)", name)
+		}
+	}
+}

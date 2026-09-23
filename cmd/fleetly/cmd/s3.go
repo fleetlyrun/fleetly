@@ -187,7 +187,7 @@ func (c *s3SetCmd) Run(ctx context.Context, env *commands.Environment, args []st
 			fmt.Fprintf(&b, " secret fingerprint=%s", st.GetSecretFingerprint())
 		}
 		if st.GetPublicExposed() {
-			b.WriteString(" public_exposed=true (s3.<base> reachable; auth = storage credentials)")
+			fmt.Fprintf(&b, " public_exposed=true (%s reachable; auth = storage credentials)", s3PublicDomainLabel(st))
 		}
 		b.WriteString("\n")
 		_, err = fmt.Fprint(env.Stdout, b.String())
@@ -385,17 +385,29 @@ func (c *s3StatusCmd) Run(ctx context.Context, env *commands.Environment, args [
 		if deployment != "" {
 			fmt.Fprintf(&b, "deployment: %s\n", deployment)
 		}
-		// 公网面行（E3-6，D-S3-9 诚实口径）：开启时显示 s3.<base> 端点形态
-		// + 「公网可达面 +1，鉴权 = RustFS 凭证」提示——8423 的教训不重演：
-		// 该暴露是用户显式选择，CLI 面如实复述其含义。base_domain 由 daemon
-		// 配置持有，读面无此字段（proto 未含），端点以 <base> 形态展示。
+		// 公网面行（E3-6，D-S3-9 诚实口径）：开启时显示公网端点形态 +
+		// 「公网可达面 +1，鉴权 = RustFS 凭证」提示——8423 的教训不重演：
+		// 该暴露是用户显式选择，CLI 面如实复述其含义。域名取服务端派生
+		// 实值（v0.2.x 收尾票：S3SettingsView.public_domain）；旧 daemon
+		// 读面无此字段时退回字面形态（诚实降级，不臆造域名）。
 		if st.GetPublicExposed() {
-			b.WriteString("public endpoint: s3.<base> (websecure TLS -> managed RustFS; internal endpoint http://rustfs:9000 unchanged)\n")
+			fmt.Fprintf(&b, "public endpoint: %s (websecure TLS -> managed RustFS; internal endpoint http://rustfs:9000 unchanged)\n", s3PublicDomainLabel(st))
 			b.WriteString("public exposure: publicly reachable surface +1; authentication = RustFS credentials\n")
 		}
 		_, err = fmt.Fprint(env.Stdout, b.String())
 		return err
 	})
+}
+
+// s3PublicDomainLabel 是公网域名的渲染口径：优先服务端派生实值
+//（S3SettingsView.public_domain，读面含 base_domain 派生）；字段为空
+//（旧 daemon / base_domain 未配的竞态窗）退回字面 s3.<base>——与 v0.2.0
+// 前的显示形态逐字一致，不臆造域名。
+func s3PublicDomainLabel(st *serverv1.S3SettingsView) string {
+	if d := st.GetPublicDomain(); d != "" {
+		return d
+	}
+	return "s3.<base>"
 }
 
 // protoJSONOptions 引用见 render.go（本文件的 status --json 与全局 marshaler

@@ -831,6 +831,10 @@
           "type": "string",
           "format": "date-time",
           "title": "最近一次保存时刻（从未保存 → 不输出）。"
+        },
+        "public_domain": {
+          "type": "string",
+          "title": "公网访问域名的服务端派生实值（v0.2.x 收尾票：CLI 公网行字面 s3.\u003cbase\u003e\n的收口——读面此前不含 base_domain，CLI 只能显示字面形态）。派生公式\n= \"s3.\" + base_domain；仅 public_exposed=true 且 base_domain 非空时填\n充，其余形态为空串（读面永不含凭据材料）。"
         }
       },
       "title": "S3SettingsView 是 s3.* 设置的只读投影。secret 只回 fingerprint（明文\nsha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateS3Settings\n承载 secret 明文，TLS 传输面 + envelope 持久层）。"

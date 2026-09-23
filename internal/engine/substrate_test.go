@@ -244,3 +244,124 @@ func TestSubstrateReconTimeGateSkipsBeats(t *testing.T) {
 		t.Fatalf("gate never reopened (inspect calls still %d)", h.sub.inspectCalls)
 	}
 }
+
+// TestSubstrateReconDrainedTasksDiscloseDegradedAndRecover F11（settled
+// 应用 drain 事件面）：服务在、期望副本不变、running 任务=0（节点 drain /
+// 任务被外部停掉——存在性判据探不到的盲区）→ app.degraded 披露（payload
+// 带水位摘要）+ 派生态 running → degraded + 审计 app.substrate_drained；
+// 持续无任务节流；任务回岗 → refreshDerivedState 单写点重推导回 running
+// 并发 app.recovered；再次 drain 可再报（非永久静音）。
+func TestSubstrateReconDrainedTasksDiscloseDegradedAndRecover(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	app := deployDemoSucceeded(t, h)
+
+	// drain 形态：任务旧代 shutdown + 新代滞留 pending（desired 副本不变）。
+	drainedTasks := []TaskState{
+		{ID: "t-old", State: "shutdown", DesiredState: "shutdown", Image: "img"},
+		{ID: "t-new-1", State: "pending", DesiredState: "running", Image: "img"},
+	}
+	h.sub.setExternalTasks("fleetly-demo-web", drainedTasks)
+
+	h.eng.SubstrateRecon(ctx)
+
+	if got := countEventsByName(t, h, "app.degraded"); got != 1 {
+		t.Fatalf("app.degraded events = %d, want exactly 1 after drain detected", got)
+	}
+	if derived := derivedStateOf(t, h, app.ID); derived != "degraded" {
+		t.Fatalf("derived state = %q, want degraded (honest correction for zero running tasks)", derived)
+	}
+	rows, err := h.store.RecentAudits(ctx, 50)
+	if err != nil {
+		t.Fatalf("recent audits: %v", err)
+	}
+	auditFound := false
+	for _, r := range rows {
+		if r.Action == "app.substrate_drained" && r.Target == "app:"+app.Name && r.Result == "ok" {
+			auditFound = true
+		}
+	}
+	if !auditFound {
+		t.Fatalf("app.substrate_drained audit row missing: %+v", rows)
+	}
+
+	// 节流：drain 存续不得事件风暴。
+	h.eng.SubstrateRecon(ctx)
+	if got := countEventsByName(t, h, "app.degraded"); got != 1 {
+		t.Fatalf("app.degraded events = %d after rescan, want still 1 (throttle broken)", got)
+	}
+
+	// 任务回岗（节点回岗，swarm 自行重调度）→ 派生态回 running + recovered。
+	backTasks := []TaskState{
+		{ID: "t-new-2", State: "running", DesiredState: "running", Image: "img"},
+	}
+	h.sub.setExternalTasks("fleetly-demo-web", backTasks)
+	h.eng.SubstrateRecon(ctx)
+	if got := countEventsByName(t, h, "app.recovered"); got != 1 {
+		t.Fatalf("app.recovered events = %d, want exactly 1 after tasks return", got)
+	}
+	if derived := derivedStateOf(t, h, app.ID); derived != "running" {
+		t.Fatalf("derived state = %q after recovery, want running", derived)
+	}
+
+	// 再次 drain → 可再报（记忆已清零，非永久静音）。
+	h.sub.setExternalTasks("fleetly-demo-web", drainedTasks)
+	h.eng.SubstrateRecon(ctx)
+	if got := countEventsByName(t, h, "app.degraded"); got != 2 {
+		t.Fatalf("app.degraded events = %d, want 2 (memory cleared on recovery)", got)
+	}
+	if derived := derivedStateOf(t, h, app.ID); derived != "degraded" {
+		t.Fatalf("derived state = %q after second drain, want degraded", derived)
+	}
+}
+
+// TestSubstrateReconDrainedGuardRails 误报防线：外部 scale=0（期望实例=0）
+// 与部分在岗（running>0）都不是 drained 形态——判据是「期望>0 且全零」；
+// drained 与缺失并存时缺失揭示优先（视图修正 down > degraded，不叠加）。
+func TestSubstrateReconDrainedGuardRails(t *testing.T) {
+	h := newHarness(t)
+	ctx := context.Background()
+	app := deployDemoSucceeded(t, h)
+
+	// 外部 scale=0：服务在、期望副本=0、任务全灭——不得判 drained。
+	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) { spec.Replicas = 0 })
+	h.sub.setExternalTasks("fleetly-demo-web", []TaskState{
+		{ID: "t-old", State: "shutdown", DesiredState: "shutdown", Image: "img"},
+	})
+	h.eng.SubstrateRecon(ctx)
+	if got := countEventsByName(t, h, "app.degraded"); got != 0 {
+		t.Fatalf("external scale=0 misjudged as drained: %d events", got)
+	}
+	if derived := derivedStateOf(t, h, app.ID); derived != "running" {
+		t.Fatalf("derived state = %q, want running (scale=0 is existence-judged, untouched)", derived)
+	}
+
+	// 恢复期望副本但部分在岗（running>0）→ 不披露。
+	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) { spec.Replicas = 2 })
+	h.sub.setExternalTasks("fleetly-demo-web", []TaskState{
+		{ID: "t-run", State: "running", DesiredState: "running", Image: "img"},
+		{ID: "t-pend", State: "pending", DesiredState: "running", Image: "img"},
+	})
+	h.eng.SubstrateRecon(ctx)
+	if got := countEventsByName(t, h, "app.degraded"); got != 0 {
+		t.Fatalf("partial running misjudged as drained: %d events", got)
+	}
+
+	// drained 与缺失并存：缺失路径优先（down 修正），drained 不叠加事件。
+	h.sub.setExternalTasks("fleetly-demo-web", []TaskState{
+		{ID: "t-pend", State: "pending", DesiredState: "running", Image: "img"},
+	})
+	if err := h.sub.ServiceRemove(ctx, "fleetly-demo-web"); err != nil {
+		t.Fatalf("remove service: %v", err)
+	}
+	h.eng.SubstrateRecon(ctx)
+	if got := countEventsByName(t, h, "app.degraded"); got != 0 {
+		t.Fatalf("drained disclosure fired alongside missing: %d events", got)
+	}
+	if got := countEventsByName(t, h, "app.substrate_missing"); got != 1 {
+		t.Fatalf("app.substrate_missing events = %d, want 1 (missing takes precedence)", got)
+	}
+	if derived := derivedStateOf(t, h, app.ID); derived != "down" {
+		t.Fatalf("derived state = %q, want down (missing wins)", derived)
+	}
+}

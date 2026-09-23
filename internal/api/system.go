@@ -738,7 +738,9 @@ func (s *SystemService) storedS3Endpoint(ctx context.Context) (objectstore.Endpo
 }
 
 // s3SettingsView 把设置构造为脱敏读面投影（secret 解密出指纹，明文不出
-// 服务端边界）。
+// 服务端边界）。公网域名实值随读面下发（v0.2.x 收尾票）：开关开且
+// base_domain 非空时派生 s3.<base>——CLI/Console 渲染真实域名而非字面
+// 形态；其余形态留空（无公网面可指）。
 func (s *SystemService) s3SettingsView(in state.S3Settings) (*serverv1.S3SettingsView, error) {
 	v := &serverv1.S3SettingsView{
 		Mode:          in.Mode,
@@ -749,6 +751,9 @@ func (s *SystemService) s3SettingsView(in state.S3Settings) (*serverv1.S3Setting
 		PathStyle:     in.PathStyle,
 		PublicExposed: in.PublicExposed,
 		UpdatedAt:     tstamp(in.UpdatedAt),
+	}
+	if in.PublicExposed && s.baseDomain != "" {
+		v.PublicDomain = "s3." + s.baseDomain
 	}
 	if in.SecretAccessKey != "" {
 		plain, err := s.box.Decrypt([]byte(in.SecretAccessKey))

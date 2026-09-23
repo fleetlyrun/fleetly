@@ -17,7 +17,8 @@
 #
 # usage: resource-sample.sh
 # env:
-#   DIND_IMAGE        dind 镜像（默认 docker:29.8.1-dind）
+#   DIND_IMAGE        dind 镜像（默认钉 digest，台账 #1——
+#                     docs/runbooks/image-prepull.md；tag 保留可读性，digest 为准）
 #   DIND_NAME         容器名（默认 fleetly-resource-sample）
 #   RS_SKIP_BUILD     1 = 跳过交叉编译，改用 RS_BIN_DIR 指定的二进制目录
 #   RS_BIN_DIR        RS_SKIP_BUILD=1 时的二进制目录（需含 fleetlyd 与 fleetly）
@@ -31,7 +32,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
 
-DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind}"
+DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 DIND_NAME="${DIND_NAME:-fleetly-resource-sample}"
 RS_SKIP_BUILD="${RS_SKIP_BUILD:-0}"
 RS_VERSION="${RS_VERSION:-v0.1.0-rs}"
@@ -162,7 +163,8 @@ chmod +x "$STAGE/fleetlyd" "$STAGE/fleetly"
 
 # 预拉 traefik（fleetly-ingress 在 daemon 启动期拉起——让 idle 基线包含
 # 入口面；buildkit 容器由 daemon 后台预热拉起，是否在采样时已在跑如实报告）。
-docker pull traefik:v3.5 >/dev/null 2>&1 || true
+# digest 引台账 #6。
+docker pull traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2 >/dev/null 2>&1 || true
 
 sh "$INSTALL_SH" --bin-dir "$STAGE" --no-systemd >"$STAGE/install.log" 2>&1 ||
     { cat "$STAGE/install.log"; die 'install failed'; }

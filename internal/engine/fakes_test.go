@@ -234,6 +234,17 @@ func (f *fakeSubstrate) mutateUpdateFailureAction(service, action string) {
 	}
 }
 
+// setExternalTasks 整组重写服务任务实况（T0-V2.2 F11 对账测试：模拟节点
+// drain / 任务被外部停掉后的任务面——期望副本不变、旧任务 shutdown、新
+// 任务滞留 pending；与 mutateExternal 同族的「绕过平台写语义」注入缝）。
+func (f *fakeSubstrate) setExternalTasks(service string, tasks []TaskState) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if svc, ok := f.services[service]; ok {
+		svc.tasks = append([]TaskState{}, tasks...)
+	}
+}
+
 // panicOnTaskList 注入 TaskList panic（A9 测试）。
 func (f *fakeSubstrate) panicOnTaskList(service string) {
 	f.mu.Lock()

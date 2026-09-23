@@ -147,6 +147,15 @@ var builtins = []Code{
 		Summary:    "pushing the build result to the platform registry failed (network/credentials/registry fault)",
 		Suggestion: "The push to registry.<base> failed: check that the fleetly-registry service is healthy and the platform registry credentials (registry.auth_file) are current, then run the build again."},
 
+	// ── 命名保留字（W3 遗留撞键票收口，2026-09-21；注册表只增）：app 顶层
+	//    名是 fleetly-<app>-* 服务/网络/路由/secret 名族的参数，与平台固定
+	//    组件命名空间（cron/db/dbjob 前缀族、rustfs/registry 网络与路由、
+	//    acme 挑战键等）的交点逐条实证于 internal/naming 保留字表──
+	//    撞上即在部署受理层拒绝，不在底座层制造静默覆盖/误删 ──
+	{ID: "E_APP_NAME_RESERVED", HTTP: 422,
+		Summary:    "the compose top-level name collides with a platform-reserved component name (swarm service/network/router/secret namespaces derive fleetly-<name>-* objects from it)",
+		Suggestion: "Rename the app (compose top-level name) to anything outside the reserved set (listed in the error message); reserved names are platform component identities and cannot be reused by user apps."},
+
 	// ── 多节点 join 门禁（E1 多节点设计 §5.2/D-MN-13，2026-09-20 冻结，
 	//    E1-8 接线）：base_domain 缺失即多节点未启用——join 面显式拒绝、
 	//    不静默降级（provider 通道/zot 均不可用，join 后入口残缺）──

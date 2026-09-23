@@ -39,30 +39,25 @@
 #   DB_VERSION     注入的版本串（默认 v0.2.0-db-e2e）
 #
 # 私有镜像注意（dbtools）：备份 job 与 dbapp 的运行载体 ghcr.io/fleetlyrun/
-# dbtools 是 PRIVATE ghcr 包。S2 v0.2.x 中间态（CI 首推 v0.2.1-dbtools.1
-# 之前 digest 不存在，平台 Go 常量为 tag 引用）取两段式：
-#   有 DB_GHCR_USER/DB_GHCR_TOKEN → dind 内登录 + 直拉真镜像（tag 引用，
-#     CI 首推后可用；digest 首推完成后再钉回 tag@digest 形态）；
-#   无凭据 → dind 内本地构建同名 tag（预拉 postgres:16/restic/redis:7 钉
-#     定基础镜像后 docker build——debian 基底必须先有基础镜像在本地，
-#     build 才能离解析；本地构建的 swarm 服务引用同名 tag 即本地解析）。
-#   CI（nightly databases-e2e）恒有 GITHUB_TOKEN，走直拉腿。
+# dbtools 是 PRIVATE ghcr 包，引用为 tag@digest 钉定形态（CI 首推
+# 2026-09-23 完成）——**必须** DB_GHCR_USER/DB_GHCR_TOKEN（packages:read）
+# 供 dind 内登录直拉（真实 pull 落 RepoDigests；本地构建/导入解析不了
+# digest 引用——W4 实测教训，无凭据腿已随 digest 收紧退役为 fatal）；
+# CI（nightly databases-e2e）恒有 GITHUB_TOKEN。
 set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
 
 # ── 镜像钉 digest（T0-V2.3 供应链；台账见 docs/runbooks/image-prepull.md，
 # postgres/redis/restic 与 internal/dbtemplate、Dockerfile.dbtools 同源钉定；
-# dbtools 本体 = v0.2.1-dbtools.1 中间态 tag 引用——CI 首推后钉回 digest，
-# 豁免台账 deploy/image-pin-allowlist.txt）。
+# dbtools 本体 = CI 首推后的 tag@digest 钉定引用，与 Go 常量逐字一致）。
 DIND_IMAGE="${DB_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 PG_IMG='postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6'
 REDIS_IMG='redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f'
 RESTIC_IMG='restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510'
-# dbtools（私有 ghcr 包）：internal/database DefaultDatabaseToolsImage 同串
-# （中间态 tag 引用；本地构建腿以同名 tag 承接）。
-DBTOOLS_IMG='ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1'
+# dbtools（私有 ghcr 包）：internal/database DefaultDatabaseToolsImage 同串。
+DBTOOLS_IMG='ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1@sha256:472e8a5dd6b7ab2722caa996f18fec956203f99aafec0dd4c10cb82d262e866b'
 DB_SKIP_BUILD="${DB_SKIP_BUILD:-0}"
 DB_BIN_DIR="${DB_BIN_DIR:-}"
 DB_VERSION="${DB_VERSION:-v0.2.0-db-e2e}"
@@ -286,27 +281,21 @@ for img in "$ALPINE_IMG" "$PG_IMG" "$REDIS_IMG" "$RESTIC_IMG"; do
     [ "$ok" -eq 1 ] || fatal "pull $img (3 attempts exhausted)"
 done
 
-# dbtools（私有 ghcr 包）两段式获取：有凭据 → dind 内登录 + 直拉真镜像
-# （tag 引用，CI 首推后可用）；无凭据 → dind 内本地构建同名 tag（基础
-# 镜像已预拉——debian 基底 build 的 FROM/COPY --from 全部本地解析）。
-# 凭据经 exec env 注入，不落 argv 之外的面。直拉腿保留 save|load 警示：
-# digest 钉定引用（tag@digest）的本地解析依赖真实 pull 落下的 RepoDigests
-# （docker 29.8.1 实测，load 后补名也解析不了）。
+# dbtools（私有 ghcr 包）：有凭据 → dind 内登录 + 直拉真镜像（tag@digest
+# 全引用——真实 pull 才落 RepoDigests；CI 首推 2026-09-23 已完成）。无凭据
+# → 诚实 fatal：digest 钉定引用的本地解析依赖真实 pull 的 RepoDigests，
+# 本地构建同名 tag 解析不了（docker 29.8.1 实测，W4 头注教训）——中间态
+# 的本地构建腿随 digest 收紧一并退役。
 if [ -n "${DB_GHCR_USER:-}" ] && [ -n "${DB_GHCR_TOKEN:-}" ]; then
     docker exec -e GHCR_USER="$DB_GHCR_USER" -e GHCR_TOKEN="$DB_GHCR_TOKEN" \
         "$DIND" sh -c 'printf %s "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null' ||
         fatal 'docker login ghcr.io (inside dind) failed'
     docker exec "$DIND" docker pull -q "$DBTOOLS_IMG" >/dev/null ||
-        fatal "pull $DBTOOLS_IMG (inside dind) failed — check the ghcr credential and its packages:read access to this private image (the v0.2.1-dbtools.1 tag exists only after the CI first push)"
+        fatal "pull $DBTOOLS_IMG (inside dind) failed — check the ghcr credential and its packages:read access to this private image"
     docker exec "$DIND" docker logout ghcr.io >/dev/null 2>&1 || true
     nl "dbtools image pulled inside dind ($DBTOOLS_IMG)"
 else
-    nl "dbtools: no ghcr credentials — building $DBTOOLS_IMG locally inside dind (debian base; intermediate-state leg)"
-    docker exec "$DIND" mkdir -p /tmp/dbtools-build || fatal 'mkdir dbtools build dir'
-    stage "$DIND" "$ROOT/deploy/Dockerfile.dbtools" /tmp/dbtools-build/Dockerfile.dbtools
-    docker exec "$DIND" docker build -q -t "$DBTOOLS_IMG" -f /tmp/dbtools-build/Dockerfile.dbtools /tmp/dbtools-build >/dev/null ||
-        fatal "local build of $DBTOOLS_IMG failed (base images must be pullable; postgres:16/restic/redis:7 are pre-pinned above)"
-    nl "dbtools image built locally inside dind ($DBTOOLS_IMG)"
+    fatal "dbtools ($DBTOOLS_IMG) is a PRIVATE ghcr package with a digest-pinned reference: set DB_GHCR_USER/DB_GHCR_TOKEN (a ghcr credential with packages:read on fleetlyrun/dbtools) so the dind can pull it directly — local builds cannot satisfy a digest pin (no RepoDigest). In CI the databases-e2e job passes GITHUB_TOKEN automatically."
 fi
 
 docker exec "$DIND" docker swarm init --advertise-addr eth0 >/dev/null || fatal 'swarm init'

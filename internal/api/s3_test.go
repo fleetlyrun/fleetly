@@ -232,6 +232,50 @@ func TestS3SettingsValidationRPC(t *testing.T) {
 	}
 }
 
+// TestS3PublicDomainDerivedInReadFace v0.2.x 收尾票（CLI 公网行字面收口）：
+// 公网域名实值随读面下发——public_domain = "s3." + base_domain；开关关或
+// base_domain 空时为空串（字面形态的回退由 CLI 渲染层承担）。
+func TestS3PublicDomainDerivedInReadFace(t *testing.T) {
+	cl, _, admin, _ := newS3TestEnv(t, "example.test")
+	ctx := authCtx(context.Background(), admin)
+
+	// 开关关：域名实值为空（无公网面可指）。
+	if _, err := cl.UpdateS3Settings(ctx,
+		&serverv1.UpdateS3SettingsRequest{Mode: state.S3ModeRustfs}); err != nil {
+		t.Fatalf("rustfs without public: %v", err)
+	}
+	got, err := cl.GetS3Settings(ctx, &serverv1.GetS3SettingsRequest{})
+	if err != nil {
+		t.Fatalf("GetS3Settings: %v", err)
+	}
+	if got.GetSettings().GetPublicDomain() != "" {
+		t.Fatalf("public_domain = %q with public_exposed=false, want empty", got.GetSettings().GetPublicDomain())
+	}
+
+	// 开关开：域名实值 = s3.example.test（服务端派生，非字面）。
+	if _, err := cl.UpdateS3Settings(ctx,
+		&serverv1.UpdateS3SettingsRequest{Mode: state.S3ModeRustfs, PublicExposed: true}); err != nil {
+		t.Fatalf("rustfs+public: %v", err)
+	}
+	got, err = cl.GetS3Settings(ctx, &serverv1.GetS3SettingsRequest{})
+	if err != nil {
+		t.Fatalf("GetS3Settings (exposed): %v", err)
+	}
+	if got.GetSettings().GetPublicDomain() != "s3.example.test" {
+		t.Fatalf("public_domain = %q, want s3.example.test (derived actual value)", got.GetSettings().GetPublicDomain())
+	}
+
+	// 单节点形态（base_domain 空）：开关本就开不了，直读投影恒空。
+	cl3, _, admin3, _ := newS3TestEnv(t, "")
+	got3, err := cl3.GetS3Settings(authCtx(context.Background(), admin3), &serverv1.GetS3SettingsRequest{})
+	if err != nil {
+		t.Fatalf("GetS3Settings (single-node): %v", err)
+	}
+	if got3.GetSettings().GetPublicDomain() != "" {
+		t.Fatalf("public_domain = %q without base_domain, want empty", got3.GetSettings().GetPublicDomain())
+	}
+}
+
 // probeFakeS3 是探针测试用的最小假 S3（只实现探针路径：建桶前置 +
 // 对象 PUT/GET/DELETE + region 解析；sigv4 不验签，按 AccessKey 比对出
 // 403）。与 internal/objectstore 的测试假服务器同构但最小化。

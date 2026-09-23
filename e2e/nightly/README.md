@@ -27,7 +27,7 @@
 
 ```
 bash e2e/nightly/run.sh <suite>...      # suite = v1 | v2 | v3 | v4 | v6 | all
-env: DIND_IMAGE（默认 docker:29.8.1-dind）
+env: DIND_IMAGE（默认钉 digest：docker:29.8.1-dind@sha256:3f3c01aa…，台账 #1）
      DIND_EXTRA_ARGS（透传 docker run，如 --storage-driver overlay2）
 
 bash e2e/nightly/conformance-builder.sh # Builder conformance A/B/C（单 dind）
@@ -116,8 +116,8 @@ traefik（fleetly-ingress 计入 idle 基线；fleetly-buildkitd 由 daemon 后�
 
 ## 本地复跑（Windows Docker Desktop）
 
-前置：Docker Desktop 运行中（宿主引擎可低于门禁；dind **镜像**固定
-`docker:29.8.1-dind` 与 CI 一致）；Git Bash（仓库脚本为 POSIX sh + LF；
+前置：Docker Desktop 运行中（宿主引擎可低于门禁；dind **镜像**默认钉
+digest（台账 #1）与 CI 一致）；Git Bash（仓库脚本为 POSIX sh + LF；
 若工作区被 autocrlf 转成 CRLF，run.sh 会对送入 dind 的文本脚本自动去
 CR，run.sh 自身需保持 LF 执行）；Go 在 PATH（v2 之外需要，用于编译
 spike 探针）。

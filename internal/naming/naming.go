@@ -13,6 +13,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -254,6 +255,75 @@ func AppID8(appID string) (string, error) {
 func Hash8(content string) string {
 	sum := sha256.Sum256([]byte(content))
 	return hex.EncodeToString(sum[:])[:8]
+}
+
+// reservedAppNameReasons 是用户 app 顶层名的保留字清单（W3 遗留撞键票的
+// 命名审计结论，2026-09-21 收口；E_APP_NAME_RESERVED 消费）。审计方法：
+// 平台固定组件名（fleetly-ingress / -exec / -registry / -rustfs /
+// -victoriametrics / -cadvisor / -node-exporter / -victorialogs 等）对用户
+// 对象不可达——服务名公式恒含非空 <service> 段（fleetly-<app>-<service>），
+// 撞不上无后缀的固定名；真正能撞的是下面四类「以 app 名为参数的公式」与
+// 「固定字符串」的交点，逐条实证：
+//
+//	cron          前缀族：ServiceName("cron",svc)=fleetly-cron-<svc> 命中
+//	               IsCronJobName——cron 孤儿清扫会把用户长驻服务当一次性
+//	               job 删除（破坏性撞键，最高优先）；
+//	db            前缀族：fleetly-db-<svc> 命中 IsDbServiceName——发布对账
+//	               「省略=删除」扫描豁免库服务，用户服务删除被静默吞掉；
+//	dbjob         前缀族：fleetly-dbjob-<svc> 命中 IsDBJobName——清扫/采集
+//	               面把用户服务隐形成瞬时 job；
+//	rustfs        网络名：NetworkName("rustfs")=fleetly-rustfs-net 与
+//	               state.RustfsNetworkName 同串——用户 app 直挂平台 RustFS
+//	               网络（隔离面击穿）；另撞 s3 公网路由键（Name 覆写
+//	               fleetly-rustfs + -web/-websecure 后缀）与 secret 名族
+//	               （fleetly-rustfs-access-key-<fp> 同构，指纹公式同源）；
+//	registry      路由键：RouterName("registry","web")=fleetly-registry-web
+//	               与平台 registry 路由段（Name 覆写 fleetly-registry）同键
+//	               ——Synthesize 后写覆盖先写，用户路由被平台路由静默顶掉
+//	               （多节点启用即触发）；
+//	acme          路由键：RouterName("acme","challenge")=fleetly-acme-challenge
+//	               与 ACME 挑战路由键同串（挑战期配置互相覆盖）；
+//	metrics       网络名：NetworkName("metrics")=fleetly-metrics-net 与
+//	               metrics 三件套内部 overlay 同串（opt-in 启用即撞）；
+//	victorialogs  网络名：NetworkName("victorialogs")=fleetly-victorialogs-net
+//	               与日志库内部 overlay 同串（默认捆绑组件）。
+//
+// 不入清单的近名（ingress/exec/system/console/ctrl/victoriametrics/
+// cadvisor/node-exporter 等）：审计证明其服务/网络/路由三面均撞不上
+// （固定名无后缀段、固定网络名带 -net/-system 尾且无同形 app 公式产物、
+// 固定服务名不进动态配置键空间）——保留字最小化，不预防性扩列。
+var reservedAppNameReasons = map[string]string{
+	"cron":         "IsCronJobName prefix family (the cron orphan sweep would delete the app's long-running services as transient jobs)",
+	"db":           "IsDbServiceName prefix family (publish reconcile exempts the app's services from omission-means-deletion)",
+	"dbjob":        "IsDBJobName prefix family (sweeps/collection treat the app's services as transient jobs)",
+	"rustfs":       "collides with the managed RustFS overlay network fleetly-rustfs-net (state.RustfsNetworkName), the s3 public route keys and the rustfs secret name family",
+	"registry":     "collides with the platform registry route keys fleetly-registry-web/-websecure (router key overwrite in Synthesize)",
+	"acme":         "collides with the ACME challenge router/service key fleetly-acme-challenge",
+	"metrics":      "collides with the managed metrics overlay network fleetly-metrics-net",
+	"victorialogs": "collides with the managed VictoriaLogs overlay network fleetly-victorialogs-net",
+}
+
+// IsReservedAppName 报告 app 顶层名是否与平台组件命名空间撞键（部署受理
+// 前置校验，E_APP_NAME_RESERVED）。
+func IsReservedAppName(app string) bool {
+	_, ok := reservedAppNameReasons[app]
+	return ok
+}
+
+// ReservedAppNames 返回保留字清单的字典序副本（错误文案与测试面）。
+func ReservedAppNames() []string {
+	out := make([]string, 0, len(reservedAppNameReasons))
+	for k := range reservedAppNameReasons {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ReservedAppNameReason 返回单个保留名的撞键证据（错误文案/审计引用；
+// 未知名返回空串）。
+func ReservedAppNameReason(app string) string {
+	return reservedAppNameReasons[app]
 }
 
 // joinName 以 '-' 连接命名成分。

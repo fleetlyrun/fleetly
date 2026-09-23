@@ -1976,6 +1976,13 @@ export interface components {
              * Format: date-time
              */
             updated_at?: string;
+            /**
+             * 公网访问域名的服务端派生实值（v0.2.x 收尾票：CLI 公网行字面 s3.<base>
+             *     的收口——读面此前不含 base_domain，CLI 只能显示字面形态）。派生公式
+             *     = "s3." + base_domain；仅 public_exposed=true 且 base_domain 非空时填
+             *     充，其余形态为空串（读面永不含凭据材料）。
+             */
+            public_domain?: string;
         };
         v1TestS3ConnectionRequest: {
             /**

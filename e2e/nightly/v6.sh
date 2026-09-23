@@ -30,6 +30,8 @@ NL_MGR=${NL_MGR:?NL_MGR must be exported by run.sh}
 NL_W1=${NL_W1:?NL_W1 must be exported by run.sh}
 NL_W2=${NL_W2:?NL_W2 must be exported by run.sh}
 NL_ART=${NL_ART:?NL_ART must be exported by run.sh}
+# 台账钉版（docs/runbooks/image-prepull.md #3；e2e/nightly 钉版票）。
+ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 
 m() { docker exec "$NL_MGR" "$@"; }
 msh() { docker exec "$NL_MGR" sh -c "$*"; }
@@ -55,7 +57,7 @@ m docker node update --availability drain w2 >/dev/null
 m docker service create --name c3-app --replicas 1 \
     --mount type=volume,source=c3vol,target=/data \
     --mount type=bind,source=/opt/probe,target=/probe,readonly \
-    alpine:3.20 sleep 31536000 >/dev/null || fatal "create c3-app"
+    "$ALPINE_IMG" sleep 31536000 >/dev/null || fatal "create c3-app"
 if waitsvc c3-app 1 w1 120; then
     nl "V6A.1 c3-app placed on w1"
 else
@@ -120,7 +122,7 @@ m docker service create --name c3b-app --replicas 1 \
     --constraint node.labels.fleetly.node-id==w2 \
     --mount type=volume,source=c3bvol,target=/data \
     --mount type=bind,source=/opt/probe,target=/probe,readonly \
-    alpine:3.20 sleep 31536000 >/dev/null || fatal "create c3b-app"
+    "$ALPINE_IMG" sleep 31536000 >/dev/null || fatal "create c3b-app"
 waitsvc c3b-app 1 w2 120 || {
     m docker service ps c3b-app --no-trunc
     fatal "c3b-app never Running on w2"
@@ -201,7 +203,7 @@ m docker service create --name c4-app --replicas 1 \
     --constraint node.labels.fleetly.node-id==w2 \
     --mount type=volume,source=c4vol,target=/data \
     --mount type=bind,source=/opt/probe,target=/probe,readonly \
-    alpine:3.20 sleep 31536000 >/dev/null || fatal "create c4-app"
+    "$ALPINE_IMG" sleep 31536000 >/dev/null || fatal "create c4-app"
 waitsvc c4-app 1 w2 120 || {
     m docker service ps c4-app --no-trunc
     fatal "c4-app never Running on w2"

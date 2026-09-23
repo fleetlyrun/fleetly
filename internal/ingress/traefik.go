@@ -446,6 +446,25 @@ func (m *Manager) buildTraefikSpec(endpoint, token string) swarm.ServiceSpec {
 		// 可校验——Traefik 侧跳过服务器认证（传输仍 TLS 加密 + token；
 		// 服务器认证由 VPC 边界承担，内部 CA 硬化挂 v0.2.x）。单节点 8422
 		// 明文形态无 TLS，参数无效但无害（Traefik 容忍）。
+		//
+		// TODO(harden-8423, v0.2.x 硬化票未排期): 服务器认证缺口依赖链——
+		// 按主机名（ctrl.<base>，平台证书 SAN 项）拨号需满足其一：
+		//   a) worker 节点把 ctrl.<base> 解析到 advertise IP——extra_hosts
+		//      通道被真机证伪（Docker 29.8.1 swarm 任务不应用
+		//      ContainerSpec.Hosts，F9 修订二）；改走节点 /etc/hosts 指引则
+		//      把 DNS 正确性变成部署前置，收益不抵脆弱度；
+		//   b) 公网 DNS ctrl.<base> → manager 公网 IP——8423 必须公网可达，
+		//      与「动态配置含全平台 TLS 私钥，公网 8423 零暴露」裁决冲突
+		//      （F9 起因）；IP 直拨形式下 (a)(b) 均不可行，除非底座支持
+		//      拨号主机名与连接地址分离（Traefik providers.http 无此配置）。
+		//   诚实行内态：IP 端点 + insecureSkipVerify + VPC 边界（传输 TLS
+		//   加密与 token 鉴权不受影响）；spec 参数形态由
+		//   TestProviderEndpointVPCIPForm / TestPlatformCertDutyInertWhen
+		//   BaseDomainEmpty 钉死——改参数必先改测试，防无声回退。
+		//   出路（设计级，需立项）：内部 CA + swarm secret 分发 CA 到各节点
+		//   （控制面外通道，无鸡生蛋）+ 8423 换 CA 签发的 IP SAN 证书 +
+		//   --providers.http.tls.ca；或上游 swarm 任务修复 extra_hosts 后
+		//   回到主机名拨号。
 		"--providers.http.tls.insecureSkipVerify=true",
 		// ping 健康面（healthcheck 子命令消费；容器内 8080，不发布）。
 		"--ping=true",

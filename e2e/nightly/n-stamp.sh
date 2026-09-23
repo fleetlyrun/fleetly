@@ -16,10 +16,12 @@ DIR=$3
 OP=$4
 TOK=$5
 P=/opt/probe
+# 台账钉版（docs/runbooks/image-prepull.md #3；e2e/nightly 钉版票）。
+ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 echo "stamp-ms=$($P ts) svc=$SVC vol=$VOL op=$OP"
 CTR=$(docker ps --filter "label=com.docker.swarm.service.name=$SVC" --format '{{.ID}}' | head -1)
 if [ "$OP" = "read-helper" ]; then
-    docker run --rm -v "$VOL:$DIR" -v /opt/probe:/probe alpine:3.20 /probe stamp -dir "$DIR" read
+    docker run --rm -v "$VOL:$DIR" -v /opt/probe:/probe "$ALPINE_IMG" /probe stamp -dir "$DIR" read
     rc=$?
     echo "stamp-rc=$rc"
     exit $rc

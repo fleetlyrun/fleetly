@@ -1642,7 +1642,12 @@ type S3SettingsView struct {
 	// 公网子域开关（仅 rustfs 模式可开；开启后 s3.<base> 公网可达）。
 	PublicExposed bool `protobuf:"varint,8,opt,name=public_exposed,json=publicExposed,proto3" json:"public_exposed,omitempty"`
 	// 最近一次保存时刻（从未保存 → 不输出）。
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// 公网访问域名的服务端派生实值（v0.2.x 收尾票：CLI 公网行字面 s3.<base>
+	// 的收口——读面此前不含 base_domain，CLI 只能显示字面形态）。派生公式
+	// = "s3." + base_domain；仅 public_exposed=true 且 base_domain 非空时填
+	// 充，其余形态为空串（读面永不含凭据材料）。
+	PublicDomain  string `protobuf:"bytes,10,opt,name=public_domain,json=publicDomain,proto3" json:"public_domain,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1738,6 +1743,13 @@ func (x *S3SettingsView) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *S3SettingsView) GetPublicDomain() string {
+	if x != nil {
+		return x.PublicDomain
+	}
+	return ""
 }
 
 type GetS3SettingsResponse struct {
@@ -2354,7 +2366,7 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\x04kind\x18\x01 \x01(\tB0\xbaH-r+R\x00R\x06manualR\x05dailyR\vpre_upgradeR\vpost_deployR\x04kind\"N\n" +
 	"\x15TriggerBackupResponse\x125\n" +
 	"\x06backup\x18\x01 \x01(\v2\x1d.fleetly.server.v1.BackupViewR\x06backup\"\x16\n" +
-	"\x14GetS3SettingsRequest\"\xcb\x02\n" +
+	"\x14GetS3SettingsRequest\"\xf0\x02\n" +
 	"\x0eS3SettingsView\x12\x12\n" +
 	"\x04mode\x18\x01 \x01(\tR\x04mode\x12!\n" +
 	"\fendpoint_url\x18\x02 \x01(\tR\vendpointUrl\x12\x16\n" +
@@ -2366,7 +2378,9 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"path_style\x18\a \x01(\bR\tpathStyle\x12%\n" +
 	"\x0epublic_exposed\x18\b \x01(\bR\rpublicExposed\x129\n" +
 	"\n" +
-	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"V\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12#\n" +
+	"\rpublic_domain\x18\n" +
+	" \x01(\tR\fpublicDomain\"V\n" +
 	"\x15GetS3SettingsResponse\x12=\n" +
 	"\bsettings\x18\x01 \x01(\v2!.fleetly.server.v1.S3SettingsViewR\bsettings\"\xb8\x02\n" +
 	"\x17UpdateS3SettingsRequest\x124\n" +

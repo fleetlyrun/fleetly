@@ -34,14 +34,12 @@ import (
 // 取自 debian 版 redis:7，restic 静态二进制照旧）——恢复单 job 的前提
 //（本引擎与 dbtools 跨 libc 的 musl/glibc 重放风险随基底一致而消除）。
 //
-// 供应链中间态（fleetly-exec v0.2.0-exec.1 同款先例）：CI 首推
-// v0.2.1-dbtools.1 之前 digest 不存在，先以 tag 引用过渡（豁免台账见
-// deploy/image-pin-allowlist.txt）；主会话 dispatch dbtools.yml
-// tag=v0.2.1-dbtools.1 完成首推后，钉回 tag@digest 双锚并摘除豁免。
+// 供应链：CI 首推 2026-09-23（run 35797985743），digest 已钉（多架构 index，
+// buildx imagetools 独立解析）——中间态豁免已摘除，与平台其余镜像同构。
 // 工具面：pg_dump 16.15/pg_restore/psql/pg_isready/pg_ctl/gosu（postgres
 // 基底自带）、redis-cli、restic 0.19.1。重建随平台 release 由
 // .github/workflows/dbtools.yml 承载。
-const DefaultDatabaseToolsImage = "ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1"
+const DefaultDatabaseToolsImage = "ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1@sha256:472e8a5dd6b7ab2722caa996f18fec956203f99aafec0dd4c10cb82d262e866b"
 
 // 备份计划平台缺省（§5.4 配置键 databases.backup_*；实例 settings 零值
 // 字段回落——平台缺省只在此处为常量，不进 config.yaml：备份计划属实例

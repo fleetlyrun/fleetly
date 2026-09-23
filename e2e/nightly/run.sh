@@ -10,7 +10,9 @@
 #
 # usage: run.sh <suite>...     suite = v1 | v2 | v3 | v4 | v6 | all
 # env:
-#   DIND_IMAGE       dind image (default docker:29.8.1-dind)
+#   DIND_IMAGE       dind image (default pinned to the ledger digest;
+#                    docs/runbooks/image-prepull.md #1 — tag kept for
+#                    readability, digest is the source of truth)
 #   DIND_EXTRA_ARGS  extra dockerd args appended AFTER the image ref (they go
 #                    to dockerd via the dind entrypoint, not to `docker run`),
 #                    e.g. "--storage-driver overlay2" for the storage leg
@@ -36,7 +38,8 @@ NLROOT="$ROOT/e2e/nightly"
 # scripts; the docker-based wait_* helpers in lib.sh are inner-only and are
 # never called from the host side.
 . "$NLROOT/lib.sh"
-DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind}"
+DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
+ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 DIND_EXTRA_ARGS="${DIND_EXTRA_ARGS:-}"
 BR_NET=fleetly-nightly-br
 BR_SUBNET=10.213.0.0/24
@@ -236,8 +239,8 @@ suite_v6() {
         stage "$n" "$TMP/probe-c" /opt/probe
         stage "$n" "$NLROOT/n-waitsvc.sh" /opt/waitsvc.sh
         stage "$n" "$NLROOT/n-stamp.sh" /opt/stamp.sh
-        log "pre-pull alpine:3.20 on $n"
-        docker exec "$n" docker pull alpine:3.20 >/dev/null || die "alpine pull on $n"
+        log "pre-pull alpine (digest-pinned, ledger #3) on $n"
+        docker exec "$n" docker pull "$ALPINE_IMG" >/dev/null || die "alpine pull on $n"
     done
 
     log "swarm init on mgr + join w1/w2 + identity labels"

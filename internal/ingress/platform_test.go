@@ -320,6 +320,20 @@ func TestPlatformCertDutyInertWhenBaseDomainEmpty(t *testing.T) {
 	if got := traefikEndpointArg(t, dc); got != "http://127.0.0.1:8422/configs" {
 		t.Fatalf("provider endpoint = %q, want plaintext 8422 form (v0.1 equivalence)", got)
 	}
+	// 参数形态补钉（8423 硬化票收口，2026-09-21）：insecureSkipVerify 是
+	// buildTraefikSpec 的无条件参数——明文形态下 Traefik 容忍（无害）。
+	// 该断言把「参数存在」从隐式行为升级为显式契约：硬化票改为按 endpoint
+	// 形态条件下发时，此处红即是提示（单节点金样不受影响）。
+	st := dc.services[IngressServiceName]
+	foundSkip := false
+	for _, a := range st.Args {
+		if a == "--providers.http.tls.insecureSkipVerify=true" {
+			foundSkip = true
+		}
+	}
+	if !foundSkip {
+		t.Fatal("insecureSkipVerify arg missing in plaintext form (buildTraefikSpec pins it unconditionally; a conditional form must update this test deliberately)")
+	}
 }
 
 // TestTLSConfigEndpoint TLS 面 handler（E1-3 端口分面）：只承载 /configs

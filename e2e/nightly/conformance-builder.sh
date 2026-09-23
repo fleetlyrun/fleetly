@@ -23,7 +23,8 @@
 #
 # usage: conformance-builder.sh
 # env:
-#   DIND_IMAGE   dind 镜像（默认 docker:29.8.1-dind，与 CI/引擎门禁一致）
+#   DIND_IMAGE   dind 镜像（默认钉 digest，台账 #1，与 CI/引擎门禁一致——
+#                docs/runbooks/image-prepull.md；tag 保留可读性，digest 为准）
 #   DIND_NAME    容器名（默认 fleetly-conformance-builder）
 #   CB_SKIP_BUILD 1 = 跳过交叉编译，改用 CB_BIN_DIR 指定的二进制目录
 #   CB_BIN_DIR   CB_SKIP_BUILD=1 时的二进制目录（需含 fleetlyd 与 fleetly）
@@ -32,7 +33,7 @@ set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
 
-DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind}"
+DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 DIND_NAME="${DIND_NAME:-fleetly-conformance-builder}"
 CB_SKIP_BUILD="${CB_SKIP_BUILD:-0}"
 CB_VERSION="${CB_VERSION:-v0.1.0-cb}"
@@ -321,9 +322,9 @@ if [ "$RC" -ne 0 ]; then
 fi
 
 # 预拉 ingress 依赖镜像（cert seed 容器与 Traefik 服务不自动拉镜像——
-# T2.15 已知边界；test-upgrade.sh 同款预备）。
-docker pull alpine:3.20 >/dev/null 2>&1 || true
-docker pull traefik:v3.5 >/dev/null 2>&1 || true
+# T2.15 已知边界；test-upgrade.sh 同款预备）。digest 引台账 #3/#6。
+docker pull alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc >/dev/null 2>&1 || true
+docker pull traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2 >/dev/null 2>&1 || true
 
 mkdir -p /opt/fleetly/etc /var/lib/fleetly
 cat > /opt/fleetly/etc/config.yaml <<EOF

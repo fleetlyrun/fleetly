@@ -22,6 +22,10 @@ NET=nightly-b-net
 CTX=/tmp/nb-ctx
 CFG=/tmp/nightly-cfg
 PSFMT='{{.ID}} {{.Name}} {{.Image}} {{.CurrentState}} {{.DesiredState}}'
+# 镜像钉版（e2e/nightly 钉版票，2026-09-21）：digest 引台账
+# docs/runbooks/image-prepull.md #3/#6（tag 保留可读性，digest 为准）。
+ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
+TRAEFIK_IMG='traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2'
 
 nl "=== infra: engine identity ==="
 docker version --format 'engine={{.Server.Version}} api={{.Server.APIVersion}}' || fatal "docker version"
@@ -40,17 +44,14 @@ nl "=== infra 2/8: attachable overlay network ==="
 docker network rm "$NET" >/dev/null 2>&1 || true
 docker network create -d overlay --attachable "$NET" >/dev/null || fatal "overlay create"
 
-nl "=== infra 3/8: pull alpine:3.20 ==="
-docker pull alpine:3.20 >/dev/null || fatal "pull alpine"
+nl "=== infra 3/8: pull alpine:3.20 (digest-pinned, ledger #3) ==="
+# 台账 docs/runbooks/image-prepull.md #3（tag 保留可读性，digest 为准）。
+docker pull "$ALPINE_IMG" >/dev/null || fatal "pull alpine"
 
-nl "=== infra 4/8: pull traefik (pinned v3 line, first available wins) ==="
-TRAEFIK_TAG=""
-for t in v3.5 v3.4 v3.3 v3.2; do
-    nl "trying traefik:$t"
-    if docker pull "traefik:$t"; then TRAEFIK_TAG="$t"; break; fi
-done
-[ -n "$TRAEFIK_TAG" ] || fatal "no traefik v3 tag pullable"
-nl "pinned traefik tag=$TRAEFIK_TAG"
+nl "=== infra 4/8: pull traefik (digest-pinned, ledger #6) ==="
+# 台账 #6；原「v3 tag 逐个试拉、first available wins」的可变 tag 面随钉版
+# 收口（e2e/nightly 镜像钉版票，2026-09-21）。
+docker pull "$TRAEFIK_IMG" >/dev/null || fatal "pull traefik"
 
 nl "=== infra 5/8: build fixture images (provenance/sbom OFF) ==="
 bf() { # <tag> <version> <healthmode>
@@ -85,7 +86,7 @@ sleep 1
 nl "=== infra 8/8: traefik as swarm service (HTTP provider, poll 2s) ==="
 docker service rm edge >/dev/null 2>&1 || true
 docker service create --name edge --network "$NET" \
-    "traefik:$TRAEFIK_TAG" \
+    "$TRAEFIK_IMG" \
     --entryPoints.web.address=:80 \
     --providers.http.endpoint=http://cfg:9000/config \
     --providers.http.pollInterval=2s --providers.http.pollTimeout=5s \

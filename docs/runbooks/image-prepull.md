@@ -32,7 +32,7 @@ fork 镜像 + `canary` 可变 tag——供应链反面教材（docs/research/
 | 10 | `ghcr.io/project-zot/zot:v2.1.21` | `6b69512c…f48c8` | 平台 registry（zot，E1-4 部署器钉版缺省；多节点 manager 平台组件） | internal/ingress/registry.go `DefaultZotImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步） |
 | 11 | `restic/restic:0.19.1` | `136600b6…d510` | 状态备份远端上传轨（restic 钉版容器一次性执行，E3-3/D-S3-3；首次上传按需拉取，预拉可选） | internal/statebackup/restic.go `DefaultResticImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；2026-09-21 解析） |
 | 12 | `rustfs/rustfs:1.0.0` | `8cc98017…d1ff` | 托管 RustFS（opt-in 管理组件，E3-5/D-S3-10；s3.mode=rustfs 时 duty 按需拉取，预拉可选；多架构 OCI index amd64/arm64） | internal/rustfs/spec.go `DefaultRustFSImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；2026-09-21 解析：1.0.0 为最新 1.0.x stable（2026-09-16 发布，与 latest tag 当前所指同 digest）） |
-| 13 | `ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1` | `（待 CI 首推后回填）` | 库备份/恢复/校验一次性 job 的执行体（引擎工具 + restic，E4 D-DB-6；备份受理时按需拉取，预拉可选；多架构 amd64/arm64；**PRIVATE ghcr 包**）。**S2 v0.2.x debian 化重发**：基底 postgres:16（与 dbtemplate.DefaultPostgresImage 同一钉定 digest）+ debian redis:7 的 redis-cli——glibc 与引擎同源，恢复单 job（W4 双 job 消解项落地）；镜像 ~120MB→~400MB（job 一次性执行体非常驻，预算裁决 2026-09-23 可接受）。**中间态：tag 引用待 digest**（豁免台账 deploy/image-pin-allowlist.txt；e2e/databases.sh 无凭据腿以同 tag dind 内本地构建承接，基础镜像预拉同名解析） | internal/database/adapters.go `DefaultDatabaseToolsImage`（Go 常量字面，同上双锚口径，改动须同步；发布 = .github/workflows/dbtools.yml——**主会话 dispatch 参数：tag=v0.2.1-dbtools.1**，首推后钉回 tag@digest 双锚并摘豁免、回填本格 digest）。私有包预拉注意：须先认证（`docker login ghcr.io`；CI nightly databases-e2e 以 GITHUB_TOKEN + packages:read 在 dind 内直拉）。**不要用宿主 save\|load 拷贝替代直拉**——digest 钉定引用（tag@digest）的本地解析依赖真实 pull 落下的 RepoDigests，load 进来的镜像没有该记录，引用无法解析（docker 29.8.1 实测，见 e2e/databases.sh 头注）。旧基底留档：v0.2.0-dbtools.1@sha256:64c367ff…99fe（alpine/musl，恢复双 job 时代载体） |
+| 13 | `ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1` | `472e8a5d…866b` | 库备份/恢复/校验一次性 job 的执行体（引擎工具 + restic，E4 D-DB-6；备份受理时按需拉取，预拉可选；多架构 amd64/arm64；**PRIVATE ghcr 包**）。**S2 v0.2.x debian 化重发（CI 首推 2026-09-23 run 35797985743，digest 已钉）**：基底 postgres:16（与 dbtemplate.DefaultPostgresImage 同一钉定 digest）+ debian redis:7 的 redis-cli——glibc 与引擎同源，恢复单 job（W4 双 job 消解项落地）；镜像 ~120MB→~400MB（job 一次性执行体非常驻，预算裁决 2026-09-23 可接受）。e2e 无凭据本地构建腿随 digest 收紧退役为 fatal（本地构建解析不了 digest 引用——W4 实测教训） | internal/database/adapters.go `DefaultDatabaseToolsImage`（Go 常量字面，同上双锚口径，改动须同步；发布 = .github/workflows/dbtools.yml，随平台 release 由 release.yml `dbtools-image` job 同版调用）。私有包预拉注意：须先认证（`docker login ghcr.io`；CI nightly databases-e2e 以 GITHUB_TOKEN + packages:read 在 dind 内直拉）。**不要用宿主 save\|load 拷贝替代直拉**——digest 钉定引用（tag@digest）的本地解析依赖真实 pull 落下的 RepoDigests，load 进来的镜像没有该记录，引用无法解析（docker 29.8.1 实测，见 e2e/databases.sh 头注）。旧基底留档：v0.2.0-dbtools.1@sha256:64c367ff…99fe（alpine/musl，恢复双 job 时代载体） |
 | 14 | `victoriametrics/victoria-logs:v1.52.0` | `47b82089…442e` | 托管 VictoriaLogs 日志库（默认捆绑管理组件，E6/V2-1；logs.backend=victorialogs〔缺省〕时 duty 按需拉取，预拉可选；多架构 OCI index amd64/arm64 等） | internal/victorialogs/spec.go `DefaultVictoriaLogsImage`（Go 常量字面，不在 `deploy/**`/`.github/**` 扫描口径内——钉版形态由本行与本常量双锚，改动须同步；e2e/logs-victorialogs.sh 以同 digest 引用拉取。2026-09-21 解析：v1.52.0 为实现时点最新 stable（GitHub releases 2026-07-16 发布，与 latest tag 当前所指同 digest——两侧 pull 解析一致）。注意官方 repo 是 `victoriametrics/victoria-logs`；设计文档字面 `victorialogs/victoria-logs` 在 Docker Hub 不存在 |
 | 15 | `victoriametrics/victoria-metrics:v1.152.0` | `86ca5fdb…5cef` | 托管 VictoriaMetrics 单机版（metrics 三件套的存储/查询件，E6 W5-S3/D-W5-2 opt-in；metrics.mode=on 时 duty 按需拉取，预拉可选；多架构 OCI index amd64/arm64 等） | internal/metrics/spec.go `DefaultVictoriaMetricsImage`（Go 常量字面，同上双锚口径；e2e/metrics.sh 以同 digest 引用拉取。2026-09-22 解析：v1.152.0 为实现时点最新 stable（2026-09-14 发布；v1.151.0/v1.148.4 为老分支续版，rc/enterprise/scratch 变体不取）。注意单机版抓取配置 flag 是 `-promscrape.config`（文件路径/http URL），设计字面 `-prometheus.config` 在 v1.152 不存在——抓取配置经 swarm config 对象分发（internal/metrics/spec.go 头注记） |
 | 16 | `prom/node-exporter:v1.12.1` | `1b4e4438…1be0` | 托管 node_exporter（metrics 三件套的节点指标采集件，global——每节点一任务；同上按需拉取；多架构 manifest list） | internal/metrics/spec.go `DefaultNodeExporterImage`（Go 常量字面，同上双锚口径；e2e/metrics.sh 同 digest。2026-09-22 解析：v1.12.1 为实现时点最新 stable，2026-07-14 发布） |
@@ -131,11 +131,17 @@ sh deploy/check-image-pins.sh FILE...      # 只扫指定文件（负路径自�
 
 ## 6. 范围外与遗留
 
-- `e2e/nightly/*.sh`（infra-b.sh、resource-sample.sh、run.sh、
+- ~~`e2e/nightly/*.sh`（infra-b.sh、resource-sample.sh、run.sh、
   conformance-builder.sh、n-stamp.sh）仍以 tag 形态引用 alpine:3.20 /
-  traefik:v3.5 / `DIND_IMAGE` 默认 `docker:29.8.1-dind`——本票禁改
-  `e2e/**`，未钉；nightly workflow 传入的 `DIND_IMAGE` 已钉 digest。
-  列入 v0.2 后续票据收口。
+  traefik:v3.5 / `DIND_IMAGE` 默认 `docker:29.8.1-dind`~~——**已收口
+  （2026-09-21，e2e/nightly 钉版票）**：run.sh / conformance-builder.sh /
+  resource-sample.sh 的 `DIND_IMAGE` 默认值、infra-b.sh 的 alpine/traefik
+  预拉（原「v3 tag 逐个试拉」可变 tag 面一并消灭）、run.sh v6 腿预拉、
+  n-stamp.sh read-helper 容器、v6.sh 三处 fixture 服务，全部改为
+  `name:tag@sha256:…` 形态，digest 引本台账 #1/#3/#6（`sh -n` 全过；
+  脚本在 `deploy/check-image-pins.sh` 扫描口径外，钉定形态以脚本内
+  `ALPINE_IMG`/`TRAEFIK_IMG` 变量与本节双锚）。v6.sh 的 c3/c4 服务引用
+  alpine 属同票补漏（原 §6 清单未列）。
 - `pebble:latest` / `curlimages/curl:latest` 浮动 tag 的漂移风险已被
   digest 钉定消除，但升级仍须按 §4 主动换版（digest 不会自更新）。
 - `smoke-arm64`（release.yml）无容器镜像依赖（原生 go build + 单测），

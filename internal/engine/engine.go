@@ -95,6 +95,10 @@ type Engine struct {
 	// 持续缺失只报一次；服务恢复后清零可再报；重启清零 = 缺失存续时重报
 	// 一次——重复优于漏报，与 driftSeen 同语义）。
 	substrateMissingSeen map[string]bool
+	// substrateDrainedSeen 是「服务在、任务全无」（F11，settled 应用 drain
+	// 事件面）披露的进程内记忆：语义与 substrateMissingSeen 同款（持续形态
+	// 只报一次；任务回岗清零可再报；重启清零 = 重报一次，重复优于漏报）。
+	substrateDrainedSeen map[string]bool
 	// dutyPanicOn / dutyCalls 是 safeCall 的测试注入缝（MG-5 覆盖面测试）：
 	// 前者按 duty 名注入 panic（验证包壳隔离），后者记录经 safeCall 执行的
 	// duty 名与次数（验证 duty 清单全部收口；Run goroutine 写、测试 goroutine
@@ -129,6 +133,7 @@ func NewEngine(cfg Config, store *state.Store, sub Substrate, images ImageChecke
 		routeBudget:          routePublishBudget,
 		recoveryStuck:        map[string]bool{},
 		substrateMissingSeen: map[string]bool{},
+		substrateDrainedSeen: map[string]bool{},
 	}
 }
 

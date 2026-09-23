@@ -123,3 +123,59 @@ func TestBuildSwarmSpecReplicatedJob(t *testing.T) {
 		t.Fatalf("default job restart condition = %+v, want none", j2.TaskTemplate.RestartPolicy)
 	}
 }
+
+// TestBuildSwarmSpecSecretFileTargetFullValues 钉死 W3 真机教训的修复形态
+// （W3-S3 发现的休眠隐患，收尾票 2026-09-21 补测试锚）：SecretReference 的
+// File 字段必须携带完整 UID/GID/Mode（"0"/"0"/0o444——docker CLI 同款缺省
+// 安全形态）。留空会让 swarm agent 在任务启动期 strconv 解析空串直接失败
+// ——该失败只在「服务挂 secret」路径触发，单测不钉则修复可被无声回退。
+// 同族正确形态参照：internal/execrelay/spec.go、internal/rustfs/spec.go、
+// internal/database/spec.go（各自已有同款显式赋值）。
+func TestBuildSwarmSpecSecretFileTargetFullValues(t *testing.T) {
+	spec := engine.ServiceSpec{
+		Name:     "fleetly-demo-web",
+		Image:    "repo/app@sha256:abc",
+		Replicas: 1,
+		Secrets: []engine.SecretMount{
+			{SecretName: "fleetly-demo-token-abc12345", Target: "/run/secrets/token"},
+		},
+	}
+	sw, err := buildSwarmSpec(spec, map[string]string{"fleetly-demo-token-abc12345": "secret-id-1"})
+	if err != nil {
+		t.Fatalf("buildSwarmSpec: %v", err)
+	}
+	cs := sw.TaskTemplate.ContainerSpec
+	if cs == nil || len(cs.Secrets) != 1 {
+		t.Fatalf("container spec secrets = %+v, want exactly 1 reference", cs)
+	}
+	ref := cs.Secrets[0]
+	if ref.SecretID != "secret-id-1" || ref.SecretName != "fleetly-demo-token-abc12345" {
+		t.Fatalf("secret reference ids = %q/%q, want resolved id + name", ref.SecretID, ref.SecretName)
+	}
+	if ref.File == nil {
+		t.Fatal("secret File target missing (W3 hazard resurfaced: swarm agent would fail strconv on empty UID/GID at task start)")
+	}
+	if ref.File.Name != "/run/secrets/token" {
+		t.Fatalf("file target name = %q, want /run/secrets/token", ref.File.Name)
+	}
+	if ref.File.UID != "0" || ref.File.GID != "0" {
+		t.Fatalf("file target UID/GID = %q/%q, want \"0\"/\"0\" (empty string breaks swarm agent strconv)", ref.File.UID, ref.File.GID)
+	}
+	if ref.File.Mode != 0o444 {
+		t.Fatalf("file target mode = %o, want 0444", ref.File.Mode)
+	}
+}
+
+// TestBuildSwarmSpecSecretNotEnsuredFailsExplicitly 反向锚：引擎未先行
+// EnsureSecret（缺 ID）= 对账层编码错误，必须显式报错而不是静默丢引用。
+func TestBuildSwarmSpecSecretNotEnsuredFailsExplicitly(t *testing.T) {
+	_, err := buildSwarmSpec(engine.ServiceSpec{
+		Name:     "s",
+		Image:    "img",
+		Replicas: 1,
+		Secrets:  []engine.SecretMount{{SecretName: "fleetly-s-token-abc12345", Target: "/run/secrets/token"}},
+	}, nil)
+	if err == nil {
+		t.Fatal("missing secret id must fail explicitly (engine ordering bug), got nil")
+	}
+}

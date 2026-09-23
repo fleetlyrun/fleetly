@@ -122,6 +122,11 @@ var docCodes = map[string]string{ // code → 文档出处
 	// 拒绝（internal/api/terminal.go / internal/execrelay hub.go）。
 	"E_TERMINAL_DISABLED": "E7 web-terminal §2.4 (W5-S6 feature gate: terminal.enabled=false deploys no exec relay and refuses ticket issuance, 409)",
 
+	// W3 遗留撞键票收口（2026-09-21，实现期新增，文档外码单独列出）：app
+	// 顶层名与平台组件命名空间的保留字校验（compose 受理层消费，
+	// internal/naming 保留字表为证据链，422）。
+	"E_APP_NAME_RESERVED": "v0.2.x closing wave added during implementation (W3 naming-collision audit: app name vs platform component namespaces, enforced in compose acceptance; pending T0.5 freeze confirmation)",
+
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
 	"W_DEPLOY_NO_HEALTHCHECK":   "release-semantics §2.7/§2.8",
@@ -155,8 +160,8 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // E1-8 增 E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 增 E_S3_* 四码、E4-S1 增
 // managed-databases §5.2 九码、E6 W5-S1 增 E_LOGS_BACKEND_UNAVAILABLE、
 // E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE、
-// E6 W5-S4 增 E_WEBHOOK_* 三码、E7 W5-S6 增 E_TERMINAL_DISABLED——错误码
-// 只增纪律）。E7 S6 后 = 58 E + 5 W。
+// E6 W5-S4 增 E_WEBHOOK_* 三码、E7 W5-S6 增 E_TERMINAL_DISABLED、v0.2.x
+// 收尾波增 E_APP_NAME_RESERVED（W3 撞键票，只增纪律）。E7 S6 后 = 59 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -166,8 +171,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 58 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 58), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 59 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 59), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

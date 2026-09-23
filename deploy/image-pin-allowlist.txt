@@ -6,22 +6,19 @@
 # 纪律：只收「确需可变 tag」的引用（如故意验证「可变 tag 被拒」的负路径
 # 用例），每个条目必须同行注释理由；无理由的豁免视为门禁失效。
 #
-# 注意：Go 常量引用（internal/execrelay DefaultExecRelayImage 等）不在本
+# 注意：Go 常量引用（internal/database DefaultDatabaseToolsImage 等）不在本
 # 门禁扫描域（域 = deploy/*.sh、Dockerfile*、testdata Dockerfile、
 # .github/workflows/*.yml），但 check-image-pins 的 -l 列表模式与豁免匹配
 # 以「<路径>:<引用>`」为键——Go 常量条目登记在此是为可变引用留有理由
 # 注记的台账；收紧时同步钉 Go 常量 digest。
 #
-# 当前条目（1）：
-ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1
-# S2 v0.2.x 中间态（Go 常量 internal/database DefaultDatabaseToolsImage 的
-# tag 引用待 CI 首推 debian 基底重建的真 digest——dispatch
-# .github/workflows/dbtools.yml tag=v0.2.1-dbtools.1；e2e/databases.sh
-# 无凭据路径以同 tag 本地构建承接，见该脚本头注）。首推完成后钉回
-# tag@digest 双锚（Go 常量 + e2e 常量）并摘除本条——先例见下行历史条目
-#（fleetly-exec v0.2.0-exec.1）与 docs/runbooks/image-prepull.md 台账 #13。
+# 当前条目：无。
 #
 # 历史条目（已收紧摘除，留档备查）：
 # ghcr.io/fleetlyrun/fleetly-exec:v0.2.0-exec.1
 # E7 W5-S6 中间态（tag 引用待 CI 首推真 digest）；2026-09-22 CI 首推完成
 # （run 35754500342）——Go 常量已钉 sha256:4de40017…，豁免摘除。
+# ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1
+# 收尾 S2 debian 基底重发的中间态；2026-09-23 CI 首推完成（run
+# 35797985743）——Go 常量与 e2e 常量已钉 sha256:472e8a5d…，豁免摘除；
+# e2e 无凭据本地构建腿随 digest 收紧退役为 fatal（诚实口径）。

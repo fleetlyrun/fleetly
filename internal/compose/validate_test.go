@@ -475,6 +475,27 @@ name: My API!
 services:
   web: { image: nginx }
 `, "E_COMPOSE_UNSUPPORTED", "name", ""},
+
+		// 保留字撞键（W3 撞键票收口，2026-09-21）：app 顶层名与平台组件
+		// 命名空间的交点，独立错误码 422——抽样三个不同撞键面（前缀族/
+		// 网络名/路由键），全集见 internal/naming 保留字表及其测试。
+		{"reject_reserved_name_cron", `
+name: cron
+services:
+  web: { image: nginx }
+`, "E_APP_NAME_RESERVED", "name", ""},
+
+		{"reject_reserved_name_rustfs", `
+name: rustfs
+services:
+  web: { image: nginx }
+`, "E_APP_NAME_RESERVED", "name", ""},
+
+		{"reject_reserved_name_registry", `
+name: registry
+services:
+  web: { image: nginx }
+`, "E_APP_NAME_RESERVED", "name", ""},
 	}
 
 	for _, tc := range cases {

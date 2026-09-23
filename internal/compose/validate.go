@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/naming"
 )
 
 // 本文件实现 §2.4 受控子集校验的第一层：在 compose-go canonical dict 上
@@ -305,6 +306,16 @@ func validateDict(abs string, dict map[string]any) error {
 	}
 	if !validSpecName(name) {
 		return errCompose("invalid top-level compose name %q (must match ^[a-z0-9][a-z0-9_-]*$: starts with a lowercase letter or digit, only lowercase letters/digits/-/_ allowed)", name).
+			WithContext("path", "name")
+	}
+	// 保留字撞键前置校验（W3 遗留撞键票收口，2026-09-21）：平台组件的
+	// 服务/网络/路由名以 app 名为参数派生（fleetly-<app>-*），与固定组件名
+	// 族的交点见 internal/naming 保留字表——撞上即拒绝，E_APP_NAME_RESERVED
+	//（422，注册表只增）。
+	if naming.IsReservedAppName(name) {
+		return apperr.New("E_APP_NAME_RESERVED",
+			"compose name %q collides with a platform-reserved component name (%s); reserved names: %s",
+			name, naming.ReservedAppNameReason(name), strings.Join(naming.ReservedAppNames(), ", ")).
 			WithContext("path", "name")
 	}
 
