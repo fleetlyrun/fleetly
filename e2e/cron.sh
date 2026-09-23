@@ -349,15 +349,20 @@ fi
 # ───────────────── C1e: job 输出行进现有日志采集面（验收五项之「日志」）
 nl '=== C1e: job output captured by the existing log pipeline ==='
 # job 服务存活期（sleep 3 + 完成检测拍，秒级到拍级）内采集器从零全量回读，
-# 行按 (app, compose 服务) 归属进 ring/落盘——logs history 读面即断言面。
+# 行按 (app, compose 服务) 归属进湖——SearchLogs 读面即断言面。修正
+#（2026-09-23 W1-S5 全量回归）：断言面原为 `logs history`，那是磁盘 JSONL
+# 读面；E6 W5-S1 起 victorialogs 为缺省后端，容器行只入湖不落盘
+#（internal/logs/manager.go「双写不留，磁盘不翻倍」，设计 §2.3），history
+# 面对容器日志在缺省形态下恒空——断言面随平台切换改统一检索
+#（keyword + service 过滤，归属语义不变），logs-victorialogs.sh B6 同款。
 job_log_captured() {
-    fcli logs history --service "$SVC" "$APP" 2>/dev/null | grep -q 'cron-log-marker-'
+    fcli logs search --keyword 'cron-log-marker-' --service "$SVC" --source container "$APP" 2>/dev/null | grep -q 'cron-log-marker-'
 }
 if poll_until 120 job_log_captured; then
     assert "CR-C1e JOB_LOG_IN_PIPELINE" 0
 else
-    fcli logs history --service "$SVC" "$APP" || true
-    assert "CR-C1e JOB_LOG_IN_PIPELINE" 1 "job output never appeared in the logs read face"
+    fcli logs search --keyword 'cron-log-marker-' --service "$SVC" "$APP" || true
+    assert "CR-C1e JOB_LOG_IN_PIPELINE" 1 "job output never appeared in the logs search face"
 fi
 
 # ───────────────── C2: 手动触发（同一路径）

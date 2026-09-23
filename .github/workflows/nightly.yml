@@ -670,6 +670,39 @@ jobs:
           docker ps -aq --filter name=fleetly-t-e2e- | xargs -r docker rm -f
           docker network rm fleetly-t-br || true
 
+  auth-e2e:
+    # v0.3 W1 认证面端到端（e2e/auth.sh 单 dind；rbac-teams 设计 §2/§8
+    # 「e2e 新增 auth.sh」，terminal 同骨架——编排自足、镜像钉 digest）：
+    # AUTH-1 fresh 注册窗口（无用户恒开）→ AUTH-2 首用户注册（平台管理员
+    # + 个人队 owner + 默认项目事件）→ AUTH-3 bootstrap token 注册即吊销
+    # → AUTH-4 注册窗口开关（403 E_REGISTRATION_CLOSED/open/closed 往返）
+    # → AUTH-5 登录/错口令/会话生命周期（双 jar 两设备 + LogoutAll 全端
+    # 下线）→ AUTH-6 登录限流（双键 10/min，第 11 次起 429）→ AUTH-7 CLI
+    # auth 链（机具令牌拒收 + 机具凭据正面；用户 PAT 全链随 W2 补）→
+    # AUTH-8 用户管理（CreateUser/Disable/Enable/ResetPassword 重置即全端
+    # 下线）。REST 会话面用钉 digest curlimages/curl helper（cookie jar）；
+    # 不部署受管应用、dind 内零 pull——无需任何 ghcr 凭据。
+    name: auth e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run auth e2e (dind)
+        run: sh e2e/auth.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-auth-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-auth-e2e- | xargs -r docker rm -f
+          docker network rm fleetly-auth-br || true
+
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:
     # Builder conformance（ObjectStore 部分已随 E3-7 落地为

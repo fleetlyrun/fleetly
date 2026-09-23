@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -52,7 +53,10 @@ type fakeDocker struct {
 	rotateExit int
 
 	// jobRuns 记录一次性 Swarm job 执行（S5 备份/恢复/校验/清理的断言面：
-	// 镜像/挂载/网络/约束/env 的载荷形态）。
+	// 镜像/挂载/网络/约束/env 的载荷形态）。jobMu 守卫 jobRuns：TriggerBackup
+	// 的后台 goroutine（JobRun append）与测试轮询器（jobsWithPurpose 读）
+	// 并发访问——race 检测面（2026-09-23 W1-S5 回归补钉，fixture 级）。
+	jobMu   sync.Mutex
 	jobRuns []JobRunInput
 	// jobOutFn 按 job 载荷注入结论（nil = complete 空输出；测试按 Cmd 脚本
 	// 内容分支——backup 注 restic --json summary，restore/verify 注失败）。
@@ -172,7 +176,9 @@ func (f *fakeDocker) ContainerRun(_ context.Context, in ContainerRunInput) (int,
 }
 
 func (f *fakeDocker) JobRun(_ context.Context, in JobRunInput) (JobRunOutcome, error) {
+	f.jobMu.Lock()
 	f.jobRuns = append(f.jobRuns, in)
+	f.jobMu.Unlock()
 	if f.jobOutFn != nil {
 		return f.jobOutFn(in), nil
 	}
@@ -182,6 +188,8 @@ func (f *fakeDocker) JobRun(_ context.Context, in JobRunInput) (JobRunOutcome, e
 // jobsWithPurpose 按目的段筛 job 记录（fleetly-dbjob-<instance>-<purpose>-
 // <ulid8> 命名——名字是载荷可识别性的契约面）。
 func (f *fakeDocker) jobsWithPurpose(purpose string) []JobRunInput {
+	f.jobMu.Lock()
+	defer f.jobMu.Unlock()
 	var out []JobRunInput
 	for _, j := range f.jobRuns {
 		if strings.Contains(j.Name, "-"+purpose+"-") {
