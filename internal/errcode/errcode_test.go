@@ -114,8 +114,8 @@ var docCodes = map[string]string{ // code → 文档出处
 	// Webhook 面的族码——NotFound/NameConflict 为 state 哨兵的信封化投影
 	//（internal/api/notifications.go），PatternInvalid 为订阅模式白名单校验
 	//（internal/state/webhooks.go ValidateWebhookPatterns）。
-	"E_WEBHOOK_NOT_FOUND":      "E6 observability §5 (W5-S4 webhook endpoint absent: envelope projection of the state sentinel, 404)",
-	"E_WEBHOOK_NAME_CONFLICT":  "E6 observability §5 (W5-S4 endpoint names are unique: envelope projection of the state sentinel, 409)",
+	"E_WEBHOOK_NOT_FOUND":       "E6 observability §5 (W5-S4 webhook endpoint absent: envelope projection of the state sentinel, 404)",
+	"E_WEBHOOK_NAME_CONFLICT":   "E6 observability §5 (W5-S4 endpoint names are unique: envelope projection of the state sentinel, 409)",
 	"E_WEBHOOK_PATTERN_INVALID": "E6 observability §5 (W5-S4 subscription glob pattern rejected by the whitelist: non-empty [a-z0-9._-*], 422)",
 	// E7 Web 终端（web-terminal 设计 §2.4/§2.5，W5-S6 接线，注册表只增）：
 	// 功能开关门——terminal.enabled=false 时 ticket 受理与 WS 接入的诚实
@@ -127,6 +127,14 @@ var docCodes = map[string]string{ // code → 文档出处
 	// internal/api/authservice.go Register（state 哨兵 ErrRegistrationClosed
 	// 的 apperr 化投影，403）。
 	"E_REGISTRATION_CLOSED": "v0.3 W1 rbac-teams §2.1 (registration window closed: auth.registration defaults to closed once any user exists, 403)",
+
+	// v0.3 W2-S1 团队/项目面（rbac-teams 设计 §5 错误码清单，注册表只增）：
+	// 消费点 = internal/api/teams.go（最后一名 owner 守卫、保留字 slug 守卫）
+	// 与 internal/api/authservice.go AcceptInvite（一次性邀请四类不可消费
+	// 形态统一同码）。
+	"E_TEAM_LAST_OWNER":    "v0.3 W2-S1 rbac-teams §3.1/§5 (last-team-owner guard on member removal/demotion, 409)",
+	"E_INVITE_INVALID":     "v0.3 W2-S1 rbac-teams §5 (one-time invite invalid/used/revoked/expired — one code, state not disclosed, 409)",
+	"E_TEAM_SLUG_RESERVED": "v0.3 W2-S1 rbac-teams §4.3/§5 (team slug vs platform component namespaces — v0.3 naming formulas take the team slug as parameter, 422)",
 
 	// W3 遗留撞键票收口（2026-09-21，实现期新增，文档外码单独列出）：app
 	// 顶层名与平台组件命名空间的保留字校验（compose 受理层消费，
@@ -168,7 +176,9 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE、
 // E6 W5-S4 增 E_WEBHOOK_* 三码、E7 W5-S6 增 E_TERMINAL_DISABLED、v0.2.x
 // 收尾波增 E_APP_NAME_RESERVED（W3 撞键票，只增纪律）、v0.3 W1 增
-// E_REGISTRATION_CLOSED。E7 S6 后 = 59 E + 5 W；W1 后 = 60 E + 5 W。
+// E_REGISTRATION_CLOSED、v0.3 W2-S1 增 E_TEAM_LAST_OWNER / E_INVITE_INVALID /
+// E_TEAM_SLUG_RESERVED。E7 S6 后 = 59 E + 5 W；W1 后 = 60 E + 5 W；
+// W2-S1 后 = 63 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -178,8 +188,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 60 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 60), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 63 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 63), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

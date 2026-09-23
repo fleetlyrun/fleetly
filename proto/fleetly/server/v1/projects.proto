@@ -1,0 +1,190 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 teams.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// ProjectsService 是项目与队内覆写成员面（RBAC 设计 §3.3/§3.4/§5，v0.3
+// W2-S1）。
+//
+// 项目面权限（本票自含，W2-S4 通用角色门之前的实现切面）：
+//   - 全部方法要求用户凭据（会话或用户 PAT）——机具令牌恒 403（与
+//     TeamsService 同口径）；
+//   - 读面：团队成员（可见性零级联——可见项目集 = 团队归属，D-W0-2）；
+//     平台管理员只读放行；
+//   - 项目生命周期写面（创建/改名/删除）= 团队 owner（§3.2 矩阵「项目
+//     创建/删除」行；改名未入矩阵，保守取 owner——见票面偏差记录）；
+//   - 队内覆写成员面 = 团队 admin/owner（§3.3 明文）；覆写角色不授予
+//     成员管理权（权限怪圈防线）。
+//
+// slug 纪律（§3.4）：单词制 [a-z0-9]{2,32}、team 内唯一、不可变——
+// UpdateProject 无 slug 字段；同名项目跨团队允许（D-W0-9）。
+// MoveApp / MoveDatabase 不在本票（换名重部署依赖 W2-S3 命名三段化）。
+service ProjectsService {
+  // CreateProject 在团队下建项目（owner 专属）；team 内 slug 冲突 409。
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {
+    option (google.api.http) = {
+      post: "/v1/projects"
+      body: "*"
+    };
+  }
+  // ListProjects 我可见项目（团队归属集）；带 team_id 收窄到单队（须为
+  // 该队成员或平台管理员）；平台管理员不带过滤 = 全部。
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
+    option (google.api.http) = { get: "/v1/projects" };
+  }
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {
+    option (google.api.http) = { get: "/v1/projects/{id}" };
+  }
+  // UpdateProject 仅改 name/description（slug 不可变——请求无 slug 字段）。
+  rpc UpdateProject(UpdateProjectRequest) returns (UpdateProjectResponse) {
+    option (google.api.http) = {
+      patch: "/v1/projects/{id}"
+      body: "*"
+    };
+  }
+  // DeleteProject 删除空项目：项目内有存活资源（apps 非 tombstone /
+  // db_instances 非 deleted 终态）即拒绝（409——资源先迁走或删光，不做
+  // 隐式级联，§3.1）。
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse) {
+    option (google.api.http) = { delete: "/v1/projects/{id}" };
+  }
+  rpc ListProjectMembers(ListProjectMembersRequest) returns (ListProjectMembersResponse) {
+    option (google.api.http) = { get: "/v1/projects/{project_id}/members" };
+  }
+  // SetProjectMemberRole 队内覆写 upsert（团队 admin/owner，D-W0-2 B 形）：
+  // 仅限团队成员；owner 不可覆写（409）；有行则改角色、无行则插入。
+  rpc SetProjectMemberRole(SetProjectMemberRoleRequest) returns (SetProjectMemberRoleResponse) {
+    option (google.api.http) = {
+      post: "/v1/projects/{project_id}/members:set-role"
+      body: "*"
+    };
+  }
+  // RemoveProjectMember 删除覆写行（该成员回退用团队角色）。
+  rpc RemoveProjectMember(RemoveProjectMemberRequest) returns (RemoveProjectMemberResponse) {
+    option (google.api.http) = { delete: "/v1/projects/{project_id}/members/{user_id}" };
+  }
+}
+
+// ProjectView 是项目行的无敏感投影。
+message ProjectView {
+  string id = 1;
+  string team_id = 2;
+  // 归属团队 slug（限定形 team/project 展示面，D-W0-9）。
+  string team_slug = 3;
+  // 单词制标识（[a-z0-9]{2,32}、team 内唯一、不可变；命名公式三段第二位）。
+  string slug = 4;
+  string name = 5;
+  string description = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message CreateProjectRequest {
+  string team_id = 1 [(buf.validate.field).string.min_len = 1];
+  string slug = 2 [(buf.validate.field).string = {
+    min_len: 2,
+    max_len: 32,
+    pattern: "^[a-z0-9]{2,32}$"
+  }];
+  string name = 3 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 100
+  }];
+  string description = 4 [(buf.validate.field).string.max_len = 500];
+}
+
+message CreateProjectResponse {
+  ProjectView project = 1;
+}
+
+message ListProjectsRequest {
+  // 可选：收窄到单队（空 = 我可见全部——跨我所在团队；平台管理员 = 全部）。
+  string team_id = 1;
+}
+
+message ListProjectsResponse {
+  repeated ProjectView projects = 1;
+}
+
+message GetProjectRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetProjectResponse {
+  ProjectView project = 1;
+}
+
+message UpdateProjectRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 100
+  }];
+  string description = 3 [(buf.validate.field).string.max_len = 500];
+}
+
+message UpdateProjectResponse {
+  ProjectView project = 1;
+}
+
+message DeleteProjectRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message DeleteProjectResponse {}
+
+message ListProjectMembersRequest {
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ProjectMemberView {
+  string project_id = 1;
+  string user_id = 2;
+  // 覆写角色（admin/developer/viewer 三档；owner 不可覆写——设计 §3.3）。
+  string role = 3;
+  google.protobuf.Timestamp created_at = 4;
+  // 属主投影（成员列表的可用性面；无敏感材料）。
+  string email = 5;
+  string display_name = 6;
+}
+
+message ListProjectMembersResponse {
+  repeated ProjectMemberView members = 1;
+}
+
+message SetProjectMemberRoleRequest {
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  string user_id = 2 [(buf.validate.field).string.min_len = 1];
+  string role = 3 [(buf.validate.field).string = {
+    in: ["admin", "developer", "viewer"]
+  }];
+}
+
+message SetProjectMemberRoleResponse {
+  ProjectMemberView member = 1;
+}
+
+message RemoveProjectMemberRequest {
+  string project_id = 1 [(buf.validate.field).string.min_len = 1];
+  string user_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveProjectMemberResponse {}

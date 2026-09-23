@@ -50,6 +50,8 @@ func NewGRPCServer(
 	execSvc *api.ExecService,
 	authSvc *api.AuthService,
 	usersSvc *api.UsersService,
+	teamsSvc *api.TeamsService,
+	projectsSvc *api.ProjectsService,
 	sys *api.SystemService,
 ) (*lynxgrpc.Server, error) {
 	validator, err := protovalidate.New()
@@ -102,6 +104,10 @@ func NewGRPCServer(
 	// 管理面 = admin scope + handler 内平台管理员判定（internal/api/users.go）。
 	serverv1.RegisterAuthServiceServer(g, authSvc)
 	serverv1.RegisterUsersServiceServer(g, usersSvc)
+	// 团队/项目面（v0.3 W2-S1，rbac-teams §5）：角色门在 handler 内强制
+	// （机具令牌/非成员 403、平台管理员只读——internal/api/teams.go 头注）。
+	serverv1.RegisterTeamsServiceServer(g, teamsSvc)
+	serverv1.RegisterProjectsServiceServer(g, projectsSvc)
 	return srv, nil
 }
 

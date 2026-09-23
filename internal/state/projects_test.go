@@ -332,3 +332,75 @@ func TestAppsProjectNameUnique(t *testing.T) {
 		t.Fatalf("insert NULL-project db: %v", err)
 	}
 }
+
+// TestProjectEventOutbox（v0.3 W2-S1，设计 §6 事件清单 + Outbox 同事务）：
+// project.created / project.deleted / project.member_changed（override_set /
+// override_removed 两形态）随业务写同事务落 events 表。
+func TestProjectEventOutbox(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	owner, err := st.CreateUser(ctx, UserWrite{Email: "owner@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	mate, err := st.CreateUser(ctx, UserWrite{Email: "mate@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser mate: %v", err)
+	}
+	team, err := st.CreateTeamWithOwner(ctx, TeamWrite{Slug: "acme", Name: "Acme", CreatedBy: owner.ID})
+	if err != nil {
+		t.Fatalf("CreateTeamWithOwner: %v", err)
+	}
+	if _, err := st.AddMember(ctx, team.ID, mate.ID, TeamRoleDeveloper, "", ""); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+
+	proj, err := st.CreateProject(ctx, ProjectWrite{TeamID: team.ID, Slug: "web", Name: "Web", ActorUserID: owner.ID})
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	created := eventPayloads(t, st, "project.created")
+	if len(created) == 0 {
+		t.Fatal("project.created event missing")
+	}
+
+	if _, err := st.SetProjectMemberRole(ctx, proj.ID, mate.ID, ProjectRoleViewer, owner.ID, ""); err != nil {
+		t.Fatalf("SetProjectMemberRole: %v", err)
+	}
+	if err := st.RemoveProjectMember(ctx, proj.ID, mate.ID, owner.ID, ""); err != nil {
+		t.Fatalf("RemoveProjectMember: %v", err)
+	}
+	if err := st.DeleteProject(ctx, proj.ID, owner.ID, ""); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+
+	// project.member_changed 两形态（payload change 字段区分）。
+	changed := eventPayloads(t, st, "project.member_changed")
+	discriminants := map[string]bool{}
+	for _, pair := range changed {
+		if pair[0] != "project:"+proj.ID {
+			continue
+		}
+		switch payloadField(t, pair[1], "change") {
+		case "override_set", "override_removed":
+			discriminants[payloadField(t, pair[1], "change")] = true
+		default:
+			t.Fatalf("unexpected change discriminant in payload %q", pair[1])
+		}
+	}
+	if !discriminants["override_set"] || !discriminants["override_removed"] {
+		t.Fatalf("project.member_changed must carry override_set/override_removed: %v", discriminants)
+	}
+
+	// project.deleted（行已删，payload 带 team_id/slug 供事件读者定位）。
+	deleted := eventPayloads(t, st, "project.deleted")
+	for _, pair := range deleted {
+		if pair[0] == "project:"+proj.ID {
+			if slug := payloadField(t, pair[1], "slug"); slug != "web" {
+				t.Fatalf("project.deleted slug = %q, want web", slug)
+			}
+			return
+		}
+	}
+	t.Fatalf("project.deleted event missing (seen: %v)", deleted)
+}

@@ -90,6 +90,8 @@ var ProviderSet = wire.NewSet(
 	NewTokensService,
 	NewAuthService,
 	NewUsersService,
+	NewTeamsService,
+	NewProjectsService,
 	NewGitTriggers,
 	NewGitKeysService,
 	NewGRPCServer,
@@ -764,6 +766,18 @@ func NewAuthService(st *state.Store) *api.AuthService {
 // 平台管理员判定在 handler 内强制）。
 func NewUsersService(st *state.Store) *api.UsersService {
 	return api.NewUsersService(st)
+}
+
+// NewTeamsService 构造团队/成员/邀请面服务（v0.3 W2-S1，rbac-teams §3.1/
+// §3.2；角色门在 handler 内强制——scope 登记见 internal/api/scope.go）。
+func NewTeamsService(st *state.Store) *api.TeamsService {
+	return api.NewTeamsService(st)
+}
+
+// NewProjectsService 构造项目/队内覆写成员面服务（v0.3 W2-S1，rbac-teams
+// §3.3/§3.4；覆写管理权判定在 handler 内强制）。
+func NewProjectsService(st *state.Store) *api.ProjectsService {
+	return api.NewProjectsService(st)
 }
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux

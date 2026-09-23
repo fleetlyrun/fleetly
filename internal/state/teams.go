@@ -28,6 +28,11 @@ import (
 // 审计动作名取设计 §6 注册表：team.created / member_added /
 // member_role_changed / member_removed / invite_created / invite_accepted /
 // invite_revoked（与业务写同事务 fail-closed）。
+//
+// 事件（v0.3 W2-S1 补齐，设计 §6 事件清单 + Outbox 同事务）：team.created /
+// team.member_changed / invite.accepted——metadata-only 零 secret（注册表
+// 只增；register.go 的注册组合事务在 W1 已内联发 team.created，本文件是
+// 独立建队通道的发出来源，两通道 payload 同形）。
 
 // 团队角色词表（设计 §3.2 四档）。
 const (
@@ -111,6 +116,10 @@ var (
 	// ErrInviteInvalid 表示邀请不可消费——查无此 token/已接受/已吊销/已
 	// 过期统一同码（一次性凭据，不泄漏具体状态）。
 	ErrInviteInvalid = errors.New("invite invalid")
+	// ErrTeamNotEmpty 表示团队内仍有项目行（DeleteTeam 守卫，设计 §3.1
+	// 「项目须空」：项目自身有非空守卫，资源先清 → 项目可删 → 团队可删；
+	// 不做隐式级联）。
+	ErrTeamNotEmpty = errors.New("team not empty")
 )
 
 // TeamWrite 是一次团队写入。
@@ -165,8 +174,92 @@ func (s *Store) CreateTeam(ctx context.Context, w TeamWrite) (Team, error) {
 		}); err != nil {
 			return err
 		}
+		// 事件同事务（Outbox；register.go 注册组合事务同形 payload）。
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "team.created",
+			Subject: "team:" + id,
+			Payload: DiffSummary("slug", w.Slug, "name", w.Name),
+		}); err != nil {
+			return err
+		}
 		row := tx.QueryRowContext(ctx, `SELECT id, slug, name, created_by, created_at FROM teams WHERE id = ?`, id)
 		return scanTeam(row, &out)
+	})
+	if err != nil {
+		return Team{}, err
+	}
+	return out, nil
+}
+
+// CreateTeamWithOwner 是 CreateTeam 的组合原语（v0.3 W2-S1，设计 §3.1
+// 「建队者 = owner」）：团队行 + owner 成员行 + 审计（team.created /
+// team.member_added）+ 事件（team.created）单事务落位——消除「先建队后加
+// owner」两事务间的中断窗口（有队无 owner 的团队无人可管理，register.go
+// 组合原语的同款理由）。slug 冲突返回 ErrTeamSlugTaken。
+func (s *Store) CreateTeamWithOwner(ctx context.Context, w TeamWrite) (Team, error) {
+	if strings.TrimSpace(w.Slug) == "" {
+		return Team{}, fmt.Errorf("state: create team with owner: slug is empty")
+	}
+	if strings.TrimSpace(w.Name) == "" {
+		return Team{}, fmt.Errorf("state: create team with owner: name is empty")
+	}
+	if strings.TrimSpace(w.CreatedBy) == "" {
+		return Team{}, fmt.Errorf("state: create team with owner: created_by is empty")
+	}
+	id := w.ID
+	if id == "" {
+		id = ulid.Make().String()
+	}
+	var out Team
+	err := s.InTx(ctx, func(tx *Tx) error {
+		now := nowNano()
+		const teamQ = `INSERT INTO teams (id, slug, name, created_by, created_at) VALUES (?, ?, ?, ?, ?)`
+		if _, err := tx.ExecContext(ctx, teamQ, id, w.Slug, w.Name, w.CreatedBy, now); err != nil {
+			if isUniqueViolation(err) {
+				return fmt.Errorf("%w: %s", ErrTeamSlugTaken, w.Slug)
+			}
+			return fmt.Errorf("state: insert team: %w", err)
+		}
+		if err := tx.WriteAudit(ctx, AuditEntry{
+			Actor:        auditActor(w.ActorUserID),
+			ActorTokenID: w.ActorTokenID,
+			Action:       "team.created",
+			Target:       "team:" + id,
+			Result:       "ok",
+			DiffSummary:  DiffSummary("slug", w.Slug, "name", w.Name),
+		}); err != nil {
+			return err
+		}
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "team.created",
+			Subject: "team:" + id,
+			Payload: DiffSummary("slug", w.Slug, "name", w.Name),
+		}); err != nil {
+			return err
+		}
+		const memberQ = `INSERT INTO team_members (team_id, user_id, role, created_at) VALUES (?, ?, ?, ?)`
+		if _, err := tx.ExecContext(ctx, memberQ, id, w.CreatedBy, TeamRoleOwner, now); err != nil {
+			return fmt.Errorf("state: insert team owner: %w", err)
+		}
+		if err := tx.WriteAudit(ctx, AuditEntry{
+			Actor:        auditActor(w.ActorUserID),
+			ActorTokenID: w.ActorTokenID,
+			Action:       "team.member_added",
+			Target:       "team:" + id,
+			Result:       "ok",
+			DiffSummary:  DiffSummary("user_id", w.CreatedBy, "role", TeamRoleOwner),
+		}); err != nil {
+			return err
+		}
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "team.member_changed",
+			Subject: "team:" + id,
+			Payload: DiffSummary("change", "added", "user_id", w.CreatedBy, "role", TeamRoleOwner),
+		}); err != nil {
+			return err
+		}
+		return scanTeam(tx.QueryRowContext(ctx,
+			`SELECT id, slug, name, created_by, created_at FROM teams WHERE id = ?`, id), &out)
 	})
 	if err != nil {
 		return Team{}, err
@@ -217,6 +310,87 @@ func (s *Store) ListTeams(ctx context.Context) ([]Team, error) {
 	return out, nil
 }
 
+// TeamUpdate 是一次团队更新（仅显示名——slug 不可变，设计 §3.1：底座命名
+// 公式段禁改）。
+type TeamUpdate struct {
+	ID string
+	// Name 是人读显示名（非空必填）。
+	Name string
+	// ActorUserID 是发起写入的用户（保留字段：设计 §6 注册表暂无
+	// team.updated 动作，本原语暂不入审计——与 UpdateProject 同口径；
+	// 扩审计动作注册表属后续票裁决）。
+	ActorUserID string
+}
+
+// UpdateTeam 更新显示名（slug 不可变——原语签名无 slug 入参，结构性杜绝）；
+// 不存在返回 ErrTeamNotFound。
+func (s *Store) UpdateTeam(ctx context.Context, u TeamUpdate) (Team, error) {
+	if strings.TrimSpace(u.Name) == "" {
+		return Team{}, fmt.Errorf("state: update team: name is empty")
+	}
+	var out Team
+	err := s.InTx(ctx, func(tx *Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE teams SET name = ? WHERE id = ?`, u.Name, u.ID)
+		if err != nil {
+			return fmt.Errorf("state: update team: %w", err)
+		}
+		n, err := res.RowsAffected()
+		if err != nil {
+			return fmt.Errorf("state: read team update count: %w", err)
+		}
+		if n == 0 {
+			return ErrTeamNotFound
+		}
+		return scanTeam(tx.QueryRowContext(ctx,
+			`SELECT id, slug, name, created_by, created_at FROM teams WHERE id = ?`, u.ID), &out)
+	})
+	if err != nil {
+		return Team{}, err
+	}
+	return out, nil
+}
+
+// DeleteTeam 删除团队（owner 专属两段式 confirm 在 api 面；本原语承载状态
+// 面守卫，设计 §3.1）：团队内有项目行即拒绝 ErrTeamNotEmpty（项目自身有
+// 非空守卫——资源先清 → 项目可删 → 团队可删，不做隐式级联）；删除时同事务
+// 清成员行与邀请行（团队的从属数据，随主体同删，非跨资源级联）。与审计
+// （team.deleted）同事务 fail-closed。设计 §6 事件清单无 team.deleted——
+// 只落审计不落事件（事件注册表只增纪律）。
+func (s *Store) DeleteTeam(ctx context.Context, id, actorUserID, actorTokenID string) error {
+	return s.InTx(ctx, func(tx *Tx) error {
+		var one int
+		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM teams WHERE id = ?`, id).Scan(&one); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrTeamNotFound
+			}
+			return fmt.Errorf("state: probe team: %w", err)
+		}
+		var projects int64
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM projects WHERE team_id = ?`, id).Scan(&projects); err != nil {
+			return fmt.Errorf("state: count team projects: %w", err)
+		}
+		if projects > 0 {
+			return fmt.Errorf("%w: %d project(s) remain (delete the empty projects first)", ErrTeamNotEmpty, projects)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM team_members WHERE team_id = ?`, id); err != nil {
+			return fmt.Errorf("state: delete team members: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM team_invites WHERE team_id = ?`, id); err != nil {
+			return fmt.Errorf("state: delete team invites: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx, `DELETE FROM teams WHERE id = ?`, id); err != nil {
+			return fmt.Errorf("state: delete team: %w", err)
+		}
+		return tx.WriteAudit(ctx, AuditEntry{
+			Actor:        auditActor(actorUserID),
+			ActorTokenID: actorTokenID,
+			Action:       "team.deleted",
+			Target:       "team:" + id,
+			Result:       "ok",
+		})
+	})
+}
+
 // AddMember 落一条团队成员行并与审计（team.member_added）同事务
 // fail-closed；重复加入返回 ErrTeamMemberExists；角色词表非法在本层拒绝
 // （与 CHECK 词典双保险）。
@@ -244,6 +418,13 @@ func (s *Store) AddMember(ctx context.Context, teamID, userID, role, actorUserID
 			Target:       "team:" + teamID,
 			Result:       "ok",
 			DiffSummary:  DiffSummary("user_id", userID, "role", role),
+		}); err != nil {
+			return err
+		}
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "team.member_changed",
+			Subject: "team:" + teamID,
+			Payload: DiffSummary("change", "added", "user_id", userID, "role", role),
 		}); err != nil {
 			return err
 		}
@@ -295,6 +476,13 @@ func (s *Store) SetMemberRole(ctx context.Context, teamID, userID, role, actorUs
 		}); err != nil {
 			return err
 		}
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "team.member_changed",
+			Subject: "team:" + teamID,
+			Payload: DiffSummary("change", "role_changed", "user_id", userID, "from", current, "to", role),
+		}); err != nil {
+			return err
+		}
 		return scanTeamMember(tx.QueryRowContext(ctx,
 			`SELECT team_id, user_id, role, created_at FROM team_members WHERE team_id = ? AND user_id = ?`,
 			teamID, userID), &out)
@@ -340,14 +528,22 @@ func (s *Store) RemoveMember(ctx context.Context, teamID, userID, actorUserID, a
 		if err != nil {
 			return fmt.Errorf("state: read override purge count: %w", err)
 		}
-		return tx.WriteAudit(ctx, AuditEntry{
+		if err := tx.WriteAudit(ctx, AuditEntry{
 			Actor:        auditActor(actorUserID),
 			ActorTokenID: actorTokenID,
 			Action:       "team.member_removed",
 			Target:       "team:" + teamID,
 			Result:       "ok",
 			DiffSummary:  DiffSummary("user_id", userID, "role", role, "project_overrides_removed", purged),
+		}); err != nil {
+			return err
+		}
+		_, err = tx.AppendEvent(ctx, Event{
+			Name:    "team.member_changed",
+			Subject: "team:" + teamID,
+			Payload: DiffSummary("change", "removed", "user_id", userID, "role", role, "project_overrides_removed", purged),
 		})
+		return err
 	})
 }
 
@@ -609,6 +805,13 @@ func (s *Store) ConsumeInvite(ctx context.Context, plaintextToken, userID, actor
 			Target:       "invite:" + inv.ID,
 			Result:       "ok",
 			DiffSummary:  DiffSummary("team_id", inv.TeamID, "user_id", userID, "role", inv.Role),
+		}); err != nil {
+			return err
+		}
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "invite.accepted",
+			Subject: "invite:" + inv.ID,
+			Payload: DiffSummary("team_id", inv.TeamID, "user_id", userID, "role", inv.Role),
 		}); err != nil {
 			return err
 		}

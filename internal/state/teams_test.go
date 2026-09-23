@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -411,4 +412,213 @@ func TestInviteLifecycle(t *testing.T) {
 	if got, err := st.GetMembership(ctx, team.ID, invitee.ID); err != nil || got.Role != TeamRoleDeveloper {
 		t.Fatalf("existing member role must not change on re-invite accept: %v (%+v)", err, got)
 	}
+}
+
+// TestCreateTeamWithOwner（v0.3 W2-S1）：建队 + owner 成员行 + 审计 + 事件
+// 单事务落位；slug 冲突拒绝（事务整体回滚——无成员行残留）。
+func TestCreateTeamWithOwner(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	creator, err := st.CreateUser(ctx, UserWrite{Email: "owner@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	team, err := st.CreateTeamWithOwner(ctx, TeamWrite{Slug: "acme", Name: "Acme", CreatedBy: creator.ID})
+	if err != nil {
+		t.Fatalf("CreateTeamWithOwner: %v", err)
+	}
+	m, err := st.GetMembership(ctx, team.ID, creator.ID)
+	if err != nil || m.Role != TeamRoleOwner {
+		t.Fatalf("creator membership: %v (%+v)", err, m)
+	}
+	// slug 冲突整体回滚：无半落位状态。
+	if _, err := st.CreateTeamWithOwner(ctx, TeamWrite{Slug: "acme", Name: "dup", CreatedBy: creator.ID}); !errors.Is(err, ErrTeamSlugTaken) {
+		t.Fatalf("duplicate slug err = %v, want ErrTeamSlugTaken", err)
+	}
+	members, err := st.ListMembers(ctx, team.ID)
+	if err != nil || len(members) != 1 {
+		t.Fatalf("rollback must leave no stray member rows: %v (n=%d)", err, len(members))
+	}
+}
+
+// TestTeamUpdateAndDelete（v0.3 W2-S1，设计 §3.1）：UpdateTeam 仅显示名
+// （slug 不可变——原语签名无 slug 入参）；DeleteTeam 项目非空守卫
+//（ErrTeamNotEmpty）+ 成功路径同事务清成员/邀请 + 审计 team.deleted。
+func TestTeamUpdateAndDelete(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	creator, err := st.CreateUser(ctx, UserWrite{Email: "owner@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	team, err := st.CreateTeamWithOwner(ctx, TeamWrite{Slug: "acme", Name: "Acme", CreatedBy: creator.ID})
+	if err != nil {
+		t.Fatalf("CreateTeamWithOwner: %v", err)
+	}
+
+	// 改名成功；slug 不动。
+	updated, err := st.UpdateTeam(ctx, TeamUpdate{ID: team.ID, Name: "Acme Renamed", ActorUserID: creator.ID})
+	if err != nil || updated.Name != "Acme Renamed" || updated.Slug != "acme" {
+		t.Fatalf("UpdateTeam: %v (%+v)", err, updated)
+	}
+	if _, err := st.UpdateTeam(ctx, TeamUpdate{ID: "01MISSING000000000000000000", Name: "x"}); !errors.Is(err, ErrTeamNotFound) {
+		t.Fatalf("UpdateTeam missing err = %v, want ErrTeamNotFound", err)
+	}
+	if _, err := st.UpdateTeam(ctx, TeamUpdate{ID: team.ID, Name: " "}); err == nil {
+		t.Fatal("empty name must be rejected at write channel")
+	}
+
+	// 项目非空守卫：项目行存在即拒（ErrTeamNotEmpty）；项目删光后放行。
+	if _, err := st.CreateProject(ctx, ProjectWrite{TeamID: team.ID, Slug: "default", Name: "Default", ActorUserID: creator.ID}); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if err := st.DeleteTeam(ctx, team.ID, creator.ID, ""); !errors.Is(err, ErrTeamNotEmpty) {
+		t.Fatalf("DeleteTeam with project err = %v, want ErrTeamNotEmpty", err)
+	}
+	projects, err := st.ListProjects(ctx)
+	if err != nil || len(projects) != 1 {
+		t.Fatalf("ListProjects: %v (n=%d)", err, len(projects))
+	}
+	if err := st.DeleteProject(ctx, projects[0].ID, creator.ID, ""); err != nil {
+		t.Fatalf("DeleteProject: %v", err)
+	}
+
+	// 成员/邀请随团队删除清场（同事务）。
+	mate, err := st.CreateUser(ctx, UserWrite{Email: "mate@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser mate: %v", err)
+	}
+	if _, err := st.AddMember(ctx, team.ID, mate.ID, TeamRoleDeveloper, "", ""); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	if _, _, err := st.CreateInvite(ctx, InviteWrite{TeamID: team.ID, Email: "x@y.com", Role: TeamRoleViewer}); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	if err := st.DeleteTeam(ctx, team.ID, creator.ID, ""); err != nil {
+		t.Fatalf("DeleteTeam: %v", err)
+	}
+	if _, err := st.GetTeam(ctx, team.ID); !errors.Is(err, ErrTeamNotFound) {
+		t.Fatalf("GetTeam after delete err = %v, want ErrTeamNotFound", err)
+	}
+	if members, err := st.ListMembers(ctx, team.ID); err != nil || len(members) != 0 {
+		t.Fatalf("members must be cleared with the team: %v (n=%d)", err, len(members))
+	}
+	if invites, err := st.ListInvites(ctx, team.ID); err != nil || len(invites) != 0 {
+		t.Fatalf("invites must be cleared with the team: %v (n=%d)", err, len(invites))
+	}
+
+	// 审计 team.deleted 落档（事件面无 team.deleted——设计 §6 清单无此事件）。
+	audits, err := st.RecentAudits(ctx, 20)
+	if err != nil {
+		t.Fatalf("RecentAudits: %v", err)
+	}
+	var deleted bool
+	for _, a := range audits {
+		if a.Target == "team:"+team.ID && a.Action == "team.deleted" {
+			deleted = true
+		}
+	}
+	if !deleted {
+		t.Fatal("audit team.deleted missing")
+	}
+}
+
+// eventPayloads 收集指定事件名的 (subject, payload) 对（Outbox 事件断言面；
+// 同 subject 多事件全保留——member_changed 系列同主体多次发出）。
+func eventPayloads(t *testing.T, st *Store, name string) [][2]string {
+	t.Helper()
+	evs, err := st.EventsSince(context.Background(), 0, 500)
+	if err != nil {
+		t.Fatalf("EventsSince: %v", err)
+	}
+	var out [][2]string
+	for _, e := range evs {
+		if e.Name == name {
+			out = append(out, [2]string{e.Subject, e.Payload})
+		}
+	}
+	return out
+}
+
+// payloadField 解出事件 payload JSON 的指定字段（解析失败 = 测试失败）。
+func payloadField(t *testing.T, payload, key string) string {
+	t.Helper()
+	var m map[string]any
+	if err := json.Unmarshal([]byte(payload), &m); err != nil {
+		t.Fatalf("payload %q is not JSON: %v", payload, err)
+	}
+	v, _ := m[key].(string)
+	return v
+}
+
+// TestTeamEventOutbox（v0.3 W2-S1，设计 §6 事件清单 + Outbox 同事务）：
+// team.created / team.member_changed（added/role_changed/removed 三形态）/
+// invite.accepted 随业务写同事务落 events 表。
+func TestTeamEventOutbox(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+	owner, err := st.CreateUser(ctx, UserWrite{Email: "owner@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	mate, err := st.CreateUser(ctx, UserWrite{Email: "mate@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser mate: %v", err)
+	}
+
+	team, err := st.CreateTeamWithOwner(ctx, TeamWrite{Slug: "acme", Name: "Acme", CreatedBy: owner.ID})
+	if err != nil {
+		t.Fatalf("CreateTeamWithOwner: %v", err)
+	}
+	created := eventPayloads(t, st, "team.created")
+	if len(created) == 0 {
+		t.Fatal("team.created event missing")
+	}
+
+	if _, err := st.AddMember(ctx, team.ID, mate.ID, TeamRoleDeveloper, owner.ID, ""); err != nil {
+		t.Fatalf("AddMember: %v", err)
+	}
+	if _, err := st.SetMemberRole(ctx, team.ID, mate.ID, TeamRoleViewer, owner.ID, ""); err != nil {
+		t.Fatalf("SetMemberRole: %v", err)
+	}
+	if err := st.RemoveMember(ctx, team.ID, mate.ID, owner.ID, ""); err != nil {
+		t.Fatalf("RemoveMember: %v", err)
+	}
+
+	inv, token, err := st.CreateInvite(ctx, InviteWrite{TeamID: team.ID, Email: "x@y.com", Role: TeamRoleDeveloper, ActorUserID: owner.ID})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+	if _, err := st.ConsumeInvite(ctx, token, mate.ID, mate.ID, ""); err != nil {
+		t.Fatalf("ConsumeInvite: %v", err)
+	}
+
+	// team.member_changed 三形态（payload change 字段区分）。
+	changed := eventPayloads(t, st, "team.member_changed")
+	discriminants := map[string]bool{}
+	for _, pair := range changed {
+		if pair[0] != "team:"+team.ID {
+			continue
+		}
+		switch payloadField(t, pair[1], "change") {
+		case "added", "role_changed", "removed":
+			discriminants[payloadField(t, pair[1], "change")] = true
+		default:
+			t.Fatalf("unexpected change discriminant in payload %q", pair[1])
+		}
+	}
+	if !discriminants["added"] || !discriminants["role_changed"] || !discriminants["removed"] {
+		t.Fatalf("team.member_changed must carry added/role_changed/removed: %v", discriminants)
+	}
+
+	accepted := eventPayloads(t, st, "invite.accepted")
+	for _, pair := range accepted {
+		if pair[0] == "invite:"+inv.ID {
+			if role := payloadField(t, pair[1], "role"); role != TeamRoleDeveloper {
+				t.Fatalf("invite.accepted role = %q, want developer", role)
+			}
+			return
+		}
+	}
+	t.Fatalf("invite.accepted event missing (seen: %v)", accepted)
 }

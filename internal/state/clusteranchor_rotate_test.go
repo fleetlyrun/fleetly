@@ -67,13 +67,24 @@ func newRotateHarness(t *testing.T, mode string, rotErr error) (*ClusterAnchor, 
 	return anchor, st, fd, fr
 }
 
-// waitRotate 等待一次成功轮换全链（rotate + 审计）完成。
-func waitRotate(t *testing.T, fr *fakeRotator) {
+// waitRotate 等待一次成功轮换全链（rotate + 审计）完成。轮换成功信号
+//（rotated）先于审计落库——生产触发链在 rotator 调用返回后才写审计
+//（clusteranchor.go maybeRotateToken 的 goroutine 序），全量跑测试时的并行
+// 负载会把该窗口放大成偶发红：此处轮询审计行至多 5s，等待「信号 + 审计」
+// 两段都落地。
+func waitRotate(t *testing.T, st *Store, fr *fakeRotator) {
 	t.Helper()
 	select {
 	case <-fr.rotated:
 	case <-time.After(5 * time.Second):
 		t.Fatal("join token rotate did not complete within 5s")
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for !auditHasAction(t, st, "node.join_token_rotated") {
+		if time.Now().After(deadline) {
+			t.Fatal("audit node.join_token_rotated did not land within 5s after rotate")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -91,7 +102,7 @@ func TestAutoRotateFiresOnMintedAnchor(t *testing.T) {
 	// 观测拍未被轮换拖住（异步触发链的结构证明）。
 	anchor.PostSync(ctx, nil, next)
 	fr.release()
-	waitRotate(t, fr)
+	waitRotate(t, st, fr)
 
 	if got := fr.callCount(); got != 1 {
 		t.Fatalf("rotate calls = %d, want 1", got)
@@ -116,7 +127,7 @@ func TestAutoRotateFiresOnMintedAnchor(t *testing.T) {
 // TestAutoRotateIdleWithoutNewAnchor：首拍铸造触发一次后，稳态拍（快照无
 // 变化）零再触发——无新锚定不空转（D-MN-1 不重试风暴的另一面：稳态不轮换）。
 func TestAutoRotateIdleWithoutNewAnchor(t *testing.T) {
-	anchor, _, fd, fr := newRotateHarness(t, "auto", nil)
+	anchor, st2, fd, fr := newRotateHarness(t, "auto", nil)
 	ctx := context.Background()
 	seedSelf(fd, "swarm-self")
 	fd.addNode("swarm-w1", "worker-01", "ready", 5)
@@ -124,7 +135,7 @@ func TestAutoRotateIdleWithoutNewAnchor(t *testing.T) {
 
 	anchor.PostSync(ctx, nil, first)
 	fr.release()
-	waitRotate(t, fr)
+	waitRotate(t, st2, fr)
 
 	// 稳态第二拍：prev == next，无铸造 → 不触发。
 	anchor.PostSync(ctx, toCached(first), first)

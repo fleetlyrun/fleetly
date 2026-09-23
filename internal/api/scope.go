@@ -178,14 +178,41 @@ var methodScopes = map[string]string{
 	// UsersService（v0.3 W1 平台用户管理面，rbac-teams §2.1/§3.2）：整体
 	// admin scope（机具令牌面）+ handler 内平台管理员判定（用户 principal
 	// 要求 is_platform_admin——requirePlatformAdmin，fail-closed）。
-	"/fleetly.server.v1.UsersService/ListUsers":            ScopeAdmin,
-	"/fleetly.server.v1.UsersService/CreateUser":           ScopeAdmin,
-	"/fleetly.server.v1.UsersService/DisableUser":          ScopeAdmin,
-	"/fleetly.server.v1.UsersService/EnableUser":           ScopeAdmin,
-	"/fleetly.server.v1.UsersService/ResetUserPassword":    ScopeAdmin,
-	"/fleetly.server.v1.UsersService/GrantPlatformAdmin":   ScopeAdmin,
-	"/fleetly.server.v1.UsersService/RevokePlatformAdmin":  ScopeAdmin,
-	"/fleetly.server.v1.UsersService/SetRegistration":      ScopeAdmin,
+	"/fleetly.server.v1.UsersService/ListUsers":           ScopeAdmin,
+	"/fleetly.server.v1.UsersService/CreateUser":          ScopeAdmin,
+	"/fleetly.server.v1.UsersService/DisableUser":         ScopeAdmin,
+	"/fleetly.server.v1.UsersService/EnableUser":          ScopeAdmin,
+	"/fleetly.server.v1.UsersService/ResetUserPassword":   ScopeAdmin,
+	"/fleetly.server.v1.UsersService/GrantPlatformAdmin":  ScopeAdmin,
+	"/fleetly.server.v1.UsersService/RevokePlatformAdmin": ScopeAdmin,
+	"/fleetly.server.v1.UsersService/SetRegistration":     ScopeAdmin,
+	// TeamsService / ProjectsService（v0.3 W2-S1 团队/项目面，rbac-teams
+	// §3.1/§3.3）：登记整体 read——这两面的真授权是 handler 内的**角色门**
+	//（成员资格 + §3.2 矩阵/§3.3 覆写管理权，非 scope），scope 门只承担
+	// 「凭据至少持有最小读」的形状约束（会话凭据天然全集；用户 PAT 最小
+	// read 可达，实际权限由角色收敛）。机具令牌（user NULL）在 handler 内
+	// 恒 403——无用户即无团队成员身份（含读面；平台级凭据的设计语义 §2.3），
+	// 平台管理员用户只读放行、写面 403（不代写）。W2-S4 通用角色门落地时
+	// 本组登记与实现随迁（auth.go sessionScopes 注释同款收口标记）。
+	"/fleetly.server.v1.TeamsService/CreateTeam":              ScopeRead,
+	"/fleetly.server.v1.TeamsService/ListTeams":               ScopeRead,
+	"/fleetly.server.v1.TeamsService/GetTeam":                 ScopeRead,
+	"/fleetly.server.v1.TeamsService/UpdateTeam":              ScopeRead,
+	"/fleetly.server.v1.TeamsService/DeleteTeam":              ScopeRead,
+	"/fleetly.server.v1.TeamsService/ListTeamMembers":         ScopeRead,
+	"/fleetly.server.v1.TeamsService/SetTeamMemberRole":       ScopeRead,
+	"/fleetly.server.v1.TeamsService/RemoveTeamMember":        ScopeRead,
+	"/fleetly.server.v1.TeamsService/CreateInvite":            ScopeRead,
+	"/fleetly.server.v1.TeamsService/ListTeamInvites":         ScopeRead,
+	"/fleetly.server.v1.TeamsService/RevokeInvite":            ScopeRead,
+	"/fleetly.server.v1.ProjectsService/CreateProject":        ScopeRead,
+	"/fleetly.server.v1.ProjectsService/ListProjects":         ScopeRead,
+	"/fleetly.server.v1.ProjectsService/GetProject":           ScopeRead,
+	"/fleetly.server.v1.ProjectsService/UpdateProject":        ScopeRead,
+	"/fleetly.server.v1.ProjectsService/DeleteProject":        ScopeRead,
+	"/fleetly.server.v1.ProjectsService/ListProjectMembers":   ScopeRead,
+	"/fleetly.server.v1.ProjectsService/SetProjectMemberRole": ScopeRead,
+	"/fleetly.server.v1.ProjectsService/RemoveProjectMember":  ScopeRead,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

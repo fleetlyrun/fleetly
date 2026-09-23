@@ -134,6 +134,8 @@ func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (*runtime.Ser
 		serverv1.RegisterSecretsServiceHandlerFromEndpoint,  // E4 W4-S4：平台密钥库面（D-DB-7；无值读回——list 只出名称/指纹）
 		serverv1.RegisterAuthServiceHandlerFromEndpoint,     // v0.3 W1：认证面（注册/登录/会话；Register/Login/GetRegistrationState 豁免鉴权）
 		serverv1.RegisterUsersServiceHandlerFromEndpoint,    // v0.3 W1：平台用户管理面（平台管理员判定在 handler）
+		serverv1.RegisterTeamsServiceHandlerFromEndpoint,    // v0.3 W2-S1：团队/成员/邀请面（角色门在 handler）
+		serverv1.RegisterProjectsServiceHandlerFromEndpoint, // v0.3 W2-S1：项目/队内覆写成员面（覆写管理权判定在 handler）
 	} {
 		if err := register(context.Background(), mux, grpcEndpoint, opts); err != nil {
 			return nil, err

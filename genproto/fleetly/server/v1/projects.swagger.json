@@ -1,0 +1,481 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/projects.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "ProjectsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/projects": {
+      "get": {
+        "summary": "ListProjects 我可见项目（团队归属集）；带 team_id 收窄到单队（须为\n该队成员或平台管理员）；平台管理员不带过滤 = 全部。",
+        "operationId": "ProjectsService_ListProjects",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListProjectsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "team_id",
+            "description": "可选：收窄到单队（空 = 我可见全部——跨我所在团队；平台管理员 = 全部）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      },
+      "post": {
+        "summary": "CreateProject 在团队下建项目（owner 专属）；team 内 slug 冲突 409。",
+        "operationId": "ProjectsService_CreateProject",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateProjectResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateProjectRequest"
+            }
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
+    },
+    "/v1/projects/{id}": {
+      "get": {
+        "operationId": "ProjectsService_GetProject",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetProjectResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteProject 删除空项目：项目内有存活资源（apps 非 tombstone /\ndb_instances 非 deleted 终态）即拒绝（409——资源先迁走或删光，不做\n隐式级联，§3.1）。",
+        "operationId": "ProjectsService_DeleteProject",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteProjectResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      },
+      "patch": {
+        "summary": "UpdateProject 仅改 name/description（slug 不可变——请求无 slug 字段）。",
+        "operationId": "ProjectsService_UpdateProject",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateProjectResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ProjectsServiceUpdateProjectBody"
+            }
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/members": {
+      "get": {
+        "operationId": "ProjectsService_ListProjectMembers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListProjectMembersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/members/{user_id}": {
+      "delete": {
+        "summary": "RemoveProjectMember 删除覆写行（该成员回退用团队角色）。",
+        "operationId": "ProjectsService_RemoveProjectMember",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RemoveProjectMemberResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
+    },
+    "/v1/projects/{project_id}/members:set-role": {
+      "post": {
+        "summary": "SetProjectMemberRole 队内覆写 upsert（团队 admin/owner，D-W0-2 B 形）：\n仅限团队成员；owner 不可覆写（409）；有行则改角色、无行则插入。",
+        "operationId": "ProjectsService_SetProjectMemberRole",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetProjectMemberRoleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ProjectsServiceSetProjectMemberRoleBody"
+            }
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "ProjectsServiceSetProjectMemberRoleBody": {
+      "type": "object",
+      "properties": {
+        "user_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        }
+      }
+    },
+    "ProjectsServiceUpdateProjectBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateProjectRequest": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateProjectResponse": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "$ref": "#/definitions/v1ProjectView"
+        }
+      }
+    },
+    "v1DeleteProjectResponse": {
+      "type": "object"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetProjectResponse": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "$ref": "#/definitions/v1ProjectView"
+        }
+      }
+    },
+    "v1ListProjectMembersResponse": {
+      "type": "object",
+      "properties": {
+        "members": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ProjectMemberView"
+          }
+        }
+      }
+    },
+    "v1ListProjectsResponse": {
+      "type": "object",
+      "properties": {
+        "projects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ProjectView"
+          }
+        }
+      }
+    },
+    "v1ProjectMemberView": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "user_id": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "title": "覆写角色（admin/developer/viewer 三档；owner 不可覆写——设计 §3.3）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "email": {
+          "type": "string",
+          "title": "属主投影（成员列表的可用性面；无敏感材料）。"
+        },
+        "display_name": {
+          "type": "string"
+        }
+      }
+    },
+    "v1ProjectView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "team_id": {
+          "type": "string"
+        },
+        "team_slug": {
+          "type": "string",
+          "title": "归属团队 slug（限定形 team/project 展示面，D-W0-9）。"
+        },
+        "slug": {
+          "type": "string",
+          "title": "单词制标识（[a-z0-9]{2,32}、team 内唯一、不可变；命名公式三段第二位）。"
+        },
+        "name": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "ProjectView 是项目行的无敏感投影。"
+    },
+    "v1RemoveProjectMemberResponse": {
+      "type": "object"
+    },
+    "v1SetProjectMemberRoleResponse": {
+      "type": "object",
+      "properties": {
+        "member": {
+          "$ref": "#/definitions/v1ProjectMemberView"
+        }
+      }
+    },
+    "v1UpdateProjectResponse": {
+      "type": "object",
+      "properties": {
+        "project": {
+          "$ref": "#/definitions/v1ProjectView"
+        }
+      }
+    }
+  }
+}

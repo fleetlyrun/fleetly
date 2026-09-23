@@ -181,6 +181,10 @@ func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env
 	// 平台用户管理面在平台管理员判定后的读面）。
 	serverv1.RegisterAuthServiceServer(srv, api.NewAuthService(st))
 	serverv1.RegisterUsersServiceServer(srv, api.NewUsersService(st))
+	// 团队/项目面（v0.3 W2-S1）：CLI/集成测试同路径消费（角色门在 handler
+	// 内强制，与生产同形）。
+	serverv1.RegisterTeamsServiceServer(srv, api.NewTeamsService(st))
+	serverv1.RegisterProjectsServiceServer(srv, api.NewProjectsService(st))
 
 	lis := bufconn.Listen(1024 * 1024)
 	go func() { _ = srv.Serve(lis) }()

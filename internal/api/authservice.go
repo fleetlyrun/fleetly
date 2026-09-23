@@ -196,8 +196,11 @@ func (s *AuthService) Me(ctx context.Context, _ *serverv1.MeRequest) (*serverv1.
 	return &serverv1.MeResponse{User: userView(u), Teams: teams}, nil
 }
 
-// AcceptInvite 消费一次性邀请（W1 落面——邀请的产生面随 W2
-// TeamsService.CreateInvite 落地；本方法合法消费 state.ConsumeInvite 原语）。
+// AcceptInvite 消费一次性邀请（全语义接线，v0.3 W2-S1——W1 落面时邀请的
+// 产生面尚未落地）：合法消费 state.ConsumeInvite 原语（角色落定、团队归属、
+// 审计与事件 invite.accepted 同事务）。不可消费（查无此 token/已接受/已吊销/
+// 已过期）统一 E_INVITE_INVALID（rbac-teams §5 注册表稳定码，409——一次性
+// 凭据不泄漏具体状态）。
 func (s *AuthService) AcceptInvite(ctx context.Context, req *serverv1.AcceptInviteRequest) (*serverv1.AcceptInviteResponse, error) {
 	p, ok := PrincipalFromContext(ctx)
 	if !ok || p.UserID == "" {
@@ -206,9 +209,7 @@ func (s *AuthService) AcceptInvite(ctx context.Context, req *serverv1.AcceptInvi
 	inv, err := s.st.ConsumeInvite(ctx, req.GetToken(), p.UserID, p.UserID, callerTokenID(ctx))
 	if err != nil {
 		if errors.Is(err, state.ErrInviteInvalid) {
-			// E_INVITE_INVALID 稳定码随 W2 TeamsService（rbac-teams §5 错误
-			// 码清单）登记——W1 退化信封 409（不泄漏邀请具体状态）。
-			return nil, conflict("invite is invalid, expired, or already used")
+			return nil, apperr.New("E_INVITE_INVALID", "invite is invalid, expired, or already used")
 		}
 		return nil, err
 	}
@@ -216,11 +217,17 @@ func (s *AuthService) AcceptInvite(ctx context.Context, req *serverv1.AcceptInvi
 	if err != nil {
 		return nil, err
 	}
+	// 生效角色回读：已是成员重复 accept 保持现有角色（ConsumeInvite 不改
+	// 角色仍置已消费）——响应报 accept 后的真实成员角色，非邀请声明角色。
+	role := inv.Role
+	if m, err := s.st.GetMembership(ctx, inv.TeamID, p.UserID); err == nil {
+		role = m.Role
+	}
 	return &serverv1.AcceptInviteResponse{
 		TeamId:   t.ID,
 		TeamSlug: t.Slug,
 		TeamName: t.Name,
-		Role:     inv.Role,
+		Role:     role,
 	}, nil
 }
 

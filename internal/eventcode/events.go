@@ -19,8 +19,13 @@ package eventcode
 //   - v0.3 W1 认证/用户面（rbac-teams §6 事件清单的注册态三类，注册表
 //     只增）：发出来源 = 自助注册组合事务（internal/state/register.go，
 //     与业务写同事务 = Outbox）。
+//   - v0.3 W2-S1 团队/项目面（rbac-teams §6 事件清单余下四项，注册表
+//     只增）：发出来源 = internal/state 的 teams.go/projects.go 原语
+//     （AddMember/SetMemberRole/RemoveMember/ConsumeInvite/DeleteProject/
+//     SetProjectMemberRole/RemoveProjectMember/CreateTeam/CreateProject，
+//     与业务写同事务 = Outbox）。
 //
-// 计 52 + 18 = 70 + W1 增 3 = 73 个事件名。
+// 计 52 + 18 = 70 + W1 增 3 = 73 + W2-S1 增 4 = 77 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -214,6 +219,29 @@ var builtins = []Event{
 	//    自助注册组合事务（internal/state/register.go，与用户/团队/项目
 	//    写入同事务 = Outbox；auth.login/logout 族不落事件，仅审计）──
 	{Name: "user.registered", Summary: "a user completed self-registration (payload carries email/is_platform_admin/team_id/team_slug, never credentials; first user is platform admin with a personal team + default project)"},
-	{Name: "team.created", Summary: "a team was created (payload carries slug/name; W1 source = the personal team provisioned atomically with registration)"},
-	{Name: "project.created", Summary: "a project was created (payload carries team_id/slug; W1 source = the default project provisioned atomically with registration)"},
+	{Name: "team.created", Summary: "a team was created (payload carries slug/name; W1 source = the personal team provisioned atomically with registration, W2-S1 source = TeamsService.CreateTeam)"},
+	{Name: "project.created", Summary: "a project was created (payload carries team_id/slug; W1 source = the default project provisioned atomically with registration, W2-S1 source = ProjectsService.CreateProject)"},
+
+	// ── 团队/项目面（v0.3 W2-S1，RBAC 设计 §6 事件清单余下四项；注册表
+	//    只增。metadata-only，零 secret——通知反环路红线沿用）：发出来源 =
+	//    internal/state 的 teams.go/projects.go 原语（与业务写同事务 =
+	//    Outbox）。「成员/角色管理三动作在审计面分记 member_added/
+	//    member_role_changed/member_removed，事件面收敛为单一
+	//    team.member_changed（payload change 字段区分）」——设计 §6 的
+	//    审计动作与事件清单是两张表，事件取清单原文 ──
+	// 发出来源：AddMember / SetMemberRole / RemoveMember
+	//（internal/state/teams.go，payload change=added|role_changed|removed；
+	// RemoveMember 附带 project_overrides_removed 联动清理计数）。
+	{Name: "team.member_changed", Summary: "team membership changed — a member added, role changed or removed (payload carries change/user_id/role or from/to; removal carries the purged project-override count)"},
+	// 发出来源：ConsumeInvite（internal/state/teams.go，invite 一次性消费
+	// 同事务；subject = invite:<id>，payload 带 team_id/user_id/role）。
+	{Name: "invite.accepted", Summary: "a one-time team invite was accepted (payload carries team_id/user_id/role; the plaintext token never appears anywhere)"},
+	// 发出来源：DeleteProject（internal/state/projects.go，非空守卫通过后的
+	// 删除事务；payload 带 team_id/slug——行已删，slug 供事件读者定位）。
+	{Name: "project.deleted", Summary: "an empty project was deleted (non-empty guard passed; payload carries team_id/slug)"},
+	// 发出来源：SetProjectMemberRole / RemoveProjectMember
+	//（internal/state/projects.go，队内覆写行 upsert/删除；payload
+	// change=override_set 带 role、override_removed）。owner 恒不可覆写
+	//（设计 §3.3），覆写事件只涉及三档项目角色。
+	{Name: "project.member_changed", Summary: "a project role override was set or removed (payload carries change/user_id and role on override_set; no row means the team role applies again)"},
 }

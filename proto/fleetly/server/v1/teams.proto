@@ -1,0 +1,251 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 auth.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// TeamsService 是团队与成员/邀请面（RBAC 设计 §3.1/§3.2/§5，v0.3 W2-S1）。
+//
+// 团队面权限（本票自含，W2-S4 通用角色门之前的实现切面）：
+//   - 全部方法要求用户凭据（会话或用户 PAT）——机具令牌（user NULL）无
+//     团队成员身份，恒 403（含读面；平台级凭据的设计语义 §2.3）；
+//   - 读面（List/Get）：团队成员；平台管理员只读放行（support 视角，
+//     §3.2「全团队项目只读」）；
+//   - 写面：按 §3.2 矩阵——team 改名/删除/成员角色增删改 = owner；
+//     邀请（创建/列表/吊销）= owner/admin（§3.1 明文取齐：所邀角色不得
+//     高于邀请者自身，邀 owner 角色 = owner 专属）；平台管理员不代写
+//     （写面 403——职责分离，审计 actor 干净）。
+//
+// slug 纪律（§3.1/§4.3）：单词制 [a-z0-9]{2,32}、全局唯一、不可变——
+// UpdateTeam 无 slug 字段（结构性杜绝）；保留字守卫 E_TEAM_SLUG_RESERVED。
+service TeamsService {
+  // CreateTeam 建队：调用方成为 owner（§3.1）；slug 冲突 409、保留字
+  // 422（E_TEAM_SLUG_RESERVED）。
+  rpc CreateTeam(CreateTeamRequest) returns (CreateTeamResponse) {
+    option (google.api.http) = {
+      post: "/v1/teams"
+      body: "*"
+    };
+  }
+  // ListTeams 我所在团队；平台管理员 = 全部（§3.2 只读全域）。
+  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse) {
+    option (google.api.http) = { get: "/v1/teams" };
+  }
+  rpc GetTeam(GetTeamRequest) returns (GetTeamResponse) {
+    option (google.api.http) = { get: "/v1/teams/{id}" };
+  }
+  // UpdateTeam 仅改显示名（slug 不可变——请求无 slug 字段）。
+  rpc UpdateTeam(UpdateTeamRequest) returns (UpdateTeamResponse) {
+    option (google.api.http) = {
+      patch: "/v1/teams/{id}"
+      body: "*"
+    };
+  }
+  // DeleteTeam owner 专属两段式（confirm = slug）+ 项目须空（资源先迁走
+  // 或删光，不做隐式级联，§3.1）。
+  rpc DeleteTeam(DeleteTeamRequest) returns (DeleteTeamResponse) {
+    option (google.api.http) = { delete: "/v1/teams/{id}" };
+  }
+  rpc ListTeamMembers(ListTeamMembersRequest) returns (ListTeamMembersResponse) {
+    option (google.api.http) = { get: "/v1/teams/{team_id}/members" };
+  }
+  // SetTeamMemberRole owner 专属：调整成员角色（最后一名 owner 降级 →
+  // E_TEAM_LAST_OWNER）。
+  rpc SetTeamMemberRole(SetTeamMemberRoleRequest) returns (SetTeamMemberRoleResponse) {
+    option (google.api.http) = {
+      post: "/v1/teams/{team_id}/members:set-role"
+      body: "*"
+    };
+  }
+  // RemoveTeamMember owner 专属：移出成员（联动清该团队全部项目覆写行，
+  // D-W0-2；最后一名 owner → E_TEAM_LAST_OWNER）。
+  rpc RemoveTeamMember(RemoveTeamMemberRequest) returns (RemoveTeamMemberResponse) {
+    option (google.api.http) = { delete: "/v1/teams/{team_id}/members/{user_id}" };
+  }
+  // CreateInvite owner/admin 可邀（§3.1）：所邀角色不得高于邀请者自身；
+  // 邀 owner 角色 = owner 专属。明文 token 仅本次响应一次性返回（无 SMTP：
+  // 邀请链接页面直出供复制）。
+  rpc CreateInvite(CreateInviteRequest) returns (CreateInviteResponse) {
+    option (google.api.http) = {
+      post: "/v1/teams/{team_id}/invites"
+      body: "*"
+    };
+  }
+  rpc ListTeamInvites(ListTeamInvitesRequest) returns (ListTeamInvitesResponse) {
+    option (google.api.http) = { get: "/v1/teams/{team_id}/invites" };
+  }
+  // RevokeInvite 吊销未消费邀请（已消费/已吊销按幂等成功）。
+  rpc RevokeInvite(RevokeInviteRequest) returns (RevokeInviteResponse) {
+    option (google.api.http) = {
+      post: "/v1/teams/{team_id}/invites/{invite_id}:revoke"
+      body: "*"
+    };
+  }
+}
+
+// TeamView 是团队行的无敏感投影。
+message TeamView {
+  string id = 1;
+  // 单词制标识（[a-z0-9]{2,32}、全局唯一、不可变；底座命名公式段）。
+  string slug = 2;
+  // 人读显示名。
+  string name = 3;
+  string created_by = 4;
+  google.protobuf.Timestamp created_at = 5;
+}
+
+message CreateTeamRequest {
+  string slug = 1 [(buf.validate.field).string = {
+    min_len: 2,
+    max_len: 32,
+    pattern: "^[a-z0-9]{2,32}$"
+  }];
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 100
+  }];
+}
+
+message CreateTeamResponse {
+  TeamView team = 1;
+}
+
+message ListTeamsRequest {}
+
+message ListTeamsResponse {
+  repeated TeamView teams = 1;
+}
+
+message GetTeamRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message GetTeamResponse {
+  TeamView team = 1;
+}
+
+message UpdateTeamRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // 新显示名（slug 不可变——请求无 slug 字段，改 slug 只能重建团队）。
+  string name = 2 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 100
+  }];
+}
+
+message UpdateTeamResponse {
+  TeamView team = 1;
+}
+
+message DeleteTeamRequest {
+  string id = 1 [(buf.validate.field).string.min_len = 1];
+  // 两段式确认：confirm 必须等于团队 slug（数据/归属安全同 DeleteDatabase
+  // 口径）。
+  string confirm = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message DeleteTeamResponse {}
+
+message ListTeamMembersRequest {
+  string team_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message TeamMemberView {
+  string team_id = 1;
+  string user_id = 2;
+  // 团队角色（owner/admin/developer/viewer 四档，设计 §3.2）。
+  string role = 3;
+  google.protobuf.Timestamp created_at = 4;
+  // 属主投影（成员列表的可用性面——email 与显示名；无敏感材料）。
+  string email = 5;
+  string display_name = 6;
+}
+
+message ListTeamMembersResponse {
+  repeated TeamMemberView members = 1;
+}
+
+message SetTeamMemberRoleRequest {
+  string team_id = 1 [(buf.validate.field).string.min_len = 1];
+  string user_id = 2 [(buf.validate.field).string.min_len = 1];
+  string role = 3 [(buf.validate.field).string = {
+    in: ["owner", "admin", "developer", "viewer"]
+  }];
+}
+
+message SetTeamMemberRoleResponse {
+  TeamMemberView member = 1;
+}
+
+message RemoveTeamMemberRequest {
+  string team_id = 1 [(buf.validate.field).string.min_len = 1];
+  string user_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveTeamMemberResponse {}
+
+message CreateInviteRequest {
+  string team_id = 1 [(buf.validate.field).string.min_len = 1];
+  string email = 2 [(buf.validate.field).string = {
+    min_len: 3,
+    max_len: 254,
+    email: true
+  }];
+  string role = 3 [(buf.validate.field).string = {
+    in: ["owner", "admin", "developer", "viewer"]
+  }];
+}
+
+message InviteView {
+  string id = 1;
+  string team_id = 2;
+  // 被邀邮箱（小写归一）。
+  string email = 3;
+  string role = 4;
+  // 过期时刻（创建 + 7 天；一次性窗口）。
+  google.protobuf.Timestamp expires_at = 5;
+  google.protobuf.Timestamp created_at = 6;
+  // 已接受/已吊销时输出对应时刻；未消费时不输出。
+  google.protobuf.Timestamp accepted_at = 7;
+  google.protobuf.Timestamp revoked_at = 8;
+}
+
+message CreateInviteResponse {
+  InviteView invite = 1;
+  // 明文一次性 token（sha256 入库）：仅本次响应可见，用于拼邀请链接
+  // console/auth/invite?token=…（无 SMTP 直出供复制，设计 §3.1）。
+  string token = 2;
+}
+
+message ListTeamInvitesRequest {
+  string team_id = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message ListTeamInvitesResponse {
+  repeated InviteView invites = 1;
+}
+
+message RevokeInviteRequest {
+  string team_id = 1 [(buf.validate.field).string.min_len = 1];
+  string invite_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RevokeInviteResponse {}

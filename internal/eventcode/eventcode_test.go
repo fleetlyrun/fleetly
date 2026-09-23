@@ -133,14 +133,14 @@ var docEvents = map[string]string{ // event → 文档出处
 	"db.credentials_rotated": "E4 managed-databases §5.3 (operation event; referencing apps auto-redeploy follows)",
 	// E6 观测（observability §2/§7，W5-S1 接线）：logs.* 5 项——设计 §7
 	//「事件码只增（logs.* 5 项）」的全集。
-	"logs.backend_updated":      "E6 observability §2.2 (settings save transaction; switch triggers the duty deploy/remove)",
+	"logs.backend_updated":       "E6 observability §2.2 (settings save transaction; switch triggers the duty deploy/remove)",
 	"logs.victorialogs_deployed": "E6 observability §2.1 (duty converge diff; payload carries service/image/reason)",
 	"logs.victorialogs_removed":  "E6 observability §2.2 (backend left victorialogs; data volume retained)",
 	"logs.ingest_degraded":       "E6 observability §2.3 (ingest streak enter edge, debounced; live tail unaffected)",
 	"logs.ingest_recovered":      "E6 observability §2.3 (ingest streak exit edge, debounced)",
 	// E6 观测（observability §4/§7，W5-S3 接线）：metrics.* 3 项——D-W5-2
 	// opt-in 的设置/收敛/清场事件面。
-	"metrics.mode_updated":  "E6 observability §4.1 (settings save transaction; opt-in switch deploys or removes the managed stack, volume retained)",
+	"metrics.mode_updated":   "E6 observability §4.1 (settings save transaction; opt-in switch deploys or removes the managed stack, volume retained)",
 	"metrics.stack_deployed": "E6 observability §4.1 (duty converge diff; payload carries service/image/reason)",
 	"metrics.stack_removed":  "E6 observability §4.1 (mode left on; data volume retained)",
 	// E7 Web 终端（web-terminal §2.4，W5-S6 接线）：terminal.* 2 项——会话
@@ -152,9 +152,17 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 只增）：发出来源 = 自助注册组合事务（internal/state/register.go，与
 	// 用户/团队/项目写入同事务 = Outbox；payload metadata-only 零 secret）。
 	// auth.login/logout 族不落事件（设计 §6 仅审计）。
-	"user.registered":  "v0.3 W1 rbac-teams §6 (registration composite transaction; metadata-only, never credentials)",
-	"team.created":     "v0.3 W1 rbac-teams §6 (registration composite transaction: personal team; metadata-only)",
-	"project.created":  "v0.3 W1 rbac-teams §6 (registration composite transaction: default project; metadata-only)",
+	"user.registered": "v0.3 W1 rbac-teams §6 (registration composite transaction; metadata-only, never credentials)",
+	"team.created":    "v0.3 W1 rbac-teams §6 (registration composite transaction: personal team; W2-S1 also emits it from TeamsService.CreateTeam; metadata-only)",
+	"project.created": "v0.3 W1 rbac-teams §6 (registration composite transaction: default project; W2-S1 also emits it from ProjectsService.CreateProject; metadata-only)",
+
+	// v0.3 W2-S1 团队/项目面（rbac-teams 设计 §6 事件清单余下四项，注册表
+	// 只增）：发出来源 = internal/state 的 teams.go/projects.go 原语（与
+	// 业务写同事务 = Outbox；payload metadata-only 零 secret）。
+	"team.member_changed":    "v0.3 W2-S1 rbac-teams §6 (member add/role-change/remove converge on one event, change field discriminates; state teams.go, same transaction)",
+	"invite.accepted":        "v0.3 W2-S1 rbac-teams §6 (one-time invite consumed; state teams.go ConsumeInvite, same transaction)",
+	"project.deleted":        "v0.3 W2-S1 rbac-teams §6 (empty-project deletion; state projects.go DeleteProject, same transaction)",
+	"project.member_changed": "v0.3 W2-S1 rbac-teams §6 (project role override set/removed; state projects.go, same transaction)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

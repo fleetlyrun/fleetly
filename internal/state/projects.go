@@ -32,6 +32,11 @@ import (
 // member_role_changed / member_removed（与业务写同事务 fail-closed）。
 // UpdateProject 不入审计（设计 §6 注册表无 project.updated 动作——动作
 // 注册表只增不改，扩注册表属 W2 API 票裁决）。
+//
+// 事件（v0.3 W2-S1 补齐，设计 §6 事件清单 + Outbox 同事务）：project.created /
+// project.deleted / project.member_changed——metadata-only 零 secret（注册表
+// 只增；register.go 的注册组合事务在 W1 已内联发 project.created，本文件是
+// 独立建项通道的发出来源，两通道 payload 同形）。
 
 // 项目角色词表（设计 §3.3：队内覆写三档，owner 不可覆写）。
 const (
@@ -142,6 +147,14 @@ func (s *Store) CreateProject(ctx context.Context, w ProjectWrite) (Project, err
 		}); err != nil {
 			return err
 		}
+		// 事件同事务（Outbox；register.go 注册组合事务同形 payload）。
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "project.created",
+			Subject: "project:" + id,
+			Payload: DiffSummary("team_id", w.TeamID, "slug", w.Slug),
+		}); err != nil {
+			return err
+		}
 		row := tx.QueryRowContext(ctx,
 			`SELECT id, team_id, slug, name, description, created_at FROM projects WHERE id = ?`, id)
 		return scanProject(row, &out)
@@ -237,8 +250,8 @@ func (s *Store) UpdateProject(ctx context.Context, u ProjectUpdate) (Project, er
 // fail-closed。
 func (s *Store) DeleteProject(ctx context.Context, id, actorUserID, actorTokenID string) error {
 	return s.InTx(ctx, func(tx *Tx) error {
-		var one int
-		if err := tx.QueryRowContext(ctx, `SELECT 1 FROM projects WHERE id = ?`, id).Scan(&one); err != nil {
+		var teamID, slug string
+		if err := tx.QueryRowContext(ctx, `SELECT team_id, slug FROM projects WHERE id = ?`, id).Scan(&teamID, &slug); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrProjectNotFound
 			}
@@ -263,13 +276,21 @@ func (s *Store) DeleteProject(ctx context.Context, id, actorUserID, actorTokenID
 		if _, err := tx.ExecContext(ctx, `DELETE FROM projects WHERE id = ?`, id); err != nil {
 			return fmt.Errorf("state: delete project: %w", err)
 		}
-		return tx.WriteAudit(ctx, AuditEntry{
+		if err := tx.WriteAudit(ctx, AuditEntry{
 			Actor:        auditActor(actorUserID),
 			ActorTokenID: actorTokenID,
 			Action:       "project.deleted",
 			Target:       "project:" + id,
 			Result:       "ok",
+		}); err != nil {
+			return err
+		}
+		_, err := tx.AppendEvent(ctx, Event{
+			Name:    "project.deleted",
+			Subject: "project:" + id,
+			Payload: DiffSummary("team_id", teamID, "slug", slug),
 		})
+		return err
 	})
 }
 
@@ -330,6 +351,13 @@ func (s *Store) SetProjectMemberRole(ctx context.Context, projectID, userID, rol
 		}); err != nil {
 			return err
 		}
+		if _, err := tx.AppendEvent(ctx, Event{
+			Name:    "project.member_changed",
+			Subject: "project:" + projectID,
+			Payload: DiffSummary("change", "override_set", "user_id", userID, "role", role),
+		}); err != nil {
+			return err
+		}
 		return scanProjectMember(tx.QueryRowContext(ctx,
 			`SELECT project_id, user_id, role, created_at FROM project_members WHERE project_id = ? AND user_id = ?`,
 			projectID, userID), &out)
@@ -357,14 +385,22 @@ func (s *Store) RemoveProjectMember(ctx context.Context, projectID, userID, acto
 		if n == 0 {
 			return ErrProjectMemberNotFound
 		}
-		return tx.WriteAudit(ctx, AuditEntry{
+		if err := tx.WriteAudit(ctx, AuditEntry{
 			Actor:        auditActor(actorUserID),
 			ActorTokenID: actorTokenID,
 			Action:       "project.member_removed",
 			Target:       "project:" + projectID,
 			Result:       "ok",
 			DiffSummary:  DiffSummary("user_id", userID),
+		}); err != nil {
+			return err
+		}
+		_, err = tx.AppendEvent(ctx, Event{
+			Name:    "project.member_changed",
+			Subject: "project:" + projectID,
+			Payload: DiffSummary("change", "override_removed", "user_id", userID),
 		})
+		return err
 	})
 }
 

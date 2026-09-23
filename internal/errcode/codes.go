@@ -4,8 +4,9 @@ package errcode
 // 出处）。分布核对：release-semantics §2.7（17 E + 3 W）、stateful-placement
 // §2.8（8 E + 1 W）与 §2.9（1 E）、state-model §2.7/§2.9/§2.4/§2.2（4 E）、
 // architecture §2.4（3 码）+ §2.3（E_STATE_VERSION_CONFLICT）；v0.3 W1 增
-// E_REGISTRATION_CLOSED（rbac-teams §2.1）。
-// 计 60 个 E_ + 5 个 W_ = 65 码（逐波注记见各分节）。
+// E_REGISTRATION_CLOSED（rbac-teams §2.1）；v0.3 W2-S1 增 E_TEAM_LAST_OWNER /
+// E_INVITE_INVALID / E_TEAM_SLUG_RESERVED（rbac-teams §5）。
+// 计 63 个 E_ + 5 个 W_ = 68 码（逐波注记见各分节）。
 //
 // HTTP 默认映射：文档显式给定的照文档（E_DOMAIN_CONFLICT/E_STATE_VERSION_
 // CONFLICT/E_VOLUME_NODE_MISMATCH/E_PLACEMENT_MOVE_REQUIRES_ACK→409、
@@ -287,6 +288,29 @@ var builtins = []Code{
 	{ID: "E_REGISTRATION_CLOSED", HTTP: 403,
 		Summary:    "self-service registration is closed (auth.registration defaults to closed once the platform has any user; the zero-user window is always open)",
 		Suggestion: "Ask a platform administrator to create the account via 'POST /v1/users' (or flip the switch with 'PUT /v1/auth/registration' open); the first user of a fresh install can always register."},
+
+	// ── 团队/项目面（v0.3 W2-S1，RBAC 设计 §5 错误码清单，注册表只增）：
+	//    消费点 = internal/api/teams.go 与 internal/api/authservice.go
+	//    （state 哨兵的信封化投影）。E_DB_PROJECT_MISMATCH / E_PROJECT_
+	//    AMBIGUOUS / E_APP_AMBIGUOUS 同清单余项随 W2-S3 命名/归属管道票
+	//    登记（本票无消费点，不提前造码）。──
+	// 消费点：RemoveTeamMember / SetTeamMemberRole 降级路径的最后一名 owner
+	// 守卫（state 哨兵 ErrTeamLastOwner，409——操作与守卫同事务）。
+	{ID: "E_TEAM_LAST_OWNER", HTTP: 409,
+		Summary:    "last-team-owner guard: removing or demoting the only owner would leave the team without a responsible party",
+		Suggestion: "Grant the owner role to another member first (POST /v1/teams/{team_id}/members:set-role), then retry; a team always keeps at least one owner."},
+	// 消费点：AuthService.AcceptInvite 的四类不可消费形态（查无此 token /
+	// 已接受 / 已吊销 / 已过期——state 哨兵 ErrInviteInvalid 统一同码，
+	// 409；一次性凭据不泄漏具体状态）。
+	{ID: "E_INVITE_INVALID", HTTP: 409,
+		Summary:    "the invite token is invalid, already used, revoked, or expired (one-time credential; the specific state is not disclosed)",
+		Suggestion: "Ask the team owner or admin for a fresh invite link; invite links are valid for 7 days and can be used exactly once."},
+	// 消费点：CreateTeam 的保留字守卫（8 个平台组件保留字守前缀族——命名
+	// 公式 v0.3 起以 team slug 为参数，撞上即在受理层拒绝；state 层注释
+	// 「保留字校验在上层」的落点。422 与 E_LABEL_RESERVED 同级语义违约）。
+	{ID: "E_TEAM_SLUG_RESERVED", HTTP: 422,
+		Summary:    "the team slug collides with a platform-reserved component name (v0.3 naming formulas derive fleetly-<team>-* objects from the team slug; the reserved set guards the prefix families)",
+		Suggestion: "Pick another slug outside the reserved set (listed in the error message); slugs are lowercase word-form identifiers [a-z0-9]{2,32} and immutable once created."},
 
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",
