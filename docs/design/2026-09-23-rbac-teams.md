@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| **已冻结（裁决轮完成 2026-09-23：内裁四项 + 用户直裁四票，D-W0-1~8 全落）** | 2026-09-23 | [v0.3 规划](../plan/2026-09-23-v0.3-plan.md) §2 W0 / §3 六问；[架构文档](2026-09-17-architecture.md) §4.2 安全基线 / D21；[v0.2 观测设计](2026-09-22-observability.md)（terminal scope 先例） |
+| **已冻结（裁决轮完成 2026-09-23：内裁四项 + 用户直裁四票；评审补充 D-W0-9 同名项目解析——D-W0-1~9 全落）** | 2026-09-23 | [v0.3 规划](../plan/2026-09-23-v0.3-plan.md) §2 W0 / §3 六问；[架构文档](2026-09-17-architecture.md) §4.2 安全基线 / D21；[v0.2 观测设计](2026-09-22-observability.md)（terminal scope 先例） |
 
 ## 0. 输入与定位
 
@@ -147,6 +147,7 @@ CREATE TABLE projects (
 
 - `apps.project_id` / `databases.project_id` 加列（NULL 仅存在于「升级后 → 首用户注册前」窗口——该窗口内只有机具令牌在操作，资源面全库语义不变）。新建资源（首次 Deploy / CreateDatabase）必须携带 project（缺省 = 当前上下文个人队默认项目）。
 - **首用户自动全量认领（裁决 D-W0-5，用户直裁 2026-09-23）**：首个用户注册在**同一事务**内完成——建用户（平台管理员）+ 建个人 Team + 建默认 Project `default` + `UPDATE apps / databases SET project_id … WHERE project_id IS NULL` 全量划入 + 审计（auth.registered / project.created / app_moved 与 db_moved 汇总条目带数量）。无未认领中间态、无认领向导，升级零中断。**操作指引（诚实记录）**：升级后应立即注册首用户——「升级 → 注册」之间若注册窗口暴露公网，首个注册者将获得平台管理员与全部存量资源（该前提由裁决接受；缓解 = 该窗口内保持实例私网/仅操作员可达）。资源后续改派走 MoveApp / MoveDatabase（ProjectsService，平台管理员）。
+- **同名项目跨团队允许（裁决 D-W0-9，2026-09-23 用户评审补充）**：projects 唯一性维持 `UNIQUE(team_id, slug)`——「每个团队各有 default/prod」是自然心智（GitLab group 命名空间同构），**不取全局唯一**（否则 `default` 即稀缺，与注册默认项目设计直接冲突）。引用解析规则：**限定形 `team-slug/project-slug` 恒可解析**；裸名仅在解析域内唯一时可用（解析域 = 调用方可见项目集；CLI 带上下文时 = 上下文团队内），歧义 → `E_PROJECT_AMBIGUOUS`（错误文案列出候选 `team/project` 供限定）；CLI 上下文存储、Console 路由、审计与事件 target 一律用 ID（`project:<id>`，免疫重名），展示层跨团队视图（平台管理员列表/审计页）显示限定形。
 - **App 名保持全局唯一（裁决 D-W0-4）**：服务/卷/secret/网络/路由公式全部以 app 名为参数（§1），per-project 命名空间化 = 全部存量对象换名重部署 + 保留字/路由键公式重写的迁移海啸；收益仅「两个团队各有一个 `web`」，自托管单集群场景低频。代价如实记录：跨团队重名 → 部署失败 E_APP_NAME_TAKEN（文案建议带团队前缀命名）。多租户 SaaS 化（v0.4+）再议命名空间迁移专项（挂账 §14）。
 - 域名绑 app 不变（域名全局唯一性天然跨项目不撞）。
 
@@ -181,9 +182,9 @@ CREATE TABLE projects (
 | ProjectsService | CreateProject / ListProjects / GetProject / UpdateProject / DeleteProject；MoveApp / MoveDatabase（资源改派面，平台管理员——D-W0-5 认领后唯一归属变更通道） | W2 |
 | AuditService | ListAudit（actor/action/时间/result 过滤 + 分页，平台管理员）；CLI `fleetly audit export --csv`（D-W0-6 读面） | W3 |
 | SystemService 增量 | GetSystemStatus 增 git SSH host key SHA256 指纹字段（FZ-12 披露面，D-W0-8） | W3 |
-| 既有资源 API | Deploy/CreateDatabase 请求增 project 字段；List* 增 project 过滤；TokensService/GitKeysService 语义随迁（§2.3） | W2 |
+| 既有资源 API | Deploy/CreateDatabase 请求增 project 字段（裸名或 `team/project` 限定形，D-W0-9 解析规则）；List* 增 project 过滤（同解析规则）；TokensService/GitKeysService 语义随迁（§2.3） | W2 |
 
-纪律：新方法全部登记 scope.go（fail-closed）；错误码按注册表现状（新增 E_TEAM_LAST_OWNER / E_INVITE_INVALID / E_DB_PROJECT_MISMATCH 等进 errcode 注册表）。
+纪律：新方法全部登记 scope.go（fail-closed）；错误码按注册表现状（新增 E_TEAM_LAST_OWNER / E_INVITE_INVALID / E_DB_PROJECT_MISMATCH / E_PROJECT_AMBIGUOUS 等进 errcode 注册表）。
 
 ## 6. 审计与事件衔接（W3 铺垫）
 
@@ -241,3 +242,4 @@ project_members（GitLab 双层）；device flow 登录；email 验证/邮件邀
 | D-W0-6 | 审计留存与读面（规划 §3 Q3）：90 天可调（platform_settings）+ Console 审计页 + CLI 导出 CSV | **已裁**（§6） |
 | D-W0-7 | 商业分界（规划 §3 Q5）：**开源全功能**——自托管不设团队/项目/成员上限（红线直译）；付费 = 托管云 + 企业件（SSO/LDAP、审计外发 SIEM、合规报告、优先支持）；对 v0.3 实现零约束 | **已裁**（落点 = 发布口径，v0.3 发布时 README 明示） |
 | D-W0-8 | FZ-12 SSH host key 钉位（规划 §3 Q4）：指纹披露 + git.hostkey_changed 变更事件 + CLI `fleetly git fingerprint` 核对；host key 持久化保持，known_hosts 钉定为客户端指引 | **已裁**（§6） |
+| D-W0-9 | 同名项目跨团队（用户评审补充 2026-09-23）：per-team 唯一维持 + 限定形引用解析——`team/project` 恒可解析，裸名仅解析域内唯一（否则 E_PROJECT_AMBIGUOUS 列候选）；CLI 上下文/Console 路由/审计与事件 target 一律 ID | **已裁**（§3.4） |
