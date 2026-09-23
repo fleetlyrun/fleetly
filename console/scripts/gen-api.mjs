@@ -20,7 +20,12 @@ const repoRoot = path.resolve(here, "..", "..");
 const outPath = path.resolve(here, "..", "src", "api", "schema.d.ts");
 
 // console 实际消费的服务面（endpoints.ts / streams.ts 的端点来源 proto）。
+// 注意：users.swagger.json 不在清单——其 SetRegistration 挂载在同一路径
+// /v1/auth/registration（与 auth.swagger.json 的 GET 重复，合并会撞
+// duplicate path 断言），且 Users 管理面（W2/W3 的用户管理页）尚无消费方；
+// Console 认证面只需 auth.proto 的七个端点。
 const SPEC_FILES = [
+  "auth.swagger.json",
   "apps.swagger.json",
   "deployments.swagger.json",
   "revisions.swagger.json",

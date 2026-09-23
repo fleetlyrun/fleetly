@@ -14,6 +14,18 @@ import type { components } from "./schema";
 
 type Schemas = components["schemas"];
 
+// ── auth（v0.3 RBAC W1 认证面；proto fleetly/server/v1/auth.proto）────────
+
+export type UserView = Schemas["v1UserView"];
+export type TeamMembership = Schemas["v1TeamMembership"];
+export type MeResponse = Schemas["v1MeResponse"];
+export type RegisterResponse = Schemas["v1RegisterResponse"];
+export type LoginResponse = Schemas["v1LoginResponse"];
+export type LogoutResponse = Schemas["v1LogoutResponse"];
+export type LogoutAllResponse = Schemas["v1LogoutAllResponse"];
+export type AcceptInviteResponse = Schemas["v1AcceptInviteResponse"];
+export type GetRegistrationStateResponse = Schemas["v1GetRegistrationStateResponse"];
+
 // ── apps ────────────────────────────────────────────────────────────────
 
 export type AppView = Schemas["v1AppView"];

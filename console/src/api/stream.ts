@@ -95,6 +95,9 @@ async function consume<T>(
   try {
     const response = await fetch(url, {
       headers,
+      // 会话 cookie 随行（与 api() 同口径——无 Bearer token 的 Console
+      // 会话面，日志跟随/事件注视流靠 cookie 鉴权）。
+      credentials: "include",
       signal: controller.signal,
     });
     if (!response.ok || !response.body) {

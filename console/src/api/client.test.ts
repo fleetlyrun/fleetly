@@ -1,9 +1,17 @@
-// API 客户端单测（stubbed fetch，不起真服务）：Bearer 注入、错误信封
-// 类型化、401 时清凭据 + 触发未授权监听、bytes base64 上行（Deploy 契约）。
+// API 客户端单测（stubbed fetch，不起真服务）：双凭据（Bearer 注入 / 会话
+// cookie credentials）、错误信封类型化、401 时清凭据 + 触发未授权监听、
+// 认证面 optionalAuth 豁免、bytes base64 上行（Deploy 契约）。
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, clearToken, getToken, setToken, utf8ToBase64 } from "@/api/client";
+import {
+  api,
+  clearToken,
+  getToken,
+  setToken,
+  setUnauthorizedListener,
+  utf8ToBase64,
+} from "@/api/client";
 import { ApiError } from "@/api/errors";
 
 function jsonResponse(status: number, body: unknown) {
@@ -46,6 +54,34 @@ describe("api client", () => {
     expect((init.headers as Record<string, string>).Authorization).toBeUndefined();
   });
 
+  it("always sends credentials: include (session-cookie carrier)", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api("/auth/me");
+
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.credentials).toBe("include");
+  });
+
+  it("optionalAuth: a 401 neither clears the token nor notifies the listener", async () => {
+    setToken("flt_probe");
+    const listener = vi.fn();
+    setUnauthorizedListener(listener);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(401, { message: "not signed in" }),
+      ),
+    );
+
+    // 认证面自身的 401（登录失败/启动探测）是业务结果——全局登出不得触发。
+    await expect(api("/auth/me", { optionalAuth: true })).rejects.toBeInstanceOf(ApiError);
+    expect(getToken()).toBe("flt_probe");
+    expect(listener).not.toHaveBeenCalled();
+    setUnauthorizedListener(null);
+  });
+
   it("throws a typed ApiError carrying the snake_case envelope", async () => {
     vi.stubGlobal(
       "fetch",
@@ -73,7 +109,6 @@ describe("api client", () => {
   it("clears the token and notifies the listener on 401", async () => {
     setToken("flt_revoked");
     const listener = vi.fn();
-    const { setUnauthorizedListener } = await import("@/api/client");
     setUnauthorizedListener(listener);
 
     vi.stubGlobal(

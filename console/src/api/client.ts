@@ -1,11 +1,17 @@
-// REST 数据面唯一入口：fetch + Bearer + 错误信封解析。所有 /v1 消费必须
-// 经此模块（无旁路调用）；流式（NDJSON）见 stream.ts——鉴权与 base 解析
-// 同源复用。
+// REST 数据面唯一入口：fetch + 双凭据（Bearer | 会话 cookie）+ 错误信封
+// 解析。所有 /v1 消费必须经此模块（无旁路调用）；流式（NDJSON）见
+// stream.ts——鉴权与 base 解析同源复用。
 //
-// - token：v0.1 单操作员口径，localStorage 持久（authStore）；
+// - 凭据（v0.3 RBAC W1 双凭据形态）：localStorage 有 API token → Authorization
+//   Bearer（PAT/机具令牌路径，优先不回落）；无 token → 服务端会话 cookie
+//   fleetly_session（Console 登录/注册下发，HttpOnly）。所有请求统一
+//   credentials:"include"（同源 /v1 直达；VITE_API_BASE 独立域名部署时
+//   携带 cookie 的唯一手段）。
 // - base：生产态缺省相对路径 /v1（daemon 同源托管），VITE_API_BASE 覆盖
 //   （如独立域名部署）；开发态经 Vite dev proxy 同源转发；
-// - 401：统一触发 onUnauthorized（回登录页），调用方无需逐点处理。
+// - 401：统一触发 onUnauthorized（回登录页），调用方无需逐点处理；认证
+//   面自身（登录失败/启动探测等）经 optionalAuth 豁免——那是业务结果，
+//   不是会话失效事件。
 
 import { ApiError, type ErrorEnvelope } from "./errors";
 
@@ -86,6 +92,13 @@ export interface ApiRequestInit {
   rawBody?: Record<string, unknown>;
   /** 请求方取消信号（与缺省 30s 超时组合，任一触发即中止） */
   signal?: AbortSignal;
+  /**
+   * 401 豁免全局未授权处置（不清凭据、不触发 onUnauthorized）。仅供认证
+   * 面自身使用：会话启动探测、登录/注册（错口令的 401 是业务结果）、
+   * 注销（会话已失效时注销请求自身的 401 不构成事件）。资源面调用禁止
+   * 置位——会话失效必须走全局登出。
+   */
+  optionalAuth?: boolean;
 }
 
 /** 请求缺省超时：挂起请求不再无限等待（D4-⑤）。 */
@@ -136,6 +149,9 @@ export async function api<T>(path: string, init: ApiRequestInit = {}): Promise<T
     method: init.method ?? "GET",
     headers,
     body,
+    // 会话 cookie 随行（credentials 缺省 same-origin 也覆盖同源形态，这里
+    // 统一 include——VITE_API_BASE 跨源部署时 cookie/会话面唯一可行值）。
+    credentials: "include",
     signal: init.signal
       ? AbortSignal.any([init.signal, timeout])
       : timeout,
@@ -143,8 +159,9 @@ export async function api<T>(path: string, init: ApiRequestInit = {}): Promise<T
 
   if (!response.ok) {
     const envelope = await parseEnvelope(response);
-    if (response.status === 401) {
-      // 会话失效：全局登出走统一处置（与流式面共用）。
+    if (response.status === 401 && !init.optionalAuth) {
+      // 会话失效：全局登出走统一处置（与流式面共用）。optionalAuth 调用
+      // 方（认证面自身）自行消化 401 语义。
       handleUnauthorized(envelope);
     }
     throw new ApiError(response.status, envelope);

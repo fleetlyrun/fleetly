@@ -3,6 +3,7 @@
 
 import { api, utf8ToBase64 } from "./client";
 import type {
+  AcceptInviteResponse,
   CancelDeploymentResponse,
   CreateDatabaseResponse,
   CreateTerminalTicketResponse,
@@ -17,6 +18,7 @@ import type {
   GetIngressStatusResponse,
   GetJoinGuideResponse,
   GetMetricsStatusResponse,
+  GetRegistrationStateResponse,
   GetRevisionSpecResponse,
   GetS3SettingsResponse,
   GetSystemStatusResponse,
@@ -36,8 +38,13 @@ import type {
   ListWebhookDeliveriesResponse,
   ListWebhookEndpointsResponse,
   ListAppsResponse,
+  LoginResponse,
+  LogoutAllResponse,
+  LogoutResponse,
+  MeResponse,
   MetricsMode,
   PlacementView,
+  RegisterResponse,
   RemoveEnvResponse,
   RemoveSecretResponse,
   RestoreDatabaseBackupResponse,
@@ -69,6 +76,76 @@ import type {
   VolumeView,
   WebhookDeliveryStatus,
 } from "./types";
+
+// ── auth（v0.3 RBAC W1 认证面；proto fleetly/server/v1/auth.proto）──────
+// 会话 = HttpOnly cookie fleetly_session（Register/Login 经 Set-Cookie 下
+// 发，fetch credentials:"include" 携带——见 client.ts）；API token 路径仍
+// 走 Bearer（双凭据：有 token 用 Bearer，否则 cookie）。认证面自身的 401
+// 是业务结果（错口令/未登录探测），一律 optionalAuth 豁免全局未授权处置。
+
+/** 自助注册（无用户窗口恒开；成功即下发会话 cookie——自动登录）。 */
+export function register(input: {
+  email: string;
+  password: string;
+  display_name?: string;
+}) {
+  return api<RegisterResponse>("/auth/register", {
+    method: "POST",
+    json: input,
+    optionalAuth: true,
+  });
+}
+
+/** 口令登录（成功即下发会话 cookie）。 */
+export function login(email: string, password: string) {
+  return api<LoginResponse>("/auth/login", {
+    method: "POST",
+    json: { email, password },
+    optionalAuth: true,
+  });
+}
+
+/** 注销当前会话（服务端删行 + 清 cookie；会话已失效时静默成功语义）。 */
+export function logout() {
+  return api<LogoutResponse>("/auth/logout", {
+    method: "POST",
+    json: {},
+    optionalAuth: true,
+  });
+}
+
+/** 全部注销（删除当前用户全部会话；响应携带吊销行数）。 */
+export function logoutAll() {
+  return api<LogoutAllResponse>("/auth/logout-all", {
+    method: "POST",
+    json: {},
+    optionalAuth: true,
+  });
+}
+
+/**
+ * 当前身份投影（user + is_platform_admin + 所属团队与角色）。optionalAuth
+ * 仅供启动探测使用——会话面内消费（用户菜单）保持默认：会话失效走全局
+ * 登出。
+ */
+export function me(opts: { optionalAuth?: boolean } = {}) {
+  return api<MeResponse>("/auth/me", { optionalAuth: opts.optionalAuth });
+}
+
+/** 消费一次性邀请（无效/过期/已消费 → 409 信封，调用方如实展示）。 */
+export function acceptInvite(token: string) {
+  return api<AcceptInviteResponse>("/auth/invite:accept", {
+    method: "POST",
+    json: { token },
+  });
+}
+
+/** 注册窗口状态（登录页注册入口开关：open=true 或 has_users=false 显示）。 */
+export function getRegistrationState() {
+  return api<GetRegistrationStateResponse>("/auth/registration", {
+    optionalAuth: true,
+  });
+}
 
 // ── apps ────────────────────────────────────────────────────────────────
 

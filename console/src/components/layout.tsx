@@ -1,28 +1,28 @@
-// Console 壳（dokploy 式）：可折叠侧边栏（分组导航 + 版本/操作员页脚）
-// + 顶栏（折叠钮 / 面包屑 / 时钟 / 主题）+ 内容区。导航 = v0.1 功能面
-// （应用 / 事件 / 系统）。折叠偏好持久化 localStorage；小屏首帧默认折叠。
+// Console 壳（dokploy 式）：可折叠侧边栏（分组导航 + 版本页脚）
+// + 顶栏（折叠钮 / 面包屑 / 时钟 / 主题 / 用户菜单）+ 内容区。导航 =
+// v0.1 功能面（应用 / 事件 / 系统）。折叠偏好持久化 localStorage；小屏
+// 首帧默认折叠。身份与退出收拢在顶栏用户菜单（v0.3 RBAC W1，设计 §7；
+// 侧栏旧「Operator/token auth」页脚与 Sign out 按钮由用户菜单取代）。
 
 import { useQuery } from "@tanstack/react-query";
 import {
   Boxes,
   Database,
   House,
-  LogOut,
   PanelLeft,
   Radio,
   Server,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { NavLink, Outlet, useNavigate } from "react-router-dom";
+import { NavLink, Outlet } from "react-router-dom";
 
 import { getSystemStatus } from "@/api/endpoints";
-import { useAuth } from "@/auth";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TimeBadge } from "@/components/time-badge";
+import { UserMenu } from "@/components/user-menu";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { queryClient } from "@/query";
 
 const COLLAPSE_KEY = "fleetly.console.sidebar-collapsed";
 
@@ -91,8 +91,6 @@ function NavItem({
 }
 
 export function Layout() {
-  const { logout } = useAuth();
-  const navigate = useNavigate();
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
 
   // 版本号：侧边栏页脚（与 System 页共享查询缓存；静默失败即隐藏）。
@@ -147,37 +145,12 @@ export function Layout() {
           ))}
         </nav>
 
-        <div className="shrink-0 space-y-1 border-t p-2">
+        <div className="shrink-0 border-t p-2">
           {!collapsed && version ? (
-            <div className="px-2 pb-1 text-[10px] text-muted-foreground">
+            <div className="px-2 py-1 text-[10px] text-muted-foreground">
               Version {version}
             </div>
           ) : null}
-          {!collapsed ? (
-            <div className="rounded-md border bg-background px-2 py-1.5">
-              <div className="text-xs font-medium leading-tight">Operator</div>
-              <div className="text-[10px] leading-tight text-muted-foreground">
-                token auth
-              </div>
-            </div>
-          ) : null}
-          <Button
-            variant="ghost"
-            size="sm"
-            title={collapsed ? "Sign out" : undefined}
-            className={cn("w-full justify-start text-muted-foreground", collapsed && "justify-center px-0")}
-            onClick={() => {
-              // 登出同时清 react-query 缓存（M9-9）：上一操作员的 apps/
-              // deployments 等服务端状态不得泄给下一个会话（token 换人后
-              // 直接复用旧缓存会闪现他人数据）。
-              queryClient.clear();
-              logout();
-              navigate("/login");
-            }}
-          >
-            <LogOut aria-hidden className="h-4 w-4 shrink-0" />
-            {!collapsed && "Sign out"}
-          </Button>
         </div>
       </aside>
 
@@ -195,6 +168,7 @@ export function Layout() {
           <div className="ml-auto flex items-center gap-1.5">
             <TimeBadge />
             <ThemeToggle />
+            <UserMenu />
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 md:p-6">

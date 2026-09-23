@@ -1,7 +1,9 @@
 // Console 冒烟三链路（W1 T1-V2.6）：登录 → 应用详情+部署历史 → 登出，
 // 全部打真实 staging（baseURL 由 playwright.config.ts 提供）。锚点只用
-// 既有 testid（app-row / deployment-row / state-badge）与可访问名
-// （"API token" / "Sign in" / "Sign out" / "Deployments"），不新造锚点。
+// 既有 testid（app-row / deployment-row / state-badge / login-token-toggle /
+// login-token-submit / user-menu / logout / login-email / login-submit）与
+// 可访问名（"API token" / "Deployments"），不新造锚点。v0.3 RBAC 后登录页
+// 主形态是邮箱+口令，冒烟走折叠的 API token 高级路径（运维直连口径）。
 // token 从 FLEETLY_SMOKE_TOKEN 读取（config 已并入 .env.smoke 缺省），
 // 本文件不入库真值。
 
@@ -15,13 +17,14 @@ test.describe.configure({ mode: "serial" });
 
 test.skip(TOKEN === "", "FLEETLY_SMOKE_TOKEN 未设置，跳过 staging 冒烟");
 
-/** 从 /ui/ 未登录态粘贴 token 走真实登录，等已登录侧边栏出现。 */
+/** 从 /ui/ 未登录态展开折叠区、粘贴 token 走真实登录，等已登录侧边栏出现。 */
 async function signIn(page: Page): Promise<void> {
   await page.goto("/ui/");
+  await page.getByTestId("login-token-toggle").click();
   const tokenInput = page.getByLabel("API token");
   await expect(tokenInput).toBeVisible();
   await tokenInput.fill(TOKEN);
-  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.getByTestId("login-token-submit").click();
   // 登录成功 → Gate 换已登录路由壳；侧边栏 Applications 可点即已登录。
   // exact: true——首页还有 "View applications" 链接，子串匹配会撞严格模式。
   await expect(
@@ -66,13 +69,14 @@ test("应用详情+部署历史：hello-web 切 Deployments 页签有历史行",
   await page.screenshot({ path: "smoke-artifacts/02-detail-deployments.png", fullPage: true });
 });
 
-test("登出：Sign out 后回到登录页", async ({ page }) => {
+test("登出：用户菜单 Sign out 后回到登录页", async ({ page }) => {
   await signIn(page);
 
-  await page.getByRole("button", { name: "Sign out" }).click();
-  // 登出 → navigate("/login") → 未登录 Gate 渲染登录表单。
-  await expect(page.getByLabel("API token")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Sign in" })).toBeVisible();
+  await page.getByTestId("user-menu").click();
+  await page.getByTestId("logout").click();
+  // 登出 → navigate("/login") → 未登录 Gate 渲染登录表单（邮箱主形态）。
+  await expect(page.getByTestId("login-email")).toBeVisible();
+  await expect(page.getByTestId("login-submit")).toBeVisible();
   await expect(page).toHaveURL(/\/ui\/(login)?$/);
 
   await page.screenshot({ path: "smoke-artifacts/03-logout-login-page.png", fullPage: true });

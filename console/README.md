@@ -1,7 +1,7 @@
 # fleetly console
 
-Console 端 = React SPA，经 REST API（`/v1`，Bearer 鉴权）消费平台，无任何
-旁路调用。T2.21 落地。
+Console 端 = React SPA，经 REST API（`/v1`，双凭据：Bearer | 会话 cookie）消费平台，无任何
+旁路调用。T2.21 落地；v0.3 RBAC W1 起认证面 = 邮箱+口令（服务端会话）+ API token 高级路径。
 
 ## 技术形态
 
@@ -20,7 +20,7 @@ Console 端 = React SPA，经 REST API（`/v1`，Bearer 鉴权）消费平台，
 console/
   src/
     api/            # 数据面唯一入口
-      client.ts     #   fetch + Bearer + 错误信封解析 + 401 全局处理
+      client.ts     #   fetch + 双凭据（Bearer | cookie, credentials:include）+ 错误信封解析 + 401 全局处理
       errors.ts     #   ErrorEnvelope / ApiError（snake_case 七字段信封）
       endpoints.ts  #   端点封装（页面只经此消费 REST 面）
       stream.ts     #   NDJSON 解析器（断帧拼接）+ 流消费
@@ -28,10 +28,11 @@ console/
       stream-types.ts # 流帧类型（{"entry":…} / {"event":…|{"cursor_expired":…}）
       types.ts      #   proto 投影类型（UseProtoNames → snake_case）
     pages/          # 首页仪表盘 / 应用列表 / 详情（概览·部署·日志·env·域名）/ 系统 / 事件
-    components/     # 壳布局（可折叠侧边栏+面包屑+时钟+主题）+ StateBadge（状态色语义）
+                    # / 登录（邮箱口令+注册入口+折叠 token 路径）/ 邀请链接（/auth/invite）
+    components/     # 壳布局（可折叠侧边栏+面包屑+时钟+主题+用户菜单）+ StateBadge（状态色语义）
                     # + EnvelopeAlert（信封渲染）+ StatCard/EmptyState/PillTabs 等原子 + shadcn ui
     hooks/          # use-event-stream（事件流订阅，首页活动流与事件页共用）
-    auth.tsx        # token 登录态（localStorage 持久）
+    auth.tsx        # 登录态（Me 探测三态：loading/anon/authed；会话 cookie + token 双凭据）
   tests → src/**/*.test.{ts,tsx}（vitest + @testing-library/react）
 ```
 
@@ -39,7 +40,7 @@ console/
 
 | 页面 | 端点（proto/fleetly/server/v1 派生） |
 | --- | --- |
-| 登录（凭据校验） | GET /v1/apps |
+| 登录/注册/邀请（RBAC W1） | POST /v1/auth/login、POST /v1/auth/register（Set-Cookie 下发会话）、GET /v1/auth/registration（注册入口开关）、POST /v1/auth/logout(-all)、GET /v1/auth/me（启动探测 + 用户菜单投影）、POST /v1/auth/invite:accept；折叠高级路径 = 粘贴 API token（GET /v1/apps 校验 + Bearer） |
 | 首页仪表盘 | GET /v1/apps、GET /v1/system/status、GET /v1/system/nodes、GET /v1/events/stream（统计与活动流均为客户端派生，不新增端点） |
 | 应用列表 | GET /v1/apps |
 | 概览 | GET /v1/apps/{app}、GET /v1/apps/{app}/placement |

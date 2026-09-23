@@ -5,6 +5,137 @@
 // （int64 → 字符串；EmitUnpopulated=false → 零值字段缺省，全部属性可选）。
 
 export interface paths {
+    "/v1/auth/invite:accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * AcceptInvite 消费一次性邀请（设计 §3.1：W1 落面、合法消费 store 原语
+         *     ——邀请的产生面（TeamsService.CreateInvite）随 W2 落地）。
+         */
+        post: operations["AuthService_AcceptInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["AuthService_Login"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/logout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Logout 注销当前会话（需会话 cookie 凭据；删除会话行 + 清除 cookie）。 */
+        post: operations["AuthService_Logout"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/logout-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** LogoutAll 全部注销：删除当前用户全部会话（含本会话）。 */
+        post: operations["AuthService_LogoutAll"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Me 当前身份投影：user + is_platform_admin + 所属团队与角色（团队面
+         *     W2 落地前的只读投影）。
+         */
+        get: operations["AuthService_Me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register 自助注册：无用户窗口恒开（首注册者即平台管理员，同事务建
+         *     个人 Team + 默认 Project `default`，并吊销 bootstrap token——零残留
+         *     后门）；users 非空后由注册开关管辖（关闭 → E_REGISTRATION_CLOSED）。
+         */
+        post: operations["AuthService_Register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/auth/registration": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetRegistrationState 登录页开关注册入口（设计 §5/§7）：无用户窗口恒
+         *     返回 open=true（has_users=false）。
+         */
+        get: operations["AuthService_GetRegistrationState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps": {
         parameters: {
             query?: never;
@@ -1174,6 +1305,108 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        v1AcceptInviteRequest: {
+            /** 邀请链接携带的一次性明文 token（服务端只存 sha256）。 */
+            token?: string;
+        };
+        v1AcceptInviteResponse: {
+            team_id?: string;
+            team_slug?: string;
+            team_name?: string;
+            /** 受邀团队角色（accept 时落定的成员角色）。 */
+            role?: string;
+        };
+        /**
+         * ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、
+         *     架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染
+         *     为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，
+         *     只增不复用）对齐。
+         */
+        v1ErrorResponse: {
+            /** 稳定错误码字符串（如 "E_COMPOSE_INVALID"），注册表校验只增。 */
+            code?: string;
+            /** 人读错误信息（面向运维/集成方，不承诺文案稳定）。 */
+            message?: string;
+            /**
+             * 失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态
+             *     phase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。
+             */
+            stage?: string;
+            /** 关联的部署 ID（无关联时为空）。 */
+            deployment_id?: string;
+            /** 可执行的修复建议（面向用户展示）。 */
+            suggestion?: string;
+            /** 结构化附加上下文（machine-readable 键值对）。 */
+            context?: {
+                [key: string]: string;
+            };
+            /** 相关文档 URL（错误码文档锚点）。 */
+            docs?: string;
+        };
+        v1GetRegistrationStateResponse: {
+            /** 注册是否开放（无用户窗口恒 true；否则 = auth.registration，缺省 closed）。 */
+            open?: boolean;
+            /** 平台是否已有用户（首用户引导/演练面事实披露）。 */
+            has_users?: boolean;
+        };
+        v1LoginRequest: {
+            email?: string;
+            password?: string;
+        };
+        v1LoginResponse: {
+            user?: components["schemas"]["v1UserView"];
+        };
+        v1LogoutAllRequest: Record<string, never>;
+        v1LogoutAllResponse: {
+            /**
+             * 本次删除的会话行数（含当前会话）。
+             * Format: int64
+             */
+            sessions_revoked?: string;
+        };
+        v1LogoutRequest: Record<string, never>;
+        v1LogoutResponse: Record<string, never>;
+        v1MeResponse: {
+            user?: components["schemas"]["v1UserView"];
+            /** 所属团队与角色投影（viewer/developer/admin/owner 四档，设计 §3.2）。 */
+            teams?: components["schemas"]["v1TeamMembership"][];
+        };
+        v1RegisterRequest: {
+            email?: string;
+            /** 明文口令（8..128 字符；argon2id 落库，明文不入库/审计/日志）。 */
+            password?: string;
+            /** 人读显示名（空 = 缺省取 email 本地部分）。 */
+            display_name?: string;
+        };
+        v1RegisterResponse: {
+            user?: components["schemas"]["v1UserView"];
+        };
+        /** TeamMembership 是「我所在团队」的只读投影。 */
+        v1TeamMembership: {
+            team_id?: string;
+            team_slug?: string;
+            team_name?: string;
+            /** 团队角色（owner/admin/developer/viewer）。 */
+            role?: string;
+        };
+        /**
+         * UserView 是用户行的无敏感投影：口令哈希不存在于任何通道（state 层投影
+         *     纪律）；disabled_at 为空 = 在册。
+         */
+        v1UserView: {
+            id?: string;
+            email?: string;
+            display_name?: string;
+            /** 平台管理员标志（用户标志非角色，设计 §3.2）。 */
+            is_platform_admin?: boolean;
+            /** Format: date-time */
+            created_at?: string;
+            /**
+             * 已禁用时输出禁用时刻；在册时不输出。
+             * Format: date-time
+             */
+            disabled_at?: string;
+        };
         AppsServiceSetAppSourceBody: {
             /** 拉源 remote URL（file:// 与 https://、ssh:// 形态）。 */
             source_url?: string;
@@ -1249,33 +1482,6 @@ export interface components {
              */
             source_git_sha?: string;
             source_git_ref?: string;
-        };
-        /**
-         * ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、
-         *     架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染
-         *     为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，
-         *     只增不复用）对齐。
-         */
-        v1ErrorResponse: {
-            /** 稳定错误码字符串（如 "E_COMPOSE_INVALID"），注册表校验只增。 */
-            code?: string;
-            /** 人读错误信息（面向运维/集成方，不承诺文案稳定）。 */
-            message?: string;
-            /**
-             * 失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态
-             *     phase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。
-             */
-            stage?: string;
-            /** 关联的部署 ID（无关联时为空）。 */
-            deployment_id?: string;
-            /** 可执行的修复建议（面向用户展示）。 */
-            suggestion?: string;
-            /** 结构化附加上下文（machine-readable 键值对）。 */
-            context?: {
-                [key: string]: string;
-            };
-            /** 相关文档 URL（错误码文档锚点）。 */
-            docs?: string;
         };
         v1GetAppResponse: {
             id?: string;
@@ -2596,6 +2802,229 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    AuthService_AcceptInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1AcceptInviteRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1AcceptInviteResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AuthService_Login: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1LoginRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1LoginResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AuthService_Logout: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1LogoutRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1LogoutResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AuthService_LogoutAll: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1LogoutAllRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1LogoutAllResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AuthService_Me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1MeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AuthService_Register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1RegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RegisterResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AuthService_GetRegistrationState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetRegistrationStateResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     AppsService_ListApps: {
         parameters: {
             query?: {
