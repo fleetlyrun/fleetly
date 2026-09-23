@@ -65,6 +65,7 @@ placement.bound	app node binding completed (including automatic pinning)
 placement.changed	binding changed (via the explicitly confirmed migration path)
 placement.recovered	bound node recovered; binding re-established automatically
 placement.unresolved	binding undecidable after DR; explicit placement required (no guessing)
+project.created	a project was created (payload carries team_id/slug; W1 source = the default project provisioned atomically with registration)
 reconcile.drift_detected	drift detected between desired and actual state (including manual docker operations); convergence is per-app opt-in
 restore.completed	control plane restore completed (after exiting read-only observation)
 route.publish_failed	app ingress route publish failed (deploy unaffected; alerts separately)
@@ -72,8 +73,10 @@ route.published	app ingress routes published (after the health gate passed, all 
 s3.rustfs_deployed	managed RustFS deployed or converged to the desired spec (payload carries service/image/reason, never credentials)
 s3.rustfs_removed	managed RustFS removed after s3.mode left rustfs (data volume retained; payload carries volume_retained=true)
 s3.updated	object storage settings changed (payload carries the mode and toggles, never credentials)
+team.created	a team was created (payload carries slug/name; W1 source = the personal team provisioned atomically with registration)
 terminal.closed	web terminal session closed (payload carries duration, close code and reason; metadata only, never session content)
 terminal.opened	web terminal session opened (payload carries app/service/container/node/token metadata only, never session content)
+user.registered	a user completed self-registration (payload carries email/is_platform_admin/team_id/team_slug, never credentials; first user is platform admin with a personal team + default project)
 volume.created	volume registered (data birthplace; pins the hosting node)
 volume.detached	volume detached (volume declaration removed; data is not deleted with the declaration)
 volume.discarded	volume explicitly discarded (admin+confirm+audited)

@@ -1,0 +1,167 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "fleetly/server/v1/users.proto";
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 tokens.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// AuthService 是认证面（RBAC 设计 §2.1/§2.2/§5，v0.3 W1）：注册窗口规则
+// （无用户恒开 / 之后由 auth.registration 缺省 closed 管辖）、口令登录、
+// 服务端会话（Cookie `fleetly_session`，HttpOnly + SameSite=Lax + Path=/）。
+//
+// 会话下发形态：Register/Login 成功经 gRPC 响应 header metadata（键
+// `set-cookie`，gateway 面 OutgoingHeaderMatcher 映射回 HTTP `Set-Cookie`）
+// 下发——会话凭据不进响应体（proto 字段零出现），浏览器面由 gateway 原生
+// 承载；明文会话值只在 Set-Cookie 出现这一次，服务端只存 sha256（state 层
+// 纪律）。注册/登录按 email+来源 IP 双键限流（10 次/分钟）。
+service AuthService {
+  // Register 自助注册：无用户窗口恒开（首注册者即平台管理员，同事务建
+  // 个人 Team + 默认 Project `default`，并吊销 bootstrap token——零残留
+  // 后门）；users 非空后由注册开关管辖（关闭 → E_REGISTRATION_CLOSED）。
+  rpc Register(RegisterRequest) returns (RegisterResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/register"
+      body: "*"
+    };
+  }
+  rpc Login(LoginRequest) returns (LoginResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/login"
+      body: "*"
+    };
+  }
+  // Logout 注销当前会话（需会话 cookie 凭据；删除会话行 + 清除 cookie）。
+  rpc Logout(LogoutRequest) returns (LogoutResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/logout"
+      body: "*"
+    };
+  }
+  // LogoutAll 全部注销：删除当前用户全部会话（含本会话）。
+  rpc LogoutAll(LogoutAllRequest) returns (LogoutAllResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/logout-all"
+      body: "*"
+    };
+  }
+  // Me 当前身份投影：user + is_platform_admin + 所属团队与角色（团队面
+  // W2 落地前的只读投影）。
+  rpc Me(MeRequest) returns (MeResponse) {
+    option (google.api.http) = { get: "/v1/auth/me" };
+  }
+  // AcceptInvite 消费一次性邀请（设计 §3.1：W1 落面、合法消费 store 原语
+  // ——邀请的产生面（TeamsService.CreateInvite）随 W2 落地）。
+  rpc AcceptInvite(AcceptInviteRequest) returns (AcceptInviteResponse) {
+    option (google.api.http) = {
+      post: "/v1/auth/invite:accept"
+      body: "*"
+    };
+  }
+  // GetRegistrationState 登录页开关注册入口（设计 §5/§7）：无用户窗口恒
+  // 返回 open=true（has_users=false）。
+  rpc GetRegistrationState(GetRegistrationStateRequest) returns (GetRegistrationStateResponse) {
+    option (google.api.http) = { get: "/v1/auth/registration" };
+  }
+}
+
+message RegisterRequest {
+  string email = 1 [(buf.validate.field).string = {
+    min_len: 3,
+    max_len: 254,
+    email: true
+  }];
+  // 明文口令（8..128 字符；argon2id 落库，明文不入库/审计/日志）。
+  string password = 2 [(buf.validate.field).string = {
+    min_len: 8,
+    max_len: 128
+  }];
+  // 人读显示名（空 = 缺省取 email 本地部分）。
+  string display_name = 3 [(buf.validate.field).string.max_len = 100];
+}
+
+message RegisterResponse {
+  UserView user = 1;
+}
+
+message LoginRequest {
+  string email = 1 [(buf.validate.field).string = {
+    min_len: 3,
+    max_len: 254,
+    email: true
+  }];
+  string password = 2 [(buf.validate.field).string = {
+    min_len: 1,
+    max_len: 128
+  }];
+}
+
+message LoginResponse {
+  UserView user = 1;
+}
+
+message LogoutRequest {}
+
+message LogoutResponse {}
+
+message LogoutAllRequest {}
+
+message LogoutAllResponse {
+  // 本次删除的会话行数（含当前会话）。
+  int64 sessions_revoked = 1;
+}
+
+message MeRequest {}
+
+message MeResponse {
+  UserView user = 1;
+  // 所属团队与角色投影（viewer/developer/admin/owner 四档，设计 §3.2）。
+  repeated TeamMembership teams = 2;
+}
+
+// TeamMembership 是「我所在团队」的只读投影。
+message TeamMembership {
+  string team_id = 1;
+  string team_slug = 2;
+  string team_name = 3;
+  // 团队角色（owner/admin/developer/viewer）。
+  string role = 4;
+}
+
+message AcceptInviteRequest {
+  // 邀请链接携带的一次性明文 token（服务端只存 sha256）。
+  string token = 1 [(buf.validate.field).string.min_len = 1];
+}
+
+message AcceptInviteResponse {
+  string team_id = 1;
+  string team_slug = 2;
+  string team_name = 3;
+  // 受邀团队角色（accept 时落定的成员角色）。
+  string role = 4;
+}
+
+message GetRegistrationStateRequest {}
+
+message GetRegistrationStateResponse {
+  // 注册是否开放（无用户窗口恒 true；否则 = auth.registration，缺省 closed）。
+  bool open = 1;
+  // 平台是否已有用户（首用户引导/演练面事实披露）。
+  bool has_users = 2;
+}

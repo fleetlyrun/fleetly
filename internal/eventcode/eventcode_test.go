@@ -147,6 +147,14 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 起止的审计/事件双落面；payload 只带元数据，会话内容零出现。
 	"terminal.opened": "E7 web-terminal §2.4 (hub session acceptance, same-transaction with the audit row; metadata only, never session content)",
 	"terminal.closed": "E7 web-terminal §2.4 (hub session close, same-transaction with the audit row; duration/reason metadata, never session content)",
+
+	// v0.3 W1 认证/用户面（rbac-teams 设计 §6 事件清单的注册态三类，注册表
+	// 只增）：发出来源 = 自助注册组合事务（internal/state/register.go，与
+	// 用户/团队/项目写入同事务 = Outbox；payload metadata-only 零 secret）。
+	// auth.login/logout 族不落事件（设计 §6 仅审计）。
+	"user.registered":  "v0.3 W1 rbac-teams §6 (registration composite transaction; metadata-only, never credentials)",
+	"team.created":     "v0.3 W1 rbac-teams §6 (registration composite transaction: personal team; metadata-only)",
+	"project.created":  "v0.3 W1 rbac-teams §6 (registration composite transaction: default project; metadata-only)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

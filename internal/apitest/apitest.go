@@ -175,6 +175,10 @@ func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env
 	// 通知 Webhook 面（E6 W5-S4）：CLI golden/冒烟测试同路径消费（受理/
 	// 投影面——投递器 duty 不在进程内装配，TestWebhook 指向真实网络才可达）。
 	serverv1.RegisterNotificationsServiceServer(srv, api.NewNotificationsService(st, box))
+	// 认证/用户面（v0.3 W1）：CLI/golden 测试同路径消费（注册/登录/会话；
+	// 平台用户管理面在平台管理员判定后的读面）。
+	serverv1.RegisterAuthServiceServer(srv, api.NewAuthService(st))
+	serverv1.RegisterUsersServiceServer(srv, api.NewUsersService(st))
 
 	lis := bufconn.Listen(1024 * 1024)
 	go func() { _ = srv.Serve(lis) }()

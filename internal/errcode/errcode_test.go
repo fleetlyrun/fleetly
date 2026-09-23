@@ -122,6 +122,12 @@ var docCodes = map[string]string{ // code → 文档出处
 	// 拒绝（internal/api/terminal.go / internal/execrelay hub.go）。
 	"E_TERMINAL_DISABLED": "E7 web-terminal §2.4 (W5-S6 feature gate: terminal.enabled=false deploys no exec relay and refuses ticket issuance, 409)",
 
+	// v0.3 W1 认证/用户面（rbac-teams 设计 §2.1/§10，注册表只增）：注册
+	// 窗口关闭的稳定拒绝码（无用户窗口恒开不落本码）。消费点 =
+	// internal/api/authservice.go Register（state 哨兵 ErrRegistrationClosed
+	// 的 apperr 化投影，403）。
+	"E_REGISTRATION_CLOSED": "v0.3 W1 rbac-teams §2.1 (registration window closed: auth.registration defaults to closed once any user exists, 403)",
+
 	// W3 遗留撞键票收口（2026-09-21，实现期新增，文档外码单独列出）：app
 	// 顶层名与平台组件命名空间的保留字校验（compose 受理层消费，
 	// internal/naming 保留字表为证据链，422）。
@@ -161,7 +167,8 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // managed-databases §5.2 九码、E6 W5-S1 增 E_LOGS_BACKEND_UNAVAILABLE、
 // E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE、
 // E6 W5-S4 增 E_WEBHOOK_* 三码、E7 W5-S6 增 E_TERMINAL_DISABLED、v0.2.x
-// 收尾波增 E_APP_NAME_RESERVED（W3 撞键票，只增纪律）。E7 S6 后 = 59 E + 5 W。
+// 收尾波增 E_APP_NAME_RESERVED（W3 撞键票，只增纪律）、v0.3 W1 增
+// E_REGISTRATION_CLOSED。E7 S6 后 = 59 E + 5 W；W1 后 = 60 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -171,8 +178,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 59 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 59), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 60 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 60), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

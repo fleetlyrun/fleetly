@@ -88,6 +88,8 @@ var ProviderSet = wire.NewSet(
 	NewEventsService,
 	NewPlacementService,
 	NewTokensService,
+	NewAuthService,
+	NewUsersService,
 	NewGitTriggers,
 	NewGitKeysService,
 	NewGRPCServer,
@@ -750,6 +752,18 @@ func NewPlacementService(st *state.Store, res *placement.Resolver) *api.Placemen
 // NewTokensService 构造 token 管理面服务。
 func NewTokensService(st *state.Store) *api.TokensService {
 	return api.NewTokensService(st)
+}
+
+// NewAuthService 构造认证面服务（v0.3 W1，rbac-teams §2：注册/登录/会话；
+// 注册与登录的 email+IP 双键限流内置）。
+func NewAuthService(st *state.Store) *api.AuthService {
+	return api.NewAuthService(st)
+}
+
+// NewUsersService 构造平台用户管理面服务（v0.3 W1，rbac-teams §2.1/§3.2；
+// 平台管理员判定在 handler 内强制）。
+func NewUsersService(st *state.Store) *api.UsersService {
+	return api.NewUsersService(st)
 }
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux

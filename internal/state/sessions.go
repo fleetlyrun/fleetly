@@ -182,6 +182,20 @@ func (s *Store) RevokeUserSessions(ctx context.Context, userID string) (int64, e
 	return n, nil
 }
 
+// revokeUserSessionsTx 是 RevokeUserSessions 的事务内形态（ResetPassword
+// 的「重置即全端下线」联动在口令写事务内调用——原子生效，无中间窗口）。
+func revokeUserSessionsTx(ctx context.Context, tx *Tx, userID string) (int64, error) {
+	res, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE user_id = ?`, userID)
+	if err != nil {
+		return 0, fmt.Errorf("state: revoke user sessions: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("state: read revoke count: %w", err)
+	}
+	return n, nil
+}
+
 // SweepExpiredSessions 删除过期会话行（janitor 挂接；认证路径本就拒认
 // 过期行——清扫只回收表空间），返回删除行数。now 注入（janitor PruneOnce
 // 同口径，测试可驱动）。

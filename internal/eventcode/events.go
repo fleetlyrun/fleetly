@@ -16,8 +16,11 @@ package eventcode
 //     操作事件 9（操作不换主状态）。不复用 app.*/deployment.*——独立
 //     资源无对应 subject。S1 注册；发出来源随 S2-S5 票据接线
 //     （usage_test 豁免清单同步注记）。
+//   - v0.3 W1 认证/用户面（rbac-teams §6 事件清单的注册态三类，注册表
+//     只增）：发出来源 = 自助注册组合事务（internal/state/register.go，
+//     与业务写同事务 = Outbox）。
 //
-// 计 52 + 18 = 70 个事件名。
+// 计 52 + 18 = 70 + W1 增 3 = 73 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -205,4 +208,12 @@ var builtins = []Event{
 	// 「payload 不含会话内容」）。
 	{Name: "terminal.opened", Summary: "web terminal session opened (payload carries app/service/container/node/token metadata only, never session content)"},
 	{Name: "terminal.closed", Summary: "web terminal session closed (payload carries duration, close code and reason; metadata only, never session content)"},
+
+	// ── 认证/用户面（v0.3 W1，RBAC 设计 §6 事件清单的注册态三类；注册表
+	//    只增。metadata-only，零 secret——通知反环路红线沿用）：发出来源 =
+	//    自助注册组合事务（internal/state/register.go，与用户/团队/项目
+	//    写入同事务 = Outbox；auth.login/logout 族不落事件，仅审计）──
+	{Name: "user.registered", Summary: "a user completed self-registration (payload carries email/is_platform_admin/team_id/team_slug, never credentials; first user is platform admin with a personal team + default project)"},
+	{Name: "team.created", Summary: "a team was created (payload carries slug/name; W1 source = the personal team provisioned atomically with registration)"},
+	{Name: "project.created", Summary: "a project was created (payload carries team_id/slug; W1 source = the default project provisioned atomically with registration)"},
 }

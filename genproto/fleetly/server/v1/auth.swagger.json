@@ -1,0 +1,434 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/auth.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "AuthService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/auth/invite:accept": {
+      "post": {
+        "summary": "AcceptInvite 消费一次性邀请（设计 §3.1：W1 落面、合法消费 store 原语\n——邀请的产生面（TeamsService.CreateInvite）随 W2 落地）。",
+        "operationId": "AuthService_AcceptInvite",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1AcceptInviteResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1AcceptInviteRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/login": {
+      "post": {
+        "operationId": "AuthService_Login",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LoginResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LoginRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/logout": {
+      "post": {
+        "summary": "Logout 注销当前会话（需会话 cookie 凭据；删除会话行 + 清除 cookie）。",
+        "operationId": "AuthService_Logout",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LogoutResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LogoutRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/logout-all": {
+      "post": {
+        "summary": "LogoutAll 全部注销：删除当前用户全部会话（含本会话）。",
+        "operationId": "AuthService_LogoutAll",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LogoutAllResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1LogoutAllRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/me": {
+      "get": {
+        "summary": "Me 当前身份投影：user + is_platform_admin + 所属团队与角色（团队面\nW2 落地前的只读投影）。",
+        "operationId": "AuthService_Me",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1MeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/register": {
+      "post": {
+        "summary": "Register 自助注册：无用户窗口恒开（首注册者即平台管理员，同事务建\n个人 Team + 默认 Project `default`，并吊销 bootstrap token——零残留\n后门）；users 非空后由注册开关管辖（关闭 → E_REGISTRATION_CLOSED）。",
+        "operationId": "AuthService_Register",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RegisterResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RegisterRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AuthService"
+        ]
+      }
+    },
+    "/v1/auth/registration": {
+      "get": {
+        "summary": "GetRegistrationState 登录页开关注册入口（设计 §5/§7）：无用户窗口恒\n返回 open=true（has_users=false）。",
+        "operationId": "AuthService_GetRegistrationState",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetRegistrationStateResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "AuthService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1AcceptInviteRequest": {
+      "type": "object",
+      "properties": {
+        "token": {
+          "type": "string",
+          "title": "邀请链接携带的一次性明文 token（服务端只存 sha256）。"
+        }
+      }
+    },
+    "v1AcceptInviteResponse": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "string"
+        },
+        "team_slug": {
+          "type": "string"
+        },
+        "team_name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "title": "受邀团队角色（accept 时落定的成员角色）。"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetRegistrationStateResponse": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean",
+          "title": "注册是否开放（无用户窗口恒 true；否则 = auth.registration，缺省 closed）。"
+        },
+        "has_users": {
+          "type": "boolean",
+          "title": "平台是否已有用户（首用户引导/演练面事实披露）。"
+        }
+      }
+    },
+    "v1LoginRequest": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        }
+      }
+    },
+    "v1LoginResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        }
+      }
+    },
+    "v1LogoutAllRequest": {
+      "type": "object"
+    },
+    "v1LogoutAllResponse": {
+      "type": "object",
+      "properties": {
+        "sessions_revoked": {
+          "type": "string",
+          "format": "int64",
+          "title": "本次删除的会话行数（含当前会话）。"
+        }
+      }
+    },
+    "v1LogoutRequest": {
+      "type": "object"
+    },
+    "v1LogoutResponse": {
+      "type": "object"
+    },
+    "v1MeResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        },
+        "teams": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1TeamMembership"
+          },
+          "title": "所属团队与角色投影（viewer/developer/admin/owner 四档，设计 §3.2）。"
+        }
+      }
+    },
+    "v1RegisterRequest": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string",
+          "title": "明文口令（8..128 字符；argon2id 落库，明文不入库/审计/日志）。"
+        },
+        "display_name": {
+          "type": "string",
+          "title": "人读显示名（空 = 缺省取 email 本地部分）。"
+        }
+      }
+    },
+    "v1RegisterResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        }
+      }
+    },
+    "v1TeamMembership": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "string"
+        },
+        "team_slug": {
+          "type": "string"
+        },
+        "team_name": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string",
+          "title": "团队角色（owner/admin/developer/viewer）。"
+        }
+      },
+      "title": "TeamMembership 是「我所在团队」的只读投影。"
+    },
+    "v1UserView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_platform_admin": {
+          "type": "boolean",
+          "title": "平台管理员标志（用户标志非角色，设计 §3.2）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "disabled_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "已禁用时输出禁用时刻；在册时不输出。"
+        }
+      },
+      "title": "UserView 是用户行的无敏感投影：口令哈希不存在于任何通道（state 层投影\n纪律）；disabled_at 为空 = 在册。"
+    }
+  }
+}

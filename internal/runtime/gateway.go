@@ -42,6 +42,9 @@ import (
 //   - EventsService（Watch = chunked-JSON 流，seq 游标 + 过期信封帧）
 //   - ExecService（E7 W5-S6：ticket 受理面 + 状态视图；WS 数据面不走
 //     gateway——/v1/terminal 的 GET 是原生 WS 端点，见下方例外清单）
+//   - AuthService / UsersService（v0.3 W1，rbac-teams §5：认证面与平台
+//     用户管理面；Register/Login/GetRegistrationState 豁免鉴权，会话
+//     cookie 经 metadata 透传——见 newGatewayMuxWithTLS 的 matcher 注释）
 //
 // gRPC-only 清单：**v0.1 为空**——所有服务均挂 gateway（写操作挂 gateway
 // 供 Console 使用；Follow/Watch 的 JSON 帧形态适宜 REST）。若后续出现
@@ -95,6 +98,14 @@ func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (*runtime.Ser
 		runtime.WithMarshalerOption("*/*", newJSONMarshaler()),
 		runtime.WithMarshalerOption("application/json", newJSONMarshaler()),
 		runtime.WithErrorHandler(newGatewayErrorHandler()),
+		// 会话 cookie 透传（v0.3 W1，rbac-teams §2.2）：gRPC 服务经响应
+		// header metadata（键 "set-cookie"，internal/api/authservice.go）
+		// 下发 Set-Cookie——缺省 OutgoingHeaderMatcher 给一切键加
+		// "Grpc-Metadata-" 前缀，浏览器不识别；此处对 set-cookie 显式
+		// 还原为 HTTP 头原名（其余键维持缺省前缀形态不变）。入向 Cookie
+		// 头经缺省 HeaderMatcher 以 "grpcgateway-cookie" 键进 metadata，
+		// 认证分支消费（internal/api/auth.go cookieFromMetadata），零配置。
+		runtime.WithOutgoingHeaderMatcher(outgoingHeaderMatcher),
 	)
 	var opts []grpc.DialOption
 	if tlsCfg != nil {
@@ -121,12 +132,25 @@ func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (*runtime.Ser
 		serverv1.RegisterGitKeysServiceHandlerFromEndpoint,  // M4-2：与 gRPC 侧注册清单对齐
 		serverv1.RegisterDatabaseServiceHandlerFromEndpoint, // E4 W4-S2：库实例资源面（生命周期 RPC；连接投影脱敏）
 		serverv1.RegisterSecretsServiceHandlerFromEndpoint,  // E4 W4-S4：平台密钥库面（D-DB-7；无值读回——list 只出名称/指纹）
+		serverv1.RegisterAuthServiceHandlerFromEndpoint,     // v0.3 W1：认证面（注册/登录/会话；Register/Login/GetRegistrationState 豁免鉴权）
+		serverv1.RegisterUsersServiceHandlerFromEndpoint,    // v0.3 W1：平台用户管理面（平台管理员判定在 handler）
 	} {
 		if err := register(context.Background(), mux, grpcEndpoint, opts); err != nil {
 			return nil, err
 		}
 	}
 	return mux, nil
+}
+
+// outgoingHeaderMatcher 是 gateway 的出向 header 映射：set-cookie 还原为
+// HTTP 原名（会话 cookie 下发，v0.3 W1——见 newGatewayMuxWithTLS 注释），
+// 其余键维持缺省 "Grpc-Metadata-" 前缀形态（DefaultHeaderMatcher 同语义，
+// 手写以避免对该缺省函数的隐式依赖漂移）。
+func outgoingHeaderMatcher(key string) (string, bool) {
+	if strings.EqualFold(key, "set-cookie") {
+		return "Set-Cookie", true
+	}
+	return runtime.MetadataHeaderPrefix + key, true
 }
 
 // newJSONMarshaler 是 gateway 的 JSON marshaler：UseProtoNames 使字段名按

@@ -48,6 +48,8 @@ func NewGRPCServer(
 	dbs *api.DatabaseService,
 	secretsSvc *api.SecretsService,
 	execSvc *api.ExecService,
+	authSvc *api.AuthService,
+	usersSvc *api.UsersService,
 	sys *api.SystemService,
 ) (*lynxgrpc.Server, error) {
 	validator, err := protovalidate.New()
@@ -95,6 +97,11 @@ func NewGRPCServer(
 	serverv1.RegisterCronServiceServer(g, cronSvc)
 	serverv1.RegisterDatabaseServiceServer(g, dbs)
 	serverv1.RegisterSecretsServiceServer(g, secretsSvc) // E4 W4-S4：平台密钥库面（D-DB-7，无值读回）
+	// 认证/用户面（v0.3 W1，rbac-teams §5）：注册/登录/注册状态三方法在
+	// 拦截器豁免名单，Logout/LogoutAll/Me/AcceptInvite = 任意已认证，用户
+	// 管理面 = admin scope + handler 内平台管理员判定（internal/api/users.go）。
+	serverv1.RegisterAuthServiceServer(g, authSvc)
+	serverv1.RegisterUsersServiceServer(g, usersSvc)
 	return srv, nil
 }
 

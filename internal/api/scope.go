@@ -165,6 +165,27 @@ var methodScopes = map[string]string{
 	// 明」不同级，独立授予（D19 原文：terminal 独立 scope）。
 	"/fleetly.server.v1.ExecService/CreateTerminalTicket": ScopeTerminal,
 	"/fleetly.server.v1.ExecService/GetTerminalStatus":    ScopeTerminal,
+	// AuthService（v0.3 W1，rbac-teams §2/§5）：Register/Login/
+	// GetRegistrationState 三方法进 authExempt 名单（auth.go——登录页开关注
+	// 册入口，无凭据可用）；Logout/LogoutAll/Me/AcceptInvite = 任意已认证
+	// 凭据（取 read——会话凭据 scope 全集、最小机具令牌天然蕴含）。**注意**
+	// 会话凭据的临时 scope 口径（sessionScopes）与 W2 角色门收口点见
+	// auth.go 注释。
+	"/fleetly.server.v1.AuthService/Logout":       ScopeRead,
+	"/fleetly.server.v1.AuthService/LogoutAll":    ScopeRead,
+	"/fleetly.server.v1.AuthService/Me":           ScopeRead,
+	"/fleetly.server.v1.AuthService/AcceptInvite": ScopeRead,
+	// UsersService（v0.3 W1 平台用户管理面，rbac-teams §2.1/§3.2）：整体
+	// admin scope（机具令牌面）+ handler 内平台管理员判定（用户 principal
+	// 要求 is_platform_admin——requirePlatformAdmin，fail-closed）。
+	"/fleetly.server.v1.UsersService/ListUsers":            ScopeAdmin,
+	"/fleetly.server.v1.UsersService/CreateUser":           ScopeAdmin,
+	"/fleetly.server.v1.UsersService/DisableUser":          ScopeAdmin,
+	"/fleetly.server.v1.UsersService/EnableUser":           ScopeAdmin,
+	"/fleetly.server.v1.UsersService/ResetUserPassword":    ScopeAdmin,
+	"/fleetly.server.v1.UsersService/GrantPlatformAdmin":   ScopeAdmin,
+	"/fleetly.server.v1.UsersService/RevokePlatformAdmin":  ScopeAdmin,
+	"/fleetly.server.v1.UsersService/SetRegistration":      ScopeAdmin,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

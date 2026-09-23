@@ -359,9 +359,10 @@ func (s *Store) EnableUser(ctx context.Context, id, actorUserID, actorTokenID st
 }
 
 // ResetPassword 重设用户口令（设计 §2.1：v0.3 无 SMTP，找回口令 = 平台
-// 管理员重置）：重算 argon2id 哈希落库，明文与哈希不入审计。不存在返回
-// ErrUserNotFound。不吊销既有会话（设计仅对 DisableUser 定义会话联动；
-// 「口令重置后强制全端下线」留 W1 API 票裁决）。
+// 管理员重置）：重算 argon2id 哈希落库，明文与哈希不入审计。重置即全端
+// 下线——同事务删除该用户全部会话行（W1 API 票对 S1 遗留裁量的裁决落定：
+// 与 DisableUser 的会话联动同型，消除「口令已换而旧会话仍有效」窗口）。
+// 不存在返回 ErrUserNotFound。
 func (s *Store) ResetPassword(ctx context.Context, id, newPassword, actorUserID, actorTokenID string) error {
 	if strings.TrimSpace(newPassword) == "" {
 		return fmt.Errorf("state: reset password: password is empty")
@@ -382,14 +383,31 @@ func (s *Store) ResetPassword(ctx context.Context, id, newPassword, actorUserID,
 		if n == 0 {
 			return ErrUserNotFound
 		}
+		// 会话联动吊销（重置即全端下线，本票裁决；DisableUser 同款删行语义）。
+		revoked, err := revokeUserSessionsTx(ctx, tx, id)
+		if err != nil {
+			return err
+		}
 		return tx.WriteAudit(ctx, AuditEntry{
 			Actor:        auditActor(actorUserID),
 			ActorTokenID: actorTokenID,
 			Action:       "user.password_reset",
 			Target:       "user:" + id,
 			Result:       "ok",
+			DiffSummary:  DiffSummary("sessions_revoked", revoked),
 		})
 	})
+}
+
+// HasAnyUser 报告是否已存在任意用户行——注册窗口判定的谓词（users 表为空
+// → 注册恒开，设计 §2.1；api 面 GetRegistrationState 同口径消费）。
+func (s *Store) HasAnyUser(ctx context.Context) (bool, error) {
+	const q = `SELECT COUNT(1) FROM users`
+	var n int64
+	if err := s.db.QueryRowContext(ctx, q).Scan(&n); err != nil {
+		return false, fmt.Errorf("state: count users: %w", err)
+	}
+	return n > 0, nil
 }
 
 // scanUserCols 扫一行到 u（extra 追加列由调用方提供，如 password_hash）。

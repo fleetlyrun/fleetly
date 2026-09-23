@@ -384,6 +384,30 @@ func (s *Store) GetMembership(ctx context.Context, teamID, userID string) (TeamM
 	return m, nil
 }
 
+// ListUserMemberships 返回该用户的全部团队成员关系（created_at 升序）——
+// 「我所在团队」投影原语（api 面 Me RPC 消费；team slug/name 的补全在
+// 调用面按 team_id 取行）。
+func (s *Store) ListUserMemberships(ctx context.Context, userID string) ([]TeamMember, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT team_id, user_id, role, created_at FROM team_members WHERE user_id = ? ORDER BY created_at ASC, team_id ASC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("state: list user memberships: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []TeamMember
+	for rows.Next() {
+		var m TeamMember
+		if err := scanTeamMember(rows, &m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate user memberships: %w", err)
+	}
+	return out, nil
+}
+
 // guardLastOwner 是最后一名 owner 守卫（设计 §3.1）：teamID 内除 userID 外
 // 已无其他 owner → ErrTeamLastOwner。必须在持有写锁的事务内调用（与写操作
 // 同事务，消除「检查与写分离」竞态窗）。

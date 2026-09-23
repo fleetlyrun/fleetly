@@ -3,13 +3,9 @@ package errcode
 // builtins 是文档域清单的全量录入（唯一真源为注册表；此处每码注明文档
 // 出处）。分布核对：release-semantics §2.7（17 E + 3 W）、stateful-placement
 // §2.8（8 E + 1 W）与 §2.9（1 E）、state-model §2.7/§2.9/§2.4/§2.2（4 E）、
-// architecture §2.4（3 码）+ §2.3（E_STATE_VERSION_CONFLICT）。
-// 计 42 个 E_ + 5 个 W_ = 47 码（文档外实现期新增码：T2.15 的
-// E_ROUTE_PUBLISH_FAILED、MG-C3 的 E_DEPLOY_CONFIRM_REQUIRED、M4-6 的
-// E_TOKEN_LAST_ADMIN、multi-node E1-5 的 E_REGISTRY_* 两码、E1-8 的
-// E_MULTI_NODE_REQUIRES_BASE_DOMAIN、E3-2 的 E_S3_* 四码、E6 W5-S4 的
-// E_WEBHOOK_* 三码——见各自分节注记，待 T0.5 契约冻结确认；现 57 E +
-// 5 W = 62 码）。
+// architecture §2.4（3 码）+ §2.3（E_STATE_VERSION_CONFLICT）；v0.3 W1 增
+// E_REGISTRATION_CLOSED（rbac-teams §2.1）。
+// 计 60 个 E_ + 5 个 W_ = 65 码（逐波注记见各分节）。
 //
 // HTTP 默认映射：文档显式给定的照文档（E_DOMAIN_CONFLICT/E_STATE_VERSION_
 // CONFLICT/E_VOLUME_NODE_MISMATCH/E_PLACEMENT_MOVE_REQUIRES_ACK→409、
@@ -282,6 +278,15 @@ var builtins = []Code{
 	{ID: "E_TERMINAL_DISABLED", HTTP: 409,
 		Summary:    "the web terminal feature is disabled (terminal.enabled=false): no exec relay is deployed and no terminal tickets are issued",
 		Suggestion: "Enable the feature by setting terminal.enabled: true in the control plane config and restarting fleetlyd; the exec relay duty converges the fleetly-exec service on every node automatically."},
+
+	// ── 认证/用户面（v0.3 W1，RBAC 设计 §2.1/§10；注册表只增）：注册窗口
+	//    关闭的稳定拒绝码（无用户窗口恒开不落本码；users 非空后
+	//    auth.registration 缺省 closed 管辖）。消费点：internal/api/
+	//    authservice.go Register（state 哨兵 ErrRegistrationClosed 的
+	//    apperr 化投影，403）。──
+	{ID: "E_REGISTRATION_CLOSED", HTTP: 403,
+		Summary:    "self-service registration is closed (auth.registration defaults to closed once the platform has any user; the zero-user window is always open)",
+		Suggestion: "Ask a platform administrator to create the account via 'POST /v1/users' (or flip the switch with 'PUT /v1/auth/registration' open); the first user of a fresh install can always register."},
 
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",

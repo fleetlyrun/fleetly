@@ -62,10 +62,25 @@ func containsScope(scopes, need string) bool {
 }
 
 // Principal 是通过鉴权的调用方身份（handler 侧审计 actor_token_id 消费）。
+// v0.3 W1（RBAC 设计 §4.2 第 1 条）扩展用户维度：UserID/SessionID 仅有会话
+// 或用户 PAT 凭据时非空；机具令牌（user NULL）二者恒空 = 平台级凭据。
 type Principal struct {
 	TokenID string
 	Scopes  []string
+	// UserID 是属主用户（会话凭据 = 会话属主；用户 PAT = token.user_id；
+	// 机具令牌 = ""）。
+	UserID string
+	// SessionID 是会话凭据的会话行 ID（Cookie 认证分支非空；Bearer 恒空）。
+	SessionID string
 }
+
+// sessionScopes 是会话凭据的临时 scope 口径（本票裁决的最小正确解）：视为
+// [read, deploy, admin] 全集——真正的约束由平台面 is_platform_admin 检查
+//（UsersService 等，internal/api/users.go requirePlatformAdmin）与 W2 角色门
+//（rbac-teams §4.2 第 2 条 ResolvePermission）收口。**W2 收口点**：角色门
+// 落地时会话 Scopes 改为按目标资源角色蕴含计算，terminal 不在会话全集
+//（Web 终端对会话凭据在 W2 按 developer 角色放行）。本注释即收口标记。
+var sessionScopes = []string{ScopeRead, ScopeDeploy, ScopeAdmin}
 
 type principalKey struct{}
 
@@ -92,6 +107,9 @@ type Authenticator struct {
 	touchEvery time.Duration
 	// touch 是盖写端口（缺省 st.TouchTokenUsed；测试注入计数假实现）。
 	touch func(ctx context.Context, tokenID string) error
+	// sessionTouch 是会话 last_seen 盖写端口（缺省 st.TouchSessionUsed；
+	// A2 同款节流经 lastTouch map 复用，键加 "sess:" 前缀隔离）。
+	sessionTouch func(ctx context.Context, sessionID string) error
 	// now 是可注入时钟（测试用短窗口推进时间）。
 	now func() time.Time
 }
@@ -103,12 +121,13 @@ const defaultTouchEvery = 60 * time.Second
 // NewAuthenticator 构造认证器（内置缺省参数限流器：宽松防滥用）。
 func NewAuthenticator(st *state.Store) *Authenticator {
 	return &Authenticator{
-		st:         st,
-		limiter:    newRateLimiter(0, 0),
-		lastTouch:  make(map[string]time.Time),
-		touchEvery: defaultTouchEvery,
-		touch:      st.TouchTokenUsed,
-		now:        time.Now,
+		st:           st,
+		limiter:      newRateLimiter(0, 0),
+		lastTouch:    make(map[string]time.Time),
+		touchEvery:   defaultTouchEvery,
+		touch:        st.TouchTokenUsed,
+		sessionTouch: st.TouchSessionUsed,
+		now:          time.Now,
 	}
 }
 
@@ -130,7 +149,52 @@ func (a *Authenticator) Authenticate(ctx context.Context, authorization string) 
 		return Principal{}, statusEnvelope(codes.ResourceExhausted, "rate limit exceeded for token")
 	}
 	a.touchUsed(ctx, tok.ID)
-	return Principal{TokenID: tok.ID, Scopes: strings.Split(tok.Scopes, ",")}, nil
+	return Principal{TokenID: tok.ID, Scopes: strings.Split(tok.Scopes, ","), UserID: tok.UserID}, nil
+}
+
+// sessionCookieName 是 Console 浏览器会话 cookie 名（RBAC 设计 §2.2；
+// gateway 透传 HTTP Cookie 头 → metadata "grpcgateway-cookie"，本分支解析）。
+const sessionCookieName = "fleetly_session"
+
+// AuthenticateSessionCookie 校验会话 cookie 凭据并返回身份：Cookie 头里的
+// fleetly_session 明文 → state 哈希认证（属主禁用/过期一并拒认）→ Principal
+// {SessionID, UserID, Scopes=sessionScopes}。认证成功后经 A2 节流盖写
+// last_seen_at。任何失败统一 401（不泄漏会话存在性）。
+func (a *Authenticator) AuthenticateSessionCookie(ctx context.Context, cookieHeader string) (Principal, error) {
+	plaintext := sessionCookieValue(cookieHeader)
+	if plaintext == "" {
+		return Principal{}, statusEnvelope(codes.Unauthenticated, "missing session cookie")
+	}
+	sess, err := a.st.AuthenticateSession(ctx, plaintext)
+	if err != nil {
+		// ErrSessionInvalid / ErrSessionExpired / 读取故障：统一 401
+		//（fail-closed，不泄漏内部状态）。
+		return Principal{}, statusEnvelope(codes.Unauthenticated, "invalid or expired session")
+	}
+	a.touchSessionUsed(ctx, sess.ID)
+	return Principal{SessionID: sess.ID, UserID: sess.UserID, Scopes: sessionScopes}, nil
+}
+
+// touchSessionUsed 按 A2 节流盖写会话 last_seen_at（与 token 盖写共用节流
+// map，键加 "sess:" 前缀隔离；窗口内跳过、失败不落窗口）。
+func (a *Authenticator) touchSessionUsed(ctx context.Context, sessionID string) {
+	key := "sess:" + sessionID
+	now := a.now()
+	a.touchMu.Lock()
+	if last, ok := a.lastTouch[key]; ok && now.Sub(last) < a.touchEvery {
+		a.touchMu.Unlock()
+		return
+	}
+	a.touchMu.Unlock()
+	if a.sessionTouch == nil {
+		return
+	}
+	if err := a.sessionTouch(ctx, sessionID); err != nil {
+		return
+	}
+	a.touchMu.Lock()
+	a.lastTouch[key] = now
+	a.touchMu.Unlock()
 }
 
 // touchUsed 按 A2 节流盖写 last_used_at：距上次**成功**写不足 touchEvery
@@ -161,6 +225,25 @@ func bearerToken(authorization string) string {
 	return strings.TrimSpace(parts[1])
 }
 
+// sessionCookieValue 从 Cookie 头原文解析 fleetly_session 的值（RFC 6265
+// name=value 对的分号分隔形态；值不含引号——服务端下发的 64 hex，此处对
+// 引号包裹形态做防御式剥离）。
+func sessionCookieValue(cookieHeader string) string {
+	for _, part := range strings.Split(cookieHeader, ";") {
+		part = strings.TrimSpace(part)
+		name, value, found := strings.Cut(part, "=")
+		if !found || strings.TrimSpace(name) != sessionCookieName {
+			continue
+		}
+		value = strings.TrimSpace(value)
+		if len(value) >= 2 && value[0] == '"' && value[len(value)-1] == '"' {
+			value = value[1 : len(value)-1]
+		}
+		return value
+	}
+	return ""
+}
+
 // authorize 判定 scope：不足 → 403（PermissionDenied，信封退化形态）。
 func (a *Authenticator) authorize(p Principal, required string) error {
 	if containsScope(strings.Join(p.Scopes, ","), required) {
@@ -179,9 +262,14 @@ var authExemptPrefixes = []string{
 	"/grpc.reflection.",
 }
 
-// authExemptMethods 显式豁免的完整方法名。
+// authExemptMethods 显式豁免的完整方法名（v0.3 W1 增认证三面：Register/
+// Login 无凭据可用；GetRegistrationState 驱动登录页注册入口——rbac-teams
+// §2.2「REST /v1/auth/* 进鉴权豁免名单（Register/Login/Ping 族）」）。
 var authExemptMethods = map[string]bool{
-	"/fleetly.server.v1.SystemService/Ping": true,
+	"/fleetly.server.v1.SystemService/Ping":          true,
+	"/fleetly.server.v1.AuthService/Register":        true,
+	"/fleetly.server.v1.AuthService/Login":           true,
+	"/fleetly.server.v1.AuthService/GetRegistrationState": true,
 }
 
 func authExempt(fullMethod string) bool {
@@ -239,9 +327,24 @@ func (a *Authenticator) StreamAuthInterceptor() grpc.StreamServerInterceptor {
 	}
 }
 
-// authenticateAndAuthorize 从 metadata 取凭据走认证 + scope 判定。
+// authenticateAndAuthorize 从 metadata 取凭据走认证 + scope 判定。双凭据
+// 形态（RBAC 设计 §2.2）：Authorization Bearer 优先（CLI/机具面现状不变）；
+// 无 Bearer 凭据时回落会话 cookie（gateway 透传形态 "grpcgateway-cookie"
+// 优先，gRPC 直连手工携带的 "cookie" 键兜底）——Bearer 存在但不合法仍走
+// Bearer 401（不静默回落 cookie，凭据来源唯一可判定）。
 func (a *Authenticator) authenticateAndAuthorize(ctx context.Context, fullMethod, required string) (Principal, error) {
-	p, err := a.Authenticate(ctx, authorizationFromMetadata(ctx))
+	authorization := authorizationFromMetadata(ctx)
+	var (
+		p   Principal
+		err error
+	)
+	if bearerToken(authorization) != "" {
+		p, err = a.Authenticate(ctx, authorization)
+	} else if cookieHeader := cookieFromMetadata(ctx); cookieHeader != "" {
+		p, err = a.AuthenticateSessionCookie(ctx, cookieHeader)
+	} else {
+		p, err = a.Authenticate(ctx, authorization)
+	}
 	if err != nil {
 		return Principal{}, err
 	}
@@ -261,6 +364,22 @@ func authorizationFromMetadata(ctx context.Context) string {
 	for _, key := range []string{"authorization", "grpcgateway-authorization"} {
 		if vals := md.Get(key); len(vals) > 0 {
 			return vals[0]
+		}
+	}
+	return ""
+}
+
+// cookieFromMetadata 取 Cookie 头原文（grpc-gateway v2 缺省 HeaderMatcher
+// 把永久头（IANA 永久清单，Cookie 在列）经 "grpcgateway-" 前缀转入 gRPC
+// metadata——键全小写；直连 gRPC 客户端手工携带的 "cookie" 键兜底）。
+func cookieFromMetadata(ctx context.Context) string {
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return ""
+	}
+	for _, key := range []string{"grpcgateway-cookie", "cookie"} {
+		if vals := md.Get(key); len(vals) > 0 {
+			return strings.Join(vals, "; ")
 		}
 	}
 	return ""

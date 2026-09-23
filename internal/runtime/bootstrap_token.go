@@ -49,7 +49,7 @@ func bootstrapAdminToken(log *slog.Logger, path string, st *state.Store) error {
 		log.Info("bootstrap token file already exists, skipping generation (delete it after the first successful login)", "path", path)
 		return nil
 	}
-	plaintext, err := api.GenerateBootstrapAdminToken(context.Background(), st, "bootstrap admin (initial install)")
+	plaintext, err := api.GenerateBootstrapAdminToken(context.Background(), st, state.BootstrapTokenName)
 	if err != nil {
 		return err
 	}

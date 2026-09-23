@@ -51,6 +51,12 @@ type Token struct {
 	RevokedAt time.Time
 }
 
+// BootstrapTokenName 是首启 bootstrap admin token 的人读备注（note 列值，
+// internal/runtime 种子通道与本常量同源——识别 bootstrap 的唯一面：name
+// 精确匹配 + 机具令牌（user_id IS NULL）+ 在册（revoked_at IS NULL）。
+// 首用户注册事务按此定位自动吊销（设计 §2.3：桥梁凭据，目的达成即死）。
+const BootstrapTokenName = "bootstrap admin (initial install)"
+
 // tokRowCols 是 token 行查询列清单（命名避开 "token" 前缀——gosec G101
 // 对凭据样常量名误报；列清单本身非凭据）。
 const tokRowCols = `id, token_hash, name, scopes, created_at, last_used_at, revoked_at, user_id, project_id`

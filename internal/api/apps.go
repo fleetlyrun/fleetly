@@ -385,16 +385,23 @@ func deploymentView(r state.DeployRecord) *serverv1.DeploymentView {
 	return v
 }
 
-// auditEntryFromPrincipal 构造审计条目骨架（actor 恒 human——API 无法区分
-// 人类/AI 代理，token 备注/-ID 承载可追溯性；state-model §2.9 actor 词表
-// 不扩）。
+// auditEntryFromPrincipal 构造审计条目骨架：actor 按凭据身份增维（v0.3 W1，
+// rbac-teams 设计 §6——用户操作填 user:<id>（ActorTokenID 保留 PAT 面）；
+// 机具令牌/无用户凭据回落 human——state-model §2.9 actor 词表 human/
+// ai_agent/system 不扩，user:<id> 形态由 state 层 auditActor 同源约定）。
 func auditEntry(ctx context.Context, target, diff string) state.AuditEntry {
-	actorTokenID := ""
+	var (
+		actor        = "human"
+		actorTokenID string
+	)
 	if p, ok := PrincipalFromContext(ctx); ok {
 		actorTokenID = p.TokenID
+		if p.UserID != "" {
+			actor = "user:" + p.UserID
+		}
 	}
 	return state.AuditEntry{
-		Actor:        "human",
+		Actor:        actor,
 		ActorTokenID: actorTokenID,
 		Action:       actionFromContext(ctx),
 		Target:       target,

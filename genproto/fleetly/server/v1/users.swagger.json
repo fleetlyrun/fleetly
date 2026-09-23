@@ -1,0 +1,473 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/users.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "UsersService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/auth/registration": {
+      "put": {
+        "operationId": "UsersService_SetRegistration",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetRegistrationResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetRegistrationRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
+    "/v1/users": {
+      "get": {
+        "operationId": "UsersService_ListUsers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListUsersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "UsersService"
+        ]
+      },
+      "post": {
+        "operationId": "UsersService_CreateUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateUserResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateUserRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
+    "/v1/users/{id}/disable": {
+      "post": {
+        "operationId": "UsersService_DisableUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DisableUserResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UsersServiceDisableUserBody"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
+    "/v1/users/{id}/enable": {
+      "post": {
+        "operationId": "UsersService_EnableUser",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1EnableUserResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UsersServiceEnableUserBody"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
+    "/v1/users/{id}/password:reset": {
+      "post": {
+        "operationId": "UsersService_ResetUserPassword",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ResetUserPasswordResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UsersServiceResetUserPasswordBody"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
+    "/v1/users/{id}/platform-admin:grant": {
+      "post": {
+        "operationId": "UsersService_GrantPlatformAdmin",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GrantPlatformAdminResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UsersServiceGrantPlatformAdminBody"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
+    "/v1/users/{id}/platform-admin:revoke": {
+      "post": {
+        "operationId": "UsersService_RevokePlatformAdmin",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RevokePlatformAdminResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/UsersServiceRevokePlatformAdminBody"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "UsersServiceDisableUserBody": {
+      "type": "object"
+    },
+    "UsersServiceEnableUserBody": {
+      "type": "object"
+    },
+    "UsersServiceGrantPlatformAdminBody": {
+      "type": "object"
+    },
+    "UsersServiceResetUserPasswordBody": {
+      "type": "object"
+    },
+    "UsersServiceRevokePlatformAdminBody": {
+      "type": "object"
+    },
+    "v1CreateUserRequest": {
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string",
+          "title": "人读显示名（空 = 缺省取 email 本地部分，state 层落定）。"
+        }
+      }
+    },
+    "v1CreateUserResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        },
+        "temporary_password": {
+          "type": "string",
+          "title": "明文临时口令，仅本次响应可见；首次登录后建议由用户自行修改（改口令\n自助面挂账设计 §12——v0.3 找回口令 = 平台管理员重置）。"
+        }
+      }
+    },
+    "v1DisableUserResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        }
+      }
+    },
+    "v1EnableUserResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GrantPlatformAdminResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        }
+      }
+    },
+    "v1ListUsersResponse": {
+      "type": "object",
+      "properties": {
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1UserView"
+          }
+        }
+      }
+    },
+    "v1ResetUserPasswordResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "temporary_password": {
+          "type": "string",
+          "title": "明文临时口令，仅本次响应可见；旧口令立即失效，且该用户全部会话同\n事务吊销（重置即全端下线，设计 §2.1 本票裁决）。"
+        }
+      }
+    },
+    "v1RevokePlatformAdminResponse": {
+      "type": "object",
+      "properties": {
+        "user": {
+          "$ref": "#/definitions/v1UserView"
+        }
+      }
+    },
+    "v1SetRegistrationRequest": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean",
+          "title": "true = 开放自助注册；false = 关闭（平台管理员仍可经 CreateUser 加人）。"
+        }
+      }
+    },
+    "v1SetRegistrationResponse": {
+      "type": "object",
+      "properties": {
+        "open": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1UserView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "email": {
+          "type": "string"
+        },
+        "display_name": {
+          "type": "string"
+        },
+        "is_platform_admin": {
+          "type": "boolean",
+          "title": "平台管理员标志（用户标志非角色，设计 §3.2）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "disabled_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "已禁用时输出禁用时刻；在册时不输出。"
+        }
+      },
+      "title": "UserView 是用户行的无敏感投影：口令哈希不存在于任何通道（state 层投影\n纪律）；disabled_at 为空 = 在册。"
+    }
+  }
+}
