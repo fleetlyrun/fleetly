@@ -291,10 +291,16 @@ func TestBackupSchedulingWindowAndPrune(t *testing.T) {
 	h.setTasks(h.svcName(inst), TaskObservation{State: "running", DesiredState: "running", Image: inst.ImageDigest})
 	h.beatRun()
 	h.saveS3Settings()
+	// now = 03:30 UTC（平台缺省窗 hour_utc=3 内）。钉定必须先于台账回拨——
+	// stale 从钉定 now 派生而非真实时钟（两者混用 = 日期漂移定时炸弹：真实
+	// 今天越过钉定日后，回拨台账距窗内节拍不足 interval → 被判「新鲜」→
+	// duty 跳过 → 超时；2026-09-23 实爆，第二颗〔第一颗见 database_test.go
+	// 12:30 钉定〕）。
+	h.now = time.Date(2026, 9, 21, 3, 30, 0, 0, time.UTC)
 	// 旧台账：8 份历史（keep 缺省 7——应被 prune 到 7），created_at 回拨到
 	// 3 天前（InsertDatabaseBackup 落当前时刻——台账 freshness 判据要求
 	// 「上一份 daily 早于 interval」的历史事实）。
-	stale := time.Now().Add(-72 * time.Hour).UnixNano()
+	stale := h.now.Add(-72 * time.Hour).UnixNano()
 	for i := 0; i < 8; i++ {
 		if _, err := h.st.InsertDatabaseBackup(context.Background(), state.DatabaseBackup{
 			DatabaseID:     inst.ID,
@@ -328,8 +334,7 @@ func TestBackupSchedulingWindowAndPrune(t *testing.T) {
 			return JobRunOutcome{State: "complete", ExitCode: 0}
 		}
 	}
-	// now = 03:30 UTC（平台缺省窗 hour_utc=3 内）。
-	h.now = time.Date(2026, 9, 21, 3, 30, 0, 0, time.UTC)
+	// 窗内节拍（now 已钉定于台账回拨之前，见上）。
 	h.beatRun()
 	waitUntil(t, 5*time.Second, "scheduled daily row", func() bool {
 		rows, _ := h.st.ListDatabaseBackups(context.Background(), inst.ID, 20)
