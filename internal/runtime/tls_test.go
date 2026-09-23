@@ -359,12 +359,18 @@ func TestNewControlPlaneTLSAssembly(t *testing.T) {
 	certFile := filepath.Join(dir, "manual-cert.pem")
 	keyFile := filepath.Join(dir, "manual-key.pem")
 
-	// off：nil，无 cleanup，无错误。
+	// off：provider nil，但 cleanup 恒非 nil 且可安全调用——wire 聚合清理
+	// 闭包无条件调用（nil 函数值 = SIGTERM 优雅停机 panic，smoke.sh 实爆；
+	// manual 分支同病同修）。
 	offCfg := &AppConfig{}
 	off, cleanupOff, err := NewControlPlaneTLS(app, offCfg, nil)
-	if err != nil || off != nil || cleanupOff != nil {
-		t.Fatalf("off assembly: cleanup-nil=%v err=%v, want nil-tls/nil-cleanup/nil-err (err=%v)", cleanupOff != nil, err != nil, err)
+	if err != nil || off != nil {
+		t.Fatalf("off assembly: want nil-tls/nil-err (err=%v)", err)
 	}
+	if cleanupOff == nil {
+		t.Fatal("off assembly cleanup must be non-nil (wire post-stop hooks call it unconditionally)")
+	}
+	cleanupOff()
 
 	// manual：文件缺失 loud-fail；就绪后加载成功且 Get 供给。
 	missingCfg := &AppConfig{ControlPlane: ControlPlaneConfig{TLS: ControlPlaneTLSConfig{
@@ -381,9 +387,10 @@ func TestNewControlPlaneTLSAssembly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("manual assembly: %v", err)
 	}
-	if cleanupManual != nil {
-		t.Cleanup(cleanupManual)
+	if cleanupManual == nil {
+		t.Fatal("manual assembly cleanup must be non-nil (wire post-stop hooks call it unconditionally)")
 	}
+	t.Cleanup(cleanupManual)
 	if manual == nil || manual.mode != ControlPlaneTLSManual {
 		t.Fatalf("manual assembly produced %+v", manual)
 	}

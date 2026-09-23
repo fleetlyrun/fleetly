@@ -66,9 +66,12 @@ type webhookRunner struct {
 	pending  int // 已受理未完成的任务数（idle 判定 = pending == 0）
 	stopping atomic.Bool
 	done     chan struct{} // worker 排空退出信号（nil = 未启动）
-	// drainBudget 在 init 时从包级 var 捕获为不可变字段：看门狗 goroutine
-	// 只读它，与测试对包级 var 的回写（cleanup 还原）无共享内存——var 形态
-	// 的注入点语义不变（构造前写入即生效）。
+	// shutdown 是 Stop 的显式排水信号：lynx 停机序是「先 Stop 后 cancel
+	// 服务 ctx」（服务 ctx 特意不继承取消信号，lynx.go 注释明示）——join
+	// 若依赖 ctx 取消解除，就构成 Stop 等看门狗、看门狗等 cancel、cancel
+	// 等 Stop 返回的循环等待，只能靠 lynx StopTimeout（5s）打破（SIGTERM
+	// 优雅停机非零退出的实爆根因，smoke 断言 5 揪出）。
+	shutdown     chan struct{}
 	drainBudget  time.Duration
 	watchdogDone chan struct{} // 看门狗退出信号（nil = 未启动）
 }
@@ -77,6 +80,7 @@ type webhookRunner struct {
 func (r *webhookRunner) init() {
 	r.queue = make(chan webhookJob, webhookQueueCapacity)
 	r.cond = sync.NewCond(&r.mu)
+	r.shutdown = make(chan struct{})
 	r.drainBudget = webhookDrainBudget
 }
 
@@ -98,14 +102,22 @@ func (r *webhookRunner) start(ctx context.Context, process, disclose func(webhoo
 	go r.loop(ctx, done, watchdogDone, process, disclose)
 }
 
-// stop 等待 worker 排空退出；ctx 先到则让位返回（后台排空继续，进程退出
-// 兜底）。未启动为 no-op。看门狗 goroutine 同属 join 面：drain 正常收口时
-// 它最多再存活一个 drainBudget（扑空路径），join 保证 Stop 返回后 runner
-// 上无任何 goroutine 残留（测试 cleanup 与后续断言因此有序）。
+// stop 主动触发排空并等待 worker 退出（lynx 停机序里 Stop 先于服务 ctx
+// cancel——收口不依赖 ctx 取消，见 shutdown 字段注记）；ctx 先到则让位返回
+// （后台排空继续，进程退出兜底）。未启动为 no-op。看门狗 goroutine 同属
+// join 面：主循环正常收口（done 关闭 = 无在处理项且队列已空）时它立即退出
+//（免睡扑空）；预算尽路径它至多再存活一个 drainBudget。
 func (r *webhookRunner) stop(ctx context.Context) error {
 	r.mu.Lock()
 	done := r.done
 	watchdogDone := r.watchdogDone
+	if done != nil {
+		select {
+		case <-r.shutdown:
+		default:
+			close(r.shutdown)
+		}
+	}
 	r.mu.Unlock()
 	if done == nil {
 		return nil
@@ -169,13 +181,32 @@ func (r *webhookRunner) loop(ctx context.Context, done, watchdogDone chan struct
 	defer close(done)
 	go func() {
 		defer close(watchdogDone)
-		<-ctx.Done()
+		// 主循环正常收口（done 关闭）= 无在处理项且队列已空：看门狗无
+		// 物可弃，立即退出（免睡 drainBudget 的扑空等待）。非阻塞优先探
+		// 测防 select 随机性把已就绪的 done 错过。
+		select {
+		case <-done:
+			return
+		default:
+		}
+		select {
+		case <-ctx.Done():
+		case <-r.shutdown:
+		case <-done:
+			return
+		}
 		time.Sleep(r.drainBudget)
 		r.shutdownDiscard(disclose)
 	}()
 	for {
 		select {
 		case <-ctx.Done():
+			r.mu.Lock()
+			r.stopping.Store(true)
+			r.mu.Unlock()
+			r.drain(process)
+			return
+		case <-r.shutdown:
 			r.mu.Lock()
 			r.stopping.Store(true)
 			r.mu.Unlock()

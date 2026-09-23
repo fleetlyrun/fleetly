@@ -70,7 +70,11 @@ func NewControlPlaneTLS(app lynx.App, cfg *AppConfig, ing *ingress.Manager) (*Co
 	}
 	switch cfg.TLSMode() {
 	case ControlPlaneTLSOff:
-		return nil, nil, nil
+		// cleanup 恒非 nil：wire 聚合清理闭包无条件调用（wire_gen.go 多处
+		// cleanup10()），off 返回 nil 会让 SIGTERM 优雅停机在 runPostStopHooks
+		// 里对 nil 函数值调用 panic（TLS-off 是缺省形态——smoke.sh 优雅停机
+		// 断言实爆；manual 分支同病同修）。
+		return nil, func() {}, nil
 	case ControlPlaneTLSManual:
 		cache := newTLSCertCache(cfg.ControlPlane.TLS.CertFile, cfg.ControlPlane.TLS.KeyFile).
 			withMinVersion(cfg.TLSMinVersion())
@@ -83,7 +87,7 @@ func NewControlPlaneTLS(app lynx.App, cfg *AppConfig, ing *ingress.Manager) (*Co
 			mode:  ControlPlaneTLSManual,
 			log:   log,
 			cache: cache,
-		}, nil, nil
+		}, func() {}, nil
 	default: // platform——ValidateControlPlaneTLS 已保证 base_domain 非空。
 		certFile, keyFile, err := ing.PlatformCertPaths()
 		if err != nil {
