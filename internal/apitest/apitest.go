@@ -10,6 +10,8 @@ package apitest
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"log/slog"
 	"net"
 	"os"
@@ -203,6 +205,40 @@ func seedToken(t *testing.T, st *state.Store) string {
 	plaintext, err := api.GenerateBootstrapAdminToken(context.Background(), st, "apitest admin")
 	if err != nil {
 		t.Fatalf("apitest: seed token: %v", err)
+	}
+	return plaintext
+}
+
+// SeedUser 注册一个用户（state.RegisterUser 原语——首注册 = 平台管理员 +
+// 个人队 owner + 默认项目 default；后续注册需 auth.registration=open），
+// 返回注册落位投影（CLI 登录态测试的身份/团队夹具）。
+func (e *Env) SeedUser(t *testing.T, email, password string) state.RegisterResult {
+	t.Helper()
+	rr, err := e.Store.RegisterUser(context.Background(), state.RegisterWrite{Email: email, Password: password})
+	if err != nil {
+		t.Fatalf("apitest: register user %s: %v", email, err)
+	}
+	return rr
+}
+
+// SeedUserToken 为用户签发一枚用户 PAT（state.CreateToken 带 UserID——
+// TokensService 用户化迁移是 W2 API 票面，登录态夹具在 state 原语层取数），
+// 返回明文（格式与 api 面同形：flt_ + 24 字节 hex；scope read 够 Me 投影）。
+func (e *Env) SeedUserToken(t *testing.T, userID string) string {
+	t.Helper()
+	raw := make([]byte, 24)
+	if _, err := rand.Read(raw); err != nil {
+		t.Fatalf("apitest: generate user token: %v", err)
+	}
+	plaintext := "flt_" + hex.EncodeToString(raw)
+	if _, err := e.Store.CreateToken(context.Background(), state.TokenWrite{
+		Hash:   state.HashToken(plaintext),
+		Name:   "apitest user pat",
+		Scopes: "read",
+		UserID: userID,
+		Actor:  "human",
+	}); err != nil {
+		t.Fatalf("apitest: create user token: %v", err)
 	}
 	return plaintext
 }

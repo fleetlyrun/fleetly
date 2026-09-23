@@ -67,7 +67,10 @@ func normalizeVolatile(s string) string {
 }
 
 // startCLI 拨通进程内服务面：起 apitest 环境并注入拨号器 + FLEETLY_*
-// 环境覆盖（env 路径与 flag 路径共用同一 connFlags 读点）。
+// 环境覆盖（env 路径与 flag 路径共用同一 connFlags 读点）。配置文件隔离
+//（W1-S4）：dial 的 token 解析在 env 缺失时回落 ~/.fleetly/config.yaml
+//（resolveToken）——测试把 configPathOverride 指到临时目录，开发机上的
+// 真实登录态不得影响夹具语义（凭据一律经 env/flag 显式注入）。
 func startCLI(t *testing.T) *apitest.Env {
 	t.Helper()
 	env := apitest.Start(t)
@@ -75,6 +78,9 @@ func startCLI(t *testing.T) *apitest.Env {
 	saved := extraDialOptions
 	extraDialOptions = restore
 	t.Cleanup(func() { extraDialOptions = saved })
+	savedPath := configPathOverride
+	configPathOverride = filepath.Join(t.TempDir(), "home", ".fleetly", "config.yaml")
+	t.Cleanup(func() { configPathOverride = savedPath })
 	t.Setenv("FLEETLY_ADDR", "passthrough:///bufnet")
 	t.Setenv("FLEETLY_TOKEN", env.AdminToken)
 	return env

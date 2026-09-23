@@ -86,12 +86,14 @@ deploy/           installer & systemd units (lands with T2.1)
 
 ## CLI
 
-The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`) and `--token` (env `FLEETLY_TOKEN`); the bootstrap admin token is written **once** to `<data-root>/bootstrap-token` on first start (never logged; delete after first login), further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only), `64` usage error (unknown verb, bad flags/arguments — `EX_USAGE`). Flags must precede positional arguments (Go std `flag` semantics). Unary RPCs carry a default 30s deadline; Ctrl-C on streaming verbs (`logs follow`, `events watch`) and wait verbs (`deploy`, `build`, `rollback`) exits cleanly with code 0.
+The CLI talks to the daemon over gRPC only — no direct database or Docker access. Every verb that touches the platform takes `--addr` (default `127.0.0.1:8421`, env `FLEETLY_ADDR`), `--token` (env `FLEETLY_TOKEN`), and the team/project context flags `--team`/`--project` (env `FLEETLY_TEAM`/`FLEETLY_PROJECT`); for token and context the read order is flag > env > the local config `~/.fleetly/config.yaml`. `fleetly auth login` verifies a pasted PAT (via `Me`) and stores it there together with the current team/project context; `fleetly auth status` shows the identity and context, `fleetly auth logout` clears the local copy only (server-side revocation stays with `fleetly tokens revoke`). The bootstrap admin token is written **once** to `<data-root>/bootstrap-token` on first start (never logged; delete after first login), further tokens come from `fleetly tokens create`. Every verb supports `--json`; exit codes are `0` success/no changes, `1` error, `2` changes detected (`plan`/`diff` only), `64` usage error (unknown verb, bad flags/arguments — `EX_USAGE`). Flags must precede positional arguments (Go std `flag` semantics). Unary RPCs carry a default 30s deadline; Ctrl-C on streaming verbs (`logs follow`, `events watch`) and wait verbs (`deploy`, `build`, `rollback`) exits cleanly with code 0.
 
 ```bash
 fleetlyd &                                  # control plane (gRPC :8421, HTTP :8420, git SSH :8424)
 export FLEETLY_ADDR=127.0.0.1:8421
-export FLEETLY_TOKEN=<bootstrap admin token>
+
+fleetly auth login                          # paste a PAT once; stored in ~/.fleetly/config.yaml
+fleetly auth status                         # identity (Me), teams × roles, team/project context
 
 fleetly validate compose.yaml               # controlled-subset validation (local)
 fleetly plan compose.yaml                   # diff vs latest revision via API; exit 2 = changes

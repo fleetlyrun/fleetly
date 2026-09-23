@@ -96,22 +96,32 @@ type timestampProto = timestamppb.Timestamp
 type connFlags struct {
 	addr  string
 	token string
+	// team / project 是当前 team/project 上下文的显式覆盖面（v0.3 W1-S4，
+	// rbac-teams 设计 §2.4「--team/--project 显式覆盖」）：公共 flag 面先行，
+	// 本票仅 auth status 消费展示，资源命令按上下文过滤/限定随 W2 落地。
+	// 解析序 flag > env（FLEETLY_TEAM/FLEETLY_PROJECT）> config，见 resolve.go。
+	team    string
+	project string
 	// tlsModeFlag / tlsInsecureFlag 是 --tls / --tls-insecure 的旗标位
 	//（V2-8，E7 同批）：显式旗标优先于 FLEETLY_TLS env；两旗标互斥。
 	tlsFlag         bool
 	tlsInsecureFlag bool
 }
 
-// register 把 --addr/--token/--tls/--tls-insecure 挂进动词 flag 集（--addr
-// 缺省回落环境变量——CI/脚本形态无需逐命令传参）。--token 的默认值必须
-// 保持空串（H1）：std flag 的 -h/help 会把非空默认值明文打进 stdout，帮助
-// 输出常被贴进工单/CI 日志/AI 会话——env 回落挪到消费点 dial() 里做，-h
-// 面永不出现 token 本体。--tls/--tls-insecure 缺省 false（缺省明文——存量
-// 单节点 localhost 形态逐字兼容）；FLEETLY_TLS 在消费点解析（与 token 同
-// 款纪律：旗标 > env）。
+// register 把 --addr/--token/--tls/--tls-insecure/--team/--project 挂进动
+// 词 flag 集（--addr 缺省回落环境变量——CI/脚本形态无需逐命令传参）。--token
+// 的默认值必须保持空串（H1）：std flag 的 -h/help 会把非空默认值明文打进
+// stdout，帮助输出常被贴进工单/CI 日志/AI 会话——env/config 回落挪到消费
+// 点 dial() 里做（resolveToken：flag > env > config），-h 面永不出现 token
+// 本体。--tls/--tls-insecure 缺省 false（缺省明文——存量单节点 localhost
+// 形态逐字兼容）；FLEETLY_TLS 在消费点解析（与 token 同款纪律：旗标 > env）。
+// --team/--project 同款空缺省（H1 同理——帮助面保持干净），消费点解析见
+// resolveContext；本票仅 auth status 展示，资源命令消费随 W2。
 func (f *connFlags) register(fs *flag.FlagSet) {
 	fs.StringVar(&f.addr, "addr", envOrDefault("FLEETLY_ADDR", fleetly.DefaultAddr), "fleetlyd gRPC address")
-	fs.StringVar(&f.token, "token", "", "API token (env: FLEETLY_TOKEN; bootstrap token: see <data-root>/bootstrap-token)")
+	fs.StringVar(&f.token, "token", "", "API token (priority: --token > FLEETLY_TOKEN > the credential stored by 'fleetly auth login'; bootstrap token: see <data-root>/bootstrap-token)")
+	fs.StringVar(&f.team, "team", "", "current team context (priority: --team > FLEETLY_TEAM > config current_team; resource filtering lands in v0.3 W2)")
+	fs.StringVar(&f.project, "project", "", "current project context (priority: --project > FLEETLY_PROJECT > config current_project; resource filtering lands in v0.3 W2)")
 	fs.BoolVar(&f.tlsFlag, "tls", false, "dial the control plane over TLS and verify the server certificate (ServerName = host in --addr; env: FLEETLY_TLS=true)")
 	fs.BoolVar(&f.tlsInsecureFlag, "tls-insecure", false, "dial over TLS but skip certificate verification (explicit opt-out; mutually exclusive with --tls; env: FLEETLY_TLS=insecure)")
 }
@@ -144,14 +154,16 @@ func (f *connFlags) resolveTLS() (*tls.Config, error) {
 }
 
 // dial 建立 SDK 客户端（连接惰性建立；Close 交还调用方）。一元 RPC 的
-// 缺省 deadline 拦截器随连接挂载（S17-D3）。token 在此消费点回落
-// FLEETLY_TOKEN（H1：flag 默认值置空防 -h 回显，env 语义不变）。TLS 面
-// 在此解析（--tls/--tls-insecure 旗标 + FLEETLY_TLS env，见 resolveTLS）
+// 缺省 deadline 拦截器随连接挂载（S17-D3）。token 在此消费点走统一解析矩
+// 阵 resolveToken（flag > FLEETLY_TOKEN > config——W1-S4 新增 config 回落
+// 尾环：auth login 落盘的凭据对全部远程动词生效；env 高于 config，存量
+// CI/脚本形态零行为变化；H1：flag 默认值置空防 -h 回显，语义不变）。TLS
+// 面在此解析（--tls/--tls-insecure 旗标 + FLEETLY_TLS env，见 resolveTLS）
 // ——TLS 拨号时 SDK 侧凭据自动要求传输安全（RequireTransportSecurity 跟随）。
 func (f *connFlags) dial() (*fleetly.Client, error) {
-	token := f.token
-	if token == "" {
-		token = os.Getenv("FLEETLY_TOKEN")
+	token, _, err := resolveToken(f.token)
+	if err != nil {
+		return nil, err
 	}
 	tlsCfg, err := f.resolveTLS()
 	if err != nil {

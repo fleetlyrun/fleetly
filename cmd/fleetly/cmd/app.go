@@ -2,7 +2,9 @@
 //
 // T2.18 CLI-over-SDK 改造：CLI 与 API 同源——全部平台动词只经 SDK（gRPC）
 // 消费 fleetlyd（连接参数 --addr/--token，env 覆盖 FLEETLY_ADDR/
-// FLEETLY_TOKEN），不再有任何直开 DB / 直连 docker / 直读密钥的路径。
+// FLEETLY_TOKEN；W1-S4 起 token 另有 config 回落尾环——auth login 落盘的
+// ~/.fleetly/config.yaml，读序 flag > env > config，见 resolve.go），不再
+// 有任何直开 DB / 直连 docker / 直读密钥的路径。
 // 纯本地解析保留在 validate/plan--baseline/diff（internal/compose 纯库）。
 // 全动词支持 --json；退出码四态（S17-D3）：0=成功/无变化、1=错误、
 // 2=有变化（仅 plan/diff）、64=用法错误。
@@ -41,6 +43,7 @@ func NewApp(version string) *commands.App {
 		newNotificationsCmd(),
 		newEventsCmd(),
 		newTokensCmd(),
+		newAuthCmd(),
 		newPlacementCmd(),
 		newNodesCmd(),
 		newVolumesCmd(),

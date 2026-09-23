@@ -51,7 +51,10 @@ func renderCLIError(err error) string {
 	if st, ok := status.FromError(err); ok {
 		switch st.Code() {
 		case codes.Unauthenticated:
-			return err.Error() + "\n  hint: token missing or invalid — set --token / FLEETLY_TOKEN" +
+			// W1-S4 增补 auth login 指引（首位——粘贴式 PAT 的正规入口）；
+			// bootstrap token 与 tokens create 指引保留（机具/管理员形态）。
+			return err.Error() + "\n  hint: token missing or invalid — run 'fleetly auth login' to verify and store a PAT (~/.fleetly/config.yaml)," +
+				" or set --token / FLEETLY_TOKEN" +
 				" (the bootstrap admin token is in the <data root>/bootstrap-token file (written once, never logged, deleted after first login); further tokens are issued by an admin via 'fleetly tokens create')"
 		case codes.Unavailable:
 			return err.Error() + "\n  hint: fleetlyd unreachable — check --addr (default 127.0.0.1:8421, env FLEETLY_ADDR)" +

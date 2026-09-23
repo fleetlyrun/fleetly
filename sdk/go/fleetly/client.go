@@ -93,6 +93,7 @@ type Client struct {
 	place   serverv1.PlacementServiceClient
 	tokens  serverv1.TokensServiceClient
 	gitkey  serverv1.GitKeysServiceClient
+	auth    serverv1.AuthServiceClient
 	cron    serverv1.CronServiceClient
 	dbs     serverv1.DatabaseServiceClient
 	secs    serverv1.SecretsServiceClient
@@ -138,6 +139,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		place:   serverv1.NewPlacementServiceClient(conn),
 		tokens:  serverv1.NewTokensServiceClient(conn),
 		gitkey:  serverv1.NewGitKeysServiceClient(conn),
+		auth:    serverv1.NewAuthServiceClient(conn),
 		cron:    serverv1.NewCronServiceClient(conn),
 		dbs:     serverv1.NewDatabaseServiceClient(conn),
 		secs:    serverv1.NewSecretsServiceClient(conn),
@@ -207,6 +209,11 @@ func (c *Client) Placement() serverv1.PlacementServiceClient { return c.place }
 
 // Tokens 取 token 管理面（admin scope）。
 func (c *Client) Tokens() serverv1.TokensServiceClient { return c.tokens }
+
+// Auth 取认证面（v0.3 W1：Me/Register/Login/Logout/LogoutAll/AcceptInvite/
+// GetRegistrationState——CLI 的登录验证与身份投影经此消费；注册/登录下发
+// 的会话 cookie 是浏览器面凭据，CLI 不消费，见 AuthService 注释）。
+func (c *Client) Auth() serverv1.AuthServiceClient { return c.auth }
 
 // GitKeys 取 git 公钥管理面（admin scope，T2.19）。
 func (c *Client) GitKeys() serverv1.GitKeysServiceClient { return c.gitkey }

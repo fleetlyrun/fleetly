@@ -84,12 +84,14 @@ deploy/           安装器与 systemd unit（随 T2.1 落地）
 
 ## CLI
 
-CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）与 `--token`（env `FLEETLY_TOKEN`）；bootstrap admin token 在首启时**一次性写入** `<数据根>/bootstrap-token` 文件（不进日志；首登后删除），后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）、`64` 用法错误（未知动词/flag 或参数违规，EX_USAGE 惯例）。flags 需置于位置参数之前（Go std `flag` 语义）。一元 RPC 带缺省 30s deadline；流式动词（`logs follow`、`events watch`）与等待动词（`deploy`、`build`、`rollback`）上 Ctrl-C 干净退出（退出码 0）。
+CLI 只经 gRPC（SDK）与守护进程通信——没有任何直开数据库或直连 Docker 的路径。所有触达平台的动词都带 `--addr`（默认 `127.0.0.1:8421`，env `FLEETLY_ADDR`）、`--token`（env `FLEETLY_TOKEN`）与 team/project 上下文 flag `--team`/`--project`（env `FLEETLY_TEAM`/`FLEETLY_PROJECT`）；token 与上下文的读取序为 flag > env > 本地配置 `~/.fleetly/config.yaml`。`fleetly auth login` 验证粘贴的 PAT（经 `Me`）后连同当前 team/project 上下文落盘该文件；`fleetly auth status` 展示身份与上下文，`fleetly auth logout` 只清本地副本（服务端吊销仍走 `fleetly tokens revoke`）。bootstrap admin token 在首启时**一次性写入** `<数据根>/bootstrap-token` 文件（不进日志；首登后删除），后续 token 由 `fleetly tokens create` 签发。全部动词支持 `--json`；退出码 `0` 成功/无变化、`1` 错误、`2` 有变化（仅 `plan`/`diff`）、`64` 用法错误（未知动词/flag 或参数违规，EX_USAGE 惯例）。flags 需置于位置参数之前（Go std `flag` 语义）。一元 RPC 带缺省 30s deadline；流式动词（`logs follow`、`events watch`）与等待动词（`deploy`、`build`、`rollback`）上 Ctrl-C 干净退出（退出码 0）。
 
 ```bash
 fleetlyd &                                  # 控制面（gRPC :8421，HTTP :8420，git SSH :8424）
 export FLEETLY_ADDR=127.0.0.1:8421
-export FLEETLY_TOKEN=<bootstrap admin token>
+
+fleetly auth login                          # 粘贴一次 PAT；落盘 ~/.fleetly/config.yaml
+fleetly auth status                         # 身份（Me）、团队×角色、team/project 上下文
 
 fleetly validate compose.yaml               # 受控子集校验（本地）
 fleetly plan compose.yaml                   # 经 API 与最近版本快照比对；退出 2 = 有变化
