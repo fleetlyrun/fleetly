@@ -199,7 +199,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 | 库卷 | `fleetly-db-<name>-<key>-<id8>` | **不变** | id8 同上天然防撞 |
 | 路由键 | `fleetly-<app>-<svc>` | `fleetly-<team>-<prj>-<app>-<svc>` | traefik 动态配置键空间；access-log RouterName 反解为 spec 候选集匹配，公式变更内部消化 |
 
-- **label 集 +`fleetly.team` / `fleetly.project`**（服务创建时写入；对账/清扫/管理查询的识别面）。架构与 state-model 的公式表、naming 表驱动测试随 W1 首票同步修订（文档先行纪律）。
+- **label 集 +`fleetly.team` / `fleetly.project`**（服务创建时写入；对账/清扫/管理查询的识别面）。架构与 state-model 的公式表、naming 表驱动测试随 W2 命名落地票同步修订（文档先行纪律；命名三段化属 W2 归属管道，见规划 §2）。
 - **保留字迁移**：8 保留字（cron/db/dbjob/rustfs/registry/acme/metrics/victorialogs）从 app 名清单迁到 **team slug 清单**——app 名从此不再紧邻 `fleetly-` 前缀（结构性安全，E_APP_NAME_RESERVED 退役）；team slug 顶到该位置必须守前缀族与平台固定名（E_TEAM_SLUG_RESERVED）。project 段居第二位不邻前缀族（`fleetly-acme-db-…` 撞不上 `fleetly-db-`）——不新增保留约束。
 - **已知段内歧义（v0.2 既有类，如实记录）**：同团队 `app=a, service=b-c` 与 `app=a-b, service=c` 推导同名服务——docker 创建失败显性暴露（非静默串线），admission 预检挂账（§12）；跨团队拼接歧义由 team slug 单词制结构性消灭。
 - **流标签口径**：日志流标签 `app` 的值改为三段限定形 `team/prj/app`（ingest 写入与 SearchLogs 校验同口径，D-W0-9 解析规则复用）；metrics 容器/服务名随公式自然分段化。
@@ -237,7 +237,7 @@ CREATE TABLE project_members (          -- D-W0-2 修订：队内覆写形（§3
 ## 8. 迁移与兼容（fresh-install 版本，D-W0-5 修订）
 
 - **前提**：现役部署仅一处 staging 且可清空重建（用户澄清 2026-09-23）——v0.2→v0.3 **不提供升级路径**，不为假想安装者保留兼容面；v0.2.x 对外为终点版，未来若出现真实外部安装者再评估升级专项。staging 演练按**清空重建**执行。
-- **00018 一号迁移（净新增面）**：新表 users / sessions / teams / team_members / team_invites / projects / project_members（队内覆写，§3.3）；apps/databases 增 project_id、team_id（**NOT NULL**——空表加列经表重建实现，实现票细节）与 `UNIQUE(project_id, name)`（D-W0-4 二修）；tokens 增 user_id、project_id；git_keys 增 user_id；索引：team_members(team_id/user_id)、projects(team_id)、project_members(project_id)、apps(project_id/team_id)、databases(project_id/team_id)、tokens(user_id)、sessions(user_id/expires_at)。外键关系应用层维护（与既有表一致，SQLite 不开硬约束）。迁移历史保持追加制（fresh 安装顺序跑全链，毫秒级——不做基线重写）。
+- **00018 一号迁移（净新增面）**：新表 users / sessions / teams / team_members / team_invites / projects / project_members（队内覆写，§3.3）；apps/databases 增 project_id、team_id（**终态 NOT NULL**——实现切分：00018 建列〔可空：W1 部署路径未接归属，SQLite UNIQUE 对 NULL 互异不阻塞〕、W2 命名/归属管道落地时 00019 表重建收紧）与 `UNIQUE(project_id, name)`（D-W0-4 二修，随 00018 建索引）；tokens 增 user_id、project_id；git_keys 增 user_id；索引：team_members(team_id/user_id)、projects(team_id)、project_members(project_id)、apps(project_id/team_id)、databases(project_id/team_id)、tokens(user_id)、sessions(user_id/expires_at)。外键关系应用层维护（与既有表一致，SQLite 不开硬约束）。迁移历史保持追加制（fresh 安装顺序跑全链，毫秒级——不做基线重写）。
 - **命名公式（§4.3）自 v0.3 首次部署即新形**——无旧名对象、无收编 duty；CLI/Console 服务名展示随公式；**既有 e2e 脚本中 `fleetly-<app>-<svc>` 形服务名断言按 fixture 团队+项目前缀清扫**（W2 票内完成，验收 = 全量 e2e 绿）。
 - **事件 golden** 只增不改（新事件 metadata-only）。
 - **e2e 新增**：`auth.sh`（注册/首用户=平台管理员+个人队默认项目/注册开关/登录注销/限流/PAT 自服务/口令重置/**bootstrap token 首用户注册即吊销**）、`rbac.sh`（角色矩阵抽检：viewer 拒部署、developer 开终端拒 env 明文、跨项目库引用拒绝、**项目覆写抽检**〔团队 developer 某项目降 viewer 拒部署 / 团队 viewer 某项目升 developer 可部署 / owner 恒不覆写 / 移出团队联动清覆写〕、MoveApp 改派后归属与权限随迁（含换名重部署断言）、列表过滤、机具令牌全库）。
