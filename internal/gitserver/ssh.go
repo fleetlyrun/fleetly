@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"os/exec"
 	"strings"
 	"time"
@@ -60,12 +61,21 @@ func (s *GitTriggers) ListenAndServe(ctx context.Context, addr string) error {
 	// 对端地址——保留默认即可。
 	serverConfig.PublicKeyCallback = func(meta gossh.ConnMetadata, key gossh.PublicKey) (*gossh.Permissions, error) {
 		fingerprint := gossh.FingerprintSHA256(key)
-		if _, err := s.st.GetGitKeyByFingerprint(ctx, fingerprint); err != nil {
+		keyRow, err := s.st.GetGitKeyByFingerprint(ctx, fingerprint)
+		if err != nil {
 			s.log.Warn("gitserver: ssh auth rejected", "remote", meta.RemoteAddr().String(),
 				"fingerprint", fingerprint)
 			return nil, fmt.Errorf("unknown public key")
 		}
-		return &gossh.Permissions{Extensions: map[string]string{"fingerprint": fingerprint}}, nil
+		perms := &gossh.Permissions{Extensions: map[string]string{"fingerprint": fingerprint}}
+		// W2 §2.3 push 署名用户：key 属主非空（用户自服务注册）→ 经
+		// Permissions 扩展随连接传递，push 路径注入钩子环境变量入审计
+		// actor；存量无主键（user_id NULL）不带该扩展——审计 actor 落
+		// system 原口径（迁移口径，如实报告）。
+		if keyRow.UserID != "" {
+			perms.Extensions["push_user"] = keyRow.UserID
+		}
+		return perms, nil
 	}
 	serverConfig.AddHostKey(signer)
 
@@ -183,6 +193,18 @@ func (s *GitTriggers) execGitCommand(ctx context.Context, sconn *gossh.ServerCon
 	}
 	gitArgs := []string{sub, repoPath}
 	cmd := newGitCommand(ctx, gitArgs...)
+	if sub == "receive-pack" {
+		// W2 §2.3：push 路径把 SSH 认证回调解析的署名用户注入钩子环境
+		//（post-receive 继承 git 子进程环境，回调 payload 随行透传——
+		// push 审计 actor 署名）。值经 pushUserEnvValue 白名单化（ULID
+		// 词表）——环境变量与 JSON 载荷双面防注入；无主键/克隆路径不注
+		// 入（缺省变量，钩子按空处理）。
+		if sconn.Permissions != nil {
+			if v := pushUserEnvValue(sconn.Permissions.Extensions["push_user"]); v != "" {
+				cmd.Env = append(os.Environ(), "FLEETLY_PUSH_USER="+v)
+			}
+		}
+	}
 	cmd.Stdin = ch
 	cmd.Stdout = ch
 	cmd.Stderr = ch.Stderr()
@@ -214,6 +236,21 @@ func newGitCommand(ctx context.Context, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, gitBin, args...) //nolint:gosec // G204：子命令为白名单词形、路径经 app 名严格校验（E6 gitBin 为测试注入缝）
 	cmd.WaitDelay = gitWaitDelay
 	return cmd
+}
+
+// pushUserEnvValue 白名单化 push 署名用户（ULID 词表 [A-Za-z0-9]）：环境
+// 变量与钩子 JSON 载荷双面防注入；含任何其他字符的值整体丢弃（fail-
+// closed——属主 id 由平台写入通道生成，异形值只可能是异常态）。
+func pushUserEnvValue(v string) string {
+	if v == "" {
+		return ""
+	}
+	for _, r := range v {
+		if !(r >= '0' && r <= '9') && !(r >= 'a' && r <= 'z') && !(r >= 'A' && r <= 'Z') {
+			return ""
+		}
+	}
+	return v
 }
 
 // parseGitCommand 解析 SSH exec 命令形态：

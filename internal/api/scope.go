@@ -102,15 +102,18 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.PlacementService/UpdatePlacement":           ScopeAdmin,
 	"/fleetly.server.v1.PlacementService/ListVolumes":               ScopeRead,
 	"/fleetly.server.v1.PlacementService/GetPlacementMigrationPlan": ScopeRead,
-	// TokensService（管理面整体 admin）
-	"/fleetly.server.v1.TokensService/CreateToken": ScopeAdmin,
-	"/fleetly.server.v1.TokensService/ListTokens":  ScopeAdmin,
-	"/fleetly.server.v1.TokensService/RevokeToken": ScopeAdmin,
-	// GitKeysService（git 公钥管理面整体 admin——SSH push 认证凭据，
-	// T2.19）
-	"/fleetly.server.v1.GitKeysService/AddGitKey":    ScopeAdmin,
-	"/fleetly.server.v1.GitKeysService/ListGitKeys":  ScopeAdmin,
-	"/fleetly.server.v1.GitKeysService/RemoveGitKey": ScopeAdmin,
+	// TokensService / GitKeysService（v0.3 W2 语义迁移，rbac-teams 设计
+	// §2.3）：登记整体 read——真授权在 handler 内（用户自服务面：用户管
+	// 自己的 PAT / push key；平台管理员全列 + 机具令牌显式创建；机具令牌
+	// 按「平台管理员等价」读全列，写面须 admin scope，AddGitKey 恒要求
+	// 用户 principal）。teams/projects 同款切面（scope 门只承担「凭据至少
+	// 持有最小 read」的形状约束）；纪律：改登记 = 改测试。
+	"/fleetly.server.v1.TokensService/CreateToken": ScopeRead,
+	"/fleetly.server.v1.TokensService/ListTokens":  ScopeRead,
+	"/fleetly.server.v1.TokensService/RevokeToken": ScopeRead,
+	"/fleetly.server.v1.GitKeysService/AddGitKey":    ScopeRead,
+	"/fleetly.server.v1.GitKeysService/ListGitKeys":  ScopeRead,
+	"/fleetly.server.v1.GitKeysService/RemoveGitKey": ScopeRead,
 	// CronService（E5 Cron）：手动触发 = 写面语义（与 Deploy 同级——触发
 	// 的是应用自身的 compose 声明，不新增权限面）；台账读面 = read。
 	"/fleetly.server.v1.CronService/TriggerCronRun": ScopeDeploy,

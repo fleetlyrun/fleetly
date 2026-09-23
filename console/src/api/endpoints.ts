@@ -7,6 +7,7 @@ import type {
   CancelDeploymentResponse,
   CreateDatabaseResponse,
   CreateTerminalTicketResponse,
+  CreateTokenResponse,
   CreateWebhookEndpointResponse,
   DeleteDatabaseResponse,
   DeleteWebhookEndpointResponse,
@@ -35,6 +36,8 @@ import type {
   ListNodesResponse,
   ListRevisionsResponse,
   ListSecretsResponse,
+  ListTokensResponse,
+  ListProjectsResponse,
   ListWebhookDeliveriesResponse,
   ListWebhookEndpointsResponse,
   ListAppsResponse,
@@ -51,6 +54,7 @@ import type {
   ResumeDatabaseResponse,
   RetryDatabaseResponse,
   RevealDatabaseCredentialsResponse,
+  RevokeTokenResponse,
   RollbackDeploymentResponse,
   RotateDatabaseCredentialsResponse,
   RotateJoinTokenResponse,
@@ -145,6 +149,40 @@ export function getRegistrationState() {
   return api<GetRegistrationStateResponse>("/auth/registration", {
     optionalAuth: true,
   });
+}
+
+// ── tokens / projects（v0.3 W2-S2 PAT 自服务页，rbac-teams 设计 §7）──────
+// TokensService 用户化语义（§2.3）：本组端点是用户自服务面——列表只回自
+// 己的 PAT；创建明文仅响应一次；吊销限自己的（平台管理员语义不经 Console
+// 本页暴露）。
+
+/** 当前用户的 PAT 列表（无敏感投影：备注/scope/绑定项目/哈希前缀）。 */
+export function listTokens() {
+  return api<ListTokensResponse>("/tokens");
+}
+
+/**
+ * 创建 PAT：明文只在本次响应出现一次（服务端只存 sha256 哈希）；scopes
+ * 声明不得超出角色可达集（越集 400 带指引）；project_id 可选绑定。
+ */
+export function createToken(input: {
+  scopes: string[];
+  note: string;
+  project_id?: string;
+}) {
+  return api<CreateTokenResponse>("/tokens", { method: "POST", json: input });
+}
+
+/** 吊销自己的 PAT（幂等；可见集外/不存在一律 404 信封）。 */
+export function revokeToken(id: string) {
+  return api<RevokeTokenResponse>(`/tokens/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+/** 可见项目集（所在团队的项目；平台管理员全量——PAT 绑定下拉数据源）。 */
+export function listProjects() {
+  return api<ListProjectsResponse>("/projects");
 }
 
 // ── apps ────────────────────────────────────────────────────────────────

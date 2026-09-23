@@ -113,6 +113,14 @@
         "note": {
           "type": "string",
           "title": "备注（人读；如 \"CI 部署\"）。字段名 note（name 列承载，兼容既有表结构）。"
+        },
+        "project_id": {
+          "type": "string",
+          "title": "绑定项目（可选；设计 §2.3 project_id 收窄维度——W2-S4 角色门消费）。\n提供时须为在册项目（未知 → 400）。"
+        },
+        "machine": {
+          "type": "boolean",
+          "title": "机具令牌旗标（设计 §2.3：平台级凭据 = 平台管理员显式创建）。true 时\n产出 user NULL 的机具令牌：调用方须为平台管理员用户或 admin scope\n机具令牌，否则 403。缺省 false = 用户自服务 PAT（机具令牌调用方无\n用户身份，恒产出机具令牌——与既有 CI 形态兼容）。"
         }
       }
     },
@@ -233,6 +241,14 @@
           "type": "string",
           "format": "date-time",
           "title": "已吊销时不输出（列表默认只出在册 token）。"
+        },
+        "user_id": {
+          "type": "string",
+          "title": "属主用户（W2 §2.3 用户化注记）：非空 = 用户 PAT 的属主 id；空 = 平台\n机具令牌（EmitUnpopulated=false 下机具令牌不输出本字段）。"
+        },
+        "project_id": {
+          "type": "string",
+          "title": "绑定项目（空 = 不绑定，不输出）。"
         }
       },
       "title": "TokenView 是 token 行的无敏感投影：备注/scope/哈希前缀——明文与完整\n哈希永不回读（state-model §2.9）。"

@@ -136,6 +136,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/tokens": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["TokensService_ListTokens"];
+        put?: never;
+        post: operations["TokensService_CreateToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/tokens/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["TokensService_RevokeToken"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ListProjects 我可见项目（团队归属集）；带 team_id 收窄到单队（须为
+         *     该队成员或平台管理员）；平台管理员不带过滤 = 全部。
+         */
+        get: operations["ProjectsService_ListProjects"];
+        put?: never;
+        /** CreateProject 在团队下建项目（owner 专属）；team 内 slug 冲突 409。 */
+        post: operations["ProjectsService_CreateProject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ProjectsService_GetProject"];
+        put?: never;
+        post?: never;
+        /**
+         * DeleteProject 删除空项目：项目内有存活资源（apps 非 tombstone /
+         *     db_instances 非 deleted 终态）即拒绝（409——资源先迁走或删光，不做
+         *     隐式级联，§3.1）。
+         */
+        delete: operations["ProjectsService_DeleteProject"];
+        options?: never;
+        head?: never;
+        /** UpdateProject 仅改 name/description（slug 不可变——请求无 slug 字段）。 */
+        patch: operations["ProjectsService_UpdateProject"];
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["ProjectsService_ListProjectMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** RemoveProjectMember 删除覆写行（该成员回退用团队角色）。 */
+        delete: operations["ProjectsService_RemoveProjectMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{project_id}/members:set-role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * SetProjectMemberRole 队内覆写 upsert（团队 admin/owner，D-W0-2 B 形）：
+         *     仅限团队成员；owner 不可覆写（409）；有行则改角色、无行则插入。
+         */
+        post: operations["ProjectsService_SetProjectMemberRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps": {
         parameters: {
             query?: never;
@@ -1407,6 +1535,132 @@ export interface components {
              */
             disabled_at?: string;
         };
+        v1CreateTokenRequest: {
+            /**
+             * scope 集（read / deploy / terminal / admin；admin 蕴含 deploy 蕴含 read
+             *     ⊕ terminal——terminal 为独立 scope，read/deploy 不蕴含（E7 W5-S6）；
+             *     重复项服务端归一去重）。
+             */
+            scopes?: string[];
+            /** 备注（人读；如 "CI 部署"）。字段名 note（name 列承载，兼容既有表结构）。 */
+            note?: string;
+            /**
+             * 绑定项目（可选；设计 §2.3 project_id 收窄维度——W2-S4 角色门消费）。
+             *     提供时须为在册项目（未知 → 400）。
+             */
+            project_id?: string;
+            /**
+             * 机具令牌旗标（设计 §2.3：平台级凭据 = 平台管理员显式创建）。true 时
+             *     产出 user NULL 的机具令牌：调用方须为平台管理员用户或 admin scope
+             *     机具令牌，否则 403。缺省 false = 用户自服务 PAT（机具令牌调用方无
+             *     用户身份，恒产出机具令牌——与既有 CI 形态兼容）。
+             */
+            machine?: boolean;
+        };
+        v1CreateTokenResponse: {
+            id?: string;
+            /** 明文 token（flt_<随机 48 hex>），仅本次响应可见。 */
+            token?: string;
+            note?: string;
+            scopes?: string[];
+            /** Format: date-time */
+            created_at?: string;
+        };
+        v1ListTokensResponse: {
+            tokens?: components["schemas"]["v1TokenView"][];
+        };
+        v1RevokeTokenResponse: {
+            id?: string;
+            revoked_at?: string;
+        };
+        /**
+         * TokenView 是 token 行的无敏感投影：备注/scope/哈希前缀——明文与完整
+         *     哈希永不回读（state-model §2.9）。
+         */
+        v1TokenView: {
+            id?: string;
+            note?: string;
+            scopes?: string[];
+            /** token_hash 前 12 hex（识别用，非凭据）。 */
+            hash_prefix?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /**
+             * 最近使用；从未使用时不输出。
+             * Format: date-time
+             */
+            last_used_at?: string;
+            /**
+             * 已吊销时不输出（列表默认只出在册 token）。
+             * Format: date-time
+             */
+            revoked_at?: string;
+            /**
+             * 属主用户（W2 §2.3 用户化注记）：非空 = 用户 PAT 的属主 id；空 = 平台
+             *     机具令牌（EmitUnpopulated=false 下机具令牌不输出本字段）。
+             */
+            user_id?: string;
+            /** 绑定项目（空 = 不绑定，不输出）。 */
+            project_id?: string;
+        };
+        ProjectsServiceSetProjectMemberRoleBody: {
+            user_id?: string;
+            role?: string;
+        };
+        ProjectsServiceUpdateProjectBody: {
+            name?: string;
+            description?: string;
+        };
+        v1CreateProjectRequest: {
+            team_id?: string;
+            slug?: string;
+            name?: string;
+            description?: string;
+        };
+        v1CreateProjectResponse: {
+            project?: components["schemas"]["v1ProjectView"];
+        };
+        v1DeleteProjectResponse: Record<string, never>;
+        v1GetProjectResponse: {
+            project?: components["schemas"]["v1ProjectView"];
+        };
+        v1ListProjectMembersResponse: {
+            members?: components["schemas"]["v1ProjectMemberView"][];
+        };
+        v1ListProjectsResponse: {
+            projects?: components["schemas"]["v1ProjectView"][];
+        };
+        v1ProjectMemberView: {
+            project_id?: string;
+            user_id?: string;
+            /** 覆写角色（admin/developer/viewer 三档；owner 不可覆写——设计 §3.3）。 */
+            role?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** 属主投影（成员列表的可用性面；无敏感材料）。 */
+            email?: string;
+            display_name?: string;
+        };
+        /** ProjectView 是项目行的无敏感投影。 */
+        v1ProjectView: {
+            id?: string;
+            team_id?: string;
+            /** 归属团队 slug（限定形 team/project 展示面，D-W0-9）。 */
+            team_slug?: string;
+            /** 单词制标识（[a-z0-9]{2,32}、team 内唯一、不可变；命名公式三段第二位）。 */
+            slug?: string;
+            name?: string;
+            description?: string;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        v1RemoveProjectMemberResponse: Record<string, never>;
+        v1SetProjectMemberRoleResponse: {
+            member?: components["schemas"]["v1ProjectMemberView"];
+        };
+        v1UpdateProjectResponse: {
+            project?: components["schemas"]["v1ProjectView"];
+        };
         AppsServiceSetAppSourceBody: {
             /** 拉源 remote URL（file:// 与 https://、ssh:// 形态）。 */
             source_url?: string;
@@ -1571,6 +1825,14 @@ export interface components {
         DeploymentsServiceDeployFromGitBody: {
             sha?: string;
             ref?: string;
+            /**
+             * push 署名用户（W2 §2.3 审计 actor 联动）：post-receive 钩子把 SSH
+             *     公钥认证回调解析出的 git_keys.user_id 经 FLEETLY_PUSH_USER 环境变量
+             *     原样透传；空 = 存量无主键/缺省（审计 actor 落 machine 原口径）。
+             *     信任边界：钩子文件 daemon 属主 0600，与 hook token 同级——字段是
+             *     审计归因面，不是授权面。
+             */
+            push_user?: string;
         };
         DeploymentsServiceRollbackDeploymentBody: {
             /** 回滚目标版本快照 ID；空 = 最近一次成功部署的版本（回退一版）。 */
@@ -3012,6 +3274,359 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1GetRegistrationStateResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TokensService_ListTokens: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListTokensResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TokensService_CreateToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateTokenRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateTokenResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TokensService_RevokeToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RevokeTokenResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_ListProjects: {
+        parameters: {
+            query?: {
+                /** @description 可选：收窄到单队（空 = 我可见全部——跨我所在团队；平台管理员 = 全部）。 */
+                team_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListProjectsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_CreateProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateProjectRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateProjectResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_GetProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetProjectResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_DeleteProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteProjectResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_UpdateProject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectsServiceUpdateProjectBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateProjectResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_ListProjectMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListProjectMembersResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_RemoveProjectMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RemoveProjectMemberResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_SetProjectMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectsServiceSetProjectMemberRoleBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetProjectMemberRoleResponse"];
                 };
             };
             /** @description An unexpected error response. */

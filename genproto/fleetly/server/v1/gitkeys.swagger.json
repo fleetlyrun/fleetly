@@ -190,6 +190,10 @@
         "created_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "user_id": {
+          "type": "string",
+          "title": "属主用户（W2 §2.3 用户化注记）：非空 = 登录用户自服务注册的 key；\n空 = 存量无主键（迁移口径：只读展示归平台管理员/机具令牌全列）。"
         }
       },
       "title": "GitKeyView 是 git 公钥行的无敏感投影（公钥本体为公开材料可回读；平台\n从不接触私钥）。"

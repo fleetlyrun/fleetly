@@ -29,8 +29,12 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
 // TokensService 是 API token 管理面（T2.17；state-model §2.9：哈希存储，
-// 明文永不落库；审计 actor=human/ai_agent）。token 管理 = admin scope
-// 专用（鉴权矩阵在拦截器链强制）。
+// 明文永不落库）。v0.3 W2 语义迁移（rbac-teams 设计 §2.3）：从「admin
+// 全局面」改为「用户自服务面」——登录用户管自己的 PAT（创建/列表/吊销；
+// 声明 scopes ⊆ 用户可达集校验，防呆非防险——角色门仍是硬边界）；平台
+// 管理员可看全部、可建平台级机具令牌（user NULL；machine 旗标显式）；
+// 机具令牌按「平台管理员等价」读全列、写面须 admin scope。scope 门登记
+// read（最小形状约束），真授权在 handler 内（teams/projects 同款切面）。
 //
 // CreateToken 返回的明文 token **仅此一次**可见——服务端只存 sha256 哈希，
 // 丢失只能 revoke 后重建。
@@ -83,8 +87,12 @@ func (c *tokensServiceClient) RevokeToken(ctx context.Context, in *RevokeTokenRe
 // for forward compatibility.
 //
 // TokensService 是 API token 管理面（T2.17；state-model §2.9：哈希存储，
-// 明文永不落库；审计 actor=human/ai_agent）。token 管理 = admin scope
-// 专用（鉴权矩阵在拦截器链强制）。
+// 明文永不落库）。v0.3 W2 语义迁移（rbac-teams 设计 §2.3）：从「admin
+// 全局面」改为「用户自服务面」——登录用户管自己的 PAT（创建/列表/吊销；
+// 声明 scopes ⊆ 用户可达集校验，防呆非防险——角色门仍是硬边界）；平台
+// 管理员可看全部、可建平台级机具令牌（user NULL；machine 旗标显式）；
+// 机具令牌按「平台管理员等价」读全列、写面须 admin scope。scope 门登记
+// read（最小形状约束），真授权在 handler 内（teams/projects 同款切面）。
 //
 // CreateToken 返回的明文 token **仅此一次**可见——服务端只存 sha256 哈希，
 // 丢失只能 revoke 后重建。

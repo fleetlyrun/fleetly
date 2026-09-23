@@ -60,7 +60,7 @@ func newGitKeysCmd() *gitKeysCmd {
 }
 
 func (c *gitKeysCmd) Name() string     { return "keys" }
-func (c *gitKeysCmd) Synopsis() string { return "manage git deploy keys (admin scope)" }
+func (c *gitKeysCmd) Synopsis() string { return "manage your git push keys (self-service; machine tokens cannot own keys)" }
 func (c *gitKeysCmd) Usage() string    { return "git keys <add|list|rm> [flags] ..." }
 
 func (c *gitKeysCmd) SetFlags(_ *flag.FlagSet) {}

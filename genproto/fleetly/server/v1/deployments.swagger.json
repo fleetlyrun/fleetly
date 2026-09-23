@@ -263,6 +263,10 @@
         },
         "ref": {
           "type": "string"
+        },
+        "push_user": {
+          "type": "string",
+          "title": "push 署名用户（W2 §2.3 审计 actor 联动）：post-receive 钩子把 SSH\n公钥认证回调解析出的 git_keys.user_id 经 FLEETLY_PUSH_USER 环境变量\n原样透传；空 = 存量无主键/缺省（审计 actor 落 machine 原口径）。\n信任边界：钩子文件 daemon 属主 0600，与 hook token 同级——字段是\n审计归因面，不是授权面。"
         }
       },
       "title": "DeployFromGitRequest 携带 push 上下文（app 来自 REST 路径）。ref 形如\nrefs/heads/main；sha 为 40 位十六进制 commit（服务端严格校验）。"

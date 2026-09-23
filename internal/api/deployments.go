@@ -29,11 +29,12 @@ import (
 type GitDeployTriggers interface {
 	// DeployFromGitPush 以 git push 语义入队部署：每次调用建部署记录
 	// （显式用户动作，不去重——幂等口径绑定在票面）；返回记录与校验期
-	// 警告。actorTokenID 记录钩子回调 token（可空）。ref 非该 app 配置
-	// 分支（空回落 main）时返回 gitserver.ErrBranchNotTracked——分支
-	// 过滤的权威点在实现侧（daemon），本 handler 把哨兵映射为 skipped
-	// 回执而非 gRPC 错误。
-	DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID string) (state.DeployRecord, []compose.Warning, error)
+	// 警告。actorTokenID 记录钩子回调 token（可空）；pushUser 是 SSH 公
+	// 钥认证回调解析的署名用户（空 = 存量无主 key——审计 actor 落原口
+	// 径）。ref 非该 app 配置分支（空回落 main）时返回
+	// gitserver.ErrBranchNotTracked——分支过滤的权威点在实现侧
+	//（daemon），本 handler 把哨兵映射为 skipped 回执而非 gRPC 错误。
+	DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID, pushUser string) (state.DeployRecord, []compose.Warning, error)
 }
 
 // DeploymentsService 实现 server.v1.DeploymentsService（T2.17）。
@@ -227,7 +228,7 @@ func (s *DeploymentsService) DeployFromGit(ctx context.Context, req *serverv1.De
 	if !gitSHAValid(req.GetSha()) {
 		return nil, statusInvalidArgument("sha must be 40 hex chars")
 	}
-	rec, warnings, err := s.git.DeployFromGitPush(ctx, req.GetApp(), req.GetSha(), req.GetRef(), callerTokenID(ctx))
+	rec, warnings, err := s.git.DeployFromGitPush(ctx, req.GetApp(), req.GetSha(), req.GetRef(), callerTokenID(ctx), req.GetPushUser())
 	if err != nil {
 		// 分支未跟踪（H2）：非错误终局——skipped 回执（deployment_id 留空；
 		// status 是自由字符串字段，钩子脚本把响应 JSON 打到 pusher stderr，

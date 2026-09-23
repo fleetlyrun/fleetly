@@ -38,10 +38,27 @@ func newEd25519PubKeyFile(t *testing.T, dir string) (string, string) {
 	return path, gossh.FingerprintSHA256(sshPub)
 }
 
-// TestGoldenGitKeysLifecycle git keys add/list/rm --json 全生命周期。
+// TestGoldenGitKeysLifecycle git keys add/list/rm --json 全生命周期（W2
+// GitKeys 用户化后：git keys = 用户自服务面——机具令牌恒 403，凭据须为
+// 用户 PAT）。
 func TestGoldenGitKeysLifecycle(t *testing.T) {
-	startCLI(t)
+	env := startCLI(t)
+	// 用户凭据夹具：注册用户（首用户 = 平台管理员 + 个人队）+ read 用户
+	// PAT——scope 门 read 形状约束下自服务面的最小形。
+	user := env.SeedUser(t, "gitkeys@example.com", "pw-gitkeys-123")
+	pat := env.SeedUserToken(t, user.User.ID)
+	t.Setenv("FLEETLY_TOKEN", pat)
+
 	keyPath, fingerprint := newEd25519PubKeyFile(t, t.TempDir())
+
+	// 机具令牌（user NULL）不得加 key（公钥归属用户——push 审计 actor 随
+	// 署名用户；平台级凭据无自服务对象）。
+	t.Setenv("FLEETLY_TOKEN", env.AdminToken)
+	if code, _, errOut := runCLIConn(t, "git", "keys", "add", "--json", keyPath); code != 1 ||
+		!strings.Contains(errOut, "machine tokens cannot own push keys") {
+		t.Fatalf("machine token git keys add should 403: code=%d stderr=%q", code, errOut)
+	}
+	t.Setenv("FLEETLY_TOKEN", pat)
 
 	code, out, errOut := runCLIConn(t, "git", "keys", "add", "--json", "--note", "operator laptop", keyPath)
 	if code != 0 {

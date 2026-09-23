@@ -27,7 +27,7 @@ type stubGitTriggers struct {
 	err error
 }
 
-func (g *stubGitTriggers) DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID string) (state.DeployRecord, []compose.Warning, error) {
+func (g *stubGitTriggers) DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID, pushUser string) (state.DeployRecord, []compose.Warning, error) {
 	return g.rec, nil, g.err
 }
 

@@ -4,7 +4,7 @@
 // 经 api 层全局处置回登录页，本组件不重复处置。
 
 import { useQuery } from "@tanstack/react-query";
-import { LogOut, Users } from "lucide-react";
+import { KeyRound, LogOut, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
@@ -122,6 +122,21 @@ export function UserMenu() {
             </div>
           ) : null}
           <div className="mt-1 space-y-0.5 border-t pt-1">
+            {/* PAT 自服务页入口（设计 §7 用户菜单「PAT 页」）。 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              role="menuitem"
+              className="w-full justify-start"
+              data-testid="user-menu-pat"
+              onClick={() => {
+                setOpen(false);
+                navigate("/pat");
+              }}
+            >
+              <KeyRound aria-hidden className="h-4 w-4" />
+              Personal access tokens
+            </Button>
             <Button
               variant="ghost"
               size="sm"

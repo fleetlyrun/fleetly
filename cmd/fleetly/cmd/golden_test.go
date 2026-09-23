@@ -529,10 +529,13 @@ func TestGoldenTokensLifecycle(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("new token apps list: code=%d out=%s", code, out)
 	}
-	// read scope 写 token 管理面 → 403 信封、退出 1。
+	// read scope 的机具令牌写 token 管理面 → 403 信封、退出 1（W2 语义
+	// 迁移：机具令牌造 token 属平台级写面，须 admin scope——handler 收口，
+	// scope 门 read 只做形状约束）。
 	code, _, errOut = runCLIConn(t, "tokens", "create", "--json", "--scopes", "read")
-	if code != 1 || !strings.Contains(errOut, "scope insufficient") {
-		t.Fatalf("read token creating a token should 403: code=%d stderr=%q", code, errOut)
+	if code != 1 || !strings.Contains(errOut, "PermissionDenied") ||
+		!strings.Contains(errOut, "machine token lacks the admin scope") {
+		t.Fatalf("read machine token creating a token should 403: code=%d stderr=%q", code, errOut)
 	}
 
 	// revoke 需要 admin——切回 admin token 执行。

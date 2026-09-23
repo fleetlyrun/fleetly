@@ -28,11 +28,12 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// GitKeysService 是平台管理的 git 公钥管理面（T2.19 git push(SSH) 触发入口
-// 的认证面）。v0.1 单操作员口径：全局级 key（admin scope 管理，可推所有
-// app 仓库）；per-app key 随 v0.2。裁决注记：独立服务（与 TokensService
-// 同级的管理面）而非挂在 tokens.proto——token 与 git key 是两类凭据、
-// 两张表、两条审计词根，独立文件使 scope 登记与契约演进互不牵连。
+// GitKeysService 是 git 公钥管理面（T2.19 git push(SSH) 触发入口的认证
+// 面）。v0.3 W2 用户化迁移（rbac-teams 设计 §2.3）：AddGitKey = 登录用户
+// 自服务（机具令牌 403——公钥归属用户，push 审计 actor 随署名用户）；
+// ListGitKeys = 自己的（平台管理员/机具令牌=全部，含存量无主键的只读
+// 展示）；RemoveGitKey = 自己的或平台管理员。scope 门登记 read（最小形状
+// 约束），真授权在 handler 内（teams/projects 同款切面）。
 //
 // SSH 侧只做公钥指纹（SHA256, ssh-keygen -lf 同格式）匹配：公钥本体入库
 // 供 list 展示与指纹复算；私钥永不经过平台。
@@ -84,11 +85,12 @@ func (c *gitKeysServiceClient) RemoveGitKey(ctx context.Context, in *RemoveGitKe
 // All implementations must embed UnimplementedGitKeysServiceServer
 // for forward compatibility.
 //
-// GitKeysService 是平台管理的 git 公钥管理面（T2.19 git push(SSH) 触发入口
-// 的认证面）。v0.1 单操作员口径：全局级 key（admin scope 管理，可推所有
-// app 仓库）；per-app key 随 v0.2。裁决注记：独立服务（与 TokensService
-// 同级的管理面）而非挂在 tokens.proto——token 与 git key 是两类凭据、
-// 两张表、两条审计词根，独立文件使 scope 登记与契约演进互不牵连。
+// GitKeysService 是 git 公钥管理面（T2.19 git push(SSH) 触发入口的认证
+// 面）。v0.3 W2 用户化迁移（rbac-teams 设计 §2.3）：AddGitKey = 登录用户
+// 自服务（机具令牌 403——公钥归属用户，push 审计 actor 随署名用户）；
+// ListGitKeys = 自己的（平台管理员/机具令牌=全部，含存量无主键的只读
+// 展示）；RemoveGitKey = 自己的或平台管理员。scope 门登记 read（最小形状
+// 约束），真授权在 handler 内（teams/projects 同款切面）。
 //
 // SSH 侧只做公钥指纹（SHA256, ssh-keygen -lf 同格式）匹配：公钥本体入库
 // 供 list 展示与指纹复算；私钥永不经过平台。

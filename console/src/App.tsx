@@ -31,6 +31,7 @@ import { DatabaseDetailPage } from "@/pages/DatabaseDetailPage";
 import { EventsPage } from "@/pages/EventsPage";
 import { InvitePage } from "@/pages/InvitePage";
 import { LoginPage } from "@/pages/LoginPage";
+import { PatPage } from "@/pages/PatPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { queryClient } from "@/query";
 
@@ -106,6 +107,7 @@ function AuthedRoutes() {
         </Route>
         <Route path="/databases" element={<DatabasesPage />} />
         <Route path="/databases/:name" element={<DatabaseDetailPage />} />
+        <Route path="/pat" element={<PatPage />} />
         <Route path="/system" element={<SystemPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/auth/invite" element={<InvitePage />} />

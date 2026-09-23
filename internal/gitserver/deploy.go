@@ -53,6 +53,11 @@ type DeployInput struct {
 	// check-then-insert 竞态在此闭合）；SSH push 路径恒不置位——git push
 	// 是显式用户动作，每次调用都建部署（幂等口径绑定，见上）。
 	DedupeSHA bool
+	// PushUser 是 push 署名用户（W2 §2.3 审计 actor 联动）：SSH 公钥认证
+	// 回调按指纹命中的 git_keys.user_id 经钩子环境变量透传而来；空 =
+	// 存量无主键/缺省（审计 actor 落 system 原口径）。非空时审计 actor =
+	// user:<id>（设计 §6 用户操作署名）。webhook 入口恒空（机器动作）。
+	PushUser string
 }
 
 // DeployFromCommit 执行读源 → 校验 → 入队；返回 queued 部署记录与校验
@@ -165,7 +170,10 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 			return err
 		}
 		return tx.WriteAudit(ctx, state.AuditEntry{
-			Actor:        "system",
+			// push 审计 actor（W2 §2.3）：署名用户非空 = user:<id>（公钥
+			// 认证回调解析的属主）；空 = system 原口径（机器动作——webhook
+			// 入口与存量无主 key）。
+			Actor:        pushAuditActor(in.PushUser),
 			ActorTokenID: in.ActorTokenID,
 			Action:       in.AuditAction,
 			Target:       "deployment:" + rec.ID,
@@ -182,15 +190,26 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 }
 
 // DeployFromGitPush 是 DeployFromGit RPC 的端口实现（git push 路径；每次
-// push 都建部署记录）。actorTokenID 记录钩子回调 token（可追溯）。
-func (s *GitTriggers) DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID string) (state.DeployRecord, []compose.Warning, error) {
+// push 都建部署记录）。actorTokenID 记录钩子回调 token（可追溯）；pushUser
+// 是 SSH 公钥认证回调解析的署名用户（空 = 存量无主 key，审计落原口径）。
+func (s *GitTriggers) DeployFromGitPush(ctx context.Context, app, sha, ref, actorTokenID, pushUser string) (state.DeployRecord, []compose.Warning, error) {
 	return s.DeployFromCommit(ctx, DeployInput{
 		App:          app,
 		SHA:          sha,
 		Ref:          ref,
 		AuditAction:  "git.push_deploy",
 		ActorTokenID: actorTokenID,
+		PushUser:     pushUser,
 	})
+}
+
+// pushAuditActor 是 push 审计主体归一（W2 §2.3）：署名用户非空 = user:<id>
+// （设计 §6 用户操作署名）；空 = system 原口径（机器动作）。
+func pushAuditActor(pushUser string) string {
+	if pushUser == "" {
+		return "system"
+	}
+	return "user:" + pushUser
 }
 
 // checkBranchTracked 是分支过滤的权威谓词（MG-C1）：加载 app 的 git 配置

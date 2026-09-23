@@ -30,12 +30,18 @@
 #   AUTH-6 登录限流：同 email 连续错口令 → 第 11 次起 429（10/min 双键
 #          email+IP；探针用全新 email 桶 + 请求同源，双键同步耗尽——
 #          断言前 settle 65s 让双键全满，12 连发内补充量 <1）。
-#   AUTH-7 CLI auth 链（**W1 退化形态**，见下方「诚实范围」）：
-#          a 机具令牌被 auth login 拒收（"platform machine token" 文案
-#            + 非零退出）；b 机具令牌经 FLEETLY_TOKEN 走 apps list 通
+#   AUTH-7 CLI auth 全链（W2-S2 补全——TokensService 用户化后用户 PAT 有
+#          产生面）：a 机具令牌被 auth login 拒收（"platform machine token"
+#            文案 + 非零退出）；b 机具令牌经 FLEETLY_TOKEN 走 apps list 通
 #            （机具凭据的 CLI 正面）；c auth status 对机具令牌如实投影
 #            「machine token」态；d 无凭据 status exit 1 + "not logged
-#            in"；e auth logout 幂等（无凭据也成功收尾）。
+#            in"；e auth logout 幂等（无凭据也成功收尾）；f 用户 PAT 管道
+#            喂 auth login 落盘（Me 验证通过才落）；g auth status 投影
+#            Me（email + 平台管理员位）；h 第二用户 PAT login → status
+#            按凭据切换身份投影（非管理员）；i logout 清凭据 → 回无凭据
+#            态（exit 1）。机具令牌经 founder 会话以 machine 旗标显式签
+#            发（W2 语义：平台级凭据 = 平台管理员显式创建，设计 §2.3）；
+#            用户 PAT = 用户自服务（会话调 POST /v1/tokens，无旗标）。
 #   AUTH-8 平台管理员用户管理：CreateUser（临时口令一次性返回）→ 新
 #          用户登录成功 → DisableUser → 旧会话与再登录双拒 →
 #          EnableUser 恢复登录 → ResetPassword → 旧口令 401、重置前
@@ -47,12 +53,10 @@
 #          W3 ListAudit 落地后本套件补 API 面断言。
 #
 #   诚实范围（单测/e2e 分工）：
-#   - AUTH-7 的「用户 PAT 全链」（login 管道收 PAT 落盘 → status Me 投影
-#     → logout 清凭据）依赖用户 PAT 的产生面——W1 的
-#     TokensService.CreateToken 仍是 admin 全局面（state.TokenWrite 不带
-#     user_id = 机具令牌，user PAT 无法经任何 W1 面产生），用户 PAT 自
-#     服务随 W2 TokensService 用户化迁移后，本套件补「用户 PAT login
-#     落盘全链」正例（解析矩阵/落盘/四态投影已由 CLI 单测钉死）；
+#   - 用户 PAT 的「越权 scope 声明拒止」（viewer 造 admin PAT → 400）与
+#     机具令牌/平台管理员的 TokensService 授权矩阵：api 单测钉死
+#    （tokens_user_test.go / gitkeys_user_test.go）——e2e 黑盒面不重复
+#     布角色矩阵夹具（注册用户的个人队 owner 角色使负例不可经黑盒构造）；
 #   - 会话 cookie 属性（HttpOnly/SameSite=Lax/Path=/）、XFF 信任语义、
 #     并发首注册竞态、无用户窗口竞态：gateway/state 单测钉死（e2e 黑盒
 #     面不重复断言头属性）；
@@ -403,13 +407,21 @@ assert "AUTH-2d ME_PERSONAL_TEAM_OWNER" $([ "$RC" = 200 ] &&
     printf '%s' "$BODY" | grep -qE '"role": ?"owner"' && echo 0 || echo 1) \
     "me = $RC body: $BODY"
 
-# 注册后的 admin 机具凭据：平台管理员的会话 cookie 建（TokensService W1
-# 仍是 admin 全局面 → user NULL 机具令牌），供 CLI/events 面（CLI 不消费
+# 注册后的 admin 机具凭据：founder 会话 + machine 旗标显式签发（W2 语义
+# 迁移：机具令牌 = 平台级凭据，仅平台管理员可建——设计 §2.3；无旗标的
+# 会话调用产出的是调用者自己的用户 PAT），供 CLI/events 面（CLI 不消费
 # 会话 cookie——auth.go 头注）。
-req founder POST /v1/tokens '{"note":"e2e-auth-machine","scopes":["admin"]}'
+req founder POST /v1/tokens '{"machine":true,"note":"e2e-auth-machine","scopes":["admin"]}'
 MACHINE_TOKEN=$(printf '%s' "$BODY" | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
 [ -n "$MACHINE_TOKEN" ] || fatal 'machine token creation failed'
-al 'admin machine token minted via founder session (REST /v1/tokens)'
+al 'admin machine token minted via founder session (REST /v1/tokens, machine flag)'
+
+# founder 的用户 PAT（自服务：同一端点、无 machine 旗标——会话调用即造
+# 自己的 PAT；AUTH-7 的 CLI login 全链凭据）。
+req founder POST /v1/tokens '{"note":"founder cli pat","scopes":["read"]}'
+FOUNDER_PAT=$(printf '%s' "$BODY" | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$FOUNDER_PAT" ] || fatal 'founder user PAT creation failed'
+al 'founder user PAT minted via founder session (self-service face)'
 
 # 注册同事务副作用事件（W1 无 projects 读面——事件流即披露面；默认项目
 # 的 slug `default` 在 project.created 事件 payload 里，需 --json 帧）。
@@ -547,6 +559,23 @@ assert "AUTH-7f LOGOUT_IDEMPOTENT_OK" $([ "$AUTH7F_RC" = 0 ] &&
     printf '%s' "$AUTH7F_OUT" | grep -qi 'already logged out' && echo 0 || echo 1) \
     "logout rc=$AUTH7F_RC output: $(printf '%s' "$AUTH7F_OUT" | tail -1)"
 
+# ── 用户 PAT 全链（W2-S2 补全）：login 管道收 PAT → Me 验证 → 落盘 →
+#    status 投影身份 → logout 清凭据。acli HOME 隔离保证落盘面单设备。
+AUTH7G_OUT=$(printf '%s' "$FOUNDER_PAT" | acli auth login 2>&1)
+assert "AUTH-7g USER_PAT_LOGIN_PIPE_STORED" $([ -n "$AUTH7G_OUT" ] &&
+    printf '%s' "$AUTH7G_OUT" | grep -qi 'logged in as founder@auth-e2e.test' && echo 0 || echo 1) \
+    "auth login output: $(printf '%s' "$AUTH7G_OUT" | tail -1)"
+AUTH7H_OUT=$(acli auth status 2>&1)
+assert "AUTH-7h STATUS_ME_PROJECTION_FROM_PAT" $(printf '%s' "$AUTH7H_OUT" | grep -qi 'logged in as founder@auth-e2e.test' &&
+    printf '%s' "$AUTH7H_OUT" | grep -qi 'platform admin: yes' && echo 0 || echo 1) \
+    "auth status output: $(printf '%s' "$AUTH7H_OUT" | tail -1)"
+# 用户 PAT 的 API 正面：同一凭据走 gRPC 只读面（自服务列表也通）。
+if acli tokens list >/dev/null 2>&1; then
+    assert "AUTH-7h2 USER_PAT_CLI_TOKENS_LIST_OK" 0
+else
+    assert "AUTH-7h2 USER_PAT_CLI_TOKENS_LIST_OK" 1 "founder PAT failed tokens list"
+fi
+
 # ───────── AUTH-8: 平台管理员用户管理（CreateUser/Disable/Enable/Reset）
 # settle 70s：AUTH-6 的 12 连发触发了 gateway per-IP 固定窗失败桶（窗起点
 # = 首个 401，1 分钟内该 IP 一律 429 短路）——沉降必须盖过整窗，管理员
@@ -556,6 +585,31 @@ settle_buckets 70
 # 真实语义）——管理员重新登录恢复平台管理员凭据（fixture 前置，非断言）。
 req founder POST /v1/auth/login "{\"email\":\"$FOUNDER_EMAIL\",\"password\":\"$FOUNDER_PASS\"}"
 [ "$RC" = 200 ] || fatal "founder re-login failed (AUTH-8 pre-condition): $RC $BODY"
+
+# ── AUTH-7i/7j（置本处的理由）：mate 的用户 PAT 须经 mate 自己的会话在
+#    REST 面签发（自服务语义：PAT 归属调用者，平台管理员无法代造）——
+#    REST 面在 AUTH-6 的限流探针后需等 gateway per-IP 固定窗沉降（上方
+#    settle_buckets 70 已盖过），故本腿物理后移、编号仍属 AUTH-7 链。
+req mate POST /v1/tokens '{"note":"mate cli pat","scopes":["read"]}'
+MATE_PAT=$(printf '%s' "$BODY" | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$MATE_PAT" ] || fatal 'mate user PAT creation failed'
+AUTH7I_OUT=$(printf '%s' "$MATE_PAT" | acli auth login 2>&1)
+assert "AUTH-7i SECOND_USER_PAT_LOGIN_OK" $(printf '%s' "$AUTH7I_OUT" | grep -qi 'logged in as mate@auth-e2e.test' && echo 0 || echo 1) \
+    "mate auth login output: $(printf '%s' "$AUTH7I_OUT" | tail -1)"
+AUTH7J_OUT=$(acli auth status 2>&1)
+assert "AUTH-7j STATUS_PROJECTION_FOLLOWS_CREDENTIAL" $(printf '%s' "$AUTH7J_OUT" | grep -qi 'logged in as mate@auth-e2e.test' &&
+    printf '%s' "$AUTH7J_OUT" | grep -qi 'platform admin: no' && echo 0 || echo 1) \
+    "mate auth status output: $(printf '%s' "$AUTH7J_OUT" | tail -1)"
+# logout 清真实凭据 → 回无凭据态（exit 1 + 指引）——AUTH-7 链收口。
+AUTH7K_RC=0
+AUTH7K_OUT=$(acli auth logout 2>&1) || AUTH7K_RC=$?
+assert "AUTH-7k LOGOUT_CLEARS_THEN_NO_CREDENTIAL" $([ "$AUTH7K_RC" = 0 ] && echo 0 || echo 1) \
+    "logout rc=$AUTH7K_RC output: $(printf '%s' "$AUTH7K_OUT" | tail -1)"
+AUTH7K_RC2=0
+AUTH7K_STATUS=$(acli auth status 2>&1) || AUTH7K_RC2=$?
+assert "AUTH-7k2 STATUS_NO_CREDENTIAL_AFTER_LOGOUT" $([ "$AUTH7K_RC2" = 1 ] &&
+    printf '%s' "$AUTH7K_STATUS" | grep -qi 'not logged in' && echo 0 || echo 1) \
+    "post-logout status rc=$AUTH7K_RC2 output: $(printf '%s' "$AUTH7K_STATUS" | tail -1)"
 req founder POST /v1/users "{\"email\":\"$WORKER_EMAIL\",\"display_name\":\"Worker\"}"
 WORKER_PASS=$(printf '%s' "$BODY" | grep -oE '"temporary_password": ?"[^"]*"' | head -1 | cut -d'"' -f4)
 WORKER_ID=$(printf '%s' "$BODY" | grep -oE '"id": ?"[^"]*"' | head -1 | cut -d'"' -f4)

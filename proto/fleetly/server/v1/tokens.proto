@@ -23,8 +23,12 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 // TokensService 是 API token 管理面（T2.17；state-model §2.9：哈希存储，
-// 明文永不落库；审计 actor=human/ai_agent）。token 管理 = admin scope
-// 专用（鉴权矩阵在拦截器链强制）。
+// 明文永不落库）。v0.3 W2 语义迁移（rbac-teams 设计 §2.3）：从「admin
+// 全局面」改为「用户自服务面」——登录用户管自己的 PAT（创建/列表/吊销；
+// 声明 scopes ⊆ 用户可达集校验，防呆非防险——角色门仍是硬边界）；平台
+// 管理员可看全部、可建平台级机具令牌（user NULL；machine 旗标显式）；
+// 机具令牌按「平台管理员等价」读全列、写面须 admin scope。scope 门登记
+// read（最小形状约束），真授权在 handler 内（teams/projects 同款切面）。
 //
 // CreateToken 返回的明文 token **仅此一次**可见——服务端只存 sha256 哈希，
 // 丢失只能 revoke 后重建。
@@ -53,6 +57,14 @@ message CreateTokenRequest {
   }];
   // 备注（人读；如 "CI 部署"）。字段名 note（name 列承载，兼容既有表结构）。
   string note = 2 [(buf.validate.field).string.max_len = 200];
+  // 绑定项目（可选；设计 §2.3 project_id 收窄维度——W2-S4 角色门消费）。
+  // 提供时须为在册项目（未知 → 400）。
+  string project_id = 3 [(buf.validate.field).string.max_len = 64];
+  // 机具令牌旗标（设计 §2.3：平台级凭据 = 平台管理员显式创建）。true 时
+  // 产出 user NULL 的机具令牌：调用方须为平台管理员用户或 admin scope
+  // 机具令牌，否则 403。缺省 false = 用户自服务 PAT（机具令牌调用方无
+  // 用户身份，恒产出机具令牌——与既有 CI 形态兼容）。
+  bool machine = 4;
 }
 
 message CreateTokenResponse {
@@ -79,6 +91,11 @@ message TokenView {
   google.protobuf.Timestamp last_used_at = 6;
   // 已吊销时不输出（列表默认只出在册 token）。
   google.protobuf.Timestamp revoked_at = 7;
+  // 属主用户（W2 §2.3 用户化注记）：非空 = 用户 PAT 的属主 id；空 = 平台
+  // 机具令牌（EmitUnpopulated=false 下机具令牌不输出本字段）。
+  string user_id = 8;
+  // 绑定项目（空 = 不绑定，不输出）。
+  string project_id = 9;
 }
 
 message ListTokensResponse {

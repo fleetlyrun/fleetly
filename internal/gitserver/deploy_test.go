@@ -30,7 +30,7 @@ func TestDeployFromGitPush(t *testing.T) {
 	tmpBefore := countComposeTempDirs(t)
 
 	// 首次 push → queued 部署 + 来源字段。
-	rec, warnings, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "")
+	rec, warnings, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "")
 	if err != nil {
 		t.Fatalf("DeployFromGitPush: %v", err)
 	}
@@ -54,7 +54,7 @@ func TestDeployFromGitPush(t *testing.T) {
 	}
 
 	// 同内容二次 push → 部署记录新建（显式用户动作不去重）。
-	rec2, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "")
+	rec2, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "")
 	if err != nil {
 		t.Fatalf("second push: %v", err)
 	}
@@ -86,6 +86,49 @@ func countComposeTempDirs(t *testing.T) int {
 	return n
 }
 
+// TestDeployFromGitPushSignedUserAudit W2 §2.3 push 审计 actor 署名：SSH
+// 公钥认证回调解析的属主（PushUser 非空）→ git.push_deploy 审计 actor =
+// user:<id>（设计 §6 用户操作署名）；空（存量无主 key / webhook 入口）→
+// system 原口径。
+func TestDeployFromGitPushSignedUserAudit(t *testing.T) {
+	requireGit(t)
+	src, st, _, _ := newTestSource(t, 0)
+	ctx := context.Background()
+
+	sourceDir, sha := newSourceRepo(t, composeFixture)
+	if _, _, err := src.EnsureBareRepo(ctx, "my-api"); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, sourceDir, "push", "--quiet", src.repoPath("my-api"), "main")
+
+	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "01HXXXXUSER1"); err != nil {
+		t.Fatalf("signed push: %v", err)
+	}
+	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", ""); err != nil {
+		t.Fatalf("anonymous push: %v", err)
+	}
+
+	audits, err := st.RecentAudits(ctx, 10)
+	if err != nil {
+		t.Fatalf("audits: %v", err)
+	}
+	signed, anonymous := 0, 0
+	for _, a := range audits {
+		if a.Action != "git.push_deploy" {
+			continue
+		}
+		switch a.Actor {
+		case "user:01HXXXXUSER1":
+			signed++
+		case "system":
+			anonymous++
+		}
+	}
+	if signed != 1 || anonymous != 1 {
+		t.Fatalf("push audit actors: signed=%d anonymous=%d, want 1/1", signed, anonymous)
+	}
+}
+
 func TestDeployFromCommitRejections(t *testing.T) {
 	requireGit(t)
 	src, _, _, _ := newTestSource(t, 0)
@@ -98,17 +141,17 @@ func TestDeployFromCommitRejections(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitRun(t, sourceDir, "push", "--quiet", src.repoPath("my-api"), "main")
-	_, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "")
+	_, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "")
 	var appErr *apperr.Error
 	if err == nil || !errors.As(err, &appErr) || appErr.Code() != "E_COMPOSE_UNSUPPORTED" {
 		t.Fatalf("name mismatch err = %v, want E_COMPOSE_UNSUPPORTED", err)
 	}
 
 	// 非法 sha / 非法 app 名 → 输入防御拒绝。
-	if _, _, err := src.DeployFromGitPush(ctx, "my-api", "zz", "refs/heads/main", ""); err == nil {
+	if _, _, err := src.DeployFromGitPush(ctx, "my-api", "zz", "refs/heads/main", "", ""); err == nil {
 		t.Fatal("invalid sha accepted")
 	}
-	if _, _, err := src.DeployFromGitPush(ctx, "../evil", sha, "refs/heads/main", ""); err == nil {
+	if _, _, err := src.DeployFromGitPush(ctx, "../evil", sha, "refs/heads/main", "", ""); err == nil {
 		t.Fatal("invalid app name accepted")
 	}
 }
@@ -129,7 +172,7 @@ func TestDeployFromCommitBranchFilter(t *testing.T) {
 
 	// 首次形态（app 行不存在）：按缺省分支 main 比对——dev 哨兵拒止且
 	// 零副作用（不建 app 行、不建部署行）。
-	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/dev", ""); !errors.Is(err, ErrBranchNotTracked) {
+	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/dev", "", ""); !errors.Is(err, ErrBranchNotTracked) {
 		t.Fatalf("untracked branch (first push) err = %v, want ErrBranchNotTracked", err)
 	}
 	if _, err := st.GetAppByName(ctx, "my-api"); !errors.Is(err, state.ErrAppNotFound) {
@@ -137,7 +180,7 @@ func TestDeployFromCommitBranchFilter(t *testing.T) {
 	}
 
 	// 配置分支（缺省 main）正常入队；app 行随首次部署创建。
-	rec, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "")
+	rec, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "")
 	if err != nil {
 		t.Fatalf("tracked branch push: %v", err)
 	}
@@ -147,7 +190,7 @@ func TestDeployFromCommitBranchFilter(t *testing.T) {
 	}
 
 	// app 行在、分支缺省 main：dev 仍拒止，(app, sha) 部署计数不变。
-	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/dev", ""); !errors.Is(err, ErrBranchNotTracked) {
+	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/dev", "", ""); !errors.Is(err, ErrBranchNotTracked) {
 		t.Fatalf("untracked branch (app exists) err = %v, want ErrBranchNotTracked", err)
 	}
 	n, err := st.CountGitDeploymentsForSHA(ctx, appRow.ID, sha)
@@ -157,10 +200,10 @@ func TestDeployFromCommitBranchFilter(t *testing.T) {
 
 	// 显式配置分支 release：main 反被拒止；release 放行（新部署行）。
 	setAppSource(t, st, appRow.ID, fileURL(sourceDir), "release")
-	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", ""); !errors.Is(err, ErrBranchNotTracked) {
+	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", ""); !errors.Is(err, ErrBranchNotTracked) {
 		t.Fatalf("main after reconfig err = %v, want ErrBranchNotTracked", err)
 	}
-	rec2, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/release", "")
+	rec2, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/release", "", "")
 	if err != nil {
 		t.Fatalf("reconfigured branch push: %v", err)
 	}
@@ -169,7 +212,7 @@ func TestDeployFromCommitBranchFilter(t *testing.T) {
 	}
 
 	// ref 为空（端口调用方未携带引用形态）不做比对——进程内直连夹具兼容面。
-	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "", ""); err != nil {
+	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "", "", ""); err != nil {
 		t.Fatalf("empty ref push: %v", err)
 	}
 }

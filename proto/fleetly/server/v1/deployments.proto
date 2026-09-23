@@ -141,6 +141,12 @@ message DeployFromGitRequest {
   string app = 1 [(buf.validate.field).string.min_len = 1];
   string sha = 2 [(buf.validate.field).string.len = 40];
   string ref = 3 [(buf.validate.field).string.min_len = 1];
+  // push 署名用户（W2 §2.3 审计 actor 联动）：post-receive 钩子把 SSH
+  // 公钥认证回调解析出的 git_keys.user_id 经 FLEETLY_PUSH_USER 环境变量
+  // 原样透传；空 = 存量无主键/缺省（审计 actor 落 machine 原口径）。
+  // 信任边界：钩子文件 daemon 属主 0600，与 hook token 同级——字段是
+  // 审计归因面，不是授权面。
+  string push_user = 4 [(buf.validate.field).string.max_len = 64];
 }
 
 // DeployFromGitResponse 与 DeployResponse 同投影面（独立消息以满足 buf

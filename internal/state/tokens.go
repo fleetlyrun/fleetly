@@ -159,10 +159,22 @@ func (s *Store) CreateToken(ctx context.Context, w TokenWrite) (Token, error) {
 	return out, nil
 }
 
-// ListTokens 返回全部在册（未吊销）token（created_at 升序）。
+// ListTokens 返回全部在册（未吊销）token（created_at 升序；平台管理员/
+// 机具令牌全列消费）。
 func (s *Store) ListTokens(ctx context.Context) ([]Token, error) {
-	const q = `SELECT ` + tokRowCols + ` FROM tokens WHERE revoked_at IS NULL ORDER BY created_at ASC, id ASC`
-	rows, err := s.db.QueryContext(ctx, q)
+	return s.listTokensWhere(ctx, ``)
+}
+
+// ListTokensForUser 返回属主用户的在册 token（created_at 升序；用户自
+// 服务列表消费——设计 §2.3：登录用户只看自己的 PAT）。
+func (s *Store) ListTokensForUser(ctx context.Context, userID string) ([]Token, error) {
+	return s.listTokensWhere(ctx, ` AND user_id = ?`, userID)
+}
+
+// listTokensWhere 是 token 列表的共享通道（extra 空 = 全列；带占位实参 =
+// 按属主过滤）。
+func (s *Store) listTokensWhere(ctx context.Context, cond string, args ...any) ([]Token, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT `+tokRowCols+` FROM tokens WHERE revoked_at IS NULL`+cond+` ORDER BY created_at ASC, id ASC`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("state: list tokens: %w", err)
 	}
@@ -179,6 +191,13 @@ func (s *Store) ListTokens(ctx context.Context) ([]Token, error) {
 		return nil, fmt.Errorf("state: iterate tokens: %w", err)
 	}
 	return out, nil
+}
+
+// GetToken 按 id 取 token 行（吊销前的归属判定查点；无敏感面——投影含
+// 哈希，调用方不得外带）。不存在返回 ErrTokenNotFound。
+func (s *Store) GetToken(ctx context.Context, id string) (Token, error) {
+	row := s.db.QueryRowContext(ctx, `SELECT `+tokRowCols+` FROM tokens WHERE id = ?`, id)
+	return scanToken(row)
 }
 
 // HasAnyToken 报告是否已存在任意 token 行（含已吊销）——bootstrap 判定

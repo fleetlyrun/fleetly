@@ -19,7 +19,9 @@ import (
 //   - 无 token → 401（Unauthenticated，读面亦拒——安全基线「无 token 全部 401」）
 //   - 错 token → 401
 //   - read   可读列表（ListApps）
-//   - read   不可建 token（CreateToken → 403）
+//   - read   不可建 token（CreateToken → 403；W2 语义迁移后 TokensService
+//            scope 门登记 read，本行 403 由 handler 收口——机具令牌造
+//            token 属平台级写面须 admin scope）
 //   - deploy 可部署（Deploy 入队）与写 env（SetEnv）
 //   - deploy 不可建 token（403）、不可读 env 明文（GetEnv → 403）
 //   - admin  全能（建 token / 读明文 / 删应用）

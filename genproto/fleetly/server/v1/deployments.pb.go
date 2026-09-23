@@ -458,10 +458,16 @@ func (x *DeployRequest) GetConfirmDestructive() bool {
 // DeployFromGitRequest 携带 push 上下文（app 来自 REST 路径）。ref 形如
 // refs/heads/main；sha 为 40 位十六进制 commit（服务端严格校验）。
 type DeployFromGitRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
-	Sha           string                 `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
-	Ref           string                 `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	Sha   string                 `protobuf:"bytes,2,opt,name=sha,proto3" json:"sha,omitempty"`
+	Ref   string                 `protobuf:"bytes,3,opt,name=ref,proto3" json:"ref,omitempty"`
+	// push 署名用户（W2 §2.3 审计 actor 联动）：post-receive 钩子把 SSH
+	// 公钥认证回调解析出的 git_keys.user_id 经 FLEETLY_PUSH_USER 环境变量
+	// 原样透传；空 = 存量无主键/缺省（审计 actor 落 machine 原口径）。
+	// 信任边界：钩子文件 daemon 属主 0600，与 hook token 同级——字段是
+	// 审计归因面，不是授权面。
+	PushUser      string `protobuf:"bytes,4,opt,name=push_user,json=pushUser,proto3" json:"push_user,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -513,6 +519,13 @@ func (x *DeployFromGitRequest) GetSha() string {
 func (x *DeployFromGitRequest) GetRef() string {
 	if x != nil {
 		return x.Ref
+	}
+	return ""
+}
+
+func (x *DeployFromGitRequest) GetPushUser() string {
+	if x != nil {
+		return x.PushUser
 	}
 	return ""
 }
@@ -912,11 +925,12 @@ const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"\rDeployRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12!\n" +
 	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\x12/\n" +
-	"\x13confirm_destructive\x18\x03 \x01(\bR\x12confirmDestructive\"h\n" +
+	"\x13confirm_destructive\x18\x03 \x01(\bR\x12confirmDestructive\"\x8e\x01\n" +
 	"\x14DeployFromGitRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1a\n" +
 	"\x03sha\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x98\x01(R\x03sha\x12\x19\n" +
-	"\x03ref\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03ref\"\xa5\x01\n" +
+	"\x03ref\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03ref\x12$\n" +
+	"\tpush_user\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18@R\bpushUser\"\xa5\x01\n" +
 	"\x15DeployFromGitResponse\x12#\n" +
 	"\rdeployment_id\x18\x01 \x01(\tR\fdeploymentId\x12\x10\n" +
 	"\x03app\x18\x02 \x01(\tR\x03app\x12\x16\n" +

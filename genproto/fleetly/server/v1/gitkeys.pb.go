@@ -159,12 +159,15 @@ func (x *AddGitKeyResponse) GetCreatedAt() *timestamppb.Timestamp {
 // GitKeyView 是 git 公钥行的无敏感投影（公钥本体为公开材料可回读；平台
 // 从不接触私钥）。
 type GitKeyView struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	Fingerprint   string                 `protobuf:"bytes,2,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
-	KeyType       string                 `protobuf:"bytes,3,opt,name=key_type,json=keyType,proto3" json:"key_type,omitempty"`
-	Note          string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Id          string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Fingerprint string                 `protobuf:"bytes,2,opt,name=fingerprint,proto3" json:"fingerprint,omitempty"`
+	KeyType     string                 `protobuf:"bytes,3,opt,name=key_type,json=keyType,proto3" json:"key_type,omitempty"`
+	Note        string                 `protobuf:"bytes,4,opt,name=note,proto3" json:"note,omitempty"`
+	CreatedAt   *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// 属主用户（W2 §2.3 用户化注记）：非空 = 登录用户自服务注册的 key；
+	// 空 = 存量无主键（迁移口径：只读展示归平台管理员/机具令牌全列）。
+	UserId        string `protobuf:"bytes,6,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -232,6 +235,13 @@ func (x *GitKeyView) GetCreatedAt() *timestamppb.Timestamp {
 		return x.CreatedAt
 	}
 	return nil
+}
+
+func (x *GitKeyView) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
 }
 
 type ListGitKeysRequest struct {
@@ -418,7 +428,7 @@ const file_fleetly_server_v1_gitkeys_proto_rawDesc = "" +
 	"\bkey_type\x18\x03 \x01(\tR\akeyType\x12\x12\n" +
 	"\x04note\x18\x04 \x01(\tR\x04note\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xa8\x01\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\xc1\x01\n" +
 	"\n" +
 	"GitKeyView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12 \n" +
@@ -426,7 +436,8 @@ const file_fleetly_server_v1_gitkeys_proto_rawDesc = "" +
 	"\bkey_type\x18\x03 \x01(\tR\akeyType\x12\x12\n" +
 	"\x04note\x18\x04 \x01(\tR\x04note\x129\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"\x14\n" +
+	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x17\n" +
+	"\auser_id\x18\x06 \x01(\tR\x06userId\"\x14\n" +
 	"\x12ListGitKeysRequest\"H\n" +
 	"\x13ListGitKeysResponse\x121\n" +
 	"\x04keys\x18\x01 \x03(\v2\x1d.fleetly.server.v1.GitKeyViewR\x04keys\".\n" +

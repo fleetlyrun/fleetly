@@ -26,6 +26,15 @@ export type LogoutAllResponse = Schemas["v1LogoutAllResponse"];
 export type AcceptInviteResponse = Schemas["v1AcceptInviteResponse"];
 export type GetRegistrationStateResponse = Schemas["v1GetRegistrationStateResponse"];
 
+// ── tokens / projects（v0.3 W2-S2 PAT 自服务页，rbac-teams 设计 §7）──────
+
+export type TokenView = Schemas["v1TokenView"];
+export type CreateTokenResponse = Schemas["v1CreateTokenResponse"];
+export type ListTokensResponse = Schemas["v1ListTokensResponse"];
+export type RevokeTokenResponse = Schemas["v1RevokeTokenResponse"];
+export type ProjectView = Schemas["v1ProjectView"];
+export type ListProjectsResponse = Schemas["v1ListProjectsResponse"];
+
 // ── apps ────────────────────────────────────────────────────────────────
 
 export type AppView = Schemas["v1AppView"];

@@ -23,9 +23,13 @@ const outPath = path.resolve(here, "..", "src", "api", "schema.d.ts");
 // 注意：users.swagger.json 不在清单——其 SetRegistration 挂载在同一路径
 // /v1/auth/registration（与 auth.swagger.json 的 GET 重复，合并会撞
 // duplicate path 断言），且 Users 管理面（W2/W3 的用户管理页）尚无消费方；
-// Console 认证面只需 auth.proto 的七个端点。
+// Console 认证面只需 auth.proto 的七个端点。tokens/projects 随 W2-S2 PAT
+// 管理页进清单（自服务面；teams/gitkeys 等其余服务仍无 Console 消费方，
+// 进清单即撞 duplicate path 断言的潜在面——按需添加）。
 const SPEC_FILES = [
   "auth.swagger.json",
+  "tokens.swagger.json",
+  "projects.swagger.json",
   "apps.swagger.json",
   "deployments.swagger.json",
   "revisions.swagger.json",

@@ -1,8 +1,10 @@
 package cmd
 
 // fleetly tokens 命令（T2.18 新增动词——RPC 面自 T2.17 起已有，CLI 补齐；
-// admin scope 专用）：create / list / revoke。明文 token 仅 create 响应一
-// 次可见（服务端只存 sha256 哈希，丢失只能 revoke 后重建）。
+// v0.3 W2 语义迁移：用户自服务面——登录用户管自己的 PAT，声明 scopes 不
+// 得超出角色可达集；平台管理员经 --machine 显式创建平台级机具令牌）：
+// create / list / revoke。明文 token 仅 create 响应一次可见（服务端只存
+// sha256 哈希，丢失只能 revoke 后重建）。
 
 import (
 	"context"
@@ -28,7 +30,7 @@ func newTokensCmd() *tokensCmd {
 }
 
 func (c *tokensCmd) Name() string     { return "tokens" }
-func (c *tokensCmd) Synopsis() string { return "API token management (admin scope)" }
+func (c *tokensCmd) Synopsis() string { return "manage personal access tokens (PATs; platform admins can also mint machine tokens)" }
 func (c *tokensCmd) Usage() string    { return "tokens <create|list|revoke> [flags] ..." }
 
 func (c *tokensCmd) SetFlags(_ *flag.FlagSet) {}
@@ -40,28 +42,36 @@ func (c *tokensCmd) Run(ctx context.Context, env *commands.Environment, args []s
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
 
-// tokensCreateCmd 实现 `fleetly tokens create --scopes <s1,s2> [--note]`。
+// tokensCreateCmd 实现 `fleetly tokens create --scopes <s1,s2> [--note]
+// [--project <id>] [--machine]`：登录凭据（用户 PAT）造自己的 PAT——声明
+// scopes ⊆ 用户可达集（viewer 角色造 admin PAT → 400 带指引）；平台管理
+// 员（或 admin 机具令牌）经 --machine 创建平台级机具令牌（CI/CD 形态）。
 type tokensCreateCmd struct {
 	scopes  string
 	note    string
+	project string
+	machine bool
 	jsonOut bool
 	conn    connFlags
 }
 
 func (c *tokensCreateCmd) Name() string { return "create" }
 func (c *tokensCreateCmd) Synopsis() string {
-	return "create an API token (plaintext shown once)"
+	return "create a token (plaintext shown once; personal PAT by default, --machine for a platform machine token)"
 }
 func (c *tokensCreateCmd) Usage() string {
-	return "tokens create [--addr <host:port>] [--token <tok>] --scopes <read|deploy|admin[,…]> [--note <text>] [--json]"
+	return "tokens create [--addr <host:port>] [--token <tok>] --scopes <read|deploy|terminal|admin[,…]> [--note <text>] [--project <id>] [--machine] [--json]"
 }
 
 func (c *tokensCreateCmd) SetFlags(fs *flag.FlagSet) {
 	c.conn.register(fs)
 	// E7 W5-S6：词表增补 terminal（Web 终端独立 scope——默认仅 admin，
-	// read/deploy 不蕴含；admin 蕴含一切）。
-	fs.StringVar(&c.scopes, "scopes", "read", "comma-separated scopes (read/deploy/terminal/admin; admin implies deploy, read and terminal; terminal is the web-terminal scope, not implied by read/deploy)")
-	fs.StringVar(&c.note, "note", "", "human-readable note (e.g. \"CI deploy\")")
+	// read/deploy 不蕴含；admin 蕴含一切）。W2：声明受用户可达集约束
+	//（服务端校验——超集 400 带指引）。
+	fs.StringVar(&c.scopes, "scopes", "read", "comma-separated scopes (read/deploy/terminal/admin; admin implies deploy, read and terminal; terminal is the web-terminal scope, not implied by read/deploy; declared scopes must not exceed your role-implied capabilities)")
+	fs.StringVar(&c.note, "note", "", "human-readable note (e.g. \"laptop\" or \"CI deploy\")")
+	fs.StringVar(&c.project, "bind-project", "", "optional project id to bind the token to (narrowing dimension; the role gate still applies; distinct from the --project context flag)")
+	fs.BoolVar(&c.machine, "machine", false, "create a platform machine token instead of a personal PAT (platform admins only; machine tokens carry no user identity)")
 	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
 }
 
@@ -71,7 +81,12 @@ func (c *tokensCreateCmd) Run(ctx context.Context, env *commands.Environment, ar
 	}
 	scopes := strings.Split(c.scopes, ",")
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Tokens().CreateToken(ctx, &serverv1.CreateTokenRequest{Scopes: scopes, Note: c.note})
+		resp, err := cl.Tokens().CreateToken(ctx, &serverv1.CreateTokenRequest{
+			Scopes:    scopes,
+			Note:      c.note,
+			ProjectId: c.project,
+			Machine:   c.machine,
+		})
 		if err != nil {
 			return err
 		}
@@ -79,7 +94,11 @@ func (c *tokensCreateCmd) Run(ctx context.Context, env *commands.Environment, ar
 			return writeProtoJSON(env.Stdout, resp)
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "token created: %s (shown only once, store it safely — the server keeps only a hash)\n", resp.GetToken())
+		kind := "personal access token"
+		if c.machine {
+			kind = "machine token"
+		}
+		fmt.Fprintf(&b, "token created (%s): %s (shown only once, store it safely — the server keeps only a hash)\n", kind, resp.GetToken())
 		fmt.Fprintf(&b, "  id: %s\n  scopes: %s\n", resp.GetId(), strings.Join(resp.GetScopes(), ","))
 		if resp.GetNote() != "" {
 			fmt.Fprintf(&b, "  note: %s\n", resp.GetNote())
@@ -90,7 +109,8 @@ func (c *tokensCreateCmd) Run(ctx context.Context, env *commands.Environment, ar
 }
 
 // tokensListCmd 实现 `fleetly tokens list`（无敏感投影：备注/scope/哈希
-// 前缀——明文与完整哈希永不回读）。
+// 前缀/属主——明文与完整哈希永不回读）。用户只见自己的 PAT；平台管理员
+// 与机具令牌见全部（machine 注记区分平台级凭据）。
 type tokensListCmd struct {
 	jsonOut bool
 	conn    connFlags
@@ -98,7 +118,7 @@ type tokensListCmd struct {
 
 func (c *tokensListCmd) Name() string { return "list" }
 func (c *tokensListCmd) Synopsis() string {
-	return "list API tokens (no sensitive projection)"
+	return "list tokens you own (platform admins see all; no sensitive projection)"
 }
 func (c *tokensListCmd) Usage() string {
 	return "tokens list [--addr <host:port>] [--token <tok>] [--json]"
@@ -128,6 +148,14 @@ func (c *tokensListCmd) Run(ctx context.Context, env *commands.Environment, args
 		var b strings.Builder
 		for _, t := range resp.GetTokens() {
 			line := fmt.Sprintf("%s  %-12s scopes=%s", t.GetId(), t.GetHashPrefix(), strings.Join(t.GetScopes(), ","))
+			if t.GetUserId() != "" {
+				line += "  user=" + t.GetUserId()
+			} else {
+				line += "  machine"
+			}
+			if t.GetProjectId() != "" {
+				line += "  project=" + t.GetProjectId()
+			}
 			if t.GetNote() != "" {
 				line += "  note=" + t.GetNote()
 			}
@@ -141,7 +169,8 @@ func (c *tokensListCmd) Run(ctx context.Context, env *commands.Environment, args
 	})
 }
 
-// tokensRevokeCmd 实现 `fleetly tokens revoke <id>`（幂等；不存在 404）。
+// tokensRevokeCmd 实现 `fleetly tokens revoke <id>`（幂等；可见集外或不存在
+// 一律 404；吊销最后一枚 admin token 被 E_TOKEN_LAST_ADMIN 守卫拒绝）。
 type tokensRevokeCmd struct {
 	jsonOut bool
 	conn    connFlags
@@ -149,7 +178,7 @@ type tokensRevokeCmd struct {
 
 func (c *tokensRevokeCmd) Name() string { return "revoke" }
 func (c *tokensRevokeCmd) Synopsis() string {
-	return "revoke an API token (idempotent)"
+	return "revoke a token you own (idempotent; platform admins can revoke any)"
 }
 func (c *tokensRevokeCmd) Usage() string {
 	return "tokens revoke [--addr <host:port>] [--token <tok>] [--json] <id>"
