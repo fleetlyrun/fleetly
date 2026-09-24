@@ -99,8 +99,14 @@ func (c *deployCmd) Run(ctx context.Context, env *commands.Environment, args []s
 		if err != nil {
 			return err
 		}
-		// app 派生状态（读面即时推导）。
-		appResp, err := cl.Apps().GetApp(ctx, &serverv1.GetAppRequest{Name: final.GetApp()})
+		// app 派生状态（读面即时推导）。同名跨项目（D-W0-4 二修）下裸名
+		// 歧义：项目上下文为限定形时用 team/prj/app 取派生态——staging 真机
+		// 演练（SV-11b）抓出「部署成功后尾查 GetApp 裸名 409」的错位。
+		appRef := final.GetApp()
+		if rc.Project != "" && strings.Contains(rc.Project, "/") {
+			appRef = rc.Project + "/" + final.GetApp()
+		}
+		appResp, err := cl.Apps().GetApp(ctx, &serverv1.GetAppRequest{Name: appRef})
 		if err != nil {
 			return err
 		}
