@@ -419,9 +419,13 @@ type MeResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	User  *UserView              `protobuf:"bytes,1,opt,name=user,proto3" json:"user,omitempty"`
 	// 所属团队与角色投影（viewer/developer/admin/owner 四档，设计 §3.2）。
-	Teams         []*TeamMembership `protobuf:"bytes,2,rep,name=teams,proto3" json:"teams,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Teams []*TeamMembership `protobuf:"bytes,2,rep,name=teams,proto3" json:"teams,omitempty"`
+	// 队内覆写行投影（v0.3 W3-S2，rbac-teams §3.3 B 形：有行则覆写、双向
+	// 生效；无行则团队角色生效——本投影只列**有覆写行**的项目）。Console
+	// 消费在 S3。
+	ProjectOverrides []*ProjectOverrideMembership `protobuf:"bytes,3,rep,name=project_overrides,json=projectOverrides,proto3" json:"project_overrides,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *MeResponse) Reset() {
@@ -464,6 +468,13 @@ func (x *MeResponse) GetUser() *UserView {
 func (x *MeResponse) GetTeams() []*TeamMembership {
 	if x != nil {
 		return x.Teams
+	}
+	return nil
+}
+
+func (x *MeResponse) GetProjectOverrides() []*ProjectOverrideMembership {
+	if x != nil {
+		return x.ProjectOverrides
 	}
 	return nil
 }
@@ -538,6 +549,78 @@ func (x *TeamMembership) GetRole() string {
 	return ""
 }
 
+// ProjectOverrideMembership 是「我的项目角色覆写行」只读投影（§3.3 队内
+// 覆写形：仅限团队成员；owner 恒不可覆写——本投影角色词表只有三档）。
+type ProjectOverrideMembership struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	TeamId    string                 `protobuf:"bytes,2,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
+	// 项目 slug（队内唯一、不可变）。
+	PrjSlug string `protobuf:"bytes,3,opt,name=prj_slug,json=prjSlug,proto3" json:"prj_slug,omitempty"`
+	// 覆写角色（admin/developer/viewer）。
+	Role          string `protobuf:"bytes,4,opt,name=role,proto3" json:"role,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectOverrideMembership) Reset() {
+	*x = ProjectOverrideMembership{}
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectOverrideMembership) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectOverrideMembership) ProtoMessage() {}
+
+func (x *ProjectOverrideMembership) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectOverrideMembership.ProtoReflect.Descriptor instead.
+func (*ProjectOverrideMembership) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ProjectOverrideMembership) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *ProjectOverrideMembership) GetTeamId() string {
+	if x != nil {
+		return x.TeamId
+	}
+	return ""
+}
+
+func (x *ProjectOverrideMembership) GetPrjSlug() string {
+	if x != nil {
+		return x.PrjSlug
+	}
+	return ""
+}
+
+func (x *ProjectOverrideMembership) GetRole() string {
+	if x != nil {
+		return x.Role
+	}
+	return ""
+}
+
 type AcceptInviteRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 邀请链接携带的一次性明文 token（服务端只存 sha256）。
@@ -548,7 +631,7 @@ type AcceptInviteRequest struct {
 
 func (x *AcceptInviteRequest) Reset() {
 	*x = AcceptInviteRequest{}
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[11]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -560,7 +643,7 @@ func (x *AcceptInviteRequest) String() string {
 func (*AcceptInviteRequest) ProtoMessage() {}
 
 func (x *AcceptInviteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[11]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -573,7 +656,7 @@ func (x *AcceptInviteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInviteRequest.ProtoReflect.Descriptor instead.
 func (*AcceptInviteRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{11}
+	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *AcceptInviteRequest) GetToken() string {
@@ -596,7 +679,7 @@ type AcceptInviteResponse struct {
 
 func (x *AcceptInviteResponse) Reset() {
 	*x = AcceptInviteResponse{}
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[12]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -608,7 +691,7 @@ func (x *AcceptInviteResponse) String() string {
 func (*AcceptInviteResponse) ProtoMessage() {}
 
 func (x *AcceptInviteResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[12]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -621,7 +704,7 @@ func (x *AcceptInviteResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AcceptInviteResponse.ProtoReflect.Descriptor instead.
 func (*AcceptInviteResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{12}
+	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *AcceptInviteResponse) GetTeamId() string {
@@ -660,7 +743,7 @@ type GetRegistrationStateRequest struct {
 
 func (x *GetRegistrationStateRequest) Reset() {
 	*x = GetRegistrationStateRequest{}
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[13]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -672,7 +755,7 @@ func (x *GetRegistrationStateRequest) String() string {
 func (*GetRegistrationStateRequest) ProtoMessage() {}
 
 func (x *GetRegistrationStateRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[13]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -685,7 +768,7 @@ func (x *GetRegistrationStateRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRegistrationStateRequest.ProtoReflect.Descriptor instead.
 func (*GetRegistrationStateRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{13}
+	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 type GetRegistrationStateResponse struct {
@@ -700,7 +783,7 @@ type GetRegistrationStateResponse struct {
 
 func (x *GetRegistrationStateResponse) Reset() {
 	*x = GetRegistrationStateResponse{}
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[14]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -712,7 +795,7 @@ func (x *GetRegistrationStateResponse) String() string {
 func (*GetRegistrationStateResponse) ProtoMessage() {}
 
 func (x *GetRegistrationStateResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_auth_proto_msgTypes[14]
+	mi := &file_fleetly_server_v1_auth_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -725,7 +808,7 @@ func (x *GetRegistrationStateResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetRegistrationStateResponse.ProtoReflect.Descriptor instead.
 func (*GetRegistrationStateResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{14}
+	return file_fleetly_server_v1_auth_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *GetRegistrationStateResponse) GetOpen() bool {
@@ -765,15 +848,22 @@ const file_fleetly_server_v1_auth_proto_rawDesc = "" +
 	"\x10LogoutAllRequest\">\n" +
 	"\x11LogoutAllResponse\x12)\n" +
 	"\x10sessions_revoked\x18\x01 \x01(\x03R\x0fsessionsRevoked\"\v\n" +
-	"\tMeRequest\"v\n" +
+	"\tMeRequest\"\xd1\x01\n" +
 	"\n" +
 	"MeResponse\x12/\n" +
 	"\x04user\x18\x01 \x01(\v2\x1b.fleetly.server.v1.UserViewR\x04user\x127\n" +
-	"\x05teams\x18\x02 \x03(\v2!.fleetly.server.v1.TeamMembershipR\x05teams\"w\n" +
+	"\x05teams\x18\x02 \x03(\v2!.fleetly.server.v1.TeamMembershipR\x05teams\x12Y\n" +
+	"\x11project_overrides\x18\x03 \x03(\v2,.fleetly.server.v1.ProjectOverrideMembershipR\x10projectOverrides\"w\n" +
 	"\x0eTeamMembership\x12\x17\n" +
 	"\ateam_id\x18\x01 \x01(\tR\x06teamId\x12\x1b\n" +
 	"\tteam_slug\x18\x02 \x01(\tR\bteamSlug\x12\x1b\n" +
 	"\tteam_name\x18\x03 \x01(\tR\bteamName\x12\x12\n" +
+	"\x04role\x18\x04 \x01(\tR\x04role\"\x82\x01\n" +
+	"\x19ProjectOverrideMembership\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x17\n" +
+	"\ateam_id\x18\x02 \x01(\tR\x06teamId\x12\x19\n" +
+	"\bprj_slug\x18\x03 \x01(\tR\aprjSlug\x12\x12\n" +
 	"\x04role\x18\x04 \x01(\tR\x04role\"4\n" +
 	"\x13AcceptInviteRequest\x12\x1d\n" +
 	"\x05token\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x05token\"}\n" +
@@ -810,7 +900,7 @@ func file_fleetly_server_v1_auth_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_auth_proto_rawDescData
 }
 
-var file_fleetly_server_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
+var file_fleetly_server_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 16)
 var file_fleetly_server_v1_auth_proto_goTypes = []any{
 	(*RegisterRequest)(nil),              // 0: fleetly.server.v1.RegisterRequest
 	(*RegisterResponse)(nil),             // 1: fleetly.server.v1.RegisterResponse
@@ -823,36 +913,38 @@ var file_fleetly_server_v1_auth_proto_goTypes = []any{
 	(*MeRequest)(nil),                    // 8: fleetly.server.v1.MeRequest
 	(*MeResponse)(nil),                   // 9: fleetly.server.v1.MeResponse
 	(*TeamMembership)(nil),               // 10: fleetly.server.v1.TeamMembership
-	(*AcceptInviteRequest)(nil),          // 11: fleetly.server.v1.AcceptInviteRequest
-	(*AcceptInviteResponse)(nil),         // 12: fleetly.server.v1.AcceptInviteResponse
-	(*GetRegistrationStateRequest)(nil),  // 13: fleetly.server.v1.GetRegistrationStateRequest
-	(*GetRegistrationStateResponse)(nil), // 14: fleetly.server.v1.GetRegistrationStateResponse
-	(*UserView)(nil),                     // 15: fleetly.server.v1.UserView
+	(*ProjectOverrideMembership)(nil),    // 11: fleetly.server.v1.ProjectOverrideMembership
+	(*AcceptInviteRequest)(nil),          // 12: fleetly.server.v1.AcceptInviteRequest
+	(*AcceptInviteResponse)(nil),         // 13: fleetly.server.v1.AcceptInviteResponse
+	(*GetRegistrationStateRequest)(nil),  // 14: fleetly.server.v1.GetRegistrationStateRequest
+	(*GetRegistrationStateResponse)(nil), // 15: fleetly.server.v1.GetRegistrationStateResponse
+	(*UserView)(nil),                     // 16: fleetly.server.v1.UserView
 }
 var file_fleetly_server_v1_auth_proto_depIdxs = []int32{
-	15, // 0: fleetly.server.v1.RegisterResponse.user:type_name -> fleetly.server.v1.UserView
-	15, // 1: fleetly.server.v1.LoginResponse.user:type_name -> fleetly.server.v1.UserView
-	15, // 2: fleetly.server.v1.MeResponse.user:type_name -> fleetly.server.v1.UserView
+	16, // 0: fleetly.server.v1.RegisterResponse.user:type_name -> fleetly.server.v1.UserView
+	16, // 1: fleetly.server.v1.LoginResponse.user:type_name -> fleetly.server.v1.UserView
+	16, // 2: fleetly.server.v1.MeResponse.user:type_name -> fleetly.server.v1.UserView
 	10, // 3: fleetly.server.v1.MeResponse.teams:type_name -> fleetly.server.v1.TeamMembership
-	0,  // 4: fleetly.server.v1.AuthService.Register:input_type -> fleetly.server.v1.RegisterRequest
-	2,  // 5: fleetly.server.v1.AuthService.Login:input_type -> fleetly.server.v1.LoginRequest
-	4,  // 6: fleetly.server.v1.AuthService.Logout:input_type -> fleetly.server.v1.LogoutRequest
-	6,  // 7: fleetly.server.v1.AuthService.LogoutAll:input_type -> fleetly.server.v1.LogoutAllRequest
-	8,  // 8: fleetly.server.v1.AuthService.Me:input_type -> fleetly.server.v1.MeRequest
-	11, // 9: fleetly.server.v1.AuthService.AcceptInvite:input_type -> fleetly.server.v1.AcceptInviteRequest
-	13, // 10: fleetly.server.v1.AuthService.GetRegistrationState:input_type -> fleetly.server.v1.GetRegistrationStateRequest
-	1,  // 11: fleetly.server.v1.AuthService.Register:output_type -> fleetly.server.v1.RegisterResponse
-	3,  // 12: fleetly.server.v1.AuthService.Login:output_type -> fleetly.server.v1.LoginResponse
-	5,  // 13: fleetly.server.v1.AuthService.Logout:output_type -> fleetly.server.v1.LogoutResponse
-	7,  // 14: fleetly.server.v1.AuthService.LogoutAll:output_type -> fleetly.server.v1.LogoutAllResponse
-	9,  // 15: fleetly.server.v1.AuthService.Me:output_type -> fleetly.server.v1.MeResponse
-	12, // 16: fleetly.server.v1.AuthService.AcceptInvite:output_type -> fleetly.server.v1.AcceptInviteResponse
-	14, // 17: fleetly.server.v1.AuthService.GetRegistrationState:output_type -> fleetly.server.v1.GetRegistrationStateResponse
-	11, // [11:18] is the sub-list for method output_type
-	4,  // [4:11] is the sub-list for method input_type
-	4,  // [4:4] is the sub-list for extension type_name
-	4,  // [4:4] is the sub-list for extension extendee
-	0,  // [0:4] is the sub-list for field type_name
+	11, // 4: fleetly.server.v1.MeResponse.project_overrides:type_name -> fleetly.server.v1.ProjectOverrideMembership
+	0,  // 5: fleetly.server.v1.AuthService.Register:input_type -> fleetly.server.v1.RegisterRequest
+	2,  // 6: fleetly.server.v1.AuthService.Login:input_type -> fleetly.server.v1.LoginRequest
+	4,  // 7: fleetly.server.v1.AuthService.Logout:input_type -> fleetly.server.v1.LogoutRequest
+	6,  // 8: fleetly.server.v1.AuthService.LogoutAll:input_type -> fleetly.server.v1.LogoutAllRequest
+	8,  // 9: fleetly.server.v1.AuthService.Me:input_type -> fleetly.server.v1.MeRequest
+	12, // 10: fleetly.server.v1.AuthService.AcceptInvite:input_type -> fleetly.server.v1.AcceptInviteRequest
+	14, // 11: fleetly.server.v1.AuthService.GetRegistrationState:input_type -> fleetly.server.v1.GetRegistrationStateRequest
+	1,  // 12: fleetly.server.v1.AuthService.Register:output_type -> fleetly.server.v1.RegisterResponse
+	3,  // 13: fleetly.server.v1.AuthService.Login:output_type -> fleetly.server.v1.LoginResponse
+	5,  // 14: fleetly.server.v1.AuthService.Logout:output_type -> fleetly.server.v1.LogoutResponse
+	7,  // 15: fleetly.server.v1.AuthService.LogoutAll:output_type -> fleetly.server.v1.LogoutAllResponse
+	9,  // 16: fleetly.server.v1.AuthService.Me:output_type -> fleetly.server.v1.MeResponse
+	13, // 17: fleetly.server.v1.AuthService.AcceptInvite:output_type -> fleetly.server.v1.AcceptInviteResponse
+	15, // 18: fleetly.server.v1.AuthService.GetRegistrationState:output_type -> fleetly.server.v1.GetRegistrationStateResponse
+	12, // [12:19] is the sub-list for method output_type
+	5,  // [5:12] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_auth_proto_init() }
@@ -867,7 +959,7 @@ func file_fleetly_server_v1_auth_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_auth_proto_rawDesc), len(file_fleetly_server_v1_auth_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   15,
+			NumMessages:   16,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

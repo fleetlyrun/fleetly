@@ -1,12 +1,13 @@
 package cmd
 
 // fleetly git 命令（T2.19）：git push(SSH) 触发入口的公钥管理面（admin
-// scope）。动词面 = `git keys add|list|rm`：
+// scope）。动词面 = `git keys add|list|rm` + `git fingerprint`：
 //
 //	git keys add  <key.pub>   注册平台管理公钥（authorized_keys 单行；
 //	                          明文私钥永不经过平台）；
 //	git keys list             在册公钥（指纹/类型/备注）；
-//	git keys rm   <id>        删除公钥（新 SSH 握手即拒绝）。
+//	git keys rm   <id>        删除公钥（新 SSH 握手即拒绝）；
+//	git fingerprint           服务端 host key SHA256 指纹（FZ-12 披露面）。
 //
 // push 用法：`git push ssh://git@<host>:8424/<app>.git <branch>`——SSH
 // 面默认只绑 127.0.0.1（安全默认基线），VPS 对外暴露见 README。
@@ -22,14 +23,14 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 )
 
-// gitCmd 是外层动词 `git`：分发 keys。
+// gitCmd 是外层动词 `git`：分发 keys / fingerprint。
 type gitCmd struct {
 	sub *commands.App
 }
 
 func newGitCmd() *gitCmd {
 	sub := commands.New()
-	sub.Register(newGitKeysCmd())
+	sub.Register(newGitKeysCmd(), &gitFingerprintCmd{})
 	sub.VerbTitle = "git subcommands:"
 	return &gitCmd{sub: sub}
 }
@@ -214,6 +215,54 @@ func (c *gitKeysRmCmd) Run(ctx context.Context, env *commands.Environment, args 
 	})
 }
 
+// gitFingerprintCmd 实现 `fleetly git fingerprint`（FZ-12 披露面，D-W0-8）：
+// 直出 git SSH host key 的 SHA256 指纹，供客户端核对/钉定 known_hosts
+//（ssh-keygen -lf 输出同形态）。known_hosts 钉定为客户端文档指引——平台
+// 不代管下发；钉定用法（帮助文案即指引）：
+//
+//	<host>:8424 ssh-ed25519 <指纹对应的公钥>   →   ~/.ssh/known_hosts
+//
+// 或首连时用 `ssh -o StrictHostKeyChecking=accept-new -p 8424 git@<host>`。
+type gitFingerprintCmd struct {
+	jsonOut bool
+	conn    connFlags
+}
+
+func (c *gitFingerprintCmd) Name() string { return "fingerprint" }
+func (c *gitFingerprintCmd) Synopsis() string {
+	return "print the git SSH server host key fingerprint (SHA256) to pin in your known_hosts (clients verify it with `ssh-keygen -lf`; the platform never ships known_hosts entries)"
+}
+func (c *gitFingerprintCmd) Usage() string {
+	return "git fingerprint [--addr <host:port>] [--token <tok>] [--json]"
+}
+
+func (c *gitFingerprintCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *gitFingerprintCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if len(args) != 0 {
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("expected 0 arguments, got %d", len(args))}
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.System().GetSystemStatus(ctx, &serverv1.GetSystemStatusRequest{})
+		if err != nil {
+			return err
+		}
+		fp := resp.GetGitSshFingerprint()
+		if c.jsonOut {
+			return writeJSON(env.Stdout, map[string]any{"git_ssh_fingerprint": fp})
+		}
+		if fp == "" {
+			_, err := fmt.Fprintln(env.Stdout, "no git SSH host key yet (the git face generates one on first start)")
+			return err
+		}
+		_, err = fmt.Fprintln(env.Stdout, fp)
+		return err
+	})
+}
+
 // 编译期断言：git 命令实现 commands.Command/Flagged 契约。
 var (
 	_ commands.Command = &gitCmd{}
@@ -226,4 +275,6 @@ var (
 	_ commands.Flagged = &gitKeysListCmd{}
 	_ commands.Command = &gitKeysRmCmd{}
 	_ commands.Flagged = &gitKeysRmCmd{}
+	_ commands.Command = &gitFingerprintCmd{}
+	_ commands.Flagged = &gitFingerprintCmd{}
 )

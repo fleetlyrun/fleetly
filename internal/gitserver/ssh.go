@@ -51,7 +51,7 @@ var gitBin = "git"
 // ListenAndServe 监听 SSH git 面（阻塞至 ctx 取消或监听错误）；启用态由
 // lynx.Service 壳（cmd/fleetlyd）驱动。
 func (s *GitTriggers) ListenAndServe(ctx context.Context, addr string) error {
-	signer, err := s.ensureHostKey()
+	signer, err := s.ensureHostKey(ctx)
 	if err != nil {
 		return err
 	}

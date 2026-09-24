@@ -25,7 +25,8 @@ package eventcode
 //     SetProjectMemberRole/RemoveProjectMember/CreateTeam/CreateProject，
 //     与业务写同事务 = Outbox）。
 //
-// 计 52 + 18 = 70 + W1 增 3 = 73 + W2-S1 增 4 = 77 个事件名。
+// 计 52 + 18 = 70 + W1 增 3 = 73 + W2-S1 增 4 = 77 + W3-S2 增 1（FZ-12
+// git.hostkey_changed）= 78 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -244,4 +245,12 @@ var builtins = []Event{
 	// change=override_set 带 role、override_removed）。owner 恒不可覆写
 	//（设计 §3.3），覆写事件只涉及三档项目角色。
 	{Name: "project.member_changed", Summary: "a project role override was set or removed (payload carries change/user_id and role on override_set; no row means the team role applies again)"},
+
+	// ── git SSH host key（v0.3 W3-S2，rbac-teams §6 裁决 D-W0-8 FZ-12；
+	//    注册表只增）：发出来源 = host key 启动装载与指纹台账的比对事务
+	//（internal/state/hostkeysettings.go，与台账更新同事务 = Outbox）。
+	//    payload 只带新旧 SHA256 指纹——公钥指纹是公开材料（known_hosts
+	//    核对值），私钥文件本体绝不出现（state-model §2.9 secret 纪律）。
+	//    首启建账静默（零事件），装载指纹与台账不同才发。
+	{Name: "git.hostkey_changed", Summary: "the git SSH host key changed since the previous load (file rebuilt or key replaced; payload carries the old and new SHA256 fingerprints — public key material only, the private key never appears)"},
 }

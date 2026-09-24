@@ -114,6 +114,13 @@ func (fakeJoinPort) SwarmRotateJoinToken(_ context.Context, role string) (string
 	return "swmtkn-rotated-" + role, nil
 }
 
+// fakeGitHostKey 是 git SSH host key 指纹源的确定性测试替身（FZ-12 披露
+// 面——api.GitHostKeySource 结构同形实现；指纹词形真实，golden 面的
+// SHA256: 词头经 normalizeVolatile 归一）。
+type fakeGitHostKey struct{}
+
+func (fakeGitHostKey) Fingerprint() string { return "SHA256:FixturedGitHostKeyFingerprint==" }
+
 // start 是 Start/StartWithJoin 的共用装配核。
 func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env {
 	t.Helper()
@@ -150,7 +157,7 @@ func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env
 		grpc.ChainStreamInterceptor(auth.StreamAuthInterceptor()),
 	)
 	systemSvc := api.NewSystemService("dev", st,
-		func() []api.SystemComponent { return nil }, nil, nil)
+		func() []api.SystemComponent { return nil }, nil, nil).WithGitHostKey(fakeGitHostKey{})
 	if joinPort != nil {
 		systemSvc = systemSvc.WithJoinGuide(joinBaseDomain, joinPort)
 	}

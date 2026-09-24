@@ -68,7 +68,7 @@ func TestConnContextCancelsOnClientDisconnect(t *testing.T) {
 	src, st, _, _ := newTestSource(t, 0)
 	ctx := context.Background()
 
-	hostSigner, err := src.ensureHostKey()
+	hostSigner, err := src.ensureHostKey(ctx)
 	if err != nil {
 		t.Fatalf("ensure host key: %v", err)
 	}

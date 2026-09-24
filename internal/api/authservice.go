@@ -174,8 +174,10 @@ func (s *AuthService) LogoutAll(ctx context.Context, _ *serverv1.LogoutAllReques
 	return &serverv1.LogoutAllResponse{SessionsRevoked: n}, nil
 }
 
-// Me 当前身份投影：user + 所属团队与角色（团队 slug/name 补全按 team_id
-// 逐行取——团队面列表原语属 W2，本票只读投影量级 = 单用户团队数）。
+// Me 当前身份投影：user + 所属团队与角色 + 队内覆写行（v0.3 W3-S2，§3.3
+// B 形投影扩面——有覆写行的项目随行；团队 slug/name 补全按 team_id 逐行
+// 取，覆写行的项目归属按 project_id 逐行取。投影量级 = 单用户团队/覆写
+// 行数；Console 消费在 S3）。
 func (s *AuthService) Me(ctx context.Context, _ *serverv1.MeRequest) (*serverv1.MeResponse, error) {
 	p, ok := PrincipalFromContext(ctx)
 	if !ok || p.UserID == "" {
@@ -210,7 +212,30 @@ func (s *AuthService) Me(ctx context.Context, _ *serverv1.MeRequest) (*serverv1.
 			Role:     m.Role,
 		})
 	}
-	return &serverv1.MeResponse{User: userView(u), Teams: teams}, nil
+	// 队内覆写行投影（W3-S2）：ListProjectMembershipsByUser 出行、逐行补
+	// 项目归属（team_id/slug）。项目行已删而覆写行残留 → 跳过（与团队行
+	// 残留同款不阻塞口径——state 删除面已联动清理，此处是防御性兜底）。
+	overrideRows, err := s.st.ListProjectMembershipsByUser(ctx, u.ID)
+	if err != nil {
+		return nil, err
+	}
+	overrides := make([]*serverv1.ProjectOverrideMembership, 0, len(overrideRows))
+	for _, m := range overrideRows {
+		proj, err := s.st.GetProject(ctx, m.ProjectID)
+		if err != nil {
+			if errors.Is(err, state.ErrProjectNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		overrides = append(overrides, &serverv1.ProjectOverrideMembership{
+			ProjectId: proj.ID,
+			TeamId:    proj.TeamID,
+			PrjSlug:   proj.Slug,
+			Role:      m.Role,
+		})
+	}
+	return &serverv1.MeResponse{User: userView(u), Teams: teams, ProjectOverrides: overrides}, nil
 }
 
 // AcceptInvite 消费一次性邀请（全语义接线，v0.3 W2-S1——W1 落面时邀请的

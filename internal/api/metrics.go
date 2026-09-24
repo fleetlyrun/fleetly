@@ -190,6 +190,12 @@ func (s *MetricsService) retentionDays() int {
 // 同事务（state 层 fail-closed）；duty 下一拍按新值收敛（三件部署或移除，
 // 数据卷保留）。返回保存后的状态视图。
 func (s *MetricsService) SetMetricsMode(ctx context.Context, req *serverv1.SetMetricsModeRequest) (*serverv1.SetMetricsModeResponse, error) {
+	// 平台面写门（v0.3 W3-S2 扩全，rbac-teams §3.2「全局设置 → 仅平台管理
+	// 员」）：metrics 模式切换触发三件套部署/移除，属平台全局设置写面——
+	// 用户 principal 须平台管理员（机具令牌沿 scope 门现状）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	opts := state.MetricsSaveOptions{Actor: "human"}
 	if p, ok := PrincipalFromContext(ctx); ok {
 		opts.ActorTokenID = p.TokenID

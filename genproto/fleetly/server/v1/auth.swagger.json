@@ -356,8 +356,36 @@
             "$ref": "#/definitions/v1TeamMembership"
           },
           "title": "所属团队与角色投影（viewer/developer/admin/owner 四档，设计 §3.2）。"
+        },
+        "project_overrides": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ProjectOverrideMembership"
+          },
+          "title": "队内覆写行投影（v0.3 W3-S2，rbac-teams §3.3 B 形：有行则覆写、双向\n生效；无行则团队角色生效——本投影只列**有覆写行**的项目）。Console\n消费在 S3。"
         }
       }
+    },
+    "v1ProjectOverrideMembership": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "team_id": {
+          "type": "string"
+        },
+        "prj_slug": {
+          "type": "string",
+          "title": "项目 slug（队内唯一、不可变）。"
+        },
+        "role": {
+          "type": "string",
+          "title": "覆写角色（admin/developer/viewer）。"
+        }
+      },
+      "title": "ProjectOverrideMembership 是「我的项目角色覆写行」只读投影（§3.3 队内\n覆写形：仅限团队成员；owner 恒不可覆写——本投影角色词表只有三档）。"
     },
     "v1RegisterRequest": {
       "type": "object",

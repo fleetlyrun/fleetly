@@ -196,7 +196,9 @@ func TestGetMetricsStatusVMUnreachableReportingZero(t *testing.T) {
 func TestSetMetricsModeRoundTrip(t *testing.T) {
 	st := openMetricsStore(t)
 	svc := NewMetricsService(st)
-	resp, err := svc.SetMetricsMode(context.Background(), &serverv1.SetMetricsModeRequest{Mode: state.MetricsModeOn})
+	// directCtx = 机具 admin 等效 principal（W3-S2 平台写面门：直调夹具的
+	// 授权形态，harness 惯例）。
+	resp, err := svc.SetMetricsMode(directCtx(context.Background()), &serverv1.SetMetricsModeRequest{Mode: state.MetricsModeOn})
 	if err != nil {
 		t.Fatalf("SetMetricsMode(on): %v", err)
 	}
@@ -204,7 +206,7 @@ func TestSetMetricsModeRoundTrip(t *testing.T) {
 		t.Fatalf("status = %+v, want on/set", resp.GetStatus())
 	}
 	// 非法值被 state 层校验拒绝（fail-closed）。
-	if _, err := svc.SetMetricsMode(context.Background(), &serverv1.SetMetricsModeRequest{Mode: "prometheus"}); err == nil {
+	if _, err := svc.SetMetricsMode(directCtx(context.Background()), &serverv1.SetMetricsModeRequest{Mode: "prometheus"}); err == nil {
 		t.Fatal("invalid mode must fail")
 	}
 }

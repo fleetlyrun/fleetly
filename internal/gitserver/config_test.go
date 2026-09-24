@@ -1,6 +1,7 @@
 package gitserver
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -33,11 +34,12 @@ func TestConfigNormalize(t *testing.T) {
 func TestHostKeyReuse(t *testing.T) {
 	src, _, _, dir := newTestSource(t, 0)
 	src.cfg.Root = dir // host key 落在 Root 下（缺省路径形态）
-	s1, err := src.ensureHostKey()
+	ctx := context.Background()
+	s1, err := src.ensureHostKey(ctx)
 	if err != nil {
 		t.Fatalf("ensureHostKey: %v", err)
 	}
-	s2, err := src.ensureHostKey()
+	s2, err := src.ensureHostKey(ctx)
 	if err != nil {
 		t.Fatalf("second ensureHostKey: %v", err)
 	}

@@ -163,6 +163,12 @@ var docEvents = map[string]string{ // event → 文档出处
 	"invite.accepted":        "v0.3 W2-S1 rbac-teams §6 (one-time invite consumed; state teams.go ConsumeInvite, same transaction)",
 	"project.deleted":        "v0.3 W2-S1 rbac-teams §6 (empty-project deletion; state projects.go DeleteProject, same transaction)",
 	"project.member_changed": "v0.3 W2-S1 rbac-teams §6 (project role override set/removed; state projects.go, same transaction)",
+
+	// v0.3 W3-S2 git SSH host key（rbac-teams §6 裁决 D-W0-8 FZ-12，注册表
+	// 只增）：发出来源 = host key 启动装载与指纹台账的比对事务
+	//（internal/state/hostkeysettings.go，与台账更新同事务 = Outbox；
+	// payload 只带新旧 SHA256 指纹——公开材料，私钥零出现）。
+	"git.hostkey_changed": "v0.3 W3-S2 rbac-teams §6 D-W0-8 (host key startup load vs fingerprint ledger; state hostkeysettings.go, same transaction; public key material only)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

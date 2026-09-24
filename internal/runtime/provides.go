@@ -600,8 +600,10 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *api.DriftService {
 // 组件随 duty 管理器与日志管线接线（设计 §2.3：healthy = duty 部署符合
 // 预期且 ingest streak 无降级；降级时 Error 带丢弃计数——诚实红面）。E6
 // W5-S4：notifications 组件随投递器接线（设计 §5.2——启用端点连续终败即
-// 红，Error 带端点名与最近错误；无终败 = 无所欠恒绿）。
-func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, mm *metrics.Manager, nm *notify.Manager, erm *execrelay.Manager, version Version) *api.SystemService {
+// 红，Error 带端点名与最近错误；无终败 = 无所欠恒绿）。W3-S2：git SSH
+// host key 指纹源随 GitTriggers 接线（FZ-12 披露面，D-W0-8——
+// GetSystemStatus 的 git_ssh_fingerprint 现读）。
+func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, ob *state.Observer, sb *secrets.Box, ing *ingress.Manager, bm *statebackup.Manager, rm *rustfs.Manager, sc *substrate.Client, lm *logs.Manager, vm *victorialogs.Manager, mm *metrics.Manager, nm *notify.Manager, erm *execrelay.Manager, gt *gitserver.GitTriggers, version Version) *api.SystemService {
 	components := func() []api.SystemComponent {
 		return []api.SystemComponent{
 			{Name: "state.store", Check: st.CheckHealth},
@@ -659,7 +661,8 @@ func NewSystemService(cfg *AppConfig, st *state.Store, id *state.NodeIdentity, o
 	}
 	return api.NewSystemService(string(version), st, components, ing, rm).WithBackupManager(bm).
 		WithJoinGuide(cfg.BaseDomain, sc).
-		WithSecretsBox(sb)
+		WithSecretsBox(sb).
+		WithGitHostKey(gt)
 }
 
 // ingestDegradedError 是日志入湖降级的组件健康错误（Error 文本带丢弃

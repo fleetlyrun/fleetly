@@ -87,12 +87,16 @@ var methodScopes = map[string]string{
 	// 日志后端面（E6 W5-S1）：show = read（运行视图）；set = deploy
 	//（写运行域语义——切换触发 duty 收敛与采集路由翻转，与
 	// SetDriftConverge 的 opt-in 置位同级；无凭据材料，不到 admin）。
+	// W3-S2 起用户 principal 另须 is_platform_admin（requirePlatformWriteFace
+	// 挂 handler——rbac-teams §3.2「全局设置 → 仅平台管理员」扩全；机具令牌
+	// 沿本登记的 scope 门）。
 	"/fleetly.server.v1.LogsService/GetLogsBackend": ScopeRead,
 	"/fleetly.server.v1.LogsService/SetLogsBackend": ScopeDeploy,
 	// MetricsService（E6 W5-S3，D-W5-2 opt-in）：查询与状态 = read
 	//（PromQL 透传是操作员工具——设计 §4.2；能看日志检索就能查指标）；
 	// 模式切换 = deploy（写运行域语义——opt-in 置位触发三件套部署/移除，
-	// 与 SetLogsBackend 同级理由；无凭据材料，不到 admin）。
+	// 与 SetLogsBackend 同级理由；无凭据材料，不到 admin）。W3-S2 起用户
+	// principal 另须 is_platform_admin（SetLogsBackend 同款 handler 门）。
 	"/fleetly.server.v1.MetricsService/SearchMetrics":    ScopeRead,
 	"/fleetly.server.v1.MetricsService/GetMetricsStatus": ScopeRead,
 	"/fleetly.server.v1.MetricsService/SetMetricsMode":   ScopeDeploy,
@@ -156,7 +160,9 @@ var methodScopes = map[string]string{
 	// NotificationsService（E6 W5-S4，observability §5）：读面 = read（端点
 	// 视图与投递台账是事实面——指纹非凭据，与 token 哈希前缀同口径）；写面
 	// = admin（端点是平台级凭据面——创建/更新/删除/轮换/测试与 s3 设置同
-	// 级；secret 明文只在创建/轮换响应一次性返回）。
+	// 级；secret 明文只在创建/轮换响应一次性返回）。W3-S2 起用户 principal
+	// 另须 is_platform_admin（requirePlatformWriteFace 挂五个写面 handler
+	// ——rbac-teams §3.2「通知 → 仅平台管理员」扩全；机具令牌沿 scope 门）。
 	"/fleetly.server.v1.NotificationsService/ListWebhookEndpoints":  ScopeRead,
 	"/fleetly.server.v1.NotificationsService/GetWebhookEndpoint":    ScopeRead,
 	"/fleetly.server.v1.NotificationsService/ListWebhookDeliveries": ScopeRead,

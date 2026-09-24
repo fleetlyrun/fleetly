@@ -63,6 +63,11 @@ func (s *NotificationsService) GetWebhookEndpoint(ctx context.Context, req *serv
 // CreateWebhookEndpoint 创建端点：密钥平台生成 + envelope 加密 + 指纹，
 // **明文仅本次响应可见**。
 func (s *NotificationsService) CreateWebhookEndpoint(ctx context.Context, req *serverv1.CreateWebhookEndpointRequest) (*serverv1.CreateWebhookEndpointResponse, error) {
+	// 平台面写门（v0.3 W3-S2 扩全，rbac-teams §3.2「通知 → 仅平台管理员」
+	// ——端点是平台级凭据面，与 S3 设置同门）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if err := shapeWebhookName(req.GetName()); err != nil {
 		return nil, err
 	}
@@ -101,6 +106,10 @@ func (s *NotificationsService) CreateWebhookEndpoint(ctx context.Context, req *s
 
 // UpdateWebhookEndpoint 部分更新（optional 字段语义——未提供不变）。
 func (s *NotificationsService) UpdateWebhookEndpoint(ctx context.Context, req *serverv1.UpdateWebhookEndpointRequest) (*serverv1.UpdateWebhookEndpointResponse, error) {
+	// 平台面写门（v0.3 W3-S2 扩全——同 Create）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	u := state.WebhookEndpointUpdate{ActorTokenID: callerTokenID(ctx)}
 	if req.Name != nil {
 		if err := shapeWebhookName(req.GetName()); err != nil {
@@ -132,6 +141,10 @@ func (s *NotificationsService) UpdateWebhookEndpoint(ctx context.Context, req *s
 
 // DeleteWebhookEndpoint 删除端点（台账行同事务清理）。
 func (s *NotificationsService) DeleteWebhookEndpoint(ctx context.Context, req *serverv1.DeleteWebhookEndpointRequest) (*serverv1.DeleteWebhookEndpointResponse, error) {
+	// 平台面写门（v0.3 W3-S2 扩全——同 Create）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if err := s.st.DeleteWebhookEndpoint(ctx, req.GetId(), "human", callerTokenID(ctx)); err != nil {
 		return nil, mapWebhookErr(err, req.GetId())
 	}
@@ -140,6 +153,10 @@ func (s *NotificationsService) DeleteWebhookEndpoint(ctx context.Context, req *s
 
 // RotateWebhookSecret 轮换签名密钥：新密钥**明文仅本次响应可见**。
 func (s *NotificationsService) RotateWebhookSecret(ctx context.Context, req *serverv1.RotateWebhookSecretRequest) (*serverv1.RotateWebhookSecretResponse, error) {
+	// 平台面写门（v0.3 W3-S2 扩全——同 Create；轮换即凭据材料重置）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	plaintext, err := generateWebhookSecret()
 	if err != nil {
 		return nil, err
@@ -163,6 +180,11 @@ func (s *NotificationsService) RotateWebhookSecret(ctx context.Context, req *ser
 // TestWebhook 发送 type=test 载荷（设计 §5.2）：库内解密 + 同链路签名
 // POST，同步返回单次投递结论；不落台账。
 func (s *NotificationsService) TestWebhook(ctx context.Context, req *serverv1.TestWebhookRequest) (*serverv1.TestWebhookResponse, error) {
+	// 平台面写门（v0.3 W3-S2 扩全——同 Create；测试消耗平台凭据发真实
+	// 出站请求，与 S3 连接探针同门）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	e, err := s.st.GetWebhookEndpoint(ctx, req.GetId())
 	if err != nil {
 		return nil, mapWebhookErr(err, req.GetId())

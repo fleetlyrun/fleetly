@@ -267,7 +267,7 @@ func TestGetSetLogsBackend(t *testing.T) {
 		t.Fatalf("deployment = %q, want pending (service missing)", v.GetDeployment())
 	}
 
-	setResp, err := svc.SetLogsBackend(ctx, &serverv1.SetLogsBackendRequest{Backend: state.LogsBackendJSONL})
+	setResp, err := svc.SetLogsBackend(directCtx(ctx), &serverv1.SetLogsBackendRequest{Backend: state.LogsBackendJSONL})
 	if err != nil {
 		t.Fatalf("SetLogsBackend: %v", err)
 	}
@@ -279,7 +279,7 @@ func TestGetSetLogsBackend(t *testing.T) {
 		t.Fatalf("deployment = %q, want removed", resp2.GetView().GetDeployment())
 	}
 	fk.exists = true
-	if _, err := svc.SetLogsBackend(ctx, &serverv1.SetLogsBackendRequest{Backend: state.LogsBackendVictorialogs}); err != nil {
+	if _, err := svc.SetLogsBackend(directCtx(ctx), &serverv1.SetLogsBackendRequest{Backend: state.LogsBackendVictorialogs}); err != nil {
 		t.Fatalf("set back: %v", err)
 	}
 	resp3, _ := svc.GetLogsBackend(ctx, &serverv1.GetLogsBackendRequest{})

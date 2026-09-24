@@ -95,6 +95,29 @@ func TestGoldenGitKeysLifecycle(t *testing.T) {
 	}
 }
 
+// TestGoldenGitFingerprint `git fingerprint`（FZ-12 披露面，D-W0-8）：
+// --json 直出 git_ssh_fingerprint 字段；人读形态单行 SHA256:…。夹具 = 
+// apitest 装配的确定性指纹源（fakeGitHostKey）。
+func TestGoldenGitFingerprint(t *testing.T) {
+	startCLI(t)
+
+	code, out, errOut := runCLIConn(t, "git", "fingerprint", "--json")
+	if code != 0 {
+		t.Fatalf("fingerprint --json: code=%d stderr=%s", code, errOut)
+	}
+	compareGolden(t, "git_fingerprint", out)
+
+	// 人读形态：单行指纹（SHA256: 词头——与 ssh-keygen -lf 同形态）。
+	code, out, errOut = runCLIConn(t, "git", "fingerprint")
+	if code != 0 {
+		t.Fatalf("fingerprint: code=%d stderr=%s", code, errOut)
+	}
+	if lines := strings.Split(strings.TrimRight(out, "\n"), "\n"); len(lines) != 1 ||
+		!strings.HasPrefix(lines[0], "SHA256:") {
+		t.Fatalf("human output = %q, want a single SHA256:… line", out)
+	}
+}
+
 // TestGoldenAppsWebhook webhook 配置面：set-secret → show → set-source →
 // show（无敏感投影——secret 只回 configured 位）。
 func TestGoldenAppsWebhook(t *testing.T) {
