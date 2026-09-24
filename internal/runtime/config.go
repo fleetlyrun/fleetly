@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
@@ -579,7 +580,25 @@ func (c *AppConfig) IngressSettings() ingress.Config {
 		},
 		RenewBefore:       time.Duration(c.Ingress.RenewBeforeDays) * 24 * time.Hour,
 		RenewScanInterval: time.Duration(c.Ingress.RenewScanSeconds) * time.Second,
+		// console 免端口直访段（2026-09-24）：网关端口与 TLS 形态由控制面
+		// 配置注入（ingress 侧只认这两个投影位，不重复端口语义）。
+		ControlGatewayPort: httpPortOf(c.HTTPAddr()),
+		ControlGatewayTLS:  c.TLSMode() != ControlPlaneTLSOff,
 	}.Normalize()
+}
+
+// httpPortOf 提取 host:port 的端口位（畸形/缺失回落 8420——与
+// DefaultHTTPAddr 端口一致；控制面启动对 addr 的合法性另有校验）。
+func httpPortOf(addr string) int {
+	_, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return 8420
+	}
+	p, err := strconv.Atoi(port)
+	if err != nil || p <= 0 {
+		return 8420
+	}
+	return p
 }
 
 // StateConfig 是状态层配置节（config 键 state.*）。保留期天数取非正值
@@ -615,6 +634,14 @@ func (c *AppConfig) GRPCAddr() string {
 		return defaultGRPCAddr
 	}
 	return c.GRPC.Addr
+}
+
+// HTTPAddr 返回 HTTP 面（gateway）监听地址，未配置时回落缺省值。
+func (c *AppConfig) HTTPAddr() string {
+	if c.Addr == "" {
+		return DefaultHTTPAddr
+	}
+	return c.Addr
 }
 
 // DBPath 返回状态库路径，未配置时回落缺省值。

@@ -117,7 +117,20 @@ type Config struct {
 	// PollInterval 是 Traefik 拉取配置的轮询周期（静态配置参数；供收敛
 	// 等待逻辑对齐节奏）。
 	PollInterval time.Duration
+	// ControlGatewayPort 是控制面网关（REST /v1 + Console /ui）端口，由
+	// runtime 装配注入（HTTP 面 addr 的端口位；0 = 回落 8420）。console
+	// 免端口直访路由段的后端端口（2026-09-24）——注意与 cfgPort（配置
+	// 端点 8422/8423）区分。
+	ControlGatewayPort int
+	// ControlGatewayTLS 报告控制面网关是否以 TLS 形态服务（control_plane.
+	// tls.mode != off，runtime 注入）。console 直访段据此选 https 后端 +
+	// 跳过服务器认证的 transport（IP 端点无 SAN——F9 修订二同口径）。
+	ControlGatewayTLS bool
 }
+
+// consoleGatewayPortFallback 是 ControlGatewayPort 未注入时的回落（与
+// runtime DefaultHTTPAddr 端口位一致）。
+const consoleGatewayPortFallback = 8420
 
 // ACMEConfig 是集中 ACME 配置（config 键 ingress.acme.*）。
 type ACMEConfig struct {

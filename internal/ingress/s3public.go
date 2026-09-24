@@ -114,14 +114,17 @@ const (
 
 // platformConsoleRoute 返回 console 免端口直访路由段（2026-09-24 用户实报
 // 易错点收口：https://console.<base>/ 免 8420 端口与 /ui/ 前缀两个输入位）。
-// Host(`console.<base>`) → 控制面网关（advertise 地址 : cfgPort 端口）；根
-// 路径 302 到 /ui/（RootRedirect 中间件）。TLS 模式且平台证书在盘时后端走
-// https + 跳过服务器认证的专用 transport（IP 端点无 SAN——与
-// providerEndpoint F9 修订二同口径，服务器认证由 VPC 边界承担）；单节点
-// 明文形态走 http。App=平台证书保留名：publishWithCerts 的按 app 挂证书
-// 循环自动挂 443 路由与内联证书段（registry 路由同构，零特判）。
-// advertiseIP 未定（EnsureTraefik 未跑过）时不追加——路由面无地址可指；
-// duty 收敛链恒在 EnsureTraefik 之后重发布，最终一致。
+// Host(`console.<base>`) → 控制面网关（advertise 地址 : ControlGatewayPort
+// ——网关端口由 runtime 注入，与配置端点 8422/8423 无关）；根路径 302 到
+// /ui/（RootRedirect 中间件）。网关 TLS 形态（ControlGatewayTLS，
+// control_plane.tls.mode != off）时后端走 https + 跳过服务器认证的专用
+// transport（IP 端点无 SAN——与 providerEndpoint F9 修订二同口径，服务器
+// 认证由 VPC 边界承担）；明文形态走 http。App=平台证书保留名：
+// publishWithCerts 的按 app 挂证书循环自动挂 443 路由与内联证书段
+//（registry 路由同构，零特判）。advertiseIP 未定（EnsureTraefik 未跑过）
+// 时不追加——路由面无地址可指；duty 收敛链恒在 EnsureTraefik 之后重发布，
+// 最终一致。前提（诚实记录）：网关须绑定非回环（远程访问 Console 的安装
+// 形态天然满足；纯回环绑定下本路由 502）。
 func (m *Manager) platformConsoleRoute() (Route, bool) {
 	m.mu.Lock()
 	advertise := m.advertiseIP
@@ -129,9 +132,13 @@ func (m *Manager) platformConsoleRoute() (Route, bool) {
 	if advertise == "" {
 		return Route{}, false
 	}
+	port := m.cfg.ControlGatewayPort
+	if port <= 0 {
+		port = consoleGatewayPortFallback
+	}
 	scheme := "http"
 	transport := ""
-	if m.platformCertOnDisk() {
+	if m.cfg.ControlGatewayTLS {
 		scheme = "https"
 		transport = consoleTransportName
 	}
@@ -140,7 +147,7 @@ func (m *Manager) platformConsoleRoute() (Route, bool) {
 		Service:      consoleIngressBackend,
 		Domains:      []string{"console." + m.cfg.BaseDomain},
 		Name:         consoleRouterName,
-		BackendURL:   scheme + "://" + net.JoinHostPort(advertise, fmt.Sprint(m.cfgPort())),
+		BackendURL:   scheme + "://" + net.JoinHostPort(advertise, fmt.Sprint(port)),
 		Transport:    transport,
 		RootRedirect: "/ui/",
 	}, true

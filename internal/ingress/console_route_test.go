@@ -7,7 +7,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 )
 
 func TestPlatformConsoleRoute(t *testing.T) {
@@ -35,7 +34,10 @@ func TestPlatformConsoleRoute(t *testing.T) {
 	if !ok || r.Name != consoleRouterName || r.Service != "console" {
 		t.Fatalf("console route missing: %+v ok=%v", r, ok)
 	}
-	// 单节点明文形态：http 后端、无 transport 覆写、根路径 302 到 /ui/。
+	// 明文形态（ControlGatewayTLS=false）：http 后端、无 transport 覆写、
+	// 根路径 302 到 /ui/。网关端口取注入位（ControlGatewayPort）。
+	m.cfg.ControlGatewayPort = 8420
+	r, _ = m.platformConsoleRoute()
 	if r.BackendURL != "http://10.124.0.3:8420" || r.Transport != "" || r.RootRedirect != "/ui/" {
 		t.Fatalf("plaintext form = %+v", r)
 	}
@@ -43,21 +45,21 @@ func TestPlatformConsoleRoute(t *testing.T) {
 		t.Fatalf("console route app = %q, want platform cert reserved name", r.App)
 	}
 
-	// 平台证书在盘：https 后端 + 跳过服务器认证的专用 transport（IP 端点
-	// 无 SAN——providerEndpoint F9 修订二同口径）。
-	certPEM, keyPEM, _ := selfSignedTestCert(t, "console.example.test")
-	if err := m.certs.Save(&CertificatePair{
-		App:      platformCertApp,
-		Domains:  m.PlatformDomains(),
-		CertPEM:  certPEM,
-		KeyPEM:   keyPEM,
-		NotAfter: time.Now().Add(24 * time.Hour).UTC(),
-	}); err != nil {
-		t.Fatalf("seed platform cert: %v", err)
-	}
+	// 网关 TLS 形态（ControlGatewayTLS=true，runtime 按控制面 tls.mode 注入）：
+	// https 后端 + 跳过服务器认证的专用 transport（IP 端点无 SAN——
+	// providerEndpoint F9 修订二同口径）。
+	m.cfg.ControlGatewayTLS = true
 	r, _ = m.platformConsoleRoute()
 	if r.BackendURL != "https://10.124.0.3:8420" || r.Transport != consoleTransportName {
 		t.Fatalf("tls form = %+v", r)
+	}
+
+	// 端口未注入（零值）：回落 8420。
+	m.cfg.ControlGatewayPort = 0
+	m.cfg.ControlGatewayTLS = false
+	r, _ = m.platformConsoleRoute()
+	if r.BackendURL != "http://10.124.0.3:8420" {
+		t.Fatalf("fallback port form = %+v", r)
 	}
 
 	// withPlatformRoutes 集成：registry 与 console 两段都在（s3 关闭态）。
