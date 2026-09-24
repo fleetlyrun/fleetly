@@ -38,6 +38,7 @@ type DynamicConfig struct {
 type HTTPDynamic struct {
 	Routers           map[string]*Router           `json:"routers"`
 	Services          map[string]*DynamicService   `json:"services"`
+	Middlewares       map[string]*Middleware       `json:"middlewares,omitempty"`
 	ServersTransports map[string]*ServersTransport `json:"serversTransports,omitempty"`
 }
 
@@ -46,10 +47,26 @@ type Router struct {
 	Rule        string   `json:"rule"`
 	EntryPoints []string `json:"entryPoints"`
 	Service     string   `json:"service"`
+	// Middlewares 引用 http.middlewares 键（Validate 校验存在性；@internal
+	// 限定名豁免——平台路由段的根路径重定向用）。
+	Middlewares []string `json:"middlewares,omitempty"`
 	// Priority 显式优先级（ACME 挑战路由用——压过 host 路由的默认
 	// 规则长度优先级）。
 	Priority int        `json:"priority,omitempty"`
 	TLS      *RouterTLS `json:"tls,omitempty"`
+}
+
+// Middleware 是一条中间件定义（当前只承载 redirectRegex——平台路由段的
+// console 根路径重定向；Traefik v3 动态配置契约形态）。
+type Middleware struct {
+	RedirectRegex *RedirectRegex `json:"redirectRegex,omitempty"`
+}
+
+// RedirectRegex 是 302/301 重定向中间件（regex 对请求全 URL 匹配）。
+type RedirectRegex struct {
+	Regex       string `json:"regex"`
+	Replacement string `json:"replacement"`
+	Permanent   bool   `json:"permanent,omitempty"`
 }
 
 // RouterTLS 非 nil 即启用该路由的 TLS（443 入口路由携带）。
@@ -78,6 +95,10 @@ type Server struct {
 type ServersTransport struct {
 	MaxIdleConnsPerHost int                 `json:"maxIdleConnsPerHost,omitempty"`
 	ForwardingTimeouts  *ForwardingTimeouts `json:"forwardingTimeouts,omitempty"`
+	// InsecureSkipVerify 用于「后端是控制面 TLS 面但以 IP 寻址」的平台
+	// 路由段（console 直访）：IP 端点无 SAN 可校验——与 providerEndpoint
+	// F9 修订二同口径（传输加密 + 服务器认证由 VPC 边界承担）。
+	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
 }
 
 // ForwardingTimeouts 是转发超时（字符串时长形态——Spike B 脚本同款，
@@ -125,6 +146,19 @@ type Route struct {
 	// registry——swarm 服务名即后端 DNS 名，与 app 路由「键 = 服务名」的
 	// 后端公式同构）；app 路由恒空（v0.1 形态不变）。
 	Name string
+	// BackendURL 是后端的显式覆写（空 = 「键[:端口]」公式——app/registry
+	// 路由的 swarm DNS 形态）。平台路由段指向宿主进程时使用（console 免
+	// 端口直访段 → 控制面网关 advertise 地址）。
+	BackendURL string
+	// Transport 是该路由后端的 serversTransport 键覆写（空 = 平台默认
+	// fleetly-default）。console 直访段在 TLS 模式指向 https IP 后端时
+	// 引用跳过服务器认证的专用 transport。
+	Transport string
+	// RootRedirect 非空时（如 "/ui/"）追加根路径重定向路由段：Host 匹配
+	// 且 Path(`/`) 的请求 302 到该前缀（redirectRegex 中间件，键
+	// <name>-root-redirect）。console 直访段用——免端口 + 免 /ui 前缀两
+	// 个用户侧易错位一并收口（2026-09-24 用户实报）。
+	RootRedirect string
 }
 
 // CertificateRef 是一张已落库证书的引用（app 名 + 台账字段 sha256/到期；
@@ -194,7 +228,7 @@ func Synthesize(routes []Route) *DynamicConfig {
 	for _, r := range routes {
 		// 键解析：Name 覆写优先（平台路由段），否则 app×service 公式。
 		// 后端 URL = 键 + ":" + port——键即 swarm 服务的 overlay DNS 名
-		//（app 与平台路由段同构）。
+		//（app 与平台路由段同构）；BackendURL 覆写优先（宿主进程后端）。
 		name := r.Name
 		if name == "" {
 			name = RouterName(r.TeamSlug, r.PrjSlug, r.App, r.Service)
@@ -215,14 +249,57 @@ func Synthesize(routes []Route) *DynamicConfig {
 				TLS:         &RouterTLS{},
 			}
 		}
-		backend := name
-		if r.Port != "" {
-			backend = name + ":" + r.Port
+		if r.RootRedirect != "" {
+			// 根路径重定向路由段：Host + Path(`/`) 精确匹配（规则长于
+			// Host-only，Traefik 缺省优先级自然压过主路由）→ 302 到前缀。
+			rootRule := rule + " && Path(`/`)"
+			mwName := name + "-root-redirect"
+			if cfg.HTTP.Middlewares == nil {
+				cfg.HTTP.Middlewares = map[string]*Middleware{}
+			}
+			cfg.HTTP.Middlewares[mwName] = &Middleware{
+				RedirectRegex: &RedirectRegex{
+					Regex:       `^(https?://[^/]+)/?$`,
+					Replacement: "${1}" + r.RootRedirect,
+				},
+			}
+			cfg.HTTP.Routers[name+"-root-web"] = &Router{
+				Rule:        rootRule,
+				EntryPoints: []string{"web"},
+				Service:     name,
+				Middlewares: []string{mwName},
+			}
+			if distributable(r) {
+				cfg.HTTP.Routers[name+"-root-websecure"] = &Router{
+					Rule:        rootRule,
+					EntryPoints: []string{"websecure"},
+					Service:     name,
+					Middlewares: []string{mwName},
+					TLS:         &RouterTLS{},
+				}
+			}
+		}
+		backend := r.BackendURL
+		if backend == "" {
+			backend = name
+			if r.Port != "" {
+				backend = name + ":" + r.Port
+			}
+			backend = "http://" + backend
+		}
+		transport := defaultServersTransportName
+		if r.Transport != "" {
+			transport = r.Transport
+			// 覆写 transport 的定义随配置下发（当前唯一形态：跳过服务器
+			// 认证——console 直访段的 IP 后端 TLS 面专用）。
+			if _, ok := cfg.HTTP.ServersTransports[transport]; !ok {
+				cfg.HTTP.ServersTransports[transport] = &ServersTransport{InsecureSkipVerify: true}
+			}
 		}
 		cfg.HTTP.Services[name] = &DynamicService{
 			LoadBalancer: &LoadBalancer{
-				Servers:          []Server{{URL: "http://" + backend}},
-				ServersTransport: defaultServersTransportName + "@http",
+				Servers:          []Server{{URL: backend}},
+				ServersTransport: transport + "@http",
 			},
 		}
 	}
@@ -282,6 +359,16 @@ func Validate(cfg *DynamicConfig) error {
 		}
 		if _, ok := cfg.HTTP.Services[r.Service]; !ok {
 			return fmt.Errorf("ingress: router %s references nonexistent service %s (dangling reference rejected)", name, r.Service)
+		}
+		// 中间件引用同样悬空即拒（@internal 限定名豁免——与 services 同
+		// 纪律：坏 router 会被 Traefik 连同整份配置应用）。
+		for _, mw := range r.Middlewares {
+			if isInternalService(mw) {
+				continue
+			}
+			if _, ok := cfg.HTTP.Middlewares[mw]; !ok {
+				return fmt.Errorf("ingress: router %s references nonexistent middleware %s (dangling reference rejected)", name, mw)
+			}
 		}
 	}
 	for name, s := range cfg.HTTP.Services {

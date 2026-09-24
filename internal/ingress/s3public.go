@@ -27,6 +27,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"time"
 
@@ -80,14 +81,18 @@ func (m *Manager) platformS3Route() Route {
 }
 
 // withPlatformRoutes 追加平台路由段：registry 路由（E1-4，base_domain 门）
-// + s3.<base> 路由（E3-6，公网开关门）。开关关闭或设置读取失败 → 不追加
-// （fail-closed：设置损坏时路由面缺席 = 公网面关闭，全量发布照常——设置
-// 读取故障不放大成全平台入口发布失败；duty 侧同错误走退避重试并告警）。
+// + console 免端口直访路由（2026-09-24，base_domain 门）+ s3.<base> 路由
+//（E3-6，公网开关门）。开关关闭或设置读取失败 → 不追加（fail-closed：设置
+// 损坏时路由面缺席 = 公网面关闭，全量发布照常——设置读取故障不放大成全
+// 平台入口发布失败；duty 侧同错误走退避重试并告警）。
 func (m *Manager) withPlatformRoutes(ctx context.Context, routes []Route) []Route {
 	if !m.ConfigTLSEnabled() {
 		return routes
 	}
 	routes = append(routes, m.platformRegistryRoute())
+	if r, ok := m.platformConsoleRoute(); ok {
+		routes = append(routes, r)
+	}
 	exposed, err := m.s3PublicExposed(ctx)
 	if err != nil {
 		m.log.Warn("ingress: s3 public route omitted (settings unreadable; failing closed to internal-only)", "error", err)
@@ -97,6 +102,48 @@ func (m *Manager) withPlatformRoutes(ctx context.Context, routes []Route) []Rout
 		routes = append(routes, m.platformS3Route())
 	}
 	return routes
+}
+
+// console 直访段常量：router/service 键与后端 transport 键（fleetly- 前缀
+// 纪律；键空间与用户对象公式解耦）。
+const (
+	consoleRouterName     = "fleetly-console"
+	consoleTransportName  = "fleetly-console-transport"
+	consoleIngressBackend = "console"
+)
+
+// platformConsoleRoute 返回 console 免端口直访路由段（2026-09-24 用户实报
+// 易错点收口：https://console.<base>/ 免 8420 端口与 /ui/ 前缀两个输入位）。
+// Host(`console.<base>`) → 控制面网关（advertise 地址 : cfgPort 端口）；根
+// 路径 302 到 /ui/（RootRedirect 中间件）。TLS 模式且平台证书在盘时后端走
+// https + 跳过服务器认证的专用 transport（IP 端点无 SAN——与
+// providerEndpoint F9 修订二同口径，服务器认证由 VPC 边界承担）；单节点
+// 明文形态走 http。App=平台证书保留名：publishWithCerts 的按 app 挂证书
+// 循环自动挂 443 路由与内联证书段（registry 路由同构，零特判）。
+// advertiseIP 未定（EnsureTraefik 未跑过）时不追加——路由面无地址可指；
+// duty 收敛链恒在 EnsureTraefik 之后重发布，最终一致。
+func (m *Manager) platformConsoleRoute() (Route, bool) {
+	m.mu.Lock()
+	advertise := m.advertiseIP
+	m.mu.Unlock()
+	if advertise == "" {
+		return Route{}, false
+	}
+	scheme := "http"
+	transport := ""
+	if m.platformCertOnDisk() {
+		scheme = "https"
+		transport = consoleTransportName
+	}
+	return Route{
+		App:          platformCertApp,
+		Service:      consoleIngressBackend,
+		Domains:      []string{"console." + m.cfg.BaseDomain},
+		Name:         consoleRouterName,
+		BackendURL:   scheme + "://" + net.JoinHostPort(advertise, fmt.Sprint(m.cfgPort())),
+		Transport:    transport,
+		RootRedirect: "/ui/",
+	}, true
 }
 
 // platformDomainsWithS3 是平台证书 SAN 期望态集（PlatformDomains 的
