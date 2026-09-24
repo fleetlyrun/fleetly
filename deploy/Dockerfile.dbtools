@@ -16,16 +16,56 @@
 #   - redis-cli 改从 debian 版 redis:7 拷入（与 dbtemplate.DefaultRedisImage
 #     同一钉定 digest）——musl 链接的 alpine redis-cli 在 glibc 基底不可运行；
 #     restic 为 Go 静态二进制，任意基底可运行（来源镜像不变）。
+#   - **mysql/mongo 工具面（v0.3 W4-S2，D-W4-3「临时 mysqld/mongod 须在
+#     dbtools 镜像内」的镜像裁决落地）**：从两引擎镜像同 digest COPY，与
+#     PG 基底选型同一条「与引擎逐位同版」原则——备份导出与恢复重放的工具
+#     版本恒等于引擎版本：
+#       - mysql:8.4（dbtemplate.DefaultMySQLImage 同一钉定 digest，台账
+#         #19）→ mysqld（/usr/sbin，服务端——恢复重放的临时实例本体）+
+#         mysql/mysqldump/mysqladmin（客户端；三者静态链接 libmysqlclient，
+#         依赖仅 libssl3/libcrypto3/ncurses 等 bookworm 原生同名库）+
+#         /usr/lib64/mysql（mysqld 私有 abseil/protobuf 库，$ORIGIN 相对
+#         寻址：布局原样保真）+ /usr/share/mysql-8.4（errmsg 等运行文件）。
+#         **不取 debian default-mysql-client**：bookworm 该包 = MariaDB
+#         10.11 客户端（mariadb-dump 无 --source-data——备份词表 D-W4-3
+#         在用；且无 mysqld 服务端——恢复词表必需），双缺口故弃。
+#       - mongo:8.0（dbtemplate.DefaultMongoImage 同一钉定 digest，台账
+#         #20）→ mongod（服务端，恢复临时实例）+ mongosh/mongodump/
+#         mongorestore（官方 8.0 镜像已自带全套工具面，镜像内 ls 实证）
+#         ——免 mongodb-database-tools/mongosh 官方 deb 的外置下载面
+#         （bookworm 无 mongodb-clients 包，deb 路线需 URL+sha256 钉定；
+#         引擎同源 COPY 后该供应链面整体不引入）。
+#   - **缺口库（基底缺、引擎镜像补）**：mysql 客户端需 libncurses.so.6、
+#     mongod/mongodump 链接 libcurl.so.4 及其闭包子集（libnghttp2/librtmp/
+#     libssh/libpsl/libbrotli*——逐 soname 对基底盘点后的精确补集，其余
+#     闭包如 libgnutls/libkrb5/libldap 基底已有）→ 按引擎镜像 COPY 进
+#     /usr/local/dbtools-lib，LD_LIBRARY_PATH 挂载（ldconfig 纳管需 RUN
+#     执行，与纯 COPY 纪律冲突；补集仅含基底缺失 soname，无遮蔽面）。
+#     libaio.so.1 单独走 mysqld 的 $ORIGIN/../lib64/mysql/private RPATH
+#     （不经 LD_LIBRARY_PATH）。同 mysql-files 目录：mysqld 8.4 缺省
+#     secure-file-priv=/var/lib/mysql-files（编译期缺省，实机 boot 实证
+#     缺目录即拒起）——引擎镜像由 rpm 预建，此处以惰性占位文件 + 0755
+#     物化该目录（恢复 job 以数据卷属主 uid 降权运行，root:root 0755 可
+#     过目录可及性检查）。/etc/my.cnf 刻意不拷（EL 宿主形态：log-error 指
+#     向 /var/log/mysql 等容器外路径，拷入即引入新拒起面）。
 #   - 体积注记（预算裁决 2026-09-23：opt-in/job 型组件不占 600MB 常驻预算
-#     顶）：postgres debian 基底使最终镜像从 ~120MB 增至 ~400MB——本镜像是
-#     一次性 job 执行体、非常驻，按需拉取用后即删，预算口径明示可接受。
-#   - 工具面（引擎适配器的命令词表，internal/database S5 消费）：
+#     顶）：postgres debian 基底使最终镜像从 ~120MB 增至 ~400MB；W4-S2 增
+#     mysql/mongo 工具面（mysqld 64MB + 私有库 30MB + mongo 全套）后
+#     ~1.08GB（docker images 本机实测，amd64 未压缩）——本镜像是**一次性
+#     job 执行体、非常驻**，按需拉取用后即删，预算口径明示可接受。
+#   - 工具面（引擎适配器的命令词表，internal/database S5/W4 消费）：
 #       pg_dump / pg_restore / psql / pg_isready / pg_ctl   （postgres:16
 #       基底自带，/usr/local/bin——与引擎镜像同源同版）
 #       redis-cli                     （/usr/local/bin/redis-cli）
 #       restic                        （/usr/bin/restic → /usr/local/bin）
 #       gosu                          （postgres 官方镜像自带——恢复重放的
 #       降权执行依赖，internal/database 恢复词表消费）
+#       mysqld / mysql / mysqldump / mysqladmin   （/usr/sbin、/usr/bin）
+#       mongod / mongosh / mongodump / mongorestore   （/usr/bin）
+#   - 多架构：五个 FROM 全为多架构 index（含新增 mysql:8.4/mongo:8.0——
+#     与台账 #19/#20 同 digest），COPY --from 按目标平台解析对应 manifest；
+#     缺口库源路径用 /usr/lib/*-linux-gnu/ 通配（amd64/arm64 双覆盖）——
+#     仍纯 COPY 无 RUN，无需 QEMU。
 #
 # 发布：release.yml dbtools job（随平台 release 重建并钉新 digest）；本地
 # 引导/演练构建用 buildx --push（见 runbook）。
@@ -34,7 +74,42 @@ FROM restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11
 
 FROM redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f AS redis
 
+FROM mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d AS mysql-engine
+
+FROM mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2 AS mongo-engine
+
 FROM postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6
 
 COPY --from=restic /usr/bin/restic /usr/local/bin/restic
+
 COPY --from=redis /usr/local/bin/redis-cli /usr/local/bin/redis-cli
+
+# mysql 工具面（mysql:8.4 引擎同源——台账 #19 同 digest，逐位同版）。
+# mysqld 私有库随 /usr/lib64/mysql 原样落位（$ORIGIN/../lib64/mysql/private
+# RPATH 不变）；libaio.so.1 挪进同一 RPATH 目录以补 bookworm 缺包。
+COPY --from=mysql-engine /usr/bin/mysql /usr/bin/mysqldump /usr/bin/mysqladmin /usr/bin/
+COPY --from=mysql-engine /usr/sbin/mysqld /usr/sbin/mysqld
+COPY --from=mysql-engine /usr/lib64/mysql/ /usr/lib64/mysql/
+COPY --from=mysql-engine /usr/share/mysql-8.4/ /usr/share/mysql-8.4/
+COPY --from=mysql-engine /usr/lib64/libaio.so.1 /usr/lib64/mysql/private/libaio.so.1
+
+# secure-file-priv 目录物化（纯 COPY 造不出空目录——占位文件带入；
+# --chmod=0755 使非 root 降权 mysqld 过目录可及性检查）。
+COPY --from=mysql-engine --chmod=0755 /etc/my.cnf /var/lib/mysql-files/.keep
+
+# mongo 工具面（mongo:8.0 引擎同源——台账 #20 同 digest；官方镜像自带全
+# 套工具，无需 database-tools/mongosh 外置 deb）。
+COPY --from=mongo-engine /usr/bin/mongod /usr/bin/mongodump /usr/bin/mongorestore /usr/bin/mongosh /usr/bin/
+
+# 缺口库精确补集（基底逐 soname 盘点后的缺项；源路径通配多架构目录）。
+COPY --from=mysql-engine /usr/lib64/libncurses.so.6 /usr/local/dbtools-lib/
+COPY --from=mongo-engine /usr/lib/*-linux-gnu/libcurl.so.4 /usr/local/dbtools-lib/
+COPY --from=mongo-engine /usr/lib/*-linux-gnu/libnghttp2.so.14 /usr/local/dbtools-lib/
+COPY --from=mongo-engine /usr/lib/*-linux-gnu/librtmp.so.1 /usr/local/dbtools-lib/
+COPY --from=mongo-engine /usr/lib/*-linux-gnu/libssh.so.4 /usr/local/dbtools-lib/
+COPY --from=mongo-engine /usr/lib/*-linux-gnu/libpsl.so.5 /usr/local/dbtools-lib/
+COPY --from=mongo-engine /usr/lib/*-linux-gnu/libbrotlidec.so.1 /usr/local/dbtools-lib/
+COPY --from=mongo-engine /usr/lib/*-linux-gnu/libbrotlicommon.so.1 /usr/local/dbtools-lib/
+
+# 缺口库挂载（ldconfig 需 RUN——与纯 COPY 纪律冲突；见头注缺口库说明）。
+ENV LD_LIBRARY_PATH=/usr/local/dbtools-lib

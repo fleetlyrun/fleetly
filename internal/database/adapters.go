@@ -138,7 +138,10 @@ func backupJobScript(in dbtemplate.BackupInput) ([]string, error) {
 	case dbtemplate.TemplateRedis7:
 		export = fmt.Sprintf("redis-cli -h %s --no-auth-warning --rdb /dev/stdout", in.Instance)
 	case dbtemplate.TemplateMySQL84:
-		export = fmt.Sprintf("mysqldump -h %s -u fleetly --single-transaction --source-data=2 %s",
+		// --databases：导出自带 CREATE DATABASE + USE——恢复重放前置 DROP
+		// DATABASE 后裸重放必须有库名锚（W4-S2 容器内实证抓出：无该旗标
+		// 的 dump 两语句皆缺，重放必败 "No database selected"）。
+		export = fmt.Sprintf("mysqldump -h %s -u fleetly --single-transaction --source-data=2 --databases %s",
 			in.Instance, dbtemplate.DatabaseName(in.Instance))
 	case dbtemplate.TemplateMongoDB80:
 		// authSource=admin：官方入口把 initdb root 恒建于 admin 库（设计

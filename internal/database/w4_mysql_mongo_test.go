@@ -60,7 +60,7 @@ func TestMySQLBackupJobSpec(t *testing.T) {
 	}
 	script := strings.Join(j.Cmd, " ")
 	for _, want := range []string{
-		"mysqldump -h my-bk -u fleetly --single-transaction --source-data=2 my_bk",
+		"mysqldump -h my-bk -u fleetly --single-transaction --source-data=2 --databases my_bk",
 		"backup --stdin --stdin-filename db/my-bk/db.sql",
 	} {
 		if !strings.Contains(script, want) {
