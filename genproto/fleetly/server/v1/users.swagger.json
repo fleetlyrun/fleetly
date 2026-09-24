@@ -16,6 +16,58 @@
     "application/json"
   ],
   "paths": {
+    "/v1/audit/retention": {
+      "get": {
+        "operationId": "UsersService_GetAuditRetention",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAuditRetentionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "UsersService"
+        ]
+      },
+      "put": {
+        "operationId": "UsersService_SetAuditRetention",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetAuditRetentionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetAuditRetentionRequest"
+            }
+          }
+        ],
+        "tags": [
+          "UsersService"
+        ]
+      }
+    },
     "/v1/auth/registration": {
       "put": {
         "operationId": "UsersService_SetRegistration",
@@ -384,6 +436,26 @@
       },
       "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
     },
+    "v1GetAuditRetentionResponse": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "integer",
+          "format": "int32",
+          "title": "显式设置的留存天数（set=false 时不输出）。"
+        },
+        "set": {
+          "type": "boolean",
+          "title": "该键是否被显式保存过（false = platform_settings 无行）。"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "设置行 updated_at（未设置时不输出）。"
+        }
+      },
+      "title": "GetAuditRetentionResponse 是审计留存设置的只读投影（v0.3 W3-S3，rbac-teams\n§6 D-W0-6 收口——写面随本 RPC 族补齐，state 层 LoadAuditSettings W3-S1 已\n备）。本层只诚实投影「未设置 / 显式设置」之别：set=false 时 days 不输出，\n生效值回落链（config state.audit_retention_days \u003e 缺省 90）由消费方裁决\n——Console 显示缺省口径，不谎报设置存在。"
+    },
     "v1GrantPlatformAdminResponse": {
       "type": "object",
       "properties": {
@@ -421,6 +493,25 @@
       "properties": {
         "user": {
           "$ref": "#/definitions/v1UserView"
+        }
+      }
+    },
+    "v1SetAuditRetentionRequest": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "integer",
+          "format": "int32",
+          "title": "留存天数，≥1（buf.validate 与 state.ValidateRetentionDays 同值域双门\n——0/负数会把「关掉清理」伪装成合法设置，两层都显式拒绝）。"
+        }
+      }
+    },
+    "v1SetAuditRetentionResponse": {
+      "type": "object",
+      "properties": {
+        "days": {
+          "type": "integer",
+          "format": "int32"
         }
       }
     },

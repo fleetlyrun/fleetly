@@ -19,6 +19,7 @@ import type {
   DisableUserResponse,
   EnableUserResponse,
   GetAppResponse,
+  GetAuditRetentionResponse,
   GetDatabaseResponse,
   GetEnvResponse,
   GetIngressStatusResponse,
@@ -32,6 +33,7 @@ import type {
   GetWebhookEndpointResponse,
   GrantPlatformAdminResponse,
   ListAppDomainsResponse,
+  ListAuditResponse,
   ListBackupsResponse,
   ListCronRunsResponse,
   ListDatabaseBackupsResponse,
@@ -78,6 +80,7 @@ import type {
   SetEnvResponse,
   SetMetricsModeResponse,
   SetProjectMemberRoleResponse,
+  SetAuditRetentionResponse,
   SetRegistrationResponse,
   SetSecretResponse,
   SetTeamMemberRoleResponse,
@@ -367,6 +370,50 @@ export function setRegistration(open: boolean) {
   return api<SetRegistrationResponse>("/auth/registration", {
     method: "PUT",
     json: { open },
+  });
+}
+
+// ── audit（v0.3 W3-S1 读面 + W3-S3 留存设置与浏览页，rbac-teams §6）───────
+// 全部方法平台管理员硬门（用户 principal 须 is_platform_admin；机具令牌沿
+// admin scope 门）。导出（CSV）不经 Console——诚实口径指向 CLI
+// `fleetly audit export --csv`，Console 只做浏览。
+
+/** 审计台账分页检索（at 倒序；total = 过滤生效、分页生效前的全量命中数）。 */
+export function listAudit(
+  opts: {
+    actor?: string;
+    action?: string;
+    result?: "ok" | "error" | "";
+    target?: string;
+    since?: string;
+    until?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+) {
+  const query: Record<string, string> = {};
+  if (opts.actor) query.actor = opts.actor;
+  if (opts.action) query.action = opts.action;
+  if (opts.result) query.result = opts.result;
+  if (opts.target) query.target = opts.target;
+  if (opts.since) query.since = opts.since;
+  if (opts.until) query.until = opts.until;
+  if (opts.limit !== undefined) query.limit = String(opts.limit);
+  if (opts.offset !== undefined) query.offset = String(opts.offset);
+  const qs = new URLSearchParams(query).toString();
+  return api<ListAuditResponse>(`/audit${qs ? `?${qs}` : ""}`);
+}
+
+/** 审计留存设置读面（set=false = 未显式设置——Console 显示缺省口径）。 */
+export function getAuditRetention() {
+  return api<GetAuditRetentionResponse>("/audit/retention");
+}
+
+/** 审计留存天数设置（≥1；保存即生效——janitor 每拍现读）。 */
+export function setAuditRetention(days: number) {
+  return api<SetAuditRetentionResponse>("/audit/retention", {
+    method: "PUT",
+    json: { days },
   });
 }
 

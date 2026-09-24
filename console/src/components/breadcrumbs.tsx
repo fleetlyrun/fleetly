@@ -10,6 +10,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   apps: "Applications",
   system: "System",
   events: "Events",
+  audit: "Audit",
   deployments: "Deployments",
   logs: "Logs",
   env: "Env",

@@ -76,6 +76,15 @@ service UsersService {
       body: "*"
     };
   }
+  rpc GetAuditRetention(GetAuditRetentionRequest) returns (GetAuditRetentionResponse) {
+    option (google.api.http) = { get: "/v1/audit/retention" };
+  }
+  rpc SetAuditRetention(SetAuditRetentionRequest) returns (SetAuditRetentionResponse) {
+    option (google.api.http) = {
+      put: "/v1/audit/retention"
+      body: "*"
+    };
+  }
 }
 
 // UserView 是用户行的无敏感投影：口令哈希不存在于任何通道（state 层投影
@@ -164,4 +173,32 @@ message SetRegistrationRequest {
 
 message SetRegistrationResponse {
   bool open = 1;
+}
+
+message GetAuditRetentionRequest {}
+
+// GetAuditRetentionResponse 是审计留存设置的只读投影（v0.3 W3-S3，rbac-teams
+// §6 D-W0-6 收口——写面随本 RPC 族补齐，state 层 LoadAuditSettings W3-S1 已
+// 备）。本层只诚实投影「未设置 / 显式设置」之别：set=false 时 days 不输出，
+// 生效值回落链（config state.audit_retention_days > 缺省 90）由消费方裁决
+// ——Console 显示缺省口径，不谎报设置存在。
+message GetAuditRetentionResponse {
+  // 显式设置的留存天数（set=false 时不输出）。
+  int32 days = 1;
+  // 该键是否被显式保存过（false = platform_settings 无行）。
+  bool set = 2;
+  // 设置行 updated_at（未设置时不输出）。
+  google.protobuf.Timestamp updated_at = 3;
+}
+
+message SetAuditRetentionRequest {
+  // 留存天数，≥1（buf.validate 与 state.ValidateRetentionDays 同值域双门
+  // ——0/负数会把「关掉清理」伪装成合法设置，两层都显式拒绝）。
+  int32 days = 1 [(buf.validate.field).int32 = {
+    gte: 1
+  }];
+}
+
+message SetAuditRetentionResponse {
+  int32 days = 1;
 }

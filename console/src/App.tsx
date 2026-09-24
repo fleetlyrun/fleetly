@@ -17,6 +17,7 @@ import { AuthProvider, useAuth } from "@/auth";
 import { setUnauthorizedListener } from "@/api/client";
 import { Layout } from "@/components/layout";
 import { AdminPage } from "@/pages/AdminPage";
+import { AuditPage } from "@/pages/AuditPage";
 import { HomePage } from "@/pages/HomePage";
 import { AppsPage } from "@/pages/AppsPage";
 import { AppDetailLayout } from "@/pages/AppDetailLayout";
@@ -120,6 +121,7 @@ function AuthedRoutes() {
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/teams/:teamId" element={<TeamPage />} />
           <Route path="/admin/users" element={<AdminPage />} />
+          <Route path="/admin/audit" element={<AuditPage />} />
           <Route path="/auth/invite" element={<InvitePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>

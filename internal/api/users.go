@@ -7,6 +7,7 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
 // UsersService 实现 server.v1.UsersService（v0.3 W1，rbac-teams 设计
@@ -165,6 +166,52 @@ func (s *UsersService) SetRegistration(ctx context.Context, req *serverv1.SetReg
 		return nil, err
 	}
 	return &serverv1.SetRegistrationResponse{Open: req.GetOpen()}, nil
+}
+
+// GetAuditRetention 审计留存设置只读投影（v0.3 W3-S3，rbac-teams §6
+// D-W0-6 收口）：set=false 时 days/updated_at 不输出——生效值回落链
+//（config > 缺省 90）由消费方裁决，本层不投影缺省数值（state 层语义）。
+func (s *UsersService) GetAuditRetention(ctx context.Context, _ *serverv1.GetAuditRetentionRequest) (*serverv1.GetAuditRetentionResponse, error) {
+	if err := s.requirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
+	settings, err := s.st.LoadAuditSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	resp := &serverv1.GetAuditRetentionResponse{Set: settings.Set}
+	if settings.Set {
+		resp.Days = int32(settings.RetentionDays) //nolint:gosec // G115：天数 ≤ int32 值域（校验后小整数）
+		resp.UpdatedAt = timestamppb.New(settings.UpdatedAt)
+	}
+	return resp, nil
+}
+
+// SetAuditRetention 审计留存天数设置（写面 API 本票补齐——state
+// SaveRetentionDays W3-S1 已备，挂 UsersService 与 SetRegistration 同族：
+// 平台面写语义 + audit.retention_changed 审计在 state 层同事务落档）。
+func (s *UsersService) SetAuditRetention(ctx context.Context, req *serverv1.SetAuditRetentionRequest) (*serverv1.SetAuditRetentionResponse, error) {
+	if err := s.requirePlatformAdmin(ctx); err != nil {
+		return nil, err
+	}
+	days := int(req.GetDays())
+	// 双门之二：buf.validate 拦 HTTP 面，此处拦进程内调用（词表口径与
+	// state.ValidateRetentionDays 一致，信封显式 422 形态）。
+	if err := state.ValidateRetentionDays(days); err != nil {
+		return nil, statusEnvelope(codes.InvalidArgument, "audit retention days must be >= 1")
+	}
+	p := principalOf(ctx)
+	actor := "human"
+	if p.UserID != "" {
+		actor = "user:" + p.UserID
+	}
+	if err := s.st.SaveRetentionDays(ctx, days, state.AuditSaveOptions{
+		Actor:        actor,
+		ActorTokenID: callerTokenID(ctx),
+	}); err != nil {
+		return nil, err
+	}
+	return &serverv1.SetAuditRetentionResponse{Days: req.GetDays()}, nil
 }
 
 // ── 内部 helpers ─────────────────────────────────────────────────────────────

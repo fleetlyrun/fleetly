@@ -27,6 +27,8 @@ const (
 	UsersService_GrantPlatformAdmin_FullMethodName  = "/fleetly.server.v1.UsersService/GrantPlatformAdmin"
 	UsersService_RevokePlatformAdmin_FullMethodName = "/fleetly.server.v1.UsersService/RevokePlatformAdmin"
 	UsersService_SetRegistration_FullMethodName     = "/fleetly.server.v1.UsersService/SetRegistration"
+	UsersService_GetAuditRetention_FullMethodName   = "/fleetly.server.v1.UsersService/GetAuditRetention"
+	UsersService_SetAuditRetention_FullMethodName   = "/fleetly.server.v1.UsersService/SetAuditRetention"
 )
 
 // UsersServiceClient is the client API for UsersService service.
@@ -50,6 +52,8 @@ type UsersServiceClient interface {
 	GrantPlatformAdmin(ctx context.Context, in *GrantPlatformAdminRequest, opts ...grpc.CallOption) (*GrantPlatformAdminResponse, error)
 	RevokePlatformAdmin(ctx context.Context, in *RevokePlatformAdminRequest, opts ...grpc.CallOption) (*RevokePlatformAdminResponse, error)
 	SetRegistration(ctx context.Context, in *SetRegistrationRequest, opts ...grpc.CallOption) (*SetRegistrationResponse, error)
+	GetAuditRetention(ctx context.Context, in *GetAuditRetentionRequest, opts ...grpc.CallOption) (*GetAuditRetentionResponse, error)
+	SetAuditRetention(ctx context.Context, in *SetAuditRetentionRequest, opts ...grpc.CallOption) (*SetAuditRetentionResponse, error)
 }
 
 type usersServiceClient struct {
@@ -140,6 +144,26 @@ func (c *usersServiceClient) SetRegistration(ctx context.Context, in *SetRegistr
 	return out, nil
 }
 
+func (c *usersServiceClient) GetAuditRetention(ctx context.Context, in *GetAuditRetentionRequest, opts ...grpc.CallOption) (*GetAuditRetentionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAuditRetentionResponse)
+	err := c.cc.Invoke(ctx, UsersService_GetAuditRetention_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *usersServiceClient) SetAuditRetention(ctx context.Context, in *SetAuditRetentionRequest, opts ...grpc.CallOption) (*SetAuditRetentionResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetAuditRetentionResponse)
+	err := c.cc.Invoke(ctx, UsersService_SetAuditRetention_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // UsersServiceServer is the server API for UsersService service.
 // All implementations must embed UnimplementedUsersServiceServer
 // for forward compatibility.
@@ -161,6 +185,8 @@ type UsersServiceServer interface {
 	GrantPlatformAdmin(context.Context, *GrantPlatformAdminRequest) (*GrantPlatformAdminResponse, error)
 	RevokePlatformAdmin(context.Context, *RevokePlatformAdminRequest) (*RevokePlatformAdminResponse, error)
 	SetRegistration(context.Context, *SetRegistrationRequest) (*SetRegistrationResponse, error)
+	GetAuditRetention(context.Context, *GetAuditRetentionRequest) (*GetAuditRetentionResponse, error)
+	SetAuditRetention(context.Context, *SetAuditRetentionRequest) (*SetAuditRetentionResponse, error)
 	mustEmbedUnimplementedUsersServiceServer()
 }
 
@@ -194,6 +220,12 @@ func (UnimplementedUsersServiceServer) RevokePlatformAdmin(context.Context, *Rev
 }
 func (UnimplementedUsersServiceServer) SetRegistration(context.Context, *SetRegistrationRequest) (*SetRegistrationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetRegistration not implemented")
+}
+func (UnimplementedUsersServiceServer) GetAuditRetention(context.Context, *GetAuditRetentionRequest) (*GetAuditRetentionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAuditRetention not implemented")
+}
+func (UnimplementedUsersServiceServer) SetAuditRetention(context.Context, *SetAuditRetentionRequest) (*SetAuditRetentionResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetAuditRetention not implemented")
 }
 func (UnimplementedUsersServiceServer) mustEmbedUnimplementedUsersServiceServer() {}
 func (UnimplementedUsersServiceServer) testEmbeddedByValue()                      {}
@@ -360,6 +392,42 @@ func _UsersService_SetRegistration_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _UsersService_GetAuditRetention_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAuditRetentionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsersServiceServer).GetAuditRetention(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UsersService_GetAuditRetention_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsersServiceServer).GetAuditRetention(ctx, req.(*GetAuditRetentionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _UsersService_SetAuditRetention_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetAuditRetentionRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(UsersServiceServer).SetAuditRetention(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: UsersService_SetAuditRetention_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(UsersServiceServer).SetAuditRetention(ctx, req.(*SetAuditRetentionRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // UsersService_ServiceDesc is the grpc.ServiceDesc for UsersService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -398,6 +466,14 @@ var UsersService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetRegistration",
 			Handler:    _UsersService_SetRegistration_Handler,
+		},
+		{
+			MethodName: "GetAuditRetention",
+			Handler:    _UsersService_GetAuditRetention_Handler,
+		},
+		{
+			MethodName: "SetAuditRetention",
+			Handler:    _UsersService_SetAuditRetention_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

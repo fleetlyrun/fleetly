@@ -10,7 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { SystemPage } from "@/pages/SystemPage";
 import { setToken } from "@/api/client";
 
-function stubSystemFetch(joinGuide?: Record<string, unknown>) {
+function stubSystemFetch(joinGuide?: Record<string, unknown>, statusExtra: Record<string, unknown> = {}) {
   return vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
     if (url.includes("/system/nodes/join-guide")) {
@@ -71,6 +71,7 @@ function stubSystemFetch(joinGuide?: Record<string, unknown>) {
         Promise.resolve({
           version: "dev",
           components: [{ name: "state.store", ok: true }],
+          ...statusExtra,
         }),
     });
   });
@@ -171,5 +172,50 @@ describe("SystemPage join wizard (E1-8)", () => {
     // 回到 nodes 页签：平台 ID 列照常渲染。
     await userEvent.click(screen.getByRole("tab", { name: "Nodes" }));
     expect(screen.getByText("n_node1")).toBeInTheDocument();
+  });
+});
+
+// git SSH 指纹行（W3-S3，FZ-12 披露面 + rbac-teams §7「system 页」）：
+// 指纹值 + 复制 + known_hosts 一行指引；未启用时空态诚实呈现。
+describe("SystemPage git SSH fingerprint (W3-S3)", () => {
+  it("shows the fingerprint with copy button and known_hosts guidance", async () => {
+    setToken("flt_test");
+    vi.stubGlobal(
+      "fetch",
+      stubSystemFetch(undefined, { git_ssh_fingerprint: "SHA256:FixturedFingerprintValue==" }),
+    );
+
+    render(
+      <MemoryRouter initialEntries={["/system"]}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <SystemPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    const fp = await screen.findByTestId("system-git-fingerprint");
+    expect(fp.textContent).toBe("SHA256:FixturedFingerprintValue==");
+    expect(screen.getByTestId("system-git-fingerprint-copy")).toBeInTheDocument();
+    expect(screen.getByTestId("system-git-fingerprint-hint").textContent).toContain("known_hosts");
+    expect(screen.getByTestId("system-git-fingerprint-hint").textContent).toContain("ssh-keygen -lf");
+  });
+
+  it("renders an honest empty state when git SSH is not enabled", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubSystemFetch(undefined));
+
+    render(
+      <MemoryRouter initialEntries={["/system"]}>
+        <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+          <SystemPage />
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("component-health");
+    expect(screen.getByTestId("system-git-fingerprint-empty").textContent).toContain(
+      "Git SSH is not enabled",
+    );
+    expect(screen.queryByTestId("system-git-fingerprint")).not.toBeInTheDocument();
   });
 });

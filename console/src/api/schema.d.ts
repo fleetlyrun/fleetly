@@ -444,6 +444,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/audit": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AuditService_ListAudit"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps": {
         parameters: {
             query?: never;
@@ -1678,6 +1694,24 @@ export interface components {
             user?: components["schemas"]["v1UserView"];
             /** 所属团队与角色投影（viewer/developer/admin/owner 四档，设计 §3.2）。 */
             teams?: components["schemas"]["v1TeamMembership"][];
+            /**
+             * 队内覆写行投影（v0.3 W3-S2，rbac-teams §3.3 B 形：有行则覆写、双向
+             *     生效；无行则团队角色生效——本投影只列**有覆写行**的项目）。Console
+             *     消费在 S3。
+             */
+            project_overrides?: components["schemas"]["v1ProjectOverrideMembership"][];
+        };
+        /**
+         * ProjectOverrideMembership 是「我的项目角色覆写行」只读投影（§3.3 队内
+         *     覆写形：仅限团队成员；owner 恒不可覆写——本投影角色词表只有三档）。
+         */
+        v1ProjectOverrideMembership: {
+            project_id?: string;
+            team_id?: string;
+            /** 项目 slug（队内唯一、不可变）。 */
+            prj_slug?: string;
+            /** 覆写角色（admin/developer/viewer）。 */
+            role?: string;
         };
         v1RegisterRequest: {
             email?: string;
@@ -1964,6 +1998,35 @@ export interface components {
         };
         v1UpdateProjectResponse: {
             project?: components["schemas"]["v1ProjectView"];
+        };
+        /**
+         * AuditView 是审计行的读面投影：AuditRecord 全字段（无敏感材料——secret
+         *     值禁止进入审计，state-model §2.9 红线在写侧强制，读面零脱敏负担）。
+         */
+        v1AuditView: {
+            id?: string;
+            /** Format: date-time */
+            at?: string;
+            /** human / system / user:<id>（设计 §6 actor 增维）。 */
+            actor?: string;
+            action?: string;
+            target?: string;
+            /** ok | error。 */
+            result?: string;
+            /** 失败路径的注册表错误码（'' = 成功行）。 */
+            error_code?: string;
+            /** 关联请求 ID（'' = 无）。 */
+            request_id?: string;
+            /** 脱敏后的 diff 摘要（'' = 无）。 */
+            diff_summary?: string;
+        };
+        v1ListAuditResponse: {
+            audits?: components["schemas"]["v1AuditView"][];
+            /**
+             * 全量命中计数（过滤生效、分页生效前）——读面分页器的总数投影。
+             * Format: int32
+             */
+            total?: number;
         };
         AppsServiceSetAppSourceBody: {
             /** 拉源 remote URL（file:// 与 https://、ssh:// 形态）。 */
@@ -2619,6 +2682,13 @@ export interface components {
             version?: string;
             components?: components["schemas"]["v1ComponentHealth"][];
             backup?: components["schemas"]["v1BackupHealth"];
+            /**
+             * git SSH host key 的 SHA256 指纹（FZ-12 披露面，D-W0-8；OpenSSH 形态
+             *     SHA256:…——公钥指纹为公开材料）。git SSH 面未启用或 host key 未生成
+             *     时为空。客户端钉定（known_hosts）为文档指引：以本字段核对
+             *     `ssh-keygen -lf` 的服务端指纹，平台不代管下发 known_hosts。
+             */
+            git_ssh_fingerprint?: string;
         };
         /** JoinGuideView 是 join 向导输出（服务端生成，multi-node §2.3）。 */
         v1JoinGuideView: {
@@ -4384,6 +4454,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1MoveDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AuditService_ListAudit: {
+        parameters: {
+            query?: {
+                actor?: string;
+                action?: string;
+                /** @description ok | error（其他值恒空集——精确匹配语义，服务端不再另行校验词表）。 */
+                result?: string;
+                target?: string;
+                since?: string;
+                until?: string;
+                /** @description 分页（非正/缺省 = 服务端页大小 100，天花板 1000；offset 非负）。 */
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListAuditResponse"];
                 };
             };
             /** @description An unexpected error response. */

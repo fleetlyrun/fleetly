@@ -7,8 +7,9 @@
 //
 // 门语义：本模块派生的角色能力（useTeamCapabilities）只是前端体验门——
 // viewer 隐藏写按钮等；服务端角色门（W2-S4 ResolvePermission）才是硬门。
-// 项目覆写角色不进 Me 投影，能力判定按团队角色（被覆写升权的用户少看了
-// 按钮——如实披露的保守面，见 S5 执行汇总）。
+// W3-S3 起能力判定按「当前项目覆写行优先于团队角色」（§3.3 B 形，双向
+// 生效——Me.project_overrides 投影 W3-S2 已供数）：选中项目命中覆写行即
+// 用覆写角色渲染按钮；未选项目时按团队角色。
 
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -21,7 +22,7 @@ import {
 } from "react";
 
 import { listProjects, me } from "@/api/endpoints";
-import type { ProjectView, TeamMembership } from "@/api/types";
+import type { ProjectOverrideMembership, ProjectView, TeamMembership } from "@/api/types";
 
 const CONTEXT_STORAGE_KEY = "fleetly.console.context";
 
@@ -48,6 +49,8 @@ export interface TeamProjectContextValue {
   teams: TeamMembership[];
   /** 可见项目全集（团队选择后的子集由 selectedTeam 过滤）。 */
   projects: ProjectView[];
+  /** 我的项目角色覆写行（Me 投影——能力判定按覆写优先，W3-S3 消费）。 */
+  projectOverrides: ProjectOverrideMembership[];
   /** 当前选中团队（slug 匹配；null = 未收窄）。 */
   selectedTeamSlug: string | null;
   /** 当前选中项目 slug（队内唯一；null = 未收窄——跨队随团队切换失效）。 */
@@ -66,6 +69,7 @@ const noop = () => {};
 const NeutralContext: TeamProjectContextValue = {
   teams: [],
   projects: [],
+  projectOverrides: [],
   selectedTeamSlug: null,
   selectedProjectSlug: null,
   projectRef: "",
@@ -98,6 +102,10 @@ export function TeamProjectProvider({ children }: { children: ReactNode }) {
 
   const teams = useMemo(() => meQuery.data?.teams ?? [], [meQuery.data]);
   const projects = useMemo(() => projectsQuery.data?.projects ?? [], [projectsQuery.data]);
+  const projectOverrides = useMemo(
+    () => meQuery.data?.project_overrides ?? [],
+    [meQuery.data],
+  );
 
   // 持久化落点：setter 内直写（不经 effect—— setState-in-effect 纪律）。
   const persist = useCallback((next: StoredContext) => {
@@ -148,6 +156,7 @@ export function TeamProjectProvider({ children }: { children: ReactNode }) {
     return {
       teams,
       projects,
+      projectOverrides,
       selectedTeamSlug: effective.team,
       selectedProjectSlug: effective.project,
       projectRef:
@@ -159,7 +168,7 @@ export function TeamProjectProvider({ children }: { children: ReactNode }) {
       setTeamSlug,
       setProjectSlug,
     };
-  }, [teams, projects, effective, setTeamSlug, setProjectSlug]);
+  }, [teams, projects, projectOverrides, effective, setTeamSlug, setProjectSlug]);
 
   return <TeamProjectContext.Provider value={value}>{children}</TeamProjectContext.Provider>;
 }
@@ -220,8 +229,14 @@ export function capabilitiesForRole(role: string | null | undefined): TeamCapabi
 }
 
 /**
- * 当前选中团队的能力视图（未选团队时回落「我所在唯一团队」——单队用户
- * （个人队 owner）零选择也有正确能力；多队未选 = 无能力，促显式选择）。
+ * 当前选中团队（及项目）的能力视图（未选团队时回落「我所在唯一团队」——
+ * 单队用户（个人队 owner）零选择也有正确能力；多队未选 = 无能力，促显式
+ * 选择）。
+ *
+ * 覆写优先（W3-S3 消费 Me.project_overrides，rbac-teams §3.3 B 形）：选中
+ * 项目命中覆写行即用覆写角色——双向生效（升权者见写按钮、降权者隐藏）；
+ * 行匹配按 team_id + prj_slug（覆写只对团队成员存在，owner 恒无行——服务
+ * 端保证）。未选项目时按团队角色。
  *
  * fail-open 口径：Me 投影不可用（teams 空——接口失败/测试直挂页面）时
  * 返回能力全开。前端门只是体验优化，服务端角色门（ResolvePermission）
@@ -229,14 +244,26 @@ export function capabilitiesForRole(role: string | null | undefined): TeamCapabi
  * 性错误——如实全开，让 403 信封说话。
  */
 export function useTeamCapabilities(): TeamCapabilities {
-  const { teams, selectedTeamSlug } = useProjectContext();
+  const { teams, projectOverrides, selectedTeamSlug, selectedProjectSlug } =
+    useProjectContext();
   const role = useMemo(() => {
+    let membership: TeamMembership | null = null;
     if (selectedTeamSlug) {
-      return teams.find((t) => t.team_slug === selectedTeamSlug)?.role ?? null;
+      membership = teams.find((t) => t.team_slug === selectedTeamSlug) ?? null;
+    } else if (teams.length === 1) {
+      membership = teams[0];
     }
-    if (teams.length === 1) return teams[0].role;
-    return null;
-  }, [teams, selectedTeamSlug]);
+    if (!membership) return null;
+    // 覆写行优先于团队角色（仅选中项目时判定；team_id + prj_slug 命中）。
+    if (selectedProjectSlug) {
+      const override = projectOverrides.find(
+        (o) =>
+          o.team_id === membership?.team_id && o.prj_slug === selectedProjectSlug,
+      );
+      if (override) return override.role ?? null;
+    }
+    return membership.role ?? null;
+  }, [teams, projectOverrides, selectedTeamSlug, selectedProjectSlug]);
   if (teams.length === 0) return OPEN_CAPABILITIES;
   return capabilitiesForRole(role);
 }

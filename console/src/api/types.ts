@@ -19,6 +19,7 @@ type Schemas = components["schemas"];
 export type UserView = Schemas["v1UserView"];
 export type TeamMembership = Schemas["v1TeamMembership"];
 export type MeResponse = Schemas["v1MeResponse"];
+export type ProjectOverrideMembership = Schemas["v1ProjectOverrideMembership"];
 export type RegisterResponse = Schemas["v1RegisterResponse"];
 export type LoginResponse = Schemas["v1LoginResponse"];
 export type LogoutResponse = Schemas["v1LogoutResponse"];
@@ -73,6 +74,19 @@ export type EnableUserResponse = { user?: UserView };
 export type GrantPlatformAdminResponse = { user?: UserView };
 export type RevokePlatformAdminResponse = { user?: UserView };
 export type SetRegistrationResponse = { open?: boolean };
+
+/** 审计留存设置读面：set=false = 未显式设置（生效值走 config > 缺省 90）。 */
+export type GetAuditRetentionResponse = {
+  days?: number;
+  set?: boolean;
+  updated_at?: string;
+};
+export type SetAuditRetentionResponse = { days?: number };
+
+// ── audit（v0.3 W3-S1 读面 + W3-S3 Console 浏览页，rbac-teams §6）─────────
+
+export type AuditView = Schemas["v1AuditView"];
+export type ListAuditResponse = Schemas["v1ListAuditResponse"];
 
 
 // ── apps ────────────────────────────────────────────────────────────────

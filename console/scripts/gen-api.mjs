@@ -23,14 +23,17 @@ const outPath = path.resolve(here, "..", "src", "api", "schema.d.ts");
 // 注意：users.swagger.json 不在清单——S2 取舍沿用（W2-S5 复核）：其
 // SetRegistration 挂载在同一路径 /v1/auth/registration（与 auth.swagger.json
 // 的 GET 路径键重复，合并器按路径键整体断言 duplicate，方法级互补不豁免），
-// 故用户管理面的投影类型（UserView 等）在 types.ts 手写并注明同源。
+// 故用户管理面的投影类型（UserView 等）在 types.ts 手写并注明同源
+//（W3-S3 起含同文件的 audit retention 两 RPC——路径 /v1/audit/retention
+// 与 audit.swagger.json 的 /v1/audit 不冲突，但同文件路径键纪律整体豁免）。
 // tokens/projects 随 W2-S2 PAT 管理页进清单；teams 随 W2-S5 团队设置页进
-// 清单（成员/角色/邀请管理面）。
+// 清单（成员/角色/邀请管理面）；audit 随 W3-S3 审计浏览页进清单。
 const SPEC_FILES = [
   "auth.swagger.json",
   "tokens.swagger.json",
   "teams.swagger.json",
   "projects.swagger.json",
+  "audit.swagger.json",
   "apps.swagger.json",
   "deployments.swagger.json",
   "revisions.swagger.json",

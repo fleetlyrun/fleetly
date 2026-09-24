@@ -839,6 +839,200 @@ func (x *SetRegistrationResponse) GetOpen() bool {
 	return false
 }
 
+type GetAuditRetentionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAuditRetentionRequest) Reset() {
+	*x = GetAuditRetentionRequest{}
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAuditRetentionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAuditRetentionRequest) ProtoMessage() {}
+
+func (x *GetAuditRetentionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAuditRetentionRequest.ProtoReflect.Descriptor instead.
+func (*GetAuditRetentionRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_users_proto_rawDescGZIP(), []int{17}
+}
+
+// GetAuditRetentionResponse 是审计留存设置的只读投影（v0.3 W3-S3，rbac-teams
+// §6 D-W0-6 收口——写面随本 RPC 族补齐，state 层 LoadAuditSettings W3-S1 已
+// 备）。本层只诚实投影「未设置 / 显式设置」之别：set=false 时 days 不输出，
+// 生效值回落链（config state.audit_retention_days > 缺省 90）由消费方裁决
+// ——Console 显示缺省口径，不谎报设置存在。
+type GetAuditRetentionResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 显式设置的留存天数（set=false 时不输出）。
+	Days int32 `protobuf:"varint,1,opt,name=days,proto3" json:"days,omitempty"`
+	// 该键是否被显式保存过（false = platform_settings 无行）。
+	Set bool `protobuf:"varint,2,opt,name=set,proto3" json:"set,omitempty"`
+	// 设置行 updated_at（未设置时不输出）。
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAuditRetentionResponse) Reset() {
+	*x = GetAuditRetentionResponse{}
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAuditRetentionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAuditRetentionResponse) ProtoMessage() {}
+
+func (x *GetAuditRetentionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAuditRetentionResponse.ProtoReflect.Descriptor instead.
+func (*GetAuditRetentionResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_users_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GetAuditRetentionResponse) GetDays() int32 {
+	if x != nil {
+		return x.Days
+	}
+	return 0
+}
+
+func (x *GetAuditRetentionResponse) GetSet() bool {
+	if x != nil {
+		return x.Set
+	}
+	return false
+}
+
+func (x *GetAuditRetentionResponse) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type SetAuditRetentionRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 留存天数，≥1（buf.validate 与 state.ValidateRetentionDays 同值域双门
+	// ——0/负数会把「关掉清理」伪装成合法设置，两层都显式拒绝）。
+	Days          int32 `protobuf:"varint,1,opt,name=days,proto3" json:"days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAuditRetentionRequest) Reset() {
+	*x = SetAuditRetentionRequest{}
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAuditRetentionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAuditRetentionRequest) ProtoMessage() {}
+
+func (x *SetAuditRetentionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAuditRetentionRequest.ProtoReflect.Descriptor instead.
+func (*SetAuditRetentionRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_users_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *SetAuditRetentionRequest) GetDays() int32 {
+	if x != nil {
+		return x.Days
+	}
+	return 0
+}
+
+type SetAuditRetentionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Days          int32                  `protobuf:"varint,1,opt,name=days,proto3" json:"days,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetAuditRetentionResponse) Reset() {
+	*x = SetAuditRetentionResponse{}
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetAuditRetentionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetAuditRetentionResponse) ProtoMessage() {}
+
+func (x *SetAuditRetentionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_users_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetAuditRetentionResponse.ProtoReflect.Descriptor instead.
+func (*SetAuditRetentionResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_users_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *SetAuditRetentionResponse) GetDays() int32 {
+	if x != nil {
+		return x.Days
+	}
+	return 0
+}
+
 var File_fleetly_server_v1_users_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_users_proto_rawDesc = "" +
@@ -886,7 +1080,18 @@ const file_fleetly_server_v1_users_proto_rawDesc = "" +
 	"\x16SetRegistrationRequest\x12\x12\n" +
 	"\x04open\x18\x01 \x01(\bR\x04open\"-\n" +
 	"\x17SetRegistrationResponse\x12\x12\n" +
-	"\x04open\x18\x01 \x01(\bR\x04open2\xdc\b\n" +
+	"\x04open\x18\x01 \x01(\bR\x04open\"\x1a\n" +
+	"\x18GetAuditRetentionRequest\"|\n" +
+	"\x19GetAuditRetentionResponse\x12\x12\n" +
+	"\x04days\x18\x01 \x01(\x05R\x04days\x12\x10\n" +
+	"\x03set\x18\x02 \x01(\bR\x03set\x129\n" +
+	"\n" +
+	"updated_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"7\n" +
+	"\x18SetAuditRetentionRequest\x12\x1b\n" +
+	"\x04days\x18\x01 \x01(\x05B\a\xbaH\x04\x1a\x02(\x01R\x04days\"/\n" +
+	"\x19SetAuditRetentionResponse\x12\x12\n" +
+	"\x04days\x18\x01 \x01(\x05R\x04days2\xfb\n" +
+	"\n" +
 	"\fUsersService\x12i\n" +
 	"\tListUsers\x12#.fleetly.server.v1.ListUsersRequest\x1a$.fleetly.server.v1.ListUsersResponse\"\x11\x82\xd3\xe4\x93\x02\v\x12\t/v1/users\x12o\n" +
 	"\n" +
@@ -897,7 +1102,9 @@ const file_fleetly_server_v1_users_proto_rawDesc = "" +
 	"\x11ResetUserPassword\x12+.fleetly.server.v1.ResetUserPasswordRequest\x1a,.fleetly.server.v1.ResetUserPasswordResponse\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/users/{id}/password:reset\x12\xa1\x01\n" +
 	"\x12GrantPlatformAdmin\x12,.fleetly.server.v1.GrantPlatformAdminRequest\x1a-.fleetly.server.v1.GrantPlatformAdminResponse\".\x82\xd3\xe4\x93\x02(:\x01*\"#/v1/users/{id}/platform-admin:grant\x12\xa5\x01\n" +
 	"\x13RevokePlatformAdmin\x12-.fleetly.server.v1.RevokePlatformAdminRequest\x1a..fleetly.server.v1.RevokePlatformAdminResponse\"/\x82\xd3\xe4\x93\x02):\x01*\"$/v1/users/{id}/platform-admin:revoke\x12\x8a\x01\n" +
-	"\x0fSetRegistration\x12).fleetly.server.v1.SetRegistrationRequest\x1a*.fleetly.server.v1.SetRegistrationResponse\" \x82\xd3\xe4\x93\x02\x1a:\x01*\x1a\x15/v1/auth/registrationB\x98\x01\x92ARRP\n" +
+	"\x0fSetRegistration\x12).fleetly.server.v1.SetRegistrationRequest\x1a*.fleetly.server.v1.SetRegistrationResponse\" \x82\xd3\xe4\x93\x02\x1a:\x01*\x1a\x15/v1/auth/registration\x12\x8b\x01\n" +
+	"\x11GetAuditRetention\x12+.fleetly.server.v1.GetAuditRetentionRequest\x1a,.fleetly.server.v1.GetAuditRetentionResponse\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/audit/retention\x12\x8e\x01\n" +
+	"\x11SetAuditRetention\x12+.fleetly.server.v1.SetAuditRetentionRequest\x1a,.fleetly.server.v1.SetAuditRetentionResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\x1a\x13/v1/audit/retentionB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -914,7 +1121,7 @@ func file_fleetly_server_v1_users_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_users_proto_rawDescData
 }
 
-var file_fleetly_server_v1_users_proto_msgTypes = make([]protoimpl.MessageInfo, 17)
+var file_fleetly_server_v1_users_proto_msgTypes = make([]protoimpl.MessageInfo, 21)
 var file_fleetly_server_v1_users_proto_goTypes = []any{
 	(*UserView)(nil),                    // 0: fleetly.server.v1.UserView
 	(*ListUsersRequest)(nil),            // 1: fleetly.server.v1.ListUsersRequest
@@ -933,38 +1140,47 @@ var file_fleetly_server_v1_users_proto_goTypes = []any{
 	(*RevokePlatformAdminResponse)(nil), // 14: fleetly.server.v1.RevokePlatformAdminResponse
 	(*SetRegistrationRequest)(nil),      // 15: fleetly.server.v1.SetRegistrationRequest
 	(*SetRegistrationResponse)(nil),     // 16: fleetly.server.v1.SetRegistrationResponse
-	(*timestamppb.Timestamp)(nil),       // 17: google.protobuf.Timestamp
+	(*GetAuditRetentionRequest)(nil),    // 17: fleetly.server.v1.GetAuditRetentionRequest
+	(*GetAuditRetentionResponse)(nil),   // 18: fleetly.server.v1.GetAuditRetentionResponse
+	(*SetAuditRetentionRequest)(nil),    // 19: fleetly.server.v1.SetAuditRetentionRequest
+	(*SetAuditRetentionResponse)(nil),   // 20: fleetly.server.v1.SetAuditRetentionResponse
+	(*timestamppb.Timestamp)(nil),       // 21: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_users_proto_depIdxs = []int32{
-	17, // 0: fleetly.server.v1.UserView.created_at:type_name -> google.protobuf.Timestamp
-	17, // 1: fleetly.server.v1.UserView.disabled_at:type_name -> google.protobuf.Timestamp
+	21, // 0: fleetly.server.v1.UserView.created_at:type_name -> google.protobuf.Timestamp
+	21, // 1: fleetly.server.v1.UserView.disabled_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: fleetly.server.v1.ListUsersResponse.users:type_name -> fleetly.server.v1.UserView
 	0,  // 3: fleetly.server.v1.CreateUserResponse.user:type_name -> fleetly.server.v1.UserView
 	0,  // 4: fleetly.server.v1.DisableUserResponse.user:type_name -> fleetly.server.v1.UserView
 	0,  // 5: fleetly.server.v1.EnableUserResponse.user:type_name -> fleetly.server.v1.UserView
 	0,  // 6: fleetly.server.v1.GrantPlatformAdminResponse.user:type_name -> fleetly.server.v1.UserView
 	0,  // 7: fleetly.server.v1.RevokePlatformAdminResponse.user:type_name -> fleetly.server.v1.UserView
-	1,  // 8: fleetly.server.v1.UsersService.ListUsers:input_type -> fleetly.server.v1.ListUsersRequest
-	3,  // 9: fleetly.server.v1.UsersService.CreateUser:input_type -> fleetly.server.v1.CreateUserRequest
-	5,  // 10: fleetly.server.v1.UsersService.DisableUser:input_type -> fleetly.server.v1.DisableUserRequest
-	7,  // 11: fleetly.server.v1.UsersService.EnableUser:input_type -> fleetly.server.v1.EnableUserRequest
-	9,  // 12: fleetly.server.v1.UsersService.ResetUserPassword:input_type -> fleetly.server.v1.ResetUserPasswordRequest
-	11, // 13: fleetly.server.v1.UsersService.GrantPlatformAdmin:input_type -> fleetly.server.v1.GrantPlatformAdminRequest
-	13, // 14: fleetly.server.v1.UsersService.RevokePlatformAdmin:input_type -> fleetly.server.v1.RevokePlatformAdminRequest
-	15, // 15: fleetly.server.v1.UsersService.SetRegistration:input_type -> fleetly.server.v1.SetRegistrationRequest
-	2,  // 16: fleetly.server.v1.UsersService.ListUsers:output_type -> fleetly.server.v1.ListUsersResponse
-	4,  // 17: fleetly.server.v1.UsersService.CreateUser:output_type -> fleetly.server.v1.CreateUserResponse
-	6,  // 18: fleetly.server.v1.UsersService.DisableUser:output_type -> fleetly.server.v1.DisableUserResponse
-	8,  // 19: fleetly.server.v1.UsersService.EnableUser:output_type -> fleetly.server.v1.EnableUserResponse
-	10, // 20: fleetly.server.v1.UsersService.ResetUserPassword:output_type -> fleetly.server.v1.ResetUserPasswordResponse
-	12, // 21: fleetly.server.v1.UsersService.GrantPlatformAdmin:output_type -> fleetly.server.v1.GrantPlatformAdminResponse
-	14, // 22: fleetly.server.v1.UsersService.RevokePlatformAdmin:output_type -> fleetly.server.v1.RevokePlatformAdminResponse
-	16, // 23: fleetly.server.v1.UsersService.SetRegistration:output_type -> fleetly.server.v1.SetRegistrationResponse
-	16, // [16:24] is the sub-list for method output_type
-	8,  // [8:16] is the sub-list for method input_type
-	8,  // [8:8] is the sub-list for extension type_name
-	8,  // [8:8] is the sub-list for extension extendee
-	0,  // [0:8] is the sub-list for field type_name
+	21, // 8: fleetly.server.v1.GetAuditRetentionResponse.updated_at:type_name -> google.protobuf.Timestamp
+	1,  // 9: fleetly.server.v1.UsersService.ListUsers:input_type -> fleetly.server.v1.ListUsersRequest
+	3,  // 10: fleetly.server.v1.UsersService.CreateUser:input_type -> fleetly.server.v1.CreateUserRequest
+	5,  // 11: fleetly.server.v1.UsersService.DisableUser:input_type -> fleetly.server.v1.DisableUserRequest
+	7,  // 12: fleetly.server.v1.UsersService.EnableUser:input_type -> fleetly.server.v1.EnableUserRequest
+	9,  // 13: fleetly.server.v1.UsersService.ResetUserPassword:input_type -> fleetly.server.v1.ResetUserPasswordRequest
+	11, // 14: fleetly.server.v1.UsersService.GrantPlatformAdmin:input_type -> fleetly.server.v1.GrantPlatformAdminRequest
+	13, // 15: fleetly.server.v1.UsersService.RevokePlatformAdmin:input_type -> fleetly.server.v1.RevokePlatformAdminRequest
+	15, // 16: fleetly.server.v1.UsersService.SetRegistration:input_type -> fleetly.server.v1.SetRegistrationRequest
+	17, // 17: fleetly.server.v1.UsersService.GetAuditRetention:input_type -> fleetly.server.v1.GetAuditRetentionRequest
+	19, // 18: fleetly.server.v1.UsersService.SetAuditRetention:input_type -> fleetly.server.v1.SetAuditRetentionRequest
+	2,  // 19: fleetly.server.v1.UsersService.ListUsers:output_type -> fleetly.server.v1.ListUsersResponse
+	4,  // 20: fleetly.server.v1.UsersService.CreateUser:output_type -> fleetly.server.v1.CreateUserResponse
+	6,  // 21: fleetly.server.v1.UsersService.DisableUser:output_type -> fleetly.server.v1.DisableUserResponse
+	8,  // 22: fleetly.server.v1.UsersService.EnableUser:output_type -> fleetly.server.v1.EnableUserResponse
+	10, // 23: fleetly.server.v1.UsersService.ResetUserPassword:output_type -> fleetly.server.v1.ResetUserPasswordResponse
+	12, // 24: fleetly.server.v1.UsersService.GrantPlatformAdmin:output_type -> fleetly.server.v1.GrantPlatformAdminResponse
+	14, // 25: fleetly.server.v1.UsersService.RevokePlatformAdmin:output_type -> fleetly.server.v1.RevokePlatformAdminResponse
+	16, // 26: fleetly.server.v1.UsersService.SetRegistration:output_type -> fleetly.server.v1.SetRegistrationResponse
+	18, // 27: fleetly.server.v1.UsersService.GetAuditRetention:output_type -> fleetly.server.v1.GetAuditRetentionResponse
+	20, // 28: fleetly.server.v1.UsersService.SetAuditRetention:output_type -> fleetly.server.v1.SetAuditRetentionResponse
+	19, // [19:29] is the sub-list for method output_type
+	9,  // [9:19] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_users_proto_init() }
@@ -978,7 +1194,7 @@ func file_fleetly_server_v1_users_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_users_proto_rawDesc), len(file_fleetly_server_v1_users_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   17,
+			NumMessages:   21,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

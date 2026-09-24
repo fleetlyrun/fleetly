@@ -12,6 +12,7 @@ import {
   House,
   PanelLeft,
   Radio,
+  ScrollText,
   Server,
   UsersRound,
 } from "lucide-react";
@@ -153,13 +154,23 @@ export function Layout() {
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
           {isPlatformAdmin ? (
-            <NavItem
-              to="/admin/users"
-              label="Admin"
-              icon={Server}
-              end={false}
-              collapsed={collapsed}
-            />
+            <>
+              <NavItem
+                to="/admin/users"
+                label="Admin"
+                icon={Server}
+                end={false}
+                collapsed={collapsed}
+              />
+              {/* 审计页（W3-S3，rbac-teams §7）：平台管理员台账浏览面。 */}
+              <NavItem
+                to="/admin/audit"
+                label="Audit"
+                icon={ScrollText}
+                end={false}
+                collapsed={collapsed}
+              />
+            </>
           ) : null}
         </nav>
 

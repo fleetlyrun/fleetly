@@ -198,6 +198,11 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.UsersService/GrantPlatformAdmin":  ScopeAdmin,
 	"/fleetly.server.v1.UsersService/RevokePlatformAdmin": ScopeAdmin,
 	"/fleetly.server.v1.UsersService/SetRegistration":     ScopeAdmin,
+	// 审计留存设置（v0.3 W3-S3，rbac-teams §6 D-W0-6 收口）：平台面写语义
+	// 与 SetRegistration 同族——整体 admin scope + handler 内平台管理员判定
+	//（requirePlatformAdmin 同门）。
+	"/fleetly.server.v1.UsersService/GetAuditRetention": ScopeAdmin,
+	"/fleetly.server.v1.UsersService/SetAuditRetention": ScopeAdmin,
 	// TeamsService / ProjectsService（v0.3 W2-S1 团队/项目面，rbac-teams
 	// §3.1/§3.3）：登记整体 read——这两面的真授权是 handler 内的**角色门**
 	//（成员资格 + §3.2 矩阵/§3.3 覆写管理权，非 scope），scope 门只承担
