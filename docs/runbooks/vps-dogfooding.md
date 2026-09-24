@@ -262,5 +262,14 @@ staging 升级收尾波构建(7dc5d2e 同源)后逐票验证:
 
 staging 现保持态:fresh v0.3(67c9dc4+两 fix),TLS platform on(证书重签),founder/mate 双用户,demo×2 项目+matedemo+pgshared 库在役;node2 仍 Down(W3-F2 UDP 未放行)。
 
+### §13.1 console 免端口直访(2026-09-24,用户实报易错点收口)
+
+用户连续踩两坑(deeploop.net 主机名证书报警→console.dev.fleetly.run 缺端口缺路径打到 traefik 404)后落的产品修复(main 0921a1d+0d84e6a):
+
+- **访问口径(新)**:`https://console.dev.fleetly.run/` ——根路径 302 到 /ui/,traefik 443 反代到控制面网关(advertise:8420,TLS+跳过服务器认证 transport——IP 端点无 SAN,F9 修订二同口径);证书绿锁。
+- 旧口径仍有效:`https://console.dev.fleetly.run:8420/ui/`(控制面直连)。REST `/v1/**` 同享免端口形态。
+- 实现要点:ingress Route 增 BackendURL/Transport/RootRedirect 三平台段字段;网关端口与 TLS 形态由 runtime 注入(ControlGatewayPort=addr 端口位,ControlGatewayTLS=tls.mode!=off)——**勿用 cfgPort(配置端点 8422/8423)当网关端口**(初版即犯此错,staging 500 'first record does not look like a TLS handshake' 揪出)。
+- 前提:网关须绑定非回环(远程访问 Console 的安装形态天然满足;纯回环绑定下该路由 502,注释已诚实记录)。
+
 
 
