@@ -266,6 +266,19 @@ W1-S2 披露的 XFF 伪造面已收口:gateway 层(newGatewayMuxWithTLS 的 sani
 
 **上游可信代理形态(如外置 TLS 反代指到 gateway 端口)的放开指引**:当前实现会把代理注入的 XFF 一并清除,全量外部客户端将共享代理地址的注册/登录限流桶——email 键限流仍独立生效(防撞库主防线在),仅 per-IP 维度退化为 per-proxy。如需按代理放行(trusted_proxies 类配置:信任清单内代理注入的 XFF 取最后一个非清单项),属配置面扩展点——现票刻意不发明开关;有真实部署形态需求时按 errcode/config 注释惯例立项,勿在部署侧手工改头绕过(清洗层在进程内,改不了)。
 
+### §13.3 W3 审计/留存/指纹/邀请注册 真机验证(2026-09-24 实录)
+
+W3 构建(c9851e0)部署后 **17/17 全过**(`/tmp/v03/verify-w3.sh` 可复跑;两条脚本态——Me teams[0] 是个人队非受邀队/留存首轮已改——均定向查询证实):
+
+| 断言族 | 实录 | 结果 |
+|---|---|---|
+| 审计读面 | `audit list`(action 过滤命中/result=error 过滤命中)/`audit export --csv`(RFC4180 表头+数据行) | ✅ |
+| FZ-12 指纹 | `git fingerprint`=SHA256:gx2AO0hn…;GetSystemStatus.git_ssh_fingerprint 同值 | ✅ |
+| invite-token 注册 | **关窗状态下**携有效邀请 token 注册 200→Me 双团队(个人队 newbie owner+受邀队 founder viewer——注册即自动 accept);无效 token 409 E_INVITE_INVALID | ✅ |
+| 留存设置 | GET 未设置缺省态→PUT 30 读回 30→audit.retention_changed 落档→复位 90 | ✅ |
+
+staging 附加态:newbie 用户;留存=90;W3 功能(审计页/覆写按钮/指纹卡/留存入口)Console 面可浏览器复核。
+
 staging 现保持态:fresh v0.3(67c9dc4+两 fix),TLS platform on(证书重签),founder/mate 双用户,demo×2 项目+matedemo+pgshared 库在役;node2 仍 Down(W3-F2 UDP 未放行)。
 
 ### §13.1 console 免端口直访(2026-09-24,用户实报易错点收口)
