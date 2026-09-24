@@ -570,3 +570,36 @@ func TestDeployRoleGate(t *testing.T) {
 		t.Fatalf("developer deploy must create the app row: %v", err)
 	}
 }
+
+// TestDeploySameNameSecondProject（staging SV-11b 真机抓出，2026-09-24）：
+// 同名 app 在目标项目不存在 → **新建**（D-W0-4 二修：project 内唯一 = 跨项目
+// 同名是两个不同应用）；目标项目已有 → 沿用且归属一致。S3 实现曾取
+// 「全局按名解析 → 409 E_APP_PROJECT_MISMATCH 指引 MoveApp」的偏差裁决，
+// 与设计 §3.4/§8「同团队跨项目同名 app 亦成功」矛盾，本测试钉死对齐后语义。
+func TestDeploySameNameSecondProject(t *testing.T) {
+	f := newRBACEnv(t)
+	deploys := serverv1.NewDeploymentsServiceClient(f.conn)
+	composeBody := []byte("name: dup\nservices:\n  web:\n    image: alpine:3\n    command: [\"sleep\", \"infinity\"]\n    healthcheck:\n      test: [\"CMD\", \"true\"]\n      interval: 1s\n      timeout: 1s\n      retries: 2\n      start_period: 1s\n")
+	deploy := func(token, project string) error {
+		_, err := deploys.Deploy(authCtx(context.Background(), token), &serverv1.DeployRequest{
+			App: "dup", Compose: composeBody, Project: project})
+		return err
+	}
+	tokDev := seedUserPAT(t, f.st, f.uDev.ID, ScopeRead+","+ScopeDeploy)
+	if err := deploy(tokDev, "acme/prod"); err != nil {
+		t.Fatalf("first deploy (acme/prod): %v", err)
+	}
+	// 同名第二署（跨团队跨项目）：必须新建行而非 409。
+	tokMachine := seedTokenPlain(t, f.st, ScopeAdmin)
+	if err := deploy(tokMachine, "beta/default"); err != nil {
+		t.Fatalf("same-name deploy into a second project must create a new app: %v", err)
+	}
+	if _, err := f.st.GetAppByNameInProject(context.Background(), f.projC.ID, "dup"); err != nil {
+		t.Fatalf("second-project row missing: %v", err)
+	}
+	// 原行归属不动。
+	row, err := f.st.GetAppByNameInProject(context.Background(), f.projB.ID, "dup")
+	if err != nil || row.ProjectID != f.projB.ID {
+		t.Fatalf("original row ownership changed: row=%+v err=%v", row, err)
+	}
+}

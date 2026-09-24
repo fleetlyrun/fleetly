@@ -379,11 +379,12 @@ func apperrConflict(rec state.DeployRecord) error {
 // CLI 同语义：应用随首次部署自动创建）。v0.3 W2-S3 归属管道（rbac-teams
 // §3.4 D-W0-4 二修）：
 //   - 按（解析项目，名字）精确查行——命中即归属一致，沿用行；
-//   - 行存在于其他项目 → 409 E_APP_PROJECT_MISMATCH（**校验一致**裁决：
-//     忽略请求 project 的静默沿用会掩盖调用方上下文漂移；改派走
-//     MoveApp——同库同名 app 的「项目内新建」语义由此让位给显式改派，
-//     报告偏差记录）；
-//   - 按名多行命中 → E_APP_AMBIGUOUS（读面限定形支持归 S4 的显性兜底）。
+//   - 目标项目内无此名 → **在目标项目新建**。名字在其他项目存在 ≠ 冲突
+//     （project 内唯一 = 同名跨项目是两个不同应用——「prod 与 dev 各有
+//     demo」是设计能力）。staging 真机演练（2026-09-24 SV-11b）抓出 S3
+//     的 409 E_APP_PROJECT_MISMATCH 偏差裁决与此对齐：调用方上下文漂移
+//     的防呆由 deploy 请求的显式 project 字段承载（机具必须显式；用户
+//     缺省=个人队 default——显式传错项目属调用方错误，产品不越权拦截）。
 func ensureApp(ctx context.Context, st *state.Store, name string, proj state.Project) (state.App, error) {
 	app, err := st.GetAppByNameInProject(ctx, proj.ID, name)
 	if err == nil {
@@ -391,23 +392,6 @@ func ensureApp(ctx context.Context, st *state.Store, name string, proj state.Pro
 	}
 	if !errors.Is(err, state.ErrAppNotFound) {
 		return state.App{}, mapAppErr(err, name)
-	}
-	anyRow, err := st.GetAppByName(ctx, name)
-	switch {
-	case err == nil && anyRow.ProjectID != proj.ID:
-		return state.App{}, apperr.New("E_APP_PROJECT_MISMATCH",
-			"app %q already belongs to project %q (ownership on the row wins once assigned); deploy with that project or move the app first",
-			name, anyRow.QualifiedName()).
-			WithContext("app", name).
-			WithContext("current_project", anyRow.ProjectID)
-	case err == nil:
-		return anyRow, nil
-	case errors.Is(err, state.ErrAppAmbiguous):
-		return state.App{}, apperr.New("E_APP_AMBIGUOUS",
-			"app %q resolves to multiple rows across projects; reference it by id or use the qualified read face", name).
-			WithContext("app", name)
-	case !errors.Is(err, state.ErrAppNotFound):
-		return state.App{}, err
 	}
 	created, err := st.CreateApp(ctx, "", name, proj.ID, proj.TeamID)
 	if err != nil {
