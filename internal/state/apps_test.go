@@ -13,7 +13,7 @@ func TestAppTombstoneLifecycle(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestAppTombstoneNotResurrected(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -72,8 +72,9 @@ func TestAppTombstoneNotResurrected(t *testing.T) {
 		t.Fatalf("mark deleted: %v", err)
 	}
 
-	// 同名 CreateApp：拒绝（ErrAppExists），且绝不复用/改写 tombstone 行。
-	if _, err := st.CreateApp(ctx, "", "demo"); !errors.Is(err, ErrAppExists) {
+	// 同名 CreateApp（同项目）：拒绝（ErrAppExists），且绝不复用/改写
+	// tombstone 行。（v0.3 名字占用语义 = project 内占用——同项目重名冲突。）
+	if _, err := st.CreateApp(ctx, "", "demo", app.ProjectID, app.TeamID); !errors.Is(err, ErrAppExists) {
 		t.Fatalf("recreate over tombstone must return ErrAppExists, got: %v", err)
 	}
 	got, err := st.GetAppByName(ctx, "demo")
@@ -98,14 +99,14 @@ func TestAppTombstoneNotResurrected(t *testing.T) {
 func TestAppNameOccupiedWhileDeleting(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
 	if err := st.MarkAppDeleting(ctx, app.ID); err != nil {
 		t.Fatalf("mark deleting: %v", err)
 	}
-	if _, err := st.CreateApp(ctx, "", "demo"); !errors.Is(err, ErrAppExists) {
+	if _, err := st.CreateApp(ctx, "", "demo", app.ProjectID, app.TeamID); !errors.Is(err, ErrAppExists) {
 		t.Fatalf("create while deleting must be ErrAppExists, got: %v", err)
 	}
 }
@@ -115,11 +116,11 @@ func TestAppNameOccupiedWhileDeleting(t *testing.T) {
 func TestListAppsByLifecycle(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	demo, err := st.CreateApp(ctx, "", "demo")
+	demo, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create demo: %v", err)
 	}
-	other, err := st.CreateApp(ctx, "", "other")
+	other, err := seedAppE(t, st, "other")
 	if err != nil {
 		t.Fatalf("create other: %v", err)
 	}
@@ -157,7 +158,7 @@ func TestListAppsByLifecycle(t *testing.T) {
 func TestTxMarkAppDeletedTransactional(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

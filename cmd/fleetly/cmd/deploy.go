@@ -76,11 +76,20 @@ func (c *deployCmd) Run(ctx context.Context, env *commands.Environment, args []s
 	if err != nil {
 		return err
 	}
+	// v0.3 W2-S3 归属管道：--project（或 FLEETLY_PROJECT/config 上下文）
+	// 随请求上行——裸名或 team/prj 限定形；用户 PAT 缺省 = 个人队默认项目，
+	// 机具令牌必须显式（否则服务端 400 带指引）。上下文解析单点 resolveContext
+	//（flag > env > config）。
+	rc, err := resolveContext(c.conn.team, c.conn.project)
+	if err != nil {
+		return err
+	}
 	err = c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Deployments().Deploy(ctx, &serverv1.DeployRequest{
 			App:                spec.Name,
 			Compose:            content,
 			ConfirmDestructive: c.confirmDestructive,
+			Project:            rc.Project,
 		})
 		if err != nil {
 			return err

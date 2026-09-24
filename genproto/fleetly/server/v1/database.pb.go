@@ -28,14 +28,20 @@ const (
 type CreateDatabaseRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 库实例名（^[a-z0-9][a-z0-9_-]*$——与 app 名同字符集规则；对象前缀族
-	// fleetly-db-* 与 app 名族解耦，app 与库实例可重名）。
+	// fleetly-db-* 与 app 名族解耦，app 与库实例可重名）。project 内唯一
+	// （D-W0-4 二修——跨项目同名实例合法）。
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
 	// 模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。
 	Template string `protobuf:"bytes,2,opt,name=template,proto3" json:"template,omitempty"`
 	// 资源限额（零值字段回落模板缺省——PG 1C/1Gi、Redis 0.5C/256Mi）。
 	Limits *DatabaseLimits `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
 	// 备份计划（零值字段回落平台缺省 24h/7 份/03:00 UTC）。
-	BackupPlan    *DatabaseBackupPlan `protobuf:"bytes,4,opt,name=backup_plan,json=backupPlan,proto3" json:"backup_plan,omitempty"`
+	BackupPlan *DatabaseBackupPlan `protobuf:"bytes,4,opt,name=backup_plan,json=backupPlan,proto3" json:"backup_plan,omitempty"`
+	// 目标项目（v0.3 W2-S3 归属管道，D-W0-9 解析规则）：裸名或
+	// `team/project` 限定形；解析规则与缺省语义同 DeployRequest.project
+	// （机具令牌必须显式）。首次创建写入 db_instances.project_id/team_id；
+	// 行上归属已定时必须一致（409 E_APP_PROJECT_MISMATCH 指引 MoveDatabase）。
+	Project       string `protobuf:"bytes,5,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -96,6 +102,13 @@ func (x *CreateDatabaseRequest) GetBackupPlan() *DatabaseBackupPlan {
 		return x.BackupPlan
 	}
 	return nil
+}
+
+func (x *CreateDatabaseRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type CreateDatabaseResponse struct {
@@ -2052,13 +2065,14 @@ var File_fleetly_server_v1_database_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_database_proto_rawDesc = "" +
 	"\n" +
-	" fleetly/server/v1/database.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xf1\x01\n" +
+	" fleetly/server/v1/database.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x94\x02\n" +
 	"\x15CreateDatabaseRequest\x120\n" +
 	"\x04name\x18\x01 \x01(\tB\x1c\xbaH\x19r\x172\x15^[a-z0-9][a-z0-9_-]*$R\x04name\x12#\n" +
 	"\btemplate\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\btemplate\x129\n" +
 	"\x06limits\x18\x03 \x01(\v2!.fleetly.server.v1.DatabaseLimitsR\x06limits\x12F\n" +
 	"\vbackup_plan\x18\x04 \x01(\v2%.fleetly.server.v1.DatabaseBackupPlanR\n" +
-	"backupPlan\"U\n" +
+	"backupPlan\x12!\n" +
+	"\aproject\x18\x05 \x01(\tB\a\xbaH\x04r\x02\x18AR\aproject\"U\n" +
 	"\x16CreateDatabaseResponse\x12;\n" +
 	"\bdatabase\x18\x01 \x01(\v2\x1f.fleetly.server.v1.DatabaseViewR\bdatabase\"1\n" +
 	"\x12GetDatabaseRequest\x12\x1b\n" +

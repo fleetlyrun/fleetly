@@ -44,6 +44,11 @@ func loopbackBase() string {
 // 类既有约束；首位收紧为字母数字，拒绝纯符号形态）。
 var servicePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 
+// appPattern 是 app 流过滤值的白名单（v0.3 流标签口径，rbac-teams §4.3）：
+// 裸名或三段限定形 `team/prj/app`——slug 段同服务名字表，'/' 为限定分隔符
+//（至多两个）；注入字形（引号/管道/空白）仍被结构性挡住。
+var appPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*(/[a-z0-9][a-z0-9-]*/[a-z0-9][a-z0-9-]*)?$`)
+
 // allowedSources 是来源白名单词表（S1：container|build；S2 起访问日志
 // source=access 进入词表——与采集面同拍放行，诚实边界不预放行）。
 var allowedSources = map[string]bool{
@@ -229,8 +234,8 @@ var ErrBadQuery = errors.New("victorialogs: invalid search query")
 // 全空输入返回 `*`（match-all；时间窗由 start/end 参数承载）。
 func BuildLogsQL(apps, services, sources []string, keyword string) (string, error) {
 	for _, v := range apps {
-		if !servicePattern.MatchString(v) {
-			return "", fmt.Errorf("%w: app %q not in ^[a-z0-9][a-z0-9-]*$", ErrBadQuery, v)
+		if !appPattern.MatchString(v) {
+			return "", fmt.Errorf("%w: app %q not in ^[a-z0-9-]+ or team/prj/app form", ErrBadQuery, v)
 		}
 	}
 	for _, v := range services {

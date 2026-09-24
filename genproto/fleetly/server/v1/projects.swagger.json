@@ -280,9 +280,109 @@
           "ProjectsService"
         ]
       }
+    },
+    "/v1/projects/{to_project_id}:move-app": {
+      "post": {
+        "summary": "MoveApp 资源改派（v0.3 W2-S3，rbac-teams §3.4/§5；平台管理员专属）：\n写归属 + 换名重部署（D-W0-4 二修——底座命名三段以归属为参数）。无卷\n服务近零中断（建新名→等 running→删旧名）；有卷短暂停机窗口。跨团队/\n跨项目改派先过目标项目唯一性（409）。app 引用 = 裸名（解析域内唯一）\n或 `team/prj/app` 限定形或平台 ID；目标项目 = 平台 ID（D-W0-9：管理面\n用 ID，免疫重名）。",
+        "operationId": "ProjectsService_MoveApp",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1MoveAppResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "to_project_id",
+            "description": "目标项目平台 ID（管理面用 ID，D-W0-9——免疫同名项目歧义）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ProjectsServiceMoveAppBody"
+            }
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
+    },
+    "/v1/projects/{to_project_id}:move-database": {
+      "post": {
+        "summary": "MoveDatabase 资源改派（同 MoveApp 语义；库卷公式不变——零卷迁移/\n零数据搬移，换名重部署引用同一物理卷）。",
+        "operationId": "ProjectsService_MoveDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1MoveDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "to_project_id",
+            "description": "目标项目平台 ID。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/ProjectsServiceMoveDatabaseBody"
+            }
+          }
+        ],
+        "tags": [
+          "ProjectsService"
+        ]
+      }
     }
   },
   "definitions": {
+    "ProjectsServiceMoveAppBody": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string",
+          "title": "app 引用：裸名（解析域内唯一）、`team/prj/app` 限定形或平台 ID。"
+        }
+      },
+      "title": "MoveAppRequest 是资源改派请求（平台管理员专属）。"
+    },
+    "ProjectsServiceMoveDatabaseBody": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string",
+          "title": "库实例引用：裸名（解析域内唯一）、`team/prj/\u003cname\u003e` 限定形或平台 ID。"
+        }
+      },
+      "title": "MoveDatabaseRequest 是库实例改派请求（平台管理员专属）。"
+    },
     "ProjectsServiceSetProjectMemberRoleBody": {
       "type": "object",
       "properties": {
@@ -401,6 +501,53 @@
           }
         }
       }
+    },
+    "v1MoveAppResponse": {
+      "type": "object",
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "from_project_id": {
+          "type": "string"
+        },
+        "to_project_id": {
+          "type": "string"
+        },
+        "to_project": {
+          "type": "string"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "换名重部署的部署 ID（无部署史 = 空）。"
+        },
+        "status": {
+          "type": "string",
+          "title": "moved|accepted（accepted = 无底座对象随迁的纯归属切换）。"
+        }
+      },
+      "title": "MoveAppResponse 是改派应答：换名重部署的结论投影（swapped = 新命名服务\n已就位并摘除旧名服务；accepted = 无运行中服务，仅归属切换）。"
+    },
+    "v1MoveDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "type": "string"
+        },
+        "from_project_id": {
+          "type": "string"
+        },
+        "to_project_id": {
+          "type": "string"
+        },
+        "to_project": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "title": "MoveDatabaseResponse 是库改派应答。"
     },
     "v1ProjectMemberView": {
       "type": "object",

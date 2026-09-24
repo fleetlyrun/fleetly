@@ -31,6 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/errcode"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 func TestRegistryRefForms(t *testing.T) {
@@ -245,7 +246,7 @@ func newRegistryTestBuilder(t *testing.T, st *state.Store, solver *fakeSolver) (
 // buildkit/网络）。
 func enqueueClaimedBuild(t *testing.T, b *Builder, st *state.Store, appName, service string) state.BuildRecord {
 	t.Helper()
-	app, err := st.CreateApp(context.Background(), "", appName)
+	app, err := testsupport.SeedAppE(t, st, appName)
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

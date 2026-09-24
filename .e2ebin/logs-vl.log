@@ -1,0 +1,48 @@
+[vl-e2e 16:47:57] using prebuilt binaries from D:/Codes/qiulin/fleetly/.e2ebin
+[vl-e2e 16:48:02] dind fleetly-vl-e2e-dind ready (engine 29.8.1)
+[vl-e2e 16:48:02] staging binaries + config (exec+stdin)
+[vl-e2e 16:48:12] pre-pulling fixture images (pinned digests)
+[vl-e2e 16:48:33] fleetlyd live (liveness 200), bootstrap token read
+[vl-e2e 16:48:35] founder registered (platform admin); PAT minted; project context founder/default
+[vl-e2e 16:48:35] === A1: duty converges on default (logs.backend unset -> victorialogs) ===
+[vl-e2e 16:48:36] VL-A1 SERVICE_RUNNING_ON_DEFAULT: PASS
+[vl-e2e 16:48:40] VL-A2 DEPLOYED_EVENT: PASS
+[vl-e2e 16:48:40] VL-A3 LOOPBACK_HEALTH_OK: PASS
+[vl-e2e 16:48:41] VL-A4 BACKEND_SHOW_DEPLOYED: PASS
+[vl-e2e 16:48:41] === A5: app logs flow into the store and SearchLogs hits the marker ===
+[vl-e2e 16:48:52] VL-A5 APP_DEPLOY_SUCCEEDED: PASS
+[vl-e2e 16:48:53] VL-A6 SEARCHLOGS_HIT_MARKER: PASS
+[vl-e2e 16:48:53] === A7: keyword filter (honest empty result on 200) ===
+[vl-e2e 16:48:53] VL-A7 SEARCH_EMPTY_HONEST_200: PASS
+[vl-e2e 16:48:53] === A8: injection negative (malicious keyword stays a literal phrase) ===
+[vl-e2e 16:48:53] VL-A8 EVIL_KEYWORD_NOT_5XX: PASS
+[vl-e2e 16:48:53] === B1: traefik accesslog args converged (spec drift comparison covers --accesslog) ===
+[vl-e2e 16:48:54] VL-B1 INGRESS_ACCESSLOG_ARGS_CONVERGED: PASS
+[vl-e2e 16:48:54] === B2: build app deploys (build lines flow into the store, source=build) ===
+[vl-e2e 16:48:56]   building the image first (fleetly build, then deploy)
+[vl-e2e 16:49:04] VL-B2a BUILD_SUCCEEDED: PASS
+[vl-e2e 16:49:16] VL-B2 BUILD_APP_DEPLOY_SUCCEEDED: PASS
+[vl-e2e 16:49:16] === B3: build logs are searchable (source=build hits the marker) ===
+[vl-e2e 16:49:16] VL-B3 BUILD_LOG_SEARCHABLE: PASS
+[vl-e2e 16:49:16] === B4: ingress route ready for the access-log app (whoami) ===
+[vl-e2e 16:49:27] VL-B4a WEB_APP_DEPLOY_SUCCEEDED: PASS
+[vl-e2e 16:49:27] VL-B4 INGRESS_ROUTE_READY: PASS
+[vl-e2e 16:49:27] === B5: access log collected and attributable (source=access with fields) ===
+[vl-e2e 16:49:33] VL-B5 ACCESS_LOG_SEARCHABLE_WITH_FIELDS: PASS
+[vl-e2e 16:49:33] === B6: CLI logs search hits the container marker ===
+[vl-e2e 16:49:33] VL-B6 CLI_SEARCH_KEYWORD_HIT: PASS
+[vl-e2e 16:49:33] === B7: CLI empty result is honest (exit 0 with a no-matches line) ===
+[vl-e2e 16:49:33] VL-B7 CLI_SEARCH_EMPTY_HONEST: PASS
+[vl-e2e 16:49:34] === A9: degraded streak on VL down; live tail unaffected ===
+[vl-e2e 16:49:44] VL-A9 INGEST_DEGRADED_EVENT: PASS
+[vl-e2e 16:49:52] VL-A10 FOLLOW_UNAFFECTED_WHILE_DEGRADED: PASS
+[vl-e2e 16:49:52] === A11: backend switch jsonl (service removed, volume retained) ===
+[vl-e2e 16:50:34] VL-A11 SERVICE_REMOVED_ON_JSONL: PASS
+[vl-e2e 16:50:34] VL-A12 VOLUME_RETAINED_ON_JSONL: PASS
+[vl-e2e 16:50:39] VL-A13 REMOVED_EVENT: PASS
+[vl-e2e 16:50:39] VL-A14 BACKEND_SHOW_JSONL_REMOVED: PASS
+[vl-e2e 16:50:39] === A15: switch back to victorialogs (service re-converges) ===
+[vl-e2e 16:51:35] VL-A15 SERVICE_RECONVERGED: PASS
+[vl-e2e 16:51:36] VL-A16 BACKEND_SHOW_DEPLOYED_AGAIN: PASS
+[vl-e2e 16:51:36] VL-A17 VOLUME_STILL_RETAINED: PASS
+[vl-e2e 16:51:36] SUITE-DONE all-asserts-passed

@@ -39,6 +39,7 @@ export MSYS2_ARG_CONV_EXCL='*'
 
 # ── 镜像钉 digest（T0-V2.3 供应链；与 e2e/notifications.sh 同源）。
 DIND_IMAGE="${CTL_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 CTL_SKIP_BUILD="${CTL_SKIP_BUILD:-0}"
 CTL_BIN_DIR="${CTL_BIN_DIR:-}"
 CTL_VERSION="${CTL_VERSION:-v0.2.0-control-plane-tls-e2e}"
@@ -92,7 +93,7 @@ m() { docker exec "$DIND" "$@"; }         # dind 内直跑
 msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
 # fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
-    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$CTL_TOKEN" \
+    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_PROJECT="$FOUNDER_PROJECT" -e FLEETLY_TOKEN="$CTL_TOKEN" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
 
@@ -282,6 +283,34 @@ done
     fatal 'fleetlyd not live (TLS) within 90s'
 }
 CTL_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootstrap token'
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope——founder 是平台管理员可达集；CLI 不消费会话 cookie）。
+# 首次部署/建库经 FLEETLY_PROJECT=founder/default 显式携带项目归属；fcli
+# 统一 env 注入。bootstrap token 已随首用户注册按设计吊销弃用。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+# 本套件 fleetlyd 以 TLS 模式监听（8420 = HTTPS 面，自签证书 → -k）；
+# 明文 http 打 HTTPS 口会拿到 Go 的提示串且 curl 退出码 0——必须 https。
+docker exec "$CURLER" curl -s -k -o /dev/null "https://10.219.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -k -c /tmp/jar -X POST "https://10.219.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+CTL_TOKEN=$(docker exec "$CURLER" curl -s -k -b /tmp/jar -X POST "https://10.219.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$CTL_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+nl 'founder registered (platform admin); PAT minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
+
 [ -n "$CTL_TOKEN" ] || fatal 'empty bootstrap token'
 tl 'fleetlyd live over TLS (liveness 200), bootstrap token read'
 

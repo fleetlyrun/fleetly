@@ -41,12 +41,13 @@ import (
 const accessIngressService = "fleetly-ingress"
 
 // accessRouterName 是 app 路由键公式（与 internal/ingress.RouterName 同式：
-// `fleetly-<app>-<service>`——ingress 动态配置的路由/服务键，traefik access
-// JSON 的 RouterName 剥离 provider 后缀与入口后缀后即此键。公式原文在
-// ingress；本包不反向 import——一致性由 access_routername_test.go 对照
-// ingress.RouterName 输出钉死，单边改式即测试红）。
-func accessRouterName(app, service string) string {
-	return "fleetly-" + app + "-" + service
+// `fleetly-<team>-<prj>-<app>-<service>`——v0.3 三段形，rbac-teams §4.3 路由
+// 键行——ingress 动态配置的路由/服务键，traefik access JSON 的 RouterName
+// 剥离 provider 后缀与入口后缀后即此键。公式原文在 ingress；本包不反向
+// import——一致性由 access_routername_test.go 对照 ingress.RouterName 输出
+// 钉死，单边改式即测试红）。
+func accessRouterName(team, prj, app, service string) string {
+	return "fleetly-" + team + "-" + prj + "-" + app + "-" + service
 }
 
 // accessTarget 是一条访问行的归属（反解产物）：app 行（携带 ID——脱敏值集
@@ -319,7 +320,7 @@ func accessEntryOf(acc traefikAccess, target accessTarget, at time.Time, red *re
 		fields[FieldClientIP] = ip
 	}
 	return Entry{
-		App:     target.app.Name,
+		App:     qualifiedAppOf(target.app),
 		Service: target.service,
 		At:      at,
 		Line:    red.redact(summary),

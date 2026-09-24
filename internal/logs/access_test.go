@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // accessLineJSON 构造一条 traefik v3.5 形态的 access JSON 行（真实字段集
@@ -75,15 +76,15 @@ func TestAccessRouterNameFormulaMatchesIngress(t *testing.T) {
 	if accessIngressService != ingress.IngressServiceName {
 		t.Fatalf("ingress service name drift: %q vs %q", accessIngressService, ingress.IngressServiceName)
 	}
-	for _, tc := range []struct{ app, service string }{
-		{"webapp", "web"},
-		{"my-cool-app", "web"},
-		{"app", "web-app"},
-		{"a1", "svc_2.proxy"},
-		{"demo", "db"},
+	for _, tc := range []struct{ team, prj, app, service string }{
+		{"acme", "prod", "webapp", "web"},
+		{"acme", "prod", "my-cool-app", "web"},
+		{"acme", "prod", "app", "web-app"},
+		{"acme", "prod", "a1", "svc_2.proxy"},
+		{"acme", "prod", "demo", "db"},
 	} {
-		if got, want := accessRouterName(tc.app, tc.service), ingress.RouterName(tc.app, tc.service); got != want {
-			t.Fatalf("router name formula drift for (%s, %s): %q vs ingress %q", tc.app, tc.service, got, want)
+		if got, want := accessRouterName(tc.team, tc.prj, tc.app, tc.service), ingress.RouterName(tc.team, tc.prj, tc.app, tc.service); got != want {
+			t.Fatalf("router name formula drift for (%s/%s/%s, %s): %q vs ingress %q", tc.team, tc.prj, tc.app, tc.service, got, want)
 		}
 	}
 }
@@ -105,19 +106,19 @@ func TestStripAccessRouterKey(t *testing.T) {
 
 func TestAccessRouteOfResolvesViaCandidates(t *testing.T) {
 	apps := []accessTarget{
-		{app: state.App{ID: "id1", Name: "webapp"}, service: "web"},
-		{app: state.App{ID: "id2", Name: "my-cool-app"}, service: "web"},
-		{app: state.App{ID: "id3", Name: "webapp"}, service: "web-app"},
+		{app: state.App{ID: "id1", Name: "webapp", TeamSlug: "acme", ProjectSlug: "prod"}, service: "web"},
+		{app: state.App{ID: "id2", Name: "my-cool-app", TeamSlug: "acme", ProjectSlug: "prod"}, service: "web"},
+		{app: state.App{ID: "id3", Name: "webapp", TeamSlug: "acme", ProjectSlug: "prod"}, service: "web-app"},
 	}
 	candidates := make(map[string]accessTarget, len(apps))
 	for _, tc := range apps {
-		candidates[accessRouterName(tc.app.Name, tc.service)] = tc
+		candidates[accessRouterName(tc.app.TeamSlug, tc.app.ProjectSlug, tc.app.Name, tc.service)] = tc
 	}
 
 	// websecure 路由（443）与 web 路由（80）都反解到同一归属。
 	for _, router := range []string{
-		"fleetly-webapp-web-web@http",
-		"fleetly-webapp-web-websecure@http",
+		"fleetly-acme-prod-webapp-web-web@http",
+		"fleetly-acme-prod-webapp-web-websecure@http",
 	} {
 		got, ok := accessRouteOf(router, candidates)
 		if !ok || got.app.Name != "webapp" || got.service != "web" || got.app.ID != "id1" {
@@ -125,11 +126,11 @@ func TestAccessRouteOfResolvesViaCandidates(t *testing.T) {
 		}
 	}
 	// 歧义消解：app 与 service 都含 '-'，切分不唯一——候选匹配给出唯一解。
-	got, ok := accessRouteOf("fleetly-my-cool-app-web-web@http", candidates)
+	got, ok := accessRouteOf("fleetly-acme-prod-my-cool-app-web-web@http", candidates)
 	if !ok || got.app.ID != "id2" || got.service != "web" {
 		t.Fatalf("ambiguous route resolved to %+v ok=%v, want my-cool-app/web", got, ok)
 	}
-	got, ok = accessRouteOf("fleetly-webapp-web-app-websecure@http", candidates)
+	got, ok = accessRouteOf("fleetly-acme-prod-webapp-web-app-websecure@http", candidates)
 	if !ok || got.app.ID != "id3" || got.service != "web-app" {
 		t.Fatalf("ambiguous route resolved to %+v ok=%v, want webapp/web-app", got, ok)
 	}
@@ -143,16 +144,17 @@ func TestAccessRouteOfResolvesViaCandidates(t *testing.T) {
 
 func TestAccessEntryOfBuildsSummaryAndRedacts(t *testing.T) {
 	at := time.Date(2026, 9, 21, 8, 0, 0, 0, time.UTC)
-	acc, ok := accessLineOf(accessLineJSON("fleetly-webapp-web-websecure@http", "GET", "200",
+	acc, ok := accessLineOf(accessLineJSON("fleetly-acme-prod-webapp-web-websecure@http", "GET", "200",
 		"app.example.com", "/api/items?token=secret-token-12345", "10.216.0.5:53112", 1_500_000, at))
 	if !ok {
 		t.Fatal("precondition: access line must parse")
 	}
 	red := &redactor{values: []string{"secret-token-12345"}}
-	target := accessTarget{app: state.App{ID: "id1", Name: "webapp"}, service: "web"}
+	target := accessTarget{app: state.App{ID: "id1", Name: "webapp", TeamSlug: "acme", ProjectSlug: "prod"}, service: "web"}
 	e := accessEntryOf(acc, target, at, red)
 
-	if e.App != "webapp" || e.Service != "web" || e.Source != SourceAccess {
+	// app 值 = 三段限定形（v0.3 流标签口径）。
+	if e.App != "acme/prod/webapp" || e.Service != "web" || e.Source != SourceAccess {
 		t.Fatalf("entry = %+v", e)
 	}
 	if !e.At.Equal(at) {
@@ -164,7 +166,7 @@ func TestAccessEntryOfBuildsSummaryAndRedacts(t *testing.T) {
 		t.Fatalf("summary = %q, want %q", e.Line, want)
 	}
 	if e.Fields[FieldMethod] != "GET" || e.Fields[FieldStatus] != "200" ||
-		e.Fields[FieldRoute] != "fleetly-webapp-web-websecure@http" ||
+		e.Fields[FieldRoute] != "fleetly-acme-prod-webapp-web-websecure@http" ||
 		e.Fields[FieldDurationMS] != "1" || e.Fields[FieldClientIP] != "10.216.0.5" {
 		t.Fatalf("fields = %v", e.Fields)
 	}
@@ -240,11 +242,11 @@ func TestPollAccessCollectsIntoIngesterOnly(t *testing.T) {
 	}
 	mg.refreshBackendGate(ctx)
 
-	app, err := st.CreateApp(ctx, "", "webapp")
+	app, err := testsupport.SeedAppE(t, st, "webapp")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
-	port.setApp("webapp", "web")
+	port.setApp(app.QualifiedName(), "web")
 	makeSucceededDeployment(t, st, app.ID, "dep-acc-1")
 
 	const secret = "secret-token-12345"
@@ -259,11 +261,13 @@ func TestPollAccessCollectsIntoIngesterOnly(t *testing.T) {
 	base := time.Now().Add(-time.Hour).Truncate(time.Second)
 	mg.WithClock(func() time.Time { return base })
 	hitAt := base.Add(2 * time.Millisecond)
+	// 路由键 = 真实命名公式（播种 app 的 team/prj slug 随机——键由公式现算）。
+	hitRouter := accessRouterName(app.TeamSlug, app.ProjectSlug, app.Name, "web") + "-websecure@http"
 	port.emit("fleetly-ingress",
 		// 运行日志（文本形态）——跳过。
 		substrate.LogLine{At: base.Add(time.Millisecond), Line: `level=info msg="Configuration loaded"`},
 		// 合法访问行（命中 webapp/web，443 路由；query 带凭证）。
-		substrate.LogLine{At: hitAt, Line: accessLineJSON("fleetly-webapp-web-websecure@http", "GET", "200",
+		substrate.LogLine{At: hitAt, Line: accessLineJSON(hitRouter, "GET", "200",
 			"app.example.com", "/api/items?token="+secret, "10.216.0.5:53112", 1_500_000, hitAt)},
 		// 缺 RouterName 的 JSON——跳过。
 		substrate.LogLine{At: base.Add(3 * time.Millisecond), Line: `{"level":"INFO","msg":"x"}`},
@@ -273,7 +277,8 @@ func TestPollAccessCollectsIntoIngesterOnly(t *testing.T) {
 	)
 
 	// 直播订阅先行：访问行绝不进 ring（FollowLogs 零改动的结构保证）。
-	ch, stop := mg.Follow(ctx, "webapp", "web")
+	// 订阅键 = 三段限定形（v0.3 流标签口径）。
+	ch, stop := mg.Follow(ctx, app.QualifiedName(), "web")
 	defer stop()
 
 	mg.scanOnce(ctx)
@@ -292,8 +297,8 @@ func TestPollAccessCollectsIntoIngesterOnly(t *testing.T) {
 		t.Fatalf("access rows = %d, want exactly 1 (batches: %d)", len(accessRows), len(batches))
 	}
 	row := accessRows[0]
-	if row.App != "webapp" || row.Service != "web" {
-		t.Fatalf("attribution = %s/%s, want webapp/web", row.App, row.Service)
+	if row.App != app.QualifiedName() || row.Service != "web" {
+		t.Fatalf("attribution = %s/%s, want %s/web", row.App, row.Service, app.QualifiedName())
 	}
 	if row.Fields[FieldDeploymentID] != "dep-acc-1" {
 		t.Fatalf("deployment_id = %q, want dep-acc-1", row.Fields[FieldDeploymentID])
@@ -347,10 +352,8 @@ func TestPollAccessGateSkipsOnJSONL(t *testing.T) {
 		t.Fatal("precondition: jsonl backend must close the ingest gate")
 	}
 
-	if _, err := st.CreateApp(ctx, "", "webapp"); err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
-	port.setApp("webapp", "web")
+	app, _ := testsupport.SeedAppE(t, st, "webapp")
+	port.setApp(app.QualifiedName(), "web")
 	base := time.Now().Add(-time.Hour)
 	mg.WithClock(func() time.Time { return base })
 	port.emit("fleetly-ingress", substrate.LogLine{At: base.Add(time.Millisecond),

@@ -18,7 +18,7 @@ import (
 func (h *harness) enqueueApp(t *testing.T, composePath, appName string) state.DeployRecord {
 	t.Helper()
 	ctx := context.Background()
-	app, err := ensureAppForTest(ctx, h.store, appName)
+	app, err := ensureAppForTest(t, ctx, h.store, appName)
 	if err != nil {
 		t.Fatalf("ensure app %s: %v", appName, err)
 	}
@@ -48,7 +48,7 @@ func TestTickPanicIsolatedPerDeployment(t *testing.T) {
 
 	// A 推进到 observing 后注入毒点：TaskList（观察窗信号源）panic。
 	h.runToStatus(t, recA, state.DeployObserving)
-	h.sub.panicOnTaskList("fleetly-demo-web")
+	h.sub.panicOnTaskList(h.svc("web"))
 
 	// 同一拍：A panic → 失败终态；B 正常推进（不因前者中断）。
 	h.clk.Advance(2 * time.Second)

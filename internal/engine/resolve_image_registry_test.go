@@ -26,7 +26,7 @@ func resolveRegistryFixture(t *testing.T, h *harness, image string) (state.Deplo
 	}
 	rec := state.DeployRecord{AppID: "app-x", AppName: "demo", SpecHash: spec.SpecHash}
 	// builds 行有 apps 外键：build 模式用例先落真实应用行（enqueue 同款）。
-	app, err := ensureAppForTest(h.t.Context(), h.store, "demo")
+	app, err := ensureAppForTest(t, h.t.Context(), h.store, "demo")
 	if err != nil {
 		t.Fatalf("ensure app: %v", err)
 	}

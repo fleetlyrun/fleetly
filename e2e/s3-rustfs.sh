@@ -35,6 +35,7 @@ export MSYS2_ARG_CONV_EXCL='*'
 
 # ── 镜像钉 digest（T0-V2.3 供应链；台账见 docs/runbooks/image-prepull.md）。
 DIND_IMAGE="${S3_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 RUSTFS_IMG='rustfs/rustfs:1.0.0@sha256:8cc9801755448b71a786705ce76692c77e14936cccd87cf2fc31842e58f4d1ff'
 RESTIC_IMG='restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510'
@@ -91,7 +92,7 @@ m() { docker exec "$DIND" "$@"; }         # dind 内直跑
 msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
 # fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
-    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$S3_TOKEN" \
+    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_PROJECT="$FOUNDER_PROJECT" -e FLEETLY_TOKEN="$S3_TOKEN" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
 # events_grep <pattern> — 现抓事件流快照（busybox timeout 掐断 follow 流）
@@ -267,6 +268,32 @@ done
 S3_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootstrap token'
 [ -n "$S3_TOKEN" ] || fatal 'empty bootstrap token'
 nl 'fleetlyd live (liveness 200), bootstrap token read'
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope——founder 是平台管理员可达集；CLI 不消费会话 cookie）。
+# 首次部署/建库经 FLEETLY_PROJECT=founder/default 显式携带项目归属；fcli
+# 统一 env 注入。bootstrap token 已随首用户注册按设计吊销弃用。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://10.215.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.215.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+S3_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.215.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$S3_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+nl 'founder registered (platform admin); PAT minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
+
 
 # ───────────────── A0: 前置校验（label 而 unset → E_S3_NOT_CONFIGURED）
 nl '=== A0: honest refusal when s3.mode=unset (E_S3_NOT_CONFIGURED) ==='
@@ -341,7 +368,7 @@ else
 fi
 
 app_ctr() {
-    msh "docker ps -q --filter label=com.docker.swarm.service.name=fleetly-$APP-$SVC | head -n 1" | tr -d '\r'
+    msh "docker ps -q --filter label=com.docker.swarm.service.name=fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-$APP-$SVC | head -n 1" | tr -d '\r'
 }
 CTR=$(app_ctr)
 [ -n "$CTR" ] || fatal 'app container not found'

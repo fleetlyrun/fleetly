@@ -342,7 +342,9 @@ func (h *Hub) OpenSession(ctx context.Context, b TicketBinding, cols, rows uint1
 	if !h.Enabled() {
 		return nil, ErrTerminalDisabled
 	}
-	svcName, err := naming.ServiceName(b.App, b.Service)
+	// Swarm 服务名按限定形 label 推导（v0.3 三段公式——ticket 签发面已把
+	// team/prj/app 限定形带入绑定；rbac-teams §4.3）。
+	svcName, err := naming.ServiceNameQualified(b.SwarmAppLabel(), b.Service)
 	if err != nil {
 		return nil, fmt.Errorf("execrelay: derive service name: %w", err)
 	}

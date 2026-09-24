@@ -154,16 +154,17 @@ func TestRecipientFingerprint(t *testing.T) {
 }
 
 // TestSecretRefNamingAndRotation 验收 1/5 的 secrets 侧：引用名逐字对照
-// 设计字符串；值轮换 → hash8 变 → 名变（换引用）。
+// 设计字符串（v0.3 三段形，rbac-teams §4.3）；值轮换 → hash8 变 → 名变
+//（换引用）。
 func TestSecretRefNamingAndRotation(t *testing.T) {
-	ref, err := SecretRef("my-api", "database_url", "value-v1")
+	ref, err := SecretRef("my-team", "my-prj", "my-api", "database_url", "value-v1")
 	if err != nil {
 		t.Fatalf("ref: %v", err)
 	}
-	if ref.Name != "fleetly-my-api-database_url-"+ref.Hash8 {
+	if ref.Name != "fleetly-my-team-my-prj-my-api-database_url-"+ref.Hash8 {
 		t.Fatalf("secret name = %s, hash8 = %s", ref.Name, ref.Hash8)
 	}
-	rotated, err := SecretRef("my-api", "database_url", "value-v2")
+	rotated, err := SecretRef("my-team", "my-prj", "my-api", "database_url", "value-v2")
 	if err != nil {
 		t.Fatalf("rotated ref: %v", err)
 	}
@@ -175,7 +176,7 @@ func TestSecretRefNamingAndRotation(t *testing.T) {
 // TestNoMaterialInErrors 负面断言（state-model §2.9）：全部构造/加密路径
 // 的错误信息不含明文值。
 func TestNoMaterialInErrors(t *testing.T) {
-	_, err := SecretRef("my-api", "bad name", "leaky-plaintext")
+	_, err := SecretRef("my-team", "my-prj", "my-api", "bad name", "leaky-plaintext")
 	if err == nil {
 		t.Fatal("expected error for invalid name")
 	}

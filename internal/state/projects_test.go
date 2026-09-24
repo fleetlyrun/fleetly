@@ -284,41 +284,38 @@ func TestProjectMemberOverrides(t *testing.T) {
 	}
 }
 
-// TestAppsProjectNameUnique（D-W0-4 二修，随 00018 建索引）：UNIQUE
-// (project_id, name) 行为抽检——同项目同名拒绝；NULL 归属多行不阻塞
-// （两条 NULL project 的 app 共存，SQLite NULL 互异语义）。诚实口径：W1
-// 的 apps.name / db_instances.name 全局 UNIQUE（00001/00015）仍在位，00019
-// 表重建时随 NOT NULL 收敛一并降级——故此处「同项目同名」断言无法区分是
-// 哪个唯一约束触发（复合索引的在册与列序由 TestMigration00018RBACSchema
-// 钉死），「同名跨项目合法」是 00019 后的行为，不在本票断言面。
+// TestAppsProjectNameUnique（D-W0-4 二修；00019 收紧后的终态语义）：
+// UNIQUE (project_id, name) 行为抽检——同项目同名拒绝；**同名跨项目合法**
+//（每个项目各有自己的 web/db）；NULL 归属被 NOT NULL 拒绝（W1 可空切分
+// 形态随 00019 表重建收敛，rbac-teams §8）。
 func TestAppsProjectNameUnique(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
 	insApp := func(id, name string, projectID any) error {
-		_, err := st.db.ExecContext(ctx, `INSERT INTO apps (id, name, lifecycle, created_at, updated_at, project_id)
-			VALUES (?, ?, 'active', 1, 1, ?)`, id, name, projectID)
+		_, err := st.db.ExecContext(ctx, `INSERT INTO apps (id, name, lifecycle, created_at, updated_at, project_id, team_id)
+			VALUES (?, ?, 'active', 1, 1, ?, '01TEAM1')`, id, name, projectID)
 		return err
 	}
-	// NULL 归属两行共存（归属接入前的存量形态，无阻塞）。
-	if err := insApp("01APP1", "web", nil); err != nil {
-		t.Fatalf("insert NULL-project app 1: %v", err)
+	// NULL 归属 → NOT NULL 拒绝（00019 收紧）。
+	if err := insApp("01APP1", "web", nil); err == nil {
+		t.Fatalf("insert NULL-project app accepted, want NOT NULL violation")
 	}
-	if err := insApp("01APP2", "api", nil); err != nil {
-		t.Fatalf("insert NULL-project app 2: %v", err)
-	}
-	// 同项目同名 → 唯一冲突（project 内唯一语义；W1 期间由全局 name
-	// UNIQUE 先触发，复合唯一索引在册由迁移测试保证）。
-	if err := insApp("01APP3", "web2", "01PROJ1"); err != nil {
+	// 同项目同名 → 唯一冲突。
+	if err := insApp("01APP2", "web2", "01PROJ1"); err != nil {
 		t.Fatalf("insert project app: %v", err)
 	}
-	if err := insApp("01APP4", "web2", "01PROJ1"); !isUniqueViolation(err) {
+	if err := insApp("01APP3", "web2", "01PROJ1"); !isUniqueViolation(err) {
 		t.Fatalf("duplicate (project_id, name) err = %v, want unique violation", err)
 	}
+	// 同名跨项目 → 合法（D-W0-4 二修核心语义）。
+	if err := insApp("01APP4", "web2", "01PROJ2"); err != nil {
+		t.Fatalf("same-name app in another project rejected: %v", err)
+	}
 
-	// db_instances 同口径：同项目同名拒绝。
+	// db_instances 同口径：同项目同名拒绝；跨项目同名合法。
 	insDb := func(id, name string, projectID any) error {
-		_, err := st.db.ExecContext(ctx, `INSERT INTO db_instances (id, name, template, image_digest, settings, credential_cipher, platform_node_id, state, created_at, updated_at, project_id)
-			VALUES (?, ?, 'postgres-16', 'sha256:x', '{}', 'cipher', '', 'ready', 1, 1, ?)`, id, name, projectID)
+		_, err := st.db.ExecContext(ctx, `INSERT INTO db_instances (id, name, template, image_digest, settings, credential_cipher, platform_node_id, state, created_at, updated_at, project_id, team_id)
+			VALUES (?, ?, 'postgres-16', 'sha256:x', '{}', 'cipher', '', 'ready', 1, 1, ?, '01TEAM1')`, id, name, projectID)
 		return err
 	}
 	if err := insDb("01DB1", "pg", "01PROJ1"); err != nil {
@@ -327,9 +324,8 @@ func TestAppsProjectNameUnique(t *testing.T) {
 	if err := insDb("01DB2", "pg", "01PROJ1"); !isUniqueViolation(err) {
 		t.Fatalf("duplicate (project_id, name) db err = %v, want unique violation", err)
 	}
-	// NULL 归属库实例共存。
-	if err := insDb("01DB3", "pgnull", nil); err != nil {
-		t.Fatalf("insert NULL-project db: %v", err)
+	if err := insDb("01DB3", "pg", "01PROJ2"); err != nil {
+		t.Fatalf("same-name db in another project rejected: %v", err)
 	}
 }
 

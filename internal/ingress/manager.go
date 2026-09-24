@@ -23,10 +23,14 @@ import (
 )
 
 // PublishInput 是一次路由发布的输入（engine.RoutePublisher 契约的载荷；
-// domains/port 来自归一化 compose——首健康后由引擎提取）。
+// domains/port 来自归一化 compose——首健康后由引擎提取）。TeamSlug/PrjSlug
+// 是归属两个 slug（v0.3：per-app 网络接入与路由键三段公式的参数，
+// rbac-teams §4.3）。
 type PublishInput struct {
-	AppID   string
-	AppName string
+	AppID    string
+	AppName  string
+	TeamSlug string
+	PrjSlug  string
 	// Services 是入口服务集（有 fleetly.domains label 的服务）。
 	Services []ServiceRoutes
 }
@@ -321,7 +325,7 @@ func (m *Manager) PublishRoutes(ctx context.Context, in PublishInput) error {
 		return err
 	}
 	if len(in.Services) > 0 {
-		if err := m.attachNetwork(ctx, in.AppName); err != nil {
+		if err := m.attachNetwork(ctx, in.TeamSlug, in.PrjSlug, in.AppName); err != nil {
 			return err
 		}
 	}
@@ -403,6 +407,56 @@ func (m *Manager) WithdrawAppRoutes(ctx context.Context, appID string) error {
 	return m.republishAll(ctx)
 }
 
+// DetachAppNetwork 是 MoveApp 摘旧网的收尾面（v0.3 W2-S3，rbac-teams
+// §4.3「网络 prune 空旧网」）：traefik 从旧 app 专属 overlay 摘挂（以实况
+// 网络集为基准删除目标 ID——attachNetworkID 的镜像语义）+ 网络移除
+//（best-effort：仍有端点挂接返回错误——引用方清场后由调用方重试/文档消化）。
+// 幂等：traefik 未挂接该网 = 摘挂 no-op；网络已不存在 = 移除 no-op。
+func (m *Manager) DetachAppNetwork(ctx context.Context, team, prj, app string) error {
+	netName, err := appNetworkName(team, prj, app)
+	if err != nil {
+		return err
+	}
+	netID, err := m.docker.NetworkID(ctx, netName)
+	if err != nil {
+		// 网络已不存在：摘挂无从谈起，幂等成功。
+		return nil
+	}
+	cur, err := m.docker.ServiceInspect(ctx, IngressServiceName)
+	if err != nil {
+		return err
+	}
+	if cur.Exists {
+		targets := make([]string, 0, len(cur.Networks))
+		detached := false
+		for _, n := range cur.Networks {
+			if n == netID {
+				detached = true
+				continue
+			}
+			targets = append(targets, n)
+		}
+		if detached {
+			m.mu.Lock()
+			base := m.lastSpec
+			m.mu.Unlock()
+			if base == nil {
+				return fmt.Errorf("ingress: no desired spec available (ensure traefik first)")
+			}
+			spec := specWithNetworks(*base, targets)
+			if err := m.docker.ServiceUpdate(ctx, IngressServiceName, cur.Version, spec); err != nil {
+				return err
+			}
+			m.mu.Lock()
+			m.lastSpec = &spec
+			m.mu.Unlock()
+			m.log.Info("ingress: traefik detached from app overlay network (app move)", "network", netName)
+		}
+	}
+	// 空网移除（仍挂端点返回错误——调用方 best-effort）。
+	return m.docker.NetworkRemove(ctx, netName)
+}
+
 // republishAll 是 sweep 的全量重发布（HTTP 段 + 证书段；幂等）。
 func (m *Manager) republishAll(ctx context.Context) error {
 	if err := m.publish(ctx); err != nil {
@@ -444,6 +498,7 @@ func collectDomainsOf(in PublishInput) []string {
 // tombstone/删除中的 app 路由不发布）。确定性：按 (app, service) 字典序。
 func routesFromLedger(ctx context.Context, st *state.Store, rows []state.Domain) ([]Route, error) {
 	nameByAppID := map[string]string{}
+	slugByAppID := map[string][2]string{}
 	type key struct{ app, service string }
 	order := []key{}
 	byKey := map[key]*Route{}
@@ -455,15 +510,17 @@ func routesFromLedger(ctx context.Context, st *state.Store, rows []state.Domain)
 				continue
 			}
 			nameByAppID[row.AppID] = appRow.Name
+			slugByAppID[row.AppID] = [2]string{appRow.TeamSlug, appRow.ProjectSlug}
 		}
 		app := nameByAppID[row.AppID]
 		if app == "" {
 			continue
 		}
+		slugs := slugByAppID[row.AppID]
 		k := key{app: app, service: row.Service}
 		r, exists := byKey[k]
 		if !exists {
-			r = &Route{App: app, Service: row.Service, Port: row.Port}
+			r = &Route{App: app, Service: row.Service, TeamSlug: slugs[0], PrjSlug: slugs[1], Port: row.Port}
 			byKey[k] = r
 			order = append(order, k)
 		}

@@ -10,12 +10,14 @@ import (
 // db_references / db_backups / app_secrets 的 CRUD 验收（managed-databases
 // 设计 §2.4/§2.6/§2.7，E4 S1）。
 
-// createTestDatabase 是库实例测试夹具（返回 ID）。
+// createTestDatabase 是库实例测试夹具（返回 ID；归属 = 独立夹具项目）。
 func createTestDatabase(t *testing.T, st *Store, name string) string {
 	t.Helper()
+	proj := seedFixtureProject(t, st)
 	row, err := st.CreateDatabaseInstance(context.Background(), DatabaseInstance{
 		Name: name, Template: "postgres-16", ImageDigest: "postgres:16@sha256:aaa",
 		CredentialCipher: "age-cipher",
+		ProjectID:        proj.ID, TeamID: proj.TeamID,
 	})
 	if err != nil {
 		t.Fatalf("create database %s: %v", name, err)

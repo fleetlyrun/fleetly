@@ -19,13 +19,13 @@ import (
 
 func TestSynthesizeMapsRoutesDeterministically(t *testing.T) {
 	routes := []Route{
-		{App: "demo", Service: "web", Port: "8080", Domains: []string{"b.example.test", "a.example.test"}},
+		{App: "demo", TeamSlug: "acme", PrjSlug: "prod", Service: "web", Port: "8080", Domains: []string{"b.example.test", "a.example.test"}},
 	}
 	cfg := Synthesize(routes)
 	if cfg.HTTP == nil || cfg.HTTP.Routers == nil || cfg.HTTP.Services == nil {
 		t.Fatalf("routers/services keys must always exist (Spike B discipline)")
 	}
-	router := cfg.HTTP.Routers["fleetly-demo-web-web"]
+	router := cfg.HTTP.Routers["fleetly-acme-prod-demo-web-web"]
 	if router == nil {
 		t.Fatalf("web router missing: %+v", cfg.HTTP.Routers)
 	}
@@ -39,12 +39,12 @@ func TestSynthesizeMapsRoutesDeterministically(t *testing.T) {
 		t.Fatalf("web router entrypoint = %v", router.EntryPoints)
 	}
 	// 服务映射：VIP + expose 端口 + 平台默认 serversTransport（V4 依据）。
-	svc := cfg.HTTP.Services["fleetly-demo-web"]
+	svc := cfg.HTTP.Services["fleetly-acme-prod-demo-web"]
 	if svc == nil || svc.LoadBalancer == nil || len(svc.LoadBalancer.Servers) != 1 {
 		t.Fatalf("service mapping missing: %+v", cfg.HTTP.Services)
 	}
-	if got := svc.LoadBalancer.Servers[0].URL; got != "http://fleetly-demo-web:8080" {
-		t.Fatalf("server url = %s, want http://fleetly-demo-web:8080", got)
+	if got := svc.LoadBalancer.Servers[0].URL; got != "http://fleetly-acme-prod-demo-web:8080" {
+		t.Fatalf("server url = %s, want http://fleetly-acme-prod-demo-web:8080", got)
 	}
 	if svc.LoadBalancer.ServersTransport != defaultServersTransportName+"@http" {
 		t.Fatalf("serversTransport ref = %s", svc.LoadBalancer.ServersTransport)
@@ -64,14 +64,14 @@ func TestSynthesizeMapsRoutesDeterministically(t *testing.T) {
 func TestSynthesizeTLSSegmentWhenCertReady(t *testing.T) {
 	certPEM, keyPEM, _ := selfSignedTestCert(t, "shop.example.test")
 	routes := []Route{
-		{App: "shop", Service: "web", Port: "80", Domains: []string{"shop.example.test"},
+		{App: "shop", TeamSlug: "acme", PrjSlug: "prod", Service: "web", Port: "80", Domains: []string{"shop.example.test"},
 			Cert: &CertificateRef{App: "shop", SHA256: "aa", NotAfter: 1, CertPEM: certPEM, KeyPEM: keyPEM}},
 	}
 	cfg := Synthesize(routes)
-	if cfg.HTTP.Routers["fleetly-shop-web-websecure"] == nil {
+	if cfg.HTTP.Routers["fleetly-acme-prod-shop-web-websecure"] == nil {
 		t.Fatalf("443 router missing when cert ready")
 	}
-	if cfg.HTTP.Routers["fleetly-shop-web-websecure"].TLS == nil {
+	if cfg.HTTP.Routers["fleetly-acme-prod-shop-web-websecure"].TLS == nil {
 		t.Fatalf("443 router must enable tls")
 	}
 	if cfg.TLS == nil || len(cfg.TLS.Certificates) != 1 {
@@ -100,7 +100,7 @@ func TestSynthesizeTLSSegmentWhenCertReady(t *testing.T) {
 		t.Fatalf("inline cert fingerprint mismatch: got %x want %x", gotSum, wantSum)
 	}
 	// HTTP 路由并存（无重定向设计外行为）。
-	if cfg.HTTP.Routers["fleetly-shop-web-web"] == nil {
+	if cfg.HTTP.Routers["fleetly-acme-prod-shop-web-web"] == nil {
 		t.Fatalf("80 router missing when cert ready")
 	}
 	// 序列化键名契约钉死（FileOrContent 修正项——V-MN 实测：未知键使
@@ -235,7 +235,7 @@ func TestValidateRejectsDanglingRouterRef(t *testing.T) {
 
 func TestViewChallengeOverlayAndServedRevision(t *testing.T) {
 	v := newView("http://10.0.0.5:8422")
-	v.setRoutes([]Route{{App: "demo", Service: "web", Port: "80", Domains: []string{"d.test"}}})
+	v.setRoutes([]Route{{App: "demo", TeamSlug: "acme", PrjSlug: "prod", Service: "web", Port: "80", Domains: []string{"d.test"}}})
 
 	// 无挑战：快照 = 纯路由。
 	if snap, _ := v.snapshot(); snap.HTTP.Routers[acmeChallengeRouterName] != nil {

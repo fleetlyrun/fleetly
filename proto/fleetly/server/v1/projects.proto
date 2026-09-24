@@ -37,7 +37,8 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 //
 // slug 纪律（§3.4）：单词制 [a-z0-9]{2,32}、team 内唯一、不可变——
 // UpdateProject 无 slug 字段；同名项目跨团队允许（D-W0-9）。
-// MoveApp / MoveDatabase 不在本票（换名重部署依赖 W2-S3 命名三段化）。
+// MoveApp / MoveDatabase 随 W2-S3 命名三段化落地（换名重部署编排见
+// rbac-teams §3.4/§4.3；平台管理员专属）。
 service ProjectsService {
   // CreateProject 在团队下建项目（owner 专属）；team 内 slug 冲突 409。
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {
@@ -81,6 +82,26 @@ service ProjectsService {
   // RemoveProjectMember 删除覆写行（该成员回退用团队角色）。
   rpc RemoveProjectMember(RemoveProjectMemberRequest) returns (RemoveProjectMemberResponse) {
     option (google.api.http) = { delete: "/v1/projects/{project_id}/members/{user_id}" };
+  }
+  // MoveApp 资源改派（v0.3 W2-S3，rbac-teams §3.4/§5；平台管理员专属）：
+  // 写归属 + 换名重部署（D-W0-4 二修——底座命名三段以归属为参数）。无卷
+  // 服务近零中断（建新名→等 running→删旧名）；有卷短暂停机窗口。跨团队/
+  // 跨项目改派先过目标项目唯一性（409）。app 引用 = 裸名（解析域内唯一）
+  // 或 `team/prj/app` 限定形或平台 ID；目标项目 = 平台 ID（D-W0-9：管理面
+  // 用 ID，免疫重名）。
+  rpc MoveApp(MoveAppRequest) returns (MoveAppResponse) {
+    option (google.api.http) = {
+      post: "/v1/projects/{to_project_id}:move-app"
+      body: "*"
+    };
+  }
+  // MoveDatabase 资源改派（同 MoveApp 语义；库卷公式不变——零卷迁移/
+  // 零数据搬移，换名重部署引用同一物理卷）。
+  rpc MoveDatabase(MoveDatabaseRequest) returns (MoveDatabaseResponse) {
+    option (google.api.http) = {
+      post: "/v1/projects/{to_project_id}:move-database"
+      body: "*"
+    };
   }
 }
 
@@ -188,3 +209,41 @@ message RemoveProjectMemberRequest {
 }
 
 message RemoveProjectMemberResponse {}
+
+// MoveAppRequest 是资源改派请求（平台管理员专属）。
+message MoveAppRequest {
+  // app 引用：裸名（解析域内唯一）、`team/prj/app` 限定形或平台 ID。
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // 目标项目平台 ID（管理面用 ID，D-W0-9——免疫同名项目歧义）。
+  string to_project_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// MoveAppResponse 是改派应答：换名重部署的结论投影（swapped = 新命名服务
+// 已就位并摘除旧名服务；accepted = 无运行中服务，仅归属切换）。
+message MoveAppResponse {
+  string app = 1;
+  string from_project_id = 2;
+  string to_project_id = 3;
+  string to_project = 4;
+  // 换名重部署的部署 ID（无部署史 = 空）。
+  string deployment_id = 5;
+  // moved|accepted（accepted = 无底座对象随迁的纯归属切换）。
+  string status = 6;
+}
+
+// MoveDatabaseRequest 是库实例改派请求（平台管理员专属）。
+message MoveDatabaseRequest {
+  // 库实例引用：裸名（解析域内唯一）、`team/prj/<name>` 限定形或平台 ID。
+  string database = 1 [(buf.validate.field).string.min_len = 1];
+  // 目标项目平台 ID。
+  string to_project_id = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+// MoveDatabaseResponse 是库改派应答。
+message MoveDatabaseResponse {
+  string database = 1;
+  string from_project_id = 2;
+  string to_project_id = 3;
+  string to_project = 4;
+  string status = 5;
+}

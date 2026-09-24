@@ -57,7 +57,7 @@ func TestAuthMatrix(t *testing.T) {
 	}
 
 	// deploy：可部署入队（返回 queued id）。
-	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "matrixapp",
 		Compose: []byte("name: matrixapp\nservices:\n  web:\n    image: nginx:alpine\n"),
 	})

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakePublisher 是 RoutePublisher 的记录型假实现（calls 含失败调用；
@@ -44,7 +45,7 @@ services:
 `
 
 // routeServiceName 是 fixture 的 Swarm 服务名（naming 公式）。
-const routeServiceName = "fleetly-demo-web"
+// routeServiceName 已随 v0.3 三段命名公式改为 h.svc("web") 动态推导（const 字面量不可调用方法）。
 
 // TestRoutePublishStrictlyAfterHealthGate 时序断言：releasing 阶段（健康
 // 门通过前）发布器零调用；route.published 事件严格晚于 deployment.healthy。
@@ -53,7 +54,7 @@ func TestRoutePublishStrictlyAfterHealthGate(t *testing.T) {
 	pub := &fakePublisher{}
 	h.eng = h.eng.WithRoutePublisher(pub)
 	// 首更新滞留 PENDING：部署停在 releasing（健康门未过）。
-	h.sub.setMode(routeServiceName, modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	path := h.writeCompose(composeWithDomains)
 	rec := h.enqueue(path)
 	ctx := context.Background()
@@ -88,7 +89,7 @@ func TestRoutePublishStrictlyAfterHealthGate(t *testing.T) {
 	// 健康门通过：切流 → observing → 首健康发布挂点。（假底座直接把
 	// pending 服务收敛为 completed + 目标版本运行任务——ServiceUpdate
 	// 语义只在新内容更新时改写行为模型，这里等价「任务已健康」。）
-	svc := h.sub.services[routeServiceName]
+	svc := h.sub.services[h.svc("web")]
 	svc.update = "completed"
 	svc.message = ""
 	svc.tasks = h.sub.runningTasks(svc, "t-new")
@@ -191,7 +192,7 @@ func TestRoutePublishFailureDoesNotFailDeployment(t *testing.T) {
 func TestRouteInputLedgerFallback(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	app, err := h.store.CreateApp(ctx, "", "demo")
+	app, err := testsupport.SeedAppE(t, h.store, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

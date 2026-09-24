@@ -24,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeDocker 是 dockerPort 的假实现（收敛断言的记录器）。
@@ -217,6 +218,10 @@ type harness struct {
 	docker *fakeDocker
 	mgr    *Manager
 	now    time.Time
+	// proj 是夹具项目（v0.3 归属必填——实例行的 project_id/team_id 来源）；
+	// teamSlug 是夹具团队 slug（三段命名公式的 team 段）。
+	proj     state.Project
+	teamSlug string
 }
 
 func newHarness(t *testing.T) *harness {
@@ -241,7 +246,12 @@ func newHarness(t *testing.T) *harness {
 	// W5-S1 验收门复现的定时炸弹（其余时刻全绿故 W4 门未暴露）。需要窗口
 	// 语义的测试显式设置 h.now（TestBackupSchedulingWindowAndPrune）。
 	nowUTC := time.Now().UTC()
-	h := &harness{t: t, st: st, box: box, docker: fd, mgr: mgr,
+	proj := testsupport.SeedProject(t, st)
+	team, err := st.GetTeam(context.Background(), proj.TeamID)
+	if err != nil {
+		t.Fatalf("get fixture team: %v", err)
+	}
+	h := &harness{t: t, st: st, box: box, docker: fd, mgr: mgr, proj: proj, teamSlug: team.Slug,
 		now: time.Date(nowUTC.Year(), nowUTC.Month(), nowUTC.Day(), 12, 30, 0, 0, time.UTC)}
 	mgr.WithClock(func() time.Time { return h.now })
 	return h
@@ -314,6 +324,8 @@ func (h *harness) createInstance(name, template string) state.DatabaseInstance {
 		Template:         template,
 		ImageDigest:      tpl.Image,
 		CredentialCipher: string(cipher),
+		ProjectID:        h.proj.ID,
+		TeamID:           h.proj.TeamID,
 	})
 	if err != nil {
 		h.t.Fatalf("create instance: %v", err)
@@ -331,6 +343,16 @@ func (h *harness) get(id string) state.DatabaseInstance {
 	return inst
 }
 
+// dbNetName 推导实例共享网络名（三段公式——夹具项目 slug + 实例名）。
+func (h *harness) dbNetName(instance string) string {
+	h.t.Helper()
+	name, err := naming.DBNetworkName(h.teamSlug, h.proj.Slug, instance)
+	if err != nil {
+		h.t.Fatalf("db network name: %v", err)
+	}
+	return name
+}
+
 // svcName 解析实例的 swarm 服务名。
 func (h *harness) svcName(inst state.DatabaseInstance) string {
 	h.t.Helper()
@@ -338,7 +360,7 @@ func (h *harness) svcName(inst state.DatabaseInstance) string {
 	if err != nil {
 		h.t.Fatalf("template: %v", err)
 	}
-	name, err := naming.DBServiceName(inst.Name, tpl.ServiceName)
+	name, err := naming.DBServiceName(inst.TeamSlug, inst.ProjectSlug, inst.Name, tpl.ServiceName)
 	if err != nil {
 		h.t.Fatalf("service name: %v", err)
 	}
@@ -382,17 +404,17 @@ func TestProvisionToReady(t *testing.T) {
 	if !svc.Exists || svc.Replicas != 1 {
 		t.Errorf("service = %+v, want exists replicas=1", svc)
 	}
-	if svc.Labels[state.LabelDesiredHash] == "" || svc.Labels[state.LabelDatabase] != "pg-main" {
-		t.Errorf("service labels = %v, want desired-hash + fleetly.db marker", svc.Labels)
+	if svc.Labels[state.LabelDesiredHash] == "" || svc.Labels[state.LabelDatabase] != inst.QualifiedName() {
+		t.Errorf("service labels = %v, want desired-hash + fleetly.db marker (qualified form)", svc.Labels)
 	}
-	if !h.docker.networks["fleetly-db-pg-main-net"] {
+	if !h.docker.networks[h.dbNetName("pg-main")] {
 		t.Error("shared network not ensured")
 	}
 	// PG 凭据 secret：已创建、带归属 label 由 secretSpecOf 决定——名含指纹
 	// hash8 且明文进创建载荷（这里只断言存在性；明文断言见 hash 一致性）。
 	found := false
 	for name := range h.docker.secrets {
-		if strings.HasPrefix(name, "fleetly-db-pg-main-password-") {
+		if strings.HasPrefix(name, "fleetly-db-"+h.teamSlug+"-"+h.proj.Slug+"-pg-main-password-") {
 			found = true
 		}
 	}
@@ -620,7 +642,7 @@ func TestReapRetriesIdempotently(t *testing.T) {
 		State: "running", DesiredState: "running", Image: inst.ImageDigest,
 	})
 	h.beatRun()
-	h.docker.netUsed["fleetly-db-pg-stuck-net"] = 1 // 引用方端点未释放
+	h.docker.netUsed[h.dbNetName("pg-stuck")] = 1 // 引用方端点未释放
 
 	if err := h.st.EnterDbPhase(context.Background(), inst.ID,
 		state.DatabaseReady, state.DatabaseDeleting); err != nil {
@@ -630,7 +652,7 @@ func TestReapRetriesIdempotently(t *testing.T) {
 	if got := h.get(inst.ID); got.State != state.DatabaseDeleting {
 		t.Fatalf("state = %s, want deleting (network in use, retry next beat)", got.State)
 	}
-	h.docker.netUsed["fleetly-db-pg-stuck-net"] = 0
+	h.docker.netUsed[h.dbNetName("pg-stuck")] = 0
 	h.beatRun()
 	if got := h.get(inst.ID); got.State != state.DatabaseDeleted {
 		t.Fatalf("state = %s, want deleted after retry", got.State)

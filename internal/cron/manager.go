@@ -411,7 +411,14 @@ func (m *Manager) trigger(ctx context.Context, s schedule, scheduledAt time.Time
 	}
 
 	runID := ulid.Make().String()
-	jobName, err := naming.CronJobName(s.app, s.service, runID)
+	// v0.3 三段命名（rbac-teams §4.3 cron 行）：team/prj 段取自 Job 模板的
+	// 服务 label（fleetly.team/fleetly.project——规划期随归属写入，模板与
+	// app 行同源同构；快照是 cron 调度集的权威来源，二次查库反而可能读到
+	// MoveApp 换派后的新归属而与在途模板错位）。
+	jobName, err := naming.CronJobName(
+		s.template.ServiceLabels[state.LabelTeam],
+		s.template.ServiceLabels[state.LabelProject],
+		s.app, s.service, runID)
 	if err != nil {
 		return state.CronRun{}, fmt.Errorf("job naming: %w", err)
 	}
@@ -681,8 +688,9 @@ func (m *Manager) sweepOrphanJobs(ctx context.Context, byKey map[string]schedule
 
 // jobSpecFrom 由 Job 模板克隆一次性 job 的执行形态：改名 fleetly-cron-*、
 // 单副本、restart-condition=none（失败即 failed 不重试）、服务 label 收敛
-// 为受管三件套 + fleetly.cron.run（模板携带的 deployment/desired-hash 归属
-// label 对 job 服务是谎——不继承）。
+// 为受管件 + fleetly.cron.run（模板携带的 deployment/desired-hash 归属
+// label 对 job 服务是谎——不继承；team/project 与限定形 app 值同模板——
+// 归属识别面，v0.3 流标签口径）。
 func jobSpecFrom(t engine.ServiceSpec, jobName, runID string) engine.ServiceSpec {
 	j := t
 	j.Name = jobName
@@ -695,6 +703,12 @@ func jobSpecFrom(t engine.ServiceSpec, jobName, runID string) engine.ServiceSpec
 		state.LabelApp:     t.ServiceLabels[state.LabelApp],
 		state.LabelProcess: t.ServiceLabels[state.LabelProcess],
 		state.LabelCronRun: runID,
+	}
+	if v := t.ServiceLabels[state.LabelTeam]; v != "" {
+		labels[state.LabelTeam] = v
+	}
+	if v := t.ServiceLabels[state.LabelProject]; v != "" {
+		labels[state.LabelProject] = v
 	}
 	j.ServiceLabels = labels
 	return j

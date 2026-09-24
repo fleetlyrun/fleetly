@@ -46,6 +46,7 @@ export MSYS2_ARG_CONV_EXCL='*'
 # ── 镜像钉 digest（T0-V2.3 供应链；台账见 docs/runbooks/image-prepull.md，
 #    whoami 于 2026-09-20 经 docker manifest inspect 解析多架构 index digest）。
 DIND_IMAGE="${MN_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 TRAEFIK_IMG='traefik:v3.5@sha256:16acb89c6db341182970d6fdafece31303b0a380a8ed7aa51682e225229bf1d2'
 WHOAMI_IMG='traefik/whoami:v1.10.4@sha256:02d8fe035f170f91cbb5e458a57f4cefab747436f8244a0eb2d66785fe5e565f'
@@ -105,7 +106,7 @@ w1sh() { docker exec "$W1" sh -c "$*"; }
 w2sh() { docker exec "$W2" sh -c "$*"; }
 # fcli <args...> — mgr dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
-    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$MR_TOKEN" \
+    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_PROJECT="$FOUNDER_PROJECT" -e FLEETLY_TOKEN="$MR_TOKEN" \
         "$MGR" /opt/fleetly/bin/fleetly "$@"
 }
 # events_grep <pattern> — 现抓事件流快照（busybox timeout 掐断 follow 流）
@@ -309,6 +310,36 @@ done
 MR_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootstrap token'
 [ -n "$MR_TOKEN" ] || fatal 'empty bootstrap token'
 nl 'fleetlyd live (liveness 200), bootstrap token read'
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope——founder 是平台管理员可达集；CLI 不消费会话 cookie）。
+# 首次部署/建库经 FLEETLY_PROJECT=founder/default 显式携带项目归属；fcli
+# 统一 env 注入。bootstrap token 已随首用户注册按设计吊销弃用。
+CURLER="$MGR-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://$MGR_IP:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://$MGR_IP:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+MR_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://$MGR_IP:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$MR_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+# v0.3 三段命名（rbac-teams §4.3）：服务名 fleetly-<team>-<prj>-<app>-<svc>。
+# 必须在 FOUNDER_TEAM/FOUNDER_PRJ 赋值后展开（卷名族公式不变——卷引用不带
+# 前缀）。
+MR_DB_SVC="fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-$APP-db"
+nl 'founder registered (platform admin); PAT minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
+
 
 W1_JOIN=$(w1sh "docker swarm join $MGR_IP:2377 --token $T0" >/dev/null 2>&1; echo $?)
 assert "MN-A1 WORKER_JOIN_ACCEPTED" $([ "$W1_JOIN" -eq 0 ] && echo 0 || echo 1) "rc=$W1_JOIN"
@@ -493,12 +524,12 @@ else
 fi
 # C2：任务已起在 w1（healthcheck 按住 → 停在 Starting/Unhealthy，永不切流）。
 task_on_w1() {
-    msh "docker service ps fleetly-$APP-db --format '{{.Node}} {{.CurrentState}}' | grep -q '^w1 '" 2>/dev/null
+    msh "docker service ps $MR_DB_SVC --format '{{.Node}} {{.CurrentState}}' | grep -q '^w1 '" 2>/dev/null
 }
 if poll_until 90 task_on_w1; then
     assert "MN-C2 TASK_STARTED_ON_W1" 0
 else
-    msh "docker service ps fleetly-$APP-db --no-trunc" || true
+    msh "docker service ps $MR_DB_SVC --no-trunc" || true
     assert "MN-C2 TASK_STARTED_ON_W1" 1 "db task never appeared on w1"
 fi
 
@@ -518,7 +549,7 @@ else
     assert "MN-C4 DEPLOYMENT_BLOCKED_WAITING" 1 "phase never became blocked_waiting"
 fi
 blocked_task_shape() {
-    r=$(msh "docker service ps fleetly-$APP-db --format '{{.CurrentState}}'" 2>/dev/null)
+    r=$(msh "docker service ps $MR_DB_SVC --format '{{.CurrentState}}'" 2>/dev/null)
     run=$(printf '%s' "$r" | grep -c '^Running')
     pend=$(printf '%s' "$r" | grep -c 'Pending')
     [ "${run:-0}" -eq 0 ] && [ "${pend:-0}" -ge 1 ]
@@ -526,7 +557,7 @@ blocked_task_shape() {
 if poll_until 60 blocked_task_shape; then
     assert "MN-C5 TASK_PENDING_WHILE_BLOCKED" 0
 else
-    msh "docker service ps fleetly-$APP-db" || true
+    msh "docker service ps $MR_DB_SVC" || true
     assert "MN-C5 TASK_PENDING_WHILE_BLOCKED" 1 "expected 0 Running + >=1 Pending under drain"
 fi
 
@@ -558,17 +589,17 @@ else
     assert "MN-C7 REDEPLOY_CONVERGED_SUCCEEDED" 1 "deployment never succeeded after recovery (status=$(deploy_status))"
 fi
 task_back_on_w1() {
-    msh "docker service ps fleetly-$APP-db --format '{{.Node}} {{.CurrentState}}' | grep -q '^w1 Running'" 2>/dev/null
+    msh "docker service ps $MR_DB_SVC --format '{{.Node}} {{.CurrentState}}' | grep -q '^w1 Running'" 2>/dev/null
 }
 if poll_until 120 task_back_on_w1; then
     assert "MN-C8 TASK_REBOUND_TO_W1" 0
 else
-    msh "docker service ps fleetly-$APP-db --no-trunc" || true
+    msh "docker service ps $MR_DB_SVC --no-trunc" || true
     assert "MN-C8 TASK_REBOUND_TO_W1" 1 "task never back Running on w1"
 fi
 GOT=$(w1sh "docker run --rm -v $MR_VOL:/data $ALPINE_IMG cat /data/marker.txt" 2>/dev/null | tr -d '\r\n')
 [ "$GOT" = "$MARKER" ]
 assert "MN-C9 MARKER_INTACT_AFTER_ROUNDTRIP" $? "want=$MARKER got=$GOT"
 
-msh "docker service rm fleetly-$APP-db" >/dev/null 2>&1 || true
+msh "docker service rm $MR_DB_SVC" >/dev/null 2>&1 || true
 finish

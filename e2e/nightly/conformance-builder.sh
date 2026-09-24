@@ -21,6 +21,18 @@
 #   C  坏 Dockerfile（COPY 不存在的文件）→ fleetly build rc!=0 + builds 行
 #      failed/E_BUILD_FAILED + deploy rc!=0 + 部署行 failed/E_BUILD_FAILED。
 #
+# v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4；W2-S3 收尾 2026-09-24
+# 迁入，照抄 e2e/cron.sh / e2e/databases.sh / e2e/multinode-rehearsal.sh
+# 同名 fixture）：bootstrap token 弃用（v0.3 起 token 落盘
+# /var/lib/fleetly/bootstrap-token、日志不再打印，且首用户注册后即按设计
+# 吊销）——daemon 起服（cb-boot.sh）后由宿主经 curl helper 容器（dind 内
+# 无 curl；CURL_IMAGE 钉 digest 见样板）注册 founder（首用户 = 平台管理员
+# + 个人队 + 默认项目 default）并铸用户 PAT（admin scope——founder 是平台
+# 管理员可达集），再经 exec+stdin 送回 dind /tmp/cb-token；内层 cb-inner.sh
+# 的 cli() 统一携带 FLEETLY_TOKEN=<PAT> FLEETLY_PROJECT=founder/default
+#（部署/构建面必须显式项目归属）。为此 dind 迁出默认 bridge，钉在宿主私网
+# 10.221.0.0/24（fleetly-cb-br；其余 e2e 套件已占 213-220/222 网段）。
+#
 # usage: conformance-builder.sh
 # env:
 #   DIND_IMAGE   dind 镜像（默认钉 digest，台账 #1，与 CI/引擎门禁一致——
@@ -35,6 +47,10 @@ export MSYS2_ARG_CONV_EXCL='*'
 
 DIND_IMAGE="${DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 DIND_NAME="${DIND_NAME:-fleetly-conformance-builder}"
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
+CB_BR_NET=fleetly-cb-br
+CB_BR_SUBNET=10.221.0.0/24
+DIND_IP=10.221.0.10
 CB_SKIP_BUILD="${CB_SKIP_BUILD:-0}"
 CB_VERSION="${CB_VERSION:-v0.1.0-cb}"
 
@@ -45,6 +61,8 @@ die() {
 }
 cleanup() {
     docker rm -f "$DIND_NAME" >/dev/null 2>&1 || true
+    docker rm -f "$DIND_NAME-curl" >/dev/null 2>&1 || true
+    docker network rm "$CB_BR_NET" >/dev/null 2>&1 || true
 }
 trap 'rm -rf "$TMP"; cleanup' EXIT
 
@@ -205,10 +223,13 @@ EOF
 
 # ------------------------------------------------------- 内层断言脚本生成
 # 引号 heredoc：不做宿主展开，内层自足；busybox ash 兼容（无 local/[[ ]]）。
-cat >"$TMP/cb-inner.sh" <<'INNER_EOF'
+cat >"$TMP/cb-boot.sh" <<'BOOT_EOF'
 #!/bin/sh
-# cb-inner.sh — Builder conformance 内层（dind 内执行；由宿主编排生成注入）。
-# 断言风格与 e2e/nightly/lib.sh 一致（NAME: PASS/FAIL + 计数 + finish）。
+# cb-boot.sh — Builder conformance 起服段（dind 内执行；由宿主编排生成注入）：
+# P0 预检 → 安装 → 预拉 ingress 依赖镜像 → 配置 → 起 daemon → liveness 门。
+# 断言面（Traefik/buildkit 门 + 场景 A/B/C + finish）在 cb-inner.sh——起服
+# 成功后宿主先跑 v0.3 归属管道 fixture（curl helper 注册 founder + 铸用户
+# PAT，经 exec+stdin 送回 dind /tmp/cb-token），再执行断言段（见宿主头注）。
 set -u
 . /tmp/lib.sh
 
@@ -218,7 +239,6 @@ APPS="$CB_STAGE/apps"
 DLOG=/tmp/cb-fleetlyd.log
 PID_FILE=/var/run/fleetlyd.pid
 HTTP=http://127.0.0.1:8420
-DOMAIN_A=confa.test.local
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
@@ -242,17 +262,6 @@ http_code() { # <url> [host] — dind 无 curl，busybox wget -S 状态行走 st
     fi
 }
 
-json_str() { # <json> <key> — 定点字段提取（indent JSON；非通用解析器）
-    printf '%s' "$1" |
-        grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" |
-        head -n 1 |
-        sed 's/.*:[[:space:]]*"//; s/"$//'
-}
-
-cli() { # <args...> — 带连接 env 的 fleetly CLI（gRPC 面）
-    FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN="$TOKEN" /opt/fleetly/bin/fleetly "$@"
-}
-
 wait_liveness() { # <budget-s>
     _deadline=$(( $(date +%s) + $1 ))
     while [ "$(date +%s)" -lt "$_deadline" ]; do
@@ -261,48 +270,8 @@ wait_liveness() { # <budget-s>
     done
     return 1
 }
-traefik_ready() {
-    docker service ls --format '{{.Name}} {{.Replicas}}' 2>/dev/null |
-        grep -q 'fleetly-ingress 1/1'
-}
-wait_traefik() { # <budget-s>
-    _deadline=$(( $(date +%s) + $1 ))
-    while [ "$(date +%s)" -lt "$_deadline" ]; do
-        traefik_ready && return 0
-        sleep 3
-    done
-    return 1
-}
-route_ok() { # <domain>
-    [ "$(http_code "http://127.0.0.1/" "$1")" = '200' ]
-}
-wait_route() { # <domain> <budget-s>
-    _deadline=$(( $(date +%s) + $2 ))
-    while [ "$(date +%s)" -lt "$_deadline" ]; do
-        route_ok "$1" && return 0
-        sleep 2
-    done
-    return 1
-}
-derived_states() {
-    cli apps list --json 2>/dev/null |
-        grep -o '"derived_state": *"[a-z]*"' |
-        sed 's/.*: *"//; s/"$//' |
-        sort
-}
-first_derived_state() {
-    derived_states | head -n 1
-}
-wait_app_running() { # <budget-s>
-    _deadline=$(( $(date +%s) + $1 ))
-    while [ "$(date +%s)" -lt "$_deadline" ]; do
-        [ "$(first_derived_state)" = 'running' ] && return 0
-        sleep 2
-    done
-    return 1
-}
 
-nl "=== Builder conformance inner (stage=$CB_STAGE) ==="
+nl "=== Builder conformance boot (stage=$CB_STAGE) ==="
 
 # ------------------------------------------------------------ P0 preflight
 for _f in "$INSTALL_SH" "$CB_STAGE/fleetlyd" "$CB_STAGE/fleetly" \
@@ -371,10 +340,108 @@ if [ "$(http_code "$HTTP/healthz/liveness")" != '200' ]; then
     tail -n 40 "$DLOG" 2>/dev/null || true
     fatal 'daemon not live; cannot continue'
 fi
-TOKEN=$(grep 'bootstrap admin token' "$DLOG" 2>/dev/null | sed -e 's/.*: //' -e 's/".*//' | head -n 1)
-[ -n "$TOKEN" ]
-assert "CB-P1-bootstrap-token" $?
-[ -n "$TOKEN" ] || finish
+nl 'CB-BOOT-OK daemon live; founder fixture runs host-side next'
+exit 0
+BOOT_EOF
+
+# 断言段（cb-inner.sh）：Traefik/buildkit 门 + 场景 A/B/C + finish。v0.3
+# 归属管道：cli 统一用户 PAT + 显式项目（bootstrap token 弃用，fixture 在
+# 宿主段——daemon 起服后注册 founder 铸 PAT 送回 /tmp/cb-token）。
+# 引号 heredoc：不做宿主展开，内层自足；busybox ash 兼容（无 local/[[ ]]）。
+cat >"$TMP/cb-inner.sh" <<'INNER_EOF'
+#!/bin/sh
+# cb-inner.sh — Builder conformance 断言段（dind 内执行；宿主编排生成注入，
+# 在 cb-boot.sh 起服 + 宿主 v0.3 fixture 之后运行）。断言风格与
+# e2e/nightly/lib.sh 一致（NAME: PASS/FAIL + 计数 + finish）。
+set -u
+. /tmp/lib.sh
+
+CB_STAGE=/tmp/conformance
+APPS="$CB_STAGE/apps"
+HTTP=http://127.0.0.1:8420
+DOMAIN_A=confa.test.local
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+http_code() { # <url> [host] — dind 无 curl，busybox wget -S 状态行走 stderr
+    if have curl; then
+        if [ -n "${2:-}" ]; then
+            curl -s -o /dev/null -w '%{http_code}' --max-time 5 -H "Host: $2" "$1" 2>/dev/null || printf '000'
+        else
+            curl -s -o /dev/null -w '%{http_code}' --max-time 5 "$1" 2>/dev/null || printf '000'
+        fi
+    elif have wget; then
+        if [ -n "${2:-}" ]; then
+            wget -q -S -T 5 -O /dev/null --header "Host: $2" "$1" 2>&1 |
+                awk 'NR==1 {gsub(/^[[:space:]]*HTTP\/[0-9.]+[[:space:]]*/, ""); print $1; exit}' || printf '000'
+        else
+            wget -q -S -T 5 -O /dev/null "$1" 2>&1 |
+                awk 'NR==1 {gsub(/^[[:space:]]*HTTP\/[0-9.]+[[:space:]]*/, ""); print $1; exit}' || printf '000'
+        fi
+    else
+        printf '000'
+    fi
+}
+
+json_str() { # <json> <key> — 定点字段提取（indent JSON；非通用解析器）
+    printf '%s' "$1" |
+        grep -o "\"$2\"[[:space:]]*:[[:space:]]*\"[^\"]*\"" |
+        head -n 1 |
+        sed 's/.*:[[:space:]]*"//; s/"$//'
+}
+
+# v0.3 归属管道：用户 PAT（宿主 fixture 经 exec+stdin 送入 /tmp/cb-token；
+# bootstrap token 已随首用户注册按设计吊销弃用）+ 显式项目归属（部署/构建
+# 面必须携带 FLEETLY_PROJECT）。
+TOKEN=$(cat /tmp/cb-token 2>/dev/null)
+[ -n "$TOKEN" ] || fatal 'founder PAT missing at /tmp/cb-token (host fixture did not run?)'
+cli() { # <args...> — 带连接 env 的 fleetly CLI（gRPC 面）
+    FLEETLY_ADDR=127.0.0.1:8421 FLEETLY_TOKEN="$TOKEN" FLEETLY_PROJECT=founder/default \
+        /opt/fleetly/bin/fleetly "$@"
+}
+
+traefik_ready() {
+    docker service ls --format '{{.Name}} {{.Replicas}}' 2>/dev/null |
+        grep -q 'fleetly-ingress 1/1'
+}
+wait_traefik() { # <budget-s>
+    _deadline=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$_deadline" ]; do
+        traefik_ready && return 0
+        sleep 3
+    done
+    return 1
+}
+route_ok() { # <domain>
+    [ "$(http_code "http://127.0.0.1/" "$1")" = '200' ]
+}
+wait_route() { # <domain> <budget-s>
+    _deadline=$(( $(date +%s) + $2 ))
+    while [ "$(date +%s)" -lt "$_deadline" ]; do
+        route_ok "$1" && return 0
+        sleep 2
+    done
+    return 1
+}
+derived_states() {
+    cli apps list --json 2>/dev/null |
+        grep -o '"derived_state": *"[a-z]*"' |
+        sed 's/.*: *"//; s/"$//' |
+        sort
+}
+first_derived_state() {
+    derived_states | head -n 1
+}
+wait_app_running() { # <budget-s>
+    _deadline=$(( $(date +%s) + $1 ))
+    while [ "$(date +%s)" -lt "$_deadline" ]; do
+        [ "$(first_derived_state)" = 'running' ] && return 0
+        sleep 2
+    done
+    return 1
+}
+
+nl "=== Builder conformance inner (stage=$CB_STAGE) ==="
 
 # Traefik 就绪（daemon 启动期拉起 fleetly-ingress global service）。
 wait_traefik 240
@@ -487,8 +554,13 @@ finish
 INNER_EOF
 
 # ----------------------------------------------------------------- dind
+# 宿主私网（fixture 的 curl helper 要能直达 REST 面——默认 bridge 无钉定
+# IP；子网避开其余 e2e 套件已占网段，见头注）。
+docker network create -d bridge --subnet "$CB_BR_SUBNET" "$CB_BR_NET" >/dev/null ||
+    die "create $CB_BR_NET"
 docker rm -f "$DIND_NAME" >/dev/null 2>&1 || true
-docker run -d --name "$DIND_NAME" --privileged "$DIND_IMAGE" >/dev/null ||
+docker run -d --name "$DIND_NAME" --privileged \
+    --network "$CB_BR_NET" --ip "$DIND_IP" "$DIND_IMAGE" >/dev/null ||
     die "docker run $DIND_NAME"
 _i=0
 while ! docker exec "$DIND_NAME" docker info >/dev/null 2>&1; do
@@ -509,6 +581,7 @@ docker exec "$DIND_NAME" mkdir -p /tmp/conformance/bin \
     /tmp/conformance/apps/c/src || die 'mkdir stage'
 stage /tmp/lib.sh "$ROOT/e2e/nightly/lib.sh"
 stage /tmp/conformance/install.sh "$ROOT/deploy/install.sh"
+stage /tmp/cb-boot.sh "$TMP/cb-boot.sh"
 stage /tmp/cb-inner.sh "$TMP/cb-inner.sh"
 stage /tmp/conformance/fleetlyd "$CB_BIN_DIR/fleetlyd"
 stage /tmp/conformance/fleetly "$CB_BIN_DIR/fleetly"
@@ -527,6 +600,41 @@ stage /tmp/conformance/apps/c/src/Dockerfile "$APPS/c/src/Dockerfile"
 stage /tmp/conformance/apps/c/fleetly.yaml "$APPS/c/fleetly.yaml"
 
 # ----------------------------------------------------------------- 执行
+log 'running in-dind boot (cb-boot.sh)'
+docker exec "$DIND_NAME" sh /tmp/cb-boot.sh
+RC=$?
+if [ "$RC" -ne 0 ]; then
+    log "boot RED (rc=$RC) -- dumping dind log tail"
+    docker logs "$DIND_NAME" --tail 120 2>&1 | tail -60 || true
+    exit "$RC"
+fi
+
+# ── v0.3 归属管道 fixture（宿主侧；cron.sh/databases.sh/multinode-rehearsal.sh
+# 同款）：curl helper 注册 founder（首用户 = 平台管理员 + 个人队 + 默认项目
+# default）→ 会话自服务铸用户 PAT（admin scope——founder 是平台管理员可达
+# 集；CLI 不消费会话 cookie）。PAT 经 exec+stdin 送回 dind /tmp/cb-token，
+# 断言段的 cli() 统一携带 FLEETLY_PROJECT=founder/default。bootstrap token
+# 已随首用户注册按设计吊销弃用。
+CURLER="$DIND_NAME-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$CB_BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    die "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://$DIND_IP:8420/healthz/liveness" ||
+    die 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://$DIND_IP:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || die 'founder register'
+CB_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://$DIND_IP:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$CB_TOKEN" ] || die 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+printf '%s' "$CB_TOKEN" >"$TMP/cb-token"
+stage /tmp/cb-token "$TMP/cb-token"
+log 'founder registered (platform admin); PAT minted and staged; project context founder/default'
+
 log 'running in-dind conformance suite (cb-inner.sh)'
 docker exec "$DIND_NAME" sh /tmp/cb-inner.sh
 RC=$?

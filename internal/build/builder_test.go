@@ -16,6 +16,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // errImages 是失败路径测试的镜像端口（成功构建后的 inspect 分支不会被
@@ -32,7 +33,7 @@ func (errImages) LoadImage(_ context.Context, _ io.Reader) error { return nil }
 // failed + E_BUILD_FAILED 信封（无日志可附时 context 不带 log 键）。
 func TestBuilderExecuteCorruptRequestFailsWithEnvelope(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "builder-fail")
+	app, err := testsupport.SeedAppE(t, st, "builder-fail")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -87,7 +88,7 @@ func TestBuilderExecuteCorruptRequestFailsWithEnvelope(t *testing.T) {
 // TestBuilderExecuteUnclaimedRejected 未认领（非 building）记录拒绝执行。
 func TestBuilderExecuteUnclaimedRejected(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "builder-claim-guard")
+	app, err := testsupport.SeedAppE(t, st, "builder-claim-guard")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -109,7 +110,7 @@ func TestBuilderExecuteUnclaimedRejected(t *testing.T) {
 // （WithoutCancel 生效；run/solve 用原 ctx，关停即取消，正确）。
 func TestBuilderTerminalWriteSurvivesCancelledContext(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "builder-cancel")
+	app, err := testsupport.SeedAppE(t, st, "builder-cancel")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -161,7 +162,7 @@ func TestBuilderTerminalWriteSurvivesCancelledContext(t *testing.T) {
 // 且 builds 行落 failed 终态（复用既有 fail 路径，不静默放宽）。
 func TestBuilderExecuteContextOutsideManagedRootsFails(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "ctx-escape")
+	app, err := testsupport.SeedAppE(t, st, "ctx-escape")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -219,7 +220,7 @@ func TestBuilderExecuteContextOutsideManagedRootsFails(t *testing.T) {
 // 连接门快速失败（失败注入面，不依赖 docker/buildkit 环境）。
 func TestBuilderFailedBuildRecordsLogPath(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "builder-logpath")
+	app, err := testsupport.SeedAppE(t, st, "builder-logpath")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

@@ -94,7 +94,7 @@ func TestSubstrateReconMissingServiceDisclosesCorrectsAndThrottles(t *testing.T)
 	app := deployDemoSucceeded(t, h)
 
 	// 外部 docker service rm：期望服务整体缺失。
-	if err := h.sub.ServiceRemove(ctx, "fleetly-demo-web"); err != nil {
+	if err := h.sub.ServiceRemove(ctx, h.svc("web")); err != nil {
 		t.Fatalf("remove service: %v", err)
 	}
 
@@ -116,7 +116,7 @@ func TestSubstrateReconMissingServiceDisclosesCorrectsAndThrottles(t *testing.T)
 	}
 
 	// 服务恢复（重新存在即收敛：判据是存在性）→ 记忆清零、零事件。
-	if err := h.sub.ServiceCreate(ctx, ServiceSpec{Name: "fleetly-demo-web", Image: "alpine:3", Replicas: 1}); err != nil {
+	if err := h.sub.ServiceCreate(ctx, ServiceSpec{Name: h.svc("web"), Image: "alpine:3", Replicas: 1}); err != nil {
 		t.Fatalf("recreate service: %v", err)
 	}
 	h.eng.SubstrateRecon(ctx)
@@ -128,7 +128,7 @@ func TestSubstrateReconMissingServiceDisclosesCorrectsAndThrottles(t *testing.T)
 	}
 
 	// 再次缺失 → 可再报（非永久静音），派生态再次修正。
-	if err := h.sub.ServiceRemove(ctx, "fleetly-demo-web"); err != nil {
+	if err := h.sub.ServiceRemove(ctx, h.svc("web")); err != nil {
 		t.Fatalf("remove service again: %v", err)
 	}
 	h.eng.SubstrateRecon(ctx)
@@ -154,7 +154,7 @@ func TestSubstrateReconSilentWhenServiceExists(t *testing.T) {
 	}
 
 	// 外部 docker service scale --replicas=0：service 仍在、副本归零。
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) { spec.Replicas = 0 })
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) { spec.Replicas = 0 })
 	h.eng.SubstrateRecon(ctx)
 	if got := countEventsByName(t, h, "app.substrate_missing"); got != 0 {
 		t.Fatalf("replicas=0 misjudged as missing (criterion must be service existence): %d events", got)
@@ -165,7 +165,7 @@ func TestSubstrateReconSilentWhenServiceExists(t *testing.T) {
 
 	// 非 running 派生态不是候选（degraded/blocked/down 各有归属路径）。
 	flipDerivedState(t, h, app.ID, "running", "degraded")
-	if err := h.sub.ServiceRemove(ctx, "fleetly-demo-web"); err != nil {
+	if err := h.sub.ServiceRemove(ctx, h.svc("web")); err != nil {
 		t.Fatalf("remove service: %v", err)
 	}
 	h.eng.SubstrateRecon(ctx)
@@ -210,7 +210,7 @@ func TestSubstrateReconSubstrateErrorIsNotMissing(t *testing.T) {
 	// 错误恢复 + 真实缺失：下一拍正常检出（瞬态错误未被当成缺失，也未
 	// 污染节流记忆）。
 	h.sub.failInspectErr = nil
-	if err := h.sub.ServiceRemove(ctx, "fleetly-demo-web"); err != nil {
+	if err := h.sub.ServiceRemove(ctx, h.svc("web")); err != nil {
 		t.Fatalf("remove service: %v", err)
 	}
 	h.eng.SubstrateRecon(ctx)
@@ -261,7 +261,7 @@ func TestSubstrateReconDrainedTasksDiscloseDegradedAndRecover(t *testing.T) {
 		{ID: "t-old", State: "shutdown", DesiredState: "shutdown", Image: "img"},
 		{ID: "t-new-1", State: "pending", DesiredState: "running", Image: "img"},
 	}
-	h.sub.setExternalTasks("fleetly-demo-web", drainedTasks)
+	h.sub.setExternalTasks(h.svc("web"), drainedTasks)
 
 	h.eng.SubstrateRecon(ctx)
 
@@ -295,7 +295,7 @@ func TestSubstrateReconDrainedTasksDiscloseDegradedAndRecover(t *testing.T) {
 	backTasks := []TaskState{
 		{ID: "t-new-2", State: "running", DesiredState: "running", Image: "img"},
 	}
-	h.sub.setExternalTasks("fleetly-demo-web", backTasks)
+	h.sub.setExternalTasks(h.svc("web"), backTasks)
 	h.eng.SubstrateRecon(ctx)
 	if got := countEventsByName(t, h, "app.recovered"); got != 1 {
 		t.Fatalf("app.recovered events = %d, want exactly 1 after tasks return", got)
@@ -305,7 +305,7 @@ func TestSubstrateReconDrainedTasksDiscloseDegradedAndRecover(t *testing.T) {
 	}
 
 	// 再次 drain → 可再报（记忆已清零，非永久静音）。
-	h.sub.setExternalTasks("fleetly-demo-web", drainedTasks)
+	h.sub.setExternalTasks(h.svc("web"), drainedTasks)
 	h.eng.SubstrateRecon(ctx)
 	if got := countEventsByName(t, h, "app.degraded"); got != 2 {
 		t.Fatalf("app.degraded events = %d, want 2 (memory cleared on recovery)", got)
@@ -324,8 +324,8 @@ func TestSubstrateReconDrainedGuardRails(t *testing.T) {
 	app := deployDemoSucceeded(t, h)
 
 	// 外部 scale=0：服务在、期望副本=0、任务全灭——不得判 drained。
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) { spec.Replicas = 0 })
-	h.sub.setExternalTasks("fleetly-demo-web", []TaskState{
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) { spec.Replicas = 0 })
+	h.sub.setExternalTasks(h.svc("web"), []TaskState{
 		{ID: "t-old", State: "shutdown", DesiredState: "shutdown", Image: "img"},
 	})
 	h.eng.SubstrateRecon(ctx)
@@ -337,8 +337,8 @@ func TestSubstrateReconDrainedGuardRails(t *testing.T) {
 	}
 
 	// 恢复期望副本但部分在岗（running>0）→ 不披露。
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) { spec.Replicas = 2 })
-	h.sub.setExternalTasks("fleetly-demo-web", []TaskState{
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) { spec.Replicas = 2 })
+	h.sub.setExternalTasks(h.svc("web"), []TaskState{
 		{ID: "t-run", State: "running", DesiredState: "running", Image: "img"},
 		{ID: "t-pend", State: "pending", DesiredState: "running", Image: "img"},
 	})
@@ -348,10 +348,10 @@ func TestSubstrateReconDrainedGuardRails(t *testing.T) {
 	}
 
 	// drained 与缺失并存：缺失路径优先（down 修正），drained 不叠加事件。
-	h.sub.setExternalTasks("fleetly-demo-web", []TaskState{
+	h.sub.setExternalTasks(h.svc("web"), []TaskState{
 		{ID: "t-pend", State: "pending", DesiredState: "running", Image: "img"},
 	})
-	if err := h.sub.ServiceRemove(ctx, "fleetly-demo-web"); err != nil {
+	if err := h.sub.ServiceRemove(ctx, h.svc("web")); err != nil {
 		t.Fatalf("remove service: %v", err)
 	}
 	h.eng.SubstrateRecon(ctx)

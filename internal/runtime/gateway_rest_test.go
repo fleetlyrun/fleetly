@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // TestGatewayRESTDualFace T2.17 验收（REST 双面一致性抽测）：同进程按生产
@@ -49,7 +50,7 @@ func TestGatewayRESTDualFace(t *testing.T) {
 
 	// 种子数据：一个应用 + 一次部署入队行（不经引擎——直接行写入，部署
 	// 列表面只读投影验证）。
-	app, err := st.CreateApp(context.Background(), "", "demo")
+	app, err := testsupport.SeedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

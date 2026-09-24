@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeRotator 是 CredentialRotator 端口的测试替身（编排本体在 internal/
@@ -53,6 +54,7 @@ func newRotateTestEnv(t *testing.T, rotator CredentialRotator) (*state.Store, *s
 	serverv1.RegisterDatabaseServiceServer(srv, NewDatabaseService(st, box, nil, rotator, &fakeOps{}))
 	conn := serveBufconn(t, srv)
 	token := seedTokenPlain(t, st, "admin")
+	seedFixtureProject(t, st) // 归属夹具（确定性 slug "fixture"——mustCreate 消费）
 	return st, box, serverv1.NewDatabaseServiceClient(conn), token
 }
 
@@ -259,9 +261,7 @@ func TestSecretSurfacesScopeAdminOnly(t *testing.T) {
 	}
 	// admin 侧形状错误可达 handler（鉴权放行；bufvalidate 拦截器不在本
 	// 最小夹具链上——值上限由 handler 兜底校验承载）。
-	if _, err := st.CreateApp(authCtx(context.Background(), adminTok), "", "a"); err != nil {
-		t.Fatalf("create app: %v", err)
-	}
+	testsupport.SeedApp(t, st, "a")
 	if _, err := serverv1.NewSecretsServiceClient(conn).SetSecret(authCtx(context.Background(), adminTok),
 		&serverv1.SetSecretRequest{App: "a", Name: "n", Value: ""}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("admin empty value code = %v, want InvalidArgument", status.Code(err))

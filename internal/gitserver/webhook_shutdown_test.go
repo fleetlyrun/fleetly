@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // interruptedAudits 读取当前 app.webhook_interrupted 审计行。
@@ -58,11 +59,10 @@ func TestWebhookShutdownDisclosesQueuedJobs(t *testing.T) {
 	t.Cleanup(func() { webhookDrainBudget = savedBudget })
 
 	src, st, box, _ := newTestSource(t, time.Minute)
-	ctx := context.Background()
 	secret := "hook-secret-at-least-16"
 
 	sourceDir, _ := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

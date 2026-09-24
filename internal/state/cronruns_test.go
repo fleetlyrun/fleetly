@@ -12,7 +12,7 @@ import (
 
 func createAppRow(t *testing.T, st *Store) App {
 	t.Helper()
-	app, err := st.CreateApp(context.Background(), "", "cronapp")
+	app, err := seedAppE(t, st, "cronapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

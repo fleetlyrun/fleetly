@@ -65,7 +65,7 @@ func (m *Manager) convergeProvisioning(ctx context.Context, inst *state.Database
 	}
 
 	// ① 共享网络（幂等创建，managed label；库服务与引用方 app 都挂它）。
-	netName, err := naming.DBNetworkName(inst.Name)
+	netName, err := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
 	if err != nil {
 		m.log.Warn("database: provision deferred", "instance", inst.Name, "error", err)
 		return
@@ -92,12 +92,12 @@ func (m *Manager) convergeProvisioning(ctx context.Context, inst *state.Database
 	// secret，spec 启动参数投递）。
 	secretIDs := map[string]string{}
 	if tpl.CredentialDelivery == dbtemplate.CredentialSecretFile {
-		secretName, err := naming.DBSecretName(inst.Name, pgSecretKey, naming.Hash8(password))
+		secretName, err := naming.DBSecretName(inst.TeamSlug, inst.ProjectSlug, inst.Name, pgSecretKey, naming.Hash8(password))
 		if err != nil {
 			m.log.Warn("database: provision deferred", "instance", inst.Name, "error", err)
 			return
 		}
-		id, err := m.ensureCredentialSecret(ctx, inst.Name, secretName, password)
+		id, err := m.ensureCredentialSecret(ctx, inst.QualifiedName(), secretName, password)
 		if err != nil {
 			m.log.Warn("database: provision deferred (credential secret)", "instance", inst.Name, "error", err)
 			return
@@ -105,7 +105,7 @@ func (m *Manager) convergeProvisioning(ctx context.Context, inst *state.Database
 		secretIDs[secretName] = id
 		// 旧值 secret 清场（轮换后名字更替——best-effort：in-use 由下一拍
 		// 消化；材料不残留）。
-		if err := m.removeStaleCredentialSecrets(ctx, inst.Name, secretName); err != nil {
+		if err := m.removeStaleCredentialSecrets(ctx, inst.QualifiedName(), secretName); err != nil {
 			m.log.Warn("database: stale credential secret cleanup deferred", "instance", inst.Name, "error", err)
 		}
 	}
@@ -116,7 +116,7 @@ func (m *Manager) convergeProvisioning(ctx context.Context, inst *state.Database
 		m.failProvisioning(ctx, inst, "template render failed: "+err.Error())
 		return
 	}
-	swarmSpec, err := buildServiceSpec(desired, inst.Name, secretIDs)
+	swarmSpec, err := buildServiceSpec(desired, inst.QualifiedName(), secretIDs)
 	if err != nil {
 		m.failProvisioning(ctx, inst, "service spec build failed: "+err.Error())
 		return
@@ -382,7 +382,7 @@ func (m *Manager) watchHealthy(ctx context.Context, inst *state.DatabaseInstance
 	// removeStaleCredentialSecrets best-effort 清场，材料不残留）。
 	secretIDs := map[string]string{}
 	if tpl.CredentialDelivery == dbtemplate.CredentialSecretFile {
-		secretName, err := naming.DBSecretName(inst.Name, pgSecretKey, naming.Hash8(password))
+		secretName, err := naming.DBSecretName(inst.TeamSlug, inst.ProjectSlug, inst.Name, pgSecretKey, naming.Hash8(password))
 		if err != nil {
 			m.log.Warn("database: watch deferred", "instance", inst.Name, "error", err)
 			return
@@ -394,7 +394,7 @@ func (m *Manager) watchHealthy(ctx context.Context, inst *state.DatabaseInstance
 		}
 		if !exists {
 			// secret 缺失（外部清理）：先补齐再收敛服务——服务引用不能悬空。
-			if id, err = m.ensureCredentialSecret(ctx, inst.Name, secretName, password); err != nil {
+			if id, err = m.ensureCredentialSecret(ctx, inst.QualifiedName(), secretName, password); err != nil {
 				m.log.Warn("database: watch deferred (credential secret recreate)", "instance", inst.Name, "error", err)
 				return
 			}
@@ -402,7 +402,7 @@ func (m *Manager) watchHealthy(ctx context.Context, inst *state.DatabaseInstance
 		secretIDs[secretName] = id
 		// 旧值 secret 清场（轮换换名后——best-effort：in-use 如实报错降级
 		// 日志，下一拍重走；与 provisioning 路径同款纪律）。
-		if err := m.removeStaleCredentialSecrets(ctx, inst.Name, secretName); err != nil {
+		if err := m.removeStaleCredentialSecrets(ctx, inst.QualifiedName(), secretName); err != nil {
 			m.log.Warn("database: stale credential secret cleanup deferred", "instance", inst.Name, "error", err)
 		}
 	}
@@ -411,7 +411,7 @@ func (m *Manager) watchHealthy(ctx context.Context, inst *state.DatabaseInstance
 		m.log.Warn("database: watch deferred (render)", "instance", inst.Name, "error", err)
 		return
 	}
-	swarmSpec, err := buildServiceSpec(desired, inst.Name, secretIDs)
+	swarmSpec, err := buildServiceSpec(desired, inst.QualifiedName(), secretIDs)
 	if err != nil {
 		m.log.Warn("database: watch deferred (spec build)", "instance", inst.Name, "error", err)
 		return
@@ -481,7 +481,7 @@ func (m *Manager) convergePaused(ctx context.Context, inst *state.DatabaseInstan
 	}
 	secretIDs := map[string]string{}
 	if tpl.CredentialDelivery == dbtemplate.CredentialSecretFile {
-		secretName, err := naming.DBSecretName(inst.Name, pgSecretKey, naming.Hash8(password))
+		secretName, err := naming.DBSecretName(inst.TeamSlug, inst.ProjectSlug, inst.Name, pgSecretKey, naming.Hash8(password))
 		if err != nil {
 			return
 		}
@@ -491,7 +491,7 @@ func (m *Manager) convergePaused(ctx context.Context, inst *state.DatabaseInstan
 			return
 		}
 		if !exists {
-			if id, err = m.ensureCredentialSecret(ctx, inst.Name, secretName, password); err != nil {
+			if id, err = m.ensureCredentialSecret(ctx, inst.QualifiedName(), secretName, password); err != nil {
 				m.log.Warn("database: pause converge deferred (credential secret recreate)", "instance", inst.Name, "error", err)
 				return
 			}
@@ -503,7 +503,7 @@ func (m *Manager) convergePaused(ctx context.Context, inst *state.DatabaseInstan
 		m.log.Warn("database: pause converge deferred (render)", "instance", inst.Name, "error", err)
 		return
 	}
-	swarmSpec, err := buildServiceSpec(desired, inst.Name, secretIDs)
+	swarmSpec, err := buildServiceSpec(desired, inst.QualifiedName(), secretIDs)
 	if err != nil {
 		m.log.Warn("database: pause converge deferred (spec build)", "instance", inst.Name, "error", err)
 		return
@@ -520,7 +520,7 @@ func (m *Manager) convergePaused(ctx context.Context, inst *state.DatabaseInstan
 // ——下一拍从该步重走（各步幂等）。
 func (m *Manager) reapDeleting(ctx context.Context, inst *state.DatabaseInstance) {
 	// ① 服务移除（幂等）+ 消失确认（删除有传播延迟——未消失本拍收场）。
-	svcName, err := naming.DBServiceName(inst.Name, serviceSuffixOf(inst.Template))
+	svcName, err := naming.DBServiceName(inst.TeamSlug, inst.ProjectSlug, inst.Name, serviceSuffixOf(inst.Template))
 	if err != nil {
 		m.log.Warn("database: reap deferred", "instance", inst.Name, "error", err)
 		return
@@ -538,7 +538,7 @@ func (m *Manager) reapDeleting(ctx context.Context, inst *state.DatabaseInstance
 
 	// ② 凭据 secret 清场（label 选择——全部历史值；in-use 已随服务消失
 	// 解除，残余竞态下一拍重走）。
-	if err := m.removeStaleCredentialSecrets(ctx, inst.Name, ""); err != nil {
+	if err := m.removeStaleCredentialSecrets(ctx, inst.QualifiedName(), ""); err != nil {
 		m.log.Warn("database: reap deferred (secret cleanup)", "instance", inst.Name, "error", err)
 		return
 	}
@@ -552,7 +552,7 @@ func (m *Manager) reapDeleting(ctx context.Context, inst *state.DatabaseInstance
 
 	// ④ 共享网络移除（引用方端点未释放时 in-use——下一拍重试直至清场；
 	// 引用守卫保证受理时无引用行，挂接残余只来自在途部署窗口）。
-	netName, err := naming.DBNetworkName(inst.Name)
+	netName, err := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
 	if err != nil {
 		m.log.Warn("database: reap deferred", "instance", inst.Name, "error", err)
 		return

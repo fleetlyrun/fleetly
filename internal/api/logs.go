@@ -49,12 +49,14 @@ func (s *LogsService) WithVictorialogs(vl *victorialogs.Backend, vm *victorialog
 }
 
 // FollowLogs 实时跟随（server-streaming；ctx 取消即断流，重连 = 重新
-// Follow）。
+// Follow）。订阅键 = app 的三段限定形（v0.3 流标签口径——采集端 ring 以
+// 限定形记账，rbac-teams §4.3）。
 func (s *LogsService) FollowLogs(req *serverv1.FollowLogsRequest, stream serverv1.LogsService_FollowLogsServer) error {
-	if _, err := resolveApp(stream.Context(), s.st, req.GetApp()); err != nil {
+	app, err := resolveApp(stream.Context(), s.st, req.GetApp())
+	if err != nil {
 		return err
 	}
-	ch, cancel := s.mg.Follow(stream.Context(), req.GetApp(), req.GetService())
+	ch, cancel := s.mg.Follow(stream.Context(), app.QualifiedName(), req.GetService())
 	defer cancel()
 	for entry := range ch {
 		if err := stream.Send(&serverv1.FollowLogsResponse{Entry: logEntryView(entry)}); err != nil {

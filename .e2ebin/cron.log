@@ -1,0 +1,26 @@
+[cron-e2e 15:48:09] using prebuilt binaries from D:/Codes/qiulin/fleetly/.e2ebin
+[cron-e2e 15:48:09] WARN removing leftover cron-e2e containers: 9873410e0e67
+[cron-e2e 15:48:14] dind fleetly-cron-dind ready (engine 29.8.1)
+[cron-e2e 15:48:14] staging binaries + config (exec+stdin)
+[cron-e2e 15:48:25] pre-pulling fixture images (pinned digests)
+[cron-e2e 15:48:33] fleetlyd live (liveness 200), bootstrap token read
+[cron-e2e 15:48:34] founder registered (platform admin); PAT minted; project context founder/default
+[cron-e2e 15:48:34] === C0: mixed app deploy (web long-running + task cron schedule) ===
+[cron-e2e 15:48:46] CR-C0 MIXED_APP_DEPLOY: PASS
+[cron-e2e 15:48:46] CR-C0a WEB_SERVICE_RUNNING: PASS
+[cron-e2e 15:48:47] CR-C0b CRON_SERVICE_NOT_LONGRUNNING: PASS
+[cron-e2e 15:48:47] === C1: scheduled fire -> succeeded -> job service removed ===
+[cron-e2e 15:49:05] CR-C1a TRIGGERED_EVENT: PASS
+[cron-e2e 15:49:16] CR-C1b SUCCEEDED_EVENT: PASS
+[cron-e2e 15:49:16] CR-C1c RUN_LEDGER_SUCCEEDED_ROW: PASS
+[cron-e2e 15:49:17] CR-C1d JOB_SERVICE_REMOVED: PASS
+[cron-e2e 15:49:17] === C1e: job output captured by the existing log pipeline ===
+[cron-e2e 15:49:17] CR-C1e JOB_LOG_IN_PIPELINE: PASS
+[cron-e2e 15:49:17] === C2: manual trigger via CLI (same trigger chain) ===
+[cron-e2e 15:49:18] CR-C2a MANUAL_TRIGGER_RUN: PASS
+[cron-e2e 15:49:18] CR-C2b MANUAL_RUN_LEDGER_ROW: PASS
+[cron-e2e 15:49:18] === C3: replicas>0 with fleetly.cron refused ===
+[cron-e2e 15:49:19] CR-C3 REPLICAS_GT0_REFUSED: PASS
+[cron-e2e 15:49:20] === C4: 6-field expression refused ===
+[cron-e2e 15:49:21] CR-C4 SIX_FIELD_EXPRESSION_REFUSED: PASS
+[cron-e2e 15:49:21] SUITE-DONE all-asserts-passed

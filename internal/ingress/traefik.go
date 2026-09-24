@@ -61,6 +61,9 @@ type dockerClient interface {
 	// NetworkID 解析网络名 → 底座 ID（attach 幂等判据：服务实况里的
 	// 网络目标是 ID 形态）。
 	NetworkID(ctx context.Context, name string) (string, error)
+	// NetworkRemove 删除网络（MoveApp 摘旧网；幂等：缺失视为成功；仍有
+	// 端点挂接返回错误——调用方 best-effort 消化）。
+	NetworkRemove(ctx context.Context, name string) error
 	// VolumeEnsure 确认命名卷存在（幂等；E1-4 registry 数据卷的前置对象
 	// ——swarm 对 task 卷挂载亦有按节点创建语义，显式收敛使部署器自证）。
 	VolumeEnsure(ctx context.Context, name string) error
@@ -210,6 +213,18 @@ func (c *realDockerClient) NetworkID(ctx context.Context, name string) (string, 
 	return res.Network.ID, nil
 }
 
+// NetworkRemove 删除网络（MoveApp 摘旧网；幂等：缺失视为成功；仍有端点
+// 挂接返回错误——调用方 best-effort 消化，引用方清场后可重试）。
+func (c *realDockerClient) NetworkRemove(ctx context.Context, name string) error {
+	if _, err := c.cli.NetworkRemove(ctx, name, mobyclient.NetworkRemoveOptions{}); err != nil {
+		if errdefs.IsNotFound(err) {
+			return nil
+		}
+		return fmt.Errorf("ingress: network remove %s: %w", name, err)
+	}
+	return nil
+}
+
 // VolumeEnsure 确认命名卷存在（幂等；E1-4 registry 数据卷前置对象——已有
 // 即 no-op、缺失创建、并发竞态已存在即成功；与 substrate 同语义）。
 func (c *realDockerClient) VolumeEnsure(ctx context.Context, name string) error {
@@ -328,8 +343,8 @@ func (m *Manager) EnsureTraefik(ctx context.Context) error {
 //（lastSpec 不含历史 attach，会互相覆盖丢失其他 app 的网络，实机验证
 // 发现的多 app 回归）。幂等判据用网络 ID（swarm 把 attach 目标归一为
 // ID——名字比对永不命中，产生重复 attach，实机验证发现的第二处）。
-func (m *Manager) attachNetwork(ctx context.Context, appName string) error {
-	netName, err := appNetworkName(appName)
+func (m *Manager) attachNetwork(ctx context.Context, team, prj, app string) error {
+	netName, err := appNetworkName(team, prj, app)
 	if err != nil {
 		return err
 	}
@@ -615,16 +630,18 @@ func outboundLocalIP() string {
 }
 
 // appNetworkName 是 per-app overlay 网络名（naming.NetworkName 同公式；
-// 入口层本地重写避免适配器反向依赖引擎/核心——公式由 naming_test 钉死，
-// 本包不得改写）。
-func appNetworkName(app string) (string, error) {
-	if app == "" {
-		return "", fmt.Errorf("ingress: app name is empty")
+// v0.3 三段形——team/prj 段进公式，rbac-teams §4.3。入口层本地重写避免
+// 适配器反向依赖引擎/核心——公式由 naming_test 钉死，本包不得改写）。
+func appNetworkName(team, prj, app string) (string, error) {
+	if team == "" || prj == "" || app == "" {
+		return "", fmt.Errorf("ingress: app network naming requires team/project/app slugs (got %q/%q/%q)", team, prj, app)
 	}
-	if strings.ContainsAny(app, " \t/\\") {
-		return "", fmt.Errorf("ingress: app name %q contains invalid characters", app)
+	for _, v := range []string{team, prj, app} {
+		if strings.ContainsAny(v, " \t/\\") {
+			return "", fmt.Errorf("ingress: app network naming component %q contains invalid characters", v)
+		}
 	}
-	return "fleetly-" + app + "-net", nil
+	return "fleetly-" + team + "-" + prj + "-" + app + "-net", nil
 }
 
 // sameStrings 切片相等（同序）。

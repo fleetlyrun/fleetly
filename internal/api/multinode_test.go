@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeJoin 是 JoinTokenPort 的测试替身。
@@ -210,7 +211,7 @@ func TestRotateJoinTokenAudited(t *testing.T) {
 func TestListNodesPinnedAppIds(t *testing.T) {
 	st := tStore(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "web")
+	app, err := testsupport.SeedAppE(t, st, "web")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -275,7 +276,7 @@ func startPlacement(t *testing.T, st *state.Store) (serverv1.PlacementServiceCli
 func TestUpdatePlacementAndListVolumes(t *testing.T) {
 	st := tStore(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "web")
+	app, err := testsupport.SeedAppE(t, st, "web")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -339,7 +340,7 @@ func TestUpdatePlacementAndListVolumes(t *testing.T) {
 func TestGetPlacementMigrationPlan(t *testing.T) {
 	st := tStore(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "web")
+	app, err := testsupport.SeedAppE(t, st, "web")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

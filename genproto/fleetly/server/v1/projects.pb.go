@@ -959,6 +959,281 @@ func (*RemoveProjectMemberResponse) Descriptor() ([]byte, []int) {
 	return file_fleetly_server_v1_projects_proto_rawDescGZIP(), []int{17}
 }
 
+// MoveAppRequest 是资源改派请求（平台管理员专属）。
+type MoveAppRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// app 引用：裸名（解析域内唯一）、`team/prj/app` 限定形或平台 ID。
+	App string `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// 目标项目平台 ID（管理面用 ID，D-W0-9——免疫同名项目歧义）。
+	ToProjectId   string `protobuf:"bytes,2,opt,name=to_project_id,json=toProjectId,proto3" json:"to_project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveAppRequest) Reset() {
+	*x = MoveAppRequest{}
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveAppRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveAppRequest) ProtoMessage() {}
+
+func (x *MoveAppRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveAppRequest.ProtoReflect.Descriptor instead.
+func (*MoveAppRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_projects_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *MoveAppRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *MoveAppRequest) GetToProjectId() string {
+	if x != nil {
+		return x.ToProjectId
+	}
+	return ""
+}
+
+// MoveAppResponse 是改派应答：换名重部署的结论投影（swapped = 新命名服务
+// 已就位并摘除旧名服务；accepted = 无运行中服务，仅归属切换）。
+type MoveAppResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	FromProjectId string                 `protobuf:"bytes,2,opt,name=from_project_id,json=fromProjectId,proto3" json:"from_project_id,omitempty"`
+	ToProjectId   string                 `protobuf:"bytes,3,opt,name=to_project_id,json=toProjectId,proto3" json:"to_project_id,omitempty"`
+	ToProject     string                 `protobuf:"bytes,4,opt,name=to_project,json=toProject,proto3" json:"to_project,omitempty"`
+	// 换名重部署的部署 ID（无部署史 = 空）。
+	DeploymentId string `protobuf:"bytes,5,opt,name=deployment_id,json=deploymentId,proto3" json:"deployment_id,omitempty"`
+	// moved|accepted（accepted = 无底座对象随迁的纯归属切换）。
+	Status        string `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveAppResponse) Reset() {
+	*x = MoveAppResponse{}
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveAppResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveAppResponse) ProtoMessage() {}
+
+func (x *MoveAppResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveAppResponse.ProtoReflect.Descriptor instead.
+func (*MoveAppResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_projects_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *MoveAppResponse) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *MoveAppResponse) GetFromProjectId() string {
+	if x != nil {
+		return x.FromProjectId
+	}
+	return ""
+}
+
+func (x *MoveAppResponse) GetToProjectId() string {
+	if x != nil {
+		return x.ToProjectId
+	}
+	return ""
+}
+
+func (x *MoveAppResponse) GetToProject() string {
+	if x != nil {
+		return x.ToProject
+	}
+	return ""
+}
+
+func (x *MoveAppResponse) GetDeploymentId() string {
+	if x != nil {
+		return x.DeploymentId
+	}
+	return ""
+}
+
+func (x *MoveAppResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+// MoveDatabaseRequest 是库实例改派请求（平台管理员专属）。
+type MoveDatabaseRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 库实例引用：裸名（解析域内唯一）、`team/prj/<name>` 限定形或平台 ID。
+	Database string `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	// 目标项目平台 ID。
+	ToProjectId   string `protobuf:"bytes,2,opt,name=to_project_id,json=toProjectId,proto3" json:"to_project_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveDatabaseRequest) Reset() {
+	*x = MoveDatabaseRequest{}
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveDatabaseRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveDatabaseRequest) ProtoMessage() {}
+
+func (x *MoveDatabaseRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveDatabaseRequest.ProtoReflect.Descriptor instead.
+func (*MoveDatabaseRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_projects_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *MoveDatabaseRequest) GetDatabase() string {
+	if x != nil {
+		return x.Database
+	}
+	return ""
+}
+
+func (x *MoveDatabaseRequest) GetToProjectId() string {
+	if x != nil {
+		return x.ToProjectId
+	}
+	return ""
+}
+
+// MoveDatabaseResponse 是库改派应答。
+type MoveDatabaseResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Database      string                 `protobuf:"bytes,1,opt,name=database,proto3" json:"database,omitempty"`
+	FromProjectId string                 `protobuf:"bytes,2,opt,name=from_project_id,json=fromProjectId,proto3" json:"from_project_id,omitempty"`
+	ToProjectId   string                 `protobuf:"bytes,3,opt,name=to_project_id,json=toProjectId,proto3" json:"to_project_id,omitempty"`
+	ToProject     string                 `protobuf:"bytes,4,opt,name=to_project,json=toProject,proto3" json:"to_project,omitempty"`
+	Status        string                 `protobuf:"bytes,5,opt,name=status,proto3" json:"status,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *MoveDatabaseResponse) Reset() {
+	*x = MoveDatabaseResponse{}
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *MoveDatabaseResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*MoveDatabaseResponse) ProtoMessage() {}
+
+func (x *MoveDatabaseResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_projects_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use MoveDatabaseResponse.ProtoReflect.Descriptor instead.
+func (*MoveDatabaseResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_projects_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *MoveDatabaseResponse) GetDatabase() string {
+	if x != nil {
+		return x.Database
+	}
+	return ""
+}
+
+func (x *MoveDatabaseResponse) GetFromProjectId() string {
+	if x != nil {
+		return x.FromProjectId
+	}
+	return ""
+}
+
+func (x *MoveDatabaseResponse) GetToProjectId() string {
+	if x != nil {
+		return x.ToProjectId
+	}
+	return ""
+}
+
+func (x *MoveDatabaseResponse) GetToProject() string {
+	if x != nil {
+		return x.ToProject
+	}
+	return ""
+}
+
+func (x *MoveDatabaseResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
 var File_fleetly_server_v1_projects_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_projects_proto_rawDesc = "" +
@@ -1022,7 +1297,28 @@ const file_fleetly_server_v1_projects_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\tprojectId\x12 \n" +
 	"\auser_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06userId\"\x1d\n" +
-	"\x1bRemoveProjectMemberResponse2\xf9\b\n" +
+	"\x1bRemoveProjectMemberResponse\"X\n" +
+	"\x0eMoveAppRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12+\n" +
+	"\rto_project_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\vtoProjectId\"\xcb\x01\n" +
+	"\x0fMoveAppResponse\x12\x10\n" +
+	"\x03app\x18\x01 \x01(\tR\x03app\x12&\n" +
+	"\x0ffrom_project_id\x18\x02 \x01(\tR\rfromProjectId\x12\"\n" +
+	"\rto_project_id\x18\x03 \x01(\tR\vtoProjectId\x12\x1d\n" +
+	"\n" +
+	"to_project\x18\x04 \x01(\tR\ttoProject\x12#\n" +
+	"\rdeployment_id\x18\x05 \x01(\tR\fdeploymentId\x12\x16\n" +
+	"\x06status\x18\x06 \x01(\tR\x06status\"g\n" +
+	"\x13MoveDatabaseRequest\x12#\n" +
+	"\bdatabase\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\bdatabase\x12+\n" +
+	"\rto_project_id\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\vtoProjectId\"\xb5\x01\n" +
+	"\x14MoveDatabaseResponse\x12\x1a\n" +
+	"\bdatabase\x18\x01 \x01(\tR\bdatabase\x12&\n" +
+	"\x0ffrom_project_id\x18\x02 \x01(\tR\rfromProjectId\x12\"\n" +
+	"\rto_project_id\x18\x03 \x01(\tR\vtoProjectId\x12\x1d\n" +
+	"\n" +
+	"to_project\x18\x04 \x01(\tR\ttoProject\x12\x16\n" +
+	"\x06status\x18\x05 \x01(\tR\x06status2\x97\v\n" +
 	"\x0fProjectsService\x12{\n" +
 	"\rCreateProject\x12'.fleetly.server.v1.CreateProjectRequest\x1a(.fleetly.server.v1.CreateProjectResponse\"\x17\x82\xd3\xe4\x93\x02\x11:\x01*\"\f/v1/projects\x12u\n" +
 	"\fListProjects\x12&.fleetly.server.v1.ListProjectsRequest\x1a'.fleetly.server.v1.ListProjectsResponse\"\x14\x82\xd3\xe4\x93\x02\x0e\x12\f/v1/projects\x12t\n" +
@@ -1032,7 +1328,9 @@ const file_fleetly_server_v1_projects_proto_rawDesc = "" +
 	"\rDeleteProject\x12'.fleetly.server.v1.DeleteProjectRequest\x1a(.fleetly.server.v1.DeleteProjectResponse\"\x19\x82\xd3\xe4\x93\x02\x13*\x11/v1/projects/{id}\x12\x9c\x01\n" +
 	"\x12ListProjectMembers\x12,.fleetly.server.v1.ListProjectMembersRequest\x1a-.fleetly.server.v1.ListProjectMembersResponse\")\x82\xd3\xe4\x93\x02#\x12!/v1/projects/{project_id}/members\x12\xae\x01\n" +
 	"\x14SetProjectMemberRole\x12..fleetly.server.v1.SetProjectMemberRoleRequest\x1a/.fleetly.server.v1.SetProjectMemberRoleResponse\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/v1/projects/{project_id}/members:set-role\x12\xa9\x01\n" +
-	"\x13RemoveProjectMember\x12-.fleetly.server.v1.RemoveProjectMemberRequest\x1a..fleetly.server.v1.RemoveProjectMemberResponse\"3\x82\xd3\xe4\x93\x02-*+/v1/projects/{project_id}/members/{user_id}B\x98\x01\x92ARRP\n" +
+	"\x13RemoveProjectMember\x12-.fleetly.server.v1.RemoveProjectMemberRequest\x1a..fleetly.server.v1.RemoveProjectMemberResponse\"3\x82\xd3\xe4\x93\x02-*+/v1/projects/{project_id}/members/{user_id}\x12\x82\x01\n" +
+	"\aMoveApp\x12!.fleetly.server.v1.MoveAppRequest\x1a\".fleetly.server.v1.MoveAppResponse\"0\x82\xd3\xe4\x93\x02*:\x01*\"%/v1/projects/{to_project_id}:move-app\x12\x96\x01\n" +
+	"\fMoveDatabase\x12&.fleetly.server.v1.MoveDatabaseRequest\x1a'.fleetly.server.v1.MoveDatabaseResponse\"5\x82\xd3\xe4\x93\x02/:\x01*\"*/v1/projects/{to_project_id}:move-databaseB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -1049,7 +1347,7 @@ func file_fleetly_server_v1_projects_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_projects_proto_rawDescData
 }
 
-var file_fleetly_server_v1_projects_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_fleetly_server_v1_projects_proto_msgTypes = make([]protoimpl.MessageInfo, 22)
 var file_fleetly_server_v1_projects_proto_goTypes = []any{
 	(*ProjectView)(nil),                  // 0: fleetly.server.v1.ProjectView
 	(*CreateProjectRequest)(nil),         // 1: fleetly.server.v1.CreateProjectRequest
@@ -1069,15 +1367,19 @@ var file_fleetly_server_v1_projects_proto_goTypes = []any{
 	(*SetProjectMemberRoleResponse)(nil), // 15: fleetly.server.v1.SetProjectMemberRoleResponse
 	(*RemoveProjectMemberRequest)(nil),   // 16: fleetly.server.v1.RemoveProjectMemberRequest
 	(*RemoveProjectMemberResponse)(nil),  // 17: fleetly.server.v1.RemoveProjectMemberResponse
-	(*timestamppb.Timestamp)(nil),        // 18: google.protobuf.Timestamp
+	(*MoveAppRequest)(nil),               // 18: fleetly.server.v1.MoveAppRequest
+	(*MoveAppResponse)(nil),              // 19: fleetly.server.v1.MoveAppResponse
+	(*MoveDatabaseRequest)(nil),          // 20: fleetly.server.v1.MoveDatabaseRequest
+	(*MoveDatabaseResponse)(nil),         // 21: fleetly.server.v1.MoveDatabaseResponse
+	(*timestamppb.Timestamp)(nil),        // 22: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_projects_proto_depIdxs = []int32{
-	18, // 0: fleetly.server.v1.ProjectView.created_at:type_name -> google.protobuf.Timestamp
+	22, // 0: fleetly.server.v1.ProjectView.created_at:type_name -> google.protobuf.Timestamp
 	0,  // 1: fleetly.server.v1.CreateProjectResponse.project:type_name -> fleetly.server.v1.ProjectView
 	0,  // 2: fleetly.server.v1.ListProjectsResponse.projects:type_name -> fleetly.server.v1.ProjectView
 	0,  // 3: fleetly.server.v1.GetProjectResponse.project:type_name -> fleetly.server.v1.ProjectView
 	0,  // 4: fleetly.server.v1.UpdateProjectResponse.project:type_name -> fleetly.server.v1.ProjectView
-	18, // 5: fleetly.server.v1.ProjectMemberView.created_at:type_name -> google.protobuf.Timestamp
+	22, // 5: fleetly.server.v1.ProjectMemberView.created_at:type_name -> google.protobuf.Timestamp
 	12, // 6: fleetly.server.v1.ListProjectMembersResponse.members:type_name -> fleetly.server.v1.ProjectMemberView
 	12, // 7: fleetly.server.v1.SetProjectMemberRoleResponse.member:type_name -> fleetly.server.v1.ProjectMemberView
 	1,  // 8: fleetly.server.v1.ProjectsService.CreateProject:input_type -> fleetly.server.v1.CreateProjectRequest
@@ -1088,16 +1390,20 @@ var file_fleetly_server_v1_projects_proto_depIdxs = []int32{
 	11, // 13: fleetly.server.v1.ProjectsService.ListProjectMembers:input_type -> fleetly.server.v1.ListProjectMembersRequest
 	14, // 14: fleetly.server.v1.ProjectsService.SetProjectMemberRole:input_type -> fleetly.server.v1.SetProjectMemberRoleRequest
 	16, // 15: fleetly.server.v1.ProjectsService.RemoveProjectMember:input_type -> fleetly.server.v1.RemoveProjectMemberRequest
-	2,  // 16: fleetly.server.v1.ProjectsService.CreateProject:output_type -> fleetly.server.v1.CreateProjectResponse
-	4,  // 17: fleetly.server.v1.ProjectsService.ListProjects:output_type -> fleetly.server.v1.ListProjectsResponse
-	6,  // 18: fleetly.server.v1.ProjectsService.GetProject:output_type -> fleetly.server.v1.GetProjectResponse
-	8,  // 19: fleetly.server.v1.ProjectsService.UpdateProject:output_type -> fleetly.server.v1.UpdateProjectResponse
-	10, // 20: fleetly.server.v1.ProjectsService.DeleteProject:output_type -> fleetly.server.v1.DeleteProjectResponse
-	13, // 21: fleetly.server.v1.ProjectsService.ListProjectMembers:output_type -> fleetly.server.v1.ListProjectMembersResponse
-	15, // 22: fleetly.server.v1.ProjectsService.SetProjectMemberRole:output_type -> fleetly.server.v1.SetProjectMemberRoleResponse
-	17, // 23: fleetly.server.v1.ProjectsService.RemoveProjectMember:output_type -> fleetly.server.v1.RemoveProjectMemberResponse
-	16, // [16:24] is the sub-list for method output_type
-	8,  // [8:16] is the sub-list for method input_type
+	18, // 16: fleetly.server.v1.ProjectsService.MoveApp:input_type -> fleetly.server.v1.MoveAppRequest
+	20, // 17: fleetly.server.v1.ProjectsService.MoveDatabase:input_type -> fleetly.server.v1.MoveDatabaseRequest
+	2,  // 18: fleetly.server.v1.ProjectsService.CreateProject:output_type -> fleetly.server.v1.CreateProjectResponse
+	4,  // 19: fleetly.server.v1.ProjectsService.ListProjects:output_type -> fleetly.server.v1.ListProjectsResponse
+	6,  // 20: fleetly.server.v1.ProjectsService.GetProject:output_type -> fleetly.server.v1.GetProjectResponse
+	8,  // 21: fleetly.server.v1.ProjectsService.UpdateProject:output_type -> fleetly.server.v1.UpdateProjectResponse
+	10, // 22: fleetly.server.v1.ProjectsService.DeleteProject:output_type -> fleetly.server.v1.DeleteProjectResponse
+	13, // 23: fleetly.server.v1.ProjectsService.ListProjectMembers:output_type -> fleetly.server.v1.ListProjectMembersResponse
+	15, // 24: fleetly.server.v1.ProjectsService.SetProjectMemberRole:output_type -> fleetly.server.v1.SetProjectMemberRoleResponse
+	17, // 25: fleetly.server.v1.ProjectsService.RemoveProjectMember:output_type -> fleetly.server.v1.RemoveProjectMemberResponse
+	19, // 26: fleetly.server.v1.ProjectsService.MoveApp:output_type -> fleetly.server.v1.MoveAppResponse
+	21, // 27: fleetly.server.v1.ProjectsService.MoveDatabase:output_type -> fleetly.server.v1.MoveDatabaseResponse
+	18, // [18:28] is the sub-list for method output_type
+	8,  // [8:18] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
 	8,  // [8:8] is the sub-list for extension extendee
 	0,  // [0:8] is the sub-list for field type_name
@@ -1114,7 +1420,7 @@ func file_fleetly_server_v1_projects_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_projects_proto_rawDesc), len(file_fleetly_server_v1_projects_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   22,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

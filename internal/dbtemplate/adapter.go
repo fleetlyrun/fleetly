@@ -44,6 +44,10 @@ type BackupInput struct {
 	// Instance/TemplateID 是目标实例名与模板 ID（引擎工具集与端口由模板定）。
 	Instance   string
 	TemplateID string
+	// TeamSlug/PrjSlug 是归属两个 slug（v0.3 库族三段命名——job 接入的
+	// 实例共享网络名公式参数，rbac-teams §4.3）。
+	TeamSlug string
+	PrjSlug  string
 	// Kind 取 Backup* 词表。
 	Kind BackupKind
 	// VolumeName 是实例数据卷 docker 名（job 钉绑定节点、挂卷执行）。
@@ -82,6 +86,8 @@ type BackupOutcome struct {
 	// ── Verify 回读上下文（备份时已裁决的事实）──
 	Instance            string
 	TemplateID          string
+	TeamSlug            string
+	PrjSlug             string
 	BindNodeID          string
 	Repository          string
 	ResticPassword      string
@@ -98,6 +104,8 @@ type BackupOutcome struct {
 type RestoreInput struct {
 	Instance   string
 	TemplateID string
+	TeamSlug   string
+	PrjSlug    string
 	VolumeName string
 	BindNodeID string
 	Repository string
@@ -108,9 +116,9 @@ type RestoreInput struct {
 	// ResticPassword 是 repo 口令明文（只进 job env）。
 	ResticPassword string
 	// S3AccessKeyID/S3SecretKey/S3Region 是解密后的端点凭证（只进 job env）。
-	S3AccessKeyID string
-	S3SecretKey   string
-	S3Region      string
+	S3AccessKeyID       string
+	S3SecretKey         string
+	S3Region            string
 	S3PathStyle         bool
 	AttachRustfsNetwork bool
 }
@@ -121,6 +129,8 @@ type RestoreInput struct {
 type RotateInput struct {
 	Instance   string
 	TemplateID string
+	TeamSlug   string
+	PrjSlug    string
 	VolumeName string
 	BindNodeID string
 	// NewPassword 是新凭据明文。

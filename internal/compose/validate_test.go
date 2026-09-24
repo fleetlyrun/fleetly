@@ -476,26 +476,11 @@ services:
   web: { image: nginx }
 `, "E_COMPOSE_UNSUPPORTED", "name", ""},
 
-		// 保留字撞键（W3 撞键票收口，2026-09-21）：app 顶层名与平台组件
-		// 命名空间的交点，独立错误码 422——抽样三个不同撞键面（前缀族/
-		// 网络名/路由键），全集见 internal/naming 保留字表及其测试。
-		{"reject_reserved_name_cron", `
-name: cron
-services:
-  web: { image: nginx }
-`, "E_APP_NAME_RESERVED", "name", ""},
-
-		{"reject_reserved_name_rustfs", `
-name: rustfs
-services:
-  web: { image: nginx }
-`, "E_APP_NAME_RESERVED", "name", ""},
-
-		{"reject_reserved_name_registry", `
-name: registry
-services:
-  web: { image: nginx }
-`, "E_APP_NAME_RESERVED", "name", ""},
+		// 保留字撞键校验已随 v0.3 命名三段化退役（rbac-teams §4.3 保留字
+		// 迁移）：app 名不再紧邻 fleetly- 前缀——旧保留名 cron/rustfs/
+		// registry 作为 compose 顶层名现在**合法**（结构性安全，E_APP_NAME_
+		// RESERVED 退役，8 词迁 team slug 清单由团队受理层消费）。负向断言
+		// 就此移除；保留字的撞键证据链留在 internal/naming 保留字表及其测试。
 	}
 
 	for _, tc := range cases {

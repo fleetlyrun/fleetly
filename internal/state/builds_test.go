@@ -14,7 +14,7 @@ import (
 
 func createBuildTestApp(t *testing.T, st *Store, name string) App {
 	t.Helper()
-	app, err := st.CreateApp(context.Background(), "", name)
+	app, err := seedAppE(t, st, name)
 	if err != nil {
 		t.Fatalf("create app %s: %v", name, err)
 	}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // webhook 入口测试（T2.19 验收断言面；D1 后契约更新）：验签正/负、
@@ -249,9 +250,8 @@ func TestValidDeliveryID(t *testing.T) {
 // 不携带该头时时间窗防线不存在（见 webhook.go 文件头注释 2）。
 func TestWebhookTimestampBindsSignature(t *testing.T) {
 	src, st, box, _ := newTestSource(t, time.Minute)
-	ctx := context.Background()
 	secret := "hook-secret-at-least-16"
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -347,7 +347,7 @@ func TestWebhookHandlerFullChain(t *testing.T) {
 
 	// 源仓库（file 路径形态的 remote）与 app 播种。
 	sourceDir, sha := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -504,7 +504,7 @@ func TestWebhookFetchFailureDoesNotPoisonReplayCache(t *testing.T) {
 	secret := "hook-secret-at-least-16"
 
 	sourceDir, sha := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -571,7 +571,7 @@ func TestWebhookBadSignatureDoesNotPoisonCache(t *testing.T) {
 	ctx := context.Background()
 	secret := "hook-secret-at-least-16"
 	sourceDir, sha := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -647,7 +647,7 @@ func TestWebhookOversizedDeliveryIDRejected(t *testing.T) {
 	startWebhookWorker(t, src)
 	sourceDir, sha := newSourceRepo(t, composeFixture)
 	ctx := context.Background()
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -699,7 +699,7 @@ func TestWebhookConcurrentSameDeliverySingleDeploy(t *testing.T) {
 	ctx := context.Background()
 	secret := "hook-secret-at-least-16"
 	sourceDir, sha := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -773,7 +773,7 @@ func TestWebhookSlowFetchDoesNotBlockResponse(t *testing.T) {
 	secret := "hook-secret-at-least-16"
 
 	sourceDir, sha := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -835,7 +835,7 @@ func TestWebhookQueueFullReturns503(t *testing.T) {
 	secret := "hook-secret-at-least-16"
 
 	sourceDir, _ := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -894,7 +894,7 @@ func TestWebhookWorkerDrainsOnStop(t *testing.T) {
 	secret := "hook-secret-at-least-16"
 
 	sourceDir, sha := newSourceRepo(t, composeFixture)
-	appRow, err := st.CreateApp(ctx, "", "my-api")
+	appRow, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

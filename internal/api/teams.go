@@ -53,13 +53,13 @@ func validateTeamSlug(slug string) error {
 	if !slugPattern.MatchString(slug) {
 		return statusInvalidArgument("team slug must be a lowercase word of 2..32 characters [a-z0-9]")
 	}
-	if naming.IsReservedAppName(slug) {
-		// 保留字清单与 app 名清单同源（设计 §4.3 保留字迁移：8 词从 app 名
-		// 清单迁到 team slug 清单；naming 公式三段化随 W2-S3，本票先落
-		// 受理层守卫）。
+	// 保留字清单已随 v0.3 命名三段化从 app 名迁到 team slug（rbac-teams
+	// §4.3 保留字迁移；W2-S3 起消费 naming 单点——消 W2-S1 先行守卫的
+	// 同源重复）。清单随迁移语义不变：同 8 词、同撞键证据链。
+	if naming.IsReservedTeamSlug(slug) {
 		return apperr.New("E_TEAM_SLUG_RESERVED",
-			"team slug %q collides with a platform-reserved component name: %s", slug, naming.ReservedAppNameReason(slug)).
-			WithContext("reserved_names", strings.Join(naming.ReservedAppNames(), ","))
+			"team slug %q collides with a platform-reserved component name: %s", slug, naming.ReservedTeamSlugReason(slug)).
+			WithContext("reserved_names", strings.Join(naming.ReservedTeamSlugs(), ","))
 	}
 	return nil
 }

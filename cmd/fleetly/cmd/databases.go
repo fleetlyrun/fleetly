@@ -113,12 +113,18 @@ func (c *databaseCreateCmd) Run(ctx context.Context, env *commands.Environment, 
 	if err := requireArgs(c.Usage(), args, 1); err != nil {
 		return err
 	}
+	// v0.3 W2-S3 归属：上下文解析单点 resolveContext（flag > env > config）。
+	rc, err := resolveContext(c.conn.team, c.conn.project)
+	if err != nil {
+		return err
+	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Databases().CreateDatabase(ctx, &serverv1.CreateDatabaseRequest{
 			Name:       args[0],
 			Template:   c.template,
 			Limits:     c.limits.limits(),
 			BackupPlan: c.limits.backupPlan(),
+			Project:    rc.Project, // 裸名或 team/prj；用户缺省个人队 default
 		})
 		if err != nil {
 			return err

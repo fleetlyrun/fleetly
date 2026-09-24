@@ -37,6 +37,9 @@ export MSYS2_ARG_CONV_EXCL='*'
 # ── 镜像钉 digest（T0-V2.3 供应链；台账见 docs/runbooks/image-prepull.md）。
 DIND_IMAGE="${CR_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
+# curl helper（v0.3 fixture：REST 注册/铸 PAT 面——dind 内 busybox wget 无
+# cookie 语义，auth.sh 同源钉版）。
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 CR_SKIP_BUILD="${CR_SKIP_BUILD:-0}"
 CR_BIN_DIR="${CR_BIN_DIR:-}"
 CR_VERSION="${CR_VERSION:-v0.2.0-cron-e2e}"
@@ -90,6 +93,7 @@ msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
 # fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
     docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$CR_TOKEN" \
+        -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
 # events_grep <pattern> — 现抓事件流快照（busybox timeout 掐断 follow 流）
@@ -263,6 +267,32 @@ CR_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootst
 [ -n "$CR_TOKEN" ] || fatal 'empty bootstrap token'
 nl 'fleetlyd live (liveness 200), bootstrap token read'
 
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope——founder 是平台管理员可达集；CLI 不消费会话 cookie）。
+# 首次部署经 FLEETLY_PROJECT=founder/default 显式携带项目归属（归属管道
+# 验收面；bootstrap token 已随首用户注册按设计吊销弃用）。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://10.216.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.216.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+CR_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.216.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$CR_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+nl 'founder registered (platform admin); PAT minted; project context '"$FOUNDER_PROJECT"
+
 # ───────────────── C0: 混合应用部署（长驻 web + cron task）
 nl '=== C0: mixed app deploy (web long-running + task cron schedule) ==='
 cat >"$TMP/app-compose.yaml" <<EOF
@@ -292,7 +322,7 @@ case "$C0_OUT" in
 esac
 
 web_running() {
-    msh "docker service ps fleetly-$APP-$WEB_SVC --format '{{.CurrentState}}' | grep -q '^Running'" 2>/dev/null
+    msh "docker service ps fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-$APP-$WEB_SVC --format '{{.CurrentState}}' | grep -q '^Running'" 2>/dev/null
 }
 if poll_until 120 web_running; then
     assert "CR-C0a WEB_SERVICE_RUNNING" 0
@@ -303,11 +333,11 @@ fi
 
 # 只声明不部署：cron 服务不得以长驻形态创建（fleetly-cronapp-task 不存在）。
 cron_longrunning_absent() {
-    msh "docker service ls --format '{{.Name}}'" 2>/dev/null | grep -qx "fleetly-$APP-$SVC"
+    msh "docker service ls --format '{{.Name}}'" 2>/dev/null | grep -qx "fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-$APP-$SVC"
     [ $? -ne 0 ]
 }
 poll_until 10 cron_longrunning_absent
-assert "CR-C0b CRON_SERVICE_NOT_LONGRUNNING" $? "service fleetly-$APP-$SVC must not exist as a long-running service"
+assert "CR-C0b CRON_SERVICE_NOT_LONGRUNNING" $? "service fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-$APP-$SVC must not exist as a long-running service"
 
 # ───────────────── C1: 到点触发 + 完成收口 + job 服务删除
 nl '=== C1: scheduled fire -> succeeded -> job service removed ==='
@@ -356,12 +386,12 @@ nl '=== C1e: job output captured by the existing log pipeline ==='
 # 面对容器日志在缺省形态下恒空——断言面随平台切换改统一检索
 #（keyword + service 过滤，归属语义不变），logs-victorialogs.sh B6 同款。
 job_log_captured() {
-    fcli logs search --keyword 'cron-log-marker-' --service "$SVC" --source container "$APP" 2>/dev/null | grep -q 'cron-log-marker-'
+    fcli logs search --keyword 'cron-log-marker-' --service "$SVC" --source container "$FOUNDER_PROJECT/$APP" 2>/dev/null | grep -q 'cron-log-marker-'
 }
 if poll_until 120 job_log_captured; then
     assert "CR-C1e JOB_LOG_IN_PIPELINE" 0
 else
-    fcli logs search --keyword 'cron-log-marker-' --service "$SVC" "$APP" || true
+    fcli logs search --keyword 'cron-log-marker-' --service "$SVC" "$FOUNDER_PROJECT/$APP" || true
     assert "CR-C1e JOB_LOG_IN_PIPELINE" 1 "job output never appeared in the logs search face"
 fi
 

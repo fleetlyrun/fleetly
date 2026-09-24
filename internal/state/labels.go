@@ -14,8 +14,15 @@ const (
 	// LabelManaged 标记平台受管对象（服务 label，"true"）：归属判定、
 	// 孤儿检测、删除保护的依据。
 	LabelManaged = "fleetly.managed"
-	// LabelApp 标记归属应用（服务/容器 label，值为应用名）。
+	// LabelApp 标记归属应用（服务/容器 label；值 = 三段限定形
+	// `team/prj/app`——v0.3 流标签口径，rbac-teams §4.3； QualifiedName）。
 	LabelApp = "fleetly.app"
+	// LabelTeam / LabelProject 标记归属 team 与 project（服务 label，值 =
+	// 两个单词制 slug；v0.3 rbac-teams §4.3「label 集 +fleetly.team /
+	// fleetly.project——服务创建时写入，对账/清扫/管理查询的识别面」）。
+	LabelTeam = "fleetly.team"
+	// LabelProject 标记归属 project slug（同上）。
+	LabelProject = "fleetly.project"
 	// LabelProcess 标记 compose 服务名（应用内进程名）。
 	LabelProcess = "fleetly.process"
 	// LabelDeployment 标记发布归属（值 = deployment ID）。

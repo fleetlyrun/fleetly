@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // newSecretsTestEnv 起带 SecretsService 的 bufconn 测试环境。
@@ -45,7 +46,7 @@ func newSecretsTestEnv(t *testing.T) (*state.Store, *secrets.Box, serverv1.Secre
 func TestSecretsSetListRemove(t *testing.T) {
 	st, box, cl, token := newSecretsTestEnv(t)
 	ctx := authCtx(context.Background(), token)
-	if _, err := st.CreateApp(ctx, "", "webapp"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "webapp"); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
 
@@ -125,7 +126,7 @@ func TestSecretsSetListRemove(t *testing.T) {
 func TestSecretsNameValidation(t *testing.T) {
 	st, _, cl, token := newSecretsTestEnv(t)
 	ctx := authCtx(context.Background(), token)
-	if _, err := st.CreateApp(ctx, "", "shapeapp"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "shapeapp"); err != nil {
 		t.Fatalf("create app: %v", err)
 	}
 	for _, name := range []string{"", "a/b", "..", "-lead", ".dot", strings.Repeat("x", 64)} {

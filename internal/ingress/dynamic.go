@@ -109,6 +109,10 @@ type TLSCertificate struct {
 type Route struct {
 	App     string
 	Service string
+	// TeamSlug / PrjSlug 是归属两个 slug（v0.3 三段路由键公式的参数，
+	// rbac-teams §4.3；app 路由必填，平台路由段〔Name 覆写〕忽略）。
+	TeamSlug string
+	PrjSlug  string
 	// Port 是后端目标端口（compose expose 首端口）。
 	Port string
 	// Domains 是该服务的域名集（归一化 compose spec 产出）。
@@ -116,10 +120,10 @@ type Route struct {
 	// Cert 标记该 app 证书是否已就绪（就绪则 443 路由 + tls.certificates
 	// 下发；未就绪只发 80 路由）。
 	Cert *CertificateRef
-	// Name 是 router/service 键的显式覆写（空 = RouterName(app, service)）。
-	// 平台路由段使用（E1-4：registry 路由段的键 = fleetly-registry——swarm
-	// 服务名即后端 DNS 名，与 app 路由「键 = 服务名」的后端公式同构）；
-	// app 路由恒空（v0.1 形态不变）。
+	// Name 是 router/service 键的显式覆写（空 = RouterName(team, prj, app,
+	// service)）。平台路由段使用（E1-4：registry 路由段的键 = fleetly-
+	// registry——swarm 服务名即后端 DNS 名，与 app 路由「键 = 服务名」的
+	// 后端公式同构）；app 路由恒空（v0.1 形态不变）。
 	Name string
 }
 
@@ -150,10 +154,12 @@ const (
 	noopServiceRef     = "noop@internal"
 )
 
-// RouterName 返回 app 服务对应的 router/service 键（fleetly-<app>-<service>
-// ——与 Swarm 服务名同形，键空间唯一且可读）。
-func RouterName(app, service string) string {
-	return "fleetly-" + app + "-" + service
+// RouterName 返回 app 服务对应的 router/service 键
+//（fleetly-<team>-<prj>-<app>-<service>——v0.3 三段形，rbac-teams §4.3 路由
+// 键行：与 Swarm 服务名同形，键空间唯一且可读；access-log RouterName 反解
+// 为 spec 候选集匹配，公式变更内部消化）。
+func RouterName(team, prj, app, service string) string {
+	return "fleetly-" + team + "-" + prj + "-" + app + "-" + service
 }
 
 // Synthesize 从全量路由集合成动态配置（确定性：路由按 app/service 字典
@@ -191,7 +197,7 @@ func Synthesize(routes []Route) *DynamicConfig {
 		//（app 与平台路由段同构）。
 		name := r.Name
 		if name == "" {
-			name = RouterName(r.App, r.Service)
+			name = RouterName(r.TeamSlug, r.PrjSlug, r.App, r.Service)
 		}
 		rule := hostRuleOf(r.Domains)
 		// 80 入口（web）：无证书时的唯一入口；有证书时与 443 并存

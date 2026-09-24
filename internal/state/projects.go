@@ -165,9 +165,63 @@ func (s *Store) CreateProject(ctx context.Context, w ProjectWrite) (Project, err
 	return out, nil
 }
 
+// DefaultProjectSlug 是注册默认项目 slug（设计 §3.1「每个用户注册默认建队
+// + 默认 Project default」；无项目参数的首次 Deploy 缺省进它——api/gitserver
+// 缺省解析消费，单一值源）。
+const DefaultProjectSlug = "default"
+
+// ErrDefaultProjectUnresolved 表示用户的个人队默认项目不可解析（无 owner
+// 队或队内无 default 项目）——调用面指引显式携带 project 引用。
+var ErrDefaultProjectUnresolved = errors.New("default project not resolvable for user")
+
+// ResolveUserDefaultProject 解析用户的个人队默认项目（注册组合事务落位的
+// 口径：created_by=该用户的 owner 队下 slug=default 项目；D-W0-9 缺省解析
+// 域的用户面）。无 owner 队（异常面）回落任一成员队的 default；仍无 →
+// ErrDefaultProjectUnresolved。
+func (s *Store) ResolveUserDefaultProject(ctx context.Context, userID string) (Project, error) {
+	memberships, err := s.ListUserMemberships(ctx, userID)
+	if err != nil {
+		return Project{}, err
+	}
+	teamIDs := make([]string, 0, len(memberships))
+	for _, m := range memberships {
+		if m.Role == TeamRoleOwner {
+			if t, terr := s.GetTeam(ctx, m.TeamID); terr == nil && t.CreatedBy == userID {
+				teamIDs = append([]string{t.ID}, teamIDs...) // 个人队优先
+				continue
+			}
+		}
+		teamIDs = append(teamIDs, m.TeamID)
+	}
+	for _, teamID := range teamIDs {
+		projects, err := s.ListProjects(ctx)
+		if err != nil {
+			return Project{}, err
+		}
+		for _, proj := range projects {
+			if proj.TeamID == teamID && proj.Slug == DefaultProjectSlug {
+				return proj, nil
+			}
+		}
+	}
+	return Project{}, ErrDefaultProjectUnresolved
+}
+
 // GetProject 按 ID 取项目行；不存在返回 ErrProjectNotFound。
 func (s *Store) GetProject(ctx context.Context, id string) (Project, error) {
 	row := s.db.QueryRowContext(ctx,
+		`SELECT id, team_id, slug, name, description, created_at FROM projects WHERE id = ?`, id)
+	var p Project
+	if err := scanProject(row, &p); err != nil {
+		return Project{}, err
+	}
+	return p, nil
+}
+
+// GetProject 是事务内按 ID 取项目行（MoveApp/MoveDatabase 同事务改派路径
+// 的目标项目读取）。
+func (t *Tx) GetProject(ctx context.Context, id string) (Project, error) {
+	row := t.QueryRowContext(ctx,
 		`SELECT id, team_id, slug, name, description, created_at FROM projects WHERE id = ?`, id)
 	var p Project
 	if err := scanProject(row, &p); err != nil {

@@ -43,14 +43,14 @@ func TestTriggerBuildScopeAdminOnly(t *testing.T) {
 	}
 
 	// deploy scope token：PermissionDenied（H14——不随 deploy 下放）。
-	_, err := builds.TriggerBuild(authCtx(ctx, env.depTok), &serverv1.TriggerBuildRequest{
+	_, err := builds.TriggerBuild(authCtx(ctx, env.depTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("scopeapp", "."),
 	})
 	if status.Code(err) != codes.PermissionDenied {
 		t.Fatalf("deploy token TriggerBuild code = %v, want PermissionDenied", status.Code(err))
 	}
 	// read scope token：同样拒绝（admin 严格于 deploy）。
-	_, err = builds.TriggerBuild(authCtx(ctx, env.readTok), &serverv1.TriggerBuildRequest{
+	_, err = builds.TriggerBuild(authCtx(ctx, env.readTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("scopeapp", "."),
 	})
 	if status.Code(err) != codes.PermissionDenied {
@@ -59,7 +59,7 @@ func TestTriggerBuildScopeAdminOnly(t *testing.T) {
 
 	// admin token：放行（合法相对 context，基准回落服务端临时目录——
 	// context "." 即基准本身，包含性满足）。
-	resp, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{
+	resp, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("scopeapp", "."),
 	})
 	if err != nil {
@@ -80,7 +80,7 @@ func TestTriggerBuildContextContainment(t *testing.T) {
 	base := t.TempDir()
 
 	// 显式 base_dir + `..` 多级逃逸（直指宿主上层/根）：拒绝。
-	_, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{
+	_, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("escapeapp", "../../.."),
 		BaseDir: base,
 	})
@@ -96,7 +96,7 @@ func TestTriggerBuildContextContainment(t *testing.T) {
 	}
 
 	// 显式 base_dir + 单级逃逸（context == 基准父目录）：拒绝。
-	if _, err = builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{
+	if _, err = builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("escapeapp", ".."),
 		BaseDir: base,
 	}); status.Code(err) != codes.InvalidArgument {
@@ -105,14 +105,14 @@ func TestTriggerBuildContextContainment(t *testing.T) {
 
 	// 基准回落临时目录（不携带 base_dir）+ 逃逸：同样拒绝（逃逸形态在
 	// 临时基准下只有外带语义，无合法构建内容）。
-	if _, err = builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{
+	if _, err = builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("escapeapp", "../.."),
 	}); status.Code(err) != codes.InvalidArgument {
 		t.Fatalf("temp-base escape code = %v, want InvalidArgument", status.Code(err))
 	}
 
 	// 合法相对 context（子目录词形，含折叠段）：通过。
-	resp, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{
+	resp, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("okapp", "./web"),
 		BaseDir: base,
 	})
@@ -187,9 +187,10 @@ func TestTriggerBuildWakesQueueImmediately(t *testing.T) {
 	conn := serveBufconn(t, srv)
 	client := serverv1.NewBuildsServiceClient(conn)
 	tok := tokenFor(t, st)
+	seedFixtureProject(t, st) // 归属夹具（确定性 slug "fixture"）
 
 	start := time.Now()
-	if _, err := client.TriggerBuild(authCtx(context.Background(), tok), &serverv1.TriggerBuildRequest{
+	if _, err := client.TriggerBuild(authCtx(context.Background(), tok), &serverv1.TriggerBuildRequest{Project: "fixture",
 		Compose: triggerCompose("wakeapp", "."),
 	}); err != nil {
 		t.Fatalf("TriggerBuild: %v", err)

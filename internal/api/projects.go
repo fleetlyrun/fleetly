@@ -3,8 +3,12 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"google.golang.org/grpc/codes"
 )
@@ -30,11 +34,24 @@ import (
 type ProjectsService struct {
 	serverv1.UnimplementedProjectsServiceServer
 	st *state.Store
+	// move 编排端口（W2-S3；nil = 未装配——MoveApp/MoveDatabase 如实报
+	// 不可用，不静默退化）。实现 = engine / database / ingress（runtime
+	// 装配；接口在本包定义——方向纪律同 GitDeployTriggers）。
+	appMove AppMovePort
+	dbMove  DBMovePort
+	ingMove IngressMovePort
 }
 
 // NewProjectsService 构造 ProjectsService。
 func NewProjectsService(st *state.Store) *ProjectsService {
 	return &ProjectsService{st: st}
+}
+
+// WithMovePorts 注入改派编排端口（链式装配；nil 端口 = 对应 RPC 如实报
+// 不可用）。
+func (s *ProjectsService) WithMovePorts(app AppMovePort, db DBMovePort, ing IngressMovePort) *ProjectsService {
+	s.appMove, s.dbMove, s.ingMove = app, db, ing
+	return s
 }
 
 // requireProjectOverrideManager 是队内覆写成员面门（§3.3 明文：团队
@@ -270,6 +287,228 @@ func (s *ProjectsService) RemoveProjectMember(ctx context.Context, req *serverv1
 		return nil, mapProjectErr(err)
 	}
 	return &serverv1.RemoveProjectMemberResponse{}, nil
+}
+
+// ── 资源改派面（W2-S3，rbac-teams §3.4/§5；平台管理员专属）──────────────────
+
+// requireMoveAdmin 是改派面权限门：平台管理员（用户 principal；机具令牌
+// 恒 403——改派是平台管理员的迁移权，§3.2「全团队项目只读 + 认领迁移权」
+// 的写面例外，职责分离纪律下唯一由平台管理员执行的资源写动作）。
+func requireMoveAdmin(ctx context.Context, st *state.Store) (Principal, error) {
+	p, err := requireTeamUser(ctx)
+	if err != nil {
+		return Principal{}, err
+	}
+	if !isPlatformAdminUser(ctx, st) {
+		return Principal{}, statusEnvelope(codes.PermissionDenied,
+			"resource move requires a platform administrator (machine tokens are not eligible)")
+	}
+	return p, nil
+}
+
+// resolveAppRefForMove 解析改派目标 app（裸名域内唯一 / team/prj/app 限定
+// 形 / 平台 ID；限定形读面在此落位——改派是管理面，D-W0-9 恒可解析形态）。
+func (s *ProjectsService) resolveAppRefForMove(ctx context.Context, ref string) (state.App, error) {
+	if strings.Contains(ref, "/") {
+		teamSlug, rest, err := cutQualifiedRef(ref)
+		if err != nil {
+			return state.App{}, statusInvalidArgument(err.Error())
+		}
+		prjSlug, appName, err := cutQualifiedRef(rest)
+		if err != nil {
+			return state.App{}, statusInvalidArgument(err.Error())
+		}
+		proj, err := resolveQualifiedProject(ctx, s.st, teamSlug, prjSlug)
+		if err != nil {
+			return state.App{}, err
+		}
+		app, err := s.st.GetAppByNameInProject(ctx, proj.ID, appName)
+		if err != nil {
+			return state.App{}, mapAppErr(err, ref)
+		}
+		return app, nil
+	}
+	app, err := s.st.GetAppByID(ctx, ref)
+	if err == nil {
+		return app, nil
+	}
+	if !errors.Is(err, state.ErrAppNotFound) {
+		return state.App{}, err
+	}
+	row, err := s.st.GetAppByName(ctx, ref)
+	if err != nil {
+		if errors.Is(err, state.ErrAppAmbiguous) {
+			return state.App{}, apperr.New("E_APP_AMBIGUOUS",
+				"app %q resolves to multiple rows across projects; use the team/prj/app qualified form or the platform id", ref).
+				WithContext("app", ref)
+		}
+		return state.App{}, mapAppErr(err, ref)
+	}
+	return row, nil
+}
+
+// cutQualifiedRef 按 '/' 拆分限定引用的一段（空段/越界 → 400 语义错误）。
+func cutQualifiedRef(ref string) (string, string, error) {
+	i := strings.IndexByte(ref, '/')
+	if i <= 0 || i == len(ref)-1 {
+		return "", "", fmt.Errorf("qualified reference %q must be team/prj/... form", ref)
+	}
+	return ref[:i], ref[i+1:], nil
+}
+
+// MoveApp 资源改派（平台管理员；写归属 + 换名重部署——编排组合：
+// ①改派前捕获旧归属上下文（旧限定形 label 与旧 slug——旧名清扫与摘网的
+// 参数）→ ②state.MoveApp 同事务审计（app.moved，跨项目唯一性 409）→
+// ③入队重部署（正常发布管线在新命名上下文产出快照/revision——无成功部署
+// 史 = 无底座对象随迁，accepted 形态）→ ④等待新名服务就位 → ⑤摘旧名
+// 服务 + 摘旧网（best-effort——摘网失败降级日志）。④超时 = 保守放弃清扫
+// （流量仍在旧名上，删旧 = 主动停机）并以错误应答——改派半程由「重部署
+// 已入队 + 归属已切换」承载，人工重跑 MoveApp 同参数即幂等收尾（幂等面：
+// ②同项目返回 ErrMoveSameTarget、①捕获以当前行归属为准——报告偏差记录）。
+func (s *ProjectsService) MoveApp(ctx context.Context, req *serverv1.MoveAppRequest) (*serverv1.MoveAppResponse, error) {
+	p, err := requireMoveAdmin(ctx, s.st)
+	if err != nil {
+		return nil, err
+	}
+	if s.appMove == nil {
+		return nil, statusEnvelope(codes.Unavailable, "move orchestration is not assembled in this build")
+	}
+	app, err := s.resolveAppRefForMove(ctx, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	toProj, err := s.st.GetProject(ctx, req.GetToProjectId())
+	if err != nil {
+		return nil, mapProjectErr(err)
+	}
+	// ① 旧上下文捕获（行上 slug 是旧归属——MoveApp 原语落库前的快照）。
+	from := app
+	// ② 归属切换（state 同事务审计 app.moved；同项目 409）。
+	moved, err := s.st.MoveApp(ctx, app.ID, toProj.ID, p.UserID, callerTokenID(ctx))
+	if err != nil {
+		if errors.Is(err, state.ErrMoveSameTarget) {
+			return nil, conflict(err.Error())
+		}
+		if errors.Is(err, state.ErrAppExists) {
+			return nil, conflict(fmt.Sprintf("app %q already exists in the target project (names are unique per project); choose another target or rename first", app.Name))
+		}
+		return nil, err
+	}
+	resp := &serverv1.MoveAppResponse{
+		App:           moved.Name,
+		FromProjectId: from.ProjectID,
+		ToProjectId:   toProj.ID,
+		ToProject:     toProj.Slug,
+	}
+	// ③ 入队重部署（无成功部署史 = accepted：无底座对象随迁）。
+	deployID, err := s.appMove.EnqueueMoveRedeploy(ctx, moved.ID)
+	switch {
+	case err == nil:
+		resp.DeploymentId = deployID
+	case errors.Is(err, engine.ErrNoRedeploySource):
+		resp.Status = "accepted"
+		return resp, nil
+	default:
+		return nil, err
+	}
+	// ④ 等待新命名服务就位（预算超时 = 保守放弃清扫，错误应答）。
+	if err := s.appMove.AwaitAppSwap(ctx, moved.ID, MoveAwaitTimeout); err != nil {
+		return nil, err
+	}
+	// ⑤ 摘旧名服务 + 摘旧网（旧网 best-effort——引用未清场时下一拍/人工）。
+	if _, err := s.appMove.SweepMovedServices(ctx, from.QualifiedName()); err != nil {
+		return nil, err
+	}
+	if s.ingMove != nil {
+		if err := s.ingMove.DetachAppNetwork(ctx, from.TeamSlug, from.ProjectSlug, from.Name); err != nil {
+			// 摘网失败不回滚改派（旧网无服务挂接后即成无害空网；收尾重试面）。
+			_ = err
+		}
+	}
+	resp.Status = "moved"
+	return resp, nil
+}
+
+// resolveDatabaseRefForMove 解析改派目标库实例（同 resolveAppRefForMove 的
+// 三形态；裸名多行命中 E_APP_AMBIGUOUS）。
+func (s *ProjectsService) resolveDatabaseRefForMove(ctx context.Context, ref string) (state.DatabaseInstance, error) {
+	if strings.Contains(ref, "/") {
+		parts := strings.Split(ref, "/")
+		if len(parts) != 3 {
+			return state.DatabaseInstance{}, statusInvalidArgument("database reference must be team/prj/name form")
+		}
+		proj, err := resolveQualifiedProject(ctx, s.st, parts[0], parts[1])
+		if err != nil {
+			return state.DatabaseInstance{}, err
+		}
+		inst, err := s.st.GetDatabaseInstanceByNameInProject(ctx, proj.ID, parts[2])
+		if err != nil {
+			if errors.Is(err, state.ErrDatabaseNotFound) {
+				return state.DatabaseInstance{}, databaseNotFound(parts[2], "not found in project "+proj.Slug)
+			}
+			return state.DatabaseInstance{}, err
+		}
+		return inst, nil
+	}
+	inst, err := s.st.GetDatabaseInstance(ctx, ref)
+	if err == nil {
+		return inst, nil
+	}
+	if !errors.Is(err, state.ErrDatabaseNotFound) {
+		return state.DatabaseInstance{}, err
+	}
+	row, err := s.st.GetDatabaseInstanceByName(ctx, ref)
+	if err != nil {
+		if errors.Is(err, state.ErrDatabaseAmbiguous) {
+			return state.DatabaseInstance{}, apperr.New("E_APP_AMBIGUOUS",
+				"database %q resolves to multiple rows across projects; use the team/prj/name qualified form or the platform id", ref).
+				WithContext("database", ref)
+		}
+		return state.DatabaseInstance{}, databaseNotFound(ref, "not found")
+	}
+	return row, nil
+}
+
+// MoveDatabase 资源改派（平台管理员；写归属 + 换名重部署——旧名服务移除
+// （卷独占：短暂停机窗口）→ 旧 secret/网络清场 → 新名收敛等待；库卷公式
+// 不变 = 零卷迁移）。
+func (s *ProjectsService) MoveDatabase(ctx context.Context, req *serverv1.MoveDatabaseRequest) (*serverv1.MoveDatabaseResponse, error) {
+	p, err := requireMoveAdmin(ctx, s.st)
+	if err != nil {
+		return nil, err
+	}
+	if s.dbMove == nil {
+		return nil, statusEnvelope(codes.Unavailable, "move orchestration is not assembled in this build")
+	}
+	inst, err := s.resolveDatabaseRefForMove(ctx, req.GetDatabase())
+	if err != nil {
+		return nil, err
+	}
+	toProj, err := s.st.GetProject(ctx, req.GetToProjectId())
+	if err != nil {
+		return nil, mapProjectErr(err)
+	}
+	from := inst
+	moved, err := s.st.MoveDatabase(ctx, inst.ID, toProj.ID, p.UserID, callerTokenID(ctx))
+	if err != nil {
+		if errors.Is(err, state.ErrMoveSameTarget) {
+			return nil, conflict(err.Error())
+		}
+		if errors.Is(err, state.ErrDatabaseExists) {
+			return nil, conflict(fmt.Sprintf("database %q already exists in the target project (names are unique per project); choose another target or rename first", inst.Name))
+		}
+		return nil, err
+	}
+	if err := s.dbMove.MoveDatabaseRedeploy(ctx, moved, from.TeamSlug, from.ProjectSlug); err != nil {
+		return nil, err
+	}
+	return &serverv1.MoveDatabaseResponse{
+		Database:      moved.Name,
+		FromProjectId: from.ProjectID,
+		ToProjectId:   toProj.ID,
+		ToProject:     toProj.Slug,
+		Status:        "moved",
+	}, nil
 }
 
 // ── 投影 helpers ─────────────────────────────────────────────────────────────

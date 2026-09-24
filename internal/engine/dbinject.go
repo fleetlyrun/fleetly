@@ -166,7 +166,9 @@ func (e *Engine) resolveDatabaseReferences(ctx context.Context, appID, appName s
 					WithContext("instances", prev+","+inst.Name)
 			}
 			newPrefixes[prefix] = inst.Name
-			net, nerr := naming.DBNetworkName(inst.Name)
+			// 库共享网络名随实例归属三段化（rbac-teams §4.3 库行：fleetly-
+			// db-<team>-<prj>-<name>-net——slug 不可变，随行 join 装载）。
+			net, nerr := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
 			if nerr != nil {
 				return nil, nil, errorf("E_RUNTIME_UNAVAILABLE", "network naming failed for database instance %s: %v", inst.Name, nerr)
 			}

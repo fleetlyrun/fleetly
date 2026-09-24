@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // TestGatewayWebhookNativeEndpoints（T2.19 验收：路径豁免精确性）：
@@ -42,7 +43,7 @@ func TestGatewayWebhookNativeEndpoints(t *testing.T) {
 		t.Fatalf("EnsureKey: %v", err)
 	}
 
-	app, err := st.CreateApp(context.Background(), "", "demo")
+	app, err := testsupport.SeedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

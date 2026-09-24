@@ -136,10 +136,22 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_INVITE_INVALID":     "v0.3 W2-S1 rbac-teams §5 (one-time invite invalid/used/revoked/expired — one code, state not disclosed, 409)",
 	"E_TEAM_SLUG_RESERVED": "v0.3 W2-S1 rbac-teams §4.3/§5 (team slug vs platform component namespaces — v0.3 naming formulas take the team slug as parameter, 422)",
 
+	// v0.3 W2-S3 归属管道（rbac-teams §4.2/§5 + D-W0-9 解析规则）：裸名
+	// 歧义两面（project 解析与 app/库资源解析）+ 归属一致性守卫。消费点 =
+	// internal/api（deployments.go / databases.go / errors.go）。
+	// E_APP_NAME_RESERVED 已随保留字迁移退役（v0.2.x 收尾波增、v0.3 W2-S3
+	// 减——rbac-teams §4.3/§5 设计明示「E_APP_NAME_RESERVED 退役」；保留字
+	// 清单整体迁 team slug 后 app 名不再紧邻 fleetly- 前缀，守卫消费点
+	// internal/compose 受理层同步移除）。退役是设计明示的减码而非漂移。
+	"E_PROJECT_AMBIGUOUS":    "v0.3 W2-S3 rbac-teams §4.2/§5 (bare project name matches multiple visible projects, D-W0-9; qualify as team/project, 400)",
+	"E_APP_AMBIGUOUS":        "v0.3 W2-S3 rbac-teams §4.2/§5 (resource name matches rows across projects — per-project uniqueness, D-W0-4; qualified/id read face lands in S4, 400)",
+	"E_APP_PROJECT_MISMATCH": "v0.3 W2-S3 rbac-teams §3.4 (deploy/database-create targets a project different from the row's ownership — check-consistency ruling; MoveApp guidance, 409)",
+	"E_APP_PROJECT_REQUIRED": "v0.3 W2-S3 rbac-teams §3.4 (git-push first-deploy cannot derive project ownership: no signed user or no default project; deploy once via CLI/API, 400)",
+
 	// W3 遗留撞键票收口（2026-09-21，实现期新增，文档外码单独列出）：app
 	// 顶层名与平台组件命名空间的保留字校验（compose 受理层消费，
 	// internal/naming 保留字表为证据链，422）。
-	"E_APP_NAME_RESERVED": "v0.2.x closing wave added during implementation (W3 naming-collision audit: app name vs platform component namespaces, enforced in compose acceptance; pending T0.5 freeze confirmation)",
+	// E_APP_NAME_RESERVED 于 v0.3 W2-S3 退役（见上方归属管道分组的注记）。
 
 	// 警告码（5 W）
 	"W_DEPLOY_INSTABILITY":      "release-semantics §2.7",
@@ -175,10 +187,13 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // managed-databases §5.2 九码、E6 W5-S1 增 E_LOGS_BACKEND_UNAVAILABLE、
 // E6 W5-S3 增 E_METRICS_NOT_ENABLED/E_METRICS_BACKEND_UNAVAILABLE、
 // E6 W5-S4 增 E_WEBHOOK_* 三码、E7 W5-S6 增 E_TERMINAL_DISABLED、v0.2.x
-// 收尾波增 E_APP_NAME_RESERVED（W3 撞键票，只增纪律）、v0.3 W1 增
+// 收尾波增 E_APP_NAME_RESERVED（W3 撞键票）、v0.3 W1 增
 // E_REGISTRATION_CLOSED、v0.3 W2-S1 增 E_TEAM_LAST_OWNER / E_INVITE_INVALID /
 // E_TEAM_SLUG_RESERVED。E7 S6 后 = 59 E + 5 W；W1 后 = 60 E + 5 W；
-// W2-S1 后 = 63 E + 5 W。
+// W2-S1 后 = 63 E + 5 W；W2-S3 减 E_APP_NAME_RESERVED（rbac-teams §4.3
+// 保留字迁移退役——设计明示的唯一减码）增 E_PROJECT_AMBIGUOUS /
+// E_APP_AMBIGUOUS / E_APP_PROJECT_MISMATCH / E_APP_PROJECT_REQUIRED
+// → 66 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -188,8 +203,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 63 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 63), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 66 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 66), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

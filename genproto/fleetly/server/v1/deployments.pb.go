@@ -389,7 +389,9 @@ type DeployRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。
 	// compose 应用名与请求 app 必须一致（A1：不一致 → E_COMPOSE_UNSUPPORTED，
-	// 不误建 app、不入队）。
+	// 不误建 app、不入队）。app 名 project 内唯一（D-W0-4 二修）——同一项目
+	// 内重复部署沿用行上归属（请求 project 必须一致，不一致 409
+	// E_APP_PROJECT_MISMATCH 指引 MoveApp）。
 	App string `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
 	// compose 文件内容字节（JSON/YAML 原文；服务端落临时文件走受控子集
 	// 校验——compose 违约不动底座、不入队）。
@@ -400,8 +402,14 @@ type DeployRequest struct {
 	// 必须显式置位才放行入队；未置位返回 E_DEPLOY_CONFIRM_REQUIRED、不入队。
 	// 首发（无历史 revision）恒非破坏性，置位与否均放行。
 	ConfirmDestructive bool `protobuf:"varint,3,opt,name=confirm_destructive,json=confirmDestructive,proto3" json:"confirm_destructive,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// 目标项目（v0.3 W2-S3 归属管道，D-W0-9 解析规则）：裸名或 `team/project`
+	// 限定形。裸名仅解析域内唯一时可用（用户 = 可见项目集；机具令牌/平台
+	// 管理员 = 全库），多命中 400 E_PROJECT_AMBIGUOUS 列候选。缺省：用户 =
+	// 个人队 default 项目；机具令牌无缺省（必须显式，否则 400 带指引）。
+	// 首次部署写入 apps.project_id/team_id；行上归属已定时必须一致（409）。
+	Project       string `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *DeployRequest) Reset() {
@@ -453,6 +461,13 @@ func (x *DeployRequest) GetConfirmDestructive() bool {
 		return x.ConfirmDestructive
 	}
 	return false
+}
+
+func (x *DeployRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 // DeployFromGitRequest 携带 push 上下文（app 来自 REST 路径）。ref 形如
@@ -921,11 +936,12 @@ const file_fleetly_server_v1_deployments_proto_rawDesc = "" +
 	"\x15GetDeploymentResponse\x12A\n" +
 	"\n" +
 	"deployment\x18\x01 \x01(\v2!.fleetly.server.v1.DeploymentViewR\n" +
-	"deployment\"~\n" +
+	"deployment\"\xa1\x01\n" +
 	"\rDeployRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12!\n" +
 	"\acompose\x18\x02 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\x12/\n" +
-	"\x13confirm_destructive\x18\x03 \x01(\bR\x12confirmDestructive\"\x8e\x01\n" +
+	"\x13confirm_destructive\x18\x03 \x01(\bR\x12confirmDestructive\x12!\n" +
+	"\aproject\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18AR\aproject\"\x8e\x01\n" +
 	"\x14DeployFromGitRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1a\n" +
 	"\x03sha\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x98\x01(R\x03sha\x12\x19\n" +

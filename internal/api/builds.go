@@ -76,7 +76,20 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 		return nil, fmt.Errorf("resolve base_dir %s: %w", base, err)
 	}
 
-	app, err := ensureApp(ctx, s.st, spec.Name)
+	// 归属（v0.3 W2-S3）：app 行已在 → 沿用行上归属（project 字段忽略）；
+	// 不存在 → 解析 project（显式引用或用户缺省；机具令牌必须显式）建行。
+	app, err := s.st.GetAppByName(ctx, spec.Name)
+	if errors.Is(err, state.ErrAppNotFound) {
+		proj, rerr := resolveProjectRef(ctx, s.st, req.GetProject())
+		if rerr != nil {
+			return nil, rerr
+		}
+		app, err = ensureApp(ctx, s.st, spec.Name, proj)
+	} else if errors.Is(err, state.ErrAppAmbiguous) {
+		return nil, apperr.New("E_APP_AMBIGUOUS",
+			"app %q resolves to multiple rows across projects; reference it by id or use the qualified read face", spec.Name).
+			WithContext("app", spec.Name)
+	}
 	if err != nil {
 		return nil, err
 	}

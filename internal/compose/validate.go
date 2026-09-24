@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
-	"github.com/fleetlyrun/fleetly/internal/naming"
 )
 
 // 本文件实现 §2.4 受控子集校验的第一层：在 compose-go canonical dict 上
@@ -308,16 +307,11 @@ func validateDict(abs string, dict map[string]any) error {
 		return errCompose("invalid top-level compose name %q (must match ^[a-z0-9][a-z0-9_-]*$: starts with a lowercase letter or digit, only lowercase letters/digits/-/_ allowed)", name).
 			WithContext("path", "name")
 	}
-	// 保留字撞键前置校验（W3 遗留撞键票收口，2026-09-21）：平台组件的
-	// 服务/网络/路由名以 app 名为参数派生（fleetly-<app>-*），与固定组件名
-	// 族的交点见 internal/naming 保留字表——撞上即拒绝，E_APP_NAME_RESERVED
-	//（422，注册表只增）。
-	if naming.IsReservedAppName(name) {
-		return apperr.New("E_APP_NAME_RESERVED",
-			"compose name %q collides with a platform-reserved component name (%s); reserved names: %s",
-			name, naming.ReservedAppNameReason(name), strings.Join(naming.ReservedAppNames(), ", ")).
-			WithContext("path", "name")
-	}
+	// 保留字撞键校验已随 v0.3 命名三段化退役（rbac-teams §4.3 保留字迁移）：
+	// 命名公式以 team·prj slug 为前两段，app 名不再紧邻 fleetly- 前缀——
+	// 与平台组件命名空间的撞键面结构性消失（E_APP_NAME_RESERVED 退役，
+	// 8 保留字迁 team slug 清单，E_TEAM_SLUG_RESERVED 在团队受理层消费；
+	// internal/naming 保留字表保留证据链）。
 
 	for _, key := range sortedKeys(dict) {
 		if strings.HasPrefix(key, "x-") {

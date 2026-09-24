@@ -32,9 +32,9 @@ import (
 // 缺省/显式 closed；设计 §2.1，api 面 E_REGISTRATION_CLOSED 的 state 哨兵）。
 var ErrRegistrationClosed = errors.New("registration closed")
 
-// defaultProjectSlug 是注册默认项目 slug（设计 §2.1/§3.1：无项目参数的
-// 首次 Deploy 缺省进它）。
-const defaultProjectSlug = "default"
+// DefaultProjectSlug（projects.go 导出常量）是注册默认项目 slug（设计
+// §2.1/§3.1：无项目参数的首次 Deploy 缺省进它）——注册落位与缺省解析
+// 同一值源。
 
 // RegisterWrite 是一次自助注册（口令明文入参、argon2id 落库，明文不入
 // 库/审计/日志——users 表同纪律）。
@@ -188,11 +188,11 @@ func (s *Store) RegisterUser(ctx context.Context, w RegisterWrite) (RegisterResu
 
 		pid := ulid.Make().String()
 		const projectQ = `INSERT INTO projects (id, team_id, slug, name, description, created_at) VALUES (?, ?, ?, ?, ?, ?)`
-		if _, err := tx.ExecContext(ctx, projectQ, pid, tid, defaultProjectSlug, defaultProjectSlug, "", now); err != nil {
+		if _, err := tx.ExecContext(ctx, projectQ, pid, tid, DefaultProjectSlug, DefaultProjectSlug, "", now); err != nil {
 			if isUniqueViolation(err) {
 				// UNIQUE(team_id, slug)：新团队内不可能撞 `default`——防御
 				// 式分支（理论不可达），loud-fail 不静默吞。
-				return fmt.Errorf("state: insert default project: duplicate slug %s in new team", defaultProjectSlug)
+				return fmt.Errorf("state: insert default project: duplicate slug %s in new team", DefaultProjectSlug)
 			}
 			return fmt.Errorf("state: insert default project: %w", err)
 		}
@@ -201,18 +201,18 @@ func (s *Store) RegisterUser(ctx context.Context, w RegisterWrite) (RegisterResu
 			Action:       "project.created",
 			Target:       "project:" + pid,
 			Result:       "ok",
-			DiffSummary:  DiffSummary("team_id", tid, "slug", defaultProjectSlug, "name", defaultProjectSlug),
+			DiffSummary:  DiffSummary("team_id", tid, "slug", DefaultProjectSlug, "name", DefaultProjectSlug),
 		}); err != nil {
 			return err
 		}
 		if _, err := tx.AppendEvent(ctx, Event{
 			Name:    "project.created",
 			Subject: "project:" + pid,
-			Payload: DiffSummary("team_id", tid, "slug", defaultProjectSlug),
+			Payload: DiffSummary("team_id", tid, "slug", DefaultProjectSlug),
 		}); err != nil {
 			return err
 		}
-		out.Project = Project{ID: pid, TeamID: tid, Slug: defaultProjectSlug, Name: defaultProjectSlug, CreatedAt: time.Unix(0, now).UTC()}
+		out.Project = Project{ID: pid, TeamID: tid, Slug: DefaultProjectSlug, Name: DefaultProjectSlug, CreatedAt: time.Unix(0, now).UTC()}
 
 		_, err = tx.AppendEvent(ctx, Event{
 			Name:    "user.registered",

@@ -14,6 +14,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // cronPlanFixture 规划一个 web + cron(task) 双服务应用。
@@ -23,6 +24,8 @@ func cronPlanFixture(t *testing.T, yaml string) (*compose.Spec, *Plan) {
 	plan, err := BuildPlan(PlanInput{
 		AppID:        "app1id",
 		AppName:      "app1",
+		TeamSlug:     "acme",
+		PrjSlug:      "prod",
 		DeploymentID: "dep1",
 		Spec:         spec,
 		FileEnv:      map[string]map[string]string{},
@@ -57,7 +60,7 @@ services:
 	for _, s := range plan.Services {
 		names = append(names, s.Name)
 	}
-	want, _ := naming.ServiceName("app1", "web")
+	want, _ := naming.ServiceName("acme", "prod", "app1", "web")
 	if len(plan.Services) != 1 || plan.Services[0].Name != want {
 		t.Fatalf("long-running set = %v, want only %s", names, want)
 	}
@@ -68,7 +71,7 @@ services:
 	}
 	jobFound := false
 	for _, s := range specs {
-		if s.Name == "fleetly-app1-task" {
+		if s.Name == "fleetly-acme-prod-app1-task" {
 			jobFound = true
 			if !s.Job || s.Image != "repo/task:1@sha256:def" {
 				t.Fatalf("job template wrong: job=%v image=%s", s.Job, s.Image)
@@ -113,7 +116,10 @@ services:
 func TestDecodeSpecsFiltersJobTemplates(t *testing.T) {
 	h := newHarness(t)
 	ctx := h.t.Context()
-	app, err := h.store.CreateApp(ctx, "id1", "app1")
+	// 固定 ID 播种（decodeSpecs 的 snapshot 密文不依赖归属 slug；直接走
+	// 五参 CreateApp + 夹具项目）。
+	proj := testsupport.SeedProject(t, h.store)
+	app, err := h.store.CreateApp(ctx, "id1", "app1", proj.ID, proj.TeamID)
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

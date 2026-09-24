@@ -51,7 +51,7 @@ func TestBackupJobSpecAssertions(t *testing.T) {
 	if len(j.Constraints) != 1 || j.Constraints[0] != "node.labels.fleetly.node-id == n_node" {
 		t.Errorf("constraints = %v, want the platform node-label pin (swarm node.id never equals the platform id)", j.Constraints)
 	}
-	if !h.docker.networks["fleetly-db-pg-bk-net"] {
+	if !h.docker.networks[h.dbNetName("pg-bk")] {
 		t.Errorf("instance shared network %v not attached", j.Networks)
 	}
 	if !strings.HasPrefix(j.Name, "fleetly-dbjob-pg-bk-backup-") {
@@ -91,7 +91,7 @@ func TestBackupJobSpecAssertions(t *testing.T) {
 			t.Error("empty env entry")
 		}
 	}
-	if len(j.Networks) != 1 || j.Networks[0] != "fleetly-db-pg-bk-net" {
+	if len(j.Networks) != 1 || j.Networks[0] != h.dbNetName("pg-bk") {
 		t.Errorf("networks = %v, want exactly the instance network in external mode", j.Networks)
 	}
 	// 台账生命周期：verified 行 + 快照 + 字节量。

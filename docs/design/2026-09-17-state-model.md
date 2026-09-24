@@ -45,13 +45,13 @@
 
 | 对象 | 键 | 用途 |
 |---|---|---|
-| Service | `managed=true`、`app`、`process`、`deployment`、`cron`（job 的 schedule 名） | 归属判定、孤儿检测、删除保护、堆栈对账辅助、cron 运行归属 |
+| Service | `managed=true`、`app`、`process`、`deployment`、`cron`（job 的 schedule 名）；v0.3 增 `team`、`project`（[rbac-teams §4.3](../design/2026-09-23-rbac-teams.md)：对账/清扫/管理查询的识别面） | 归属判定、孤儿检测、删除保护、堆栈对账辅助、cron 运行归属 |
 | Container | `app` | 人工排障时识别归属（不参与决策） |
 | Node | `node-id`（平台 ID） | 放置锚与重绑 |
 | Volume | 无 label，使用命名约定 `fleetly-<app>-<key>-<appid8>`（约束来源：卷由服务 spec 在各节点惰性创建，label 传递能力待 Spike 验证——`VolumeOptions.Labels` 生效则可收敛到 label 体系） | 卷归属与防代际静默复用 |
 
 - 平台约定 label（compose 原生字段承载）：`fleetly.domains`（路由域名，逗号分隔列表）、`fleetly.placement.node`（放置意图）〔v0.1 契约〕；`fleetly.cron` / `fleetly.cron.timezone` / `fleetly.cron.timeout`（定时任务，v0.2 契约；带该 label 的服务不按长驻部署）。
-- 对象命名（适配器内，防集群全局命名空间撞名，2026-09-17 审核裁决；语义见架构 §2.4）：Swarm 服务名 `fleetly-<app>-<service>`；secret 名 `fleetly-<app>-<name>-<hash8>`（file target 保持 compose 名，轮换 = 换引用）；网络别名 = compose 服务名（app 内短名互访与 compose 语义一致）。
+- 对象命名（适配器内，防集群全局命名空间撞名，2026-09-17 审核裁决；语义见架构 §2.4；**v0.3 D-W0-4 二修**：app 名降为 project 内唯一，命名三段 `team-prj-app` 承载全局唯一——服务名 `fleetly-<team>-<prj>-<app>-<service>`、secret 名 `fleetly-<team>-<prj>-<app>-<name>-<hash8>`、app 网络 `fleetly-<team>-<prj>-<app>-net`，cron job `fleetly-cron-<team>-<prj>-<app>-<svc>-<ulid8>`、库族 `fleetly-db-<team>-<prj>-<name>-…`；卷两族公式不变〔appid8/id8 ULID 尾缀天然防撞，零卷迁移〕；完整对照表见 [rbac-teams §4.3](../design/2026-09-23-rbac-teams.md)；`fleetly.app` label 值与日志流标签同口径改为三段限定形 `team/prj/app`）：网络别名 = compose 服务名（app 内短名互访与 compose 语义一致）不变；secret file target 保持 compose 名，轮换 = 换引用不变。
 - ~~锚点文档 / schema 版本化 / 溢写~~：经 D18 砍除（无硬承诺需要；DB + label 足够）。
 
 ### 2.5 漂移判定

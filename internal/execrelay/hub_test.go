@@ -58,7 +58,7 @@ func newHubFixture(t *testing.T, mutate func(cfg *HubConfig)) *hubFixture {
 			ExecRelayServiceName: {
 				{ID: "rtask1", NodeID: "n1", ContainerID: "abc123def4567890", State: "running", DesiredState: "running", Timestamp: time.Now()},
 			},
-			"fleetly-demo-web": {
+			"fleetly-acme-prod-demo-web": {
 				{ID: "task-9", NodeID: "n1", ContainerID: "cafe1234567890", State: "running", DesiredState: "running", Timestamp: time.Now()},
 				{ID: "task-old", NodeID: "n1", ContainerID: "old1234567890", State: "shutdown", DesiredState: "shutdown", Timestamp: time.Now()},
 			},
@@ -145,7 +145,7 @@ func TestHubOpenSessionHappyPath(t *testing.T) {
 	f := newHubFixture(t, nil)
 	f.registerDefault(t)
 	ctx := context.Background()
-	s, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: "tok1", App: "demo", Service: "web"}, 0, 0)
+	s, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: "tok1", App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0)
 	if err != nil {
 		t.Fatalf("OpenSession: %v", err)
 	}
@@ -204,7 +204,7 @@ func TestHubSessionCloseEventAndAudit(t *testing.T) {
 	f := newHubFixture(t, nil)
 	f.registerDefault(t)
 	ctx := context.Background()
-	s, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: "tok1", App: "demo", Service: "web"}, 0, 0)
+	s, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: "tok1", App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0)
 	if err != nil {
 		t.Fatalf("OpenSession: %v", err)
 	}
@@ -247,7 +247,7 @@ func TestHubSessionContentNeverLeaks(t *testing.T) {
 	f := newHubFixture(t, nil)
 	f.registerDefault(t)
 	ctx := context.Background()
-	s, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: "tok1", App: "demo", Service: "web"}, 0, 0)
+	s, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: "tok1", App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0)
 	if err != nil {
 		t.Fatalf("OpenSession: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestHubSessionLimits(t *testing.T) {
 	f.registerDefault(t)
 	ctx := context.Background()
 	mk := func(tokenID string) error {
-		_, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: tokenID, App: "demo", Service: "web"}, 0, 0)
+		_, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: tokenID, App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0)
 		return err
 	}
 	if err := mk("t1"); err != nil {
@@ -326,12 +326,12 @@ func TestHubDisabled(t *testing.T) {
 		cfg.Enabled = func() bool { return enabled }
 	})
 	f.registerDefault(t)
-	_, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", Service: "web"}, 0, 0)
+	_, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0)
 	if !errors.Is(err, ErrTerminalDisabled) {
 		t.Fatalf("err = %v, want ErrTerminalDisabled", err)
 	}
 	enabled = true
-	if _, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", Service: "web"}, 0, 0); err != nil {
+	if _, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0); err != nil {
 		t.Fatalf("OpenSession after enabling: %v", err)
 	}
 }
@@ -342,7 +342,7 @@ func TestHubGlobalLimit(t *testing.T) {
 	f.registerDefault(t)
 	ctx := context.Background()
 	for i, tok := range []string{"a", "b", "c", "d"} {
-		_, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: tok, App: "demo", Service: "web"}, 0, 0)
+		_, err := f.hub.OpenSession(ctx, TicketBinding{TokenID: tok, App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0)
 		if i < 3 && err != nil {
 			t.Fatalf("session %d: %v", i+1, err)
 		}
@@ -355,18 +355,18 @@ func TestHubGlobalLimit(t *testing.T) {
 // TestHubNoTaskOrNoRelay 目标选择失败面：无 running 任务 / 节点无 relay。
 func TestHubNoTaskOrNoRelay(t *testing.T) {
 	f := newHubFixture(t, nil)
-	f.tasks.tasks["fleetly-demo-web"] = []TaskRuntime{
+	f.tasks.tasks["fleetly-acme-prod-demo-web"] = []TaskRuntime{
 		{ID: "x", State: "shutdown", DesiredState: "shutdown"},
 	}
-	_, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", Service: "web"}, 0, 0)
+	_, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0)
 	if !errors.Is(err, ErrNoRunningTask) {
 		t.Fatalf("err = %v, want ErrNoRunningTask", err)
 	}
 	// 任务在位但 relay 未注册（连接表空）。
-	f.tasks.tasks["fleetly-demo-web"] = []TaskRuntime{
+	f.tasks.tasks["fleetly-acme-prod-demo-web"] = []TaskRuntime{
 		{ID: "y", NodeID: "n9", ContainerID: "zzz", State: "running", DesiredState: "running", Timestamp: time.Now()},
 	}
-	if _, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", Service: "web"}, 0, 0); !errors.Is(err, ErrNoRelayConnection) {
+	if _, err := f.hub.OpenSession(context.Background(), TicketBinding{TokenID: "t1", App: "demo", AppLabel: "acme/prod/demo", Service: "web"}, 0, 0); !errors.Is(err, ErrNoRelayConnection) {
 		t.Fatalf("err = %v, want ErrNoRelayConnection", err)
 	}
 }

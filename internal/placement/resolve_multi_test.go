@@ -15,6 +15,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // addWorker 向 harness 快照追加一个已锚定且 ready 的 worker。
@@ -86,7 +87,7 @@ func TestAutoPickThreeFactors(t *testing.T) {
 		wID := "n_" + ulid.Make().String()
 		h.addWorker("worker-01", wID)
 		// 同名兄弟应用：把 worker 的已钉数垫高（self: 1 钉 / worker: 2 钉）。
-		other, err := h.store.CreateApp(ctx, "", "sibling")
+		other, err := testsupport.SeedAppE(t, h.store, "sibling")
 		if err != nil {
 			t.Fatalf("create sibling: %v", err)
 		}

@@ -17,8 +17,12 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/compose"
+	"strings"
+
+	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // harness 是一只测试环境（store + box + 假底座/解析器/时钟）。
@@ -34,6 +38,65 @@ type harness struct {
 }
 
 var testStart = time.Now().UTC().Truncate(time.Second)
+
+// svc 推导 harness 播种 demo 应用的指定 compose 服务名（v0.3 三段公式——
+// team/prj slug 取自 app 行，机械改写自旧字面量 fleetly-demo-<service>）。
+// app 行尚未播种时先播种（与 enqueue 的 ensure 语义一致——服务名推导可能
+// 早于入队发生）。
+func (h *harness) svc(service string) string {
+	h.t.Helper()
+	app := h.demoApp()
+	name, nerr := naming.ServiceName(app.TeamSlug, app.ProjectSlug, app.Name, service)
+	if nerr != nil {
+		h.t.Fatalf("service name: %v", nerr)
+	}
+	return name
+}
+
+// demoNet 推导 demo 应用的 per-app overlay 网络名（三段公式）。
+func (h *harness) demoNet() string {
+	h.t.Helper()
+	app := h.demoApp()
+	name, nerr := naming.NetworkName(app.TeamSlug, app.ProjectSlug, app.Name)
+	if nerr != nil {
+		h.t.Fatalf("network name: %v", nerr)
+	}
+	return name
+}
+
+// demoSecretPrefix 推导 demo 应用的 Swarm secret 名前缀（name + '-'）。
+func (h *harness) demoSecretPrefix(name string) string {
+	h.t.Helper()
+	app := h.demoApp()
+	out, nerr := naming.SecretName(app.TeamSlug, app.ProjectSlug, app.Name, name, strings.Repeat("0", 8))
+	if nerr != nil {
+		h.t.Fatalf("secret name: %v", nerr)
+	}
+	return strings.TrimSuffix(out, strings.Repeat("0", 8))
+}
+
+// demoSecretLabels 返回 demo 应用 secret 的归属 label 集（值 = 三段限定形）。
+func (h *harness) demoSecretLabels() map[string]string {
+	h.t.Helper()
+	return secretLabels(h.demoApp().QualifiedName())
+}
+
+// demoApp 取（必要时播种）harness 的 demo 应用行。
+func (h *harness) demoApp() state.App {
+	h.t.Helper()
+	app, err := h.store.GetAppByName(context.Background(), "demo")
+	if err == nil {
+		return app
+	}
+	if err != state.ErrAppNotFound {
+		h.t.Fatalf("resolve demo app: %v", err)
+	}
+	seeded, err := testsupport.SeedAppE(h.t, h.store, "demo")
+	if err != nil {
+		h.t.Fatalf("seed demo app: %v", err)
+	}
+	return seeded
+}
 
 func newHarness(t *testing.T) *harness {
 	t.Helper()
@@ -71,7 +134,7 @@ func (h *harness) writeCompose(content string) string {
 func (h *harness) enqueue(composePath string) state.DeployRecord {
 	h.t.Helper()
 	ctx := context.Background()
-	app, err := ensureAppForTest(ctx, h.store, "demo")
+	app, err := ensureAppForTest(h.t, ctx, h.store, "demo")
 	if err != nil {
 		h.t.Fatalf("ensure app: %v", err)
 	}
@@ -139,13 +202,13 @@ func hasEvent(names []string, want string) bool {
 
 // ensureAppForTest / specHashOf 是测试侧的 CLI 同构助手（compose.Load 校验
 // 后取 spec_hash；应用不存在则创建）。
-func ensureAppForTest(ctx context.Context, st *state.Store, name string) (state.App, error) {
+func ensureAppForTest(t *testing.T, ctx context.Context, st *state.Store, name string) (state.App, error) {
 	if app, err := st.GetAppByName(ctx, name); err == nil {
 		return app, nil
 	} else if err != state.ErrAppNotFound {
 		return state.App{}, err
 	}
-	return st.CreateApp(ctx, "", name)
+	return testsupport.SeedAppE(t, st, name)
 }
 
 func specHashOf(path string) string {
@@ -193,14 +256,26 @@ func TestFirstDeploySucceeds(t *testing.T) {
 	if final.RevisionID == "" {
 		t.Fatal("revision_id empty on success")
 	}
-	// 服务存在 + managed label + 前缀命名 + fleetly.app 容器 label。
-	svc, err := h.sub.ServiceInspect(context.Background(), "fleetly-demo-web")
+	// 服务存在 + managed label + 三段命名 + fleetly.app 限定形容器 label
+	//（v0.3 label 集：+fleetly.team / fleetly.project，rbac-teams §4.3）。
+	app, err := h.store.GetAppByName(context.Background(), "demo")
+	if err != nil {
+		t.Fatalf("get app: %v", err)
+	}
+	svc, err := h.sub.ServiceInspect(context.Background(), h.svc("web"))
 	if err != nil {
 		t.Fatalf("service inspect: %v", err)
 	}
-	if svc.Labels[state.LabelManaged] != "true" || svc.Labels[state.LabelApp] != "demo" ||
+	if svc.Labels[state.LabelManaged] != "true" || svc.Labels[state.LabelApp] != app.QualifiedName() ||
 		svc.Labels[state.LabelProcess] != "web" {
 		t.Fatalf("service labels = %v, want managed/app/process set", svc.Labels)
+	}
+	if svc.Labels[state.LabelTeam] != app.TeamSlug || svc.Labels[state.LabelProject] != app.ProjectSlug {
+		t.Fatalf("ownership labels = %v, want team=%s project=%s",
+			svc.Labels, app.TeamSlug, app.ProjectSlug)
+	}
+	if svc.ContainerLabels[state.LabelApp] != app.QualifiedName() {
+		t.Fatalf("container app label = %s, want %s", svc.ContainerLabels[state.LabelApp], app.QualifiedName())
 	}
 	if svc.Labels[state.LabelDeployment] != rec.ID {
 		t.Fatalf("deployment label = %s, want %s", svc.Labels[state.LabelDeployment], rec.ID)
@@ -305,8 +380,8 @@ func TestFailureUnswitchedRestoresPreviousVersion(t *testing.T) {
 	if final := h.runToTerminal(rec1); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 deploy = %s (%s), want succeeded", final.Status, final.ErrorCode)
 	}
-	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
-	v1Running := h.runningTaskIDs("fleetly-demo-web", v1Image)
+	v1Image := h.sub.services[h.svc("web")].spec.Image
+	v1Running := h.runningTaskIDs(h.svc("web"), v1Image)
 	if len(v1Running) == 0 {
 		t.Fatal("no running v1 tasks after success")
 	}
@@ -324,7 +399,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePausedHealth)
+	h.sub.setMode(h.svc("web"), modePausedHealth)
 	rec2 := h.enqueue(pathV2)
 	final := h.runToTerminal(rec2)
 
@@ -340,7 +415,7 @@ services:
 	// 归位重放：最后有效 spec 被重新应用（ServiceUpdate 调用带 v1 镜像）。
 	found := false
 	for _, u := range h.sub.updates {
-		if u[0] == "fleetly-demo-web" && u[1] == v1Image {
+		if u[0] == h.svc("web") && u[1] == v1Image {
 			found = true
 		}
 	}
@@ -349,7 +424,7 @@ services:
 	}
 	// 归位零任务替换（同内容重放：v1 运行任务 id 不变、零新增运行任务，
 	// Spike B2 同构断言）。
-	after := h.runningTaskIDs("fleetly-demo-web", v1Image)
+	after := h.runningTaskIDs(h.svc("web"), v1Image)
 	if !equalSets(after, v1Running) {
 		t.Fatalf("running v1 tasks changed after restore: %v -> %v", v1Running, after)
 	}
@@ -369,7 +444,7 @@ func TestFirstDeployFailureScalesToZero(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	path := h.writeCompose(composeV1)
-	h.sub.setMode("fleetly-demo-web", modePausedStart)
+	h.sub.setMode(h.svc("web"), modePausedStart)
 	rec := h.enqueue(path)
 	final := h.runToTerminal(rec)
 
@@ -379,7 +454,7 @@ func TestFirstDeployFailureScalesToZero(t *testing.T) {
 	if !final.SubstrateHalted {
 		t.Fatal("substrate_halted not set (first deploy failure keeps the scene at scale=0)")
 	}
-	svc, err := h.sub.ServiceInspect(ctx, "fleetly-demo-web")
+	svc, err := h.sub.ServiceInspect(ctx, h.svc("web"))
 	if err != nil {
 		t.Fatalf("service should exist (scene kept at scale=0): %v", err)
 	}
@@ -409,7 +484,7 @@ func TestObserveCrashLoopFailsUnstable(t *testing.T) {
 		h.eng.Tick(ctx)
 	}
 	// 注入崩溃循环（≥2 次退出）。
-	h.sub.crashNewRunning("fleetly-demo-web", 2, h.clk.Now())
+	h.sub.crashNewRunning(h.svc("web"), 2, h.clk.Now())
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_OBSERVE_CRASH_LOOP" {
 		t.Fatalf("deploy = %s (%s), want failed E_OBSERVE_CRASH_LOOP", final.Status, final.ErrorCode)
@@ -436,7 +511,7 @@ func TestObserveIgnoresPriorDeploymentCrashHistory(t *testing.T) {
 	}
 	// 注入两条同镜像的历史崩溃任务：时间戳在第二次部署发布开始之前
 	// （上一部署的崩溃史，与目标镜像相同——时间界是唯一判据）。
-	h.sub.crashNewRunning("fleetly-demo-web", 2, h.clk.Now())
+	h.sub.crashNewRunning(h.svc("web"), 2, h.clk.Now())
 	// 同镜像连续部署：旧崩溃史不得计入新观察窗（回归：曾误判
 	// E_OBSERVE_CRASH_LOOP，见 T2-6 实机发现）。
 	rec2 := h.enqueue(h.writeCompose(composeV1))
@@ -473,7 +548,7 @@ func TestObserveSingleCrashSelfHealsWarns(t *testing.T) {
 		h.eng.Tick(ctx)
 	}
 	// 单次退出（Swarm 重启自愈：运行任务保留、失败记录在列）。
-	h.sub.crashNewRunning("fleetly-demo-web", 1, h.clk.Now())
+	h.sub.crashNewRunning(h.svc("web"), 1, h.clk.Now())
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeploySucceeded {
 		t.Fatalf("status = %s (%s), want succeeded (warning pass)", final.Status, final.ErrorCode)
@@ -493,7 +568,7 @@ func TestCancelUnswitchedRestoresThenCancels(t *testing.T) {
 	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 = %s", final.Status)
 	}
-	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
+	v1Image := h.sub.services[h.svc("web")].spec.Image
 
 	pathV2 := h.writeCompose(`name: demo
 services:
@@ -507,7 +582,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePending) // 迟迟未切流
+	h.sub.setMode(h.svc("web"), modePending) // 迟迟未切流
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8; i++ {
 		row, _ := h.store.GetDeployment(ctx, rec2.ID)
@@ -573,7 +648,7 @@ func TestWatchdogPendingTimeoutRestores(t *testing.T) {
 	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 = %s", final.Status)
 	}
-	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
+	v1Image := h.sub.services[h.svc("web")].spec.Image
 
 	pathV2 := h.writeCompose(`name: demo
 services:
@@ -587,7 +662,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
 		h.eng.Tick(ctx)
@@ -632,7 +707,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
 		h.eng.Tick(ctx)
@@ -804,7 +879,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
 		h.eng.Tick(ctx)
@@ -823,7 +898,7 @@ func TestRestartRecoveryClassifiesReleasing(t *testing.T) {
 	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 = %s", final.Status)
 	}
-	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
+	v1Image := h.sub.services[h.svc("web")].spec.Image
 
 	pathV2 := h.writeCompose(`name: demo
 services:
@@ -837,7 +912,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePausedHealth)
+	h.sub.setMode(h.svc("web"), modePausedHealth)
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
 		h.eng.Tick(ctx)
@@ -888,7 +963,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
 		h.eng.Tick(ctx)
@@ -916,7 +991,7 @@ services:
 
 	// 节点恢复：底座任务转健康（节点回来后 Swarm 调度启动）→ tick 续跑
 	//（resumeFromBlocked 重臂看门狗）→ 链路走完。
-	svc := h.sub.services["fleetly-demo-web"]
+	svc := h.sub.services[h.svc("web")]
 	svc.update = "completed"
 	svc.tasks = h.sub.runningTasks(svc, "t-resumed")
 	final := h.runToTerminalWith(rec2, eng2)
@@ -939,7 +1014,7 @@ func TestRestartRecoveryUndeterminableFailsInterrupted(t *testing.T) {
 	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 = %s", final.Status)
 	}
-	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
+	v1Image := h.sub.services[h.svc("web")].spec.Image
 	pathV2 := h.writeCompose(`name: demo
 services:
   web:
@@ -952,7 +1027,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
 		h.eng.Tick(ctx)
@@ -1032,7 +1107,7 @@ services:
 	if final := h.runToTerminal(h.enqueue(path2)); final.Status != state.DeploySucceeded {
 		t.Fatalf("two-service deploy = %s (%s)", final.Status, final.ErrorCode)
 	}
-	if _, err := h.sub.ServiceInspect(ctx, "fleetly-demo-worker"); err != nil {
+	if _, err := h.sub.ServiceInspect(ctx, h.svc("worker")); err != nil {
 		t.Fatalf("worker service missing: %v", err)
 	}
 	// 移除 worker 再部署 → 对账删除（省略=删除）。
@@ -1040,10 +1115,10 @@ services:
 	if final := h.runToTerminal(h.enqueue(path1)); final.Status != state.DeploySucceeded {
 		t.Fatalf("reduced deploy = %s (%s)", final.Status, final.ErrorCode)
 	}
-	if _, err := h.sub.ServiceInspect(ctx, "fleetly-demo-worker"); err != ErrServiceNotFound {
+	if _, err := h.sub.ServiceInspect(ctx, h.svc("worker")); err != ErrServiceNotFound {
 		t.Fatalf("worker service should be removed, got %v", err)
 	}
-	if len(h.sub.removed) == 0 || h.sub.removed[len(h.sub.removed)-1] != "fleetly-demo-worker" {
+	if len(h.sub.removed) == 0 || h.sub.removed[len(h.sub.removed)-1] != h.svc("worker") {
 		t.Fatalf("removed = %v, want fleetly-demo-worker", h.sub.removed)
 	}
 }
@@ -1052,7 +1127,7 @@ func TestEnvPendingPromotedOnSuccess(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	// 平台 env pending（密文入库——CLI 同构）。
-	app, err := ensureAppForTest(ctx, h.store, "demo")
+	app, err := ensureAppForTest(t, ctx, h.store, "demo")
 	if err != nil {
 		t.Fatalf("ensure app: %v", err)
 	}
@@ -1078,7 +1153,7 @@ func TestEnvPendingPromotedOnSuccess(t *testing.T) {
 		t.Fatalf("env status = %s, want effective (takes effect with the deploy)", row.Status)
 	}
 	// 合并结果注入容器 env（key 在列；值不进断言输出）。
-	env := h.sub.services["fleetly-demo-web"].spec.Env
+	env := h.sub.services[h.svc("web")].spec.Env
 	found := false
 	for _, kv := range env {
 		if len(kv) > 10 && kv[:10] == "DEMO_TOKEN" {
@@ -1098,7 +1173,7 @@ func TestEnvChangedHookFiresOnPromote(t *testing.T) {
 	fired := make(chan string, 4)
 	h.eng.WithEnvChangedHook(func(appID string) { fired <- appID })
 	ctx := context.Background()
-	app, err := ensureAppForTest(ctx, h.store, "demo")
+	app, err := ensureAppForTest(t, ctx, h.store, "demo")
 	if err != nil {
 		t.Fatalf("ensure app: %v", err)
 	}
@@ -1149,7 +1224,7 @@ volumes:
 	if final := h.runToTerminal(h.enqueue(pathV1)); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 = %s (%s)", final.Status, final.ErrorCode)
 	}
-	spec := h.sub.services["fleetly-demo-db"].spec
+	spec := h.sub.services[h.svc("db")].spec
 	if spec.UpdateOrder != "stop-first" {
 		t.Fatalf("volume service order = %q, want stop-first (platform-enforced)", spec.UpdateOrder)
 	}
@@ -1165,7 +1240,7 @@ services:
 volumes:
   data:
 `)
-	h.sub.setMode("fleetly-demo-db", modePausedStart)
+	h.sub.setMode(h.svc("db"), modePausedStart)
 	rec2 := h.enqueue(pathV2)
 	final := h.runToTerminal(rec2)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_TASK_START_FAILED" {
@@ -1205,7 +1280,7 @@ func TestPostWindowUnstableAlertsOnce(t *testing.T) {
 	}
 	// 窗后崩溃（L4）：注入 failed 且时间戳晚于窗末。
 	h.clk.Advance(30 * time.Second)
-	h.sub.crashNewRunning("fleetly-demo-web", 1, h.clk.Now())
+	h.sub.crashNewRunning(h.svc("web"), 1, h.clk.Now())
 	h.eng.Tick(ctx)
 	got, _ := h.eng.AppDerivedState(ctx, rec.AppID)
 	if got != DerivedDegraded {
@@ -1281,7 +1356,7 @@ services:
       retries: 2
       start_period: 1s
 `)
-	h.sub.setMode("fleetly-demo-web", modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	rec2 := h.enqueue(pathV2)
 	for i := 0; i < 8 && !h.releasing(rec2.ID); i++ {
 		h.eng.Tick(ctx)
@@ -1311,7 +1386,7 @@ services:
 
 	// 节点恢复 + 任务转健康：resumeFromBlocked 重置 deadline 并续跑到成功。
 	h.resolver.persistentPreflightFail = nil
-	svc := h.sub.services["fleetly-demo-web"]
+	svc := h.sub.services[h.svc("web")]
 	svc.update = "completed"
 	svc.message = ""
 	svc.tasks = h.sub.runningTasks(svc, "t-new")
@@ -1338,10 +1413,10 @@ func TestReconcileFailureRoutesThroughFailureDispatch(t *testing.T) {
 	if final := h.runToTerminal(h.enqueue(h.writeCompose(composeV1))); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 = %s", final.Status)
 	}
-	v1Image := h.sub.services["fleetly-demo-web"].spec.Image
+	v1Image := h.sub.services[h.svc("web")].spec.Image
 
 	// v2 双服务：web 更新成功、worker 创建失败（对账中途失败）。
-	h.sub.failUpdates["fleetly-demo-worker"] = errors.New("injected reconcile failure: worker create")
+	h.sub.failUpdates[h.svc("worker")] = errors.New("injected reconcile failure: worker create")
 	pathV2 := h.writeCompose(`name: demo
 services:
   web:
@@ -1372,7 +1447,7 @@ services:
 	}
 	restored := false
 	for _, u := range h.sub.updates {
-		if u[0] == "fleetly-demo-web" && u[1] == v1Image {
+		if u[0] == h.svc("web") && u[1] == v1Image {
 			restored = true
 		}
 	}
@@ -1386,7 +1461,7 @@ services:
 func TestFirstDeployReconcileFailureScalesToZero(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	h.sub.failUpdates["fleetly-demo-worker"] = errors.New("injected reconcile failure: worker create")
+	h.sub.failUpdates[h.svc("worker")] = errors.New("injected reconcile failure: worker create")
 	path := h.writeCompose(`name: demo
 services:
   web:
@@ -1405,7 +1480,7 @@ services:
 		t.Fatal("substrate_halted not set (first deploy failure keeps the scene at scale=0)")
 	}
 	// 已创建的 web 副本清零（worker 未创建：ServiceInspect NotFound 跳过）。
-	svc, err := h.sub.ServiceInspect(ctx, "fleetly-demo-web")
+	svc, err := h.sub.ServiceInspect(ctx, h.svc("web"))
 	if err != nil {
 		t.Fatalf("web service should exist (scene kept at scale=0): %v", err)
 	}
@@ -1482,7 +1557,7 @@ func TestObserveIgnoresPreSwitchCrashes(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	// 首更新滞留 PENDING：部署停在 releasing（健康门未过，未切流）。
-	h.sub.setMode("fleetly-demo-web", modePending)
+	h.sub.setMode(h.svc("web"), modePending)
 	rec := h.enqueue(h.writeCompose(composeV1))
 	h.eng.Tick(ctx)
 	row := mustGet(h, rec.ID)
@@ -1491,11 +1566,11 @@ func TestObserveIgnoresPreSwitchCrashes(t *testing.T) {
 	}
 	// 发布期崩溃 2 次（时间戳晚于 ReleaseStartedAt、早于切流点）。
 	h.clk.Advance(time.Second)
-	h.sub.crashNewRunning("fleetly-demo-web", 2, h.clk.Now())
+	h.sub.crashNewRunning(h.svc("web"), 2, h.clk.Now())
 	// 健康门通过 → 切流（FirstHealthyAt 晚于崩溃时间戳）→ 观察窗首拍即
 	// 旧缺陷的误判点（since=ReleaseStartedAt 把 2 次发布期崩溃计入窗口 →
 	// E_OBSERVE_CRASH_LOOP）。
-	svc := h.sub.services["fleetly-demo-web"]
+	svc := h.sub.services[h.svc("web")]
 	svc.update = "completed"
 	svc.message = ""
 	svc.tasks = h.sub.runningTasks(svc, "t-new")

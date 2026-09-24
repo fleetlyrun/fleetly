@@ -74,14 +74,16 @@ func (m *Manager) scanOnce(ctx context.Context) {
 	}
 	active := make(map[string]struct{}, len(apps))
 	for _, app := range apps {
-		active[app.Name] = struct{}{}
+		// 采集面的 app 键 = 三段限定形（v0.3 流标签口径，rbac-teams §4.3
+		// ——游标/ring/淘汰记账与入湖 label 同键，Follow 消费面同值）。
+		active[qualifiedAppOf(app)] = struct{}{}
 	}
 	// M7-6：先对账已消失 app 的延迟淘汰（连续 miss 超窗 → 游标 + ring
 	// 回收），再推进活跃面采集。
 	m.evictStaleStreamState(active)
 	candidates := make(map[string]accessTarget)
 	for _, app := range apps {
-		services, err := m.port.ManagedServiceProcesses(ctx, app.Name)
+		services, err := m.port.ManagedServiceProcesses(ctx, qualifiedAppOf(app))
 		if err != nil {
 			// 底座暂态（swarm 未就绪等）：跳过本轮，下轮重试。
 			m.log.Debug("logs: service discovery failed", "app", app.Name, "error", err.Error())
@@ -89,7 +91,7 @@ func (m *Manager) scanOnce(ctx context.Context) {
 		}
 		red := m.red.forApp(ctx, app.ID)
 		for _, svc := range services {
-			candidates[accessRouterName(app.Name, svc)] = accessTarget{app: app, service: svc}
+			candidates[accessRouterName(app.TeamSlug, app.ProjectSlug, app.Name, svc)] = accessTarget{app: app, service: svc}
 			m.pollStream(ctx, app, svc, red)
 		}
 		// E5 Cron：一次性 cron job 服务（fleetly-cron- 前缀，服务名不进
@@ -99,14 +101,19 @@ func (m *Manager) scanOnce(ctx context.Context) {
 	m.pollAccess(ctx, candidates)
 }
 
-// pollStream 拉取长驻服务的单条流（compose 服务名 → 命名公式 swarm 名）。
+// qualifiedAppOf 是 app 三段限定形的本地出口（state.App.QualifiedName 同
+// 式；logs 包统一经此处取值，便于口径单点）。
+func qualifiedAppOf(app state.App) string { return app.QualifiedName() }
+
+// pollStream 拉取长驻服务的单条流（compose 服务名 → 命名公式 swarm 名；
+// v0.3 三段公式——team/prj 段随 app 行 slug）。
 func (m *Manager) pollStream(ctx context.Context, app state.App, service string, red *redactor) {
-	swarmName, err := naming.ServiceName(app.Name, service)
+	swarmName, err := naming.ServiceName(app.TeamSlug, app.ProjectSlug, app.Name, service)
 	if err != nil {
 		m.log.Warn("logs: swarm service name resolve failed", "app", app.Name, "service", service, "error", err.Error())
 		return
 	}
-	m.pollStreamNamed(ctx, app, service, swarmName, streamKey(app.Name, service), red, false)
+	m.pollStreamNamed(ctx, app, service, swarmName, streamKey(qualifiedAppOf(app), service), red, false)
 }
 
 // cronCursorKey 是 cron job 采集游标键（与长驻 (app, service) 键隔离——同
@@ -144,7 +151,7 @@ func cronJobRefOf(app string, s engine.ServiceState) (CronJobRef, bool) {
 // 服务删除后流自然断、游标当轮回收，无悬挂 goroutine（pollStreamNamed 同
 // 步排空 + MG-1 看门狗兜底）。
 func (m *Manager) pollCronJobs(ctx context.Context, app state.App, red *redactor) {
-	states, err := m.port.CronJobServiceStates(ctx, app.Name)
+	states, err := m.port.CronJobServiceStates(ctx, qualifiedAppOf(app))
 	if err != nil {
 		// 底座暂态：跳过本轮，游标保留（服务若已删，下一轮发现集为空时回收）。
 		m.log.Debug("logs: cron job discovery failed", "app", app.Name, "error", err.Error())
@@ -152,15 +159,15 @@ func (m *Manager) pollCronJobs(ctx context.Context, app state.App, red *redactor
 	}
 	seen := make(map[string]bool, len(states))
 	for _, s := range states {
-		ref, ok := cronJobRefOf(app.Name, s)
+		ref, ok := cronJobRefOf(qualifiedAppOf(app), s)
 		if !ok {
 			continue
 		}
-		key := cronCursorKey(app.Name, ref.JobService)
+		key := cronCursorKey(qualifiedAppOf(app), ref.JobService)
 		seen[key] = true
 		m.pollStreamNamed(ctx, app, ref.Service, ref.JobService, key, red, true)
 	}
-	m.evictCronCursors(app.Name, seen)
+	m.evictCronCursors(qualifiedAppOf(app), seen)
 }
 
 // evictCronCursors 回收已消失 job 服务的采集游标：本轮发现集之外的 cron 游
@@ -192,7 +199,7 @@ func (m *Manager) pollStreamNamed(ctx context.Context, app state.App, service, s
 			// 创建起的全部输出；行短量小，一次性语义天然有界）。
 			anchor = time.Time{}
 		}
-		cur = &stream{app: app.Name, appID: app.ID, service: service, lastAt: anchor}
+		cur = &stream{app: qualifiedAppOf(app), appID: app.ID, service: service, lastAt: anchor}
 		m.streams[cursorKey] = cur
 	}
 	since := cur.lastAt
@@ -238,7 +245,9 @@ deliver:
 				last = at // 游标只随可信时间戳行推进。
 			}
 			e := Entry{
-				App:     app.Name,
+				// app = 三段限定形（v0.3 流标签口径——入湖 label / ring 键 /
+				// 落盘文件名同值；消费面 Follow/History 按限定形寻址）。
+				App:     qualifiedAppOf(app),
 				Service: service,
 				At:      at,
 				Stderr:  line.Stderr,
@@ -399,9 +408,12 @@ func (m *Manager) History(ctx context.Context, q HistoryQuery) ([]Entry, error) 
 	if err != nil {
 		return nil, err
 	}
+	// 落盘/入湖文件与行均以三段限定形为 app 键（v0.3 流标签口径）——检索
+	// 键随解析后的行归属换算，请求侧继续收裸名/限定形（GetAppByName 兼容）。
+	q.App = qualifiedAppOf(app)
 	var out []Entry
 	if q.Source == "" || q.Source == SourceContainer {
-		rows, err := m.dsk.query(ctx, app.Name, q.Service, SourceContainer, q.Since, q.Until, q.Limit)
+		rows, err := m.dsk.query(ctx, q.App, q.Service, SourceContainer, q.Since, q.Until, q.Limit)
 		if err != nil {
 			return nil, err
 		}
@@ -455,7 +467,7 @@ func (m *Manager) buildLogEntries(ctx context.Context, app state.App, q HistoryQ
 		}
 		for _, line := range lines {
 			out = append(out, Entry{
-				App:     app.Name,
+				App:     qualifiedAppOf(app),
 				Service: b.Service,
 				At:      at,
 				Line:    red.redact(line),

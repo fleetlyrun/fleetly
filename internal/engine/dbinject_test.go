@@ -15,7 +15,9 @@ import (
 	"testing"
 
 	"github.com/fleetlyrun/fleetly/internal/compose"
+	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // 库实例模板 ID 字面量（测试不得 import dbtemplate——它在 engine 之上，
@@ -120,11 +122,14 @@ func createDBInstanceForTest(t *testing.T, h *harness, name, template, password 
 	if err != nil {
 		t.Fatalf("encrypt credential: %v", err)
 	}
+	proj := testsupport.SeedProject(t, h.store)
 	inst, err := h.store.CreateDatabaseInstance(ctx, state.DatabaseInstance{
 		Name:             name,
 		Template:         template,
 		ImageDigest:      "postgres:16@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		CredentialCipher: string(cipher),
+		ProjectID:        proj.ID,
+		TeamID:           proj.TeamID,
 	})
 	if err != nil {
 		t.Fatalf("create database instance %s: %v", name, err)
@@ -183,7 +188,7 @@ func TestDeployWithDatabaseReference(t *testing.T) {
 	}
 
 	// 合并结果注入：六键齐、值来自物化行（本次部署消费 pending）。
-	env := serviceEnvMap(t, h, "fleetly-demo-web")
+	env := serviceEnvMap(t, h, h.svc("web"))
 	for key, want := range map[string]string{
 		"FLEETLY_DB_PG1_URL":      "postgres://fleetly:" + pw + "@pg1:5432/pg1",
 		"FLEETLY_DB_PG1_HOST":     "pg1",
@@ -198,27 +203,31 @@ func TestDeployWithDatabaseReference(t *testing.T) {
 	}
 	// 物化行是 app 侧 env_vars 行——经合并链流向 app 全体服务（S16-C4
 	// 既有语义，与 `fleetly env set` 同源）；网络附加才是 label 作用域。
-	workerEnv := serviceEnvMap(t, h, "fleetly-demo-worker")
+	workerEnv := serviceEnvMap(t, h, h.svc("worker"))
 	if workerEnv["FLEETLY_DB_PG1_PASSWORD"] != pw {
 		t.Errorf("worker env FLEETLY_DB_PG1_PASSWORD = %q, want app-wide materialized value", workerEnv["FLEETLY_DB_PG1_PASSWORD"])
 	}
 
 	// 网络牵线：web = app 网络（别名 = 服务名）+ 库共享网络（无别名）；
 	// worker 仅 app 网络。
-	svc := h.sub.services["fleetly-demo-web"].spec
+	svc := h.sub.services[h.svc("web")].spec
 	if len(svc.Networks) != 2 {
 		t.Fatalf("web networks = %+v, want app net + db net", svc.Networks)
 	}
 	dbNet := svc.Networks[1]
-	if dbNet.Name != "fleetly-db-pg1-net" || len(dbNet.Aliases) != 0 {
-		t.Fatalf("db network attach = %+v, want fleetly-db-pg1-net without aliases", dbNet)
+	wantDBNet, nerr := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
+	if nerr != nil {
+		t.Fatalf("db network name: %v", nerr)
 	}
-	workerNets := h.sub.services["fleetly-demo-worker"].spec.Networks
-	if len(workerNets) != 1 || workerNets[0].Name != "fleetly-demo-net" {
+	if dbNet.Name != wantDBNet || len(dbNet.Aliases) != 0 {
+		t.Fatalf("db network attach = %+v, want %s without aliases", dbNet, wantDBNet)
+	}
+	workerNets := h.sub.services[h.svc("worker")].spec.Networks
+	if len(workerNets) != 1 || workerNets[0].Name != h.demoNet() {
 		t.Fatalf("worker networks = %+v, want app net only", workerNets)
 	}
 	// 库网络在发布时被 NetworkEnsure（applyDesired 既有幂等确认循环）。
-	if !h.sub.networks["fleetly-db-pg1-net"] {
+	if !h.sub.networks[wantDBNet] {
 		t.Fatal("db network was not ensured at release")
 	}
 
@@ -282,14 +291,14 @@ func TestDeployReferenceValueChangeRepends(t *testing.T) {
 		t.Fatalf("rotated row = %+v (%v), want pending (value change re-pends)", row, err)
 	}
 	// 运行 spec 仍是旧值（pending 未消费）。
-	if env := serviceEnvMap(t, h, "fleetly-demo-web"); env["FLEETLY_DB_PG1_PASSWORD"] != "passwordV1x" {
+	if env := serviceEnvMap(t, h, h.svc("web")); env["FLEETLY_DB_PG1_PASSWORD"] != "passwordV1x" {
 		t.Fatalf("running spec must keep the consumed value until redeploy, got %q", env["FLEETLY_DB_PG1_PASSWORD"])
 	}
 
 	if final := h.runToTerminal(h.enqueue(h.writeCompose(dbRefCompose))); final.Status != state.DeploySucceeded {
 		t.Fatalf("v2 = %s (%s), want succeeded", final.Status, final.ErrorCode)
 	}
-	if env := serviceEnvMap(t, h, "fleetly-demo-web"); env["FLEETLY_DB_PG1_PASSWORD"] != newPW {
+	if env := serviceEnvMap(t, h, h.svc("web")); env["FLEETLY_DB_PG1_PASSWORD"] != newPW {
 		t.Fatalf("redeployed spec password = %q, want %q", env["FLEETLY_DB_PG1_PASSWORD"], newPW)
 	}
 	row, _ = h.store.GetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD")
@@ -425,7 +434,7 @@ func TestReferenceRemovalCleanup(t *testing.T) {
 	if final := h.runToTerminal(h.enqueue(h.writeCompose(dbRefCompose))); final.Status != state.DeploySucceeded {
 		t.Fatalf("v1 = %s (%s), want succeeded", final.Status, final.ErrorCode)
 	}
-	before := h.sub.services["fleetly-demo-web"].spec.DesiredHash()
+	before := h.sub.services[h.svc("web")].spec.DesiredHash()
 
 	if final := h.runToTerminal(h.enqueue(h.writeCompose(dbRefComposeNoLabel))); final.Status != state.DeploySucceeded {
 		t.Fatalf("v2 = %s (%s), want succeeded", final.Status, final.ErrorCode)
@@ -445,14 +454,14 @@ func TestReferenceRemovalCleanup(t *testing.T) {
 		}
 	}
 	// 网络/哈希：spec 摘除库网络，desired-hash 变化。
-	svc := h.sub.services["fleetly-demo-web"].spec
-	if len(svc.Networks) != 1 || svc.Networks[0].Name != "fleetly-demo-net" {
+	svc := h.sub.services[h.svc("web")].spec
+	if len(svc.Networks) != 1 || svc.Networks[0].Name != h.demoNet() {
 		t.Fatalf("networks after removal = %+v, want app net only", svc.Networks)
 	}
 	if svc.DesiredHash() == before {
 		t.Fatal("desired hash unchanged after dropping the reference (network/env must participate)")
 	}
-	if env := serviceEnvMap(t, h, "fleetly-demo-web"); len(env) != 0 {
+	if env := serviceEnvMap(t, h, h.svc("web")); len(env) != 0 {
 		t.Fatalf("env after removal = %v, want empty", env)
 	}
 }
@@ -519,13 +528,13 @@ func TestRollbackReplaysCurrentSystemEnv(t *testing.T) {
 	if final.Status != state.DeploySucceeded {
 		t.Fatalf("rollback = %s (%s), want succeeded", final.Status, final.ErrorCode)
 	}
-	env := serviceEnvMap(t, h, "fleetly-demo-web")
+	env := serviceEnvMap(t, h, h.svc("web"))
 	if env["FLEETLY_DB_PG1_PASSWORD"] != newPW {
 		t.Fatalf("replayed password = %q, want current %q (D-DB-11: snapshot value must not revive)", env["FLEETLY_DB_PG1_PASSWORD"], newPW)
 	}
 	// 其余快照字段照常回放（非 system 键不修正——用镜像引用作对照）。
 	v1Specs := decodeForTest(t, h, v1)
-	if h.sub.services["fleetly-demo-web"].spec.Image != v1Specs[0].Image {
+	if h.sub.services[h.svc("web")].spec.Image != v1Specs[0].Image {
 		t.Fatal("non-system snapshot fields must replay verbatim")
 	}
 }
@@ -554,7 +563,7 @@ func TestRollbackRetainsSnapshotValueWhenSystemRowGone(t *testing.T) {
 	if final := h.runToTerminal(rec); final.Status != state.DeploySucceeded {
 		t.Fatalf("rollback = %s (%s), want succeeded", final.Status, final.ErrorCode)
 	}
-	env := serviceEnvMap(t, h, "fleetly-demo-web")
+	env := serviceEnvMap(t, h, h.svc("web"))
 	if env["FLEETLY_DB_PG1_PASSWORD"] != "oldpasswordA1" {
 		t.Fatalf("replayed password = %q, want snapshot value oldpasswordA1 (documented boundary)", env["FLEETLY_DB_PG1_PASSWORD"])
 	}
@@ -590,7 +599,7 @@ func TestRestoreSnapshotSubstitutesCurrentSystemEnv(t *testing.T) {
 	if err := h.eng.restoreSnapshot(ctx, v1, specs); err != nil {
 		t.Fatalf("restoreSnapshot: %v", err)
 	}
-	env := serviceEnvMap(t, h, "fleetly-demo-web")
+	env := serviceEnvMap(t, h, h.svc("web"))
 	if env["FLEETLY_DB_PG1_PASSWORD"] != newPW {
 		t.Fatalf("restored password = %q, want current %q (D-DB-11 must apply on every replay path)", env["FLEETLY_DB_PG1_PASSWORD"], newPW)
 	}

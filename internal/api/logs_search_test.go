@@ -26,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/victorialogs"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // openLogsStore 起独立临时库。
@@ -104,7 +105,7 @@ func TestSearchLogsJSONLModeSameCode(t *testing.T) {
 	if err := st.SaveLogsSettings(ctx, state.LogsBackendJSONL, state.LogsSaveOptions{Actor: "human"}); err != nil {
 		t.Fatalf("save: %v", err)
 	}
-	if _, err := st.CreateApp(ctx, "", "app"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "app"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	svc := newLogsSvc(st, victorialogs.NewBackend(), nil)
@@ -116,7 +117,7 @@ func TestSearchLogsJSONLModeSameCode(t *testing.T) {
 func TestSearchLogsFaceNotAssembled(t *testing.T) {
 	st := openLogsStore(t)
 	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "app"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "app"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	svc := newLogsSvc(st, nil, nil)
@@ -128,7 +129,7 @@ func TestSearchLogsFaceNotAssembled(t *testing.T) {
 func TestSearchLogsVLUnreachableSameCode(t *testing.T) {
 	st := openLogsStore(t)
 	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "app"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "app"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	vl := victorialogs.NewBackendWithBase("http://127.0.0.1:1")
@@ -142,7 +143,7 @@ func TestSearchLogsVLUnreachableSameCode(t *testing.T) {
 func TestSearchLogsRowsAndCursor(t *testing.T) {
 	st := openLogsStore(t)
 	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "app"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "app"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +197,7 @@ func TestSearchLogsRowsAndCursor(t *testing.T) {
 func TestSearchLogsCursorInvalid(t *testing.T) {
 	st := openLogsStore(t)
 	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "app"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "app"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -216,7 +217,7 @@ func TestSearchLogsCursorInvalid(t *testing.T) {
 func TestSearchLogsAccessFieldsProjected(t *testing.T) {
 	st := openLogsStore(t)
 	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "app"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "app"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

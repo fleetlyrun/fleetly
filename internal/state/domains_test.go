@@ -13,7 +13,7 @@ import (
 func TestReplaceAppDomainsLedgerReconcile(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -82,7 +82,7 @@ func TestReplaceAppDomainsLedgerReconcile(t *testing.T) {
 func TestReplaceAppDomainsPortOnlyChange(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "portchange")
+	app, err := seedAppE(t, st, "portchange")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -116,7 +116,7 @@ func TestReplaceAppDomainsPortOnlyChange(t *testing.T) {
 func TestSetDomainCertLedger(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	app, _ := st.CreateApp(ctx, "", "shop")
+	app, _ := seedAppE(t, st, "shop")
 	if err := st.ReplaceAppDomains(ctx, app.ID, []DomainServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
 	}); err != nil {
@@ -156,8 +156,8 @@ func TestSetDomainCertLedger(t *testing.T) {
 func TestListAllDomainsAcrossApps(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
-	app1, _ := st.CreateApp(ctx, "", "one")
-	app2, _ := st.CreateApp(ctx, "", "two")
+	app1, _ := seedAppE(t, st, "one")
+	app2, _ := seedAppE(t, st, "two")
 	_ = st.ReplaceAppDomains(ctx, app1.ID, []DomainServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"one.example.test"}},
 	})

@@ -19,10 +19,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // newDatabaseTestEnv 起带 DatabaseService 的 bufconn 测试环境（真实 store +
-// envelope box + 鉴权链，harness 同构）。
+// envelope box + 鉴权链，harness 同构）+ 确定性夹具项目 "fixture"（v0.3 归属
+// 必填——创建请求显式携带，机具令牌裸名解析全域唯一命中）。
 func newDatabaseTestEnv(t *testing.T) (*state.Store, *secrets.Box, serverv1.DatabaseServiceClient, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -40,14 +42,15 @@ func newDatabaseTestEnv(t *testing.T) (*state.Store, *secrets.Box, serverv1.Data
 	serverv1.RegisterDatabaseServiceServer(srv, NewDatabaseService(st, box, nil, nil, nil))
 	conn := serveBufconn(t, srv)
 	token := seedTokenPlain(t, st, "admin")
+	seedFixtureProject(t, st)
 	return st, box, serverv1.NewDatabaseServiceClient(conn), token
 }
 
-// mustCreate 用 admin 凭据创建一个实例并返回视图。
+// mustCreate 用 admin 凭据创建一个实例并返回视图（归属 = 夹具项目）。
 func mustCreate(t *testing.T, cl serverv1.DatabaseServiceClient, token, name, template string) *serverv1.DatabaseView {
 	t.Helper()
 	resp, err := cl.CreateDatabase(authCtx(context.Background(), token), &serverv1.CreateDatabaseRequest{
-		Name: name, Template: template,
+		Name: name, Template: template, Project: "fixture",
 	})
 	if err != nil {
 		t.Fatalf("CreateDatabase %s: %v", name, err)
@@ -125,7 +128,7 @@ func TestDatabaseCreateAndGetMasked(t *testing.T) {
 		t.Fatalf("invalid name code = %v, want InvalidArgument", status.Code(err))
 	}
 	// 重名 → 409。
-	_, err = cl.CreateDatabase(ctx, &serverv1.CreateDatabaseRequest{Name: "pg-prod", Template: dbtemplate.TemplateRedis7})
+	_, err = cl.CreateDatabase(ctx, &serverv1.CreateDatabaseRequest{Name: "pg-prod", Template: dbtemplate.TemplateRedis7, Project: "fixture"})
 	if status.Code(err) != codes.FailedPrecondition {
 		t.Fatalf("duplicate name code = %v, want FailedPrecondition (409)", status.Code(err))
 	}
@@ -253,7 +256,7 @@ func TestDatabaseDeleteGuardAndConfirm(t *testing.T) {
 	}
 
 	// 引用守卫：db_references 非空 → 409 E_DB_REFERENCED 附清单。
-	app, err := st.CreateApp(context.Background(), "", "consumer")
+	app, err := testsupport.SeedAppE(t, st, "consumer")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

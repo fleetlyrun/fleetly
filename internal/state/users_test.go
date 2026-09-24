@@ -352,9 +352,14 @@ func TestDisableUserRevokesSessionsAndPATs(t *testing.T) {
 	}
 }
 
-// TestMigration00018RBACSchema（迁移 00018 验收）：七新表存在、加列就位
-// （apps/db_instances/tokens/git_keys，全部可空）、设计 §8 清单索引在册
-// （含 UNIQUE(project_id, name) 复合唯一索引）。
+// TestMigration00018RBACSchema（迁移 00018 验收 + 00019 收紧后的终态口径）：
+// 七新表存在、加列就位、设计 §8 清单索引在册。
+//
+// v0.3 W2-S3 00019 表重建后的终态口径（rbac-teams §8 实现切分）：apps/
+// db_instances 的 project_id/team_id 收紧为 NOT NULL（切分设计：00018 可空
+// → 00019 收紧）；UNIQUE(project_id,name) 由表约束承载（00018 的具名唯一
+// 索引 idx_*_project_name 随重建收敛为 sqlite_autoindex），全局 UNIQUE(name)
+// 退役（D-W0-4 二修）。
 func TestMigration00018RBACSchema(t *testing.T) {
 	st := newTestStore(t)
 	ctx := context.Background()
@@ -370,12 +375,17 @@ func TestMigration00018RBACSchema(t *testing.T) {
 		}
 	}
 
-	// 加列清单（列名 → 携表）：全部可空（PRAGMA table_info notnull = 0）。
-	for _, tc := range []struct{ table, col string }{
-		{"apps", "project_id"}, {"apps", "team_id"},
-		{"db_instances", "project_id"}, {"db_instances", "team_id"},
-		{"tokens", "user_id"}, {"tokens", "project_id"},
-		{"git_keys", "user_id"},
+	// 加列清单（列名 → 携表）+ 00019 收紧后的 NOT NULL 终态：
+	//   apps/db_instances 归属列 = NOT NULL（notnull = 1）；
+	//   tokens/git_keys 用户化列保持可空（语义 NULL：机具令牌/不绑定/存量）。
+	for _, tc := range []struct {
+		table, col  string
+		wantNotNull int
+	}{
+		{"apps", "project_id", 1}, {"apps", "team_id", 1},
+		{"db_instances", "project_id", 1}, {"db_instances", "team_id", 1},
+		{"tokens", "user_id", 0}, {"tokens", "project_id", 0},
+		{"git_keys", "user_id", 0},
 	} {
 		rows, err := st.db.QueryContext(ctx, `PRAGMA table_info(`+tc.table+`)`)
 		if err != nil {
@@ -405,8 +415,8 @@ func TestMigration00018RBACSchema(t *testing.T) {
 		if !found {
 			t.Fatalf("column %s.%s missing", tc.table, tc.col)
 		}
-		if notNull != 0 {
-			t.Fatalf("column %s.%s notnull = %d, want 0 (nullable-first: NOT NULL tightening is 00019/W2)", tc.table, tc.col, notNull)
+		if notNull != tc.wantNotNull {
+			t.Fatalf("column %s.%s notnull = %d, want %d (00019 tightening)", tc.table, tc.col, notNull, tc.wantNotNull)
 		}
 	}
 
@@ -430,8 +440,8 @@ func TestMigration00018RBACSchema(t *testing.T) {
 		return out
 	}
 	for table, want := range map[string][]string{
-		"apps":            {"idx_apps_project_name", "idx_apps_project", "idx_apps_team"},
-		"db_instances":    {"idx_db_instances_project_name", "idx_db_instances_project", "idx_db_instances_team"},
+		"apps":            {"idx_apps_project", "idx_apps_team"},
+		"db_instances":    {"idx_db_instances_project", "idx_db_instances_team"},
 		"tokens":          {"idx_tokens_user"},
 		"team_members":    {"idx_team_members_team", "idx_team_members_user"},
 		"projects":        {"idx_projects_team"},
@@ -446,22 +456,29 @@ func TestMigration00018RBACSchema(t *testing.T) {
 		}
 	}
 
-	// 复合唯一索引的列序核对：apps(project_id, name)。
-	rows, err := st.db.QueryContext(ctx, `PRAGMA index_info(idx_apps_project_name)`)
-	if err != nil {
-		t.Fatalf("index_info: %v", err)
+	// UNIQUE(project_id, name) 以表约束在册（00019 重建后 = sqlite_autoindex
+	// 具名消失）；列序核对改走 autoindex（按 sqlite_master sql 断言约束在表
+	// 定义内，免疫 autoindex 命名细节）。
+	var appsDDL string
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT sql FROM sqlite_master WHERE type='table' AND name='apps'`).Scan(&appsDDL); err != nil {
+		t.Fatalf("read apps ddl: %v", err)
 	}
-	defer rows.Close()
-	var cols []string
-	for rows.Next() {
-		var seqno, cid int
-		var cname string
-		if err := rows.Scan(&seqno, &cid, &cname); err != nil {
-			t.Fatalf("scan index_info: %v", err)
-		}
-		cols = append(cols, cname)
+	if !strings.Contains(appsDDL, "UNIQUE (project_id, name)") {
+		t.Fatalf("apps table constraint UNIQUE(project_id, name) missing in ddl: %s", appsDDL)
 	}
-	if len(cols) != 2 || cols[0] != "project_id" || cols[1] != "name" {
-		t.Fatalf("idx_apps_project_name columns = %v, want [project_id name]", cols)
+	if strings.Contains(appsDDL, `name TEXT NOT NULL UNIQUE`) {
+		t.Fatalf("apps.name must not carry a global UNIQUE constraint (D-W0-4): %s", appsDDL)
+	}
+	var dbDDL string
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT sql FROM sqlite_master WHERE type='table' AND name='db_instances'`).Scan(&dbDDL); err != nil {
+		t.Fatalf("read db_instances ddl: %v", err)
+	}
+	if !strings.Contains(dbDDL, "UNIQUE (project_id, name)") {
+		t.Fatalf("db_instances table constraint UNIQUE(project_id, name) missing in ddl: %s", dbDDL)
+	}
+	if strings.Contains(dbDDL, `name                  TEXT NOT NULL UNIQUE`) {
+		t.Fatalf("db_instances.name must not carry a global UNIQUE constraint (D-W0-4): %s", dbDDL)
 	}
 }

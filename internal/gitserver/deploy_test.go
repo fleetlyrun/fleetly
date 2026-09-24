@@ -9,6 +9,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // DeployFromCommit 测试（幂等口径绑定断言面）：每次 git push 都建部署记录
@@ -28,6 +29,10 @@ func TestDeployFromGitPush(t *testing.T) {
 	// MG-6 回归前置采样：解析中转临时目录（os.MkdirTemp("fleetly-compose-")）
 	// 必须随请求回收——结束时对照，不留孤儿 tmp。
 	tmpBefore := countComposeTempDirs(t)
+
+	// v0.3 归属必填：push 前先以夹具项目建 app 行（webhook/push 无署名
+	// 用户可解析项目的诚实拒绝面由 TestDeployFromCommitDedupeSHA 承载）。
+	testsupport.SeedApp(t, st, "my-api")
 
 	// 首次 push → queued 部署 + 来源字段。
 	rec, warnings, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "")
@@ -100,6 +105,7 @@ func TestDeployFromGitPushSignedUserAudit(t *testing.T) {
 		t.Fatal(err)
 	}
 	gitRun(t, sourceDir, "push", "--quiet", src.repoPath("my-api"), "main")
+	testsupport.SeedApp(t, st, "my-api") // 归属夹具（署名用户无个人队可解析）
 
 	if _, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "01HXXXXUSER1"); err != nil {
 		t.Fatalf("signed push: %v", err)
@@ -179,7 +185,8 @@ func TestDeployFromCommitBranchFilter(t *testing.T) {
 		t.Fatalf("filtered push created app row (err = %v)", err)
 	}
 
-	// 配置分支（缺省 main）正常入队；app 行随首次部署创建。
+	// 配置分支（缺省 main）正常入队；app 行经夹具项目预置（v0.3 归属必填）。
+	testsupport.SeedApp(t, st, "my-api")
 	rec, _, err := src.DeployFromGitPush(ctx, "my-api", sha, "refs/heads/main", "", "")
 	if err != nil {
 		t.Fatalf("tracked branch push: %v", err)
@@ -236,6 +243,9 @@ func TestDeployFromCommitFailClosedAtomic(t *testing.T) {
 	}
 	gitRun(t, sourceDir, "push", "--quiet", src.repoPath("my-api"), "main")
 
+	// app 行预置（事务外前置写——v0.3 归属必填，经夹具项目）。
+	testsupport.SeedApp(t, st, "my-api")
+
 	_, _, err := src.DeployFromCommit(ctx, DeployInput{
 		App:         "my-api",
 		SHA:         sha,
@@ -258,13 +268,25 @@ func TestDeployFromCommitFailClosedAtomic(t *testing.T) {
 	if n, qerr := st.CountGitDeploymentsForSHA(ctx, app.ID, sha); qerr != nil || n != 0 {
 		t.Fatalf("git deployments for sha = %d (%v), want 0", n, qerr)
 	}
-	// deployment.queued 事件先于审计写、一并撤销——事件表干净。
+	// deployment.queued 事件先于审计写、一并撤销——事件表无部署事件
+	//（夹具团队/项目播种事件存在于前，不计入断言）。
 	events, eerr := st.EventsSince(ctx, 0, 10)
-	if eerr != nil || len(events) != 0 {
-		t.Fatalf("events after failed enqueue = %+v (%v), want none", events, eerr)
+	if eerr != nil {
+		t.Fatalf("events after failed enqueue: %v", eerr)
+	}
+	for _, ev := range events {
+		if ev.Name == "deployment.queued" {
+			t.Fatalf("deployment.queued must be rolled back with the failed enqueue, got %+v", events)
+		}
 	}
 
 	// 对照：合法 action 的正常入队后，部署行与事件齐全。
+	// 健康入队新增恰好一条 deployment.queued 事件（播种期的 team/project
+	// 事件不计入——相对计数断言）。
+	before, beforeErr := st.EventsSince(ctx, 0, 10)
+	if beforeErr != nil {
+		t.Fatalf("events before healthy enqueue: %v", beforeErr)
+	}
 	if _, _, err := src.DeployFromCommit(ctx, DeployInput{
 		App: "my-api", SHA: sha, Ref: "refs/heads/main", AuditAction: "git.push_deploy",
 	}); err != nil {
@@ -273,8 +295,11 @@ func TestDeployFromCommitFailClosedAtomic(t *testing.T) {
 	if n, qerr := st.CountGitDeploymentsForSHA(ctx, app.ID, sha); qerr != nil || n != 1 {
 		t.Fatalf("git deployments after healthy enqueue = %d (%v), want 1", n, qerr)
 	}
-	if events, eerr := st.EventsSince(ctx, 0, 10); eerr != nil || len(events) != 1 {
-		t.Fatalf("events after healthy enqueue = %d (%v), want 1", len(events), eerr)
+	after, afterErr := st.EventsSince(ctx, 0, 10)
+	if afterErr != nil || len(after) != len(before)+1 ||
+		after[len(after)-1].Name != "deployment.queued" {
+		t.Fatalf("events after healthy enqueue: before=%d after=%d (%v/%v), want exactly one new deployment.queued",
+			len(before), len(after), beforeErr, afterErr)
 	}
 }
 
@@ -297,7 +322,9 @@ func TestDeployFromCommitDedupeSHA(t *testing.T) {
 		App: "my-api", SHA: sha, Ref: "refs/heads/main",
 		AuditAction: "git.webhook_deploy", DedupeSHA: true,
 	}
-	// 首发：建行（app 行随之自动创建）。
+	// 首发：建行（app 行经夹具项目预置——v0.3 归属必填，webhook 机器动作
+	// 无署名用户可解析项目）。
+	testsupport.SeedApp(t, st, "my-api")
 	if _, _, err := src.DeployFromCommit(ctx, dedupeInput); err != nil {
 		t.Fatalf("first dedupe enqueue: %v", err)
 	}

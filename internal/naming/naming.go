@@ -7,6 +7,13 @@
 //   - 平台命名只存在于适配器——归一化 compose 不出现平台名（§2.4「平台
 //     命名不进归一化 compose」）；调用方 = internal/substrate / 发布引擎；
 //   - label 密钥/payload 永不进 label（state-model §2.4）。
+//
+// v0.3 三段命名（D-W0-4 二修，rbac-teams §4.3）：app/库名唯一性降为
+// project 内唯一，全局唯一由 team·prj 段承载——app 族与库族的 service/
+// network/secret/cron 公式全部在对象名内插入 `<team>-<prj>` 两段（两个
+// slug 均单词制 [a-z0-9]{2,32}、不可变，拼接无歧义）。**卷两族公式不变**
+// （appid8/id8 = ULID 前 8 位尾缀已天然全局防撞——零卷迁移/零数据搬移，
+// MoveApp 换名重部署时卷引用原样保留）。
 package naming
 
 import (
@@ -17,36 +24,81 @@ import (
 	"strings"
 )
 
-// 平台命名公式（文档原文逐字；state-model §2.4 / architecture §2.4）：
+// 平台命名公式（文档原文逐字；state-model §2.4 / architecture §2.4 /
+// rbac-teams §4.3 对照表）：
 //
-//	Swarm 服务名   fleetly-<app>-<service>
-//	Secret 名      fleetly-<app>-<name>-<hash8>   （hash8 = 内容 sha256 前 8）
-//	卷名           fleetly-<app>-<key>-<appid8>   （appid8 = app ID 前 8）
-//	网络名         fleetly-<app>-net              （每 app 专属 overlay；
-//	                                                 文档未钉字符串，保守补全，
-//	                                                 见包内注释与遗留记录）
+//	Swarm 服务名   fleetly-<team>-<prj>-<app>-<service>
+//	Secret 名      fleetly-<team>-<prj>-<app>-<name>-<hash8>（hash8 = 内容
+//	               sha256 前 8）
+//	卷名           fleetly-<app>-<key>-<appid8>   （v0.3 不变；appid8 = app
+//	               ID 前 8）
+//	网络名         fleetly-<team>-<prj>-<app>-net （每 app 专属 overlay；
+//	               文档未钉字符串，保守补全，见包内注释与遗留记录）
+//	日志流标签 app 值  <team>/<prj>/<app>（三段限定形，QualifiedName）
 const (
 	// namePrefix 是全部平台对象名的公共前缀（防集群全局命名空间撞名）。
 	namePrefix = "fleetly-"
 )
 
-// ServiceName 返回 Swarm 服务名 `fleetly-<app>-<service>`：两个 app 各有
-// 同名服务（web/db）不冲突；服务别名 = compose 服务名（app 内短名互访与
-// compose 语义一致，见 NetworkAlias）。
-func ServiceName(app, service string) (string, error) {
+// QualifiedName 返回 app/库实例的三段限定形 `<team>/<prj>/<name>`（D-W0-9
+// 引用解析口径；'/' 不是命名成分合法字符，结构性与 '-' 拼接歧义互斥）。
+// 该形态是 fleetly.app label 值与日志流标签 app 值的统一口径（rbac-teams
+// §4.3 流标签行）。
+func QualifiedName(team, prj, name string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
+	if err := validateComponent("name", name); err != nil {
+		return "", err
+	}
+	return team + "/" + prj + "/" + name, nil
+}
+
+// ServiceName 返回 Swarm 服务名 `fleetly-<team>-<prj>-<app>-<service>`：
+// 全局唯一由 team·prj 段保证（app 名 project 内唯一——不同项目的同名服务
+// 不冲突）；服务别名 = compose 服务名（app 内短名互访与 compose 语义一致，
+// 见 NetworkAlias）。
+func ServiceName(team, prj, app, service string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
 	if err := validateComponent("app", app); err != nil {
 		return "", err
 	}
 	if err := validateComponent("service", service); err != nil {
 		return "", err
 	}
-	return joinName(app, service), nil
+	return joinName(team, prj, app, service), nil
 }
 
-// SecretName 返回 Swarm secret 名 `fleetly-<app>-<name>-<hash8>`。hash8
-// 由调用方经 Hash8(内容) 计算——**值轮换即换名换引用**（architecture §2.4
-// 密钥行；desired-hash 以 secret 引用参与，轮换天然触发重部署）。
-func SecretName(app, name, hash8 string) (string, error) {
+// ServiceNameQualified 由三段限定形 app 标识（QualifiedName 产物）与
+// compose 服务名返回 Swarm 服务名——QualifiedName 的逆消费面（'/' 在命名
+// 成分字符集外，按 '/' 拆分无歧义）。terminal 会话等只持限定形的调用方
+// 消费。
+func ServiceNameQualified(qualifiedApp, service string) (string, error) {
+	parts := strings.Split(qualifiedApp, "/")
+	if len(parts) != 3 {
+		return "", fmt.Errorf("naming: qualified app %q is not team/prj/app form", qualifiedApp)
+	}
+	return ServiceName(parts[0], parts[1], parts[2], service)
+}
+
+// SecretName 返回 Swarm secret 名 `fleetly-<team>-<prj>-<app>-<name>-<hash8>`。
+// hash8 由调用方经 Hash8(内容) 计算——**值轮换即换名换引用**（architecture
+// §2.4 密钥行；desired-hash 以 secret 引用参与，轮换天然触发重部署）。
+func SecretName(team, prj, app, name, hash8 string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
 	if err := validateComponent("app", app); err != nil {
 		return "", err
 	}
@@ -56,12 +108,14 @@ func SecretName(app, name, hash8 string) (string, error) {
 	if err := validateHash8(hash8); err != nil {
 		return "", err
 	}
-	return joinName(app, name, hash8), nil
+	return joinName(team, prj, app, name, hash8), nil
 }
 
-// VolumeName 返回平台卷名 `fleetly-<app>-<key>-<appid8>`：卷无 label，
-// 用命名约定承载归属（state-model §2.4；VolumeOptions.Labels 生效前的
-// 收敛路径，stateful-placement §6）。appid8 = app 平台 ID 前 8 位。
+// VolumeName 返回平台卷名 `fleetly-<app>-<key>-<appid8>`（**v0.3 公式不变**
+// ——rbac-teams §4.3 卷行：appid8 = app 平台 ID 前 8 位已天然全局防撞，零卷
+// 迁移/零数据搬移；MoveApp 换名重部署时卷引用原样保留）。卷无 label，用命
+// 名约定承载归属（state-model §2.4；VolumeOptions.Labels 生效前的收敛路径，
+// stateful-placement §6）。
 func VolumeName(app, key, appID string) (string, error) {
 	if err := validateComponent("app", app); err != nil {
 		return "", err
@@ -76,19 +130,27 @@ func VolumeName(app, key, appID string) (string, error) {
 	return joinName(app, key, id8), nil
 }
 
-// NetworkName 返回 app 专属 overlay 网络名（保守补全 `fleetly-<app>-net`；
-// 文档钉死的是「每 app 专属 overlay 网络 + 服务别名 = compose 服务名」语义，
-// 未钉网络名字符串——命名与前缀纪律保持一致，跨 app 网络隔离由专属网络
-// 承载，architecture §2.4 服务命名与网络行）。
-func NetworkName(app string) (string, error) {
+// NetworkName 返回 app 专属 overlay 网络名（保守补全
+// `fleetly-<team>-<prj>-<app>-net`；文档钉死的是「每 app 专属 overlay 网络
+// + 服务别名 = compose 服务名」语义，未钉网络名字符串——命名与前缀纪律保
+// 持一致，跨 app 网络隔离由专属网络承载，architecture §2.4 服务命名与网络
+// 行；team·prj 段承载全局唯一）。
+func NetworkName(team, prj, app string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
 	if err := validateComponent("app", app); err != nil {
 		return "", err
 	}
-	return namePrefix + app + "-net", nil
+	return joinName(team, prj, app, "net"), nil
 }
 
 // NetworkAlias 返回服务在 app 网络内的别名 = compose 服务名（app 内短名
 // 互访与 compose 语义一致；跨 app 不可见——隔离由每 app 专属网络保证）。
+// v0.3 不变（别名是 compose 语义面，不进平台命名空间）。
 func NetworkAlias(service string) (string, error) {
 	if err := validateComponent("service", service); err != nil {
 		return "", err
@@ -97,16 +159,23 @@ func NetworkAlias(service string) (string, error) {
 }
 
 // cronJobNamePrefix 是一次性 cron job 服务名的固定前缀（E5 Cron）：完整名
-// `fleetly-cron-<app>-<service>-<ulid8>`。前缀隔离了长驻服务的
-// `fleetly-<app>-<service>` 命名空间——引擎对账（省略=删除的删除扫描）与
-// 启动残留收口都以该前缀识别 job 服务的瞬时性（在途 job 不得被发布对账
-// 误删；ulid8 使同 schedule 的重叠触发命名天然不冲突）。
+// `fleetly-cron-<team>-<prj>-<app>-<service>-<ulid8>`。前缀隔离了长驻服务的
+// `fleetly-<team>-<prj>-<app>-<service>` 命名空间——引擎对账（省略=删除的
+// 删除扫描）与启动残留收口都以该前缀识别 job 服务的瞬时性（在途 job 不得
+// 被发布对账误删；ulid8 使同 schedule 的重叠触发命名天然不冲突）。
 const cronJobNamePrefix = namePrefix + "cron-"
 
 // CronJobName 返回一次性 cron job 的 Swarm 服务名
-// `fleetly-cron-<app>-<service>-<ulid8>`（ulid8 = 触发 run 的 ULID 前 8 位
-// ——同 schedule 串行〔max-concurrent 1〕下的唯一性兜底）。
-func CronJobName(app, service, runID string) (string, error) {
+// `fleetly-cron-<team>-<prj>-<app>-<service>-<ulid8>`（ulid8 = 触发 run 的
+// ULID 前 8 位——同 schedule 串行〔max-concurrent 1〕下的唯一性兜底；前缀
+// 族不变，IsCronJobName 沿用，rbac-teams §4.3 cron 行）。
+func CronJobName(team, prj, app, service, runID string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
 	if err := validateComponent("app", app); err != nil {
 		return "", err
 	}
@@ -116,23 +185,24 @@ func CronJobName(app, service, runID string) (string, error) {
 	if len(runID) < 8 {
 		return "", fmt.Errorf("naming: run id %q shorter than 8 chars", runID)
 	}
-	return cronJobNamePrefix + app + "-" + service + "-" + runID[:8], nil
+	return cronJobNamePrefix + team + "-" + prj + "-" + app + "-" + service + "-" + runID[:8], nil
 }
 
 // IsCronJobName 报告 Swarm 服务名是否为一次性 cron job 服务（引擎对账的
-// 删除扫描与残留收口按此前缀排除/识别瞬时 job 服务）。
+// 删除扫描与残留收口按此前缀排除/识别瞬时 job 服务；前缀族 v0.3 不变）。
 func IsCronJobName(name string) bool {
 	return strings.HasPrefix(name, cronJobNamePrefix)
 }
 
-// 库族命名公式（E4 数据库托管，managed-databases §5.4 文档锚逐字；新增
-// 函数非改既有公式——与 app 名族 `fleetly-<app>-*` 解耦的独立前缀族，
-// 库实例与 app 可重名、对象不撞，§2.1 名字空间独立）：
+// 库族命名公式（E4 数据库托管，managed-databases §5.4 文档锚 + rbac-teams
+// §4.3 库行 v0.3 三段化；与 app 名族 `fleetly-<team>-<prj>-<app>-*` 解耦的
+// 独立前缀族，库实例与 app 可重名、对象不撞，§2.1 名字空间独立）：
 //
-//	库服务名   fleetly-db-<name>-<service>
-//	库网络名   fleetly-db-<name>-net           （每实例专属共享 overlay）
-//	库卷名     fleetly-db-<name>-<key>-<id8>   （id8 = 实例 ID 前 8）
-//	库 secret 名 fleetly-db-<name>-<secret>-<hash8>
+//	库服务名   fleetly-db-<team>-<prj>-<name>-<service>
+//	库网络名   fleetly-db-<team>-<prj>-<name>-net（每实例专属共享 overlay）
+//	库卷名     fleetly-db-<name>-<key>-<id8>     （v0.3 不变；id8 = 实例 ID
+//	                                             前 8，天然全局防撞）
+//	库 secret 名 fleetly-db-<team>-<prj>-<name>-<secret>-<hash8>
 //
 // 前缀族常量 dbNamePrefix 同时是引擎对账的识别面（IsDbServiceName——库
 // 服务不受发布对账「省略=删除」扫描管辖，后续阶段消费）。
@@ -141,29 +211,44 @@ const (
 	dbNamePrefix = namePrefix + "db-"
 )
 
-// DBServiceName 返回库服务名 `fleetly-db-<name>-<service>`（name = 库实例
-// 名，service = 模板服务名——模板渲染层供给，internal/dbtemplate）。
-func DBServiceName(name, service string) (string, error) {
+// DBServiceName 返回库服务名 `fleetly-db-<team>-<prj>-<name>-<service>`
+// （name = 库实例名〔project 内唯一〕，service = 模板服务名——模板渲染层
+// 供给，internal/dbtemplate）。
+func DBServiceName(team, prj, name, service string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
 	if err := validateComponent("name", name); err != nil {
 		return "", err
 	}
 	if err := validateComponent("service", service); err != nil {
 		return "", err
 	}
-	return dbNamePrefix + name + "-" + service, nil
+	return dbNamePrefix + team + "-" + prj + "-" + name + "-" + service, nil
 }
 
-// DBNetworkName 返回库实例专属共享 overlay 网络名 `fleetly-db-<name>-net`
-// （库服务挂该网络、别名 = 实例名；引用方服务部署时由平台附加挂载）。
-func DBNetworkName(name string) (string, error) {
+// DBNetworkName 返回库实例专属共享 overlay 网络名
+// `fleetly-db-<team>-<prj>-<name>-net`（库服务挂该网络、别名 = 实例名；
+// 引用方服务部署时由平台附加挂载）。
+func DBNetworkName(team, prj, name string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
 	if err := validateComponent("name", name); err != nil {
 		return "", err
 	}
-	return dbNamePrefix + name + "-net", nil
+	return dbNamePrefix + team + "-" + prj + "-" + name + "-net", nil
 }
 
-// DBVolumeName 返回库数据卷名 `fleetly-db-<name>-<key>-<id8>`（id8 = 库
-// 实例平台 ID 前 8 位——防代际静默复用，与 app 卷的 appid8 同纪律）。
+// DBVolumeName 返回库数据卷名 `fleetly-db-<name>-<key>-<id8>`（**v0.3 公式
+// 不变**——rbac-teams §4.3 库卷行：id8 = 库实例平台 ID 前 8 位天然全局防撞，
+// 零卷迁移；与 app 卷同纪律）。
 func DBVolumeName(name, key, instanceID string) (string, error) {
 	if err := validateComponent("name", name); err != nil {
 		return "", err
@@ -178,9 +263,15 @@ func DBVolumeName(name, key, instanceID string) (string, error) {
 	return dbNamePrefix + name + "-" + key + "-" + id8, nil
 }
 
-// DBSecretName 返回库 secret 名 `fleetly-db-<name>-<secret>-<hash8>`
+// DBSecretName 返回库 secret 名 `fleetly-db-<team>-<prj>-<name>-<secret>-<hash8>`
 // （hash8 = 值 sha256 前 8——值轮换即换名换引用，app secret 同纪律）。
-func DBSecretName(name, secret, hash8 string) (string, error) {
+func DBSecretName(team, prj, name, secret, hash8 string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
 	if err := validateComponent("name", name); err != nil {
 		return "", err
 	}
@@ -190,12 +281,12 @@ func DBSecretName(name, secret, hash8 string) (string, error) {
 	if err := validateHash8(hash8); err != nil {
 		return "", err
 	}
-	return dbNamePrefix + name + "-" + secret + "-" + hash8, nil
+	return dbNamePrefix + team + "-" + prj + "-" + name + "-" + secret + "-" + hash8, nil
 }
 
 // IsDbServiceName 报告 Swarm 服务名是否为库族服务（fleetly-db- 前缀——
 // 引擎对账的删除扫描与 reconcile 按此前缀豁免库服务：库收敛器自管，
-// 不受发布对账「省略=删除」管辖）。
+// 不受发布对账「省略=删除」管辖；前缀族 v0.3 不变）。
 func IsDbServiceName(name string) bool {
 	return strings.HasPrefix(name, dbNamePrefix)
 }
@@ -209,6 +300,11 @@ func IsDbServiceName(name string) bool {
 // fleetly-cron-）都按前缀/label 边界忽略它——前缀不独立会被某一方的
 // 清扫误伤（在途备份 job 被删 = 备份静默丢失）。ulid8 使同实例重叠触发
 // 的命名天然不冲突（重叠受理由操作互斥哨兵拒绝，此处只兜底）。
+//
+// v0.3 注：dbjob 前缀族不在 rbac-teams §4.3 对照表内（不在三段化清单）——
+// job 服务是瞬时对象（创建即追踪、完成即删除），实例段重复只发生在「不同
+// 项目同名实例」之间且 ulid8 尾缀天然互异，无碰撞面；公式保持不变（最保守
+// 改动面）。
 const dbJobNamePrefix = namePrefix + "dbjob-"
 
 // DBJobName 返回库一次性 job 的 Swarm 服务名
@@ -257,45 +353,42 @@ func Hash8(content string) string {
 	return hex.EncodeToString(sum[:])[:8]
 }
 
-// reservedAppNameReasons 是用户 app 顶层名的保留字清单（W3 遗留撞键票的
-// 命名审计结论，2026-09-21 收口；E_APP_NAME_RESERVED 消费）。审计方法：
-// 平台固定组件名（fleetly-ingress / -exec / -registry / -rustfs /
-// -victoriametrics / -cadvisor / -node-exporter / -victorialogs 等）对用户
-// 对象不可达——服务名公式恒含非空 <service> 段（fleetly-<app>-<service>），
-// 撞不上无后缀的固定名；真正能撞的是下面四类「以 app 名为参数的公式」与
-// 「固定字符串」的交点，逐条实证：
+// reservedTeamSlugReasons 是 team slug 的保留字清单（rbac-teams §4.3 保留
+// 字迁移：v0.2 的 8 个 app 名保留字整体迁到 team slug——v0.3 命名公式以
+// team slug 为第一参数，app 名从此不再紧邻 `fleetly-` 前缀〔结构性安全，
+// E_APP_NAME_RESERVED 退役〕；team slug 顶到该位置必须守前缀族与平台固定
+// 名，E_TEAM_SLUG_RESERVED 消费本清单）。project 段居第二位不邻前缀族
+// （`fleetly-acme-db-…` 撞不上 `fleetly-db-`）——project slug 不新增保留
+// 约束。审计证据链（撞键面逐条实证，W3 撞键票 2026-09-21 + D-W0-4 迁移）：
 //
-//	cron          前缀族：ServiceName("cron",svc)=fleetly-cron-<svc> 命中
-//	               IsCronJobName——cron 孤儿清扫会把用户长驻服务当一次性
-//	               job 删除（破坏性撞键，最高优先）；
-//	db            前缀族：fleetly-db-<svc> 命中 IsDbServiceName——发布对账
-//	               「省略=删除」扫描豁免库服务，用户服务删除被静默吞掉；
-//	dbjob         前缀族：fleetly-dbjob-<svc> 命中 IsDBJobName——清扫/采集
-//	               面把用户服务隐形成瞬时 job；
-//	rustfs        网络名：NetworkName("rustfs")=fleetly-rustfs-net 与
-//	               state.RustfsNetworkName 同串——用户 app 直挂平台 RustFS
-//	               网络（隔离面击穿）；另撞 s3 公网路由键（Name 覆写
-//	               fleetly-rustfs + -web/-websecure 后缀）与 secret 名族
-//	               （fleetly-rustfs-access-key-<fp> 同构，指纹公式同源）；
-//	registry      路由键：RouterName("registry","web")=fleetly-registry-web
-//	               与平台 registry 路由段（Name 覆写 fleetly-registry）同键
-//	               ——Synthesize 后写覆盖先写，用户路由被平台路由静默顶掉
-//	               （多节点启用即触发）；
-//	acme          路由键：RouterName("acme","challenge")=fleetly-acme-challenge
-//	               与 ACME 挑战路由键同串（挑战期配置互相覆盖）；
-//	metrics       网络名：NetworkName("metrics")=fleetly-metrics-net 与
-//	               metrics 三件套内部 overlay 同串（opt-in 启用即撞）；
-//	victorialogs  网络名：NetworkName("victorialogs")=fleetly-victorialogs-net
-//	               与日志库内部 overlay 同串（默认捆绑组件）。
+//	cron          前缀族：team slug="cron" 时服务名 fleetly-cron-<prj>-… 命中
+//	               IsCronJobName——cron 孤儿清扫会把长驻服务当一次性 job 删除
+//	               （破坏性撞键，最高优先）；
+//	db            前缀族：fleetly-db-<prj>-… 命中 IsDbServiceName——发布对账
+//	               「省略=删除」扫描豁免库服务，服务删除被静默吞掉；
+//	dbjob         前缀族：fleetly-dbjob-… 命中 IsDBJobName——清扫/采集面把
+//	               长驻服务隐形成瞬时 job；
+//	rustfs        网络名：NetworkName("rustfs",…) 无 team 段固定名形
+//	               fleetly-rustfs-net 与 state.RustfsNetworkName 同串——用户
+//	               app 直挂平台 RustFS 网络（隔离面击穿）；另撞 s3 公网路由键
+//	               与 rustfs secret 名族（同构指纹公式）；
+//	registry      路由键：与平台 registry 路由段（Name 覆写 fleetly-registry）
+//	               的键空间同形冲突——多节点 registry 模式启用即触发；
+//	acme          路由键：与 ACME 挑战路由键 fleetly-acme-challenge 同串
+//	               （挑战期配置互相覆盖）；
+//	metrics       网络名：与 metrics 三件套内部 overlay fleetly-metrics-net
+//	               同串（opt-in 启用即撞）；
+//	victorialogs  网络名：与日志库内部 overlay fleetly-victorialogs-net 同串
+//	               （默认捆绑组件）。
 //
 // 不入清单的近名（ingress/exec/system/console/ctrl/victoriametrics/
 // cadvisor/node-exporter 等）：审计证明其服务/网络/路由三面均撞不上
-// （固定名无后缀段、固定网络名带 -net/-system 尾且无同形 app 公式产物、
-// 固定服务名不进动态配置键空间）——保留字最小化，不预防性扩列。
-var reservedAppNameReasons = map[string]string{
-	"cron":         "IsCronJobName prefix family (the cron orphan sweep would delete the app's long-running services as transient jobs)",
-	"db":           "IsDbServiceName prefix family (publish reconcile exempts the app's services from omission-means-deletion)",
-	"dbjob":        "IsDBJobName prefix family (sweeps/collection treat the app's services as transient jobs)",
+// （固定名无后缀段、固定网络名带 -net/-system 尾且无同形公式产物、固定
+// 服务名不进动态配置键空间）——保留字最小化，不预防性扩列。
+var reservedTeamSlugReasons = map[string]string{
+	"cron":         "IsCronJobName prefix family (the cron orphan sweep would delete the team's long-running services as transient jobs)",
+	"db":           "IsDbServiceName prefix family (publish reconcile exempts the team's services from omission-means-deletion)",
+	"dbjob":        "IsDBJobName prefix family (sweeps/collection treat the team's services as transient jobs)",
 	"rustfs":       "collides with the managed RustFS overlay network fleetly-rustfs-net (state.RustfsNetworkName), the s3 public route keys and the rustfs secret name family",
 	"registry":     "collides with the platform registry route keys fleetly-registry-web/-websecure (router key overwrite in Synthesize)",
 	"acme":         "collides with the ACME challenge router/service key fleetly-acme-challenge",
@@ -303,27 +396,27 @@ var reservedAppNameReasons = map[string]string{
 	"victorialogs": "collides with the managed VictoriaLogs overlay network fleetly-victorialogs-net",
 }
 
-// IsReservedAppName 报告 app 顶层名是否与平台组件命名空间撞键（部署受理
-// 前置校验，E_APP_NAME_RESERVED）。
-func IsReservedAppName(app string) bool {
-	_, ok := reservedAppNameReasons[app]
+// IsReservedTeamSlug 报告 team slug 是否与平台组件命名空间撞键（团队受理
+// 前置校验，E_TEAM_SLUG_RESERVED——naming 单点，api 层消费）。
+func IsReservedTeamSlug(slug string) bool {
+	_, ok := reservedTeamSlugReasons[slug]
 	return ok
 }
 
-// ReservedAppNames 返回保留字清单的字典序副本（错误文案与测试面）。
-func ReservedAppNames() []string {
-	out := make([]string, 0, len(reservedAppNameReasons))
-	for k := range reservedAppNameReasons {
+// ReservedTeamSlugs 返回保留字清单的字典序副本（错误文案与测试面）。
+func ReservedTeamSlugs() []string {
+	out := make([]string, 0, len(reservedTeamSlugReasons))
+	for k := range reservedTeamSlugReasons {
 		out = append(out, k)
 	}
 	sort.Strings(out)
 	return out
 }
 
-// ReservedAppNameReason 返回单个保留名的撞键证据（错误文案/审计引用；
+// ReservedTeamSlugReason 返回单个保留 slug 的撞键证据（错误文案/审计引用；
 // 未知名返回空串）。
-func ReservedAppNameReason(app string) string {
-	return reservedAppNameReasons[app]
+func ReservedTeamSlugReason(slug string) string {
+	return reservedTeamSlugReasons[slug]
 }
 
 // joinName 以 '-' 连接命名成分。

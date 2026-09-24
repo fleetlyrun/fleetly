@@ -545,8 +545,8 @@ func TestProjectsOverrideMatrix(t *testing.T) {
 	// DeleteProject 非空守卫：项目内存活 app 行阻塞；清空后删除成功。
 	appID := "01APPPROJ00000000000000000"
 	if err := env.st.InTx(ctx, func(tx *state.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO apps (id, name, lifecycle, created_at, updated_at, project_id)
-			VALUES (?, ?, 'active', 1, 1, ?)`, appID, "webapp", projID)
+		_, err := tx.ExecContext(ctx, `INSERT INTO apps (id, name, lifecycle, created_at, updated_at, project_id, team_id)
+			VALUES (?, ?, 'active', 1, 1, ?, (SELECT team_id FROM projects WHERE id = ?))`, appID, "webapp", projID, projID)
 		return err
 	}); err != nil {
 		t.Fatalf("seed project app: %v", err)

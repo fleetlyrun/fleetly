@@ -108,8 +108,9 @@ func (s *GitTriggers) DeployFromCommit(ctx context.Context, in DeployInput) (sta
 			spec.Name, in.App)
 	}
 
-	// 应用行（首次 push = 应用的第一个平台动作，随部署自动创建）。
-	app, err := ensureAppRow(ctx, s.st, spec.Name)
+	// 应用行（首次 push = 应用的第一个平台动作，随部署自动创建）。v0.3
+	// 归属管道：首建行以 push 署名用户解析缺省项目（ensureAppRow 注）。
+	app, err := ensureAppRow(ctx, s.st, spec.Name, in.PushUser)
 	if err != nil {
 		return state.DeployRecord{}, nil, err
 	}
@@ -248,8 +249,11 @@ func composeReject(err error) error {
 }
 
 // ensureAppRow 取应用行；不存在则创建（与 api 包 ensureApp 同语义——本包
-// 自持一份，避免反向依赖 api）。
-func ensureAppRow(ctx context.Context, st *state.Store, name string) (state.App, error) {
+// 自持一份，避免反向依赖 api）。v0.3 W2-S3 归属管道：首次 push 建行时以
+// push 署名用户的个人队默认项目落归属（与 API Deploy 的用户缺省同口径，
+// state.ResolveUserDefaultProject 单点）；无署名用户（存量无主键/机器
+// push）→ 拒绝并指引：先经 CLI/API 携带 project 首发建行，再 push。
+func ensureAppRow(ctx context.Context, st *state.Store, name, pushUserID string) (state.App, error) {
 	app, err := st.GetAppByName(ctx, name)
 	if err == nil {
 		return app, nil
@@ -257,7 +261,18 @@ func ensureAppRow(ctx context.Context, st *state.Store, name string) (state.App,
 	if !errors.Is(err, state.ErrAppNotFound) {
 		return state.App{}, err
 	}
-	created, err := st.CreateApp(ctx, "", name)
+	if pushUserID == "" {
+		return state.App{}, apperr.New("E_APP_PROJECT_REQUIRED",
+			"app %q does not exist yet and the push carries no signed user; deploy once via CLI/API with a project to create it, then push", name).
+			WithContext("app", name)
+	}
+	proj, err := st.ResolveUserDefaultProject(ctx, pushUserID)
+	if err != nil {
+		return state.App{}, apperr.New("E_APP_PROJECT_REQUIRED",
+			"app %q does not exist yet and no default project is resolvable for the push user; deploy once via CLI/API with a project to create it, then push", name).
+			WithContext("app", name)
+	}
+	created, err := st.CreateApp(ctx, "", name, proj.ID, proj.TeamID)
 	if err != nil {
 		return state.App{}, err
 	}

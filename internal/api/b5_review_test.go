@@ -17,6 +17,7 @@ import (
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/apperr"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // TestRevokeTokenLastAdminGuard M4-6：唯一 admin token 的吊销被守卫拒绝
@@ -90,7 +91,7 @@ func TestTriggerBuildAuditAttribution(t *testing.T) {
 	ctx := context.Background()
 	builds := serverv1.NewBuildsServiceClient(env.conn)
 
-	resp, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{
+	resp, err := builds.TriggerBuild(authCtx(ctx, env.admTok), &serverv1.TriggerBuildRequest{Project: env.projectRef(), 
 		Compose: triggerCompose("attrib-app", "."),
 	})
 	if err != nil {
@@ -128,7 +129,7 @@ func TestConflictEnvelopePreservedOnREST(t *testing.T) {
 	ctx := context.Background()
 	apps := serverv1.NewAppsServiceClient(env.conn)
 
-	if _, err := env.st.CreateApp(ctx, "", "conflict-app"); err != nil {
+	if _, err := testsupport.SeedAppE(t, env.st, "conflict-app"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	// 第一拍：active → deleting（成功）。

@@ -333,8 +333,16 @@ func (b *Builder) run(ctx context.Context, rec state.BuildRecord, req Request, i
 	}
 	defer func() { _ = logf.Close() }()
 	// W5-S1：日志行分流（文件写入逐字不变；分流喂入湖批量器 source=build
-	// ——设计 §2.3 同一咽喉点接入；sink 未装配 = 纯透传零差异）。
-	logw := newLogTee(logf, b.logSink, rec.AppID, req.AppName, rec.Service)
+	// ——设计 §2.3 同一咽喉点接入；sink 未装配 = 纯透传零差异）。v0.3：
+	// app 标识以三段限定形传递（流标签口径，rbac-teams §4.3）——每次构建
+	// 解析一次 app 行（slug 不可变），行级零开销。
+	appLabel := req.AppName
+	if appRow, aerr := b.store.GetAppByID(context.Background(), rec.AppID); aerr == nil {
+		appLabel = appRow.QualifiedName()
+	} else if !errors.Is(aerr, state.ErrAppNotFound) && b.log != nil {
+		b.log.Warn("build: resolve app for log labels failed", "app_id", rec.AppID, "error", aerr.Error())
+	}
+	logw := newLogTee(logf, b.logSink, rec.AppID, appLabel, rec.Service)
 
 	var pushDigest string
 	switch rec.Driver {

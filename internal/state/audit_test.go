@@ -16,8 +16,9 @@ func TestAuditFailClosed(t *testing.T) {
 	ctx := context.Background()
 
 	// ① 正常路径：业务写 + 合法审计同事务落库。
+	proj := seedFixtureProject(t, st) // 事务外播种（store 写不可嵌套在 InTx 内）
 	err := st.InTx(ctx, func(tx *Tx) error {
-		if _, err := tx.CreateApp(ctx, "", "demo"); err != nil {
+		if _, err := tx.CreateApp(ctx, "", "demo", proj.ID, proj.TeamID); err != nil {
 			return err
 		}
 		return tx.WriteAudit(ctx, AuditEntry{Actor: "human", Action: "app.create", Target: "app:demo", Result: "ok"})
@@ -39,7 +40,7 @@ func TestAuditFailClosed(t *testing.T) {
 	// ② fail-closed 路径：审计行非法（actor 空串 → audit_log CHECK
 	//    length(actor) > 0 违例，真实数据库错误）→ 业务写随事务回滚。
 	err = st.InTx(ctx, func(tx *Tx) error {
-		if _, err := tx.CreateApp(ctx, "", "broken"); err != nil {
+		if _, err := tx.CreateApp(ctx, "", "broken", proj.ID, proj.TeamID); err != nil {
 			return err
 		}
 		// 审计写失败：缺 actor 的审计行不合法。

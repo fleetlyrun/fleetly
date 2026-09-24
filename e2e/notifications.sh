@@ -44,6 +44,7 @@ export MSYS2_ARG_CONV_EXCL='*'
 
 # ── 镜像钉 digest（T0-V2.3 供应链；与 e2e/metrics.sh 同源）。
 DIND_IMAGE="${NOT_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 WHOAMI_IMG='traefik/whoami:v1.10.4@sha256:02d8fe035f170f91cbb5e458a57f4cefab747436f8244a0eb2d66785fe5e565f'
 NOT_SKIP_BUILD="${NOT_SKIP_BUILD:-0}"
 NOT_BIN_DIR="${NOT_BIN_DIR:-}"
@@ -99,7 +100,7 @@ m() { docker exec "$DIND" "$@"; }         # dind 内直跑
 msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
 # fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
-    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$NOT_TOKEN" \
+    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_PROJECT="$FOUNDER_PROJECT" -e FLEETLY_TOKEN="$NOT_TOKEN" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
 # events_grep <pattern> — 事件流快照检索（watch 快照即「迄今全部事件」）。
@@ -284,6 +285,32 @@ done
 NOT_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootstrap token'
 [ -n "$NOT_TOKEN" ] || fatal 'empty bootstrap token'
 nl 'fleetlyd live (liveness 200), bootstrap token read'
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope——founder 是平台管理员可达集；CLI 不消费会话 cookie）。
+# 首次部署/建库经 FLEETLY_PROJECT=founder/default 显式携带项目归属；fcli
+# 统一 env 注入。bootstrap token 已随首用户注册按设计吊销弃用。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://10.218.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.218.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+NOT_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.218.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$NOT_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+nl 'founder registered (platform admin); PAT minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
+
 
 # 缺省日志后端 = victorialogs（默认捆绑）——本套件不消费检索面，切 jsonl
 # 免去 VL 镜像拉取与 ingest 降级事件噪声（logs.backend_updated 事件本身

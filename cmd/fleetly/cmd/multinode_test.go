@@ -11,6 +11,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // startCLIJoin 拨通带 join 向导面的服务面（base_domain 非空 + fake join
@@ -94,7 +95,7 @@ func TestCLIRotateToken(t *testing.T) {
 func TestCLIVolumesList(t *testing.T) {
 	env := startCLI(t)
 	ctx := context.Background()
-	app, err := env.Store.CreateApp(ctx, "", "web")
+	app, err := testsupport.SeedAppE(t, env.Store, "web")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

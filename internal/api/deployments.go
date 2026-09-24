@@ -122,7 +122,16 @@ func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployReq
 			WithContext("actual", spec.Name)
 	}
 
-	app, err := ensureApp(ctx, s.st, spec.Name)
+	// 归属解析与一致性（v0.3 W2-S3 归属管道，rbac-teams §3.4/§4.2 D-W0-9）：
+	// project 引用（裸名/限定形）解析为项目行；应用行已存在时校验行上归属
+	// 与请求一致（**校验一致**而非静默沿用——不一致 409 指引 MoveApp）；
+	// 首次部署把归属写上 app 行。compose 应用名与请求 app 一致性已在上
+	// （A1）——此处 spec.Name 即目标 app 名。
+	proj, err := resolveProjectRef(ctx, s.st, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	app, err := ensureApp(ctx, s.st, spec.Name, proj)
 	if err != nil {
 		return nil, err
 	}
@@ -342,16 +351,40 @@ func apperrConflict(rec state.DeployRecord) error {
 }
 
 // ensureApp 取应用行；不存在则创建（部署常是应用的第一个平台动作，与
-// CLI 同语义：应用随首次部署自动创建）。
-func ensureApp(ctx context.Context, st *state.Store, name string) (state.App, error) {
-	app, err := st.GetAppByName(ctx, name)
+// CLI 同语义：应用随首次部署自动创建）。v0.3 W2-S3 归属管道（rbac-teams
+// §3.4 D-W0-4 二修）：
+//   - 按（解析项目，名字）精确查行——命中即归属一致，沿用行；
+//   - 行存在于其他项目 → 409 E_APP_PROJECT_MISMATCH（**校验一致**裁决：
+//     忽略请求 project 的静默沿用会掩盖调用方上下文漂移；改派走
+//     MoveApp——同库同名 app 的「项目内新建」语义由此让位给显式改派，
+//     报告偏差记录）；
+//   - 按名多行命中 → E_APP_AMBIGUOUS（读面限定形支持归 S4 的显性兜底）。
+func ensureApp(ctx context.Context, st *state.Store, name string, proj state.Project) (state.App, error) {
+	app, err := st.GetAppByNameInProject(ctx, proj.ID, name)
 	if err == nil {
 		return app, nil
 	}
 	if !errors.Is(err, state.ErrAppNotFound) {
+		return state.App{}, mapAppErr(err, name)
+	}
+	anyRow, err := st.GetAppByName(ctx, name)
+	switch {
+	case err == nil && anyRow.ProjectID != proj.ID:
+		return state.App{}, apperr.New("E_APP_PROJECT_MISMATCH",
+			"app %q already belongs to project %q (ownership on the row wins once assigned); deploy with that project or move the app first",
+			name, anyRow.QualifiedName()).
+			WithContext("app", name).
+			WithContext("current_project", anyRow.ProjectID)
+	case err == nil:
+		return anyRow, nil
+	case errors.Is(err, state.ErrAppAmbiguous):
+		return state.App{}, apperr.New("E_APP_AMBIGUOUS",
+			"app %q resolves to multiple rows across projects; reference it by id or use the qualified read face", name).
+			WithContext("app", name)
+	case !errors.Is(err, state.ErrAppNotFound):
 		return state.App{}, err
 	}
-	created, err := st.CreateApp(ctx, "", name)
+	created, err := st.CreateApp(ctx, "", name, proj.ID, proj.TeamID)
 	if err != nil {
 		return state.App{}, err
 	}

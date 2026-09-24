@@ -20,12 +20,12 @@ const driftProbeValue = "super-secret-plaintext-9f2c"
 
 func TestDriftHashStabilityAndSensitivity(t *testing.T) {
 	base := ServiceSpec{
-		Name:     "fleetly-demo-web",
+		Name:     "fleetly-acme-prod-demo-web",
 		Image:    "alpine:3@sha256:aaa",
 		Command:  []string{"sleep", "infinity"},
 		Env:      []string{"A=1", "B=2"},
 		Replicas: 2,
-		Networks: []NetworkAttach{{Name: "fleetly-demo-net", Aliases: []string{"web"}}},
+		Networks: []NetworkAttach{{Name: "fleetly-acme-prod-demo-net", Aliases: []string{"web"}}},
 		ServiceLabels: map[string]string{
 			state.LabelManaged: "true", state.LabelApp: "demo",
 			state.LabelDeployment: "d1", state.LabelDesiredHash: "h1",
@@ -93,7 +93,7 @@ func TestDriftDetectionEmitsEventOnceAndDoesNotConvergeByDefault(t *testing.T) {
 	}
 
 	// 注入外部改动（模拟手动 docker service update --env）。
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) {
 		spec.Env = append(spec.Env, "EVIL="+driftProbeValue)
 	})
 
@@ -145,7 +145,7 @@ func TestDriftDetectionEmitsEventOnceAndDoesNotConvergeByDefault(t *testing.T) {
 	if on, _ := h.store.GetAppDriftConverge(ctx, app.ID); on {
 		t.Fatal("drift converge default is on")
 	}
-	joined := strings.Join(h.sub.services["fleetly-demo-web"].spec.Env, ",")
+	joined := strings.Join(h.sub.services[h.svc("web")].spec.Env, ",")
 	if !strings.Contains(joined, driftProbeValue) {
 		t.Fatalf("drift was converged while opt-in is off: %v", joined)
 	}
@@ -162,14 +162,14 @@ func TestDriftConvergeOptInAndManual(t *testing.T) {
 	if err := h.eng.SetDriftConverge(ctx, "demo", true, "human"); err != nil {
 		t.Fatalf("enable converge: %v", err)
 	}
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) {
 		spec.Env = append(spec.Env, "EVIL="+driftProbeValue)
 	})
 	h.eng.DriftScan(ctx)
 
 	// 开启时漂移 → 按当前期望态收敛（归位重放原语：同内容重放零任务
 	// 替换——外部 env 改动被写回）。
-	got := h.sub.services["fleetly-demo-web"].spec.Env
+	got := h.sub.services[h.svc("web")].spec.Env
 	for _, kv := range got {
 		if strings.HasPrefix(kv, "EVIL=") {
 			t.Fatalf("opt-in converge did not remove drift: %v", got)
@@ -193,7 +193,7 @@ func TestDriftConvergeOptInAndManual(t *testing.T) {
 	}
 
 	// 人工一次性收敛（actor=human；不经 opt-in 位）。
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) {
 		spec.Env = append(spec.Env, "MANUAL=1")
 	})
 	source, err := h.eng.ConvergeApp(ctx, "demo", "human")
@@ -251,7 +251,7 @@ func TestDriftDetectsUpdateConfigTamper(t *testing.T) {
 	}
 
 	// 外部改 update-order（start-first → stop-first）→ 漂移项出现。
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) {
 		spec.UpdateOrder = "stop-first"
 	})
 	report, err = h.eng.DriftShow(ctx, "demo")
@@ -278,10 +278,10 @@ func TestDriftDetectsUpdateConfigTamper(t *testing.T) {
 
 	// 归位 order，改受管字段 failure_action → 专报项（不进期望态哈希的
 	// 受管字段走独立比对）。
-	h.sub.mutateExternal("fleetly-demo-web", func(spec *ServiceSpec) {
+	h.sub.mutateExternal(h.svc("web"), func(spec *ServiceSpec) {
 		spec.UpdateOrder = "start-first"
 	})
-	h.sub.mutateUpdateFailureAction("fleetly-demo-web", "rollback")
+	h.sub.mutateUpdateFailureAction(h.svc("web"), "rollback")
 	report, err = h.eng.DriftShow(ctx, "demo")
 	if err != nil || !report.Drifted {
 		t.Fatalf("failure_action tamper not detected: %+v (%v)", report, err)
@@ -319,7 +319,7 @@ func countEvents(t *testing.T, h *harness, name string) int {
 func TestDriftGlobalServiceNoFalsePositive(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
-	app, err := ensureAppForTest(ctx, h.store, "demo")
+	app, err := ensureAppForTest(t, ctx, h.store, "demo")
 	if err != nil {
 		t.Fatalf("ensure app: %v", err)
 	}
@@ -332,7 +332,7 @@ func TestDriftGlobalServiceNoFalsePositive(t *testing.T) {
 		Replicas:          1,
 		ServiceLabels:     map[string]string{state.LabelManaged: "true", state.LabelApp: "demo", state.LabelProcess: "agent"},
 		ContainerLabels:   map[string]string{state.LabelApp: "demo"},
-		Networks:          []NetworkAttach{{Name: "fleetly-demo-net", Aliases: []string{"agent"}}},
+		Networks:          []NetworkAttach{{Name: h.demoNet(), Aliases: []string{"agent"}}},
 		UpdateOrder:       "stop-first",
 		UpdateParallelism: 1,
 	}

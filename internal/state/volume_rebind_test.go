@@ -14,7 +14,7 @@ import (
 func TestVolumePrevNodeColumnDefaultsEmpty(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
-	app, err := st.CreateApp(ctx, "", "app-1")
+	app, err := seedAppE(t, st, "app-1")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -38,11 +38,11 @@ func TestVolumePrevNodeColumnDefaultsEmpty(t *testing.T) {
 func TestRebindAppVolumes(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
-	app, err := st.CreateApp(ctx, "", "app-1")
+	app, err := seedAppE(t, st, "app-1")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	app2, err := st.CreateApp(ctx, "", "app-2")
+	app2, err := seedAppE(t, st, "app-2")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -99,11 +99,11 @@ func TestListAllVolumes(t *testing.T) {
 	ctx := context.Background()
 	st := newTestStore(t)
 	// volumes 表有 apps 外键：先落两个应用行并以真实平台 ID 登记。
-	app1, err := st.CreateApp(ctx, "", "app-1")
+	app1, err := seedAppE(t, st, "app-1")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	app2, err := st.CreateApp(ctx, "", "app-2")
+	app2, err := seedAppE(t, st, "app-2")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

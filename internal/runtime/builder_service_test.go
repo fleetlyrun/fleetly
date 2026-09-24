@@ -17,6 +17,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // quickExecutor 立即收敛 succeeded 终态。
@@ -46,7 +47,7 @@ func TestBuilderServiceLifecycleAndQueueFlow(t *testing.T) {
 	}
 	defer func() { _ = st.Close() }()
 
-	app, err := st.CreateApp(context.Background(), "", "builder-svc")
+	app, err := testsupport.SeedAppE(t, st, "builder-svc")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

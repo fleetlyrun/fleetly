@@ -124,6 +124,10 @@ var (
 	// ErrDatabaseStateConflict 表示 CAS 竞争落败（当前状态 ≠ 声明的 from
 	// ——同族乐观冲突语义；S2 映射 E_STATE_VERSION_CONFLICT）。
 	ErrDatabaseStateConflict = errors.New("database state changed concurrently (CAS mismatch)")
+	// ErrDatabaseAmbiguous 表示按裸名解析命中多行（v0.3 D-W0-4 二修：库名
+	// project 内唯一后，跨项目同名实例合法——读面限定形支持归 S4，本哨兵
+	// 显性拒绝）。
+	ErrDatabaseAmbiguous = errors.New("database instance name is ambiguous across projects")
 )
 
 // DatabaseSettings 是 db_instances.settings 的 JSON 形态（限额 + 备份计划
@@ -169,6 +173,15 @@ type DatabaseInstance struct {
 	State          DatabaseState
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	// v0.3 W2-S3 增项目归属（rbac-teams §3.4）：project_id/team_id NOT NULL
+	// （00019 收紧）+ 两个不可变 slug（projects/teams join 反解——库族命名
+	// 公式三段 fleetly-db-<team>-<prj>-<name>-* 的参数源；slug 不可变故随行
+	// 装载即缓存）。
+	ProjectID string
+	TeamID    string
+	// TeamSlug / ProjectSlug 是归属两个 slug（命名公式段；不可变）。
+	TeamSlug    string
+	ProjectSlug string
 	// LastError 是最近一次收敛失败的人读原因快照（迁移 00016；收敛器落
 	// failed 时写入、retry 重收敛过健康门落 ready 时清空——诊断面跨重启
 	// 存续。单行化、零凭据材料；'' = 当前无失败现场）。
@@ -206,8 +219,16 @@ func ValidateDatabaseName(name string) error {
 	return nil
 }
 
+// QualifiedName 返回库实例的三段限定形 `team/prj/<name>`（D-W0-9 引用口径；
+// App.QualifiedName 同式，公式由 dbinstances_test.go 对照钉死）。
+func (d DatabaseInstance) QualifiedName() string {
+	return d.TeamSlug + "/" + d.ProjectSlug + "/" + d.Name
+}
+
 // CreateDatabaseInstance 创建库实例行（受理即 provisioning——无 created
-// 态，§2.1）。名字校验 + 全局唯一（任意生命周期态占用，同 app 纪律）；
+// 态，§2.1）。名字校验 + project 内唯一（v0.3 D-W0-4 二修：UNIQUE
+// (project_id,name)，跨项目同名库实例合法；任意生命周期态名字占用，同
+// app 纪律）；归属必填（W2-S3 归属管道，空 = 调用面违约显性拒绝）；
 // 凭据密文必须由调用方先行生成（创建时一次，§2.5）。id 留空自动生成 ULID。
 func (s *Store) CreateDatabaseInstance(ctx context.Context, in DatabaseInstance) (DatabaseInstance, error) {
 	var created DatabaseInstance
@@ -245,6 +266,9 @@ func (t *Tx) CreateDatabaseInstance(ctx context.Context, in DatabaseInstance) (D
 	if in.State != DatabaseProvisioning {
 		return DatabaseInstance{}, fmt.Errorf("state: create database instance: initial state must be %q (acceptance is provisioning, got %q)", DatabaseProvisioning, in.State)
 	}
+	if in.ProjectID == "" || in.TeamID == "" {
+		return DatabaseInstance{}, errors.New("state: create database instance: project id and team id are required (v0.3 ownership pipeline)")
+	}
 	if in.ID == "" {
 		in.ID = ulid.Make().String()
 	}
@@ -254,42 +278,74 @@ func (t *Tx) CreateDatabaseInstance(ctx context.Context, in DatabaseInstance) (D
 	}
 	now := nowNano()
 	const q = `INSERT INTO db_instances
-		(id, name, template, image_digest, settings, credential_cipher, platform_node_id, state, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		(id, name, template, image_digest, settings, credential_cipher, platform_node_id, state, created_at, updated_at, project_id, team_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	if _, err := t.ExecContext(ctx, q,
 		in.ID, in.Name, in.Template, in.ImageDigest, string(settings), in.CredentialCipher,
-		in.PlatformNodeID, string(in.State), now, now); err != nil {
+		in.PlatformNodeID, string(in.State), now, now, in.ProjectID, in.TeamID); err != nil {
 		if isUniqueViolation(err) {
 			return DatabaseInstance{}, fmt.Errorf("%w: %s", ErrDatabaseExists, in.Name)
 		}
 		return DatabaseInstance{}, fmt.Errorf("state: insert database instance %s: %w", in.Name, err)
 	}
-	in.CreatedAt = time.Unix(0, now).UTC()
-	in.UpdatedAt = time.Unix(0, now).UTC()
-	return in, nil
+	// 写后回读（slug join 反解）——返回行与读面同构。
+	return t.GetDatabaseInstance(ctx, in.ID)
 }
 
 // GetDatabaseInstance 按平台 ID 取库实例；不存在返回 ErrDatabaseNotFound。
 func (s *Store) GetDatabaseInstance(ctx context.Context, id string) (DatabaseInstance, error) {
-	const q = `SELECT ` + dbInstanceScanCols + ` FROM db_instances WHERE id = ?`
+	const q = `SELECT ` + dbInstanceScanCols + ` ` + dbInstanceScanFrom + ` WHERE d.id = ?`
 	return scanDatabaseInstance(s.db.QueryRowContext(ctx, q, id))
 }
 
 // GetDatabaseInstance 是事务内按平台 ID 取库实例（写后回读/前置态前哨）。
 func (t *Tx) GetDatabaseInstance(ctx context.Context, id string) (DatabaseInstance, error) {
-	const q = `SELECT ` + dbInstanceScanCols + ` FROM db_instances WHERE id = ?`
+	const q = `SELECT ` + dbInstanceScanCols + ` ` + dbInstanceScanFrom + ` WHERE d.id = ?`
 	return scanDatabaseInstance(t.QueryRowContext(ctx, q, id))
 }
 
 // GetDatabaseInstanceByName 按名取库实例；不存在返回 ErrDatabaseNotFound。
+// 跨项目同名多行命中时返回 ErrDatabaseAmbiguous（不静默取任意行——D-W0-4
+// 二修后的按名解析纪律：裸名仅域内唯一时可用；限定形/ID 读面归 S4）。
 func (s *Store) GetDatabaseInstanceByName(ctx context.Context, name string) (DatabaseInstance, error) {
-	const q = `SELECT ` + dbInstanceScanCols + ` FROM db_instances WHERE name = ?`
-	return scanDatabaseInstance(s.db.QueryRowContext(ctx, q, name))
+	const q = `SELECT ` + dbInstanceScanCols + ` ` + dbInstanceScanFrom + ` WHERE d.name = ? ORDER BY d.id LIMIT 2`
+	rows, err := s.db.QueryContext(ctx, q, name)
+	if err != nil {
+		return DatabaseInstance{}, fmt.Errorf("state: query database instance by name: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out DatabaseInstance
+	n := 0
+	for rows.Next() {
+		n++
+		if n > 1 {
+			return DatabaseInstance{}, fmt.Errorf("%w: %s (qualify as team/prj/%s or reference by id)", ErrDatabaseAmbiguous, name, name)
+		}
+		row, err := scanDatabaseInstance(rows)
+		if err != nil {
+			return DatabaseInstance{}, err
+		}
+		out = row
+	}
+	if err := rows.Err(); err != nil {
+		return DatabaseInstance{}, fmt.Errorf("state: iterate database instances by name: %w", err)
+	}
+	if n == 0 {
+		return DatabaseInstance{}, ErrDatabaseNotFound
+	}
+	return out, nil
+}
+
+// GetDatabaseInstanceByNameInProject 按项目 + 名取库实例（创建面的占用
+// 判定与归属一致性校验通道——UNIQUE(project_id,name) 语义的读取形态）。
+func (s *Store) GetDatabaseInstanceByNameInProject(ctx context.Context, projectID, name string) (DatabaseInstance, error) {
+	const q = `SELECT ` + dbInstanceScanCols + ` ` + dbInstanceScanFrom + ` WHERE d.project_id = ? AND d.name = ?`
+	return scanDatabaseInstance(s.db.QueryRowContext(ctx, q, projectID, name))
 }
 
 // ListDatabaseInstances 返回全部库实例（按 name 字典序——展示面稳定序）。
 func (s *Store) ListDatabaseInstances(ctx context.Context) ([]DatabaseInstance, error) {
-	const q = `SELECT ` + dbInstanceScanCols + ` FROM db_instances ORDER BY name ASC`
+	const q = `SELECT ` + dbInstanceScanCols + ` ` + dbInstanceScanFrom + ` ORDER BY d.name ASC`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("state: query database instances: %w", err)
@@ -396,6 +452,7 @@ func (s *Store) RotateDatabaseCredentialCAS(ctx context.Context, id string, prev
 	}
 	return ok, nil
 }
+
 // SetDatabaseNodeBinding 内嵌放置绑定（D-DB-1：绑定进 db_instances 行、
 // 不写 placements 表）。空串 = 解绑（数据安全由调用方裁决——绑定变更/
 // rebind 编排在后续票据落地）。
@@ -568,9 +625,15 @@ func (s *Store) DatabaseBindingCountByNode(ctx context.Context) (map[string]int,
 }
 
 // dbInstanceScanCols 是库实例行查询列清单（新增列只加在此与扫描函数）。
-const dbInstanceScanCols = `id, name, template, image_digest, settings, credential_cipher,
-	credential_updated_at, platform_node_id, state, last_error, delete_volumes,
-	created_at, updated_at, deleting_at, deleted_at`
+const dbInstanceScanCols = `d.id, d.name, d.template, d.image_digest, d.settings, d.credential_cipher,
+	d.credential_updated_at, d.platform_node_id, d.state, d.last_error, d.delete_volumes,
+	d.created_at, d.updated_at, d.deleting_at, d.deleted_at,
+	d.project_id, d.team_id, t.slug, p.slug`
+
+// dbInstanceScanFrom 是库实例行查询的 FROM 子句（slug join 单点）。
+const dbInstanceScanFrom = `FROM db_instances d
+	JOIN projects p ON p.id = d.project_id
+	JOIN teams t ON t.id = d.team_id`
 
 // scanDatabaseInstance 从单行构造 DatabaseInstance（row 接口同时覆盖
 // *sql.Row 与 *sql.Rows）。settings 列经 string 中转后 json.Unmarshal
@@ -584,7 +647,8 @@ func scanDatabaseInstance(row interface{ Scan(dest ...any) error }) (DatabaseIns
 	var created, updated int64
 	if err := row.Scan(&d.ID, &d.Name, &d.Template, &d.ImageDigest, &settings,
 		&d.CredentialCipher, &credentialUpdated, &d.PlatformNodeID, &state,
-		&d.LastError, &deleteVolumes, &created, &updated, &deleting, &deleted); err != nil {
+		&d.LastError, &deleteVolumes, &created, &updated, &deleting, &deleted,
+		&d.ProjectID, &d.TeamID, &d.TeamSlug, &d.ProjectSlug); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return DatabaseInstance{}, ErrDatabaseNotFound
 		}
@@ -607,4 +671,66 @@ func scanDatabaseInstance(row interface{ Scan(dest ...any) error }) (DatabaseIns
 		d.DeletedAt = time.Unix(0, deleted.Int64).UTC()
 	}
 	return d, nil
+}
+
+// MoveDatabase 资源改派（rbac-teams §3.4/§5，W2-S3）：写归属（project_id +
+// team_id 冗余列同步自目标项目行）+ 审计 db.moved 同事务 fail-closed。
+// 换名重部署（库服务/网络/secret 底座对象的 team/prj 段随新归属推导）由
+// 库收敛编排层执行——本原语只动权威态；同名占用守卫：目标项目已有同名
+// 实例（UNIQUE(project_id,name)，D-W0-4 二修）→ ErrDatabaseExists（跨团队
+// 改派先过目标项目唯一性，409，调用面映射）；非 deleted 终态行才可改派。
+func (s *Store) MoveDatabase(ctx context.Context, id, toProjectID, actorUserID, actorTokenID string) (DatabaseInstance, error) {
+	if toProjectID == "" {
+		return DatabaseInstance{}, errors.New("state: move database: target project id is empty")
+	}
+	var out DatabaseInstance
+	err := s.InTx(ctx, func(tx *Tx) error {
+		inst, err := tx.GetDatabaseInstance(ctx, id)
+		if err != nil {
+			return err
+		}
+		if inst.State == DatabaseDeleting || inst.State.Terminal() {
+			return fmt.Errorf("%w: %s is %s", ErrDatabaseTerminal, inst.Name, inst.State)
+		}
+		proj, err := tx.GetProject(ctx, toProjectID)
+		if err != nil {
+			return err
+		}
+		if inst.ProjectID == toProjectID {
+			return fmt.Errorf("%w: database %s is already in project %s", ErrMoveSameTarget, inst.Name, toProjectID)
+		}
+		var taken int
+		if err := tx.QueryRowContext(ctx,
+			`SELECT 1 FROM db_instances WHERE project_id = ? AND name = ? AND state != 'deleted' AND id != ?`,
+			toProjectID, inst.Name, id).Scan(&taken); err == nil {
+			return fmt.Errorf("%w: %s already exists in the target project", ErrDatabaseExists, inst.Name)
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("state: probe target project name: %w", err)
+		}
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE db_instances SET project_id = ?, team_id = ?, updated_at = ? WHERE id = ?`,
+			proj.ID, proj.TeamID, nowNano(), id); err != nil {
+			return fmt.Errorf("state: move database: %w", err)
+		}
+		if err := tx.WriteAudit(ctx, AuditEntry{
+			Actor:        auditActor(actorUserID),
+			ActorTokenID: actorTokenID,
+			Action:       "db.moved",
+			Target:       "database:" + inst.ID,
+			Result:       "ok",
+			DiffSummary:  DiffSummary("database", inst.Name, "from_project", inst.ProjectID, "to_project", proj.ID, "to_team", proj.TeamID),
+		}); err != nil {
+			return err
+		}
+		moved, err := tx.GetDatabaseInstance(ctx, id)
+		if err != nil {
+			return err
+		}
+		out = moved
+		return nil
+	})
+	if err != nil {
+		return DatabaseInstance{}, err
+	}
+	return out, nil
 }

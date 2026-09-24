@@ -39,18 +39,21 @@ func newOpsTestEnv(t *testing.T, ops BackupOrchestrator) (*state.Store, *secrets
 }
 
 // seedReadyDB 落一个 ready 实例（API 同构造：凭据加密 + provisioning →
-// ready 健康门推进）。
+// ready 健康门推进；归属 = 确定性夹具项目）。
 func seedReadyDB(t *testing.T, st *state.Store, box *secrets.Box, name string) state.DatabaseInstance {
 	t.Helper()
 	cipher, err := box.Encrypt([]byte("password-plaintext"))
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
+	proj := seedFixtureProject(t, st)
 	inst, err := st.CreateDatabaseInstance(context.Background(), state.DatabaseInstance{
 		Name:             name,
 		Template:         "postgres-16",
 		ImageDigest:      "postgres:16@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		CredentialCipher: string(cipher),
+		ProjectID:        proj.ID,
+		TeamID:           proj.TeamID,
 	})
 	if err != nil {
 		t.Fatalf("create instance: %v", err)

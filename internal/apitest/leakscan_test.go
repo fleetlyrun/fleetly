@@ -31,6 +31,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/gitserver"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/testsupport"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -139,10 +140,7 @@ func TestLeakScanWebhookFetchFailure(t *testing.T) {
 	t.Cleanup(func() { wcancel(); _ = src.StopWebhookWorker(context.Background()) })
 
 	const secret = "hook-secret-at-least-16"
-	appRow, err := st.CreateApp(ctx, "", "leaky")
-	if err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
+	appRow := testsupport.SeedApp(t, st, "leaky")
 	cipher, err := box.Encrypt([]byte(secret))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
@@ -247,10 +245,7 @@ func TestLeakScanAuditDiffSpecialChars(t *testing.T) {
 		t.Fatalf("state.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	app, err := st.CreateApp(context.Background(), "", "weird")
-	if err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
+	app := testsupport.SeedApp(t, st, "weird")
 	weirdKey := `we"ird\key`
 	if _, err := st.SetAppEnv(context.Background(), app.ID, weirdKey, "cipher-blob", "platform"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)

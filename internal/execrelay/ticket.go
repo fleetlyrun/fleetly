@@ -48,10 +48,22 @@ type TicketBinding struct {
 	// TokenID 是签发者 API token（并发限额与审计 actor 的键）。
 	TokenID string
 	// App / Service 是目标（WS 升级时控制面据此选 task——用户不选容器）。
-	App     string
-	Service string
+	// App 是请求侧应用名（展示/审计面）；Swarm 服务名推导用 AppLabel
+	//（v0.3 三段限定形 team/prj/app——rbac-teams §4.3，签发面已解析）。
+	App       string
+	AppLabel  string
+	Service   string
 	// Expires 是过期时刻（UTC）。
 	Expires time.Time
+}
+
+// SwarmAppLabel 返回服务名推导用的 app 标识（限定形优先——存量绑定无
+// AppLabel 时回落裸名，兼容单测直构形态）。
+func (b TicketBinding) SwarmAppLabel() string {
+	if b.AppLabel != "" {
+		return b.AppLabel
+	}
+	return b.App
 }
 
 // TicketStore 是一次性 ticket 内存表。
@@ -71,7 +83,14 @@ func NewTicketStore(ttl time.Duration) *TicketStore {
 }
 
 // Create 签发一张 ticket（绑 token+app+service；60s 后过期——设计原文）。
+// app 标识 = 裸名（SwarmAppLabel 回落形态；生产签发走 CreateLabeled）。
 func (ts *TicketStore) Create(tokenID, app, service string) TicketBinding {
+	return ts.CreateLabeled(tokenID, app, "", service)
+}
+
+// CreateLabeled 签发带限定形 app 标识的 ticket（appLabel = team/prj/app，
+// v0.3 流标签口径——hub 侧 Swarm 服务名推导的参数源）。
+func (ts *TicketStore) CreateLabeled(tokenID, app, appLabel, service string) TicketBinding {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.sweepLocked()
@@ -88,11 +107,12 @@ func (ts *TicketStore) Create(tokenID, app, service string) TicketBinding {
 		delete(ts.tickets, oldest)
 	}
 	b := TicketBinding{
-		Ticket:  newTicketSecret(),
-		TokenID: tokenID,
-		App:     app,
-		Service: service,
-		Expires: ts.now().Add(ts.ttl),
+		Ticket:   newTicketSecret(),
+		TokenID:  tokenID,
+		App:      app,
+		AppLabel: appLabel,
+		Service:  service,
+		Expires:  ts.now().Add(ts.ttl),
 	}
 	ts.tickets[b.Ticket] = b
 	return b

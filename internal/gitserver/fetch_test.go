@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // 拉源计划构造测试（认证材料形态的单元断言面——构造与执行分离，不真实
@@ -18,7 +19,7 @@ import (
 func TestBuildFetchAuthKinds(t *testing.T) {
 	src, st, box, _ := newTestSource(t, 0)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "my-api")
+	app, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +157,7 @@ func TestBuildFetchAuthKinds(t *testing.T) {
 func TestBuildFetchHTTPSOnlyForTokenAuth(t *testing.T) {
 	src, st, box, _ := newTestSource(t, 0)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "tok-app")
+	app, err := testsupport.SeedAppE(t, st, "tok-app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +191,7 @@ func TestBuildFetchHTTPSOnlyForTokenAuth(t *testing.T) {
 func TestSourceURLWhitelist(t *testing.T) {
 	src, st, _, _ := newTestSource(t, 0)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "wl-app")
+	app, err := testsupport.SeedAppE(t, st, "wl-app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -266,7 +267,7 @@ func TestSourceURLHost(t *testing.T) {
 func TestFetchHostKeyFirstSeenAudit(t *testing.T) {
 	src, st, box, dir := newTestSource(t, 0)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "ssh-app")
+	app, err := testsupport.SeedAppE(t, st, "ssh-app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +350,7 @@ func TestFetchHostKeyFirstSeenAudit(t *testing.T) {
 func TestFetchHostKeyAuditSkippedForNonSSH(t *testing.T) {
 	src, st, box, _ := newTestSource(t, 0)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "token-app")
+	app, err := testsupport.SeedAppE(t, st, "token-app")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +402,7 @@ func TestFetchSSHKeyFailureLeavesNoTempResidue(t *testing.T) {
 	requireGit(t) // EnsureBareRepo 经 execGit 真实建仓
 	src, st, box, _ := newTestSource(t, 0)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "ssh-residue")
+	app, err := testsupport.SeedAppE(t, st, "ssh-residue")
 	if err != nil {
 		t.Fatal(err)
 	}

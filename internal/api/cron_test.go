@@ -20,6 +20,7 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/cron"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeCronTriggers 是调度端口的假件（回放预设行/错误）。
@@ -71,7 +72,7 @@ func TestTriggerCronRunErrorMapping(t *testing.T) {
 
 func seedApp(t *testing.T, st *state.Store, name string) state.App {
 	t.Helper()
-	app, err := st.CreateApp(context.Background(), "", name)
+	app, err := testsupport.SeedAppE(t, st, name)
 	if err != nil {
 		t.Fatalf("create app %s: %v", name, err)
 	}
@@ -122,7 +123,7 @@ func TestTriggerCronRunMissingApp(t *testing.T) {
 func TestListCronRunsProjection(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	app, err := env.st.CreateApp(ctx, "", "cronapp")
+	app, err := testsupport.SeedAppE(t, env.st, "cronapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

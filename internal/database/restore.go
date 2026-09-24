@@ -148,6 +148,8 @@ func (m *Manager) runRestore(ctx context.Context, inst *state.DatabaseInstance, 
 	restoreErr := m.Restore(ctx, dbtemplate.RestoreInput{
 		Instance:            inst.Name,
 		TemplateID:          inst.Template,
+		TeamSlug:            inst.TeamSlug,
+		PrjSlug:             inst.ProjectSlug,
 		VolumeName:          volName,
 		VolumeTarget:        tpl.VolumeMountPath,
 		BindNodeID:          inst.PlatformNodeID,
@@ -226,7 +228,7 @@ func (m *Manager) applyDesiredService(ctx context.Context, inst *state.DatabaseI
 	}
 	secretIDs := map[string]string{}
 	if tpl.CredentialDelivery == dbtemplate.CredentialSecretFile {
-		secretName, err := naming.DBSecretName(inst.Name, pgSecretKey, naming.Hash8(password))
+		secretName, err := naming.DBSecretName(inst.TeamSlug, inst.ProjectSlug, inst.Name, pgSecretKey, naming.Hash8(password))
 		if err != nil {
 			return engine.ServiceSpec{}, err
 		}
@@ -235,7 +237,7 @@ func (m *Manager) applyDesiredService(ctx context.Context, inst *state.DatabaseI
 			return engine.ServiceSpec{}, err
 		}
 		if !exists {
-			if id, err = m.ensureCredentialSecret(ctx, inst.Name, secretName, password); err != nil {
+			if id, err = m.ensureCredentialSecret(ctx, inst.QualifiedName(), secretName, password); err != nil {
 				return engine.ServiceSpec{}, err
 			}
 		}
@@ -245,7 +247,7 @@ func (m *Manager) applyDesiredService(ctx context.Context, inst *state.DatabaseI
 	if err != nil {
 		return engine.ServiceSpec{}, err
 	}
-	swarmSpec, err := buildServiceSpec(desired, inst.Name, secretIDs)
+	swarmSpec, err := buildServiceSpec(desired, inst.QualifiedName(), secretIDs)
 	if err != nil {
 		return engine.ServiceSpec{}, err
 	}

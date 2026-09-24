@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -52,6 +53,11 @@ var (
 	// volatileFingerprint 是 git key 的 SHA256 指纹（T2.19；识别用非凭据，
 	// 逐 key 不同）。
 	volatileFingerprint = regexp.MustCompile(`SHA256:[A-Za-z0-9+/]+={0,3}`)
+	// volatileQualifiedName 是三段限定形 app 值（v0.3 W2-S3 流标签口径：
+	// t<pkg>/p<pkg> 夹具 slug 段逐次不同——golden 只保留裸名段；紧凑与
+	// protojson 两种冒号形态都归一）。
+	volatileQualifiedName   = regexp.MustCompile(`"app": "t[0-9a-z]{16}/p[0-9a-z]{16}/`)
+	volatileQualifiedNameCp = regexp.MustCompile(`"app":"t[0-9a-z]{16}/p[0-9a-z]{16}/`)
 )
 
 // normalizeVolatile 把非确定字段替换为占位符（golden 的确定性边界）。
@@ -63,6 +69,8 @@ func normalizeVolatile(s string) string {
 	s = volatileAppID8.ReplaceAllString(s, `-<appid8>"`)
 	s = volatileHashPre.ReplaceAllString(s, `"hash_prefix": "<hashprefix>"`)
 	s = volatileFingerprint.ReplaceAllString(s, "SHA256:<fingerprint>")
+	s = volatileQualifiedName.ReplaceAllString(s, `"app": "`)
+	s = volatileQualifiedNameCp.ReplaceAllString(s, `"app":"`)
 	return s
 }
 
@@ -81,6 +89,11 @@ func startCLI(t *testing.T) *apitest.Env {
 	savedPath := configPathOverride
 	configPathOverride = filepath.Join(t.TempDir(), "home", ".fleetly", "config.yaml")
 	t.Cleanup(func() { configPathOverride = savedPath })
+	// v0.3 归属管道（W2-S3）：AdminToken 是机具令牌——无缺省项目，CLI 请求
+	// 必须显式携带。夹具项目经 FLEETLY_PROJECT 上下文注入（connFlags 解析
+	// 序 flag > env，全部 CLI 命令零改动继承）。
+	proj := env.SeedProject(t)
+	t.Setenv("FLEETLY_PROJECT", proj.ID)
 	t.Setenv("FLEETLY_ADDR", "passthrough:///bufnet")
 	t.Setenv("FLEETLY_TOKEN", env.AdminToken)
 	return env
@@ -589,16 +602,17 @@ func TestGoldenLogsHistoryAndFollow(t *testing.T) {
 }
 
 // TestGoldenEventsWatch events watch --json：播种一帧后 ctx 超时收口
-// （JSONL 单行；重连续读语义由 events_test.go 的游标断言承载）。
+// （JSONL 单行；重连续读语义由 events_test.go 的游标断言承载）。watch 游标
+// 跳过夹具团队/项目的播种事件（--since-seq = 最后一帧播种 seq）。
 func TestGoldenEventsWatch(t *testing.T) {
 	env := startCLI(t)
-	env.AppendEvent(t, "deployment.queued", "deployment:01TEST", `{"deployment":"01TEST","app":"my-api"}`)
+	appended := env.AppendEvent(t, "deployment.queued", "deployment:01TEST", `{"deployment":"01TEST","app":"my-api"}`)
 
 	watchCtx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
 	var stdout, stderr bytes.Buffer
 	e := &commands.Environment{Stdout: &stdout, Stderr: &stderr}
-	code := NewApp(testAppVersion).Run(watchCtx, e, []string{"events", "watch", "--json"})
+	code := NewApp(testAppVersion).Run(watchCtx, e, []string{"events", "watch", "--json", "--since-seq", fmt.Sprintf("%d", appended-1)})
 	if code != 1 {
 		t.Fatalf("watch: code=%d stderr=%s", code, stderr.String())
 	}

@@ -387,9 +387,12 @@ type prepareResult struct {
 	composeEnv  map[string]map[string]string
 	platformEnv []envlayer.PlatformVar
 	decision    placement.Decision
+	// app 是本次部署的 app 权威行（v0.3 W2-S3：TeamSlug/ProjectSlug 随行
+	// 装载——三段命名公式的参数源，规划期单点读取）。
+	app state.App
 	// s3Env / attachRustfs 是 S3 注入面（E3-4：fleetly.s3=true 服务的
 	// system env 与 rustfs 网络牵线；nil/false = 本发布无注入面）。
-	s3Env       map[string][]envlayer.PlatformVar
+	s3Env        map[string][]envlayer.PlatformVar
 	attachRustfs bool
 	// dbNetworks 是库引用的网络牵线面（E4：fleetly.databases label 服务 →
 	// 库共享网络名列表；nil = 本发布无库引用）。
@@ -482,6 +485,13 @@ func (e *Engine) runBuilding(ctx context.Context, rec state.DeployRecord) error 
 // prepareInputs 重载 compose、解析放置、提取 env 与平台层明文（preparing/
 // building 共用；幂等——重启后重入）。
 func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*prepareResult, error) {
+	// app 行随行装载（v0.3 W2-S3：team/prj slug 是三段命名公式的参数源；
+	// slug 不可变——部署期单点读取即缓存）。行缺失 = 部署队列与权威态的
+	// 不变量破坏（app 行先于部署行存在），fail-fast。
+	app, err := e.store.GetAppByID(ctx, rec.AppID)
+	if err != nil {
+		return nil, errorf("E_RUNTIME_UNAVAILABLE", "failed to load app %s for deployment %s: %v", rec.AppID, rec.ID, err)
+	}
 	spec, _, err := compose.Load(ctx, rec.ComposePath)
 	if err != nil {
 		return nil, err // compose.Load 已携带 E_COMPOSE_* 信封（场景 1）
@@ -547,7 +557,7 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 	// secret 挂载面（E4 managed-databases §2.7）：compose secrets 声明 →
 	// app_secrets 存在性哨兵（E_SECRET_NOT_FOUND fail-fast）+ Swarm secret
 	// 确保 + SecretMount 装配（值零进规划产物）。
-	secretMounts, err := e.resolveSecretMounts(ctx, rec.AppID, rec.AppName, spec)
+	secretMounts, err := e.resolveSecretMounts(ctx, app, spec)
 	if err != nil {
 		return nil, err
 	}
@@ -562,6 +572,7 @@ func (e *Engine) prepareInputs(ctx context.Context, rec state.DeployRecord) (*pr
 		composeEnv:   composeEnv,
 		platformEnv:  platform,
 		decision:     decision,
+		app:          app,
 		s3Env:        s3Env,
 		attachRustfs: attachRustfs,
 		dbNetworks:   dbNetworks,
@@ -588,6 +599,8 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	plan, err := BuildPlan(PlanInput{
 		AppID:               rec.AppID,
 		AppName:             rec.AppName,
+		TeamSlug:            pre.app.TeamSlug,
+		PrjSlug:             pre.app.ProjectSlug,
 		DeploymentID:        rec.ID,
 		Spec:                pre.spec,
 		FileEnv:             pre.fileEnv,
@@ -803,27 +816,32 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 	if err := e.ensureSnapshotSecrets(ctx, rec, desired); err != nil {
 		return appErrOf(err, rec.ID)
 	}
-	// per-app 网络先行（服务创建的前置对象）。
-	netName, err := networkNameOf(rec.AppName)
-	if err != nil {
-		return appErrOf(err, rec.ID)
-	}
-	if err := e.sub.NetworkEnsure(ctx, netName); err != nil {
-		return appErrOf(err, rec.ID)
-	}
-	// 期望 spec 引用的平台侧网络一并确认（幂等创建）：E3-4 rustfs 牵线与
-	// E4 库共享网络（fleetly-db-<name>-net，fleetly.databases 引用面）同经
-	// 此循环——应用发布不因组件收敛时序失败（设计 §2.4 时序行 3：
-	// NetworkEnsure 全部附加网络）。
-	extraNets := map[string]bool{}
+	// 归属识别面从期望 spec 自身推导（v0.3 W2-S3：spec 的服务 label 携带
+	// 三段限定形 app 值与 fleetly.team/fleetly.project 两键——快照重放路径
+	// 与规划路径同源同构，不再以 rec.AppName 二次推导）。对账的 label 过滤
+	// 与「省略=删除」的作用域即随归属走：换派（MoveApp）后的新发布只可见
+	// 新命名上下文的同归属服务。
+	appLabel := ""
 	for i := range desired {
-		for _, n := range desired[i].Networks {
-			if n.Name != netName {
-				extraNets[n.Name] = true
-			}
+		if v := desired[i].ServiceLabels[state.LabelApp]; v != "" {
+			appLabel = v
+			break
 		}
 	}
-	for name := range extraNets {
+	if appLabel == "" {
+		return appErrOf(errorf("E_RUNTIME_UNAVAILABLE",
+			"desired state for deployment %s carries no %s label (planner/snapshot invariant broken)", rec.ID, state.LabelApp), rec.ID)
+	}
+	// 网络前置确认：期望 spec 引用的全部平台侧网络幂等创建（per-app 专属
+	// 网络 + E3-4 rustfs 牵线 + E4 库共享网络——设计 §2.4 时序行 3：
+	// NetworkEnsure 全部附加网络；应用发布不因组件收敛时序失败）。
+	nets := map[string]bool{}
+	for i := range desired {
+		for _, n := range desired[i].Networks {
+			nets[n.Name] = true
+		}
+	}
+	for name := range nets {
 		if err := e.sub.NetworkEnsure(ctx, name); err != nil {
 			return appErrOf(err, rec.ID)
 		}
@@ -831,7 +849,7 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 
 	existing, err := e.sub.ServiceList(ctx, map[string]string{
 		state.LabelManaged: state.ManagedLabelValue,
-		state.LabelApp:     rec.AppName,
+		state.LabelApp:     appLabel,
 	})
 	if err != nil {
 		return appErrOf(err, rec.ID)

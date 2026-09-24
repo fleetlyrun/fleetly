@@ -14,6 +14,7 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // TestEnvServiceInvalidationHook H9：SetEnv/RemoveEnv 写点成功后触发失效
@@ -30,7 +31,7 @@ func TestEnvServiceInvalidationHook(t *testing.T) {
 		t.Fatalf("EnsureKey: %v", err)
 	}
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "hookapp")
+	app, err := testsupport.SeedAppE(t, st, "hookapp")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}

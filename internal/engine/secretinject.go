@@ -68,7 +68,7 @@ func (e *Engine) WithSecretReaper(r SecretReaper) *Engine { e.secretReap = r; re
 // 不缓存长驻）。返回：服务 → SecretMount 列表（按 target 字典序——
 // desired-hash 确定性）；无任何声明的 app 返回 nil（零写入零底座副作用）。
 // 声明缺失 → E_SECRET_NOT_FOUND（点名全部缺失名，一次暴露全量缺口）。
-func (e *Engine) resolveSecretMounts(ctx context.Context, appID, appName string, spec *compose.Spec) (map[string][]SecretMount, error) {
+func (e *Engine) resolveSecretMounts(ctx context.Context, app state.App, spec *compose.Spec) (map[string][]SecretMount, error) {
 	// 声明收集（跨服务去重：同一 source 多服务引用 = 一次解密一次 ensure）。
 	var sources []string
 	for i := range spec.Services {
@@ -88,12 +88,13 @@ func (e *Engine) resolveSecretMounts(ctx context.Context, appID, appName string,
 		return nil, errorf("E_RUNTIME_UNAVAILABLE",
 			"service(s) declare compose secrets but the secret ensurer port is not wired (assembly bug: the engine requires a SecretEnsurer for secret declarations)")
 	}
+	appLabel := app.QualifiedName()
 
 	// 存在性哨兵：全量缺口一次点名（可行动面——逐个修比逐轮部署撞墙诚实）。
 	var missing []string
 	plainBySource := make(map[string]string, len(sources))
 	for _, source := range sources {
-		cipher, err := e.store.GetAppSecretCipher(ctx, appID, source)
+		cipher, err := e.store.GetAppSecretCipher(ctx, app.ID, source)
 		if err != nil {
 			if !errors.Is(err, state.ErrAppSecretNotFound) {
 				return nil, errorf("E_RUNTIME_UNAVAILABLE", "failed to read secret %s from the platform secret store: %v", source, err)
@@ -114,9 +115,9 @@ func (e *Engine) resolveSecretMounts(ctx context.Context, appID, appName string,
 		sort.Strings(missing)
 		return nil, apperr.New("E_SECRET_NOT_FOUND",
 			"secret(s) %s declared by the compose file are not in the platform secret store (set them with: fleetly secrets set %s <name> --value <value>)",
-			strings.Join(missing, ", "), appName).
+			strings.Join(missing, ", "), app.Name).
 			WithContext("missing", strings.Join(missing, ",")).
-			WithContext("app", appName)
+			WithContext("app", app.Name)
 	}
 
 	mounts := make(map[string][]SecretMount)
@@ -129,12 +130,12 @@ func (e *Engine) resolveSecretMounts(ctx context.Context, appID, appName string,
 		list := make([]SecretMount, 0, len(svc.Secrets))
 		for _, ref := range svc.Secrets {
 			plain := plainBySource[ref.Source]
-			secretName, err := secretNameFor(appName, ref.Source, plain)
+			secretName, err := secretNameFor(app.TeamSlug, app.ProjectSlug, app.Name, ref.Source, plain)
 			if err != nil {
 				return nil, err
 			}
 			if _, ok := ensured[ref.Source]; !ok {
-				id, eerr := e.secretEnsure.EnsureSecret(ctx, secretName, []byte(plain), secretLabels(appName))
+				id, eerr := e.secretEnsure.EnsureSecret(ctx, secretName, []byte(plain), secretLabels(appLabel))
 				if eerr != nil {
 					return nil, errorf("E_RUNTIME_UNAVAILABLE", "failed to ensure swarm secret for %s: %v", ref.Source, eerr)
 				}
@@ -151,8 +152,9 @@ func (e *Engine) resolveSecretMounts(ctx context.Context, appID, appName string,
 // ensureSnapshotSecrets 为快照重放路径确保 secret 底座对象在位（
 // applyDesired 头部调用——回滚/归位/漂移收敛共用；发布路径的 ensure 已在
 // resolveSecretMounts 完成，此处幂等重入无害）。快照的挂载名必须能对
-// app_secrets 现值解析（名 = fleetly-<app>-<name>-<hash8>，值轮换即换名
-// ——不匹配 = 轮换已发生，挂载名悬空）：缺失解析 → E_SECRET_NOT_FOUND。
+// app_secrets 现值解析（名 = fleetly-<team>-<prj>-<app>-<name>-<hash8>，
+// 值轮换即换名——不匹配 = 轮换已发生，挂载名悬空）：缺失解析 →
+// E_SECRET_NOT_FOUND。
 func (e *Engine) ensureSnapshotSecrets(ctx context.Context, rec state.DeployRecord, specs []ServiceSpec) error {
 	// 快照挂载名收集。
 	names := map[string]bool{}
@@ -168,6 +170,11 @@ func (e *Engine) ensureSnapshotSecrets(ctx context.Context, rec state.DeployReco
 		return errorf("E_RUNTIME_UNAVAILABLE",
 			"snapshot carries secret mounts but the secret ensurer port is not wired (assembly bug)")
 	}
+	app, err := e.store.GetAppByID(ctx, rec.AppID)
+	if err != nil {
+		return errorf("E_RUNTIME_UNAVAILABLE", "failed to load app %s for secret replay: %v", rec.AppID, err)
+	}
+	appLabel := app.QualifiedName()
 	rows, err := e.store.ListAppSecrets(ctx, rec.AppID)
 	if err != nil {
 		return errorf("E_RUNTIME_UNAVAILABLE", "failed to read the platform secret store for replay: %v", err)
@@ -179,7 +186,7 @@ func (e *Engine) ensureSnapshotSecrets(ctx context.Context, rec state.DeployReco
 			return errorf("E_RUNTIME_UNAVAILABLE",
 				"failed to decrypt platform secret %s (master key mismatch or corrupted ciphertext)", row.Name)
 		}
-		secretName, serr := secretNameFor(rec.AppName, row.Name, string(plain))
+		secretName, serr := secretNameFor(app.TeamSlug, app.ProjectSlug, app.Name, row.Name, string(plain))
 		if serr != nil {
 			return serr
 		}
@@ -193,7 +200,7 @@ func (e *Engine) ensureSnapshotSecrets(ctx context.Context, rec state.DeployReco
 				WithContext("secret", name).
 				WithContext("app", rec.AppName)
 		}
-		if _, err := e.secretEnsure.EnsureSecret(ctx, name, []byte(plain), secretLabels(rec.AppName)); err != nil {
+		if _, err := e.secretEnsure.EnsureSecret(ctx, name, []byte(plain), secretLabels(appLabel)); err != nil {
 			return errorf("E_RUNTIME_UNAVAILABLE", "failed to ensure swarm secret for replay: %v", err)
 		}
 	}
@@ -201,9 +208,10 @@ func (e *Engine) ensureSnapshotSecrets(ctx context.Context, rec state.DeployReco
 }
 
 // secretNameFor 由密钥库声明名构造 Swarm secret 名（值轮换即换名换引用，
-// managed-databases §2.7 逐字兑现 naming.SecretName 既有设计）。
-func secretNameFor(app, name, plain string) (string, error) {
-	secretName, err := naming.SecretName(app, name, naming.Hash8(plain))
+// managed-databases §2.7 逐字兑现 naming.SecretName 既有设计；v0.3 三段形
+// ——team/prj 段进公式）。
+func secretNameFor(team, prj, app, name, plain string) (string, error) {
+	secretName, err := naming.SecretName(team, prj, app, name, naming.Hash8(plain))
 	if err != nil {
 		return "", errorf("E_RUNTIME_UNAVAILABLE", "naming failed for secret %s: %v", name, err)
 	}
@@ -211,11 +219,12 @@ func secretNameFor(app, name, plain string) (string, error) {
 }
 
 // secretLabels 构造 app secret 的归属 label 集（清场/识别的选择器锚——
-// 值轮换换名后旧对象的 best-effort 清场按 fleetly.app 选择器扫描）。
-func secretLabels(app string) map[string]string {
+// 值轮换换名后旧对象的 best-effort 清场按 fleetly.app 选择器扫描；值 =
+// 三段限定形）。
+func secretLabels(qualifiedApp string) map[string]string {
 	return map[string]string{
 		state.LabelManaged: state.ManagedLabelValue,
-		state.LabelApp:     app,
+		state.LabelApp:     qualifiedApp,
 	}
 }
 

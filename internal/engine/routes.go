@@ -32,10 +32,13 @@ type RouteServiceSpec struct {
 	Domains []string
 }
 
-// RoutePublishInput 是一次路由发布输入。
+// RoutePublishInput 是一次路由发布输入。TeamSlug/PrjSlug 是归属两个 slug
+// （v0.3：ingress 的 per-app 网络接入与三段路由键公式参数，rbac-teams §4.3）。
 type RoutePublishInput struct {
 	AppID    string
 	AppName  string
+	TeamSlug string
+	PrjSlug  string
 	Services []RouteServiceSpec
 }
 
@@ -106,11 +109,27 @@ func (e *Engine) publishRoutes(ctx context.Context, rec state.DeployRecord) {
 	}
 }
 
-// routePublishInput 构建发布输入（compose 同源优先，台账兜底）。
+// routePublishInput 构建发布输入（compose 同源优先，台账兜底）。归属 slug
+// 一次读取（v0.3：路由键与网络接入的三段公式参数——发布路径的 app 行
+// 读取，slug 不可变故可缓存于本次发布）。
 func (e *Engine) routePublishInput(ctx context.Context, rec state.DeployRecord) RoutePublishInput {
+	out, ok := e.routeInputFromLedgerOrSpec(ctx, rec)
+	if !ok {
+		return RoutePublishInput{AppID: rec.AppID, AppName: rec.AppName}
+	}
+	if app, err := e.store.GetAppByID(ctx, rec.AppID); err == nil {
+		out.TeamSlug = app.TeamSlug
+		out.PrjSlug = app.ProjectSlug
+	}
+	return out
+}
+
+// routeInputFromLedgerOrSpec 是 compose 同源声明集的提取（routePublishInput
+// 的拆分段——保持「声明集失败不猜」的兜底语义可见）。
+func (e *Engine) routeInputFromLedgerOrSpec(ctx context.Context, rec state.DeployRecord) (RoutePublishInput, bool) {
 	if spec, _, err := compose.Load(ctx, rec.ComposePath); err == nil && spec.SpecHash == rec.SpecHash {
 		if in, ok := routeInputFromSpec(rec, spec); ok {
-			return in
+			return in, true
 		}
 		// 声明集不可用（domains 服务无 expose 的纵深防御形态）：落台账
 		// 兜底——不能拿「半截」声明对账（防误删路由）。
@@ -118,7 +137,7 @@ func (e *Engine) routePublishInput(ctx context.Context, rec state.DeployRecord) 
 	// 台账直推（声明源缺失：文件丢失/回滚文件漂移——保持现状不误删）。
 	rows, err := e.store.ListAppDomains(ctx, rec.AppID)
 	if err != nil {
-		return RoutePublishInput{AppID: rec.AppID, AppName: rec.AppName}
+		return RoutePublishInput{}, false
 	}
 	byService := map[string]*RouteServiceSpec{}
 	order := []string{}
@@ -135,7 +154,7 @@ func (e *Engine) routePublishInput(ctx context.Context, rec state.DeployRecord) 
 	for _, name := range order {
 		services = append(services, *byService[name])
 	}
-	return RoutePublishInput{AppID: rec.AppID, AppName: rec.AppName, Services: services}
+	return RoutePublishInput{AppID: rec.AppID, AppName: rec.AppName, Services: services}, true
 }
 
 // routeInputFromSpec 从归一化 compose 提取路由声明（domains 服务 →

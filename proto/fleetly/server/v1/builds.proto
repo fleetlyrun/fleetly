@@ -68,6 +68,10 @@ message TriggerBuildRequest {
   // 目录）。v0.1 单机同宿主语义，见 service 注释（H14：admin scope，且
   // context 解析后不得越出该基准目录）。
   string base_dir = 3;
+  // 目标项目（v0.3 W2-S3 归属管道）：仅在该 app 尚不存在、构建自动建行时
+  // 消费——解析与缺省语义同 DeployRequest.project（D-W0-9；机具令牌必须
+  // 显式）。app 行已在时沿用行上归属，本字段忽略。
+  string project = 4 [(buf.validate.field).string.max_len = 65];
 }
 
 message TriggerBuildResponse {

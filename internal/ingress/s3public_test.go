@@ -21,6 +21,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/rustfs"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // newS3PublicTestManager 构造 base_domain 非空 + ACME 启用 + 短退避/短扫描
@@ -175,7 +176,7 @@ func TestS3PublicDutyConvergesToggle(t *testing.T) {
 	ctx := context.Background()
 
 	// 前置：一个带域名 app + 在盘证书（既有 TLS 面——往返回归的被保护对象）。
-	app, err := st.CreateApp(ctx, "", "shop")
+	app, err := testsupport.SeedAppE(t, st, "shop")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestS3PublicDutyConvergesToggle(t *testing.T) {
 	if err := m.certs.Save(appPair); err != nil {
 		t.Fatalf("save app pair: %v", err)
 	}
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "shop", Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "shop", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
 	}}); err != nil {
 		t.Fatalf("publish app: %v", err)
@@ -230,7 +231,7 @@ func TestS3PublicDutyConvergesToggle(t *testing.T) {
 		if snap.TLS == nil || len(snap.TLS.Certificates) == 0 {
 			t.Fatalf("%s: tls.certificates wiped (F10 regression)", stage)
 		}
-		if !hasRouterKey(t, m, "fleetly-shop-web-websecure") {
+		if !hasRouterKey(t, m, "fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-shop-web-websecure") {
 			t.Fatalf("%s: existing app websecure router wiped (F10 regression)", stage)
 		}
 	}
@@ -248,7 +249,11 @@ func TestS3PublicDutyConvergesToggle(t *testing.T) {
 		return sameDomainSet(certDomainsOnDisk(t, m), m.PlatformDomains())
 	})
 	awaitUntil(t, "app network preserved after detach", 5*time.Second, func() bool {
-		return traefikHasNetwork(dc, "netid-fleetly-shop-net")
+		shopNet, nerr := appNetworkName(app.TeamSlug, app.ProjectSlug, "shop")
+		if nerr != nil {
+			t.Fatalf("shop net name: %v", nerr)
+		}
+		return traefikHasNetwork(dc, "netid-"+shopNet)
 	})
 	assertShopTLSIntact("after disable")
 	if n := calls.Load(); n < 2 {
@@ -327,7 +332,7 @@ func TestS3PublicSettingsUnreadableFailsClosed(t *testing.T) {
 	m, _, st, _ := newS3PublicTestManager(t, "example.test")
 	ctx := context.Background()
 	setS3Settings(t, st, "example.test", state.S3ModeRustfs, true)
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := testsupport.SeedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -338,7 +343,7 @@ func TestS3PublicSettingsUnreadableFailsClosed(t *testing.T) {
 	}
 	// 先正常发布一次（demo 路由进台账与视图），再注入损坏设置值
 	// （布尔位畸形——LoadS3Settings loud-fail 的形态）。
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "demo", Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "demo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"demo.example.test"}},
 	}}); err != nil {
 		t.Fatalf("publish demo: %v", err)
@@ -356,7 +361,7 @@ func TestS3PublicSettingsUnreadableFailsClosed(t *testing.T) {
 	if hasRouterKey(t, m, "fleetly-rustfs-web") {
 		t.Fatal("s3 route must be omitted (fail-closed) when settings are unreadable")
 	}
-	if !hasRouterKey(t, m, "fleetly-demo-web-web") {
+	if !hasRouterKey(t, m, "fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-demo-web-web") {
 		t.Fatal("app routes must publish normally when s3 settings are unreadable")
 	}
 	// duty 对同一故障显式退避（不静默吞掉）。

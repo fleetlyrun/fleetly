@@ -12,6 +12,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeDocker 是放置测试的底座替身（state.DockerClient 端口最小实现：
@@ -69,7 +70,7 @@ func newHarness(t *testing.T) *harness {
 	}
 	t.Cleanup(func() { _ = st.Close() })
 
-	app, err := st.CreateApp(ctx, "", "my-api")
+	app, err := testsupport.SeedAppE(t, st, "my-api")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

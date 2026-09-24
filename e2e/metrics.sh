@@ -61,6 +61,7 @@ export MSYS2_ARG_CONV_EXCL='*'
 #    多处同步）。cAdvisor 官方 repo = gcr.io/cadvisor/cadvisor（Docker Hub
 #    google/cadvisor 已 DEPRECATED——repo 勘误见台账 #17）。
 DIND_IMAGE="${MET_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 VM_IMG='victoriametrics/victoria-metrics:v1.152.0@sha256:86ca5fdb6d87d56ba047b044039019ba2bd9042b36e35f6ea34e437b6c825cef'
 NODE_EXPORTER_IMG='prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0'
 CADVISOR_IMG='gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57'
@@ -116,7 +117,7 @@ m() { docker exec "$DIND" "$@"; }         # dind 内直跑
 msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
 # fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
-    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$MET_TOKEN" \
+    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_PROJECT="$FOUNDER_PROJECT" -e FLEETLY_TOKEN="$MET_TOKEN" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
 # events_grep <pattern> — 现抓事件流快照（busybox timeout 掐断 follow 流）
@@ -287,6 +288,32 @@ done
 MET_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootstrap token'
 [ -n "$MET_TOKEN" ] || fatal 'empty bootstrap token'
 nl 'fleetlyd live (liveness 200), bootstrap token read'
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope——founder 是平台管理员可达集；CLI 不消费会话 cookie）。
+# 首次部署/建库经 FLEETLY_PROJECT=founder/default 显式携带项目归属；fcli
+# 统一 env 注入。bootstrap token 已随首用户注册按设计吊销弃用。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://10.217.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.217.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+MET_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.217.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$MET_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+nl 'founder registered (platform admin); PAT minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
+
 
 # ───────── A1: 缺省零常驻（D-W5-2 opt-in——unset 生效，duty 无所欠）
 nl '=== A1: default (unset) deploys nothing ==='
@@ -519,8 +546,8 @@ fi
 # （Console 按 label 分组呈诚实空态 + 降级说明；恢复随 cAdvisor 上游修复）。
 nl '=== A13: app attribution label form probe (honest) ==='
 label_hit() {
-    fcli metrics query --json 'container_memory_usage_bytes{container_label_com_docker_swarm_service_name=~"^fleetly-metricsapp-.*"}' 2>/dev/null |
-        grep -q 'fleetly-metricsapp-web'
+    fcli metrics query --json 'container_memory_usage_bytes{container_label_com_docker_swarm_service_name=~"^fleetly-founder-default-metricsapp-.*"}' 2>/dev/null |
+        grep -q "fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-metricsapp-web"
 }
 if label_hit; then
     nl "MET-A13 SWARM_SERVICE_LABEL: LABEL-HIT (fleetly-metricsapp-web observed)"

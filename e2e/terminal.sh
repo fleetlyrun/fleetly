@@ -50,6 +50,8 @@ export MSYS2_ARG_CONV_EXCL='*'
 # ── 镜像钉 digest（T0-V2.3 供应链；与 e2e/control-plane-tls.sh 同源）。
 DIND_IMAGE="${T_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
+# curl helper（v0.3 fixture：REST 注册/铸 PAT 面——auth.sh 同源钉版）。
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 T_SKIP_BUILD="${T_SKIP_BUILD:-0}"
 T_BIN_DIR="${T_BIN_DIR:-}"
 T_VERSION="${T_VERSION:-v0.2.0-terminal-e2e}"
@@ -107,6 +109,7 @@ msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
 # fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
     docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$CTL_TOKEN" \
+        -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
 # tcli <args...> — dind 内的 termclient（WS 测试客户端；HTTP 面）。
@@ -299,6 +302,31 @@ CTL_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read boots
 [ -n "$CTL_TOKEN" ] || fatal 'empty bootstrap token'
 tl 'fleetlyd live (plaintext faces), bootstrap token read'
 
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope；CLI 不消费会话 cookie）。首次部署经
+# FLEETLY_PROJECT=founder/default 显式携带项目归属（fcli 统一 env 注入）。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://10.220.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.220.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+CTL_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.220.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$CTL_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+tl 'founder registered (platform admin); PAT minted; project context '"$FOUNDER_PROJECT"
+
 # ───────── T-1: relay duty 收敛（global 服务 running）
 t1_running() {
     msh 'docker service ls --filter name=fleetly-exec --format "{{.Replicas}}" 2>/dev/null' | grep -q '^1/1$'
@@ -342,7 +370,7 @@ services:
       start_period: 0s
 EOF
 stage "$DIND" "$TMP/app-compose.yaml" /opt/fleetly/termapp-compose.yaml
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$CTL_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$CTL_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c '/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/termapp-compose.yaml > /tmp/term-deploy.log 2>&1'
 deploy_succeeded() {
     fcli deployments list --json "$APP" 2>/dev/null | grep -q '"status": "succeeded"'

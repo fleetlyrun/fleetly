@@ -188,9 +188,9 @@ volumes:
 | 路由目标端口 | `expose` 首个端口 | 未声明则不发布 |
 | 放置（v0.2） | `labels: fleetly.placement.node`；有卷应用由平台自动绑定 | 用户 `deploy.placement.constraints` 仅允许 `node.labels.fleetly.*` 命名空间 |
 | 定时任务（v0.2） | 服务 `labels: fleetly.cron`（+可选 `fleetly.cron.timezone`、`fleetly.cron.timeout`） | 带该 label 的服务不按长驻部署，由调度器创建一次性 Swarm job；`replicas` 必须 0/省略；违反 → `E_COMPOSE_UNSUPPORTED`（reason 细分） |
-| 密钥 | ~~compose `secrets`~~ **v0.1 暂不接入，显式拒绝**（`E_COMPOSE_UNSUPPORTED`；2026-09-20 评审 C1：平台密钥库未接入前，放行只会在准备期晚期失败且错误码误导） | v0.2 平台密钥库接入后开放：映射为 Swarm secret（名 `fleetly-<app>-<name>-<hash8>`，file target 保持 compose 名），应用读 `/run/secrets`；`env_file` 允许但仅限非密钥 |
+| 密钥 | ~~compose `secrets`~~ **v0.1 暂不接入，显式拒绝**（`E_COMPOSE_UNSUPPORTED`；2026-09-20 评审 C1：平台密钥库未接入前，放行只会在准备期晚期失败且错误码误导） | v0.2 平台密钥库接入后开放：映射为 Swarm secret（名 `fleetly-<team>-<prj>-<app>-<name>-<hash8>`，v0.3 三段命名，[rbac-teams §4.3](2026-09-23-rbac-teams.md)；file target 保持 compose 名），应用读 `/run/secrets`；`env_file` 允许但仅限非密钥 |
 | 变量合并 | 三层优先链：`env_file` < `environment` < 平台 env_vars（2026-09-17 审核裁决） | 同键平台层覆盖；`desired-hash` 与 revision 快照按**合并结果**计算（`key:sha256` + 来源标注）；`fleetly env set` 创建 pending 变更、**随下次部署生效**（不立即改运行服务——env 变更经部署固化，与发布专项 D-REL-9 一致）；覆盖键在 plan/diff 告警 `W_ENV_PLATFORM_OVERRIDE`；模板自动连接串 = `source=system` 平台 env（只读展示） |
-| 服务命名与网络 | Swarm 服务名 `fleetly-<app>-<service>`（适配器内）；每 app 专属 overlay 网络 + 服务别名 = compose 服务名 | 集群全局命名空间防撞名（两个 app 各有 `web`/`db` 不冲突）；app 内短名互访与 compose 语义一致、跨 app 网络隔离；平台命名不进归一化 compose；v0.2 跨 app 互访（数据库模板）由平台牵线共享网络，随模板设计裁决 |
+| 服务命名与网络 | Swarm 服务名 `fleetly-<team>-<prj>-<app>-<service>`（v0.3 三段命名，D-W0-4 二修，[rbac-teams §4.3](2026-09-23-rbac-teams.md)；适配器内；卷名族 `fleetly-<app>-<key>-<appid8>` 不变——appid8 天然全局防撞）；每 app 专属 overlay 网络（名 `fleetly-<team>-<prj>-<app>-net`）+ 服务别名 = compose 服务名 | 集群全局命名空间防撞名（app 名 project 内唯一，全局唯一由 team·prj 段承载——两个项目各有 `web`/`db` 不冲突）；app 内短名互访与 compose 语义一致、跨 app 网络隔离；平台命名不进归一化 compose；v0.2 跨 app 互访（数据库模板）由平台牵线共享网络，随模板设计裁决 |
 | 变量插值 | 关闭 `${VAR}` 与 `.env` 插值 | 消除环境相关不确定性；归一化按字面处理 |
 | 受管字段 | `deploy.update_config.failure_action` 必须 `pause`（或省略）；`monitor` 必须省略或 5s | 违反 → `E_COMPOSE_MANAGED_FIELD`，校验拒绝、不静默覆盖 |
 

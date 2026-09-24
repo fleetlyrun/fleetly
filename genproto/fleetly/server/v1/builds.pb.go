@@ -36,7 +36,11 @@ type TriggerBuildRequest struct {
 	// 构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时
 	// 目录）。v0.1 单机同宿主语义，见 service 注释（H14：admin scope，且
 	// context 解析后不得越出该基准目录）。
-	BaseDir       string `protobuf:"bytes,3,opt,name=base_dir,json=baseDir,proto3" json:"base_dir,omitempty"`
+	BaseDir string `protobuf:"bytes,3,opt,name=base_dir,json=baseDir,proto3" json:"base_dir,omitempty"`
+	// 目标项目（v0.3 W2-S3 归属管道）：仅在该 app 尚不存在、构建自动建行时
+	// 消费——解析与缺省语义同 DeployRequest.project（D-W0-9；机具令牌必须
+	// 显式）。app 行已在时沿用行上归属，本字段忽略。
+	Project       string `protobuf:"bytes,4,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -88,6 +92,13 @@ func (x *TriggerBuildRequest) GetService() string {
 func (x *TriggerBuildRequest) GetBaseDir() string {
 	if x != nil {
 		return x.BaseDir
+	}
+	return ""
+}
+
+func (x *TriggerBuildRequest) GetProject() string {
+	if x != nil {
+		return x.Project
 	}
 	return ""
 }
@@ -613,11 +624,12 @@ var File_fleetly_server_v1_builds_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_builds_proto_rawDesc = "" +
 	"\n" +
-	"\x1efleetly/server/v1/builds.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"m\n" +
+	"\x1efleetly/server/v1/builds.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x90\x01\n" +
 	"\x13TriggerBuildRequest\x12!\n" +
 	"\acompose\x18\x01 \x01(\fB\a\xbaH\x04z\x02\x10\x01R\acompose\x12\x18\n" +
 	"\aservice\x18\x02 \x01(\tR\aservice\x12\x19\n" +
-	"\bbase_dir\x18\x03 \x01(\tR\abaseDir\"\xe6\x01\n" +
+	"\bbase_dir\x18\x03 \x01(\tR\abaseDir\x12!\n" +
+	"\aproject\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x18AR\aproject\"\xe6\x01\n" +
 	"\x14TriggerBuildResponse\x12\x10\n" +
 	"\x03app\x18\x01 \x01(\tR\x03app\x124\n" +
 	"\x06builds\x18\x02 \x03(\v2\x1c.fleetly.server.v1.BuildViewR\x06builds\x12=\n" +

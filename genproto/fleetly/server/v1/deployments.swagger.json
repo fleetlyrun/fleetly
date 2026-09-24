@@ -72,7 +72,7 @@
         "parameters": [
           {
             "name": "app",
-            "description": "应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。\ncompose 应用名与请求 app 必须一致（A1：不一致 → E_COMPOSE_UNSUPPORTED，\n不误建 app、不入队）。",
+            "description": "应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。\ncompose 应用名与请求 app 必须一致（A1：不一致 → E_COMPOSE_UNSUPPORTED，\n不误建 app、不入队）。app 名 project 内唯一（D-W0-4 二修）——同一项目\n内重复部署沿用行上归属（请求 project 必须一致，不一致 409\nE_APP_PROJECT_MISMATCH 指引 MoveApp）。",
             "in": "path",
             "required": true,
             "type": "string"
@@ -252,6 +252,10 @@
         "confirm_destructive": {
           "type": "boolean",
           "title": "破坏性变更确认门控（架构 §2.4 变更计划/确认语义，MG-C3）：本次部署相对\n最新 revision 的变更集含破坏性操作（服务删除/卷解绑——判定单源在\ncompose 包，与 plan artifact 的 requires_confirm_destructive 同口径）时，\n必须显式置位才放行入队；未置位返回 E_DEPLOY_CONFIRM_REQUIRED、不入队。\n首发（无历史 revision）恒非破坏性，置位与否均放行。"
+        },
+        "project": {
+          "type": "string",
+          "title": "目标项目（v0.3 W2-S3 归属管道，D-W0-9 解析规则）：裸名或 `team/project`\n限定形。裸名仅解析域内唯一时可用（用户 = 可见项目集；机具令牌/平台\n管理员 = 全库），多命中 400 E_PROJECT_AMBIGUOUS 列候选。缺省：用户 =\n个人队 default 项目；机具令牌无缺省（必须显式，否则 400 带指引）。\n首次部署写入 apps.project_id/team_id；行上归属已定时必须一致（409）。"
         }
       }
     },

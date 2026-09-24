@@ -60,9 +60,11 @@ func TestEnterDbPhaseSingleWritePoint(t *testing.T) {
 
 	newInstance := func(name string) DatabaseInstance {
 		t.Helper()
+		proj := seedFixtureProject(t, st)
 		row, err := st.CreateDatabaseInstance(ctx, DatabaseInstance{
 			Name: name, Template: "postgres-16", ImageDigest: "postgres:16@sha256:aaa",
 			CredentialCipher: "age-cipher",
+			ProjectID:        proj.ID, TeamID: proj.TeamID,
 		})
 		if err != nil {
 			t.Fatalf("create instance %s: %v", name, err)
@@ -165,9 +167,11 @@ func TestDatabaseInstanceCRUD(t *testing.T) {
 		CPUSeconds: 2.0, MemoryBytes: 4 << 30,
 		Backup: DatabaseBackupPlan{IntervalHours: 12, Keep: 14, HourUTC: 4},
 	}
+	proj := seedFixtureProject(t, st)
 	inst, err := st.CreateDatabaseInstance(ctx, DatabaseInstance{
 		Name: "pg-prod", Template: "postgres-16", ImageDigest: "postgres:16@sha256:aaa",
 		CredentialCipher: "age-cipher-v1", PlatformNodeID: "n_01", Settings: settings,
+		ProjectID: proj.ID, TeamID: proj.TeamID,
 	})
 	if err != nil {
 		t.Fatalf("create: %v", err)
@@ -182,9 +186,10 @@ func TestDatabaseInstanceCRUD(t *testing.T) {
 		t.Fatalf("credential_updated_at = %v, want zero (never rotated)", inst.CredentialUpdatedAt)
 	}
 
-	// 唯一名占用（任意生命周期态）。
+	// 唯一名占用（同项目、任意生命周期态）。
 	if _, err := st.CreateDatabaseInstance(ctx, DatabaseInstance{
 		Name: "pg-prod", Template: "redis-7", ImageDigest: "y", CredentialCipher: "c",
+		ProjectID: proj.ID, TeamID: proj.TeamID,
 	}); !errors.Is(err, ErrDatabaseExists) {
 		t.Fatalf("duplicate name err = %v, want ErrDatabaseExists", err)
 	}
@@ -207,6 +212,7 @@ func TestDatabaseInstanceCRUD(t *testing.T) {
 
 	other, err := st.CreateDatabaseInstance(ctx, DatabaseInstance{
 		Name: "redis-cache", Template: "redis-7", ImageDigest: "redis:7@sha256:bbb", CredentialCipher: "age-cipher-v2",
+		ProjectID: proj.ID, TeamID: proj.TeamID,
 	})
 	if err != nil {
 		t.Fatalf("create second: %v", err)

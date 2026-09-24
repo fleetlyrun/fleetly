@@ -45,14 +45,17 @@ func (s *ExecService) CreateTerminalTicket(ctx context.Context, req *serverv1.Cr
 	if !s.hub.Enabled() {
 		return nil, terminalDisabled()
 	}
-	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
 		return nil, err
 	}
 	var tokenID string
 	if p, ok := PrincipalFromContext(ctx); ok {
 		tokenID = p.TokenID
 	}
-	b := s.hub.Tickets().Create(tokenID, req.GetApp(), req.GetService())
+	// 绑定携带三段限定形（v0.3 流标签口径）——hub 侧按限定形推导 Swarm
+	// 服务名（fleetly-<team>-<prj>-<app>-<service>，rbac-teams §4.3）。
+	b := s.hub.Tickets().CreateLabeled(tokenID, req.GetApp(), app.QualifiedName(), req.GetService())
 	return &serverv1.CreateTerminalTicketResponse{
 		Ticket:           b.Ticket,
 		ExpiresAt:        timestamppb.New(b.Expires),

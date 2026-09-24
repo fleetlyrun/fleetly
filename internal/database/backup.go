@@ -267,6 +267,8 @@ func (m *Manager) runBackup(ctx context.Context, inst *state.DatabaseInstance, k
 	in := dbtemplate.BackupInput{
 		Instance:            inst.Name,
 		TemplateID:          inst.Template,
+		TeamSlug:            inst.TeamSlug,
+		PrjSlug:             inst.ProjectSlug,
 		Kind:                kind,
 		BindNodeID:          inst.PlatformNodeID,
 		Repository:          target.Repository,
@@ -355,7 +357,7 @@ func (m *Manager) pruneBackups(ctx context.Context, inst *state.DatabaseInstance
 		m.log.Warn("database: prune skipped (script build)", "instance", inst.Name, "error", err)
 		return
 	}
-	net, nerr := naming.DBNetworkName(inst.Name)
+	net, nerr := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
 	if nerr != nil {
 		m.log.Warn("database: prune skipped (network name)", "instance", inst.Name, "error", nerr)
 		return
@@ -368,6 +370,8 @@ func (m *Manager) pruneBackups(ctx context.Context, inst *state.DatabaseInstance
 		networks: jobNetworks(out.AttachRustfsNetwork, net),
 		timeout:  pruneJobTimeout,
 		bindNode: out.BindNodeID,
+		teamSlug: out.TeamSlug,
+		prjSlug:  out.PrjSlug,
 	}); err != nil {
 		m.log.Warn("database: restic forget failed (retention not aligned; backups unaffected)", "instance", inst.Name, "error", err)
 	}

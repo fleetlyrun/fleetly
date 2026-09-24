@@ -60,10 +60,11 @@ func (e *Engine) reapDeletingApp(ctx context.Context, app state.App) {
 	} else if has {
 		return
 	}
-	// 受管服务发现（与 applyDesired/漂移检测同一 label 约定：managed + app 名）。
+	// 受管服务发现（与 applyDesired/漂移检测同一 label 约定：managed +
+	// app 限定形值——v0.3 流标签口径，team/prj/app）。
 	existing, err := e.sub.ServiceList(ctx, map[string]string{
 		state.LabelManaged: state.ManagedLabelValue,
-		state.LabelApp:     app.Name,
+		state.LabelApp:     app.QualifiedName(),
 	})
 	if err != nil {
 		// 底座瞬态（不可达/超时）：duty 内消化，不落 app 终态——下拍重试。
@@ -84,9 +85,8 @@ func (e *Engine) reapDeletingApp(ctx context.Context, app state.App) {
 	// 场：单条失败不阻塞 tombstone 第二拍（阻塞会让 app 永久卡 deleting，
 	// 而孤儿 secret 只是无害的底座残留——诚实告警优于删除不可用），下拍
 	// 重扫幂等重试直至清完。
-	e.reapAppSecrets(ctx, app.Name)
-	// 全部受管服务已移除 → tombstone 第二拍 + 终局事件（app.deleted，注册
-	// 表词）与审计同事务（fail-closed；CAS 失败 = 并发已推进，幂等跳过）。
+	e.reapAppSecrets(ctx, app.QualifiedName())
+	// 全部受管服务已移除 → tombstone 第二拍 + 终局事件（app.deleted，注册	// 表词）与审计同事务（fail-closed；CAS 失败 = 并发已推进，幂等跳过）。
 	// E4 managed-databases §2.4「引用 app 删除 = 行级联清理」：db_references
 	// 倒排随 tombstone 第二拍同事务清空（库删除守卫的引用面不再悬挂）。
 	err = e.store.InTx(ctx, func(tx *state.Tx) error {

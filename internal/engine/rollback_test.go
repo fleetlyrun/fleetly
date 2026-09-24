@@ -85,7 +85,7 @@ func TestRollbackReplaysSnapshotWithEnv(t *testing.T) {
 		t.Fatal("rollback succeeded without switching (first_healthy_at empty)")
 	}
 	// 服务实况回 v1 spec：镜像回退 + env 键集回退。
-	svc := h.sub.services["fleetly-demo-web"]
+	svc := h.sub.services[h.svc("web")]
 	v1Specs := decodeForTest(t, h, v1)
 	if svc.spec.Image != v1Specs[0].Image {
 		t.Fatalf("service image = %s, want v1 %s", svc.spec.Image, v1Specs[0].Image)
@@ -201,7 +201,7 @@ func TestRollbackPreflightImageMissing(t *testing.T) {
 	}
 	// 不动底座：服务实况仍是 v2 镜像。
 	v2Specs := decodeForTest(t, h, v2)
-	if got := h.sub.services["fleetly-demo-web"].spec.Image; got != v2Specs[0].Image {
+	if got := h.sub.services[h.svc("web")].spec.Image; got != v2Specs[0].Image {
 		t.Fatalf("service image = %s, want untouched v2 %s", got, v2Specs[0].Image)
 	}
 	// preflight 失败不关收敛 opt-in（app 未被动过）。
@@ -237,7 +237,7 @@ func TestRollbackFailureNoSecondAutoAndConvergeForceOff(t *testing.T) {
 	}
 
 	v1Specs := decodeForTest(t, h, v1)
-	h.sub.setMode("fleetly-demo-web", modePausedHealth) // 回放更新失败（pause 冻结）
+	h.sub.setMode(h.svc("web"), modePausedHealth) // 回放更新失败（pause 冻结）
 	rec, err := EnqueueRollback(ctx, h.store, RollbackInput{AppName: "demo", TargetRevisionID: v1.RevisionID})
 	if err != nil {
 		t.Fatalf("enqueue rollback: %v", err)
@@ -307,7 +307,7 @@ func TestRollbackObserveWindowFailureAlsoClosesConverge(t *testing.T) {
 		}
 		h.eng.Tick(ctx)
 	}
-	h.sub.crashNewRunning("fleetly-demo-web", 2, h.clk.Now())
+	h.sub.crashNewRunning(h.svc("web"), 2, h.clk.Now())
 	final := h.runToTerminal(rec)
 	if final.Status != state.DeployFailed || final.ErrorCode != "E_ROLLBACK_FAILED" {
 		t.Fatalf("rollback = %s (%s), want failed E_ROLLBACK_FAILED (post-switch failure still counts as a rollback failure)", final.Status, final.ErrorCode)

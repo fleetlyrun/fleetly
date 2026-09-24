@@ -350,7 +350,7 @@ type ingressPublisher struct {
 }
 
 func (p ingressPublisher) PublishRoutes(ctx context.Context, in engine.RoutePublishInput) error {
-	out := ingress.PublishInput{AppID: in.AppID, AppName: in.AppName}
+	out := ingress.PublishInput{AppID: in.AppID, AppName: in.AppName, TeamSlug: in.TeamSlug, PrjSlug: in.PrjSlug}
 	for _, svc := range in.Services {
 		out.Services = append(out.Services, ingress.ServiceRoutes{
 			Service: svc.Service, Port: svc.Port, Domains: svc.Domains,
@@ -775,9 +775,55 @@ func NewTeamsService(st *state.Store) *api.TeamsService {
 }
 
 // NewProjectsService 构造项目/队内覆写成员面服务（v0.3 W2-S1，rbac-teams
-// §3.3/§3.4；覆写管理权判定在 handler 内强制）。
-func NewProjectsService(st *state.Store) *api.ProjectsService {
-	return api.NewProjectsService(st)
+// §3.3/§3.4；覆写管理权判定在 handler 内强制）。W2-S3：注入改派换名重部署
+// 编排端口（engine 换名发布/等待/清扫 + database 收敛 + ingress 摘网——
+// api.AppMovePort / api.DBMovePort / api.IngressMovePort 的实现粘合）。
+func NewProjectsService(st *state.Store, eng *engine.Engine, dbm *database.Manager, ing *ingress.Manager) *api.ProjectsService {
+	svc := api.NewProjectsService(st)
+	svc = svc.WithMovePorts(
+		appMovePort{eng: eng},
+		dbMovePort{mgr: dbm},
+		ingressMovePort{mgr: ing},
+	)
+	return svc
+}
+
+// appMovePort 是 api.AppMovePort 的 engine.Engine 实现（MoveApp 换名重
+// 部署编排；internal/engine/move.go）。
+type appMovePort struct {
+	eng *engine.Engine
+}
+
+func (p appMovePort) EnqueueMoveRedeploy(ctx context.Context, appID string) (string, error) {
+	return engine.EnqueueMoveRedeploy(ctx, p.eng.Store(), appID)
+}
+
+func (p appMovePort) AwaitAppSwap(ctx context.Context, appID string, timeout time.Duration) error {
+	return p.eng.AwaitAppSwap(ctx, appID, timeout)
+}
+
+func (p appMovePort) SweepMovedServices(ctx context.Context, oldQualified string) (int, error) {
+	return p.eng.SweepMovedServices(ctx, oldQualified)
+}
+
+// dbMovePort 是 api.DBMovePort 的 database.Manager 实现（MoveDatabase 换名
+// 重部署收敛编排；internal/database/move.go）。
+type dbMovePort struct {
+	mgr *database.Manager
+}
+
+func (p dbMovePort) MoveDatabaseRedeploy(ctx context.Context, inst state.DatabaseInstance, oldTeamSlug, oldPrjSlug string) error {
+	return p.mgr.MoveDatabaseRedeploy(ctx, inst, oldTeamSlug, oldPrjSlug)
+}
+
+// ingressMovePort 是 api.IngressMovePort 的 ingress.Manager 实现（摘旧网
+// 收尾面）。
+type ingressMovePort struct {
+	mgr *ingress.Manager
+}
+
+func (p ingressMovePort) DetachAppNetwork(ctx context.Context, team, prj, app string) error {
+	return p.mgr.DetachAppNetwork(ctx, team, prj, app)
 }
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux

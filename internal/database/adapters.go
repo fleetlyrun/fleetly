@@ -32,7 +32,7 @@ import (
 // S2 v0.2.x 重发为 debian/glibc 基底（deploy/Dockerfile.dbtools：基底 =
 // postgres:16 与 dbtemplate.DefaultPostgresImage 同一钉定 digest，redis-cli
 // 取自 debian 版 redis:7，restic 静态二进制照旧）——恢复单 job 的前提
-//（本引擎与 dbtools 跨 libc 的 musl/glibc 重放风险随基底一致而消除）。
+// （本引擎与 dbtools 跨 libc 的 musl/glibc 重放风险随基底一致而消除）。
 //
 // 供应链：CI 首推 2026-09-23（run 35797985743），digest 已钉（多架构 index，
 // buildx imagetools 独立解析）——中间态豁免已摘除，与平台其余镜像同构。
@@ -57,10 +57,10 @@ const (
 // 律）：覆盖镜像分发 + 工具执行；job ctx 超预算即诚实判败（事件/事件面
 // 台账承载结论）。
 const (
-	backupJobTimeout  = 10 * time.Minute  // pg_dump/--rdb 导出 + restic 入库（首传含镜像拉取）
-	verifyJobTimeout  = 5 * time.Minute   // restic dump 回读 + 引擎级头校验
-	restoreJobTimeout = 15 * time.Minute  // 停库重放（temp postgres 起停 + pg_restore）
-	pruneJobTimeout   = 5 * time.Minute   // restic forget --prune（路径过滤）
+	backupJobTimeout  = 10 * time.Minute // pg_dump/--rdb 导出 + restic 入库（首传含镜像拉取）
+	verifyJobTimeout  = 5 * time.Minute  // restic dump 回读 + 引擎级头校验
+	restoreJobTimeout = 15 * time.Minute // 停库重放（temp postgres 起停 + pg_restore）
+	pruneJobTimeout   = 5 * time.Minute  // restic forget --prune（路径过滤）
 	// upgradeWatchWindow 是升级健康门观察窗（provisioning 健康门预算同口
 	// 径——start_period 30s + 探测窗；超窗判败 → digest 归位）。
 	upgradeWatchWindow = 5 * time.Minute
@@ -244,18 +244,20 @@ func (m *Manager) Backup(ctx context.Context, in dbtemplate.BackupInput) (dbtemp
 	if err != nil {
 		return dbtemplate.BackupOutcome{}, err
 	}
-	net, err := naming.DBNetworkName(in.Instance)
+	net, err := naming.DBNetworkName(in.TeamSlug, in.PrjSlug, in.Instance)
 	if err != nil {
 		return dbtemplate.BackupOutcome{}, err
 	}
 	outcome, err := m.runToolsJob(ctx, toolsJobInput{
-		instance:   in.Instance,
-		purpose:    "backup",
-		script:     script,
-		env:        toolsJobEnv(in.Password, in.Repository, in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
-		networks:   jobNetworks(in.AttachRustfsNetwork, net),
-		timeout:    backupJobTimeout,
-		bindNode:   in.BindNodeID,
+		instance: in.Instance,
+		purpose:  "backup",
+		script:   script,
+		env:      toolsJobEnv(in.Password, in.Repository, in.ResticPassword, in.S3AccessKeyID, in.S3SecretKey, in.S3Region),
+		networks: jobNetworks(in.AttachRustfsNetwork, net),
+		timeout:  backupJobTimeout,
+		bindNode: in.BindNodeID,
+		teamSlug: in.TeamSlug,
+		prjSlug:  in.PrjSlug,
 	})
 	if err != nil {
 		return dbtemplate.BackupOutcome{}, err
@@ -277,7 +279,7 @@ func (m *Manager) Verify(ctx context.Context, in dbtemplate.BackupOutcome) error
 	if err != nil {
 		return err
 	}
-	net, err := naming.DBNetworkName(in.Instance)
+	net, err := naming.DBNetworkName(in.TeamSlug, in.PrjSlug, in.Instance)
 	if err != nil {
 		return err
 	}
@@ -289,6 +291,8 @@ func (m *Manager) Verify(ctx context.Context, in dbtemplate.BackupOutcome) error
 		networks: jobNetworks(in.AttachRustfsNetwork, net),
 		timeout:  verifyJobTimeout,
 		bindNode: in.BindNodeID,
+		teamSlug: in.TeamSlug,
+		prjSlug:  in.PrjSlug,
 	})
 	if err != nil {
 		return err
@@ -301,11 +305,11 @@ func (m *Manager) Verify(ctx context.Context, in dbtemplate.BackupOutcome) error
 
 // Restore 原地恢复（dbtemplate.EngineAdapter 契约）：纯执行体——scale 0/
 // 事件/失败口径归 restore.go 编排；本方法只跑恢复 job。PG = 单 dbtools job
-//（restic 取回 + 临时 postgres 重放同 job——v0.2.1-dbtools.1 起基底与引
+// （restic 取回 + 临时 postgres 重放同 job——v0.2.1-dbtools.1 起基底与引
 // 擎同源 glibc，跨 libc 重放风险消除，见 restorePostgresJobScript 注）；
 // Redis = 单 dbtools job（RDB 落卷）。
 func (m *Manager) Restore(ctx context.Context, in dbtemplate.RestoreInput) error {
-	net, err := naming.DBNetworkName(in.Instance)
+	net, err := naming.DBNetworkName(in.TeamSlug, in.PrjSlug, in.Instance)
 	if err != nil {
 		return err
 	}
@@ -332,6 +336,8 @@ func (m *Manager) Restore(ctx context.Context, in dbtemplate.RestoreInput) error
 		mounts:   mounts,
 		timeout:  restoreJobTimeout,
 		bindNode: in.BindNodeID,
+		teamSlug: in.TeamSlug,
+		prjSlug:  in.PrjSlug,
 	})
 	if err != nil {
 		return err
@@ -397,6 +403,10 @@ type toolsJobInput struct {
 	mounts   []JobMount
 	timeout  time.Duration
 	bindNode string
+	// teamSlug/prjSlug 是归属 slug（fleetly.db label 值 = 三段限定形——
+	// 跨项目同名实例的清场选择器不互撞，v0.3 流标签口径）。
+	teamSlug string
+	prjSlug  string
 }
 
 // restic 同仓写锁互斥的有界重试（W4-S6 e2e 实测）：库备份与控制面状态备
@@ -446,8 +456,9 @@ func (m *Manager) runToolsJob(ctx context.Context, in toolsJobInput) (JobRunOutc
 			Mounts:      in.mounts,
 			Constraints: []string{"node.labels." + state.LabelNodeID + " == " + in.bindNode},
 			Labels: map[string]string{
-				state.LabelManaged:  state.ManagedLabelValue,
-				state.LabelDatabase: in.instance,
+				state.LabelManaged: state.ManagedLabelValue,
+				// 归属锚 = 三段限定形（跨项目同名实例不互撞；v0.3 流标签口径）。
+				state.LabelDatabase: qualifiedOf(in.teamSlug, in.prjSlug, in.instance),
 			},
 		})
 	}
@@ -510,6 +521,8 @@ func (m *Manager) outcomeContext(in dbtemplate.BackupInput, snap string, size in
 		SizeBytes:           size,
 		Instance:            in.Instance,
 		TemplateID:          in.TemplateID,
+		TeamSlug:            in.TeamSlug,
+		PrjSlug:             in.PrjSlug,
 		BindNodeID:          in.BindNodeID,
 		Repository:          in.Repository,
 		ResticPassword:      in.ResticPassword,
@@ -519,6 +532,12 @@ func (m *Manager) outcomeContext(in dbtemplate.BackupInput, snap string, size in
 		S3PathStyle:         in.S3PathStyle,
 		AttachRustfsNetwork: in.AttachRustfsNetwork,
 	}
+}
+
+// qualifiedOf 是库实例三段限定形的本地出口（state.DatabaseInstance.
+// QualifiedName 同式——adapters 层的 tools job 载荷只有 slug 散字段）。
+func qualifiedOf(team, prj, instance string) string {
+	return team + "/" + prj + "/" + instance
 }
 
 // jobFailureText 归一 job 失败诊断（任务 Err + 退出码 + 尾部输出摘要——
@@ -567,7 +586,7 @@ type resticSummary struct {
 }
 
 // parseResticSummary 从 restic backup --json 输出提取本次快照 id 与字节量
-//（逐行 JSON：取 message_type=summary 的行；无 → 空串）。
+// （逐行 JSON：取 message_type=summary 的行；无 → 空串）。
 func parseResticSummary(output string) (string, int64) {
 	var snap string
 	var size int64

@@ -37,6 +37,8 @@ func planInputFor(t *testing.T, yaml string, mutate func(in *PlanInput)) (*Plan,
 	in := PlanInput{
 		AppID:        "app1id",
 		AppName:      "s3app",
+		TeamSlug:     "acme",
+		PrjSlug:      "prod",
 		DeploymentID: "dep1",
 		Spec:         spec,
 		FileEnv:      map[string]map[string]string{},

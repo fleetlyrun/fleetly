@@ -6,7 +6,8 @@ package errcode
 // architecture §2.4（3 码）+ §2.3（E_STATE_VERSION_CONFLICT）；v0.3 W1 增
 // E_REGISTRATION_CLOSED（rbac-teams §2.1）；v0.3 W2-S1 增 E_TEAM_LAST_OWNER /
 // E_INVITE_INVALID / E_TEAM_SLUG_RESERVED（rbac-teams §5）。
-// 计 63 个 E_ + 5 个 W_ = 68 码（逐波注记见各分节）。
+// 计 66 个 E_ + 5 个 W_ = 71 码（逐波注记见各分节；v0.3 W2-S3 随保留字
+// 迁移退役 E_APP_NAME_RESERVED——rbac-teams §4.3/§5 设计明示的唯一减码）。
 //
 // HTTP 默认映射：文档显式给定的照文档（E_DOMAIN_CONFLICT/E_STATE_VERSION_
 // CONFLICT/E_VOLUME_NODE_MISMATCH/E_PLACEMENT_MOVE_REQUIRES_ACK→409、
@@ -144,14 +145,13 @@ var builtins = []Code{
 		Summary:    "pushing the build result to the platform registry failed (network/credentials/registry fault)",
 		Suggestion: "The push to registry.<base> failed: check that the fleetly-registry service is healthy and the platform registry credentials (registry.auth_file) are current, then run the build again."},
 
-	// ── 命名保留字（W3 遗留撞键票收口，2026-09-21；注册表只增）：app 顶层
-	//    名是 fleetly-<app>-* 服务/网络/路由/secret 名族的参数，与平台固定
-	//    组件命名空间（cron/db/dbjob 前缀族、rustfs/registry 网络与路由、
-	//    acme 挑战键等）的交点逐条实证于 internal/naming 保留字表──
-	//    撞上即在部署受理层拒绝，不在底座层制造静默覆盖/误删 ──
-	{ID: "E_APP_NAME_RESERVED", HTTP: 422,
-		Summary:    "the compose top-level name collides with a platform-reserved component name (swarm service/network/router/secret namespaces derive fleetly-<name>-* objects from it)",
-		Suggestion: "Rename the app (compose top-level name) to anything outside the reserved set (listed in the error message); reserved names are platform component identities and cannot be reused by user apps."},
+	// ── 命名保留字（W3 遗留撞键票收口，2026-09-21；v0.3 W2-S3 退役）：
+	//    E_APP_NAME_RESERVED 随保留字迁移退役（rbac-teams §4.3：v0.3 命名
+	//    三段化后 app 名不再紧邻 fleetly- 前缀——结构性安全，保留字清单
+	//    整体迁到 team slug〔E_TEAM_SLUG_RESERVED 消费〕，app 名守卫的
+	//    消费点 internal/compose 受理层同步移除）。退役是设计明示的减码
+	//    （§5「E_APP_NAME_RESERVED 随保留字迁移退役」），非注册表语义
+	//    漂移；v0.2.x 终点版文档保留该码的档案记载。──
 
 	// ── 多节点 join 门禁（E1 多节点设计 §5.2/D-MN-13，2026-09-20 冻结，
 	//    E1-8 接线）：base_domain 缺失即多节点未启用——join 面显式拒绝、
@@ -291,9 +291,8 @@ var builtins = []Code{
 
 	// ── 团队/项目面（v0.3 W2-S1，RBAC 设计 §5 错误码清单，注册表只增）：
 	//    消费点 = internal/api/teams.go 与 internal/api/authservice.go
-	//    （state 哨兵的信封化投影）。E_DB_PROJECT_MISMATCH / E_PROJECT_
-	//    AMBIGUOUS / E_APP_AMBIGUOUS 同清单余项随 W2-S3 命名/归属管道票
-	//    登记（本票无消费点，不提前造码）。──
+	//    （state 哨兵的信封化投影）。E_DB_PROJECT_MISMATCH 同清单余项随
+	//    W2-S4 跨项目守卫票登记（本票无消费点，不提前造码）。──
 	// 消费点：RemoveTeamMember / SetTeamMemberRole 降级路径的最后一名 owner
 	// 守卫（state 哨兵 ErrTeamLastOwner，409——操作与守卫同事务）。
 	{ID: "E_TEAM_LAST_OWNER", HTTP: 409,
@@ -311,6 +310,30 @@ var builtins = []Code{
 	{ID: "E_TEAM_SLUG_RESERVED", HTTP: 422,
 		Summary:    "the team slug collides with a platform-reserved component name (v0.3 naming formulas derive fleetly-<team>-* objects from the team slug; the reserved set guards the prefix families)",
 		Suggestion: "Pick another slug outside the reserved set (listed in the error message); slugs are lowercase word-form identifiers [a-z0-9]{2,32} and immutable once created."},
+
+	// ── 归属管道（v0.3 W2-S3，rbac-teams §4.2/§5 + D-W0-9 解析规则）──
+	// 消费点：Deploy/CreateDatabase 的 project 解析（裸名解析域内命中多个
+	// 同名项目 → 列候选；409 无——请求侧可修正）。
+	{ID: "E_PROJECT_AMBIGUOUS", HTTP: 400,
+		Summary:    "the bare project name matches more than one visible project (same-name projects across teams are legal, D-W0-9)",
+		Suggestion: "Qualify the reference as team/project (e.g. acme/prod) and retry; the matching candidates are listed in the error context."},
+	// 消费点：按裸名解析 app/库资源的多行命中面（读面限定形支持归 S4——
+	// 创建面与命名面先行，state.ErrAppAmbiguous / ErrDatabaseAmbiguous 的
+	// 信封化投影）。
+	{ID: "E_APP_AMBIGUOUS", HTTP: 400,
+		Summary:    "the resource name matches more than one row across projects (app/database names are unique per project, D-W0-4); bare-name references must be unique in the resolution scope",
+		Suggestion: "Qualify the reference as team/project/<name> or reference the resource by its platform id; e2e/CLI fixtures should avoid same-named resources until the qualified read face lands (S4)."},
+	// 消费点：Deploy/CreateDatabase 的归属一致性守卫——行上归属已定，重复
+	// 请求指向其他项目即拒绝（校验一致而非静默沿用；指引 MoveApp）。
+	{ID: "E_APP_PROJECT_MISMATCH", HTTP: 409,
+		Summary:    "the request targets a different project than the one the app row already belongs to (ownership on the row wins once assigned)",
+		Suggestion: "Deploy without the project field (it resolves to the row's own project) or move the app first: a platform administrator can reassign ownership with MoveApp (rename redeploy)."},
+	// 消费点：git push 首发路径（internal/gitserver ensureAppRow）——首次
+	// 建行的归属解析失败（push 无署名用户，或署名用户无缺省项目）：先经
+	// CLI/API 携带 project 首发建行，再 push。
+	{ID: "E_APP_PROJECT_REQUIRED", HTTP: 400,
+		Summary:    "the pushed app does not exist yet and no project ownership can be derived from the push (no signed user or no default project)",
+		Suggestion: "Deploy once via CLI/API passing project \"team/project\" to create the app with ownership, then push; subsequent pushes deploy to the row's own project."},
 
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",

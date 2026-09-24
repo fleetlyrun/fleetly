@@ -1,0 +1,28 @@
+[s3-e2e 15:57:14] using prebuilt binaries from D:/Codes/qiulin/fleetly/.e2ebin
+[s3-e2e 15:57:14] WARN removing leftover s3-e2e containers: 533ffcfe1603
+[s3-e2e 15:57:19] dind fleetly-s3-dind ready (engine 29.8.1)
+[s3-e2e 15:57:19] staging binaries + config (exec+stdin)
+[s3-e2e 15:57:30] pre-pulling fixture images (pinned digests)
+[s3-e2e 15:58:14] fleetlyd live (liveness 200), bootstrap token read
+[s3-e2e 15:58:16] founder registered (platform admin); PAT minted; project context '"$FOUNDER_PROJECT"'
+[s3-e2e 15:58:16] === A0: honest refusal when s3.mode=unset (E_S3_NOT_CONFIGURED) ===
+[s3-e2e 15:58:18] S3-A0 UNSET_DEPLOY_REFUSED: PASS
+[s3-e2e 15:58:18] === A1: rustfs duty convergence (managed service + probe) ===
+[s3-e2e 15:59:17] S3-A1 RUSTFS_SERVICE_RUNNING: PASS
+[s3-e2e 15:59:21] S3-A2 RUSTFS_DEPLOYED_EVENT: PASS
+[s3-e2e 15:59:30] S3-A3 PROBE_PUT_GET_DELETE_OK: PASS
+[s3-e2e 15:59:30] === A2: credential injection (env + real S3 roundtrip via injected values) ===
+[s3-e2e 15:59:43] S3-A4 APP_DEPLOY_SUCCEEDED: PASS
+[s3-e2e 15:59:45] S3-A5 INJECTED_ENV_VALUES: PASS
+[s3-e2e 15:59:54] S3-A6 INJECTED_ENDPOINT_READ_WRITE: PASS
+[s3-e2e 15:59:54] === A3: state backup upload over the managed endpoint (upload_status=ok) ===
+[s3-e2e 16:00:01] S3-A7 BACKUP_UPLOAD_OK: PASS
+[s3-e2e 16:00:02] S3-A8 MANUAL_BACKUP_UPLOAD_OK: PASS
+[s3-e2e 16:00:02] === A3.5: s3 status honesty note (rustfs mode) ===
+[s3-e2e 16:00:02] S3-A11 STATUS_HONESTY_NOTE: PASS
+[s3-e2e 16:00:02] === A4: disable (service removed, volume retained) ===
+[s3-e2e 16:00:47] S3-A9 DISABLE_REMOVES_SERVICE: PASS
+[s3-e2e 16:00:48] S3-A10 VOLUME_RETAINED: PASS
+[s3-e2e 16:00:48] === A5: s3 status deployment line after disable ===
+[s3-e2e 16:00:48] S3-A12 STATUS_DEPLOYMENT_LINE: PASS
+[s3-e2e 16:00:48] SUITE-DONE all-asserts-passed

@@ -56,6 +56,8 @@ export MSYS2_ARG_CONV_EXCL='*'
 DIND_IMAGE="${LOGS_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
 VL_IMG='victoriametrics/victoria-logs:v1.52.0@sha256:47b820890d64c4575a2a0a46415dcd8a4fd59a0f1fcd6a377693d7aea639442e'
+# curl helper（v0.3 fixture：REST 注册/铸 PAT 面——auth.sh 同源钉版）。
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 # whoami：B4/B5 访问日志归因的 HTTP 服务应用（multinode-rehearsal.sh 同款
 # 钉版；:80 直答——alpine busybox 无 httpd applet 的教训后选真服务镜像）。
 WHOAMI_IMG='traefik/whoami:v1.10.4@sha256:02d8fe035f170f91cbb5e458a57f4cefab747436f8244a0eb2d66785fe5e565f'
@@ -108,12 +110,14 @@ poll_until() {
 
 m() { docker exec "$DIND" "$@"; }         # dind 内直跑
 msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
-# fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
+# fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + founder PAT；项目上下文
+# 经 FLEETLY_PROJECT 显式注入——v0.3 归属管道）。
 fcli() {
     docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" \
+        -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
-# rest_search <query> — REST 面 SearchLogs（gateway GET；bootstrap token）。
+# rest_search <query> — REST 面 SearchLogs（gateway GET；founder PAT）。
 rest_search() {
     m wget -q -T 10 -O - --header="Authorization: Bearer $VL_TOKEN" \
         "http://127.0.0.1:8420/v1/apps/$APP/logs/search$1" 2>/dev/null
@@ -289,6 +293,31 @@ VL_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootst
 [ -n "$VL_TOKEN" ] || fatal 'empty bootstrap token'
 nl 'fleetlyd live (liveness 200), bootstrap token read'
 
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope）。首次部署经 FLEETLY_PROJECT=founder/default 显式携带项目
+# 归属（fcli 统一 env 注入）；bootstrap token 弃用。curl helper 同 auth.sh。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://10.216.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.216.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+VL_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.216.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$VL_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+nl 'founder registered (platform admin); PAT minted; project context '"$FOUNDER_PROJECT"
+
 # ───────── A1: duty 收敛（缺省即部署——未显式设置 = victorialogs 生效）
 nl '=== A1: duty converges on default (logs.backend unset -> victorialogs) ==='
 vl_running() {
@@ -350,7 +379,7 @@ services:
 EOF
 stage "$DIND" "$TMP/app-compose.yaml" /opt/fleetly/vlapp-compose.yaml
 
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c '/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/vlapp-compose.yaml > /tmp/vl-deploy.log 2>&1'
 deploy_succeeded() {
     fcli deployments list --json "$APP" 2>/dev/null | grep -q '"status": "succeeded"'
@@ -460,7 +489,7 @@ poll_until 480 buildkit_ready || nl "WARN buildkitd warmup over budget; attempti
 # 终态（conformance-builder.sh CB-A 同款次序）。构建行经咽喉点入湖 = B3
 # 的输入面；构建成功后 deploy 直通核对接 spec_hash 命中。
 nl '  building the image first (fleetly build, then deploy)'
-docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" \
+docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" /opt/fleetly/bin/fleetly build --timeout 10m --json \
     "/tmp/$BUILD_APP/compose.yaml" >/dev/null 2>&1
 build_succeeded() {
@@ -473,7 +502,7 @@ else
     assert "VL-B2a BUILD_SUCCEEDED" 1 "fleetly build never reached succeeded within 600s"
 fi
 
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c "/opt/fleetly/bin/fleetly deploy --timeout 600s /tmp/$BUILD_APP/compose.yaml > /tmp/vl-deploy-build.log 2>&1"
 build_deploy_succeeded() {
     fcli deployments list --json "$BUILD_APP" 2>/dev/null | grep -q '"status": "succeeded"'
@@ -516,7 +545,7 @@ services:
       fleetly.domains: "$WEB_DOMAIN"
 EOF
 stage "$DIND" "$TMP/vlweb-compose.yaml" /opt/fleetly/vlweb-compose.yaml
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$VL_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c '/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/vlweb-compose.yaml > /tmp/vl-deploy-web.log 2>&1'
 web_deploy_succeeded() {
     fcli deployments list --json "$WEB_APP" 2>/dev/null | grep -q '"status": "succeeded"'
@@ -566,13 +595,13 @@ fi
 # 旗标在位置参数前——本仓 CLI 约定）。
 nl '=== B6: CLI logs search hits the container marker ==='
 cli_search_hit() {
-    fcli logs search --keyword "$MARKER2" --source container --limit 5 "$APP" 2>/dev/null |
+    fcli logs search --keyword "$MARKER2" --source container --limit 5 "$FOUNDER_PROJECT/$APP" 2>/dev/null |
         grep -q "$MARKER2"
 }
 if poll_until 60 cli_search_hit; then
     assert "VL-B6 CLI_SEARCH_KEYWORD_HIT" 0
 else
-    fcli logs search --keyword "$MARKER2" --source container --limit 5 "$APP" || true
+    fcli logs search --keyword "$MARKER2" --source container --limit 5 "$FOUNDER_PROJECT/$APP" || true
     assert "VL-B6 CLI_SEARCH_KEYWORD_HIT" 1 "CLI search never hit the container marker"
 fi
 

@@ -20,6 +20,7 @@ import (
 	"github.com/go-acme/lego/v4/registration"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // newACMETestManager 构造 ACME 启用 + 假签发器（obtainFn 注入缝，E1）的
@@ -71,7 +72,7 @@ func newACMETestManager(t *testing.T) (*Manager, *state.Store, *atomic.Int64) {
 func TestEnsureCertificateConcurrentSingleObtain(t *testing.T) {
 	m, st, calls := newACMETestManager(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := testsupport.SeedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -127,7 +128,7 @@ func TestEnsureCertificateConcurrentSingleObtain(t *testing.T) {
 func TestRenewDueSkipsUnresolvableApp(t *testing.T) {
 	m, st, calls := newACMETestManager(t)
 	ctx := context.Background()
-	live, err := st.CreateApp(ctx, "", "live")
+	live, err := testsupport.SeedAppE(t, st, "live")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

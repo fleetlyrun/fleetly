@@ -18,6 +18,7 @@ import (
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeWithdrawer 是 RouteWithdrawer 的记录型假实现（台账面与
@@ -57,7 +58,7 @@ func newAppsTestEnv(t *testing.T, withdraw RouteWithdrawer) (*AppsService, *stat
 func seedAppWithDomains(t *testing.T, st *state.Store, name string) state.App {
 	t.Helper()
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", name)
+	app, err := testsupport.SeedAppE(t, st, name)
 	if err != nil {
 		t.Fatalf("create app %s: %v", name, err)
 	}
@@ -135,7 +136,7 @@ func TestDeleteAppWithdrawFailureAlarms(t *testing.T) {
 func TestSetAppSourceValidation(t *testing.T) {
 	svc, st := newAppsTestEnv(t, nil)
 	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "srcapp"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "srcapp"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 
@@ -180,7 +181,7 @@ func TestListAppsLimitDefaultAndBatchDerived(t *testing.T) {
 
 	// 120 个 app（超过缺省 100）。
 	for i := 0; i < 120; i++ {
-		if _, err := store.CreateApp(ctx, "", fmt.Sprintf("app-%03d", i)); err != nil {
+		if _, err := testsupport.SeedAppE(t, store, fmt.Sprintf("app-%03d", i)); err != nil {
 			t.Fatalf("create app %d: %v", i, err)
 		}
 	}

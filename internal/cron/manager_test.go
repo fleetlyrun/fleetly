@@ -22,6 +22,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeClock 是可拨动的时钟。
@@ -128,7 +129,7 @@ func newHarness(t *testing.T) *harness {
 	clk := &fakeClock{now: time.Date(2026, 9, 21, 12, 0, 5, 0, time.UTC)}
 	mgr := NewManager(Config{}, st, box, sub, fakePreflight{}, slog.New(slog.NewTextHandler(io.Discard, nil))).
 		WithClock(clk)
-	app, err := st.CreateApp(context.Background(), "", "cronapp")
+	app, err := testsupport.SeedAppE(t, st, "cronapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -165,17 +166,19 @@ func (h *harness) arm(expression, service string) {
 		h.t.Fatalf("create revision: %v", err)
 	}
 	template := engine.ServiceSpec{
-		Name:     "fleetly-cronapp-" + service,
+		Name:     h.app.TeamSlug + "-" + h.app.ProjectSlug + "-cronapp-" + service,
 		Image:    "busybox@sha256:aa",
 		Job:      true,
 		Replicas: 1,
-		Networks: []engine.NetworkAttach{{Name: "fleetly-cronapp-net", Aliases: []string{service}}},
+		Networks: []engine.NetworkAttach{{Name: "fleetly-" + h.app.TeamSlug + "-" + h.app.ProjectSlug + "-cronapp-net", Aliases: []string{service}}},
 		ServiceLabels: map[string]string{
-			state.LabelManaged: state.ManagedLabelValue,
-			state.LabelApp:     h.app.Name,
-			state.LabelProcess: service,
+			state.LabelManaged:  state.ManagedLabelValue,
+			state.LabelApp:      h.app.QualifiedName(),
+			state.LabelProcess:  service,
+			state.LabelTeam:     h.app.TeamSlug,
+			state.LabelProject:  h.app.ProjectSlug,
 		},
-		ContainerLabels: map[string]string{state.LabelApp: h.app.Name},
+		ContainerLabels: map[string]string{state.LabelApp: h.app.QualifiedName()},
 	}
 	snapshot, err := json.Marshal([]engine.ServiceSpec{template})
 	if err != nil {
@@ -263,7 +266,7 @@ func TestBeatFiresDueSchedule(t *testing.T) {
 	if len(rows) != 1 || rows[0].Status != state.CronRunStarted {
 		t.Fatalf("expected one started row, got %+v", rows)
 	}
-	if !strings.HasPrefix(rows[0].JobService, "fleetly-cron-cronapp-task-") {
+	if !strings.HasPrefix(rows[0].JobService, "fleetly-cron-"+h.app.TeamSlug+"-"+h.app.ProjectSlug+"-cronapp-task-") {
 		t.Fatalf("job service name = %q", rows[0].JobService)
 	}
 	if rows[0].ScheduledAt != time.Date(2026, 9, 21, 12, 0, 0, 0, time.UTC) {
@@ -279,7 +282,7 @@ func TestBeatFiresDueSchedule(t *testing.T) {
 	if got := h.eventNames()["cron.triggered"]; got != 1 {
 		t.Fatalf("cron.triggered events = %d, want 1", got)
 	}
-	if !h.sub.nets["fleetly-cronapp-net"] {
+	if !h.sub.nets["fleetly-"+h.app.TeamSlug+"-"+h.app.ProjectSlug+"-cronapp-net"] {
 		t.Fatal("per-app network was not ensured before job creation")
 	}
 }

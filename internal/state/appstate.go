@@ -57,8 +57,7 @@ func (t *Tx) GetAppDerivedState(ctx context.Context, appID string) (string, erro
 // ListActiveApps 返回全部 active 应用（created_at 升序；引擎运行期巡检的
 // 候选集，v0.1 单机规模）。
 func (s *Store) ListActiveApps(ctx context.Context) ([]App, error) {
-	const q = `SELECT id, name, lifecycle, created_at, updated_at, deleting_at, deleted_at
-		FROM apps WHERE lifecycle = 'active' ORDER BY created_at ASC, id ASC`
+	const q = `SELECT ` + appScanCols + ` ` + appScanFrom + ` WHERE a.lifecycle = 'active' ORDER BY a.created_at ASC, a.id ASC`
 	rows, err := s.db.QueryContext(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("state: list apps: %w", err)
@@ -83,8 +82,7 @@ func (s *Store) ListActiveApps(ctx context.Context) ([]App, error) {
 // 执行者据此发现待收敛应用）。lifecycle 必须是 AppLifecycle 词表值，
 // 调用方（引擎 duty）直接传常量，本函数不做词表校验（空集 = 无待收敛）。
 func (s *Store) ListAppsByLifecycle(ctx context.Context, lifecycle AppLifecycle) ([]App, error) {
-	const q = `SELECT id, name, lifecycle, created_at, updated_at, deleting_at, deleted_at
-		FROM apps WHERE lifecycle = ? ORDER BY created_at ASC, id ASC`
+	const q = `SELECT ` + appScanCols + ` ` + appScanFrom + ` WHERE a.lifecycle = ? ORDER BY a.created_at ASC, a.id ASC`
 	rows, err := s.db.QueryContext(ctx, q, string(lifecycle))
 	if err != nil {
 		return nil, fmt.Errorf("state: list apps by lifecycle: %w", err)

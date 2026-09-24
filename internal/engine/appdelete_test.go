@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // deletingHarness 在 demo 应用上构造「已成功部署 + 已置 deleting」的现场：
@@ -190,7 +191,7 @@ func TestReapDeletingAppsThrottledByTimeGate(t *testing.T) {
 	// 时钟过闸后恢复扫描：新置 deleting 的应用（无受管服务——直接落第二拍）
 	// 在过闸后的非 force 拍里被收敛（证明扫描确实恢复执行）。
 	h.clk.Advance(appDeleteScanInterval + time.Second)
-	if _, err := h.store.CreateApp(ctx, "", "other"); err != nil {
+	if _, err := testsupport.SeedAppE(t, h.store, "other"); err != nil {
 		t.Fatalf("create other app: %v", err)
 	}
 	if err := h.store.MarkAppDeleting(ctx, mustAppID(t, h, "other")); err != nil {
@@ -266,9 +267,12 @@ func TestReapDeletingAppsSweepsAppSecrets(t *testing.T) {
 	h := deletingAppWithServices(t)
 	ctx := context.Background()
 	reaper := newFakeSecretReaper()
-	reaper.add("fleetly-demo-apikey-1a2b3c4d", secretLabels("demo"))
-	reaper.add("fleetly-demo-tls-9f8e7d6c", secretLabels("demo"))
-	reaper.add("fleetly-other-key-11223344", secretLabels("other"))
+	reaper.add(h.demoSecretPrefix("apikey")+"1a2b3c4d", h.demoSecretLabels())
+	reaper.add(h.demoSecretPrefix("tls")+"9f8e7d6c", h.demoSecretLabels())
+	reaper.add("fleetly-other-key-11223344", map[string]string{
+		"fleetly.managed": "true",
+		"fleetly.app":     "other/app",
+	})
 	reaper.add("fleetly-db-pgprod-password-55667788", map[string]string{
 		"fleetly.managed": "true",
 		"fleetly.db":      "pgprod",

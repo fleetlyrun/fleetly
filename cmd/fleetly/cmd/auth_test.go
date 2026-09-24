@@ -44,8 +44,11 @@ func TestAuthStatusValidCredential(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("seed config: %v", err)
 	}
-	// env 置空：逼迫 config 环生效（来源展示 = config）。
+	// env 置空：逼迫 config 环生效（来源展示 = config；含 startCLI 注入的
+	// 夹具 FLEETLY_PROJECT——上下文断言要 config 来源）。
 	t.Setenv("FLEETLY_TOKEN", "")
+	t.Setenv("FLEETLY_TEAM", "")
+	t.Setenv("FLEETLY_PROJECT", "")
 
 	code, out, errOut := runCLI(t, "auth", "status")
 	if code != 0 {

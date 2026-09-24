@@ -186,7 +186,7 @@ func (m *Manager) RotateCredentials(ctx context.Context, name string) ([]string,
 // psql 错误文本可能回显语句材料，明文纪律优先；`docker logs` 已随容器
 // 移除，重试即重放诊断）。
 func (m *Manager) rotatePostgresCredential(ctx context.Context, inst *state.DatabaseInstance, image, old, new string) error {
-	netName, err := naming.DBNetworkName(inst.Name)
+	netName, err := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
 	if err != nil {
 		return err
 	}

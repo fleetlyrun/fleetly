@@ -24,7 +24,7 @@ func newDeployStore(t *testing.T) *Store {
 func TestDeploymentLifecycleAndCAS(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "depapp")
+	app, err := seedAppE(t, st, "depapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestDeploymentLifecycleAndCAS(t *testing.T) {
 func TestDeploymentFailureRecordFields(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "failapp")
+	app, err := seedAppE(t, st, "failapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestDeploymentFailureRecordFields(t *testing.T) {
 func TestDeploymentPhaseStartedAtBaseline(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "anchorapp")
+	app, err := seedAppE(t, st, "anchorapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestDeploymentPhaseStartedAtBaseline(t *testing.T) {
 func TestTxCreateDeploymentAtomicWithEventAudit(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "atomapp")
+	app, err := seedAppE(t, st, "atomapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -257,7 +257,7 @@ func TestTxCreateDeploymentAtomicWithEventAudit(t *testing.T) {
 func TestAppDerivedStateCASAndConflict(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "derived")
+	app, err := seedAppE(t, st, "derived")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -289,8 +289,8 @@ func TestAppDerivedStateCASAndConflict(t *testing.T) {
 func TestRevisionSeqPerApp(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	appA, _ := st.CreateApp(ctx, "", "reva")
-	appB, _ := st.CreateApp(ctx, "", "revb")
+	appA, _ := seedAppE(t, st, "reva")
+	appB, _ := seedAppE(t, st, "revb")
 	var seqA1, seqA2, seqB1 int64
 	if err := st.InTx(ctx, func(tx *Tx) error {
 		rev, err := tx.CreateRevision(ctx, RevisionWrite{AppID: appA.ID, ComposeNormalized: "{}", Overlay: "{}", DesiredHash: "h1"})
@@ -348,15 +348,15 @@ func (s *Store) revisionIDFor(t *testing.T, ctx context.Context, appID string, s
 func TestLatestDeploymentsByAppBatch(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	a1, err := st.CreateApp(ctx, "", "batch-a")
+	a1, err := seedAppE(t, st, "batch-a")
 	if err != nil {
 		t.Fatalf("create app a: %v", err)
 	}
-	a2, err := st.CreateApp(ctx, "", "batch-b")
+	a2, err := seedAppE(t, st, "batch-b")
 	if err != nil {
 		t.Fatalf("create app b: %v", err)
 	}
-	a3, err := st.CreateApp(ctx, "", "batch-c")
+	a3, err := seedAppE(t, st, "batch-c")
 	if err != nil {
 		t.Fatalf("create app c: %v", err)
 	}
@@ -420,7 +420,7 @@ func TestLatestDeploymentsByAppBatch(t *testing.T) {
 func TestDeploymentStatusWriteRequiresPrevStatus(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "prev-status-app")
+	app, err := seedAppE(t, st, "prev-status-app")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -481,7 +481,7 @@ func TestDeploymentStatusWriteRequiresPrevStatus(t *testing.T) {
 func TestGitSHADedupConcurrentSingleRow(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "dedup-app")
+	app, err := seedAppE(t, st, "dedup-app")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -539,7 +539,7 @@ func TestGitSHADedupConcurrentSingleRow(t *testing.T) {
 func TestLatestSucceededDeploymentID(t *testing.T) {
 	ctx := context.Background()
 	st := newDeployStore(t)
-	app, err := st.CreateApp(ctx, "", "attrapp")
+	app, err := seedAppE(t, st, "attrapp")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

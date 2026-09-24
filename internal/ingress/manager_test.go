@@ -32,6 +32,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeDocker 是 dockerClient 的假实现（服务/网络内存态 + 调用记录；E1-2
@@ -46,6 +47,7 @@ type fakeDocker struct {
 	updates     []string
 	updateSpecs []swarm.ServiceSpec
 	netEns      []string
+	netRemoved  []string
 	volumeEns   []string
 	info        swarmInfo
 	// legacySeedPresent 模拟 v0.1 证书 seed 容器残留（LegacySeedContainer
@@ -187,6 +189,19 @@ func (f *fakeDocker) NetworkID(_ context.Context, name string) (string, error) {
 	return "netid-" + name, nil
 }
 
+// NetworkRemove 记录网络移除调用（MoveApp 摘旧网；同构底座语义：缺失视为
+// 成功；仍有端点挂接 = 错误——本假件以 netMissing 模拟缺失路径）。
+func (f *fakeDocker) NetworkRemove(_ context.Context, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.netRemoved = append(f.netRemoved, name)
+	if f.netMissing[name] {
+		return nil
+	}
+	delete(f.networks, name)
+	return nil
+}
+
 // VolumeEnsure 记录卷收敛调用（同构底座语义：存在即 no-op，缺失创建）。
 func (f *fakeDocker) VolumeEnsure(_ context.Context, name string) error {
 	f.mu.Lock()
@@ -233,12 +248,12 @@ func newTestManager(t *testing.T) (*Manager, *fakeDocker, *state.Store) {
 func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 	m, dc, st := newTestManager(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := testsupport.SeedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
 
-	in := PublishInput{AppID: app.ID, AppName: "demo", Services: []ServiceRoutes{
+	in := PublishInput{AppID: app.ID, AppName: "demo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "8080", Domains: []string{"test.example.internal"}},
 	}}
 	if err := m.PublishRoutes(ctx, in); err != nil {
@@ -287,10 +302,10 @@ func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 
 	// 视图：路由已合成（带 port）。
 	snap, _ := m.vw.snapshot()
-	if snap.HTTP.Routers["fleetly-demo-web-web"] == nil {
+	if snap.HTTP.Routers["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-demo-web-web"] == nil {
 		t.Fatalf("route not in view: %+v", snap.HTTP.Routers)
 	}
-	if got := snap.HTTP.Services["fleetly-demo-web"].LoadBalancer.Servers[0].URL; got != "http://fleetly-demo-web:8080" {
+	if got := snap.HTTP.Services["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-demo-web"].LoadBalancer.Servers[0].URL; got != "http://fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-demo-web:8080" {
 		t.Fatalf("server url = %s", got)
 	}
 
@@ -318,25 +333,25 @@ func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 func TestPublishEmptyViewWithdrawsToFallback(t *testing.T) {
 	m, _, st := newTestManager(t)
 	ctx := context.Background()
-	app, _ := st.CreateApp(ctx, "", "solo")
-	in := PublishInput{AppID: app.ID, AppName: "solo", Services: []ServiceRoutes{
+	app, _ := testsupport.SeedAppE(t, st, "solo")
+	in := PublishInput{AppID: app.ID, AppName: "solo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"solo.example.test"}},
 	}}
 	if err := m.PublishRoutes(ctx, in); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	if snap, _ := m.vw.snapshot(); snap.HTTP.Routers["fleetly-solo-web-web"] == nil {
+	if snap, _ := m.vw.snapshot(); snap.HTTP.Routers["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-solo-web-web"] == nil {
 		t.Fatal("route should be in view after publish")
 	}
 
 	// 移除声明（服务删除的发布路径）：空声明集 → 台账清空 → 合成落
 	// 兜底 → 发布成功（不再拒绝）。
-	err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "solo", Services: []ServiceRoutes{}})
+	err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "solo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{}})
 	if err != nil {
 		t.Fatalf("publishing an empty route view must succeed via fallback (H9): %v", err)
 	}
 	snap, _ := m.vw.snapshot()
-	if snap.HTTP.Routers["fleetly-solo-web-web"] != nil {
+	if snap.HTTP.Routers["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-solo-web-web"] != nil {
 		t.Fatal("previous route must be withdrawn (absent from view)")
 	}
 	if snap.HTTP.Routers[fallbackRouterName] == nil {
@@ -354,16 +369,16 @@ func TestPublishEmptyViewWithdrawsToFallback(t *testing.T) {
 func TestWithdrawAppRoutes(t *testing.T) {
 	m, _, st := newTestManager(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "gone")
+	app, err := testsupport.SeedAppE(t, st, "gone")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "gone", Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "gone", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"gone.example.test"}},
 	}}); err != nil {
 		t.Fatalf("publish: %v", err)
 	}
-	if snap, _ := m.vw.snapshot(); snap.HTTP.Routers["fleetly-gone-web-web"] == nil {
+	if snap, _ := m.vw.snapshot(); snap.HTTP.Routers["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-gone-web-web"] == nil {
 		t.Fatal("route should be in view before withdraw")
 	}
 
@@ -376,7 +391,7 @@ func TestWithdrawAppRoutes(t *testing.T) {
 		t.Fatalf("ledger rows must be deleted on withdraw: %+v", rows)
 	}
 	snap, _ := m.vw.snapshot()
-	if snap.HTTP.Routers["fleetly-gone-web-web"] != nil {
+	if snap.HTTP.Routers["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-gone-web-web"] != nil {
 		t.Fatal("route must be withdrawn from view")
 	}
 	if snap.HTTP.Routers[fallbackRouterName] == nil {
@@ -594,11 +609,11 @@ func TestAttachNetworkKeepsPreviousApps(t *testing.T) {
 	m, dc, st := newTestManager(t)
 	ctx := context.Background()
 	for _, name := range []string{"app1", "app2"} {
-		appRow, err := st.CreateApp(ctx, "", name)
+		appRow, err := testsupport.SeedAppE(t, st, name)
 		if err != nil {
 			t.Fatalf("create app: %v", err)
 		}
-		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, Services: []ServiceRoutes{
+		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, TeamSlug: appRow.TeamSlug, PrjSlug: appRow.ProjectSlug, Services: []ServiceRoutes{
 			{Service: "web", Port: "80", Domains: []string{name + ".example.test"}},
 		}}); err != nil {
 			t.Fatalf("publish %s: %v", name, err)
@@ -614,12 +629,29 @@ func TestAttachNetworkKeepsPreviousApps(t *testing.T) {
 		return false
 	}
 	// 底座把 attach 目标归一为 ID（fake 同构：netid-<name>）——按 ID 断言。
-	if !has("netid-fleetly-app1-net") || !has("netid-fleetly-app2-net") {
+	// 网络名 = 三段公式（team/prj slug 取自各自 app 行）。
+	app1, err := st.GetAppByName(ctx, "app1")
+	if err != nil {
+		t.Fatalf("get app1: %v", err)
+	}
+	app2, err := st.GetAppByName(ctx, "app2")
+	if err != nil {
+		t.Fatalf("get app2: %v", err)
+	}
+	n1, nerr := appNetworkName(app1.TeamSlug, app1.ProjectSlug, "app1")
+	if nerr != nil {
+		t.Fatalf("app1 net name: %v", nerr)
+	}
+	n2, nerr := appNetworkName(app2.TeamSlug, app2.ProjectSlug, "app2")
+	if nerr != nil {
+		t.Fatalf("app2 net name: %v", nerr)
+	}
+	if !has("netid-" + n1) || !has("netid-" + n2) {
 		t.Fatalf("networks after two app attaches = %v, want both app nets present", nets)
 	}
 	// 幂等重发布（同一 app）：attach 以 ID 判等——不再产生更新/重复项。
 	before := len(dc.updates)
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: mustApp1(t, st).ID, AppName: "app1", Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app1.ID, AppName: "app1", TeamSlug: app1.TeamSlug, PrjSlug: app1.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"app1.example.test"}},
 	}}); err != nil {
 		t.Fatalf("republish app1: %v", err)
@@ -657,11 +689,11 @@ func TestEnsureTraefikUpdatePreservesAttachedNetworks(t *testing.T) {
 	ctx := context.Background()
 	// 预置：两个 app 各自接入网络（经真实发布路径建起多 app 挂载态）。
 	for _, name := range []string{"app1", "app2"} {
-		appRow, err := st.CreateApp(ctx, "", name)
+		appRow, err := testsupport.SeedAppE(t, st, name)
 		if err != nil {
 			t.Fatalf("create app: %v", err)
 		}
-		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, Services: []ServiceRoutes{
+		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, TeamSlug: appRow.TeamSlug, PrjSlug: appRow.ProjectSlug, Services: []ServiceRoutes{
 			{Service: "web", Port: "80", Domains: []string{name + ".example.test"}},
 		}}); err != nil {
 			t.Fatalf("publish %s: %v", name, err)
@@ -680,11 +712,28 @@ func TestEnsureTraefikUpdatePreservesAttachedNetworks(t *testing.T) {
 		t.Fatalf("update payload image = %s, want %s", last.TaskTemplate.ContainerSpec.Image, DefaultTraefikImage)
 	}
 	// 核心断言：两个既有网络仍在提交载荷里、且无新增（以实况为基准合并）。
+	// 网络名 = 三段公式（各自 app 行 slug）。
+	app1, err := st.GetAppByName(ctx, "app1")
+	if err != nil {
+		t.Fatalf("get app1: %v", err)
+	}
+	app2, err := st.GetAppByName(ctx, "app2")
+	if err != nil {
+		t.Fatalf("get app2: %v", err)
+	}
+	net1, nerr := appNetworkName(app1.TeamSlug, app1.ProjectSlug, "app1")
+	if nerr != nil {
+		t.Fatalf("app1 net: %v", nerr)
+	}
+	net2, nerr := appNetworkName(app2.TeamSlug, app2.ProjectSlug, "app2")
+	if nerr != nil {
+		t.Fatalf("app2 net: %v", nerr)
+	}
 	got := map[string]bool{}
 	for _, n := range last.TaskTemplate.Networks {
 		got[n.Target] = true
 	}
-	if len(got) != 2 || !got["netid-fleetly-app1-net"] || !got["netid-fleetly-app2-net"] {
+	if len(got) != 2 || !got["netid-"+net1] || !got["netid-"+net2] {
 		t.Fatalf("update payload networks = %v, want exactly both attached app nets", last.TaskTemplate.Networks)
 	}
 	// 服务实况同构：整组替换后两网络仍在（底座视角未断网）。
@@ -771,7 +820,7 @@ func TestEnsureTraefikRetiresLegacyCertDistribution(t *testing.T) {
 func TestViewCarriesInlinePEM(t *testing.T) {
 	m, _, st := newTestManager(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "shop")
+	app, err := testsupport.SeedAppE(t, st, "shop")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -785,7 +834,7 @@ func TestViewCarriesInlinePEM(t *testing.T) {
 	}
 
 	// 发布（带证书段的全量重发布）→ 视图。
-	in := PublishInput{AppID: app.ID, AppName: "shop", Services: []ServiceRoutes{
+	in := PublishInput{AppID: app.ID, AppName: "shop", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
 	}}
 	if err := m.PublishRoutes(ctx, in); err != nil {
@@ -831,7 +880,7 @@ func TestDomainlessPublishKeepsTLSegments(t *testing.T) {
 	m, _, st := newTestManager(t)
 	ctx := context.Background()
 	// app A：带域名 + 证书（既有 TLS 面）。
-	appA, err := st.CreateApp(ctx, "", "shop")
+	appA, err := testsupport.SeedAppE(t, st, "shop")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -843,7 +892,7 @@ func TestDomainlessPublishKeepsTLSegments(t *testing.T) {
 	if err := m.certs.Save(pair); err != nil {
 		t.Fatalf("save pair: %v", err)
 	}
-	inA := PublishInput{AppID: appA.ID, AppName: "shop", Services: []ServiceRoutes{
+	inA := PublishInput{AppID: appA.ID, AppName: "shop", TeamSlug: appA.TeamSlug, PrjSlug: appA.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
 	}}
 	if err := m.PublishRoutes(ctx, inA); err != nil {
@@ -854,11 +903,11 @@ func TestDomainlessPublishKeepsTLSegments(t *testing.T) {
 		t.Fatalf("precondition: A carries TLS segment, got %+v", snapA.TLS)
 	}
 	// app B：无域名（内部应用）发布——全量视图换入不得擦掉 A 的 TLS。
-	appB, err := st.CreateApp(ctx, "", "internal")
+	appB, err := testsupport.SeedAppE(t, st, "internal")
 	if err != nil {
 		t.Fatalf("create app B: %v", err)
 	}
-	inB := PublishInput{AppID: appB.ID, AppName: "internal", Services: []ServiceRoutes{
+	inB := PublishInput{AppID: appB.ID, AppName: "internal", TeamSlug: appB.TeamSlug, PrjSlug: appB.ProjectSlug, Services: []ServiceRoutes{
 		{Service: "svc", Port: "8080"},
 	}}
 	if err := m.PublishRoutes(ctx, inB); err != nil {

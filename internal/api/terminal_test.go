@@ -17,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/execrelay"
 	"github.com/fleetlyrun/fleetly/internal/secrets"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeTerminalTasks 是 execrelay.TaskSource 的最小假实现（本面不触底座——
@@ -76,10 +77,7 @@ func TestExecServiceAppNotFound(t *testing.T) {
 
 func TestExecServiceTicketIssuedAndBound(t *testing.T) {
 	svc, st := newTerminalTestEnv(t, true)
-	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "demo"); err != nil {
-		t.Fatalf("seed app: %v", err)
-	}
+	testsupport.SeedApp(t, st, "demo")
 	resp, err := svc.CreateTerminalTicket(principalCtx("tok-e2e"),
 		&serverv1.CreateTerminalTicketRequest{App: "demo", Service: "web"})
 	if err != nil {

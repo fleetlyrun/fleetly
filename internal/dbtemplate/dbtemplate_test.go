@@ -16,6 +16,8 @@ import (
 
 const (
 	testInstance = "pg-prod"
+	testTeam     = "acme"
+	testPrj      = "prod"
 	testPassword = "abc123XYZdef456GHIjkl789MNO012" // 32 位词表内测试值（非真实凭据）
 	testID       = "01JABCDEFDB000"
 )
@@ -24,6 +26,8 @@ func renderInput(templateID string) RenderInput {
 	return RenderInput{
 		Instance:    testInstance,
 		InstanceID:  testID,
+		TeamSlug:    testTeam,
+		PrjSlug:     testPrj,
 		TemplateID:  templateID,
 		Credentials: Credentials{Password: testPassword},
 	}
@@ -99,10 +103,10 @@ func TestRenderPostgresDeterministicGolden(t *testing.T) {
 	}
 
 	// 名族（fleetly-db- 前缀族 + 别名 = 实例名）。
-	if spec.Name != "fleetly-db-pg-prod-postgres" {
-		t.Fatalf("service name = %s, want fleetly-db-pg-prod-postgres", spec.Name)
+	if spec.Name != "fleetly-db-acme-prod-pg-prod-postgres" {
+		t.Fatalf("service name = %s, want fleetly-db-acme-prod-pg-prod-postgres", spec.Name)
 	}
-	if len(spec.Networks) != 1 || spec.Networks[0].Name != "fleetly-db-pg-prod-net" ||
+	if len(spec.Networks) != 1 || spec.Networks[0].Name != "fleetly-db-acme-prod-pg-prod-net" ||
 		!reflect.DeepEqual(spec.Networks[0].Aliases, []string{"pg-prod"}) {
 		t.Fatalf("networks = %+v, want the instance network with alias = instance name (no generic postgres alias)", spec.Networks)
 	}
@@ -126,7 +130,7 @@ func TestRenderPostgresDeterministicGolden(t *testing.T) {
 	if len(spec.Secrets) != 1 || spec.Secrets[0].Target != "/run/secrets/password" {
 		t.Fatalf("secrets = %+v, want the password secret at /run/secrets/password", spec.Secrets)
 	}
-	if !strings.HasPrefix(spec.Secrets[0].SecretName, "fleetly-db-pg-prod-password-") {
+	if !strings.HasPrefix(spec.Secrets[0].SecretName, "fleetly-db-acme-prod-pg-prod-password-") {
 		t.Fatalf("secret name = %s, want the fleetly-db- family", spec.Secrets[0].SecretName)
 	}
 
@@ -158,7 +162,7 @@ func TestRenderPostgresDeterministicGolden(t *testing.T) {
 
 	// 限额覆盖（设置面唯一可改项）：零值回落缺省、显式值生效。
 	overridden, err := Render(RenderInput{
-		Instance: testInstance, InstanceID: testID, TemplateID: TemplatePostgres16,
+		Instance: testInstance, InstanceID: testID, TeamSlug: testTeam, PrjSlug: testPrj, TemplateID: TemplatePostgres16,
 		Limits:      Limits{CPUSeconds: 0.25, MemoryBytes: 256 << 20},
 		Credentials: Credentials{Password: testPassword},
 	})
@@ -169,7 +173,7 @@ func TestRenderPostgresDeterministicGolden(t *testing.T) {
 		t.Fatalf("overridden resources = %+v, want 0.25 CPU / 256MiB", overridden.Resources)
 	}
 	partial, err := Render(RenderInput{
-		Instance: testInstance, InstanceID: testID, TemplateID: TemplatePostgres16,
+		Instance: testInstance, InstanceID: testID, TeamSlug: testTeam, PrjSlug: testPrj, TemplateID: TemplatePostgres16,
 		Limits:      Limits{MemoryBytes: 2 << 30},
 		Credentials: Credentials{Password: testPassword},
 	})
@@ -189,8 +193,8 @@ func TestRenderRedis(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render redis: %v", err)
 	}
-	if spec.Name != "fleetly-db-pg-prod-redis" {
-		t.Fatalf("service name = %s, want fleetly-db-pg-prod-redis", spec.Name)
+	if spec.Name != "fleetly-db-acme-prod-pg-prod-redis" {
+		t.Fatalf("service name = %s, want fleetly-db-acme-prod-pg-prod-redis", spec.Name)
 	}
 	// 启动参数形态：redis-server --requirepass <pw>（官方镜像 entrypoint
 	// 透传）。

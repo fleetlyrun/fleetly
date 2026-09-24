@@ -50,7 +50,7 @@ func TestUpdateDeploymentRejectsIllegalTransition(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	app, err := st.CreateApp(ctx, "", "machine-app")
+	app, err := seedAppE(t, st, "machine-app")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -118,7 +118,7 @@ func TestEnterPhaseSingleWritePoint(t *testing.T) {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	app, err := st.CreateApp(ctx, "", "enterphase-app")
+	app, err := seedAppE(t, st, "enterphase-app")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

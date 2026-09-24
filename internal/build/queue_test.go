@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // blockingExecutor 是并发测试的假执行器：Execute 记录在途数、阻塞在
@@ -101,7 +102,7 @@ func enqueueTestBuild(t *testing.T, q *Queue, appID, service string) state.Build
 // TestQueueConcurrencyCap 并发 2 时 5 个构建的在途峰值不得超过 2。
 func TestQueueConcurrencyCap(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-cap")
+	app, err := testsupport.SeedAppE(t, st, "queue-cap")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -176,7 +177,7 @@ func TestQueueConcurrencyCap(t *testing.T) {
 // 无阻塞时构建快速到达终态。
 func TestQueueWakesOnEnqueue(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-wake")
+	app, err := testsupport.SeedAppE(t, st, "queue-wake")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -214,7 +215,7 @@ func TestQueueWakesOnEnqueue(t *testing.T) {
 // 后断言确定性成立，且「失败不阻塞后续调度」的测试意图不变。
 func TestQueueExecuteFailureKeepsScheduling(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-fail")
+	app, err := testsupport.SeedAppE(t, st, "queue-fail")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -316,7 +317,7 @@ func assertAuditReason(t *testing.T, st *state.Store, buildID, wantContains stri
 // 不受复位误伤。
 func TestQueueStartupResetsInterruptedBuilds(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-reset")
+	app, err := testsupport.SeedAppE(t, st, "queue-reset")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -373,7 +374,7 @@ func TestQueueStartupResetsInterruptedBuilds(t *testing.T) {
 // 本测试钉死收敛语义本身。
 func TestConvergeClaimedUnreadable(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-unreadable")
+	app, err := testsupport.SeedAppE(t, st, "queue-unreadable")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -427,7 +428,7 @@ func (e *panicThenOkExecutor) Execute(ctx context.Context, rec state.BuildRecord
 // 循环存活，后续构建照常执行。
 func TestQueuePanickingBuildDoesNotKillScheduler(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-panic")
+	app, err := testsupport.SeedAppE(t, st, "queue-panic")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -458,7 +459,7 @@ func TestQueuePanickingBuildDoesNotKillScheduler(t *testing.T) {
 // 第二条要等 tick 即超时失败）。
 func TestQueueWakeFiresAfterSlotRelease(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-wake-slot")
+	app, err := testsupport.SeedAppE(t, st, "queue-wake-slot")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -523,7 +524,7 @@ func (e *hungThenOkExecutor) Execute(ctx context.Context, rec state.BuildRecord)
 // 下第二条构建正常执行）。
 func TestQueueBuildTimeoutConvergesFailed(t *testing.T) {
 	st := newQueueTestStore(t)
-	app, err := st.CreateApp(context.Background(), "", "queue-timeout")
+	app, err := testsupport.SeedAppE(t, st, "queue-timeout")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

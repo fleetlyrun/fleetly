@@ -88,7 +88,18 @@ bash e2e/nightly/resource-sample.sh     # 资源采样（单 dind；RS_OUT_DIR �
 ## Builder conformance（T2.24；场景与断言）
 
 `conformance-builder.sh`（单 dind；fleetlyd+fleetly+探针交叉编译注入，
-daemon `--bin-dir --no-systemd` 起服，Traefik 就绪后走 CLI）：
+daemon `--bin-dir --no-systemd` 起服，Traefik 就绪后走 CLI）。dind 钉在
+宿主私网 `fleetly-cb-br`（10.221.0.0/24，10.221.0.10——其余 e2e 套件已占
+213-220/222 网段），fixture 的 curl helper 经该网直达 REST 面。
+**v0.3 归属管道 fixture**（cron.sh/databases.sh/multinode-rehearsal.sh 同款；
+内层拆为 `cb-boot.sh` 起服段 + `cb-inner.sh` 断言段）：bootstrap token 弃用
+（v0.3 落盘 `/var/lib/fleetly/bootstrap-token`、首用户注册后即吊销）——起服
+后宿主经 curl helper（CURL_IMAGE 钉 digest）注册 founder（首用户 = 平台
+管理员 + 个人队 + 默认项目 default）铸用户 PAT，经 exec+stdin 送回 dind
+`/tmp/cb-token`；断言段 `cli()` 统一携带 `FLEETLY_TOKEN=<PAT>
+FLEETLY_PROJECT=founder/default`（部署/构建面显式项目归属；服务名随之
+三段化 `fleetly-founder-default-confa-web` 等，断言面走 CLI JSON 投影，
+不受公式变更影响）：
 
 | 场景 | 素材 | 断言（内层脚本） |
 | --- | --- | --- |

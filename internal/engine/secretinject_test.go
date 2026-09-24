@@ -15,6 +15,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeSecretEnsure 是 SecretEnsurer 端口的测试替身（记录 ensure 调用的
@@ -99,7 +100,7 @@ func TestDeployWithExternalSecret(t *testing.T) {
 		if !errors.Is(err, state.ErrAppNotFound) {
 			t.Fatalf("get app: %v", err)
 		}
-		app, err = h.store.CreateApp(ctx, "", "demo")
+		app, err = testsupport.SeedAppE(t, h.store, "demo")
 		if err != nil {
 			t.Fatalf("create app: %v", err)
 		}
@@ -112,8 +113,8 @@ func TestDeployWithExternalSecret(t *testing.T) {
 	}
 
 	// spec 挂载面：短语法 target 缺省 = source；长语法 target 显式。
-	wantName := "fleetly-demo-dbpass-" + hash8
-	web := h.sub.services["fleetly-demo-web"].spec
+	wantName := h.demoSecretPrefix("dbpass") + hash8
+	web := h.sub.services[h.svc("web")].spec
 	if len(web.Secrets) != 1 {
 		t.Fatalf("web secrets = %+v, want exactly one mount", web.Secrets)
 	}
@@ -123,7 +124,7 @@ func TestDeployWithExternalSecret(t *testing.T) {
 	if web.Secrets[0].Target != "/run/secrets/dbpass" {
 		t.Errorf("web secret target = %q, want /run/secrets/dbpass", web.Secrets[0].Target)
 	}
-	worker := h.sub.services["fleetly-demo-worker"].spec
+	worker := h.sub.services[h.svc("worker")].spec
 	if len(worker.Secrets) != 1 || worker.Secrets[0].Target != "/run/secrets/dbpass.txt" {
 		t.Fatalf("worker secret mount = %+v, want long-syntax target /run/secrets/dbpass.txt", worker.Secrets)
 	}
@@ -137,8 +138,9 @@ func TestDeployWithExternalSecret(t *testing.T) {
 	if len(ensure.ensured) != 1 {
 		t.Errorf("ensure calls = %d, want 1 (same source deduped across services)", len(ensure.ensured))
 	}
-	if lbl := ensure.labels[wantName]; lbl[state.LabelApp] != "demo" || lbl[state.LabelManaged] != state.ManagedLabelValue {
-		t.Errorf("ensure labels = %+v, want managed + app=demo ownership anchors", lbl)
+	demo := h.demoApp()
+	if lbl := ensure.labels[wantName]; lbl[state.LabelApp] != demo.QualifiedName() || lbl[state.LabelManaged] != state.ManagedLabelValue {
+		t.Errorf("ensure labels = %+v, want managed + app=%s ownership anchors", lbl, demo.QualifiedName())
 	}
 
 	// 值零出现：事件载荷（快照只带名字；desired_spec 密文由引擎加密落库，
@@ -156,10 +158,7 @@ func TestDeploySecretMissingPreflight(t *testing.T) {
 	h := newHarness(t)
 	ensure := newFakeSecretEnsure()
 	h.eng.WithSecretEnsurer(ensure)
-	ctx := context.Background()
-	if _, err := h.store.CreateApp(ctx, "", "demo"); err != nil {
-		t.Fatalf("create app: %v", err)
-	}
+	testsupport.SeedApp(t, h.store, "demo")
 
 	final := h.runToTerminal(h.enqueue(h.writeCompose(secretCompose)))
 	if final.Status != state.DeployFailed {
@@ -185,15 +184,15 @@ func TestSnapshotSecretResolution(t *testing.T) {
 	ensure := newFakeSecretEnsure()
 	h.eng.WithSecretEnsurer(ensure)
 	ctx := context.Background()
-	app, err := h.store.CreateApp(ctx, "", "demo")
+	app, err := testsupport.SeedAppE(t, h.store, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
 	hash8 := mustSetAppSecret(t, h, app.ID, "dbpass", "value-v1-AAA")
 
-	mounts := []SecretMount{{SecretName: "fleetly-demo-dbpass-" + hash8, Target: "/run/secrets/dbpass"}}
+	mounts := []SecretMount{{SecretName: h.demoSecretPrefix("dbpass") + hash8, Target: "/run/secrets/dbpass"}}
 	specs := []ServiceSpec{{
-		Name:    "fleetly-demo-web",
+		Name:    h.svc("web"),
 		Image:   "alpine:3@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		Secrets: mounts,
 	}}
@@ -203,7 +202,7 @@ func TestSnapshotSecretResolution(t *testing.T) {
 	if err := h.eng.preflightRollback(ctx, rec, specs); err != nil {
 		t.Fatalf("preflight with matching secret: %v", err)
 	}
-	if _, ok := ensure.ensured["fleetly-demo-dbpass-"+hash8]; !ok {
+	if _, ok := ensure.ensured[h.demoSecretPrefix("dbpass")+hash8]; !ok {
 		t.Fatal("replay path did not ensure the swarm secret")
 	}
 

@@ -38,6 +38,10 @@ const (
 type PlanInput struct {
 	AppID   string
 	AppName string
+	// TeamSlug / PrjSlug 是归属两个 slug（v0.3 三段命名公式的参数——
+	// rbac-teams §4.3；从 app 行 join projects/teams 反解，slug 不可变）。
+	TeamSlug string
+	PrjSlug  string
 	// DeploymentID 是发布归属（服务 label fleetly.deployment）。
 	DeploymentID string
 	// Spec 是归一化 compose（daemon 侧重载，二次校验防御）。
@@ -193,7 +197,7 @@ func platformVarsFor(in PlanInput, service string) []envlayer.PlatformVar {
 // buildServiceSpec 规划单个服务（返回 spec 与合并结果；spec 此时不带服务
 // label——调用方统一附加）。
 func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey map[string]state.Volume) (ServiceSpec, []envlayer.Merged, error) {
-	swarmName, err := naming.ServiceName(in.AppName, svc.Name)
+	swarmName, err := naming.ServiceName(in.TeamSlug, in.PrjSlug, in.AppName, svc.Name)
 	if err != nil {
 		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "naming failed for service %s: %v", svc.Name, err)
 	}
@@ -201,7 +205,7 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 	if err != nil {
 		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "alias failed for service %s: %v", svc.Name, err)
 	}
-	netName, err := naming.NetworkName(in.AppName)
+	netName, err := naming.NetworkName(in.TeamSlug, in.PrjSlug, in.AppName)
 	if err != nil {
 		return ServiceSpec{}, nil, errorf("E_RUNTIME_UNAVAILABLE", "network naming failed for app %s: %v", in.AppName, err)
 	}
@@ -261,14 +265,15 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 	}
 
 	spec := ServiceSpec{
-		Name:    swarmName,
-		Image:   image,
+		Name:  swarmName,
+		Image: image,
 		Command: append([]string{}, svc.Command...),
-		Env:     envList,
+		Env:  envList,
 		ContainerLabels: map[string]string{
-			state.LabelApp: in.AppName,
+			// 容器 label 仅 fleetly.app，值 = 三段限定形（流标签口径）。
+			state.LabelApp: qualifiedAppName(in),
 		},
-		ServiceLabels:     namingServiceLabels(in.AppName, svc.Name, in.DeploymentID),
+		ServiceLabels:     namingServiceLabels(in, svc.Name, in.DeploymentID),
 		Global:            svc.Deploy != nil && svc.Deploy.Mode == "global",
 		Replicas:          composeReplicas(svc),
 		Networks:          networks,
@@ -293,16 +298,30 @@ func buildServiceSpec(in PlanInput, svc *compose.Service, image string, volByKey
 	return spec, merged, nil
 }
 
-// namingServiceLabels 构造服务 label 最小集 + 部署归属（naming 失败视为
-// 不可达的命名违约——受控子集已保证字符集）。
-func namingServiceLabels(app, service, deploymentID string) map[string]string {
-	labels, err := naming.ServiceLabels(app, service, deploymentID)
+// qualifiedAppName 返回 app 的三段限定形 `team/prj/app`（流标签口径，
+// rbac-teams §4.3；命名公式同源参数，失败视为不可达的命名违约——受控子集
+// 已保证字符集）。
+func qualifiedAppName(in PlanInput) string {
+	q, err := naming.QualifiedName(in.TeamSlug, in.PrjSlug, in.AppName)
+	if err != nil {
+		return in.AppName
+	}
+	return q
+}
+
+// namingServiceLabels 构造服务 label 最小集（含 fleetly.team/fleetly.project
+// 两键与三段限定形 app 值；naming 失败视为不可达的命名违约——受控子集已
+// 保证字符集）。
+func namingServiceLabels(in PlanInput, service, deploymentID string) map[string]string {
+	labels, err := naming.ServiceLabels(in.TeamSlug, in.PrjSlug, in.AppName, service, deploymentID)
 	if err != nil {
 		return map[string]string{
 			state.LabelManaged:    state.ManagedLabelValue,
-			state.LabelApp:        app,
+			state.LabelApp:        qualifiedAppName(in),
 			state.LabelProcess:    service,
 			state.LabelDeployment: deploymentID,
+			state.LabelTeam:       in.TeamSlug,
+			state.LabelProject:    in.PrjSlug,
 		}
 	}
 	return labels

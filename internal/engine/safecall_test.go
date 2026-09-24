@@ -30,13 +30,16 @@ import (
 var tickDutyManifest = []string{"recoveryRetry", "pickQueued", "advanceActive", "watchPostWindow", "reapDeletingApps", "substrateRecon"}
 
 // readEngineSource 读取 engine.go 源文本（同包直读；源扫描的输入）。
+// 行尾归一到 LF 后再扫描：Windows 检出（core.autocrlf=true）会把磁盘上的
+// .go 文件写成 CRLF——函数体结尾判据 `\n}\n` 是行尾敏感的字节序列，不归一
+// 则测试结果随检出环境漂移（本机实录）。
 func readEngineSource(t *testing.T) string {
 	t.Helper()
 	raw, err := os.ReadFile("engine.go")
 	if err != nil {
 		t.Fatalf("read engine.go: %v", err)
 	}
-	return string(raw)
+	return strings.ReplaceAll(string(raw), "\r\n", "\n")
 }
 
 // funcBody 提取顶层方法的函数体（签名起始到首个列 0 的 "}"）。
@@ -117,7 +120,7 @@ func TestWatchPostWindowPanicDoesNotKillTick(t *testing.T) {
 	}
 	// 窗末已过 + 巡检会触达 TaskList（毒点）。
 	h.clk.Advance(30 * time.Second)
-	h.sub.panicOnTaskList("fleetly-demo-web")
+	h.sub.panicOnTaskList(h.svc("web"))
 	// 同拍再入队一条（独立 app）：pickQueued 在毒点 duty（最后位）之前执行。
 	composeOther := strings.Replace(composeV1, "name: demo", "name: other", 1)
 	rec2 := h.enqueueApp(t, h.writeCompose(composeOther), "other")

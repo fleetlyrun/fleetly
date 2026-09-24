@@ -24,6 +24,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
+	"github.com/oklog/ulid/v2"
+
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
 	"github.com/fleetlyrun/fleetly/internal/api"
 	"github.com/fleetlyrun/fleetly/internal/compose"
@@ -247,14 +249,38 @@ func (e *Env) SeedUserToken(t *testing.T, userID string) string {
 	return plaintext
 }
 
+// SeedProject 播种一个独立团队+项目（v0.3 W2-S3 归属管道：CreateApp 夹具
+// 通道——每次调用建独立队/项目，避免 UNIQUE(project_id,name) 串扰）。slug
+// 取 ULID 小写化片段（单词制词表内）。
+func (e *Env) SeedProject(t *testing.T) state.Project {
+	t.Helper()
+	// slug 源 = ULID 整段随机区（第 11~26 字符）——Make() 同毫秒内单调递
+	// 增，只有尾部可靠演化；取全随机区保证同毫秒连发不撞 team slug UNIQUE。
+	suffix := strings.ToLower(ulid.Make().String())[10:26]
+	team, err := e.Store.CreateTeam(context.Background(), state.TeamWrite{
+		Slug: "t" + suffix, Name: "apitest fixture team", CreatedBy: "apitest",
+	})
+	if err != nil {
+		t.Fatalf("apitest: seed fixture team: %v", err)
+	}
+	proj, err := e.Store.CreateProject(context.Background(), state.ProjectWrite{
+		TeamID: team.ID, Slug: "p" + suffix, Name: "apitest fixture project",
+	})
+	if err != nil {
+		t.Fatalf("apitest: seed fixture project: %v", err)
+	}
+	return proj
+}
+
 // CreateApp 播种一个应用行（读面测试的既有应用夹具；幂等——已存在时
-// 返回既有行）。
+// 返回既有行；新建行走独立夹具项目归属）。
 func (e *Env) CreateApp(t *testing.T, name string) state.App {
 	t.Helper()
 	if app, err := e.Store.GetAppByName(context.Background(), name); err == nil {
 		return app
 	}
-	app, err := e.Store.CreateApp(context.Background(), "", name)
+	proj := e.SeedProject(t)
+	app, err := e.Store.CreateApp(context.Background(), "", name, proj.ID, proj.TeamID)
 	if err != nil {
 		t.Fatalf("apitest: create app %s: %v", name, err)
 	}
@@ -301,7 +327,8 @@ func (e *Env) SeedPlacement(t *testing.T, appName string) string {
 	t.Helper()
 	app, err := e.Store.GetAppByName(context.Background(), appName)
 	if err != nil {
-		app, err = e.Store.CreateApp(context.Background(), "01HJKMNP", appName)
+		proj := e.SeedProject(t)
+		app, err = e.Store.CreateApp(context.Background(), "01HJKMNP", appName, proj.ID, proj.TeamID)
 		if err != nil {
 			t.Fatalf("apitest: create fixed-id app: %v", err)
 		}

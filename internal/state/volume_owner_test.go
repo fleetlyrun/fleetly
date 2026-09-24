@@ -199,12 +199,16 @@ func TestVolumesOwnerGeneralizationMigration(t *testing.T) {
 		t.Fatalf("close pre-migration db: %v", err)
 	}
 
-	// ② 正常打开 = 应用 00014-00015（ensureMigrated 走增量）。
-	st, err := Open(ctx, path)
+	// ② 应用 00014-00015（openWithMigrationsThrough 增量；**不**跑全链——
+	// v0.3 为 fresh-install 版本（rbac-teams §8 D-W0-5），00019 起归属列
+	// NOT NULL，存量 NULL 归属行的升级路径按设计不存在；本测试钉的是
+	// 00014→00015 的卷行语义平移，截链到 15 即可）。
+	db2, err := openWithMigrationsThrough(ctx, path, 15)
 	if err != nil {
-		t.Fatalf("open store (apply 14-15): %v", err)
+		t.Fatalf("apply migrations through 15: %v", err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	t.Cleanup(func() { _ = db2.Close() })
+	st := &Store{db: db2, path: path}
 
 	// ③ app 卷行语义保持：包装读取面逐字段相等（ListAppVolumes 按 key
 	// 字典序 → [cache, data]）。
@@ -241,12 +245,8 @@ func TestVolumesOwnerGeneralizationMigration(t *testing.T) {
 		t.Fatal("legacy app_id column still present after rebuild migration")
 	}
 
-	// ⑤ 泛化写入通道在迁移后的库上可用。
-	dbID := createTestDatabase(t, st, "post-mig-db")
-	if _, _, err := st.RegisterVolume(ctx, VolumeWrite{
-		OwnerKind: VolumeOwnerDatabase, OwnerID: dbID, Key: "data", Name: "fleetly-db-post-mig-db-data-01JABCDE",
-		PlatformNodeID: "n_01", MountPath: "/var/lib/postgresql/data",
-	}); err != nil {
-		t.Fatalf("register database volume on migrated db: %v", err)
-	}
+	// ⑤（原「泛化写入通道在迁移后的库上可用」）已随 v0.3 W2-S3 移除：通道
+	// 的正路测试在 TestOwnerVolumeRegistration（全链迁移库）；截链到 00015
+	// 的库上 teams/projects 表尚不存在（00018 才建），库实例归属写入无从
+	// 构造——且 v0.3 fresh-install 前提（D-W0-5）下不存在跨版本混合库。
 }

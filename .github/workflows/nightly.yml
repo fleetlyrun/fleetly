@@ -737,7 +737,13 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
       - name: cleanup
         if: always()
-        run: docker ps -aq --filter name=fleetly-conformance-builder | xargs -r docker rm -f
+        # 容器 + fleetly-cb-br 私网（v0.3 归属管道 fixture 引入；脚本 trap
+        # 常规自清，此处兜底 cancel/timeout 残留——与上方 suite job 清
+        # fleetly-nightly-br 同款）。
+        run: |
+          docker ps -aq --filter name=fleetly-conformance-builder | xargs -r docker rm -f
+          docker ps -aq --filter name=fleetly-conformance-builder-curl | xargs -r docker rm -f
+          docker network rm fleetly-cb-br || true
 
   resource-sample:
     # 控制面 idle 资源基线采样（交付 §2.2 nightly 第 5 项；趋势告警不阻断，

@@ -339,6 +339,8 @@ func renderService(inst *state.DatabaseInstance, password string, replicas uint6
 	spec, err := dbtemplate.Render(dbtemplate.RenderInput{
 		Instance:   inst.Name,
 		InstanceID: inst.ID,
+		TeamSlug:   inst.TeamSlug,
+		PrjSlug:    inst.ProjectSlug,
 		TemplateID: inst.Template,
 		Limits: dbtemplate.Limits{
 			CPUSeconds:  inst.Settings.CPUSeconds,

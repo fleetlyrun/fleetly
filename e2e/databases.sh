@@ -53,6 +53,8 @@ export MSYS2_ARG_CONV_EXCL='*'
 # dbtools 本体 = CI 首推后的 tag@digest 钉定引用，与 Go 常量逐字一致）。
 DIND_IMAGE="${DB_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 ALPINE_IMG='alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc'
+# curl helper（v0.3 fixture：REST 注册/铸 PAT 面——auth.sh 同源钉版）。
+CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 PG_IMG='postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6'
 REDIS_IMG='redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f'
 RESTIC_IMG='restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510'
@@ -66,7 +68,9 @@ BR_NET=fleetly-db-br
 BR_SUBNET=10.216.0.0/24
 DIND=fleetly-db-e2e-dind
 DB=pg-prod
-DBSVC=fleetly-db-$DB-postgres
+# v0.3 三段库族命名（rbac-teams §4.3）：fleetly-db-<team>-<prj>-<name>-<svc>。
+# 在 FOUNDER_TEAM/FOUNDER_PRJ 赋值后展开（消费点都在 suspend 段之后）。
+DBSVC=''
 DBAPP=dbapp
 SECAPP=secapp
 SECSVC=agent
@@ -115,6 +119,7 @@ msh() { docker exec "$DIND" sh -c "$*"; } # dind 内跑 shell 段
 # fcli <args...> — dind 内的 fleetly CLI（gRPC 面 + bootstrap token）。
 fcli() {
     docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" \
+        -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
         "$DIND" /opt/fleetly/bin/fleetly "$@"
 }
 
@@ -319,12 +324,39 @@ DB_TOKEN=$(m sh -c 'cat /var/lib/fleetly/bootstrap-token') || fatal 'read bootst
 [ -n "$DB_TOKEN" ] || fatal 'empty bootstrap token'
 nl 'fleetlyd live (liveness 200), bootstrap token read'
 
-# app 容器 id（每次重部署后变化——逐次现查）。
+# ── v0.3 归属管道 fixture（rbac-teams §2.1/§2.3/§3.4）：注册 founder（首
+# 用户 = 平台管理员 + 个人队 + 默认项目 default）→ 会话自服务铸用户 PAT
+#（admin scope——founder 是平台管理员可达集；CLI 不消费会话 cookie）。
+# 首次部署/建库经 FLEETLY_PROJECT=founder/default 显式携带项目归属；raw
+# docker exec 驱动的 deploy 同样注入该 env。bootstrap token 弃用。
+CURLER="$DIND-curl"
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+docker run -d --name "$CURLER" --network "$BR_NET" "$CURL_IMAGE" sleep 100000 >/dev/null ||
+    fatal "docker run $CURLER"
+docker exec "$CURLER" curl -s -o /dev/null "http://10.216.0.10:8420/healthz/liveness" ||
+    fatal 'curl helper cannot reach the REST face'
+docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.216.0.10:8420/v1/auth/register" \
+    -H 'Content-Type: application/json' \
+    -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
+    >/dev/null || fatal 'founder register'
+DB_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.216.0.10:8420/v1/tokens" \
+    -H 'Content-Type: application/json' \
+    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$DB_TOKEN" ] || fatal 'founder PAT mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+docker rm -f "$CURLER" >/dev/null 2>&1 || true
+FOUNDER_TEAM=founder
+FOUNDER_PRJ=default
+DBSVC="fleetly-db-$FOUNDER_TEAM-$FOUNDER_PRJ-$DB-postgres"
+FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
+nl 'founder registered (platform admin); PAT minted; project context '"$FOUNDER_PROJECT"
+
+# app 容器 id（每次重部署后变化——逐次现查；服务名 = 三段命名公式）。
 dbapp_ctr() {
-    msh "docker ps -q --filter label=com.docker.swarm.service.name=fleetly-$DBAPP-writer | head -n 1" | tr -d '\r'
+    msh "docker ps -q --filter label=com.docker.swarm.service.name=fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-$DBAPP-writer | head -n 1" | tr -d '\r'
 }
 secapp_ctr() {
-    msh "docker ps -q --filter label=com.docker.swarm.service.name=fleetly-$SECAPP-$SECSVC | head -n 1" | tr -d '\r'
+    msh "docker ps -q --filter label=com.docker.swarm.service.name=fleetly-$FOUNDER_TEAM-$FOUNDER_PRJ-$SECAPP-$SECSVC | head -n 1" | tr -d '\r'
 }
 # db_psql <sql> — 经 dbapp 容器的 psql（走注入的 FLEETLY_DB_*_URL——注入链
 # 与凭据正确性的端到端证据，不用宿主直连库容器）。
@@ -435,7 +467,7 @@ EOF
 stage "$DIND" "$TMP/dbapp-compose.yaml" /opt/fleetly/dbapp-compose.yaml
 
 DBAPP_DEPLOY_LOG=/tmp/db-dbapp-deploy.log
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c "/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/dbapp-compose.yaml > $DBAPP_DEPLOY_LOG 2>&1"
 # dbapp_succeeded — dbapp 最新部署 succeeded（重部署轮询共用）。
 dbapp_succeeded() {
@@ -575,7 +607,7 @@ services:
       start_period: 0s
 EOF
 stage "$DIND" "$TMP/secapp-compose.yaml" /opt/fleetly/secapp-compose.yaml
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c "/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/secapp-compose.yaml > /tmp/db-secapp-deploy0.log 2>&1"
 if poll_until 300 secapp_succeeded; then
     nl 'fixture ready: secapp exists (secret-free bootstrap deploy)'
@@ -603,7 +635,7 @@ secrets:
     external: true
 EOF
 stage "$DIND" "$TMP/secapp-compose.yaml" /opt/fleetly/secapp-compose.yaml
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c "/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/secapp-compose.yaml > /tmp/db-secapp-deploy.log 2>&1"
 if poll_until 300 secapp_succeeded; then
     assert "DB-D16 SECAPP_DEPLOY_SUCCEEDED" 0
@@ -629,7 +661,7 @@ esac
 # ───────────────── D12: 重设 → 重部署恢复
 nl '=== D18: secret re-set -> redeploy recovers, mount re-asserted ==='
 fcli secrets set --value "$SECRET_VALUE" "$SECAPP" "$SECRET_NAME" >/dev/null 2>&1 || fatal 'secrets set (re)'
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c "/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/secapp-compose.yaml > /tmp/db-secapp-deploy2.log 2>&1"
 if poll_until 300 secapp_succeeded; then
     assert "DB-D19 SECRET_RESET_REDEPLOY_OK" 0
@@ -689,7 +721,7 @@ services:
       start_period: 0s
 EOF
 stage "$DIND" "$TMP/dbapp-compose2.yaml" /opt/fleetly/dbapp-compose2.yaml
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$DB_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c "/opt/fleetly/bin/fleetly deploy --timeout 300s --confirm-destructive /opt/fleetly/dbapp-compose2.yaml > /tmp/db-dbapp-deploy2.log 2>&1"
 if poll_until 300 dbapp_succeeded; then
     assert "DB-D24 UNREFERENCED_REDEPLOY_OK" 0

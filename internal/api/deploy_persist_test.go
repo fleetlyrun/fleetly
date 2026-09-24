@@ -30,7 +30,7 @@ func TestDeployPersistsComposeUnderDataRoot(t *testing.T) {
 	ctx := context.Background()
 	deployments := serverv1.NewDeploymentsServiceClient(env.conn)
 
-	resp, err := deployments.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	resp, err := deployments.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "persistapp",
 		Compose: deployCompose("persistapp"),
 	})

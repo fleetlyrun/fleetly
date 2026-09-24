@@ -116,7 +116,8 @@ services:
 `
 
 // seedGateRevision 落一条成功版本快照作为门控基线（ComposeNormalized =
-// canonical JSON，与引擎 succeedDeployment 同形态），返回 app 行。
+// canonical JSON，与引擎 succeedDeployment 同形态），返回 app 行。app 行
+// 播种在 env 夹具项目（projectRef 引用一致——Deploy 请求的归属校验）。
 func seedGateRevision(t *testing.T, st *state.Store, yamlText string) state.App {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "compose.yaml")
@@ -127,7 +128,8 @@ func seedGateRevision(t *testing.T, st *state.Store, yamlText string) state.App 
 	if err != nil {
 		t.Fatalf("load fixture: %v", err)
 	}
-	app, err := st.CreateApp(context.Background(), "", spec.Name)
+	proj := seedFixtureProject(t, st)
+	app, err := st.CreateApp(context.Background(), "", spec.Name, proj.ID, proj.TeamID)
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -172,8 +174,9 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 	seedGateRevision(t, env.st, gateBaseCompose)
 
 	// 删除服务、未确认：拒绝（信封 code、409 映射、建议文案含
-	// --confirm-destructive），且不入队（部署行仍为 0）。
-	_, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	// --confirm-destructive），且不入队（部署行仍为 0）。app 行经夹具
+	// 项目播种——请求 project 引用同一夹具项目（ID 形态，env.projectRef）。
+	_, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(),
 		App:     "gateapp",
 		Compose: []byte(gateRemovedCompose),
 	})
@@ -198,7 +201,7 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 	}
 
 	// 同一 compose、带 confirm：入队成功（queued + 部署行 1）。
-	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:                "gateapp",
 		Compose:            []byte(gateRemovedCompose),
 		ConfirmDestructive: true,
@@ -214,7 +217,7 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 	}
 
 	// 仅修改（无服务删除）：不需要 confirm 即入队（部署行 2）。
-	dr2, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	dr2, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "gateapp",
 		Compose: []byte(gateChangedCompose),
 	})
@@ -229,7 +232,7 @@ func TestDeployConfirmDestructiveGate(t *testing.T) {
 	}
 
 	// 首发（无历史 revision）：无基线可比，恒放行。
-	dr3, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	dr3, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "freshapp",
 		Compose: []byte("name: freshapp\nservices:\n  web:\n    image: nginx:alpine\n"),
 	})
@@ -266,14 +269,14 @@ func TestDeployTempDirCleanedUp(t *testing.T) {
 
 	before := countTmp()
 	// 被拒路径（compose 名与请求 app 错位——在 ensureApp 之前返回）。
-	if _, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	if _, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "nomatch",
 		Compose: []byte("name: otherapp\nservices:\n  web:\n    image: nginx:alpine\n"),
 	}); err == nil {
 		t.Fatal("app-name mismatch deploy must be rejected")
 	}
 	// 成功路径（入队）。
-	if _, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	if _, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "tmpclean",
 		Compose: []byte("name: tmpclean\nservices:\n  web:\n    image: nginx:alpine\n"),
 	}); err != nil {
@@ -294,7 +297,7 @@ func TestDeployAppNameMismatchRejected(t *testing.T) {
 
 	// 不一致：拒绝（REST 路径 {app}=urlapp、compose name=composeapp 的
 	// 静默错位形态）。
-	_, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	_, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "urlapp",
 		Compose: []byte("name: composeapp\nservices:\n  web:\n    image: nginx:alpine\n"),
 	})
@@ -324,7 +327,7 @@ func TestDeployAppNameMismatchRejected(t *testing.T) {
 	}
 
 	// 一致：正常入队（queued + 部署行 1）。
-	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(), 
 		App:     "composeapp",
 		Compose: []byte("name: composeapp\nservices:\n  web:\n    image: nginx:alpine\n"),
 	})

@@ -31,6 +31,10 @@ type RenderInput struct {
 	Instance string
 	// InstanceID 是库实例平台 ID（卷命名 id8 尾缀——防代际静默复用）。
 	InstanceID string
+	// TeamSlug / PrjSlug 是归属两个 slug（v0.3 库族三段命名公式的参数，
+	// rbac-teams §4.3 库行；卷公式不变故不参与卷名）。
+	TeamSlug string
+	PrjSlug  string
 	// TemplateID 是注册表键。
 	TemplateID string
 	// Limits 是用户限额（零值字段回落模板缺省；设置面只有限额与备份计划
@@ -69,11 +73,11 @@ func Render(in RenderInput) (engine.ServiceSpec, error) {
 		return engine.ServiceSpec{}, fmt.Errorf("dbtemplate: instance id %q shorter than 8 chars", in.InstanceID)
 	}
 
-	svcName, err := naming.DBServiceName(in.Instance, tpl.ServiceName)
+	svcName, err := naming.DBServiceName(in.TeamSlug, in.PrjSlug, in.Instance, tpl.ServiceName)
 	if err != nil {
 		return engine.ServiceSpec{}, err
 	}
-	netName, err := naming.DBNetworkName(in.Instance)
+	netName, err := naming.DBNetworkName(in.TeamSlug, in.PrjSlug, in.Instance)
 	if err != nil {
 		return engine.ServiceSpec{}, err
 	}
@@ -83,7 +87,7 @@ func Render(in RenderInput) (engine.ServiceSpec, error) {
 	}
 	// secret 名 hash8 = 值 sha256 前 8：值轮换即换名换引用（app secret
 	// 同纪律——引用进 desired-hash，轮换天然触发重部署）。
-	secretName, err := naming.DBSecretName(in.Instance, pgSecretName, naming.Hash8(in.Credentials.Password))
+	secretName, err := naming.DBSecretName(in.TeamSlug, in.PrjSlug, in.Instance, pgSecretName, naming.Hash8(in.Credentials.Password))
 	if err != nil {
 		return engine.ServiceSpec{}, err
 	}

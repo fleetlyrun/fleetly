@@ -27,6 +27,8 @@ const (
 	ProjectsService_ListProjectMembers_FullMethodName   = "/fleetly.server.v1.ProjectsService/ListProjectMembers"
 	ProjectsService_SetProjectMemberRole_FullMethodName = "/fleetly.server.v1.ProjectsService/SetProjectMemberRole"
 	ProjectsService_RemoveProjectMember_FullMethodName  = "/fleetly.server.v1.ProjectsService/RemoveProjectMember"
+	ProjectsService_MoveApp_FullMethodName              = "/fleetly.server.v1.ProjectsService/MoveApp"
+	ProjectsService_MoveDatabase_FullMethodName         = "/fleetly.server.v1.ProjectsService/MoveDatabase"
 )
 
 // ProjectsServiceClient is the client API for ProjectsService service.
@@ -48,7 +50,8 @@ const (
 //
 // slug 纪律（§3.4）：单词制 [a-z0-9]{2,32}、team 内唯一、不可变——
 // UpdateProject 无 slug 字段；同名项目跨团队允许（D-W0-9）。
-// MoveApp / MoveDatabase 不在本票（换名重部署依赖 W2-S3 命名三段化）。
+// MoveApp / MoveDatabase 随 W2-S3 命名三段化落地（换名重部署编排见
+// rbac-teams §3.4/§4.3；平台管理员专属）。
 type ProjectsServiceClient interface {
 	// CreateProject 在团队下建项目（owner 专属）；team 内 slug 冲突 409。
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
@@ -68,6 +71,16 @@ type ProjectsServiceClient interface {
 	SetProjectMemberRole(ctx context.Context, in *SetProjectMemberRoleRequest, opts ...grpc.CallOption) (*SetProjectMemberRoleResponse, error)
 	// RemoveProjectMember 删除覆写行（该成员回退用团队角色）。
 	RemoveProjectMember(ctx context.Context, in *RemoveProjectMemberRequest, opts ...grpc.CallOption) (*RemoveProjectMemberResponse, error)
+	// MoveApp 资源改派（v0.3 W2-S3，rbac-teams §3.4/§5；平台管理员专属）：
+	// 写归属 + 换名重部署（D-W0-4 二修——底座命名三段以归属为参数）。无卷
+	// 服务近零中断（建新名→等 running→删旧名）；有卷短暂停机窗口。跨团队/
+	// 跨项目改派先过目标项目唯一性（409）。app 引用 = 裸名（解析域内唯一）
+	// 或 `team/prj/app` 限定形或平台 ID；目标项目 = 平台 ID（D-W0-9：管理面
+	// 用 ID，免疫重名）。
+	MoveApp(ctx context.Context, in *MoveAppRequest, opts ...grpc.CallOption) (*MoveAppResponse, error)
+	// MoveDatabase 资源改派（同 MoveApp 语义；库卷公式不变——零卷迁移/
+	// 零数据搬移，换名重部署引用同一物理卷）。
+	MoveDatabase(ctx context.Context, in *MoveDatabaseRequest, opts ...grpc.CallOption) (*MoveDatabaseResponse, error)
 }
 
 type projectsServiceClient struct {
@@ -158,6 +171,26 @@ func (c *projectsServiceClient) RemoveProjectMember(ctx context.Context, in *Rem
 	return out, nil
 }
 
+func (c *projectsServiceClient) MoveApp(ctx context.Context, in *MoveAppRequest, opts ...grpc.CallOption) (*MoveAppResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MoveAppResponse)
+	err := c.cc.Invoke(ctx, ProjectsService_MoveApp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *projectsServiceClient) MoveDatabase(ctx context.Context, in *MoveDatabaseRequest, opts ...grpc.CallOption) (*MoveDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MoveDatabaseResponse)
+	err := c.cc.Invoke(ctx, ProjectsService_MoveDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProjectsServiceServer is the server API for ProjectsService service.
 // All implementations must embed UnimplementedProjectsServiceServer
 // for forward compatibility.
@@ -177,7 +210,8 @@ func (c *projectsServiceClient) RemoveProjectMember(ctx context.Context, in *Rem
 //
 // slug 纪律（§3.4）：单词制 [a-z0-9]{2,32}、team 内唯一、不可变——
 // UpdateProject 无 slug 字段；同名项目跨团队允许（D-W0-9）。
-// MoveApp / MoveDatabase 不在本票（换名重部署依赖 W2-S3 命名三段化）。
+// MoveApp / MoveDatabase 随 W2-S3 命名三段化落地（换名重部署编排见
+// rbac-teams §3.4/§4.3；平台管理员专属）。
 type ProjectsServiceServer interface {
 	// CreateProject 在团队下建项目（owner 专属）；team 内 slug 冲突 409。
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
@@ -197,6 +231,16 @@ type ProjectsServiceServer interface {
 	SetProjectMemberRole(context.Context, *SetProjectMemberRoleRequest) (*SetProjectMemberRoleResponse, error)
 	// RemoveProjectMember 删除覆写行（该成员回退用团队角色）。
 	RemoveProjectMember(context.Context, *RemoveProjectMemberRequest) (*RemoveProjectMemberResponse, error)
+	// MoveApp 资源改派（v0.3 W2-S3，rbac-teams §3.4/§5；平台管理员专属）：
+	// 写归属 + 换名重部署（D-W0-4 二修——底座命名三段以归属为参数）。无卷
+	// 服务近零中断（建新名→等 running→删旧名）；有卷短暂停机窗口。跨团队/
+	// 跨项目改派先过目标项目唯一性（409）。app 引用 = 裸名（解析域内唯一）
+	// 或 `team/prj/app` 限定形或平台 ID；目标项目 = 平台 ID（D-W0-9：管理面
+	// 用 ID，免疫重名）。
+	MoveApp(context.Context, *MoveAppRequest) (*MoveAppResponse, error)
+	// MoveDatabase 资源改派（同 MoveApp 语义；库卷公式不变——零卷迁移/
+	// 零数据搬移，换名重部署引用同一物理卷）。
+	MoveDatabase(context.Context, *MoveDatabaseRequest) (*MoveDatabaseResponse, error)
 	mustEmbedUnimplementedProjectsServiceServer()
 }
 
@@ -230,6 +274,12 @@ func (UnimplementedProjectsServiceServer) SetProjectMemberRole(context.Context, 
 }
 func (UnimplementedProjectsServiceServer) RemoveProjectMember(context.Context, *RemoveProjectMemberRequest) (*RemoveProjectMemberResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method RemoveProjectMember not implemented")
+}
+func (UnimplementedProjectsServiceServer) MoveApp(context.Context, *MoveAppRequest) (*MoveAppResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MoveApp not implemented")
+}
+func (UnimplementedProjectsServiceServer) MoveDatabase(context.Context, *MoveDatabaseRequest) (*MoveDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method MoveDatabase not implemented")
 }
 func (UnimplementedProjectsServiceServer) mustEmbedUnimplementedProjectsServiceServer() {}
 func (UnimplementedProjectsServiceServer) testEmbeddedByValue()                         {}
@@ -396,6 +446,42 @@ func _ProjectsService_RemoveProjectMember_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProjectsService_MoveApp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveAppRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectsServiceServer).MoveApp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectsService_MoveApp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectsServiceServer).MoveApp(ctx, req.(*MoveAppRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProjectsService_MoveDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(MoveDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectsServiceServer).MoveDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectsService_MoveDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectsServiceServer).MoveDatabase(ctx, req.(*MoveDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProjectsService_ServiceDesc is the grpc.ServiceDesc for ProjectsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -434,6 +520,14 @@ var ProjectsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RemoveProjectMember",
 			Handler:    _ProjectsService_RemoveProjectMember_Handler,
+		},
+		{
+			MethodName: "MoveApp",
+			Handler:    _ProjectsService_MoveApp_Handler,
+		},
+		{
+			MethodName: "MoveDatabase",
+			Handler:    _ProjectsService_MoveDatabase_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

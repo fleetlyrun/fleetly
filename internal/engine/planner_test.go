@@ -52,6 +52,8 @@ services:
 	plan, err := BuildPlan(PlanInput{
 		AppID:        "app1id",
 		AppName:      "app1",
+		TeamSlug:     "acme",
+		PrjSlug:      "prod",
 		DeploymentID: "dep1",
 		Spec:         spec,
 		FileEnv:      map[string]map[string]string{},
@@ -68,7 +70,7 @@ services:
 		t.Fatalf("services = %d", len(plan.Services))
 	}
 	svc := plan.Services[0]
-	wantName, _ := naming.ServiceName("app1", "web")
+	wantName, _ := naming.ServiceName("acme", "prod", "app1", "web")
 	if svc.Name != wantName {
 		t.Fatalf("service name = %s, want %s", svc.Name, wantName)
 	}
@@ -104,7 +106,7 @@ services:
 	}
 	// 期望态哈希稳定（同输入两次一致）。
 	plan2, err := BuildPlan(PlanInput{
-		AppID: "app1id", AppName: "app1", DeploymentID: "dep1",
+		AppID: "app1id", AppName: "app1", TeamSlug: "acme", PrjSlug: "prod", DeploymentID: "dep1",
 		Spec: spec, FileEnv: map[string]map[string]string{},
 		ComposeEnv:  map[string]map[string]string{"web": {"PLAIN": "hello"}},
 		PlatformEnv: []envlayer.PlatformVar{{Key: "PLAIN", Value: "platform", Source: "platform"}},
@@ -129,7 +131,7 @@ volumes:
   data:
 `)
 	plan, err := BuildPlan(PlanInput{
-		AppID: "app1id", AppName: "app1", DeploymentID: "dep1",
+		AppID: "app1id", AppName: "app1", TeamSlug: "acme", PrjSlug: "prod", DeploymentID: "dep1",
 		Spec:    spec,
 		FileEnv: map[string]map[string]string{}, ComposeEnv: map[string]map[string]string{},
 		Images: map[string]string{"db": "repo/db:1@sha256:ddd"},
@@ -168,7 +170,7 @@ volumes:
   data:
 `)
 	_, err := BuildPlan(PlanInput{
-		AppID: "app1id", AppName: "app1", DeploymentID: "dep1",
+		AppID: "app1id", AppName: "app1", TeamSlug: "acme", PrjSlug: "prod", DeploymentID: "dep1",
 		Spec:    spec,
 		FileEnv: map[string]map[string]string{}, ComposeEnv: map[string]map[string]string{},
 		Images:  map[string]string{"db": "repo/db:1@sha256:ddd"},

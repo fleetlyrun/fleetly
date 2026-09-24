@@ -219,7 +219,7 @@ func TestJanitorPrunesDeploymentDirs(t *testing.T) {
 	now := time.Now().UTC()
 	old := now.Add(-40 * 24 * time.Hour)
 
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -294,7 +294,7 @@ func TestJanitorOrphanProbeErrorSkipsDir(t *testing.T) {
 	now := time.Now().UTC()
 	old := now.Add(-40 * 24 * time.Hour)
 
-	app, err := st.CreateApp(ctx, "", "probe-app")
+	app, err := seedAppE(t, st, "probe-app")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -345,7 +345,7 @@ func TestJanitorPrunesTerminalBuilds(t *testing.T) {
 	now := time.Now().UTC()
 	old := now.Add(-100 * 24 * time.Hour)
 
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -427,7 +427,7 @@ func TestJanitorStaleNonTerminalScan(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 
-	app, err := st.CreateApp(ctx, "", "demo")
+	app, err := seedAppE(t, st, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}

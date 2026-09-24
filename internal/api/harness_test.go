@@ -27,6 +27,42 @@ type testEnv struct {
 	readTok string
 	depTok  string
 	admTok  string
+	// fixtureProject 是 env 级夹具项目（v0.3 归属必填：机具令牌的 Deploy/
+	// CreateDatabase 请求必须显式携带 project——测试经 projectRef() 引用）。
+	fixtureProject state.Project
+}
+
+// projectRef 返回夹具项目的引用（项目 ID——resolveProjectRef 支持裸名/
+// team/project 限定形/ID 三形态，ID 免疫随机 slug）。
+func (e *testEnv) projectRef() string { return e.fixtureProject.ID }
+
+// seedFixtureProject 播种 env 级夹具团队 + 项目（slug 确定性 "fixture"，
+// 幂等——同 store 重复调用返回既有行；机具令牌按裸名解析全域唯一命中）。
+func seedFixtureProject(t *testing.T, st *state.Store) state.Project {
+	t.Helper()
+	if team, err := st.GetTeamBySlug(context.Background(), "tfixture"); err == nil {
+		projects, perr := st.ListProjects(context.Background())
+		if perr == nil {
+			for _, p := range projects {
+				if p.TeamID == team.ID && p.Slug == "fixture" {
+					return p
+				}
+			}
+		}
+	}
+	team, err := st.CreateTeam(context.Background(), state.TeamWrite{
+		Slug: "tfixture", Name: "fixture team", CreatedBy: "fixture",
+	})
+	if err != nil {
+		t.Fatalf("seed fixture team: %v", err)
+	}
+	proj, err := st.CreateProject(context.Background(), state.ProjectWrite{
+		TeamID: team.ID, Slug: "fixture", Name: "fixture project",
+	})
+	if err != nil {
+		t.Fatalf("seed fixture project: %v", err)
+	}
+	return proj
 }
 
 // newTestEnv 起一个带鉴权链的 gRPC server（bufconn），注册鉴权矩阵触达的
@@ -44,7 +80,7 @@ func newTestEnv(t *testing.T) *testEnv {
 		t.Fatalf("EnsureKey: %v", err)
 	}
 
-	env := &testEnv{st: st, box: box}
+	env := &testEnv{st: st, box: box, fixtureProject: seedFixtureProject(t, st)}
 	env.readTok = env.seedToken(t, "read")
 	env.depTok = env.seedToken(t, "deploy")
 	env.admTok = env.seedToken(t, "admin")

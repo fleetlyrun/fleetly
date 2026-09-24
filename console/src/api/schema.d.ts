@@ -264,6 +264,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/projects/{to_project_id}:move-app": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * MoveApp 资源改派（v0.3 W2-S3，rbac-teams §3.4/§5；平台管理员专属）：
+         *     写归属 + 换名重部署（D-W0-4 二修——底座命名三段以归属为参数）。无卷
+         *     服务近零中断（建新名→等 running→删旧名）；有卷短暂停机窗口。跨团队/
+         *     跨项目改派先过目标项目唯一性（409）。app 引用 = 裸名（解析域内唯一）
+         *     或 `team/prj/app` 限定形或平台 ID；目标项目 = 平台 ID（D-W0-9：管理面
+         *     用 ID，免疫重名）。
+         */
+        post: operations["ProjectsService_MoveApp"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/projects/{to_project_id}:move-database": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * MoveDatabase 资源改派（同 MoveApp 语义；库卷公式不变——零卷迁移/
+         *     零数据搬移，换名重部署引用同一物理卷）。
+         */
+        post: operations["ProjectsService_MoveDatabase"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps": {
         parameters: {
             query?: never;
@@ -1603,6 +1647,16 @@ export interface components {
             /** 绑定项目（空 = 不绑定，不输出）。 */
             project_id?: string;
         };
+        /** MoveAppRequest 是资源改派请求（平台管理员专属）。 */
+        ProjectsServiceMoveAppBody: {
+            /** app 引用：裸名（解析域内唯一）、`team/prj/app` 限定形或平台 ID。 */
+            app?: string;
+        };
+        /** MoveDatabaseRequest 是库实例改派请求（平台管理员专属）。 */
+        ProjectsServiceMoveDatabaseBody: {
+            /** 库实例引用：裸名（解析域内唯一）、`team/prj/<name>` 限定形或平台 ID。 */
+            database?: string;
+        };
         ProjectsServiceSetProjectMemberRoleBody: {
             user_id?: string;
             role?: string;
@@ -1629,6 +1683,28 @@ export interface components {
         };
         v1ListProjectsResponse: {
             projects?: components["schemas"]["v1ProjectView"][];
+        };
+        /**
+         * MoveAppResponse 是改派应答：换名重部署的结论投影（swapped = 新命名服务
+         *     已就位并摘除旧名服务；accepted = 无运行中服务，仅归属切换）。
+         */
+        v1MoveAppResponse: {
+            app?: string;
+            from_project_id?: string;
+            to_project_id?: string;
+            to_project?: string;
+            /** 换名重部署的部署 ID（无部署史 = 空）。 */
+            deployment_id?: string;
+            /** moved|accepted（accepted = 无底座对象随迁的纯归属切换）。 */
+            status?: string;
+        };
+        /** MoveDatabaseResponse 是库改派应答。 */
+        v1MoveDatabaseResponse: {
+            database?: string;
+            from_project_id?: string;
+            to_project_id?: string;
+            to_project?: string;
+            status?: string;
         };
         v1ProjectMemberView: {
             project_id?: string;
@@ -1817,6 +1893,14 @@ export interface components {
              *     首发（无历史 revision）恒非破坏性，置位与否均放行。
              */
             confirm_destructive?: boolean;
+            /**
+             * 目标项目（v0.3 W2-S3 归属管道，D-W0-9 解析规则）：裸名或 `team/project`
+             *     限定形。裸名仅解析域内唯一时可用（用户 = 可见项目集；机具令牌/平台
+             *     管理员 = 全库），多命中 400 E_PROJECT_AMBIGUOUS 列候选。缺省：用户 =
+             *     个人队 default 项目；机具令牌无缺省（必须显式，否则 400 带指引）。
+             *     首次部署写入 apps.project_id/team_id；行上归属已定时必须一致（409）。
+             */
+            project?: string;
         };
         /**
          * DeployFromGitRequest 携带 push 上下文（app 来自 REST 路径）。ref 形如
@@ -2649,13 +2733,21 @@ export interface components {
         v1CreateDatabaseRequest: {
             /**
              * 库实例名（^[a-z0-9][a-z0-9_-]*$——与 app 名同字符集规则；对象前缀族
-             *     fleetly-db-* 与 app 名族解耦，app 与库实例可重名）。
+             *     fleetly-db-* 与 app 名族解耦，app 与库实例可重名）。project 内唯一
+             *     （D-W0-4 二修——跨项目同名实例合法）。
              */
             name?: string;
             /** 模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。 */
             template?: string;
             limits?: components["schemas"]["v1DatabaseLimits"];
             backup_plan?: components["schemas"]["v1DatabaseBackupPlan"];
+            /**
+             * 目标项目（v0.3 W2-S3 归属管道，D-W0-9 解析规则）：裸名或
+             *     `team/project` 限定形；解析规则与缺省语义同 DeployRequest.project
+             *     （机具令牌必须显式）。首次创建写入 db_instances.project_id/team_id；
+             *     行上归属已定时必须一致（409 E_APP_PROJECT_MISMATCH 指引 MoveDatabase）。
+             */
+            project?: string;
         };
         v1CreateDatabaseResponse: {
             database?: components["schemas"]["v1DatabaseView"];
@@ -3640,6 +3732,78 @@ export interface operations {
             };
         };
     };
+    ProjectsService_MoveApp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 目标项目平台 ID（管理面用 ID，D-W0-9——免疫同名项目歧义）。 */
+                to_project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectsServiceMoveAppBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1MoveAppResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    ProjectsService_MoveDatabase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 目标项目平台 ID。 */
+                to_project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProjectsServiceMoveDatabaseBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1MoveDatabaseResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     AppsService_ListApps: {
         parameters: {
             query?: {
@@ -3879,7 +4043,9 @@ export interface operations {
                 /**
                  * @description 应用名（不存在时自动创建——与 CLI deploy 同语义：应用随首次部署创建）。
                  *     compose 应用名与请求 app 必须一致（A1：不一致 → E_COMPOSE_UNSUPPORTED，
-                 *     不误建 app、不入队）。
+                 *     不误建 app、不入队）。app 名 project 内唯一（D-W0-4 二修）——同一项目
+                 *     内重复部署沿用行上归属（请求 project 必须一致，不一致 409
+                 *     E_APP_PROJECT_MISMATCH 指引 MoveApp）。
                  */
                 app: string;
             };

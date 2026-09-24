@@ -14,6 +14,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // seedReference 预置一个引用 app：app 行 + db_reference + 上一个 succeeded
@@ -21,7 +22,7 @@ import (
 func (h *harness) seedReference(t *testing.T, inst state.DatabaseInstance, appName, oldPassword string) state.App {
 	t.Helper()
 	ctx := context.Background()
-	app, err := h.st.CreateApp(ctx, "", appName)
+	app, err := testsupport.SeedAppE(t, h.st, appName)
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
@@ -115,7 +116,7 @@ func TestRotatePostgresReady(t *testing.T) {
 		t.Fatalf("container runs = %d, want 1", len(h.docker.rotateRuns))
 	}
 	run := h.docker.rotateRuns[0]
-	if run.Network != "fleetly-db-pg1-net" {
+	if run.Network != h.dbNetName("pg1") {
 		t.Errorf("job network = %q, want the instance shared network", run.Network)
 	}
 	if run.Image != inst.ImageDigest {

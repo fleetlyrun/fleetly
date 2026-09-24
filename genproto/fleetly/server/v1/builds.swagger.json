@@ -267,6 +267,10 @@
         "base_dir": {
           "type": "string",
           "title": "构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时\n目录）。v0.1 单机同宿主语义，见 service 注释（H14：admin scope，且\ncontext 解析后不得越出该基准目录）。"
+        },
+        "project": {
+          "type": "string",
+          "title": "目标项目（v0.3 W2-S3 归属管道）：仅在该 app 尚不存在、构建自动建行时\n消费——解析与缺省语义同 DeployRequest.project（D-W0-9；机具令牌必须\n显式）。app 行已在时沿用行上归属，本字段忽略。"
         }
       }
     },

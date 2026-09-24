@@ -18,6 +18,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // fakeBackend 是 IngestBackend 假件：可编程成败 + 批次捕获。
@@ -237,16 +238,14 @@ func TestManagerVLSkipsDiskAndFollowsUnaffected(t *testing.T) {
 		t.Fatal("vl gate should be on with default backend")
 	}
 
-	if _, err := st.CreateApp(ctx, "", "vlapp"); err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
-	port.setApp("vlapp", "web")
+	app, _ := testsupport.SeedAppE(t, st, "vlapp")
+	port.setApp(app.QualifiedName(), "web")
 	base := time.Now().Add(-time.Hour)
 	mg.WithClock(func() time.Time { return base })
-	port.emit("fleetly-vlapp-web", substrate.LogLine{At: base.Add(time.Millisecond), Line: "live line"})
+	port.emit("fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-vlapp-web", substrate.LogLine{At: base.Add(time.Millisecond), Line: "live line"})
 
-	// 直播订阅先行（VL 故障下的存活面——本测试的钉子）。
-	ch, stop := mg.Follow(ctx, "vlapp", "web")
+	// 直播订阅先行（VL 故障下的存活面——本测试的钉子）。订阅键 = 三段限定形。
+	ch, stop := mg.Follow(ctx, app.QualifiedName(), "web")
 	defer stop()
 
 	mg.scanOnce(ctx)
@@ -298,7 +297,7 @@ func TestIngestBuildLineRedactedAndGated(t *testing.T) {
 	}
 	mg.refreshBackendGate(ctx)
 
-	if _, err := st.CreateApp(ctx, "", "builder"); err != nil {
+	if _, err := testsupport.SeedAppE(t, st, "builder"); err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	appRow, err := st.GetAppByName(ctx, "builder")

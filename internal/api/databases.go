@@ -98,9 +98,10 @@ func (s *DatabaseService) kickOnce() {
 	}
 }
 
-// CreateDatabase 创建库实例：模板校验（未知 → 400）→ 名校验 → 凭据生成 +
-// 加密 → 实例行 + db.provision_started 事件 + 审计 db.create 同事务
-// fail-closed。
+// CreateDatabase 创建库实例：模板校验（未知 → 400）→ 名校验 → 归属解析与
+// 一致性（v0.3 W2-S3：project 引用解析，行上归属已定必须一致——409 指引
+// MoveDatabase）→ 凭据生成 + 加密 → 实例行（project_id/team_id NOT NULL）
+// + db.provision_started 事件 + 审计 db.create 同事务 fail-closed。
 func (s *DatabaseService) CreateDatabase(ctx context.Context, req *serverv1.CreateDatabaseRequest) (*serverv1.CreateDatabaseResponse, error) {
 	tpl, err := dbtemplate.Get(req.GetTemplate())
 	if err != nil {
@@ -111,6 +112,30 @@ func (s *DatabaseService) CreateDatabase(ctx context.Context, req *serverv1.Crea
 	}
 	if err := state.ValidateDatabaseName(req.GetName()); err != nil {
 		return nil, statusInvalidArgument(err.Error())
+	}
+	// 归属解析（D-W0-9：裸名域内唯一/限定形恒可解析；机具令牌必须显式）。
+	proj, err := resolveProjectRef(ctx, s.st, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	// 归属一致性：行存在于其他项目 → 409（校验一致裁决，MoveDatabase 指引
+	// ——与 Deploy 同口径）；目标项目内已有同名 → 名字占用 409。
+	existing, err := s.st.GetDatabaseInstanceByName(ctx, req.GetName())
+	switch {
+	case err == nil && existing.ProjectID != proj.ID:
+		return nil, apperr.New("E_APP_PROJECT_MISMATCH",
+			"database %q already belongs to project %q (ownership on the row wins once assigned); create with that project or move the instance first",
+			req.GetName(), existing.QualifiedName()).
+			WithContext("database", req.GetName()).
+			WithContext("current_project", existing.ProjectID)
+	case err == nil:
+		return nil, conflict(fmt.Sprintf("database instance name %q is already registered in project %q (names stay reserved across the lifecycle)", req.GetName(), proj.Slug))
+	case errors.Is(err, state.ErrDatabaseAmbiguous):
+		return nil, apperr.New("E_APP_AMBIGUOUS",
+			"database %q resolves to multiple rows across projects; reference it by id or use the qualified read face", req.GetName()).
+			WithContext("database", req.GetName())
+	case !errors.Is(err, state.ErrDatabaseNotFound):
+		return nil, err
 	}
 	password, err := dbtemplate.GeneratePassword()
 	if err != nil {
@@ -128,6 +153,8 @@ func (s *DatabaseService) CreateDatabase(ctx context.Context, req *serverv1.Crea
 			ImageDigest:      tpl.Image,
 			Settings:         databaseSettingsOf(req.GetLimits(), req.GetBackupPlan()),
 			CredentialCipher: string(cipher),
+			ProjectID:        proj.ID,
+			TeamID:           proj.TeamID,
 		})
 		if err != nil {
 			return err

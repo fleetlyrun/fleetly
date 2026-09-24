@@ -603,7 +603,7 @@
       "properties": {
         "name": {
           "type": "string",
-          "title": "库实例名（^[a-z0-9][a-z0-9_-]*$——与 app 名同字符集规则；对象前缀族\nfleetly-db-* 与 app 名族解耦，app 与库实例可重名）。"
+          "title": "库实例名（^[a-z0-9][a-z0-9_-]*$——与 app 名同字符集规则；对象前缀族\nfleetly-db-* 与 app 名族解耦，app 与库实例可重名）。project 内唯一\n（D-W0-4 二修——跨项目同名实例合法）。"
         },
         "template": {
           "type": "string",
@@ -616,6 +616,10 @@
         "backup_plan": {
           "$ref": "#/definitions/v1DatabaseBackupPlan",
           "title": "备份计划（零值字段回落平台缺省 24h/7 份/03:00 UTC）。"
+        },
+        "project": {
+          "type": "string",
+          "title": "目标项目（v0.3 W2-S3 归属管道，D-W0-9 解析规则）：裸名或\n`team/project` 限定形；解析规则与缺省语义同 DeployRequest.project\n（机具令牌必须显式）。首次创建写入 db_instances.project_id/team_id；\n行上归属已定时必须一致（409 E_APP_PROJECT_MISMATCH 指引 MoveDatabase）。"
         }
       }
     },

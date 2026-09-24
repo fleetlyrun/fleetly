@@ -11,6 +11,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/substrate"
+	testsupport "github.com/fleetlyrun/fleetly/internal/testsupport"
 )
 
 // TestRingBounded T2.20 验收：ring buffer 限深——超容量挤掉最旧。
@@ -237,34 +238,28 @@ func TestCollectorPollAndRedact(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	if _, err := st.CreateApp(ctx, "", "webapp"); err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
+	appRow, _ := testsupport.SeedAppE(t, st, "webapp")
 	// 种一枚平台 env（脱敏源 = 该 app env 明文集）。
 	const secret = "super-secret-value-42"
 	ciphertext, err := box.Encrypt([]byte(secret))
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	appRow, err := st.GetAppByName(ctx, "webapp")
-	if err != nil {
-		t.Fatalf("GetAppByName: %v", err)
-	}
 	if _, err := st.SetAppEnv(ctx, appRow.ID, "API_KEY", string(ciphertext), "platform"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
-	port.setApp("webapp", "web")
+	port.setApp(appRow.QualifiedName(), "web")
 	// 时钟注入：首轮采集游标 = clock()（首启从「当前」起采）。日志行
 	// 时间取游标之后，与真实时序一致。
 	base := time.Now().Add(-time.Hour)
 	mg.WithClock(func() time.Time { return base })
-	port.emit("fleetly-webapp-web",
+	port.emit("fleetly-"+appRow.TeamSlug+"-"+appRow.ProjectSlug+"-webapp-web",
 		substrate.LogLine{At: base.Add(time.Millisecond), Line: "boot ok"},
 		substrate.LogLine{At: base.Add(2 * time.Millisecond), Stderr: true, Line: "token=super-secret-value-42"},
 	)
 
-	// Follow 先行订阅（回放为空，实时接收）。
-	ch, stop := mg.Follow(ctx, "webapp", "web")
+	// Follow 先行订阅（回放为空，实时接收；键 = 三段限定形）。
+	ch, stop := mg.Follow(ctx, appRow.QualifiedName(), "web")
 	defer stop()
 
 	mg.scanOnce(ctx) // 首轮
@@ -294,7 +289,7 @@ func TestCollectorPollAndRedact(t *testing.T) {
 	}
 
 	// 增量轮询不重复：新行才入环。
-	port.emit("fleetly-webapp-web", substrate.LogLine{At: base.Add(3 * time.Millisecond), Line: "again"})
+	port.emit("fleetly-"+appRow.TeamSlug+"-"+appRow.ProjectSlug+"-webapp-web", substrate.LogLine{At: base.Add(3 * time.Millisecond), Line: "again"})
 	mg.scanOnce(ctx)
 	select {
 	case e := <-ch:
@@ -346,7 +341,7 @@ func TestFollowCancelViaContext(t *testing.T) {
 func TestHistoryBuildSource(t *testing.T) {
 	mg, _, st, _ := newTestManager(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "builder")
+	app, err := testsupport.SeedAppE(t, st, "builder")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -381,7 +376,7 @@ func TestHistoryBuildSource(t *testing.T) {
 func TestHistoryBuildSourceRedacted(t *testing.T) {
 	mg, _, st, box := newTestManager(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "builder2")
+	app, err := testsupport.SeedAppE(t, st, "builder2")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -533,7 +528,7 @@ func TestReadPlainLinesKeepsTail(t *testing.T) {
 func TestRedactorInvalidateRebuildsOnEnvChange(t *testing.T) {
 	mg, _, st, box := newTestManager(t)
 	ctx := context.Background()
-	app, err := st.CreateApp(ctx, "", "redactinv")
+	app, err := testsupport.SeedAppE(t, st, "redactinv")
 	if err != nil {
 		t.Fatalf("CreateApp: %v", err)
 	}
@@ -583,23 +578,21 @@ func TestZeroAtLinesDoNotAdvanceCursor(t *testing.T) {
 	mg, port, st, _ := newTestManager(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	if _, err := st.CreateApp(ctx, "", "contapp"); err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
-	port.setApp("contapp", "web")
+	app, _ := testsupport.SeedAppE(t, st, "contapp")
+	port.setApp(app.QualifiedName(), "web")
 	base := time.Now().Add(-time.Hour)
 	mg.WithClock(func() time.Time { return base })
-	port.emit("fleetly-contapp-web",
+	port.emit("fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-contapp-web",
 		substrate.LogLine{At: base.Add(time.Millisecond), Line: "ts-line"},
 		substrate.LogLine{Line: "continuation"}, // 零 At 续行（时间戳解析失败形态）
 		substrate.LogLine{At: base.Add(2 * time.Millisecond), Line: "ts-line-2"},
 	)
-	ch, stop := mg.Follow(ctx, "contapp", "web")
+	ch, stop := mg.Follow(ctx, app.QualifiedName(), "web")
 	defer stop()
 
 	mg.scanOnce(ctx)
 
-	cur, ok := mg.streams[streamKey("contapp", "web")]
+	cur, ok := mg.streams[streamKey(app.QualifiedName(), "web")]
 	if !ok {
 		t.Fatal("stream cursor missing after first poll")
 	}
@@ -630,11 +623,9 @@ func TestPollWatchdogAbandonsStuckRound(t *testing.T) {
 	mg, port, st, _ := newTestManager(t)
 	mg.pollWatchdogOverride = 50 * time.Millisecond
 	ctx := context.Background()
-	if _, err := st.CreateApp(ctx, "", "stuckapp"); err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
-	port.setApp("stuckapp", "web")
-	port.stuck["fleetly-stuckapp-web"] = true
+	app, _ := testsupport.SeedAppE(t, st, "stuckapp")
+	port.setApp(app.QualifiedName(), "web")
+	port.stuck["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-stuckapp-web"] = true
 
 	done := make(chan struct{})
 	go func() {
@@ -643,7 +634,7 @@ func TestPollWatchdogAbandonsStuckRound(t *testing.T) {
 	}()
 	select {
 	case <-done:
-		if _, ok := mg.streams[streamKey("stuckapp", "web")]; !ok {
+		if _, ok := mg.streams[streamKey(app.QualifiedName(), "web")]; !ok {
 			t.Fatal("cursor missing (first-round cursor should be registered before the watchdog fires)")
 		}
 	case <-time.After(5 * time.Second):
@@ -659,23 +650,18 @@ func TestPollWatchdogAbandonsStuckRound(t *testing.T) {
 func TestStreamStateEvictedAfterAppGone(t *testing.T) {
 	mg, port, st, _ := newTestManager(t)
 	ctx := context.Background()
-	gone, err := st.CreateApp(ctx, "", "goneapp")
-	if err != nil {
-		t.Fatalf("CreateApp: %v", err)
-	}
-	if _, err := st.CreateApp(ctx, "", "keeperapp"); err != nil {
-		t.Fatalf("CreateApp keeper: %v", err)
-	}
-	port.setApp("goneapp", "web")
-	port.setApp("keeperapp", "web")
+	gone, _ := testsupport.SeedAppE(t, st, "goneapp")
+	keeper, _ := testsupport.SeedAppE(t, st, "keeperapp")
+	port.setApp(gone.QualifiedName(), "web")
+	port.setApp(keeper.QualifiedName(), "web")
 	now := time.Now().Truncate(time.Second)
 	mg.WithClock(func() time.Time { return now })
-	port.emit("fleetly-goneapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "gone-line"})
-	port.emit("fleetly-keeperapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "keeper-line"})
+	port.emit("fleetly-"+gone.TeamSlug+"-"+gone.ProjectSlug+"-goneapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "gone-line"})
+	port.emit("fleetly-"+keeper.TeamSlug+"-"+keeper.ProjectSlug+"-keeperapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "keeper-line"})
 
 	mg.scanOnce(ctx) // 两 app 均活跃：游标 + ring 建立
-	goneKey := streamKey("goneapp", "web")
-	keeperKey := streamKey("keeperapp", "web")
+	goneKey := streamKey(gone.QualifiedName(), "web")
+	keeperKey := streamKey(keeper.QualifiedName(), "web")
 	if mg.streams[goneKey] == nil || mg.hub.streams[goneKey] == nil {
 		t.Fatal("precondition: gone app cursor/ring missing")
 	}
@@ -705,13 +691,11 @@ func TestStreamStateEvictedAfterAppGone(t *testing.T) {
 		t.Fatal("bystander app state unexpectedly evicted")
 	}
 	// 淘汰后新建 app（首启语义）：采集正常。
-	if _, err := st.CreateApp(ctx, "", "freshapp"); err != nil {
-		t.Fatalf("CreateApp fresh: %v", err)
-	}
-	port.setApp("freshapp", "web")
-	port.emit("fleetly-freshapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "fresh-line"})
+	fresh, _ := testsupport.SeedAppE(t, st, "freshapp")
+	port.setApp(fresh.QualifiedName(), "web")
+	port.emit("fleetly-"+fresh.TeamSlug+"-"+fresh.ProjectSlug+"-freshapp-web", substrate.LogLine{At: now.Add(time.Millisecond), Line: "fresh-line"})
 	mg.scanOnce(ctx)
-	if mg.streams[streamKey("freshapp", "web")] == nil || mg.hub.streams[streamKey("freshapp", "web")] == nil {
+	if mg.streams[streamKey(fresh.QualifiedName(), "web")] == nil || mg.hub.streams[streamKey(fresh.QualifiedName(), "web")] == nil {
 		t.Fatal("fresh app not collected after eviction")
 	}
 }
