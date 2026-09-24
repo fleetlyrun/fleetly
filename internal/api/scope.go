@@ -212,6 +212,11 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.TeamsService/CreateInvite":            ScopeRead,
 	"/fleetly.server.v1.TeamsService/ListTeamInvites":         ScopeRead,
 	"/fleetly.server.v1.TeamsService/RevokeInvite":            ScopeRead,
+	// AuditService（v0.3 W3-S1 审计读面，rbac-teams §5/§6 D-W0-6）：整体
+	// admin scope（机具令牌面——平台管理员等价，§2.3）+ handler 内平台管理
+	// 员判定（requirePlatformAdminPrincipal 共享门——UsersService 同门）。
+	// 读台账是平台敏感事实面（操作者全量动作流），不随 read/deploy 下放。
+	"/fleetly.server.v1.AuditService/ListAudit": ScopeAdmin,
 	"/fleetly.server.v1.ProjectsService/CreateProject":        ScopeRead,
 	"/fleetly.server.v1.ProjectsService/ListProjects":         ScopeRead,
 	"/fleetly.server.v1.ProjectsService/GetProject":           ScopeRead,

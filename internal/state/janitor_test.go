@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -90,6 +91,102 @@ func TestJanitorRetentionDefaults(t *testing.T) {
 	if jr2.EventRetention() != 7*24*time.Hour || jr2.AuditRetention() != 90*24*time.Hour {
 		t.Fatalf("configured retentions wrong: %v / %v", jr2.EventRetention(), jr2.AuditRetention())
 	}
+}
+
+// TestJanitorAuditRetentionPriority W3-S1 D-W0-6 留存回落链三态：
+// platform_settings audit.retention_days > config state.audit_retention_days
+//（经 JanitorConfig 装配）> 缺省 90。行为锚 = 实际清理轮的删除边界。
+func TestJanitorAuditRetentionPriority(t *testing.T) {
+	ctx := context.Background()
+	now := time.Now().UTC()
+	day := 24 * time.Hour
+	seed := func(t *testing.T, st *Store, ages ...time.Duration) {
+		t.Helper()
+		for i, age := range ages {
+			if err := st.InTx(ctx, func(tx *Tx) error {
+				return tx.WriteAudit(ctx, AuditEntry{
+					Actor: "system", Action: "app.create", Result: "ok",
+					ID: fmt.Sprintf("01PRIOTEST%02d0000000000000000", i), At: now.Add(-age),
+				})
+			}); err != nil {
+				t.Fatalf("seed audit %d: %v", i, err)
+			}
+		}
+	}
+	remaining := func(t *testing.T, st *Store) int {
+		t.Helper()
+		// 只数播种的 app.create 行——SaveRetentionDays 自身落的
+		// audit.retention_changed 审计行不进计数（它在窗内，恒存活）。
+		rows, _, err := st.ListAudits(ctx, AuditQuery{Action: "app.create"})
+		if err != nil {
+			t.Fatalf("list audits: %v", err)
+		}
+		return len(rows)
+	}
+
+	t.Run("default_90_no_settings_no_config", func(t *testing.T) {
+		st := newTestStore(t)
+		seed(t, st, 91*day, 89*day) // 91 天行出窗、89 天行在窗内
+		jr := NewJanitor(st, JanitorConfig{}, testLogger())
+		if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+		if got := remaining(t, st); got != 1 {
+			t.Fatalf("default 90d window: remaining = %d, want 1 (the 89d row)", got)
+		}
+	})
+
+	t.Run("platform_settings_overrides_config", func(t *testing.T) {
+		st := newTestStore(t)
+		seed(t, st, 31*day, 29*day)
+		if err := st.SaveRetentionDays(ctx, 30, AuditSaveOptions{Actor: "system"}); err != nil {
+			t.Fatalf("save retention: %v", err)
+		}
+		// config 说 365（构造期回落值），settings=30 必须赢。
+		jr := NewJanitor(st, JanitorConfig{AuditRetentionDays: 365}, testLogger())
+		if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+		if got := remaining(t, st); got != 1 {
+			t.Fatalf("settings 30d window: remaining = %d, want 1 (the 29d row)", got)
+		}
+	})
+
+	t.Run("config_fallback_when_unset", func(t *testing.T) {
+		st := newTestStore(t)
+		seed(t, st, 366*day, 364*day)
+		jr := NewJanitor(st, JanitorConfig{AuditRetentionDays: 365}, testLogger())
+		if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+			t.Fatalf("prune: %v", err)
+		}
+		if got := remaining(t, st); got != 1 {
+			t.Fatalf("config 365d fallback: remaining = %d, want 1 (the 364d row)", got)
+		}
+	})
+
+	// 设置保存即生效：运行中改设置，下一拍新窗生效（每拍现读，不缓存长驻
+	// ——logs/metrics 设置的 janitor 消费先例同形态）。
+	t.Run("setting_change_takes_effect_next_round", func(t *testing.T) {
+		st := newTestStore(t)
+		seed(t, st, 91*day, 89*day)
+		jr := NewJanitor(st, JanitorConfig{}, testLogger())
+		if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+			t.Fatalf("prune 1: %v", err)
+		}
+		if got := remaining(t, st); got != 1 {
+			t.Fatalf("pre-change: remaining = %d, want 1", got)
+		}
+		// 收紧到 30 天：上一轮在窗内的 89 天行下一拍出窗。
+		if err := st.SaveRetentionDays(ctx, 30, AuditSaveOptions{Actor: "system"}); err != nil {
+			t.Fatalf("save retention: %v", err)
+		}
+		if _, _, err := jr.PruneOnce(ctx, now); err != nil {
+			t.Fatalf("prune 2: %v", err)
+		}
+		if got := remaining(t, st); got != 0 {
+			t.Fatalf("post-change: remaining = %d, want 0 (89d row left the new 30d window)", got)
+		}
+	})
 }
 
 // TestJanitorServiceLoop Start/Stop 生命周期：启动先清一拍，Stop 退出。

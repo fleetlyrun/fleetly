@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 users.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// AuditService 是审计读面（rbac-teams §5/§6 裁决 D-W0-6，v0.3 W3-S1）：
+// 仅平台管理员可用（用户 principal 要求 is_platform_admin；user_id 为空的
+// 机具令牌沿既有 admin scope 门——平台面判定在服务实现内强制，§4.2 第 3
+// 条）。读面 = 过滤 + 分页的台账检索；Console 审计页（W3-S3）与 CLI
+// `fleetly audit list/export` 共同消费。
+service AuditService {
+  rpc ListAudit(ListAuditRequest) returns (ListAuditResponse) {
+    option (google.api.http) = { get: "/v1/audit" };
+  }
+}
+
+// ListAuditRequest 是审计检索的过滤集与分页参数（空字段 = 该维不过滤）。
+// 过滤语义与 state.AuditQuery 同源（internal/state/audit.go）：
+//   - actor  子串包含（human / system / user:<id>——整体串检索兼容）；
+//   - action 前缀匹配（audit.* / api.* / auth.* 动作族）；
+//   - result 精确匹配（ok | error）；
+//   - target 子串包含；
+//   - since/until 时间窗（闭区间两边界含）。
+message ListAuditRequest {
+  string actor = 1 [(buf.validate.field).string.max_len = 200];
+  string action = 2 [(buf.validate.field).string.max_len = 100];
+  // ok | error（其他值恒空集——精确匹配语义，服务端不再另行校验词表）。
+  string result = 3 [(buf.validate.field).string = {
+    in: ["", "ok", "error"]
+  }];
+  string target = 4 [(buf.validate.field).string.max_len = 200];
+  google.protobuf.Timestamp since = 5;
+  google.protobuf.Timestamp until = 6;
+  // 分页（非正/缺省 = 服务端页大小 100，天花板 1000；offset 非负）。
+  int32 limit = 7 [(buf.validate.field).int32 = {
+    gte: 0,
+    lte: 1000
+  }];
+  int32 offset = 8 [(buf.validate.field).int32 = {
+    gte: 0
+  }];
+}
+
+// AuditView 是审计行的读面投影：AuditRecord 全字段（无敏感材料——secret
+// 值禁止进入审计，state-model §2.9 红线在写侧强制，读面零脱敏负担）。
+message AuditView {
+  string id = 1;
+  google.protobuf.Timestamp at = 2;
+  // human / system / user:<id>（设计 §6 actor 增维）。
+  string actor = 3;
+  string action = 4;
+  string target = 5;
+  // ok | error。
+  string result = 6;
+  // 失败路径的注册表错误码（'' = 成功行）。
+  string error_code = 7;
+  // 关联请求 ID（'' = 无）。
+  string request_id = 8;
+  // 脱敏后的 diff 摘要（'' = 无）。
+  string diff_summary = 9;
+}
+
+message ListAuditResponse {
+  repeated AuditView audits = 1;
+  // 全量命中计数（过滤生效、分页生效前）——读面分页器的总数投影。
+  int32 total = 2;
+}

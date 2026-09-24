@@ -1,0 +1,193 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/audit.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "AuditService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/audit": {
+      "get": {
+        "operationId": "AuditService_ListAudit",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAuditResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "actor",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "result",
+            "description": "ok | error（其他值恒空集——精确匹配语义，服务端不再另行校验词表）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "target",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "name": "limit",
+            "description": "分页（非正/缺省 = 服务端页大小 100，天花板 1000；offset 非负）。",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "AuditService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1AuditView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "actor": {
+          "type": "string",
+          "title": "human / system / user:\u003cid\u003e（设计 §6 actor 增维）。"
+        },
+        "action": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "result": {
+          "type": "string",
+          "title": "ok | error。"
+        },
+        "error_code": {
+          "type": "string",
+          "title": "失败路径的注册表错误码（'' = 成功行）。"
+        },
+        "request_id": {
+          "type": "string",
+          "title": "关联请求 ID（'' = 无）。"
+        },
+        "diff_summary": {
+          "type": "string",
+          "title": "脱敏后的 diff 摘要（'' = 无）。"
+        }
+      },
+      "title": "AuditView 是审计行的读面投影：AuditRecord 全字段（无敏感材料——secret\n值禁止进入审计，state-model §2.9 红线在写侧强制，读面零脱敏负担）。"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1ListAuditResponse": {
+      "type": "object",
+      "properties": {
+        "audits": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AuditView"
+          }
+        },
+        "total": {
+          "type": "integer",
+          "format": "int32",
+          "title": "全量命中计数（过滤生效、分页生效前）——读面分页器的总数投影。"
+        }
+      }
+    }
+  }
+}

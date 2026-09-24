@@ -45,6 +45,8 @@ import (
 //   - AuthService / UsersService（v0.3 W1，rbac-teams §5：认证面与平台
 //     用户管理面；Register/Login/GetRegistrationState 豁免鉴权，会话
 //     cookie 经 metadata 透传——见 newGatewayMuxWithTLS 的 matcher 注释）
+//   - AuditService（v0.3 W3-S1，rbac-teams §6 D-W0-6：审计读面，平台
+//     管理员判定在 handler）
 //
 // gRPC-only 清单：**v0.1 为空**——所有服务均挂 gateway（写操作挂 gateway
 // 供 Console 使用；Follow/Watch 的 JSON 帧形态适宜 REST）。若后续出现
@@ -134,6 +136,7 @@ func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (*runtime.Ser
 		serverv1.RegisterSecretsServiceHandlerFromEndpoint,  // E4 W4-S4：平台密钥库面（D-DB-7；无值读回——list 只出名称/指纹）
 		serverv1.RegisterAuthServiceHandlerFromEndpoint,     // v0.3 W1：认证面（注册/登录/会话；Register/Login/GetRegistrationState 豁免鉴权）
 		serverv1.RegisterUsersServiceHandlerFromEndpoint,    // v0.3 W1：平台用户管理面（平台管理员判定在 handler）
+		serverv1.RegisterAuditServiceHandlerFromEndpoint,    // v0.3 W3-S1：审计读面（平台管理员判定在 handler——D-W0-6）
 		serverv1.RegisterTeamsServiceHandlerFromEndpoint,    // v0.3 W2-S1：团队/成员/邀请面（角色门在 handler）
 		serverv1.RegisterProjectsServiceHandlerFromEndpoint, // v0.3 W2-S1：项目/队内覆写成员面（覆写管理权判定在 handler）
 	} {

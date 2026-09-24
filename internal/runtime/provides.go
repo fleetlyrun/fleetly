@@ -90,6 +90,7 @@ var ProviderSet = wire.NewSet(
 	NewTokensService,
 	NewAuthService,
 	NewUsersService,
+	NewAuditService,
 	NewTeamsService,
 	NewProjectsService,
 	NewGitTriggers,
@@ -769,6 +770,13 @@ func NewAuthService(cfg *AppConfig, st *state.Store) *api.AuthService {
 // 平台管理员判定在 handler 内强制）。
 func NewUsersService(st *state.Store) *api.UsersService {
 	return api.NewUsersService(st)
+}
+
+// NewAuditService 构造审计读面服务（v0.3 W3-S1，rbac-teams §5/§6 裁决
+// D-W0-6：过滤+分页的台账检索；平台管理员双门——scope admin + handler
+// requirePlatformAdminPrincipal 共享单点，internal/api/audit.go 头注）。
+func NewAuditService(st *state.Store) *api.AuditService {
+	return api.NewAuditService(st)
 }
 
 // NewTeamsService 构造团队/成员/邀请面服务（v0.3 W2-S1，rbac-teams §3.1/

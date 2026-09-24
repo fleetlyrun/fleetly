@@ -46,11 +46,12 @@
 #          用户登录成功 → DisableUser → 旧会话与再登录双拒 →
 #          EnableUser 恢复登录 → ResetPassword → 旧口令 401、重置前
 #          会话全灭、新口令 200（重置即全端下线，S1 悬置裁决收口）。
-#   AUTH-9 审计锚点：**跳过**（如实注明）。audit_log 直查在 e2e 无先例
-#          （dind 内无 sqlite3；引入即新增镜像/apk 网络依赖），W1 亦无
-#          审计读面（ListAudit 属 W3）——auth.* 审计行由 internal/api 与
-#          internal/state 的 hermetic 单测直读断言（cron.sh C2 同口径）；
-#          W3 ListAudit 落地后本套件补 API 面断言。
+#   AUTH-9 审计读面（W3-S1 落地，D-W0-6）：CLI `audit list`（gRPC 面）按
+#          action 过滤命中 auth.login_failed ≥1 且全响应不含任何口令材料；
+#          --actor 过滤以 user:<founder-id> 命中注册者审计行；--result
+#          error 过滤非空；非平台管理员用户 PAT 拒（PermissionDenied）而
+#          admin 机具令牌放行；`audit export --csv` 表头精确 + 行数 ≥ 数据
+#          行且 CSV 同样不含口令材料。
 #
 #   诚实范围（单测/e2e 分工）：
 #   - 用户 PAT 的「越权 scope 声明拒止」（viewer 造 admin PAT → 400）与
@@ -397,6 +398,10 @@ fi
 req founder POST /v1/auth/register "{\"email\":\"$FOUNDER_EMAIL\",\"password\":\"$FOUNDER_PASS\",\"display_name\":\"Founder\"}"
 assert "AUTH-2a FIRST_USER_REGISTER_200" $([ "$RC" = 200 ] && echo 0 || echo 1) \
     "POST /v1/auth/register = $RC body: $BODY"
+# founder 的用户 ID（AUTH-9 的 --actor 过滤锚；注册响应 = UserView 投影，
+# id 为首字段）。
+FOUNDER_ID=$(printf '%s' "$BODY" | grep -oE '"id": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$FOUNDER_ID" ] || fatal 'founder user id missing from the register response'
 assert "AUTH-2b FIRST_USER_IS_PLATFORM_ADMIN" $(printf '%s' "$BODY" | grep -qE '"is_platform_admin": ?true' && echo 0 || echo 1) \
     "register body: $BODY"
 assert "AUTH-2c FIRST_USER_SESSION_COOKIE_SET" $([ -n "$(sess_of founder)" ] && echo 0 || echo 1) \
@@ -651,8 +656,82 @@ req anon POST /v1/auth/login "{\"email\":\"$WORKER_EMAIL\",\"password\":\"$NEW_P
 assert "AUTH-8k NEW_PASSWORD_LOGIN_OK" $([ "$RC" = 200 ] && echo 0 || echo 1) \
     "new-password login after reset = $RC body: $BODY"
 
-# AUTH-9：审计锚点——跳过（头注「诚实范围」；auth.* 审计行由 hermetic
-# 单测直读断言，W3 ListAudit 落地后本套件补 API 面断言）。
-al 'AUTH-9 SKIPPED — audit rows have no read face in W1 and no sqlite precedent in e2e; covered by hermetic unit tests (see header)'
+# ───────── AUTH-9: 审计读面（W3-S1，D-W0-6）——CLI audit list/export
+# CLI 的 audit 动词走 gRPC 面（mcli = admin 机具令牌，平台管理员等价——
+# rbac-teams §2.3/§4.2 第 3 条）。JSON 快照与 CSV 落 dind 内 /tmp，宿主侧
+# 经 docker exec grep/wc 断言（本套件零 jq 依赖的既有纪律）。
+# audit_list_json <args...> — 审计读面 JSON 快照（--json 固定；rc 不判——
+# 断言按文件内容 + 显式 rc 判据展开）。
+audit_list_json() {
+    docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$MACHINE_TOKEN" \
+        "$DIND" sh -c "/opt/fleetly/bin/fleetly audit list --json $* >/tmp/auth-audit.json 2>/tmp/auth-audit.err; echo \$?"
+}
+# audit_no_password_material <file> — 口令材料负面断言（全链出现过的全部
+# 口令值逐个检索；任一命中 = 审计面泄密，红线）。secret 值禁入审计
+#（state-model §2.9）与「登录失败不落口令」（rbac-teams §6）的双锚。
+audit_no_password_material() {
+    for secret in "$FOUNDER_PASS" "$MATE_PASS" "$WORKER_PASS" "$NEW_PASS"; do
+        if m grep -q "$secret" "$1" 2>/dev/null; then
+            return 1
+        fi
+    done
+    return 0
+}
+
+# 9a: action 前缀过滤命中登录失败行（AUTH-5c 与限流探针至少各落一行）。
+AUDIT9_RC=$(audit_list_json --action auth.login_failed)
+AUDIT9_HITS=$(m grep -c '"action": "auth.login_failed"' /tmp/auth-audit.json 2>/dev/null || true)
+assert "AUTH-9a AUDIT_LIST_ACTION_FILTER_HITS_LOGIN_FAILED" $([ "$AUDIT9_RC" = 0 ] &&
+    [ "${AUDIT9_HITS:-0}" -ge 1 ] && echo 0 || echo 1) \
+    "rc=$AUDIT9_RC hits=$AUDIT9_HITS err: $(m cat /tmp/auth-audit.err 2>/dev/null | tail -n 2)"
+
+# 9b: 全响应不含口令材料（负面断言）。
+if audit_no_password_material /tmp/auth-audit.json; then
+    assert "AUTH-9b AUDIT_LIST_FREE_OF_PASSWORD_MATERIAL" 0
+else
+    assert "AUTH-9b AUDIT_LIST_FREE_OF_PASSWORD_MATERIAL" 1 "a password value leaked into the audit read face"
+fi
+
+# 9c: --actor 过滤以 user:<founder-id> 命中（注册/注销等审计行的 actor 形态）。
+AUDIT9C_RC=$(audit_list_json --actor "user:$FOUNDER_ID")
+AUDIT9C_HITS=$(m grep -c '"actor": "user:'"$FOUNDER_ID"'"' /tmp/auth-audit.json 2>/dev/null || true)
+assert "AUTH-9c AUDIT_LIST_ACTOR_FILTER_HITS_FOUNDER" $([ "$AUDIT9C_RC" = 0 ] &&
+    [ "${AUDIT9C_HITS:-0}" -ge 1 ] && echo 0 || echo 1) \
+    "rc=$AUDIT9C_RC hits=$AUDIT9C_HITS (actor=user:$FOUNDER_ID)"
+
+# 9d: --result error 过滤非空（登录失败行 result=error——无口令字段的
+# 失败留痕，rbac-teams §6）。
+AUDIT9D_RC=$(audit_list_json --result error)
+AUDIT9D_HITS=$(m grep -c '"result": "error"' /tmp/auth-audit.json 2>/dev/null || true)
+assert "AUTH-9d AUDIT_LIST_RESULT_ERROR_NON_EMPTY" $([ "$AUDIT9D_RC" = 0 ] &&
+    [ "${AUDIT9D_HITS:-0}" -ge 1 ] && echo 0 || echo 1) \
+    "rc=$AUDIT9D_RC hits=$AUDIT9D_HITS"
+
+# 9e: 非平台管理员用户 PAT 拒（scope 门 read → 403 文案）；admin 机具令牌
+# 的放行已由 9a-9d 证明（mcli 凭据）。
+AUDIT9E_RC=0
+AUDIT9E_OUT=$(docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$MATE_PAT" \
+    "$DIND" /opt/fleetly/bin/fleetly audit list 2>&1) || AUDIT9E_RC=$?
+assert "AUTH-9e AUDIT_LIST_NON_ADMIN_PAT_REJECTED" $([ "$AUDIT9E_RC" -ne 0 ] &&
+    printf '%s' "$AUDIT9E_OUT" | grep -qi 'PermissionDenied' && echo 0 || echo 1) \
+    "rc=$AUDIT9E_RC output: $(printf '%s' "$AUDIT9E_OUT" | tail -n 1)"
+
+# 9f: export --csv——表头精确、数据行 ≥ 登录失败行数（≥1）、CSV 同样不含
+# 口令材料（RFC 4180 转义不影响子串检索——口令值无逗号/引号/换行）。
+AUDIT9F_RC=$(docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$MACHINE_TOKEN" \
+    "$DIND" sh -c '/opt/fleetly/bin/fleetly audit export --csv /tmp/auth-audit.csv >/tmp/auth-audit-export.out 2>&1; echo $?')
+AUDIT9F_HEADER=$(m head -n 1 /tmp/auth-audit.csv 2>/dev/null)
+AUDIT9F_LINES=$(m sh -c 'wc -l < /tmp/auth-audit.csv' 2>/dev/null | tr -d ' ')
+assert "AUTH-9f AUDIT_EXPORT_CSV_HEADER" $([ "$AUDIT9F_RC" = 0 ] &&
+    [ "$AUDIT9F_HEADER" = 'id,at,actor,action,target,result,error_code,request_id,diff_summary' ] && echo 0 || echo 1) \
+    "rc=$AUDIT9F_RC header=$AUDIT9F_HEADER"
+assert "AUTH-9g AUDIT_EXPORT_CSV_DATA_ROWS" $([ "${AUDIT9F_LINES:-0}" -ge 2 ] &&
+    m grep -q 'auth.login_failed' /tmp/auth-audit.csv 2>/dev/null && echo 0 || echo 1) \
+    "lines=$AUDIT9F_LINES (want >= 2 = header + data)"
+if audit_no_password_material /tmp/auth-audit.csv; then
+    assert "AUTH-9h AUDIT_EXPORT_CSV_FREE_OF_PASSWORD_MATERIAL" 0
+else
+    assert "AUTH-9h AUDIT_EXPORT_CSV_FREE_OF_PASSWORD_MATERIAL" 1 "a password value leaked into the CSV export"
+fi
 
 finish

@@ -169,10 +169,11 @@ func (s *UsersService) SetRegistration(ctx context.Context, req *serverv1.SetReg
 
 // ── 内部 helpers ─────────────────────────────────────────────────────────────
 
-// requirePlatformAdmin 是平台面判定（设计 §4.2 第 3 条）：机具令牌（UserID
-// 空）沿 scope 门放行（拦截器已强制 admin）；用户 principal 要求属主在册
-// 且 is_platform_admin。任何读取故障按拒绝处理（fail-closed）。
-func (s *UsersService) requirePlatformAdmin(ctx context.Context) error {
+// requirePlatformAdminPrincipal 是平台面判定的共享单点（设计 §4.2 第 3 条
+// ——UsersService 与 AuditService（W3-S1 D-W0-6 审计读面）同门）：机具令牌
+//（UserID 空）沿 scope 门放行（拦截器已强制 admin）；用户 principal 要求
+// 属主在册且 is_platform_admin。任何读取故障按拒绝处理（fail-closed）。
+func requirePlatformAdminPrincipal(ctx context.Context, st UserLookupStore) error {
 	p, ok := PrincipalFromContext(ctx)
 	if !ok {
 		return statusEnvelope(codes.Unauthenticated, "missing credential")
@@ -180,7 +181,7 @@ func (s *UsersService) requirePlatformAdmin(ctx context.Context) error {
 	if p.UserID == "" {
 		return nil // 机具令牌：平台级凭据（rbac-teams §2.3 设计语义）
 	}
-	u, err := s.st.GetUser(ctx, p.UserID)
+	u, err := st.GetUser(ctx, p.UserID)
 	if err != nil {
 		return statusEnvelope(codes.Unauthenticated, "invalid credential")
 	}
@@ -188,6 +189,18 @@ func (s *UsersService) requirePlatformAdmin(ctx context.Context) error {
 		return statusEnvelope(codes.PermissionDenied, "platform administrator privileges required")
 	}
 	return nil
+}
+
+// UserLookupStore 是平台面判定所需的最小读取面（*state.Store 满足）——
+// 共享门不绑定具体服务，判定的输入只有 principal 与属主行。
+type UserLookupStore interface {
+	GetUser(ctx context.Context, id string) (state.User, error)
+}
+
+// requirePlatformAdmin 是 UsersService 的平台面判定（共享单点委托——
+// 审计读面同门，语义不可分叉）。
+func (s *UsersService) requirePlatformAdmin(ctx context.Context) error {
+	return requirePlatformAdminPrincipal(ctx, s.st)
 }
 
 // principalOf 取调用方身份（拦截器保证存在；兜底零值）。

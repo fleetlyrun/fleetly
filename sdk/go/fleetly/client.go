@@ -94,6 +94,7 @@ type Client struct {
 	tokens  serverv1.TokensServiceClient
 	gitkey  serverv1.GitKeysServiceClient
 	auth    serverv1.AuthServiceClient
+	audit   serverv1.AuditServiceClient
 	cron    serverv1.CronServiceClient
 	dbs     serverv1.DatabaseServiceClient
 	secs    serverv1.SecretsServiceClient
@@ -140,6 +141,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		tokens:  serverv1.NewTokensServiceClient(conn),
 		gitkey:  serverv1.NewGitKeysServiceClient(conn),
 		auth:    serverv1.NewAuthServiceClient(conn),
+		audit:   serverv1.NewAuditServiceClient(conn),
 		cron:    serverv1.NewCronServiceClient(conn),
 		dbs:     serverv1.NewDatabaseServiceClient(conn),
 		secs:    serverv1.NewSecretsServiceClient(conn),
@@ -217,6 +219,10 @@ func (c *Client) Auth() serverv1.AuthServiceClient { return c.auth }
 
 // GitKeys 取 git 公钥管理面（admin scope，T2.19）。
 func (c *Client) GitKeys() serverv1.GitKeysServiceClient { return c.gitkey }
+
+// Audit 取审计读面（v0.3 W3-S1，rbac-teams §6 D-W0-6：过滤+分页的台账
+// 检索——平台管理员用户凭据或 admin 机具令牌）。
+func (c *Client) Audit() serverv1.AuditServiceClient { return c.audit }
 
 // Cron 取定时任务面（E5 Cron：手动触发 + 运行台账读面）。
 func (c *Client) Cron() serverv1.CronServiceClient { return c.cron }

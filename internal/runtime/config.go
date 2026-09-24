@@ -602,14 +602,18 @@ func httpPortOf(addr string) int {
 }
 
 // StateConfig 是状态层配置节（config 键 state.*）。保留期天数取非正值
-// 时回落注册默认（事件 30 天 / 审计 365 天 / builds 终态行 90 天——保留期
-// 是契约默认，不允许误配成 0 静默关闭清理）。
+// 时回落注册默认（事件 30 天 / 审计 90 天 / builds 终态行 90 天——保留期
+// 是契约默认，不允许误配成 0 静默关闭清理）。审计留存另有 platform_settings
+// 键 audit.retention_days 的运行期设置面（W3-S1 D-W0-6）：显式设置 > 本节
+// config > 缺省 90，janitor 每拍现读（internal/state/janitor.go）。
 type StateConfig struct {
 	// DBPath 是 SQLite 状态库文件路径（state.db_path）。
 	DBPath string `mapstructure:"db_path"`
 	// EventRetentionDays 是事件保留天数（state.event_retention_days）。
 	EventRetentionDays int `mapstructure:"event_retention_days"`
-	// AuditRetentionDays 是审计保留天数（state.audit_retention_days）。
+	// AuditRetentionDays 是审计保留天数（state.audit_retention_days；缺省
+	// 90——D-W0-6，platform_settings audit.retention_days 显式设置时覆盖
+	// 本值）。
 	AuditRetentionDays int `mapstructure:"audit_retention_days"`
 	// BuildRetentionDays 是 builds 终态行保留天数（state.build_retention_
 	// days；缺省 90，A10/S18——janitor 清理终态构建台账行）。

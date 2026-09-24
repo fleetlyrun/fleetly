@@ -56,8 +56,10 @@ state:
   db_path: "./fleetly.db"
   # 事件保留天数（默认 30；非正值回落默认，不允许关闭清理）。
   event_retention_days: 30
-  # 审计保留天数（默认 365）。
-  audit_retention_days: 365
+  # 审计保留天数（默认 90——D-W0-6）。运行期可在 platform_settings 键
+  # audit.retention_days 显式设置（优先级：platform_settings > 本键 > 90，
+  # janitor 每拍现读）。
+  audit_retention_days: 90
   # builds 终态行保留天数（S18-A10；默认 90。janitor 按 finished_at 清理
   # 终态构建台账行，非正值回落默认）。
   build_retention_days: 90

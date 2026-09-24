@@ -29,10 +29,12 @@ import (
 const JanitorCleanupInterval = time.Hour
 
 // DefaultEventRetentionDays / DefaultAuditRetentionDays 是保留期默认值
-// （架构 §2.3：事件 30 天、审计 1 年；config 可调）。
+//（事件 30 天；审计自 v0.3 W3-S1 起缺省 90 天——裁决 D-W0-6，原 365 天
+// 常量改为缺省值；config state.audit_retention_days 可调、platform_settings
+// audit.retention_days 显式设置再覆盖——回落链见 PruneOnce 的每拍现读）。
 const (
 	DefaultEventRetentionDays = 30
-	DefaultAuditRetentionDays = 365
+	DefaultAuditRetentionDays = 90
 )
 
 // S18-A7/A10 新增保留窗默认值。
@@ -81,6 +83,8 @@ type Janitor struct {
 	cfg   JanitorConfig
 
 	eventRetention time.Duration
+	// auditRetention 是审计留存的**构造期回落值**（config > 缺省 90）：
+	// 每拍现读 platform_settings 失败或未显式设置时的兜底（auditRetentionFor）。
 	auditRetention time.Duration
 
 	// staleSeen 是非终态超龄告警的进程内记忆（每行告警一次；重启清零 =
@@ -148,9 +152,29 @@ func (j *Janitor) Stop(_ context.Context) error {
 	return nil
 }
 
-// EventRetention / AuditRetention 返回生效保留期（诊断用）。
+// EventRetention / AuditRetention 返回生效保留期（诊断用；AuditRetention
+// 是构造期回落值——platform_settings 显式设置后的每拍生效值见
+// auditRetentionFor）。
 func (j *Janitor) EventRetention() time.Duration { return j.eventRetention }
 func (j *Janitor) AuditRetention() time.Duration { return j.auditRetention }
+
+// auditRetentionFor 现读审计留存时长（每清一拍一次——设置保存即生效，读
+// 侧不缓存长驻，logs/metrics 设置的 janitor 消费先例同形态）。回落链
+//（D-W0-6）：platform_settings audit.retention_days > 构造期回落值
+//（config state.audit_retention_days > 缺省 90）。设置读取失败保持构造期
+// 回落值（底座暂态不该翻转保留窗，warn 记录下拍再试——refreshBackendGate
+// 同口径）。
+func (j *Janitor) auditRetentionFor(ctx context.Context) time.Duration {
+	in, err := j.store.LoadAuditSettings(ctx)
+	if err != nil {
+		j.log.Warn("janitor: load audit retention setting failed (keeping startup fallback)", "error", err.Error())
+		return j.auditRetention
+	}
+	if in.Set {
+		return time.Duration(in.RetentionDays) * 24 * time.Hour
+	}
+	return j.auditRetention
+}
 
 // PruneOnce 执行一轮清理（now 为基准时刻），返回 (事件条数, 审计条数)。
 // 独立导出供测试直接驱动。S18-A7/A10：一轮内顺次执行全部 duties——
@@ -162,7 +186,10 @@ func (j *Janitor) PruneOnce(ctx context.Context, now time.Time) (events int64, a
 	if err != nil {
 		return 0, 0, err
 	}
-	audits, err = j.store.PruneExpiredAudits(ctx, now.Add(-j.auditRetention))
+	// 审计窗每拍现读 platform_settings audit.retention_days（W3-S1 D-W0-6：
+	// platform_settings > config > 缺省 90——auditRetentionFor），设置保存
+	// 即生效，不等进程重启。
+	audits, err = j.store.PruneExpiredAudits(ctx, now.Add(-j.auditRetentionFor(ctx)))
 	if err != nil {
 		return events, 0, err
 	}

@@ -44,6 +44,7 @@ func NewApp(version string) *commands.App {
 		newEventsCmd(),
 		newTokensCmd(),
 		newAuthCmd(),
+		newAuditCmd(),
 		newPlacementCmd(),
 		newNodesCmd(),
 		newVolumesCmd(),

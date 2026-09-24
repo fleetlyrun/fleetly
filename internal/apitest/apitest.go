@@ -183,6 +183,9 @@ func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env
 	// 平台用户管理面在平台管理员判定后的读面）。
 	serverv1.RegisterAuthServiceServer(srv, api.NewAuthService(st))
 	serverv1.RegisterUsersServiceServer(srv, api.NewUsersService(st))
+	// 审计读面（v0.3 W3-S1）：CLI 测试同路径消费（平台管理员双门在 handler，
+	// 与生产同形）。
+	serverv1.RegisterAuditServiceServer(srv, api.NewAuditService(st))
 	// 团队/项目面（v0.3 W2-S1）：CLI/集成测试同路径消费（角色门在 handler
 	// 内强制，与生产同形）。
 	serverv1.RegisterTeamsServiceServer(srv, api.NewTeamsService(st))
