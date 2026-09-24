@@ -238,5 +238,29 @@ staging 升级收尾波构建(7dc5d2e 同源)后逐票验证:
 
 挂账(收尾波新增):8423 根治=内部 CA+swarm secret 分发+IP SAN 证书(设计级立项,依赖链钉在 traefik.go TODO(harden-8423));VM `-memory.allowedPercent` 可选优化;存量保留字 app 的重部署边界(新部署拒绝,存量视图不受影响)。
 
+## 13. v0.3 W1+W2 真机演练(2026-09-24 实录,fresh 清空重建)
+
+形态:**staging 清空重建为 fresh v0.3**(D-W0-5 修订口径——抹 /var/lib/fleetly 与全部 fleetly- swarm 对象,保留 swarm 集群与 config.yaml;scp main 构建 67c9dc4+双 fix 的 fleetlyd/fleetly/console dist)。冷启动即平台组件自动收敛(exec/ingress/registry/VL 各 1/1),平台证书 LE 重签(周内重复签发限额内)。
+
+验证套件 `.w3out/staging-v03/verify.sh`(SV-1..SV-15)+ 定向复验,三轮迭代后 **32/32 全过**:
+
+| 断言族 | 实录 | 结果 |
+|---|---|---|
+| fresh 认证链 | 注册窗口恒开+无用户→bootstrap 预注册可用→首用户注册=平台管理员+个人队 founder(owner)+默认项目 default→**bootstrap 即刻 401**(SV-1..5) | ✅ |
+| 机具令牌+三段命名 | founder 会话铸 machine PAT→`FLEETLY_PROJECT=founder/default` deploy→**服务名 fleetly-founder-default-demo-web**(SV-6/7) | ✅ |
+| 邀请链 | owner 建邀(developer)→临时开注册→mate 注册→accept(生效角色回读)→关注册(SV-8) | ✅(注记①) |
+| 角色矩阵 | developer 可部署、**env 按键明文读 403**(写 200 对照);项目覆写 mate→viewer 后部署 403,恢复 developer 后复原(SV-9/10) | ✅ |
+| 同名跨项目 | 同团队第二项目 staging 部署**同名 demo 成功**→两服务并存 fleetly-founder-{default,staging}-demo-web(SV-11) | ✅(注记②) |
+| E4 跨项目守卫 | founder/default 建库 pgshared(postgres-16,就绪)→staging 项目 app 以 `fleetly.databases: pgshared` label 引用→**E_DB_PROJECT_MISMATCH 拒绝**(SV-12) | ✅ |
+| 观测/事件/TLS | VL 默认捆绑 marker 检索命中;事件流 user.registered×2/team.created×2/project.created×3;Console /ui/ 200;明文 8420 拒(SV-13..15) | ✅ |
+
+**演练产出两修一挂账**:
+- 修①(7082385):**deploy 同名跨项目按设计新建**——S3 实现的「全局按名解析→409 指引 MoveApp」偏差与 D-W0-4 二修矛盾(§8 演练要点直判),ensureApp 改「目标项目内无此名即新建」+回归测试钉死;
+- 修②(0b669d7):CLI deploy 成功后尾查 GetApp 裸名歧义→限定形化;
+- 挂账①:**邀请未注册用户需临时开注册窗**(设计 §3.1「注册即自动 accept」的服务端 invite-token 注册通道未实现,Console 现靠 from-回跳+临时开窗;W3 候选票)。
+脚本侧教训:SetRegistration 是 bool `open`(非字符串);库投影字段 `status`;env 明文=按键 GET `/env/{key}`;`logs search` 的 app 是位置参数;E4 引用声明=`fleetly.databases` label(非 env URL 探测)。
+
+staging 现保持态:fresh v0.3(67c9dc4+两 fix),TLS platform on(证书重签),founder/mate 双用户,demo×2 项目+matedemo+pgshared 库在役;node2 仍 Down(W3-F2 UDP 未放行)。
+
 
 
