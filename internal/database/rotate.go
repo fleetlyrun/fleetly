@@ -18,6 +18,14 @@ package database
 //   - Redis：无引擎侧动作（凭据 = spec 启动参数）——CAS 落库新密文后由收
 //     敛 duty 下一拍按 desired-hash 差异重建任务（运行中）或仅更新 spec
 //     （paused，resume 时以新密码重建）。
+//   - MySQL（v0.3 W4，D-W4-3）：同 PG 原语——一次性容器 job 以旧密码认证
+//     （MYSQL_PWD env）、`ALTER USER 'fleetly'@'%'`（官方镜像建 USER@'%'
+//     的 host 段逐字）；暂停期同拒（mysqld 停摆无法 ALTER，ErrPGRotation
+//     Paused 共用哨兵）。
+//   - MongoDB（v0.3 W4，D-W4-3）：一次性容器 job 以旧密码认证
+//     （MONGO_PASSWORD env 经 ${MONGO_PASSWORD} 引用展开进 URI——mongosh
+//     无原生凭据 env）、`db.updateUser`（admin 库——官方入口 root 恒建于
+//     admin，设计 §8.1 注记）；暂停期同拒。
 //
 // 引擎侧成功后（PG job exit 0 / Redis 密文落库）：
 //  1. 重物化引用方 system env 行（FLEETLY_DB_<NAME>_*，值回 pending）——
@@ -54,9 +62,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// ErrPGRotationPaused 表示 PG 实例暂停期轮换被拒（postgres 需运行中实例
-// 才能 ALTER USER——resume 后再轮换的诚实拒绝，PG 引擎级边界）。
-var ErrPGRotationPaused = errors.New("postgres requires a running instance to ALTER USER (resume the database, then rotate)")
+// ErrPGRotationPaused 表示库实例暂停期轮换被拒（PG/MySQL/Mongo 共用——
+// 三引擎都需要运行中实例执行引擎侧改密语句；v0.3 W4 起 MySQL/Mongo 轮换
+// 沿用同一哨兵，名字保留首发 PG 的历史锚；api 经 errors.Is 映射 409 族并
+// 附「先 resume 再轮换」指引）。消息措辞引擎中立（哨兵单值，不给 MySQL/
+// Mongo 回报 postgres 措辞的错位文本）。
+var ErrPGRotationPaused = errors.New("database engine requires a running instance to rotate credentials (resume the database, then rotate)")
 
 // ErrRotationConflict 表示轮换落库的乐观 CAS 落败（并发轮换已推进——
 // 同族乐观冲突语义，D-DB-8；api 映射 E_STATE_VERSION_CONFLICT）。
@@ -135,6 +146,24 @@ func (m *Manager) RotateCredentials(ctx context.Context, name string) ([]string,
 		if err := m.rotatePostgresCredential(ctx, &inst, tpl.Image, old, new); err != nil {
 			return nil, &RotationStageError{Stage: "engine", Err: err}
 		}
+	case dbtemplate.TemplateMySQL84:
+		// MySQL 暂停拒绝（PG 同款引擎级边界，v0.3 W4）：mysqld 停摆时
+		// ALTER USER 无从执行——如实拒绝提示先 resume，不受理假轮换。
+		if inst.State == state.DatabasePaused {
+			return nil, ErrPGRotationPaused
+		}
+		if err := m.rotateMySQLCredential(ctx, &inst, tpl.Image, old, new); err != nil {
+			return nil, &RotationStageError{Stage: "engine", Err: err}
+		}
+	case dbtemplate.TemplateMongoDB80:
+		// MongoDB 暂停拒绝（PG 同款引擎级边界，v0.3 W4）：mongod 停摆时
+		// updateUser 无从执行——如实拒绝提示先 resume，不受理假轮换。
+		if inst.State == state.DatabasePaused {
+			return nil, ErrPGRotationPaused
+		}
+		if err := m.rotateMongoCredential(ctx, &inst, tpl.Image, old, new); err != nil {
+			return nil, &RotationStageError{Stage: "engine", Err: err}
+		}
 	case dbtemplate.TemplateRedis7:
 		// Redis 无引擎侧动作（凭据 = spec 启动参数；收敛 duty 按 hash 差异
 		// 重建任务）——落库即引擎侧完成。
@@ -205,6 +234,76 @@ func (m *Manager) rotatePostgresCredential(ctx context.Context, inst *state.Data
 		// not exist」退败（exit 2）。ALTER USER 是集群级操作，维护库执行。
 		Cmd:     []string{"psql", "-h", inst.Name, "-U", "fleetly", "-d", "postgres", "-v", "ON_ERROR_STOP=1", "-c", "ALTER USER fleetly WITH PASSWORD '" + new + "'"},
 		Env:     []string{"PGPASSWORD=" + old},
+		Network: netName,
+	})
+	if err != nil {
+		return err
+	}
+	if exit != 0 {
+		return fmt.Errorf("credential rotation job exited %d (authentication with the stored password failed, or the instance is unhealthy; verify with databases reveal and retry)", exit)
+	}
+	return nil
+}
+
+// rotateMySQLCredential 引擎侧热轮换（MySQL，v0.3 W4）：一次性容器 job 在
+// 库共享网络内以旧密码认证、ALTER USER 换新（官方镜像建 USER@'%'——host
+// 段逐字；D-W4-3 轮换原语）。密码字符集 [a-zA-Z0-9]（GeneratePassword）→
+// 单引号字面量内无引号 hazard，字面拼接安全；旧密码经 MYSQL_PWD env
+// （mysql 客户端原生消费）。退出码非 0 = 认证/执行失败（诊断面只有退出码
+// ——容器输出不采集，明文纪律优先；PG 同款口径）。
+func (m *Manager) rotateMySQLCredential(ctx context.Context, inst *state.DatabaseInstance, image, old, new string) error {
+	netName, err := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
+	if err != nil {
+		return err
+	}
+	// 前置：共享网络在位（幂等——paused 恢复窗口/外部清理后的自愈）。
+	if err := m.docker.NetworkEnsure(ctx, netName); err != nil {
+		return fmt.Errorf("rotation network ensure: %w", err)
+	}
+	jobName := "fleetly-db-" + inst.Name + "-rotate-" + ulid.Make().String()[:8]
+	exit, err := m.docker.ContainerRun(ctx, ContainerRunInput{
+		Name:  jobName,
+		Image: image,
+		// ALTER USER 不依赖缺省库——mysql 客户端无库连接即集群级操作面。
+		Cmd:     []string{"mysql", "-h", inst.Name, "-u", "fleetly", "-e", "ALTER USER 'fleetly'@'%' IDENTIFIED BY '" + new + "'"},
+		Env:     []string{"MYSQL_PWD=" + old},
+		Network: netName,
+	})
+	if err != nil {
+		return err
+	}
+	if exit != 0 {
+		return fmt.Errorf("credential rotation job exited %d (authentication with the stored password failed, or the instance is unhealthy; verify with databases reveal and retry)", exit)
+	}
+	return nil
+}
+
+// rotateMongoCredential 引擎侧热轮换（MongoDB，v0.3 W4）：一次性容器 job
+// 在库共享网络内以旧密码认证、db.updateUser 换新（D-W4-3 轮换原语）。
+// 认证与更新同在 admin 库（官方入口把 initdb root 恒建于 admin——设计
+// managed-databases §8.1 实现注记）；旧密码经 MONGO_PASSWORD env、以
+// ${MONGO_PASSWORD} 引用展开进 URI（字面量不进命令词表——mongosh 无原生
+// 凭据 env，该形态与备份 job 的 Mongo 消费同款）；新密码进 eval 字面量
+// （[a-zA-Z0-9] 无引号 hazard）。退出码非 0 = 认证/执行失败（诊断面只有
+// 退出码——明文纪律优先）。
+func (m *Manager) rotateMongoCredential(ctx context.Context, inst *state.DatabaseInstance, image, old, new string) error {
+	netName, err := naming.DBNetworkName(inst.TeamSlug, inst.ProjectSlug, inst.Name)
+	if err != nil {
+		return err
+	}
+	// 前置：共享网络在位（幂等——paused 恢复窗口/外部清理后的自愈）。
+	if err := m.docker.NetworkEnsure(ctx, netName); err != nil {
+		return fmt.Errorf("rotation network ensure: %w", err)
+	}
+	jobName := "fleetly-db-" + inst.Name + "-rotate-" + ulid.Make().String()[:8]
+	cmd := `mongosh "mongodb://fleetly:${MONGO_PASSWORD}@` + inst.Name + `:27017/admin" --quiet --eval "db.getSiblingDB('admin').updateUser('fleetly', {pwd: '` + new + `'})"`
+	exit, err := m.docker.ContainerRun(ctx, ContainerRunInput{
+		Name:  jobName,
+		Image: image,
+		Cmd:   []string{"sh", "-c", cmd},
+		Env:   []string{"MONGO_PASSWORD=" + old},
+		// sh -c 展开需要 shell；ContainerRun 无 Cmd 包装——命令自带 sh -c
+		// 形态（官方 mongo 镜像 ENTRYPOINT 透传）。
 		Network: netName,
 	})
 	if err != nil {

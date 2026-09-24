@@ -24,6 +24,14 @@ const (
 	DefaultPostgresImage = "postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f26b1dfbe30d6"
 	// DefaultRedisImage 是 redis:7 的钉定引用。
 	DefaultRedisImage = "redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f"
+	// DefaultMySQLImage 是 mysql:8.4（8.4 LTS）的钉定引用（v0.3 W4
+	// D-W4-1；台账 docs/runbooks/image-prepull.md #19——2026-09-24 解析，
+	// 多架构 index digest 经 amd64 拉取 RepoDigest 一致 + 按 digest 以
+	// arm64 平台独立拉取交付 arm64 镜像双验）。
+	DefaultMySQLImage = "mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d"
+	// DefaultMongoImage 是 mongo:8.0（8.0 Community）的钉定引用（v0.3 W4
+	// D-W4-2；台账 #20——双验方法同上，2026-09-24）。
+	DefaultMongoImage = "mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2"
 )
 
 // 模板 ID（注册表键；API/CLI 面的 template 取值词表）。
@@ -32,6 +40,10 @@ const (
 	TemplatePostgres16 = "postgres-16"
 	// TemplateRedis7 是 Redis 7 首发模板。
 	TemplateRedis7 = "redis-7"
+	// TemplateMySQL84 是 MySQL 8.4 LTS 模板（v0.3 W4，D-W4-1）。
+	TemplateMySQL84 = "mysql-8.4"
+	// TemplateMongoDB80 是 MongoDB 8.0 Community 模板（v0.3 W4，D-W4-2）。
+	TemplateMongoDB80 = "mongodb-8.0"
 )
 
 // ErrUnknownTemplate 表示模板 ID 不在注册表（S2 映射 E_DB_TEMPLATE_
@@ -125,6 +137,36 @@ func redisHealthGate() HealthGate {
 	}
 }
 
+// mysqlHealthGate 是 MySQL 健康门（v0.3 W4 D-W4 裁决逐字：`mysqladmin
+// ping`，节奏与 PG/Redis 缺省同 5s/3s/3/30s）。实现注记：无认证 ping 的
+// 判定语义 = mysqld 应答即存活——mysqladmin 对「应答但拒绝认证」的活服
+// 务器返回 0（官方镜像缺省探针同形态），与 §2.2 Redis 行的 NOAUTH 假成
+// 功不同类：Redis 是认证后每命令全 NOAUTH（存活≠可服务），MySQL 的
+// access-denied 回应本身以退出码证明服务在答——存活即本门的真值。
+func mysqlHealthGate() HealthGate {
+	return HealthGate{
+		Test:        []string{"CMD", "mysqladmin", "ping"},
+		Interval:    5 * time.Second,
+		Timeout:     3 * time.Second,
+		Retries:     3,
+		StartPeriod: 30 * time.Second,
+	}
+}
+
+// mongoHealthGate 是 MongoDB 健康门（v0.3 W4 D-W4 裁决逐字：`mongosh
+// --quiet --eval db.adminCommand('ping')`）。实现注记：`ping` 在认证开启
+// 时属 MongoDB 免认证命令白名单——连通可答即真值判定；无认证通道依赖
+// （凭据走 initdb，健康门不消费）。
+func mongoHealthGate() HealthGate {
+	return HealthGate{
+		Test:        []string{"CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"},
+		Interval:    5 * time.Second,
+		Timeout:     3 * time.Second,
+		Retries:     3,
+		StartPeriod: 30 * time.Second,
+	}
+}
+
 // registry 是平台内置模板注册表（唯一真源；新引擎接入 = 一个条目 +
 // 一个 EngineAdapter + 备份镜像工具，§2.2）。
 var registry = map[string]Template{
@@ -154,6 +196,37 @@ var registry = map[string]Template{
 		CredentialDelivery: CredentialSpecArg,
 		HealthGate:         redisHealthGate(),
 		DefaultLimits:      Limits{CPUSeconds: 0.5, MemoryBytes: 256 << 20}, // 256MiB
+	},
+	TemplateMySQL84: {
+		ID:          TemplateMySQL84,
+		Image:       DefaultMySQLImage,
+		ServiceName: "mysql",
+		EnginePort:  3306,
+		// 卷 key=data 挂 /var/lib/mysql（官方镜像 DATADIR）；凭据经
+		// MYSQL_*_FILE secret 文件投递（入口 file_env 原生支持——D-W4-1，
+		// 设计 managed-databases §8.2 表）；root 密码 = 同一凭据值（root
+		// 不在用户面/投影暴露，仅满足官方镜像 initdb 必填——轮换只动
+		// fleetly@'%'）。
+		VolumeKey:          "data",
+		VolumeMountPath:    "/var/lib/mysql",
+		CredentialDelivery: CredentialSecretFile,
+		HealthGate:         mysqlHealthGate(),
+		DefaultLimits:      Limits{CPUSeconds: 1.0, MemoryBytes: 1 << 30}, // 1GiB
+	},
+	TemplateMongoDB80: {
+		ID:          TemplateMongoDB80,
+		Image:       DefaultMongoImage,
+		ServiceName: "mongo",
+		EnginePort:  27017,
+		// 卷 key=data 挂 /data/db（官方镜像 dbpath）；凭据经
+		// MONGO_INITDB_ROOT_PASSWORD_FILE secret 文件投递（D-W4-2，设计
+		// managed-databases §8.2 表）；root 用户由官方入口恒建于 admin 库
+		// ——连接串投影带 ?authSource=admin（§8.1 实现注记）。
+		VolumeKey:          "data",
+		VolumeMountPath:    "/data/db",
+		CredentialDelivery: CredentialSecretFile,
+		HealthGate:         mongoHealthGate(),
+		DefaultLimits:      Limits{CPUSeconds: 1.0, MemoryBytes: 1 << 30}, // 1GiB
 	},
 }
 

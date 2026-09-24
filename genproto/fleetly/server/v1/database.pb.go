@@ -31,9 +31,11 @@ type CreateDatabaseRequest struct {
 	// fleetly-db-* 与 app 名族解耦，app 与库实例可重名）。project 内唯一
 	// （D-W0-4 二修——跨项目同名实例合法）。
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// 模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。
+	// 模板 ID（平台内置注册表：postgres-16 / redis-7 / mysql-8.4 /
+	// mongodb-8.0；未知 → 400）。
 	Template string `protobuf:"bytes,2,opt,name=template,proto3" json:"template,omitempty"`
-	// 资源限额（零值字段回落模板缺省——PG 1C/1Gi、Redis 0.5C/256Mi）。
+	// 资源限额（零值字段回落模板缺省——PG 1C/1Gi、Redis 0.5C/256Mi、
+	// MySQL/Mongo 1C/1Gi）。
 	Limits *DatabaseLimits `protobuf:"bytes,3,opt,name=limits,proto3" json:"limits,omitempty"`
 	// 备份计划（零值字段回落平台缺省 24h/7 份/03:00 UTC）。
 	BackupPlan *DatabaseBackupPlan `protobuf:"bytes,4,opt,name=backup_plan,json=backupPlan,proto3" json:"backup_plan,omitempty"`

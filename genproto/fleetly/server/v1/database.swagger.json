@@ -614,11 +614,11 @@
         },
         "template": {
           "type": "string",
-          "title": "模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。"
+          "title": "模板 ID（平台内置注册表：postgres-16 / redis-7 / mysql-8.4 /\nmongodb-8.0；未知 → 400）。"
         },
         "limits": {
           "$ref": "#/definitions/v1DatabaseLimits",
-          "title": "资源限额（零值字段回落模板缺省——PG 1C/1Gi、Redis 0.5C/256Mi）。"
+          "title": "资源限额（零值字段回落模板缺省——PG 1C/1Gi、Redis 0.5C/256Mi、\nMySQL/Mongo 1C/1Gi）。"
         },
         "backup_plan": {
           "$ref": "#/definitions/v1DatabaseBackupPlan",

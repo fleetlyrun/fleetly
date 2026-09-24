@@ -45,8 +45,10 @@ type RenderInput struct {
 	Credentials Credentials
 }
 
-// render 固定常量（PG 凭据规格：固定 USER=fleetly；DATABASE = 实例名
-// '-'→'_'；密码经 Swarm secret 文件投递）。
+// render 固定常量（凭据规格，PG 首发后为全引擎共用口径：固定
+// USER=fleetly；DATABASE = 实例名 '-'→'_'；密码经 Swarm secret 文件投递
+// ——secret 文件路径对 mysql/mongo 官方入口的 _FILE 变体同形复用，
+// v0.3 W4）。
 const (
 	pgUser           = "fleetly"
 	pgPasswordFile   = "/run/secrets/password"
@@ -138,7 +140,8 @@ func Render(in RenderInput) (engine.ServiceSpec, error) {
 
 // renderEnv 组装引擎注入 env（调用方 sortEnv 排序）。PG：固定 USER、
 // DATABASE（实例名 '-'→'_'）、密码经 secret 文件、PGDATA 子目录约定；
-// Redis：健康门用的密码 env 引用源。
+// Redis：健康门用的密码 env 引用源；MySQL/Mongo：官方入口 _FILE 变体消费
+// 同一 secret 文件（v0.3 W4 D-W4-1/2，设计 managed-databases §8.2 表）。
 func renderEnv(tpl Template, in RenderInput) []string {
 	var env []string
 	switch tpl.ID {
@@ -152,6 +155,25 @@ func renderEnv(tpl Template, in RenderInput) []string {
 	case TemplateRedis7:
 		env = []string{
 			redisPasswordEnv + "=" + in.Credentials.Password,
+		}
+	case TemplateMySQL84:
+		// 官方镜像凭据规格：USER/DATABASE 由实例名与模板确定性推导；
+		// MYSQL_ROOT_PASSWORD 与应用密码同值（root 不在投影/用户面暴露，
+		// 仅满足官方镜像 initdb 必填——轮换只动 fleetly@'%'）。
+		env = []string{
+			"MYSQL_DATABASE=" + DatabaseName(in.Instance),
+			"MYSQL_PASSWORD_FILE=" + pgPasswordFile,
+			"MYSQL_ROOT_PASSWORD_FILE=" + pgPasswordFile,
+			"MYSQL_USER=" + pgUser,
+		}
+	case TemplateMongoDB80:
+		// 官方入口把 initdb root 恒建于 admin 库；MONGO_INITDB_DATABASE
+		// 只声明 initdb 缺省库（库本体由首写惰性创建——MongoDB 语义）。
+		// 连接串投影因此带 ?authSource=admin（§8.1 实现注记）。
+		env = []string{
+			"MONGO_INITDB_DATABASE=" + DatabaseName(in.Instance),
+			"MONGO_INITDB_ROOT_PASSWORD_FILE=" + pgPasswordFile,
+			"MONGO_INITDB_ROOT_USERNAME=" + pgUser,
 		}
 	}
 	return env
@@ -194,9 +216,10 @@ func DatabaseName(instance string) string {
 }
 
 // ConnectionVars 渲染引用方物化 env 键值集（§2.5 键集表——planner 物化为
-// 引用 app 的 env_vars source=system 行）。PG：URL/HOST/PORT/USER/PASSWORD/
-// DATABASE；Redis 子集：URL/HOST/PORT/PASSWORD。URL 密码字符集 [a-zA-Z0-9]
-// 免 percent-encode（§2.5 连接串格式行）。
+// 引用 app 的 env_vars source=system 行；v0.3 W4 扩 MySQL/Mongo 全键行，
+// 设计 managed-databases §8.1 投影表）。PG/MySQL/Mongo：URL/HOST/PORT/
+// USER/PASSWORD/DATABASE；Redis 子集：URL/HOST/PORT/PASSWORD。URL 密码
+// 字符集 [a-zA-Z0-9] 免 percent-encode（§2.5 连接串格式行）。
 func ConnectionVars(templateID, instance, password string) (map[string]string, error) {
 	tpl, err := Get(templateID)
 	if err != nil {
@@ -222,6 +245,19 @@ func ConnectionVars(templateID, instance, password string) (map[string]string, e
 		out[prefix+"_DATABASE"] = dbName
 	case TemplateRedis7:
 		out[prefix+"_URL"] = fmt.Sprintf("redis://:%s@%s:%d/0", password, instance, tpl.EnginePort)
+	case TemplateMySQL84:
+		dbName := DatabaseName(instance)
+		out[prefix+"_URL"] = fmt.Sprintf("mysql://%s:%s@%s:%d/%s", pgUser, password, instance, tpl.EnginePort, dbName)
+		out[prefix+"_USER"] = pgUser
+		out[prefix+"_DATABASE"] = dbName
+	case TemplateMongoDB80:
+		// ?authSource=admin：官方入口把 initdb root 恒建于 admin 库（镜像
+		// 入口脚本硬编码，8.0 无 MONGO_INITDB_ROOT_DATABASE），驱动缺省按
+		// URI path 库认证——无该参数认证必败（§8.1 实现注记）。
+		dbName := DatabaseName(instance)
+		out[prefix+"_URL"] = fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=admin", pgUser, password, instance, tpl.EnginePort, dbName)
+		out[prefix+"_USER"] = pgUser
+		out[prefix+"_DATABASE"] = dbName
 	}
 	return out, nil
 }

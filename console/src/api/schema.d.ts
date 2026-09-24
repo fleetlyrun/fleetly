@@ -1719,6 +1719,13 @@ export interface components {
             password?: string;
             /** 人读显示名（空 = 缺省取 email 本地部分）。 */
             display_name?: string;
+            /**
+             * 邀请 token（可空，v0.3 W3-S4 设计 §3.1「未注册→注册即自动 accept」）：
+             *     携带有效邀请 token 的注册豁免注册窗（窗口关闭也可注册），注册与邀请
+             *     消费同事务——注册成功即以受邀角色入队。无效 token → E_INVITE_INVALID
+             *     （一次性凭据不泄漏存在性细节）。缺省（空）时行为与无邀请注册逐字一致。
+             */
+            invite_token?: string;
         };
         v1RegisterResponse: {
             user?: components["schemas"]["v1UserView"];
@@ -3035,7 +3042,10 @@ export interface components {
              *     （D-W0-4 二修——跨项目同名实例合法）。
              */
             name?: string;
-            /** 模板 ID（平台内置注册表：postgres-16 / redis-7；未知 → 400）。 */
+            /**
+             * 模板 ID（平台内置注册表：postgres-16 / redis-7 / mysql-8.4 /
+             *     mongodb-8.0；未知 → 400）。
+             */
             template?: string;
             limits?: components["schemas"]["v1DatabaseLimits"];
             backup_plan?: components["schemas"]["v1DatabaseBackupPlan"];

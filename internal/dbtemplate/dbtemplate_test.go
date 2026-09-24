@@ -70,13 +70,189 @@ func TestPinnedDigests(t *testing.T) {
 		t.Fatalf("redis default limits = %+v, want 0.5 CPU / 256MiB (D-DB-9)", rd.DefaultLimits)
 	}
 
-	// 注册表 = 两模板；未知 ID → ErrUnknownTemplate（S2 映射
-	// E_DB_TEMPLATE_UNSUPPORTED）。
-	if list := List(); len(list) != 2 || list[0].ID != "postgres-16" || list[1].ID != "redis-7" {
-		t.Fatalf("registry list = %+v, want [postgres-16 redis-7] sorted", list)
+	// 注册表 = 四模板（v0.3 W4 扩 mysql-8.4/mongodb-8.0）；未知 ID →
+	// ErrUnknownTemplate（S2 映射 E_DB_TEMPLATE_UNSUPPORTED）。
+	list := List()
+	if len(list) != 4 {
+		t.Fatalf("registry list = %+v, want 4 templates", list)
+	}
+	for i, want := range []string{"mongodb-8.0", "mysql-8.4", "postgres-16", "redis-7"} {
+		if list[i].ID != want {
+			t.Fatalf("registry list[%d] = %s, want %s (sorted)", i, list[i].ID, want)
+		}
 	}
 	if _, err := Get("mysql-8"); !errors.Is(err, ErrUnknownTemplate) {
 		t.Fatalf("unknown template err = %v, want ErrUnknownTemplate", err)
+	}
+	if _, err := Get("mongo-8.0"); !errors.Is(err, ErrUnknownTemplate) {
+		t.Fatalf("unknown template err = %v, want ErrUnknownTemplate (the mongodb key is mongodb-8.0)", err)
+	}
+}
+
+// TestMySQLAndMongoTemplates 新模板注册表字段逐字（v0.3 W4 D-W4-1/2，设计
+// managed-databases §8.2 表）：digest 双锚、端口、卷挂载点、secret 文件投
+// 递、健康门（裁决命令逐字）、缺省限额。
+func TestMySQLAndMongoTemplates(t *testing.T) {
+	my, err := Get(TemplateMySQL84)
+	if err != nil {
+		t.Fatalf("get mysql-8.4: %v", err)
+	}
+	if my.Image != "mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d" {
+		t.Fatalf("mysql image = %s, want the pinned multi-arch digest (D-W4-1)", my.Image)
+	}
+	if my.EnginePort != 3306 || my.ServiceName != "mysql" || my.VolumeKey != "data" || my.VolumeMountPath != "/var/lib/mysql" {
+		t.Fatalf("mysql template fields drifted: %+v", my)
+	}
+	if my.CredentialDelivery != CredentialSecretFile {
+		t.Fatalf("mysql credential delivery = %s, want secret-file (MYSQL_*_FILE native _FILE support)", my.CredentialDelivery)
+	}
+	if my.DefaultLimits != (Limits{CPUSeconds: 1.0, MemoryBytes: 1 << 30}) {
+		t.Fatalf("mysql default limits = %+v, want 1.0 CPU / 1GiB", my.DefaultLimits)
+	}
+	if !reflect.DeepEqual(my.HealthGate.Test, []string{"CMD", "mysqladmin", "ping"}) {
+		t.Fatalf("mysql health gate = %v, want the ruled mysqladmin ping", my.HealthGate.Test)
+	}
+
+	mo, err := Get(TemplateMongoDB80)
+	if err != nil {
+		t.Fatalf("get mongodb-8.0: %v", err)
+	}
+	if mo.Image != "mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2" {
+		t.Fatalf("mongo image = %s, want the pinned multi-arch digest (D-W4-2)", mo.Image)
+	}
+	if mo.EnginePort != 27017 || mo.ServiceName != "mongo" || mo.VolumeKey != "data" || mo.VolumeMountPath != "/data/db" {
+		t.Fatalf("mongo template fields drifted: %+v", mo)
+	}
+	if mo.CredentialDelivery != CredentialSecretFile {
+		t.Fatalf("mongo credential delivery = %s, want secret-file (MONGO_INITDB_ROOT_PASSWORD_FILE native _FILE support)", mo.CredentialDelivery)
+	}
+	if mo.DefaultLimits != (Limits{CPUSeconds: 1.0, MemoryBytes: 1 << 30}) {
+		t.Fatalf("mongo default limits = %+v, want 1.0 CPU / 1GiB", mo.DefaultLimits)
+	}
+	if !reflect.DeepEqual(mo.HealthGate.Test, []string{"CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"}) {
+		t.Fatalf("mongo health gate = %v, want the ruled mongosh ping eval", mo.HealthGate.Test)
+	}
+	for _, tpl := range []Template{my, mo} {
+		if tpl.HealthGate.Interval != 5*time.Second || tpl.HealthGate.Timeout != 3*time.Second ||
+			tpl.HealthGate.Retries != 3 || tpl.HealthGate.StartPeriod != 30*time.Second {
+			t.Fatalf("%s health gate timing = %+v, want the default 5s/3s/3/30s", tpl.ID, tpl.HealthGate)
+		}
+	}
+}
+
+// TestRenderMySQLAndMongo 新模板渲染 golden：secret 文件投递（官方入口
+// _FILE 变体 env）+ 挂载点 + 健康门 + 确定性（同输入同投影同 desired-hash）。
+func TestRenderMySQLAndMongo(t *testing.T) {
+	for _, tc := range []struct {
+		templateID string
+		wantEnv    []string
+	}{
+		{
+			TemplateMySQL84,
+			[]string{
+				"MYSQL_DATABASE=pg_prod",
+				"MYSQL_PASSWORD_FILE=/run/secrets/password",
+				"MYSQL_ROOT_PASSWORD_FILE=/run/secrets/password",
+				"MYSQL_USER=fleetly",
+			},
+		},
+		{
+			TemplateMongoDB80,
+			[]string{
+				"MONGO_INITDB_DATABASE=pg_prod",
+				"MONGO_INITDB_ROOT_PASSWORD_FILE=/run/secrets/password",
+				"MONGO_INITDB_ROOT_USERNAME=fleetly",
+			},
+		},
+	} {
+		in := renderInput(tc.templateID)
+		spec, err := Render(in)
+		if err != nil {
+			t.Fatalf("render %s: %v", tc.templateID, err)
+		}
+		again, err := Render(in)
+		if err != nil {
+			t.Fatalf("render %s again: %v", tc.templateID, err)
+		}
+		if !reflect.DeepEqual(spec, again) {
+			t.Fatalf("%s render is not deterministic:\n %+v\n %+v", tc.templateID, spec, again)
+		}
+		if spec.DesiredHash() != again.DesiredHash() || spec.DesiredHash() == "" {
+			t.Fatalf("%s desired hash unstable/empty", tc.templateID)
+		}
+		// env：按键字典序 + 官方入口 _FILE 变体消费同一 secret 文件 + 命令
+		// 词表/投影零明文。
+		if !reflect.DeepEqual(spec.Env, tc.wantEnv) {
+			t.Fatalf("%s env = %v, want %v", tc.templateID, spec.Env, tc.wantEnv)
+		}
+		for _, kv := range spec.Env {
+			if strings.Contains(kv, testPassword) {
+				t.Fatalf("%s env carries credential plaintext: %s", tc.templateID, kv)
+			}
+		}
+		// secret 文件投递：密码不进 Command/启动参数（与 Redis spec-arg 形
+		// 态相反——新引擎官方镜像均原生支持 _FILE，零成本硬化走 secret 管
+		// 道，D-DB-10 优先序）。
+		if spec.Command != nil {
+			t.Fatalf("%s must not carry a command override, got %v", tc.templateID, spec.Command)
+		}
+		if len(spec.Secrets) != 1 || spec.Secrets[0].Target != "/run/secrets/password" {
+			t.Fatalf("%s secrets = %+v, want the password secret at /run/secrets/password", tc.templateID, spec.Secrets)
+		}
+		// 卷挂载点与平台受管面。
+		wantMount := "/var/lib/mysql"
+		if tc.templateID == TemplateMongoDB80 {
+			wantMount = "/data/db"
+		}
+		if len(spec.Mounts) != 1 || spec.Mounts[0].Target != wantMount {
+			t.Fatalf("%s mounts = %+v, want the data volume at %s", tc.templateID, spec.Mounts, wantMount)
+		}
+		if spec.Replicas != 1 || spec.UpdateOrder != "stop-first" {
+			t.Fatalf("%s replicas/order = %d/%s, want 1/stop-first", tc.templateID, spec.Replicas, spec.UpdateOrder)
+		}
+		if spec.Resources == nil || spec.Resources.NanoCPUs != 1_000_000_000 || spec.Resources.MemoryBytes != 1<<30 {
+			t.Fatalf("%s resources = %+v, want 1.0 CPU / 1GiB defaults", tc.templateID, spec.Resources)
+		}
+		if spec.Healthcheck == nil || spec.Healthcheck.Interval != 5*time.Second || spec.Healthcheck.StartPeriod != 30*time.Second {
+			t.Fatalf("%s healthcheck = %+v, want the template health gate", tc.templateID, spec.Healthcheck)
+		}
+	}
+}
+
+// TestConnectionVarsMySQLAndMongo 新模板连接串/物化键集（设计 managed-
+// databases §8.1 投影表）：全键同构 PG；mongo 的 URL 带 ?authSource=admin
+// （官方入口 root 恒建于 admin 库的实现注记）；密码零出现在键名面。
+func TestConnectionVarsMySQLAndMongo(t *testing.T) {
+	myVars, err := ConnectionVars(TemplateMySQL84, testInstance, testPassword)
+	if err != nil {
+		t.Fatalf("mysql connection vars: %v", err)
+	}
+	wantMySQL := map[string]string{
+		"FLEETLY_DB_PG_PROD_URL":      "mysql://fleetly:" + testPassword + "@pg-prod:3306/pg_prod",
+		"FLEETLY_DB_PG_PROD_HOST":     "pg-prod",
+		"FLEETLY_DB_PG_PROD_PORT":     "3306",
+		"FLEETLY_DB_PG_PROD_USER":     "fleetly",
+		"FLEETLY_DB_PG_PROD_PASSWORD": testPassword,
+		"FLEETLY_DB_PG_PROD_DATABASE": "pg_prod",
+	}
+	if !reflect.DeepEqual(myVars, wantMySQL) {
+		t.Fatalf("mysql vars = %v, want %v", myVars, wantMySQL)
+	}
+
+	moVars, err := ConnectionVars(TemplateMongoDB80, testInstance, testPassword)
+	if err != nil {
+		t.Fatalf("mongo connection vars: %v", err)
+	}
+	wantMongo := map[string]string{
+		"FLEETLY_DB_PG_PROD_URL":      "mongodb://fleetly:" + testPassword + "@pg-prod:27017/pg_prod?authSource=admin",
+		"FLEETLY_DB_PG_PROD_HOST":     "pg-prod",
+		"FLEETLY_DB_PG_PROD_PORT":     "27017",
+		"FLEETLY_DB_PG_PROD_USER":     "fleetly",
+		"FLEETLY_DB_PG_PROD_PASSWORD": testPassword,
+		"FLEETLY_DB_PG_PROD_DATABASE": "pg_prod",
+	}
+	if !reflect.DeepEqual(moVars, wantMongo) {
+		t.Fatalf("mongo vars = %v, want %v", moVars, wantMongo)
 	}
 }
 

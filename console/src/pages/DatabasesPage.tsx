@@ -53,6 +53,8 @@ import { useProjectContext, useTeamCapabilities } from "@/lib/context";
 const TEMPLATES = [
   { value: "postgres-16", label: "postgres-16" },
   { value: "redis-7", label: "redis-7" },
+  { value: "mysql-8.4", label: "mysql-8.4" },
+  { value: "mongodb-8.0", label: "mongodb-8.0" },
 ];
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;

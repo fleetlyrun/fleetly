@@ -289,7 +289,7 @@ naming 新增库族公式（新增函数非改既有公式，本文档为文档�
 
 ## 7. 明确不做
 
-- MySQL/MongoDB 模板（紧随按需求排序——各引擎备份适配器是主要成本，架构 §4.3）
+- ~~MySQL/MongoDB 模板~~（紧随按需求排序——各引擎备份适配器是主要成本，架构 §4.3；**v0.3 W4 兑现：见 §8**）
 - 主版本升级（PG 16→17）与引擎切换迁移路径
 - 读写分离/副本/库层 HA（有状态 HA 边界口径不变：库所在节点失联 = 该库不可用，恢复走备份重放 + rebind）
 - 库内多 database/多用户管理、RBAC、计量计费、多租户（v0.2 规划 §8）
@@ -300,3 +300,55 @@ naming 新增库族公式（新增函数非改既有公式，本文档为文档�
 - 纳管用户自建外部库（adopt）
 - compose `secrets` 的 `file:`/`environment:` 来源与 uid/gid/mode 子键；secret 值读回 API
 - 库实例自动换点/自动迁移（钉住纪律，D16）；用户自由跨 app 网络（V2-5）
+
+## 8. v0.3 W4 模板扩展：MySQL 8.4 / MongoDB 8.0（2026-09-24 增补）
+
+**背景**：§7 首行「MySQL/MongoDB 模板（紧随按需求排序）」在本轮排期兑现（v0.3 W4）。裁决参数由主会话给定（2026-09-24），照录为 D-W4-* 行——实现严格沿既有模板/适配器模式（§2.2/§2.5/§2.6），零新增机制面。分票口径：S1 = 模板 + 适配器脚本与断言（本节）；S2 = dbtools 镜像扩展（加装 mysqldump/mysql/mongosh/mongodump/mongorestore）；S4 = e2e 真跑腿。
+
+### 8.1 裁决行（D-W4-*）
+
+| # | 裁决 | 落地注记 |
+|---|---|---|
+| D-W4-1 | 模板 `mysql-8.4`（MySQL 8.4 LTS）；引擎镜像 `mysql:8.4` 按实现时点解析钉 digest，台账登记（runbook image-prepull §1） | digest = `mysql:8.4@sha256:0744ee5ef89ce6ccfa13de3e579fe6b9e27f93dd70da9c06d2c908b1b193fb8d`（多架构 OCI index，amd64/arm64 双平台按同一 digest 独立拉取复核通过，2026-09-24；tag@digest 双锚与 postgres-16 同款） |
+| D-W4-2 | 模板 `mongodb-8.0`（MongoDB 8.0 Community）；引擎镜像 `mongo:8.0` 同上钉定 | digest = `mongo:8.0@sha256:4968f22d0c6c10ef29952f3e807f62872ba22b3312f25803564fbfc08255efc2`（同上双验，2026-09-24） |
+| D-W4-3 | 备份适配器：mysql = `mysqldump --single-transaction --source-data=2`（InnoDB 一致性快照）恢复 `mysql < dump.sql`；mongo = `mongodump --archive --gzip` 恢复 `mongorestore --archive --gzip --drop`。工具由 dbtools 镜像承载（**S2 扩展镜像**；S1 只写适配器脚本与断言，e2e 真跑依赖 S2 新镜像——S1 的 e2e 范围 = 既有 postgres/redis 腿不回归破坏） | 单 job 形态沿 PG 先例（恢复 = restic 取回 + 临时引擎实例重放同 job）：临时 mysqld/mongod 须在 dbtools 镜像内——S2 的镜像基底扩为多引擎工具面（PG/Redis 现有工具面保留） |
+
+连接串投影（§2.5 键集表扩两行；`<NAME>` = 实例名大写下划线形，USER/DATABASE 与 PG 同构——USER=fleetly 固定、DATABASE=实例名 `'-'→'_'`）：
+
+| 引擎 | 物化键 | URL 形态 |
+|---|---|---|
+| MySQL | `FLEETLY_DB_<NAME>_{URL,HOST,PORT,USER,PASSWORD,DATABASE}`（PG 全键同构） | `mysql://fleetly:<pw>@<实例名>:3306/<db>` |
+| MongoDB | 同上全键 | `mongodb://fleetly:<pw>@<实例名>:27017/<db>?authSource=admin` |
+
+**MongoDB authSource 实现注记（对裁决格式的必要补充）**：裁决给定的投影骨架为 `mongodb://user:pass@<name>:27017/<db>`；官方 mongo 镜像入口脚本把 initdb root 用户**恒建于 `admin` 库**（docker-entrypoint.sh: `rootAuthDatabase='admin'` 硬编码，8.0 无 `MONGO_INITDB_ROOT_DATABASE` 支持），驱动的 authSource 缺省取 URI path 库 → 无 `?authSource=admin` 时认证必败。故投影以追加 `?authSource=admin` 的形态兑现裁决（最小改动：不动入口脚本、不自造 init script 造第二用户——两者都是新机制面）。密码字符集 [a-zA-Z0-9]（GeneratePassword 共用），URI 免 percent-encode；`/`、`?`、`@`、`:` 均不出现，query 参数位置无注入面。
+
+### 8.2 模板规格表（§2.2 表的扩两列）
+
+| 字段 | mysql-8.4 | mongodb-8.0 |
+|---|---|---|
+| 镜像 | `mysql:8.4@sha256:0744ee5e…3fb8d`（D-W4-1） | `mongo:8.0@sha256:4968f22d…5efc2`（D-W4-2） |
+| 引擎内部端口 | 3306 | 27017 |
+| 卷 | key=`data`，挂 `/var/lib/mysql` | key=`data`，挂 `/data/db` |
+| 凭据规格 | USER=fleetly、DATABASE=实例名 `'-'→'_'`、密码 32 位 [a-zA-Z0-9]（与 PG 同构——凭据只存一份）；root 密码 = 同一凭据值（`MYSQL_ROOT_PASSWORD_FILE` 指向同一 secret 文件——root 不在投影/用户面暴露，仅满足官方镜像 initdb 必填；轮换只动 `fleetly@'%'`，root 恒为 initdb 值且恢复路径无需它，见 8.3） | 同左（`MONGO_INITDB_ROOT_USERNAME=fleetly`；`MONGO_INITDB_DATABASE=<db>` 声明 initdb 缺省库；库本体由首写惰性创建——MongoDB 语义） |
+| 凭据投递 | **Swarm secret 文件**（`MYSQL_PASSWORD_FILE`/`MYSQL_ROOT_PASSWORD_FILE`——官方入口 `file_env` 原生支持 _FILE 变体，镜像内 grep 实证；CredentialDelivery=secret-file，与 PG 同管） | **Swarm secret 文件**（`MONGO_INITDB_ROOT_PASSWORD_FILE`——官方入口 `file_env` 原生支持，同上实证） |
+| 健康门（D-W4 裁决逐字） | `mysqladmin ping`（CMD 形态；服务应答即存活——官方镜像缺省探针；`mysqladmin` 对「应答但拒认证」的活服务器返回 0，无假阴性，与 §2.2 Redis 行的 NOAUTH 假成功不同类：Redis 是每命令全 NOAUTH，此处 ping 本身可达即判真） | `mongosh --quiet --eval db.adminCommand('ping')`（CMD 形态；`ping` 在 MongoDB 认证开启时属免认证命令白名单，连通即真值） |
+| 节奏 | 5s/3s/3/30s（与 PG/Redis 缺省同） | 同左 |
+| 默认限额 | 1.0 CPU / 1GiB（沿用 D-DB-9 PG 档——W4 裁决未单列，创建时可覆盖；MySQL 8.4 与 WiredTiger 在 1GiB 内以缺省配置可运行） | 同左（实现者保守取值，见遗留） |
+| 连接串渲染 | 见 §8.1 投影表 | 同左（含 `?authSource=admin`） |
+
+模板注册表键与 proto 注释/Console 选项/CLI help 同步（CreateDatabase 的 template 词表 = postgres-16 / redis-7 / mysql-8.4 / mongodb-8.0；`E_DB_TEMPLATE_UNSUPPORTED` 词表面零改动）。
+
+### 8.3 备份适配器命令面（§2.6 的引擎实现扩充）
+
+repo 内路径：`db/<instance>/db.sql`（mysqldump 文本）与 `db/<instance>/db.archive`（mongodump 归档）；restic 管道/summary 解析/路径过滤 prune/verify 三态与既有引擎逐字共用。
+
+| 步 | MySQL | MongoDB |
+|---|---|---|
+| Backup | `mysqldump -h <实例> -u fleetly --single-transaction --source-data=2 <db> \| restic backup --stdin --stdin-filename db/<实例>/db.sql --json` | `mongodump --host <实例> --db <db> --archive --gzip \| restic backup --stdin --stdin-filename db/<实例>/db.archive --json` |
+| Verify | restic dump 回读头部 `grep -q "MySQL dump"`（mysqldump 文件头魔术串） | restic dump 回读头部 gzip 魔术 `1f 8b`（`od -An -tx1` 十六进制比对） |
+| Restore（停库重放，单 dbtools job 挂卷 rw） | 快照落卷根暂存 → 临时 mysqld 起于数据卷（`--skip-grant-tables --skip-networking`〔后者由前者自动蕴含〕+ socket-only + gosu 降权——与 PG「socket trust + 降权」同暴露类：无网络监听、容器内瞬态）→ `DROP DATABASE IF EXISTS` + `mysql --socket=… < dump.sql` → `mysqladmin shutdown` → 暂存清场 | 快照落卷根暂存 → 临时 mongod 起于数据卷（缺省无 `--auth` = 本进程内免认证，`--bind_ip 127.0.0.1` 锁回环——与 PG socket trust 同类：授权是进程旗标非卷内持久态）→ `mongorestore --host 127.0.0.1 --archive=<暂存> --gzip --drop` → `db.adminCommand({shutdown:1})` → 暂存清场 |
+| RotateCredential | 一次性容器（引擎镜像）`mysql -h <实例> -u fleetly -e "ALTER USER 'fleetly'@'%' IDENTIFIED BY '<new>'"`，旧密码经 `MYSQL_PWD` env（沿 §2.5 PG 轮换原语形态：引擎级热换、失败即未变、CAS 落库在后；官方镜像建 `USER@'%'`） | 一次性容器（引擎镜像）`mongosh "mongodb://fleetly:${MONGO_PASSWORD}@<实例>:27017/admin" --quiet --eval "db.getSiblingDB('admin').updateUser('fleetly', {pwd: '<new>'})"`——认证与 updateUser 同在 admin（root 恒建于 admin，§8.1 注记）；旧密码经 job env、新密码进 eval 字面量（[a-zA-Z0-9] 无引号 hazard，PG 同款） |
+
+明文纪律沿既有负面测试面：密码只进 job env（新增 `MYSQL_PWD`/`MONGO_PASSWORD` 键）与运行时 shell 展开（`${MONGO_PASSWORD}` 引用形态——字面量不进 job spec/命令词表，与 Redis 健康门 env 引用同暴露类）；命令词表零明文。恢复的凭据语义边界沿 §2.2 W4-S5 落地注记（重放备份时刻的库内密码，错位以 `reveal` 对账 + 再轮换收口——skip-grant/免认证临时实例不读取卷内凭据，边界不受影响）。
+
+**挂账（跨票）**：S2 dbtools 镜像扩展（多引擎工具面 + digest 钉定 + 台账行更新）；S4 e2e mysql/mongo 真跑腿。本票登记的镜像台账两行只覆盖引擎镜像；dbtools 行的 digest 更新归 S2。

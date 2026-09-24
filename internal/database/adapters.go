@@ -7,9 +7,13 @@ package database
 // 编排/台账/事件在 backup.go/restore.go/upgrade.go）。
 //
 // 明文纪律（负面测试钉死）：密码只进 job env（PGPASSWORD / REDISCLI_AUTH /
-// RESTIC_PASSWORD / AWS_*）——命令词表零密码；PG 恢复走 unix socket trust
-//（官方镜像 pg_hba 对 local 全 trust）故恢复命令零凭据；restic 输出只含
-// 路径与字节量。凭据明文字段（dbtemplate.BackupInput 等）只存活于内存链。
+// MYSQL_PWD / MONGO_PASSWORD / RESTIC_PASSWORD / AWS_*）——命令词表零密码
+// （Mongo 的 URI 消费 ${MONGO_PASSWORD} 运行时展开，引用不落字面量）；PG
+// 恢复走 unix socket trust（官方镜像 pg_hba 对 local 全 trust）故恢复命令
+// 零凭据；MySQL 恢复走 --skip-grant-tables socket-only 临时实例、Mongo 恢
+// 复走免认证 loopback 临时实例（PG 同暴露类，见 restoreMySQLJobScript/
+// restoreMongoJobScript 注）；restic 输出只含路径与字节量。凭据明文字段
+//（dbtemplate.BackupInput 等）只存活于内存链。
 
 import (
 	"context"
@@ -73,8 +77,10 @@ const (
 // 照同 repo——D-DB-6「独立 repo 被否」）。restic forget 的路径过滤与恢复
 // 的 restic dump 都以该路径寻址。
 const (
-	pgBackupFilename    = "db.dump"
-	redisBackupFilename = "dump.rdb"
+	pgBackupFilename     = "db.dump"
+	redisBackupFilename  = "dump.rdb"
+	mysqlBackupFilename  = "db.sql"   // mysqldump 文本导出（v0.3 W4 D-W4-3）
+	mongoBackupFilename  = "db.archive" // mongodump --archive --gzip 归档
 )
 
 // backupFilename 取模板对应的导出文件名（repo 内路径 = db/<instance>/<文件>）。
@@ -84,6 +90,10 @@ func backupFilename(templateID string) (string, error) {
 		return pgBackupFilename, nil
 	case dbtemplate.TemplateRedis7:
 		return redisBackupFilename, nil
+	case dbtemplate.TemplateMySQL84:
+		return mysqlBackupFilename, nil
+	case dbtemplate.TemplateMongoDB80:
+		return mongoBackupFilename, nil
 	default:
 		return "", fmt.Errorf("database: template %q has no backup adapter", templateID)
 	}
@@ -102,11 +112,18 @@ func resticCmd(pathStyle bool) string {
 // backupJobScript 拼装备份命令（流式导出 | restic 入库；--json 产出
 // summary 供 snapshot id / total_bytes 提取）：
 //
-//	PG    pg_dump -Fc（逻辑备份，运行中一致性）| restic backup --stdin
-//	Redis redis-cli --rdb /dev/stdout（RDB 流式）| restic backup --stdin
+//	PG     pg_dump -Fc（逻辑备份，运行中一致性）| restic backup --stdin
+//	Redis  redis-cli --rdb /dev/stdout（RDB 流式）| restic backup --stdin
+//	MySQL  mysqldump --single-transaction --source-data=2（InnoDB 一致性快
+//	       照，D-W4-3）| restic backup --stdin
+//	Mongo  mongodump --archive --gzip（归档流，D-W4-3）| restic backup --stdin
 //
 // /dev/stdout 而非字面 "-"：redis-cli 的 --rdb 接收**文件名**参数，设备
 // 文件是管道流的可靠形态（alpine 容器内恒存在）。
+// 明文纪律：MySQL/Mongo 凭据经 MYSQL_PWD/MONGO_PASSWORD env——Mongo 的
+// URI 以 ${MONGO_PASSWORD} 引用展开（字面量不进 job spec；运行时 shell
+// 展开与本仓 Redis 健康门 env 引用同暴露类——mongodump 无原生凭据 env，
+// 该形态是命令词表零明文的唯一解）。
 func backupJobScript(in dbtemplate.BackupInput) ([]string, error) {
 	filename, err := backupFilename(in.TemplateID)
 	if err != nil {
@@ -120,6 +137,14 @@ func backupJobScript(in dbtemplate.BackupInput) ([]string, error) {
 			in.Instance, dbtemplate.DatabaseName(in.Instance))
 	case dbtemplate.TemplateRedis7:
 		export = fmt.Sprintf("redis-cli -h %s --no-auth-warning --rdb /dev/stdout", in.Instance)
+	case dbtemplate.TemplateMySQL84:
+		export = fmt.Sprintf("mysqldump -h %s -u fleetly --single-transaction --source-data=2 %s",
+			in.Instance, dbtemplate.DatabaseName(in.Instance))
+	case dbtemplate.TemplateMongoDB80:
+		// authSource=admin：官方入口把 initdb root 恒建于 admin 库（设计
+		// managed-databases §8.1 实现注记）——URI 认证库名随其固定。
+		export = fmt.Sprintf(`mongodump --uri "mongodb://fleetly:${MONGO_PASSWORD}@%s:27017/%s?authSource=admin" --archive --gzip`,
+			in.Instance, dbtemplate.DatabaseName(in.Instance))
 	default:
 		return nil, fmt.Errorf("database: template %q has no backup adapter", in.TemplateID)
 	}
@@ -131,8 +156,10 @@ func backupJobScript(in dbtemplate.BackupInput) ([]string, error) {
 // verifyJobScript 拼装回读校验命令（§2.6 Verify 契约——「备份假成功」零
 // 容忍的引擎级实现）：restic 读回快照 + 引擎级校验——
 //
-//	PG    restic dump > /tmp/v.dump && pg_restore --list（exit 0 = 归档有效）
-//	Redis restic dump | head -c 5 == "REDIS"（RDB magic）
+//	PG     restic dump > /tmp/v.dump && pg_restore --list（exit 0 = 归档有效）
+//	Redis  restic dump | head -c 5 == "REDIS"（RDB magic）
+//	MySQL  restic dump | head -c 32 含 "MySQL dump"（mysqldump 文件头魔术串）
+//	Mongo  restic dump | head -c 2 == gzip magic 1f 8b（--gzip 归档流头）
 func verifyJobScript(in dbtemplate.BackupOutcome) ([]string, error) {
 	filename, err := backupFilename(in.TemplateID)
 	if err != nil {
@@ -147,6 +174,16 @@ func verifyJobScript(in dbtemplate.BackupOutcome) ([]string, error) {
 	case dbtemplate.TemplateRedis7:
 		return []string{"sh", "-c",
 			fmt.Sprintf("%s dump %s %s | head -c 5 | grep -q REDIS",
+				resticCmd(in.S3PathStyle), in.SnapshotID, repoPath)}, nil
+	case dbtemplate.TemplateMySQL84:
+		return []string{"sh", "-c",
+			fmt.Sprintf(`%s dump %s %s | head -c 32 | grep -q "MySQL dump"`,
+				resticCmd(in.S3PathStyle), in.SnapshotID, repoPath)}, nil
+	case dbtemplate.TemplateMongoDB80:
+		// gzip 头两字节 0x1f 0x8b：od 十六进制化后比对（busybox/coreutils
+		// 双兼容形态，dbtools 内 od 恒在）。
+		return []string{"sh", "-c",
+			fmt.Sprintf(`%s dump %s %s | head -c 2 | od -An -tx1 | tr -d ' \n' | grep -q 1f8b`,
 				resticCmd(in.S3PathStyle), in.SnapshotID, repoPath)}, nil
 	default:
 		return nil, fmt.Errorf("database: template %q has no verify adapter", in.TemplateID)
@@ -317,12 +354,21 @@ func (m *Manager) Restore(ctx context.Context, in dbtemplate.RestoreInput) error
 	mounts := []JobMount{{VolumeName: in.VolumeName, Target: in.VolumeTarget, ReadOnly: false}}
 	nets := jobNetworks(in.AttachRustfsNetwork, net)
 	var script []string
-	if in.TemplateID == dbtemplate.TemplatePostgres16 {
+	switch in.TemplateID {
+	case dbtemplate.TemplatePostgres16:
 		script, err = restorePostgresJobScript(in)
-	} else {
+	case dbtemplate.TemplateRedis7:
 		// Redis：fetch 即重放完成（RDB 落卷 + AOF 目录清除在 fetch script
 		// 的卷内收尾——dbtools 与 redis 引擎镜像同为 glibc 可执行面）。
 		script, err = restoreRedisFetchScript(in)
+	case dbtemplate.TemplateMySQL84:
+		// MySQL：临时 mysqld 起于数据卷重放（D-W4-3，restoreMySQLJobScript）。
+		script, err = restoreMySQLJobScript(in)
+	case dbtemplate.TemplateMongoDB80:
+		// MongoDB：临时 mongod 起于数据卷重放（D-W4-3，restoreMongoJobScript）。
+		script, err = restoreMongoJobScript(in)
+	default:
+		return fmt.Errorf("database: template %q has no restore adapter", in.TemplateID)
 	}
 	if err != nil {
 		return err
@@ -364,9 +410,114 @@ func restoreRedisFetchScript(in dbtemplate.RestoreInput) ([]string, error) {
 	return []string{"sh", "-c", script}, nil
 }
 
+// replaySQLFilename / replayArchiveFilename 是恢复材料在卷根的暂存文件名
+// （材料落盘可对账；重放后清场——残留只会误导人工排查，PG 同纪律）。
+const (
+	replaySQLFilename     = "fleetly-replay.sql"
+	replayArchiveFilename = "fleetly-replay.archive"
+)
+
+// restoreMySQLJobScript 是 MySQL 的单 job 恢复命令（D-W4-3：停库重放 =
+// 快照落卷根暂存 → 临时 mysqld 起于数据卷 → `mysql < dump.sql` 重放 →
+// 关停清场）。与 PG 恢复同构的防御面：
+//   - `--skip-grant-tables`：免认证重放（卷内 fleetly 密码可能是备份时刻
+//     旧值，恢复前置态不依赖它）；该旗标自动蕴含 `--skip-networking`（8.0+
+//     文档语义）——临时实例 socket-only，与 PG「unix socket trust」同暴露
+//     类：无网络监听、容器内瞬态、不进实例共享网；
+//   - 降权 uid 从数据目录属主探测（mysqld 拒以 root 运行——gosu/su-exec
+//     接受数字 uid，PG 同款探测收口）；
+//   - 临时实例拉起带 kill -0 看护重启（旧引擎下线期一次性起动可能失败）；
+//   - `mysqladmin shutdown` 与起动同 uid（root 形态在 `set -e` 下会让成
+//     功的重放被误判失败）。
+//   - 暂存 dump 落卷根（datadir 根散文件不被 mysqld 当作数据库扫描），
+//     重放后清场。
+//
+// 重放语义：mysqldump 导出自带 `CREATE DATABASE IF NOT EXISTS` + `USE`
+// （按库导出的官方形态），前置 DROP DATABASE 保证幂等重放（重放即回到备
+// 份时刻——半程失败由编排层保持实例停止的既有口径承载）。
+func restoreMySQLJobScript(in dbtemplate.RestoreInput) ([]string, error) {
+	filename, err := backupFilename(in.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+	repoPath := "db/" + in.Instance + "/" + filename
+	dumpPath := in.VolumeTarget + "/" + replaySQLFilename
+	sock := "/run/mysqld/mysqld.sock"
+	db := dbtemplate.DatabaseName(in.Instance)
+	script := strings.Join([]string{
+		"set -e",
+		// ① 取回快照落卷根暂存文件（restic 材料在 env）。
+		fmt.Sprintf("%s dump %s %s > %s",
+			resticCmd(in.S3PathStyle), in.SnapshotID, repoPath, dumpPath),
+		// ② 临时实例重放（停库重放本体）。
+		`if command -v gosu >/dev/null 2>&1; then PRIVDROP="gosu"; elif command -v su-exec >/dev/null 2>&1; then PRIVDROP="su-exec"; else echo "no privilege-drop tool in job image" >&2; exit 64; fi`,
+		`MYUID=$(stat -c %u ` + in.VolumeTarget + `)`,
+		`mkdir -p /run/mysqld && chown "$MYUID" /run/mysqld`,
+		fmt.Sprintf(`$PRIVDROP "$MYUID" mysqld --skip-grant-tables --skip-networking --socket=%s --datadir=%s &`, sock, in.VolumeTarget),
+		`MYPID=$!`,
+		`i=0`,
+		fmt.Sprintf(`until mysqladmin --socket=%s ping >/dev/null 2>&1; do`, sock),
+		`  i=$((i+1))`,
+		`  if [ "$i" -gt 90 ]; then echo "temporary mysqld did not become ready" >&2; exit 65; fi`,
+		fmt.Sprintf(`  if ! kill -0 "$MYPID" 2>/dev/null; then sleep 2; $PRIVDROP "$MYUID" mysqld --skip-grant-tables --skip-networking --socket=%s --datadir=%s & MYPID=$!; fi`, sock, in.VolumeTarget),
+		`  sleep 1`,
+		`done`,
+		"mysql --socket=" + sock + " -e 'DROP DATABASE IF EXISTS `" + db + "`;'",
+		fmt.Sprintf(`mysql --socket=%s < %s`, sock, dumpPath),
+		fmt.Sprintf(`$PRIVDROP "$MYUID" mysqladmin --socket=%s shutdown`, sock),
+		// ③ 暂存 dump 清场（卷根文件不属引擎数据）。
+		fmt.Sprintf(`rm -f %s`, dumpPath),
+	}, "\n")
+	return []string{"sh", "-c", script}, nil
+}
+
+// restoreMongoJobScript 是 MongoDB 的单 job 恢复命令（D-W4-3：停库重放 =
+// 快照落卷根暂存 → 临时 mongod 起于数据卷 → `mongorestore --archive
+// --gzip --drop` 重放 → 关停清场）。防御面与 MySQL 脚本同构：
+//   - 临时 mongod 不带 --auth（授权是进程旗标非卷内持久态——本地全权 +
+//     `--bind_ip 127.0.0.1` 锁回环，与 PG socket trust 同暴露类）；
+//   - 降权 uid 从数据目录属主探测（mongod 不建议以 root 运行——同款探测
+//     收口）；
+//   - kill -0 看护重启 + `mongosh … shutdown` 优雅关停（连接随关停断开，
+//     `|| true` 收尾）+ wait 进程退出（WiredTiger 检查点落盘后 job 才收）。
+func restoreMongoJobScript(in dbtemplate.RestoreInput) ([]string, error) {
+	filename, err := backupFilename(in.TemplateID)
+	if err != nil {
+		return nil, err
+	}
+	repoPath := "db/" + in.Instance + "/" + filename
+	archivePath := in.VolumeTarget + "/" + replayArchiveFilename
+	script := strings.Join([]string{
+		"set -e",
+		// ① 取回快照落卷根暂存文件（restic 材料在 env）。
+		fmt.Sprintf("%s dump %s %s > %s",
+			resticCmd(in.S3PathStyle), in.SnapshotID, repoPath, archivePath),
+		// ② 临时实例重放（停库重放本体）。
+		`if command -v gosu >/dev/null 2>&1; then PRIVDROP="gosu"; elif command -v su-exec >/dev/null 2>&1; then PRIVDROP="su-exec"; else echo "no privilege-drop tool in job image" >&2; exit 64; fi`,
+		`MUID=$(stat -c %u ` + in.VolumeTarget + `)`,
+		fmt.Sprintf(`$PRIVDROP "$MUID" mongod --dbpath %s --bind_ip 127.0.0.1 --port 27017 &`, in.VolumeTarget),
+		`MOPID=$!`,
+		`i=0`,
+		`until mongosh --quiet --host 127.0.0.1 --port 27017 --eval "db.adminCommand('ping')" >/dev/null 2>&1; do`,
+		`  i=$((i+1))`,
+		`  if [ "$i" -gt 90 ]; then echo "temporary mongod did not become ready" >&2; exit 65; fi`,
+		fmt.Sprintf(`  if ! kill -0 "$MOPID" 2>/dev/null; then sleep 2; $PRIVDROP "$MUID" mongod --dbpath %s --bind_ip 127.0.0.1 --port 27017 & MOPID=$!; fi`, in.VolumeTarget),
+		`  sleep 1`,
+		`done`,
+		fmt.Sprintf(`mongorestore --host 127.0.0.1 --port 27017 --archive=%s --gzip --drop`, archivePath),
+		`mongosh --quiet --host 127.0.0.1 --port 27017 --eval "db.adminCommand({shutdown: 1})" >/dev/null 2>&1 || true`,
+		`wait "$MOPID" 2>/dev/null || true`,
+		// ③ 暂存 archive 清场（卷根文件不属引擎数据）。
+		fmt.Sprintf(`rm -f %s`, archivePath),
+	}, "\n")
+	return []string{"sh", "-c", script}, nil
+}
+
 // RotateCredential 引擎侧热轮换（dbtemplate.EngineAdapter 契约——薄委托
-// rotate.go 的既有原语，接口非装饰）：PG = 一次性容器 ALTER USER；Redis =
-// 无引擎侧动作（spec 启动参数投递，收敛 duty 按哈希差换挂）。
+// rotate.go 的既有原语，接口非装饰）：PG = 一次性容器 ALTER USER；MySQL =
+// 一次性容器 ALTER USER（fleetly@'%'）；Mongo = 一次性容器 updateUser
+// （admin 库）；Redis = 无引擎侧动作（spec 启动参数投递，收敛 duty 按哈
+// 希差换挂）。
 func (m *Manager) RotateCredential(ctx context.Context, in dbtemplate.RotateInput) error {
 	inst, err := m.store.GetDatabaseInstanceByName(ctx, in.Instance)
 	if err != nil {
@@ -383,6 +534,10 @@ func (m *Manager) RotateCredential(ctx context.Context, in dbtemplate.RotateInpu
 	switch inst.Template {
 	case dbtemplate.TemplatePostgres16:
 		return m.rotatePostgresCredential(ctx, &inst, tpl.Image, old, in.NewPassword)
+	case dbtemplate.TemplateMySQL84:
+		return m.rotateMySQLCredential(ctx, &inst, tpl.Image, old, in.NewPassword)
+	case dbtemplate.TemplateMongoDB80:
+		return m.rotateMongoCredential(ctx, &inst, tpl.Image, old, in.NewPassword)
 	case dbtemplate.TemplateRedis7:
 		return nil // 无引擎侧动作（凭据 = spec 启动参数，rotate.go 编排承载）
 	default:
@@ -482,11 +637,18 @@ func (m *Manager) runToolsJob(ctx context.Context, in toolsJobInput) (JobRunOutc
 // 的 repo 目标携带——W4-S6 e2e 实测修正：此前漏设，restic 以
 // 「Please specify repository location」诚实退败（词表与 env 键集声称
 // 一一对应，缺这一键 = 备份/校验/恢复永远无 repo 可寻址；fake 底座不看
-// env 真实性，单测抓不到）。
+// env 真实性，单测抓不到）。MYSQL_PWD/MONGO_PASSWORD 是 v0.3 W4 新引擎
+// 的凭据消费键（mysqldump 原生读 MYSQL_PWD；mongodump 无原生 env，消费
+// 形态 = 命令词表内 ${MONGO_PASSWORD} 的 shell 展开——引用不落字面量）。
 func toolsJobEnv(enginePassword, resticRepository, resticPassword, accessKey, secretKey, region string) []string {
 	var env []string
 	if enginePassword != "" {
-		env = append(env, "PGPASSWORD="+enginePassword, "REDISCLI_AUTH="+enginePassword)
+		env = append(env,
+			"PGPASSWORD="+enginePassword,
+			"REDISCLI_AUTH="+enginePassword,
+			"MYSQL_PWD="+enginePassword,
+			"MONGO_PASSWORD="+enginePassword,
+		)
 	}
 	if resticRepository != "" {
 		env = append(env, "RESTIC_REPOSITORY="+resticRepository)
