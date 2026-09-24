@@ -20,15 +20,16 @@ const repoRoot = path.resolve(here, "..", "..");
 const outPath = path.resolve(here, "..", "src", "api", "schema.d.ts");
 
 // console 实际消费的服务面（endpoints.ts / streams.ts 的端点来源 proto）。
-// 注意：users.swagger.json 不在清单——其 SetRegistration 挂载在同一路径
-// /v1/auth/registration（与 auth.swagger.json 的 GET 重复，合并会撞
-// duplicate path 断言），且 Users 管理面（W2/W3 的用户管理页）尚无消费方；
-// Console 认证面只需 auth.proto 的七个端点。tokens/projects 随 W2-S2 PAT
-// 管理页进清单（自服务面；teams/gitkeys 等其余服务仍无 Console 消费方，
-// 进清单即撞 duplicate path 断言的潜在面——按需添加）。
+// 注意：users.swagger.json 不在清单——S2 取舍沿用（W2-S5 复核）：其
+// SetRegistration 挂载在同一路径 /v1/auth/registration（与 auth.swagger.json
+// 的 GET 路径键重复，合并器按路径键整体断言 duplicate，方法级互补不豁免），
+// 故用户管理面的投影类型（UserView 等）在 types.ts 手写并注明同源。
+// tokens/projects 随 W2-S2 PAT 管理页进清单；teams 随 W2-S5 团队设置页进
+// 清单（成员/角色/邀请管理面）。
 const SPEC_FILES = [
   "auth.swagger.json",
   "tokens.swagger.json",
+  "teams.swagger.json",
   "projects.swagger.json",
   "apps.swagger.json",
   "deployments.swagger.json",

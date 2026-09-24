@@ -38,6 +38,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Input } from "@/components/ui/input";
+import { useProjectContext } from "@/lib/context";
 import { timeAgo } from "@/lib/utils";
 
 type StateFilter = "all" | "healthy" | "degraded" | "unavailable";
@@ -127,7 +128,14 @@ function AppRow({ app }: { app: AppView }) {
 }
 
 export function AppsPage() {
-  const query = useQuery({ queryKey: ["apps"], queryFn: listApps, refetchInterval: 5000 });
+  // 项目上下文收窄（W2-S5 顶栏切换器）：有选择时请求带 ?project=team/prj
+  // （服务端过滤），无选择 = 可见全集。queryKey 随 ref 变化——切换即重查。
+  const { projectRef } = useProjectContext();
+  const query = useQuery({
+    queryKey: ["apps", projectRef],
+    queryFn: () => listApps(projectRef ? { project: projectRef } : {}),
+    refetchInterval: 5000,
+  });
 
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");

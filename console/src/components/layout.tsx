@@ -1,8 +1,9 @@
 // Console 壳（dokploy 式）：可折叠侧边栏（分组导航 + 版本页脚）
-// + 顶栏（折叠钮 / 面包屑 / 时钟 / 主题 / 用户菜单）+ 内容区。导航 =
-// v0.1 功能面（应用 / 事件 / 系统）。折叠偏好持久化 localStorage；小屏
-// 首帧默认折叠。身份与退出收拢在顶栏用户菜单（v0.3 RBAC W1，设计 §7；
-// 侧栏旧「Operator/token auth」页脚与 Sign out 按钮由用户菜单取代）。
+// + 顶栏（折叠钮 / 团队·项目切换器 / 面包屑 / 时钟 / 主题 / 用户菜单）+
+// 内容区。导航 = v0.1 功能面（应用 / 事件 / 系统）+ v0.3 团队面（Teams）
+// + 平台管理员面（Admin，仅 is_platform_admin 可见——W2-S5，rbac-teams
+// 设计 §7）。折叠偏好持久化 localStorage；小屏首帧默认折叠。身份与退出
+// 收拢在顶栏用户菜单。
 
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -12,6 +13,7 @@ import {
   PanelLeft,
   Radio,
   Server,
+  UsersRound,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
@@ -20,8 +22,10 @@ import { getSystemStatus } from "@/api/endpoints";
 import { Breadcrumbs } from "@/components/breadcrumbs";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { TimeBadge } from "@/components/time-badge";
+import { TeamProjectSwitcher } from "@/components/team-project-switcher";
 import { UserMenu } from "@/components/user-menu";
 import { Button } from "@/components/ui/button";
+import { useIsPlatformAdmin } from "@/lib/context";
 import { cn } from "@/lib/utils";
 
 const COLLAPSE_KEY = "fleetly.console.sidebar-collapsed";
@@ -33,6 +37,7 @@ const NAV_PLATFORM = [
   { to: "/events", label: "Events", icon: Radio, end: false },
   { to: "/system", label: "System", icon: Server, end: false },
 ];
+const NAV_TEAMS = [{ to: "/teams", label: "Teams", icon: UsersRound, end: false }];
 
 function useSidebarCollapsed() {
   // 无持久化偏好时按视口宽度定初值（窄屏折叠；宽屏展开）。一次性求值，
@@ -92,6 +97,7 @@ function NavItem({
 
 export function Layout() {
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
+  const isPlatformAdmin = useIsPlatformAdmin();
 
   // 版本号：侧边栏页脚（与 System 页共享查询缓存；静默失败即隐藏）。
   const { data: status } = useQuery({
@@ -133,6 +139,9 @@ export function Layout() {
           {NAV_MAIN.map((item) => (
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
+          {NAV_TEAMS.map((item) => (
+            <NavItem key={item.to} {...item} collapsed={collapsed} />
+          ))}
           {!collapsed ? (
             <div className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
               Platform
@@ -143,6 +152,15 @@ export function Layout() {
           {NAV_PLATFORM.map((item) => (
             <NavItem key={item.to} {...item} collapsed={collapsed} />
           ))}
+          {isPlatformAdmin ? (
+            <NavItem
+              to="/admin/users"
+              label="Admin"
+              icon={Server}
+              end={false}
+              collapsed={collapsed}
+            />
+          ) : null}
         </nav>
 
         <div className="shrink-0 border-t p-2">
@@ -164,6 +182,7 @@ export function Layout() {
           >
             <PanelLeft aria-hidden className="h-4 w-4" />
           </Button>
+          <TeamProjectSwitcher />
           <Breadcrumbs />
           <div className="ml-auto flex items-center gap-1.5">
             <TimeBadge />

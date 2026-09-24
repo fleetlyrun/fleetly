@@ -85,7 +85,7 @@ function FeedCard({
 export function HomePage() {
   const appsQuery = useQuery({
     queryKey: ["apps"],
-    queryFn: listApps,
+    queryFn: () => listApps(),
     refetchInterval: 5000,
   });
   const statusQuery = useQuery({

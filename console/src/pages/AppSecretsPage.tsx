@@ -39,6 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/utils";
+import { useTeamCapabilities } from "@/lib/context";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -46,6 +47,7 @@ function SecretRow({ app, row }: { app: string; row: SecretView }) {
   const queryClient = useQueryClient();
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [error, setError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
+  const { canAdminResources } = useTeamCapabilities();
 
   const removeMutation = useMutation({
     mutationFn: () => removeSecret(app, row.name ?? ""),
@@ -67,16 +69,18 @@ function SecretRow({ app, row }: { app: string; row: SecretView }) {
         updated {timeAgo(row.updated_at)}
       </TableCell>
       <TableCell className="text-right">
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-red-600 dark:text-red-400"
-          aria-label={`Remove secret ${row.name}`}
-          data-testid="secret-remove-button"
-          onClick={() => setConfirmOpen(true)}
-        >
-          <Trash2 aria-hidden className="h-3.5 w-3.5" />
-        </Button>
+        {canAdminResources ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-red-600 dark:text-red-400"
+            aria-label={`Remove secret ${row.name}`}
+            data-testid="secret-remove-button"
+            onClick={() => setConfirmOpen(true)}
+          >
+            <Trash2 aria-hidden className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
       </TableCell>
       {confirmOpen ? (
         <Dialog open onOpenChange={(v) => (v ? undefined : setConfirmOpen(false))}>
@@ -176,6 +180,9 @@ function SetSecretForm({ app }: { app: string }) {
 
 export function AppSecretsPage() {
   const { name = "" } = useParams();
+  // 角色门（前端体验门，§3.2）：secrets 写 = admin+（viewer/developer 不见
+  // 写面；服务端硬门不变）。
+  const { canAdminResources } = useTeamCapabilities();
   const query = useQuery({
     queryKey: ["secrets", name],
     queryFn: () => listSecrets(name),
@@ -222,9 +229,11 @@ export function AppSecretsPage() {
         </Button>
       </CardHeader>
       <CardContent className="divide-y pt-0">
-        <section className="py-4">
-          <SetSecretForm app={name} />
-        </section>
+        {canAdminResources ? (
+          <section className="py-4">
+            <SetSecretForm app={name} />
+          </section>
+        ) : null}
         <section className="py-4">
           {rows.length === 0 ? (
             <p className="text-sm text-muted-foreground" data-testid="secrets-empty">

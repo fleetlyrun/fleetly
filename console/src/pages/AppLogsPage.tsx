@@ -33,6 +33,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatTime } from "@/lib/utils";
+import { useProjectContext } from "@/lib/context";
 
 const LIVE_CAP = 2000;
 const ALL_SERVICES = "__all__";
@@ -355,6 +356,10 @@ export function AppLogsPage() {
 
   // ── 检索态（SearchLogs，W5-S2）─────────────────────────────────────────
 
+  // SearchLogs 的 app 流选择器（W2-S4 起：非平台管理员的用户凭据必须三段
+  // 限定形 team/prj/app——服务端硬校验）。Console 按当前团队/项目上下文
+  // 构造限定形（顶栏切换器）；无上下文时透传裸名，服务端 400 带指引。
+  const { qualifyApp } = useProjectContext();
   const runSearch = useCallback(
     (cursor?: string) => {
       setSearching(true);
@@ -364,7 +369,7 @@ export function AppLogsPage() {
         label: "1h",
         ms: 60 * 60_000,
       };
-      searchLogs(name, {
+      searchLogs(qualifyApp(name), {
         keyword: keyword.trim() || undefined,
         services: searchService === ALL_SERVICES ? undefined : [searchService],
         sources: searchSources.length > 0 ? searchSources : undefined,
@@ -393,7 +398,7 @@ export function AppLogsPage() {
         })
         .finally(() => setSearching(false));
     },
-    [name, keyword, windowKey, searchService, searchSources],
+    [name, keyword, windowKey, searchService, searchSources, qualifyApp],
   );
 
   const loadMore = useCallback(() => {

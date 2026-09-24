@@ -22,6 +22,7 @@ import { EnvelopeAlert } from "@/components/envelope-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { extractServiceNames } from "@/lib/compose-cron";
+import { useTeamCapabilities } from "@/lib/context";
 import { AppTerminalView } from "@/terminal/app-terminal-view";
 
 /** 会话面状态（状态行的有限词表——idle/opening/active/closed）。 */
@@ -33,6 +34,8 @@ const HARD_LIMIT_SECONDS = 30 * 60;
 
 export function AppTerminalPage() {
   const { name = "" } = useParams();
+  // 角色门（前端体验门，§3.2）：Web 终端 = developer+（viewer 不给接入口）。
+  const { canDeploy } = useTeamCapabilities();
 
   // 平台状态（10s 轮询——连接表/会话表是活数据）。
   const status = useQuery({
@@ -147,10 +150,11 @@ export function AppTerminalPage() {
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
           {err ? <EnvelopeAlert code={err.code} message={err.message} suggestion={err.suggestion} docs={err.docs} /> : null}
-          {!enabled ? (
+          {!enabled || !canDeploy ? (
             <p className="text-sm text-muted-foreground" data-testid="terminal-disabled-note">
-              The web terminal is disabled in the control plane config (terminal.enabled). Enable it and restart
-              fleetlyd — the exec relay duty converges the fleetly-exec service on every node automatically.
+              {!enabled
+                ? "The web terminal is disabled in the control plane config (terminal.enabled). Enable it and restart fleetlyd — the exec relay duty converges the fleetly-exec service on every node automatically."
+                : "The web terminal requires the developer role or higher in this app's project — your account is read-only here."}
             </p>
           ) : (
             <>

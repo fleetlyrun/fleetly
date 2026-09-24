@@ -65,7 +65,7 @@ export function PatPage() {
   });
   const projectsQuery = useQuery({
     queryKey: ["projects", "pat-page"],
-    queryFn: listProjects,
+    queryFn: () => listProjects(),
     staleTime: 60_000,
   });
 

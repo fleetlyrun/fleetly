@@ -35,6 +35,46 @@ export type RevokeTokenResponse = Schemas["v1RevokeTokenResponse"];
 export type ProjectView = Schemas["v1ProjectView"];
 export type ListProjectsResponse = Schemas["v1ListProjectsResponse"];
 
+// ── teams（v0.3 W2-S5 团队设置页：成员/角色/邀请管理，rbac-teams §3.1）──
+
+export type TeamView = Schemas["v1TeamView"];
+export type ListTeamsResponse = Schemas["v1ListTeamsResponse"];
+export type TeamMemberView = Schemas["v1TeamMemberView"];
+export type ListTeamMembersResponse = Schemas["v1ListTeamMembersResponse"];
+export type SetTeamMemberRoleResponse = Schemas["v1SetTeamMemberRoleResponse"];
+export type InviteView = Schemas["v1InviteView"];
+export type CreateInviteResponse = Schemas["v1CreateInviteResponse"];
+export type ListTeamInvitesResponse = Schemas["v1ListTeamInvitesResponse"];
+
+// ── projects 覆写成员面（v0.3 W2-S5 项目设置 tab，rbac-teams §3.3）────────
+
+export type ProjectMemberView = Schemas["v1ProjectMemberView"];
+export type ListProjectMembersResponse = Schemas["v1ListProjectMembersResponse"];
+export type SetProjectMemberRoleResponse = Schemas["v1SetProjectMemberRoleResponse"];
+export type CreateProjectResponse = Schemas["v1CreateProjectResponse"];
+
+// ── users（v0.3 W2-S5 平台管理员用户管理页，设计 §7「平台管理员」）───────
+// 手写投影（非 schema.d.ts 生成——users.swagger.json 因 /v1/auth/registration
+// 路径键与 auth.swagger.json 冲突留在 gen-api 清单外，S2 取舍沿用，见
+// gen-api.mjs 头注）。UserView 复用 auth 段的生成类型（同一 proto 消息，
+// Me 投影同源）；其余为 users.proto 消息的手写镜像：Timestamp 为 RFC3339
+// 字符串、零值字段缺省（EmitUnpopulated=false）。
+
+export type ListUsersResponse = { users?: UserView[] };
+
+/** 创建用户应答：明文临时口令仅本次响应可见（服务端只存哈希）。 */
+export type CreateUserResponse = { user?: UserView; temporary_password?: string };
+
+/** 口令重置应答：明文临时口令仅本次可见；重置即该用户全端下线。 */
+export type ResetUserPasswordResponse = { id?: string; temporary_password?: string };
+
+export type DisableUserResponse = { user?: UserView };
+export type EnableUserResponse = { user?: UserView };
+export type GrantPlatformAdminResponse = { user?: UserView };
+export type RevokePlatformAdminResponse = { user?: UserView };
+export type SetRegistrationResponse = { open?: boolean };
+
+
 // ── apps ────────────────────────────────────────────────────────────────
 
 export type AppView = Schemas["v1AppView"];

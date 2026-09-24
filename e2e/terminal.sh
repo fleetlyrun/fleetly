@@ -316,16 +316,20 @@ docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.220.0.10:8420/v1/au
     -H 'Content-Type: application/json' \
     -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
     >/dev/null || fatal 'founder register'
+# W2-S5 夹具修正：主凭据改铸 **machine 令牌**（平台级凭据 = 资源面 admin
+# 等价，rbac-teams §2.3；W2-S4 起平台管理员在资源面被 ResolvePermission
+# 短路为只读——founder 的用户 PAT 已不能再承担部署）。终端 scope 的独立
+# 令牌子断言在 T-7 段自行铸造（见下文）。
 CTL_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.220.0.10:8420/v1/tokens" \
     -H 'Content-Type: application/json' \
-    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
-[ -n "$CTL_TOKEN" ] || fatal 'founder PAT mint failed'
-# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+    -d '{"machine":true,"note":"e2e machine token","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$CTL_TOKEN" ] || fatal 'machine token mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 token；避免钉住 bridge 网络影响后续套件）。
 docker rm -f "$CURLER" >/dev/null 2>&1 || true
 FOUNDER_TEAM=founder
 FOUNDER_PRJ=default
 FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
-tl 'founder registered (platform admin); PAT minted; project context '"$FOUNDER_PROJECT"
+tl 'founder registered (platform admin); machine token minted; project context '"$FOUNDER_PROJECT"
 
 # ───────── T-1: relay duty 收敛（global 服务 running）
 t1_running() {
@@ -399,7 +403,9 @@ fi
 
 # ───────── T-5: terminal scope 缺失拒（read-only token → HTTP 403）
 # protojson 的冒号后空格非确定（随机空白）——grep -E 兼容两种形态。
-READ_TOKEN=$(fcli tokens create --scopes read --note e2e-term-read --json 2>/dev/null | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+# W2-S5：独立 scope 令牌经 --machine 铸造（主凭据 = admin 机具令牌，可铸
+# 任意 scope 的平台级令牌——S4 起平台管理员用户 PAT 的可达集不再含 terminal）。
+READ_TOKEN=$(fcli tokens create --machine --scopes read --note e2e-term-read --json 2>/dev/null | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
 [ -n "$READ_TOKEN" ] || fatal 'read token creation failed'
 t5_rejected() {
     if tcli -mode ticket -token "$READ_TOKEN" -app "$APP" -service "$SVC" >/dev/null 2>&1; then
@@ -413,8 +419,8 @@ else
     assert "T-5 READ_TOKEN_TICKET_REJECTED" 1 "read-only token unexpectedly obtained a terminal ticket"
 fi
 
-# ───────── T-6: terminal scope 独立 token 全会话走通
-TERM_TOKEN=$(fcli tokens create --scopes terminal --note e2e-term-scope --json 2>/dev/null | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+# ───────── T-6: terminal scope 独立 token 全会话走通（--machine 铸造，同 T-5）
+TERM_TOKEN=$(fcli tokens create --machine --scopes terminal --note e2e-term-scope --json 2>/dev/null | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
 [ -n "$TERM_TOKEN" ] || fatal 'terminal-scope token creation failed'
 t6_echo() {
     tcli -mode run -token "$TERM_TOKEN" -app "$APP" -service "$SVC" \

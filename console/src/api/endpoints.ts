@@ -6,13 +6,18 @@ import type {
   AcceptInviteResponse,
   CancelDeploymentResponse,
   CreateDatabaseResponse,
+  CreateInviteResponse,
+  CreateProjectResponse,
   CreateTerminalTicketResponse,
   CreateTokenResponse,
   CreateWebhookEndpointResponse,
+  CreateUserResponse,
   DeleteDatabaseResponse,
   DeleteWebhookEndpointResponse,
   DeployResponse,
   DeploymentView,
+  DisableUserResponse,
+  EnableUserResponse,
   GetAppResponse,
   GetDatabaseResponse,
   GetEnvResponse,
@@ -25,6 +30,7 @@ import type {
   GetSystemStatusResponse,
   GetTerminalStatusResponse,
   GetWebhookEndpointResponse,
+  GrantPlatformAdminResponse,
   ListAppDomainsResponse,
   ListBackupsResponse,
   ListCronRunsResponse,
@@ -38,6 +44,11 @@ import type {
   ListSecretsResponse,
   ListTokensResponse,
   ListProjectsResponse,
+  ListProjectMembersResponse,
+  ListTeamInvitesResponse,
+  ListTeamMembersResponse,
+  ListTeamsResponse,
+  ListUsersResponse,
   ListWebhookDeliveriesResponse,
   ListWebhookEndpointsResponse,
   ListAppsResponse,
@@ -50,10 +61,12 @@ import type {
   RegisterResponse,
   RemoveEnvResponse,
   RemoveSecretResponse,
+  ResetUserPasswordResponse,
   RestoreDatabaseBackupResponse,
   ResumeDatabaseResponse,
   RetryDatabaseResponse,
   RevealDatabaseCredentialsResponse,
+  RevokePlatformAdminResponse,
   RevokeTokenResponse,
   RollbackDeploymentResponse,
   RotateDatabaseCredentialsResponse,
@@ -64,8 +77,12 @@ import type {
   SearchSource,
   SetEnvResponse,
   SetMetricsModeResponse,
+  SetProjectMemberRoleResponse,
+  SetRegistrationResponse,
   SetSecretResponse,
+  SetTeamMemberRoleResponse,
   SuspendDatabaseResponse,
+  TeamView,
   TestS3ConnectionRequest,
   TestS3ConnectionResponse,
   TestWebhookResponse,
@@ -181,14 +198,187 @@ export function revokeToken(id: string) {
 }
 
 /** 可见项目集（所在团队的项目；平台管理员全量——PAT 绑定下拉数据源）。 */
-export function listProjects() {
-  return api<ListProjectsResponse>("/projects");
+export function listProjects(opts: { team_id?: string } = {}) {
+  const qs = opts.team_id ? `?team_id=${encodeURIComponent(opts.team_id)}` : "";
+  return api<ListProjectsResponse>(`/projects${qs}`);
+}
+
+// ── teams（v0.3 W2-S5 团队设置页，rbac-teams §3.1/§7）────────────────────
+// 团队面权限（teams.proto 头注）：读面 = 团队成员（平台管理员只读放行）；
+// 写面 = 成员角色增删改 owner、邀请 owner/admin（所邀角色 ≤ 邀请者自身）。
+// 机具令牌两面恒 403；服务端硬门，Console 按角色渲染只是体验门。
+
+/** 建队：调用方成为 owner；slug 冲突 409、保留字 422。 */
+export function createTeam(input: { slug: string; name: string }) {
+  return api<{ team?: TeamView }>("/teams", { method: "POST", json: input });
+}
+
+/** 我所在团队；平台管理员 = 全部（只读 support 视角）。 */
+export function listTeams() {
+  return api<ListTeamsResponse>("/teams");
+}
+
+/** 两段式删除（confirm = slug；项目须空——不做隐式级联）。 */
+export function deleteTeam(id: string, confirm: string) {
+  return api<Record<string, never>>(`/teams/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    json: { confirm },
+  });
+}
+
+export function listTeamMembers(teamId: string) {
+  return api<ListTeamMembersResponse>(
+    `/teams/${encodeURIComponent(teamId)}/members`,
+  );
+}
+
+/** 调整成员角色（owner 专属；最后一名 owner 降级 → E_TEAM_LAST_OWNER）。 */
+export function setTeamMemberRole(teamId: string, userId: string, role: string) {
+  return api<SetTeamMemberRoleResponse>(
+    `/teams/${encodeURIComponent(teamId)}/members:set-role`,
+    { method: "POST", json: { user_id: userId, role } },
+  );
+}
+
+/** 移出成员（owner 专属；联动清该团队全部项目覆写行）。 */
+export function removeTeamMember(teamId: string, userId: string) {
+  return api<Record<string, never>>(
+    `/teams/${encodeURIComponent(teamId)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
+}
+
+/**
+ * 创建邀请：明文 token 仅本次响应一次性返回（无 SMTP——链接直出供复制，
+ * 链接形态 <origin>/ui/auth/invite?token=…）。
+ */
+export function createInvite(teamId: string, input: { email: string; role: string }) {
+  return api<CreateInviteResponse>(
+    `/teams/${encodeURIComponent(teamId)}/invites`,
+    { method: "POST", json: input },
+  );
+}
+
+export function listTeamInvites(teamId: string) {
+  return api<ListTeamInvitesResponse>(
+    `/teams/${encodeURIComponent(teamId)}/invites`,
+  );
+}
+
+/** 吊销未消费邀请（已消费/已吊销按幂等成功）。 */
+export function revokeInvite(teamId: string, inviteId: string) {
+  return api<Record<string, never>>(
+    `/teams/${encodeURIComponent(teamId)}/invites/${encodeURIComponent(inviteId)}:revoke`,
+    { method: "POST", json: {} },
+  );
+}
+
+// ── projects 覆写成员面（v0.3 W2-S5 项目设置 tab，rbac-teams §3.3）────────
+// 项目生命周期写面（创建/删除）= 团队 owner（§3.2 矩阵）；覆写成员面 =
+// 团队 admin/owner；覆写角色 ∈ admin/developer/viewer（owner 不可覆写）。
+
+export function createProject(input: {
+  team_id: string;
+  slug: string;
+  name: string;
+  description?: string;
+}) {
+  return api<CreateProjectResponse>("/projects", { method: "POST", json: input });
+}
+
+export function deleteProject(id: string) {
+  return api<Record<string, never>>(`/projects/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+export function listProjectMembers(projectId: string) {
+  return api<ListProjectMembersResponse>(
+    `/projects/${encodeURIComponent(projectId)}/members`,
+  );
+}
+
+/** 覆写 upsert（团队 admin/owner；目标须为团队成员；owner 不可覆写）。 */
+export function setProjectMemberRole(projectId: string, userId: string, role: string) {
+  return api<SetProjectMemberRoleResponse>(
+    `/projects/${encodeURIComponent(projectId)}/members:set-role`,
+    { method: "POST", json: { user_id: userId, role } },
+  );
+}
+
+/** 摘除覆写行（回退团队角色）。 */
+export function removeProjectMember(projectId: string, userId: string) {
+  return api<Record<string, never>>(
+    `/projects/${encodeURIComponent(projectId)}/members/${encodeURIComponent(userId)}`,
+    { method: "DELETE" },
+  );
+}
+
+// ── users（v0.3 W2-S5 平台管理员用户管理页，设计 §7）─────────────────────
+// 全部方法 is_platform_admin 硬门（机具令牌不符格——users.proto 语义）；
+// 临时口令/重置口令明文仅本次响应可见，页面一次性展示（无找回）。
+
+export function listUsers() {
+  return api<ListUsersResponse>("/users");
+}
+
+export function createUser(input: { email: string; display_name?: string }) {
+  return api<CreateUserResponse>("/users", { method: "POST", json: input });
+}
+
+export function disableUser(id: string) {
+  return api<DisableUserResponse>(`/users/${encodeURIComponent(id)}/disable`, {
+    method: "POST",
+    json: {},
+  });
+}
+
+export function enableUser(id: string) {
+  return api<EnableUserResponse>(`/users/${encodeURIComponent(id)}/enable`, {
+    method: "POST",
+    json: {},
+  });
+}
+
+/** 重置口令：旧口令即死 + 该用户全部会话同事务吊销（重置即全端下线）。 */
+export function resetUserPassword(id: string) {
+  return api<ResetUserPasswordResponse>(
+    `/users/${encodeURIComponent(id)}/password:reset`,
+    { method: "POST", json: {} },
+  );
+}
+
+export function grantPlatformAdmin(id: string) {
+  return api<GrantPlatformAdminResponse>(
+    `/users/${encodeURIComponent(id)}/platform-admin:grant`,
+    { method: "POST", json: {} },
+  );
+}
+
+export function revokePlatformAdmin(id: string) {
+  return api<RevokePlatformAdminResponse>(
+    `/users/${encodeURIComponent(id)}/platform-admin:revoke`,
+    { method: "POST", json: {} },
+  );
+}
+
+/** 注册窗口开关（PUT /v1/auth/registration；与 GET 同路径不同方法）。 */
+export function setRegistration(open: boolean) {
+  return api<SetRegistrationResponse>("/auth/registration", {
+    method: "PUT",
+    json: { open },
+  });
 }
 
 // ── apps ────────────────────────────────────────────────────────────────
 
-export function listApps() {
-  return api<ListAppsResponse>("/apps");
+/**
+ * 列表按「调用方可见项目集」过滤（服务端）；opts.project 为可选收窄
+ * （裸名或 `team/prj` 限定形——W2-S4，apps.proto ListAppsRequest.project）。
+ */
+export function listApps(opts: { project?: string } = {}) {
+  const qs = opts.project ? `?project=${encodeURIComponent(opts.project)}` : "";
+  return api<ListAppsResponse>(`/apps${qs}`);
 }
 
 export function getApp(name: string) {
@@ -577,8 +767,10 @@ export function getPlacement(app: string) {
 
 // ── databases（E4 数据库托管，managed-databases §5.1/§5.2）───────────────
 
-export function listDatabases() {
-  return api<ListDatabasesResponse>("/databases");
+/** 列表可见性过滤同 apps；opts.project 可选收窄（裸名或 team/prj 限定形）。 */
+export function listDatabases(opts: { project?: string } = {}) {
+  const qs = opts.project ? `?project=${encodeURIComponent(opts.project)}` : "";
+  return api<ListDatabasesResponse>(`/databases${qs}`);
 }
 
 export function getDatabase(name: string) {
@@ -588,6 +780,8 @@ export function getDatabase(name: string) {
 export function createDatabase(req: {
   name: string;
   template: string;
+  /** 目标项目（裸名或 team/prj 限定形）；缺省 = 调用者个人队 default。 */
+  project?: string;
   limits?: { cpu_seconds?: number; memory_bytes?: string };
 }) {
   return api<CreateDatabaseResponse>("/databases", { method: "POST", json: req });

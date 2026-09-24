@@ -300,16 +300,20 @@ docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.218.0.10:8420/v1/au
     -H 'Content-Type: application/json' \
     -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
     >/dev/null || fatal 'founder register'
+# W2-S5 夹具修正：凭据改铸 **machine 令牌**（平台级凭据 = 资源面 admin
+# 等价，rbac-teams §2.3；W2-S4 起平台管理员在资源面被 ResolvePermission
+# 短路为只读——founder 的用户 PAT 已不能再承担部署/资源写；webhook 端点
+# CRUD 属 admin scope 面，机具凭据按 scope 门放行，语义不变）。
 NOT_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.218.0.10:8420/v1/tokens" \
     -H 'Content-Type: application/json' \
-    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
-[ -n "$NOT_TOKEN" ] || fatal 'founder PAT mint failed'
-# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+    -d '{"machine":true,"note":"e2e machine token","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$NOT_TOKEN" ] || fatal 'machine token mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 token；避免钉住 bridge 网络影响后续套件）。
 docker rm -f "$CURLER" >/dev/null 2>&1 || true
 FOUNDER_TEAM=founder
 FOUNDER_PRJ=default
 FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
-nl 'founder registered (platform admin); PAT minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
+nl 'founder registered (platform admin); machine token minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
 
 
 # 缺省日志后端 = victorialogs（默认捆绑）——本套件不消费检索面，切 jsonl
@@ -366,7 +370,7 @@ services:
       test: ["NONE"]
 EOF
 stage "$DIND" "$TMP/app-compose.yaml" /opt/fleetly/not-compose.yaml
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$NOT_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$NOT_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c '/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/not-compose.yaml > /tmp/not-deploy.log 2>&1'
 deploy_succeeded() {
     fcli deployments list --json "$APP" 2>/dev/null | grep -q '"status": "succeeded"'

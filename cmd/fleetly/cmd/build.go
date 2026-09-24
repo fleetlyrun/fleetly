@@ -68,11 +68,21 @@ func (c *buildCmd) Run(ctx context.Context, env *commands.Environment, args []st
 	if err != nil {
 		return err
 	}
+	// v0.3 W2-S5 补齐（S3 归属管道在 build 站点的遗漏）：--project（或
+	// FLEETLY_PROJECT/config 上下文）随 TriggerBuild 上行——构建行的项目
+	// 归属与 app 行一致；用户凭据缺省个人队默认项目，机具令牌必须显式
+	//（缺失时服务端 400 带指引）。上下文解析单点 resolveContext（与
+	// deploy.go 同款）。
+	rc, err := resolveContext(c.conn.team, c.conn.project)
+	if err != nil {
+		return err
+	}
 	err = c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Builds().TriggerBuild(ctx, &serverv1.TriggerBuildRequest{
 			Compose: content,
 			Service: c.service,
 			BaseDir: filepath.Dir(composeAbs),
+			Project: rc.Project,
 		})
 		if err != nil {
 			return err

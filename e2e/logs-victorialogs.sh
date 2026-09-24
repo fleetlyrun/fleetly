@@ -119,8 +119,12 @@ fcli() {
 }
 # rest_search <query> — REST 面 SearchLogs（gateway GET；founder PAT）。
 rest_search() {
+    # $1 = 查询串；$2 = app 流选择器（可选，缺省 $APP）。W2-S4 起 SearchLogs
+    # 强制按 app 收口（rbac-teams §4.2）——检索结果只含所选 app 的流，跨 app
+    # 的行（构建日志归构建 app、访问日志归路由 app）必须选对各自的流。
+    app=${2:-$APP}
     m wget -q -T 10 -O - --header="Authorization: Bearer $VL_TOKEN" \
-        "http://127.0.0.1:8420/v1/apps/$APP/logs/search$1" 2>/dev/null
+        "http://127.0.0.1:8420/v1/apps/$app/logs/search$1" 2>/dev/null
 }
 # events_grep <pattern> — 现抓事件流快照（busybox timeout 掐断 follow 流）
 # 并在快照中检索。watch 是长驻流，快照即「迄今全部事件」。
@@ -307,16 +311,19 @@ docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.216.0.10:8420/v1/au
     -H 'Content-Type: application/json' \
     -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
     >/dev/null || fatal 'founder register'
+# W2-S5 夹具修正：凭据改铸 **machine 令牌**（平台级凭据 = 资源面 admin
+# 等价，rbac-teams §2.3；W2-S4 起平台管理员在资源面被 ResolvePermission
+# 短路为只读——founder 的用户 PAT 已不能再承担部署/资源写）。
 VL_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.216.0.10:8420/v1/tokens" \
     -H 'Content-Type: application/json' \
-    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
-[ -n "$VL_TOKEN" ] || fatal 'founder PAT mint failed'
-# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+    -d '{"machine":true,"note":"e2e machine token","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$VL_TOKEN" ] || fatal 'machine token mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 token；避免钉住 bridge 网络影响后续套件）。
 docker rm -f "$CURLER" >/dev/null 2>&1 || true
 FOUNDER_TEAM=founder
 FOUNDER_PRJ=default
 FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
-nl 'founder registered (platform admin); PAT minted; project context '"$FOUNDER_PROJECT"
+nl 'founder registered (platform admin); machine token minted; project context '"$FOUNDER_PROJECT"
 
 # ───────── A1: duty 收敛（缺省即部署——未显式设置 = victorialogs 生效）
 nl '=== A1: duty converges on default (logs.backend unset -> victorialogs) ==='
@@ -516,14 +523,15 @@ else
 fi
 
 # B3 构建日志可检索（buildkit 逐行 tee → 批量器 2s flush → VL 索引）。
+# W2-S4 起 SearchLogs 按 app 收口——构建行归构建 app（vlbapp），检索选它的流。
 nl '=== B3: build logs are searchable (source=build hits the marker) ==='
 build_search_hit() {
-    rest_search "?keyword=$BUILD_MARKER&sources=build" | grep -q "$BUILD_MARKER"
+    rest_search "?keyword=$BUILD_MARKER&sources=build" "$BUILD_APP" | grep -q "$BUILD_MARKER"
 }
 if poll_until 120 build_search_hit; then
     assert "VL-B3 BUILD_LOG_SEARCHABLE" 0
 else
-    rest_search "?keyword=$BUILD_MARKER&sources=build" || true
+    rest_search "?keyword=$BUILD_MARKER&sources=build" "$BUILD_APP" || true
     assert "VL-B3 BUILD_LOG_SEARCHABLE" 1 "build marker never searchable within 120s"
 fi
 
@@ -577,7 +585,8 @@ nl '=== B5: access log collected and attributable (source=access with fields) ==
 m wget -q -T 5 -O /dev/null --header "Host: $WEB_DOMAIN" \
     "http://127.0.0.1/$ACCESS_MARKER?q=1" 2>/dev/null || true
 access_search_hit() {
-    body=$(rest_search "?keyword=$ACCESS_MARKER&sources=access")
+    # W2-S4 起 SearchLogs 按 app 收口——访问行归路由 app（vlweb），选它的流。
+    body=$(rest_search "?keyword=$ACCESS_MARKER&sources=access" "$WEB_APP")
     printf '%s' "$body" | grep -q "$ACCESS_MARKER" &&
         printf '%s' "$body" | grep -q '"method"' &&
         printf '%s' "$body" | grep -q '"status"' &&
@@ -587,7 +596,7 @@ access_search_hit() {
 if poll_until 120 access_search_hit; then
     assert "VL-B5 ACCESS_LOG_SEARCHABLE_WITH_FIELDS" 0
 else
-    rest_search "?keyword=$ACCESS_MARKER&sources=access" || true
+    rest_search "?keyword=$ACCESS_MARKER&sources=access" "$WEB_APP" || true
     assert "VL-B5 ACCESS_LOG_SEARCHABLE_WITH_FIELDS" 1 "access row with fields never searchable within 120s"
 fi
 

@@ -16,6 +16,7 @@ import {
 import { AuthProvider, useAuth } from "@/auth";
 import { setUnauthorizedListener } from "@/api/client";
 import { Layout } from "@/components/layout";
+import { AdminPage } from "@/pages/AdminPage";
 import { HomePage } from "@/pages/HomePage";
 import { AppsPage } from "@/pages/AppsPage";
 import { AppDetailLayout } from "@/pages/AppDetailLayout";
@@ -33,6 +34,9 @@ import { InvitePage } from "@/pages/InvitePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PatPage } from "@/pages/PatPage";
 import { SystemPage } from "@/pages/SystemPage";
+import { TeamPage } from "@/pages/TeamPage";
+import { TeamsPage } from "@/pages/TeamsPage";
+import { TeamProjectProvider } from "@/lib/context";
 import { queryClient } from "@/query";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
@@ -92,28 +96,35 @@ function AnonRoutes({
 /** 已登录应用面（含邀请页的已登录分支——进入即自动 accept）。 */
 function AuthedRoutes() {
   return (
-    <Routes>
-      <Route element={<RequireAuth><Layout /></RequireAuth>}>
-        <Route path="/" element={<HomePage />} />
-        <Route path="/apps" element={<AppsPage />} />
-        <Route path="/apps/:name" element={<AppDetailLayout />}>
-          <Route index element={<AppOverviewPage />} />
-          <Route path="deployments" element={<AppDeploymentsPage />} />
-          <Route path="logs" element={<AppLogsPage />} />
-          <Route path="env" element={<AppEnvPage />} />
-          <Route path="secrets" element={<AppSecretsPage />} />
-          <Route path="domains" element={<AppDomainsPage />} />
-          <Route path="terminal" element={<AppTerminalPage />} />
+    // 团队/项目上下文（W2-S5 顶栏切换器的数据源与资源页收窄来源）只服务
+    // 已登录面——匿名路由无需它。
+    <TeamProjectProvider>
+      <Routes>
+        <Route element={<RequireAuth><Layout /></RequireAuth>}>
+          <Route path="/" element={<HomePage />} />
+          <Route path="/apps" element={<AppsPage />} />
+          <Route path="/apps/:name" element={<AppDetailLayout />}>
+            <Route index element={<AppOverviewPage />} />
+            <Route path="deployments" element={<AppDeploymentsPage />} />
+            <Route path="logs" element={<AppLogsPage />} />
+            <Route path="env" element={<AppEnvPage />} />
+            <Route path="secrets" element={<AppSecretsPage />} />
+            <Route path="domains" element={<AppDomainsPage />} />
+            <Route path="terminal" element={<AppTerminalPage />} />
+          </Route>
+          <Route path="/databases" element={<DatabasesPage />} />
+          <Route path="/databases/:name" element={<DatabaseDetailPage />} />
+          <Route path="/pat" element={<PatPage />} />
+          <Route path="/system" element={<SystemPage />} />
+          <Route path="/events" element={<EventsPage />} />
+          <Route path="/teams" element={<TeamsPage />} />
+          <Route path="/teams/:teamId" element={<TeamPage />} />
+          <Route path="/admin/users" element={<AdminPage />} />
+          <Route path="/auth/invite" element={<InvitePage />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
-        <Route path="/databases" element={<DatabasesPage />} />
-        <Route path="/databases/:name" element={<DatabaseDetailPage />} />
-        <Route path="/pat" element={<PatPage />} />
-        <Route path="/system" element={<SystemPage />} />
-        <Route path="/events" element={<EventsPage />} />
-        <Route path="/auth/invite" element={<InvitePage />} />
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+      </Routes>
+    </TeamProjectProvider>
   );
 }
 

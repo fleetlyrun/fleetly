@@ -168,6 +168,142 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/teams": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListTeams 我所在团队；平台管理员 = 全部（§3.2 只读全域）。 */
+        get: operations["TeamsService_ListTeams"];
+        put?: never;
+        /**
+         * CreateTeam 建队：调用方成为 owner（§3.1）；slug 冲突 409、保留字
+         *     422（E_TEAM_SLUG_RESERVED）。
+         */
+        post: operations["TeamsService_CreateTeam"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teams/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["TeamsService_GetTeam"];
+        put?: never;
+        post?: never;
+        /**
+         * DeleteTeam owner 专属两段式（confirm = slug）+ 项目须空（资源先迁走
+         *     或删光，不做隐式级联，§3.1）。
+         */
+        delete: operations["TeamsService_DeleteTeam"];
+        options?: never;
+        head?: never;
+        /** UpdateTeam 仅改显示名（slug 不可变——请求无 slug 字段）。 */
+        patch: operations["TeamsService_UpdateTeam"];
+        trace?: never;
+    };
+    "/v1/teams/{team_id}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["TeamsService_ListTeamInvites"];
+        put?: never;
+        /**
+         * CreateInvite owner/admin 可邀（§3.1）：所邀角色不得高于邀请者自身；
+         *     邀 owner 角色 = owner 专属。明文 token 仅本次响应一次性返回（无 SMTP：
+         *     邀请链接页面直出供复制）。
+         */
+        post: operations["TeamsService_CreateInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teams/{team_id}/invites/{invite_id}:revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** RevokeInvite 吊销未消费邀请（已消费/已吊销按幂等成功）。 */
+        post: operations["TeamsService_RevokeInvite"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teams/{team_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["TeamsService_ListTeamMembers"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teams/{team_id}/members/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * RemoveTeamMember owner 专属：移出成员（联动清该团队全部项目覆写行，
+         *     D-W0-2；最后一名 owner → E_TEAM_LAST_OWNER）。
+         */
+        delete: operations["TeamsService_RemoveTeamMember"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/teams/{team_id}/members:set-role": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * SetTeamMemberRole owner 专属：调整成员角色（最后一名 owner 降级 →
+         *     E_TEAM_LAST_OWNER）。
+         */
+        post: operations["TeamsService_SetTeamMemberRole"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/projects": {
         parameters: {
             query?: never;
@@ -1646,6 +1782,98 @@ export interface components {
             user_id?: string;
             /** 绑定项目（空 = 不绑定，不输出）。 */
             project_id?: string;
+        };
+        TeamsServiceCreateInviteBody: {
+            email?: string;
+            role?: string;
+        };
+        TeamsServiceRevokeInviteBody: Record<string, never>;
+        TeamsServiceSetTeamMemberRoleBody: {
+            user_id?: string;
+            role?: string;
+        };
+        TeamsServiceUpdateTeamBody: {
+            /** 新显示名（slug 不可变——请求无 slug 字段，改 slug 只能重建团队）。 */
+            name?: string;
+        };
+        v1CreateInviteResponse: {
+            invite?: components["schemas"]["v1InviteView"];
+            /**
+             * 明文一次性 token（sha256 入库）：仅本次响应可见，用于拼邀请链接
+             *     console/auth/invite?token=…（无 SMTP 直出供复制，设计 §3.1）。
+             */
+            token?: string;
+        };
+        v1CreateTeamRequest: {
+            slug?: string;
+            name?: string;
+        };
+        v1CreateTeamResponse: {
+            team?: components["schemas"]["v1TeamView"];
+        };
+        v1DeleteTeamResponse: Record<string, never>;
+        v1GetTeamResponse: {
+            team?: components["schemas"]["v1TeamView"];
+        };
+        v1InviteView: {
+            id?: string;
+            team_id?: string;
+            /** 被邀邮箱（小写归一）。 */
+            email?: string;
+            role?: string;
+            /**
+             * 过期时刻（创建 + 7 天；一次性窗口）。
+             * Format: date-time
+             */
+            expires_at?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /**
+             * 已接受/已吊销时输出对应时刻；未消费时不输出。
+             * Format: date-time
+             */
+            accepted_at?: string;
+            /** Format: date-time */
+            revoked_at?: string;
+        };
+        v1ListTeamInvitesResponse: {
+            invites?: components["schemas"]["v1InviteView"][];
+        };
+        v1ListTeamMembersResponse: {
+            members?: components["schemas"]["v1TeamMemberView"][];
+        };
+        v1ListTeamsResponse: {
+            teams?: components["schemas"]["v1TeamView"][];
+        };
+        v1RemoveTeamMemberResponse: Record<string, never>;
+        v1RevokeInviteResponse: Record<string, never>;
+        v1SetTeamMemberRoleResponse: {
+            member?: components["schemas"]["v1TeamMemberView"];
+        };
+        v1TeamMemberView: {
+            team_id?: string;
+            user_id?: string;
+            /** 团队角色（owner/admin/developer/viewer 四档，设计 §3.2）。 */
+            role?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /** 属主投影（成员列表的可用性面——email 与显示名；无敏感材料）。 */
+            email?: string;
+            display_name?: string;
+        };
+        /** TeamView 是团队行的无敏感投影。 */
+        v1TeamView: {
+            id?: string;
+            /** 单词制标识（[a-z0-9]{2,32}、全局唯一、不可变；底座命名公式段）。 */
+            slug?: string;
+            /** 人读显示名。 */
+            name?: string;
+            created_by?: string;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        v1UpdateTeamResponse: {
+            team?: components["schemas"]["v1TeamView"];
         };
         /** MoveAppRequest 是资源改派请求（平台管理员专属）。 */
         ProjectsServiceMoveAppBody: {
@@ -3472,6 +3700,371 @@ export interface operations {
             };
         };
     };
+    TeamsService_ListTeams: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListTeamsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_CreateTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateTeamRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateTeamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_GetTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetTeamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_DeleteTeam: {
+        parameters: {
+            query?: {
+                /**
+                 * @description 两段式确认：confirm 必须等于团队 slug（数据/归属安全同 DeleteDatabase
+                 *     口径）。
+                 */
+                confirm?: string;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteTeamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_UpdateTeam: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamsServiceUpdateTeamBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateTeamResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_ListTeamInvites: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListTeamInvitesResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_CreateInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamsServiceCreateInviteBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateInviteResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_RevokeInvite: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamsServiceRevokeInviteBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RevokeInviteResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_ListTeamMembers: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListTeamMembersResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_RemoveTeamMember: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RemoveTeamMemberResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    TeamsService_SetTeamMemberRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                team_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TeamsServiceSetTeamMemberRoleBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetTeamMemberRoleResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     ProjectsService_ListProjects: {
         parameters: {
             query?: {
@@ -3809,6 +4402,12 @@ export interface operations {
             query?: {
                 /** @description 列表上限（缺省 100；v0.1 单机规模不做分页游标）。 */
                 limit?: number;
+                /**
+                 * @description 项目收窄（v0.3 W2-S4 可见性过滤，rbac-teams §4.2）：裸名或 `team/project`
+                 *     限定形（D-W0-9 解析规则；解析域 = 调用方可见项目集，机具令牌/平台管理
+                 *     员 = 全库）。空 = 不收窄（用户面仍按可见项目集过滤）。
+                 */
+                project?: string;
             };
             header?: never;
             path?: never;
@@ -5366,6 +5965,12 @@ export interface operations {
             query?: {
                 /** @description 行数上限（缺省 100）。 */
                 limit?: number;
+                /**
+                 * @description 项目收窄（v0.3 W2-S4 可见性过滤，rbac-teams §4.2）：裸名或 `team/project`
+                 *     限定形（D-W0-9 解析规则；解析域 = 调用方可见项目集，机具令牌/平台管理
+                 *     员 = 全库）。空 = 不收窄（用户面仍按可见项目集过滤）。
+                 */
+                project?: string;
             };
             header?: never;
             path?: never;

@@ -48,6 +48,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatBytes, timeAgo } from "@/lib/utils";
+import { useProjectContext, useTeamCapabilities } from "@/lib/context";
 
 const TEMPLATES = [
   { value: "postgres-16", label: "postgres-16" },
@@ -78,6 +79,7 @@ function LastBackupCell({ name }: { name: string }) {
 
 function CreateDatabaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
   const queryClient = useQueryClient();
+  const { projectRef } = useProjectContext();
   const [name, setName] = useState("");
   const [template, setTemplate] = useState("postgres-16");
   const [cpu, setCpu] = useState("");
@@ -92,6 +94,9 @@ function CreateDatabaseDialog({ open, onOpenChange }: { open: boolean; onOpenCha
       return createDatabase({
         name,
         template,
+        // 项目上下文收窄（W2-S5）：顶栏选中项目即创建目标（限定形
+        // team/prj）；无选择 = 服务端缺省（调用者个人队 default 项目）。
+        project: projectRef || undefined,
         limits:
           cpu.trim() !== "" || memoryGiB.trim() !== ""
             ? {
@@ -265,9 +270,13 @@ function DatabaseRow({ db }: { db: DatabaseView }) {
 }
 
 export function DatabasesPage() {
+  // 项目上下文收窄（W2-S5）+ 创建按钮角色门（库生命周期 = admin+，§3.2
+  // 矩阵；前端体验门，服务端硬门不变）。
+  const { projectRef } = useProjectContext();
+  const { canAdminResources } = useTeamCapabilities();
   const query = useQuery({
-    queryKey: ["databases"],
-    queryFn: listDatabases,
+    queryKey: ["databases", projectRef],
+    queryFn: () => listDatabases(projectRef ? { project: projectRef } : {}),
     refetchInterval: 5000,
   });
   const [createOpen, setCreateOpen] = useState(false);
@@ -295,10 +304,12 @@ export function DatabasesPage() {
           >
             Refresh
           </Button>
-          <Button size="sm" data-testid="database-create-button" onClick={() => setCreateOpen(true)}>
-            <Plus aria-hidden className="h-3.5 w-3.5" />
-            Create database
-          </Button>
+          {canAdminResources ? (
+            <Button size="sm" data-testid="database-create-button" onClick={() => setCreateOpen(true)}>
+              <Plus aria-hidden className="h-3.5 w-3.5" />
+              Create database
+            </Button>
+          ) : null}
         </>
       }
     />

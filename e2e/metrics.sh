@@ -303,16 +303,20 @@ docker exec "$CURLER" curl -s -c /tmp/jar -X POST "http://10.217.0.10:8420/v1/au
     -H 'Content-Type: application/json' \
     -d '{"email":"founder@e2e.test","password":"founder-pass-1","display_name":"Founder"}' \
     >/dev/null || fatal 'founder register'
+# W2-S5 夹具修正：凭据改铸 **machine 令牌**（平台级凭据 = 资源面 admin
+# 等价，rbac-teams §2.3；W2-S4 起平台管理员在资源面被 ResolvePermission
+# 短路为只读——founder 的用户 PAT 已不能再承担部署/资源写；metrics 模式
+# 切换属平台面，机具凭据按 scope 门放行，语义不变）。
 MET_TOKEN=$(docker exec "$CURLER" curl -s -b /tmp/jar -X POST "http://10.217.0.10:8420/v1/tokens" \
     -H 'Content-Type: application/json' \
-    -d '{"note":"e2e pat","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
-[ -n "$MET_TOKEN" ] || fatal 'founder PAT mint failed'
-# curl helper 用毕即除（fixture 只承担注册与铸 PAT；避免钉住 bridge 网络影响后续套件）。
+    -d '{"machine":true,"note":"e2e machine token","scopes":["admin"]}' | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$MET_TOKEN" ] || fatal 'machine token mint failed'
+# curl helper 用毕即除（fixture 只承担注册与铸 token；避免钉住 bridge 网络影响后续套件）。
 docker rm -f "$CURLER" >/dev/null 2>&1 || true
 FOUNDER_TEAM=founder
 FOUNDER_PRJ=default
 FOUNDER_PROJECT="$FOUNDER_TEAM/$FOUNDER_PRJ"
-nl 'founder registered (platform admin); PAT minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
+nl 'founder registered (platform admin); machine token minted; project context '"'"'"$FOUNDER_PROJECT"'"'"''
 
 
 # ───────── A1: 缺省零常驻（D-W5-2 opt-in——unset 生效，duty 无所欠）
@@ -514,7 +518,7 @@ services:
       test: ["NONE"]
 EOF
 stage "$DIND" "$TMP/app-compose.yaml" /opt/fleetly/met-compose.yaml
-docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$MET_TOKEN" \
+docker exec -d -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$MET_TOKEN" -e FLEETLY_PROJECT="$FOUNDER_PROJECT" \
     "$DIND" sh -c '/opt/fleetly/bin/fleetly deploy --timeout 300s /opt/fleetly/met-compose.yaml > /tmp/met-deploy.log 2>&1'
 deploy_succeeded() {
     fcli deployments list --json "$APP" 2>/dev/null | grep -q '"status": "succeeded"'

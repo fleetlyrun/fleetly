@@ -47,6 +47,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { formatTime, timeAgo } from "@/lib/utils";
+import { useTeamCapabilities } from "@/lib/context";
 
 /** 终态集：之外的状态轮询跟踪。 */
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
@@ -327,7 +328,8 @@ function DeploymentRow({
       void queryClient.invalidateQueries({ queryKey: ["deployments", app] });
     },
   });
-  const cancellable = !TERMINAL.has(d.status ?? "");
+  const { canDeploy } = useTeamCapabilities();
+  const cancellable = canDeploy && !TERMINAL.has(d.status ?? "");
   const showState =
     d.phase === "blocked_waiting" ? "blocked_waiting" : d.status ?? "";
 
@@ -412,6 +414,8 @@ export function AppDeploymentsPage() {
   const { name = "" } = useParams();
   // 单一展开位：一次只看一条部署的 diff（再点收起）。
   const [expandedId, setExpandedId] = useState("");
+  // 角色门（前端体验门，§3.2）：部署/回滚/取消 = developer+。
+  const { canDeploy } = useTeamCapabilities();
 
   const historyQuery = useQuery({
     queryKey: ["deployments", name],
@@ -440,8 +444,12 @@ export function AppDeploymentsPage() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-        <DeployCard app={name} />
-        <RollbackCard app={name} />
+        {canDeploy ? (
+          <>
+            <DeployCard app={name} />
+            <RollbackCard app={name} />
+          </>
+        ) : null}
       </div>
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">

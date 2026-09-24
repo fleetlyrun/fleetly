@@ -703,6 +703,38 @@ jobs:
           docker ps -aq --filter name=fleetly-auth-e2e- | xargs -r docker rm -f
           docker network rm fleetly-auth-br || true
 
+  rbac-e2e:
+    # v0.3 W2 RBAC 端到端（e2e/rbac.sh 单 dind；rbac-teams 设计 §3.2/§3.3/
+    # §4.2/§8「e2e 新增 rbac.sh」，auth 同骨架——编排自足、镜像钉 digest）：
+    # RB-1 角色矩阵抽检（viewer 拒部署/developer 拒 env 明文+可部署可终端
+    # ticket/机具令牌全库+团队读面恒拒）→ RB-2 项目覆写四断言（developer
+    # 降 viewer 拒部署/viewer 升 developer 可部署且单项目作用域/owner 恒不
+    # 覆写/移出团队清覆写）→ RB-3 跨项目库引用拒绝（E_DB_PROJECT_MISMATCH）
+    # → RB-4 MoveApp 改派（换名重部署 + 权限随迁）→ RB-5 列表过滤
+    # （?project= 收窄 + 跨队隔离 + 404 不泄漏）→ RB-6 SearchLogs 裸名选择
+    # 器 400。受管应用负载 = 公共 curlimages/curl（sleep infinity 长驻——
+    # 部署真收敛且无 ghcr 私有依赖）。
+    name: rbac e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run rbac e2e (dind)
+        run: sh e2e/rbac.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-rbac-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-rbac-e2e- | xargs -r docker rm -f
+          docker network rm fleetly-rbac-br || true
+
   # ───────────────────────────────────── conformance / 资源采样（T2.24）────
   conformance-builder:
     # Builder conformance（ObjectStore 部分已随 E3-7 落地为

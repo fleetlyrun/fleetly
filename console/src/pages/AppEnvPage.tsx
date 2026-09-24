@@ -31,11 +31,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/utils";
+import { useTeamCapabilities } from "@/lib/context";
 
 function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
   const queryClient = useQueryClient();
   const [revealed, setRevealed] = useState("");
   const [revealError, setRevealError] = useState<string>("");
+  // 角色门（前端体验门）：env 明文读 = admin+、env 写（移除）= developer+
+  //（§3.2 矩阵）；服务端硬门不变，403 信封照实展示。
+  const { canDeploy, canAdminResources } = useTeamCapabilities();
 
   const revealMutation = useMutation({
     mutationFn: () => getEnv(app, row.key ?? ""),
@@ -70,18 +74,20 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
         ) : (
           <span className="flex items-center gap-2">
             <span className="text-muted-foreground">••••••••</span>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-6 w-6"
-              aria-label={`Reveal value of ${row.key}`}
-              onClick={() => {
-                setRevealError("");
-                revealMutation.mutate();
-              }}
-            >
-              <Eye aria-hidden className="h-3.5 w-3.5" />
-            </Button>
+            {canAdminResources ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-6 w-6"
+                aria-label={`Reveal value of ${row.key}`}
+                onClick={() => {
+                  setRevealError("");
+                  revealMutation.mutate();
+                }}
+              >
+                <Eye aria-hidden className="h-3.5 w-3.5" />
+              </Button>
+            ) : null}
           </span>
         )}
         {revealError ? (
@@ -107,16 +113,18 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
         updated {timeAgo(row.updated_at)}
       </TableCell>
       <TableCell>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 text-red-600 dark:text-red-400"
-          aria-label={`Remove ${row.key}`}
-          onClick={() => removeMutation.mutate()}
-          disabled={removeMutation.isPending}
-        >
-          <Trash2 aria-hidden className="h-3.5 w-3.5" />
-        </Button>
+        {canDeploy ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 text-red-600 dark:text-red-400"
+            aria-label={`Remove ${row.key}`}
+            onClick={() => removeMutation.mutate()}
+            disabled={removeMutation.isPending}
+          >
+            <Trash2 aria-hidden className="h-3.5 w-3.5" />
+          </Button>
+        ) : null}
       </TableCell>
     </TableRow>
   );
@@ -179,6 +187,8 @@ function SetEnvForm({ app }: { app: string }) {
 
 export function AppEnvPage() {
   const { name = "" } = useParams();
+  // 角色门（前端体验门，§3.2）：env 写 = developer+。
+  const { canDeploy } = useTeamCapabilities();
   const query = useQuery({
     queryKey: ["env", name],
     queryFn: () => listEnv(name),
@@ -248,9 +258,12 @@ export function AppEnvPage() {
         </Button>
       </CardHeader>
       <CardContent className="divide-y pt-0">
-        <section className="py-4">
-          <SetEnvForm app={name} />
-        </section>
+        {/* env 写 = developer+（§3.2 矩阵；viewer 不见写面）。 */}
+        {canDeploy ? (
+          <section className="py-4">
+            <SetEnvForm app={name} />
+          </section>
+        ) : null}
         <section className="py-4">
           <h3
             className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-amber-600 dark:text-amber-400"
