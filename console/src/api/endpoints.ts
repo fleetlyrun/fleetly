@@ -28,6 +28,7 @@ import type {
   GetRegistrationStateResponse,
   GetRevisionSpecResponse,
   GetS3SettingsResponse,
+  GetSmtpSettingsResponse,
   GetSystemStatusResponse,
   GetTerminalStatusResponse,
   GetWebhookEndpointResponse,
@@ -86,15 +87,17 @@ import type {
   SetTeamMemberRoleResponse,
   SuspendDatabaseResponse,
   TeamView,
+  TestWebhookResponse,
   TestS3ConnectionRequest,
   TestS3ConnectionResponse,
-  TestWebhookResponse,
+  TestSmtpResponse,
   TriggerBackupResponse,
   TriggerCronRunResponse,
   TriggerDatabaseBackupResponse,
   UpgradeDatabaseResponse,
   UpdateS3SettingsRequest,
   UpdateS3SettingsResponse,
+  UpdateSmtpSettingsResponse,
   UpdateWebhookEndpointResponse,
   VerifyAppDomainsResponse,
   VolumeView,
@@ -624,7 +627,7 @@ export function setMetricsMode(mode: MetricsMode) {
   return api<SetMetricsModeResponse>("/metrics/mode", { method: "PUT", json: { mode } });
 }
 
-// ── notifications（E6 W5-S4 通知 Webhook；observability §5）──────────────
+// ── notifications（E6 W5-S4 通知 Webhook；observability §5 + §8 通道扩展）──
 
 /** 端点清单（无敏感投影——secret 只出指纹）。 */
 export function listWebhookEndpoints() {
@@ -640,13 +643,17 @@ export function getWebhookEndpoint(id: string) {
 
 /**
  * 创建端点（admin scope）：签名密钥明文仅在响应出现一次，读面只出指纹。
- * url 用 http/https（内网 receiver 允许 http——Console 出警示文案）。
+ * 通道类型 webhook|slack|email（W4-S3）：webhook/slack 带 url（内网
+ * receiver 允许 http——Console 出警示文案）；email 带 target 收件地址，
+ * 投递凭据走平台级 SMTP 设置面。
  */
 export function createWebhookEndpoint(input: {
   name: string;
   url: string;
   event_patterns: string[];
   enabled?: boolean;
+  type?: string;
+  target?: string;
 }) {
   return api<CreateWebhookEndpointResponse>("/notifications/endpoints", {
     method: "POST",
@@ -656,7 +663,8 @@ export function createWebhookEndpoint(input: {
 
 /**
  * 部分更新（admin scope）：未提供的字段不变；event_patterns 空 = 不变、
- * 非空 = 整体替换。
+ * 非空 = 整体替换。type/target/url 组合形状在服务端对最终形态校验
+ * （换通道时 url/target 可显式清空）。
  */
 export function updateWebhookEndpoint(
   id: string,
@@ -665,6 +673,8 @@ export function updateWebhookEndpoint(
     url?: string;
     event_patterns?: string[];
     enabled?: boolean;
+    type?: string;
+    target?: string;
   },
 ) {
   return api<UpdateWebhookEndpointResponse>(
@@ -689,7 +699,8 @@ export function rotateWebhookSecret(id: string) {
   );
 }
 
-/** 发送 type=test 载荷（admin scope；验证连通与验签配置，同步结论）。 */
+/** 发送 type=test 载荷（admin scope；按端点通道类型试发，同步结论——RPC
+ * 名沿契约门禁保留 TestWebhook，语义即 TestEndpoint）。 */
 export function testWebhook(id: string) {
   return api<TestWebhookResponse>(
     `/notifications/endpoints/${encodeURIComponent(id)}/test`,
@@ -707,6 +718,40 @@ export function listWebhookDeliveries(
   if (opts.limit !== undefined) p.limit = String(opts.limit);
   const qs = new URLSearchParams(p).toString();
   return api<ListWebhookDeliveriesResponse>(`/notifications/deliveries${qs ? `?${qs}` : ""}`);
+}
+
+/** 平台级 SMTP 设置只读面（密码只出指纹；email 端点共用一份——W4-S3）。 */
+export function getSmtpSettings() {
+  return api<GetSmtpSettingsResponse>("/notifications/smtp");
+}
+
+/** 保存平台级 SMTP 设置（PUT 语义；密码明文只写不读，空 = 清除）。 */
+export function updateSmtpSettings(input: {
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  from: string;
+}) {
+  return api<UpdateSmtpSettingsResponse>("/notifications/smtp", {
+    method: "PUT",
+    json: input,
+  });
+}
+
+/** SMTP 探针（候选或已存配置发测试邮件到指定 to——真实 SMTP 往返）。 */
+export function testSmtp(input: {
+  to: string;
+  host?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  from?: string;
+}) {
+  return api<TestSmtpResponse>("/notifications/smtp/test", {
+    method: "POST",
+    json: input,
+  });
 }
 
 // ── system ──────────────────────────────────────────────────────────────

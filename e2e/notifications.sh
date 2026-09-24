@@ -1,18 +1,21 @@
 #!/bin/sh
-# e2e/notifications.sh — E6 W5-S4 通知 Webhook 端到端（单节点 dind 形态；
-# 设计 docs/design/2026-09-22-observability.md §5 的真机闭环，V2-6 Webhook
-# 首发——POST + 重试 + 事件订阅；metrics.sh 同骨架——编排自足、镜像钉
-# digest）：宿主 bridge 上起一个特权 dind → swarm init + fleetlyd 起服 →
-# 全部断言经 dind 内的 fleetly CLI / REST / nc receiver 驱动：
+# e2e/notifications.sh — E6 W5-S4 通知 Webhook 端到端 + W4-S3 通道扩展（单
+# 节点 dind 形态；设计 docs/design/2026-09-22-observability.md §5/§8 的真机
+# 闭环，V2-6 Webhook 首发——POST + 重试 + 事件订阅；§8 增 slack/email 通道
+# 与平台级 SMTP 设置面；metrics.sh 同骨架——编排自足、镜像钉 digest）：宿主
+# bridge 上起一个特权 dind → swarm init + fleetlyd 起服 → 全部断言经 dind
+# 内的 fleetly CLI / REST / nc receiver / smtpsink 驱动：
 #
 #   receiver 形态：dind 容器内 busybox `nc -l -p <port>` 循环——预先备好
 #   HTTP 200 响应文件作 stdin，请求原文（头 + 体）append 到 /tmp/recv-<p>.log
-#   （fleetlyd 与 receiver 同 netns → 端点 URL 用 127.0.0.1；三端口隔离：
+#   （fleetlyd 与 receiver 同 netns → 端点 URL 用 127.0.0.1；端口隔离：
 #   8899 = ops（deployment.*）、8898 = star（*）、59991 = dead（logs.*，
-#   不可达端口）。验签在宿主侧用 python 独立重算 HMAC（不是 grep 签名存在
-#   ——设计 §7 S4 验收原文）。
+#   不可达端口）、8897 = slack-relay（--type slack，logs.*））。验签在宿主
+#   侧用 python 独立重算 HMAC（不是 grep 签名存在——设计 §7 S4 验收原文）。
+#   SMTP 接收器 = e2e/smtpsink（同仓编译的假 SMTP——canned 250 应答，会话
+#   全文落盘 /tmp/smtp-sink.log，零第三方）。
 #
-#   N1 端点创建：secret 明文一次性返回（三个端点三把不同密钥）。
+#   N1 端点创建：secret 明文一次性返回（多端点多把不同密钥）。
 #   N2-N3 订阅命中：部署 whoami 应用 → deployment.* 事件 → ops 与 star
 #      receiver 都收到带签名的 POST。
 #   N4-N5 HMAC 验签：宿主侧用创建响应的明文密钥重算
@@ -27,7 +30,18 @@
 #   N9 恢复绿：停用 dead 端点 → notifications 组件回绿。
 #   N10 test 载荷：notifications test → type=test 载荷到达 ops receiver。
 #   N11 台账读面：deliveries --status ok 显示 response_code=200。
-#   N12 零回环（设计红线）：事件流快照无任何 notify.* 事件——通知自身
+#   N12 slack 通道（§8 D-W4-4/D-W4-5）：--type slack 端点 → 触发 logs.*
+#      事件 → receiver 收到 {"text":"[fleetly] …"} 载荷形态、该请求无
+#      X-Fleetly-Signature 头（Slack 端自带鉴权，平台不加 HMAC）。
+#   N13 email 通道：--type email 端点（target=probe@e2e.test）+ SMTP 设置
+#      （smtp set，密码走 FLEETLY_SMTP_PASSWORD env）→ 触发 logs.* 事件 →
+#      smtpsink 收到 MAIL FROM/RCPT TO/DATA 全链（Subject: [fleetly] …），
+#      密码材料零出现在会话；台账 ok 行不带 response_code（SMTP 语义不进
+#      该列——通用 success bool + detail 口径）。
+#   N14 SMTP 设置往返 + TestSmtp：smtp get 只出指纹不出明文 →
+#      notifications smtp test --to probe2@e2e.test → sink 收到第二封信
+#     （RCPT TO:<probe2@e2e.test>、Subject: [fleetly] test）。
+#   N15 零回环（设计红线）：事件流快照无任何 notify.* 事件——通知自身
 #      零事件（订阅 * 不会把自己套进回环）。
 #
 # 断言风格与 e2e/metrics.sh 一致（NOT-x: PASS/FAIL 行 + NL_FAIL 计数 +
@@ -36,7 +50,8 @@
 # env:
 #   NOT_DIND_IMAGE   dind 镜像（默认 docker:29.8.1-dind，钉 digest 与 CI 一致）
 #   NOT_SKIP_BUILD   1 = 跳过交叉编译，改用 NOT_BIN_DIR 下的现成二进制
-#   NOT_BIN_DIR      NOT_SKIP_BUILD=1 时的二进制来源（需含 fleetlyd 与 fleetly）
+#   NOT_BIN_DIR      NOT_SKIP_BUILD=1 时的二进制来源（需含 fleetlyd 与 fleetly
+#                    与 smtpsink）
 #   NOT_VERSION      注入的版本串（默认 v0.2.0-notifications-e2e）
 set -u
 export MSYS_NO_PATHCONV=1
@@ -57,7 +72,9 @@ APP=notifyapp
 SVC=web
 OPS_PORT=8899
 STAR_PORT=8898
+SLACK_PORT=8897
 DEAD_PORT=59991
+SMTP_PORT=2525
 
 NL_FAIL=0
 SUITE_DINDS=''
@@ -184,7 +201,7 @@ command -v go >/dev/null 2>&1 || NOT_SKIP_BUILD=1
 
 # ─────────────────────────────────────────────────────────────── 构建
 if [ "$NOT_SKIP_BUILD" != '1' ]; then
-    nl "cross-compiling linux/amd64 fleetlyd+fleetly ($NOT_VERSION)"
+    nl "cross-compiling linux/amd64 fleetlyd+fleetly+smtpsink ($NOT_VERSION)"
     (
         cd "$ROOT" &&
             GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
@@ -192,7 +209,9 @@ if [ "$NOT_SKIP_BUILD" != '1' ]; then
                 -o "$TMP/fleetlyd" ./cmd/fleetlyd &&
             GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
                 go build -trimpath -ldflags "-s -w -X main.version=$NOT_VERSION" \
-                -o "$TMP/fleetly" ./cmd/fleetly
+                -o "$TMP/fleetly" ./cmd/fleetly &&
+            GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
+                go build -trimpath -o "$TMP/smtpsink" ./e2e/smtpsink
     ) || fatal 'go build failed'
     NOT_BIN_DIR="$TMP"
 else
@@ -201,6 +220,7 @@ else
 fi
 [ -f "$NOT_BIN_DIR/fleetlyd" ] || fatal "fleetlyd missing in $NOT_BIN_DIR"
 [ -f "$NOT_BIN_DIR/fleetly" ] || fatal "fleetly missing in $NOT_BIN_DIR"
+[ -f "$NOT_BIN_DIR/smtpsink" ] || fatal "smtpsink missing in $NOT_BIN_DIR"
 
 # ─────────────────────────────────────────────────────── dind 编排准备
 leftovers=$(docker ps -aq --filter name=fleetly-n-e2e- 2>/dev/null || true)
@@ -236,7 +256,8 @@ nl 'staging binaries + config (exec+stdin)'
 docker exec "$DIND" mkdir -p /opt/fleetly/bin /opt/fleetly/etc /var/lib/fleetly || fatal 'mkdir stage'
 stage "$DIND" "$NOT_BIN_DIR/fleetlyd" /opt/fleetly/bin/fleetlyd
 stage "$DIND" "$NOT_BIN_DIR/fleetly" /opt/fleetly/bin/fleetly
-docker exec "$DIND" chmod +x /opt/fleetly/bin/fleetlyd /opt/fleetly/bin/fleetly || fatal 'chmod'
+stage "$DIND" "$NOT_BIN_DIR/smtpsink" /opt/fleetly/bin/smtpsink
+docker exec "$DIND" chmod +x /opt/fleetly/bin/fleetlyd /opt/fleetly/bin/fleetly /opt/fleetly/bin/smtpsink || fatal 'chmod'
 
 # fleetlyd 配置：离线 dind 形态——ACME/git 关闭、base_domain 留空。
 cat >"$TMP/config.yaml" <<'EOF'
@@ -324,10 +345,12 @@ logs_backend_ok() {
 }
 poll_until 30 logs_backend_ok || fatal 'logs backend set jsonl never accepted'
 
-# receiver 就位（三个端口：ops/star/dead）。
+# receiver 就位（四个端口：ops/star/slack/dead）+ 假 SMTP sink。
 start_receiver "$OPS_PORT"
 start_receiver "$STAR_PORT"
-nl "receivers up on $OPS_PORT/$STAR_PORT (dead endpoint targets 127.0.0.1:$DEAD_PORT)"
+start_receiver "$SLACK_PORT"
+docker exec -d "$DIND" sh -c "/opt/fleetly/bin/smtpsink -addr 127.0.0.1:$SMTP_PORT > /tmp/smtp-sink.log 2>&1"
+nl "receivers up on $OPS_PORT/$STAR_PORT/$SLACK_PORT (dead endpoint targets 127.0.0.1:$DEAD_PORT, smtpsink on $SMTP_PORT)"
 
 # ───────── N1: 端点创建（secret 明文一次性返回）
 nl '=== N1: endpoint create returns the secret once ==='
@@ -545,17 +568,123 @@ else
     assert "NOT-N11 LEDGER_SHOWS_RESPONSE_CODE" 1 "ok deliveries never recorded response_code=200"
 fi
 
-# ───────── N12: 零回环（设计红线：事件流无 notify.* 事件）
-nl '=== N12: zero notify.* events (no self-trigger loop) ==='
+# ───────── N12: slack 通道（{"text"} 载荷形态、无平台签名头——§8）
+nl '=== N12: slack channel delivers the {"text"} form without a signature ==='
+NOT_SLACK_JSON=$(fcli notifications endpoint create --json --type slack --patterns 'logs.*' slack-relay "http://127.0.0.1:$SLACK_PORT/hook") || fatal 'create slack endpoint'
+printf '%s' "$NOT_SLACK_JSON" | host_python -c 'import json,sys;e=json.load(sys.stdin)["endpoint"];assert e["type"]=="slack",e' || fatal 'slack endpoint view lost its type'
+slack_text_ok() {
+    fcli logs backend set jsonl >/dev/null 2>&1 &&
+        sleep 3 && pull_log "$SLACK_PORT" &&
+        grep -q '"text":"\[fleetly\] logs.backend_updated' "$TMP/recv-$SLACK_PORT.log" 2>/dev/null
+}
+if poll_until 60 slack_text_ok; then
+    assert "NOT-N12a SLACK_TEXT_PAYLOAD_FORM" 0
+else
+    msh "cat /tmp/recv-$SLACK_PORT.log 2>/dev/null" || true
+    assert "NOT-N12a SLACK_TEXT_PAYLOAD_FORM" 1 "slack receiver never saw the {\"text\"} payload"
+fi
+# 无签名头（该请求的投递语义 = URL 即凭据；平台不加 HMAC——§8.1 通道表）。
+cat >"$TMP/check_slack.py" <<'EOF'
+import sys
+raw = open(sys.argv[1], "rb").read().decode("utf-8", "replace")
+blocks = raw.split("POST /hook HTTP/1.1")
+target = [b for b in blocks if '"text":"[fleetly] logs.backend_updated' in b]
+if not target:
+    print("SLACK missing-text-payload")
+    sys.exit(1)
+if "X-Fleetly-Signature" in target[0]:
+    print("SLACK unexpected-signature-header")
+    sys.exit(1)
+print("SLACK text-only-payload-no-signature")
+EOF
+pull_log "$SLACK_PORT"
+SLACK_CHECK=$(host_python "$TMP/check_slack.py" "$TMP/recv-$SLACK_PORT.log")
+nl "slack check: $SLACK_CHECK"
+[ "$SLACK_CHECK" = "SLACK text-only-payload-no-signature" ]
+assert "NOT-N12b SLACK_NO_SIGNATURE_HEADER" $?
+
+# ───────── N13: email 通道（SMTP 设置 + --type email 端点 → 真投递）
+nl '=== N13: email channel delivers through the platform SMTP settings ==='
+# 密码经 FLEETLY_SMTP_PASSWORD 环境变量注入（不进 shell 历史）；docker exec
+# 只透传显式 -e 的变量——显式带上（CLI 侧旗标缺省回退读该 env）。
+NOT_SMTP_SET_OUT=$(docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_PROJECT="$FOUNDER_PROJECT" -e FLEETLY_TOKEN="$NOT_TOKEN" \
+    -e FLEETLY_SMTP_PASSWORD=not-for-the-wire \
+    "$DIND" /opt/fleetly/bin/fleetly notifications smtp set --host 127.0.0.1 --port "$SMTP_PORT" --from fleetly@e2e.test) ||
+    fatal 'smtp set failed'
+printf '%s' "$NOT_SMTP_SET_OUT" | grep -q 'not-for-the-wire' && fatal 'smtp set echoed the password'
+NOT_MAIL_JSON=$(fcli notifications endpoint create --json --type email --target probe@e2e.test --patterns 'logs.*' mail-relay) || fatal 'create email endpoint'
+printf '%s' "$NOT_MAIL_JSON" | host_python -c 'import json,sys;e=json.load(sys.stdin)["endpoint"];assert e["type"]=="email" and e["target"]=="probe@e2e.test",e' || fatal 'email endpoint view lost its channel fields'
+email_delivered() {
+    fcli logs backend set jsonl >/dev/null 2>&1 &&
+        sleep 3 && m grep -q 'RCPT TO:<probe@e2e.test>' /tmp/smtp-sink.log 2>/dev/null
+}
+if poll_until 60 email_delivered; then
+    assert "NOT-N13a EMAIL_SMTP_SESSION_DELIVERED" 0
+else
+    msh 'cat /tmp/smtp-sink.log 2>/dev/null' || true
+    assert "NOT-N13a EMAIL_SMTP_SESSION_DELIVERED" 1 "smtpsink never saw the endpoint delivery"
+fi
+# 会话全链 + 消息形态 + 密码零泄漏（AUTH 未启用——密码材料绝不上线）。
+sink_all_ok() {
+    m grep -q 'MAIL FROM:<fleetly@e2e.test>' /tmp/smtp-sink.log 2>/dev/null &&
+        m grep -q 'Subject: \[fleetly\] logs.backend_updated' /tmp/smtp-sink.log 2>/dev/null &&
+        m sh -c "! grep -q 'not-for-the-wire' /tmp/smtp-sink.log" 2>/dev/null
+}
+if sink_all_ok; then
+    assert "NOT-N13b EMAIL_SESSION_SHAPE_AND_PASSWORD_LEAK_FREE" 0
+else
+    msh 'cat /tmp/smtp-sink.log 2>/dev/null' || true
+    assert "NOT-N13b EMAIL_SESSION_SHAPE_AND_PASSWORD_LEAK_FREE" 1 "smtp session shape wrong or the password leaked onto the wire"
+fi
+# 台账 ok 行（通用 success 语义——response_code 不承载 SMTP 250）。
+email_ledger_ok() {
+    fcli notifications deliveries --endpoint mail-relay --status ok 2>/dev/null | grep -q 'status=ok'
+}
+if poll_until 30 email_ledger_ok; then
+    assert "NOT-N13c EMAIL_LEDGER_OK" 0
+else
+    fcli notifications deliveries --endpoint mail-relay || true
+    assert "NOT-N13c EMAIL_LEDGER_OK" 1 "email delivery never turned ok in the ledger"
+fi
+
+# ───────── N14: SMTP 设置往返（只出指纹）+ TestSmtp（真试发）
+nl '=== N14: smtp settings round trip shows only a fingerprint; TestSmtp delivers ==='
+SMTP_GET_OUT=$(fcli notifications smtp get 2>/dev/null)
+smtp_get_hides_password() {
+    printf '%s' "$SMTP_GET_OUT" | grep -q 'fingerprint' || return 1
+    printf '%s' "$SMTP_GET_OUT" | grep -q 'not-for-the-wire' && return 1
+    return 0
+}
+if smtp_get_hides_password; then
+    assert "NOT-N14a SMTP_GET_SHOWS_FINGERPRINT_ONLY" 0
+else
+    printf '%s\n' "$SMTP_GET_OUT" || true
+    assert "NOT-N14a SMTP_GET_SHOWS_FINGERPRINT_ONLY" 1 "smtp get leaked the password or lacks the fingerprint"
+fi
+smtp_test_ok() {
+    fcli notifications smtp test --to probe2@e2e.test >/dev/null 2>&1 &&
+        m grep -q 'RCPT TO:<probe2@e2e.test>' /tmp/smtp-sink.log 2>/dev/null &&
+        m grep -q 'Subject: \[fleetly\] test' /tmp/smtp-sink.log 2>/dev/null
+}
+if poll_until 60 smtp_test_ok; then
+    assert "NOT-N14b SMTP_TEST_DELIVERS_PROBE_MAIL" 0
+else
+    fcli notifications smtp test --to probe2@e2e.test || true
+    msh 'cat /tmp/smtp-sink.log 2>/dev/null' || true
+    assert "NOT-N14b SMTP_TEST_DELIVERS_PROBE_MAIL" 1 "TestSmtp probe mail never arrived"
+fi
+
+# ───────── N15: 零回环（设计红线：事件流无 notify.* 事件）
+nl '=== N15: zero notify.* events (no self-trigger loop) ==='
 no_notify_events() {
     events_grep 'NOTGREPPED' >/dev/null 2>&1
     ! m grep -q 'notify\.' /tmp/not-events.txt 2>/dev/null
 }
 if poll_until 30 no_notify_events; then
-    assert "NOT-N12 ZERO_NOTIFY_EVENTS_NO_LOOP" 0
+    assert "NOT-N15 ZERO_NOTIFY_EVENTS_NO_LOOP" 0
 else
     msh 'grep -c "notify\." /tmp/not-events.txt' || true
-    assert "NOT-N12 ZERO_NOTIFY_EVENTS_NO_LOOP" 1 "notify.* events appeared in the stream (self-trigger loop!)"
+    assert "NOT-N15 ZERO_NOTIFY_EVENTS_NO_LOOP" 1 "notify.* events appeared in the stream (self-trigger loop!)"
 fi
 
 finish

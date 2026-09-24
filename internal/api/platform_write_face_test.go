@@ -94,7 +94,7 @@ func TestPlatformWriteFaceGate(t *testing.T) {
 		return resp.GetEndpoint().GetId(), nil
 	}
 
-	// 非平台管理员用户 PAT：七个写面全部 403（凭据声明 admin——门在平台面）。
+	// 非平台管理员用户 PAT：十个写面全部 403（凭据声明 admin——门在平台面）。
 	for name, call := range map[string]func() error{
 		"SetLogsBackend":        func() error { return setBackend(env.tokUser) },
 		"SetMetricsMode":        func() error { return setMode(env.tokUser) },
@@ -111,8 +111,22 @@ func TestPlatformWriteFaceGate(t *testing.T) {
 			_, err := notify.RotateWebhookSecret(authCtx(ctx, env.tokUser), &serverv1.RotateWebhookSecretRequest{Id: "01TEST"})
 			return err
 		},
-		"TestWebhook": func() error {
+		"TestEndpoint": func() error {
 			_, err := notify.TestWebhook(authCtx(ctx, env.tokUser), &serverv1.TestWebhookRequest{Id: "01TEST"})
+			return err
+		},
+		"GetSmtpSettings": func() error {
+			_, err := notify.GetSmtpSettings(authCtx(ctx, env.tokUser), &serverv1.GetSmtpSettingsRequest{})
+			return err
+		},
+		"UpdateSmtpSettings": func() error {
+			_, err := notify.UpdateSmtpSettings(authCtx(ctx, env.tokUser), &serverv1.UpdateSmtpSettingsRequest{
+				Host: "smtp.example.test", Port: 25, From: "f@example.test",
+			})
+			return err
+		},
+		"TestSmtp": func() error {
+			_, err := notify.TestSmtp(authCtx(ctx, env.tokUser), &serverv1.TestSmtpRequest{To: "probe@example.test"})
 			return err
 		},
 	} {
@@ -138,12 +152,28 @@ func TestPlatformWriteFaceGate(t *testing.T) {
 	if _, err := notify.RotateWebhookSecret(authCtx(ctx, env.tokMachine), &serverv1.RotateWebhookSecretRequest{Id: id}); err != nil {
 		t.Fatalf("machine RotateWebhookSecret: %v", err)
 	}
-	// TestWebhook 指向不可达环回端点：RPC 成功（响应 ok=false）即 200 证明
+	// TestEndpoint 指向不可达环回端点：RPC 成功（响应 ok=false）即 200 证明
 	// ——投递结论是业务事实，不是凭据拒绝。
 	if resp, err := notify.TestWebhook(authCtx(ctx, env.tokMachine), &serverv1.TestWebhookRequest{Id: id}); err != nil {
-		t.Fatalf("machine TestWebhook: %v", err)
+		t.Fatalf("machine TestEndpoint: %v", err)
 	} else if resp.GetOk() {
-		t.Fatal("test webhook to an unreachable endpoint must report ok=false")
+		t.Fatal("test endpoint probe to an unreachable receiver must report ok=false")
+	}
+	// SMTP 面：Get 返回缺省态；Update 保存（真实设置面写入）；TestSmtp 对
+	// 不可达中继探针（RPC 成功 + ok=false 即 200 证明）。Update 后清理：
+	// 再 Update 成空设置（同 PUT 语义覆盖）。
+	if _, err := notify.GetSmtpSettings(authCtx(ctx, env.tokMachine), &serverv1.GetSmtpSettingsRequest{}); err != nil {
+		t.Fatalf("machine GetSmtpSettings: %v", err)
+	}
+	if _, err := notify.UpdateSmtpSettings(authCtx(ctx, env.tokMachine), &serverv1.UpdateSmtpSettingsRequest{
+		Host: "127.0.0.1", Port: 1, From: "fleetly@example.test", Password: "pw-e2e-only",
+	}); err != nil {
+		t.Fatalf("machine UpdateSmtpSettings: %v", err)
+	}
+	if resp, err := notify.TestSmtp(authCtx(ctx, env.tokMachine), &serverv1.TestSmtpRequest{To: "probe@example.test"}); err != nil {
+		t.Fatalf("machine TestSmtp: %v", err)
+	} else if resp.GetOk() {
+		t.Fatal("smtp probe against an unreachable relay must report ok=false")
 	}
 	if _, err := notify.DeleteWebhookEndpoint(authCtx(ctx, env.tokMachine), &serverv1.DeleteWebhookEndpointRequest{Id: id}); err != nil {
 		t.Fatalf("machine DeleteWebhookEndpoint: %v", err)

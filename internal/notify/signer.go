@@ -26,7 +26,7 @@ const (
 	HeaderContentType = "application/json"
 )
 
-// PayloadTypeEvent / PayloadTypeTest 是载荷 type 标位（TestWebhook 发送
+// PayloadTypeEvent / PayloadTypeTest 是载荷 type 标位（TestEndpoint 发送
 // type=test 载荷——结构同真实事件，设计 §5.2）。
 const (
 	PayloadTypeEvent = "event"
@@ -106,8 +106,8 @@ func hmacSHA256(secret []byte, timestampUnix int64, body []byte) []byte {
 	return mac.Sum(nil)
 }
 
-// sendPayload 是签名 POST 的执行体（Manager 投递与 TestWebhook 共链路——
-// 同一签名/头/超时/Close 语义，验签配置的验证才有意义）。
+// sendPayload 是签名 POST 的执行体（Manager webhook 投递与 TestEndpoint
+// 共链路——同一签名/头/超时/Close 语义，验签配置的验证才有意义）。
 func sendPayload(ctx context.Context, client *http.Client, rawURL string, secret []byte, body []byte, timeout time.Duration) (bool, int, string) {
 	ts := time.Now().UTC().Unix()
 	attemptCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -131,7 +131,7 @@ func sendPayload(ctx context.Context, client *http.Client, rawURL string, secret
 	return true, resp.StatusCode, ""
 }
 
-// SendTestPayload 发送 type=test 载荷（TestWebhook RPC 的执行体；结构同
+// SendTestPayload 发送 type=test 载荷（webhook 通道试发执行体；结构同
 // 真实事件、验签同链路——设计 §5.2「验证连通与验签配置」）。单次同步
 // POST（10s 预算）；不落台账——连通性检查不是投递事实。
 func SendTestPayload(ctx context.Context, rawURL string, secret []byte, endpointID string) (bool, int, string) {

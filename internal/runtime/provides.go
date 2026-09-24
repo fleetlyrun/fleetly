@@ -729,9 +729,10 @@ func NewEventsService(st *state.Store) *api.EventsService {
 	return api.NewEventsService(st)
 }
 
-// NewNotificationsService 构造通知 Webhook 订阅/投递面服务（E6 W5-S4：
-// 端点 CRUD + 台账读面 + TestWebhook——box 承载 secret envelope 加解密，
-// 投递本体由 notify.Manager 常驻循环承载）。
+// NewNotificationsService 构造通知订阅/投递面服务（E6 W5-S4 / W4-S3 通道
+// 扩展：端点 CRUD + 台账读面 + TestWebhook（按类型试发）+ SMTP 设置三
+// RPC——box 承载 secret/密码 envelope 加解密，投递本体由 notify.Manager
+// 常驻循环承载）。
 func NewNotificationsService(st *state.Store, sb *secrets.Box) *api.NotificationsService {
 	return api.NewNotificationsService(st, sb)
 }

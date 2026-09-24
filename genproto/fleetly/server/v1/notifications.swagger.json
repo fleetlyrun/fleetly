@@ -256,6 +256,7 @@
     "/v1/notifications/endpoints/{id}/test": {
       "post": {
         "summary": "TestWebhook 发送 type=test 载荷（admin scope；设计 §5.2）：结构同真实\n事件、验签同链路——验证连通与验签配置。同步等待单次投递结果（10s\n预算）；不落台账（连通性检查不是投递事实）。",
+        "description": "W4-S3 语义扩为按端点类型试发（TestEndpoint 语义——email 试发收件 =\n端点 target 地址；slack 载荷 = {\"text\"} 形态）。RPC 名保留 TestWebhook\n——buf breaking FILE 门禁禁 RPC/消息删除（契约版本化纪律 §2.8），\n线格式重命名随下一契约版本评估；CLI `notifications test` 即本语义。",
         "operationId": "NotificationsService_TestWebhook",
         "responses": {
           "200": {
@@ -291,6 +292,93 @@
           "NotificationsService"
         ]
       }
+    },
+    "/v1/notifications/smtp": {
+      "get": {
+        "summary": "GetSmtpSettings 平台级 SMTP 设置只读面（admin scope；设计 §8.3）：\n密码只回指纹（明文 sha256 前 8 hex），绝不回明文。全部 email 端点共\n用这一份设置（通道设置与端点解耦）。",
+        "operationId": "NotificationsService_GetSmtpSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetSmtpSettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "NotificationsService"
+        ]
+      },
+      "put": {
+        "summary": "UpdateSmtpSettings 全量保存平台级 SMTP 设置（PUT 语义：请求即新状态，\n空 password/username 回落空值；设计 §8.3）。密码明文入站（TLS 传输面）\n→ envelope 加密落库；审计 notify.smtp_changed（只落审计不落事件）。",
+        "operationId": "NotificationsService_UpdateSmtpSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateSmtpSettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UpdateSmtpSettingsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      }
+    },
+    "/v1/notifications/smtp/test": {
+      "post": {
+        "summary": "TestSmtp SMTP 探针（admin scope；设计 §8.3）：对候选（未保存也能测）\n或已存配置发测试邮件到指定收件地址——真实 SMTP 往返。不落台账（连通\n性检查不是投递事实）。",
+        "operationId": "NotificationsService_TestSmtp",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TestSmtpResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TestSmtpRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NotificationsService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -309,7 +397,7 @@
         },
         "url": {
           "type": "string",
-          "title": "改 URL（可选）。"
+          "title": "改 URL（可选；webhook/slack 非空——形状在服务端校验；显式空串仅允许\n伴随换通道到 email，单独置空被服务端拒绝）。"
         },
         "event_patterns": {
           "type": "array",
@@ -321,6 +409,14 @@
         "enabled": {
           "type": "boolean",
           "title": "启停（可选——enabled 订阅开关；停用端点暂停投递不删台账）。"
+        },
+        "type": {
+          "type": "string",
+          "title": "通道类型（可选；词表同 Create——组合形状在服务端对「更新后的最终\n形态」校验）。"
+        },
+        "target": {
+          "type": "string",
+          "title": "email 通道收件地址（可选；非空必须合法邮箱形状，显式空串仅允许伴随\n换通道离开 email）。"
         }
       }
     },
@@ -333,7 +429,7 @@
         },
         "url": {
           "type": "string",
-          "title": "接收端 URL（http/https；host 必填；不带 userinfo）。"
+          "title": "接收端 URL（webhook/slack 通道必填；http/https；host 必填；不带\nuserinfo。email 通道必须为空——投递走平台 SMTP 设置）。"
         },
         "event_patterns": {
           "type": "array",
@@ -345,6 +441,14 @@
         "enabled": {
           "type": "boolean",
           "title": "创建即启用（缺省 true）。"
+        },
+        "type": {
+          "type": "string",
+          "title": "通道类型（webhook | slack | email；空串 = webhook 缺省。组合形状\n[url/target 互斥、email target 必须合法邮箱] 在服务端校验——跨字段\n条件不做 protovalidate CEL，400 形状门 + state 层白名单双闸）。"
+        },
+        "target": {
+          "type": "string",
+          "title": "email 通道收件地址（to；非 email 通道必须为空）。"
         }
       }
     },
@@ -405,6 +509,14 @@
       },
       "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
     },
+    "v1GetSmtpSettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1SmtpSettingsView"
+        }
+      }
+    },
     "v1GetWebhookEndpointResponse": {
       "type": "object",
       "properties": {
@@ -450,24 +562,133 @@
         }
       }
     },
-    "v1TestWebhookResponse": {
+    "v1SmtpSettingsView": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "title": "SMTP 中继主机（空 = 未设置）。"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32",
+          "title": "SMTP 端口（1..65535；未设置 = 0）。"
+        },
+        "username": {
+          "type": "string",
+          "title": "认证用户名（可选——无认证中继为空）。"
+        },
+        "password_fingerprint": {
+          "type": "string",
+          "title": "密码指纹（明文 sha256 前 8 hex；空 = 未设置）。"
+        },
+        "from": {
+          "type": "string",
+          "title": "信封发件地址（From）。"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "SmtpSettingsView 是 notify.smtp.* 设置的只读投影：密码只出指纹（明文与\n密文永不回读——S3 secret 卡同口径）。"
+    },
+    "v1TestSmtpRequest": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "type": "string",
+          "title": "测试邮件收件地址（必填；合法邮箱形状）。"
+        },
+        "host": {
+          "type": "string",
+          "title": "候选配置（未保存也能测——S3 探针同语义）：全部候选字段为空时测已存\n配置。候选密码明文只在本请求内使用，绝不落库。字段全部 optional——\n未设置的形状规则跳过（零值不是「空邮箱」违约），服务端按「全空 =\n测已存」收敛。"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "from": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TestSmtpResponse": {
       "type": "object",
       "properties": {
         "ok": {
-          "type": "boolean",
-          "title": "2xx 到手 = true。"
+          "type": "boolean"
         },
         "status_code": {
           "type": "integer",
           "format": "int32",
-          "title": "HTTP 响应码（传输失败 = 0）。"
+          "title": "SMTP 会话完成码（250 语义；未达 DATA 应答 = 0）。"
         },
         "error": {
           "type": "string",
           "title": "失败摘要（单行化；成功为空）。"
         }
       },
-      "title": "TestWebhookResponse 是 type=test 载荷的同步投递结论（设计 §5.2）。"
+      "title": "TestSmtpResponse 是 SMTP 探针的同步结论（ok = 邮件被中继接受；error =\n失败步单行摘要，密码材料零出现）。"
+    },
+    "v1TestWebhookResponse": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean",
+          "title": "投递被接收方接受（webhook/slack 2xx；email SMTP 会话完成）。"
+        },
+        "status_code": {
+          "type": "integer",
+          "format": "int32",
+          "title": "HTTP 响应码（webhook/slack；传输失败 = 0。email 通道不出码）。"
+        },
+        "error": {
+          "type": "string",
+          "title": "失败摘要（单行化；成功为空）。"
+        }
+      },
+      "title": "TestWebhookResponse 是 type=test 载荷按通道类型试发的同步结论（设计\n§5.2/§8.2：webhook/slack = HTTP 语义；email = SMTP 会话语义）。"
+    },
+    "v1UpdateSmtpSettingsRequest": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "title": "SMTP 中继主机（必填）。"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32",
+          "title": "SMTP 端口（1..65535）。"
+        },
+        "username": {
+          "type": "string",
+          "title": "认证用户名（可选；空 = 无认证中继）。"
+        },
+        "password": {
+          "type": "string",
+          "title": "密码明文（**只写不读**——空 = 清除已存密码；envelope 加密落库，读面\n只出指纹）。"
+        },
+        "from": {
+          "type": "string",
+          "title": "信封发件地址（From；必须合法邮箱形状）。"
+        }
+      }
+    },
+    "v1UpdateSmtpSettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1SmtpSettingsView"
+        }
+      }
     },
     "v1UpdateWebhookEndpointResponse": {
       "type": "object",
@@ -535,7 +756,7 @@
         },
         "url": {
           "type": "string",
-          "title": "接收端 URL（操作员自配——单操作员信任模型，无 SSRF 过滤，设计 §5.1\n诚实口径；https 建议但不强制）。"
+          "title": "接收端 URL（webhook/slack 通道；操作员自配——单操作员信任模型，无\nSSRF 过滤，设计 §5.1 诚实口径；https 建议但不强制。email 通道恒空）。"
         },
         "event_patterns": {
           "type": "array",
@@ -558,6 +779,14 @@
         "updated_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "type": {
+          "type": "string",
+          "title": "通道类型（webhook | slack | email；缺省 webhook——存量端点升级即\nwebhook，行为逐字不变，设计 §8.1）。"
+        },
+        "target": {
+          "type": "string",
+          "title": "email 通道收件地址（to；webhook/slack 恒空——设计 §8.1 通道与端点\n解耦：投递凭据在平台级 SMTP 设置面，端点只带收件地址）。"
         }
       },
       "title": "WebhookEndpointView 是端点行的无敏感投影：密钥只出指纹（明文与密文\n永不回读）。"

@@ -22,22 +22,28 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   }
 };
 
-// NotificationsService 是通知 Webhook 订阅/投递面（E6 观测专项设计 §5，
-// W5-S4；V2-6 Webhook 首发——POST + 重试 + 事件订阅）。
+// NotificationsService 是通知订阅/投递面（E6 观测专项设计 §5 + §8 通道
+// 扩展，W5-S4 首发 / W4-S3 扩 slack+email 通道；V2-6 Webhook 首发——POST
+// + 重试 + 事件订阅）。
 //
-// 模型：端点（url + 平台生成的 HMAC 签名密钥 + 订阅模式集）订阅平台事件
-// 流（glob 模式，`*` = 全订）；投递器（internal/notify lynx service，进程
-// 内消费者——与 WatchEvents 平行，不经 token/流机制）按事件 seq 游标轮询
-// events 表，匹配端点后 POST JSON + 签名头（接收方可验签 + 5min 窗防重
-// 放）。失败退避 30s/5m 重试，3 次尝试后终态 failed（设计 §5.2）。
+// 模型：端点（type ∈ {webhook,slack,email} + 订阅模式集）订阅平台事件流
+//（glob 模式，`*` = 全订）；投递器（internal/notify lynx service，进程内
+// 消费者——与 WatchEvents 平行，不经 token/流机制）按事件 seq 游标轮询
+// events 表，匹配端点后按通道类型投递：webhook = POST JSON + 签名头
+//（接收方可验签 + 5min 窗防重放）；slack = POST {"text"}（Incoming
+// Webhook，URL 即凭据，平台不加 HMAC）；email = SMTP 投递（平台级一份
+// notify.smtp.* 设置，密码 envelope 加密只写不读——读面只出指纹）。失败
+// 退避 30s/5m 重试，3 次尝试后终态 failed（设计 §5.2/§8.1 通道表）。
 //
-// 红线（§5.2）：**通知自身零事件**——投递失败不 emitted 事件（防自激励
-// 环），失败可见面 = 投递台账（ListWebhookDeliveries）+ system status
-// notifications 组件红 + Console 卡；订阅 `*` 不会回环。
+// 红线（§5.2/§8.4）：**通知自身零事件**——投递失败不 emitted 事件（防
+// 自激励环），失败可见面 = 投递台账（ListWebhookDeliveries）+ system
+// status notifications 组件红 + Console 卡；订阅 `*` 不会回环；
+// notify.smtp_changed 只落审计不落事件。
 //
-// secret 纪律：密钥平台生成（32B base64），envelope 加密落库；明文只在
-// CreateWebhookEndpoint / RotateWebhookSecret 响应**一次性**返回，读面
-// 只出 sha256 前 8 hex 指纹（s3 卡同口径）。
+// secret 纪律：签名密钥平台生成（32B base64），envelope 加密落库；明文
+// 只在 CreateWebhookEndpoint / RotateWebhookSecret 响应**一次性**返回，
+// 读面只出 sha256 前 8 hex 指纹（s3 卡同口径）。SMTP 密码同理：明文只写
+// 不读，读面只出指纹。
 service NotificationsService {
   // ListWebhookEndpoints 端点清单（read scope；无敏感投影）。
   rpc ListWebhookEndpoints(ListWebhookEndpointsRequest) returns (ListWebhookEndpointsResponse) {
@@ -70,6 +76,11 @@ service NotificationsService {
   // TestWebhook 发送 type=test 载荷（admin scope；设计 §5.2）：结构同真实
   // 事件、验签同链路——验证连通与验签配置。同步等待单次投递结果（10s
   // 预算）；不落台账（连通性检查不是投递事实）。
+  //
+  // W4-S3 语义扩为按端点类型试发（TestEndpoint 语义——email 试发收件 =
+  // 端点 target 地址；slack 载荷 = {"text"} 形态）。RPC 名保留 TestWebhook
+  // ——buf breaking FILE 门禁禁 RPC/消息删除（契约版本化纪律 §2.8），
+  // 线格式重命名随下一契约版本评估；CLI `notifications test` 即本语义。
   rpc TestWebhook(TestWebhookRequest) returns (TestWebhookResponse) {
     option (google.api.http) = { post: "/v1/notifications/endpoints/{id}/test" body: "*" };
   }
@@ -78,6 +89,24 @@ service NotificationsService {
   rpc ListWebhookDeliveries(ListWebhookDeliveriesRequest) returns (ListWebhookDeliveriesResponse) {
     option (google.api.http) = { get: "/v1/notifications/deliveries" };
   }
+  // GetSmtpSettings 平台级 SMTP 设置只读面（admin scope；设计 §8.3）：
+  // 密码只回指纹（明文 sha256 前 8 hex），绝不回明文。全部 email 端点共
+  // 用这一份设置（通道设置与端点解耦）。
+  rpc GetSmtpSettings(GetSmtpSettingsRequest) returns (GetSmtpSettingsResponse) {
+    option (google.api.http) = { get: "/v1/notifications/smtp" };
+  }
+  // UpdateSmtpSettings 全量保存平台级 SMTP 设置（PUT 语义：请求即新状态，
+  // 空 password/username 回落空值；设计 §8.3）。密码明文入站（TLS 传输面）
+  // → envelope 加密落库；审计 notify.smtp_changed（只落审计不落事件）。
+  rpc UpdateSmtpSettings(UpdateSmtpSettingsRequest) returns (UpdateSmtpSettingsResponse) {
+    option (google.api.http) = { put: "/v1/notifications/smtp" body: "*" };
+  }
+  // TestSmtp SMTP 探针（admin scope；设计 §8.3）：对候选（未保存也能测）
+  // 或已存配置发测试邮件到指定收件地址——真实 SMTP 往返。不落台账（连通
+  // 性检查不是投递事实）。
+  rpc TestSmtp(TestSmtpRequest) returns (TestSmtpResponse) {
+    option (google.api.http) = { post: "/v1/notifications/smtp/test" body: "*" };
+  }
 }
 
 // WebhookEndpointView 是端点行的无敏感投影：密钥只出指纹（明文与密文
@@ -85,8 +114,8 @@ service NotificationsService {
 message WebhookEndpointView {
   string id = 1;
   string name = 2;
-  // 接收端 URL（操作员自配——单操作员信任模型，无 SSRF 过滤，设计 §5.1
-  // 诚实口径；https 建议但不强制）。
+  // 接收端 URL（webhook/slack 通道；操作员自配——单操作员信任模型，无
+  // SSRF 过滤，设计 §5.1 诚实口径；https 建议但不强制。email 通道恒空）。
   string url = 3;
   // 订阅模式集（事件名 glob；`*` = 全订）。
   repeated string event_patterns = 4;
@@ -95,6 +124,12 @@ message WebhookEndpointView {
   string secret_fingerprint = 6;
   google.protobuf.Timestamp created_at = 7;
   google.protobuf.Timestamp updated_at = 8;
+  // 通道类型（webhook | slack | email；缺省 webhook——存量端点升级即
+  // webhook，行为逐字不变，设计 §8.1）。
+  string type = 9;
+  // email 通道收件地址（to；webhook/slack 恒空——设计 §8.1 通道与端点
+  // 解耦：投递凭据在平台级 SMTP 设置面，端点只带收件地址）。
+  string target = 10;
 }
 
 message ListWebhookEndpointsRequest {}
@@ -118,8 +153,9 @@ message CreateWebhookEndpointRequest {
     max_len: 64,
     pattern: "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
   }];
-  // 接收端 URL（http/https；host 必填；不带 userinfo）。
-  string url = 2 [(buf.validate.field).string = { min_len: 1, max_len: 2048 }];
+  // 接收端 URL（webhook/slack 通道必填；http/https；host 必填；不带
+  // userinfo。email 通道必须为空——投递走平台 SMTP 设置）。
+  string url = 2 [(buf.validate.field).string = { max_len: 2048 }];
   // 订阅模式集（非空；每项 1..128 chars of [a-z0-9._-*]；服务端去重保序）。
   repeated string event_patterns = 3 [(buf.validate.field).repeated = {
     min_items: 1,
@@ -128,6 +164,14 @@ message CreateWebhookEndpointRequest {
   }];
   // 创建即启用（缺省 true）。
   optional bool enabled = 4;
+  // 通道类型（webhook | slack | email；空串 = webhook 缺省。组合形状
+  // [url/target 互斥、email target 必须合法邮箱] 在服务端校验——跨字段
+  // 条件不做 protovalidate CEL，400 形状门 + state 层白名单双闸）。
+  string type = 5 [(buf.validate.field).string = {
+    in: ["", "webhook", "slack", "email"]
+  }];
+  // email 通道收件地址（to；非 email 通道必须为空）。
+  string target = 6 [(buf.validate.field).string = { max_len: 320 }];
 }
 
 message CreateWebhookEndpointResponse {
@@ -144,8 +188,9 @@ message UpdateWebhookEndpointRequest {
     max_len: 64,
     pattern: "^[a-zA-Z0-9][a-zA-Z0-9._-]*$"
   }];
-  // 改 URL（可选）。
-  optional string url = 3 [(buf.validate.field).string = { min_len: 1, max_len: 2048 }];
+  // 改 URL（可选；webhook/slack 非空——形状在服务端校验；显式空串仅允许
+  // 伴随换通道到 email，单独置空被服务端拒绝）。
+  optional string url = 3 [(buf.validate.field).string = { max_len: 2048 }];
   // 改订阅模式集（可选——repeated 无 optional 语义：空 = 不变，非空 =
   // 整体替换且过白名单校验）。
   repeated string event_patterns = 4 [(buf.validate.field).repeated = {
@@ -154,6 +199,14 @@ message UpdateWebhookEndpointRequest {
   }];
   // 启停（可选——enabled 订阅开关；停用端点暂停投递不删台账）。
   optional bool enabled = 5;
+  // 通道类型（可选；词表同 Create——组合形状在服务端对「更新后的最终
+  // 形态」校验）。
+  optional string type = 6 [(buf.validate.field).string = {
+    in: ["", "webhook", "slack", "email"]
+  }];
+  // email 通道收件地址（可选；非空必须合法邮箱形状，显式空串仅允许伴随
+  // 换通道离开 email）。
+  optional string target = 7 [(buf.validate.field).string = { max_len: 320 }];
 }
 
 message UpdateWebhookEndpointResponse {
@@ -183,11 +236,12 @@ message TestWebhookRequest {
   string id = 1 [(buf.validate.field).string.min_len = 1];
 }
 
-// TestWebhookResponse 是 type=test 载荷的同步投递结论（设计 §5.2）。
+// TestWebhookResponse 是 type=test 载荷按通道类型试发的同步结论（设计
+// §5.2/§8.2：webhook/slack = HTTP 语义；email = SMTP 会话语义）。
 message TestWebhookResponse {
-  // 2xx 到手 = true。
+  // 投递被接收方接受（webhook/slack 2xx；email SMTP 会话完成）。
   bool ok = 1;
-  // HTTP 响应码（传输失败 = 0）。
+  // HTTP 响应码（webhook/slack；传输失败 = 0。email 通道不出码）。
   int32 status_code = 2;
   // 失败摘要（单行化；成功为空）。
   string error = 3;
@@ -226,4 +280,81 @@ message WebhookDeliveryView {
 
 message ListWebhookDeliveriesResponse {
   repeated WebhookDeliveryView deliveries = 1;
+}
+
+// ── 平台级 SMTP 设置面（W4-S3，设计 §8.3）─────────────────────────────────
+
+// SmtpSettingsView 是 notify.smtp.* 设置的只读投影：密码只出指纹（明文与
+// 密文永不回读——S3 secret 卡同口径）。
+message SmtpSettingsView {
+  // SMTP 中继主机（空 = 未设置）。
+  string host = 1;
+  // SMTP 端口（1..65535；未设置 = 0）。
+  int32 port = 2;
+  // 认证用户名（可选——无认证中继为空）。
+  string username = 3;
+  // 密码指纹（明文 sha256 前 8 hex；空 = 未设置）。
+  string password_fingerprint = 4;
+  // 信封发件地址（From）。
+  string from = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+message GetSmtpSettingsRequest {}
+
+message GetSmtpSettingsResponse {
+  SmtpSettingsView settings = 1;
+}
+
+message UpdateSmtpSettingsRequest {
+  // SMTP 中继主机（必填）。
+  string host = 1 [(buf.validate.field).string = { min_len: 1, max_len: 253 }];
+  // SMTP 端口（1..65535）。
+  int32 port = 2 [(buf.validate.field).int32 = { gte: 1, lte: 65535 }];
+  // 认证用户名（可选；空 = 无认证中继）。
+  string username = 3 [(buf.validate.field).string = { max_len: 320 }];
+  // 密码明文（**只写不读**——空 = 清除已存密码；envelope 加密落库，读面
+  // 只出指纹）。
+  string password = 4 [(buf.validate.field).string = { max_len: 1024 }];
+  // 信封发件地址（From；必须合法邮箱形状）。
+  string from = 5 [(buf.validate.field).string = {
+    min_len: 3,
+    max_len: 320,
+    email: true
+  }];
+}
+
+message UpdateSmtpSettingsResponse {
+  SmtpSettingsView settings = 1;
+}
+
+message TestSmtpRequest {
+  // 测试邮件收件地址（必填；合法邮箱形状）。
+  string to = 1 [(buf.validate.field).string = {
+    min_len: 3,
+    max_len: 320,
+    email: true
+  }];
+  // 候选配置（未保存也能测——S3 探针同语义）：全部候选字段为空时测已存
+  // 配置。候选密码明文只在本请求内使用，绝不落库。字段全部 optional——
+  // 未设置的形状规则跳过（零值不是「空邮箱」违约），服务端按「全空 =
+  // 测已存」收敛。
+  optional string host = 2 [(buf.validate.field).string = { max_len: 253 }];
+  optional int32 port = 3 [(buf.validate.field).int32 = { gte: 0, lte: 65535 }];
+  optional string username = 4 [(buf.validate.field).string = { max_len: 320 }];
+  optional string password = 5 [(buf.validate.field).string = { max_len: 1024 }];
+  optional string from = 6 [(buf.validate.field).string = {
+    max_len: 320,
+    email: true
+  }];
+}
+
+// TestSmtpResponse 是 SMTP 探针的同步结论（ok = 邮件被中继接受；error =
+// 失败步单行摘要，密码材料零出现）。
+message TestSmtpResponse {
+  bool ok = 1;
+  // SMTP 会话完成码（250 语义；未达 DATA 应答 = 0）。
+  int32 status_code = 2;
+  // 失败摘要（单行化；成功为空）。
+  string error = 3;
 }

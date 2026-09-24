@@ -1,31 +1,43 @@
-// notifications 设置卡（E6 W5-S4 通知 Webhook；SystemPage Notifications
-// 页签）：端点清单（名字/URL/订阅模式/开关/密钥指纹 + 启停/测试/轮换/
-// 删除）+ 创建表单（secret 明文一次性弹显——复制 + 主动隐藏）+ 投递
-// 台账抽屉（状态/尝试/响应码/下次重试）+ 终败红态。
+// notifications 设置卡（E6 W5-S4 通知 Webhook；W4-S3 通道扩展；SystemPage
+// Notifications 页签）：端点清单（名字/类型/URL/订阅模式/开关/密钥指纹 +
+// 启停/测试/轮换/删除）+ 创建表单（通道类型选择——webhook/slack 走 URL、
+// email 走收件地址 + 平台 SMTP 设置；secret 明文一次性弹显——复制 + 主动
+// 隐藏）+ 投递台账抽屉（状态/尝试/响应码/下次重试）+ 终败红态 + 平台级
+// SMTP 设置卡（email 端点共用一份；密码只写不读——读面只出指纹）。
 //
-// 诚实口径（observability §5）：secret 明文只在创建/轮换响应出现一次，
+// 诚实口径（observability §5/§8）：secret 明文只在创建/轮换响应出现一次，
 // 丢失只能 rotate-secret；投递失败零事件——可见面就是本卡的台账抽屉与
 // system status 的 notifications 组件红。URL 允许 http（内网 receiver）
-// ——表单常驻警示文案；平台不做 SSRF 过滤（单操作员信任模型）。
+// ——表单常驻警示文案；平台不做 SSRF 过滤（单操作员信任模型）。SMTP
+// 密码明文只写不读，保存响应只回指纹。
 //
 // 锚点（只增）：notifications-card / webhook-create-form /
-// webhook-secret-once / webhook-deliveries / webhook-endpoint-failed。
+// webhook-secret-once / webhook-deliveries / webhook-endpoint-failed /
+// notifications-smtp-card / smtp-test-result。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, EyeOff } from "lucide-react";
+import { Bell, EyeOff, Mail } from "lucide-react";
 import { useState } from "react";
 
 import {
   createWebhookEndpoint,
   deleteWebhookEndpoint,
+  getSmtpSettings,
   listWebhookDeliveries,
   listWebhookEndpoints,
   rotateWebhookSecret,
+  testSmtp,
   testWebhook,
+  updateSmtpSettings,
   updateWebhookEndpoint,
 } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
-import type { WebhookDeliveryStatus, WebhookEndpointView } from "@/api/types";
+import type {
+  SmtpSettingsView,
+  WebhookChannelType,
+  WebhookDeliveryStatus,
+  WebhookEndpointView,
+} from "@/api/types";
 import { EnvelopeAlertFrom } from "@/components/envelope-alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +49,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -254,6 +273,13 @@ function EndpointRowActions({ endpoint }: { endpoint: WebhookEndpointView }) {
   );
 }
 
+/** 通道类型选项（W4-S3 词表三值；webhook 缺省——存量端点升级即 webhook）。 */
+const CHANNEL_OPTIONS: { value: WebhookChannelType; label: string }[] = [
+  { value: "webhook", label: "webhook (signed JSON POST)" },
+  { value: "slack", label: "slack (Incoming Webhook)" },
+  { value: "email", label: "email (SMTP via platform settings)" },
+];
+
 export function NotificationsSettingsCard() {
   const queryClient = useQueryClient();
   const endpoints = useQuery({
@@ -271,7 +297,9 @@ export function NotificationsSettingsCard() {
   const failingIds = new Set((failed.data?.deliveries ?? []).map((d) => d.endpoint_id));
 
   const [name, setName] = useState("");
+  const [channel, setChannel] = useState<WebhookChannelType>("webhook");
   const [url, setUrl] = useState("");
+  const [target, setTarget] = useState("");
   const [patterns, setPatterns] = useState("");
   const [createError, setCreateError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
   const [onceSecret, setOnceSecret] = useState<string | null>(null);
@@ -280,16 +308,19 @@ export function NotificationsSettingsCard() {
     mutationFn: () =>
       createWebhookEndpoint({
         name: name.trim(),
-        url: url.trim(),
+        url: channel === "email" ? "" : url.trim(),
         event_patterns: patterns
           .split(",")
           .map((p) => p.trim())
           .filter(Boolean),
+        type: channel,
+        target: channel === "email" ? target.trim() : "",
       }),
     onSuccess: (resp) => {
       setOnceSecret(resp.secret ?? null);
       setName("");
       setUrl("");
+      setTarget("");
       setPatterns("");
       setCreateError(null);
       void queryClient.invalidateQueries({ queryKey: ["notifications"] });
@@ -304,9 +335,9 @@ export function NotificationsSettingsCard() {
     <Card data-testid="notifications-card">
       <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
         <Bell aria-hidden className="h-4 w-4 text-muted-foreground" />
-        <CardTitle className="text-sm font-semibold">Notifications (webhooks)</CardTitle>
+        <CardTitle className="text-sm font-semibold">Notifications</CardTitle>
         <CardDescription className="ml-auto text-xs">
-          event subscriptions delivered as signed POSTs · retries 30s/5m · 3 attempts
+          event subscriptions delivered over webhook / slack / email · retries 30s/5m · 3 attempts
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-4">
@@ -316,7 +347,7 @@ export function NotificationsSettingsCard() {
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (endpoints.data?.endpoints ?? []).length === 0 ? (
           <p className="text-sm text-muted-foreground">
-            No webhook endpoints. Create one below — deliveries never emit events
+            No notification endpoints. Create one below — deliveries never emit events
             (no self-trigger loops), failures surface in the ledger and the
             notifications component.
           </p>
@@ -325,7 +356,8 @@ export function NotificationsSettingsCard() {
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
-                <TableHead>URL</TableHead>
+                <TableHead>Channel</TableHead>
+                <TableHead>Destination</TableHead>
                 <TableHead>Patterns</TableHead>
                 <TableHead>Secret</TableHead>
                 <TableHead>State</TableHead>
@@ -333,35 +365,7 @@ export function NotificationsSettingsCard() {
             </TableHeader>
             <TableBody>
               {(endpoints.data?.endpoints ?? []).map((e) => (
-                <TableRow key={e.id}>
-                  <TableCell className="align-top font-medium">{e.name}</TableCell>
-                  <TableCell
-                    className="max-w-[220px] truncate align-top font-mono text-xs"
-                    title={e.url ?? ""}
-                  >
-                    {e.url}
-                  </TableCell>
-                  <TableCell className="align-top font-mono text-xs">
-                    {(e.event_patterns ?? []).join(", ")}
-                  </TableCell>
-                  <TableCell className="align-top font-mono text-xs">
-                    {e.secret_fingerprint}…
-                  </TableCell>
-                  <TableCell className="space-y-1 align-top">
-                    {failingIds.has(e.id) ? (
-                      <div
-                        data-testid="webhook-endpoint-failed"
-                        className="text-xs font-medium text-red-600 dark:text-red-400"
-                      >
-                        terminally failing
-                      </div>
-                    ) : null}
-                    <div className={e.enabled ? "text-xs" : "text-xs text-muted-foreground"}>
-                      {e.enabled ? "enabled" : "disabled"}
-                    </div>
-                    <EndpointRowActions endpoint={e} />
-                  </TableCell>
-                </TableRow>
+                <EndpointRow key={e.id} endpoint={e} failing={failingIds.has(e.id)} />
               ))}
             </TableBody>
           </Table>
@@ -384,14 +388,19 @@ export function NotificationsSettingsCard() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="webhook-url">Receiver URL</Label>
-              <Input
-                id="webhook-url"
-                placeholder="https://hooks.example.test/fleetly"
-                className="font-mono text-xs"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
+              <Label htmlFor="webhook-channel">Channel</Label>
+              <Select value={channel} onValueChange={(v) => setChannel(v as WebhookChannelType)}>
+                <SelectTrigger id="webhook-channel" data-testid="webhook-channel-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHANNEL_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>
+                      {o.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="webhook-patterns">Event patterns</Label>
@@ -404,15 +413,284 @@ export function NotificationsSettingsCard() {
               />
             </div>
           </div>
+          {channel === "email" ? (
+            <div className="space-y-1.5">
+              <Label htmlFor="webhook-target">Recipient mailbox</Label>
+              <Input
+                id="webhook-target"
+                placeholder="ops@example.test"
+                className="font-mono text-xs"
+                value={target}
+                onChange={(e) => setTarget(e.target.value)}
+              />
+              <p className="text-xs text-muted-foreground">
+                Delivery goes through the platform SMTP settings below — save them once
+                and every email endpoint reuses them.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-1.5">
+              <Label htmlFor="webhook-url">Receiver URL</Label>
+              <Input
+                id="webhook-url"
+                placeholder={channel === "slack" ? "https://hooks.slack.com/services/…" : "https://hooks.example.test/fleetly"}
+                className="font-mono text-xs"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+              />
+            </div>
+          )}
           <p className="text-xs text-muted-foreground">{HTTP_NOTE}</p>
           {createError ? <EnvelopeAlertFrom envelope={createError} /> : null}
           <Button
             size="sm"
-            disabled={!name.trim() || !url.trim() || !patterns.trim() || create.isPending}
+            disabled={
+              !name.trim() ||
+              !patterns.trim() ||
+              (channel === "email" ? !target.trim() : !url.trim()) ||
+              create.isPending
+            }
             onClick={() => create.mutate()}
           >
             Create endpoint
           </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 端点行（类型/目的地列 + 行动作面）——通道语义投影（W4-S3）。 */
+function EndpointRow({ endpoint, failing }: { endpoint: WebhookEndpointView; failing: boolean }) {
+  const type = endpoint.type ?? "webhook";
+  return (
+    <TableRow>
+      <TableCell className="align-top font-medium">{endpoint.name}</TableCell>
+      <TableCell className="align-top">
+        <span
+          className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs"
+          data-testid={`endpoint-type-${type}`}
+        >
+          {type}
+        </span>
+      </TableCell>
+      <TableCell
+        className="max-w-[220px] truncate align-top font-mono text-xs"
+        title={type === "email" ? `to: ${endpoint.target ?? ""}` : endpoint.url ?? ""}
+      >
+        {type === "email" ? `to: ${endpoint.target ?? ""}` : endpoint.url}
+      </TableCell>
+      <TableCell className="align-top font-mono text-xs">
+        {(endpoint.event_patterns ?? []).join(", ")}
+      </TableCell>
+      <TableCell className="align-top font-mono text-xs">
+        {endpoint.secret_fingerprint}…
+      </TableCell>
+      <TableCell className="space-y-1 align-top">
+        {failing ? (
+          <div
+            data-testid="webhook-endpoint-failed"
+            className="text-xs font-medium text-red-600 dark:text-red-400"
+          >
+            terminally failing
+          </div>
+        ) : null}
+        <div className={endpoint.enabled ? "text-xs" : "text-xs text-muted-foreground"}>
+          {endpoint.enabled ? "enabled" : "disabled"}
+        </div>
+        <EndpointRowActions endpoint={endpoint} />
+      </TableCell>
+    </TableRow>
+  );
+}
+
+/** SMTP 设置密码占位（PUT 语义：空 = 清除——诚实文案，不谎称「保持不变」）。 */
+const SMTP_PASSWORD_NOTE =
+  "Write-only: the password is stored encrypted and never read back (only a fingerprint is shown). Saving with an empty password clears the stored one.";
+
+/** SmtpSettingsCard 是平台级 SMTP 设置卡（W4-S3，observability §8.3）：
+ * email 端点共用一份投递配置；密码只写不读；Test 发真实测试邮件。 */
+export function SmtpSettingsCard() {
+  const queryClient = useQueryClient();
+  const settings = useQuery({
+    queryKey: ["notifications", "smtp"],
+    queryFn: getSmtpSettings,
+  });
+  const stored: SmtpSettingsView | null = settings.data?.settings ?? null;
+
+  const [host, setHost] = useState("");
+  const [port, setPort] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [from, setFrom] = useState("");
+  const [testTo, setTestTo] = useState("");
+  const [saveError, setSaveError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
+  const [testOk, setTestOk] = useState<boolean | null>(null);
+  const [testError, setTestError] = useState<string | null>(null);
+  const [probeError, setProbeError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
+
+  // 表单以已存设置预填（密码除外——只写不读）；加载完成后一次。
+  const [seeded, setSeeded] = useState(false);
+  if (stored && !seeded) {
+    setHost(stored.host ?? "");
+    setPort(stored.port ? String(stored.port) : "");
+    setUsername(stored.username ?? "");
+    setFrom(stored.from ?? "");
+    setSeeded(true);
+  }
+
+  const invalidate = () => void queryClient.invalidateQueries({ queryKey: ["notifications", "smtp"] });
+
+  const save = useMutation({
+    mutationFn: () =>
+      updateSmtpSettings({
+        host: host.trim(),
+        port: Number(port) || 0,
+        username: username.trim(),
+        password,
+        from: from.trim(),
+      }),
+    onSuccess: () => {
+      setPassword("");
+      setSaveError(null);
+      invalidate();
+    },
+    onError: (err) => setSaveError(errorEnvelopeFrom(err)),
+  });
+
+  const probe = useMutation({
+    mutationFn: () => testSmtp({ to: testTo.trim() }),
+    onSuccess: (resp) => {
+      setTestOk(resp.ok ?? false);
+      setTestError(resp.ok ? null : resp.error || `relay answered ${resp.status_code ?? 0}`);
+      setProbeError(null);
+    },
+    onError: (err) => {
+      setTestOk(false);
+      setTestError(null);
+      setProbeError(errorEnvelopeFrom(err));
+    },
+  });
+
+  return (
+    <Card data-testid="notifications-smtp-card">
+      <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+        <Mail aria-hidden className="h-4 w-4 text-muted-foreground" />
+        <CardTitle className="text-sm font-semibold">SMTP settings (email channel)</CardTitle>
+        <CardDescription className="ml-auto text-xs">
+          one platform-wide configuration shared by every email endpoint
+          {stored?.updated_at ? ` · saved ${formatTime(stored.updated_at)}` : ""}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 pt-4">
+        {settings.isError ? (
+          <EnvelopeAlertFrom envelope={errorEnvelopeFrom(settings.error)} />
+        ) : null}
+        {stored && !stored.host ? (
+          <p className="text-xs text-muted-foreground">
+            No SMTP settings saved yet — email endpoints cannot deliver until they are configured.
+          </p>
+        ) : null}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="space-y-1.5">
+            <Label htmlFor="smtp-host">Relay host</Label>
+            <Input
+              id="smtp-host"
+              placeholder="smtp.example.test"
+              className="font-mono text-xs"
+              value={host}
+              onChange={(e) => setHost(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="smtp-port">Port</Label>
+            <Input
+              id="smtp-port"
+              placeholder="587"
+              inputMode="numeric"
+              className="font-mono text-xs"
+              value={port}
+              onChange={(e) => setPort(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="smtp-from">From address</Label>
+            <Input
+              id="smtp-from"
+              placeholder="fleetly@example.test"
+              className="font-mono text-xs"
+              value={from}
+              onChange={(e) => setFrom(e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label htmlFor="smtp-username">Username (optional)</Label>
+            <Input
+              id="smtp-username"
+              className="font-mono text-xs"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="smtp-password">Password (write-only)</Label>
+            <Input
+              id="smtp-password"
+              type="password"
+              autoComplete="new-password"
+              className="font-mono text-xs"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">{SMTP_PASSWORD_NOTE}</p>
+          </div>
+        </div>
+        {stored?.password_fingerprint ? (
+          <p className="font-mono text-xs text-muted-foreground" data-testid="smtp-password-fingerprint">
+            stored password fingerprint: {stored.password_fingerprint}…
+          </p>
+        ) : null}
+        {saveError ? <EnvelopeAlertFrom envelope={saveError} /> : null}
+        <Button
+          size="sm"
+          disabled={!host.trim() || !port || !from.trim() || save.isPending}
+          onClick={() => save.mutate()}
+        >
+          Save SMTP settings
+        </Button>
+
+        <div className="space-y-2 rounded-md border p-3">
+          <div className="text-sm font-medium">Send a test email</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              id="smtp-test-to"
+              placeholder="you@example.test"
+              className="max-w-xs font-mono text-xs"
+              value={testTo}
+              onChange={(e) => setTestTo(e.target.value)}
+            />
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!testTo.trim() || probe.isPending}
+              onClick={() => probe.mutate()}
+            >
+              Test
+            </Button>
+          </div>
+          {testOk === true ? (
+            <p className="text-xs text-emerald-600 dark:text-emerald-400" data-testid="smtp-test-result">
+              Test mail accepted by the relay (check the mailbox).
+            </p>
+          ) : null}
+          {testOk === false && testError ? (
+            <p className="text-xs text-red-600 dark:text-red-400" data-testid="smtp-test-result">
+              Test failed: {testError}
+            </p>
+          ) : null}
+          {probeError ? <EnvelopeAlertFrom envelope={probeError} /> : null}
         </div>
       </CardContent>
     </Card>

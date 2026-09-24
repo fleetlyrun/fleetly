@@ -46,6 +46,15 @@ const (
 	WebhookDeliveryFailed  = "failed"
 )
 
+// 通道类型词表（observability 设计 §8.1，D-W4-4，W4-S3）：端点 type 列
+// 只增三值；缺省/存量 = webhook（行为逐字不变）。channelWordlist 由
+// ValidateWebhookChannel 双保险（迁移 DEFAULT 是第一道）。
+const (
+	WebhookChannelWebhook = "webhook"
+	WebhookChannelSlack   = "slack"
+	WebhookChannelEmail   = "email"
+)
+
 // webhookStateKeyCursor 是 webhook_state 表的消费游标键（单行状态）。
 const webhookStateKeyCursor = "last_seq"
 
@@ -54,6 +63,11 @@ type WebhookEndpoint struct {
 	ID   string
 	Name string
 	URL  string
+	// Type 是通道类型（webhook|slack|email——词表见包顶常量；空串只可能
+	// 出现在旁路写入，读取面归一为 webhook）。
+	Type string
+	// Target 是 email 通道的收件地址（webhook/slack 恒为空串）。
+	Target string
 	// SecretCipher 是 envelope 密文（存储形态；解密边界在调用方）。
 	SecretCipher string
 	// SecretFingerprint 是明文 sha256 前 8 hex（识别用，非凭据）。
@@ -72,6 +86,10 @@ type WebhookEndpointWrite struct {
 	ID   string
 	Name string
 	URL  string
+	// Type 是通道类型（空串 = webhook 缺省——proto3 零值语义）。
+	Type string
+	// Target 是 email 通道收件地址（非 email 通道必须为空）。
+	Target string
 	// SecretCipher 必须是 envelope 密文形态；空串拒绝（防御性——端点无
 	// 签名密钥即不可验签，创建即无效）。
 	SecretCipher string
@@ -88,6 +106,10 @@ type WebhookEndpointWrite struct {
 type WebhookEndpointUpdate struct {
 	Name *string
 	URL  *string
+	// Type / Target 通道语义（nil = 不变；组合合法性由 validateChannel
+	// 对「更新后的最终形态」校验）。
+	Type   *string
+	Target *string
 	// EventPatterns 非 nil = 整体替换（替换前过 ValidateWebhookPatterns）。
 	EventPatterns []string
 	Enabled       *bool
@@ -164,8 +186,62 @@ func ValidateWebhookPatterns(patterns []string) ([]string, error) {
 	return out, nil
 }
 
+// ValidateWebhookChannel 校验通道类型（词表三值；空串归一为 webhook——
+// proto3 零值语义）。返回归一后的类型。
+func ValidateWebhookChannel(t string) (string, error) {
+	if t == "" {
+		return WebhookChannelWebhook, nil
+	}
+	switch t {
+	case WebhookChannelWebhook, WebhookChannelSlack, WebhookChannelEmail:
+		return t, nil
+	default:
+		return "", fmt.Errorf("state: webhook channel type %q not in {webhook, slack, email}", t)
+	}
+}
+
+// emailTargetRe 是 email 通道收件地址的白名单（保守形态：本地段@域名段，
+// 无空格无显示名——`user@intranet-host` 这类无点内网域名合法，SMTP 投递
+// 面允许）。API 面另有 net/mail 精校验；这里是存储不变量的第二道闸。
+var emailTargetRe = regexp.MustCompile(`^[^@\s]+@[^@\s]+$`)
+
+// ValidateWebhookEmailTarget 校验 email 通道收件地址（保存前统一入口）。
+func ValidateWebhookEmailTarget(target string) error {
+	if !emailTargetRe.MatchString(target) {
+		return fmt.Errorf("state: email target %q is not a bare mailbox address (local@domain, no display name, no spaces)", target)
+	}
+	return nil
+}
+
+// validateChannelShape 校验通道字段组合（设计 §8.1）：webhook/slack →
+// url 必填合法且 target 必须为空；email → target 必填合法且 url 必须为
+// 空。type 为空串按 webhook 归一。
+func validateChannelShape(t, rawURL, target string) error {
+	typ, err := ValidateWebhookChannel(t)
+	if err != nil {
+		return err
+	}
+	switch typ {
+	case WebhookChannelWebhook, WebhookChannelSlack:
+		if strings.TrimSpace(target) != "" {
+			return fmt.Errorf("state: %s endpoints must not carry a target (the receiver URL is the url field)", typ)
+		}
+		if err := ValidateWebhookURL(rawURL); err != nil {
+			return err
+		}
+	case WebhookChannelEmail:
+		if strings.TrimSpace(rawURL) != "" {
+			return fmt.Errorf("state: email endpoints must not carry a url (delivery goes through the platform SMTP settings)")
+		}
+		if err := ValidateWebhookEmailTarget(target); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // webhookEndpointCols 是端点行查询列清单。
-const webhookEndpointCols = `id, name, url, secret_cipher, secret_fingerprint, event_patterns, enabled, created_at, updated_at`
+const webhookEndpointCols = `id, name, url, type, target, secret_cipher, secret_fingerprint, event_patterns, enabled, created_at, updated_at`
 
 // scanWebhookEndpoint 从行扫描端点投影。
 func scanWebhookEndpoint(row scanner) (WebhookEndpoint, error) {
@@ -177,7 +253,7 @@ func scanWebhookEndpoint(row scanner) (WebhookEndpoint, error) {
 		createdAt    int64
 		updatedAt    int64
 	)
-	if err := row.Scan(&e.ID, &e.Name, &e.URL, &cipher, &e.SecretFingerprint,
+	if err := row.Scan(&e.ID, &e.Name, &e.URL, &e.Type, &e.Target, &cipher, &e.SecretFingerprint,
 		&patternsJSON, &enabled, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return WebhookEndpoint{}, ErrWebhookNotFound
@@ -185,6 +261,9 @@ func scanWebhookEndpoint(row scanner) (WebhookEndpoint, error) {
 		return WebhookEndpoint{}, fmt.Errorf("state: scan webhook endpoint: %w", err)
 	}
 	e.SecretCipher = cipher
+	if e.Type == "" {
+		e.Type = WebhookChannelWebhook
+	}
 	if err := json.Unmarshal([]byte(patternsJSON), &e.EventPatterns); err != nil {
 		return WebhookEndpoint{}, fmt.Errorf("state: scan webhook endpoint %s: patterns json: %w", e.ID, err)
 	}
@@ -203,7 +282,11 @@ func (s *Store) CreateWebhookEndpoint(ctx context.Context, w WebhookEndpointWrit
 	if err := ValidateWebhookName(w.Name); err != nil {
 		return WebhookEndpoint{}, err
 	}
-	if err := ValidateWebhookURL(w.URL); err != nil {
+	if err := validateChannelShape(w.Type, w.URL, w.Target); err != nil {
+		return WebhookEndpoint{}, err
+	}
+	typ, err := ValidateWebhookChannel(w.Type)
+	if err != nil {
 		return WebhookEndpoint{}, err
 	}
 	patterns, err := ValidateWebhookPatterns(w.EventPatterns)
@@ -231,24 +314,24 @@ func (s *Store) CreateWebhookEndpoint(ctx context.Context, w WebhookEndpointWrit
 	err = s.InTx(ctx, func(tx *Tx) error {
 		now := nowNano()
 		const q = `INSERT INTO webhook_endpoints
-			(id, name, url, secret_cipher, secret_fingerprint, event_patterns, enabled, created_at, updated_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-		if _, err := tx.ExecContext(ctx, q, id, w.Name, w.URL, w.SecretCipher,
+			(id, name, url, type, target, secret_cipher, secret_fingerprint, event_patterns, enabled, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+		if _, err := tx.ExecContext(ctx, q, id, w.Name, w.URL, typ, w.Target, w.SecretCipher,
 			w.SecretFingerprint, string(patternsJSON), webhookBoolToInt(w.Enabled), now, now); err != nil {
 			if isUniqueViolation(err) {
 				return ErrWebhookNameConflict
 			}
 			return fmt.Errorf("state: insert webhook endpoint: %w", err)
 		}
-		// 审计（§5.1）：diff 只带名字/模式数/开关——URL 与密文/指纹零出现
-		//（URL 虽非凭据，审计面保持最小事实集；读面自可见）。
+		// 审计（§5.1）：diff 只带名字/模式数/开关/通道类型——URL、target 与
+		// 密文/指纹零出现（URL 虽非凭据，审计面保持最小事实集；读面自可见）。
 		if err := tx.WriteAudit(ctx, AuditEntry{
 			Actor:        actor,
 			ActorTokenID: w.ActorTokenID,
 			Action:       "webhook.created",
 			Target:       "webhook:" + id,
 			Result:       "ok",
-			DiffSummary: DiffSummary("name", w.Name, "patterns_count", len(patterns),
+			DiffSummary: DiffSummary("name", w.Name, "type", typ, "patterns_count", len(patterns),
 				"enabled", w.Enabled),
 		}); err != nil {
 			return err
@@ -296,7 +379,8 @@ func (s *Store) GetWebhookEndpoint(ctx context.Context, id string) (WebhookEndpo
 // 下一次成功投递自然转绿（台账是事实面，不做状态性回写）。
 func (s *Store) UpdateWebhookEndpoint(ctx context.Context, id string, u WebhookEndpointUpdate) (WebhookEndpoint, error) {
 	anyField := u.Name != nil || u.URL != nil || u.EventPatterns != nil ||
-		u.Enabled != nil || u.SecretCipher != nil || u.SecretFingerprint != nil
+		u.Enabled != nil || u.SecretCipher != nil || u.SecretFingerprint != nil ||
+		u.Type != nil || u.Target != nil
 	if !anyField {
 		return WebhookEndpoint{}, fmt.Errorf("state: update webhook endpoint: no fields to update")
 	}
@@ -308,8 +392,20 @@ func (s *Store) UpdateWebhookEndpoint(ctx context.Context, id string, u WebhookE
 			return WebhookEndpoint{}, err
 		}
 	}
-	if u.URL != nil {
-		if err := ValidateWebhookURL(*u.URL); err != nil {
+	if u.Type != nil {
+		if _, err := ValidateWebhookChannel(*u.Type); err != nil {
+			return WebhookEndpoint{}, err
+		}
+	}
+	if u.URL != nil && *u.URL == "" && u.Type == nil {
+		// url 显式置空只允许伴随通道切换（email 端点 url 恒空）——单独置空
+		// 会让 webhook/slack 端点失去投递地址，显式拒绝。
+		return WebhookEndpoint{}, fmt.Errorf("state: update webhook endpoint: url must not be empty (switch the channel type in the same update to clear it)")
+	}
+	if u.Target != nil && *u.Target != "" {
+		// 空串 = 随通道切换清空（组合形状由 validateChannelShape 对最终
+		// 形态校验）；非空必须过邮箱词表。
+		if err := ValidateWebhookEmailTarget(*u.Target); err != nil {
 			return WebhookEndpoint{}, err
 		}
 	}
@@ -333,9 +429,30 @@ func (s *Store) UpdateWebhookEndpoint(ctx context.Context, id string, u WebhookE
 	// 审计 diff 字段集（先收集后写——同事务内看到的是最终形态）。
 	changed := []any{}
 	err := s.InTx(ctx, func(tx *Tx) error {
-		// 行存在性先行（UPDATE 不报错不返回行数语义的防御——审计不落幽灵行）。
-		if _, err := scanWebhookEndpoint(tx.QueryRowContext(ctx,
-			`SELECT `+webhookEndpointCols+` FROM webhook_endpoints WHERE id = ?`, id)); err != nil {
+		// 行存在性先行（UPDATE 不报错不返回行数语义的防御——审计不落幽灵行）；
+		// 同时取现值做通道组合校验（对「更新后的最终形态」校验）。
+		prev, err := scanWebhookEndpoint(tx.QueryRowContext(ctx,
+			`SELECT `+webhookEndpointCols+` FROM webhook_endpoints WHERE id = ?`, id))
+		if err != nil {
+			return err
+		}
+		finalType := prev.Type
+		if u.Type != nil {
+			if ft, err := ValidateWebhookChannel(*u.Type); err != nil {
+				return err
+			} else {
+				finalType = ft
+			}
+		}
+		finalURL := prev.URL
+		if u.URL != nil {
+			finalURL = *u.URL
+		}
+		finalTarget := prev.Target
+		if u.Target != nil {
+			finalTarget = *u.Target
+		}
+		if err := validateChannelShape(finalType, finalURL, finalTarget); err != nil {
 			return err
 		}
 		now := nowNano()
@@ -357,6 +474,22 @@ func (s *Store) UpdateWebhookEndpoint(ctx context.Context, id string, u WebhookE
 				return fmt.Errorf("state: update webhook endpoint url: %w", err)
 			}
 			changed = append(changed, "url_changed", true)
+		}
+		if u.Type != nil {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE webhook_endpoints SET type = ?, updated_at = ? WHERE id = ?`,
+				finalType, now, id); err != nil {
+				return fmt.Errorf("state: update webhook endpoint type: %w", err)
+			}
+			changed = append(changed, "type", finalType)
+		}
+		if u.Target != nil {
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE webhook_endpoints SET target = ?, updated_at = ? WHERE id = ?`,
+				*u.Target, now, id); err != nil {
+				return fmt.Errorf("state: update webhook endpoint target: %w", err)
+			}
+			changed = append(changed, "target_changed", true)
 		}
 		if patternsJSON != nil {
 			if _, err := tx.ExecContext(ctx,

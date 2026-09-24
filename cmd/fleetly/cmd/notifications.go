@@ -1,18 +1,22 @@
 package cmd
 
-// fleetly notifications 命令（E6 观测专项设计 §5，W5-S4；V2-6 Webhook
-// 首发——POST + 重试 + 事件订阅）：
+// fleetly notifications 命令（E6 观测专项设计 §5 + §8 通道扩展，W5-S4 /
+// W4-S3；V2-6 Webhook 首发——POST + 重试 + 事件订阅；§8 增 slack/email 通
+// 道与平台级 SMTP 设置面）：
 //
-//	endpoint list            端点清单（名字/URL/订阅模式/开关/指纹/
+//	endpoint list            端点清单（名字/类型/URL/订阅模式/开关/指纹/
 //	                         最近投递终态——无敏感投影）；
-//	endpoint create          创建端点（secret 明文一次性返回，丢失只能
-//	                         rotate-secret 重置）；
+//	endpoint create          创建端点（--type webhook|slack|email，email
+//	                         用 --target 带收件地址；secret 明文一次性返
+//	                         回，丢失只能 rotate-secret 重置）；
 //	endpoint rm              删除端点（台账行随之清理）；
 //	endpoint enable/disable  订阅开关（停用暂停投递不删台账）；
 //	endpoint set-patterns    改订阅模式集（整体替换语义）；
 //	endpoint rotate-secret   轮换签名密钥（新明文一次性返回）；
+//	smtp get/set/test        平台级 SMTP 设置面（email 通道共用一份；
+//	                         密码只写不读，读面只出指纹）；
 //	deliveries               投递台账（重试路径与终败的诚实可见面）；
-//	test                     发送 type=test 载荷（验证连通与验签配置）。
+//	test                     发送 type=test 载荷（按端点类型真实试发）。
 //
 // 端点定位：位置参数 <name|id>——先按名精确匹配，未命中按 id 直取（CLI
 // 人读形态优先名字；id 是 REST 面 handle）。
@@ -23,6 +27,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/lynx-go/commands"
@@ -37,24 +42,25 @@ type notificationsCmd struct {
 
 func newNotificationsCmd() *notificationsCmd {
 	sub := commands.New()
-	sub.Register(newNotificationsEndpointCmd(), &notificationsDeliveriesCmd{}, &notificationsTestCmd{})
+	sub.Register(newNotificationsEndpointCmd(), &notificationsDeliveriesCmd{},
+		&notificationsTestCmd{}, newNotificationsSmtpCmd())
 	sub.VerbTitle = "notifications subcommands:"
 	return &notificationsCmd{sub: sub}
 }
 
 func (c *notificationsCmd) Name() string { return "notifications" }
 func (c *notificationsCmd) Synopsis() string {
-	return "webhook notification endpoints and deliveries (V2-6)"
+	return "notification endpoints and deliveries across webhook/slack/email channels (V2-6)"
 }
 func (c *notificationsCmd) Usage() string {
-	return "notifications <endpoint|deliveries|test> [flags] [args]"
+	return "notifications <endpoint|smtp|deliveries|test> [flags] [args]"
 }
 
 func (c *notificationsCmd) SetFlags(_ *flag.FlagSet) {}
 
 func (c *notificationsCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
 	if len(args) == 0 {
-		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (endpoint|deliveries|test)")}
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (endpoint|smtp|deliveries|test)")}
 	}
 	return subDispatchUsage(c, c.sub, ctx, env, args)
 }
@@ -105,7 +111,7 @@ type webhookEndpointListCmd struct {
 
 func (c *webhookEndpointListCmd) Name() string { return "list" }
 func (c *webhookEndpointListCmd) Synopsis() string {
-	return "list webhook endpoints (no sensitive projection: secret appears as a fingerprint)"
+	return "list notification endpoints (no sensitive projection: secret appears as a fingerprint)"
 }
 func (c *webhookEndpointListCmd) Usage() string {
 	return "notifications endpoint list [--addr <host:port>] [--token <tok>] [--json]"
@@ -127,26 +133,40 @@ func (c *webhookEndpointListCmd) Run(ctx context.Context, env *commands.Environm
 		}
 		var b strings.Builder
 		if len(resp.GetEndpoints()) == 0 {
-			b.WriteString("no webhook endpoints (create one with 'notifications endpoint create')\n")
+			b.WriteString("no notification endpoints (create one with 'notifications endpoint create')\n")
 		}
 		for _, e := range resp.GetEndpoints() {
-			enabled := "disabled"
-			if e.GetEnabled() {
-				enabled = "enabled"
-			}
-			fmt.Fprintf(&b, "%s  %s  secret=%s…  [%s]  %s\n",
-				e.GetName(), e.GetUrl(), e.GetSecretFingerprint(), enabled,
-				strings.Join(e.GetEventPatterns(), ","))
+			b.WriteString(endpointListLine(e))
 		}
 		_, err = fmt.Fprint(env.Stdout, b.String())
 		return err
 	})
 }
 
+// endpointListLine 渲染端点清单行（通道语义列：webhook/slack 显 URL；
+// email 显 to:<target>——表驱动测试钉住该口径）。
+func endpointListLine(e *serverv1.WebhookEndpointView) string {
+	enabled := "disabled"
+	if e.GetEnabled() {
+		enabled = "enabled"
+	}
+	where := e.GetUrl()
+	if e.GetType() == "email" {
+		where = "to:" + e.GetTarget()
+	}
+	return fmt.Sprintf("%s  [%s]  %s  secret=%s…  [%s]  %s\n",
+		e.GetName(), e.GetType(), where, e.GetSecretFingerprint(), enabled,
+		strings.Join(e.GetEventPatterns(), ","))
+}
+
 // webhookEndpointCreateCmd 实现 `notifications endpoint create <name> <url>
-// --patterns <p[,…]> [--disabled]`：secret 明文仅本次输出。
+// --patterns <p[,…]> [--type webhook|slack|email] [--target <to>]
+// [--disabled]`：secret 明文仅本次输出。email 端点无 URL 位置参数——
+// 第二位置参数可省略，收件地址走 --target。
 type webhookEndpointCreateCmd struct {
 	patterns string
+	typ      string
+	target   string
 	disabled bool
 	jsonOut  bool
 	conn     connFlags
@@ -154,22 +174,33 @@ type webhookEndpointCreateCmd struct {
 
 func (c *webhookEndpointCreateCmd) Name() string { return "create" }
 func (c *webhookEndpointCreateCmd) Synopsis() string {
-	return "create a webhook endpoint (signing secret shown once; event_patterns are event-name globs like deployment.* or *)"
+	return "create a notification endpoint (type webhook|slack|email; email uses --target for the mailbox and takes no URL; secret shown once)"
 }
 func (c *webhookEndpointCreateCmd) Usage() string {
-	return "notifications endpoint create [--addr <host:port>] [--token <tok>] --patterns <glob[,…]> [--disabled] [--json] <name> <url>"
+	return "notifications endpoint create [--addr <host:port>] [--token <tok>] --patterns <glob[,…]> [--type webhook|slack|email] [--target <mailbox>] [--disabled] [--json] <name> [<url>]"
 }
 
 func (c *webhookEndpointCreateCmd) SetFlags(fs *flag.FlagSet) {
 	c.conn.register(fs)
 	fs.StringVar(&c.patterns, "patterns", "", "comma-separated event-name glob patterns (e.g. deployment.*,cron.failed or * for everything)")
+	fs.StringVar(&c.typ, "type", "webhook", "channel type: webhook (signed JSON POST), slack (Incoming Webhook), email (SMTP via the platform settings)")
+	fs.StringVar(&c.target, "target", "", "email channel only: recipient mailbox address (required for --type email)")
 	fs.BoolVar(&c.disabled, "disabled", false, "create the endpoint disabled (subscription paused)")
 	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
 }
 
 func (c *webhookEndpointCreateCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
-	if err := requireArgs(c.Usage(), args, 2); err != nil {
-		return err
+	typ := c.typ
+	if typ == "" {
+		typ = "webhook"
+	}
+	// email 端点：1 个位置参数（无 URL）；webhook/slack：2 个（name+url）。
+	nArgs, want := 2, "<name> <url>"
+	if typ == "email" {
+		nArgs, want = 1, "<name>"
+	}
+	if len(args) < nArgs || len(args) > 2 {
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("want %s, got %d positional argument(s)", want, len(args))}
 	}
 	if strings.TrimSpace(c.patterns) == "" {
 		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("--patterns is required (e.g. --patterns 'deployment.*' or --patterns '*')")}
@@ -178,7 +209,9 @@ func (c *webhookEndpointCreateCmd) Run(ctx context.Context, env *commands.Enviro
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Notifications().CreateWebhookEndpoint(ctx, &serverv1.CreateWebhookEndpointRequest{
 			Name:          args[0],
-			Url:           args[1],
+			Url:           urlArg(args),
+			Type:          typ,
+			Target:        c.target,
 			EventPatterns: splitCommaList(c.patterns),
 			Enabled:       &enabled,
 		})
@@ -189,9 +222,15 @@ func (c *webhookEndpointCreateCmd) Run(ctx context.Context, env *commands.Enviro
 			return writeProtoJSON(env.Stdout, resp)
 		}
 		var b strings.Builder
-		fmt.Fprintf(&b, "webhook endpoint created: %s (id %s)\n", resp.GetEndpoint().GetName(), resp.GetEndpoint().GetId())
-		fmt.Fprintf(&b, "  url: %s\n  patterns: %s\n  enabled: %v\n",
-			resp.GetEndpoint().GetUrl(),
+		fmt.Fprintf(&b, "notification endpoint created: %s (id %s, type %s)\n",
+			resp.GetEndpoint().GetName(), resp.GetEndpoint().GetId(), resp.GetEndpoint().GetType())
+		if resp.GetEndpoint().GetUrl() != "" {
+			fmt.Fprintf(&b, "  url: %s\n", resp.GetEndpoint().GetUrl())
+		}
+		if resp.GetEndpoint().GetTarget() != "" {
+			fmt.Fprintf(&b, "  target: %s\n", resp.GetEndpoint().GetTarget())
+		}
+		fmt.Fprintf(&b, "  patterns: %s\n  enabled: %v\n",
 			strings.Join(resp.GetEndpoint().GetEventPatterns(), ","),
 			resp.GetEndpoint().GetEnabled())
 		fmt.Fprintf(&b, "  signing secret (shown only once, store it safely; the platform keeps only a fingerprint %s…):\n    %s\n",
@@ -199,6 +238,14 @@ func (c *webhookEndpointCreateCmd) Run(ctx context.Context, env *commands.Enviro
 		_, err = fmt.Fprint(env.Stdout, b.String())
 		return err
 	})
+}
+
+// urlArg 取第二个位置参数（email 端点无 URL——缺位时空串）。
+func urlArg(args []string) string {
+	if len(args) > 1 {
+		return args[1]
+	}
+	return ""
 }
 
 // webhookEndpointRmCmd 实现 `notifications endpoint rm <name|id>`。
@@ -467,7 +514,8 @@ func (c *notificationsDeliveriesCmd) Run(ctx context.Context, env *commands.Envi
 }
 
 // notificationsTestCmd 实现 `notifications test <name|id>`：发送 type=test
-// 载荷（验证连通与验签配置；同步返回单次投递结论）。
+// 载荷（按端点类型真实试发——webhook 签名 POST / slack {"text"} / email
+// SMTP 投递到端点 target；同步返回单次投递结论）。
 type notificationsTestCmd struct {
 	jsonOut bool
 	conn    connFlags
@@ -475,7 +523,7 @@ type notificationsTestCmd struct {
 
 func (c *notificationsTestCmd) Name() string { return "test" }
 func (c *notificationsTestCmd) Synopsis() string {
-	return "send a type=test payload to an endpoint (verifies connectivity and signature setup; single synchronous POST)"
+	return "send a type=test payload to an endpoint (delivered over the endpoint's channel; single synchronous attempt)"
 }
 func (c *notificationsTestCmd) Usage() string {
 	return "notifications test [--addr <host:port>] [--token <tok>] [--json] <name|id>"
@@ -507,6 +555,225 @@ func (c *notificationsTestCmd) Run(ctx context.Context, env *commands.Environmen
 			return err
 		}
 		return fmt.Errorf("test payload failed (status_code=%d): %s", resp.GetStatusCode(), resp.GetError())
+	})
+}
+
+// ── notifications smtp（W4-S3 平台级 SMTP 设置面，设计 §8.3）──────────────
+
+// notificationsSmtpCmd 是中层动词 `notifications smtp`：分发 get/set/test。
+type notificationsSmtpCmd struct {
+	sub *commands.App
+}
+
+func newNotificationsSmtpCmd() *notificationsSmtpCmd {
+	sub := commands.New()
+	sub.Register(&smtpGetCmd{}, &smtpSetCmd{}, &smtpTestCmd{})
+	sub.VerbTitle = "smtp subcommands:"
+	return &notificationsSmtpCmd{sub: sub}
+}
+
+func (c *notificationsSmtpCmd) Name() string { return "smtp" }
+func (c *notificationsSmtpCmd) Synopsis() string {
+	return "manage the platform SMTP settings shared by all email endpoints (get/set/test)"
+}
+func (c *notificationsSmtpCmd) Usage() string {
+	return "notifications smtp <get|set|test> [flags] [args]"
+}
+
+func (c *notificationsSmtpCmd) SetFlags(_ *flag.FlagSet) {}
+
+func (c *notificationsSmtpCmd) Run(ctx context.Context, env *commands.Environment, args []string) error {
+	if len(args) == 0 {
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("missing subcommand (get|set|test)")}
+	}
+	return subDispatchUsage(c, c.sub, ctx, env, args)
+}
+
+// smtpGetCmd 实现 `notifications smtp get`：设置只读展示（密码只出指纹，
+// 读面永无明文——s3 show 同口径）。
+type smtpGetCmd struct {
+	jsonOut bool
+	conn    connFlags
+}
+
+func (c *smtpGetCmd) Name() string { return "get" }
+func (c *smtpGetCmd) Synopsis() string {
+	return "show the platform SMTP settings (password shown as a fingerprint only)"
+}
+func (c *smtpGetCmd) Usage() string {
+	return "notifications smtp get [--addr <host:port>] [--token <tok>] [--json]"
+}
+
+func (c *smtpGetCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *smtpGetCmd) Run(ctx context.Context, env *commands.Environment, _ []string) error {
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Notifications().GetSmtpSettings(ctx, &serverv1.GetSmtpSettingsRequest{})
+		if err != nil {
+			return err
+		}
+		if c.jsonOut {
+			return writeProtoJSON(env.Stdout, resp)
+		}
+		st := resp.GetSettings()
+		var b strings.Builder
+		if st.GetHost() == "" {
+			b.WriteString("no SMTP settings saved (email endpoints cannot deliver until configured)\n")
+		} else {
+			fmt.Fprintf(&b, "host: %s\nport: %d\nusername: %s\nfrom: %s\n",
+				st.GetHost(), st.GetPort(), st.GetUsername(), st.GetFrom())
+			b.WriteString("password: ")
+			if st.GetPasswordFingerprint() == "" {
+				b.WriteString("(not set)")
+			} else {
+				fmt.Fprintf(&b, "fingerprint %s…", st.GetPasswordFingerprint())
+			}
+			b.WriteString("\n")
+		}
+		_, err = fmt.Fprint(env.Stdout, b.String())
+		return err
+	})
+}
+
+// smtpSetCmd 实现 `notifications smtp set --host --port --from
+// [--username] [--password]`：PUT 全量语义。密码经 --password 旗标或
+// FLEETLY_SMTP_PASSWORD 环境变量（env 形态不进 shell 历史）；两者皆空 =
+// 清除已存密码（与 PUT 全量语义一致）。
+type smtpSetCmd struct {
+	host     string
+	port     int
+	username string
+	password string
+	from     string
+	jsonOut  bool
+	conn     connFlags
+}
+
+func (c *smtpSetCmd) Name() string { return "set" }
+func (c *smtpSetCmd) Synopsis() string {
+	return "save the platform SMTP settings (PUT: the request is the new state; the password is write-only and shown as a fingerprint afterwards)"
+}
+func (c *smtpSetCmd) Usage() string {
+	return "notifications smtp set [--addr <host:port>] [--token <tok>] --host <relay> --port <n> --from <addr> [--username <u>] [--password <pw>|FLEETLY_SMTP_PASSWORD env] [--json]"
+}
+
+func (c *smtpSetCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.StringVar(&c.host, "host", "", "SMTP relay host (required)")
+	fs.IntVar(&c.port, "port", 0, "SMTP relay port 1..65535 (required, e.g. 587)")
+	fs.StringVar(&c.username, "username", "", "auth username (optional; empty = relay without authentication)")
+	fs.StringVar(&c.password, "password", "", "auth password (write-only; prefer the FLEETLY_SMTP_PASSWORD env var to keep it out of shell history; empty = clear)")
+	fs.StringVar(&c.from, "from", "", "envelope-from mailbox address (required)")
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *smtpSetCmd) Run(ctx context.Context, env *commands.Environment, _ []string) error {
+	if strings.TrimSpace(c.host) == "" || c.port == 0 || strings.TrimSpace(c.from) == "" {
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("--host, --port and --from are required (PUT semantics: the request is the whole new state)")}
+	}
+	// 密码旗标缺省回退环境变量（env 不进 shell 历史——优先形态）。
+	password := c.password
+	if password == "" {
+		password = os.Getenv("FLEETLY_SMTP_PASSWORD")
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		resp, err := cl.Notifications().UpdateSmtpSettings(ctx, &serverv1.UpdateSmtpSettingsRequest{
+			Host:     c.host,
+			Port:     int32(c.port), //nolint:gosec // G115：端口量级极小
+			Username: c.username,
+			Password: password,
+			From:     c.from,
+		})
+		if err != nil {
+			return err
+		}
+		if c.jsonOut {
+			return writeProtoJSON(env.Stdout, resp)
+		}
+		st := resp.GetSettings()
+		fp := st.GetPasswordFingerprint()
+		detail := "(not set)"
+		if fp != "" {
+			detail = "fingerprint " + fp + "…"
+		}
+		_, err = fmt.Fprintf(env.Stdout, "SMTP settings saved: %s:%d from %s password %s\n",
+			st.GetHost(), st.GetPort(), st.GetFrom(), detail)
+		return err
+	})
+}
+
+// smtpTestCmd 实现 `notifications smtp test --to <addr>
+// [--host --port --username --password --from]`：对候选（未保存也能测）
+// 或已存配置发测试邮件——真实 SMTP 往返。
+type smtpTestCmd struct {
+	to       string
+	host     string
+	port     int
+	username string
+	password string
+	from     string
+	jsonOut  bool
+	conn     connFlags
+}
+
+func (c *smtpTestCmd) Name() string { return "test" }
+func (c *smtpTestCmd) Synopsis() string {
+	return "send a test email through the SMTP settings (candidate flags or the saved settings; real SMTP round trip)"
+}
+func (c *smtpTestCmd) Usage() string {
+	return "notifications smtp test [--addr <host:port>] [--token <tok>] --to <addr> [--host <relay>] [--port <n>] [--username <u>] [--password <pw>] [--from <addr>] [--json]"
+}
+
+func (c *smtpTestCmd) SetFlags(fs *flag.FlagSet) {
+	c.conn.register(fs)
+	fs.StringVar(&c.to, "to", "", "test-mail recipient mailbox address (required)")
+	fs.StringVar(&c.host, "host", "", "candidate relay host (empty = test the saved settings)")
+	fs.IntVar(&c.port, "port", 0, "candidate relay port")
+	fs.StringVar(&c.username, "username", "", "candidate auth username")
+	fs.StringVar(&c.password, "password", "", "candidate auth password (used for this probe only, never stored)")
+	fs.StringVar(&c.from, "from", "", "candidate envelope-from address")
+	fs.BoolVar(&c.jsonOut, "json", false, "output machine-readable JSON")
+}
+
+func (c *smtpTestCmd) Run(ctx context.Context, env *commands.Environment, _ []string) error {
+	if strings.TrimSpace(c.to) == "" {
+		return &commands.UsageError{Usage: c.Usage(), Err: fmt.Errorf("--to is required (the mailbox the test mail is delivered to)")}
+	}
+	return c.conn.withClient(func(cl *fleetlyClient) error {
+		// 候选字段 optional 语义：只带用户显式提供的字段（全缺省 = 测已存
+		// 设置——空字符串不参与「是否给了候选」的判定）。
+		req := &serverv1.TestSmtpRequest{To: c.to}
+		if c.host != "" {
+			req.Host = &c.host
+		}
+		if c.port != 0 {
+			port := int32(c.port) //nolint:gosec // G115：端口量级极小
+			req.Port = &port
+		}
+		if c.username != "" {
+			req.Username = &c.username
+		}
+		if c.password != "" {
+			req.Password = &c.password
+		}
+		if c.from != "" {
+			req.From = &c.from
+		}
+		resp, err := cl.Notifications().TestSmtp(ctx, req)
+		if err != nil {
+			return err
+		}
+		if c.jsonOut {
+			return writeProtoJSON(env.Stdout, resp)
+		}
+		if resp.GetOk() {
+			_, err = fmt.Fprintf(env.Stdout, "test mail accepted by the relay (DATA answered %d); check the %s mailbox\n", resp.GetStatusCode(), c.to)
+			return err
+		}
+		return fmt.Errorf("smtp test failed (status_code=%d): %s", resp.GetStatusCode(), resp.GetError())
 	})
 }
 

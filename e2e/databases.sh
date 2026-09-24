@@ -59,7 +59,7 @@ PG_IMG='postgres:16@sha256:a3b7f434b2dc57ce85a67e171163eb8ab1a1ebcb39d27484661f2
 REDIS_IMG='redis:7@sha256:c6eabf748fc7a61dbb5a705c78bcf3d6377b1127a97d0ce965c11c44ba46896f'
 RESTIC_IMG='restic/restic:0.19.1@sha256:136600b6ff6843d61d355f7f71f460a166429f35de6fd11b568fece3c9a4d510'
 # dbtools（私有 ghcr 包）：internal/database DefaultDatabaseToolsImage 同串。
-DBTOOLS_IMG='ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1@sha256:472e8a5dd6b7ab2722caa996f18fec956203f99aafec0dd4c10cb82d262e866b'
+DBTOOLS_IMG='ghcr.io/fleetlyrun/dbtools:v0.3.0-dbtools.1@sha256:2b9288a9d844c1a924d9a52c2745861056c28e2ee2caabc6dfd9db313775bd96'
 DB_SKIP_BUILD="${DB_SKIP_BUILD:-0}"
 DB_BIN_DIR="${DB_BIN_DIR:-}"
 DB_VERSION="${DB_VERSION:-v0.2.0-db-e2e}"

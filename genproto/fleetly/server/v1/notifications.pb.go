@@ -31,8 +31,8 @@ type WebhookEndpointView struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Name  string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
-	// 接收端 URL（操作员自配——单操作员信任模型，无 SSRF 过滤，设计 §5.1
-	// 诚实口径；https 建议但不强制）。
+	// 接收端 URL（webhook/slack 通道；操作员自配——单操作员信任模型，无
+	// SSRF 过滤，设计 §5.1 诚实口径；https 建议但不强制。email 通道恒空）。
 	Url string `protobuf:"bytes,3,opt,name=url,proto3" json:"url,omitempty"`
 	// 订阅模式集（事件名 glob；`*` = 全订）。
 	EventPatterns []string `protobuf:"bytes,4,rep,name=event_patterns,json=eventPatterns,proto3" json:"event_patterns,omitempty"`
@@ -41,8 +41,14 @@ type WebhookEndpointView struct {
 	SecretFingerprint string                 `protobuf:"bytes,6,opt,name=secret_fingerprint,json=secretFingerprint,proto3" json:"secret_fingerprint,omitempty"`
 	CreatedAt         *timestamppb.Timestamp `protobuf:"bytes,7,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt         *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	// 通道类型（webhook | slack | email；缺省 webhook——存量端点升级即
+	// webhook，行为逐字不变，设计 §8.1）。
+	Type string `protobuf:"bytes,9,opt,name=type,proto3" json:"type,omitempty"`
+	// email 通道收件地址（to；webhook/slack 恒空——设计 §8.1 通道与端点
+	// 解耦：投递凭据在平台级 SMTP 设置面，端点只带收件地址）。
+	Target        string `protobuf:"bytes,10,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *WebhookEndpointView) Reset() {
@@ -129,6 +135,20 @@ func (x *WebhookEndpointView) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *WebhookEndpointView) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *WebhookEndpointView) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
 }
 
 type ListWebhookEndpointsRequest struct {
@@ -303,12 +323,19 @@ type CreateWebhookEndpointRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 端点名（唯一；1..64，字母数字开头）。
 	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	// 接收端 URL（http/https；host 必填；不带 userinfo）。
+	// 接收端 URL（webhook/slack 通道必填；http/https；host 必填；不带
+	// userinfo。email 通道必须为空——投递走平台 SMTP 设置）。
 	Url string `protobuf:"bytes,2,opt,name=url,proto3" json:"url,omitempty"`
 	// 订阅模式集（非空；每项 1..128 chars of [a-z0-9._-*]；服务端去重保序）。
 	EventPatterns []string `protobuf:"bytes,3,rep,name=event_patterns,json=eventPatterns,proto3" json:"event_patterns,omitempty"`
 	// 创建即启用（缺省 true）。
-	Enabled       *bool `protobuf:"varint,4,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	Enabled *bool `protobuf:"varint,4,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	// 通道类型（webhook | slack | email；空串 = webhook 缺省。组合形状
+	// [url/target 互斥、email target 必须合法邮箱] 在服务端校验——跨字段
+	// 条件不做 protovalidate CEL，400 形状门 + state 层白名单双闸）。
+	Type string `protobuf:"bytes,5,opt,name=type,proto3" json:"type,omitempty"`
+	// email 通道收件地址（to；非 email 通道必须为空）。
+	Target        string `protobuf:"bytes,6,opt,name=target,proto3" json:"target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -371,6 +398,20 @@ func (x *CreateWebhookEndpointRequest) GetEnabled() bool {
 	return false
 }
 
+func (x *CreateWebhookEndpointRequest) GetType() string {
+	if x != nil {
+		return x.Type
+	}
+	return ""
+}
+
+func (x *CreateWebhookEndpointRequest) GetTarget() string {
+	if x != nil {
+		return x.Target
+	}
+	return ""
+}
+
 type CreateWebhookEndpointResponse struct {
 	state    protoimpl.MessageState `protogen:"open.v1"`
 	Endpoint *WebhookEndpointView   `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
@@ -429,13 +470,20 @@ type UpdateWebhookEndpointRequest struct {
 	Id    string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	// 改名（可选）。
 	Name *string `protobuf:"bytes,2,opt,name=name,proto3,oneof" json:"name,omitempty"`
-	// 改 URL（可选）。
+	// 改 URL（可选；webhook/slack 非空——形状在服务端校验；显式空串仅允许
+	// 伴随换通道到 email，单独置空被服务端拒绝）。
 	Url *string `protobuf:"bytes,3,opt,name=url,proto3,oneof" json:"url,omitempty"`
 	// 改订阅模式集（可选——repeated 无 optional 语义：空 = 不变，非空 =
 	// 整体替换且过白名单校验）。
 	EventPatterns []string `protobuf:"bytes,4,rep,name=event_patterns,json=eventPatterns,proto3" json:"event_patterns,omitempty"`
 	// 启停（可选——enabled 订阅开关；停用端点暂停投递不删台账）。
-	Enabled       *bool `protobuf:"varint,5,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	Enabled *bool `protobuf:"varint,5,opt,name=enabled,proto3,oneof" json:"enabled,omitempty"`
+	// 通道类型（可选；词表同 Create——组合形状在服务端对「更新后的最终
+	// 形态」校验）。
+	Type *string `protobuf:"bytes,6,opt,name=type,proto3,oneof" json:"type,omitempty"`
+	// email 通道收件地址（可选；非空必须合法邮箱形状，显式空串仅允许伴随
+	// 换通道离开 email）。
+	Target        *string `protobuf:"bytes,7,opt,name=target,proto3,oneof" json:"target,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -503,6 +551,20 @@ func (x *UpdateWebhookEndpointRequest) GetEnabled() bool {
 		return *x.Enabled
 	}
 	return false
+}
+
+func (x *UpdateWebhookEndpointRequest) GetType() string {
+	if x != nil && x.Type != nil {
+		return *x.Type
+	}
+	return ""
+}
+
+func (x *UpdateWebhookEndpointRequest) GetTarget() string {
+	if x != nil && x.Target != nil {
+		return *x.Target
+	}
+	return ""
 }
 
 type UpdateWebhookEndpointResponse struct {
@@ -779,12 +841,13 @@ func (x *TestWebhookRequest) GetId() string {
 	return ""
 }
 
-// TestWebhookResponse 是 type=test 载荷的同步投递结论（设计 §5.2）。
+// TestWebhookResponse 是 type=test 载荷按通道类型试发的同步结论（设计
+// §5.2/§8.2：webhook/slack = HTTP 语义；email = SMTP 会话语义）。
 type TestWebhookResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// 2xx 到手 = true。
+	// 投递被接收方接受（webhook/slack 2xx；email SMTP 会话完成）。
 	Ok bool `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
-	// HTTP 响应码（传输失败 = 0）。
+	// HTTP 响应码（webhook/slack；传输失败 = 0。email 通道不出码）。
 	StatusCode int32 `protobuf:"varint,2,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`
 	// 失败摘要（单行化；成功为空）。
 	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
@@ -1073,11 +1136,461 @@ func (x *ListWebhookDeliveriesResponse) GetDeliveries() []*WebhookDeliveryView {
 	return nil
 }
 
+// SmtpSettingsView 是 notify.smtp.* 设置的只读投影：密码只出指纹（明文与
+// 密文永不回读——S3 secret 卡同口径）。
+type SmtpSettingsView struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// SMTP 中继主机（空 = 未设置）。
+	Host string `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	// SMTP 端口（1..65535；未设置 = 0）。
+	Port int32 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
+	// 认证用户名（可选——无认证中继为空）。
+	Username string `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
+	// 密码指纹（明文 sha256 前 8 hex；空 = 未设置）。
+	PasswordFingerprint string `protobuf:"bytes,4,opt,name=password_fingerprint,json=passwordFingerprint,proto3" json:"password_fingerprint,omitempty"`
+	// 信封发件地址（From）。
+	From          string                 `protobuf:"bytes,5,opt,name=from,proto3" json:"from,omitempty"`
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SmtpSettingsView) Reset() {
+	*x = SmtpSettingsView{}
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SmtpSettingsView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SmtpSettingsView) ProtoMessage() {}
+
+func (x *SmtpSettingsView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SmtpSettingsView.ProtoReflect.Descriptor instead.
+func (*SmtpSettingsView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_notifications_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *SmtpSettingsView) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *SmtpSettingsView) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *SmtpSettingsView) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *SmtpSettingsView) GetPasswordFingerprint() string {
+	if x != nil {
+		return x.PasswordFingerprint
+	}
+	return ""
+}
+
+func (x *SmtpSettingsView) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+func (x *SmtpSettingsView) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type GetSmtpSettingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSmtpSettingsRequest) Reset() {
+	*x = GetSmtpSettingsRequest{}
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSmtpSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSmtpSettingsRequest) ProtoMessage() {}
+
+func (x *GetSmtpSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSmtpSettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetSmtpSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_notifications_proto_rawDescGZIP(), []int{19}
+}
+
+type GetSmtpSettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *SmtpSettingsView      `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSmtpSettingsResponse) Reset() {
+	*x = GetSmtpSettingsResponse{}
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSmtpSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSmtpSettingsResponse) ProtoMessage() {}
+
+func (x *GetSmtpSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSmtpSettingsResponse.ProtoReflect.Descriptor instead.
+func (*GetSmtpSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_notifications_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *GetSmtpSettingsResponse) GetSettings() *SmtpSettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type UpdateSmtpSettingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// SMTP 中继主机（必填）。
+	Host string `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	// SMTP 端口（1..65535）。
+	Port int32 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
+	// 认证用户名（可选；空 = 无认证中继）。
+	Username string `protobuf:"bytes,3,opt,name=username,proto3" json:"username,omitempty"`
+	// 密码明文（**只写不读**——空 = 清除已存密码；envelope 加密落库，读面
+	// 只出指纹）。
+	Password string `protobuf:"bytes,4,opt,name=password,proto3" json:"password,omitempty"`
+	// 信封发件地址（From；必须合法邮箱形状）。
+	From          string `protobuf:"bytes,5,opt,name=from,proto3" json:"from,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateSmtpSettingsRequest) Reset() {
+	*x = UpdateSmtpSettingsRequest{}
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSmtpSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSmtpSettingsRequest) ProtoMessage() {}
+
+func (x *UpdateSmtpSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSmtpSettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateSmtpSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_notifications_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *UpdateSmtpSettingsRequest) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *UpdateSmtpSettingsRequest) GetPort() int32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *UpdateSmtpSettingsRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *UpdateSmtpSettingsRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *UpdateSmtpSettingsRequest) GetFrom() string {
+	if x != nil {
+		return x.From
+	}
+	return ""
+}
+
+type UpdateSmtpSettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *SmtpSettingsView      `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateSmtpSettingsResponse) Reset() {
+	*x = UpdateSmtpSettingsResponse{}
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateSmtpSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateSmtpSettingsResponse) ProtoMessage() {}
+
+func (x *UpdateSmtpSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateSmtpSettingsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateSmtpSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_notifications_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *UpdateSmtpSettingsResponse) GetSettings() *SmtpSettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type TestSmtpRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 测试邮件收件地址（必填；合法邮箱形状）。
+	To string `protobuf:"bytes,1,opt,name=to,proto3" json:"to,omitempty"`
+	// 候选配置（未保存也能测——S3 探针同语义）：全部候选字段为空时测已存
+	// 配置。候选密码明文只在本请求内使用，绝不落库。字段全部 optional——
+	// 未设置的形状规则跳过（零值不是「空邮箱」违约），服务端按「全空 =
+	// 测已存」收敛。
+	Host          *string `protobuf:"bytes,2,opt,name=host,proto3,oneof" json:"host,omitempty"`
+	Port          *int32  `protobuf:"varint,3,opt,name=port,proto3,oneof" json:"port,omitempty"`
+	Username      *string `protobuf:"bytes,4,opt,name=username,proto3,oneof" json:"username,omitempty"`
+	Password      *string `protobuf:"bytes,5,opt,name=password,proto3,oneof" json:"password,omitempty"`
+	From          *string `protobuf:"bytes,6,opt,name=from,proto3,oneof" json:"from,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestSmtpRequest) Reset() {
+	*x = TestSmtpRequest{}
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestSmtpRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestSmtpRequest) ProtoMessage() {}
+
+func (x *TestSmtpRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestSmtpRequest.ProtoReflect.Descriptor instead.
+func (*TestSmtpRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_notifications_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *TestSmtpRequest) GetTo() string {
+	if x != nil {
+		return x.To
+	}
+	return ""
+}
+
+func (x *TestSmtpRequest) GetHost() string {
+	if x != nil && x.Host != nil {
+		return *x.Host
+	}
+	return ""
+}
+
+func (x *TestSmtpRequest) GetPort() int32 {
+	if x != nil && x.Port != nil {
+		return *x.Port
+	}
+	return 0
+}
+
+func (x *TestSmtpRequest) GetUsername() string {
+	if x != nil && x.Username != nil {
+		return *x.Username
+	}
+	return ""
+}
+
+func (x *TestSmtpRequest) GetPassword() string {
+	if x != nil && x.Password != nil {
+		return *x.Password
+	}
+	return ""
+}
+
+func (x *TestSmtpRequest) GetFrom() string {
+	if x != nil && x.From != nil {
+		return *x.From
+	}
+	return ""
+}
+
+// TestSmtpResponse 是 SMTP 探针的同步结论（ok = 邮件被中继接受；error =
+// 失败步单行摘要，密码材料零出现）。
+type TestSmtpResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Ok    bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	// SMTP 会话完成码（250 语义；未达 DATA 应答 = 0）。
+	StatusCode int32 `protobuf:"varint,2,opt,name=status_code,json=statusCode,proto3" json:"status_code,omitempty"`
+	// 失败摘要（单行化；成功为空）。
+	Error         string `protobuf:"bytes,3,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestSmtpResponse) Reset() {
+	*x = TestSmtpResponse{}
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestSmtpResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestSmtpResponse) ProtoMessage() {}
+
+func (x *TestSmtpResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_notifications_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestSmtpResponse.ProtoReflect.Descriptor instead.
+func (*TestSmtpResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_notifications_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *TestSmtpResponse) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *TestSmtpResponse) GetStatusCode() int32 {
+	if x != nil {
+		return x.StatusCode
+	}
+	return 0
+}
+
+func (x *TestSmtpResponse) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
 var File_fleetly_server_v1_notifications_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_notifications_proto_rawDesc = "" +
 	"\n" +
-	"%fleetly/server/v1/notifications.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xb1\x02\n" +
+	"%fleetly/server/v1/notifications.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xdd\x02\n" +
 	"\x13WebhookEndpointView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x10\n" +
@@ -1088,36 +1601,43 @@ const file_fleetly_server_v1_notifications_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x1d\n" +
+	"updated_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x12\n" +
+	"\x04type\x18\t \x01(\tR\x04type\x12\x16\n" +
+	"\x06target\x18\n" +
+	" \x01(\tR\x06target\"\x1d\n" +
 	"\x1bListWebhookEndpointsRequest\"d\n" +
 	"\x1cListWebhookEndpointsResponse\x12D\n" +
 	"\tendpoints\x18\x01 \x03(\v2&.fleetly.server.v1.WebhookEndpointViewR\tendpoints\"4\n" +
 	"\x19GetWebhookEndpointRequest\x12\x17\n" +
 	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\"`\n" +
 	"\x1aGetWebhookEndpointResponse\x12B\n" +
-	"\bendpoint\x18\x01 \x01(\v2&.fleetly.server.v1.WebhookEndpointViewR\bendpoint\"\xf3\x01\n" +
+	"\bendpoint\x18\x01 \x01(\v2&.fleetly.server.v1.WebhookEndpointViewR\bendpoint\"\xc7\x02\n" +
 	"\x1cCreateWebhookEndpointRequest\x12;\n" +
-	"\x04name\x18\x01 \x01(\tB'\xbaH$r\"\x10\x01\x18@2\x1c^[a-zA-Z0-9][a-zA-Z0-9._-]*$R\x04name\x12\x1c\n" +
-	"\x03url\x18\x02 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x10R\x03url\x12M\n" +
+	"\x04name\x18\x01 \x01(\tB'\xbaH$r\"\x10\x01\x18@2\x1c^[a-zA-Z0-9][a-zA-Z0-9._-]*$R\x04name\x12\x1a\n" +
+	"\x03url\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10R\x03url\x12M\n" +
 	"\x0eevent_patterns\x18\x03 \x03(\tB&\xbaH#\x92\x01 \b\x01\x10@\"\x1ar\x182\x16^[a-z0-9._\\-*]{1,128}$R\reventPatterns\x12\x1d\n" +
-	"\aenabled\x18\x04 \x01(\bH\x00R\aenabled\x88\x01\x01B\n" +
+	"\aenabled\x18\x04 \x01(\bH\x00R\aenabled\x88\x01\x01\x122\n" +
+	"\x04type\x18\x05 \x01(\tB\x1e\xbaH\x1br\x19R\x00R\awebhookR\x05slackR\x05emailR\x04type\x12 \n" +
+	"\x06target\x18\x06 \x01(\tB\b\xbaH\x05r\x03\x18\xc0\x02R\x06targetB\n" +
 	"\n" +
 	"\b_enabled\"{\n" +
 	"\x1dCreateWebhookEndpointResponse\x12B\n" +
 	"\bendpoint\x18\x01 \x01(\v2&.fleetly.server.v1.WebhookEndpointViewR\bendpoint\x12\x16\n" +
-	"\x06secret\x18\x02 \x01(\tR\x06secret\"\xa5\x02\n" +
+	"\x06secret\x18\x02 \x01(\tR\x06secret\"\x97\x03\n" +
 	"\x1cUpdateWebhookEndpointRequest\x12\x17\n" +
 	"\x02id\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x02id\x12@\n" +
-	"\x04name\x18\x02 \x01(\tB'\xbaH$r\"\x10\x01\x18@2\x1c^[a-zA-Z0-9][a-zA-Z0-9._-]*$H\x00R\x04name\x88\x01\x01\x12!\n" +
-	"\x03url\x18\x03 \x01(\tB\n" +
-	"\xbaH\ar\x05\x10\x01\x18\x80\x10H\x01R\x03url\x88\x01\x01\x12K\n" +
+	"\x04name\x18\x02 \x01(\tB'\xbaH$r\"\x10\x01\x18@2\x1c^[a-zA-Z0-9][a-zA-Z0-9._-]*$H\x00R\x04name\x88\x01\x01\x12\x1f\n" +
+	"\x03url\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x10H\x01R\x03url\x88\x01\x01\x12K\n" +
 	"\x0eevent_patterns\x18\x04 \x03(\tB$\xbaH!\x92\x01\x1e\x10@\"\x1ar\x182\x16^[a-z0-9._\\-*]{1,128}$R\reventPatterns\x12\x1d\n" +
-	"\aenabled\x18\x05 \x01(\bH\x02R\aenabled\x88\x01\x01B\a\n" +
+	"\aenabled\x18\x05 \x01(\bH\x02R\aenabled\x88\x01\x01\x127\n" +
+	"\x04type\x18\x06 \x01(\tB\x1e\xbaH\x1br\x19R\x00R\awebhookR\x05slackR\x05emailH\x03R\x04type\x88\x01\x01\x12%\n" +
+	"\x06target\x18\a \x01(\tB\b\xbaH\x05r\x03\x18\xc0\x02H\x04R\x06target\x88\x01\x01B\a\n" +
 	"\x05_nameB\x06\n" +
 	"\x04_urlB\n" +
 	"\n" +
-	"\b_enabled\"c\n" +
+	"\b_enabledB\a\n" +
+	"\x05_typeB\t\n" +
+	"\a_target\"c\n" +
 	"\x1dUpdateWebhookEndpointResponse\x12B\n" +
 	"\bendpoint\x18\x01 \x01(\v2&.fleetly.server.v1.WebhookEndpointViewR\bendpoint\"7\n" +
 	"\x1cDeleteWebhookEndpointRequest\x12\x17\n" +
@@ -1162,8 +1682,45 @@ const file_fleetly_server_v1_notifications_proto_rawDesc = "" +
 	"\x1dListWebhookDeliveriesResponse\x12F\n" +
 	"\n" +
 	"deliveries\x18\x01 \x03(\v2&.fleetly.server.v1.WebhookDeliveryViewR\n" +
-	"deliveries2\xaf\n" +
+	"deliveries\"\xd8\x01\n" +
+	"\x10SmtpSettingsView\x12\x12\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12\x12\n" +
+	"\x04port\x18\x02 \x01(\x05R\x04port\x12\x1a\n" +
+	"\busername\x18\x03 \x01(\tR\busername\x121\n" +
+	"\x14password_fingerprint\x18\x04 \x01(\tR\x13passwordFingerprint\x12\x12\n" +
+	"\x04from\x18\x05 \x01(\tR\x04from\x129\n" +
 	"\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\x18\n" +
+	"\x16GetSmtpSettingsRequest\"Z\n" +
+	"\x17GetSmtpSettingsResponse\x12?\n" +
+	"\bsettings\x18\x01 \x01(\v2#.fleetly.server.v1.SmtpSettingsViewR\bsettings\"\xca\x01\n" +
+	"\x19UpdateSmtpSettingsRequest\x12\x1e\n" +
+	"\x04host\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xfd\x01R\x04host\x12\x1f\n" +
+	"\x04port\x18\x02 \x01(\x05B\v\xbaH\b\x1a\x06\x18\xff\xff\x03(\x01R\x04port\x12$\n" +
+	"\busername\x18\x03 \x01(\tB\b\xbaH\x05r\x03\x18\xc0\x02R\busername\x12$\n" +
+	"\bpassword\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\bpassword\x12 \n" +
+	"\x04from\x18\x05 \x01(\tB\f\xbaH\tr\a\x10\x03\x18\xc0\x02`\x01R\x04from\"]\n" +
+	"\x1aUpdateSmtpSettingsResponse\x12?\n" +
+	"\bsettings\x18\x01 \x01(\v2#.fleetly.server.v1.SmtpSettingsViewR\bsettings\"\xa8\x02\n" +
+	"\x0fTestSmtpRequest\x12\x1c\n" +
+	"\x02to\x18\x01 \x01(\tB\f\xbaH\tr\a\x10\x03\x18\xc0\x02`\x01R\x02to\x12!\n" +
+	"\x04host\x18\x02 \x01(\tB\b\xbaH\x05r\x03\x18\xfd\x01H\x00R\x04host\x88\x01\x01\x12$\n" +
+	"\x04port\x18\x03 \x01(\x05B\v\xbaH\b\x1a\x06\x18\xff\xff\x03(\x00H\x01R\x04port\x88\x01\x01\x12)\n" +
+	"\busername\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\xc0\x02H\x02R\busername\x88\x01\x01\x12)\n" +
+	"\bpassword\x18\x05 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bH\x03R\bpassword\x88\x01\x01\x12#\n" +
+	"\x04from\x18\x06 \x01(\tB\n" +
+	"\xbaH\ar\x05\x18\xc0\x02`\x01H\x04R\x04from\x88\x01\x01B\a\n" +
+	"\x05_hostB\a\n" +
+	"\x05_portB\v\n" +
+	"\t_usernameB\v\n" +
+	"\t_passwordB\a\n" +
+	"\x05_from\"Y\n" +
+	"\x10TestSmtpResponse\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x1f\n" +
+	"\vstatus_code\x18\x02 \x01(\x05R\n" +
+	"statusCode\x12\x14\n" +
+	"\x05error\x18\x03 \x01(\tR\x05error2\xce\r\n" +
 	"\x14NotificationsService\x12\x9c\x01\n" +
 	"\x14ListWebhookEndpoints\x12..fleetly.server.v1.ListWebhookEndpointsRequest\x1a/.fleetly.server.v1.ListWebhookEndpointsResponse\"#\x82\xd3\xe4\x93\x02\x1d\x12\x1b/v1/notifications/endpoints\x12\x9b\x01\n" +
 	"\x12GetWebhookEndpoint\x12,.fleetly.server.v1.GetWebhookEndpointRequest\x1a-.fleetly.server.v1.GetWebhookEndpointResponse\"(\x82\xd3\xe4\x93\x02\"\x12 /v1/notifications/endpoints/{id}\x12\xa2\x01\n" +
@@ -1172,7 +1729,10 @@ const file_fleetly_server_v1_notifications_proto_rawDesc = "" +
 	"\x15DeleteWebhookEndpoint\x12/.fleetly.server.v1.DeleteWebhookEndpointRequest\x1a0.fleetly.server.v1.DeleteWebhookEndpointResponse\"(\x82\xd3\xe4\x93\x02\"* /v1/notifications/endpoints/{id}\x12\xaf\x01\n" +
 	"\x13RotateWebhookSecret\x12-.fleetly.server.v1.RotateWebhookSecretRequest\x1a..fleetly.server.v1.RotateWebhookSecretResponse\"9\x82\xd3\xe4\x93\x023:\x01*\"./v1/notifications/endpoints/{id}/rotate-secret\x12\x8e\x01\n" +
 	"\vTestWebhook\x12%.fleetly.server.v1.TestWebhookRequest\x1a&.fleetly.server.v1.TestWebhookResponse\"0\x82\xd3\xe4\x93\x02*:\x01*\"%/v1/notifications/endpoints/{id}/test\x12\xa0\x01\n" +
-	"\x15ListWebhookDeliveries\x12/.fleetly.server.v1.ListWebhookDeliveriesRequest\x1a0.fleetly.server.v1.ListWebhookDeliveriesResponse\"$\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/notifications/deliveriesB\x98\x01\x92ARRP\n" +
+	"\x15ListWebhookDeliveries\x12/.fleetly.server.v1.ListWebhookDeliveriesRequest\x1a0.fleetly.server.v1.ListWebhookDeliveriesResponse\"$\x82\xd3\xe4\x93\x02\x1e\x12\x1c/v1/notifications/deliveries\x12\x88\x01\n" +
+	"\x0fGetSmtpSettings\x12).fleetly.server.v1.GetSmtpSettingsRequest\x1a*.fleetly.server.v1.GetSmtpSettingsResponse\"\x1e\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/notifications/smtp\x12\x94\x01\n" +
+	"\x12UpdateSmtpSettings\x12,.fleetly.server.v1.UpdateSmtpSettingsRequest\x1a-.fleetly.server.v1.UpdateSmtpSettingsResponse\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\x1a\x16/v1/notifications/smtp\x12{\n" +
+	"\bTestSmtp\x12\".fleetly.server.v1.TestSmtpRequest\x1a#.fleetly.server.v1.TestSmtpResponse\"&\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/notifications/smtp/testB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -1189,7 +1749,7 @@ func file_fleetly_server_v1_notifications_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_notifications_proto_rawDescData
 }
 
-var file_fleetly_server_v1_notifications_proto_msgTypes = make([]protoimpl.MessageInfo, 18)
+var file_fleetly_server_v1_notifications_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
 var file_fleetly_server_v1_notifications_proto_goTypes = []any{
 	(*WebhookEndpointView)(nil),           // 0: fleetly.server.v1.WebhookEndpointView
 	(*ListWebhookEndpointsRequest)(nil),   // 1: fleetly.server.v1.ListWebhookEndpointsRequest
@@ -1209,40 +1769,56 @@ var file_fleetly_server_v1_notifications_proto_goTypes = []any{
 	(*ListWebhookDeliveriesRequest)(nil),  // 15: fleetly.server.v1.ListWebhookDeliveriesRequest
 	(*WebhookDeliveryView)(nil),           // 16: fleetly.server.v1.WebhookDeliveryView
 	(*ListWebhookDeliveriesResponse)(nil), // 17: fleetly.server.v1.ListWebhookDeliveriesResponse
-	(*timestamppb.Timestamp)(nil),         // 18: google.protobuf.Timestamp
+	(*SmtpSettingsView)(nil),              // 18: fleetly.server.v1.SmtpSettingsView
+	(*GetSmtpSettingsRequest)(nil),        // 19: fleetly.server.v1.GetSmtpSettingsRequest
+	(*GetSmtpSettingsResponse)(nil),       // 20: fleetly.server.v1.GetSmtpSettingsResponse
+	(*UpdateSmtpSettingsRequest)(nil),     // 21: fleetly.server.v1.UpdateSmtpSettingsRequest
+	(*UpdateSmtpSettingsResponse)(nil),    // 22: fleetly.server.v1.UpdateSmtpSettingsResponse
+	(*TestSmtpRequest)(nil),               // 23: fleetly.server.v1.TestSmtpRequest
+	(*TestSmtpResponse)(nil),              // 24: fleetly.server.v1.TestSmtpResponse
+	(*timestamppb.Timestamp)(nil),         // 25: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_notifications_proto_depIdxs = []int32{
-	18, // 0: fleetly.server.v1.WebhookEndpointView.created_at:type_name -> google.protobuf.Timestamp
-	18, // 1: fleetly.server.v1.WebhookEndpointView.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 0: fleetly.server.v1.WebhookEndpointView.created_at:type_name -> google.protobuf.Timestamp
+	25, // 1: fleetly.server.v1.WebhookEndpointView.updated_at:type_name -> google.protobuf.Timestamp
 	0,  // 2: fleetly.server.v1.ListWebhookEndpointsResponse.endpoints:type_name -> fleetly.server.v1.WebhookEndpointView
 	0,  // 3: fleetly.server.v1.GetWebhookEndpointResponse.endpoint:type_name -> fleetly.server.v1.WebhookEndpointView
 	0,  // 4: fleetly.server.v1.CreateWebhookEndpointResponse.endpoint:type_name -> fleetly.server.v1.WebhookEndpointView
 	0,  // 5: fleetly.server.v1.UpdateWebhookEndpointResponse.endpoint:type_name -> fleetly.server.v1.WebhookEndpointView
-	18, // 6: fleetly.server.v1.WebhookDeliveryView.next_retry_at:type_name -> google.protobuf.Timestamp
-	18, // 7: fleetly.server.v1.WebhookDeliveryView.created_at:type_name -> google.protobuf.Timestamp
-	18, // 8: fleetly.server.v1.WebhookDeliveryView.updated_at:type_name -> google.protobuf.Timestamp
+	25, // 6: fleetly.server.v1.WebhookDeliveryView.next_retry_at:type_name -> google.protobuf.Timestamp
+	25, // 7: fleetly.server.v1.WebhookDeliveryView.created_at:type_name -> google.protobuf.Timestamp
+	25, // 8: fleetly.server.v1.WebhookDeliveryView.updated_at:type_name -> google.protobuf.Timestamp
 	16, // 9: fleetly.server.v1.ListWebhookDeliveriesResponse.deliveries:type_name -> fleetly.server.v1.WebhookDeliveryView
-	1,  // 10: fleetly.server.v1.NotificationsService.ListWebhookEndpoints:input_type -> fleetly.server.v1.ListWebhookEndpointsRequest
-	3,  // 11: fleetly.server.v1.NotificationsService.GetWebhookEndpoint:input_type -> fleetly.server.v1.GetWebhookEndpointRequest
-	5,  // 12: fleetly.server.v1.NotificationsService.CreateWebhookEndpoint:input_type -> fleetly.server.v1.CreateWebhookEndpointRequest
-	7,  // 13: fleetly.server.v1.NotificationsService.UpdateWebhookEndpoint:input_type -> fleetly.server.v1.UpdateWebhookEndpointRequest
-	9,  // 14: fleetly.server.v1.NotificationsService.DeleteWebhookEndpoint:input_type -> fleetly.server.v1.DeleteWebhookEndpointRequest
-	11, // 15: fleetly.server.v1.NotificationsService.RotateWebhookSecret:input_type -> fleetly.server.v1.RotateWebhookSecretRequest
-	13, // 16: fleetly.server.v1.NotificationsService.TestWebhook:input_type -> fleetly.server.v1.TestWebhookRequest
-	15, // 17: fleetly.server.v1.NotificationsService.ListWebhookDeliveries:input_type -> fleetly.server.v1.ListWebhookDeliveriesRequest
-	2,  // 18: fleetly.server.v1.NotificationsService.ListWebhookEndpoints:output_type -> fleetly.server.v1.ListWebhookEndpointsResponse
-	4,  // 19: fleetly.server.v1.NotificationsService.GetWebhookEndpoint:output_type -> fleetly.server.v1.GetWebhookEndpointResponse
-	6,  // 20: fleetly.server.v1.NotificationsService.CreateWebhookEndpoint:output_type -> fleetly.server.v1.CreateWebhookEndpointResponse
-	8,  // 21: fleetly.server.v1.NotificationsService.UpdateWebhookEndpoint:output_type -> fleetly.server.v1.UpdateWebhookEndpointResponse
-	10, // 22: fleetly.server.v1.NotificationsService.DeleteWebhookEndpoint:output_type -> fleetly.server.v1.DeleteWebhookEndpointResponse
-	12, // 23: fleetly.server.v1.NotificationsService.RotateWebhookSecret:output_type -> fleetly.server.v1.RotateWebhookSecretResponse
-	14, // 24: fleetly.server.v1.NotificationsService.TestWebhook:output_type -> fleetly.server.v1.TestWebhookResponse
-	17, // 25: fleetly.server.v1.NotificationsService.ListWebhookDeliveries:output_type -> fleetly.server.v1.ListWebhookDeliveriesResponse
-	18, // [18:26] is the sub-list for method output_type
-	10, // [10:18] is the sub-list for method input_type
-	10, // [10:10] is the sub-list for extension type_name
-	10, // [10:10] is the sub-list for extension extendee
-	0,  // [0:10] is the sub-list for field type_name
+	25, // 10: fleetly.server.v1.SmtpSettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	18, // 11: fleetly.server.v1.GetSmtpSettingsResponse.settings:type_name -> fleetly.server.v1.SmtpSettingsView
+	18, // 12: fleetly.server.v1.UpdateSmtpSettingsResponse.settings:type_name -> fleetly.server.v1.SmtpSettingsView
+	1,  // 13: fleetly.server.v1.NotificationsService.ListWebhookEndpoints:input_type -> fleetly.server.v1.ListWebhookEndpointsRequest
+	3,  // 14: fleetly.server.v1.NotificationsService.GetWebhookEndpoint:input_type -> fleetly.server.v1.GetWebhookEndpointRequest
+	5,  // 15: fleetly.server.v1.NotificationsService.CreateWebhookEndpoint:input_type -> fleetly.server.v1.CreateWebhookEndpointRequest
+	7,  // 16: fleetly.server.v1.NotificationsService.UpdateWebhookEndpoint:input_type -> fleetly.server.v1.UpdateWebhookEndpointRequest
+	9,  // 17: fleetly.server.v1.NotificationsService.DeleteWebhookEndpoint:input_type -> fleetly.server.v1.DeleteWebhookEndpointRequest
+	11, // 18: fleetly.server.v1.NotificationsService.RotateWebhookSecret:input_type -> fleetly.server.v1.RotateWebhookSecretRequest
+	13, // 19: fleetly.server.v1.NotificationsService.TestWebhook:input_type -> fleetly.server.v1.TestWebhookRequest
+	15, // 20: fleetly.server.v1.NotificationsService.ListWebhookDeliveries:input_type -> fleetly.server.v1.ListWebhookDeliveriesRequest
+	19, // 21: fleetly.server.v1.NotificationsService.GetSmtpSettings:input_type -> fleetly.server.v1.GetSmtpSettingsRequest
+	21, // 22: fleetly.server.v1.NotificationsService.UpdateSmtpSettings:input_type -> fleetly.server.v1.UpdateSmtpSettingsRequest
+	23, // 23: fleetly.server.v1.NotificationsService.TestSmtp:input_type -> fleetly.server.v1.TestSmtpRequest
+	2,  // 24: fleetly.server.v1.NotificationsService.ListWebhookEndpoints:output_type -> fleetly.server.v1.ListWebhookEndpointsResponse
+	4,  // 25: fleetly.server.v1.NotificationsService.GetWebhookEndpoint:output_type -> fleetly.server.v1.GetWebhookEndpointResponse
+	6,  // 26: fleetly.server.v1.NotificationsService.CreateWebhookEndpoint:output_type -> fleetly.server.v1.CreateWebhookEndpointResponse
+	8,  // 27: fleetly.server.v1.NotificationsService.UpdateWebhookEndpoint:output_type -> fleetly.server.v1.UpdateWebhookEndpointResponse
+	10, // 28: fleetly.server.v1.NotificationsService.DeleteWebhookEndpoint:output_type -> fleetly.server.v1.DeleteWebhookEndpointResponse
+	12, // 29: fleetly.server.v1.NotificationsService.RotateWebhookSecret:output_type -> fleetly.server.v1.RotateWebhookSecretResponse
+	14, // 30: fleetly.server.v1.NotificationsService.TestWebhook:output_type -> fleetly.server.v1.TestWebhookResponse
+	17, // 31: fleetly.server.v1.NotificationsService.ListWebhookDeliveries:output_type -> fleetly.server.v1.ListWebhookDeliveriesResponse
+	20, // 32: fleetly.server.v1.NotificationsService.GetSmtpSettings:output_type -> fleetly.server.v1.GetSmtpSettingsResponse
+	22, // 33: fleetly.server.v1.NotificationsService.UpdateSmtpSettings:output_type -> fleetly.server.v1.UpdateSmtpSettingsResponse
+	24, // 34: fleetly.server.v1.NotificationsService.TestSmtp:output_type -> fleetly.server.v1.TestSmtpResponse
+	24, // [24:35] is the sub-list for method output_type
+	13, // [13:24] is the sub-list for method input_type
+	13, // [13:13] is the sub-list for extension type_name
+	13, // [13:13] is the sub-list for extension extendee
+	0,  // [0:13] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_notifications_proto_init() }
@@ -1253,13 +1829,14 @@ func file_fleetly_server_v1_notifications_proto_init() {
 	file_fleetly_server_v1_notifications_proto_msgTypes[5].OneofWrappers = []any{}
 	file_fleetly_server_v1_notifications_proto_msgTypes[7].OneofWrappers = []any{}
 	file_fleetly_server_v1_notifications_proto_msgTypes[16].OneofWrappers = []any{}
+	file_fleetly_server_v1_notifications_proto_msgTypes[23].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_notifications_proto_rawDesc), len(file_fleetly_server_v1_notifications_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   18,
+			NumMessages:   25,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

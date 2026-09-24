@@ -120,7 +120,7 @@ S1 e2e 实测 VL idle 增量；staging 演练全栈复测（rustfs 启用态 429
 - **cAdvisor 应用归因标签恢复**：docker29 snapshotter 形态 swarm 标签缺席（上游限制）；S7 真机演练 probe image/name 标签形态，image 标签若在（fleetly-local/<app>: / registry.<base>/apps/<app>@）可即刻切 Console PromQL 到 image 前缀匹配；根治随 cAdvisor 上游。
 - **§6.A FTS5 兜底（设计附录，条件实现）**：600MB 门失败时——jsonl 模式 + FTS5 虚表索引 JSONL 日文件 + SearchLogs 后端切换开关（`logs.search_backend`）；平时不实现。
 - 全局跨应用日志检索页：v0.2.x。
-- Slack/Email 通道：随真实需求（V2-6 原文）；告警规则引擎（VM alerting）：v0.3+ 评估。
+- Slack/Email 通道：~~随真实需求（V2-6 原文）~~ → 已裁决实施（v0.3 W4-S3，见 §8 通道扩展）；告警规则引擎（VM alerting）：v0.3+ 评估。
 - 自动扩缩、指标水位触发：v0.3。
 - VL 集群版/跨节点日志副本：不做（单写点纪律）。
 - 访问日志精确到 task 的蓝绿归因：v0.3 候选（中间件注头方案留档）。
@@ -136,3 +136,71 @@ S1 e2e 实测 VL idle 增量；staging 演练全栈复测（rustfs 启用态 429
 | S4 e2e | 订阅 `deployment.*` → 触发部署 → receiver 收到 + HMAC 验签通过 → 重试路径（receiver 500→退避→台账）→ `*` 订阅无回环 → test 载荷 |
 | 契约 | 事件码只增（`logs.*` 5 项、组件健康面）；错误码注册表全量设计按需消费（`E_LOGS_BACKEND_UNAVAILABLE`、`E_METRICS_NOT_ENABLED`、`E_WEBHOOK_*` 族）；proto breaking 门禁；Console 锚点清单只增 |
 | staging 演练 | runbook §10：全链 + 预算复测（429+VL / metrics on 复测）+ 跨节点日志聚合实测点（§2.3）+ worker 指标（视 UDP 放行状态诚实记录） |
+
+## 8. W4 通道扩展：Slack / Email（D-W4-4 / D-W4-5，v0.3 W4-S3）
+
+§5 通知 Webhook 的通道类型扩展票。**§5 全部裁决原文不变**——glob 订阅、
+游标消费、退避重试（3 次尝试 30s/5m）、台账、janitor 7d、**通知自身零事件
+红线**与新通道完全共用；本节只裁决「投递的最后一公里」按通道类型分叉。
+
+### 8.1 通道表（D-W4-4）
+
+| type（词表） | 端点行字段 | 投递动作 | 签名 | 台账语义 |
+|---|---|---|---|---|
+| `webhook`（缺省/存量） | `url`（既有语义逐字不变） | POST JSON 全字段载荷 | `X-Fleetly-Signature` HMAC-SHA256（既有契约） | `response_code`=HTTP 码 |
+| `slack` | `url`（Slack Incoming Webhook URL——URL 即凭据） | POST JSON `{"text": <渲染文案>}` | **无平台签名头**（Slack 端自带鉴权，平台不加 HMAC） | `response_code`=HTTP 码 |
+| `email` | `target`（收件地址 to；`url` 留空） | net/smtp 投递（STARTTLS，net/mail 构造，零第三方依赖） | 无（凭据是平台级 SMTP 设置，非端点级） | 通用 `success bool + detail 字符串`（`last_error`；`response_code` 不承载 SMTP 语义，保持 NULL——既有列兼容） |
+
+- 端点存储形态：迁移 00020 给 `webhook_endpoints` 加 `type`（缺省
+  `webhook`，存量行自动回填）与 `target` 两列（只加法）；`url` 列被
+  webhook/slack 复用，email 端点存 `target`。
+- **通道设置与端点解耦**：SMTP 是平台级一份设置（`notify.smtp.*` 键族：
+  host/port/username/password/from；password envelope 加密落库，沿 S3
+  secret 先例——密码明文只写不读，读面只出 sha256 前 8 hex 指纹），多个
+  email 端点共用；Slack/webhook 端点的 URL 各自随行。
+- 校验（API 面 400 形状门 + state 层防御第二道闸）：type ∈ 词表三值；
+  `webhook|slack` → url 必填合法（http/https）、target 必须为空；
+  `email` → target 必须是合法邮箱、url 必须为空。
+
+### 8.2 消息渲染（D-W4-5）
+
+事件→消息的数据面沿既有 delivery 载荷（patterns 匹配后的事件投影：
+seq/at/name/subject/payload）。
+
+| 通道 | 形态 |
+|---|---|
+| webhook | 既有 JSON 载荷**逐字不变**（对外契约，§5.2 原文） |
+| slack | 单行头 `[fleetly] <event name> — <subject>` + 详情字段若干行（`key: value`，payload JSON 顶层键逐行展开）；整体作为 `{"text": ...}` 的值 |
+| email | 纯文本（不做 HTML）：邮件主题 `[fleetly] <event name>`；正文 = 事件字段键值对（seq/at/name/subject/payload 逐行 `key: value`） |
+
+type=test 试发载荷三通道同构（name=test、subject 指向被测端点——§5.2
+原语义）；`TestWebhook` **语义**扩为按端点类型试发（email 试发收件 =
+端点 `target` 地址；slack 试发 `{"text"}` 形态）。**RPC 名保留
+`TestWebhook` 不改**——buf breaking FILE 门禁禁 RPC/消息删除（契约版本
+化纪律），线格式重命名随下一契约版本评估；CLI `notifications test` 与
+Console Test 按钮即本语义（实现内部执行体命名 SendTestEndpoint）。
+
+### 8.3 SMTP 设置面
+
+- `NotificationsService` 增三 RPC（平台管理员门
+  `requirePlatformWriteFace` 同款，scope 登记 admin）：
+  `GetSmtpSettings`（读面只出指纹）/ `UpdateSmtpSettings`（PUT 全量语义
+  沿 S3——密码入站即加密，未提供即回落空值）/ `TestSmtp`（对候选或已存
+  配置发测试邮件到指定 to——真实 SMTP 往返）。
+- 变更审计 `notify.smtp_changed`（authsettings 审计形态：只落审计**不落
+  事件**——§5.2 红线的精神延伸：通知配置面自身零事件；diff 只带
+  host/port/from 是否变化的事实，密码零泄漏入审计/日志/事件）。
+- CLI：`fleetly notifications smtp get|set|test`；密码经 `--password`
+  旗标或 `FLEETLY_SMTP_PASSWORD` 环境变量（env 形态不进 shell 历史）；
+  端点创建命令增 `--type` / `--target`。
+
+### 8.4 红线沿用声明
+
+- **通知自身零事件**：三通道投递失败一律只进台账 + notifications 组件红
+  + Console 卡；`notify.smtp_changed` 只落审计不落事件；events 注册表
+  零新增。
+- 投递管线（游标/匹配/退避/台账/janitor）零改动复用：通道分叉只发生在
+  单次投递尝试的执行体（webhook=签名 POST / slack=裸 POST / email=SMTP
+  会话），attempts/next_retry_at/终态语义三通道一致。
+- 不做（本票）：staging 演练（S4）、mysql/mongo e2e（S4）；HTML 邮件、
+  每端点独立 SMTP 凭据、SMTP OAuth（XOAUTH2）均不做。

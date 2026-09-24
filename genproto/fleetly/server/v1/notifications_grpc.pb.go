@@ -27,28 +27,37 @@ const (
 	NotificationsService_RotateWebhookSecret_FullMethodName   = "/fleetly.server.v1.NotificationsService/RotateWebhookSecret"
 	NotificationsService_TestWebhook_FullMethodName           = "/fleetly.server.v1.NotificationsService/TestWebhook"
 	NotificationsService_ListWebhookDeliveries_FullMethodName = "/fleetly.server.v1.NotificationsService/ListWebhookDeliveries"
+	NotificationsService_GetSmtpSettings_FullMethodName       = "/fleetly.server.v1.NotificationsService/GetSmtpSettings"
+	NotificationsService_UpdateSmtpSettings_FullMethodName    = "/fleetly.server.v1.NotificationsService/UpdateSmtpSettings"
+	NotificationsService_TestSmtp_FullMethodName              = "/fleetly.server.v1.NotificationsService/TestSmtp"
 )
 
 // NotificationsServiceClient is the client API for NotificationsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// NotificationsService 是通知 Webhook 订阅/投递面（E6 观测专项设计 §5，
-// W5-S4；V2-6 Webhook 首发——POST + 重试 + 事件订阅）。
+// NotificationsService 是通知订阅/投递面（E6 观测专项设计 §5 + §8 通道
+// 扩展，W5-S4 首发 / W4-S3 扩 slack+email 通道；V2-6 Webhook 首发——POST
+// + 重试 + 事件订阅）。
 //
-// 模型：端点（url + 平台生成的 HMAC 签名密钥 + 订阅模式集）订阅平台事件
-// 流（glob 模式，`*` = 全订）；投递器（internal/notify lynx service，进程
-// 内消费者——与 WatchEvents 平行，不经 token/流机制）按事件 seq 游标轮询
-// events 表，匹配端点后 POST JSON + 签名头（接收方可验签 + 5min 窗防重
-// 放）。失败退避 30s/5m 重试，3 次尝试后终态 failed（设计 §5.2）。
+// 模型：端点（type ∈ {webhook,slack,email} + 订阅模式集）订阅平台事件流
+// （glob 模式，`*` = 全订）；投递器（internal/notify lynx service，进程内
+// 消费者——与 WatchEvents 平行，不经 token/流机制）按事件 seq 游标轮询
+// events 表，匹配端点后按通道类型投递：webhook = POST JSON + 签名头
+// （接收方可验签 + 5min 窗防重放）；slack = POST {"text"}（Incoming
+// Webhook，URL 即凭据，平台不加 HMAC）；email = SMTP 投递（平台级一份
+// notify.smtp.* 设置，密码 envelope 加密只写不读——读面只出指纹）。失败
+// 退避 30s/5m 重试，3 次尝试后终态 failed（设计 §5.2/§8.1 通道表）。
 //
-// 红线（§5.2）：**通知自身零事件**——投递失败不 emitted 事件（防自激励
-// 环），失败可见面 = 投递台账（ListWebhookDeliveries）+ system status
-// notifications 组件红 + Console 卡；订阅 `*` 不会回环。
+// 红线（§5.2/§8.4）：**通知自身零事件**——投递失败不 emitted 事件（防
+// 自激励环），失败可见面 = 投递台账（ListWebhookDeliveries）+ system
+// status notifications 组件红 + Console 卡；订阅 `*` 不会回环；
+// notify.smtp_changed 只落审计不落事件。
 //
-// secret 纪律：密钥平台生成（32B base64），envelope 加密落库；明文只在
-// CreateWebhookEndpoint / RotateWebhookSecret 响应**一次性**返回，读面
-// 只出 sha256 前 8 hex 指纹（s3 卡同口径）。
+// secret 纪律：签名密钥平台生成（32B base64），envelope 加密落库；明文
+// 只在 CreateWebhookEndpoint / RotateWebhookSecret 响应**一次性**返回，
+// 读面只出 sha256 前 8 hex 指纹（s3 卡同口径）。SMTP 密码同理：明文只写
+// 不读，读面只出指纹。
 type NotificationsServiceClient interface {
 	// ListWebhookEndpoints 端点清单（read scope；无敏感投影）。
 	ListWebhookEndpoints(ctx context.Context, in *ListWebhookEndpointsRequest, opts ...grpc.CallOption) (*ListWebhookEndpointsResponse, error)
@@ -69,10 +78,27 @@ type NotificationsServiceClient interface {
 	// TestWebhook 发送 type=test 载荷（admin scope；设计 §5.2）：结构同真实
 	// 事件、验签同链路——验证连通与验签配置。同步等待单次投递结果（10s
 	// 预算）；不落台账（连通性检查不是投递事实）。
+	//
+	// W4-S3 语义扩为按端点类型试发（TestEndpoint 语义——email 试发收件 =
+	// 端点 target 地址；slack 载荷 = {"text"} 形态）。RPC 名保留 TestWebhook
+	// ——buf breaking FILE 门禁禁 RPC/消息删除（契约版本化纪律 §2.8），
+	// 线格式重命名随下一契约版本评估；CLI `notifications test` 即本语义。
 	TestWebhook(ctx context.Context, in *TestWebhookRequest, opts ...grpc.CallOption) (*TestWebhookResponse, error)
 	// ListWebhookDeliveries 投递台账（read scope）：按端点/状态过滤，最新
 	// 在前——重试路径与终败的诚实可见面。
 	ListWebhookDeliveries(ctx context.Context, in *ListWebhookDeliveriesRequest, opts ...grpc.CallOption) (*ListWebhookDeliveriesResponse, error)
+	// GetSmtpSettings 平台级 SMTP 设置只读面（admin scope；设计 §8.3）：
+	// 密码只回指纹（明文 sha256 前 8 hex），绝不回明文。全部 email 端点共
+	// 用这一份设置（通道设置与端点解耦）。
+	GetSmtpSettings(ctx context.Context, in *GetSmtpSettingsRequest, opts ...grpc.CallOption) (*GetSmtpSettingsResponse, error)
+	// UpdateSmtpSettings 全量保存平台级 SMTP 设置（PUT 语义：请求即新状态，
+	// 空 password/username 回落空值；设计 §8.3）。密码明文入站（TLS 传输面）
+	// → envelope 加密落库；审计 notify.smtp_changed（只落审计不落事件）。
+	UpdateSmtpSettings(ctx context.Context, in *UpdateSmtpSettingsRequest, opts ...grpc.CallOption) (*UpdateSmtpSettingsResponse, error)
+	// TestSmtp SMTP 探针（admin scope；设计 §8.3）：对候选（未保存也能测）
+	// 或已存配置发测试邮件到指定收件地址——真实 SMTP 往返。不落台账（连通
+	// 性检查不是投递事实）。
+	TestSmtp(ctx context.Context, in *TestSmtpRequest, opts ...grpc.CallOption) (*TestSmtpResponse, error)
 }
 
 type notificationsServiceClient struct {
@@ -163,26 +189,62 @@ func (c *notificationsServiceClient) ListWebhookDeliveries(ctx context.Context, 
 	return out, nil
 }
 
+func (c *notificationsServiceClient) GetSmtpSettings(ctx context.Context, in *GetSmtpSettingsRequest, opts ...grpc.CallOption) (*GetSmtpSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSmtpSettingsResponse)
+	err := c.cc.Invoke(ctx, NotificationsService_GetSmtpSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *notificationsServiceClient) UpdateSmtpSettings(ctx context.Context, in *UpdateSmtpSettingsRequest, opts ...grpc.CallOption) (*UpdateSmtpSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateSmtpSettingsResponse)
+	err := c.cc.Invoke(ctx, NotificationsService_UpdateSmtpSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *notificationsServiceClient) TestSmtp(ctx context.Context, in *TestSmtpRequest, opts ...grpc.CallOption) (*TestSmtpResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestSmtpResponse)
+	err := c.cc.Invoke(ctx, NotificationsService_TestSmtp_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NotificationsServiceServer is the server API for NotificationsService service.
 // All implementations must embed UnimplementedNotificationsServiceServer
 // for forward compatibility.
 //
-// NotificationsService 是通知 Webhook 订阅/投递面（E6 观测专项设计 §5，
-// W5-S4；V2-6 Webhook 首发——POST + 重试 + 事件订阅）。
+// NotificationsService 是通知订阅/投递面（E6 观测专项设计 §5 + §8 通道
+// 扩展，W5-S4 首发 / W4-S3 扩 slack+email 通道；V2-6 Webhook 首发——POST
+// + 重试 + 事件订阅）。
 //
-// 模型：端点（url + 平台生成的 HMAC 签名密钥 + 订阅模式集）订阅平台事件
-// 流（glob 模式，`*` = 全订）；投递器（internal/notify lynx service，进程
-// 内消费者——与 WatchEvents 平行，不经 token/流机制）按事件 seq 游标轮询
-// events 表，匹配端点后 POST JSON + 签名头（接收方可验签 + 5min 窗防重
-// 放）。失败退避 30s/5m 重试，3 次尝试后终态 failed（设计 §5.2）。
+// 模型：端点（type ∈ {webhook,slack,email} + 订阅模式集）订阅平台事件流
+// （glob 模式，`*` = 全订）；投递器（internal/notify lynx service，进程内
+// 消费者——与 WatchEvents 平行，不经 token/流机制）按事件 seq 游标轮询
+// events 表，匹配端点后按通道类型投递：webhook = POST JSON + 签名头
+// （接收方可验签 + 5min 窗防重放）；slack = POST {"text"}（Incoming
+// Webhook，URL 即凭据，平台不加 HMAC）；email = SMTP 投递（平台级一份
+// notify.smtp.* 设置，密码 envelope 加密只写不读——读面只出指纹）。失败
+// 退避 30s/5m 重试，3 次尝试后终态 failed（设计 §5.2/§8.1 通道表）。
 //
-// 红线（§5.2）：**通知自身零事件**——投递失败不 emitted 事件（防自激励
-// 环），失败可见面 = 投递台账（ListWebhookDeliveries）+ system status
-// notifications 组件红 + Console 卡；订阅 `*` 不会回环。
+// 红线（§5.2/§8.4）：**通知自身零事件**——投递失败不 emitted 事件（防
+// 自激励环），失败可见面 = 投递台账（ListWebhookDeliveries）+ system
+// status notifications 组件红 + Console 卡；订阅 `*` 不会回环；
+// notify.smtp_changed 只落审计不落事件。
 //
-// secret 纪律：密钥平台生成（32B base64），envelope 加密落库；明文只在
-// CreateWebhookEndpoint / RotateWebhookSecret 响应**一次性**返回，读面
-// 只出 sha256 前 8 hex 指纹（s3 卡同口径）。
+// secret 纪律：签名密钥平台生成（32B base64），envelope 加密落库；明文
+// 只在 CreateWebhookEndpoint / RotateWebhookSecret 响应**一次性**返回，
+// 读面只出 sha256 前 8 hex 指纹（s3 卡同口径）。SMTP 密码同理：明文只写
+// 不读，读面只出指纹。
 type NotificationsServiceServer interface {
 	// ListWebhookEndpoints 端点清单（read scope；无敏感投影）。
 	ListWebhookEndpoints(context.Context, *ListWebhookEndpointsRequest) (*ListWebhookEndpointsResponse, error)
@@ -203,10 +265,27 @@ type NotificationsServiceServer interface {
 	// TestWebhook 发送 type=test 载荷（admin scope；设计 §5.2）：结构同真实
 	// 事件、验签同链路——验证连通与验签配置。同步等待单次投递结果（10s
 	// 预算）；不落台账（连通性检查不是投递事实）。
+	//
+	// W4-S3 语义扩为按端点类型试发（TestEndpoint 语义——email 试发收件 =
+	// 端点 target 地址；slack 载荷 = {"text"} 形态）。RPC 名保留 TestWebhook
+	// ——buf breaking FILE 门禁禁 RPC/消息删除（契约版本化纪律 §2.8），
+	// 线格式重命名随下一契约版本评估；CLI `notifications test` 即本语义。
 	TestWebhook(context.Context, *TestWebhookRequest) (*TestWebhookResponse, error)
 	// ListWebhookDeliveries 投递台账（read scope）：按端点/状态过滤，最新
 	// 在前——重试路径与终败的诚实可见面。
 	ListWebhookDeliveries(context.Context, *ListWebhookDeliveriesRequest) (*ListWebhookDeliveriesResponse, error)
+	// GetSmtpSettings 平台级 SMTP 设置只读面（admin scope；设计 §8.3）：
+	// 密码只回指纹（明文 sha256 前 8 hex），绝不回明文。全部 email 端点共
+	// 用这一份设置（通道设置与端点解耦）。
+	GetSmtpSettings(context.Context, *GetSmtpSettingsRequest) (*GetSmtpSettingsResponse, error)
+	// UpdateSmtpSettings 全量保存平台级 SMTP 设置（PUT 语义：请求即新状态，
+	// 空 password/username 回落空值；设计 §8.3）。密码明文入站（TLS 传输面）
+	// → envelope 加密落库；审计 notify.smtp_changed（只落审计不落事件）。
+	UpdateSmtpSettings(context.Context, *UpdateSmtpSettingsRequest) (*UpdateSmtpSettingsResponse, error)
+	// TestSmtp SMTP 探针（admin scope；设计 §8.3）：对候选（未保存也能测）
+	// 或已存配置发测试邮件到指定收件地址——真实 SMTP 往返。不落台账（连通
+	// 性检查不是投递事实）。
+	TestSmtp(context.Context, *TestSmtpRequest) (*TestSmtpResponse, error)
 	mustEmbedUnimplementedNotificationsServiceServer()
 }
 
@@ -240,6 +319,15 @@ func (UnimplementedNotificationsServiceServer) TestWebhook(context.Context, *Tes
 }
 func (UnimplementedNotificationsServiceServer) ListWebhookDeliveries(context.Context, *ListWebhookDeliveriesRequest) (*ListWebhookDeliveriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListWebhookDeliveries not implemented")
+}
+func (UnimplementedNotificationsServiceServer) GetSmtpSettings(context.Context, *GetSmtpSettingsRequest) (*GetSmtpSettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSmtpSettings not implemented")
+}
+func (UnimplementedNotificationsServiceServer) UpdateSmtpSettings(context.Context, *UpdateSmtpSettingsRequest) (*UpdateSmtpSettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateSmtpSettings not implemented")
+}
+func (UnimplementedNotificationsServiceServer) TestSmtp(context.Context, *TestSmtpRequest) (*TestSmtpResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestSmtp not implemented")
 }
 func (UnimplementedNotificationsServiceServer) mustEmbedUnimplementedNotificationsServiceServer() {}
 func (UnimplementedNotificationsServiceServer) testEmbeddedByValue()                              {}
@@ -406,6 +494,60 @@ func _NotificationsService_ListWebhookDeliveries_Handler(srv interface{}, ctx co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NotificationsService_GetSmtpSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSmtpSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationsServiceServer).GetSmtpSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationsService_GetSmtpSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationsServiceServer).GetSmtpSettings(ctx, req.(*GetSmtpSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NotificationsService_UpdateSmtpSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateSmtpSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationsServiceServer).UpdateSmtpSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationsService_UpdateSmtpSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationsServiceServer).UpdateSmtpSettings(ctx, req.(*UpdateSmtpSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NotificationsService_TestSmtp_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestSmtpRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NotificationsServiceServer).TestSmtp(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NotificationsService_TestSmtp_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NotificationsServiceServer).TestSmtp(ctx, req.(*TestSmtpRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NotificationsService_ServiceDesc is the grpc.ServiceDesc for NotificationsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -444,6 +586,18 @@ var NotificationsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListWebhookDeliveries",
 			Handler:    _NotificationsService_ListWebhookDeliveries_Handler,
+		},
+		{
+			MethodName: "GetSmtpSettings",
+			Handler:    _NotificationsService_GetSmtpSettings_Handler,
+		},
+		{
+			MethodName: "UpdateSmtpSettings",
+			Handler:    _NotificationsService_UpdateSmtpSettings_Handler,
+		},
+		{
+			MethodName: "TestSmtp",
+			Handler:    _NotificationsService_TestSmtp_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

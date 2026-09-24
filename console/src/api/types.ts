@@ -159,7 +159,7 @@ export type SetMetricsModeResponse = Schemas["v1SetMetricsModeResponse"];
 /** metrics.mode 词表（proto SetMetricsModeRequest.mode 消费侧词表）。 */
 export type MetricsMode = "unset" | "on";
 
-// ── notifications（E6 W5-S4 通知 Webhook；observability §5）──────────────
+// ── notifications（E6 W5-S4 通知 Webhook；observability §5 + §8 通道扩展）──
 
 export type WebhookEndpointView = Schemas["v1WebhookEndpointView"];
 export type ListWebhookEndpointsResponse = Schemas["v1ListWebhookEndpointsResponse"];
@@ -168,9 +168,19 @@ export type CreateWebhookEndpointResponse = Schemas["v1CreateWebhookEndpointResp
 export type UpdateWebhookEndpointResponse = Schemas["v1UpdateWebhookEndpointResponse"];
 export type DeleteWebhookEndpointResponse = Schemas["v1DeleteWebhookEndpointResponse"];
 export type RotateWebhookSecretResponse = Schemas["v1RotateWebhookSecretResponse"];
+// W4-S3：RPC 名沿契约版本化门禁保留 TestWebhook，语义扩为按端点通道类型
+// 试发（webhook 签名 POST / slack {"text"} / email SMTP——observability §8.2）。
 export type TestWebhookResponse = Schemas["v1TestWebhookResponse"];
 export type WebhookDeliveryView = Schemas["v1WebhookDeliveryView"];
 export type ListWebhookDeliveriesResponse = Schemas["v1ListWebhookDeliveriesResponse"];
+// 平台级 SMTP 设置面（W4-S3，observability §8.3：密码只写不读——读面只出指纹）。
+export type SmtpSettingsView = Schemas["v1SmtpSettingsView"];
+export type GetSmtpSettingsResponse = Schemas["v1GetSmtpSettingsResponse"];
+export type UpdateSmtpSettingsResponse = Schemas["v1UpdateSmtpSettingsResponse"];
+export type TestSmtpResponse = Schemas["v1TestSmtpResponse"];
+
+/** 通道类型词表（proto type 消费侧词表；缺省 webhook——存量端点升级即 webhook）。 */
+export type WebhookChannelType = "webhook" | "slack" | "email";
 
 /** 投递状态词表（proto status 过滤消费侧词表；failed = 终态）。 */
 export type WebhookDeliveryStatus = "pending" | "ok" | "failed";

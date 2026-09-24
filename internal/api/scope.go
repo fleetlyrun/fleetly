@@ -157,12 +157,15 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.SecretsService/SetSecret":    ScopeAdmin,
 	"/fleetly.server.v1.SecretsService/ListSecrets":  ScopeRead,
 	"/fleetly.server.v1.SecretsService/RemoveSecret": ScopeAdmin,
-	// NotificationsService（E6 W5-S4，observability §5）：读面 = read（端点
-	// 视图与投递台账是事实面——指纹非凭据，与 token 哈希前缀同口径）；写面
-	// = admin（端点是平台级凭据面——创建/更新/删除/轮换/测试与 s3 设置同
-	// 级；secret 明文只在创建/轮换响应一次性返回）。W3-S2 起用户 principal
-	// 另须 is_platform_admin（requirePlatformWriteFace 挂五个写面 handler
-	// ——rbac-teams §3.2「通知 → 仅平台管理员」扩全；机具令牌沿 scope 门）。
+	// NotificationsService（E6 W5-S4，observability §5；W4-S3 通道扩展 §8）：
+	// 读面 = read（端点视图与投递台账是事实面——指纹非凭据，与 token 哈希
+	// 前缀同口径）；写面 = admin（端点是平台级凭据面——创建/更新/删除/轮
+	// 换/测试与 s3 设置同级；secret 明文只在创建/轮换响应一次性返回；SMTP
+	// 设置面整体 admin——密码明文只写不读与 TestSmtp 探针消耗平台凭据，
+	// GetSmtpSettings 的读面含凭据指纹）。W3-S2 起用户 principal 另须
+	// is_platform_admin（requirePlatformWriteFace 挂全部写面 + SMTP 三 RPC
+	// handler——rbac-teams §3.2「通知 → 仅平台管理员」扩全；机具令牌沿
+	// scope 门）。
 	"/fleetly.server.v1.NotificationsService/ListWebhookEndpoints":  ScopeRead,
 	"/fleetly.server.v1.NotificationsService/GetWebhookEndpoint":    ScopeRead,
 	"/fleetly.server.v1.NotificationsService/ListWebhookDeliveries": ScopeRead,
@@ -171,6 +174,9 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.NotificationsService/DeleteWebhookEndpoint": ScopeAdmin,
 	"/fleetly.server.v1.NotificationsService/RotateWebhookSecret":   ScopeAdmin,
 	"/fleetly.server.v1.NotificationsService/TestWebhook":           ScopeAdmin,
+	"/fleetly.server.v1.NotificationsService/GetSmtpSettings":       ScopeAdmin,
+	"/fleetly.server.v1.NotificationsService/UpdateSmtpSettings":    ScopeAdmin,
+	"/fleetly.server.v1.NotificationsService/TestSmtp":              ScopeAdmin,
 	// ExecService（E7 W5-S6，web-terminal §2.4）：**整体 terminal scope**——
 	// 独立 scope（默认仅 admin；read/deploy 不蕴含；admin 蕴含，auth.go
 	// containsScope）。终端是任意命令执行面，权限与 deploy 的「发布自身声

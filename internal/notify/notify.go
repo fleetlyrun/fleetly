@@ -458,14 +458,35 @@ func (m *Manager) attempt(ctx context.Context, job deliveryJob) {
 		}
 		return
 	}
-	secret, err := m.box.Decrypt([]byte(ep.SecretCipher))
+	// 通道分发（设计 §8.1）：webhook 需要签名密钥（解密失败按失败计尝试
+	// ——平台密钥面故障不该无限占用重试预算）；slack 的鉴权是 URL 本身、
+	// email 的凭据在平台级 SMTP 设置——都不消费端点级签名密钥。
+	epCh := Endpoint{Type: ep.Type, URL: ep.URL, Target: ep.Target}
+	var smtpCfg *SmtpConfig
+	if ep.Type == state.WebhookChannelWebhook || ep.Type == "" {
+		secret, err := m.box.Decrypt([]byte(ep.SecretCipher))
+		if err != nil {
+			// 密钥解密失败 = 平台密钥面故障（非接收方故障）：按失败计尝试——
+			// 密钥损坏的端点不该无限占用重试预算；终态后由台账可见。
+			m.recordFailure(bookCtx, d, 0, "secret decrypt failed (platform key error)")
+			return
+		}
+		epCh.Secret = secret
+	}
+	if ep.Type == state.WebhookChannelEmail {
+		cfg, err := m.smtpConfig(bookCtx)
+		if err != nil {
+			m.recordFailure(bookCtx, d, 0, "smtp settings unavailable: "+err.Error())
+			return
+		}
+		smtpCfg = cfg
+	}
+	payload, err := m.eventPayload(ctx, d.EventSeq)
 	if err != nil {
-		// 密钥解密失败 = 平台密钥面故障（非接收方故障）：按失败计尝试——
-		// 密钥损坏的端点不该无限占用重试预算；终态后由台账可见。
-		m.recordFailure(bookCtx, d, 0, "secret decrypt failed (platform key error)")
+		m.recordFailure(bookCtx, d, 0, "event lookup failed: "+err.Error())
 		return
 	}
-	ok, code, errText := m.post(ctx, ep.URL, secret, d.EventSeq)
+	ok, code, errText := deliver(ctx, m.client, epCh, payload, smtpCfg, m.cfg.attemptTimeout())
 	if ok {
 		if err := m.store.RecordWebhookAttempt(bookCtx, job.deliveryID, state.WebhookAttemptResult{
 			OK:           true,
@@ -476,6 +497,27 @@ func (m *Manager) attempt(ctx context.Context, job deliveryJob) {
 		return
 	}
 	m.recordFailure(bookCtx, d, code, errText)
+}
+
+// smtpConfig 读取并解密平台级 SMTP 设置（email 通道投递前现读——保存即对
+// 下一次投递生效；密码解密失败与未配置同面呈现，不带密码材料）。
+func (m *Manager) smtpConfig(ctx context.Context) (*SmtpConfig, error) {
+	in, err := m.store.LoadSmtpSettings(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if in.Host == "" || in.Port == 0 || in.From == "" {
+		return nil, errors.New("notify.smtp settings are incomplete (host/port/from are required)")
+	}
+	cfg := &SmtpConfig{Host: in.Host, Port: in.Port, Username: in.Username, From: in.From}
+	if in.PasswordCipher != "" {
+		plain, err := m.box.Decrypt([]byte(in.PasswordCipher))
+		if err != nil {
+			return nil, errors.New("smtp password decrypt failed (platform key error)")
+		}
+		cfg.Password = string(plain)
+	}
+	return cfg, nil
 }
 
 // recordFailure 记失败尝试：未达预算 → pending + 退避定时；达预算 → 终态
@@ -498,21 +540,6 @@ func (m *Manager) recordFailure(ctx context.Context, d state.WebhookDelivery, co
 		m.log.Warn("notify: delivery terminally failed (no event emitted by design; see the delivery ledger and the notifications component)",
 			"delivery", d.ID, "endpoint", d.EndpointID, "event_seq", d.EventSeq, "attempts", d.Attempts+1, "error", errText)
 	}
-}
-
-// post 执行一次带签名的 POST（2xx = ok；非 2xx 与传输错误均失败——非 2xx
-// 记响应码，传输错误 code=0）。链路与 SendTestPayload 共用 sendPayload
-// （同签名/头/超时/Close 语义——TestWebhook 验签配置的验证才有意义）。
-func (m *Manager) post(ctx context.Context, rawURL string, secret []byte, eventSeq int64) (bool, int, string) {
-	payload, err := m.eventPayload(ctx, eventSeq)
-	if err != nil {
-		return false, 0, "event lookup failed: " + err.Error()
-	}
-	body, err := MarshalPayload(payload)
-	if err != nil {
-		return false, 0, "payload marshal failed: " + err.Error()
-	}
-	return sendPayload(ctx, m.client, rawURL, secret, body, m.cfg.attemptTimeout())
 }
 
 // eventPayload 取事件行构造投递载荷（EventsSince 的 seq 定位读——游标语义

@@ -1576,8 +1576,59 @@ export interface paths {
          * TestWebhook 发送 type=test 载荷（admin scope；设计 §5.2）：结构同真实
          *     事件、验签同链路——验证连通与验签配置。同步等待单次投递结果（10s
          *     预算）；不落台账（连通性检查不是投递事实）。
+         * @description W4-S3 语义扩为按端点类型试发（TestEndpoint 语义——email 试发收件 =
+         *     端点 target 地址；slack 载荷 = {"text"} 形态）。RPC 名保留 TestWebhook
+         *     ——buf breaking FILE 门禁禁 RPC/消息删除（契约版本化纪律 §2.8），
+         *     线格式重命名随下一契约版本评估；CLI `notifications test` 即本语义。
          */
         post: operations["NotificationsService_TestWebhook"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/smtp": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetSmtpSettings 平台级 SMTP 设置只读面（admin scope；设计 §8.3）：
+         *     密码只回指纹（明文 sha256 前 8 hex），绝不回明文。全部 email 端点共
+         *     用这一份设置（通道设置与端点解耦）。
+         */
+        get: operations["NotificationsService_GetSmtpSettings"];
+        /**
+         * UpdateSmtpSettings 全量保存平台级 SMTP 设置（PUT 语义：请求即新状态，
+         *     空 password/username 回落空值；设计 §8.3）。密码明文入站（TLS 传输面）
+         *     → envelope 加密落库；审计 notify.smtp_changed（只落审计不落事件）。
+         */
+        put: operations["NotificationsService_UpdateSmtpSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/notifications/smtp/test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * TestSmtp SMTP 探针（admin scope；设计 §8.3）：对候选（未保存也能测）
+         *     或已存配置发测试邮件到指定收件地址——真实 SMTP 往返。不落台账（连通
+         *     性检查不是投递事实）。
+         */
+        post: operations["NotificationsService_TestSmtp"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3293,7 +3344,10 @@ export interface components {
         NotificationsServiceUpdateWebhookEndpointBody: {
             /** 改名（可选）。 */
             name?: string;
-            /** 改 URL（可选）。 */
+            /**
+             * 改 URL（可选；webhook/slack 非空——形状在服务端校验；显式空串仅允许
+             *     伴随换通道到 email，单独置空被服务端拒绝）。
+             */
             url?: string;
             /**
              * 改订阅模式集（可选——repeated 无 optional 语义：空 = 不变，非空 =
@@ -3302,16 +3356,37 @@ export interface components {
             event_patterns?: string[];
             /** 启停（可选——enabled 订阅开关；停用端点暂停投递不删台账）。 */
             enabled?: boolean;
+            /**
+             * 通道类型（可选；词表同 Create——组合形状在服务端对「更新后的最终
+             *     形态」校验）。
+             */
+            type?: string;
+            /**
+             * email 通道收件地址（可选；非空必须合法邮箱形状，显式空串仅允许伴随
+             *     换通道离开 email）。
+             */
+            target?: string;
         };
         v1CreateWebhookEndpointRequest: {
             /** 端点名（唯一；1..64，字母数字开头）。 */
             name?: string;
-            /** 接收端 URL（http/https；host 必填；不带 userinfo）。 */
+            /**
+             * 接收端 URL（webhook/slack 通道必填；http/https；host 必填；不带
+             *     userinfo。email 通道必须为空——投递走平台 SMTP 设置）。
+             */
             url?: string;
             /** 订阅模式集（非空；每项 1..128 chars of [a-z0-9._-*]；服务端去重保序）。 */
             event_patterns?: string[];
             /** 创建即启用（缺省 true）。 */
             enabled?: boolean;
+            /**
+             * 通道类型（webhook | slack | email；空串 = webhook 缺省。组合形状
+             *     [url/target 互斥、email target 必须合法邮箱] 在服务端校验——跨字段
+             *     条件不做 protovalidate CEL，400 形状门 + state 层白名单双闸）。
+             */
+            type?: string;
+            /** email 通道收件地址（to；非 email 通道必须为空）。 */
+            target?: string;
         };
         v1CreateWebhookEndpointResponse: {
             endpoint?: components["schemas"]["v1WebhookEndpointView"];
@@ -3320,6 +3395,9 @@ export interface components {
         };
         v1DeleteWebhookEndpointResponse: {
             id?: string;
+        };
+        v1GetSmtpSettingsResponse: {
+            settings?: components["schemas"]["v1SmtpSettingsView"];
         };
         v1GetWebhookEndpointResponse: {
             endpoint?: components["schemas"]["v1WebhookEndpointView"];
@@ -3336,17 +3414,90 @@ export interface components {
             /** 新密钥指纹（读面对齐）。 */
             secret_fingerprint?: string;
         };
-        /** TestWebhookResponse 是 type=test 载荷的同步投递结论（设计 §5.2）。 */
-        v1TestWebhookResponse: {
-            /** 2xx 到手 = true。 */
+        /**
+         * SmtpSettingsView 是 notify.smtp.* 设置的只读投影：密码只出指纹（明文与
+         *     密文永不回读——S3 secret 卡同口径）。
+         */
+        v1SmtpSettingsView: {
+            /** SMTP 中继主机（空 = 未设置）。 */
+            host?: string;
+            /**
+             * SMTP 端口（1..65535；未设置 = 0）。
+             * Format: int32
+             */
+            port?: number;
+            /** 认证用户名（可选——无认证中继为空）。 */
+            username?: string;
+            /** 密码指纹（明文 sha256 前 8 hex；空 = 未设置）。 */
+            password_fingerprint?: string;
+            /** 信封发件地址（From）。 */
+            from?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        v1TestSmtpRequest: {
+            /** 测试邮件收件地址（必填；合法邮箱形状）。 */
+            to?: string;
+            /**
+             * 候选配置（未保存也能测——S3 探针同语义）：全部候选字段为空时测已存
+             *     配置。候选密码明文只在本请求内使用，绝不落库。
+             */
+            host?: string;
+            /** Format: int32 */
+            port?: number;
+            username?: string;
+            password?: string;
+            from?: string;
+        };
+        /**
+         * TestSmtpResponse 是 SMTP 探针的同步结论（ok = 邮件被中继接受；error =
+         *     失败步单行摘要，密码材料零出现）。
+         */
+        v1TestSmtpResponse: {
             ok?: boolean;
             /**
-             * HTTP 响应码（传输失败 = 0）。
+             * SMTP 会话完成码（250 语义；未达 DATA 应答 = 0）。
              * Format: int32
              */
             status_code?: number;
             /** 失败摘要（单行化；成功为空）。 */
             error?: string;
+        };
+        /**
+         * TestWebhookResponse 是 type=test 载荷按通道类型试发的同步结论（设计
+         *     §5.2/§8.2：webhook/slack = HTTP 语义；email = SMTP 会话语义）。
+         */
+        v1TestWebhookResponse: {
+            /** 投递被接收方接受（webhook/slack 2xx；email SMTP 会话完成）。 */
+            ok?: boolean;
+            /**
+             * HTTP 响应码（webhook/slack；传输失败 = 0。email 通道不出码）。
+             * Format: int32
+             */
+            status_code?: number;
+            /** 失败摘要（单行化；成功为空）。 */
+            error?: string;
+        };
+        v1UpdateSmtpSettingsRequest: {
+            /** SMTP 中继主机（必填）。 */
+            host?: string;
+            /**
+             * SMTP 端口（1..65535）。
+             * Format: int32
+             */
+            port?: number;
+            /** 认证用户名（可选；空 = 无认证中继）。 */
+            username?: string;
+            /**
+             * 密码明文（**只写不读**——空 = 清除已存密码；envelope 加密落库，读面
+             *     只出指纹）。
+             */
+            password?: string;
+            /** 信封发件地址（From；必须合法邮箱形状）。 */
+            from?: string;
+        };
+        v1UpdateSmtpSettingsResponse: {
+            settings?: components["schemas"]["v1SmtpSettingsView"];
         };
         v1UpdateWebhookEndpointResponse: {
             endpoint?: components["schemas"]["v1WebhookEndpointView"];
@@ -3392,8 +3543,8 @@ export interface components {
             id?: string;
             name?: string;
             /**
-             * 接收端 URL（操作员自配——单操作员信任模型，无 SSRF 过滤，设计 §5.1
-             *     诚实口径；https 建议但不强制）。
+             * 接收端 URL（webhook/slack 通道；操作员自配——单操作员信任模型，无
+             *     SSRF 过滤，设计 §5.1 诚实口径；https 建议但不强制。email 通道恒空）。
              */
             url?: string;
             /** 订阅模式集（事件名 glob；`*` = 全订）。 */
@@ -3405,6 +3556,16 @@ export interface components {
             created_at?: string;
             /** Format: date-time */
             updated_at?: string;
+            /**
+             * 通道类型（webhook | slack | email；缺省 webhook——存量端点升级即
+             *     webhook，行为逐字不变，设计 §8.1）。
+             */
+            type?: string;
+            /**
+             * email 通道收件地址（to；webhook/slack 恒空——设计 §8.1 通道与端点
+             *     解耦：投递凭据在平台级 SMTP 设置面，端点只带收件地址）。
+             */
+            target?: string;
         };
         v1CreateTerminalTicketRequest: {
             /** 目标应用名。 */
@@ -6917,6 +7078,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1TestWebhookResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_GetSmtpSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetSmtpSettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_UpdateSmtpSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1UpdateSmtpSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateSmtpSettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    NotificationsService_TestSmtp: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1TestSmtpRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TestSmtpResponse"];
                 };
             };
             /** @description An unexpected error response. */

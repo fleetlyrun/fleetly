@@ -43,7 +43,7 @@ import (
 // 工具面：pg_dump 16.15/pg_restore/psql/pg_isready/pg_ctl/gosu（postgres
 // 基底自带）、redis-cli、restic 0.19.1。重建随平台 release 由
 // .github/workflows/dbtools.yml 承载。
-const DefaultDatabaseToolsImage = "ghcr.io/fleetlyrun/dbtools:v0.2.1-dbtools.1@sha256:472e8a5dd6b7ab2722caa996f18fec956203f99aafec0dd4c10cb82d262e866b"
+const DefaultDatabaseToolsImage = "ghcr.io/fleetlyrun/dbtools:v0.3.0-dbtools.1@sha256:2b9288a9d844c1a924d9a52c2745861056c28e2ee2caabc6dfd9db313775bd96"
 
 // 备份计划平台缺省（§5.4 配置键 databases.backup_*；实例 settings 零值
 // 字段回落——平台缺省只在此处为常量，不进 config.yaml：备份计划属实例

@@ -174,9 +174,9 @@ func TestWebhookUpdateEnableDisableAndRotate(t *testing.T) {
 	}
 }
 
-// TestWebhookTestEndpointSignsCorrectly：TestWebhook 用库内解密的密钥按契
-// 算法签名——接收侧（测试服务器）用创建响应的明文独立重算 HMAC 验签
-// （真实重算，非 grep 签名存在——与 e2e 同口径）。
+// TestWebhookTestEndpointSignsCorrectly：TestEndpoint（webhook 通道）用库
+// 内解密的密钥按契算法签名——接收侧（测试服务器）用创建响应的明文独立
+// 重算 HMAC 验签（真实重算，非 grep 签名存在——与 e2e 同口径）。
 func TestWebhookTestEndpointSignsCorrectly(t *testing.T) {
 	_, _, cl, token := newNotificationsTestEnv(t)
 
