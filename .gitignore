@@ -65,3 +65,6 @@ bootstrap-token
 .w3out/
 .w4out/
 .w5out/
+
+# e2e 本地工作产物（中断跑批的日志/二进制）
+.e2ebin/
