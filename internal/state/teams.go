@@ -746,84 +746,109 @@ func (s *Store) RevokeInvite(ctx context.Context, inviteID, actorUserID, actorTo
 // 消费/未吊销/未过期（任一不满足或查无此 token → ErrInviteInvalid，不泄漏
 // 具体状态）→ 同事务落 team_members 行（已是成员则保持现有角色，不重复
 // 插入不改角色）+ 置 accepted_at。与审计（team.invite_accepted）同事务
-// fail-closed。
+// fail-closed。校验/消费两段经 lookupValidInviteTx / consumeInviteRowTx
+// 承载——注册组合原语（RegisterUser 携带 InviteToken，v0.3 W3-S4）复用
+// 同一原语对，消费侧审计与事件不存在第二套口径。
 func (s *Store) ConsumeInvite(ctx context.Context, plaintextToken, userID, actorUserID, actorTokenID string) (TeamInvite, error) {
 	if plaintextToken == "" || userID == "" {
 		return TeamInvite{}, ErrInviteInvalid
 	}
-	hash := HashToken(plaintextToken)
 	var out TeamInvite
 	err := s.InTx(ctx, func(tx *Tx) error {
-		var (
-			inv        TeamInvite
-			expires    int64
-			created    int64
-			acceptedAt sql.NullInt64
-			revokedAt  sql.NullInt64
-		)
-		err := tx.QueryRowContext(ctx, `SELECT id, team_id, email, role, expires_at, created_by, created_at, accepted_at, revoked_at
-			FROM team_invites WHERE token_hash = ?`, hash).
-			Scan(&inv.ID, &inv.TeamID, &inv.Email, &inv.Role, &expires, &inv.CreatedBy, &created, &acceptedAt, &revokedAt)
+		inv, err := lookupValidInviteTx(ctx, tx, plaintextToken)
 		if err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return ErrInviteInvalid
-			}
-			return fmt.Errorf("state: scan invite: %w", err)
-		}
-		inv.CreatedAt = time.Unix(0, created).UTC()
-		if acceptedAt.Valid || revokedAt.Valid || time.Unix(0, expires).UTC().Before(time.Now().UTC()) {
-			return ErrInviteInvalid
-		}
-		// 已是成员：不重复插入、不改现有角色（invite 视为已消费）。
-		now := nowNano()
-		res, err := tx.ExecContext(ctx,
-			`INSERT INTO team_members (team_id, user_id, role, created_at) VALUES (?, ?, ?, ?)
-			ON CONFLICT (team_id, user_id) DO NOTHING`, inv.TeamID, userID, inv.Role, now)
-		if err != nil {
-			return fmt.Errorf("state: insert membership on invite accept: %w", err)
-		}
-		if n, _ := res.RowsAffected(); n > 0 {
-			if err := tx.WriteAudit(ctx, AuditEntry{
-				Actor:        auditActor(actorUserID),
-				ActorTokenID: actorTokenID,
-				Action:       "team.member_added",
-				Target:       "team:" + inv.TeamID,
-				Result:       "ok",
-				DiffSummary:  DiffSummary("user_id", userID, "role", inv.Role, "via", "invite:"+inv.ID),
-			}); err != nil {
-				return err
-			}
-		}
-		if _, err := tx.ExecContext(ctx,
-			`UPDATE team_invites SET accepted_at = ? WHERE id = ?`, now, inv.ID); err != nil {
-			return fmt.Errorf("state: mark invite accepted: %w", err)
-		}
-		if err := tx.WriteAudit(ctx, AuditEntry{
-			Actor:        auditActor(actorUserID),
-			ActorTokenID: actorTokenID,
-			Action:       "team.invite_accepted",
-			Target:       "invite:" + inv.ID,
-			Result:       "ok",
-			DiffSummary:  DiffSummary("team_id", inv.TeamID, "user_id", userID, "role", inv.Role),
-		}); err != nil {
 			return err
 		}
-		if _, err := tx.AppendEvent(ctx, Event{
-			Name:    "invite.accepted",
-			Subject: "invite:" + inv.ID,
-			Payload: DiffSummary("team_id", inv.TeamID, "user_id", userID, "role", inv.Role),
-		}); err != nil {
-			return err
-		}
-		inv.ExpiresAt = time.Unix(0, expires).UTC()
-		inv.AcceptedAt = time.Unix(0, now).UTC()
-		out = inv
-		return nil
+		out, err = consumeInviteRowTx(ctx, tx, inv, userID, actorUserID, actorTokenID)
+		return err
 	})
 	if err != nil {
 		return TeamInvite{}, err
 	}
 	return out, nil
+}
+
+// lookupValidInviteTx 在事务内按明文 token 定位邀请行并校验可消费性
+// （token 哈希命中 + 未消费/未吊销/未过期——任一不满足或查无此 token →
+// ErrInviteInvalid，不泄漏具体状态）。只读谓词——写面在 consumeInviteRowTx；
+// 消费（ConsumeInvite）与注册（RegisterUser 豁免注册窗判定，register.go）
+// 两侧共用，保证「窗口豁免判定」与「用户写入」在同一事务内现查 team_invites。
+func lookupValidInviteTx(ctx context.Context, tx *Tx, plaintextToken string) (TeamInvite, error) {
+	hash := HashToken(plaintextToken)
+	var (
+		inv        TeamInvite
+		expires    int64
+		created    int64
+		acceptedAt sql.NullInt64
+		revokedAt  sql.NullInt64
+	)
+	err := tx.QueryRowContext(ctx, `SELECT id, team_id, email, role, expires_at, created_by, created_at, accepted_at, revoked_at
+		FROM team_invites WHERE token_hash = ?`, hash).
+		Scan(&inv.ID, &inv.TeamID, &inv.Email, &inv.Role, &expires, &inv.CreatedBy, &created, &acceptedAt, &revokedAt)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return TeamInvite{}, ErrInviteInvalid
+		}
+		return TeamInvite{}, fmt.Errorf("state: scan invite: %w", err)
+	}
+	inv.CreatedAt = time.Unix(0, created).UTC()
+	if acceptedAt.Valid || revokedAt.Valid || time.Unix(0, expires).UTC().Before(time.Now().UTC()) {
+		return TeamInvite{}, ErrInviteInvalid
+	}
+	inv.ExpiresAt = time.Unix(0, expires).UTC()
+	return inv, nil
+}
+
+// consumeInviteRowTx 在事务内消费一条已通过 lookupValidInviteTx 校验的
+// 邀请：落 team_members 行（已是成员则保持现有角色，不重复插入不改角色）
+// + 置 accepted_at。与审计（team.member_added via 邀请 / team.invite_accepted）
+// 和事件（invite.accepted）同事务 fail-closed。ConsumeInvite 原语与注册
+// 组合原语（RegisterUser）的唯一写面——注册路径经此消费，审计/事件自然
+// 单落。
+func consumeInviteRowTx(ctx context.Context, tx *Tx, inv TeamInvite, userID, actorUserID, actorTokenID string) (TeamInvite, error) {
+	// 已是成员：不重复插入、不改现有角色（invite 视为已消费）。
+	now := nowNano()
+	res, err := tx.ExecContext(ctx,
+		`INSERT INTO team_members (team_id, user_id, role, created_at) VALUES (?, ?, ?, ?)
+		ON CONFLICT (team_id, user_id) DO NOTHING`, inv.TeamID, userID, inv.Role, now)
+	if err != nil {
+		return TeamInvite{}, fmt.Errorf("state: insert membership on invite accept: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		if err := tx.WriteAudit(ctx, AuditEntry{
+			Actor:        auditActor(actorUserID),
+			ActorTokenID: actorTokenID,
+			Action:       "team.member_added",
+			Target:       "team:" + inv.TeamID,
+			Result:       "ok",
+			DiffSummary:  DiffSummary("user_id", userID, "role", inv.Role, "via", "invite:"+inv.ID),
+		}); err != nil {
+			return TeamInvite{}, err
+		}
+	}
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE team_invites SET accepted_at = ? WHERE id = ?`, now, inv.ID); err != nil {
+		return TeamInvite{}, fmt.Errorf("state: mark invite accepted: %w", err)
+	}
+	if err := tx.WriteAudit(ctx, AuditEntry{
+		Actor:        auditActor(actorUserID),
+		ActorTokenID: actorTokenID,
+		Action:       "team.invite_accepted",
+		Target:       "invite:" + inv.ID,
+		Result:       "ok",
+		DiffSummary:  DiffSummary("team_id", inv.TeamID, "user_id", userID, "role", inv.Role),
+	}); err != nil {
+		return TeamInvite{}, err
+	}
+	if _, err := tx.AppendEvent(ctx, Event{
+		Name:    "invite.accepted",
+		Subject: "invite:" + inv.ID,
+		Payload: DiffSummary("team_id", inv.TeamID, "user_id", userID, "role", inv.Role),
+	}); err != nil {
+		return TeamInvite{}, err
+	}
+	inv.AcceptedAt = time.Unix(0, now).UTC()
+	return inv, nil
 }
 
 // scanTeam 从单行构造 Team。

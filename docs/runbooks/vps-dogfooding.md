@@ -257,8 +257,14 @@ staging 升级收尾波构建(7dc5d2e 同源)后逐票验证:
 **演练产出两修一挂账**:
 - 修①(7082385):**deploy 同名跨项目按设计新建**——S3 实现的「全局按名解析→409 指引 MoveApp」偏差与 D-W0-4 二修矛盾(§8 演练要点直判),ensureApp 改「目标项目内无此名即新建」+回归测试钉死;
 - 修②(0b669d7):CLI deploy 成功后尾查 GetApp 裸名歧义→限定形化;
-- 挂账①:**邀请未注册用户需临时开注册窗**(设计 §3.1「注册即自动 accept」的服务端 invite-token 注册通道未实现,Console 现靠 from-回跳+临时开窗;W3 候选票)。
+- 挂账①:**邀请未注册用户需临时开注册窗**(设计 §3.1「注册即自动 accept」的服务端 invite-token 注册通道未实现,Console 现靠 from-回跳+临时开窗;W3 候选票)。**已收口(W3-S4)**:RegisterRequest 增可选 invite_token——带有效邀请的注册豁免注册窗且同事务自动消费入队(受邀角色),无效 token 拒 E_INVITE_INVALID;关窗邀请注册全链已入 e2e/rbac.sh RB-0 断言。
 脚本侧教训:SetRegistration 是 bool `open`(非字符串);库投影字段 `status`;env 明文=按键 GET `/env/{key}`;`logs search` 的 app 是位置参数;E4 引用声明=`fleetly.databases` label(非 env URL 探测)。
+
+### §13.2 XFF 信任边界(W3-S4 收口,含上游可信代理放开指引)
+
+W1-S2 披露的 XFF 伪造面已收口:gateway 层(newGatewayMuxWithTLS 的 sanitizeForwardedFor)删除入向 `X-Forwarded-For` 头——控制面自身即反代边界,grpc-gateway 随后以真实 TCP 对端地址回填 x-forwarded-for metadata;api 侧 clientIPFromContext 只在 gRPC 对端为环回(=gateway 回拨)时采信该 metadata,远程直连 gRPC 方自带的 XFF metadata 一律不采信(IP 键限流不可伪造;email 键不受影响)。
+
+**上游可信代理形态(如外置 TLS 反代指到 gateway 端口)的放开指引**:当前实现会把代理注入的 XFF 一并清除,全量外部客户端将共享代理地址的注册/登录限流桶——email 键限流仍独立生效(防撞库主防线在),仅 per-IP 维度退化为 per-proxy。如需按代理放行(trusted_proxies 类配置:信任清单内代理注入的 XFF 取最后一个非清单项),属配置面扩展点——现票刻意不发明开关;有真实部署形态需求时按 errcode/config 注释惯例立项,勿在部署侧手工改头绕过(清洗层在进程内,改不了)。
 
 staging 现保持态:fresh v0.3(67c9dc4+两 fix),TLS platform on(证书重签),founder/mate 双用户,demo×2 项目+matedemo+pgshared 库在役;node2 仍 Down(W3-F2 UDP 未放行)。
 

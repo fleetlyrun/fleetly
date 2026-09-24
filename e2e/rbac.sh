@@ -4,6 +4,12 @@
 # fixture 模式：注册 founder→PAT→CLI/REST；REST 会话/PAT 断言经 curl helper
 # 容器，Bearer 认证不依赖 cookie jar 但沿用同一通道）。
 #
+#   RB-0  邀请注册通道（v0.3 W3-S4，设计 §3.1「未注册→注册即自动 accept」）：
+#           a 关窗状态下无 token 注册 → E_REGISTRATION_CLOSED（窗口确已关闭
+#             的承重面）；
+#           b founder 邀请未注册邮箱（viewer）→ 注册携带 invite_token → 200
+#             （豁免注册窗）+ Me 即见受邀队 viewer 角色；
+#           c 无效 token 注册 → E_INVITE_INVALID（不泄漏存在性细节）。
 #   RB-1  角色矩阵抽检（§3.2）：
 #           a 团队 viewer PAT 部署 → 403；
 #           b 团队 developer PAT env 明文读 → 403（owner 正面对照 200）；
@@ -79,6 +85,8 @@ SOLO_EMAIL=solo@rbac-e2e.test
 SOLO_PASS=solo-pass-11
 ADMINK_EMAIL=admink@rbac-e2e.test
 ADMINK_PASS=admink-pass1
+INVNEW_EMAIL=invnew@rbac-e2e.test
+INVNEW_PASS=invnew-pass-1
 
 TEAM=amber
 PROJ_A=proja
@@ -440,6 +448,35 @@ accept_invite devv "$DEVV_EMAIL" developer
 accept_invite viewd "$VIEWD_EMAIL" viewer
 accept_invite admink "$ADMINK_EMAIL" admin
 rl 'amber team members joined via invites (deva=dev viewb=view devv=dev viewd=view admink=admin)'
+
+# ───────── RB-0: 邀请注册通道（v0.3 W3-S4，设计 §3.1）：注册窗在上方已
+#            显式收窗（closed），被邀请的未注册用户经 invite_token 注册。
+# a 无 token 注册 → E_REGISTRATION_CLOSED（此时窗口确已关闭的承重面）。
+req anon POST /v1/auth/register "{\"email\":\"$INVNEW_EMAIL\",\"password\":\"$INVNEW_PASS\"}"
+assert "RB-0a WINDOW_CLOSED_NO_TOKEN_403" $([ "$RC" = 403 ] &&
+    printf '%s' "$BODY" | grep -qE '"code": ?"E_REGISTRATION_CLOSED"' && echo 0 || echo 1) \
+    "closed-window no-token register = $RC body: $BODY"
+
+# b founder 邀请未注册邮箱 → 携带 invite_token 注册 → 200（豁免注册窗），
+#   且 Me 即见受邀队与受邀角色（注册即自动 accept，无需二次 accept 调用）。
+req founder POST "/v1/teams/$TEAM_ID/invites" "{\"email\":\"$INVNEW_EMAIL\",\"role\":\"viewer\"}"
+[ "$RC" = 200 ] || fatal "invite for unregistered user failed: $RC $BODY"
+INVNEW_TOKEN=$(printf '%s' "$BODY" | grep -oE '"token": ?"[^"]*"' | head -1 | cut -d'"' -f4)
+[ -n "$INVNEW_TOKEN" ] || fatal 'invite token missing for unregistered user'
+req invnew POST /v1/auth/register "{\"email\":\"$INVNEW_EMAIL\",\"password\":\"$INVNEW_PASS\",\"invite_token\":\"$INVNEW_TOKEN\"}"
+assert "RB-0b-1 INVITE_REGISTER_WINDOW_EXEMPT_200" $([ "$RC" = 200 ] && echo 0 || echo 1) \
+    "invite registration with closed window = $RC body: $BODY"
+req invnew GET /v1/auth/me ''
+assert "RB-0b-2 INVITE_REGISTER_AUTO_ACCEPT_ROLE" $(printf '%s' "$BODY" | grep -q "\"$TEAM_ID\"" &&
+    printf '%s' "$BODY" | grep -qE '"role": ?"viewer"' && echo 0 || echo 1) \
+    "Me after invite registration = $BODY (want membership in $TEAM_ID with viewer role)"
+
+# c 无效 token 注册 → E_INVITE_INVALID（一次性凭据不泄漏存在性细节；
+#   注册表 HTTP 状态随信封承载）。
+req anon POST /v1/auth/register "{\"email\":\"invbogus@rbac-e2e.test\",\"password\":\"bogus-pass-1\",\"invite_token\":\"bogus-token-value\"}"
+assert "RB-0c INVALID_INVITE_TOKEN_REJECTED" $([ "$RC" = 409 ] &&
+    printf '%s' "$BODY" | grep -qE '"code": ?"E_INVITE_INVALID"' && echo 0 || echo 1) \
+    "invalid invite token register = $RC body: $BODY"
 
 # 项目 proja / projb（owner 专属写面——fixture 正面；default 项目只随注册
 # 建在个人队，团队项目一律显式创建）。

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"net"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
@@ -56,9 +58,27 @@ func newAuthEnv(t *testing.T) *authEnv {
 	return env
 }
 
-// ctxIP 带固定来源 IP 的 ctx（限流双键的 IP 维度可预测）。
+// ctxIP 带固定来源 IP 的 ctx（限流双键的 IP 维度可预测）。bufconn 形态
+// 的 gRPC 对端是 "bufnet"（非环回）——W3-S4 起 clientIPFromContext 只在
+// 环回对端（gateway 回拨形态）采信 x-forwarded-for metadata，bufconn 上
+// 的 XFF 不参与限流键；需要精确控制 IP 键的测试用 peerCtx 直调 handler。
 func ctxIP(ip string) context.Context {
 	return metadata.AppendToOutgoingContext(context.Background(), "x-forwarded-for", ip+":1234")
+}
+
+// peerCtx 构造「对端 + XFF metadata」齐备的直调 handler ctx：loopp 为真
+// 时对端是环回（gateway 回拨形态——XFF 被采信），否则是远程直连形态
+//（XFF 视为客户端可控、不采信）。
+func peerCtx(loop bool, peerIP, xff string) context.Context {
+	ipp := "127.0.0.1"
+	if !loop {
+		ipp = peerIP
+	}
+	base := context.Background()
+	if xff != "" {
+		base = metadata.NewIncomingContext(base, metadata.Pairs("x-forwarded-for", xff))
+	}
+	return peer.NewContext(base, &peer.Peer{Addr: &net.TCPAddr{IP: net.ParseIP(ipp), Port: 43210}})
 }
 
 // register 注册并返回（用户投影, 会话 cookie 值）。捕获响应 header metadata
@@ -506,7 +526,6 @@ func TestUsersServiceLifecycleAndReset(t *testing.T) {
 // 次耗尽后第 11 次 429；换 email 但同 IP 也 429（IP 键独立计数已耗尽）。
 func TestAuthRateLimit(t *testing.T) {
 	env := newAuthEnv(t)
-	client := serverv1.NewAuthServiceClient(env.conn)
 	// 假时钟注入限流器（窗口不推进——持续耗尽）。
 	clk := &fakeClock{cur: time.Now()}
 	env.auth.authLimiter.now = clk.Now
@@ -525,11 +544,80 @@ func TestAuthRateLimit(t *testing.T) {
 	if _, _, err := env.login(t, "203.0.113.7", "other@example.com", "whatever-pw"); status.Code(err) != codes.ResourceExhausted {
 		t.Fatalf("other email same IP err = %v, want ResourceExhausted", err)
 	}
-	// 换 IP：email 键是独立桶（other@ 首次消耗）→ 401 正常路径。
-	if _, _, err := env.login(t, "203.0.113.8", "other@example.com", "whatever-pw"); status.Code(err) != codes.Unauthenticated {
+	// 换 IP：email 键是独立桶（other@ 首次消耗）→ 401 正常路径。IP 维度
+	// 经 peerCtx 直调 handler 控制（W3-S4 起 XFF 只在环回对端——gateway
+	// 回拨形态——被采信；环回 + XFF 即 gateway 清洗后的分桶形态）。
+	if _, err := env.auth.Login(peerCtx(true, "", "203.0.113.8:1234"),
+		&serverv1.LoginRequest{Email: "other@example.com", Password: "whatever-pw"}); status.Code(err) != codes.Unauthenticated {
 		t.Fatalf("other IP err = %v, want Unauthenticated (fresh IP bucket)", err)
 	}
-	_ = client
+}
+
+// TestClientIPFromContextTrustSemantics（v0.3 W3-S4，W1-S2 XFF 伪造面收口
+// 的单点语义钉死）：环回对端（gateway 回拨形态）采信清洗后的
+// x-forwarded-for metadata；远程直连对端的 XFF metadata 客户端可控不采信
+// ——IP 键回落真实对端；均不可得 "unknown"。
+func TestClientIPFromContextTrustSemantics(t *testing.T) {
+	// 环回对端 + XFF（gateway 清洗形态 = 单一真实 HTTP 对端值）→ 采信。
+	if got := clientIPFromContext(peerCtx(true, "", "203.0.113.7:1234")); got != "203.0.113.7" {
+		t.Fatalf("loopback peer + XFF = %q, want 203.0.113.7", got)
+	}
+	// 环回对端、无 XFF → 对端地址本身。
+	if got := clientIPFromContext(peerCtx(true, "", "")); got != "127.0.0.1" {
+		t.Fatalf("loopback peer without XFF = %q, want 127.0.0.1", got)
+	}
+	// 远程直连对端 + 伪造 XFF → 不采信，用真实对端（不可伪造断言）。
+	if got := clientIPFromContext(peerCtx(false, "198.51.100.9", "9.9.9.9:1234")); got != "198.51.100.9" {
+		t.Fatalf("remote peer + forged XFF = %q, want peer 198.51.100.9 (forgery must not win)", got)
+	}
+	// 远程直连对端、无 XFF → 对端地址。
+	if got := clientIPFromContext(peerCtx(false, "198.51.100.9", "")); got != "198.51.100.9" {
+		t.Fatalf("remote peer without XFF = %q, want 198.51.100.9", got)
+	}
+	// 无对端（进程内直调未注入 peer）→ "unknown" 占位。
+	if got := clientIPFromContext(ctxIP("203.0.113.7")); got != "unknown" {
+		t.Fatalf("no-peer ctx = %q, want unknown", got)
+	}
+}
+
+// TestAuthRateLimitIPKeyUnforgeable（W3-S4 api 侧限流键不可伪造断言）：
+// 远程直连对端每次换一枚伪造 XFF metadata 也无法稀释 IP 桶——10 次（每次
+// 换 email 规避 email 键）后第 11 次 429。对照（同函数语义单点）：环回
+// 对端 + 不同 XFF = gateway 清洗后按真实 HTTP 对端分桶，桶各自独立。
+func TestAuthRateLimitIPKeyUnforgeable(t *testing.T) {
+	env := newAuthEnv(t)
+	clk := &fakeClock{cur: time.Now()}
+	env.auth.authLimiter.now = clk.Now
+
+	// 远程对端 198.51.100.9：10 次登录，email 与伪造 XFF 逐次全新。
+	for i := 0; i < 10; i++ {
+		email := strings.Repeat("x", i+1) + "@forge.example.com"
+		xff := ipToString(203, i) + ":1234"
+		if _, err := env.auth.Login(peerCtx(false, "198.51.100.9", xff),
+			&serverv1.LoginRequest{Email: email, Password: "whatever-pw"}); status.Code(err) != codes.Unauthenticated {
+			t.Fatalf("forged attempt %d err = %v, want Unauthenticated", i+1, err)
+		}
+	}
+	// 第 11 次（又是全新 email + 全新伪造 XFF）→ 429：XFF 不参与远程对端
+	// 的 IP 键，桶按真实对端计满。
+	if _, err := env.auth.Login(peerCtx(false, "198.51.100.9", "203.0.113.250:1234"),
+		&serverv1.LoginRequest{Email: "final@forge.example.com", Password: "whatever-pw"}); status.Code(err) != codes.ResourceExhausted {
+		t.Fatalf("11th forged attempt err = %v, want ResourceExhausted (IP key not forgeable)", err)
+	}
+
+	// 对照：环回对端 + 不同 XFF（gateway 清洗后的分桶形态）桶各自独立。
+	for i := 0; i < 3; i++ {
+		email := strings.Repeat("g", i+1) + "@gateway.example.com"
+		if _, err := env.auth.Login(peerCtx(true, "", ipToString(198, i)+":1234"),
+			&serverv1.LoginRequest{Email: email, Password: "whatever-pw"}); status.Code(err) != codes.Unauthenticated {
+			t.Fatalf("gateway-shape attempt %d err = %v, want Unauthenticated (per-client buckets)", i+1, err)
+		}
+	}
+}
+
+// ipToString 构造 203.0.x.y / 198.0.x.y 形态的测试 IP 串（避免主保留段）。
+func ipToString(base, i int) string {
+	return net.IPv4(byte(base), byte(10), byte(i/256), byte(i%256)).String()
 }
 
 // TestAuthFaceScopeRegistration：认证/用户面方法级登记完整性——豁免三面 +
@@ -568,6 +656,87 @@ func TestAuthFaceScopeRegistration(t *testing.T) {
 	if NewAuthService(nil).sessionTTL != 7*24*time.Hour {
 		t.Fatalf("session TTL = %v, want 7d (design §2.2)", NewAuthService(nil).sessionTTL)
 	}
+}
+
+// TestAuthRegisterWithInviteToken（v0.3 W3-S4，设计 §3.1「未注册→注册即
+// 自动 accept」）：关窗状态下携带有效邀请 token 的注册成功（豁免注册窗）
+// 且 Me 即见受邀队与角色；无效 token → E_INVITE_INVALID（不泄漏存在性）；
+// 无 token 原路径回归由 TestAuthRegisterAndWindowRules 承载。
+func TestAuthRegisterWithInviteToken(t *testing.T) {
+	env := newAuthEnv(t)
+	client := serverv1.NewAuthServiceClient(env.conn)
+	ctx := context.Background()
+
+	// 首用户（平台管理员）+ 团队 + 邀请（state 面构造产生侧；注册窗在
+	// 首用户后缺省 closed）。
+	root, _ := env.register(t, "203.0.113.7", "root@example.com", "pw-root-123")
+	team, err := env.st.CreateTeam(ctx, state.TeamWrite{Slug: "acme", Name: "Acme", CreatedBy: root.GetId()})
+	if err != nil {
+		t.Fatalf("CreateTeam: %v", err)
+	}
+	if _, err := env.st.AddMember(ctx, team.ID, root.GetId(), state.TeamRoleOwner, "", ""); err != nil {
+		t.Fatalf("AddMember owner: %v", err)
+	}
+	_, token, err := env.st.CreateInvite(ctx, state.InviteWrite{
+		TeamID: team.ID, Email: "newbie@example.com", Role: state.TeamRoleDeveloper, ActorUserID: root.GetId(),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	// 关窗 + 有效 token → 注册成功（豁免注册窗），会话照常下发。
+	newbie, cookie := env.registerWithInvite(t, "198.51.100.5", "Newbie@Example.COM", "pw-newbie-9", token)
+	if newbie.GetIsPlatformAdmin() {
+		t.Fatal("invited registrant must not be platform admin")
+	}
+	// Me 即见个人队 owner + 受邀队 developer（注册即自动 accept）。
+	me, err := client.Me(cookieCtx(cookie), &serverv1.MeRequest{})
+	if err != nil {
+		t.Fatalf("Me after invite registration: %v", err)
+	}
+	roles := map[string]string{}
+	for _, tm := range me.GetTeams() {
+		roles[tm.GetTeamId()] = tm.GetRole()
+	}
+	if roles[team.ID] != state.TeamRoleDeveloper {
+		t.Fatalf("Me teams = %+v, want developer on invited team %s", me.GetTeams(), team.ID)
+	}
+
+	// 关窗 + 无效 token → E_INVITE_INVALID（查无此 token 形态；已消费/
+	// 已吊销/已过期的同码拒绝由 state 层测试钉死）。
+	_, err = client.Register(ctxIP("198.51.100.6"), &serverv1.RegisterRequest{
+		Email: "ghost@example.com", Password: "pw-ghost-12", InviteToken: "bogus-token",
+	})
+	wantCode(t, err, "E_INVITE_INVALID")
+
+	// 负例零副作用：失败注册未建用户行，同 email 开窗后原路径可注册。
+	if err := env.st.SaveRegistration(ctx, state.AuthRegistrationOpen, state.AuthSaveOptions{Actor: "user:x"}); err != nil {
+		t.Fatalf("open window: %v", err)
+	}
+	plain, _ := env.register(t, "198.51.100.6", "ghost@example.com", "pw-ghost-12")
+	if plain.GetEmail() != "ghost@example.com" {
+		t.Fatalf("plain registration = %+v", plain)
+	}
+}
+
+// registerWithInvite 携带邀请 token 注册并返回（用户投影, 会话 cookie 值）。
+func (e *authEnv) registerWithInvite(t *testing.T, ip, email, password, inviteToken string) (*serverv1.UserView, string) {
+	t.Helper()
+	var hdr metadata.MD
+	res, err := serverv1.NewAuthServiceClient(e.conn).Register(ctxIP(ip),
+		&serverv1.RegisterRequest{Email: email, Password: password, InviteToken: inviteToken}, grpc.Header(&hdr))
+	if err != nil {
+		t.Fatalf("Register(with invite): %v", err)
+	}
+	cookies := hdr.Get("set-cookie")
+	if len(cookies) == 0 {
+		t.Fatal("Register must carry set-cookie response header metadata")
+	}
+	value, ok := strings.CutPrefix(cookies[0], sessionCookieName+"=")
+	if !ok {
+		t.Fatalf("set-cookie %q must target %s", cookies[0], sessionCookieName)
+	}
+	return res.GetUser(), strings.Split(value, ";")[0]
 }
 
 // TestAuditEntryActorDimension（设计 §6 actor 增维）：用户凭据 actor =

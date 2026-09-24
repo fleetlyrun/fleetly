@@ -67,6 +67,13 @@ state:
   # 本机套接字（linux unix socket / Windows named pipe）。
   docker_host: ""
 
+# 认证面（v0.3 W2-S4 会话 TTL 收口；注册开关不走本文件——运行期经
+# platform_settings auth.registration，PUT /v1/auth/registration）。
+auth:
+  # 会话滑动窗口时长（小时；缺省/非正值 = 168 即 7 天滑动。绝对寿命上限
+  # 30 天是硬封顶——本项只能调短生效，配置超过上限时封顶到上限）。
+  session_ttl_hours: 168
+
 # 平台密钥（envelope 加密主密钥，architecture §2.3）：主密钥文件与备份数据
 # 分离保存；权限过宽（POSIX group/other 可读）拒绝启动。
 secrets:

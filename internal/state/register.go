@@ -13,9 +13,12 @@ package state
 // 非空 → platform_settings `auth.registration`（open|closed，缺省 closed）
 // 管辖——开关读取与用户写入同事务，消除「并发首注册竞态」窗口。
 //
-// 邀请联动（设计 §3.1「未注册→注册即自动 accept」）不在本原语：W1 的
-// Register RPC 无邀请 token 参数（api 面切分），accept 走独立的
-// ConsumeInvite 原语（api/authservice.go）。
+// 邀请联动（设计 §3.1「未注册→注册即自动 accept」，v0.3 W3-S4 收口）：
+// RegisterWrite.InviteToken 非空时注册即带邀请——同一事务内先现查
+// team_invites（lookupValidInviteTx：token 哈希命中且未过期未消费未吊销）
+// 豁免注册窗，用户落位后经 consumeInviteRowTx 消费（受邀角色入队；审计/
+// 事件与 ConsumeInvite 原语同一写面，无双落）。已注册用户的 accept 仍走
+// 独立 ConsumeInvite 原语（api/authservice.go AcceptInvite）。
 
 import (
 	"context"
@@ -45,6 +48,13 @@ type RegisterWrite struct {
 	Password string
 	// DisplayName 留空取 email 本地部分。
 	DisplayName string
+	// InviteToken 是可选的一次性邀请明文 token（v0.3 W3-S4，设计 §3.1
+	// 「未注册→注册即自动 accept」）：非空时（1）注册豁免注册窗——窗口
+	// 判定前在同一事务内现查 team_invites（lookupValidInviteTx）；（2）
+	// 注册落位后同事务消费该邀请（consumeInviteRowTx，受邀角色入队）。
+	// 无效 token 在任何写入前失败（整笔回滚），返回 ErrInviteInvalid。
+	// 空 = 原注册语义逐字不变。
+	InviteToken string
 }
 
 // RegisterResult 是一次注册的落位投影（用户 + 个人队与角色 + 默认项目）。
@@ -58,10 +68,12 @@ type RegisterResult struct {
 }
 
 // RegisterUser 落一笔原子注册；窗口关闭返回 ErrRegistrationClosed、email
-// 冲突返回 ErrEmailTaken（哨兵映射在 api 面）。与审计（user.created /
-// team.created / team.member_added / project.created / token.revoke〔首用户
-// bootstrap 吊销时〕）和事件（user.registered / team.created /
-// project.created，metadata-only）同事务 fail-closed。
+// 冲突返回 ErrEmailTaken、携带不可消费的邀请 token 返回 ErrInviteInvalid
+//（三者均为哨兵，映射在 api 面）。携带有效邀请时豁免注册窗并同事务入队
+//（RegisterWrite.InviteToken 注）。与审计（user.created / team.created /
+// team.member_added / project.created / token.revoke〔首用户 bootstrap 吊销
+// 时〕）和事件（user.registered / team.created / project.created，metadata-
+// only）同事务 fail-closed。
 func (s *Store) RegisterUser(ctx context.Context, w RegisterWrite) (RegisterResult, error) {
 	email, err := normalizeEmail(w.Email)
 	if err != nil {
@@ -81,13 +93,28 @@ func (s *Store) RegisterUser(ctx context.Context, w RegisterWrite) (RegisterResu
 
 	var out RegisterResult
 	err = s.InTx(ctx, func(tx *Tx) error {
+		// 邀请校验前置（W3-S4）：带 token 的注册在同一事务内现查
+		// team_invites——无效 token（查无/已消费/已吊销/已过期）在任何
+		// 写入前失败（ErrInviteInvalid，整笔回滚语义下不存在「用户已建
+		// 而邀请无效」的中间态）。校验通过 = 豁免注册窗（设计 §3.1：受邀
+		// 注册不受 auth.registration 管辖——邀请本身即平台侧的准入决定）。
+		hasInvite := w.InviteToken != ""
+		var invite TeamInvite
+		if hasInvite {
+			inv, err := lookupValidInviteTx(ctx, tx, w.InviteToken)
+			if err != nil {
+				return err
+			}
+			invite = inv
+		}
 		// 窗口判定与写入同事务：首注册（users 空）恒开；其后由
-		// auth.registration 管辖（缺省 closed，设计 §2.1）。
+		// auth.registration 管辖（缺省 closed，设计 §2.1）——携带有效
+		// 邀请的注册豁免本判定。
 		var users int64
 		if err := tx.QueryRowContext(ctx, `SELECT COUNT(1) FROM users`).Scan(&users); err != nil {
 			return fmt.Errorf("state: count users: %w", err)
 		}
-		if users > 0 {
+		if users > 0 && !hasInvite {
 			settings, err := loadAuthSettingsFrom(ctx, tx.Tx)
 			if err != nil {
 				return err
@@ -213,6 +240,19 @@ func (s *Store) RegisterUser(ctx context.Context, w RegisterWrite) (RegisterResu
 			return err
 		}
 		out.Project = Project{ID: pid, TeamID: tid, Slug: DefaultProjectSlug, Name: DefaultProjectSlug, CreatedAt: time.Unix(0, now).UTC()}
+
+		// 邀请消费（W3-S4，设计 §3.1）：注册落位完成即同事务入受邀队
+		//（consumeInviteRowTx = ConsumeInvite 原语的唯一写面——成员行 +
+		// accepted_at + member_added/invite_accepted 审计 + invite.accepted
+		// 事件，本事务内恰好落这一次）。actor = 注册者本人（自助动作）；
+		// 无调用方 PAT（注册面豁免鉴权）。
+		if hasInvite {
+			var cerr error
+			invite, cerr = consumeInviteRowTx(ctx, tx, invite, uid, uid, "")
+			if cerr != nil {
+				return cerr
+			}
+		}
 
 		_, err = tx.AppendEvent(ctx, Event{
 			Name:    "user.registered",

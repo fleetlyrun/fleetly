@@ -192,6 +192,194 @@ func TestRegisterUserSlugCollisionSuffix(t *testing.T) {
 	}
 }
 
+// TestRegisterUserWithInviteToken（v0.3 W3-S4，RBAC 设计 §3.1「未注册→
+// 注册即自动 accept」）：关窗状态下带有效邀请 token 的注册豁免注册窗、
+// 注册成功即同事务以受邀角色入队；审计（team.invite_accepted）与事件
+//（invite.accepted）经 ConsumeInvite 同一写面恰好单落；无效 token（查无/
+// 已消费/已吊销/已过期）在任何写入前整笔回滚 ErrInviteInvalid——用户行
+// 不残留，同一 email 仍可走无 token 原路径（开窗后）注册。
+func TestRegisterUserWithInviteToken(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	// 邀请产生面（不依赖注册窗）：owner + 团队 + developer 邀请。
+	owner, err := st.CreateUser(ctx, UserWrite{Email: "owner@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser owner: %v", err)
+	}
+	team, err := st.CreateTeam(ctx, TeamWrite{Slug: "acme", Name: "Acme", CreatedBy: owner.ID})
+	if err != nil {
+		t.Fatalf("CreateTeam: %v", err)
+	}
+	if _, err := st.AddMember(ctx, team.ID, owner.ID, TeamRoleOwner, "", ""); err != nil {
+		t.Fatalf("AddMember owner: %v", err)
+	}
+	_, token, err := st.CreateInvite(ctx, InviteWrite{
+		TeamID: team.ID, Email: "newbie@example.com", Role: TeamRoleDeveloper, ActorUserID: owner.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	// 注册窗口缺省 closed（users 非空）+ 有效 token → 注册成功（豁免注册
+	// 窗）且即入队：个人队 owner + acme developer 双成员关系。
+	rr, err := st.RegisterUser(ctx, RegisterWrite{
+		Email: "Newbie@Example.COM", Password: "pw-newbie-1", InviteToken: token,
+	})
+	if err != nil {
+		t.Fatalf("invite registration with closed window: %v", err)
+	}
+	if rr.User.IsPlatformAdmin {
+		t.Fatal("invited registrant must not be platform admin")
+	}
+	if rr.TeamRole != TeamRoleOwner || rr.Project.Slug != "default" {
+		t.Fatalf("personal provisioning = role:%s project:%s, want owner/default", rr.TeamRole, rr.Project.Slug)
+	}
+	ms, err := st.ListUserMemberships(ctx, rr.User.ID)
+	if err != nil || len(ms) != 2 {
+		t.Fatalf("memberships after invite registration = %v (%v), want 2", ms, err)
+	}
+	// 排序键是 (created_at, team_id)——同事务两行在时钟粒度内可能并列，
+	// 按 team_id 定位断言，不依赖行序。
+	var personal, invited *TeamMember
+	for i := range ms {
+		switch ms[i].TeamID {
+		case rr.Team.ID:
+			personal = &ms[i]
+		case team.ID:
+			invited = &ms[i]
+		}
+	}
+	if personal == nil || personal.Role != TeamRoleOwner {
+		t.Fatalf("personal membership missing/ wrong role: %v", ms)
+	}
+	if invited == nil || invited.Role != TeamRoleDeveloper {
+		t.Fatalf("invited membership = %v, want developer on acme (team %s)", ms, team.ID)
+	}
+	// 邀请行已消费（accepted_at 置位）。
+	invites, err := st.ListInvites(ctx, team.ID)
+	if err != nil || len(invites) != 1 || invites[0].AcceptedAt.IsZero() {
+		t.Fatalf("invite after registration = %+v err=%v, want accepted_at set", invites, err)
+	}
+
+	// 审计/事件不双落：invite.accepted 事件恰 1 条；team.invite_accepted
+	// 审计恰 1 条；via invite:<id> 的 member_added 审计恰 1 条（个人队的
+	// member_added 不带 via 邀请，不计入）。
+	var inviteAcceptedEvents int64
+	if err := st.db.QueryRowContext(ctx,
+		`SELECT COUNT(1) FROM events WHERE name = 'invite.accepted'`).Scan(&inviteAcceptedEvents); err != nil {
+		t.Fatalf("count invite.accepted events: %v", err)
+	}
+	if inviteAcceptedEvents != 1 {
+		t.Fatalf("invite.accepted events = %d, want exactly 1 (ConsumeInvite shared write face)", inviteAcceptedEvents)
+	}
+	audits, err := st.RecentAudits(ctx, 50)
+	if err != nil {
+		t.Fatalf("RecentAudits: %v", err)
+	}
+	acceptedAudits, viaInviteAdds := 0, 0
+	for _, a := range audits {
+		if a.Action == "team.invite_accepted" {
+			acceptedAudits++
+		}
+		if a.Action == "team.member_added" && strings.Contains(a.DiffSummary, "invite:") {
+			viaInviteAdds++
+		}
+	}
+	if acceptedAudits != 1 || viaInviteAdds != 1 {
+		t.Fatalf("invite audits = invite_accepted:%d member_added(via invite):%d, want 1/1", acceptedAudits, viaInviteAdds)
+	}
+
+	// token 复用（已消费）→ 注册拒绝，ErrInviteInvalid。
+	if _, err := st.RegisterUser(ctx, RegisterWrite{
+		Email: "reuse@example.com", Password: "pw", InviteToken: token,
+	}); !errors.Is(err, ErrInviteInvalid) {
+		t.Fatalf("registration with consumed invite err = %v, want ErrInviteInvalid", err)
+	}
+
+	// 查无此 token → 同码拒绝（不泄漏存在性）。
+	if _, err := st.RegisterUser(ctx, RegisterWrite{
+		Email: "unknown@example.com", Password: "pw", InviteToken: "bogus-token",
+	}); !errors.Is(err, ErrInviteInvalid) {
+		t.Fatalf("registration with unknown invite err = %v, want ErrInviteInvalid", err)
+	}
+
+	// 已吊销邀请 → 拒绝。
+	_, revToken, err := st.CreateInvite(ctx, InviteWrite{
+		TeamID: team.ID, Email: "revoked@example.com", Role: TeamRoleViewer, ActorUserID: owner.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite revocation fixture: %v", err)
+	}
+	invites, err = st.ListInvites(ctx, team.ID)
+	if err != nil {
+		t.Fatalf("ListInvites: %v", err)
+	}
+	var revID string
+	for _, inv := range invites {
+		if inv.AcceptedAt.IsZero() {
+			revID = inv.ID
+		}
+	}
+	if err := st.RevokeInvite(ctx, revID, owner.ID, ""); err != nil {
+		t.Fatalf("RevokeInvite: %v", err)
+	}
+	if _, err := st.RegisterUser(ctx, RegisterWrite{
+		Email: "revoked@example.com", Password: "pw", InviteToken: revToken,
+	}); !errors.Is(err, ErrInviteInvalid) {
+		t.Fatalf("registration with revoked invite err = %v, want ErrInviteInvalid", err)
+	}
+
+	// 已过期邀请 → 拒绝（expires_at 回拨构造过期存量——store 层无时钟注入）。
+	_, expToken, err := st.CreateInvite(ctx, InviteWrite{
+		TeamID: team.ID, Email: "expired@example.com", Role: TeamRoleViewer, ActorUserID: owner.ID,
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite expiry fixture: %v", err)
+	}
+	invites, err = st.ListInvites(ctx, team.ID)
+	if err != nil {
+		t.Fatalf("ListInvites 2: %v", err)
+	}
+	var expID string
+	for _, inv := range invites {
+		if inv.AcceptedAt.IsZero() && inv.ID != revID {
+			expID = inv.ID
+		}
+	}
+	if _, err := st.db.ExecContext(ctx,
+		`UPDATE team_invites SET expires_at = ? WHERE id = ?`,
+		time.Now().UTC().Add(-time.Minute).UnixNano(), expID); err != nil {
+		t.Fatalf("backdate expires_at: %v", err)
+	}
+	if _, err := st.RegisterUser(ctx, RegisterWrite{
+		Email: "expired@example.com", Password: "pw", InviteToken: expToken,
+	}); !errors.Is(err, ErrInviteInvalid) {
+		t.Fatalf("registration with expired invite err = %v, want ErrInviteInvalid", err)
+	}
+
+	// 负例零副作用：四个失败注册均未建用户行（行数 = owner + 新bie）。
+	var users int64
+	if err := st.db.QueryRowContext(ctx, `SELECT COUNT(1) FROM users`).Scan(&users); err != nil {
+		t.Fatalf("count users: %v", err)
+	}
+	if users != 2 {
+		t.Fatalf("user rows after failed invite registrations = %d, want 2 (failed writes must roll back)", users)
+	}
+
+	// 无 token 原路径回归：开窗后同 email（某负例残留邮箱）注册照常成功。
+	if err := st.SaveRegistration(ctx, AuthRegistrationOpen, AuthSaveOptions{Actor: "user:x"}); err != nil {
+		t.Fatalf("open window: %v", err)
+	}
+	plain, err := st.RegisterUser(ctx, RegisterWrite{Email: "unknown@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("plain registration (no token) after opening window: %v", err)
+	}
+	if len(plain.Team.Slug) == 0 || plain.Project.Slug != "default" {
+		t.Fatalf("plain registration provisioning = %+v", plain)
+	}
+}
+
 // TestResetPasswordRevokesSessions（本票裁决：重置即全端下线，设计 §2.1）：
 // 口令重置与该用户全部会话吊销同事务生效；他用户会话不动；审计带
 // sessions_revoked 计数。

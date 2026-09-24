@@ -305,14 +305,23 @@ func TestHubSessionLimits(t *testing.T) {
 	if err := mk("t2"); err != nil {
 		t.Fatalf("session for t2: %v", err)
 	}
-	// 收尾归还配额：终结 t1 的一条后，t1 可再开。
+	// 收尾归还配额：终结 t1 的一条后，t1 可再开。会话表是 map——迭代首键
+	// 随机，摘到 t2 的会话不释放 t1 配额（W3-S4 flake 诊治：全量回归偶红
+	// 「session after release: terminal session limit reached (per-token
+	// limit 2)」的根因），按绑定 token 钉定摘除对象。per-token 计数在
+	// popSessionLocked（takeSession）内同步回滚，钉定后无异步等待面。
 	var sid string
 	f.hub.mu.Lock()
-	for id := range f.hub.sessions {
-		sid = id
-		break
+	for id, s := range f.hub.sessions {
+		if s.binding.TokenID == "t1" {
+			sid = id
+			break
+		}
 	}
 	f.hub.mu.Unlock()
+	if sid == "" {
+		t.Fatal("no t1 session in table (fixture broken)")
+	}
 	f.hub.takeSession(sid).endAfterPop("test close", CloseOK)
 	if err := mk("t1"); err != nil {
 		t.Fatalf("session after release: %v", err)

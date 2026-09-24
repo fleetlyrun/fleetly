@@ -30,7 +30,12 @@ type RegisterRequest struct {
 	// 明文口令（8..128 字符；argon2id 落库，明文不入库/审计/日志）。
 	Password string `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
 	// 人读显示名（空 = 缺省取 email 本地部分）。
-	DisplayName   string `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	DisplayName string `protobuf:"bytes,3,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"`
+	// 邀请 token（可空，v0.3 W3-S4 设计 §3.1「未注册→注册即自动 accept」）：
+	// 携带有效邀请 token 的注册豁免注册窗（窗口关闭也可注册），注册与邀请
+	// 消费同事务——注册成功即以受邀角色入队。无效 token → E_INVITE_INVALID
+	// （一次性凭据不泄漏存在性细节）。缺省（空）时行为与无邀请注册逐字一致。
+	InviteToken   string `protobuf:"bytes,4,opt,name=invite_token,json=inviteToken,proto3" json:"invite_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -82,6 +87,13 @@ func (x *RegisterRequest) GetPassword() string {
 func (x *RegisterRequest) GetDisplayName() string {
 	if x != nil {
 		return x.DisplayName
+	}
+	return ""
+}
+
+func (x *RegisterRequest) GetInviteToken() string {
+	if x != nil {
+		return x.InviteToken
 	}
 	return ""
 }
@@ -829,12 +841,13 @@ var File_fleetly_server_v1_auth_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x1cfleetly/server/v1/auth.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dfleetly/server/v1/users.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\x89\x01\n" +
+	"\x1cfleetly/server/v1/auth.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1dfleetly/server/v1/users.proto\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"\xb6\x01\n" +
 	"\x0fRegisterRequest\x12\"\n" +
 	"\x05email\x18\x01 \x01(\tB\f\xbaH\tr\a\x10\x03\x18\xfe\x01`\x01R\x05email\x12&\n" +
 	"\bpassword\x18\x02 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\b\x18\x80\x01R\bpassword\x12*\n" +
-	"\fdisplay_name\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x18dR\vdisplayName\"C\n" +
+	"\fdisplay_name\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x18dR\vdisplayName\x12+\n" +
+	"\finvite_token\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\x01R\vinviteToken\"C\n" +
 	"\x10RegisterResponse\x12/\n" +
 	"\x04user\x18\x01 \x01(\v2\x1b.fleetly.server.v1.UserViewR\x04user\"Z\n" +
 	"\fLoginRequest\x12\"\n" +

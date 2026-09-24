@@ -15,8 +15,26 @@ import (
 // DeployFromCommit 测试（幂等口径绑定断言面）：每次 git push 都建部署记录
 // （不去重）；来源字段落库；compose 名与仓库名不一致拒绝。
 
+// isolateProcessTemp 把进程级临时根重定向到本测试私有目录（W3-S4 flake
+// 诊治）。背景：MG-6 的中转目录回收断言（countComposeTempDirs）采样的是
+// 进程全局系统 temp——全仓满载时并行的其他包测试进程在同一系统 temp 里
+// 创建/回收同前缀（fleetly-compose-）中转目录，采样被外部进程污染：
+// .w3out 三份全量日志同一签名「fleetly-compose-* dir count 2704 → 2705 /
+// 2705 → 2707 / 2762 → 2769」（存量孤儿数千 + 并行包增量；单包隔离恒绿）。
+// 重定向后（TMPDIR/TMP/TEMP 同设，覆盖 os.TempDir 的跨平台读取序）采样
+// 空间仅含本进程目录，断言保持真实——产品代码 os.MkdirTemp("", ...) 每次
+// 调用现取 os.TempDir()，回收语义未被放松。纯测试夹具层修复，产品不动。
+func isolateProcessTemp(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	t.Setenv("TMPDIR", dir)
+	t.Setenv("TMP", dir)
+	t.Setenv("TEMP", dir)
+}
+
 func TestDeployFromGitPush(t *testing.T) {
 	requireGit(t)
+	isolateProcessTemp(t)
 	src, st, _, _ := newTestSource(t, 0)
 	ctx := context.Background()
 

@@ -82,7 +82,7 @@ import (
 // 实现：newRootHandler 先按精确路径形态分派 webhook 与 /ui/ 静态 handler
 // （console handler 未启用时为 nil——分派跳过）、终端 native 端点（terminal
 // handler 未启用时为 nil），其余一律交回 grpc-gateway mux。
-func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
+func newGatewayMux(grpcEndpoint string) (http.Handler, error) {
 	return newGatewayMuxWithTLS(grpcEndpoint, nil)
 }
 
@@ -94,7 +94,11 @@ func newGatewayMux(grpcEndpoint string) (*runtime.ServeMux, error) {
 // InsecureSkipVerify 的信任锚是进程自身（外部面的 TLS 由监听器强制），
 // 对自己的 8421 做完整校验需要 CA 链装载，属自证循环——诚实跳过并在此
 // 注明；transport 加密本身照常生效。
-func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (*runtime.ServeMux, error) {
+//
+// 返回的 handler 在 mux 外包一层 sanitizeForwardedFor（W3-S4，XFF 覆写
+// 收口——见该函数注释）：生产装配（provides.go newHTTPServices）与测试
+// （newGatewayMux 原样复用）走的同一构造，信任边界不存在旁路形态。
+func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (http.Handler, error) {
 	mux := runtime.NewServeMux(
 		runtime.WithMarshalerOption(runtime.MIMEWildcard, newJSONMarshaler()),
 		runtime.WithMarshalerOption("*/*", newJSONMarshaler()),
@@ -144,7 +148,29 @@ func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (*runtime.Ser
 			return nil, err
 		}
 	}
-	return mux, nil
+	return sanitizeForwardedFor(mux), nil
+}
+
+// sanitizeForwardedFor 是 gateway 的入向信任边界（W3-S4，W1-S2 披露的
+// XFF 覆写挂账收口）：控制面自身就是反代边界——入向 X-Forwarded-For 头
+// 不可信（直连方可伪造链首值，使 api 面 IP 键限流按任意自报地址分桶）。
+// 此处删除客户端携带的 XFF 头；grpc-gateway v2 的 annotateContext 随后把
+// 真实 TCP 对端地址（RemoteAddr host）并入 x-forwarded-for metadata
+//（v2.30 语义：client 头拼接链尾再追加 RemoteAddr——client 侧已删，故
+// metadata 恰为单一真实 peer 值）。api 侧（internal/api/authservice.go
+// clientIPFromContext）只在 gRPC 对端为环回时采信该 metadata——环回 =
+// gateway 回拨（gateway 与 gRPC 同进程同主机），远程直连 gRPC 方自带的
+// x-forwarded-for metadata 一律不采信。
+//
+// 上游可信代理形态（外置 TLS 反代在 gateway 之前）如实披露：本层把代理
+// 注入的 XFF 一并清除，全量客户端共享代理地址的限流桶——email 键限流
+// 不受影响，主防线在；按代理放行（trusted_proxies 类开关）属配置面扩展
+// 点，本票不发明（runbook 披露面）。
+func sanitizeForwardedFor(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.Header.Del("X-Forwarded-For")
+		next.ServeHTTP(w, r)
+	})
 }
 
 // outgoingHeaderMatcher 是 gateway 的出向 header 映射：set-cookie 还原为

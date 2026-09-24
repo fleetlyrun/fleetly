@@ -83,7 +83,9 @@ func (s *AuthService) WithSessionSecurity(secure bool, ttl time.Duration) *AuthS
 
 // Register 自助注册（窗口规则在 state.RegisterUser 事务内原子判定）：
 // 成功 = 用户 + 个人队 + 默认项目落位（首用户另含平台管理员置位与
-// bootstrap 吊销）+ 会话下发。
+// bootstrap 吊销）+ 会话下发。请求携带 invite_token 时走邀请注册通道
+//（v0.3 W3-S4，设计 §3.1「未注册→注册即自动 accept」）：有效 token 豁免
+// 注册窗并同事务入队（受邀角色）；无效 token → E_INVITE_INVALID。
 func (s *AuthService) Register(ctx context.Context, req *serverv1.RegisterRequest) (*serverv1.RegisterResponse, error) {
 	if !s.allowAuth(ctx, req.GetEmail()) {
 		return nil, statusEnvelope(codes.ResourceExhausted, "rate limit exceeded for registration")
@@ -92,6 +94,7 @@ func (s *AuthService) Register(ctx context.Context, req *serverv1.RegisterReques
 		Email:       req.GetEmail(),
 		Password:    req.GetPassword(),
 		DisplayName: req.GetDisplayName(),
+		InviteToken: req.GetInviteToken(),
 	})
 	if err != nil {
 		switch {
@@ -99,6 +102,11 @@ func (s *AuthService) Register(ctx context.Context, req *serverv1.RegisterReques
 			return nil, apperr.New("E_REGISTRATION_CLOSED",
 				"self-service registration is closed; ask a platform administrator to create the account").
 				WithContext("reason", "registration_closed")
+		case errors.Is(err, state.ErrInviteInvalid):
+			// 邀请注册通道：不可消费的邀请统一 E_INVITE_INVALID（rbac-teams
+			// §5 注册表稳定码，HTTP 状态由注册表承载——一次性凭据不泄漏
+			// 存在性与具体状态，与 AcceptInvite 同码同态）。
+			return nil, apperr.New("E_INVITE_INVALID", "invite is invalid, expired, or already used")
 		case errors.Is(err, state.ErrEmailTaken):
 			return nil, conflict("email already registered: " + req.GetEmail())
 		default:
@@ -361,20 +369,27 @@ func loginTargetEmail(email string) string {
 	return string(out)
 }
 
-// clientIPFromContext 取来源 IP（X-Forwarded-For 首值优先——自托管部署在
-// 反代后的形态；直连形态回落 gRPC peer host；均不可得用 "unknown" 占位
-// ——限流键空间保持有界）。
+// clientIPFromContext 取限流键的来源 IP（W3-S4 信任语义收口，W1-S2 披露
+// 的 XFF 伪造面）：gateway 形态（gRPC 对端为环回——gateway 与 gRPC 同进程
+// 同主机回拨，入向 XFF 头已在 gateway 面清洗为真实 HTTP 对端，见
+// internal/runtime/gateway.go sanitizeForwardedFor）采信 x-forwarded-for
+// metadata；其余形态（远程直连 gRPC 等）的该 metadata 客户端可控，一律
+// 不信任——直接用 gRPC 对端地址；均不可得用 "unknown" 占位（限流键空间
+// 保持有界）。
 func clientIPFromContext(ctx context.Context) string {
-	if md, ok := metadata.FromIncomingContext(ctx); ok {
-		if vals := md.Get("x-forwarded-for"); len(vals) > 0 && vals[0] != "" {
-			host, _, err := net.SplitHostPort(vals[0])
-			if err != nil {
-				host = vals[0]
+	pr, _ := peer.FromContext(ctx)
+	if pr != nil && pr.Addr != nil && isLoopbackAddr(pr.Addr.String()) {
+		if md, ok := metadata.FromIncomingContext(ctx); ok {
+			if vals := md.Get("x-forwarded-for"); len(vals) > 0 && vals[0] != "" {
+				host, _, err := net.SplitHostPort(vals[0])
+				if err != nil {
+					host = vals[0]
+				}
+				return host
 			}
-			return host
 		}
 	}
-	if pr, ok := peer.FromContext(ctx); ok && pr.Addr != nil {
+	if pr != nil && pr.Addr != nil {
 		host, _, err := net.SplitHostPort(pr.Addr.String())
 		if err != nil {
 			return pr.Addr.String()
@@ -382,6 +397,17 @@ func clientIPFromContext(ctx context.Context) string {
 		return host
 	}
 	return "unknown"
+}
+
+// isLoopbackAddr 判定 host:port 形态地址是否环回（gateway 回拨的判定
+// 面；非 host:port 形态——如测试 bufconn 的 "bufnet"——非环回）。
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 // setSessionCookie 写 Set-Cookie 响应头（HttpOnly + SameSite=Lax + Path=/；
