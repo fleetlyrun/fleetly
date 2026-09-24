@@ -246,7 +246,11 @@ func (x *GetDatabaseResponse) GetDatabase() *DatabaseView {
 type ListDatabasesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 行数上限（缺省 100）。
-	Limit         int32 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	Limit int32 `protobuf:"varint,1,opt,name=limit,proto3" json:"limit,omitempty"`
+	// 项目收窄（v0.3 W2-S4 可见性过滤，rbac-teams §4.2）：裸名或 `team/project`
+	// 限定形（D-W0-9 解析规则；解析域 = 调用方可见项目集，机具令牌/平台管理
+	// 员 = 全库）。空 = 不收窄（用户面仍按可见项目集过滤）。
+	Project       string `protobuf:"bytes,2,opt,name=project,proto3" json:"project,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -286,6 +290,13 @@ func (x *ListDatabasesRequest) GetLimit() int32 {
 		return x.Limit
 	}
 	return 0
+}
+
+func (x *ListDatabasesRequest) GetProject() string {
+	if x != nil {
+		return x.Project
+	}
+	return ""
 }
 
 type ListDatabasesResponse struct {
@@ -2078,10 +2089,11 @@ const file_fleetly_server_v1_database_proto_rawDesc = "" +
 	"\x12GetDatabaseRequest\x12\x1b\n" +
 	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"R\n" +
 	"\x13GetDatabaseResponse\x12;\n" +
-	"\bdatabase\x18\x01 \x01(\v2\x1f.fleetly.server.v1.DatabaseViewR\bdatabase\"8\n" +
+	"\bdatabase\x18\x01 \x01(\v2\x1f.fleetly.server.v1.DatabaseViewR\bdatabase\"[\n" +
 	"\x14ListDatabasesRequest\x12 \n" +
 	"\x05limit\x18\x01 \x01(\x05B\n" +
-	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\x05limit\"V\n" +
+	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\x05limit\x12!\n" +
+	"\aproject\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18AR\aproject\"V\n" +
 	"\x15ListDatabasesResponse\x12=\n" +
 	"\tdatabases\x18\x01 \x03(\v2\x1f.fleetly.server.v1.DatabaseViewR\tdatabases\"u\n" +
 	"\x15DeleteDatabaseRequest\x12\x1b\n" +

@@ -48,6 +48,10 @@ func (s *SecretsService) SetSecret(ctx context.Context, req *serverv1.SetSecretR
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：set/remove=admin、list=read（scope 登记映射）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	if err := validateSecretName(req.GetName()); err != nil {
 		return nil, statusInvalidArgument(err.Error())
 	}
@@ -92,6 +96,10 @@ func (s *SecretsService) ListSecrets(ctx context.Context, req *serverv1.ListSecr
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：set/remove=admin、list=read（scope 登记映射）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	rows, err := s.st.ListAppSecrets(ctx, app.ID)
 	if err != nil {
 		return nil, err
@@ -114,6 +122,10 @@ func (s *SecretsService) ListSecrets(ctx context.Context, req *serverv1.ListSecr
 func (s *SecretsService) RemoveSecret(ctx context.Context, req *serverv1.RemoveSecretRequest) (*serverv1.RemoveSecretResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：set/remove=admin、list=read（scope 登记映射）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	err = s.st.InTx(ctx, func(tx *state.Tx) error {

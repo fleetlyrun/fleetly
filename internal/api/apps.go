@@ -54,10 +54,28 @@ const defaultListAppsLimit = 100
 // limit 截断后的 app 集合经 state 层两次 IN 查询（PlacementByApp +
 // LatestDeploymentsByApp）取全部派生输入，替代逐 app 的 GetPlacement +
 // ListAppDeployments N+1 形态。
+//
+// v0.3 W2-S4 可见性过滤（rbac-teams §4.2）：用户 principal 按可见项目集
+//（成员团队归属——覆写不改变可见性，可见性零级联 §3.3）过滤；机具令牌与
+// 平台管理员全库。?project= 收窄（限定形/域内唯一裸名，resolveProjectRef
+// 单点解析）——收窄与可见性取交集。
 func (s *AppsService) ListApps(ctx context.Context, req *serverv1.ListAppsRequest) (*serverv1.ListAppsResponse, error) {
 	apps, err := s.st.ListActiveApps(ctx)
 	if err != nil {
 		return nil, err
+	}
+	allowed, err := visibleProjectFilter(ctx, s.st, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	if allowed != nil {
+		narrowed := apps[:0:0]
+		for _, app := range apps {
+			if allowed[app.ProjectID] {
+				narrowed = append(narrowed, app)
+			}
+		}
+		apps = narrowed
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
@@ -101,6 +119,10 @@ func (s *AppsService) GetApp(ctx context.Context, req *serverv1.GetAppRequest) (
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	derived, err := s.derivedState(ctx, app.ID)
 	if err != nil {
 		return nil, err
@@ -134,6 +156,10 @@ func (s *AppsService) GetApp(ctx context.Context, req *serverv1.GetAppRequest) (
 func (s *AppsService) DeleteApp(ctx context.Context, req *serverv1.DeleteAppRequest) (*serverv1.DeleteAppResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetName())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	err = s.st.InTx(ctx, func(tx *state.Tx) error {
@@ -180,6 +206,10 @@ func (s *AppsService) SetAppWebhookSecret(ctx context.Context, req *serverv1.Set
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	cipher, err := s.box.Encrypt([]byte(req.GetSecret()))
 	if err != nil {
 		return nil, fmt.Errorf("encrypt webhook secret: %w", err)
@@ -194,6 +224,10 @@ func (s *AppsService) SetAppWebhookSecret(ctx context.Context, req *serverv1.Set
 func (s *AppsService) ShowAppWebhook(ctx context.Context, req *serverv1.ShowAppWebhookRequest) (*serverv1.ShowAppWebhookResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetName())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	cfg, err := s.st.GetAppGitConfig(ctx, app.ID)
@@ -242,6 +276,10 @@ func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSour
 	}
 	app, err := resolveApp(ctx, s.st, req.GetName())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	secretCipher := ""

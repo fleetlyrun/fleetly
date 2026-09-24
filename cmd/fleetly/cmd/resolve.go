@@ -14,7 +14,10 @@ package cmd
 // 「空 = 未设置」参与回落（export FLEETLY_TOKEN= 等价 unset，与既有 env
 // 缺省回落纪律一致）。
 
-import "os"
+import (
+	"os"
+	"strings"
+)
 
 // 解析来源标签（resolveCredential/resolveContext 返回；空串 = 未解析到）。
 const (
@@ -31,6 +34,40 @@ type resolvedContext struct {
 	Project       string `json:"project"`
 	TeamSource    string `json:"team_source"`
 	ProjectSource string `json:"project_source"`
+}
+
+// qualifyRef 按上下文把裸资源引用补全为限定形（v0.3 W2-S4 CLI 参数面同步，
+// rbac-teams §3.4 D-W0-9）：上下文 team+project 齐备且引用为裸名（不含 "/"）
+// 时补全为 team/prj/名——资源命令的裸名在 CLI 上下文团队内解析；引用已含
+// "/"（限定形）或上下文缺失时原样返回（服务端按调用方可见项目集解析，歧义
+// E_APP_AMBIGUOUS 列候选——客户端补全只是消歧便利，解析语义权威在服务端）。
+// ULID 形态的平台 ID（26 位字母数字）不补全——ID 引用免疫重名，是管理面惯例。
+func qualifyRef(rc resolvedContext, ref string) string {
+	ref = strings.TrimSpace(ref)
+	if ref == "" || strings.Contains(ref, "/") || looksLikeULID(ref) {
+		return ref
+	}
+	if rc.Team == "" || rc.Project == "" {
+		return ref
+	}
+	return rc.Team + "/" + rc.Project + "/" + ref
+}
+
+// looksLikeULID 报告 s 是否为 ULID 形态（26 位，base32 字母表 0-9A-HJKMNP-
+// TVWXYZ；大小写容忍——服务端 ID 判定同款宽松形态，仅用于客户端免补全）。
+func looksLikeULID(s string) bool {
+	if len(s) != 26 {
+		return false
+	}
+	for _, r := range s {
+		switch {
+		case r >= '0' && r <= '9':
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // firstNonEmpty 按参数序返回首个非空值与来源标签（优先级矩阵的机械形：

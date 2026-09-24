@@ -3,6 +3,7 @@ package api
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,19 +75,44 @@ func (s *EventsService) releaseWatchSlot(tokenID string) {
 
 // WatchEvents 实现事件流（入口先过 A5 per-token 并发闸：超限
 // ResourceExhausted，流结束/ctx 取消时 defer 释放槽位）。
+//
+// v0.3 W2-S4 可见性过滤（rbac-teams §4.2）：app 主体事件（subject =
+// app:<名>）按调用方可见项目集服务端过滤（用户 principal）；非 app 主体
+//（deployment/database/team/project/platform:* 等系统与台账事件）任意已
+// 认证 read 可见。机具令牌与平台管理员不过滤（全库）。
 func (s *EventsService) WatchEvents(req *serverv1.WatchEventsRequest, stream serverv1.EventsService_WatchEventsServer) error {
-	if p, ok := PrincipalFromContext(stream.Context()); ok {
+	ctx := stream.Context()
+	if p, ok := PrincipalFromContext(ctx); ok {
 		if !s.acquireWatchSlot(p.TokenID) {
 			return statusEnvelope(codes.ResourceExhausted,
 				fmt.Sprintf("watch streams limit reached for token (max %d concurrent)", maxWatchStreamsPerToken))
 		}
 		defer s.releaseWatchSlot(p.TokenID)
 	}
+	// app 主体过滤集：nil = 不过滤（全局调用方）；非 nil = 用户可见的 app
+	// 名集合（裸名——事件 subject 的记法，engine.appEvent 单点）。
+	var visibleApps map[string]bool
+	if !callerIsGlobal(ctx, s.st) {
+		apps, err := s.st.ListActiveApps(ctx)
+		if err != nil {
+			return err
+		}
+		allowed, err := visibleProjectFilter(ctx, s.st, "")
+		if err != nil {
+			return err
+		}
+		visibleApps = make(map[string]bool, len(apps))
+		for _, app := range apps {
+			if allowed[app.ProjectID] {
+				visibleApps[app.Name] = true
+			}
+		}
+	}
 	cursor := req.GetSinceSeq()
 	ticker := time.NewTicker(s.interval)
 	defer ticker.Stop()
 	for {
-		rows, err := s.st.EventsSince(stream.Context(), cursor, watchBatchSize)
+		rows, err := s.st.EventsSince(ctx, cursor, watchBatchSize)
 		if err != nil {
 			if expired, oldest, ok := cursorExpiredOf(err); ok {
 				// 410 信封错误帧后正常关闭（不回 gRPC error status）。
@@ -100,6 +126,10 @@ func (s *EventsService) WatchEvents(req *serverv1.WatchEventsRequest, stream ser
 			return err
 		}
 		for _, ev := range rows {
+			if visibleApps != nil && eventSubjectApp(ev.Subject) != "" && !visibleApps[eventSubjectApp(ev.Subject)] {
+				cursor = ev.Seq // 过滤不吞游标：被滤事件同样推进（防整批被滤时原地重读）
+				continue        // app 主体不在可见集：服务端过滤（不发帧）
+			}
 			if err := stream.Send(&serverv1.WatchEventsResponse{Frame: &serverv1.WatchEventsResponse_Event{
 				Event: eventView(ev),
 			}}); err != nil {
@@ -108,11 +138,20 @@ func (s *EventsService) WatchEvents(req *serverv1.WatchEventsRequest, stream ser
 			cursor = ev.Seq
 		}
 		select {
-		case <-stream.Context().Done():
+		case <-ctx.Done():
 			return nil // 断线重连语义：客户端以最后 seq 续读
 		case <-ticker.C:
 		}
 	}
+}
+
+// eventSubjectApp 抽取 app 主体事件的 app 名（subject = "app:<名>"；非 app
+// 主体返回空串——不过滤）。
+func eventSubjectApp(subject string) string {
+	if name, ok := strings.CutPrefix(subject, "app:"); ok {
+		return name
+	}
+	return ""
 }
 
 // eventView 构造事件投影。

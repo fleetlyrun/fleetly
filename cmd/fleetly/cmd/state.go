@@ -118,7 +118,7 @@ func (c *envGetCmd) Run(ctx context.Context, env *commands.Environment, args []s
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Env().GetEnv(ctx, &serverv1.GetEnvRequest{App: args[0], Key: args[1]})
+		resp, err := cl.Env().GetEnv(ctx, &serverv1.GetEnvRequest{App: c.conn.ref(args[0]), Key: args[1]})
 		if err != nil {
 			return err
 		}
@@ -157,7 +157,7 @@ func (c *envListCmd) Run(ctx context.Context, env *commands.Environment, args []
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Env().ListEnv(ctx, &serverv1.ListEnvRequest{App: args[0]})
+		resp, err := cl.Env().ListEnv(ctx, &serverv1.ListEnvRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -209,7 +209,7 @@ func (c *envRmCmd) Run(ctx context.Context, env *commands.Environment, args []st
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		if _, err := cl.Env().RemoveEnv(ctx, &serverv1.RemoveEnvRequest{App: args[0], Key: args[1]}); err != nil {
+		if _, err := cl.Env().RemoveEnv(ctx, &serverv1.RemoveEnvRequest{App: c.conn.ref(args[0]), Key: args[1]}); err != nil {
 			return err
 		}
 		if c.jsonOut {
@@ -275,7 +275,7 @@ func (c *placementShowCmd) Run(ctx context.Context, env *commands.Environment, a
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Placement().ShowPlacement(ctx, &serverv1.ShowPlacementRequest{App: args[0]})
+		resp, err := cl.Placement().ShowPlacement(ctx, &serverv1.ShowPlacementRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}

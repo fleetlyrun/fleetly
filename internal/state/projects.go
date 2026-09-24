@@ -458,6 +458,44 @@ func (s *Store) RemoveProjectMember(ctx context.Context, projectID, userID, acto
 	})
 }
 
+// GetProjectMembership 取单条覆写行（ResolvePermission 的覆写优先判定消费
+// ——v0.3 W2-S4）；不存在返回 ErrProjectMemberNotFound（调用面以此区分「有
+// 覆写」与「无覆写走团队角色」）。
+func (s *Store) GetProjectMembership(ctx context.Context, projectID, userID string) (ProjectMember, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT project_id, user_id, role, created_at FROM project_members WHERE project_id = ? AND user_id = ?`, projectID, userID)
+	var m ProjectMember
+	if err := scanProjectMember(row, &m); err != nil {
+		return ProjectMember{}, err
+	}
+	return m, nil
+}
+
+// ListProjectMembershipsByUser 返回该用户的全部队内覆写行（created_at 升序
+// ——v0.3 W2-S4 角色门/可达集计算的按用户读取面：ResolvePermission 先查覆
+// 写行后走 team_members 的「覆写行」半边；S4 前防呆面不精化覆写的旧口径随
+// 本原语收口）。项目行归属映射（project_id → team）由调用面按需 join。
+func (s *Store) ListProjectMembershipsByUser(ctx context.Context, userID string) ([]ProjectMember, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT project_id, user_id, role, created_at FROM project_members WHERE user_id = ? ORDER BY created_at ASC, project_id ASC`, userID)
+	if err != nil {
+		return nil, fmt.Errorf("state: list project memberships by user: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []ProjectMember
+	for rows.Next() {
+		var m ProjectMember
+		if err := scanProjectMember(rows, &m); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("state: iterate project memberships by user: %w", err)
+	}
+	return out, nil
+}
+
 // ListProjectMembers 返回项目全部覆写行（created_at 升序）。
 func (s *Store) ListProjectMembers(ctx context.Context, projectID string) ([]ProjectMember, error) {
 	rows, err := s.db.QueryContext(ctx,

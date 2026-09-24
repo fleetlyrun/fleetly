@@ -187,7 +187,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	apiDatabaseService := NewDatabaseService(store, box, databaseManager)
 	apiSecretsService := NewSecretsService(store, box)
 	execService := NewExecService(store, hub, execrelayManager)
-	authService := NewAuthService(store)
+	authService := NewAuthService(appConfig, store)
 	usersService := NewUsersService(store)
 	teamsService := NewTeamsService(store)
 	projectsService := NewProjectsService(store, engine, databaseManager, ingressManager)

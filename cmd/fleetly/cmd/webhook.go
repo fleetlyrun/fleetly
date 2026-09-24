@@ -83,7 +83,7 @@ func (c *webhookSecretSetCmd) Run(ctx context.Context, env *commands.Environment
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Apps().SetAppWebhookSecret(ctx, &serverv1.SetAppWebhookSecretRequest{
-			Name: args[0], Secret: args[1],
+			Name: c.conn.ref(args[0]), Secret: args[1],
 		})
 		if err != nil {
 			return err
@@ -121,7 +121,7 @@ func (c *webhookShowCmd) Run(ctx context.Context, env *commands.Environment, arg
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Apps().ShowAppWebhook(ctx, &serverv1.ShowAppWebhookRequest{Name: args[0]})
+		resp, err := cl.Apps().ShowAppWebhook(ctx, &serverv1.ShowAppWebhookRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -172,7 +172,7 @@ func (c *webhookSourceSetCmd) Run(ctx context.Context, env *commands.Environment
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Apps().SetAppSource(ctx, &serverv1.SetAppSourceRequest{
-			Name: args[0], SourceUrl: args[1], SourceBranch: c.branch,
+			Name: c.conn.ref(args[0]), SourceUrl: args[1], SourceBranch: c.branch,
 			SourceAuthKind: c.authKind, SourceAuthSecret: c.authSecret,
 		})
 		if err != nil {

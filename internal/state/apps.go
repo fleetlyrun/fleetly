@@ -143,6 +143,26 @@ func (s *Store) GetAppByName(ctx context.Context, name string) (App, error) {
 	return scanAppSingle(rows, name)
 }
 
+// ListAppRowsByName 返回该裸名的全部应用行（跨项目、任意生命周期态）——
+// E_APP_AMBIGUOUS 候选列与可见域解析的支撑原语（v0.3 W2-S4）。
+func (s *Store) ListAppRowsByName(ctx context.Context, name string) ([]App, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT `+appScanCols+` `+appScanFrom+` WHERE a.name = ? ORDER BY a.id`, name)
+	if err != nil {
+		return nil, fmt.Errorf("state: list app rows by name: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var out []App
+	for rows.Next() {
+		app, err := scanApp(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, app)
+	}
+	return out, rows.Err()
+}
+
 // GetAppByNameInProject 按项目 + 名取应用行（创建面/归属一致性校验的精确
 // 通道——UNIQUE(project_id,name) 语义的读取形态）。
 func (s *Store) GetAppByNameInProject(ctx context.Context, projectID, name string) (App, error) {

@@ -24,12 +24,13 @@ import (
 // NewAuthenticator 构造 API 认证器并承载 bootstrap 种子（装配期执行——
 // 失败 fail-fast 拒绝启动：鉴权面就绪是 API 面可用的前置）。cfg 提供
 // bootstrap token 文件路径（B5：<数据根>/bootstrap-token，数据根与 state
-// 库同目录）。
+// 库同目录）与会话滑动窗口 TTL（auth.session_ttl_hours，W2-S4 注入面——
+// 认证拍的滑动续期与登录面同参数）。
 func NewAuthenticator(app lynx.App, cfg *AppConfig, st *state.Store) (*api.Authenticator, error) {
 	if err := bootstrapAdminToken(app.Logger(), cfg.BootstrapTokenPath(), st); err != nil {
 		return nil, err
 	}
-	return api.NewAuthenticator(st), nil
+	return api.NewAuthenticator(st).WithSessionTTL(cfg.SessionTTL()), nil
 }
 
 // bootstrapAdminToken 首启种子（B5：token 写文件不进日志——测试断言日志

@@ -45,6 +45,11 @@ func (s *EnvService) SetEnv(ctx context.Context, req *serverv1.SetEnvRequest) (*
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：SetEnv=deploy / GetEnv=admin / ListEnv=read
+	// / RemoveEnv=deploy——层级由拦截器注入的 scope 登记映射（下同）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	ciphertext, err := s.box.Encrypt([]byte(req.GetValue()))
 	if err != nil {
 		return nil, err
@@ -63,6 +68,11 @@ func (s *EnvService) SetEnv(ctx context.Context, req *serverv1.SetEnvRequest) (*
 func (s *EnvService) GetEnv(ctx context.Context, req *serverv1.GetEnvRequest) (*serverv1.GetEnvResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：SetEnv=deploy / GetEnv=admin / ListEnv=read
+	// / RemoveEnv=deploy——层级由拦截器注入的 scope 登记映射（下同）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	row, err := s.st.GetAppEnv(ctx, app.ID, req.GetKey())
@@ -90,6 +100,11 @@ func (s *EnvService) ListEnv(ctx context.Context, req *serverv1.ListEnvRequest) 
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：SetEnv=deploy / GetEnv=admin / ListEnv=read
+	// / RemoveEnv=deploy——层级由拦截器注入的 scope 登记映射（下同）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	rows, err := s.st.ListAppEnv(ctx, app.ID)
 	if err != nil {
 		return nil, err
@@ -112,6 +127,11 @@ func (s *EnvService) ListEnv(ctx context.Context, req *serverv1.ListEnvRequest) 
 func (s *EnvService) RemoveEnv(ctx context.Context, req *serverv1.RemoveEnvRequest) (*serverv1.RemoveEnvResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：SetEnv=deploy / GetEnv=admin / ListEnv=read
+	// / RemoveEnv=deploy——层级由拦截器注入的 scope 登记映射（下同）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	if err := s.st.DeleteAppEnv(ctx, app.ID, req.GetKey()); err != nil {

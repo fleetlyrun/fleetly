@@ -126,6 +126,23 @@ func authCtx(ctx context.Context, token string) context.Context {
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
 
+// directCtx 是进程内直调 handler 的测试上下文：注入与「机具 admin 令牌过
+// 生产拦截链」等效的 Principal（UserID 空 = 全库 admin 等价，rbac-teams
+// §2.3 设计语义）。仅服务直调夹具使用——不经 bufconn 鉴权链的旧形态测试
+// 随 W2-S4 角色门迁移到本形态（角色门对无 principal 一律 fail-closed）。
+func directCtx(ctx context.Context) context.Context {
+	return context.WithValue(ctx, principalKey{}, Principal{TokenID: "direct-test", Scopes: []string{ScopeAdmin}})
+}
+
+// directPrincipalInterceptor 是直调测试装配（bufconn 不挂生产鉴权链的
+// 服务端）的 Principal 注入拦截器：与 directCtx 同一夹具语义，服务端形态
+// （gRPC outgoing ctx 值不跨线，客户端注入对服务端 handler 不可见）。
+func directPrincipalInterceptor() grpc.UnaryServerInterceptor {
+	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		return handler(directCtx(ctx), req)
+	}
+}
+
 // newAuthServer 起一个只挂鉴权拦截链的空 server（各测试自行注册服务）。
 func newAuthServer(auth *Authenticator) *grpc.Server {
 	return grpc.NewServer(

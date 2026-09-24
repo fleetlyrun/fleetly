@@ -109,7 +109,7 @@ func TestSearchLogsJSONLModeSameCode(t *testing.T) {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	svc := newLogsSvc(st, victorialogs.NewBackend(), nil)
-	_, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app", Keyword: "boom"})
+	_, err := svc.SearchLogs(directCtx(ctx), &serverv1.SearchLogsRequest{App: "app", Keyword: "boom"})
 	assertApperrCode(t, err, "E_LOGS_BACKEND_UNAVAILABLE")
 }
 
@@ -121,7 +121,7 @@ func TestSearchLogsFaceNotAssembled(t *testing.T) {
 		t.Fatalf("CreateApp: %v", err)
 	}
 	svc := newLogsSvc(st, nil, nil)
-	_, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app"})
+	_, err := svc.SearchLogs(directCtx(ctx), &serverv1.SearchLogsRequest{App: "app"})
 	assertApperrCode(t, err, "E_LOGS_BACKEND_UNAVAILABLE")
 }
 
@@ -134,7 +134,7 @@ func TestSearchLogsVLUnreachableSameCode(t *testing.T) {
 	}
 	vl := victorialogs.NewBackendWithBase("http://127.0.0.1:1")
 	svc := newLogsSvc(st, vl, nil)
-	_, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app"})
+	_, err := svc.SearchLogs(directCtx(ctx), &serverv1.SearchLogsRequest{App: "app"})
 	assertApperrCode(t, err, "E_LOGS_BACKEND_UNAVAILABLE")
 }
 
@@ -169,7 +169,7 @@ func TestSearchLogsRowsAndCursor(t *testing.T) {
 	vl := victorialogs.NewBackendWithBase(srv.URL)
 
 	svc := newLogsSvc(st, vl, nil)
-	resp, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app", Limit: 4})
+	resp, err := svc.SearchLogs(directCtx(ctx), &serverv1.SearchLogsRequest{App: "app", Limit: 4})
 	if err != nil {
 		t.Fatalf("SearchLogs: %v", err)
 	}
@@ -184,7 +184,7 @@ func TestSearchLogsRowsAndCursor(t *testing.T) {
 		t.Fatalf("cursor offset = %d err=%v, want 4", offset, err)
 	}
 	// 末页（offset=4 返回 1 行 < 预算 → has-more=false，无 cursor）。
-	resp2, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app", Limit: 4, Cursor: resp.GetNextCursor()})
+	resp2, err := svc.SearchLogs(directCtx(ctx), &serverv1.SearchLogsRequest{App: "app", Limit: 4, Cursor: resp.GetNextCursor()})
 	if err != nil {
 		t.Fatalf("SearchLogs page2: %v", err)
 	}
@@ -206,7 +206,7 @@ func TestSearchLogsCursorInvalid(t *testing.T) {
 	t.Cleanup(srv.Close)
 	vl := victorialogs.NewBackendWithBase(srv.URL)
 	svc := newLogsSvc(st, vl, nil)
-	_, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app", Cursor: "not-a-cursor!!"})
+	_, err := svc.SearchLogs(directCtx(ctx), &serverv1.SearchLogsRequest{App: "app", Cursor: "not-a-cursor!!"})
 	if err == nil || !strings.Contains(err.Error(), "cursor") {
 		t.Fatalf("err = %v, want invalid cursor", err)
 	}
@@ -229,7 +229,7 @@ func TestSearchLogsAccessFieldsProjected(t *testing.T) {
 	vl := victorialogs.NewBackendWithBase(srv.URL)
 	svc := newLogsSvc(st, vl, nil)
 
-	resp, err := svc.SearchLogs(ctx, &serverv1.SearchLogsRequest{App: "app", Sources: []string{"access"}})
+	resp, err := svc.SearchLogs(directCtx(ctx), &serverv1.SearchLogsRequest{App: "app", Sources: []string{"access"}})
 	if err != nil {
 		t.Fatalf("SearchLogs: %v", err)
 	}

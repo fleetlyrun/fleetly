@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"strconv"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -50,13 +52,18 @@ func (s *LogsService) WithVictorialogs(vl *victorialogs.Backend, vm *victorialog
 
 // FollowLogs 实时跟随（server-streaming；ctx 取消即断流，重连 = 重新
 // Follow）。订阅键 = app 的三段限定形（v0.3 流标签口径——采集端 ring 以
-// 限定形记账，rbac-teams §4.3）。
+// 限定形记账，rbac-teams §4.3）。app 参数即引用（裸名/限定形，可见域解析
+// + 角色门——W2-S4；FollowLogs 的强制约束由此承载）。
 func (s *LogsService) FollowLogs(req *serverv1.FollowLogsRequest, stream serverv1.LogsService_FollowLogsServer) error {
-	app, err := resolveApp(stream.Context(), s.st, req.GetApp())
+	ctx := stream.Context()
+	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
 		return err
 	}
-	ch, cancel := s.mg.Follow(stream.Context(), app.QualifiedName(), req.GetService())
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return err
+	}
+	ch, cancel := s.mg.Follow(ctx, app.QualifiedName(), req.GetService())
 	defer cancel()
 	for entry := range ch {
 		if err := stream.Send(&serverv1.FollowLogsResponse{Entry: logEntryView(entry)}); err != nil {
@@ -66,12 +73,18 @@ func (s *LogsService) FollowLogs(req *serverv1.FollowLogsRequest, stream serverv
 	return nil
 }
 
-// ListHistoryLogs 历史检索（时间窗/服务/来源过滤）。
+// ListHistoryLogs 历史检索（时间窗/服务/来源过滤；可见域解析 + 角色门）。
 func (s *LogsService) ListHistoryLogs(ctx context.Context, req *serverv1.ListHistoryLogsRequest) (*serverv1.ListHistoryLogsResponse, error) {
-	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	q := logs.HistoryQuery{
+		// 原始引用原样下发（logs.Manager.History 内部做 GetAppByName 解析
+		// 与三段限定形换算；本面的可见域解析 + 角色门已先行收口——W2-S4）。
 		App:     req.GetApp(),
 		Service: req.GetService(),
 		Source:  req.GetSource(),
@@ -106,8 +119,15 @@ const (
 // 面只在日志库——不返回空列表冒充）；② VL 不可达（检索降级，直播面不受
 // 影响）。keyword 由 victorialogs.BuildLogsQL 转义为字面量短语（注入安全
 // 硬性条款；白名单外的服务名/来源以 InvalidArgument 拒绝）。
+//
+// v0.3 W2-S4 强制 app 约束（rbac-teams §4.2）：非平台管理员的用户查询必须
+// 含 `app="team/prj/app"` 三段限定形流选择器（请求 apps 字段即选择器面）；
+// 无选择器 / 选择器非限定形 / 引用不可见 app → 拒绝带指引。命中校验后按
+// 解析出的规范限定形下发查询（与 ingest 写入的标签值同口径）。机具令牌与
+// 平台管理员不受约束（全库）。
 func (s *LogsService) SearchLogs(ctx context.Context, req *serverv1.SearchLogsRequest) (*serverv1.SearchLogsResponse, error) {
-	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+	apps, err := s.constrainSearchApps(ctx, req.GetApp(), req.GetApps())
+	if err != nil {
 		return nil, err
 	}
 	if s.vl == nil {
@@ -134,7 +154,7 @@ func (s *LogsService) SearchLogs(ctx context.Context, req *serverv1.SearchLogsRe
 		limit = maxSearchLimit
 	}
 	q := victorialogs.SearchQuery{
-		Apps:     req.GetApps(),
+		Apps:     apps,
 		Keyword:  req.GetKeyword(),
 		Services: req.GetServices(),
 		Sources:  req.GetSources(),
@@ -177,6 +197,53 @@ func (s *LogsService) SearchLogs(ctx context.Context, req *serverv1.SearchLogsRe
 		resp.NextCursor = encodeSearchCursor(offset + len(out))
 	}
 	return resp, nil
+}
+
+// constrainSearchApps 校验并归一 SearchLogs 的 app 流选择器（v0.3 W2-S4
+// 强制约束，rbac-teams §4.2「SearchLogs 强制 app 约束」的执行点）：
+//   - 选择器必填（proto 形状已约束，此处双保险——无选择器 400 带指引）；
+//   - 非全局调用方（用户且非平台管理员）：选择器必须是三段限定形
+//     team/prj/app（选择器即约束面——裸名无从判定「查的是哪个项目的流」），
+//     解析后过角色门（不可见/越权随门拒绝）；
+//   - 全局调用方（机具令牌/平台管理员）：任意引用形态，按解析出的规范限
+//     定形下发；
+//   - 返回查询过滤集（规范限定形——与 ingest 写入的流标签值同口径）。
+//     预留的 apps 重复字段与归一结果不符即 400（单 app 诚实边界，不静默
+//     忽略额外值）。
+func (s *LogsService) constrainSearchApps(ctx context.Context, appRef string, extraApps []string) ([]string, error) {
+	appRef = strings.TrimSpace(appRef)
+	if appRef == "" {
+		return nil, statusInvalidArgument(
+			`search requires an app stream selector: pass app="team/prj/app" (the qualified form is mandatory for user credentials)`)
+	}
+	global := callerIsGlobal(ctx, s.st)
+	if !global && strings.Count(appRef, "/") != 2 {
+		return nil, statusInvalidArgument(fmt.Sprintf(
+			"app stream selector %q must use the qualified form team/prj/app for user credentials (search is enforced per app; resolve the bare name with 'fleetly apps list' first)", appRef))
+	}
+	app, err := resolveApp(ctx, s.st, appRef)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
+	canonical := app.QualifiedName()
+	if len(extraApps) > 0 {
+		normalized := make([]string, 0, len(extraApps))
+		for _, a := range extraApps {
+			row, rerr := resolveApp(ctx, s.st, a)
+			if rerr != nil {
+				return nil, rerr
+			}
+			if rerr := requireAppAccess(ctx, s.st, row); rerr != nil {
+				return nil, rerr
+			}
+			normalized = append(normalized, row.QualifiedName())
+		}
+		return append([]string{canonical}, normalized...), nil
+	}
+	return []string{canonical}, nil
 }
 
 // searchRowFields 投影访问行的结构化字段（白名单键双保险——入湖侧已过滤，

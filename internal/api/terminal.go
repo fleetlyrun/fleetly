@@ -49,6 +49,12 @@ func (s *ExecService) CreateTerminalTicket(ctx context.Context, req *serverv1.Cr
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：terminal scope 对人类角色按 §3.2 矩阵映射为
+	// developer+（levelDeploy）——Web 终端对会话/用户 PAT 凭据的角色蕴含；
+	// 机具令牌仍由独立 terminal scope 把门（第 1 门，逐字不动）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	var tokenID string
 	if p, ok := PrincipalFromContext(ctx); ok {
 		tokenID = p.TokenID

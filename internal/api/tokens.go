@@ -210,10 +210,12 @@ func (s *TokensService) validateProjectBinding(ctx context.Context, projectID st
 }
 
 // validateDeclaredScopes 校验声明 scopes ⊆ 用户可达集（设计 §2.3：防呆
-// 非防险——viewer 用户造 admin PAT → 400 带指引；角色门落地后仍会按
-// min(scopes, 角色蕴含) 硬性收缩，本校验只把明显的越权声明挡在创建时）。
+// 非防险——viewer 用户造 admin PAT → 400 带指引；硬收缩在第 2 门角色门按
+// min(scopes, 目标项目角色蕴含) 逐请求生效，本校验只把明显的越权声明挡在
+// 创建时）。可达集单点 reachableScopesForUser（ownership.go）——v0.3 W2-S4
+// 收口：S2 的「不做覆写精化」遗留在此闭环，覆写行（含升向）并入可达集。
 func (s *TokensService) validateDeclaredScopes(ctx context.Context, userID, declared string) error {
-	reachable := s.userReachableScopes(ctx, userID)
+	reachable := reachableScopesForUser(ctx, s.st, userID)
 	for _, sc := range strings.Split(declared, ",") {
 		if sc == "" {
 			continue
@@ -225,49 +227,6 @@ func (s *TokensService) validateDeclaredScopes(ctx context.Context, userID, decl
 		}
 	}
 	return nil
-}
-
-// userReachableScopes 计算用户的可达 scope 集（§3.2 角色→scope 对齐）：
-// 平台管理员 = 全集；否则 = 所在团队角色蕴含的并集；无成员关系的用户 =
-// {read} 最小集（viewer 等价——CreateUser 通道建的用户无队）。
-//
-// 决策注记（保守最小实现）：取团队角色并集，不做 project_members 覆写
-// 的按项目精化——PAT 声明校验是防呆面，覆写收窄在角色门硬性生效；项目
-// 级精化随 S4 角色门一并收口（遗留）。
-func (s *TokensService) userReachableScopes(ctx context.Context, userID string) map[string]bool {
-	all := map[string]bool{ScopeRead: true, ScopeDeploy: true, ScopeTerminal: true, ScopeAdmin: true}
-	if isPlatformAdminUser(ctx, s.st) {
-		return all
-	}
-	reachable := map[string]bool{ScopeRead: true} // 最小缺省（无队用户 = viewer 等价）
-	memberships, err := s.st.ListUserMemberships(ctx, userID)
-	if err != nil {
-		return reachable // 读故障按最小集收敛（fail-closed）
-	}
-	for _, m := range memberships {
-		switch m.Role {
-		case state.TeamRoleOwner, state.TeamRoleAdmin:
-			return all // admin/owner 蕴含全集（含 terminal——§3.2 矩阵）
-		case state.TeamRoleDeveloper:
-			reachable[ScopeDeploy] = true
-			reachable[ScopeTerminal] = true
-		case state.TeamRoleViewer:
-			// read 已在缺省集。
-		}
-	}
-	return reachable
-}
-
-// reachableScopeList 是可达集的人读清单（错误指引用；固定词表序）。
-func reachableScopeList(reachable map[string]bool) string {
-	order := []string{ScopeRead, ScopeDeploy, ScopeTerminal, ScopeAdmin}
-	out := make([]string, 0, len(order))
-	for _, s := range order {
-		if reachable[s] {
-			out = append(out, s)
-		}
-	}
-	return strings.Join(out, ", ")
 }
 
 // generateToken 生成明文 token（crypto/rand 24 字节 → 48 hex）。

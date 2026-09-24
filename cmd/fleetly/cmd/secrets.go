@@ -73,7 +73,7 @@ func (c *secretSetCmd) Run(ctx context.Context, env *commands.Environment, args 
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Secrets().SetSecret(ctx, &serverv1.SetSecretRequest{
-			App:   args[0],
+			App:   c.conn.ref(args[0]),
 			Name:  args[1],
 			Value: c.value,
 		})
@@ -110,7 +110,7 @@ func (c *secretListCmd) Run(ctx context.Context, env *commands.Environment, args
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Secrets().ListSecrets(ctx, &serverv1.ListSecretsRequest{App: args[0]})
+		resp, err := cl.Secrets().ListSecrets(ctx, &serverv1.ListSecretsRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -155,7 +155,7 @@ func (c *secretRemoveCmd) Run(ctx context.Context, env *commands.Environment, ar
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Secrets().RemoveSecret(ctx, &serverv1.RemoveSecretRequest{
-			App:  args[0],
+			App:  c.conn.ref(args[0]),
 			Name: args[1],
 		})
 		if err != nil {

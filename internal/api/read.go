@@ -38,6 +38,11 @@ func (s *PlacementService) ShowPlacement(ctx context.Context, req *serverv1.Show
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
+	// UpdatePlacement=admin）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	resp := &serverv1.ShowPlacementResponse{App: app.Name, Volumes: []*serverv1.VolumeView{}}
 	if p, err := s.st.GetPlacement(ctx, app.ID); err == nil {
 		resp.Placement = placementView(p)
@@ -60,6 +65,11 @@ func (s *PlacementService) ShowPlacement(ctx context.Context, req *serverv1.Show
 func (s *PlacementService) UpdatePlacement(ctx context.Context, req *serverv1.UpdatePlacementRequest) (*serverv1.UpdatePlacementResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
+	// UpdatePlacement=admin）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	if s.res == nil {
@@ -118,6 +128,11 @@ func (s *PlacementService) GetPlacementMigrationPlan(ctx context.Context, req *s
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
+	// UpdatePlacement=admin）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	if s.res == nil {
 		return nil, status.Error(codes.Unavailable, "placement resolver unavailable (not assembled)")
 	}
@@ -159,6 +174,11 @@ func (s *RevisionsService) ListRevisions(ctx context.Context, req *serverv1.List
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
+	// UpdatePlacement=admin）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	rows, err := s.st.ListRevisions(ctx, app.ID)
 	if err != nil {
 		return nil, err
@@ -183,6 +203,11 @@ func (s *RevisionsService) ListRevisions(ctx context.Context, req *serverv1.List
 func (s *RevisionsService) GetRevisionSpec(ctx context.Context, req *serverv1.GetRevisionSpecRequest) (*serverv1.GetRevisionSpecResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
+	// UpdatePlacement=admin）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	rev, err := s.st.GetAppRevision(ctx, app.ID, req.GetRevisionId())
@@ -217,6 +242,11 @@ func (s *DomainsService) ListAppDomains(ctx context.Context, req *serverv1.ListA
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
+	// UpdatePlacement=admin）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	rows, err := s.st.ListAppDomains(ctx, app.ID)
 	if err != nil {
 		return nil, err
@@ -240,6 +270,11 @@ func (s *DomainsService) ListAppDomains(ctx context.Context, req *serverv1.ListA
 func (s *DomainsService) VerifyAppDomains(ctx context.Context, req *serverv1.VerifyAppDomainsRequest) (*serverv1.VerifyAppDomainsResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
+	// UpdatePlacement=admin）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	rows, err := s.st.ListAppDomains(ctx, app.ID)

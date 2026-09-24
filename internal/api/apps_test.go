@@ -79,7 +79,7 @@ func TestDeleteAppWithdrawsRoutes(t *testing.T) {
 	ctx := context.Background()
 	app := seedAppWithDomains(t, store, "gone")
 
-	if _, err := svc.DeleteApp(ctx, &serverv1.DeleteAppRequest{Name: "gone"}); err != nil {
+	if _, err := svc.DeleteApp(directCtx(ctx), &serverv1.DeleteAppRequest{Name: "gone"}); err != nil {
 		t.Fatalf("DeleteApp: %v", err)
 	}
 	if len(fake.calls) != 1 || fake.calls[0] != app.ID {
@@ -106,7 +106,7 @@ func TestDeleteAppWithdrawFailureAlarms(t *testing.T) {
 	ctx := context.Background()
 	app := seedAppWithDomains(t, store, "stuck")
 
-	_, err := svc.DeleteApp(ctx, &serverv1.DeleteAppRequest{Name: "stuck"})
+	_, err := svc.DeleteApp(directCtx(ctx), &serverv1.DeleteAppRequest{Name: "stuck"})
 	if err == nil {
 		t.Fatal("DeleteApp must surface withdrawal failure")
 	}
@@ -141,7 +141,7 @@ func TestSetAppSourceValidation(t *testing.T) {
 	}
 
 	// E7④：https_token 配对时 auth_secret ≥16。
-	_, err := svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
+	_, err := svc.SetAppSource(directCtx(ctx), &serverv1.SetAppSourceRequest{
 		Name: "srcapp", SourceUrl: "https://example.com/acme/web.git",
 		SourceAuthKind: "https_token", SourceAuthSecret: "short",
 	})
@@ -149,7 +149,7 @@ func TestSetAppSourceValidation(t *testing.T) {
 		t.Fatalf("short auth_secret err = %v, want InvalidArgument", err)
 	}
 	// E7⑤：https_token 拒绝 http:// 明文源。
-	_, err = svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
+	_, err = svc.SetAppSource(directCtx(ctx), &serverv1.SetAppSourceRequest{
 		Name: "srcapp", SourceUrl: "http://example.com/acme/web.git",
 		SourceAuthKind: "https_token", SourceAuthSecret: "long-enough-token-16",
 	})
@@ -157,14 +157,14 @@ func TestSetAppSourceValidation(t *testing.T) {
 		t.Fatalf("http + https_token err = %v, want InvalidArgument", err)
 	}
 	// 合法形态：https + 16+ 材料。
-	if _, err := svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
+	if _, err := svc.SetAppSource(directCtx(ctx), &serverv1.SetAppSourceRequest{
 		Name: "srcapp", SourceUrl: "https://example.com/acme/web.git",
 		SourceAuthKind: "https_token", SourceAuthSecret: "long-enough-token-16",
 	}); err != nil {
 		t.Fatalf("valid https_token source rejected: %v", err)
 	}
 	// http:// + none 仍允许（匿名明文拉取是合法形态）。
-	if _, err := svc.SetAppSource(ctx, &serverv1.SetAppSourceRequest{
+	if _, err := svc.SetAppSource(directCtx(ctx), &serverv1.SetAppSourceRequest{
 		Name: "srcapp", SourceUrl: "http://example.com/acme/web.git", SourceAuthKind: "none",
 	}); err != nil {
 		t.Fatalf("http + none must stay allowed: %v", err)
@@ -233,7 +233,7 @@ func TestListAppsLimitDefaultAndBatchDerived(t *testing.T) {
 	}
 
 	// limit=0：缺省 100 截断（命名升序 = created_at 升序的前 100 个）。
-	resp, err := svc.ListApps(ctx, &serverv1.ListAppsRequest{})
+	resp, err := svc.ListApps(directCtx(ctx), &serverv1.ListAppsRequest{})
 	if err != nil {
 		t.Fatalf("ListApps default: %v", err)
 	}
@@ -245,12 +245,12 @@ func TestListAppsLimitDefaultAndBatchDerived(t *testing.T) {
 	}
 
 	// limit=5：照用（前 5）。
-	resp5, err := svc.ListApps(ctx, &serverv1.ListAppsRequest{Limit: 5})
+	resp5, err := svc.ListApps(directCtx(ctx), &serverv1.ListAppsRequest{Limit: 5})
 	if err != nil || len(resp5.GetApps()) != 5 {
 		t.Fatalf("limit=5 apps = %d err=%v, want 5", len(resp5.GetApps()), err)
 	}
 	// limit=150：超集不截断（全部 120）。
-	resp150, err := svc.ListApps(ctx, &serverv1.ListAppsRequest{Limit: 150})
+	resp150, err := svc.ListApps(directCtx(ctx), &serverv1.ListAppsRequest{Limit: 150})
 	if err != nil || len(resp150.GetApps()) != 120 {
 		t.Fatalf("limit=150 apps = %d err=%v, want 120", len(resp150.GetApps()), err)
 	}
@@ -275,7 +275,7 @@ func TestListAppsLimitDefaultAndBatchDerived(t *testing.T) {
 		if got := derivedOf(resp.GetApps(), name); got != want {
 			t.Fatalf("batch derived %s = %s, want %s", name, got, want)
 		}
-		detail, derr := svc.GetApp(ctx, &serverv1.GetAppRequest{Name: name})
+		detail, derr := svc.GetApp(directCtx(ctx), &serverv1.GetAppRequest{Name: name})
 		if derr != nil {
 			t.Fatalf("GetApp %s: %v", name, derr)
 		}

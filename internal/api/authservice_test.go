@@ -277,10 +277,34 @@ func TestSessionCookieAuthenticationBranch(t *testing.T) {
 		if p.SessionID == "" || p.UserID != u.ID {
 			t.Fatalf("principal via %s = %+v, want session identity", key, p)
 		}
-		// 会话 scope = 全集（临时口径；W2 角色门收口——见 auth.go 注释）。
+		// 会话 scope = 角色可达集（W2-S4 硬收缩后的口径）。本用户是库内首
+		// 用户（state.CreateUser 首用户强制平台管理员）→ 可达集 = 全集。
 		if err := auth.authorize(p, ScopeAdmin); err != nil {
-			t.Fatalf("session scopes must cover admin (temporary posture): %v", err)
+			t.Fatalf("platform admin session scopes must cover admin: %v", err)
 		}
+	}
+	// 非管理员、无成员关系用户的会话 = {read} 最小集（W2-S4 硬收缩——admin
+	// 与 deploy 均不可达；资源面真授权在角色门逐请求解析，rbac-teams §4.2）。
+	plain, err := env.st.CreateUser(ctx, state.UserWrite{Email: "plain@example.com", Password: "pw"})
+	if err != nil {
+		t.Fatalf("CreateUser(plain): %v", err)
+	}
+	_, plainSess, err := env.st.CreateSession(ctx, plain.ID, time.Now().UTC().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("CreateSession(plain): %v", err)
+	}
+	pPlain, err := auth.AuthenticateSessionCookie(ctx, sessionCookieName+"="+plainSess)
+	if err != nil {
+		t.Fatalf("AuthenticateSessionCookie(plain): %v", err)
+	}
+	if err := auth.authorize(pPlain, ScopeAdmin); err == nil {
+		t.Fatalf("membership-less non-admin session must NOT cover admin (W2-S4 hard shrink)")
+	}
+	if err := auth.authorize(pPlain, ScopeDeploy); err == nil {
+		t.Fatalf("membership-less non-admin session must NOT cover deploy (W2-S4 hard shrink)")
+	}
+	if err := auth.authorize(pPlain, ScopeRead); err != nil {
+		t.Fatalf("session scopes must cover read (minimal set): %v", err)
 	}
 
 	// Bearer 优先：带合法 Bearer + 垃圾 cookie 的请求走 token 分支。
@@ -536,12 +560,13 @@ func TestAuthFaceScopeRegistration(t *testing.T) {
 			t.Errorf("UsersService.%s scope = %q ok=%v, want admin", m, s, ok)
 		}
 	}
-	// 会话 cookie 名与 TTL 常量（设计 §2.2 形态）。
+	// 会话 cookie 名与缺省 TTL（设计 §2.2 形态；W2-S4 起 TTL 是 AuthService
+	// 的注入字段——缺省 7 天滑动、绝对上限 30 天在 state 层封顶）。
 	if sessionCookieName != "fleetly_session" {
 		t.Fatalf("session cookie name = %q, want fleetly_session", sessionCookieName)
 	}
-	if sessionTTL != 7*24*time.Hour {
-		t.Fatalf("session TTL = %v, want 7d (design §2.2)", sessionTTL)
+	if NewAuthService(nil).sessionTTL != 7*24*time.Hour {
+		t.Fatalf("session TTL = %v, want 7d (design §2.2)", NewAuthService(nil).sessionTTL)
 	}
 }
 

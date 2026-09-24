@@ -147,6 +147,7 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_APP_AMBIGUOUS":        "v0.3 W2-S3 rbac-teams §4.2/§5 (resource name matches rows across projects — per-project uniqueness, D-W0-4; qualified/id read face lands in S4, 400)",
 	"E_APP_PROJECT_MISMATCH": "v0.3 W2-S3 rbac-teams §3.4 (deploy/database-create targets a project different from the row's ownership — check-consistency ruling; MoveApp guidance, 409)",
 	"E_APP_PROJECT_REQUIRED": "v0.3 W2-S3 rbac-teams §3.4 (git-push first-deploy cannot derive project ownership: no signed user or no default project; deploy once via CLI/API, 400)",
+	"E_DB_PROJECT_MISMATCH":  "v0.3 W2-S4 rbac-teams §4.1/§4.2 (referenced database instance belongs to a different project than the app — project isolation R6/R7; cross-project database attachment rejected at deploy admission via the engine preparing face, 409)",
 
 	// W3 遗留撞键票收口（2026-09-21，实现期新增，文档外码单独列出）：app
 	// 顶层名与平台组件命名空间的保留字校验（compose 受理层消费，
@@ -193,7 +194,8 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // W2-S1 后 = 63 E + 5 W；W2-S3 减 E_APP_NAME_RESERVED（rbac-teams §4.3
 // 保留字迁移退役——设计明示的唯一减码）增 E_PROJECT_AMBIGUOUS /
 // E_APP_AMBIGUOUS / E_APP_PROJECT_MISMATCH / E_APP_PROJECT_REQUIRED
-// → 66 E + 5 W。
+// → 66 E + 5 W；W2-S4 增 E_DB_PROJECT_MISMATCH（rbac-teams §4.1 E4 跨项目
+// 库引用守卫，部署受理面）→ 67 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -203,8 +205,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 66 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 66), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 67 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 67), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

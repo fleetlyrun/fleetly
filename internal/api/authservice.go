@@ -39,14 +39,18 @@ type AuthService struct {
 	// authLimiter 是注册/登录共用的双键限流器（email:... 与 ip:... 各一桶
 	// ——任一耗尽即拒，撞库者无法用单 email 换多 IP 配额）。
 	authLimiter *rateLimiter
+	// sessionTTL 是会话滑动窗口时长（config auth.session_ttl_hours 注入面；
+	// 缺省 state.DefaultSessionTTL = 7 天。绝对寿命 30 天上限在 state 层
+	// 封顶——CreateSession 与 SlideSession 双侧 MIN）。W1 的固定 7 天常量
+	// 口径随 W2-S4 收口为「可配置滑动 + 绝对上限」。
+	sessionTTL time.Duration
+	// secureCookie 是会话 cookie 的 Secure 位（控制面 TLS 模式 off = false、
+	// platform/manual = true——rbac-teams §2.2「Secure 随 TLS 模式」的 W2-S4
+	// 收口；W1 期该位挂账）。
+	secureCookie bool
 	// now 是可注入时钟（会话过期计算；测试驱动）。
 	now func() time.Time
 }
-
-// 会话 TTL（rbac-teams 设计 §2.2：7 天滑动 + 30 天绝对上限；config
-// auth.session_ttl_hours 可调项未随本票落 config 面——W2 Console 会话面
-// 收口，当前实现取设计缺省 7 天固定期）。
-const sessionTTL = 7 * 24 * time.Hour
 
 // 注册/登录限流参数（设计 §2.1：如 10 次/分钟）。
 const (
@@ -55,13 +59,26 @@ const (
 	authRatePerSecF = float64(authRatePerMin) / 60.0
 )
 
-// NewAuthService 构造 AuthService。
+// NewAuthService 构造 AuthService（会话 TTL 缺省 7 天滑动、Secure 位缺省
+// 关——TLS-off 形态的诚实缺省；生产装配经 WithSessionSecurity 注入）。
 func NewAuthService(st *state.Store) *AuthService {
 	return &AuthService{
 		st:          st,
 		authLimiter: &rateLimiter{buckets: make(map[string]*tokenBucket), rate: authRatePerSecF, burst: authRateBurst, now: time.Now},
+		sessionTTL:  state.DefaultSessionTTL,
 		now:         time.Now,
 	}
+}
+
+// WithSessionSecurity 注入会话 cookie 的 Secure 位与滑动窗口时长（v0.3
+// W2-S4 装配面）：secure = 控制面 TLS 模式非 off（platform/manual 带 Secure
+// 位）；ttl = config auth.session_ttl_hours（非正值忽略保持缺省）。
+func (s *AuthService) WithSessionSecurity(secure bool, ttl time.Duration) *AuthService {
+	s.secureCookie = secure
+	if ttl > 0 {
+		s.sessionTTL = ttl
+	}
+	return s
 }
 
 // Register 自助注册（窗口规则在 state.RegisterUser 事务内原子判定）：
@@ -265,12 +282,20 @@ func (s *AuthService) allowAuth(ctx context.Context, email string) bool {
 }
 
 // createSession 落会话行并写 Set-Cookie 响应头（明文只出现这一次）。
+// TTL 语义（W2-S4 收口，rbac-teams §2.2）：expires = min(now + 滑动窗口,
+// now + 绝对寿命上限)——绝对上限是 state 层常量（MaxSessionLifetime），
+// 后续滑动续期（Authenticator 认证拍的 SlideSession）在同一上限内延长。
 func (s *AuthService) createSession(ctx context.Context, userID string) (string, error) {
-	_, plaintext, err := s.st.CreateSession(ctx, userID, s.now().UTC().Add(sessionTTL))
+	now := s.now().UTC()
+	expires := now.Add(s.sessionTTL)
+	if abs := now.Add(state.MaxSessionLifetime); expires.After(abs) {
+		expires = abs // 配置 TTL 超过绝对上限时封顶（可调短、不可调过长寿命）
+	}
+	_, plaintext, err := s.st.CreateSession(ctx, userID, expires)
 	if err != nil {
 		return "", err
 	}
-	setSessionCookie(ctx, plaintext, int(sessionTTL/time.Second))
+	setSessionCookie(ctx, plaintext, int(s.sessionTTL/time.Second), s.secureCookie)
 	return plaintext, nil
 }
 
@@ -335,12 +360,16 @@ func clientIPFromContext(ctx context.Context) string {
 }
 
 // setSessionCookie 写 Set-Cookie 响应头（HttpOnly + SameSite=Lax + Path=/；
-// Secure 随 TLS 模式——gRPC handler 侧拿不到 gateway 的 TLS 上下文，该位
-// 挂账 W2 Console 会话面随 TLS 模式注入，rbac-teams §2.2）。
-func setSessionCookie(ctx context.Context, plaintext string, maxAge int) {
-	_ = grpc.SetHeader(ctx, metadata.Pairs("set-cookie", fmt.Sprintf(
-		"%s=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d",
-		sessionCookieName, plaintext, maxAge)))
+// Secure 位随控制面 TLS 模式——off 不带、platform/manual 带，rbac-teams
+// §2.2 的 W2-S4 收口；gRPC handler 侧拿不到 gateway 的 TLS 上下文，该位由
+// 装配期按配置注入 AuthService）。
+func setSessionCookie(ctx context.Context, plaintext string, maxAge int, secure bool) {
+	value := fmt.Sprintf("%s=%s; Path=/; HttpOnly; SameSite=Lax; Max-Age=%d",
+		sessionCookieName, plaintext, maxAge)
+	if secure {
+		value += "; Secure"
+	}
+	_ = grpc.SetHeader(ctx, metadata.Pairs("set-cookie", value))
 }
 
 // clearSessionCookie 写过期 Set-Cookie（注销/全部注销后浏览器立即清掉）。

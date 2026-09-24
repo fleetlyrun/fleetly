@@ -118,6 +118,11 @@ func (s *DatabaseService) CreateDatabase(ctx context.Context, req *serverv1.Crea
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：库生命周期 = admin 层级（scope 登记映射）；
+	// 先门后建行。平台管理员不代写在此收口。
+	if err := requireResourceAccess(ctx, s.st, proj.ID); err != nil {
+		return nil, err
+	}
 	// 归属一致性：行存在于其他项目 → 409（校验一致裁决，MoveDatabase 指引
 	// ——与 Deploy 同口径）；目标项目内已有同名 → 名字占用 409。
 	existing, err := s.st.GetDatabaseInstanceByName(ctx, req.GetName())
@@ -181,11 +186,14 @@ func (s *DatabaseService) CreateDatabase(ctx context.Context, req *serverv1.Crea
 	return &serverv1.CreateDatabaseResponse{Database: view}, nil
 }
 
-// GetDatabase 库实例详情（脱敏投影）。
+// GetDatabase 库实例详情（脱敏投影；可见域解析 + 角色门，W2-S4）。
 func (s *DatabaseService) GetDatabase(ctx context.Context, req *serverv1.GetDatabaseRequest) (*serverv1.GetDatabaseResponse, error) {
-	inst, err := s.st.GetDatabaseInstanceByName(ctx, req.GetName())
+	inst, err := resolveDatabaseRef(ctx, s.st, req.GetName())
 	if err != nil {
-		return nil, mapDatabaseErr(err)
+		return nil, err
+	}
+	if err := requireDatabaseAccess(ctx, s.st, inst); err != nil {
+		return nil, err
 	}
 	view, err := s.databaseView(ctx, inst)
 	if err != nil {
@@ -195,11 +203,25 @@ func (s *DatabaseService) GetDatabase(ctx context.Context, req *serverv1.GetData
 }
 
 // ListDatabases 库实例列表（name 字典序；deleted tombstone 不进默认列表
-// ——与 apps 列表同口径）。
+// ——与 apps 列表同口径）。可见性过滤 + ?project= 收窄（W2-S4，与 ListApps
+// 同款 visibleProjectFilter 单点）。
 func (s *DatabaseService) ListDatabases(ctx context.Context, req *serverv1.ListDatabasesRequest) (*serverv1.ListDatabasesResponse, error) {
 	rows, err := s.st.ListDatabaseInstances(ctx)
 	if err != nil {
 		return nil, err
+	}
+	allowed, err := visibleProjectFilter(ctx, s.st, req.GetProject())
+	if err != nil {
+		return nil, err
+	}
+	if allowed != nil {
+		narrowed := rows[:0:0]
+		for _, inst := range rows {
+			if allowed[inst.ProjectID] {
+				narrowed = append(narrowed, inst)
+			}
+		}
+		rows = narrowed
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
@@ -226,9 +248,14 @@ func (s *DatabaseService) ListDatabases(ctx context.Context, req *serverv1.ListD
 // （E_DB_REFERENCED 409 附引用清单）→ 卷处置选择落位 + deleting 转移 +
 // 审计 db.delete 同事务；reap 由收敛 duty 幂等完成。
 func (s *DatabaseService) DeleteDatabase(ctx context.Context, req *serverv1.DeleteDatabaseRequest) (*serverv1.DeleteDatabaseResponse, error) {
-	inst, err := s.st.GetDatabaseInstanceByName(ctx, req.GetName())
+	inst, err := resolveDatabaseRef(ctx, s.st, req.GetName())
 	if err != nil {
-		return nil, mapDatabaseErr(err)
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：删除 = admin 层级（getMutableInstance 未覆盖
+	// 终态行——删除目标可能已 deleting，门先行）。
+	if err := requireDatabaseAccess(ctx, s.st, inst); err != nil {
+		return nil, err
 	}
 	if inst.State == state.DatabaseDeleting || inst.State == state.DatabaseDeleted {
 		return nil, databaseNotFound(inst.Name, "already "+string(inst.State))
@@ -668,11 +695,15 @@ func (s *DatabaseService) mapOperationErr(err error) error {
 // ── 内部协作者 ──────────────────────────────────────────────────────────────
 
 // getMutableInstance 取非终态实例（deleting/deleted 的操作目标 → 404——
-// E_DB_NOT_FOUND 的「已进入 deleting/deleted」语义行）。
+// E_DB_NOT_FOUND 的「已进入 deleting/deleted」语义行）。可见域解析 + 角色
+// 门（W2-S4）：全部库写面/敏感面经此单点进角色门。
 func (s *DatabaseService) getMutableInstance(ctx context.Context, name string) (state.DatabaseInstance, error) {
-	inst, err := s.st.GetDatabaseInstanceByName(ctx, name)
+	inst, err := resolveDatabaseRef(ctx, s.st, name)
 	if err != nil {
-		return state.DatabaseInstance{}, mapDatabaseErr(err)
+		return state.DatabaseInstance{}, err
+	}
+	if err := requireDatabaseAccess(ctx, s.st, inst); err != nil {
+		return state.DatabaseInstance{}, err
 	}
 	if inst.State == state.DatabaseDeleting || inst.State == state.DatabaseDeleted {
 		return state.DatabaseInstance{}, databaseNotFound(inst.Name, "already "+string(inst.State))

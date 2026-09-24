@@ -78,6 +78,13 @@ var materializedEnvSuffixes = []string{"URL", "HOST", "PORT", "USER", "PASSWORD"
 // env_vars system 物化行（含失配行删除）；app 曾引用而本次声明全无（label
 // 全部移除）→ 级联清理拍。
 func (e *Engine) resolveDatabaseReferences(ctx context.Context, appID, appName string, spec *compose.Spec) (netsByService map[string][]string, warnings []compose.Warning, err error) {
+	// 跨项目守卫基准（v0.3 W2-S4，rbac-teams §4.1 E4）：引用方 app 行的归属
+	// 是判定基准——preparing 期单次索引读，随既有清单读取同量级。
+	app, aerr := e.store.GetAppByID(ctx, appID)
+	if aerr != nil {
+		return nil, nil, errorf("E_RUNTIME_UNAVAILABLE", "failed to read app %s for database reference resolution: %v", appID, aerr)
+	}
+
 	// 既有引用先行读取（全清 + 替换差集与「label 全部移除」判定都要用；
 	// 一次索引查询——从未引用过库的 app 后续零额外读取）。
 	existingRefs, err := e.store.ListDatabaseReferencesByApp(ctx, appID)
@@ -142,6 +149,22 @@ func (e *Engine) resolveDatabaseReferences(ctx context.Context, appID, appName s
 			inst, ok := byName[name]
 			if !ok || inst.State == state.DatabaseDeleting || inst.State == state.DatabaseDeleted {
 				return nil, nil, databaseNotFound(name, svc.Name, candidates)
+			}
+			// 跨项目守卫（E4，W2-S4 落地——设计 §4.1「E4 库网络是唯一跨 app
+			// 连通通道，准入守门」）：引用实例与 app 不同项目即拒绝入队——
+			// 否则牵线网络（fleetly-db-<team>-<prj>-<name>-net）把两个项目
+			// 的 L3 域接通，项目隔离被部署面绕开。网络名随实例归属推导，同
+			// 项目引用才可能成立。getByName 多行同名：实例名 project 内唯一
+			// （D-W0-4 二修），byName 以实例名为键——跨项目同名实例在此不可
+			// 指名引用（引用语义 = 实例名，重名项目间以 MoveDatabase 整理）。
+			if inst.ProjectID != app.ProjectID {
+				return nil, nil, apperr.New("E_DB_PROJECT_MISMATCH",
+					"database instance %q referenced by service %s belongs to project %q but the app belongs to project %q: cross-project database references are rejected (project isolation); move the instance into the app's project first (platform administrators can reassign it with MoveDatabase)",
+					name, svc.Name, inst.QualifiedName(), app.QualifiedName()).
+					WithContext("database", name).
+					WithContext("database_project", inst.QualifiedName()).
+					WithContext("app", appName).
+					WithContext("app_project", app.QualifiedName())
 			}
 			// D-DB-5：引用前哨只查存在性不查就绪——未就绪（provisioning/
 			// failed/degraded/paused）如实警告，不阻塞部署。

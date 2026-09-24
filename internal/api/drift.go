@@ -25,7 +25,12 @@ func NewDriftService(st *state.Store, eng *engine.Engine) *DriftService {
 
 // ShowDrift 即时判定运行域漂移（不写事件不收敛——与 CLI 读面同源）。
 func (s *DriftService) ShowDrift(ctx context.Context, req *serverv1.ShowDriftRequest) (*serverv1.ShowDriftResponse, error) {
-	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门；Converge/Set 同批——show=read、写面=deploy）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	report, err := s.eng.DriftShow(ctx, req.GetApp())
@@ -58,7 +63,11 @@ func (s *DriftService) ShowDrift(ctx context.Context, req *serverv1.ShowDriftReq
 // ConvergeDrift 人工一次性收敛（归位重放原语，带审计；在途部署存在时
 // 409 语义由引擎承载）。
 func (s *DriftService) ConvergeDrift(ctx context.Context, req *serverv1.ConvergeDriftRequest) (*serverv1.ConvergeDriftResponse, error) {
-	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	rec, err := s.eng.ConvergeApp(ctx, req.GetApp(), "human")
@@ -75,7 +84,11 @@ func (s *DriftService) ConvergeDrift(ctx context.Context, req *serverv1.Converge
 // SetDriftConverge 收敛 opt-in 的人工置位/重置（回滚失败强制关闭后的
 // 唯一恢复入口；带审计）。
 func (s *DriftService) SetDriftConverge(ctx context.Context, req *serverv1.SetDriftConvergeRequest) (*serverv1.SetDriftConvergeResponse, error) {
-	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	if err := s.eng.SetDriftConverge(ctx, req.GetApp(), req.GetEnabled(), "human"); err != nil {

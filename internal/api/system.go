@@ -115,6 +115,27 @@ func (s *SystemService) WithSecretsBox(box *secrets.Box) *SystemService {
 	return s
 }
 
+// requirePlatformWriteFace 是平台面写/敏感面的用户凭据门（v0.3 W2-S4 收口，
+// rbac-teams §4.2 第 3 条 + §3.2 矩阵「用户管理/注册开关/节点/S3/通知/全局
+// 设置 → 仅平台管理员」）：机具令牌（UserID 空）沿 scope 门现状放行（平台
+// 级凭据 §2.3 设计语义）；用户 principal 要求 is_platform_admin（403——写
+// 操作需入队拿角色，平台管理员身份不代平台外写）。透明度例外（GetSystemStatus/
+// ListNodes/GetIngressStatus 任意已认证 read）不经本门。
+func requirePlatformWriteFace(ctx context.Context, st *state.Store) error {
+	p, ok := PrincipalFromContext(ctx)
+	if !ok {
+		return statusEnvelope(codes.Unauthenticated, "missing credential")
+	}
+	if p.UserID == "" {
+		return nil // 机具令牌：scope 门已判定（admin/deploy 级登记不变）
+	}
+	if !isPlatformAdminUser(ctx, st) {
+		return statusEnvelope(codes.PermissionDenied,
+			"platform administrator privileges required for this platform face (users keep it read-only; join flows and node/backup administration need a platform admin or a machine token)")
+	}
+	return nil
+}
+
 // Ping 回应 service / version。proto 字段上的 buf.validate 最小约束由拦截
 // 器统一校验；Ping 豁免鉴权（T2.17 契约：与 healthz 同为存活面）。
 func (s *SystemService) Ping(ctx context.Context, req *serverv1.PingRequest) (*serverv1.PingResponse, error) {
@@ -176,6 +197,10 @@ func (s *SystemService) ListBackups(ctx context.Context, req *serverv1.ListBacku
 // CLI 缺省 30s deadline 不再掐死备份本体——客户端只失去本次同步响应，
 // 台账照常落账（ListBackups 复核）。
 func (s *SystemService) TriggerBackup(ctx context.Context, req *serverv1.TriggerBackupRequest) (*serverv1.TriggerBackupResponse, error) {
+	// 平台面写门（W2-S4）：用户 principal 须平台管理员（机具令牌沿 scope 门）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if s.backup == nil {
 		return nil, status.Error(codes.Unavailable, "backup manager unavailable (not assembled)")
 	}
@@ -261,6 +286,10 @@ func (s *SystemService) ListNodes(ctx context.Context, req *serverv1.ListNodesRe
 // （409，D-MN-13——多节点未启用显式拒绝，不静默降级）。admin scope（响应
 // 含 token 材料）由拦截器链把门。
 func (s *SystemService) GetJoinGuide(ctx context.Context, req *serverv1.GetJoinGuideRequest) (*serverv1.GetJoinGuideResponse, error) {
+	// 平台面敏感读门（W2-S4）：响应含 join token 材料 = 平台管理员。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if s.baseDomain == "" {
 		// D-MN-13：配置缺失显式拒绝——provider 通道/zot 均不可用，join 后
 		// 入口残缺；隐式猜测即事故面。
@@ -358,6 +387,10 @@ func hostOfAddr(addr string) string {
 // rotate 后旧 token 立即失效。审计动作 node.join_token_rotated（§5.3：
 // join-token rotate 记审计、不设事件）。admin scope 由拦截器链把门。
 func (s *SystemService) RotateJoinToken(ctx context.Context, req *serverv1.RotateJoinTokenRequest) (*serverv1.RotateJoinTokenResponse, error) {
+	// 平台面写门（W2-S4）：join token 轮换 = 平台管理员（机具令牌沿 scope 门）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if s.join == nil {
 		return nil, status.Error(codes.Unavailable, "swarm join face unavailable (not assembled)")
 	}
@@ -550,6 +583,10 @@ func listCertDirApps(dir string) ([]string, error) {
 // GetS3Settings 对象存储设置只读面：secret 只回 fingerprint（明文 sha256
 // 前 8），绝不回明文。s3.mode=unset 时其余字段为空。
 func (s *SystemService) GetS3Settings(ctx context.Context, req *serverv1.GetS3SettingsRequest) (*serverv1.GetS3SettingsResponse, error) {
+	// 平台面敏感读门（W2-S4）：S3 设置 = 平台凭据面（§3.2 矩阵）。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if s.box == nil {
 		return nil, status.Error(codes.Unavailable, "secrets box unavailable (not assembled)")
 	}
@@ -569,6 +606,10 @@ func (s *SystemService) GetS3Settings(ctx context.Context, req *serverv1.GetS3Se
 // 层（E_S3_CONFIG_CONFLICT / E_S3_PUBLIC_REQUIRES_BASE_DOMAIN，信封原样
 // 透传）；保存 + 审计 + 事件 s3.updated 同事务（payload 带模式不带走秘密）。
 func (s *SystemService) UpdateS3Settings(ctx context.Context, req *serverv1.UpdateS3SettingsRequest) (*serverv1.UpdateS3SettingsResponse, error) {
+	// 平台面写门（W2-S4）：S3 设置保存 = 平台管理员。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if s.box == nil {
 		return nil, status.Error(codes.Unavailable, "secrets box unavailable (not assembled)")
 	}
@@ -611,6 +652,10 @@ func (s *SystemService) UpdateS3Settings(ctx context.Context, req *serverv1.Upda
 // 的探针 = 探测容器形态（E3-5：一次性 restic 容器 attach 托管网络执行
 // 真实往返——宿主进程不可达 overlay，容器内 DNS 才可达服务）。
 func (s *SystemService) TestS3Connection(ctx context.Context, req *serverv1.TestS3ConnectionRequest) (*serverv1.TestS3ConnectionResponse, error) {
+	// 平台面写门（W2-S4）：连接探针消耗平台凭据 = admin 级信任面。
+	if err := requirePlatformWriteFace(ctx, s.st); err != nil {
+		return nil, err
+	}
 	if s.box == nil {
 		return nil, status.Error(codes.Unavailable, "secrets box unavailable (not assembled)")
 	}

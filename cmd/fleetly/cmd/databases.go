@@ -161,7 +161,7 @@ func (c *databaseGetCmd) Run(ctx context.Context, env *commands.Environment, arg
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Databases().GetDatabase(ctx, &serverv1.GetDatabaseRequest{Name: args[0]})
+		resp, err := cl.Databases().GetDatabase(ctx, &serverv1.GetDatabaseRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -273,7 +273,7 @@ func (c *databaseDeleteCmd) Run(ctx context.Context, env *commands.Environment, 
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Databases().DeleteDatabase(ctx, &serverv1.DeleteDatabaseRequest{
-			Name:          args[0],
+			Name:          c.conn.ref(args[0]), // 引用面补全限定形；confirm 须实例裸名（下方）
 			Confirm:       args[0],
 			DeleteVolumes: c.deleteVolumes,
 		})
@@ -310,7 +310,7 @@ func (c *databaseSuspendCmd) Run(ctx context.Context, env *commands.Environment,
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Databases().SuspendDatabase(ctx, &serverv1.SuspendDatabaseRequest{Name: args[0]})
+		resp, err := cl.Databases().SuspendDatabase(ctx, &serverv1.SuspendDatabaseRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -339,7 +339,7 @@ func (c *databaseResumeCmd) Run(ctx context.Context, env *commands.Environment, 
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Databases().ResumeDatabase(ctx, &serverv1.ResumeDatabaseRequest{Name: args[0]})
+		resp, err := cl.Databases().ResumeDatabase(ctx, &serverv1.ResumeDatabaseRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -368,7 +368,7 @@ func (c *databaseRetryCmd) Run(ctx context.Context, env *commands.Environment, a
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Databases().RetryDatabase(ctx, &serverv1.RetryDatabaseRequest{Name: args[0]})
+		resp, err := cl.Databases().RetryDatabase(ctx, &serverv1.RetryDatabaseRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -404,7 +404,7 @@ func (c *databaseSettingsCmd) Run(ctx context.Context, env *commands.Environment
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Databases().UpdateDatabaseSettings(ctx, &serverv1.UpdateDatabaseSettingsRequest{
-			Name:       args[0],
+			Name:       c.conn.ref(args[0]),
 			Limits:     c.limits.limits(),
 			BackupPlan: c.limits.backupPlan(),
 		})
@@ -448,7 +448,7 @@ func (c *databaseRotateCmd) Run(ctx context.Context, env *commands.Environment, 
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Databases().RotateDatabaseCredentials(ctx, &serverv1.RotateDatabaseCredentialsRequest{
-			Name:    args[0],
+			Name:    c.conn.ref(args[0]),
 			Confirm: c.confirm,
 		})
 		if err != nil {
@@ -489,7 +489,7 @@ func (c *databaseRevealCmd) Run(ctx context.Context, env *commands.Environment, 
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Databases().RevealDatabaseCredentials(ctx, &serverv1.RevealDatabaseCredentialsRequest{Name: args[0]})
+		resp, err := cl.Databases().RevealDatabaseCredentials(ctx, &serverv1.RevealDatabaseCredentialsRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -534,7 +534,7 @@ func (c *databaseBackupCmd) Run(ctx context.Context, env *commands.Environment, 
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Databases().TriggerDatabaseBackup(ctx, &serverv1.TriggerDatabaseBackupRequest{Name: args[0]})
+		resp, err := cl.Databases().TriggerDatabaseBackup(ctx, &serverv1.TriggerDatabaseBackupRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -572,7 +572,7 @@ func (c *databaseBackupsCmd) Run(ctx context.Context, env *commands.Environment,
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Databases().ListDatabaseBackups(ctx, &serverv1.ListDatabaseBackupsRequest{
-			Name:  args[0],
+			Name:  c.conn.ref(args[0]),
 			Limit: int32(c.limit),
 		})
 		if err != nil {
@@ -641,7 +641,7 @@ func (c *databaseRestoreCmd) Run(ctx context.Context, env *commands.Environment,
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Databases().RestoreDatabaseBackup(ctx, &serverv1.RestoreDatabaseBackupRequest{
-			Name:     args[0],
+			Name:     c.conn.ref(args[0]),
 			Snapshot: c.snapshot,
 			Confirm:  c.confirm,
 		})
@@ -681,7 +681,7 @@ func (c *databaseUpgradeCmd) Run(ctx context.Context, env *commands.Environment,
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Databases().UpgradeDatabase(ctx, &serverv1.UpgradeDatabaseRequest{
-			Name:    args[0],
+			Name:    c.conn.ref(args[0]),
 			Confirm: c.confirm,
 		})
 		if err != nil {

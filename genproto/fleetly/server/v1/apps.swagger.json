@@ -41,6 +41,13 @@
             "required": false,
             "type": "integer",
             "format": "int32"
+          },
+          {
+            "name": "project",
+            "description": "项目收窄（v0.3 W2-S4 可见性过滤，rbac-teams §4.2）：裸名或 `team/project`\n限定形（D-W0-9 解析规则；解析域 = 调用方可见项目集，机具令牌/平台管理\n员 = 全库）。空 = 不收窄（用户面仍按可见项目集过滤）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [

@@ -54,7 +54,7 @@ func (c *rollbackCmd) Run(ctx context.Context, env *commands.Environment, args [
 	}
 	err := c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Deployments().RollbackDeployment(ctx, &serverv1.RollbackDeploymentRequest{
-			App:              args[0],
+			App:              c.conn.ref(args[0]),
 			TargetRevisionId: c.to,
 		})
 		if err != nil {
@@ -140,7 +140,7 @@ func (c *revisionsListCmd) Run(ctx context.Context, env *commands.Environment, a
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Revisions().ListRevisions(ctx, &serverv1.ListRevisionsRequest{App: args[0]})
+		resp, err := cl.Revisions().ListRevisions(ctx, &serverv1.ListRevisionsRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -241,7 +241,7 @@ func (c *driftShowCmd) Run(ctx context.Context, env *commands.Environment, args 
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Drift().ShowDrift(ctx, &serverv1.ShowDriftRequest{App: args[0]})
+		resp, err := cl.Drift().ShowDrift(ctx, &serverv1.ShowDriftRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -304,7 +304,7 @@ func (c *driftConvergeCmd) Run(ctx context.Context, env *commands.Environment, a
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Drift().ConvergeDrift(ctx, &serverv1.ConvergeDriftRequest{App: args[0]})
+		resp, err := cl.Drift().ConvergeDrift(ctx, &serverv1.ConvergeDriftRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -366,7 +366,7 @@ func runDriftToggle(ctx context.Context, env *commands.Environment, usage string
 		return err
 	}
 	return conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Drift().SetDriftConverge(ctx, &serverv1.SetDriftConvergeRequest{App: args[0], Enabled: on})
+		resp, err := cl.Drift().SetDriftConverge(ctx, &serverv1.SetDriftConvergeRequest{App: conn.ref(args[0]), Enabled: on})
 		if err != nil {
 			return err
 		}

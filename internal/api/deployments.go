@@ -57,10 +57,14 @@ func NewDeploymentsService(st *state.Store, git GitDeployTriggers) *DeploymentsS
 	return &DeploymentsService{st: st, git: git}
 }
 
-// ListDeployments 按应用列部署（created_at 倒序）。
+// ListDeployments 按应用列部署（created_at 倒序）。app 引用经可见域解析
+//（W2-S4）+ 角色门。
 func (s *DeploymentsService) ListDeployments(ctx context.Context, req *serverv1.ListDeploymentsRequest) (*serverv1.ListDeploymentsResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	limit := int(req.GetLimit())
@@ -129,6 +133,11 @@ func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployReq
 	// （A1）——此处 spec.Name 即目标 app 名。
 	proj, err := resolveProjectRef(ctx, s.st, req.GetProject())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：部署 = developer+（levelDeploy；平台管理员
+	// 不代写在此收口）。首署前先门——不得为无权调用方建 app 行。
+	if err := requireResourceAccess(ctx, s.st, proj.ID); err != nil {
 		return nil, err
 	}
 	app, err := ensureApp(ctx, s.st, spec.Name, proj)
@@ -237,6 +246,17 @@ func (s *DeploymentsService) DeployFromGit(ctx context.Context, req *serverv1.De
 	if !gitSHAValid(req.GetSha()) {
 		return nil, statusInvalidArgument("sha must be 40 hex chars")
 	}
+	// 角色门（W2-S4 第 2 门）：app 行在册时按行上归属门 deploy 层级（git
+	// push 钩子经 PAT 回调的用户面）；行不在册（首发）由 gitserver 的建行
+	// 路径承载归属解析（E_APP_PROJECT_REQUIRED 指引）——角色门在行落位后
+	// 的后续部署自然生效。
+	if app, aerr := resolveApp(ctx, s.st, req.GetApp()); aerr == nil {
+		if err := requireAppAccess(ctx, s.st, app); err != nil {
+			return nil, err
+		}
+	} else if !isNotFoundErr(aerr) {
+		return nil, aerr
+	}
 	rec, warnings, err := s.git.DeployFromGitPush(ctx, req.GetApp(), req.GetSha(), req.GetRef(), callerTokenID(ctx), req.GetPushUser())
 	if err != nil {
 		// 分支未跟踪（H2）：非错误终局——skipped 回执（deployment_id 留空；
@@ -323,7 +343,12 @@ func (s *DeploymentsService) CancelDeployment(ctx context.Context, req *serverv1
 // RollbackDeployment 回滚入队（engine.EnqueueRollback：目标解析失败
 // E_ROLLBACK_NO_TARGET；事件/审计在引擎入队路径内置）。
 func (s *DeploymentsService) RollbackDeployment(ctx context.Context, req *serverv1.RollbackDeploymentRequest) (*serverv1.RollbackDeploymentResponse, error) {
-	if _, err := resolveApp(ctx, s.st, req.GetApp()); err != nil {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4）：回滚 = developer+。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	rec, err := engine.EnqueueRollback(ctx, s.st, engine.RollbackInput{

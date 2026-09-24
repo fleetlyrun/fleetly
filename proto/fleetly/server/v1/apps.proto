@@ -69,6 +69,10 @@ service AppsService {
 message ListAppsRequest {
   // 列表上限（缺省 100；v0.1 单机规模不做分页游标）。
   int32 limit = 1 [(buf.validate.field).int32 = { gte: 0, lte: 1000 }];
+  // 项目收窄（v0.3 W2-S4 可见性过滤，rbac-teams §4.2）：裸名或 `team/project`
+  // 限定形（D-W0-9 解析规则；解析域 = 调用方可见项目集，机具令牌/平台管理
+  // 员 = 全库）。空 = 不收窄（用户面仍按可见项目集过滤）。
+  string project = 2 [(buf.validate.field).string.max_len = 65];
 }
 
 message AppView {

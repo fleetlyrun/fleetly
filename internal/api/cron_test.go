@@ -34,10 +34,11 @@ func (f fakeCronTriggers) TriggerRun(context.Context, string, string, string, st
 }
 
 // newCronTestServer 起一只只挂 CronService 的 bufconn gRPC（handler 级映射
-// 测试；鉴权链在 auth_test 全矩阵覆盖，scope 登记另有结构断言）。
+// 测试；鉴权链在 auth_test 全矩阵覆盖，scope 登记另有结构断言）。挂直调夹
+// 具的 Principal 注入拦截器（等效机具 admin——W2-S4 角色门随迁）。
 func newCronTestServer(t *testing.T, svc *CronService) serverv1.CronServiceClient {
 	t.Helper()
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(grpc.ChainUnaryInterceptor(directPrincipalInterceptor()))
 	serverv1.RegisterCronServiceServer(srv, svc)
 	lis := bufconn.Listen(1024 * 1024)
 	go func() { _ = srv.Serve(lis) }()

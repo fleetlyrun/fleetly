@@ -114,7 +114,9 @@ services:
 `
 
 // createDBInstanceForTest 建库实例行（受理即 provisioning），want 状态非
-// provisioning 时经 EnterDbPhase 推进（转移表内合法边）。
+// provisioning 时经 EnterDbPhase 推进（转移表内合法边）。实例落在 demo 应
+// 用的同一项目（v0.3 W2-S4 E4 跨项目守卫的正例基准——跨项目引用由
+// TestDatabaseReferenceCrossProjectRejected 单独钉负例）。
 func createDBInstanceForTest(t *testing.T, h *harness, name, template, password string, want state.DatabaseState) state.DatabaseInstance {
 	t.Helper()
 	ctx := context.Background()
@@ -122,14 +124,14 @@ func createDBInstanceForTest(t *testing.T, h *harness, name, template, password 
 	if err != nil {
 		t.Fatalf("encrypt credential: %v", err)
 	}
-	proj := testsupport.SeedProject(t, h.store)
+	app := h.demoApp()
 	inst, err := h.store.CreateDatabaseInstance(ctx, state.DatabaseInstance{
 		Name:             name,
 		Template:         template,
 		ImageDigest:      "postgres:16@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 		CredentialCipher: string(cipher),
-		ProjectID:        proj.ID,
-		TeamID:           proj.TeamID,
+		ProjectID:        app.ProjectID,
+		TeamID:           app.TeamID,
 	})
 	if err != nil {
 		t.Fatalf("create database instance %s: %v", name, err)
@@ -638,5 +640,40 @@ func TestDatabaseReferenceNoCredentialLeak(t *testing.T) {
 		if strings.Contains(a.DiffSummary, pw) {
 			t.Errorf("audit %s leaks the credential password", a.Action)
 		}
+	}
+}
+
+// TestDatabaseReferenceCrossProjectRejected（v0.3 W2-S4 E4 守卫，rbac-teams
+// §4.1「E4 库网络是唯一跨 app 连通通道，准入守门」）：引用实例与 app 不同
+// 项目 → 部署失败 E_DB_PROJECT_MISMATCH——跨项目牵线在受理期拒绝（守卫
+// 单点在 resolveDatabaseReferences，覆盖 API Deploy / git push 全部入队路
+// 径）。正例（同项目引用成功）由上方既有用例承载——夹具已统一为同项目。
+func TestDatabaseReferenceCrossProjectRejected(t *testing.T) {
+	h := newHarness(t)
+	h.eng.WithDatabaseTemplate(dbTemplateTestAdapter{})
+	// 实例落在与 demo app 无关的独立项目（SeedProject 每次播种新团队）。
+	proj := testsupport.SeedProject(t, h.store)
+	cipher, err := h.box.Encrypt([]byte("pw"))
+	if err != nil {
+		t.Fatalf("encrypt credential: %v", err)
+	}
+	if _, err := h.store.CreateDatabaseInstance(context.Background(), state.DatabaseInstance{
+		Name:             "pg1",
+		Template:         testTemplatePostgres16,
+		ImageDigest:      "postgres:16@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		CredentialCipher: string(cipher),
+		ProjectID:        proj.ID,
+		TeamID:           proj.TeamID,
+	}); err != nil {
+		t.Fatalf("create cross-project instance: %v", err)
+	}
+	final := h.runToTerminal(h.enqueue(h.writeCompose(dbRefCompose)))
+	if final.Status != state.DeployFailed || final.ErrorCode != "E_DB_PROJECT_MISMATCH" {
+		t.Fatalf("deploy = %s (%s), want failed E_DB_PROJECT_MISMATCH", final.Status, final.ErrorCode)
+	}
+	// 负例不落引用登记：跨项目引用零副作用。
+	refs, rerr := h.store.ListDatabaseReferencesByApp(context.Background(), mustAppID(t, h, "demo"))
+	if rerr != nil || len(refs) != 0 {
+		t.Fatalf("references after rejected deploy = %v (err=%v), want empty", refs, rerr)
 	}
 }

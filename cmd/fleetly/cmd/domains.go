@@ -67,7 +67,7 @@ func (c *domainsListCmd) Run(ctx context.Context, env *commands.Environment, arg
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Domains().ListAppDomains(ctx, &serverv1.ListAppDomainsRequest{App: args[0]})
+		resp, err := cl.Domains().ListAppDomains(ctx, &serverv1.ListAppDomainsRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -132,7 +132,7 @@ func (c *domainsVerifyCmd) Run(ctx context.Context, env *commands.Environment, a
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Domains().VerifyAppDomains(ctx, &serverv1.VerifyAppDomainsRequest{App: args[0]})
+		resp, err := cl.Domains().VerifyAppDomains(ctx, &serverv1.VerifyAppDomainsRequest{App: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}

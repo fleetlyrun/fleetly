@@ -76,7 +76,7 @@ func (c *logsFollowCmd) Run(ctx context.Context, env *commands.Environment, args
 		return err
 	}
 	err := c.conn.withClient(func(cl *fleetlyClient) error {
-		return cl.FollowLogs(ctx, args[0], c.service, func(frame *serverv1.FollowLogsResponse) error {
+		return cl.FollowLogs(ctx, c.conn.ref(args[0]), c.service, func(frame *serverv1.FollowLogsResponse) error {
 			return emitLogEntry(env, c.jsonOut, frame.GetEntry())
 		})
 	})
@@ -118,7 +118,7 @@ func (c *logsHistoryCmd) Run(ctx context.Context, env *commands.Environment, arg
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Logs().ListHistoryLogs(ctx, &serverv1.ListHistoryLogsRequest{
-			App: args[0], Service: c.service, Source: c.source, Limit: int32Clamp(c.limit),
+			App: c.conn.ref(args[0]), Service: c.service, Source: c.source, Limit: int32Clamp(c.limit),
 		})
 		if err != nil {
 			return err
@@ -209,7 +209,7 @@ func (c *logsSearchCmd) Run(ctx context.Context, env *commands.Environment, args
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		req := &serverv1.SearchLogsRequest{
-			App:     args[0],
+			App:     c.conn.ref(args[0]),
 			Keyword: c.keyword,
 			Limit:   int32Clamp(c.limit),
 		}

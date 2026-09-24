@@ -334,6 +334,13 @@ var builtins = []Code{
 	{ID: "E_APP_PROJECT_REQUIRED", HTTP: 400,
 		Summary:    "the pushed app does not exist yet and no project ownership can be derived from the push (no signed user or no default project)",
 		Suggestion: "Deploy once via CLI/API passing project \"team/project\" to create the app with ownership, then push; subsequent pushes deploy to the row's own project."},
+	// 消费点：部署受理的跨项目库引用守卫（v0.3 W2-S4，rbac-teams §4.1/
+	// §4.2 E4——引用实例与 app 不同项目 → 拒绝入队；执行点 = 引擎 preparing
+	// 期解析 fleetly.databases label 的单点，internal/engine/dbinject.go，
+	// 覆盖 API Deploy / git push / webhook 全部入队路径）。
+	{ID: "E_DB_PROJECT_MISMATCH", HTTP: 409,
+		Summary:    "the referenced database instance belongs to a different project than the app (project isolation, R6/R7): cross-project database attachment is rejected at deploy admission",
+		Suggestion: "Move the database into the app's project first (a platform administrator can reassign it with MoveDatabase), or reference an instance created in the same project; the app's project is listed in the error context."},
 
 	// ── 警告码（W_：资源/计划上的标注，不作为 HTTP 错误返回，HTTP=0）──
 	{ID: "W_DEPLOY_INSTABILITY",

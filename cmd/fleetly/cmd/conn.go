@@ -190,6 +190,18 @@ func (f *connFlags) withClient(fn func(*fleetlyClient) error) error {
 	return fn(c)
 }
 
+// ref 按上下文补全裸资源引用（v0.3 W2-S4 CLI 参数面同步的统一消费点）：
+// 资源命令把位置参数经本方法过一道（qualifyRef——flag/env/config 上下文齐
+// 备时裸名 → team/prj/名）。仅在 withClient 的执行体内调用——dial() 已先
+// 于此完成 config 的 fail-loud 读取，此处读失败的静默回落实际不可达。
+func (f *connFlags) ref(name string) string {
+	rc, err := resolveContext(f.team, f.project)
+	if err != nil {
+		return name
+	}
+	return qualifyRef(rc, name)
+}
+
 // envOrDefault 取环境变量（空值回落缺省）。
 func envOrDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {

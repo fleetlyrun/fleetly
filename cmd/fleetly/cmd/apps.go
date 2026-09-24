@@ -130,7 +130,7 @@ func (c *appsGetCmd) Run(ctx context.Context, env *commands.Environment, args []
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Apps().GetApp(ctx, &serverv1.GetAppRequest{Name: args[0]})
+		resp, err := cl.Apps().GetApp(ctx, &serverv1.GetAppRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}
@@ -179,7 +179,7 @@ func (c *appsDeleteCmd) Run(ctx context.Context, env *commands.Environment, args
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Apps().DeleteApp(ctx, &serverv1.DeleteAppRequest{Name: args[0]})
+		resp, err := cl.Apps().DeleteApp(ctx, &serverv1.DeleteAppRequest{Name: c.conn.ref(args[0])})
 		if err != nil {
 			return err
 		}

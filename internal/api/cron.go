@@ -45,6 +45,10 @@ func (s *CronService) TriggerCronRun(ctx context.Context, req *serverv1.TriggerC
 	if err != nil {
 		return nil, err
 	}
+	// 角色门（W2-S4 第 2 门）：触发=deploy、台账=read（scope 登记映射）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
 	run, err := s.triggers.TriggerRun(ctx, app.ID, app.Name, req.GetService(), callerTokenID(ctx))
 	if err != nil {
 		if errors.Is(err, cron.ErrNoSchedule) {
@@ -59,6 +63,10 @@ func (s *CronService) TriggerCronRun(ctx context.Context, req *serverv1.TriggerC
 func (s *CronService) ListCronRuns(ctx context.Context, req *serverv1.ListCronRunsRequest) (*serverv1.ListCronRunsResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：触发=deploy、台账=read（scope 登记映射）。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	limit := int(req.GetLimit())

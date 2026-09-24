@@ -78,11 +78,16 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 
 	// 归属（v0.3 W2-S3）：app 行已在 → 沿用行上归属（project 字段忽略）；
 	// 不存在 → 解析 project（显式引用或用户缺省；机具令牌必须显式）建行。
+	// 角色门（v0.3 W2-S4 第 2 门）：TriggerBuild=admin 层级（H14 宿主目录
+	// 信任边界）——行在册按行上归属门；首建按解析项目门（先门后建行）。
 	app, err := s.st.GetAppByName(ctx, spec.Name)
 	if errors.Is(err, state.ErrAppNotFound) {
 		proj, rerr := resolveProjectRef(ctx, s.st, req.GetProject())
 		if rerr != nil {
 			return nil, rerr
+		}
+		if gerr := requireResourceAccess(ctx, s.st, proj.ID); gerr != nil {
+			return nil, gerr
 		}
 		app, err = ensureApp(ctx, s.st, spec.Name, proj)
 	} else if errors.Is(err, state.ErrAppAmbiguous) {
@@ -91,6 +96,9 @@ func (s *BuildsService) TriggerBuild(ctx context.Context, req *serverv1.TriggerB
 			WithContext("app", spec.Name)
 	}
 	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 
@@ -207,10 +215,13 @@ func (s *BuildsService) GetBuild(ctx context.Context, req *serverv1.GetBuildRequ
 	return &serverv1.GetBuildResponse{Build: buildView(rec, s.appNameByID(ctx, rec.AppID))}, nil
 }
 
-// ListBuilds 按应用列构建（created_at 倒序）。
+// ListBuilds 按应用列构建（created_at 倒序；可见域解析 + 角色门，W2-S4）。
 func (s *BuildsService) ListBuilds(ctx context.Context, req *serverv1.ListBuildsRequest) (*serverv1.ListBuildsResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
 	limit := int(req.GetLimit())

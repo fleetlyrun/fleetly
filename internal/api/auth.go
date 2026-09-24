@@ -74,13 +74,27 @@ type Principal struct {
 	SessionID string
 }
 
-// sessionScopes 是会话凭据的临时 scope 口径（本票裁决的最小正确解）：视为
-// [read, deploy, admin] 全集——真正的约束由平台面 is_platform_admin 检查
-//（UsersService 等，internal/api/users.go requirePlatformAdmin）与 W2 角色门
-//（rbac-teams §4.2 第 2 条 ResolvePermission）收口。**W2 收口点**：角色门
-// 落地时会话 Scopes 改为按目标资源角色蕴含计算，terminal 不在会话全集
-//（Web 终端对会话凭据在 W2 按 developer 角色放行）。本注释即收口标记。
-var sessionScopes = []string{ScopeRead, ScopeDeploy, ScopeAdmin}
+// sessionScopes（W1 临时口径：会话凭据视为 read/deploy/admin 全集）已于
+// v0.3 W2-S4 废除——会话凭据的 scope 形状 = reachableScopesForUser（角色
+// 蕴含的并集，ownership.go 单点；平台管理员 = 全集，developer+ 含 terminal），
+// 资源面的真授权在第 2 门角色门（ResolvePermission，按目标资源逐请求解析
+// ——rbac-teams §4.2；auth.go 旧注释的「W2 收口点」就此收口）。
+// requiredScopeKey 是拦截器注入 ctx 的方法所需 scope 键（角色门把 scope.go
+// 登记映射为资源层级的唯一输入——accessLevelForScope）。
+type requiredScopeKey struct{}
+
+// putRequiredScope / requiredScopeFromContext 是 ctx 携带方法所需 scope 的
+// 读写对（拦截器写、资源 handler 读；缺失时角色门按 levelAdmin fail-closed）。
+func putRequiredScope(ctx context.Context, scope string) context.Context {
+	return context.WithValue(ctx, requiredScopeKey{}, scope)
+}
+
+func requiredScopeFromContext(ctx context.Context) string {
+	if s, ok := ctx.Value(requiredScopeKey{}).(string); ok {
+		return s
+	}
+	return ""
+}
 
 type principalKey struct{}
 
@@ -107,9 +121,13 @@ type Authenticator struct {
 	touchEvery time.Duration
 	// touch 是盖写端口（缺省 st.TouchTokenUsed；测试注入计数假实现）。
 	touch func(ctx context.Context, tokenID string) error
-	// sessionTouch 是会话 last_seen 盖写端口（缺省 st.TouchSessionUsed；
-	// A2 同款节流经 lastTouch map 复用，键加 "sess:" 前缀隔离）。
+	// sessionTouch 是会话滑动续期端口（缺省 st.SlideSession；A2 同款节流经
+	// lastTouch map 复用，键加 "sess:" 前缀隔离——滑动续期与 last_seen 盖写
+	// 同一节流拍，60s 窗口内重复认证不重复落写）。
 	sessionTouch func(ctx context.Context, sessionID string) error
+	// sessionTTL 是会话滑动窗口时长（config auth.session_ttl_hours 的注入面；
+	// 缺省 state.DefaultSessionTTL = 7 天。绝对上限 30 天在 state 层封顶）。
+	sessionTTL time.Duration
 	// now 是可注入时钟（测试用短窗口推进时间）。
 	now func() time.Time
 }
@@ -126,9 +144,21 @@ func NewAuthenticator(st *state.Store) *Authenticator {
 		lastTouch:    make(map[string]time.Time),
 		touchEvery:   defaultTouchEvery,
 		touch:        st.TouchTokenUsed,
-		sessionTouch: st.TouchSessionUsed,
+		sessionTouch: func(ctx context.Context, id string) error { return st.SlideSession(ctx, id, state.DefaultSessionTTL) },
+		sessionTTL:   state.DefaultSessionTTL,
 		now:          time.Now,
 	}
+}
+
+// WithSessionTTL 注入会话滑动窗口时长（config auth.session_ttl_hours 的装配
+// 面；非正值忽略保持缺省——链式装配）。
+func (a *Authenticator) WithSessionTTL(ttl time.Duration) *Authenticator {
+	if ttl > 0 {
+		a.sessionTTL = ttl
+		s := a.st
+		a.sessionTouch = func(ctx context.Context, id string) error { return s.SlideSession(ctx, id, ttl) }
+	}
+	return a
 }
 
 // Authenticate 校验 Bearer 凭据并返回身份；失败返回 grpc status（401/403
@@ -158,8 +188,12 @@ const sessionCookieName = "fleetly_session"
 
 // AuthenticateSessionCookie 校验会话 cookie 凭据并返回身份：Cookie 头里的
 // fleetly_session 明文 → state 哈希认证（属主禁用/过期一并拒认）→ Principal
-// {SessionID, UserID, Scopes=sessionScopes}。认证成功后经 A2 节流盖写
-// last_seen_at。任何失败统一 401（不泄漏会话存在性）。
+// {SessionID, UserID, Scopes=可达集}。**W2-S4 硬收缩**：Scopes 不再是 W1 的
+// 临时全集，而是 reachableScopesForUser（角色蕴含并集——viewer 只 read、
+// developer 含 terminal、平台管理员全集；ownership.go 单点）；资源面的精确
+// 授权在第 2 门角色门逐请求解析（rbac-teams §4.2）。认证成功后经 A2 节流
+// 滑动续期（last_seen 盖写 + expires 滑动延长，绝对上限 state 层封顶）。
+// 任何失败统一 401（不泄漏会话存在性）。
 func (a *Authenticator) AuthenticateSessionCookie(ctx context.Context, cookieHeader string) (Principal, error) {
 	plaintext := sessionCookieValue(cookieHeader)
 	if plaintext == "" {
@@ -172,7 +206,19 @@ func (a *Authenticator) AuthenticateSessionCookie(ctx context.Context, cookieHea
 		return Principal{}, statusEnvelope(codes.Unauthenticated, "invalid or expired session")
 	}
 	a.touchSessionUsed(ctx, sess.ID)
-	return Principal{SessionID: sess.ID, UserID: sess.UserID, Scopes: sessionScopes}, nil
+	scopes := reachableScopesForUser(ctx, a.st, sess.UserID)
+	return Principal{SessionID: sess.ID, UserID: sess.UserID, Scopes: scopeSetToList(scopes)}, nil
+}
+
+// scopeSetToList 把可达集转为固定词表序的切片（Principal.Scopes 存储形态）。
+func scopeSetToList(set map[string]bool) []string {
+	out := make([]string, 0, len(set))
+	for _, s := range []string{ScopeRead, ScopeDeploy, ScopeTerminal, ScopeAdmin} {
+		if set[s] {
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // touchSessionUsed 按 A2 节流盖写会话 last_seen_at（与 token 盖写共用节流
@@ -303,6 +349,8 @@ func (a *Authenticator) UnaryAuthInterceptor() grpc.UnaryServerInterceptor {
 		}
 		ctx = context.WithValue(ctx, principalKey{}, p)
 		ctx = context.WithValue(ctx, actionKey{}, methodAction(info.FullMethod))
+		// 角色门的层级输入（scope.go 登记唯一来源——第 1 门与第 2 门共用）。
+		ctx = putRequiredScope(ctx, required)
 		return handler(ctx, req)
 	}
 }
@@ -323,6 +371,7 @@ func (a *Authenticator) StreamAuthInterceptor() grpc.StreamServerInterceptor {
 		}
 		ctx := context.WithValue(ss.Context(), principalKey{}, p)
 		ctx = context.WithValue(ctx, actionKey{}, methodAction(info.FullMethod))
+		ctx = putRequiredScope(ctx, required)
 		return handler(srv, &authorizedStream{ServerStream: ss, ctx: ctx})
 	}
 }

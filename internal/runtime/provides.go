@@ -757,9 +757,12 @@ func NewTokensService(st *state.Store) *api.TokensService {
 }
 
 // NewAuthService 构造认证面服务（v0.3 W1，rbac-teams §2：注册/登录/会话；
-// 注册与登录的 email+IP 双键限流内置）。
-func NewAuthService(st *state.Store) *api.AuthService {
-	return api.NewAuthService(st)
+// 注册与登录的 email+IP 双键限流内置。W2-S4 收口：会话 cookie Secure 位随
+// 控制面 TLS 模式（off 不带 / platform+manual 带）、滑动窗口 TTL 取 config
+// auth.session_ttl_hours——rbac-teams §2.2 的装配面注入）。
+func NewAuthService(cfg *AppConfig, st *state.Store) *api.AuthService {
+	auth := api.NewAuthService(st)
+	return auth.WithSessionSecurity(cfg.TLSMode() != ControlPlaneTLSOff, cfg.SessionTTL())
 }
 
 // NewUsersService 构造平台用户管理面服务（v0.3 W1，rbac-teams §2.1/§3.2；

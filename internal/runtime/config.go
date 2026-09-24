@@ -91,6 +91,30 @@ type AppConfig struct {
 	// Backup 是状态备份配置节（config 键 backup.*，T2.22；缺省值经
 	// statebackup.Config.Normalize 回落——单一事实源在 internal/statebackup）。
 	Backup BackupConfig `mapstructure:"backup"`
+	// Auth 是认证面配置节（config 键 auth.*，v0.3 W2-S4 会话 TTL 收口）。
+	Auth AuthConfig `mapstructure:"auth"`
+}
+
+// AuthConfig 是认证面配置节（config 键 auth.*，rbac-teams §2.2）。
+type AuthConfig struct {
+	// SessionTTLHours 是会话滑动窗口时长小时数（auth.session_ttl_hours；
+	// 缺省/非正值 = 168 即 7 天滑动。绝对寿命上限 30 天是 state 层硬封顶
+	// 常量（state.MaxSessionLifetime）——本项只能调短生效，配置超过上限时
+	// 封顶到上限）。
+	SessionTTLHours int `mapstructure:"session_ttl_hours"`
+}
+
+// SessionTTL 返回会话滑动窗口时长（config auth.session_ttl_hours；非正值回
+// 落 state.DefaultSessionTTL = 7 天；超过 30 天绝对上限封顶）。
+func (c *AppConfig) SessionTTL() time.Duration {
+	ttl := time.Duration(c.Auth.SessionTTLHours) * time.Hour
+	if ttl <= 0 {
+		return state.DefaultSessionTTL
+	}
+	if ttl > state.MaxSessionLifetime {
+		return state.MaxSessionLifetime
+	}
+	return ttl
 }
 
 // TerminalConfig 是 Web 终端功能配置节（config 键 terminal.*，E7 W5-S6）。

@@ -44,10 +44,10 @@ func TestEnvServiceInvalidationHook(t *testing.T) {
 		fired = append(fired, appID)
 	})
 
-	if _, err := svc.SetEnv(ctx, &serverv1.SetEnvRequest{App: "hookapp", Key: "API_KEY", Value: "v-1-secret-value"}); err != nil {
+	if _, err := svc.SetEnv(directCtx(ctx), &serverv1.SetEnvRequest{App: "hookapp", Key: "API_KEY", Value: "v-1-secret-value"}); err != nil {
 		t.Fatalf("SetEnv: %v", err)
 	}
-	if _, err := svc.RemoveEnv(ctx, &serverv1.RemoveEnvRequest{App: "hookapp", Key: "API_KEY"}); err != nil {
+	if _, err := svc.RemoveEnv(directCtx(ctx), &serverv1.RemoveEnvRequest{App: "hookapp", Key: "API_KEY"}); err != nil {
 		t.Fatalf("RemoveEnv: %v", err)
 	}
 	mu.Lock()
@@ -58,7 +58,7 @@ func TestEnvServiceInvalidationHook(t *testing.T) {
 	}
 
 	// 失败路径不触发：删除不存在的键 → 404，回调不调用。
-	if _, err := svc.RemoveEnv(ctx, &serverv1.RemoveEnvRequest{App: "hookapp", Key: "GONE"}); err == nil {
+	if _, err := svc.RemoveEnv(directCtx(ctx), &serverv1.RemoveEnvRequest{App: "hookapp", Key: "GONE"}); err == nil {
 		t.Fatal("remove missing key should fail (404)")
 	}
 	mu.Lock()

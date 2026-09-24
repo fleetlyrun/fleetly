@@ -1,12 +1,9 @@
 package api
 
 import (
-	"context"
 	"errors"
-	"strings"
 
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
-	"github.com/fleetlyrun/fleetly/internal/apperr"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -65,46 +62,6 @@ func mapAppErr(err error, name string) error {
 	}
 }
 
-// resolveApp 按引用取应用行（api 面统一入口；NotFound 语义归一）。v0.3
-// W2-S3 起支持两种引用形态：裸名（解析域内唯一——GetAppByName 多行命中
-// 返回 E_APP_AMBIGUOUS）与三段限定形 `team/prj/app`（SearchLogs 等消费面
-// 按流标签新值寻址的最小读面；完整限定形读面归 S4）。
-func resolveApp(ctx context.Context, st *state.Store, ref string) (state.App, error) {
-	if teamSlug, rest, found := strings.Cut(ref, "/"); found {
-		prjSlug, appName, _ := strings.Cut(rest, "/")
-		if prjSlug != "" && appName != "" {
-			team, terr := st.GetTeamBySlug(ctx, teamSlug)
-			if terr != nil {
-				if errors.Is(terr, state.ErrTeamNotFound) {
-					return state.App{}, notFound("app not found: " + ref)
-				}
-				return state.App{}, terr
-			}
-			projects, perr := st.ListProjects(ctx)
-			if perr != nil {
-				return state.App{}, perr
-			}
-			for _, proj := range projects {
-				if proj.TeamID != team.ID || proj.Slug != prjSlug {
-					continue
-				}
-				app, aerr := st.GetAppByNameInProject(ctx, proj.ID, appName)
-				if aerr != nil {
-					return state.App{}, mapAppErr(aerr, ref)
-				}
-				return app, nil
-			}
-			return state.App{}, notFound("app not found: " + ref)
-		}
-	}
-	app, err := st.GetAppByName(ctx, ref)
-	if err != nil {
-		if errors.Is(err, state.ErrAppAmbiguous) {
-			return state.App{}, apperr.New("E_APP_AMBIGUOUS",
-				"app %q resolves to multiple rows across projects; use the team/prj/app qualified form", ref).
-				WithContext("app", ref)
-		}
-		return state.App{}, mapAppErr(err, ref)
-	}
-	return app, nil
-}
+// resolveApp 已迁往 ownership.go（v0.3 W2-S4：资源引用解析与角色门同域——
+// 可见域感知的解析、E_APP_AMBIGUOUS 候选列、限定形 team/prj/app 均在解析
+// 单点收口；本文件保留 state 哨兵 → gRPC status 的映射原语）。

@@ -71,7 +71,7 @@ func (c *cronTriggerCmd) Run(ctx context.Context, env *commands.Environment, arg
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Cron().TriggerCronRun(ctx, &serverv1.TriggerCronRunRequest{
-			App:     args[0],
+			App:     c.conn.ref(args[0]),
 			Service: args[1],
 		})
 		if err != nil {
@@ -130,7 +130,7 @@ func (c *cronRunsCmd) Run(ctx context.Context, env *commands.Environment, args [
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
 		resp, err := cl.Cron().ListCronRuns(ctx, &serverv1.ListCronRunsRequest{
-			App:     args[0],
+			App:     c.conn.ref(args[0]),
 			Service: service,
 			Limit:   int32Clamp(c.limit),
 		})

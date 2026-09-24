@@ -27,6 +27,9 @@ var methodScopes = map[string]string{
 	// pre_upgrade 快照共用入口），取 deploy scope。
 	"/fleetly.server.v1.SystemService/ListBackups":   ScopeRead,
 	"/fleetly.server.v1.SystemService/TriggerBackup": ScopeDeploy,
+	// W2-S4 平台面收口（rbac-teams §4.2 第 3 条）：TriggerBackup 属平台备份
+	// 写面——用户 principal 另须 is_platform_admin（requirePlatformWriteFace，
+	// internal/api/system.go）；机具令牌沿本登记的 scope 门。
 	// S3 设置面（E3-2，对象存储 §5.1）：整体 admin——端点/桶/凭证指纹属
 	// 平台敏感配置，secret 明文只写（Update）与凭证解密（Test）是平台
 	// 信任面，与 env 明文读同级，不随 deploy/read 下放。
@@ -171,9 +174,9 @@ var methodScopes = map[string]string{
 	// AuthService（v0.3 W1，rbac-teams §2/§5）：Register/Login/
 	// GetRegistrationState 三方法进 authExempt 名单（auth.go——登录页开关注
 	// 册入口，无凭据可用）；Logout/LogoutAll/Me/AcceptInvite = 任意已认证
-	// 凭据（取 read——会话凭据 scope 全集、最小机具令牌天然蕴含）。**注意**
-	// 会话凭据的临时 scope 口径（sessionScopes）与 W2 角色门收口点见
-	// auth.go 注释。
+	// 凭据（取 read——会话凭据 scope = 角色可达集、最小机具令牌天然蕴含）。
+	// 会话凭据的 scope 口径（reachableScopesForUser，W2-S4 硬收缩收口）见
+	// auth.go。
 	"/fleetly.server.v1.AuthService/Logout":       ScopeRead,
 	"/fleetly.server.v1.AuthService/LogoutAll":    ScopeRead,
 	"/fleetly.server.v1.AuthService/Me":           ScopeRead,
@@ -192,11 +195,12 @@ var methodScopes = map[string]string{
 	// TeamsService / ProjectsService（v0.3 W2-S1 团队/项目面，rbac-teams
 	// §3.1/§3.3）：登记整体 read——这两面的真授权是 handler 内的**角色门**
 	//（成员资格 + §3.2 矩阵/§3.3 覆写管理权，非 scope），scope 门只承担
-	// 「凭据至少持有最小读」的形状约束（会话凭据天然全集；用户 PAT 最小
-	// read 可达，实际权限由角色收敛）。机具令牌（user NULL）在 handler 内
-	// 恒 403——无用户即无团队成员身份（含读面；平台级凭据的设计语义 §2.3），
-	// 平台管理员用户只读放行、写面 403（不代写）。W2-S4 通用角色门落地时
-	// 本组登记与实现随迁（auth.go sessionScopes 注释同款收口标记）。
+	// 「凭据至少持有最小读」的形状约束（会话凭据 scope = 角色可达集；用户
+	// PAT 最小 read 可达，实际权限由角色收敛）。机具令牌（user NULL）在
+	// handler 内恒 403——无用户即无团队成员身份（含读面；平台级凭据的设计
+	// 语义 §2.3），平台管理员用户只读放行、写面 403（不代写）。W2-S4 通用
+	// 角色门（ResolvePermission 单点，ownership.go）已落地，本组登记维持
+	// 形状门角色。
 	"/fleetly.server.v1.TeamsService/CreateTeam":              ScopeRead,
 	"/fleetly.server.v1.TeamsService/ListTeams":               ScopeRead,
 	"/fleetly.server.v1.TeamsService/GetTeam":                 ScopeRead,

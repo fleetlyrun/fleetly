@@ -254,7 +254,7 @@ func (c *buildsListCmd) Run(ctx context.Context, env *commands.Environment, args
 		return err
 	}
 	return c.conn.withClient(func(cl *fleetlyClient) error {
-		resp, err := cl.Builds().ListBuilds(ctx, &serverv1.ListBuildsRequest{App: args[0], Limit: int32Clamp(c.limit)})
+		resp, err := cl.Builds().ListBuilds(ctx, &serverv1.ListBuildsRequest{App: c.conn.ref(args[0]), Limit: int32Clamp(c.limit)})
 		if err != nil {
 			return err
 		}
