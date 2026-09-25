@@ -36,6 +36,15 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.SystemService/GetS3Settings":    ScopeAdmin,
 	"/fleetly.server.v1.SystemService/UpdateS3Settings": ScopeAdmin,
 	"/fleetly.server.v1.SystemService/TestS3Connection": ScopeAdmin,
+	// ACME DNS-01 设置面（B 线 W5-S3，D-V3W5-3/4）：整体 admin——DNS 服务
+	// 商凭证指纹属平台敏感配置，token 明文只写（Update）与凭证解密（探针
+	// TestDnsProvider）是平台信任面，与 S3 设置三面同级，不随 deploy/read
+	// 下放。用户 principal 另须 is_platform_admin（requirePlatformWriteFace
+	// 挂全部三 handler——rbac-teams §3.2「全局设置 → 仅平台管理员」；机具
+	// 令牌沿本登记的 scope 门）。
+	"/fleetly.server.v1.SystemService/GetAcmeSettings":    ScopeAdmin,
+	"/fleetly.server.v1.SystemService/UpdateAcmeSettings": ScopeAdmin,
+	"/fleetly.server.v1.SystemService/TestDnsProvider":    ScopeAdmin,
 	// AppsService
 	"/fleetly.server.v1.AppsService/ListApps":  ScopeRead,
 	"/fleetly.server.v1.AppsService/GetApp":    ScopeRead,

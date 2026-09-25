@@ -23,6 +23,7 @@ import type {
   GetAuditRetentionResponse,
   GetDatabaseResponse,
   GetEnvResponse,
+  GetAcmeSettingsResponse,
   GetIngressStatusResponse,
   GetJoinGuideResponse,
   GetMetricsStatusResponse,
@@ -102,11 +103,15 @@ import type {
   TestWebhookResponse,
   TestS3ConnectionRequest,
   TestS3ConnectionResponse,
+  TestDnsProviderRequest,
+  TestDnsProviderResponse,
   TestSmtpResponse,
   TriggerBackupResponse,
   TriggerCronRunResponse,
   TriggerDatabaseBackupResponse,
   UpgradeDatabaseResponse,
+  UpdateAcmeSettingsRequest,
+  UpdateAcmeSettingsResponse,
   UpdateS3SettingsRequest,
   UpdateS3SettingsResponse,
   UpdateSmtpSettingsResponse,
@@ -935,6 +940,29 @@ export function updateS3Settings(req: UpdateS3SettingsRequest) {
  */
 export function testS3Connection(req: TestS3ConnectionRequest) {
   return api<TestS3ConnectionResponse>("/system/s3:test", {
+    method: "POST",
+    json: req,
+  });
+}
+
+// ── ACME DNS-01 设置面（B 线 W5 设计 §3，D-V3W5-3/D-V3W5-4，admin scope）──
+
+/** ACME 设置只读投影：凭证只回 fingerprint，读面永无明文。 */
+export function getAcmeSettings() {
+  return api<GetAcmeSettingsResponse>("/system/acme");
+}
+
+/** 保存 provider/凭证/wildcard（api_token 明文只写；留空 = 保留已存凭证）。 */
+export function updateAcmeSettings(req: UpdateAcmeSettingsRequest) {
+  return api<UpdateAcmeSettingsResponse>("/system/acme", { method: "PUT", json: req });
+}
+
+/**
+ * DNS 服务商探针（create→delete 真实 TXT _acme-challenge-test.<base>）：
+ * 传候选凭证即「先测后存」；全空 = 测已存凭证。
+ */
+export function testDnsProvider(req: TestDnsProviderRequest) {
+  return api<TestDnsProviderResponse>("/system/acme/dns:test", {
     method: "POST",
     json: req,
   });

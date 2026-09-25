@@ -64,7 +64,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	builder := NewBuilder(appConfig, store, client, daemonManager, app, logsManager)
 	queue := NewBuildQueue(app, appConfig, store, builder)
 	resolver := NewPlacementResolver(store, dockerClient)
-	ingressManager, cleanup4, err := NewIngressManager(app, appConfig, store)
+	ingressManager, cleanup4, err := NewIngressManager(app, appConfig, store, box)
 	if err != nil {
 		cleanup3()
 		cleanup2()

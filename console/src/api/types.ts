@@ -237,6 +237,17 @@ export type TestS3ConnectionResponse = Schemas["v1TestS3ConnectionResponse"];
 export type S3ConnectionTestResult = Schemas["v1S3ConnectionTestResult"];
 export type S3ProbeStep = Schemas["v1S3ProbeStep"];
 
+// ── ACME DNS-01 设置面（B 线 W5-S3，D-V3W5-3/D-V3W5-4）──────────────────
+
+export type AcmeSettingsView = Schemas["v1AcmeSettingsView"];
+export type GetAcmeSettingsResponse = Schemas["v1GetAcmeSettingsResponse"];
+export type UpdateAcmeSettingsRequest = Schemas["v1UpdateAcmeSettingsRequest"];
+export type UpdateAcmeSettingsResponse = Schemas["v1UpdateAcmeSettingsResponse"];
+export type TestDnsProviderRequest = Schemas["v1TestDnsProviderRequest"];
+export type TestDnsProviderResponse = Schemas["v1TestDnsProviderResponse"];
+export type DnsProviderTestResult = Schemas["v1DnsProviderTestResult"];
+export type DnsProbeStep = Schemas["v1DnsProbeStep"];
+
 // ── cron（E5 Cron，架构 §4.3）────────────────────────────────────────────
 
 export type CronRunView = Schemas["v1CronRunView"];

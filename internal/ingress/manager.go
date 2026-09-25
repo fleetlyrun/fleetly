@@ -85,6 +85,9 @@ type Manager struct {
 	// s3PublicScanInterval 是 s3 公网开关 duty 的稳态扫描周期（E3-6；零值
 	// 回落 s3PublicScanInterval 常量，单测注入短周期驱动开关收敛断言）。
 	s3PublicScanInterval time.Duration
+	// dnsProviderFn 是 DNS-01 插件解析缝（W5-S3，dns01.go；生产 = 装配点
+	// 闭包，nil = DNS-01 面未装配——wildcard 开启时平台证书签发如实失败）。
+	dnsProviderFn DNSProviderResolver
 }
 
 // NewManager 构造入口管理器（cfg 缺省回落；docker client 按

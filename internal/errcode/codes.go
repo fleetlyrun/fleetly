@@ -303,6 +303,24 @@ var builtins = []Code{
 		Summary:    "an alert rule channels list is invalid (must be a list of non-empty notification endpoint ids; an empty list means deliver to all enabled endpoints)",
 		Suggestion: "List the notification endpoints with 'fleetly notifications endpoint list' and pass their ids (comma-separated on the CLI); leave it empty to fan out to every enabled endpoint."},
 
+	// ── ACME DNS-01 通配证书面（B 线 W5 设计 §3，D-V3W5-3/D-V3W5-4，
+	//    W5-S3；注册表只增）──
+	// 消费点：E_ACME_WILDCARD_REQUIRES_PROVIDER / E_ACME_WILDCARD_REQUIRES_
+	// BASE_DOMAIN = acme.* 设置保存的联动校验门（internal/state/
+	// acmesettings.go ValidateAcmeSettings——422 语义违约 / 409 配置缺失，
+	// 与 E_ALERTS_METRICS_REQUIRED、E_S3_PUBLIC_REQUIRES_BASE_DOMAIN 同构）；
+	// E_ACME_DNS_TEST_FAILED = TestDnsProvider 探针失败（internal/api
+	// ——失败步与底层错误摘要进信封 context，凭证材料零出现）。
+	{ID: "E_ACME_WILDCARD_REQUIRES_PROVIDER", HTTP: 422,
+		Summary:    "acme.wildcard=true requires a DNS provider (dnspod or cloudflare): a wildcard SAN can only be validated via a DNS-01 challenge",
+		Suggestion: "Configure the DNS provider credentials first ('fleetly acme dns set --provider dnspod --token …' or the Console ACME card), then switch the wildcard on ('fleetly acme wildcard on')."},
+	{ID: "E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN", HTTP: 409,
+		Summary:    "acme.wildcard=true requires a platform base domain (the wildcard domain set *.base with console/ctrl/registry.<base> derives from it)",
+		Suggestion: "Configure base_domain (installer --base-domain) before switching the wildcard on; the wildcard certificate covers every platform subdomain and app domain under it."},
+	{ID: "E_ACME_DNS_TEST_FAILED", HTTP: 503,
+		Summary:    "the DNS provider probe failed (create -> delete a real TXT record at _acme-challenge-test.<base_domain>; the failed step and the underlying provider error travel in the envelope context)",
+		Suggestion: "Fix the provider credentials per the failed probe step (create=auth/write incl. zone resolution, delete=cleanup) and test again; the honest contract is: test passed = the provider credentials can authenticate, write and delete TXT records under the platform domain."},
+
 	// ── Web 终端面（E7 设计 §2.4/§2.5，W5-S6；注册表只增）──
 	// 消费点：ExecService.CreateTerminalTicket 与 native WS 端点的功能开关
 	// 门（config terminal.enabled=false——duty 移除 relay 服务、API 拒绝

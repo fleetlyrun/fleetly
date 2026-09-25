@@ -106,6 +106,41 @@ service SystemService {
       body: "*"
     };
   }
+  // GetAcmeSettings ACME DNS-01 设置只读面（B 线 W5 设计 §3，D-V3W5-3/4；
+  // admin scope——DNS 服务商凭据指纹属平台敏感配置，与 S3 设置同门）。
+  // 凭证只回 fingerprint（sha256 前 8），绝不回明文；同时下发服务端派生的
+  // 通配期望域名集（wildcard=true 时非空）——CLI/Console 展示当前证书
+  // 域名集形态，派生公式与签发面同源（服务端单点）。
+  rpc GetAcmeSettings(GetAcmeSettingsRequest) returns (GetAcmeSettingsResponse) {
+    option (google.api.http) = { get: "/v1/system/acme" };
+  }
+  // UpdateAcmeSettings 保存 ACME DNS-01 设置（provider + 凭证 + wildcard
+  // 开关）。api_token 为明文只写字段（TLS 传输面承载机密性，持久层
+  // envelope 加密）：**留空 = 保留已存凭证**（SMTP 密码同款先例——wildcard
+  // 开关切换不要求重录凭证）；dns_provider=none 恒清空凭证。联动校验
+  // fail-fast：wildcard=true 须 provider ∈ {dnspod, cloudflare}（422
+  // E_ACME_WILDCARD_REQUIRES_PROVIDER——通配 SAN 只能 DNS-01 验证）且须
+  // base_domain（409 E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN）。保存落审计
+  // acme.settings_changed（provider/wildcard/凭证有无——零明文；本设置族
+  // 零事件，审计承载）。
+  rpc UpdateAcmeSettings(UpdateAcmeSettingsRequest) returns (UpdateAcmeSettingsResponse) {
+    option (google.api.http) = {
+      put: "/v1/system/acme"
+      body: "*"
+    };
+  }
+  // TestDnsProvider DNS 服务商探针（诚实契约：在 _acme-challenge-test.
+  // <base_domain> 建 TXT → 删 TXT 两步真实往返——通过 = 能认证/能写/能删，
+  // zone 解析在 create 步隐含执行；不是"能列域名"级别的浅探测）。可带候选
+  // 凭证（未保存也能测）；两字段全空 = 测已存凭证。探针失败以
+  // E_ACME_DNS_TEST_FAILED 报错，失败步与底层 provider 错误摘要进信封
+  // context（凭证材料零出现）。
+  rpc TestDnsProvider(TestDnsProviderRequest) returns (TestDnsProviderResponse) {
+    option (google.api.http) = {
+      post: "/v1/system/acme/dns:test"
+      body: "*"
+    };
+  }
 }
 
 message PingRequest {}
@@ -449,4 +484,95 @@ message S3ConnectionTestResult {
 
 message TestS3ConnectionResponse {
   S3ConnectionTestResult result = 1;
+}
+
+// ── ACME DNS-01 通配证书面（B 线 W5 设计 §3，D-V3W5-3/D-V3W5-4，W5-S3）──
+
+message GetAcmeSettingsRequest {}
+
+// AcmeSettingsView 是 acme.* 设置的只读投影。凭证只回 fingerprint（明文
+// sha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateAcmeSettings
+// 承载明文，TLS 传输面 + envelope 持久层）。
+message AcmeSettingsView {
+  // DNS-01 服务商词表：none（缺省，未配置）| dnspod | cloudflare。
+  string dns_provider = 1;
+  // 凭证指纹（sha256 前 8 hex），非凭证本体；空 = 未设置。
+  string credentials_fingerprint = 2;
+  // 通配证书 opt-in 开关（true 时平台证书签
+  // [*.base, console/ctrl/registry.<base>]，DNS-01 验证）。
+  bool wildcard = 3;
+  // 最近一次保存时刻（从未保存 → 不输出）。
+  google.protobuf.Timestamp updated_at = 4;
+  // 通配期望域名集的服务端派生实值（wildcard=true 且 base_domain 非空时
+  // 非空；派生公式与签发面同源）。CLI/Console 的「当前证书域集」展示源。
+  repeated string wildcard_domains = 5;
+  // 平台域名（空 = 单节点形态——通配/平台证书面均不可用）。
+  string base_domain = 6;
+}
+
+message GetAcmeSettingsResponse {
+  AcmeSettingsView settings = 1;
+}
+
+message UpdateAcmeSettingsRequest {
+  // 服务商词表（空 = none）。联动校验见 rpc 注记。
+  string dns_provider = 1 [(buf.validate.field).string = {
+    in: [
+      "",
+      "none",
+      "dnspod",
+      "cloudflare"
+    ]
+  }];
+  // 凭证明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存凭证**
+  //（SMTP 密码同款先例——wildcard 开关切换不要求重录）；dns_provider=none
+  // 时恒清空。dnspod 形态 "<id>,<token>"；cloudflare 为单 token。
+  string api_token = 2;
+  // 通配证书 opt-in 开关。
+  bool wildcard = 3;
+}
+
+message UpdateAcmeSettingsResponse {
+  // 保存后的设置投影（与 GetAcmeSettings 同一脱敏读面）。
+  AcmeSettingsView settings = 1;
+}
+
+message TestDnsProviderRequest {
+  // 候选配置（未保存也能测）：任一字段非空即视为候选；两字段全空 = 测
+  // 已存凭证（provider 未配置时拒绝）。
+  string dns_provider = 1 [(buf.validate.field).string = {
+    in: [
+      "",
+      "dnspod",
+      "cloudflare"
+    ]
+  }];
+  string api_token = 2;
+}
+
+// DnsProbeStep 是探针单步结果（create/delete；诚实契约：失败步可定位）。
+message DnsProbeStep {
+  // 步骤名：create | delete。
+  string step = 1;
+  bool ok = 2;
+  // 该步耗时（毫秒）。
+  int64 duration_ms = 3;
+  // 失败时的底层 provider 错误摘要（不含凭证材料）。
+  string error = 4;
+}
+
+// DnsProviderTestResult 是探针结构化结果：provider 回显、探针 TXT 名、
+// 各步耗时、失败步。ok=false 时 failed_step 指向首个失败步（create 失败
+// 短路——无记录可删，delete 不执行）。
+message DnsProviderTestResult {
+  bool ok = 1;
+  string dns_provider = 2;
+  // 探针 TXT 记录名（_acme-challenge-test.<base_domain>）。
+  string record_name = 3;
+  repeated DnsProbeStep steps = 4;
+  string failed_step = 5;
+}
+
+message TestDnsProviderResponse {
+  DnsProviderTestResult result = 1;
 }

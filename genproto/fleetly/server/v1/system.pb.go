@@ -2252,6 +2252,541 @@ func (x *TestS3ConnectionResponse) GetResult() *S3ConnectionTestResult {
 	return nil
 }
 
+type GetAcmeSettingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAcmeSettingsRequest) Reset() {
+	*x = GetAcmeSettingsRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAcmeSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAcmeSettingsRequest) ProtoMessage() {}
+
+func (x *GetAcmeSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAcmeSettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetAcmeSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{33}
+}
+
+// AcmeSettingsView 是 acme.* 设置的只读投影。凭证只回 fingerprint（明文
+// sha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateAcmeSettings
+// 承载明文，TLS 传输面 + envelope 持久层）。
+type AcmeSettingsView struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// DNS-01 服务商词表：none（缺省，未配置）| dnspod | cloudflare。
+	DnsProvider string `protobuf:"bytes,1,opt,name=dns_provider,json=dnsProvider,proto3" json:"dns_provider,omitempty"`
+	// 凭证指纹（sha256 前 8 hex），非凭证本体；空 = 未设置。
+	CredentialsFingerprint string `protobuf:"bytes,2,opt,name=credentials_fingerprint,json=credentialsFingerprint,proto3" json:"credentials_fingerprint,omitempty"`
+	// 通配证书 opt-in 开关（true 时平台证书签
+	// [*.base, console/ctrl/registry.<base>]，DNS-01 验证）。
+	Wildcard bool `protobuf:"varint,3,opt,name=wildcard,proto3" json:"wildcard,omitempty"`
+	// 最近一次保存时刻（从未保存 → 不输出）。
+	UpdatedAt *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// 通配期望域名集的服务端派生实值（wildcard=true 且 base_domain 非空时
+	// 非空；派生公式与签发面同源）。CLI/Console 的「当前证书域集」展示源。
+	WildcardDomains []string `protobuf:"bytes,5,rep,name=wildcard_domains,json=wildcardDomains,proto3" json:"wildcard_domains,omitempty"`
+	// 平台域名（空 = 单节点形态——通配/平台证书面均不可用）。
+	BaseDomain    string `protobuf:"bytes,6,opt,name=base_domain,json=baseDomain,proto3" json:"base_domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AcmeSettingsView) Reset() {
+	*x = AcmeSettingsView{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AcmeSettingsView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AcmeSettingsView) ProtoMessage() {}
+
+func (x *AcmeSettingsView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AcmeSettingsView.ProtoReflect.Descriptor instead.
+func (*AcmeSettingsView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *AcmeSettingsView) GetDnsProvider() string {
+	if x != nil {
+		return x.DnsProvider
+	}
+	return ""
+}
+
+func (x *AcmeSettingsView) GetCredentialsFingerprint() string {
+	if x != nil {
+		return x.CredentialsFingerprint
+	}
+	return ""
+}
+
+func (x *AcmeSettingsView) GetWildcard() bool {
+	if x != nil {
+		return x.Wildcard
+	}
+	return false
+}
+
+func (x *AcmeSettingsView) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+func (x *AcmeSettingsView) GetWildcardDomains() []string {
+	if x != nil {
+		return x.WildcardDomains
+	}
+	return nil
+}
+
+func (x *AcmeSettingsView) GetBaseDomain() string {
+	if x != nil {
+		return x.BaseDomain
+	}
+	return ""
+}
+
+type GetAcmeSettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *AcmeSettingsView      `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetAcmeSettingsResponse) Reset() {
+	*x = GetAcmeSettingsResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetAcmeSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetAcmeSettingsResponse) ProtoMessage() {}
+
+func (x *GetAcmeSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetAcmeSettingsResponse.ProtoReflect.Descriptor instead.
+func (*GetAcmeSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *GetAcmeSettingsResponse) GetSettings() *AcmeSettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type UpdateAcmeSettingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 服务商词表（空 = none）。联动校验见 rpc 注记。
+	DnsProvider string `protobuf:"bytes,1,opt,name=dns_provider,json=dnsProvider,proto3" json:"dns_provider,omitempty"`
+	// 凭证明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存凭证**
+	// （SMTP 密码同款先例——wildcard 开关切换不要求重录）；dns_provider=none
+	// 时恒清空。dnspod 形态 "<id>,<token>"；cloudflare 为单 token。
+	ApiToken string `protobuf:"bytes,2,opt,name=api_token,json=apiToken,proto3" json:"api_token,omitempty"`
+	// 通配证书 opt-in 开关。
+	Wildcard      bool `protobuf:"varint,3,opt,name=wildcard,proto3" json:"wildcard,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAcmeSettingsRequest) Reset() {
+	*x = UpdateAcmeSettingsRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAcmeSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAcmeSettingsRequest) ProtoMessage() {}
+
+func (x *UpdateAcmeSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAcmeSettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateAcmeSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *UpdateAcmeSettingsRequest) GetDnsProvider() string {
+	if x != nil {
+		return x.DnsProvider
+	}
+	return ""
+}
+
+func (x *UpdateAcmeSettingsRequest) GetApiToken() string {
+	if x != nil {
+		return x.ApiToken
+	}
+	return ""
+}
+
+func (x *UpdateAcmeSettingsRequest) GetWildcard() bool {
+	if x != nil {
+		return x.Wildcard
+	}
+	return false
+}
+
+type UpdateAcmeSettingsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 保存后的设置投影（与 GetAcmeSettings 同一脱敏读面）。
+	Settings      *AcmeSettingsView `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAcmeSettingsResponse) Reset() {
+	*x = UpdateAcmeSettingsResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAcmeSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAcmeSettingsResponse) ProtoMessage() {}
+
+func (x *UpdateAcmeSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAcmeSettingsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateAcmeSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *UpdateAcmeSettingsResponse) GetSettings() *AcmeSettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type TestDnsProviderRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 候选配置（未保存也能测）：任一字段非空即视为候选；两字段全空 = 测
+	// 已存凭证（provider 未配置时拒绝）。
+	DnsProvider   string `protobuf:"bytes,1,opt,name=dns_provider,json=dnsProvider,proto3" json:"dns_provider,omitempty"`
+	ApiToken      string `protobuf:"bytes,2,opt,name=api_token,json=apiToken,proto3" json:"api_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestDnsProviderRequest) Reset() {
+	*x = TestDnsProviderRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestDnsProviderRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestDnsProviderRequest) ProtoMessage() {}
+
+func (x *TestDnsProviderRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestDnsProviderRequest.ProtoReflect.Descriptor instead.
+func (*TestDnsProviderRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *TestDnsProviderRequest) GetDnsProvider() string {
+	if x != nil {
+		return x.DnsProvider
+	}
+	return ""
+}
+
+func (x *TestDnsProviderRequest) GetApiToken() string {
+	if x != nil {
+		return x.ApiToken
+	}
+	return ""
+}
+
+// DnsProbeStep 是探针单步结果（create/delete；诚实契约：失败步可定位）。
+type DnsProbeStep struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 步骤名：create | delete。
+	Step string `protobuf:"bytes,1,opt,name=step,proto3" json:"step,omitempty"`
+	Ok   bool   `protobuf:"varint,2,opt,name=ok,proto3" json:"ok,omitempty"`
+	// 该步耗时（毫秒）。
+	DurationMs int64 `protobuf:"varint,3,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	// 失败时的底层 provider 错误摘要（不含凭证材料）。
+	Error         string `protobuf:"bytes,4,opt,name=error,proto3" json:"error,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DnsProbeStep) Reset() {
+	*x = DnsProbeStep{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DnsProbeStep) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DnsProbeStep) ProtoMessage() {}
+
+func (x *DnsProbeStep) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DnsProbeStep.ProtoReflect.Descriptor instead.
+func (*DnsProbeStep) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *DnsProbeStep) GetStep() string {
+	if x != nil {
+		return x.Step
+	}
+	return ""
+}
+
+func (x *DnsProbeStep) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *DnsProbeStep) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *DnsProbeStep) GetError() string {
+	if x != nil {
+		return x.Error
+	}
+	return ""
+}
+
+// DnsProviderTestResult 是探针结构化结果：provider 回显、探针 TXT 名、
+// 各步耗时、失败步。ok=false 时 failed_step 指向首个失败步（create 失败
+// 短路——无记录可删，delete 不执行）。
+type DnsProviderTestResult struct {
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	Ok          bool                   `protobuf:"varint,1,opt,name=ok,proto3" json:"ok,omitempty"`
+	DnsProvider string                 `protobuf:"bytes,2,opt,name=dns_provider,json=dnsProvider,proto3" json:"dns_provider,omitempty"`
+	// 探针 TXT 记录名（_acme-challenge-test.<base_domain>）。
+	RecordName    string          `protobuf:"bytes,3,opt,name=record_name,json=recordName,proto3" json:"record_name,omitempty"`
+	Steps         []*DnsProbeStep `protobuf:"bytes,4,rep,name=steps,proto3" json:"steps,omitempty"`
+	FailedStep    string          `protobuf:"bytes,5,opt,name=failed_step,json=failedStep,proto3" json:"failed_step,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DnsProviderTestResult) Reset() {
+	*x = DnsProviderTestResult{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DnsProviderTestResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DnsProviderTestResult) ProtoMessage() {}
+
+func (x *DnsProviderTestResult) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DnsProviderTestResult.ProtoReflect.Descriptor instead.
+func (*DnsProviderTestResult) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *DnsProviderTestResult) GetOk() bool {
+	if x != nil {
+		return x.Ok
+	}
+	return false
+}
+
+func (x *DnsProviderTestResult) GetDnsProvider() string {
+	if x != nil {
+		return x.DnsProvider
+	}
+	return ""
+}
+
+func (x *DnsProviderTestResult) GetRecordName() string {
+	if x != nil {
+		return x.RecordName
+	}
+	return ""
+}
+
+func (x *DnsProviderTestResult) GetSteps() []*DnsProbeStep {
+	if x != nil {
+		return x.Steps
+	}
+	return nil
+}
+
+func (x *DnsProviderTestResult) GetFailedStep() string {
+	if x != nil {
+		return x.FailedStep
+	}
+	return ""
+}
+
+type TestDnsProviderResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Result        *DnsProviderTestResult `protobuf:"bytes,1,opt,name=result,proto3" json:"result,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TestDnsProviderResponse) Reset() {
+	*x = TestDnsProviderResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TestDnsProviderResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TestDnsProviderResponse) ProtoMessage() {}
+
+func (x *TestDnsProviderResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TestDnsProviderResponse.ProtoReflect.Descriptor instead.
+func (*TestDnsProviderResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *TestDnsProviderResponse) GetResult() *DnsProviderTestResult {
+	if x != nil {
+		return x.Result
+	}
+	return nil
+}
+
 var File_fleetly_server_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_system_proto_rawDesc = "" +
@@ -2433,7 +2968,46 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\vfailed_step\x18\a \x01(\tR\n" +
 	"failedStep\"]\n" +
 	"\x18TestS3ConnectionResponse\x12A\n" +
-	"\x06result\x18\x01 \x01(\v2).fleetly.server.v1.S3ConnectionTestResultR\x06result2\xa2\v\n" +
+	"\x06result\x18\x01 \x01(\v2).fleetly.server.v1.S3ConnectionTestResultR\x06result\"\x18\n" +
+	"\x16GetAcmeSettingsRequest\"\x91\x02\n" +
+	"\x10AcmeSettingsView\x12!\n" +
+	"\fdns_provider\x18\x01 \x01(\tR\vdnsProvider\x127\n" +
+	"\x17credentials_fingerprint\x18\x02 \x01(\tR\x16credentialsFingerprint\x12\x1a\n" +
+	"\bwildcard\x18\x03 \x01(\bR\bwildcard\x129\n" +
+	"\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12)\n" +
+	"\x10wildcard_domains\x18\x05 \x03(\tR\x0fwildcardDomains\x12\x1f\n" +
+	"\vbase_domain\x18\x06 \x01(\tR\n" +
+	"baseDomain\"Z\n" +
+	"\x17GetAcmeSettingsResponse\x12?\n" +
+	"\bsettings\x18\x01 \x01(\v2#.fleetly.server.v1.AcmeSettingsViewR\bsettings\"\x9a\x01\n" +
+	"\x19UpdateAcmeSettingsRequest\x12D\n" +
+	"\fdns_provider\x18\x01 \x01(\tB!\xbaH\x1er\x1cR\x00R\x04noneR\x06dnspodR\n" +
+	"cloudflareR\vdnsProvider\x12\x1b\n" +
+	"\tapi_token\x18\x02 \x01(\tR\bapiToken\x12\x1a\n" +
+	"\bwildcard\x18\x03 \x01(\bR\bwildcard\"]\n" +
+	"\x1aUpdateAcmeSettingsResponse\x12?\n" +
+	"\bsettings\x18\x01 \x01(\v2#.fleetly.server.v1.AcmeSettingsViewR\bsettings\"u\n" +
+	"\x16TestDnsProviderRequest\x12>\n" +
+	"\fdns_provider\x18\x01 \x01(\tB\x1b\xbaH\x18r\x16R\x00R\x06dnspodR\n" +
+	"cloudflareR\vdnsProvider\x12\x1b\n" +
+	"\tapi_token\x18\x02 \x01(\tR\bapiToken\"i\n" +
+	"\fDnsProbeStep\x12\x12\n" +
+	"\x04step\x18\x01 \x01(\tR\x04step\x12\x0e\n" +
+	"\x02ok\x18\x02 \x01(\bR\x02ok\x12\x1f\n" +
+	"\vduration_ms\x18\x03 \x01(\x03R\n" +
+	"durationMs\x12\x14\n" +
+	"\x05error\x18\x04 \x01(\tR\x05error\"\xc3\x01\n" +
+	"\x15DnsProviderTestResult\x12\x0e\n" +
+	"\x02ok\x18\x01 \x01(\bR\x02ok\x12!\n" +
+	"\fdns_provider\x18\x02 \x01(\tR\vdnsProvider\x12\x1f\n" +
+	"\vrecord_name\x18\x03 \x01(\tR\n" +
+	"recordName\x125\n" +
+	"\x05steps\x18\x04 \x03(\v2\x1f.fleetly.server.v1.DnsProbeStepR\x05steps\x12\x1f\n" +
+	"\vfailed_step\x18\x05 \x01(\tR\n" +
+	"failedStep\"[\n" +
+	"\x17TestDnsProviderResponse\x12@\n" +
+	"\x06result\x18\x01 \x01(\v2(.fleetly.server.v1.DnsProviderTestResultR\x06result2\xc6\x0e\n" +
 	"\rSystemService\x12`\n" +
 	"\x04Ping\x12\x1e.fleetly.server.v1.PingRequest\x1a\x1f.fleetly.server.v1.PingResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/ping\x12\x83\x01\n" +
 	"\x0fGetSystemStatus\x12).fleetly.server.v1.GetSystemStatusRequest\x1a*.fleetly.server.v1.GetSystemStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12p\n" +
@@ -2445,7 +3019,10 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\x0fRotateJoinToken\x12).fleetly.server.v1.RotateJoinTokenRequest\x1a*.fleetly.server.v1.RotateJoinTokenResponse\"-\x82\xd3\xe4\x93\x02':\x01*\"\"/v1/system/nodes/join-token:rotate\x12y\n" +
 	"\rGetS3Settings\x12'.fleetly.server.v1.GetS3SettingsRequest\x1a(.fleetly.server.v1.GetS3SettingsResponse\"\x15\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/system/s3\x12\x85\x01\n" +
 	"\x10UpdateS3Settings\x12*.fleetly.server.v1.UpdateS3SettingsRequest\x1a+.fleetly.server.v1.UpdateS3SettingsResponse\"\x18\x82\xd3\xe4\x93\x02\x12:\x01*\x1a\r/v1/system/s3\x12\x8a\x01\n" +
-	"\x10TestS3Connection\x12*.fleetly.server.v1.TestS3ConnectionRequest\x1a+.fleetly.server.v1.TestS3ConnectionResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/system/s3:testB\x98\x01\x92ARRP\n" +
+	"\x10TestS3Connection\x12*.fleetly.server.v1.TestS3ConnectionRequest\x1a+.fleetly.server.v1.TestS3ConnectionResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/system/s3:test\x12\x81\x01\n" +
+	"\x0fGetAcmeSettings\x12).fleetly.server.v1.GetAcmeSettingsRequest\x1a*.fleetly.server.v1.GetAcmeSettingsResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/acme\x12\x8d\x01\n" +
+	"\x12UpdateAcmeSettings\x12,.fleetly.server.v1.UpdateAcmeSettingsRequest\x1a-.fleetly.server.v1.UpdateAcmeSettingsResponse\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\x1a\x0f/v1/system/acme\x12\x8d\x01\n" +
+	"\x0fTestDnsProvider\x12).fleetly.server.v1.TestDnsProviderRequest\x1a*.fleetly.server.v1.TestDnsProviderResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/system/acme/dns:testB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -2462,93 +3039,113 @@ func file_fleetly_server_v1_system_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_system_proto_rawDescData
 }
 
-var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 34)
+var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
 var file_fleetly_server_v1_system_proto_goTypes = []any{
-	(*PingRequest)(nil),              // 0: fleetly.server.v1.PingRequest
-	(*PingResponse)(nil),             // 1: fleetly.server.v1.PingResponse
-	(*GetSystemStatusRequest)(nil),   // 2: fleetly.server.v1.GetSystemStatusRequest
-	(*ComponentHealth)(nil),          // 3: fleetly.server.v1.ComponentHealth
-	(*GetSystemStatusResponse)(nil),  // 4: fleetly.server.v1.GetSystemStatusResponse
-	(*BackupHealth)(nil),             // 5: fleetly.server.v1.BackupHealth
-	(*ListNodesRequest)(nil),         // 6: fleetly.server.v1.ListNodesRequest
-	(*NodeView)(nil),                 // 7: fleetly.server.v1.NodeView
-	(*ListNodesResponse)(nil),        // 8: fleetly.server.v1.ListNodesResponse
-	(*GetJoinGuideRequest)(nil),      // 9: fleetly.server.v1.GetJoinGuideRequest
-	(*FirewallRule)(nil),             // 10: fleetly.server.v1.FirewallRule
-	(*JoinGuideView)(nil),            // 11: fleetly.server.v1.JoinGuideView
-	(*GetJoinGuideResponse)(nil),     // 12: fleetly.server.v1.GetJoinGuideResponse
-	(*RotateJoinTokenRequest)(nil),   // 13: fleetly.server.v1.RotateJoinTokenRequest
-	(*RotateJoinTokenResponse)(nil),  // 14: fleetly.server.v1.RotateJoinTokenResponse
-	(*GetIngressStatusRequest)(nil),  // 15: fleetly.server.v1.GetIngressStatusRequest
-	(*TraefikView)(nil),              // 16: fleetly.server.v1.TraefikView
-	(*CertLedgerView)(nil),           // 17: fleetly.server.v1.CertLedgerView
-	(*GetIngressStatusResponse)(nil), // 18: fleetly.server.v1.GetIngressStatusResponse
-	(*ListBackupsRequest)(nil),       // 19: fleetly.server.v1.ListBackupsRequest
-	(*BackupView)(nil),               // 20: fleetly.server.v1.BackupView
-	(*ListBackupsResponse)(nil),      // 21: fleetly.server.v1.ListBackupsResponse
-	(*TriggerBackupRequest)(nil),     // 22: fleetly.server.v1.TriggerBackupRequest
-	(*TriggerBackupResponse)(nil),    // 23: fleetly.server.v1.TriggerBackupResponse
-	(*GetS3SettingsRequest)(nil),     // 24: fleetly.server.v1.GetS3SettingsRequest
-	(*S3SettingsView)(nil),           // 25: fleetly.server.v1.S3SettingsView
-	(*GetS3SettingsResponse)(nil),    // 26: fleetly.server.v1.GetS3SettingsResponse
-	(*UpdateS3SettingsRequest)(nil),  // 27: fleetly.server.v1.UpdateS3SettingsRequest
-	(*UpdateS3SettingsResponse)(nil), // 28: fleetly.server.v1.UpdateS3SettingsResponse
-	(*TestS3ConnectionRequest)(nil),  // 29: fleetly.server.v1.TestS3ConnectionRequest
-	(*S3ProbeStep)(nil),              // 30: fleetly.server.v1.S3ProbeStep
-	(*S3ConnectionTestResult)(nil),   // 31: fleetly.server.v1.S3ConnectionTestResult
-	(*TestS3ConnectionResponse)(nil), // 32: fleetly.server.v1.TestS3ConnectionResponse
-	nil,                              // 33: fleetly.server.v1.NodeView.LabelsEntry
-	(*timestamppb.Timestamp)(nil),    // 34: google.protobuf.Timestamp
+	(*PingRequest)(nil),                // 0: fleetly.server.v1.PingRequest
+	(*PingResponse)(nil),               // 1: fleetly.server.v1.PingResponse
+	(*GetSystemStatusRequest)(nil),     // 2: fleetly.server.v1.GetSystemStatusRequest
+	(*ComponentHealth)(nil),            // 3: fleetly.server.v1.ComponentHealth
+	(*GetSystemStatusResponse)(nil),    // 4: fleetly.server.v1.GetSystemStatusResponse
+	(*BackupHealth)(nil),               // 5: fleetly.server.v1.BackupHealth
+	(*ListNodesRequest)(nil),           // 6: fleetly.server.v1.ListNodesRequest
+	(*NodeView)(nil),                   // 7: fleetly.server.v1.NodeView
+	(*ListNodesResponse)(nil),          // 8: fleetly.server.v1.ListNodesResponse
+	(*GetJoinGuideRequest)(nil),        // 9: fleetly.server.v1.GetJoinGuideRequest
+	(*FirewallRule)(nil),               // 10: fleetly.server.v1.FirewallRule
+	(*JoinGuideView)(nil),              // 11: fleetly.server.v1.JoinGuideView
+	(*GetJoinGuideResponse)(nil),       // 12: fleetly.server.v1.GetJoinGuideResponse
+	(*RotateJoinTokenRequest)(nil),     // 13: fleetly.server.v1.RotateJoinTokenRequest
+	(*RotateJoinTokenResponse)(nil),    // 14: fleetly.server.v1.RotateJoinTokenResponse
+	(*GetIngressStatusRequest)(nil),    // 15: fleetly.server.v1.GetIngressStatusRequest
+	(*TraefikView)(nil),                // 16: fleetly.server.v1.TraefikView
+	(*CertLedgerView)(nil),             // 17: fleetly.server.v1.CertLedgerView
+	(*GetIngressStatusResponse)(nil),   // 18: fleetly.server.v1.GetIngressStatusResponse
+	(*ListBackupsRequest)(nil),         // 19: fleetly.server.v1.ListBackupsRequest
+	(*BackupView)(nil),                 // 20: fleetly.server.v1.BackupView
+	(*ListBackupsResponse)(nil),        // 21: fleetly.server.v1.ListBackupsResponse
+	(*TriggerBackupRequest)(nil),       // 22: fleetly.server.v1.TriggerBackupRequest
+	(*TriggerBackupResponse)(nil),      // 23: fleetly.server.v1.TriggerBackupResponse
+	(*GetS3SettingsRequest)(nil),       // 24: fleetly.server.v1.GetS3SettingsRequest
+	(*S3SettingsView)(nil),             // 25: fleetly.server.v1.S3SettingsView
+	(*GetS3SettingsResponse)(nil),      // 26: fleetly.server.v1.GetS3SettingsResponse
+	(*UpdateS3SettingsRequest)(nil),    // 27: fleetly.server.v1.UpdateS3SettingsRequest
+	(*UpdateS3SettingsResponse)(nil),   // 28: fleetly.server.v1.UpdateS3SettingsResponse
+	(*TestS3ConnectionRequest)(nil),    // 29: fleetly.server.v1.TestS3ConnectionRequest
+	(*S3ProbeStep)(nil),                // 30: fleetly.server.v1.S3ProbeStep
+	(*S3ConnectionTestResult)(nil),     // 31: fleetly.server.v1.S3ConnectionTestResult
+	(*TestS3ConnectionResponse)(nil),   // 32: fleetly.server.v1.TestS3ConnectionResponse
+	(*GetAcmeSettingsRequest)(nil),     // 33: fleetly.server.v1.GetAcmeSettingsRequest
+	(*AcmeSettingsView)(nil),           // 34: fleetly.server.v1.AcmeSettingsView
+	(*GetAcmeSettingsResponse)(nil),    // 35: fleetly.server.v1.GetAcmeSettingsResponse
+	(*UpdateAcmeSettingsRequest)(nil),  // 36: fleetly.server.v1.UpdateAcmeSettingsRequest
+	(*UpdateAcmeSettingsResponse)(nil), // 37: fleetly.server.v1.UpdateAcmeSettingsResponse
+	(*TestDnsProviderRequest)(nil),     // 38: fleetly.server.v1.TestDnsProviderRequest
+	(*DnsProbeStep)(nil),               // 39: fleetly.server.v1.DnsProbeStep
+	(*DnsProviderTestResult)(nil),      // 40: fleetly.server.v1.DnsProviderTestResult
+	(*TestDnsProviderResponse)(nil),    // 41: fleetly.server.v1.TestDnsProviderResponse
+	nil,                                // 42: fleetly.server.v1.NodeView.LabelsEntry
+	(*timestamppb.Timestamp)(nil),      // 43: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_system_proto_depIdxs = []int32{
 	3,  // 0: fleetly.server.v1.GetSystemStatusResponse.components:type_name -> fleetly.server.v1.ComponentHealth
 	5,  // 1: fleetly.server.v1.GetSystemStatusResponse.backup:type_name -> fleetly.server.v1.BackupHealth
-	34, // 2: fleetly.server.v1.BackupHealth.last_backup_at:type_name -> google.protobuf.Timestamp
-	34, // 3: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
-	33, // 4: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
+	43, // 2: fleetly.server.v1.BackupHealth.last_backup_at:type_name -> google.protobuf.Timestamp
+	43, // 3: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
+	42, // 4: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
 	7,  // 5: fleetly.server.v1.ListNodesResponse.nodes:type_name -> fleetly.server.v1.NodeView
 	10, // 6: fleetly.server.v1.JoinGuideView.manager_firewall_rules:type_name -> fleetly.server.v1.FirewallRule
 	10, // 7: fleetly.server.v1.JoinGuideView.worker_firewall_rules:type_name -> fleetly.server.v1.FirewallRule
 	11, // 8: fleetly.server.v1.GetJoinGuideResponse.guide:type_name -> fleetly.server.v1.JoinGuideView
-	34, // 9: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
+	43, // 9: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
 	16, // 10: fleetly.server.v1.GetIngressStatusResponse.traefik:type_name -> fleetly.server.v1.TraefikView
 	17, // 11: fleetly.server.v1.GetIngressStatusResponse.certificates:type_name -> fleetly.server.v1.CertLedgerView
-	34, // 12: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
-	34, // 13: fleetly.server.v1.BackupView.uploaded_at:type_name -> google.protobuf.Timestamp
+	43, // 12: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
+	43, // 13: fleetly.server.v1.BackupView.uploaded_at:type_name -> google.protobuf.Timestamp
 	20, // 14: fleetly.server.v1.ListBackupsResponse.backups:type_name -> fleetly.server.v1.BackupView
 	20, // 15: fleetly.server.v1.TriggerBackupResponse.backup:type_name -> fleetly.server.v1.BackupView
-	34, // 16: fleetly.server.v1.S3SettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	43, // 16: fleetly.server.v1.S3SettingsView.updated_at:type_name -> google.protobuf.Timestamp
 	25, // 17: fleetly.server.v1.GetS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
 	25, // 18: fleetly.server.v1.UpdateS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
 	30, // 19: fleetly.server.v1.S3ConnectionTestResult.steps:type_name -> fleetly.server.v1.S3ProbeStep
 	31, // 20: fleetly.server.v1.TestS3ConnectionResponse.result:type_name -> fleetly.server.v1.S3ConnectionTestResult
-	0,  // 21: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
-	2,  // 22: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
-	6,  // 23: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
-	15, // 24: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
-	19, // 25: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
-	22, // 26: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
-	9,  // 27: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
-	13, // 28: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
-	24, // 29: fleetly.server.v1.SystemService.GetS3Settings:input_type -> fleetly.server.v1.GetS3SettingsRequest
-	27, // 30: fleetly.server.v1.SystemService.UpdateS3Settings:input_type -> fleetly.server.v1.UpdateS3SettingsRequest
-	29, // 31: fleetly.server.v1.SystemService.TestS3Connection:input_type -> fleetly.server.v1.TestS3ConnectionRequest
-	1,  // 32: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
-	4,  // 33: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
-	8,  // 34: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
-	18, // 35: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
-	21, // 36: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
-	23, // 37: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
-	12, // 38: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
-	14, // 39: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
-	26, // 40: fleetly.server.v1.SystemService.GetS3Settings:output_type -> fleetly.server.v1.GetS3SettingsResponse
-	28, // 41: fleetly.server.v1.SystemService.UpdateS3Settings:output_type -> fleetly.server.v1.UpdateS3SettingsResponse
-	32, // 42: fleetly.server.v1.SystemService.TestS3Connection:output_type -> fleetly.server.v1.TestS3ConnectionResponse
-	32, // [32:43] is the sub-list for method output_type
-	21, // [21:32] is the sub-list for method input_type
-	21, // [21:21] is the sub-list for extension type_name
-	21, // [21:21] is the sub-list for extension extendee
-	0,  // [0:21] is the sub-list for field type_name
+	43, // 21: fleetly.server.v1.AcmeSettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	34, // 22: fleetly.server.v1.GetAcmeSettingsResponse.settings:type_name -> fleetly.server.v1.AcmeSettingsView
+	34, // 23: fleetly.server.v1.UpdateAcmeSettingsResponse.settings:type_name -> fleetly.server.v1.AcmeSettingsView
+	39, // 24: fleetly.server.v1.DnsProviderTestResult.steps:type_name -> fleetly.server.v1.DnsProbeStep
+	40, // 25: fleetly.server.v1.TestDnsProviderResponse.result:type_name -> fleetly.server.v1.DnsProviderTestResult
+	0,  // 26: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
+	2,  // 27: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
+	6,  // 28: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
+	15, // 29: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
+	19, // 30: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
+	22, // 31: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
+	9,  // 32: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
+	13, // 33: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
+	24, // 34: fleetly.server.v1.SystemService.GetS3Settings:input_type -> fleetly.server.v1.GetS3SettingsRequest
+	27, // 35: fleetly.server.v1.SystemService.UpdateS3Settings:input_type -> fleetly.server.v1.UpdateS3SettingsRequest
+	29, // 36: fleetly.server.v1.SystemService.TestS3Connection:input_type -> fleetly.server.v1.TestS3ConnectionRequest
+	33, // 37: fleetly.server.v1.SystemService.GetAcmeSettings:input_type -> fleetly.server.v1.GetAcmeSettingsRequest
+	36, // 38: fleetly.server.v1.SystemService.UpdateAcmeSettings:input_type -> fleetly.server.v1.UpdateAcmeSettingsRequest
+	38, // 39: fleetly.server.v1.SystemService.TestDnsProvider:input_type -> fleetly.server.v1.TestDnsProviderRequest
+	1,  // 40: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
+	4,  // 41: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
+	8,  // 42: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
+	18, // 43: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
+	21, // 44: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
+	23, // 45: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
+	12, // 46: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
+	14, // 47: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
+	26, // 48: fleetly.server.v1.SystemService.GetS3Settings:output_type -> fleetly.server.v1.GetS3SettingsResponse
+	28, // 49: fleetly.server.v1.SystemService.UpdateS3Settings:output_type -> fleetly.server.v1.UpdateS3SettingsResponse
+	32, // 50: fleetly.server.v1.SystemService.TestS3Connection:output_type -> fleetly.server.v1.TestS3ConnectionResponse
+	35, // 51: fleetly.server.v1.SystemService.GetAcmeSettings:output_type -> fleetly.server.v1.GetAcmeSettingsResponse
+	37, // 52: fleetly.server.v1.SystemService.UpdateAcmeSettings:output_type -> fleetly.server.v1.UpdateAcmeSettingsResponse
+	41, // 53: fleetly.server.v1.SystemService.TestDnsProvider:output_type -> fleetly.server.v1.TestDnsProviderResponse
+	40, // [40:54] is the sub-list for method output_type
+	26, // [26:40] is the sub-list for method input_type
+	26, // [26:26] is the sub-list for extension type_name
+	26, // [26:26] is the sub-list for extension extendee
+	0,  // [0:26] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_system_proto_init() }
@@ -2562,7 +3159,7 @@ func file_fleetly_server_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_system_proto_rawDesc), len(file_fleetly_server_v1_system_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   34,
+			NumMessages:   43,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

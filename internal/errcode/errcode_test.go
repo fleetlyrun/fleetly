@@ -133,6 +133,15 @@ var docCodes = map[string]string{ // code → 文档出处
 	// 拒绝（internal/api/terminal.go / internal/execrelay hub.go）。
 	"E_TERMINAL_DISABLED": "E7 web-terminal §2.4 (W5-S6 feature gate: terminal.enabled=false deploys no exec relay and refuses ticket issuance, 409)",
 
+	// B 线 W5 ACME DNS-01 通配证书面（b-line-w5 设计 §3，D-V3W5-3/D-V3W5-4，
+	// W5-S3 接线，注册表只增）：acme.* 设置联动校验门两码（消费点 =
+	// internal/state/acmesettings.go ValidateAcmeSettings——422 语义违约 /
+	// 409 配置缺失）+ DNS 服务商探针失败码（消费点 = internal/api/acme.go
+	// TestDnsProvider——失败步进信封 context）。
+	"E_ACME_WILDCARD_REQUIRES_PROVIDER":    "v0.3 W5 b-line-w5 §3 (acme.wildcard=true requires a DNS provider — a wildcard SAN can only be validated via DNS-01, 422)",
+	"E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN": "v0.3 W5 b-line-w5 §3 (acme.wildcard=true requires a platform base domain — the wildcard domain set derives from it, 409)",
+	"E_ACME_DNS_TEST_FAILED":               "v0.3 W5 b-line-w5 §3 (DNS provider probe failed: create -> delete a real TXT record; failed step in the envelope context, 503)",
+
 	// v0.3 W1 认证/用户面（rbac-teams 设计 §2.1/§10，注册表只增）：注册
 	// 窗口关闭的稳定拒绝码（无用户窗口恒开不落本码）。消费点 =
 	// internal/api/authservice.go Register（state 哨兵 ErrRegistrationClosed
@@ -208,7 +217,10 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // → 66 E + 5 W；W2-S4 增 E_DB_PROJECT_MISMATCH（rbac-teams §4.1 E4 跨项目
 // 库引用守卫，部署受理面）→ 67 E + 5 W；W5-S2 增告警面七码（B 线
 // b-line-w5 设计 §2，D-V3W5-1：E_ALERTS_METRICS_REQUIRED 前置门 +
-// E_ALERT_RULE_* 六码）→ 74 E + 5 W。
+// E_ALERT_RULE_* 六码）→ 74 E + 5 W；W5-S3 增 ACME DNS-01 通配证书面三码
+//（b-line-w5 设计 §3，D-V3W5-3/D-V3W5-4：E_ACME_WILDCARD_REQUIRES_PROVIDER /
+// E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN 联动门 + E_ACME_DNS_TEST_FAILED
+// 探针失败）→ 77 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -218,8 +230,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 74 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 74), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 77 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 77), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

@@ -1020,6 +1020,64 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/system/acme": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetAcmeSettings ACME DNS-01 设置只读面（B 线 W5 设计 §3，D-V3W5-3/4；
+         *     admin scope——DNS 服务商凭据指纹属平台敏感配置，与 S3 设置同门）。
+         *     凭证只回 fingerprint（sha256 前 8），绝不回明文；同时下发服务端派生的
+         *     通配期望域名集（wildcard=true 时非空）——CLI/Console 展示当前证书
+         *     域名集形态，派生公式与签发面同源（服务端单点）。
+         */
+        get: operations["SystemService_GetAcmeSettings"];
+        /**
+         * UpdateAcmeSettings 保存 ACME DNS-01 设置（provider + 凭证 + wildcard
+         *     开关）。api_token 为明文只写字段（TLS 传输面承载机密性，持久层
+         *     envelope 加密）：**留空 = 保留已存凭证**（SMTP 密码同款先例——wildcard
+         *     开关切换不要求重录凭证）；dns_provider=none 恒清空凭证。联动校验
+         *     fail-fast：wildcard=true 须 provider ∈ {dnspod, cloudflare}（422
+         *     E_ACME_WILDCARD_REQUIRES_PROVIDER——通配 SAN 只能 DNS-01 验证）且须
+         *     base_domain（409 E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN）。保存落审计
+         *     acme.settings_changed（provider/wildcard/凭证有无——零明文；本设置族
+         *     零事件，审计承载）。
+         */
+        put: operations["SystemService_UpdateAcmeSettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/system/acme/dns:test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * TestDnsProvider DNS 服务商探针（诚实契约：在 _acme-challenge-test.
+         *     <base_domain> 建 TXT → 删 TXT 两步真实往返——通过 = 能认证/能写/能删，
+         *     zone 解析在 create 步隐含执行；不是"能列域名"级别的浅探测）。可带候选
+         *     凭证（未保存也能测）；两字段全空 = 测已存凭证。探针失败以
+         *     E_ACME_DNS_TEST_FAILED 报错，失败步与底层 provider 错误摘要进信封
+         *     context（凭证材料零出现）。
+         */
+        post: operations["SystemService_TestDnsProvider"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/system/backups": {
         parameters: {
             query?: never;
@@ -2888,6 +2946,34 @@ export interface components {
             cursor_expired?: components["schemas"]["v1CursorExpiredView"];
         };
         /**
+         * AcmeSettingsView 是 acme.* 设置的只读投影。凭证只回 fingerprint（明文
+         *     sha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateAcmeSettings
+         *     承载明文，TLS 传输面 + envelope 持久层）。
+         */
+        v1AcmeSettingsView: {
+            /** DNS-01 服务商词表：none（缺省，未配置）| dnspod | cloudflare。 */
+            dns_provider?: string;
+            /** 凭证指纹（sha256 前 8 hex），非凭证本体；空 = 未设置。 */
+            credentials_fingerprint?: string;
+            /**
+             * 通配证书 opt-in 开关（true 时平台证书签
+             *     [*.base, console/ctrl/registry.<base>]，DNS-01 验证）。
+             */
+            wildcard?: boolean;
+            /**
+             * 最近一次保存时刻（从未保存 → 不输出）。
+             * Format: date-time
+             */
+            updated_at?: string;
+            /**
+             * 通配期望域名集的服务端派生实值（wildcard=true 且 base_domain 非空时
+             *     非空；派生公式与签发面同源）。CLI/Console 的「当前证书域集」展示源。
+             */
+            wildcard_domains?: string[];
+            /** 平台域名（空 = 单节点形态——通配/平台证书面均不可用）。 */
+            base_domain?: string;
+        };
+        /**
          * BackupHealth 是系统状态里备份面的明细视图（组件布尔健康的展开：最近
          *     一次备份的时间与校验结论——「绿色成功但实际没备份」的对立面是让
          *     verify_status 与时间直接可见）。
@@ -2972,6 +3058,32 @@ export interface components {
             ok?: boolean;
             error?: string;
         };
+        /** DnsProbeStep 是探针单步结果（create/delete；诚实契约：失败步可定位）。 */
+        v1DnsProbeStep: {
+            /** 步骤名：create | delete。 */
+            step?: string;
+            ok?: boolean;
+            /**
+             * 该步耗时（毫秒）。
+             * Format: int64
+             */
+            duration_ms?: string;
+            /** 失败时的底层 provider 错误摘要（不含凭证材料）。 */
+            error?: string;
+        };
+        /**
+         * DnsProviderTestResult 是探针结构化结果：provider 回显、探针 TXT 名、
+         *     各步耗时、失败步。ok=false 时 failed_step 指向首个失败步（create 失败
+         *     短路——无记录可删，delete 不执行）。
+         */
+        v1DnsProviderTestResult: {
+            ok?: boolean;
+            dns_provider?: string;
+            /** 探针 TXT 记录名（_acme-challenge-test.<base_domain>）。 */
+            record_name?: string;
+            steps?: components["schemas"]["v1DnsProbeStep"][];
+            failed_step?: string;
+        };
         /**
          * FirewallRule 是一条防火墙放行规则文本（方向 + 端口/协议 + 用途 + 可
          *     复制命令；只生成不自动应用——平台不静默改用户防火墙，multi-node §2.3）。
@@ -2987,6 +3099,9 @@ export interface components {
             rule?: string;
             /** 规则应用在哪一侧（manager / worker / both）。 */
             side?: string;
+        };
+        v1GetAcmeSettingsResponse: {
+            settings?: components["schemas"]["v1AcmeSettingsView"];
         };
         v1GetIngressStatusResponse: {
             traefik?: components["schemas"]["v1TraefikView"];
@@ -3176,6 +3291,17 @@ export interface components {
              */
             public_domain?: string;
         };
+        v1TestDnsProviderRequest: {
+            /**
+             * 候选配置（未保存也能测）：任一字段非空即视为候选；两字段全空 = 测
+             *     已存凭证（provider 未配置时拒绝）。
+             */
+            dns_provider?: string;
+            api_token?: string;
+        };
+        v1TestDnsProviderResponse: {
+            result?: components["schemas"]["v1DnsProviderTestResult"];
+        };
         v1TestS3ConnectionRequest: {
             /**
              * 候选配置（未保存也能测）：任一字段非零即视为候选配置；全空 = 测已存
@@ -3211,6 +3337,21 @@ export interface components {
         };
         v1TriggerBackupResponse: {
             backup?: components["schemas"]["v1BackupView"];
+        };
+        v1UpdateAcmeSettingsRequest: {
+            /** 服务商词表（空 = none）。联动校验见 rpc 注记。 */
+            dns_provider?: string;
+            /**
+             * 凭证明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存凭证**
+             *     （SMTP 密码同款先例——wildcard 开关切换不要求重录）；dns_provider=none
+             *     时恒清空。dnspod 形态 "<id>,<token>"；cloudflare 为单 token。
+             */
+            api_token?: string;
+            /** 通配证书 opt-in 开关。 */
+            wildcard?: boolean;
+        };
+        v1UpdateAcmeSettingsResponse: {
+            settings?: components["schemas"]["v1AcmeSettingsView"];
         };
         v1UpdateS3SettingsRequest: {
             /** 模式词表（空 = unset）。external↔rustfs 互斥校验见 rpc 注记。 */
@@ -6285,6 +6426,101 @@ export interface operations {
                     "application/json": {
                         result?: components["schemas"]["v1WatchEventsResponse"];
                     };
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_GetAcmeSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetAcmeSettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_UpdateAcmeSettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1UpdateAcmeSettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateAcmeSettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_TestDnsProvider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1TestDnsProviderRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TestDnsProviderResponse"];
                 };
             };
             /** @description An unexpected error response. */

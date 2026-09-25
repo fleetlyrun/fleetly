@@ -16,6 +16,93 @@
     "application/json"
   ],
   "paths": {
+    "/v1/system/acme": {
+      "get": {
+        "summary": "GetAcmeSettings ACME DNS-01 设置只读面（B 线 W5 设计 §3，D-V3W5-3/4；\nadmin scope——DNS 服务商凭据指纹属平台敏感配置，与 S3 设置同门）。\n凭证只回 fingerprint（sha256 前 8），绝不回明文；同时下发服务端派生的\n通配期望域名集（wildcard=true 时非空）——CLI/Console 展示当前证书\n域名集形态，派生公式与签发面同源（服务端单点）。",
+        "operationId": "SystemService_GetAcmeSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAcmeSettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      },
+      "put": {
+        "summary": "UpdateAcmeSettings 保存 ACME DNS-01 设置（provider + 凭证 + wildcard\n开关）。api_token 为明文只写字段（TLS 传输面承载机密性，持久层\nenvelope 加密）：**留空 = 保留已存凭证**（SMTP 密码同款先例——wildcard\n开关切换不要求重录凭证）；dns_provider=none 恒清空凭证。联动校验\nfail-fast：wildcard=true 须 provider ∈ {dnspod, cloudflare}（422\nE_ACME_WILDCARD_REQUIRES_PROVIDER——通配 SAN 只能 DNS-01 验证）且须\nbase_domain（409 E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN）。保存落审计\nacme.settings_changed（provider/wildcard/凭证有无——零明文；本设置族\n零事件，审计承载）。",
+        "operationId": "SystemService_UpdateAcmeSettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateAcmeSettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UpdateAcmeSettingsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
+    "/v1/system/acme/dns:test": {
+      "post": {
+        "summary": "TestDnsProvider DNS 服务商探针（诚实契约：在 _acme-challenge-test.\n\u003cbase_domain\u003e 建 TXT → 删 TXT 两步真实往返——通过 = 能认证/能写/能删，\nzone 解析在 create 步隐含执行；不是\"能列域名\"级别的浅探测）。可带候选\n凭证（未保存也能测）；两字段全空 = 测已存凭证。探针失败以\nE_ACME_DNS_TEST_FAILED 报错，失败步与底层 provider 错误摘要进信封\ncontext（凭证材料零出现）。",
+        "operationId": "SystemService_TestDnsProvider",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TestDnsProviderResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TestDnsProviderRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
     "/v1/system/backups": {
       "get": {
         "summary": "ListBackups 状态备份台账（T2.22，只读）：热备快照的诚实账（kind/路径/\nsha256/verify_status）。verify_status=failed 的行是红色告警面的一部分\n——台账如实保留失败行，消费方据此判断备份可用性。",
@@ -319,6 +406,40 @@
     }
   },
   "definitions": {
+    "v1AcmeSettingsView": {
+      "type": "object",
+      "properties": {
+        "dns_provider": {
+          "type": "string",
+          "title": "DNS-01 服务商词表：none（缺省，未配置）| dnspod | cloudflare。"
+        },
+        "credentials_fingerprint": {
+          "type": "string",
+          "title": "凭证指纹（sha256 前 8 hex），非凭证本体；空 = 未设置。"
+        },
+        "wildcard": {
+          "type": "boolean",
+          "title": "通配证书 opt-in 开关（true 时平台证书签\n[*.base, console/ctrl/registry.\u003cbase\u003e]，DNS-01 验证）。"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "最近一次保存时刻（从未保存 → 不输出）。"
+        },
+        "wildcard_domains": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "通配期望域名集的服务端派生实值（wildcard=true 且 base_domain 非空时\n非空；派生公式与签发面同源）。CLI/Console 的「当前证书域集」展示源。"
+        },
+        "base_domain": {
+          "type": "string",
+          "title": "平台域名（空 = 单节点形态——通配/平台证书面均不可用）。"
+        }
+      },
+      "title": "AcmeSettingsView 是 acme.* 设置的只读投影。凭证只回 fingerprint（明文\nsha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateAcmeSettings\n承载明文，TLS 传输面 + envelope 持久层）。"
+    },
     "v1BackupHealth": {
       "type": "object",
       "properties": {
@@ -431,6 +552,54 @@
       },
       "title": "ComponentHealth 是单组件健康如实上报（name = lynx 服务名，如\nstate.store / state.observer / ingress.traefik）。ok=false 时 error 为\n检查器返回原文。"
     },
+    "v1DnsProbeStep": {
+      "type": "object",
+      "properties": {
+        "step": {
+          "type": "string",
+          "title": "步骤名：create | delete。"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "duration_ms": {
+          "type": "string",
+          "format": "int64",
+          "title": "该步耗时（毫秒）。"
+        },
+        "error": {
+          "type": "string",
+          "title": "失败时的底层 provider 错误摘要（不含凭证材料）。"
+        }
+      },
+      "title": "DnsProbeStep 是探针单步结果（create/delete；诚实契约：失败步可定位）。"
+    },
+    "v1DnsProviderTestResult": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "dns_provider": {
+          "type": "string"
+        },
+        "record_name": {
+          "type": "string",
+          "title": "探针 TXT 记录名（_acme-challenge-test.\u003cbase_domain\u003e）。"
+        },
+        "steps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DnsProbeStep"
+          }
+        },
+        "failed_step": {
+          "type": "string"
+        }
+      },
+      "title": "DnsProviderTestResult 是探针结构化结果：provider 回显、探针 TXT 名、\n各步耗时、失败步。ok=false 时 failed_step 指向首个失败步（create 失败\n短路——无记录可删，delete 不执行）。"
+    },
     "v1ErrorResponse": {
       "type": "object",
       "properties": {
@@ -493,6 +662,14 @@
         }
       },
       "title": "FirewallRule 是一条防火墙放行规则文本（方向 + 端口/协议 + 用途 + 可\n复制命令；只生成不自动应用——平台不静默改用户防火墙，multi-node §2.3）。"
+    },
+    "v1GetAcmeSettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1AcmeSettingsView"
+        }
+      }
     },
     "v1GetIngressStatusResponse": {
       "type": "object",
@@ -843,6 +1020,26 @@
       },
       "title": "S3SettingsView 是 s3.* 设置的只读投影。secret 只回 fingerprint（明文\nsha256 前 8 hex；空 = 未设置）——读面永无明文（写面 UpdateS3Settings\n承载 secret 明文，TLS 传输面 + envelope 持久层）。"
     },
+    "v1TestDnsProviderRequest": {
+      "type": "object",
+      "properties": {
+        "dns_provider": {
+          "type": "string",
+          "title": "候选配置（未保存也能测）：任一字段非空即视为候选；两字段全空 = 测\n已存凭证（provider 未配置时拒绝）。"
+        },
+        "api_token": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TestDnsProviderResponse": {
+      "type": "object",
+      "properties": {
+        "result": {
+          "$ref": "#/definitions/v1DnsProviderTestResult"
+        }
+      }
+    },
     "v1TestS3ConnectionRequest": {
       "type": "object",
       "properties": {
@@ -908,6 +1105,32 @@
       "properties": {
         "backup": {
           "$ref": "#/definitions/v1BackupView"
+        }
+      }
+    },
+    "v1UpdateAcmeSettingsRequest": {
+      "type": "object",
+      "properties": {
+        "dns_provider": {
+          "type": "string",
+          "title": "服务商词表（空 = none）。联动校验见 rpc 注记。"
+        },
+        "api_token": {
+          "type": "string",
+          "title": "凭证明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存凭证**\n（SMTP 密码同款先例——wildcard 开关切换不要求重录）；dns_provider=none\n时恒清空。dnspod 形态 \"\u003cid\u003e,\u003ctoken\u003e\"；cloudflare 为单 token。"
+        },
+        "wildcard": {
+          "type": "boolean",
+          "title": "通配证书 opt-in 开关。"
+        }
+      }
+    },
+    "v1UpdateAcmeSettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1AcmeSettingsView",
+          "title": "保存后的设置投影（与 GetAcmeSettings 同一脱敏读面）。"
         }
       }
     },

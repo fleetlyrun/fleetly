@@ -413,7 +413,7 @@ func TestNewControlPlaneTLSAssembly(t *testing.T) {
 			Mode: ControlPlaneTLSPlatform,
 		}},
 	}
-	ing, cleanupIng, err := NewIngressManager(app, platformCfg, st)
+	ing, cleanupIng, err := NewIngressManager(app, platformCfg, st, nil)
 	if err != nil {
 		t.Fatalf("ingress manager: %v", err)
 	}

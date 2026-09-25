@@ -157,7 +157,8 @@ func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env
 		grpc.ChainStreamInterceptor(auth.StreamAuthInterceptor()),
 	)
 	systemSvc := api.NewSystemService("dev", st,
-		func() []api.SystemComponent { return nil }, nil, nil).WithGitHostKey(fakeGitHostKey{})
+		func() []api.SystemComponent { return nil }, nil, nil).WithGitHostKey(fakeGitHostKey{}).
+		WithSecretsBox(box)
 	if joinPort != nil {
 		systemSvc = systemSvc.WithJoinGuide(joinBaseDomain, joinPort)
 	}

@@ -19,6 +19,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { getIngressStatus, getSystemStatus, listNodes } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
+import { AcmeSettingsCard } from "@/components/acme-settings-card";
 import { AlertingSettingsCard } from "@/components/alerting-settings-card";
 import { BackupsCard } from "@/components/backups-card";
 import {
@@ -416,6 +417,11 @@ export function SystemPage() {
 
       {tab === "ingress" ? (
         <div className="space-y-4">
+          {/* ACME DNS-01 设置卡（B 线 W5-S3，D-V3W5-3/D-V3W5-4）：DNS 服务商
+              选择 + 凭证 write-only + 探针 + 通配开关 + 当前证书域集展示
+              ——与证书台账同域（ingress 页签）。 */}
+          <AcmeSettingsCard />
+
           <Card>
             <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
               <Boxes aria-hidden className="h-4 w-4 text-muted-foreground" />

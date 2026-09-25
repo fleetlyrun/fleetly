@@ -19,17 +19,20 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SystemService_Ping_FullMethodName             = "/fleetly.server.v1.SystemService/Ping"
-	SystemService_GetSystemStatus_FullMethodName  = "/fleetly.server.v1.SystemService/GetSystemStatus"
-	SystemService_ListNodes_FullMethodName        = "/fleetly.server.v1.SystemService/ListNodes"
-	SystemService_GetIngressStatus_FullMethodName = "/fleetly.server.v1.SystemService/GetIngressStatus"
-	SystemService_ListBackups_FullMethodName      = "/fleetly.server.v1.SystemService/ListBackups"
-	SystemService_TriggerBackup_FullMethodName    = "/fleetly.server.v1.SystemService/TriggerBackup"
-	SystemService_GetJoinGuide_FullMethodName     = "/fleetly.server.v1.SystemService/GetJoinGuide"
-	SystemService_RotateJoinToken_FullMethodName  = "/fleetly.server.v1.SystemService/RotateJoinToken"
-	SystemService_GetS3Settings_FullMethodName    = "/fleetly.server.v1.SystemService/GetS3Settings"
-	SystemService_UpdateS3Settings_FullMethodName = "/fleetly.server.v1.SystemService/UpdateS3Settings"
-	SystemService_TestS3Connection_FullMethodName = "/fleetly.server.v1.SystemService/TestS3Connection"
+	SystemService_Ping_FullMethodName               = "/fleetly.server.v1.SystemService/Ping"
+	SystemService_GetSystemStatus_FullMethodName    = "/fleetly.server.v1.SystemService/GetSystemStatus"
+	SystemService_ListNodes_FullMethodName          = "/fleetly.server.v1.SystemService/ListNodes"
+	SystemService_GetIngressStatus_FullMethodName   = "/fleetly.server.v1.SystemService/GetIngressStatus"
+	SystemService_ListBackups_FullMethodName        = "/fleetly.server.v1.SystemService/ListBackups"
+	SystemService_TriggerBackup_FullMethodName      = "/fleetly.server.v1.SystemService/TriggerBackup"
+	SystemService_GetJoinGuide_FullMethodName       = "/fleetly.server.v1.SystemService/GetJoinGuide"
+	SystemService_RotateJoinToken_FullMethodName    = "/fleetly.server.v1.SystemService/RotateJoinToken"
+	SystemService_GetS3Settings_FullMethodName      = "/fleetly.server.v1.SystemService/GetS3Settings"
+	SystemService_UpdateS3Settings_FullMethodName   = "/fleetly.server.v1.SystemService/UpdateS3Settings"
+	SystemService_TestS3Connection_FullMethodName   = "/fleetly.server.v1.SystemService/TestS3Connection"
+	SystemService_GetAcmeSettings_FullMethodName    = "/fleetly.server.v1.SystemService/GetAcmeSettings"
+	SystemService_UpdateAcmeSettings_FullMethodName = "/fleetly.server.v1.SystemService/UpdateAcmeSettings"
+	SystemService_TestDnsProvider_FullMethodName    = "/fleetly.server.v1.SystemService/TestDnsProvider"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -85,6 +88,29 @@ type SystemServiceClient interface {
 	// 探活）。可带候选配置（未保存也能测）；全部候选字段为空 = 测已存配置。
 	// 探针失败以 E_S3_TEST_FAILED 报错，失败步与底层错误摘要进信封 context。
 	TestS3Connection(ctx context.Context, in *TestS3ConnectionRequest, opts ...grpc.CallOption) (*TestS3ConnectionResponse, error)
+	// GetAcmeSettings ACME DNS-01 设置只读面（B 线 W5 设计 §3，D-V3W5-3/4；
+	// admin scope——DNS 服务商凭据指纹属平台敏感配置，与 S3 设置同门）。
+	// 凭证只回 fingerprint（sha256 前 8），绝不回明文；同时下发服务端派生的
+	// 通配期望域名集（wildcard=true 时非空）——CLI/Console 展示当前证书
+	// 域名集形态，派生公式与签发面同源（服务端单点）。
+	GetAcmeSettings(ctx context.Context, in *GetAcmeSettingsRequest, opts ...grpc.CallOption) (*GetAcmeSettingsResponse, error)
+	// UpdateAcmeSettings 保存 ACME DNS-01 设置（provider + 凭证 + wildcard
+	// 开关）。api_token 为明文只写字段（TLS 传输面承载机密性，持久层
+	// envelope 加密）：**留空 = 保留已存凭证**（SMTP 密码同款先例——wildcard
+	// 开关切换不要求重录凭证）；dns_provider=none 恒清空凭证。联动校验
+	// fail-fast：wildcard=true 须 provider ∈ {dnspod, cloudflare}（422
+	// E_ACME_WILDCARD_REQUIRES_PROVIDER——通配 SAN 只能 DNS-01 验证）且须
+	// base_domain（409 E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN）。保存落审计
+	// acme.settings_changed（provider/wildcard/凭证有无——零明文；本设置族
+	// 零事件，审计承载）。
+	UpdateAcmeSettings(ctx context.Context, in *UpdateAcmeSettingsRequest, opts ...grpc.CallOption) (*UpdateAcmeSettingsResponse, error)
+	// TestDnsProvider DNS 服务商探针（诚实契约：在 _acme-challenge-test.
+	// <base_domain> 建 TXT → 删 TXT 两步真实往返——通过 = 能认证/能写/能删，
+	// zone 解析在 create 步隐含执行；不是"能列域名"级别的浅探测）。可带候选
+	// 凭证（未保存也能测）；两字段全空 = 测已存凭证。探针失败以
+	// E_ACME_DNS_TEST_FAILED 报错，失败步与底层 provider 错误摘要进信封
+	// context（凭证材料零出现）。
+	TestDnsProvider(ctx context.Context, in *TestDnsProviderRequest, opts ...grpc.CallOption) (*TestDnsProviderResponse, error)
 }
 
 type systemServiceClient struct {
@@ -205,6 +231,36 @@ func (c *systemServiceClient) TestS3Connection(ctx context.Context, in *TestS3Co
 	return out, nil
 }
 
+func (c *systemServiceClient) GetAcmeSettings(ctx context.Context, in *GetAcmeSettingsRequest, opts ...grpc.CallOption) (*GetAcmeSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetAcmeSettingsResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetAcmeSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) UpdateAcmeSettings(ctx context.Context, in *UpdateAcmeSettingsRequest, opts ...grpc.CallOption) (*UpdateAcmeSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateAcmeSettingsResponse)
+	err := c.cc.Invoke(ctx, SystemService_UpdateAcmeSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) TestDnsProvider(ctx context.Context, in *TestDnsProviderRequest, opts ...grpc.CallOption) (*TestDnsProviderResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestDnsProviderResponse)
+	err := c.cc.Invoke(ctx, SystemService_TestDnsProvider_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
@@ -258,6 +314,29 @@ type SystemServiceServer interface {
 	// 探活）。可带候选配置（未保存也能测）；全部候选字段为空 = 测已存配置。
 	// 探针失败以 E_S3_TEST_FAILED 报错，失败步与底层错误摘要进信封 context。
 	TestS3Connection(context.Context, *TestS3ConnectionRequest) (*TestS3ConnectionResponse, error)
+	// GetAcmeSettings ACME DNS-01 设置只读面（B 线 W5 设计 §3，D-V3W5-3/4；
+	// admin scope——DNS 服务商凭据指纹属平台敏感配置，与 S3 设置同门）。
+	// 凭证只回 fingerprint（sha256 前 8），绝不回明文；同时下发服务端派生的
+	// 通配期望域名集（wildcard=true 时非空）——CLI/Console 展示当前证书
+	// 域名集形态，派生公式与签发面同源（服务端单点）。
+	GetAcmeSettings(context.Context, *GetAcmeSettingsRequest) (*GetAcmeSettingsResponse, error)
+	// UpdateAcmeSettings 保存 ACME DNS-01 设置（provider + 凭证 + wildcard
+	// 开关）。api_token 为明文只写字段（TLS 传输面承载机密性，持久层
+	// envelope 加密）：**留空 = 保留已存凭证**（SMTP 密码同款先例——wildcard
+	// 开关切换不要求重录凭证）；dns_provider=none 恒清空凭证。联动校验
+	// fail-fast：wildcard=true 须 provider ∈ {dnspod, cloudflare}（422
+	// E_ACME_WILDCARD_REQUIRES_PROVIDER——通配 SAN 只能 DNS-01 验证）且须
+	// base_domain（409 E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN）。保存落审计
+	// acme.settings_changed（provider/wildcard/凭证有无——零明文；本设置族
+	// 零事件，审计承载）。
+	UpdateAcmeSettings(context.Context, *UpdateAcmeSettingsRequest) (*UpdateAcmeSettingsResponse, error)
+	// TestDnsProvider DNS 服务商探针（诚实契约：在 _acme-challenge-test.
+	// <base_domain> 建 TXT → 删 TXT 两步真实往返——通过 = 能认证/能写/能删，
+	// zone 解析在 create 步隐含执行；不是"能列域名"级别的浅探测）。可带候选
+	// 凭证（未保存也能测）；两字段全空 = 测已存凭证。探针失败以
+	// E_ACME_DNS_TEST_FAILED 报错，失败步与底层 provider 错误摘要进信封
+	// context（凭证材料零出现）。
+	TestDnsProvider(context.Context, *TestDnsProviderRequest) (*TestDnsProviderResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -300,6 +379,15 @@ func (UnimplementedSystemServiceServer) UpdateS3Settings(context.Context, *Updat
 }
 func (UnimplementedSystemServiceServer) TestS3Connection(context.Context, *TestS3ConnectionRequest) (*TestS3ConnectionResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestS3Connection not implemented")
+}
+func (UnimplementedSystemServiceServer) GetAcmeSettings(context.Context, *GetAcmeSettingsRequest) (*GetAcmeSettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAcmeSettings not implemented")
+}
+func (UnimplementedSystemServiceServer) UpdateAcmeSettings(context.Context, *UpdateAcmeSettingsRequest) (*UpdateAcmeSettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateAcmeSettings not implemented")
+}
+func (UnimplementedSystemServiceServer) TestDnsProvider(context.Context, *TestDnsProviderRequest) (*TestDnsProviderResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestDnsProvider not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -520,6 +608,60 @@ func _SystemService_TestS3Connection_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_GetAcmeSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAcmeSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetAcmeSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetAcmeSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetAcmeSettings(ctx, req.(*GetAcmeSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_UpdateAcmeSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateAcmeSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).UpdateAcmeSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_UpdateAcmeSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).UpdateAcmeSettings(ctx, req.(*UpdateAcmeSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_TestDnsProvider_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestDnsProviderRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).TestDnsProvider(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_TestDnsProvider_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).TestDnsProvider(ctx, req.(*TestDnsProviderRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -570,6 +712,18 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TestS3Connection",
 			Handler:    _SystemService_TestS3Connection_Handler,
+		},
+		{
+			MethodName: "GetAcmeSettings",
+			Handler:    _SystemService_GetAcmeSettings_Handler,
+		},
+		{
+			MethodName: "UpdateAcmeSettings",
+			Handler:    _SystemService_UpdateAcmeSettings_Handler,
+		},
+		{
+			MethodName: "TestDnsProvider",
+			Handler:    _SystemService_TestDnsProvider_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

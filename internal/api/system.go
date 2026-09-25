@@ -62,6 +62,9 @@ type SystemService struct {
 	// 分支经它解析派生端点与托管凭据；nil = 未装配——rustfs 探针如实报
 	// 不可用）。
 	rustfs *rustfs.Manager
+	// dnsProviderFactory 是 DNS-01 插件构造缝（W5-S3，acme.go；nil = 回落
+	// acmedns.New 官方端点形态——测试注入 httptest 假端点用）。
+	dnsProviderFactory DNSProviderFactory
 }
 
 // JoinTokenPort 是 swarm join-token 面端口（multi-node §2.3；*substrate.

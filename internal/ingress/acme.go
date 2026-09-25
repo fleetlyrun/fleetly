@@ -311,11 +311,39 @@ func (m *Manager) obtainAndRegister(ctx context.Context, appID, app string, doma
 }
 
 // legoObtain 是 obtainFn 的生产实现（E1 注入缝默认值）：lego 客户端 +
-// HTTP-01 挑战 provider + Obtain，返回证书链/私钥 PEM。
+// 挑战 provider + Obtain，返回证书链/私钥 PEM。
+//
+// 挑战形态分支（W5-S3，D-V3W5-4）：平台证书 + acme.wildcard=true 走
+// DNS-01（通配 SAN 无法 HTTP-01 验证；插件解析失败显式失败，不回落
+// HTTP-01——理由见 dns01.go 包注释）；app 证书恒 HTTP-01（自定义域名场
+// 景保留，路径零变化）。
 func (m *Manager) legoObtain(ctx context.Context, app string, user registration.User, domains []string) ([]byte, []byte, error) {
 	client, err := m.newClient(ctx, user)
 	if err != nil {
 		return nil, nil, err
+	}
+	if app == platformCertApp {
+		useDNS01, err := m.dns01ForPlatform(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		if useDNS01 {
+			provider, err := m.resolveDNSProvider(ctx)
+			if err != nil {
+				return nil, nil, err
+			}
+			if err := client.Challenge.SetDNS01Provider(&dns01ChallengeAdapter{provider: provider}); err != nil {
+				return nil, nil, fmt.Errorf("ingress: set dns-01 provider: %w", err)
+			}
+			res, err := client.Certificate.Obtain(certificate.ObtainRequest{
+				Domains: append([]string{}, domains...),
+				Bundle:  true,
+			})
+			if err != nil {
+				return nil, nil, fmt.Errorf("ingress: acme obtain for %s: %w", app, err)
+			}
+			return res.Certificate, res.PrivateKey, nil
+		}
 	}
 	if err := client.Challenge.SetHTTP01Provider(&challengeProvider{mgr: m}); err != nil {
 		return nil, nil, fmt.Errorf("ingress: set http-01 provider: %w", err)

@@ -154,11 +154,26 @@ func (m *Manager) platformConsoleRoute() (Route, bool) {
 }
 
 // platformDomainsWithS3 是平台证书 SAN 期望态集（PlatformDomains 的
-// 设置感知形态）：公网开关开启时条件增第四 SAN s3.<base>。SAN 集不另存
-// 状态——证书库台账里的既有 SAN 集与之失配即触发重签发（needsRenewal 的
-// 「域名集变化即重签」），增/缩双向同语义。
+// 设置感知形态）：acme.wildcard=true 时期望集变
+// [*.base, console.<base>, ctrl.<base>, registry.<base>]（W5-S3，
+// D-V3W5-4——通配一张覆盖全部 app 域名与平台子域，s3.<base> 亦被通配
+// 收编，不再单列第四 SAN）；否则公网开关开启时条件增第四 SAN s3.<base>。
+// SAN 集不另存状态——证书库台账里的既有 SAN 集与之失配即触发重签发
+//（needsRenewal 的「域名集变化即重签」），增/缩双向同语义。
 func (m *Manager) platformDomainsWithS3(ctx context.Context) ([]string, error) {
 	domains := m.PlatformDomains()
+	wildcard, err := m.acmeWildcard(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if wildcard {
+		return []string{
+			"*." + m.cfg.BaseDomain,
+			"console." + m.cfg.BaseDomain,
+			"ctrl." + m.cfg.BaseDomain,
+			"registry." + m.cfg.BaseDomain,
+		}, nil
+	}
 	exposed, err := m.s3PublicExposed(ctx)
 	if err != nil {
 		return nil, err
@@ -167,6 +182,16 @@ func (m *Manager) platformDomainsWithS3(ctx context.Context) ([]string, error) {
 		domains = append(domains, "s3."+m.cfg.BaseDomain)
 	}
 	return domains, nil
+}
+
+// acmeWildcard 读 acme.wildcard 开关（每次判定现读——运行期设置不缓存
+// 长驻；设置读取失败显式报错，调用方按退避重试/省略段处理）。
+func (m *Manager) acmeWildcard(ctx context.Context) (bool, error) {
+	in, err := m.store.LoadAcmeSettings(ctx)
+	if err != nil {
+		return false, fmt.Errorf("ingress: load acme settings: %w", err)
+	}
+	return in.Wildcard, nil
 }
 
 // convergeS3Public 执行一拍公网面收敛（开关状态变化后的全链；幂等）：
@@ -292,7 +317,9 @@ func (m *Manager) detachPlatformNetwork(ctx context.Context, netName string) err
 }
 
 // runS3PublicDuty 是公网子域开关的常驻收敛循环（Manager.Run 启动的独立
-// goroutine；ctx 取消返回）：
+// goroutine；ctx 取消返回）。W5-S3 起同拍守望 acme.wildcard（两者都只改
+// 平台证书 SAN 期望态集 + 平台路由段——收敛链共用 convergeS3Public：证书
+// 集合变化经 ensurePlatformCertificate 的「域名集变化即重签」判据收敛）：
 //
 //	base_domain 为空 → 不启动（单节点形态零成本，开关在设置面即被拒）；
 //	状态变化拍 → convergeS3Public 全链（失败退避重试，registry duty 同款）；
@@ -313,20 +340,31 @@ func (m *Manager) runS3PublicDuty(ctx context.Context) {
 	converged := false
 	hasState := false
 	lastExposed := false
+	lastWildcard := false
 	for {
 		exposed, err := m.s3PublicExposed(ctx)
+		wildcard, werr := m.acmeWildcard(ctx)
 		switch {
-		case err != nil:
+		case err != nil || werr != nil:
 			converged = false
-			m.log.Warn("ingress: s3 public exposure check deferred (retrying)", "error", err)
-		case !hasState || exposed != lastExposed:
+			if err != nil {
+				m.log.Warn("ingress: s3 public exposure check deferred (retrying)", "error", err)
+			}
+			if werr != nil {
+				m.log.Warn("ingress: acme wildcard check deferred (retrying)", "error", werr)
+			}
+		case !hasState || exposed != lastExposed || wildcard != lastWildcard:
 			if cerr := m.convergeS3Public(ctx, exposed); cerr != nil {
 				converged = false
-				m.log.Warn("ingress: s3 public exposure convergence deferred (retrying)",
-					"exposed", exposed, "error", cerr)
+				m.log.Warn("ingress: platform face convergence deferred (retrying)",
+					"exposed", exposed, "wildcard", wildcard, "error", cerr)
 			} else {
 				converged = true
 				switch {
+				case hasState && wildcard != lastWildcard:
+					m.log.Info("ingress: platform certificate domain set converged for the wildcard toggle",
+						"wildcard", wildcard, "wildcard_domain", "*."+m.cfg.BaseDomain,
+						"note", "platform certificate reissued for the new SAN set; app routing is unchanged (443 is covered by the wildcard via SNI)")
 				case exposed:
 					m.log.Info("ingress: s3 public subdomain exposed",
 						"route", "s3."+m.cfg.BaseDomain, "backend", rustfsServiceName+":"+rustfsBackendPort,
@@ -340,6 +378,7 @@ func (m *Manager) runS3PublicDuty(ctx context.Context) {
 				}
 				hasState = true
 				lastExposed = exposed
+				lastWildcard = wildcard
 			}
 		default:
 			if derr := m.convergeS3PublicNetwork(ctx, exposed); derr != nil {

@@ -14,6 +14,7 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
+	"github.com/fleetlyrun/fleetly/internal/acmedns"
 	"github.com/fleetlyrun/fleetly/internal/api"
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/cron"
@@ -346,8 +347,33 @@ func NewPlacementResolver(st *state.Store, dc state.DockerClient) *placement.Res
 // NewIngressManager 构建入口/证书管理器（T2.15/T2.16：Traefik 部署 +
 // 配置端点 + 集中 ACME；ingress.* 配置节，缺省回落 internal/ingress）。
 // docker 连接经 manager cleanup 释放（Wire cleanup，OnPostStop 时点）。
-func NewIngressManager(app lynx.App, cfg *AppConfig, st *state.Store) (*ingress.Manager, func(), error) {
-	return ingress.NewManager(cfg.IngressSettings(), st, app.Logger())
+// W5-S3：DNS-01 插件解析缝随 envelope 解密器接线（dns01.go）——读 acme.*
+// 设置 → 解密凭证 → acmedns.New（零第三方 SDK 插件）；每签发现读（凭证
+// 轮换即生效）；provider 未配置/解密失败显式报错（wildcard 签发诚实失败，
+// duty 退避重试，不回落 HTTP-01）。
+func NewIngressManager(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets.Box) (*ingress.Manager, func(), error) {
+	mgr, cleanup, err := ingress.NewManager(cfg.IngressSettings(), st, app.Logger())
+	if err != nil {
+		return nil, nil, err
+	}
+	mgr.WithDNSProviderResolver(func(ctx context.Context) (acmedns.Provider, error) {
+		if sb == nil {
+			return nil, fmt.Errorf("secrets box not assembled (acme dns credentials cannot be decrypted)")
+		}
+		in, err := st.LoadAcmeSettings(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("load acme dns settings: %w", err)
+		}
+		if in.DNSProvider == state.AcmeDNSProviderNone || !in.CredentialsSet() {
+			return nil, fmt.Errorf("dns provider not configured (acme.dns.provider=%s)", in.DNSProvider)
+		}
+		plain, err := sb.Decrypt([]byte(in.CredentialsCipher))
+		if err != nil {
+			return nil, fmt.Errorf("decrypt acme dns credentials: %w", err)
+		}
+		return acmedns.New(in.DNSProvider, plain)
+	})
+	return mgr, cleanup, nil
 }
 
 // ingressPublisher 是 engine.RoutePublisher 的载荷转换适配器：引擎侧
