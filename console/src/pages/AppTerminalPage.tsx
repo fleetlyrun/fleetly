@@ -144,7 +144,7 @@ export function AppTerminalPage() {
             {!enabled
               ? "disabled (terminal.enabled=false)"
               : status.data
-                ? `relay ${status.data.relay_deployed ? "deployed" : "converging"} · ${status.data.nodes_connected} node(s) connected · ${status.data.active_sessions} session(s)`
+                ? `relay ${status.data.relay_deployed ? "deployed" : "converging"} · ${status.data.nodes_connected ?? 0} node(s) connected · ${status.data.active_sessions ?? 0} session(s)`
                 : "status…"}
           </span>
         </CardHeader>
@@ -204,6 +204,7 @@ export function AppTerminalPage() {
                   sinkRef.current = fn;
                 }}
                 onInput={(data) => conn?.write(data)}
+                onResize={(cols, rows) => conn?.resize(cols, rows)}
               />
             </>
           )}

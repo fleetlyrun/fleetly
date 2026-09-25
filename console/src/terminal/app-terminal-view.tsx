@@ -4,7 +4,8 @@
 //
 // 生命周期：挂载即建 Terminal（光标常亮、scrollback 2000）；phase=closed/
 // idle 且已有实例时销毁重建空闲态——每次「Open terminal」都是全新缓冲
-//（断线后的旧输出不跨会话残留——诚实呈现）。
+//（断线后的旧输出不跨会话残留——诚实呈现）。输入/行列尺寸事件外抛
+//（onData/onResize——页面转发 conn.write/conn.resize 同步 PTY）。
 
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal } from "@xterm/xterm";
@@ -18,19 +19,23 @@ export interface AppTerminalViewProps {
   registerSink: (fn: (data: Uint8Array) => void) => void;
   /** 键入事件（xterm onData——页面转发 conn.write）。 */
   onInput: (data: string) => void;
+  /** 客户端行列落定（fit/窗口缩放）——页面转发 conn.resize 同步 PTY。 */
+  onResize: (cols: number, rows: number) => void;
 }
 
-export function AppTerminalView({ phase, registerSink, onInput }: AppTerminalViewProps) {
+export function AppTerminalView({ phase, registerSink, onInput, onResize }: AppTerminalViewProps) {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   // 回调经 ref 间接（mount effect 闭包冻结——props 更新在 effect 内落表）。
   const onInputRef = useRef(onInput);
+  const onResizeRef = useRef(onResize);
   const registerSinkRef = useRef(registerSink);
   useEffect(() => {
     onInputRef.current = onInput;
+    onResizeRef.current = onResize;
     registerSinkRef.current = registerSink;
-  }, [onInput, registerSink]);
+  }, [onInput, onResize, registerSink]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -45,8 +50,12 @@ export function AppTerminalView({ phase, registerSink, onInput }: AppTerminalVie
     term.loadAddon(fit);
     term.open(host);
     term.onData((data) => onInputRef.current(data));
+    term.onResize(({ cols, rows }) => onResizeRef.current(cols, rows));
     // 首帧布局（容器尺寸就位后）+ 容器尺寸变化跟随（ResizeObserver——
-    // 面板栅格变化/折叠时保持行宽诚实）。
+    // 面板栅格变化/窗口缩放时保持行宽诚实）。宿主高度必须是定值：fit 以
+    // 宿主当前高度算行数，若高度随内容增长（min-h 自撑高），fit→撑高→
+    // RO→fit 成正反馈，页面无限拉长（真机走查实爆）——故外层定高 +
+    // overflow-hidden 兜底，宿主自身不带 padding/border（fit 直接量它）。
     const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => {
       try {
         fit.fit();
@@ -72,14 +81,28 @@ export function AppTerminalView({ phase, registerSink, onInput }: AppTerminalVie
      
   }, []);
 
+  // 会话激活瞬间把已 fit 的行列推给 PTY：连接建立本身不触发 onResize
+  // （尺寸未变），而 relay 侧 PTY 从默认 80x24 起步——不推一次则服务端
+  // 按旧行列回显，与客户端渲染错位。
+  useEffect(() => {
+    if (phase !== "active") return;
+    const term = termRef.current;
+    if (term) onResizeRef.current(term.cols, term.rows);
+  }, [phase]);
+
   return (
     <div
-      ref={hostRef}
-      data-testid="terminal-session-view"
-      data-phase={phase}
       className={
-        "min-h-64 rounded-md border bg-background p-2 " + (phase === "active" ? "" : "opacity-80")
+        "h-96 overflow-hidden rounded-md border bg-background p-2 " +
+        (phase === "active" ? "" : "opacity-80")
       }
-    />
+    >
+      <div
+        ref={hostRef}
+        data-testid="terminal-session-view"
+        data-phase={phase}
+        className="h-full w-full"
+      />
+    </div>
   );
 }

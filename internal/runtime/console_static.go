@@ -22,13 +22,18 @@ const consoleUIPathPrefix = "/ui"
 
 // consoleCSP 是 /ui/ 静态面的 Content-Security-Policy（D4-④）。指令集按
 // Console 构建产物的实际加载形态定稿（2026-09-19 对 dist/ 排查）：Vite
-// 产物为外部 module script + 外部样式表（Tailwind v4 无内联样式注入），
-// 数据面 fetch/流式全走同源 /v1，图标为同源 svg——无 'unsafe-inline' 面。
+// 产物为外部 module script + 外部样式表，数据面 fetch/流式全走同源 /v1，
+// 图标为同源 svg——无 'unsafe-inline' 脚本面。
 //   - connect-src 'self'：/v1 REST + NDJSON 流（VITE_API_BASE 指向跨源
 //     控制面时需放宽本指令）；
 //   - img-src 'self' data:：同源 favicon/图标，data: 为零散内联图标预留；
-//   - style-src 'self'：仅外部样式表（React 运行时改 style 走 CSSOM，不受限）。
-const consoleCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self'"
+//   - style-src 'self' 'unsafe-inline'：外部样式表之外，xterm（E7 Web 终端）
+//     的 DOM 渲染器在运行时注入 <style> 元素下发主题色/光标/行列样式——
+//     无 'unsafe-inline' 时该注入被静默拦截，终端默认前景色回落到页面
+//     文字色（深色主题下即黑底黑字，光标亦不可见；staging 真机实测）。
+//     样式注入不含执行面（相对 script 的 unsafe-inline 风险低一个量级），
+//     React 自身的样式修改仍走 CSSOM 不受影响（2026-09-25 修订）。
+const consoleCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 
 // consoleCompressibleExt 是按扩展名的可压缩静态资产（2026-09-25 加载优化
 // ——staging 实测 daemon 静态面无压缩，浏览器实传 1MB 未压缩 JS；gzip 后

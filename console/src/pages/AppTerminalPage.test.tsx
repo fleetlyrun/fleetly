@@ -12,14 +12,17 @@ import { setToken } from "@/api/client";
 import { AppTerminalPage } from "@/pages/AppTerminalPage";
 
 // xterm 视图整体 mock（jsdom 无 canvas 渲染面——验收分工：真实 PTY 行为
-// 由 e2e 承载，此处只钉页面装配与状态机）。
-const sinkWrites: Uint8Array[] = [];
-vi.mock("@/terminal/app-terminal-view", () => ({
-  AppTerminalView: ({ phase }: { phase: string }) => (
-    <div data-testid="terminal-session-view" data-phase={phase} />
-  ),
+// 由 e2e 承载，此处只钉页面装配与状态机）。最新 props 落 harness——测试
+// 经 onResize 驱动「视图行列落定 → conn.resize」的转发接线。
+const viewHarness = vi.hoisted(() => ({
+  props: null as null | { phase: string; onResize: (cols: number, rows: number) => void },
 }));
-void sinkWrites;
+vi.mock("@/terminal/app-terminal-view", () => ({
+  AppTerminalView: (props: { phase: string; onResize: (cols: number, rows: number) => void }) => {
+    viewHarness.props = props;
+    return <div data-testid="terminal-session-view" data-phase={props.phase} />;
+  },
+}));
 
 const COMPOSE = JSON.stringify({
   name: "demo",
@@ -37,6 +40,7 @@ type FakeHandlers = {
 };
 let fakeHandlers: FakeHandlers | null = null;
 const connectCalls: { path: string }[] = [];
+const resizeCalls: Array<[number, number]> = [];
 
 vi.mock("@/api/terminal-ws", async () => {
   const actual = await vi.importActual<typeof import("@/api/terminal-ws")>("@/api/terminal-ws");
@@ -47,7 +51,9 @@ vi.mock("@/api/terminal-ws", async () => {
       fakeHandlers = handlers;
       return {
         write: () => {},
-        resize: () => {},
+        resize: (cols: number, rows: number) => {
+          resizeCalls.push([cols, rows]);
+        },
         close: () => {},
       };
     },
@@ -163,6 +169,8 @@ describe("AppTerminalPage", () => {
     setToken("tok_test");
     fakeHandlers = null;
     connectCalls.length = 0;
+    resizeCalls.length = 0;
+    viewHarness.props = null;
     vi.stubGlobal("fetch", stubFetch());
   });
 
@@ -174,6 +182,9 @@ describe("AppTerminalPage", () => {
     const select = await screen.findByTestId("terminal-service-select");
     expect(select.textContent).not.toContain("jobber");
     expect(screen.getByTestId("terminal-platform-state").textContent).toContain("1 node(s) connected");
+    // protojson 省略零值字段——active_sessions=0 不在响应里也须显示 0
+    //（回归：曾把 undefined 直接内插成 "undefined session(s)"）。
+    expect(screen.getByTestId("terminal-platform-state").textContent).toContain("0 session(s)");
     expect(screen.getByTestId("terminal-status-line").textContent).toContain("idle");
   });
 
@@ -186,6 +197,10 @@ describe("AppTerminalPage", () => {
     await waitFor(() => expect(connectCalls).toHaveLength(1));
     expect(connectCalls[0]!.path).toBe("/v1/terminal?ticket=tkt_abc");
     expect(screen.getByTestId("terminal-status-line").textContent).toContain("connected to web");
+    // 视图行列落定 → conn.resize（PTY 侧行列同步接线；先等 active 渲染
+    // 提交——conn 尚为 null 的旧闭包里 resize 是 no-op）。
+    viewHarness.props!.onResize(120, 30);
+    await waitFor(() => expect(resizeCalls).toContainEqual([120, 30]));
     // 服务端 close 帧：断线原因原文进状态行（不发明第二套文案）。
     fakeHandlers!.onClose({ id: "s1", code: 429, reason: "terminal session limit reached (2 per token, 8 platform-wide)" });
     await waitFor(() =>
