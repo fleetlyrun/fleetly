@@ -574,7 +574,7 @@ func buildVMAlertSpec(platformID string, nc notifierConfig, rules []state.AlertR
 					// 回环 IP 无 SAN 可校验——跳过服务器认证（传输仍加密+
 					// basicAuth token；staging 真机 2026-09-25 实爆明文拨
 					// TLS 口 = connection reset 后补，0d84e6a 同族）。
-					"-notifier.tls.insecureSkipVerify=true",
+					"-notifier.tlsInsecureSkipVerify=true",
 					"-notifier.basicAuth.username=" + notifierBasicAuthUsername,
 					// 密码位 = ingress token（file 形态——凭据材料不进 spec）。
 					"-notifier.basicAuth.passwordFile=" + notifierTokenMountPath,
