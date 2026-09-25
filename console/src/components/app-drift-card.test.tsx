@@ -1,8 +1,9 @@
 // 应用漂移卡测试（2026-09-25 审查 backlog #9 / §3 P1-5）：三态渲染
 //（in sync / drifted / no baseline）与 opt-in 回显（开）、Converge 确认框
-// 与载荷、开关载荷、角色门三态（developer 可收敛 / viewer 只读 / 平台
-// 管理员说明态）、信封错误（409 在途部署冲突）。所有 fetch 均为原始 stub
-//（与 AppOverviewPage.test 同形态），断言 URL + method + JSON 载荷。
+// 与载荷、开关载荷、角色门三态（developer 可收敛+开关（deploy 门，2026-09-25
+// 复核对齐）/ viewer 只读 / 平台管理员说明态）、信封错误（409 在途部署
+// 冲突）。所有 fetch 均为原始 stub（与 AppOverviewPage.test 同形态），断言
+// URL + method + JSON 载荷。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -274,12 +275,13 @@ describe("AppDriftCard role gates", () => {
     return log;
   }
 
-  it("developer: converge button visible, opt-in toggle (admin face) hidden", async () => {
+  it("developer: converge button and opt-in toggle both visible (deploy-scope gate)", async () => {
+    // SetDriftConverge 服务端登记即 ScopeDeploy——developer 的开关可见性
+    // 与服务端同口径（2026-09-25 复核：不再前端收口到 admin）。
     renderCardInRole({ is_platform_admin: false, role: "developer" });
 
     await screen.findByTestId("drift-converge-button");
-    expect(screen.getByTestId("drift-converge-button")).toBeInTheDocument();
-    expect(screen.queryByTestId("drift-convergence-toggle")).not.toBeInTheDocument();
+    expect(screen.getByTestId("drift-convergence-toggle")).toBeInTheDocument();
     expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
   });
 

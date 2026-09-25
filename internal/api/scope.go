@@ -275,6 +275,12 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.ProjectsService/ListProjectMembers":   ScopeRead,
 	"/fleetly.server.v1.ProjectsService/SetProjectMemberRole": ScopeRead,
 	"/fleetly.server.v1.ProjectsService/RemoveProjectMember":  ScopeRead,
+	// 资源改派（backlog #16，MoveAppRequest/MoveDatabaseRequest 平台管理员
+	// 专属）：admin scope——跨项目迁移是归属写面，与 app 删除同级；此前漏
+	// 登记走拦截器 fail-closed（未登记按 admin 拒绝），本登记只把既有行为
+	// 落回矩阵登记点，语义不变（scope.go 头注纪律：新增 RPC 必须登记）。
+	"/fleetly.server.v1.ProjectsService/MoveApp":      ScopeAdmin,
+	"/fleetly.server.v1.ProjectsService/MoveDatabase": ScopeAdmin,
 }
 
 // RequiredScope 返回方法所需 scope（未登记返回 false——调用方按 admin

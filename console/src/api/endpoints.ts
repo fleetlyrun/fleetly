@@ -22,7 +22,6 @@ import type {
   GetAlertsStatusResponse,
   GetAppResponse,
   GetAuditRetentionResponse,
-  GetBuildResponse,
   GetDatabaseResponse,
   GetEnvResponse,
   GetAcmeSettingsResponse,
@@ -546,18 +545,14 @@ export function rollbackDeployment(app: string, targetRevisionId?: string) {
 //（所有角色可读——本组只封装读面）。TriggerBuild（POST /v1/builds）=
 // admin scope 且载荷是 compose 内容字节、app 可自动建行——语义是 CLI
 // `fleetly build <compose>` 的构建入口，不是「对既有应用的手动重建」，
-// Console 不封装、Builds 页只读。
+// Console 不封装、Builds 页只读。单条构建 GetBuild 不封装：台账页的刷新
+// 由 listBuilds 轮询覆盖，零消费的封装面不下沉（2026-09-25 复核）。
 
 /** 构建台账（ListBuilds：路径参数即 app 过滤；created_at 倒序；天花板 100）。 */
 export function listBuilds(app: string, limit = 20) {
   return api<ListBuildsResponse>(
     `/apps/${encodeURIComponent(app)}/builds?limit=${limit}`,
   );
-}
-
-/** 单条构建（行展开期间的状态刷新源；CLI build 等待轮询同面）。 */
-export function getBuild(id: string) {
-  return api<GetBuildResponse>(`/builds/${encodeURIComponent(id)}`);
 }
 
 // ── drift（运行域漂移面，T2.18；proto fleetly/server/v1/drift.proto）──────

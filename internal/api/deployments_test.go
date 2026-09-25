@@ -455,3 +455,107 @@ func TestDeployAppRefResolutionA1(t *testing.T) {
 		}
 	}
 }
+
+// TestDeployBareNameAmbiguityCreationFallback A1 兜底语义的直接测试
+//（2026-09-25 复核补测）：裸名解析域内歧义（E_APP_AMBIGUOUS）不是 Deploy
+// 的拒绝面——Deploy 的兜底是「解析不到既有应用按创建语义：原始参数与
+// spec.Name 一致才放行」。歧义面归属裁决在 ensureApp 的（目标项目，名）
+// 精确查询：匹配部署命中目标项目的既有行，不误建第三行、不串扰其他项目
+// 的同名行；错位部署照拒且零建行零入队。
+func TestDeployBareNameAmbiguityCreationFallback(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	deploys := serverv1.NewDeploymentsServiceClient(env.conn)
+
+	// 裸名歧义播种：同名 app 行落在两个项目（机具令牌全域解析 → 歧义）。
+	projA := env.fixtureProject
+	team, err := env.st.GetTeamBySlug(ctx, "tfixture")
+	if err != nil {
+		t.Fatalf("get fixture team: %v", err)
+	}
+	projB, err := env.st.CreateProject(ctx, state.ProjectWrite{
+		TeamID: team.ID, Slug: "fixture2", Name: "fixture project 2",
+	})
+	if err != nil {
+		t.Fatalf("create second project: %v", err)
+	}
+	for _, p := range []state.Project{projA, projB} {
+		if _, cerr := env.st.CreateApp(ctx, "", "dupapp", p.ID, p.TeamID); cerr != nil {
+			t.Fatalf("create dupapp in %s: %v", p.Slug, cerr)
+		}
+	}
+	// 前置自证：裸名解析确实歧义（Deploy 的兜底分支以此为触发前提）。
+	// directCtx 注入机具令牌等效 Principal（UserID 空 = 全域解析域）——
+	// resolveApp 的 Principal 读自进程内 ctx 值，不跨界（harness_test.go
+	// directCtx 注释同口径）。
+	if _, rerr := resolveApp(directCtx(ctx), env.st, "dupapp"); rerr == nil {
+		t.Fatal("precondition broken: bare name dupapp resolves without ambiguity")
+	} else if e, ok := apperr.FromError(rerr); !ok || e.Code() != "E_APP_AMBIGUOUS" {
+		t.Fatalf("precondition error = %v, want E_APP_AMBIGUOUS envelope", rerr)
+	}
+
+	countRowsByNameIn := func(p state.Project) int {
+		t.Helper()
+		app, gerr := env.st.GetAppByNameInProject(ctx, p.ID, "dupapp")
+		if gerr != nil {
+			t.Fatalf("GetAppByNameInProject %s/dupapp: %v", p.Slug, gerr)
+		}
+		rows, lerr := env.st.ListAppDeployments(ctx, app.ID, 100)
+		if lerr != nil {
+			t.Fatalf("ListAppDeployments: %v", lerr)
+		}
+		return len(rows)
+	}
+
+	// 放行面：原文与 spec.Name 一致 → 兜底放行；ensureApp 按请求 project
+	// 精确命中 projB 的既有行——部署落在 projB，projA 同名行不受扰，无第三行。
+	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+		Project: projB.ID,
+		App:     "dupapp",
+		Compose: []byte("name: dupapp\nservices:\n  web:\n    image: nginx:alpine\n"),
+	})
+	if err != nil {
+		t.Fatalf("ambiguous bare-name matching deploy must fall through to creation semantics: %v", err)
+	}
+	if dr.GetStatus() != "queued" || dr.GetDeploymentId() == "" || dr.GetApp() != "dupapp" {
+		t.Fatalf("ambiguous matching receipt = %+v", dr)
+	}
+	rows, err := env.st.ListAppRowsByName(ctx, "dupapp")
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("matching deploy must not create a third dupapp row: rows=%d err=%v", len(rows), err)
+	}
+	if n := countRowsByNameIn(projB); n != 1 {
+		t.Fatalf("deployment must land on the requested project's row: projB rows = %d, want 1", n)
+	}
+	if n := countRowsByNameIn(projA); n != 0 {
+		t.Fatalf("deployment must not touch the sibling row: projA rows = %d, want 0", n)
+	}
+
+	// 拒绝面：原文与 spec.Name 错位 → E_COMPOSE_UNSUPPORTED（expected=dupapp
+	// 原始参数口径），且零建行、不入队（在途行维持放行面的 1 条）。
+	_, err = deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{
+		Project: projB.ID,
+		App:     "dupapp",
+		Compose: []byte("name: othername\nservices:\n  web:\n    image: nginx:alpine\n"),
+	})
+	if err == nil {
+		t.Fatal("ambiguous bare-name mismatch deploy must be rejected")
+	}
+	e, ok := apperr.FromError(err)
+	if !ok {
+		t.Fatalf("rejection error carries no envelope: %v", err)
+	}
+	if e.Code() != "E_COMPOSE_UNSUPPORTED" {
+		t.Fatalf("envelope code = %q, want E_COMPOSE_UNSUPPORTED", e.Code())
+	}
+	if e.Context()["expected"] != "dupapp" || e.Context()["actual"] != "othername" {
+		t.Fatalf("envelope context = %v, want expected=dupapp actual=othername", e.Context())
+	}
+	rows, err = env.st.ListAppRowsByName(ctx, "othername")
+	if err != nil || len(rows) != 0 {
+		t.Fatalf("rejected request must not create app othername: rows=%d err=%v", len(rows), err)
+	}
+	if ntid, lerr := env.st.ListNonTerminalDeployments(ctx); lerr != nil || len(ntid) != 1 {
+		t.Fatalf("rejected request must not enqueue: non-terminal rows=%d err=%v, want 1", len(ntid), lerr)
+	}
+}

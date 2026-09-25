@@ -275,6 +275,10 @@ describe("AppDeploymentsPage deployment tracking (M9-5 / M9-7)", () => {
 
 // ── Deploy triggers 卡（P1-8「Git push 通道不可发现」）────────────────────
 
+// 26 字符规范 ULID：Console 详情导航以平台 id 寻址（路由参数 = 平台 id，
+// 非业务名）——触发卡测试挂 id 路由，钉「接收端 URL 用业务名而非 id」。
+const APP_REF = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+
 const WEBHOOK_CFG = {
   name: "demo",
   secret_configured: true,
@@ -325,7 +329,7 @@ function renderTriggersPage() {
     defaultOptions: { queries: { retry: false } },
   });
   return render(
-    <MemoryRouter initialEntries={["/apps/demo/deployments"]}>
+    <MemoryRouter initialEntries={[`/apps/${APP_REF}/deployments`]}>
       <QueryClientProvider client={client}>
         <TeamProjectProvider>
           <Routes>
@@ -353,13 +357,34 @@ describe("AppDeploymentsPage deploy triggers (P1-8)", () => {
     expect(screen.getByTestId("triggers-branch")).toHaveTextContent("release");
     expect(screen.getByTestId("triggers-secret-configured")).toHaveTextContent("Configured (never displayed)");
     expect(screen.getByTestId("triggers-source-state")).toHaveTextContent("https://git.example.com/acme/demo.git");
-    // 接收端 URL（gateway 既有路由拼装）：github 变体可复制。
+    // 接收端 URL（gateway 既有路由拼装）：路径段用响应的业务名（name
+    // 字段）而非路由参数（平台 id）——id 形态永不匹配服务端接收端分派
+    // 正则，拼进去就是恒 404 死链。
     const receiver = screen.getByTestId("triggers-webhook-url");
     expect(receiver).toHaveTextContent("/v1/apps/demo/webhooks/github");
+    expect(receiver.textContent).not.toContain(APP_REF);
 
     const user = userEvent.setup();
     await user.click(screen.getByTestId("triggers-git-remote-copy"));
     expect(screen.getByTestId("triggers-git-remote-copy")).toHaveTextContent("Copied");
+  });
+
+  it("discloses honestly when the app name cannot match the receiver path pattern", async () => {
+    setToken("flt_test");
+    // 下划线名：服务端接收端分派正则（[a-z0-9][a-z0-9-]{0,62}）不收——
+    // URL 照拼（如实展示），卡内出说明（服务端限制），不静默冒充可用。
+    const { fetchMock } = stubTriggers("owner", false, { ...WEBHOOK_CFG, name: "demo_app" });
+    vi.stubGlobal("fetch", fetchMock);
+    renderTriggersPage();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("triggers-webhook-url")).toHaveTextContent(
+        "/v1/apps/demo_app/webhooks/github",
+      ),
+    );
+    expect(screen.getByTestId("triggers-webhook-name-note")).toHaveTextContent(
+      "server-side",
+    );
   });
 
   it("secret rotation: PUT payload carries the value, success never echoes the plaintext", async () => {
@@ -380,7 +405,7 @@ describe("AppDeploymentsPage deploy triggers (P1-8)", () => {
     await user.click(screen.getByTestId("triggers-secret-submit"));
     await waitFor(() => {
       const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/webhook-secret"));
-      expect(put?.url.endsWith("/v1/apps/demo/webhook-secret")).toBe(true);
+      expect(put?.url.endsWith(`/v1/apps/${APP_REF}/webhook-secret`)).toBe(true);
       expect(put?.body).toEqual({ secret: secretValue });
     });
 
@@ -408,7 +433,7 @@ describe("AppDeploymentsPage deploy triggers (P1-8)", () => {
 
     await waitFor(() => {
       const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/source"));
-      expect(put?.url.endsWith("/v1/apps/demo/source")).toBe(true);
+      expect(put?.url.endsWith(`/v1/apps/${APP_REF}/source`)).toBe(true);
       expect(put?.body).toEqual({
         source_url: "https://git.example.com/acme/demo.git",
         source_branch: "main",

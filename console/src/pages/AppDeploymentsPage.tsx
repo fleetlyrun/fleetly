@@ -340,15 +340,26 @@ function RollbackCard({ app }: { app: string }) {
 // 契约无指纹）。webhook 接收端 URL 不在响应内——按 gateway 既有路由
 //（internal/runtime/gateway.go：POST /v1/apps/{app}/webhooks/github|gitea）
 // 与 console apiBase 拼装，是既有服务端事实的展示，不是新契约面。
+// 路径段必须用响应解析出的**业务名**（name 字段）：服务端分派正则
+//（internal/gitserver/webhook.go WebhookPathPattern）只收
+// [a-z0-9][a-z0-9-]{0,62} 且命中后按业务名查行——本页路由参数是平台 id
+//（26 字符 ULID 含大写，永不匹配分派正则），拿它拼接收端 URL 是恒 404
+// 死链（2026-09-25 复核修复）。业务名含下划线等出律字符的形态服务端
+// 同样不收——卡内如实注一行说明。
 
 /** 拉源认证形态词表（proto SetAppSourceRequest.source_auth_kind in 约束）。 */
 type SourceAuthKind = "none" | "https_token" | "ssh_key";
 
-/** webhook 接收端绝对 URL（apiBase 缺省相对 /v1——以当前 origin 补全供复制）。 */
+/** webhook 接收端绝对 URL（apiBase 缺省相对 /v1——以当前 origin 补全供
+ * 复制）。app 参数必须是**业务名**：服务端接收端按业务名分派（见文件头
+ * 注）——调用方传路由参数（平台 id）会拼出死链。 */
 function webhookReceiverUrl(app: string, forge: "github" | "gitea"): string {
   const base = new URL(apiBase(), window.location.origin).href.replace(/\/+$/, "");
   return `${base}/apps/${encodeURIComponent(app)}/webhooks/${forge}`;
 }
+
+/** 服务端接收端分派对 app 名的词形约束（WebhookPathPattern 第一捕获组）。 */
+const WEBHOOK_NAME_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** 读态行：code 值 + 复制（System 页指纹卡同款形态）；空值诚实说明。 */
 function CopyValueRow({
@@ -524,16 +535,30 @@ function DeployTriggersCard({ app }: { app: string }) {
           </div>
           <CopyValueRow
             label="Receiver URL (GitHub)"
-            value={webhookReceiverUrl(app, "github")}
+            value={cfg?.name ? webhookReceiverUrl(cfg.name, "github") : ""}
             testid="triggers-webhook-url"
-            empty="Unavailable."
+            empty="Available once the trigger configuration loads."
             hint={
               <>
                 Gitea variant: same path with <code className="font-mono">/gitea</code>. The
+                path addresses the app by its name (not the id in the address bar). The
                 receiver answers 404 until a signing secret is configured.
               </>
             }
           />
+          {/* 服务端接收端只收 [a-z0-9-] 词形的应用名：出律名字（如下划线）
+              的应用收不到 push/webhook 触发——如实披露，不静默给死链。 */}
+          {cfg?.name && !WEBHOOK_NAME_PATTERN.test(cfg.name) ? (
+            <p
+              className="text-xs text-amber-800 dark:text-amber-300"
+              data-testid="triggers-webhook-name-note"
+            >
+              This app&apos;s name contains characters outside [a-z0-9-]. The git push
+              and webhook receiver paths only accept lowercase letters, digits and
+              dashes, so push triggers are unavailable for this app (server-side
+              limitation).
+            </p>
+          ) : null}
           <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="triggers-secret-state">
             <span className="text-xs font-medium text-muted-foreground">Signing secret</span>
             {cfg === undefined ? null : configured ? (

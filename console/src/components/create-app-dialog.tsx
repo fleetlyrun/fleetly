@@ -41,14 +41,20 @@ const APP_NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
 
 /**
  * 解析 compose 顶层 `name:` 行。按行首（无缩进）匹配——YAML 顶层键不出现在
- * 缩进层级，服务内的 name: 键带前导空白不会误中；引号包裹的值剥壳。这是
- * 表单回填的便利启发式，权威解析在服务端（受控子集校验）。
+ * 缩进层级，服务内的 name: 键带前导空白不会误中；行内注释剥离（YAML 的
+ * 注释起点是「空白 + #」，`api#1` 这类无空白紧邻的 # 不是注释；引号内含
+ * # 的形态不在本启发式的处理域——这是表单回填的便利启发式，权威解析在
+ * 服务端受控子集校验，UI 只需不再把 `name: myapi # prod` 这类合法输入
+ * fail-closed 卡在名字校验）。
  */
 export function parseComposeName(text: string): string | null {
   for (const line of text.split(/\r?\n/)) {
     const m = /^name\s*:\s*(.*?)\s*$/.exec(line);
     if (m) {
-      const v = m[1].replace(/^["']|["']$/g, "");
+      const v = m[1]
+        .replace(/(^|\s)#.*$/, "")
+        .trim()
+        .replace(/^["']|["']$/g, "");
       return v || null;
     }
   }

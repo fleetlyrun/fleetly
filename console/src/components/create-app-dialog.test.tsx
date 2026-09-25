@@ -100,6 +100,16 @@ describe("parseComposeName", () => {
     // 缩进的 name: 是服务级键，不是顶层。
     expect(parseComposeName("services:\n  web:\n    name: inner")).toBeNull();
   });
+
+  // 行内注释剥离（2026-09-25 复核）：` #` 起的注释不进取值——否则
+  // `name: myapi # prod` 取出 `myapi # prod`，名字校验 fail-closed 卡住
+  // 合法输入。引号包裹 + 注释同过；无空白紧邻的 # 不是 YAML 注释起点。
+  it("strips inline comments before taking the value", () => {
+    expect(parseComposeName("name: myapi # prod")).toBe("myapi");
+    expect(parseComposeName('name: "myapi" # prod')).toBe("myapi");
+    expect(parseComposeName("name: myapi#2")).toBe("myapi#2");
+    expect(parseComposeName("name: # only a comment")).toBeNull();
+  });
 });
 
 describe("CreateAppDialog", () => {

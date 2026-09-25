@@ -12,6 +12,10 @@ import (
 // 置位复用 engine 既有逻辑（DriftShow/ConvergeApp/SetDriftConverge），本面
 // 只做契约投影——不重写对账语义。actor 恒 "human"（API 无法区分人类/AI
 // 代理，可追溯性由审计 actor_token_id 承载，与 rollback 面同口径）。
+//
+// 引擎调用恒传**解析后的业务名**（app.Name）：engine 侧三方法按
+// GetAppByName 直查，不识别引用形态——把原始引用（Console 主路径的路由
+// 参数 = 平台 id）透传会使 id 寻址恒 404（app not found: <ULID>）。
 type DriftService struct {
 	serverv1.UnimplementedDriftServiceServer
 	st  *state.Store
@@ -33,7 +37,7 @@ func (s *DriftService) ShowDrift(ctx context.Context, req *serverv1.ShowDriftReq
 	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
-	report, err := s.eng.DriftShow(ctx, req.GetApp())
+	report, err := s.eng.DriftShow(ctx, app.Name)
 	if err != nil {
 		return nil, mapAppErr(err, req.GetApp())
 	}
@@ -70,7 +74,7 @@ func (s *DriftService) ConvergeDrift(ctx context.Context, req *serverv1.Converge
 	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
-	rec, err := s.eng.ConvergeApp(ctx, req.GetApp(), "human")
+	rec, err := s.eng.ConvergeApp(ctx, app.Name, "human")
 	if err != nil {
 		return nil, mapAppErr(err, req.GetApp())
 	}
@@ -91,7 +95,7 @@ func (s *DriftService) SetDriftConverge(ctx context.Context, req *serverv1.SetDr
 	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
-	if err := s.eng.SetDriftConverge(ctx, req.GetApp(), req.GetEnabled(), "human"); err != nil {
+	if err := s.eng.SetDriftConverge(ctx, app.Name, req.GetEnabled(), "human"); err != nil {
 		return nil, mapAppErr(err, req.GetApp())
 	}
 	return &serverv1.SetDriftConvergeResponse{

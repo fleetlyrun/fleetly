@@ -16,9 +16,11 @@
 //     GetDriftConverge 零调用方）——开关只做显式置位并回显响应值，初态
 //     如实标注 unknown，不臆造当前状态。
 // 角色门（服务端 scope 登记：ShowDrift=read、Converge/Set=deploy；平台
-// 管理员资源面 levelRead）：读面全角色；Converge now = canDeploy；opt-in
-// 开关 = canAdminResources（比服务端 deploy 门更严的前端收口）；平台管理
-// 员按 platform-readonly-note 既有形态原位说明。
+// 管理员资源面 levelRead）：读面全角色；Converge now 与 opt-in 开关 =
+// canDeploy（2026-09-25 复核对齐：SetDriftConverge 服务端即 ScopeDeploy
+// 登记——developer 服务端可写、UI 按 admin 收口不可见且无说明是不一致
+// 缺陷，前端门改同口径）；平台管理员按 platform-readonly-note 既有形态
+// 原位说明。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { GitCompare } from "lucide-react";
@@ -104,7 +106,9 @@ interface AppDriftCardProps {
 
 export function AppDriftCard({ app }: AppDriftCardProps) {
   const queryClient = useQueryClient();
-  const { canDeploy, canAdminResources } = useTeamCapabilities();
+  // 前端体验门与服务端 ScopeDeploy 登记同口径：收敛与 opt-in 开关都是
+  // deploy 面（canDeploy）——不再比服务端更严收口到 admin。
+  const { canDeploy } = useTeamCapabilities();
   const isPlatformAdmin = useIsPlatformAdmin();
 
   // 收敛跟踪：不落独立 phase state——由「最近一次收敛入队时刻」+ 预算
@@ -276,7 +280,7 @@ export function AppDriftCard({ app }: AppDriftCardProps) {
         ) : null}
 
         {/* 自动收敛 opt-in（检测恒开、收敛默认关）：无读取面——开关只做
-            显式置位并回显响应；权限不足（admin 门）时按钮不渲染。 */}
+            显式置位并回显响应；权限不足（deploy 门）时按钮不渲染。 */}
         <div className="border-t pt-3">
           <div className="text-sm font-medium">Automatic convergence</div>
           <p className="mt-1 text-xs text-muted-foreground">
@@ -306,7 +310,7 @@ export function AppDriftCard({ app }: AppDriftCardProps) {
               suggestion={toggleError.suggestion}
             />
           ) : null}
-          {canAdminResources && !isPlatformAdmin ? (
+          {canDeploy && !isPlatformAdmin ? (
             <div className="mt-2 flex gap-2" data-testid="drift-convergence-toggle">
               <Button
                 size="sm"

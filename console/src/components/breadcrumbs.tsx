@@ -27,12 +27,18 @@ const SEGMENT_LABELS: Record<string, string> = {
   teams: "Teams",
   projects: "Projects",
   deployments: "Deployments",
+  builds: "Builds",
   logs: "Logs",
   env: "Env",
   secrets: "Secrets",
   domains: "Domains",
   terminal: "Terminal",
   "git-keys": "Git push keys",
+  // 一级页存量缺失段（2026-09-25 复核）：/pat（PAT 自服务页）、
+  // /admin/users（Administration 组入口——/admin/audit 的 "audit" 段已被
+  // 上面 audit 键覆盖，"admin" 前缀段保持原文渲染）。
+  pat: "API tokens",
+  users: "Users",
 };
 
 /** 26 字符规范 ULID（平台 ID 段的形态判据）。 */
