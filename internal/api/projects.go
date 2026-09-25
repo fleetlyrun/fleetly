@@ -164,9 +164,14 @@ func (s *ProjectsService) ListProjects(ctx context.Context, req *serverv1.ListPr
 	if err != nil {
 		return nil, err
 	}
+	teamFiltered := req.GetTeamId() != ""
 	out := make([]*serverv1.ProjectView, 0, len(projects))
 	for _, proj := range projects {
-		if req.GetTeamId() != "" || isPlatformAdminUser(ctx, s.st) || allowed[proj.TeamID] {
+		// team_id 收窄 = 严格归属匹配（曾是 `req.GetTeamId() != ""` 恒真
+		// 条件——过滤完全失效，团队设置页串出全部团队的项目，2026-09-25
+		// staging 真机走查实爆后修正）。
+		if (teamFiltered && proj.TeamID == req.GetTeamId()) ||
+			(!teamFiltered && (isPlatformAdminUser(ctx, s.st) || allowed[proj.TeamID])) {
 			view, err := s.projectView(ctx, proj)
 			if err != nil {
 				return nil, err

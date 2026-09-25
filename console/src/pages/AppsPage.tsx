@@ -68,12 +68,19 @@ function matchStateFilter(state: string | undefined, filter: StateFilter): boole
 function AppRow({ app }: { app: AppView }) {
   const navigate = useNavigate();
   const name = app.name ?? "";
+  // 详情导航以平台 id 寻址（2026-09-25 走查裁决）：同名 app 的裸名解析必
+  // 歧义（E_APP_AMBIGUOUS——点行进错误页的断层），REST 单段路由也承载不了
+  // team/prj/app 三段；id 全库唯一且服务端 resolveApp 支持 id 短路。
+  const href = `/apps/${encodeURIComponent(app.id ?? "")}`;
+  // 副标题 = 归属限定形 team/prj（S3 投影）；旧服务端缺投影时回退 id。
+  const ownership =
+    app.team_slug && app.project_slug ? `${app.team_slug}/${app.project_slug}` : app.id;
   return (
     <TableRow
       data-testid="app-row"
       data-state={app.derived_state}
       className="cursor-pointer"
-      onClick={() => navigate(`/apps/${encodeURIComponent(name)}`)}
+      onClick={() => navigate(href)}
     >
       <TableCell>
         <div className="flex min-w-0 items-center gap-3">
@@ -82,14 +89,14 @@ function AppRow({ app }: { app: AppView }) {
           </span>
           <span className="min-w-0">
             <Link
-              to={`/apps/${encodeURIComponent(name)}`}
+              to={href}
               className="block truncate font-medium hover:underline"
               onClick={(e) => e.stopPropagation()}
             >
               {name}
             </Link>
             <span className="block truncate font-mono text-xs text-muted-foreground">
-              {app.id}
+              {ownership}
             </span>
             {/* degraded 一等 UI（W5-S2）：行内常驻解释（compact 卡）——
                 不再是只有 badge 的二等态；点击链接进事件流（行点击语义
@@ -128,9 +135,11 @@ function AppRow({ app }: { app: AppView }) {
 }
 
 export function AppsPage() {
-  // 项目上下文收窄（W2-S5 顶栏切换器）：有选择时请求带 ?project=team/prj
-  // （服务端过滤），无选择 = 可见全集。queryKey 随 ref 变化——切换即重查。
-  const { projectRef } = useProjectContext();
+  // 项目上下文收窄（W2-S5 顶栏切换器）：选中项目时请求带 ?project=team/prj
+  // （服务端过滤）；只选团队时服务端无 team 参数——按 AppView 归属投影
+  // （team_slug）客户端收窄（2026-09-25 走查实爆：选团队后列表仍全量）。
+  // queryKey 随 ref 变化——切换即重查。
+  const { selectedTeamSlug, selectedProjectSlug, projectRef } = useProjectContext();
   const query = useQuery({
     queryKey: ["apps", projectRef],
     queryFn: () => listApps(projectRef ? { project: projectRef } : {}),
@@ -149,6 +158,9 @@ export function AppsPage() {
   const visible = useMemo(() => {
     const needle = search.trim().toLowerCase();
     const filtered = apps.filter((a) => {
+      if (selectedTeamSlug && !selectedProjectSlug && a.team_slug !== selectedTeamSlug) {
+        return false;
+      }
       if (needle && !(a.name ?? "").toLowerCase().includes(needle) && !(a.id ?? "").toLowerCase().includes(needle)) {
         return false;
       }
@@ -168,7 +180,7 @@ export function AppsPage() {
           return (b.updated_at ?? "").localeCompare(a.updated_at ?? "");
       }
     });
-  }, [apps, search, stateFilter, lifecycleFilter, sortKey]);
+  }, [apps, search, stateFilter, lifecycleFilter, sortKey, selectedTeamSlug, selectedProjectSlug]);
 
   if (query.isPending) {
     return (

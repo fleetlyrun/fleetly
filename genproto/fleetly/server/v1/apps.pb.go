@@ -88,9 +88,13 @@ type AppView struct {
 	// 生命周期状态位：active / deleting / deleted。
 	Lifecycle string `protobuf:"bytes,3,opt,name=lifecycle,proto3" json:"lifecycle,omitempty"`
 	// 派生状态：running / degraded / blocked / down（读面即时推导）。
-	DerivedState  string                 `protobuf:"bytes,4,opt,name=derived_state,json=derivedState,proto3" json:"derived_state,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
-	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	DerivedState string                 `protobuf:"bytes,4,opt,name=derived_state,json=derivedState,proto3" json:"derived_state,omitempty"`
+	CreatedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// 归属 slug（v0.3 W2-S3 归属模型；Console 限定形展示与团队级收窄过滤
+	// 的数据源——此前无归属投影，同名 app 在列表面不可分）。
+	TeamSlug      string `protobuf:"bytes,7,opt,name=team_slug,json=teamSlug,proto3" json:"team_slug,omitempty"`
+	ProjectSlug   string `protobuf:"bytes,8,opt,name=project_slug,json=projectSlug,proto3" json:"project_slug,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -165,6 +169,20 @@ func (x *AppView) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *AppView) GetTeamSlug() string {
+	if x != nil {
+		return x.TeamSlug
+	}
+	return ""
+}
+
+func (x *AppView) GetProjectSlug() string {
+	if x != nil {
+		return x.ProjectSlug
+	}
+	return ""
 }
 
 type ListAppsResponse struct {
@@ -264,6 +282,9 @@ type GetAppResponse struct {
 	DerivedState string                 `protobuf:"bytes,4,opt,name=derived_state,json=derivedState,proto3" json:"derived_state,omitempty"`
 	CreatedAt    *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	// 归属 slug（AppView 同款；详情头与列表行的限定形展示同源）。
+	TeamSlug    string `protobuf:"bytes,9,opt,name=team_slug,json=teamSlug,proto3" json:"team_slug,omitempty"`
+	ProjectSlug string `protobuf:"bytes,10,opt,name=project_slug,json=projectSlug,proto3" json:"project_slug,omitempty"`
 	// 放置绑定（未绑定时不输出——EmitUnpopulated=false 语义下 message 零值
 	// 字段不渲染，读面缺省即「无绑定」）。
 	Placement *PlacementView `protobuf:"bytes,7,opt,name=placement,proto3" json:"placement,omitempty"`
@@ -343,6 +364,20 @@ func (x *GetAppResponse) GetUpdatedAt() *timestamppb.Timestamp {
 		return x.UpdatedAt
 	}
 	return nil
+}
+
+func (x *GetAppResponse) GetTeamSlug() string {
+	if x != nil {
+		return x.TeamSlug
+	}
+	return ""
+}
+
+func (x *GetAppResponse) GetProjectSlug() string {
+	if x != nil {
+		return x.ProjectSlug
+	}
+	return ""
 }
 
 func (x *GetAppResponse) GetPlacement() *PlacementView {
@@ -1279,7 +1314,7 @@ const file_fleetly_server_v1_apps_proto_rawDesc = "" +
 	"\x0fListAppsRequest\x12 \n" +
 	"\x05limit\x18\x01 \x01(\x05B\n" +
 	"\xbaH\a\x1a\x05\x18\xe8\a(\x00R\x05limit\x12!\n" +
-	"\aproject\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18AR\aproject\"\xe6\x01\n" +
+	"\aproject\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x18AR\aproject\"\xa6\x02\n" +
 	"\aAppView\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -1288,11 +1323,13 @@ const file_fleetly_server_v1_apps_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"B\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1b\n" +
+	"\tteam_slug\x18\a \x01(\tR\bteamSlug\x12!\n" +
+	"\fproject_slug\x18\b \x01(\tR\vprojectSlug\"B\n" +
 	"\x10ListAppsResponse\x12.\n" +
 	"\x04apps\x18\x01 \x03(\v2\x1a.fleetly.server.v1.AppViewR\x04apps\",\n" +
 	"\rGetAppRequest\x12\x1b\n" +
-	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"\xff\x02\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\"\xbf\x03\n" +
 	"\x0eGetAppResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x1c\n" +
@@ -1301,7 +1338,10 @@ const file_fleetly_server_v1_apps_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
 	"\n" +
-	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12>\n" +
+	"updated_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12\x1b\n" +
+	"\tteam_slug\x18\t \x01(\tR\bteamSlug\x12!\n" +
+	"\fproject_slug\x18\n" +
+	" \x01(\tR\vprojectSlug\x12>\n" +
 	"\tplacement\x18\a \x01(\v2 .fleetly.server.v1.PlacementViewR\tplacement\x12P\n" +
 	"\x12recent_deployments\x18\b \x03(\v2!.fleetly.server.v1.DeploymentViewR\x11recentDeployments\"/\n" +
 	"\x10DeleteAppRequest\x12\x1b\n" +

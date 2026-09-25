@@ -343,6 +343,13 @@ func (s *Store) GetDatabaseInstanceByNameInProject(ctx context.Context, projectI
 	return scanDatabaseInstance(s.db.QueryRowContext(ctx, q, projectID, name))
 }
 
+// GetDatabaseInstanceByID 按平台 ID 取库实例；不存在返回 ErrDatabaseNotFound
+//（api 面 resolveDatabaseRef 的 id 短路消费——与 GetAppByID 对称）。
+func (s *Store) GetDatabaseInstanceByID(ctx context.Context, id string) (DatabaseInstance, error) {
+	const q = `SELECT ` + dbInstanceScanCols + ` ` + dbInstanceScanFrom + ` WHERE d.id = ?`
+	return scanDatabaseInstance(s.db.QueryRowContext(ctx, q, id))
+}
+
 // ListDatabaseInstances 返回全部库实例（按 name 字典序——展示面稳定序）。
 func (s *Store) ListDatabaseInstances(ctx context.Context) ([]DatabaseInstance, error) {
 	const q = `SELECT ` + dbInstanceScanCols + ` ` + dbInstanceScanFrom + ` ORDER BY d.name ASC`

@@ -243,9 +243,6 @@ export function TeamsPage() {
           member role (separation of duties).
         </p>
       ) : null}
-      <Button asChild variant="ghost" size="sm">
-        <Link to="/apps">Back to applications</Link>
-      </Button>
     </div>
   );
 }

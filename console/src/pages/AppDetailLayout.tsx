@@ -1,6 +1,8 @@
 // 应用详情壳：标题行（名称 + 派生状态 + 生命周期）+ 分段式子导航
 // （概览/部署/日志/env/域名）+ 详情数据加载。深链形如
-// /ui/apps/<name>/deployments——daemon 的 SPA 回退直接可达。
+// /ui/apps/<ref>/deployments——<ref> 支持平台 id（列表行导航口径，同名
+// app 裸名必歧义，2026-09-25 走查裁决）与裸名（唯一名直连）；daemon 的
+// SPA 回退直接可达。
 
 import { useQuery } from "@tanstack/react-query";
 import { Boxes } from "lucide-react";
@@ -50,6 +52,8 @@ export function AppDetailLayout() {
   }
 
   const app = query.data;
+  // 标题显示业务名：ref 为 id 寻址时从详情响应反解（加载中暂显 ref）。
+  const displayName = app?.name ?? name;
   const lifecycle = app?.lifecycle ?? "active";
 
   return (
@@ -60,7 +64,7 @@ export function AppDetailLayout() {
         </span>
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2.5">
-            <h1 className="truncate font-mono text-xl font-semibold tracking-tight">{name}</h1>
+            <h1 className="truncate font-mono text-xl font-semibold tracking-tight">{displayName}</h1>
             {app ? <StateBadge state={app.derived_state ?? ""} /> : null}
             {app && lifecycle !== "active" ? (
               <span className="rounded-md border px-1.5 py-0.5 text-xs text-muted-foreground">

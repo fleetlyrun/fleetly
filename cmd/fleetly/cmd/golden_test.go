@@ -58,6 +58,9 @@ var (
 	// protojson 两种冒号形态都归一）。
 	volatileQualifiedName   = regexp.MustCompile(`"app": "t[0-9a-z]{16}/p[0-9a-z]{16}/`)
 	volatileQualifiedNameCp = regexp.MustCompile(`"app":"t[0-9a-z]{16}/p[0-9a-z]{16}/`)
+	// volatileSlugPair 是归属 slug 投影（v0.3 W2-S3 AppView/GetAppResponse
+	// 新增 team_slug/project_slug——夹具 slug 逐次随机，golden 归一为占位）。
+	volatileSlugPair = regexp.MustCompile(`"(team|project)_slug": "[tp][0-9a-z]{16}"`)
 )
 
 // normalizeVolatile 把非确定字段替换为占位符（golden 的确定性边界）。
@@ -71,6 +74,7 @@ func normalizeVolatile(s string) string {
 	s = volatileFingerprint.ReplaceAllString(s, "SHA256:<fingerprint>")
 	s = volatileQualifiedName.ReplaceAllString(s, `"app": "`)
 	s = volatileQualifiedNameCp.ReplaceAllString(s, `"app":"`)
+	s = volatileSlugPair.ReplaceAllString(s, `"${1}_slug": "<${1}-slug>"`)
 	return s
 }
 

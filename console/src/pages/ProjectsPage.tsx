@@ -10,7 +10,7 @@
 // 单一管理面，本页不复制危险操作。
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { ChevronRight, FolderKanban, Loader2, Plus } from "lucide-react";
+import { FolderKanban, Loader2, Plus } from "lucide-react";
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
@@ -186,7 +186,6 @@ export function ProjectsPage() {
                   <TableHead>My role</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Created</TableHead>
-                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -231,9 +230,6 @@ export function ProjectsPage() {
                       <TableCell className="text-xs text-muted-foreground">{p.description}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {formatTime(p.created_at)}
-                      </TableCell>
-                      <TableCell className="w-10 text-right">
-                        <ChevronRight aria-hidden className="ml-auto h-4 w-4 text-muted-foreground/60" />
                       </TableCell>
                     </TableRow>
                   );

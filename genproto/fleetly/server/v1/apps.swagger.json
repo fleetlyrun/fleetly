@@ -427,6 +427,13 @@
         "updated_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "team_slug": {
+          "type": "string",
+          "title": "归属 slug（v0.3 W2-S3 归属模型；Console 限定形展示与团队级收窄过滤\n的数据源——此前无归属投影，同名 app 在列表面不可分）。"
+        },
+        "project_slug": {
+          "type": "string"
         }
       }
     },
@@ -564,6 +571,13 @@
         "updated_at": {
           "type": "string",
           "format": "date-time"
+        },
+        "team_slug": {
+          "type": "string",
+          "title": "归属 slug（AppView 同款；详情头与列表行的限定形展示同源）。"
+        },
+        "project_slug": {
+          "type": "string"
         },
         "placement": {
           "$ref": "#/definitions/v1PlacementView",

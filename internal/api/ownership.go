@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
@@ -187,8 +188,12 @@ func accessLevelName(l accessLevel) string {
 //     §3.3 可见性零级联）/ 全库（机具令牌与平台管理员）；多命中 →
 //     E_APP_AMBIGUOUS（候选列 team/prj/app）；零命中 → 404（不泄漏不可见
 //     资源的存在性）。
-//   - ID 形态：项目引用支持（D-W0-9 管理面惯例）；app/库引用不支持——按名
-//     寻址面统一走 slug 形态，平台 ID 只在创建/列表投影中返回（既有口径）。
+//   - ID 形态：项目引用支持（D-W0-9 管理面惯例）；app/库引用自 2026-09-25
+//     起支持平台 ID 短路（26 字符 ULID 精确命中即按 id 解析）——Console
+//     详情导航以 id 寻址：同名 app 的裸名解析必然歧义（D-W0-4 二修），而
+//     REST 单段路由参数吃不下 team/prj/app 三段限定形，id 是单段可承载的
+//     唯一精确引用。寻址不是授权——越权仍由 requireResourceAccess 收口；
+//     id 不存在按 404 报（不泄漏存在性）。
 
 // callerIsGlobal 报告调用方的裸名解析域是否为全库（机具令牌 = 设计语义全库
 // admin 等价；平台管理员 = 全库只读 support 视角）。读故障 fail-closed 按
@@ -206,7 +211,8 @@ func callerIsGlobal(ctx context.Context, st *state.Store) bool {
 
 // resolveApp 按引用取应用行（api 面统一入口；v0.3 W2-S4 起可见域感知——
 // 裸名解析域 = 调用方可见项目集，机具令牌/平台管理员 = 全库）。限定形
-// team/prj/app 恒可解析（寻址）；NotFound 语义归一（mapAppErr）。
+// team/prj/app 恒可解析（寻址）；26 字符 ULID 按 id 精确解析（Console
+// 详情导航面，头注 ID 形态）；NotFound 语义归一（mapAppErr）。
 func resolveApp(ctx context.Context, st *state.Store, ref string) (state.App, error) {
 	ref = strings.TrimSpace(ref)
 	if teamSlug, rest, found := strings.Cut(ref, "/"); found {
@@ -214,6 +220,14 @@ func resolveApp(ctx context.Context, st *state.Store, ref string) (state.App, er
 		if prjSlug != "" && appName != "" {
 			return resolveQualifiedApp(ctx, st, teamSlug, prjSlug, appName)
 		}
+	}
+	// id 形态：26 字符规范 ULID 精确命中（id 全库唯一，无歧义面）。
+	if _, perr := ulid.ParseStrict(ref); perr == nil {
+		app, err := st.GetAppByID(ctx, ref)
+		if err != nil {
+			return state.App{}, mapAppErr(err, ref)
+		}
+		return app, nil
 	}
 	// 裸名：解析域内唯一才可用。
 	if callerIsGlobal(ctx, st) {
@@ -311,6 +325,14 @@ func resolveDatabaseRef(ctx context.Context, st *state.Store, ref string) (state
 			}
 			return inst, nil
 		}
+	}
+	// id 形态：26 字符规范 ULID 精确命中（app 族同款，resolveApp 头注 ID 形态）。
+	if _, perr := ulid.ParseStrict(ref); perr == nil {
+		inst, err := st.GetDatabaseInstanceByID(ctx, ref)
+		if err != nil {
+			return state.DatabaseInstance{}, mapDatabaseErr(err)
+		}
+		return inst, nil
 	}
 	if callerIsGlobal(ctx, st) {
 		inst, err := st.GetDatabaseInstanceByName(ctx, ref)

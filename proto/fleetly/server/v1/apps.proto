@@ -106,6 +106,10 @@ message AppView {
   string derived_state = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
+  // 归属 slug（v0.3 W2-S3 归属模型；Console 限定形展示与团队级收窄过滤
+  // 的数据源——此前无归属投影，同名 app 在列表面不可分）。
+  string team_slug = 7;
+  string project_slug = 8;
 }
 
 message ListAppsResponse {
@@ -124,6 +128,9 @@ message GetAppResponse {
   string derived_state = 4;
   google.protobuf.Timestamp created_at = 5;
   google.protobuf.Timestamp updated_at = 6;
+  // 归属 slug（AppView 同款；详情头与列表行的限定形展示同源）。
+  string team_slug = 9;
+  string project_slug = 10;
   // 放置绑定（未绑定时不输出——EmitUnpopulated=false 语义下 message 零值
   // 字段不渲染，读面缺省即「无绑定」）。
   PlacementView placement = 7;

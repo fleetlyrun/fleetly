@@ -108,6 +108,8 @@ func (s *AppsService) ListApps(ctx context.Context, req *serverv1.ListAppsReques
 			DerivedState: derived,
 			CreatedAt:    timestamppb.New(app.CreatedAt),
 			UpdatedAt:    timestamppb.New(app.UpdatedAt),
+			TeamSlug:     app.TeamSlug,
+			ProjectSlug:  app.ProjectSlug,
 		})
 	}
 	return &serverv1.ListAppsResponse{Apps: out}, nil
@@ -134,6 +136,8 @@ func (s *AppsService) GetApp(ctx context.Context, req *serverv1.GetAppRequest) (
 		DerivedState: derived,
 		CreatedAt:    timestamppb.New(app.CreatedAt),
 		UpdatedAt:    timestamppb.New(app.UpdatedAt),
+		TeamSlug:     app.TeamSlug,
+		ProjectSlug:  app.ProjectSlug,
 	}
 	if p, err := s.st.GetPlacement(ctx, app.ID); err == nil {
 		resp.Placement = placementView(p)

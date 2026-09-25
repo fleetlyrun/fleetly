@@ -2329,6 +2329,12 @@ export interface components {
             created_at?: string;
             /** Format: date-time */
             updated_at?: string;
+            /**
+             * 归属 slug（v0.3 W2-S3 归属模型；Console 限定形展示与团队级收窄过滤
+             *     的数据源——此前无归属投影，同名 app 在列表面不可分）。
+             */
+            team_slug?: string;
+            project_slug?: string;
         };
         v1DeleteAppResponse: {
             name?: string;
@@ -2381,6 +2387,9 @@ export interface components {
             created_at?: string;
             /** Format: date-time */
             updated_at?: string;
+            /** 归属 slug（AppView 同款；详情头与列表行的限定形展示同源）。 */
+            team_slug?: string;
+            project_slug?: string;
             placement?: components["schemas"]["v1PlacementView"];
             /** 最近部署（created_at 倒序，至多 5 条；派生状态的正交细节）。 */
             recent_deployments?: components["schemas"]["v1DeploymentView"][];
