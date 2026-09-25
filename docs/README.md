@@ -25,6 +25,7 @@
 | 2026-09-17 | [竞品调研：轻量自托管 PaaS 的六个关键问题](research/2026-09-17-competitive-landscape.md) | 已完成 | 零停机/多节点/声明式/MCP/构建/差评六主题；收敛点、死亡区、借鉴与避开清单（含对架构文档的 13 条修订建议） |
 | 2026-09-17 | [Swarm 作为多节点底座的可行性评估](research/2026-09-17-swarm-substrate-assessment.md) | 已完成 | 源码级验证发布语义/路由/镜像存储/故障语义；结论：建议采纳（含 7 项不可退让的 Spike 验证门）；修正前报告 Swarm 表述 |
 | 2026-09-20 | [对照调研：zane-ops（Python/Django + Temporal + Swarm）](research/2026-09-20-zane-ops-comparison.md) | 已完成 | 同底座不同重量级路线对照：部署编排多处独立收敛（印证）、Celery→Temporal 迁移史、10 容器 ≈7GB 控制面实证；R1-R8 借鉴 / A1-A6 避坑清单，输入 v0.2 规划 |
+| 2026-09-25 | [评估：OpenObserve 替换 Victoria 系列](research/2026-09-25-openobserve-vs-victoria.md) | 已裁决（V3W5-E1 维持 Victoria） | 单二进制全栈观测平台（AGPL，22.1k stars）两角色评估：默认日志面否决（预算硬碰撞——实测 v1.0.4 idle RSS 340-346MiB vs VL 12.7MB）；opt-in 观测面可行但不值得（无 scrape 需另配采集器组件数不净减+PromQL v2.45 收敛期+resolved 通知缺口）；挂账「观测高级层」候选带重评三条件；顺带收获：OO 官方支持 RustFS 后端、摄入失败静默 200 与管道错误传播同族坑 |
 
 ## 实施规划（docs/plan/）
 
