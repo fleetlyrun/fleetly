@@ -114,8 +114,11 @@ func resticCmd(pathStyle bool) string {
 //
 //	PG     pg_dump -Fc（逻辑备份，运行中一致性）| restic backup --stdin
 //	Redis  redis-cli --rdb /dev/stdout（RDB 流式）| restic backup --stdin
-//	MySQL  mysqldump --single-transaction --source-data=2（InnoDB 一致性快
-//	       照，D-W4-3）| restic backup --stdin
+//	MySQL  mysqldump --single-transaction --databases（InnoDB 一致性快照，
+//	       D-W4-3；**不带 --source-data=2**——复制坐标需 RELOAD/FLUSH_TABLES
+//	       特权，fleetly 用户（官方入口仅授 db.* ALL）跑必败且失败被管道
+//	       掩蔽为「仅头部假快照」，W4-S4 真机实证后裁撤；坐标平台不消费）
+//	       | restic backup --stdin
 //	Mongo  mongodump --archive --gzip（归档流，D-W4-3）| restic backup --stdin
 //
 // /dev/stdout 而非字面 "-"：redis-cli 的 --rdb 接收**文件名**参数，设备
@@ -139,9 +142,10 @@ func backupJobScript(in dbtemplate.BackupInput) ([]string, error) {
 		export = fmt.Sprintf("redis-cli -h %s --no-auth-warning --rdb /dev/stdout", in.Instance)
 	case dbtemplate.TemplateMySQL84:
 		// --databases：导出自带 CREATE DATABASE + USE——恢复重放前置 DROP
-		// DATABASE 后裸重放必须有库名锚（W4-S2 容器内实证抓出：无该旗标
-		// 的 dump 两语句皆缺，重放必败 "No database selected"）。
-		export = fmt.Sprintf("mysqldump -h %s -u fleetly --single-transaction --source-data=2 --databases %s",
+		// DATABASE 后裸重放必须有库名锚（W4-S2 容器内实证抓出）。不带
+		// --source-data=2（特权不符+管道掩蔽假快照，W4-S4 真机裁撤——见
+		// backupJobScript 头注）。
+		export = fmt.Sprintf("mysqldump -h %s -u fleetly --single-transaction --databases %s",
 			in.Instance, dbtemplate.DatabaseName(in.Instance))
 	case dbtemplate.TemplateMongoDB80:
 		// authSource=admin：官方入口把 initdb root 恒建于 admin 库（设计
@@ -179,8 +183,12 @@ func verifyJobScript(in dbtemplate.BackupOutcome) ([]string, error) {
 			fmt.Sprintf("%s dump %s %s | head -c 5 | grep -q REDIS",
 				resticCmd(in.S3PathStyle), in.SnapshotID, repoPath)}, nil
 	case dbtemplate.TemplateMySQL84:
+		// 双门：文件头魔术串 + **CREATE DATABASE 在场**——W4-S4 真机实证
+		// 「仅头部假快照」（mysqldump 失败被管道掩蔽）能过头部门，恢复
+		// 重放空内容即删库；内容门让假快照在 verify 期显性失败（防御纵深
+		// ——根因已在备份词表修复，此处是检测面兜底）。
 		return []string{"sh", "-c",
-			fmt.Sprintf(`%s dump %s %s | head -c 32 | grep -q "MySQL dump"`,
+			fmt.Sprintf(`%s dump %s %s > /tmp/v.dump && head -c 32 /tmp/v.dump | grep -q "MySQL dump" && grep -q "CREATE DATABASE" /tmp/v.dump`,
 				resticCmd(in.S3PathStyle), in.SnapshotID, repoPath)}, nil
 	case dbtemplate.TemplateMongoDB80:
 		// gzip 头两字节 0x1f 0x8b：od 十六进制化后比对（busybox/coreutils

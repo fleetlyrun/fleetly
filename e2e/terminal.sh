@@ -3,11 +3,12 @@
 # docs/design/2026-09-22-web-terminal.md §2 + §4 安全面套件；control-plane-tls.sh
 # 同骨架——单 dind、编排自足、镜像钉 digest）：
 #
-#   镜像（钉定口径，2026-09-22 CI 首推后收紧）：fleetly-exec 是**私有 ghcr
-#   包**，dind 内登录直拉 tag@digest 全引用（与 Go 常量逐字一致——真实
-#   pull 才落 RepoDigests，save|load/本地构建解析不了 digest 引用；databases.sh
-#   的 DB_GHCR_* 同款纪律）。凭据经 TERM_GHCR_USER/TERM_GHCR_TOKEN 注入
-#   （CI 的 GITHUB_TOKEN 自动具备 packages:read）。
+#   镜像（钉定口径，2026-09-22 CI 首推后收紧）：fleetly-exec 是 ghcr 包，
+#   dind 内直拉 tag@digest 全引用（与 Go 常量逐字一致——真实 pull 才落
+#   RepoDigests，save|load/本地构建解析不了 digest 引用；databases.sh 的
+#   DB_GHCR_* 同款纪律）。凭据 TERM_GHCR_USER/TERM_GHCR_TOKEN 可选：有 →
+#   登录直拉（CI 的 GITHUB_TOKEN 自动具备 packages:read）；无 → 匿名直拉
+#   （2026-09-24 实证匿名可读，本地复跑路径），拉取失败仍诚实 fatal。
 #
 #   T-1  relay duty 收敛：fleetly-exec global 服务 running（每节点一任务）。
 #   T-2  terminal status RPC：enabled + relay 已连接（nodes_connected ≥ 1
@@ -42,7 +43,7 @@
 #   T_SKIP_BUILD   1 = 跳过交叉编译，改用 T_BIN_DIR 下的现成二进制
 #   T_BIN_DIR      T_SKIP_BUILD=1 时的二进制来源（fleetlyd/fleetly/termclient）
 #   T_VERSION      注入的版本串（默认 v0.2.0-terminal-e2e）
-#   TERM_GHCR_USER / TERM_GHCR_TOKEN  私有 exec 镜像的 ghcr 凭据（packages:read；CI 自动注入）
+#   TERM_GHCR_USER / TERM_GHCR_TOKEN  exec 镜像的 ghcr 凭据（可选——packages:read；CI 自动注入；缺省匿名直拉）
 set -u
 export MSYS_NO_PATHCONV=1
 export MSYS2_ARG_CONV_EXCL='*'
@@ -232,9 +233,10 @@ stage "$DIND" "$T_BIN_DIR/fleetly" /opt/fleetly/bin/fleetly
 stage "$DIND" "$T_BIN_DIR/termclient" /opt/fleetly/bin/termclient
 docker exec "$DIND" chmod +x /opt/fleetly/bin/fleetlyd /opt/fleetly/bin/fleetly /opt/fleetly/bin/termclient || fatal 'chmod'
 
-# fleetly-exec 镜像：私有 ghcr 包 dind 内登录直拉（digest 全引用；databases.sh
-# 的 DB_GHCR_* 同款纪律——真实 pull 才落 RepoDigests，本地构建解析不了钉定
-# 引用）。凭据经 exec env 注入，不落 argv 之外的面。
+# fleetly-exec 镜像：ghcr 包 digest 全引用 dind 内直拉（databases.sh 的
+# DB_GHCR_* 同款纪律——真实 pull 才落 RepoDigests，本地构建解析不了钉定
+# 引用）。凭据经 exec env 注入，不落 argv 之外的面；无凭据 → 匿名直拉
+# （2026-09-24 实证该包匿名可读——本地复跑路径），拉取失败仍诚实 fatal。
 if [ -n "${TERM_GHCR_USER:-}" ] && [ -n "${TERM_GHCR_TOKEN:-}" ]; then
     docker exec -e GHCR_USER="$TERM_GHCR_USER" -e GHCR_TOKEN="$TERM_GHCR_TOKEN" \
         "$DIND" sh -c 'printf %s "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin >/dev/null' ||
@@ -242,9 +244,11 @@ if [ -n "${TERM_GHCR_USER:-}" ] && [ -n "${TERM_GHCR_TOKEN:-}" ]; then
     docker exec "$DIND" docker pull -q "$EXEC_IMAGE" >/dev/null ||
         fatal "pull $EXEC_IMAGE (inside dind) failed — check the ghcr credential and its packages:read access to fleetlyrun/fleetly-exec"
     docker exec "$DIND" docker logout ghcr.io >/dev/null 2>&1 || true
-    tl "exec image pulled inside dind ($EXEC_IMAGE)"
+    tl "exec image pulled inside dind with ghcr credentials ($EXEC_IMAGE)"
 else
-    fatal "fleetly-exec ($EXEC_IMAGE) is a PRIVATE ghcr package: set TERM_GHCR_USER/TERM_GHCR_TOKEN (a ghcr credential with packages:read on fleetlyrun/fleetly-exec) so the dind can pull it directly; in CI the terminal-e2e job passes GITHUB_TOKEN automatically"
+    docker exec "$DIND" docker pull -q "$EXEC_IMAGE" >/dev/null ||
+        fatal "pull $EXEC_IMAGE (inside dind, anonymous) failed — set TERM_GHCR_USER/TERM_GHCR_TOKEN (a ghcr credential with packages:read on fleetlyrun/fleetly-exec) if the package is private for your principal. In CI the terminal-e2e job passes GITHUB_TOKEN automatically."
+    tl "exec image pulled inside dind anonymously ($EXEC_IMAGE)"
 fi
 
 # fleetlyd 配置（TLS off = ws:// 明文形态——exec 通道明文降级面；离线 dind
