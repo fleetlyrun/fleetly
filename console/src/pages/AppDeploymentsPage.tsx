@@ -4,10 +4,21 @@
 // 字段级 diff（行内 What changed 展开，对比上一部署的归一化快照，T0-V2.4）。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
-import { CheckCircle2, FileUp, Loader2, Rocket, Undo2 } from "lucide-react";
+import {
+  Check,
+  CheckCircle2,
+  Copy,
+  FileUp,
+  GitBranch,
+  Loader2,
+  Rocket,
+  Undo2,
+  Webhook,
+} from "lucide-react";
+import { useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { Link, useParams } from "react-router-dom";
 
+import { apiBase } from "@/api/client";
 import {
   deploy,
   getDeployment,
@@ -15,12 +26,16 @@ import {
   listRevisions,
   rollbackDeployment,
   cancelDeployment,
+  setAppSource,
+  setAppWebhookSecret,
+  showAppWebhook,
 } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
 import type { ComposeWarning, DeploymentView } from "@/api/types";
 import { DeploymentDiff } from "@/components/deployment-diff";
 import { DeploymentFailureAlert, EnvelopeAlert } from "@/components/envelope-alert";
 import { StateBadge } from "@/components/state-badge";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -29,6 +44,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -47,7 +71,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { formatTime, timeAgo } from "@/lib/utils";
-import { useTeamCapabilities } from "@/lib/context";
+import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
 
 /** 终态集：之外的状态轮询跟踪。 */
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
@@ -308,6 +332,391 @@ function RollbackCard({ app }: { app: string }) {
   );
 }
 
+// ── Deploy triggers 卡（P1-8「Git push 通道不可发现」，2026-09-25 审查
+// backlog #11；proto apps.proto ShowAppWebhook/SetAppWebhookSecret/SetAppSource，
+// scope.go 三 RPC 均 admin）───────────────────────────────────────────────
+// 展示全部取自响应字段：git_remote_hint（push 远端，git SSH 面未启用时为
+// 空串）、source_url/branch/auth_kind、secret_configured 位（值永不回读，
+// 契约无指纹）。webhook 接收端 URL 不在响应内——按 gateway 既有路由
+//（internal/runtime/gateway.go：POST /v1/apps/{app}/webhooks/github|gitea）
+// 与 console apiBase 拼装，是既有服务端事实的展示，不是新契约面。
+
+/** 拉源认证形态词表（proto SetAppSourceRequest.source_auth_kind in 约束）。 */
+type SourceAuthKind = "none" | "https_token" | "ssh_key";
+
+/** webhook 接收端绝对 URL（apiBase 缺省相对 /v1——以当前 origin 补全供复制）。 */
+function webhookReceiverUrl(app: string, forge: "github" | "gitea"): string {
+  const base = new URL(apiBase(), window.location.origin).href.replace(/\/+$/, "");
+  return `${base}/apps/${encodeURIComponent(app)}/webhooks/${forge}`;
+}
+
+/** 读态行：code 值 + 复制（System 页指纹卡同款形态）；空值诚实说明。 */
+function CopyValueRow({
+  label,
+  value,
+  empty,
+  hint,
+  testid,
+}: {
+  label: string;
+  value: string;
+  empty: string;
+  hint?: ReactNode;
+  testid: string;
+}) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="space-y-1" data-testid={testid}>
+      <div className="text-xs font-medium text-muted-foreground">{label}</div>
+      {value ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <code className="break-all font-mono text-xs">{value}</code>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-7"
+            data-testid={`${testid}-copy`}
+            onClick={() => {
+              void navigator.clipboard?.writeText(value);
+              setCopied(true);
+            }}
+          >
+            {copied ? (
+              <Check aria-hidden className="h-3.5 w-3.5" />
+            ) : (
+              <Copy aria-hidden className="h-3.5 w-3.5" />
+            )}
+            {copied ? "Copied" : "Copy"}
+          </Button>
+        </div>
+      ) : (
+        <div className="text-xs text-muted-foreground">{empty}</div>
+      )}
+      {hint ? <div className="text-xs text-muted-foreground">{hint}</div> : null}
+    </div>
+  );
+}
+
+function DeployTriggersCard({ app }: { app: string }) {
+  const queryClient = useQueryClient();
+  const webhookQuery = useQuery({
+    queryKey: ["app-webhook", app],
+    queryFn: () => showAppWebhook(app),
+  });
+  const cfg = webhookQuery.data;
+
+  // secret 轮换（write-only：值只出现在请求体，成功后不回显明文——旧值即
+  // 时失效：验签按库存值单点判定，state.SetAppWebhookSecret 直接覆盖）。
+  const [secret, setSecret] = useState("");
+  const [secretDialogOpen, setSecretDialogOpen] = useState(false);
+  const [secretStored, setSecretStored] = useState(false);
+
+  // 拉源表单（整体替换语义——读态到达时一次性水合，避免空表单提交静默清掉
+  // 既有 source；渲染期派生模式，不经 effect）。
+  const [hydratedApp, setHydratedApp] = useState("");
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [sourceBranch, setSourceBranch] = useState("main");
+  const [authKind, setAuthKind] = useState<SourceAuthKind>("none");
+  const [authSecret, setAuthSecret] = useState("");
+  const [sourceStored, setSourceStored] = useState(false);
+
+  const [error, setError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
+
+  if (cfg && hydratedApp !== app) {
+    setHydratedApp(app);
+    setSourceUrl(cfg.source_url ?? "");
+    setSourceBranch(cfg.source_branch || "main");
+    setAuthKind((cfg.source_auth_kind || "none") as SourceAuthKind);
+  }
+
+  const secretMutation = useMutation({
+    mutationFn: () => setAppWebhookSecret(app, secret),
+    onSuccess: () => {
+      setSecretDialogOpen(false);
+      setSecret("");
+      setSecretStored(true);
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["app-webhook", app] });
+    },
+    onError: (err) => setError(errorEnvelopeFrom(err)),
+  });
+
+  const sourceMutation = useMutation({
+    mutationFn: () =>
+      setAppSource(app, {
+        source_url: sourceUrl.trim(),
+        source_branch: sourceBranch.trim() || "main",
+        source_auth_kind: authKind,
+        ...(authKind === "none" ? {} : { source_auth_secret: authSecret }),
+      }),
+    onSuccess: () => {
+      setSourceStored(true);
+      setAuthSecret("");
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["app-webhook", app] });
+    },
+    onError: (err) => setError(errorEnvelopeFrom(err)),
+  });
+
+  const secretReady = secret.length >= 16;
+  const sourceReady =
+    sourceBranch.trim() !== "" && (authKind === "none" || authSecret.length >= 16);
+  const configured = cfg?.secret_configured === true;
+  // 读面失败（403 信封等）一等渲染——不静默吞掉。
+  const readError = webhookQuery.isError ? errorEnvelopeFrom(webhookQuery.error) : null;
+
+  function onSourceSubmit(e: FormEvent) {
+    e.preventDefault();
+    if (sourceReady) sourceMutation.mutate();
+  }
+
+  return (
+    <Card data-testid="deploy-triggers-card">
+      <CardHeader className="border-b pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+          <Webhook aria-hidden className="h-4 w-4 text-muted-foreground" />
+          Deploy triggers
+        </CardTitle>
+        <CardDescription>
+          Push to deploy over git, or trigger from GitHub/Gitea webhooks. The
+          app&apos;s configured branch is the trigger branch for both channels.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5 pt-4">
+        {readError ? (
+          <EnvelopeAlert
+            code={readError.code}
+            message={readError.message}
+            suggestion={readError.suggestion}
+            docs={readError.docs}
+          />
+        ) : null}
+
+        {/* git push 通道：远端 + 触发分支 + deploy key 入口。 */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <GitBranch aria-hidden className="h-3.5 w-3.5" />
+            Git push
+          </div>
+          <CopyValueRow
+            label="Push remote"
+            value={cfg?.git_remote_hint ?? ""}
+            testid="triggers-git-remote"
+            empty="Unavailable — the git SSH face is not enabled on this server."
+            hint="Pushing to this remote deploys the configured branch with zero downtime."
+          />
+          <div className="text-xs text-muted-foreground" data-testid="triggers-branch">
+            Trigger branch: <code className="font-mono">{cfg?.source_branch || "main"}</code>
+            {" · "}register a deploy key on the{" "}
+            <Link to="/git-keys" className="font-medium underline underline-offset-2">
+              Git push keys
+            </Link>{" "}
+            page.
+          </div>
+        </div>
+
+        {/* webhook 通道：接收端 URL（github/gitea 双变体）+ 签名密钥态。 */}
+        <div className="space-y-3 border-t pt-4">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Webhook aria-hidden className="h-3.5 w-3.5" />
+            Webhook
+          </div>
+          <CopyValueRow
+            label="Receiver URL (GitHub)"
+            value={webhookReceiverUrl(app, "github")}
+            testid="triggers-webhook-url"
+            empty="Unavailable."
+            hint={
+              <>
+                Gitea variant: same path with <code className="font-mono">/gitea</code>. The
+                receiver answers 404 until a signing secret is configured.
+              </>
+            }
+          />
+          <div className="flex flex-wrap items-center gap-2 text-sm" data-testid="triggers-secret-state">
+            <span className="text-xs font-medium text-muted-foreground">Signing secret</span>
+            {cfg === undefined ? null : configured ? (
+              <Badge variant="secondary" data-testid="triggers-secret-configured">
+                Configured (never displayed)
+              </Badge>
+            ) : (
+              <span className="text-xs text-muted-foreground" data-testid="triggers-secret-missing">
+                Not configured — the webhook endpoint is disabled.
+              </span>
+            )}
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="space-y-1.5">
+              <Label htmlFor="webhook-secret-input">New secret</Label>
+              <Input
+                id="webhook-secret-input"
+                type="password"
+                data-testid="triggers-secret-input"
+                className="w-72 font-mono text-xs"
+                placeholder="At least 16 characters"
+                value={secret}
+                onChange={(e) => setSecret(e.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              data-testid="triggers-secret-open"
+              disabled={secret.length < 16}
+              onClick={() => setSecretDialogOpen(true)}
+            >
+              Set secret
+            </Button>
+          </div>
+          {secretStored ? (
+            <p className="text-sm text-emerald-600 dark:text-emerald-400" data-testid="triggers-secret-stored">
+              Webhook secret stored (encrypted at rest; it is never displayed again).
+            </p>
+          ) : null}
+        </div>
+
+        {/* 拉源配置（webhook 收到投递后拉取代码的 remote；整体替换语义）。 */}
+        <div className="space-y-3 border-t pt-4">
+          <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            <Rocket aria-hidden className="h-3.5 w-3.5" />
+            Fetch source
+          </div>
+          <div className="text-xs text-muted-foreground" data-testid="triggers-source-state">
+            {cfg === undefined ? null : cfg.source_url ? (
+              <>
+                Current: <code className="font-mono">{cfg.source_url}</code> (auth:{" "}
+                {cfg.source_auth_kind || "none"})
+              </>
+            ) : (
+              "No fetch source set — webhook deliveries deploy the pushed ref without a fetch."
+            )}
+          </div>
+          <form className="space-y-3" onSubmit={onSourceSubmit}>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label htmlFor="source-url-input">Source URL</Label>
+                <Input
+                  id="source-url-input"
+                  data-testid="source-url-input"
+                  className="font-mono text-xs"
+                  placeholder="https://git.example.com/team/app.git (or file://)"
+                  value={sourceUrl}
+                  onChange={(e) => setSourceUrl(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="source-branch-input">Branch</Label>
+                <Input
+                  id="source-branch-input"
+                  data-testid="source-branch-input"
+                  value={sourceBranch}
+                  onChange={(e) => setSourceBranch(e.target.value)}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Auth</Label>
+                <Select value={authKind} onValueChange={(v) => setAuthKind(v as SourceAuthKind)}>
+                  <SelectTrigger data-testid="source-auth-kind">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">none (public source)</SelectItem>
+                    <SelectItem value="https_token">https_token</SelectItem>
+                    <SelectItem value="ssh_key">ssh_key</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              {authKind !== "none" ? (
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label htmlFor="source-auth-secret-input">
+                    Auth material ({authKind === "https_token" ? "token" : "PEM private key"})
+                  </Label>
+                  <Input
+                    id="source-auth-secret-input"
+                    type="password"
+                    data-testid="source-auth-secret-input"
+                    className="font-mono text-xs"
+                    placeholder="At least 16 characters"
+                    value={authSecret}
+                    onChange={(e) => setAuthSecret(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Encrypted at rest, never read back. Whole-replacement
+                    semantics: every save writes URL, branch and auth together,
+                    so the material must be re-entered on each change.
+                    {authKind === "https_token" ? " https_token requires an https:// source URL." : ""}
+                  </p>
+                </div>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-3">
+              <Button
+                type="submit"
+                variant="outline"
+                data-testid="source-submit"
+                disabled={!sourceReady || sourceMutation.isPending}
+              >
+                {sourceMutation.isPending ? (
+                  <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                ) : null}
+                Save source
+              </Button>
+              <span className="text-xs text-muted-foreground">
+                Save with an empty URL and auth &quot;none&quot; to clear the fetch source.
+              </span>
+              {sourceStored ? (
+                <span className="text-sm text-emerald-600 dark:text-emerald-400" data-testid="source-stored">
+                  Source saved.
+                </span>
+              ) : null}
+            </div>
+          </form>
+        </div>
+
+        {error ? (
+          <EnvelopeAlert code={error.code} message={error.message} suggestion={error.suggestion} docs={error.docs} />
+        ) : null}
+      </CardContent>
+
+      {/* 轮换两步确认：旧 secret 即时失效（验签按库存值单点判定——投递方
+          同步换新，否则投递 401/拒绝）；值永不回显。 */}
+      <Dialog open={secretDialogOpen} onOpenChange={setSecretDialogOpen}>
+        <DialogContent data-testid="triggers-secret-dialog">
+          <DialogHeader>
+            <DialogTitle>Set webhook signing secret</DialogTitle>
+            <DialogDescription>
+              The new secret takes effect immediately: deliveries signed with
+              the old secret fail verification — signature checking is the
+              webhook endpoint&apos;s only authentication. Update your forge
+              with the same value. The secret is stored encrypted and never
+              displayed again.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="triggers-secret-cancel"
+              onClick={() => setSecretDialogOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              data-testid="triggers-secret-submit"
+              disabled={!secretReady || secretMutation.isPending}
+              onClick={() => secretMutation.mutate()}
+            >
+              {secretMutation.isPending ? "Setting…" : "Set secret"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 function DeploymentRow({
   d,
   app,
@@ -414,8 +823,12 @@ export function AppDeploymentsPage() {
   const { name = "" } = useParams();
   // 单一展开位：一次只看一条部署的 diff（再点收起）。
   const [expandedId, setExpandedId] = useState("");
-  // 角色门（前端体验门，§3.2）：部署/回滚/取消 = developer+。
-  const { canDeploy } = useTeamCapabilities();
+  // 角色门（前端体验门，§3.2）：部署/回滚/取消 = developer+；触发面读/写
+  //（ShowAppWebhook 三 RPC）= admin scope（scope.go 登记）→ canAdminResources
+  // 同口径。平台管理员资源面恒只读（P0-3 双门，服务端 ownership.go 硬拒）
+  // ——写卡换成诚实说明，不做静默消失。
+  const { canDeploy, canAdminResources } = useTeamCapabilities();
+  const isPlatformAdmin = useIsPlatformAdmin();
 
   const historyQuery = useQuery({
     queryKey: ["deployments", name],
@@ -449,8 +862,37 @@ export function AppDeploymentsPage() {
             <DeployCard app={name} />
             <RollbackCard app={name} />
           </>
+        ) : isPlatformAdmin ? (
+          // P0-3：平台管理员资源面只读（职责分离）——说明卡落在 Deploy/
+          // Rollback 卡原位，指明可行动路径（CLI 机具令牌 / 成员角色）。
+          <Card className="border-dashed lg:col-span-2">
+            <CardContent
+              className="p-4 text-sm text-muted-foreground"
+              data-testid="platform-readonly-note"
+            >
+              Platform administrators have read-only access to resources
+              (separation of duties). Deploy and roll back from the CLI with a
+              machine token, or ask a team owner for a member role.
+            </CardContent>
+          </Card>
         ) : null}
       </div>
+      {/* Deploy triggers 卡（P1-8）：读面与写面同门（admin scope）——admin+
+          见卡，其余角色见说明态（平台管理员走职责分离口径）。 */}
+      {canAdminResources ? (
+        <DeployTriggersCard app={name} />
+      ) : (
+        <Card className="border-dashed">
+          <CardContent
+            className="p-4 text-sm text-muted-foreground"
+            data-testid="triggers-admin-note"
+          >
+            {isPlatformAdmin
+              ? "Platform administrators have read-only access to resources (separation of duties). Deploy trigger settings are managed by team admins, or from the CLI with a machine token."
+              : "Deploy trigger settings (git push remote, webhooks, fetch source) are visible to team admins only (admin scope on this app's project). Ask a team admin for access."}
+          </CardContent>
+        </Card>
+      )}
       <Card>
         <CardHeader className="flex-row items-center justify-between space-y-0 border-b pb-3">
           <CardTitle className="text-sm font-semibold">

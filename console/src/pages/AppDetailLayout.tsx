@@ -19,6 +19,7 @@ import { timeAgo } from "@/lib/utils";
 const TABS = [
   { key: "", label: "Overview" },
   { key: "deployments", label: "Deployments" },
+  { key: "builds", label: "Builds" },
   { key: "logs", label: "Logs" },
   { key: "env", label: "Env" },
   { key: "secrets", label: "Secrets" },

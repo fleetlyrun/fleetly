@@ -1,7 +1,11 @@
 // 部署历史测试：失败行展示错误信封形态（error_code + verdict + recovery
 // 可见）；中间态徽章（observing/blocked_waiting）一等渲染。跟踪轮询持续
 // 失败（M9-5）：错误信封一等渲染而非永远转圈；refetchInterval 回调对空
-// data 形态可选链守卫（M9-7）。
+// data 形态可选链守卫（M9-7）。平台管理员双门（P0-3）：资源面写卡换成
+// 只读说明卡（不做静默消失），非管理员 owner 的写卡不受扰（防回归）。
+// Deploy triggers 卡（P1-8）：读态字段（git_remote_hint/分支/secret configured
+// 位/接收端 URL）/secret 载荷与不回显断言/source 载荷（整体替换、none 不带
+// 材料键）/角色门三态（admin+ 见卡；成员说明态；平台管理员职责分离说明态）。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -10,6 +14,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppDeploymentsPage } from "@/pages/AppDeploymentsPage";
+import { TeamProjectProvider } from "@/lib/context";
 import { setToken } from "@/api/client";
 
 function ok(body: unknown) {
@@ -129,6 +134,92 @@ describe("AppDeploymentsPage failure envelope", () => {
   });
 });
 
+describe("AppDeploymentsPage platform-admin read-only (P0-3)", () => {
+  // 夹具：/auth/me 供 owner 成员关系 + is_platform_admin 开关（经
+  // TeamProjectProvider 挂载——能力判定走生产接线，非 fail-open 缺省）。
+  function stubMe(isPlatformAdmin: boolean) {
+    return vi.fn().mockImplementation((url: string) => {
+      const u = String(url);
+      if (u.endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () =>
+            Promise.resolve({
+              user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+              teams: [
+                { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+              ],
+              project_overrides: [],
+            }),
+        });
+      }
+      if (u.includes("/deployments")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () => Promise.resolve({ deployments: [] }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "",
+        json: () => Promise.resolve({ revisions: [] }),
+      });
+    });
+  }
+
+  function renderPageInTeamContext() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return render(
+      <MemoryRouter initialEntries={["/apps/demo/deployments"]}>
+        <QueryClientProvider client={client}>
+          <TeamProjectProvider>
+            <Routes>
+              <Route path="/apps/:name/deployments" element={<AppDeploymentsPage />} />
+            </Routes>
+          </TeamProjectProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("平台管理员（owner 角色）：只读说明卡替代 Deploy/Rollback 卡，部署历史照常渲染", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubMe(true));
+    renderPageInTeamContext();
+
+    // 说明卡在写卡原位（诚实说明，不做静默消失）。
+    await waitFor(() => {
+      expect(screen.getByTestId("platform-readonly-note")).toHaveTextContent(
+        "Platform administrators have read-only access to resources",
+      );
+    });
+    // 资源面写卡（含可访问名锚点）不再渲染。
+    expect(screen.queryByText("Deploy compose")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Deploy" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rollback" })).not.toBeInTheDocument();
+    // 页面骨架不塌：部署历史空态照常。
+    await waitFor(() => expect(screen.getByText("No deployments yet.")).toBeInTheDocument());
+  });
+
+  it("非管理员 owner：Deploy/Rollback 卡照常渲染、无只读说明（防回归）", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubMe(false));
+    renderPageInTeamContext();
+
+    await waitFor(() => expect(screen.getByText("Deploy compose")).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Deploy" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Rollback" })).toBeInTheDocument();
+    expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
+  });
+});
+
 describe("AppDeploymentsPage deployment tracking (M9-5 / M9-7)", () => {
   it("renders the error envelope when the tracked deployment poll keeps failing (no infinite spinner)", async () => {
     setToken("flt_test");
@@ -179,5 +270,179 @@ describe("AppDeploymentsPage deployment tracking (M9-5 / M9-7)", () => {
     expect(screen.getByTestId("deployment-tracker")).toHaveTextContent(
       "dep_track",
     );
+  });
+});
+
+// ── Deploy triggers 卡（P1-8「Git push 通道不可发现」）────────────────────
+
+const WEBHOOK_CFG = {
+  name: "demo",
+  secret_configured: true,
+  source_url: "https://git.example.com/acme/demo.git",
+  source_branch: "release",
+  source_auth_kind: "https_token",
+  git_remote_hint: "ssh://git@10.0.0.8:8424/demo.git",
+};
+
+/** 触发面全 stub：Me（角色开关）+ 部署历史 + webhook 读面 + 写面回显。 */
+function stubTriggers(role: string, isPlatformAdmin: boolean, cfg: unknown) {
+  const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+  const fetchMock = vi.fn().mockImplementation((url: string, init?: { method?: string; body?: string }) => {
+    const u = String(url);
+    calls.push({ url: u, method: init?.method, body: init?.body ? JSON.parse(init.body) : undefined });
+    if (u.endsWith("/auth/me")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "",
+        json: () =>
+          Promise.resolve({
+            user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+            teams: [{ team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role }],
+            project_overrides: [],
+          }),
+      });
+    }
+    if (u.endsWith("/webhook") && (!init?.method || init.method === "GET")) {
+      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(cfg) });
+    }
+    if (init?.method === "PUT" && u.endsWith("/webhook-secret")) {
+      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ name: "demo", configured: true }) });
+    }
+    if (init?.method === "PUT" && u.endsWith("/source")) {
+      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ name: "demo" }) });
+    }
+    if (u.includes("/deployments")) {
+      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ deployments: [] }) });
+    }
+    return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ revisions: [] }) });
+  });
+  return { fetchMock, calls };
+}
+
+function renderTriggersPage() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <MemoryRouter initialEntries={["/apps/demo/deployments"]}>
+      <QueryClientProvider client={client}>
+        <TeamProjectProvider>
+          <Routes>
+            <Route path="/apps/:name/deployments" element={<AppDeploymentsPage />} />
+          </Routes>
+        </TeamProjectProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+describe("AppDeploymentsPage deploy triggers (P1-8)", () => {
+  it("admin+ read state: remote hint with copy, trigger branch, secret configured badge, source", async () => {
+    setToken("flt_test");
+    const { fetchMock } = stubTriggers("owner", false, WEBHOOK_CFG);
+    vi.stubGlobal("fetch", fetchMock);
+    renderTriggersPage();
+
+    // admin+（owner）见卡。
+    await waitFor(() => expect(screen.getByTestId("deploy-triggers-card")).toBeInTheDocument());
+    // 读态字段全部来自 ShowAppWebhook 响应（异步到达——以远端提示为就绪信号）。
+    await waitFor(() =>
+      expect(screen.getByTestId("triggers-git-remote")).toHaveTextContent("ssh://git@10.0.0.8:8424/demo.git"),
+    );
+    expect(screen.getByTestId("triggers-branch")).toHaveTextContent("release");
+    expect(screen.getByTestId("triggers-secret-configured")).toHaveTextContent("Configured (never displayed)");
+    expect(screen.getByTestId("triggers-source-state")).toHaveTextContent("https://git.example.com/acme/demo.git");
+    // 接收端 URL（gateway 既有路由拼装）：github 变体可复制。
+    const receiver = screen.getByTestId("triggers-webhook-url");
+    expect(receiver).toHaveTextContent("/v1/apps/demo/webhooks/github");
+
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("triggers-git-remote-copy"));
+    expect(screen.getByTestId("triggers-git-remote-copy")).toHaveTextContent("Copied");
+  });
+
+  it("secret rotation: PUT payload carries the value, success never echoes the plaintext", async () => {
+    setToken("flt_test");
+    // secret 未配置态起手（缺 secret_configured 位）。
+    const { fetchMock, calls } = stubTriggers("owner", false, { name: "demo" });
+    vi.stubGlobal("fetch", fetchMock);
+    renderTriggersPage();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByTestId("triggers-secret-missing")).toBeInTheDocument());
+
+    const secretValue = "whsec-0123456789abcdef";
+    await user.type(screen.getByTestId("triggers-secret-input"), secretValue);
+    await user.click(screen.getByTestId("triggers-secret-open"));
+    expect(screen.getByTestId("triggers-secret-dialog")).toHaveTextContent("takes effect immediately");
+
+    await user.click(screen.getByTestId("triggers-secret-submit"));
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/webhook-secret"));
+      expect(put?.url.endsWith("/v1/apps/demo/webhook-secret")).toBe(true);
+      expect(put?.body).toEqual({ secret: secretValue });
+    });
+
+    // 不回显断言：成功提示出现、确认框关闭、明文在文档任何位置都不存在。
+    await waitFor(() => expect(screen.getByTestId("triggers-secret-stored")).toBeInTheDocument());
+    expect(screen.queryByTestId("triggers-secret-dialog")).not.toBeInTheDocument();
+    expect(screen.queryByText(secretValue)).not.toBeInTheDocument();
+    // 输入复位（type=password 输入框同样不得残留明文）。
+    expect(screen.getByTestId("triggers-secret-input")).toHaveValue("");
+  });
+
+  it("set source: PUT payload is the whole replacement (url+branch+kind; no secret key for none)", async () => {
+    setToken("flt_test");
+    const { fetchMock, calls } = stubTriggers("owner", false, { name: "demo" });
+    vi.stubGlobal("fetch", fetchMock);
+    renderTriggersPage();
+    const user = userEvent.setup();
+
+    await waitFor(() => expect(screen.getByTestId("deploy-triggers-card")).toBeInTheDocument());
+    // 未水合到 source 字段时分支缺省 main（proto source_branch 默认语义）。
+    expect(screen.getByTestId("source-branch-input")).toHaveValue("main");
+
+    await user.type(screen.getByTestId("source-url-input"), "https://git.example.com/acme/demo.git");
+    await user.click(screen.getByTestId("source-submit"));
+
+    await waitFor(() => {
+      const put = calls.find((c) => c.method === "PUT" && c.url.endsWith("/source"));
+      expect(put?.url.endsWith("/v1/apps/demo/source")).toBe(true);
+      expect(put?.body).toEqual({
+        source_url: "https://git.example.com/acme/demo.git",
+        source_branch: "main",
+        source_auth_kind: "none",
+      });
+    });
+    expect(screen.getByTestId("source-stored")).toBeInTheDocument();
+  });
+
+  it("role gate: card for admin+, honest note for developer, separation-of-duties note for platform admin", async () => {
+    setToken("flt_test");
+    const { fetchMock: adminFetch } = stubTriggers("owner", false, WEBHOOK_CFG);
+    vi.stubGlobal("fetch", adminFetch);
+    const { unmount } = renderTriggersPage();
+    await waitFor(() => expect(screen.getByTestId("deploy-triggers-card")).toBeInTheDocument());
+    unmount();
+
+    // developer（canDeploy ✓ / canAdminResources ✗）：说明态，不发 webhook 读请求之外无卡。
+    const { fetchMock: devFetch } = stubTriggers("developer", false, WEBHOOK_CFG);
+    vi.stubGlobal("fetch", devFetch);
+    const dev = renderTriggersPage();
+    await waitFor(() => expect(screen.getByTestId("triggers-admin-note")).toBeInTheDocument());
+    expect(screen.getByTestId("triggers-admin-note")).toHaveTextContent("visible to team admins only");
+    expect(screen.queryByTestId("deploy-triggers-card")).not.toBeInTheDocument();
+    dev.unmount();
+
+    // 平台管理员：职责分离口径说明态（P0-3 双门），卡同样不渲染。
+    const { fetchMock: paFetch } = stubTriggers("owner", true, WEBHOOK_CFG);
+    vi.stubGlobal("fetch", paFetch);
+    renderTriggersPage();
+    await waitFor(() => expect(screen.getByTestId("triggers-admin-note")).toBeInTheDocument());
+    expect(screen.getByTestId("triggers-admin-note")).toHaveTextContent(
+      "Platform administrators have read-only access to resources",
+    );
+    expect(screen.queryByTestId("deploy-triggers-card")).not.toBeInTheDocument();
   });
 });

@@ -118,6 +118,44 @@ export type ListDeploymentsResponse = Schemas["v1ListDeploymentsResponse"];
 export type CancelDeploymentResponse = Schemas["v1CancelDeploymentResponse"];
 export type RollbackDeploymentResponse = Schemas["v1RollbackDeploymentResponse"];
 
+// ── builds（构建台账面，T2.18；proto fleetly/server/v1/builds.proto）──────
+// BuildView 词表：status ∈ queued/building/succeeded/failed；driver ∈
+// railpack/dockerfile/passthrough。无触发来源/commit sha/部署关联字段
+// ——Console 不硬造对应列。TriggerBuild 类型随清单进来但无端点封装
+//（CLI 构建入口，Console 不消费）。
+
+export type BuildView = Schemas["v1BuildView"];
+export type GetBuildResponse = Schemas["v1GetBuildResponse"];
+export type ListBuildsResponse = Schemas["v1ListBuildsResponse"];
+
+// ── git keys（T2.19 git push(SSH) 认证面；proto fleetly/server/v1/gitkeys.proto）──
+// 无敏感投影：公钥本体为公开材料（指纹可复算），私钥永不经过平台。
+
+export type GitKeyView = Schemas["v1GitKeyView"];
+export type AddGitKeyRequest = Schemas["v1AddGitKeyRequest"];
+export type AddGitKeyResponse = Schemas["v1AddGitKeyResponse"];
+export type ListGitKeysResponse = Schemas["v1ListGitKeysResponse"];
+export type RemoveGitKeyResponse = Schemas["v1RemoveGitKeyResponse"];
+
+// ── apps webhook/git 触发面（T2.19；proto apps.proto，admin scope）────────
+// secret 与 source 认证材料均为只写（响应只回 configured 位/回显非敏感字段）。
+
+export type ShowAppWebhookResponse = Schemas["v1ShowAppWebhookResponse"];
+// 请求体在 swagger 面是内联 body 形（openapiv2 不出 v1 消息 definition）——
+// 投影随生成形态取 <Op>Body 名。
+export type SetAppWebhookSecretRequest = Schemas["AppsServiceSetAppWebhookSecretBody"];
+export type SetAppWebhookSecretResponse = Schemas["v1SetAppWebhookSecretResponse"];
+export type SetAppSourceRequest = Schemas["AppsServiceSetAppSourceBody"];
+export type SetAppSourceResponse = Schemas["v1SetAppSourceResponse"];
+
+// ── drift（运行域漂移面，T2.18；proto fleetly/server/v1/drift.proto）──────
+
+export type ShowDriftResponse = Schemas["v1ShowDriftResponse"];
+export type ServiceDriftView = Schemas["v1ServiceDriftView"];
+export type FieldDiffView = Schemas["v1FieldDiffView"];
+export type ConvergeDriftResponse = Schemas["v1ConvergeDriftResponse"];
+export type SetDriftConvergeResponse = Schemas["v1SetDriftConvergeResponse"];
+
 // ── revisions ────────────────────────────────────────────────────────────
 
 export type RevisionView = Schemas["v1RevisionView"];

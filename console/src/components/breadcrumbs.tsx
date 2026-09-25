@@ -4,7 +4,10 @@
 //   - 应用 id 段（详情导航 2026-09-25 起 id 寻址）→ 应用名：响应式观察
 //     ["apps", ref] 列表缓存与 ["app", id] 详情缓存（后者与详情壳共用同
 //     键查询——深链直入也随后到数据补出真名，getQueryData 非响应式读不到
-//     异步填充，2026-09-25 复验实爆）。缓存缺席回退通用名，绝不裸显 ID。
+//     异步填充，2026-09-25 复验实爆）。id 段可处于路径任意位置（详情壳
+//     子页签 /apps/:id/logs 的 id 非末段——详情壳自身持有同键查询，观察
+//     者挂上即可命中缓存）。数据落地前显示骨架占位「—」，绝不裸显 ID、
+//     也不再渲染字面 "Application" 占位（2026-09-25 审查 P2-9）。
 // 末段为当前页（纯文本），前段可点。
 
 import { useQuery } from "@tanstack/react-query";
@@ -29,6 +32,7 @@ const SEGMENT_LABELS: Record<string, string> = {
   secrets: "Secrets",
   domains: "Domains",
   terminal: "Terminal",
+  "git-keys": "Git push keys",
 };
 
 /** 26 字符规范 ULID（平台 ID 段的形态判据）。 */
@@ -39,12 +43,13 @@ export function Breadcrumbs() {
   const { teams, projectRef } = useProjectContext();
   const segments = location.pathname.split("/").filter(Boolean);
 
-  // 应用 id 段至多一个（路径末段）；useQuery 数量恒定，enabled 门控是否
-  // 挂观察者（enabled=false 只读缓存不发请求——列表先行场景零开销）。
+  // 应用 id 段至多一个、可处于路径任意位置（详情壳子页签的 id 非末段）；
+  // 详情观察者按「路径中存在 app id 段」挂载（enabled=false 只读缓存不发
+  // 请求——列表先行场景零开销）。项目 id 段仅末段（详情页本体）。
   const lastSeg = segments[segments.length - 1] ?? "";
-  const prevOfLast = segments[segments.length - 2];
-  const lastIsAppId = ULID_RE.test(lastSeg) && prevOfLast === "apps";
-  const lastIsProjectId = ULID_RE.test(lastSeg) && prevOfLast === "projects";
+  const appSeg =
+    segments.find((seg, i) => ULID_RE.test(seg) && segments[i - 1] === "apps") ?? "";
+  const lastIsProjectId = ULID_RE.test(lastSeg) && segments[segments.length - 2] === "projects";
   const appsList = useQuery({
     queryKey: ["apps", projectRef],
     queryFn: () => listApps(projectRef ? { project: projectRef } : {}),
@@ -52,9 +57,9 @@ export function Breadcrumbs() {
     staleTime: 5 * 60 * 1000,
   });
   const appDetail = useQuery({
-    queryKey: ["app", lastSeg],
-    queryFn: () => getApp(lastSeg),
-    enabled: lastIsAppId,
+    queryKey: ["app", appSeg],
+    queryFn: () => getApp(appSeg),
+    enabled: appSeg !== "",
     staleTime: 30 * 1000,
     retry: false,
   });
@@ -80,12 +85,12 @@ export function Breadcrumbs() {
       const team = teams.find((t) => t.team_id === seg);
       if (team) return team.team_name || team.team_slug || "Team";
       if (prev === "apps") {
-        if (seg === lastSeg) {
-          const fromList = appsList.data?.apps?.find((a) => a.id === seg);
-          if (fromList?.name) return fromList.name;
-          return appDetail.data?.name ?? "Application";
-        }
-        return "Application";
+        // 反解序：列表缓存行名 → 详情缓存名；落地前骨架占位（不裸显
+        // ID、不渲染字面 "Application"——2026-09-25 审查 P2-9）。
+        const fromList = appsList.data?.apps?.find((a) => a.id === seg);
+        if (fromList?.name) return fromList.name;
+        if (seg === appSeg) return appDetail.data?.name ?? "—";
+        return "—";
       }
       if (prev === "projects") {
         if (seg === lastSeg) {

@@ -170,4 +170,20 @@ describe("DatabasesPage create dialog", () => {
       expect(screen.queryByTestId("database-create-dialog")).not.toBeInTheDocument();
     });
   });
+
+  it("displays the target project in the dialog (no context selection = server default)", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubFetchWith(DBS));
+    const user = userEvent.setup();
+
+    renderAt("/databases");
+    await screen.findByText("pg-prod");
+
+    await user.click(screen.getByTestId("database-create-button"));
+    // 抽出的对话框显式展示目标项目（可发现性收口）；本测试无顶栏项目选择
+    // ——回落服务端缺省（调用者个人队 default 项目）。
+    expect(screen.getByTestId("database-target-project")).toHaveTextContent(
+      "default (your personal team)",
+    );
+  });
 });

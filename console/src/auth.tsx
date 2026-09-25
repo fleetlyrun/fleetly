@@ -1,10 +1,11 @@
 // 登录态（v0.3 RBAC W1 双凭据口径）：主路径 = 服务端会话（邮箱+口令登录
 // /注册，HttpOnly cookie fleetly_session，浏览器侧零持久）；高级路径 =
-// API token（localStorage 持久，Authorization Bearer——运维/CLI 直连）。
-// 启动经 GET /v1/auth/me 探测归位（loading → authed | anon，Gate 据此渲染
-// splash / 登录面 / 应用面，避免登录页闪烁）；会话失效的 401 由 api 层
-// 全局处置（清凭据 + App 级监听回登录页），本模块只提供 clearSession 给
-// 监听侧调用。
+// API token（sessionStorage 持久——P1-4 降权，Authorization Bearer——运维/
+// CLI 直连）。启动经 GET /v1/auth/me 探测归位（loading → authed | anon，
+// Gate 据此渲染 splash / 登录面 / 应用面，避免登录页闪烁）；会话失效的
+// 401 由 api 层全局处置（清凭据 + App 级监听回登录页），本模块只提供
+// clearSession 给监听侧调用。登录/注册成功路径整树清 react-query 缓存
+// （P1-2：换身份不得复用上一账号的 Me 等投影）。
 
 import {
   createContext,
@@ -25,6 +26,7 @@ import {
   register as registerRequest,
 } from "@/api/endpoints";
 import { isApiError } from "@/api/errors";
+import { queryClient } from "@/query";
 
 export type AuthStatus = "loading" | "anon" | "authed";
 
@@ -33,6 +35,8 @@ export interface RegisterInput {
   password: string;
   /** 可选显示名（空 = 服务端缺省取 email 本地部分）。 */
   displayName?: string;
+  /** 可选一次性邀请 token（P1-1 受邀注册：服务端豁免注册窗、同事务入队）。 */
+  inviteToken?: string;
 }
 
 interface AuthContextValue {
@@ -85,18 +89,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // 服务端成功即经 Set-Cookie 下发会话（HttpOnly——浏览器侧无凭据可
       // 持久）；本地存 token 的话（高级路径用过）不影响：双凭据 Bearer 优先。
       await loginRequest(email, password);
+      // 换身份必清缓存（P1-2，2026-09-25 审查 §3）：登出→登录的竞态窗口里
+      // 上一账号的 ["auth","me"] 等投影（staleTime 5min）可能存活，被
+      // RequireAuth 探测/用户菜单直接吃掉 → 身份壳串号（Admin 导航/团队
+      // 切换器仍为前一账号）。导航前整树清缓存，登录后的 Me/列表全部重探。
+      queryClient.clear();
       setStatus("authed");
     },
     [],
   );
 
   const registerWithPassword = useCallback(async (input: RegisterInput) => {
-    // Register 同样下发会话 cookie——注册即自动登录（S2 契约）。
+    // Register 同样下发会话 cookie——注册即自动登录（S2 契约）。inviteToken
+    // 非空时走服务端受邀注册通道（豁免注册窗 + 同事务消费邀请入队）。
     await registerRequest({
       email: input.email,
       password: input.password,
       ...(input.displayName ? { display_name: input.displayName } : {}),
+      ...(input.inviteToken ? { invite_token: input.inviteToken } : {}),
     });
+    // 同登录路径：注册即换身份，清缓存后再进入应用面（P1-2）。
+    queryClient.clear();
     setStatus("authed");
   }, []);
 

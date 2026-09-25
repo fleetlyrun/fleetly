@@ -39,6 +39,18 @@ const ME_USER = {
   teams: [],
 };
 
+// 上一账号的 Me 投影（P1-2 身份串号复现夹具）：staleTime 5min 内的陈旧
+// 缓存若登录时不清，RequireAuth/用户菜单会直接吃掉 → 身份壳仍是前任。
+const ME_PREV_ACCOUNT = {
+  user: {
+    id: "u0",
+    email: "founder@example.com",
+    display_name: "Founder",
+    is_platform_admin: true,
+  },
+  teams: [],
+};
+
 interface RouteStub {
   match: (url: string) => boolean;
   respond: (url: string, init?: RequestInit, meCall?: number) => unknown;
@@ -76,6 +88,7 @@ function renderLoginStandalone(state?: { from?: string }) {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/elsewhere" element={<p>landed-elsewhere</p>} />
+            <Route path="/" element={<p>landed-home</p>} />
           </Routes>
         </QueryClientProvider>
       </AuthProvider>
@@ -101,6 +114,8 @@ function appSurfaceRoutes(): RouteStub[] {
 beforeEach(() => {
   queryClient.clear();
   setToken("");
+  // 登出提示标志（App.tsx 401 弹回路径置位、登录页读后即清）——用例间隔离。
+  sessionStorage.clear();
 });
 
 describe("LoginPage registration entry gating", () => {
@@ -184,6 +199,9 @@ describe("LoginPage register form", () => {
       ...appSurfaceRoutes(),
     ]);
     vi.stubGlobal("fetch", fetchMock);
+    // 上一账号的 Me 投影预置入缓存（staleTime 5min）：不清缓存则用户菜单
+    // 直接复用（仍显 Founder、Me 只有探测一发）——注册路径的清缓存在此现形。
+    queryClient.setQueryData(["auth", "me"], ME_PREV_ACCOUNT);
     renderAppAt("/login");
     const user = userEvent.setup();
     await user.click(await screen.findByTestId("register-toggle"));
@@ -208,6 +226,44 @@ describe("LoginPage register form", () => {
     });
     // cookie 会话路径不落 localStorage 凭据。
     expect(getToken()).toBe("");
+
+    // P1-2：注册即换身份——预置的上一账号 Me 投影不得存活到应用面。缓存
+    // 已清 → 用户菜单必然重探 Me（第二发）并以新账号渲染（按钮标签为证）。
+    const meCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes("/auth/me"));
+    await waitFor(() => {
+      expect(screen.getByTestId("user-menu")).toHaveTextContent("Operator");
+      expect(screen.getByTestId("user-menu")).not.toHaveTextContent("Founder");
+    });
+    expect(meCalls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("clears the previous account's query cache on sign-in (identity-switch isolation)", async () => {
+    const fetchMock = stubFetch([
+      // me：第一发 = 启动探测（401 匿名）；登录成功后用户菜单第二发 200。
+      { match: path("auth/me"), respond: (_u, _i, call) => (call === 1 ? jsonResponse(401, {}) : jsonResponse(200, ME_USER)) },
+      { match: path("auth/registration"), respond: () => jsonResponse(200, { open: false, has_users: true }) },
+      { match: path("auth/login"), respond: () => jsonResponse(200, { user: ME_USER.user }) },
+      ...appSurfaceRoutes(),
+    ]);
+    vi.stubGlobal("fetch", fetchMock);
+    // 上一账号的 Me 投影已入缓存（staleTime 5min 内的应用面会直接复用——
+    // P1-2 身份串号的成因）。不清缓存则重探不发生、菜单仍显 Founder。
+    queryClient.setQueryData(["auth", "me"], ME_PREV_ACCOUNT);
+
+    renderAppAt("/login");
+    const user = userEvent.setup();
+    await user.type(await screen.findByTestId("login-email"), "op@example.com");
+    await user.type(screen.getByTestId("login-password"), "correct-horse");
+    await user.click(screen.getByTestId("login-submit"));
+
+    // 导航前整树清缓存：登录后的 Me 重探（第二发）且身份壳是新账号。
+    expect(await screen.findByTestId("user-menu")).toBeInTheDocument();
+    const meCalls = fetchMock.mock.calls.filter(([u]) => String(u).includes("/auth/me"));
+    await waitFor(() => {
+      expect(meCalls.length).toBeGreaterThanOrEqual(2);
+      expect(screen.getByTestId("user-menu")).toHaveTextContent("Operator");
+      expect(screen.getByTestId("user-menu")).not.toHaveTextContent("Founder");
+    });
   });
 });
 
@@ -295,6 +351,70 @@ describe("LoginPage password sign-in", () => {
   });
 });
 
+describe("LoginPage invited registration (review P1-1: anon + closed window)", () => {
+  // InvitePage 引导登录时塞进 from 的完整邀请 URL（/auth/invite?token=…）。
+  const INVITE_FROM = { from: "/auth/invite?token=invitetoken123" };
+
+  it("renders the invited register form as the first screen even when registration is closed", async () => {
+    const fetchMock = stubFetch([
+      // 关窗态（open=false, has_users=true）：受邀注册豁免注册窗，表单照常
+      // 首屏出现——服务端 W3-S4 契约（携带 invite_token 的注册豁免窗口判定）。
+      { match: path("auth/registration"), respond: () => jsonResponse(200, { open: false, has_users: true }) },
+    ]);
+    vi.stubGlobal("fetch", fetchMock);
+    renderLoginStandalone(INVITE_FROM);
+
+    // 首屏主形态 = 受邀注册表单（无需任何 toggle），文案区分受邀形态。
+    expect(screen.getByTestId("register-form")).toBeInTheDocument();
+    expect(screen.getByText(/You've been invited to join a team/)).toBeInTheDocument();
+
+    // 登录为次链接：可切到登录表单；受邀上下文仍保留注册入口（可切回）。
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("login-toggle"));
+    expect(screen.getByTestId("login-form")).toBeInTheDocument();
+    expect(screen.getByTestId("register-toggle")).toBeInTheDocument();
+  });
+
+  it("sends invite_token with the register payload and lands in the console (not back at the invite URL)", async () => {
+    const registerCalls: Array<{ url: string; init?: RequestInit }> = [];
+    const fetchMock = stubFetch([
+      { match: path("auth/me"), respond: () => jsonResponse(401, {}) },
+      { match: path("auth/registration"), respond: () => jsonResponse(200, { open: false, has_users: true }) },
+      {
+        match: path("auth/register"),
+        respond: (u, init) => {
+          registerCalls.push({ url: String(u), init });
+          return jsonResponse(200, { user: ME_USER.user });
+        },
+      },
+    ]);
+    vi.stubGlobal("fetch", fetchMock);
+    renderLoginStandalone(INVITE_FROM);
+    const user = userEvent.setup();
+    await user.type(await screen.findByTestId("register-email"), "invited@example.com");
+    await user.type(screen.getByTestId("register-display-name"), "Invited User");
+    await user.type(screen.getByTestId("register-password"), "long-enough-8");
+    await user.type(screen.getByTestId("register-confirm"), "long-enough-8");
+    await user.click(screen.getByTestId("register-submit"));
+
+    // 载荷携带 invite_token（服务端同事务消费邀请 + 下发会话 cookie）。
+    expect(registerCalls).toHaveLength(1);
+    expect(registerCalls[0]?.url).toBe("/v1/auth/register");
+    const init = registerCalls[0]?.init as RequestInit & { credentials?: string };
+    expect(init.credentials).toBe("include");
+    expect(JSON.parse(String(init.body))).toEqual({
+      email: "invited@example.com",
+      password: "long-enough-8",
+      display_name: "Invited User",
+      invite_token: "invitetoken123",
+    });
+
+    // 注册事务已消费邀请——直达控制台首页而非回跳邀请 URL（二次 accept
+    // 同一 token 必 409 E_INVITE_INVALID）。
+    expect(await screen.findByText("landed-home")).toBeInTheDocument();
+  });
+});
+
 describe("LoginPage API token path removed (2026-09-25 user ruling)", () => {
   it("no longer renders the token section on the sign-in form", async () => {
     vi.stubGlobal(
@@ -339,5 +459,71 @@ describe("startup Me probe", () => {
     renderAppAt("/");
     // 应用启动拉 Me：会话有效 → 直达应用面（用户菜单在顶栏）。
     expect(await screen.findByTestId("user-menu")).toBeInTheDocument();
+  });
+
+  it("bounces to the login page on a resource 401 without a Session-invalid banner", async () => {
+    // 会话失效（资源面 401）：全局处置清本地态回登录页；告警条不随行——
+    // P1-2 顺带收敛：登录页错误态归提交动作自身，全局 401 只负责弹回。
+    vi.stubGlobal(
+      "fetch",
+      stubFetch([
+        { match: path("auth/me"), respond: () => jsonResponse(200, ME_USER) },
+        { match: path("system/status"), respond: () => jsonResponse(200, { version: "0.3.0" }) },
+        { match: path("system/nodes"), respond: () => jsonResponse(200, { nodes: [] }) },
+        { match: path("apps"), respond: () => jsonResponse(401, { message: "invalid or expired session" }) },
+        { match: path("events/stream"), respond: () => new Promise(() => undefined) },
+      ]),
+    );
+    renderAppAt("/");
+    expect(await screen.findByTestId("login-email")).toBeInTheDocument();
+    expect(screen.queryByText(/Session invalid/)).not.toBeInTheDocument();
+  });
+});
+
+describe("LoginPage neutral signed-out notice (2026-09-25 leftover)", () => {
+  it("shows the neutral notice after a global-401 bounce", async () => {
+    // 会话失效被全局 401 处置弹回：登录页渲染中性提示条（muted，非告警）
+    // ——前序阶段移除「Session invalid」告警后补的告知面。
+    vi.stubGlobal(
+      "fetch",
+      stubFetch([
+        { match: path("auth/me"), respond: () => jsonResponse(200, ME_USER) },
+        { match: path("system/status"), respond: () => jsonResponse(200, { version: "0.3.0" }) },
+        { match: path("system/nodes"), respond: () => jsonResponse(200, { nodes: [] }) },
+        { match: path("apps"), respond: () => jsonResponse(401, { message: "invalid or expired session" }) },
+        { match: path("events/stream"), respond: () => new Promise(() => undefined) },
+      ]),
+    );
+    renderAppAt("/");
+
+    expect(await screen.findByTestId("login-email")).toBeInTheDocument();
+    expect(screen.getByTestId("signed-out-note")).toHaveTextContent(
+      "You have been signed out.",
+    );
+    // 中性提示不是告警（无 role=alert），错误态仍归提交动作自身。
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("shows no notice after an explicit sign-out from the user menu", async () => {
+    // 主动登出（用户菜单 Sign out）：不置标志——登录页无提示条。
+    vi.stubGlobal(
+      "fetch",
+      stubFetch([
+        { match: path("auth/me"), respond: () => jsonResponse(200, ME_USER) },
+        { match: path("system/status"), respond: () => jsonResponse(200, { version: "0.3.0" }) },
+        { match: path("system/nodes"), respond: () => jsonResponse(200, { nodes: [] }) },
+        { match: path("apps"), respond: () => jsonResponse(200, { apps: [] }) },
+        { match: path("events/stream"), respond: () => new Promise(() => undefined) },
+        { match: path("auth/logout"), respond: () => jsonResponse(200, {}) },
+      ]),
+    );
+    renderAppAt("/");
+    const user = userEvent.setup();
+
+    await user.click(await screen.findByTestId("user-menu"));
+    await user.click(screen.getByTestId("logout"));
+
+    expect(await screen.findByTestId("login-email")).toBeInTheDocument();
+    expect(screen.queryByTestId("signed-out-note")).not.toBeInTheDocument();
   });
 });

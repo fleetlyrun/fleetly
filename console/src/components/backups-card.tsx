@@ -1,15 +1,19 @@
 // 状态备份台账卡（T2.22 台账 + E3-3 上传轨）：本地回读校验（verify）与
 // 远端上传（upload）两列结论如实并列——上传失败不回写 verify，红色行是
-// 告警面的一部分（设计 §5.5 锚点 backup-upload-status）。
+// 告警面的一部分（设计 §5.5 锚点 backup-upload-status）。Back up now
+//（backlog #4-②）手动触发一次状态备份：同步语义（响应即落账后的台账行
+// ——internal/api/system.go TriggerBackup），成功后失效台账立即重取；
+// 失败信封原样呈现（verify 失败也落账，台账里看得见失败事实）。
 
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DatabaseBackup } from "lucide-react";
 
-import { listBackups } from "@/api/endpoints";
+import { listBackups, triggerBackup } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
 import { EmptyState } from "@/components/empty-state";
 import { EnvelopeAlertFrom } from "@/components/envelope-alert";
 import { StatusDot } from "@/components/status-dot";
+import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
@@ -80,10 +84,23 @@ function UploadStatusCell({ backup }: { backup: BackupView }) {
 }
 
 export function BackupsCard() {
+  const queryClient = useQueryClient();
   const backupsQuery = useQuery({
     queryKey: ["system", "backups"],
     queryFn: listBackups,
     refetchInterval: 15000,
+  });
+
+  // 手动触发（backlog #4-②）：平台状态备份（系统面——服务端
+  // requirePlatformWriteFace 硬门，平台管理员可执行；沿 SystemPage 既有
+  // 设置卡形态不另设前端角色门，403 信封照实展示）。成功失效台账 + 系统
+  // 健康卡（BackupHealth 同源）——新行 created_at 倒序直接可见。
+  const trigger = useMutation({
+    mutationFn: () => triggerBackup(),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ["system", "backups"] });
+      void queryClient.invalidateQueries({ queryKey: ["system", "status"] });
+    },
   });
 
   const backups = backupsQuery.data?.backups ?? [];
@@ -92,8 +109,29 @@ export function BackupsCard() {
     <Card>
       <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
         <CardTitle className="text-sm font-semibold">Backups</CardTitle>
+        <div className="ml-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="backup-trigger"
+            disabled={trigger.isPending}
+            onClick={() => trigger.mutate()}
+          >
+            {trigger.isPending ? "Backing up…" : "Back up now"}
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="pt-4">
+        <p className="mb-3 text-xs text-muted-foreground" data-testid="backup-trigger-hint">
+          "Back up now" triggers a manual platform state backup (control-plane
+          state — not application or database data backups; those live on each
+          database's detail page).
+        </p>
+        {trigger.isError ? (
+          <div className="mb-3" data-testid="backup-trigger-error">
+            <EnvelopeAlertFrom envelope={errorEnvelopeFrom(trigger.error)} />
+          </div>
+        ) : null}
         {backupsQuery.isError ? (
           <EnvelopeAlertFrom envelope={errorEnvelopeFrom(backupsQuery.error)} />
         ) : backups.length === 0 ? (

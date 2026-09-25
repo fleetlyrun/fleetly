@@ -24,6 +24,7 @@ import { errorEnvelopeFrom } from "@/api/errors";
 import type { MetricsSeries } from "@/api/types";
 import { EnvelopeAlertFrom } from "@/components/envelope-alert";
 import { MetricsChart, type ChartSeries } from "@/components/metrics-chart";
+import { useIsPlatformAdmin } from "@/lib/context";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -69,6 +70,10 @@ interface AppMetricsCardProps {
 
 export function AppMetricsCard({ app }: AppMetricsCardProps) {
   const queryClient = useQueryClient();
+  // 平台管理员资源面只读（P0-3 双门）：metrics 开栈是资源写动作——开关
+  // 隐藏、原位说明（CLI 等价 fleetly metrics mode，文案如实指路）；本卡
+  // 原本就无角色门，非平台管理员各角色渲染零变化。
+  const platformReadonly = useIsPlatformAdmin();
   const status = useQuery({
     queryKey: ["metrics", "status"],
     queryFn: getMetricsStatus,
@@ -182,14 +187,24 @@ export function AppMetricsCard({ app }: AppMetricsCardProps) {
           {enable.isError ? (
             <EnvelopeAlertFrom envelope={errorEnvelopeFrom(enable.error)} />
           ) : null}
-          <Button
-            size="sm"
-            data-testid="metrics-mode-toggle"
-            disabled={enable.isPending}
-            onClick={() => enable.mutate()}
-          >
-            {enable.isPending ? "Enabling…" : "Enable metrics"}
-          </Button>
+          {platformReadonly ? (
+            // P0-3：平台管理员只读——说明行。
+            <p className="text-xs text-muted-foreground" data-testid="platform-readonly-note">
+              Platform administrators have read-only access to resources
+              (separation of duties). Manage the metrics stack from the CLI
+              with a machine token (<code>fleetly metrics mode</code>), or ask
+              a team owner for a member role.
+            </p>
+          ) : (
+            <Button
+              size="sm"
+              data-testid="metrics-mode-toggle"
+              disabled={enable.isPending}
+              onClick={() => enable.mutate()}
+            >
+              {enable.isPending ? "Enabling…" : "Enable metrics"}
+            </Button>
+          )}
         </CardContent>
       </Card>
     );

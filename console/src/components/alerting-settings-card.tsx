@@ -1,10 +1,11 @@
 // 告警设置卡（B 线 W5-S2，D-V3W5-1；SystemPage Alerts 页签）：alerts.mode
 // 开关（**前置门 metrics.mode=on**——metrics 未开时禁用态提示）+ 栈状态
 // 视图（vmalert 部署态 + 规则数）+ 告警规则管理（expr 编辑 + Test 即时
-// 求值 + 通道绑定勾选 + for 时长——设计 §2.3 Console 面原文）。
+// 求值 + 通道绑定勾选 + for 时长——设计 §2.3 Console 面原文；规则编辑
+// backlog #4-④：updateAlertRule 接 UI，复用创建表单形态预填）。
 //
 // 锚点（只增）：alerting-status-card / alerts-mode-toggle / alerting-rule-row
-// / alerting-rule-form / alerting-test-result。
+// / alerting-rule-form / alerting-test-result / alert-rule-edit。
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -19,6 +20,7 @@ import {
   listWebhookEndpoints,
   setAlertsMode,
   testAlertRule,
+  updateAlertRule,
 } from "@/api/endpoints";
 import type { AlertRuleView } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
@@ -76,28 +78,41 @@ function TestResult({ expr }: { expr: string }) {
 }
 
 // 规则表单：name/expr/for/severity + 通道绑定勾选（channels 缺省全端点）。
-function RuleForm({ onClose }: { onClose: () => void }) {
+// rule 传入 = 编辑态（backlog #4-④）：预填规则行、提交走 PUT 部分更新；
+// 缺省 = 创建态（POST）。角色门沿该卡既有创建/删除形态（无前端门，服务端
+// requirePlatformWriteFace 硬门，403 信封照实展示）。
+function RuleForm({ rule, onClose }: { rule?: AlertRuleView; onClose: () => void }) {
   const queryClient = useQueryClient();
-  const [name, setName] = useState("");
-  const [expr, setExpr] = useState("");
-  const [forSeconds, setForSeconds] = useState("0");
-  const [severity, setSeverity] = useState("warning");
-  const [channelIds, setChannelIds] = useState<string[]>([]);
+  // 编辑态预填（view 投影 → 表单值）：for_duration_seconds 是 int64 的
+  // JSON 形态（protojson 出 string，fixture 可能是 number——Number 归一）；
+  // severity 取 labels.severity；channels 直投影。
+  const [name, setName] = useState(rule?.name ?? "");
+  const [expr, setExpr] = useState(rule?.expr ?? "");
+  const [forSeconds, setForSeconds] = useState(String(Number(rule?.for_duration_seconds ?? 0)));
+  const [severity, setSeverity] = useState(rule?.labels?.severity ?? "");
+  const [channelIds, setChannelIds] = useState<string[]>(rule?.channels ?? []);
 
   const endpoints = useQuery({
     queryKey: ["notifications", "endpoints"],
     queryFn: listWebhookEndpoints,
   });
 
-  const create = useMutation({
-    mutationFn: () =>
-      createAlertRule({
+  const save = useMutation({
+    mutationFn: () => {
+      const labels: Record<string, string> = severity === "" ? {} : { severity };
+      const payload = {
         name,
         expr,
         for_duration_seconds: Number(forSeconds) || 0,
-        labels: severity === "" ? {} : { severity },
+        labels,
         channels: channelIds,
-      }),
+      };
+      // PUT 为部分更新语义（alerting.proto UpdateAlertRuleRequest）：labels
+      // 非 null 整体替换、channels 非空整体替换——载荷字段与创建对齐。
+      return rule
+        ? updateAlertRule(rule.id ?? "", payload)
+        : createAlertRule(payload);
+    },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["alerting"] });
       onClose();
@@ -108,9 +123,10 @@ function RuleForm({ onClose }: { onClose: () => void }) {
     <form
       className="space-y-3 rounded-md border p-3"
       data-testid="alerting-rule-form"
+      data-mode={rule ? "edit" : "create"}
       onSubmit={(e) => {
         e.preventDefault();
-        create.mutate();
+        save.mutate();
       }}
     >
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -192,18 +208,27 @@ function RuleForm({ onClose }: { onClose: () => void }) {
             </span>
           ) : null}
         </div>
+        {rule ? (
+          // PUT 部分更新语义的诚实披露：channels 空 = 不变——勾选全清无法
+          // 表达「回落全端点」（服务端口径需 Delete+Create）。
+          <span className="block text-xs text-muted-foreground">
+            Editing uses partial-update semantics: clearing every channel keeps
+            the current binding (delete and recreate the rule to fall back to
+            all endpoints).
+          </span>
+        ) : null}
       </div>
-      {create.isError ? (
-        <EnvelopeAlertFrom envelope={errorEnvelopeFrom(create.error)} />
+      {save.isError ? (
+        <EnvelopeAlertFrom envelope={errorEnvelopeFrom(save.error)} />
       ) : null}
       <div className="flex gap-2">
         <Button
           type="submit"
           size="sm"
-          disabled={name.trim() === "" || expr.trim() === "" || create.isPending}
+          disabled={name.trim() === "" || expr.trim() === "" || save.isPending}
           data-testid="alert-rule-submit"
         >
-          Create rule
+          {rule ? "Save changes" : "Create rule"}
         </Button>
         <Button type="button" size="sm" variant="outline" onClick={onClose}>
           Cancel
@@ -213,15 +238,22 @@ function RuleForm({ onClose }: { onClose: () => void }) {
   );
 }
 
-// 单条规则行（name/expr/for/severity/channels 摘要 + 删除）。
+// 单条规则行（name/expr/for/severity/channels 摘要 + 编辑 + 删除）。
 function RuleRow({ rule }: { rule: AlertRuleView }) {
   const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
   const remove = useMutation({
     mutationFn: () => deleteAlertRule(rule.id ?? ""),
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["alerting"] }),
   });
   // for_duration_seconds 线格式 = int64 的 JSON string 形态（protojson 映射）。
   const forSeconds = Number(rule.for_duration_seconds ?? 0);
+
+  // 编辑态：行原位替换为预填表单（沿 scaling 卡「行内进编辑」形态）。
+  if (editing) {
+    return <RuleForm rule={rule} onClose={() => setEditing(false)} />;
+  }
+
   return (
     <div
       className="flex flex-wrap items-center justify-between gap-2 rounded-md border p-3"
@@ -246,14 +278,24 @@ function RuleRow({ rule }: { rule: AlertRuleView }) {
             : "channels: all enabled endpoints"}
         </div>
       </div>
-      <Button
-        size="sm"
-        variant="outline"
-        disabled={remove.isPending}
-        onClick={() => remove.mutate()}
-      >
-        Remove
-      </Button>
+      <div className="flex gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          data-testid="alert-rule-edit"
+          onClick={() => setEditing(true)}
+        >
+          Edit
+        </Button>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={remove.isPending}
+          onClick={() => remove.mutate()}
+        >
+          Remove
+        </Button>
+      </div>
       {remove.isError ? <EnvelopeAlertFrom envelope={errorEnvelopeFrom(remove.error)} /> : null}
     </div>
   );

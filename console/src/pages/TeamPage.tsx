@@ -7,11 +7,15 @@
 //   Projects  项目列表 + 创建/删除（owner 专属）+ 项目覆写成员（admin/
 //             owner；覆写角色 ∈ admin/developer/viewer，owner 不可覆写）。
 // 所有写按钮按调用者团队角色渲染（前端体验门；服务端硬门不变）。
+// 页签态进 URL（2026-09-25 审查 P2-2，与 SystemPage 同款 ?tab= 模式）：
+// Members/Invites/Projects 可深链；非法/缺省回落 members（成员面是页首
+// 主形态）。Projects tab 的项目行可点进 /projects/:id（与 ProjectsPage
+// 行为对齐——此前行本体无链接，与一级页相反）。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Loader2, Plus, Trash2, UsersRound } from "lucide-react";
 import { useMemo, useState, type FormEvent } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import {
   createInvite,
@@ -77,11 +81,10 @@ function InlineError({ error }: { error: ErrorEnvelope | null }) {
 export function TeamPage() {
   const { teamId = "" } = useParams();
   const { teams } = useProjectContext();
+  const [searchParams, setSearchParams] = useSearchParams();
   // 我的团队角色（Me 投影 by team_id）→ 能力视图（前端体验门）。
   const myRole = teams.find((t) => t.team_id === teamId)?.role ?? null;
   const caps = useMemo(() => capabilitiesForRole(myRole), [myRole]);
-
-  const [tab, setTab] = useState("members");
 
   const tabs = [
     { key: "members", label: "Members" },
@@ -89,6 +92,10 @@ export function TeamPage() {
     ...(caps.canInvite ? [{ key: "invites", label: "Invites" }] : []),
     { key: "projects", label: "Projects" },
   ];
+  // 页签态以 URL 为源（?tab=）：不在当前可见词表（含能力门收窄后的
+  // invites）的取值回落 members——深链/越权 tab 一律安全落地。
+  const rawTab = searchParams.get("tab") ?? "";
+  const tab = tabs.some((t) => t.key === rawTab) ? rawTab : "members";
 
   return (
     <div className="space-y-4" data-testid="team-page">
@@ -100,7 +107,13 @@ export function TeamPage() {
             : "You are viewing this team without a membership role (read-only)."
         }
       />
-      <PillTabs value={tab} onValueChange={setTab} items={tabs} ariaLabel="Team sections" />
+      {/* 缺省页签不带查询串（SystemPage 同款）——URL 保持干净。 */}
+      <PillTabs
+        value={tab}
+        onValueChange={(key) => setSearchParams(key === "members" ? {} : { tab: key })}
+        items={tabs}
+        ariaLabel="Team sections"
+      />
       {tab === "members" ? <MembersTab teamId={teamId} caps={caps} /> : null}
       {tab === "invites" && caps.canInvite ? <InvitesTab teamId={teamId} caps={caps} /> : null}
       {tab === "projects" ? <ProjectsTab teamId={teamId} caps={caps} /> : null}
@@ -637,7 +650,15 @@ function ProjectsTab({
                 {projects.map((p) => (
                   <TableRow key={p.id} data-testid="project-row" data-slug={p.slug}>
                     <TableCell>
-                      <div className="font-medium">{p.name}</div>
+                      {/* 项目行可点进详情（2026-09-25 审查 P2-2，与
+                          ProjectsPage 行为对齐）——名称即链接，id 寻址。 */}
+                      <Link
+                        to={`/projects/${encodeURIComponent(p.id ?? "")}`}
+                        className="font-medium hover:underline"
+                        data-testid="project-row-link"
+                      >
+                        {p.name}
+                      </Link>
                       {/* 跨团队展示限定形（D-W0-9）。 */}
                       <div className="font-mono text-xs text-muted-foreground">
                         {p.team_slug}/{p.slug}

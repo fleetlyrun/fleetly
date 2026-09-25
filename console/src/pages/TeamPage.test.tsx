@@ -138,12 +138,12 @@ function stubFetch(overrides: {
   });
 }
 
-function renderAt() {
+function renderAt(initialPath = "/teams/01TEAM") {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return render(
-    <MemoryRouter initialEntries={["/teams/01TEAM"]}>
+    <MemoryRouter initialEntries={[initialPath]}>
       <QueryClientProvider client={client}>
         {/* 角色能力自 Me 投影派生（context.tsx）——Provider 参与渲染。 */}
         <TeamProjectProvider>
@@ -275,6 +275,52 @@ describe("TeamPage projects + overrides", () => {
       );
       expect(deleted).toBeDefined();
     });
+  });
+});
+
+// ── 页签进 URL（2026-09-25 审查 P2-2：SystemPage 同款 ?tab= 深链）────────
+
+describe("TeamPage tabs in URL", () => {
+  it("deep-links to the projects tab via ?tab=projects", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubFetch());
+    renderAt("/teams/01TEAM?tab=projects");
+
+    await screen.findByTestId("team-page");
+    expect(await screen.findByTestId("projects-tab")).toBeInTheDocument();
+    expect(screen.queryByTestId("members-card")).not.toBeInTheDocument();
+  });
+
+  it("deep-links to the invites tab when the capability gate allows it", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubFetch());
+    renderAt("/teams/01TEAM?tab=invites");
+
+    await screen.findByTestId("team-page");
+    expect(await screen.findByTestId("invites-tab")).toBeInTheDocument();
+    expect(screen.queryByTestId("members-card")).not.toBeInTheDocument();
+  });
+
+  it("falls back to the members tab on an unknown tab value", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubFetch());
+    renderAt("/teams/01TEAM?tab=bogus");
+
+    await screen.findByTestId("team-page");
+    expect(await screen.findByTestId("members-card")).toBeInTheDocument();
+    expect(screen.queryByTestId("projects-tab")).not.toBeInTheDocument();
+  });
+
+  it("links each project row to its detail page (id-addressed)", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubFetch());
+    renderAt("/teams/01TEAM?tab=projects");
+
+    const links = await screen.findAllByTestId("project-row-link");
+    expect(links.map((l) => l.getAttribute("href"))).toEqual([
+      "/projects/01PRJ1",
+      "/projects/01PRJ2",
+    ]);
   });
 });
 

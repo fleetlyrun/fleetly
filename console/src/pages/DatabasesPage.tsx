@@ -1,20 +1,22 @@
 // 库实例列表（E4 managed-databases §4 验收步 9：Console 库实例为一等页面
 // ——独立资源面 /ui/databases，与 apps 分立）。统计卡（生命周期态计数）+
-// 表格（模板/状态/放置/卷/最近备份/可升级）+ 创建对话框（模板 + 名 + 可选
-// 限额）。备份列逐行轻查询（limit=1，无轮询——单操作员平台量级可控）。
+// 表格（模板/状态/放置/卷/最近备份/可升级）+ 创建对话框（抽出的可复用组件
+// components/create-database-dialog.tsx——项目详情页 Databases 卡同享；
+// 目标项目 = 顶栏选中项目限定形，对话框内明示）。备份列逐行轻查询（limit=1，
+// 无轮询——单操作员平台量级可控）。
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { ChevronRight, Database, Plus } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 
 import {
-  createDatabase,
   listDatabaseBackups,
   listDatabases,
 } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
 import type { DatabaseView } from "@/api/types";
+import { CreateDatabaseDialog } from "@/components/create-database-dialog";
 import { EmptyState } from "@/components/empty-state";
 import { EnvelopeAlert } from "@/components/envelope-alert";
 import { PageHeader } from "@/components/page-header";
@@ -22,23 +24,6 @@ import { StateBadge } from "@/components/state-badge";
 import { StatCard } from "@/components/stat-card";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -48,16 +33,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatBytes, timeAgo } from "@/lib/utils";
-import { useProjectContext, useTeamCapabilities } from "@/lib/context";
-
-const TEMPLATES = [
-  { value: "postgres-16", label: "postgres-16" },
-  { value: "redis-7", label: "redis-7" },
-  { value: "mysql-8.4", label: "mysql-8.4" },
-  { value: "mongodb-8.0", label: "mongodb-8.0" },
-];
-
-const NAME_PATTERN = /^[a-z0-9][a-z0-9_-]*$/;
+import { useIsPlatformAdmin, useProjectContext, useTeamCapabilities } from "@/lib/context";
 
 /** 行内最近备份（limit=1 只取最新一行；无轮询——创建/触发后随缓存失效刷新）。 */
 function LastBackupCell({ name }: { name: string }) {
@@ -76,140 +52,6 @@ function LastBackupCell({ name }: { name: string }) {
       {row.kind} · {timeAgo(row.created_at)}
       {failed ? " (verify failed)" : ""}
     </span>
-  );
-}
-
-function CreateDatabaseDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
-  const queryClient = useQueryClient();
-  const { projectRef } = useProjectContext();
-  const [name, setName] = useState("");
-  const [template, setTemplate] = useState("postgres-16");
-  const [cpu, setCpu] = useState("");
-  const [memoryGiB, setMemoryGiB] = useState("");
-  const [error, setError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
-
-  const nameOk = NAME_PATTERN.test(name);
-  const createMutation = useMutation({
-    mutationFn: () => {
-      const cpuN = Number(cpu);
-      const memN = Number(memoryGiB);
-      return createDatabase({
-        name,
-        template,
-        // 项目上下文收窄（W2-S5）：顶栏选中项目即创建目标（限定形
-        // team/prj）；无选择 = 服务端缺省（调用者个人队 default 项目）。
-        project: projectRef || undefined,
-        limits:
-          cpu.trim() !== "" || memoryGiB.trim() !== ""
-            ? {
-                cpu_seconds: cpu.trim() !== "" && !Number.isNaN(cpuN) ? cpuN : 0,
-                memory_bytes:
-                  memoryGiB.trim() !== "" && !Number.isNaN(memN)
-                    ? String(Math.round(memN * 1024 * 1024 * 1024))
-                    : undefined,
-              }
-            : undefined,
-      });
-    },
-    onSuccess: () => {
-      setError(null);
-      setName("");
-      setCpu("");
-      setMemoryGiB("");
-      void queryClient.invalidateQueries({ queryKey: ["databases"] });
-      onOpenChange(false);
-    },
-    onError: (err) => setError(errorEnvelopeFrom(err)),
-  });
-
-  function onSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (nameOk) createMutation.mutate();
-  }
-
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent data-testid="database-create-dialog">
-        <DialogHeader>
-          <DialogTitle>Create database</DialogTitle>
-          <DialogDescription>
-            A managed instance is created immediately (status provisioning) and
-            converges to ready once the engine health gate passes. Credentials
-            are generated once and stored encrypted; they are injected into
-            referencing apps as <code>FLEETLY_DB_*</code> variables.
-          </DialogDescription>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={onSubmit}>
-          <div className="space-y-1.5">
-            <Label htmlFor="database-name">Name</Label>
-            <Input
-              id="database-name"
-              data-testid="database-name-input"
-              className="font-mono text-xs"
-              placeholder="pg-prod"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              lowercase letters, digits, - and _ (must start alphanumeric).
-            </p>
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="database-template">Template</Label>
-            <Select value={template} onValueChange={setTemplate}>
-              <SelectTrigger id="database-template" data-testid="database-template-select" className="w-56">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {TEMPLATES.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>
-                    {t.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="database-cpu">CPU limit (cores)</Label>
-              <Input
-                id="database-cpu"
-                data-testid="database-cpu-input"
-                className="font-mono text-xs"
-                placeholder="template default"
-                inputMode="decimal"
-                value={cpu}
-                onChange={(e) => setCpu(e.target.value)}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="database-memory">Memory limit (GiB)</Label>
-              <Input
-                id="database-memory"
-                data-testid="database-memory-input"
-                className="font-mono text-xs"
-                placeholder="template default"
-                inputMode="decimal"
-                value={memoryGiB}
-                onChange={(e) => setMemoryGiB(e.target.value)}
-              />
-            </div>
-          </div>
-          {error ? (
-            <EnvelopeAlert code={error.code} message={error.message} suggestion={error.suggestion} />
-          ) : null}
-          <DialogFooter>
-            <Button
-              type="submit"
-              data-testid="database-create-submit"
-              disabled={!nameOk || createMutation.isPending}
-            >
-              {createMutation.isPending ? "Creating…" : "Create"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 
@@ -273,9 +115,11 @@ function DatabaseRow({ db }: { db: DatabaseView }) {
 
 export function DatabasesPage() {
   // 项目上下文收窄（W2-S5）+ 创建按钮角色门（库生命周期 = admin+，§3.2
-  // 矩阵；前端体验门，服务端硬门不变）。
+  // 矩阵；前端体验门，服务端硬门不变）。平台管理员资源面恒只读（P0-3
+  // 双门）——创建钮消失时以说明卡明示原因，不做静默消失。
   const { projectRef } = useProjectContext();
   const { canAdminResources } = useTeamCapabilities();
+  const isPlatformAdmin = useIsPlatformAdmin();
   const query = useQuery({
     queryKey: ["databases", projectRef],
     queryFn: () => listDatabases(projectRef ? { project: projectRef } : {}),
@@ -291,6 +135,21 @@ export function DatabasesPage() {
     }
     return by;
   }, [databases]);
+
+  // P0-3 只读说明：Create database 按钮因平台管理员身份隐藏时，落一张
+  // 说明卡（三个返回形态共享——pending/error/ready 的页头都在）。
+  const platformReadonlyNote = !canAdminResources && isPlatformAdmin ? (
+    <Card className="border-dashed">
+      <CardContent
+        className="p-4 text-sm text-muted-foreground"
+        data-testid="platform-readonly-note"
+      >
+        Platform administrators have read-only access to resources (separation
+        of duties). Create and manage database instances from the CLI with a
+        machine token, or ask a team owner for a member role.
+      </CardContent>
+    </Card>
+  ) : null;
 
   const header = (
     <PageHeader
@@ -321,6 +180,7 @@ export function DatabasesPage() {
     return (
       <div className="space-y-4" data-testid="databases-page">
         {header}
+        {platformReadonlyNote}
         <p className="text-sm text-muted-foreground">Loading databases…</p>
       </div>
     );
@@ -330,6 +190,7 @@ export function DatabasesPage() {
     return (
       <div className="space-y-4" data-testid="databases-page">
         {header}
+        {platformReadonlyNote}
         <EnvelopeAlert
           code={envelope.code}
           message={envelope.message}
@@ -343,6 +204,7 @@ export function DatabasesPage() {
   return (
     <div className="space-y-4" data-testid="databases-page">
       {header}
+      {platformReadonlyNote}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard label="Instances" value={databases.length} />
         <StatCard label="Ready" value={counts.ready ?? 0} />
@@ -380,7 +242,9 @@ export function DatabasesPage() {
           )}
         </CardContent>
       </Card>
-      <CreateDatabaseDialog open={createOpen} onOpenChange={setCreateOpen} />
+      {/* 抽出的可复用对话框：目标项目 = 顶栏选中项目（对话框内明示）——
+          与抽取前行为一致（projectRef 缺省回落服务端缺省）。 */}
+      <CreateDatabaseDialog open={createOpen} onOpenChange={setCreateOpen} projectRef={projectRef} />
     </div>
   );
 }

@@ -6,7 +6,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Boxes, ChevronRight, Search } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 
 import { listApps } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
@@ -146,6 +146,14 @@ export function AppsPage() {
     refetchInterval: 5000,
   });
 
+  // 创建应用对话框的落地说明（P0-1）：DeployResponse 不带应用平台 id，
+  // 对话框入队成功后导航到本页并携带 location.state——在此渲染一次性
+  // queued 通知（导航离开即消失，不持久化）。
+  const location = useLocation();
+  const queuedNotice = (
+    location.state as { deployQueued?: { app?: string; deploymentId?: string } } | null
+  )?.deployQueued;
+
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
   const [lifecycleFilter, setLifecycleFilter] = useState<LifecycleFilter>("all");
@@ -223,6 +231,23 @@ export function AppsPage() {
           </Button>
         }
       />
+
+      {queuedNotice ? (
+        <div
+          data-testid="deploy-queued-notice"
+          role="status"
+          className="rounded-md border border-emerald-500/30 bg-emerald-500/5 p-3 text-sm text-emerald-800 dark:text-emerald-300"
+        >
+          Application “{queuedNotice.app ?? ""}” queued for deployment
+          {queuedNotice.deploymentId ? (
+            <>
+              {" "}(<code className="font-mono text-xs">{queuedNotice.deploymentId}</code>)
+            </>
+          ) : null}
+          . It appears below once created — open its Deployments tab to track
+          progress.
+        </div>
+      ) : null}
 
       <Card>
         <div className="flex flex-wrap items-center gap-2 border-b px-4 py-3">

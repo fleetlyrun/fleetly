@@ -1,10 +1,11 @@
 // Console 壳（dokploy 式）：可折叠侧边栏（分组导航 + 版本页脚）
 // + 顶栏（折叠钮 / 团队·项目切换器 / 面包屑 / 时钟 / 主题 / 用户菜单）+
-// 内容区。导航 = v0.1 功能面（应用 / 事件 / 系统）+ v0.3 团队/项目面
-// （Teams / Projects——Projects 一级入口为 2026-09-24 用户裁决）+ 平台
-// 管理员面（Admin，仅 is_platform_admin 可见——W2-S5，rbac-teams 设计
-// §7）。折叠偏好持久化 localStorage；小屏首帧默认折叠。身份与退出
-// 收拢在顶栏用户菜单。
+// 内容区。导航分组（2026-09-25 审查 §6-4）：Home 与工作区语义组（Teams/
+// Projects，紧随 Home 无标签）不带标签，其余三组带标签——WORKLOADS
+// （Applications/Databases）、PLATFORM（Events/System）、ADMINISTRATION
+// （Admin/Audit，仅 is_platform_admin 可见——W2-S5，rbac-teams 设计 §7；
+// Admin 图标与 System 去重，改 users 族）。折叠偏好持久化 localStorage；
+// 小屏首帧默认折叠。身份与退出收拢在顶栏用户菜单。
 
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -17,6 +18,7 @@ import {
   Radio,
   ScrollText,
   Server,
+  Users,
   UsersRound,
 } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
@@ -34,16 +36,33 @@ import { cn } from "@/lib/utils";
 
 const COLLAPSE_KEY = "fleetly.console.sidebar-collapsed";
 
-const NAV_MAIN = [{ to: "/", label: "Home", icon: House, end: true }];
-const NAV_PLATFORM = [
+interface NavEntry {
+  to: string;
+  label: string;
+  icon: typeof Boxes;
+  end?: boolean;
+}
+
+const NAV_HOME: NavEntry[] = [{ to: "/", label: "Home", icon: House, end: true }];
+// 工作区语义组：紧随 Home、不带分组标签（团队与项目是横切上下文，非
+// 工作负载也非平台面）。
+const NAV_WORKSPACE: NavEntry[] = [
+  { to: "/teams", label: "Teams", icon: UsersRound, end: false },
+  { to: "/projects", label: "Projects", icon: FolderKanban, end: false },
+];
+const NAV_WORKLOADS: NavEntry[] = [
   { to: "/apps", label: "Applications", icon: Boxes, end: false },
   { to: "/databases", label: "Databases", icon: Database, end: false },
+];
+const NAV_PLATFORM: NavEntry[] = [
   { to: "/events", label: "Events", icon: Radio, end: false },
   { to: "/system", label: "System", icon: Server, end: false },
 ];
-const NAV_TEAMS = [
-  { to: "/teams", label: "Teams", icon: UsersRound, end: false },
-  { to: "/projects", label: "Projects", icon: FolderKanban, end: false },
+const NAV_ADMIN: NavEntry[] = [
+  // Admin 换 users 族图标（原与 System 共用 Server——2026-09-25 审查 P2-6）。
+  { to: "/admin/users", label: "Admin", icon: Users, end: false },
+  // 审计页（W3-S3，rbac-teams §7）：平台管理员台账浏览面。
+  { to: "/admin/audit", label: "Audit", icon: ScrollText, end: false },
 ];
 
 function useSidebarCollapsed() {
@@ -102,6 +121,40 @@ function NavItem({
   );
 }
 
+/**
+ * 分组导航渲染（组标签复用原 Platform 标签样式；折叠时标签位退化为等高
+ * 占位——折叠态不渲染文字）。label 为空 = 无标签组（Home / 工作区组）。
+ */
+function NavGroup({
+  label,
+  items,
+  collapsed,
+}: {
+  label: string;
+  items: NavEntry[];
+  collapsed: boolean;
+}) {
+  return (
+    <>
+      {label ? (
+        !collapsed ? (
+          <div
+            className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70"
+            data-testid={`nav-group-${label.toLowerCase()}`}
+          >
+            {label}
+          </div>
+        ) : (
+          <div className="pb-1 pt-4" />
+        )
+      ) : null}
+      {items.map((item) => (
+        <NavItem key={item.to} {...item} collapsed={collapsed} />
+      ))}
+    </>
+  );
+}
+
 export function Layout() {
   const [collapsed, toggleCollapsed] = useSidebarCollapsed();
   const isPlatformAdmin = useIsPlatformAdmin();
@@ -143,40 +196,12 @@ export function Layout() {
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-2 py-3" aria-label="Main">
-          {NAV_MAIN.map((item) => (
-            <NavItem key={item.to} {...item} collapsed={collapsed} />
-          ))}
-          {NAV_TEAMS.map((item) => (
-            <NavItem key={item.to} {...item} collapsed={collapsed} />
-          ))}
-          {!collapsed ? (
-            <div className="px-3 pb-1 pt-4 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground/70">
-              Platform
-            </div>
-          ) : (
-            <div className="pb-1 pt-4" />
-          )}
-          {NAV_PLATFORM.map((item) => (
-            <NavItem key={item.to} {...item} collapsed={collapsed} />
-          ))}
+          <NavGroup label="" items={NAV_HOME} collapsed={collapsed} />
+          <NavGroup label="" items={NAV_WORKSPACE} collapsed={collapsed} />
+          <NavGroup label="Workloads" items={NAV_WORKLOADS} collapsed={collapsed} />
+          <NavGroup label="Platform" items={NAV_PLATFORM} collapsed={collapsed} />
           {isPlatformAdmin ? (
-            <>
-              <NavItem
-                to="/admin/users"
-                label="Admin"
-                icon={Server}
-                end={false}
-                collapsed={collapsed}
-              />
-              {/* 审计页（W3-S3，rbac-teams §7）：平台管理员台账浏览面。 */}
-              <NavItem
-                to="/admin/audit"
-                label="Audit"
-                icon={ScrollText}
-                end={false}
-                collapsed={collapsed}
-              />
-            </>
+            <NavGroup label="Administration" items={NAV_ADMIN} collapsed={collapsed} />
           ) : null}
         </nav>
 

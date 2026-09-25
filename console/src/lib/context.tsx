@@ -80,18 +80,24 @@ const NeutralContext: TeamProjectContextValue = {
 
 const TeamProjectContext = createContext<TeamProjectContextValue>(NeutralContext);
 
-export function TeamProjectProvider({ children }: { children: ReactNode }) {
-  const [selected, setSelected] = useState<StoredContext>(loadStoredContext);
-
-  // Me 投影（与 user-menu 同键共享缓存）+ 可见项目集。静默失败 = 上下文
-  // 降级为无选择（资源页全量可见集）——列表读面失败不阻塞页面。
-  const meQuery = useQuery({
+// Me 投影查询（provider / useTeamCapabilities / useIsPlatformAdmin 三处
+// 同键共享缓存——同 key 去重，不会多发请求；选项必须一致地静默失败）。
+function useMeQuery() {
+  return useQuery({
     queryKey: ["auth", "me"],
     queryFn: () => me(),
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
     retry: false,
   });
+}
+
+export function TeamProjectProvider({ children }: { children: ReactNode }) {
+  const [selected, setSelected] = useState<StoredContext>(loadStoredContext);
+
+  // Me 投影（与 user-menu 同键共享缓存）+ 可见项目集。静默失败 = 上下文
+  // 降级为无选择（资源页全量可见集）——列表读面失败不阻塞页面。
+  const meQuery = useMeQuery();
   const projectsQuery = useQuery({
     queryKey: ["projects", "context"],
     queryFn: () => listProjects(),
@@ -197,17 +203,20 @@ export interface TeamCapabilities {
   role: string | null;
   /** read 面：所有角色恒真（viewer 起步）。 */
   canRead: boolean;
-  /** deploy 面：developer+（部署/回滚/env 写/cron/终端）。 */
+  /** deploy 面：developer+（部署/回滚/env 写/cron/终端）；平台管理员恒 false。 */
   canDeploy: boolean;
-  /** admin 面：admin+（app 删除/env 明文/secrets/构建/库生命周期）。 */
+  /** admin 面：admin+（app 删除/env 明文/secrets/构建/库生命周期）；平台管理员恒 false。 */
   canAdminResources: boolean;
-  /** owner 面：成员/角色/邀请/项目创建与删除。 */
+  /** owner 面：成员/角色/邀请/项目创建与删除（身份面——平台管理员按角色照常）。 */
   canManageTeam: boolean;
-  /** 邀请面：owner/admin（§3.1；所邀角色 ≤ 自身由服务端把关）。 */
+  /** 邀请面：owner/admin（§3.1；所邀角色 ≤ 自身由服务端把关）——身份面。 */
   canInvite: boolean;
 }
 
-/** 能力全开（Me 投影不可用时的缺省——见 useTeamCapabilities 头注）。 */
+/**
+ * 能力全开（Me 投影不可得时的缺省——见 useTeamCapabilities 头注 fail-open
+ * 口径）。平台管理员**不得**落到这里：双门判定先于本缺省（同函数内）。
+ */
 const OPEN_CAPABILITIES: TeamCapabilities = {
   role: null,
   canRead: true,
@@ -238,14 +247,30 @@ export function capabilitiesForRole(role: string | null | undefined): TeamCapabi
  * 行匹配按 team_id + prj_slug（覆写只对团队成员存在，owner 恒无行——服务
  * 端保证）。未选项目时按团队角色。
  *
- * fail-open 口径：Me 投影不可用（teams 空——接口失败/测试直挂页面）时
+ * fail-open 口径：Me 投影不可得（teams 空——接口失败/测试直挂页面）时
  * 返回能力全开。前端门只是体验优化，服务端角色门（ResolvePermission）
  * 才是硬门；无角色信息就隐藏写按钮只会制造「按钮无故消失」的错觉，方向
  * 性错误——如实全开，让 403 信封说话。
+ *
+ * 双门模型（P0-3，2026-09-25 审查 docs/reports/2026-09-25-console-ui-review.md
+ * §2；服务端裁决 = internal/api/ownership.go ResolvePermission：平台管理员
+ * 无条件 levelRead，即使他是团队 owner）：能力分两个平面——
+ *   - 资源面（canDeploy / canAdminResources，写；canRead 恒真）：平台管理
+ *     员**一律 false**——服务端 403 硬拒，前端再全开就是「按钮可见、点了
+ *     必炸」（这正是 P0-3）；
+ *   - 身份面（canManageTeam / canInvite，建队/建项目/邀请/成员管理/PAT/
+ *     用户管理）：服务端**不禁**平台管理员（实测 founder 建队建项目发邀请
+ *     均成功）——保持按团队角色解析，不因平台身份缩权。
+ * fail-open 与双门的关系：fail-open 只在 Me 投影不可得时生效；Me 可得且
+ * is_platform_admin=true 时**必须先于 fail-open 关门**（平台管理员在 Me
+ * 投影里常以「全部团队」形态出现、teams 非空，但即便 teams 空——无团队
+ * 平台管理员——也不得落 OPEN_CAPABILITIES，服务端同样是硬拒）。
  */
 export function useTeamCapabilities(): TeamCapabilities {
   const { teams, projectOverrides, selectedTeamSlug, selectedProjectSlug } =
     useProjectContext();
+  const { data: meData } = useMeQuery();
+  const isPlatformAdmin = meData?.user?.is_platform_admin === true;
   const role = useMemo(() => {
     let membership: TeamMembership | null = null;
     if (selectedTeamSlug) {
@@ -264,18 +289,23 @@ export function useTeamCapabilities(): TeamCapabilities {
     }
     return membership.role ?? null;
   }, [teams, projectOverrides, selectedTeamSlug, selectedProjectSlug]);
+  // 双门第一判（先于 fail-open——见头注）：平台管理员资源面硬关、身份面
+  // 按角色。canRead 强制恒真（无角色时 capabilitiesForRole 会给 false，
+  // 但平台管理员对全部资源只读是服务端保证的）。
+  if (isPlatformAdmin) {
+    return {
+      ...capabilitiesForRole(role),
+      canRead: true,
+      canDeploy: false,
+      canAdminResources: false,
+    };
+  }
   if (teams.length === 0) return OPEN_CAPABILITIES;
   return capabilitiesForRole(role);
 }
 
 /** 平台管理员标志（Me 投影；透明度/平台管理面的导航与页面门）。 */
 export function useIsPlatformAdmin(): boolean {
-  const { data } = useQuery({
-    queryKey: ["auth", "me"],
-    queryFn: () => me(),
-    staleTime: 5 * 60 * 1000,
-    refetchOnWindowFocus: false,
-    retry: false,
-  });
+  const { data } = useMeQuery();
   return data?.user?.is_platform_admin === true;
 }

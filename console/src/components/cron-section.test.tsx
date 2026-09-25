@@ -7,6 +7,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { CronSection } from "@/components/cron-section";
+import { TeamProjectProvider } from "@/lib/context";
 import { setToken } from "@/api/client";
 
 const COMPOSE_WITH_CRON = JSON.stringify({
@@ -190,5 +191,52 @@ describe("CronSection (E5 Cron)", () => {
     expect(screen.queryByTestId("cron-runs-list")).not.toBeInTheDocument();
     expect(container).toBeEmptyDOMElement();
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/cron-runs"))).toBe(false);
+  });
+
+  it("平台管理员：手动触发链隐藏、原位只读说明；非平台管理员触发钮照常（P0-3 双门）", async () => {
+    setToken("flt_test");
+    const inner = stubCronFetch();
+    const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () =>
+            Promise.resolve({
+              user: { id: "01U1", email: "f@t.test", is_platform_admin: true },
+              teams: [
+                { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+              ],
+              project_overrides: [],
+            }),
+        });
+      }
+      return inner.fetchMock(input, init);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    render(
+      <QueryClientProvider client={client}>
+        <TeamProjectProvider>
+          <CronSection app="demo" />
+        </TeamProjectProvider>
+      </QueryClientProvider>,
+    );
+
+    // 触发钮 + confirm 链不再渲染；说明行原位渲染（CLI 等价命令如实指路）。
+    await waitFor(() => screen.getByTestId("cron-service-row"));
+    expect(screen.queryByRole("button", { name: "Run now" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cron-trigger-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("platform-readonly-note")).toHaveTextContent(
+      "fleetly cron trigger",
+    );
+    // 台账照常（读面不受扰）。
+    await waitFor(() =>
+      expect(screen.getByTestId("cron-runs-list")).toBeInTheDocument(),
+    );
   });
 });

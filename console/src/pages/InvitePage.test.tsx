@@ -1,5 +1,7 @@
 // 邀请链接页测试（/auth/invite?token=… 两分支）：
-// - 未登录：提示先登录/注册（注册窗口开放时出注册链接），不发起 accept；
+// - 未登录：提示先登录/注册；「Create an account」恒显（受邀注册不受注册
+//   窗管辖——登录页按 from 暂存的邀请 token 首屏进受邀注册表单），匿名分支
+//   不再探测注册窗；不发起 accept；
 // - 已登录：进入即自动 accept（一次性消费——仅一次 POST），成功展示入队
 //   结果；无效邀请的 409 信封如实展示（code/message/suggestion 全字段）；
 // - 缺 token 参数：缺票提示，不发起 accept。
@@ -75,7 +77,7 @@ describe("InvitePage anon branch", () => {
     expect(await screen.findByTestId("invite-anon")).toBeInTheDocument();
     // 未登录不发起一次性消费。
     expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/auth/invite:accept"))).toBe(false);
-    // 注册窗口开放 → 出注册入口；登录链接携带回跳（from 暂存在路由 state）。
+    // 注册链接恒显（不受注册窗管辖）；登录链接携带回跳（from 暂存在路由 state）。
     expect(screen.getByTestId("invite-signin")).toBeInTheDocument();
     expect(screen.getByTestId("invite-register")).toBeInTheDocument();
   });
@@ -91,17 +93,18 @@ describe("InvitePage anon branch", () => {
     expect(await screen.findByText("login-page")).toBeInTheDocument();
   });
 
-  it("hides the register hint when registration is closed", async () => {
-    vi.stubGlobal(
-      "fetch",
-      stubFetch({
-        me: () => jsonResponse(401, {}),
-        registration: () => jsonResponse(200, { open: false, has_users: true }),
-      }),
-    );
+  it("keeps the register hint when registration is closed and never probes the window", async () => {
+    const fetchMock = stubFetch({
+      me: () => jsonResponse(401, {}),
+      registration: () => jsonResponse(200, { open: false, has_users: true }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
     renderInvite("?token=invitetoken123");
     expect(await screen.findByTestId("invite-anon")).toBeInTheDocument();
-    expect(screen.queryByTestId("invite-register")).not.toBeInTheDocument();
+    // 受邀注册豁免注册窗（W3-S4 服务端契约）：关窗也恒显，且匿名分支不再
+    // 探测注册窗（此前 registrationOpen 门控=受邀死路的成因）。
+    expect(screen.getByTestId("invite-register")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/auth/registration"))).toBe(false);
   });
 });
 

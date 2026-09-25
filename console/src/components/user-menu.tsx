@@ -4,11 +4,12 @@
 // 经 api 层全局处置回登录页，本组件不重复处置。
 
 import { useQuery } from "@tanstack/react-query";
-import { KeyRound, LogOut, Users } from "lucide-react";
+import { GitBranch, KeyRound, LogOut, Users } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { me } from "@/api/endpoints";
+import { getToken } from "@/api/client";
 import { useAuth } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { queryClient } from "@/query";
@@ -18,6 +19,12 @@ export function UserMenu() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+
+  // Bearer 身份指示（P1-4，2026-09-25 审查 §3）：读到 API token 即按 token
+  // 凭据形态操作（Bearer 优先不回落，会话 cookie 不参与）——审计与排障都
+  // 需要知道这一点。只在面板打开的渲染时机求值（getToken 非响应式；开合
+  // 菜单即重渲染，足够诚实且零订阅成本）。
+  const viaApiToken = open && getToken() !== "";
 
   // Me 投影（登录后拉取）：staleTime 内不重复请求——启动探测已验证会话，
   // 这里取展示数据。
@@ -83,6 +90,16 @@ export function UserMenu() {
           data-testid="user-menu-panel"
           className="absolute right-0 top-full z-30 mt-2 w-64 rounded-md border bg-background p-2 shadow-md"
         >
+          {/* Bearer 身份指示条置顶（P1-4）：token 认证生效时明示凭据形态——
+              否则 403「scope insufficient」之类文案解释不了身份从何而来。 */}
+          {viaApiToken ? (
+            <div
+              data-testid="user-menu-token-note"
+              className="mb-1 rounded-md bg-amber-500/10 px-2 py-1.5 text-[11px] leading-snug text-amber-800 dark:text-amber-300"
+            >
+              Acting via API token — session cookie is not used.
+            </div>
+          ) : null}
           <div className="space-y-0.5 px-2 py-1.5">
             <div className="truncate text-sm font-medium" data-testid="user-menu-name">
               {user?.display_name || user?.email || "Signed in"}
@@ -136,6 +153,22 @@ export function UserMenu() {
             >
               <KeyRound aria-hidden className="h-4 w-4" />
               Personal access tokens
+            </Button>
+            {/* Git push keys 自服务页入口（P1-8：git push 通道可发现性——
+                与 PAT 页同族的用户凭据自服务面）。 */}
+            <Button
+              variant="ghost"
+              size="sm"
+              role="menuitem"
+              className="w-full justify-start"
+              data-testid="user-menu-git-keys"
+              onClick={() => {
+                setOpen(false);
+                navigate("/git-keys");
+              }}
+            >
+              <GitBranch aria-hidden className="h-4 w-4" />
+              Git push keys
             </Button>
             <Button
               variant="ghost"

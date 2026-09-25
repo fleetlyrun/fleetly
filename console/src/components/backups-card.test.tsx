@@ -1,9 +1,9 @@
 // 备份台账卡测试（E3-3 上传轨 + T2.22 台账）：每行 upload_status 锚点
 //（none/ok/failed + uploaded_at；failed 红色行带 upload_error 摘要）、
-// verify 结论渲染、空态。
+// verify 结论渲染、空态、Back up now 手动触发（backlog #4-②）。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { BackupsCard } from "@/components/backups-card";
@@ -111,5 +111,71 @@ describe("BackupsCard upload status (E3-3)", () => {
       expect(screen.getByText("No backups yet")).toBeInTheDocument(),
     );
     expect(screen.queryByTestId("backup-upload-status")).not.toBeInTheDocument();
+  });
+
+  it("Back up now posts a manual state backup and refetches the ledger (backlog #4-②)", async () => {
+    setToken("flt_test");
+    const log: { url: string; method: string; body?: unknown }[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        log.push({ url, method: init?.method ?? "GET", body: init?.body });
+        if (url.includes("/system/backups")) {
+          if (init?.method === "POST") {
+            // TriggerBackupResponse：响应即落账后的台账行（同步语义）。
+            return Promise.resolve({
+              ok: true,
+              status: 200,
+              statusText: "",
+              json: () =>
+                Promise.resolve({
+                  backup: {
+                    id: "b_manual",
+                    kind: "manual",
+                    verify_status: "verified",
+                    created_at: "2026-09-25T12:00:00Z",
+                  },
+                }),
+            });
+          }
+          return Promise.resolve({
+            ok: true,
+            status: 200,
+            statusText: "",
+            json: () => Promise.resolve({ backups: [] }),
+          });
+        }
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () => Promise.resolve({}),
+        });
+      }),
+    );
+
+    renderCard();
+
+    // 初始台账 GET 恰一次（15s 轮询间隔内测试不会触发第二次自然轮询）。
+    await waitFor(() => expect(screen.getByTestId("backup-trigger")).toBeInTheDocument());
+    const ledgerGets = () =>
+      log.filter((e) => e.method === "GET" && e.url.includes("/system/backups")).length;
+    expect(ledgerGets()).toBe(1);
+
+    fireEvent.click(screen.getByTestId("backup-trigger"));
+
+    await waitFor(() => {
+      const post = log.find(
+        (e) => e.method === "POST" && e.url.includes("/system/backups"),
+      );
+      expect(post).toBeTruthy();
+      expect(JSON.parse(String(post?.body))).toEqual({ kind: "manual" });
+    });
+    // 台账失效 → 立即重取（GET 第二次），新行不经 15s 轮询即可见。
+    await waitFor(() => expect(ledgerGets()).toBeGreaterThanOrEqual(2));
+    expect(screen.getByTestId("backup-trigger-hint").textContent).toContain(
+      "platform state backup",
+    );
   });
 });

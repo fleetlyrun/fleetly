@@ -36,6 +36,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/utils";
+import { useIsPlatformAdmin } from "@/lib/context";
 
 // cron run 状态 → 状态点色（对齐 state-badge.tsx 色板口径：succeeded 绿 /
 // failed·timeout 红 / started 进行中蓝 / skipped 非失败终态灰）。
@@ -66,8 +67,18 @@ function RunStatusCell({ run }: { run: CronRunView }) {
   );
 }
 
-/** 单个 cron 服务行：scheduled 标注 + expression/timezone/timeout + 触发。 */
-function CronServiceRow({ app, service }: { app: string; service: CronServiceView }) {
+/** 单个 cron 服务行：scheduled 标注 + expression/timezone/timeout + 触发。
+ * platformReadonly（P0-3 双门）= 平台管理员资源面只读——手动触发链隐藏；
+ * 本组件原本就无角色门（非平台管理员各角色见同一触发钮——零变化）。 */
+function CronServiceRow({
+  app,
+  service,
+  platformReadonly,
+}: {
+  app: string;
+  service: CronServiceView;
+  platformReadonly: boolean;
+}) {
   const queryClient = useQueryClient();
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<string>("");
@@ -115,43 +126,45 @@ function CronServiceRow({ app, service }: { app: string; service: CronServiceVie
               {result}
             </span>
           ) : null}
-          {confirming ? (
-            <>
-              <span className="text-xs text-muted-foreground">
-                Run {service.name} now?
-              </span>
-              <Button
-                type="button"
-                size="sm"
-                data-testid="cron-trigger-button"
-                disabled={triggerMutation.isPending}
-                onClick={() => triggerMutation.mutate()}
-              >
-                {triggerMutation.isPending ? "Triggering…" : "Confirm"}
-              </Button>
+          {!platformReadonly ? (
+            confirming ? (
+              <>
+                <span className="text-xs text-muted-foreground">
+                  Run {service.name} now?
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  data-testid="cron-trigger-button"
+                  disabled={triggerMutation.isPending}
+                  onClick={() => triggerMutation.mutate()}
+                >
+                  {triggerMutation.isPending ? "Triggering…" : "Confirm"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </Button>
+              </>
+            ) : (
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => setConfirming(false)}
+                onClick={() => {
+                  setResult("");
+                  setError(null);
+                  setConfirming(true);
+                }}
               >
-                Cancel
+                Run now
               </Button>
-            </>
-          ) : (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setResult("");
-                setError(null);
-                setConfirming(true);
-              }}
-            >
-              Run now
-            </Button>
-          )}
+            )
+          ) : null}
         </span>
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -176,6 +189,9 @@ function CronServiceRow({ app, service }: { app: string; service: CronServiceVie
 }
 
 export function CronSection({ app }: { app: string }) {
+  // 平台管理员资源面只读（P0-3 双门）：手动触发链隐藏、卡内原位说明
+  //（CLI 等价命令 fleetly cron trigger 齐备，文案如实指路）。
+  const platformReadonly = useIsPlatformAdmin();
   // cron 服务清单：从最近 active revision 的归一化快照现读（与调度器同源）。
   const revisionsQuery = useQuery({
     queryKey: ["revisions", app],
@@ -225,9 +241,18 @@ export function CronSection({ app }: { app: string }) {
         <CardTitle className="text-sm font-semibold">Scheduled jobs (cron)</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4 pt-4">
+        {platformReadonly ? (
+          // P0-3：平台管理员只读——说明行。
+          <p className="text-xs text-muted-foreground" data-testid="platform-readonly-note">
+            Platform administrators have read-only access to resources
+            (separation of duties). Trigger jobs from the CLI with a machine
+            token (<code>fleetly cron trigger</code>), or ask a team owner for
+            a member role.
+          </p>
+        ) : null}
         <div className="space-y-2">
           {cronServices.map((s) => (
-            <CronServiceRow key={s.name} app={app} service={s} />
+            <CronServiceRow key={s.name} app={app} service={s} platformReadonly={platformReadonly} />
           ))}
           <p className="text-xs text-muted-foreground">
             Cron services are one-shot jobs fired on schedule — they do not run

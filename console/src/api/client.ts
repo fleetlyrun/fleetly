@@ -2,11 +2,15 @@
 // 解析。所有 /v1 消费必须经此模块（无旁路调用）；流式（NDJSON）见
 // stream.ts——鉴权与 base 解析同源复用。
 //
-// - 凭据（v0.3 RBAC W1 双凭据形态）：localStorage 有 API token → Authorization
-//   Bearer（PAT/机具令牌路径，优先不回落）；无 token → 服务端会话 cookie
+// - 凭据（v0.3 RBAC W1 双凭据形态）：读到 API token → Authorization Bearer
+//   （PAT/机具令牌路径，优先不回落）；无 token → 服务端会话 cookie
 //   fleetly_session（Console 登录/注册下发，HttpOnly）。所有请求统一
 //   credentials:"include"（同源 /v1 直达；VITE_API_BASE 独立域名部署时
 //   携带 cookie 的唯一手段）。
+//   token 存储降权（P1-4，2026-09-25 审查 §3）：Console 的 token 登录面已
+//   移除（f1b98f7），再无生产写入方——写入只落 sessionStorage（标签页生命周期，
+//   共享机器/并行会话不再被残留 token 静默换身份）；读取 sessionStorage 优先
+//   + localStorage 兜底（仅服务 f1b98f7 前的存量迁移面）；401 处置/登出双清。
 // - base：生产态缺省相对路径 /v1（daemon 同源托管），VITE_API_BASE 覆盖
 //   （如独立域名部署）；开发态经 Vite dev proxy 同源转发；
 // - 401：统一触发 onUnauthorized（回登录页），调用方无需逐点处理；认证
@@ -27,6 +31,14 @@ export function setUnauthorizedListener(l: UnauthorizedListener | null) {
 }
 
 export function getToken(): string {
+  // sessionStorage 优先（P1-4 降权后的唯一写入面）；localStorage 只作存量
+  // 迁移兜底（f1b98f7 前持久化的残留 token，读到即用——下一次 401/登出双清）。
+  try {
+    const session = sessionStorage.getItem(TOKEN_KEY);
+    if (session) return session;
+  } catch {
+    // sessionStorage 不可用（隐私模式等）——继续尝试 localStorage。
+  }
   try {
     return localStorage.getItem(TOKEN_KEY) ?? "";
   } catch {
@@ -35,19 +47,32 @@ export function getToken(): string {
 }
 
 export function setToken(token: string) {
+  // 写入只落 sessionStorage（P1-4：标签页生命周期——共享机器/并行会话的
+  // 残留 token 不再跨会话存活，也不会静默劫持他人会话的身份）。
   try {
     if (token) {
-      localStorage.setItem(TOKEN_KEY, token);
+      sessionStorage.setItem(TOKEN_KEY, token);
     } else {
-      localStorage.removeItem(TOKEN_KEY);
+      sessionStorage.removeItem(TOKEN_KEY);
     }
   } catch {
-    // localStorage 不可用（隐私模式等）：token 仅存内存，登录态本轮有效。
+    // sessionStorage 不可用（隐私模式等）：token 无持久面，本轮内不生效。
   }
 }
 
 export function clearToken() {
-  setToken("");
+  // 双清（P1-4）：本代 sessionStorage + 存量迁移面 localStorage——401 处置、
+  // 登出、启动探测失效都经此，残留 token 不得在任何存储位存活。
+  try {
+    sessionStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // 忽略：同 setToken。
+  }
+  try {
+    localStorage.removeItem(TOKEN_KEY);
+  } catch {
+    // 忽略：localStorage 不可用时无残留可清。
+  }
 }
 
 /**

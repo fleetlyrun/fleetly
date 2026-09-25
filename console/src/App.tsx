@@ -1,6 +1,6 @@
 // 路由总装：认证门卫三态（启动 Me 探测 splash → 未登录〔登录页/邀请页/
-// 深链暂存〕→ 已登录应用面）+ 全局 401 监听（会话失效清本地态回登录页
-// 并提示）。
+// 深链暂存〕→ 已登录应用面）+ 全局 401 监听（会话失效清本地态回登录页；
+// 告警面收敛到登录页提交动作自身——P1-2 顺带，见 Gate 内注）。
 //
 // 路由级代码分割（2026-09-25 用户裁决「js 拆多文件缩短加载」）：登录/邀请
 // 与应用壳（Layout）保持 eager（首屏与登录后落地最小串行依赖），其余页面
@@ -10,7 +10,7 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { lazy, useEffect, useState } from "react";
+import { lazy, useEffect } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -26,6 +26,7 @@ import { HomePage } from "@/pages/HomePage";
 import { InvitePage } from "@/pages/InvitePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { TeamProjectProvider } from "@/lib/context";
+import { markSignedOut } from "@/lib/signed-out";
 import { queryClient } from "@/query";
 
 /** 路由页 lazy 装配（页面均命名导出——统一映射 default）。 */
@@ -36,6 +37,7 @@ const AppsPage = lazyPage(() => import("@/pages/AppsPage"), "AppsPage");
 const AppDetailLayout = lazyPage(() => import("@/pages/AppDetailLayout"), "AppDetailLayout");
 const AppOverviewPage = lazyPage(() => import("@/pages/AppOverviewPage"), "AppOverviewPage");
 const AppDeploymentsPage = lazyPage(() => import("@/pages/AppDeploymentsPage"), "AppDeploymentsPage");
+const AppBuildsPage = lazyPage(() => import("@/pages/AppBuildsPage"), "AppBuildsPage");
 const AppLogsPage = lazyPage(() => import("@/pages/AppLogsPage"), "AppLogsPage");
 const AppEnvPage = lazyPage(() => import("@/pages/AppEnvPage"), "AppEnvPage");
 const AppSecretsPage = lazyPage(() => import("@/pages/AppSecretsPage"), "AppSecretsPage");
@@ -44,6 +46,7 @@ const AppTerminalPage = lazyPage(() => import("@/pages/AppTerminalPage"), "AppTe
 const DatabasesPage = lazyPage(() => import("@/pages/DatabasesPage"), "DatabasesPage");
 const DatabaseDetailPage = lazyPage(() => import("@/pages/DatabaseDetailPage"), "DatabaseDetailPage");
 const EventsPage = lazyPage(() => import("@/pages/EventsPage"), "EventsPage");
+const GitKeysPage = lazyPage(() => import("@/pages/GitKeysPage"), "GitKeysPage");
 const PatPage = lazyPage(() => import("@/pages/PatPage"), "PatPage");
 const ProjectsPage = lazyPage(() => import("@/pages/ProjectsPage"), "ProjectsPage");
 const ProjectDetailPage = lazyPage(() => import("@/pages/ProjectDetailPage"), "ProjectDetailPage");
@@ -79,16 +82,10 @@ function AuthSplash() {
  * 登录/注册）；其余深链（/apps/...）经 Navigate 暂存 from（含查询串，
  * 邀请链接回跳依赖它）后落登录页，登录成功 navigate(from) 恢复。
  */
-function AnonRoutes({
-  authError,
-  onAuthErrorSeen,
-}: {
-  authError?: string;
-  onAuthErrorSeen?: () => void;
-}) {
+function AnonRoutes() {
   const location = useLocation();
   if (location.pathname === "/login") {
-    return <LoginPage authError={authError} onAuthErrorSeen={onAuthErrorSeen} />;
+    return <LoginPage />;
   }
   return (
     <Routes>
@@ -120,6 +117,7 @@ function AuthedRoutes() {
           <Route path="/apps/:name" element={<AppDetailLayout />}>
             <Route index element={<AppOverviewPage />} />
             <Route path="deployments" element={<AppDeploymentsPage />} />
+            <Route path="builds" element={<AppBuildsPage />} />
             <Route path="logs" element={<AppLogsPage />} />
             <Route path="env" element={<AppEnvPage />} />
             <Route path="secrets" element={<AppSecretsPage />} />
@@ -129,6 +127,7 @@ function AuthedRoutes() {
           <Route path="/databases" element={<DatabasesPage />} />
           <Route path="/databases/:name" element={<DatabaseDetailPage />} />
           <Route path="/pat" element={<PatPage />} />
+          <Route path="/git-keys" element={<GitKeysPage />} />
           <Route path="/system" element={<SystemPage />} />
           <Route path="/events" element={<EventsPage />} />
           <Route path="/teams" element={<TeamsPage />} />
@@ -147,17 +146,15 @@ function AuthedRoutes() {
 
 function Gate() {
   const { status, clearSession } = useAuth();
-  const [authError, setAuthError] = useState<string>("");
 
   useEffect(() => {
     // App 级 401 监听：任意资源请求被拒（会话/令牌失效或被吊销）→ 清本地
-    // 凭据回登录页（服务端 cookie 由失效响应自身清，不另发注销请求）。
-    setUnauthorizedListener((envelope) => {
-      setAuthError(
-        envelope.message
-          ? `Session invalid: ${envelope.message}`
-          : "Session invalid: credentials rejected (401)",
-      );
+    // 凭据回登录页（服务端 cookie 由失效响应自身清，不另发注销请求）。告警
+    // 面不在此设（P1-2 顺带收敛）：登录页错误态归提交动作自身——全局 401
+    // 只负责弹回 + 置一次性中性提示标志（登录页渲染「You have been signed
+    // out.」muted 条；主动登出走用户菜单的 logout 路径，不置位、无提示）。
+    setUnauthorizedListener(() => {
+      markSignedOut();
       clearSession();
     });
     return () => setUnauthorizedListener(null);
@@ -168,7 +165,7 @@ function Gate() {
       {status === "loading" ? (
         <AuthSplash />
       ) : status === "anon" ? (
-        <AnonRoutes authError={authError} onAuthErrorSeen={() => setAuthError("")} />
+        <AnonRoutes />
       ) : (
         <AuthedRoutes />
       )}

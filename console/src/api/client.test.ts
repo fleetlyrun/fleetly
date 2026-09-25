@@ -44,6 +44,64 @@ describe("api client", () => {
     );
   });
 
+  it("stores tokens in sessionStorage and prefers it over a legacy localStorage copy (P1-4)", async () => {
+    setToken("flt_session");
+    // 存量迁移面：localStorage 里残留一份 f1b98f7 前的旧 token。
+    localStorage.setItem("fleetly.console.token", "flt_legacy");
+    // 写入只落 sessionStorage（标签页生命周期），不动 localStorage 存量。
+    expect(sessionStorage.getItem("fleetly.console.token")).toBe("flt_session");
+    expect(localStorage.getItem("fleetly.console.token")).toBe("flt_legacy");
+
+    // 读取 sessionStorage 优先：Bearer 取新 token 而非残留旧 token。
+    expect(getToken()).toBe("flt_session");
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api("/apps");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer flt_session",
+    );
+  });
+
+  it("falls back to a legacy localStorage token when no session copy exists (migration)", async () => {
+    localStorage.setItem("fleetly.console.token", "flt_legacy");
+    expect(sessionStorage.getItem("fleetly.console.token")).toBeNull();
+    expect(getToken()).toBe("flt_legacy");
+
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await api("/apps");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer flt_legacy",
+    );
+  });
+
+  it("clears both sessionStorage and the legacy localStorage copy on 401 (P1-4)", async () => {
+    setToken("flt_session");
+    localStorage.setItem("fleetly.console.token", "flt_legacy");
+    const listener = vi.fn();
+    setUnauthorizedListener(listener);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        jsonResponse(401, { message: "invalid or revoked token" }),
+      ),
+    );
+
+    await expect(api("/apps")).rejects.toBeInstanceOf(ApiError);
+    // 双清：残留 token 不得在任何存储位存活。
+    expect(sessionStorage.getItem("fleetly.console.token")).toBeNull();
+    expect(localStorage.getItem("fleetly.console.token")).toBeNull();
+    expect(getToken()).toBe("");
+    expect(listener).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "invalid or revoked token" }),
+    );
+    setUnauthorizedListener(null);
+  });
+
   it("omits the Authorization header without a token", async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse(200, { ok: true }));
     vi.stubGlobal("fetch", fetchMock);

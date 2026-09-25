@@ -1,7 +1,7 @@
 // 告警设置卡测试（B 线 W5-S2，D-V3W5-1；SystemPage Alerts 页签）：
 // metrics off 时的禁用态提示（前置门可见面）、开启链路（PUT /alerting/mode）、
 // 规则清单渲染、创建流（POST /alerting/rules 的字段投影：for/severity/channels）、
-// Test 即时求值、删除。
+// Test 即时求值、删除、规则编辑（backlog #4-④：预填 + PUT 部分更新载荷）。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -77,6 +77,9 @@ function renderCard(metricsMode: "on" | "unset" = "on") {
         if (init?.method === "POST") return jsonResponse({ rule: RULES.rules[0] }, 200);
         if (init?.method === "DELETE") return jsonResponse({});
         return jsonResponse(RULES);
+      }
+      if (url.endsWith("/alerting/rules/01ALERT") && init?.method === "PUT") {
+        return jsonResponse({ rule: { ...RULES.rules[0], expr: "up == 0" } });
       }
       if (url.endsWith("/alerting/rules:test")) {
         return jsonResponse({
@@ -187,6 +190,44 @@ describe("AlertingSettingsCard", () => {
       const del = log.find((e) => e.method === "DELETE" && e.url.includes("/alerting/rules/"));
       expect(del).toBeTruthy();
       expect(del?.url).toContain("01ALERT");
+    });
+  });
+
+  it("edits a rule: form prefilled from the row, PUT carries the fields (backlog #4-④)", async () => {
+    const log = renderCard("on");
+    await screen.findByTestId("alerting-status-card");
+    await waitFor(() => expect(screen.getAllByTestId("alerting-rule-row").length).toBe(1));
+
+    fireEvent.click(screen.getByTestId("alert-rule-edit"));
+    await screen.findByTestId("alerting-rule-form");
+
+    // 预填：name/expr/for/severity/通道勾选全部来自规则行投影。
+    expect((screen.getByTestId("alert-rule-name") as HTMLInputElement).value).toBe("high-cpu");
+    expect(
+      (screen.getByTestId("alert-rule-expr") as HTMLTextAreaElement).value,
+    ).toBe("cpu_used > 90");
+    expect((screen.getByTestId("alert-rule-for") as HTMLInputElement).value).toBe("300");
+    expect((screen.getByTestId("alert-rule-severity") as HTMLInputElement).value).toBe("critical");
+    // 通道勾选预填（端点清单为异步查询——等勾选行渲染后断言勾选态）。
+    await waitFor(() => expect(screen.getByLabelText("ops-slack")).toBeChecked());
+
+    // 修改 expr 后保存 → PUT /alerting/rules/{id}（字段与创建载荷对齐）。
+    fireEvent.change(screen.getByTestId("alert-rule-expr"), {
+      target: { value: "up == 0" },
+    });
+    fireEvent.click(screen.getByTestId("alert-rule-submit"));
+    await waitFor(() => {
+      const put = log.find(
+        (e) => e.method === "PUT" && e.url.endsWith("/alerting/rules/01ALERT"),
+      );
+      expect(put).toBeTruthy();
+      expect(JSON.parse(String(put?.body))).toEqual({
+        name: "high-cpu",
+        expr: "up == 0",
+        for_duration_seconds: 300,
+        labels: { severity: "critical" },
+        channels: ["ep-1"],
+      });
     });
   });
 });

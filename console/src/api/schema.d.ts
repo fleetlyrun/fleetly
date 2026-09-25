@@ -675,6 +675,134 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{app}/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["BuildsService_ListBuilds"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["BuildsService_TriggerBuild"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/builds/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["BuildsService_GetBuild"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/drift": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DriftService_ShowDrift"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/drift/converge": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["DriftService_ConvergeDrift"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/drift/convergence": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put: operations["DriftService_SetDriftConverge"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/git/keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["GitKeysService_ListGitKeys"];
+        put?: never;
+        post: operations["GitKeysService_AddGitKey"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/git/keys/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete: operations["GitKeysService_RemoveGitKey"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{app}/revisions": {
         parameters: {
             query?: never;
@@ -2582,6 +2710,152 @@ export interface components {
             app?: string;
             /** 恒 "queued"（入队即返回）。 */
             status?: string;
+        };
+        /**
+         * BuildView 是构建行的只读投影（词表与 state 层一致：queued/building/
+         *     succeeded/failed；driver ∈ railpack/dockerfile/passthrough）。
+         */
+        v1BuildView: {
+            id?: string;
+            app?: string;
+            service?: string;
+            driver?: string;
+            status?: string;
+            /** 成功终态必非空（image_ref ↔ image_digest，D9 digest 引用）。 */
+            image_ref?: string;
+            image_digest?: string;
+            /** 产物归档路径（railpack plan JSON / 构建日志）。 */
+            plan_path?: string;
+            log_path?: string;
+            /** 失败终态的注册表错误码。 */
+            error_code?: string;
+            /** Format: date-time */
+            started_at?: string;
+            /** Format: date-time */
+            finished_at?: string;
+        };
+        v1GetBuildResponse: {
+            build?: components["schemas"]["v1BuildView"];
+        };
+        v1ListBuildsResponse: {
+            builds?: components["schemas"]["v1BuildView"][];
+        };
+        /** PassthroughService 是镜像模式服务的直通报告（无构建行）。 */
+        v1PassthroughService: {
+            service?: string;
+            image?: string;
+        };
+        v1TriggerBuildRequest: {
+            /**
+             * compose 文件内容字节（JSON/YAML 原文；应用名取自 compose name——请求
+             *     无 app 字段，单源无错位面（A1 注记；若后续加 app 字段须与 Deploy 同款
+             *     一致性校验）；服务端解析受控子集——compose 违约不动底座、不入队）。
+             * Format: byte
+             */
+            compose?: string;
+            /** 只构建该 compose 服务；空 = 全部 build 模式服务。 */
+            service?: string;
+            /**
+             * 构建上下文解析基准目录（context 相对路径的宿主基准；空 = 服务端临时
+             *     目录）。v0.1 单机同宿主语义，见 service 注释（H14：admin scope，且
+             *     context 解析后不得越出该基准目录）。
+             */
+            base_dir?: string;
+            /**
+             * 目标项目（v0.3 W2-S3 归属管道）：仅在该 app 尚不存在、构建自动建行时
+             *     消费——解析与缺省语义同 DeployRequest.project（D-W0-9；机具令牌必须
+             *     显式）。app 行已在时沿用行上归属，本字段忽略。
+             */
+            project?: string;
+        };
+        v1TriggerBuildResponse: {
+            /** 应用名（compose name；应用不存在时自动创建——与 deploy 同语义）。 */
+            app?: string;
+            /** 入队的构建行（status 恒 "queued"）。 */
+            builds?: components["schemas"]["v1BuildView"][];
+            /** compose 校验期非阻断标注（与 Deploy 同口径透传）。 */
+            warnings?: components["schemas"]["v1ComposeWarning"][];
+            /** 直通服务（仅 image 无 build——不建行不构建，附镜像引用）。 */
+            passthrough?: components["schemas"]["v1PassthroughService"][];
+        };
+        DriftServiceConvergeDriftBody: Record<string, never>;
+        DriftServiceSetDriftConvergeBody: {
+            enabled?: boolean;
+        };
+        v1ConvergeDriftResponse: {
+            app?: string;
+            /** 收敛基准部署（期望态快照来源；收敛入队为准入重放，状态经部署面跟踪）。 */
+            deployment_id?: string;
+            desired_hash?: string;
+        };
+        /**
+         * FieldDiffView 是单字段差异（值均为投影形态：env 只到键名 + key:hash，
+         *     值明文与长度都不出投影）。
+         */
+        v1FieldDiffView: {
+            field?: string;
+            expected?: string;
+            actual?: string;
+        };
+        /**
+         * ServiceDriftView 是单服务的漂移结果（missing = 期望服务不存在；extra =
+         *     期望集之外的多余受管服务）。
+         */
+        v1ServiceDriftView: {
+            service?: string;
+            drifted?: boolean;
+            missing?: boolean;
+            extra?: boolean;
+            diff?: components["schemas"]["v1FieldDiffView"][];
+        };
+        v1SetDriftConvergeResponse: {
+            app?: string;
+            enabled?: boolean;
+        };
+        v1ShowDriftResponse: {
+            app?: string;
+            /** 期望态来源部署（空 = 无成功部署记录，无从判定）。 */
+            desired_deployment?: string;
+            drifted?: boolean;
+            services?: components["schemas"]["v1ServiceDriftView"][];
+        };
+        v1AddGitKeyRequest: {
+            /** OpenSSH authorized_keys 单行形态（ssh-ed25519/ssh-rsa/ecdsa-sha2-*）。 */
+            public_key?: string;
+            /** 人读备注（如 "operator laptop"）。 */
+            note?: string;
+        };
+        v1AddGitKeyResponse: {
+            id?: string;
+            /** SHA256 指纹（"SHA256:<base64>"，ssh-keygen -lf 同格式）。 */
+            fingerprint?: string;
+            key_type?: string;
+            note?: string;
+            /** Format: date-time */
+            created_at?: string;
+        };
+        /**
+         * GitKeyView 是 git 公钥行的无敏感投影（公钥本体为公开材料可回读；平台
+         *     从不接触私钥）。
+         */
+        v1GitKeyView: {
+            id?: string;
+            fingerprint?: string;
+            key_type?: string;
+            note?: string;
+            /** Format: date-time */
+            created_at?: string;
+            /**
+             * 属主用户（W2 §2.3 用户化注记）：非空 = 登录用户自服务注册的 key；
+             *     空 = 存量无主键（迁移口径：只读展示归平台管理员/机具令牌全列）。
+             */
+            user_id?: string;
+        };
+        v1ListGitKeysResponse: {
+            keys?: components["schemas"]["v1GitKeyView"][];
+        };
+        v1RemoveGitKeyResponse: {
+            id?: string;
         };
         v1GetRevisionSpecResponse: {
             revision_id?: string;
@@ -5618,6 +5892,298 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1CancelDeploymentResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    BuildsService_ListBuilds: {
+        parameters: {
+            query?: {
+                /** @description 返回上限（缺省 20，天花板 100）。 */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListBuildsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    BuildsService_TriggerBuild: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1TriggerBuildRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TriggerBuildResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    BuildsService_GetBuild: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetBuildResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DriftService_ShowDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ShowDriftResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DriftService_ConvergeDrift: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DriftServiceConvergeDriftBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ConvergeDriftResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DriftService_SetDriftConverge: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DriftServiceSetDriftConvergeBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetDriftConvergeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    GitKeysService_ListGitKeys: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListGitKeysResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    GitKeysService_AddGitKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1AddGitKeyRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1AddGitKeyResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    GitKeysService_RemoveGitKey: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RemoveGitKeyResponse"];
                 };
             };
             /** @description An unexpected error response. */

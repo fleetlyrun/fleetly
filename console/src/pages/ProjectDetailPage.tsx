@@ -4,8 +4,11 @@
 //     UpdateProject = 团队 owner 硬门，前端按成员角色渲染编辑钮——个人队
 //     owner 天然可编辑；平台管理员非成员只读视角）；
 //   - Applications 卡：项目内应用清单（listApps ?project=team/prj 收窄，
-//     行链接 id 寻址进详情——同名应用安全）；
-//   - Databases 卡：listDatabases ?project= 收窄（同 id 寻址）；
+//     行链接 id 寻址进详情——同名应用安全）+ 创建 CTA（Deploy new
+//     application 对话框——Deploy upsert 语义随首署建应用，2026-09-25 审查
+//     P0-1「全站没有创建应用入口」收口）；
+//   - Databases 卡：listDatabases ?project= 收窄（同 id 寻址）+ 创建 CTA
+//     （抽出的 CreateDatabaseDialog，目标项目 = 本页项目限定形）；
 //   - 成员覆写管理在团队设置 Projects tab（单一管理面）——卡片底部链接。
 // 面包屑经 ["project", id] 详情缓存反解项目名。
 
@@ -15,6 +18,8 @@ import {
   Database,
   Loader2,
   Pencil,
+  Plus,
+  Rocket,
   Save,
 } from "lucide-react";
 import { useState, type FormEvent } from "react";
@@ -22,6 +27,9 @@ import { Link, useParams } from "react-router-dom";
 
 import { getProject, listApps, listDatabases, updateProject } from "@/api/endpoints";
 import { errorEnvelopeFrom, type ErrorEnvelope } from "@/api/errors";
+import { CreateAppDialog } from "@/components/create-app-dialog";
+import { CreateDatabaseDialog } from "@/components/create-database-dialog";
+import { EmptyState } from "@/components/empty-state";
 import { EnvelopeAlert } from "@/components/envelope-alert";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -37,17 +45,21 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useProjectContext } from "@/lib/context";
+import { roleAtLeast, useIsPlatformAdmin, useProjectContext } from "@/lib/context";
 import { formatTime, timeAgo } from "@/lib/utils";
 
 export function ProjectDetailPage() {
   const { projectId = "" } = useParams();
-  const { teams } = useProjectContext();
+  const { teams, projectOverrides } = useProjectContext();
+  const isPlatformAdmin = useIsPlatformAdmin();
   const queryClient = useQueryClient();
   const [error, setError] = useState<ErrorEnvelope | null>(null);
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  // 创建 CTA 的对话框开关（Applications / Databases 各一）。
+  const [createAppOpen, setCreateAppOpen] = useState(false);
+  const [createDbOpen, setCreateDbOpen] = useState(false);
 
   const projectQuery = useQuery({
     queryKey: ["project", projectId],
@@ -91,6 +103,16 @@ export function ProjectDetailPage() {
   const membership = teams.find((t) => t.team_id === project.team_id);
   const myRole = membership?.role ?? null;
   const canEdit = myRole === "owner";
+  // 资源创建门（前端体验门，§3.2 矩阵 + P0-3 双门）：按**本页项目**的归属
+  // 团队解析（顶栏选中上下文无关——项目详情页面向任意可见项目）。覆写行
+  // 优先（W3-S3 同判定式：team_id + prj_slug 命中即用覆写角色）。平台管理
+  // 员资源面恒只读（服务端 ownership.go 硬拒）——CTA 不渲染，改落说明卡。
+  const override = projectOverrides.find(
+    (o) => o.team_id === project.team_id && o.prj_slug === project.slug,
+  );
+  const resourceRole = override?.role ?? myRole;
+  const canDeploy = !isPlatformAdmin && roleAtLeast(resourceRole, "developer");
+  const canAdminResources = !isPlatformAdmin && roleAtLeast(resourceRole, "admin");
   const qualified = `${project.team_slug}/${project.slug}`;
 
   return (
@@ -104,14 +126,17 @@ export function ProjectDetailPage() {
               <>
                 {" · "}
                 <Link
-                  to={`/teams/${encodeURIComponent(membership.team_id ?? "")}`}
+                  to={`/teams/${encodeURIComponent(membership.team_id ?? "")}?tab=members`}
                   className="hover:underline"
                 >
                   team settings
                 </Link>
                 {" · "}
+                {/* 角色覆写管理面在团队设置的 Projects tab（单一管理面）——
+                    落点带 tab（2026-09-25 审查 P2-2：两个链接此前同指一个
+                    URL，覆写入口永远落在 Members tab）。 */}
                 <Link
-                  to={`/teams/${encodeURIComponent(membership.team_id ?? "")}`}
+                  to={`/teams/${encodeURIComponent(membership.team_id ?? "")}?tab=projects`}
                   className="hover:underline"
                 >
                   members &amp; role overrides
@@ -215,14 +240,66 @@ export function ProjectDetailPage() {
         </CardContent>
       </Card>
 
-      <ProjectApps teamSlug={project.team_slug ?? ""} slug={project.slug ?? ""} />
-      <ProjectDatabases teamSlug={project.team_slug ?? ""} slug={project.slug ?? ""} />
+      {/* P0-3 平台管理员说明态：资源创建 CTA 因双门（资源面恒只读）隐藏
+          时，以说明卡明示原因与可行动路径，不做静默消失。 */}
+      {isPlatformAdmin ? (
+        <Card className="border-dashed">
+          <CardContent
+            className="p-4 text-sm text-muted-foreground"
+            data-testid="platform-readonly-note"
+          >
+            Platform administrators have read-only access to resources
+            (separation of duties). Deploy applications and create databases
+            from the CLI with a machine token, or ask a team owner for a member
+            role.
+          </CardContent>
+        </Card>
+      ) : null}
+
+      <ProjectApps
+        teamSlug={project.team_slug ?? ""}
+        slug={project.slug ?? ""}
+        canDeploy={canDeploy}
+        onCreate={() => setCreateAppOpen(true)}
+      />
+      <ProjectDatabases
+        teamSlug={project.team_slug ?? ""}
+        slug={project.slug ?? ""}
+        canAdminResources={canAdminResources}
+        onCreate={() => setCreateDbOpen(true)}
+      />
+
+      {canDeploy ? (
+        <CreateAppDialog
+          open={createAppOpen}
+          onOpenChange={setCreateAppOpen}
+          projectRef={qualified}
+        />
+      ) : null}
+      {canAdminResources ? (
+        <CreateDatabaseDialog
+          open={createDbOpen}
+          onOpenChange={setCreateDbOpen}
+          projectRef={qualified}
+        />
+      ) : null}
     </div>
   );
 }
 
-/** 项目内应用清单（服务端 ?project= 收窄；行 id 寻址进详情）。 */
-function ProjectApps({ teamSlug, slug }: { teamSlug: string; slug: string }) {
+/** 项目内应用清单（服务端 ?project= 收窄；行 id 寻址进详情）。创建 CTA：
+ *  developer+（Deploy new application 对话框——deploy upsert 随首署建行）。 */
+function ProjectApps({
+  teamSlug,
+  slug,
+  canDeploy,
+  onCreate,
+}: {
+  teamSlug: string;
+  slug: string;
+  canDeploy: boolean;
+  onCreate: () => void;
+}) {
   const query = useQuery({
     queryKey: ["apps", `${teamSlug}/${slug}`],
     queryFn: () => listApps({ project: `${teamSlug}/${slug}` }),
@@ -231,16 +308,40 @@ function ProjectApps({ teamSlug, slug }: { teamSlug: string; slug: string }) {
 
   return (
     <Card data-testid="project-apps-card">
-      <CardHeader className="border-b pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-          <Boxes aria-hidden className="h-4 w-4 text-muted-foreground" />
-          Applications
-        </CardTitle>
-        <CardDescription className="mt-1">Apps deployed in this project.</CardDescription>
+      <CardHeader className="flex-row items-start justify-between space-y-0 border-b pb-3">
+        <div className="space-y-1">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Boxes aria-hidden className="h-4 w-4 text-muted-foreground" />
+            Applications
+          </CardTitle>
+          <CardDescription className="mt-1">Apps deployed in this project.</CardDescription>
+        </div>
+        {canDeploy ? (
+          <Button size="sm" data-testid="project-app-create-button" onClick={onCreate}>
+            <Rocket aria-hidden className="h-3.5 w-3.5" />
+            Deploy application
+          </Button>
+        ) : null}
       </CardHeader>
       <CardContent className="p-0">
         {apps.length === 0 ? (
-          <p className="p-5 text-sm text-muted-foreground">No applications in this project yet.</p>
+          <EmptyState
+            icon={Boxes}
+            title="No applications in this project yet."
+            hint="Deploy a compose file to create the first app in this project — the app is created together with its first deployment."
+          >
+            {canDeploy ? (
+              <Button
+                size="sm"
+                className="mt-2"
+                data-testid="project-app-empty-cta"
+                onClick={onCreate}
+              >
+                <Rocket aria-hidden className="h-3.5 w-3.5" />
+                Deploy your first application
+              </Button>
+            ) : null}
+          </EmptyState>
         ) : (
           <Table>
             <TableHeader>
@@ -275,8 +376,19 @@ function ProjectApps({ teamSlug, slug }: { teamSlug: string; slug: string }) {
   );
 }
 
-/** 项目内数据库清单（服务端 ?project= 收窄；行 id 寻址——同名库安全）。 */
-function ProjectDatabases({ teamSlug, slug }: { teamSlug: string; slug: string }) {
+/** 项目内数据库清单（服务端 ?project= 收窄；行 id 寻址——同名库安全）。
+ *  创建 CTA：admin+（复用抽出的 CreateDatabaseDialog，目标 = 本页项目）。 */
+function ProjectDatabases({
+  teamSlug,
+  slug,
+  canAdminResources,
+  onCreate,
+}: {
+  teamSlug: string;
+  slug: string;
+  canAdminResources: boolean;
+  onCreate: () => void;
+}) {
   const query = useQuery({
     queryKey: ["databases", `${teamSlug}/${slug}`],
     queryFn: () => listDatabases({ project: `${teamSlug}/${slug}` }),
@@ -285,16 +397,40 @@ function ProjectDatabases({ teamSlug, slug }: { teamSlug: string; slug: string }
 
   return (
     <Card data-testid="project-databases-card">
-      <CardHeader className="border-b pb-3">
-        <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-          <Database aria-hidden className="h-4 w-4 text-muted-foreground" />
-          Databases
-        </CardTitle>
-        <CardDescription className="mt-1">Managed databases in this project.</CardDescription>
+      <CardHeader className="flex-row items-start justify-between space-y-0 border-b pb-3">
+        <div className="space-y-1">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Database aria-hidden className="h-4 w-4 text-muted-foreground" />
+            Databases
+          </CardTitle>
+          <CardDescription className="mt-1">Managed databases in this project.</CardDescription>
+        </div>
+        {canAdminResources ? (
+          <Button size="sm" data-testid="project-db-create-button" onClick={onCreate}>
+            <Plus aria-hidden className="h-3.5 w-3.5" />
+            Create database
+          </Button>
+        ) : null}
       </CardHeader>
       <CardContent className="p-0">
         {dbs.length === 0 ? (
-          <p className="p-5 text-sm text-muted-foreground">No databases in this project yet.</p>
+          <EmptyState
+            icon={Database}
+            title="No databases in this project yet."
+            hint="Create a managed instance in this project — referencing apps consume it via the FLEETLY_DB_* variables."
+          >
+            {canAdminResources ? (
+              <Button
+                size="sm"
+                className="mt-2"
+                data-testid="project-db-empty-cta"
+                onClick={onCreate}
+              >
+                <Plus aria-hidden className="h-3.5 w-3.5" />
+                Create a database
+              </Button>
+            ) : null}
+          </EmptyState>
         ) : (
           <Table>
             <TableHeader>

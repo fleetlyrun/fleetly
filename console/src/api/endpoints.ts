@@ -12,6 +12,7 @@ import type {
   CreateTokenResponse,
   CreateWebhookEndpointResponse,
   CreateUserResponse,
+  ConvergeDriftResponse,
   DeleteDatabaseResponse,
   DeleteWebhookEndpointResponse,
   DeployResponse,
@@ -21,6 +22,7 @@ import type {
   GetAlertsStatusResponse,
   GetAppResponse,
   GetAuditRetentionResponse,
+  GetBuildResponse,
   GetDatabaseResponse,
   GetEnvResponse,
   GetAcmeSettingsResponse,
@@ -37,6 +39,13 @@ import type {
   GetTerminalStatusResponse,
   GetWebhookEndpointResponse,
   GrantPlatformAdminResponse,
+  AddGitKeyResponse,
+  ListGitKeysResponse,
+  RemoveGitKeyResponse,
+  SetAppSourceRequest,
+  SetAppSourceResponse,
+  SetAppWebhookSecretResponse,
+  ShowAppWebhookResponse,
   ListAppDomainsResponse,
   ListAlertRulesResponse,
   AlertRuleView,
@@ -48,6 +57,7 @@ import type {
   AlertsMode,
   ListAuditResponse,
   ListBackupsResponse,
+  ListBuildsResponse,
   ListCronRunsResponse,
   ListDatabaseBackupsResponse,
   ListDeploymentsResponse,
@@ -92,6 +102,7 @@ import type {
   SearchLogsResponse,
   SearchMetricsResponse,
   SearchSource,
+  SetDriftConvergeResponse,
   SetEnvResponse,
   SetMetricsModeResponse,
   SetScalingPolicyResponse,
@@ -100,6 +111,7 @@ import type {
   SetRegistrationResponse,
   SetSecretResponse,
   SetTeamMemberRoleResponse,
+  ShowDriftResponse,
   SuspendDatabaseResponse,
   TeamView,
   TestWebhookResponse,
@@ -134,6 +146,13 @@ export function register(input: {
   email: string;
   password: string;
   display_name?: string;
+  /**
+   * 可选一次性邀请 token（W3-S4 受邀注册通道，P1-1 前端接线）：服务端
+   * 同事务现查 team_invites 豁免注册窗并在注册落位后消费（受邀角色入队
+   * ——internal/state/register.go RegisterWrite.InviteToken 语义）；无效
+   * token → 409 E_INVITE_INVALID。
+   */
+  invite_token?: string;
 }) {
   return api<RegisterResponse>("/auth/register", {
     method: "POST",
@@ -488,11 +507,20 @@ export function getDeployment(id: string) {
   );
 }
 
-/** Deploy：compose 内容字节按 proto bytes 契约 base64 上行。 */
-export function deploy(app: string, composeText: string) {
+/**
+ * Deploy：compose 内容字节按 proto bytes 契约 base64 上行。opts.project
+ * 透传 DeployRequest.project（裸名或 team/prj 限定形，proto deployments.proto
+ * body: "*" 面字段——REST 无 query 形态）：新应用首次部署的归属声明（服务
+ * 端 ensureApp 随首署建行）；缺省 = 服务端缺省（调用者个人队 default 项目）。
+ * 既有消费方（应用详情页 DeployCard 部署既有应用）不传即载荷形态不变。
+ */
+export function deploy(app: string, composeText: string, opts: { project?: string } = {}) {
   return api<DeployResponse>(`/apps/${encodeURIComponent(app)}/deployments`, {
     method: "POST",
-    rawBody: { compose: utf8ToBase64(composeText) },
+    rawBody: {
+      compose: utf8ToBase64(composeText),
+      ...(opts.project ? { project: opts.project } : {}),
+    },
   });
 }
 
@@ -511,6 +539,124 @@ export function rollbackDeployment(app: string, targetRevisionId?: string) {
       json: targetRevisionId ? { target_revision_id: targetRevisionId } : {},
     },
   );
+}
+
+// ── builds（构建台账面，T2.18；proto fleetly/server/v1/builds.proto）──────
+// 服务端角色门（internal/api/scope.go 登记）：GetBuild / ListBuilds = read
+//（所有角色可读——本组只封装读面）。TriggerBuild（POST /v1/builds）=
+// admin scope 且载荷是 compose 内容字节、app 可自动建行——语义是 CLI
+// `fleetly build <compose>` 的构建入口，不是「对既有应用的手动重建」，
+// Console 不封装、Builds 页只读。
+
+/** 构建台账（ListBuilds：路径参数即 app 过滤；created_at 倒序；天花板 100）。 */
+export function listBuilds(app: string, limit = 20) {
+  return api<ListBuildsResponse>(
+    `/apps/${encodeURIComponent(app)}/builds?limit=${limit}`,
+  );
+}
+
+/** 单条构建（行展开期间的状态刷新源；CLI build 等待轮询同面）。 */
+export function getBuild(id: string) {
+  return api<GetBuildResponse>(`/builds/${encodeURIComponent(id)}`);
+}
+
+// ── drift（运行域漂移面，T2.18；proto fleetly/server/v1/drift.proto）──────
+// 服务端角色门（internal/api/scope.go 登记）：ShowDrift = read（所有角色
+// 可读）；ConvergeDrift / SetDriftConverge = deploy（developer+，资源面写
+// ——Console 侧体验门再按卡内设计收口）。收敛入队为准入重放，状态经部署
+// 面跟踪（ConvergeDriftResponse.deployment_id 是收敛基准部署，非新在途行
+// ——drift.proto 注释原文）；opt-in 位（apps.drift_converge）无读取面
+// （ShowDrift/AppView 均不带）——Console 开关只做显式置位、回显响应。
+
+/** 即时漂移判定（不写事件不收敛——与 CLI `fleetly drift show` 同源）。 */
+export function showDrift(app: string) {
+  return api<ShowDriftResponse>(`/apps/${encodeURIComponent(app)}/drift`);
+}
+
+/**
+ * 人工一次性收敛（带审计，不经 opt-in 位；在途部署存在时 409
+ * E_STATE_VERSION_CONFLICT）。proto 载荷只有 app（路径参数，body:"*" 下
+ * 空 JSON 对象即全量请求）——CLI --confirm-destructive 是 deploy 动词的
+ * flag，收敛契约无确认参数，本端点不携带。
+ */
+export function convergeDrift(app: string) {
+  return api<ConvergeDriftResponse>(
+    `/apps/${encodeURIComponent(app)}/drift/converge`,
+    { method: "POST", json: {} },
+  );
+}
+
+/** 收敛 opt-in 置位/重置（回滚失败强制关闭后的恢复路径；带审计）。 */
+export function setDriftConvergence(app: string, enabled: boolean) {
+  return api<SetDriftConvergeResponse>(
+    `/apps/${encodeURIComponent(app)}/drift/convergence`,
+    { method: "PUT", json: { enabled } },
+  );
+}
+
+// ── git keys（T2.19 git push(SSH) 认证面；proto fleetly/server/v1/gitkeys.proto）──
+// scope 登记 read（最小形状约束），真授权在 handler 内（internal/api/gitkeys.go
+// 用户化语义，rbac-teams §2.3）：Add = 登录用户自服务（公钥归属用户——机具
+// 令牌恒 403）；List = 自己的（平台管理员/机具令牌 = 全列含存量无主键的只读
+// 展示）；Remove = 自己的或平台管理员。Console 凭据（会话 cookie/用户 PAT）
+// 均为用户 principal——本组端点按自服务面消费，格式校验在服务端
+//（authorized_keys 单行解析；重复指纹 409）。
+
+/** 在册公钥列表（无敏感投影：指纹/类型/备注/属主注记——公钥为公开材料）。 */
+export function listGitKeys() {
+  return api<ListGitKeysResponse>("/git/keys");
+}
+
+/** 注册公钥：authorized_keys 单行 + 人读备注（缺省取 key comment）。 */
+export function addGitKey(input: { public_key: string; note?: string }) {
+  return api<AddGitKeyResponse>("/git/keys", { method: "POST", json: input });
+}
+
+/** 删除公钥（不存在 404 信封；删除即时生效——在推连接不受影响，新握手即拒）。 */
+export function removeGitKey(id: string) {
+  return api<RemoveGitKeyResponse>(`/git/keys/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
+// ── apps webhook/git 触发面（T2.19；proto apps.proto）────────────────────
+// scope.go 登记：ShowAppWebhook / SetAppWebhookSecret / SetAppSource 三 RPC
+// 均 admin scope（secret 与认证材料写面 = admin——验签是 webhook 端点的唯一
+// 认证；读面亦 admin——source URL 与分支拓扑属运维面）。用户 principal 另受
+// 项目角色门（requireAppAccess → admin+），Console 侧 Deploy triggers 卡按
+// canAdminResources 同口径收口读面（viewer/developer 见说明态）。
+
+/** 回读 webhook/git 触发配置（无敏感投影：secret 只回 configured 位）。 */
+export function showAppWebhook(app: string) {
+  return api<ShowAppWebhookResponse>(
+    `/apps/${encodeURIComponent(app)}/webhook`,
+  );
+}
+
+/**
+ * 设置 webhook 签名密钥（≥16 字符，服务端弱密钥显式拒绝；envelope 加密落
+ * 库、永不回读）。轮换即时生效：验签按库存值单点判定，旧密钥签名的投递
+ * 立即失败。proto min_len=16——REST 面无「清除」路径（空值 400）。
+ */
+export function setAppWebhookSecret(app: string, secret: string) {
+  return api<SetAppWebhookSecretResponse>(
+    `/apps/${encodeURIComponent(app)}/webhook-secret`,
+    { method: "PUT", json: { secret } },
+  );
+}
+
+/**
+ * 设置 webhook 拉源（整体替换语义——认证材料加密落库无法「留旧」，每次
+ * 调用写全量字段）。source_auth_kind ∈ none|https_token|ssh_key；kind 非
+ * none 时 source_auth_secret 必带（≥16 字符，https_token 强制 https:// 源
+ * ——服务端用例层交叉校验）。source_url 空 + kind none = 清除拉源配置
+ *（internal/state AppSourceWrite.URL 空 = 清除，auth 字段一并清空）。
+ */
+export function setAppSource(app: string, input: SetAppSourceRequest) {
+  return api<SetAppSourceResponse>(`/apps/${encodeURIComponent(app)}/source`, {
+    method: "PUT",
+    json: input,
+  });
 }
 
 // ── revisions ───────────────────────────────────────────────────────────

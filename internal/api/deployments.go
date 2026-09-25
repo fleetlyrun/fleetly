@@ -118,11 +118,28 @@ func (s *DeploymentsService) Deploy(ctx context.Context, req *serverv1.DeployReq
 	// 错位 + 误建 app）；拒绝发生在 ensureApp 之前——不误建 app、不入队。
 	// 复用 compose 族拒绝码 E_COMPOSE_UNSUPPORTED（errcode 零新增，与
 	// H14 同裁决）。
-	if req.GetApp() != "" && spec.Name != req.GetApp() {
+	//
+	// id 寻址（5e593d9 起 Console 详情导航以平台 id 寻址）：请求 app 能解
+	// 析到既有应用（26 字符 ULID 按 id 短路 / team/prj/app 限定形 / 解析域
+	// 内唯一裸名）时，与**解析后的业务名**比对——裸 ULID 与 compose name
+	// 必然错位，原样比对会使 Console 部署既有应用恒拒。解析不到既有应用
+	// 时保持原语义：原始参数与 spec.Name 严格一致（NotFound = 首次部署的
+	// 创建场景，防 app 参数声明 X 却静默建出 Y；裸名歧义等其余解析失败一
+	// 并按创建语义兜底——目标归属由下方 ensureApp 的项目内精确查询裁决，
+	// 歧义面不在此提前收紧，CLI 按名部署行为不变）。mismatch 报错的
+	// 「requested target app」展示解析后的业务名（无业务名可解时回落原始
+	// 参数），不再裸显平台 id。
+	targetApp := req.GetApp()
+	if targetApp != "" {
+		if app, resolveErr := resolveApp(ctx, s.st, targetApp); resolveErr == nil {
+			targetApp = app.Name
+		}
+	}
+	if req.GetApp() != "" && spec.Name != targetApp {
 		return nil, apperr.New("E_COMPOSE_UNSUPPORTED",
 			"compose application name %q does not match the requested target app %q (the compose application name and the requested app must match)",
-			spec.Name, req.GetApp()).
-			WithContext("expected", req.GetApp()).
+			spec.Name, targetApp).
+			WithContext("expected", targetApp).
 			WithContext("actual", spec.Name)
 	}
 

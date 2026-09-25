@@ -5,16 +5,17 @@
 //   触发不得二次 POST）。
 // - 未登录：提示先登录/注册——「登录后 accept」由登录页的 from 暂存回跳
 //   本页实现（登录成功 navigate(from) → 本页 authed 分支自动 accept）。
-//   注册后自动 accept 的联动 UX 随 W2 邀请产生面收口，本票只受理端点。
+//   受邀注册不受注册窗管辖（P1-1 服务端契约：携带 invite_token 的注册豁免
+//   窗口判定）——「Create an account」恒显（2026-09-25 审查顺手项，此前被
+//   registrationOpen 门控：关窗时受邀新用户在 Console 无路可走）。
 // 注意：邀请的产生面（TeamsService.CreateInvite）是 W2——W1 期间无合法
 // token 可签发，本页对任意 token 的 409 均如实报错（本票验收口径）。
 
-import { useQuery } from "@tanstack/react-query";
 import { CheckCircle2, Loader2, UserPlus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useSearchParams } from "react-router-dom";
 
-import { acceptInvite, getRegistrationState } from "@/api/endpoints";
+import { acceptInvite } from "@/api/endpoints";
 import type { AcceptInviteResponse } from "@/api/types";
 import { errorEnvelopeFrom, type ErrorEnvelope } from "@/api/errors";
 import { useAuth } from "@/auth";
@@ -35,19 +36,6 @@ export function InvitePage() {
   const [failure, setFailure] = useState<ErrorEnvelope | null>(null);
   // 一次性消费防重：accept 每次挂载至多触发一次。
   const attempted = useRef(false);
-
-  // 未登录分支的注册入口提示（同登录页口径：查询失败按关闭处理）。
-  const registrationQuery = useQuery({
-    queryKey: ["auth", "registration"],
-    queryFn: getRegistrationState,
-    staleTime: 60_000,
-    refetchOnWindowFocus: false,
-    enabled: !authed,
-  });
-  const registrationOpen = registrationQuery.data
-    ? registrationQuery.data.open === true ||
-      registrationQuery.data.has_users === false
-    : false;
 
   useEffect(() => {
     if (!authed || !token || attempted.current) return;
@@ -100,20 +88,20 @@ export function InvitePage() {
               Sign in to accept
             </Link>
           </Button>
-          {registrationOpen ? (
-            <p className="text-center text-xs text-muted-foreground">
-              New here?{" "}
-              <Link
-                to="/login"
-                state={{ from: inviteUrl }}
-                data-testid="invite-register"
-                className="font-medium underline underline-offset-2"
-              >
-                Create an account
-              </Link>{" "}
-              from the sign-in page.
-            </p>
-          ) : null}
+          {/* 受邀注册恒显（顺手项）：不查注册窗、不受其管辖——登录页感知
+              from 里的邀请 token 后首屏即受邀注册表单（P1-1 机制）。 */}
+          <p className="text-center text-xs text-muted-foreground">
+            New here?{" "}
+            <Link
+              to="/login"
+              state={{ from: inviteUrl }}
+              data-testid="invite-register"
+              className="font-medium underline underline-offset-2"
+            >
+              Create an account
+            </Link>{" "}
+            from the sign-in page.
+          </p>
         </div>
       ) : phase === "ok" && result ? (
         <div className="space-y-4" data-testid="invite-ok">

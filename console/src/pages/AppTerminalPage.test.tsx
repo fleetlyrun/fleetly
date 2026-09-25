@@ -60,7 +60,7 @@ vi.mock("@/api/terminal-ws", async () => {
   };
 });
 
-function stubFetch() {
+function stubFetch(opts: { hangStatus?: boolean } = {}) {
   return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     const method = init?.method ?? "GET";
@@ -81,6 +81,8 @@ function stubFetch() {
       });
     }
     if (url.includes("/terminal/status")) {
+      // 挂起态（查询在途——芯片加载占位的驱动条件）。
+      if (opts.hangStatus) return new Promise(() => undefined);
       return Promise.resolve({
         ok: true,
         status: 200,
@@ -230,5 +232,16 @@ describe("AppTerminalPage", () => {
       ),
     );
     expect(connectCalls).toHaveLength(0);
+  });
+
+  it("shows a loading placeholder in the platform chip while the status query is in flight", async () => {
+    // 状态查询挂起：右上角芯片渲染加载占位「—」，不再渲染字面 "status…"
+    //（2026-09-25 审查 P2-10）。
+    vi.stubGlobal("fetch", stubFetch({ hangStatus: true }));
+    renderPage();
+
+    const chip = await screen.findByTestId("terminal-platform-state");
+    await waitFor(() => expect(chip.textContent).toBe("—"));
+    expect(chip.textContent).not.toContain("status");
   });
 });

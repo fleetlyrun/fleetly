@@ -22,7 +22,7 @@ import { EnvelopeAlert } from "@/components/envelope-alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { extractServiceNames } from "@/lib/compose-cron";
-import { useTeamCapabilities } from "@/lib/context";
+import { useTeamCapabilities, useIsPlatformAdmin } from "@/lib/context";
 import { AppTerminalView } from "@/terminal/app-terminal-view";
 
 /** 会话面状态（状态行的有限词表——idle/opening/active/closed）。 */
@@ -35,7 +35,10 @@ const HARD_LIMIT_SECONDS = 30 * 60;
 export function AppTerminalPage() {
   const { name = "" } = useParams();
   // 角色门（前端体验门，§3.2）：Web 终端 = developer+（viewer 不给接入口）。
+  // 平台管理员资源面恒只读（P0-3 双门）——接入口消失时在禁用说明里如实
+  // 说明原因（不与「角色不够」混用一条文案）。
   const { canDeploy } = useTeamCapabilities();
+  const isPlatformAdmin = useIsPlatformAdmin();
 
   // 平台状态（10s 轮询——连接表/会话表是活数据）。
   const status = useQuery({
@@ -145,7 +148,9 @@ export function AppTerminalPage() {
               ? "disabled (terminal.enabled=false)"
               : status.data
                 ? `relay ${status.data.relay_deployed ? "deployed" : "converging"} · ${status.data.nodes_connected ?? 0} node(s) connected · ${status.data.active_sessions ?? 0} session(s)`
-                : "status…"}
+                // 状态未到（查询在途）的加载态占位——不渲染字面 "status…"
+                //（2026-09-25 审查 P2-10）。
+                : "—"}
           </span>
         </CardHeader>
         <CardContent className="space-y-3 pt-4">
@@ -154,7 +159,9 @@ export function AppTerminalPage() {
             <p className="text-sm text-muted-foreground" data-testid="terminal-disabled-note">
               {!enabled
                 ? "The web terminal is disabled in the control plane config (terminal.enabled). Enable it and restart fleetlyd — the exec relay duty converges the fleetly-exec service on every node automatically."
-                : "The web terminal requires the developer role or higher in this app's project — your account is read-only here."}
+                : isPlatformAdmin
+                  ? "Platform administrators have read-only access to resources (separation of duties), so the web terminal is not available. Ask a team owner for a member role (developer or higher)."
+                  : "The web terminal requires the developer role or higher in this app's project — your account is read-only here."}
             </p>
           ) : (
             <>

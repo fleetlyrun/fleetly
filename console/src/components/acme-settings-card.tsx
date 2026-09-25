@@ -173,13 +173,19 @@ export function AcmeSettingsCard() {
   const isNone = form.provider === "none";
   const providerConfigured = form.provider === "dnspod" || form.provider === "cloudflare";
 
+  // saved 时间戳仅在非零值时渲染（proto 零值 Timestamp 序列化为 epoch
+  // 字符串仍为真值——未保存过设置时会显示 "saved 1970/…"，2026-09-25
+  // 审查 P2-3）：epoch 0 或不可解析一律视作未保存。
+  const savedAtIso = stored?.updated_at ?? "";
+  const savedAt = savedAtIso && new Date(savedAtIso).getTime() > 0 ? savedAtIso : "";
+
   return (
     <Card data-testid="acme-settings-card">
       <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
         <Globe aria-hidden className="h-4 w-4 text-muted-foreground" />
         <CardTitle className="text-sm font-semibold">Certificates (ACME)</CardTitle>
         <CardDescription className="ml-auto text-xs">
-          Wildcard certificates via DNS-01{stored?.updated_at ? ` · saved ${formatTime(stored.updated_at)}` : ""}
+          Wildcard certificates via DNS-01{savedAt ? ` · saved ${formatTime(savedAt)}` : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-4">

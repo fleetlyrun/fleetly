@@ -341,3 +341,117 @@ func TestDeployAppNameMismatchRejected(t *testing.T) {
 		t.Fatalf("matching names should enqueue: deployment rows = %d, want 1", n)
 	}
 }
+
+// TestDeployAppRefResolutionA1 A1 的引用解析语义（2026-09-25，Console 详情
+// 导航自 5e593d9 起以平台 id 寻址 /v1/apps/{app}/deployments）：请求 app 能
+// 解析到既有应用时与**解析后的业务名**比对（裸 ULID 与 compose name 必然错
+// 位，原样比对使 Console 部署既有应用恒拒）；解析不到（=创建场景）保持原
+// 语义——原始参数与 spec.Name 严格一致。四场景：
+//  1. id 寻址 + compose 名一致 → 成功入队；
+//  2. id 寻址 + compose 名不一致 → 拒（报错含业务名、不含平台 id）；
+//  3. 创建场景裸名一致 → 成功入队；
+//  4. 创建场景裸名不一致 → 拒（原始参数严格比对）。
+func TestDeployAppRefResolutionA1(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	deploys := serverv1.NewDeploymentsServiceClient(env.conn)
+
+	// 既有应用播种：经创建场景（裸名一致）部署一次落 app 行——后续场景以
+	// 该行的平台 id 做 id 寻址。
+	if _, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(),
+		App:     "idaddr",
+		Compose: []byte("name: idaddr\nservices:\n  web:\n    image: nginx:alpine\n"),
+	}); err != nil {
+		t.Fatalf("seed deploy: %v", err)
+	}
+	app, err := env.st.GetAppByName(ctx, "idaddr")
+	if err != nil {
+		t.Fatalf("GetAppByName idaddr: %v", err)
+	}
+
+	// 场景 1：id 寻址 + compose 名一致 → 成功入队（部署行累计 2）。
+	dr, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(),
+		App:     app.ID,
+		Compose: []byte("name: idaddr\nservices:\n  web:\n    image: nginx:1.27\n"),
+	})
+	if err != nil {
+		t.Fatalf("id-addressed matching deploy: %v", err)
+	}
+	if dr.GetStatus() != "queued" || dr.GetDeploymentId() == "" || dr.GetApp() != "idaddr" {
+		t.Fatalf("id-addressed matching receipt = %+v", dr)
+	}
+	rowsBefore := deploymentRowCount(t, env.st, "idaddr")
+	if rowsBefore != 2 {
+		t.Fatalf("id-addressed matching deploy should enqueue: deployment rows = %d, want 2", rowsBefore)
+	}
+
+	// 场景 2：id 寻址 + compose 名不一致 → 拒（E_COMPOSE_UNSUPPORTED；报错
+	// 展示解析后的业务名而非裸 ULID），且不入队、不误建 compose 侧名字。
+	_, err = deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(),
+		App:     app.ID,
+		Compose: []byte("name: othername\nservices:\n  web:\n    image: nginx:alpine\n"),
+	})
+	if err == nil {
+		t.Fatal("id-addressed mismatch deploy must be rejected")
+	}
+	e, ok := apperr.FromError(err)
+	if !ok {
+		t.Fatalf("rejection error carries no envelope: %v", err)
+	}
+	if e.Code() != "E_COMPOSE_UNSUPPORTED" {
+		t.Fatalf("envelope code = %q, want E_COMPOSE_UNSUPPORTED", e.Code())
+	}
+	if msg := e.Envelope().GetMessage(); !strings.Contains(msg, "idaddr") || strings.Contains(msg, app.ID) {
+		t.Fatalf("mismatch message must name the resolved app and not the platform id: %q", msg)
+	}
+	if e.Context()["expected"] != "idaddr" || e.Context()["actual"] != "othername" {
+		t.Fatalf("envelope context = %v, want expected=idaddr actual=othername", e.Context())
+	}
+	if n := deploymentRowCount(t, env.st, "idaddr"); n != rowsBefore {
+		t.Fatalf("rejected deploy must not enqueue: deployment rows = %d, want %d", n, rowsBefore)
+	}
+	if _, gerr := env.st.GetAppByName(ctx, "othername"); !errors.Is(gerr, state.ErrAppNotFound) {
+		t.Fatalf("rejected request must not create app othername: %v", gerr)
+	}
+
+	// 场景 3：创建场景裸名一致 → 成功入队（resolveApp 解析不到 → 原始参数
+	// 与 spec.Name 一致放行，ensureApp 建行）。
+	dr2, err := deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(),
+		App:     "freshname",
+		Compose: []byte("name: freshname\nservices:\n  web:\n    image: nginx:alpine\n"),
+	})
+	if err != nil {
+		t.Fatalf("creation-scenario matching deploy: %v", err)
+	}
+	if dr2.GetStatus() != "queued" || dr2.GetDeploymentId() == "" {
+		t.Fatalf("creation-scenario matching receipt = %+v", dr2)
+	}
+	if n := deploymentRowCount(t, env.st, "freshname"); n != 1 {
+		t.Fatalf("creation-scenario matching deploy should enqueue: deployment rows = %d, want 1", n)
+	}
+
+	// 场景 4：创建场景裸名不一致 → 拒（原始参数严格比对语义保持——app 参数
+	// 声明 X 不得静默建出 Y），且两个名字的 app 行都不存在。
+	_, err = deploys.Deploy(authCtx(ctx, env.depTok), &serverv1.DeployRequest{Project: env.projectRef(),
+		App:     "declaredname",
+		Compose: []byte("name: builtname\nservices:\n  web:\n    image: nginx:alpine\n"),
+	})
+	if err == nil {
+		t.Fatal("creation-scenario mismatch deploy must be rejected")
+	}
+	e, ok = apperr.FromError(err)
+	if !ok {
+		t.Fatalf("rejection error carries no envelope: %v", err)
+	}
+	if e.Code() != "E_COMPOSE_UNSUPPORTED" {
+		t.Fatalf("envelope code = %q, want E_COMPOSE_UNSUPPORTED", e.Code())
+	}
+	if e.Context()["expected"] != "declaredname" || e.Context()["actual"] != "builtname" {
+		t.Fatalf("envelope context = %v, want expected=declaredname actual=builtname", e.Context())
+	}
+	for _, name := range []string{"declaredname", "builtname"} {
+		if _, gerr := env.st.GetAppByName(ctx, name); !errors.Is(gerr, state.ErrAppNotFound) {
+			t.Fatalf("rejected request must not create app %s: %v", name, gerr)
+		}
+	}
+}

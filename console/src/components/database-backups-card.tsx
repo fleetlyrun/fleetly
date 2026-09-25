@@ -46,6 +46,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatBytes, formatTime, timeAgo } from "@/lib/utils";
+import { useIsPlatformAdmin } from "@/lib/context";
 
 // RustFS 同节点诚实口径（managed-databases §2.6 诚实口径行——文案与
 // s3-settings-card 的 D-S3-8 注记同族，限定到库备份）。
@@ -133,6 +134,10 @@ function RestoreDialog({
 
 export function DatabaseBackupsCard({ name, actionable }: { name: string; actionable: boolean }) {
   const queryClient = useQueryClient();
+  // 平台管理员资源面只读（P0-3 双门）：手动备份/恢复钮隐藏、原位说明
+  //（CLI 等价命令齐备，文案如实指路）；非平台管理员渲染零变化（本组件
+  // 原本就无角色门，viewers 也见禁用态钮——保持现状）。
+  const platformReadonly = useIsPlatformAdmin();
   const backupsQuery = useQuery({
     queryKey: ["database-backups", name],
     queryFn: () => listDatabaseBackups(name),
@@ -185,22 +190,33 @@ export function DatabaseBackupsCard({ name, actionable }: { name: string; action
             restore replays the backup-time password — rotate afterwards if
             credentials changed since the backup.
           </p>
-          <Button
-            size="sm"
-            variant="outline"
-            data-testid="database-backup-trigger-button"
-            disabled={!actionable || triggerMutation.isPending}
-            title={
-              actionable
-                ? "Trigger a manual backup (async)"
-                : "Backups need the instance in ready or degraded state"
-            }
-            onClick={() => triggerMutation.mutate()}
-          >
-            <Clock aria-hidden className="h-3.5 w-3.5" />
-            Back up now
-          </Button>
+          {!platformReadonly ? (
+            <Button
+              size="sm"
+              variant="outline"
+              data-testid="database-backup-trigger-button"
+              disabled={!actionable || triggerMutation.isPending}
+              title={
+                actionable
+                  ? "Trigger a manual backup (async)"
+                  : "Backups need the instance in ready or degraded state"
+              }
+              onClick={() => triggerMutation.mutate()}
+            >
+              <Clock aria-hidden className="h-3.5 w-3.5" />
+              Back up now
+            </Button>
+          ) : null}
         </div>
+        {platformReadonly ? (
+          // P0-3：平台管理员只读——说明行（CLI 等价命令齐备，文案如实指路）。
+          <p className="text-xs text-muted-foreground" data-testid="platform-readonly-note">
+            Platform administrators have read-only access to resources
+            (separation of duties). Trigger backups and restore from the CLI
+            with a machine token (<code>fleetly databases backup</code> /{" "}
+            <code>restore</code>), or ask a team owner for a member role.
+          </p>
+        ) : null}
         {triggerError ? (
           <EnvelopeAlert code={triggerError.code} message={triggerError.message} suggestion={triggerError.suggestion} />
         ) : null}
@@ -247,21 +263,23 @@ export function DatabaseBackupsCard({ name, actionable }: { name: string; action
                     {timeAgo(b.created_at)}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      className="h-7 text-red-600 dark:text-red-400"
-                      data-testid="database-restore-button"
-                      disabled={!actionable}
-                      title={
-                        actionable
-                          ? `Restore snapshot ${b.snapshot} in place (destructive)`
-                          : "Restores need the instance in ready or degraded state"
-                      }
-                      onClick={() => setRestoreRow(b)}
-                    >
-                      Restore
-                    </Button>
+                    {!platformReadonly ? (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="h-7 text-red-600 dark:text-red-400"
+                        data-testid="database-restore-button"
+                        disabled={!actionable}
+                        title={
+                          actionable
+                            ? `Restore snapshot ${b.snapshot} in place (destructive)`
+                            : "Restores need the instance in ready or degraded state"
+                        }
+                        onClick={() => setRestoreRow(b)}
+                      >
+                        Restore
+                      </Button>
+                    ) : null}
                   </TableCell>
                 </TableRow>
               ))}

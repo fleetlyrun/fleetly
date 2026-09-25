@@ -32,7 +32,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { useTeamCapabilities } from "@/lib/context";
+import { useTeamCapabilities, useIsPlatformAdmin } from "@/lib/context";
 
 interface PolicyFormValues {
   min_replicas: number;
@@ -251,8 +251,11 @@ interface AppScalingCardProps {
 }
 
 export function AppScalingCard({ app, services }: AppScalingCardProps) {
-  // 前端角色门（admin+ 可写——设计 §1.1；服务端硬门不变，403 信封照实展示）。
+  // 前端角色门（admin+ 可写——设计 §1.1；服务端硬门不变，403 信封照实展
+  // 示）。平台管理员资源面恒只读（P0-3 双门）——编辑钮消失时以说明行明示
+  // 原因，不做静默消失。
   const { canAdminResources } = useTeamCapabilities();
+  const isPlatformAdmin = useIsPlatformAdmin();
   const status = useQuery({
     queryKey: ["metrics", "status"],
     queryFn: getMetricsStatus,
@@ -274,6 +277,15 @@ export function AppScalingCard({ app, services }: AppScalingCardProps) {
             metrics.mode is not on — policies are dormant and never act. Enable the metrics
             stack (Resources card) for evaluation to resume; a one-time dormant disclosure is
             emitted per policy.
+          </p>
+        ) : null}
+        {!canAdminResources && isPlatformAdmin ? (
+          // P0-3：平台管理员资源面只读——说明行（CLI 有 scaling 策略命令，
+          // 文案如实指路）。
+          <p className="text-xs text-muted-foreground" data-testid="platform-readonly-note">
+            Platform administrators have read-only access to resources
+            (separation of duties). Manage autoscaling policies from the CLI
+            with a machine token, or ask a team owner for a member role.
           </p>
         ) : null}
         {services.length === 0 ? (

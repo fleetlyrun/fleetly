@@ -22,6 +22,11 @@ export function TeamProjectSwitcher() {
     ? projects.filter((p) => p.team_slug === selectedTeamSlug)
     : projects;
 
+  // 未选团队显式引导（P1-3，2026-09-25 审查 §3）：多团队未选时
+  // useTeamCapabilities 解析不出角色 → 全站写钮静默消失且无解释。单团队
+  // 沿用既有回落语义（唯一团队即上下文），不渲染提示。
+  const needsTeamHint = teams.length > 1 && !selectedTeamSlug;
+
   if (teams.length === 0) {
     // 无团队投影（Me 未回/异常）——不渲染空选择面。
     return null;
@@ -59,6 +64,14 @@ export function TeamProjectSwitcher() {
           </option>
         ))}
       </select>
+      {needsTeamHint ? (
+        <span
+          data-testid="team-context-hint"
+          className="whitespace-nowrap text-xs text-muted-foreground"
+        >
+          Select a team to unlock deploy and write actions.
+        </span>
+      ) : null}
     </div>
   );
 }

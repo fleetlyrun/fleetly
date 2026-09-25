@@ -39,7 +39,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/utils";
-import { useTeamCapabilities } from "@/lib/context";
+import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
 
 const NAME_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
@@ -181,8 +181,10 @@ function SetSecretForm({ app }: { app: string }) {
 export function AppSecretsPage() {
   const { name = "" } = useParams();
   // 角色门（前端体验门，§3.2）：secrets 写 = admin+（viewer/developer 不见
-  // 写面；服务端硬门不变）。
+  // 写面；服务端硬门不变）。平台管理员资源面恒只读（P0-3 双门）——写表单
+  // 消失时以说明行明示原因，不做静默消失。
   const { canAdminResources } = useTeamCapabilities();
+  const isPlatformAdmin = useIsPlatformAdmin();
   const query = useQuery({
     queryKey: ["secrets", name],
     queryFn: () => listSecrets(name),
@@ -232,6 +234,17 @@ export function AppSecretsPage() {
         {canAdminResources ? (
           <section className="py-4">
             <SetSecretForm app={name} />
+          </section>
+        ) : isPlatformAdmin ? (
+          // P0-3：平台管理员资源面只读——说明行（CLI 有 secrets set，文案
+          // 如实指路）。
+          <section className="py-4" data-testid="platform-readonly-note">
+            <p className="text-sm text-muted-foreground">
+              Platform administrators have read-only access to resources
+              (separation of duties). Set or remove secrets from the CLI with
+              a machine token (<code>fleetly secrets set</code>), or ask a
+              team owner for a member role.
+            </p>
           </section>
         ) : null}
         <section className="py-4">

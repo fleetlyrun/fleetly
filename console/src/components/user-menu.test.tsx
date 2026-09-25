@@ -1,9 +1,10 @@
 // 用户菜单测试（v0.3 RBAC W1；M9-9 口径沿袭）：
 // - Me 投影展示：显示名/邮箱、平台管理员标志、所属团队与角色（W1 只读）；
-// - Sign out 在清 localStorage 凭据的同时清空 react-query 缓存——下一个
-//   会话（换人）不得复用上一个会话的服务端状态；注销请求打到
-//   POST /v1/auth/logout；
-// - Sign out all devices 走 POST /v1/auth/logout-all。
+// - Sign out 在清凭据的同时清空 react-query 缓存——下一个会话（换人）不
+//   得复用上一个会话的服务端状态；注销请求打到 POST /v1/auth/logout；
+// - Sign out all devices 走 POST /v1/auth/logout-all；
+// - Bearer 身份指示（P1-4）：读到 API token → 面板顶部身份说明条；纯会话
+//   cookie → 不渲染。
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -57,6 +58,8 @@ function renderLayout() {
           <Routes>
             <Route element={<Layout />}>
               <Route path="/" element={<p>home-body</p>} />
+              {/* Git push keys 路由可达（P1-8 菜单入口接线；页面本体自测）。 */}
+              <Route path="/git-keys" element={<p>git-keys-body</p>} />
             </Route>
           </Routes>
         </QueryClientProvider>
@@ -88,6 +91,40 @@ describe("UserMenu Me projection", () => {
     expect(teams).toHaveTextContent("owner");
     expect(teams).toHaveTextContent("Globex");
     expect(teams).toHaveTextContent("developer");
+    // 纯会话 cookie（无 token）：Bearer 身份指示条不渲染。
+    expect(screen.queryByTestId("user-menu-token-note")).not.toBeInTheDocument();
+  });
+});
+
+describe("UserMenu git push keys entry (review P1-8)", () => {
+  it("offers a Git push keys entry that navigates to /git-keys", async () => {
+    vi.stubGlobal("fetch", stubFetch());
+    renderLayout();
+    await waitFor(() => expect(screen.getByTestId("user-menu")).toBeInTheDocument());
+    const user = userEvent.setup();
+
+    await user.click(screen.getByTestId("user-menu"));
+    expect(screen.getByTestId("user-menu-git-keys")).toHaveTextContent("Git push keys");
+    await user.click(screen.getByTestId("user-menu-git-keys"));
+
+    // 路由可达：/git-keys 落到页面（测试桩替身）。
+    expect(screen.getByText("git-keys-body")).toBeInTheDocument();
+    // 菜单随导航收起。
+    expect(screen.queryByTestId("user-menu-panel")).not.toBeInTheDocument();
+  });
+});
+
+describe("UserMenu API-token indicator (review P1-4)", () => {
+  it("notes when the session acts via an API token", async () => {
+    vi.stubGlobal("fetch", stubFetch());
+    setToken("flt_operator_a");
+    renderLayout();
+    await waitFor(() => expect(screen.getByTestId("user-menu")).toBeInTheDocument());
+    const user = userEvent.setup();
+    await user.click(screen.getByTestId("user-menu"));
+    expect(screen.getByTestId("user-menu-token-note")).toHaveTextContent(
+      "Acting via API token — session cookie is not used.",
+    );
   });
 });
 

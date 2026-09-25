@@ -2,14 +2,17 @@
 // 按节点 IP 生成的防火墙放行规则、DNS 步骤与完成判据。诚实契约：平台只
 // 生成规则文本、绝不自动应用用户防火墙；base_domain 缺失时服务端以
 // E_MULTI_NODE_REQUIRES_BASE_DOMAIN（409）拒绝，信封原样呈现。
+// Rotate join token（backlog #4-③）：轮换 worker join token——服务端语义
+//（internal/api/system.go RotateJoinToken）为旧 token 即刻失效，两步确认
+// 后执行；已生成的指引自动重取以显示新 token。
 
 import { useMutation } from "@tanstack/react-query";
 import { Check, Copy, Network } from "lucide-react";
 import { useState } from "react";
 
-import { getJoinGuide } from "@/api/endpoints";
+import { getJoinGuide, rotateJoinToken } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
-import { EnvelopeAlertFrom } from "@/components/envelope-alert";
+import { EnvelopeAlert, EnvelopeAlertFrom } from "@/components/envelope-alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +22,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 function CopyButton({ value, label }: { value: string; label: string }) {
@@ -48,11 +59,28 @@ function CopyButton({ value, label }: { value: string; label: string }) {
 
 export function JoinWizard() {
   const [workerIp, setWorkerIp] = useState("");
+  const [rotateOpen, setRotateOpen] = useState(false);
+  const [rotateError, setRotateError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
   const guide = useMutation({
     mutationFn: () => getJoinGuide(workerIp.trim() || undefined),
   });
   const g = guide.data?.guide;
   const err = guide.error ? errorEnvelopeFrom(guide.error) : null;
+
+  // 轮换（系统面动作——服务端 requirePlatformWriteFace 硬门，平台管理员可
+  // 执行；沿 SystemPage 既有卡片形态不另设前端角色门，403 信封照实展示）。
+  // role 固定 worker（指引只消费 worker token）。成功后已生成的指引立即
+  // 重取（join 命令/token 显示新值）；未生成过则无可刷新，下次 Generate
+  // 自然拿到新 token。
+  const rotate = useMutation({
+    mutationFn: () => rotateJoinToken("worker"),
+    onSuccess: () => {
+      setRotateError(null);
+      setRotateOpen(false);
+      if (guide.data) guide.mutate();
+    },
+    onError: (err) => setRotateError(errorEnvelopeFrom(err)),
+  });
 
   return (
     <Card>
@@ -79,12 +107,60 @@ export function JoinWizard() {
           >
             {guide.isPending ? "Generating…" : "Generate join guide"}
           </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            data-testid="join-token-rotate"
+            disabled={rotate.isPending}
+            onClick={() => {
+              setRotateError(null);
+              setRotateOpen(true);
+            }}
+          >
+            Rotate join token
+          </Button>
         </div>
 
         {err ? (
           <div className="mt-3">
             <EnvelopeAlertFrom envelope={err} />
           </div>
+        ) : null}
+
+        {/* 轮换两步确认（无需输名字——后果说明 + 显式确认即两步纪律形态；
+            服务端语义：旧 token 即刻失效，已加入节点不受影响）。 */}
+        {rotateOpen ? (
+          <Dialog open onOpenChange={(v) => (v ? undefined : setRotateOpen(false))}>
+            <DialogContent data-testid="join-token-rotate-dialog">
+              <DialogHeader>
+                <DialogTitle>Rotate join token</DialogTitle>
+                <DialogDescription>
+                  The worker join token is replaced immediately: any join
+                  command or token copied earlier stops working, and no new
+                  node can join with it. Nodes that already joined the swarm
+                  are not affected. A generated join guide below is refreshed
+                  automatically so you can re-copy the new command.
+                </DialogDescription>
+              </DialogHeader>
+              {rotateError ? (
+                <EnvelopeAlert
+                  code={rotateError.code}
+                  message={rotateError.message}
+                  suggestion={rotateError.suggestion}
+                />
+              ) : null}
+              <DialogFooter>
+                <Button
+                  variant="destructive"
+                  data-testid="join-token-rotate-submit"
+                  disabled={rotate.isPending}
+                  onClick={() => rotate.mutate()}
+                >
+                  {rotate.isPending ? "Rotating…" : "Rotate token"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : null}
 
         {g ? (

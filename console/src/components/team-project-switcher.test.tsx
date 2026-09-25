@@ -21,6 +21,12 @@ const ME = {
   ],
 };
 
+// 单团队用户（P1-3 对照组：个人队 owner——未选团队时既有回落语义成立）。
+const ME_SINGLE = {
+  user: { id: "01U2", email: "solo@t.test", is_platform_admin: false },
+  teams: [{ team_id: "01TEAM1", team_slug: "acme", team_name: "Acme", role: "owner" }],
+};
+
 const PROJECTS = {
   projects: [
     { id: "01PRJ1", team_id: "01TEAM1", team_slug: "acme", slug: "default", name: "Default" },
@@ -29,11 +35,11 @@ const PROJECTS = {
   ],
 };
 
-function stubIdentityFetch() {
+function stubIdentityFetch(me: unknown = ME) {
   return vi.fn().mockImplementation((input: RequestInfo | URL, _init?: RequestInit) => {
     const url = String(input);
     if (url.includes("/auth/me")) {
-      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(ME) });
+      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(me) });
     }
     if (url.includes("/projects")) {
       return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(PROJECTS) });
@@ -146,6 +152,36 @@ describe("TeamProjectSwitcher", () => {
       team: "beta",
       project: null,
     });
+  });
+});
+
+describe("TeamProjectSwitcher team-context hint (review P1-3)", () => {
+  it("shows the unlock hint for a multi-team user with no team selected", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubIdentityFetch());
+    const user = userEvent.setup();
+
+    renderWith(<TeamProjectSwitcher />);
+
+    // 多团队 + 未选团队：能力解析不出角色、写钮静默消失——显式提示补因果。
+    expect(await screen.findByTestId("team-context-hint")).toHaveTextContent(
+      "Select a team to unlock deploy and write actions.",
+    );
+
+    // 选中团队后提示随之消失（能力已解析）。
+    await user.selectOptions(screen.getByTestId("team-switcher"), "acme");
+    expect(screen.queryByTestId("team-context-hint")).not.toBeInTheDocument();
+  });
+
+  it("renders no hint for a single-team user (existing fallback semantics)", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubIdentityFetch(ME_SINGLE));
+
+    renderWith(<TeamProjectSwitcher />);
+
+    // 单团队回落：唯一团队即上下文，无需引导。
+    await screen.findByTestId("team-switcher");
+    expect(screen.queryByTestId("team-context-hint")).not.toBeInTheDocument();
   });
 });
 

@@ -1,6 +1,8 @@
 // 应用概览页测试（E3-8/E5 Cron 切面）：服务清单从最近 active revision 的
 // 归一化快照现读——cron 服务如实标注 scheduled（不冒充长驻态），长驻服务
-// 不做状态冒充；cron 区块（台账 + 手动触发）挂载于概览页。
+// 不做状态冒充；cron 区块（台账 + 手动触发）挂载于概览页。平台管理员双门
+//（P0-3 残余面收口）：cron 触发 / metrics 开关 / 扩缩策略写钮隐藏、原位
+// 只读说明；非管理员 owner 零变化（防回归）。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -8,6 +10,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { AppOverviewPage } from "@/pages/AppOverviewPage";
+import { TeamProjectProvider } from "@/lib/context";
 import { setToken } from "@/api/client";
 
 const COMPOSE = JSON.stringify({
@@ -29,7 +32,10 @@ const RUNS = [
   },
 ];
 
-function stubOverviewFetch(log: { url: string; method: string }[] = []) {
+function stubOverviewFetch(
+  log: { url: string; method: string }[] = [],
+  appExtra: Record<string, unknown> = {},
+) {
   return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     log.push({ url, method: init?.method ?? "GET" });
@@ -39,6 +45,15 @@ function stubOverviewFetch(log: { url: string; method: string }[] = []) {
         status: 200,
         statusText: "",
         json: () => Promise.resolve({ compose: COMPOSE }),
+      });
+    }
+    if (init?.method === "DELETE" && url.endsWith("/apps/demo")) {
+      // DeleteAppResponse：{name, lifecycle}（tombstone 第一拍已提交）。
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "",
+        json: () => Promise.resolve({ name: "demo", lifecycle: "deleting" }),
       });
     }
     if (url.includes("/cron-runs")) {
@@ -88,6 +103,7 @@ function stubOverviewFetch(log: { url: string; method: string }[] = []) {
           name: "demo",
           lifecycle: "active",
           derived_state: "running",
+          ...appExtra,
         }),
     });
   });
@@ -144,5 +160,212 @@ describe("AppOverviewPage services list (E5 Cron)", () => {
       (e) => e.method === "POST" && e.url.includes("/services/jobber/trigger"),
     );
     expect(trigger).toBeTruthy();
+  });
+});
+
+describe("AppOverviewPage platform-admin read-only (P0-3 residual)", () => {
+  // /auth/me 包装：owner 成员关系 + is_platform_admin 开关（其余请求透传
+  // 给既有分路 stub）。注意 metrics status 的分路：stub 的兜底返回无 mode
+  // 字段 → AppMetricsCard 走 opt-in 缺省态（Enable metrics 开关可见）。
+  function stubMe(isPlatformAdmin: boolean, inner: ReturnType<typeof stubOverviewFetch>) {
+    return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () =>
+            Promise.resolve({
+              user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+              teams: [
+                { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+              ],
+              project_overrides: [],
+            }),
+        });
+      }
+      return inner(input, init);
+    });
+  }
+
+  function renderOverviewInTeamContext(isPlatformAdmin: boolean) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const inner = stubOverviewFetch();
+    vi.stubGlobal("fetch", stubMe(isPlatformAdmin, inner));
+    return render(
+      <MemoryRouter initialEntries={["/apps/demo"]}>
+        <QueryClientProvider client={client}>
+          <TeamProjectProvider>
+            <Routes>
+              <Route path="/apps/:name" element={<AppOverviewPage />} />
+            </Routes>
+          </TeamProjectProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("平台管理员（owner 角色）：cron 触发/metrics 开关/扩缩策略写钮隐藏，只读说明原位渲染，读面骨架照常", async () => {
+    setToken("flt_test");
+    renderOverviewInTeamContext(true);
+
+    // 说明（cron 区块 + metrics 卡 + 扩缩策略卡 ≥3 处）。
+    await waitFor(() => {
+      const notes = screen.getAllByTestId("platform-readonly-note");
+      expect(notes.length).toBeGreaterThanOrEqual(3);
+      expect(notes[0]).toHaveTextContent(
+        "Platform administrators have read-only access to resources",
+      );
+    });
+    // 写钮不再渲染。
+    expect(screen.queryByRole("button", { name: "Run now" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("cron-trigger-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("metrics-mode-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Add policy" })).not.toBeInTheDocument();
+    // 读面骨架不塌：服务清单 + cron 台账照常。
+    await waitFor(() =>
+      expect(screen.getByTestId("cron-runs-list")).toBeInTheDocument(),
+    );
+    expect(screen.getByText("*/5 * * * *")).toBeInTheDocument();
+  });
+
+  it("非管理员 owner：写钮照常渲染、无只读说明（零变化防回归）", async () => {
+    setToken("flt_test");
+    renderOverviewInTeamContext(false);
+
+    await waitFor(() =>
+      expect(screen.getByTestId("cron-runs-list")).toBeInTheDocument(),
+    );
+    expect(screen.getByRole("button", { name: "Run now" })).toBeInTheDocument();
+    expect(screen.getByTestId("metrics-mode-toggle")).toBeInTheDocument();
+    expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
+  });
+});
+
+describe("AppOverviewPage time display (2026-09-25 review P2-3)", () => {
+  it("renders Created/Updated as relative time with the absolute value in the title", async () => {
+    setToken("flt_test");
+    const created = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    const updated = new Date(Date.now() - 30_000).toISOString();
+    vi.stubGlobal("fetch", stubOverviewFetch([], { created_at: created, updated_at: updated }));
+
+    renderOverview();
+
+    // Created 与 Updated 同为相对时间（此前 Created=绝对、Updated=相对并存），
+    // 绝对值留 title tooltip。
+    const createdEl = await screen.findByTitle(created);
+    expect(createdEl.textContent).toBe("3h ago");
+    const updatedEl = screen.getByTitle(updated);
+    expect(updatedEl.textContent).toBe("30s ago");
+    expect(screen.getByText("Created")).toBeInTheDocument();
+  });
+});
+
+describe("AppOverviewPage Danger Zone (backlog #4-①)", () => {
+  // /auth/me 包装 + 团队上下文渲染（P0-3 describe 的 helper 在其作用域内，
+  // 本 describe 自备同形态装配）。
+  function stubMe(isPlatformAdmin: boolean, inner: ReturnType<typeof stubOverviewFetch>) {
+    return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () =>
+            Promise.resolve({
+              user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+              teams: [
+                { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+              ],
+              project_overrides: [],
+            }),
+        });
+      }
+      return inner(input, init);
+    });
+  }
+
+  function renderInTeamContext(isPlatformAdmin: boolean) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const inner = stubOverviewFetch();
+    vi.stubGlobal("fetch", stubMe(isPlatformAdmin, inner));
+    return render(
+      <MemoryRouter initialEntries={["/apps/demo"]}>
+        <QueryClientProvider client={client}>
+          <TeamProjectProvider>
+            <Routes>
+              <Route path="/apps/:name" element={<AppOverviewPage />} />
+            </Routes>
+          </TeamProjectProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("平台管理员：Danger Zone 无删除钮，原位只读说明（资源面双门）", async () => {
+    setToken("flt_test");
+    renderInTeamContext(true);
+
+    await screen.findByTestId("danger-zone");
+    // me 投影落地前能力门 fail-open（体验门缺省全开——context.tsx 口径），
+    // 稳态以只读说明渲染为准；随后断言删除钮已消失。
+    await waitFor(() => {
+      const notes = screen.getAllByTestId("platform-readonly-note");
+      expect(
+        notes.some((n) => n.textContent?.includes("Delete applications from the CLI")),
+      ).toBe(true);
+    });
+    expect(screen.queryByTestId("app-delete-button")).not.toBeInTheDocument();
+  });
+
+  it("owner：两步确认（输名前禁用）→ DELETE /apps/demo → 导航回 /apps", async () => {
+    setToken("flt_test");
+    const log: { url: string; method: string }[] = [];
+    // 团队上下文 + /apps 探针路由（导航断言）。log 经 stubOverviewFetch 传入。
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    vi.stubGlobal(
+      "fetch",
+      stubMe(false, stubOverviewFetch(log)),
+    );
+    render(
+      <MemoryRouter initialEntries={["/apps/demo"]}>
+        <QueryClientProvider client={client}>
+          <TeamProjectProvider>
+            <Routes>
+              <Route path="/apps/:name" element={<AppOverviewPage />} />
+              <Route path="/apps" element={<div data-testid="apps-page-probe" />} />
+            </Routes>
+          </TeamProjectProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+
+    await screen.findByTestId("danger-zone");
+    fireEvent.click(screen.getByTestId("app-delete-button"));
+
+    // 两步确认：对话框弹出且未输名前提交禁用。
+    const dialog = await screen.findByTestId("app-delete-dialog");
+    expect((screen.getByTestId("app-delete-submit") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByTestId("app-delete-confirm-input"), {
+      target: { value: "demo" },
+    });
+    expect((screen.getByTestId("app-delete-submit") as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(screen.getByTestId("app-delete-submit"));
+    void dialog;
+
+    // 删除成功：DELETE 载荷落地 + 导航回 /apps。
+    await waitFor(() =>
+      expect(screen.getByTestId("apps-page-probe")).toBeInTheDocument(),
+    );
+    const del = log.find(
+      (e) => e.method === "DELETE" && e.url.endsWith("/apps/demo"),
+    );
+    expect(del).toBeTruthy();
   });
 });

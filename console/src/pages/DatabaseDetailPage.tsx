@@ -54,6 +54,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatTime } from "@/lib/utils";
+import { useIsPlatformAdmin } from "@/lib/context";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -232,8 +233,11 @@ function ConfirmDialog({
   );
 }
 
-/** 连接卡：脱敏投影常显 + 显式 reveal（admin 面——取到的明文只在内存/前台，隐藏即弃）。 */
+/** 连接卡：脱敏投影常显 + 显式 reveal（admin 面——取到的明文只在内存/前台，隐藏即弃）。
+ * 平台管理员资源面只读（P0-3 双门）：reveal 钮隐藏、原位给诚实说明（reveal
+ * 有 CLI 等价命令，文案如实指路）；非平台管理员渲染零变化。 */
 function ConnectionCard({ name }: { name: string }) {
+  const platformReadonly = useIsPlatformAdmin();
   const query = useQuery({ queryKey: ["database", name], queryFn: () => getDatabase(name) });
   const conn = query.data?.database?.connection;
   const [revealed, setRevealed] = useState<{ password: string; url: string } | null>(null);
@@ -314,25 +318,38 @@ function ConnectionCard({ name }: { name: string }) {
                   <span className="flex items-center gap-2">
                     <code className="text-xs text-muted-foreground">{conn.password_fingerprint ?? "—"}</code>
                     <span className="text-xs text-muted-foreground">(fingerprint)</span>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="h-7"
-                      data-testid="database-reveal-button"
-                      disabled={revealMutation.isPending}
-                      onClick={() => revealMutation.mutate()}
-                    >
-                      <Eye aria-hidden className="h-3.5 w-3.5" />
-                      Reveal
-                    </Button>
+                    {!platformReadonly ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7"
+                        data-testid="database-reveal-button"
+                        disabled={revealMutation.isPending}
+                        onClick={() => revealMutation.mutate()}
+                      >
+                        <Eye aria-hidden className="h-3.5 w-3.5" />
+                        Reveal
+                      </Button>
+                    ) : null}
                   </span>
                 )
               }
             />
-            <p className="text-xs text-muted-foreground">
-              Admin action: revealing shows the plaintext password in the UI and
-              is recorded in the audit log. The masked URL never leaves storage.
-            </p>
+            {platformReadonly ? (
+              // P0-3：平台管理员只读——说明行替换「Admin action」段（该段描
+              // 述的正是其不可用的动作）。
+              <p className="text-xs text-muted-foreground" data-testid="platform-readonly-note">
+                Platform administrators have read-only access to resources
+                (separation of duties). Reveal the credential from the CLI with
+                a machine token (<code>fleetly databases reveal</code>), or ask
+                a team owner for a member role.
+              </p>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Admin action: revealing shows the plaintext password in the UI and
+                is recorded in the audit log. The masked URL never leaves storage.
+              </p>
+            )}
             {revealError ? (
               <p className="text-xs text-red-600 dark:text-red-400">{revealError}</p>
             ) : null}
@@ -348,6 +365,10 @@ function ConnectionCard({ name }: { name: string }) {
 export function DatabaseDetailPage() {
   const { name = "" } = useParams();
   const queryClient = useQueryClient();
+  // 平台管理员资源面只读（P0-3 双门）：生命周期写钮/reveal/备份/恢复隐藏并
+  // 原位说明。注意本页对非平台管理员（含 viewer）今天就不设角色门——按
+  // 「非平台管理员各角色行为零变化」，此处只加平台管理员单门。
+  const platformReadonly = useIsPlatformAdmin();
   const query = useQuery({
     queryKey: ["database", name],
     queryFn: () => getDatabase(name),
@@ -419,76 +440,96 @@ export function DatabaseDetailPage() {
           ) : null}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="database-suspend-button"
-            disabled={!can("suspend") || suspendMutation.isPending}
-            title={can("suspend") ? "Scale to zero (volumes kept); referencing apps lose connectivity" : "Suspend needs ready/degraded"}
-            onClick={() => suspendMutation.mutate()}
-          >
-            <Pause aria-hidden className="h-3.5 w-3.5" />
-            Suspend
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="database-resume-button"
-            disabled={!can("resume") || resumeMutation.isPending}
-            title={can("resume") ? "Reconverge to ready" : "Resume applies to paused instances"}
-            onClick={() => resumeMutation.mutate()}
-          >
-            <Play aria-hidden className="h-3.5 w-3.5" />
-            Resume
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="database-retry-button"
-            disabled={!can("retry") || retryMutation.isPending}
-            title={can("retry") ? "Retry convergence from the failed scene" : "Retry applies to failed instances"}
-            onClick={() => retryMutation.mutate()}
-          >
-            <RotateCw aria-hidden className="h-3.5 w-3.5" />
-            Retry
-          </Button>
-          {db?.upgrade_available ? (
-            <Button
-              variant="outline"
-              size="sm"
-              data-testid="database-upgrade-button"
-              disabled={!can("upgrade") || terminalish}
-              title={can("upgrade") ? "Controlled rebuild on the current template image" : "Upgrade needs ready/degraded/paused"}
-              onClick={() => setConfirmKind("upgrade")}
-            >
-              <TrendingUp aria-hidden className="h-3.5 w-3.5" />
-              Upgrade
-            </Button>
+          {!platformReadonly ? (
+            <>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="database-suspend-button"
+                disabled={!can("suspend") || suspendMutation.isPending}
+                title={can("suspend") ? "Scale to zero (volumes kept); referencing apps lose connectivity" : "Suspend needs ready/degraded"}
+                onClick={() => suspendMutation.mutate()}
+              >
+                <Pause aria-hidden className="h-3.5 w-3.5" />
+                Suspend
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="database-resume-button"
+                disabled={!can("resume") || resumeMutation.isPending}
+                title={can("resume") ? "Reconverge to ready" : "Resume applies to paused instances"}
+                onClick={() => resumeMutation.mutate()}
+              >
+                <Play aria-hidden className="h-3.5 w-3.5" />
+                Resume
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="database-retry-button"
+                disabled={!can("retry") || retryMutation.isPending}
+                title={can("retry") ? "Retry convergence from the failed scene" : "Retry applies to failed instances"}
+                onClick={() => retryMutation.mutate()}
+              >
+                <RotateCw aria-hidden className="h-3.5 w-3.5" />
+                Retry
+              </Button>
+              {db?.upgrade_available ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="database-upgrade-button"
+                  disabled={!can("upgrade") || terminalish}
+                  title={can("upgrade") ? "Controlled rebuild on the current template image" : "Upgrade needs ready/degraded/paused"}
+                  onClick={() => setConfirmKind("upgrade")}
+                >
+                  <TrendingUp aria-hidden className="h-3.5 w-3.5" />
+                  Upgrade
+                </Button>
+              ) : null}
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="database-rotate-button"
+                disabled={!can("rotate")}
+                title={can("rotate") ? "Destructive credential rotation (referencing apps are redeployed)" : "Rotate needs ready/degraded/paused"}
+                onClick={() => setConfirmKind("rotate")}
+              >
+                <KeyRound aria-hidden className="h-3.5 w-3.5" />
+                Rotate
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                data-testid="database-delete-button"
+                disabled={!can("delete")}
+                title={can("delete") ? "Tombstone the instance (volume kept by default)" : "Instance is already deleting/deleted"}
+                onClick={() => setConfirmKind("delete")}
+              >
+                <Trash2 aria-hidden className="h-3.5 w-3.5" />
+                Delete
+              </Button>
+            </>
           ) : null}
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="database-rotate-button"
-            disabled={!can("rotate")}
-            title={can("rotate") ? "Destructive credential rotation (referencing apps are redeployed)" : "Rotate needs ready/degraded/paused"}
-            onClick={() => setConfirmKind("rotate")}
-          >
-            <KeyRound aria-hidden className="h-3.5 w-3.5" />
-            Rotate
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            data-testid="database-delete-button"
-            disabled={!can("delete")}
-            title={can("delete") ? "Tombstone the instance (volume kept by default)" : "Instance is already deleting/deleted"}
-            onClick={() => setConfirmKind("delete")}
-          >
-            <Trash2 aria-hidden className="h-3.5 w-3.5" />
-            Delete
-          </Button>
         </div>
       </div>
+
+      {platformReadonly ? (
+        // P0-3：操作面原位说明（生命周期 CLI 等价命令齐备——fleetly
+        // databases <suspend|resume|retry|rotate|upgrade|delete|backup|restore>）。
+        <Card className="border-dashed">
+          <CardContent
+            className="p-4 text-sm text-muted-foreground"
+            data-testid="platform-readonly-note"
+          >
+            Platform administrators have read-only access to resources
+            (separation of duties). Manage this database instance from the CLI
+            with a machine token (<code>fleetly databases</code> suspend, rotate,
+            backup, restore, …), or ask a team owner for a member role.
+          </CardContent>
+        </Card>
+      ) : null}
 
       {db?.last_error ? (
         <div

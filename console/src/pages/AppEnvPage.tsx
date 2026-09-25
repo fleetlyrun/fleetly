@@ -1,7 +1,8 @@
 // env 管理：列表（值脱敏——ListEnv 恒无值）+ set/remove + 逐键取明文
 // （GET env 是 admin 面动作，显式展开才取）。
 // **pending 分组独立可见**（票面验收项）：Set/Remove 均置 pending——
-// 「待下次部署生效」分组与 effective 分开呈现。
+// 「待下次部署生效」分组与 effective 分开呈现。行删除走确认框
+// （2026-09-25 审查 P2-4：全站破坏性动作两步确认纪律）。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Eye, EyeOff, KeyRound, Clock, Plus, RefreshCw, Trash2 } from "lucide-react";
@@ -20,6 +21,14 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -31,12 +40,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { timeAgo } from "@/lib/utils";
-import { useTeamCapabilities } from "@/lib/context";
+import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
 
 function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
   const queryClient = useQueryClient();
   const [revealed, setRevealed] = useState("");
   const [revealError, setRevealError] = useState<string>("");
+  // 行删除确认（2026-09-25 审查 P2-4，全站破坏性动作两步确认纪律——
+  // AppSecretsPage 行删除同款形态）：一键直删改为确认后删。
+  const [confirmOpen, setConfirmOpen] = useState(false);
   // 角色门（前端体验门）：env 明文读 = admin+、env 写（移除）= developer+
   //（§3.2 矩阵）；服务端硬门不变，403 信封照实展示。
   const { canDeploy, canAdminResources } = useTeamCapabilities();
@@ -50,6 +62,7 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
   const removeMutation = useMutation({
     mutationFn: () => removeEnv(app, row.key ?? ""),
     onSuccess: () => {
+      setConfirmOpen(false);
       void queryClient.invalidateQueries({ queryKey: ["env", app] });
     },
   });
@@ -119,11 +132,45 @@ function EnvRow({ app, row }: { app: string; row: EnvVarView }) {
             size="icon"
             className="h-7 w-7 text-red-600 dark:text-red-400"
             aria-label={`Remove ${row.key}`}
-            onClick={() => removeMutation.mutate()}
+            data-testid="env-remove-button"
+            onClick={() => setConfirmOpen(true)}
             disabled={removeMutation.isPending}
           >
             <Trash2 aria-hidden className="h-3.5 w-3.5" />
           </Button>
+        ) : null}
+        {confirmOpen ? (
+          <Dialog open onOpenChange={(v) => (v ? undefined : setConfirmOpen(false))}>
+            <DialogContent data-testid="env-remove-dialog">
+              <DialogHeader>
+                <DialogTitle>Remove {row.key}</DialogTitle>
+                <DialogDescription>
+                  Remove <span className="font-mono">{row.key}</span> from this
+                  application? The removal takes effect on the next deployment.
+                  Setting the same key again before then restores it.
+                </DialogDescription>
+              </DialogHeader>
+              <DialogFooter>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  data-testid="env-remove-cancel"
+                  onClick={() => setConfirmOpen(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  size="sm"
+                  data-testid="env-remove-submit"
+                  disabled={removeMutation.isPending}
+                  onClick={() => removeMutation.mutate()}
+                >
+                  {removeMutation.isPending ? "Removing…" : "Remove variable"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         ) : null}
       </TableCell>
     </TableRow>
@@ -187,8 +234,10 @@ function SetEnvForm({ app }: { app: string }) {
 
 export function AppEnvPage() {
   const { name = "" } = useParams();
-  // 角色门（前端体验门，§3.2）：env 写 = developer+。
+  // 角色门（前端体验门，§3.2）：env 写 = developer+。平台管理员资源面恒
+  // 只读（P0-3 双门）——写表单消失时以说明行明示原因，不做静默消失。
   const { canDeploy } = useTeamCapabilities();
+  const isPlatformAdmin = useIsPlatformAdmin();
   const query = useQuery({
     queryKey: ["env", name],
     queryFn: () => listEnv(name),
@@ -258,10 +307,20 @@ export function AppEnvPage() {
         </Button>
       </CardHeader>
       <CardContent className="divide-y pt-0">
-        {/* env 写 = developer+（§3.2 矩阵；viewer 不见写面）。 */}
+        {/* env 写 = developer+（§3.2 矩阵；viewer 不见写面）。平台管理员
+            资源面只读（P0-3 双门）——说明行（env 无 CLI 写路径，文案如实
+            不指 CLI）。 */}
         {canDeploy ? (
           <section className="py-4">
             <SetEnvForm app={name} />
+          </section>
+        ) : isPlatformAdmin ? (
+          <section className="py-4" data-testid="platform-readonly-note">
+            <p className="text-sm text-muted-foreground">
+              Platform administrators have read-only access to resources
+              (separation of duties). Ask a team owner for a member role to
+              change environment variables.
+            </p>
           </section>
         ) : null}
         <section className="py-4">

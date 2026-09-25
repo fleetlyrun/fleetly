@@ -1,26 +1,43 @@
 // 概览页：基本信息 + 服务清单（cron 服务标注 scheduled——compose 声明但
 // 非长驻，不冒充长驻态）+ 放置/卷概览（服务拓扑明细在 revision spec）+
-// cron 区块（运行台账 + 手动触发）。三/四卡片分区：Application /
-// Placement / Services / Volumes / Scheduled jobs。
+// cron 区块（运行台账 + 手动触发）+ Danger Zone（应用删除）。卡片分区：
+// Application / Placement / Services / Volumes / Scheduled jobs / Danger Zone。
 
-import { useQuery } from "@tanstack/react-query";
-import { Boxes, Layers, MapPin, PackageOpen } from "lucide-react";
-import { useParams } from "react-router-dom";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { AlertTriangle, Boxes, Layers, MapPin, PackageOpen } from "lucide-react";
+import { useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 
 import {
+  deleteApp,
   getApp,
   getPlacement,
   getRevisionSpec,
   listRevisions,
 } from "@/api/endpoints";
-import { formatTime, timeAgo } from "@/lib/utils";
+import { errorEnvelopeFrom } from "@/api/errors";
+import { timeAgo } from "@/lib/utils";
+import { AppDriftCard } from "@/components/app-drift-card";
 import { AppMetricsCard } from "@/components/app-metrics-card";
 import { AppScalingCard } from "@/components/app-scaling-card";
 import { CronSection } from "@/components/cron-section";
 import { DegradedExplanationCardLive } from "@/components/degraded-explanation-card";
+import { EnvelopeAlert } from "@/components/envelope-alert";
 import { StatusDot } from "@/components/status-dot";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { StateBadge } from "@/components/state-badge";
+import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
 import {
   Table,
   TableBody,
@@ -37,6 +54,134 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
       <span className="text-muted-foreground">{label}</span>
       <span className="text-right font-medium">{value}</span>
     </div>
+  );
+}
+
+// Danger Zone 卡（backlog #4-①，2026-09-25 审查 §7/§4.11）：应用删除入口。
+// 删除语义取自服务端代码事实（internal/api/apps.go DeleteApp +
+// internal/engine/appdelete.go），如实写进确认文案：
+//   - 第一拍（API 同步）：active → deleting 墓碑 + 路由即时撤销（域名停摆）；
+//   - 第二拍（引擎收敛 duty，约 10s 一拍）：在途部署等终态 → 受管服务逐个
+//     移除 → Swarm secret 扫尾 → deleted；失败保持 deleting 下拍重试；
+//   - 数据卷不随删除清理（引擎无卷处理路径）——节点上孤儿保留、可手工恢复；
+//   - app 行不物理删除且名字唯一约束仍在——名字永久占用、不可复用。
+// 角色门（资源面写 = admin+，前端体验门）：平台管理员双门只读（P0-3），
+// 按 platform-readonly-note 既有形态原位说明；viewer/developer 整卡不渲染。
+function DangerZoneCard({ name, displayName }: { name: string; displayName: string }) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const { canAdminResources } = useTeamCapabilities();
+  const isPlatformAdmin = useIsPlatformAdmin();
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
+
+  const del = useMutation({
+    mutationFn: () => deleteApp(name),
+    onSuccess: () => {
+      setError(null);
+      // 删除即离开详情语境：失效详情/列表/放置缓存后回应用列表（详情查询
+      // 对 deleting 墓碑仍可读，但本会话已完成删除意图，不再驻留）。
+      void queryClient.invalidateQueries({ queryKey: ["app", name] });
+      void queryClient.invalidateQueries({ queryKey: ["apps"] });
+      void queryClient.invalidateQueries({ queryKey: ["placement", name] });
+      navigate("/apps");
+    },
+    onError: (err) => setError(errorEnvelopeFrom(err)),
+  });
+
+  if (!canAdminResources && !isPlatformAdmin) return null;
+
+  return (
+    <Card data-testid="danger-zone" className="border-red-200 dark:border-red-900/40">
+      <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+        <AlertTriangle aria-hidden className="h-4 w-4 text-red-600 dark:text-red-400" />
+        <CardTitle className="text-sm font-semibold">Danger Zone</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-4">
+        {canAdminResources ? (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-sm font-medium">Delete application</div>
+              <p className="text-xs text-muted-foreground">
+                Tombstones the app and withdraws its routes immediately; managed
+                services are reaped in the background. Data volumes are kept and
+                the name stays reserved. This cannot be undone.
+              </p>
+            </div>
+            <Button
+              variant="destructive"
+              size="sm"
+              data-testid="app-delete-button"
+              onClick={() => {
+                setConfirm("");
+                setError(null);
+                setConfirmOpen(true);
+              }}
+            >
+              Delete application
+            </Button>
+          </div>
+        ) : (
+          // P0-3 双门：平台管理员资源面只读——说明行原位渲染（CLI 有应用
+          // 删除命令，文案如实指路），不做静默消失。
+          <p className="text-xs text-muted-foreground" data-testid="platform-readonly-note">
+            Platform administrators have read-only access to resources
+            (separation of duties). Delete applications from the CLI with a
+            machine token, or ask a team owner for a member role.
+          </p>
+        )}
+
+        {confirmOpen ? (
+          <Dialog open onOpenChange={(v) => (v ? undefined : setConfirmOpen(false))}>
+            <DialogContent data-testid="app-delete-dialog">
+              <DialogHeader>
+                <DialogTitle>Delete application {displayName}</DialogTitle>
+                <DialogDescription>
+                  Deletion is a two-beat tombstone: routes are withdrawn
+                  immediately and the app enters deleting; managed services are
+                  removed shortly after by background convergence (in-flight
+                  deployments finish first). Data volumes are kept on the node
+                  as orphans (recoverable by hand) and deployment history is
+                  retained. The name stays reserved — it cannot be reused for a
+                  new application.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-1.5">
+                <Label htmlFor="app-delete-confirm">
+                  Type the application name{" "}
+                  <span className="font-mono">{displayName}</span> to confirm
+                </Label>
+                <Input
+                  id="app-delete-confirm"
+                  data-testid="app-delete-confirm-input"
+                  className="font-mono text-xs"
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                />
+              </div>
+              {error ? (
+                <EnvelopeAlert
+                  code={error.code}
+                  message={error.message}
+                  suggestion={error.suggestion}
+                />
+              ) : null}
+              <DialogFooter>
+                <Button
+                  variant="destructive"
+                  data-testid="app-delete-submit"
+                  disabled={confirm !== displayName || del.isPending}
+                  onClick={() => del.mutate()}
+                >
+                  {del.isPending ? "Deleting…" : "Delete application"}
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -91,7 +236,9 @@ export function AppOverviewPage() {
             <>
               <Field label="Derived state" value={<StateBadge state={app.derived_state ?? ""} />} />
               <Field label="Lifecycle" value={<code>{app.lifecycle}</code>} />
-              <Field label="Created" value={<span title={app.created_at}>{formatTime(app.created_at)}</span>} />
+              {/* Created/Updated 统一相对时间（2026-09-25 审查 P2-3：同一张
+                  卡绝对/相对并存），绝对值留 title tooltip——与全站列表一致。 */}
+              <Field label="Created" value={<span title={app.created_at}>{timeAgo(app.created_at)}</span>} />
               <Field label="Updated" value={<span title={app.updated_at}>{timeAgo(app.updated_at)}</span>} />
               <Field label="ID" value={<code className="text-xs">{app.id}</code>} />
             </>
@@ -132,6 +279,13 @@ export function AppOverviewPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Drift 卡（backlog #9，2026-09-25 审查 §3 P1-5）：运行域漂移读面
+          （全角色）+ Converge now（deploy 面）+ 自动收敛 opt-in 开关
+          （admin 面）——紧随 Placement 卡。 */}
+      <div className="md:col-span-2">
+        <AppDriftCard app={name} />
+      </div>
 
       <Card className="md:col-span-2">
         <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
@@ -244,6 +398,13 @@ export function AppOverviewPage() {
           />
         </div>
       ) : null}
+
+      {/* Danger Zone（backlog #4-①）：应用删除（admin+ 可见；平台管理员
+          只读说明）。displayName 为 id 寻址时的反解业务名——确认输入对齐
+          用户看到的标题名。 */}
+      <div className="md:col-span-2">
+        <DangerZoneCard name={name} displayName={app?.name ?? name} />
+      </div>
     </div>
   );
 }

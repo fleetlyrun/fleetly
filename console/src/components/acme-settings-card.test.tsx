@@ -293,3 +293,40 @@ describe("AcmeSettingsCard (W5-S3)", () => {
     );
   });
 });
+
+describe("AcmeSettingsCard zero-value timestamp (2026-09-25 review P2-3)", () => {
+  it("hides the saved timestamp when updated_at is the epoch zero value", async () => {
+    setToken("flt_test");
+    const { fetchMock } = stubAcmeFetch({
+      // proto 零值 Timestamp 的 JSON 形态（epoch）——未保存过设置时的实况。
+      settings: { ...STORED_NONE, updated_at: "1970-01-01T00:00:00Z" },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderCard();
+    await screen.findByTestId("acme-settings-card");
+    // 设置已到（禁用门由 base_domain 驱动——说明数据已回放）。
+    await waitFor(() =>
+      expect(screen.getByTestId("acme-token-input")).toBeDisabled(),
+    );
+    const desc = screen.getByText("Wildcard certificates via DNS-01");
+    expect(desc.textContent).not.toContain("saved");
+    expect(desc.textContent).not.toContain("1970");
+  });
+
+  it("shows the saved timestamp when a real updated_at is stored", async () => {
+    setToken("flt_test");
+    const { fetchMock } = stubAcmeFetch({
+      settings: { ...STORED_DNSPOD, updated_at: "2026-09-25T08:00:00Z" },
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderCard();
+    await screen.findByTestId("acme-settings-card");
+    await awaitStoredLoaded("ab12cd34");
+
+    const desc = screen.getByText(/Wildcard certificates via DNS-01/);
+    expect(desc.textContent).toContain("saved");
+    expect(desc.textContent).not.toContain("1970");
+  });
+});

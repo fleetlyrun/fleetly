@@ -36,6 +36,16 @@ const SPEC_FILES = [
   "audit.swagger.json",
   "apps.swagger.json",
   "deployments.swagger.json",
+  // builds 随 P1-6（Builds 台账页）进清单：BuildsService 读面（GetBuild/
+  // ListBuilds）是 Builds 页签的数据源。TriggerBuild（POST /v1/builds，
+  // admin scope + compose 字节载荷）语义是 CLI 构建入口，Console 不消费
+  // ——类型随清单进来但无端点封装。
+  "builds.swagger.json",
+  "drift.swagger.json",
+  // gitkeys 随 P1-8（git push 通道可发现性，2026-09-25 审查 backlog #11）进
+  // 清单：GitKeysService 用户自服务三 RPC（Add/List/Remove）是 GitKeys 页的
+  // 数据源。scope 登记 read，真授权在 handler 内（gitkeys.go 用户化语义）。
+  "gitkeys.swagger.json",
   "revisions.swagger.json",
   "env.swagger.json",
   "domains.swagger.json",

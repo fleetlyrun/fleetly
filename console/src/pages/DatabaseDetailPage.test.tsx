@@ -2,7 +2,8 @@
 // 敏感性标注）、状态相宜的操作面（paused → resume 可用 suspend 不可用）、
 // rotate 破坏性两段式确认（名字回填 + 引用 app 自动重部署的诚实文案）、
 // 备份卡 rustfs 诚实口径 + verify 徽章 + restore 两段式。fetch 按 URL 分路
-// mock（SystemPage.test 同款）。
+// mock（SystemPage.test 同款）。平台管理员双门（P0-3 残余面收口）：资源面
+// 写钮全部隐藏、原位只读说明；非管理员 owner 零变化（防回归）。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -11,6 +12,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DatabaseDetailPage } from "@/pages/DatabaseDetailPage";
+import { TeamProjectProvider } from "@/lib/context";
 import { setToken } from "@/api/client";
 
 const DB = {
@@ -268,5 +270,97 @@ describe("DatabaseDetailPage", () => {
         confirm: "pg-prod",
       });
     });
+  });
+});
+
+describe("DatabaseDetailPage platform-admin read-only (P0-3 residual)", () => {
+  // /auth/me 包装：owner 成员关系 + is_platform_admin 开关（经
+  // TeamProjectProvider 生产接线；其余请求透传给既有分路 stub）。
+  function stubMe(isPlatformAdmin: boolean, inner: ReturnType<typeof stubDetailFetch>) {
+    return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () =>
+            Promise.resolve({
+              user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+              teams: [
+                { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+              ],
+              project_overrides: [],
+            }),
+        });
+      }
+      return inner(input, init);
+    });
+  }
+
+  function renderAtInTeamContext() {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    return render(
+      <MemoryRouter initialEntries={["/databases/pg-prod"]}>
+        <QueryClientProvider client={client}>
+          <TeamProjectProvider>
+            <Routes>
+              <Route path="/databases/:name" element={<DatabaseDetailPage />} />
+            </Routes>
+          </TeamProjectProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  async function renderReadyInTeamContext(isPlatformAdmin: boolean) {
+    setToken("flt_test");
+    const inner = stubDetailFetch({ s3Mode: "rustfs", status: "ready" });
+    vi.stubGlobal("fetch", stubMe(isPlatformAdmin, inner));
+    renderAtInTeamContext();
+    await screen.findByTestId("database-detail-page");
+    await waitFor(() => screen.getByTestId("database-connection-card"));
+  }
+
+  it("平台管理员：生命周期/reveal/备份/恢复写钮全部隐藏，只读说明原位渲染，读面骨架照常", async () => {
+    await renderReadyInTeamContext(true);
+
+    // 说明卡三处（操作面 / 连接卡 / 备份卡）。
+    const notes = screen.getAllByTestId("platform-readonly-note");
+    expect(notes.length).toBe(3);
+    expect(notes[0]).toHaveTextContent(
+      "Platform administrators have read-only access to resources",
+    );
+    // 生命周期写钮（ready 态原本可用）不再渲染。
+    expect(screen.queryByTestId("database-suspend-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-resume-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-retry-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-upgrade-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-rotate-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-delete-button")).not.toBeInTheDocument();
+    // reveal / 备份 / 恢复写钮不再渲染。
+    expect(screen.queryByTestId("database-reveal-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-backup-trigger-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-restore-button")).not.toBeInTheDocument();
+    // 读面骨架不塌：状态徽章 / 连接投影 / 备份台账照常。
+    expect(screen.getByTestId("database-connection-card")).toBeInTheDocument();
+    await waitFor(() => screen.getByTestId("database-backups-card"));
+    expect(screen.getAllByTestId("database-backup-row")).toHaveLength(2);
+    expect(screen.getByText("1a2b3c4d")).toBeInTheDocument();
+  });
+
+  it("非管理员 owner：全部写钮照常渲染、无只读说明（零变化防回归）", async () => {
+    await renderReadyInTeamContext(false);
+
+    expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
+    await waitFor(() => screen.getByTestId("database-backups-card"));
+    // ready 态：生命周期钮可见且可用（与基线行为一致）。
+    expect(screen.getByTestId("database-suspend-button")).toBeEnabled();
+    expect(screen.getByTestId("database-rotate-button")).toBeEnabled();
+    expect(screen.getByTestId("database-delete-button")).toBeEnabled();
+    expect(screen.getByTestId("database-reveal-button")).toBeInTheDocument();
+    expect(screen.getByTestId("database-backup-trigger-button")).toBeEnabled();
+    expect(screen.getAllByTestId("database-restore-button")[0]).toBeEnabled();
   });
 });
