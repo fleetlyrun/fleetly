@@ -279,7 +279,20 @@ W3 构建(c9851e0)部署后 **17/17 全过**(`/tmp/v03/verify-w3.sh` 可复跑;�
 
 staging 附加态:newbie 用户;留存=90;W3 功能(审计页/覆写按钮/指纹卡/留存入口)Console 面可浏览器复核。
 
-staging 现保持态:fresh v0.3(67c9dc4+两 fix),TLS platform on(证书重签),founder/mate 双用户,demo×2 项目+matedemo+pgshared 库在役;node2 仍 Down(W3-F2 UDP 未放行)。
+staging 现保持态:fresh v0.3(W5 构建 44b7fe8),TLS platform on(证书重签),founder/mate/newbie 三用户,demo×2 项目+matedemo+pgshared 库在役;metrics+alerts on(vmalert 第四件在役);node2 仍 Down(W3-F2 UDP 未放行)。
+
+### §13.4 W5 自动扩缩+告警真机演练(2026-09-25 实录)
+
+W5 构建部署后 verify-w5.sh(/tmp/w5bin,可 W5_SKIP_UPGRADE=1 复跑)+定向 ALM 复验:
+
+| 断言族 | 实录 | 结果 |
+|---|---|---|
+| 自动扩缩 | metrics 栈收敛→stressapp 部署→策略(min1/max4/target20%)→**真扩容 2→4**(journal:"autoscaler adjusted replicas, before2 after4, dimension=cpu")→冷却窗护栏→**比例缩容 4→3**→dormant 披露 | ✅ |
+| 告警链 | sink 端点→规则→vmalert 部署→**firing×10+resolved×8 载荷送达**(sink.log 计数;双向闭环) | ✅(两修后) |
+| DNS-01 通配 | ACM 腿待 FLEETLY_DNSPOD_TOKEN(用户侧) | ⏳ |
+
+**演练产出两修**(dind e2e 绿但 TLS 形态真机暴露——**控制面组件拨自身网关必须按 TLS 模式选 scheme,0d84e6a 同族教训第二次实证**):①b0c475a notifier scheme 跟随 tls.mode+insecureSkipVerify(明文拨 TLS 口=connection reset);②44b7fe8 flag 名驼峰 `-notifier.tlsInsecureSkipVerify`(点形 crash-loop,镜像 -help 实证)。
+脚本侧教训(第三次!):events watch 流式命令必须有界(timeout 包装——F11 盲管道同族);webhook 通道告警载荷=status 小写 JSON(Slack/Email 才有 FIRING/RESOLVED 大写文案——grep 口径按通道类型)。
 
 ### §13.1 console 免端口直访(2026-09-24,用户实报易错点收口)
 
