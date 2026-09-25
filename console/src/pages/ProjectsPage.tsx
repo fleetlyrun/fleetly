@@ -10,9 +10,9 @@
 // 单一管理面，本页不复制危险操作。
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { FolderKanban, Loader2, Plus } from "lucide-react";
+import { ChevronRight, FolderKanban, Loader2, Plus } from "lucide-react";
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 import { createProject } from "@/api/endpoints";
 import { errorEnvelopeFrom, type ErrorEnvelope } from "@/api/errors";
@@ -35,6 +35,7 @@ import { useProjectContext } from "@/lib/context";
 import { formatTime } from "@/lib/utils";
 
 export function ProjectsPage() {
+  const navigate = useNavigate();
   const { teams, projects, projectOverrides } = useProjectContext();
 
   // 生效角色：项目覆写行优先（team_id + prj_slug 命中），否则团队角色；
@@ -186,6 +187,7 @@ export function ProjectsPage() {
                   <TableHead>My role</TableHead>
                   <TableHead>Description</TableHead>
                   <TableHead>Created</TableHead>
+                  <TableHead className="w-10" />
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -193,13 +195,25 @@ export function ProjectsPage() {
                   const membership = teams.find((t) => t.team_id === p.team_id);
                   const role = roleFor(p.team_id, p.slug);
                   return (
-                    <TableRow key={p.id} data-testid="project-row" data-slug={p.slug}>
+                    <TableRow
+                      key={p.id}
+                      data-testid="project-row"
+                      data-slug={p.slug}
+                      className="cursor-pointer"
+                      onClick={() => navigate(`/projects/${encodeURIComponent(p.id ?? "")}`)}
+                    >
                       <TableCell>
                         <div className="flex items-center gap-2.5 font-medium">
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border bg-muted/40">
                             <FolderKanban aria-hidden className="h-4 w-4 text-muted-foreground" />
                           </span>
-                          {p.name}
+                          <Link
+                            to={`/projects/${encodeURIComponent(p.id ?? "")}`}
+                            className="hover:underline"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {p.name}
+                          </Link>
                         </div>
                         {/* 跨团队展示限定形（D-W0-9）。 */}
                         <div className="font-mono text-xs text-muted-foreground">
@@ -230,6 +244,9 @@ export function ProjectsPage() {
                       <TableCell className="text-xs text-muted-foreground">{p.description}</TableCell>
                       <TableCell className="text-xs text-muted-foreground">
                         {formatTime(p.created_at)}
+                      </TableCell>
+                      <TableCell className="w-10 text-right">
+                        <ChevronRight aria-hidden className="ml-auto h-4 w-4 text-muted-foreground/60" />
                       </TableCell>
                     </TableRow>
                   );

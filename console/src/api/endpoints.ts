@@ -31,6 +31,7 @@ import type {
   GetRevisionSpecResponse,
   GetS3SettingsResponse,
   GetScalingPolicyResponse,
+  GetProjectResponse,
   GetSmtpSettingsResponse,
   GetSystemStatusResponse,
   GetTerminalStatusResponse,
@@ -59,6 +60,7 @@ import type {
   ListTokensResponse,
   ListProjectsResponse,
   ListProjectMembersResponse,
+  UpdateProjectResponse,
   ListTeamInvitesResponse,
   ListTeamMembersResponse,
   ListTeamsResponse,
@@ -312,6 +314,19 @@ export function createProject(input: {
 export function deleteProject(id: string) {
   return api<Record<string, never>>(`/projects/${encodeURIComponent(id)}`, {
     method: "DELETE",
+  });
+}
+
+/** 项目详情（读面门：成员/平台管理员只读）。 */
+export function getProject(id: string) {
+  return api<GetProjectResponse>(`/projects/${encodeURIComponent(id)}`);
+}
+
+/** 编辑 name/description（slug 不可变；服务端 owner 硬门——团队设置同规）。 */
+export function updateProject(id: string, input: { name: string; description?: string }) {
+  return api<UpdateProjectResponse>(`/projects/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    json: input,
   });
 }
 

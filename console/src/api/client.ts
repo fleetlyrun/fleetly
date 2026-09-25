@@ -85,7 +85,7 @@ export function utf8ToBase64(s: string): string {
 }
 
 export interface ApiRequestInit {
-  method?: "GET" | "POST" | "PUT" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   /** JSON 体（自动序列化）；与 rawBody 互斥 */
   json?: unknown;
   /** proto bytes 上行（base64 编码后作 JSON 体，如 Deploy.compose） */

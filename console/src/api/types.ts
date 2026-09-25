@@ -53,6 +53,8 @@ export type ProjectMemberView = Schemas["v1ProjectMemberView"];
 export type ListProjectMembersResponse = Schemas["v1ListProjectMembersResponse"];
 export type SetProjectMemberRoleResponse = Schemas["v1SetProjectMemberRoleResponse"];
 export type CreateProjectResponse = Schemas["v1CreateProjectResponse"];
+export type GetProjectResponse = Schemas["v1GetProjectResponse"];
+export type UpdateProjectResponse = Schemas["v1UpdateProjectResponse"];
 
 // ── users（v0.3 W2-S5 平台管理员用户管理页，设计 §7「平台管理员」）───────
 // 手写投影（非 schema.d.ts 生成——users.swagger.json 因 /v1/auth/registration

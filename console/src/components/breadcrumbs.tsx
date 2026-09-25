@@ -12,7 +12,7 @@ import { Fragment } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { ChevronRight } from "lucide-react";
 
-import { getApp, listApps } from "@/api/endpoints";
+import { getApp, getProject, listApps, listProjects } from "@/api/endpoints";
 import { useProjectContext } from "@/lib/context";
 
 const SEGMENT_LABELS: Record<string, string> = {
@@ -44,6 +44,7 @@ export function Breadcrumbs() {
   const lastSeg = segments[segments.length - 1] ?? "";
   const prevOfLast = segments[segments.length - 2];
   const lastIsAppId = ULID_RE.test(lastSeg) && prevOfLast === "apps";
+  const lastIsProjectId = ULID_RE.test(lastSeg) && prevOfLast === "projects";
   const appsList = useQuery({
     queryKey: ["apps", projectRef],
     queryFn: () => listApps(projectRef ? { project: projectRef } : {}),
@@ -54,6 +55,21 @@ export function Breadcrumbs() {
     queryKey: ["app", lastSeg],
     queryFn: () => getApp(lastSeg),
     enabled: lastIsAppId,
+    staleTime: 30 * 1000,
+    retry: false,
+  });
+  // 项目 id 段：["projects","context"] 列表缓存（切换器/一级页先行必命中）
+  // + ["project", id] 详情缓存（详情页查询键同源）。
+  const projectsList = useQuery({
+    queryKey: ["projects", "context"],
+    queryFn: () => listProjects(),
+    enabled: false,
+    staleTime: 60 * 1000,
+  });
+  const projectDetail = useQuery({
+    queryKey: ["project", lastSeg],
+    queryFn: () => getProject(lastSeg),
+    enabled: lastIsProjectId,
     staleTime: 30 * 1000,
     retry: false,
   });
@@ -70,6 +86,14 @@ export function Breadcrumbs() {
           return appDetail.data?.name ?? "Application";
         }
         return "Application";
+      }
+      if (prev === "projects") {
+        if (seg === lastSeg) {
+          const fromList = projectsList.data?.projects?.find((p) => p.id === seg);
+          if (fromList?.name) return fromList.name;
+          return projectDetail.data?.project?.name ?? "Project";
+        }
+        return "Project";
       }
       return "Team settings";
     }

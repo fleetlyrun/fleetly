@@ -46,6 +46,7 @@ const DatabaseDetailPage = lazyPage(() => import("@/pages/DatabaseDetailPage"), 
 const EventsPage = lazyPage(() => import("@/pages/EventsPage"), "EventsPage");
 const PatPage = lazyPage(() => import("@/pages/PatPage"), "PatPage");
 const ProjectsPage = lazyPage(() => import("@/pages/ProjectsPage"), "ProjectsPage");
+const ProjectDetailPage = lazyPage(() => import("@/pages/ProjectDetailPage"), "ProjectDetailPage");
 const SystemPage = lazyPage(() => import("@/pages/SystemPage"), "SystemPage");
 const TeamPage = lazyPage(() => import("@/pages/TeamPage"), "TeamPage");
 const TeamsPage = lazyPage(() => import("@/pages/TeamsPage"), "TeamsPage");
@@ -133,6 +134,7 @@ function AuthedRoutes() {
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/teams/:teamId" element={<TeamPage />} />
           <Route path="/projects" element={<ProjectsPage />} />
+          <Route path="/projects/:projectId" element={<ProjectDetailPage />} />
           <Route path="/admin/users" element={<AdminPage />} />
           <Route path="/admin/audit" element={<AuditPage />} />
           <Route path="/auth/invite" element={<InvitePage />} />
