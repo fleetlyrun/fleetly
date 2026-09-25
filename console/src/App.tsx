@@ -34,6 +34,7 @@ import { EventsPage } from "@/pages/EventsPage";
 import { InvitePage } from "@/pages/InvitePage";
 import { LoginPage } from "@/pages/LoginPage";
 import { PatPage } from "@/pages/PatPage";
+import { ProjectsPage } from "@/pages/ProjectsPage";
 import { SystemPage } from "@/pages/SystemPage";
 import { TeamPage } from "@/pages/TeamPage";
 import { TeamsPage } from "@/pages/TeamsPage";
@@ -120,6 +121,7 @@ function AuthedRoutes() {
           <Route path="/events" element={<EventsPage />} />
           <Route path="/teams" element={<TeamsPage />} />
           <Route path="/teams/:teamId" element={<TeamPage />} />
+          <Route path="/projects" element={<ProjectsPage />} />
           <Route path="/admin/users" element={<AdminPage />} />
           <Route path="/admin/audit" element={<AuditPage />} />
           <Route path="/auth/invite" element={<InvitePage />} />

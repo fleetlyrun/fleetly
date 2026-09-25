@@ -1,14 +1,16 @@
 // Console 壳（dokploy 式）：可折叠侧边栏（分组导航 + 版本页脚）
 // + 顶栏（折叠钮 / 团队·项目切换器 / 面包屑 / 时钟 / 主题 / 用户菜单）+
-// 内容区。导航 = v0.1 功能面（应用 / 事件 / 系统）+ v0.3 团队面（Teams）
-// + 平台管理员面（Admin，仅 is_platform_admin 可见——W2-S5，rbac-teams
-// 设计 §7）。折叠偏好持久化 localStorage；小屏首帧默认折叠。身份与退出
+// 内容区。导航 = v0.1 功能面（应用 / 事件 / 系统）+ v0.3 团队/项目面
+// （Teams / Projects——Projects 一级入口为 2026-09-24 用户裁决）+ 平台
+// 管理员面（Admin，仅 is_platform_admin 可见——W2-S5，rbac-teams 设计
+// §7）。折叠偏好持久化 localStorage；小屏首帧默认折叠。身份与退出
 // 收拢在顶栏用户菜单。
 
 import { useQuery } from "@tanstack/react-query";
 import {
   Boxes,
   Database,
+  FolderKanban,
   House,
   PanelLeft,
   Radio,
@@ -38,7 +40,10 @@ const NAV_PLATFORM = [
   { to: "/events", label: "Events", icon: Radio, end: false },
   { to: "/system", label: "System", icon: Server, end: false },
 ];
-const NAV_TEAMS = [{ to: "/teams", label: "Teams", icon: UsersRound, end: false }];
+const NAV_TEAMS = [
+  { to: "/teams", label: "Teams", icon: UsersRound, end: false },
+  { to: "/projects", label: "Projects", icon: FolderKanban, end: false },
+];
 
 function useSidebarCollapsed() {
   // 无持久化偏好时按视口宽度定初值（窄屏折叠；宽屏展开）。一次性求值，

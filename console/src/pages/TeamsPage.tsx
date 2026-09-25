@@ -1,16 +1,30 @@
 // 团队列表页（/teams，v0.3 W2-S5，rbac-teams 设计 §7）：我所在团队
 // （Me 投影——角色徽章）+ 平台管理员的跨团队只读面（ListTeams 全量，
 // support 视角——成员角色未知，仅列名与限定形 slug）。行点击进团队设置
-// 页（成员/邀请/项目管理）。
+// 页（成员/邀请/项目管理）。页头「New team」= 建队对话框（POST /teams，
+// 调用方即 owner——注册自动建个人队之外的多团队入口，此前仅 CLI）。
 
-import { useQuery } from "@tanstack/react-query";
-import { ChevronRight, UsersRound } from "lucide-react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { ChevronRight, Loader2, Plus, UsersRound } from "lucide-react";
+import { useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 
-import { listTeams } from "@/api/endpoints";
+import { createTeam, listTeams } from "@/api/endpoints";
+import { errorEnvelopeFrom, type ErrorEnvelope } from "@/api/errors";
+import { EnvelopeAlert } from "@/components/envelope-alert";
 import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Table,
   TableBody,
@@ -37,12 +51,107 @@ export function TeamsPage() {
   const mineIds = new Set(teams.map((t) => t.team_id));
   const others = allTeams.filter((t) => !mineIds.has(t.id ?? ""));
 
+  const queryClient = useQueryClient();
+  const [creating, setCreating] = useState(false);
+  const [slug, setSlug] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState<ErrorEnvelope | null>(null);
+
+  // 建队成功 = 调用方成为新队 owner：Me 投影（列表/切换器/能力门）与
+  // 管理员全量面缓存一并失效。
+  const createMutation = useMutation({
+    mutationFn: () => createTeam({ slug: slug.trim(), name: name.trim() }),
+    onSuccess: () => {
+      setCreating(false);
+      setSlug("");
+      setName("");
+      setError(null);
+      void queryClient.invalidateQueries({ queryKey: ["auth", "me"] });
+      void queryClient.invalidateQueries({ queryKey: ["teams"] });
+      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    },
+    onError: (err) => setError(errorEnvelopeFrom(err)),
+  });
+
+  function onCreate(e: FormEvent) {
+    e.preventDefault();
+    if (slug.trim() && name.trim()) createMutation.mutate();
+  }
+
   return (
     <div className="space-y-4" data-testid="teams-page">
       <PageHeader
         title="Teams"
         description="Your teams and projects. Open a team to manage members, invites and project role overrides."
+        actions={
+          <Button size="sm" data-testid="team-create-open" onClick={() => setCreating(true)}>
+            <Plus aria-hidden className="h-3.5 w-3.5" />
+            New team
+          </Button>
+        }
       />
+      <Dialog open={creating} onOpenChange={(open) => !open && setCreating(false)}>
+        <DialogContent data-testid="team-create-dialog">
+          <DialogHeader>
+            <DialogTitle>Create a team</DialogTitle>
+            <DialogDescription>
+              You become the owner of the new team. Slug is word-only ([a-z0-9], 2–32 chars),
+              immutable, and unique across the platform — it is the first segment of the
+              infrastructure naming formula.
+            </DialogDescription>
+          </DialogHeader>
+          <form className="space-y-4" onSubmit={onCreate}>
+            <div className="space-y-2">
+              <Label htmlFor="team-slug">Slug</Label>
+              <Input
+                id="team-slug"
+                data-testid="team-slug-input"
+                className="w-full font-mono text-xs"
+                placeholder="acme"
+                autoFocus
+                value={slug}
+                onChange={(e) => setSlug(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="team-name">Name</Label>
+              <Input
+                id="team-name"
+                data-testid="team-name-input"
+                className="w-full"
+                placeholder="Acme Inc"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            {error ? (
+              <EnvelopeAlert code={error.code} message={error.message} suggestion={error.suggestion} />
+            ) : null}
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="team-create-cancel"
+                onClick={() => setCreating(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                data-testid="team-create-submit"
+                disabled={!slug.trim() || !name.trim() || createMutation.isPending}
+              >
+                {createMutation.isPending ? (
+                  <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
+                ) : null}
+                Create team
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
       <Card>
         <CardContent className="p-0">
           {teams.length === 0 ? (

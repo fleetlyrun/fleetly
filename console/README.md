@@ -40,7 +40,7 @@ console/
 
 | 页面 | 端点（proto/fleetly/server/v1 派生） |
 | --- | --- |
-| 登录/注册/邀请（RBAC W1） | POST /v1/auth/login、POST /v1/auth/register（Set-Cookie 下发会话）、GET /v1/auth/registration（注册入口开关）、POST /v1/auth/logout(-all)、GET /v1/auth/me（启动探测 + 用户菜单投影）、POST /v1/auth/invite:accept；折叠高级路径 = 粘贴 API token（GET /v1/apps 校验 + Bearer） |
+| 登录/注册/邀请（RBAC W1） | POST /v1/auth/login、POST /v1/auth/register（Set-Cookie 下发会话）、GET /v1/auth/registration（注册入口开关）、POST /v1/auth/logout(-all)、GET /v1/auth/me（启动探测 + 用户菜单/团队上下文投影）、POST /v1/auth/invite:accept（API token 登录面已移除——2026-09-25 用户裁决） |
 | 首页仪表盘 | GET /v1/apps、GET /v1/system/status、GET /v1/system/nodes、GET /v1/events/stream（统计与活动流均为客户端派生，不新增端点） |
 | 应用列表 | GET /v1/apps |
 | 概览 | GET /v1/apps/{app}、GET /v1/apps/{app}/placement |
@@ -50,6 +50,9 @@ console/
 | 域名 | GET /v1/apps/{app}/domains、POST /v1/apps/{app}/domains/verify |
 | 系统 | GET /v1/system/status、/v1/system/nodes、/v1/system/ingress |
 | 事件 | GET /v1/events/stream（NDJSON，`since_seq` 游标续读 + cursor_expired 重同步） |
+| 团队列表（/teams） | GET /v1/auth/me（我的团队投影）、GET /v1/teams（平台管理员全量只读）、POST /v1/teams（「New team」建队对话框——调用方即 owner） |
+| 团队设置（/teams/{id}） | GET/PUT /v1/teams/{id}/members、POST members:set-role、邀请面 POST/GET /v1/teams/{id}/invites + DELETE、项目面 POST/GET /v1/projects、DELETE /v1/projects/{id}、覆写成员 GET/POST/DELETE /v1/projects/{id}/members |
+| 项目一级页（/projects） | GET /v1/projects（跨团队聚合，与顶栏切换器同源）、POST /v1/projects（创建卡片门 = 目标团队 owner；删除/覆写仍在团队设置页） |
 
 ## 部署形态
 
