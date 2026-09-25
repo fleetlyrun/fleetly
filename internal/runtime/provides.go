@@ -288,7 +288,14 @@ func NewMetricsManager(app lynx.App, cfg *AppConfig, st *state.Store, mb *metric
 	if mb != nil {
 		mgr = mgr.WithHealth(mb.Ping)
 	}
-	notifierURL := fmt.Sprintf("http://127.0.0.1:%d%s", httpPortOf(cfg.HTTPAddr()), internalAlertsPath)
+	// notifier scheme 跟随网关 TLS 形态（staging 真机 2026-09-25 实爆：TLS 常开
+	// 下明文拨 8420 = connection reset——与 console 直访段 0d84e6a 同族教训）；
+	// 回环 IP 无 SAN，TLS 形态下接收器 spec 侧补 -notifier.tls.insecureSkipVerify。
+	scheme := "http"
+	if cfg.TLSMode() != ControlPlaneTLSOff {
+		scheme = "https"
+	}
+	notifierURL := fmt.Sprintf("%s://127.0.0.1:%d%s", scheme, httpPortOf(cfg.HTTPAddr()), internalAlertsPath)
 	mgr = mgr.WithAlertsNotifier(notifierURL, cfg.IngressSettings().TokenFile)
 	return mgr, cleanup, nil
 }

@@ -66,6 +66,7 @@ func TestVMAlertConvergesOnAlertsMode(t *testing.T) {
 		"-datasource.url=http://127.0.0.1:8428",
 		"-remoteRead.url=http://127.0.0.1:8428",
 		"-notifier.url=http://127.0.0.1:8420/internal/alerts",
+		"-notifier.tls.insecureSkipVerify=true",
 		"-notifier.basicAuth.username=fleetly",
 		"-notifier.basicAuth.passwordFile=/etc/fleetly/notifier-token",
 		"-rule=/etc/vmalert/rules/*.yaml",
