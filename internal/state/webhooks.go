@@ -650,12 +650,16 @@ type WebhookDelivery struct {
 	LastError string
 	// NextRetryAt 是下次重试时刻（nil = 无待重试——终态或等待首发）。
 	NextRetryAt *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// AlertPayload 是告警投递的载荷事实（JSON 文本；空串 = 事件投递行——
+	// 载荷经 events 表按 EventSeq 解析）。告警行 EventSeq 恒为 0（事件 seq
+	// 自 1 起单调的哨兵值；告警投递零事件——载荷物化在台账行自身，W5-S2）。
+	AlertPayload string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
 }
 
 // webhookDeliveryCols 是台账行查询列清单。
-const webhookDeliveryCols = `id, event_seq, endpoint_id, status, attempts, response_code, last_error, next_retry_at, created_at, updated_at`
+const webhookDeliveryCols = `id, event_seq, endpoint_id, status, attempts, response_code, last_error, next_retry_at, alert_payload, created_at, updated_at`
 
 // scanWebhookDelivery 从行扫描台账投影。
 func scanWebhookDelivery(row scanner) (WebhookDelivery, error) {
@@ -663,11 +667,12 @@ func scanWebhookDelivery(row scanner) (WebhookDelivery, error) {
 		d            WebhookDelivery
 		responseCode sql.NullInt64
 		nextRetry    sql.NullInt64
+		alertPayload sql.NullString
 		createdAt    int64
 		updatedAt    int64
 	)
 	if err := row.Scan(&d.ID, &d.EventSeq, &d.EndpointID, &d.Status, &d.Attempts,
-		&responseCode, &d.LastError, &nextRetry, &createdAt, &updatedAt); err != nil {
+		&responseCode, &d.LastError, &nextRetry, &alertPayload, &createdAt, &updatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return WebhookDelivery{}, ErrWebhookNotFound
 		}
@@ -681,6 +686,7 @@ func scanWebhookDelivery(row scanner) (WebhookDelivery, error) {
 		t := time.Unix(0, nextRetry.Int64).UTC()
 		d.NextRetryAt = &t
 	}
+	d.AlertPayload = alertPayload.String
 	d.CreatedAt = time.Unix(0, createdAt).UTC()
 	d.UpdatedAt = time.Unix(0, updatedAt).UTC()
 	return d, nil
@@ -950,6 +956,38 @@ func (s *Store) LatestWebhookTerminalDeliveries(ctx context.Context) (map[string
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("state: iterate latest webhook terminal deliveries: %w", err)
+	}
+	return out, nil
+}
+
+// CreateAlertDeliveries 为告警投递落台账行（B 线 W5 §2.3，D-V3W5-1，
+// W5-S2）：每个目标端点各落一条 pending 行，载荷物化在 alert_payload 列
+//（**零事件**——防回环红线，告警不经事件流，无游标推进语义）。event_seq
+// 恒为 0（事件 seq 自 1 起单调的哨兵值）。返回新建的 pending 行（投递器
+// 据此入队）。与事件投递共用重试簿记（attempts/退避/终态）与 7d 清理窗。
+func (s *Store) CreateAlertDeliveries(ctx context.Context, endpointIDs []string, alertPayload string) ([]WebhookDelivery, error) {
+	out := make([]WebhookDelivery, 0, len(endpointIDs))
+	err := s.InTx(ctx, func(tx *Tx) error {
+		now := nowNano()
+		for _, epID := range endpointIDs {
+			id := ulid.Make().String()
+			const q = `INSERT INTO webhook_deliveries
+				(id, event_seq, endpoint_id, status, attempts, last_error, alert_payload, created_at, updated_at)
+				VALUES (?, 0, ?, ?, 0, '', ?, ?, ?)`
+			if _, err := tx.ExecContext(ctx, q, id, epID, WebhookDeliveryPending, alertPayload, now, now); err != nil {
+				return fmt.Errorf("state: insert alert delivery (endpoint %s): %w", epID, err)
+			}
+			row, err := scanWebhookDelivery(tx.QueryRowContext(ctx,
+				`SELECT `+webhookDeliveryCols+` FROM webhook_deliveries WHERE id = ?`, id))
+			if err != nil {
+				return err
+			}
+			out = append(out, row)
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }

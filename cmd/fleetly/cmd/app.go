@@ -40,6 +40,7 @@ func NewApp(version string) *commands.App {
 		newEnvCmd(),
 		newLogsCmd(),
 		newMetricsCmd(),
+		newAlertsCmd(),
 		newNotificationsCmd(),
 		newEventsCmd(),
 		newTokensCmd(),

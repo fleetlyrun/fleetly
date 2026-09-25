@@ -88,6 +88,7 @@ type Client struct {
 	env     serverv1.EnvServiceClient
 	logs    serverv1.LogsServiceClient
 	metrics serverv1.MetricsServiceClient
+	alerts  serverv1.AlertingServiceClient
 	notifs  serverv1.NotificationsServiceClient
 	events  serverv1.EventsServiceClient
 	place   serverv1.PlacementServiceClient
@@ -135,6 +136,7 @@ func NewClient(opts ...Option) (*Client, error) {
 		env:     serverv1.NewEnvServiceClient(conn),
 		logs:    serverv1.NewLogsServiceClient(conn),
 		metrics: serverv1.NewMetricsServiceClient(conn),
+		alerts:  serverv1.NewAlertingServiceClient(conn),
 		notifs:  serverv1.NewNotificationsServiceClient(conn),
 		events:  serverv1.NewEventsServiceClient(conn),
 		place:   serverv1.NewPlacementServiceClient(conn),
@@ -198,6 +200,10 @@ func (c *Client) Logs() serverv1.LogsServiceClient { return c.logs }
 // Metrics 取 metrics 面客户端（E6 W5-S3：SearchMetrics/GetMetricsStatus/
 // SetMetricsMode）。
 func (c *Client) Metrics() serverv1.MetricsServiceClient { return c.metrics }
+
+// Alerts 取告警面客户端（B 线 W5-S2，D-V3W5-1：规则 CRUD/SetAlertsMode/
+// GetAlertsStatus/TestAlertRule）。
+func (c *Client) Alerts() serverv1.AlertingServiceClient { return c.alerts }
 
 // Notifications 取通知 Webhook 面（E6 W5-S4：端点 CRUD/轮换/测试 + 投递
 // 台账读面）。

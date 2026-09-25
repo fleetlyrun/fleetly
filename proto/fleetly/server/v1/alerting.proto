@@ -1,0 +1,158 @@
+syntax = "proto3";
+
+package fleetly.server.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1";
+
+import "buf/validate/validate.proto";
+import "fleetly/server/v1/metrics.proto";
+import "google/api/annotations.proto";
+import "google/protobuf/timestamp.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+
+// 文件级 swagger 声明：default 错误响应引用 shared 的 ErrorResponse 信封
+//（与 buf.gen.yaml 的 disable_default_errors=true 配合）。与 logs.proto
+// 同款惯例，逐文件声明。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// AlertingService 是告警面（B 线 W5 设计 §2，D-V3W5-1，v0.3 W5-S2）：
+// alert_rules 的 CRUD + alerts.mode 开关 + 栈状态视图 + TestAlertRule
+//（datasource instant query 直接执行 expr——规则编写时的即时校验面）。
+//
+// scope 语义（scope.go 登记）：读面（List/Status）= read——规则与栈态是
+// 事实面；写面（Create/Update/Delete/SetAlertsMode/TestAlertRule）= 机具
+// 令牌 admin/deploy scope + 用户 principal 另须平台管理员
+//（requirePlatformWriteFace——告警面向平台管理员，与 notifications 端点
+// 同域，设计 §2.2）。TestAlertRule 属写面同门（规则编写伴随面，且消耗
+// VM 查询资源——保守登记）。
+service AlertingService {
+  // CreateAlertRule 创建规则（平台级唯一名）。
+  rpc CreateAlertRule(CreateAlertRuleRequest) returns (CreateAlertRuleResponse) {
+    option (google.api.http) = { post: "/v1/alerting/rules" body: "*" };
+  }
+  // ListAlertRules 规则清单（name 字典序——渲染序的稳定性锚）。
+  rpc ListAlertRules(ListAlertRulesRequest) returns (ListAlertRulesResponse) {
+    option (google.api.http) = { get: "/v1/alerting/rules" };
+  }
+  // UpdateAlertRule 部分更新（optional 字段语义——未提供不变）。
+  rpc UpdateAlertRule(UpdateAlertRuleRequest) returns (UpdateAlertRuleResponse) {
+    option (google.api.http) = { put: "/v1/alerting/rules/{id}" body: "*" };
+  }
+  // DeleteAlertRule 删除规则（duty 下一拍重渲染规则文件）。
+  rpc DeleteAlertRule(DeleteAlertRuleRequest) returns (DeleteAlertRuleResponse) {
+    option (google.api.http) = { delete: "/v1/alerting/rules/{id}" };
+  }
+  // SetAlertsMode 切换 alerts.mode（unset | on；前置门 metrics.mode=on，
+  // 违反 → 409 E_ALERTS_METRICS_REQUIRED 带指引）。
+  rpc SetAlertsMode(SetAlertsModeRequest) returns (SetAlertsModeResponse) {
+    option (google.api.http) = { put: "/v1/alerting/mode" body: "*" };
+  }
+  // GetAlertsStatus 告警栈状态视图（mode + vmalert 部署态 + 规则数）。
+  rpc GetAlertsStatus(GetAlertsStatusRequest) returns (GetAlertsStatusResponse) {
+    option (google.api.http) = { get: "/v1/alerting/status" };
+  }
+  // TestAlertRule 单次求值试跑（经 VM /api/v1/query 直接执行 expr 返回
+  // 样本——不落库不部署，纯校验面）。
+  rpc TestAlertRule(TestAlertRuleRequest) returns (TestAlertRuleResponse) {
+    option (google.api.http) = { post: "/v1/alerting/rules:test" body: "*" };
+  }
+}
+
+// AlertRuleView 是一条规则的读面投影。
+message AlertRuleView {
+  string id = 1;
+  string name = 2;
+  string expr = 3;
+  // for 子句秒数（0 = 无 for 子句）。
+  int64 for_duration_seconds = 4;
+  // 规则 label 集（含 severity——severity 进通知文案的源头）。
+  map<string, string> labels = 5;
+  // 通知端点 id 集（空 = 缺省投全部启用端点）。
+  repeated string channels = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message CreateAlertRuleRequest {
+  string name = 1 [(buf.validate.field).string = { pattern: "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$" }];
+  string expr = 2 [(buf.validate.field).string = { min_len: 1, max_len: 2048 }];
+  int64 for_duration_seconds = 3 [(buf.validate.field).int64 = { gte: 0 }];
+  map<string, string> labels = 4;
+  repeated string channels = 5;
+}
+
+message CreateAlertRuleResponse {
+  AlertRuleView rule = 1;
+}
+
+message ListAlertRulesRequest {}
+
+message ListAlertRulesResponse {
+  repeated AlertRuleView rules = 1;
+}
+
+message UpdateAlertRuleRequest {
+  string id = 1 [(buf.validate.field).string = { min_len: 1 }];
+  optional string name = 2 [(buf.validate.field).string = { pattern: "^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$" }];
+  optional string expr = 3 [(buf.validate.field).string = { min_len: 1, max_len: 2048 }];
+  optional int64 for_duration_seconds = 4 [(buf.validate.field).int64 = { gte: 0 }];
+  // 非 null = 整体替换（null = 不变）。
+  map<string, string> labels = 5;
+  // 非空 = 整体替换（全量替换语义用空集表达需经 Delete+Create——与
+  // notifications patterns 更新同口径）。
+  repeated string channels = 6;
+}
+
+message UpdateAlertRuleResponse {
+  AlertRuleView rule = 1;
+}
+
+message DeleteAlertRuleRequest {
+  string id = 1 [(buf.validate.field).string = { min_len: 1 }];
+}
+
+message DeleteAlertRuleResponse {}
+
+message SetAlertsModeRequest {
+  string mode = 1 [(buf.validate.field).string = {
+    in: ["unset", "on"]
+  }];
+}
+
+message SetAlertsModeResponse {
+  GetAlertsStatusResponse status = 1;
+}
+
+message GetAlertsStatusRequest {}
+
+message GetAlertsStatusResponse {
+  // 生效模式：unset | on（缺省 unset；set 区分「缺省生效」）。
+  string mode = 1;
+  bool mode_set = 2;
+  // vmalert 服务部署态（mode=on 且 exists=false = duty 收敛中——过渡态）。
+  bool vmalert_exists = 3;
+  string vmalert_image = 4;
+  // 平台规则数。
+  int32 rule_count = 5;
+  // metrics.mode 当前值（前置门的可见面——alerts on 而 metrics off =
+  // vmalert 被移除的休眠形态，如实并列让消费方自判）。
+  string metrics_mode = 6;
+}
+
+message TestAlertRuleRequest {
+  string expr = 1 [(buf.validate.field).string = { min_len: 1, max_len: 2048 }];
+}
+
+// TestAlertRuleResponse 是 instant query 的样本回（序列 label 集 + 单点；
+// 空集 = 表达式合法但当前无匹配序列——同样是「试跑成功」的事实）。
+message TestAlertRuleResponse {
+  repeated MetricsSeries series = 1;
+}

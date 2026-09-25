@@ -117,6 +117,17 @@ var docCodes = map[string]string{ // code → 文档出处
 	"E_WEBHOOK_NOT_FOUND":       "E6 observability §5 (W5-S4 webhook endpoint absent: envelope projection of the state sentinel, 404)",
 	"E_WEBHOOK_NAME_CONFLICT":   "E6 observability §5 (W5-S4 endpoint names are unique: envelope projection of the state sentinel, 409)",
 	"E_WEBHOOK_PATTERN_INVALID": "E6 observability §5 (W5-S4 subscription glob pattern rejected by the whitelist: non-empty [a-z0-9._-*], 422)",
+	// B 线 W5 告警面（b-line-w5 设计 §2，D-V3W5-1，W5-S2 接线，注册表只增）：
+	// alerts.mode 前置门 + alert_rules CRUD 的哨兵投影与形状校验族。消费点 =
+	// internal/state/alertsettings.go 与 internal/state/alerting.go（409 前置
+	// 门在 state 层构造）+ internal/api/alerting.go（哨兵投影）。
+	"E_ALERTS_METRICS_REQUIRED":     "v0.3 W5 b-line-w5 §2.1 (alerts.mode=on gate: metrics.mode must be on first — vmalert has no datasource otherwise, 409)",
+	"E_ALERT_RULE_NOT_FOUND":        "v0.3 W5 b-line-w5 §2.2 (alert rule absent: envelope projection of the state sentinel, 404)",
+	"E_ALERT_RULE_NAME_CONFLICT":    "v0.3 W5 b-line-w5 §2.2 (rule names unique platform-wide: envelope projection of the state sentinel, 409)",
+	"E_ALERT_RULE_EXPR_INVALID":     "v0.3 W5 b-line-w5 §2.2 (expr must be a non-empty PromQL of at most 2048 chars, 422)",
+	"E_ALERT_RULE_FOR_INVALID":      "v0.3 W5 b-line-w5 §2.2 (for_duration must be >= 0 seconds, 422)",
+	"E_ALERT_RULE_LABELS_INVALID":   "v0.3 W5 b-line-w5 §2.2 (labels must be a JSON object with non-empty string keys, 422)",
+	"E_ALERT_RULE_CHANNELS_INVALID": "v0.3 W5 b-line-w5 §2.2/§2.3 (channels must be a list of non-empty endpoint ids; empty = all enabled endpoints, 422)",
 	// E7 Web 终端（web-terminal 设计 §2.4/§2.5，W5-S6 接线，注册表只增）：
 	// 功能开关门——terminal.enabled=false 时 ticket 受理与 WS 接入的诚实
 	// 拒绝（internal/api/terminal.go / internal/execrelay hub.go）。
@@ -195,7 +206,9 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // 保留字迁移退役——设计明示的唯一减码）增 E_PROJECT_AMBIGUOUS /
 // E_APP_AMBIGUOUS / E_APP_PROJECT_MISMATCH / E_APP_PROJECT_REQUIRED
 // → 66 E + 5 W；W2-S4 增 E_DB_PROJECT_MISMATCH（rbac-teams §4.1 E4 跨项目
-// 库引用守卫，部署受理面）→ 67 E + 5 W。
+// 库引用守卫，部署受理面）→ 67 E + 5 W；W5-S2 增告警面七码（B 线
+// b-line-w5 设计 §2，D-V3W5-1：E_ALERTS_METRICS_REQUIRED 前置门 +
+// E_ALERT_RULE_* 六码）→ 74 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -205,8 +218,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 67 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 67), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 74 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 74), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

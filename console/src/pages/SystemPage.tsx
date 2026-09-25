@@ -19,6 +19,7 @@ import { useSearchParams } from "react-router-dom";
 
 import { getIngressStatus, getSystemStatus, listNodes } from "@/api/endpoints";
 import { errorEnvelopeFrom } from "@/api/errors";
+import { AlertingSettingsCard } from "@/components/alerting-settings-card";
 import { BackupsCard } from "@/components/backups-card";
 import {
   EnvelopeAlert,
@@ -55,6 +56,7 @@ const TABS = [
   { key: "nodes", label: "Nodes" },
   { key: "ingress", label: "Ingress" },
   { key: "metrics", label: "Metrics" },
+  { key: "alerts", label: "Alerts" },
   { key: "notifications", label: "Notifications" },
   { key: "storage", label: "Storage" },
 ];
@@ -188,6 +190,13 @@ export function SystemPage() {
         // metrics 设置卡（E6 W5-S3，D-W5-2 opt-in）：模式开关 + 栈状态 +
         // 诚实「worker 节点需 overlay 数据面」文案。
         <MetricsSettingsCard />
+      ) : null}
+
+      {tab === "alerts" ? (
+        // 告警设置卡（B 线 W5-S2，D-V3W5-1）：alerts.mode 开关（前置门
+        // metrics.mode=on——off 时禁用态提示）+ vmalert 状态 + 规则管理
+        //（expr 编辑 + Test 即时求值 + 通道绑定勾选）。
+        <AlertingSettingsCard />
       ) : null}
 
       {tab === "notifications" ? (

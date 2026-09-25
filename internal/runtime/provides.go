@@ -70,6 +70,7 @@ var ProviderSet = wire.NewSet(
 	NewExecRelayManager,
 	NewExecService,
 	NewTerminalNativeHandler,
+	NewAlertsReceiverHandler,
 	NewAuthenticator,
 	NewSystemService,
 	NewAppsService,
@@ -84,6 +85,7 @@ var ProviderSet = wire.NewSet(
 	NewEnvService,
 	NewLogsService,
 	NewMetricsService,
+	NewAlertingService,
 	NewNotificationsService,
 	NewEventsService,
 	NewPlacementService,
@@ -266,14 +268,17 @@ func NewMetricsBackend() *metrics.Backend {
 	return metrics.NewBackend()
 }
 
-// NewMetricsManager 构建托管 metrics 三件套 duty 管理器（E6 W5-S3，设计
-// §4.1，D-W5-2 opt-in：metrics.mode=on 时幂等部署/收敛三件——VM 单副本钉
+// NewMetricsManager 构建托管 metrics 栈 duty 管理器（E6 W5-S3，设计 §4.1，
+// D-W5-2 opt-in：metrics.mode=on 时幂等部署/收敛三件——VM 单副本钉
 // manager/卷/host 网络回环监听 8428/-retentionPeriod 对齐 metrics.
 // retention_days/-promscrape.config 经 swarm config 对象分发；cAdvisor 与
-// node_exporter global。切回 unset 三件移除保留卷。常驻收敛循环由服务壳
-// Start 承载，资源层——晚于 engine 停）。自建 Docker 连接（victorialogs
-// Manager 同款形态），cleanup 释放；健康拨测 = Backend.Ping（宿主回环
-// 直达——无探针容器）。
+// node_exporter global。切回 unset 三件移除保留卷。W5-S2 起 alerts.mode=on
+// 时第四件 vmalert 同收敛——notifier URL 指向本进程 gateway 的
+// /internal/alerts（回环形态：vmalert 钉 manager 且 host 网络，与 gateway
+// 同 netns，恒可达；tokenFile = ingress token 文件，bind 只读进任务——
+// 凭据材料不进服务 spec）。常驻收敛循环由服务壳 Start 承载，资源层——晚于
+// engine 停）。自建 Docker 连接（victorialogs Manager 同款形态），cleanup
+// 释放；健康拨测 = Backend.Ping（宿主回环直达——无探针容器）。
 func NewMetricsManager(app lynx.App, cfg *AppConfig, st *state.Store, mb *metrics.Backend) (*metrics.Manager, func(), error) {
 	mgr, cleanup, err := metrics.NewManager(st, cfg.MetricsSettings().RetentionDays, app.Logger())
 	if err != nil {
@@ -282,6 +287,8 @@ func NewMetricsManager(app lynx.App, cfg *AppConfig, st *state.Store, mb *metric
 	if mb != nil {
 		mgr = mgr.WithHealth(mb.Ping)
 	}
+	notifierURL := fmt.Sprintf("http://127.0.0.1:%d%s", httpPortOf(cfg.HTTPAddr()), internalAlertsPath)
+	mgr = mgr.WithAlertsNotifier(notifierURL, cfg.IngressSettings().TokenFile)
 	return mgr, cleanup, nil
 }
 
@@ -742,6 +749,13 @@ func NewNotificationsService(st *state.Store, sb *secrets.Box) *api.Notification
 	return api.NewNotificationsService(st, sb)
 }
 
+// NewAlertingService 构造告警面服务（B 线 W5-S2，D-V3W5-1：规则 CRUD +
+// alerts.mode 开关 + 栈状态视图 + TestAlertRule 即时求值——查询后端与
+// metrics duty 管理器注入，与 NewMetricsService 同款装配缝）。
+func NewAlertingService(st *state.Store, mb *metrics.Backend, mm *metrics.Manager) *api.AlertingService {
+	return api.NewAlertingService(st).WithBackend(mb, mm)
+}
+
 // NewExecService 构造 Web 终端受理面服务（E7 W5-S6：ticket 签发 + 状态
 // 视图——整体 terminal scope；注入 relay duty 管理器承接 status 部署态）。
 func NewExecService(st *state.Store, hub *execrelay.Hub, erm *execrelay.Manager) *api.ExecService {
@@ -753,6 +767,22 @@ func NewExecService(st *state.Store, hub *execrelay.Hub, erm *execrelay.Manager)
 // WS——newRootHandler 的精确路径分派面，例外清单见 gateway.go）。
 func NewTerminalNativeHandler(app lynx.App, hub *execrelay.Hub) *execrelay.NativeHandler {
 	return execrelay.NewNativeHandler(execrelay.NativeConfig{Hub: hub, Log: app.Logger()})
+}
+
+// NewAlertsReceiverHandler 构造平台内建告警接收器（B 线 W5-S2，D-V3W5-1：
+// POST /internal/alerts——newRootHandler 的精确路径分派面，例外清单见
+// gateway.go）。凭据 = ingress token 同源（Manager.Token 幂等加载/生成）；
+// 投递面 = notify.Manager（告警映射：channels 缺省全端点、RESOLVED 前缀、
+// 零事件红线在 notify/state 层钉死）。ing 为 nil（测试精简装配）= 不挂载。
+func NewAlertsReceiverHandler(app lynx.App, ing *ingress.Manager, nm *notify.Manager) (http.Handler, error) {
+	if ing == nil || nm == nil {
+		return nil, nil
+	}
+	token, err := ing.Token(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("alerts receiver: load ingress token: %w", err)
+	}
+	return newAlertsReceiverHandler(token, nm, app.Logger()), nil
 }
 
 // NewPlacementService 构造放置面服务（T2.17 只读 + E1-7 显式换点/卷清单/
@@ -848,15 +878,16 @@ func (p ingressMovePort) DetachAppNetwork(ctx context.Context, team, prj, app st
 
 // NewHTTPServer 创建控制面 HTTP 服务：根 handler 是 grpc-gateway mux
 // （REST /v1/** 经 gateway 反代到本进程 gRPC，见 newGatewayMux）外包原生
-// 端点分派（newRootHandler——webhook、GET / 引导页与 Console /ui/ 静态
-// 托管，例外清单见 gateway.go）；/healthz/liveness 与 /healthz/readiness
-// 由 lynxhttp.Server 自行挂载，与 gateway 路由共存（torchwood 同款双面
-// 单端口形态）。Console 静态托管仅在 console.static_dir 非空时挂载（缺省
-// 关闭），目录缺 index.html 时 fail-fast 拒绝启动。
+// 端点分派（newRootHandler——webhook、GET / 引导页、Console /ui/ 静态
+// 托管与 POST /internal/alerts 告警接收器〔W5-S2〕，例外清单见 gateway.go）；
+// /healthz/liveness 与 /healthz/readiness 由 lynxhttp.Server 自行挂载，与
+// gateway 路由共存（torchwood 同款双面单端口形态）。Console 静态托管仅在
+// console.static_dir 非空时挂载（缺省关闭），目录缺 index.html 时 fail-fast
+// 拒绝启动。
 //
 // M4-3：经 WithServerOptions 放宽 WriteTimeout（见 tuneHTTPServer——lynx
 // 缺省 60s 绝对超时会静默掐断 /v1/events/stream 与 logs stream）。
-func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl *ControlPlaneTLS, terminal *execrelay.NativeHandler) (*lynxhttp.Server, error) {
+func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl *ControlPlaneTLS, terminal *execrelay.NativeHandler, alertsHandler http.Handler) (*lynxhttp.Server, error) {
 	// 回拨凭据跟随控制面 TLS 形态（W5-S5 缺陷修复：TLS 形态下明文回拨使
 	// 全量 REST /v1 断——见 newGatewayMuxWithTLS 注记；回环自拨 + 进程自
 	// 身信任锚的 InsecureSkipVerify，外部面 TLS 由监听器强制）。
@@ -875,7 +906,7 @@ func NewHTTPServer(app lynx.App, cfg *AppConfig, src *gitserver.GitTriggers, ctl
 			return nil, err
 		}
 	}
-	root := newRootHandler(gitserver.NewWebhookHandler(src), consoleUI, terminal, mux)
+	root := newRootHandler(gitserver.NewWebhookHandler(src), consoleUI, terminal, alertsHandler, mux)
 	opts := []lynxhttp.Option{
 		lynxhttp.WithAddr(cfg.Addr),
 		lynxhttp.WithHealthCheckers(app.HealthCheckers),

@@ -40,7 +40,7 @@ func TestGatewayRequestBodyLimit(t *testing.T) {
 		}
 		w.WriteHeader(gohttp.StatusOK)
 	})
-	root := newRootHandler(gohttp.NotFoundHandler(), nil, nil, fallback)
+	root := newRootHandler(gohttp.NotFoundHandler(), nil, nil, nil, fallback)
 
 	// 面 1：声明超限 Content-Length 的 POST /v1/**（无 token）→ 413，先于
 	// fallback（鉴权与解码都在其后）。
@@ -71,7 +71,7 @@ func TestGatewayRequestBodyLimit(t *testing.T) {
 		_, readErr = io.Copy(io.Discard, r.Body)
 		w.WriteHeader(gohttp.StatusOK)
 	})
-	root2 := newRootHandler(gohttp.NotFoundHandler(), nil, nil, fallback2)
+	root2 := newRootHandler(gohttp.NotFoundHandler(), nil, nil, nil, fallback2)
 	req2 := httptest.NewRequest(gohttp.MethodPost, "/v1/apps", io.MultiReader(
 		bytes.NewReader(oversized), // 超限体
 		strings.NewReader("tail"))) // 确保总长 > 上限
@@ -135,7 +135,7 @@ func TestGatewayGitKeysRegistered(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGatewayMux: %v", err)
 	}
-	root := newRootHandler(gohttp.NotFoundHandler(), nil, nil, mux)
+	root := newRootHandler(gohttp.NotFoundHandler(), nil, nil, nil, mux)
 
 	get := func(token string) (int, string) {
 		req := httptest.NewRequest(gohttp.MethodGet, "/v1/git/keys", nil)

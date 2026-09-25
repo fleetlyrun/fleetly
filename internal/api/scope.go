@@ -110,6 +110,22 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.MetricsService/SetMetricsMode":   ScopeDeploy,
 	// EventsService
 	"/fleetly.server.v1.EventsService/WatchEvents": ScopeRead,
+	// AlertingService（B 线 W5-S2，D-V3W5-1）：读面 = read（规则与栈态是
+	// 事实面——任意已认证凭据）；规则 CRUD = admin（告警面向平台管理员，
+	// 与 notifications 端点同域——平台级权威态，无 per-app 资源面语义）；
+	// SetAlertsMode = deploy（写运行域语义——opt-in 置位触发 vmalert 部署/
+	// 移除，与 SetMetricsMode 同级理由，无凭据材料）。TestAlertRule = admin
+	//（规则编写伴随面且消耗 VM 查询资源——保守登记，与 CRUD 同门）。
+	// W3-S2 起用户 principal 另须 is_platform_admin（requirePlatformWriteFace
+	// 挂全部写面 handler——rbac-teams §3.2「全局设置 → 仅平台管理员」扩全；
+	// 机具令牌沿本登记的 scope 门）。
+	"/fleetly.server.v1.AlertingService/ListAlertRules":  ScopeRead,
+	"/fleetly.server.v1.AlertingService/GetAlertsStatus": ScopeRead,
+	"/fleetly.server.v1.AlertingService/CreateAlertRule": ScopeAdmin,
+	"/fleetly.server.v1.AlertingService/UpdateAlertRule": ScopeAdmin,
+	"/fleetly.server.v1.AlertingService/DeleteAlertRule": ScopeAdmin,
+	"/fleetly.server.v1.AlertingService/SetAlertsMode":   ScopeDeploy,
+	"/fleetly.server.v1.AlertingService/TestAlertRule":   ScopeAdmin,
 	// PlacementService
 	// ShowPlacement/ListVolumes/GetPlacementMigrationPlan = read（只读面，
 	// E1-7）；UpdatePlacement = admin（破坏性确认路径，multi-node §2.6）。

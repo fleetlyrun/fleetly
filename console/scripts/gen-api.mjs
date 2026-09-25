@@ -41,6 +41,7 @@ const SPEC_FILES = [
   "domains.swagger.json",
   "logs.swagger.json",
   "metrics.swagger.json",
+  "alerting.swagger.json",
   "events.swagger.json",
   "system.swagger.json",
   "placement.swagger.json",

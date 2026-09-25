@@ -1,0 +1,497 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "fleetly/server/v1/alerting.proto",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "AlertingService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/alerting/mode": {
+      "put": {
+        "summary": "SetAlertsMode 切换 alerts.mode（unset | on；前置门 metrics.mode=on，\n违反 → 409 E_ALERTS_METRICS_REQUIRED 带指引）。",
+        "operationId": "AlertingService_SetAlertsMode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetAlertsModeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetAlertsModeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/alerting/rules": {
+      "get": {
+        "summary": "ListAlertRules 规则清单（name 字典序——渲染序的稳定性锚）。",
+        "operationId": "AlertingService_ListAlertRules",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAlertRulesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "AlertingService"
+        ]
+      },
+      "post": {
+        "summary": "CreateAlertRule 创建规则（平台级唯一名）。",
+        "operationId": "AlertingService_CreateAlertRule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateAlertRuleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateAlertRuleRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/alerting/rules/{id}": {
+      "delete": {
+        "summary": "DeleteAlertRule 删除规则（duty 下一拍重渲染规则文件）。",
+        "operationId": "AlertingService_DeleteAlertRule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteAlertRuleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      },
+      "put": {
+        "summary": "UpdateAlertRule 部分更新（optional 字段语义——未提供不变）。",
+        "operationId": "AlertingService_UpdateAlertRule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateAlertRuleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AlertingServiceUpdateAlertRuleBody"
+            }
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/alerting/rules:test": {
+      "post": {
+        "summary": "TestAlertRule 单次求值试跑（经 VM /api/v1/query 直接执行 expr 返回\n样本——不落库不部署，纯校验面）。",
+        "operationId": "AlertingService_TestAlertRule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TestAlertRuleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TestAlertRuleRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/alerting/status": {
+      "get": {
+        "summary": "GetAlertsStatus 告警栈状态视图（mode + vmalert 部署态 + 规则数）。",
+        "operationId": "AlertingService_GetAlertsStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetAlertsStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "AlertingServiceUpdateAlertRuleBody": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        },
+        "for_duration_seconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "非 null = 整体替换（null = 不变）。"
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "非空 = 整体替换（全量替换语义用空集表达需经 Delete+Create——与\nnotifications patterns 更新同口径）。"
+        }
+      }
+    },
+    "v1AlertRuleView": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        },
+        "for_duration_seconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "for 子句秒数（0 = 无 for 子句）。"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "规则 label 集（含 severity——severity 进通知文案的源头）。"
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "通知端点 id 集（空 = 缺省投全部启用端点）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "title": "AlertRuleView 是一条规则的读面投影。"
+    },
+    "v1CreateAlertRuleRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "expr": {
+          "type": "string"
+        },
+        "for_duration_seconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "v1CreateAlertRuleResponse": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/definitions/v1AlertRuleView"
+        }
+      }
+    },
+    "v1DeleteAlertRuleResponse": {
+      "type": "object"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_COMPOSE_INVALID\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "stage": {
+          "type": "string",
+          "title": "失败所处管线阶段（如 resolve / build / deploy / serve；勿与部署子状态\nphase 混用——该字段 2026-09-20 命名审查由 phase 更名 stage）。"
+        },
+        "deployment_id": {
+          "type": "string",
+          "title": "关联的部署 ID（无关联时为空）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（面向用户展示）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "结构化附加上下文（machine-readable 键值对）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "相关文档 URL（错误码文档锚点）。"
+        }
+      },
+      "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约定义（发布专项 §2.7、\n架构 D21）：gateway HTTPErrorHandler（阶段 3 落地）将 gRPC 错误统一渲染\n为本结构，snake_case JSON 输出；code 与 T0.2 错误码注册表（唯一真源，\n只增不复用）对齐。"
+    },
+    "v1GetAlertsStatusResponse": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string",
+          "title": "生效模式：unset | on（缺省 unset；set 区分「缺省生效」）。"
+        },
+        "mode_set": {
+          "type": "boolean"
+        },
+        "vmalert_exists": {
+          "type": "boolean",
+          "title": "vmalert 服务部署态（mode=on 且 exists=false = duty 收敛中——过渡态）。"
+        },
+        "vmalert_image": {
+          "type": "string"
+        },
+        "rule_count": {
+          "type": "integer",
+          "format": "int32",
+          "title": "平台规则数。"
+        },
+        "metrics_mode": {
+          "type": "string",
+          "title": "metrics.mode 当前值（前置门的可见面——alerts on 而 metrics off =\nvmalert 被移除的休眠形态，如实并列让消费方自判）。"
+        }
+      }
+    },
+    "v1ListAlertRulesResponse": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AlertRuleView"
+          }
+        }
+      }
+    },
+    "v1MetricsPoint": {
+      "type": "object",
+      "properties": {
+        "t": {
+          "type": "string",
+          "format": "int64"
+        },
+        "v": {
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "title": "MetricsPoint 是单个采样点（t = unix 秒；v = 采样值）。"
+    },
+    "v1MetricsSeries": {
+      "type": "object",
+      "properties": {
+        "metric": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MetricsPoint"
+          }
+        }
+      },
+      "title": "MetricsSeries 是一条时序（label 集原样透传——含 __name__ 原始指标名；\n函数产出的序列无该 label，透传不补造）。"
+    },
+    "v1SetAlertsModeRequest": {
+      "type": "object",
+      "properties": {
+        "mode": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SetAlertsModeResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "$ref": "#/definitions/v1GetAlertsStatusResponse"
+        }
+      }
+    },
+    "v1TestAlertRuleRequest": {
+      "type": "object",
+      "properties": {
+        "expr": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TestAlertRuleResponse": {
+      "type": "object",
+      "properties": {
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MetricsSeries"
+          }
+        }
+      },
+      "title": "TestAlertRuleResponse 是 instant query 的样本回（序列 label 集 + 单点；\n空集 = 表达式合法但当前无匹配序列——同样是「试跑成功」的事实）。"
+    },
+    "v1UpdateAlertRuleResponse": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/definitions/v1AlertRuleView"
+        }
+      }
+    }
+  }
+}

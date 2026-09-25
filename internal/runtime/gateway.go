@@ -78,10 +78,16 @@ import (
 //     proto/JSON，无法走 gateway 反代形态；豁免精确到两条 GET 精确路径
 //     （分派面 = 豁免面；POST /v1/terminal/tickets 仍走 gateway → gRPC
 //     拦截器链的 terminal scope）。
+//   - POST /internal/alerts —— 平台内建告警接收器（B 线 W5-S2，D-V3W5-1，
+//     alerts_receiver.go）：Alertmanager v2 webhook 载荷不是 proto/JSON
+//     契约面，鉴权 = ingress token 同源静态凭据（Bearer/Basic 双形态），
+//     与 gateway 鉴权体系完全不同；豁免精确到一条 POST 精确路径（分派面 =
+//     豁免面）。
 //
 // 实现：newRootHandler 先按精确路径形态分派 webhook 与 /ui/ 静态 handler
 // （console handler 未启用时为 nil——分派跳过）、终端 native 端点（terminal
-// handler 未启用时为 nil），其余一律交回 grpc-gateway mux。
+// handler 未启用时为 nil）、告警接收器（alerts handler 未启用时为 nil），
+// 其余一律交回 grpc-gateway mux。
 func newGatewayMux(grpcEndpoint string) (http.Handler, error) {
 	return newGatewayMuxWithTLS(grpcEndpoint, nil)
 }
@@ -130,6 +136,7 @@ func newGatewayMuxWithTLS(grpcEndpoint string, tlsCfg *tls.Config) (http.Handler
 		serverv1.RegisterEnvServiceHandlerFromEndpoint,
 		serverv1.RegisterLogsServiceHandlerFromEndpoint,
 		serverv1.RegisterMetricsServiceHandlerFromEndpoint,       // E6 W5-S3：metrics opt-in 面（PromQL 查询/状态/模式切换）
+		serverv1.RegisterAlertingServiceHandlerFromEndpoint,      // B 线 W5-S2：告警面（规则/mode/状态/试跑）
 		serverv1.RegisterNotificationsServiceHandlerFromEndpoint, // E6 W5-S4：通知 Webhook 面（端点/台账/测试）
 		serverv1.RegisterExecServiceHandlerFromEndpoint,          // E7 W5-S6：Web 终端受理面（ticket/状态；WS 数据面走原生端点）
 		serverv1.RegisterEventsServiceHandlerFromEndpoint,
@@ -223,7 +230,7 @@ func grpcEndpointFromAddr(addr string) string {
 // ——仅 gateway 面；webhook 与 /ui/ 分派不经限速层，不受影响）。
 // H7：全根请求体上限中间件（limitRequestBody）最外层先行——鉴权与
 // gateway 解码之前拒绝超限物化（见 maxRequestBodyBytes）。
-func newRootHandler(webhook http.Handler, consoleUI http.Handler, terminal http.Handler, fallback http.Handler) http.Handler {
+func newRootHandler(webhook http.Handler, consoleUI http.Handler, terminal http.Handler, alerts http.Handler, fallback http.Handler) http.Handler {
 	gateway := newAuthFailureLimiter(time.Minute, 10).wrap(fallback)
 	landing := newLandingHandler()
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -251,6 +258,11 @@ func newRootHandler(webhook http.Handler, consoleUI http.Handler, terminal http.
 		// 路径分派，其余路径 404 原样交回 gateway（nil = 未装配——永不分派）。
 		if terminal != nil && (r.URL.Path == execrelay.RelayPath || r.URL.Path == execrelay.TerminalWSPath) {
 			terminal.ServeHTTP(w, r)
+			return
+		}
+		// 平台内建告警接收器（W5-S2）：精确路径 POST 分派（nil = 未装配）。
+		if alerts != nil && r.URL.Path == internalAlertsPath && r.Method == http.MethodPost {
+			alerts.ServeHTTP(w, r)
 			return
 		}
 		gateway.ServeHTTP(w, r)

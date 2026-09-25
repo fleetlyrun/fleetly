@@ -78,6 +78,9 @@ type Manager struct {
 	// health 是回环健康拨测端口（CheckHealth 的可达性面；单测注入。
 	// nil = 不拨测——部署在位即视为健康，单测/精简装配形态）。
 	health func(ctx context.Context) error
+	// notifier 是 vmalert → 平台接收器的投递面配置（装配点注入；零值 =
+	// 告警面未装配——alerts.mode=on 时收敛显式失败退避，宁缺毋错）。
+	notifier notifierConfig
 }
 
 // NewManager 构造 duty 管理器（自建 Docker 连接；cleanup 释放）。
@@ -97,6 +100,14 @@ func NewManagerWithDocker(store *state.Store, retentionDays int, dc dockerPort, 
 // WithHealth 注入回环健康拨测端口（生产装配 = Backend.Ping；nil = 不拨测）。
 func (m *Manager) WithHealth(h func(ctx context.Context) error) *Manager {
 	m.health = h
+	return m
+}
+
+// WithAlertsNotifier 注入 vmalert → 平台接收器的投递面配置（W5-S2：URL =
+// 接收器完整地址〔gateway 回环形态〕，tokenFile = ingress token 文件宿主
+// 路径；生产装配见 provides.go）。零值字段 = 告警面未装配。
+func (m *Manager) WithAlertsNotifier(url, tokenFile string) *Manager {
+	m.notifier = notifierConfig{URL: url, TokenFile: tokenFile}
 	return m
 }
 
@@ -144,6 +155,12 @@ const (
 // 时采集器先在位则首拍即可抓到；删时先删 VM 停掉抓取面再删采集器）。
 func managedServices() []string {
 	return []string{CAdvisorServiceName, NodeExporterServiceName, VictoriaServiceName}
+}
+
+// removalOrder 是清场的删除次序（依赖倒序——vmalert 依赖 VM 的 datasource
+// 面，最先删；VM 次之〔停抓取面〕；采集器殿后）。
+func removalOrder() []string {
+	return []string{VMAlertServiceName, VictoriaServiceName, NodeExporterServiceName, CAdvisorServiceName}
 }
 
 // Ensure 执行一拍收敛。返回当前应许态结论与可重试错误。
@@ -259,7 +276,73 @@ func (m *Manager) converge(ctx context.Context) error {
 			})
 		}
 	}
-	// ④ 旧抓取 config GC（内容寻址换版后的遗留对象；best-effort——服务在
+	// ④ 告警面（W5-S2，D-V3W5-1）：alerts.mode=on 时规则 config（内容寻址
+	//    ——规则集变化即换版）+ vmalert 服务；否则移除 vmalert + 规则 config
+	//    清场（幂等，三件不受影响）。
+	alertsIn, err := m.store.LoadAlertsSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("metrics: load alerts settings: %w", err)
+	}
+	if alertsIn.Mode != state.AlertsModeOn {
+		if err := m.removeVMAlertIfPresent(ctx); err != nil {
+			return err
+		}
+		m.gcRulesConfigs(ctx, "")
+	} else {
+		if !m.notifier.owed() {
+			return errors.New("metrics: alerts.mode=on but the alerts receiver face is not assembled (notifier url / token file missing)")
+		}
+		rules, err := m.store.ListAlertRules(ctx)
+		if err != nil {
+			return fmt.Errorf("metrics: list alert rules: %w", err)
+		}
+		rulesSpec := buildRulesConfigSpec(rules)
+		rulesID, err := m.docker.ConfigEnsure(ctx, rulesSpec.Name, rulesSpec)
+		if err != nil {
+			return err
+		}
+		want := buildVMAlertSpec(platformID, m.notifier, rules)
+		anchorRulesConfig(&want, rulesSpec.Name, rulesID)
+		cur, err := m.docker.ServiceInspect(ctx, VMAlertServiceName)
+		if err != nil {
+			return err
+		}
+		if cur.Exists {
+			for i, t := range cur.Networks {
+				n, err := m.docker.NetworkName(ctx, t)
+				if err != nil {
+					return err
+				}
+				cur.Networks[i] = n
+			}
+		}
+		reason := ""
+		switch {
+		case !cur.Exists:
+			if err := m.docker.ServiceCreate(ctx, want); err != nil {
+				return err
+			}
+			reason = "created"
+			m.log.Info("metrics: service created",
+				"service", VMAlertServiceName, "image", DefaultVMAlertImage)
+		case !specEqual(cur, want):
+			if err := m.docker.ServiceUpdate(ctx, VMAlertServiceName, cur.Version, want); err != nil {
+				return err
+			}
+			reason = "updated"
+			m.log.Info("metrics: service updated to desired spec (spec drift)",
+				"service", VMAlertServiceName)
+		}
+		if reason != "" {
+			m.emitEvent(ctx, "metrics.stack_deployed", "platform:metrics", map[string]string{
+				"service": VMAlertServiceName,
+				"image":   DefaultVMAlertImage,
+				"reason":  reason,
+			})
+		}
+		m.gcRulesConfigs(ctx, rulesSpec.Name)
+	}
+	// ⑤ 旧抓取 config GC（内容寻址换版后的遗留对象；best-effort——服务在
 	//    用引用的 config 删除会被底座拒绝，此处只清真正失引用的旧版）。
 	m.gcScrapeConfigs(ctx, scrapeSpec.Name)
 	return nil
@@ -293,6 +376,8 @@ func serviceImage(name string) string {
 		return DefaultCAdvisorImage
 	case NodeExporterServiceName:
 		return DefaultNodeExporterImage
+	case VMAlertServiceName:
+		return DefaultVMAlertImage
 	}
 	return ""
 }
@@ -315,15 +400,55 @@ func (m *Manager) gcScrapeConfigs(ctx context.Context, current string) {
 	}
 }
 
+// gcRulesConfigs 清场失引用的旧规则 config（rulesConfigLabel 选择器；
+// current 为空 = 全族清场——alerts.mode 离开 on 的清场形态；best-effort）。
+func (m *Manager) gcRulesConfigs(ctx context.Context, current string) {
+	names, err := m.docker.RulesConfigListNames(ctx)
+	if err != nil {
+		m.log.Warn("metrics: rules config gc list failed", "error", err)
+		return
+	}
+	for _, n := range names {
+		if n == current {
+			continue
+		}
+		if err := m.docker.ConfigRemove(ctx, n); err != nil {
+			m.log.Warn("metrics: rules config gc remove failed", "config", n, "error", err)
+		}
+	}
+}
+
+// removeVMAlertIfPresent 是 alerts.mode 离开 on（或 metrics 先走）时对
+// vmalert 的清场（幂等）：服务在 → 移除 + 差分事件 metrics.stack_removed
+//（payload 带 service）；规则 config 由调用方 gcRulesConfigs(ctx, "") 清场。
+// 数据面无卷——vmalert 是无状态评估器，删服务即完整清场。
+func (m *Manager) removeVMAlertIfPresent(ctx context.Context) error {
+	cur, err := m.docker.ServiceInspect(ctx, VMAlertServiceName)
+	if err != nil {
+		return err
+	}
+	if !cur.Exists {
+		return nil
+	}
+	if err := m.docker.ServiceRemove(ctx, VMAlertServiceName); err != nil {
+		return err
+	}
+	m.log.Info("metrics: vmalert removed (alerts.mode left on, or metrics.mode left on); rule files keep in state — re-enable to re-render",
+		"service", VMAlertServiceName)
+	m.emitEvent(ctx, "metrics.stack_removed", "platform:metrics", map[string]string{
+		"service": VMAlertServiceName,
+	})
+	return nil
+}
+
 // removeIfPresent 是 mode 离开 on 的清场（幂等）：三件服务在 → 移除 +
 // 事件 metrics.stack_removed（payload 带 volume_retained=true）；抓取
 // config 全部清场。数据卷**永不删除**（rustfs 禁用同型数据安全语义——
 // 切回 on 复用卷，指标历史延续）。
 func (m *Manager) removeIfPresent(ctx context.Context) error {
 	removedAny := false
-	// 删除序：VM 先（停抓取面）→ 采集器。
-	for i := len(managedServices()) - 1; i >= 0; i-- {
-		name := managedServices()[i]
+	// 删除序：依赖倒序（vmalert → VM → 采集器）。
+	for _, name := range removalOrder() {
 		cur, err := m.docker.ServiceInspect(ctx, name)
 		if err != nil {
 			return err
@@ -408,10 +533,22 @@ func (m *Manager) DeploymentStatus(ctx context.Context) (DeploymentStatus, error
 	return out, nil
 }
 
+// VMAlertStatus 读取 vmalert 服务的在位实况（GetAlertsStatus 的部署态投影
+// 面；底座不可达如实报错——不在位 Exists=false，由消费方如实呈现）。
+func (m *Manager) VMAlertStatus(ctx context.Context) (ComponentStatus, error) {
+	cur, err := m.docker.ServiceInspect(ctx, VMAlertServiceName)
+	if err != nil {
+		return ComponentStatus{}, err
+	}
+	return ComponentStatus{Name: VMAlertServiceName, Exists: cur.Exists, Image: cur.Image}, nil
+}
+
 // CheckHealth 是 system status 组件检查器（metrics）的部署面：mode 非 on
 // = 无所欠（健康——opt-in 缺省零常驻，验收标准 7）；mode=on 时三件应在位
 // ——缺失即收敛未完成（duty 会继续收敛，红是过渡态的如实表达）。VM 健康
 // 拨测在位后执行：不可达即红（查询面降级，采集面不受影响——诚实口径）。
+// W5-S2：alerts.mode=on 时 vmalert 亦应在位（同 duty 收敛，缺失=过渡红）；
+// alerts off 时 vmalert 无所欠。
 func (m *Manager) CheckHealth() error {
 	ctx, cancel := context.WithTimeout(context.Background(), settingsLoadTimeout)
 	defer cancel()
@@ -422,7 +559,15 @@ func (m *Manager) CheckHealth() error {
 	if in.Mode != state.MetricsModeOn {
 		return nil
 	}
-	for _, name := range ComponentNames() {
+	names := ComponentNames()
+	alertsIn, err := m.store.LoadAlertsSettings(ctx)
+	if err != nil {
+		return fmt.Errorf("metrics: load alerts settings: %w", err)
+	}
+	if alertsIn.Mode == state.AlertsModeOn {
+		names = append(names, VMAlertServiceName)
+	}
+	for _, name := range names {
 		cur, err := m.docker.ServiceInspect(ctx, name)
 		if err != nil {
 			return fmt.Errorf("metrics: service inspect %s: %w", name, err)

@@ -481,6 +481,28 @@ func (m *Manager) attempt(ctx context.Context, job deliveryJob) {
 		}
 		smtpCfg = cfg
 	}
+	// 告警分支（W5-S2，D-V3W5-1）：alert_payload 非空 = 告警投递行——载荷
+	// 取自台账行自身（零事件，事件流零依赖），渲染按告警文案（FIRING/
+	// RESOLVED 头行 + severity），预算与事件投递同一套（本函数剩余逻辑）。
+	if d.AlertPayload != "" {
+		if d.EventSeq != 0 {
+			// 形态守卫：告警行 event_seq 恒 0（脏数据防御——loud 终态）。
+			m.recordFailure(bookCtx, d, 0, "alert delivery row carries a non-zero event seq (dirty row)")
+			return
+		}
+		ok, code, errText := m.attemptAlert(ctx, d.AlertPayload, epCh, smtpCfg)
+		if ok {
+			if err := m.store.RecordWebhookAttempt(bookCtx, job.deliveryID, state.WebhookAttemptResult{
+				OK:           true,
+				ResponseCode: code,
+			}); err != nil {
+				m.log.Error("notify: record ok attempt failed", "delivery", job.deliveryID, "error", err)
+			}
+			return
+		}
+		m.recordFailure(bookCtx, d, code, errText)
+		return
+	}
 	payload, err := m.eventPayload(ctx, d.EventSeq)
 	if err != nil {
 		m.recordFailure(bookCtx, d, 0, "event lookup failed: "+err.Error())

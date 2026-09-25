@@ -18,6 +18,7 @@ import type {
   DeploymentView,
   DisableUserResponse,
   EnableUserResponse,
+  GetAlertsStatusResponse,
   GetAppResponse,
   GetAuditRetentionResponse,
   GetDatabaseResponse,
@@ -35,6 +36,14 @@ import type {
   GetWebhookEndpointResponse,
   GrantPlatformAdminResponse,
   ListAppDomainsResponse,
+  ListAlertRulesResponse,
+  AlertRuleView,
+  CreateAlertRuleResponse,
+  UpdateAlertRuleResponse,
+  DeleteAlertRuleResponse,
+  SetAlertsModeResponse,
+  TestAlertRuleResponse,
+  AlertsMode,
   ListAuditResponse,
   ListBackupsResponse,
   ListCronRunsResponse,
@@ -629,6 +638,67 @@ export function searchMetrics(
 export function setMetricsMode(mode: MetricsMode) {
   return api<SetMetricsModeResponse>("/metrics/mode", { method: "PUT", json: { mode } });
 }
+
+// ── alerting（B 线 W5-S2，D-V3W5-1 告警面）────────────────────────────────
+
+/** 规则清单（read scope；name 字典序——规则文件渲染同序）。 */
+export function listAlertRules() {
+  return api<ListAlertRulesResponse>("/alerting/rules");
+}
+
+/** 创建规则（admin scope + 平台写面；平台级唯一名）。 */
+export function createAlertRule(input: {
+  name: string;
+  expr: string;
+  for_duration_seconds?: number;
+  labels?: Record<string, string>;
+  channels?: string[];
+}) {
+  return api<CreateAlertRuleResponse>("/alerting/rules", { method: "POST", json: input });
+}
+
+/** 部分更新规则（admin scope + 平台写面；未提供字段不变）。 */
+export function updateAlertRule(
+  id: string,
+  input: {
+    name?: string;
+    expr?: string;
+    for_duration_seconds?: number;
+    labels?: Record<string, string>;
+    channels?: string[];
+  },
+) {
+  return api<UpdateAlertRuleResponse>(
+    `/alerting/rules/${encodeURIComponent(id)}`,
+    { method: "PUT", json: input },
+  );
+}
+
+/** 删除规则（admin scope + 平台写面；duty 下一拍重渲染规则文件）。 */
+export function deleteAlertRule(id: string) {
+  return api<DeleteAlertRuleResponse>(
+    `/alerting/rules/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+}
+
+/** alerts.mode 切换（deploy scope + 平台写面；前置门 metrics.mode=on）。 */
+export function setAlertsMode(mode: AlertsMode) {
+  return api<SetAlertsModeResponse>("/alerting/mode", { method: "PUT", json: { mode } });
+}
+
+/** 告警栈状态视图（read scope）：mode/vmalert 部署态/规则数/metrics.mode。 */
+export function getAlertsStatus() {
+  return api<GetAlertsStatusResponse>("/alerting/status");
+}
+
+/** TestAlertRule：expr 经 VM instant query 单次求值（规则编写即时校验面）。 */
+export function testAlertRule(expr: string) {
+  return api<TestAlertRuleResponse>("/alerting/rules:test", { method: "POST", json: { expr } });
+}
+
+/** AlertRuleView 重导出（表单投影消费）。 */
+export type { AlertRuleView };
 
 // ── apps scaling（W5-S1，D-V3W5-2 自动扩缩策略面）────────────────────────
 

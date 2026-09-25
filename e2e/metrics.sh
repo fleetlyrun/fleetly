@@ -65,6 +65,9 @@ CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01
 VM_IMG='victoriametrics/victoria-metrics:v1.152.0@sha256:86ca5fdb6d87d56ba047b044039019ba2bd9042b36e35f6ea34e437b6c825cef'
 NODE_EXPORTER_IMG='prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0'
 CADVISOR_IMG='gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57'
+# W5-S2（D-V3W5-1）：vmalert 组件（alerts.mode=on 的规则评估器；台账 #21）。
+# S4 告警 e2e 腿的预拉面——本腿只拉取暖机，不驱动告警链。
+VMALERT_IMG='victoriametrics/vmalert:v1.152.0@sha256:ba00566373eb8c72d70cbee123e27ee75292dc0239830f36218c72712ba396b2'
 WHOAMI_IMG='traefik/whoami:v1.10.4@sha256:02d8fe035f170f91cbb5e458a57f4cefab747436f8244a0eb2d66785fe5e565f'
 MET_SKIP_BUILD="${MET_SKIP_BUILD:-0}"
 MET_BIN_DIR="${MET_BIN_DIR:-}"
@@ -262,9 +265,9 @@ logging:
 EOF
 stage "$DIND" "$TMP/config.yaml" /opt/fleetly/etc/config.yaml
 
-# 预拉三件套钉版镜像（一次拉齐，收敛窗只做调度；whoami 随后用）。
+# 预拉三件套+vmalert 钉版镜像（一次拉齐，收敛窗只做调度；whoami 随后用）。
 nl 'pre-pulling fixture images (pinned digests)'
-for img in "$VM_IMG" "$NODE_EXPORTER_IMG" "$CADVISOR_IMG" "$WHOAMI_IMG"; do
+for img in "$VM_IMG" "$NODE_EXPORTER_IMG" "$CADVISOR_IMG" "$VMALERT_IMG" "$WHOAMI_IMG"; do
     docker exec "$DIND" docker pull -q "$img" >/dev/null || fatal "pull $img"
 done
 

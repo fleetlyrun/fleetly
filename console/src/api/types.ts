@@ -159,6 +159,20 @@ export type SetMetricsModeResponse = Schemas["v1SetMetricsModeResponse"];
 /** metrics.mode 词表（proto SetMetricsModeRequest.mode 消费侧词表）。 */
 export type MetricsMode = "unset" | "on";
 
+// ── alerting（B 线 W5-S2，D-V3W5-1 告警面）────────────────────────────────
+
+export type AlertRuleView = Schemas["v1AlertRuleView"];
+export type ListAlertRulesResponse = Schemas["v1ListAlertRulesResponse"];
+export type CreateAlertRuleResponse = Schemas["v1CreateAlertRuleResponse"];
+export type UpdateAlertRuleResponse = Schemas["v1UpdateAlertRuleResponse"];
+export type DeleteAlertRuleResponse = Schemas["v1DeleteAlertRuleResponse"];
+export type SetAlertsModeResponse = Schemas["v1SetAlertsModeResponse"];
+export type GetAlertsStatusResponse = Schemas["v1GetAlertsStatusResponse"];
+export type TestAlertRuleResponse = Schemas["v1TestAlertRuleResponse"];
+
+/** alerts.mode 词表（proto SetAlertsModeRequest.mode 消费侧词表）。 */
+export type AlertsMode = "unset" | "on";
+
 // ── apps scaling（W5-S1，D-V3W5-2 自动扩缩策略面）────────────────────────
 
 export type GetScalingPolicyResponse = Schemas["v1GetScalingPolicyResponse"];

@@ -272,6 +272,37 @@ var builtins = []Code{
 		Summary:    "a webhook event pattern is invalid (patterns must be a non-empty list of 1..128 chars from [a-z0-9._-*]; '*' is the wildcard)",
 		Suggestion: "Use event-name glob patterns like \"deployment.*\", \"cron.failed\" or \"*\" (matches everything); see 'fleetly events watch' for the event vocabulary the patterns match against."},
 
+	// ── 告警面（B 线 W5 设计 §2，D-V3W5-1，W5-S2；注册表只增）──
+	// 消费点：E_ALERTS_METRICS_REQUIRED = alerts.mode=on 的前置门
+	//（internal/state/alertsettings.go SaveAlertsSettings——设计 §2.1「前置
+	// 门 = metrics.mode=on，否则 409 带指引」）；E_ALERT_RULE_NOT_FOUND /
+	// E_ALERT_RULE_NAME_CONFLICT = alert_rules CRUD 的 state 哨兵信封化投影
+	//（internal/api/alerting.go，404/409）；E_ALERT_RULE_EXPR_INVALID /
+	// E_ALERT_RULE_FOR_INVALID / E_ALERT_RULE_LABELS_INVALID /
+	// E_ALERT_RULE_CHANNELS_INVALID = 规则形状校验（internal/state/
+	// alerting.go——422 语义违约，与 E_WEBHOOK_PATTERN_INVALID 同级）。
+	{ID: "E_ALERTS_METRICS_REQUIRED", HTTP: 409,
+		Summary:    "alerts.mode=on requires metrics.mode=on first (vmalert has no datasource without the managed VictoriaMetrics)",
+		Suggestion: "Enable the metrics stack first ('fleetly metrics mode set on' or the Console metrics card), wait for the three managed services to converge, then switch alerts on ('fleetly alerts mode on')."},
+	{ID: "E_ALERT_RULE_NOT_FOUND", HTTP: 404,
+		Summary:    "the alert rule referenced by the operation does not exist (or was already deleted)",
+		Suggestion: "List the rules with 'fleetly alerts rules ls' and retry with an existing id or name."},
+	{ID: "E_ALERT_RULE_NAME_CONFLICT", HTTP: 409,
+		Summary:    "an alert rule with the same name already exists (rule names are unique platform-wide — alerting is a platform-admin domain)",
+		Suggestion: "Pick another rule name (or delete the old rule first); names are the operator-facing handle used by the CLI and Console."},
+	{ID: "E_ALERT_RULE_EXPR_INVALID", HTTP: 422,
+		Summary:    "an alert rule expr is invalid (must be a non-empty PromQL expression of at most 2048 chars)",
+		Suggestion: "Write the PromQL condition that should evaluate to a series when the alert should fire (e.g. 'up == 0'); syntax is validated by vmalert/VictoriaMetrics — use 'fleetly alerts rules test' to evaluate it before saving."},
+	{ID: "E_ALERT_RULE_FOR_INVALID", HTTP: 422,
+		Summary:    "an alert rule for_duration is invalid (must be >= 0 seconds; 0 = no for clause)",
+		Suggestion: "Pass a non-negative number of seconds (e.g. --for 300 for a five-minute sustained condition before firing)."},
+	{ID: "E_ALERT_RULE_LABELS_INVALID", HTTP: 422,
+		Summary:    "an alert rule labels object is invalid (keys must be non-empty; values are strings; the severity label drives the notification text)",
+		Suggestion: "Provide a JSON object of string to string, e.g. {\"severity\":\"critical\"}; an empty object is valid."},
+	{ID: "E_ALERT_RULE_CHANNELS_INVALID", HTTP: 422,
+		Summary:    "an alert rule channels list is invalid (must be a list of non-empty notification endpoint ids; an empty list means deliver to all enabled endpoints)",
+		Suggestion: "List the notification endpoints with 'fleetly notifications endpoint list' and pass their ids (comma-separated on the CLI); leave it empty to fan out to every enabled endpoint."},
+
 	// ── Web 终端面（E7 设计 §2.4/§2.5，W5-S6；注册表只增）──
 	// 消费点：ExecService.CreateTerminalTicket 与 native WS 端点的功能开关
 	// 门（config terminal.enabled=false——duty 移除 relay 服务、API 拒绝

@@ -141,7 +141,21 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	taskSource := NewExecRelayTaskSource(client)
 	hub := NewExecRelayHub(app, appConfig, store, taskSource)
 	nativeHandler := NewTerminalNativeHandler(app, hub)
-	server, err := NewHTTPServer(app, appConfig, gitTriggers, controlPlaneTLS, nativeHandler)
+	handler, err := NewAlertsReceiverHandler(app, ingressManager, notifyManager)
+	if err != nil {
+		cleanup10()
+		cleanup9()
+		cleanup8()
+		cleanup7()
+		cleanup6()
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	server, err := NewHTTPServer(app, appConfig, gitTriggers, controlPlaneTLS, nativeHandler, handler)
 	if err != nil {
 		cleanup10()
 		cleanup9()
@@ -178,6 +192,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	envService := NewEnvService(store, box, logsManager)
 	apiLogsService := NewLogsService(store, logsManager, backend, victorialogsManager)
 	apiMetricsService := NewMetricsService(appConfig, store, metricsBackend, metricsManager)
+	alertingService := NewAlertingService(store, metricsBackend, metricsManager)
 	notificationsService := NewNotificationsService(store, box)
 	eventsService := NewEventsService(store)
 	placementService := NewPlacementService(store, resolver)
@@ -193,7 +208,7 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	teamsService := NewTeamsService(store)
 	projectsService := NewProjectsService(store, engine, databaseManager, ingressManager)
 	systemService := NewSystemService(appConfig, store, nodeIdentity, observer, box, ingressManager, manager, rustfsManager, client, logsManager, victorialogsManager, metricsManager, notifyManager, execrelayManager, gitTriggers, version)
-	grpcServer, err := NewGRPCServer(app, appConfig, controlPlaneTLS, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, apiMetricsService, notificationsService, eventsService, placementService, tokensService, gitKeysService, cronService, apiDatabaseService, apiSecretsService, execService, authService, usersService, auditService, teamsService, projectsService, systemService)
+	grpcServer, err := NewGRPCServer(app, appConfig, controlPlaneTLS, authenticator, appsService, deploymentsService, revisionsService, buildsService, driftService, domainsService, envService, apiLogsService, apiMetricsService, alertingService, notificationsService, eventsService, placementService, tokensService, gitKeysService, cronService, apiDatabaseService, apiSecretsService, execService, authService, usersService, auditService, teamsService, projectsService, systemService)
 	if err != nil {
 		cleanup10()
 		cleanup9()

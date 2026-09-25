@@ -316,7 +316,7 @@ func TestGatewayAuthFailureIPLimit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGatewayMux: %v", err)
 	}
-	root := newRootHandler(gohttp.NotFoundHandler(), nil, nil, mux)
+	root := newRootHandler(gohttp.NotFoundHandler(), nil, nil, nil, mux)
 
 	get := func(remoteAddr, token string) int {
 		req := httptest.NewRequest(gohttp.MethodGet, "/v1/apps", nil)

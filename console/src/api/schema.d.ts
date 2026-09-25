@@ -911,6 +911,99 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/alerting/mode": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * SetAlertsMode 切换 alerts.mode（unset | on；前置门 metrics.mode=on，
+         *     违反 → 409 E_ALERTS_METRICS_REQUIRED 带指引）。
+         */
+        put: operations["AlertingService_SetAlertsMode"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/alerting/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** ListAlertRules 规则清单（name 字典序——渲染序的稳定性锚）。 */
+        get: operations["AlertingService_ListAlertRules"];
+        put?: never;
+        /** CreateAlertRule 创建规则（平台级唯一名）。 */
+        post: operations["AlertingService_CreateAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/alerting/rules/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** UpdateAlertRule 部分更新（optional 字段语义——未提供不变）。 */
+        put: operations["AlertingService_UpdateAlertRule"];
+        post?: never;
+        /** DeleteAlertRule 删除规则（duty 下一拍重渲染规则文件）。 */
+        delete: operations["AlertingService_DeleteAlertRule"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/alerting/rules:test": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * TestAlertRule 单次求值试跑（经 VM /api/v1/query 直接执行 expr 返回
+         *     样本——不落库不部署，纯校验面）。
+         */
+        post: operations["AlertingService_TestAlertRule"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/alerting/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** GetAlertsStatus 告警栈状态视图（mode + vmalert 部署态 + 规则数）。 */
+        get: operations["AlertingService_GetAlertsStatus"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/events/stream": {
         parameters: {
             query?: never;
@@ -2675,6 +2768,96 @@ export interface components {
         };
         v1SetMetricsModeResponse: {
             status?: components["schemas"]["v1GetMetricsStatusResponse"];
+        };
+        AlertingServiceUpdateAlertRuleBody: {
+            name?: string;
+            expr?: string;
+            /** Format: int64 */
+            for_duration_seconds?: string;
+            /** 非 null = 整体替换（null = 不变）。 */
+            labels?: {
+                [key: string]: string;
+            };
+            /**
+             * 非空 = 整体替换（全量替换语义用空集表达需经 Delete+Create——与
+             *     notifications patterns 更新同口径）。
+             */
+            channels?: string[];
+        };
+        /** AlertRuleView 是一条规则的读面投影。 */
+        v1AlertRuleView: {
+            id?: string;
+            name?: string;
+            expr?: string;
+            /**
+             * for 子句秒数（0 = 无 for 子句）。
+             * Format: int64
+             */
+            for_duration_seconds?: string;
+            /** 规则 label 集（含 severity——severity 进通知文案的源头）。 */
+            labels?: {
+                [key: string]: string;
+            };
+            /** 通知端点 id 集（空 = 缺省投全部启用端点）。 */
+            channels?: string[];
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
+        v1CreateAlertRuleRequest: {
+            name?: string;
+            expr?: string;
+            /** Format: int64 */
+            for_duration_seconds?: string;
+            labels?: {
+                [key: string]: string;
+            };
+            channels?: string[];
+        };
+        v1CreateAlertRuleResponse: {
+            rule?: components["schemas"]["v1AlertRuleView"];
+        };
+        v1DeleteAlertRuleResponse: Record<string, never>;
+        v1GetAlertsStatusResponse: {
+            /** 生效模式：unset | on（缺省 unset；set 区分「缺省生效」）。 */
+            mode?: string;
+            mode_set?: boolean;
+            /** vmalert 服务部署态（mode=on 且 exists=false = duty 收敛中——过渡态）。 */
+            vmalert_exists?: boolean;
+            vmalert_image?: string;
+            /**
+             * 平台规则数。
+             * Format: int32
+             */
+            rule_count?: number;
+            /**
+             * metrics.mode 当前值（前置门的可见面——alerts on 而 metrics off =
+             *     vmalert 被移除的休眠形态，如实并列让消费方自判）。
+             */
+            metrics_mode?: string;
+        };
+        v1ListAlertRulesResponse: {
+            rules?: components["schemas"]["v1AlertRuleView"][];
+        };
+        v1SetAlertsModeRequest: {
+            mode?: string;
+        };
+        v1SetAlertsModeResponse: {
+            status?: components["schemas"]["v1GetAlertsStatusResponse"];
+        };
+        v1TestAlertRuleRequest: {
+            expr?: string;
+        };
+        /**
+         * TestAlertRuleResponse 是 instant query 的样本回（序列 label 集 + 单点；
+         *     空集 = 表达式合法但当前无匹配序列——同样是「试跑成功」的事实）。
+         */
+        v1TestAlertRuleResponse: {
+            series?: components["schemas"]["v1MetricsSeries"][];
+        };
+        v1UpdateAlertRuleResponse: {
+            rule?: components["schemas"]["v1AlertRuleView"];
         };
         /**
          * CursorExpiredView 是游标过期断档帧：seq ≤ (oldest_seq - 1) 的事件已被
@@ -5845,6 +6028,229 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1GetMetricsStatusResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AlertingService_SetAlertsMode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1SetAlertsModeRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetAlertsModeResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AlertingService_ListAlertRules: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ListAlertRulesResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AlertingService_CreateAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1CreateAlertRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateAlertRuleResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AlertingService_UpdateAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AlertingServiceUpdateAlertRuleBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateAlertRuleResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AlertingService_DeleteAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1DeleteAlertRuleResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AlertingService_TestAlertRule: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1TestAlertRuleRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1TestAlertRuleResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AlertingService_GetAlertsStatus: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetAlertsStatusResponse"];
                 };
             };
             /** @description An unexpected error response. */

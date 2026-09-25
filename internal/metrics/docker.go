@@ -66,6 +66,9 @@ type dockerPort interface {
 	ConfigListNames(ctx context.Context) ([]string, error)
 	// ConfigRemove 删除 config 对象（幂等：缺失视为成功）。
 	ConfigRemove(ctx context.Context, name string) error
+	// RulesConfigListNames 列出 vmalert 规则族的 config 对象名（W5-S2 GC
+	// 面——rulesConfigLabel 选择器，抓取 config 同族对偶）。
+	RulesConfigListNames(ctx context.Context) ([]string, error)
 }
 
 // ServiceState 是托管服务的实况投影（本包收敛比对的实况侧）。
@@ -294,4 +297,21 @@ func (c *realDockerClient) ConfigRemove(ctx context.Context, name string) error 
 		return fmt.Errorf("metrics: config remove %s: %w", name, err)
 	}
 	return nil
+}
+
+// RulesConfigListNames 实现 dockerPort 的规则族 GC 读面（rulesConfigLabel
+// 选择器；与抓取 config 族互斥——两族 label 不同，各自只认自己的行）。
+func (c *realDockerClient) RulesConfigListNames(ctx context.Context) ([]string, error) {
+	res, err := c.cli.ConfigList(ctx, mobyclient.ConfigListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("metrics: rules config list: %w", err)
+	}
+	var out []string
+	for _, cfg := range res.Items {
+		if cfg.Spec.Labels[rulesConfigLabel] != "true" {
+			continue
+		}
+		out = append(out, cfg.Spec.Name)
+	}
+	return out, nil
 }

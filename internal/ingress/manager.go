@@ -153,6 +153,14 @@ func (m *Manager) token(_ context.Context) (string, error) {
 	return m.tokenVal, m.tokenErr
 }
 
+// Token 返回平台 ingress token 明文（W5-S2 告警接收器的同源凭据消费面——
+// POST /internal/alerts 与本配置端点共用同一 token file，加载/生成语义与
+// token() 完全一致〔幂等、缓存、首启生成落 0600 文件〕；这是 token 明文的
+// 唯一进程内出口，接收器侧只做常量时间比对不落日志）。
+func (m *Manager) Token(ctx context.Context) (string, error) {
+	return m.token(ctx)
+}
+
 // setResponderURL / responderURLValue 是挑战应答基址的写读（EnsureTraefik
 // 探测 advertise addr 后回填；view 的快照合成消费——只改基址字段，路由
 // 与挑战态不受影响）。

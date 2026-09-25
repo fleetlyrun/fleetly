@@ -39,6 +39,7 @@ func NewGRPCServer(
 	env *api.EnvService,
 	logsSvc *api.LogsService,
 	metricsSvc *api.MetricsService,
+	alertingSvc *api.AlertingService,
 	notificationsSvc *api.NotificationsService,
 	events *api.EventsService,
 	placement *api.PlacementService,
@@ -91,6 +92,7 @@ func NewGRPCServer(
 	serverv1.RegisterEnvServiceServer(g, env)
 	serverv1.RegisterLogsServiceServer(g, logsSvc)
 	serverv1.RegisterMetricsServiceServer(g, metricsSvc)             // E6 W5-S3：metrics opt-in 面（查询/状态/模式）
+	serverv1.RegisterAlertingServiceServer(g, alertingSvc)           // B 线 W5-S2：告警面（规则/mode/状态/试跑）
 	serverv1.RegisterNotificationsServiceServer(g, notificationsSvc) // E6 W5-S4：通知 Webhook 面（端点/台账/测试）
 	serverv1.RegisterExecServiceServer(g, execSvc)                   // E7 W5-S6：Web 终端受理面（ticket/状态；terminal scope）
 	serverv1.RegisterEventsServiceServer(g, events)

@@ -105,7 +105,7 @@ func TestGatewayWebhookNativeEndpoints(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newGatewayMux: %v", err)
 	}
-	base := startRootHTTP(t, newRootHandler(gitserver.NewWebhookHandler(src), nil, nil, mux))
+	base := startRootHTTP(t, newRootHandler(gitserver.NewWebhookHandler(src), nil, nil, nil, mux))
 
 	post := func(method, path string, headers map[string]string, body string) (int, string) {
 		req, err := http.NewRequest(method, base+path, strings.NewReader(body))

@@ -187,6 +187,12 @@ func start(t *testing.T, joinBaseDomain string, joinPort api.JoinTokenPort) *Env
 	// 路径消费（受理/投影面——投递器 duty 不在进程内装配，TestWebhook 指
 	// 向真实网络才可达）。
 	serverv1.RegisterNotificationsServiceServer(srv, api.NewNotificationsService(st, box))
+	// 告警面（B 线 W5-S2，D-V3W5-1）：CLI 测试同路径消费（受理/投影面——
+	// mb/mm nil = TestAlertRule 如实报不可用、status 部署态如实报 absent）。
+	serverv1.RegisterAlertingServiceServer(srv, api.NewAlertingService(st))
+	// metrics 面（E6 W5-S3）：alerts.mode 前置门的 CLI 驱动面（mb/mm nil =
+	// status 部署态/节点比如实报 unset/0 的降级形态，与生产 nil-safety 同语义）。
+	serverv1.RegisterMetricsServiceServer(srv, api.NewMetricsService(st))
 	// 认证/用户面（v0.3 W1）：CLI/golden 测试同路径消费（注册/登录/会话；
 	// 平台用户管理面在平台管理员判定后的读面）。
 	serverv1.RegisterAuthServiceServer(srv, api.NewAuthService(st))

@@ -73,6 +73,9 @@ const (
 	CAdvisorServiceName = "fleetly-cadvisor"
 	// NodeExporterServiceName 是托管 node_exporter 服务名（global）。
 	NodeExporterServiceName = "fleetly-node-exporter"
+	// VMAlertServiceName 是托管 vmalert 服务名（metrics 栈第四组件，
+	// alerts.mode=on opt-in——D-V3W5-1；replicated-1 钉 manager 与 VM 同族）。
+	VMAlertServiceName = "fleetly-vmalert"
 	// VolumeName 是 VM 数据本地命名卷（钉 manager——数据重力；禁用保留，
 	// 再启用复用；VM 数据不进 state_backups，卷损 = 丢失保留窗内的指标，
 	// 不损平台状态）。
@@ -80,37 +83,61 @@ const (
 	// scrapeConfigPrefix 是抓取配置 swarm config 对象名前缀（后随
 	// 内容 hash8——内容寻址，不可变对象按引用换版）。
 	scrapeConfigPrefix = "fleetly-vm-scrape-"
+	// rulesConfigPrefix 是 vmalert 规则 swarm config 对象名前缀（内容寻址
+	// 同款——规则集变化即换版，设计 §2.2「scrape config 同款增删换」）。
+	rulesConfigPrefix = "fleetly-vmalert-rules-"
 	// scrapeLabel 是抓取配置对象的自描述 label（GC 选择器锚）。
 	scrapeLabel = "fleetly.victoriametrics-scrape"
-	// vmLabel / cadvisorLabel / nodeExporterLabel 是各服务的自描述 label
-	//（CLI/运维识别面）。
+	// rulesConfigLabel 是规则配置对象的自描述 label（GC 选择器锚）。
+	rulesConfigLabel = "fleetly.vmalert-rules"
+	// vmLabel / cadvisorLabel / nodeExporterLabel / vmalertLabel 是各服务的
+	// 自描述 label（CLI/运维识别面）。
 	vmLabel           = "fleetly.victoriametrics"
 	cadvisorLabel     = "fleetly.cadvisor"
 	nodeExporterLabel = "fleetly.node-exporter"
+	vmalertLabel      = "fleetly.vmalert"
 	// dataMountPath 是 VM 数据目录挂载点（-storageDataPath 指向它）。
 	dataMountPath = "/vmdata"
 	// scrapeConfigMountPath 是抓取配置在任务内的挂载路径
 	//（-promscrape.config 指向它）。
 	scrapeConfigMountPath = "/etc/fleetly/vm-scrape.yml"
+	// rulesConfigMountPath 是规则配置在任务内的挂载路径（-rule 的 glob
+	// `/etc/vmalert/rules/*.yaml` 精确命中该文件）。
+	rulesConfigMountPath = "/etc/vmalert/rules/rules.yaml"
+	// notifierTokenMountPath 是 ingress token 文件在 vmalert 任务内的只读
+	// 挂载点（-notifier.basicAuth.passwordFile 指向它——凭据材料不进服务
+	// spec，token file 复用，设计 §2.3）。
+	notifierTokenMountPath = "/etc/fleetly/notifier-token"
+	// notifierBasicAuthUsername 是 vmalert → 接收器 Basic 认证的用户名
+	//（常量非凭据；凭据 = 密码位的 ingress token）。
+	notifierBasicAuthUsername = "fleetly"
 	// QueryPort 是 VM HTTP API 端口（VM 缺省 8428：query/ingest/health 同
 	// 端口；host 网络 + 回环监听的目标地址）。
 	QueryPort = 8428
+	// VMAlertPort 是 vmalert 自身 HTTP 面（UI/-help）端口（官方缺省 8880；
+	// host 网络任务回环监听——零公网面不变量对第四组件同样成立）。
+	VMAlertPort = 8880
+	// DefaultEvaluationInterval 是规则求值周期（设计 §2.1：30s）。
+	DefaultEvaluationInterval = 30 * time.Second
 	// CAdvisorPort / NodeExporterPort 是采集器的监听端口（cAdvisor 官方
 	// 缺省 8080、node_exporter 官方缺省 9100——端口未改只收编；绑定面
 	// 0.0.0.0，抓取目标 = 节点 advertise 地址 + 本端口）。
 	CAdvisorPort     = 8080
 	NodeExporterPort = 9100
-	// hostIP 是 VM 查询面的回环绑定地址（D-W5-4：127.0.0.1 = 零公网面；
-	// 只用于 VM——采集器的绑定面见 bindAllIP）。
+	// hostIP 是 VM/vmalert 查询面的回环绑定地址（D-W5-4：127.0.0.1 = 零公
+	// 网面；采集器的绑定面见 bindAllIP）。
 	hostIP = "127.0.0.1"
 	// bindAllIP 是采集器（cAdvisor/node_exporter）的绑定地址（§6 挂账票
 	// 修订：0.0.0.0 = 对节点全部网络接口开放——VM 经节点 advertise 地址
 	// 直连抓取；**采集面 = 内网面，公网访问由节点/云防火墙负责**，见文件
-	// 头诚实口径注记。VM 不用此值——查询面保持回环）。
+	// 头诚实口径注记。VM/vmalert 不用此值——查询面保持回环）。
 	bindAllIP = "0.0.0.0"
 	// vmMemoryBytes 是 VM 内存限额起步值（设计 §4.1：128MB，实测校准门
 	// 挂账——先测 idle 再定）。
 	vmMemoryBytes = int64(128) << 20
+	// vmalertMemoryBytes 是 vmalert 内存限额（设计 §2.1 opt-in 豁免预算的
+	// 起步值——与 VM 同档 128MB；规则求值是无状态面，idle RSS 远低于此）。
+	vmalertMemoryBytes = int64(128) << 20
 	// cadvisorMemoryBytes 是 cAdvisor 内存限额起步值（设计 §4.1 注：128MB
 	// 踩线、192MB 可接受——cAdvisor 是预算大头，限额保守但别 OOM 杀循环）。
 	cadvisorMemoryBytes = int64(192) << 20
@@ -147,6 +174,18 @@ const DefaultCAdvisorImage = "gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203
 // exporter 官方 repo；v1.12.1 为实现时点最新 stable，2026-07-14 发布；
 // digest sha256:1b4e4438…，manifest list 多架构 index）。台账 #16。
 const DefaultNodeExporterImage = "prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0"
+
+// DefaultVMAlertImage 是托管 vmalert（metrics 栈第四组件，alerts.mode=on
+// opt-in，D-V3W5-1）的钉定镜像。组件与 VictoriaMetrics 单版同发同版号：
+// v1.152.0 为实现时点最新 stable（GitHub releases 2026-09-14，prerelease=
+// false，与台账 #15 单机版同日核实）；digest sha256:ba005663…（多架构 OCI
+// index，amd64/arm64 等通吃，`docker buildx imagetools inspect` 实测）。
+// 台账 #21。flag 取证（同日镜像 -help 实测）：notifier 认证 flag 的真实
+// 形态是 **-notifier.basicAuth.username / -notifier.basicAuth.password**
+//（及 *File 变体，array 型），设计 §2.1 字面「-notifier.basicAuthUsername/
+// Password」为笔误缩写——实现取核实后的最小正确形态（passwordFile 形态，
+// 凭据材料不进服务 spec）。
+const DefaultVMAlertImage = "victoriametrics/vmalert:v1.152.0@sha256:ba00566373eb8c72d70cbee123e27ee75292dc0239830f36218c72712ba396b2"
 
 // HealthPath / query 路径常量（VM v1.152 单机版 HTTP API；/health 返回
 // "OK"）。查询面：GET /api/v1/query_range（区间）与 /api/v1/query（瞬时）。
@@ -413,6 +452,177 @@ func buildNodeExporterSpec() swarm.ServiceSpec {
 // bindRO 是宿主只读 bind 挂载的构造器（三件 spec 共用）。
 func bindRO(source, target string) mount.Mount {
 	return mount.Mount{Type: mount.TypeBind, Source: source, Target: target, ReadOnly: true}
+}
+
+// ── vmalert（metrics 栈第四组件，D-V3W5-1，W5-S2）─────────────────────────
+
+// notifierConfig 是 vmalert → 平台内建接收器的投递面配置（装配点注入——
+// runtime 提供 gateway 端口与 ingress token 文件路径；零值 = 告警面未装配）。
+type notifierConfig struct {
+	// URL 是接收器完整地址（http://127.0.0.1:<gateway-port>/internal/alerts
+	// ——vmalert 钉 manager 且 host 网络，与 gateway 同 netns，回环恒可达；
+	// 设计字面「<advertise>:<网关端口>」的实现收敛为回环：gateway 缺省绑定
+	// 127.0.0.1，advertise 形态在缺省绑定下不可达，见实现票偏差注记）。
+	URL string
+	// TokenFile 是 ingress token 文件的宿主路径（bind 只读挂载进任务，
+	// -notifier.basicAuth.passwordFile 指向任务内路径——凭据材料不进服务
+	// spec；token file 复用，设计 §2.3）。
+	TokenFile string
+}
+
+// owed 报告告警面是否已装配（未装配时 alerts.mode=on 显式失败退避——
+// 宁缺毋错）。
+func (c notifierConfig) owed() bool { return c.URL != "" && c.TokenFile != "" }
+
+// rulesYAML 把规则集渲染为 Prometheus rule 文件（设计 §2.2：groups 单组；
+// `for` 映射 for_duration〔0 = 无 for 子句〕；annotation 携带 channels/
+// severity/name）。确定性渲染（内容寻址命名的哈希基）：渲染前按 name 排序
+//（存储读取序的同锚防线——同规则集恒同内容，与调用方的切片序无关）、
+// label 键排序、expr 用块标量免转义。空规则集渲染空组（vmalert 合法输入；
+// 内容寻址名稳定）。
+func rulesYAML(rules []state.AlertRule) string {
+	ordered := make([]state.AlertRule, len(rules))
+	copy(ordered, rules)
+	sort.Slice(ordered, func(i, j int) bool {
+		if ordered[i].Name != ordered[j].Name {
+			return ordered[i].Name < ordered[j].Name
+		}
+		return ordered[i].ID < ordered[j].ID
+	})
+	var b strings.Builder
+	b.WriteString("groups:\n")
+	b.WriteString("  - name: fleetly\n")
+	b.WriteString("    rules:\n")
+	for _, r := range ordered {
+		fmt.Fprintf(&b, "      - alert: %s\n", r.Name)
+		b.WriteString("        expr: >-\n")
+		for _, line := range strings.Split(strings.TrimRight(r.Expr, "\n"), "\n") {
+			fmt.Fprintf(&b, "          %s\n", strings.TrimSpace(line))
+		}
+		if r.ForDurationSeconds > 0 {
+			fmt.Fprintf(&b, "        for: %ds\n", r.ForDurationSeconds)
+		}
+		keys := make([]string, 0, len(r.Labels))
+		for k := range r.Labels {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		if len(keys) > 0 {
+			b.WriteString("        labels:\n")
+			for _, k := range keys {
+				fmt.Fprintf(&b, "          %s: %s\n", k, r.Labels[k])
+			}
+		}
+		// annotation 携带 channels/severity/name（设计 §2.2 原文）：severity
+		// 取规则 labels 的 severity（缺失则不写该 annotation）；channels =
+		// 端点 id 逗号串（空 = 接收器缺省投全部端点）；summary = 规则名。
+		channels := strings.Join(r.Channels, ",")
+		severity := r.Labels["severity"]
+		b.WriteString("        annotations:\n")
+		fmt.Fprintf(&b, "          summary: %s\n", r.Name)
+		fmt.Fprintf(&b, "          channels: %s\n", channels)
+		if severity != "" {
+			fmt.Fprintf(&b, "          severity: %s\n", severity)
+		}
+	}
+	return b.String()
+}
+
+// rulesConfigName 是规则配置的 swarm config 对象名（内容寻址：规则集变 =
+// 名变 = 新对象；服务 spec 以名引用，specEqual 比对捕获漂移）。
+func rulesConfigName(rules []state.AlertRule) string {
+	sum := sha256.Sum256([]byte(rulesYAML(rules)))
+	return rulesConfigPrefix + hex.EncodeToString(sum[:4])
+}
+
+// buildRulesConfigSpec 构造规则配置的期望 swarm.ConfigSpec。
+func buildRulesConfigSpec(rules []state.AlertRule) swarm.ConfigSpec {
+	return swarm.ConfigSpec{
+		Annotations: swarm.Annotations{
+			Name: rulesConfigName(rules),
+			Labels: map[string]string{
+				state.LabelManaged: state.ManagedLabelValue,
+				rulesConfigLabel:   "true",
+			},
+		},
+		Data: []byte(rulesYAML(rules)),
+	}
+}
+
+// buildVMAlertSpec 构造托管 vmalert 服务的期望 swarm spec（replicated-1 +
+// manager 约束 + host 网络回环监听 + 规则 config 引用（内容寻址）+ token
+// 文件只读 bind + 内存限额 128MB；无端口发布面——参数按 v1.152 镜像 -help
+// 实测 flag 形态，2026-09-25）。
+func buildVMAlertSpec(platformID string, nc notifierConfig, rules []state.AlertRule) swarm.ServiceSpec {
+	one := uint64(1)
+	spec := swarm.ServiceSpec{
+		Annotations: swarm.Annotations{
+			Name: VMAlertServiceName,
+			Labels: map[string]string{
+				state.LabelManaged: state.ManagedLabelValue,
+				vmalertLabel:       "true",
+			},
+		},
+		TaskTemplate: swarm.TaskSpec{
+			ContainerSpec: &swarm.ContainerSpec{
+				Image: DefaultVMAlertImage,
+				Args: []string{
+					"-datasource.url=http://" + hostIP + ":" + strconv.Itoa(QueryPort),
+					"-remoteRead.url=http://" + hostIP + ":" + strconv.Itoa(QueryPort),
+					"-notifier.url=" + nc.URL,
+					"-notifier.basicAuth.username=" + notifierBasicAuthUsername,
+					// 密码位 = ingress token（file 形态——凭据材料不进 spec）。
+					"-notifier.basicAuth.passwordFile=" + notifierTokenMountPath,
+					"-rule=/etc/vmalert/rules/*.yaml",
+					fmt.Sprintf("-evaluationInterval=%s", DefaultEvaluationInterval),
+					fmt.Sprintf("-httpListenAddr=%s:%d", hostIP, VMAlertPort),
+				},
+				Mounts: []mount.Mount{
+					// ingress token 文件（平台生成凭据）只读进任务——挂载源
+					// 是路径不是材料（token file 复用，设计 §2.3）。
+					{Type: mount.TypeBind, Source: nc.TokenFile, Target: notifierTokenMountPath, ReadOnly: true},
+				},
+				Configs: []*swarm.ConfigReference{{
+					ConfigName: rulesConfigName(rules),
+					File: &swarm.ConfigReferenceFileTarget{
+						Name: rulesConfigMountPath,
+						UID:  "0", GID: "0", Mode: 0o444,
+					},
+				}},
+			},
+			// host 网络：datasource/remoteRead 走 VM 回环监听（同宿主 netns
+			// 直达），notifier 走 gateway 回环监听（同上）。
+			Networks: []swarm.NetworkAttachmentConfig{{
+				Target: hostNetworkName,
+			}},
+			Placement: &swarm.Placement{
+				Constraints: []string{constraintFor(platformID)},
+			},
+			Resources: &swarm.ResourceRequirements{
+				Limits: &swarm.Limit{MemoryBytes: vmalertMemoryBytes},
+			},
+		},
+		Mode: swarm.ServiceMode{Replicated: &swarm.ReplicatedService{Replicas: &one}},
+		UpdateConfig: &swarm.UpdateConfig{
+			Parallelism:   1,
+			FailureAction: "pause",
+			Order:         "stop-first",
+		},
+	}
+	return spec
+}
+
+// anchorRulesConfig 把规则 config 的底座对象 ID 锚入期望 spec（anchorSpec
+// 的规则族对偶——只写名会被 swarm 以 "malformed config reference" 拒绝，
+// W3 secret-ID 同族教训）。
+func anchorRulesConfig(spec *swarm.ServiceSpec, rulesName, rulesID string) {
+	if cs := spec.TaskTemplate.ContainerSpec; cs != nil {
+		for _, ref := range cs.Configs {
+			if ref.ConfigName == rulesName {
+				ref.ConfigID = rulesID
+			}
+		}
+	}
 }
 
 // specEqual 幂等比对（镜像/参数/挂载/网络/约束/副本/限额/抓取配置引用

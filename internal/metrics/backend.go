@@ -190,6 +190,29 @@ func (b *Backend) InstantValue(ctx context.Context, promql string) (value float6
 	return series[0].Points[0].V, true, nil
 }
 
+// InstantSeries 执行瞬时查询并返回全量序列（TestAlertRule 的执行体，W5-S2
+// ——规则编写时的即时校验面：expr 直接执行返回样本集；limit 截断规范化，
+// 缺省 200 天花板 1000）。坏 PromQL → ErrBadQuery（api 层映射
+// InvalidArgument，VM 错误原文透传）。
+func (b *Backend) InstantSeries(ctx context.Context, promql string, limit int) ([]Series, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	vals := url.Values{}
+	vals.Set("query", promql)
+	body, status, err := b.get(ctx, QueryInstantPath+"?"+vals.Encode())
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status > 299 {
+		return nil, classify(status, body)
+	}
+	return parseVector(body, limit)
+}
+
 // limitOr 是 RangeQuery 的 limit 兜底（零值回落缺省）。
 func (q RangeQuery) limitOr(def int) int {
 	if q.Limit <= 0 {
@@ -282,8 +305,13 @@ func parseMatrix(body []byte, limit int) ([]Series, error) {
 	return out, nil
 }
 
-// parseVector 解析 query 瞬时响应（value 单点形态复用 values 解析）。
-func parseVector(body []byte) ([]Series, error) {
+// parseVector 解析 query 瞬时响应（value 单点形态复用 values 解析；limit
+// 截断规范化——序列数天花板，TestAlertRule 消费）。
+func parseVector(body []byte, limit ...int) ([]Series, error) {
+	maxSeries := 0
+	if len(limit) > 0 && limit[0] > 0 {
+		maxSeries = limit[0]
+	}
 	var resp vmAPIResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
 		return nil, fmt.Errorf("metrics: parse instant response: %w", err)
@@ -293,6 +321,9 @@ func parseVector(body []byte) ([]Series, error) {
 	}
 	out := make([]Series, 0, len(resp.Data.Result))
 	for _, r := range resp.Data.Result {
+		if maxSeries > 0 && len(out) >= maxSeries {
+			break
+		}
 		s := Series{Metric: r.Metric}
 		if len(r.Value) == 2 {
 			p := Point{V: anyFloat(r.Value[1])}

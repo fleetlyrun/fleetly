@@ -132,7 +132,23 @@ func (f *fakeDocker) ConfigListNames(_ context.Context) ([]string, error) {
 	defer f.mu.Unlock()
 	out := make([]string, 0, len(f.configs))
 	for name := range f.configs {
-		out = append(out, name)
+		if strings.HasPrefix(name, scrapeConfigPrefix) {
+			out = append(out, name)
+		}
+	}
+	return out, nil
+}
+
+// RulesConfigListNames 假读面（规则族 GC——按名前缀分族，与真实现按 label
+// 分族的语义对偶：本包两族 config 的名前缀与 label 一一对应）。
+func (f *fakeDocker) RulesConfigListNames(_ context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.configs))
+	for name := range f.configs {
+		if strings.HasPrefix(name, rulesConfigPrefix) {
+			out = append(out, name)
+		}
 	}
 	return out, nil
 }
