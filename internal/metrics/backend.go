@@ -166,6 +166,30 @@ func (b *Backend) CountInstant(ctx context.Context, promql string) (int, error) 
 	return int(series[0].Points[0].V), nil
 }
 
+// InstantValue 执行瞬时查询并返回首个序列首点的数值（autoscaler 评估器的
+// 数据面，W5-S1）：ok=false 表示**查不到序列**——与「序列在但值为 0」严格
+// 区分（诚实无数据不扩缩的判据输入；调用方对两种形态分流处置）。VM 对
+// 空集返回 success + 空 result——不是错误。
+func (b *Backend) InstantValue(ctx context.Context, promql string) (value float64, ok bool, err error) {
+	vals := url.Values{}
+	vals.Set("query", promql)
+	body, status, err := b.get(ctx, QueryInstantPath+"?"+vals.Encode())
+	if err != nil {
+		return 0, false, err
+	}
+	if status < 200 || status > 299 {
+		return 0, false, classify(status, body)
+	}
+	series, err := parseVector(body)
+	if err != nil {
+		return 0, false, err
+	}
+	if len(series) == 0 || len(series[0].Points) == 0 {
+		return 0, false, nil
+	}
+	return series[0].Points[0].V, true, nil
+}
+
 // limitOr 是 RangeQuery 的 limit 兜底（零值回落缺省）。
 func (q RangeQuery) limitOr(def int) int {
 	if q.Limit <= 0 {

@@ -99,6 +99,18 @@ type Engine struct {
 	// 事件面）披露的进程内记忆：语义与 substrateMissingSeen 同款（持续形态
 	// 只报一次；任务回岗清零可再报；重启清零 = 重报一次，重复优于漏报）。
 	substrateDrainedSeen map[string]bool
+	// metricsQ 是 VM 瞬时查询端口（autoscaler 评估器的数据面；nil = duty
+	// 整体不在评估域——装配层经 WithMetricsQuerier 注入）。
+	metricsQ MetricsQuerier
+	// scalingNextAt 是扩缩评估扫描的最早时刻（autoscalingInterval 频控，
+	// substrateNextAt 同模式：tick goroutine 专用；重启即清零 = 重启后立即
+	// 评估一拍）。
+	scalingNextAt time.Time
+	// scalingDormantSeen / scalingNoDataSeen 是扩缩披露的进程内记忆（每策略
+	// 一次性语义：条件存续只报一次；条件解除清零可再报；重启清零 = 重报
+	// 一次，重复优于漏报——与 driftSeen 同族）。
+	scalingDormantSeen map[string]bool
+	scalingNoDataSeen  map[string]bool
 	// dutyPanicOn / dutyCalls 是 safeCall 的测试注入缝（MG-5 覆盖面测试）：
 	// 前者按 duty 名注入 panic（验证包壳隔离），后者记录经 safeCall 执行的
 	// duty 名与次数（验证 duty 清单全部收口；Run goroutine 写、测试 goroutine
@@ -134,6 +146,8 @@ func NewEngine(cfg Config, store *state.Store, sub Substrate, images ImageChecke
 		recoveryStuck:        map[string]bool{},
 		substrateMissingSeen: map[string]bool{},
 		substrateDrainedSeen: map[string]bool{},
+		scalingDormantSeen:   map[string]bool{},
+		scalingNoDataSeen:    map[string]bool{},
 	}
 }
 
@@ -239,6 +253,9 @@ func (e *Engine) tick(ctx context.Context) {
 	e.safeCall("watchPostWindow", func() { e.watchPostWindow(ctx) })
 	e.safeCall("reapDeletingApps", func() { e.reapDeletingApps(ctx, false) })
 	e.safeCall("substrateRecon", func() { e.substrateRecon(ctx, false) })
+	// 扩缩评估（W5-S1，D-V3W5-2）：收敛拍尾部——发布链路推进完毕后的稳态
+	// 求值（自有 30s 频控闸；查询面未装配时 duty 空转）。
+	e.safeCall("dutyAutoscaling", func() { e.dutyAutoscaling(ctx, false) })
 }
 
 // pickQueued 拾取可启动的 queued 部署：同 app 互斥——仅当该 app 无其他

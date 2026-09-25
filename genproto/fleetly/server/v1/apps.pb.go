@@ -849,6 +849,428 @@ func (x *SetAppSourceResponse) GetSourceAuthKind() string {
 	return ""
 }
 
+type GetScalingPolicyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 应用名（裸名/限定形，resolveApp 单点解析）。
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// compose 服务名。
+	Service       string `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetScalingPolicyRequest) Reset() {
+	*x = GetScalingPolicyRequest{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetScalingPolicyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetScalingPolicyRequest) ProtoMessage() {}
+
+func (x *GetScalingPolicyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetScalingPolicyRequest.ProtoReflect.Descriptor instead.
+func (*GetScalingPolicyRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GetScalingPolicyRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetScalingPolicyRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+type GetScalingPolicyResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Service string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	// 副本下限（≥1）。
+	MinReplicas int32 `protobuf:"varint,3,opt,name=min_replicas,json=minReplicas,proto3" json:"min_replicas,omitempty"`
+	// 副本上限（≤16——swarm 单服务上限口径）。
+	MaxReplicas int32 `protobuf:"varint,4,opt,name=max_replicas,json=maxReplicas,proto3" json:"max_replicas,omitempty"`
+	// CPU 目标水位百分数（[20,90]；0 = 未设该维度目标）。
+	TargetCpuPct int32 `protobuf:"varint,5,opt,name=target_cpu_pct,json=targetCpuPct,proto3" json:"target_cpu_pct,omitempty"`
+	// 内存目标水位百分数（[20,90]；0 = 未设该维度目标）。
+	TargetMemPct int32 `protobuf:"varint,6,opt,name=target_mem_pct,json=targetMemPct,proto3" json:"target_mem_pct,omitempty"`
+	// 动作冷却窗秒数（[60,3600]，缺省 180）。
+	CooldownSeconds int32                  `protobuf:"varint,7,opt,name=cooldown_seconds,json=cooldownSeconds,proto3" json:"cooldown_seconds,omitempty"`
+	CreatedAt       *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt       *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetScalingPolicyResponse) Reset() {
+	*x = GetScalingPolicyResponse{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetScalingPolicyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetScalingPolicyResponse) ProtoMessage() {}
+
+func (x *GetScalingPolicyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetScalingPolicyResponse.ProtoReflect.Descriptor instead.
+func (*GetScalingPolicyResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GetScalingPolicyResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GetScalingPolicyResponse) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *GetScalingPolicyResponse) GetMinReplicas() int32 {
+	if x != nil {
+		return x.MinReplicas
+	}
+	return 0
+}
+
+func (x *GetScalingPolicyResponse) GetMaxReplicas() int32 {
+	if x != nil {
+		return x.MaxReplicas
+	}
+	return 0
+}
+
+func (x *GetScalingPolicyResponse) GetTargetCpuPct() int32 {
+	if x != nil {
+		return x.TargetCpuPct
+	}
+	return 0
+}
+
+func (x *GetScalingPolicyResponse) GetTargetMemPct() int32 {
+	if x != nil {
+		return x.TargetMemPct
+	}
+	return 0
+}
+
+func (x *GetScalingPolicyResponse) GetCooldownSeconds() int32 {
+	if x != nil {
+		return x.CooldownSeconds
+	}
+	return 0
+}
+
+func (x *GetScalingPolicyResponse) GetCreatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return nil
+}
+
+func (x *GetScalingPolicyResponse) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type SetScalingPolicyRequest struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Service string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	// 副本下限（≥1；必填）。
+	MinReplicas int32 `protobuf:"varint,3,opt,name=min_replicas,json=minReplicas,proto3" json:"min_replicas,omitempty"`
+	// 副本上限（≤16 且 ≥ min；必填）。
+	MaxReplicas int32 `protobuf:"varint,4,opt,name=max_replicas,json=maxReplicas,proto3" json:"max_replicas,omitempty"`
+	// CPU 目标水位（0 = 不设该维度；至少一维非 0）。
+	TargetCpuPct int32 `protobuf:"varint,5,opt,name=target_cpu_pct,json=targetCpuPct,proto3" json:"target_cpu_pct,omitempty"`
+	// 内存目标水位（0 = 不设该维度；至少一维非 0）。
+	TargetMemPct int32 `protobuf:"varint,6,opt,name=target_mem_pct,json=targetMemPct,proto3" json:"target_mem_pct,omitempty"`
+	// 冷却窗秒数（0 = 缺省 180）。
+	CooldownSeconds int32 `protobuf:"varint,7,opt,name=cooldown_seconds,json=cooldownSeconds,proto3" json:"cooldown_seconds,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *SetScalingPolicyRequest) Reset() {
+	*x = SetScalingPolicyRequest{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetScalingPolicyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetScalingPolicyRequest) ProtoMessage() {}
+
+func (x *SetScalingPolicyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetScalingPolicyRequest.ProtoReflect.Descriptor instead.
+func (*SetScalingPolicyRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *SetScalingPolicyRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SetScalingPolicyRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *SetScalingPolicyRequest) GetMinReplicas() int32 {
+	if x != nil {
+		return x.MinReplicas
+	}
+	return 0
+}
+
+func (x *SetScalingPolicyRequest) GetMaxReplicas() int32 {
+	if x != nil {
+		return x.MaxReplicas
+	}
+	return 0
+}
+
+func (x *SetScalingPolicyRequest) GetTargetCpuPct() int32 {
+	if x != nil {
+		return x.TargetCpuPct
+	}
+	return 0
+}
+
+func (x *SetScalingPolicyRequest) GetTargetMemPct() int32 {
+	if x != nil {
+		return x.TargetMemPct
+	}
+	return 0
+}
+
+func (x *SetScalingPolicyRequest) GetCooldownSeconds() int32 {
+	if x != nil {
+		return x.CooldownSeconds
+	}
+	return 0
+}
+
+type SetScalingPolicyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 写入后的策略视图（与 GetScalingPolicy 同构）。
+	Policy        *GetScalingPolicyResponse `protobuf:"bytes,1,opt,name=policy,proto3" json:"policy,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetScalingPolicyResponse) Reset() {
+	*x = SetScalingPolicyResponse{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetScalingPolicyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetScalingPolicyResponse) ProtoMessage() {}
+
+func (x *SetScalingPolicyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetScalingPolicyResponse.ProtoReflect.Descriptor instead.
+func (*SetScalingPolicyResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *SetScalingPolicyResponse) GetPolicy() *GetScalingPolicyResponse {
+	if x != nil {
+		return x.Policy
+	}
+	return nil
+}
+
+type RemoveScalingPolicyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Service       string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveScalingPolicyRequest) Reset() {
+	*x = RemoveScalingPolicyRequest{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveScalingPolicyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveScalingPolicyRequest) ProtoMessage() {}
+
+func (x *RemoveScalingPolicyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveScalingPolicyRequest.ProtoReflect.Descriptor instead.
+func (*RemoveScalingPolicyRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RemoveScalingPolicyRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RemoveScalingPolicyRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+type RemoveScalingPolicyResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Name    string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Service string                 `protobuf:"bytes,2,opt,name=service,proto3" json:"service,omitempty"`
+	// 恒 true（删除成功即无策略）。
+	Removed       bool `protobuf:"varint,3,opt,name=removed,proto3" json:"removed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveScalingPolicyResponse) Reset() {
+	*x = RemoveScalingPolicyResponse{}
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveScalingPolicyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveScalingPolicyResponse) ProtoMessage() {}
+
+func (x *RemoveScalingPolicyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_apps_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveScalingPolicyResponse.ProtoReflect.Descriptor instead.
+func (*RemoveScalingPolicyResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_apps_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RemoveScalingPolicyResponse) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *RemoveScalingPolicyResponse) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *RemoveScalingPolicyResponse) GetRemoved() bool {
+	if x != nil {
+		return x.Removed
+	}
+	return false
+}
+
 var File_fleetly_server_v1_apps_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_apps_proto_rawDesc = "" +
@@ -919,7 +1341,40 @@ const file_fleetly_server_v1_apps_proto_rawDesc = "" +
 	"\n" +
 	"source_url\x18\x02 \x01(\tR\tsourceUrl\x12#\n" +
 	"\rsource_branch\x18\x03 \x01(\tR\fsourceBranch\x12(\n" +
-	"\x10source_auth_kind\x18\x04 \x01(\tR\x0esourceAuthKind2\xfd\x05\n" +
+	"\x10source_auth_kind\x18\x04 \x01(\tR\x0esourceAuthKind\"[\n" +
+	"\x17GetScalingPolicyRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12#\n" +
+	"\aservice\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18dR\aservice\"\xfb\x02\n" +
+	"\x18GetScalingPolicyResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aservice\x18\x02 \x01(\tR\aservice\x12!\n" +
+	"\fmin_replicas\x18\x03 \x01(\x05R\vminReplicas\x12!\n" +
+	"\fmax_replicas\x18\x04 \x01(\x05R\vmaxReplicas\x12$\n" +
+	"\x0etarget_cpu_pct\x18\x05 \x01(\x05R\ftargetCpuPct\x12$\n" +
+	"\x0etarget_mem_pct\x18\x06 \x01(\x05R\ftargetMemPct\x12)\n" +
+	"\x10cooldown_seconds\x18\a \x01(\x05R\x0fcooldownSeconds\x129\n" +
+	"\n" +
+	"created_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x129\n" +
+	"\n" +
+	"updated_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xd0\x02\n" +
+	"\x17SetScalingPolicyRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12#\n" +
+	"\aservice\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18dR\aservice\x12,\n" +
+	"\fmin_replicas\x18\x03 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x10(\x01R\vminReplicas\x12,\n" +
+	"\fmax_replicas\x18\x04 \x01(\x05B\t\xbaH\x06\x1a\x04\x18\x10(\x01R\vmaxReplicas\x12/\n" +
+	"\x0etarget_cpu_pct\x18\x05 \x01(\x05B\t\xbaH\x06\x1a\x04\x18Z(\x00R\ftargetCpuPct\x12/\n" +
+	"\x0etarget_mem_pct\x18\x06 \x01(\x05B\t\xbaH\x06\x1a\x04\x18Z(\x00R\ftargetMemPct\x125\n" +
+	"\x10cooldown_seconds\x18\a \x01(\x05B\n" +
+	"\xbaH\a\x1a\x05\x18\x90\x1c(\x00R\x0fcooldownSeconds\"_\n" +
+	"\x18SetScalingPolicyResponse\x12C\n" +
+	"\x06policy\x18\x01 \x01(\v2+.fleetly.server.v1.GetScalingPolicyResponseR\x06policy\"^\n" +
+	"\x1aRemoveScalingPolicyRequest\x12\x1b\n" +
+	"\x04name\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04name\x12#\n" +
+	"\aservice\x18\x02 \x01(\tB\t\xbaH\x06r\x04\x10\x01\x18dR\aservice\"e\n" +
+	"\x1bRemoveScalingPolicyResponse\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x18\n" +
+	"\aservice\x18\x02 \x01(\tR\aservice\x12\x18\n" +
+	"\aremoved\x18\x03 \x01(\bR\aremoved2\xd4\t\n" +
 	"\vAppsService\x12e\n" +
 	"\bListApps\x12\".fleetly.server.v1.ListAppsRequest\x1a#.fleetly.server.v1.ListAppsResponse\"\x10\x82\xd3\xe4\x93\x02\n" +
 	"\x12\b/v1/apps\x12f\n" +
@@ -927,7 +1382,10 @@ const file_fleetly_server_v1_apps_proto_rawDesc = "" +
 	"\tDeleteApp\x12#.fleetly.server.v1.DeleteAppRequest\x1a$.fleetly.server.v1.DeleteAppResponse\"\x17\x82\xd3\xe4\x93\x02\x11*\x0f/v1/apps/{name}\x12\x9f\x01\n" +
 	"\x13SetAppWebhookSecret\x12-.fleetly.server.v1.SetAppWebhookSecretRequest\x1a..fleetly.server.v1.SetAppWebhookSecretResponse\")\x82\xd3\xe4\x93\x02#:\x01*\x1a\x1e/v1/apps/{name}/webhook-secret\x12\x86\x01\n" +
 	"\x0eShowAppWebhook\x12(.fleetly.server.v1.ShowAppWebhookRequest\x1a).fleetly.server.v1.ShowAppWebhookResponse\"\x1f\x82\xd3\xe4\x93\x02\x19\x12\x17/v1/apps/{name}/webhook\x12\x82\x01\n" +
-	"\fSetAppSource\x12&.fleetly.server.v1.SetAppSourceRequest\x1a'.fleetly.server.v1.SetAppSourceResponse\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\x1a\x16/v1/apps/{name}/sourceB\x98\x01\x92ARRP\n" +
+	"\fSetAppSource\x12&.fleetly.server.v1.SetAppSourceRequest\x1a'.fleetly.server.v1.SetAppSourceResponse\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\x1a\x16/v1/apps/{name}/source\x12\x96\x01\n" +
+	"\x10GetScalingPolicy\x12*.fleetly.server.v1.GetScalingPolicyRequest\x1a+.fleetly.server.v1.GetScalingPolicyResponse\")\x82\xd3\xe4\x93\x02#\x12!/v1/apps/{name}/scaling/{service}\x12\x99\x01\n" +
+	"\x10SetScalingPolicy\x12*.fleetly.server.v1.SetScalingPolicyRequest\x1a+.fleetly.server.v1.SetScalingPolicyResponse\",\x82\xd3\xe4\x93\x02&:\x01*\x1a!/v1/apps/{name}/scaling/{service}\x12\x9f\x01\n" +
+	"\x13RemoveScalingPolicy\x12-.fleetly.server.v1.RemoveScalingPolicyRequest\x1a..fleetly.server.v1.RemoveScalingPolicyResponse\")\x82\xd3\xe4\x93\x02#*!/v1/apps/{name}/scaling/{service}B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -944,7 +1402,7 @@ func file_fleetly_server_v1_apps_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_apps_proto_rawDescData
 }
 
-var file_fleetly_server_v1_apps_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
+var file_fleetly_server_v1_apps_proto_msgTypes = make([]protoimpl.MessageInfo, 19)
 var file_fleetly_server_v1_apps_proto_goTypes = []any{
 	(*ListAppsRequest)(nil),             // 0: fleetly.server.v1.ListAppsRequest
 	(*AppView)(nil),                     // 1: fleetly.server.v1.AppView
@@ -959,35 +1417,50 @@ var file_fleetly_server_v1_apps_proto_goTypes = []any{
 	(*ShowAppWebhookResponse)(nil),      // 10: fleetly.server.v1.ShowAppWebhookResponse
 	(*SetAppSourceRequest)(nil),         // 11: fleetly.server.v1.SetAppSourceRequest
 	(*SetAppSourceResponse)(nil),        // 12: fleetly.server.v1.SetAppSourceResponse
-	(*timestamppb.Timestamp)(nil),       // 13: google.protobuf.Timestamp
-	(*PlacementView)(nil),               // 14: fleetly.server.v1.PlacementView
-	(*DeploymentView)(nil),              // 15: fleetly.server.v1.DeploymentView
+	(*GetScalingPolicyRequest)(nil),     // 13: fleetly.server.v1.GetScalingPolicyRequest
+	(*GetScalingPolicyResponse)(nil),    // 14: fleetly.server.v1.GetScalingPolicyResponse
+	(*SetScalingPolicyRequest)(nil),     // 15: fleetly.server.v1.SetScalingPolicyRequest
+	(*SetScalingPolicyResponse)(nil),    // 16: fleetly.server.v1.SetScalingPolicyResponse
+	(*RemoveScalingPolicyRequest)(nil),  // 17: fleetly.server.v1.RemoveScalingPolicyRequest
+	(*RemoveScalingPolicyResponse)(nil), // 18: fleetly.server.v1.RemoveScalingPolicyResponse
+	(*timestamppb.Timestamp)(nil),       // 19: google.protobuf.Timestamp
+	(*PlacementView)(nil),               // 20: fleetly.server.v1.PlacementView
+	(*DeploymentView)(nil),              // 21: fleetly.server.v1.DeploymentView
 }
 var file_fleetly_server_v1_apps_proto_depIdxs = []int32{
-	13, // 0: fleetly.server.v1.AppView.created_at:type_name -> google.protobuf.Timestamp
-	13, // 1: fleetly.server.v1.AppView.updated_at:type_name -> google.protobuf.Timestamp
+	19, // 0: fleetly.server.v1.AppView.created_at:type_name -> google.protobuf.Timestamp
+	19, // 1: fleetly.server.v1.AppView.updated_at:type_name -> google.protobuf.Timestamp
 	1,  // 2: fleetly.server.v1.ListAppsResponse.apps:type_name -> fleetly.server.v1.AppView
-	13, // 3: fleetly.server.v1.GetAppResponse.created_at:type_name -> google.protobuf.Timestamp
-	13, // 4: fleetly.server.v1.GetAppResponse.updated_at:type_name -> google.protobuf.Timestamp
-	14, // 5: fleetly.server.v1.GetAppResponse.placement:type_name -> fleetly.server.v1.PlacementView
-	15, // 6: fleetly.server.v1.GetAppResponse.recent_deployments:type_name -> fleetly.server.v1.DeploymentView
-	0,  // 7: fleetly.server.v1.AppsService.ListApps:input_type -> fleetly.server.v1.ListAppsRequest
-	3,  // 8: fleetly.server.v1.AppsService.GetApp:input_type -> fleetly.server.v1.GetAppRequest
-	5,  // 9: fleetly.server.v1.AppsService.DeleteApp:input_type -> fleetly.server.v1.DeleteAppRequest
-	7,  // 10: fleetly.server.v1.AppsService.SetAppWebhookSecret:input_type -> fleetly.server.v1.SetAppWebhookSecretRequest
-	9,  // 11: fleetly.server.v1.AppsService.ShowAppWebhook:input_type -> fleetly.server.v1.ShowAppWebhookRequest
-	11, // 12: fleetly.server.v1.AppsService.SetAppSource:input_type -> fleetly.server.v1.SetAppSourceRequest
-	2,  // 13: fleetly.server.v1.AppsService.ListApps:output_type -> fleetly.server.v1.ListAppsResponse
-	4,  // 14: fleetly.server.v1.AppsService.GetApp:output_type -> fleetly.server.v1.GetAppResponse
-	6,  // 15: fleetly.server.v1.AppsService.DeleteApp:output_type -> fleetly.server.v1.DeleteAppResponse
-	8,  // 16: fleetly.server.v1.AppsService.SetAppWebhookSecret:output_type -> fleetly.server.v1.SetAppWebhookSecretResponse
-	10, // 17: fleetly.server.v1.AppsService.ShowAppWebhook:output_type -> fleetly.server.v1.ShowAppWebhookResponse
-	12, // 18: fleetly.server.v1.AppsService.SetAppSource:output_type -> fleetly.server.v1.SetAppSourceResponse
-	13, // [13:19] is the sub-list for method output_type
-	7,  // [7:13] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	19, // 3: fleetly.server.v1.GetAppResponse.created_at:type_name -> google.protobuf.Timestamp
+	19, // 4: fleetly.server.v1.GetAppResponse.updated_at:type_name -> google.protobuf.Timestamp
+	20, // 5: fleetly.server.v1.GetAppResponse.placement:type_name -> fleetly.server.v1.PlacementView
+	21, // 6: fleetly.server.v1.GetAppResponse.recent_deployments:type_name -> fleetly.server.v1.DeploymentView
+	19, // 7: fleetly.server.v1.GetScalingPolicyResponse.created_at:type_name -> google.protobuf.Timestamp
+	19, // 8: fleetly.server.v1.GetScalingPolicyResponse.updated_at:type_name -> google.protobuf.Timestamp
+	14, // 9: fleetly.server.v1.SetScalingPolicyResponse.policy:type_name -> fleetly.server.v1.GetScalingPolicyResponse
+	0,  // 10: fleetly.server.v1.AppsService.ListApps:input_type -> fleetly.server.v1.ListAppsRequest
+	3,  // 11: fleetly.server.v1.AppsService.GetApp:input_type -> fleetly.server.v1.GetAppRequest
+	5,  // 12: fleetly.server.v1.AppsService.DeleteApp:input_type -> fleetly.server.v1.DeleteAppRequest
+	7,  // 13: fleetly.server.v1.AppsService.SetAppWebhookSecret:input_type -> fleetly.server.v1.SetAppWebhookSecretRequest
+	9,  // 14: fleetly.server.v1.AppsService.ShowAppWebhook:input_type -> fleetly.server.v1.ShowAppWebhookRequest
+	11, // 15: fleetly.server.v1.AppsService.SetAppSource:input_type -> fleetly.server.v1.SetAppSourceRequest
+	13, // 16: fleetly.server.v1.AppsService.GetScalingPolicy:input_type -> fleetly.server.v1.GetScalingPolicyRequest
+	15, // 17: fleetly.server.v1.AppsService.SetScalingPolicy:input_type -> fleetly.server.v1.SetScalingPolicyRequest
+	17, // 18: fleetly.server.v1.AppsService.RemoveScalingPolicy:input_type -> fleetly.server.v1.RemoveScalingPolicyRequest
+	2,  // 19: fleetly.server.v1.AppsService.ListApps:output_type -> fleetly.server.v1.ListAppsResponse
+	4,  // 20: fleetly.server.v1.AppsService.GetApp:output_type -> fleetly.server.v1.GetAppResponse
+	6,  // 21: fleetly.server.v1.AppsService.DeleteApp:output_type -> fleetly.server.v1.DeleteAppResponse
+	8,  // 22: fleetly.server.v1.AppsService.SetAppWebhookSecret:output_type -> fleetly.server.v1.SetAppWebhookSecretResponse
+	10, // 23: fleetly.server.v1.AppsService.ShowAppWebhook:output_type -> fleetly.server.v1.ShowAppWebhookResponse
+	12, // 24: fleetly.server.v1.AppsService.SetAppSource:output_type -> fleetly.server.v1.SetAppSourceResponse
+	14, // 25: fleetly.server.v1.AppsService.GetScalingPolicy:output_type -> fleetly.server.v1.GetScalingPolicyResponse
+	16, // 26: fleetly.server.v1.AppsService.SetScalingPolicy:output_type -> fleetly.server.v1.SetScalingPolicyResponse
+	18, // 27: fleetly.server.v1.AppsService.RemoveScalingPolicy:output_type -> fleetly.server.v1.RemoveScalingPolicyResponse
+	19, // [19:28] is the sub-list for method output_type
+	10, // [10:19] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_apps_proto_init() }
@@ -1003,7 +1476,7 @@ func file_fleetly_server_v1_apps_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_apps_proto_rawDesc), len(file_fleetly_server_v1_apps_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   13,
+			NumMessages:   19,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

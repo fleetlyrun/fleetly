@@ -15,6 +15,7 @@ import {
 } from "@/api/endpoints";
 import { formatTime, timeAgo } from "@/lib/utils";
 import { AppMetricsCard } from "@/components/app-metrics-card";
+import { AppScalingCard } from "@/components/app-scaling-card";
 import { CronSection } from "@/components/cron-section";
 import { DegradedExplanationCardLive } from "@/components/degraded-explanation-card";
 import { StatusDot } from "@/components/status-dot";
@@ -231,6 +232,18 @@ export function AppOverviewPage() {
       <div className="md:col-span-2">
         <AppMetricsCard app={name} />
       </div>
+
+      {/* 自动扩缩策略卡（W5-S1，D-V3W5-2）：只列长驻服务（cron 无副本
+          语义）——策略展示/编辑/删除（admin+ 可写）；metrics off 休眠态
+          提示。 */}
+      {services !== null ? (
+        <div className="md:col-span-2">
+          <AppScalingCard
+            app={name}
+            services={services.filter((s) => !s.isCron).map((s) => s.name)}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

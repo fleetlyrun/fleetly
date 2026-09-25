@@ -28,6 +28,7 @@ import type {
   GetRegistrationStateResponse,
   GetRevisionSpecResponse,
   GetS3SettingsResponse,
+  GetScalingPolicyResponse,
   GetSmtpSettingsResponse,
   GetSystemStatusResponse,
   GetTerminalStatusResponse,
@@ -63,6 +64,7 @@ import type {
   PlacementView,
   RegisterResponse,
   RemoveEnvResponse,
+  RemoveScalingPolicyResponse,
   RemoveSecretResponse,
   ResetUserPasswordResponse,
   RestoreDatabaseBackupResponse,
@@ -80,6 +82,7 @@ import type {
   SearchSource,
   SetEnvResponse,
   SetMetricsModeResponse,
+  SetScalingPolicyResponse,
   SetProjectMemberRoleResponse,
   SetAuditRetentionResponse,
   SetRegistrationResponse,
@@ -625,6 +628,48 @@ export function searchMetrics(
 /** 模式切换（deploy scope）：保存即生效——duty 收敛部署/移除，卷保留。 */
 export function setMetricsMode(mode: MetricsMode) {
   return api<SetMetricsModeResponse>("/metrics/mode", { method: "PUT", json: { mode } });
+}
+
+// ── apps scaling（W5-S1，D-V3W5-2 自动扩缩策略面）────────────────────────
+
+/**
+ * 读取服务的自动扩缩策略（read scope）。未设置 = 404（未配置即无策略
+ ——服务端信封，调用面按 404 归一「无策略」态）。
+ */
+export function getScalingPolicy(app: string, service: string) {
+  return api<GetScalingPolicyResponse>(
+    `/apps/${encodeURIComponent(app)}/scaling/${encodeURIComponent(service)}`,
+  );
+}
+
+/**
+ * 写入（整行替换 upsert）服务的自动扩缩策略（deploy scope；Console 卡按
+ * 设计 §1.1「admin 可写」再收紧前端门）。约束：min ≥1、max ≤16、target ∈
+ * [20,90]（0 = 该维度不设目标，至少一维必设）、cooldown ∈ [60,3600]s。
+ */
+export function setScalingPolicy(
+  app: string,
+  service: string,
+  input: {
+    min_replicas: number;
+    max_replicas: number;
+    target_cpu_pct: number;
+    target_mem_pct: number;
+    cooldown_seconds: number;
+  },
+) {
+  return api<SetScalingPolicyResponse>(
+    `/apps/${encodeURIComponent(app)}/scaling/${encodeURIComponent(service)}`,
+    { method: "PUT", json: input },
+  );
+}
+
+/** 删除服务的自动扩缩策略（deploy scope；运行期副本覆盖随删）。 */
+export function removeScalingPolicy(app: string, service: string) {
+  return api<RemoveScalingPolicyResponse>(
+    `/apps/${encodeURIComponent(app)}/scaling/${encodeURIComponent(service)}`,
+    { method: "DELETE" },
+  );
 }
 
 // ── notifications（E6 W5-S4 通知 Webhook；observability §5 + §8 通道扩展）──

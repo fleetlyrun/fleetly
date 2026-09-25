@@ -364,8 +364,10 @@ func (p ingressPublisher) PublishRoutes(ctx context.Context, in engine.RoutePubl
 // 配置节，缺省回落文档默认）。底座服务/任务面由 substrate.Client 隐式实现
 // engine.Substrate + engine.ImageChecker（适配器方向：substrate → engine
 // 核心接口）；路由发布端口由 ingress.Manager 经载荷适配实现（T2.15——
-// 健康门后挂点）。
-func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box, m *ingress.Manager, bm *statebackup.Manager, lm *logs.Manager) *engine.Engine {
+// 健康门后挂点）。mb 是 VM 回环查询消费端（W5-S1 自动扩缩评估器的数据面
+// ——经 WithMetricsQuerier 注入 engine.MetricsQuerier 端口；nil = 扩缩
+// duty 空转，装配形态诚实空转不冒充运行态）。
+func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Client, pl *placement.Resolver, box *secrets.Box, m *ingress.Manager, bm *statebackup.Manager, lm *logs.Manager, mb *metrics.Backend) *engine.Engine {
 	return engine.NewEngine(cfg.EngineSettings(), st, sc, sc, pl, box, app.Logger()).
 		WithRoutePublisher(ingressPublisher{m: m}).
 		// 备份挂钩（T2.22）：每次部署成功后异步触发一次热备快照
@@ -383,7 +385,10 @@ func NewEngine(app lynx.App, cfg *AppConfig, st *state.Store, sc *substrate.Clie
 		WithSecretEnsurer(sc).
 		// E4 W4-S6：Swarm secret 清场端口（app 删除 reap 的扫尾面——按归属
 		// label 扫描移除，best-effort 不阻塞删除收敛）。
-		WithSecretReaper(sc)
+		WithSecretReaper(sc).
+		// W5-S1 自动扩缩（D-V3W5-2）：VM 瞬时查询端口——metrics.Backend 隐式
+		// 实现 engine.MetricsQuerier（评估器的 CPU/内存采样面）。
+		WithMetricsQuerier(mb)
 }
 
 // dbTemplatePort 是引擎对库模板连接信息面的装配层适配（engine.DatabaseTemplatePort；

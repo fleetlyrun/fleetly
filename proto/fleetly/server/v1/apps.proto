@@ -64,6 +64,28 @@ service AppsService {
       body: "*"
     };
   }
+  // GetScalingPolicy 读取服务的自动扩缩策略（W5-S1，D-V3W5-2；read 门——
+  // 策略是应用运行面的事实视图）。未设置返回 404（未配置即无策略）。
+  rpc GetScalingPolicy(GetScalingPolicyRequest) returns (GetScalingPolicyResponse) {
+    option (google.api.http) = { get: "/v1/apps/{name}/scaling/{service}" };
+  }
+  // SetScalingPolicy 写入（整行替换 upsert）服务的自动扩缩策略（deploy 门
+  // ——资源面写语义，与 Deploy/SetEnv 同级；用户 principal 另受项目角色门
+  // 约束，机具令牌 admin 等价照旧）。约束：min ≥1、max ≤16、target ∈
+  // [20,90]（0 = 该维度不设目标，至少一维必设）、cooldown ∈ [60,3600]s
+  // 缺省 180。生效前置：metrics.mode=on 且服务 running（metrics off 时
+  // 策略休眠——scaling.dormant 事件一次性披露）；有卷服务只扩不缩。
+  rpc SetScalingPolicy(SetScalingPolicyRequest) returns (SetScalingPolicyResponse) {
+    option (google.api.http) = {
+      put: "/v1/apps/{name}/scaling/{service}"
+      body: "*"
+    };
+  }
+  // RemoveScalingPolicy 删除服务的自动扩缩策略（deploy 门）。同键运行期
+  // 副本覆盖一并清除——期望副本回落 compose 快照（外部改动照常走漂移判据）。
+  rpc RemoveScalingPolicy(RemoveScalingPolicyRequest) returns (RemoveScalingPolicyResponse) {
+    option (google.api.http) = { delete: "/v1/apps/{name}/scaling/{service}" };
+  }
 }
 
 message ListAppsRequest {
@@ -175,4 +197,60 @@ message SetAppSourceResponse {
   string source_url = 2;
   string source_branch = 3;
   string source_auth_kind = 4;
+}
+
+message GetScalingPolicyRequest {
+  // 应用名（裸名/限定形，resolveApp 单点解析）。
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  // compose 服务名。
+  string service = 2 [(buf.validate.field).string = { min_len: 1, max_len: 100 }];
+}
+
+message GetScalingPolicyResponse {
+  string name = 1;
+  string service = 2;
+  // 副本下限（≥1）。
+  int32 min_replicas = 3;
+  // 副本上限（≤16——swarm 单服务上限口径）。
+  int32 max_replicas = 4;
+  // CPU 目标水位百分数（[20,90]；0 = 未设该维度目标）。
+  int32 target_cpu_pct = 5;
+  // 内存目标水位百分数（[20,90]；0 = 未设该维度目标）。
+  int32 target_mem_pct = 6;
+  // 动作冷却窗秒数（[60,3600]，缺省 180）。
+  int32 cooldown_seconds = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp updated_at = 9;
+}
+
+message SetScalingPolicyRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string service = 2 [(buf.validate.field).string = { min_len: 1, max_len: 100 }];
+  // 副本下限（≥1；必填）。
+  int32 min_replicas = 3 [(buf.validate.field).int32 = { gte: 1, lte: 16 }];
+  // 副本上限（≤16 且 ≥ min；必填）。
+  int32 max_replicas = 4 [(buf.validate.field).int32 = { gte: 1, lte: 16 }];
+  // CPU 目标水位（0 = 不设该维度；至少一维非 0）。
+  int32 target_cpu_pct = 5 [(buf.validate.field).int32 = { gte: 0, lte: 90 }];
+  // 内存目标水位（0 = 不设该维度；至少一维非 0）。
+  int32 target_mem_pct = 6 [(buf.validate.field).int32 = { gte: 0, lte: 90 }];
+  // 冷却窗秒数（0 = 缺省 180）。
+  int32 cooldown_seconds = 7 [(buf.validate.field).int32 = { gte: 0, lte: 3600 }];
+}
+
+message SetScalingPolicyResponse {
+  // 写入后的策略视图（与 GetScalingPolicy 同构）。
+  GetScalingPolicyResponse policy = 1;
+}
+
+message RemoveScalingPolicyRequest {
+  string name = 1 [(buf.validate.field).string.min_len = 1];
+  string service = 2 [(buf.validate.field).string = { min_len: 1, max_len: 100 }];
+}
+
+message RemoveScalingPolicyResponse {
+  string name = 1;
+  string service = 2;
+  // 恒 true（删除成功即无策略）。
+  bool removed = 3;
 }

@@ -169,6 +169,14 @@ var docEvents = map[string]string{ // event → 文档出处
 	//（internal/state/hostkeysettings.go，与台账更新同事务 = Outbox；
 	// payload 只带新旧 SHA256 指纹——公开材料，私钥零出现）。
 	"git.hostkey_changed": "v0.3 W3-S2 rbac-teams §6 D-W0-8 (host key startup load vs fingerprint ledger; state hostkeysettings.go, same transaction; public key material only)",
+
+	// B 线 W5 自动扩缩（设计 §1，D-V3W5-2，v0.3 W5-S1 接线，注册表只增）：
+	// 发出来源 = engine 收敛拍尾部的扩缩 duty（internal/engine/
+	// autoscaling.go）。策略 CRUD 零事件（审计 scaling.policy_changed 承载
+	// ——事件面是运行期动作与披露）。
+	"scaling.adjusted": "B-line W5 §1 D-V3W5-2 (autoscaler adjusted a service's replica count; engine autoscaling duty; payload carries dimension/before-after replicas/utilization)",
+	"scaling.dormant":  "B-line W5 §1 D-V3W5-2 (policy dormant while metrics.mode is off; one-time disclosure per policy, re-armed when metrics turns on)",
+	"scaling.no_data":  "B-line W5 §1 D-V3W5-2 (no metric series for the target dimension — no action, honest no-data; one-time disclosure per policy)",
 }
 
 // TestDocEventSetMatchesRegistry：注册表事件集与文档清单逐一致。

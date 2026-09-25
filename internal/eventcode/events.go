@@ -26,7 +26,8 @@ package eventcode
 //     与业务写同事务 = Outbox）。
 //
 // 计 52 + 18 = 70 + W1 增 3 = 73 + W2-S1 增 4 = 77 + W3-S2 增 1（FZ-12
-// git.hostkey_changed）= 78 个事件名。
+// git.hostkey_changed）= 78 + W5-S1 增 3（scaling.adjusted / scaling.dormant
+// / scaling.no_data，B 线 W5 D-V3W5-2）= 81 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -253,4 +254,15 @@ var builtins = []Event{
 	//    核对值），私钥文件本体绝不出现（state-model §2.9 secret 纪律）。
 	//    首启建账静默（零事件），装载指纹与台账不同才发。
 	{Name: "git.hostkey_changed", Summary: "the git SSH host key changed since the previous load (file rebuilt or key replaced; payload carries the old and new SHA256 fingerprints — public key material only, the private key never appears)"},
+
+	// ── 自动扩缩（B 线 W5 设计 §1，D-V3W5-2，v0.3 W5-S1 接线；注册表只增。
+	//    发出来源 = engine 收敛拍尾部的扩缩 duty，internal/engine/
+	//    autoscaling.go）。策略 CRUD 零事件（审计 scaling.policy_changed 承
+	//    载——设计 §1.2 的事件面是运行期动作与披露）──
+	// 副本调整动作：payload 带 service/dimension（cpu|mem|cpu+mem）/
+	// replicas_before/replicas_after/实测水位百分数。
+	{Name: "scaling.adjusted", Summary: "autoscaler adjusted a service's replica count (payload carries the triggering dimension, before/after replicas and measured utilization)"},
+	// 披露面（每策略一次性；条件解除后可再披露）：
+	{Name: "scaling.dormant", Summary: "a scaling policy is dormant because metrics.mode is not on (one-time disclosure per policy; re-armed when metrics turns on)"},
+	{Name: "scaling.no_data", Summary: "a scaling policy had no metric series for its target dimension — no action, honest no-data (one-time disclosure per policy)"},
 }

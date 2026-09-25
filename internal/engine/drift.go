@@ -193,7 +193,9 @@ func (e *Engine) DriftShow(ctx context.Context, appName string) (*DriftReport, e
 	return e.computeAppDrift(ctx, app.ID, app.Name)
 }
 
-// computeAppDrift 是漂移判定的共享核心（检测器与 DriftShow 同源）。
+// computeAppDrift 是漂移判定的共享核心（检测器与 DriftShow 同源）。期望
+// 副本先经 pinScalingReplicaOverrides 钉平台运行期覆盖（autoscaler 写通道
+// ——D-V3W5-2：平台自己写的副本不被漂移误报，外部 scale 照常检出）。
 func (e *Engine) computeAppDrift(ctx context.Context, appID, appName string) (*DriftReport, error) {
 	report := &DriftReport{App: appName}
 	source, specs, err := e.lastSucceededSpecs(ctx, appID)
@@ -203,6 +205,11 @@ func (e *Engine) computeAppDrift(ctx context.Context, appID, appName string) (*D
 	if source == nil {
 		return report, nil // 无成功部署：无期望态，无从判定漂移
 	}
+	overrides, err := e.store.ListScalingReplicaOverrides(ctx, appID)
+	if err != nil {
+		return nil, err
+	}
+	pinScalingReplicaOverrides(specs, overrides, source.ID)
 	report.DesiredDeployment = source.ID
 
 	desiredNames := map[string]bool{}
@@ -532,7 +539,9 @@ func (e *Engine) ConvergeApp(ctx context.Context, appName, actor string) (state.
 }
 
 // convergeApp 执行收敛（共享原语）：期望态快照 → restoreSnapshot（确定性、
-// 幂等、禁 --force）→ 审计。
+// 幂等、禁 --force）→ 审计。重放前把活覆盖的副本数钉进期望（红线②：收敛
+// 不回滚 autoscaler 的平台写——回滚旧 revision 的路径不经此处，覆盖不生效
+// 是其正确语义）。
 func (e *Engine) convergeApp(ctx context.Context, appID, appName, actor string) (state.DeployRecord, error) {
 	source, specs, err := e.lastSucceededSpecs(ctx, appID)
 	if err != nil {
@@ -541,6 +550,11 @@ func (e *Engine) convergeApp(ctx context.Context, appID, appName, actor string) 
 	if source == nil {
 		return state.DeployRecord{}, fmt.Errorf("engine: app %s has no succeeded deployment to converge to", appName)
 	}
+	overrides, oerr := e.store.ListScalingReplicaOverrides(ctx, appID)
+	if oerr != nil {
+		return state.DeployRecord{}, oerr
+	}
+	pinScalingReplicaOverrides(specs, overrides, source.ID)
 	if err := e.restoreSnapshot(ctx, *source, specs); err != nil {
 		return state.DeployRecord{}, err
 	}

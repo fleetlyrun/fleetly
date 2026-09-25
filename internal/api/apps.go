@@ -56,7 +56,7 @@ const defaultListAppsLimit = 100
 // ListAppDeployments N+1 形态。
 //
 // v0.3 W2-S4 可见性过滤（rbac-teams §4.2）：用户 principal 按可见项目集
-//（成员团队归属——覆写不改变可见性，可见性零级联 §3.3）过滤；机具令牌与
+// （成员团队归属——覆写不改变可见性，可见性零级联 §3.3）过滤；机具令牌与
 // 平台管理员全库。?project= 收窄（限定形/域内唯一裸名，resolveProjectRef
 // 单点解析）——收窄与可见性取交集。
 func (s *AppsService) ListApps(ctx context.Context, req *serverv1.ListAppsRequest) (*serverv1.ListAppsResponse, error) {
@@ -305,6 +305,108 @@ func (s *AppsService) SetAppSource(ctx context.Context, req *serverv1.SetAppSour
 		SourceBranch:   req.GetSourceBranch(),
 		SourceAuthKind: string(kind),
 	}, nil
+}
+
+// scalingPolicyView 是策略行的 API 投影（get/set 共面——写入应答回读同构
+// 视图，调用方无需二次查询）。
+func scalingPolicyView(name string, p state.ScalingPolicy) *serverv1.GetScalingPolicyResponse {
+	return &serverv1.GetScalingPolicyResponse{
+		Name:            name,
+		Service:         p.Service,
+		MinReplicas:     int32(p.MinReplicas),     //nolint:gosec // G115：[1,16] 校验保证量级
+		MaxReplicas:     int32(p.MaxReplicas),     //nolint:gosec // G115：[1,16] 校验保证量级
+		TargetCpuPct:    int32(p.TargetCPUPct),    //nolint:gosec // G115：[0,90] 校验保证量级
+		TargetMemPct:    int32(p.TargetMemPct),    //nolint:gosec // G115：[0,90] 校验保证量级
+		CooldownSeconds: int32(p.CooldownSeconds), //nolint:gosec // G115：[60,3600] 校验保证量级
+		CreatedAt:       timestamppb.New(p.CreatedAt),
+		UpdatedAt:       timestamppb.New(p.UpdatedAt),
+	}
+}
+
+// GetScalingPolicy 读取服务的自动扩缩策略（W5-S1，D-V3W5-2；read 门）。
+// 未设置 = 404（未配置即无策略——与 webhook secret 的 404 语义同型）。
+func (s *AppsService) GetScalingPolicy(ctx context.Context, req *serverv1.GetScalingPolicyRequest) (*serverv1.GetScalingPolicyResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
+	p, err := s.st.GetScalingPolicy(ctx, app.ID, req.GetService())
+	if err != nil {
+		if errors.Is(err, state.ErrScalingPolicyNotFound) {
+			return nil, notFound(fmt.Sprintf("no scaling policy for service %q of app %q", req.GetService(), app.Name))
+		}
+		return nil, err
+	}
+	return scalingPolicyView(app.Name, p), nil
+}
+
+// SetScalingPolicy 写入（整行替换 upsert）服务的自动扩缩策略（deploy 门
+// ——资源面写语义；机具令牌 admin 等价照旧）。服务端校验（词表/区间/至少
+// 一维目标）先于 state 写通道（友好 400；state 层同规则双保险）。
+func (s *AppsService) SetScalingPolicy(ctx context.Context, req *serverv1.SetScalingPolicyRequest) (*serverv1.SetScalingPolicyResponse, error) {
+	if err := validateScalingPolicyRequest(req); err != nil {
+		return nil, err
+	}
+	app, err := resolveApp(ctx, s.st, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
+	p, err := s.st.SetScalingPolicy(ctx, app.ID, state.ScalingPolicy{
+		Service:         req.GetService(),
+		MinReplicas:     int(req.GetMinReplicas()),
+		MaxReplicas:     int(req.GetMaxReplicas()),
+		TargetCPUPct:    int(req.GetTargetCpuPct()),
+		TargetMemPct:    int(req.GetTargetMemPct()),
+		CooldownSeconds: int(req.GetCooldownSeconds()),
+	}, state.ScalingPolicyOptions{Actor: "human", ActorTokenID: callerTokenID(ctx)})
+	if err != nil {
+		return nil, err
+	}
+	return &serverv1.SetScalingPolicyResponse{Policy: scalingPolicyView(app.Name, p)}, nil
+}
+
+// validateScalingPolicyRequest 是 SetScalingPolicy 的请求形状校验（403 之前
+// 的 400 面；跨字段规则——protovalidate 单字段约束覆盖不到的部分在此收口，
+// 词表与 state.ValidateScalingPolicy 同源）。
+func validateScalingPolicyRequest(req *serverv1.SetScalingPolicyRequest) error {
+	if req.GetMaxReplicas() < req.GetMinReplicas() {
+		return statusInvalidArgument("max_replicas must be >= min_replicas")
+	}
+	if req.GetTargetCpuPct() == 0 && req.GetTargetMemPct() == 0 {
+		return statusInvalidArgument("at least one target is required (target_cpu_pct or target_mem_pct)")
+	}
+	return nil
+}
+
+// RemoveScalingPolicy 删除服务的自动扩缩策略（deploy 门）。未设置 = 404；
+// 同键运行期副本覆盖由 state 层联动清除。
+func (s *AppsService) RemoveScalingPolicy(ctx context.Context, req *serverv1.RemoveScalingPolicyRequest) (*serverv1.RemoveScalingPolicyResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetName())
+	if err != nil {
+		return nil, err
+	}
+	// 角色门（W2-S4 第 2 门）：方法所需层级由拦截器注入的 scope 登记映射。
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
+	if err := s.st.RemoveScalingPolicy(ctx, app.ID, req.GetService(), state.ScalingPolicyOptions{
+		Actor:        "human",
+		ActorTokenID: callerTokenID(ctx),
+	}); err != nil {
+		if errors.Is(err, state.ErrScalingPolicyNotFound) {
+			return nil, notFound(fmt.Sprintf("no scaling policy for service %q of app %q", req.GetService(), app.Name))
+		}
+		return nil, err
+	}
+	return &serverv1.RemoveScalingPolicyResponse{Name: app.Name, Service: req.GetService(), Removed: true}, nil
 }
 
 // derivedState 读面即时派生应用状态（state-model §2.10 纯函数，与引擎/CLI

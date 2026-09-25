@@ -25,6 +25,9 @@ const (
 	AppsService_SetAppWebhookSecret_FullMethodName = "/fleetly.server.v1.AppsService/SetAppWebhookSecret"
 	AppsService_ShowAppWebhook_FullMethodName      = "/fleetly.server.v1.AppsService/ShowAppWebhook"
 	AppsService_SetAppSource_FullMethodName        = "/fleetly.server.v1.AppsService/SetAppSource"
+	AppsService_GetScalingPolicy_FullMethodName    = "/fleetly.server.v1.AppsService/GetScalingPolicy"
+	AppsService_SetScalingPolicy_FullMethodName    = "/fleetly.server.v1.AppsService/SetScalingPolicy"
+	AppsService_RemoveScalingPolicy_FullMethodName = "/fleetly.server.v1.AppsService/RemoveScalingPolicy"
 )
 
 // AppsServiceClient is the client API for AppsService service.
@@ -51,6 +54,19 @@ type AppsServiceClient interface {
 	// 默认 main）。
 	// 认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。
 	SetAppSource(ctx context.Context, in *SetAppSourceRequest, opts ...grpc.CallOption) (*SetAppSourceResponse, error)
+	// GetScalingPolicy 读取服务的自动扩缩策略（W5-S1，D-V3W5-2；read 门——
+	// 策略是应用运行面的事实视图）。未设置返回 404（未配置即无策略）。
+	GetScalingPolicy(ctx context.Context, in *GetScalingPolicyRequest, opts ...grpc.CallOption) (*GetScalingPolicyResponse, error)
+	// SetScalingPolicy 写入（整行替换 upsert）服务的自动扩缩策略（deploy 门
+	// ——资源面写语义，与 Deploy/SetEnv 同级；用户 principal 另受项目角色门
+	// 约束，机具令牌 admin 等价照旧）。约束：min ≥1、max ≤16、target ∈
+	// [20,90]（0 = 该维度不设目标，至少一维必设）、cooldown ∈ [60,3600]s
+	// 缺省 180。生效前置：metrics.mode=on 且服务 running（metrics off 时
+	// 策略休眠——scaling.dormant 事件一次性披露）；有卷服务只扩不缩。
+	SetScalingPolicy(ctx context.Context, in *SetScalingPolicyRequest, opts ...grpc.CallOption) (*SetScalingPolicyResponse, error)
+	// RemoveScalingPolicy 删除服务的自动扩缩策略（deploy 门）。同键运行期
+	// 副本覆盖一并清除——期望副本回落 compose 快照（外部改动照常走漂移判据）。
+	RemoveScalingPolicy(ctx context.Context, in *RemoveScalingPolicyRequest, opts ...grpc.CallOption) (*RemoveScalingPolicyResponse, error)
 }
 
 type appsServiceClient struct {
@@ -121,6 +137,36 @@ func (c *appsServiceClient) SetAppSource(ctx context.Context, in *SetAppSourceRe
 	return out, nil
 }
 
+func (c *appsServiceClient) GetScalingPolicy(ctx context.Context, in *GetScalingPolicyRequest, opts ...grpc.CallOption) (*GetScalingPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetScalingPolicyResponse)
+	err := c.cc.Invoke(ctx, AppsService_GetScalingPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appsServiceClient) SetScalingPolicy(ctx context.Context, in *SetScalingPolicyRequest, opts ...grpc.CallOption) (*SetScalingPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetScalingPolicyResponse)
+	err := c.cc.Invoke(ctx, AppsService_SetScalingPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *appsServiceClient) RemoveScalingPolicy(ctx context.Context, in *RemoveScalingPolicyRequest, opts ...grpc.CallOption) (*RemoveScalingPolicyResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveScalingPolicyResponse)
+	err := c.cc.Invoke(ctx, AppsService_RemoveScalingPolicy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AppsServiceServer is the server API for AppsService service.
 // All implementations must embed UnimplementedAppsServiceServer
 // for forward compatibility.
@@ -145,6 +191,19 @@ type AppsServiceServer interface {
 	// 默认 main）。
 	// 认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。
 	SetAppSource(context.Context, *SetAppSourceRequest) (*SetAppSourceResponse, error)
+	// GetScalingPolicy 读取服务的自动扩缩策略（W5-S1，D-V3W5-2；read 门——
+	// 策略是应用运行面的事实视图）。未设置返回 404（未配置即无策略）。
+	GetScalingPolicy(context.Context, *GetScalingPolicyRequest) (*GetScalingPolicyResponse, error)
+	// SetScalingPolicy 写入（整行替换 upsert）服务的自动扩缩策略（deploy 门
+	// ——资源面写语义，与 Deploy/SetEnv 同级；用户 principal 另受项目角色门
+	// 约束，机具令牌 admin 等价照旧）。约束：min ≥1、max ≤16、target ∈
+	// [20,90]（0 = 该维度不设目标，至少一维必设）、cooldown ∈ [60,3600]s
+	// 缺省 180。生效前置：metrics.mode=on 且服务 running（metrics off 时
+	// 策略休眠——scaling.dormant 事件一次性披露）；有卷服务只扩不缩。
+	SetScalingPolicy(context.Context, *SetScalingPolicyRequest) (*SetScalingPolicyResponse, error)
+	// RemoveScalingPolicy 删除服务的自动扩缩策略（deploy 门）。同键运行期
+	// 副本覆盖一并清除——期望副本回落 compose 快照（外部改动照常走漂移判据）。
+	RemoveScalingPolicy(context.Context, *RemoveScalingPolicyRequest) (*RemoveScalingPolicyResponse, error)
 	mustEmbedUnimplementedAppsServiceServer()
 }
 
@@ -172,6 +231,15 @@ func (UnimplementedAppsServiceServer) ShowAppWebhook(context.Context, *ShowAppWe
 }
 func (UnimplementedAppsServiceServer) SetAppSource(context.Context, *SetAppSourceRequest) (*SetAppSourceResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SetAppSource not implemented")
+}
+func (UnimplementedAppsServiceServer) GetScalingPolicy(context.Context, *GetScalingPolicyRequest) (*GetScalingPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetScalingPolicy not implemented")
+}
+func (UnimplementedAppsServiceServer) SetScalingPolicy(context.Context, *SetScalingPolicyRequest) (*SetScalingPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetScalingPolicy not implemented")
+}
+func (UnimplementedAppsServiceServer) RemoveScalingPolicy(context.Context, *RemoveScalingPolicyRequest) (*RemoveScalingPolicyResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveScalingPolicy not implemented")
 }
 func (UnimplementedAppsServiceServer) mustEmbedUnimplementedAppsServiceServer() {}
 func (UnimplementedAppsServiceServer) testEmbeddedByValue()                     {}
@@ -302,6 +370,60 @@ func _AppsService_SetAppSource_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AppsService_GetScalingPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetScalingPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).GetScalingPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_GetScalingPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).GetScalingPolicy(ctx, req.(*GetScalingPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppsService_SetScalingPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetScalingPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).SetScalingPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_SetScalingPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).SetScalingPolicy(ctx, req.(*SetScalingPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AppsService_RemoveScalingPolicy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveScalingPolicyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AppsServiceServer).RemoveScalingPolicy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AppsService_RemoveScalingPolicy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AppsServiceServer).RemoveScalingPolicy(ctx, req.(*RemoveScalingPolicyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AppsService_ServiceDesc is the grpc.ServiceDesc for AppsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -332,6 +454,18 @@ var AppsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SetAppSource",
 			Handler:    _AppsService_SetAppSource_Handler,
+		},
+		{
+			MethodName: "GetScalingPolicy",
+			Handler:    _AppsService_GetScalingPolicy_Handler,
+		},
+		{
+			MethodName: "SetScalingPolicy",
+			Handler:    _AppsService_SetScalingPolicy_Handler,
+		},
+		{
+			MethodName: "RemoveScalingPolicy",
+			Handler:    _AppsService_RemoveScalingPolicy_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

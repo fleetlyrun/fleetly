@@ -114,6 +114,123 @@
         ]
       }
     },
+    "/v1/apps/{name}/scaling/{service}": {
+      "get": {
+        "summary": "GetScalingPolicy 读取服务的自动扩缩策略（W5-S1，D-V3W5-2；read 门——\n策略是应用运行面的事实视图）。未设置返回 404（未配置即无策略）。",
+        "operationId": "AppsService_GetScalingPolicy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetScalingPolicyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "description": "应用名（裸名/限定形，resolveApp 单点解析）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "service",
+            "description": "compose 服务名。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      },
+      "delete": {
+        "summary": "RemoveScalingPolicy 删除服务的自动扩缩策略（deploy 门）。同键运行期\n副本覆盖一并清除——期望副本回落 compose 快照（外部改动照常走漂移判据）。",
+        "operationId": "AppsService_RemoveScalingPolicy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RemoveScalingPolicyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      },
+      "put": {
+        "summary": "SetScalingPolicy 写入（整行替换 upsert）服务的自动扩缩策略（deploy 门\n——资源面写语义，与 Deploy/SetEnv 同级；用户 principal 另受项目角色门\n约束，机具令牌 admin 等价照旧）。约束：min ≥1、max ≤16、target ∈\n[20,90]（0 = 该维度不设目标，至少一维必设）、cooldown ∈ [60,3600]s\n缺省 180。生效前置：metrics.mode=on 且服务 running（metrics off 时\n策略休眠——scaling.dormant 事件一次性披露）；有卷服务只扩不缩。",
+        "operationId": "AppsService_SetScalingPolicy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetScalingPolicyResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "service",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AppsServiceSetScalingPolicyBody"
+            }
+          }
+        ],
+        "tags": [
+          "AppsService"
+        ]
+      }
+    },
     "/v1/apps/{name}/source": {
       "put": {
         "summary": "SetAppSource 设置 webhook 拉源配置（remote url + 分支 + 认证形态；\nadmin）。source_branch 同时是 git push 的触发分支（app 配置分支，\n默认 main）。\n认证材料（https_token/ssh_key）经平台 envelope 加密落库，引用不落明文。",
@@ -253,6 +370,36 @@
         "secret": {
           "type": "string",
           "title": "webhook 签名密钥（HMAC-SHA256 原料，GitHub/Gitea 同形态）。≥16 字符\n——弱密钥显式拒绝（验签是该端点的唯一认证）。"
+        }
+      }
+    },
+    "AppsServiceSetScalingPolicyBody": {
+      "type": "object",
+      "properties": {
+        "min_replicas": {
+          "type": "integer",
+          "format": "int32",
+          "title": "副本下限（≥1；必填）。"
+        },
+        "max_replicas": {
+          "type": "integer",
+          "format": "int32",
+          "title": "副本上限（≤16 且 ≥ min；必填）。"
+        },
+        "target_cpu_pct": {
+          "type": "integer",
+          "format": "int32",
+          "title": "CPU 目标水位（0 = 不设该维度；至少一维非 0）。"
+        },
+        "target_mem_pct": {
+          "type": "integer",
+          "format": "int32",
+          "title": "内存目标水位（0 = 不设该维度；至少一维非 0）。"
+        },
+        "cooldown_seconds": {
+          "type": "integer",
+          "format": "int32",
+          "title": "冷却窗秒数（0 = 缺省 180）。"
         }
       }
     },
@@ -432,6 +579,50 @@
         }
       }
     },
+    "v1GetScalingPolicyResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "min_replicas": {
+          "type": "integer",
+          "format": "int32",
+          "title": "副本下限（≥1）。"
+        },
+        "max_replicas": {
+          "type": "integer",
+          "format": "int32",
+          "title": "副本上限（≤16——swarm 单服务上限口径）。"
+        },
+        "target_cpu_pct": {
+          "type": "integer",
+          "format": "int32",
+          "title": "CPU 目标水位百分数（[20,90]；0 = 未设该维度目标）。"
+        },
+        "target_mem_pct": {
+          "type": "integer",
+          "format": "int32",
+          "title": "内存目标水位百分数（[20,90]；0 = 未设该维度目标）。"
+        },
+        "cooldown_seconds": {
+          "type": "integer",
+          "format": "int32",
+          "title": "动作冷却窗秒数（[60,3600]，缺省 180）。"
+        },
+        "created_at": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
     "v1ListAppsResponse": {
       "type": "object",
       "properties": {
@@ -480,6 +671,21 @@
       },
       "title": "PlacementView 是 placements 行投影（state ∈ bound/blocked/unresolved，\n派生语义见 state-model §2.10；blocked/unresolved 是 app 派生状态\nblocked 的来源）。"
     },
+    "v1RemoveScalingPolicyResponse": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "service": {
+          "type": "string"
+        },
+        "removed": {
+          "type": "boolean",
+          "title": "恒 true（删除成功即无策略）。"
+        }
+      }
+    },
     "v1SetAppSourceResponse": {
       "type": "object",
       "properties": {
@@ -506,6 +712,15 @@
         "configured": {
           "type": "boolean",
           "title": "恒 true（设置成功即已配置）。"
+        }
+      }
+    },
+    "v1SetScalingPolicyResponse": {
+      "type": "object",
+      "properties": {
+        "policy": {
+          "$ref": "#/definitions/v1GetScalingPolicyResponse",
+          "title": "写入后的策略视图（与 GetScalingPolicy 同构）。"
         }
       }
     },

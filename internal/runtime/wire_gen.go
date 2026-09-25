@@ -71,7 +71,8 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 		cleanup()
 		return nil, nil, err
 	}
-	engine := NewEngine(app, appConfig, store, client, resolver, box, ingressManager, manager, logsManager)
+	metricsBackend := NewMetricsBackend()
+	engine := NewEngine(app, appConfig, store, client, resolver, box, ingressManager, manager, logsManager, metricsBackend)
 	cronManager := NewCronManager(app, store, box, client, resolver)
 	notifyManager := NewNotifyManager(app, store, box)
 	rustfsManager, cleanup5, err := NewRustfsManager(app, store, box, client)
@@ -91,7 +92,6 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 		cleanup()
 		return nil, nil, err
 	}
-	metricsBackend := NewMetricsBackend()
 	metricsManager, cleanup7, err := NewMetricsManager(app, appConfig, store, metricsBackend)
 	if err != nil {
 		cleanup6()

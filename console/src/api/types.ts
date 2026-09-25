@@ -159,6 +159,12 @@ export type SetMetricsModeResponse = Schemas["v1SetMetricsModeResponse"];
 /** metrics.mode 词表（proto SetMetricsModeRequest.mode 消费侧词表）。 */
 export type MetricsMode = "unset" | "on";
 
+// ── apps scaling（W5-S1，D-V3W5-2 自动扩缩策略面）────────────────────────
+
+export type GetScalingPolicyResponse = Schemas["v1GetScalingPolicyResponse"];
+export type SetScalingPolicyResponse = Schemas["v1SetScalingPolicyResponse"];
+export type RemoveScalingPolicyResponse = Schemas["v1RemoveScalingPolicyResponse"];
+
 // ── notifications（E6 W5-S4 通知 Webhook；observability §5 + §8 通道扩展）──
 
 export type WebhookEndpointView = Schemas["v1WebhookEndpointView"];

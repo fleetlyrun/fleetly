@@ -45,6 +45,14 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.AppsService/SetAppWebhookSecret": ScopeAdmin,
 	"/fleetly.server.v1.AppsService/ShowAppWebhook":      ScopeAdmin,
 	"/fleetly.server.v1.AppsService/SetAppSource":        ScopeAdmin,
+	// 自动扩缩策略面（W5-S1，D-V3W5-2）：读 = read（策略是应用运行面的事
+	// 实视图，与 GetApp 同级）；写 = deploy（资源面写语义——调整的是应用
+	// 自身的运行参数，与 Deploy/SetEnv/SetDriftConverge 同级；无凭据材料，
+	// 不到 admin。机具令牌 admin 等价照旧；用户 principal 另受第 2 门项目
+	// 角色约束——requireAppAccess，developer+ 可写）。
+	"/fleetly.server.v1.AppsService/GetScalingPolicy":    ScopeRead,
+	"/fleetly.server.v1.AppsService/SetScalingPolicy":    ScopeDeploy,
+	"/fleetly.server.v1.AppsService/RemoveScalingPolicy": ScopeDeploy,
 	// DeploymentsService
 	"/fleetly.server.v1.DeploymentsService/ListDeployments":    ScopeRead,
 	"/fleetly.server.v1.DeploymentsService/GetDeployment":      ScopeRead,

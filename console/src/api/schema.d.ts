@@ -492,6 +492,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/apps/{name}/scaling/{service}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetScalingPolicy 读取服务的自动扩缩策略（W5-S1，D-V3W5-2；read 门——
+         *     策略是应用运行面的事实视图）。未设置返回 404（未配置即无策略）。
+         */
+        get: operations["AppsService_GetScalingPolicy"];
+        /**
+         * SetScalingPolicy 写入（整行替换 upsert）服务的自动扩缩策略（deploy 门
+         *     ——资源面写语义，与 Deploy/SetEnv 同级；用户 principal 另受项目角色门
+         *     约束，机具令牌 admin 等价照旧）。约束：min ≥1、max ≤16、target ∈
+         *     [20,90]（0 = 该维度不设目标，至少一维必设）、cooldown ∈ [60,3600]s
+         *     缺省 180。生效前置：metrics.mode=on 且服务 running（metrics off 时
+         *     策略休眠——scaling.dormant 事件一次性披露）；有卷服务只扩不缩。
+         */
+        put: operations["AppsService_SetScalingPolicy"];
+        post?: never;
+        /**
+         * RemoveScalingPolicy 删除服务的自动扩缩策略（deploy 门）。同键运行期
+         *     副本覆盖一并清除——期望副本回落 compose 快照（外部改动照常走漂移判据）。
+         */
+        delete: operations["AppsService_RemoveScalingPolicy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/apps/{name}/source": {
         parameters: {
             query?: never;
@@ -2108,6 +2140,33 @@ export interface components {
              */
             secret?: string;
         };
+        AppsServiceSetScalingPolicyBody: {
+            /**
+             * 副本下限（≥1；必填）。
+             * Format: int32
+             */
+            min_replicas?: number;
+            /**
+             * 副本上限（≤16 且 ≥ min；必填）。
+             * Format: int32
+             */
+            max_replicas?: number;
+            /**
+             * CPU 目标水位（0 = 不设该维度；至少一维非 0）。
+             * Format: int32
+             */
+            target_cpu_pct?: number;
+            /**
+             * 内存目标水位（0 = 不设该维度；至少一维非 0）。
+             * Format: int32
+             */
+            target_mem_pct?: number;
+            /**
+             * 冷却窗秒数（0 = 缺省 180）。
+             * Format: int32
+             */
+            cooldown_seconds?: number;
+        };
         v1AppView: {
             id?: string;
             name?: string;
@@ -2175,6 +2234,39 @@ export interface components {
             /** 最近部署（created_at 倒序，至多 5 条；派生状态的正交细节）。 */
             recent_deployments?: components["schemas"]["v1DeploymentView"][];
         };
+        v1GetScalingPolicyResponse: {
+            name?: string;
+            service?: string;
+            /**
+             * 副本下限（≥1）。
+             * Format: int32
+             */
+            min_replicas?: number;
+            /**
+             * 副本上限（≤16——swarm 单服务上限口径）。
+             * Format: int32
+             */
+            max_replicas?: number;
+            /**
+             * CPU 目标水位百分数（[20,90]；0 = 未设该维度目标）。
+             * Format: int32
+             */
+            target_cpu_pct?: number;
+            /**
+             * 内存目标水位百分数（[20,90]；0 = 未设该维度目标）。
+             * Format: int32
+             */
+            target_mem_pct?: number;
+            /**
+             * 动作冷却窗秒数（[60,3600]，缺省 180）。
+             * Format: int32
+             */
+            cooldown_seconds?: number;
+            /** Format: date-time */
+            created_at?: string;
+            /** Format: date-time */
+            updated_at?: string;
+        };
         v1ListAppsResponse: {
             apps?: components["schemas"]["v1AppView"][];
         };
@@ -2199,6 +2291,12 @@ export interface components {
             /** Format: date-time */
             updated_at?: string;
         };
+        v1RemoveScalingPolicyResponse: {
+            name?: string;
+            service?: string;
+            /** 恒 true（删除成功即无策略）。 */
+            removed?: boolean;
+        };
         v1SetAppSourceResponse: {
             name?: string;
             source_url?: string;
@@ -2209,6 +2307,9 @@ export interface components {
             name?: string;
             /** 恒 true（设置成功即已配置）。 */
             configured?: boolean;
+        };
+        v1SetScalingPolicyResponse: {
+            policy?: components["schemas"]["v1GetScalingPolicyResponse"];
         };
         v1ShowAppWebhookResponse: {
             name?: string;
@@ -3440,7 +3541,9 @@ export interface components {
             to?: string;
             /**
              * 候选配置（未保存也能测——S3 探针同语义）：全部候选字段为空时测已存
-             *     配置。候选密码明文只在本请求内使用，绝不落库。
+             *     配置。候选密码明文只在本请求内使用，绝不落库。字段全部 optional——
+             *     未设置的形状规则跳过（零值不是「空邮箱」违约），服务端按「全空 =
+             *     测已存」收敛。
              */
             host?: string;
             /** Format: int32 */
@@ -4766,6 +4869,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1DeleteAppResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AppsService_GetScalingPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description 应用名（裸名/限定形，resolveApp 单点解析）。 */
+                name: string;
+                /** @description compose 服务名。 */
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetScalingPolicyResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AppsService_SetScalingPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppsServiceSetScalingPolicyBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1SetScalingPolicyResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    AppsService_RemoveScalingPolicy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                service: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RemoveScalingPolicyResponse"];
                 };
             };
             /** @description An unexpected error response. */
