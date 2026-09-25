@@ -5,7 +5,8 @@
 // SPA 回退直接可达。
 
 import { useQuery } from "@tanstack/react-query";
-import { Boxes } from "lucide-react";
+import { Boxes, Loader2 } from "lucide-react";
+import { Suspense } from "react";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router-dom";
 
 import { getApp } from "@/api/endpoints";
@@ -87,7 +88,17 @@ export function AppDetailLayout() {
         items={TABS}
       />
 
-      <Outlet />
+      {/* 子 tab（概览/日志/终端等）同属路由级 lazy——内层边界让 chunk 取回
+          期间详情头/页签保持可见（外层 Layout 边界只兜底详情壳本身）。 */}
+      <Suspense
+        fallback={
+          <div className="flex h-48 items-center justify-center" data-testid="route-splash">
+            <Loader2 aria-hidden className="h-5 w-5 animate-spin text-muted-foreground" />
+          </div>
+        }
+      >
+        <Outlet />
+      </Suspense>
     </div>
   );
 }

@@ -26,6 +26,33 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rolldownOptions: {
+      output: {
+        // vendor 稳定分包（2026-09-25 加载优化）：react 栈/查询/无障碍组件
+        // 各自成 chunk——应用代码每版全变，vendor 哈希稳定（浏览器跨版本
+        // 缓存不失效）；xterm/uplot 只被所属路由引用，随路由 chunk 自动
+        // 分离，不进首屏。路由级 lazy 在 App.tsx（登录/邀请/壳 eager）。
+        advancedChunks: {
+          groups: [
+            {
+              name: "vendor-react",
+              test: /[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler|@remix-run)[\\/]/,
+              priority: 10,
+            },
+            {
+              name: "vendor-query",
+              test: /[\\/]node_modules[\\/]@tanstack[\\/]/,
+            },
+            {
+              name: "vendor-radix",
+              test: /[\\/]node_modules[\\/]@radix-ui[\\/]/,
+            },
+          ],
+        },
+      },
+    },
+  },
   test: {
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],

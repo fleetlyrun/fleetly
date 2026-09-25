@@ -1,10 +1,16 @@
 // 路由总装：认证门卫三态（启动 Me 探测 splash → 未登录〔登录页/邀请页/
 // 深链暂存〕→ 已登录应用面）+ 全局 401 监听（会话失效清本地态回登录页
 // 并提示）。
+//
+// 路由级代码分割（2026-09-25 用户裁决「js 拆多文件缩短加载」）：登录/邀请
+// 与应用壳（Layout）保持 eager（首屏与登录后落地最小串行依赖），其余页面
+// 全部 lazy——单 bundle 时代整站 296KB gzip 首屏全量下载，慢链路 30-60s；
+// 拆分后首屏只拉壳+当前路由（xterm/uplot 等只在所属路由 chunk 里按需取），
+// vendor 再经 rolldown advancedChunks 稳定分组（跨版本缓存不失效）。
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { lazy, useEffect, useState } from "react";
 import {
   BrowserRouter,
   Navigate,
@@ -16,30 +22,35 @@ import {
 import { AuthProvider, useAuth } from "@/auth";
 import { setUnauthorizedListener } from "@/api/client";
 import { Layout } from "@/components/layout";
-import { AdminPage } from "@/pages/AdminPage";
-import { AuditPage } from "@/pages/AuditPage";
 import { HomePage } from "@/pages/HomePage";
-import { AppsPage } from "@/pages/AppsPage";
-import { AppDetailLayout } from "@/pages/AppDetailLayout";
-import { AppOverviewPage } from "@/pages/AppOverviewPage";
-import { AppDeploymentsPage } from "@/pages/AppDeploymentsPage";
-import { AppLogsPage } from "@/pages/AppLogsPage";
-import { AppEnvPage } from "@/pages/AppEnvPage";
-import { AppSecretsPage } from "@/pages/AppSecretsPage";
-import { AppDomainsPage } from "@/pages/AppDomainsPage";
-import { AppTerminalPage } from "@/pages/AppTerminalPage";
-import { DatabasesPage } from "@/pages/DatabasesPage";
-import { DatabaseDetailPage } from "@/pages/DatabaseDetailPage";
-import { EventsPage } from "@/pages/EventsPage";
 import { InvitePage } from "@/pages/InvitePage";
 import { LoginPage } from "@/pages/LoginPage";
-import { PatPage } from "@/pages/PatPage";
-import { ProjectsPage } from "@/pages/ProjectsPage";
-import { SystemPage } from "@/pages/SystemPage";
-import { TeamPage } from "@/pages/TeamPage";
-import { TeamsPage } from "@/pages/TeamsPage";
 import { TeamProjectProvider } from "@/lib/context";
 import { queryClient } from "@/query";
+
+/** 路由页 lazy 装配（页面均命名导出——统一映射 default）。 */
+const lazyPage = (load: () => Promise<{ [k: string]: unknown }>, name: string) =>
+  lazy(() => load().then((m) => ({ default: m[name] as React.ComponentType })));
+
+const AppsPage = lazyPage(() => import("@/pages/AppsPage"), "AppsPage");
+const AppDetailLayout = lazyPage(() => import("@/pages/AppDetailLayout"), "AppDetailLayout");
+const AppOverviewPage = lazyPage(() => import("@/pages/AppOverviewPage"), "AppOverviewPage");
+const AppDeploymentsPage = lazyPage(() => import("@/pages/AppDeploymentsPage"), "AppDeploymentsPage");
+const AppLogsPage = lazyPage(() => import("@/pages/AppLogsPage"), "AppLogsPage");
+const AppEnvPage = lazyPage(() => import("@/pages/AppEnvPage"), "AppEnvPage");
+const AppSecretsPage = lazyPage(() => import("@/pages/AppSecretsPage"), "AppSecretsPage");
+const AppDomainsPage = lazyPage(() => import("@/pages/AppDomainsPage"), "AppDomainsPage");
+const AppTerminalPage = lazyPage(() => import("@/pages/AppTerminalPage"), "AppTerminalPage");
+const DatabasesPage = lazyPage(() => import("@/pages/DatabasesPage"), "DatabasesPage");
+const DatabaseDetailPage = lazyPage(() => import("@/pages/DatabaseDetailPage"), "DatabaseDetailPage");
+const EventsPage = lazyPage(() => import("@/pages/EventsPage"), "EventsPage");
+const PatPage = lazyPage(() => import("@/pages/PatPage"), "PatPage");
+const ProjectsPage = lazyPage(() => import("@/pages/ProjectsPage"), "ProjectsPage");
+const SystemPage = lazyPage(() => import("@/pages/SystemPage"), "SystemPage");
+const TeamPage = lazyPage(() => import("@/pages/TeamPage"), "TeamPage");
+const TeamsPage = lazyPage(() => import("@/pages/TeamsPage"), "TeamsPage");
+const AdminPage = lazyPage(() => import("@/pages/AdminPage"), "AdminPage");
+const AuditPage = lazyPage(() => import("@/pages/AuditPage"), "AuditPage");
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { authed } = useAuth();

@@ -12,13 +12,14 @@ import {
   Database,
   FolderKanban,
   House,
+  Loader2,
   PanelLeft,
   Radio,
   ScrollText,
   Server,
   UsersRound,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
 import { getSystemStatus } from "@/api/endpoints";
@@ -207,7 +208,17 @@ export function Layout() {
           </div>
         </header>
         <main className="mx-auto w-full max-w-[1440px] flex-1 p-4 md:p-6">
-          <Outlet />
+          {/* 路由级 lazy 的加载边界（App.tsx 分割策略）：chunk 取回前占位
+              splash，壳与侧边栏保持可交互。 */}
+          <Suspense
+            fallback={
+              <div className="flex h-64 items-center justify-center" data-testid="route-splash">
+                <Loader2 aria-hidden className="h-6 w-6 animate-spin text-muted-foreground" />
+              </div>
+            }
+          >
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
