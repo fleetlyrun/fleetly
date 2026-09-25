@@ -94,7 +94,7 @@ func (s *SystemService) UpdateAcmeSettings(ctx context.Context, req *serverv1.Up
 }
 
 // TestDnsProvider DNS 服务商探针：候选凭证（未保存也能测）或已存凭证
-//（两字段全空）。在 _acme-challenge-test.<base_domain> 建删真实 TXT——
+// （两字段全空）。在 _acme-challenge-test.<base_domain> 建删真实 TXT——
 // 通过 = 能认证/能写/能删（zone 解析在 create 步隐含执行）。失败以
 // E_ACME_DNS_TEST_FAILED 报错：失败步与 provider 错误摘要进 context。
 func (s *SystemService) TestDnsProvider(ctx context.Context, req *serverv1.TestDnsProviderRequest) (*serverv1.TestDnsProviderResponse, error) {
@@ -139,7 +139,13 @@ func (s *SystemService) TestDnsProvider(ctx context.Context, req *serverv1.TestD
 			"dns_provider %q not in {dnspod, cloudflare}", providerName))
 	}
 
-	provider, err := s.newDNSProvider(providerName, []byte(tokenPlain))
+	// 候选凭证同走信封包装（与保存路径同词形归一——探针测的就是将存进
+	// 平台的凭证形态；W5-S4 门上修复，见 resolveStoredOrEncryptedCredentials）。
+	envelope, werr := acmedns.CredentialsEnvelope(tokenPlain)
+	if werr != nil {
+		return nil, statusInvalidArgument(werr.Error())
+	}
+	provider, err := s.newDNSProvider(providerName, envelope)
 	if err != nil {
 		return nil, statusInvalidArgument(err.Error())
 	}
@@ -187,7 +193,9 @@ func (s *SystemService) runDNSProbe(ctx context.Context, providerName string, pr
 
 // resolveStoredOrEncryptedCredentials 计算保存形态的凭证密文：
 //   - provider=none → 恒清空（""）；
-//   - api_token 非空 → envelope 加密明文；
+//   - api_token 非空 → 插件凭证信封包装（CredentialsEnvelope——W5-S4 门上
+//     修复：API 面词形是裸 token，插件解析面只认 JSON 信封）后 envelope
+//     加密落库；
 //   - api_token 留空 → 保留已存密文（SMTP 密码同款先例；已存密文不可读
 //     明文再加密——密文原样沿用）。
 func (s *SystemService) resolveStoredOrEncryptedCredentials(ctx context.Context, provider, tokenPlain string) (string, error) {
@@ -195,7 +203,11 @@ func (s *SystemService) resolveStoredOrEncryptedCredentials(ctx context.Context,
 		return "", nil
 	}
 	if tokenPlain != "" {
-		ct, err := s.box.Encrypt([]byte(tokenPlain))
+		envelope, err := acmedns.CredentialsEnvelope(tokenPlain)
+		if err != nil {
+			return "", fmt.Errorf("wrap acme dns credentials: %w", err)
+		}
+		ct, err := s.box.Encrypt(envelope)
 		if err != nil {
 			return "", fmt.Errorf("encrypt acme dns credentials: %w", err)
 		}

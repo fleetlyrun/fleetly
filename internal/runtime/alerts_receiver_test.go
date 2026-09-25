@@ -41,11 +41,11 @@ func newTestReceiver(fk *fakeAlertNotifier) http.Handler {
 func TestReceiverPayloadMappingTable(t *testing.T) {
 	const bearer = "Bearer secret-token"
 	cases := []struct {
-		name    string
-		body    string
-		wantCT  int   // 受理通知数
-		wantSE  int   // 期望 HTTP 码
-		check   func(t *testing.T, fk *fakeAlertNotifier)
+		name   string
+		body   string
+		wantCT int // 受理通知数
+		wantSE int // 期望 HTTP 码
+		check  func(t *testing.T, fk *fakeAlertNotifier)
 	}{
 		{
 			name:   "firing with severity and channels",
@@ -119,6 +119,33 @@ func TestReceiverPayloadMappingTable(t *testing.T) {
 			name:   "invalid status rejected",
 			body:   `{"alerts":[{"status":"bogus","labels":{"alertname":"A"}}]}`,
 			wantCT: 0, wantSE: 400,
+		},
+		{
+			// W5-S4 门上修复的钉：vmalert 的投递形态 = Alertmanager v2 裸数组
+			//（元素即 alert，无 status 字段）——firing 恒带未来 endsAt。
+			name:   "vmalert bare array form fires (future endsAt)",
+			body:   `[{"startsAt":"2026-09-25T00:00:00Z","endsAt":"2099-01-01T00:00:00Z","labels":{"alertname":"ExpGate","severity":"warning"},"annotations":{}}]`,
+			wantCT: 1, wantSE: 200,
+			check: func(t *testing.T, fk *fakeAlertNotifier) {
+				n := fk.notices[0]
+				if n.Name != "ExpGate" || n.StartsAt.IsZero() || n.Severity != "warning" {
+					t.Fatalf("notice = %+v", n)
+				}
+				if n.Status != notify.AlertStatusFiring {
+					t.Fatalf("status = %s, want firing (future endsAt)", n.Status)
+				}
+			},
+		},
+		{
+			// 恢复判据（数组形态无 status）：endsAt 已成过去 = resolved。
+			name:   "vmalert bare array form resolves (past endsAt)",
+			body:   `[{"startsAt":"2026-09-25T00:00:00Z","endsAt":"2020-01-01T00:00:00Z","labels":{"alertname":"ExpGate"}}]`,
+			wantCT: 1, wantSE: 200,
+			check: func(t *testing.T, fk *fakeAlertNotifier) {
+				if !fk.notices[0].Resolved() {
+					t.Fatalf("status = %s, want resolved (past endsAt)", fk.notices[0].Status)
+				}
+			},
 		},
 		{
 			name:   "bad json rejected",
@@ -242,6 +269,16 @@ func TestReceiverDispatchViaRootHandler(t *testing.T) {
 	root.ServeHTTP(rec, req)
 	if rec.Code != 404 {
 		t.Fatalf("undispatched GET status = %d, want 404", rec.Code)
+	}
+
+	// W5-S4 门上修复的钉：vmalert 把 -notifier.url 当 Alertmanager base，
+	// 恒以 <url>/api/v2/alerts 投递——子路径 POST 同样分派到接收器。
+	rec = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodPost, "/internal/alerts/api/v2/alerts", strings.NewReader(`[]`))
+	req.Header.Set("Authorization", "Bearer secret-token")
+	root.ServeHTTP(rec, req)
+	if rec.Code != 200 {
+		t.Fatalf("appended-path POST status = %d, want 200", rec.Code)
 	}
 
 	// alerts handler 未装配（nil）时路径进 gateway fallback（既有行为不变）。

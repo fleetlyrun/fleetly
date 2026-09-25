@@ -146,6 +146,18 @@ type credentials struct {
 	APIToken string `json:"api_token"`
 }
 
+// CredentialsEnvelope 把 API 面的裸 api_token 词形包装为插件层的凭证 JSON
+// 信封（本包 credentials 形态的唯一构造出口——调用方不拼 JSON 字面量）。
+// W5-S4 门上修复（e2e/control-plane-tls.sh AC-5 实证补获）：CLI/API 的
+// 凭证口径是裸 token（dnspod = "<id>,<token>"、cloudflare = 单 token），
+// 而插件解析面 parseCredentials 只认 JSON 信封——保存与探针两处入参若
+// 不经包装，生产装配（零 factory 注入）必在 parseCredentials 处断裂。
+// api_token 内含的双引号/反斜杠由 encoding/json 转义兜底（词形不变式：
+// Envelope → parseCredentials 恒还原同一 token）。
+func CredentialsEnvelope(apiToken string) ([]byte, error) {
+	return json.Marshal(credentials{APIToken: apiToken})
+}
+
 // parseCredentials 解析并校验凭证 JSON（api_token 必填非空）。
 func parseCredentials(raw []byte) (credentials, error) {
 	var c credentials

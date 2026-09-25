@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -105,6 +106,8 @@ func TestAcmeSettingsFace(t *testing.T) {
 	}
 
 	// 保存 dnspod + token：指纹回显、响应无明文、密文落库。
+	// W5-S4 门上修复：API 面裸 token 经 CredentialsEnvelope 包装后落库
+	//（指纹 = 信封字节的指纹——读面口径不变，仍只作轮换比对锚）。
 	up, err := cl.UpdateAcmeSettings(authCtx(ctx, admin), &serverv1.UpdateAcmeSettingsRequest{
 		DnsProvider: state.AcmeDNSProviderDNSPod,
 		ApiToken:    plaintext,
@@ -112,7 +115,11 @@ func TestAcmeSettingsFace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateAcmeSettings: %v", err)
 	}
-	sum := sha256.Sum256([]byte(plaintext))
+	envelope, err := acmedns.CredentialsEnvelope(plaintext)
+	if err != nil {
+		t.Fatalf("CredentialsEnvelope: %v", err)
+	}
+	sum := sha256.Sum256(envelope)
 	wantFP := hex.EncodeToString(sum[:8])
 	if up.GetSettings().GetCredentialsFingerprint() != wantFP {
 		t.Fatalf("fingerprint = %s, want %s", up.GetSettings().GetCredentialsFingerprint(), wantFP)
@@ -279,6 +286,40 @@ func TestDnsProviderProbe(t *testing.T) {
 	}
 
 	// 候选正路径：两步全绿，记录名进结果与假件调用序列。
+	// W5-S4 门上修复的桥接钉：factory 收到的凭证字节必须是插件层的 JSON
+	// 信封（{"api_token":"1,tok"}）——API 面裸 token 词形在服务端归一，
+	// 生产装配（零 factory 注入）的 parseCredentials 不再断裂。
+	var factoryGot []byte
+	clWrap, _, adminWrap, _ := newAcmeTestEnv(t, "example.test", func(name string, cred []byte) (acmedns.Provider, error) {
+		factoryGot = append([]byte(nil), cred...)
+		return fake, nil
+	})
+	fake.calls = nil
+	if _, err := clWrap.TestDnsProvider(authCtx(ctx, adminWrap), &serverv1.TestDnsProviderRequest{
+		DnsProvider: "dnspod", ApiToken: "1,tok",
+	}); err != nil {
+		t.Fatalf("TestDnsProvider (wrapped candidate): %v", err)
+	}
+	var decoded struct {
+		APIToken string `json:"api_token"`
+	}
+	if err := json.Unmarshal(factoryGot, &decoded); err != nil || decoded.APIToken != "1,tok" {
+		t.Fatalf("factory credentials = %q (unmarshal=%v), want the {\"api_token\":\"1,tok\"} envelope", factoryGot, err)
+	}
+
+	// 桥接负路径（零 factory 注入 = 生产装配形态）：信封内 token 形状由
+	// 插件层校验——parseCredentials 通过（包装生效）后 dnspod 形状守卫报
+	// "<id>,<token>" 形态错，而非 JSON 解析错。
+	clPlain, _, adminPlain, _ := newAcmeTestEnv(t, "example.test", nil)
+	_, err = clPlain.TestDnsProvider(authCtx(ctx, adminPlain), &serverv1.TestDnsProviderRequest{
+		DnsProvider: "dnspod", ApiToken: "onlytoken",
+	})
+	if status.Code(err) != codes.InvalidArgument || !strings.Contains(status.Convert(err).Message(), `<id>,<token>`) {
+		t.Fatalf("shape guard = %v, want InvalidArgument naming the dnspod token form", err)
+	}
+
+	// 原候选正路径（假件调用序列断言——重置计数后独占运行）。
+	fake.calls = nil
 	res, err := cl.TestDnsProvider(actx, &serverv1.TestDnsProviderRequest{
 		DnsProvider: "dnspod", ApiToken: "1,tok",
 	})

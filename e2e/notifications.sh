@@ -44,6 +44,19 @@
 #   N15 零回环（设计红线）：事件流快照无任何 notify.* 事件——通知自身
 #      零事件（订阅 * 不会把自己套进回环）。
 #
+# ── W5-S4 告警腿（NOT-A*，D-V3W5-1 真机闭环；observability §2.3）──────
+#   vmalert 链真机形态：metrics on（前置门）→ notifications endpoint（sink
+#   夹具）→ alerts mode on（vmalert 第四件）→ 恒真规则 e2e_alert_gate == 1
+#   → sink 断言 FIRING 文案（webhook 载荷 type=alert/alert.firing + slack
+#   {"text"} 头行）→ 序列注入翻 0 → RESOLVED 断言（resolved 语义原生补齐）
+#   → channels 路由纪律（未列入 channels 的端点零告警）→ events watch 全程
+#   零 alert.*/notify.* 新增（零事件红线 e2e 形态）→ 拆除面（规则删/告警
+#   off/metrics off 四件清场）。
+#
+#   告警指标源同 e2e/scaling.sh 的 fixture 注记：经 VM 原生 import API 注入
+#   e2e_alert_gate 序列（1=扩带恒真→FIRING；0→RESOLVED），规则全程不重启
+#   ——vmalert 活跃告警状态跨 config 换版不保，活体转移必须走数据面。
+#
 # 断言风格与 e2e/metrics.sh 一致（NOT-x: PASS/FAIL 行 + NL_FAIL 计数 +
 # finish）。
 # usage: e2e/notifications.sh
@@ -61,9 +74,15 @@ export MSYS2_ARG_CONV_EXCL='*'
 DIND_IMAGE="${NOT_DIND_IMAGE:-docker:29.8.1-dind@sha256:3f3c01aaaebf7cce837356b688b7c059a4749f10bd7660dec7c58fc454a283f0}"
 CURL_IMAGE='curlimages/curl:8.11.1@sha256:c1fe1679c34d9784c1b0d1e5f62ac0a79fca01fb6377cdd33e90473c6f9f9a69'
 WHOAMI_IMG='traefik/whoami:v1.10.4@sha256:02d8fe035f170f91cbb5e458a57f4cefab747436f8244a0eb2d66785fe5e565f'
+# W5-S4 告警腿预拉面（metrics on 的四件——vmalert 是 alerts.mode=on 的第四件；
+# digest 与 e2e/metrics.sh 同源多锚）。
+VM_IMG='victoriametrics/victoria-metrics:v1.152.0@sha256:86ca5fdb6d87d56ba047b044039019ba2bd9042b36e35f6ea34e437b6c825cef'
+NODE_EXPORTER_IMG='prom/node-exporter:v1.12.1@sha256:1b4e4438faca4dd7e001dd445d161a4a2091b0fededa84093b3a8dfeae1f1be0'
+CADVISOR_IMG='gcr.io/cadvisor/cadvisor:v0.55.1@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57'
+VMALERT_IMG='victoriametrics/vmalert:v1.152.0@sha256:ba00566373eb8c72d70cbee123e27ee75292dc0239830f36218c72712ba396b2'
 NOT_SKIP_BUILD="${NOT_SKIP_BUILD:-0}"
 NOT_BIN_DIR="${NOT_BIN_DIR:-}"
-NOT_VERSION="${NOT_VERSION:-v0.2.0-notifications-e2e}"
+NOT_VERSION="${NOT_VERSION:-v0.3.0-notifications-e2e}"
 
 BR_NET=fleetly-n-br
 BR_SUBNET=10.218.0.0/24
@@ -73,8 +92,12 @@ SVC=web
 OPS_PORT=8899
 STAR_PORT=8898
 SLACK_PORT=8897
+SINK_PORT=8896
 DEAD_PORT=59991
 SMTP_PORT=2525
+ALERT_RULE_NAME=e2e-gate
+ALERT_GATE_SERIES=e2e_alert_gate
+VM_IMPORT_URL='http://127.0.0.1:8428/api/v1/import/prometheus'
 
 NL_FAIL=0
 SUITE_DINDS=''
@@ -125,6 +148,15 @@ events_grep() {
     docker exec -e FLEETLY_ADDR=127.0.0.1:8421 -e FLEETLY_TOKEN="$NOT_TOKEN" \
         "$DIND" sh -c 'timeout 4 /opt/fleetly/bin/fleetly events watch --since-seq 0 > /tmp/not-events.txt 2>/dev/null; exit 0'
     m grep -q "$1" /tmp/not-events.txt
+}
+# start_gate_loop <value> — 门序列持续注入（VM 原生 import API 单点 POST，
+# 5s 一拍；vmalert 30s 求值窗内恒有新鲜点——指标源 fixture 注记见文件头）。
+# pidfile 管理生命周期。
+start_gate_loop() { # <value>
+    docker exec -d "$DIND" sh -c 'echo $$ > /tmp/not-gate.pid; while :; do wget -q -T 5 -O /dev/null --post-data "'"$ALERT_GATE_SERIES"' $1 $(date +%s)000" '"$VM_IMPORT_URL"' 2>/dev/null; sleep 5; done' gate-loop "$1"
+}
+stop_gate_loop() {
+    msh 'v=$(cat /tmp/not-gate.pid 2>/dev/null); [ -n "$v" ] && kill "$v" 2>/dev/null; true'
 }
 # host_python — 宿主侧 python 解释器（Git Bash 与 CI ubuntu 均有）。
 host_python() {
@@ -248,9 +280,12 @@ while ! docker exec "$DIND" docker info >/dev/null 2>&1; do
 done
 nl "dind $DIND ready (engine $(docker exec "$DIND" docker version --format '{{.Server.Version}}' 2>/dev/null))"
 
-# 预拉 whoami（部署事件的载体）。
+# 预拉 whoami（部署事件的载体）+ 告警腿 metrics 四件（见文件头）。
 nl 'pre-pulling fixture images (pinned digests)'
 docker exec "$DIND" docker pull -q "$WHOAMI_IMG" >/dev/null || fatal "pull $WHOAMI_IMG"
+for img in "$VM_IMG" "$NODE_EXPORTER_IMG" "$CADVISOR_IMG" "$VMALERT_IMG"; do
+    docker exec "$DIND" docker pull -q "$img" >/dev/null || fatal "pull $img"
+done
 
 nl 'staging binaries + config (exec+stdin)'
 docker exec "$DIND" mkdir -p /opt/fleetly/bin /opt/fleetly/etc /var/lib/fleetly || fatal 'mkdir stage'
@@ -686,5 +721,218 @@ else
     msh 'grep -c "notify\." /tmp/not-events.txt' || true
     assert "NOT-N15 ZERO_NOTIFY_EVENTS_NO_LOOP" 1 "notify.* events appeared in the stream (self-trigger loop!)"
 fi
+
+# ═══════════════════════════ W5-S4 告警腿（NOT-A*，D-V3W5-1）═══════════════
+
+# ───────── NOT-A1: alerts mode 前置门（metrics off 时 409 带指引）
+nl '=== NOT-A1: alerts mode on without metrics is rejected (409 gate) ==='
+ALERT_GATE_OUT=$(fcli alerts mode on 2>&1)
+if [ $? -ne 0 ] && printf '%s' "$ALERT_GATE_OUT" | grep -q 'E_ALERTS_METRICS_REQUIRED'; then
+    assert "NOT-A1 ALERTS_MODE_GATE_WITHOUT_METRICS" 0
+else
+    printf '%s\n' "$ALERT_GATE_OUT" || true
+    assert "NOT-A1 ALERTS_MODE_GATE_WITHOUT_METRICS" 1 "alerts mode on was accepted (or failed otherwise) while metrics.mode is unset"
+fi
+
+# ───────── NOT-A2: metrics on（vmalert 链的前置数据面）→ 四件收敛
+nl '=== NOT-A2: metrics stack converges (alerting datasource) ==='
+metrics_on_ok() {
+    fcli metrics mode set on >/dev/null 2>&1
+}
+poll_until 60 metrics_on_ok || fatal 'metrics mode set on never accepted'
+metrics_running_ok() {
+    for svc in fleetly-cadvisor fleetly-node-exporter fleetly-victoriametrics; do
+        msh "docker service ps $svc --format '{{.CurrentState}}' | grep -q '^Running'" 2>/dev/null || return 1
+    done
+    return 0
+}
+if poll_until 300 metrics_running_ok; then
+    assert "NOT-A2a METRICS_STACK_THREE_RUNNING" 0
+else
+    m docker service ls || true
+    assert "NOT-A2a METRICS_STACK_THREE_RUNNING" 1 "managed metrics stack never fully ran within 300s"
+fi
+metrics_reporting_ok() {
+    fcli metrics status 2>/dev/null | grep -q 'nodes_reporting: 1/1'
+}
+if poll_until 150 metrics_reporting_ok; then
+    assert "NOT-A2b METRICS_REPORTING_1_OF_1" 0
+else
+    fcli metrics status || true
+    assert "NOT-A2b METRICS_REPORTING_1_OF_1" 1 "VM never reported a converged scrape target"
+fi
+
+# ───────── NOT-A3: alerts sink（webhook 端点——告警投递的接收夹具）
+nl '=== NOT-A3: alerts sink endpoint + channels routing fixtures ==='
+start_receiver "$SINK_PORT"
+NOT_SINK_JSON=$(fcli notifications endpoint create --json --patterns 'terminal.*' alerts-sink "http://127.0.0.1:$SINK_PORT/hook") || fatal 'create alerts sink endpoint'
+NOT_SINK_ID=$(printf '%s' "$NOT_SINK_JSON" | host_python -c 'import json,sys;print(json.load(sys.stdin)["endpoint"]["id"])')
+NOT_SLACK_ID=$(printf '%s' "$NOT_SLACK_JSON" | host_python -c 'import json,sys;print(json.load(sys.stdin)["endpoint"]["id"])')
+[ -n "$NOT_SINK_ID" ] && [ -n "$NOT_SLACK_ID" ] || fatal 'endpoint ids missing'
+assert "NOT-A3 SINK_ENDPOINT_CREATED" 0
+
+# ───────── NOT-A4: 规则落库 + rules test 即时校验（VM instant 求值面）
+nl '=== NOT-A4: alert rule created and test-evaluated against VM ==='
+start_gate_loop 1
+rule_create_ok() {
+    fcli alerts rules create --label severity=warning --channels "$NOT_SINK_ID,$NOT_SLACK_ID" \
+        "$ALERT_RULE_NAME" "$ALERT_GATE_SERIES == 1" >/dev/null 2>&1
+}
+if poll_until 60 rule_create_ok; then
+    assert "NOT-A4a RULE_CREATED" 0
+else
+    fcli alerts rules create --label severity=warning --channels "$NOT_SINK_ID,$NOT_SLACK_ID" \
+        "$ALERT_RULE_NAME" "$ALERT_GATE_SERIES == 1" || true
+    assert "NOT-A4a RULE_CREATED" 1 "alert rule create never accepted"
+fi
+rules_test_ok() {
+    fcli alerts rules test "$ALERT_GATE_SERIES" 2>/dev/null | grep -q 'series: 1'
+}
+if poll_until 60 rules_test_ok; then
+    assert "NOT-A4c RULES_TEST_INSTANT_EVAL" 0
+else
+    fcli alerts rules test "$ALERT_GATE_SERIES" || true
+    assert "NOT-A4c RULES_TEST_INSTANT_EVAL" 1 "rules test never saw the injected gate series"
+fi
+
+# ───────── NOT-A5: alerts mode on → vmalert 第四件收敛
+nl '=== NOT-A5: alerts mode on deploys the vmalert evaluator ==='
+alerts_on_ok() {
+    fcli alerts mode on >/dev/null 2>&1
+}
+poll_until 60 alerts_on_ok || fatal 'alerts mode on never accepted'
+alerts_status_ok() {
+    fcli alerts status 2>/dev/null | grep -q 'mode: on' &&
+        fcli alerts status 2>/dev/null | grep -q 'vmalert: deployed' &&
+        fcli alerts status 2>/dev/null | grep -q 'rules: 1'
+}
+if poll_until 240 alerts_status_ok; then
+    assert "NOT-A5a VMALERT_DEPLOYED_STATUS" 0
+else
+    fcli alerts status || true
+    assert "NOT-A5a VMALERT_DEPLOYED_STATUS" 1 "alerts status never went fully green"
+fi
+vmalert_running_ok() {
+    msh "docker service ps fleetly-vmalert --format '{{.CurrentState}}' | grep -q '^Running'" 2>/dev/null
+}
+if poll_until 120 vmalert_running_ok; then
+    assert "NOT-A5b VMALERT_SERVICE_RUNNING" 0
+else
+    msh 'docker service ps fleetly-vmalert --no-trunc' || true
+    assert "NOT-A5b VMALERT_SERVICE_RUNNING" 1 "the vmalert service never ran"
+fi
+
+# ───────── NOT-A6: FIRING（恒真规则命中 → sink 收到 alert 载荷与文案）
+nl '=== NOT-A6: sustained-true rule fires into the channels-restricted sinks ==='
+sink_firing_ok() {
+    pull_log "$SINK_PORT"
+    grep -q '"name":"alert.firing"' "$TMP/recv-$SINK_PORT.log" 2>/dev/null &&
+        grep -q '"subject":"'"$ALERT_RULE_NAME"'"' "$TMP/recv-$SINK_PORT.log" 2>/dev/null
+}
+if poll_until 300 sink_firing_ok; then
+    assert "NOT-A6a SINK_GOT_FIRING_PAYLOAD" 0
+else
+    msh "cat /tmp/recv-$SINK_PORT.log 2>/dev/null" || true
+    assert "NOT-A6a SINK_GOT_FIRING_PAYLOAD" 1 "the webhook sink never saw the alert.firing payload"
+fi
+slack_firing_ok() {
+    pull_log "$SLACK_PORT"
+    grep -q '\[fleetly\] FIRING '"$ALERT_RULE_NAME"' (severity=warning)' "$TMP/recv-$SLACK_PORT.log" 2>/dev/null
+}
+if poll_until 60 slack_firing_ok; then
+    assert "NOT-A6b SLACK_SINK_GOT_FIRING_HEADLINE" 0
+else
+    msh "cat /tmp/recv-$SLACK_PORT.log 2>/dev/null" || true
+    assert "NOT-A6b SLACK_SINK_GOT_FIRING_HEADLINE" 1 "the slack sink never saw the FIRING headline"
+fi
+
+# ───────── NOT-A7: channels 路由纪律（未列入 channels 的端点零告警）
+nl '=== NOT-A7: channels routing discipline (star relay is not in the rule channels) ==='
+pull_log "$STAR_PORT"
+if grep -q 'alert.firing' "$TMP/recv-$STAR_PORT.log" 2>/dev/null; then
+    assert "NOT-A7 CHANNELS_ROUTING_DISCIPLINE" 1 "star relay (not in channels) received an alert delivery"
+else
+    assert "NOT-A7 CHANNELS_ROUTING_DISCIPLINE" 0
+fi
+
+# ───────── NOT-A8: RESOLVED（数据面翻 0——规则不动，活跃告警活体转移）
+nl '=== NOT-A8: gate flip to 0 resolves the active alert (no rule restart) ==='
+stop_gate_loop
+sleep 2
+start_gate_loop 0
+sink_resolved_ok() {
+    pull_log "$SINK_PORT"
+    grep -q '"name":"alert.resolved"' "$TMP/recv-$SINK_PORT.log" 2>/dev/null
+}
+if poll_until 300 sink_resolved_ok; then
+    assert "NOT-A8a SINK_GOT_RESOLVED_PAYLOAD" 0
+else
+    msh "cat /tmp/recv-$SINK_PORT.log 2>/dev/null" || true
+    assert "NOT-A8a SINK_GOT_RESOLVED_PAYLOAD" 1 "the webhook sink never saw the alert.resolved payload"
+fi
+slack_resolved_ok() {
+    pull_log "$SLACK_PORT"
+    grep -q '\[fleetly\] RESOLVED '"$ALERT_RULE_NAME" "$TMP/recv-$SLACK_PORT.log" 2>/dev/null
+}
+if poll_until 180 slack_resolved_ok; then
+    assert "NOT-A8b SLACK_SINK_GOT_RESOLVED_HEADLINE" 0
+else
+    msh "cat /tmp/recv-$SLACK_PORT.log 2>/dev/null" || true
+    assert "NOT-A8b SLACK_SINK_GOT_RESOLVED_HEADLINE" 1 "the slack sink never saw the RESOLVED headline"
+fi
+
+# ───────── NOT-A9: 零事件红线（告警链全程事件流零新增 alert.*/notify.*）
+nl '=== NOT-A9: zero alerting events across the whole firing/resolved cycle ==='
+no_alert_events() {
+    events_grep 'NOTGREPPED' >/dev/null 2>&1
+    if m grep -qE '(notify\.|alert\.)' /tmp/not-events.txt 2>/dev/null; then
+        return 1
+    fi
+    return 0
+}
+if no_alert_events; then
+    assert "NOT-A9 ZERO_ALERT_EVENTS_RED_LINE" 0
+else
+    msh 'grep -E "(notify\.|alert\.)" /tmp/not-events.txt | head -5' || true
+    assert "NOT-A9 ZERO_ALERT_EVENTS_RED_LINE" 1 "alerting produced events on the stream (zero-event red line broken)"
+fi
+
+# ───────── NOT-A10: 拆除面（规则删 → 告警 off → metrics off 四件清场）
+nl '=== NOT-A10: teardown removes rule, vmalert and the metrics stack ==='
+rule_rm_ok() {
+    fcli alerts rules rm "$ALERT_RULE_NAME" >/dev/null 2>&1
+}
+poll_until 60 rule_rm_ok || fatal 'alert rule rm never accepted'
+alerts_off_ok() {
+    fcli alerts mode off >/dev/null 2>&1
+}
+poll_until 60 alerts_off_ok || fatal 'alerts mode off never accepted'
+vmalert_gone_status_ok() {
+    fcli alerts status 2>/dev/null | grep -q 'vmalert: not deployed'
+}
+if poll_until 180 vmalert_gone_status_ok; then
+    assert "NOT-A10a VMALERT_REMOVED_ON_OFF" 0
+else
+    fcli alerts status || true
+    assert "NOT-A10a VMALERT_REMOVED_ON_OFF" 1 "vmalert still deployed after alerts mode off"
+fi
+metrics_unset_ok() {
+    fcli metrics mode set unset >/dev/null 2>&1
+}
+poll_until 60 metrics_unset_ok || fatal 'metrics mode set unset never accepted'
+metrics_gone_ok() {
+    names=$(m docker service ls --format '{{.Name}}' 2>/dev/null)
+    printf '%s' "$names" | grep -q 'fleetly-victoriametrics' && return 1
+    printf '%s' "$names" | grep -q 'fleetly-cadvisor' && return 1
+    printf '%s' "$names" | grep -q 'fleetly-node-exporter' && return 1
+    return 0
+}
+if poll_until 240 metrics_gone_ok; then
+    assert "NOT-A10b METRICS_STACK_REMOVED" 0
+else
+    m docker service ls || true
+    assert "NOT-A10b METRICS_STACK_REMOVED" 1 "metrics services still present after unset"
+fi
+stop_gate_loop
 
 finish

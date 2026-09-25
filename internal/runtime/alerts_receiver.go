@@ -112,7 +112,7 @@ func authorizeReceiver(r *http.Request, token string) bool {
 // alertmanagerPayload 是 Alertmanager v2 webhook 载荷的消费投影（只取本
 // 端点消费的字段；其余字段 DiscardUnknown 语义忽略）。
 type alertmanagerPayload struct {
-	Status string           `json:"status"`
+	Status string              `json:"status"`
 	Alerts []alertmanagerAlert `json:"alerts"`
 }
 
@@ -127,6 +127,13 @@ type alertmanagerAlert struct {
 // parseAlertmanagerPayload 解析载荷为告警事实集（每条 alert 独立一条；
 // 空数组合法 = 无所投；status 缺省逐条回退顶层再回退 firing——Alertmanager
 // v2 语义）。非 JSON/超限 body = 400。
+//
+// W5-S4 门上修复（e2e/notifications.sh NOT-A6 实证补获）：vmalert 的
+// -notifier.url 投递形态是 **裸数组**（Alertmanager v2 webhook：元素即
+// alert，且元素/顶层均不带 status 字段）——信封对象形态（本端点首版）与
+// 裸数组形态双收。数组元素的恢复判据 = endsAt 已成过去（Alertmanager 语义
+// ：endsAt 过去 = 已解决；vmalert 对 firing 恒带未来 endsAt，对 resolved
+// 置过去值）。
 func parseAlertmanagerPayload(r io.Reader) ([]notify.AlertNotice, error) {
 	raw, err := io.ReadAll(r)
 	if err != nil {
@@ -137,8 +144,13 @@ func parseAlertmanagerPayload(r io.Reader) ([]notify.AlertNotice, error) {
 	}
 	var payload alertmanagerPayload
 	if err := json.Unmarshal(raw, &payload); err != nil {
-		return nil, err
+		var alerts []alertmanagerAlert
+		if arrErr := json.Unmarshal(raw, &alerts); arrErr != nil {
+			return nil, err
+		}
+		payload.Alerts = alerts
 	}
+	now := time.Now()
 	out := make([]notify.AlertNotice, 0, len(payload.Alerts))
 	for _, a := range payload.Alerts {
 		status := a.Status
@@ -147,6 +159,9 @@ func parseAlertmanagerPayload(r io.Reader) ([]notify.AlertNotice, error) {
 		}
 		if status == "" {
 			status = notify.AlertStatusFiring
+			if t, perr := time.Parse(time.RFC3339, a.EndsAt); perr == nil && t.Before(now) {
+				status = notify.AlertStatusResolved
+			}
 		}
 		if status != notify.AlertStatusFiring && status != notify.AlertStatusResolved {
 			return nil, errors.New("alert status must be firing or resolved")

@@ -260,8 +260,13 @@ func newRootHandler(webhook http.Handler, consoleUI http.Handler, terminal http.
 			terminal.ServeHTTP(w, r)
 			return
 		}
-		// 平台内建告警接收器（W5-S2）：精确路径 POST 分派（nil = 未装配）。
-		if alerts != nil && r.URL.Path == internalAlertsPath && r.Method == http.MethodPost {
+		// 平台内建告警接收器（W5-S2）：POST 分派（nil = 未装配）。精确路径
+		// + vmalert 追加形态两个入口——W5-S4 门上修复（e2e/notifications.sh
+		// NOT-A6 实证补获）：vmalert 把 -notifier.url 当 Alertmanager base
+		// URL，恒以 <url>/api/v2/alerts 投递；仅收精确路径时投递全数 404
+		// （vmalert 侧按 notifier failure 退避重试）。
+		if alerts != nil && r.Method == http.MethodPost &&
+			(r.URL.Path == internalAlertsPath || strings.HasPrefix(r.URL.Path, internalAlertsPath+"/")) {
 			alerts.ServeHTTP(w, r)
 			return
 		}

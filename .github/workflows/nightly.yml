@@ -575,6 +575,36 @@ jobs:
           docker ps -aq --filter name=fleetly-m- | xargs -r docker rm -f
           docker network rm fleetly-m-br || true
 
+  scaling-e2e:
+    # E6 W5-S4 自动扩缩端到端（e2e/scaling.sh 单 dind；W5-S1 D-V3W5-2 真机
+    # 闭环，metrics 同骨架——编排自足、镜像钉 digest）：metrics opt-in 三件
+    # 收敛 → CPU 打压应用（alpine sha1sum ×2 + cpus 限额）与带卷应用部署 →
+    # 策略落库与 scaling show 回放 → scaling.no_data 诚实披露（cAdvisor 归
+    # 属标签缺席的 fixture 注记见脚本头——指标数据经 VM 原生 import API 注
+    # 入，评估链全真）→ 扩容 2→4（HPA 反解夹逼 + scaling.adjusted 载荷）→
+    # 策略投影稳定 → 冷却窗护栏（低水位 70s 两拍不动作）→ 冷却过期缩容
+    # 4→1 → stateful 只扩不缩护栏 → 策略移除 → metrics off scaling.dormant。
+    name: scaling e2e (dind)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5.6.0
+        with:
+          go-version-file: go.mod
+      - name: run scaling e2e (dind)
+        run: sh e2e/scaling.sh
+      - name: dump dind logs
+        if: failure()
+        run: |
+          docker ps -a --filter name=fleetly-scl-e2e- --format '{{.Names}}' |
+            xargs -r -n1 sh -c 'echo "===== $0 ====="; docker logs "$0" --tail 120 || true'
+      - name: cleanup
+        if: always()
+        run: |
+          docker ps -aq --filter name=fleetly-scl- | xargs -r docker rm -f
+          docker network rm fleetly-scl-br || true
+
   notifications-e2e:
     # E6 W5-S4 通知 Webhook 端到端 + W4-S3 通道扩展（e2e/notifications.sh 单
     # dind；observability §5/§8 真机闭环，metrics 同骨架——编排自足、镜像钉
@@ -588,7 +618,12 @@ jobs:
     # 绿 → N10 type=test 载荷 → N11 台账 response_code → N12 slack 通道
     #（{"text"} 形态 + 无签名头）→ N13 email 通道（SMTP 真会话 + 密码零上
     # 线）→ N14 SMTP 设置往返（只出指纹）+ TestSmtp → N15 零 notify.* 事件
-    #（无回环红线）。
+    #（无回环红线）。W5-S4 起追加告警腿（NOT-A*，D-V3W5-1 vmalert 链真机
+    # 形态）：metrics 前置门 409 → metrics on 四件收敛 → 恒真规则经 VM
+    # import API 注入门序列驱动（cAdvisor 归属标签缺席的 fixture 注记见脚
+    # 本头）→ FIRING 文案（webhook 载荷 + slack 头行）→ 序列翻 0 RESOLVED
+    #（规则不动、活体转移）→ channels 路由纪律 → 零 alert.* 事件红线 →
+    # 拆除面（规则删/告警 off/metrics off 清场）。
     name: notifications e2e (dind)
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -618,7 +653,12 @@ jobs:
     # （liveness+landing）→ TLS-2 gRPC 面 --tls-insecure 读+写 → TLS-3 明文
     # 双面拒绝 → TLS-4 --tls 经 SAN 主机名校验通过 → TLS-5 SAN 外主机名拒 →
     # TLS-6 旗标互斥 → TLS-7 platform 空 base_domain loud-fail → TLS-8 off
-    # 模式回归（明文逐字可回）。
+    # 模式回归（明文逐字可回）。W5-S4 起追加 ACME DNS-01 形态腿（AC-*，
+    # D-V3W5-3/4 设置面往返+联动门；跑在 TLS-8 off 态实例——配置带
+    # base_domain 且 acme disabled）：provider 门负向 → dns set env 凭证
+    # 往返（只出指纹）→ dns test 真端点假凭证负路径（failed_step 信封）→
+    # wildcard on 四元域集投影 → off 恢复缺省态；真 DNS-01 签发留 staging
+    # 演练（.w3out/staging-v03/verify-w5.sh）。
     name: control-plane tls e2e (dind)
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -820,7 +860,7 @@ jobs:
   # 不计失败；engine-matrix 任一格红即整体 failure。
   notify:
     name: Feishu notify
-    needs: [v1-health-gate, v2-digest-nopull, v3-routing, v4-conn-governance, v6-placement, v5-recovery-drill, engine-matrix, upgrade-e2e, install-suite, multinode-rehearsal, conformance-objectstore, s3-rustfs-e2e, databases-e2e, conformance-builder, resource-sample]
+    needs: [v1-health-gate, v2-digest-nopull, v3-routing, v4-conn-governance, v6-placement, v5-recovery-drill, engine-matrix, upgrade-e2e, install-suite, multinode-rehearsal, conformance-objectstore, s3-rustfs-e2e, databases-e2e, conformance-builder, resource-sample, scaling-e2e]
     if: ${{ !cancelled() && failure() }}
     runs-on: ubuntu-latest
     steps:
@@ -828,6 +868,6 @@ jobs:
       - uses: ./.github/actions/feishu-notify
         with:
           status: failure
-          detail: v1=${{ needs.v1-health-gate.result }} v2=${{ needs.v2-digest-nopull.result }} v3=${{ needs.v3-routing.result }} v4=${{ needs.v4-conn-governance.result }} v6=${{ needs.v6-placement.result }} v5=${{ needs.v5-recovery-drill.result }} engine-matrix=${{ needs.engine-matrix.result }} upgrade-e2e=${{ needs.upgrade-e2e.result }} install-suite=${{ needs.install-suite.result }} multinode=${{ needs.multinode-rehearsal.result }} objectstore=${{ needs.conformance-objectstore.result }} s3-e2e=${{ needs.s3-rustfs-e2e.result }} databases-e2e=${{ needs.databases-e2e.result }} conformance-builder=${{ needs.conformance-builder.result }} resource-sample=${{ needs.resource-sample.result }}
+          detail: v1=${{ needs.v1-health-gate.result }} v2=${{ needs.v2-digest-nopull.result }} v3=${{ needs.v3-routing.result }} v4=${{ needs.v4-conn-governance.result }} v6=${{ needs.v6-placement.result }} v5=${{ needs.v5-recovery-drill.result }} engine-matrix=${{ needs.engine-matrix.result }} upgrade-e2e=${{ needs.upgrade-e2e.result }} install-suite=${{ needs.install-suite.result }} multinode=${{ needs.multinode-rehearsal.result }} objectstore=${{ needs.conformance-objectstore.result }} s3-e2e=${{ needs.s3-rustfs-e2e.result }} databases-e2e=${{ needs.databases-e2e.result }} conformance-builder=${{ needs.conformance-builder.result }} resource-sample=${{ needs.resource-sample.result }} scaling-e2e=${{ needs.scaling-e2e.result }}
         env:
           FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
