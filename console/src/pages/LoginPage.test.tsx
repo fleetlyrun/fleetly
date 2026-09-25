@@ -295,88 +295,21 @@ describe("LoginPage password sign-in", () => {
   });
 });
 
-describe("LoginPage API token path (M9-1 validate-before-persist regression)", () => {
-  it("validates the pasted token before persisting and keeps the user on login on 401", async () => {
-    let respond: (v: unknown) => void = () => undefined;
+describe("LoginPage API token path removed (2026-09-25 user ruling)", () => {
+  it("no longer renders the token section on the sign-in form", async () => {
     vi.stubGlobal(
       "fetch",
       stubFetch([
         { match: path("auth/me"), respond: () => jsonResponse(401, {}) },
         { match: path("auth/registration"), respond: () => jsonResponse(200, { open: false, has_users: true }) },
-        {
-          match: path("apps"),
-          respond: () => new Promise((res) => (respond = res)), // 挂起可控
-        },
       ]),
     );
     renderAppAt("/login");
-    const user = userEvent.setup();
     await screen.findByTestId("login-email");
-    await user.click(screen.getByTestId("login-token-toggle"));
-    await user.type(screen.getByLabelText("API token"), "flt_wrong");
-    await user.click(screen.getByTestId("login-token-submit"));
-
-    // 校验进行中：提交按钮禁用、页面仍在（Gate 未卸载本页）、校验请求已带
-    // 待验证 token 的 Bearer（token 只进 API 层供 Bearer，登录态未翻转）。
-    expect(screen.getByTestId("login-token-submit")).toBeDisabled();
-    expect(screen.getByLabelText("API token")).toBeInTheDocument();
-    const fetchMock = vi.mocked(fetch);
-    const appsCall = fetchMock.mock.calls.find(([u]) => String(u).includes("/v1/apps"));
-    expect(
-      (appsCall?.[1] as { headers?: Record<string, string> })?.headers
-        ?.Authorization,
-    ).toBe("Bearer flt_wrong");
-
-    respond({
-      ok: false,
-      status: 401,
-      statusText: "Unauthorized",
-      json: () =>
-        Promise.resolve({
-          code: "E_UNAUTHENTICATED",
-          message: "invalid or revoked token",
-          suggestion: "create a token with `fleetly tokens create` and retry",
-        }),
-    });
-
-    await waitFor(() => {
-      const alert = screen.getByRole("alert");
-      expect(alert).toHaveTextContent("Sign-in failed: invalid or revoked token");
-      expect(alert).toHaveTextContent(
-        "create a token with `fleetly tokens create` and retry",
-      );
-    });
-    // 失败终态：无凭据残留、仍停登录页、Gate 级 401 横幅被本页信封取代。
-    expect(getToken()).toBe("");
-    expect(screen.getByLabelText("API token")).toBeInTheDocument();
-    expect(screen.queryByText(/Session invalid/)).not.toBeInTheDocument();
-    expect(screen.getByTestId("login-token-submit")).toBeEnabled();
-  });
-
-  it("signs in with a valid token (Bearer persisted) and leaves the login page", async () => {
-    vi.stubGlobal(
-      "fetch",
-      stubFetch([
-        // me：第一发 = 启动探测（401 匿名）；token 登录后用户菜单第二发 200
-        //（若仍 401，会正确触发全局会话失效清态——那正是 401 接线的回归面）。
-        { match: path("auth/me"), respond: (_u, _i, call) => (call === 1 ? jsonResponse(401, {}) : jsonResponse(200, ME_USER)) },
-        { match: path("auth/registration"), respond: () => jsonResponse(200, { open: false, has_users: true }) },
-        { match: path("apps"), respond: () => jsonResponse(200, { apps: [] }) },
-        ...appSurfaceRoutes().filter((r) => !r.match("/v1/apps")),
-      ]),
-    );
-    renderAppAt("/login");
-    const user = userEvent.setup();
-    await screen.findByTestId("login-email");
-    await user.click(screen.getByTestId("login-token-toggle"));
-    await user.type(screen.getByLabelText("API token"), "flt_good");
-    await user.click(screen.getByTestId("login-token-submit"));
-
-    // 校验通过才持久化：token 进 localStorage、Gate 切应用面（登录页退场）。
-    await waitFor(() => expect(getToken()).toBe("flt_good"));
-    await waitFor(() => {
-      expect(screen.queryByTestId("login-email")).not.toBeInTheDocument();
-    });
+    expect(screen.queryByTestId("login-token-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("login-token")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("login-token-submit")).not.toBeInTheDocument();
+    expect(screen.queryByText(/API token/i)).not.toBeInTheDocument();
   });
 });
 

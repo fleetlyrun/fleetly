@@ -16,7 +16,7 @@ import {
   type ReactNode,
 } from "react";
 
-import { clearToken, setToken } from "@/api/client";
+import { clearToken } from "@/api/client";
 import {
   login as loginRequest,
   logout as logoutRequest,
@@ -40,8 +40,6 @@ interface AuthContextValue {
   status: AuthStatus;
   /** status === "authed" 的布尔投影（路由门卫沿用）。 */
   authed: boolean;
-  /** 高级路径：持久化 API token 并进入（调用方先自行校验——M9-1 先验后存）。 */
-  loginWithToken(token: string): void;
   /** 主路径：邮箱+口令登录（成功 = 服务端已下发会话 cookie）。 */
   loginWithPassword(email: string, password: string): Promise<void>;
   /** 自助注册（成功即下发会话——自动登录）。 */
@@ -80,12 +78,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const loginWithToken = useCallback((next: string) => {
-    const trimmed = next.trim();
-    setToken(trimmed);
-    setStatus("authed");
   }, []);
 
   const loginWithPassword = useCallback(
@@ -143,14 +135,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     () => ({
       status,
       authed: status === "authed",
-      loginWithToken,
       loginWithPassword,
       registerWithPassword,
       logout,
       logoutAll,
       clearSession,
     }),
-    [status, loginWithToken, loginWithPassword, registerWithPassword, logout, logoutAll, clearSession],
+    [status, loginWithPassword, registerWithPassword, logout, logoutAll, clearSession],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
