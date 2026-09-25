@@ -6,7 +6,7 @@
 
 fleetly 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用部署到 1~10 台服务器的集群上，获得零停机发布、版本回滚、漂移检测，以及一套同时为人类与 AI Agent 设计的 API 面——不需要 Kubernetes。
 
-**当前状态：v0.2 已发布（v0.1.0 / v0.2.0）。** 设计已定稿并通过评审；每一波实现均带 dind E2E 与真实 VPS 演练记录。单机形态（v0.1）与生产基线（v0.2：多节点、托管数据库、统一日志检索、通知、Web 终端、控制面 TLS）均已交付——见[路线图](#路线图)。曾用名 *edgesets* 与 *edgefleet*。
+**当前状态：v0.3 已发布（v0.1.0 / v0.2.0 / v0.3.0）。** 设计已定稿并通过评审；每一波实现均带 dind E2E 与真实 VPS 演练记录。单机形态（v0.1）、生产基线（v0.2：多节点、托管数据库、统一日志检索、通知、Web 终端、控制面 TLS）与团队版（v0.3：用户账号、团队与项目隔离、角色授权、审计追踪、MySQL/MongoDB 模板、Slack/Email 通道、自动扩缩、vmalert 告警、DNS-01 通配证书）均已交付——见[路线图](#路线图)。曾用名 *edgesets* 与 *edgefleet*。
 
 ## 安装
 
@@ -14,18 +14,18 @@ fleetly 是面向小团队的极轻量级开源 PaaS：把 `compose.yaml` 应用
 
 ```sh
 curl -fsSL https://fleetly.dev/install.sh | sudo sh -            # 最新 stable
-curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.2.0
+curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.3.0
 sudo sh install.sh --bin-dir ./dist                              # 离线 / 开发形态
 ```
 
-首启会把 bootstrap admin token **一次性写入** `<数据根>/bootstrap-token` 文件（0600、不进日志；首次成功登录后删除该文件）。卸载默认保留应用数据（`--purge` 才删）。控制面升级一条命令、自带升级前快照与失败自动回退（`sudo sh upgrade.sh --version vX.Y.Z`）；Engine/主机升级是另一条冷备轨——见 [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md)。三形态、门禁清单、端口面表与 dind 验收见 [`deploy/README.md`](deploy/README.md)。（release 制品链随发布流水线落地；在那之前离线 `--bin-dir` 形态是可用路径。）
+首启开放自助注册直到首个用户注册（该用户即平台管理员，并自动创建个人团队与默认项目）；写入 `<数据根>/bootstrap-token` 的初始 admin token 在此刻自动吊销——装机后请尽快注册、再暴露端口。卸载默认保留应用数据（`--purge` 才删）。控制面升级一条命令、自带升级前快照与失败自动回退（`sudo sh upgrade.sh --version vX.Y.Z`）；Engine/主机升级是另一条冷备轨——见 [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md)。三形态、门禁清单、端口面表与 dind 验收见 [`deploy/README.md`](deploy/README.md)。（release 制品链随发布流水线落地；在那之前离线 `--bin-dir` 形态是可用路径。）
 
 ## 为什么是 fleetly
 
 - **为没有运维的团队而建。** ≤5 名开发、无专职运维、1~3 台服务器起步、每周 1~2 小时的维护预算。一切可自动化的（证书、备份、升级、巡检）都自动化且可验证。
 - **Compose 是唯一应用模型。** 没有私有 spec。受控的 Compose 规范子集 + 最小 `fleetly.*` label 约定；子集之外一律结构化报错拒绝，绝不静默忽略。
 - **Docker Swarm 作底座。** 成员管理、调度、健康门更新由引擎内置——不自研分布式核心。v0.1 单节点本身就是（对用户透明的）单节点 Swarm，加第二台是 `docker swarm join`，不是重构。
-- **API 优先，proto 即契约。** gRPC + REST（grpc-gateway）由同一份 protobuf 派生；CLI、Console 与（v0.2 的）MCP 都是同一契约的消费者。没有 API 的功能不准进产品。
+- **API 优先，proto 即契约。** gRPC + REST（grpc-gateway）由同一份 protobuf 派生；CLI、Console 与未来的 Agent 集成都是同一契约的消费者。没有 API 的功能不准进产品。
 - **信任是地板。** 原子化自升级（预拉镜像 + 快照 + 失败自动回退）、带回读校验的备份、错误信息即产品（稳定错误码 + 上下文 + 修复建议）——同时服务人类与 AI Agent。
 
 ## 能力地图（规划）
@@ -45,7 +45,14 @@ sudo sh install.sh --bin-dir ./dist                              # 离线 / 开�
 | 控制面 TLS | off / 平台证书 / 手工三态，双面（gRPC + HTTP）同证书，CLI/SDK TLS | v0.2 |
 | S3 备份 | 外部端点或 opt-in 托管 RustFS（同节点 = 便捷层，非灾备） | v0.2 |
 | Cron | Swarm job 形态 cron + 台账 + 看门狗 | v0.2 |
-| AI Agent | MCP server，精选工具面（≤30 工具）、scope token、破坏性操作两段式确认 | v0.3 |
+| 团队与项目 | 用户账号（首用户=平台管理员）、团队邀请链接、项目级 app/库隔离、四档角色（viewer/developer/admin/owner + 项目内覆写）、CI 机具令牌 | v0.3 |
+| 审计 | 可检索审计追踪（操作者/动作/对象/结果/diff）、留存可调、Console 浏览 + CLI 导出 CSV | v0.3 |
+| 数据服务 | 托管 Postgres/Redis/MySQL/MongoDB 模板 + 备份/恢复/升级 + 连接串注入 + 平台密钥库 | v0.2–v0.3 |
+| 通知 | Webhook 端点 + 事件模式订阅 + HMAC 签名投递 + 重试台账；Slack 与 Email（SMTP）通道 | v0.2–v0.3 |
+| 自动扩缩 | CPU/内存水位策略（冷却窗）；平台持有的副本覆盖层，与漂移对账不打架 | v0.3 |
+| 告警 | vmalert（随 metrics opt-in）+ 规则 API + 渲染 Prometheus 规则文件 + 平台内建 Alertmanager 兼容接收器路由到通知通道（firing+resolved） | v0.3 |
+| 通配 TLS | 可选平台通配证书（`*.base_domain`）走 DNS-01（DNSPod/Cloudflare），覆盖全部应用域名 | v0.3 |
+| AI Agent | MCP server，精选工具面（≤30 工具）、scope token、破坏性操作两段式确认 | 暂缓 |
 
 ## 诚实的边界
 
@@ -54,7 +61,7 @@ sudo sh install.sh --bin-dir ./dist                              # 离线 / 开�
 ## 架构
 
 ```
-CLI (fleetly) / Console / MCP (v0.2) / gRPC / REST / git push (SSH) / Webhook
+CLI (fleetly) / Console / gRPC / REST / git push (SSH) / Webhook
                  │
    fleetlyd —— 运行于 Swarm manager 的 Go 单二进制
      API：gRPC + grpc-gateway（proto = 唯一契约真源）
@@ -198,10 +205,13 @@ fleetly cron runs my-api              # 运行台账：status / scheduled / star
 | 阶段 | 范围 | 状态 |
 |---|---|---|
 | T0 地基 | 仓库、CI 门禁、proto 契约链、错误/事件注册表、dind E2E 骨架 | ✅ 完成 |
-| Spike A/B/C | 构建、发布与路由、底座风险验证（V1–V7） | 下一步 |
-| v0.1 | 单节点 8 项范围 GA（部署闭环、TLS、回滚、信任闭环演练） | 开发中 |
-| v0.2 | 多节点、MCP、S3 端点、托管数据库、cron、指标、Web 终端 | 规划中 |
-| v0.3 | 预览环境、模板目录、RBAC、Compose 子集扩展、Tunnel 接入 | 规划中 |
+| Spike A/B/C | 构建、发布与路由、底座风险验证（V1–V7） | ✅ 完成 |
+| v0.1 | 单节点 8 项范围 GA（部署闭环、TLS、回滚、信任闭环演练） | ✅ 完成（v0.1.0） |
+| v0.2 | 多节点、托管数据库（Postgres/Redis）、统一日志检索、通知、cron、Web 终端、控制面 TLS、指标（opt-in） | ✅ 完成（v0.2.0） |
+| v0.3 | 团队与项目（用户/角色/审计）、MySQL/MongoDB 模板、Slack/Email 通道、自动扩缩、vmalert 告警、DNS-01 通配证书 | ✅ 完成（v0.3.0） |
+| v0.4+ | MCP 重启评估、OpenObserve 观测高级层（带重评门槛）、生产深化后续 | 规划中 |
+
+**商业线（刻意保持简单）：** 自托管核心全功能且永远如此——不做功能阉割。付费面是托管云与企业件（SSO/LDAP、审计外发 SIEM、合规报告、优先支持）。
 
 ## 开发
 

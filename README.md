@@ -8,7 +8,7 @@
 
 fleetly is an ultra-lightweight open-source PaaS for small teams. Deploy `compose.yaml` apps to a cluster of 1–10 servers with zero-downtime releases, revision-based rollback, drift detection, and an API surface designed for both humans and AI agents — no Kubernetes required.
 
-**Status: v0.2 released (v0.1.0 / v0.2.0).** Design frozen and reviewed; every wave is implemented with dind E2E + staged-on-real-VPS rehearsal records. Single-node (v0.1) and the production baseline (v0.2: multi-node, managed databases, unified log search, notifications, web terminal, control-plane TLS) are shipped — see the [roadmap](#roadmap). Formerly known as *edgesets* and *edgefleet*.
+**Status: v0.3 released (v0.1.0 / v0.2.0 / v0.3.0).** Design frozen and reviewed; every wave is implemented with dind E2E + staged-on-real-VPS rehearsal records. Single-node (v0.1), the production baseline (v0.2: multi-node, managed databases, unified log search, notifications, web terminal, control-plane TLS), and the team edition (v0.3: user accounts, teams & projects with per-project isolation, role-based access, audit trail, MySQL/MongoDB templates, Slack/Email channels, autoscaling, vmalert alerting, wildcard certs via DNS-01) are shipped — see the [roadmap](#roadmap). Formerly known as *edgesets* and *edgefleet*.
 
 ## Install
 
@@ -16,18 +16,18 @@ One command on a clean Linux VPS (amd64/arm64, root) installs a running platform
 
 ```sh
 curl -fsSL https://fleetly.dev/install.sh | sudo sh -            # latest stable
-curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.2.0
+curl -fsSL https://fleetly.dev/install.sh | sudo sh - --version v0.3.0
 sudo sh install.sh --bin-dir ./dist                              # offline / dev form
 ```
 
-The first start writes the bootstrap admin token **once** to `<data-root>/bootstrap-token` (0600, never logged; remove the file after the first successful login). Uninstall keeps application data (`--purge` removes it). Upgrading the control plane is one command with a pre-upgrade snapshot and automatic rollback (`sudo sh upgrade.sh --version vX.Y.Z`); Engine/host upgrades are a separate cold-backup procedure — see [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md). Forms, gate list, port table, and dind verification: [`deploy/README.md`](deploy/README.md). (Release artifacts land with the release pipeline — until then the offline `--bin-dir` form is the working path.)
+The first start opens self-service registration until the first user signs up (that user becomes the platform administrator and creates their personal team + default project); the bootstrap admin token written to `<data-root>/bootstrap-token` (0600, never logged) is revoked automatically at that moment — register promptly after install, before exposing ports. Uninstall keeps application data (`--purge` removes it). Upgrading the control plane is one command with a pre-upgrade snapshot and automatic rollback (`sudo sh upgrade.sh --version vX.Y.Z`); Engine/host upgrades are a separate cold-backup procedure — see [`docs/runbooks/upgrade.md`](docs/runbooks/upgrade.md). Forms, gate list, port table, and dind verification: [`deploy/README.md`](deploy/README.md). (Release artifacts land with the release pipeline — until then the offline `--bin-dir` form is the working path.)
 
 ## Why fleetly
 
 - **Built for teams without ops.** ≤5 developers, no dedicated ops, 1–3 servers to start, a maintenance budget of 1–2 hours *per week*. Everything automatable (TLS, backups, upgrades, inspection) is automated and verifiable.
 - **Compose is the only app model.** No proprietary spec. A controlled subset of the Compose Specification with a minimal `fleetly.*` label convention; anything outside the subset is rejected with a structured error, never silently ignored.
 - **Docker Swarm as the substrate.** Membership, scheduling, and health-gated updates come from the engine itself — no self-built distributed core. Single-node v0.1 is already a (transparent) single-node Swarm, so adding the second server is a `docker swarm join`, not a re-architecture.
-- **API-first, proto as the contract.** gRPC + REST (grpc-gateway) derived from a single protobuf source; CLI, Console, and (in v0.2) MCP are all consumers of the same contract. No feature ships without an API.
+- **API-first, proto as the contract.** gRPC + REST (grpc-gateway) derived from a single protobuf source; CLI, Console, and future agent integrations are all consumers of the same contract. No feature ships without an API.
 - **Trust is the floor.** Atomic self-upgrades (pre-pulled image + snapshot + auto-rollback), backups with read-back verification, error messages as a product (stable error codes + context + fix suggestions) — for humans and AI agents alike.
 
 ## Feature map (planned)
@@ -47,7 +47,14 @@ The first start writes the bootstrap admin token **once** to `<data-root>/bootst
 | Control-plane TLS | off / platform-cert / manual modes on both faces (gRPC + HTTP), CLI/SDK TLS | v0.2 |
 | S3 backups | External endpoints or opt-in managed RustFS (same-node = convenience, not DR) | v0.2 |
 | Cron | Swarm-job cron with ledger + watchdog | v0.2 |
-| AI agents | MCP server with a curated toolset (≤30 tools), scoped tokens, two-step destructive confirmation | v0.3 |
+| Teams & projects | User accounts (first user = platform admin), teams with invite links, projects as the isolation unit for apps/databases, roles (viewer/developer/admin/owner + per-project overrides), machine tokens for CI | v0.3 |
+| Audit | Queryable audit trail (actor/action/target/result/diff), retention setting, Console browser + CLI CSV export | v0.3 |
+| Data services | Managed Postgres/Redis/MySQL/MongoDB templates + per-engine backup/restore/upgrade + connection-string injection + platform secret store | v0.2–v0.3 |
+| Notifications | Webhook endpoints with event-pattern subscriptions, HMAC-signed deliveries, retry ledger; Slack and Email (SMTP) channels | v0.2–v0.3 |
+| Autoscaling | CPU/memory watermark policies per service with cooldowns; platform-owned replica overrides that never fight drift reconcile | v0.3 |
+| Alerting | vmalert (opt-in with metrics) with rules API, rendered Prometheus rule files, in-platform Alertmanager-compatible receiver routing into notification channels (firing + resolved) | v0.3 |
+| Wildcard TLS | Optional platform wildcard certificate (`*.base_domain`) via DNS-01 (DNSPod/Cloudflare) covering all app domains | v0.3 |
+| AI agents | MCP server with a curated toolset (≤30 tools), scoped tokens, two-step destructive confirmation | deferred |
 
 ## Honest boundaries
 
@@ -56,7 +63,7 @@ We say what we don't do: no cross-node shared storage (volumes are local; statef
 ## Architecture
 
 ```
-CLI (fleetly) / Console / MCP (v0.2) / gRPC / REST / git push (SSH) / Webhook
+CLI (fleetly) / Console / gRPC / REST / git push (SSH) / Webhook
                  │
    fleetlyd — single Go binary on the Swarm manager
      API: gRPC + grpc-gateway (proto = single contract source)
@@ -200,10 +207,13 @@ All docs live in [`docs/`](docs/README.md) (Chinese, design-first workflow):
 | Stage | Scope | Status |
 |---|---|---|
 | T0 foundation | repo, CI gates, proto contract chain, error/event registries, dind E2E skeleton | ✅ done |
-| Spike A/B/C | build, release+routing, substrate risk validation (V1–V7) | next |
-| v0.1 | single-node GA of the 8-item scope (deploy loop, TLS, rollback, trust drill) | in development |
-| v0.2 | multi-node, MCP, S3 endpoints, managed databases, cron, metrics, Web terminal | planned |
-| v0.3 | preview environments, template catalog, RBAC, Compose subset expansion, tunnel access | planned |
+| Spike A/B/C | build, release+routing, substrate risk validation (V1–V7) | ✅ done |
+| v0.1 | single-node GA of the 8-item scope (deploy loop, TLS, rollback, trust drill) | ✅ done (v0.1.0) |
+| v0.2 | multi-node, managed databases (Postgres/Redis), unified log search, notifications, cron, web terminal, control-plane TLS, metrics (opt-in) | ✅ done (v0.2.0) |
+| v0.3 | teams & projects (users/roles/audit), MySQL/MongoDB templates, Slack/Email channels, autoscaling, vmalert alerting, wildcard certs (DNS-01) | ✅ done (v0.3.0) |
+| v0.4+ | MCP revisit, OpenObserve premium observability tier (re-evaluation gated), production deepening follow-ups | planned |
+
+**Commercial line (deliberately simple):** the self-hosted core is fully featured and stays that way — no feature gating. Paid offerings are the managed cloud and enterprise components (SSO/LDAP, SIEM audit export, compliance reporting, priority support).
 
 ## Development
 
