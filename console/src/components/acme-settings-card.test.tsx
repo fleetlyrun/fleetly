@@ -151,15 +151,21 @@ describe("AcmeSettingsCard (W5-S3)", () => {
     renderCard();
     await screen.findByTestId("acme-settings-card");
     await screen.findByTestId("acme-token-input");
+    // 先等已存设置回放到 placeholder（本文件其余用例同款前置），再断言。
+    await awaitStoredLoaded("ab12cd34");
 
     // 凭证读面：恒空值 + 指纹 placeholder（write-only 形态）。
     const token = screen.getByTestId("acme-token-input");
     expect(token).toHaveValue("");
     expect(token.getAttribute("placeholder")).toContain("ab12cd34");
     expect(token.getAttribute("placeholder")).toContain("never read back");
-    // 留空保留语义的提示在案。
-    expect(screen.getByTestId("acme-token-hint").textContent).toContain(
-      "Leaving this blank keeps the stored token",
+    // 留空保留语义的提示在案。hint 走 waitFor 终态一致：全量并发下
+    // 直接读会命中「query 数据已到（placeholder 已含指纹）、effect
+    // 同步表单未落」的瞬态窗口（W5 收官与 W6 回归各 flake 一次）。
+    await waitFor(() =>
+      expect(screen.getByTestId("acme-token-hint").textContent).toContain(
+        "Leaving this blank keeps the stored token",
+      ),
     );
     // wildcard 关：开关未勾选（provider 就位可点）。
     expect(screen.getByTestId("acme-wildcard-toggle")).toBeEnabled();

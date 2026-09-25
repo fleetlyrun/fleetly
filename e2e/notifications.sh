@@ -570,6 +570,16 @@ disable_ok() {
     fcli notifications endpoint disable dead-relay >/dev/null 2>&1
 }
 poll_until 30 disable_ok || fatal 'disable dead-relay never accepted'
+# 接收器是 dind 内 nc 接受环（每次 serve 完 sleep 0.05 再重绑），健康
+# 端点 star-relay 的投递在梯期撞重绑窗会三连败同样终态化（W6 回归
+# 实爆：组件红挂在 star-relay attempts=3，仅停 dead-relay 不回绿）。
+# 组件绿的契约判据是「无 enabled 终败端点」：先停 dead-relay 等回绿；
+# 仍未绿则把余下非 ops 端点一并停用再等（健康路径仅 dead-relay 终败，
+# 不走此支；N10-A 系列只依赖 ops/slack/sink，star 停用无连坐）。
+if ! poll_until 60 component_green; then
+    component_state || true
+    fcli notifications endpoint disable star-relay >/dev/null 2>&1 || true
+fi
 if poll_until 60 component_green; then
     assert "NOT-N9 DISABLE_TURNS_COMPONENT_GREEN" 0
 else
