@@ -1,8 +1,9 @@
 package logs
 
-// E5 Cron 整改（架构 §4.3 留存行「日志进现有采集」）：一次性 cron job 服务
-// 日志进管线的映射解析（job 名 + 受管 label → (app, compose 服务)）与采集
-// 路径（零点全量回读、归属合流、游标当轮回收、不重复）。
+// E5 Cron / DT-4 整改（架构 §4.3 留存行「日志进现有采集」+ DT-4 部署期
+// init job）：一次性 job 服务日志进管线的映射解析（job 名 + 受管 label →
+// (app, compose 服务)）与采集路径（零点全量回读、归属合流、游标当轮回收、
+// 不重复）——cron 与 init 两个前缀族共享同一发现面与归属解析。
 //
 // v0.3 W2-S3：app 归属标识与 job 服务名都以三段限定形/三段公式消费
 // （fleetly-cron-<team>-<prj>-<app>-<svc>-<ulid8>；label 值 team/prj/app）。
@@ -36,13 +37,23 @@ func jobState(name, appLabel, process string) engine.ServiceState {
 	}
 }
 
-// testJobName 构造确定性 job 服务名（固定 ULID 词形尾缀；三段公式——
-// team/prj 段取播种 app 的 slug）。
+// testJobName 构造确定性 cron job 服务名（固定 ULID 词形尾缀；三段公式
+// ——team/prj 段取播种 app 的 slug）。
 func testJobName(t *testing.T, app state.App) string {
 	t.Helper()
 	name, err := naming.CronJobName(app.TeamSlug, app.ProjectSlug, app.Name, "task", "01JABCDEFGHJKMNPQRSTVWX")
 	if err != nil {
 		t.Fatalf("CronJobName: %v", err)
+	}
+	return name
+}
+
+// testInitJobName 构造确定性 init job 服务名（DT-4；deployid8 固定词形）。
+func testInitJobName(t *testing.T, app state.App) string {
+	t.Helper()
+	name, err := naming.InitJobName(app.TeamSlug, app.ProjectSlug, app.Name, "migrate", "01JABCDEFGHJKMNPQRSTVWX")
+	if err != nil {
+		t.Fatalf("InitJobName: %v", err)
 	}
 	return name
 }
@@ -56,32 +67,44 @@ func cronTestSetup(t *testing.T) (*Manager, *fakePort, state.App) {
 	return mg, port, app
 }
 
-// TestCronJobRefOfMapping 映射解析：合法投影 → 归属对；前缀不符 / app label
-// 漂移 / process label 缺失 → 拒绝（label 是唯一权威——job 名字符串反解在
-// app/service 含 '-' 时有歧义）。
-func TestCronJobRefOfMapping(t *testing.T) {
+// TestJobServiceRefOfMapping 映射解析：合法投影 → 归属对（cron 与 init 两
+// 前缀族同面）；前缀不符 / app label 漂移 / process label 缺失 → 拒绝
+//（label 是唯一权威——job 名字符串反解在 app/service 含 '-' 时有歧义）。
+func TestJobServiceRefOfMapping(t *testing.T) {
 	const appLabel = "acme/prod/cronapp"
 	jobName, err := naming.CronJobName("acme", "prod", "cronapp", "task", "01JABCDEFGHJKMNPQRSTVWX")
 	if err != nil {
 		t.Fatalf("CronJobName: %v", err)
 	}
-	ref, ok := cronJobRefOf(appLabel, jobState(jobName, appLabel, "task"))
+	ref, ok := jobServiceRefOf(appLabel, jobState(jobName, appLabel, "task"))
 	if !ok {
-		t.Fatal("valid job projection rejected")
+		t.Fatal("valid cron job projection rejected")
 	}
 	if ref.JobService != jobName || ref.Service != "task" {
 		t.Fatalf("ref = %+v", ref)
 	}
-	if _, ok := cronJobRefOf(appLabel, jobState("fleetly-cronapp-task", appLabel, "task")); ok {
+	// DT-4：init job 服务同面采集（独立前缀族，同一归属解析）。
+	initName, err := naming.InitJobName("acme", "prod", "cronapp", "migrate", "01JABCDEFGHJKMNPQRSTVWX")
+	if err != nil {
+		t.Fatalf("InitJobName: %v", err)
+	}
+	initRef, ok := jobServiceRefOf(appLabel, jobState(initName, appLabel, "migrate"))
+	if !ok {
+		t.Fatal("valid init job projection rejected")
+	}
+	if initRef.JobService != initName || initRef.Service != "migrate" {
+		t.Fatalf("init ref = %+v", initRef)
+	}
+	if _, ok := jobServiceRefOf(appLabel, jobState("fleetly-cronapp-task", appLabel, "task")); ok {
 		t.Fatal("long-running service name accepted as job")
 	}
-	if _, ok := cronJobRefOf("other/team/app", jobState(jobName, appLabel, "task")); ok {
+	if _, ok := jobServiceRefOf("other/team/app", jobState(jobName, appLabel, "task")); ok {
 		t.Fatal("app label drift accepted (mis-attribution)")
 	}
-	if _, ok := cronJobRefOf(appLabel, jobState(jobName, appLabel, "")); ok {
+	if _, ok := jobServiceRefOf(appLabel, jobState(jobName, appLabel, "")); ok {
 		t.Fatal("missing process label accepted")
 	}
-	if _, ok := cronJobRefOf(appLabel, engine.ServiceState{Name: jobName}); ok {
+	if _, ok := jobServiceRefOf(appLabel, engine.ServiceState{Name: jobName}); ok {
 		t.Fatal("nil labels accepted")
 	}
 }
@@ -96,7 +119,7 @@ func TestCronJobLogsCollectedFromStart(t *testing.T) {
 	// 行时间早于任何发现时刻（发现晚于输出的最坏形态）。
 	at := time.Now().UTC().Add(-time.Hour)
 	port.emit(jobName, cronLine(at, "cron-e2e-log-marker"))
-	port.setCronJobs(app.QualifiedName(), jobState(jobName, app.QualifiedName(), "task"))
+	port.setJobServices(app.QualifiedName(), jobState(jobName, app.QualifiedName(), "task"))
 
 	mg.scanOnce(ctx)
 
@@ -130,7 +153,7 @@ func TestCronJobLogsCollectedFromStart(t *testing.T) {
 
 	// 游标独立记账：job 游标按 job 服务名建立，与长驻 (app, service) 键隔离。
 	mg.mu.Lock()
-	_, hasJobCursor := mg.streams[cronCursorKey(app.QualifiedName(), jobName)]
+	_, hasJobCursor := mg.streams[jobCursorKey(app.QualifiedName(), jobName)]
 	_, hasTaskLongRunningCursor := mg.streams[streamKey(app.Name, "task")]
 	mg.mu.Unlock()
 	if !hasJobCursor {
@@ -150,7 +173,7 @@ func TestCronJobLogsNoDupAndCursorReclaimed(t *testing.T) {
 	jobName := testJobName(t, app)
 	at := time.Now().UTC().Add(-time.Hour)
 	port.emit(jobName, cronLine(at, "line-one"))
-	port.setCronJobs(app.QualifiedName(), jobState(jobName, app.QualifiedName(), "task"))
+	port.setJobServices(app.QualifiedName(), jobState(jobName, app.QualifiedName(), "task"))
 
 	mg.scanOnce(ctx)
 	// job 仍在途并产出了新行：续拍只增量（不重复 line-one）。
@@ -166,10 +189,10 @@ func TestCronJobLogsNoDupAndCursorReclaimed(t *testing.T) {
 	}
 
 	// job 完成删除（发现面清空）：游标当轮回收，无悬挂。
-	port.setCronJobs(app.QualifiedName())
+	port.setJobServices(app.QualifiedName())
 	mg.scanOnce(ctx)
 	mg.mu.Lock()
-	_, stillThere := mg.streams[cronCursorKey(app.QualifiedName(), jobName)]
+	_, stillThere := mg.streams[jobCursorKey(app.QualifiedName(), jobName)]
 	mg.mu.Unlock()
 	if stillThere {
 		t.Fatal("job cursor not reclaimed after the job service disappeared")
@@ -184,21 +207,21 @@ func TestCronJobDiscoveryTransientKeepsCursor(t *testing.T) {
 	jobName := testJobName(t, app)
 	base := time.Now().UTC().Add(-time.Hour)
 	port.emit(jobName, cronLine(base, "line-one"))
-	port.setCronJobs(app.QualifiedName(), jobState(jobName, app.QualifiedName(), "task"))
+	port.setJobServices(app.QualifiedName(), jobState(jobName, app.QualifiedName(), "task"))
 	mg.scanOnce(ctx)
 
-	port.failCronDiscovery(errFakeTransient)
+	port.failJobDiscovery(errFakeTransient)
 	mg.scanOnce(ctx) // 暂态轮：跳过，游标必须保留
 
 	mg.mu.Lock()
-	_, kept := mg.streams[cronCursorKey(app.QualifiedName(), jobName)]
+	_, kept := mg.streams[jobCursorKey(app.QualifiedName(), jobName)]
 	mg.mu.Unlock()
 	if !kept {
 		t.Fatal("transient discovery failure evicted a live job cursor")
 	}
 
 	// 恢复后续拍照常增量。
-	port.failCronDiscovery(nil)
+	port.failJobDiscovery(nil)
 	port.emit(jobName, cronLine(base.Add(time.Second), "line-two"))
 	mg.scanOnce(ctx)
 	rows, err := mg.History(ctx, HistoryQuery{App: app.Name, Service: "task"})
@@ -207,5 +230,36 @@ func TestCronJobDiscoveryTransientKeepsCursor(t *testing.T) {
 	}
 	if len(rows) != 2 {
 		t.Fatalf("history rows after recovery = %d, want 2: %+v", len(rows), rows)
+	}
+}
+
+// TestInitJobLogsCollectedFromStart DT-4：init job 服务（fleetly-init- 独立
+// 前缀族）与 cron job 共享同一采集面——发现即零点全量回读、按
+// (app, compose 服务) 归因合流（与长驻服务同键）。
+func TestInitJobLogsCollectedFromStart(t *testing.T) {
+	mg, port, app := cronTestSetup(t)
+	ctx := context.Background()
+	initName := testInitJobName(t, app)
+	at := time.Now().UTC().Add(-time.Hour)
+	port.emit(initName, cronLine(at, "init-e2e-log-marker"))
+	port.setJobServices(app.QualifiedName(), jobState(initName, app.QualifiedName(), "migrate"))
+
+	mg.scanOnce(ctx)
+
+	rows, err := mg.History(ctx, HistoryQuery{App: app.Name, Service: "migrate"})
+	if err != nil {
+		t.Fatalf("history: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Line != "init-e2e-log-marker" {
+		t.Fatalf("history rows = %+v", rows)
+	}
+	if rows[0].Service != "migrate" {
+		t.Fatalf("init job line attributed to %q, want migrate", rows[0].Service)
+	}
+	mg.mu.Lock()
+	_, hasCursor := mg.streams[jobCursorKey(app.QualifiedName(), initName)]
+	mg.mu.Unlock()
+	if !hasCursor {
+		t.Fatal("init job cursor not recorded")
 	}
 }

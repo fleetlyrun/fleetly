@@ -36,6 +36,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/fleetlyrun/fleetly/internal/naming"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -250,7 +251,10 @@ func (e *Engine) computeAppDrift(ctx context.Context, appID, appName string) (*D
 		report.Services = append(report.Services, sd)
 	}
 	// 期望集之外的多余受管服务（外部创建/未清理）也是漂移（省略=删除的
-	// 期望语义；收敛原语会删）。
+	// 期望语义；收敛原语会删）。例外：一次性 job 服务（fleetly-cron- /
+	// fleetly-init- 前缀）—它们是平台瞬时对象，收敛原语**不会**删（对账
+	// 删除扫描豁免），标漂移与此前提自相矛盾；生命周期归 cron 调度器与
+	// init 相位/sweepInitJobs。
 	existing, err := e.sub.ServiceList(ctx, map[string]string{
 		state.LabelManaged: state.ManagedLabelValue,
 		state.LabelApp:     appName,
@@ -260,6 +264,9 @@ func (e *Engine) computeAppDrift(ctx context.Context, appID, appName string) (*D
 	}
 	for _, s := range existing {
 		if desiredNames[s.Name] {
+			continue
+		}
+		if naming.IsCronJobName(s.Name) || naming.IsInitJobName(s.Name) {
 			continue
 		}
 		report.Services = append(report.Services, ServiceDrift{

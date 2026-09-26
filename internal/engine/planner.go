@@ -82,6 +82,10 @@ type PlanInput struct {
 type Plan struct {
 	// Services 按服务名字典序（对账与快照确定性）。
 	Services []ServiceSpec
+	// InitJobs 是 init job 模板（DT-4；Job=true 且 InitJob=true，按服务名
+	// 字典序）：发布管线在晋级前按此集合创建一次性 job——执行形态与快照
+	// 同源（重启续跑从 rec.DesiredSpec 现读同一形态）。
+	InitJobs []ServiceSpec
 	// EnvSnapshotHash 是 env 三层合并结果快照哈希（key:sha256+来源；
 	// 值明文永不进哈希输入）。
 	EnvSnapshotHash string
@@ -103,6 +107,11 @@ type Plan struct {
 // 但不进 plan.Services（长驻对账集）——「只声明不部署」的装配面跳过由
 // decodeSpecs 的 Job 过滤与对账单源保证。plan 对 cron 服务以警告如实披露
 // （无注册码，Kind 标识）。
+//
+// DT-4 口径：init job 服务（fleetly.job: init label）同走 Job 模板路（不进
+// plan.Services），另以 InitJob=true 标记并进入 plan.InitJobs——发布管线
+// 在晋级前以该集合跑一次性作业；与 cron 的区分位 = InitJob（老快照
+// Job=true 无 InitJob 即 cron，零回归）。
 func BuildPlan(in PlanInput) (*Plan, error) {
 	volByKey := map[string]state.Volume{}
 	for _, v := range in.Volumes {
@@ -123,7 +132,8 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 		if err != nil {
 			return nil, err
 		}
-		if svc.Cron != nil {
+		switch {
+		case svc.Cron != nil:
 			spec.Job = true
 			plan.Warnings = append(plan.Warnings, compose.Warning{
 				Kind:    compose.WarningKindCronServiceScheduled,
@@ -131,7 +141,25 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 				Message: "service " + svc.Name + " declares the cron schedule " + svc.Cron.Expression +
 					" (declared-only: not deployed as a long-running service; the cron scheduler creates one-shot jobs on schedule)",
 			})
-		} else {
+		case svc.InitJob:
+			// DT-4：init job 模板——不按长驻部署（发布管线在晋级前创建
+			// 一次性 job，全过得进长驻对账）；执行形态与长驻同源编译
+			//（buildServiceSpec 共用）。
+			spec.Job = true
+			spec.InitJob = true
+			if svc.InitJobTimeout != "" {
+				if d, perr := time.ParseDuration(svc.InitJobTimeout); perr == nil && d > 0 {
+					spec.InitJobTimeout = d
+				}
+			}
+			plan.InitJobs = append(plan.InitJobs, spec)
+			plan.Warnings = append(plan.Warnings, compose.Warning{
+				Kind:    compose.WarningKindInitJobDeclared,
+				Service: svc.Name,
+				Message: "service " + svc.Name + " declares " + compose.LabelJob + ": init" +
+					" (declared-only: not deployed as a long-running service; the release pipeline runs it once before promoting the new revision)",
+			})
+		default:
 			services = append(services, spec)
 		}
 		all = append(all, spec)
@@ -143,6 +171,7 @@ func BuildPlan(in PlanInput) (*Plan, error) {
 	}
 	sort.Slice(all, func(i, j int) bool { return all[i].Name < all[j].Name })
 	sort.Slice(services, func(i, j int) bool { return services[i].Name < services[j].Name })
+	sort.Slice(plan.InitJobs, func(i, j int) bool { return plan.InitJobs[i].Name < plan.InitJobs[j].Name })
 	plan.Services = services
 	plan.EnvSnapshotHash = canonicalHash(envByService)
 

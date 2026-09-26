@@ -65,8 +65,17 @@ func (e *Engine) cancelTerminal(ctx context.Context, rec state.DeployRecord) err
 
 // cancelDeployment releasing（未切流）取消：先归位再落 cancelled（§2.3）。
 // 无有效版本时按首发语义 scale=0 保留现场（不置 substrate_halted——取消
-// 不是失败）。
+// 不是失败）。DT-4：init 相位取消先清场在途 init job（best-effort，残留由
+// sweepInitJobs 兜底），再走既有归位/scale=0 语义。
 func (e *Engine) cancelDeployment(ctx context.Context, rec state.DeployRecord) error {
+	if rec.Phase == state.PhaseInitJobs {
+		if templates, derr := e.decodeInitJobTemplates(rec); derr == nil {
+			e.removeInitJobServices(ctx, rec, templates)
+		} else {
+			e.log.Warn("engine: init job templates unreadable during cancel (orphan sweep will collect by prefix)",
+				"deployment", rec.ID, "error", derr)
+		}
+	}
 	previous, err := e.lastActiveSnapshot(ctx, rec)
 	if err != nil {
 		return err
@@ -223,6 +232,14 @@ func (e *Engine) classifyRecovering(ctx context.Context, rec state.DeployRecord)
 	// 滞留 PENDING → default 分支误判 E_DEPLOY_INTERRUPTED 失败 + 归位，
 	// 而节点仍不可用，归位重放同样滞留——既假失败又空转底座。
 	if rec.Phase == state.PhaseBlockedWaiting {
+		return nil
+	}
+	// DT-4 init 子相位分流：job 服务确定性命名 + 快照是执行形态权威来源
+	// ——重启续跑是幂等的（ServiceInspect→缺失即创建；任务判定续跑），
+	// 不落入下方「长驻服务未切换 → 无法判定」的立即失败分类。预算/看门狗
+	// 锚已在行上（release_started_at / watchdog_deadline_at），
+	// evaluateInitJobs 续判。
+	if rec.Phase == state.PhaseInitJobs {
 		return nil
 	}
 	specs, err := e.decodeSpecs(rec)

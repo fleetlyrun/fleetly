@@ -213,7 +213,9 @@ func NewObserver(app lynx.App, cfg *AppConfig, st *state.Store, dc state.DockerC
 // NewJanitor 构造保留期清理守护（事件/审计过期清理，周期可配）。
 // A7/A10（S18）扩展：部署 compose 目录 30 天窗、builds 终态行 90 天、
 // artifacts 目录 30 天保留窗与非终态超龄扫描（预算从 engine/build 配置
-// 派生：2×（发布看门狗+观察窗）/ 2×构建超时）。
+// 派生：2×（init job 预算+发布看门狗+观察窗）/ 2×构建超时——DT-4 起含
+// init 相位，含 init job 的部署合法停留可达 InitJobTimeout+DeployTimeout，
+// 不含即假告警）。
 func NewJanitor(app lynx.App, st *state.Store, cfg *AppConfig) *state.Janitor {
 	engineCfg := cfg.EngineSettings().Normalize()
 	buildCfg := cfg.BuildSettings()
@@ -225,7 +227,7 @@ func NewJanitor(app lynx.App, st *state.Store, cfg *AppConfig) *state.Janitor {
 		ArtifactsRetentionDays: cfg.Build.ArtifactsRetentionDays,
 		DeploymentsRoot:        cfg.DeploymentsRoot(),
 		// 部署目录 30 天窗取注册默认（DeploymentDirRetentionDays 零值回落）。
-		StaleDeploymentBudget: 2 * (engineCfg.DeployTimeout + engineCfg.ObserveWindow),
+		StaleDeploymentBudget: 2 * (engineCfg.InitJobTimeout + engineCfg.DeployTimeout + engineCfg.ObserveWindow),
 		StaleBuildBudget:      2 * buildCfg.Timeout,
 	}, app.Logger())
 }

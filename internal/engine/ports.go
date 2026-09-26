@@ -31,12 +31,22 @@ type ServiceSpec struct {
 	ContainerLabels map[string]string `json:"container_labels,omitempty"`
 	// Global 是 global 模式（compose deploy.mode=global）；false = replicated。
 	Global bool `json:"global,omitempty"`
-	// Job 是一次性 replicated-job 模式（E5 Cron，架构 §4.3 执行行）：带该
-	// 标记的 spec 不参与长驻对账（decodeSpecs 对外投影过滤 Job——发布/漂移/
-	// 存在性对账只见长驻集），由 cron 调度器克隆为 job 服务（改名
-	// fleetly-cron-*、replicas 1、restart-condition=none）按点创建。快照
-	// （desired_spec 密文）保留 Job 模板——调度集的执行形态来源。
+	// Job 是一次性 replicated-job 模式（E5 Cron / DT-4 init job，架构 §4.3
+	// 执行行）：带该标记的 spec 不参与长驻对账（decodeSpecs 对外投影过滤
+	// Job——发布/漂移/存在性对账只见长驻集），由一次性 job 运行器克隆为
+	// job 服务（改名、replicas 1、restart-condition=none）按点/按发布创建。
+	// 快照（desired_spec 密文）保留 Job 模板——cron 调度集与 init 相位的
+	// 执行形态来源。
 	Job bool `json:"job,omitempty"`
+	// InitJob 标记 init job 模板（DT-4；Job=true 且 InitJob=true）：发布
+	// 管线在晋级（长驻服务对账）前创建一次性 job 并等待全部成功；cron
+	// 模板此位恒 false（JobKind 语义由该位与 Job 的组合表达，老快照
+	// Job=true 无 InitJob 即为 cron——零回归兼容面）。
+	InitJob bool `json:"init_job,omitempty"`
+	// InitJobTimeout 是 init job 看门狗预算（fleetly.job.timeout 归一值；
+	// 0 = 平台默认 engine.Config.InitJobTimeout）。每个 init job 独立计时，
+	// 锚 = deployments.release_started_at。
+	InitJobTimeout time.Duration `json:"init_job_timeout,omitempty"`
 	// Replicas 是期望副本（replicated 模式；0 = scale-0 保留现场）。
 	Replicas uint64 `json:"replicas"`
 	// Networks 是服务接入网络（per-app 专属网络 + 别名 = compose 服务名）。
@@ -267,6 +277,11 @@ func (realClock) Now() time.Time { return time.Now().UTC() }
 type Config struct {
 	// DeployTimeout 是 L2 看门狗预算（默认 300s；有效值 ≥ health 预算）。
 	DeployTimeout time.Duration
+	// InitJobTimeout 是 init job 看门狗的平台缺省预算（默认 10m，沿 cron
+	// DefaultJobTimeout 同值；fleetly.job.timeout label 逐服务覆盖——
+	// DT-4）。init 相位由它起算看门狗；job 全过后重臂 DeployTimeout 给
+	// 健康门完整预算。
+	InitJobTimeout time.Duration
 	// ObserveWindow 是 L3 观察窗时长（默认 60s）。
 	ObserveWindow time.Duration
 	// UnstableReplicasBelow 是副本水位的持续不足判定时长（默认 10s，
@@ -283,6 +298,9 @@ type Config struct {
 func (c Config) Normalize() Config {
 	if c.DeployTimeout <= 0 {
 		c.DeployTimeout = 300 * time.Second
+	}
+	if c.InitJobTimeout <= 0 {
+		c.InitJobTimeout = DefaultJobTimeout
 	}
 	if c.ObserveWindow <= 0 {
 		c.ObserveWindow = 60 * time.Second

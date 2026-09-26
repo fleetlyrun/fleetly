@@ -36,6 +36,10 @@ const (
 	// LabelCronRun 标记一次性 cron job 服务归属的运行行（E5 Cron；值 =
 	// cron_runs.id——残留 job 服务与台账行的对账锚）。
 	LabelCronRun = "fleetly.cron.run"
+	// LabelInitRun 标记部署期 init job 服务归属的部署行（DT-4；值 =
+	// deployments.id——孤儿清扫（引擎 sweepInitJobs）与日志采集（JobServiceStates）
+	// 的归属锚；fleetly.cron.run 同款纪律）。
+	LabelInitRun = "fleetly.init.run"
 
 	// LabelDatabase 标记库实例归属（E4 数据库托管，managed-databases §2.1
 	// D-DB-1：库服务/网络/卷/secret 的自描述 marker，值 = 库实例名）。与

@@ -72,6 +72,8 @@ project.deleted	an empty project was deleted (non-empty guard passed; payload ca
 project.member_changed	a project role override was set or removed (payload carries change/user_id and role on override_set; no row means the team role applies again)
 reconcile.drift_detected	drift detected between desired and actual state (including manual docker operations); convergence is per-app opt-in
 registry.updated	platform registry credentials changed (payload carries the host and the password fingerprint, never credentials)
+release.job_failed	release-time init job failed (task failed/rejected/shut down; the deployment fails — no retry, restart-condition=none; job service removed)
+release.job_timed_out	release-time init job exceeded its watchdog budget (default 10m, fleetly.job.timeout label overrides; the deployment fails and the job service is removed)
 restore.completed	control plane restore completed (after exiting read-only observation)
 route.label_ignored	compose fleetly.domains label declarations were ignored because state domain rows exist (labels are bootstrap-only; payload carries the declared/state counts)
 route.publish_failed	app ingress route publish failed (deploy unaffected; alerts separately)

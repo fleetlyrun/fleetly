@@ -29,7 +29,9 @@ package eventcode
 // git.hostkey_changed）= 78 + W5-S1 增 3（scaling.adjusted / scaling.dormant
 // / scaling.no_data，B 线 W5 D-V3W5-2）= 81 + IMPL-T1-1 增 1
 // （route.label_ignored，OT-2 单一写点仲裁）= 82 + IMPL-T1-2 增 1
-// （registry.updated，DT-2 平台 registry 凭证面）= 83 个事件名。
+// （registry.updated，DT-2 平台 registry 凭证面）= 83 + IMPL-T1-3 增 2
+// （release.job_failed / release.job_timed_out，DT-4 部署期 init job）=
+// 85 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -125,6 +127,15 @@ var builtins = []Event{
 	{Name: "cron.failed", Summary: "cron run failed (task failed/rejected; no retry — restart-condition=none; job service removed)"},
 	{Name: "cron.timed_out", Summary: "cron run exceeded its watchdog budget (default 10m, fleetly.cron.timeout label overrides; job service removed)"},
 	{Name: "cron.skipped", Summary: "cron trigger skipped (overlap / node unavailable / missed during downtime / interrupted by restart); no catch-up run"},
+
+	// ── 部署期一次性作业（DT-4，torchwood 线；IMPL-T1-3 接线）──
+	// 发出来源 = internal/engine 的 init 相位评估（release 管线在晋级前以
+	// 新 spec 跑 fleetly.job: init 声明的一次性 job）：job 自身失败/超时的
+	// 披露面；随后 deployment.failed（错误码 E_INIT_JOB_FAILED /
+	// E_INIT_JOB_TIMED_OUT）点名 job 与原因。payload 只带事实字段
+	//（deployment/app/service/job_service/budget/error），无敏感材料。
+	{Name: "release.job_failed", Summary: "release-time init job failed (task failed/rejected/shut down; the deployment fails — no retry, restart-condition=none; job service removed)"},
+	{Name: "release.job_timed_out", Summary: "release-time init job exceeded its watchdog budget (default 10m, fleetly.job.timeout label overrides; the deployment fails and the job service is removed)"},
 
 	// S18-A10 实现期新增（评审类 A 运行时断言层，§9 裁决并入 janitor）：
 	// 非终态行超龄停留的显性化告警（只告警不自愈——恢复路径已有 S8/S9 兜底，

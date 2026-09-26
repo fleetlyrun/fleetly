@@ -87,6 +87,9 @@ type Engine struct {
 	// 与 recoveryNextAt 同模式：tick goroutine 专用——Run 单 goroutine 驱动，
 	// 无并发访问；重启即清零 = 重启后立即扫一拍）。
 	deleteScanNextAt time.Time
+	// initScanNextAt 是 init 孤儿服务清扫的最早时刻（DT-4 频控，同上模式；
+	// 重启即清零 = 重启后立即扫一拍——崩溃残留在一个窗口内被收口）。
+	initScanNextAt time.Time
 	// substrateNextAt 是运行期存在性对账扫描的最早时刻（T0-V2.2/R2 频控，
 	// 与 deleteScanNextAt 同模式：tick goroutine 专用；重启即清零 = 重启后
 	// 立即扫一拍）。
@@ -245,7 +248,8 @@ func (e *Engine) safeCall(name string, fn func()) {
 
 // tick 是一个推进周期：恢复重试（M1-8）→ 队列拾取 → 在途推进 → 窗后巡检
 // → deleting 应用回收（H10/MG-3，时间闸降频）→ 运行期存在性对账
-// （T0-V2.2/R2，时间闸降频）。全部 duty 经 safeCall 收口（MG-5）。
+// （T0-V2.2/R2，时间闸降频）→ init 孤儿服务清扫（DT-4，时间闸降频）。
+// 全部 duty 经 safeCall 收口（MG-5）。
 func (e *Engine) tick(ctx context.Context) {
 	e.safeCall("recoveryRetry", func() { e.retryRecoveryIfNeeded(ctx) })
 	e.safeCall("pickQueued", func() { e.pickQueued(ctx) })
@@ -253,6 +257,7 @@ func (e *Engine) tick(ctx context.Context) {
 	e.safeCall("watchPostWindow", func() { e.watchPostWindow(ctx) })
 	e.safeCall("reapDeletingApps", func() { e.reapDeletingApps(ctx, false) })
 	e.safeCall("substrateRecon", func() { e.substrateRecon(ctx, false) })
+	e.safeCall("sweepInitJobs", func() { e.sweepInitJobs(ctx, false) })
 	// 扩缩评估（W5-S1，D-V3W5-2）：收敛拍尾部——发布链路推进完毕后的稳态
 	// 求值（自有 30s 频控闸；查询面未装配时 duty 空转）。
 	e.safeCall("dutyAutoscaling", func() { e.dutyAutoscaling(ctx, false) })
@@ -672,22 +677,45 @@ func (e *Engine) planAndRelease(ctx context.Context, rec state.DeployRecord, pre
 	envHash := plan.EnvSnapshotHash
 	desiredHash := plan.DesiredHash
 	desiredSpec := string(snapshot)
-	// 释放迁移经单写点（T0-V2.2）：preparing/building → releasing 与快照
-	// 字段（看门狗锚、哈希、密文快照）同事务原子生效。
-	if err := e.store.EnterPhase(ctx, rec.ID, rec.Status, state.DeployReleasing, state.DeploymentPatch{
+	// DT-4：含 init job 的发布进入 init 子相位——预算取 max(各 job 预算)
+	// 作相位兜底（per-job 判定在 evaluateInitJobs）；相位与快照/看门狗锚
+	// **同一 EnterPhase 原子落位**（不存在「已进 releasing 但 init 相位
+	// 未记」的窗口）。无 init 模板时相位零写、预算 = DeployTimeout（守卫⑤：
+	// 无 init job 的 release 路径行为零变化）。
+	initJobs := plan.InitJobs
+	patch := state.DeploymentPatch{
 		ReleaseStartedAt:   &releaseAt,
 		WatchdogDeadlineAt: &deadline,
 		SpecHash:           &specHash,
 		EnvSnapshotHash:    &envHash,
 		DesiredHash:        &desiredHash,
 		DesiredSpec:        &desiredSpec,
-	}); err != nil {
+	}
+	if len(initJobs) > 0 {
+		phase := state.PhaseInitJobs
+		patch.Phase = &phase
+		deadline = releaseAt.Add(e.initJobsMaxBudget(initJobs))
+		patch.WatchdogDeadlineAt = &deadline
+	}
+	// 释放迁移经单写点（T0-V2.2）：preparing/building → releasing 与快照
+	// 字段（看门狗锚、哈希、密文快照、init 相位）同事务原子生效。
+	if err := e.store.EnterPhase(ctx, rec.ID, rec.Status, state.DeployReleasing, patch); err != nil {
 		return err
 	}
 	rec.Status = state.DeployReleasing
 	rec.DesiredSpec = desiredSpec
 	rec.ReleaseStartedAt = releaseAt
 	rec.WatchdogDeadlineAt = deadline
+	rec.Phase = ""
+	if len(initJobs) > 0 {
+		rec.Phase = state.PhaseInitJobs
+	}
+
+	if len(initJobs) > 0 {
+		// 迁移先于新代码：先确保 job 服务在位（幂等），下一拍起逐拍判定；
+		// 长驻服务的对账（applyDesired）推迟到 job 全过（finishInitJobs）。
+		return e.provisionInitJobServices(ctx, rec, initJobs)
+	}
 
 	// 对账执行（新增/更新/删除）。失败走失败分流（M1-2，D-REL-4 唯一
 	// 入口）：对账是半应用现场（部分服务已创建/更新/删除），直接落 failed
@@ -907,12 +935,13 @@ func (e *Engine) applyDesired(ctx context.Context, rec state.DeployRecord, desir
 		}
 	}
 	// 省略=删除（compose 移除服务 → 删 Swarm service；卷数据不删）。
-	// E5 Cron：一次性 job 服务（fleetly-cron-* 前缀）不在此对账域——它们是
-	// 调度器的瞬时对象（在途 job 被发布对账误删 = 运行静默丢失），生命周期
-	// 归 internal/cron（完成删除 + 启动残留收口）。
+	// E5 Cron / DT-4：一次性 job 服务（fleetly-cron-* / fleetly-init-* 前缀）
+	// 不在此对账域——它们是调度器/init 相位的瞬时对象（在途 job 被发布对账
+	// 误删 = 运行/迁移静默丢失），生命周期归各自所有者（cron 调度器 /
+	// initjobs 相位 + sweepInitJobs）。
 	for _, s := range existing {
 		if !desiredNames[s.Name] {
-			if naming.IsCronJobName(s.Name) {
+			if naming.IsCronJobName(s.Name) || naming.IsInitJobName(s.Name) {
 				continue
 			}
 			if err := e.sub.ServiceRemove(ctx, s.Name); err != nil {

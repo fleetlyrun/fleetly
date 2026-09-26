@@ -67,8 +67,9 @@ type JanitorConfig struct {
 	DeploymentsRoot string
 	// DeploymentDirRetentionDays 是部署目录在终态后的保留天数（缺省 30）。
 	DeploymentDirRetentionDays int
-	// StaleDeploymentBudget 是部署非终态超龄判定预算（2×（DeployTimeout+
-	// ObserveWindow），装配自 engine 配置；≤0 跳过部署扫描）。
+	// StaleDeploymentBudget 是部署非终态超龄判定预算（2×（init job 预算+
+	// DeployTimeout+ObserveWindow），装配自 engine 配置——DT-4 起含 init
+	// 相位；≤0 跳过部署扫描）。
 	StaleDeploymentBudget time.Duration
 	// StaleBuildBudget 是构建非终态超龄判定预算（2×构建超时，装配自
 	// build 配置；≤0 跳过构建扫描）。

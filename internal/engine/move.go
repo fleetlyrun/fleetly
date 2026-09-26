@@ -164,7 +164,8 @@ func countRunningTasks(tasks []TaskState) int {
 }
 
 // SweepMovedServices 摘除旧命名上下文的长驻服务（改派清扫收尾；幂等：
-// 缺失视为成功）。在途 cron job 服务按前缀豁免（见文件头处置裁决）。
+// 缺失视为成功）。在途 cron / init job 服务按前缀豁免（见文件头处置裁决
+// ——DT-4：在途 init job 同样让位跑完，由发布管线收口）。
 // 返回移除数。secret 清场不在此——旧名 secret（fleetly-<old>-<app>-*）无
 // 引用后成为无害孤儿，由 app 删除 reap 的 label 选择器兜底（app label 值
 // 已随改派切换，旧值选择器扫不到的窗口 = 一次 MoveApp 与一次 DeleteApp
@@ -179,8 +180,8 @@ func (e *Engine) SweepMovedServices(ctx context.Context, oldQualified string) (i
 	}
 	removed := 0
 	for _, s := range olds {
-		if naming.IsCronJobName(s.Name) {
-			continue // 在途 cron job 让位：跑完由调度器收口
+		if naming.IsCronJobName(s.Name) || naming.IsInitJobName(s.Name) {
+			continue // 在途 job 让位：跑完由各自所有者收口
 		}
 		if err := e.sub.ServiceRemove(ctx, s.Name); err != nil {
 			return removed, err

@@ -25,6 +25,15 @@ const (
 	LabelCron          = "fleetly.cron"
 	LabelCronTimezone  = "fleetly.cron.timezone"
 	LabelCronTimeout   = "fleetly.cron.timeout"
+	// LabelJob 是部署期一次性作业声明（DT-4，torchwood 线）：值词表仅
+	// "init"——发布管线在晋级（长驻服务对账）前以新 spec 跑一次性 job，
+	// 全过才晋级；与 fleetly.cron 互斥（同一服务的两种一次性执行语义不可
+	// 并存）。见 parseJobLabels 的值契约。
+	LabelJob = "fleetly.job"
+	// LabelJobTimeout 是 init job 看门狗预算（fleetly.cron.timeout 同形态：
+	// 正 Go duration；缺省平台预算 10m）。孤儿 label（无 fleetly.job）在
+	// 解析期拒绝——与 cron 家族的孤儿纪律同款。
+	LabelJobTimeout = "fleetly.job.timeout"
 	// LabelS3 是对象存储凭证注入开关（E3 对象存储 §2.4/D-S3-6）：值为
 	// "true" 的服务由发布引擎注入 S3 system env（source=system——env 三层
 	// 合并链的最高层）；rustfs 模式额外牵线平台内部网络（E3-4）。label 出
@@ -45,17 +54,23 @@ const (
 	// domain 契约上限（架构 §2.4）：每服务 ≤5、每 app ≤10。
 	maxDomainsPerService = 5
 	maxDomainsPerApp     = 10
+
+	// jobLabelInitValue 是 fleetly.job 的唯一合法值（DT-4：部署期 init job）。
+	jobLabelInitValue = "init"
 )
 
 // knownFleetlyLabels 是平台承认的平台约定键全集（cron 家族自 E5 Cron 起
 // 生效——值契约见 parseCronSchedule；s3 为 E3-4 起的生效契约键；databases
-// 为 E4 起的生效契约键——值契约见 parseDatabasesLabel）。
+// 为 E4 起的生效契约键——值契约见 parseDatabasesLabel；job 家族自 DT-4 起
+// 生效——值契约见 parseJobLabels）。
 var knownFleetlyLabels = map[string]bool{
 	LabelDomains:       true,
 	LabelPlacementNode: true,
 	LabelCron:          true,
 	LabelCronTimezone:  true,
 	LabelCronTimeout:   true,
+	LabelJob:           true,
+	LabelJobTimeout:    true,
 	LabelS3:            true,
 	LabelDatabases:     true,
 }
@@ -161,6 +176,61 @@ func parseCronSchedule(service string, labels map[string]string) (*CronSchedule,
 		out.Timeout = d.String()
 	}
 	return out, nil
+}
+
+// parseJobLabels 解析 fleetly.job label 家族（DT-4 部署期一次性作业）：
+// 主 label 值词表仅 "init"（其他值一律拒——fail-loud，不静默当未声明，
+// 与 parseS3Label 同一纪律）；时长为正 Go duration（缺省平台预算）。
+// 两条交叉契约：
+//   - 与 fleetly.cron 互斥：同一服务不能同时声明两种一次性执行语义
+//     （E_LABEL_RESERVED + reason=job_cron_exclusive）；
+//   - 孤儿时长 label（有 fleetly.job.timeout 无 fleetly.job）拒绝：静默
+//     无机会生效的声明是「以为配了」的悬案（cron 孤儿纪律同款）。
+//
+// replicas 契约与 expose 禁令在 normalize（typed 层）执行——本函数只拥有
+// label 值形态（与 parseCronSchedule 的分工一致）。
+func parseJobLabels(service string, labels map[string]string) (bool, string, error) {
+	raw, declared := labels[LabelJob]
+	timeoutRaw, timeoutDeclared := labels[LabelJobTimeout]
+	if !declared {
+		if timeoutDeclared {
+			return false, "", apperr.New("E_LABEL_RESERVED",
+				"service %q declares label %q without %q (the timeout refines a one-shot init job; without the job label it would never take effect)",
+				service, LabelJobTimeout, LabelJob).
+				WithContext("path", "services."+service+".labels."+LabelJobTimeout).
+				WithContext("reason", "job_without_declaration")
+		}
+		return false, "", nil
+	}
+	if _, cronDeclared := labels[LabelCron]; cronDeclared {
+		return false, "", apperr.New("E_LABEL_RESERVED",
+			"service %q declares both %q and %q (the two one-shot execution semantics are mutually exclusive: a service is either a scheduled cron job or a release-time init job)",
+			service, LabelJob, LabelCron).
+			WithContext("path", "services."+service+".labels."+LabelJob).
+			WithContext("reason", "job_cron_exclusive")
+	}
+	value := strings.TrimSpace(raw)
+	if value != jobLabelInitValue {
+		return false, "", apperr.New("E_LABEL_RESERVED",
+			"service %q declares label %q with value %q (the only accepted value is %q: a release-time one-shot job run before the new revision is promoted)",
+			service, LabelJob, raw, jobLabelInitValue).
+			WithContext("path", "services."+service+".labels."+LabelJob).
+			WithContext("reason", "invalid_value")
+	}
+	out := ""
+	if timeoutDeclared {
+		v := strings.TrimSpace(timeoutRaw)
+		d, err := time.ParseDuration(v)
+		if err != nil || d <= 0 {
+			return false, "", apperr.New("E_LABEL_RESERVED",
+				"service %q declares label %q with an invalid timeout %q (a positive Go duration such as \"30m\"; defaults to the platform watchdog budget when omitted)",
+				service, LabelJobTimeout, timeoutRaw).
+				WithContext("path", "services."+service+".labels."+LabelJobTimeout).
+				WithContext("reason", "invalid_timeout")
+		}
+		out = d.String()
+	}
+	return true, out, nil
 }
 
 // idnaProfile 是域名归一化档案：IDN → punycode（架构 §2.4 域名行）。Lookup

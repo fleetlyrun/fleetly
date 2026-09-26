@@ -96,6 +96,40 @@ func TestCronJobNameThreeSegment(t *testing.T) {
 	}
 }
 
+// TestInitJobNameThreeSegment DT-4：部署期 init job 服务名
+// `fleetly-init-<team>-<prj>-<app>-<svc>-<deployid8>`；前缀族独立于 cron
+// （互不误伤是两族清扫/对账豁免的正确性前提）。
+func TestInitJobNameThreeSegment(t *testing.T) {
+	name, err := InitJobName("acme", "prod", "my-api", "migrate", "01JABCDEFGHJKMNPQRSTVWX")
+	if err != nil {
+		t.Fatalf("InitJobName: %v", err)
+	}
+	if name != "fleetly-init-acme-prod-my-api-migrate-01JABCDE" {
+		t.Fatalf("InitJobName = %q, want the three-segment init family form", name)
+	}
+	if !IsInitJobName(name) {
+		t.Fatalf("IsInitJobName(%q) = false, want true", name)
+	}
+	if IsCronJobName(name) || IsInitJobName("fleetly-cron-acme-prod-my-api-migrate-01JABCDE") {
+		t.Fatal("init and cron prefix families must not cross-match (independent sweeps)")
+	}
+	if IsInitJobName("fleetly-acme-prod-my-api-migrate") {
+		t.Fatal("long-running service name must not match the init job prefix")
+	}
+	for _, tc := range []struct {
+		name string
+		fn   func() (string, error)
+	}{
+		{"empty team", func() (string, error) { return InitJobName("", "prj", "app", "migrate", "01JABCDEFGH") }},
+		{"empty service", func() (string, error) { return InitJobName("t", "p", "app", "", "01JABCDEFGH") }},
+		{"short deployment id", func() (string, error) { return InitJobName("t", "p", "app", "migrate", "01JA") }},
+	} {
+		if _, err := tc.fn(); err == nil {
+			t.Errorf("%s: expected error", tc.name)
+		}
+	}
+}
+
 // TestHash8RotationIsNewName 验收 2 的命名侧：值轮换即换名换引用（架构
 // §2.4 密钥行——引用参与 desired-hash，轮换天然触发重部署）。
 func TestHash8RotationIsNewName(t *testing.T) {
@@ -214,11 +248,12 @@ func must(t *testing.T, fn func() (string, error)) string {
 
 // TestReservedTeamSlugs 保留字清单钉死（rbac-teams §4.3 保留字迁移：v0.2
 // 的 8 个 app 名保留字迁到 team slug；D-W0-4 迁移裁决 + W3 撞键票审计证据
-// 链随迁）：八个保留 slug 各带撞键证据；清单字典序稳定（错误文案可重放）；
-// 非保留名（近名形态与普通名）不误伤；app 名清单已随迁移退役（结构性安全
-// ——app 名不再紧邻 fleetly- 前缀，E_APP_NAME_RESERVED 退役）。
+// 链随迁 + DT-4 增 init）：每个保留 slug 各带撞键证据；清单字典序稳定
+// （错误文案可重放）；非保留名（近名形态与普通名）不误伤；app 名清单已随
+// 迁移退役（结构性安全——app 名不再紧邻 fleetly- 前缀，E_APP_NAME_RESERVED
+// 退役）。
 func TestReservedTeamSlugs(t *testing.T) {
-	want := []string{"acme", "cron", "db", "dbjob", "metrics", "registry", "rustfs", "victorialogs"}
+	want := []string{"acme", "cron", "db", "dbjob", "init", "metrics", "registry", "rustfs", "victorialogs"}
 	got := ReservedTeamSlugs()
 	if len(got) != len(want) {
 		t.Fatalf("reserved set = %v, want %v", got, want)
@@ -236,7 +271,7 @@ func TestReservedTeamSlugs(t *testing.T) {
 			t.Errorf("ReservedTeamSlugReason(%q) empty: every reserved slug must carry its collision evidence", name)
 		}
 	}
-	for _, name := range []string{"demo", "ingress", "exec", "system", "console", "victoriametrics", "cadvisor", "node-exporter", "cronapp", "dbapp"} {
+	for _, name := range []string{"demo", "ingress", "exec", "system", "console", "victoriametrics", "cadvisor", "node-exporter", "cronapp", "dbapp", "initapp"} {
 		if IsReservedTeamSlug(name) {
 			t.Errorf("IsReservedTeamSlug(%q) = true, audit proved no collision (reserved set must stay minimal)", name)
 		}

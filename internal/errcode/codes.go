@@ -51,6 +51,17 @@ var builtins = []Code{
 	{ID: "E_TASK_START_FAILED", HTTP: 500,
 		Summary:    "new task failed to start (image entrypoint/resource limits/runtime error)",
 		Suggestion: "Check the task logs to locate the start failure, fix it, and retry."},
+	// ── 部署期一次性作业（DT-4，torchwood 线；IMPL-T1-3 只增）──
+	// 消费点 = internal/engine init 相位评估：release 管线在晋级前以新 spec
+	// 跑 fleetly.job: init 声明的一次性 job。失败与超时分别落码（与
+	// E_TASK_START_FAILED / E_HEALTH_TIMEOUT 同一分层归因习惯）；job 名与
+	// 原因进 deployment.failed detail 与 release.job_* 事件。
+	{ID: "E_INIT_JOB_FAILED", HTTP: 500,
+		Summary:    "release-time init job failed (task failed/rejected/shut down): the deployment fails before the new revision is promoted",
+		Suggestion: "Check the init job logs (attributed to the declaring compose service) to locate the failure, fix the job, and deploy again; completed jobs are not rolled back (migrations are forward-only)."},
+	{ID: "E_INIT_JOB_TIMED_OUT", HTTP: 500,
+		Summary:    "release-time init job exceeded its watchdog budget (default 10m, fleetly.job.timeout label overrides): the deployment fails before promotion",
+		Suggestion: "Raise fleetly.job.timeout on the init service (a positive Go duration such as 30m) or speed up the migration, then deploy again."},
 	{ID: "E_HEALTH_TIMEOUT", HTTP: 500,
 		Summary:    "health gate timeout: new task did not pass healthcheck within budget",
 		Suggestion: "Verify the healthcheck command and port are correct and the app can pass the health check within budget."},

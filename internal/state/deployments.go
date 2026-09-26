@@ -76,6 +76,12 @@ const (
 	// PhaseBlockedWaiting 发布中绑定节点 DOWN：看门狗暂停计时、可 cancel
 	// （release-semantics §2.3，场景 15）。
 	PhaseBlockedWaiting = "blocked_waiting"
+	// PhaseInitJobs 发布中的 init job 子相位（DT-4，torchwood 线）：新
+	// revision 的长驻服务对账（applyDesired）之前执行一次性 init job——迁移
+	// 先于新代码跑在旧库上；job 全过才清相位晋级。init 相位优先于
+	// blocked_waiting（相位列单值：init 期节点不可用由 job 看门狗兜底，
+	// cancel 可用，清收在收尾路径）。
+	PhaseInitJobs = "init_jobs"
 )
 
 // deployment verdict 词表（verdict 列；unstable 仅为 deployment 判定）。

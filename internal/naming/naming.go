@@ -194,6 +194,47 @@ func IsCronJobName(name string) bool {
 	return strings.HasPrefix(name, cronJobNamePrefix)
 }
 
+// initJobNamePrefix 是部署期 init job 服务名的固定前缀（DT-4）：完整名
+// `fleetly-init-<team>-<prj>-<app>-<service>-<deployid8>`。**独立于 cron
+// 前缀族**——一次性 job 服务的瞬时性必须可按名识别：cron 孤儿清扫
+//（internal/cron sweepOrphanJobs 只认 fleetly-cron-）、引擎对账（删除扫描
+// 与漂移 Extra 判定按此前缀豁免）、MoveApp 摘旧名（在途 job 让位）与日志
+// 管线（JobServiceStates 两族并列）都按前缀/label 边界识别；与 cron 共享
+// 前缀会被对方的清扫误伤（在途 init job 被当 cron 残留删除 = 迁移静默
+// 丢失）。deployid8 = deployment ID 前 8 位——同一部署跨 tick/重启命名
+// 确定（创建幂等、续跑可寻址；cron 的 ulid8 是「每次触发一服务」，init
+// 是「每次部署一服务」）。
+const initJobNamePrefix = namePrefix + "init-"
+
+// InitJobName 返回部署期 init job 的 Swarm 服务名
+// `fleetly-init-<team>-<prj>-<app>-<service>-<deployid8>`（DT-4）。
+func InitJobName(team, prj, app, service, deploymentID string) (string, error) {
+	if err := validateComponent("team", team); err != nil {
+		return "", err
+	}
+	if err := validateComponent("prj", prj); err != nil {
+		return "", err
+	}
+	if err := validateComponent("app", app); err != nil {
+		return "", err
+	}
+	if err := validateComponent("service", service); err != nil {
+		return "", err
+	}
+	id8, err := instanceID8(deploymentID)
+	if err != nil {
+		return "", err
+	}
+	return initJobNamePrefix + team + "-" + prj + "-" + app + "-" + service + "-" + id8, nil
+}
+
+// IsInitJobName 报告 Swarm 服务名是否为部署期 init job 服务（对账删除
+// 豁免、漂移 Extra 豁免、MoveApp 让位与孤儿清扫的瞬时性识别谓词，
+// IsCronJobName 同款纪律）。
+func IsInitJobName(name string) bool {
+	return strings.HasPrefix(name, initJobNamePrefix)
+}
+
 // 库族命名公式（E4 数据库托管，managed-databases §5.4 文档锚 + rbac-teams
 // §4.3 库行 v0.3 三段化；与 app 名族 `fleetly-<team>-<prj>-<app>-*` 解耦的
 // 独立前缀族，库实例与 app 可重名、对象不撞，§2.1 名字空间独立）：
@@ -364,6 +405,9 @@ func Hash8(content string) string {
 //	cron          前缀族：team slug="cron" 时服务名 fleetly-cron-<prj>-… 命中
 //	               IsCronJobName——cron 孤儿清扫会把长驻服务当一次性 job 删除
 //	               （破坏性撞键，最高优先）；
+//	init          前缀族：team slug="init" 时服务名 fleetly-init-<prj>-… 命中
+//	               IsInitJobName——对账删除/漂移 Extra 对长驻服务静默豁免
+//	               （服务删除被吞），init 孤儿清扫反向误删在途长驻任务；
 //	db            前缀族：fleetly-db-<prj>-… 命中 IsDbServiceName——发布对账
 //	               「省略=删除」扫描豁免库服务，服务删除被静默吞掉；
 //	dbjob         前缀族：fleetly-dbjob-… 命中 IsDBJobName——清扫/采集面把
@@ -387,6 +431,7 @@ func Hash8(content string) string {
 // 服务名不进动态配置键空间）——保留字最小化，不预防性扩列。
 var reservedTeamSlugReasons = map[string]string{
 	"cron":         "IsCronJobName prefix family (the cron orphan sweep would delete the team's long-running services as transient jobs)",
+	"init":         "IsInitJobName prefix family (reconcile-deletion and drift-extra exemptions would silently spare the team's long-running services, and the init orphan sweep would delete their in-flight tasks)",
 	"db":           "IsDbServiceName prefix family (publish reconcile exempts the team's services from omission-means-deletion)",
 	"dbjob":        "IsDBJobName prefix family (sweeps/collection treat the team's services as transient jobs)",
 	"rustfs":       "collides with the managed RustFS overlay network fleetly-rustfs-net (state.RustfsNetworkName), the s3 public route keys and the rustfs secret name family",

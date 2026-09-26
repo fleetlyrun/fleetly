@@ -82,9 +82,9 @@ func (f *fakeLogPort) ManagedServiceProcesses(_ context.Context, _ string) ([]st
 	return []string{"web"}, nil
 }
 
-// CronJobServiceStates 实现 logs.Port 增补面（E5 Cron）：API 测试装配无 cron
+// JobServiceStates 实现 logs.Port 增补面（E5 Cron / DT-4）：API 测试装配无
 // job 场景，恒空集。
-func (f *fakeLogPort) CronJobServiceStates(_ context.Context, _ string) ([]engine.ServiceState, error) {
+func (f *fakeLogPort) JobServiceStates(_ context.Context, _ string) ([]engine.ServiceState, error) {
 	return nil, nil
 }
 

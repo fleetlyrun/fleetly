@@ -60,6 +60,12 @@ var docCodes = map[string]string{ // code → 文档出处
 	// 不变量「路由发布失败不回滚部署、单独告警」的审计错误码落点。
 	"E_ROUTE_PUBLISH_FAILED": "T2.15 added during implementation (architecture §2.5 route-failure alert semantics; pending T0.5 freeze confirmation)",
 
+	// DT-4 实现期新增（torchwood 线；注册表只增）：发布管线晋级前一次性
+	// init job 的失败/超时归因码（消费点 = internal/engine init 相位评估；
+	// job 名与原因进 deployment.failed detail 与 release.job_* 事件）。
+	"E_INIT_JOB_FAILED":    "DT-4 added during implementation (torchwood line: release-time init job failed before promotion; no retry, restart-condition=none)",
+	"E_INIT_JOB_TIMED_OUT": "DT-4 added during implementation (torchwood line: release-time init job watchdog budget exceeded; fleetly.job.timeout overrides the 10m default)",
+
 	// MG-C3 实现期新增（文档外码单独列出，待 T0.5 契约冻结确认）：架构 §2.4
 	// plan/apply 语义「破坏性操作要求 --confirm-destructive」的 deploy 入队
 	// 门控错误码。
@@ -220,7 +226,8 @@ func TestDocCodeSetMatchesRegistry(t *testing.T) {
 // E_ALERT_RULE_* 六码）→ 74 E + 5 W；W5-S3 增 ACME DNS-01 通配证书面三码
 //（b-line-w5 设计 §3，D-V3W5-3/D-V3W5-4：E_ACME_WILDCARD_REQUIRES_PROVIDER /
 // E_ACME_WILDCARD_REQUIRES_BASE_DOMAIN 联动门 + E_ACME_DNS_TEST_FAILED
-// 探针失败）→ 77 E + 5 W。
+// 探针失败）→ 77 E + 5 W。DT-4（IMPL-T1-3）增 E_INIT_JOB_FAILED /
+// E_INIT_JOB_TIMED_OUT（部署期 init job 失败/超时归因）→ 79 E + 5 W。
 func TestRegisteredCountByKind(t *testing.T) {
 	errCount, warnCount := 0, 0
 	for _, c := range Default().All() {
@@ -230,8 +237,8 @@ func TestRegisteredCountByKind(t *testing.T) {
 			warnCount++
 		}
 	}
-	if errCount != 77 || warnCount != 5 {
-		t.Fatalf("E_ = %d (want 77), W_ = %d (want 5)", errCount, warnCount)
+	if errCount != 79 || warnCount != 5 {
+		t.Fatalf("E_ = %d (want 79), W_ = %d (want 5)", errCount, warnCount)
 	}
 }
 

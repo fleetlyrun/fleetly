@@ -63,12 +63,13 @@ func (c *Client) ManagedServiceProcesses(ctx context.Context, app string) ([]str
 	return out, nil
 }
 
-// CronJobServiceStates 实现 logs.Port（E5 Cron 留存行「日志进现有采集」）：
-// 列出该 app 当前存活的一次性 cron job 服务实况投影（fleetly-cron- 前缀的
-// 受管服务）。归属解析（job 名 + 受管 label → compose 服务）不在本层——
-// logs.cronJobRefOf 以 label 为权威承载（job 服务名含 app/service 成分，
+// JobServiceStates 实现 logs.Port（E5 Cron / DT-4 的「日志进现有采集」）：
+// 列出该 app 当前存活的一次性 job 服务实况投影（fleetly-cron- 与
+// fleetly-init- 两个前缀族的受管服务——cron 触发与发布期 init job 共享
+// 采集面）。归属解析（job 名 + 受管 label → compose 服务）不在本层——
+// logs.jobServiceRefOf 以 label 为权威承载（job 服务名含 app/service 成分，
 // 字符串反解在含 '-' 时有歧义）。
-func (c *Client) CronJobServiceStates(ctx context.Context, app string) ([]engine.ServiceState, error) {
+func (c *Client) JobServiceStates(ctx context.Context, app string) ([]engine.ServiceState, error) {
 	rows, err := c.ServiceList(ctx, map[string]string{
 		state.LabelManaged: state.ManagedLabelValue,
 		state.LabelApp:     app,
@@ -78,7 +79,7 @@ func (c *Client) CronJobServiceStates(ctx context.Context, app string) ([]engine
 	}
 	out := make([]engine.ServiceState, 0, len(rows))
 	for _, r := range rows {
-		if !naming.IsCronJobName(r.Name) {
+		if !naming.IsCronJobName(r.Name) && !naming.IsInitJobName(r.Name) {
 			continue
 		}
 		out = append(out, r)

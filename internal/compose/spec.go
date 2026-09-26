@@ -86,6 +86,16 @@ type Service struct {
 	// 装配），由调度器按点创建一次性 Swarm job。进归一化快照与 spec_hash
 	//——调度集组装从 revision 的 compose_normalized 快照现读（internal/cron）。
 	Cron *CronSchedule `json:"cron,omitempty"`
+	// InitJob 是 fleetly.job label 的归一化结果（DT-4 部署期一次性作业）：
+	// true = 该服务是 init job——不按长驻部署（Job 模板进快照），发布管线
+	// 在晋级（长驻服务对账）前以新 spec 创建一次性 job，全部成功才推进；
+	// 失败/超时即本次发布失败。与 Cron 互斥（解析期拒绝）。进归一化快照
+	// 与 spec_hash——声明变更即期望态变更。
+	InitJob bool `json:"init_job,omitempty"`
+	// InitJobTimeout 是 fleetly.job.timeout 的归一化值（看门狗预算的
+	// time.Duration.String() 形态；空 = 平台默认）。仅 InitJob=true 时有
+	// 意义（孤儿 label 在解析期拒绝）。
+	InitJobTimeout string `json:"init_job_timeout,omitempty"`
 	// Databases 是 fleetly.databases label 的归一化结果（E4 托管数据库，
 	// managed-databases §2.4/D-DB-4）：引用的库实例名列表（trim/排序——
 	// 逗号分隔书写形态与顺序无关，快照取字典序）。非空 = 该服务引用库

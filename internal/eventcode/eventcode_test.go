@@ -67,6 +67,13 @@ var docEvents = map[string]string{ // event → 文档出处
 	"cron.failed":    "E5 Cron added during implementation (object-storage §8; W3-S5; run failed, no retry)",
 	"cron.timed_out": "E5 Cron added during implementation (object-storage §8; FZ-4 pinned name; watchdog budget exceeded, job service removed)",
 
+	// DT-4 实现期新增（torchwood 线；注册表只增）：发布管线晋级前一次性
+	// init job 的失败/超时披露——发出来源 = internal/engine init 相位评估，
+	// 随后 deployment.failed（E_INIT_JOB_FAILED / E_INIT_JOB_TIMED_OUT）
+	// 点名 job 与原因；payload 只带事实字段，无敏感材料。
+	"release.job_failed":    "DT-4 added during implementation (torchwood line: release-time init job failed; the deployment fails, job service removed)",
+	"release.job_timed_out": "DT-4 added during implementation (torchwood line: release-time init job watchdog budget exceeded; fleetly.job.timeout overrides the 10m default)",
+
 	// T2.15 实现期新增（文档外事件名单独列出，待 T0.5 契约冻结确认）：架构
 	// §2.5 不变量「路由发布严格晚于健康门；发布失败不回滚部署、单独告警 +
 	// 审计」。证书签发/续期不设新事件名（走审计记录）。

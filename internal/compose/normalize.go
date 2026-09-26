@@ -135,6 +135,32 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 			}
 		}
 
+		// job label 家族（DT-4 部署期一次性作业）：值词表仅 init（fail-loud
+		// 解析期拒绝，见 parseJobLabels），与 fleetly.cron 互斥；typed 层补
+		// 两条契约——expose 禁令（expose 是路由目标端口声明，job 不产出长驻
+		// 监听面）与 replicas 契约（一次性 job 无长驻副本语义，>0 声明的是
+		// 平台无法兑现的期望；cron 同型）。
+		initJob, initJobTimeout, err := parseJobLabels(name, svc.Labels)
+		if err != nil {
+			return nil, nil, err
+		}
+		if initJob {
+			if len(svc.Expose) > 0 {
+				return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED",
+					"service %q declares both %q and expose (an init job is a one-shot process with no long-running listener to route to; expose is the routing target port declaration)",
+					name, LabelJob).
+					WithContext("path", prefix+".expose").
+					WithContext("reason", "init_job_expose")
+			}
+			if svc.Deploy != nil && svc.Deploy.Replicas != nil && *svc.Deploy.Replicas > 0 {
+				return nil, nil, apperr.New("E_COMPOSE_UNSUPPORTED",
+					"service %q declares deploy.replicas=%d together with the %q label (init jobs run as one-shot jobs: replicas must be 0 or omitted)",
+					name, *svc.Deploy.Replicas, LabelJob).
+					WithContext("path", prefix+".deploy.replicas").
+					WithContext("reason", "init_job_replicas")
+			}
+		}
+
 		normalized, err := normalizeService(workDir, name, &svc, ws)
 		if err != nil {
 			return nil, nil, err
@@ -143,6 +169,8 @@ func normalize(abs string, project *types.Project) (*Spec, []Warning, error) {
 		normalized.PlacementNode = placementRefs[name]
 		normalized.S3 = s3
 		normalized.Cron = cronSchedule
+		normalized.InitJob = initJob
+		normalized.InitJobTimeout = initJobTimeout
 		normalized.Databases = databases
 		services = append(services, normalized)
 	}

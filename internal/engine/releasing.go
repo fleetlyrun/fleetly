@@ -30,6 +30,14 @@ func (e *Engine) evaluateReleasing(ctx context.Context, rec state.DeployRecord) 
 		return e.cancelDeployment(ctx, rec)
 	}
 
+	// DT-4 init 子相位：晋级前一次性作业（迁移先于新代码）——job 全过才
+	// 进长驻对账/健康门。分支先于 watchBoundNode：相位列单值约束下 init
+	// 相位优先（init 期节点不可用由 job 看门狗兜底，cancel 准入在上方已
+	// 处置；无 init 模板的部署相位恒空、不触达本分支——守卫⑤）。
+	if rec.Phase == state.PhaseInitJobs {
+		return e.evaluateInitJobs(ctx, rec)
+	}
+
 	specs, err := e.decodeSpecs(rec)
 	if err != nil {
 		return e.failTransitionErr(ctx, rec, errorf("E_DEPLOY_INTERRUPTED",

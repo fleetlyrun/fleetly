@@ -99,17 +99,19 @@ type Port interface {
 	StreamServiceLogs(ctx context.Context, service string, since time.Time, follow bool) (<-chan substrate.LogLine, error)
 	// ManagedServiceProcesses 返回应用的受管 compose 服务名集。
 	ManagedServiceProcesses(ctx context.Context, app string) ([]string, error)
-	// CronJobServiceStates 返回该 app 当前存活的一次性 cron job 服务实况投影
-	//（fleetly-cron- 前缀受管服务，E5 Cron「日志进现有采集」）。实现只负责
-	// 忠实列出；归属映射解析（job 名 + 受管 label → compose 服务）由 logs 层
-	// cronJobRefOf 纯函数承载（可 hermetic 测试）。
-	CronJobServiceStates(ctx context.Context, app string) ([]engine.ServiceState, error)
+	// JobServiceStates 返回该 app 当前存活的一次性 job 服务实况投影
+	//（fleetly-cron- 与 fleetly-init- 两个前缀族的受管服务——E5 Cron 与
+	// DT-4 init job 的「日志进现有采集」共享同一发现面）。实现只负责忠实
+	// 列出；归属映射解析（job 名 + 受管 label → compose 服务）由 logs 层
+	// jobServiceRefOf 纯函数承载（可 hermetic 测试）。
+	JobServiceStates(ctx context.Context, app string) ([]engine.ServiceState, error)
 }
 
-// CronJobRef 是一次性 cron job 服务的日志采集归属：JobService 是 Swarm 服务
-// 名（流打开目标），Service 是归属 compose 服务名（ring/落盘/History/Follow
-// 的 (app, service) 键——job 行与长驻服务同面合流）。
-type CronJobRef struct {
+// JobServiceRef 是一次性 job 服务的日志采集归属（cron 与 init 共用）：
+// JobService 是 Swarm 服务名（流打开目标），Service 是归属 compose 服务名
+// （ring/落盘/History/Follow 的 (app, service) 键——job 行与长驻服务同面
+// 合流）。
+type JobServiceRef struct {
 	JobService string
 	Service    string
 }

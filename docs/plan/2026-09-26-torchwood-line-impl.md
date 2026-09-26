@@ -330,3 +330,119 @@ staging/真机待执行项（本环境无 staging 访问权，未虚构结果）
 - ② staging 多节点「ghcr 公共镜像零预拉部署」：T2-0②（本票已留本地单节点同构实证）。
 - ⑤ 私有镜像 + 平台凭证逐节点拉取：T2-0②（本票已留 registryAuthForImage 编码与 EncodedRegistryAuth 更新/披露面证据；跨节点拉取需多节点窗口）。
 - 建议 staging 窗口一并复核：registry 凭证设置保存后对下一次部署即刻生效（每次现读）；`fleetly registry set/clear` 后 `E_IMAGE_PULL_FAILED` 文案包含 registry 原因。
+
+### IMPL-T1-3 方案可行性审查（2026-09-26，实现会话）
+
+**结论：通过（无阻塞前置矛盾），进入实现。** 票面三处「由审查决定并说明」的裁量项（naming 前缀族、release 相位机挂钩点、看门狗预算取值来源）的裁决与理由见下；全部现状锚点成立。
+
+现状锚点核实（票内 file:line 逐条）：
+- `internal/compose/domains.go:118-164`（cron label 解析先例）✓：`parseCronSchedule` 表达式/时区/超时三键 fail-loud（E_LABEL_RESERVED + reason 上下文），label 白名单 `knownFleetlyLabels` 在 :53-61——init job 的 label 家族照此纪律扩展。
+- `internal/cron/manager.go`（one-shot job 机器）✓：`jobSpecFrom` :694-715（模板克隆为 replicas=1 / restart-condition=none / Global=false + 一次性 label 集）、`trigger` :389-484（网络先行 → 建服务 → 台账/事件同事务）、`pollInFlight` :555-598（每拍任务判定 + 看门狗收口）、`closeRun` :603-651（删服务 + 终态事件）、`sweepOrphanJobs` :656-687（前缀清扫）——本票从中抽出可复用原语（见「挂钩点」第 1 条）。
+- `internal/compose/validate.go:47`（depends_on 拒绝注释「orchestration order is managed by the platform release pipeline」）✓：作业顺序语义本就归发布管线，本票是它第一次真实承载。
+
+必查项取证：
+
+1. **swarm one-shot job 约束的 label 公式**（逐项核实）：
+   - 底座翻译（`internal/substrate/services.go:253-264`）：`Job=true` → `ReplicatedJob{MaxConcurrent:1, TotalCompletions:1}`；job 模式**不写 UpdateConfig**（daemon 拒绝）；RestartPolicy 缺省 `condition=none`（失败即 failed 终态、不重试）；env/mounts/networks/secrets/constraints/resources/healthcheck 与长驻服务共用同一条 `buildSwarmSpec`——job 与 service 的投影同源由此成立。
+   - 命名与识别面纪律（`internal/naming/naming.go:161-195` cron 族、`:294-330` dbjob 族注释）：一次性 job 服务的瞬时性必须**按前缀族可识别**，否则会被某一方的清扫误伤（在途 job 被删 = 静默丢失）。**裁决：新增独立前缀族 `fleetly-init-`**（不复用 cron 前缀——cron 孤儿清扫会把在途 init job 当 cron 残留误删；反之 init 清扫也会误伤在途 cron job）。公式 `fleetly-init-<team>-<prj>-<app>-<service>-<deploymentID8>`：尾缀取 **deploymentID 前 8 位**（cron 的 ulid8 是「每次触发一服务」，init 是「每次部署一服务」——确定性命名使创建幂等、重启续跑可寻址）。
+   - **保留 slug 扩张**：team slug=`init` 时 `fleetly-init-<prj>-…` 命中 `IsInitJobName`（破坏性撞键：对账删除豁免/init 清扫误伤长驻服务）——`init` 进 `reservedTeamSlugReasons`（与 cron/db/dbjob 同证据链，E_TEAM_SLUG_RESERVED 受理层消费）。
+   - label 集：job 服务 label = managed + app（三段限定形）+ process + team + project + `fleetly.init.run=<deploymentID>`（残留识别与日志归因锚；cron 的 `fleetly.cron.run` 同款）。
+
+2. **与 release 相位机的挂钩点**（迁移安全论证 + 单写点纪律）：
+   - 迁移安全：新代码不得先于迁移跑在旧库上 → init job 必须**先于 applyDesired（长驻服务 create/update）**完成；挂钩点 = releasing 相位内的子相位。
+   - **裁决：复用 `deployments.phase` 子状态列**（blocked_waiting 先例），新增 `init_jobs` 值；`preparing/building → releasing` 的 **EnterPhase 同事务**携带 `Phase=init_jobs`（与 ReleaseStartedAt/WatchdogDeadlineAt/快照原子落位——不存在「已进 releasing 但 init 相位未记」的窗口）。相位推进（init 全过 → 清相位 + 重臂看门狗）走 `UpdateDeployment` 非转换就地更新通道（state/deployments.go:393-410 的既定口径：EnterPhase 管辖「转换 + 伴随字段」，子状态清位/时间锚正是 extra/就地更新面）——不绕 EnterPhase 单写点，也不越界用它。
+   - `evaluateReleasing` 判定顺序：cancel 准入 → **init 相位分支（先于 watchBoundNode）** → watchBoundNode → 长驻判定。相位列单值约束下 init 相位优先于 blocked_waiting：节点不可用期由 job 看门狗兜底（超时失败，cancel 可用且收尾清 job），不引入第二子状态列（occam）。`classifyRecovering` 对 `phase==init_jobs` 直接放行回 tick 续跑（job 服务确定性命名 → ServiceInspect→缺失即创建 幂等；任务判定续跑），**不走** E_DEPLOY_INTERRUPTED 立即失败分类。
+   - 失败/超时不绕道：统一走 `failUnswitchedOrSwitched`（D-REL-4 唯一入口）——失败分流/归位（replay 上一有效 revision）语义照旧；事件 `release.job_failed` / `release.job_timed_out` 先落（job 自身的失败记录），随后终态转移（deployment.failed payload 点名 job 与原因）。
+   - 崩溃窗口诚实记录：init 全过 → 清相位提交 → 清场 → applyDesired；若在清相位后、applyDesired 前控制面崩溃，重启恢复按既有「无法判定」分类失败（E_DEPLOY_INTERRUPTED + 归位旧版本）——**安全失败**（迁移已执行、新代码未晋级、旧版本照常服务），不重跑迁移（重跑迁移的风险高于一次显式失败）。
+
+3. **看门狗预算取值来源**（裁量项）：
+   - **裁决：新增 label `fleetly.job.timeout`**（与 `fleetly.cron.timeout` 同形态同解析：正 Go duration，缺省平台预算 10m=沿 cron `DefaultJobTimeout`；孤儿 label（无 `fleetly.job`）拒绝——cron 的孤儿纪律同款）。理由：`fleetly.job` 与 `fleetly.cron` 互斥后 `fleetly.cron.timeout` 不可复用，而真实迁移（torchwood migrate）时长不可预设——per-service 预算是「复用 cron 看门狗语义」的完整兑现；engine.Config 新增 `InitJobTimeout` 注入位承载平台缺省（单测短预算）。
+   - **per-job 预算语义**：每个 init job 独立计时（锚 = ReleaseStartedAt，job 创建紧随其后），任一 job 超其预算即 timeout（事件点名该 job + 预算）；相位级 WatchdogDeadlineAt = ReleaseStartedAt + max(各 job 预算) 作兜底（两处同值收敛，防时钟/边界漏判）。多 job 并行、全过才晋级；任一 failed/rejected/shutdown 立即失败（fail-fast；已完成的 job 不回滚——迁移前向语义）。
+
+4. **env/secret/config 投影与 service 同源**：同一 `BuildPlan.buildServiceSpec`（planner.go:199-299）——env 三层合并/S3 system env/库网络/secret 挂载/卷/网络/资源限额/放置约束全部照编，init 模板只多 `Job=true` 标记（与 cron 的 :126-136 同路）；**快照（desired_spec 密文）保留 init 模板**（重启后执行形态来源）。secret 底座对象：`resolveSecretMounts`（secretinject.go:71-150）遍历全部服务已在 preparing 期 ensure（含 init 模板）；重启续跑路径在 evaluateInitJobs 建服务前再经 `ensureSnapshotSecrets` 幂等确保（SecretReference 必须携底座 ID——W3 真机教训）。网络先行（建服务前逐网 NetworkEnsure，cron trigger 同语义）。**Config 资源（OT-3/IMPL-T1-4）尚不在树**：当前投影链无 config 面；该票落地时 compose `type: config` 挂载在 buildServiceSpec 同一装配点，init 模板自动同源（本票不做预留代码，防悬空）。
+
+5. **多 init job 并行 + 事件/错误码**：事件 `release.job_failed` / `release.job_timed_out`（eventcode 只增 + docEvents + golden 显式再生成）；错误码 `E_INIT_JOB_FAILED` / `E_INIT_JOB_TIMED_OUT`（HTTP 500，errcode 只增 + docCodes + count + golden）。payload 只带 app/app_id/service/job_service/budget/error（无敏感材料）。
+
+6. **日志入 VL 并按 app/job 归因**：先例 = `internal/logs/manager.go:146-186`（发现面 → label 权威归属 → 零点全量回读 → ring/落盘/入湖同面合流）。**共享机制裁决**：日志发现面本就是「一次性 job 服务」族语义——把 `Port.CronJobServiceStates` 扩为 `JobServiceStates`（cron + init 两前缀族，基础实现 = `internal/substrate/logs.go` 的 managed+app 列举加 `IsInitJobName`），映射解析（前缀 + label 权威）、游标隔离（族标记 `\x00job\x00` 替代 `\x00cron\x00`，内存态无持久化影响）、暂态保留全部沿用；cron 采集行为（零点回读/增量/回收）零变化（既有测试机械改名后逐条语义不变）。
+
+7. **审查新增的交互面**（不查即误伤）：
+   - 引擎对账删除扫描（engine.go:909-922）与漂移「多余受管服务」判定（drift.go:252-270）都必须豁免 init 前缀：前者防 applyDesired 误删在途 init job（cron 同款豁免）；后者是同一豁免的配套——漂移 Extra 判定的自述前提「收敛原语会删」对这些瞬时族不成立（顺带把 cron 也纳入同一豁免，口径一致）。
+   - MoveApp 摘旧名（move.go:181-185）必须豁免 init 前缀（在途 init job 让位跑完，由发布管线收口——cron 裁决同款）。
+   - janitor 非终态超龄预算（state/janitor.go:70-72，装配 runtime/provides.go:228）= 2×(DeployTimeout+ObserveWindow)；含 init 相位的部署合法停留可到 InitJobTimeout+DeployTimeout → 装配改为 2×(InitJobTimeout+DeployTimeout+ObserveWindow)，防假告警（观测阈值面，非发布行为）。
+   - 回滚重放**不执行** init job：`decodeSpecs` 过滤 Job 模板的既有口径（rollback.go:215-219 只重放长驻集）——迁移前向不回放，与 release-semantics §2.4「卷数据/DB 迁移不回滚」一致；本票不改。
+   - 守卫⑤口径：无 init 模板的部署不携带 init 相位（phase 零写）、预算是 DeployTimeout、applyDesired 仍在计划拍内执行——专门回归测试钉死事件序列/相位推进/底座调用面，并在基线提交上复跑验证（见实施记录）。
+
+结论：全部锚点成立、无票面矛盾；进入实现。实现中的决策与偏离记入实施记录。
+
+### IMPL-T1-3 实施记录（2026-09-26，实现会话）
+
+**状态：实现完成，待用户验收（未 commit）。** 引擎级守卫回归测试补齐后工作区全量 `go test ./...` 全绿（本会话仅新增 `internal/engine/initjobs_test.go`；实现文件零净改动——测试灵敏度对抗变异已逐一还原，`git diff --stat` 与本会话盘点时逐文件一致）。
+
+变更文件清单（每文件一句）：
+- `internal/engine/initjobs.go`（新）：init 相位评估——EnterPhase 同事务落相位/快照/看门狗锚；每拍 provision（网络先行 + 幂等确保 secret 底座对象 + 确定性命名建服务）+ 任务判定 + per-job 预算与相位兜底；失败/超时先落 `release.job_*` 事件再走 `failUnswitchedOrSwitched` 唯一入口；收尾清相位 + 重臂 DeployTimeout + 清场 + applyDesired 晋级；`sweepInitJobs` 孤儿清扫与 `SweepInitJobs` 测试/诊断入口。
+- `internal/engine/jobrun.go`（新）：一次性 job 共享原语——`DefaultJobTimeout`（10m）、`JobSpecFrom`（单副本 / restart-condition=none / service label 收敛为受管件+归属+一次性运行锚）、`JobTaskVerdict`（complete/failed/rejected/shutdown 判定与单行归因）；抽取时 cron 行为逐字保持。
+- `internal/engine/initjobs_test.go`（新，本会话补齐）：五条守卫逐条回归 + 执行形态/规划快照/env 同源/重启幂等补充（对应表见下）。
+- `internal/engine/engine.go`：planAndRelease 挂 init 相位（同事务 patch.Phase + 预算取 max(各 job 预算)；无 init 模板相位零写）；applyDesired 删除扫描增 init 前缀豁免；tick 增 `sweepInitJobs` duty 与 `initScanNextAt` 频控字段。
+- `internal/engine/planner.go`：`Plan` 增 `InitJobs`（Job=true 且 InitJob=true，不进长驻对账集）；BuildPlan 增 init job 模板路（timeout 归一、Kind 警告披露）。
+- `internal/engine/ports.go`：ServiceSpec 增 `InitJob`/`InitJobTimeout`；`Config` 增 `InitJobTimeout`（Normalize 缺省 = DefaultJobTimeout）。
+- `internal/engine/releasing.go`：evaluateReleasing 增 init 子相位分支（cancel 准入之后、watchBoundNode 之前）。
+- `internal/engine/recovery.go`：classifyRecovering 对 `phase=init_jobs` 直接放行回 tick 续跑（不误分类 E_DEPLOY_INTERRUPTED）；cancelDeployment 先清场在途 init job。
+- `internal/engine/drift.go`：漂移 Extra 判定豁免 cron/init 前缀（瞬时族的「收敛原语会删」前提不成立）。
+- `internal/engine/move.go`：SweepMovedServices 摘旧名豁免 init 前缀（在途 job 让位跑完，由发布管线收口）。
+- `internal/engine/safecall_test.go`：tick duty 清单增 `sweepInitJobs`（源扫描一致面）。
+- `internal/compose/domains.go`：`LabelJob`/`LabelJobTimeout` 常量与 knownFleetlyLabels 扩面；`parseJobLabels`（值词表仅 init、与 fleetly.cron 互斥、孤儿超时拒绝、正 Go duration 归一）。
+- `internal/compose/normalize.go`：job label 接入归一化；typed 层补 expose 禁令与 replicas 契约（>0 拒）。
+- `internal/compose/spec.go`：Service 增 `InitJob`/`InitJobTimeout`（进归一化快照与 spec_hash）。
+- `internal/compose/load.go`：`WarningKindInitJobDeclared`（只声明不部署服务的 Kind 披露）。
+- `internal/compose/joblabel_test.go`（新）：label 值契约/互斥/孤儿超时/非法超时/expose/replicas/spec_hash 与 diff 九组回归。
+- `internal/naming/naming.go`：`initJobNamePrefix`/`InitJobName`/`IsInitJobName`（独立前缀族 `fleetly-init-<team>-<prj>-<app>-<svc>-<deployid8>`）；team slug `init` 进保留字。
+- `internal/naming/naming_test.go`：三段公式/跨族不误伤/参数校验 + 保留字清单扩面。
+- `internal/cron/manager.go`：jobSpecFrom/jobTaskVerdict 内核抽到 engine（trigger/pollInFlight 换 `engine.JobSpecFrom`/`engine.JobTaskVerdict`；errOrText/singleLine 同步内化为 `jobErrOrText`/`jobSingleLine`；`DefaultJobTimeout = engine.DefaultJobTimeout` 别名）——cron 行为逐字保持。
+- `internal/logs/logs.go`：`Port.CronJobServiceStates` → `JobServiceStates`；`CronJobRef` → `JobServiceRef`（cron/init 两前缀族共享发现面）。
+- `internal/logs/manager.go`：pollCronJobs → pollJobServices；job 游标族标记 `\x00cron\x00` → `\x00job\x00`。
+- `internal/logs/cron_test.go`：既有 cron 用例迁到共享面 + 新增 init job 零点回读/归因合流用例。
+- `internal/logs/logs_test.go`：fakePort 发现面改名（jobStates/jobErr）。
+- `internal/substrate/logs.go`：JobServiceStates 实现（cron + init 两前缀族列举）。
+- `internal/apitest/apitest.go`：fakeLogPort 同名实现改名（API 测试装配）。
+- `internal/state/deployments.go`：`PhaseInitJobs` 子相位常量。
+- `internal/state/labels.go`：`LabelInitRun`（`fleetly.init.run` 归属锚）。
+- `internal/state/janitor.go`：StaleDeploymentBudget 口径注释（含 init 相位）。
+- `internal/runtime/provides.go`：janitor 非终态预算装配改 `2×(InitJobTimeout+DeployTimeout+ObserveWindow)`。
+- `internal/errcode/codes.go` + `errcode_test.go` + `testdata/codes.golden`：`E_INIT_JOB_FAILED`/`E_INIT_JOB_TIMED_OUT` 只增登记（79 E + 5 W）与 golden 再生成。
+- `internal/eventcode/events.go` + `eventcode_test.go` + `testdata/events.golden`：`release.job_failed`/`release.job_timed_out` 只增登记与 golden 再生成。
+- `docs/plan/2026-09-26-torchwood-line-impl.md`：审查小节 + 本实施记录。
+
+测试清单与票面五条守卫逐条对应表（本会话新增 = 行内全部 engine 测试；既有分层注明来源）：
+
+| 守卫/补充面 | 回归测试 |
+|---|---|
+| ① job 失败 → release 失败（迁移安全） | `TestInitJobFailureFailsReleaseBeforePromotion`：failed 任务 → `release.job_failed`（payload 点名 job_service+原因）→ failed/`E_INIT_JOB_FAILED` + 首发 scale=0；job 在途期长驻服务零创建/零 update |
+| ② job 超时 → timed_out + release 失败 | `TestInitJobTimeoutFailsReleaseWithTimedOutEvent`（`fleetly.job.timeout: 30s`，deadline=release+30s）；`TestInitJobPlatformDefaultBudgetTimesOut`（平台缺省 10m）；`TestInitJobInjectedPlatformBudgetTimesOut`（`Config.InitJobTimeout` 注入 15s）；`TestInitJobTimeoutIsPerJobBudget`（两 job 预算 30s vs 10m：小预算独立点火 + 事件点名该 job，不被 max 兜底掩盖） |
+| ③ 多 init job 并行全过才晋级 | `TestMultipleInitJobsPromoteOnlyAfterAllPass`：两 job 交错完成；全过前无长驻 create/update、相位不清、零 healthy；全过后相位清位 + job 清场 + 新 spec 对账 + 健康门/观察窗照旧 |
+| ④ job 零残留 | `TestInitJobServicesLeaveNoResidue`（成功/失败/超时三子测：fake 服务表 + ServiceRemove 调用双断言）；`TestSweepInitJobsClearsOrphansWithinOneScan`（孤儿三因——部署行缺失/终态/相位已清——一个扫描周期清除；在途 init job 与非 init 长驻不误伤）；`TestApplyDesiredSparesInitJobServices`（对账删除豁免） |
+| ⑤ 无 init job 路径零变化 | `TestReleaseWithoutInitJobsIsUnchanged`：全程相位列零写、无 `release.job_*` 事件、首拍（计划拍内）即对账并切流 observing、看门狗 = release+DeployTimeout、唯一服务为长驻 web |
+| 补充：执行形态快照 | 守卫①内联断言（Job=true / Global=false / replicas=1 / restart-condition=none / `fleetly.init.run=deploymentID` / 确定性命名 / 不继承 deployment 与 desired-hash label / 网络先行）；`TestBuildPlanInitJobTemplateSnapshot`（不进长驻集、进 plan.InitJobs 与快照、digest 钉定、45m 归一、Kind 警告） |
+| 补充：env 投影同源 | `TestInitJobEnvironmentProjectionSharedSource`：init job 与长驻服务的 env 三层合并结果逐键同值（compose env + 平台层 pending env 同源注入） |
+| 补充：重启续跑幂等 | `TestInitJobRestartRecoveryResumesIdempotently`：同部署连续两拍不重建 job 服务；控制面重启不被误分类、不写 error_code；续跑晋级至成功并清场 |
+| 既有分层（审查会话，不回退） | compose `TestJobLabelValid`/`Defaults`/`InvalidValue`/`ExclusiveWithCron`/`TimeoutWithoutDeclaration`/`InvalidTimeout`/`ServiceExposeRejected`/`ReplicasContract`/`InSpecHashAndDiff`；naming `TestInitJobNameThreeSegment` + 保留字扩面；logs `TestInitJobLogsCollectedFromStart`、`TestJobServiceRefOfMapping`（两前缀族同面）；errcode/eventcode golden |
+
+一手验证证据（本会话复验）：
+- 全量 `go test ./... -count=1` 全绿（engine 13.5s，含新增 13 个守卫回归测试，其中 1 个三子测）。
+- 变更包 `go test -race -count=1` 全绿：engine / compose / naming / logs / state / cron / errcode / eventcode。
+- `go vet ./...` 净（exit 0）。
+- golden：`internal/errcode`（79 E + 5 W）与 `internal/eventcode` golden 测试在列通过；本会话未再动 golden（只增登记与再生成已在审查会话完成）。
+- 测试非空洞性对抗验证（临时变异实现 → 目标测试逐条转红 → 全部还原；还原后 `git diff --stat` 与变异前逐文件一致）：`len(unfinished)==0`→`<=1` 被守卫①③捕获；per-job 阈值改为 `2×budget` 被 `TestInitJobTimeoutIsPerJobBudget` 捕获（单 job 用例会被相位兜底同值收敛掩盖——这正是新增双预算用例的原因）；无 init 也写相位被守卫⑤捕获；applyDesired 摘除 init 豁免被 `TestApplyDesiredSparesInitJobServices` 捕获。
+
+偏离清单（实现中的决策与修正，均按纪律登记）：
+1. **本会话未发现实现 bug**：五条守卫回归首轮即绿；对抗变异仅用于验证测试灵敏度（非实现缺陷），变异已全部还原并以 `git diff --stat` 核对。
+2. **新增 `SweepInitJobs` 导出入口**（测试/诊断直通频控闸）：孤儿清扫的生产驱动仍是 tick duty（30s 频控，重启即清零立即扫一拍）；导出单步入口与 `substrateRecon` 等 duty 的测试面惯例同型，审查裁决未涉及（测试接缝，非行为变化）。
+3. **per-job 与相位兜底的判决覆盖**：实现与冻结裁决第 3 条一致（两处同值收敛：per-job 主路径 + deadline=max(各预算) 兜底）；单 job 用例无法区分两者，补双预算用例钉死 per-job 独立语义（未改实现）。
+4. **防御分支登记**：`decodeInitJobTemplates` 为空时告警后清相位继续（理论不可达——相位与快照同事务落位，防静默卡死）；`initJobElapsed` 锚缺失回落 `created_at`（存量/异常行保持有界语义，同 H11 预算基线惯例）。
+5. **日志族标记**：游标族标记由 `\x00cron\x00` 改 `\x00job\x00`（内存态键、无持久化影响；键内已含 job 服务名，cron/init 跨族不撞）——审查裁决第 6 条逐字落地。
+6. **`internal/cron` 保留 jobSpecFrom 注释索引**：抽取后原实现删除，注释指向 engine 共享原语（防再次分叉出第二份实现）；`singleLine` 留在 cron（事件 payload 单行化，engine 侧 `jobSingleLine` 为 job 失败归因专用，两处文案契约同口径）。
+
+staging/真机待执行项（本环境无 staging 访问权，未虚构结果；本票未跑真机探针）：
+- 真实 daemon 上 `Job=true`（ReplicatedJob{MaxConcurrent:1,TotalCompletions:1}、不写 UpdateConfig、restart-condition=none）建服务与任务终态（complete/failed）端到端复核。
+- 迁移时长校准：torchwood migrate 类长任务在真机上验证 `fleetly.job.timeout` 预算取值与超时事件的可行动性。
+- init job 瞬态窗口（秒级到分钟级）内日志经 VL 的采集完整性（零点全量回读在真实 substrates 上的归属与保留）。
+- 控制面真重启窗口的 `phase=init_jobs` 续跑（确定性命名服务寻址与任务判定续跑）；清相位后、applyDesired 前崩溃的安全失败路径（E_DEPLOY_INTERRUPTED + 归位旧版本，不重跑迁移）演练。

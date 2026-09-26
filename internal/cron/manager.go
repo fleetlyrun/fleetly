@@ -47,7 +47,9 @@ import (
 // 缺省 10s——分钟级 cron 的触发延迟上界，对齐 Dokploy 观感）。
 const (
 	DefaultScanInterval = 10 * time.Second
-	DefaultJobTimeout   = 10 * time.Minute
+	// DefaultJobTimeout 是一次性 job 看门狗的平台缺省预算（10m；DT-4 起
+	// 与 init 相位的 engine.DefaultJobTimeout 同源同值）。
+	DefaultJobTimeout = engine.DefaultJobTimeout
 )
 
 // TriggerSource 是触发来源词表（cron_runs 无来源列——来源进 cron.triggered
@@ -422,7 +424,10 @@ func (m *Manager) trigger(ctx context.Context, s schedule, scheduledAt time.Time
 	if err != nil {
 		return state.CronRun{}, fmt.Errorf("job naming: %w", err)
 	}
-	job := jobSpecFrom(s.template, jobName, runID)
+	// 一次性 job 执行形态由 engine.JobSpecFrom 统一克隆（DT-4 抽取：init
+	// 相位共用同一形态约束——单副本/restart=none/label 收敛；cron 行为
+	// 逐字保持）。
+	job := engine.JobSpecFrom(s.template, jobName, map[string]string{state.LabelCronRun: runID})
 	// 网络先行（对账路径同语义）：per-app 专属网络 + rustfs 牵线（E3-4）
 	// 等模板引用的全部网络幂等确认。
 	for _, n := range job.Networks {
@@ -578,21 +583,16 @@ func (m *Manager) pollInFlight(ctx context.Context, byKey map[string]schedule, n
 }
 
 // jobTaskVerdict 判定在途 run 的任务侧结论：succeeded / failed（含原因）/
-// 空串（仍在途——无任务、任务运行中或底座读失败〔下一拍重试〕）。
+// 空串（仍在途——无任务、任务运行中或底座读失败〔下一拍重试〕）。判定
+// 内核 = engine.JobTaskVerdict（DT-4 抽取，init 相位共用；词表映射保 cron
+// 台账语义不变）。
 func (m *Manager) jobTaskVerdict(ctx context.Context, r state.CronRun) (string, string) {
-	tasks, err := m.sub.TaskList(ctx, r.JobService)
-	if err != nil {
-		return "", "" // 底座暂态：下一拍重判（看门狗兜底）
-	}
-	for _, t := range tasks {
-		switch t.State {
-		case "complete":
-			return state.CronRunSucceeded, ""
-		case "failed", "rejected":
-			return state.CronRunFailed, singleLine(errOrText(t.Err, "task "+t.State))
-		case "shutdown":
-			return state.CronRunFailed, "task was shut down before completion"
-		}
+	verdict, reason := engine.JobTaskVerdict(ctx, m.sub, r.JobService)
+	switch verdict {
+	case engine.JobVerdictSucceeded:
+		return state.CronRunSucceeded, ""
+	case engine.JobVerdictFailed:
+		return state.CronRunFailed, reason
 	}
 	return "", ""
 }
@@ -686,41 +686,10 @@ func (m *Manager) sweepOrphanJobs(ctx context.Context, byKey map[string]schedule
 	}
 }
 
-// jobSpecFrom 由 Job 模板克隆一次性 job 的执行形态：改名 fleetly-cron-*、
-// 单副本、restart-condition=none（失败即 failed 不重试）、服务 label 收敛
-// 为受管件 + fleetly.cron.run（模板携带的 deployment/desired-hash 归属
-// label 对 job 服务是谎——不继承；team/project 与限定形 app 值同模板——
-// 归属识别面，v0.3 流标签口径）。
-func jobSpecFrom(t engine.ServiceSpec, jobName, runID string) engine.ServiceSpec {
-	j := t
-	j.Name = jobName
-	j.Job = true
-	j.Global = false
-	j.Replicas = 1
-	j.RestartPolicy = &engine.RestartPolicySpec{Condition: "none"}
-	labels := map[string]string{
-		state.LabelManaged: state.ManagedLabelValue,
-		state.LabelApp:     t.ServiceLabels[state.LabelApp],
-		state.LabelProcess: t.ServiceLabels[state.LabelProcess],
-		state.LabelCronRun: runID,
-	}
-	if v := t.ServiceLabels[state.LabelTeam]; v != "" {
-		labels[state.LabelTeam] = v
-	}
-	if v := t.ServiceLabels[state.LabelProject]; v != "" {
-		labels[state.LabelProject] = v
-	}
-	j.ServiceLabels = labels
-	return j
-}
-
-// errOrText 回退文案（任务 Err 为空时的诚实缺省）。
-func errOrText(err, fallback string) string {
-	if strings.TrimSpace(err) == "" {
-		return fallback
-	}
-	return err
-}
+// jobSpecFrom / errOrText 已抽取到 engine（DT-4 共享原语）：形态克隆 =
+// engine.JobSpecFrom（cron 调用点传 fleetly.cron.run 运行锚），任务判定 =
+// engine.JobTaskVerdict（词表映射见 jobTaskVerdict）。抽取时 cron 行为逐字
+// 保持——本注释保留调用关系索引，防再次分叉出第二份实现。
 
 // singleLine 是事件 payload 的错误单行化（禁换行——事件 JSON 脱敏契约，
 // engine.errMessageForEvent 同口径）。

@@ -129,6 +129,10 @@ const (
 	// ——只声明不部署长驻服务的 plan 披露口径（调度器按点建一次性 job；
 	// 无注册 W 码，Kind 标识）。
 	WarningKindCronServiceScheduled = "cron_service_scheduled"
+	// WarningKindInitJobDeclared：服务带 fleetly.job 声明（DT-4）——只声明
+	// 不部署长驻服务的 plan 披露口径（发布管线在晋级前建一次性 job 跑
+	// init 语义；无注册 W 码，Kind 标识）。
+	WarningKindInitJobDeclared = "init_job_declared"
 )
 
 // errCompose 构造带路径上下文的 E_COMPOSE_UNSUPPORTED。
