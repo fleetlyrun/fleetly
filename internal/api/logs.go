@@ -83,9 +83,13 @@ func (s *LogsService) ListHistoryLogs(ctx context.Context, req *serverv1.ListHis
 		return nil, err
 	}
 	q := logs.HistoryQuery{
-		// 原始引用原样下发（logs.Manager.History 内部做 GetAppByName 解析
-		// 与三段限定形换算；本面的可见域解析 + 角色门已先行收口——W2-S4）。
-		App:     req.GetApp(),
+		// 解析后的三段限定形下发（logs.Manager.History 内部按 GetAppByName
+		// 重解析并换算三段限定形流键；本面的可见域解析 + 角色门已先行收口
+		// ——W2-S4）。传限定形而非原始引用：路由参数 = 平台 id 时 Manager
+		// 内部 GetAppByName 恒 miss（裸 app not found 未映射错误码 → 裸
+		// 500，2026-09-26 staging 多应用复现）；裸名在跨项目同名时撞
+		// ErrAppAmbiguous 同病——限定形经 GetAppByQualifiedName 精确命中。
+		App:     app.QualifiedName(),
 		Service: req.GetService(),
 		Source:  req.GetSource(),
 		Limit:   int(req.GetLimit()),

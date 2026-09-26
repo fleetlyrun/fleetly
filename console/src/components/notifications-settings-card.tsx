@@ -65,6 +65,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatTime } from "@/lib/utils";
+import { useIsPlatformAdmin } from "@/lib/context";
+
+/** 非平台管理员的写面说明（2026-09-25 走查——此前 viewer/developer 见到
+ * enabled 的端点 CRUD/Test/SMTP 保存假按钮）：台账读面保留，写面原位说明。 */
+const PLATFORM_ADMIN_NOTE = "Platform administrator required.";
 
 /** http 明文警示（内网 receiver 允许 http——常驻文案，设计 §5.1）。 */
 const HTTP_NOTE =
@@ -169,8 +174,10 @@ function DeliveriesPanel({ endpointId }: { endpointId: string }) {
   );
 }
 
-/** 端点行动作面（启停/测试/轮换/删除/台账）。 */
-function EndpointRowActions({ endpoint }: { endpoint: WebhookEndpointView }) {
+/** 端点行动作面（启停/测试/轮换/删除/台账）。写面（Enable/Test/Rotate/
+ * Delete = admin scope + 平台写面）按 canWrite 渲染；Deliveries 抽屉是
+ * read scope 读面——全角色保留（2026-09-25 走查角色门拆分）。 */
+function EndpointRowActions({ endpoint, canWrite }: { endpoint: WebhookEndpointView; canWrite: boolean }) {
   const queryClient = useQueryClient();
   const [showDeliveries, setShowDeliveries] = useState(false);
   const [testError, setTestError] = useState<string | null>(null);
@@ -211,30 +218,34 @@ function EndpointRowActions({ endpoint }: { endpoint: WebhookEndpointView }) {
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={toggle.isPending}
-          onClick={() => toggle.mutate(!enabled)}
-        >
-          {enabled ? "Disable" : "Enable"}
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={test.isPending}
-          onClick={() => test.mutate()}
-        >
-          Test
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={rotate.isPending}
-          onClick={() => rotate.mutate()}
-        >
-          Rotate secret
-        </Button>
+        {canWrite ? (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={toggle.isPending}
+              onClick={() => toggle.mutate(!enabled)}
+            >
+              {enabled ? "Disable" : "Enable"}
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={test.isPending}
+              onClick={() => test.mutate()}
+            >
+              Test
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={rotate.isPending}
+              onClick={() => rotate.mutate()}
+            >
+              Rotate secret
+            </Button>
+          </>
+        ) : null}
         <Button
           size="sm"
           variant="ghost"
@@ -242,15 +253,17 @@ function EndpointRowActions({ endpoint }: { endpoint: WebhookEndpointView }) {
         >
           {showDeliveries ? "Hide deliveries" : "Deliveries"}
         </Button>
-        <Button
-          size="sm"
-          variant="ghost"
-          className="text-red-600 dark:text-red-400"
-          disabled={remove.isPending}
-          onClick={() => remove.mutate()}
-        >
-          Delete
-        </Button>
+        {canWrite ? (
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-red-600 dark:text-red-400"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Delete
+          </Button>
+        ) : null}
       </div>
       {testOk === false && testError ? (
         <p className="text-xs text-red-600 dark:text-red-400" data-testid="webhook-test-error">
@@ -282,6 +295,10 @@ const CHANNEL_OPTIONS: { value: WebhookChannelType; label: string }[] = [
 
 export function NotificationsSettingsCard() {
   const queryClient = useQueryClient();
+  // 写面门（2026-09-25 走查）：端点 CRUD/Test = admin scope + 平台写面
+  // ——非平台管理员隐藏创建表单与行写钮、原位说明；端点清单与投递台账
+  //（read scope）全角色保留。
+  const isPlatformAdmin = useIsPlatformAdmin();
   const endpoints = useQuery({
     queryKey: ["notifications", "endpoints"],
     queryFn: listWebhookEndpoints,
@@ -365,7 +382,7 @@ export function NotificationsSettingsCard() {
             </TableHeader>
             <TableBody>
               {(endpoints.data?.endpoints ?? []).map((e) => (
-                <EndpointRow key={e.id} endpoint={e} failing={failingIds.has(e.id)} />
+                <EndpointRow key={e.id} endpoint={e} failing={failingIds.has(e.id)} canWrite={isPlatformAdmin} />
               ))}
             </TableBody>
           </Table>
@@ -375,7 +392,8 @@ export function NotificationsSettingsCard() {
           <SecretOncePanel secret={onceSecret} onDismiss={() => setOnceSecret(null)} />
         ) : null}
 
-        <div className="space-y-3 rounded-md border p-3" data-testid="webhook-create-form">
+        {isPlatformAdmin ? (
+          <div className="space-y-3 rounded-md border p-3" data-testid="webhook-create-form">
           <div className="text-sm font-medium">Create endpoint</div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             <div className="space-y-1.5">
@@ -455,13 +473,19 @@ export function NotificationsSettingsCard() {
             Create endpoint
           </Button>
         </div>
+        ) : (
+          // 写面说明（2026-09-25 走查）：非平台管理员原位只读说明。
+          <p className="text-xs text-muted-foreground" data-testid="webhook-create-readonly-note">
+            {PLATFORM_ADMIN_NOTE}
+          </p>
+        )}
       </CardContent>
     </Card>
   );
 }
 
 /** 端点行（类型/目的地列 + 行动作面）——通道语义投影（W4-S3）。 */
-function EndpointRow({ endpoint, failing }: { endpoint: WebhookEndpointView; failing: boolean }) {
+function EndpointRow({ endpoint, failing, canWrite }: { endpoint: WebhookEndpointView; failing: boolean; canWrite: boolean }) {
   const type = endpoint.type ?? "webhook";
   return (
     <TableRow>
@@ -498,7 +522,7 @@ function EndpointRow({ endpoint, failing }: { endpoint: WebhookEndpointView; fai
         <div className={endpoint.enabled ? "text-xs" : "text-xs text-muted-foreground"}>
           {endpoint.enabled ? "enabled" : "disabled"}
         </div>
-        <EndpointRowActions endpoint={endpoint} />
+        <EndpointRowActions endpoint={endpoint} canWrite={canWrite} />
       </TableCell>
     </TableRow>
   );
@@ -509,12 +533,19 @@ const SMTP_PASSWORD_NOTE =
   "Write-only: the password is stored encrypted and never read back (only a fingerprint is shown). Saving with an empty password clears the stored one.";
 
 /** SmtpSettingsCard 是平台级 SMTP 设置卡（W4-S3，observability §8.3）：
- * email 端点共用一份投递配置；密码只写不读；Test 发真实测试邮件。 */
+ * email 端点共用一份投递配置；密码只写不读；Test 发真实测试邮件。
+ * 读写面整体 admin scope（scope.go NotificationsService/GetSmtpSettings
+ * 等三 RPC 登记）：非平台管理员整卡替换为只读说明（2026-09-25 走查）；
+ * saved 时间戳仅在非零值时渲染（epoch 零值守卫——ACME 卡同类修复的
+ * 漏网点，2026-09-25 走查）。 */
 export function SmtpSettingsCard() {
   const queryClient = useQueryClient();
+  const isPlatformAdmin = useIsPlatformAdmin();
   const settings = useQuery({
     queryKey: ["notifications", "smtp"],
     queryFn: getSmtpSettings,
+    enabled: isPlatformAdmin,
+    retry: false,
   });
   const stored: SmtpSettingsView | null = settings.data?.settings ?? null;
 
@@ -572,6 +603,32 @@ export function SmtpSettingsCard() {
     },
   });
 
+  // saved 时间戳零值守卫（对齐 acme-settings-card 同类修复）：epoch 0 或
+  // 不可解析一律视作未保存——proto 零值 Timestamp 序列化为 epoch 字符串
+  // 仍为真值，未保存过设置时会渲染 "saved 1970/…"。
+  const savedAtIso = stored?.updated_at ?? "";
+  const savedAt = savedAtIso && new Date(savedAtIso).getTime() > 0 ? savedAtIso : "";
+
+  // 非平台管理员：整卡替换为只读说明（全部 hooks 之后条件返回）。
+  if (!isPlatformAdmin) {
+    return (
+      <Card data-testid="notifications-smtp-card">
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+          <Mail aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">SMTP settings (email channel)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-4">
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="smtp-settings-readonly-note"
+          >
+            {PLATFORM_ADMIN_NOTE}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card data-testid="notifications-smtp-card">
       <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
@@ -579,7 +636,7 @@ export function SmtpSettingsCard() {
         <CardTitle className="text-sm font-semibold">SMTP settings (email channel)</CardTitle>
         <CardDescription className="ml-auto text-xs">
           one platform-wide configuration shared by every email endpoint
-          {stored?.updated_at ? ` · saved ${formatTime(stored.updated_at)}` : ""}
+          {savedAt ? ` · saved ${formatTime(savedAt)}` : ""}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4 pt-4">

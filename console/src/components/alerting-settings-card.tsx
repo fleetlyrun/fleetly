@@ -34,6 +34,11 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { useIsPlatformAdmin } from "@/lib/context";
+
+/** 非平台管理员的写面说明（2026-09-25 走查——此前 viewer/developer 见到
+ * enabled 的模式钮/规则 CRUD 假按钮）：状态读面保留，写面原位说明。 */
+const PLATFORM_ADMIN_NOTE = "Platform administrator required.";
 
 // TestAlertRule 求值结果的样本投影（即时校验面的展示形态）。
 function TestResult({ expr }: { expr: string }) {
@@ -239,7 +244,7 @@ function RuleForm({ rule, onClose }: { rule?: AlertRuleView; onClose: () => void
 }
 
 // 单条规则行（name/expr/for/severity/channels 摘要 + 编辑 + 删除）。
-function RuleRow({ rule }: { rule: AlertRuleView }) {
+function RuleRow({ rule, canWrite }: { rule: AlertRuleView; canWrite: boolean }) {
   const queryClient = useQueryClient();
   const [editing, setEditing] = useState(false);
   const remove = useMutation({
@@ -278,24 +283,26 @@ function RuleRow({ rule }: { rule: AlertRuleView }) {
             : "channels: all enabled endpoints"}
         </div>
       </div>
-      <div className="flex gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          data-testid="alert-rule-edit"
-          onClick={() => setEditing(true)}
-        >
-          Edit
-        </Button>
-        <Button
-          size="sm"
-          variant="outline"
-          disabled={remove.isPending}
-          onClick={() => remove.mutate()}
-        >
-          Remove
-        </Button>
-      </div>
+      {canWrite ? (
+        <div className="flex gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            data-testid="alert-rule-edit"
+            onClick={() => setEditing(true)}
+          >
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={remove.isPending}
+            onClick={() => remove.mutate()}
+          >
+            Remove
+          </Button>
+        </div>
+      ) : null}
       {remove.isError ? <EnvelopeAlertFrom envelope={errorEnvelopeFrom(remove.error)} /> : null}
     </div>
   );
@@ -304,6 +311,10 @@ function RuleRow({ rule }: { rule: AlertRuleView }) {
 export function AlertingSettingsCard() {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(false);
+  // 写面门（2026-09-25 走查）：模式切换/规则 CRUD/Test 都是平台管理员面
+  //（requirePlatformWriteFace 硬门）——非平台管理员隐藏写钮、原位说明；
+  // 状态与规则读面（read scope）全角色保留。
+  const isPlatformAdmin = useIsPlatformAdmin();
   const status = useQuery({
     queryKey: ["alerting", "status"],
     queryFn: getAlertsStatus,
@@ -355,24 +366,34 @@ export function AlertingSettingsCard() {
                   {status.data?.metrics_mode ?? "unset"}
                 </div>
               </div>
-              <div className="flex items-center gap-2" data-testid="alerts-mode-toggle">
-                <Button
-                  size="sm"
-                  variant={isOn ? "outline" : "default"}
-                  disabled={isOn || !metricsOn || setMode.isPending}
-                  onClick={() => setMode.mutate("on")}
+              {isPlatformAdmin ? (
+                <div className="flex items-center gap-2" data-testid="alerts-mode-toggle">
+                  <Button
+                    size="sm"
+                    variant={isOn ? "outline" : "default"}
+                    disabled={isOn || !metricsOn || setMode.isPending}
+                    onClick={() => setMode.mutate("on")}
+                  >
+                    Enable
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={isOn ? "default" : "outline"}
+                    disabled={!isOn || setMode.isPending}
+                    onClick={() => setMode.mutate("unset")}
+                  >
+                    Disable
+                  </Button>
+                </div>
+              ) : (
+                // 写面说明（2026-09-25 走查）：非平台管理员原位只读说明。
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="alerts-mode-readonly-note"
                 >
-                  Enable
-                </Button>
-                <Button
-                  size="sm"
-                  variant={isOn ? "default" : "outline"}
-                  disabled={!isOn || setMode.isPending}
-                  onClick={() => setMode.mutate("unset")}
-                >
-                  Disable
-                </Button>
-              </div>
+                  {PLATFORM_ADMIN_NOTE}
+                </p>
+              )}
             </div>
             {!metricsOn ? (
               <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="alerts-metrics-gate-note">
@@ -388,18 +409,30 @@ export function AlertingSettingsCard() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <div className="text-sm font-medium">Alert rules</div>
-                <Button size="sm" variant="outline" onClick={() => setShowForm((v) => !v)}>
-                  {showForm ? "Close form" : "New rule"}
-                </Button>
+                {isPlatformAdmin ? (
+                  <Button size="sm" variant="outline" onClick={() => setShowForm((v) => !v)}>
+                    {showForm ? "Close form" : "New rule"}
+                  </Button>
+                ) : null}
               </div>
+              {!isPlatformAdmin ? (
+                // 规则 CRUD 写面说明（2026-09-25 走查）：读面照常，写面收口。
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="alerting-rules-readonly-note"
+                >
+                  {PLATFORM_ADMIN_NOTE}
+                </p>
+              ) : null}
               {showForm ? <RuleForm onClose={() => setShowForm(false)} /> : null}
               {rulesList.map((r) => (
-                <RuleRow key={r.id} rule={r} />
+                <RuleRow key={r.id} rule={r} canWrite={isPlatformAdmin} />
               ))}
               {rulesList.length === 0 && !showForm ? (
                 <p className="text-xs text-muted-foreground">
-                  No alert rules yet — create one to start evaluating expressions every 30s
-                  (firing and RESOLVED notifications go to the notification endpoints).
+                  {isPlatformAdmin
+                    ? "No alert rules yet — create one to start evaluating expressions every 30s (firing and RESOLVED notifications go to the notification endpoints)."
+                    : "No alert rules yet."}
                 </p>
               ) : null}
               {rules.isError ? (

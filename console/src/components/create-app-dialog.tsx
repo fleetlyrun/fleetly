@@ -82,6 +82,9 @@ export function CreateAppDialog({
   const composeName = parseComposeName(composeText);
   const effectiveName = composeName ?? name.trim();
   const nameOk = APP_NAME_PATTERN.test(effectiveName);
+  // 非法名即时反馈（2026-09-25 走查：此前只禁按钮零提示——输入者无从知道
+  // 为什么 Deploy 不可点）。有输入且非法时红字提示；空名不提示（尚未输入）。
+  const nameInvalid = effectiveName !== "" && !nameOk;
 
   const deployMutation = useMutation({
     mutationFn: () => {
@@ -155,12 +158,23 @@ export function CreateAppDialog({
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
+            {/* 规则说明与实际拦截行为逐字一致（2026-09-25 走查：措辞矛盾
+                收口）；非法输入时红字提示与禁用态同时出现。 */}
             <p className="text-xs text-muted-foreground">
-              lowercase letters, digits, - and _ (must start alphanumeric).
+              Lowercase letters, digits, - and _ only (must start with a letter
+              or digit).
               {composeName
-                ? " The compose file declares the top-level name — it wins and the field above follows it."
+                ? " The compose file declares the top-level name — it wins and this field follows it."
                 : " If the compose file declares a top-level name, it wins."}
             </p>
+            {nameInvalid ? (
+              <p
+                className="text-xs text-red-600 dark:text-red-400"
+                data-testid="app-create-name-error"
+              >
+                Lowercase letters, digits, - and _ only.
+              </p>
+            ) : null}
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="app-create-compose">Compose YAML</Label>

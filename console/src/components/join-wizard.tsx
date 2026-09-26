@@ -31,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useIsPlatformAdmin } from "@/lib/context";
 
 function CopyButton({ value, label }: { value: string; label: string }) {
   const [copied, setCopied] = useState(false);
@@ -61,6 +62,10 @@ export function JoinWizard() {
   const [workerIp, setWorkerIp] = useState("");
   const [rotateOpen, setRotateOpen] = useState(false);
   const [rotateError, setRotateError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
+  // 读写面整体 admin scope（scope.go：GetJoinGuide/RotateJoinToken 登记；
+  // guide 响应含 join token 材料）：非平台管理员整卡替换为只读说明
+  //（2026-09-25 走查——此前 viewer 见到 enabled 的 Generate/Rotate 假钮）。
+  const isPlatformAdmin = useIsPlatformAdmin();
   const guide = useMutation({
     mutationFn: () => getJoinGuide(workerIp.trim() || undefined),
   });
@@ -68,10 +73,9 @@ export function JoinWizard() {
   const err = guide.error ? errorEnvelopeFrom(guide.error) : null;
 
   // 轮换（系统面动作——服务端 requirePlatformWriteFace 硬门，平台管理员可
-  // 执行；沿 SystemPage 既有卡片形态不另设前端角色门，403 信封照实展示）。
-  // role 固定 worker（指引只消费 worker token）。成功后已生成的指引立即
-  // 重取（join 命令/token 显示新值）；未生成过则无可刷新，下次 Generate
-  // 自然拿到新 token。
+  // 执行）。role 固定 worker（指引只消费 worker token）。成功后已生成的
+  // 指引立即重取（join 命令/token 显示新值）；未生成过则无可刷新，下次
+  // Generate 自然拿到新 token。
   const rotate = useMutation({
     mutationFn: () => rotateJoinToken("worker"),
     onSuccess: () => {
@@ -81,6 +85,29 @@ export function JoinWizard() {
     },
     onError: (err) => setRotateError(errorEnvelopeFrom(err)),
   });
+
+  // 非平台管理员：只读说明卡（所有 hooks 之后条件返回——无 hook 差异）。
+  if (!isPlatformAdmin) {
+    return (
+      <Card>
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+          <Network aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">Add node</CardTitle>
+          <CardDescription className="ml-auto text-xs">
+            Join a worker node — Docker Engine only, zero fleetly installables.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="join-wizard-readonly-note"
+          >
+            Platform administrator required.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card>

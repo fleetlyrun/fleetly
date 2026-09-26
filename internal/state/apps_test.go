@@ -196,3 +196,37 @@ func TestTxMarkAppDeletedTransactional(t *testing.T) {
 		t.Fatalf("tx deleted→deleted must be rejected, got: %v", err)
 	}
 }
+
+// TestGetAppByNameQualifiedForm 三段限定形的精确解析（2026-09-26 staging
+// 修复回归：跨项目同名 app〔「prod 与 dev 各有 demo」设计能力〕下，裸名
+// 查询显性歧义、限定形逐行精确命中——按裸名重解析的引擎/日志共享面凭
+// GetAppByName 的限定形分支免疫歧义）。
+func TestGetAppByNameQualifiedForm(t *testing.T) {
+	st := newTestStore(t)
+	ctx := context.Background()
+
+	a := seedApp(t, st, "demo")
+	b := seedApp(t, st, "demo")
+
+	// 裸名：跨项目重名显性歧义（不静默取任意行）。
+	if _, err := st.GetAppByName(ctx, "demo"); !errors.Is(err, ErrAppAmbiguous) {
+		t.Fatalf("bare name over duplicate rows = %v, want ErrAppAmbiguous", err)
+	}
+	// 限定形：各自精确命中（回读归属 slug 与行 id 一致）。
+	for _, want := range []App{a, b} {
+		got, err := st.GetAppByName(ctx, want.QualifiedName())
+		if err != nil {
+			t.Fatalf("qualified %q: %v", want.QualifiedName(), err)
+		}
+		if got.ID != want.ID {
+			t.Fatalf("qualified %q resolved id = %s, want %s", want.QualifiedName(), got.ID, want.ID)
+		}
+		if got.QualifiedName() != want.QualifiedName() {
+			t.Fatalf("qualified roundtrip = %q, want %q", got.QualifiedName(), want.QualifiedName())
+		}
+	}
+	// 限定形指向不存在的 app：ErrAppNotFound（不落歧义面）。
+	if _, err := st.GetAppByName(ctx, a.TeamSlug+"/"+a.ProjectSlug+"/ghost"); !errors.Is(err, ErrAppNotFound) {
+		t.Fatalf("unknown qualified = %v, want ErrAppNotFound", err)
+	}
+}

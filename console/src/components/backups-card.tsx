@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { formatTime, timeAgo } from "@/lib/utils";
 import type { BackupView } from "@/api/types";
+import { useIsPlatformAdmin } from "@/lib/context";
 
 function formatSize(bytes: string | undefined): string {
   const n = Number(bytes ?? 0);
@@ -92,9 +93,10 @@ export function BackupsCard() {
   });
 
   // 手动触发（backlog #4-②）：平台状态备份（系统面——服务端
-  // requirePlatformWriteFace 硬门，平台管理员可执行；沿 SystemPage 既有
-  // 设置卡形态不另设前端角色门，403 信封照实展示）。成功失效台账 + 系统
-  // 健康卡（BackupHealth 同源）——新行 created_at 倒序直接可见。
+  // requirePlatformWriteFace 硬门，平台管理员可执行）。前端体验门补齐
+  //（2026-09-25 走查：viewer 此前见到 enabled 假按钮）：非平台管理员隐藏
+  // 触发钮、原位说明；台账读面（ListBackups = read scope）全角色保留。
+  const isPlatformAdmin = useIsPlatformAdmin();
   const trigger = useMutation({
     mutationFn: () => triggerBackup(),
     onSuccess: () => {
@@ -110,15 +112,17 @@ export function BackupsCard() {
       <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
         <CardTitle className="text-sm font-semibold">Backups</CardTitle>
         <div className="ml-auto">
-          <Button
-            variant="outline"
-            size="sm"
-            data-testid="backup-trigger"
-            disabled={trigger.isPending}
-            onClick={() => trigger.mutate()}
-          >
-            {trigger.isPending ? "Backing up…" : "Back up now"}
-          </Button>
+          {isPlatformAdmin ? (
+            <Button
+              variant="outline"
+              size="sm"
+              data-testid="backup-trigger"
+              disabled={trigger.isPending}
+              onClick={() => trigger.mutate()}
+            >
+              {trigger.isPending ? "Backing up…" : "Back up now"}
+            </Button>
+          ) : null}
         </div>
       </CardHeader>
       <CardContent className="pt-4">
@@ -127,6 +131,12 @@ export function BackupsCard() {
           state — not application or database data backups; those live on each
           database's detail page).
         </p>
+        {!isPlatformAdmin ? (
+          // 写面说明（2026-09-25 走查）：非平台管理员原位只读说明。
+          <p className="mb-3 text-xs text-muted-foreground" data-testid="backup-trigger-readonly-note">
+            Platform administrator required.
+          </p>
+        ) : null}
         {trigger.isError ? (
           <div className="mb-3" data-testid="backup-trigger-error">
             <EnvelopeAlertFrom envelope={errorEnvelopeFrom(trigger.error)} />

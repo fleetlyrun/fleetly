@@ -134,12 +134,13 @@ export function ProjectDetailPage() {
                 {" · "}
                 {/* 角色覆写管理面在团队设置的 Projects tab（单一管理面）——
                     落点带 tab（2026-09-25 审查 P2-2：两个链接此前同指一个
-                    URL，覆写入口永远落在 Members tab）。 */}
+                    URL，覆写入口永远落在 Members tab）；文案直说落点语义
+                    （2026-09-25 走查：'members & role overrides' 含糊）。 */}
                 <Link
                   to={`/teams/${encodeURIComponent(membership.team_id ?? "")}?tab=projects`}
                   className="hover:underline"
                 >
-                  members &amp; role overrides
+                  project role overrides
                 </Link>
               </>
             ) : (

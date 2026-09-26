@@ -369,7 +369,14 @@ func (s *DeploymentsService) RollbackDeployment(ctx context.Context, req *server
 		return nil, err
 	}
 	rec, err := engine.EnqueueRollback(ctx, s.st, engine.RollbackInput{
-		AppName:          req.GetApp(),
+		// 引擎按 GetAppByName 重解析（不识别引用形态）：传解析后的三段限
+		// 定形——原始引用（路由参数 = 平台 id）透传使既有应用的回滚恒
+		// E_ROLLBACK_NO_TARGET 且文案裸显平台 id（2026-09-25 teamadmin 走
+		// 查实录「app <ULID> does not exist」）；业务裸名在跨项目同名时撞
+		// ErrAppAmbiguous（E_RUNTIME_UNAVAILABLE 500）。限定形精确命中，
+		// 目标解析失败的文案亦不复现平台 id（与 Deploy A1 修法同源，取
+		// 限定形而非裸业务名的理由见 drift.go 头注）。
+		AppName:          app.QualifiedName(),
 		TargetRevisionID: req.GetTargetRevisionId(),
 		Actor:            "human",
 	})

@@ -20,10 +20,24 @@ import (
 // mux（无 token 仍 401）。
 const consoleUIPathPrefix = "/ui"
 
+// consoleInlineThemeScriptHash 是 index.html 内联「防闪主题」脚本的 CSP
+// 静态哈希（sha256-'…'，script-src 白名单项）。背景（2026-09-25 走查）：
+// consoleCSP 无 script-src 时回落 default-src 'self'，该内联脚本每页被
+// 拦 2 条 console error（主题防闪失效）；脚本必须内联在 React 挂载前执行
+// 才有防闪意义，外链化得不偿失——按脚本原始字节（console/index.html 被
+// .gitattributes 钉 LF，构建产物逐字节确定）计算哈希放行。
+// 纪律：改动 index.html 的内联脚本（哪怕一个空格/换行）必须重算并同步
+// 本哈希，否则脚本被 CSP 静默拦截；计算方式 = sha256（<script> 与
+// </script> 之间的原始字节，含换行与缩进，不含标签本身）。
+const consoleInlineThemeScriptHash = "sha256-+ZMaiU8bP+f4HWQQalPITs6U4z+vCsPp7gQFCyWhSqc="
+
 // consoleCSP 是 /ui/ 静态面的 Content-Security-Policy（D4-④）。指令集按
 // Console 构建产物的实际加载形态定稿（2026-09-19 对 dist/ 排查）：Vite
 // 产物为外部 module script + 外部样式表，数据面 fetch/流式全走同源 /v1，
 // 图标为同源 svg——无 'unsafe-inline' 脚本面。
+//   - script-src 'self' + 内联主题脚本哈希白名单（见
+//     consoleInlineThemeScriptHash 注释）：显式声明优于 default-src 回落，
+//     防闪脚本按哈希精确放行、其余内联脚本仍拒（2026-09-25 修订）；
 //   - connect-src 'self'：/v1 REST + NDJSON 流（VITE_API_BASE 指向跨源
 //     控制面时需放宽本指令）；
 //   - img-src 'self' data:：同源 favicon/图标，data: 为零散内联图标预留；
@@ -33,7 +47,8 @@ const consoleUIPathPrefix = "/ui"
 //     文字色（深色主题下即黑底黑字，光标亦不可见；staging 真机实测）。
 //     样式注入不含执行面（相对 script 的 unsafe-inline 风险低一个量级），
 //     React 自身的样式修改仍走 CSSOM 不受影响（2026-09-25 修订）。
-const consoleCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
+const consoleCSP = "default-src 'self'; connect-src 'self'; img-src 'self' data:; " +
+	"style-src 'self' 'unsafe-inline'; script-src 'self' '" + consoleInlineThemeScriptHash + "'"
 
 // consoleCompressibleExt 是按扩展名的可压缩静态资产（2026-09-25 加载优化
 // ——staging 实测 daemon 静态面无压缩，浏览器实传 1MB 未压缩 JS；gzip 后

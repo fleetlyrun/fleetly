@@ -120,9 +120,21 @@ describe("CreateAppDialog", () => {
     expect(screen.getByTestId("app-target-project")).toHaveTextContent("founder/staging");
     expect(screen.getByTestId("app-create-dialog")).toBeInTheDocument();
 
+    // 非法名：提交禁用 + 红字即时提示（2026-09-25 走查：此前只禁按钮零
+    // 提示——输入者无从知道 Deploy 为什么不可点）。
     await user.type(screen.getByTestId("app-create-name-input"), "Bad Name");
     await user.type(screen.getByTestId("app-create-compose-input"), COMPOSE_NO_NAME);
     expect(screen.getByTestId("app-create-submit")).toBeDisabled();
+    expect(screen.getByTestId("app-create-name-error")).toHaveTextContent(
+      "Lowercase letters, digits, - and _ only.",
+    );
+
+    // 名字合法化后红字提示消失（反馈与输入同步）。
+    await user.clear(screen.getByTestId("app-create-name-input"));
+    await user.type(screen.getByTestId("app-create-name-input"), "web-api");
+    await waitFor(() =>
+      expect(screen.queryByTestId("app-create-name-error")).not.toBeInTheDocument(),
+    );
   });
 
   it("prepends name to compose without a top-level name and posts app+project", async () => {

@@ -282,6 +282,11 @@ describe("AppDriftCard role gates", () => {
 
     await screen.findByTestId("drift-converge-button");
     expect(screen.getByTestId("drift-convergence-toggle")).toBeInTheDocument();
+    // 写面在（deploy 门通过）：说明文案指向下方按钮（2026-09-25 走查：
+    // 文案随按钮条件渲染——有按钮才说 buttons below）。
+    expect(screen.getByTestId("drift-convergence-state").parentElement?.textContent ?? "").toContain(
+      "buttons below set it explicitly",
+    );
     expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
   });
 
@@ -294,6 +299,10 @@ describe("AppDriftCard role gates", () => {
     expect(screen.queryByTestId("drift-converge-button")).not.toBeInTheDocument();
     expect(screen.queryByTestId("drift-convergence-toggle")).not.toBeInTheDocument();
     expect(screen.getByText("Converge requires the deploy face (developer role or higher).")).toBeInTheDocument();
+    // 只读态文案不再指向不存在的 buttons below（2026-09-25 走查）。
+    const autoSection = screen.getByTestId("drift-convergence-state").parentElement ?? null;
+    expect(autoSection?.textContent ?? "").toContain("controlled by team admins");
+    expect(autoSection?.textContent ?? "").not.toContain("buttons below");
   });
 
   it("platform administrator: read face visible, both write actions replaced by the readonly note", async () => {

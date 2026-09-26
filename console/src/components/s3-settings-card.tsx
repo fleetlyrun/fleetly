@@ -43,6 +43,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatTime } from "@/lib/utils";
+import { useIsPlatformAdmin } from "@/lib/context";
+
+/** 非平台管理员的整卡替换说明（S3 设置读面/写面均为 admin scope——
+ * scope.go SystemService/GetS3Settings 登记；viewer/developer 连读面都
+ * 403，卡片整体替换为诚实说明，2026-09-25 走查）。 */
+const PLATFORM_ADMIN_NOTE = "Platform administrator required.";
 
 // RustFS 诚实口径（D-S3-8，V2-2 裁决）：UI 文案语言跟随 console 现状
 //（英文为工作语言）。常驻于 rustfs 模式——不可关闭、不随保存消失。
@@ -118,9 +124,15 @@ function ProbeStepRow({
 
 export function S3SettingsCard() {
   const queryClient = useQueryClient();
+  // 读写面整体 admin scope（scope.go 登记）：读面 query 对非平台管理员
+  // 关闭（enabled:false——否则每访必 403）；非平台管理员整卡替换为只读
+  // 说明（2026-09-25 走查）。
+  const isPlatformAdmin = useIsPlatformAdmin();
   const settingsQuery = useQuery({
     queryKey: ["system", "s3-settings"],
     queryFn: getS3Settings,
+    enabled: isPlatformAdmin,
+    retry: false,
   });
 
   const stored = settingsQuery.data?.settings;
@@ -195,6 +207,29 @@ export function S3SettingsCard() {
 
   const isRustfs = form.mode === "rustfs";
   const isExternal = form.mode === "external";
+
+  // 非平台管理员：读写面整体 admin scope（scope.go 登记）——整卡替换为
+  // 只读说明（2026-09-25 走查）。置于全部 hooks 之后（规则：条件返回不得
+  // 跨 hook 调用）。
+  if (!isPlatformAdmin) {
+    return (
+      <Card data-testid="s3-settings-card">
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+          <Cloud aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">Object storage (S3)</CardTitle>
+          <CardDescription className="ml-auto text-xs">Remote backup uploads</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-4">
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="s3-settings-readonly-note"
+          >
+            {PLATFORM_ADMIN_NOTE}
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card data-testid="s3-settings-card">

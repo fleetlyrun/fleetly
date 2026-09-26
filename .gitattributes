@@ -18,3 +18,9 @@ genproto/** text eol=lf
 # 迁移 SQL 钉 LF：migrations_test 对已应用文件原始字节 sha256（只加法纪律），
 # CRLF 检出会使全部哈希漂移；与 proto/genproto 同款「源头钉 LF」策略。
 *.sql text eol=lf
+# HTML 钉 LF（当前仅 console/index.html）：内联防闪主题脚本的原始字节被
+# consoleCSP（internal/runtime/console_static.go）以 sha256-'…' 静态哈希
+# 白名单放行——行尾随 autocrlf/检出平台漂移会改变脚本字节使哈希失配、
+# CSP 静默拦截脚本（防闪失效回归）。源头钉 LF 即哈希全局确定（2026-09-25
+# 走查修复；同款「源头钉 LF」策略）。
+*.html text eol=lf

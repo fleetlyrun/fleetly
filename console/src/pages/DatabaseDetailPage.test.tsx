@@ -110,6 +110,12 @@ function stubDetailFetch(opts: { s3Mode?: string; status?: string } = {}) {
           Promise.resolve({ name: "pg-prod", snapshot: "db/pg-prod/0f1e2d3c", status: "accepted" }),
       });
     }
+    if (url.includes("/databases/pg-prod") && method === "DELETE") {
+      return Promise.resolve({
+        ok: true, status: 200, statusText: "",
+        json: () => Promise.resolve({ name: "pg-prod", status: "deleting" }),
+      });
+    }
     if (url.includes("/system/s3")) {
       return Promise.resolve({
         ok: true, status: 200, statusText: "",
@@ -146,6 +152,70 @@ async function renderReady(opts: { s3Mode?: string; status?: string } = {}) {
   await screen.findByTestId("database-detail-page");
   await waitFor(() => screen.getByTestId("database-connection-card"));
   return fetchMock;
+}
+
+// /auth/me 包装（TeamProjectProvider 生产接线；其余请求透传给既有分路
+// stub）。两个 describe 共享：平台管理员态 / 成员角色态（owner/viewer）。
+function stubMe(
+  opts: { isPlatformAdmin: boolean; role?: string },
+  inner: ReturnType<typeof stubDetailFetch>,
+) {
+  return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/auth/me")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "",
+        json: () =>
+          Promise.resolve({
+            user: { id: "01U1", email: "f@t.test", is_platform_admin: opts.isPlatformAdmin },
+            teams: [
+              {
+                team_id: "01TEAM",
+                team_slug: "acme",
+                team_name: "Acme",
+                role: opts.role ?? "owner",
+              },
+            ],
+            project_overrides: [],
+          }),
+      });
+    }
+    return inner(input, init);
+  });
+}
+
+function renderAtInTeamContext() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <MemoryRouter initialEntries={["/databases/pg-prod"]}>
+      <QueryClientProvider client={client}>
+        <TeamProjectProvider>
+          <Routes>
+            <Route path="/databases/:name" element={<DatabaseDetailPage />} />
+          </Routes>
+        </TeamProjectProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
+
+async function renderReadyInContext(
+  opts: { isPlatformAdmin: boolean; role?: string; s3Mode?: string; status?: string } = {
+    isPlatformAdmin: false,
+  },
+) {
+  setToken("flt_test");
+  const inner = stubDetailFetch({
+    s3Mode: opts.s3Mode ?? "unset",
+    status: opts.status ?? "ready",
+  });
+  vi.stubGlobal("fetch", stubMe(opts, inner));
+  renderAtInTeamContext();
+  await screen.findByTestId("database-detail-page");
+  await waitFor(() => screen.getByTestId("database-connection-card"));
 }
 
 afterEach(() => {
@@ -211,7 +281,9 @@ describe("DatabaseDetailPage", () => {
   });
 
   it("shows the rustfs honesty note and the failed verify row on the backups card", async () => {
-    await renderReady();
+    // S3 可达性探测（rustfs 口径判断）仅平台管理员发起（GET /system/s3 =
+    // admin scope，非平台管理员跳过探测）——本测试按平台管理员视角渲染。
+    await renderReadyInContext({ isPlatformAdmin: true, s3Mode: "rustfs" });
     await waitFor(() => screen.getByTestId("database-backups-card"));
 
     expect(screen.getByTestId("database-honesty-note")).toHaveTextContent(/convenience layer/i);
@@ -222,6 +294,11 @@ describe("DatabaseDetailPage", () => {
     expect(rows[0].getAttribute("data-verify")).toBe("verified");
     expect(rows[1].getAttribute("data-verify")).toBe("failed");
     expect(rows[1].textContent).toContain("read-back checksum mismatch");
+    // 探测门：非平台管理员跳过 GET /system/s3（enabled:false）。
+    const s3Calls = (globalThis.fetch as ReturnType<typeof vi.fn>).mock.calls.filter((c) =>
+      String(c[0]).includes("/system/s3"),
+    );
+    expect(s3Calls).toHaveLength(1);
   });
 
   it("triggers a manual backup from a ready instance (POST /backups)", async () => {
@@ -240,6 +317,11 @@ describe("DatabaseDetailPage", () => {
       expect(posted).toBeTruthy();
       expect(JSON.parse(String(posted![1]?.body))).toEqual({ kind: "manual" });
     });
+    // 受理即反馈（2026-09-25 走查：此前点击后零反馈）：异步受理成功行 +
+    // 按钮在途态标签。
+    expect(screen.getByTestId("database-backup-accepted")).toHaveTextContent(
+      /Backup accepted/,
+    );
   });
 
   it("restores a snapshot only after the destructive name confirm", async () => {
@@ -271,60 +353,39 @@ describe("DatabaseDetailPage", () => {
       });
     });
   });
+  it("deletes only after the destructive name confirm and passes confirm via the query string", async () => {
+    // confirm 走 query（2026-09-25 走查修复：DELETE 无 body 绑定，此前
+    // JSON body 上送被网关忽略 → 恒 400 destructive operation）。
+    const fetchMock = await renderReady();
+    const user = userEvent.setup();
+
+    await user.click(screen.getByTestId("database-delete-button"));
+    const dialog = screen.getByTestId("database-delete-dialog");
+    expect(dialog).toBeInTheDocument();
+
+    // 未回填名字 → 提交禁用。
+    expect(screen.getByTestId("database-delete-submit")).toBeDisabled();
+    // 卷保留开关：默认关（delete_volumes=false 上行）。
+    await user.click(screen.getByTestId("database-delete-volumes-toggle"));
+    await user.click(screen.getByTestId("database-delete-volumes-toggle"));
+    await user.type(screen.getByTestId("database-delete-confirm-input"), "pg-prod");
+    await user.click(screen.getByTestId("database-delete-submit"));
+
+    await waitFor(() => {
+      const deleted = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes("/databases/pg-prod") && c[1]?.method === "DELETE",
+      );
+      expect(deleted).toBeTruthy();
+      const url = String(deleted![0]);
+      expect(url).toContain("confirm=pg-prod");
+      expect(url).toContain("delete_volumes=false");
+    });
+  });
 });
 
 describe("DatabaseDetailPage platform-admin read-only (P0-3 residual)", () => {
-  // /auth/me 包装：owner 成员关系 + is_platform_admin 开关（经
-  // TeamProjectProvider 生产接线；其余请求透传给既有分路 stub）。
-  function stubMe(isPlatformAdmin: boolean, inner: ReturnType<typeof stubDetailFetch>) {
-    return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-      if (String(input).endsWith("/auth/me")) {
-        return Promise.resolve({
-          ok: true,
-          status: 200,
-          statusText: "",
-          json: () =>
-            Promise.resolve({
-              user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
-              teams: [
-                { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
-              ],
-              project_overrides: [],
-            }),
-        });
-      }
-      return inner(input, init);
-    });
-  }
-
-  function renderAtInTeamContext() {
-    const client = new QueryClient({
-      defaultOptions: { queries: { retry: false } },
-    });
-    return render(
-      <MemoryRouter initialEntries={["/databases/pg-prod"]}>
-        <QueryClientProvider client={client}>
-          <TeamProjectProvider>
-            <Routes>
-              <Route path="/databases/:name" element={<DatabaseDetailPage />} />
-            </Routes>
-          </TeamProjectProvider>
-        </QueryClientProvider>
-      </MemoryRouter>,
-    );
-  }
-
-  async function renderReadyInTeamContext(isPlatformAdmin: boolean) {
-    setToken("flt_test");
-    const inner = stubDetailFetch({ s3Mode: "rustfs", status: "ready" });
-    vi.stubGlobal("fetch", stubMe(isPlatformAdmin, inner));
-    renderAtInTeamContext();
-    await screen.findByTestId("database-detail-page");
-    await waitFor(() => screen.getByTestId("database-connection-card"));
-  }
-
   it("平台管理员：生命周期/reveal/备份/恢复写钮全部隐藏，只读说明原位渲染，读面骨架照常", async () => {
-    await renderReadyInTeamContext(true);
+    await renderReadyInContext({ isPlatformAdmin: true });
 
     // 说明卡三处（操作面 / 连接卡 / 备份卡）。
     const notes = screen.getAllByTestId("platform-readonly-note");
@@ -351,7 +412,7 @@ describe("DatabaseDetailPage platform-admin read-only (P0-3 residual)", () => {
   });
 
   it("非管理员 owner：全部写钮照常渲染、无只读说明（零变化防回归）", async () => {
-    await renderReadyInTeamContext(false);
+    await renderReadyInContext({ isPlatformAdmin: false, role: "owner" });
 
     expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
     await waitFor(() => screen.getByTestId("database-backups-card"));
@@ -362,5 +423,32 @@ describe("DatabaseDetailPage platform-admin read-only (P0-3 residual)", () => {
     expect(screen.getByTestId("database-reveal-button")).toBeInTheDocument();
     expect(screen.getByTestId("database-backup-trigger-button")).toBeEnabled();
     expect(screen.getAllByTestId("database-restore-button")[0]).toBeEnabled();
+  });
+
+  it("viewer（成员角色门，2026-09-25 走查）：全部写钮隐藏、成员角色说明卡渲染、读面骨架照常", async () => {
+    await renderReadyInContext({ isPlatformAdmin: false, role: "viewer" });
+
+    // 说明卡：成员角色语义（platform-readonly-note 形态复用）——页面级
+    // 一张 + 备份卡内说明行一条。
+    const pageNote = await screen.findByTestId("database-role-note");
+    expect(pageNote).toHaveTextContent(
+      "Database lifecycle actions require the admin role in this project.",
+    );
+    expect(screen.getByTestId("database-backups-role-note")).toBeInTheDocument();
+    expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
+    // 生命周期/reveal/备份/恢复写钮不再渲染（此前是 enabled 假按钮）。
+    expect(screen.queryByTestId("database-suspend-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-resume-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-retry-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-upgrade-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-rotate-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-delete-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-reveal-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-backup-trigger-button")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("database-restore-button")).not.toBeInTheDocument();
+    // 读面骨架不塌：连接脱敏投影 + 备份台账照常。
+    await waitFor(() => screen.getByTestId("database-backups-card"));
+    expect(screen.getAllByTestId("database-backup-row")).toHaveLength(2);
+    expect(screen.getByText("1a2b3c4d")).toBeInTheDocument();
   });
 });

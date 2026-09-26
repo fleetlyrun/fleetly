@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { formatTime } from "@/lib/utils";
+import { useIsPlatformAdmin } from "@/lib/context";
 
 const PROVIDER_OPTIONS = [
   { value: "none", label: "Not configured" },
@@ -91,9 +92,15 @@ function ProbeStepRow({
 
 export function AcmeSettingsCard() {
   const queryClient = useQueryClient();
+  // 读写面整体 admin scope（scope.go SystemService/GetAcmeSettings 等三
+  // RPC 登记）：读面 query 对非平台管理员关闭（enabled:false——否则每访
+  // 必 403）；非平台管理员整卡替换为只读说明（2026-09-25 走查）。
+  const isPlatformAdmin = useIsPlatformAdmin();
   const settingsQuery = useQuery({
     queryKey: ["system", "acme-settings"],
     queryFn: getAcmeSettings,
+    enabled: isPlatformAdmin,
+    retry: false,
   });
 
   const stored = settingsQuery.data?.settings;
@@ -172,6 +179,26 @@ export function AcmeSettingsCard() {
 
   const isNone = form.provider === "none";
   const providerConfigured = form.provider === "dnspod" || form.provider === "cloudflare";
+
+  // 非平台管理员：整卡替换为只读说明（全部 hooks 之后条件返回）。
+  if (!isPlatformAdmin) {
+    return (
+      <Card data-testid="acme-settings-card">
+        <CardHeader className="flex-row items-center gap-2 space-y-0 border-b pb-3">
+          <Globe aria-hidden className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-semibold">Certificates (ACME)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 pt-4">
+          <p
+            className="text-sm text-muted-foreground"
+            data-testid="acme-settings-readonly-note"
+          >
+            Platform administrator required.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
 
   // saved 时间戳仅在非零值时渲染（proto 零值 Timestamp 序列化为 epoch
   // 字符串仍为真值——未保存过设置时会显示 "saved 1970/…"，2026-09-25

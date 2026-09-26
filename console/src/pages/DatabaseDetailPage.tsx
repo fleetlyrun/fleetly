@@ -54,7 +54,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatTime } from "@/lib/utils";
-import { useIsPlatformAdmin } from "@/lib/context";
+import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -234,10 +234,12 @@ function ConfirmDialog({
 }
 
 /** 连接卡：脱敏投影常显 + 显式 reveal（admin 面——取到的明文只在内存/前台，隐藏即弃）。
- * 平台管理员资源面只读（P0-3 双门）：reveal 钮隐藏、原位给诚实说明（reveal
- * 有 CLI 等价命令，文案如实指路）；非平台管理员渲染零变化。 */
+ * 写面双门（P0-3 双门 + 角色门 2026-09-25 走查）：reveal 钮按 canAdminResources
+ * （admin+）渲染——此前只门了平台管理员，viewer/developer 见到点了必 403 的
+ * 假按钮；平台管理员说明态保留，非管理员成员渲染零变化。 */
 function ConnectionCard({ name }: { name: string }) {
   const platformReadonly = useIsPlatformAdmin();
+  const { canAdminResources } = useTeamCapabilities();
   const query = useQuery({ queryKey: ["database", name], queryFn: () => getDatabase(name) });
   const conn = query.data?.database?.connection;
   const [revealed, setRevealed] = useState<{ password: string; url: string } | null>(null);
@@ -318,7 +320,7 @@ function ConnectionCard({ name }: { name: string }) {
                   <span className="flex items-center gap-2">
                     <code className="text-xs text-muted-foreground">{conn.password_fingerprint ?? "—"}</code>
                     <span className="text-xs text-muted-foreground">(fingerprint)</span>
-                    {!platformReadonly ? (
+                    {!canAdminResources ? null : (
                       <Button
                         variant="outline"
                         size="sm"
@@ -330,7 +332,7 @@ function ConnectionCard({ name }: { name: string }) {
                         <Eye aria-hidden className="h-3.5 w-3.5" />
                         Reveal
                       </Button>
-                    ) : null}
+                    )}
                   </span>
                 )
               }
@@ -365,10 +367,12 @@ function ConnectionCard({ name }: { name: string }) {
 export function DatabaseDetailPage() {
   const { name = "" } = useParams();
   const queryClient = useQueryClient();
-  // 平台管理员资源面只读（P0-3 双门）：生命周期写钮/reveal/备份/恢复隐藏并
-  // 原位说明。注意本页对非平台管理员（含 viewer）今天就不设角色门——按
-  // 「非平台管理员各角色行为零变化」，此处只加平台管理员单门。
+  // 生命周期写面双门（2026-09-25 走查）：资源面写钮按 canAdminResources
+  //（admin+）渲染——此前只门了平台管理员（P0-3 单门），viewer/developer
+  // 见到整排 enabled 假按钮（点了服务端 403）。平台管理员说明态保留；
+  // 非管理员的普通成员给成员角色语义的说明卡。
   const platformReadonly = useIsPlatformAdmin();
+  const { canAdminResources } = useTeamCapabilities();
   const query = useQuery({
     queryKey: ["database", name],
     queryFn: () => getDatabase(name),
@@ -440,7 +444,7 @@ export function DatabaseDetailPage() {
           ) : null}
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          {!platformReadonly ? (
+          {canAdminResources ? (
             <>
               <Button
                 variant="outline"
@@ -527,6 +531,18 @@ export function DatabaseDetailPage() {
             (separation of duties). Manage this database instance from the CLI
             with a machine token (<code>fleetly databases</code> suspend, rotate,
             backup, restore, …), or ask a team owner for a member role.
+          </CardContent>
+        </Card>
+      ) : !canAdminResources ? (
+        // 成员角色门（2026-09-25 走查）：viewer/developer 此前见到整排
+        // enabled 假按钮——原位说明卡（platform-readonly-note 同形态、
+        // 成员角色语义文案）。
+        <Card className="border-dashed">
+          <CardContent
+            className="p-4 text-sm text-muted-foreground"
+            data-testid="database-role-note"
+          >
+            Database lifecycle actions require the admin role in this project.
           </CardContent>
         </Card>
       ) : null}

@@ -38,9 +38,9 @@ var (
 	// ErrAppNotFound 表示应用不存在。
 	ErrAppNotFound = errors.New("app not found")
 	// ErrAppAmbiguous 表示按裸名解析命中多行（v0.3 D-W0-4 二修：app 名
-	// project 内唯一后，跨项目同名 app 合法——按名解析需限定形
-	// team/prj/app 或域内唯一；读面限定形支持归 S4，本哨兵先兜底显性
-	// 拒绝，不静默取任意行）。
+	// project 内唯一后，跨项目同名 app 合法——裸名仅解析域内唯一时可用，
+	// 跨项目重名须以限定形 team/prj/app（GetAppByName 兼容）或 id 显性
+	// 寻址；本哨兵兜底显性拒绝，不静默取任意行）。
 	ErrAppAmbiguous = errors.New("app name is ambiguous across projects")
 	// ErrInvalidLifecycleTransition 表示生命周期状态位迁移非法
 	// （状态机：active → deleting → deleted，不可跳越、不可回退）。
@@ -132,8 +132,16 @@ func (t *Tx) CreateApp(ctx context.Context, appID, name, projectID, teamID strin
 
 // GetAppByName 按名取应用行；不存在返回 ErrAppNotFound。跨项目同名 app 多
 // 行命中时返回 ErrAppAmbiguous（不静默取任意行——D-W0-4 二修后的按名解析
-// 纪律：裸名仅域内唯一时可用；限定形/ID 读面归 S4）。
+// 纪律：裸名仅域内唯一时可用）。三段限定形 team/prj/app 输入走精确解析
+//（GetAppByQualifiedName——按裸名重解析的引擎/日志共享面凭限定形免疫跨项
+// 目重名歧义；应用名词表不含 `/`〔compose 名 ^[a-z0-9][a-z0-9_-]*$〕，分支
+// 与裸名查询不相交）。ID 形态归调用面解析（GetAppByID 全库唯一）。
 func (s *Store) GetAppByName(ctx context.Context, name string) (App, error) {
+	if teamSlug, rest, found := strings.Cut(name, "/"); found {
+		if prjSlug, appName, ok := strings.Cut(rest, "/"); ok && teamSlug != "" && prjSlug != "" && appName != "" {
+			return s.GetAppByQualifiedName(ctx, teamSlug, prjSlug, appName)
+		}
+	}
 	const q = `SELECT ` + appScanCols + ` ` + appScanFrom + ` WHERE a.name = ? ORDER BY a.id LIMIT 2`
 	rows, err := s.db.QueryContext(ctx, q, name)
 	if err != nil {
@@ -141,6 +149,15 @@ func (s *Store) GetAppByName(ctx context.Context, name string) (App, error) {
 	}
 	defer func() { _ = rows.Close() }()
 	return scanAppSingle(rows, name)
+}
+
+// GetAppByQualifiedName 按三段限定形 team/prj/app 取应用行（两段 slug 与
+// 名字精确匹配；不存在返回 ErrAppNotFound）。跨项目同名 app（D-W0-4 二修
+// 后合法）的无歧义读取通道——UNIQUE(project_id, name) 的 slug 投影形态。
+func (s *Store) GetAppByQualifiedName(ctx context.Context, teamSlug, prjSlug, appName string) (App, error) {
+	const q = `SELECT ` + appScanCols + ` ` + appScanFrom + `
+		WHERE t.slug = ? AND p.slug = ? AND a.name = ?`
+	return scanApp(s.db.QueryRowContext(ctx, q, teamSlug, prjSlug, appName))
 }
 
 // ListAppRowsByName 返回该裸名的全部应用行（跨项目、任意生命周期态）——

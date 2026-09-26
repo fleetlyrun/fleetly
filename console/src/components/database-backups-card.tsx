@@ -5,7 +5,7 @@
 // 延伸——复用 System 存储页同一 API 投影判断模式）。
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Clock, HardDriveDownload, ShieldAlert } from "lucide-react";
+import { Clock, HardDriveDownload, Loader2, ShieldAlert } from "lucide-react";
 import { useState } from "react";
 
 import {
@@ -46,7 +46,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { formatBytes, formatTime, timeAgo } from "@/lib/utils";
-import { useIsPlatformAdmin } from "@/lib/context";
+import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
 
 // RustFS 同节点诚实口径（managed-databases §2.6 诚实口径行——文案与
 // s3-settings-card 的 D-S3-8 注记同族，限定到库备份）。
@@ -134,19 +134,24 @@ function RestoreDialog({
 
 export function DatabaseBackupsCard({ name, actionable }: { name: string; actionable: boolean }) {
   const queryClient = useQueryClient();
-  // 平台管理员资源面只读（P0-3 双门）：手动备份/恢复钮隐藏、原位说明
-  //（CLI 等价命令齐备，文案如实指路）；非平台管理员渲染零变化（本组件
-  // 原本就无角色门，viewers 也见禁用态钮——保持现状）。
+  // 写面双门（2026-09-25 走查）：手动备份/恢复钮按 canAdminResources
+  //（admin+）渲染——此前只门了平台管理员，viewer/developer 见到 enabled
+  // 假按钮；平台管理员说明态保留，成员角色语义说明行补齐。
   const platformReadonly = useIsPlatformAdmin();
+  const { canAdminResources } = useTeamCapabilities();
   const backupsQuery = useQuery({
     queryKey: ["database-backups", name],
     queryFn: () => listDatabaseBackups(name),
     refetchInterval: 10_000,
   });
+  // S3 可达性探测（GET /v1/system/s3 = admin scope）：仅平台管理员发起；
+  // 非平台管理员跳过——既有请求恒 403（静默噪音面），enabled:false 即不发。
   const s3Query = useQuery({
     queryKey: ["system", "s3-settings"],
     queryFn: getS3Settings,
     staleTime: 60_000,
+    enabled: platformReadonly,
+    retry: false,
   });
   const [restoreRow, setRestoreRow] = useState<DatabaseBackupView | null>(null);
   const [triggerError, setTriggerError] = useState<ReturnType<typeof errorEnvelopeFrom> | null>(null);
@@ -190,7 +195,7 @@ export function DatabaseBackupsCard({ name, actionable }: { name: string; action
             restore replays the backup-time password — rotate afterwards if
             credentials changed since the backup.
           </p>
-          {!platformReadonly ? (
+          {canAdminResources ? (
             <Button
               size="sm"
               variant="outline"
@@ -203,8 +208,12 @@ export function DatabaseBackupsCard({ name, actionable }: { name: string; action
               }
               onClick={() => triggerMutation.mutate()}
             >
-              <Clock aria-hidden className="h-3.5 w-3.5" />
-              Back up now
+              {triggerMutation.isPending ? (
+                <Loader2 aria-hidden className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Clock aria-hidden className="h-3.5 w-3.5" />
+              )}
+              {triggerMutation.isPending ? "Backing up…" : "Back up now"}
             </Button>
           ) : null}
         </div>
@@ -215,6 +224,18 @@ export function DatabaseBackupsCard({ name, actionable }: { name: string; action
             (separation of duties). Trigger backups and restore from the CLI
             with a machine token (<code>fleetly databases backup</code> /{" "}
             <code>restore</code>), or ask a team owner for a member role.
+          </p>
+        ) : !canAdminResources ? (
+          // 成员角色门（2026-09-25 走查）：viewer/developer 的原位说明。
+          <p className="text-xs text-muted-foreground" data-testid="database-backups-role-note">
+            Database lifecycle actions require the admin role in this project.
+          </p>
+        ) : null}
+        {/* 受理即反馈（2026-09-25 走查：此前点击后零反馈）：备份是异步受理
+            （响应即 accepted，结论经台账披露）——受理成功行 + 按钮在途态。 */}
+        {triggerMutation.isSuccess ? (
+          <p className="text-xs text-emerald-600 dark:text-emerald-400" data-testid="database-backup-accepted">
+            Backup accepted — it runs in the background and appears in the ledger below.
           </p>
         ) : null}
         {triggerError ? (
@@ -263,7 +284,7 @@ export function DatabaseBackupsCard({ name, actionable }: { name: string; action
                     {timeAgo(b.created_at)}
                   </TableCell>
                   <TableCell className="text-right">
-                    {!platformReadonly ? (
+                    {canAdminResources ? (
                       <Button
                         size="sm"
                         variant="ghost"

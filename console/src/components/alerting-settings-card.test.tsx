@@ -63,7 +63,7 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
-function renderCard(metricsMode: "on" | "unset" = "on") {
+function renderCard(metricsMode: "on" | "unset" = "on", isPlatformAdmin = true) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   const log: { url: string; method: string; body?: unknown }[] = [];
   vi.stubGlobal(
@@ -71,6 +71,19 @@ function renderCard(metricsMode: "on" | "unset" = "on") {
     vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       log.push({ url, method: init?.method ?? "GET", body: init?.body });
+      if (url.endsWith("/auth/me")) {
+        return jsonResponse({
+          user: {
+            id: "01U1",
+            email: "f@t.test",
+            is_platform_admin: isPlatformAdmin,
+          },
+          teams: [
+            { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+          ],
+          project_overrides: [],
+        });
+      }
       if (url.endsWith("/metrics/status")) return jsonResponse(metricsMode === "on" ? METRICS_ON : METRICS_OFF);
       if (url.endsWith("/alerting/status")) return jsonResponse(ALERTS_UNSET);
       if (url.endsWith("/alerting/rules")) {
@@ -148,7 +161,8 @@ describe("AlertingSettingsCard", () => {
   it("creates a rule carrying for/severity/channels and evaluates the expr with Test", async () => {
     const log = renderCard("on");
     await screen.findByTestId("alerting-status-card");
-    fireEvent.click(screen.getByRole("button", { name: "New rule" }));
+    // Me 投影解析后写面 UI 才渲染——先等 New rule 按钮出现。
+    fireEvent.click(await screen.findByRole("button", { name: "New rule" }));
     const form = await screen.findByTestId("alerting-rule-form");
 
     fireEvent.change(screen.getByTestId("alert-rule-name"), { target: { value: "vm-down" } });
@@ -229,5 +243,31 @@ describe("AlertingSettingsCard", () => {
         channels: ["ep-1"],
       });
     });
+  });
+
+  it("viewer（写面门，2026-09-25 走查）：状态与规则读面保留，模式钮/CRUD/Test 换只读说明", async () => {
+    const log = renderCard("on", false);
+    const card = await screen.findByTestId("alerting-status-card");
+    await waitFor(() => expect(screen.getAllByTestId("alerting-rule-row").length).toBe(1));
+
+    // 读面（read scope）照常：alerts.mode 投影 + 规则行投影。
+    await waitFor(() => expect(card.textContent).toContain("alerts.mode: unset"));
+    expect(card.textContent).toContain("high-cpu");
+    expect(card.textContent).toContain("cpu_used > 90");
+
+    // 写面（平台管理员专属）：模式钮 / New rule / 行 Edit+Remove 全部隐藏，
+    // 原位只读说明两处（模式 + 规则 CRUD）。
+    expect(screen.queryByTestId("alerts-mode-toggle")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "New rule" })).not.toBeInTheDocument();
+    expect(screen.queryByTestId("alert-rule-edit")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Remove" })).not.toBeInTheDocument();
+    expect(screen.getByTestId("alerts-mode-readonly-note")).toHaveTextContent(
+      "Platform administrator required.",
+    );
+    expect(screen.getByTestId("alerting-rules-readonly-note")).toHaveTextContent(
+      "Platform administrator required.",
+    );
+    // 零写请求面（mode PUT / rules CRUD 不发）。
+    expect(log.some((e) => e.method !== "GET" && e.url.includes("/alerting"))).toBe(false);
   });
 });

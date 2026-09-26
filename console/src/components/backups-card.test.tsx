@@ -9,6 +9,32 @@ import { describe, expect, it, vi } from "vitest";
 import { BackupsCard } from "@/components/backups-card";
 import { setToken } from "@/api/client";
 
+/** /auth/me 包装（useIsPlatformAdmin 生产接线）：Back up now 写面门
+ * （TriggerBackup = 平台管理员专属，2026-09-25 走查）测试用。 */
+function withMe(
+  isPlatformAdmin: boolean,
+  inner: (input: RequestInfo | URL, init?: RequestInit) => Promise<unknown>,
+) {
+  return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/auth/me")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "",
+        json: () =>
+          Promise.resolve({
+            user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+            teams: [
+              { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+            ],
+            project_overrides: [],
+          }),
+      });
+    }
+    return inner(input, init);
+  });
+}
+
 function stubBackupsFetch(backups: Record<string, unknown>[]) {
   return vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
@@ -116,44 +142,42 @@ describe("BackupsCard upload status (E3-3)", () => {
   it("Back up now posts a manual state backup and refetches the ledger (backlog #4-②)", async () => {
     setToken("flt_test");
     const log: { url: string; method: string; body?: unknown }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        log.push({ url, method: init?.method ?? "GET", body: init?.body });
-        if (url.includes("/system/backups")) {
-          if (init?.method === "POST") {
-            // TriggerBackupResponse：响应即落账后的台账行（同步语义）。
-            return Promise.resolve({
-              ok: true,
-              status: 200,
-              statusText: "",
-              json: () =>
-                Promise.resolve({
-                  backup: {
-                    id: "b_manual",
-                    kind: "manual",
-                    verify_status: "verified",
-                    created_at: "2026-09-25T12:00:00Z",
-                  },
-                }),
-            });
-          }
+    const inner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      log.push({ url, method: init?.method ?? "GET", body: init?.body });
+      if (url.includes("/system/backups")) {
+        if (init?.method === "POST") {
+          // TriggerBackupResponse：响应即落账后的台账行（同步语义）。
           return Promise.resolve({
             ok: true,
             status: 200,
             statusText: "",
-            json: () => Promise.resolve({ backups: [] }),
+            json: () =>
+              Promise.resolve({
+                backup: {
+                  id: "b_manual",
+                  kind: "manual",
+                  verify_status: "verified",
+                  created_at: "2026-09-25T12:00:00Z",
+                },
+              }),
           });
         }
         return Promise.resolve({
           ok: true,
           status: 200,
           statusText: "",
-          json: () => Promise.resolve({}),
+          json: () => Promise.resolve({ backups: [] }),
         });
-      }),
-    );
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "",
+        json: () => Promise.resolve({}),
+      });
+    });
+    vi.stubGlobal("fetch", withMe(true, inner));
 
     renderCard();
 
@@ -177,5 +201,30 @@ describe("BackupsCard upload status (E3-3)", () => {
     expect(screen.getByTestId("backup-trigger-hint").textContent).toContain(
       "platform state backup",
     );
+  });
+
+  it("viewer（写面门，2026-09-25 走查）：无 Back up now 按钮、原位只读说明，台账读面照常", async () => {
+    setToken("flt_test");
+    const inner = stubBackupsFetch([
+      {
+        id: "b1",
+        kind: "daily",
+        size_bytes: "1024",
+        verify_status: "verified",
+        created_at: "2026-09-21T02:00:00Z",
+      },
+    ]);
+    vi.stubGlobal("fetch", withMe(false, inner));
+
+    renderCard();
+
+    await waitFor(() =>
+      expect(screen.getByTestId("backup-trigger-readonly-note")).toHaveTextContent(
+        "Platform administrator required.",
+      ),
+    );
+    expect(screen.queryByTestId("backup-trigger")).not.toBeInTheDocument();
+    // 台账读面（ListBackups = read scope）不受写面门影响。
+    await waitFor(() => expect(screen.getByText("daily")).toBeInTheDocument());
   });
 });

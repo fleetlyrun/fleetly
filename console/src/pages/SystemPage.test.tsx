@@ -1,5 +1,7 @@
 // 系统页 join 向导卡片测试（E1-8，multi-node §2.3/§2.9）：生成向导材料
 //（join 命令/token 复制面）、HA 边界诚实口径卡片、既有节点表锚点不破坏。
+// 写面门（2026-09-25 走查）：join 面整体 admin scope——非平台管理员卡片
+// 整体替换为只读说明，viewer 不再看到 enabled 的 Generate/Rotate 假按钮。
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { render, screen, waitFor } from "@testing-library/react";
@@ -10,9 +12,28 @@ import { describe, expect, it, vi } from "vitest";
 import { SystemPage } from "@/pages/SystemPage";
 import { setToken } from "@/api/client";
 
-function stubSystemFetch(joinGuide?: Record<string, unknown>, statusExtra: Record<string, unknown> = {}) {
+function stubSystemFetch(
+  joinGuide?: Record<string, unknown>,
+  statusExtra: Record<string, unknown> = {},
+  isPlatformAdmin = true,
+) {
   return vi.fn().mockImplementation((input: RequestInfo | URL) => {
     const url = String(input);
+    if (url.endsWith("/auth/me")) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: "",
+        json: () =>
+          Promise.resolve({
+            user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+            teams: [
+              { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+            ],
+            project_overrides: [],
+          }),
+      });
+    }
     if (url.includes("/system/nodes/join-guide")) {
       if (!joinGuide) {
         return Promise.resolve({
@@ -137,13 +158,29 @@ describe("SystemPage join wizard (E1-8)", () => {
     const user = userEvent.setup();
 
     renderSystem();
-    await user.click(screen.getByText("Generate join guide"));
+    // Me 投影解析后写面 UI 才渲染——先等 Generate 按钮出现。
+    await user.click(await screen.findByText("Generate join guide"));
 
     await waitFor(() =>
       expect(
         screen.getByText(/E_MULTI_NODE_REQUIRES_BASE_DOMAIN/),
       ).toBeInTheDocument(),
     );
+  });
+
+  it("viewer（写面门，2026-09-25 走查）：向导整体替换为只读说明，无 Generate/Rotate 假按钮", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubSystemFetch(GUIDE, {}, false));
+
+    renderSystem();
+    await waitFor(() => screen.getByText("srv-01"));
+
+    expect(screen.getByTestId("join-wizard-readonly-note")).toHaveTextContent(
+      "Platform administrator required.",
+    );
+    expect(screen.queryByText("Generate join guide")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("join-token-rotate")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("join-wizard-command")).not.toBeInTheDocument();
   });
 
   it("shows the HA boundary card with get / do-not-get columns", async () => {

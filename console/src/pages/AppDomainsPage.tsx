@@ -97,6 +97,18 @@ export function AppDomainsPage() {
           </div>
         </CardHeader>
         <CardContent>
+          {/* Verify 的性质说明（2026-09-25 走查）：VerifyAppDomains 服务端
+              登记 read scope（scope.go DomainsService）+ handler 内读层角色
+              门（internal/api/read.go requireAppAccess）——探测不写任何平台
+              状态，对全部项目角色（含 viewer）可用是服务端事实，按钮保留
+              全角色；此行只把动作性质说清。 */}
+          <p
+            className="mb-3 text-xs text-muted-foreground"
+            data-testid="domains-verify-note"
+          >
+            Verify runs a read-only local probe (DNS + HTTP reachability) — it
+            changes nothing and is available to every project role.
+          </p>
           {verifyError ? (
             <div className="mb-3">
               <EnvelopeAlert

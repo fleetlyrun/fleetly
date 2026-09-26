@@ -471,3 +471,173 @@ describe("AppDeploymentsPage deploy triggers (P1-8)", () => {
     expect(screen.queryByTestId("deploy-triggers-card")).not.toBeInTheDocument();
   });
 });
+
+// ── DeployCard 项目归属上下文（2026-09-25 走查）──────────────────────────
+// 多团队成员从应用详情 Deploy 卡重部署 → deploy() 未传 project → 服务端
+// 缺省解析不到归属项目 → 400 no default project resolvable。修复：选中
+// team+project 即随载荷携带 `team/prj`；多团队未选禁用 Deploy 并卡内指路；
+// 单团队用户缺省（服务端回落个人队 default）——载荷形态不变防回归。
+describe("AppDeploymentsPage DeployCard project context", () => {
+  const TEAMS = [
+    { team_id: "01TA", team_slug: "acme", team_name: "Acme", role: "admin" },
+    { team_id: "01TB", team_slug: "globex", team_name: "Globex", role: "owner" },
+  ];
+  const PROJECTS = {
+    projects: [
+      { id: "01PA", team_id: "01TA", team_slug: "acme", slug: "staging", name: "Staging" },
+    ],
+  };
+
+  /** 多团队 stub：Me + /projects + 部署历史 + Deploy POST 捕获。 */
+  function stubMultiTeam() {
+    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    const fetchMock = vi.fn().mockImplementation((url: string, init?: { method?: string; body?: string }) => {
+      const u = String(url);
+      calls.push({ url: u, method: init?.method, body: init?.body ? JSON.parse(init.body) : undefined });
+      if (u.endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true, status: 200, statusText: "",
+          json: () =>
+            Promise.resolve({
+              user: { id: "01U1", email: "f@t.test", is_platform_admin: false },
+              teams: TEAMS,
+              project_overrides: [],
+            }),
+        });
+      }
+      if (u.endsWith("/projects")) {
+        return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(PROJECTS) });
+      }
+      if (init?.method === "POST" && u.includes("/apps/demo/deployments")) {
+        return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ deployment_id: "dep_ctx", warnings: [] }) });
+      }
+      if (u.includes("/deployments")) {
+        return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ deployments: [] }) });
+      }
+      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ revisions: [] }) });
+    });
+    return { fetchMock, calls };
+  }
+
+  function renderWithContext() {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return render(
+      <MemoryRouter initialEntries={["/apps/demo/deployments"]}>
+        <QueryClientProvider client={client}>
+          <TeamProjectProvider>
+            <Routes>
+              <Route path="/apps/:name/deployments" element={<AppDeploymentsPage />} />
+            </Routes>
+          </TeamProjectProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+  }
+
+  it("多团队+已选上下文：Deploy 载荷携带 team/prj（修复 400 no default project）", async () => {
+    setToken("flt_test");
+    window.localStorage.setItem(
+      "fleetly.console.context",
+      JSON.stringify({ team: "acme", project: "staging" }),
+    );
+    const { fetchMock, calls } = stubMultiTeam();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithContext();
+    await waitFor(() => expect(screen.getByText("Deploy compose")).toBeInTheDocument());
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Compose YAML"),
+      "services:\n  web:\n    image: nginx:1.27-alpine\n",
+    );
+    await user.click(screen.getByRole("button", { name: "Deploy" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url.includes("/apps/demo/deployments"));
+      expect(post).toBeTruthy();
+      // project 以 team/prj 限定形随载荷上行（deployments.proto body:"*"）。
+      expect(post?.body).toHaveProperty("project", "acme/staging");
+    });
+    expect(screen.getByTestId("deployment-tracker")).toHaveTextContent("dep_ctx");
+  });
+
+  it("多团队选队未选项目：Deploy 禁用 + 卡内指路提示（不发请求）", async () => {
+    setToken("flt_test");
+    // 只选团队未选项目：角色可解析（Deploy 卡可见——正是走查实录的失败
+    // 入口）而 projectRef 为空 → 卡内禁用 + 指路，不再静默发缺省部署。
+    window.localStorage.setItem(
+      "fleetly.console.context",
+      JSON.stringify({ team: "acme", project: null }),
+    );
+    const { fetchMock, calls } = stubMultiTeam();
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithContext();
+    await waitFor(() => expect(screen.getByText("Deploy compose")).toBeInTheDocument());
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Compose YAML"),
+      "services:\n  web:\n    image: nginx:1.27-alpine\n",
+    );
+
+    const deployButton = screen.getByRole("button", { name: "Deploy" });
+    expect(deployButton).toBeDisabled();
+    expect(screen.getByTestId("deploy-project-context-hint")).toHaveTextContent(
+      "Select a team and project above to deploy.",
+    );
+    // 有 compose 内容也不得发出 Deploy POST（按钮禁用即无请求面）。
+    expect(
+      calls.some((c) => c.method === "POST" && c.url.includes("/apps/demo/deployments")),
+    ).toBe(false);
+  });
+
+  it("单团队回归：未选上下文 Deploy 载荷不带 project（服务端个人队缺省）", async () => {
+    setToken("flt_test");
+    const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((url: string, init?: { method?: string; body?: string }) => {
+        const u = String(url);
+        calls.push({ url: u, method: init?.method, body: init?.body ? JSON.parse(init.body) : undefined });
+        if (u.endsWith("/auth/me")) {
+          return Promise.resolve({
+            ok: true, status: 200, statusText: "",
+            json: () =>
+              Promise.resolve({
+                user: { id: "01U1", email: "f@t.test", is_platform_admin: false },
+                teams: [TEAMS[0]],
+                project_overrides: [],
+              }),
+          });
+        }
+        if (u.endsWith("/projects")) {
+          return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(PROJECTS) });
+        }
+        if (init?.method === "POST" && u.includes("/apps/demo/deployments")) {
+          return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ deployment_id: "dep_solo", warnings: [] }) });
+        }
+        if (u.includes("/deployments")) {
+          return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ deployments: [] }) });
+        }
+        return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ revisions: [] }) });
+      }),
+    );
+
+    renderWithContext();
+    await waitFor(() => expect(screen.getByText("Deploy compose")).toBeInTheDocument());
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Compose YAML"),
+      "services:\n  web:\n    image: nginx:1.27-alpine\n",
+    );
+    // 单团队用户零选择也有正确能力（useTeamCapabilities 回落唯一团队）。
+    expect(screen.getByRole("button", { name: "Deploy" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "Deploy" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url.includes("/apps/demo/deployments"));
+      expect(post).toBeTruthy();
+      expect(post?.body).not.toHaveProperty("project");
+    });
+  });
+});

@@ -51,6 +51,26 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+/** /auth/me 包装（useIsPlatformAdmin 生产接线）：写面门（端点 CRUD/Test/
+ * SMTP 保存 = 平台管理员专属，2026-09-25 走查）测试用；其余请求透传。 */
+function withMe(
+  isPlatformAdmin: boolean,
+  inner: (input: RequestInfo | URL, init?: RequestInit) => Promise<unknown>,
+) {
+  return vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/auth/me")) {
+      return jsonResponse({
+        user: { id: "01U1", email: "f@t.test", is_platform_admin: isPlatformAdmin },
+        teams: [
+          { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+        ],
+        project_overrides: [],
+      });
+    }
+    return inner(input, init);
+  });
+}
+
 function renderCard() {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -68,9 +88,7 @@ describe("NotificationsSettingsCard", () => {
   it("lists endpoints with fingerprint and enables creation round-trip", async () => {
     setToken("flt_test");
     const log: { url: string; method: string; body?: unknown }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         log.push({ url, method: init?.method ?? "GET", body: init?.body });
         if (url.includes("/notifications/endpoints") && (init?.method ?? "GET") === "GET") {
@@ -78,8 +96,8 @@ describe("NotificationsSettingsCard", () => {
         }
         if (url.includes("/notifications/deliveries")) return jsonResponse({ deliveries: [] });
         return jsonResponse({});
-      }),
-    );
+      });
+    vi.stubGlobal("fetch", withMe(true, stubInner));
     renderCard();
     await screen.findByTestId("notifications-card");
     await waitFor(() =>
@@ -115,9 +133,7 @@ describe("NotificationsSettingsCard", () => {
 
   it("reveals the one-time secret after create and hides it on demand", async () => {
     setToken("flt_test");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url.includes("/notifications/endpoints") && method === "POST") {
@@ -135,10 +151,12 @@ describe("NotificationsSettingsCard", () => {
         }
         if (url.includes("/notifications/deliveries")) return jsonResponse({ deliveries: [] });
         return jsonResponse(ENDPOINTS);
-      }),
-    );
+      });
+    vi.stubGlobal("fetch", withMe(true, stubInner));
     renderCard();
     await screen.findByTestId("notifications-card");
+    // Me 投影解析后创建表单才渲染——先等表单出现再交互。
+    await screen.findByTestId("webhook-create-form");
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "new-ops" } });
     fireEvent.change(screen.getByLabelText("Receiver URL"), {
       target: { value: "https://new.example.test/hook" },
@@ -159,9 +177,7 @@ describe("NotificationsSettingsCard", () => {
 
   it("marks terminally failing endpoints red and surfaces pattern validation errors", async () => {
     setToken("flt_test");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         const method = init?.method ?? "GET";
         if (url.includes("/notifications/endpoints") && method === "GET") {
@@ -187,8 +203,8 @@ describe("NotificationsSettingsCard", () => {
           );
         }
         return jsonResponse({});
-      }),
-    );
+      });
+    vi.stubGlobal("fetch", withMe(true, stubInner));
     renderCard();
     await screen.findByTestId("notifications-card");
     // 终败红态锚点（dead-relay 最近终态 = failed）。
@@ -214,9 +230,7 @@ describe("NotificationsSettingsCard", () => {
   it("creates an email endpoint through the channel select (target input, empty url)", async () => {
     setToken("flt_test");
     const log: { url: string; method: string; body?: unknown }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
         const url = String(input);
         log.push({ url, method: init?.method ?? "GET", body: init?.body });
         if (url.includes("/notifications/endpoints") && (init?.method ?? "GET") === "GET") {
@@ -224,10 +238,12 @@ describe("NotificationsSettingsCard", () => {
         }
         if (url.includes("/notifications/deliveries")) return jsonResponse({ deliveries: [] });
         return jsonResponse({});
-      }),
-    );
+      });
+    vi.stubGlobal("fetch", withMe(true, stubInner));
     renderCard();
     await screen.findByTestId("notifications-card");
+    // Me 投影解析后创建表单才渲染——先等表单出现再交互。
+    await screen.findByTestId("webhook-create-form");
     // Radix Select 交互纪律（s3-settings-card.test.tsx 同款）：jsdom 缺
     // pointer capture API，用 keyDown(ArrowDown) 开启 + 点选 option。
     fireEvent.keyDown(screen.getByTestId("webhook-channel-select"), { key: "ArrowDown" });
@@ -262,28 +278,26 @@ describe("SmtpSettingsCard", () => {
   it("shows the stored fingerprint (never plaintext), saves via PUT and probes a test mail", async () => {
     setToken("flt_test");
     const log: { url: string; method: string; body?: unknown }[] = [];
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
-        const url = String(input);
-        log.push({ url, method: init?.method ?? "GET", body: init?.body });
-        if (url.endsWith("/notifications/smtp") && (init?.method ?? "GET") === "GET") {
-          return jsonResponse({
-            settings: {
-              host: "smtp.example.test",
-              port: 587,
-              username: "relay-user",
-              password_fingerprint: "0123456789abcdef",
-              from: "fleetly@example.test",
-            },
-          });
-        }
-        if (url.endsWith("/notifications/smtp/test")) {
-          return jsonResponse({ ok: true, status_code: 250 });
-        }
-        return jsonResponse({});
-      }),
-    );
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      log.push({ url, method: init?.method ?? "GET", body: init?.body });
+      if (url.endsWith("/notifications/smtp") && (init?.method ?? "GET") === "GET") {
+        return jsonResponse({
+          settings: {
+            host: "smtp.example.test",
+            port: 587,
+            username: "relay-user",
+            password_fingerprint: "0123456789abcdef",
+            from: "fleetly@example.test",
+          },
+        });
+      }
+      if (url.endsWith("/notifications/smtp/test")) {
+        return jsonResponse({ ok: true, status_code: 250 });
+      }
+      return jsonResponse({});
+      });
+    vi.stubGlobal("fetch", withMe(true, stubInner));
     const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(
       <QueryClientProvider client={client}>
@@ -328,5 +342,94 @@ describe("SmtpSettingsCard", () => {
     await waitFor(() =>
       expect(screen.getByTestId("smtp-test-result").textContent).toContain("accepted by the relay"),
     );
+  });
+
+  it("hides the saved timestamp when updated_at is the epoch zero value (2026-09-25 walkthrough)", async () => {
+    setToken("flt_test");
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith("/notifications/smtp") && (init?.method ?? "GET") === "GET") {
+        // proto 零值 Timestamp 的 JSON 形态（epoch）——未保存过设置时的实况。
+        return jsonResponse({
+          settings: { host: "", port: 0, updated_at: "1970-01-01T00:00:00Z" },
+        });
+      }
+      return jsonResponse({});
+      });
+    vi.stubGlobal("fetch", withMe(true, stubInner));
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SmtpSettingsCard />
+      </QueryClientProvider>,
+    );
+    // Me 投影解析后表单卡才渲染（此前只读说明短暂替代——先等表单出现）。
+    await screen.findByLabelText("Relay host");
+    // 零值守卫（对齐 ACME 卡同类修复）：epoch 不渲染 "saved 1970/…"。
+    const desc = screen.getByText(/one platform-wide configuration/);
+    expect(desc.textContent).not.toContain("saved");
+    expect(desc.textContent).not.toContain("1970");
+  });
+
+  it("viewer（写面门，2026-09-25 走查）：SMTP 卡整卡替换为只读说明，不发 GET /notifications/smtp", async () => {
+    setToken("flt_test");
+    const log: { url: string; method: string }[] = [];
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      log.push({ url, method: init?.method ?? "GET" });
+      return jsonResponse({});
+      });
+    vi.stubGlobal("fetch", withMe(false, stubInner));
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={client}>
+        <SmtpSettingsCard />
+      </QueryClientProvider>,
+    );
+    const note = await screen.findByTestId("smtp-settings-readonly-note");
+    expect(note).toHaveTextContent("Platform administrator required.");
+    // 整卡替换：表单/保存/探针一概不渲染。
+    expect(screen.queryByLabelText("Relay host")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save SMTP settings" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Test" })).not.toBeInTheDocument();
+    // 读面即 admin scope：不发 GET /notifications/smtp（enabled:false）。
+    expect(log.some((e) => e.url.includes("/notifications/smtp"))).toBe(false);
+  });
+});
+
+describe("NotificationsSettingsCard viewer write-face gate (2026-09-25 walkthrough)", () => {
+  it("viewer：端点清单与台账照常，创建表单换只读说明，行写钮隐藏、Deliveries 保留", async () => {
+    setToken("flt_test");
+    const log: { url: string; method: string }[] = [];
+    const stubInner = vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      log.push({ url, method: init?.method ?? "GET" });
+      if (url.includes("/notifications/endpoints") && (init?.method ?? "GET") === "GET") {
+        return jsonResponse(ENDPOINTS);
+      }
+      if (url.includes("/notifications/deliveries")) return jsonResponse({ deliveries: [] });
+      return jsonResponse({});
+      });
+    vi.stubGlobal("fetch", withMe(false, stubInner));
+
+    renderCard();
+
+    const note = await screen.findByTestId("webhook-create-readonly-note");
+    expect(note).toHaveTextContent("Platform administrator required.");
+    // 读面保留：清单行照常（异步到达）；Deliveries（read scope）照常（两行各一个）。
+    await screen.findByText("ops");
+    expect(screen.getAllByRole("button", { name: "Deliveries" }).length).toBe(2);
+
+    // 写面收口：行写钮（Enable/Test/Rotate/Delete）隐藏。
+    expect(screen.queryByTestId("webhook-create-form")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Enable" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Disable" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Test" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Rotate secret" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Delete" })).not.toBeInTheDocument();
+    // 零写请求面。
+    expect(log.some((e) => e.method !== "GET" && e.url.includes("/notifications"))).toBe(false);
   });
 });

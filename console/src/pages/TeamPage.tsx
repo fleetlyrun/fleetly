@@ -337,10 +337,15 @@ function InvitesTab({
     mutationFn: (inviteId: string) => revokeInvite(teamId, inviteId),
     onSuccess: () => {
       setError(null);
+      setRevokeTarget(null);
       void queryClient.invalidateQueries({ queryKey: ["team-invites", teamId] });
     },
     onError: (err) => setError(errorEnvelopeFrom(err)),
   });
+
+  // 吊销两步确认（2026-09-25 走查：此前单击即发，无确认框——与站点
+  // 两拍纪律对齐）；按钮 aria-label 沿既有（Revoke invite for <email>）。
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; email: string } | null>(null);
 
   function onCreate(e: FormEvent) {
     e.preventDefault();
@@ -489,7 +494,9 @@ function InvitesTab({
                             className="h-7 w-7 text-muted-foreground hover:text-destructive"
                             aria-label={`Revoke invite for ${inv.email}`}
                             data-testid="invite-revoke"
-                            onClick={() => revokeMutation.mutate(inv.id ?? "")}
+                            onClick={() =>
+                              setRevokeTarget({ id: inv.id ?? "", email: inv.email ?? "" })
+                            }
                           >
                             <Trash2 aria-hidden className="h-3.5 w-3.5" />
                           </Button>
@@ -503,6 +510,41 @@ function InvitesTab({
           )}
         </CardContent>
       </Card>
+
+      {/* 吊销两步确认：说明后果（已复制的链接即刻失效）、未确认不发请求。 */}
+      {revokeTarget ? (
+        <Dialog open onOpenChange={(v) => (v ? undefined : setRevokeTarget(null))}>
+          <DialogContent data-testid="invite-revoke-dialog">
+            <DialogHeader>
+              <DialogTitle>Revoke invite for {revokeTarget.email}?</DialogTitle>
+              <DialogDescription>
+                The pending invite link stops working immediately: anyone who
+                already received it can no longer accept. This cannot be undone
+                — create a new invite to re-invite the same address.
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button
+                variant="outline"
+                size="sm"
+                data-testid="invite-revoke-cancel"
+                onClick={() => setRevokeTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                data-testid="invite-revoke-submit"
+                disabled={revokeMutation.isPending}
+                onClick={() => revokeMutation.mutate(revokeTarget.id)}
+              >
+                {revokeMutation.isPending ? "Revoking…" : "Revoke invite"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </div>
   );
 }

@@ -280,15 +280,19 @@ export function AppDriftCard({ app }: AppDriftCardProps) {
         ) : null}
 
         {/* 自动收敛 opt-in（检测恒开、收敛默认关）：无读取面——开关只做
-            显式置位并回显响应；权限不足（deploy 门）时按钮不渲染。 */}
+            显式置位并回显响应；写面（deploy 门）不可用时按钮不渲染，说明
+            文案随之换为受控方语义（2026-09-25 走查：只读视角此前指向不
+            存在的 "buttons below"）。 */}
         <div className="border-t pt-3">
           <div className="text-sm font-medium">Automatic convergence</div>
           <p className="mt-1 text-xs text-muted-foreground">
             Detection runs continuously; automatic convergence is opt-in per app
             (default off) and is force-disabled by the daemon after a failed
-            rollback. The API does not expose the current opt-in state — the
-            buttons below set it explicitly (the server echoes the applied
-            value). The CLI equivalent is <code>fleetly drift enable|disable</code>.
+            rollback. The API does not expose the current opt-in state —{" "}
+            {canDeploy && !isPlatformAdmin
+              ? "the buttons below set it explicitly (the server echoes the applied value). "
+              : "convergence is controlled by team admins. "}
+            The CLI equivalent is <code>fleetly drift enable|disable</code>.
           </p>
           <p className="mt-1 text-xs" data-testid="drift-convergence-state">
             Opt-in state:{" "}

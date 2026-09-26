@@ -228,6 +228,43 @@ describe("TeamPage invites", () => {
     // 邀请列表渲染（pending 行 + 吊销钮）。
     expect(screen.getByTestId("invite-row")).toBeInTheDocument();
   });
+
+  it("revokes an invite only after the two-step confirm (aria-labelled button, no POST before confirm)", async () => {
+    setToken("flt_test");
+    const fetchMock = stubFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+
+    renderAt("/teams/01TEAM?tab=invites");
+    expect(await screen.findByTestId("invites-tab")).toBeInTheDocument();
+
+    // 邀请清单异步到达后再取吊销钮；钮带 aria 名（屏幕阅读器可达——
+    // 2026-09-25 走查）。
+    const revoke = await screen.findByTestId("invite-revoke");
+    expect(revoke).toHaveAttribute("aria-label", "Revoke invite for new@t.test");
+
+    // 两步确认：第一步只开确认框，未确认前零请求。
+    await user.click(revoke);
+    const dialog = screen.getByTestId("invite-revoke-dialog");
+    expect(dialog).toHaveTextContent("Revoke invite for new@t.test?");
+    expect(
+      fetchMock.mock.calls.some(
+        (c) => String(c[0]).includes(":revoke") && c[1]?.method === "POST",
+      ),
+    ).toBe(false);
+
+    // 确认后 POST :revoke；对话框收起。
+    await user.click(screen.getByTestId("invite-revoke-submit"));
+    await waitFor(() => {
+      const posted = fetchMock.mock.calls.find(
+        (c) => String(c[0]).includes("/invites/01INV1:revoke") && c[1]?.method === "POST",
+      );
+      expect(posted).toBeTruthy();
+    });
+    await waitFor(() =>
+      expect(screen.queryByTestId("invite-revoke-dialog")).not.toBeInTheDocument(),
+    );
+  });
 });
 
 describe("TeamPage projects + overrides", () => {

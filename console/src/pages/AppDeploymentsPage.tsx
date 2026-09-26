@@ -71,7 +71,7 @@ import {
 } from "@/components/ui/table";
 import { Textarea } from "@/components/ui/textarea";
 import { formatTime, timeAgo } from "@/lib/utils";
-import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
+import { useIsPlatformAdmin, useProjectContext, useTeamCapabilities } from "@/lib/context";
 
 /** 终态集：之外的状态轮询跟踪。 */
 const TERMINAL = new Set(["succeeded", "failed", "cancelled"]);
@@ -95,6 +95,14 @@ function previousWithRevision(
 
 function DeployCard({ app }: { app: string }) {
   const queryClient = useQueryClient();
+  // 项目归属上下文（2026-09-25 走查：多团队成员重部署既有应用 → 服务端
+  // 缺省解析不到归属项目 → 400 no default project resolvable）。选中
+  // team+project 即以 `team/prj` 限定形显式声明归属；未选时单团队用户可
+  // 缺省（服务端回落个人队 default 项目——既有行为保留），多团队用户必须
+  // 显式选择，否则 Deploy 禁用并在卡内指路（与 topbar team-context-hint
+  // 同一提示家族）。
+  const { teams, projectRef } = useProjectContext();
+  const needsProjectPick = teams.length > 1 && projectRef === "";
   const [composeText, setComposeText] = useState("");
   const [trackedId, setTrackedId] = useState("");
   // ComposeWarning 形状跟随生成类型（D4-②：手写 {field,warning} 与 proto
@@ -103,7 +111,8 @@ function DeployCard({ app }: { app: string }) {
   const fileRef = useRef<HTMLInputElement>(null);
 
   const deployMutation = useMutation({
-    mutationFn: () => deploy(app, composeText),
+    mutationFn: () =>
+      deploy(app, composeText, projectRef ? { project: projectRef } : {}),
     onSuccess: (resp) => {
       setTrackedId(resp.deployment_id ?? "");
       setWarnings(resp.warnings ?? []);
@@ -167,7 +176,12 @@ function DeployCard({ app }: { app: string }) {
             onChange={(e) => setComposeText(e.target.value)}
           />
           <div className="flex items-center gap-2">
-            <Button type="submit" disabled={!composeText.trim() || deployMutation.isPending}>
+            <Button
+              type="submit"
+              disabled={
+                !composeText.trim() || deployMutation.isPending || needsProjectPick
+              }
+            >
               {deployMutation.isPending ? (
                 <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
               ) : null}
@@ -189,6 +203,14 @@ function DeployCard({ app }: { app: string }) {
               onChange={onFile}
             />
           </div>
+          {needsProjectPick ? (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="deploy-project-context-hint"
+            >
+              Select a team and project above to deploy.
+            </p>
+          ) : null}
         </form>
 
         {trackedError ? (

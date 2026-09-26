@@ -22,6 +22,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { useIsPlatformAdmin } from "@/lib/context";
 
 // 诚实口径常驻文案（与 CLI `metrics status` note 同源——§6 挂账票修订后
 // 跨节点采集 = VM 经节点 advertise 地址直连（VPC/LAN），不依赖 overlay
@@ -34,6 +35,10 @@ const CROSS_NODE_NOTE =
 
 export function MetricsSettingsCard() {
   const queryClient = useQueryClient();
+  // 模式切换写面门（2026-09-25 走查）：SetMetricsMode = deploy scope +
+  // requirePlatformWriteFace（平台管理员专属）——非平台管理员隐藏切换钮、
+  // 原位说明；状态读面（GetMetricsStatus = read）全角色保留。
+  const isPlatformAdmin = useIsPlatformAdmin();
   const status = useQuery({
     queryKey: ["metrics", "status"],
     queryFn: getMetricsStatus,
@@ -75,24 +80,34 @@ export function MetricsSettingsCard() {
                   · retention {status.data?.retention_days} days
                 </div>
               </div>
-              <div className="flex items-center gap-2" data-testid="metrics-mode-toggle">
-                <Button
-                  size="sm"
-                  variant={isOn ? "outline" : "default"}
-                  disabled={isOn || setMode.isPending}
-                  onClick={() => setMode.mutate("on")}
+              {isPlatformAdmin ? (
+                <div className="flex items-center gap-2" data-testid="metrics-mode-toggle">
+                  <Button
+                    size="sm"
+                    variant={isOn ? "outline" : "default"}
+                    disabled={isOn || setMode.isPending}
+                    onClick={() => setMode.mutate("on")}
+                  >
+                    Enable
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={isOn ? "default" : "outline"}
+                    disabled={!isOn || setMode.isPending}
+                    onClick={() => setMode.mutate("unset")}
+                  >
+                    Disable
+                  </Button>
+                </div>
+              ) : (
+                // 写面说明（2026-09-25 走查）：非平台管理员原位只读说明。
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="metrics-mode-readonly-note"
                 >
-                  Enable
-                </Button>
-                <Button
-                  size="sm"
-                  variant={isOn ? "default" : "outline"}
-                  disabled={!isOn || setMode.isPending}
-                  onClick={() => setMode.mutate("unset")}
-                >
-                  Disable
-                </Button>
-              </div>
+                  Platform administrator required.
+                </p>
+              )}
             </div>
 
             {setMode.isError ? (

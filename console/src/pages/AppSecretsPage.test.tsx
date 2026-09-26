@@ -9,6 +9,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { AppSecretsPage } from "@/pages/AppSecretsPage";
+import { TeamProjectProvider } from "@/lib/context";
 import { setToken } from "@/api/client";
 
 const SECRETS = {
@@ -147,4 +148,76 @@ describe("AppSecretsPage", () => {
     renderAt();
     await screen.findByTestId("secrets-empty");
   });
+
+  it("viewer（写面门 + 文案，2026-09-25 走查）：空态不指向不存在的 Set 表单", async () => {
+    setToken("flt_test");
+    vi.stubGlobal(
+      "fetch",
+      stubSecretsFetchRole({ role: "viewer", secrets: [] }),
+    );
+
+    renderAtInRole();
+    const empty = await screen.findByTestId("secrets-empty");
+    // Me 投影解析前能力为 fail-open（表单可见）——等角色门把空态文案切到
+    // 只读变体后再断言。
+    await waitFor(() =>
+      expect(empty.textContent).toContain("Declare it under the compose file's top-level"),
+    );
+    // 表单不在渲染时，空态文案不再指路 "Set one above"。
+    expect(empty.textContent).not.toContain("Set one above");
+    // 写表单与行删除钮不渲染（此前只门平台管理员——viewer 见假按钮）。
+    await waitFor(() =>
+      expect(screen.queryByTestId("secret-name-input")).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId("secret-remove-button")).not.toBeInTheDocument();
+    // 平台管理员说明态不渲染（成员是普通 viewer）。
+    expect(screen.queryByTestId("platform-readonly-note")).not.toBeInTheDocument();
+  });
 });
+
+/** 带角色视角的 fetch 桩（/auth/me + secrets 投影）。 */
+function stubSecretsFetchRole(opts: { role: string; secrets: unknown[] }) {
+  return vi.fn().mockImplementation((input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/auth/me")) {
+      return Promise.resolve({
+        ok: true, status: 200, statusText: "",
+        json: () =>
+          Promise.resolve({
+            user: { id: "01U1", email: "f@t.test", is_platform_admin: false },
+            teams: [
+              { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: opts.role },
+            ],
+            project_overrides: [],
+          }),
+      });
+    }
+    if (url.includes("/secrets")) {
+      return Promise.resolve({
+        ok: true, status: 200, statusText: "",
+        json: () => Promise.resolve({ secrets: opts.secrets }),
+      });
+    }
+    return Promise.resolve({
+      ok: true, status: 200, statusText: "",
+      json: () => Promise.resolve({}),
+    });
+  });
+}
+
+function renderAtInRole() {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return render(
+    <MemoryRouter initialEntries={["/apps/web/secrets"]}>
+      <QueryClientProvider client={client}>
+        <TeamProjectProvider>
+          <Routes>
+            <Route path="/apps/:name/secrets" element={<AppSecretsPage />} />
+          </Routes>
+        </TeamProjectProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}

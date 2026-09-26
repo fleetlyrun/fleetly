@@ -64,11 +64,14 @@ type FetchLog = { url: string; method: string; body: Record<string, unknown> };
 
 /**
  * 组装 fetch 桩：记录每次调用（url/method/body），按 URL 形态回设定响应。
+ * isPlatformAdmin=false 时按 viewer 视角（ACME 读写面整体 admin scope——
+ * 2026-09-25 走查：viewer 只见整卡只读说明，且不发 GET /system/acme）。
  */
 function stubAcmeFetch(opts?: {
   settings?: Record<string, unknown>;
   testResponse?: { status: number; body: Record<string, unknown> };
   saveResponse?: Record<string, unknown>;
+  isPlatformAdmin?: boolean;
 }) {
   const log: FetchLog[] = [];
   const fetchMock = vi.fn().mockImplementation(
@@ -85,6 +88,25 @@ function stubAcmeFetch(opts?: {
       }
       log.push({ url, method, body });
 
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          statusText: "",
+          json: () =>
+            Promise.resolve({
+              user: {
+                id: "01U1",
+                email: "f@t.test",
+                is_platform_admin: opts?.isPlatformAdmin ?? true,
+              },
+              teams: [
+                { team_id: "01TEAM", team_slug: "acme", team_name: "Acme", role: "owner" },
+              ],
+              project_overrides: [],
+            }),
+        });
+      }
       if (url.includes("/system/acme/dns:test")) {
         const t = opts?.testResponse ?? { status: 200, body: { result: PROBE_OK } };
         return Promise.resolve({
@@ -328,5 +350,25 @@ describe("AcmeSettingsCard zero-value timestamp (2026-09-25 review P2-3)", () =>
     const desc = screen.getByText(/Wildcard certificates via DNS-01/);
     expect(desc.textContent).toContain("saved");
     expect(desc.textContent).not.toContain("1970");
+  });
+});
+
+describe("AcmeSettingsCard platform write-face gate (2026-09-25 walkthrough)", () => {
+  it("viewer：整卡替换为只读说明，不发 GET /system/acme", async () => {
+    setToken("flt_test");
+    const { fetchMock, log } = stubAcmeFetch({ isPlatformAdmin: false });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderCard();
+
+    const note = await screen.findByTestId("acme-settings-readonly-note");
+    expect(note).toHaveTextContent("Platform administrator required.");
+    // 整卡替换：表单与写钮不渲染。
+    expect(screen.queryByTestId("acme-provider-select")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("acme-token-input")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("acme-test-button")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save" })).not.toBeInTheDocument();
+    // 读面即 admin scope：不发 GET /system/acme（enabled:false）。
+    expect(log.some((e) => e.url.includes("/system/acme"))).toBe(false);
   });
 });

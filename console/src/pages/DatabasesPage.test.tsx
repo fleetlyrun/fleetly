@@ -9,6 +9,7 @@ import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DatabasesPage } from "@/pages/DatabasesPage";
+import { TeamProjectProvider } from "@/lib/context";
 import { setToken } from "@/api/client";
 
 const DBS = [
@@ -185,5 +186,94 @@ describe("DatabasesPage create dialog", () => {
     expect(screen.getByTestId("database-target-project")).toHaveTextContent(
       "default (your personal team)",
     );
+  });
+
+  it("follows the topbar team/project context: dialog shows team/prj and the payload carries it", async () => {
+    // 顶栏上下文跟随（2026-09-25 走查：建库对话框恒 default personal team
+    // 的实录缺陷——projectRef 必须响应式取自 useProjectContext 的选中
+    // slugs 组合）。本地存储播种选中态（TeamProjectProvider 持久化键）。
+    setToken("flt_test");
+    window.localStorage.setItem(
+      "fleetly.console.context",
+      JSON.stringify({ team: "review", project: "review" }),
+    );
+    const posted: Array<{ url: string; body: Record<string, unknown> }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        const method = init?.method ?? "GET";
+        if (url.endsWith("/auth/me")) {
+          return Promise.resolve({
+            ok: true, status: 200, statusText: "",
+            json: () =>
+              Promise.resolve({
+                user: { id: "01U1", email: "f@t.test", is_platform_admin: false },
+                teams: [
+                  { team_id: "01T", team_slug: "review", team_name: "Review", role: "owner" },
+                ],
+                project_overrides: [],
+              }),
+          });
+        }
+        if (url.endsWith("/projects")) {
+          return Promise.resolve({
+            ok: true, status: 200, statusText: "",
+            json: () =>
+              Promise.resolve({
+                projects: [
+                  { id: "01P", team_id: "01T", team_slug: "review", slug: "review", name: "Review" },
+                ],
+              }),
+          });
+        }
+        if (url.includes("/databases") && method === "POST") {
+          posted.push({ url, body: JSON.parse(String(init?.body ?? "{}")) });
+          return Promise.resolve({
+            ok: true, status: 200, statusText: "",
+            json: () => Promise.resolve({ database: { id: "dbx", name: "pg-new" } }),
+          });
+        }
+        if (url.includes("/databases")) {
+          return Promise.resolve({
+            ok: true, status: 200, statusText: "",
+            json: () => Promise.resolve({ databases: DBS }),
+          });
+        }
+        return Promise.resolve({
+          ok: true, status: 200, statusText: "",
+          json: () => Promise.resolve({ backups: [] }),
+        });
+      }),
+    );
+    const user = userEvent.setup();
+
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <MemoryRouter initialEntries={["/databases"]}>
+        <QueryClientProvider client={client}>
+          <TeamProjectProvider>
+            <Routes>
+              <Route path="/databases" element={<DatabasesPage />} />
+              <Route path="/databases/:name" element={<p>detail-of-db</p>} />
+            </Routes>
+          </TeamProjectProvider>
+        </QueryClientProvider>
+      </MemoryRouter>,
+    );
+    await screen.findByText("pg-prod");
+
+    await user.click(screen.getByTestId("database-create-button"));
+    // 对话框内显式展示选中上下文（review/review）。
+    expect(screen.getByTestId("database-target-project")).toHaveTextContent("review/review");
+
+    await user.type(screen.getByTestId("database-name-input"), "pg-new");
+    await user.click(screen.getByTestId("database-create-submit"));
+    await waitFor(() => {
+      expect(posted).toHaveLength(1);
+      // 创建载荷携带限定形目标项目（与列表收窄同源）。
+      expect(posted[0].body.project).toBe("review/review");
+      expect(posted[0].body.name).toBe("pg-new");
+    });
   });
 });

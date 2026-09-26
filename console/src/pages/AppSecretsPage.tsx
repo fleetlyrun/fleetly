@@ -249,10 +249,15 @@ export function AppSecretsPage() {
         ) : null}
         <section className="py-4">
           {rows.length === 0 ? (
+            /* 空态文案随写面条件渲染（2026-09-25 走查：只读视角此前指向
+                不存在的 "Set one above"——表单未渲染时不指路）。 */
             <p className="text-sm text-muted-foreground" data-testid="secrets-empty">
-              No secrets stored. Set one above, declare it under the compose
-              file's top-level <code>secrets:</code> (external: true) and
-              reference it from a service.
+              No secrets stored.{" "}
+              {canAdminResources
+                ? "Set one above, declare it under the compose file's top-level "
+                : "Declare it under the compose file's top-level "}
+              <code>secrets:</code> (external: true) and reference it from a
+              service.
             </p>
           ) : (
             <Table>

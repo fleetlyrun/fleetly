@@ -261,12 +261,16 @@ export function listTeams() {
   return api<ListTeamsResponse>("/teams");
 }
 
-/** 两段式删除（confirm = slug；项目须空——不做隐式级联）。 */
+/**
+ * 两段式删除（confirm = slug；项目须空——不做隐式级联）。confirm 走 query
+ * 参数（teams.proto DeleteTeam 的 DELETE 无 body 绑定——与 deleteDatabase
+ * 同款传输形态；本端点尚无 Console 消费方，形状先钉对，2026-09-25 同型排查）。
+ */
 export function deleteTeam(id: string, confirm: string) {
-  return api<Record<string, never>>(`/teams/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    json: { confirm },
-  });
+  return api<Record<string, never>>(
+    `/teams/${encodeURIComponent(id)}?confirm=${encodeURIComponent(confirm)}`,
+    { method: "DELETE" },
+  );
 }
 
 export function listTeamMembers(teamId: string) {
@@ -1178,10 +1182,18 @@ export function createDatabase(req: {
   return api<CreateDatabaseResponse>("/databases", { method: "POST", json: req });
 }
 
+/**
+ * 删除受理（破坏性两段式）：confirm/delete_volumes 走 **query 参数**——
+ * proto http rule 对 DELETE 只声明路径段（databases.proto DeleteDatabase，
+ * 无 body 绑定），grpc-gateway 把非路径字段从 query 读取；此前以 JSON body
+ * 上送会被网关整体忽略，confirm 恒空 → 400 "destructive operation: pass
+ * confirm=…"（2026-09-25 走查实录：确认框输名了但载荷从未到达服务端）。
+ * delete_volumes 序列化为 proto3 bool 的 JSON 形态（true/false 字面量）。
+ */
 export function deleteDatabase(name: string, opts: { confirm: string; delete_volumes: boolean }) {
-  return api<DeleteDatabaseResponse>(`/databases/${encodeURIComponent(name)}`, {
+  const qs = `confirm=${encodeURIComponent(opts.confirm)}&delete_volumes=${opts.delete_volumes}`;
+  return api<DeleteDatabaseResponse>(`/databases/${encodeURIComponent(name)}?${qs}`, {
     method: "DELETE",
-    json: opts,
   });
 }
 

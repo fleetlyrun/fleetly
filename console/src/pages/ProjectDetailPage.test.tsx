@@ -158,13 +158,14 @@ describe("ProjectDetailPage", () => {
     renderAt();
 
     await screen.findByTestId("project-detail-name");
-    // team settings → 成员管理 tab；members & role overrides → 覆写管理面
-    //（团队设置 Projects tab，单一管理面）。此前两链接同指 /teams/:id。
+    // team settings → 成员管理 tab；project role overrides → 覆写管理面
+    //（团队设置 Projects tab，单一管理面）。此前两链接同指 /teams/:id；
+    // 文案直说落点语义（2026-09-25 走查：'members & role overrides' 含糊）。
     expect(screen.getByRole("link", { name: "team settings" }).getAttribute("href")).toBe(
       "/teams/01T1?tab=members",
     );
     expect(
-      screen.getByRole("link", { name: /members & role overrides/ }).getAttribute("href"),
+      screen.getByRole("link", { name: "project role overrides" }).getAttribute("href"),
     ).toBe("/teams/01T1?tab=projects");
   });
 });
