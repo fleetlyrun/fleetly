@@ -13,6 +13,7 @@ import (
 	"net/http"
 	neturl "net/url"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 
@@ -22,23 +23,26 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// PublishInput 是一次路由发布的输入（engine.RoutePublisher 契约的载荷；
-// domains/port 来自归一化 compose——首健康后由引擎提取）。TeamSlug/PrjSlug
-// 是归属两个 slug（v0.3：per-app 网络接入与路由键三段公式的参数，
-// rbac-teams §4.3）。
+// PublishInput 是一次路由发布的输入（engine.RoutePublisher 契约的载荷）。
+// IMPL-T1-1 起声明真值 = state 域名行（发布点现读；消除「读快照 ↔ 写点」
+// 竞态），Declared 只承载 compose label 声明（bootstrap 种子候选：
+// state 无行时播种，state 有行时一律忽略并派事件——单一写点仲裁）。
+// TeamSlug/PrjSlug 是归属两个 slug（v0.3：per-app 网络接入与路由键三段
+// 公式的参数，rbac-teams §4.3）。
 type PublishInput struct {
 	AppID    string
 	AppName  string
 	TeamSlug string
 	PrjSlug  string
-	// Services 是入口服务集（有 fleetly.domains label 的服务）。
-	Services []ServiceRoutes
+	// Declared 是 compose label 域名声明（归一化 spec 产出；仅首部署
+	// state 无行时作为种子落库，此后永久让位给 state 行）。
+	Declared []ServiceRoutes
 }
 
-// ServiceRoutes 是单个入口服务的路由声明。
+// ServiceRoutes 是 compose label 的单个入口服务声明（种子形态）。
 type ServiceRoutes struct {
 	Service string
-	// Port 是后端端口（compose expose 首端口）。
+	// Port 是路由目标端口（compose expose 首端口）。
 	Port    string
 	Domains []string
 }
@@ -305,10 +309,20 @@ func (m *Manager) publish(ctx context.Context) error {
 	return m.publishWithCerts(ctx)
 }
 
-// PublishRoutes 实现 engine.RoutePublisher：域名台账对账 → Traefik 收敛
-// 与网络接入 → 全量配置收敛（先校验后换视图）→ 证书保障（缺/域名集变化/
-// 临期即签发；签发失败不阻断已生效的 HTTP 路由，TLS 段随下次成功签发
-// 收敛）。
+// PublishRoutes 实现 engine.RoutePublisher（发布链路：单一写点仲裁 →
+// Traefik 收敛与网络接入 → 全量配置收敛 → 证书保障）。声明的真值 = state
+// 域名行（发布点现读）：
+//
+//   - state 有行：Declared（compose label）一律忽略并派 route.label_ignored
+//     事件（label 仅 bootstrap 种子形态；dokploy「Domains UI 与 label 并存
+//     时 Traefik 二选一不可控」的事故类在数据模型层消灭）；
+//   - state 无行 + Declared 非空：首部署播种（SeedAppDomainsIfEmpty 原子
+//     落库，此后
+//     state 即真值）；
+//   - 两者皆空：无路由声明，照常收敛（幂等空操作，不误删任何既有行）。
+//
+// 证书保障：本 app 域名集缺/变/临期即签发（HTTP-01 完整链；失败不阻断
+// 已生效的 HTTP 路由，TLS 段随下次成功签发收敛）。
 //
 // 语义注释（T2.15 设计取舍）：发布失败的处置权在调用方（引擎）——部署
 // 不回滚、route.publish_failed 单独告警 + 审计；本方法自身是幂等收敛
@@ -317,39 +331,81 @@ func (m *Manager) PublishRoutes(ctx context.Context, in PublishInput) error {
 	if in.AppName == "" {
 		return fmt.Errorf("ingress: publish requires app name")
 	}
-	// ① 台账对账（声明集 = 本次部署归一化 compose 的 domains；服务移除
-	// /域名撤销 = 声明集之外的行删除——「省略 = 删除」的路由面）。
-	declared := make([]state.DomainServiceRoutes, 0, len(in.Services))
-	for _, svc := range in.Services {
-		declared = append(declared, state.DomainServiceRoutes{
-			Service: svc.Service,
-			Port:    svc.Port,
-			Domains: append([]string{}, svc.Domains...),
-		})
-	}
-	if err := m.store.ReplaceAppDomains(ctx, in.AppID, declared); err != nil {
+	rows, err := m.store.ListAppDomains(ctx, in.AppID)
+	if err != nil {
 		return err
 	}
-	// ② Traefik 收敛 + app 网络接入（swarm 未就绪显式失败——引擎侧降级
+	switch {
+	case len(rows) > 0:
+		if len(in.Declared) > 0 {
+			m.discloseIgnoredLabels(ctx, in, rows)
+		}
+	case len(in.Declared) > 0:
+		seeds := make([]state.DomainServiceRoutes, 0, len(in.Declared))
+		for _, svc := range in.Declared {
+			seeds = append(seeds, state.DomainServiceRoutes{
+				Service: svc.Service,
+				Port:    svc.Port,
+				Domains: append([]string{}, svc.Domains...),
+			})
+		}
+		// 播种走原子仲裁原语（检空 + 插入同事务）：并发 API 写行不被覆盖/
+		// 删除；播种与否都重读行集——真值恒来自 state。
+		if _, err := m.store.SeedAppDomainsIfEmpty(ctx, in.AppID, seeds); err != nil {
+			return err
+		}
+		if rows, err = m.store.ListAppDomains(ctx, in.AppID); err != nil {
+			return err
+		}
+	}
+	if err := m.converge(ctx, in.AppID, in.AppName, in.TeamSlug, in.PrjSlug, rows); err != nil {
+		return err
+	}
+	return nil
+}
+
+// ConvergeAppDomains 是域名资源写面（API CRUD）后的收敛入口：state 行即
+// 真值（无种子仲裁——写面已落库），收敛 = 网络接入 + 全量发布 + 证书保障。
+// 失败上抛给调用方处置（API 面按「资源已保存、收敛随下次发布/续期扫描
+// 重试」的语义披露，不回滚资源行）。
+func (m *Manager) ConvergeAppDomains(ctx context.Context, appID string) error {
+	if appID == "" {
+		return fmt.Errorf("ingress: converge requires app id")
+	}
+	app, err := m.store.GetAppByID(ctx, appID)
+	if err != nil {
+		return err
+	}
+	rows, err := m.store.ListAppDomains(ctx, appID)
+	if err != nil {
+		return err
+	}
+	return m.converge(ctx, appID, app.Name, app.TeamSlug, app.ProjectSlug, rows)
+}
+
+// converge 是发布/写面共用的收敛段（行集已就位：Traefik 收敛 → 网络接入
+// → 全量发布 → 证书保障 → 带证书重发布）。
+func (m *Manager) converge(ctx context.Context, appID, appName, teamSlug, prjSlug string, rows []state.Domain) error {
+	// ① Traefik 收敛 + app 网络接入（swarm 未就绪显式失败——调用方降级
 	// 告警语义的输入；不猜测底座状态）。
 	if err := m.EnsureTraefik(ctx); err != nil {
 		return err
 	}
-	if len(in.Services) > 0 {
-		if err := m.attachNetwork(ctx, in.TeamSlug, in.PrjSlug, in.AppName); err != nil {
+	if len(rows) > 0 {
+		if err := m.attachNetwork(ctx, teamSlug, prjSlug, appName); err != nil {
 			return err
 		}
 	}
-	// ③ 全量配置收敛（全量视图语义：其他 app 的路由同盘——单应用坏配置
+	// ② 全量配置收敛（全量视图语义：其他 app 的路由同盘——单应用坏配置
 	// 不影响其他应用路由的边界在本方法的 Validate/合成层面成立）。
 	if err := m.publish(ctx); err != nil {
 		return err
 	}
-	// ④ 证书保障：本 app 域名集的证书缺/变/临期即签发（HTTP-01 完整链；
-	// 失败返回错误——HTTP 路由已在③生效）。成功后带 TLS 段重发布一次。
-	domains := collectDomainsOf(in)
+	// ③ 证书保障：本 app 域名集的证书缺/变/临期即签发（HTTP-01 完整链；
+	// 失败返回错误——HTTP 路由已在②生效）。成功后带 TLS 段重发布一次。
+	domains := domainsOfRows(rows)
 	if len(domains) > 0 {
-		if _, err := m.ensureCertificate(ctx, in.AppID, in.AppName, domains, false); err != nil {
+		if _, err := m.ensureCertificate(ctx, appID, appName, domains, false); err != nil {
 			return err
 		}
 		if err := m.publishWithCerts(ctx); err != nil {
@@ -357,6 +413,31 @@ func (m *Manager) PublishRoutes(ctx context.Context, in PublishInput) error {
 		}
 	}
 	return nil
+}
+
+// discloseIgnoredLabels 派发 label 被忽略事件（仲裁守卫的披露面；事件写
+// 失败只降级日志——路由收敛不受披露失败影响，与证书审计同纪律）。
+func (m *Manager) discloseIgnoredLabels(ctx context.Context, in PublishInput, rows []state.Domain) {
+	declaredDomains, declaredServices := 0, len(in.Declared)
+	for _, svc := range in.Declared {
+		declaredDomains += len(svc.Domains)
+	}
+	payload := fmt.Sprintf(
+		`{"app":%q,"reason":"state_rows_exist","declared_services":%d,"declared_domains":%d,"state_domains":%d}`,
+		in.AppName, declaredServices, declaredDomains, len(rows))
+	err := m.store.InTx(ctx, func(tx *state.Tx) error {
+		_, err := tx.AppendEvent(ctx, state.Event{
+			Name:    "route.label_ignored",
+			Subject: "app:" + in.AppName,
+			Payload: payload,
+		})
+		return err
+	})
+	if err != nil {
+		m.log.Warn("ingress: record label-ignored event failed", "app", in.AppName, "error", err)
+	}
+	m.log.Info("ingress: compose domain labels ignored (state domain rows are the single source of truth; labels are bootstrap-only)",
+		"app", in.AppName, "declared_services", declaredServices, "declared_domains", declaredDomains, "state_rows", len(rows))
 }
 
 // publishWithCerts 全量重发布（带证书段）：证书库就绪的 app 路由挂
@@ -496,23 +577,80 @@ func (m *Manager) Status(ctx context.Context) (Status, error) {
 	}, nil
 }
 
-// collectDomainsOf 收集发布输入的全部域名（排序去重；多 SAN 单证书/app）。
-func collectDomainsOf(in PublishInput) []string {
-	var out []string
-	for _, svc := range in.Services {
-		out = append(out, svc.Domains...)
+// domainsOfRows 收集行集域名（排序去重；多 SAN 单证书/app）。
+func domainsOfRows(rows []state.Domain) []string {
+	out := make([]string, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, row.Domain)
 	}
 	return uniqueSorted(out)
 }
 
-// routesFromLedger 把台账行聚合成路由集（app 名经 GetAppByID 解析；
-// tombstone/删除中的 app 路由不发布）。确定性：按 (app, service) 字典序。
+// domainGroupKey 是路由分组键（app × service × port × protocol：同一服务的
+// 不同后端各占一条 Route）。
+type domainGroupKey struct{ app, service, port, protocol string }
+
+// lessRouteGroup 是路由分组的全序（app/service 字典序 → 端口数值序 →
+// 协议序 http < h2c）。端口不可解析时按字符串序兜底并排在可解析值之后。
+func lessRouteGroup(a, b domainGroupKey) bool {
+	if a.app != b.app {
+		return a.app < b.app
+	}
+	if a.service != b.service {
+		return a.service < b.service
+	}
+	an, aerr := strconv.Atoi(a.port)
+	bn, berr := strconv.Atoi(b.port)
+	switch {
+	case aerr == nil && berr == nil:
+		if an != bn {
+			return an < bn
+		}
+	case aerr == nil:
+		return true
+	case berr == nil:
+		return false
+	}
+	if a.port != b.port {
+		return a.port < b.port
+	}
+	return protocolRank(a.protocol) < protocolRank(b.protocol)
+}
+
+// protocolRank 是协议排序序位（http < h2c——同端口双协议时 http 组取
+// RouterName 本体，机器面 h2c 组带后缀）。
+func protocolRank(protocol string) int {
+	if protocol == "h2c" {
+		return 1
+	}
+	return 0
+}
+
+// routeKeySuffix 是分组键后缀：`~<port>[~h2c]`。'~' 不在服务名字符集
+// （[a-z0-9._-]）内，结构上不可能与任何 RouterName 撞键；端口缺省（旧行
+// 未同步）以 0 占位——键空间唯一性优先。
+func routeKeySuffix(port, protocol string) string {
+	p := port
+	if p == "" {
+		p = "0"
+	}
+	suffix := "~" + p
+	if protocol == "h2c" {
+		suffix += "~h2c"
+	}
+	return suffix
+}
+
+// routesFromLedger 把域名行聚合成路由集（app 名经 GetAppByID 解析；
+// tombstone/删除中的 app 路由不发布）。IMPL-T1-1：分组键 = (app, service,
+// port, protocol)——同一服务多后端各占一条 Route，第 2..n 组附
+// `~<port>[~h2c]` 键后缀消歧（第 1 组保持 RouterName 本体，单后端服务
+// 公式零变化）；确定性排序见 lessRouteGroup。
 func routesFromLedger(ctx context.Context, st *state.Store, rows []state.Domain) ([]Route, error) {
 	nameByAppID := map[string]string{}
 	slugByAppID := map[string][2]string{}
-	type key struct{ app, service string }
-	order := []key{}
-	byKey := map[key]*Route{}
+	order := []domainGroupKey{}
+	byKey := map[domainGroupKey]*Route{}
 	for _, row := range rows {
 		if _, ok := nameByAppID[row.AppID]; !ok {
 			appRow, err := st.GetAppByID(ctx, row.AppID)
@@ -528,24 +666,29 @@ func routesFromLedger(ctx context.Context, st *state.Store, rows []state.Domain)
 			continue
 		}
 		slugs := slugByAppID[row.AppID]
-		k := key{app: app, service: row.Service}
+		k := domainGroupKey{app: app, service: row.Service, port: row.Port, protocol: row.Protocol}
 		r, exists := byKey[k]
 		if !exists {
-			r = &Route{App: app, Service: row.Service, TeamSlug: slugs[0], PrjSlug: slugs[1], Port: row.Port}
+			r = &Route{
+				App: app, Service: row.Service, TeamSlug: slugs[0], PrjSlug: slugs[1],
+				Port: row.Port, Protocol: row.Protocol,
+			}
 			byKey[k] = r
 			order = append(order, k)
 		}
 		r.Domains = append(r.Domains, row.Domain)
 	}
+	sort.Slice(order, func(i, j int) bool { return lessRouteGroup(order[i], order[j]) })
+	firstOfService := map[string]bool{}
 	out := make([]Route, 0, len(order))
-	sort.Slice(order, func(i, j int) bool {
-		if order[i].app != order[j].app {
-			return order[i].app < order[j].app
-		}
-		return order[i].service < order[j].service
-	})
 	for _, k := range order {
 		r := byKey[k]
+		svcKey := k.app + "\x00" + k.service
+		if firstOfService[svcKey] {
+			r.KeySuffix = routeKeySuffix(k.port, k.protocol)
+		} else {
+			firstOfService[svcKey] = true
+		}
 		r.Domains = uniqueSorted(r.Domains)
 		out = append(out, *r)
 	}

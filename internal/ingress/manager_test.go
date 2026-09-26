@@ -253,7 +253,7 @@ func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 		t.Fatalf("create app: %v", err)
 	}
 
-	in := PublishInput{AppID: app.ID, AppName: "demo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
+	in := PublishInput{AppID: app.ID, AppName: "demo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "8080", Domains: []string{"test.example.internal"}},
 	}}
 	if err := m.PublishRoutes(ctx, in); err != nil {
@@ -325,16 +325,15 @@ func TestPublishRoutesConvergesTraefikAndView(t *testing.T) {
 	}
 }
 
-// TestPublishEmptyViewWithdrawsToFallback 是 H9 前身
-// TestPublishEmptyViewKeepsPreviousConfig 的语义反转：最后一个路由移除
-// （空声明集）不再是「拒绝换视图、Traefik 保留旧路由（502 残留）」，
-// 而是空视图 = noop 兜底形态真实下发——旧路由不在、兜底路由在、台账
-// 已清（撤销生效）。
-func TestPublishEmptyViewWithdrawsToFallback(t *testing.T) {
+// TestPublishEmptyDeclarationKeepsStateRows 「省略 = 删除」退役（IMPL-T1-1
+// 单一写点仲裁）：声明真值 = state 行——空 Declared（compose 无域名 label /
+// 文件漂移）不删除既有行、路由保持；撤销唯一入口 = WithdrawAppRoutes 与
+// API 删除（label 仅首部署播种）。
+func TestPublishEmptyDeclarationKeepsStateRows(t *testing.T) {
 	m, _, st := newTestManager(t)
 	ctx := context.Background()
 	app, _ := testsupport.SeedAppE(t, st, "solo")
-	in := PublishInput{AppID: app.ID, AppName: "solo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
+	in := PublishInput{AppID: app.ID, AppName: "solo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"solo.example.test"}},
 	}}
 	if err := m.PublishRoutes(ctx, in); err != nil {
@@ -344,22 +343,17 @@ func TestPublishEmptyViewWithdrawsToFallback(t *testing.T) {
 		t.Fatal("route should be in view after publish")
 	}
 
-	// 移除声明（服务删除的发布路径）：空声明集 → 台账清空 → 合成落
-	// 兜底 → 发布成功（不再拒绝）。
-	err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "solo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{}})
-	if err != nil {
-		t.Fatalf("publishing an empty route view must succeed via fallback (H9): %v", err)
+	// 空 Declared：state 行保持、路由保持——label 不再拥有对账删除权。
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "solo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug}); err != nil {
+		t.Fatalf("publishing without declarations must not fail: %v", err)
 	}
 	snap, _ := m.vw.snapshot()
-	if snap.HTTP.Routers["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-solo-web-web"] != nil {
-		t.Fatal("previous route must be withdrawn (absent from view)")
-	}
-	if snap.HTTP.Routers[fallbackRouterName] == nil {
-		t.Fatalf("fallback router must be served on empty view: %+v", snap.HTTP.Routers)
+	if snap.HTTP.Routers["fleetly-"+app.TeamSlug+"-"+app.ProjectSlug+"-solo-web-web"] == nil {
+		t.Fatal("state rows must survive an empty declaration (omission-means-deletion retired)")
 	}
 	rows, _ := st.ListAppDomains(ctx, app.ID)
-	if len(rows) != 0 {
-		t.Fatalf("ledger should reflect the (empty) declared set: %+v", rows)
+	if len(rows) != 1 || rows[0].Domain != "solo.example.test" {
+		t.Fatalf("state rows must be kept: %+v", rows)
 	}
 }
 
@@ -373,7 +367,7 @@ func TestWithdrawAppRoutes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "gone", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "gone", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"gone.example.test"}},
 	}}); err != nil {
 		t.Fatalf("publish: %v", err)
@@ -411,6 +405,192 @@ func TestWithdrawAppRoutes(t *testing.T) {
 	if err := m.WithdrawAppRoutes(ctx, ""); err == nil {
 		t.Fatal("withdraw with empty app id must fail")
 	}
+}
+
+// TestPublishSeedsFromLabelsWhenStateEmpty 守卫②的种子里程（IMPL-T1-1）：
+// state 无行 + compose label 声明 → 首部署播种（默认 protocol=http /
+// cert_mode=http01），路由按 state 行渲染；重复发布（种子已落库）不再改行，
+// 转为 label 忽略 + 事件披露。
+func TestPublishSeedsFromLabelsWhenStateEmpty(t *testing.T) {
+	m, _, st := newTestManager(t)
+	ctx := context.Background()
+	app, _ := testsupport.SeedAppE(t, st, "seed")
+	in := PublishInput{AppID: app.ID, AppName: "seed", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
+		{Service: "web", Port: "8080", Domains: []string{"seed.example.test"}},
+	}}
+	if err := m.PublishRoutes(ctx, in); err != nil {
+		t.Fatalf("seed publish: %v", err)
+	}
+	rows, _ := st.ListAppDomains(ctx, app.ID)
+	if len(rows) != 1 || rows[0].Domain != "seed.example.test" || rows[0].Port != "8080" ||
+		rows[0].Protocol != "http" || rows[0].CertMode != "http01" {
+		t.Fatalf("seeded row wrong: %+v", rows)
+	}
+	if got := len(eventsNamed(t, st, "route.label_ignored")); got != 0 {
+		t.Fatalf("seed publish must not raise label_ignored (got %d)", got)
+	}
+	// 二次发布（同声明）：state 已存在 → 不播种、不改行，派忽略事件一次。
+	if err := m.PublishRoutes(ctx, in); err != nil {
+		t.Fatalf("republish: %v", err)
+	}
+	rows2, _ := st.ListAppDomains(ctx, app.ID)
+	if len(rows2) != 1 || rows2[0].Domain != "seed.example.test" {
+		t.Fatalf("republish must not change seeded rows: %+v", rows2)
+	}
+	if got := len(eventsNamed(t, st, "route.label_ignored")); got != 1 {
+		t.Fatalf("republish with labels must raise label_ignored once (got %d)", got)
+	}
+}
+
+// TestPublishIgnoresLabelsWhenStateRowsExist 守卫②（仲裁验收，IMPL-T1-1）：
+// state 已有域名行时 compose label 一律忽略——不播种、不合并、不删除，
+// 路由按 state 行渲染，并派 route.label_ignored 事件（label 仅 bootstrap）。
+func TestPublishIgnoresLabelsWhenStateRowsExist(t *testing.T) {
+	m, _, st := newTestManager(t)
+	ctx := context.Background()
+	app, _ := testsupport.SeedAppE(t, st, "arb")
+	// state 行（API 形态）：api.example.test → web:8080 http。
+	if _, err := st.CreateAppDomain(ctx, app.ID, state.DomainInput{
+		Domain: "api.example.test", Service: "web", Port: "8080", Protocol: "http", CertMode: "http01",
+	}); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+	// compose label 声明另一域名/端口（旧写法）：必须被忽略。
+	in := PublishInput{AppID: app.ID, AppName: "arb", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
+		{Service: "web", Port: "9090", Domains: []string{"label.example.test"}},
+	}}
+	if err := m.PublishRoutes(ctx, in); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	rows, _ := st.ListAppDomains(ctx, app.ID)
+	if len(rows) != 1 || rows[0].Domain != "api.example.test" || rows[0].Port != "8080" {
+		t.Fatalf("labels must be ignored when state rows exist: %+v", rows)
+	}
+	base := "fleetly-" + app.TeamSlug + "-" + app.ProjectSlug + "-arb-web"
+	snap, _ := m.vw.snapshot()
+	if snap.HTTP.Routers[base+"-web"] == nil {
+		t.Fatalf("state row route missing: %+v", snap.HTTP.Routers)
+	}
+	if rule := snap.HTTP.Routers[base+"-web"].Rule; !strings.Contains(rule, "api.example.test") || strings.Contains(rule, "label.example.test") {
+		t.Fatalf("view must render state rows only, rule = %q", rule)
+	}
+	got := eventsNamed(t, st, "route.label_ignored")
+	if len(got) != 1 {
+		t.Fatalf("route.label_ignored events = %d, want 1", len(got))
+	}
+	if got[0].Subject != "app:arb" {
+		t.Fatalf("event subject = %q, want app:arb", got[0].Subject)
+	}
+}
+
+// TestPublishMultiBackendServicePerDomainRouting 守卫①/③（IMPL-T1-1）：同一
+// 服务两域名不同端口不同协议 → dynamic config 各自正确——第 1 组（http）
+// 取 RouterName 本体 + http://，第 2 组（h2c）取 `~<port>~h2c` 后缀 +
+// h2c://（scheme=h2c 直出）；后端 DNS 名恒为 Swarm 服务名（后缀只进键
+// 空间），80 路由各自带所属 host 规则。
+func TestPublishMultiBackendServicePerDomainRouting(t *testing.T) {
+	m, _, st := newTestManager(t)
+	ctx := context.Background()
+	app, _ := testsupport.SeedAppE(t, st, "multi")
+	if _, err := st.CreateAppDomain(ctx, app.ID, state.DomainInput{
+		Domain: "ws.multi.example.test", Service: "web", Port: "9080", Protocol: "http", CertMode: "http01",
+	}); err != nil {
+		t.Fatalf("create ws domain: %v", err)
+	}
+	if _, err := st.CreateAppDomain(ctx, app.ID, state.DomainInput{
+		Domain: "grpc.multi.example.test", Service: "web", Port: "9090", Protocol: "h2c", CertMode: "http01",
+	}); err != nil {
+		t.Fatalf("create grpc domain: %v", err)
+	}
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "multi", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug}); err != nil {
+		t.Fatalf("publish: %v", err)
+	}
+	snap, _ := m.vw.snapshot()
+	base := "fleetly-" + app.TeamSlug + "-" + app.ProjectSlug + "-multi-web"
+	// 第 1 组（数值端口序 http:9080）：RouterName 本体。
+	if got := snap.HTTP.Services[base].LoadBalancer.Servers[0].URL; got != "http://"+base+":9080" {
+		t.Fatalf("http group backend = %q", got)
+	}
+	if rule := snap.HTTP.Routers[base+"-web"].Rule; rule != "Host(`ws.multi.example.test`)" {
+		t.Fatalf("http group rule = %q", rule)
+	}
+	// 第 2 组（h2c:9090）：键后缀消歧，后端 DNS 仍是服务名。
+	h2cKey := base + "~9090~h2c"
+	if snap.HTTP.Services[h2cKey] == nil {
+		t.Fatalf("h2c group service missing (keys: %v)", mapKeys(snap.HTTP.Services))
+	}
+	if got := snap.HTTP.Services[h2cKey].LoadBalancer.Servers[0].URL; got != "h2c://"+base+":9090" {
+		t.Fatalf("h2c group backend = %q, want h2c://%s:9090 (scheme=h2c direct)", got, base)
+	}
+	if snap.HTTP.Routers[h2cKey+"-web"] == nil {
+		t.Fatalf("h2c group router missing: %v", mapKeys(snap.HTTP.Routers))
+	}
+	if rule := snap.HTTP.Routers[h2cKey+"-web"].Rule; rule != "Host(`grpc.multi.example.test`)" {
+		t.Fatalf("h2c group rule = %q", rule)
+	}
+	// 单后端服务公式零变化（既有用例已覆盖），此处钉键空间唯一性：两组键
+	// 互异且后缀与任何 RouterName 不可能撞（'~' 不在服务名字符集内）。
+	if h2cKey == base {
+		t.Fatal("group keys must be distinct")
+	}
+}
+
+// TestConvergeAppDomainsFromState API 写面收敛入口（IMPL-T1-1）：资源行落库
+// 后收敛出路由；删除行再收敛 → 路由撤销（视图落兜底）。
+func TestConvergeAppDomainsFromState(t *testing.T) {
+	m, _, st := newTestManager(t)
+	ctx := context.Background()
+	app, _ := testsupport.SeedAppE(t, st, "api")
+	if _, err := st.CreateAppDomain(ctx, app.ID, state.DomainInput{
+		Domain: "api.example.test", Service: "web", Port: "8080", Protocol: "http", CertMode: "http01",
+	}); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+	if err := m.ConvergeAppDomains(ctx, app.ID); err != nil {
+		t.Fatalf("converge: %v", err)
+	}
+	base := "fleetly-" + app.TeamSlug + "-" + app.ProjectSlug + "-api-web"
+	if snap, _ := m.vw.snapshot(); snap.HTTP.Routers[base+"-web"] == nil {
+		t.Fatal("route missing after converge")
+	}
+	if err := st.RemoveAppDomain(ctx, app.ID, "api.example.test"); err != nil {
+		t.Fatalf("remove domain: %v", err)
+	}
+	if err := m.ConvergeAppDomains(ctx, app.ID); err != nil {
+		t.Fatalf("converge after removal: %v", err)
+	}
+	snap, _ := m.vw.snapshot()
+	if snap.HTTP.Routers[base+"-web"] != nil {
+		t.Fatal("route must be withdrawn after the state row is removed")
+	}
+	if snap.HTTP.Routers[fallbackRouterName] == nil {
+		t.Fatalf("empty view must fall back to the noop router: %v", mapKeys(snap.HTTP.Routers))
+	}
+}
+
+// eventsNamed 返回店内指定名字的事件（升序）。
+func eventsNamed(t *testing.T, st *state.Store, name string) []state.Event {
+	t.Helper()
+	evs, err := st.EventsSince(context.Background(), 0, 200)
+	if err != nil {
+		t.Fatalf("list events: %v", err)
+	}
+	out := []state.Event{}
+	for _, ev := range evs {
+		if ev.Name == name {
+			out = append(out, ev)
+		}
+	}
+	return out
+}
+
+// mapKeys 是配置键集合的排错视图（测试失败输出用）。
+func mapKeys[T any](m map[string]T) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
 }
 
 // TestProviderEndpointTokenAuth 配置端点鉴权负面测试（验收 3：带错
@@ -613,7 +793,7 @@ func TestAttachNetworkKeepsPreviousApps(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create app: %v", err)
 		}
-		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, TeamSlug: appRow.TeamSlug, PrjSlug: appRow.ProjectSlug, Services: []ServiceRoutes{
+		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, TeamSlug: appRow.TeamSlug, PrjSlug: appRow.ProjectSlug, Declared: []ServiceRoutes{
 			{Service: "web", Port: "80", Domains: []string{name + ".example.test"}},
 		}}); err != nil {
 			t.Fatalf("publish %s: %v", name, err)
@@ -651,7 +831,7 @@ func TestAttachNetworkKeepsPreviousApps(t *testing.T) {
 	}
 	// 幂等重发布（同一 app）：attach 以 ID 判等——不再产生更新/重复项。
 	before := len(dc.updates)
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: app1.ID, AppName: "app1", TeamSlug: app1.TeamSlug, PrjSlug: app1.ProjectSlug, Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app1.ID, AppName: "app1", TeamSlug: app1.TeamSlug, PrjSlug: app1.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"app1.example.test"}},
 	}}); err != nil {
 		t.Fatalf("republish app1: %v", err)
@@ -693,7 +873,7 @@ func TestEnsureTraefikUpdatePreservesAttachedNetworks(t *testing.T) {
 		if err != nil {
 			t.Fatalf("create app: %v", err)
 		}
-		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, TeamSlug: appRow.TeamSlug, PrjSlug: appRow.ProjectSlug, Services: []ServiceRoutes{
+		if err := m.PublishRoutes(ctx, PublishInput{AppID: appRow.ID, AppName: name, TeamSlug: appRow.TeamSlug, PrjSlug: appRow.ProjectSlug, Declared: []ServiceRoutes{
 			{Service: "web", Port: "80", Domains: []string{name + ".example.test"}},
 		}}); err != nil {
 			t.Fatalf("publish %s: %v", name, err)
@@ -834,7 +1014,7 @@ func TestViewCarriesInlinePEM(t *testing.T) {
 	}
 
 	// 发布（带证书段的全量重发布）→ 视图。
-	in := PublishInput{AppID: app.ID, AppName: "shop", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
+	in := PublishInput{AppID: app.ID, AppName: "shop", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
 	}}
 	if err := m.PublishRoutes(ctx, in); err != nil {
@@ -892,7 +1072,7 @@ func TestDomainlessPublishKeepsTLSegments(t *testing.T) {
 	if err := m.certs.Save(pair); err != nil {
 		t.Fatalf("save pair: %v", err)
 	}
-	inA := PublishInput{AppID: appA.ID, AppName: "shop", TeamSlug: appA.TeamSlug, PrjSlug: appA.ProjectSlug, Services: []ServiceRoutes{
+	inA := PublishInput{AppID: appA.ID, AppName: "shop", TeamSlug: appA.TeamSlug, PrjSlug: appA.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
 	}}
 	if err := m.PublishRoutes(ctx, inA); err != nil {
@@ -907,7 +1087,7 @@ func TestDomainlessPublishKeepsTLSegments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create app B: %v", err)
 	}
-	inB := PublishInput{AppID: appB.ID, AppName: "internal", TeamSlug: appB.TeamSlug, PrjSlug: appB.ProjectSlug, Services: []ServiceRoutes{
+	inB := PublishInput{AppID: appB.ID, AppName: "internal", TeamSlug: appB.TeamSlug, PrjSlug: appB.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "svc", Port: "8080"},
 	}}
 	if err := m.PublishRoutes(ctx, inB); err != nil {

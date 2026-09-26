@@ -7,11 +7,13 @@ package engine
 // E_ROUTE_PUBLISH_FAILED），重试路径 = 幂等发布（观察窗终态再发布一次）
 // 与下次部署。
 //
-// 路由声明的提取来源（优先级）：
-//  1. compose 重载（spec_hash 复核——与期望态同源；服务移除/域名撤销随
-//     本次声明集对账删除，「省略 = 删除」的路由面）；
-//  2. 重载失败/hash 漂移（文件丢失、回滚目标与现盘文件不一致）→ 台账
-//     直推（幂等不回退：没有可靠声明源时不猜——不因声明源缺失误删路由）。
+// 路由声明的来源（IMPL-T1-1 起）：
+//  1. 真值 = state 域名行（internal/ingress 在发布点现读；API CRUD 与首
+//     部署种子是仅有的写入方）；
+//  2. 本包只从 compose 重载提取 label 声明（spec_hash 复核——与期望态
+//     同源）作为种子候选：state 无行时首部署播种；state 有行时一律忽略
+//     并派事件（label 仅 bootstrap）。重载失败/hash 漂移 → 不提供种子
+//     （没有可靠声明源时不猜——不因声明源缺失误删/误建路由）。
 
 import (
 	"context"
@@ -23,7 +25,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
-// RouteServiceSpec 是单个入口服务的路由声明（引擎 → 发布端口的载荷）。
+// RouteServiceSpec 是单个入口服务的 compose 声明（引擎 → 发布端口的种子
+// 候选载荷）。IMPL-T1-1 起域名声明真值 = state 域名行（ingress 发布点
+// 现读）；本载荷只承载 label 种子（state 无行时的首部署播种），Port 是
+// compose expose 首端口。
 type RouteServiceSpec struct {
 	Service string
 	// Port 是后端端口（compose expose 首端口）。
@@ -33,13 +38,16 @@ type RouteServiceSpec struct {
 }
 
 // RoutePublishInput 是一次路由发布输入。TeamSlug/PrjSlug 是归属两个 slug
-// （v0.3：ingress 的 per-app 网络接入与三段路由键公式参数，rbac-teams §4.3）。
+// （v0.3：ingress 的 per-app 网络接入与三段路由键公式参数，rbac-teams
+// §4.3）。
 type RoutePublishInput struct {
 	AppID    string
 	AppName  string
 	TeamSlug string
 	PrjSlug  string
-	Services []RouteServiceSpec
+	// Declared 是 compose label 域名声明（bootstrap 种子候选：state 无行
+	// 时播种；state 有行时一律忽略并派事件——单一写点仲裁在 ingress 侧）。
+	Declared []RouteServiceSpec
 }
 
 // RoutePublisher 是入口路由发布端口（internal/ingress.Manager 隐式实现；
@@ -103,19 +111,23 @@ func (e *Engine) publishRoutes(ctx context.Context, rec state.DeployRecord) {
 			return err
 		}
 		return auditDeployment(ctx, tx, "system", "route.publish", rec.ID,
-			"ok", "", state.DiffSummary("app", rec.AppName, "services", len(in.Services))) // MG-6：构造器替换手拼 JSON（计数保持原生数值）
+			"ok", "", state.DiffSummary("app", rec.AppName, "declared_services", len(in.Declared))) // MG-6：构造器替换手拼 JSON（计数保持原生数值；真值 = state 行，本计数只记本次种子候选）
 	}); err != nil {
 		e.log.Warn("engine: record route published", "deployment", rec.ID, "error", err)
 	}
 }
 
-// routePublishInput 构建发布输入（compose 同源优先，台账兜底）。归属 slug
-// 一次读取（v0.3：路由键与网络接入的三段公式参数——发布路径的 app 行
-// 读取，slug 不可变故可缓存于本次发布）。
+// routePublishInput 构建发布输入：compose label 声明（种子候选——spec_hash
+// 复核与期望态同源；不可读/hash 漂移则不提供种子，ingress 以 state 行为
+// 准）+ 归属 slug 一次读取（v0.3：路由键与网络接入的三段公式参数）。
+// 域名声明真值 = state 域名行（ingress 发布点现读——IMPL-T1-1 起台账不再
+// 经本包直推）。
 func (e *Engine) routePublishInput(ctx context.Context, rec state.DeployRecord) RoutePublishInput {
-	out, ok := e.routeInputFromLedgerOrSpec(ctx, rec)
-	if !ok {
-		return RoutePublishInput{AppID: rec.AppID, AppName: rec.AppName}
+	out := RoutePublishInput{AppID: rec.AppID, AppName: rec.AppName}
+	if spec, _, err := compose.Load(ctx, rec.ComposePath); err == nil && spec.SpecHash == rec.SpecHash {
+		if declared, ok := declaredServicesFromSpec(spec); ok {
+			out.Declared = declared
+		}
 	}
 	if app, err := e.store.GetAppByID(ctx, rec.AppID); err == nil {
 		out.TeamSlug = app.TeamSlug
@@ -124,42 +136,11 @@ func (e *Engine) routePublishInput(ctx context.Context, rec state.DeployRecord) 
 	return out
 }
 
-// routeInputFromLedgerOrSpec 是 compose 同源声明集的提取（routePublishInput
-// 的拆分段——保持「声明集失败不猜」的兜底语义可见）。
-func (e *Engine) routeInputFromLedgerOrSpec(ctx context.Context, rec state.DeployRecord) (RoutePublishInput, bool) {
-	if spec, _, err := compose.Load(ctx, rec.ComposePath); err == nil && spec.SpecHash == rec.SpecHash {
-		if in, ok := routeInputFromSpec(rec, spec); ok {
-			return in, true
-		}
-		// 声明集不可用（domains 服务无 expose 的纵深防御形态）：落台账
-		// 兜底——不能拿「半截」声明对账（防误删路由）。
-	}
-	// 台账直推（声明源缺失：文件丢失/回滚文件漂移——保持现状不误删）。
-	rows, err := e.store.ListAppDomains(ctx, rec.AppID)
-	if err != nil {
-		return RoutePublishInput{}, false
-	}
-	byService := map[string]*RouteServiceSpec{}
-	order := []string{}
-	for _, row := range rows {
-		svc, ok := byService[row.Service]
-		if !ok {
-			svc = &RouteServiceSpec{Service: row.Service, Port: row.Port}
-			byService[row.Service] = svc
-			order = append(order, row.Service)
-		}
-		svc.Domains = append(svc.Domains, row.Domain)
-	}
-	services := make([]RouteServiceSpec, 0, len(order))
-	for _, name := range order {
-		services = append(services, *byService[name])
-	}
-	return RoutePublishInput{AppID: rec.AppID, AppName: rec.AppName, Services: services}, true
-}
-
-// routeInputFromSpec 从归一化 compose 提取路由声明（domains 服务 →
-// service/port/domains；expose 首端口为路由目标，architecture §2.4）。
-func routeInputFromSpec(rec state.DeployRecord, spec *compose.Spec) (RoutePublishInput, bool) {
+// declaredServicesFromSpec 从归一化 compose 提取 label 域名声明（domains
+// 服务 → service/port/domains；expose 首端口为种子端口，架构 §2.4）。
+// 声明集不可用（domains 服务无 expose 的纵深防御形态）→ false：不拿
+// 「半截」声明播种（防误删/误建），调用方按无种子语义处置。
+func declaredServicesFromSpec(spec *compose.Spec) ([]RouteServiceSpec, bool) {
 	services := make([]RouteServiceSpec, 0, len(spec.Services))
 	for i := range spec.Services {
 		svc := &spec.Services[i]
@@ -168,7 +149,7 @@ func routeInputFromSpec(rec state.DeployRecord, spec *compose.Spec) (RoutePublis
 		}
 		port := firstExposePort(svc.Expose)
 		if port == "" {
-			return RoutePublishInput{}, false
+			return nil, false
 		}
 		services = append(services, RouteServiceSpec{
 			Service: svc.Name,
@@ -176,11 +157,7 @@ func routeInputFromSpec(rec state.DeployRecord, spec *compose.Spec) (RoutePublis
 			Domains: append([]string{}, svc.Domains...),
 		})
 	}
-	return RoutePublishInput{
-		AppID:    rec.AppID,
-		AppName:  rec.AppName,
-		Services: services,
-	}, true
+	return services, true
 }
 
 // firstExposePort 取 expose 首端口（"8080/tcp" → "8080"；无 → ""）。

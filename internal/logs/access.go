@@ -100,7 +100,9 @@ func accessLineOf(line string) (traefikAccess, bool) {
 // stripAccessRouterKey 把 access 行的 RouterName 归一为路由键：剥离
 // provider 限定后缀（`@http` 等——HTTP provider 的路由名在 access 行里带
 // provider 限定）与入口后缀（`-websecure` 优先于 `-web`——前者是后者的
-// 超集后缀，次序不可换）。结果即 accessRouterName(app, service) 键。
+// 超集后缀，次序不可换），再剥离多后端分组后缀（`~<port>[~h2c]`，
+// IMPL-T1-1 ingress.routeKeySuffix 同式）。结果即 accessRouterName(app,
+// service) 键（候选集按 (app, service) 构造，端口/协议分组不参与归属）。
 func stripAccessRouterKey(raw string) string {
 	if idx := strings.LastIndexByte(raw, '@'); idx >= 0 {
 		raw = raw[:idx]
@@ -110,7 +112,23 @@ func stripAccessRouterKey(raw string) string {
 	} else if suffix := "-web"; strings.HasSuffix(raw, suffix) {
 		raw = raw[:len(raw)-len(suffix)]
 	}
-	return raw
+	return stripRouteGroupSuffix(raw)
+}
+
+// stripRouteGroupSuffix 剥离多后端分组后缀 `~<port>[~h2c]`（形态不匹配
+// 原样返回；'~' 不在服务名字符集内，剥离无歧义）。
+func stripRouteGroupSuffix(raw string) string {
+	trimmed := strings.TrimSuffix(raw, "~h2c")
+	idx := strings.LastIndexByte(trimmed, '~')
+	if idx < 0 || idx == len(trimmed)-1 {
+		return raw
+	}
+	for _, r := range trimmed[idx+1:] {
+		if r < '0' || r > '9' {
+			return raw
+		}
+	}
+	return trimmed[:idx]
 }
 
 // accessRouteOf 反解 RouterName → 归属（app, service）：归一化后的键与

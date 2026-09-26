@@ -62,7 +62,7 @@ var serviceRejectList = map[string]string{
 	"devices":             "dangerous field: device mounts are denied by default (admin bypass TODO)",
 	"device_cgroup_rules": "dangerous field: device cgroup rules are denied by default (admin bypass TODO)",
 	"network_mode":        "host network modes such as network_mode: host are on the reject list (services always go through the app-dedicated network)",
-	"ports":               "host port publishing is not in the v0.1 controlled subset (route via expose + fleetly.domains)",
+	"ports":               "host port publishing is not in the v0.1 controlled subset (route via expose + fleetly.domains seed, managed as domain resources afterwards)",
 	"external_links":      "rejected field in v0.1 (cross-stack links are unsupported)",
 	"links":               "legacy links are not in the controlled subset (services reach each other by compose service name)",
 	"container_name":      "container names are managed by the platform (Swarm service name fleetly-<app>-<service>)",

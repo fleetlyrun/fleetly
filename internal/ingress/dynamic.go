@@ -126,7 +126,9 @@ type TLSCertificate struct {
 	KeyFile  string `json:"keyFile"`
 }
 
-// Route 是一条应用路由（app 的一个入口服务；domains 已归一化）。
+// Route 是一条应用路由（app 的一个入口服务的一个后端分组；domains 已
+// 归一化）。IMPL-T1-1 起同一服务的不同 (port, protocol) 后端各占一条
+// Route（分组键 = KeySuffix 消歧），后端 DNS 名恒为 Swarm 服务名。
 type Route struct {
 	App     string
 	Service string
@@ -134,17 +136,25 @@ type Route struct {
 	// rbac-teams §4.3；app 路由必填，平台路由段〔Name 覆写〕忽略）。
 	TeamSlug string
 	PrjSlug  string
-	// Port 是后端目标端口（compose expose 首端口）。
+	// Port 是后端目标端口（compose expose 首端口 / 域名资源声明）。
 	Port string
-	// Domains 是该服务的域名集（归一化 compose spec 产出）。
+	// Protocol 是后端协议（"" | "http" = http://；"h2c" = h2c://——Traefik
+	// service scheme=h2c 直出，不引入 ServersTransport 资源）。
+	Protocol string
+	// KeySuffix 是 router/service 键的后缀（Name 为空时附加在 RouterName
+	// 之后；同一服务多后端分组时第 2..n 组取 `~<port>[~h2c]` 消歧——'~'
+	// 不在服务名字符集内，结构上不可能与任何 RouterName 撞键）。后端 DNS
+	// 名恒为 RouterName 本体，不受后缀影响。
+	KeySuffix string
+	// Domains 是该分组的域名集（归一化）。
 	Domains []string
 	// Cert 标记该 app 证书是否已就绪（就绪则 443 路由 + tls.certificates
 	// 下发；未就绪只发 80 路由）。
 	Cert *CertificateRef
 	// Name 是 router/service 键的显式覆写（空 = RouterName(team, prj, app,
-	// service)）。平台路由段使用（E1-4：registry 路由段的键 = fleetly-
-	// registry——swarm 服务名即后端 DNS 名，与 app 路由「键 = 服务名」的
-	// 后端公式同构）；app 路由恒空（v0.1 形态不变）。
+	// service) + KeySuffix）。平台路由段使用（E1-4：registry 路由段的键 =
+	// fleetly-registry——swarm 服务名即后端 DNS 名，与 app 路由「键 = 服务
+	// 名」的后端公式同构）；app 路由恒空（v0.1 形态不变）。
 	Name string
 	// BackendURL 是后端的显式覆写（空 = 「键[:端口]」公式——app/registry
 	// 路由的 swarm DNS 形态）。平台路由段指向宿主进程时使用（console 免
@@ -226,12 +236,14 @@ func Synthesize(routes []Route) *DynamicConfig {
 		}
 	}
 	for _, r := range routes {
-		// 键解析：Name 覆写优先（平台路由段），否则 app×service 公式。
-		// 后端 URL = 键 + ":" + port——键即 swarm 服务的 overlay DNS 名
-		//（app 与平台路由段同构）；BackendURL 覆写优先（宿主进程后端）。
+		// 键解析：Name 覆写优先（平台路由段），否则 app 公式 + 分组后缀
+		//（KeySuffix 空 = 旧公式逐字不变）。后端 DNS 名独立解析：Name
+		// 覆写（registry/rustfs 的服务名即键）或 RouterName 本体——
+		// 分组后缀只进键空间，绝不进后端 DNS 名。
+		base := RouterName(r.TeamSlug, r.PrjSlug, r.App, r.Service)
 		name := r.Name
 		if name == "" {
-			name = RouterName(r.TeamSlug, r.PrjSlug, r.App, r.Service)
+			name = base + r.KeySuffix
 		}
 		rule := hostRuleOf(r.Domains)
 		// 80 入口（web）：无证书时的唯一入口；有证书时与 443 并存
@@ -281,11 +293,14 @@ func Synthesize(routes []Route) *DynamicConfig {
 		}
 		backend := r.BackendURL
 		if backend == "" {
-			backend = name
-			if r.Port != "" {
-				backend = name + ":" + r.Port
+			backend = r.Name // 平台路由段：键即后端 DNS 名
+			if backend == "" {
+				backend = base // app 路由段：后端 DNS 名恒为 Swarm 服务名
 			}
-			backend = "http://" + backend
+			if r.Port != "" {
+				backend = backend + ":" + r.Port
+			}
+			backend = backendSchemeOf(r.Protocol) + "://" + backend
 		}
 		transport := defaultServersTransportName
 		if r.Transport != "" {
@@ -396,6 +411,15 @@ func hostRuleOf(domains []string) string {
 		parts = append(parts, "Host(`"+d+"`)")
 	}
 	return strings.Join(parts, " || ")
+}
+
+// backendSchemeOf 是后端 URL 的协议 scheme（"h2c" = Traefik 后端 h2c；
+// 其余一律 http——平台既有形态不变）。
+func backendSchemeOf(protocol string) string {
+	if protocol == "h2c" {
+		return "h2c"
+	}
+	return "http"
 }
 
 // isInternalService 判定是否 Traefik 内建服务引用（@internal 限定名——

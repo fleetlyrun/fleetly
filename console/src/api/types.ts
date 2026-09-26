@@ -174,8 +174,16 @@ export type RemoveEnvResponse = Schemas["v1RemoveEnvResponse"];
 
 export type DomainView = Schemas["v1DomainView"];
 export type ListAppDomainsResponse = Schemas["v1ListAppDomainsResponse"];
+export type CreateAppDomainResponse = Schemas["v1CreateAppDomainResponse"];
+export type UpdateAppDomainResponse = Schemas["v1UpdateAppDomainResponse"];
+export type RemoveAppDomainResponse = Schemas["v1RemoveAppDomainResponse"];
 export type DomainCheckView = Schemas["v1DomainCheckView"];
 export type VerifyAppDomainsResponse = Schemas["v1VerifyAppDomainsResponse"];
+
+/** 后端协议词表（proto CreateAppDomainRequest.protocol 消费侧词表）。 */
+export type DomainProtocol = "http" | "h2c";
+/** 证书模式词表（proto cert_mode；wildcard 的 DNS-01 签发链沿 W5）。 */
+export type DomainCertMode = "http01" | "wildcard";
 
 // ── logs ─────────────────────────────────────────────────────────────────
 

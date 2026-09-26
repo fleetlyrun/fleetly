@@ -68,10 +68,11 @@ type Service struct {
 	Build   *Build   `json:"build,omitempty"`
 	Image   string   `json:"image,omitempty"`
 	Command []string `json:"command,omitempty"`
-	// Expose 保持原序（路由目标端口取首个，架构 §2.4）。
+	// Expose 保持原序（域名资源的播种端口取首个，架构 §2.4 / IMPL-T1-1）。
 	Expose []string `json:"expose,omitempty"`
 	// Domains 是 fleetly.domains label 解析后的域名列表（trim/小写/
-	// IDN→punycode 归一化后排序）。有该 label 的服务即入口。
+	// IDN→punycode 归一化后排序）。IMPL-T1-1 起 label 仅首部署播种——
+	// 域名资源（state 行/API CRUD）是路由声明真值。
 	Domains []string `json:"domains,omitempty"`
 	// PlacementNode 是 fleetly.placement.node label 的字面值（放置意图；
 	// 名或 n_<ULID> 的解析/绑定校验属放置层，语法校验见 validate.go）。

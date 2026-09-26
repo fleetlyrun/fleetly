@@ -876,7 +876,12 @@ export interface paths {
         };
         get: operations["DomainsService_ListAppDomains"];
         put?: never;
-        post?: never;
+        /**
+         * CreateAppDomain 新建域名资源（host 全局独占：冲突 409 E_DOMAIN_CONFLICT；
+         *     每服务 ≤5、每 app ≤10 超限 4xx E_DOMAIN_UNSUPPORTED）。写入成功后同步
+         *     触发入口收敛（路由发布 + 证书保障；失败以事件/审计披露，资源行保留）。
+         */
+        post: operations["DomainsService_CreateAppDomain"];
         delete?: never;
         options?: never;
         head?: never;
@@ -894,6 +899,31 @@ export interface paths {
         put?: never;
         post: operations["DomainsService_VerifyAppDomains"];
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/v1/apps/{app}/domains/{domain}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * UpdateAppDomain 更新既有域名行（{domain} 是寻址键 = host，不改名——
+         *     改名 = 删除 + 重建，与 env key 同口径）。空字段 = 保持现值（CLI 局部
+         *     更新形态；Console 恒发全量）。
+         */
+        put: operations["DomainsService_UpdateAppDomain"];
+        post?: never;
+        /**
+         * RemoveAppDomain 删除域名行（幂等不做：不存在 404）。删除即触发入口
+         *     收敛（路由撤销；证书 SAN 集变化随下次签发收敛）。
+         */
+        delete: operations["DomainsService_RemoveAppDomain"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2923,7 +2953,34 @@ export interface components {
             /** 恒 "pending"（随下次部署生效）。 */
             status?: string;
         };
+        DomainsServiceCreateAppDomainBody: {
+            /**
+             * host（入参原文；服务端归一化：trim/小写/IDN→punycode；通配主机本票
+             *     拒绝——app 级 DNS-01 签发链沿 W5）。
+             */
+            domain?: string;
+            /**
+             * compose 服务名（存在性由部署期底座事实兜底：服务未运行 → 502 诚实
+             *     暴露，不在此层猜服务清单）。
+             */
+            service?: string;
+            port?: string;
+            /** http | h2c（空 = http）。 */
+            protocol?: string;
+            /** http01 | wildcard（空 = http01）。 */
+            cert_mode?: string;
+        };
+        DomainsServiceUpdateAppDomainBody: {
+            /** 空 = 保持现值（全空 = 无操作更新，幂等返回当前行）。 */
+            service?: string;
+            port?: string;
+            protocol?: string;
+            cert_mode?: string;
+        };
         DomainsServiceVerifyAppDomainsBody: Record<string, never>;
+        v1CreateAppDomainResponse: {
+            domain?: components["schemas"]["v1DomainView"];
+        };
         v1DomainCheckView: {
             domain?: string;
             ips?: string[];
@@ -2954,9 +3011,20 @@ export interface components {
             cert_not_after?: string;
             /** Format: date-time */
             created_at?: string;
+            /** 后端协议（http | h2c；h2c = Traefik 后端 scheme=h2c 直出）。 */
+            protocol?: string;
+            /** 证书模式（http01 | wildcard；wildcard 的 DNS-01 app 级签发链沿 W5）。 */
+            cert_mode?: string;
         };
         v1ListAppDomainsResponse: {
             domains?: components["schemas"]["v1DomainView"][];
+        };
+        v1RemoveAppDomainResponse: {
+            app?: string;
+            domain?: string;
+        };
+        v1UpdateAppDomainResponse: {
+            domain?: components["schemas"]["v1DomainView"];
         };
         v1VerifyAppDomainsResponse: {
             checks?: components["schemas"]["v1DomainCheckView"][];
@@ -6423,6 +6491,41 @@ export interface operations {
             };
         };
     };
+    DomainsService_CreateAppDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DomainsServiceCreateAppDomainBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1CreateAppDomainResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
     DomainsService_VerifyAppDomains: {
         parameters: {
             query?: never;
@@ -6445,6 +6548,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1VerifyAppDomainsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DomainsService_UpdateAppDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                /** @description 寻址键（host，不改名）。 */
+                domain: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DomainsServiceUpdateAppDomainBody"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateAppDomainResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    DomainsService_RemoveAppDomain: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                app: string;
+                domain: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1RemoveAppDomainResponse"];
                 };
             };
             /** @description An unexpected error response. */

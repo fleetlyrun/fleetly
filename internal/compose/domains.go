@@ -168,6 +168,38 @@ func parseCronSchedule(service string, labels map[string]string) (*CronSchedule,
 // 对齐。
 var idnaProfile = idna.Lookup
 
+// normalizeDomainValue 是域名形态归一化的单点（parseDomainsLabel 与 API
+// 域名资源面共用）：trim/小写/IDN→punycode；空条目、通配主机与非法形态
+// 返回 reason（empty_entry | wildcard | invalid_form）+ 底层错误文本。
+// 通配主机在 app 级 DNS-01 签发链就绪（W5）前不可表达——与 compose label
+// 同口径。
+func normalizeDomainValue(raw string) (string, string, error) {
+	d := strings.TrimSpace(raw)
+	if d == "" {
+		return "", "empty_entry", fmt.Errorf("domain is empty")
+	}
+	if strings.HasPrefix(d, "*") {
+		return "", "wildcard", fmt.Errorf("wildcard hosts require DNS-01 app-level issuance (W5); use a concrete host for now")
+	}
+	ascii, err := idnaProfile.ToASCII(strings.ToLower(d))
+	if err != nil {
+		return "", "invalid_form", err
+	}
+	return ascii, "", nil
+}
+
+// NormalizeDomain 是单域名归一化入口（API 域名资源面的形态契约与 compose
+// label 同源）：归一化产物（小写 punycode）或 E_DOMAIN_UNSUPPORTED（reason
+// 上下文点名空条目/通配/非法形态）。
+func NormalizeDomain(raw string) (string, error) {
+	ascii, reason, err := normalizeDomainValue(raw)
+	if err != nil {
+		return "", apperr.New("E_DOMAIN_UNSUPPORTED", "domain %q has an unsupported form: %v", raw, err).
+			WithContext("reason", reason)
+	}
+	return ascii, nil
+}
+
 // parseDomainsLabel 解析 fleetly.domains label 值：逗号分隔列表 → trim/
 // 小写/IDN→punycode 归一化、排序去重；通配符与非法形态 →
 // E_DOMAIN_UNSUPPORTED；超上限 → E_DOMAIN_UNSUPPORTED（reason 上下文标注）。
@@ -177,20 +209,18 @@ func parseDomainsLabel(service, value string) ([]string, error) {
 	domains := make([]string, 0, len(rawItems))
 	seen := map[string]bool{}
 	for i, raw := range rawItems {
-		d := strings.TrimSpace(raw)
 		pathCtx := fmt.Sprintf("services.%s.labels.%s[%d]", service, LabelDomains, i)
-		if d == "" {
-			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "domain list of service %q contains an empty entry", service).
-				WithContext("path", pathCtx).WithContext("reason", "empty_entry")
-		}
-		if strings.HasPrefix(d, "*") {
-			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "domain %q of service %q is a wildcard (wildcard certificates require DNS-01, supported from v0.2)", service, d).
-				WithContext("path", pathCtx).WithContext("reason", "wildcard")
-		}
-		ascii, err := idnaProfile.ToASCII(strings.ToLower(d))
+		ascii, reason, err := normalizeDomainValue(raw)
 		if err != nil {
-			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "domain %q of service %q has an unsupported form: %v", service, d, err).
-				WithContext("path", pathCtx).WithContext("reason", "invalid_form")
+			msg := fmt.Sprintf("domain %q of service %q has an unsupported form: %v", strings.TrimSpace(raw), service, err)
+			switch reason {
+			case "wildcard":
+				msg = fmt.Sprintf("domain %q of service %q is a wildcard (wildcard certificates require DNS-01, supported from v0.2)", strings.TrimSpace(raw), service)
+			case "empty_entry":
+				msg = fmt.Sprintf("domain list of service %q contains an empty entry", service)
+			}
+			return nil, apperr.New("E_DOMAIN_UNSUPPORTED", "%s", msg).
+				WithContext("path", pathCtx).WithContext("reason", reason)
 		}
 		if !seen[ascii] {
 			seen[ascii] = true

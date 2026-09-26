@@ -22,10 +22,16 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   }
 };
 
-// DomainsService 是域名台账只读与验证面（T2.17；architecture §2.6）。
-// 台账写入方唯一 = internal/ingress（发布时按归一化 compose 对账同步），
-// API 只读不写——域名变更走部署（compose 声明）路径。Verify 是本机视角
-// 探测（解析 + 80/443 + 实收证书如实记录），判断权在操作者。
+// DomainsService 是域名资源面（T2.17 只读台账 + T 线 IMPL-T1-1 可写升级；
+// OT-2）：per-domain {domain(host), service, port, protocol, cert_mode} 的
+// CRUD + 验证。域名资源是路由事实源（写入方 = 本服务的 API CRUD 与发布
+// 种子——compose label 仅首部署 bootstrap 种子，state 存在行时 label 一律
+// 忽略并派事件）；Verify 是本机视角探测（解析 + 80/443 + 实收证书如实
+// 记录），判断权在操作者。
+//
+// scope（scope.go 登记处）：list/verify = read；create/update/remove =
+// deploy（路由声明属应用运行面写语义——compose label 同一直信赖；
+// 平台管理员资源面只读的双门不变）。
 service DomainsService {
   rpc ListAppDomains(ListAppDomainsRequest) returns (ListAppDomainsResponse) {
     option (google.api.http) = { get: "/v1/apps/{app}/domains" };
@@ -35,6 +41,29 @@ service DomainsService {
       post: "/v1/apps/{app}/domains/verify"
       body: "*"
     };
+  }
+  // CreateAppDomain 新建域名资源（host 全局独占：冲突 409 E_DOMAIN_CONFLICT；
+  // 每服务 ≤5、每 app ≤10 超限 4xx E_DOMAIN_UNSUPPORTED）。写入成功后同步
+  // 触发入口收敛（路由发布 + 证书保障；失败以事件/审计披露，资源行保留）。
+  rpc CreateAppDomain(CreateAppDomainRequest) returns (CreateAppDomainResponse) {
+    option (google.api.http) = {
+      post: "/v1/apps/{app}/domains"
+      body: "*"
+    };
+  }
+  // UpdateAppDomain 更新既有域名行（{domain} 是寻址键 = host，不改名——
+  // 改名 = 删除 + 重建，与 env key 同口径）。空字段 = 保持现值（CLI 局部
+  // 更新形态；Console 恒发全量）。
+  rpc UpdateAppDomain(UpdateAppDomainRequest) returns (UpdateAppDomainResponse) {
+    option (google.api.http) = {
+      put: "/v1/apps/{app}/domains/{domain}"
+      body: "*"
+    };
+  }
+  // RemoveAppDomain 删除域名行（幂等不做：不存在 404）。删除即触发入口
+  // 收敛（路由撤销；证书 SAN 集变化随下次签发收敛）。
+  rpc RemoveAppDomain(RemoveAppDomainRequest) returns (RemoveAppDomainResponse) {
+    option (google.api.http) = { delete: "/v1/apps/{app}/domains/{domain}" };
   }
 }
 
@@ -52,10 +81,61 @@ message DomainView {
   // 叶证书 NotAfter；未签发时不输出。
   google.protobuf.Timestamp cert_not_after = 5;
   google.protobuf.Timestamp created_at = 6;
+  // 后端协议（http | h2c；h2c = Traefik 后端 scheme=h2c 直出）。
+  string protocol = 7;
+  // 证书模式（http01 | wildcard；wildcard 的 DNS-01 app 级签发链沿 W5）。
+  string cert_mode = 8;
 }
 
 message ListAppDomainsResponse {
   repeated DomainView domains = 1;
+}
+
+message CreateAppDomainResponse {
+  DomainView domain = 1;
+}
+
+message UpdateAppDomainResponse {
+  DomainView domain = 1;
+}
+
+message CreateAppDomainRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // host（入参原文；服务端归一化：trim/小写/IDN→punycode；通配主机本票
+  // 拒绝——app 级 DNS-01 签发链沿 W5）。
+  string domain = 2 [
+    (buf.validate.field).string.min_len = 1,
+    (buf.validate.field).string.max_len = 253
+  ];
+  // compose 服务名（存在性由部署期底座事实兜底：服务未运行 → 502 诚实
+  // 暴露，不在此层猜服务清单）。
+  string service = 3 [(buf.validate.field).string.min_len = 1];
+  string port = 4 [(buf.validate.field).string.min_len = 1];
+  // http | h2c（空 = http）。
+  string protocol = 5;
+  // http01 | wildcard（空 = http01）。
+  string cert_mode = 6;
+}
+
+message UpdateAppDomainRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  // 寻址键（host，不改名）。
+  string domain = 2 [(buf.validate.field).string.min_len = 1];
+  // 空 = 保持现值（全空 = 无操作更新，幂等返回当前行）。
+  string service = 3;
+  string port = 4;
+  string protocol = 5;
+  string cert_mode = 6;
+}
+
+message RemoveAppDomainRequest {
+  string app = 1 [(buf.validate.field).string.min_len = 1];
+  string domain = 2 [(buf.validate.field).string.min_len = 1];
+}
+
+message RemoveAppDomainResponse {
+  string app = 1;
+  string domain = 2;
 }
 
 message VerifyAppDomainsRequest {

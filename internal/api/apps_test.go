@@ -62,8 +62,8 @@ func seedAppWithDomains(t *testing.T, st *state.Store, name string) state.App {
 	if err != nil {
 		t.Fatalf("create app %s: %v", name, err)
 	}
-	if err := st.ReplaceAppDomains(ctx, app.ID, []state.DomainServiceRoutes{
-		{Service: "web", Port: "80", Domains: []string{name + ".example.test"}},
+	if _, err := st.CreateAppDomain(ctx, app.ID, state.DomainInput{
+		Domain: name + ".example.test", Service: "web", Port: "80", Protocol: "http", CertMode: "http01",
 	}); err != nil {
 		t.Fatalf("seed domains for %s: %v", name, err)
 	}

@@ -86,9 +86,17 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.DriftService/ShowDrift":        ScopeRead,
 	"/fleetly.server.v1.DriftService/ConvergeDrift":    ScopeDeploy,
 	"/fleetly.server.v1.DriftService/SetDriftConverge": ScopeDeploy,
-	// DomainsService
+	// DomainsService（T2.17 只读 + IMPL-T1-1 可写升级）：读面 read；写面
+	// （域名资源 CRUD）= deploy——路由声明属应用运行面写语义（compose
+	// label 同一信赖级：改可达面/暴露面但不含凭据材料，与 SetEnv/
+	// SetScalingPolicy 同级；平台管理员资源面只读的双门不变）。机具令牌沿
+	// 本登记的 scope 门；用户 principal 另受第 2 门项目角色约束
+	//（requireAppAccess，developer+ 可写）。
 	"/fleetly.server.v1.DomainsService/ListAppDomains":   ScopeRead,
 	"/fleetly.server.v1.DomainsService/VerifyAppDomains": ScopeRead,
+	"/fleetly.server.v1.DomainsService/CreateAppDomain":  ScopeDeploy,
+	"/fleetly.server.v1.DomainsService/UpdateAppDomain":  ScopeDeploy,
+	"/fleetly.server.v1.DomainsService/RemoveAppDomain":  ScopeDeploy,
 	// EnvService
 	"/fleetly.server.v1.EnvService/ListEnv":   ScopeRead,
 	"/fleetly.server.v1.EnvService/SetEnv":    ScopeDeploy,

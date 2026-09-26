@@ -99,12 +99,12 @@ func TestRoutePublishStrictlyAfterHealthGate(t *testing.T) {
 		t.Fatalf("publisher calls after gate = %d, want 1", got)
 	}
 	in := pub.inputs[0]
-	if in.AppName != "demo" || len(in.Services) != 1 {
+	if in.AppName != "demo" || len(in.Declared) != 1 {
 		t.Fatalf("publish input malformed: %+v", in)
 	}
-	if in.Services[0].Service != "web" || in.Services[0].Port != "8080" ||
-		len(in.Services[0].Domains) != 1 || in.Services[0].Domains[0] != "test.example.internal" {
-		t.Fatalf("route spec wrong: %+v", in.Services[0])
+	if in.Declared[0].Service != "web" || in.Declared[0].Port != "8080" ||
+		len(in.Declared[0].Domains) != 1 || in.Declared[0].Domains[0] != "test.example.internal" {
+		t.Fatalf("route spec wrong: %+v", in.Declared[0])
 	}
 
 	// 事件时序：healthy/switched/observe_started 之后才有 route.published
@@ -187,31 +187,25 @@ func TestRoutePublishFailureDoesNotFailDeployment(t *testing.T) {
 	}
 }
 
-// TestRouteInputLedgerFallback compose 文件丢失时发布输入从台账直推
-// （不误删路由——幂等不回退的兜底语义）。
-func TestRouteInputLedgerFallback(t *testing.T) {
+// TestRouteInputDeclaredSeedExtraction 发布输入 = label 种子候选提取
+// （声明真值 = state 域名行，由 ingress 发布点现读；本包只提取种子）：
+// compose 可重载且 hash 匹配 → Declared 非空；文件丢失/hash 漂移 → 不提供
+// 种子（没有可靠声明源时不猜——不误删/误建路由）。
+func TestRouteInputDeclaredSeedExtraction(t *testing.T) {
 	h := newHarness(t)
 	ctx := context.Background()
 	app, err := testsupport.SeedAppE(t, h.store, "demo")
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	// 台账预置声明（上次发布同步的形态）。
-	if err := h.store.ReplaceAppDomains(ctx, app.ID, []state.DomainServiceRoutes{
-		{Service: "web", Port: "8080", Domains: []string{"kept.example.test"}},
-	}); err != nil {
-		t.Fatalf("seed ledger: %v", err)
-	}
+	// 文件丢失（声明源缺失）→ 无种子；state 行照常由 ingress 发布（state
+	// 真值回归覆盖在 internal/ingress 的对应用例）。
 	rec := state.DeployRecord{AppID: app.ID, AppName: "demo", SpecHash: "deadbeef"}
 	in := h.eng.routePublishInput(ctx, recWithComposePath(rec, filepath.Join(h.t.TempDir(), "gone.yaml")))
-	if in.AppName != "demo" || len(in.Services) != 1 {
-		t.Fatalf("ledger fallback input malformed: %+v", in)
+	if in.AppName != "demo" || len(in.Declared) != 0 {
+		t.Fatalf("missing compose file must yield no seed candidates: %+v", in)
 	}
-	if in.Services[0].Service != "web" || in.Services[0].Port != "8080" ||
-		in.Services[0].Domains[0] != "kept.example.test" {
-		t.Fatalf("fallback services wrong: %+v", in.Services[0])
-	}
-	// compose 声明同源路径：文件可重载且 hash 匹配 → 从声明提取（首端口）。
+	// compose 可重载且 hash 匹配 → 种子候选 = expose 首端口 + 归一化域名。
 	path := h.writeCompose(composeWithDomains)
 	rec2, err := h.store.CreateDeployment(ctx, state.DeployRecord{
 		AppID: app.ID, AppName: "demo", Kind: "deploy",
@@ -221,9 +215,9 @@ func TestRouteInputLedgerFallback(t *testing.T) {
 		t.Fatalf("create deployment: %v", err)
 	}
 	in2 := h.eng.routePublishInput(ctx, rec2)
-	if len(in2.Services) != 1 || in2.Services[0].Port != "8080" ||
-		len(in2.Services[0].Domains) != 1 || in2.Services[0].Domains[0] != "test.example.internal" {
-		t.Fatalf("compose-sourced input wrong: %+v", in2.Services)
+	if len(in2.Declared) != 1 || in2.Declared[0].Port != "8080" ||
+		len(in2.Declared[0].Domains) != 1 || in2.Declared[0].Domains[0] != "test.example.internal" {
+		t.Fatalf("compose-sourced seed candidates wrong: %+v", in2.Declared)
 	}
 	if strings.Contains(composeWithDomains, "ports") {
 		t.Fatal("fixture must not use ports (rejected by the v0.1 controlled subset)")

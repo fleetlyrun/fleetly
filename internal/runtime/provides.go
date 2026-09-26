@@ -393,8 +393,8 @@ type ingressPublisher struct {
 
 func (p ingressPublisher) PublishRoutes(ctx context.Context, in engine.RoutePublishInput) error {
 	out := ingress.PublishInput{AppID: in.AppID, AppName: in.AppName, TeamSlug: in.TeamSlug, PrjSlug: in.PrjSlug}
-	for _, svc := range in.Services {
-		out.Services = append(out.Services, ingress.ServiceRoutes{
+	for _, svc := range in.Declared {
+		out.Declared = append(out.Declared, ingress.ServiceRoutes{
 			Service: svc.Service, Port: svc.Port, Domains: svc.Domains,
 		})
 	}

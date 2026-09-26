@@ -76,8 +76,8 @@ func TestEnsureCertificateConcurrentSingleObtain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	if err := st.ReplaceAppDomains(ctx, app.ID, []state.DomainServiceRoutes{
-		{Service: "web", Port: "80", Domains: []string{"demo.example.test"}},
+	if _, err := st.CreateAppDomain(ctx, app.ID, state.DomainInput{
+		Domain: "demo.example.test", Service: "web", Port: "80", Protocol: "http", CertMode: "http01",
 	}); err != nil {
 		t.Fatalf("seed domains: %v", err)
 	}
@@ -132,8 +132,8 @@ func TestRenewDueSkipsUnresolvableApp(t *testing.T) {
 	if err != nil {
 		t.Fatalf("create app: %v", err)
 	}
-	if err := st.ReplaceAppDomains(ctx, live.ID, []state.DomainServiceRoutes{
-		{Service: "web", Port: "80", Domains: []string{"live.example.test"}},
+	if _, err := st.CreateAppDomain(ctx, live.ID, state.DomainInput{
+		Domain: "live.example.test", Service: "web", Port: "80", Protocol: "http", CertMode: "http01",
 	}); err != nil {
 		t.Fatalf("seed domains: %v", err)
 	}
@@ -154,5 +154,43 @@ func TestRenewDueSkipsUnresolvableApp(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].CertSHA256 == "" {
 		t.Fatalf("live app cert not registered: %+v", rows)
+	}
+}
+
+// TestConvergeAppDomainsIssuesHTTP01CertificateForAPICreatedDomain 守卫⑤的
+// 代码链取证（IMPL-T1-1；staging 真机复验单列）：API 形态写入的域名行走
+// ConvergeAppDomains → app 证书签发的 HTTP-01 SAN 集 = state 行域名（路径
+// 不回退），签发后行上登记 cert_sha256。
+func TestConvergeAppDomainsIssuesHTTP01CertificateForAPICreatedDomain(t *testing.T) {
+	m, st, _ := newACMETestManager(t)
+	ctx := context.Background()
+	app, err := testsupport.SeedAppE(t, st, "acmeapi")
+	if err != nil {
+		t.Fatalf("create app: %v", err)
+	}
+	const domain = "api.acmeapi.example.test"
+	if _, err := st.CreateAppDomain(ctx, app.ID, state.DomainInput{
+		Domain: domain, Service: "web", Port: "8080", Protocol: "http", CertMode: "http01",
+	}); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+	certPEM, keyPEM, _ := selfSignedTestCert(t, domain)
+	var issued []string
+	m.obtainFn = func(_ context.Context, _ string, _ registration.User, domains []string) ([]byte, []byte, error) {
+		issued = append([]string{}, domains...)
+		return certPEM, keyPEM, nil
+	}
+	if err := m.ConvergeAppDomains(ctx, app.ID); err != nil {
+		t.Fatalf("converge: %v", err)
+	}
+	if len(issued) != 1 || issued[0] != domain {
+		t.Fatalf("HTTP-01 SAN set = %v, want [%s]", issued, domain)
+	}
+	rows, err := st.ListAppDomains(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("ListAppDomains: %v", err)
+	}
+	if len(rows) != 1 || rows[0].CertSHA256 == "" {
+		t.Fatalf("cert ledger row not stamped after issuance: %+v", rows)
 	}
 }

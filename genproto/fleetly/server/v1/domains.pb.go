@@ -78,8 +78,12 @@ type DomainView struct {
 	// 证书 PEM 内容 sha256 hex；” = 尚无证书。
 	CertSha256 string `protobuf:"bytes,4,opt,name=cert_sha256,json=certSha256,proto3" json:"cert_sha256,omitempty"`
 	// 叶证书 NotAfter；未签发时不输出。
-	CertNotAfter  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=cert_not_after,json=certNotAfter,proto3" json:"cert_not_after,omitempty"`
-	CreatedAt     *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	CertNotAfter *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=cert_not_after,json=certNotAfter,proto3" json:"cert_not_after,omitempty"`
+	CreatedAt    *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// 后端协议（http | h2c；h2c = Traefik 后端 scheme=h2c 直出）。
+	Protocol string `protobuf:"bytes,7,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	// 证书模式（http01 | wildcard；wildcard 的 DNS-01 app 级签发链沿 W5）。
+	CertMode      string `protobuf:"bytes,8,opt,name=cert_mode,json=certMode,proto3" json:"cert_mode,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -156,6 +160,20 @@ func (x *DomainView) GetCreatedAt() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *DomainView) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *DomainView) GetCertMode() string {
+	if x != nil {
+		return x.CertMode
+	}
+	return ""
+}
+
 type ListAppDomainsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Domains       []*DomainView          `protobuf:"bytes,1,rep,name=domains,proto3" json:"domains,omitempty"`
@@ -200,6 +218,374 @@ func (x *ListAppDomainsResponse) GetDomains() []*DomainView {
 	return nil
 }
 
+type CreateAppDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Domain        *DomainView            `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateAppDomainResponse) Reset() {
+	*x = CreateAppDomainResponse{}
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateAppDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateAppDomainResponse) ProtoMessage() {}
+
+func (x *CreateAppDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateAppDomainResponse.ProtoReflect.Descriptor instead.
+func (*CreateAppDomainResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CreateAppDomainResponse) GetDomain() *DomainView {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+type UpdateAppDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Domain        *DomainView            `protobuf:"bytes,1,opt,name=domain,proto3" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAppDomainResponse) Reset() {
+	*x = UpdateAppDomainResponse{}
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAppDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAppDomainResponse) ProtoMessage() {}
+
+func (x *UpdateAppDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAppDomainResponse.ProtoReflect.Descriptor instead.
+func (*UpdateAppDomainResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *UpdateAppDomainResponse) GetDomain() *DomainView {
+	if x != nil {
+		return x.Domain
+	}
+	return nil
+}
+
+type CreateAppDomainRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// host（入参原文；服务端归一化：trim/小写/IDN→punycode；通配主机本票
+	// 拒绝——app 级 DNS-01 签发链沿 W5）。
+	Domain string `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`
+	// compose 服务名（存在性由部署期底座事实兜底：服务未运行 → 502 诚实
+	// 暴露，不在此层猜服务清单）。
+	Service string `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	Port    string `protobuf:"bytes,4,opt,name=port,proto3" json:"port,omitempty"`
+	// http | h2c（空 = http）。
+	Protocol string `protobuf:"bytes,5,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	// http01 | wildcard（空 = http01）。
+	CertMode      string `protobuf:"bytes,6,opt,name=cert_mode,json=certMode,proto3" json:"cert_mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateAppDomainRequest) Reset() {
+	*x = CreateAppDomainRequest{}
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateAppDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateAppDomainRequest) ProtoMessage() {}
+
+func (x *CreateAppDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateAppDomainRequest.ProtoReflect.Descriptor instead.
+func (*CreateAppDomainRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *CreateAppDomainRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *CreateAppDomainRequest) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *CreateAppDomainRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *CreateAppDomainRequest) GetPort() string {
+	if x != nil {
+		return x.Port
+	}
+	return ""
+}
+
+func (x *CreateAppDomainRequest) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *CreateAppDomainRequest) GetCertMode() string {
+	if x != nil {
+		return x.CertMode
+	}
+	return ""
+}
+
+type UpdateAppDomainRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	App   string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	// 寻址键（host，不改名）。
+	Domain string `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`
+	// 空 = 保持现值（全空 = 无操作更新，幂等返回当前行）。
+	Service       string `protobuf:"bytes,3,opt,name=service,proto3" json:"service,omitempty"`
+	Port          string `protobuf:"bytes,4,opt,name=port,proto3" json:"port,omitempty"`
+	Protocol      string `protobuf:"bytes,5,opt,name=protocol,proto3" json:"protocol,omitempty"`
+	CertMode      string `protobuf:"bytes,6,opt,name=cert_mode,json=certMode,proto3" json:"cert_mode,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateAppDomainRequest) Reset() {
+	*x = UpdateAppDomainRequest{}
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateAppDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateAppDomainRequest) ProtoMessage() {}
+
+func (x *UpdateAppDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateAppDomainRequest.ProtoReflect.Descriptor instead.
+func (*UpdateAppDomainRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *UpdateAppDomainRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *UpdateAppDomainRequest) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+func (x *UpdateAppDomainRequest) GetService() string {
+	if x != nil {
+		return x.Service
+	}
+	return ""
+}
+
+func (x *UpdateAppDomainRequest) GetPort() string {
+	if x != nil {
+		return x.Port
+	}
+	return ""
+}
+
+func (x *UpdateAppDomainRequest) GetProtocol() string {
+	if x != nil {
+		return x.Protocol
+	}
+	return ""
+}
+
+func (x *UpdateAppDomainRequest) GetCertMode() string {
+	if x != nil {
+		return x.CertMode
+	}
+	return ""
+}
+
+type RemoveAppDomainRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	Domain        string                 `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveAppDomainRequest) Reset() {
+	*x = RemoveAppDomainRequest{}
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveAppDomainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveAppDomainRequest) ProtoMessage() {}
+
+func (x *RemoveAppDomainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveAppDomainRequest.ProtoReflect.Descriptor instead.
+func (*RemoveAppDomainRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *RemoveAppDomainRequest) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *RemoveAppDomainRequest) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
+type RemoveAppDomainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
+	Domain        string                 `protobuf:"bytes,2,opt,name=domain,proto3" json:"domain,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveAppDomainResponse) Reset() {
+	*x = RemoveAppDomainResponse{}
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveAppDomainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveAppDomainResponse) ProtoMessage() {}
+
+func (x *RemoveAppDomainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveAppDomainResponse.ProtoReflect.Descriptor instead.
+func (*RemoveAppDomainResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *RemoveAppDomainResponse) GetApp() string {
+	if x != nil {
+		return x.App
+	}
+	return ""
+}
+
+func (x *RemoveAppDomainResponse) GetDomain() string {
+	if x != nil {
+		return x.Domain
+	}
+	return ""
+}
+
 type VerifyAppDomainsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	App           string                 `protobuf:"bytes,1,opt,name=app,proto3" json:"app,omitempty"`
@@ -209,7 +595,7 @@ type VerifyAppDomainsRequest struct {
 
 func (x *VerifyAppDomainsRequest) Reset() {
 	*x = VerifyAppDomainsRequest{}
-	mi := &file_fleetly_server_v1_domains_proto_msgTypes[3]
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -221,7 +607,7 @@ func (x *VerifyAppDomainsRequest) String() string {
 func (*VerifyAppDomainsRequest) ProtoMessage() {}
 
 func (x *VerifyAppDomainsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_domains_proto_msgTypes[3]
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -234,7 +620,7 @@ func (x *VerifyAppDomainsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyAppDomainsRequest.ProtoReflect.Descriptor instead.
 func (*VerifyAppDomainsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{3}
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *VerifyAppDomainsRequest) GetApp() string {
@@ -265,7 +651,7 @@ type DomainCheckView struct {
 
 func (x *DomainCheckView) Reset() {
 	*x = DomainCheckView{}
-	mi := &file_fleetly_server_v1_domains_proto_msgTypes[4]
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -277,7 +663,7 @@ func (x *DomainCheckView) String() string {
 func (*DomainCheckView) ProtoMessage() {}
 
 func (x *DomainCheckView) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_domains_proto_msgTypes[4]
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -290,7 +676,7 @@ func (x *DomainCheckView) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DomainCheckView.ProtoReflect.Descriptor instead.
 func (*DomainCheckView) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{4}
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *DomainCheckView) GetDomain() string {
@@ -365,7 +751,7 @@ type VerifyAppDomainsResponse struct {
 
 func (x *VerifyAppDomainsResponse) Reset() {
 	*x = VerifyAppDomainsResponse{}
-	mi := &file_fleetly_server_v1_domains_proto_msgTypes[5]
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -377,7 +763,7 @@ func (x *VerifyAppDomainsResponse) String() string {
 func (*VerifyAppDomainsResponse) ProtoMessage() {}
 
 func (x *VerifyAppDomainsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_server_v1_domains_proto_msgTypes[5]
+	mi := &file_fleetly_server_v1_domains_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -390,7 +776,7 @@ func (x *VerifyAppDomainsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyAppDomainsResponse.ProtoReflect.Descriptor instead.
 func (*VerifyAppDomainsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{5}
+	return file_fleetly_server_v1_domains_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *VerifyAppDomainsResponse) GetChecks() []*DomainCheckView {
@@ -406,7 +792,7 @@ const file_fleetly_server_v1_domains_proto_rawDesc = "" +
 	"\n" +
 	"\x1ffleetly/server/v1/domains.proto\x12\x11fleetly.server.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1cgoogle/api/annotations.proto\x1a\x1fgoogle/protobuf/timestamp.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\"2\n" +
 	"\x15ListAppDomainsRequest\x12\x19\n" +
-	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\"\xf0\x01\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\"\xa9\x02\n" +
 	"\n" +
 	"DomainView\x12\x18\n" +
 	"\aservice\x18\x01 \x01(\tR\aservice\x12\x16\n" +
@@ -416,9 +802,36 @@ const file_fleetly_server_v1_domains_proto_rawDesc = "" +
 	"certSha256\x12@\n" +
 	"\x0ecert_not_after\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\fcertNotAfter\x129\n" +
 	"\n" +
-	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\"Q\n" +
+	"created_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x12\x1a\n" +
+	"\bprotocol\x18\a \x01(\tR\bprotocol\x12\x1b\n" +
+	"\tcert_mode\x18\b \x01(\tR\bcertMode\"Q\n" +
 	"\x16ListAppDomainsResponse\x127\n" +
-	"\adomains\x18\x01 \x03(\v2\x1d.fleetly.server.v1.DomainViewR\adomains\"4\n" +
+	"\adomains\x18\x01 \x03(\v2\x1d.fleetly.server.v1.DomainViewR\adomains\"P\n" +
+	"\x17CreateAppDomainResponse\x125\n" +
+	"\x06domain\x18\x01 \x01(\v2\x1d.fleetly.server.v1.DomainViewR\x06domain\"P\n" +
+	"\x17UpdateAppDomainResponse\x125\n" +
+	"\x06domain\x18\x01 \x01(\v2\x1d.fleetly.server.v1.DomainViewR\x06domain\"\xd0\x01\n" +
+	"\x16CreateAppDomainRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\"\n" +
+	"\x06domain\x18\x02 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\x01\x18\xfd\x01R\x06domain\x12!\n" +
+	"\aservice\x18\x03 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\aservice\x12\x1b\n" +
+	"\x04port\x18\x04 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x04port\x12\x1a\n" +
+	"\bprotocol\x18\x05 \x01(\tR\bprotocol\x12\x1b\n" +
+	"\tcert_mode\x18\x06 \x01(\tR\bcertMode\"\xbb\x01\n" +
+	"\x16UpdateAppDomainRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1f\n" +
+	"\x06domain\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06domain\x12\x18\n" +
+	"\aservice\x18\x03 \x01(\tR\aservice\x12\x12\n" +
+	"\x04port\x18\x04 \x01(\tR\x04port\x12\x1a\n" +
+	"\bprotocol\x18\x05 \x01(\tR\bprotocol\x12\x1b\n" +
+	"\tcert_mode\x18\x06 \x01(\tR\bcertMode\"T\n" +
+	"\x16RemoveAppDomainRequest\x12\x19\n" +
+	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\x12\x1f\n" +
+	"\x06domain\x18\x02 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x06domain\"C\n" +
+	"\x17RemoveAppDomainResponse\x12\x10\n" +
+	"\x03app\x18\x01 \x01(\tR\x03app\x12\x16\n" +
+	"\x06domain\x18\x02 \x01(\tR\x06domain\"4\n" +
 	"\x17VerifyAppDomainsRequest\x12\x19\n" +
 	"\x03app\x18\x01 \x01(\tB\a\xbaH\x04r\x02\x10\x01R\x03app\"\xae\x02\n" +
 	"\x0fDomainCheckView\x12\x16\n" +
@@ -432,10 +845,13 @@ const file_fleetly_server_v1_domains_proto_rawDesc = "" +
 	"\x0ecert_not_after\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\fcertNotAfter\x12\x14\n" +
 	"\x05error\x18\t \x01(\tR\x05error\"V\n" +
 	"\x18VerifyAppDomainsResponse\x12:\n" +
-	"\x06checks\x18\x01 \x03(\v2\".fleetly.server.v1.DomainCheckViewR\x06checks2\xb0\x02\n" +
+	"\x06checks\x18\x01 \x03(\v2\".fleetly.server.v1.DomainCheckViewR\x06checks2\xe9\x05\n" +
 	"\x0eDomainsService\x12\x85\x01\n" +
 	"\x0eListAppDomains\x12(.fleetly.server.v1.ListAppDomainsRequest\x1a).fleetly.server.v1.ListAppDomainsResponse\"\x1e\x82\xd3\xe4\x93\x02\x18\x12\x16/v1/apps/{app}/domains\x12\x95\x01\n" +
-	"\x10VerifyAppDomains\x12*.fleetly.server.v1.VerifyAppDomainsRequest\x1a+.fleetly.server.v1.VerifyAppDomainsResponse\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/apps/{app}/domains/verifyB\x98\x01\x92ARRP\n" +
+	"\x10VerifyAppDomains\x12*.fleetly.server.v1.VerifyAppDomainsRequest\x1a+.fleetly.server.v1.VerifyAppDomainsResponse\"(\x82\xd3\xe4\x93\x02\":\x01*\"\x1d/v1/apps/{app}/domains/verify\x12\x8b\x01\n" +
+	"\x0fCreateAppDomain\x12).fleetly.server.v1.CreateAppDomainRequest\x1a*.fleetly.server.v1.CreateAppDomainResponse\"!\x82\xd3\xe4\x93\x02\x1b:\x01*\"\x16/v1/apps/{app}/domains\x12\x94\x01\n" +
+	"\x0fUpdateAppDomain\x12).fleetly.server.v1.UpdateAppDomainRequest\x1a*.fleetly.server.v1.UpdateAppDomainResponse\"*\x82\xd3\xe4\x93\x02$:\x01*\x1a\x1f/v1/apps/{app}/domains/{domain}\x12\x91\x01\n" +
+	"\x0fRemoveAppDomain\x12).fleetly.server.v1.RemoveAppDomainRequest\x1a*.fleetly.server.v1.RemoveAppDomainResponse\"'\x82\xd3\xe4\x93\x02!*\x1f/v1/apps/{app}/domains/{domain}B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -452,31 +868,45 @@ func file_fleetly_server_v1_domains_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_domains_proto_rawDescData
 }
 
-var file_fleetly_server_v1_domains_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_fleetly_server_v1_domains_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_fleetly_server_v1_domains_proto_goTypes = []any{
 	(*ListAppDomainsRequest)(nil),    // 0: fleetly.server.v1.ListAppDomainsRequest
 	(*DomainView)(nil),               // 1: fleetly.server.v1.DomainView
 	(*ListAppDomainsResponse)(nil),   // 2: fleetly.server.v1.ListAppDomainsResponse
-	(*VerifyAppDomainsRequest)(nil),  // 3: fleetly.server.v1.VerifyAppDomainsRequest
-	(*DomainCheckView)(nil),          // 4: fleetly.server.v1.DomainCheckView
-	(*VerifyAppDomainsResponse)(nil), // 5: fleetly.server.v1.VerifyAppDomainsResponse
-	(*timestamppb.Timestamp)(nil),    // 6: google.protobuf.Timestamp
+	(*CreateAppDomainResponse)(nil),  // 3: fleetly.server.v1.CreateAppDomainResponse
+	(*UpdateAppDomainResponse)(nil),  // 4: fleetly.server.v1.UpdateAppDomainResponse
+	(*CreateAppDomainRequest)(nil),   // 5: fleetly.server.v1.CreateAppDomainRequest
+	(*UpdateAppDomainRequest)(nil),   // 6: fleetly.server.v1.UpdateAppDomainRequest
+	(*RemoveAppDomainRequest)(nil),   // 7: fleetly.server.v1.RemoveAppDomainRequest
+	(*RemoveAppDomainResponse)(nil),  // 8: fleetly.server.v1.RemoveAppDomainResponse
+	(*VerifyAppDomainsRequest)(nil),  // 9: fleetly.server.v1.VerifyAppDomainsRequest
+	(*DomainCheckView)(nil),          // 10: fleetly.server.v1.DomainCheckView
+	(*VerifyAppDomainsResponse)(nil), // 11: fleetly.server.v1.VerifyAppDomainsResponse
+	(*timestamppb.Timestamp)(nil),    // 12: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_domains_proto_depIdxs = []int32{
-	6, // 0: fleetly.server.v1.DomainView.cert_not_after:type_name -> google.protobuf.Timestamp
-	6, // 1: fleetly.server.v1.DomainView.created_at:type_name -> google.protobuf.Timestamp
-	1, // 2: fleetly.server.v1.ListAppDomainsResponse.domains:type_name -> fleetly.server.v1.DomainView
-	6, // 3: fleetly.server.v1.DomainCheckView.cert_not_after:type_name -> google.protobuf.Timestamp
-	4, // 4: fleetly.server.v1.VerifyAppDomainsResponse.checks:type_name -> fleetly.server.v1.DomainCheckView
-	0, // 5: fleetly.server.v1.DomainsService.ListAppDomains:input_type -> fleetly.server.v1.ListAppDomainsRequest
-	3, // 6: fleetly.server.v1.DomainsService.VerifyAppDomains:input_type -> fleetly.server.v1.VerifyAppDomainsRequest
-	2, // 7: fleetly.server.v1.DomainsService.ListAppDomains:output_type -> fleetly.server.v1.ListAppDomainsResponse
-	5, // 8: fleetly.server.v1.DomainsService.VerifyAppDomains:output_type -> fleetly.server.v1.VerifyAppDomainsResponse
-	7, // [7:9] is the sub-list for method output_type
-	5, // [5:7] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	12, // 0: fleetly.server.v1.DomainView.cert_not_after:type_name -> google.protobuf.Timestamp
+	12, // 1: fleetly.server.v1.DomainView.created_at:type_name -> google.protobuf.Timestamp
+	1,  // 2: fleetly.server.v1.ListAppDomainsResponse.domains:type_name -> fleetly.server.v1.DomainView
+	1,  // 3: fleetly.server.v1.CreateAppDomainResponse.domain:type_name -> fleetly.server.v1.DomainView
+	1,  // 4: fleetly.server.v1.UpdateAppDomainResponse.domain:type_name -> fleetly.server.v1.DomainView
+	12, // 5: fleetly.server.v1.DomainCheckView.cert_not_after:type_name -> google.protobuf.Timestamp
+	10, // 6: fleetly.server.v1.VerifyAppDomainsResponse.checks:type_name -> fleetly.server.v1.DomainCheckView
+	0,  // 7: fleetly.server.v1.DomainsService.ListAppDomains:input_type -> fleetly.server.v1.ListAppDomainsRequest
+	9,  // 8: fleetly.server.v1.DomainsService.VerifyAppDomains:input_type -> fleetly.server.v1.VerifyAppDomainsRequest
+	5,  // 9: fleetly.server.v1.DomainsService.CreateAppDomain:input_type -> fleetly.server.v1.CreateAppDomainRequest
+	6,  // 10: fleetly.server.v1.DomainsService.UpdateAppDomain:input_type -> fleetly.server.v1.UpdateAppDomainRequest
+	7,  // 11: fleetly.server.v1.DomainsService.RemoveAppDomain:input_type -> fleetly.server.v1.RemoveAppDomainRequest
+	2,  // 12: fleetly.server.v1.DomainsService.ListAppDomains:output_type -> fleetly.server.v1.ListAppDomainsResponse
+	11, // 13: fleetly.server.v1.DomainsService.VerifyAppDomains:output_type -> fleetly.server.v1.VerifyAppDomainsResponse
+	3,  // 14: fleetly.server.v1.DomainsService.CreateAppDomain:output_type -> fleetly.server.v1.CreateAppDomainResponse
+	4,  // 15: fleetly.server.v1.DomainsService.UpdateAppDomain:output_type -> fleetly.server.v1.UpdateAppDomainResponse
+	8,  // 16: fleetly.server.v1.DomainsService.RemoveAppDomain:output_type -> fleetly.server.v1.RemoveAppDomainResponse
+	12, // [12:17] is the sub-list for method output_type
+	7,  // [7:12] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_domains_proto_init() }
@@ -490,7 +920,7 @@ func file_fleetly_server_v1_domains_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_domains_proto_rawDesc), len(file_fleetly_server_v1_domains_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

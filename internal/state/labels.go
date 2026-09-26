@@ -48,7 +48,9 @@ const (
 	// state-model §2.3）。
 	LabelNodeID = "fleetly.node-id"
 
-	// LabelDomains 是平台约定路由域名列表（compose 服务 label，逗号分隔）。
+	// LabelDomains 是平台约定路由域名列表（compose 服务 label，逗号分隔；
+	// IMPL-T1-1 起仅首部署 bootstrap 种子——state 域名行是路由声明真值，
+	// 有行后 label 一律忽略并派 route.label_ignored 事件）。
 	LabelDomains = "fleetly.domains"
 	// LabelPlacementNode 是放置意图（compose 服务 label，v0.2 多节点消费，
 	// 常量先行）。

@@ -46,6 +46,11 @@ import type {
   SetAppWebhookSecretResponse,
   ShowAppWebhookResponse,
   ListAppDomainsResponse,
+  CreateAppDomainResponse,
+  UpdateAppDomainResponse,
+  RemoveAppDomainResponse,
+  DomainProtocol,
+  DomainCertMode,
   ListAlertRulesResponse,
   AlertRuleView,
   CreateAlertRuleResponse,
@@ -698,11 +703,50 @@ export function removeEnv(app: string, key: string) {
   );
 }
 
-// ── domains ─────────────────────────────────────────────────────────────
+// ── domains（IMPL-T1-1：域名资源 CRUD + verify；label 仅首部署种子）─────
 
 export function listDomains(app: string) {
   return api<ListAppDomainsResponse>(
     `/apps/${encodeURIComponent(app)}/domains`,
+  );
+}
+
+export function createDomain(
+  app: string,
+  body: {
+    domain: string;
+    service: string;
+    port: string;
+    protocol: DomainProtocol;
+    cert_mode: DomainCertMode;
+  },
+) {
+  return api<CreateAppDomainResponse>(
+    `/apps/${encodeURIComponent(app)}/domains`,
+    { method: "POST", json: body },
+  );
+}
+
+export function updateDomain(
+  app: string,
+  domain: string,
+  body: {
+    service: string;
+    port: string;
+    protocol: DomainProtocol;
+    cert_mode: DomainCertMode;
+  },
+) {
+  return api<UpdateAppDomainResponse>(
+    `/apps/${encodeURIComponent(app)}/domains/${encodeURIComponent(domain)}`,
+    { method: "PUT", json: body },
+  );
+}
+
+export function removeDomain(app: string, domain: string) {
+  return api<RemoveAppDomainResponse>(
+    `/apps/${encodeURIComponent(app)}/domains/${encodeURIComponent(domain)}`,
+    { method: "DELETE" },
   );
 }
 

@@ -188,7 +188,7 @@ func TestS3PublicDutyConvergesToggle(t *testing.T) {
 	if err := m.certs.Save(appPair); err != nil {
 		t.Fatalf("save app pair: %v", err)
 	}
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "shop", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "shop", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"shop.example.test"}},
 	}}); err != nil {
 		t.Fatalf("publish app: %v", err)
@@ -343,7 +343,7 @@ func TestS3PublicSettingsUnreadableFailsClosed(t *testing.T) {
 	}
 	// 先正常发布一次（demo 路由进台账与视图），再注入损坏设置值
 	// （布尔位畸形——LoadS3Settings loud-fail 的形态）。
-	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "demo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Services: []ServiceRoutes{
+	if err := m.PublishRoutes(ctx, PublishInput{AppID: app.ID, AppName: "demo", TeamSlug: app.TeamSlug, PrjSlug: app.ProjectSlug, Declared: []ServiceRoutes{
 		{Service: "web", Port: "80", Domains: []string{"demo.example.test"}},
 	}}); err != nil {
 		t.Fatalf("publish demo: %v", err)

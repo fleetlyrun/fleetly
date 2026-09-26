@@ -4,7 +4,9 @@
     {
       "domain": "api.example.com",
       "service": "web",
-      "port": "8080"
+      "port": "8080",
+      "protocol": "http",
+      "cert_mode": "http01"
     }
   ]
 }

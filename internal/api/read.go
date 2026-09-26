@@ -3,8 +3,13 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strconv"
+	"strings"
 
 	serverv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/server/v1"
+	"github.com/fleetlyrun/fleetly/internal/apperr"
+	"github.com/fleetlyrun/fleetly/internal/compose"
 	"github.com/fleetlyrun/fleetly/internal/ingress"
 	"github.com/fleetlyrun/fleetly/internal/placement"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -224,7 +229,11 @@ func (s *RevisionsService) GetRevisionSpec(ctx context.Context, req *serverv1.Ge
 	}, nil
 }
 
-// DomainsService 实现 server.v1.DomainsService。
+// DomainsService 实现 server.v1.DomainsService（T2.17 只读面 + IMPL-T1-1
+// 可写升级）：域名资源 CRUD + 本机视角验证。域名资源是路由声明的唯一真值
+// （compose label 仅首部署 bootstrap 种子）；写入成功后同步触发入口收敛
+// （mgr 可空——测试/无 ingress 装配形态跳过收敛），收敛失败不撤销资源行：
+// 落审计 error 行 + route.publish_failed 事件（下次部署/续期扫描恢复）。
 type DomainsService struct {
 	serverv1.UnimplementedDomainsServiceServer
 	st  *state.Store
@@ -236,14 +245,28 @@ func NewDomainsService(st *state.Store, mgr *ingress.Manager) *DomainsService {
 	return &DomainsService{st: st, mgr: mgr}
 }
 
-// ListAppDomains 域名台账（只读；写入方唯一 = internal/ingress 发布对账）。
+// domainViewOf 是域名行的视图投影（列表与写面回执共用的单点）。
+func domainViewOf(d state.Domain) *serverv1.DomainView {
+	return &serverv1.DomainView{
+		Service:      d.Service,
+		Domain:       d.Domain,
+		Port:         d.Port,
+		Protocol:     d.Protocol,
+		CertMode:     d.CertMode,
+		CertSha256:   d.CertSHA256,
+		CertNotAfter: tstamp(d.CertNotAfter),
+		CreatedAt:    tstamp(d.CreatedAt),
+	}
+}
+
+// ListAppDomains 域名资源列表（排序：域名字典序）。
 func (s *DomainsService) ListAppDomains(ctx context.Context, req *serverv1.ListAppDomainsRequest) (*serverv1.ListAppDomainsResponse, error) {
 	app, err := resolveApp(ctx, s.st, req.GetApp())
 	if err != nil {
 		return nil, err
 	}
 	// 角色门（W2-S4 第 2 门；层级随方法 scope 登记映射——读面 read、
-	// UpdatePlacement=admin）。
+	// 写面 deploy）。
 	if err := requireAppAccess(ctx, s.st, app); err != nil {
 		return nil, err
 	}
@@ -253,16 +276,269 @@ func (s *DomainsService) ListAppDomains(ctx context.Context, req *serverv1.ListA
 	}
 	out := make([]*serverv1.DomainView, 0, len(rows))
 	for _, d := range rows {
-		out = append(out, &serverv1.DomainView{
-			Service:      d.Service,
-			Domain:       d.Domain,
-			Port:         d.Port,
-			CertSha256:   d.CertSHA256,
-			CertNotAfter: tstamp(d.CertNotAfter),
-			CreatedAt:    tstamp(d.CreatedAt),
-		})
+		out = append(out, domainViewOf(d))
 	}
 	return &serverv1.ListAppDomainsResponse{Domains: out}, nil
+}
+
+// CreateAppDomain 新建域名资源（守卫④：host 冲突 409、超限 400 均点名；
+// 上限与 compose label 契约同值 ≤5/服务、≤10/app）。
+func (s *DomainsService) CreateAppDomain(ctx context.Context, req *serverv1.CreateAppDomainRequest) (*serverv1.CreateAppDomainResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
+	domain, err := compose.NormalizeDomain(req.GetDomain())
+	if err != nil {
+		return nil, err
+	}
+	input, err := domainInputOf(req.GetService(), req.GetPort(), req.GetProtocol(), req.GetCertMode(), domain,
+		state.Domain{}) // 创建：空字段取平台缺省（http/http01）
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.st.CreateAppDomain(ctx, app.ID, input)
+	if err != nil {
+		return nil, domainWriteError(err, domain)
+	}
+	if err := s.writeDomainAudit(ctx, "domain.created", app, row, "ok", ""); err != nil {
+		return nil, err
+	}
+	s.convergeAfterDomainWrite(ctx, app, row.Domain)
+	return &serverv1.CreateAppDomainResponse{Domain: domainViewOf(row)}, nil
+}
+
+// UpdateAppDomain 更新域名资源（{domain} 是寻址键 = host 不改名；空字段 =
+// 保持现值——CLI 局部更新形态，Console 恒发全量）。
+func (s *DomainsService) UpdateAppDomain(ctx context.Context, req *serverv1.UpdateAppDomainRequest) (*serverv1.UpdateAppDomainResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
+	domain, err := compose.NormalizeDomain(req.GetDomain())
+	if err != nil {
+		return nil, err
+	}
+	current, err := s.st.GetAppDomain(ctx, app.ID, domain)
+	if err != nil {
+		if errors.Is(err, state.ErrDomainNotFound) {
+			return nil, notFound("domain not found: " + domain)
+		}
+		return nil, err
+	}
+	input, err := domainInputOf(req.GetService(), req.GetPort(), req.GetProtocol(), req.GetCertMode(), domain, current)
+	if err != nil {
+		return nil, err
+	}
+	row, err := s.st.UpdateAppDomain(ctx, app.ID, domain, input)
+	if err != nil {
+		return nil, domainWriteError(err, domain)
+	}
+	if err := s.writeDomainAudit(ctx, "domain.updated", app, row, "ok", ""); err != nil {
+		return nil, err
+	}
+	s.convergeAfterDomainWrite(ctx, app, row.Domain)
+	return &serverv1.UpdateAppDomainResponse{Domain: domainViewOf(row)}, nil
+}
+
+// RemoveAppDomain 删除域名资源（不存在 404；删除即触发入口收敛——路由
+// 撤销 + 证书 SAN 集随下次签发收敛）。
+func (s *DomainsService) RemoveAppDomain(ctx context.Context, req *serverv1.RemoveAppDomainRequest) (*serverv1.RemoveAppDomainResponse, error) {
+	app, err := resolveApp(ctx, s.st, req.GetApp())
+	if err != nil {
+		return nil, err
+	}
+	if err := requireAppAccess(ctx, s.st, app); err != nil {
+		return nil, err
+	}
+	domain, err := compose.NormalizeDomain(req.GetDomain())
+	if err != nil {
+		return nil, err
+	}
+	current, err := s.st.GetAppDomain(ctx, app.ID, domain)
+	if err != nil {
+		if errors.Is(err, state.ErrDomainNotFound) {
+			return nil, notFound("domain not found: " + domain)
+		}
+		return nil, err
+	}
+	if err := s.st.RemoveAppDomain(ctx, app.ID, domain); err != nil {
+		if errors.Is(err, state.ErrDomainNotFound) {
+			return nil, notFound("domain not found: " + domain)
+		}
+		return nil, err
+	}
+	if err := s.writeDomainAudit(ctx, "domain.removed", app, current, "ok", ""); err != nil {
+		return nil, err
+	}
+	s.convergeAfterDomainWrite(ctx, app, domain)
+	return &serverv1.RemoveAppDomainResponse{App: app.Name, Domain: domain}, nil
+}
+
+// domainInputOf 组装域名资源写入载荷：空字段的语义由 fallback 承载——
+// 创建（fallback 零值）空 = 平台缺省 http/http01；更新空 = 保持现值
+// （fallback = 当前行）。非空字段一律显式校验（形态违规 400 点名）。
+func domainInputOf(service, port, protocol, certMode, domain string, fallback state.Domain) (state.DomainInput, error) {
+	in := state.DomainInput{
+		Domain:   domain,
+		Service:  pickNonEmpty(service, fallback.Service),
+		Port:     pickNonEmpty(port, fallback.Port),
+		Protocol: pickNonEmpty(protocol, fallback.Protocol),
+		CertMode: pickNonEmpty(certMode, fallback.CertMode),
+	}
+	if in.Protocol == "" {
+		in.Protocol = "http"
+	}
+	if in.CertMode == "" {
+		in.CertMode = "http01"
+	}
+	if err := validateDomainService(in.Service); err != nil {
+		return state.DomainInput{}, err
+	}
+	if err := validateDomainPort(in.Port); err != nil {
+		return state.DomainInput{}, err
+	}
+	switch in.Protocol {
+	case "http", "h2c":
+	default:
+		return state.DomainInput{}, statusInvalidArgument(
+			"protocol must be one of http|h2c (got " + in.Protocol + ")")
+	}
+	switch in.CertMode {
+	case "http01", "wildcard":
+	default:
+		return state.DomainInput{}, statusInvalidArgument(
+			"cert_mode must be one of http01|wildcard (got " + in.CertMode + ")")
+	}
+	return in, nil
+}
+
+// pickNonEmpty 空串取回退值（更新面的「空 = 保持现值」语义）。
+func pickNonEmpty(v, fallback string) string {
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
+// validateDomainService 校验服务引用形态（compose 服务名字符集
+// [A-Za-z0-9._-]，首字符字母数字——与 compose 标识符同族的宽松门；服务
+// 是否存在属底座事实：未运行服务 → 502 诚实暴露，不在解析层猜清单）。
+func validateDomainService(service string) error {
+	if service == "" {
+		return statusInvalidArgument("service is required")
+	}
+	if len(service) > 128 {
+		return statusInvalidArgument("service must be at most 128 chars")
+	}
+	for i, r := range service {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case i > 0 && (r == '.' || r == '_' || r == '-'):
+		default:
+			return statusInvalidArgument("service must match ^[A-Za-z0-9][A-Za-z0-9._-]*$")
+		}
+	}
+	return nil
+}
+
+// validateDomainPort 校验后端端口（1..65535 的十进制数字形态）。
+func validateDomainPort(port string) error {
+	if port == "" {
+		return statusInvalidArgument("port is required")
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return statusInvalidArgument("port must be an integer within 1..65535 (got " + port + ")")
+	}
+	return nil
+}
+
+// domainWriteError 把 state 写面错误映射为 API 语义（守卫④的 4xx 点名：
+// host 冲突 409 E_DOMAIN_CONFLICT、超限 400 E_DOMAIN_UNSUPPORTED）。
+func domainWriteError(err error, domain string) error {
+	var limitErr *state.DomainLimitError
+	switch {
+	case errors.Is(err, state.ErrDomainConflict):
+		return apperr.New("E_DOMAIN_CONFLICT",
+			"domain %q is already used by another service or app (a host belongs to exactly one service)", domain).
+			WithContext("domain", domain)
+	case errors.As(err, &limitErr):
+		scope := "app"
+		if limitErr.Scope == "service" {
+			scope = "service"
+		}
+		return apperr.New("E_DOMAIN_UNSUPPORTED",
+			"domain limit reached (%s scope: %d domains already declared, limit %d)", scope, limitErr.Count, limitErr.Limit).
+			WithContext("reason", "per_"+scope+"_limit")
+	case errors.Is(err, state.ErrDomainNotFound):
+		return notFound("domain not found: " + domain)
+	default:
+		return err
+	}
+}
+
+// writeDomainAudit 写域名资源审计行（动作 domain.created/updated/removed；
+// target = domain:<app>/<host>，与 secret:<app>/<name> 同型）。
+func (s *DomainsService) writeDomainAudit(ctx context.Context, action string, app state.App, row state.Domain, result, errorCode string) error {
+	entry := domainAudit(ctx, action, app.Name, row.Domain,
+		state.DiffSummary("service", row.Service, "port", row.Port, "protocol", row.Protocol, "cert_mode", row.CertMode))
+	entry.Result = result
+	entry.ErrorCode = errorCode
+	return s.st.InTx(ctx, func(tx *state.Tx) error { return tx.WriteAudit(ctx, entry) })
+}
+
+// domainAudit 构造域名资源审计条目（actor 归因沿 databaseAudit：API 无法
+// 区分人类/AI 代理，token 承载可追溯性）。
+func domainAudit(ctx context.Context, action, app, domain, diff string) state.AuditEntry {
+	return databaseAudit(ctx, action, "domain:"+app+"/"+domain, diff)
+}
+
+// convergeAfterDomainWrite 是写面后的入口收敛（best-effort：资源行已落库，
+// 收敛失败不撤销写入——落审计 error 行 + route.publish_failed 事件供运维面
+// 观察，下次部署/续期扫描恢复；mgr 为空 = 无 ingress 装配形态跳过）。
+func (s *DomainsService) convergeAfterDomainWrite(ctx context.Context, app state.App, domain string) {
+	if s.mgr == nil {
+		return
+	}
+	if err := s.mgr.ConvergeAppDomains(ctx, app.ID); err != nil {
+		summary := domainErrorSummary(err)
+		entry := domainAudit(ctx, "route.publish", app.Name, domain, state.DiffSummary("error", summary))
+		entry.Result = "error"
+		entry.ErrorCode = "E_ROUTE_PUBLISH_FAILED"
+		if werr := s.st.InTx(ctx, func(tx *state.Tx) error {
+			if aerr := tx.WriteAudit(ctx, entry); aerr != nil {
+				return aerr
+			}
+			_, eerr := tx.AppendEvent(ctx, state.Event{
+				Name:    "route.publish_failed",
+				Subject: "app:" + app.Name,
+				Payload: fmt.Sprintf(`{"app":%q,"source":"domains_api","error":%q}`, app.Name, summary),
+			})
+			return eerr
+		}); werr != nil {
+			// 披露失败不回滚资源事实（与证书审计同纪律）。
+			return
+		}
+	}
+}
+
+// domainErrorSummary 是收敛错误的事件/审计单行化（禁换行、限长——事件
+// payload 脱敏契约）。
+func domainErrorSummary(err error) string {
+	msg := err.Error()
+	msg = strings.ReplaceAll(msg, "\n", " ")
+	msg = strings.ReplaceAll(msg, "\r", " ")
+	if len(msg) > 300 {
+		msg = msg[:300]
+	}
+	return msg
 }
 
 // VerifyAppDomains 本机视角域名验证（ingress.VerifyDomains；探测材料

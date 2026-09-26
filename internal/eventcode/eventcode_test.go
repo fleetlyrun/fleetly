@@ -72,6 +72,10 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 审计」。证书签发/续期不设新事件名（走审计记录）。
 	"route.published":      "T2.15 added during implementation (architecture §2.5 route publish timing; pending T0.5 freeze confirmation)",
 	"route.publish_failed": "T2.15 added during implementation (architecture §2.5 route failure alerts separately; pending T0.5 freeze confirmation)",
+	// IMPL-T1-1 实现期新增（OT-2 单一写点仲裁，T 线设计档；注册表只增）：
+	// state 域名行存在时 compose label 声明被忽略的披露——label 仅首部署
+	// bootstrap 种子；发出来源 = internal/ingress PublishRoutes 仲裁点。
+	"route.label_ignored": "IMPL-T1-1 added during implementation (OT-2 single-writer arbitration: labels are bootstrap-only once state domain rows exist)",
 
 	// S17-D1 实现期新增（评审类 D 超时与取消闭环）：webhook 受理转异步后
 	// 拉源失败只能走事件流披露（官方不重投）。

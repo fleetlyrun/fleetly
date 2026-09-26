@@ -97,6 +97,13 @@ func TestStripAccessRouterKey(t *testing.T) {
 		"fleetly-registry-websecure@http":   "fleetly-registry",
 		"fleetly-fallback@http":             "fleetly-fallback",
 		"acme-challenge-http@http":          "acme-challenge-http",
+		// IMPL-T1-1 多后端分组后缀（~<port>[~h2c]）：剥回归一到 RouterName
+		// 本体（候选集按 (app, service) 构造，分组不参与归属）。
+		"fleetly-acme-prod-webapp-web~9090~h2c-web@http":       "fleetly-acme-prod-webapp-web",
+		"fleetly-acme-prod-webapp-web~9090~h2c-websecure@http": "fleetly-acme-prod-webapp-web",
+		"fleetly-acme-prod-webapp-web~8080-web@http":           "fleetly-acme-prod-webapp-web",
+		// 服务名本身含 ~ 不可能（字符集外）；含数字段的服务名不被误剥。
+		"fleetly-acme-prod-webapp-svc2-web@http": "fleetly-acme-prod-webapp-svc2",
 	} {
 		if got := stripAccessRouterKey(raw); got != want {
 			t.Fatalf("strip(%q) = %q, want %q", raw, got, want)

@@ -21,19 +21,39 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	DomainsService_ListAppDomains_FullMethodName   = "/fleetly.server.v1.DomainsService/ListAppDomains"
 	DomainsService_VerifyAppDomains_FullMethodName = "/fleetly.server.v1.DomainsService/VerifyAppDomains"
+	DomainsService_CreateAppDomain_FullMethodName  = "/fleetly.server.v1.DomainsService/CreateAppDomain"
+	DomainsService_UpdateAppDomain_FullMethodName  = "/fleetly.server.v1.DomainsService/UpdateAppDomain"
+	DomainsService_RemoveAppDomain_FullMethodName  = "/fleetly.server.v1.DomainsService/RemoveAppDomain"
 )
 
 // DomainsServiceClient is the client API for DomainsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// DomainsService 是域名台账只读与验证面（T2.17；architecture §2.6）。
-// 台账写入方唯一 = internal/ingress（发布时按归一化 compose 对账同步），
-// API 只读不写——域名变更走部署（compose 声明）路径。Verify 是本机视角
-// 探测（解析 + 80/443 + 实收证书如实记录），判断权在操作者。
+// DomainsService 是域名资源面（T2.17 只读台账 + T 线 IMPL-T1-1 可写升级；
+// OT-2）：per-domain {domain(host), service, port, protocol, cert_mode} 的
+// CRUD + 验证。域名资源是路由事实源（写入方 = 本服务的 API CRUD 与发布
+// 种子——compose label 仅首部署 bootstrap 种子，state 存在行时 label 一律
+// 忽略并派事件）；Verify 是本机视角探测（解析 + 80/443 + 实收证书如实
+// 记录），判断权在操作者。
+//
+// scope（scope.go 登记处）：list/verify = read；create/update/remove =
+// deploy（路由声明属应用运行面写语义——compose label 同一直信赖；
+// 平台管理员资源面只读的双门不变）。
 type DomainsServiceClient interface {
 	ListAppDomains(ctx context.Context, in *ListAppDomainsRequest, opts ...grpc.CallOption) (*ListAppDomainsResponse, error)
 	VerifyAppDomains(ctx context.Context, in *VerifyAppDomainsRequest, opts ...grpc.CallOption) (*VerifyAppDomainsResponse, error)
+	// CreateAppDomain 新建域名资源（host 全局独占：冲突 409 E_DOMAIN_CONFLICT；
+	// 每服务 ≤5、每 app ≤10 超限 4xx E_DOMAIN_UNSUPPORTED）。写入成功后同步
+	// 触发入口收敛（路由发布 + 证书保障；失败以事件/审计披露，资源行保留）。
+	CreateAppDomain(ctx context.Context, in *CreateAppDomainRequest, opts ...grpc.CallOption) (*CreateAppDomainResponse, error)
+	// UpdateAppDomain 更新既有域名行（{domain} 是寻址键 = host，不改名——
+	// 改名 = 删除 + 重建，与 env key 同口径）。空字段 = 保持现值（CLI 局部
+	// 更新形态；Console 恒发全量）。
+	UpdateAppDomain(ctx context.Context, in *UpdateAppDomainRequest, opts ...grpc.CallOption) (*UpdateAppDomainResponse, error)
+	// RemoveAppDomain 删除域名行（幂等不做：不存在 404）。删除即触发入口
+	// 收敛（路由撤销；证书 SAN 集变化随下次签发收敛）。
+	RemoveAppDomain(ctx context.Context, in *RemoveAppDomainRequest, opts ...grpc.CallOption) (*RemoveAppDomainResponse, error)
 }
 
 type domainsServiceClient struct {
@@ -64,17 +84,64 @@ func (c *domainsServiceClient) VerifyAppDomains(ctx context.Context, in *VerifyA
 	return out, nil
 }
 
+func (c *domainsServiceClient) CreateAppDomain(ctx context.Context, in *CreateAppDomainRequest, opts ...grpc.CallOption) (*CreateAppDomainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateAppDomainResponse)
+	err := c.cc.Invoke(ctx, DomainsService_CreateAppDomain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *domainsServiceClient) UpdateAppDomain(ctx context.Context, in *UpdateAppDomainRequest, opts ...grpc.CallOption) (*UpdateAppDomainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateAppDomainResponse)
+	err := c.cc.Invoke(ctx, DomainsService_UpdateAppDomain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *domainsServiceClient) RemoveAppDomain(ctx context.Context, in *RemoveAppDomainRequest, opts ...grpc.CallOption) (*RemoveAppDomainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RemoveAppDomainResponse)
+	err := c.cc.Invoke(ctx, DomainsService_RemoveAppDomain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // DomainsServiceServer is the server API for DomainsService service.
 // All implementations must embed UnimplementedDomainsServiceServer
 // for forward compatibility.
 //
-// DomainsService 是域名台账只读与验证面（T2.17；architecture §2.6）。
-// 台账写入方唯一 = internal/ingress（发布时按归一化 compose 对账同步），
-// API 只读不写——域名变更走部署（compose 声明）路径。Verify 是本机视角
-// 探测（解析 + 80/443 + 实收证书如实记录），判断权在操作者。
+// DomainsService 是域名资源面（T2.17 只读台账 + T 线 IMPL-T1-1 可写升级；
+// OT-2）：per-domain {domain(host), service, port, protocol, cert_mode} 的
+// CRUD + 验证。域名资源是路由事实源（写入方 = 本服务的 API CRUD 与发布
+// 种子——compose label 仅首部署 bootstrap 种子，state 存在行时 label 一律
+// 忽略并派事件）；Verify 是本机视角探测（解析 + 80/443 + 实收证书如实
+// 记录），判断权在操作者。
+//
+// scope（scope.go 登记处）：list/verify = read；create/update/remove =
+// deploy（路由声明属应用运行面写语义——compose label 同一直信赖；
+// 平台管理员资源面只读的双门不变）。
 type DomainsServiceServer interface {
 	ListAppDomains(context.Context, *ListAppDomainsRequest) (*ListAppDomainsResponse, error)
 	VerifyAppDomains(context.Context, *VerifyAppDomainsRequest) (*VerifyAppDomainsResponse, error)
+	// CreateAppDomain 新建域名资源（host 全局独占：冲突 409 E_DOMAIN_CONFLICT；
+	// 每服务 ≤5、每 app ≤10 超限 4xx E_DOMAIN_UNSUPPORTED）。写入成功后同步
+	// 触发入口收敛（路由发布 + 证书保障；失败以事件/审计披露，资源行保留）。
+	CreateAppDomain(context.Context, *CreateAppDomainRequest) (*CreateAppDomainResponse, error)
+	// UpdateAppDomain 更新既有域名行（{domain} 是寻址键 = host，不改名——
+	// 改名 = 删除 + 重建，与 env key 同口径）。空字段 = 保持现值（CLI 局部
+	// 更新形态；Console 恒发全量）。
+	UpdateAppDomain(context.Context, *UpdateAppDomainRequest) (*UpdateAppDomainResponse, error)
+	// RemoveAppDomain 删除域名行（幂等不做：不存在 404）。删除即触发入口
+	// 收敛（路由撤销；证书 SAN 集变化随下次签发收敛）。
+	RemoveAppDomain(context.Context, *RemoveAppDomainRequest) (*RemoveAppDomainResponse, error)
 	mustEmbedUnimplementedDomainsServiceServer()
 }
 
@@ -90,6 +157,15 @@ func (UnimplementedDomainsServiceServer) ListAppDomains(context.Context, *ListAp
 }
 func (UnimplementedDomainsServiceServer) VerifyAppDomains(context.Context, *VerifyAppDomainsRequest) (*VerifyAppDomainsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method VerifyAppDomains not implemented")
+}
+func (UnimplementedDomainsServiceServer) CreateAppDomain(context.Context, *CreateAppDomainRequest) (*CreateAppDomainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateAppDomain not implemented")
+}
+func (UnimplementedDomainsServiceServer) UpdateAppDomain(context.Context, *UpdateAppDomainRequest) (*UpdateAppDomainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateAppDomain not implemented")
+}
+func (UnimplementedDomainsServiceServer) RemoveAppDomain(context.Context, *RemoveAppDomainRequest) (*RemoveAppDomainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RemoveAppDomain not implemented")
 }
 func (UnimplementedDomainsServiceServer) mustEmbedUnimplementedDomainsServiceServer() {}
 func (UnimplementedDomainsServiceServer) testEmbeddedByValue()                        {}
@@ -148,6 +224,60 @@ func _DomainsService_VerifyAppDomains_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DomainsService_CreateAppDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateAppDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DomainsServiceServer).CreateAppDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DomainsService_CreateAppDomain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DomainsServiceServer).CreateAppDomain(ctx, req.(*CreateAppDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DomainsService_UpdateAppDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateAppDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DomainsServiceServer).UpdateAppDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DomainsService_UpdateAppDomain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DomainsServiceServer).UpdateAppDomain(ctx, req.(*UpdateAppDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DomainsService_RemoveAppDomain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveAppDomainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DomainsServiceServer).RemoveAppDomain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DomainsService_RemoveAppDomain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DomainsServiceServer).RemoveAppDomain(ctx, req.(*RemoveAppDomainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // DomainsService_ServiceDesc is the grpc.ServiceDesc for DomainsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -162,6 +292,18 @@ var DomainsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "VerifyAppDomains",
 			Handler:    _DomainsService_VerifyAppDomains_Handler,
+		},
+		{
+			MethodName: "CreateAppDomain",
+			Handler:    _DomainsService_CreateAppDomain_Handler,
+		},
+		{
+			MethodName: "UpdateAppDomain",
+			Handler:    _DomainsService_UpdateAppDomain_Handler,
+		},
+		{
+			MethodName: "RemoveAppDomain",
+			Handler:    _DomainsService_RemoveAppDomain_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

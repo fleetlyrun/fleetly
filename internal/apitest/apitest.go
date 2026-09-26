@@ -383,14 +383,13 @@ func (e *Env) SeedNode(t *testing.T) {
 	}
 }
 
-// SeedDomain 播种一条域名台账行（domains list 夹具）。
+// SeedDomain 播种一条域名资源行（domains list 夹具）。
 func (e *Env) SeedDomain(t *testing.T, appName, service, domain, port string) {
 	t.Helper()
 	app := e.CreateApp(t, appName)
-	err := e.Store.ReplaceAppDomains(context.Background(), app.ID, []state.DomainServiceRoutes{{
-		Service: service, Port: port, Domains: []string{domain},
-	}})
-	if err != nil {
+	if _, err := e.Store.CreateAppDomain(context.Background(), app.ID, state.DomainInput{
+		Domain: domain, Service: service, Port: port, Protocol: "http", CertMode: "http01",
+	}); err != nil {
 		t.Fatalf("apitest: seed domain: %v", err)
 	}
 }

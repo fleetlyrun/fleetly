@@ -27,7 +27,8 @@ package eventcode
 //
 // 计 52 + 18 = 70 + W1 增 3 = 73 + W2-S1 增 4 = 77 + W3-S2 增 1（FZ-12
 // git.hostkey_changed）= 78 + W5-S1 增 3（scaling.adjusted / scaling.dormant
-// / scaling.no_data，B 线 W5 D-V3W5-2）= 81 个事件名。
+// / scaling.no_data，B 线 W5 D-V3W5-2）= 81 + IMPL-T1-1 增 1
+//（route.label_ignored，OT-2 单一写点仲裁）= 82 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -108,6 +109,12 @@ var builtins = []Event{
 	//    签发/续期不设新事件名，走审计记录）──
 	{Name: "route.published", Summary: "app ingress routes published (after the health gate passed, all dynamic config converged)"},
 	{Name: "route.publish_failed", Summary: "app ingress route publish failed (deploy unaffected; alerts separately)"},
+	// IMPL-T1-1 实现期新增（OT-2 单一写点仲裁）：state 已有域名行时
+	// compose label 声明被忽略的披露（label 仅首部署 bootstrap 种子）。
+	// 发出来源 = internal/ingress PublishRoutes 的仲裁点（best-effort
+	// 披露，失败降级日志——不影响路由收敛）；payload 带 app 与声明/state
+	// 计数，无敏感材料。
+	{Name: "route.label_ignored", Summary: "compose fleetly.domains label declarations were ignored because state domain rows exist (labels are bootstrap-only; payload carries the declared/state counts)"},
 
 	// ── 定时任务（E5 Cron，架构 §4.3 细则 + object-storage 设计 §8 事件面；
 	//    W3-S5 接线。发出来源 = internal/cron 触发链与完成检测——事件与
