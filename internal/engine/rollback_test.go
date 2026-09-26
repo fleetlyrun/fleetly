@@ -60,7 +60,7 @@ func TestRollbackReplaysSnapshotWithEnv(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get app: %v", err)
 	}
-	if _, err := h.store.SetAppEnv(ctx, app.ID, "PLATFORM_PENDING", "p", "platform"); err != nil {
+	if _, err := h.store.SetAppEnv(ctx, app.ID, "PLATFORM_PENDING", "p", "platform", "human"); err != nil {
 		t.Fatalf("set pending env: %v", err)
 	}
 

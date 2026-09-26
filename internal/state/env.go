@@ -83,7 +83,10 @@ func ValidateEnvKey(key string) error {
 // SetAppEnv 创建或更新平台 env（同 app 同 key 唯一）：写值并把 status 重置
 // 为 pending（既有 effective 行被覆盖同样回到 pending——生效语义 = 下次部署
 // 消费）。审计同事务 fail-closed，diff 摘要只含键名与状态，不含值。
-// source 取 platform / system；留空回落 platform。
+// source 取 platform / system；留空回落 platform。actor 是审计主体署名，
+// 必须显式传入（空 = 构造错误拒写——2026-09-26 走查 W2-12：此前 actor 硬
+// 编码 "system"，用户写被记成系统动作；取值纪律 = 用户会话 "user:<id>"、
+// 机具令牌 "human"、平台物化 "system"）。
 //
 // 保留名字空间守卫（managed-databases 设计 §2.5，E4/FZ-1）：source=platform
 // 的用户写撞 `FLEETLY_` 前缀（大小写敏感）→ E_ENV_KEY_RESERVED（422）。前缀
@@ -91,9 +94,12 @@ func ValidateEnvKey(key string) error {
 // 「system 行被用户 upsert 劫持 source」路径——现状 upsert 会改写 source，
 // 若无本守卫，用户对 FLEETLY_* 键的 platform 写将顶掉 S4 物化的 system 行。
 // source=system 的写是平台内部物化（DB 连接串等），任意键放行。
-func (s *Store) SetAppEnv(ctx context.Context, appID, key, value, source string) (EnvVar, error) {
+func (s *Store) SetAppEnv(ctx context.Context, appID, key, value, source, actor string) (EnvVar, error) {
 	if err := ValidateEnvKey(key); err != nil {
 		return EnvVar{}, fmt.Errorf("state: %w", err)
+	}
+	if actor == "" {
+		return EnvVar{}, fmt.Errorf("state: env audit actor is required (user session \"user:<id>\", machine token \"human\", platform materialization \"system\")")
 	}
 	if source == "" {
 		source = "platform"
@@ -114,7 +120,7 @@ func (s *Store) SetAppEnv(ctx context.Context, appID, key, value, source string)
 		}
 		out = row
 		return tx.WriteAudit(ctx, AuditEntry{
-			Actor:  "system",
+			Actor:  actor,
 			Action: "app.env_set",
 			Target: "app:" + appID,
 			Result: "ok",

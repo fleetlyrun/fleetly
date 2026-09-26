@@ -55,6 +55,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatTime } from "@/lib/utils";
 import { useIsPlatformAdmin, useTeamCapabilities } from "@/lib/context";
+import { useSubjectResolver } from "@/hooks/use-subject-resolver";
 
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -373,6 +374,8 @@ export function DatabaseDetailPage() {
   // 非管理员的普通成员给成员角色语义的说明卡。
   const platformReadonly = useIsPlatformAdmin();
   const { canAdminResources } = useTeamCapabilities();
+  // placement/volume 节点 ID 可读化（W2-7）。
+  const resolveSubject = useSubjectResolver();
   const query = useQuery({
     queryKey: ["database", name],
     queryFn: () => getDatabase(name),
@@ -580,7 +583,7 @@ export function DatabaseDetailPage() {
               <>
                 <Field label="Status" value={<StateBadge state={status} />} />
                 <Field label="Image" value={<code className="text-xs">{db.image_digest}</code>} />
-                <Field label="Placement" value={<code className="text-xs">{db.placement || "—"}</code>} />
+                <Field label="Placement" value={<code className="text-xs">{resolveSubject(db.placement) || "—"}</code>} />
                 <Field
                   label="Volume"
                   value={
@@ -588,7 +591,7 @@ export function DatabaseDetailPage() {
                       <span className="text-right">
                         <code className="text-xs">{db.volume.name}</code>
                         <span className="block text-xs text-muted-foreground">
-                          {db.volume.status} · node {db.volume.platform_node_id}
+                          {db.volume.status} · node {resolveSubject(db.volume.platform_node_id)}
                         </span>
                       </span>
                     ) : (
@@ -599,17 +602,27 @@ export function DatabaseDetailPage() {
                 <Field
                   label="Limits"
                   value={
-                    <span className="text-xs">
-                      cpu {db.limits?.cpu_seconds ?? "—"} · mem {db.limits?.memory_bytes ?? "—"} B
-                    </span>
+                    db.limits?.cpu_seconds == null && db.limits?.memory_bytes == null ? (
+                      <span className="text-xs text-muted-foreground">not set (engine defaults)</span>
+                    ) : (
+                      <span className="text-xs">
+                        cpu {db.limits?.cpu_seconds ?? "not set"} · mem{" "}
+                        {db.limits?.memory_bytes != null ? `${db.limits.memory_bytes} B` : "not set"}
+                      </span>
+                    )
                   }
                 />
                 <Field
                   label="Backup plan"
                   value={
-                    <span className="text-xs">
-                      every {db.backup_plan?.interval_hours ?? "—"}h · keep {db.backup_plan?.keep ?? "—"} · {String(db.backup_plan?.hour_utc ?? "—")}:00 UTC
-                    </span>
+                    !db.backup_plan?.interval_hours && db.backup_plan?.keep == null ? (
+                      <span className="text-xs text-muted-foreground">not set (platform default: daily 03:00 UTC, keep 7)</span>
+                    ) : (
+                      <span className="text-xs">
+                        every {db.backup_plan?.interval_hours ?? "—"}h · keep {db.backup_plan?.keep ?? "—"} ·{" "}
+                        {String(db.backup_plan?.hour_utc ?? "—")}:00 UTC
+                      </span>
+                    )
                   }
                 />
                 <Field

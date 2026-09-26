@@ -12,6 +12,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PatPage } from "@/pages/PatPage";
 import { setToken } from "@/api/client";
 
+// W2-1：令牌带属主（user_id）——本页只渲染 Me 自己的 PAT；他人 PAT 由
+// Admin 平台台账承载（见 PlatformTokensCard 测试）。
+const ME = {
+  user: {
+    id: "01USERME",
+    email: "owner@fleetly.run",
+    display_name: "Owner",
+    is_platform_admin: false,
+  },
+};
+
 const TOKENS = {
   tokens: [
     {
@@ -22,6 +33,7 @@ const TOKENS = {
       hash_prefix: "1a2b3c4d5e6f",
       created_at: "2026-09-20T10:00:00Z",
       last_used_at: "2026-09-21T09:00:00Z",
+      user_id: "01USERME",
     },
     {
       id: "01TOK2",
@@ -29,6 +41,15 @@ const TOKENS = {
       scopes: ["read"],
       hash_prefix: "998877665544",
       created_at: "2026-09-19T08:00:00Z",
+      user_id: "01USERME",
+    },
+    {
+      id: "01TOKOTHER",
+      note: "not-mine",
+      scopes: ["read"],
+      hash_prefix: "aabbccddeeff",
+      created_at: "2026-09-18T08:00:00Z",
+      user_id: "01USEROTHER",
     },
   ],
 };
@@ -63,6 +84,12 @@ function stubFetch(overrides: {
       return Promise.resolve({
         ok: true, status: 200, statusText: "",
         json: () => Promise.resolve({ id: "01TOK2" }),
+      });
+    }
+    if (url.endsWith("/auth/me")) {
+      return Promise.resolve({
+        ok: true, status: 200, statusText: "",
+        json: () => Promise.resolve(ME),
       });
     }
     if (url.endsWith("/tokens")) {
@@ -112,10 +139,11 @@ describe("PatPage", () => {
     await screen.findByTestId("pat-page");
 
     const rows = await screen.findAllByTestId("pat-row");
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(2); // W2-1：只渲染 Me 自己的 PAT
     expect(screen.getByText("laptop")).toBeInTheDocument();
     expect(screen.getByText("01PRJ1")).toBeInTheDocument(); // 绑定项目回显
     expect(screen.getAllByText("read").length).toBeGreaterThan(0);
+    expect(screen.queryByText("not-mine")).not.toBeInTheDocument(); // 他人令牌不进本页
     expect(screen.queryByTestId("pat-token-value")).not.toBeInTheDocument(); // 明文永不回读
   });
 
@@ -188,6 +216,12 @@ describe("PatPage", () => {
     fetchMock.mockImplementation((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       const method = init?.method ?? "GET";
+      if (url.endsWith("/auth/me")) {
+        return Promise.resolve({
+          ok: true, status: 200, statusText: "",
+          json: () => Promise.resolve(ME),
+        });
+      }
       if (url.includes("/tokens/") && method === "DELETE") {
         revoked = true;
         return Promise.resolve({

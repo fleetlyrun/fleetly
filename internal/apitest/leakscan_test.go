@@ -247,7 +247,7 @@ func TestLeakScanAuditDiffSpecialChars(t *testing.T) {
 	t.Cleanup(func() { _ = st.Close() })
 	app := testsupport.SeedApp(t, st, "weird")
 	weirdKey := `we"ird\key`
-	if _, err := st.SetAppEnv(context.Background(), app.ID, weirdKey, "cipher-blob", "platform"); err != nil {
+	if _, err := st.SetAppEnv(context.Background(), app.ID, weirdKey, "cipher-blob", "platform", "human"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
 	audits, err := st.RecentAudits(context.Background(), 10)

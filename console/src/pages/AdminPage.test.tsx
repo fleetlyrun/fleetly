@@ -31,6 +31,27 @@ const USERS = {
   ],
 };
 
+// W2-1：平台令牌台账夹具——用户 PAT（带属主）与机具令牌（user_id 空）混排。
+const TOKENS = {
+  tokens: [
+    {
+      id: "01TOKPAT",
+      note: "laptop",
+      scopes: ["read", "deploy"],
+      hash_prefix: "1a2b3c4d5e6f",
+      created_at: "2026-09-20T10:00:00Z",
+      user_id: "01U2",
+    },
+    {
+      id: "01TOKMACHINE",
+      note: "ci-machine",
+      scopes: ["admin"],
+      hash_prefix: "998877665544",
+      created_at: "2026-09-19T08:00:00Z",
+    },
+  ],
+};
+
 function stubFetch(overrides: {
   onCreateUser?: (body: Record<string, unknown>) => { status: number; body: unknown };
 } = {}) {
@@ -82,6 +103,9 @@ function stubFetch(overrides: {
     if (url.endsWith("/users")) {
       return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(USERS) });
     }
+    if (url.endsWith("/tokens") && method === "GET") {
+      return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(TOKENS) });
+    }
     if (url.endsWith("/auth/me")) {
       return Promise.resolve({
         ok: true,
@@ -131,6 +155,22 @@ describe("AdminPage (platform admin)", () => {
     // 禁用行给 Enable，未禁用行给 Disable。
     expect(screen.getByTestId("admin-user-enable")).toBeInTheDocument();
     expect(screen.getByTestId("admin-user-disable")).toBeInTheDocument();
+  });
+
+  it("platform tokens ledger: owner emails resolved, machine badge for ownerless rows (W2-1)", async () => {
+    setToken("flt_test");
+    vi.stubGlobal("fetch", stubFetch());
+
+    renderAt();
+    await screen.findByTestId("admin-page");
+
+    const rows = await screen.findAllByTestId("admin-token-row");
+    expect(rows).toHaveLength(2);
+    // 用户 PAT 的属主列反解为 email（users 清单同页可用）。
+    expect(screen.getByTestId("admin-token-owner")).toHaveTextContent("mate@t.test");
+    // 机具令牌（user_id 空）以 machine 徽章呈现，不冒充用户。
+    expect(screen.getByTestId("admin-token-machine-badge")).toBeInTheDocument();
+    expect(screen.getByText("ci-machine")).toBeInTheDocument();
   });
 
   it("creates a user and shows the temporary password exactly once", async () => {

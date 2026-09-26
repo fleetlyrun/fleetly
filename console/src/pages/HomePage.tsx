@@ -14,6 +14,7 @@ import { Link } from "react-router-dom";
 
 import { listApps, getSystemStatus, listNodes } from "@/api/endpoints";
 import { eventTone, useEventStream } from "@/hooks/use-event-stream";
+import { useSubjectResolver } from "@/hooks/use-subject-resolver";
 import { EmptyState } from "@/components/empty-state";
 import { StatCard } from "@/components/stat-card";
 import { StateBadge, type StateTone } from "@/components/state-badge";
@@ -123,6 +124,10 @@ export function HomePage() {
   const managers = nodes.filter((n) => n.is_manager).length;
   const stale = nodes.filter((n) => n.stale).length;
 
+  // 事件 subject 可读化（W2-7）：kind:平台ID → kind:业务名（反解出口单一，
+  // 见 lib/subject.ts；反解不到降级 kind，不裸显 ULID）。
+  const resolveSubject = useSubjectResolver();
+
   const attention = activeApps
     .filter((a) => ATTENTION_STATES.has(a.derived_state ?? ""))
     .sort((a, b) => (a.updated_at ?? "").localeCompare(b.updated_at ?? ""));
@@ -206,7 +211,7 @@ export function HomePage() {
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{e.name}</span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {e.subject}
+                        {resolveSubject(e.subject)}
                       </span>
                     </span>
                     <span className="shrink-0 text-xs text-muted-foreground">

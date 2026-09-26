@@ -14,6 +14,7 @@ import {
   Plus,
   ShieldCheck,
   ShieldOff,
+  Trash2,
   UserRoundCheck,
   UserRoundX,
 } from "lucide-react";
@@ -25,9 +26,11 @@ import {
   enableUser,
   getRegistrationState,
   grantPlatformAdmin,
+  listTokens,
   listUsers,
   resetUserPassword,
   revokePlatformAdmin,
+  revokeToken,
   setRegistration,
 } from "@/api/endpoints";
 import { errorEnvelopeFrom, type ErrorEnvelope } from "@/api/errors";
@@ -59,6 +62,149 @@ import { formatTime } from "@/lib/utils";
 
 /** 一次性口令投影（关闭即弃——服务端只存哈希，无找回）。 */
 type OneTimeSecret = { title: string; password: string };
+
+// PlatformTokensCard 是平台级令牌台账（W2-1，2026-09-26 走查）：ListTokens
+// 对平台管理员返回全平台令牌（票面裁决——机具令牌的平台级可见性），但 PAT
+// 自服务页不再裸显这批数据（属主收敛到 Me）。本卡是它的正确落点：属主列
+// （email / machine 徽章）+ 吊销。机具令牌 user_id 空 = 无用户属主。
+function PlatformTokensCard() {
+  const queryClient = useQueryClient();
+  const tokensQuery = useQuery({
+    queryKey: ["tokens"],
+    queryFn: listTokens,
+  });
+  const usersQuery = useQuery({
+    queryKey: ["users"],
+    queryFn: listUsers,
+    retry: false,
+  });
+  const [revokeTarget, setRevokeTarget] = useState<{ id: string; label: string } | null>(null);
+  const revokeMutation = useMutation({
+    mutationFn: (id: string) => revokeToken(id),
+    onSuccess: () => {
+      setRevokeTarget(null);
+      void queryClient.invalidateQueries({ queryKey: ["tokens"] });
+    },
+    onError: () => setRevokeTarget(null),
+  });
+
+  const emailByUserId = new Map<string, string>();
+  for (const u of usersQuery.data?.users ?? []) {
+    if (u.id) emailByUserId.set(u.id, u.email ?? u.display_name ?? u.id);
+  }
+  const tokens = tokensQuery.data?.tokens ?? [];
+
+  return (
+    <Card data-testid="admin-platform-tokens">
+      <CardHeader className="border-b pb-3">
+        <CardTitle className="text-sm font-semibold">Platform tokens</CardTitle>
+        <CardDescription className="mt-1">
+          Every non-revoked credential on the platform: per-user personal access
+          tokens and machine tokens (no owner — CI/API credentials minted by
+          platform admins). Revoking a token stops its clients immediately.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="p-0">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Name</TableHead>
+              <TableHead>Owner</TableHead>
+              <TableHead>Scopes</TableHead>
+              <TableHead>Last used</TableHead>
+              <TableHead className="w-16" />
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {tokens.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="h-20 text-center text-sm text-muted-foreground" data-testid="admin-tokens-empty">
+                  No active tokens on this platform.
+                </TableCell>
+              </TableRow>
+            ) : (
+              tokens.map((t) => {
+                const owner = t.user_id ? emailByUserId.get(t.user_id) : undefined;
+                const label = `${t.note || t.id} (${owner ?? "machine token"})`;
+                return (
+                  <TableRow key={t.id} data-testid="admin-token-row" data-name={t.note}>
+                    <TableCell className="font-medium">{t.note}</TableCell>
+                    <TableCell>
+                      {t.user_id ? (
+                        <span className="text-xs" data-testid="admin-token-owner">
+                          {owner ?? t.user_id}
+                        </span>
+                      ) : (
+                        <Badge
+                          variant="secondary"
+                          className="bg-muted text-[10px] font-semibold uppercase tracking-wide text-muted-foreground"
+                          data-testid="admin-token-machine-badge"
+                        >
+                          machine token
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-wrap gap-1">
+                        {(t.scopes ?? []).map((s) => (
+                          <Badge key={s} variant="secondary" className="font-mono text-[10px]">
+                            {s}
+                          </Badge>
+                        ))}
+                      </div>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {t.last_used_at ? formatTime(t.last_used_at) : "never"}
+                    </TableCell>
+                    <TableCell>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7 text-muted-foreground hover:text-destructive"
+                        aria-label={`Revoke ${t.note}`}
+                        data-testid="admin-token-revoke"
+                        onClick={() => setRevokeTarget({ id: t.id ?? "", label })}
+                      >
+                        <Trash2 aria-hidden className="h-3.5 w-3.5" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </CardContent>
+
+      <Dialog open={revokeTarget !== null} onOpenChange={(open) => !open && setRevokeTarget(null)}>
+        <DialogContent data-testid="admin-token-revoke-dialog">
+          <DialogHeader>
+            <DialogTitle>Revoke token</DialogTitle>
+            <DialogDescription>
+              Revoke <span className="font-medium">{revokeTarget?.label}</span>?
+              Clients using it stop authenticating immediately. This cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" data-testid="admin-token-revoke-cancel" onClick={() => setRevokeTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              data-testid="admin-token-revoke-submit"
+              disabled={revokeMutation.isPending}
+              onClick={() => revokeTarget && revokeMutation.mutate(revokeTarget.id)}
+            >
+              {revokeMutation.isPending ? "Revoking…" : "Revoke token"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
 
 function AdminUsersPage() {
   const queryClient = useQueryClient();
@@ -375,6 +521,8 @@ function AdminUsersPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <PlatformTokensCard />
 
       <Card data-testid="admin-registration">
         <CardHeader className="border-b pb-3">

@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/table";
 import { formatBytes, timeAgo } from "@/lib/utils";
 import { useIsPlatformAdmin, useProjectContext, useTeamCapabilities } from "@/lib/context";
+import { useSubjectResolver } from "@/hooks/use-subject-resolver";
 
 /** 行内最近备份（limit=1 只取最新一行；无轮询——创建/触发后随缓存失效刷新）。 */
 function LastBackupCell({ name }: { name: string }) {
@@ -55,7 +56,7 @@ function LastBackupCell({ name }: { name: string }) {
   );
 }
 
-function DatabaseRow({ db }: { db: DatabaseView }) {
+function DatabaseRow({ db, resolveSubject }: { db: DatabaseView; resolveSubject: (s: string | undefined) => string }) {
   const navigate = useNavigate();
   const name = db.name ?? "";
   return (
@@ -87,8 +88,8 @@ function DatabaseRow({ db }: { db: DatabaseView }) {
       <TableCell>
         <StateBadge state={db.status ?? ""} />
       </TableCell>
-      <TableCell className="font-mono text-xs text-muted-foreground">
-        {db.placement || "—"}
+      <TableCell className="font-mono text-xs text-muted-foreground" title={db.placement}>
+        {resolveSubject(db.placement) || "—"}
       </TableCell>
       <TableCell className="font-mono text-xs text-muted-foreground">
         {db.volume ? `${db.volume.name} (${db.volume.status})` : "—"}
@@ -120,6 +121,8 @@ export function DatabasesPage() {
   const { projectRef } = useProjectContext();
   const { canAdminResources } = useTeamCapabilities();
   const isPlatformAdmin = useIsPlatformAdmin();
+  // placement 节点 ID 可读化（W2-7）。
+  const resolveSubject = useSubjectResolver();
   const query = useQuery({
     queryKey: ["databases", projectRef],
     queryFn: () => listDatabases(projectRef ? { project: projectRef } : {}),
@@ -235,7 +238,7 @@ export function DatabasesPage() {
               </TableHeader>
               <TableBody>
                 {databases.map((db) => (
-                  <DatabaseRow key={db.id} db={db} />
+                  <DatabaseRow key={db.id} db={db} resolveSubject={resolveSubject} />
                 ))}
               </TableBody>
             </Table>

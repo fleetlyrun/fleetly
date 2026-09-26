@@ -346,16 +346,25 @@ export function AlertingSettingsCard() {
         <BellRing aria-hidden className="h-4 w-4 text-muted-foreground" />
         <CardTitle className="text-sm font-semibold">Alerting</CardTitle>
         <CardDescription className="ml-auto text-xs">
-          {isOn
-            ? `${status.data?.rule_count ?? 0} rules · vmalert ${
-                status.data?.vmalert_exists ? "deployed" : "converging"
-              }`
-            : "opt-in — no rule evaluator by default"}
+          {!status.isSuccess
+            ? "loading…"
+            : isOn
+              ? `${status.data?.rule_count ?? 0} rules · vmalert ${
+                  status.data?.vmalert_exists ? "deployed" : "converging"
+                }`
+              : "opt-in — no rule evaluator by default"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 pt-4">
         {status.isError ? (
           <EnvelopeAlertFrom envelope={errorEnvelopeFrom(status.error)} />
+        ) : !status.isSuccess ? (
+          // 加载态诚实化（W2-3，2026-09-26 走查）：status 未就绪时渲染中性
+          // 占位——此前加载中渲染 `alerts.mode: ` + "default (unset) ·
+          // metrics.mode: unset"，把「尚未加载」呈现成「确认关闭」的假事实。
+          <p className="text-sm text-muted-foreground" data-testid="alerting-status-loading">
+            Loading alerting status…
+          </p>
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm">

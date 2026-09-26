@@ -54,7 +54,13 @@ func (s *EnvService) SetEnv(ctx context.Context, req *serverv1.SetEnvRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.st.SetAppEnv(ctx, app.ID, req.GetKey(), string(ciphertext), "platform"); err != nil {
+	// 审计主体署名（W2-12）：用户会话 "user:<id>"；机具令牌无用户身份，
+	// 沿用终端会话的 "human" 约定——不落到 state 层默认值（签名强制显式）。
+	actor := "human"
+	if p, ok := PrincipalFromContext(ctx); ok && p.UserID != "" {
+		actor = "user:" + p.UserID
+	}
+	if _, err := s.st.SetAppEnv(ctx, app.ID, req.GetKey(), string(ciphertext), "platform", actor); err != nil {
 		return nil, err
 	}
 	// H9：值集已变（新 secret 已可随下次部署生效）→ 即时失效脱敏缓存。

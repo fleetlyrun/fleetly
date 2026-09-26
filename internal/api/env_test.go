@@ -7,6 +7,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -65,5 +66,82 @@ func TestEnvServiceInvalidationHook(t *testing.T) {
 	defer mu.Unlock()
 	if len(fired) != 2 {
 		t.Fatalf("failure path fired callback: %v", fired)
+	}
+}
+
+// TestSetEnvAuditActorAttribution（W2-12，2026-09-26 走查）：用户会话写 env
+// 的审计主体 = "user:<id>"——此前 state 层 actor 硬编码 "system"，用户动作
+// 被记成系统动作（审计归因断裂）。机制守卫 = SetAppEnv 签名要求显式
+// actor（空 actor 构造错误拒写），本测同时验证用户路径署名与空 actor 拒绝。
+func TestSetEnvAuditActorAttribution(t *testing.T) {
+	dir := t.TempDir()
+	st, err := state.Open(context.Background(), filepath.Join(dir, "test.db"))
+	if err != nil {
+		t.Fatalf("state.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	box, _, err := secrets.EnsureKey(filepath.Join(dir, "test.key"))
+	if err != nil {
+		t.Fatalf("EnsureKey: %v", err)
+	}
+	ctx := context.Background()
+	proj := testsupport.SeedProject(t, st)
+	// 首用户强制平台管理员（资源面只读）——先造引导用户占位，被测用户是
+	// 普通成员（developer）。
+	if _, err := st.CreateUser(ctx, state.UserWrite{
+		Email: "bootstrap@fleetly.run", Password: "bootstrap-pass-1",
+	}); err != nil {
+		t.Fatalf("CreateUser bootstrap: %v", err)
+	}
+	user, err := st.CreateUser(ctx, state.UserWrite{
+		Email: "env-actor@fleetly.run", Password: "env-actor-pass-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if _, merr := st.AddMember(ctx, proj.TeamID, user.ID, "developer", "", ""); merr != nil {
+		t.Fatalf("AddMember: %v", merr)
+	}
+	app := testsupport.SeedAppInProject(t, st, "actorapp", proj)
+
+	svc := NewEnvService(st, box)
+	// 机具令牌路径（UserID 空）：审计主体 = "human"（terminal 同约定）。
+	if _, err := svc.SetEnv(directCtx(ctx), &serverv1.SetEnvRequest{App: "actorapp", Key: "MACHINE_KEY", Value: "v"}); err != nil {
+		t.Fatalf("SetEnv machine: %v", err)
+	}
+	// 用户会话路径：审计主体 = "user:<id>"（直调 ctx 须同时注入拦截器态的
+	// 方法所需 scope——deploy，与生产拦截链同语义）。
+	userCtx := putRequiredScope(context.WithValue(ctx, principalKey{}, Principal{
+		TokenID: "tok-1", Scopes: []string{ScopeDeploy}, UserID: user.ID,
+	}), ScopeDeploy)
+	if _, err := svc.SetEnv(userCtx, &serverv1.SetEnvRequest{App: "actorapp", Key: "USER_KEY", Value: "v"}); err != nil {
+		t.Fatalf("SetEnv user: %v", err)
+	}
+	audits, err := st.RecentAudits(ctx, 10)
+	if err != nil {
+		t.Fatalf("RecentAudits: %v", err)
+	}
+	actors := map[string]string{} // key → actor
+	for _, a := range audits {
+		if a.Action != "app.env_set" {
+			continue
+		}
+		var d struct {
+			Key string `json:"key"`
+		}
+		if err := json.Unmarshal([]byte(a.DiffSummary), &d); err != nil {
+			t.Fatalf("decode diff %s: %v", a.DiffSummary, err)
+		}
+		actors[d.Key] = a.Actor
+	}
+	if got := actors["USER_KEY"]; got != "user:"+user.ID {
+		t.Fatalf("user env_set audit actor = %q, want %q", got, "user:"+user.ID)
+	}
+	if got := actors["MACHINE_KEY"]; got != "human" {
+		t.Fatalf("machine env_set audit actor = %q, want human", got)
+	}
+	// 空 actor 在 state 层拒绝（签名约束：审计主体不可缺省）。
+	if _, err := st.SetAppEnv(ctx, app.ID, "NO_ACTOR", "v", "platform", ""); err == nil {
+		t.Fatal("empty audit actor must be rejected")
 	}
 }

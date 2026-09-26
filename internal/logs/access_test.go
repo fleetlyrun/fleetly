@@ -254,7 +254,7 @@ func TestPollAccessCollectsIntoIngesterOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	if _, err := st.SetAppEnv(ctx, app.ID, "TOKEN", string(ct), "platform"); err != nil {
+	if _, err := st.SetAppEnv(ctx, app.ID, "TOKEN", string(ct), "platform", "human"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
 

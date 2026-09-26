@@ -46,6 +46,7 @@ import {
 } from "@/components/ui/table";
 import { useIsPlatformAdmin } from "@/lib/context";
 import { formatTime } from "@/lib/utils";
+import { useSubjectResolver } from "@/hooks/use-subject-resolver";
 
 /** 过滤集（draft 与 applied 分离——Apply 才生效，applied 变更归零 offset）。 */
 interface AuditFilters {
@@ -209,6 +210,10 @@ function AuditBrowser() {
 
   const rows = auditQuery.data?.audits ?? [];
   const total = auditQuery.data?.total ?? 0;
+
+  // target 可读化（W2-7）：kind:平台ID → kind:业务名（subjectLabel 单一
+  // 出口；过滤仍按原始 target 值，展示与过滤语义分离）。
+  const resolveSubject = useSubjectResolver();
 
   function onApply(e: FormEvent) {
     e.preventDefault();
@@ -389,7 +394,7 @@ function AuditBrowser() {
                       </TableCell>
                       <TableCell className="font-mono text-xs">{a.action}</TableCell>
                       <TableCell className="max-w-[220px] truncate font-mono text-xs" title={a.target}>
-                        {a.target || "—"}
+                        {resolveSubject(a.target) || "—"}
                       </TableCell>
                       <TableCell>
                         {a.result === "error" ? (

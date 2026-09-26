@@ -60,14 +60,21 @@ export function MetricsSettingsCard() {
         <Activity aria-hidden className="h-4 w-4 text-muted-foreground" />
         <CardTitle className="text-sm font-semibold">Metrics</CardTitle>
         <CardDescription className="ml-auto text-xs">
-          {isOn
-            ? `${status.data?.nodes_reporting ?? 0}/${status.data?.nodes_total ?? 0} nodes reporting`
-            : "opt-in — nothing deployed by default"}
+          {!status.isSuccess
+            ? "loading…"
+            : isOn
+              ? `${status.data?.nodes_reporting ?? 0}/${status.data?.nodes_total ?? 0} nodes reporting`
+              : "opt-in — nothing deployed by default"}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-3 pt-4">
         {status.isError ? (
           <EnvelopeAlertFrom envelope={errorEnvelopeFrom(status.error)} />
+        ) : !status.isSuccess ? (
+          // 加载态诚实化（W2-3 同族）：未就绪渲染中性占位，不渲染假事实。
+          <p className="text-sm text-muted-foreground" data-testid="metrics-status-loading">
+            Loading metrics status…
+          </p>
         ) : (
           <>
             <div className="flex flex-wrap items-center justify-between gap-3 text-sm">

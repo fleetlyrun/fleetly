@@ -155,3 +155,31 @@ func TestNewServicesStopOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestGitEndpointForHint（W2-2，2026-09-26 走查）：git remote 提示的主机位
+// 解析链 = git.public_endpoint 显式配置 > base_domain 域名 > 监听地址主机位
+// （通配/空回落 127.0.0.1）——通配监听直接输出 127.0.0.1 会使远程用户复制
+// 出不可用 remote。端口位取自监听地址；显式配置缺端口位时补齐。
+func TestGitEndpointForHint(t *testing.T) {
+	cases := []struct {
+		name           string
+		addr           string
+		publicEndpoint string
+		baseDomain     string
+		want           string
+	}{
+		{"explicit wins", "0.0.0.0:8424", "git.example.com:8424", "example.com", "git.example.com:8424"},
+		{"explicit without port gets listen port", "0.0.0.0:9424", "git.example.com", "example.com", "git.example.com:9424"},
+		{"base domain next", "0.0.0.0:8424", "", "dev.fleetly.run", "dev.fleetly.run:8424"},
+		{"base domain trailing dot trimmed", ":8424", "", "dev.fleetly.run.", "dev.fleetly.run:8424"},
+		{"loopback fallback keeps host", "127.0.0.1:8424", "", "", "127.0.0.1:8424"},
+		{"wildcard falls back to loopback", "0.0.0.0:8424", "", "", "127.0.0.1:8424"},
+		{"unparseable addr falls to default port", "bogus", "", "", "127.0.0.1:8424"},
+		{"concrete host kept verbatim", "10.0.0.8:9424", "", "", "10.0.0.8:9424"},
+	}
+	for _, tc := range cases {
+		if got := gitEndpointForHint(tc.addr, tc.publicEndpoint, tc.baseDomain); got != tc.want {
+			t.Fatalf("%s: gitEndpointForHint(%q,%q,%q) = %q, want %q", tc.name, tc.addr, tc.publicEndpoint, tc.baseDomain, got, tc.want)
+		}
+	}
+}

@@ -309,7 +309,7 @@ func TestIngestBuildLineRedactedAndGated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	if _, err := st.SetAppEnv(ctx, appRow.ID, "TOKEN", string(ciphertext), "platform"); err != nil {
+	if _, err := st.SetAppEnv(ctx, appRow.ID, "TOKEN", string(ciphertext), "platform", "human"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
 

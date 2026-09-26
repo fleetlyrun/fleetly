@@ -228,18 +228,18 @@ export function SystemPage() {
             {status.isError ? (
               <EnvelopeAlertFrom envelope={errorEnvelopeFrom(status.error)} />
             ) : (
-              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              <div className="grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {components.map((c) => (
                   <div
                     key={c.name}
-                    className="flex items-center justify-between rounded-md border p-3"
+                    className="flex min-w-0 items-center justify-between gap-2 rounded-md border p-3"
                     data-testid="component-health"
                   >
-                    <code className="text-xs">{c.name}</code>
-                    <span className="flex items-center gap-2">
+                    <code className="shrink-0 text-xs">{c.name}</code>
+                    <span className="flex min-w-0 items-center gap-2">
                       {c.error ? (
                         <span
-                          className="max-w-[180px] truncate text-xs text-red-600 dark:text-red-400"
+                          className="min-w-0 flex-1 truncate text-xs text-red-600 dark:text-red-400"
                           title={c.error}
                         >
                           {c.error}

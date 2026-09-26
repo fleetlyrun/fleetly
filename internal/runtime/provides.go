@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/wire"
@@ -556,7 +557,7 @@ func portOfAddr(addr, defaultAddr string) string {
 // 配置面——box 加密 webhook secret 与拉源认证材料，gitEndpoint 拼 remote
 // 提示；H9 增补路由撤销端口——app 删除管线经 ingress.Manager 撤销路由）。
 func NewAppsService(st *state.Store, sb *secrets.Box, cfg *AppConfig, m *ingress.Manager) *api.AppsService {
-	return api.NewAppsService(st, sb, gitEndpointForHint(cfg.GitSettings().Addr), m)
+	return api.NewAppsService(st, sb, gitEndpointForHint(cfg.Git.Addr, cfg.Git.PublicEndpoint, cfg.BaseDomain), m)
 }
 
 // NewCronService 构造定时任务面服务（E5 Cron：手动触发走调度器同链路 +
@@ -581,13 +582,27 @@ func NewSecretsService(st *state.Store, sb *secrets.Box) *api.SecretsService {
 	return api.NewSecretsService(st, sb)
 }
 
-// gitEndpointForHint 把 SSH 监听地址归一为 remote 提示的 host:port
-// （host 位通配/空回落 127.0.0.1——提示面永不输出空 host 形态）。
-func gitEndpointForHint(addr string) string {
-	host, port, err := net.SplitHostPort(addr)
+// gitEndpointForHint 把 SSH 监听地址归一为 remote 提示的 host:port。主机位
+// 解析链（2026-09-26 走查 W2-2：通配监听回落 127.0.0.1 使远程用户复制出
+// 不可用 remote——服务端无法自行得知公网主机名，按「显式告知 > 平台域名 >
+// 监听地址」推导）：git.public_endpoint 显式配置 > base_domain 域名（平台
+// 公网面，DNS/证书与 git SSH 同宿主）> 监听地址主机位（通配/空回落
+// 127.0.0.1——纯本机形态提示面永不输出空 host）。
+func gitEndpointForHint(addr, publicEndpoint, baseDomain string) string {
+	_, port, err := net.SplitHostPort(addr)
 	if err != nil || port == "" {
-		return "127.0.0.1:8424"
+		port = "8424"
 	}
+	if publicEndpoint != "" {
+		if _, _, perr := net.SplitHostPort(publicEndpoint); perr != nil {
+			publicEndpoint = net.JoinHostPort(publicEndpoint, port)
+		}
+		return publicEndpoint
+	}
+	if baseDomain != "" {
+		return net.JoinHostPort(strings.TrimSuffix(baseDomain, "."), port)
+	}
+	host, _, _ := net.SplitHostPort(addr)
 	if host == "" || host == "0.0.0.0" || host == "::" {
 		host = "127.0.0.1"
 	}

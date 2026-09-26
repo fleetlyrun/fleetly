@@ -417,6 +417,11 @@ type GitConfig struct {
 	Enabled *bool `mapstructure:"enabled"`
 	// Addr 是 SSH 监听地址（git.addr；缺省 127.0.0.1:8424）。
 	Addr string `mapstructure:"addr"`
+	// PublicEndpoint 是 git remote 提示的对外 host:port（git.public_endpoint；
+	// 可空）。解析链首位：显式对外地址（如 "git.example.com:8424"，省端口位
+	// 则补监听端口）——服务端无法自行得知公网主机名，须显式告知或由
+	// base_domain 推导（gitEndpointForHint）。空 = 按 base_domain 推导。
+	PublicEndpoint string `mapstructure:"public_endpoint"`
 	// Root 是 bare 仓库根目录（git.root；空 = <state 库同目录>/git）。
 	Root string `mapstructure:"root"`
 	// HostKeyFile 是 SSH host key 文件（git.host_key_file；空 =

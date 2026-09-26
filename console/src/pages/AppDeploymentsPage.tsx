@@ -21,6 +21,7 @@ import { Link, useParams } from "react-router-dom";
 import { apiBase } from "@/api/client";
 import {
   deploy,
+  getApp,
   getDeployment,
   listDeployments,
   listRevisions,
@@ -95,14 +96,25 @@ function previousWithRevision(
 
 function DeployCard({ app }: { app: string }) {
   const queryClient = useQueryClient();
-  // 项目归属上下文（2026-09-25 走查：多团队成员重部署既有应用 → 服务端
-  // 缺省解析不到归属项目 → 400 no default project resolvable）。选中
-  // team+project 即以 `team/prj` 限定形显式声明归属；未选时单团队用户可
-  // 缺省（服务端回落个人队 default 项目——既有行为保留），多团队用户必须
-  // 显式选择，否则 Deploy 禁用并在卡内指路（与 topbar team-context-hint
-  // 同一提示家族）。
+  // 项目归属上下文（2026-09-25 走查 + 2026-09-26 W2-4 二修）：优先用应用
+  // 自身归属（AppView.team_slug/project_slug——详情壳 ["app", name] 查询
+  // 共享缓存，本卡不再额外发请求；v0.3 归属模型下该字段恒在），顶栏项目
+  // 上下文仅作详情数据未达时的缺省回退——此前只看顶栏：All projects 下重
+  // 部署既有应用被禁用（多团队用户），而应用归属明明已知（隐式全局状态
+  // 依赖是缺口本身）。未解析出归属时保持旧门：多团队用户禁用+指路。
   const { teams, projectRef } = useProjectContext();
-  const needsProjectPick = teams.length > 1 && projectRef === "";
+  const appQuery = useQuery({
+    queryKey: ["app", app],
+    queryFn: () => getApp(app),
+    staleTime: 5_000,
+    retry: false,
+  });
+  const ownProjectRef =
+    appQuery.data?.team_slug && appQuery.data?.project_slug
+      ? `${appQuery.data.team_slug}/${appQuery.data.project_slug}`
+      : "";
+  const effectiveProjectRef = ownProjectRef || projectRef;
+  const needsProjectPick = teams.length > 1 && !effectiveProjectRef;
   const [composeText, setComposeText] = useState("");
   const [trackedId, setTrackedId] = useState("");
   // ComposeWarning 形状跟随生成类型（D4-②：手写 {field,warning} 与 proto
@@ -112,7 +124,7 @@ function DeployCard({ app }: { app: string }) {
 
   const deployMutation = useMutation({
     mutationFn: () =>
-      deploy(app, composeText, projectRef ? { project: projectRef } : {}),
+      deploy(app, composeText, effectiveProjectRef ? { project: effectiveProjectRef } : {}),
     onSuccess: (resp) => {
       setTrackedId(resp.deployment_id ?? "");
       setWarnings(resp.warnings ?? []);
@@ -208,7 +220,8 @@ function DeployCard({ app }: { app: string }) {
               className="text-xs text-muted-foreground"
               data-testid="deploy-project-context-hint"
             >
-              Select a team and project above to deploy.
+              Select a project above to deploy (the app&apos;s own project is
+              used automatically once resolved).
             </p>
           ) : null}
         </form>

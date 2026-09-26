@@ -488,8 +488,9 @@ describe("AppDeploymentsPage DeployCard project context", () => {
     ],
   };
 
-  /** 多团队 stub：Me + /projects + 部署历史 + Deploy POST 捕获。 */
-  function stubMultiTeam() {
+  /** 多团队 stub：Me + /projects + 部署历史 + Deploy POST 捕获。带
+   * resolveAppAttribution 开关时 /apps/demo GET 返回归属（W2-4）。 */
+  function stubMultiTeam(opts: { appAttribution?: boolean } = {}) {
     const calls: Array<{ url: string; method?: string; body?: unknown }> = [];
     const fetchMock = vi.fn().mockImplementation((url: string, init?: { method?: string; body?: string }) => {
       const u = String(url);
@@ -507,6 +508,10 @@ describe("AppDeploymentsPage DeployCard project context", () => {
       }
       if (u.endsWith("/projects")) {
         return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve(PROJECTS) });
+      }
+      if (opts.appAttribution && u.endsWith("/apps/demo") && (!init?.method || init.method === "GET")) {
+        // W2-4：详情壳的 GetApp 响应带应用归属 slug（Deploy 卡优先消费）。
+        return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ name: "demo", team_slug: "acme", project_slug: "staging" }) });
       }
       if (init?.method === "POST" && u.includes("/apps/demo/deployments")) {
         return Promise.resolve({ ok: true, status: 200, statusText: "", json: () => Promise.resolve({ deployment_id: "dep_ctx", warnings: [] }) });
@@ -561,10 +566,43 @@ describe("AppDeploymentsPage DeployCard project context", () => {
     expect(screen.getByTestId("deployment-tracker")).toHaveTextContent("dep_ctx");
   });
 
-  it("多团队选队未选项目：Deploy 禁用 + 卡内指路提示（不发请求）", async () => {
+  it("多团队未选项目 + 应用归属可解析（W2-4）：Deploy 启用，载荷携带应用自身归属", async () => {
     setToken("flt_test");
-    // 只选团队未选项目：角色可解析（Deploy 卡可见——正是走查实录的失败
-    // 入口）而 projectRef 为空 → 卡内禁用 + 指路，不再静默发缺省部署。
+    // 只选团队未选项目：顶栏上下文为空，但应用自身归属（GetApp 的
+    // team_slug/project_slug）已返回 → 优先消费，Deploy 不再被全局上下文
+    // 卡住（隐式全局状态依赖是缺口本身）。
+    window.localStorage.setItem(
+      "fleetly.console.context",
+      JSON.stringify({ team: "acme", project: null }),
+    );
+    const { fetchMock, calls } = stubMultiTeam({ appAttribution: true });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithContext();
+    await waitFor(() => expect(screen.getByText("Deploy compose")).toBeInTheDocument());
+    const user = userEvent.setup();
+    await user.type(
+      screen.getByLabelText("Compose YAML"),
+      "services:\n  web:\n    image: nginx:1.27-alpine\n",
+    );
+    // 等待应用归属解析完成（按钮从禁用翻转为可用）。
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Deploy" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Deploy" }));
+
+    await waitFor(() => {
+      const post = calls.find((c) => c.method === "POST" && c.url.includes("/apps/demo/deployments"));
+      expect(post).toBeTruthy();
+      // 载荷 project = 应用自身归属（acme/staging），与顶栏选择无关。
+      expect(post?.body).toHaveProperty("project", "acme/staging");
+    });
+  });
+
+  it("多团队未选项目 + 应用归属未达：Deploy 禁用 + 卡内指路提示（不发请求）", async () => {
+    setToken("flt_test");
+    // 应用归属未返回（stub 无 /apps/demo GET）且顶栏未选 → 保持旧门：
+    // 禁用 + 指路，不静默发缺省部署。
     window.localStorage.setItem(
       "fleetly.console.context",
       JSON.stringify({ team: "acme", project: null }),
@@ -583,7 +621,7 @@ describe("AppDeploymentsPage DeployCard project context", () => {
     const deployButton = screen.getByRole("button", { name: "Deploy" });
     expect(deployButton).toBeDisabled();
     expect(screen.getByTestId("deploy-project-context-hint")).toHaveTextContent(
-      "Select a team and project above to deploy.",
+      "Select a project above to deploy",
     );
     // 有 compose 内容也不得发出 Deploy POST（按钮禁用即无请求面）。
     expect(

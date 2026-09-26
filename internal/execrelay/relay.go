@@ -656,13 +656,18 @@ func writeWithTimeout(ctx context.Context, conn MessageConn, frame []byte) error
 	return conn.Write(wctx, frame)
 }
 
-// shortErr 是错误文本的单行截断（关闭原因面；协议帧载荷有界）。
+// shortErr 是错误文本的单行收敛（关闭原因面；协议帧载荷有界，总预算
+// 200 字节含省略号）。截断保留尾部而非头部——docker 错误的诊断价值在尾部
+//（"stat /bin/bash: no such file or directory"），头部是样板前缀；截断以
+// 省略号如实标注。头部截断的事故：msg[:200] 把 "OCI runtime exec failed:
+// exec" 后的文件名尾巴切掉（2026-09-26 走查 W2-5）。
 func shortErr(err error) string {
-	msg := err.Error()
-	if len(msg) > 200 {
-		return msg[:200]
+	const max = 200
+	msg := strings.ReplaceAll(err.Error(), "\n", " ")
+	if len(msg) <= max {
+		return msg
 	}
-	return msg
+	return "…" + msg[len(msg)-(max-3):]
 }
 
 // orDefault 回落零值时长。

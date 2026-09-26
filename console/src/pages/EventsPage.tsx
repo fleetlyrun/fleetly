@@ -7,6 +7,7 @@ import { Fragment, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 
 import { eventTone, useEventStream } from "@/hooks/use-event-stream";
+import { useSubjectResolver } from "@/hooks/use-subject-resolver";
 import { EmptyState } from "@/components/empty-state";
 import { PageHeader } from "@/components/page-header";
 import { StatusDot } from "@/components/status-dot";
@@ -19,6 +20,8 @@ import type { EventView } from "@/api/types";
 export function EventsPage() {
   const { events, connected, notice, lastSeq, clear } = useEventStream();
   const [expanded, setExpanded] = useState<string | null>(null);
+  // subject 可读化（W2-7）：展示层反解业务名，过滤仍按原始 subject 匹配。
+  const resolveSubject = useSubjectResolver();
   // 深链预填（W5-S2 degraded 解释卡入口）：?q=app:<name> 初始化过滤——
   // 链接直达「该 app 的事件流」；随后仍可自由改过滤。
   const [searchParams] = useSearchParams();
@@ -99,6 +102,7 @@ export function EventsPage() {
                 <EventRow
                   key={e.seq}
                   event={e}
+                  subjectLabel={resolveSubject(e.subject)}
                   expanded={expanded === e.seq}
                   onToggle={() => setExpanded((x) => (x === e.seq ? null : e.seq ?? ""))}
                 />
@@ -113,10 +117,12 @@ export function EventsPage() {
 
 function EventRow({
   event,
+  subjectLabel,
   expanded,
   onToggle,
 }: {
   event: EventView;
+  subjectLabel: string;
   expanded: boolean;
   onToggle: () => void;
 }) {
@@ -131,8 +137,8 @@ function EventRow({
         </span>
         <StatusDot tone={eventTone(event.name)} />
         <span className="font-medium">{event.name}</span>
-        <code className="truncate rounded bg-muted px-1.5 py-0.5 text-xs">
-          {event.subject}
+        <code className="truncate rounded bg-muted px-1.5 py-0.5 text-xs" title={event.subject}>
+          {subjectLabel}
         </code>
         <span className="ml-auto whitespace-nowrap text-xs text-muted-foreground">
           {formatTime(event.at)}

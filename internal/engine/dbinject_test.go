@@ -285,7 +285,7 @@ func TestDeployReferenceValueChangeRepends(t *testing.T) {
 	if err := h.store.UpdateDatabaseCredential(ctx, inst.ID, string(cipher)); err != nil {
 		t.Fatalf("rotate credential: %v", err)
 	}
-	if _, err := h.store.SetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD", string(cipher), "system"); err != nil {
+	if _, err := h.store.SetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD", string(cipher), "system", "human"); err != nil {
 		t.Fatalf("rotate materialized row: %v", err)
 	}
 	row, err := h.store.GetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD")
@@ -518,7 +518,7 @@ func TestRollbackReplaysCurrentSystemEnv(t *testing.T) {
 		t.Fatalf("rotate credential: %v", err)
 	}
 	app, _ := h.store.GetAppByName(ctx, "demo")
-	if _, err := h.store.SetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD", string(cipher), "system"); err != nil {
+	if _, err := h.store.SetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD", string(cipher), "system", "human"); err != nil {
 		t.Fatalf("rotate materialized row: %v", err)
 	}
 
@@ -593,7 +593,7 @@ func TestRestoreSnapshotSubstitutesCurrentSystemEnv(t *testing.T) {
 		t.Fatalf("rotate credential: %v", err)
 	}
 	app, _ := h.store.GetAppByName(ctx, "demo")
-	if _, err := h.store.SetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD", string(cipher), "system"); err != nil {
+	if _, err := h.store.SetAppEnv(ctx, app.ID, "FLEETLY_DB_PG1_PASSWORD", string(cipher), "system", "human"); err != nil {
 		t.Fatalf("rotate materialized row: %v", err)
 	}
 

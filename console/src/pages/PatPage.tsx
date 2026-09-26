@@ -14,6 +14,7 @@ import {
   createToken,
   listProjects,
   listTokens,
+  me,
   revokeToken,
 } from "@/api/endpoints";
 import { errorEnvelopeFrom, type ErrorEnvelope } from "@/api/errors";
@@ -63,6 +64,18 @@ export function PatPage() {
     queryKey: ["tokens"],
     queryFn: listTokens,
   });
+  // 属主收敛（W2-1，2026-09-26 走查）：ListTokens 对平台管理员返回全平台
+  // 令牌（票面裁决——机具令牌须平台管理员可见），本页是「自己的 PAT」自服
+  // 务面，按 Me 收敛渲染——他人 PAT / 机具令牌不进本页（平台管理员的平台
+  // 级台账在 Admin → Platform tokens）。Me 未就绪前不渲染任何行（宁可空
+  // 也不短暂裸显他人令牌）。
+  const meQuery = useQuery({
+    queryKey: ["auth", "me"],
+    queryFn: () => me(),
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  });
+  const myUserId = meQuery.data?.user?.id ?? "";
   const projectsQuery = useQuery({
     queryKey: ["projects", "pat-page"],
     queryFn: () => listProjects(),
@@ -125,7 +138,8 @@ export function PatPage() {
     setCopied(true);
   }
 
-  const rows = tokensQuery.data?.tokens ?? [];
+  const allTokens = tokensQuery.data?.tokens ?? [];
+  const rows = myUserId ? allTokens.filter((t) => t.user_id === myUserId) : [];
   const projects = projectsQuery.data?.projects ?? [];
 
   return (
@@ -141,9 +155,9 @@ export function PatPage() {
             and API clients as <span className="font-medium">you</span>. Effective
             access is the intersection of the token scopes and your team/project
             roles. The plaintext is shown once — the server keeps only a hash.
-          </CardDescription>
-        </CardHeader>
+          </CardDescription>        </CardHeader>
         {tokensQuery.isError ? null : (
+          <>
           <Table>
             <TableHeader>
               <TableRow>
@@ -201,6 +215,12 @@ export function PatPage() {
               )}
             </TableBody>
           </Table>
+          <p className="border-t px-4 py-2 text-xs text-muted-foreground" data-testid="pat-scope-note">
+            This page lists your own tokens only. Platform administrators manage
+            machine tokens (and all users&apos; tokens) under Administration →
+            Platform tokens.
+          </p>
+          </>
         )}
       </Card>
 

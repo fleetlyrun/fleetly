@@ -245,7 +245,7 @@ func TestCollectorPollAndRedact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	if _, err := st.SetAppEnv(ctx, appRow.ID, "API_KEY", string(ciphertext), "platform"); err != nil {
+	if _, err := st.SetAppEnv(ctx, appRow.ID, "API_KEY", string(ciphertext), "platform", "human"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
 	port.setApp(appRow.QualifiedName(), "web")
@@ -389,7 +389,7 @@ func TestHistoryBuildSourceRedacted(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt env: %v", err)
 	}
-	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(envCipher), "platform"); err != nil {
+	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(envCipher), "platform", "human"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
 	hookCipher, err := box.Encrypt([]byte(hookSecret))
@@ -540,7 +540,7 @@ func TestRedactorInvalidateRebuildsOnEnvChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt: %v", err)
 	}
-	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(ct), "platform"); err != nil {
+	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(ct), "platform", "human"); err != nil {
 		t.Fatalf("SetAppEnv: %v", err)
 	}
 	red := mg.red.forApp(ctx, app.ID) // 建缓存
@@ -552,7 +552,7 @@ func TestRedactorInvalidateRebuildsOnEnvChange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Encrypt 2: %v", err)
 	}
-	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(ct2), "platform"); err != nil {
+	if _, err := st.SetAppEnv(ctx, app.ID, "API_KEY", string(ct2), "platform", "human"); err != nil {
 		t.Fatalf("SetAppEnv 2: %v", err)
 	}
 	// 未失效：缓存命中，仍持旧值集——新值泄漏（H9 缺陷形态的前提钉死）。

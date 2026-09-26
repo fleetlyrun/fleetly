@@ -1136,7 +1136,7 @@ func TestEnvPendingPromotedOnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
-	if _, err := h.store.SetAppEnv(ctx, app.ID, "DEMO_TOKEN", string(ct), "platform"); err != nil {
+	if _, err := h.store.SetAppEnv(ctx, app.ID, "DEMO_TOKEN", string(ct), "platform", "human"); err != nil {
 		t.Fatalf("set env: %v", err)
 	}
 	path := h.writeCompose(composeV1)
@@ -1181,7 +1181,7 @@ func TestEnvChangedHookFiresOnPromote(t *testing.T) {
 	if err != nil {
 		t.Fatalf("encrypt: %v", err)
 	}
-	if _, err := h.store.SetAppEnv(ctx, app.ID, "DEMO_TOKEN", string(ct), "platform"); err != nil {
+	if _, err := h.store.SetAppEnv(ctx, app.ID, "DEMO_TOKEN", string(ct), "platform", "human"); err != nil {
 		t.Fatalf("set env: %v", err)
 	}
 	path := h.writeCompose(composeV1)

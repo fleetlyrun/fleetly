@@ -68,7 +68,7 @@ func (h *harness) seedReference(t *testing.T, inst state.DatabaseInstance, appNa
 		if err != nil {
 			t.Fatalf("encrypt materialized row: %v", err)
 		}
-		if _, err := h.st.SetAppEnv(ctx, app.ID, r.key, string(cipher), "system"); err != nil {
+		if _, err := h.st.SetAppEnv(ctx, app.ID, r.key, string(cipher), "system", "human"); err != nil {
 			t.Fatalf("seed materialized row: %v", err)
 		}
 	}

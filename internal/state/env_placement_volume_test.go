@@ -27,7 +27,7 @@ func TestSetAppEnvPendingLifecycle(t *testing.T) {
 	ctx := context.Background()
 	appID := createTestApp(t, st, "my-api")
 
-	v, err := st.SetAppEnv(ctx, appID, "DATABASE_URL", "cipher-aabbcc", "platform")
+	v, err := st.SetAppEnv(ctx, appID, "DATABASE_URL", "cipher-aabbcc", "platform", "human")
 	if err != nil {
 		t.Fatalf("set env: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestSetAppEnvPendingLifecycle(t *testing.T) {
 	}
 
 	// 覆盖既有 effective 行 → 回到 pending（新值随下次部署生效）。
-	if _, err := st.SetAppEnv(ctx, appID, "DATABASE_URL", "cipher-dddddd", ""); err != nil {
+	if _, err := st.SetAppEnv(ctx, appID, "DATABASE_URL", "cipher-dddddd", "", "system"); err != nil {
 		t.Fatalf("overwrite env: %v", err)
 	}
 	got, err := st.GetAppEnv(ctx, appID, "DATABASE_URL")
@@ -84,10 +84,10 @@ func TestEnvVarsSourceSystem(t *testing.T) {
 	ctx := context.Background()
 	appID := createTestApp(t, st, "sys-app")
 
-	if _, err := st.SetAppEnv(ctx, appID, "CONN", "cipher-x", "system"); err != nil {
+	if _, err := st.SetAppEnv(ctx, appID, "CONN", "cipher-x", "system", "human"); err != nil {
 		t.Fatalf("system source: %v", err)
 	}
-	if _, err := st.SetAppEnv(ctx, appID, "CONN2", "cipher-x", "bogus"); err == nil {
+	if _, err := st.SetAppEnv(ctx, appID, "CONN2", "cipher-x", "bogus", "human"); err == nil {
 		t.Fatal("bogus source accepted")
 	}
 }
@@ -114,7 +114,7 @@ func TestEnvAuditNoValue(t *testing.T) {
 	appID := createTestApp(t, st, "audit-app")
 
 	const cipher = "age-encryted-DO-NOT-LEAK-payload"
-	if _, err := st.SetAppEnv(ctx, appID, "SECRET_KEY", cipher, "platform"); err != nil {
+	if _, err := st.SetAppEnv(ctx, appID, "SECRET_KEY", cipher, "platform", "human"); err != nil {
 		t.Fatalf("set: %v", err)
 	}
 	if err := st.DeleteAppEnv(ctx, appID, "SECRET_KEY"); err != nil {

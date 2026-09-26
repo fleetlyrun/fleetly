@@ -8,6 +8,7 @@ package execrelay
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -264,6 +265,36 @@ func TestSessionLimitDefaults(t *testing.T) {
 	if DefaultIdleTimeout != 10*time.Minute || DefaultHardTimeout != 30*time.Minute {
 		t.Fatalf("default constants drifted: %v/%v", DefaultIdleTimeout, DefaultHardTimeout)
 	}
+}
+
+// TestShortErrKeepsTail（W2-5，2026-09-26 走查）：close 原因的截断保留错误
+// 尾部——docker 错误的诊断价值在尾部（"stat /bin/bash: no such file or
+// directory"），头部是样板前缀；截断以省略号如实标注，且不得把换行带进
+// 单行的 close 原因。
+func TestShortErrKeepsTail(t *testing.T) {
+	head := "Error response from daemon: OCI runtime exec failed: "
+	tail := `exec: "/bin/bash": stat /bin/bash: no such file or directory: unknown`
+	long := errors.New(strings.Repeat("pad/", 40) + head + tail)
+	got := shortErr(long)
+	if len(got) > 201 {
+		t.Fatalf("shortErr length %d exceeds budget: %q", len(got), got)
+	}
+	if !strings.HasPrefix(got, "…") {
+		t.Fatalf("truncated reason must be marked with a leading ellipsis, got %q", got)
+	}
+	if !endsWith(got, tail) {
+		t.Fatalf("diagnostic tail lost: %q", got)
+	}
+	if multi := shortErr(errors.New("line one\nline two")); multi != "line one line two" {
+		t.Fatalf("newline not collapsed: %q", multi)
+	}
+	if short := shortErr(errors.New("short")); short != "short" {
+		t.Fatalf("short error altered: %q", short)
+	}
+}
+
+func endsWith(s, suffix string) bool {
+	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
 }
 
 // TestRelayMissingContainer 容器不存在 → 404 关闭。
