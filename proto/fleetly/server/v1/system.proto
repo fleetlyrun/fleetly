@@ -141,6 +141,24 @@ service SystemService {
       body: "*"
     };
   }
+  // GetRegistrySettings 平台 registry 凭证设置只读面（IMPL-T1-2/DT-2；
+  // admin scope——registry host/用户名/密码指纹属平台敏感配置，与 S3/ACME
+  // 设置同门）。密码只回 fingerprint（sha256 前 8），绝不回明文；未配置
+  // 时 host 为空。
+  rpc GetRegistrySettings(GetRegistrySettingsRequest) returns (GetRegistrySettingsResponse) {
+    option (google.api.http) = { get: "/v1/system/registry" };
+  }
+  // UpdateRegistrySettings 保存平台 registry 凭证设置（host + 用户名 +
+  // 密码）。语义：host 空 = 清除全部设置；password 留空 = 保留已存密码
+  //（ACME api_token 同款先例——改主机/用户名不强制重录）。保存落审计
+  // registry.updated + 事件 registry.updated（payload 带 host 与指纹，
+  // 凭据材料零出现）。解析失败时部署路径回落本机 inspect（airgap 不回归）。
+  rpc UpdateRegistrySettings(UpdateRegistrySettingsRequest) returns (UpdateRegistrySettingsResponse) {
+    option (google.api.http) = {
+      put: "/v1/system/registry"
+      body: "*"
+    };
+  }
 }
 
 message PingRequest {}
@@ -575,4 +593,41 @@ message DnsProviderTestResult {
 
 message TestDnsProviderResponse {
   DnsProviderTestResult result = 1;
+}
+
+// ── 平台 registry 凭证面（IMPL-T1-2/DT-2，部署时镜像代拉的凭证下发）──
+
+message GetRegistrySettingsRequest {}
+
+// RegistrySettingsView 是 registry.* 设置的只读投影。密码只回 fingerprint
+//（明文 sha256 前 8 hex；空 = 未设置）——读面永无明文（写面
+// UpdateRegistrySettings 承载明文，TLS 传输面 + envelope 持久层）。
+message RegistrySettingsView {
+  // 外部 registry host（归一形态：小写、无 scheme；docker.io 家族归一为
+  // registry-1.docker.io）。空 = 未配置（解析腿恒匿名）。
+  string host = 1;
+  string username = 2;
+  // 密码指纹（sha256 前 8 hex），非密码本体；空 = 未设置密码。
+  string password_fingerprint = 3;
+  // 最近一次保存时刻（从未保存 → 不输出）。
+  google.protobuf.Timestamp updated_at = 4;
+}
+
+message GetRegistrySettingsResponse {
+  RegistrySettingsView settings = 1;
+}
+
+message UpdateRegistrySettingsRequest {
+  // 外部 registry host（ghcr.io 形态；scheme 会被归一剥离）。空 = 清除
+  // 全部设置（host/用户名/密码与指纹）。
+  string host = 1;
+  string username = 2;
+  // 密码明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存密码**
+  //（ACME api_token 同款先例）；清除走 host 留空。
+  string password = 3;
+}
+
+message UpdateRegistrySettingsResponse {
+  // 保存后的设置投影（与 GetRegistrySettings 同一脱敏读面）。
+  RegistrySettingsView settings = 1;
 }

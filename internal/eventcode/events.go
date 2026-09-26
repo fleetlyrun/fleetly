@@ -28,7 +28,8 @@ package eventcode
 // 计 52 + 18 = 70 + W1 增 3 = 73 + W2-S1 增 4 = 77 + W3-S2 增 1（FZ-12
 // git.hostkey_changed）= 78 + W5-S1 增 3（scaling.adjusted / scaling.dormant
 // / scaling.no_data，B 线 W5 D-V3W5-2）= 81 + IMPL-T1-1 增 1
-//（route.label_ignored，OT-2 单一写点仲裁）= 82 个事件名。
+// （route.label_ignored，OT-2 单一写点仲裁）= 82 + IMPL-T1-2 增 1
+// （registry.updated，DT-2 平台 registry 凭证面）= 83 个事件名。
 var builtins = []Event{
 	// ── 发布（release-semantics §2.7）──
 	{Name: "deployment.queued", Summary: "deploy queued (per-app mutually exclusive queueing)"},
@@ -138,6 +139,11 @@ var builtins = []Event{
 	// s3settings.go，与业务写同事务 = Outbox 模式）。payload 只带模式与
 	// 布尔开关，绝不带凭证材料（state-model §2.9 secret 值禁止进事件）。
 	{Name: "s3.updated", Summary: "object storage settings changed (payload carries the mode and toggles, never credentials)"},
+	// IMPL-T1-2 实现期新增（DT-2 平台 registry 凭证面，注册表只增）：
+	// 发出来源 = platform_settings 的 registry.* 设置保存事务
+	//（internal/state/registrysettings.go，与业务写同事务 = Outbox 模式）。
+	// payload 只带 host 与密码指纹（sha256 前 8），绝不带密码明文/密文。
+	{Name: "registry.updated", Summary: "platform registry credentials changed (payload carries the host and the password fingerprint, never credentials)"},
 	// E3-5 rustfs duty 差分事件（node.* 同型；发出来源 = internal/rustfs
 	// 的收敛拍——服务缺失创建/spec 漂移更新发 deployed（payload 带 reason
 	// created|updated），mode 离开 rustfs 服务移除发 removed（payload 带

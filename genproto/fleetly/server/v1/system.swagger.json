@@ -295,6 +295,60 @@
         ]
       }
     },
+    "/v1/system/registry": {
+      "get": {
+        "summary": "GetRegistrySettings 平台 registry 凭证设置只读面（IMPL-T1-2/DT-2；\nadmin scope——registry host/用户名/密码指纹属平台敏感配置，与 S3/ACME\n设置同门）。密码只回 fingerprint（sha256 前 8），绝不回明文；未配置\n时 host 为空。",
+        "operationId": "SystemService_GetRegistrySettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetRegistrySettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      },
+      "put": {
+        "summary": "UpdateRegistrySettings 保存平台 registry 凭证设置（host + 用户名 +\n密码）。语义：host 空 = 清除全部设置；password 留空 = 保留已存密码\n（ACME api_token 同款先例——改主机/用户名不强制重录）。保存落审计\nregistry.updated + 事件 registry.updated（payload 带 host 与指纹，\n凭据材料零出现）。解析失败时部署路径回落本机 inspect（airgap 不回归）。",
+        "operationId": "SystemService_UpdateRegistrySettings",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UpdateRegistrySettingsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1UpdateRegistrySettingsRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
     "/v1/system/s3": {
       "get": {
         "summary": "GetS3Settings 对象存储设置只读面（E3 对象存储 §5.1/E3-2；admin scope\n——端点/桶/凭证指纹属平台敏感配置）。secret 只回 fingerprint（sha256\n前 8），绝不回明文；s3.mode=unset 时其余字段为空。",
@@ -727,6 +781,14 @@
         }
       }
     },
+    "v1GetRegistrySettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1RegistrySettingsView"
+        }
+      }
+    },
     "v1GetS3SettingsResponse": {
       "type": "object",
       "properties": {
@@ -901,6 +963,28 @@
           "title": "服务版本（构建 -ldflags 注入，未注入时为 \"dev\"）。"
         }
       }
+    },
+    "v1RegistrySettingsView": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "title": "外部 registry host（归一形态：小写、无 scheme；docker.io 家族归一为\nregistry-1.docker.io）。空 = 未配置（解析腿恒匿名）。"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password_fingerprint": {
+          "type": "string",
+          "title": "密码指纹（sha256 前 8 hex），非密码本体；空 = 未设置密码。"
+        },
+        "updated_at": {
+          "type": "string",
+          "format": "date-time",
+          "title": "最近一次保存时刻（从未保存 → 不输出）。"
+        }
+      },
+      "title": "RegistrySettingsView 是 registry.* 设置的只读投影。密码只回 fingerprint\n（明文 sha256 前 8 hex；空 = 未设置）——读面永无明文（写面\nUpdateRegistrySettings 承载明文，TLS 传输面 + envelope 持久层）。"
     },
     "v1RotateJoinTokenRequest": {
       "type": "object",
@@ -1131,6 +1215,31 @@
         "settings": {
           "$ref": "#/definitions/v1AcmeSettingsView",
           "title": "保存后的设置投影（与 GetAcmeSettings 同一脱敏读面）。"
+        }
+      }
+    },
+    "v1UpdateRegistrySettingsRequest": {
+      "type": "object",
+      "properties": {
+        "host": {
+          "type": "string",
+          "title": "外部 registry host（ghcr.io 形态；scheme 会被归一剥离）。空 = 清除\n全部设置（host/用户名/密码与指纹）。"
+        },
+        "username": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string",
+          "title": "密码明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存密码**\n（ACME api_token 同款先例）；清除走 host 留空。"
+        }
+      }
+    },
+    "v1UpdateRegistrySettingsResponse": {
+      "type": "object",
+      "properties": {
+        "settings": {
+          "$ref": "#/definitions/v1RegistrySettingsView",
+          "title": "保存后的设置投影（与 GetRegistrySettings 同一脱敏读面）。"
         }
       }
     },

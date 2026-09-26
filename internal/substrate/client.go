@@ -17,6 +17,7 @@ import (
 	mobyclient "github.com/moby/moby/client"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/imageregistry"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -32,6 +33,21 @@ type Client struct {
 	// 平台 registry 时消费凭据（--with-registry-auth 语义，不向全集群广播）。
 	registryHost  string
 	registryCreds func() (build.RegistryCredentials, error)
+
+	// externalRegistryCredentials 是平台设置面的外部 registry 凭证惰性
+	// 读取（IMPL-T1-2/DT-2；runtime 注入：state registry.* 设置现读 + Box
+	// 解密；nil = 未装配——解析恒匿名）。每次现读（保存即对下一次部署生效）；
+	// 读取失败显式（作为解析腿失败原因回落本机 inspect）。
+	externalRegistryCredentials func() (ExternalRegistrySettings, error)
+	// resolveTagDigest 是外部 tag→digest 解析的注入缝（nil = 生产实现
+	// imageregistry.Client.Resolve；单测注入假 registry）。
+	resolveTagDigest func(ctx context.Context, ref imageregistry.Reference, creds *imageregistry.Credentials) (string, error)
+	// inspectDigest 是本机 inspect 的注入缝（nil = 生产实现；单测伪造
+	// airgap 命中/缺失/本机构建三态）。
+	inspectDigest func(ctx context.Context, ref string) (string, error)
+	// imageRegistryTrace 是 registry 腿失败回落本机 inspect 的留痕注入缝
+	//（nil = 静默——测试形态；runtime 注入 slog）。
+	imageRegistryTrace func(msg string, args ...any)
 }
 
 // defaultCallTimeout 是非流式 Docker API 调用的统一 per-call 预算（D2，

@@ -45,6 +45,12 @@ var methodScopes = map[string]string{
 	"/fleetly.server.v1.SystemService/GetAcmeSettings":    ScopeAdmin,
 	"/fleetly.server.v1.SystemService/UpdateAcmeSettings": ScopeAdmin,
 	"/fleetly.server.v1.SystemService/TestDnsProvider":    ScopeAdmin,
+	// 平台 registry 凭证设置面（IMPL-T1-2/DT-2）：整体 admin——host/用户名/
+	// 密码指纹属平台敏感配置，密码明文只写（Update）是平台信任面，与 S3/
+	// ACME 设置面同级，不随 deploy/read 下放。用户 principal 另须
+	// is_platform_admin（requirePlatformWriteFace 挂两 handler）。
+	"/fleetly.server.v1.SystemService/GetRegistrySettings":    ScopeAdmin,
+	"/fleetly.server.v1.SystemService/UpdateRegistrySettings": ScopeAdmin,
 	// AppsService
 	"/fleetly.server.v1.AppsService/ListApps":  ScopeRead,
 	"/fleetly.server.v1.AppsService/GetApp":    ScopeRead,

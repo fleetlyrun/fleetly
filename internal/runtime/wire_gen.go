@@ -29,7 +29,12 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	if err != nil {
 		return nil, nil, err
 	}
-	client, cleanup2, err := NewSubstrateClient(appConfig)
+	box, err := NewSecretsBox(app, appConfig)
+	if err != nil {
+		cleanup()
+		return nil, nil, err
+	}
+	client, cleanup2, err := NewSubstrateClient(app, appConfig, store, box)
 	if err != nil {
 		cleanup()
 		return nil, nil, err
@@ -43,13 +48,6 @@ func wireBootstrap(app lynx.App, slogger *slog.Logger, version Version) (*boot.B
 	nodeIdentity := NewNodeIdentity(app, store, dockerClient)
 	observer := NewObserver(app, appConfig, store, dockerClient, client)
 	janitor := NewJanitor(app, store, appConfig)
-	box, err := NewSecretsBox(app, appConfig)
-	if err != nil {
-		cleanup3()
-		cleanup2()
-		cleanup()
-		return nil, nil, err
-	}
 	manager, err := NewBackupManager(app, appConfig, store, box, client, version)
 	if err != nil {
 		cleanup3()

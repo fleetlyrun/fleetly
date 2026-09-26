@@ -29,6 +29,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/build"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/imageregistry"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -50,20 +51,21 @@ var (
 )
 
 // ImageDigest 实现 engine.ImageChecker：返回用于 digest 钉定的不可变摘要。
-//   - 平台 registry 引用（`registry.<base>/apps/<app>@sha256:<hex>`，装配了
+// 次序（IMPL-T1-2/DT-2 设计冻结）：
+//  1. 平台 registry 引用（`registry.<base>/apps/<app>@sha256:<hex>`，装配了
 //     平台 registry 适配时）：部署前哨双模式的 registry 腿（D-MN-11）——
 //     manifest HEAD 现场核验（build.PreflightRegistry 归一信封：registry
 //     不可达 → E_REGISTRY_UNAVAILABLE 503；manifest 缺失 → ErrImageNotFound
 //     家族，回滚前哨经 build.PreflightImage 归一 E_IMAGE_UNAVAILABLE）；
-//     命中返回 manifest digest，引擎对已含 @ 的引用原样钉定（spec 得到
-//     `registry.<base>/apps/<app>@sha256:<digest>`，worker 经
-//     --with-registry-auth 拉取）。
-//   - 其余引用（v0.1 本地面）：本机 inspect，优先取 RepoDigests 的清单
-//     摘要（swarm 分发解析只接受 manifest digest——实测钉配置 ID 会得到
-//     "manifest schema unsupported" 任务拒绝）；本机构建镜像（buildkit tar
-//     装载、免 registry）无清单摘要，返回空串由引擎按引用直用（tag 形态；
-//     镜像不被平台自动清理，builds 行留有 digest 台账）。缺失归一为
-//     engine.ErrImageMissing。
+//     命中返回 manifest digest（既有语义不变）。
+//  2. digest 钉定引用（含 `@sha256:` 与 tag@digest 叠加形态）：直通返回其
+//     digest（免网络、免本机 inspect——swarm 逐节点按 digest 拉取）。
+//  3. tag 引用：registry-first 解析（宿主命中平台设置 host 且凭证在位 →
+//     携凭证；否则匿名）——公共/私有镜像免预拉；解析失败回落本机 inspect
+//     （RepoDigests 清单摘要；airgap 不回归，回落留痕经装配缝）。
+//  4. 本机 inspect 亦失败 → engine.ErrImageMissing 包装三因（image +
+//     registry 原因 + 本机状态）；本机构建镜像（fleetly-local/…，无清单
+//     摘要）解析腿跳过、inspect 返回空串由引擎按 tag 直用（旧语义）。
 func (c *Client) ImageDigest(ctx context.Context, ref string) (string, error) {
 	if c.platformRegistryEnabled() && build.IsRegistryImageRef(ref, c.registryHost) {
 		res, err := build.PreflightRegistry(ctx, c, ref)
@@ -72,21 +74,38 @@ func (c *Client) ImageDigest(ctx context.Context, ref string) (string, error) {
 		}
 		return res.Digest, nil
 	}
-	ctx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
-	defer cancel()
-	res, err := c.cli.ImageInspect(ctx, ref)
-	if err != nil {
-		if errdefs.IsNotFound(err) {
-			return "", fmt.Errorf("%w: %s", engine.ErrImageMissing, ref)
-		}
-		return "", fmt.Errorf("substrate: image inspect %s: %w", ref, err)
+
+	parsed, parseErr := imageregistry.Parse(ref)
+	if parseErr == nil && parsed.Digest != "" {
+		return parsed.Digest, nil
 	}
-	for _, rd := range res.RepoDigests {
-		if _, digest, ok := strings.Cut(rd, "@"); ok && strings.HasPrefix(digest, "sha256:") {
+	var registryErr error
+	switch {
+	case parseErr != nil:
+		registryErr = fmt.Errorf("reference not resolvable via registry API: %w", parseErr)
+	case strings.HasPrefix(ref, build.ImageRepoPrefix+"/"):
+		// 平台本机构建产物（fleetly-local/…）：无 registry 身份——跳过
+		// 解析腿，本机 inspect 语义零网络零行为变化（v0.1 本地面）。
+		registryErr = nil
+	default:
+		digest, err := c.resolveTagDigestForImage(ctx, parsed)
+		if err != nil {
+			registryErr = err
+		} else {
 			return digest, nil
 		}
 	}
-	return "", nil
+
+	localDigest, localErr := c.inspectLocalImageDigest(ctx, ref)
+	if localErr == nil {
+		c.traceImageDigestFallback(ref, registryErr)
+		return localDigest, nil
+	}
+	if registryErr == nil {
+		return "", localErr
+	}
+	return "", fmt.Errorf("%w: %s (registry resolution failed: %w; local image lookup failed: %w)",
+		engine.ErrImageMissing, ref, registryErr, localErr)
 }
 
 // SwarmReady 确认本机为 active swarm manager：未 init / 非 manager 返回

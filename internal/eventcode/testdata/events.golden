@@ -71,6 +71,7 @@ project.created	a project was created (payload carries team_id/slug; W1 source =
 project.deleted	an empty project was deleted (non-empty guard passed; payload carries team_id/slug)
 project.member_changed	a project role override was set or removed (payload carries change/user_id and role on override_set; no row means the team role applies again)
 reconcile.drift_detected	drift detected between desired and actual state (including manual docker operations); convergence is per-app opt-in
+registry.updated	platform registry credentials changed (payload carries the host and the password fingerprint, never credentials)
 restore.completed	control plane restore completed (after exiting read-only observation)
 route.label_ignored	compose fleetly.domains label declarations were ignored because state domain rows exist (labels are bootstrap-only; payload carries the declared/state counts)
 route.publish_failed	app ingress route publish failed (deploy unaffected; alerts separately)

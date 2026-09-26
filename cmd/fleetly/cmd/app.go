@@ -53,6 +53,7 @@ func NewApp(version string) *commands.App {
 		newIngressCmd(),
 		newAcmeCmd(),
 		newS3Cmd(),
+		newRegistryCmd(),
 		newGitCmd(),
 		newBackupsCmd(),
 		newCronCmd(),

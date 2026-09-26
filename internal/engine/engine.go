@@ -723,8 +723,12 @@ func (e *Engine) resolveImage(ctx context.Context, rec state.DeployRecord, svc *
 		digest, err := e.images.ImageDigest(ctx, ref)
 		if err != nil {
 			if errors.Is(err, ErrImageMissing) {
+				// IMPL-T1-2/DT-2：文案点名 image + 底层原因（substrate 包装
+				// registry 解析与本机 inspect 双因）；修复指引含平台 registry
+				// 凭证设置面。
 				return "", errorf("E_IMAGE_PULL_FAILED",
-					"image %s of service %s not available locally (v0.1 is single-node and deploys local images; pull or build it first)", svc.Name, ref)
+					"image %s of service %s is not available: %v (pull or build it locally, or configure registry credentials via 'fleetly registry set')",
+					ref, svc.Name, err)
 			}
 			if registryPreflightErr(err) {
 				return "", err // registry 前哨信封透传（码面保真，multi-node §5.2）

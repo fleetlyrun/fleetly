@@ -230,3 +230,103 @@ IMPL-T1-6(SDK TLS,独立)   IMPL-T3-*(P2,后置)
 待真机项（本环境无 staging 访问权，未虚构结果）：
 - ⑤ ACME HTTP-01 staging 真机复验（建议：加域名 `fleetly domains add` → 观察 80/443 签发与 Verify）；
 - Traefik 对 `~` 后缀路由键的实机接受性复核（HTTP provider 为 JSON map 键，paerser 无字符集限制；staging 部署时一并确认）。
+
+### IMPL-T1-2 方案可行性审查（2026-09-26，实现会话）
+
+**结论：通过（无阻塞前置矛盾），进入实现。**
+
+现状锚点核实（票内 file:line 逐条）：
+- `internal/engine/engine.go:720-735`（E_IMAGE_PULL_FAILED 映射）、`:771-777`（`pinDigest`）✓ 现行 720-734 / 771-777。
+- `internal/substrate/services.go:52-90`（本机 inspect、RepoDigests 取清单摘要；**平台 registry 腿**：zot 引用走 manifest HEAD）✓。
+- `internal/substrate/images.go:58-79`（`EnsureImagePresent` 仅 buildkitd 容器路径调用，部署路径不拉取）✓。
+- 附加现状（票面未列但关键）：`internal/substrate/registry.go` 已有 X-Registry-Auth 编码与 `registryAuthForImage`（仅平台 zot 引用命中），`ServiceCreate/ServiceUpdate` 已携 `EncodedRegistryAuth`（E1-5 多节点先例）。
+
+**必查项取证（重点：swarm service create/update 的 EncodedRegistryAuth 下发与留存语义）**：
+- 源码（moby master `daemon/cluster/services.go`，与本地 Docker 29.7.2 同线）：
+  - Create：`if encodedAuth != "" { ctnr.PullOptions = &swarmapi.ContainerSpec_PullOptions{RegistryAuth: encodedAuth} }`——凭据写入 **service spec 的 `ContainerSpec.PullOptions.RegistryAuth`**（swarmkit `api/specs.proto` field 64），随 spec 持久化于 swarm raft，agent 拉取时消费。
+  - Update：携带 auth → 覆盖 PullOptions；**不携带（空）→ 从 current spec（缺省，`RegistryAuthFrom=spec`）或 previous-spec 复制既有 PullOptions，不丢**（源码注释原文："this is needed because if the encodedAuth isn't being updated then we shouldn't lose it, and continue to use the one that was already present"）。moby client v0.6 `ServiceUpdateOptions` 提供 `RegistryAuthFrom`，与 29.x 服务端语义配套。
+  - 推论（实现纪律）：a) 我们的 update 路径即使不重携也不会丢；本票实现仍按「凭证命中的镜像每次 create/update 恒携」下发（与 CLI `--with-registry-auth` 等价）；b) **空 auth 无法清场**——私有切公共镜像时旧凭据 blob 留在 spec（无 API 清场路径），运维文档诚实记录；c) 历史 issue moby#33929（17.06 "flag is lost"）是 CLI 侧 digest 解析丢失，现行为已由 PullOptions 持久化 + RegistryAuthFrom 收敛。
+- 最小实证（本地 Docker 29.7.2，swarm active）：① create 携 auth → `docker service inspect` 的 **Docker API 类型不含 PullOptions（转换即丢）**——凭据不经 inspect API 泄露（披露面收敛）；② 宿主 swarm 数据目录为 `snap-v3-encrypted` / `wal-v3-encrypted`（raft 静态加密），明文 grep 不可得——密文态存储确认。逐节点拉取带 auth 的真机腿归 T2-0② spike（本票不重复）。
+
+其余前提取证：
+- moby client v0.6 `ServiceCreate/Update` 的 `QueryRegistry` 缺省 false：客户端**不**自行做 digest 解析——tag→digest 解析必须是平台自己的 resolver（本票）。
+- 设置先例：`platform_settings` KV（无迁移）+ `internal/secrets.Box` envelope 密文（restic/rustfs 密码先例）；API 面 admin scope + `requirePlatformWriteFace`（S3/ACME 同款）；CLI `fleetly s3 ...` 同族。
+- 代拉语义冻结（DT-2 两句话的落地次序）：**tag 引用 registry-first**（保证「Redeploy 重解析可变 tag = pull_policy: always 等价物」）；registry 不可达/404/401 时**回落本机 inspect**（airgap 不回归，失败原因入日志）；本机与 registry 皆不可得 → `E_IMAGE_PULL_FAILED` 点名 image+原因；digest 钉定引用直通（免解析，swarm 逐节点按 digest 拉取）。
+
+设计冻结（实现者按此执行）：
+1. 新包 `internal/imageregistry`：ref 解析（registry host 归一：显式 host / docker.io→registry-1.docker.io+library/；tag 与 digest 形态）+ registry v2 客户端（Bearer token flow 通用处理 `WWW-Authenticate`，匿名与凭证两种；404 → `ErrManifestNotFound`；429/5xx 退避重试；凭证只进 Authorization，绝不进日志/错误文本）。
+2. `platform_settings` 增 `registry.host/username/password_cipher/password_fingerprint`（`state/registrysettings.go`；无迁移；password 只写只回指纹；空 = 保留现值，沿 ACME api_token 先例）+ API `GetRegistrySettings/UpdateRegistrySettings`（SystemService，admin + 平台管理员门）+ CLI `fleetly registry set/show/clear` + 事件 `registry.updated`（只带 host 与指纹，只增登记）。
+3. substrate 装配：`WithImageRegistryCredentials(fn)`（runtime 注入：读设置 + Box 解密，惰性现读）；`ImageDigest` 新次序 = 平台 zot 前哨（不变）→ digest 引用直通 → tag 引用 registry 解析（命中设置 host 带凭证，否则匿名）→ 失败回落本机 inspect（RepoDigests 摘要；本地构建镜像返回空串沿旧语义）→ 双失败 `ErrImageMissing` 包原因；`registryAuthForImage` 扩展外部 registry 命中（设置 host 匹配即携 auth）。
+4. engine：`resolveImage` 的 E_IMAGE_PULL_FAILED 文案改为点名 image + 底层原因（substrate 包装错误）；plan/spec 仍钉 digest（既有 planner 语义不变）。
+5. 守卫测试：①mock registry resolver（匿名/凭证/404/429 退避）；④airgap 回落（registry 不可达 + 本机命中）；③digest 进 revision spec 回归；②⑤staging 真机项标注待执行（T2-0② 承接逐节点拉取实证）。
+6. 硬约束：仓库内镜像引用仍过 `deploy/check-image-pins.sh`；错误码只增（如确需新码走注册表评审）；不 commit。
+
+### IMPL-T1-2 实施记录（2026-09-26，实现会话）
+
+**状态：实现完成，待用户验收（未 commit）。**
+
+变更文件清单（每文件一句）：
+- `internal/imageregistry/reference.go`（新包）：镜像引用解析（显式 host / docker.io → registry-1.docker.io + library/ 补齐 / tag 与 digest 形态；仓库路径字符集与大小写校验）与 host 归一单一事实源 `NormalizeHost`。
+- `internal/imageregistry/client.go`：registry v2 最小客户端（WWW-Authenticate 挑战应答：Bearer token flow 通用 + Basic 直配；404 → `ErrManifestNotFound`；429/5xx 退避重试；凭证只进 Authorization/Basic Auth，错误文本零材料）。
+- `internal/imageregistry/reference_test.go` / `client_test.go`：解析形态矩阵与 mock registry 全形态回归（匿名/凭证/404/429 退避/凭证零泄露）。
+- `internal/imageregistry/client_manual_test.go`（新，默认不跑）：真实 registry 匿名解析探针（本机出网窗口手跑）。
+- `internal/state/registrysettings.go`：`registry.host/username/password_cipher/password_fingerprint` KV 设置（无迁移；密文与指纹同事务落库，读面免解密；host 空 = 四键齐清；保存 + 审计 `registry.updated` + 事件 `registry.updated` 同事务）。
+- `internal/state/registrysettings_test.go`：往返/归一/清除/密文-指纹同生共死/存储损坏 loud-fail/审计与事件脱敏。
+- `proto/fleetly/server/v1/system.proto` + `genproto/fleetly/server/v1/system.{pb,pb.gw,grpc.pb,swagger.json}`：SystemService 增 `GetRegistrySettings/UpdateRegistrySettings`（GET/PUT `/v1/system/registry`；view 只回指纹）。
+- `internal/api/registry.go`：两 RPC 实现（admin + `requirePlatformWriteFace` 双门；host 预校验 400；password 留空保留已存密文与指纹；清除形态四键齐清）。
+- `internal/api/registry_test.go`：设置面主链（scope 门/加密落库/指纹/留空保留/清除/400/事件脱敏）、平台管理员门、指纹口径锚。
+- `internal/api/scope.go`：两 RPC 登记 `ScopeAdmin`（注释同步平台凭据面口径）。
+- `cmd/fleetly/cmd/registry.go` + `app.go` 注册：`fleetly registry show/set/clear`（密码只回指纹；set 留空保密码；clear = 清除）。
+- `cmd/fleetly/cmd/registry_test.go`：CLI 全链与明文泄露负面扫描。
+- `internal/substrate/client.go`：Client 增外部 registry 凭证读取缝 `WithImageRegistryCredentials`、回落留痕缝 `WithImageRegistryTrace`、解析/本机 inspect 注入缝（未导出字段，单测用）。
+- `internal/substrate/registry.go`：`ExternalRegistrySettings` 类型、registry-first 解析（host 命中设置携凭证/否则匿名）、`registryAuthForImage` 外部 host 命中扩展（X-Registry-Auth 编码）、注入缝装配方法。
+- `internal/substrate/services.go`：`ImageDigest` 新次序（平台 zot 前哨不变 → digest 直通 → tag registry-first → 本机 inspect 回落 → 双失败 `ErrImageMissing` 包装三因）。
+- `internal/substrate/imagedigest_test.go`：registry-first/凭证命中两态/airgap 回落/双失败包装/直通/fleetly-local 跳过/设置读取失败显式/预算边界/平台腿优先级/外部 auth 编码。
+- `internal/substrate/imagedigest_manual_test.go`（新，默认不跑）：本地单节点真机「零预拉 digest 部署」探针。
+- `internal/substrate/client_timeout_test.go`：D2 超时用例的 `ImageDigest` 引用改 `fleetly-local/…`（tag 引用不再经 daemon 的语义变化；本地 inspect 腿预算断言强度不变）。
+- `internal/substrate/registryauth_probe_manual_test.go`（审查会话遗留，本票范围）：EncodedRegistryAuth 披露面实机探针与语义结论注释。
+- `internal/engine/engine.go`：`resolveImage` 的 `E_IMAGE_PULL_FAILED` 文案点名 image + 底层原因 + `fleetly registry set` 指引（顺带修正旧文案 params 反序）；digest 钉定/planner/drift 语义零变化。
+- `internal/engine/resolve_image_registry_test.go`：E_IMAGE_PULL_FAILED 文案回归 + 守卫③（digest 进 ServiceSpec 与 revision overlay）。
+- `internal/eventcode/events.go` / `eventcode_test.go` / `testdata/events.golden`：`registry.updated` 只增登记（docEvents + golden 再生成；两行 doc 注释 gofmt 归一）。
+- `internal/runtime/provides.go` + `wire_gen.go`：`NewSubstrateClient` 装配外部凭证读数缝（state 现读 + Box 解密）与回落留痕（slog）；wire 再生成。
+- `console/src/api/schema.d.ts`：`pnpm gen:api` 从新 swagger 再生成（只增 130 行，无 UI 改动）。
+- `docs/plan/2026-09-26-torchwood-line-impl.md`：本实施记录。
+
+测试清单与票面五条守卫逐条对应表：
+| 守卫/验收条款 | 回归测试（新增，除注明外） |
+|---|---|
+| ① resolver 单测：mock registry 匿名/凭证/404/限流退避 | `TestResolveAnonymousBearerFlow`（匿名 token flow：挑战→token→Bearer 重试）`TestResolveCredentialBearerFlow`（Basic 凭证换 token）`TestResolveBasicChallenge`（无 token 服务自建 registry）`TestResolveNotFoundMapsSentinel`（404 哨兵）`TestResolveRetriesRateLimitAnd5xx`（429/5xx 退避与预算上限）`TestResolveDigestReferencePassesThrough` `TestResolveNeverLeaksCredentials` `TestResolveUnauthorizedWithoutChallengeIsExplicit` `TestParseForms` / `TestParseRejectsInvalidForms` / `TestNormalizeHost` / `TestParseChallengeForms` / `TestClientDefaults`；真实 registry 手跑：`TestManualResolvePublicRegistryImages`（Docker Hub alpine:3.19 与 ghcr sonarr:latest 均命中 digest） |
+| ② staging 真机：ghcr 公共镜像零预拉部署成功 | **待真机**（无 staging 访问权，未虚构）。本地单节点同构实证：`TestManualPublicImageZeroPrePull`（清场本机镜像 → registry-first 解析 → digest 钉定 swarm 服务 → 任务 complete，真拉成功）；多节点 staging 归 T2-0② |
+| ③ digest 进 revision spec | `TestDeployPinsResolvedDigestIntoServiceSpecAndRevisionOverlay`（底座服务实况镜像 = `alpine:3@sha256:…`；revision overlay 含同引用）；既有 `TestResolveImagePassesThroughRegistryPreflightEnvelope` 不回退 |
+| ④ airgap 不回归：registry 不可达 + 本机命中 → 本机 digest | `TestImageDigestFallsBackToLocalInspectAirgap`（回落 + 留痕）`TestImageDigestLocalBuildImageKeepsEmptyDigest`（fleetly-local 零网络、空串旧语义）`TestImageDigestSettingsReadFailureFallsBackExplicitly` `TestImageDigestBothLegsFailWrapsImageMissing` `TestImageDigestRegistryLegBoundedByBudget`；`TestNonStreamingCallDeadlineBound` 的 ImageDigest 用例更新后仍钉住本机 inspect 腿预算 |
+| ⑤ 私有镜像 + 凭证逐节点拉取成功 | **待真机**（T2-0② 承接；本地 Docker 29 单节点无逐节点腿）。凭证面单测：`TestImageDigestUsesSettingsCredentialsOnlyForMatchingHost`（命中/不命中两态 + docker.io 归一）`TestRegistryAuthForImageExternalHostMatching`（X-Registry-Auth 编码 ServerAddress 与零凭据面）；更新语义的 EncodedRegistryAuth 披露面实证见审查节 `registryauth_probe_manual_test.go` |
+| 设置面 CRUD/指纹/权限/事件/CLI（本票新增面） | state：`TestRegistrySettingsRoundtrip` / `TestRegistrySettingsClear` / `TestRegistrySettingsValidation` / `TestRegistrySettingsStoredCorruptionFailsLoudly` / `TestRegistrySettingsAuditAndEventRedacted`；API：`TestRegistrySettingsFace`（含事件只带 host+指纹、密文为 age envelope）/ `TestRegistrySettingsPlatformAdminGate` / `TestRegistrySettingsFingerprintMatchesSHA256`；CLI：`TestRegistrySettingsCLI` |
+| 事件注册表只增纪律 | `TestDocEventSetMatchesRegistry` / `TestGoldenSnapshot`（golden 显式再生成）/ `TestRegistryEventsReferencedInProduction`（新事件有生产发出来源） |
+| 平台 zot 既有腿零回归 | `TestImageDigestRegistryBranchUsesHead` / `TestManifestHeadHitsV2PathWithBasicAuth` / `TestManifestHeadMissingMapsToImageNotFound` / `TestManifestHeadUnreachableStaysRawForEnvelopeMapping` / `TestRegistryAuthForImageGating` 全部不回退 + 新增 `TestImageDigestPlatformRegistryBranchKeepsManifestHeadPrecedence` |
+| D2 超时闭环 | `TestNonStreamingCallDeadlineBound`（ImageDigest 用例改本地命名空间引用）/ `TestImageDigestRegistryLegBoundedByBudget` |
+
+一手验证证据：
+- 全量 `go test ./... -count=1` 全绿（32 包 ok，含新包 `internal/imageregistry`）；变更包 `go test -race` 全绿（imageregistry/state/substrate/engine/api/eventcode/runtime/cmd）；`go test ./sdk/go/...` 绿；`go vet ./...` 净。
+- `golangci-lint run`（变更包）：新文件零问题；存量欠账未扩（gofmt 3 处均为未触文件 acmesettings.go/appgit.go/apps.go；errcheck/gosec/unused 为存量）。新引入的 QF1002 与自己的 gofmt 两处已修复。
+- `sh deploy/check-image-pins.sh`：`OK — 28 image reference(s) digest-pinned, 0 exempt`。
+- proto：`buf lint` 净；`buf generate` 再生成 `system.{pb,pb.gw,grpc.pb,swagger.json}`；console `pnpm gen:api` 再生成 `schema.d.ts`（+130 行）；console `pnpm typecheck` / `pnpm lint` / `pnpm test`（321 全绿）/ `pnpm build` 全净（无 UI 改动）。
+- 本地真机探针（一手）：`FLEETLY_MANUAL_REGISTRY=1 go test -tags manual ./internal/imageregistry -run TestManualResolve -v` → `alpine:3.19 → sha256:6baf43584bcb78f2e5847d1de515f23499913acf12bdf834811a3145eb11ca1`；`ghcr.io/linuxserver/sonarr:latest → sha256:f247545d23ba8b233d6604575347e48a623fe6ad75dda02348bf81917f3b5c06`。`FLEETLY_MANUAL_SWARM=1 go test -tags manual ./internal/substrate -run TestManualPublicImageZeroPrePull -v`（本地 Docker 29.7.2 / swarm active）→ 清场本机镜像后 `ghcr.io/astral-sh/uv:latest → sha256:04d046b13e60d6bcec73cbc5e1cad25d680dea90c8573340950a0ac2d1aef424`，digest 钉定服务任务 `complete`（单节点真拉成功）。
+
+偏离清单（实现中的决策与修正，均按纪律登记）：
+1. **`fleetly-local/` 前缀跳过 registry 解析腿**：平台本机构建产物无 registry 身份，保持 v0.1 本地命名空间零网络语义（免每部署一次无谓远端查询）；其余 tag 引用一律 registry-first。回落/双失败语义不变。
+2. **设置读取/解密失败不静默匿名**：装配缝返回错误时跳过该次 registry 解析（不降级成匿名尝试——配置了凭证却读不出属显式故障），原因进回落留痕；本机 inspect 亦失败时原因进最终 `E_IMAGE_PULL_FAILED` 文案。
+3. **解析腿独立预算**：新增包级可配 `externalRegistryResolveTimeout`（10s，与平台 zot 前哨同口径），黑洞 registry 不挂满部署 tick；测试注入缩短预算钉住边界。
+4. **digest 直通形态**：`@` 形态直通返回 digest（含 tag@digest 叠加与 `sha256:` 校验），非 sha256 算法按结构放行交由 registry 裁决；免网络免本机 inspect。
+5. **设置 host 归一扩展**：`NormalizeHost` 同时服务引用解析与设置面（scheme 剥离、小写、尾斜杠、docker.io 家族 → registry-1.docker.io）；API 面非法 host（残留空白/路径段）以 400 点名拒绝——未新增错误码（避免注册表扩码，宿主校验在 API 层）。
+6. **fingerprint 与密文同事务落库**（冻结设计键面）：读面免解密即回指纹；存储损坏（密文/指纹任一缺失）Load loud-fail。
+7. **D2 超时用例引用调整**：`TestNonStreamingCallDeadlineBound` 的 `ImageDigest` 用例改 `fleetly-local/…`——tag 引用 registry-first 后不再触 daemon，用例意图（本机 inspect 腿预算）改用平台本地命名空间维持断言强度。
+8. **E_IMAGE_PULL_FAILED 文案修正**：旧文案 `image %s of service %s` 实参反序（把服务名印进 image 位），本票改为点名 image + 底层原因 + 凭证设置指引（设计冻结第 4 条要求）。
+9. **`NewSubstrateClient` 签名扩展 + wire 再生成**：装配层新增 state/box/app 依赖（惰性现读 + 解密 + 留痕）；wire_gen 显式再生成。
+10. **事件 golden 与 doc 注释格式**：`registry.updated` 显式再生成 golden（只增登记），顺带把 `events.go` 两行 doc 注释（含 T1-1 遗留一行）gofmt 归一并修复一处存量 QF1002——格式面零功能变化。
+11. **多两份手跑探针**（默认不跑，`-tags manual` + 环境变量门）：真实 registry 匿名解析与本地单节点零预拉部署，把真机腿钉成可复跑证据；不替代 staging/T2-0② 验收。
+12. **留空保留语义对 host 变更同样生效**（ACME api_token 先例逐字落地）：改 host 而未给新密码时沿用已存密文/指纹——换 registry 请重录密码（proto 与 CLI 帮助文案已披露；`fleetly registry clear` 是清空路径）。
+
+staging/真机待执行项（本环境无 staging 访问权，未虚构结果）：
+- ② staging 多节点「ghcr 公共镜像零预拉部署」：T2-0②（本票已留本地单节点同构实证）。
+- ⑤ 私有镜像 + 平台凭证逐节点拉取：T2-0②（本票已留 registryAuthForImage 编码与 EncodedRegistryAuth 更新/披露面证据；跨节点拉取需多节点窗口）。
+- 建议 staging 窗口一并复核：registry 凭证设置保存后对下一次部署即刻生效（每次现读）；`fleetly registry set/clear` 后 `E_IMAGE_PULL_FAILED` 文案包含 registry 原因。

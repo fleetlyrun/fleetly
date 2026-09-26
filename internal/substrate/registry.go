@@ -16,6 +16,12 @@ package substrate
 //     ——适配器在镜像引用命中平台 registry（build.IsRegistryImageRef）时
 //     自动附带，凭据经装配期注入的惰性读取函数现读（zot 部署 duty 可能
 //     晚于装配期生成凭据文件；轮换后新部署即刻生效）。
+//
+//   - 外部 registry 解析与凭证（IMPL-T1-2/DT-2）：tag 引用经
+//     imageregistry.Client 解析为 manifest digest（匿名或平台设置凭证
+//     命中）；外部引用命中平台设置 host 时 service create/update 附带
+//     X-Registry-Auth（私有镜像逐节点拉取的成功条件）。凭证只进
+//     Authorization/编码头，绝不进日志与错误文本。
 
 import (
 	"context"
@@ -27,9 +33,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/registry"
 
 	"github.com/fleetlyrun/fleetly/internal/build"
+	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/imageregistry"
 )
 
 // 编译期断言：Client 隐式实现 build.RegistryClient 端口（manifest HEAD
@@ -122,14 +131,14 @@ func (c *Client) ManifestHead(ctx context.Context, ref string) (string, error) {
 	}
 	defer func() { _ = res.Body.Close() }()
 	_, _ = io.Copy(io.Discard, res.Body) // 连接复用要求排空（HEAD 通常无体）
-	switch {
-	case res.StatusCode == http.StatusOK:
+	switch res.StatusCode {
+	case http.StatusOK:
 		digest := res.Header.Get("Docker-Content-Digest")
 		if digest == "" {
 			return "", fmt.Errorf("substrate: registry head %s: response carried no Docker-Content-Digest", ref)
 		}
 		return digest, nil
-	case res.StatusCode == http.StatusNotFound:
+	case http.StatusNotFound:
 		return "", fmt.Errorf("%w: %s", build.ErrImageNotFound, ref)
 	default:
 		return "", fmt.Errorf("substrate: registry head %s: unexpected status %s", ref, res.Status)
@@ -150,18 +159,146 @@ func encodedRegistryAuth(host string, creds build.RegistryCredentials) (string, 
 	return base64.URLEncoding.EncodeToString(raw), nil
 }
 
-// registryAuthForImage 计算镜像引用应附带的 X-Registry-Auth 头（E1-5）：
-// 平台 registry 引用 → 凭据现读 + 编码；其余镜像（本地 fleetly-local/…、
-// 外部镜像、zot 自身钉版引用）→ 空串（凭据只分发给需要的 service，不向
-// 全集群广播）。凭据读取失败显式报错——部署中途拉取失败比入队时失败更难
-// 定位（fail-closed）。
+// registryAuthForImage 计算镜像引用应附带的 X-Registry-Auth 头（E1-5 +
+// IMPL-T1-2/DT-2）：
+//   - 平台 registry 引用 → 平台 zot 凭据现读 + 编码（既有语义）；
+//   - 外部 registry 引用命中平台设置 host 且凭证在位 → 设置凭证编码
+//     （私有镜像逐节点拉取的成功条件）；其余外部镜像（本地 fleetly-local/…、
+//     未配置 host、匿名命中）→ 空串（凭据只分发给需要的 service，不向全
+//     集群广播）。
+//
+// 凭据读取失败显式报错——部署中途拉取失败比入队时失败更难定位
+//（fail-closed）。
 func (c *Client) registryAuthForImage(image string) (string, error) {
-	if !c.platformRegistryEnabled() || !build.IsRegistryImageRef(image, c.registryHost) {
-		return "", nil
+	if c.platformRegistryEnabled() && build.IsRegistryImageRef(image, c.registryHost) {
+		creds, err := c.registryCreds()
+		if err != nil {
+			return "", fmt.Errorf("substrate: registry credentials for %s: %w", image, err)
+		}
+		return encodedRegistryAuth(c.registryHost, creds)
 	}
-	creds, err := c.registryCreds()
+	settings, err := c.externalRegistrySettings()
 	if err != nil {
 		return "", fmt.Errorf("substrate: registry credentials for %s: %w", image, err)
 	}
-	return encodedRegistryAuth(c.registryHost, creds)
+	if settings.Host == "" || (settings.Username == "" && settings.Password == "") {
+		return "", nil
+	}
+	parsed, err := imageregistry.Parse(image)
+	if err != nil {
+		// 形态不可解析（本机镜像 ID 等）：零凭据面（不猜测目标 registry）。
+		return "", nil
+	}
+	if imageregistry.NormalizeHost(settings.Host) != parsed.Host {
+		return "", nil
+	}
+	return encodedRegistryAuth(parsed.Host, build.RegistryCredentials{
+		User: settings.Username, Password: settings.Password,
+	})
+}
+
+// ExternalRegistrySettings 是平台 registry credentials 设置面的快照
+//（registry.* 设置 + Box 解密后的明文密码；明文只在调用瞬间存活——本包
+// 不做持久化读，装配层每次现读现解密）。
+type ExternalRegistrySettings struct {
+	Host     string
+	Username string
+	Password string
+}
+
+// WithImageRegistryCredentials 装配外部 registry 凭证设置读取缝
+//（IMPL-T1-2/DT-2；runtime 注入：state registry.* 设置现读 + Box 解密；
+// nil = 未装配——解析恒匿名、auth 恒空）。读取函数每次现读；失败显式
+//（作为解析腿失败原因回落本机 inspect，不静默降级为匿名）。
+func (c *Client) WithImageRegistryCredentials(fn func() (ExternalRegistrySettings, error)) *Client {
+	c.externalRegistryCredentials = fn
+	return c
+}
+
+// WithImageRegistryTrace 装配「registry 腿失败回落本机 inspect」的留痕缝
+//（nil = 静默——测试形态；runtime 注入 slog.Warn）。
+func (c *Client) WithImageRegistryTrace(trace func(msg string, args ...any)) *Client {
+	c.imageRegistryTrace = trace
+	return c
+}
+
+// externalRegistryResolveTimeout 是单次外部 registry 解析的预算（黑洞
+// registry 下不挂满部署 tick；与平台 zot 前哨的 10s 拨号预算同口径）。
+// 包级变量即可配（测试注入缩短预算，defaultCallTimeout 同款惯例）。
+var externalRegistryResolveTimeout = 10 * time.Second
+
+// defaultImageRegistryClient 是外部 registry 解析的生产实现（无状态，
+// 包级复用；HTTP 细节在 internal/imageregistry）。
+var defaultImageRegistryClient = imageregistry.NewClient()
+
+// externalRegistrySettings 调用装配缝（未装配 = 零值快照——恒匿名）。
+func (c *Client) externalRegistrySettings() (ExternalRegistrySettings, error) {
+	if c.externalRegistryCredentials == nil {
+		return ExternalRegistrySettings{}, nil
+	}
+	return c.externalRegistryCredentials()
+}
+
+// resolveTagDigestForImage 执行 registry-first 解析（DT-2 两句话的落地）：
+// 宿主命中平台设置 host 且凭证在位 → 携凭证（私有镜像）；否则匿名（公共
+// 镜像零预拉）。任何失败原样返回（调用点回落本机 inspect）。
+func (c *Client) resolveTagDigestForImage(ctx context.Context, ref imageregistry.Reference) (string, error) {
+	settings, err := c.externalRegistrySettings()
+	if err != nil {
+		return "", fmt.Errorf("platform registry credential settings unreadable: %w", err)
+	}
+	var creds *imageregistry.Credentials
+	if settings.Host != "" && imageregistry.NormalizeHost(settings.Host) == ref.Host &&
+		(settings.Username != "" || settings.Password != "") {
+		creds = &imageregistry.Credentials{Username: settings.Username, Password: settings.Password}
+	}
+	resolve := c.resolveTagDigest
+	if resolve == nil {
+		resolve = defaultImageRegistryClient.Resolve
+	}
+	rctx, cancel := context.WithTimeout(ctx, externalRegistryResolveTimeout)
+	defer cancel()
+	digest, err := resolve(rctx, ref, creds)
+	if err != nil {
+		return "", fmt.Errorf("registry %s: %w", ref.Host, err)
+	}
+	if digest == "" {
+		return "", fmt.Errorf("registry %s returned an empty manifest digest for %s", ref.Host, ref.String())
+	}
+	return digest, nil
+}
+
+// inspectLocalImageDigest 执行本机 inspect 腿（airgap 不回归的底座腿）：
+// 优先取 RepoDigests 的清单摘要（swarm 分发解析只接受 manifest digest）；
+// 本机构建镜像（无清单摘要）返回空串由引擎按 tag 直用（旧语义）。缺失
+// 归一为 engine.ErrImageMissing。
+func (c *Client) inspectLocalImageDigest(ctx context.Context, ref string) (string, error) {
+	if c.inspectDigest != nil {
+		return c.inspectDigest(ctx, ref)
+	}
+	ictx, cancel := withCallTimeout(ctx) // D2：非流式 per-call 超时
+	defer cancel()
+	res, err := c.cli.ImageInspect(ictx, ref)
+	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return "", fmt.Errorf("%w: %s", engine.ErrImageMissing, ref)
+		}
+		return "", fmt.Errorf("substrate: image inspect %s: %w", ref, err)
+	}
+	for _, rd := range res.RepoDigests {
+		if _, digest, ok := strings.Cut(rd, "@"); ok && strings.HasPrefix(digest, "sha256:") {
+			return digest, nil
+		}
+	}
+	return "", nil
+}
+
+// traceImageDigestFallback 在 registry 腿失败、本机 inspect 被启用时留痕
+//（airgap/本地已有镜像的回落路径可观测；凭据材料零出现）。
+func (c *Client) traceImageDigestFallback(ref string, registryErr error) {
+	if c.imageRegistryTrace == nil || registryErr == nil {
+		return
+	}
+	c.imageRegistryTrace("image digest: registry resolution failed, falling back to local inspect",
+		"image", ref, "registry_error", registryErr.Error())
 }

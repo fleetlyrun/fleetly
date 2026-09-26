@@ -379,6 +379,54 @@ func local_request_SystemService_TestDnsProvider_0(ctx context.Context, marshale
 	return msg, metadata, err
 }
 
+func request_SystemService_GetRegistrySettings_0(ctx context.Context, marshaler runtime.Marshaler, client SystemServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq GetRegistrySettingsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.GetRegistrySettings(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_SystemService_GetRegistrySettings_0(ctx context.Context, marshaler runtime.Marshaler, server SystemServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq GetRegistrySettingsRequest
+		metadata runtime.ServerMetadata
+	)
+	msg, err := server.GetRegistrySettings(ctx, &protoReq)
+	return msg, metadata, err
+}
+
+func request_SystemService_UpdateRegistrySettings_0(ctx context.Context, marshaler runtime.Marshaler, client SystemServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq UpdateRegistrySettingsRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	msg, err := client.UpdateRegistrySettings(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_SystemService_UpdateRegistrySettings_0(ctx context.Context, marshaler runtime.Marshaler, server SystemServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq UpdateRegistrySettingsRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := marshaler.NewDecoder(req.Body).Decode(&protoReq); err != nil && !errors.Is(err, io.EOF) {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.UpdateRegistrySettings(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 // RegisterSystemServiceHandlerServer registers the http handlers for service SystemService to "mux".
 // UnaryRPC     :call SystemServiceServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -665,6 +713,46 @@ func RegisterSystemServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		}
 		forward_SystemService_TestDnsProvider_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_SystemService_GetRegistrySettings_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.server.v1.SystemService/GetRegistrySettings", runtime.WithHTTPPathPattern("/v1/system/registry"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_SystemService_GetRegistrySettings_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_SystemService_GetRegistrySettings_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPut, pattern_SystemService_UpdateRegistrySettings_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.server.v1.SystemService/UpdateRegistrySettings", runtime.WithHTTPPathPattern("/v1/system/registry"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_SystemService_UpdateRegistrySettings_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_SystemService_UpdateRegistrySettings_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 
 	return nil
 }
@@ -943,39 +1031,77 @@ func RegisterSystemServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		}
 		forward_SystemService_TestDnsProvider_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_SystemService_GetRegistrySettings_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.server.v1.SystemService/GetRegistrySettings", runtime.WithHTTPPathPattern("/v1/system/registry"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_SystemService_GetRegistrySettings_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_SystemService_GetRegistrySettings_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
+	mux.Handle(http.MethodPut, pattern_SystemService_UpdateRegistrySettings_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.server.v1.SystemService/UpdateRegistrySettings", runtime.WithHTTPPathPattern("/v1/system/registry"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_SystemService_UpdateRegistrySettings_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_SystemService_UpdateRegistrySettings_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
 var (
-	pattern_SystemService_Ping_0               = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "ping"}, ""))
-	pattern_SystemService_GetSystemStatus_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "status"}, ""))
-	pattern_SystemService_ListNodes_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "nodes"}, ""))
-	pattern_SystemService_GetIngressStatus_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "ingress"}, ""))
-	pattern_SystemService_ListBackups_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "backups"}, ""))
-	pattern_SystemService_TriggerBackup_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "backups"}, ""))
-	pattern_SystemService_GetJoinGuide_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "system", "nodes", "join-guide"}, ""))
-	pattern_SystemService_RotateJoinToken_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "system", "nodes", "join-token"}, "rotate"))
-	pattern_SystemService_GetS3Settings_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "s3"}, ""))
-	pattern_SystemService_UpdateS3Settings_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "s3"}, ""))
-	pattern_SystemService_TestS3Connection_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "s3"}, "test"))
-	pattern_SystemService_GetAcmeSettings_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "acme"}, ""))
-	pattern_SystemService_UpdateAcmeSettings_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "acme"}, ""))
-	pattern_SystemService_TestDnsProvider_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "system", "acme", "dns"}, "test"))
+	pattern_SystemService_Ping_0                   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "ping"}, ""))
+	pattern_SystemService_GetSystemStatus_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "status"}, ""))
+	pattern_SystemService_ListNodes_0              = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "nodes"}, ""))
+	pattern_SystemService_GetIngressStatus_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "ingress"}, ""))
+	pattern_SystemService_ListBackups_0            = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "backups"}, ""))
+	pattern_SystemService_TriggerBackup_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "backups"}, ""))
+	pattern_SystemService_GetJoinGuide_0           = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "system", "nodes", "join-guide"}, ""))
+	pattern_SystemService_RotateJoinToken_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "system", "nodes", "join-token"}, "rotate"))
+	pattern_SystemService_GetS3Settings_0          = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "s3"}, ""))
+	pattern_SystemService_UpdateS3Settings_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "s3"}, ""))
+	pattern_SystemService_TestS3Connection_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "s3"}, "test"))
+	pattern_SystemService_GetAcmeSettings_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "acme"}, ""))
+	pattern_SystemService_UpdateAcmeSettings_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "acme"}, ""))
+	pattern_SystemService_TestDnsProvider_0        = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "system", "acme", "dns"}, "test"))
+	pattern_SystemService_GetRegistrySettings_0    = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "registry"}, ""))
+	pattern_SystemService_UpdateRegistrySettings_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "system", "registry"}, ""))
 )
 
 var (
-	forward_SystemService_Ping_0               = runtime.ForwardResponseMessage
-	forward_SystemService_GetSystemStatus_0    = runtime.ForwardResponseMessage
-	forward_SystemService_ListNodes_0          = runtime.ForwardResponseMessage
-	forward_SystemService_GetIngressStatus_0   = runtime.ForwardResponseMessage
-	forward_SystemService_ListBackups_0        = runtime.ForwardResponseMessage
-	forward_SystemService_TriggerBackup_0      = runtime.ForwardResponseMessage
-	forward_SystemService_GetJoinGuide_0       = runtime.ForwardResponseMessage
-	forward_SystemService_RotateJoinToken_0    = runtime.ForwardResponseMessage
-	forward_SystemService_GetS3Settings_0      = runtime.ForwardResponseMessage
-	forward_SystemService_UpdateS3Settings_0   = runtime.ForwardResponseMessage
-	forward_SystemService_TestS3Connection_0   = runtime.ForwardResponseMessage
-	forward_SystemService_GetAcmeSettings_0    = runtime.ForwardResponseMessage
-	forward_SystemService_UpdateAcmeSettings_0 = runtime.ForwardResponseMessage
-	forward_SystemService_TestDnsProvider_0    = runtime.ForwardResponseMessage
+	forward_SystemService_Ping_0                   = runtime.ForwardResponseMessage
+	forward_SystemService_GetSystemStatus_0        = runtime.ForwardResponseMessage
+	forward_SystemService_ListNodes_0              = runtime.ForwardResponseMessage
+	forward_SystemService_GetIngressStatus_0       = runtime.ForwardResponseMessage
+	forward_SystemService_ListBackups_0            = runtime.ForwardResponseMessage
+	forward_SystemService_TriggerBackup_0          = runtime.ForwardResponseMessage
+	forward_SystemService_GetJoinGuide_0           = runtime.ForwardResponseMessage
+	forward_SystemService_RotateJoinToken_0        = runtime.ForwardResponseMessage
+	forward_SystemService_GetS3Settings_0          = runtime.ForwardResponseMessage
+	forward_SystemService_UpdateS3Settings_0       = runtime.ForwardResponseMessage
+	forward_SystemService_TestS3Connection_0       = runtime.ForwardResponseMessage
+	forward_SystemService_GetAcmeSettings_0        = runtime.ForwardResponseMessage
+	forward_SystemService_UpdateAcmeSettings_0     = runtime.ForwardResponseMessage
+	forward_SystemService_TestDnsProvider_0        = runtime.ForwardResponseMessage
+	forward_SystemService_GetRegistrySettings_0    = runtime.ForwardResponseMessage
+	forward_SystemService_UpdateRegistrySettings_0 = runtime.ForwardResponseMessage
 )

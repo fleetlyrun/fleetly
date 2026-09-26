@@ -73,7 +73,13 @@ func TestNonStreamingCallDeadlineBound(t *testing.T) {
 		{"TaskList", func(ctx context.Context) error { _, err := c.TaskList(ctx, "web"); return err }},
 		{"NetworkEnsure(Inspect+Create)", func(ctx context.Context) error { return c.NetworkEnsure(ctx, "net-x") }},
 		{"SwarmReady(Info)", func(ctx context.Context) error { return c.SwarmReady(ctx) }},
-		{"ImageDigest(ImageInspect)", func(ctx context.Context) error { _, err := c.ImageDigest(ctx, "nginx:1"); return err }},
+		// ImageDigest：IMPL-T1-2 起 tag 引用 registry-first（解析腿不经
+		// daemon），本地 inspect 腿的预算断言用平台本地命名空间引用触达
+		// （fleetly-local/… 跳过解析腿——v0.1 本地面语义）。
+		{"ImageDigest(ImageInspect)", func(ctx context.Context) error {
+			_, err := c.ImageDigest(ctx, "fleetly-local/web:web-01")
+			return err
+		}},
 		// images.go：InspectImage / Volume / Container / Tag / Remove。
 		// LoadImage 不在本表——H6 修正后属 D2 排除面（装载与 solve 共生命
 		// 周期，预算由调用方 ctx 管理，见 TestLoadImageUsesCallerContext）。

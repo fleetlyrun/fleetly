@@ -2787,6 +2787,270 @@ func (x *TestDnsProviderResponse) GetResult() *DnsProviderTestResult {
 	return nil
 }
 
+type GetRegistrySettingsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRegistrySettingsRequest) Reset() {
+	*x = GetRegistrySettingsRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[42]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRegistrySettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRegistrySettingsRequest) ProtoMessage() {}
+
+func (x *GetRegistrySettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[42]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRegistrySettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetRegistrySettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{42}
+}
+
+// RegistrySettingsView 是 registry.* 设置的只读投影。密码只回 fingerprint
+// （明文 sha256 前 8 hex；空 = 未设置）——读面永无明文（写面
+// UpdateRegistrySettings 承载明文，TLS 传输面 + envelope 持久层）。
+type RegistrySettingsView struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 外部 registry host（归一形态：小写、无 scheme；docker.io 家族归一为
+	// registry-1.docker.io）。空 = 未配置（解析腿恒匿名）。
+	Host     string `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	// 密码指纹（sha256 前 8 hex），非密码本体；空 = 未设置密码。
+	PasswordFingerprint string `protobuf:"bytes,3,opt,name=password_fingerprint,json=passwordFingerprint,proto3" json:"password_fingerprint,omitempty"`
+	// 最近一次保存时刻（从未保存 → 不输出）。
+	UpdatedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RegistrySettingsView) Reset() {
+	*x = RegistrySettingsView{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[43]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RegistrySettingsView) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RegistrySettingsView) ProtoMessage() {}
+
+func (x *RegistrySettingsView) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[43]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RegistrySettingsView.ProtoReflect.Descriptor instead.
+func (*RegistrySettingsView) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{43}
+}
+
+func (x *RegistrySettingsView) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *RegistrySettingsView) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *RegistrySettingsView) GetPasswordFingerprint() string {
+	if x != nil {
+		return x.PasswordFingerprint
+	}
+	return ""
+}
+
+func (x *RegistrySettingsView) GetUpdatedAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return nil
+}
+
+type GetRegistrySettingsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Settings      *RegistrySettingsView  `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetRegistrySettingsResponse) Reset() {
+	*x = GetRegistrySettingsResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[44]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetRegistrySettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetRegistrySettingsResponse) ProtoMessage() {}
+
+func (x *GetRegistrySettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[44]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetRegistrySettingsResponse.ProtoReflect.Descriptor instead.
+func (*GetRegistrySettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{44}
+}
+
+func (x *GetRegistrySettingsResponse) GetSettings() *RegistrySettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
+type UpdateRegistrySettingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 外部 registry host（ghcr.io 形态；scheme 会被归一剥离）。空 = 清除
+	// 全部设置（host/用户名/密码与指纹）。
+	Host     string `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	Username string `protobuf:"bytes,2,opt,name=username,proto3" json:"username,omitempty"`
+	// 密码明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存密码**
+	// （ACME api_token 同款先例）；清除走 host 留空。
+	Password      string `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateRegistrySettingsRequest) Reset() {
+	*x = UpdateRegistrySettingsRequest{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[45]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRegistrySettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRegistrySettingsRequest) ProtoMessage() {}
+
+func (x *UpdateRegistrySettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[45]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRegistrySettingsRequest.ProtoReflect.Descriptor instead.
+func (*UpdateRegistrySettingsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{45}
+}
+
+func (x *UpdateRegistrySettingsRequest) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *UpdateRegistrySettingsRequest) GetUsername() string {
+	if x != nil {
+		return x.Username
+	}
+	return ""
+}
+
+func (x *UpdateRegistrySettingsRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+type UpdateRegistrySettingsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 保存后的设置投影（与 GetRegistrySettings 同一脱敏读面）。
+	Settings      *RegistrySettingsView `protobuf:"bytes,1,opt,name=settings,proto3" json:"settings,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UpdateRegistrySettingsResponse) Reset() {
+	*x = UpdateRegistrySettingsResponse{}
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[46]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UpdateRegistrySettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UpdateRegistrySettingsResponse) ProtoMessage() {}
+
+func (x *UpdateRegistrySettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_server_v1_system_proto_msgTypes[46]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UpdateRegistrySettingsResponse.ProtoReflect.Descriptor instead.
+func (*UpdateRegistrySettingsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_server_v1_system_proto_rawDescGZIP(), []int{46}
+}
+
+func (x *UpdateRegistrySettingsResponse) GetSettings() *RegistrySettingsView {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
 var File_fleetly_server_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_server_v1_system_proto_rawDesc = "" +
@@ -3007,7 +3271,22 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\vfailed_step\x18\x05 \x01(\tR\n" +
 	"failedStep\"[\n" +
 	"\x17TestDnsProviderResponse\x12@\n" +
-	"\x06result\x18\x01 \x01(\v2(.fleetly.server.v1.DnsProviderTestResultR\x06result2\xc6\x0e\n" +
+	"\x06result\x18\x01 \x01(\v2(.fleetly.server.v1.DnsProviderTestResultR\x06result\"\x1c\n" +
+	"\x1aGetRegistrySettingsRequest\"\xb4\x01\n" +
+	"\x14RegistrySettingsView\x12\x12\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x121\n" +
+	"\x14password_fingerprint\x18\x03 \x01(\tR\x13passwordFingerprint\x129\n" +
+	"\n" +
+	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"b\n" +
+	"\x1bGetRegistrySettingsResponse\x12C\n" +
+	"\bsettings\x18\x01 \x01(\v2'.fleetly.server.v1.RegistrySettingsViewR\bsettings\"k\n" +
+	"\x1dUpdateRegistrySettingsRequest\x12\x12\n" +
+	"\x04host\x18\x01 \x01(\tR\x04host\x12\x1a\n" +
+	"\busername\x18\x02 \x01(\tR\busername\x12\x1a\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\"e\n" +
+	"\x1eUpdateRegistrySettingsResponse\x12C\n" +
+	"\bsettings\x18\x01 \x01(\v2'.fleetly.server.v1.RegistrySettingsViewR\bsettings2\xfa\x10\n" +
 	"\rSystemService\x12`\n" +
 	"\x04Ping\x12\x1e.fleetly.server.v1.PingRequest\x1a\x1f.fleetly.server.v1.PingResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/ping\x12\x83\x01\n" +
 	"\x0fGetSystemStatus\x12).fleetly.server.v1.GetSystemStatusRequest\x1a*.fleetly.server.v1.GetSystemStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12p\n" +
@@ -3022,7 +3301,9 @@ const file_fleetly_server_v1_system_proto_rawDesc = "" +
 	"\x10TestS3Connection\x12*.fleetly.server.v1.TestS3ConnectionRequest\x1a+.fleetly.server.v1.TestS3ConnectionResponse\"\x1d\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/system/s3:test\x12\x81\x01\n" +
 	"\x0fGetAcmeSettings\x12).fleetly.server.v1.GetAcmeSettingsRequest\x1a*.fleetly.server.v1.GetAcmeSettingsResponse\"\x17\x82\xd3\xe4\x93\x02\x11\x12\x0f/v1/system/acme\x12\x8d\x01\n" +
 	"\x12UpdateAcmeSettings\x12,.fleetly.server.v1.UpdateAcmeSettingsRequest\x1a-.fleetly.server.v1.UpdateAcmeSettingsResponse\"\x1a\x82\xd3\xe4\x93\x02\x14:\x01*\x1a\x0f/v1/system/acme\x12\x8d\x01\n" +
-	"\x0fTestDnsProvider\x12).fleetly.server.v1.TestDnsProviderRequest\x1a*.fleetly.server.v1.TestDnsProviderResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/system/acme/dns:testB\x98\x01\x92ARRP\n" +
+	"\x0fTestDnsProvider\x12).fleetly.server.v1.TestDnsProviderRequest\x1a*.fleetly.server.v1.TestDnsProviderResponse\"#\x82\xd3\xe4\x93\x02\x1d:\x01*\"\x18/v1/system/acme/dns:test\x12\x91\x01\n" +
+	"\x13GetRegistrySettings\x12-.fleetly.server.v1.GetRegistrySettingsRequest\x1a..fleetly.server.v1.GetRegistrySettingsResponse\"\x1b\x82\xd3\xe4\x93\x02\x15\x12\x13/v1/system/registry\x12\x9d\x01\n" +
+	"\x16UpdateRegistrySettings\x120.fleetly.server.v1.UpdateRegistrySettingsRequest\x1a1.fleetly.server.v1.UpdateRegistrySettingsResponse\"\x1e\x82\xd3\xe4\x93\x02\x18:\x01*\x1a\x13/v1/system/registryB\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/server/v1;serverv1b\x06proto3"
@@ -3039,113 +3320,125 @@ func file_fleetly_server_v1_system_proto_rawDescGZIP() []byte {
 	return file_fleetly_server_v1_system_proto_rawDescData
 }
 
-var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
+var file_fleetly_server_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_fleetly_server_v1_system_proto_goTypes = []any{
-	(*PingRequest)(nil),                // 0: fleetly.server.v1.PingRequest
-	(*PingResponse)(nil),               // 1: fleetly.server.v1.PingResponse
-	(*GetSystemStatusRequest)(nil),     // 2: fleetly.server.v1.GetSystemStatusRequest
-	(*ComponentHealth)(nil),            // 3: fleetly.server.v1.ComponentHealth
-	(*GetSystemStatusResponse)(nil),    // 4: fleetly.server.v1.GetSystemStatusResponse
-	(*BackupHealth)(nil),               // 5: fleetly.server.v1.BackupHealth
-	(*ListNodesRequest)(nil),           // 6: fleetly.server.v1.ListNodesRequest
-	(*NodeView)(nil),                   // 7: fleetly.server.v1.NodeView
-	(*ListNodesResponse)(nil),          // 8: fleetly.server.v1.ListNodesResponse
-	(*GetJoinGuideRequest)(nil),        // 9: fleetly.server.v1.GetJoinGuideRequest
-	(*FirewallRule)(nil),               // 10: fleetly.server.v1.FirewallRule
-	(*JoinGuideView)(nil),              // 11: fleetly.server.v1.JoinGuideView
-	(*GetJoinGuideResponse)(nil),       // 12: fleetly.server.v1.GetJoinGuideResponse
-	(*RotateJoinTokenRequest)(nil),     // 13: fleetly.server.v1.RotateJoinTokenRequest
-	(*RotateJoinTokenResponse)(nil),    // 14: fleetly.server.v1.RotateJoinTokenResponse
-	(*GetIngressStatusRequest)(nil),    // 15: fleetly.server.v1.GetIngressStatusRequest
-	(*TraefikView)(nil),                // 16: fleetly.server.v1.TraefikView
-	(*CertLedgerView)(nil),             // 17: fleetly.server.v1.CertLedgerView
-	(*GetIngressStatusResponse)(nil),   // 18: fleetly.server.v1.GetIngressStatusResponse
-	(*ListBackupsRequest)(nil),         // 19: fleetly.server.v1.ListBackupsRequest
-	(*BackupView)(nil),                 // 20: fleetly.server.v1.BackupView
-	(*ListBackupsResponse)(nil),        // 21: fleetly.server.v1.ListBackupsResponse
-	(*TriggerBackupRequest)(nil),       // 22: fleetly.server.v1.TriggerBackupRequest
-	(*TriggerBackupResponse)(nil),      // 23: fleetly.server.v1.TriggerBackupResponse
-	(*GetS3SettingsRequest)(nil),       // 24: fleetly.server.v1.GetS3SettingsRequest
-	(*S3SettingsView)(nil),             // 25: fleetly.server.v1.S3SettingsView
-	(*GetS3SettingsResponse)(nil),      // 26: fleetly.server.v1.GetS3SettingsResponse
-	(*UpdateS3SettingsRequest)(nil),    // 27: fleetly.server.v1.UpdateS3SettingsRequest
-	(*UpdateS3SettingsResponse)(nil),   // 28: fleetly.server.v1.UpdateS3SettingsResponse
-	(*TestS3ConnectionRequest)(nil),    // 29: fleetly.server.v1.TestS3ConnectionRequest
-	(*S3ProbeStep)(nil),                // 30: fleetly.server.v1.S3ProbeStep
-	(*S3ConnectionTestResult)(nil),     // 31: fleetly.server.v1.S3ConnectionTestResult
-	(*TestS3ConnectionResponse)(nil),   // 32: fleetly.server.v1.TestS3ConnectionResponse
-	(*GetAcmeSettingsRequest)(nil),     // 33: fleetly.server.v1.GetAcmeSettingsRequest
-	(*AcmeSettingsView)(nil),           // 34: fleetly.server.v1.AcmeSettingsView
-	(*GetAcmeSettingsResponse)(nil),    // 35: fleetly.server.v1.GetAcmeSettingsResponse
-	(*UpdateAcmeSettingsRequest)(nil),  // 36: fleetly.server.v1.UpdateAcmeSettingsRequest
-	(*UpdateAcmeSettingsResponse)(nil), // 37: fleetly.server.v1.UpdateAcmeSettingsResponse
-	(*TestDnsProviderRequest)(nil),     // 38: fleetly.server.v1.TestDnsProviderRequest
-	(*DnsProbeStep)(nil),               // 39: fleetly.server.v1.DnsProbeStep
-	(*DnsProviderTestResult)(nil),      // 40: fleetly.server.v1.DnsProviderTestResult
-	(*TestDnsProviderResponse)(nil),    // 41: fleetly.server.v1.TestDnsProviderResponse
-	nil,                                // 42: fleetly.server.v1.NodeView.LabelsEntry
-	(*timestamppb.Timestamp)(nil),      // 43: google.protobuf.Timestamp
+	(*PingRequest)(nil),                    // 0: fleetly.server.v1.PingRequest
+	(*PingResponse)(nil),                   // 1: fleetly.server.v1.PingResponse
+	(*GetSystemStatusRequest)(nil),         // 2: fleetly.server.v1.GetSystemStatusRequest
+	(*ComponentHealth)(nil),                // 3: fleetly.server.v1.ComponentHealth
+	(*GetSystemStatusResponse)(nil),        // 4: fleetly.server.v1.GetSystemStatusResponse
+	(*BackupHealth)(nil),                   // 5: fleetly.server.v1.BackupHealth
+	(*ListNodesRequest)(nil),               // 6: fleetly.server.v1.ListNodesRequest
+	(*NodeView)(nil),                       // 7: fleetly.server.v1.NodeView
+	(*ListNodesResponse)(nil),              // 8: fleetly.server.v1.ListNodesResponse
+	(*GetJoinGuideRequest)(nil),            // 9: fleetly.server.v1.GetJoinGuideRequest
+	(*FirewallRule)(nil),                   // 10: fleetly.server.v1.FirewallRule
+	(*JoinGuideView)(nil),                  // 11: fleetly.server.v1.JoinGuideView
+	(*GetJoinGuideResponse)(nil),           // 12: fleetly.server.v1.GetJoinGuideResponse
+	(*RotateJoinTokenRequest)(nil),         // 13: fleetly.server.v1.RotateJoinTokenRequest
+	(*RotateJoinTokenResponse)(nil),        // 14: fleetly.server.v1.RotateJoinTokenResponse
+	(*GetIngressStatusRequest)(nil),        // 15: fleetly.server.v1.GetIngressStatusRequest
+	(*TraefikView)(nil),                    // 16: fleetly.server.v1.TraefikView
+	(*CertLedgerView)(nil),                 // 17: fleetly.server.v1.CertLedgerView
+	(*GetIngressStatusResponse)(nil),       // 18: fleetly.server.v1.GetIngressStatusResponse
+	(*ListBackupsRequest)(nil),             // 19: fleetly.server.v1.ListBackupsRequest
+	(*BackupView)(nil),                     // 20: fleetly.server.v1.BackupView
+	(*ListBackupsResponse)(nil),            // 21: fleetly.server.v1.ListBackupsResponse
+	(*TriggerBackupRequest)(nil),           // 22: fleetly.server.v1.TriggerBackupRequest
+	(*TriggerBackupResponse)(nil),          // 23: fleetly.server.v1.TriggerBackupResponse
+	(*GetS3SettingsRequest)(nil),           // 24: fleetly.server.v1.GetS3SettingsRequest
+	(*S3SettingsView)(nil),                 // 25: fleetly.server.v1.S3SettingsView
+	(*GetS3SettingsResponse)(nil),          // 26: fleetly.server.v1.GetS3SettingsResponse
+	(*UpdateS3SettingsRequest)(nil),        // 27: fleetly.server.v1.UpdateS3SettingsRequest
+	(*UpdateS3SettingsResponse)(nil),       // 28: fleetly.server.v1.UpdateS3SettingsResponse
+	(*TestS3ConnectionRequest)(nil),        // 29: fleetly.server.v1.TestS3ConnectionRequest
+	(*S3ProbeStep)(nil),                    // 30: fleetly.server.v1.S3ProbeStep
+	(*S3ConnectionTestResult)(nil),         // 31: fleetly.server.v1.S3ConnectionTestResult
+	(*TestS3ConnectionResponse)(nil),       // 32: fleetly.server.v1.TestS3ConnectionResponse
+	(*GetAcmeSettingsRequest)(nil),         // 33: fleetly.server.v1.GetAcmeSettingsRequest
+	(*AcmeSettingsView)(nil),               // 34: fleetly.server.v1.AcmeSettingsView
+	(*GetAcmeSettingsResponse)(nil),        // 35: fleetly.server.v1.GetAcmeSettingsResponse
+	(*UpdateAcmeSettingsRequest)(nil),      // 36: fleetly.server.v1.UpdateAcmeSettingsRequest
+	(*UpdateAcmeSettingsResponse)(nil),     // 37: fleetly.server.v1.UpdateAcmeSettingsResponse
+	(*TestDnsProviderRequest)(nil),         // 38: fleetly.server.v1.TestDnsProviderRequest
+	(*DnsProbeStep)(nil),                   // 39: fleetly.server.v1.DnsProbeStep
+	(*DnsProviderTestResult)(nil),          // 40: fleetly.server.v1.DnsProviderTestResult
+	(*TestDnsProviderResponse)(nil),        // 41: fleetly.server.v1.TestDnsProviderResponse
+	(*GetRegistrySettingsRequest)(nil),     // 42: fleetly.server.v1.GetRegistrySettingsRequest
+	(*RegistrySettingsView)(nil),           // 43: fleetly.server.v1.RegistrySettingsView
+	(*GetRegistrySettingsResponse)(nil),    // 44: fleetly.server.v1.GetRegistrySettingsResponse
+	(*UpdateRegistrySettingsRequest)(nil),  // 45: fleetly.server.v1.UpdateRegistrySettingsRequest
+	(*UpdateRegistrySettingsResponse)(nil), // 46: fleetly.server.v1.UpdateRegistrySettingsResponse
+	nil,                                    // 47: fleetly.server.v1.NodeView.LabelsEntry
+	(*timestamppb.Timestamp)(nil),          // 48: google.protobuf.Timestamp
 }
 var file_fleetly_server_v1_system_proto_depIdxs = []int32{
 	3,  // 0: fleetly.server.v1.GetSystemStatusResponse.components:type_name -> fleetly.server.v1.ComponentHealth
 	5,  // 1: fleetly.server.v1.GetSystemStatusResponse.backup:type_name -> fleetly.server.v1.BackupHealth
-	43, // 2: fleetly.server.v1.BackupHealth.last_backup_at:type_name -> google.protobuf.Timestamp
-	43, // 3: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
-	42, // 4: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
+	48, // 2: fleetly.server.v1.BackupHealth.last_backup_at:type_name -> google.protobuf.Timestamp
+	48, // 3: fleetly.server.v1.NodeView.observed_at:type_name -> google.protobuf.Timestamp
+	47, // 4: fleetly.server.v1.NodeView.labels:type_name -> fleetly.server.v1.NodeView.LabelsEntry
 	7,  // 5: fleetly.server.v1.ListNodesResponse.nodes:type_name -> fleetly.server.v1.NodeView
 	10, // 6: fleetly.server.v1.JoinGuideView.manager_firewall_rules:type_name -> fleetly.server.v1.FirewallRule
 	10, // 7: fleetly.server.v1.JoinGuideView.worker_firewall_rules:type_name -> fleetly.server.v1.FirewallRule
 	11, // 8: fleetly.server.v1.GetJoinGuideResponse.guide:type_name -> fleetly.server.v1.JoinGuideView
-	43, // 9: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
+	48, // 9: fleetly.server.v1.CertLedgerView.cert_not_after:type_name -> google.protobuf.Timestamp
 	16, // 10: fleetly.server.v1.GetIngressStatusResponse.traefik:type_name -> fleetly.server.v1.TraefikView
 	17, // 11: fleetly.server.v1.GetIngressStatusResponse.certificates:type_name -> fleetly.server.v1.CertLedgerView
-	43, // 12: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
-	43, // 13: fleetly.server.v1.BackupView.uploaded_at:type_name -> google.protobuf.Timestamp
+	48, // 12: fleetly.server.v1.BackupView.created_at:type_name -> google.protobuf.Timestamp
+	48, // 13: fleetly.server.v1.BackupView.uploaded_at:type_name -> google.protobuf.Timestamp
 	20, // 14: fleetly.server.v1.ListBackupsResponse.backups:type_name -> fleetly.server.v1.BackupView
 	20, // 15: fleetly.server.v1.TriggerBackupResponse.backup:type_name -> fleetly.server.v1.BackupView
-	43, // 16: fleetly.server.v1.S3SettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	48, // 16: fleetly.server.v1.S3SettingsView.updated_at:type_name -> google.protobuf.Timestamp
 	25, // 17: fleetly.server.v1.GetS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
 	25, // 18: fleetly.server.v1.UpdateS3SettingsResponse.settings:type_name -> fleetly.server.v1.S3SettingsView
 	30, // 19: fleetly.server.v1.S3ConnectionTestResult.steps:type_name -> fleetly.server.v1.S3ProbeStep
 	31, // 20: fleetly.server.v1.TestS3ConnectionResponse.result:type_name -> fleetly.server.v1.S3ConnectionTestResult
-	43, // 21: fleetly.server.v1.AcmeSettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	48, // 21: fleetly.server.v1.AcmeSettingsView.updated_at:type_name -> google.protobuf.Timestamp
 	34, // 22: fleetly.server.v1.GetAcmeSettingsResponse.settings:type_name -> fleetly.server.v1.AcmeSettingsView
 	34, // 23: fleetly.server.v1.UpdateAcmeSettingsResponse.settings:type_name -> fleetly.server.v1.AcmeSettingsView
 	39, // 24: fleetly.server.v1.DnsProviderTestResult.steps:type_name -> fleetly.server.v1.DnsProbeStep
 	40, // 25: fleetly.server.v1.TestDnsProviderResponse.result:type_name -> fleetly.server.v1.DnsProviderTestResult
-	0,  // 26: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
-	2,  // 27: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
-	6,  // 28: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
-	15, // 29: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
-	19, // 30: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
-	22, // 31: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
-	9,  // 32: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
-	13, // 33: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
-	24, // 34: fleetly.server.v1.SystemService.GetS3Settings:input_type -> fleetly.server.v1.GetS3SettingsRequest
-	27, // 35: fleetly.server.v1.SystemService.UpdateS3Settings:input_type -> fleetly.server.v1.UpdateS3SettingsRequest
-	29, // 36: fleetly.server.v1.SystemService.TestS3Connection:input_type -> fleetly.server.v1.TestS3ConnectionRequest
-	33, // 37: fleetly.server.v1.SystemService.GetAcmeSettings:input_type -> fleetly.server.v1.GetAcmeSettingsRequest
-	36, // 38: fleetly.server.v1.SystemService.UpdateAcmeSettings:input_type -> fleetly.server.v1.UpdateAcmeSettingsRequest
-	38, // 39: fleetly.server.v1.SystemService.TestDnsProvider:input_type -> fleetly.server.v1.TestDnsProviderRequest
-	1,  // 40: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
-	4,  // 41: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
-	8,  // 42: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
-	18, // 43: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
-	21, // 44: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
-	23, // 45: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
-	12, // 46: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
-	14, // 47: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
-	26, // 48: fleetly.server.v1.SystemService.GetS3Settings:output_type -> fleetly.server.v1.GetS3SettingsResponse
-	28, // 49: fleetly.server.v1.SystemService.UpdateS3Settings:output_type -> fleetly.server.v1.UpdateS3SettingsResponse
-	32, // 50: fleetly.server.v1.SystemService.TestS3Connection:output_type -> fleetly.server.v1.TestS3ConnectionResponse
-	35, // 51: fleetly.server.v1.SystemService.GetAcmeSettings:output_type -> fleetly.server.v1.GetAcmeSettingsResponse
-	37, // 52: fleetly.server.v1.SystemService.UpdateAcmeSettings:output_type -> fleetly.server.v1.UpdateAcmeSettingsResponse
-	41, // 53: fleetly.server.v1.SystemService.TestDnsProvider:output_type -> fleetly.server.v1.TestDnsProviderResponse
-	40, // [40:54] is the sub-list for method output_type
-	26, // [26:40] is the sub-list for method input_type
-	26, // [26:26] is the sub-list for extension type_name
-	26, // [26:26] is the sub-list for extension extendee
-	0,  // [0:26] is the sub-list for field type_name
+	48, // 26: fleetly.server.v1.RegistrySettingsView.updated_at:type_name -> google.protobuf.Timestamp
+	43, // 27: fleetly.server.v1.GetRegistrySettingsResponse.settings:type_name -> fleetly.server.v1.RegistrySettingsView
+	43, // 28: fleetly.server.v1.UpdateRegistrySettingsResponse.settings:type_name -> fleetly.server.v1.RegistrySettingsView
+	0,  // 29: fleetly.server.v1.SystemService.Ping:input_type -> fleetly.server.v1.PingRequest
+	2,  // 30: fleetly.server.v1.SystemService.GetSystemStatus:input_type -> fleetly.server.v1.GetSystemStatusRequest
+	6,  // 31: fleetly.server.v1.SystemService.ListNodes:input_type -> fleetly.server.v1.ListNodesRequest
+	15, // 32: fleetly.server.v1.SystemService.GetIngressStatus:input_type -> fleetly.server.v1.GetIngressStatusRequest
+	19, // 33: fleetly.server.v1.SystemService.ListBackups:input_type -> fleetly.server.v1.ListBackupsRequest
+	22, // 34: fleetly.server.v1.SystemService.TriggerBackup:input_type -> fleetly.server.v1.TriggerBackupRequest
+	9,  // 35: fleetly.server.v1.SystemService.GetJoinGuide:input_type -> fleetly.server.v1.GetJoinGuideRequest
+	13, // 36: fleetly.server.v1.SystemService.RotateJoinToken:input_type -> fleetly.server.v1.RotateJoinTokenRequest
+	24, // 37: fleetly.server.v1.SystemService.GetS3Settings:input_type -> fleetly.server.v1.GetS3SettingsRequest
+	27, // 38: fleetly.server.v1.SystemService.UpdateS3Settings:input_type -> fleetly.server.v1.UpdateS3SettingsRequest
+	29, // 39: fleetly.server.v1.SystemService.TestS3Connection:input_type -> fleetly.server.v1.TestS3ConnectionRequest
+	33, // 40: fleetly.server.v1.SystemService.GetAcmeSettings:input_type -> fleetly.server.v1.GetAcmeSettingsRequest
+	36, // 41: fleetly.server.v1.SystemService.UpdateAcmeSettings:input_type -> fleetly.server.v1.UpdateAcmeSettingsRequest
+	38, // 42: fleetly.server.v1.SystemService.TestDnsProvider:input_type -> fleetly.server.v1.TestDnsProviderRequest
+	42, // 43: fleetly.server.v1.SystemService.GetRegistrySettings:input_type -> fleetly.server.v1.GetRegistrySettingsRequest
+	45, // 44: fleetly.server.v1.SystemService.UpdateRegistrySettings:input_type -> fleetly.server.v1.UpdateRegistrySettingsRequest
+	1,  // 45: fleetly.server.v1.SystemService.Ping:output_type -> fleetly.server.v1.PingResponse
+	4,  // 46: fleetly.server.v1.SystemService.GetSystemStatus:output_type -> fleetly.server.v1.GetSystemStatusResponse
+	8,  // 47: fleetly.server.v1.SystemService.ListNodes:output_type -> fleetly.server.v1.ListNodesResponse
+	18, // 48: fleetly.server.v1.SystemService.GetIngressStatus:output_type -> fleetly.server.v1.GetIngressStatusResponse
+	21, // 49: fleetly.server.v1.SystemService.ListBackups:output_type -> fleetly.server.v1.ListBackupsResponse
+	23, // 50: fleetly.server.v1.SystemService.TriggerBackup:output_type -> fleetly.server.v1.TriggerBackupResponse
+	12, // 51: fleetly.server.v1.SystemService.GetJoinGuide:output_type -> fleetly.server.v1.GetJoinGuideResponse
+	14, // 52: fleetly.server.v1.SystemService.RotateJoinToken:output_type -> fleetly.server.v1.RotateJoinTokenResponse
+	26, // 53: fleetly.server.v1.SystemService.GetS3Settings:output_type -> fleetly.server.v1.GetS3SettingsResponse
+	28, // 54: fleetly.server.v1.SystemService.UpdateS3Settings:output_type -> fleetly.server.v1.UpdateS3SettingsResponse
+	32, // 55: fleetly.server.v1.SystemService.TestS3Connection:output_type -> fleetly.server.v1.TestS3ConnectionResponse
+	35, // 56: fleetly.server.v1.SystemService.GetAcmeSettings:output_type -> fleetly.server.v1.GetAcmeSettingsResponse
+	37, // 57: fleetly.server.v1.SystemService.UpdateAcmeSettings:output_type -> fleetly.server.v1.UpdateAcmeSettingsResponse
+	41, // 58: fleetly.server.v1.SystemService.TestDnsProvider:output_type -> fleetly.server.v1.TestDnsProviderResponse
+	44, // 59: fleetly.server.v1.SystemService.GetRegistrySettings:output_type -> fleetly.server.v1.GetRegistrySettingsResponse
+	46, // 60: fleetly.server.v1.SystemService.UpdateRegistrySettings:output_type -> fleetly.server.v1.UpdateRegistrySettingsResponse
+	45, // [45:61] is the sub-list for method output_type
+	29, // [29:45] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_server_v1_system_proto_init() }
@@ -3159,7 +3452,7 @@ func file_fleetly_server_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_server_v1_system_proto_rawDesc), len(file_fleetly_server_v1_system_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   43,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

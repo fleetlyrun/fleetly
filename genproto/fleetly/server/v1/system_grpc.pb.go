@@ -19,20 +19,22 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	SystemService_Ping_FullMethodName               = "/fleetly.server.v1.SystemService/Ping"
-	SystemService_GetSystemStatus_FullMethodName    = "/fleetly.server.v1.SystemService/GetSystemStatus"
-	SystemService_ListNodes_FullMethodName          = "/fleetly.server.v1.SystemService/ListNodes"
-	SystemService_GetIngressStatus_FullMethodName   = "/fleetly.server.v1.SystemService/GetIngressStatus"
-	SystemService_ListBackups_FullMethodName        = "/fleetly.server.v1.SystemService/ListBackups"
-	SystemService_TriggerBackup_FullMethodName      = "/fleetly.server.v1.SystemService/TriggerBackup"
-	SystemService_GetJoinGuide_FullMethodName       = "/fleetly.server.v1.SystemService/GetJoinGuide"
-	SystemService_RotateJoinToken_FullMethodName    = "/fleetly.server.v1.SystemService/RotateJoinToken"
-	SystemService_GetS3Settings_FullMethodName      = "/fleetly.server.v1.SystemService/GetS3Settings"
-	SystemService_UpdateS3Settings_FullMethodName   = "/fleetly.server.v1.SystemService/UpdateS3Settings"
-	SystemService_TestS3Connection_FullMethodName   = "/fleetly.server.v1.SystemService/TestS3Connection"
-	SystemService_GetAcmeSettings_FullMethodName    = "/fleetly.server.v1.SystemService/GetAcmeSettings"
-	SystemService_UpdateAcmeSettings_FullMethodName = "/fleetly.server.v1.SystemService/UpdateAcmeSettings"
-	SystemService_TestDnsProvider_FullMethodName    = "/fleetly.server.v1.SystemService/TestDnsProvider"
+	SystemService_Ping_FullMethodName                   = "/fleetly.server.v1.SystemService/Ping"
+	SystemService_GetSystemStatus_FullMethodName        = "/fleetly.server.v1.SystemService/GetSystemStatus"
+	SystemService_ListNodes_FullMethodName              = "/fleetly.server.v1.SystemService/ListNodes"
+	SystemService_GetIngressStatus_FullMethodName       = "/fleetly.server.v1.SystemService/GetIngressStatus"
+	SystemService_ListBackups_FullMethodName            = "/fleetly.server.v1.SystemService/ListBackups"
+	SystemService_TriggerBackup_FullMethodName          = "/fleetly.server.v1.SystemService/TriggerBackup"
+	SystemService_GetJoinGuide_FullMethodName           = "/fleetly.server.v1.SystemService/GetJoinGuide"
+	SystemService_RotateJoinToken_FullMethodName        = "/fleetly.server.v1.SystemService/RotateJoinToken"
+	SystemService_GetS3Settings_FullMethodName          = "/fleetly.server.v1.SystemService/GetS3Settings"
+	SystemService_UpdateS3Settings_FullMethodName       = "/fleetly.server.v1.SystemService/UpdateS3Settings"
+	SystemService_TestS3Connection_FullMethodName       = "/fleetly.server.v1.SystemService/TestS3Connection"
+	SystemService_GetAcmeSettings_FullMethodName        = "/fleetly.server.v1.SystemService/GetAcmeSettings"
+	SystemService_UpdateAcmeSettings_FullMethodName     = "/fleetly.server.v1.SystemService/UpdateAcmeSettings"
+	SystemService_TestDnsProvider_FullMethodName        = "/fleetly.server.v1.SystemService/TestDnsProvider"
+	SystemService_GetRegistrySettings_FullMethodName    = "/fleetly.server.v1.SystemService/GetRegistrySettings"
+	SystemService_UpdateRegistrySettings_FullMethodName = "/fleetly.server.v1.SystemService/UpdateRegistrySettings"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -111,6 +113,17 @@ type SystemServiceClient interface {
 	// E_ACME_DNS_TEST_FAILED 报错，失败步与底层 provider 错误摘要进信封
 	// context（凭证材料零出现）。
 	TestDnsProvider(ctx context.Context, in *TestDnsProviderRequest, opts ...grpc.CallOption) (*TestDnsProviderResponse, error)
+	// GetRegistrySettings 平台 registry 凭证设置只读面（IMPL-T1-2/DT-2；
+	// admin scope——registry host/用户名/密码指纹属平台敏感配置，与 S3/ACME
+	// 设置同门）。密码只回 fingerprint（sha256 前 8），绝不回明文；未配置
+	// 时 host 为空。
+	GetRegistrySettings(ctx context.Context, in *GetRegistrySettingsRequest, opts ...grpc.CallOption) (*GetRegistrySettingsResponse, error)
+	// UpdateRegistrySettings 保存平台 registry 凭证设置（host + 用户名 +
+	// 密码）。语义：host 空 = 清除全部设置；password 留空 = 保留已存密码
+	// （ACME api_token 同款先例——改主机/用户名不强制重录）。保存落审计
+	// registry.updated + 事件 registry.updated（payload 带 host 与指纹，
+	// 凭据材料零出现）。解析失败时部署路径回落本机 inspect（airgap 不回归）。
+	UpdateRegistrySettings(ctx context.Context, in *UpdateRegistrySettingsRequest, opts ...grpc.CallOption) (*UpdateRegistrySettingsResponse, error)
 }
 
 type systemServiceClient struct {
@@ -261,6 +274,26 @@ func (c *systemServiceClient) TestDnsProvider(ctx context.Context, in *TestDnsPr
 	return out, nil
 }
 
+func (c *systemServiceClient) GetRegistrySettings(ctx context.Context, in *GetRegistrySettingsRequest, opts ...grpc.CallOption) (*GetRegistrySettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetRegistrySettingsResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetRegistrySettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) UpdateRegistrySettings(ctx context.Context, in *UpdateRegistrySettingsRequest, opts ...grpc.CallOption) (*UpdateRegistrySettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UpdateRegistrySettingsResponse)
+	err := c.cc.Invoke(ctx, SystemService_UpdateRegistrySettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
@@ -337,6 +370,17 @@ type SystemServiceServer interface {
 	// E_ACME_DNS_TEST_FAILED 报错，失败步与底层 provider 错误摘要进信封
 	// context（凭证材料零出现）。
 	TestDnsProvider(context.Context, *TestDnsProviderRequest) (*TestDnsProviderResponse, error)
+	// GetRegistrySettings 平台 registry 凭证设置只读面（IMPL-T1-2/DT-2；
+	// admin scope——registry host/用户名/密码指纹属平台敏感配置，与 S3/ACME
+	// 设置同门）。密码只回 fingerprint（sha256 前 8），绝不回明文；未配置
+	// 时 host 为空。
+	GetRegistrySettings(context.Context, *GetRegistrySettingsRequest) (*GetRegistrySettingsResponse, error)
+	// UpdateRegistrySettings 保存平台 registry 凭证设置（host + 用户名 +
+	// 密码）。语义：host 空 = 清除全部设置；password 留空 = 保留已存密码
+	// （ACME api_token 同款先例——改主机/用户名不强制重录）。保存落审计
+	// registry.updated + 事件 registry.updated（payload 带 host 与指纹，
+	// 凭据材料零出现）。解析失败时部署路径回落本机 inspect（airgap 不回归）。
+	UpdateRegistrySettings(context.Context, *UpdateRegistrySettingsRequest) (*UpdateRegistrySettingsResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -388,6 +432,12 @@ func (UnimplementedSystemServiceServer) UpdateAcmeSettings(context.Context, *Upd
 }
 func (UnimplementedSystemServiceServer) TestDnsProvider(context.Context, *TestDnsProviderRequest) (*TestDnsProviderResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestDnsProvider not implemented")
+}
+func (UnimplementedSystemServiceServer) GetRegistrySettings(context.Context, *GetRegistrySettingsRequest) (*GetRegistrySettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetRegistrySettings not implemented")
+}
+func (UnimplementedSystemServiceServer) UpdateRegistrySettings(context.Context, *UpdateRegistrySettingsRequest) (*UpdateRegistrySettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateRegistrySettings not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -662,6 +712,42 @@ func _SystemService_TestDnsProvider_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_GetRegistrySettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetRegistrySettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetRegistrySettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetRegistrySettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetRegistrySettings(ctx, req.(*GetRegistrySettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_UpdateRegistrySettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateRegistrySettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).UpdateRegistrySettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_UpdateRegistrySettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).UpdateRegistrySettings(ctx, req.(*UpdateRegistrySettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -724,6 +810,14 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TestDnsProvider",
 			Handler:    _SystemService_TestDnsProvider_Handler,
+		},
+		{
+			MethodName: "GetRegistrySettings",
+			Handler:    _SystemService_GetRegistrySettings_Handler,
+		},
+		{
+			MethodName: "UpdateRegistrySettings",
+			Handler:    _SystemService_UpdateRegistrySettings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

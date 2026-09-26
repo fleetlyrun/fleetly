@@ -142,7 +142,10 @@ func NewStore(cfg *AppConfig) (*state.Store, func(), error) {
 // （E1-4/E1-5）：registry 模式镜像引用经 manifest HEAD 前哨核验、service
 // 写自动附带 --with-registry-auth 凭据（惰性现读 registry.auth_file——
 // 凭据可能由 zot 部署 duty 晚于装配期生成）；单节点不装配（零行为差异）。
-func NewSubstrateClient(cfg *AppConfig) (*substrate.Client, func(), error) {
+// IMPL-T1-2/DT-2：装配外部 registry 凭证读取缝（state registry.* 设置
+// 现读 + Box 解密；保存即对下一次部署生效——tag 解析与 service 写两处
+// 消费）与回落留痕（registry 腿失败回落本机 inspect 的日志）。
+func NewSubstrateClient(app lynx.App, cfg *AppConfig, st *state.Store, sb *secrets.Box) (*substrate.Client, func(), error) {
 	c, err := substrate.NewClient(cfg.State.DockerHost)
 	if err != nil {
 		return nil, nil, err
@@ -153,6 +156,25 @@ func NewSubstrateClient(cfg *AppConfig) (*substrate.Client, func(), error) {
 			return build.LoadRegistryCredentials(authFile)
 		})
 	}
+	c.WithImageRegistryCredentials(func() (substrate.ExternalRegistrySettings, error) {
+		in, err := st.LoadRegistrySettings(context.Background())
+		if err != nil {
+			return substrate.ExternalRegistrySettings{}, err
+		}
+		out := substrate.ExternalRegistrySettings{Host: in.Host, Username: in.Username}
+		if in.PasswordCipher != "" {
+			if sb == nil {
+				return substrate.ExternalRegistrySettings{}, fmt.Errorf("secrets box not assembled (registry credentials cannot be decrypted)")
+			}
+			plain, err := sb.Decrypt([]byte(in.PasswordCipher))
+			if err != nil {
+				return substrate.ExternalRegistrySettings{}, fmt.Errorf("decrypt registry password: %w", err)
+			}
+			out.Password = string(plain)
+		}
+		return out, nil
+	})
+	c.WithImageRegistryTrace(app.Logger().Warn)
 	return c, func() { _ = c.Close() }, nil
 }
 

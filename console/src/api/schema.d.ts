@@ -1356,6 +1356,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/system/registry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GetRegistrySettings 平台 registry 凭证设置只读面（IMPL-T1-2/DT-2；
+         *     admin scope——registry host/用户名/密码指纹属平台敏感配置，与 S3/ACME
+         *     设置同门）。密码只回 fingerprint（sha256 前 8），绝不回明文；未配置
+         *     时 host 为空。
+         */
+        get: operations["SystemService_GetRegistrySettings"];
+        /**
+         * UpdateRegistrySettings 保存平台 registry 凭证设置（host + 用户名 +
+         *     密码）。语义：host 空 = 清除全部设置；password 留空 = 保留已存密码
+         *     （ACME api_token 同款先例——改主机/用户名不强制重录）。保存落审计
+         *     registry.updated + 事件 registry.updated（payload 带 host 与指纹，
+         *     凭据材料零出现）。解析失败时部署路径回落本机 inspect（airgap 不回归）。
+         */
+        put: operations["SystemService_UpdateRegistrySettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/system/s3": {
         parameters: {
             query?: never;
@@ -3482,6 +3511,9 @@ export interface components {
         v1GetJoinGuideResponse: {
             guide?: components["schemas"]["v1JoinGuideView"];
         };
+        v1GetRegistrySettingsResponse: {
+            settings?: components["schemas"]["v1RegistrySettingsView"];
+        };
         v1GetS3SettingsResponse: {
             settings?: components["schemas"]["v1S3SettingsView"];
         };
@@ -3568,6 +3600,26 @@ export interface components {
             service?: string;
             /** 服务版本（构建 -ldflags 注入，未注入时为 "dev"）。 */
             version?: string;
+        };
+        /**
+         * RegistrySettingsView 是 registry.* 设置的只读投影。密码只回 fingerprint
+         *     （明文 sha256 前 8 hex；空 = 未设置）——读面永无明文（写面
+         *     UpdateRegistrySettings 承载明文，TLS 传输面 + envelope 持久层）。
+         */
+        v1RegistrySettingsView: {
+            /**
+             * 外部 registry host（归一形态：小写、无 scheme；docker.io 家族归一为
+             *     registry-1.docker.io）。空 = 未配置（解析腿恒匿名）。
+             */
+            host?: string;
+            username?: string;
+            /** 密码指纹（sha256 前 8 hex），非密码本体；空 = 未设置密码。 */
+            password_fingerprint?: string;
+            /**
+             * 最近一次保存时刻（从未保存 → 不输出）。
+             * Format: date-time
+             */
+            updated_at?: string;
         };
         v1RotateJoinTokenRequest: {
             /** 轮换目标 token 的角色：worker（缺省）| manager。 */
@@ -3703,6 +3755,22 @@ export interface components {
         };
         v1UpdateAcmeSettingsResponse: {
             settings?: components["schemas"]["v1AcmeSettingsView"];
+        };
+        v1UpdateRegistrySettingsRequest: {
+            /**
+             * 外部 registry host（ghcr.io 形态；scheme 会被归一剥离）。空 = 清除
+             *     全部设置（host/用户名/密码与指纹）。
+             */
+            host?: string;
+            username?: string;
+            /**
+             * 密码明文（只写字段；读面只见 fingerprint）。**留空 = 保留已存密码**
+             *     （ACME api_token 同款先例）；清除走 host 留空。
+             */
+            password?: string;
+        };
+        v1UpdateRegistrySettingsResponse: {
+            settings?: components["schemas"]["v1RegistrySettingsView"];
         };
         v1UpdateS3SettingsRequest: {
             /** 模式词表（空 = unset）。external↔rustfs 互斥校验见 rpc 注记。 */
@@ -7490,6 +7558,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["v1PingResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_GetRegistrySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1GetRegistrySettingsResponse"];
+                };
+            };
+            /** @description An unexpected error response. */
+            default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1ErrorResponse"];
+                };
+            };
+        };
+    };
+    SystemService_UpdateRegistrySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["v1UpdateRegistrySettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description A successful response. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["v1UpdateRegistrySettingsResponse"];
                 };
             };
             /** @description An unexpected error response. */

@@ -100,6 +100,10 @@ var docEvents = map[string]string{ // event → 文档出处
 	// 布尔开关不带走秘密；发出来源 = platform_settings 的 S3 设置保存事务
 	//（internal/state/s3settings.go，与业务写同事务 = Outbox 模式）。
 	"s3.updated": "E3 object-storage §5.3 added during implementation (settings change; payload carries mode/toggles, never credentials)",
+	// IMPL-T1-2 实现期新增（DT-2 平台 registry 凭证面；注册表只增）：
+	// 发出来源 = platform_settings 的 registry.* 设置保存事务
+	//（internal/state/registrysettings.go，与业务写同事务 = Outbox）。
+	"registry.updated": "IMPL-T1-2 added during implementation (DT-2 platform registry credentials change; payload carries the host and the password fingerprint, never credentials)",
 
 	// E3 对象存储 §5.3 rustfs duty 差分事件（W3-S3/E3-5 接线）：发出来源 =
 	// internal/rustfs 收敛拍（创建/漂移更新 → deployed，mode 离开 → removed

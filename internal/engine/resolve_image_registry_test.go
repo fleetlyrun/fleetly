@@ -6,6 +6,7 @@ package engine
 // 凭据」的修复建议分层直达调用方；引擎其余错误包装语义不变。
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -112,5 +113,57 @@ func TestResolveImageStillWrapsOtherErrors(t *testing.T) {
 	_, err = h.eng.resolveImage(t.Context(), rec, svc)
 	if !errors.As(err, &ae) || ae.Code() != "E_RUNTIME_UNAVAILABLE" {
 		t.Fatalf("err = %v, want E_RUNTIME_UNAVAILABLE wrap (existing semantics)", err)
+	}
+}
+
+// TestResolveImageMissingNamesImageAndReason IMPL-T1-2/DT-2：E_IMAGE_PULL_FAILED
+// 文案点名 image（修复旧文案 params 反序）并携带底层原因与凭证设置指引。
+func TestResolveImageMissingNamesImageAndReason(t *testing.T) {
+	h := newHarness(t)
+	h.images.missing = map[string]bool{"plain.example.test/img:1": true}
+	rec, svc := resolveRegistryFixture(t, h, "plain.example.test/img:1")
+	_, err := h.eng.resolveImage(t.Context(), rec, svc)
+	var ae *apperr.Error
+	if !errors.As(err, &ae) || ae.Code() != "E_IMAGE_PULL_FAILED" {
+		t.Fatalf("err = %v, want E_IMAGE_PULL_FAILED", err)
+	}
+	msg := ae.Message()
+	if !strings.Contains(msg, "plain.example.test/img:1") || !strings.Contains(msg, "service web") {
+		t.Fatalf("message must name the image and service: %s", msg)
+	}
+	if !strings.Contains(msg, "not available") || !strings.Contains(msg, "fleetly registry set") {
+		t.Fatalf("message must carry the underlying reason and the credentials guidance: %s", msg)
+	}
+}
+
+// TestDeployPinsResolvedDigestIntoServiceSpecAndRevisionOverlay 守卫③：
+// registry/本机解析得到的 digest 钉定进 plan 的 ServiceSpec（底座服务实况
+// 镜像 = repo@sha256:…）与版本快照 overlay（revision spec 回归）。
+func TestDeployPinsResolvedDigestIntoServiceSpecAndRevisionOverlay(t *testing.T) {
+	h := newHarness(t)
+	path := h.writeCompose(composeV1)
+	rec := h.enqueue(path)
+	final := h.runToTerminal(rec)
+	if final.Status != state.DeploySucceeded {
+		t.Fatalf("deploy = %s (%s), want succeeded", final.Status, final.ErrorCode)
+	}
+	// fakeImages 对未知引用返回 "sha256:digest-<ref>"（解析→钉定链路同构）。
+	wantImage := "alpine:3@sha256:digest-alpine:3"
+	svc, err := h.sub.ServiceInspect(context.Background(), h.svc("web"))
+	if err != nil {
+		t.Fatalf("service inspect: %v", err)
+	}
+	if svc.Image != wantImage {
+		t.Fatalf("service spec image = %q, want digest-pinned %q", svc.Image, wantImage)
+	}
+	revs, err := h.store.ListRevisions(context.Background(), rec.AppID)
+	if err != nil {
+		t.Fatalf("ListRevisions: %v", err)
+	}
+	if len(revs) == 0 {
+		t.Fatal("no revision snapshots recorded")
+	}
+	if !strings.Contains(revs[0].Overlay, wantImage) {
+		t.Fatalf("revision overlay must carry the digest-pinned image %q: %s", wantImage, revs[0].Overlay)
 	}
 }
