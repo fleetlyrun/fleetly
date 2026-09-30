@@ -2,7 +2,8 @@
 # e2e dind smoke（F0.24 + N0 收口批）：单节点真实链路——dind 容器内
 # install.sh 一行安装（bin-dir 模式，F0.1）→ fleetlyd（真 swarm Runtime +
 # 真 Builder）→ fleetly init 身份链（F0.2）→ doctor 冒烟（F0.4）→
-# 全链 project → app → deploy(image) → succeeded → rollback → read paths →
+# 全链 project → app → deploy(image) → succeeded → 优雅退出与被杀重放
+# 回归（F0.12 场景 1/2）→ rollback → read paths →
 # webhook HTTP 段（F0.13：容器内 curl 直发 gateway）。
 # h2c Route 端到端（traefik 受管）随 nightly 多拓扑批接入（镜像拉取与
 # ACME 时窗不适合单节点 smoke 的预算）。
@@ -154,10 +155,145 @@ log "verifying swarm carriers exist"
 docker exec "$DIND_CID" docker service ls --format '{{.Name}} {{.Replicas}}' | grep "fleetly-default-" || true
 docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep -q "fleetly-default-"
 
-# 5. webhook 段（F0.13）：配置 hook（首配铸造，secret 一次）→ 容器内 curl
-# 直发 gateway :9081 /v1/hooks/<token>（HMAC 宿侧计算）。
+# 4b/4c. 优雅退出与被杀重放回归（F0.12）：
+#   场景 1（领域模型 §5）：在途部署中 SIGKILL → 重启按 Generation 幂等
+#   重放收口——同一 Deployment 到 succeeded、无重复下发（task 恰两行：
+#   gen1 Shutdown + gen2 Running）、已成功基线不被回滚（无新增回滚行）。
+#   场景 2：observing 中 SIGTERM（宽限契约：有界退出）→ 重启观察窗续算
+#   （deadline 持久化在 deployment 行，不整窗重开——验收口径见断言）。
+restart_fleetlyd() {
+  docker exec "$DIND_CID" sh -c \
+    'setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
+  i=0
+  while [ "$i" -lt 60 ]; do
+    if cli whoami >/dev/null 2>&1; then
+      return 0
+    fi
+    i=$((i + 1))
+    sleep 1
+  done
+  echo "fleetlyd did not come back after restart" >&2
+  exit 1
+}
+
+deployment_states() {
+  cli --json deployments list --app "$APP_ID" \
+    | grep -o '"state": *"[a-z-]*"' | sed 's/.*"\([a-z-]*\)"$/\1/'
+}
+
+service_name() {
+  docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep '^fleetly-default-'
+}
+
+log "scenario 1: SIGKILL mid-deploy (F0.12 domain model scenario 1)"
+DEP2_ID=$(cli --json deploy --app "$APP_ID" --image nginx:1.27 | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+# 尽力命中 releasing（拉起窗口短；滑到 observing 也属在途，同样成立）。
+i=0
+while [ "$i" -lt 8 ]; do
+  state=$(cli --json deployments list --app "$APP_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+  case "$state" in
+    releasing|observing) break ;;
+  esac
+  i=$((i + 1))
+  sleep 0.3
+done
+# 前置断言：kill 时必须在途（queued/preparing/releasing/observing）。到达
+# failed/rolling-back 说明部署自身已败——不属于本场景，直接取证失败。
+case "$state" in
+  queued|preparing|releasing|observing) ;;
+  *)
+    echo "scenario 1 precondition broken: deployment already in $state (expected in-flight)" >&2
+    cli --json deployments list --app "$APP_ID" >&2 || true
+    exit 1
+    ;;
+esac
+log "scenario 1: killing fleetlyd (deployment state at kill: $state)"
+docker exec "$DIND_CID" pkill -9 fleetlyd || true
+sleep 1
+log "scenario 1: restarting fleetlyd"
+restart_fleetlyd
+wait_state succeeded
+log "scenario 1: replay converged to succeeded"
+
+# 收口断言：恰好两条部署且全部 succeeded 终态——基线保持 succeeded（未
+# 被回滚）、重放未另起新行（无重复下发的事务面）。
+states1=$(deployment_states | tr '\n' ' ')
+if [ "$(deployment_states | wc -w)" -ne 2 ] || [ "$(deployment_states | grep -c succeeded)" -ne 2 ]; then
+  echo "scenario 1: expected exactly 2 succeeded deployments, got: $states1" >&2
+  exit 1
+fi
+
+# 载体无重复下发：同 spec 的 gen2 Ensure 是 update no-op；kill 前后的重放
+# 不得产生额外 task（恰两行：gen1 Shutdown + gen2 Running）。
+SVC=$(service_name)
+task_rows=$(docker exec "$DIND_CID" docker service ps "$SVC" --format '{{.CurrentState}}')
+n_running=$(printf '%s\n' "$task_rows" | grep -c '^Running ' || true)
+n_shutdown=$(printf '%s\n' "$task_rows" | grep -c '^Shutdown ' || true)
+n_total=$(printf '%s\n' "$task_rows" | grep -c . || true)
+if [ "$n_total" -ne 2 ] || [ "$n_running" -ne 1 ] || [ "$n_shutdown" -ne 1 ]; then
+  echo "scenario 1: expected 2 task rows (1 Running + 1 Shutdown), got ($n_total/$n_running/$n_shutdown):" >&2
+  printf '%s\n' "$task_rows" >&2
+  exit 1
+fi
+log "scenario 1: no duplicate dispatch (2 task rows: 1 running + 1 shutdown), baseline intact"
+
+log "scenario 2: SIGTERM during observing (drain grace) then window continuation"
+cli --json deploy --app "$APP_ID" --image nginx:1.27 >/dev/null
+wait_state observing
+OBS_AT=$(date +%s)
+# 走进窗口中段再杀（默认 60s 窗，留足续算/重开的区分裕度）。
+sleep 15
+TERM_AT=$(date +%s)
+docker exec "$DIND_CID" pkill -TERM fleetlyd || true
+# 宽限契约：lynx 排水窗固定 30s（在途收口 + 摘流窗口），空载也走满——
+# 有界退出（≤30s + 余量）即契约达成，不追求秒退。
+i=0
+while [ "$i" -lt 80 ]; do
+  if ! docker exec "$DIND_CID" pgrep fleetlyd >/dev/null 2>&1; then
+    break
+  fi
+  i=$((i + 1))
+  sleep 0.5
+done
+if [ "$i" -ge 80 ]; then
+  echo "fleetlyd did not exit within the drain grace (40s > 30s budget + margin)" >&2
+  exit 1
+fi
+log "scenario 2: fleetlyd exited gracefully in $(($(date +%s) - TERM_AT))s"
+restart_fleetlyd
+wait_state succeeded
+DONE_AT=$(date +%s)
+# 续算断言：deadline 持久化在行上——成功应在 observing 检出后 ~62s 内
+#（含检测/轮询迟滞）；若整窗重开，最早 observing+15s(杀) + ~5s(重启) +
+# 60s(窗) ≈ 80s。72s 阈值两侧各留 ≥8s 裕度。
+if [ $((DONE_AT - OBS_AT)) -ge 72 ]; then
+  echo "scenario 2: observe window restarted instead of continuing (took $((DONE_AT - OBS_AT))s)" >&2
+  exit 1
+fi
+if [ "$(deployment_states | wc -w)" -ne 3 ]; then
+  echo "scenario 2: expected 3 deployment rows, got: $(deployment_states | tr '\n' ' ')" >&2
+  exit 1
+fi
+log "scenario 2: window continued after restart (succeeded at +$((DONE_AT - OBS_AT))s)"
+
+# 5. 回滚与读路径（在 webhook 段之前：后者会冻结引擎循环，见段注）。
+log "rollback (Revision Replay)"
+cli rollback --app "$APP_ID" >/dev/null
+wait_state succeeded
+
+log "revisions + events read paths"
+cli revisions list --app "$APP_ID" >/dev/null
+cli events list --limit 5 >/dev/null
+cli nodes list >/dev/null
+
+# 6. webhook 段（F0.13，本段置尾）：配置 hook（首配铸造，secret 一次）→
+# 容器内 curl 直发 gateway :9081 /v1/hooks/<token>（HMAC 宿侧计算）。
+# 仓库指向 TEST-NET（192.0.2.1）：git clone 连接黑洞挂起——clone 在单写者
+# drive 步内同步执行，引擎循环会冻结到 5 分钟超时。置尾两点收益：commit
+# 去重窗确定性在场（去重锚只匹配活跃部署；真实仓库 clone 快败曾是本段
+# 的时序骰子），且脚本随后即结束，冻结的循环随容器清理一起埋葬。
 log "webhook chain over the gateway HTTP face"
-HOOK_SECRET=$(cli --json hooks set --app "$APP_ID" --repo https://github.com/acme/shop.git --branch main --watch web/ \
+HOOK_SECRET=$(cli --json hooks set --app "$APP_ID" --repo https://192.0.2.1/acme/shop.git --branch main --watch web/ \
   | sed -n 's/.*"secret": *"\([^"]*\)".*/\1/p' | head -1)
 if [ -z "$HOOK_SECRET" ]; then
   echo "hooks set did not mint a secret" >&2
@@ -197,8 +333,8 @@ case "$resp" in
   *) echo "expected pong, got: $resp" >&2; exit 1 ;;
 esac
 
-# push 命中 → accepted + 部署推进出队（repo 是虚构仓库：building 后构建
-# 失败是预期终态——断言引擎已接手而非 queued）。
+# push 命中 → accepted + 部署推进出队（TEST-NET 仓库：building 挂起至
+# 脚本结束——断言引擎已接手而非 queued）。
 COMMIT="1234567890123456789012345678901234567890"
 PUSH="{\"ref\":\"refs/heads/main\",\"after\":\"$COMMIT\",\"head_commit\":{\"id\":\"$COMMIT\",\"message\":\"smoke push\"},\"commits\":[{\"modified\":[\"web/index.ts\"]}]}"
 payload "$PUSH"
@@ -238,7 +374,8 @@ case "$resp" in
   *) echo "expected skipped, got: $resp" >&2; exit 1 ;;
 esac
 
-# 引擎已接手：webhook 部署离开 queued（虚构仓库的构建失败是预期路径）。
+# 引擎已接手：webhook 部署离开 queued（building = clone 已在单写者步内
+# 挂起，活跃状态正是 commit 去重窗在场的直接证据）。
 i=0
 while [ "$i" -lt 60 ]; do
   state=$(cli --json deployments list --app "$APP_ID" | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
@@ -260,15 +397,7 @@ if docker exec "$DIND_CID" sh -c "grep -c '$HOOK_SECRET' /var/log/fleetlyd.log" 
 fi
 log "hook token absent from fleetlyd logs"
 
-# 6. 回滚与读路径（原链保持）。
-log "rollback (Revision Replay)"
-cli rollback --app "$APP_ID" >/dev/null
-wait_state succeeded
-
-log "revisions + events read paths"
-cli revisions list --app "$APP_ID" >/dev/null
-cli events list --limit 5 >/dev/null
-cli nodes list >/dev/null
+log "hook + audit read paths"
 cli hooks get --app "$APP_ID" >/dev/null
 cli audit --source webhook --limit 5 >/dev/null
 
