@@ -63,15 +63,18 @@ type EdgeConfigServer struct {
 
 // NewEdgeProvider 经工厂注册表构造 Edge Provider（cmd/fleetlyd blank
 // import 触发 traefik 自注册；端点/邮箱经环境变量注入，配置面随 API 批
-// 次落 config.proto）。无在册者时返回 nil（Edge 面停用，诚实降级）。
-func NewEdgeProvider() (capability.Edge, func(), error) {
+// 次落 config.proto）。无在册者或未配置端点时返回 nil——Edge 面停用是
+// 诚实降级（存量路由语义不适用 N0 骨架；安装引导批配置端点后启用），
+// 不拖死启动。
+func NewEdgeProvider(app lynx.App) (capability.Edge, func(), error) {
 	providers := capability.RegisteredFactories()
 	if len(providers[capability.KindEdge]) == 0 {
 		return nil, func() {}, nil
 	}
 	p, err := capability.Build(context.Background(), capability.KindEdge, "")
 	if err != nil {
-		return nil, nil, err
+		app.Logger().Warn("edge provider unavailable; route publishing disabled", "err", err)
+		return nil, func() {}, nil
 	}
 	edge, ok := p.(capability.Edge)
 	if !ok {

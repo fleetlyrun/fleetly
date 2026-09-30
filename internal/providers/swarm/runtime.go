@@ -154,10 +154,62 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 				}
 			}
 		case <-anchorTicker.C:
-			// 锚定扫描同时充当节点存活观测（node leave 事件经 mapEvent）。
+			// 锚定扫描同时充当节点存活观测（node leave 事件经 mapEvent）；
+			// 任务轮询补充 service 事件缺 labels 时的观测权威（L1 数据源）。
 			_ = p.anchorNodes(ctx, out)
+			_ = p.pollTasks(ctx, out)
 		}
 	}
+}
+
+// pollTasks 用 TaskList 快照生成 workload 观测：swarm 的 service 事件
+// Actor.Attributes 不携带 spec labels（Generation 观测缺锚），任务快照
+// 从 Service.Spec.Labels 还原平台标记——10s 轮询是 L1 的权威路径，事件
+// 流提供即时唤醒。
+func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.WorkloadEvent) error {
+	tasks, err := p.cli.TaskList(ctx, client.TaskListOptions{})
+	if err != nil {
+		return fmt.Errorf("task list: %w", err)
+	}
+	svcLabels := map[string]map[string]string{}
+	for _, t := range tasks.Items {
+		sid := t.ServiceID
+		if _, ok := svcLabels[sid]; ok {
+			continue
+		}
+		svc, err := p.cli.ServiceInspect(ctx, sid, client.ServiceInspectOptions{})
+		if err != nil {
+			continue
+		}
+		svcLabels[sid] = svc.Service.Spec.Labels
+	}
+	for _, t := range tasks.Items {
+		labels := svcLabels[t.ServiceID]
+		if labels[labelManaged] != "true" {
+			continue
+		}
+		gen, _ := strconv.ParseUint(labels[labelGeneration], 10, 64)
+		state := capability.WorkloadRunning
+		if t.Status.State == swarm.TaskStateFailed || t.Status.State == swarm.TaskStateRejected {
+			state = capability.WorkloadDegraded
+		}
+		ev := capability.WorkloadEvent{
+			WorkloadID: labels[labelWorkload],
+			Generation: capability.Generation(gen),
+			State:      state,
+			Node:       labels[labelNodeID],
+			Message:    string(t.Status.State),
+		}
+		if ev.WorkloadID == "" {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case out <- ev:
+		}
+	}
+	return nil
 }
 
 // mapEvent 把 swarm 事件翻译为 WorkloadEvent（读不到平台标记的载体忽略
@@ -201,6 +253,10 @@ func serviceEventState(action string) capability.WorkloadState {
 // anchorNodes 扫描全部节点：无平台 ID 标记者铸造 ULID、写回节点 label、
 // 上报 node.joined（架构 §5 节点身份锚定契约义务；D-MN-8 节点 ID 永不
 // 复用——锚定后平台权威表持有映射）。
+//
+// 并发锚定竞态（Watch 初始扫描与 DescribeCluster 对账同拍运行）：节点
+// 版本被另一路径推进时 NodeUpdate 报 out of sequence——重取版本重试；
+// 发现他方已完成锚定（label 已在）即复用，不二次铸造。
 func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.WorkloadEvent) error {
 	list, err := p.cli.NodeList(ctx, client.NodeListOptions{})
 	if err != nil {
@@ -209,6 +265,33 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 	for _, node := range list.Items {
 		if id := node.Spec.Labels[labelNodeID]; id != "" {
 			continue
+		}
+		minted, err := p.mintNodeID(ctx, node)
+		if err != nil {
+			return fmt.Errorf("mint node id on %s: %w", node.ID, err)
+		}
+		if minted == "" {
+			continue // 他方已完成锚定（复用其 label，不重复上报 joined）
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case out <- capability.WorkloadEvent{NodeJoined: &capability.NodeJoined{
+			NodeID:    minted,
+			CarrierID: node.ID,
+			Minted:    true,
+		}}:
+		}
+	}
+	return nil
+}
+
+// mintNodeID 铸造并写回单节点锚定标记；返回铸造的平台 ID（空串 = 他方
+// 已完成）。版本竞态最多重试 3 次（每次重新 inspect 取新版本）。
+func (p *Provider) mintNodeID(ctx context.Context, node swarm.Node) (string, error) {
+	for attempt := 0; attempt < 3; attempt++ {
+		if id := node.Spec.Labels[labelNodeID]; id != "" {
+			return "", nil // 他方已完成
 		}
 		minted := ulid.Make().String()
 		spec := node.Spec
@@ -222,23 +305,21 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 		}
 		labels[labelNodeID] = minted
 		spec.Labels = labels
-		if _, err := p.cli.NodeUpdate(ctx, node.ID, client.NodeUpdateOptions{
+		_, err := p.cli.NodeUpdate(ctx, node.ID, client.NodeUpdateOptions{
 			Version: node.Version,
 			Spec:    spec,
-		}); err != nil {
-			return fmt.Errorf("mint node id on %s: %w", node.ID, err)
+		})
+		if err == nil {
+			return minted, nil
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case out <- capability.WorkloadEvent{NodeJoined: &capability.NodeJoined{
-			NodeID:    minted,
-			CarrierID: node.ID,
-			Minted:    true,
-		}}:
+		// 版本竞态：重取节点（另一锚定路径已推进版本）。
+		inspect, ierr := p.cli.NodeInspect(ctx, node.ID, client.NodeInspectOptions{})
+		if ierr != nil {
+			return "", ierr
 		}
+		node = inspect.Node
 	}
-	return nil
+	return "", fmt.Errorf("node version raced 3 times")
 }
 
 // Addresses 返回隔离域可达地址（overlay VIP / 服务 DNS 名；平台无关形态）。

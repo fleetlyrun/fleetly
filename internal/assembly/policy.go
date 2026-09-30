@@ -37,9 +37,11 @@ func scopeResources() []string {
 	}
 }
 
-// NewPolicySet 从 proto 注解收集全量方法授权策略（authz.Build）。
+// NewPolicySet 从 proto 注解收集全量方法授权策略（authz.Build；流式面
+// logs/events 显式放行——拦截器按流首元数据执法，随账号批接入）。
 func NewPolicySet() (*authz.PolicySet, error) {
 	return authz.Build(authzFiles(), authz.Options{
 		Vocabulary: authz.Vocabulary{ScopeResources: scopeResources()},
+		AllowStreaming: true,
 	})
 }

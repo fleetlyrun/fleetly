@@ -141,6 +141,9 @@ func (s *engineService) Name() string               { return "engine" }
 func (s *engineService) Init(lynx.AppContext) error { return nil }
 func (s *engineService) Start(ctx context.Context) error {
 	s.e.Start(ctx)
+	// lynx 服务契约：Start 阻塞直至关停（快速返回会被当作服务退出并
+	// 触发全局 shutdown）。
+	<-ctx.Done()
 	return nil
 }
 func (s *engineService) Stop(ctx context.Context) error { return s.e.Stop(ctx) }
