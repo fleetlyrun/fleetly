@@ -52,7 +52,7 @@ func TestGoldenDoctor(t *testing.T) {
 func TestDoctorFailuresExitNonZero(t *testing.T) {
 	injectDoctorProbes(t,
 		dockerProbeResult{Err: "exec: docker: not found"},
-		errors.New("connection refused"), 1 << 30, nil,
+		errors.New("connection refused"), 1<<30, nil,
 		nil, errors.New("connection refused"),
 	)
 	code, out, stderr := runCLI(t, "doctor")

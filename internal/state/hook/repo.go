@@ -101,7 +101,7 @@ func (r *Repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, pr
 }
 
 // RecordDelivery 落一行重投去重锚；返回 true = 该 delivery 已出现过
-//（重投）。顺带清理保留窗外的旧行。
+// （重投）。顺带清理保留窗外的旧行。
 func (r *Repo) RecordDelivery(ctx context.Context, run state.Runner, appID, delivery string) (bool, error) {
 	now := r.clock.Now()
 	cutoff := state.FormatTime(now.Add(-deliveryRetention * 1e9))

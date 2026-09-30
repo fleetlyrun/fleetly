@@ -164,7 +164,7 @@ func newQuickstartVerb() commands.Command {
 				DeploymentID: dep.GetDeployment().GetId(),
 				RouteID:      route.GetRoute().GetId(),
 				Host:         host, URL: scheme + "://" + host,
-				State:        state,
+				State: state,
 			}
 			if jsonOut {
 				return writeJSON(env.Stdout, report)

@@ -67,7 +67,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 		row := &hook.Hook{
 			AppID: appRow.ID, Repo: strings.TrimSpace(req.GetRepo()),
 			Branch: normalizeBranch(req.GetBranch()), Dockerfile: normalizeDockerfile(req.GetDockerfile()),
-			WatchPaths: normalizeWatchPaths(req.GetWatchPaths()),
+			WatchPaths:  normalizeWatchPaths(req.GetWatchPaths()),
 			TokenSHA256: material.SHA256, TokenPrefix: material.Prefix, SecretCiphertext: ciphertext,
 		}
 		txErr := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {

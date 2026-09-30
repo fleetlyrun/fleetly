@@ -51,9 +51,9 @@ func TestHooksHandlerForwardsGitHubShape(t *testing.T) {
 	h := newHooksHandler(fake)
 
 	rec := post(h, fleetlygrpc.HooksURLPrefix+"flthook_abc123", `{"ref":"refs/heads/main"}`, map[string]string{
-		"X-GitHub-Event":       "push",
-		"X-GitHub-Delivery":    "d-1",
-		"X-Hub-Signature-256":  "sha256=deadbeef",
+		"X-GitHub-Event":      "push",
+		"X-GitHub-Delivery":   "d-1",
+		"X-Hub-Signature-256": "sha256=deadbeef",
 	})
 	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
 	// 请求面逐字段搬运（体是原始字节）。

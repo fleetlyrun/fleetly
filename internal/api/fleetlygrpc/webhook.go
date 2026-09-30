@@ -35,10 +35,10 @@ const skipDeployMarker = "[skip deploy]"
 // pushPayload 是 GitHub push 事件的最小解析面（其余字段忽略——契约只取
 // 部署判定所需）。
 type pushPayload struct {
-	Ref     string         `json:"ref"`
-	After   string         `json:"after"`
-	Head    *headCommit    `json:"head_commit"`
-	Commits []commitEntry  `json:"commits"`
+	Ref     string        `json:"ref"`
+	After   string        `json:"after"`
+	Head    *headCommit   `json:"head_commit"`
+	Commits []commitEntry `json:"commits"`
 }
 
 type headCommit struct {
