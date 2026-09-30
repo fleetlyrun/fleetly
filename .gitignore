@@ -40,4 +40,11 @@ console/dist/
 # e2e 本地工作产物（中断跑批的日志/二进制）
 .e2ebin/
 
+# 离线 proto 生成的钉版本地插件（buf.gen.local.yaml 消费；buf.build
+# remote 不可达时的生成通道——重装：go install 至 GOBIN=.tmp-bin）
+.tmp-bin/
+
+# 真机验证/升级的临时脚本与二进制（.n0-* 系列）
+.n0-*/
+
 .zcode/

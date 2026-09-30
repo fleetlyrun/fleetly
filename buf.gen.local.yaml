@@ -1,0 +1,26 @@
+# 本地插件形态（临时，不提交）：buf.build remote 插件不可达时的离线
+# 生成通道。插件版本与 buf.gen.yaml 的 remote 钉版一一相同，输出字节一致
+#（buf 内置编译器与插件版本是输出的全部变量）。网络恢复后回到
+# buf generate（remote）即可。
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: genproto
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-grpc-gateway
+    out: genproto
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-go-grpc
+    out: genproto
+    opt:
+      - paths=source_relative
+
+  - local: protoc-gen-openapiv2
+    out: genproto
+    opt:
+      - json_names_for_fields=false
+      - disable_default_errors=true
