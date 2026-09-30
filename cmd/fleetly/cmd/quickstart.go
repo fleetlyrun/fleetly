@@ -119,8 +119,11 @@ func newQuickstartVerb() commands.Command {
 				appID = a.GetApp().GetId()
 			}
 
-			// 3. 部署样例镜像。
-			dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: image})
+			// 3. 部署样例镜像（compose 形态：Route 后端解析依赖端口声明
+			// 落 fleetly.ports 标注——镜像直投无端口声明面，Edge 后端将
+			// 无从解析；compose 受控子集带 ports 声明）。
+			compose := fmt.Sprintf("services:\n  web:\n    image: %s\n    ports:\n      - \"%d\"\n", image, port)
+			dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
 			if err != nil {
 				return err
 			}
