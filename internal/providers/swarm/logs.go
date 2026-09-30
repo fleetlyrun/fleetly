@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -26,7 +27,7 @@ func (p *Provider) StreamLogs(ctx context.Context, q capability.LogQuery, w capa
 		if q.WorkloadID != "" && workloadIDOfContainer(c) != q.WorkloadID {
 			continue
 		}
-		if err := p.streamContainerLogs(ctx, c, w); err != nil {
+		if err := p.streamContainerLogs(ctx, c, q, w); err != nil {
 			return err
 		}
 	}
@@ -47,14 +48,26 @@ func (p *Provider) listNsContainers(ctx context.Context, ns capability.Namespace
 	return res.Items, nil
 }
 
-// streamContainerLogs 流式读取单容器日志并翻译为 LogFrame。
-func (p *Provider) streamContainerLogs(ctx context.Context, c container.Summary, w capability.LogWriter) error {
-	res, err := p.cli.ContainerLogs(ctx, c.ID, client.ContainerLogsOptions{
+// streamContainerLogs 流式读取单容器日志并翻译为 LogFrame。tail/时间窗
+// 交给 dockerd 裁剪（ContainerLogs 同参语义；Since/Until 取 RFC3339 文本
+// 形态，零值 = 不限）。
+func (p *Provider) streamContainerLogs(ctx context.Context, c container.Summary, q capability.LogQuery, w capability.LogWriter) error {
+	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
 		Follow:     true,
 		Timestamps: true,
-	})
+	}
+	if q.TailLines > 0 {
+		opts.Tail = strconv.FormatInt(q.TailLines, 10)
+	}
+	if !q.Since.IsZero() {
+		opts.Since = q.Since.Format(time.RFC3339Nano)
+	}
+	if !q.Until.IsZero() {
+		opts.Until = q.Until.Format(time.RFC3339Nano)
+	}
+	res, err := p.cli.ContainerLogs(ctx, c.ID, opts)
 	if err != nil {
 		return fmt.Errorf("container logs %s: %w", c.ID, err)
 	}

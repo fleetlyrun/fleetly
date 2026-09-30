@@ -222,8 +222,12 @@ type StreamLogsRequest struct {
 	AppId   string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
 	Process string                 `protobuf:"bytes,2,opt,name=process,proto3" json:"process,omitempty"`
 	// tail_lines 尾部行数（0 = 全量最近缓冲）；follow 持续跟随。
-	TailLines     int64 `protobuf:"varint,3,opt,name=tail_lines,json=tailLines,proto3" json:"tail_lines,omitempty"`
-	Follow        bool  `protobuf:"varint,4,opt,name=follow,proto3" json:"follow,omitempty"`
+	TailLines int64 `protobuf:"varint,3,opt,name=tail_lines,json=tailLines,proto3" json:"tail_lines,omitempty"`
+	Follow    bool  `protobuf:"varint,4,opt,name=follow,proto3" json:"follow,omitempty"`
+	// since/until 是时间窗（RFC3339；空 = 不限）。RuntimeLogs 直读边界：
+	// 窗口作用于最近缓冲，不回溯持久化检索（N2）。
+	Since         string `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
+	Until         string `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -284,6 +288,20 @@ func (x *StreamLogsRequest) GetFollow() bool {
 		return x.Follow
 	}
 	return false
+}
+
+func (x *StreamLogsRequest) GetSince() string {
+	if x != nil {
+		return x.Since
+	}
+	return ""
+}
+
+func (x *StreamLogsRequest) GetUntil() string {
+	if x != nil {
+		return x.Until
+	}
+	return ""
 }
 
 // StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339）。
@@ -381,13 +399,15 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"d\n" +
 	"\x12ListEventsResponse\x123\n" +
 	"\x06events\x18\x01 \x03(\v2\x1b.fleetly.telemetry.v1.EventR\x06events\x12\x19\n" +
-	"\blast_seq\x18\x02 \x01(\x03R\alastSeq\"{\n" +
+	"\blast_seq\x18\x02 \x01(\x03R\alastSeq\"\xa7\x01\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
 	"\n" +
 	"tail_lines\x18\x03 \x01(\x03R\ttailLines\x12\x16\n" +
-	"\x06follow\x18\x04 \x01(\bR\x06follow\"\x8f\x01\n" +
+	"\x06follow\x18\x04 \x01(\bR\x06follow\x12\x14\n" +
+	"\x05since\x18\x05 \x01(\tR\x05since\x12\x14\n" +
+	"\x05until\x18\x06 \x01(\tR\x05until\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +

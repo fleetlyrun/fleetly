@@ -74,6 +74,10 @@ message StreamLogsRequest {
   // tail_lines 尾部行数（0 = 全量最近缓冲）；follow 持续跟随。
   int64 tail_lines = 3;
   bool follow = 4;
+  // since/until 是时间窗（RFC3339；空 = 不限）。RuntimeLogs 直读边界：
+  // 窗口作用于最近缓冲，不回溯持久化检索（N2）。
+  string since = 5;
+  string until = 6;
 }
 
 // StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339）。

@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
@@ -13,6 +14,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 )
@@ -224,16 +227,44 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 	if err != nil {
 		return mapStateError(err, "app")
 	}
-	q := capability.LogQuery{
-		Namespace: capability.NamespaceRef{Team: "default", Project: appRow.ProjectID, App: appRow.ID},
-		TailLines: req.GetTailLines(),
-		Follow:    req.GetFollow(),
+	q, err := logQueryFromRequest(appRow, req)
+	if err != nil {
+		return err
 	}
 	w := &streamLogWriter{stream: stream}
 	if err := logs.StreamLogs(stream.Context(), q, w); err != nil {
 		return mapStateError(err, "logs")
 	}
 	return nil
+}
+
+// logQueryFromRequest 把 RPC 请求翻译为 RuntimeLogs 查询：process 过滤经
+// 投影公式合成 Workload ID（公式真源 engine.WorkloadID，不散拼）；时间窗
+// RFC3339（空 = 不限，坏值精确拒绝）。
+func logQueryFromRequest(appRow *app.App, req *telemetryv1.StreamLogsRequest) (capability.LogQuery, error) {
+	q := capability.LogQuery{
+		Namespace: capability.NamespaceRef{Team: "default", Project: appRow.ProjectID, App: appRow.ID},
+		TailLines: req.GetTailLines(),
+		Follow:    req.GetFollow(),
+	}
+	if p := req.GetProcess(); p != "" {
+		q.WorkloadID = engine.WorkloadID(appRow.ID, p)
+	}
+	if raw := req.GetSince(); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return q, apperr.New("E_INVALID_ARGUMENT", "since: must be RFC3339 (got %q)", raw)
+		}
+		q.Since = t
+	}
+	if raw := req.GetUntil(); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			return q, apperr.New("E_INVALID_ARGUMENT", "until: must be RFC3339 (got %q)", raw)
+		}
+		q.Until = t
+	}
+	return q, nil
 }
 
 // streamLogWriter 把 RuntimeLogs 帧转发为 RPC 流帧。

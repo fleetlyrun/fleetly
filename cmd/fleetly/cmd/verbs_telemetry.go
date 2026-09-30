@@ -50,17 +50,19 @@ func newEventsListVerb() commands.Command {
 
 func newLogsVerb() commands.Command {
 	const name = "logs"
-	var app, process string
+	var app, process, since, until string
 	var tail int64
 	var follow bool
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Stream container logs for an app (live tail + recent buffer only; persisted search lands in N2)",
-		usage:    "logs --app APP_ID [--process NAME] [--tail N] [--follow]",
+		usage:    "logs --app APP_ID [--process NAME] [--tail N] [--since T] [--until T] [--follow]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&process, "process", "", "filter by process name")
 			fs.Int64Var(&tail, "tail", 0, "tail lines (0 = all buffered)")
+			fs.StringVar(&since, "since", "", "time window start (RFC3339, e.g. 2026-10-01T00:00:00Z)")
+			fs.StringVar(&until, "until", "", "time window end (RFC3339)")
 			fs.BoolVar(&follow, "follow", false, "keep streaming new output")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
@@ -73,7 +75,8 @@ func newLogsVerb() commands.Command {
 			}
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			stream, err := c.Logs.StreamLogs(ctx, &telemetryv1.StreamLogsRequest{
-				AppId: app, TailLines: tail, Follow: follow,
+				AppId: app, Process: process, TailLines: tail, Follow: follow,
+				Since: since, Until: until,
 			})
 			if err != nil {
 				return err

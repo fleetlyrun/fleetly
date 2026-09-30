@@ -24,7 +24,7 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string) 
 		w := capability.Workload{
 			// Workload ID 是确定性合成串（领域模型 §3：ULID 或等价——唯一
 			// 且跨 Deployment 稳定，Ensure 走 update 路径而非反复重建）。
-			ID:      workloadID(spec.GetApp().GetId(), p.GetName()),
+			ID:      WorkloadID(spec.GetApp().GetId(), p.GetName()),
 			Process: p.GetName(),
 			Image:   image,
 			Command: p.GetCommand(),
@@ -71,9 +71,11 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string) 
 	return workloads, ns, nil
 }
 
-// workloadID 合成平台 Workload ID（app ULID + process 名：唯一、稳定、
+// WorkloadID 合成平台 Workload ID（app ULID + process 名：唯一、稳定、
 // 人读可分解——归属与 Drift 判定的锚，Provider 把它搬运到载体标记）。
-func workloadID(appID, process string) string {
+// 公式真源在此导出：API/CLI 面按 process 过滤日志等场景复用，不得各自
+// 拼接（散落副本一旦漂移即静默失配）。
+func WorkloadID(appID, process string) string {
 	return appID + "-" + process
 }
 
