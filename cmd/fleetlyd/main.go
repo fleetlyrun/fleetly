@@ -18,6 +18,7 @@ import (
 	// providers 只准经注册表间接装配，全仓唯此一处）。
 	_ "github.com/fleetlyrun/fleetly/internal/providers/dockerbuild"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
+	_ "github.com/fleetlyrun/fleetly/internal/providers/traefik"
 )
 
 // version/commit/date 由 mise build 的 ldflags 注入。

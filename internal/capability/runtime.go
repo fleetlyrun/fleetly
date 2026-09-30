@@ -113,6 +113,17 @@ type Workload struct {
 	Volumes []VolumeMount
 	// Networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。
 	Networks []string
+	// Publish 是宿主端口发布声明（平台无关形态）。常规用户 Workload 不
+	// 发布宿主端口（流量一律经 Edge，架构坑清单）；受管 Edge 自身例外
+	//（80/443 入站是其部署形态的一部分）。
+	Publish []PortPublish
+}
+
+// PortPublish 是一条宿主端口发布（PublishedPort 宿主侧；TargetPort 容器
+// 侧；swarm 翻译为 routing mesh 发布，k8s 翻译为 NodePort/LoadBalancer）。
+type PortPublish struct {
+	PublishedPort int32
+	TargetPort    int32
 }
 
 // WorkloadPort 是进程监听端口声明。

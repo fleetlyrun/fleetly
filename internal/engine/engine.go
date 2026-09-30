@@ -18,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
+	"github.com/fleetlyrun/fleetly/internal/state/route"
 )
 
 // 哨兵错误（API 层映射 errcode；engine 自身不依赖 apperr）。
@@ -87,15 +88,20 @@ type Engine struct {
 	nodes       *node.Repo
 	audits      *audit.Repo
 
-	loop      *Loop
-	buildLoop *Loop
-	cancel    context.CancelFunc
-	wg        sync.WaitGroup
+	loop        *Loop
+	buildLoop   *Loop
+	managedLoop *Loop
+	cancel      context.CancelFunc
+	wg          sync.WaitGroup
 
 	// 构建面（F0.9）：Builder 端口、并发上限、构建输入登记与最近日志缓冲。
 	builder   capability.Builder
 	buildOpts buildOptions
 	buildLogs *logBuffer
+
+	// Edge 面（F0.15）：Route 全量发布 + 受管 Provider reconciler。
+	edge   capability.Edge
+	routes *route.Repo
 
 	buildInputMu sync.Mutex
 	buildInputs  map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
@@ -112,16 +118,28 @@ type Engine struct {
 	drift   map[string]string // workloadID → 最后 drift 签名（去抖）
 }
 
-// New 构造引擎（不启动；Start 后进入驱动）。builder 为 nil 时构建链停用
-// （building 态部署以精确错误失败；镜像直投不受影响）。
-func New(db *state.DB, rt capability.Runtime, b capability.Builder, log *slog.Logger, opts Options) *Engine {
+// Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
+// 反馈，不静默）。
+type Deps struct {
+	DB      *state.DB
+	Runtime capability.Runtime
+	Builder capability.Builder // 可空：构建链停用（镜像直投不受影响）
+	Edge    capability.Edge    // 可空：Route 发布与受管自宿停用
+	Logger  *slog.Logger
+}
+
+// New 构造引擎（不启动；Start 后进入驱动）。
+func New(deps Deps, opts Options) *Engine {
 	opts.fill()
+	db := deps.DB
+	log := deps.Logger
 	clock := db.Clock()
 	return &Engine{
-		builder:      b,
+		builder:      deps.Builder,
+		edge:         deps.Edge,
+		runtime:      deps.Runtime,
 		db:           db,
 		log:          log,
-		runtime:      rt,
 		clock:        clock,
 		opts:         opts,
 		projects:     project.New(clock),
@@ -134,6 +152,8 @@ func New(db *state.DB, rt capability.Runtime, b capability.Builder, log *slog.Lo
 		audits:       audit.New(clock),
 		loop:         NewLoop("deployment", log),
 		buildLoop:    NewLoop("build", log),
+		managedLoop:  NewLoop("managed", log),
+		routes:       route.New(clock),
 		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 		buildLogs:    newLogBuffer(500),
 		buildInputs:  make(map[string]capability.BuildRequest),
@@ -153,7 +173,7 @@ func (e *Engine) Start(ctx context.Context) {
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	e.cancel = cancel
 	e.resetOrphanBuilds(runCtx)
-	e.wg.Add(3)
+	e.wg.Add(4)
 	go func() {
 		defer e.wg.Done()
 		e.loop.Run(runCtx, e.opts.Tick, e.step)
@@ -164,10 +184,15 @@ func (e *Engine) Start(ctx context.Context) {
 	}()
 	go func() {
 		defer e.wg.Done()
+		e.managedLoop.Run(runCtx, e.opts.Tick, e.managedStep)
+	}()
+	go func() {
+		defer e.wg.Done()
 		e.consumeWatch(runCtx)
 	}()
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	e.buildLoop.Kick()
+	e.managedLoop.Kick()
 }
 
 // resetOrphanBuilds 把崩溃遗留的 building 行重置 queued（重放：buildkit

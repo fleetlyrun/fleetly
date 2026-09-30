@@ -19,6 +19,8 @@ type fakeRuntime struct {
 
 	obsCh chan capability.WorkloadEvent
 
+	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析面）
+
 	health capability.HealthReport
 }
 
@@ -29,7 +31,10 @@ type ensureCall struct {
 }
 
 func newFakeRuntime() *fakeRuntime {
-	return &fakeRuntime{obsCh: make(chan capability.WorkloadEvent, 64)}
+	return &fakeRuntime{
+		obsCh:     make(chan capability.WorkloadEvent, 64),
+		endpoints: map[string][]capability.Endpoint{},
+	}
 }
 
 func (f *fakeRuntime) Describe() capability.ProviderDescriptor {
@@ -69,8 +74,10 @@ func (f *fakeRuntime) Watch(context.Context) (<-chan capability.WorkloadEvent, e
 	return f.obsCh, nil
 }
 
-func (f *fakeRuntime) Addresses(context.Context, capability.NamespaceRef) ([]capability.Endpoint, error) {
-	return nil, nil
+func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef) ([]capability.Endpoint, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.endpoints[ns.String()], nil
 }
 
 func (f *fakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, error) {

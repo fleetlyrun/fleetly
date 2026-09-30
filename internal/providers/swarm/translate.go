@@ -12,6 +12,7 @@ import (
 
 	mobycontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -194,15 +195,34 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		},
 		TaskTemplate: task,
 		Mode:         replicasMode(w.Replicas),
-		// 明确不发布端口（见函数注释）；UpdateConfig 语义由平台
-		// Deployment 状态机掌管（滚动与回滚 = Replay），编排器原生回滚
-		// 不用（ADR-0005）。
+		// 端口发布仅限受管 Edge 的部署形态（Workload.Publish 显式声明）；
+		// 用户 Workload 一律不发布宿主端口（流量经 Edge，见函数注释）。
+		EndpointSpec: endpointSpec(w.Publish),
+		// UpdateConfig 语义由平台 Deployment 状态机掌管（滚动与回滚 =
+		// Replay），编排器原生回滚不用（ADR-0005）。
 		UpdateConfig: &swarm.UpdateConfig{
 			Parallelism:   1,
 			Order:         swarm.UpdateOrderStartFirst,
 			FailureAction: swarm.UpdateFailureActionPause,
 		},
 	}
+}
+
+// endpointSpec 翻译宿主端口发布声明（routing mesh 模式；仅受管 Edge 形态使用）。
+func endpointSpec(publish []capability.PortPublish) *swarm.EndpointSpec {
+	if len(publish) == 0 {
+		return nil
+	}
+	ports := make([]swarm.PortConfig, 0, len(publish))
+	for _, p := range publish {
+		ports = append(ports, swarm.PortConfig{
+			Protocol:      network.TCP,
+			PublishMode:   swarm.PortConfigPublishModeIngress,
+			PublishedPort: uint32(p.PublishedPort), //nolint:gosec // 端口域 int32→uint32 无符号扩展
+			TargetPort:    uint32(p.TargetPort),    //nolint:gosec
+		})
+	}
+	return &swarm.EndpointSpec{Ports: ports}
 }
 
 // replicasMode 把期望副本数映射为服务模式（负数钳 0——排空态；钳后

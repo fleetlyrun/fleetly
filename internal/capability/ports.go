@@ -49,10 +49,31 @@ type Edge interface {
 	Provider
 
 	// PublishRoutes 幂等发布全量 Route 集（控制面强制全量配置防裸 {}
-	// 清空——旧 spike 教训）。
+	// 清空——旧 spike 教训）。Route.BackendAddr 由 engine 发布前经
+	// Runtime.Addresses 解析填充（Provider 互不 import，地址经端口传入）。
 	PublishRoutes(ctx context.Context, routes []Route) error
 	// IssueCertificate 申请/续期一张证书（ACME 托管或上传材料入库）。
 	IssueCertificate(ctx context.Context, req CertificateRequest, w ChallengeWriter) (CertificateStatus, error)
+}
+
+// Managed 是受管自宿 Provider 的部署形态声明接口（ADR-0004：唯一通用
+// reconciler 驱动；Provider 只声明"我是一条普通 Workload"，不写部署器）。
+// Describe().Managed == true 的 Provider 应实现本接口。
+type Managed interface {
+	// ManagedWorkloads 返回该 Provider 的受管部署形态（镜像钉版 + 完整
+	// 声明；reconciler 经 Runtime Ensure 下发，与用户 Workload 同通道）。
+	ManagedWorkloads() []Workload
+	// ManagedNamespace 返回受管隔离域（平台系统域，与用户 Project 分离）。
+	ManagedNamespace() NamespaceRef
+}
+
+// ConfigSource 是受管 Edge 的配置拉取数据面（Provider 经 HTTP provider
+// 轮询控制面时，控制面端点从本子面取全量配置快照；非拉取型 Provider
+// 不实现）。
+type ConfigSource interface {
+	// ConfigSnapshot 返回当前全量动态配置（永不返回裸空对象——控制面
+	// 强制全量配置，防清空事故）。
+	ConfigSnapshot() []byte
 }
 
 // Route 是 host/path → Process 端口映射（附协议与 TLS 模式）。
@@ -69,6 +90,9 @@ type Route struct {
 	Protocol Protocol
 	// TLS 模式：auto（ACME）/ none（明文，仅 sslip.io 调试）。
 	TLS string
+	// BackendAddr 是发布时解析的后端地址（Runtime.Addresses 产物，
+	// host:port 形态；Edge Provider 不再反查 Runtime）。
+	BackendAddr string
 }
 
 // CertificateRequest 是证书申请。

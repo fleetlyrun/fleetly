@@ -62,7 +62,7 @@ func newBuildEngine(t *testing.T, fb *fakeBuilder) (*Engine, *fakeRuntime) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(db, rt, fb, discardLogger(), Options{DataRoot: t.TempDir()})
+	e := New(Deps{DB: db, Runtime: rt, Builder: fb, Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop"}))
 	require.NoError(t, app.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))

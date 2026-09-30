@@ -30,8 +30,10 @@ var ProviderSet = wire.NewSet(
 	NewStateDB,
 	NewRuntimeProvider,
 	NewBuilderProvider,
+	NewEdgeProvider,
 	NewEngine,
 	NewEngineService,
+	NewEdgeConfigServer,
 	systemgrpc.New,
 	NewGRPCServer,
 	NewGatewayServer,
@@ -97,8 +99,17 @@ func NewBuilderProvider() (capability.Builder, func(), error) {
 
 // NewEngine 构造部署收敛引擎（参数当前取默认；配置面接入后从 AppConfig
 // 透传 queue 容量/观察窗/构建并发）。
-func NewEngine(db *state.DB, rt capability.Runtime, b capability.Builder, app lynx.App, cfg *config.AppConfig) *engine.Engine {
-	return engine.New(db, rt, b, app.Logger(), engine.Options{DataRoot: cfg.DataRoot()})
+func NewEngine(
+	db *state.DB,
+	rt capability.Runtime,
+	b capability.Builder,
+	edge capability.Edge,
+	app lynx.App,
+	cfg *config.AppConfig,
+) *engine.Engine {
+	return engine.New(engine.Deps{
+		DB: db, Runtime: rt, Builder: b, Edge: edge, Logger: app.Logger(),
+	}, engine.Options{DataRoot: cfg.DataRoot()})
 }
 
 // engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖
@@ -147,15 +158,20 @@ func NewPreStopHooks() boot.PreStopHooks { return nil }
 // cleanup 已单独经 Bootstrap 返回值挂载。
 func NewPostStopHooks() boot.PostStopHooks { return nil }
 
-// NewServices 返回服务注册顺序：engine → grpc → gateway。lynx 按注册顺序
-// 启动、逆序停止——引擎最后停：服务面已摘流（gateway → grpc 先停）后引擎
-// 才排空（ADR-0005 优雅退出：在途 Ensure 可安全中断重放）。gateway 与
-// grpc 间为惰性共享连接，排水窗口（WithDrainTimeout）覆盖停止期间的残余
-// 转发请求。
+// NewServices 返回服务注册顺序：engine → grpc → gateway → edgeconfig。
+// lynx 按注册顺序启动、逆序停止——引擎最后停：服务面已摘流（gateway →
+// grpc 先停）后引擎才排空（ADR-0005 优雅退出：在途 Ensure 可安全中断
+// 重放）。edgeconfig（受管 Edge 的配置拉取端点）最先停——受管实例轮询
+// 失败保留存量配置，无中断面。
 func NewServices(
 	engineSvc lynx.Service,
 	grpcServer *lynxgrpc.Server,
 	gateway *lynxhttp.Server,
+	edgeConfig *EdgeConfigServer,
 ) []lynx.Service {
-	return []lynx.Service{engineSvc, grpcServer, gateway}
+	services := []lynx.Service{engineSvc, grpcServer, gateway}
+	if edgeConfig != nil {
+		services = append(services, edgeConfig)
+	}
+	return services
 }

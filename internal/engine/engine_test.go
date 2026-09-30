@@ -32,7 +32,7 @@ func newTestEngine(t *testing.T) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(db, rt, nil, discardLogger(), Options{})
+	e := New(Deps{DB: db, Runtime: rt, Logger: discardLogger()}, Options{})
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()
@@ -265,7 +265,7 @@ func TestEngineRestartReplaysInFlightGeneration(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
 
 	// "重启"：新引擎实例（观测/Ensure 内存缓存清空），同库同 runtime。
-	e2 := New(e.db, rt, nil, e.log, Options{})
+	e2 := New(Deps{DB: e.db, Runtime: rt, Logger: e.log}, Options{})
 	e2.step(ctx)
 
 	still := getDeployment(t, e2, d.ID)

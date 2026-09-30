@@ -39,10 +39,18 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	engine := NewEngine(db, runtime, builder, app, appConfig)
+	edge, cleanup4, err := NewEdgeProvider()
+	if err != nil {
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	engine := NewEngine(db, runtime, builder, edge, app, appConfig)
 	service := NewEngineService(engine)
 	policySet, err := NewPolicySet()
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
@@ -51,22 +59,34 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	systemgrpcService := systemgrpc.New(info)
 	server, err := NewGRPCServer(app, appConfig, policySet, systemgrpcService)
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	httpServer, cleanup4, err := NewGatewayServer(app, appConfig)
+	httpServer, cleanup5, err := NewGatewayServer(app, appConfig)
 	if err != nil {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(service, server, httpServer)
+	edgeConfigServer, err := NewEdgeConfigServer(app, appConfig, edge)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	v := NewServices(service, server, httpServer, edgeConfigServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {
+		cleanup5()
 		cleanup4()
 		cleanup3()
 		cleanup2()

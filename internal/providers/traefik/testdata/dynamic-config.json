@@ -1,0 +1,83 @@
+{
+  "http": {
+    "routers": {
+      "api-127-0-0-1-sslip-io-v1": {
+        "rule": "Host(`api.127.0.0.1.sslip.io`) && PathPrefix(`/v1`)",
+        "service": "api-127-0-0-1-sslip-io-v1",
+        "tls": {
+          "certResolver": "le",
+          "domains": [
+            {
+              "main": "api.127.0.0.1.sslip.io"
+            }
+          ]
+        }
+      },
+      "plain-localhost": {
+        "rule": "Host(`plain.localhost`)",
+        "service": "plain-localhost"
+      },
+      "shop-127-0-0-1-sslip-io": {
+        "rule": "Host(`shop.127.0.0.1.sslip.io`)",
+        "service": "shop-127-0-0-1-sslip-io",
+        "tls": {
+          "certResolver": "le",
+          "domains": [
+            {
+              "main": "shop.127.0.0.1.sslip.io"
+            }
+          ]
+        }
+      }
+    },
+    "services": {
+      "api-127-0-0-1-sslip-io-v1": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "h2c://10.0.0.3:8081"
+            }
+          ]
+        }
+      },
+      "plain-localhost": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "http://10.0.0.5:3000"
+            }
+          ]
+        }
+      },
+      "shop-127-0-0-1-sslip-io": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "http://10.0.0.2:8080"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "tcp": {
+    "routers": {
+      "db-127-0-0-1-sslip-io": {
+        "rule": "HostSNI(`db.127.0.0.1.sslip.io`)",
+        "service": "db-127-0-0-1-sslip-io",
+        "tls": {}
+      }
+    },
+    "services": {
+      "db-127-0-0-1-sslip-io": {
+        "loadBalancer": {
+          "servers": [
+            {
+              "url": "tcp://10.0.0.4:5432"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

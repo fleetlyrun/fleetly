@@ -29,7 +29,7 @@
 
 **网络与路由**
 - F0.14 per-Project overlay；跨 Project 默认隔离；`egress:none` 声明（swarm v1 弱隔离，明示）。
-- F0.15 Edge：traefik 受管自宿（通用 ManagedProvider reconciler 首个实例）+ Route（host/path/port + protocol http|h2c|tcp + TLS 模式）+ LE HTTP-01 自动证书 + 默认 sslip.io 域名。验收：h2c 后端路由可通（messageloop 形态）。
+- F0.15 [x] Edge：traefik 受管自宿（通用 ManagedProvider reconciler 首个实例）+ Route（host/path/port + protocol http|h2c|tcp + TLS 模式）+ LE HTTP-01 自动证书 + 默认 sslip.io 域名。验收：h2c 后端路由可通（messageloop 形态）。
 - F0.16 Volume：受控子集 + 默认钉住节点（Placement 以平台节点 ID 为锚）。
 
 **材料与安全**
