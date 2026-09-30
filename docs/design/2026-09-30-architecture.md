@@ -34,7 +34,7 @@ internal/capability/     # 七个 Capability 端口：Go interface，消费 spec
 internal/providers/      # Provider 实现：swarm/ dockerbuild/ traefik/ victorialogs/ …
                          #   全仓唯一允许 import 编排器/基础设施 SDK 的地方
 internal/engine/         # 单写者收敛循环：deployment/ taskrun/ database/ managedprovider/ + 共享循环骨架（唯一一份）
-internal/api/            # gRPC 服务 + gateway REST + MCP + SSE + authn/z + 幂等键
+internal/api/            # gRPC 服务 + gateway REST + SSE + authn/z + 幂等键
 internal/consolebin/     # SPA embed（可选编译标签）
 ```
 
@@ -55,7 +55,7 @@ providers 之间互不 import；除 cmd 外无人 import providers（经注册�
 - **机制（ADR-0003）**：编译期 Go interface + 注册表；Provider 自注册（init），配置选定每 Capability 同期唯一在册 Provider。**先不做进程外插件协议**（deletion test：当前没有第三方插件作者，gRPC 插件协议是 porter 生态规模才配付的成本）；但契约类型全部定义在 proto（经 genproto 落 `internal/spec`），未来抽进程外插件是机械工作，不需要改语义。
 - **版本化**：Spec 带 `schemaVersion`，读入时按 check-strategy（默认：可读旧版+提示，拒绝跳代）——继承 porter 的演进教训。
 - **Provider 契约三件套**：①能力接口（做事）；②`Describe() ProviderDescriptor`（名称、版本、所需配置 schema、部署形态——若是 Managed Provider 则返回自己的部署 Spec）；③`Health()`（供降级矩阵）。
-- **配置**：`fleetlyd` 配置文件按 Capability 名给 Provider 与参数；换 Provider = 声明迁移（Runtime 更换见 §6 验收场景）。
+- **配置**：`fleetlyd` 配置文件按 Capability 名给 Provider 与参数；换 Provider = 声明迁移（Runtime 更换的验收场景见领域模型 §5 场景 3 与 §12 N4）。
 - **受管 Provider 自宿（ADR-0004）**：traefik、victorialogs、zot 等以普通 Workload 形态跑在 Runtime 上，由唯一一份通用 managedprovider reconciler 部署升级。平台自己的能力组件与用户 Workload 走**同一条** Runtime 通道——旧项目六个组件部署器六份翻译的历史不再发生。
 
 ## 4. IR：Spec 设计
@@ -66,7 +66,7 @@ AppSpec {
   app: { id, project }
   source: { git{repo,ref} | image{ref} | upload{id} }
   processes: [ { name, image|fromBuild, command, env, secretRefs, configRefs,
-                 ports[], healthcheck{http|tcp|exec, grace}, resources{cpu,mem},
+                 ports[{port, protocol(http|h2c|tcp)}], healthcheck{http|tcp|exec, grace}, resources{cpu,mem},
                  replicas, placement, volumes[], networks[] } ]
   build: { builder, dockerfile|railpack{pinnedVersion}, cacheFrom }
   firstBootJobs: [...]            # 部署期 init job（迁移等）
@@ -77,7 +77,7 @@ DatabaseSpec { engine, version, credentialsRef, storage, backupPolicy }
 
 - **来源归一化**：Compose 受控子集（白名单只增、受管字段显式拒绝，继承旧 ADR-0015）/ API 直接创建 / 上传产物 → 统一归一化成 AppSpec；归一化结果即 Revision 冻结体，部署基线永远以 Revision 为准，不回读源文件。
 - **投影**：engine 把 Spec 编译为 Runtime 无关的 Workload 集（§5 契约的输入）；探针、卷钉住、网络附件在 IR 里是声明，映射成编排器原语是 Provider 的事。
-- IR 不含：编排器 label、载体命名、约束语法、namespace、探针的编排器方言。守卫测试静态扫描 `internal/spec` 的 proto，字段名黑名单（service/pod/task/label…）。
+- IR 不含：编排器 label、载体命名、约束语法、namespace、探针的编排器方言。守卫测试静态扫描 `internal/spec` 的 proto，字段名黑名单取**编排器语义的字段/类型名**（service/pod/unit/label 等；平台自有实体名如 Task/TaskSpec 不在此列）。
 
 ## 5. Runtime 契约（保持窄面）
 
@@ -85,9 +85,9 @@ tsuru 的 17 方法 Provisioner 是反面教材；核心面 6 个方法 + 三个
 
 ```go
 type Runtime interface {
-    Apply(ctx, ns NamespaceRef, ws []Workload, gen Generation) error   // 幂等：同 gen 重放安全
+    Ensure(ctx, ns NamespaceRef, ws []Workload, gen Generation) error // 幂等：同 gen 重放安全
     Remove(ctx, ns NamespaceRef) error
-    Watch(ctx) (<-chan WorkloadStatus, error)     // 全集群状态流（engine 按 ID 归属过滤）
+    Watch(ctx) (<-chan WorkloadStatus, error)     // 全集群状态流（Workload + 节点加入/离开/转移事件；engine 按 ID 归属过滤）
     Addresses(ctx, ns NamespaceRef) ([]Endpoint, error)
     DescribeCluster(ctx) (ClusterView, error)
     Enrollment(ctx) (EnrollKit, error)            // 含轮换
@@ -97,8 +97,9 @@ type RuntimeExec interface { Exec(...) }           // 子面；经反向中继�
 type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 ```
 
-- **期望状态式**：唯一写动词 Apply；副本数变化、健康检查变化都是新 Generation 的 Apply。没有 update/scale/rollback 三个动词——回滚在平台层是 Replay（新 ADR-0005）。
-- **Drift 判定**：Provider 在 Watch 流里对照最近 Apply 的 Generation 报 `drift` 信号；平台以 ID 查权威表判定归属（§3 已述），不解析载体命名。
+- **期望状态式**：唯一写动词 Ensure；副本数变化、健康检查变化都是新 Generation 的 Ensure。没有 update/scale/rollback 三个动词——回滚在平台层是 Replay（新 ADR-0005）。（动词用 Ensure 而非 apply：apply 是 ADR-0007 禁词，且 ensure 与幂等重放语义一致。）
+- **节点身份锚定**（Provider 契约义务，继承归档 D-MN-8）：观测到无平台 ID 标记的节点 → 铸造平台节点 ID → 写回载体标记 → 审计 + `node.joined` 事件（经 Watch 流上报）；Volume 钉住与 Placement 绑定一律以平台节点 ID 为锚，节点 ID 永不复用。
+- **Drift 判定**：Provider 在 Watch 流里对照最近 Ensure 的 Generation 报 `drift` 信号；平台以 ID 查权威表判定归属（§3 已述），不解析载体命名。
 - **载体命名/标记**：Provider 私有。swarm Provider 自持命名公式（`fleetly-<team>-<prj>-<app>-<proc>`，受 64 字符上限约束时可截断策略，唯一性以平台 ID 标记兜底）与 `fleetly.*` 标记；换 k8s Provider 时换成 annotation，平台语义不变。
 
 ## 6. 状态与事件
@@ -126,15 +127,15 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 | Capability | 引导期依赖 | 故障影响 |
 |---|---|---|
 | Runtime | 必须 | 平台不可部署；已运行 Workload 不受影响（控制面单点诚实暴露） |
-| Edge | 否 | 存量路由继续服务；Route 变更失败并明示 |
+| Edge（配置发布） | 否 | 受管 Edge Workload 存活时存量路由继续服务，Route 变更失败并明示；受管 Edge Workload 自身宕机 = 全量路由中断（独立事故等级，单列通报） |
 | Logging/Metrics | 否 | 部署照常；查询面报"能力不可用" |
-| Registry | 多节点强烈建议 | 构建推送失败；已下发 digest 不受影响 |
+| Registry | 多节点强烈建议 | 构建推送失败；未预拉到节点的 digest 新部署同样失败（已运行 Workload 不受影响） |
 | ObjectStore | 否 | 备份失败；运行不受影响 |
 | Builder | 部署期需要 | 镜像引用 Source 的部署不受影响 |
 
 **HA 口径**（继承旧 ADR-0005，不改）：控制面单实例诚实暴露；数据面多 A 记录 + 连接级重试；有状态走 Backup/Restore；三 manager 管理面 HA 延后；明确不做 VIP/keepalived。
 
-**顺序与恢复**：启动序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload 观测；Platform Restore 期间只读；优雅退出是必要条件（in-flight Apply 必须可安全中断重放，旧 spike V4）。
+**顺序与恢复**：启动序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload 观测；Platform Restore 期间只读；优雅退出是必要条件（in-flight Ensure 必须可安全中断重放，旧 spike V4）。
 
 **孤儿**：一切对不上账的载体只登记、永不自动删（继承）。
 
@@ -150,7 +151,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 | ObjectStore | 外置 S3 兼容配置；RustFS opt-in 自宿 | 继承旧 ADR-0007 |
 | Builder | dockerfile + railpack(钉版) + static | 继承 |
 
-默认捆绑面 idle 预算沿用 ~600MB 口径（元裁决 ADR-0008）；受管 Provider 单核轻量组件不算红线。
+默认捆绑面守 idle 预算（600MB 为参考默认值，ADR-0010 起以实测校准）；受管 Provider 单核轻量组件不算红线。
 
 ## 10. 跨运行时的诚实边界
 

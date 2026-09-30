@@ -53,7 +53,7 @@ Project 1─* Database 1─* Backup
 Project 1─* Network（Project 级互通；跨 Project 显式声明；环境即项目由此天然隔离）
 Project 1─* SharedVariable；App 1─* Variable（两级变量，Project 层在下、App 层覆盖）
 App/Process *─* Volume（Volume 默认钉住节点）
-Task 1─* Run；Schedule 1─* Run；Task/Run 有属主 Token 与网络组
+Project 1─* Task 1─* Run；Project 1─* Schedule 1─* Run；Task/Run 有属主 Token 与网络组
 Cluster 1─* Node（观测缓存，非权威）
 Capability 1─1 Provider（swarm/traefik/victorialogs…，同期唯一在册）
 ```
@@ -81,7 +81,7 @@ preparing → building → releasing → observing → succeeded
 - releasing：投影 Workload 下发 Runtime；健康门 L1（就绪探针）。
 - observing：L3 观察窗（默认 60s）+ L2 看门狗常驻。
 - 失败回滚 = **Replay** 上一成功 Revision，永不使用编排器原生回滚（旧 ADR-0003）；Replay 必须重建缺失对象而非跳过（旧 spike B2）。
-- 同 App 的 Deployment 串行；新 Deployment 默认拒绝排队外的并发（显式 supersede 标记才允许抢占）。
+- 同 App 的 Deployment 串行；新 Deployment 默认拒绝排队外的并发（显式 supersede 标记才允许抢占）。被抢占的旧 Deployment 终态为 `superseded`，观察窗与 Route 发布权立即移交新 Deployment，在途 Generation 由新 Deployment 收口。
 
 ### Run（Task 执行）
 
@@ -103,7 +103,7 @@ pending → running → succeeded | failed | expired(TTL) | cancelled
 
 ### Build
 
-`queued → building → succeeded | failed`，输出 digest；Railpack 等外部构建器必须钉版本（旧 spike：plan 漂移）。
+`queued → building → succeeded | failed | cancelled | expired(超时看门狗)`，输出 digest；Railpack 等外部构建器必须钉版本（旧 spike：plan 漂移）。
 
 ## 5. 场景压测（语义基准）
 
@@ -111,12 +111,12 @@ pending → running → succeeded | failed | expired(TTL) | cancelled
 
 1. **发布中途被杀**（旧 spike V4）：进程在 releasing 中途被 SIGKILL，重启后按 Generation 幂等重下发；in-flight 请求必须优雅退出，否则 502 真实发生。
 2. **回滚遇到对象缺失**：Replay R(n-1) 时若载体已被人工删除，必须重建而非报成功（旧 spike B2）。
-3. **换 Runtime**：同一 App 在 swarm → k3s 迁移，App/Revision/Route/ID 全部保持；载体命名、探针实现、Enrollment 方式全部更换。这是检验运行时中立的验收场景。
+3. **换 Runtime**：同一 App 在 swarm → k3s 迁移，App/Revision/Route/ID 全部保持；载体命名、探针实现、Enrollment 方式全部更换。无状态 Workload 语义全保持；有状态 Workload（Volume/Database）经 Backup/Restore + 显式数据处置迁移——placement 绑定不跨 Runtime 复用，节点 ID 永不复用。这是检验运行时中立的验收场景。
 4. **Provider 降级**：Logging Provider 宕机 → 部署照常、日志查询报"能力不可用"；Edge Provider 宕机 → 存量路由继续服务，Route 变更失败且明示。降级矩阵见架构文档 §9。
 5. **节点失联 + Volume**：节点 DOWN（旧实测 ~13.5s 检出）期间钉住卷的工作负载不迁移、不重建（旧 spike C3a：无钉住跨节点 = 数据丢失）；node rm 后卡 PENDING 的工作负载登记为孤儿，人工裁决（旧 C4b）。
 6. **Agent 重试幂等**：同一 Idempotency-Key + 同请求体 → 返回同一 Deployment；同 Key 不同体 → 409。
 7. **漂移与人工干预**：人工改了载体配置 → Drift 事件可见，默认不自动 Converge；挂起（suspend）永不被静默撤销（旧 ADR-0004）。
-8. **Platform Restore**：恢复期平台只读（拒绝新 Deployment/Converge），基线确认后解除；启动顺序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload（旧结论：备份启动序）。
+8. **Platform Restore**：恢复期只读观察：拒绝新 Deployment/Converge；看门狗收口、TTL 到期、Drift 事件只登记、不改变决策状态（防恢复窗内 Drift 事件洪水，继承旧 ADR-0014 只读观察语义）；基线确认后解除。启动顺序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload（旧结论：备份启动序）。
 9. **并发部署**：同 App 第二个 Deployment 在非 supersede 模式下 409。
 10. **常驻实例池伸缩**：Task 池扩容 = 新建 Run，缩容 = TTL 提前 + 排空；不动 App 状态机。
 

@@ -36,7 +36,7 @@ _Avoid_: namespace, group, workspace
 
 **Environment**:
 被否决的实体（ADR-0011）：不设 Project 内环境层；环境即 Project（如 `shop` / `shop-staging` 命名约定）。
-_Avoid_: stage, env(标识符中), environment(作实体名)
+_Avoid_: stage, profile, environment(作实体名), env(作实体名缩写)
 
 **App**:
 长运行可部署单元，由一个或多个 Process 组成。
@@ -144,7 +144,7 @@ _Avoid_: driver, backend, engine, adapter(对外文案中)
 _Avoid_: ingress, gateway, load balancer
 
 **Route**:
-`host/path → Process 端口` 的映射，附 TLS 模式。
+`host/path → Process 端口` 的映射，附协议（http/h2c/tcp）与 TLS 模式。
 _Avoid_: domain, vhost, endpoint, route rule
 
 **Certificate**:
