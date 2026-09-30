@@ -1,0 +1,15 @@
+{
+  "hook": {
+    "app_id": "<ULID>",
+    "repo": "https://github.com/acme/shop.git",
+    "branch": "main",
+    "dockerfile": "Dockerfile",
+    "watch_paths": [
+      "web",
+      "libs/core"
+    ],
+    "token_prefix": "<HOOKTOKEN>",
+    "created_at": "2026-01-01T00:02:00Z",
+    "updated_at": "2026-01-01T00:02:00Z"
+  }
+}

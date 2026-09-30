@@ -1,0 +1,8 @@
+app <ULID>
+repo https://github.com/acme/shop.git
+branch main
+dockerfile Dockerfile
+watch paths web, libs/core
+secret (shown once): <HOOKTOKEN>
+webhook URL: /v1/hooks/<HOOKTOKEN> (prepend your gateway address)
+GitHub webhook secret: the same string above (rotating replaces both usages)

@@ -67,6 +67,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newRollbackVerb(),
 		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
 		groupVerb("builds", "inspect builds", newBuildsListVerb()),
+		groupVerb("hooks", "manage per-app git triggers (secrets shown once at mint/rotate)", newHooksSetVerb(), newHooksGetVerb(), newHooksRotateVerb()),
 		// Edge / Runtime 上下文。
 		groupVerb("routes", "manage routes", newRoutesCreateVerb(), newRoutesListVerb()),
 		groupVerb("nodes", "inspect cluster nodes and enrollment", newNodesListVerb(), newNodesEnrollVerb()),

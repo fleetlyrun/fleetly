@@ -40,6 +40,7 @@ type Client struct {
 	Deployments deliveryv1.DeploymentsServiceClient
 	Revisions   deliveryv1.RevisionsServiceClient
 	Builds      deliveryv1.BuildsServiceClient
+	Hooks       deliveryv1.HooksServiceClient
 	Nodes       runtimev1.NodesServiceClient
 	Routes      edgev1.RoutesServiceClient
 	Events      telemetryv1.EventsServiceClient
@@ -101,6 +102,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Deployments: deliveryv1.NewDeploymentsServiceClient(conn),
 		Revisions:   deliveryv1.NewRevisionsServiceClient(conn),
 		Builds:      deliveryv1.NewBuildsServiceClient(conn),
+		Hooks:       deliveryv1.NewHooksServiceClient(conn),
 		Nodes:       runtimev1.NewNodesServiceClient(conn),
 		Routes:      edgev1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),

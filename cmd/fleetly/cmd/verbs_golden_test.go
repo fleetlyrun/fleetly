@@ -24,10 +24,12 @@ var (
 	fprRe        = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
 	tokenRe      = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
 	invitationRe = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
+	hookTokenRe  = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
 )
 
 func normalizeGolden(s string) string {
 	s = invitationRe.ReplaceAllString(s, "<INVITATION>")
+	s = hookTokenRe.ReplaceAllString(s, "<HOOKTOKEN>")
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
 	s = ulidRe.ReplaceAllString(s, "<ULID>")
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")

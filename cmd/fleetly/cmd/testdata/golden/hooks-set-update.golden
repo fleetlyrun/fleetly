@@ -1,0 +1,6 @@
+app <ULID>
+repo https://github.com/acme/shop.git
+branch (every branch; tags never trigger)
+dockerfile Dockerfile
+watch paths (every change triggers)
+secret: (unchanged; rotate to get a new one)

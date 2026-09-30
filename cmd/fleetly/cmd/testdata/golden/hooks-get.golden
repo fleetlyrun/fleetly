@@ -1,0 +1,6 @@
+app <ULID>
+repo https://github.com/acme/shop.git
+branch main
+dockerfile Dockerfile
+watch paths web, libs/core
+webhook URL: /v1/hooks/<token> (token prefix <HOOKTOKEN>)
