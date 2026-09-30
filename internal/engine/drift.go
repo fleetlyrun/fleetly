@@ -17,7 +17,7 @@ import (
 // rebuildBaselines 按 succeeded 基线幂等重放 Ensure（启动一次）：每个
 // "最近部署为 succeeded"的 App 以行上 Generation 重下发——载体未变即
 // no-op，重建 workloadApp/expected/ensuredSpec 缓存。失败不阻断启动
-//（下一扫描拍兜底，drift 降级 gen-only/状态观测）。
+// （下一扫描拍兜底，drift 降级 gen-only/状态观测）。
 //
 // 有活跃部署的 App 跳过：在途驱动器拥有该 App 的 Ensure 权（基线重放
 // 与驱动互翻 Generation 标签会让载体多滚一轮——dind 场景 1 实证）；

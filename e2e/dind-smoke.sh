@@ -307,11 +307,12 @@ SIGN() {
   printf '%s' "$1" | openssl dgst -sha256 -hmac "$HOOK_SECRET" | sed -n 's/.*= *\([0-9a-f]*\).*/\1/p'
 }
 post_hook() {
-  # $1 event $2 delivery $3 signature $4 payload-file → "code body"
+  # $1 event $2 delivery $3 signature → "code body"（payload 恒在容器内
+  # /tmp/hook-payload，payload() 先行写入）。
   code=$(docker exec "$DIND_CID" /root/bins/h2cclient -X POST -o /tmp/hook-body \
     -H "Content-Type: application/json" \
     -H "X-GitHub-Event: $1" -H "X-GitHub-Delivery: $2" -H "X-Hub-Signature-256: $3" \
-    -data "@$4" http://127.0.0.1:9081/v1/hooks/$HOOK_SECRET \
+    -data "@/tmp/hook-payload" http://127.0.0.1:9081/v1/hooks/$HOOK_SECRET \
     | sed -n 's/^STATUS \([0-9]*\).*/\1/p')
   body=$(docker exec "$DIND_CID" cat /tmp/hook-body)
   printf '%s %s' "$code" "$body"
