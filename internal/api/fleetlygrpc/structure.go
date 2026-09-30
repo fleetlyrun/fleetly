@@ -132,8 +132,48 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 	return out, nil
 }
 
+// DeleteApp 收口删除（ADR-0023）：活跃部署拒绝（E_CONFLICT，先 cancel/等
+// 终态）→ engine 收口拆载体 → 撤路由 → tombstone + 审计。副作用不可与
+// 审计同事务：先收口后落账，收口失败即整体失败（App 保持可操作）。
 func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAppRequest) (*structurev1.DeleteAppResponse, error) {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+	if req.GetId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
+	}
+	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "app")
+	}
+	if appRow.Deleted() {
+		return nil, apperr.New("E_NOT_FOUND", "app %s not found", req.GetId())
+	}
+	active, err := svc.s.Deployments.ActiveByApp(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "deployment")
+	}
+	if len(active) > 0 {
+		return nil, apperr.New("E_CONFLICT",
+			"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), len(active))
+	}
+	if err := svc.s.Engine.TeardownApp(ctx, req.GetId()); err != nil {
+		return nil, apperr.New("E_INTERNAL", "app teardown failed").WithCause(err)
+	}
+	// 撤路由（软删；即时发布随 tombstone 后统一触发）。
+	routes, err := svc.s.Routes.List(ctx, svc.s.DB.Runner())
+	if err != nil {
+		return nil, mapStateError(err, "route")
+	}
+	for _, rt := range routes {
+		if rt.AppID != req.GetId() {
+			continue
+		}
+		if err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+			return svc.s.Routes.SoftDelete(ctx, tx, rt.ID)
+		}); err != nil {
+			return nil, mapStateError(err, "route")
+		}
+	}
+
+	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
 			return err
 		}
@@ -145,6 +185,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
+	svc.s.Engine.PublishRoutesNow() // Edge 全量发布即时触发（撤流收口）
 	return &structurev1.DeleteAppResponse{}, nil
 }
 

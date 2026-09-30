@@ -55,6 +55,13 @@ var builtins = []Code{
 		GRPC:       codes.FailedPrecondition,
 	},
 	{
+		ID:         "E_CONFLICT",
+		Summary:    "The operation conflicts with the resource's current state.",
+		Suggestion: "Resolve the state described in the message (cancel or wait for terminal states) and retry.",
+		Source:     "internal/api/fleetlygrpc/structure.go DeleteApp (ADR-0023)",
+		GRPC:       codes.FailedPrecondition,
+	},
+	{
 		ID:         "E_SECRET_UNAVAILABLE",
 		Summary:    "The secret facility is unavailable or the referenced secret is missing.",
 		Suggestion: "Create the missing secret or restore the master key under the data root keys/ directory.",

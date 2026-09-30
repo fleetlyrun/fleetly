@@ -151,7 +151,8 @@ func dialBufconn(t testing.TB, l *bufconn.Listener) *grpc.ClientConn {
 type FakeRuntime struct {
 	mu       sync.Mutex
 	ensures  []EnsureCall
-	adminErr error // RuntimeAdmin 动词注入错误（SetAdminErr 设置）
+	removed  []capability.NamespaceRef // Remove 记录（ADR-0023 收口断言）
+	adminErr error                     // RuntimeAdmin 动词注入错误（SetAdminErr 设置）
 	adminOps []AdminCall
 	obs      chan capability.WorkloadEvent
 }
@@ -188,7 +189,21 @@ func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws [
 	return nil
 }
 
-func (f *FakeRuntime) Remove(context.Context, capability.NamespaceRef) error { return nil }
+func (f *FakeRuntime) Remove(_ context.Context, ns capability.NamespaceRef) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.removed = append(f.removed, ns)
+	return nil
+}
+
+// Removed 返回 Remove 记录快照（ADR-0023 收口断言）。
+func (f *FakeRuntime) Removed() []capability.NamespaceRef {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]capability.NamespaceRef, len(f.removed))
+	copy(out, f.removed)
+	return out
+}
 
 func (f *FakeRuntime) Watch(context.Context) (<-chan capability.WorkloadEvent, error) {
 	return f.obs, nil

@@ -117,6 +117,15 @@ func (f *fakeRuntime) calls() []ensureCall {
 	return out
 }
 
+// removedSnapshot 返回 Remove 调用快照。
+func (f *fakeRuntime) removedSnapshot() []capability.NamespaceRef {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]capability.NamespaceRef, len(f.removed))
+	copy(out, f.removed)
+	return out
+}
+
 // InspectWorkloads 实现 RuntimeInspector 子面（ADR-0022）：观测 = 最近
 // 一次 Ensure 的 spec；tamper 非空时按 workloadID 覆写（人工改载体注入）。
 func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {

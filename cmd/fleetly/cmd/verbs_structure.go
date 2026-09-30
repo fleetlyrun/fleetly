@@ -150,6 +150,35 @@ func newAppsListVerb() commands.Command {
 	}
 }
 
+// apps delete（ADR-0023）：收口删除——拆载体 + 撤路由 + tombstone；活跃
+// 部署在（E_CONFLICT）时拒绝（先 cancel 或等终态）。
+func newAppsDeleteVerb() commands.Command {
+	const name = "delete"
+	var app string
+	return &flaggedVerb{
+		name: name, synopsis: "Delete an app (tears down carriers and routes; refuses while deployments are active)",
+		usage:    "apps delete --app APP_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			ctx, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "deleted app %s (carriers and routes torn down)\n", app)
+			})
+		},
+	}
+}
+
 func newSecretsPutVerb() commands.Command {
 	const name = "put"
 	var project, value string

@@ -15,7 +15,7 @@ import (
 // 连字符（与 goldenFile 的归一一致）。
 //
 // N0 修复批（A5）：枚举递归进动词组——组本身有 golden 不代表组员有
-//（revisions diff / builds list 曾双双漏网：顶层名词检查全绿、组员零
+// （revisions diff / builds list 曾双双漏网：顶层名词检查全绿、组员零
 // golden）。
 func TestAllVerbsHaveDualGoldens(t *testing.T) {
 	if *goldenUpdate {
@@ -50,7 +50,7 @@ func TestAllVerbsHaveDualGoldens(t *testing.T) {
 
 // TestExitCodesAreStable 钉死退出码机器契约：0 成功、2 有变化（diff 类）、
 // 64 用法错误（未知动词/旗标解析失败/缺必填参数）——脚本能分支的承诺
-//（N0 修复批 A5 补断言，此前退出码四态只有注释没有测试）。
+// （N0 修复批 A5 补断言，此前退出码四态只有注释没有测试）。
 func TestExitCodesAreStable(t *testing.T) {
 	t.Run("unknown verb is 64", func(t *testing.T) {
 		code, _, _ := runCLI(t, "definitely-not-a-verb")

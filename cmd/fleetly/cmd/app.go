@@ -60,7 +60,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newAuditVerb(),
 		// Structure 上下文（动词组：嵌套 Dispatch）。
 		groupVerb("projects", "manage projects", newProjectsCreateVerb(), newProjectsListVerb()),
-		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb()),
+		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsDeleteVerb()),
 		groupVerb("secrets", "manage project secrets (values never returned)", newSecretsPutVerb(), newSecretsListVerb()),
 		groupVerb("configs", "manage versioned config files", newConfigsPutVerb(), newConfigsListVerb()),
 		groupVerb("volumes", "manage volumes", newVolumesCreateVerb()),
