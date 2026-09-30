@@ -82,6 +82,9 @@ func (o *Options) fill() {
 	if o.ManagedStepTimeout <= 0 {
 		o.ManagedStepTimeout = 30 * time.Second
 	}
+	if o.DriftScanInterval <= 0 {
+		o.DriftScanInterval = 30 * time.Second
+	}
 }
 
 // Engine 是部署收敛引擎：Deployment 状态机单写者 + admission + Runtime
