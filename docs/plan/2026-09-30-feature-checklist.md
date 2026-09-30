@@ -4,7 +4,9 @@
 
 **本期裁定（2026-09-30）**：①账号体系完整 Team/Role 从 N0 就有；②Git 集成 v1 = 通用部署 Token + GitHub 原生 webhook；③dogfooding 接管现有 staging 双节点（归档版退役，不做数据迁移）；④Console N2 最小只读观察面、N3 全功能。
 
-**N0 收官（2026-09-30）**：F0.1~F0.25 全部 ✓（末三项 F0.12/18/19 于 N0 完结真机批勾选，真机证据见 docs/runbooks/staging-fleetly.md）。staging 双节点现役新 fleetly（F1.15 前哨已立）。下一步 N1 F1.1 幂等键执法批（E_IDEMPOTENCY_KEY_CONFLICT 届时入册）。
+**N0 收官（2026-09-30）**：F0.1~F0.25 全部 ✓（末三项 F0.12/18/19 于 N0 完结真机批勾选，真机证据见 docs/runbooks/staging-fleetly.md）。staging 双节点现役新 fleetly（F1.15 前哨已立）。
+
+**N0 修复批（2026-10-01）**：验收 A/B/C 全清——5 真 bug（A1 实测不成立只补回归）+ 挂网/声明面/删除语义/漂移口径/EnrollNode 安全全落地；staging HTTPS 200（双视角）、e2e 三件套（dind-smoke/e2e:h2c/e2e:twonode）全绿、lint 0 issues + race 全过。**N0 判定翻"通过"**。下一步 N1 F1.1 幂等键执法批（E_IDEMPOTENCY_KEY_CONFLICT 届时入册）。
 
 ---
 
