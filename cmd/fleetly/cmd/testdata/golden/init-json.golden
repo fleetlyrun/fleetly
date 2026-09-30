@@ -1,0 +1,10 @@
+{
+  "user": "alice",
+  "user_id": "<ULID>",
+  "token_name": "alice-cli",
+  "token_id": "<ULID>",
+  "secret": "<TOKEN>",
+  "addr": "127.0.0.1:9080",
+  "credentials_path": "<CREDS>",
+  "bootstrap_revoked": true
+}

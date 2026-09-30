@@ -10,7 +10,7 @@
 
 **安装与引导**
 - F0.1 一行安装：`curl | bash` 检测/安装 Docker → 单节点 swarm init → fleetlyd（容器形态优先）→ 数据根初始化。验收：全新 Ubuntu VPS 一条命令到 fleetlyd healthy。
-- F0.2 首启引导：Bootstrap Token 落盘（journal+文件，可吊销）+ 管理员初始化**全 CLI 可完成**（`fleetly init`）。验收：无浏览器环境可完成全部初始化。
+- F0.2 [x] 首启引导：Bootstrap Token 落盘（journal+文件，可吊销）+ 管理员初始化**全 CLI 可完成**（`fleetly init`）。验收：无浏览器环境可完成全部初始化。
 - F0.3 `fleetly quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。
 - F0.4 [x] `fleetly doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
 
@@ -42,7 +42,7 @@
 
 **API/CLI 面**
 - F0.21 [x] proto 单源：gRPC + REST gateway + OpenAPI 生成；buf breaking 门禁进 CI。
-- F0.22 CLI 核心：init/login/projects/apps/deploy/rollback/logs/events/secrets/configs/routes/nodes/tokens/audit——全命令 `--json`（golden 双形态钉死）+ 稳定退出码 + 错误信封（errcode+处置提示）。
+- F0.22 [x] CLI 核心：init/login/projects/apps/deploy/rollback/logs/events/secrets/configs/routes/nodes/tokens/audit——全命令 `--json`（golden 双形态钉死）+ 稳定退出码 + 错误信封（errcode+处置提示）。
 - F0.23 [x] 事件地基：Outbox+seq 落库、`fleetly events list`；流式 follow 在 N1。
 
 **工程守卫（先行）**

@@ -25,11 +25,15 @@ var (
 	tokenRe      = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
 	invitationRe = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
 	hookTokenRe  = regexp.MustCompile(`flthook_[A-Za-z0-9_-]{4,}`)
+	credPathRe   = regexp.MustCompile(`(?m)^credentials saved: .*$`)
+	credJSONRe   = regexp.MustCompile(`"credentials_path": ".*?"`)
 )
 
 func normalizeGolden(s string) string {
 	s = invitationRe.ReplaceAllString(s, "<INVITATION>")
 	s = hookTokenRe.ReplaceAllString(s, "<HOOKTOKEN>")
+	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
+	s = credJSONRe.ReplaceAllString(s, `"credentials_path": "<CREDS>"`)
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
 	s = ulidRe.ReplaceAllString(s, "<ULID>")
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")

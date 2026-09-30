@@ -48,6 +48,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newStatusCmd(),
 		newDoctorVerb(),
 		// 身份与访问（Identity 上下文）。
+		newInitVerb(),
 		newLoginVerb(),
 		newWhoamiVerb(),
 		groupVerb("tokens", "manage tokens (secrets shown once at creation)", newTokensCreateVerb(), newTokensListVerb(), newTokensRevokeVerb()),

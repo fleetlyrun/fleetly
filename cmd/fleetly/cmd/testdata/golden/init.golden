@@ -1,0 +1,7 @@
+initialized fleetly at 127.0.0.1:9080
+admin user alice (id <ULID>)
+cli token alice-cli (id <ULID>)
+secret (shown once): <TOKEN>
+credentials saved: <CREDS>
+bootstrap token revoked
+next: fleetly whoami
