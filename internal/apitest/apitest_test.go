@@ -39,10 +39,15 @@ func TestDeployEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "queued", dep.GetDeployment().GetState())
 
-	// 引擎推进到 releasing（假 runtime Ensure 生效）。
+	// 引擎推进到 releasing（假 runtime Ensure 生效）。releasing 态先于
+	// Ensure 记录可见（状态迁移与载体下发在同一 step 的两段），Ensure 记
+	// 录单独轮询（-race 下调度慢会暴露窗口）。
 	require.Eventually(t, func() bool {
 		got, err := deployments.GetDeployment(ctx, &deliveryv1.GetDeploymentRequest{Id: dep.GetDeployment().GetId()})
 		return err == nil && got.GetDeployment().GetState() == string(deployment.StateReleasing)
+	}, 2e9, 1e7)
+	require.Eventually(t, func() bool {
+		return len(h.Runtime.Calls()) > 0
 	}, 2e9, 1e7)
 	calls := h.Runtime.Calls()
 	require.NotEmpty(t, calls)
