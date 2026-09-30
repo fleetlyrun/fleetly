@@ -77,6 +77,7 @@ DatabaseSpec { engine, version, credentialsRef, storage, backupPolicy }
 
 - **来源归一化**：Compose 受控子集（白名单只增、受管字段显式拒绝，继承旧 ADR-0015）/ API 直接创建 / 上传产物 → 统一归一化成 AppSpec；归一化结果即 Revision 冻结体，部署基线永远以 Revision 为准，不回读源文件。
 - **投影**：engine 把 Spec 编译为 Runtime 无关的 Workload 集（§5 契约的输入）；探针、卷钉住、网络附件在 IR 里是声明，映射成编排器原语是 Provider 的事。
+- **构建执行面**（ADR-0019）：Build 恒在控制面节点——BuildKit + 本机 daemon，并发上限可配，缓存只在本机；多节点构建缓存与独立构建节点延后；上传构建走流式 tar + 大小上限，断点续传延后。
 - IR 不含：编排器 label、载体命名、约束语法、namespace、探针的编排器方言。守卫测试静态扫描 `internal/spec` 的 proto，字段名黑名单取**编排器语义的字段/类型名**（service/pod/unit/label 等；平台自有实体名如 Task/TaskSpec 不在此列）。
 
 ## 5. Runtime 契约（保持窄面）
@@ -99,6 +100,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 
 - **期望状态式**：唯一写动词 Ensure；副本数变化、健康检查变化都是新 Generation 的 Ensure。没有 update/scale/rollback 三个动词——回滚在平台层是 Replay（新 ADR-0005）。（动词用 Ensure 而非 apply：apply 是 ADR-0007 禁词，且 ensure 与幂等重放语义一致。）
 - **节点身份锚定**（Provider 契约义务，继承归档 D-MN-8）：观测到无平台 ID 标记的节点 → 铸造平台节点 ID → 写回载体标记 → 审计 + `node.joined` 事件（经 Watch 流上报）；Volume 钉住与 Placement 绑定一律以平台节点 ID 为锚，节点 ID 永不复用。
+- **材料分发**（ADR-0014）：Ensure 携带平台已解析的镜像拉取凭证与 Secret 注入材料，Provider 按节点分发（swarm `--with-registry-auth` 等价）；凭证不落载体 label 或明文 env（旧 DT-2 真机 404 教训）。
 - **Drift 判定**：Provider 在 Watch 流里对照最近 Ensure 的 Generation 报 `drift` 信号；平台以 ID 查权威表判定归属（§3 已述），不解析载体命名。
 - **载体命名/标记**：Provider 私有。swarm Provider 自持命名公式（`fleetly-<team>-<prj>-<app>-<proc>`，受 64 字符上限约束时可截断策略，唯一性以平台 ID 标记兜底）与 `fleetly.*` 标记；换 k8s Provider 时换成 annotation，平台语义不变。
 
@@ -106,6 +108,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 
 - **存储**：SQLite WAL 单文件；按聚合分包的 repo；goose 加法迁移。
 - **写路径**：每条状态机线一个单写者 goroutine；四件一拍 = 状态 CAS + tombstone + Outbox 事件 + 审计，同事务（继承旧 ADR-0002）。
+- **部署队列 admission**（ADR-0016）：同 App 部署请求去重（幂等键/commit）、默认 latest-wins 合并、显式 supersede 抢占、per-节点并发上限可配、queue 满显式反馈、排队与在途可取消；409 收窄为幂等键冲突与互斥锁。
 - **读路径**：写前直读（冲突 409）；节点/载体状态是观测缓存，不参与决策（参与决策前必直读）。
 - **事件**：Outbox 单调 seq；消费面 = gRPC server-streaming + SSE（Console/Agent 同一队列）；断档返回 410 + 快照重同步端点（继承）。
 - **审计**：Token/人/Agent 的一切写操作留痕；触发来源枚举内建（manual / api / cli / webhook / schedule——学 zane-ops）。
@@ -116,6 +119,8 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 - **三面同等能力**：Console / API / CLI。Console 只消费公共 REST/WS API，无私有服务端面（旧 P0-3 教训）；CLI 是瘦 API 客户端，写面与 API 对等，全命令 `--json`。
 - **Agent 面 = CLI + 专属 Skills，不做 MCP**（2026-09-30 用户直裁：MCP 协议体验不佳）。机器契约在 CLI：稳定 JSON 字段（golden 钉死）、错误信封（errcode + 处置提示）、稳定退出码、`--wait`（等待原语的 CLI 形态）、`events follow`（事件流的 CLI 形态）。程序性知识在 Skills：`skills/` 随仓版本化，每个 Skill 包装一段 CLI 工作流（部署诊断、数据库开通与备份、Task 池管理、Platform Restore 等），与平台版本同批演进。
 - **Token**：`resource:action` Scope（write 蕴含 read），团队/项目两级绑定；Bootstrap Token 首启生成、**可吊销**（旧项目缺口，这次补上）。
+- **治理刹车**（ADR-0017）：per-Project 的 Task/Workload 数量配额、per-Token 创建速率限制、change freeze 变更冻结窗（命中返回带原因的拒绝）、属主 Token 吊销 → 名下 Task 默认宽限排空。Scope 维持"读默认开放、写显式授权"。
+- **能力自描述**：`fleet explain <资源>` 与 `fleet schema` 输出 JSON Schema（Spec 与契约由 Go 类型反射生成，扩展面各自注入合并）——Agent 的零文档发现面（porter 模式）。
 - **幂等**：创建型写 RPC 接受 `Idempotency-Key`（CLI `--idempotency-key` 透传）；同键同体重放，同键异体 409，记录保留 24h。这是六家参考 PaaS 的共同空白，也是 CLI 脚本化与 Agent 自动化的共同地基。
 - **等待原语**：API `WaitDeployment / WaitBuild / WaitRun`（事件流过滤实现）+ CLI `--wait`；Agent 编排"部署-等待-验证"循环不必自写轮询（继承 sdk WaitBuild 经验）。
 - **事件订阅**：全量或过滤后的 Event 流（gRPC stream / SSE / `fleetly events follow --json`），配合幂等键构成可靠的声明式自动化。
@@ -137,7 +142,9 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 
 **顺序与恢复**：启动序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload 观测；Platform Restore 期间只读；优雅退出是必要条件（in-flight Ensure 必须可安全中断重放，旧 spike V4）。
 
-**孤儿**：一切对不上账的载体只登记、永不自动删（继承）。
+**孤儿**：一切对不上账的载体只登记、永不自动删（继承；平台自建残留如超 TTL 的 Run 由看门狗收口，不属孤儿）。
+
+**升级与版本偏差**（ADR-0015，"升级永不弄坏你的东西"的设计支撑）：fleetlyd 升级序 = Platform Backup 前置 → 二进制/镜像替换 → SQLite 迁移（goose 前滚，失败=恢复备份重放）→ Managed Provider 逐个 reconcile（镜像钉版、逐个升级）→ 解除只读；验收 = 升级期间用户 Workload 零重启、路由零中断。CLI/server 版本偏差 = N-1 兼容 + 请求版本协商头；proto buf breaking 门禁保持。
 
 ## 9. 默认 Provider 选型（v1）
 
@@ -148,7 +155,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 | Logging | victorialogs | 单核轻量、ES bulk 协议（旧 ADR-0006 实测裁决，OpenObserve 340MB 出局） |
 | Metrics | victoria 系（vmsingle+vmalert） | 同族裁决 |
 | Registry | zot（受管自宿） | 单二进制轻量；多节点镜像分发刚需（旧"预拉"痛点）；可切外置 registry |
-| ObjectStore | 外置 S3 兼容配置；RustFS opt-in 自宿 | 继承旧 ADR-0007 |
+| ObjectStore | 默认本地备份目标（开箱即用，ADR-0020）；外置 S3 兼容可配；RustFS opt-in 自宿 | 未配异地目标时持续告警"同机备份非灾备"；恢复演练是验收标准 |
 | Builder | dockerfile + railpack(钉版) + static | 继承 |
 
 默认捆绑面守 idle 预算（600MB 为参考默认值，ADR-0010 起以实测校准）；受管 Provider 单核轻量组件不算红线。
@@ -172,10 +179,10 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 
 ## 12. 演进路线（建议批次）
 
-- **N0 心脏**：spec/model/state + Runtime(swarm) + Deployment 状态机 + Build + Edge(traefik) + gRPC/REST + Token/Scope + 最小 CLI；e2e dind 骨架与守卫先行。
-- **N1 Agent 面 + torchwood 线**：CLI 机器契约（`--json` 全覆盖、`events follow`、`--wait`）+ 首批 Skills + 事件流(SSE) + 幂等键 + Task/Run/Schedule（程序化工作负载面，立项最高优先级）；build-from-upload。
-- **N2 数据与观测**：Database 七态 + Backup/Restore + ObjectStore + Logging/Metrics Provider 受管自宿。
-- **N3 体验**：Console 重设计（消费同一 API）+ exec 子面 + 终端。
-- **N4 第二运行时试点**：k3s Provider，验收场景 = 领域模型 §5 场景 3（换 Runtime 全语义保持）——这是对 ADR-0001 的终审。
+- **N0 心脏（单节点可用）**：spec/model/state + Runtime(swarm，含节点锚定) + Deployment 状态机与 admission 队列 + Build（控制面节点）+ Edge(traefik，含 h2c) + Secret/Config + git webhook 触发 + gRPC/REST + Token/Scope + CLI 核心命令（`--json`）+ 一行安装 + quickstart（sslip.io 零 DNS 首部署）；e2e dind 骨架与守卫先行。
+- **N1 Agent 面 + torchwood 线**（验收 = ADR-0012 能力清单全绿）：幂等键 + 事件流(SSE) + Wait 原语 + `events follow` + `fleet explain/schema` + Task/Run（one-shot/resident + Owner Lease + 双级稳定 DNS）+ Schedule + Task Network Group + App 跨挂 + 跨 Project 互通 + 治理刹车（配额/速率/change freeze）+ build-from-upload + zot 受管自宿（多节点镜像分发）+ Database 最小集（postgres[含 percona/pgvector]/redis 模板 + 本地备份）+ 首批 Skills。
+- **N2 数据与观测 + 信任**：Database 全矩阵（mysql/mongo）+ 升级/迁移 + restic 备份 + ObjectStore（外置 S3/RustFS）+ 恢复演练 + Logging/Metrics Provider 受管自宿 + 平台升级工具（ADR-0015 验收：升级零扰动）+ dbtemplate 目录化与镜像 digest 钉定（DT-9）。
+- **N3 体验**：Console（消费同一 API）+ exec 子面 + 终端 + 模板库。
+- **N4 第二运行时试点**：k3s Provider，验收场景 = 领域模型 §5 场景 3（换 Runtime：无状态全语义保持 + 有状态 Backup/Restore + 显式数据处置）——这是对 ADR-0001 的终审。
 
-每批以 deletion test 复审一遍新增抽象（继承不抽象三连文化）。
+重量提示：N2 ≈ N0+N1 之和，实施时可拆 N2a（数据+信任）/N2b（观测自宿）；每批以 deletion test 复审新增抽象（继承不抽象三连文化）。

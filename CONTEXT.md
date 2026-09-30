@@ -51,12 +51,20 @@ App 级变量；Project 级共享变量称 Shared Variable，注入时 Project �
 _Avoid_: env var(标识符中), parameter, setting
 
 **Task**:
-一次性程序化工作负载，有属主 Token、TTL 与专属网络组。常驻实例池由 Task 承载。
-_Avoid_: job, run, function, agent
+程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。
+_Avoid_: job, run, function, agent, one-off
+
+**Owner Lease**:
+resident Run 的属主心跳租约；失联超宽限即排空回收。
+_Avoid_: heartbeat, keepalive, renewal(泛指)
+
+**Task Network Group**:
+Task 专属网络组，Run 于创建时刻挂靠；App Process 可显式跨挂。
+_Avoid_: sandbox net, task net(标识符中)
 
 **Run**:
-Task 或 Schedule 的一次执行，产出结果与日志。
-_Avoid_: execution, attempt
+Task 或 Schedule 的一次执行，产出结果、日志与停止原因。
+_Avoid_: execution, attempt, instance
 
 **Schedule**:
 周期触发规则，按时生成 Run。
@@ -87,6 +95,10 @@ _Avoid_: version, snapshot
 **Deployment**:
 从旧 Revision 到新 Revision 的受监督迁移。
 _Avoid_: apply, release, rollout, deploy(名词单用)
+
+**Admission**:
+创建型请求的入队判定：去重、latest-wins 合并、supersede 抢占、queue 满反馈。
+_Avoid_: throttle(另指限流), gate
 
 ### 运行时与中间表示
 
@@ -123,11 +135,16 @@ _Avoid_: constraint, affinity
 _Avoid_: disk, mount(指 Volume 本体)
 
 **Network**:
-Project 级互通附件；跨 Project 互通需显式声明。
-_Avoid_: overlay, subnet
+Project 级互通附件；成员为 Project 进程、Task 网络组挂靠或显式跨 Project 引用；可声明 egress:none。
+_Avoid_: overlay, subnet, vpc
 
-**Secret / Config**:
-Compose 受控子集中的敏感与非敏感附件。
+**Secret**:
+Project 级敏感值实体，加密存储，值永不回显只回指纹；注入 App/Task/Database。
+_Avoid_: credential(泛称), vault entry, password store
+
+**Config**:
+版本化的非敏感挂载文件实体，可回读。
+_Avoid_: file, mount, profile
 
 ### 能力与路由
 

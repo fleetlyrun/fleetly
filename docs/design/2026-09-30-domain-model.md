@@ -20,12 +20,12 @@
 | 上下文 | 职责 | 核心实体 |
 |---|---|---|
 | **Identity & Access** | 身份、凭证、授权 | User, Team, Role, Token, Bootstrap Token |
-| **Structure** | 组织结构：项目/应用骨架 | Project, App, Process, Variable |
+| **Structure** | 组织结构：项目/应用骨架与材料 | Project, App, Process, Variable, Secret, Config |
 | **Delivery** | 源接入、构建、Revision 冻结 | Source, Build, Revision, Deployment |
 | **Runtime** | 期望状态投影与集群观测 | Spec, Workload, Generation, Cluster, Node, Enrollment, Placement |
 | **Edge & TLS** | 流量接入与证书 | Route, Certificate |
 | **Data Services** | 托管数据服务与备份 | Database, Backup, Restore |
-| **Automation** | 程序化工作负载面 | Task, Run, Schedule |
+| **Automation** | 程序化工作负载面 | Task(one-shot/resident), Run, Schedule, Owner Lease |
 | **Telemetry** | 日志与指标消费 | Logging 查询面, Metrics 查询面, Event 流 |
 
 上下文间关系：
@@ -53,7 +53,8 @@ Project 1─* Database 1─* Backup
 Project 1─* Network（Project 级互通；跨 Project 显式声明；环境即项目由此天然隔离）
 Project 1─* SharedVariable；App 1─* Variable（两级变量，Project 层在下、App 层覆盖）
 App/Process *─* Volume（Volume 默认钉住节点）
-Project 1─* Task 1─* Run；Project 1─* Schedule 1─* Run；Task/Run 有属主 Token 与网络组
+Project 1─* Task 1─* Run；Project 1─* Schedule 1─* Run；Task 有属主 Token、TTL 与 Task Network Group；resident Task 维持并发 Run 池
+Project 1─* Secret（加密存储，值不回显）；Project 1─* Config（版本化挂载文件）
 Cluster 1─* Node（观测缓存，非权威）
 Capability 1─1 Provider（swarm/traefik/victorialogs…，同期唯一在册）
 ```
@@ -83,15 +84,19 @@ preparing → building → releasing → observing → succeeded
 - 失败回滚 = **Replay** 上一成功 Revision，永不使用编排器原生回滚（旧 ADR-0003）；Replay 必须重建缺失对象而非跳过（旧 spike B2）。
 - 同 App 的 Deployment 串行；新 Deployment 默认拒绝排队外的并发（显式 supersede 标记才允许抢占）。被抢占的旧 Deployment 终态为 `superseded`，观察窗与 Route 发布权立即移交新 Deployment，在途 Generation 由新 Deployment 收口。
 
-### Run（Task 执行）
+### Task 与 Run（程序化工作负载，ADR-0012）
+
+Task 双形态：`one-shot`（创建即一次执行）与 `resident`（维持期望并发数的常驻实例池——torchwood dispatcher 形态）。resident Task 的实例退出后按重启策略补足，直到属主停止或 Task 撤销。
 
 ```
-pending → running → succeeded | failed | expired(TTL) | cancelled
+Run: pending → running → stopping → stopped | failed
 ```
 
-- TTL 到期：先排空（SIGTERM + 宽限）再标记 expired；常驻实例池（torchwood dispatcher 形态）= 长 TTL + 属主续期。
-- Run 间通过 Task 网络组互通；per-task 动态挂网被明禁（旧 09-14 事故直裁）。
-- 看门狗兜底残留载体收口，但孤儿只登记、永不自动删（旧 ADR-0014）。
+- **stopping = 排空**（SIGTERM + 宽限）：TTL 到期、属主主动停止、租约失联都先进 stopping 再落终态。
+- **停止原因**（终态必带）：`completed`（自然退出）/ `failed` / `stopped_by_user` / `ttl_expired` / `lease_expired` / `owner_revoked` / `platform_drained`。
+- **Owner Lease**：resident Run 靠属主 Token 心跳续期保温（RenewTask）；失联超宽限 → stopping(lease_expired) 并补足新实例（Task 仍 active 时）。TTL 与租约落库为绝对 deadline（ADR-0018），上限 86400s。
+- **平台契约**：per-Task 稳定 DNS（池级轮询全部活 Run）+ per-Run 稳定 DNS；镜像直部署与 secretRefs 注入为一等能力。
+- Run 经创建时刻挂靠加入 Task Network Group；per-run 运行时动态挂网维持禁令（旧 09-14 事故直裁）。看门狗对超 TTL/失租约的平台自建残留直接收口；用户手工载体仍是孤儿只登记、永不自动删。
 
 ### Database
 
@@ -117,18 +122,38 @@ pending → running → succeeded | failed | expired(TTL) | cancelled
 6. **Agent 重试幂等**：同一 Idempotency-Key + 同请求体 → 返回同一 Deployment；同 Key 不同体 → 409。
 7. **漂移与人工干预**：人工改了载体配置 → Drift 事件可见，默认不自动 Converge；挂起（suspend）永不被静默撤销（旧 ADR-0004）。
 8. **Platform Restore**：恢复期只读观察：拒绝新 Deployment/Converge；看门狗收口、TTL 到期、Drift 事件只登记、不改变决策状态（防恢复窗内 Drift 事件洪水，继承旧 ADR-0014 只读观察语义）；基线确认后解除。启动顺序 = 控制面 → Platform Backup → Managed Provider → 用户 Workload（旧结论：备份启动序）。
-9. **并发部署**：同 App 第二个 Deployment 在非 supersede 模式下 409。
+9. **并发部署 admission**（ADR-0016 修订）：同 App 部署请求入队判定——同幂等键/同 commit 去重返回既有；默认 latest-wins 合并；显式 supersede 抢占；queue 满显式反馈；排队与在途可取消。409 仅保留给幂等键冲突与互斥资源锁。
 10. **常驻实例池伸缩**：Task 池扩容 = 新建 Run，缩容 = TTL 提前 + 排空；不动 App 状态机。
+11. **租约失联**（ADR-0012）：dispatcher 进程死亡 → 心跳停止 → 宽限后 Run 进 stopping(lease_expired)，池自动补足；属主 Token 被吊销 → 名下 Task 默认宽限排空（ADR-0017），处置进审计。
+12. **跨项目投递**（ADR-0013）：messageloop（Project A）声明接收 torchwood（Project B）的 Task Network Group → 双向批准后挂靠生效；撤销声明即时隔离。
+13. **私有镜像多节点分发**（ADR-0014）：App 引用 GHCR 私有镜像 → Ensure 携带解析凭证按节点分发 → 各节点拉取成功（旧 DT-2 回归用例；凭证不落 label/明文 env）。
+14. **升级不扰动**（ADR-0015）：fleetlyd 升级（含 SQLite 迁移与 Managed Provider 逐个 reconcile）期间，用户 Workload 零重启、路由零中断。
 
-## 6. 明确不做（继承的 no-list）
+## 6. 互通与材料模型
+
+### Network 互通模型（ADR-0013）
+
+- **默认**：Project 内 overlay 全通；跨 Project 默认隔离。
+- **成员三类**：①Project 内 Process（默认）；②Task Run 在**创建时刻**挂靠所属 Task Network Group（per-run 运行时动态挂网维持禁令）；③显式跨 Project 引用——双向声明、接收方批准，撤销即时隔离。
+- **App Process 跨挂**：`processes[].networks[]` 可引用 `taskGroup:<name>`（torchwood dispatcher↔runner 通道）：每网一次性摊销挂靠、失败 fail-closed 重声明（继承旧 DT-5）。
+- **egress 语义**：网络可声明 `egress: none`（不可信代码隔离）。诚实边界：swarm Provider v1 = 弱隔离（独立 overlay + 不发布端口 + 不注入跨网 DNS，出网不阻断，明示）；k8s Provider = NetworkPolicy 原生强隔离。能力差异经能力发现端点暴露。
+
+### Secret / Config 与材料分发（ADR-0014）
+
+- **Secret**：Project 级敏感值实体；age 信封加密（KEK 在数据根、可轮换）；值永不回显、只回指纹；读写全审计；注入面覆盖 App Process、Task、Database（`credentialsRef` 落 Secret）。
+- **Config**：版本化明文挂载文件，可回读、有配额（继承旧 OT-3）。
+- **镜像凭证分发**：Registry 凭证存 Secret；Runtime Ensure 携带平台已解析的凭证与注入材料，Provider 按节点分发（swarm `--with-registry-auth` 等价）；凭证不落载体 label 或明文 env（旧 DT-2 真机 404 教训）。
+- **密封闭环**：Platform Backup 含密封密钥；恢复走解封流程，KEK 单独保管提示入 runbook。
+
+## 7. 明确不做（继承的 no-list）
 
 - CI 流水线（归 Git 托管方，旧 ADR-0012）；push 收包面（同上，webhook + 拉源唯一轨）。
 - 函数运行时 / serverless；Task 就是"程序化工作负载面"，不是 FaaS。
 - VIP / keepalived / 健康驱动 VIP 转移（旧 ADR-0005）：控制面诚实单点、数据面多 A + 连接级重试、有状态走 Backup/Restore；三 manager 管理面 HA 明确延后。
-- Swarm 上假装 NetworkPolicy / 项目配额（编排器没有的语义不虚构，架构文档 §10 说明跨运行时的诚实边界）。
+- Swarm 上不虚构 NetworkPolicy 级强隔离：`egress: none` 在 swarm 为弱隔离（§6 诚实边界）；项目资源配额不做，v1 只做 Task/Workload 数量配额与 per-Token 速率限制（ADR-0017）。
 - 自建 DNS、服务网格、多租户计费。
 
-## 7. 从归档项目继承的裁决对照
+## 8. 从归档项目继承的裁决对照
 
 （ADR-0010 起：本表全部降级为参考默认，逐项待重估；推翻时以新 ADR 记录。）
 
@@ -145,8 +170,14 @@ pending → running → succeeded | failed | expired(TTL) | cancelled
 | ADR-0014 备份等序 / 恢复只读 / 孤儿不删 | 状态机与场景 5/8 |
 | ADR-0015 Compose 受控子集 | Source 归一化输入面（架构 §5） |
 | ADR-0016/0017/0018 不抽象三连 + deletion test | 新 ADR-0003 的裁尺 |
-| torchwood 直裁：docker 直连部署形态并存；per-task attach 明禁 | Automation 上下文语义 |
+| torchwood 直裁：docker 直连部署形态并存；per-task attach 明禁 | Automation 上下文语义（attach 禁令维持；创建时刻挂靠合法，ADR-0012/0013） |
+| DT-2 镜像拉取凭证随 spec 下发（真机 404 教训） | ADR-0014 材料分发；场景 13 回归用例 |
+| DT-5 任务网挂靠（App 进程每网一次性摊销挂靠、fail-closed） | §6 Network 模型（ADR-0013） |
+| OT-2 路由协议维度（http/h2c） | Route 协议字段（审查修复恢复） |
+| OT-3 Config 版本化资源（可回读/配额） | §6 Secret/Config 模型 |
+| D-MN-8 平台节点 ID 先于 placement 存在、永不复用 | 架构 §5 节点锚定契约义务 |
+| DT-9 dbtemplate 目录化 + 镜像 digest 钉定（percona/pgvector） | N2 前置设计，批次表已纳入 |
 
-## 8. 可搬运资产（语义或代码）
+## 9. 可搬运资产（语义或代码）
 
 从归档仓可整体搬运/改写的资产：errcode/eventcode 注册表三链咬合模式（注册表 + golden + usage 反扫）、Compose 受控子集归一化器、ACME/lego 双 challenge 装配、e2e dind 套件骨架与 nightly 拓扑、golden CLI 测试模式、守卫测试模式（枚举红线 + 白名单双向保鲜）。**不搬运**：substrate/dockerapi 及六个组件部署器（被新 ADR-0001/0004 取代）、engine 共享内核结构、state 门面结构。
