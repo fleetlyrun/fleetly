@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: Backend (lint + proto + test)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # buf breaking 需要 origin/main 可解析。
+          fetch-depth: 0
+
+      # 工具链唯一来源：mise.toml（go/buf/golangci-lint 全钉版本，与本地
+      # 完全一致；torchwood 同款模式）。
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Buf lint
+        run: buf lint
+
+      - name: Buf breaking (proto contract drift)
+        run: buf breaking --against '.git#branch=origin/main'
+
+      - name: Format check (gofmt) + go vet
+        run: mise run lint:go
+
+      - name: golangci-lint
+        run: mise run lint:golangci
+
+      # codegen 漂移检查（buf generate / wire 同步）在本地门禁（mise run
+      # generate:all + git diff）：CI 冷环境重跑生成受 tidy/网络影响会产生
+      # 本地不复现的 diff（torchwood 2026-09-23 裁决沿用）。
+
+      - name: Tests (race, three modules)
+        run: go test -race ./... ./genproto/... ./sdk/go/...

@@ -19,18 +19,16 @@ import (
 // follow，N1）时读写超时维持 0、仅保留此头超时。
 const httpReadHeaderTimeout = 10 * time.Second
 
-// NewGatewayServer 装配 REST gateway（grpc-gateway）：统一错误契约
-// （gateway.NewErrorHandler + 项目 ErrorBodyBuilder）、protojson snake_case
-// marshaler、整条 gateway 共享一条 gRPC 连接（gateway.Dial 惰性建连）。
-// cleanup 关闭共享连接。
+// NewGatewayServer 装配 REST gateway（grpc-gateway）：统一错误信封出口
+// （newGatewayErrorHandler，apperr 驱动）、protojson snake_case marshaler、
+// 整条 gateway 共享一条 gRPC 连接（gateway.Dial 惰性建连）。cleanup 关闭
+// 共享连接。
 func NewGatewayServer(
 	app lynx.App,
 	cfg *config.AppConfig,
 ) (*lynxhttp.Server, func(), error) {
 	mux := gateway.NewMux(gateway.MuxOptions{
-		ErrorHandler: gateway.NewErrorHandler(errorBodyBuilder{}, gateway.HTTPOptions{
-			Logger: app.Logger(),
-		}),
+		ErrorHandler: newGatewayErrorHandler(app.Logger()),
 	})
 
 	conn, err := gateway.Dial(app.Context(), cfg.GRPCAddr(), gateway.DialConfig{})

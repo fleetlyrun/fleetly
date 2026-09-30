@@ -1,0 +1,1 @@
+E_INTERNAL	Internal	Internal server error.	Check fleetlyd logs for the matching error_id. If the error persists, report it with the error_id attached.	added during implementation

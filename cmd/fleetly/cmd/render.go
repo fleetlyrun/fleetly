@@ -5,11 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+	"github.com/fleetlyrun/fleetly/internal/model/errcode"
 )
 
 // 渲染单点（render 单点约定）：人类形态与 --json 形态的输出全部经本文件
@@ -52,4 +55,23 @@ func displayVersion(info buildinfo.BuildInfo) string {
 		return "0.0.0-dev"
 	}
 	return info.Version
+}
+
+// renderErrorFor 是 CLI 错误信封 stderr 渲染（render 单点的一部分）：
+// apperr 信封还原成功时输出多行可行动提示；否则退回 err.Error() 单行。
+func renderErrorFor(err error) string {
+	if env, ok := apperr.FromError(err); ok {
+		var b strings.Builder
+		b.WriteString(env.Error())
+		if s := env.Suggestion(); s != "" {
+			b.WriteString("\nsuggestion: ")
+			b.WriteString(s)
+		}
+		if docs := errcode.DocsURL(env.Code()); docs != "" {
+			b.WriteString("\ndocs: ")
+			b.WriteString(docs)
+		}
+		return b.String()
+	}
+	return err.Error()
 }

@@ -1,0 +1,6 @@
+# 仓库统一 LF：守卫测试扫描按 LF 归一（Windows 检出漂移教训），生成物
+# 与 golden 的字节比对同样依赖行尾稳定。
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary

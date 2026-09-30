@@ -39,15 +39,15 @@ func compareGolden(t *testing.T, name, got string) {
 	t.Helper()
 	path := filepath.Join("testdata", "golden", name+".golden")
 	if *goldenUpdate {
-		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // 测试产物目录
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(got), 0o600); err != nil { //nolint:gosec // golden 快照非机密
 			t.Fatal(err)
 		}
 		return
 	}
-	want, err := os.ReadFile(path)
+	want, err := os.ReadFile(path) //nolint:gosec // 读取本包 testdata 自有夹具
 	if err != nil {
 		t.Fatalf("golden %s missing (run `go test ./cmd/fleetly/cmd -update`): %v", name, err)
 	}

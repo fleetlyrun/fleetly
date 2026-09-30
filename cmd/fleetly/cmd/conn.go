@@ -53,10 +53,13 @@ func envOr(key, fallback string) string {
 // getenv 是 os.Getenv 的测试接缝（golden 夹具注入 FLEETLY_ADDR 等）。
 var getenv = os.Getenv
 
+// dialClient 是 fleetly.Dial 的测试接缝（bufconn 夹具注入；见 status 测试）。
+var dialClient = fleetly.Dial
+
 // dial 建立到 fleetlyd 的 SDK 连接。
 func (c *connFlags) dial() (*fleetly.Client, error) {
 	c.resolve()
-	return fleetly.Dial(c.addr)
+	return dialClient(c.addr)
 }
 
 // noArgs 校验动词不接受位置参数。

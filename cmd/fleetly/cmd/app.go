@@ -1,7 +1,7 @@
 // Package cmd 承载 fleetly CLI 全部动词。机器契约：全命令 --json（root
 // bool flag，protojson snake_case 输出）、稳定退出码（0 成功/无变化、
 // 1 错误、2 有变化（diff/plan 类）、64 用法错误）、错误信封 stderr 渲染
-// （errcode + 处置提示，随守卫批次接入）。
+// （errcode + 处置提示 + docs）。
 package cmd
 
 import (
@@ -38,8 +38,9 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 	app.FlagError = func(verb string, err error) error {
 		return fmt.Errorf("%s: bad arguments: %v", verb, err)
 	}
-	// 错误信封（errcode/suggestion/docs）渲染随守卫批次接入 apperr 后启用；
-	// 当前默认 err.Error() 单行。
+	// 错误信封渲染：apperr 还原出 errcode + 处置提示 + docs 链接（Agent
+	// 与人类共用的可行动 stderr）；非信封错误默认单行。
+	app.RenderError = renderErrorFor
 	app.ExitCode = exitCodeFor
 
 	app.Register(
