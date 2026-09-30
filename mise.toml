@@ -91,3 +91,7 @@ run = "sh e2e/dind-smoke.sh"
 [tasks."e2e:h2c"]
 description = "e2e dind 受管 traefik 挂项目网 + h2c Route 端到端（N0 修复批 B1）"
 run = "sh e2e/dind-h2c-route.sh"
+
+[tasks."e2e:twonode"]
+description = "e2e dind 双节点：enroll join + 双节点部署 + 卷钉住（F0.20）"
+run = "sh e2e/dind-two-node.sh"
