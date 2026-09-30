@@ -14,16 +14,16 @@
 # Dependency directories
 /vendor/
 
-# go.work / go.work.sum 自 T0.3 起提交入库（三 module：主仓 + genproto +
-# sdk/go）；勿在此忽略。
+# go.work / go.work.sum 提交入库（三 module：主仓 + genproto + sdk/go）；
+# 勿在此忽略。
 
-# Built binaries at repo root
+# Built binaries (mise build -> ./bin/)
+/bin/
 /fleetlyd
-/fleetly.db
-/fleetly.db-shm
-/fleetly.db-wal
-/fleetly.key
 /fleetly
+
+# 本地开发数据根（SQLite/密钥等，随部署形态落在数据根目录）
+/data/
 
 # Local config product (config-example.yaml is the committed template)
 /config.yaml
@@ -33,24 +33,9 @@
 .vscode/
 .DS_Store
 
-spike/
-
-# Console (T2.21): deps and build output are reproducible from the lockfile;
-# pnpm-lock.yaml IS committed.
+# Console（N2 批次引入；依赖与构建产物可由 lockfile 复现）
 console/node_modules/
 console/dist/
-
-bootstrap-token
-/backups/
-/fleetly-ingress.token
-/git
-/fleetly-logs/
-/fleetly-certs/
-/deployments/
-.w3out/
-.w4out/
-.w5out/
-.w6out/
 
 # e2e 本地工作产物（中断跑批的日志/二进制）
 .e2ebin/

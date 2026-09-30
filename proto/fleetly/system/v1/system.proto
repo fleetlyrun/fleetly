@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// System 服务：控制面自身状态面（`fleetly status` / `fleetly doctor` 消费）。
+// 公开面——安装引导期（Bootstrap Token 尚未生成）无凭证可用；诊断信息不含
+// 敏感细节。
+package fleetly.system.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;systemv1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+// 统一 default 错误响应（运行时错误体即 fleetly.shared.v1.ErrorResponse），
+// 文件级声明自动填充到本文件全部 operation。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service SystemService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  // GetVersion 返回控制面构建信息。
+  rpc GetVersion(GetVersionRequest) returns (GetVersionResponse) {
+    option (google.api.http) = { get: "/v1/system/version" };
+  }
+
+  // GetStatus 返回控制面服务状态。
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse) {
+    option (google.api.http) = { get: "/v1/system/status" };
+  }
+}
+
+message GetVersionRequest {}
+
+message GetVersionResponse {
+  string version = 1;
+  string commit = 2;
+  string date = 3;
+}
+
+message GetStatusRequest {}
+
+message GetStatusResponse {
+  StatusState state = 1;
+  string version = 2;
+}
+
+enum StatusState {
+  STATUS_STATE_UNSPECIFIED = 0;
+  STATUS_STATE_HEALTHY = 1;
+  STATUS_STATE_DEGRADED = 2;
+}

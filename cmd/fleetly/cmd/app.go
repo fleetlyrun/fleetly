@@ -1,0 +1,66 @@
+// Package cmd 承载 fleetly CLI 全部动词。机器契约：全命令 --json（root
+// bool flag，protojson snake_case 输出）、稳定退出码（0 成功/无变化、
+// 1 错误、2 有变化（diff/plan 类）、64 用法错误）、错误信封 stderr 渲染
+// （errcode + 处置提示，随守卫批次接入）。
+package cmd
+
+import (
+	"errors"
+	"fmt"
+
+	"github.com/lynx-go/commands"
+
+	"github.com/fleetlyrun/fleetly/internal/buildinfo"
+)
+
+// 退出码四态（归档仓验证的脚本可分支约定）：
+//
+//	0  成功（含 diff/plan 无变化）
+//	1  命令错误（RPC 失败、校验失败等）
+//	2  有变化（diff/plan 检测到漂移；仅 diff 类动词）
+//	64 用法错误（EX_USAGE：未知动词/旗标解析失败/缺参数）
+const (
+	exitChanges = 2
+	exitUsage   = 64
+)
+
+// errChanges 标记 diff/plan 类动词检测到变化（渲染照常，退出码 2）。
+var errChanges = errors.New("changes detected")
+
+// NewApp 装配 CLI 根应用。--json 是全局 root bool flag（commands 框架
+// 在任意位置剥取，落 Environment.RootBools["json"]）。
+func NewApp(info buildinfo.BuildInfo) *commands.App {
+	app := commands.New()
+	app.RootBoolFlags = []string{"json"}
+	app.HelpHeader = "fleetly - lightweight PaaS for humans and agents"
+	app.VerbTitle = "commands:"
+	app.HelpFooter = fmt.Sprintf("fleetly %s (run 'fleetly <command> --help' for details)", displayVersion(info))
+	app.FlagError = func(verb string, err error) error {
+		return fmt.Errorf("%s: bad arguments: %v", verb, err)
+	}
+	// 错误信封（errcode/suggestion/docs）渲染随守卫批次接入 apperr 后启用；
+	// 当前默认 err.Error() 单行。
+	app.ExitCode = exitCodeFor
+
+	app.Register(
+		newVersionCmd(info),
+		newStatusCmd(),
+	)
+	return app
+}
+
+// exitCodeFor 把动词错误映射为稳定退出码（机器契约见包注释）。
+func exitCodeFor(err error) int {
+	if err == nil {
+		return commands.ExitOK
+	}
+	if errors.Is(err, errChanges) {
+		return exitChanges
+	}
+	var unknown *commands.UnknownVerbError
+	var usage *commands.UsageError
+	if errors.As(err, &unknown) || errors.As(err, &usage) {
+		return exitUsage
+	}
+	return commands.ExitError
+}

@@ -1,0 +1,130 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "System 服务：控制面自身状态面（`fleetly status` / `fleetly doctor` 消费）。\n公开面——安装引导期（Bootstrap Token 尚未生成）无凭证可用；诊断信息不含\n敏感细节。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "SystemService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/system/status": {
+      "get": {
+        "summary": "GetStatus 返回控制面服务状态。",
+        "operationId": "SystemService_GetStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
+    "/v1/system/version": {
+      "get": {
+        "summary": "GetVersion 返回控制面构建信息。",
+        "operationId": "SystemService_GetVersion",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetVersionResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_INVALID_ARGUMENT\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（处置提示，Agent 与人类共用）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "machine-readable 附加上下文键值对（如 error_id、资源 ID）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "错误码文档 URL（注册表派生）。"
+        }
+      }
+    },
+    "v1GetStatusResponse": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "$ref": "#/definitions/v1StatusState"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "v1GetVersionResponse": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "string"
+        },
+        "commit": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string"
+        }
+      }
+    },
+    "v1StatusState": {
+      "type": "string",
+      "enum": [
+        "STATUS_STATE_UNSPECIFIED",
+        "STATUS_STATE_HEALTHY",
+        "STATUS_STATE_DEGRADED"
+      ],
+      "default": "STATUS_STATE_UNSPECIFIED"
+    }
+  }
+}

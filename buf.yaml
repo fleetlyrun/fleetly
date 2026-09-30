@@ -1,0 +1,14 @@
+version: v2
+# protovalidate 依赖随首个带 validate 注解的 proto 引入（N0 后续批次）。
+deps:
+  - buf.build/googleapis/googleapis
+  - buf.build/grpc-ecosystem/grpc-gateway
+  - buf.build/lynx-go/grpcapi
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  use:
+    - FILE

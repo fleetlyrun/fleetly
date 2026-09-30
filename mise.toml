@@ -1,0 +1,85 @@
+# fleetly 开发环境与任务（mise-en-place，模板同 torchwood）
+#
+#   mise install      安装 [tools] 钉版的全部开发工具
+#   mise tasks        列出全部任务
+#   mise run <task>   执行任务
+#
+# 任务统一用 sh 执行：Linux 自带，Windows 需 Git Bash 的 sh 在 PATH。
+# console 前端工具链（node/pnpm）随 N2 Console 批次进本表。
+
+[tools]
+go = "1.26.6"              # go.mod `go 1.26.6`
+buf = "1.65.0"             # buf lint / buf generate（生成物零漂移）
+protoc = "31.1"            # generate:config（config.pb.go 生成工具锁定）
+protoc-gen-go = "1.36.11"  # generate:config（与 config.pb.go 头注释一致）
+golangci-lint = "2.12.2"   # lint:golangci（与 CI 同版本）
+
+[task_config]
+shell = "sh -o errexit -c"
+
+[tasks."generate:proto"]
+description = "buf lint + buf generate（genproto/**）"
+run = ["buf lint", "buf generate"]
+
+[tasks."generate:config"]
+description = "config.proto -> config.pb.go"
+dir = "internal/config"
+run = "protoc -I. --go_out=. --go_opt=paths=source_relative ./config.proto"
+
+# wire v0.7 内嵌 -mod=mod 在 go.work 下非法，生成任务必须 GOWORK=off
+# （两仓实证坑，见 docs/design/2026-09-30-tech-stack.md §4.1）。
+[tasks.wire]
+description = "重生成 internal/assembly/wire_gen.go"
+dir = "internal/assembly"
+env = { GOWORK = "off" }
+run = ["go mod tidy", "go run -mod=mod github.com/google/wire/cmd/wire"]
+
+[tasks."generate:all"]
+description = "generate:proto + generate:config + wire"
+run = [
+  { task = "generate:proto" },
+  { task = "generate:config" },
+  { task = "wire" },
+]
+
+[tasks."lint:proto"]
+description = "buf lint + 对 origin/main 的 breaking 检查"
+run = ["buf lint", "buf breaking --against '.git#branch=origin/main'"]
+
+[tasks."lint:go"]
+description = "go vet + gofmt 检查"
+run = '''
+go vet ./... ./genproto/... ./sdk/go/...
+test -z "$(gofmt -l . ./genproto ./sdk/go)"
+'''
+
+[tasks."lint:golangci"]
+description = "golangci-lint 全量门禁（无棘轮豁免，见 .golangci.yml）"
+run = "golangci-lint run ./..."
+
+[tasks.lint]
+description = "lint:go + lint:golangci + lint:proto"
+run = [
+  { task = "lint:go" },
+  { task = "lint:golangci" },
+  { task = "lint:proto" },
+]
+
+[tasks."dev:server"]
+description = "启动 fleetlyd（go run ./cmd/fleetlyd）"
+run = "go run ./cmd/fleetlyd"
+
+[tasks.build]
+description = "go build fleetlyd + fleetly 到 ./bin/"
+run = '''
+VERSION="$(git describe --tags --always)"
+COMMIT="$(git rev-parse --short HEAD)"
+DATE="$(date +%Y%m%d%H%M%S)"
+LDFLAGS="-X main.version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE"
+go build -ldflags "$LDFLAGS" -o ./bin/ ./cmd/fleetlyd
+go build -ldflags "$LDFLAGS" -o ./bin/ ./cmd/fleetly
+'''
+
+[tasks.test]
+description = "全量测试：go test -race 三 module"
+run = "go test -race ./... ./genproto/... ./sdk/go/..."

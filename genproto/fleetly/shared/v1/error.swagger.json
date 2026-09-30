@@ -1,0 +1,15 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "ErrorResponse 是 fleetly 对外错误信封的唯一契约：服务端错误经 apperr 以\ngRPC status detail 携带本结构上线，gateway 统一渲染为 snake_case JSON。\ncode 与 internal/errcode 注册表（唯一真源，只增不复用）对齐。",
+    "version": "version not set"
+  },
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {},
+  "definitions": {}
+}

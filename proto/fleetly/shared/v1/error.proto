@@ -1,0 +1,21 @@
+syntax = "proto3";
+
+// ErrorResponse 是 fleetly 对外错误信封的唯一契约：服务端错误经 apperr 以
+// gRPC status detail 携带本结构上线，gateway 统一渲染为 snake_case JSON。
+// code 与 internal/errcode 注册表（唯一真源，只增不复用）对齐。
+package fleetly.shared.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1;sharedv1";
+
+message ErrorResponse {
+  // 稳定错误码字符串（如 "E_INVALID_ARGUMENT"），注册表校验只增。
+  string code = 1;
+  // 人读错误信息（面向运维/集成方，不承诺文案稳定）。
+  string message = 2;
+  // 可执行的修复建议（处置提示，Agent 与人类共用）。
+  string suggestion = 3;
+  // machine-readable 附加上下文键值对（如 error_id、资源 ID）。
+  map<string, string> context = 4;
+  // 错误码文档 URL（注册表派生）。
+  string docs = 5;
+}
