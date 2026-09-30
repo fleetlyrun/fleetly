@@ -1,0 +1,211 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Telemetry 上下文（领域模型 §2）：Event 流与日志查询面（日志/指标采集\n侧由 Logging/Metrics Capability 承载，本面是查询入口）。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "EventsService"
+    },
+    {
+      "name": "LogsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/events": {
+      "get": {
+        "operationId": "EventsService_ListEvents",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListEventsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "after_seq",
+            "description": "after_seq 是游标（返回 seq 之后的事件，升序）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "EventsService"
+        ]
+      }
+    },
+    "/v1/logs": {
+      "get": {
+        "operationId": "LogsService_StreamLogs",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1StreamLogsResponse"
+                }
+              },
+              "title": "Stream result of v1StreamLogsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "process",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "tail_lines",
+            "description": "tail_lines 尾部行数（0 = 全量最近缓冲）；follow 持续跟随。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "follow",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "LogsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_INVALID_ARGUMENT\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（处置提示，Agent 与人类共用）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "machine-readable 附加上下文键值对（如 error_id、资源 ID）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "错误码文档 URL（注册表派生）。"
+        }
+      }
+    },
+    "v1Event": {
+      "type": "object",
+      "properties": {
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "name": {
+          "type": "string"
+        },
+        "aggregate": {
+          "type": "string"
+        },
+        "aggregate_id": {
+          "type": "string"
+        },
+        "payload": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "title": "Event 是 Outbox 行形态（单调 seq；payload 是 JSON 字节文本）。"
+    },
+    "v1ListEventsResponse": {
+      "type": "object",
+      "properties": {
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Event"
+          }
+        },
+        "last_seq": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1StreamLogsResponse": {
+      "type": "object",
+      "properties": {
+        "workload_id": {
+          "type": "string"
+        },
+        "container": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        },
+        "line": {
+          "type": "string",
+          "format": "byte"
+        }
+      },
+      "title": "StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339）。"
+    }
+  }
+}

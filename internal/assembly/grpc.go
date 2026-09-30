@@ -9,6 +9,7 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/config"
 )
@@ -26,6 +27,7 @@ func NewGRPCServer(
 	cfg *config.AppConfig,
 	policySet *authz.PolicySet,
 	system *systemgrpc.Service,
+	services *fleetlygrpc.Services,
 ) (*lynxgrpc.Server, error) {
 	chain, err := grpcapiinterceptor.Assemble(
 		grpcapiinterceptor.ChainItem{
@@ -50,6 +52,7 @@ func NewGRPCServer(
 	grpcSrv := srv.GetServer()
 
 	systemv1.RegisterSystemServiceServer(grpcSrv, system)
+	fleetlygrpc.RegisterAll(grpcSrv, services)
 
 	// fail-closed：全部已注册方法（含框架服务豁免外的业务方法）必须带
 	// authz 策略，缺失即启动失败——注解缺失不能等到首个请求才暴露。

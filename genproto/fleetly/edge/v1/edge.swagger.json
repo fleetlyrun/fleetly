@@ -1,0 +1,232 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Edge \u0026 TLS 上下文（领域模型 §2）：Route 与证书资产。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "RoutesService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/routes": {
+      "get": {
+        "operationId": "RoutesService_ListRoutes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListRoutesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RoutesService"
+        ]
+      },
+      "post": {
+        "operationId": "RoutesService_CreateRoute",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateRouteResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateRouteRequest"
+            }
+          }
+        ],
+        "tags": [
+          "RoutesService"
+        ]
+      }
+    },
+    "/v1/routes/{id}": {
+      "delete": {
+        "operationId": "RoutesService_DeleteRoute",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteRouteResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RoutesService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1CreateRouteRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "process": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "protocol": {
+          "type": "string",
+          "title": "protocol: http | h2c | tcp（默认 http）。"
+        },
+        "tls_mode": {
+          "type": "string",
+          "title": "tls_mode: auto（ACME）| none。"
+        }
+      }
+    },
+    "v1CreateRouteResponse": {
+      "type": "object",
+      "properties": {
+        "route": {
+          "$ref": "#/definitions/v1Route"
+        }
+      }
+    },
+    "v1DeleteRouteResponse": {
+      "type": "object"
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_INVALID_ARGUMENT\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（处置提示，Agent 与人类共用）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "machine-readable 附加上下文键值对（如 error_id、资源 ID）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "错误码文档 URL（注册表派生）。"
+        }
+      }
+    },
+    "v1ListRoutesResponse": {
+      "type": "object",
+      "properties": {
+        "routes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Route"
+          }
+        }
+      }
+    },
+    "v1Route": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "host": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "process": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "tls_mode": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "title": "Route 是 host/path → Process 端口的映射（协议 http/h2c/tcp + TLS 模式）。"
+    }
+  }
+}

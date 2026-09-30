@@ -1,0 +1,564 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Delivery 上下文（领域模型 §2）：源接入、构建、Revision 冻结与 Deployment\n生命周期。Deploy 是一站式入口：两源归一化 → AppSpec 校验 → Revision\n冻结（内容寻址复用）→ admission（ADR-0016）。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "DeploymentsService"
+    },
+    {
+      "name": "RevisionsService"
+    },
+    {
+      "name": "BuildsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/apps/{app_id}/rollback": {
+      "post": {
+        "summary": "Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。",
+        "operationId": "DeploymentsService_Rollback",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RollbackResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeploymentsServiceRollbackBody"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/builds": {
+      "get": {
+        "operationId": "BuildsService_ListBuilds",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListBuildsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BuildsService"
+        ]
+      }
+    },
+    "/v1/deployments": {
+      "get": {
+        "operationId": "DeploymentsService_ListDeployments",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDeploymentsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      },
+      "post": {
+        "summary": "Deploy 归一化两源（镜像直投 / Compose 受控子集）并受理部署。",
+        "operationId": "DeploymentsService_Deploy",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeployResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DeployRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/deployments/{id}": {
+      "get": {
+        "operationId": "DeploymentsService_GetDeployment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetDeploymentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/deployments/{id}/cancel": {
+      "post": {
+        "operationId": "DeploymentsService_CancelDeployment",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CancelDeploymentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DeploymentsServiceCancelDeploymentBody"
+            }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/revisions": {
+      "get": {
+        "operationId": "RevisionsService_ListRevisions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListRevisionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RevisionsService"
+        ]
+      }
+    },
+    "/v1/revisions/diff": {
+      "get": {
+        "summary": "DiffRevisions 输出两条 Revision 的字段级差异（路径字典序）。",
+        "operationId": "RevisionsService_DiffRevisions",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DiffRevisionsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "from_seq",
+            "description": "from/to 是 App 内 Revision 序号（R1..Rn 对外形态）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "to_seq",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "RevisionsService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "DeploymentsServiceCancelDeploymentBody": {
+      "type": "object"
+    },
+    "DeploymentsServiceRollbackBody": {
+      "type": "object",
+      "properties": {
+        "to_revision": {
+          "type": "string"
+        }
+      }
+    },
+    "v1Build": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "revision_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CancelDeploymentResponse": {
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "$ref": "#/definitions/v1Deployment"
+        }
+      }
+    },
+    "v1DeployRequest": {
+      "type": "object",
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 直投形态（如 nginx:1.27）。"
+        },
+        "compose_yaml": {
+          "type": "string",
+          "title": "compose_yaml 受控子集形态（白名单执法、受管字段显式拒绝）。"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "commit_sha": {
+          "type": "string"
+        },
+        "supersede": {
+          "type": "boolean"
+        },
+        "process_name": {
+          "type": "string",
+          "title": "process_name 覆盖直投形态的进程名（默认 web）。"
+        }
+      },
+      "title": "DeployRequest 两源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。"
+    },
+    "v1DeployResponse": {
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "$ref": "#/definitions/v1Deployment"
+        }
+      }
+    },
+    "v1Deployment": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "from_revision": {
+          "type": "string"
+        },
+        "to_revision": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "generation": {
+          "type": "string",
+          "format": "uint64"
+        },
+        "idempotency_key": {
+          "type": "string"
+        },
+        "commit_sha": {
+          "type": "string"
+        },
+        "superseded_by": {
+          "type": "string"
+        },
+        "error": {
+          "type": "string"
+        },
+        "observe_deadline": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        }
+      },
+      "title": "Deployment 是受监督迁移的行形态（状态机值 kebab-case 与存储一致）。"
+    },
+    "v1DiffEntry": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "old_value": {
+          "type": "string"
+        },
+        "new_value": {
+          "type": "string"
+        }
+      }
+    },
+    "v1DiffRevisionsResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1DiffEntry"
+          }
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_INVALID_ARGUMENT\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（处置提示，Agent 与人类共用）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "machine-readable 附加上下文键值对（如 error_id、资源 ID）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "错误码文档 URL（注册表派生）。"
+        }
+      }
+    },
+    "v1GetDeploymentResponse": {
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "$ref": "#/definitions/v1Deployment"
+        }
+      }
+    },
+    "v1ListBuildsResponse": {
+      "type": "object",
+      "properties": {
+        "builds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Build"
+          }
+        }
+      }
+    },
+    "v1ListDeploymentsResponse": {
+      "type": "object",
+      "properties": {
+        "deployments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Deployment"
+          }
+        }
+      }
+    },
+    "v1ListRevisionsResponse": {
+      "type": "object",
+      "properties": {
+        "revisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Revision"
+          }
+        }
+      }
+    },
+    "v1Revision": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "seq": {
+          "type": "string",
+          "format": "int64"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      }
+    },
+    "v1RollbackResponse": {
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "$ref": "#/definitions/v1Deployment"
+        }
+      }
+    }
+  }
+}

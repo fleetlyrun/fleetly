@@ -21,7 +21,7 @@ type fakeRuntime struct {
 
 	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析面）
 
-	clusterOverride bool                 // 显式启用编程视图（空视图=节点全离开）
+	clusterOverride bool                   // 显式启用编程视图（空视图=节点全离开）
 	clusterView     capability.ClusterView // 可编程集群快照（节点对账面）
 
 	health capability.HealthReport

@@ -1,0 +1,79 @@
+syntax = "proto3";
+
+// Edge & TLS 上下文（领域模型 §2）：Route 与证书资产。
+package fleetly.edge.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1;edgev1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service RoutesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc CreateRoute(CreateRouteRequest) returns (CreateRouteResponse) {
+    option (google.api.http) = { post: "/v1/routes" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "routes" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListRoutes(ListRoutesRequest) returns (ListRoutesResponse) {
+    option (google.api.http) = { get: "/v1/routes" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "routes" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteRoute(DeleteRouteRequest) returns (DeleteRouteResponse) {
+    option (google.api.http) = { delete: "/v1/routes/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "routes" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// Route 是 host/path → Process 端口的映射（协议 http/h2c/tcp + TLS 模式）。
+message Route {
+  string id = 1;
+  string project_id = 2;
+  string host = 3;
+  string path = 4;
+  string app_id = 5;
+  string process = 6;
+  int32 port = 7;
+  string protocol = 8;
+  string tls_mode = 9;
+  string created_at = 10;
+}
+
+message CreateRouteRequest {
+  string project_id = 1;
+  string host = 2;
+  string path = 3;
+  string app_id = 4;
+  string process = 5;
+  int32 port = 6;
+  // protocol: http | h2c | tcp（默认 http）。
+  string protocol = 7;
+  // tls_mode: auto（ACME）| none。
+  string tls_mode = 8;
+}
+
+message CreateRouteResponse { Route route = 1; }
+message ListRoutesRequest { string project_id = 1; }
+message ListRoutesResponse { repeated Route routes = 1; }
+message DeleteRouteRequest { string id = 1; }
+message DeleteRouteResponse {}

@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+// Telemetry 上下文（领域模型 §2）：Event 流与日志查询面（日志/指标采集
+// 侧由 Logging/Metrics Capability 承载，本面是查询入口）。
+package fleetly.telemetry.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1;telemetryv1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// EventsService：Outbox 读路径（F0.23；流式 follow 在 N1——断档 410 + 快照
+// 重同步随订阅面批次）。
+service EventsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
+    option (google.api.http) = { get: "/v1/events" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+// LogsService：RuntimeLogs 直读（F0.25；诚实标注——仅实时 + 最近缓冲，
+// 持久化检索 N2）。
+service LogsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse) {
+    option (google.api.http) = { get: "/v1/logs" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "logs" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+// Event 是 Outbox 行形态（单调 seq；payload 是 JSON 字节文本）。
+message Event {
+  int64 seq = 1;
+  string name = 2;
+  string aggregate = 3;
+  string aggregate_id = 4;
+  string payload = 5;
+  string created_at = 6;
+}
+
+message ListEventsRequest {
+  // after_seq 是游标（返回 seq 之后的事件，升序）。
+  int64 after_seq = 1;
+  int32 limit = 2;
+}
+message ListEventsResponse {
+  repeated Event events = 1;
+  int64 last_seq = 2;
+}
+
+message StreamLogsRequest {
+  string app_id = 1;
+  string process = 2;
+  // tail_lines 尾部行数（0 = 全量最近缓冲）；follow 持续跟随。
+  int64 tail_lines = 3;
+  bool follow = 4;
+}
+
+// StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339）。
+message StreamLogsResponse {
+  string workload_id = 1;
+  string container = 2;
+  string node = 3;
+  string time = 4;
+  bytes line = 5;
+}

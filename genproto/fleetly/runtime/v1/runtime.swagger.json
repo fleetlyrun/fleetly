@@ -1,0 +1,156 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Runtime 上下文（领域模型 §2）：集群观测与节点运维面（Node/Enrollment）。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "NodesService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/nodes": {
+      "get": {
+        "operationId": "NodesService_ListNodes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListNodesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "NodesService"
+        ]
+      }
+    },
+    "/v1/nodes/enroll": {
+      "post": {
+        "summary": "EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。",
+        "operationId": "NodesService_EnrollNode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1EnrollNodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1EnrollNodeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NodesService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "v1EnrollNodeRequest": {
+      "type": "object"
+    },
+    "v1EnrollNodeResponse": {
+      "type": "object",
+      "properties": {
+        "join_command": {
+          "type": "string",
+          "title": "join_command 是工作节点完整加入命令（swarm join 形态）。"
+        }
+      }
+    },
+    "v1ErrorResponse": {
+      "type": "object",
+      "properties": {
+        "code": {
+          "type": "string",
+          "title": "稳定错误码字符串（如 \"E_INVALID_ARGUMENT\"），注册表校验只增。"
+        },
+        "message": {
+          "type": "string",
+          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
+        },
+        "suggestion": {
+          "type": "string",
+          "title": "可执行的修复建议（处置提示，Agent 与人类共用）。"
+        },
+        "context": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "machine-readable 附加上下文键值对（如 error_id、资源 ID）。"
+        },
+        "docs": {
+          "type": "string",
+          "title": "错误码文档 URL（注册表派生）。"
+        }
+      }
+    },
+    "v1ListNodesResponse": {
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Node"
+          }
+        }
+      }
+    },
+    "v1Node": {
+      "type": "object",
+      "properties": {
+        "platform_id": {
+          "type": "string"
+        },
+        "carrier_id": {
+          "type": "string"
+        },
+        "hostname": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "available": {
+          "type": "boolean"
+        },
+        "first_seen_at": {
+          "type": "string"
+        },
+        "last_seen_at": {
+          "type": "string"
+        }
+      },
+      "title": "Node 是观测缓存行（非权威；节点 ID 永不复用）。"
+    }
+  }
+}

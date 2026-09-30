@@ -73,6 +73,29 @@ func (r *Repo) GetVersion(ctx context.Context, run state.Runner, projectID, name
 	return scanConfig(row.Scan)
 }
 
+// LatestByProject 返回 Project 内每个 name 的最新版本（列表面）。
+func (r *Repo) LatestByProject(ctx context.Context, run state.Runner, projectID string) ([]Config, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT c.id, c.project_id, c.name, c.version, c.content, c.created_at
+		FROM configs c
+		JOIN (SELECT name, MAX(version) AS v FROM configs WHERE project_id = ? GROUP BY name) m
+		  ON c.name = m.name AND c.version = m.v AND c.project_id = ?
+		ORDER BY c.name`, projectID, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Config
+	for rows.Next() {
+		c, err := scanConfig(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
 // ListVersions 返回全部版本（旧→新）。
 func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, name string) ([]Config, error) {
 	rows, err := run.QueryContext(ctx, `

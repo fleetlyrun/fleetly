@@ -1,0 +1,30 @@
+package fleetlygrpc
+
+// Register 把五上下文服务注册到 gRPC server（assembly 唯一调用点）。
+
+import (
+	"google.golang.org/grpc"
+
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+)
+
+// RegisterAll 注册全部上下文服务。
+func RegisterAll(srv *grpc.Server, s *Services) {
+	structurev1.RegisterProjectsServiceServer(srv, &ProjectsService{s: s})
+	structurev1.RegisterAppsServiceServer(srv, &AppsService{s: s})
+	structurev1.RegisterSecretsServiceServer(srv, &SecretsService{s: s})
+	structurev1.RegisterConfigsServiceServer(srv, &ConfigsService{s: s})
+	structurev1.RegisterVolumesServiceServer(srv, &VolumesService{s: s})
+	structurev1.RegisterNetworksServiceServer(srv, &NetworksService{s: s})
+	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{s: s})
+	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{s: s})
+	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})
+	runtimev1.RegisterNodesServiceServer(srv, &NodesService{s: s})
+	edgev1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
+	telemetryv1.RegisterEventsServiceServer(srv, &EventsService{s: s})
+	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})
+}

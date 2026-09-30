@@ -11,6 +11,7 @@ import (
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
+	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
@@ -34,6 +35,7 @@ var ProviderSet = wire.NewSet(
 	NewEdgeProvider,
 	NewMaterialCipher,
 	NewEngine,
+	NewAPIServices,
 	NewEngineService,
 	NewEdgeConfigServer,
 	systemgrpc.New,
@@ -122,6 +124,11 @@ func NewEngine(
 	return engine.New(engine.Deps{
 		DB: db, Runtime: rt, Builder: b, Edge: edge, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{DataRoot: cfg.DataRoot()})
+}
+
+// NewAPIServices 构造五上下文 API 服务依赖集。
+func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, app lynx.App) *fleetlygrpc.Services {
+	return fleetlygrpc.NewServices(db, e, cipher, rt, app.Logger())
 }
 
 // engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖

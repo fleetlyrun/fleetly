@@ -1,0 +1,280 @@
+syntax = "proto3";
+
+// Structure 上下文（领域模型 §2）：组织结构——项目/应用骨架与材料
+//（Project/App/Secret/Config/Volume/Network）。读写分离的 CRUD 面；
+// Route 属 Edge 上下文、Deployment 属 Delivery 上下文（各自 proto 包）。
+package fleetly.structure.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1;structurev1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// ProjectsService：Project 聚合 CRUD（scope 注解先写好；enforcement 随
+// 账号批接管——fail-closed：没有执法者的限制是假限制，当前面为公开面）。
+service ProjectsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {
+    option (google.api.http) = { post: "/v1/projects" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "projects" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetProject(GetProjectRequest) returns (GetProjectResponse) {
+    option (google.api.http) = { get: "/v1/projects/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "projects" op: SCOPE_OP_READ }
+    };
+  }
+  rpc ListProjects(ListProjectsRequest) returns (ListProjectsResponse) {
+    option (google.api.http) = { get: "/v1/projects" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "projects" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteProject(DeleteProjectRequest) returns (DeleteProjectResponse) {
+    option (google.api.http) = { delete: "/v1/projects/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "projects" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+service AppsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc CreateApp(CreateAppRequest) returns (CreateAppResponse) {
+    option (google.api.http) = { post: "/v1/apps" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetApp(GetAppRequest) returns (GetAppResponse) {
+    option (google.api.http) = { get: "/v1/apps/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "apps" op: SCOPE_OP_READ }
+    };
+  }
+  rpc ListApps(ListAppsRequest) returns (ListAppsResponse) {
+    option (google.api.http) = { get: "/v1/apps" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "apps" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteApp(DeleteAppRequest) returns (DeleteAppResponse) {
+    option (google.api.http) = { delete: "/v1/apps/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "apps" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// SecretsService：值永不回显——响应只携带指纹（ADR-0014）。
+service SecretsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc PutSecret(PutSecretRequest) returns (PutSecretResponse) {
+    option (google.api.http) = { put: "/v1/secrets" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "secrets" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListSecrets(ListSecretsRequest) returns (ListSecretsResponse) {
+    option (google.api.http) = { get: "/v1/secrets" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "secrets" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteSecret(DeleteSecretRequest) returns (DeleteSecretResponse) {
+    option (google.api.http) = { delete: "/v1/secrets/{project_id}/{name}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "secrets" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// ConfigsService：版本化挂载文件（可回读）。
+service ConfigsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc PutConfig(PutConfigRequest) returns (PutConfigResponse) {
+    option (google.api.http) = { put: "/v1/configs" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "configs" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse) {
+    option (google.api.http) = { get: "/v1/configs/{project_id}/{name}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "configs" op: SCOPE_OP_READ }
+    };
+  }
+  rpc ListConfigs(ListConfigsRequest) returns (ListConfigsResponse) {
+    option (google.api.http) = { get: "/v1/configs" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "configs" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+service VolumesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse) {
+    option (google.api.http) = { post: "/v1/volumes" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "volumes" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListVolumes(ListVolumesRequest) returns (ListVolumesResponse) {
+    option (google.api.http) = { get: "/v1/volumes" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "volumes" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+service NetworksService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc CreateNetwork(CreateNetworkRequest) returns (CreateNetworkResponse) {
+    option (google.api.http) = { post: "/v1/networks" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse) {
+    option (google.api.http) = { get: "/v1/networks" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+message Project {
+  string id = 1;
+  string name = 2;
+  string team_id = 3;
+  string created_at = 4;
+  string deleted_at = 5;
+}
+
+message CreateProjectRequest { string name = 1; string team_id = 2; }
+message CreateProjectResponse { Project project = 1; }
+message GetProjectRequest { string id = 1; }
+message GetProjectResponse { Project project = 1; }
+message ListProjectsRequest {}
+message ListProjectsResponse { repeated Project projects = 1; }
+message DeleteProjectRequest { string id = 1; }
+message DeleteProjectResponse {}
+
+message App {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string created_at = 4;
+}
+
+message CreateAppRequest { string project_id = 1; string name = 2; }
+message CreateAppResponse { App app = 1; }
+message GetAppRequest { string id = 1; }
+message GetAppResponse { App app = 1; }
+message ListAppsRequest { string project_id = 1; }
+message ListAppsResponse { repeated App apps = 1; }
+message DeleteAppRequest { string id = 1; }
+message DeleteAppResponse {}
+
+message Secret {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  // fingerprint 是值指纹（值永不回显，ADR-0014）。
+  string fingerprint = 4;
+  string updated_at = 5;
+}
+
+message PutSecretRequest {
+  string project_id = 1;
+  string name = 2;
+  // value 只进不回（请求侧明文；响应只回指纹）。
+  string value = 3;
+}
+message PutSecretResponse { Secret secret = 1; }
+message ListSecretsRequest { string project_id = 1; }
+message ListSecretsResponse { repeated Secret secrets = 1; }
+message DeleteSecretRequest { string project_id = 1; string name = 2; }
+message DeleteSecretResponse {}
+
+message Config {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  int64 version = 4;
+  string created_at = 5;
+  // content 仅 GetConfig 回读（List 不带——体积面）。
+  string content = 6;
+}
+
+message PutConfigRequest { string project_id = 1; string name = 2; string content = 3; }
+message PutConfigResponse { Config config = 1; }
+message GetConfigRequest { string project_id = 1; string name = 2; int64 version = 3; }
+message GetConfigResponse { Config config = 1; }
+message ListConfigsRequest { string project_id = 1; }
+message ListConfigsResponse { repeated Config configs = 1; }
+
+message Volume {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string pinned_node_id = 4;
+  string created_at = 5;
+}
+
+message CreateVolumeRequest { string project_id = 1; string name = 2; string pinned_node_id = 3; }
+message CreateVolumeResponse { Volume volume = 1; }
+message ListVolumesRequest { string project_id = 1; }
+message ListVolumesResponse { repeated Volume volumes = 1; }
+
+message Network {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  // egress_none 是弱隔离声明（swarm v1：出网不阻断，明示）。
+  bool egress_none = 4;
+  string created_at = 5;
+}
+
+message CreateNetworkRequest { string project_id = 1; string name = 2; bool egress_none = 3; }
+message CreateNetworkResponse { Network network = 1; }
+message ListNetworksRequest { string project_id = 1; }
+message ListNetworksResponse { repeated Network networks = 1; }

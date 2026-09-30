@@ -1,0 +1,59 @@
+syntax = "proto3";
+
+// Runtime 上下文（领域模型 §2）：集群观测与节点运维面（Node/Enrollment）。
+package fleetly.runtime.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service NodesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+
+  rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
+    option (google.api.http) = { get: "/v1/nodes" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "nodes" op: SCOPE_OP_READ }
+    };
+  }
+  // EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。
+  rpc EnrollNode(EnrollNodeRequest) returns (EnrollNodeResponse) {
+    option (google.api.http) = { post: "/v1/nodes/enroll" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "nodes" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// Node 是观测缓存行（非权威；节点 ID 永不复用）。
+message Node {
+  string platform_id = 1;
+  string carrier_id = 2;
+  string hostname = 3;
+  string role = 4;
+  bool available = 5;
+  string first_seen_at = 6;
+  string last_seen_at = 7;
+}
+
+message ListNodesRequest {}
+message ListNodesResponse { repeated Node nodes = 1; }
+message EnrollNodeRequest {}
+message EnrollNodeResponse {
+  // join_command 是工作节点完整加入命令（swarm join 形态）。
+  string join_command = 1;
+}

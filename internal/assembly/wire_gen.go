@@ -66,7 +66,8 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		return nil, nil, err
 	}
 	systemgrpcService := systemgrpc.New(info)
-	server, err := NewGRPCServer(app, appConfig, policySet, systemgrpcService)
+	services := NewAPIServices(db, engine, cipher, runtime, app)
+	server, err := NewGRPCServer(app, appConfig, policySet, systemgrpcService, services)
 	if err != nil {
 		cleanup5()
 		cleanup4()

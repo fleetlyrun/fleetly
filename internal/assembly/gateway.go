@@ -11,7 +11,12 @@ import (
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 	"google.golang.org/grpc"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/config"
 )
 
@@ -38,6 +43,19 @@ func NewGatewayServer(
 
 	register := []gateway.RegisterFunc{
 		registerClient(systemv1.NewSystemServiceClient, systemv1.RegisterSystemServiceHandlerClient),
+		registerClient(structurev1.NewProjectsServiceClient, structurev1.RegisterProjectsServiceHandlerClient),
+		registerClient(structurev1.NewAppsServiceClient, structurev1.RegisterAppsServiceHandlerClient),
+		registerClient(structurev1.NewSecretsServiceClient, structurev1.RegisterSecretsServiceHandlerClient),
+		registerClient(structurev1.NewConfigsServiceClient, structurev1.RegisterConfigsServiceHandlerClient),
+		registerClient(structurev1.NewVolumesServiceClient, structurev1.RegisterVolumesServiceHandlerClient),
+		registerClient(structurev1.NewNetworksServiceClient, structurev1.RegisterNetworksServiceHandlerClient),
+		registerClient(deliveryv1.NewDeploymentsServiceClient, deliveryv1.RegisterDeploymentsServiceHandlerClient),
+		registerClient(deliveryv1.NewRevisionsServiceClient, deliveryv1.RegisterRevisionsServiceHandlerClient),
+		registerClient(deliveryv1.NewBuildsServiceClient, deliveryv1.RegisterBuildsServiceHandlerClient),
+		registerClient(runtimev1.NewNodesServiceClient, runtimev1.RegisterNodesServiceHandlerClient),
+		registerClient(edgev1.NewRoutesServiceClient, edgev1.RegisterRoutesServiceHandlerClient),
+		registerClient(telemetryv1.NewEventsServiceClient, telemetryv1.RegisterEventsServiceHandlerClient),
+		registerClient(telemetryv1.NewLogsServiceClient, telemetryv1.RegisterLogsServiceHandlerClient),
 	}
 	if err := gateway.Register(app.Context(), mux, conn, register...); err != nil {
 		_ = conn.Close()
