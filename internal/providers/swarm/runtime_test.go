@@ -35,7 +35,7 @@ func TestTaskEventStateTight(t *testing.T) {
 }
 
 // service 事件只代表 spec 变化，不代表载体就绪：create/update 必须 pending
-//（就绪权威是任务轮询），remove 计 stopped。
+// （就绪权威是任务轮询），remove 计 stopped。
 func TestServiceEventStateTight(t *testing.T) {
 	for action, want := range map[string]capability.WorkloadState{
 		"create": capability.WorkloadPending,

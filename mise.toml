@@ -87,3 +87,7 @@ run = "go test -race ./... ./genproto/... ./sdk/go/..."
 [tasks."e2e:dind"]
 description = "e2e dind 单节点冒烟（F0.24：真 swarm Runtime + 真 Builder 全链）"
 run = "sh e2e/dind-smoke.sh"
+
+[tasks."e2e:h2c"]
+description = "e2e dind 受管 traefik 挂项目网 + h2c Route 端到端（N0 修复批 B1）"
+run = "sh e2e/dind-h2c-route.sh"

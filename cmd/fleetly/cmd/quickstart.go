@@ -119,16 +119,37 @@ func newQuickstartVerb() commands.Command {
 				appID = a.GetApp().GetId()
 			}
 
-			// 3. 部署样例镜像（compose 形态：Route 后端解析依赖端口声明
+			// 3. Project 网络（幂等：存在即复用）。受管 Edge 挂全部活跃
+			// Project 网络（B1）——后端与 Edge 在同一 overlay 才互通，
+			// quickstart 一条龙必须把网络实体建出来。
+			nlist, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{ProjectId: projectID})
+			if err != nil {
+				return err
+			}
+			hasDefault := false
+			for _, n := range nlist.GetNetworks() {
+				if n.GetName() == "default" {
+					hasDefault = true
+				}
+			}
+			if !hasDefault {
+				if _, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
+					ProjectId: projectID, Name: "default",
+				}); err != nil {
+					return err
+				}
+			}
+
+			// 4. 部署样例镜像（compose 形态：Route 后端解析依赖端口声明
 			// 落 fleetly.ports 标注——镜像直投无端口声明面，Edge 后端将
-			// 无从解析；compose 受控子集带 ports 声明）。
-			compose := fmt.Sprintf("services:\n  web:\n    image: %s\n    ports:\n      - \"%d\"\n", image, port)
+			// 无从解析；networks 挂 Project 网让后端与受管 Edge 同网互通）。
+			compose := fmt.Sprintf("services:\n  web:\n    image: %s\n    ports:\n      - \"%d\"\n    networks:\n      - default\n", image, port)
 			dep, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, ComposeYaml: compose})
 			if err != nil {
 				return err
 			}
 
-			// 4. Route（sslip.io host 默认拼）。
+			// 5. Route（sslip.io host 默认拼）。
 			if host == "" {
 				host = sslipHost(serverAddr, appName)
 			}
@@ -140,7 +161,7 @@ func newQuickstartVerb() commands.Command {
 				return err
 			}
 
-			// 5. 等待 succeeded（轮询部署状态；终态即止）。
+			// 6. 等待 succeeded（轮询部署状态；终态即止）。
 			state := dep.GetDeployment().GetState()
 			if !noWait {
 				for i := 0; i < 120; i++ {
