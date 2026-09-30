@@ -11,7 +11,7 @@
 **安装与引导**
 - F0.1 [x] 一行安装：`curl | bash` 检测/安装 Docker → 单节点 swarm init → fleetlyd（容器形态优先）→ 数据根初始化。验收：全新 Ubuntu VPS 一条命令到 fleetlyd healthy。
 - F0.2 [x] 首启引导：Bootstrap Token 落盘（journal+文件，可吊销）+ 管理员初始化**全 CLI 可完成**（`fleetly init`）。验收：无浏览器环境可完成全部初始化。
-- F0.3 [x] `fleetly quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。
+- F0.3 [x] `fleetly quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。〔2026-09-30 staging 真机补验 --tls auto：TLS/路由/ACME 全通；HTTPS 200 差受管 edge 挂项目网（C5 留空桩），边界见 docs/runbooks/staging-fleetly.md〕
 - F0.4 [x] `fleetly doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
 
 **账号与权限（完整 Team/Role）**
@@ -29,15 +29,15 @@
 
 **网络与路由**
 - F0.14 [x] per-Project overlay；跨 Project 默认隔离；`egress:none` 声明（swarm v1 弱隔离，明示）。
-- F0.15 [x] Edge：traefik 受管自宿（通用 ManagedProvider reconciler 首个实例）+ Route（host/path/port + protocol http|h2c|tcp + TLS 模式）+ LE HTTP-01 自动证书 + 默认 sslip.io 域名。验收：h2c 后端路由可通（messageloop 形态）。
+- F0.15 [x] Edge：traefik 受管自宿（通用 ManagedProvider reconciler 首个实例）+ Route（host/path/port + protocol http|h2c|tcp + TLS 模式）+ LE HTTP-01 自动证书 + 默认 sslip.io 域名。验收：h2c 后端路由可通（messageloop 形态）。〔2026-09-30 staging 真机补验：LE staging CA 经 HTTP-01 签出 n0.dev.fleetly.run（issuer=(STAGING) Ersatz Emmer YR2）；生产 CA 轮换另批〕
 - F0.16 [x] Volume：受控子集 + 默认钉住节点（Placement 以平台节点 ID 为锚）。
 
 **材料与安全**
 - F0.17 [x] Secret/Config：age 信封加密（KEK 数据根、轮换 runbook）、值永不回显回指纹、注入 App/Database；Config 版本化可回读、配额。
-- F0.18 镜像凭证分发：私有 registry 凭证存 Secret，Ensure 解析后按节点分发，不落 label/明文 env。验收：私有镜像双节点拉取成功（场景 13）。
+- F0.18 [x] 镜像凭证分发：私有 registry 凭证存 Secret，Ensure 解析后按节点分发，不落 label/明文 env。验收：私有镜像双节点拉取成功（场景 13）。〔2026-09-30 staging 真机：zot+Secret 双节点 Running、node2 镜像落位、载体零凭证〕
 
 **集群（Runtime）**
-- F0.19 swarm Provider 全契约：Ensure/Remove/Watch/Addresses/DescribeCluster/Enrollment + 节点身份锚定（铸造/写回/`node.joined`）+ RuntimeLogs 子面 + RuntimeAdmin（drain/cordon）。
+- F0.19 [x] swarm Provider 全契约：Ensure/Remove/Watch/Addresses/DescribeCluster/Enrollment + 节点身份锚定（铸造/写回/`node.joined`）+ RuntimeLogs 子面 + RuntimeAdmin（drain/cordon）。〔2026-09-30 staging 真机：RuntimeAdmin 面（drain 实迁移/cordon/uncordon+审计）+ 双节点 e2e（场景 13 部署、enroll 重组链、node.joined/left 事件）〕
 - F0.20 [x] 多节点就绪：`fleetly nodes enroll` 输出加入材料。验收：双节点部署同一 App、卷钉住正确（双节点 e2e 随 dind 套件批回归）。
 
 **API/CLI 面**
