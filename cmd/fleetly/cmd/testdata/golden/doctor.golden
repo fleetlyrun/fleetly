@@ -1,0 +1,10 @@
+[ok  ] docker client            29.7.2
+[ok  ] docker daemon            29.7.2
+[ok  ] swarm                    active
+[ok  ] clock drift              within tolerance
+[ok  ] fleetlyd grpc (:9080)    listening
+[ok  ] gateway http (:9081)     listening
+[ok  ] disk                     128.0 GiB free
+[ok  ] fleetlyd 127.0.0.1:9080  healthy, server 0.1.0-test
+
+8 ok, 0 warning(s), 0 failed

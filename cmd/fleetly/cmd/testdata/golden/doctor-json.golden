@@ -1,0 +1,57 @@
+{
+  "checks": [
+    {
+      "area": "local",
+      "name": "docker client",
+      "status": "ok",
+      "detail": "29.7.2"
+    },
+    {
+      "area": "local",
+      "name": "docker daemon",
+      "status": "ok",
+      "detail": "29.7.2"
+    },
+    {
+      "area": "local",
+      "name": "swarm",
+      "status": "ok",
+      "detail": "active"
+    },
+    {
+      "area": "local",
+      "name": "clock drift",
+      "status": "ok",
+      "detail": "within tolerance"
+    },
+    {
+      "area": "local",
+      "name": "fleetlyd grpc (:9080)",
+      "status": "ok",
+      "detail": "listening"
+    },
+    {
+      "area": "local",
+      "name": "gateway http (:9081)",
+      "status": "ok",
+      "detail": "listening"
+    },
+    {
+      "area": "local",
+      "name": "disk",
+      "status": "ok",
+      "detail": "128.0 GiB free"
+    },
+    {
+      "area": "remote",
+      "name": "fleetlyd 127.0.0.1:9080",
+      "status": "ok",
+      "detail": "healthy, server 0.1.0-test"
+    }
+  ],
+  "summary": {
+    "ok": 8,
+    "warn": 0,
+    "fail": 0
+  }
+}

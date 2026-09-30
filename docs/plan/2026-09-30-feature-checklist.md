@@ -12,7 +12,7 @@
 - F0.1 一行安装：`curl | bash` 检测/安装 Docker → 单节点 swarm init → fleetlyd（容器形态优先）→ 数据根初始化。验收：全新 Ubuntu VPS 一条命令到 fleetlyd healthy。
 - F0.2 首启引导：Bootstrap Token 落盘（journal+文件，可吊销）+ 管理员初始化**全 CLI 可完成**（`fleetly init`）。验收：无浏览器环境可完成全部初始化。
 - F0.3 `fleetly quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。
-- F0.4 `fleetly doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
+- F0.4 [x] `fleetly doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
 
 **账号与权限（完整 Team/Role）**
 - F0.5 [x] User/Team/Role/Token 全模型：多用户、内置角色（owner/admin/member）+ 自定义 Role（Scope 集合）、邀请流（一次性链接）。验收：双用户双角色权限差异 e2e。

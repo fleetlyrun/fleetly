@@ -46,6 +46,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 	app.Register(
 		newVersionCmd(info),
 		newStatusCmd(),
+		newDoctorVerb(),
 		// 身份与访问（Identity 上下文）。
 		newLoginVerb(),
 		newWhoamiVerb(),
