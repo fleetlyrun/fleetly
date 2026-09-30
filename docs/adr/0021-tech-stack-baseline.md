@@ -1,0 +1,3 @@
+# 技术选型基线：torchwood 骨架 + 归档领域依赖
+
+2026-09-30 裁定：基础框架采用 torchwood 验证的 lynx 模式——`lynx-go/lynx v1.17 线`（slog/WithLoggerProvider/RunE/bootkit，与 contrib/zap 同版对齐）+ `lynx-go/grpcapi`（网关共享连接、protovalidate 校验、authz fail-closed——与 Scope 注解模型契合）+ `lynx-go/commands`（CLI，退出码四态+golden）+ `google/wire`；RPC 链 grpc + grpc-gateway + buf remote 插件（两仓逐字相同配置）。领域依赖沿用归档仓已验证版本：modernc sqlite + goose + 原生 database/sql（不用 ORM）、moby 新拆分 module、buildkit/railpack/lego/age/robfig-cron/ulid/minio-go。存储维持 SQLite 嵌入（不引入 Postgres/外部 DB/Redis/队列/工作流引擎）。Go 三 module 从 N0（主 + genproto + sdk/go），首个可用切面打真实 tag，防 torchwood 式 vendored fork 重演；Console 沿用归档栈（React 19 + Vite + TS + Tailwind 4 + Radix + TanStack）。详见 `docs/design/2026-09-30-tech-stack.md`（含六条两仓实证坑与对策）。
