@@ -44,15 +44,20 @@ func (p *Provider) setNodeAvailability(ctx context.Context, nodeID string, avail
 }
 
 // findNodeByPlatformID 以平台节点 ID（label 锚）定位载体节点。
+//
+// 真机实证（staging 2026-09-30，docker 29.8）：node 列表的 label 服务端
+// 过滤形态（label=k=v / node.labels.k=v）对含点号的键**恒不命中**且不
+// 报错——不与服务过滤方言较劲，全量列出后内存精确匹配（集群节点数
+// 量级小，全列可接受）。
 func (p *Provider) findNodeByPlatformID(ctx context.Context, nodeID string) (*swarm.Node, error) {
-	res, err := p.cli.NodeList(ctx, client.NodeListOptions{
-		Filters: client.Filters{}.Add("label", labelNodeID+"="+nodeID),
-	})
+	res, err := p.cli.NodeList(ctx, client.NodeListOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("swarm node %s: list: %w", nodeID, err)
 	}
-	if len(res.Items) == 0 {
-		return nil, fmt.Errorf("swarm node %s: no swarm node carries this platform node id: %w", nodeID, capability.ErrNodeNotFound)
+	for i := range res.Items {
+		if res.Items[i].Spec.Labels[labelNodeID] == nodeID {
+			return &res.Items[i], nil
+		}
 	}
-	return &res.Items[0], nil
+	return nil, fmt.Errorf("swarm node %s: no swarm node carries this platform node id: %w", nodeID, capability.ErrNodeNotFound)
 }
