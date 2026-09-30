@@ -75,9 +75,7 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 		return e.prepare(ctx, d)
 
 	case deployment.StateBuilding:
-		// 构建链路由 build engine 批次接入（F0.9）；当前投影器在 preparing
-		// 已把可直投部署送进 releasing，此处只可能因 Builder 未接线滞留。
-		return e.failDeployment(ctx, d, "builder is not wired yet; image-source deployments are supported in this batch")
+		return e.driveBuilding(ctx, d)
 
 	case deployment.StateReleasing:
 		return e.release(ctx, d)
@@ -113,13 +111,18 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve app: "+err.Error())
 	}
-	// 投影预检（from_build 无产物等在此得到精确错误；不下发）。
-	if _, _, err := Project(spec, team, nil); err != nil {
-		return e.failDeployment(ctx, d, "project spec: "+err.Error())
+	// 投影预检：from_build 无产物在有 Build 声明时合法（building 态产出；
+	// releasing 前再次投影校验）；无 Build 声明的 from_build 是永久错误，
+	// 此处精确失败。
+	digests, derr := e.buildDigests(ctx, d)
+	if derr == nil && (digests != nil || spec.GetBuild() == nil) {
+		_, _, derr = Project(spec, team, digests)
+	}
+	if derr != nil {
+		return e.failDeployment(ctx, d, "project spec: "+derr.Error())
 	}
 	if spec.GetBuild() != nil {
-		// Build 声明存在 → 构建链（from_build 进程在投影时校验 digest；
-		// C2 阶段无 build 产物 → 投影已失败并给出精确理由）。
+		// Build 声明存在 → 构建链（building 态由 driveBuilding 驱动）。
 		return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateBuilding, nil)
 	}
 	return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateReleasing, nil)
@@ -140,7 +143,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve app: "+err.Error())
 	}
-	digests, err := e.buildDigests(ctx, d.AppID)
+	digests, err := e.buildDigests(ctx, d)
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve build digests: "+err.Error())
 	}
@@ -208,7 +211,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 	if err != nil {
 		return e.rollbackFailed(ctx, d, "resolve app: "+err.Error())
 	}
-	digests, err := e.buildDigests(ctx, d.AppID)
+	digests, err := e.buildDigests(ctx, d)
 	if err != nil {
 		return e.rollbackFailed(ctx, d, "resolve build digests: "+err.Error())
 	}

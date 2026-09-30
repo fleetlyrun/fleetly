@@ -39,6 +39,12 @@ type Options struct {
 	ReleaseTimeout time.Duration
 	// Tick 是收敛循环兜底节拍（默认 1s）。
 	Tick time.Duration
+	// BuildConcurrency 是并发构建上限（默认 2，F0.9）。
+	BuildConcurrency int
+	// BuildTimeout 是单次构建硬超时（默认 15m；超时=expired 看门狗）。
+	BuildTimeout time.Duration
+	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
+	DataRoot string
 }
 
 func (o *Options) fill() {
@@ -53,6 +59,12 @@ func (o *Options) fill() {
 	}
 	if o.Tick <= 0 {
 		o.Tick = time.Second
+	}
+	if o.BuildConcurrency <= 0 {
+		o.BuildConcurrency = 2
+	}
+	if o.BuildTimeout <= 0 {
+		o.BuildTimeout = 15 * time.Minute
 	}
 }
 
@@ -75,9 +87,18 @@ type Engine struct {
 	nodes       *node.Repo
 	audits      *audit.Repo
 
-	loop   *Loop
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
+	loop      *Loop
+	buildLoop *Loop
+	cancel    context.CancelFunc
+	wg        sync.WaitGroup
+
+	// 构建面（F0.9）：Builder 端口、并发上限、构建输入登记与最近日志缓冲。
+	builder   capability.Builder
+	buildOpts buildOptions
+	buildLogs *logBuffer
+
+	buildInputMu sync.Mutex
+	buildInputs  map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
 
 	obsMu        sync.RWMutex
 	observations map[string]capability.WorkloadEvent // workloadID → 最新观测
@@ -91,11 +112,13 @@ type Engine struct {
 	drift   map[string]string // workloadID → 最后 drift 签名（去抖）
 }
 
-// New 构造引擎（不启动；Start 后进入驱动）。
-func New(db *state.DB, rt capability.Runtime, log *slog.Logger, opts Options) *Engine {
+// New 构造引擎（不启动；Start 后进入驱动）。builder 为 nil 时构建链停用
+// （building 态部署以精确错误失败；镜像直投不受影响）。
+func New(db *state.DB, rt capability.Runtime, b capability.Builder, log *slog.Logger, opts Options) *Engine {
 	opts.fill()
 	clock := db.Clock()
 	return &Engine{
+		builder:      b,
 		db:           db,
 		log:          log,
 		runtime:      rt,
@@ -110,6 +133,10 @@ func New(db *state.DB, rt capability.Runtime, log *slog.Logger, opts Options) *E
 		nodes:        node.New(clock),
 		audits:       audit.New(clock),
 		loop:         NewLoop("deployment", log),
+		buildLoop:    NewLoop("build", log),
+		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
+		buildLogs:    newLogBuffer(500),
+		buildInputs:  make(map[string]capability.BuildRequest),
 		observations: make(map[string]capability.WorkloadEvent),
 		workloadApp:  make(map[string]string),
 		ensuredGen:   make(map[string]uint64),
@@ -125,16 +152,44 @@ func (e *Engine) Start(ctx context.Context) {
 	}
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	e.cancel = cancel
-	e.wg.Add(2)
+	e.resetOrphanBuilds(runCtx)
+	e.wg.Add(3)
 	go func() {
 		defer e.wg.Done()
 		e.loop.Run(runCtx, e.opts.Tick, e.step)
 	}()
 	go func() {
 		defer e.wg.Done()
+		e.buildLoop.Run(runCtx, e.opts.Tick, e.buildStep)
+	}()
+	go func() {
+		defer e.wg.Done()
 		e.consumeWatch(runCtx)
 	}()
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
+	e.buildLoop.Kick()
+}
+
+// resetOrphanBuilds 把崩溃遗留的 building 行重置 queued（重放：buildkit
+// 缓存幂等；无输入登记的孤儿在 executeBuild 内再回 queued 等登记）。
+func (e *Engine) resetOrphanBuilds(ctx context.Context) {
+	if e.builder == nil {
+		return
+	}
+	active, err := e.builds.ListActive(ctx, e.db.Runner())
+	if err != nil {
+		e.log.Error("build: reset orphans", "err", err)
+		return
+	}
+	for _, b := range active {
+		if b.State != build.StateBuilding {
+			continue
+		}
+		if _, err := e.transitBuild(ctx, &b,
+			[]build.State{build.StateBuilding}, build.StateQueued, nil); err != nil {
+			e.log.Error("build: reset orphan", "build", b.ID, "err", err)
+		}
+	}
 }
 
 // Stop 有界排空：取消循环并等待在途 step（Ensure 由 step 内 ctx 收口）

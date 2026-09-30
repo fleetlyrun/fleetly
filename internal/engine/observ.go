@@ -12,6 +12,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
+	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 )
@@ -57,9 +58,36 @@ func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, e
 	return "default", a, nil
 }
 
-// buildDigests 收集 App 最新成功构建的 digest（process → digest；C3 构建
-// 链接入后生效，当前恒空 → from_build 在投影期得到精确错误）。
-func (e *Engine) buildDigests(ctx context.Context, appID string) (map[string]string, error) {
+// buildDigests 解析 Deployment 目标 Revision 的构建产物（from_build 进程
+// → digest 映射；无成功构建返回 nil → 投影期得到精确错误）。Build 是
+// Revision 级单产物：全部 from_build 进程共用同一 digest。
+func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (map[string]string, error) {
+	spec, err := e.loadSpec(d.ToRevision)
+	if err != nil {
+		return nil, err
+	}
+	var fromBuild []string
+	for _, p := range spec.GetProcesses() {
+		if p.GetFromBuild() != "" {
+			fromBuild = append(fromBuild, p.GetName())
+		}
+	}
+	if len(fromBuild) == 0 {
+		return nil, nil
+	}
+	builds, err := e.builds.ListByRevision(ctx, e.db.Runner(), d.ToRevision)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range builds {
+		if b.State == build.StateSucceeded && b.Digest != "" {
+			out := make(map[string]string, len(fromBuild))
+			for _, name := range fromBuild {
+				out[name] = b.Digest
+			}
+			return out, nil
+		}
+	}
 	return nil, nil
 }
 

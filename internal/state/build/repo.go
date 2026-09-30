@@ -88,6 +88,26 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([
 	return out, rows.Err()
 }
 
+// ListByRevision 返回 Revision 的全部 Build 行（新→旧；Revision 级构建
+// 一次，历史行应只有一条——含终态供部署驱动判定复用或失败）。
+func (r *Repo) ListByRevision(ctx context.Context, run state.Runner, revisionID string) ([]Build, error) {
+	rows, err := run.QueryContext(ctx,
+		selectCols+" WHERE revision_id = ? ORDER BY id DESC", revisionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Build
+	for rows.Next() {
+		b, err := scanBuild(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *b)
+	}
+	return out, rows.Err()
+}
+
 // ListActive 返回全部活跃 Build（构建循环拾取面）。
 func (r *Repo) ListActive(ctx context.Context, run state.Runner) ([]Build, error) {
 	rows, err := run.QueryContext(ctx,

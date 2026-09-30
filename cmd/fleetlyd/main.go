@@ -14,8 +14,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/config"
 
-	// 编译期 Provider 注册（blank import 触发 swarm 工厂自注册；架构 §2：
+	// 编译期 Provider 注册（blank import 触发工厂自注册；架构 §2：
 	// providers 只准经注册表间接装配，全仓唯此一处）。
+	_ "github.com/fleetlyrun/fleetly/internal/providers/dockerbuild"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
 )
 

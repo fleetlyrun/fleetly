@@ -33,10 +33,17 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	engine := NewEngine(db, runtime, app)
+	builder, cleanup3, err := NewBuilderProvider()
+	if err != nil {
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	engine := NewEngine(db, runtime, builder, app, appConfig)
 	service := NewEngineService(engine)
 	policySet, err := NewPolicySet()
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -44,12 +51,14 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	systemgrpcService := systemgrpc.New(info)
 	server, err := NewGRPCServer(app, appConfig, policySet, systemgrpcService)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
 	}
-	httpServer, cleanup3, err := NewGatewayServer(app, appConfig)
+	httpServer, cleanup4, err := NewGatewayServer(app, appConfig)
 	if err != nil {
+		cleanup3()
 		cleanup2()
 		cleanup()
 		return nil, nil, err
@@ -58,6 +67,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {
+		cleanup4()
 		cleanup3()
 		cleanup2()
 		cleanup()

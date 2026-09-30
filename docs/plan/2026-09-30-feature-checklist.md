@@ -21,7 +21,7 @@
 
 **应用与部署**
 - F0.8 Project/App CRUD（API+CLI）；Spec 归一化两源：Compose 受控子集（白名单+受管字段显式拒绝+拒绝原因精确）与镜像直部署。
-- F0.9 Build（dockerfile 构建器）：BuildKit、控制面节点执行、并发上限可配、缓存本机、构建日志实时流。
+- F0.9 [x] Build（dockerfile 构建器）：BuildKit、控制面节点执行、并发上限可配、缓存本机、构建日志实时流。
 - F0.10 [x] Deployment 状态机（preparing→building→releasing→observing→succeeded|failed|rolling-back→superseded）+ admission 队列：同幂等键/commit 去重、latest-wins、显式 supersede、queue_full 反馈、排队与在途可取消。
 - F0.11 回滚 = Revision Replay 一等动词（`fleetly rollback`）+ Revision diff（`fleetly revisions diff R1 R2`）。
 - F0.12 健康门与优雅退出：http/tcp/exec 探针 + L1 门 + L2 看门狗 + L3 观察窗（60s 默认）；SIGTERM 宽限；被杀后按 Generation 幂等重放（场景 1/2 回归）。

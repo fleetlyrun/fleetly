@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 )
 
@@ -45,6 +46,45 @@ const (
 	eventWorkloadDrift = "workload.drift_detected"
 	eventNodeJoined    = "node.joined"
 )
+
+// build.* payload schema。
+type buildEventPayload struct {
+	BuildID    string `json:"build_id"`
+	AppID      string `json:"app_id"`
+	RevisionID string `json:"revision_id,omitempty"`
+	State      string `json:"state"`
+	Digest     string `json:"digest,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+func buildEventPayloadJSON(b *build.Build) []byte {
+	payload := buildEventPayload{
+		BuildID: b.ID, AppID: b.AppID, RevisionID: b.RevisionID,
+		State: string(b.State), Digest: b.Digest, Error: b.Error,
+	}
+	out, _ := json.Marshal(payload)
+	return out
+}
+
+// eventBuildState 把 Build 状态映射为事件名（字面量锚定）。
+func eventBuildState(s build.State) string {
+	switch s {
+	case build.StateQueued:
+		return "build.queued"
+	case build.StateBuilding:
+		return "build.building"
+	case build.StateSucceeded:
+		return "build.succeeded"
+	case build.StateFailed:
+		return "build.failed"
+	case build.StateCancelled:
+		return "build.cancelled"
+	case build.StateExpired:
+		return "build.expired"
+	default:
+		return "build." + strings.ReplaceAll(string(s), "-", "_")
+	}
+}
 
 func deploymentEventPayloadJSON(d *deployment.Deployment) []byte {
 	p := deploymentEventPayload{

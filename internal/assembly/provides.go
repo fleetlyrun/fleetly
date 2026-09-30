@@ -29,6 +29,7 @@ var ProviderSet = wire.NewSet(
 	NewPolicySet,
 	NewStateDB,
 	NewRuntimeProvider,
+	NewBuilderProvider,
 	NewEngine,
 	NewEngineService,
 	systemgrpc.New,
@@ -72,10 +73,32 @@ func NewRuntimeProvider(app lynx.App) (capability.Runtime, func(), error) {
 	}, nil
 }
 
+// NewBuilderProvider 构造 Builder Provider（dockerfile 经 /session 连本机
+// daemon 内嵌 buildkit；可选能力——无在册者时返回 nil，构建链停用）。
+func NewBuilderProvider() (capability.Builder, func(), error) {
+	providers := capability.RegisteredFactories()
+	if len(providers[capability.KindBuilder]) == 0 {
+		return nil, func() {}, nil
+	}
+	p, err := capability.Build(context.Background(), capability.KindBuilder, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	b, ok := p.(capability.Builder)
+	if !ok {
+		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Builder port", p.Describe().Name)
+	}
+	return b, func() {
+		if c, ok := b.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
+	}, nil
+}
+
 // NewEngine 构造部署收敛引擎（参数当前取默认；配置面接入后从 AppConfig
-// 透传 queue 容量与观察窗）。
-func NewEngine(db *state.DB, rt capability.Runtime, app lynx.App) *engine.Engine {
-	return engine.New(db, rt, app.Logger(), engine.Options{})
+// 透传 queue 容量/观察窗/构建并发）。
+func NewEngine(db *state.DB, rt capability.Runtime, b capability.Builder, app lynx.App, cfg *config.AppConfig) *engine.Engine {
+	return engine.New(db, rt, b, app.Logger(), engine.Options{DataRoot: cfg.DataRoot()})
 }
 
 // engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖
