@@ -167,9 +167,9 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 		return mapStateError(err, "app")
 	}
 	q := capability.LogQuery{
-		Namespace:  capability.NamespaceRef{Team: "default", Project: appRow.ProjectID, App: appRow.ID},
-		TailLines:  req.GetTailLines(),
-		Follow:     req.GetFollow(),
+		Namespace: capability.NamespaceRef{Team: "default", Project: appRow.ProjectID, App: appRow.ID},
+		TailLines: req.GetTailLines(),
+		Follow:    req.GetFollow(),
 	}
 	w := &streamLogWriter{stream: stream}
 	if err := logs.StreamLogs(stream.Context(), q, w); err != nil {

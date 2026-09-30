@@ -18,6 +18,9 @@ func newGoldenHarness(t *testing.T) *apitest.Harness {
 		return fleetly.Dial("passthrough:///bufnet", append(opts, h.DialOpts()...)...)
 	}
 	t.Cleanup(func() { dialClient = origDial })
+	// 夹具统一注入 admin token（owner 全权 bootstrap）：golden 动词经
+	// FLEETLY_TOKEN 环境解析（conn 解析序 flag > env > 凭据文件）。
+	t.Setenv("FLEETLY_TOKEN", h.Token)
 	return h
 }
 

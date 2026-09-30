@@ -12,7 +12,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
-	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
+	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // normalizeGolden 把非确定输出占位化（ULID 主键/短哈希指纹/内容寻址
@@ -38,12 +38,7 @@ func goldenFile(verb string) string {
 // TestGoldenBusinessVerbs 顺序跑完整业务流（同一夹具状态），每动词比较
 // 双形态 golden。
 func TestGoldenBusinessVerbs(t *testing.T) {
-	h := apitest.NewManual(t)
-	origDial := dialClient
-	dialClient = func(_ string, opts ...fleetly.Option) (*fleetly.Client, error) {
-		return fleetly.Dial("passthrough:///bufnet", append(opts, h.DialOpts()...)...)
-	}
-	t.Cleanup(func() { dialClient = origDial })
+	h := newGoldenHarness(t)
 
 	type step struct {
 		verb string
@@ -145,7 +140,7 @@ func extractTailID(out string) string {
 func promoteToSucceeded(t *testing.T, h *apitest.Harness, appID string) {
 	t.Helper()
 	client := deliveryv1.NewDeploymentsServiceClient(h.Conn)
-	ctx := context.Background()
+	ctx := sdk.WithToken(context.Background(), h.Token) // 执法链激活后读路径同样要凭证
 	for i := 0; i < 20; i++ {
 		h.Runtime.ReportRunning(appID+"-web", 1)
 		h.Drive(ctx)

@@ -51,7 +51,7 @@ func TestPolicySetCoversIdentity(t *testing.T) {
 func TestScopeResourcesCoverVocabulary(t *testing.T) {
 	// 词表每资源至少被一个方法引用（死 scope 由 Build 断言把守；本测试
 	// 反向钉 identity 六资源确实在词表内——登记遗漏即刻红）。
-	resources := scopeResources()
+	resources := ScopeResources()
 	want := map[string]bool{
 		"users": false, "teams": false, "roles": false,
 		"tokens": false, "invitations": false, "audit": false,

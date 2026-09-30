@@ -21,10 +21,10 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   }
 };
 
-// ProjectsService：Project 聚合 CRUD（scope 注解先写好；enforcement 随
-// 账号批接管——fail-closed：没有执法者的限制是假限制，当前面为公开面）。
+// ProjectsService：Project 聚合 CRUD（scope 注解 + authn 拦截器执法；
+// 服务缺省档 SERVER——新增方法缺注解即启动红，不静默放行）。
 service ProjectsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc CreateProject(CreateProjectRequest) returns (CreateProjectResponse) {
     option (google.api.http) = { post: "/v1/projects" body: "*" };
@@ -57,7 +57,7 @@ service ProjectsService {
 }
 
 service AppsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc CreateApp(CreateAppRequest) returns (CreateAppResponse) {
     option (google.api.http) = { post: "/v1/apps" body: "*" };
@@ -91,7 +91,7 @@ service AppsService {
 
 // SecretsService：值永不回显——响应只携带指纹（ADR-0014）。
 service SecretsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc PutSecret(PutSecretRequest) returns (PutSecretResponse) {
     option (google.api.http) = { put: "/v1/secrets" body: "*" };
@@ -118,7 +118,7 @@ service SecretsService {
 
 // ConfigsService：版本化挂载文件（可回读）。
 service ConfigsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc PutConfig(PutConfigRequest) returns (PutConfigResponse) {
     option (google.api.http) = { put: "/v1/configs" body: "*" };
@@ -144,7 +144,7 @@ service ConfigsService {
 }
 
 service VolumesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc CreateVolume(CreateVolumeRequest) returns (CreateVolumeResponse) {
     option (google.api.http) = { post: "/v1/volumes" body: "*" };
@@ -163,7 +163,7 @@ service VolumesService {
 }
 
 service NetworksService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc CreateNetwork(CreateNetworkRequest) returns (CreateNetworkResponse) {
     option (google.api.http) = { post: "/v1/networks" body: "*" };

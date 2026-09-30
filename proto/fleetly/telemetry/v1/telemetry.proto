@@ -23,7 +23,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 // EventsService：Outbox 读路径（F0.23；流式 follow 在 N1——断档 410 + 快照
 // 重同步随订阅面批次）。
 service EventsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (google.api.http) = { get: "/v1/events" };
@@ -37,7 +37,7 @@ service EventsService {
 // LogsService：RuntimeLogs 直读（F0.25；诚实标注——仅实时 + 最近缓冲，
 // 持久化检索 N2）。
 service LogsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc StreamLogs(StreamLogsRequest) returns (stream StreamLogsResponse) {
     option (google.api.http) = { get: "/v1/logs" };

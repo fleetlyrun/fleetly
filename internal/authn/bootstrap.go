@@ -114,7 +114,7 @@ func journalHasMarker(path string) bool {
 // appendJournal 追加一行生成事实（RFC3339 + sha256 锚）。
 func appendJournal(path string, clock state.Clock, sha string) error {
 	line := state.FormatTime(clock.Now()) + " " + journalMarker + " sha256=" + sha + "\n"
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600) //nolint:gosec // 数据根内自有 journal
 	if err != nil {
 		return err
 	}

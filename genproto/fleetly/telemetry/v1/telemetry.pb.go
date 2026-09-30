@@ -400,12 +400,12 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"ListEvents\x12'.fleetly.telemetry.v1.ListEventsRequest\x1a(.fleetly.telemetry.v1.ListEventsResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
 	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/events\x1a\x06\xf2\xc4\x19\x02\b\x012\x9b\x01\n" +
+	"/v1/events\x1a\x06\xf2\xc4\x19\x02\b\x032\x9b\x01\n" +
 	"\vLogsService\x12\x83\x01\n" +
 	"\n" +
 	"StreamLogs\x12'.fleetly.telemetry.v1.StreamLogsRequest\x1a(.fleetly.telemetry.v1.StreamLogsResponse\" \xea\xc4\x19\f\b\x03\"\b\n" +
 	"\x04logs\x10\x01\x82\xd3\xe4\x93\x02\n" +
-	"\x12\b/v1/logs0\x01\x1a\x06\xf2\xc4\x19\x02\b\x01B\x9e\x01\x92ARRP\n" +
+	"\x12\b/v1/logs0\x01\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9e\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZGgithub.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1;telemetryv1b\x06proto3"

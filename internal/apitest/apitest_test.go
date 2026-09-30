@@ -17,11 +17,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func TestDeployEndToEnd(t *testing.T) {
 	h := apitest.New(t)
-	ctx := context.Background()
+	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
@@ -62,7 +63,7 @@ func TestDeployEndToEnd(t *testing.T) {
 
 func TestComposeDeployNormalizes(t *testing.T) {
 	h := apitest.New(t)
-	ctx := context.Background()
+	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
@@ -89,7 +90,7 @@ func TestComposeDeployNormalizes(t *testing.T) {
 
 func TestComposeRejectedField(t *testing.T) {
 	h := apitest.New(t)
-	ctx := context.Background()
+	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	apps := structurev1.NewAppsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
@@ -106,7 +107,7 @@ func TestComposeRejectedField(t *testing.T) {
 
 func TestNodesAndEnroll(t *testing.T) {
 	h := apitest.New(t)
-	ctx := context.Background()
+	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
 	nodes := runtimev1.NewNodesServiceClient(h.Conn)
 
 	kit, err := nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{})

@@ -12,11 +12,14 @@ import (
 	"testing"
 	"time"
 
+	grpcapiinterceptor "github.com/lynx-go/grpcapi/interceptor"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/assembly"
+	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/material"
@@ -32,6 +35,7 @@ type Harness struct {
 	Runtime *FakeRuntime
 	Clock   *statetest.FakeClock
 	Conn    *grpc.ClientConn // bufconn 连接（类型化客户端的底座）
+	Token   string           // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
 
 	listener *bufconn.Listener
 	server   *grpc.Server
@@ -83,9 +87,33 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 		t.Cleanup(func() { _ = eng.Stop(ctx) })
 	}
 
+	// 身份面与生产同源：首启流（种子 + bootstrap Token）→ 执法链
+	//（policy + authn 拦截器）→ fail-closed 断言。夹具不经 lynx，但执法
+	// 链必须与 NewGRPCServer 同构，否则测试面与生产面漂移。
+	dataRoot := t.TempDir()
+	boot, err := authn.EnsureBootstrapToken(ctx, db, dataRoot, assembly.ScopeResources(), log)
+	if err != nil {
+		t.Fatalf("apitest: bootstrap: %v", err)
+	}
+	policySet, err := assembly.NewPolicySet()
+	if err != nil {
+		t.Fatalf("apitest: policy set: %v", err)
+	}
+	authenticator := authn.NewAuthenticator(db, policySet, assembly.ScopeResources(), log)
+	unary, stream, err := assembly.NewInterceptors(policySet, authenticator)
+	if err != nil {
+		t.Fatalf("apitest: interceptors: %v", err)
+	}
+
 	services := fleetlygrpc.NewServices(db, eng, cipher, rt, log)
-	srv := grpc.NewServer()
+	srv := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(unary...),
+		grpc.ChainStreamInterceptor(stream...),
+	)
 	fleetlygrpc.RegisterAll(srv, services)
+	if err := grpcapiinterceptor.AssertAllRegisteredHavePolicy(srv, policySet); err != nil {
+		t.Fatalf("apitest: policy coverage: %v", err)
+	}
 	listener := bufconn.Listen(64 * 1024)
 	go func() { _ = srv.Serve(listener) }() //nolint:errcheck // 测试收尾统一关闭
 	t.Cleanup(srv.Stop)
@@ -93,6 +121,7 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	return &Harness{
 		DB: db, Engine: eng, Runtime: rt, Clock: clock,
 		Conn:     dialBufconn(t, listener),
+		Token:    boot.Secret,
 		listener: listener, server: srv,
 	}
 }

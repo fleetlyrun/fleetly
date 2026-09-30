@@ -47,7 +47,7 @@ func newDeployVerb() commands.Command {
 				}
 				compose = string(data)
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -77,7 +77,7 @@ func newDeploymentsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -110,7 +110,7 @@ func newRollbackVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -137,7 +137,7 @@ func newRevisionsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -172,7 +172,7 @@ func newRevisionsDiffVerb() commands.Command {
 			if app == "" || from == 0 || to == 0 {
 				return usageErr(name, "--app, --from and --to are required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -205,7 +205,7 @@ func newBuildsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -245,7 +245,7 @@ func newRoutesCreateVerb() commands.Command {
 			if project == "" || host == "" || app == "" || process == "" || port == 0 {
 				return usageErr(name, "--project, --host, --app, --process and --port are required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -273,7 +273,7 @@ func newRoutesListVerb() commands.Command {
 		name: name, synopsis: "List routes", usage: "routes list [--project PROJECT_ID]",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "filter by project") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -297,7 +297,7 @@ func newNodesListVerb() commands.Command {
 	return &flaggedVerb{
 		name: "list", synopsis: "List observed cluster nodes", usage: "nodes list",
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -321,7 +321,7 @@ func newNodesEnrollVerb() commands.Command {
 		name: "enroll", synopsis: "Print the worker join command (zero platform install on workers)",
 		usage: "nodes enroll",
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}

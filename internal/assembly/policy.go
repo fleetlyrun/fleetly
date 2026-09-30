@@ -29,10 +29,10 @@ func authzFiles() []protoreflect.FileDescriptor {
 	}
 }
 
-// scopeResources 是 Scope 词表（CONTEXT.md Scope 词条：resource:action，
+// ScopeResources 是 Scope 词表（CONTEXT.md Scope 词条：resource:action，
 // write 蕴含 read）。注解先行、执法随账号批（F0.5~F0.7）接管——词表现在
 // 登记保证 authz.Build 对 scope 声明的资源校验即刻生效（fail-closed）。
-func scopeResources() []string {
+func ScopeResources() []string {
 	return []string{
 		"projects", "apps", "secrets", "configs", "volumes", "networks",
 		"deployments", "revisions", "builds", "nodes", "routes", "events", "logs",
@@ -44,7 +44,7 @@ func scopeResources() []string {
 // logs/events 显式放行——拦截器按流首元数据执法，随账号批接入）。
 func NewPolicySet() (*authz.PolicySet, error) {
 	return authz.Build(authzFiles(), authz.Options{
-		Vocabulary:     authz.Vocabulary{ScopeResources: scopeResources()},
+		Vocabulary:     authz.Vocabulary{ScopeResources: ScopeResources()},
 		AllowStreaming: true,
 	})
 }

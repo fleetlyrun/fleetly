@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/google/wire"
+	"github.com/lynx-go/grpcapi/authz"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
 	lynxgrpc "github.com/lynx-go/lynx/server/grpc"
@@ -31,6 +32,7 @@ var ProviderSet = wire.NewSet(
 	NewAppConfig,
 	NewPolicySet,
 	NewStateDB,
+	NewAuthenticator,
 	NewRuntimeProvider,
 	NewBuilderProvider,
 	NewEdgeProvider,
@@ -49,6 +51,11 @@ var ProviderSet = wire.NewSet(
 	NewPreStopHooks,
 	NewPostStopHooks,
 )
+
+// NewAuthenticator 构造身份执法器（authn 拦截器依赖集；词表单一源注入）。
+func NewAuthenticator(db *state.DB, policySet *authz.PolicySet, app lynx.App) *authn.Authenticator {
+	return authn.NewAuthenticator(db, policySet, ScopeResources(), app.Logger())
+}
 
 // NewStateDB 打开数据根下的控制面库（WAL + goose 前滚迁移在 Open 内完成；
 // 关闭经 wire cleanup 聚合到 OnPostStop）。engine/API 批次按聚合 repo 消费。
@@ -169,7 +176,7 @@ func NewServiceFactories() []lynx.ServiceFactory { return nil }
 // Bootstrap Token 首启流（无用户时生成一次、journal 去重；F0.2/F0.6）。
 func NewPreStartHooks(db *state.DB, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
 	return boot.PreStartHooks{func(ctx context.Context) error {
-		_, err := authn.EnsureBootstrapToken(ctx, db, cfg.DataRoot(), scopeResources(), app.Logger())
+		_, err := authn.EnsureBootstrapToken(ctx, db, cfg.DataRoot(), ScopeResources(), app.Logger())
 		return err
 	}}
 }

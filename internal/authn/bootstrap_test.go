@@ -34,7 +34,7 @@ func TestEnsureBootstrapToken(t *testing.T) {
 	}
 
 	// 文件形态：单行明文。
-	fileSecret, err := os.ReadFile(filepath.Join(root, "bootstrap-token"))
+	fileSecret, err := os.ReadFile(filepath.Join(root, "bootstrap-token")) //nolint:gosec // 测试夹具 temp 目录
 	if err != nil {
 		t.Fatalf("token file: %v", err)
 	}

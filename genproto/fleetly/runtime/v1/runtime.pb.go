@@ -307,7 +307,7 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\x89\x01\n" +
 	"\n" +
 	"EnrollNode\x12%.fleetly.runtime.v1.EnrollNodeRequest\x1a&.fleetly.runtime.v1.EnrollNodeResponse\",\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x1a\x06\xf2\xc4\x19\x02\b\x01B\x9a\x01\x92ARRP\n" +
+	"\x05nodes\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZCgithub.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1b\x06proto3"

@@ -53,7 +53,7 @@ func newProjectsCreateVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -73,7 +73,7 @@ func newProjectsListVerb() commands.Command {
 	return &flaggedVerb{
 		name: "list", synopsis: "List projects", usage: "projects list",
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -105,7 +105,7 @@ func newAppsCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -131,7 +131,7 @@ func newAppsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -171,7 +171,7 @@ func newSecretsPutVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -198,7 +198,7 @@ func newSecretsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -238,7 +238,7 @@ func newConfigsPutVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -264,7 +264,7 @@ func newConfigsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -300,7 +300,7 @@ func newVolumesCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -336,7 +336,7 @@ func newNetworksCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}

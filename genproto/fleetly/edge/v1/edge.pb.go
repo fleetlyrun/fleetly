@@ -508,7 +508,7 @@ const file_fleetly_edge_v1_edge_proto_rawDesc = "" +
 	"/v1/routes\x12\x83\x01\n" +
 	"\vDeleteRoute\x12#.fleetly.edge.v1.DeleteRouteRequest\x1a$.fleetly.edge.v1.DeleteRouteResponse\")\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
-	"\x06routes\x10\x03\x82\xd3\xe4\x93\x02\x11*\x0f/v1/routes/{id}\x1a\x06\xf2\xc4\x19\x02\b\x01B\x94\x01\x92ARRP\n" +
+	"\x06routes\x10\x03\x82\xd3\xe4\x93\x02\x11*\x0f/v1/routes/{id}\x1a\x06\xf2\xc4\x19\x02\b\x03B\x94\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZ=github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1;edgev1b\x06proto3"

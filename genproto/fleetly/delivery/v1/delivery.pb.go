@@ -1307,18 +1307,18 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x10CancelDeployment\x12,.fleetly.delivery.v1.CancelDeploymentRequest\x1a-.fleetly.delivery.v1.CancelDeploymentResponse\"=\xea\xc4\x19\x13\b\x03\"\x0f\n" +
 	"\vdeployments\x10\x02\x82\xd3\xe4\x93\x02 :\x01*\"\x1b/v1/deployments/{id}/cancel\x12\x95\x01\n" +
 	"\bRollback\x12$.fleetly.delivery.v1.RollbackRequest\x1a%.fleetly.delivery.v1.RollbackResponse\"<\xea\xc4\x19\x13\b\x03\"\x0f\n" +
-	"\vdeployments\x10\x02\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/apps/{app_id}/rollback\x1a\x06\xf2\xc4\x19\x02\b\x012\xc9\x02\n" +
+	"\vdeployments\x10\x02\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/apps/{app_id}/rollback\x1a\x06\xf2\xc4\x19\x02\b\x032\xc9\x02\n" +
 	"\x10RevisionsService\x12\x92\x01\n" +
 	"\rListRevisions\x12).fleetly.delivery.v1.ListRevisionsRequest\x1a*.fleetly.delivery.v1.ListRevisionsResponse\"*\xea\xc4\x19\x11\b\x03\"\r\n" +
 	"\trevisions\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/revisions\x12\x97\x01\n" +
 	"\rDiffRevisions\x12).fleetly.delivery.v1.DiffRevisionsRequest\x1a*.fleetly.delivery.v1.DiffRevisionsResponse\"/\xea\xc4\x19\x11\b\x03\"\r\n" +
-	"\trevisions\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/revisions/diff\x1a\x06\xf2\xc4\x19\x02\b\x012\x9d\x01\n" +
+	"\trevisions\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/revisions/diff\x1a\x06\xf2\xc4\x19\x02\b\x032\x9d\x01\n" +
 	"\rBuildsService\x12\x83\x01\n" +
 	"\n" +
 	"ListBuilds\x12&.fleetly.delivery.v1.ListBuildsRequest\x1a'.fleetly.delivery.v1.ListBuildsResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
 	"\x06builds\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/builds\x1a\x06\xf2\xc4\x19\x02\b\x01B\x9c\x01\x92ARRP\n" +
+	"/v1/builds\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9c\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZEgithub.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1;deliveryv1b\x06proto3"

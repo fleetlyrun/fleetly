@@ -61,4 +61,18 @@ var builtins = []Code{
 		Source:     "added during implementation",
 		GRPC:       codes.FailedPrecondition,
 	},
+	{
+		ID:         "E_UNAUTHENTICATED",
+		Summary:    "The request carries no valid token.",
+		Suggestion: "Log in with a valid token ('fleetly login'), or check that the token has not been revoked.",
+		Source:     "added during implementation",
+		GRPC:       codes.Unauthenticated,
+	},
+	{
+		ID:         "E_FORBIDDEN",
+		Summary:    "The token lacks the scope required by this method.",
+		Suggestion: "Use a token whose role grants the required resource:action scope, or ask an admin for one.",
+		Source:     "added during implementation",
+		GRPC:       codes.PermissionDenied,
+	},
 }

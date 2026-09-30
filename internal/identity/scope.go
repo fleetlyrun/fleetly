@@ -1,11 +1,11 @@
 // Package identity 是 Identity & Access 上下文的域内核（领域模型 §2）：
 // Scope 语言（colon 形态与蕴含展开）、Token 材质（前缀化随机串 + sha256）、
 // 内置角色定义。不 import 任何 internal 包——域纯度与 model/spec 同级
-//（守卫见 internal/guards）。
+// （守卫见 internal/guards）。
 //
 // Scope 双形态裁决（本批）：CONTEXT.md 冻结 `resource:action`（colon）为
 // 存储/展示/审计的唯一形态；lynx authz 库的 ScopeSet 语言是 `resource.op`
-//（dot，colon 被 fail-closed 拒绝）。两界各自尊重——本包持有 colon 侧的
+// （dot，colon 被 fail-closed 拒绝）。两界各自尊重——本包持有 colon 侧的
 // 解析/校验/蕴含，DotForm 单点转译喂库，词汇真源不动。
 package identity
 
@@ -23,8 +23,14 @@ type Scope struct {
 	Action   string
 }
 
-// String 返回 colon 规范形态。
-func (s Scope) String() string { return s.Resource + ":" + s.Action }
+// String 返回 colon 规范形态（星形通配序列化为 "*"——解析与展示同一
+// 唯一形态）。
+func (s Scope) String() string {
+	if s.Resource == "*" {
+		return "*"
+	}
+	return s.Resource + ":" + s.Action
+}
 
 // ParseScope 解析并校验单个 colon 形态 scope（资源须在词表内）。
 func ParseScope(raw string, resources []string) (Scope, error) {

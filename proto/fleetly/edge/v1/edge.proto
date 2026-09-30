@@ -20,7 +20,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service RoutesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc CreateRoute(CreateRouteRequest) returns (CreateRouteResponse) {
     option (google.api.http) = { post: "/v1/routes" body: "*" };

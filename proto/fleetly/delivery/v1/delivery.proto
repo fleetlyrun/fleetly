@@ -22,7 +22,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service DeploymentsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   // Deploy 归一化两源（镜像直投 / Compose 受控子集）并受理部署。
   rpc Deploy(DeployRequest) returns (DeployResponse) {
@@ -64,7 +64,7 @@ service DeploymentsService {
 }
 
 service RevisionsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc ListRevisions(ListRevisionsRequest) returns (ListRevisionsResponse) {
     option (google.api.http) = { get: "/v1/revisions" };
@@ -84,7 +84,7 @@ service RevisionsService {
 }
 
 service BuildsService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc ListBuilds(ListBuildsRequest) returns (ListBuildsResponse) {
     option (google.api.http) = { get: "/v1/builds" };

@@ -20,7 +20,7 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
 };
 
 service NodesService {
-  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_PUBLIC };
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc ListNodes(ListNodesRequest) returns (ListNodesResponse) {
     option (google.api.http) = { get: "/v1/nodes" };

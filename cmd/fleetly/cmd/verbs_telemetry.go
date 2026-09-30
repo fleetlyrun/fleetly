@@ -4,13 +4,15 @@ package cmd
 // logs（F0.25：RuntimeLogs 直读，诚实标注"仅实时+最近缓冲"）。
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
 
 	"github.com/lynx-go/commands"
-	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 )
@@ -26,7 +28,7 @@ func newEventsListVerb() commands.Command {
 			fs.Int64Var(&limit, "limit", 100, "max events (capped at 1000)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -65,7 +67,7 @@ func newLogsVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			c, err := dialFromEnv(ctx)
+			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
@@ -76,7 +78,19 @@ func newLogsVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			marshal := protojson.MarshalOptions{UseProtoNames: true}
+			// 流式行经 json.Compact 归一（protojson 的空白形态按二进制
+			// 撒种，golden 确定性必须显式归一——render 单点同款纪律）。
+			compact := func(m proto.Message) (string, error) {
+				data, err := protoJSONMarshal.Marshal(m)
+				if err != nil {
+					return "", err
+				}
+				var buf bytes.Buffer
+				if err := json.Compact(&buf, data); err != nil {
+					return "", err
+				}
+				return buf.String(), nil
+			}
 			for {
 				frame, err := stream.Recv()
 				if err == io.EOF {
@@ -86,11 +100,11 @@ func newLogsVerb() commands.Command {
 					return err
 				}
 				if jsonOut {
-					data, err := marshal.Marshal(frame)
+					line, err := compact(frame)
 					if err != nil {
 						return err
 					}
-					_, _ = fmt.Fprintln(env.Stdout, string(data))
+					_, _ = fmt.Fprintln(env.Stdout, line)
 					continue
 				}
 				_, _ = fmt.Fprintf(env.Stdout, "%s %s %s\n", frame.GetTime(), frame.GetWorkloadId(), string(frame.GetLine()))
