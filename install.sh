@@ -80,7 +80,8 @@ else
 fi
 
 # ---- 4. 单节点 swarm ----
-if docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null | grep -q active; then
+# 注意精确比较：grep -q active 会把 "inactive" 一并匹配（子串坑）。
+if [ "$(docker info --format '{{.Swarm.LocalNodeState}}' 2>/dev/null)" = "active" ]; then
   log "swarm already active"
 else
   ADDR="${FLEETLY_ADVERTISE_ADDR:-}"
