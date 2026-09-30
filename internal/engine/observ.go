@@ -134,10 +134,13 @@ func (e *Engine) releaseReadyGen(d *deployment.Deployment, gen uint64) bool {
 }
 
 // watchdogBite 是 L2 看门狗：当前 Generation 观测到 stopped → 咬合描述
-// （空串 = 未咬合）。
+// （空串 = 未咬合）。旧代事件不咬合：观测槽按 Workload ID last-write-wins，
+// 滚动更新期旧 task 的 stopped@旧代 迟到事件会覆盖 running@当前代——
+// 咬合只认当前代（假咬合会让滚动更新秒败进回滚，F0.12 回归钉死）。
 func (e *Engine) watchdogBite(d *deployment.Deployment) string {
-	bite, _ := e.scanGeneration(d.AppID, d.Generation, func(ev capability.WorkloadEvent) string {
-		if ev.State == capability.WorkloadStopped {
+	gen := d.Generation
+	bite, _ := e.scanGeneration(d.AppID, gen, func(ev capability.WorkloadEvent) string {
+		if ev.State == capability.WorkloadStopped && uint64(ev.Generation) == gen {
 			return fmt.Sprintf("workload %s stopped (gen %d): %s", ev.WorkloadID, ev.Generation, ev.Message)
 		}
 		return ""

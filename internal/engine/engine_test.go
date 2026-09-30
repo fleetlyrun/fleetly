@@ -325,6 +325,50 @@ func workloadEventRunning(wid string, gen uint64) capability.WorkloadEvent {
 	return capability.WorkloadEvent{WorkloadID: wid, Generation: capability.Generation(gen), State: capability.WorkloadRunning}
 }
 
+// 滚动更新期看门狗不咬旧代事件（L2 假咬合回归，F0.12）：观测槽按
+// Workload ID last-write-wins，旧 task 的 stopped@旧代 迟到事件会覆盖
+// running@当前代——看门狗必须只认当前代（dind 真机场景 1 曾秒败进
+// rolling-back，根因形态见批记录）。
+func TestWatchdogIgnoresStaleGenerationStops(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+
+	// gen1 部署走完整链到 succeeded（基线）。
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	d1, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	require.NoError(t, err)
+	e.step(ctx)
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
+	e.step(ctx)
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d1.ID).State)
+
+	// gen2 部署（同 spec 重部署 = 滚动更新形态）：running@2 先到，
+	// 旧代 stopped@1 迟到覆盖观测槽。
+	d2, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	require.NoError(t, err)
+	e.step(ctx)
+	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d2.ID).State)
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 2))
+	e.step(ctx)
+	require.Equal(t, deployment.StateObserving, getDeployment(t, e, d2.ID).State)
+
+	e.handleObservation(ctx, capability.WorkloadEvent{
+		WorkloadID: tAppID + "-web", Generation: capability.Generation(1),
+		State: capability.WorkloadStopped, Message: "old task shutdown",
+	})
+	e.step(ctx)
+	still := getDeployment(t, e, d2.ID)
+	require.Equal(t, deployment.StateObserving, still.State,
+		"a stale-generation stop must not bite the current generation's watchdog (error: %s)", still.Error)
+
+	// 窗口走满照常收口 succeeded。
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d2.ID).State)
+}
+
 func imageSpecFor(ref string) string {
 	return `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
 		`"source":{"image":{"ref":"` + ref + `"}},"processes":[{"name":"web","image":"` + ref + `","replicas":1}]}`
