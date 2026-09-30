@@ -1,7 +1,9 @@
 package swarm
 
 import (
+	"context"
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -139,4 +141,50 @@ func TestEncodeRegistryAuth(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, decoded, `"username":"u"`)
 	assert.Contains(t, decoded, `"serveraddress":"ghcr.io"`)
+}
+
+// TestRegistryAuthNeverEntersCarrierSpec 守卫 ADR-0014 / F0.18：私有镜像
+// 凭证只经 EncodedRegistryAuth 通道随 ServiceCreate/Update 下发（swarmkit
+// 加密分发到节点），绝不进载体 label / 明文 env / spec 任何角落（旧 DT-2
+// 真机 404 教训）。双侧断言：spec 全量序列化无凭证踪迹 + 专用通道编码
+// 健全（否则守卫退化为“凭证根本没分发”）。
+func TestRegistryAuthNeverEntersCarrierSpec(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "default", Project: "shop", App: "web"}
+	w := capability.Workload{
+		ID: "wl_01H", Process: "web",
+		Image:    "registry.example.com:5000/acme/web:1",
+		Env:      map[string]string{"MODE": "prod"},
+		Replicas: 1,
+	}
+	cred := capability.RegistryCredential{
+		Server: "registry.example.com:5000", Username: "pull-bot-7f3d", Secret: "wombat-quarrel-4f7d",
+	}
+	materials := capability.Materials{RegistryAuth: map[string]capability.RegistryCredential{
+		"registry.example.com:5000": cred,
+	}}
+
+	spec := toServiceSpec(ns, w, capability.Generation(3), nil)
+	blob, err := json.Marshal(spec)
+	require.NoError(t, err)
+
+	encoded, err := encodeRegistryAuth(cred)
+	require.NoError(t, err)
+
+	// serveraddress 是镜像引用的公开部分（本就在 image 里），不作 needle；
+	// 用户名/口令/base64 编码体三件必须零踪迹。
+	for _, needle := range []string{cred.Username, cred.Secret, encoded} {
+		assert.NotContains(t, string(blob), needle,
+			"registry credential material must never appear anywhere in the carrier spec")
+	}
+	// 声明 env 原样透传、无“顺手”注入（泄漏的历史形态）。
+	assert.Equal(t, []string{"MODE=prod"}, spec.TaskTemplate.ContainerSpec.Env)
+
+	// 专用通道健全：按镜像 host 命中凭证 → base64 JSON；未命中 → 匿名。
+	p := &Provider{}
+	got, err := p.registryAuthFor(context.Background(), w.Image, materials)
+	require.NoError(t, err)
+	assert.Equal(t, encoded, got)
+	anon, err := p.registryAuthFor(context.Background(), "nginx:1.27", materials)
+	require.NoError(t, err)
+	assert.Empty(t, anon, "no matching host must mean anonymous pull (empty auth header)")
 }
