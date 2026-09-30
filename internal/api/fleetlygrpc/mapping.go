@@ -117,8 +117,13 @@ func nodeMsg(n node.Node) *runtimev1.Node {
 }
 
 // marshalSpec 是 AppSpec 的规范序列化（protojson；Revision 冻结体形态）。
+// UseProtoNames 与 CLI --json / REST gateway 同策略（snake_case）——冻结体
+// 经 DiffRevisions 的路径输出直接用户可见，三面不得割裂（N0 修复批 A4）。
+// 注意：本函数决定 Revision digest 的内容寻址；改序列化形态 = 全部历史
+// digest 失配（同内容会冻结新行而非复用）——只在可承受一次性数据迁移的
+// 批次变更（N0 staging 数据一次性重生）。
 func marshalSpec(m proto.Message) ([]byte, error) {
-	return protojson.MarshalOptions{EmitUnpopulated: false}.Marshal(m)
+	return protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(m)
 }
 
 // newID 生成 ULID。
