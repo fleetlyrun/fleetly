@@ -6,6 +6,11 @@ deps:
   - buf.build/lynx-go/grpcapi
 modules:
   - path: proto
+# 书面豁免（N0 修复批 C4）：internal/config/config.proto 不在本门禁内——
+# 它是 fleetlyd 的运行配置内部结构（非公共 API 契约），生成走 mise 的
+# generate:config 任务（protoc 直出 internal/config/config.pb.go），与
+# buf 的公共契约链（lint/breaking/gateway/openapi）不同轴。纳入 buf 需
+# 先把生成物路径并入模块结构——随配置面进 config.proto 公共化的批次再议。
 lint:
   use:
     - STANDARD

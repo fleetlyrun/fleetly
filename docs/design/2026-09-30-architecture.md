@@ -24,18 +24,23 @@
 ## 2. 分层与依赖规则
 
 ```
-cmd/fleetlyd/            # 装配（wire）：注册 Provider、选 Capability、启动引擎
-cmd/fleetly/             # CLI（API 客户端）
+cmd/fleetlyd/            # 装配入口（wire 在 internal/assembly：注册 Provider、选 Capability、启动引擎）
+cmd/fleetly/             # CLI（API 客户端；全部动词经 internal/api 的 proto 契约）
 internal/spec/           # IR：AppSpec/TaskSpec/DatabaseSpec + schemaVersion + 归一化 + 校验（叶子，纯类型）
-internal/model/          # 实体、状态机、领域事件、errcode/eventcode 注册表（叶子，纯类型）
-internal/state/          # SQLite 持久化 + Outbox。按聚合分包（project/ app/ deployment/ taskrun/ …），
-                         #   禁止门面 store.go；每个聚合包自己的 repo
-internal/capability/     # 七个 Capability 端口：Go interface，消费 spec 与 model 类型（叶子接口层）
-internal/providers/      # Provider 实现：swarm/ dockerbuild/ traefik/ victorialogs/ …
+internal/model/          # errcode/eventcode 注册表（叶子，纯类型；实体与状态机随 N0 实况落在 spec/state/engine）
+internal/state/          # SQLite 持久化 + Outbox。按聚合分包（project/ app/ deployment/ build/ …），
+                         #   禁止门面 store.go；每个聚合包自己的 repo；statetest/ 是 hermetic 夹具
+internal/capability/     # Capability 端口：Go interface，消费 spec 与 model 类型（叶子接口层）
+internal/providers/      # Provider 实现：swarm/ traefik/ dockerbuild/…
                          #   全仓唯一允许 import 编排器/基础设施 SDK 的地方
-internal/engine/         # 单写者收敛循环：deployment/ taskrun/ database/ managedprovider/ + 共享循环骨架（唯一一份）
-internal/api/            # gRPC 服务 + gateway REST + SSE + authn/z + 幂等键
-internal/consolebin/     # SPA embed（可选编译标签）
+internal/engine/         # 单写者收敛循环：deployment/ build/ managed/ drift/ teardown/ + 共享循环骨架（唯一一份）
+internal/identity/       # 身份域内核（角色/Token/邀请的纯类型；叶子）
+internal/authn/          # 身份执法应用层（种子、Bootstrap、拦截器 scope 执法）
+internal/material/       # Secret 信封加密（age；指纹与 Cipher）
+internal/config/         # fleetlyd 运行配置（config.proto → config.pb.go）
+internal/api/            # gRPC 服务 + gateway REST + apperr 信封（fleetlygrpc/ systemgrpc/）
+internal/apitest/        # bufconn 全链测试夹具（引擎真库 + FakeRuntime/Builder）
+internal/guards/         # 架构守卫测试（import/IR/词汇/循环骨架/门面）
 ```
 
 依赖方向（违反即 CI 红，守卫见 §11）：
@@ -91,11 +96,12 @@ type Runtime interface {
     Watch(ctx) (<-chan WorkloadStatus, error)     // 全集群状态流（Workload + 节点加入/离开/转移事件；engine 按 ID 归属过滤）
     Addresses(ctx, ns NamespaceRef) ([]Endpoint, error)
     DescribeCluster(ctx) (ClusterView, error)
-    Enrollment(ctx) (EnrollKit, error)            // 含轮换
+    Enrollment(ctx, rotate bool) (EnrollKit, error) // 活加入材料；rotate 先作废旧材料（C3）
 }
-type RuntimeLogs interface { StreamLogs(...) }     // 子面，按需实现
-type RuntimeExec interface { Exec(...) }           // 子面；经反向中继，节点零入站端口（继承 execrelay 模式）
-type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
+type RuntimeLogs interface { StreamLogs(...) }      // 子面，按需实现
+type RuntimeInspector interface { InspectWorkloads(...) } // 子面（ADR-0022 spec 对照 drift）
+type RuntimeExec interface { Exec(...) }            // 子面；经反向中继，节点零入站端口（继承 execrelay 模式）
+type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 ```
 
 - **期望状态式**：唯一写动词 Ensure；副本数变化、健康检查变化都是新 Generation 的 Ensure。没有 update/scale/rollback 三个动词——回滚在平台层是 Replay（新 ADR-0005）。（动词用 Ensure 而非 apply：apply 是 ADR-0007 禁词，且 ensure 与幂等重放语义一致。）

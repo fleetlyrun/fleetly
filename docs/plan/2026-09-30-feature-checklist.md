@@ -13,7 +13,7 @@
 **安装与引导**
 - F0.1 [x] 一行安装：`curl | bash` 检测/安装 Docker → 单节点 swarm init → fleetlyd（容器形态优先）→ 数据根初始化。验收：全新 Ubuntu VPS 一条命令到 fleetlyd healthy。
 - F0.2 [x] 首启引导：Bootstrap Token 落盘（journal+文件，可吊销）+ 管理员初始化**全 CLI 可完成**（`fleetly init`）。验收：无浏览器环境可完成全部初始化。
-- F0.3 [x] `fleetly quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。〔2026-09-30 staging 真机补验 --tls auto：TLS/路由/ACME 全通；HTTPS 200 差受管 edge 挂项目网（C5 留空桩），边界见 docs/runbooks/staging-fleetly.md〕
+- F0.3 [x] `fleetly quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。〔2026-10-01 N0 修复批真机收口：B1 挂网（受管 traefik 挂全部活跃 Project 网络）+ quickstart 建网/挂网/路由幂等——staging 重装后 HTTPS 200（manager 与 node2 双视角，LE staging CA）；dind e2e（e2e:h2c）同链路钉死〕
 - F0.4 [x] `fleetly doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
 
 **账号与权限（完整 Team/Role）**
@@ -31,7 +31,7 @@
 
 **网络与路由**
 - F0.14 [x] per-Project overlay；跨 Project 默认隔离；`egress:none` 声明（swarm v1 弱隔离，明示）。
-- F0.15 [x] Edge：traefik 受管自宿（通用 ManagedProvider reconciler 首个实例）+ Route（host/path/port + protocol http|h2c|tcp + TLS 模式）+ LE HTTP-01 自动证书 + 默认 sslip.io 域名。验收：h2c 后端路由可通（messageloop 形态）。〔2026-09-30 staging 真机补验：LE staging CA 经 HTTP-01 签出 n0.dev.fleetly.run（issuer=(STAGING) Ersatz Emmer YR2）；生产 CA 轮换另批〕
+- F0.15 [x] Edge：traefik 受管自宿（通用 ManagedProvider reconciler 首个实例）+ Route（host/path/port + protocol http|h2c|tcp + TLS 模式）+ LE HTTP-01 自动证书 + 默认 sslip.io 域名。验收：h2c 后端路由可通（messageloop 形态）。〔2026-09-30 staging 真机补验：LE staging CA 经 HTTP-01 签出 n0.dev.fleetly.run；2026-10-01 修复批：h2c 端到端在 dind e2e 钉死（客户端协商 h2c + 后端收到 HTTP/2.0 双证明）；生产 CA 轮换另批〕
 - F0.16 [x] Volume：受控子集 + 默认钉住节点（Placement 以平台节点 ID 为锚）。
 
 **材料与安全**
@@ -40,7 +40,7 @@
 
 **集群（Runtime）**
 - F0.19 [x] swarm Provider 全契约：Ensure/Remove/Watch/Addresses/DescribeCluster/Enrollment + 节点身份锚定（铸造/写回/`node.joined`）+ RuntimeLogs 子面 + RuntimeAdmin（drain/cordon）。〔2026-09-30 staging 真机：RuntimeAdmin 面（drain 实迁移/cordon/uncordon+审计）+ 双节点 e2e（场景 13 部署、enroll 重组链、node.joined/left 事件）〕
-- F0.20 [x] 多节点就绪：`fleetly nodes enroll` 输出加入材料。验收：双节点部署同一 App、卷钉住正确（双节点 e2e 随 dind 套件批回归）。
+- F0.20 [x] 多节点就绪：`fleetly nodes enroll` 输出加入材料。验收：双节点部署同一 App、卷钉住正确（双节点 e2e 随 dind 套件批回归）。〔2026-10-01 修复批：e2e/dind-two-node.sh 在册——nodes enroll 材料真实 join、双 process 部署跨双节点、卷钉住进程全落钉住节点且约束锚平台节点 ID；mise 任务 e2e:twonode〕
 
 **API/CLI 面**
 - F0.21 [x] proto 单源：gRPC + REST gateway + OpenAPI 生成；buf breaking 门禁进 CI。
@@ -59,7 +59,7 @@
 - F1.2 事件流 follow：SSE + gRPC stream + `fleetly events follow --json`；断档 410 + 快照重同步。
 - F1.3 Wait 原语：WaitDeployment/WaitBuild/WaitRun + CLI `--wait`。
 - F1.4 能力自描述：`fleetly explain <资源>` / `fleetly schema`（JSON Schema 反射生成）。
-- F1.5 Task API：one-shot/resident 创建（镜像直部署、env+secretRefs、TTL、资源上限）、期望并发数、排空停止、列表/watch、per-Task + per-Run 双级稳定 DNS。
+- F1.5 Task API：one-shot/resident 创建（镜像直部署、Variable+secretRefs、TTL、资源上限）、期望并发数、排空停止、列表/watch、per-Task + per-Run 双级稳定 DNS。
 - F1.6 Owner Lease：`fleetly task renew`（RenewTask）+ 宽限；lease_expired 排空并补足；属主吊销 → 名下 Task 宽限排空（可配置跑完 TTL）。
 - F1.7 Schedule：带时区 cron（ADR-0018）、手动触发、重叠 skip 策略。
 - F1.8 互通：Task Network Group（创建时刻挂靠）+ App Process 跨挂（`taskGroup:<name>`）+ 跨 Project 双向声明/批准/即时隔离。
@@ -69,7 +69,7 @@
 - F1.12 Database 最小集：postgres（含 percona/pgvector 模板）+ redis 模板、默认本地备份目标开箱即用、连接串注入 Secret、`fleetly db` 命令组。
 - F1.13 首批 Skills：`skills/`（deploy-diagnose / task-pool / database-provision），随版本演进说明。
 - F1.14 构建器扩展：railpack（钉版本）+ static。
-- F1.15 **dogfooding 上线**：staging 双节点重装新 fleetly（归档版退役）；torchwood/messageloop 从零部署。验收：ADR-0012 清单逐项打勾 + messageloop 经 h2c Route 对外服务 + dispatcher 池租约/补足/回收全语义真机回归。
+- F1.15 **dogfooding 上线**：torchwood/messageloop 从零部署（staging 双节点重装已提前于 N0 完成，见 docs/runbooks/staging-fleetly.md——归档版退役、新 fleetly 现役）。验收：ADR-0012 清单逐项打勾 + messageloop 经 h2c Route 对外服务 + dispatcher 池租约/补足/回收全语义真机回归。
 
 ## N2 数据观测信任 + 最小 Console
 

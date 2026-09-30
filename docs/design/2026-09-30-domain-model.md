@@ -74,13 +74,15 @@ Capability 1─1 Provider（swarm/traefik/victorialogs…，同期唯一在册�
 
 ```
 preparing → building → releasing → observing → succeeded
-     └────────任意阶段失败────────┘ → failed → (自动) rolling-back → succeeded|failed
+     └────────任意阶段失败────────┘ → failed → (自动) rolling-back → observing → succeeded|failed
 ```
+
+（N0 实况修正 2026-10-01：rolling-back 不直落终态——Replay 也要过 L1 健康门与 L3 观察窗，路径是 rolling-back → observing → succeeded|failed。）
 
 - preparing：Spec 归一化、Placement 解析、变量/Secret 装配、前置 Job。
 - building：可跳过（镜像引用 Source）。
 - releasing：投影 Workload 下发 Runtime；健康门 L1（就绪探针）。
-- observing：L3 观察窗（默认 60s）+ L2 看门狗常驻。
+- observing：L3 观察窗（默认 60s）+ L2 看门狗常驻（稳态亦常驻观测，ADR-0022）。
 - 失败回滚 = **Replay** 上一成功 Revision，永不使用编排器原生回滚（旧 ADR-0003）；Replay 必须重建缺失对象而非跳过（旧 spike B2）。
 - 同 App 的 Deployment 串行；新 Deployment 默认拒绝排队外的并发（显式 supersede 标记才允许抢占）。被抢占的旧 Deployment 终态为 `superseded`，观察窗与 Route 发布权立即移交新 Deployment，在途 Generation 由新 Deployment 收口。
 

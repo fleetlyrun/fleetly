@@ -21,12 +21,16 @@ _Avoid_: account, member
 _Avoid_: permission, policy
 
 **Scope**:
-`resource:action` 形式的授权单元；write 蕴含 read。
+`resource:action` 形式的授权单元；write 蕴含 read。`platform` 资源承载集群面权力（活加入材料轮换等，C3）。
 _Avoid_: grant, capability(授权义)
 
 **Token**:
 携带 Scope 的凭证，服务人与 Agent。首启由 Bootstrap Token 引导，一切 Token 可吊销。
 _Avoid_: API key, PAT, credential
+
+**Invitation**:
+一次性、限时、绑定角色的加入链接；兑换后成为 User。管理面入队的唯一途径（开放注册不设）。
+_Avoid_: signup link, invite code, share link
 
 ### 结构
 
@@ -51,7 +55,7 @@ App 级变量；Project 级共享变量称 Shared Variable，注入时 Project �
 _Avoid_: env var(标识符中), parameter, setting
 
 **Task**:
-程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。
+程序化工作负载，双形态：one-shot（一次性执行）与 resident（常驻实例池）；有属主 Token、TTL 与专属网络组。部署期一次性工作负载（Spec 的 firstBootJobs/JobSpec）是 Task 的部署期特例——词条归 Task，不另立 Deployment Job 实体（ADR-0007 词汇冻结裁决，2026-10-01）。
 _Avoid_: job, run, function, agent, one-off
 
 **Owner Lease**:
@@ -191,7 +195,7 @@ _Avoid_: component, addon, internal service
 _Avoid_: epoch, revision number
 
 **Drift**:
-实际状态偏离已下发 Spec 的信号；检测默认开启。
+实际状态偏离已下发 Spec 的信号；检测默认开启。口径（ADR-0022）：Generation 偏离与 spec 失配（人工改载体）双路径；启动按 succeeded 基线重放重建对照锚。
 _Avoid_: skew, divergence, dirty
 
 **Converge**:
