@@ -33,22 +33,7 @@
 .vscode/
 .DS_Store
 
-# Spike A artifacts: plan json 与 logs 保留入库；大文件（二进制/传输载荷）排除
-spike/a/artifacts/spikerailpack-linux
-spike/a/artifacts/spikerailpack-linux.b64
-spike/a/artifacts/spikerailpack.exe
-spike/a/artifacts/*.tar
-spike/a/artifacts/*.b64 
-# Spike B artifacts: logs ������⣻�������̽�����������ļ��ų� 
-spike/b/dockerctx/probe 
-spike/b/artifacts/*.tar 
-spike/b/artifacts/*.b64
- 
-# Spike C artifacts: logs are kept in repo; probe binary and swarm backups (contain private keys) excluded 
-spike/c/dockerctx/probe 
-spike/c/artifacts/hostbak/ 
-spike/c/artifacts/*.tar 
-spike/c/artifacts/*.b64 
+spike/
 
 # Console (T2.21): deps and build output are reproducible from the lockfile;
 # pnpm-lock.yaml IS committed.
