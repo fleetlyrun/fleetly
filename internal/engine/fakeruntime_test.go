@@ -25,6 +25,8 @@ type fakeRuntime struct {
 	clusterOverride bool                   // 显式启用编程视图（空视图=节点全离开）
 	clusterView     capability.ClusterView // 可编程集群快照（节点对账面）
 
+	tamper map[string]tamperEntry // workloadID → 人工改载体注入（场景 7）
+
 	health capability.HealthReport
 }
 
@@ -115,4 +117,43 @@ func (f *fakeRuntime) calls() []ensureCall {
 	return out
 }
 
-var _ capability.Runtime = (*fakeRuntime)(nil)
+// InspectWorkloads 实现 RuntimeInspector 子面（ADR-0022）：观测 = 最近
+// 一次 Ensure 的 spec；tamper 非空时按 workloadID 覆写（人工改载体注入）。
+func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var obs []capability.WorkloadObservation
+	for _, c := range f.ensures {
+		if c.NS.String() != ns.String() {
+			continue
+		}
+		for _, w := range c.Spec {
+			obs = append(obs, capability.WorkloadObservation{
+				WorkloadID: w.ID, Generation: c.Gen, Image: w.Image, Replicas: w.Replicas,
+				State: capability.WorkloadRunning,
+			})
+		}
+		// 只取该域最近一次 Ensure（与真 Provider 的快照语义一致）。
+		obs = obs[len(obs)-len(c.Spec):]
+		break
+	}
+	for i := range obs {
+		if t, ok := f.tamper[obs[i].WorkloadID]; ok {
+			if t.image != "" {
+				obs[i].Image = t.image
+			}
+			if t.replicas != 0 {
+				obs[i].Replicas = t.replicas
+			}
+		}
+	}
+	return obs, nil
+}
+
+// tamperEntry 是人工改载体的注入面（场景 7）。
+type tamperEntry struct {
+	image    string
+	replicas int64
+}
+
+var _ capability.RuntimeInspector = (*fakeRuntime)(nil)

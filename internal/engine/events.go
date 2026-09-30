@@ -25,7 +25,8 @@ type deploymentEventPayload struct {
 	Kind            string `json:"kind,omitempty"`
 }
 
-// workload.drift_detected（per-Workload 粒度 + 去抖，2026-09-30 裁决）。
+// workload.drift_detected（per-Workload 粒度 + 去抖，2026-09-30 裁决；
+// ADR-0022 起 gen 偏离与 spec 失配双路径共用）。
 type driftEventPayload struct {
 	WorkloadID         string `json:"workload_id"`
 	AppID              string `json:"app_id"`
@@ -33,6 +34,16 @@ type driftEventPayload struct {
 	ObservedGeneration uint64 `json:"observed_generation"`
 	ObservedState      string `json:"observed_state"`
 	Message            string `json:"message,omitempty"`
+}
+
+// workload.stopped（ADR-0022 稳态看门狗：最近部署 succeeded 的 App 在
+// 当前 Generation 观测到 stopped——只观测不迁移，处置由人/Agent 决定）。
+type stoppedEventPayload struct {
+	WorkloadID string `json:"workload_id"`
+	AppID      string `json:"app_id"`
+	Generation uint64 `json:"generation"`
+	State      string `json:"state"`
+	Message    string `json:"message,omitempty"`
 }
 
 // node.joined / node.left（nodes 表是观测缓存，事件是订阅面真源）。
@@ -44,8 +55,9 @@ type nodeEventPayload struct {
 
 // 事件名锚定（usage 反扫的字面量命中点）。
 const (
-	eventWorkloadDrift = "workload.drift_detected"
-	eventNodeJoined    = "node.joined"
+	eventWorkloadDrift   = "workload.drift_detected"
+	eventWorkloadStopped = "workload.stopped"
+	eventNodeJoined      = "node.joined"
 )
 
 // build.* payload schema。
@@ -111,6 +123,17 @@ func driftEventPayloadJSON(ev capability.WorkloadEvent, appID string, expected u
 		ObservedGeneration: uint64(ev.Generation),
 		ObservedState:      string(ev.State),
 		Message:            ev.Message,
+	})
+	return b
+}
+
+func stoppedEventPayloadJSON(wid, appID string, ev capability.WorkloadEvent) []byte {
+	b, _ := json.Marshal(stoppedEventPayload{
+		WorkloadID: wid,
+		AppID:      appID,
+		Generation: uint64(ev.Generation),
+		State:      string(ev.State),
+		Message:    ev.Message,
 	})
 	return b
 }

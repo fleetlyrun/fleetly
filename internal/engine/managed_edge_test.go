@@ -13,8 +13,8 @@ import (
 )
 
 // B1 回归（N0 修复批）：受管 Edge 挂全部活跃 Project 网络——引用形态
-//（NamespaceRef+平台名，engine 不拼载体名）；网络集变化推进受管 gen
-//（一次性收敛，不逐 tick 滚动）。
+// （NamespaceRef+平台名，engine 不拼载体名）；网络集变化推进受管 gen
+// （一次性收敛，不逐 tick 滚动）。
 func TestManagedEdgeAttachesProjectNetworks(t *testing.T) {
 	db, _ := statertest.New(t)
 	rt := newFakeRuntime()

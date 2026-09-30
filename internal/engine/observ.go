@@ -91,10 +91,10 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 	return nil, nil
 }
 
-// recordEnsured 记录 Ensure 事实：归属缓存 + 各 Workload 的 Generation
-// （就绪门集合界定——被移除 process 的旧 workload 不再计入）+ App 级
-// 最近 Generation（Drift 对照锚）。进程内缓存，重启后由幂等重放的 Ensure
-// 重建。
+// recordEnsured 记录 Ensure 事实：归属缓存 + 各 Workload 的 Generation 与
+// 投影 spec（就绪门集合界定——被移除 process 的旧 workload 不再计入）+
+// App 级最近 Generation（Drift 对照锚）。进程内缓存，重启后由幂等重放的
+// Ensure 或启动基线重放重建（ADR-0022）。
 func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capability.Workload) {
 	e.expectMu.Lock()
 	e.expected[d.AppID] = gen
@@ -103,6 +103,7 @@ func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capabi
 	for _, w := range ws {
 		e.workloadApp[w.ID] = d.AppID
 		e.ensuredGen[w.ID] = gen
+		e.ensuredSpec[w.ID] = w
 	}
 	e.obsMu.Unlock()
 }
@@ -214,6 +215,9 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 	e.obsMu.Lock()
 	e.observations[ev.WorkloadID] = ev
 	e.obsMu.Unlock()
+	if ev.State != capability.WorkloadStopped {
+		e.clearStoppedSig(ev.WorkloadID) // 稳态 stopped 去抖解除（ADR-0022）
+	}
 	e.detectDrift(ctx, ev)
 	e.loop.Kick()
 }

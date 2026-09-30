@@ -82,6 +82,26 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 	return out, rows.Err()
 }
 
+// List 返回全部活跃 App（ADR-0022 启动基线重放的枚举面）。
+func (r *Repo) List(ctx context.Context, run state.Runner) ([]App, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT id, project_id, name, created_at, updated_at, deleted_at
+		FROM apps WHERE deleted_at = '' ORDER BY id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []App
+	for rows.Next() {
+		a, err := scanAppRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *a)
+	}
+	return out, rows.Err()
+}
+
 // SoftDelete 落 tombstone（幂等；四件一拍的 tombstone 件）。
 func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())

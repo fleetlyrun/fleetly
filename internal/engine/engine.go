@@ -53,6 +53,9 @@ type Options struct {
 	//（2026-09-30）：docker daemon 重启/swarm 重建窗口内的 API hang 会把
 	// 无界的单写者循环永久卡死（静默直至进程重启）——受管步一律带界。
 	ManagedStepTimeout time.Duration
+	// DriftScanInterval 是漂移扫描节拍（默认 30s；ADR-0022 spec 对照 +
+	// 稳态看门狗共用此环）。
+	DriftScanInterval time.Duration
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 }
@@ -129,12 +132,15 @@ type Engine struct {
 	observations map[string]capability.WorkloadEvent // workloadID → 最新观测
 	workloadApp  map[string]string                   // workloadID → appID（归属缓存，Ensure 时刷新）
 	ensuredGen   map[string]uint64                   // workloadID → 最近 Ensure 的 Generation（就绪门集合界定）
+	ensuredSpec  map[string]capability.Workload      // workloadID → 最近 Ensure 的投影 spec（ADR-0022 spec 对照 drift）
 
 	expectMu sync.Mutex
 	expected map[string]uint64 // appID → 最近 Ensure 的 Generation（Drift 对照锚）
 
-	driftMu sync.Mutex
-	drift   map[string]string // workloadID → 最后 drift 签名（去抖）
+	driftMu    sync.Mutex
+	drift      map[string]string // workloadID → 最后 drift 签名（去抖）
+	stoppedMu  sync.Mutex
+	stoppedSig map[string]string // workloadID → 稳态 stopped 签名（去抖，ADR-0022）
 }
 
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
@@ -185,8 +191,10 @@ func New(deps Deps, opts Options) *Engine {
 		observations: make(map[string]capability.WorkloadEvent),
 		workloadApp:  make(map[string]string),
 		ensuredGen:   make(map[string]uint64),
+		ensuredSpec:  make(map[string]capability.Workload),
 		expected:     make(map[string]uint64),
 		drift:        make(map[string]string),
+		stoppedSig:   make(map[string]string),
 	}
 }
 
@@ -215,6 +223,11 @@ func (e *Engine) Start(ctx context.Context) {
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	e.buildLoop.Kick()
 	e.managedLoop.Kick()
+	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环。
+	go func() {
+		e.rebuildBaselines(runCtx)
+	}()
+	e.driftScanLoop(runCtx)
 }
 
 // StartWatch 只启动 Watch 消费（手动驱动形态配套：收敛循环不启动，观测

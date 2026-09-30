@@ -24,4 +24,5 @@ team.created	A team was created.	added during implementation
 token.created	A token was minted (secret shown once at creation).	added during implementation
 token.revoked	A token was revoked; its next call will be rejected.	added during implementation
 user.created	A user was created and granted a role in a team.	added during implementation
-workload.drift_detected	Observed workload state diverged from the ensured generation.	added during implementation
+workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/engine/observ.go detectDrift + internal/engine/drift.go compareSpecs
+workload.stopped	A steady-state workload was observed stopped at the current generation.	internal/engine/drift.go emitSteadyStateStopped

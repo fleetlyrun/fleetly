@@ -60,6 +60,25 @@ type RuntimeAdmin interface {
 	Uncordon(ctx context.Context, nodeID string) error
 }
 
+// RuntimeInspector 是观测子面（ADR-0022 spec 对照 drift：按需实现；未
+// 实现时引擎降级为 gen-only 对照，诚实明示不阻断）。
+type RuntimeInspector interface {
+	// InspectWorkloads 返回隔离域内平台管辖载体的观测 spec（标记还原
+	// 平台身份；spec 字段是编排器原语的平台无关投影）。快照语义：调用
+	// 即读，无流式承诺。
+	InspectWorkloads(ctx context.Context, ns NamespaceRef) ([]WorkloadObservation, error)
+}
+
+// WorkloadObservation 是一条载体观测（ADR-0022：drift spec 对照的数据
+// 面——字段只增；未观测字段零值 = 该 Provider 无此面）。
+type WorkloadObservation struct {
+	WorkloadID string
+	Generation Generation
+	Image      string
+	Replicas   int64
+	State      WorkloadState
+}
+
 // ErrNodeNotFound 是 RuntimeAdmin 子面哨兵：平台节点 ID 对不上任何载体
 // 节点。Provider 返回时 wrap 本哨兵，API 面映射 E_NOT_FOUND。
 var ErrNodeNotFound = errors.New("node not found")

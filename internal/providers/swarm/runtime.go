@@ -288,7 +288,7 @@ func (p *Provider) mapEvent(msg events.Message) (capability.WorkloadEvent, bool)
 
 // serviceEventState 把 swarm service 事件动作映射为观测状态（N0 修复批
 // A2 收紧）：create/update 只代表 spec 变化、不代表载体就绪——计 pending
-//（就绪以 10s 任务轮询为权威），remove 计 stopped。
+// （就绪以 10s 任务轮询为权威），remove 计 stopped。
 func serviceEventState(action string) capability.WorkloadState {
 	switch action {
 	case "remove":
@@ -446,6 +446,38 @@ func (p *Provider) Enrollment(ctx context.Context) (capability.EnrollKit, error)
 		Command:        fmt.Sprintf("docker swarm join --token %s %s", workerToken, managerAddr),
 		ManagerCommand: fmt.Sprintf("docker swarm join --token %s %s", managerToken, managerAddr),
 	}, nil
+}
+
+// InspectWorkloads 实现 RuntimeInspector 子面（ADR-0022 spec 对照 drift）：
+// ServiceList 快照 + 标记还原平台身份 + spec 读取（镜像/副本）。状态取
+// 期望副本面（观测状态以 Watch 流/任务轮询为权威，此处仅 spec 对照用）。
+func (p *Provider) InspectWorkloads(ctx context.Context, ns capability.NamespaceRef) ([]capability.WorkloadObservation, error) {
+	services, err := p.listNsServices(ctx, ns)
+	if err != nil {
+		return nil, fmt.Errorf("swarm inspect %s: %w", ns, err)
+	}
+	out := make([]capability.WorkloadObservation, 0, len(services))
+	for _, svc := range services {
+		labels := svc.Spec.Labels
+		if labels[labelManaged] != "true" {
+			continue
+		}
+		gen, _ := strconv.ParseUint(labels[labelGeneration], 10, 64)
+		obs := capability.WorkloadObservation{
+			WorkloadID: labels[labelWorkload],
+			Generation: capability.Generation(gen),
+			Image:      svc.Spec.TaskTemplate.ContainerSpec.Image,
+			Replicas:   1,
+			State:      capability.WorkloadRunning,
+		}
+		if svc.Spec.Mode.Replicated != nil && svc.Spec.Mode.Replicated.Replicas != nil {
+			obs.Replicas = int64(*svc.Spec.Mode.Replicated.Replicas)
+		}
+		if obs.WorkloadID != "" {
+			out = append(out, obs)
+		}
+	}
+	return out, nil
 }
 
 // listNsServices 列出隔离域内 fleetly 管辖的服务。

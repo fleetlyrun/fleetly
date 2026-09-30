@@ -207,6 +207,14 @@ func (r *Repo) NextGeneration(ctx context.Context, run state.Runner, appID strin
 	return gen + 1, nil
 }
 
+// LatestSucceeded 返回 App 最近一次 succeeded 的 Deployment（ADR-0022
+// 启动基线重放的锚；无成功基线 → ErrNotFound）。
+func (r *Repo) LatestSucceeded(ctx context.Context, run state.Runner, appID string) (*Deployment, error) {
+	row := run.QueryRowContext(ctx,
+		selectCols+" WHERE app_id = ? AND state = 'succeeded' ORDER BY id DESC LIMIT 1", appID)
+	return scanDeployment(row.Scan)
+}
+
 // Transit 是状态 CAS：仅当当前状态 ∈ from 时迁移到 to（mut 可补充落
 // error/finished_at/generation/superseded_by/observe_deadline 等字段）。
 // 前置不符 → ErrConflict；行不存在 → ErrNotFound（四件一拍的"状态"件；

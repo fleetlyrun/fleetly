@@ -30,8 +30,12 @@ var builtins = []Event{
 	{Name: "node.left", Summary: "Node left the cluster.", Source: "added during implementation"},
 
 	// Drift 信号（per-Workload 粒度 + 去抖，2026-09-30 裁决；检测默认开、
-	// 收敛默认 opt-in，ADR-0005）。
-	{Name: "workload.drift_detected", Summary: "Observed workload state diverged from the ensured generation.", Source: "added during implementation"},
+	// 收敛默认 opt-in，ADR-0005；ADR-0022 升级为 gen 偏离 + spec 失配双路径）。
+	{Name: "workload.drift_detected", Summary: "Observed workload diverged from the ensured generation or spec (ADR-0022).", Source: "internal/engine/observ.go detectDrift + internal/engine/drift.go compareSpecs"},
+
+	// 稳态看门狗（ADR-0022：最近部署 succeeded 的 App 在当前 Generation
+	// 观测到 stopped——只观测不迁移，处置由人/Agent 决定）。
+	{Name: "workload.stopped", Summary: "A steady-state workload was observed stopped at the current generation.", Source: "internal/engine/drift.go emitSteadyStateStopped"},
 
 	// Identity & Access（F0.5~F0.7 账号批）。
 	{Name: "user.created", Summary: "A user was created and granted a role in a team.", Source: "added during implementation"},
