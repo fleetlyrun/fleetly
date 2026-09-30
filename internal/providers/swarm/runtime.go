@@ -487,7 +487,7 @@ func (p *Provider) InspectWorkloads(ctx context.Context, ns capability.Namespace
 			State:      capability.WorkloadRunning,
 		}
 		if svc.Spec.Mode.Replicated != nil && svc.Spec.Mode.Replicated.Replicas != nil {
-			obs.Replicas = int64(*svc.Spec.Mode.Replicated.Replicas)
+			obs.Replicas = int64(*svc.Spec.Mode.Replicated.Replicas) //nolint:gosec // 副本计数域内（swarm 上限远小于 2^63）
 		}
 		if obs.WorkloadID != "" {
 			out = append(out, obs)

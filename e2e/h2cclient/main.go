@@ -6,34 +6,32 @@ package main
 
 import (
 	"context"
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"os"
-
-	"golang.org/x/net/http2"
+	"time"
 )
 
 func main() {
 	host := flag.String("host", "", "override the Host header (routing by name without DNS)")
+	timeout := flag.Duration("timeout", 10*time.Second, "request timeout")
 	flag.Parse()
 	if flag.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: h2cclient [-host HOST] URL")
 		os.Exit(64)
 	}
-	// h2c 明文先行知识：AllowHTTP + DialTLS 落普通 TCP（无 TLS 握手）。
-	tr := &http2.Transport{
-		AllowHTTP: true,
-		DialTLSContext: func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
-			var d net.Dialer
-			return d.DialContext(ctx, network, addr)
-		},
-	}
+	// h2c 明文先行知识：标准库 http.Protocols（Go 1.24+）声明未加密 HTTP/2
+	//（x/net/http2.Transport 已弃用且 stdlib 已覆盖此面）。
+	protocols := &http.Protocols{}
+	protocols.SetHTTP1(true)
+	protocols.SetUnencryptedHTTP2(true)
+	tr := &http.Transport{Protocols: protocols}
 	client := &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
-	req, err := http.NewRequest(http.MethodGet, flag.Arg(0), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, flag.Arg(0), nil)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "bad url:", err)
 		os.Exit(1)
