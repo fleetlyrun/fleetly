@@ -214,19 +214,20 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		svcLabels[sid] = svc.Service.Spec.Labels
 	}
 	for _, t := range tasks.Items {
+		// 历史任务（已被替换/关闭：desired 不是 running）不计观测——
+		// 只看活槽位，避免滚动替换期的旧 task 状态污染 last-write-wins 槽。
+		if t.DesiredState != swarm.TaskStateRunning {
+			continue
+		}
 		labels := svcLabels[t.ServiceID]
 		if labels[labelManaged] != "true" {
 			continue
 		}
 		gen, _ := strconv.ParseUint(labels[labelGeneration], 10, 64)
-		state := capability.WorkloadRunning
-		if t.Status.State == swarm.TaskStateFailed || t.Status.State == swarm.TaskStateRejected {
-			state = capability.WorkloadDegraded
-		}
 		ev := capability.WorkloadEvent{
 			WorkloadID: labels[labelWorkload],
 			Generation: capability.Generation(gen),
-			State:      state,
+			State:      taskEventState(t.Status.State),
 			Node:       labels[labelNodeID],
 			Message:    string(t.Status.State),
 		}
@@ -240,6 +241,21 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		}
 	}
 	return nil
+}
+
+// taskEventState 把 swarm task 状态映射为观测状态（L1 数据源，N0 修复批
+// A2 收紧）：仅 running 计 running——placement 落空（new/allocated/
+// assigned/preparing/pending/starting 族）计 pending，让 L1 门保持关闭直至
+// 真就绪或超时失败；failed/rejected 计 degraded。
+func taskEventState(s swarm.TaskState) capability.WorkloadState {
+	switch s {
+	case swarm.TaskStateRunning:
+		return capability.WorkloadRunning
+	case swarm.TaskStateFailed, swarm.TaskStateRejected:
+		return capability.WorkloadDegraded
+	default:
+		return capability.WorkloadPending
+	}
 }
 
 // mapEvent 把 swarm 事件翻译为 WorkloadEvent（读不到平台标记的载体忽略
@@ -270,13 +286,15 @@ func (p *Provider) mapEvent(msg events.Message) (capability.WorkloadEvent, bool)
 	}
 }
 
-// serviceEventState 把 swarm service 事件动作映射为观测状态。
+// serviceEventState 把 swarm service 事件动作映射为观测状态（N0 修复批
+// A2 收紧）：create/update 只代表 spec 变化、不代表载体就绪——计 pending
+//（就绪以 10s 任务轮询为权威），remove 计 stopped。
 func serviceEventState(action string) capability.WorkloadState {
 	switch action {
 	case "remove":
 		return capability.WorkloadStopped
 	default:
-		return capability.WorkloadRunning
+		return capability.WorkloadPending
 	}
 }
 
