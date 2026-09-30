@@ -58,6 +58,12 @@ func IsUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "constraint failed: UNIQUE")
 }
 
+// IsForeignKeyViolation 报告 sqlite 外键约束命中（RESTRICT 拒删等形态；
+// 聚合 repo 据此把"仍被引用"归一为 ErrConflict——提示先解绑）。
+func IsForeignKeyViolation(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "constraint failed: FOREIGN KEY")
+}
+
 // MapScanErr 把 *sql.Row.Scan 的 ErrNoRows 归一为 ErrNotFound（聚合 repo
 // 共用）。
 func MapScanErr(err error) error {

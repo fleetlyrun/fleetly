@@ -7,6 +7,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -24,6 +25,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 		runtimev1.File_fleetly_runtime_v1_runtime_proto,
 		edgev1.File_fleetly_edge_v1_edge_proto,
 		telemetryv1.File_fleetly_telemetry_v1_telemetry_proto,
+		identityv1.File_fleetly_identity_v1_identity_proto,
 	}
 }
 
@@ -34,6 +36,7 @@ func scopeResources() []string {
 	return []string{
 		"projects", "apps", "secrets", "configs", "volumes", "networks",
 		"deployments", "revisions", "builds", "nodes", "routes", "events", "logs",
+		"users", "teams", "roles", "tokens", "invitations", "audit",
 	}
 }
 
@@ -41,7 +44,7 @@ func scopeResources() []string {
 // logs/events 显式放行——拦截器按流首元数据执法，随账号批接入）。
 func NewPolicySet() (*authz.PolicySet, error) {
 	return authz.Build(authzFiles(), authz.Options{
-		Vocabulary: authz.Vocabulary{ScopeResources: scopeResources()},
+		Vocabulary:     authz.Vocabulary{ScopeResources: scopeResources()},
 		AllowStreaming: true,
 	})
 }

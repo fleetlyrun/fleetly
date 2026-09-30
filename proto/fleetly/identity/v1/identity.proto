@@ -1,0 +1,437 @@
+syntax = "proto3";
+
+// Identity & Access 上下文（领域模型 §2）：User/Team/Role/Token/Invitation
+// 与审计查询面。Scope = `resource:action`（write 蕴含 read，admin 蕴含
+// write）；Token 经 Team 内的 Role 获得 Scope（CONTEXT.md 词汇冻结）。
+package fleetly.identity.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1;identityv1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// UsersService：人类身份 CRUD + WhoAmI。WhoAmI 是 PUBLIC 档（凭证就是
+// 任意有效 Token 本身，不要求任何 Scope——login 验证与 CLI 调试入口；
+// 无身份携带即 E_UNAUTHENTICATED）。
+service UsersService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc WhoAmI(WhoAmIRequest) returns (WhoAmIResponse) {
+    option (google.api.http) = { get: "/v1/whoami" };
+    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+  }
+  rpc CreateUser(CreateUserRequest) returns (CreateUserResponse) {
+    option (google.api.http) = { post: "/v1/users" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "users" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetUser(GetUserRequest) returns (GetUserResponse) {
+    option (google.api.http) = { get: "/v1/users/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "users" op: SCOPE_OP_READ }
+    };
+  }
+  rpc ListUsers(ListUsersRequest) returns (ListUsersResponse) {
+    option (google.api.http) = { get: "/v1/users" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "users" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse) {
+    option (google.api.http) = { delete: "/v1/users/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "users" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// TeamsService：权限轴 Team CRUD（Project 归属 Team；Token/User 经 Team
+// 内 Role 获权）。
+service TeamsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc CreateTeam(CreateTeamRequest) returns (CreateTeamResponse) {
+    option (google.api.http) = { post: "/v1/teams" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "teams" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetTeam(GetTeamRequest) returns (GetTeamResponse) {
+    option (google.api.http) = { get: "/v1/teams/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "teams" op: SCOPE_OP_READ }
+    };
+  }
+  rpc ListTeams(ListTeamsRequest) returns (ListTeamsResponse) {
+    option (google.api.http) = { get: "/v1/teams" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "teams" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteTeam(DeleteTeamRequest) returns (DeleteTeamResponse) {
+    option (google.api.http) = { delete: "/v1/teams/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "teams" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// RolesService：命名的 Scope 集合（内置 owner/admin/member 只读 + 自定义
+// Role CRUD）。Scope 形态 `resource:action`，action ∈ read|write|admin。
+service RolesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc CreateRole(CreateRoleRequest) returns (CreateRoleResponse) {
+    option (google.api.http) = { post: "/v1/roles" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "roles" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetRole(GetRoleRequest) returns (GetRoleResponse) {
+    option (google.api.http) = { get: "/v1/roles/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "roles" op: SCOPE_OP_READ }
+    };
+  }
+  rpc ListRoles(ListRolesRequest) returns (ListRolesResponse) {
+    option (google.api.http) = { get: "/v1/roles" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "roles" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteRole(DeleteRoleRequest) returns (DeleteRoleResponse) {
+    option (google.api.http) = { delete: "/v1/roles/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "roles" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// TokensService：Token 全套（F0.6）。明文只在 CreateToken 响应出现一次；
+// 存储侧 sha256；吊销即下一个调用 401。Bootstrap Token 也在列表面可见、
+// 可吊销。
+service TokensService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc CreateToken(CreateTokenRequest) returns (CreateTokenResponse) {
+    option (google.api.http) = { post: "/v1/tokens" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tokens" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetToken(GetTokenRequest) returns (GetTokenResponse) {
+    option (google.api.http) = { get: "/v1/tokens/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tokens" op: SCOPE_OP_READ }
+    };
+  }
+  rpc ListTokens(ListTokensRequest) returns (ListTokensResponse) {
+    option (google.api.http) = { get: "/v1/tokens" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tokens" op: SCOPE_OP_READ }
+    };
+  }
+  rpc RevokeToken(RevokeTokenRequest) returns (RevokeTokenResponse) {
+    option (google.api.http) = { post: "/v1/tokens/{id}/revoke" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tokens" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
+// InvitationsService：一次性邀请（F0.5）。AcceptInvitation 是 PUBLIC 档
+// ——邀请 Token 自身就是凭证（被邀请者尚无平台 Token）；时窗内单次有效。
+service InvitationsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc CreateInvitation(CreateInvitationRequest) returns (CreateInvitationResponse) {
+    option (google.api.http) = { post: "/v1/invitations" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "invitations" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListInvitations(ListInvitationsRequest) returns (ListInvitationsResponse) {
+    option (google.api.http) = { get: "/v1/invitations" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "invitations" op: SCOPE_OP_READ }
+    };
+  }
+  rpc AcceptInvitation(AcceptInvitationRequest) returns (AcceptInvitationResponse) {
+    option (google.api.http) = { post: "/v1/invitations/accept" body: "*" };
+    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+  }
+}
+
+// AuditQueryService：审计读路径（F0.7）。写路径落行在各聚合事务内
+// （四件一拍）；本面按操作者/来源/动作过滤。
+service AuditQueryService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc ListAudit(ListAuditRequest) returns (ListAuditResponse) {
+    option (google.api.http) = { get: "/v1/audit" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "audit" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+// WhoAmI 是 login 验证与 CLI 调试入口：返回当前 Token 的身份投影。
+message WhoAmIRequest {}
+
+message WhoAmIResponse {
+  string token_id = 1;
+  string token_name = 2;
+  string team_id = 3;
+  string role_id = 4;
+  string role_name = 5;
+  string user_id = 6;
+  string user_name = 7;
+  repeated string scopes = 8; // colon 形态（resource:action），蕴含未展开
+}
+
+message User {
+  string id = 1;
+  string name = 2;
+  string created_at = 3;
+}
+
+message CreateUserRequest {
+  string name = 1;
+  string team_id = 2;  // 归属 Team（缺省 default）
+  string role_id = 3;  // Team 内授予的 Role
+}
+
+message CreateUserResponse {
+  User user = 1;
+}
+
+message GetUserRequest {
+  string id = 1;
+}
+
+message GetUserResponse {
+  User user = 1;
+}
+
+message ListUsersRequest {}
+
+message ListUsersResponse {
+  repeated User users = 1;
+}
+
+message DeleteUserRequest {
+  string id = 1;
+}
+
+message DeleteUserResponse {}
+
+message Team {
+  string id = 1;
+  string name = 2;
+  string created_at = 3;
+}
+
+message CreateTeamRequest {
+  string name = 1;
+}
+
+message CreateTeamResponse {
+  Team team = 1;
+}
+
+message GetTeamRequest {
+  string id = 1;
+}
+
+message GetTeamResponse {
+  Team team = 1;
+}
+
+message ListTeamsRequest {}
+
+message ListTeamsResponse {
+  repeated Team teams = 1;
+}
+
+message DeleteTeamRequest {
+  string id = 1;
+}
+
+message DeleteTeamResponse {}
+
+message Role {
+  string id = 1;
+  string team_id = 2;   // 空 = 平台级内置模板
+  string name = 3;
+  bool builtin = 4;
+  repeated string scopes = 5; // colon 形态（resource:action）
+  string created_at = 6;
+}
+
+message CreateRoleRequest {
+  string name = 1;
+  string team_id = 2;          // 自定义 Role 属于某 Team
+  repeated string scopes = 3;  // colon 形态；write⇒read 在执法点展开
+}
+
+message CreateRoleResponse {
+  Role role = 1;
+}
+
+message GetRoleRequest {
+  string id = 1;
+}
+
+message GetRoleResponse {
+  Role role = 1;
+}
+
+message ListRolesRequest {}
+
+message ListRolesResponse {
+  repeated Role roles = 1;
+}
+
+message DeleteRoleRequest {
+  string id = 1;
+}
+
+message DeleteRoleResponse {}
+
+message Token {
+  string id = 1;
+  string name = 2;
+  string team_id = 3;
+  string user_id = 4;   // 可空：无属主用户的 Token（Agent/CI）
+  string role_id = 5;
+  string prefix = 6;    // 明文前缀（泄露识别）；完整明文不回显
+  bool revoked = 7;
+  string last_used_at = 8;
+  string created_at = 9;
+}
+
+message CreateTokenRequest {
+  string name = 1;
+  string team_id = 2;
+  string role_id = 3;
+  string user_id = 4; // 可空
+}
+
+// CreateTokenResponse 是明文唯一出现点（创建响应一次；之后只存 sha256）。
+message CreateTokenResponse {
+  Token token = 1;
+  string secret = 2; // 完整明文，仅此一次
+}
+
+message GetTokenRequest {
+  string id = 1;
+}
+
+message GetTokenResponse {
+  Token token = 1;
+}
+
+message ListTokensRequest {}
+
+message ListTokensResponse {
+  repeated Token tokens = 1;
+}
+
+message RevokeTokenRequest {
+  string id = 1;
+}
+
+message RevokeTokenResponse {
+  Token token = 1;
+}
+
+message Invitation {
+  string id = 1;
+  string team_id = 2;
+  string role_id = 3;
+  string created_by = 4; // 操作者（user:<name>/token:<name>）
+  string expires_at = 5;
+  string consumed_at = 6;
+  string created_at = 7;
+}
+
+message CreateInvitationRequest {
+  string team_id = 1;
+  string role_id = 2;
+  string ttl = 3; // 时长（如 "24h"；缺省 24h，上限 168h）
+}
+
+// CreateInvitationResponse 同 Token：邀请明文仅此一次。
+message CreateInvitationResponse {
+  Invitation invitation = 1;
+  string secret = 2;
+}
+
+message ListInvitationsRequest {}
+
+message ListInvitationsResponse {
+  repeated Invitation invitations = 1;
+}
+
+message AcceptInvitationRequest {
+  string secret = 1;  // 邀请 Token 明文（被邀请者持信物）
+  string user_name = 2;
+}
+
+message AcceptInvitationResponse {
+  User user = 1;
+}
+
+message AuditEntry {
+  string id = 1;
+  string actor = 2;
+  string source = 3;  // manual|api|cli|webhook|schedule|system
+  string action = 4;
+  string resource = 5;
+  string before_fp = 6;
+  string after_fp = 7;
+  string created_at = 8;
+}
+
+message ListAuditRequest {
+  string source = 1;   // manual|api|cli|webhook|schedule|system
+  string action = 2;   // 前缀过滤（如 "token."）
+  string resource = 3; // 精确过滤（如 "project/<id>"）
+  int32 limit = 4;     // 上界 1000
+  string actor = 5;    // 精确过滤（user:<name>/token:<name>）
+}
+
+message ListAuditResponse {
+  repeated AuditEntry entries = 1;
+}

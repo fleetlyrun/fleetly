@@ -22,6 +22,7 @@ var stateRootFiles = map[string]string{
 var aggregateTables = []string{
 	"projects", "apps", "revisions", "deployments", "builds",
 	"outbox", "audit", "nodes", "secrets", "configs", "volumes", "networks", "routes",
+	"users", "teams", "roles", "memberships", "tokens", "invitations",
 }
 
 var tableRefPattern = regexp.MustCompile(`(?i)\b(FROM|INTO|UPDATE)\s+([a-z_]+)\b`)
