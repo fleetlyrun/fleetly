@@ -28,6 +28,16 @@ const anchoringPollInterval = 10 * time.Second
 // 域内服务移除——同 Generation 重放安全（领域模型场景 1：发布中途被杀，
 // 重启后按 Generation 幂等重下发）。
 func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) error {
+	// 材料先行（ADR-0014）：网络 create-or-get + Secret 载体落盘，再翻译
+	// 载体 spec（引用载体名）。
+	if err := p.ensureNetworks(ctx, ns, ws); err != nil {
+		return fmt.Errorf("swarm ensure %s: %w", ns, err)
+	}
+	secretCarriers, err := p.ensureSecrets(ctx, m)
+	if err != nil {
+		return fmt.Errorf("swarm ensure %s: %w", ns, err)
+	}
+
 	existing, err := p.listNsServices(ctx, ns)
 	if err != nil {
 		return fmt.Errorf("swarm ensure %s: list existing: %w", ns, err)
@@ -35,7 +45,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 
 	desired := make(map[string]struct{}, len(ws))
 	for _, w := range ws {
-		spec := toServiceSpec(ns, w, gen)
+		spec := toServiceSpec(ns, w, gen, secretCarriers)
 		desired[spec.Name] = struct{}{}
 
 		auth, err := p.registryAuthFor(ctx, w.Image, m)

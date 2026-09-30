@@ -1,0 +1,110 @@
+// Package secret 是 Secret 聚合 repo（CONTEXT.md Secret 词条：Project 级
+// 敏感值实体，age 信封加密存储，值永不回显只回指纹；注入 App/Task/
+// Database）。密文由 internal/material 加解密，本 repo 只管存取。
+package secret
+
+import (
+	"context"
+
+	"github.com/fleetlyrun/fleetly/internal/state"
+)
+
+// Secret 是聚合行（ciphertext 是 age 信封；fingerprint 供回显对账）。
+type Secret struct {
+	ID          string
+	ProjectID   string
+	Name        string
+	Ciphertext  []byte
+	Fingerprint string
+	CreatedAt   string
+	UpdatedAt   string
+	DeletedAt   string
+}
+
+// Deleted 报告 tombstone 状态。
+func (s *Secret) Deleted() bool { return s.DeletedAt != "" }
+
+// Repo 是 Secret 聚合存取。
+type Repo struct {
+	clock state.Clock
+}
+
+// New 构造 repo。
+func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
+
+// Upsert 写入（同名活跃行覆盖：fingerprint 变更即新值；四件一拍的审计
+// 由调用方同事务组合）。
+func (r *Repo) Upsert(ctx context.Context, run state.Runner, s *Secret) error {
+	now := state.FormatTime(r.clock.Now())
+	if existing, err := r.GetByName(ctx, run, s.ProjectID, s.Name); err == nil {
+		_, err := run.ExecContext(ctx, `
+			UPDATE secrets SET ciphertext = ?, fingerprint = ?, updated_at = ?, deleted_at = ''
+			WHERE id = ?`,
+			s.Ciphertext, s.Fingerprint, now, existing.ID)
+		s.ID, s.CreatedAt = existing.ID, existing.CreatedAt
+		s.UpdatedAt = now
+		return err
+	}
+	s.CreatedAt, s.UpdatedAt = now, now
+	_, err := run.ExecContext(ctx, `
+		INSERT INTO secrets (id, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, '')`,
+		s.ID, s.ProjectID, s.Name, s.Ciphertext, s.Fingerprint, s.CreatedAt, s.UpdatedAt)
+	return err
+}
+
+// GetByName 读活跃行（含密文——仅注入/分发路径调用；API 回显面只用
+// ListFingerprints）。
+func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*Secret, error) {
+	row := run.QueryRowContext(ctx, `
+		SELECT id, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
+		FROM secrets WHERE project_id = ? AND name = ? AND deleted_at = ''`, projectID, name)
+	return scanSecret(row.Scan)
+}
+
+// ListFingerprints 返回 Project 全部活跃 Secret 的指纹面（回显契约：值
+// 永不出现）。
+func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID string) ([]Secret, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT id, project_id, name, NULL, fingerprint, created_at, updated_at, deleted_at
+		FROM secrets WHERE project_id = ? AND deleted_at = '' ORDER BY name`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Secret
+	for rows.Next() {
+		s, err := scanSecret(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *s)
+	}
+	return out, rows.Err()
+}
+
+// SoftDelete 落 tombstone（幂等）。
+func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, projectID, name string) error {
+	now := state.FormatTime(r.clock.Now())
+	res, err := run.ExecContext(ctx, `
+		UPDATE secrets SET deleted_at = ?, updated_at = ?
+		WHERE project_id = ? AND name = ? AND deleted_at = ''`, now, now, projectID, name)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		_, err := r.GetByName(ctx, run, projectID, name)
+		return err
+	}
+	return nil
+}
+
+func scanSecret(scan func(dest ...any) error) (*Secret, error) {
+	var s Secret
+	err := scan(&s.ID, &s.ProjectID, &s.Name, &s.Ciphertext, &s.Fingerprint,
+		&s.CreatedAt, &s.UpdatedAt, &s.DeletedAt)
+	if err != nil {
+		return nil, state.MapScanErr(err)
+	}
+	return &s, nil
+}

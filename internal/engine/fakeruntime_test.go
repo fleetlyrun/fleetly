@@ -81,7 +81,9 @@ func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef) (
 }
 
 func (f *fakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, error) {
-	return capability.ClusterView{}, nil
+	return capability.ClusterView{Nodes: []capability.NodeView{{
+		NodeID: "01JD0NODE00000000000000000", CarrierID: "swarmmanager", Role: "manager", Available: true,
+	}}}, nil
 }
 
 func (f *fakeRuntime) Enrollment(context.Context) (capability.EnrollKit, error) {

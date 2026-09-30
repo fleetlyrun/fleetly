@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -31,6 +32,7 @@ var ProviderSet = wire.NewSet(
 	NewRuntimeProvider,
 	NewBuilderProvider,
 	NewEdgeProvider,
+	NewMaterialCipher,
 	NewEngine,
 	NewEngineService,
 	NewEdgeConfigServer,
@@ -99,16 +101,26 @@ func NewBuilderProvider() (capability.Builder, func(), error) {
 
 // NewEngine 构造部署收敛引擎（参数当前取默认；配置面接入后从 AppConfig
 // 透传 queue 容量/观察窗/构建并发）。
+// NewMaterialCipher 打开数据根 KEK（首启生成；ADR-0014 信封加密根）。
+func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) {
+	c, err := material.LoadCipher(cfg.DataRoot())
+	if err != nil {
+		return nil, nil, err
+	}
+	return c, func() {}, nil
+}
+
 func NewEngine(
 	db *state.DB,
 	rt capability.Runtime,
 	b capability.Builder,
 	edge capability.Edge,
+	cipher *material.Cipher,
 	app lynx.App,
 	cfg *config.AppConfig,
 ) *engine.Engine {
 	return engine.New(engine.Deps{
-		DB: db, Runtime: rt, Builder: b, Edge: edge, Logger: app.Logger(),
+		DB: db, Runtime: rt, Builder: b, Edge: edge, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{DataRoot: cfg.DataRoot()})
 }
 

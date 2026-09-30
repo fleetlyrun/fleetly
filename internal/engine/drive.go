@@ -151,7 +151,15 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	if err != nil {
 		return e.failDeployment(ctx, d, "project spec: "+err.Error())
 	}
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(d.Generation), capability.Materials{}); err != nil {
+	materials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
+	if err != nil {
+		return e.failDeployment(ctx, d, "resolve materials: "+err.Error())
+	}
+	if err := e.pinVolumes(ctx, ws, spec.GetApp().GetProject()); err != nil {
+		return e.failDeployment(ctx, d, "pin volumes: "+err.Error())
+	}
+	e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject())
+	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(d.Generation), materials); err != nil {
 		return e.failDeployment(ctx, d, "runtime ensure: "+err.Error())
 	}
 	e.recordEnsured(d, d.Generation, ws)
@@ -219,6 +227,11 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 	if err != nil {
 		return e.rollbackFailed(ctx, d, "project rollback spec: "+err.Error())
 	}
+	rollbackMaterials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
+	if err != nil {
+		return e.rollbackFailed(ctx, d, "resolve materials: "+err.Error())
+	}
+	e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject())
 	// Replay 用新 Generation 幂等重下发（单调编号；Drift 对照同步刷新）。
 	// deadline 未设 = 首轮（gen 未推进）；已设 = 等待期（gen 已在行上）。
 	deadline := parseDeadline(d.ObserveDeadline)
@@ -229,7 +242,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 			return e.rollbackFailed(ctx, d, "next generation: "+err.Error())
 		}
 	}
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), capability.Materials{}); err != nil {
+	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), rollbackMaterials); err != nil {
 		return e.rollbackFailed(ctx, d, "rollback ensure: "+err.Error())
 	}
 	e.recordEnsured(d, gen, ws)

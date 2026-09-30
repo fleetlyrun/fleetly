@@ -9,16 +9,20 @@ import (
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
+	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
+	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
 // 哨兵错误（API 层映射 errcode；engine 自身不依赖 apperr）。
@@ -103,6 +107,12 @@ type Engine struct {
 	edge   capability.Edge
 	routes *route.Repo
 
+	// 材料面（F0.17/18，ADR-0014）：Secret/Config/Volume repo 与 age 信封。
+	cipher  *material.Cipher
+	secrets *secret.Repo
+	configs *configrepo.Repo
+	volumes *volume.Repo
+
 	buildInputMu sync.Mutex
 	buildInputs  map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
 
@@ -125,6 +135,7 @@ type Deps struct {
 	Runtime capability.Runtime
 	Builder capability.Builder // 可空：构建链停用（镜像直投不受影响）
 	Edge    capability.Edge    // 可空：Route 发布与受管自宿停用
+	Cipher  *material.Cipher   // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
 	Logger  *slog.Logger
 }
 
@@ -137,6 +148,7 @@ func New(deps Deps, opts Options) *Engine {
 	return &Engine{
 		builder:      deps.Builder,
 		edge:         deps.Edge,
+		cipher:       deps.Cipher,
 		runtime:      deps.Runtime,
 		db:           db,
 		log:          log,
@@ -154,6 +166,9 @@ func New(deps Deps, opts Options) *Engine {
 		buildLoop:    NewLoop("build", log),
 		managedLoop:  NewLoop("managed", log),
 		routes:       route.New(clock),
+		secrets:      secret.New(clock),
+		configs:      configrepo.New(clock),
+		volumes:      volume.New(clock),
 		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 		buildLogs:    newLogBuffer(500),
 		buildInputs:  make(map[string]capability.BuildRequest),

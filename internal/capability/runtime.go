@@ -172,6 +172,9 @@ type VolumeMount struct {
 type Materials struct {
 	// RegistryAuth 是私有镜像拉取凭证（server 地址 → 凭证）。
 	RegistryAuth map[string]RegistryCredential
+	// SecretFiles 是 Secret 注入材料（名 → 值；Provider 翻译为文件注入
+	//（swarm: /run/secrets/<name>），值不落 label 或明文 env）。
+	SecretFiles map[string][]byte
 }
 
 // RegistryCredential 是一个 registry 的拉取凭证。

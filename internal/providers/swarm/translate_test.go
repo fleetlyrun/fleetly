@@ -80,9 +80,11 @@ func TestToServiceSpec(t *testing.T) {
 			Interval: 5e9, // 5s
 		},
 		Resources: &capability.Resources{CPUMillis: 500, MemoryMB: 256},
-		Networks:  []string{"fleetly-net-shop"},
+		Networks:  []string{"default"},
 	}
-	spec := toServiceSpec(ns, w, capability.Generation(2))
+	spec := toServiceSpec(ns, w, capability.Generation(2), map[string]string{ //nolint:gosec // 载体名样本（非凭据值）
+		"api-token": "fleetly-sec-api-token-ab12cd34",
+	})
 
 	assert.Equal(t, "fleetly-acme-shop-web-web", spec.Name)
 	assert.Equal(t, uint64(3), *spec.Mode.Replicated.Replicas)
@@ -103,7 +105,12 @@ func TestToServiceSpec(t *testing.T) {
 
 	// 网络按名引用。
 	require.Len(t, spec.TaskTemplate.Networks, 1)
-	assert.Equal(t, "fleetly-net-shop", spec.TaskTemplate.Networks[0].Target)
+	// 平台网络名映射为载体名（Provider 私有公式；平台永不解析）。
+	assert.Equal(t, "fleetly-net-shop-default", spec.TaskTemplate.Networks[0].Target)
+	// Secret 文件注入：载体引用 + /run/secrets/<平台名>，值不进 env/label。
+	require.Len(t, spec.TaskTemplate.ContainerSpec.Secrets, 1)
+	assert.Equal(t, "fleetly-sec-api-token-ab12cd34", spec.TaskTemplate.ContainerSpec.Secrets[0].SecretName)
+	assert.Equal(t, "api-token", spec.TaskTemplate.ContainerSpec.Secrets[0].File.Name)
 }
 
 func TestPlacementConstraintsLabelFormula(t *testing.T) {

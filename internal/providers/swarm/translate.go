@@ -148,7 +148,7 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 //   - Placement → 节点 label 约束公式（node.labels.fleetly.node.id==<id>）。
 //   - Networks 按名引用（网络存在性由 engine 侧网络 reconciler 保证；
 //     taskGroup:<name> 前缀由 engine 已翻译为实际网络名）。
-func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) swarm.ServiceSpec {
+func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretCarriers map[string]string) swarm.ServiceSpec {
 	container := &swarm.ContainerSpec{
 		Image:    w.Image,
 		Labels:   workloadLabels(ns, w, gen),
@@ -164,6 +164,16 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			Type:   mount.TypeVolume,
 			Source: volumeCarrierName(v.VolumeID),
 			Target: v.Target,
+		})
+	}
+	// Secret 文件注入（值已落 swarm secret 载体；容器内 /run/secrets/<名>）。
+	for platformName, carrier := range secretCarriers {
+		container.Secrets = append(container.Secrets, &swarm.SecretReference{
+			SecretName: carrier,
+			File: &swarm.SecretReferenceFileTarget{
+				Name: platformName,
+				Mode: 0o400,
+			},
 		})
 	}
 
@@ -185,7 +195,9 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		task.Placement = &swarm.Placement{Constraints: constraints}
 	}
 	for _, net := range w.Networks {
-		task.Networks = append(task.Networks, swarm.NetworkAttachmentConfig{Target: net})
+		task.Networks = append(task.Networks, swarm.NetworkAttachmentConfig{
+			Target: carrierNetworkName(ns, net),
+		})
 	}
 
 	return swarm.ServiceSpec{
