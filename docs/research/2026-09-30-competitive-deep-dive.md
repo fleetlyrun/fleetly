@@ -31,7 +31,7 @@
 | **caprover** | captain-definition 4 行即部署 + Dockerfile 回落；one-click 市场+CDN+私有源；逃生舱密度（serviceUpdateOverride/customNginxConfig）；nginx 校验失败自动回滚 | 非 GET 全局互斥 429；webhook fire-and-forget；观测近零；无服务端回滚 API；无泛域名 TLS | 偷"零声明文件部署"的入门体验与逃生舱哲学（但逃生舱进 Spec 而非绕过 Spec）；反面教材：全局锁与不可观测触发 |
 | **zane-ops** | 草稿→应用全链路（字段级 diff/单条撤销/快照冻结）；蓝绿 slot+per-deployment URL+**pause_at_step 任意步骤暂停**；HttpLog 请求级日志；Token 三维授权+凭据卫生模范 | Temporal 全家桶 11 单元起步；默认域名带随机后缀；单机假设写死；Service/ComposeStack 双轨心智 | 偷草稿-diff-撤销、pause_at_step、detected-ports 自动发现、zn_tok_ token 卫生、create-from-dokploy 式迁移钩子 |
 | **tsuru** | 长操作"流式+事件 ID 当场返回+事件内嵌日志回放"；构建现场教育（进程来源归属/deprecated 字段警告）；事件封禁（change freeze）；env managed-by 声明式卫生 | Mongo 硬依赖+5 组件足迹；API 层积幽灵功能；日志默认内存不持久 | 偷 X-Eventid 模式、streamfmt 构建日志排版、事件封禁做 agent 刹车、did-you-mean CLI 框架件 |
-| **porter** | Installation→Run→Result→Output 台账（ULID/参数摘要/日志全档）；schema 自描述合成（mixin GetSchema + `#/mixin.NAME/` 改写）；check-strategy 四档；`porter explain` | 非 PaaS（CNAB 打包工具），产品面不适用 | 偷 Run 台账做部署历史、`fleet explain/schema` 服务 agent、三层护栏（schemaVersion+状态机守卫+封禁） |
+| **porter** | Installation→Run→Result→Output 台账（ULID/参数摘要/日志全档）；schema 自描述合成（mixin GetSchema + `#/mixin.NAME/` 改写）；check-strategy 四档；`porter explain` | 非 PaaS（CNAB 打包工具），产品面不适用 | 偷 Run 台账做部署历史、`fleetly explain/schema` 服务 agent、三层护栏（schemaVersion+状态机守卫+封禁） |
 
 ## 4. 七主题跨产品结论
 
@@ -69,10 +69,10 @@
 | 状态语义四件一拍/单写者 | 参考默认 | **确认**，补强：写操作当场返回事件 ID（tsuru X-Eventid 模式）、部署日志归档进事件可回放、队列 admission 语义（去重/queue_full/可取消） |
 | webhook+拉源单轨 | 参考默认（ADR-0009 已标注待重估） | **维持单轨但补 Agent 轨**：通用部署 token URL（dokploy refreshToken 形态）+ 镜像/上传三轨不变；git push 收包面仍不做（六家中仅 dokku/caprover CLI 走上传，主流是 webhook） |
 | Compose 受控子集 | 参考默认 | **维持**，补 DX：拒绝时给精确原因与建议（不是静默失败）、zane detected-ports 式端口自动发现、归一化 diff 预览 |
-| Agent 面=CLI+Skills | 硬约束 | **强验证**（§5），补充三件套：`fleet explain`/`fleet schema`（porter 模式，能力自描述服务 agent）、事件封禁/change freeze（agent 刹车）、token 卫生全套（zane 模式） |
+| Agent 面=CLI+Skills | 硬约束 | **强验证**（§5），补充三件套：`fleetly explain`/`fleetly schema`（porter 模式，能力自描述服务 agent）、事件封禁/change freeze（agent 刹车）、token 卫生全套（zane 模式） |
 | HA 口径 | 参考默认 | **维持**（无新反证；coolify v5 才开始做多节点反而印证节奏） |
 | 部署状态机 | 设计稿 | 补：pause_at_step 调试暂停（zane）、蓝绿 per-deployment URL 先验后切、pause/回滚一等 CLI 动词（caprover 反面教训） |
-| 上手体验 | 未成文 | **新增硬要求**：一行安装 + sslip.io 零 DNS + `fleet quickstart`（2 分钟首部署）+ 默认值链（TLS/密码自动生成）+ **CLI 可完成全部初始化**（对 agent 友好，coolify 反面） |
+| 上手体验 | 未成文 | **新增硬要求**：一行安装 + sslip.io 零 DNS + `fleetly quickstart`（2 分钟首部署）+ 默认值链（TLS/密码自动生成）+ **CLI 可完成全部初始化**（对 agent 友好，coolify 反面） |
 | 模板生态 | 未设计 | 新增：模板=compose+语义变量（coolify SERVICE_* 模式）+ CDN 热更新 + 竞品迁移钩子（zane create-from-dokploy 模式） |
 
 ## 8. 定位建议（三句）

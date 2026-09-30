@@ -120,7 +120,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 - **Agent 面 = CLI + 专属 Skills，不做 MCP**（2026-09-30 用户直裁：MCP 协议体验不佳）。机器契约在 CLI：稳定 JSON 字段（golden 钉死）、错误信封（errcode + 处置提示）、稳定退出码、`--wait`（等待原语的 CLI 形态）、`events follow`（事件流的 CLI 形态）。程序性知识在 Skills：`skills/` 随仓版本化，每个 Skill 包装一段 CLI 工作流（部署诊断、数据库开通与备份、Task 池管理、Platform Restore 等），与平台版本同批演进。
 - **Token**：`resource:action` Scope（write 蕴含 read），团队/项目两级绑定；Bootstrap Token 首启生成、**可吊销**（旧项目缺口，这次补上）。
 - **治理刹车**（ADR-0017）：per-Project 的 Task/Workload 数量配额、per-Token 创建速率限制、change freeze 变更冻结窗（命中返回带原因的拒绝）、属主 Token 吊销 → 名下 Task 默认宽限排空。Scope 维持"读默认开放、写显式授权"。
-- **能力自描述**：`fleet explain <资源>` 与 `fleet schema` 输出 JSON Schema（Spec 与契约由 Go 类型反射生成，扩展面各自注入合并）——Agent 的零文档发现面（porter 模式）。
+- **能力自描述**：`fleetly explain <资源>` 与 `fleetly schema` 输出 JSON Schema（Spec 与契约由 Go 类型反射生成，扩展面各自注入合并）——Agent 的零文档发现面（porter 模式）。
 - **幂等**：创建型写 RPC 接受 `Idempotency-Key`（CLI `--idempotency-key` 透传）；同键同体重放，同键异体 409，记录保留 24h。这是六家参考 PaaS 的共同空白，也是 CLI 脚本化与 Agent 自动化的共同地基。
 - **等待原语**：API `WaitDeployment / WaitBuild / WaitRun`（事件流过滤实现）+ CLI `--wait`；Agent 编排"部署-等待-验证"循环不必自写轮询（继承 sdk WaitBuild 经验）。
 - **事件订阅**：全量或过滤后的 Event 流（gRPC stream / SSE / `fleetly events follow --json`），配合幂等键构成可靠的声明式自动化。
@@ -180,7 +180,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }   // 子面，CLI 管理操作
 ## 12. 演进路线（建议批次）
 
 - **N0 心脏（单节点可用）**：spec/model/state + Runtime(swarm，含节点锚定) + Deployment 状态机与 admission 队列 + Build（控制面节点）+ Edge(traefik，含 h2c) + Secret/Config + git webhook 触发 + gRPC/REST + Token/Scope + CLI 核心命令（`--json`）+ 一行安装 + quickstart（sslip.io 零 DNS 首部署）；e2e dind 骨架与守卫先行。
-- **N1 Agent 面 + torchwood 线**（验收 = ADR-0012 能力清单全绿）：幂等键 + 事件流(SSE) + Wait 原语 + `events follow` + `fleet explain/schema` + Task/Run（one-shot/resident + Owner Lease + 双级稳定 DNS）+ Schedule + Task Network Group + App 跨挂 + 跨 Project 互通 + 治理刹车（配额/速率/change freeze）+ build-from-upload + zot 受管自宿（多节点镜像分发）+ Database 最小集（postgres[含 percona/pgvector]/redis 模板 + 本地备份）+ 首批 Skills。
+- **N1 Agent 面 + torchwood 线**（验收 = ADR-0012 能力清单全绿）：幂等键 + 事件流(SSE) + Wait 原语 + `events follow` + `fleetly explain/schema` + Task/Run（one-shot/resident + Owner Lease + 双级稳定 DNS）+ Schedule + Task Network Group + App 跨挂 + 跨 Project 互通 + 治理刹车（配额/速率/change freeze）+ build-from-upload + zot 受管自宿（多节点镜像分发）+ Database 最小集（postgres[含 percona/pgvector]/redis 模板 + 本地备份）+ 首批 Skills。
 - **N2 数据与观测 + 信任**：Database 全矩阵（mysql/mongo）+ 升级/迁移 + restic 备份 + ObjectStore（外置 S3/RustFS）+ 恢复演练 + Logging/Metrics Provider 受管自宿 + 平台升级工具（ADR-0015 验收：升级零扰动）+ dbtemplate 目录化与镜像 digest 钉定（DT-9）。
 - **N3 体验**：Console（消费同一 API）+ exec 子面 + 终端 + 模板库。
 - **N4 第二运行时试点**：k3s Provider，验收场景 = 领域模型 §5 场景 3（换 Runtime：无状态全语义保持 + 有状态 Backup/Restore + 显式数据处置）——这是对 ADR-0001 的终审。

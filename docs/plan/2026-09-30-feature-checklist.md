@@ -10,9 +10,9 @@
 
 **安装与引导**
 - F0.1 一行安装：`curl | bash` 检测/安装 Docker → 单节点 swarm init → fleetlyd（容器形态优先）→ 数据根初始化。验收：全新 Ubuntu VPS 一条命令到 fleetlyd healthy。
-- F0.2 首启引导：Bootstrap Token 落盘（journal+文件，可吊销）+ 管理员初始化**全 CLI 可完成**（`fleet init`）。验收：无浏览器环境可完成全部初始化。
-- F0.3 `fleet quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。
-- F0.4 `fleet doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
+- F0.2 首启引导：Bootstrap Token 落盘（journal+文件，可吊销）+ 管理员初始化**全 CLI 可完成**（`fleetly init`）。验收：无浏览器环境可完成全部初始化。
+- F0.3 `fleetly quickstart`：样例应用 + sslip.io 零 DNS 域名 + 自动 TLS。验收：安装完成后 2 分钟内公网 HTTPS 可访问。
+- F0.4 `fleetly doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
 
 **账号与权限（完整 Team/Role）**
 - F0.5 User/Team/Role/Token 全模型：多用户、内置角色（owner/admin/member）+ 自定义 Role（Scope 集合）、邀请流（一次性链接）。验收：双用户双角色权限差异 e2e。
@@ -23,7 +23,7 @@
 - F0.8 Project/App CRUD（API+CLI）；Spec 归一化两源：Compose 受控子集（白名单+受管字段显式拒绝+拒绝原因精确）与镜像直部署。
 - F0.9 Build（dockerfile 构建器）：BuildKit、控制面节点执行、并发上限可配、缓存本机、构建日志实时流。
 - F0.10 Deployment 状态机（preparing→building→releasing→observing→succeeded|failed|rolling-back→superseded）+ admission 队列：同幂等键/commit 去重、latest-wins、显式 supersede、queue_full 反馈、排队与在途可取消。
-- F0.11 回滚 = Revision Replay 一等动词（`fleet rollback`）+ Revision diff（`fleet revisions diff R1 R2`）。
+- F0.11 回滚 = Revision Replay 一等动词（`fleetly rollback`）+ Revision diff（`fleetly revisions diff R1 R2`）。
 - F0.12 健康门与优雅退出：http/tcp/exec 探针 + L1 门 + L2 看门狗 + L3 观察窗（60s 默认）；SIGTERM 宽限；被杀后按 Generation 幂等重放（场景 1/2 回归）。
 - F0.13 Git 触发：per-App 通用部署 Token URL（可再生成、token 不进 URL 路径段日志）+ GitHub 原生 webhook（push 自动部署、`[skip deploy]`、watchPaths monorepo 过滤、HMAC 验签+delivery 去重）。
 
@@ -38,33 +38,33 @@
 
 **集群（Runtime）**
 - F0.19 swarm Provider 全契约：Ensure/Remove/Watch/Addresses/DescribeCluster/Enrollment + 节点身份锚定（铸造/写回/`node.joined`）+ RuntimeLogs 子面 + RuntimeAdmin（drain/cordon）。
-- F0.20 多节点就绪：`fleet nodes enroll` 输出加入材料。验收：双节点部署同一 App、卷钉住正确。
+- F0.20 多节点就绪：`fleetly nodes enroll` 输出加入材料。验收：双节点部署同一 App、卷钉住正确。
 
 **API/CLI 面**
 - F0.21 proto 单源：gRPC + REST gateway + OpenAPI 生成；buf breaking 门禁进 CI。
 - F0.22 CLI 核心：init/login/projects/apps/deploy/rollback/logs/events/secrets/configs/routes/nodes/tokens/audit——全命令 `--json`（golden 双形态钉死）+ 稳定退出码 + 错误信封（errcode+处置提示）。
-- F0.23 事件地基：Outbox+seq 落库、`fleet events list`；流式 follow 在 N1。
+- F0.23 事件地基：Outbox+seq 落库、`fleetly events list`；流式 follow 在 N1。
 
 **工程守卫（先行）**
 - F0.24 CI 守卫全套：编排器 SDK 仅限 providers/、model/spec 叶子纯度、禁词扫描（ADR-0007 清单）、errcode/eventcode 注册表三链咬合、CLI golden、e2e dind smoke。
 
 **可观测最小**
-- F0.25 `fleet logs`：运行/构建日志经 RuntimeLogs 直读（时间窗/tail/容器过滤）；持久化检索 N2 前诚实标注"仅实时+最近缓冲"。
+- F0.25 `fleetly logs`：运行/构建日志经 RuntimeLogs 直读（时间窗/tail/容器过滤）；持久化检索 N2 前诚实标注"仅实时+最近缓冲"。
 
 ## N1 Agent 面 + torchwood 线（验收 = ADR-0012 能力清单全绿）
 
 - F1.1 幂等键：创建型 RPC + CLI `--idempotency-key`；同键同体重放、异体 409、24h 保留。
-- F1.2 事件流 follow：SSE + gRPC stream + `fleet events follow --json`；断档 410 + 快照重同步。
+- F1.2 事件流 follow：SSE + gRPC stream + `fleetly events follow --json`；断档 410 + 快照重同步。
 - F1.3 Wait 原语：WaitDeployment/WaitBuild/WaitRun + CLI `--wait`。
-- F1.4 能力自描述：`fleet explain <资源>` / `fleet schema`（JSON Schema 反射生成）。
+- F1.4 能力自描述：`fleetly explain <资源>` / `fleetly schema`（JSON Schema 反射生成）。
 - F1.5 Task API：one-shot/resident 创建（镜像直部署、env+secretRefs、TTL、资源上限）、期望并发数、排空停止、列表/watch、per-Task + per-Run 双级稳定 DNS。
-- F1.6 Owner Lease：`fleet task renew`（RenewTask）+ 宽限；lease_expired 排空并补足；属主吊销 → 名下 Task 宽限排空（可配置跑完 TTL）。
+- F1.6 Owner Lease：`fleetly task renew`（RenewTask）+ 宽限；lease_expired 排空并补足；属主吊销 → 名下 Task 宽限排空（可配置跑完 TTL）。
 - F1.7 Schedule：带时区 cron（ADR-0018）、手动触发、重叠 skip 策略。
 - F1.8 互通：Task Network Group（创建时刻挂靠）+ App Process 跨挂（`taskGroup:<name>`）+ 跨 Project 双向声明/批准/即时隔离。
 - F1.9 治理刹车：per-Project Task/Workload 数量配额、per-Token 创建速率、change freeze（按资源/动作封禁，拒绝带原因）。
 - F1.10 build-from-upload：流式 tar + 大小上限。
 - F1.11 zot 受管自宿：多节点镜像分发（digest/tag 直存）、构建推送目标。
-- F1.12 Database 最小集：postgres（含 percona/pgvector 模板）+ redis 模板、默认本地备份目标开箱即用、连接串注入 Secret、`fleet db` 命令组。
+- F1.12 Database 最小集：postgres（含 percona/pgvector 模板）+ redis 模板、默认本地备份目标开箱即用、连接串注入 Secret、`fleetly db` 命令组。
 - F1.13 首批 Skills：`skills/`（deploy-diagnose / task-pool / database-provision），随版本演进说明。
 - F1.14 构建器扩展：railpack（钉版本）+ static。
 - F1.15 **dogfooding 上线**：staging 双节点重装新 fleetly（归档版退役）；torchwood/messageloop 从零部署。验收：ADR-0012 清单逐项打勾 + messageloop 经 h2c Route 对外服务 + dispatcher 池租约/补足/回收全语义真机回归。
@@ -83,7 +83,7 @@
 ## N3 体验全量
 
 - F3.1 Console 全功能：全部读写操作、终端页、quickstart 向导 UI 化、审计/设置页。
-- F3.2 exec 子面：RuntimeExec + 反向中继（节点零入站端口）+ `fleet shell` + Web 终端（票据鉴权、限额、审计）。
+- F3.2 exec 子面：RuntimeExec + 反向中继（节点零入站端口）+ `fleetly shell` + Web 终端（票据鉴权、限额、审计）。
 - F3.3 模板库：模板 schema（语义变量/自动生成密码/域名）+ 一键部署 + CDN 热更新 + 竞品迁移钩子（`create-from-dokploy` 形态）。
 - F3.4 Git 集成扩展：GitLab/Gitea 原生 webhook（届时按需求确认）。
 
