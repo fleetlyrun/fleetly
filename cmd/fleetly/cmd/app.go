@@ -62,6 +62,9 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		// Edge / Runtime 上下文。
 		groupVerb("routes", "manage routes", newRoutesCreateVerb(), newRoutesListVerb()),
 		groupVerb("nodes", "inspect cluster nodes and enrollment", newNodesListVerb(), newNodesEnrollVerb()),
+		// Telemetry 上下文。
+		groupVerb("events", "list platform events from the outbox", newEventsListVerb()),
+		newLogsVerb(),
 	)
 	return app
 }

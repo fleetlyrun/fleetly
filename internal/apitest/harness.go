@@ -5,10 +5,12 @@ package apitest
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net"
 	"sync"
 	"testing"
+	"time"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -178,4 +180,23 @@ func (f *FakeRuntime) ReportRunning(workloadID string, gen capability.Generation
 	f.obs <- capability.WorkloadEvent{WorkloadID: workloadID, Generation: gen, State: capability.WorkloadRunning}
 }
 
-var _ capability.Runtime = (*FakeRuntime)(nil)
+// StreamLogs 实现 RuntimeLogs 子面（固定两帧——logs golden 的确定性底座；
+// Follow 不实现：测试只用非 follow 形态）。
+func (f *FakeRuntime) StreamLogs(_ context.Context, q capability.LogQuery, w capability.LogWriter) error {
+	for i := 1; i <= 2; i++ {
+		if err := w.WriteLog(context.Background(), capability.LogFrame{
+			WorkloadID: q.Namespace.App + "-web",
+			Container:  "web",
+			Time:       time.Unix(1767225600, 0).UTC(),
+			Line:       []byte(fmt.Sprintf("frame-%d", i)),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+var (
+	_ capability.Runtime     = (*FakeRuntime)(nil)
+	_ capability.RuntimeLogs = (*FakeRuntime)(nil)
+)

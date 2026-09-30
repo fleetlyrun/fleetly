@@ -1,0 +1,100 @@
+package cmd
+
+// Telemetry 上下文动词：events list（F0.23 读路径；流式 follow N1）与
+// logs（F0.25：RuntimeLogs 直读，诚实标注"仅实时+最近缓冲"）。
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"io"
+
+	"github.com/lynx-go/commands"
+	"google.golang.org/protobuf/encoding/protojson"
+
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+)
+
+func newEventsListVerb() commands.Command {
+	const name = "list"
+	var after, limit int64
+	return &flaggedVerb{
+		name: name, synopsis: "List events from the outbox (cursor: after-seq; streaming follow lands in N1)",
+		usage: "events list [--after-seq N] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.Int64Var(&after, "after-seq", 0, "return events after this seq (cursor)")
+			fs.Int64Var(&limit, "limit", 100, "max events (capped at 1000)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close()                                                                                             //nolint:errcheck // 进程退出路径
+			resp, err := c.Events.ListEvents(ctx, &telemetryv1.ListEventsRequest{AfterSeq: after, Limit: int32(limit)}) //nolint:gosec // 限额在服务端钳制
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "last_seq=%d\n", resp.GetLastSeq())
+				_, _ = fmt.Fprintln(env.Stdout, "SEQ\tNAME\tAGGREGATE\tID\tCREATED")
+				for _, ev := range resp.GetEvents() {
+					_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\n", ev.GetSeq(), ev.GetName(), ev.GetAggregate(), ev.GetAggregateId(), ev.GetCreatedAt())
+				}
+			})
+		},
+	}
+}
+
+func newLogsVerb() commands.Command {
+	const name = "logs"
+	var app, process string
+	var tail int64
+	var follow bool
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Stream container logs for an app (live tail + recent buffer only; persisted search lands in N2)",
+		usage:    "logs --app APP_ID [--process NAME] [--tail N] [--follow]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&process, "process", "", "filter by process name")
+			fs.Int64Var(&tail, "tail", 0, "tail lines (0 = all buffered)")
+			fs.BoolVar(&follow, "follow", false, "keep streaming new output")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if app == "" {
+				return usageErr(name, "--app is required")
+			}
+			c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			stream, err := c.Logs.StreamLogs(ctx, &telemetryv1.StreamLogsRequest{
+				AppId: app, TailLines: tail, Follow: follow,
+			})
+			if err != nil {
+				return err
+			}
+			marshal := protojson.MarshalOptions{UseProtoNames: true}
+			for {
+				frame, err := stream.Recv()
+				if err == io.EOF {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					data, err := marshal.Marshal(frame)
+					if err != nil {
+						return err
+					}
+					_, _ = fmt.Fprintln(env.Stdout, string(data))
+					continue
+				}
+				_, _ = fmt.Fprintf(env.Stdout, "%s %s %s\n", frame.GetTime(), frame.GetWorkloadId(), string(frame.GetLine()))
+			}
+		},
+	}
+}

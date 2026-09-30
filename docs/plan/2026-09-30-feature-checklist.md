@@ -43,13 +43,13 @@
 **API/CLI 面**
 - F0.21 [x] proto 单源：gRPC + REST gateway + OpenAPI 生成；buf breaking 门禁进 CI。
 - F0.22 CLI 核心：init/login/projects/apps/deploy/rollback/logs/events/secrets/configs/routes/nodes/tokens/audit——全命令 `--json`（golden 双形态钉死）+ 稳定退出码 + 错误信封（errcode+处置提示）。
-- F0.23 事件地基：Outbox+seq 落库、`fleetly events list`；流式 follow 在 N1。
+- F0.23 [x] 事件地基：Outbox+seq 落库、`fleetly events list`；流式 follow 在 N1。
 
 **工程守卫（先行）**
 - F0.24 CI 守卫全套：编排器 SDK 仅限 providers/、model/spec 叶子纯度、禁词扫描（ADR-0007 清单）、errcode/eventcode 注册表三链咬合、CLI golden、e2e dind smoke。
 
 **可观测最小**
-- F0.25 `fleetly logs`：运行/构建日志经 RuntimeLogs 直读（时间窗/tail/容器过滤）；持久化检索 N2 前诚实标注"仅实时+最近缓冲"。
+- F0.25 [x] `fleetly logs`：运行/构建日志经 RuntimeLogs 直读（时间窗/tail/容器过滤）；持久化检索 N2 前诚实标注"仅实时+最近缓冲"。
 
 ## N1 Agent 面 + torchwood 线（验收 = ADR-0012 能力清单全绿）
 

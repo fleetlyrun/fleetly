@@ -145,9 +145,50 @@ func (svc *EventsService) ListEvents(ctx context.Context, req *telemetryv1.ListE
 	return out, nil
 }
 
-// ---- Logs（F0.25：RuntimeLogs 直读，流实现随 C8 批接入） ----
+// ---- Logs（F0.25：RuntimeLogs 直读；诚实边界——仅实时+最近缓冲，持久化
+// 检索 N2。Runtime 未实现 RuntimeLogs 子面时显式降级 E_INTERNAL →） ----
 
 type LogsService struct {
 	telemetryv1.UnimplementedLogsServiceServer
 	s *Services
 }
+
+// StreamLogs 转发 RuntimeLogs 流（appID → 隔离域解析经 app 行）。
+func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
+	logs, ok := svc.s.Runtime.(capability.RuntimeLogs)
+	if !ok {
+		return apperr.New("E_INTERNAL", "the runtime provider does not expose container logs")
+	}
+	if req.GetAppId() == "" {
+		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
+	}
+	appRow, err := svc.s.Apps.Get(stream.Context(), svc.s.DB.Runner(), req.GetAppId())
+	if err != nil {
+		return mapStateError(err, "app")
+	}
+	q := capability.LogQuery{
+		Namespace:  capability.NamespaceRef{Team: "default", Project: appRow.ProjectID, App: appRow.ID},
+		TailLines:  req.GetTailLines(),
+		Follow:     req.GetFollow(),
+	}
+	w := &streamLogWriter{stream: stream}
+	if err := logs.StreamLogs(stream.Context(), q, w); err != nil {
+		return mapStateError(err, "logs")
+	}
+	return nil
+}
+
+// streamLogWriter 把 RuntimeLogs 帧转发为 RPC 流帧。
+type streamLogWriter struct {
+	stream telemetryv1.LogsService_StreamLogsServer
+}
+
+func (w *streamLogWriter) WriteLog(ctx context.Context, f capability.LogFrame) error {
+	return w.stream.Send(&telemetryv1.StreamLogsResponse{
+		WorkloadId: f.WorkloadID, Container: f.Container, Node: f.Node,
+		Time: f.Time.UTC().Format(timeFormatRFC3339), Line: f.Line,
+	})
+}
+
+// timeFormatRFC3339 是日志帧时间形态（ADR-0018 UTC）。
+const timeFormatRFC3339 = "2006-01-02T15:04:05.000Z07:00"
