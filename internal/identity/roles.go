@@ -36,12 +36,15 @@ var memberWriteResources = map[string]bool{
 	"routes":      true,
 }
 
-// identityResources 是 Identity & Access 上下文自有的资源集（member 不
-// 获得——"不能管人"：用户/角色/Token/邀请/审计是管理面，读权也不给）。
-// 这不是词表复制：词表演进时未知资源一律按业务面处理。
-var identityResources = map[string]bool{
+// memberExcludedResources 是 member 角色完全不获得的资源集（"不能管人、
+// 不能拆家"）：用户/角色/Token/邀请/审计是管理面（读权也不给）；platform
+// 是集群面（活 join token 等价集群成员权——C3 收紧，member 与自定义
+// nodes 域角色都不得沾）。这不是词表复制：词表演进时未知资源一律按
+// 业务面处理。
+var memberExcludedResources = map[string]bool{
 	"users": true, "teams": true, "roles": true,
 	"tokens": true, "invitations": true, "audit": true,
+	"platform": true,
 }
 
 // BuiltinRole 是一条内置角色定义。
@@ -68,7 +71,7 @@ func BuiltinRoles(resources []string) []BuiltinRole {
 		} else {
 			admin = append(admin, Scope{Resource: res, Action: "admin"})
 		}
-		if identityResources[res] {
+		if memberExcludedResources[res] {
 			continue
 		}
 		member = append(member, Scope{Resource: res, Action: "read"})

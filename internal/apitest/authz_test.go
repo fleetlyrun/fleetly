@@ -15,6 +15,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
@@ -57,6 +58,7 @@ func TestScopeEnforcementMatrix(t *testing.T) {
 
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
 	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+	nodes := runtimev1.NewNodesServiceClient(h.Conn)
 
 	// 匿名：读面即 401。
 	_, err := projects.ListProjects(anon, &structurev1.ListProjectsRequest{})
@@ -79,6 +81,19 @@ func TestScopeEnforcementMatrix(t *testing.T) {
 	require.Error(t, err)
 	assert.NotEqual(t, codes.PermissionDenied, status.Code(err), "member may deploy")
 	assert.NotEqual(t, codes.Unauthenticated, status.Code(err))
+
+	// C3：EnrollNode 是 platform:admin 档——member（nodes:read 都没有，
+	// 更无 platform）不得取活 join 材料；owner 过。
+	_, err = nodes.EnrollNode(member, &runtimev1.EnrollNodeRequest{})
+	wantCode(t, err, codes.PermissionDenied, "E_FORBIDDEN")
+	_, err = nodes.EnrollNode(owner, &runtimev1.EnrollNodeRequest{})
+	require.NoError(t, err)
+	require.Equal(t, []bool{false}, h.Runtime.EnrollCalls(), "plain enroll does not rotate")
+
+	// 轮换路径：rotate 旗标直达 Runtime（泄漏处置）。
+	_, err = nodes.EnrollNode(owner, &runtimev1.EnrollNodeRequest{Rotate: true})
+	require.NoError(t, err)
+	require.Equal(t, []bool{false, true}, h.Runtime.EnrollCalls(), "rotate must reach the runtime")
 
 	// 伪造/未知 token：401。
 	_, err = projects.ListProjects(sdk.WithToken(anon, "flt_notarealtoken"), &structurev1.ListProjectsRequest{})

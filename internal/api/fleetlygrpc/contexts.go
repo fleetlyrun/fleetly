@@ -39,12 +39,25 @@ func (svc *NodesService) ListNodes(ctx context.Context, _ *runtimev1.ListNodesRe
 	return out, nil
 }
 
-func (svc *NodesService) EnrollNode(ctx context.Context, _ *runtimev1.EnrollNodeRequest) (*runtimev1.EnrollNodeResponse, error) {
-	kit, err := svc.s.Runtime.Enrollment(ctx)
+func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNodeRequest) (*runtimev1.EnrollNodeResponse, error) {
+	kit, err := svc.s.Runtime.Enrollment(ctx, req.GetRotate())
 	if err != nil {
 		return nil, mapStateError(err, "enrollment")
 	}
-	_ = svc.s.Audits // Enrollment 属读面（材料生成）；审计随轮换批接入
+	// 材料生成与轮换都是集群面敏感动作：审计如实区分（EnrollNode 是
+	// platform:admin 档，C3）。
+	action := "node.enroll"
+	if req.GetRotate() {
+		action = "node.rotate_join_tokens"
+	}
+	if err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Action: action, Resource: "cluster/join-material",
+		})
+	}); err != nil {
+		return nil, err
+	}
 	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command}, nil
 }
 

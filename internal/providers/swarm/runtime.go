@@ -421,8 +421,24 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 }
 
 // Enrollment 生成节点加入材料（worker 加入命令；节点零平台安装物）。
-// 管理面地址取可达 manager 的广播地址（N1 HA 扩容再扩展 manager 命令）。
-func (p *Provider) Enrollment(ctx context.Context) (capability.EnrollKit, error) {
+// rotate=true 先作废全部现有材料（SwarmUpdate 带 token 轮换旗标）再取
+// 新材料（C3：泄漏处置路径）。管理面地址取可达 manager 的广播地址
+// （N1 HA 扩容再扩展 manager 命令）。
+func (p *Provider) Enrollment(ctx context.Context, rotate bool) (capability.EnrollKit, error) {
+	if rotate {
+		cur, err := p.cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
+		if err != nil {
+			return capability.EnrollKit{}, fmt.Errorf("swarm rotate: inspect: %w", err)
+		}
+		if _, err := p.cli.SwarmUpdate(ctx, client.SwarmUpdateOptions{
+			Version:            cur.Swarm.Version,
+			Spec:               cur.Swarm.Spec,
+			RotateWorkerToken:  true,
+			RotateManagerToken: true,
+		}); err != nil {
+			return capability.EnrollKit{}, fmt.Errorf("swarm rotate: update: %w", err)
+		}
+	}
 	inspect, err := p.cli.SwarmInspect(ctx, client.SwarmInspectOptions{})
 	if err != nil {
 		return capability.EnrollKit{}, fmt.Errorf("swarm enrollment: %w", err)

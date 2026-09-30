@@ -149,12 +149,13 @@ func dialBufconn(t testing.TB, l *bufconn.Listener) *grpc.ClientConn {
 
 // FakeRuntime 是假 Runtime 底座（Ensure 记录、观测事件由测试注入）。
 type FakeRuntime struct {
-	mu       sync.Mutex
-	ensures  []EnsureCall
-	removed  []capability.NamespaceRef // Remove 记录（ADR-0023 收口断言）
-	adminErr error                     // RuntimeAdmin 动词注入错误（SetAdminErr 设置）
-	adminOps []AdminCall
-	obs      chan capability.WorkloadEvent
+	mu          sync.Mutex
+	ensures     []EnsureCall
+	removed     []capability.NamespaceRef // Remove 记录（ADR-0023 收口断言）
+	enrollCalls []bool                    // Enrollment 调用记录（rotate 序列，C3）
+	adminErr    error                     // RuntimeAdmin 动词注入错误（SetAdminErr 设置）
+	adminOps    []AdminCall
+	obs         chan capability.WorkloadEvent
 }
 
 // AdminCall 是一次 RuntimeAdmin 动词记录。
@@ -219,8 +220,20 @@ func (f *FakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, 
 	}}}, nil
 }
 
-func (f *FakeRuntime) Enrollment(context.Context) (capability.EnrollKit, error) {
+func (f *FakeRuntime) Enrollment(_ context.Context, rotate bool) (capability.EnrollKit, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.enrollCalls = append(f.enrollCalls, rotate)
 	return capability.EnrollKit{Command: "docker swarm join --token TESTTOKEN 127.0.0.1:2377"}, nil
+}
+
+// EnrollCalls 返回 Enrollment 调用记录（rotate 标志序列；C3 断言面）。
+func (f *FakeRuntime) EnrollCalls() []bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]bool, len(f.enrollCalls))
+	copy(out, f.enrollCalls)
+	return out
 }
 
 // Calls 返回 Ensure 记录快照。

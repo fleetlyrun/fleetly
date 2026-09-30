@@ -29,16 +29,19 @@ service NodesService {
       api_key_scope: { resource: "nodes" op: SCOPE_OP_READ }
     };
   }
-  // EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。
+  // EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
+  // token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
+  // nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
+  // 全部 join token（泄漏处置）再返回新材料。
   rpc EnrollNode(EnrollNodeRequest) returns (EnrollNodeResponse) {
     option (google.api.http) = { post: "/v1/nodes/enroll" body: "*" };
     option (grpcapi.v1.method_auth) = {
       access: ACCESS_LEVEL_SERVER
-      api_key_scope: { resource: "nodes" op: SCOPE_OP_ADMIN }
+      api_key_scope: { resource: "platform" op: SCOPE_OP_ADMIN }
     };
   }
   // 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
-  // 调度控制走 nodes write 档（加入材料敏感，EnrollNode 保持 admin 档）。
+  // 调度控制走 nodes write 档。
   rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse) {
     option (google.api.http) = { post: "/v1/nodes/{node_id}/drain" body: "*" };
     option (grpcapi.v1.method_auth) = {
@@ -75,7 +78,11 @@ message Node {
 
 message ListNodesRequest {}
 message ListNodesResponse { repeated Node nodes = 1; }
-message EnrollNodeRequest {}
+message EnrollNodeRequest {
+  // rotate 先轮换全部 join token（worker+manager；泄漏处置：旧材料即刻
+  // 失效）再返回新材料。
+  bool rotate = 1;
+}
 message EnrollNodeResponse {
   // join_command 是工作节点完整加入命令（swarm join 形态）。
   string join_command = 1;

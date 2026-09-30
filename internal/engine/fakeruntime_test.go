@@ -104,7 +104,7 @@ func (f *fakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, 
 	}}}, nil
 }
 
-func (f *fakeRuntime) Enrollment(context.Context) (capability.EnrollKit, error) {
+func (f *fakeRuntime) Enrollment(context.Context, bool) (capability.EnrollKit, error) {
 	return capability.EnrollKit{Command: "fake-join"}, nil
 }
 

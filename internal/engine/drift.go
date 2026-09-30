@@ -8,7 +8,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -231,22 +230,12 @@ func (e *Engine) clearStoppedSig(wid string) {
 	e.stoppedMu.Unlock()
 }
 
-// driftScanLoop 周期扫描（DriftScanInterval 节拍）。
+// driftScanLoop 周期扫描（DriftScanInterval 节拍；架构 §0 唯一骨架——
+// 经 engine.NewLoop 收敛，不自建 ticker）。
 func (e *Engine) driftScanLoop(ctx context.Context) {
-	e.wg.Add(1)
-	go func() {
-		defer e.wg.Done()
-		ticker := time.NewTicker(e.opts.DriftScanInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
-			scanCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
-			e.driftScan(scanCtx)
-			cancel()
-		}
-	}()
+	e.driftLoop.Run(ctx, e.opts.DriftScanInterval, func(ctx context.Context) {
+		scanCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+		e.driftScan(scanCtx)
+		cancel()
+	})
 }

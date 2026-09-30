@@ -33,10 +33,13 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type NodesServiceClient interface {
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
-	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。
+	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
+	// token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
+	// nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
+	// 全部 join token（泄漏处置）再返回新材料。
 	EnrollNode(ctx context.Context, in *EnrollNodeRequest, opts ...grpc.CallOption) (*EnrollNodeResponse, error)
 	// 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
-	// 调度控制走 nodes write 档（加入材料敏感，EnrollNode 保持 admin 档）。
+	// 调度控制走 nodes write 档。
 	DrainNode(ctx context.Context, in *DrainNodeRequest, opts ...grpc.CallOption) (*DrainNodeResponse, error)
 	CordonNode(ctx context.Context, in *CordonNodeRequest, opts ...grpc.CallOption) (*CordonNodeResponse, error)
 	UncordonNode(ctx context.Context, in *UncordonNodeRequest, opts ...grpc.CallOption) (*UncordonNodeResponse, error)
@@ -105,10 +108,13 @@ func (c *nodesServiceClient) UncordonNode(ctx context.Context, in *UncordonNodeR
 // for forward compatibility.
 type NodesServiceServer interface {
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
-	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。
+	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。活 join
+	// token 等价集群成员权（不可逆），档位是 platform:admin（C3 收紧：
+	// nodes:admin 只覆盖可逆运维面，不得白送集群钥匙）；rotate 先轮换
+	// 全部 join token（泄漏处置）再返回新材料。
 	EnrollNode(context.Context, *EnrollNodeRequest) (*EnrollNodeResponse, error)
 	// 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
-	// 调度控制走 nodes write 档（加入材料敏感，EnrollNode 保持 admin 档）。
+	// 调度控制走 nodes write 档。
 	DrainNode(context.Context, *DrainNodeRequest) (*DrainNodeResponse, error)
 	CordonNode(context.Context, *CordonNodeRequest) (*CordonNodeResponse, error)
 	UncordonNode(context.Context, *UncordonNodeRequest) (*UncordonNodeResponse, error)

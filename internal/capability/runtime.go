@@ -39,8 +39,10 @@ type Runtime interface {
 	DescribeCluster(ctx context.Context) (ClusterView, error)
 
 	// Enrollment 生成节点加入材料（swarm join 材料；k8s 节点 kubelet
-	// 既有），含轮换。
-	Enrollment(ctx context.Context) (EnrollKit, error)
+	// 既有），含轮换。rotate=true 先作废全部现有材料（泄漏处置：旧
+	// token 即刻失效）再返回新材料——活材料等价集群成员权，动词面与
+	// 授权档位都按此敏感度对待（C3）。
+	Enrollment(ctx context.Context, rotate bool) (EnrollKit, error)
 }
 
 // RuntimeLogs 是日志子面（F0.25 `fleetly logs` 消费；按需实现）。

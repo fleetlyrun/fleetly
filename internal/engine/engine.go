@@ -109,6 +109,7 @@ type Engine struct {
 	loop        *Loop
 	buildLoop   *Loop
 	managedLoop *Loop
+	driftLoop   *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 
@@ -183,6 +184,7 @@ func New(deps Deps, opts Options) *Engine {
 		loop:         NewLoop("deployment", log),
 		buildLoop:    NewLoop("build", log),
 		managedLoop:  NewLoop("managed", log),
+		driftLoop:    NewLoop("drift", log),
 		routes:       route.New(clock),
 		secrets:      secret.New(clock),
 		configs:      configrepo.New(clock),

@@ -200,7 +200,10 @@ func (x *ListNodesResponse) GetNodes() []*Node {
 }
 
 type EnrollNodeRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// rotate 先轮换全部 join token（worker+manager；泄漏处置：旧材料即刻
+	// 失效）再返回新材料。
+	Rotate        bool `protobuf:"varint,1,opt,name=rotate,proto3" json:"rotate,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -233,6 +236,13 @@ func (x *EnrollNodeRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use EnrollNodeRequest.ProtoReflect.Descriptor instead.
 func (*EnrollNodeRequest) Descriptor() ([]byte, []int) {
 	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *EnrollNodeRequest) GetRotate() bool {
+	if x != nil {
+		return x.Rotate
+	}
+	return false
 }
 
 type EnrollNodeResponse struct {
@@ -540,8 +550,9 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"lastSeenAt\"\x12\n" +
 	"\x10ListNodesRequest\"C\n" +
 	"\x11ListNodesResponse\x12.\n" +
-	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"\x13\n" +
-	"\x11EnrollNodeRequest\"7\n" +
+	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"+\n" +
+	"\x11EnrollNodeRequest\x12\x16\n" +
+	"\x06rotate\x18\x01 \x01(\bR\x06rotate\"7\n" +
 	"\x12EnrollNodeResponse\x12!\n" +
 	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand\"+\n" +
 	"\x10DrainNodeRequest\x12\x17\n" +
@@ -552,13 +563,13 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x12CordonNodeResponse\".\n" +
 	"\x13UncordonNodeRequest\x12\x17\n" +
 	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x16\n" +
-	"\x14UncordonNodeResponse2\xe6\x05\n" +
+	"\x14UncordonNodeResponse2\xe9\x05\n" +
 	"\fNodesService\x12|\n" +
 	"\tListNodes\x12$.fleetly.runtime.v1.ListNodesRequest\x1a%.fleetly.runtime.v1.ListNodesResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\x89\x01\n" +
+	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\x8c\x01\n" +
 	"\n" +
-	"EnrollNode\x12%.fleetly.runtime.v1.EnrollNodeRequest\x1a&.fleetly.runtime.v1.EnrollNodeResponse\",\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x12\x8f\x01\n" +
+	"EnrollNode\x12%.fleetly.runtime.v1.EnrollNodeRequest\x1a&.fleetly.runtime.v1.EnrollNodeResponse\"/\xea\xc4\x19\x10\b\x03\"\f\n" +
+	"\bplatform\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x12\x8f\x01\n" +
 	"\tDrainNode\x12$.fleetly.runtime.v1.DrainNodeRequest\x1a%.fleetly.runtime.v1.DrainNodeResponse\"5\xea\xc4\x19\r\b\x03\"\t\n" +
 	"\x05nodes\x10\x02\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/nodes/{node_id}/drain\x12\x93\x01\n" +
 	"\n" +
