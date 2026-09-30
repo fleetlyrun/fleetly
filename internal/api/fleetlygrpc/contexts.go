@@ -5,6 +5,7 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
@@ -42,6 +43,62 @@ func (svc *NodesService) EnrollNode(ctx context.Context, _ *runtimev1.EnrollNode
 	}
 	_ = svc.s.Audits // Enrollment 属读面（材料生成）；审计随轮换批接入
 	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command}, nil
+}
+
+// DrainNode 把节点置为排空（F0.19 RuntimeAdmin 面；平台节点 ID 为锚）。
+func (svc *NodesService) DrainNode(ctx context.Context, req *runtimev1.DrainNodeRequest) (*runtimev1.DrainNodeResponse, error) {
+	if err := svc.nodeAdmin(ctx, req.GetNodeId(), "node.drain", func(a capability.RuntimeAdmin, nodeID string) error {
+		return a.Drain(ctx, nodeID)
+	}); err != nil {
+		return nil, err
+	}
+	return &runtimev1.DrainNodeResponse{}, nil
+}
+
+// CordonNode 封锁节点（拒绝新调度，存量不动）。
+func (svc *NodesService) CordonNode(ctx context.Context, req *runtimev1.CordonNodeRequest) (*runtimev1.CordonNodeResponse, error) {
+	if err := svc.nodeAdmin(ctx, req.GetNodeId(), "node.cordon", func(a capability.RuntimeAdmin, nodeID string) error {
+		return a.Cordon(ctx, nodeID)
+	}); err != nil {
+		return nil, err
+	}
+	return &runtimev1.CordonNodeResponse{}, nil
+}
+
+// UncordonNode 解除封锁。
+func (svc *NodesService) UncordonNode(ctx context.Context, req *runtimev1.UncordonNodeRequest) (*runtimev1.UncordonNodeResponse, error) {
+	if err := svc.nodeAdmin(ctx, req.GetNodeId(), "node.uncordon", func(a capability.RuntimeAdmin, nodeID string) error {
+		return a.Uncordon(ctx, nodeID)
+	}); err != nil {
+		return nil, err
+	}
+	return &runtimev1.UncordonNodeResponse{}, nil
+}
+
+// nodeAdmin 是三个 RuntimeAdmin 动词的公共骨架：校验锚点 → 判子面可用 →
+// 执行 → 落审计行。副作用在编排器侧、不可与审计同事务：先变更后留痕，
+// 审计失败如实报错（F0.7 全部写操作留痕契约）；结果即动作本身，无前后
+// 值指纹可记。
+func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, op func(capability.RuntimeAdmin, string) error) error {
+	if nodeID == "" {
+		return apperr.New("E_INVALID_ARGUMENT", "node_id: must not be empty")
+	}
+	admin, ok := svc.s.Runtime.(capability.RuntimeAdmin)
+	if !ok {
+		return apperr.New("E_INTERNAL", "the runtime provider does not expose node administration")
+	}
+	if err := op(admin, nodeID); err != nil {
+		if errors.Is(err, capability.ErrNodeNotFound) {
+			return apperr.New("E_NOT_FOUND", "node not found").WithCause(err)
+		}
+		return apperr.New("E_INTERNAL", "node administration failed").WithCause(err)
+	}
+	return svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Action: action, Resource: "node/" + nodeID,
+		})
+	})
 }
 
 // ---- Routes（Edge & TLS 上下文） ----

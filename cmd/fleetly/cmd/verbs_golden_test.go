@@ -45,6 +45,10 @@ func goldenFile(verb string) string {
 	return regexp.MustCompile(`\s+`).ReplaceAllString(verb, "-")
 }
 
+// goldenNodeID 是 FakeRuntime 集群观测里的固定平台节点 ID（apitest 夹具
+// DescribeCluster 返回值）。
+const goldenNodeID = "01JD0NODE00000000000000000"
+
 // TestGoldenBusinessVerbs 顺序跑完整业务流（同一夹具状态），每动词比较
 // 双形态 golden。
 func TestGoldenBusinessVerbs(t *testing.T) {
@@ -73,6 +77,11 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"routes list", []string{"routes", "list"}},
 		{"nodes list", []string{"nodes", "list"}},
 		{"nodes enroll", []string{"nodes", "enroll"}},
+		// 节点运维三动词（F0.19 RuntimeAdmin 面）：FakeRuntime 集群里的固定
+		// 平台节点 ID。含 'O'（非 ULID 字符）不进归一，golden 逐字确定。
+		{"nodes drain", []string{"nodes", "drain", "--node", goldenNodeID}},
+		{"nodes cordon", []string{"nodes", "cordon", "--node", goldenNodeID}},
+		{"nodes uncordon", []string{"nodes", "uncordon", "--node", goldenNodeID}},
 	}
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，

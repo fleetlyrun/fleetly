@@ -70,9 +70,141 @@
           "NodesService"
         ]
       }
+    },
+    "/v1/nodes/{node_id}/cordon": {
+      "post": {
+        "operationId": "NodesService_CordonNode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CordonNodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NodesServiceCordonNodeBody"
+            }
+          }
+        ],
+        "tags": [
+          "NodesService"
+        ]
+      }
+    },
+    "/v1/nodes/{node_id}/drain": {
+      "post": {
+        "summary": "节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的\n调度控制走 nodes write 档（加入材料敏感，EnrollNode 保持 admin 档）。",
+        "operationId": "NodesService_DrainNode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DrainNodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "node_id",
+            "description": "node_id 是平台节点 ID（永不复用）。",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NodesServiceDrainNodeBody"
+            }
+          }
+        ],
+        "tags": [
+          "NodesService"
+        ]
+      }
+    },
+    "/v1/nodes/{node_id}/uncordon": {
+      "post": {
+        "operationId": "NodesService_UncordonNode",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1UncordonNodeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "node_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NodesServiceUncordonNodeBody"
+            }
+          }
+        ],
+        "tags": [
+          "NodesService"
+        ]
+      }
     }
   },
   "definitions": {
+    "NodesServiceCordonNodeBody": {
+      "type": "object"
+    },
+    "NodesServiceDrainNodeBody": {
+      "type": "object",
+      "title": "节点运维动词以平台节点 ID 为锚（响应无数据面：结果即动作本身）。"
+    },
+    "NodesServiceUncordonNodeBody": {
+      "type": "object"
+    },
+    "v1CordonNodeResponse": {
+      "type": "object"
+    },
+    "v1DrainNodeResponse": {
+      "type": "object"
+    },
     "v1EnrollNodeRequest": {
       "type": "object"
     },
@@ -151,6 +283,9 @@
         }
       },
       "title": "Node 是观测缓存行（非权威；节点 ID 永不复用）。"
+    },
+    "v1UncordonNodeResponse": {
+      "type": "object"
     }
   }
 }

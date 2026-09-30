@@ -10,10 +10,12 @@ import (
 	"os"
 
 	"github.com/lynx-go/commands"
+	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 func newDeployVerb() commands.Command {
@@ -335,4 +337,55 @@ func newNodesEnrollVerb() commands.Command {
 			})
 		},
 	}
+}
+
+// newNodesAdminVerb 构造节点运维动词（drain/cordon/uncordon；平台节点 ID
+// 为锚，幂等可重放——结果即动作本身，无数据面返回）。
+func newNodesAdminVerb(name, past, synopsis string, call func(ctx context.Context, c *fleetly.Client, nodeID string) (proto.Message, error)) commands.Command {
+	var nodeID string
+	return &flaggedVerb{
+		name: name, synopsis: synopsis,
+		usage: "nodes " + name + " --node ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&nodeID, "node", "", "platform node id (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if nodeID == "" {
+				return usageErr(name, "--node is required")
+			}
+			ctx, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := call(ctx, c, nodeID)
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "%s node %s\n", past, nodeID)
+			})
+		},
+	}
+}
+
+func newNodesDrainVerb() commands.Command {
+	return newNodesAdminVerb("drain", "drained", "Set a node to drain (workloads reschedule off it)",
+		func(ctx context.Context, c *fleetly.Client, nodeID string) (proto.Message, error) {
+			return c.Nodes.DrainNode(ctx, &runtimev1.DrainNodeRequest{NodeId: nodeID})
+		})
+}
+
+func newNodesCordonVerb() commands.Command {
+	return newNodesAdminVerb("cordon", "cordoned", "Cordon a node (no new placements, existing workloads stay)",
+		func(ctx context.Context, c *fleetly.Client, nodeID string) (proto.Message, error) {
+			return c.Nodes.CordonNode(ctx, &runtimev1.CordonNodeRequest{NodeId: nodeID})
+		})
+}
+
+func newNodesUncordonVerb() commands.Command {
+	return newNodesAdminVerb("uncordon", "uncordoned", "Uncordon a node (resume placements)",
+		func(ctx context.Context, c *fleetly.Client, nodeID string) (proto.Message, error) {
+			return c.Nodes.UncordonNode(ctx, &runtimev1.UncordonNodeRequest{NodeId: nodeID})
+		})
 }

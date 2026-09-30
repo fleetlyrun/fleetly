@@ -6,6 +6,8 @@ import (
 
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
+
+	"github.com/fleetlyrun/fleetly/internal/capability"
 )
 
 // Drain 实现 RuntimeAdmin 子面：节点排空（Availability=drain，存量按
@@ -50,7 +52,7 @@ func (p *Provider) findNodeByPlatformID(ctx context.Context, nodeID string) (*sw
 		return nil, fmt.Errorf("swarm node %s: list: %w", nodeID, err)
 	}
 	if len(res.Items) == 0 {
-		return nil, fmt.Errorf("swarm node %s: no swarm node carries this platform node id", nodeID)
+		return nil, fmt.Errorf("swarm node %s: no swarm node carries this platform node id: %w", nodeID, capability.ErrNodeNotFound)
 	}
 	return &res.Items[0], nil
 }

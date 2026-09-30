@@ -21,8 +21,11 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	NodesService_ListNodes_FullMethodName  = "/fleetly.runtime.v1.NodesService/ListNodes"
-	NodesService_EnrollNode_FullMethodName = "/fleetly.runtime.v1.NodesService/EnrollNode"
+	NodesService_ListNodes_FullMethodName    = "/fleetly.runtime.v1.NodesService/ListNodes"
+	NodesService_EnrollNode_FullMethodName   = "/fleetly.runtime.v1.NodesService/EnrollNode"
+	NodesService_DrainNode_FullMethodName    = "/fleetly.runtime.v1.NodesService/DrainNode"
+	NodesService_CordonNode_FullMethodName   = "/fleetly.runtime.v1.NodesService/CordonNode"
+	NodesService_UncordonNode_FullMethodName = "/fleetly.runtime.v1.NodesService/UncordonNode"
 )
 
 // NodesServiceClient is the client API for NodesService service.
@@ -32,6 +35,11 @@ type NodesServiceClient interface {
 	ListNodes(ctx context.Context, in *ListNodesRequest, opts ...grpc.CallOption) (*ListNodesResponse, error)
 	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。
 	EnrollNode(ctx context.Context, in *EnrollNodeRequest, opts ...grpc.CallOption) (*EnrollNodeResponse, error)
+	// 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
+	// 调度控制走 nodes write 档（加入材料敏感，EnrollNode 保持 admin 档）。
+	DrainNode(ctx context.Context, in *DrainNodeRequest, opts ...grpc.CallOption) (*DrainNodeResponse, error)
+	CordonNode(ctx context.Context, in *CordonNodeRequest, opts ...grpc.CallOption) (*CordonNodeResponse, error)
+	UncordonNode(ctx context.Context, in *UncordonNodeRequest, opts ...grpc.CallOption) (*UncordonNodeResponse, error)
 }
 
 type nodesServiceClient struct {
@@ -62,6 +70,36 @@ func (c *nodesServiceClient) EnrollNode(ctx context.Context, in *EnrollNodeReque
 	return out, nil
 }
 
+func (c *nodesServiceClient) DrainNode(ctx context.Context, in *DrainNodeRequest, opts ...grpc.CallOption) (*DrainNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DrainNodeResponse)
+	err := c.cc.Invoke(ctx, NodesService_DrainNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodesServiceClient) CordonNode(ctx context.Context, in *CordonNodeRequest, opts ...grpc.CallOption) (*CordonNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CordonNodeResponse)
+	err := c.cc.Invoke(ctx, NodesService_CordonNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *nodesServiceClient) UncordonNode(ctx context.Context, in *UncordonNodeRequest, opts ...grpc.CallOption) (*UncordonNodeResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UncordonNodeResponse)
+	err := c.cc.Invoke(ctx, NodesService_UncordonNode_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NodesServiceServer is the server API for NodesService service.
 // All implementations must embed UnimplementedNodesServiceServer
 // for forward compatibility.
@@ -69,6 +107,11 @@ type NodesServiceServer interface {
 	ListNodes(context.Context, *ListNodesRequest) (*ListNodesResponse, error)
 	// EnrollNode 输出工作节点加入材料（F0.20：节点零平台安装物）。
 	EnrollNode(context.Context, *EnrollNodeRequest) (*EnrollNodeResponse, error)
+	// 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
+	// 调度控制走 nodes write 档（加入材料敏感，EnrollNode 保持 admin 档）。
+	DrainNode(context.Context, *DrainNodeRequest) (*DrainNodeResponse, error)
+	CordonNode(context.Context, *CordonNodeRequest) (*CordonNodeResponse, error)
+	UncordonNode(context.Context, *UncordonNodeRequest) (*UncordonNodeResponse, error)
 	mustEmbedUnimplementedNodesServiceServer()
 }
 
@@ -84,6 +127,15 @@ func (UnimplementedNodesServiceServer) ListNodes(context.Context, *ListNodesRequ
 }
 func (UnimplementedNodesServiceServer) EnrollNode(context.Context, *EnrollNodeRequest) (*EnrollNodeResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method EnrollNode not implemented")
+}
+func (UnimplementedNodesServiceServer) DrainNode(context.Context, *DrainNodeRequest) (*DrainNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DrainNode not implemented")
+}
+func (UnimplementedNodesServiceServer) CordonNode(context.Context, *CordonNodeRequest) (*CordonNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CordonNode not implemented")
+}
+func (UnimplementedNodesServiceServer) UncordonNode(context.Context, *UncordonNodeRequest) (*UncordonNodeResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method UncordonNode not implemented")
 }
 func (UnimplementedNodesServiceServer) mustEmbedUnimplementedNodesServiceServer() {}
 func (UnimplementedNodesServiceServer) testEmbeddedByValue()                      {}
@@ -142,6 +194,60 @@ func _NodesService_EnrollNode_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NodesService_DrainNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DrainNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodesServiceServer).DrainNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodesService_DrainNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodesServiceServer).DrainNode(ctx, req.(*DrainNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodesService_CordonNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CordonNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodesServiceServer).CordonNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodesService_CordonNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodesServiceServer).CordonNode(ctx, req.(*CordonNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NodesService_UncordonNode_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UncordonNodeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NodesServiceServer).UncordonNode(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NodesService_UncordonNode_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NodesServiceServer).UncordonNode(ctx, req.(*UncordonNodeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NodesService_ServiceDesc is the grpc.ServiceDesc for NodesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -156,6 +262,18 @@ var NodesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "EnrollNode",
 			Handler:    _NodesService_EnrollNode_Handler,
+		},
+		{
+			MethodName: "DrainNode",
+			Handler:    _NodesService_DrainNode_Handler,
+		},
+		{
+			MethodName: "CordonNode",
+			Handler:    _NodesService_CordonNode_Handler,
+		},
+		{
+			MethodName: "UncordonNode",
+			Handler:    _NodesService_UncordonNode_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

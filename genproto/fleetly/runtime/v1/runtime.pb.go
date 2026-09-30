@@ -280,6 +280,248 @@ func (x *EnrollNodeResponse) GetJoinCommand() string {
 	return ""
 }
 
+// 节点运维动词以平台节点 ID 为锚（响应无数据面：结果即动作本身）。
+type DrainNodeRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// node_id 是平台节点 ID（永不复用）。
+	NodeId        string `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DrainNodeRequest) Reset() {
+	*x = DrainNodeRequest{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DrainNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DrainNodeRequest) ProtoMessage() {}
+
+func (x *DrainNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DrainNodeRequest.ProtoReflect.Descriptor instead.
+func (*DrainNodeRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *DrainNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type DrainNodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DrainNodeResponse) Reset() {
+	*x = DrainNodeResponse{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DrainNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DrainNodeResponse) ProtoMessage() {}
+
+func (x *DrainNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DrainNodeResponse.ProtoReflect.Descriptor instead.
+func (*DrainNodeResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{6}
+}
+
+type CordonNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CordonNodeRequest) Reset() {
+	*x = CordonNodeRequest{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CordonNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CordonNodeRequest) ProtoMessage() {}
+
+func (x *CordonNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CordonNodeRequest.ProtoReflect.Descriptor instead.
+func (*CordonNodeRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *CordonNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type CordonNodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CordonNodeResponse) Reset() {
+	*x = CordonNodeResponse{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CordonNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CordonNodeResponse) ProtoMessage() {}
+
+func (x *CordonNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CordonNodeResponse.ProtoReflect.Descriptor instead.
+func (*CordonNodeResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{8}
+}
+
+type UncordonNodeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	NodeId        string                 `protobuf:"bytes,1,opt,name=node_id,json=nodeId,proto3" json:"node_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UncordonNodeRequest) Reset() {
+	*x = UncordonNodeRequest{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UncordonNodeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UncordonNodeRequest) ProtoMessage() {}
+
+func (x *UncordonNodeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UncordonNodeRequest.ProtoReflect.Descriptor instead.
+func (*UncordonNodeRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *UncordonNodeRequest) GetNodeId() string {
+	if x != nil {
+		return x.NodeId
+	}
+	return ""
+}
+
+type UncordonNodeResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *UncordonNodeResponse) Reset() {
+	*x = UncordonNodeResponse{}
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *UncordonNodeResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*UncordonNodeResponse) ProtoMessage() {}
+
+func (x *UncordonNodeResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_runtime_v1_runtime_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use UncordonNodeResponse.ProtoReflect.Descriptor instead.
+func (*UncordonNodeResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{10}
+}
+
 var File_fleetly_runtime_v1_runtime_proto protoreflect.FileDescriptor
 
 const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
@@ -301,13 +543,29 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"\x13\n" +
 	"\x11EnrollNodeRequest\"7\n" +
 	"\x12EnrollNodeResponse\x12!\n" +
-	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand2\xa0\x02\n" +
+	"\fjoin_command\x18\x01 \x01(\tR\vjoinCommand\"+\n" +
+	"\x10DrainNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x13\n" +
+	"\x11DrainNodeResponse\",\n" +
+	"\x11CordonNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x14\n" +
+	"\x12CordonNodeResponse\".\n" +
+	"\x13UncordonNodeRequest\x12\x17\n" +
+	"\anode_id\x18\x01 \x01(\tR\x06nodeId\"\x16\n" +
+	"\x14UncordonNodeResponse2\xe6\x05\n" +
 	"\fNodesService\x12|\n" +
 	"\tListNodes\x12$.fleetly.runtime.v1.ListNodesRequest\x1a%.fleetly.runtime.v1.ListNodesResponse\"\"\xea\xc4\x19\r\b\x03\"\t\n" +
 	"\x05nodes\x10\x01\x82\xd3\xe4\x93\x02\v\x12\t/v1/nodes\x12\x89\x01\n" +
 	"\n" +
 	"EnrollNode\x12%.fleetly.runtime.v1.EnrollNodeRequest\x1a&.fleetly.runtime.v1.EnrollNodeResponse\",\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05nodes\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
+	"\x05nodes\x10\x03\x82\xd3\xe4\x93\x02\x15:\x01*\"\x10/v1/nodes/enroll\x12\x8f\x01\n" +
+	"\tDrainNode\x12$.fleetly.runtime.v1.DrainNodeRequest\x1a%.fleetly.runtime.v1.DrainNodeResponse\"5\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05nodes\x10\x02\x82\xd3\xe4\x93\x02\x1e:\x01*\"\x19/v1/nodes/{node_id}/drain\x12\x93\x01\n" +
+	"\n" +
+	"CordonNode\x12%.fleetly.runtime.v1.CordonNodeRequest\x1a&.fleetly.runtime.v1.CordonNodeResponse\"6\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05nodes\x10\x02\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/nodes/{node_id}/cordon\x12\x9b\x01\n" +
+	"\fUncordonNode\x12'.fleetly.runtime.v1.UncordonNodeRequest\x1a(.fleetly.runtime.v1.UncordonNodeResponse\"8\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05nodes\x10\x02\x82\xd3\xe4\x93\x02!:\x01*\"\x1c/v1/nodes/{node_id}/uncordon\x1a\x06\xf2\xc4\x19\x02\b\x03B\x9a\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZCgithub.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1;runtimev1b\x06proto3"
@@ -324,25 +582,37 @@ func file_fleetly_runtime_v1_runtime_proto_rawDescGZIP() []byte {
 	return file_fleetly_runtime_v1_runtime_proto_rawDescData
 }
 
-var file_fleetly_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_fleetly_runtime_v1_runtime_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_fleetly_runtime_v1_runtime_proto_goTypes = []any{
-	(*Node)(nil),               // 0: fleetly.runtime.v1.Node
-	(*ListNodesRequest)(nil),   // 1: fleetly.runtime.v1.ListNodesRequest
-	(*ListNodesResponse)(nil),  // 2: fleetly.runtime.v1.ListNodesResponse
-	(*EnrollNodeRequest)(nil),  // 3: fleetly.runtime.v1.EnrollNodeRequest
-	(*EnrollNodeResponse)(nil), // 4: fleetly.runtime.v1.EnrollNodeResponse
+	(*Node)(nil),                 // 0: fleetly.runtime.v1.Node
+	(*ListNodesRequest)(nil),     // 1: fleetly.runtime.v1.ListNodesRequest
+	(*ListNodesResponse)(nil),    // 2: fleetly.runtime.v1.ListNodesResponse
+	(*EnrollNodeRequest)(nil),    // 3: fleetly.runtime.v1.EnrollNodeRequest
+	(*EnrollNodeResponse)(nil),   // 4: fleetly.runtime.v1.EnrollNodeResponse
+	(*DrainNodeRequest)(nil),     // 5: fleetly.runtime.v1.DrainNodeRequest
+	(*DrainNodeResponse)(nil),    // 6: fleetly.runtime.v1.DrainNodeResponse
+	(*CordonNodeRequest)(nil),    // 7: fleetly.runtime.v1.CordonNodeRequest
+	(*CordonNodeResponse)(nil),   // 8: fleetly.runtime.v1.CordonNodeResponse
+	(*UncordonNodeRequest)(nil),  // 9: fleetly.runtime.v1.UncordonNodeRequest
+	(*UncordonNodeResponse)(nil), // 10: fleetly.runtime.v1.UncordonNodeResponse
 }
 var file_fleetly_runtime_v1_runtime_proto_depIdxs = []int32{
-	0, // 0: fleetly.runtime.v1.ListNodesResponse.nodes:type_name -> fleetly.runtime.v1.Node
-	1, // 1: fleetly.runtime.v1.NodesService.ListNodes:input_type -> fleetly.runtime.v1.ListNodesRequest
-	3, // 2: fleetly.runtime.v1.NodesService.EnrollNode:input_type -> fleetly.runtime.v1.EnrollNodeRequest
-	2, // 3: fleetly.runtime.v1.NodesService.ListNodes:output_type -> fleetly.runtime.v1.ListNodesResponse
-	4, // 4: fleetly.runtime.v1.NodesService.EnrollNode:output_type -> fleetly.runtime.v1.EnrollNodeResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0,  // 0: fleetly.runtime.v1.ListNodesResponse.nodes:type_name -> fleetly.runtime.v1.Node
+	1,  // 1: fleetly.runtime.v1.NodesService.ListNodes:input_type -> fleetly.runtime.v1.ListNodesRequest
+	3,  // 2: fleetly.runtime.v1.NodesService.EnrollNode:input_type -> fleetly.runtime.v1.EnrollNodeRequest
+	5,  // 3: fleetly.runtime.v1.NodesService.DrainNode:input_type -> fleetly.runtime.v1.DrainNodeRequest
+	7,  // 4: fleetly.runtime.v1.NodesService.CordonNode:input_type -> fleetly.runtime.v1.CordonNodeRequest
+	9,  // 5: fleetly.runtime.v1.NodesService.UncordonNode:input_type -> fleetly.runtime.v1.UncordonNodeRequest
+	2,  // 6: fleetly.runtime.v1.NodesService.ListNodes:output_type -> fleetly.runtime.v1.ListNodesResponse
+	4,  // 7: fleetly.runtime.v1.NodesService.EnrollNode:output_type -> fleetly.runtime.v1.EnrollNodeResponse
+	6,  // 8: fleetly.runtime.v1.NodesService.DrainNode:output_type -> fleetly.runtime.v1.DrainNodeResponse
+	8,  // 9: fleetly.runtime.v1.NodesService.CordonNode:output_type -> fleetly.runtime.v1.CordonNodeResponse
+	10, // 10: fleetly.runtime.v1.NodesService.UncordonNode:output_type -> fleetly.runtime.v1.UncordonNodeResponse
+	6,  // [6:11] is the sub-list for method output_type
+	1,  // [1:6] is the sub-list for method input_type
+	1,  // [1:1] is the sub-list for extension type_name
+	1,  // [1:1] is the sub-list for extension extendee
+	0,  // [0:1] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_runtime_v1_runtime_proto_init() }
@@ -356,7 +626,7 @@ func file_fleetly_runtime_v1_runtime_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_runtime_v1_runtime_proto_rawDesc), len(file_fleetly_runtime_v1_runtime_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

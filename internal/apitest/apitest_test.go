@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
@@ -124,4 +125,68 @@ func TestNodesAndEnroll(t *testing.T) {
 		list, err := nodes.ListNodes(ctx, &runtimev1.ListNodesRequest{})
 		return err == nil && len(list.GetNodes()) > 0
 	}, 3e9, 2e7)
+}
+
+// TestNodesAdminVerb 覆盖 RuntimeAdmin 三动词的服务面（F0.19）：锚点校验、
+// 哨兵错误映射、子面调用记录与审计行（结果即动作本身）。
+func TestNodesAdminVerb(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）
+	nodes := runtimev1.NewNodesServiceClient(h.Conn)
+	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
+
+	// 空锚点在服务面即拒（E_INVALID_ARGUMENT）。
+	_, err := nodes.DrainNode(ctx, &runtimev1.DrainNodeRequest{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "node_id")
+
+	// Provider 哨兵映射 E_NOT_FOUND（对不上任何载体节点）。
+	h.Runtime.SetAdminErr(capability.ErrNodeNotFound)
+	missing := "01JMISSING0000000000000000"
+	_, err = nodes.CordonNode(ctx, &runtimev1.CordonNodeRequest{NodeId: missing})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not found")
+
+	// 三动词 happy path：子面记录 + 审计行（bufconn 直连无 CLI 自标识头，
+	// source=api；CLI 走 x-fleetly-client=cli 呈现 cli）。
+	h.Runtime.SetAdminErr(nil)
+	nodeID := "01JD0NODE00000000000000000"
+	for _, r := range []struct {
+		name string
+		call func() error
+	}{
+		{"drain", func() error {
+			_, err := nodes.DrainNode(ctx, &runtimev1.DrainNodeRequest{NodeId: nodeID})
+			return err
+		}},
+		{"cordon", func() error {
+			_, err := nodes.CordonNode(ctx, &runtimev1.CordonNodeRequest{NodeId: nodeID})
+			return err
+		}},
+		{"uncordon", func() error {
+			_, err := nodes.UncordonNode(ctx, &runtimev1.UncordonNodeRequest{NodeId: nodeID})
+			return err
+		}},
+	} {
+		require.NoError(t, r.call(), "%s must succeed", r.name)
+	}
+
+	calls := h.Runtime.AdminCalls()
+	require.Len(t, calls, 4, "failed attempt is recorded too")
+	assert.Equal(t, "cordon", calls[0].Verb)
+	assert.Equal(t, missing, calls[0].NodeID)
+	assert.Equal(t, []string{"drain", "cordon", "uncordon"},
+		[]string{calls[1].Verb, calls[2].Verb, calls[3].Verb})
+	assert.Equal(t, nodeID, calls[1].NodeID)
+
+	entries, err := auditq.ListAudit(ctx, &identityv1.ListAuditRequest{Action: "node.", Limit: 100})
+	require.NoError(t, err)
+	var actions []string
+	for _, e := range entries.GetEntries() {
+		assert.Equal(t, "api", e.GetSource(), "bufconn dial carries no cli self-identification header")
+		actions = append(actions, e.GetAction())
+	}
+	// 审计列表新→旧（ORDER BY id DESC），同拍 ULID 次序不作断言。
+	assert.ElementsMatch(t, []string{"node.drain", "node.cordon", "node.uncordon"}, actions,
+		"exactly the three successful verbs leave audit rows")
 }

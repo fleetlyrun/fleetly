@@ -37,6 +37,29 @@ service NodesService {
       api_key_scope: { resource: "nodes" op: SCOPE_OP_ADMIN }
     };
   }
+  // 节点运维三动词（F0.19 RuntimeAdmin 面）：平台节点 ID 为锚；可逆的
+  // 调度控制走 nodes write 档（加入材料敏感，EnrollNode 保持 admin 档）。
+  rpc DrainNode(DrainNodeRequest) returns (DrainNodeResponse) {
+    option (google.api.http) = { post: "/v1/nodes/{node_id}/drain" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "nodes" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc CordonNode(CordonNodeRequest) returns (CordonNodeResponse) {
+    option (google.api.http) = { post: "/v1/nodes/{node_id}/cordon" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "nodes" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc UncordonNode(UncordonNodeRequest) returns (UncordonNodeResponse) {
+    option (google.api.http) = { post: "/v1/nodes/{node_id}/uncordon" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "nodes" op: SCOPE_OP_WRITE }
+    };
+  }
 }
 
 // Node 是观测缓存行（非权威；节点 ID 永不复用）。
@@ -57,3 +80,18 @@ message EnrollNodeResponse {
   // join_command 是工作节点完整加入命令（swarm join 形态）。
   string join_command = 1;
 }
+
+// 节点运维动词以平台节点 ID 为锚（响应无数据面：结果即动作本身）。
+message DrainNodeRequest {
+  // node_id 是平台节点 ID（永不复用）。
+  string node_id = 1;
+}
+message DrainNodeResponse {}
+message CordonNodeRequest {
+  string node_id = 1;
+}
+message CordonNodeResponse {}
+message UncordonNodeRequest {
+  string node_id = 1;
+}
+message UncordonNodeResponse {}

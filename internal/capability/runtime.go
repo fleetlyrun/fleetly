@@ -2,6 +2,7 @@ package capability
 
 import (
 	"context"
+	"errors"
 	"time"
 )
 
@@ -58,6 +59,10 @@ type RuntimeAdmin interface {
 	// Uncordon 解除封锁。
 	Uncordon(ctx context.Context, nodeID string) error
 }
+
+// ErrNodeNotFound 是 RuntimeAdmin 子面哨兵：平台节点 ID 对不上任何载体
+// 节点。Provider 返回时 wrap 本哨兵，API 面映射 E_NOT_FOUND。
+var ErrNodeNotFound = errors.New("node not found")
 
 // Generation 是某次已下发 Spec 的单调编号（幂等与 Drift 判定的锚，
 // CONTEXT.md Generation 词条）。

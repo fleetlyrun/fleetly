@@ -149,9 +149,17 @@ func dialBufconn(t testing.TB, l *bufconn.Listener) *grpc.ClientConn {
 
 // FakeRuntime 是假 Runtime 底座（Ensure 记录、观测事件由测试注入）。
 type FakeRuntime struct {
-	mu      sync.Mutex
-	ensures []EnsureCall
-	obs     chan capability.WorkloadEvent
+	mu       sync.Mutex
+	ensures  []EnsureCall
+	adminErr error // RuntimeAdmin 动词注入错误（SetAdminErr 设置）
+	adminOps []AdminCall
+	obs      chan capability.WorkloadEvent
+}
+
+// AdminCall 是一次 RuntimeAdmin 动词记录。
+type AdminCall struct {
+	Verb   string // drain | cordon | uncordon
+	NodeID string
 }
 
 // EnsureCall 是一次 Ensure 记录。
@@ -207,6 +215,45 @@ func (f *FakeRuntime) Calls() []EnsureCall {
 	out := make([]EnsureCall, len(f.ensures))
 	copy(out, f.ensures)
 	return out
+}
+
+// SetAdminErr 注入 RuntimeAdmin 动词错误（测错误映射；调用前设置）。
+func (f *FakeRuntime) SetAdminErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.adminErr = err
+}
+
+// AdminCalls 返回 RuntimeAdmin 动词记录快照。
+func (f *FakeRuntime) AdminCalls() []AdminCall {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]AdminCall, len(f.adminOps))
+	copy(out, f.adminOps)
+	return out
+}
+
+// recordAdmin 记录并返回注入错误（RuntimeAdmin 子面）。
+func (f *FakeRuntime) recordAdmin(verb, nodeID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.adminOps = append(f.adminOps, AdminCall{Verb: verb, NodeID: nodeID})
+	return f.adminErr
+}
+
+// Drain 实现 RuntimeAdmin 子面。
+func (f *FakeRuntime) Drain(_ context.Context, nodeID string) error {
+	return f.recordAdmin("drain", nodeID)
+}
+
+// Cordon 实现 RuntimeAdmin 子面。
+func (f *FakeRuntime) Cordon(_ context.Context, nodeID string) error {
+	return f.recordAdmin("cordon", nodeID)
+}
+
+// Uncordon 实现 RuntimeAdmin 子面。
+func (f *FakeRuntime) Uncordon(_ context.Context, nodeID string) error {
+	return f.recordAdmin("uncordon", nodeID)
 }
 
 // ReportRunning 注入 running 观测。
@@ -265,7 +312,8 @@ func (f *FakeBuilder) Calls() []capability.BuildRequest {
 }
 
 var (
-	_ capability.Runtime     = (*FakeRuntime)(nil)
-	_ capability.RuntimeLogs = (*FakeRuntime)(nil)
-	_ capability.Builder     = (*FakeBuilder)(nil)
+	_ capability.Runtime      = (*FakeRuntime)(nil)
+	_ capability.RuntimeLogs  = (*FakeRuntime)(nil)
+	_ capability.RuntimeAdmin = (*FakeRuntime)(nil)
+	_ capability.Builder      = (*FakeBuilder)(nil)
 )

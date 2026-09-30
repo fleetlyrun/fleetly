@@ -1,4 +1,7 @@
 [
+  "cordon",
+  "drain",
   "enroll",
-  "list"
+  "list",
+  "uncordon"
 ]
