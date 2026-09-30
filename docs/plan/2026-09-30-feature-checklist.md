@@ -25,7 +25,7 @@
 - F0.10 [x] Deployment 状态机（preparing→building→releasing→observing→succeeded|failed|rolling-back→superseded）+ admission 队列：同幂等键/commit 去重、latest-wins、显式 supersede、queue_full 反馈、排队与在途可取消。
 - F0.11 [x] 回滚 = Revision Replay 一等动词（`fleetly rollback`）+ Revision diff（`fleetly revisions diff R1 R2`）。
 - F0.12 健康门与优雅退出：http/tcp/exec 探针 + L1 门 + L2 看门狗 + L3 观察窗（60s 默认）；SIGTERM 宽限；被杀后按 Generation 幂等重放（场景 1/2 回归）。
-- F0.13 Git 触发：per-App 通用部署 Token URL（可再生成、token 不进 URL 路径段日志）+ GitHub 原生 webhook（push 自动部署、`[skip deploy]`、watchPaths monorepo 过滤、HMAC 验签+delivery 去重）。
+- F0.13 [x] Git 触发：per-App 通用部署 Token URL（可再生成、token 不进 URL 路径段日志）+ GitHub 原生 webhook（push 自动部署、`[skip deploy]`、watchPaths monorepo 过滤、HMAC 验签+delivery 去重）。
 
 **网络与路由**
 - F0.14 [x] per-Project overlay；跨 Project 默认隔离；`egress:none` 声明（swarm v1 弱隔离，明示）。

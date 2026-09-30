@@ -30,12 +30,14 @@ import (
 
 // Harness 是进程内全链夹具。
 type Harness struct {
-	DB      *state.DB
-	Engine  *engine.Engine
-	Runtime *FakeRuntime
-	Clock   *statetest.FakeClock
-	Conn    *grpc.ClientConn // bufconn 连接（类型化客户端的底座）
-	Token   string           // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
+	DB       *state.DB
+	Engine   *engine.Engine
+	Runtime  *FakeRuntime
+	Builder  *FakeBuilder
+	Clock    *statetest.FakeClock
+	Conn     *grpc.ClientConn // bufconn 连接（类型化客户端的底座）
+	Token    string           // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
+	DataRoot string           // 数据根（构建上下文预置等夹具操作用）
 
 	listener *bufconn.Listener
 	server   *grpc.Server
@@ -77,8 +79,13 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 		t.Fatalf("apitest: master key: %v", err)
 	}
 	rt := &FakeRuntime{obs: make(chan capability.WorkloadEvent, 64)}
+	fb := &FakeBuilder{}
 	log := slog.New(slog.DiscardHandler)
-	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher, Logger: log}, engine.Options{})
+	dataRoot := t.TempDir()
+	// 假 Builder + 数据根：git 触发链的 building→releasing 推进底座
+	//（检出目录由测试预置跳过真实 clone）。
+	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher, Builder: fb, Logger: log},
+		engine.Options{DataRoot: dataRoot})
 	if autostart {
 		eng.Start(ctx)
 		t.Cleanup(func() { _ = eng.Stop(ctx) })
@@ -90,7 +97,6 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	// 身份面与生产同源：首启流（种子 + bootstrap Token）→ 执法链
 	//（policy + authn 拦截器）→ fail-closed 断言。夹具不经 lynx，但执法
 	// 链必须与 NewGRPCServer 同构，否则测试面与生产面漂移。
-	dataRoot := t.TempDir()
 	boot, err := authn.EnsureBootstrapToken(ctx, db, dataRoot, assembly.ScopeResources(), log)
 	if err != nil {
 		t.Fatalf("apitest: bootstrap: %v", err)
@@ -119,9 +125,8 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	t.Cleanup(srv.Stop)
 
 	return &Harness{
-		DB: db, Engine: eng, Runtime: rt, Clock: clock,
-		Conn:     dialBufconn(t, listener),
-		Token:    boot.Secret,
+		DB: db, Engine: eng, Runtime: rt, Builder: fb, Clock: clock,
+		Conn: dialBufconn(t, listener), Token: boot.Secret, DataRoot: dataRoot,
 		listener: listener, server: srv,
 	}
 }
@@ -225,7 +230,42 @@ func (f *FakeRuntime) StreamLogs(_ context.Context, q capability.LogQuery, w cap
 	return nil
 }
 
+// FakeBuilder 是假构建底座（git 触发链的 building 推进用；digest 固定、
+// 记录调用）。构建上下文由测试预置（跳过真实 clone）。
+type FakeBuilder struct {
+	mu    sync.Mutex
+	calls []capability.BuildRequest
+}
+
+// FakeBuildDigest 是假构建产物 digest。
+const FakeBuildDigest = "sha256:apitest-built"
+
+func (f *FakeBuilder) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "apitest-builder", Capability: capability.KindBuilder, Version: "test"}
+}
+
+func (f *FakeBuilder) Health(context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+
+func (f *FakeBuilder) Build(_ context.Context, req capability.BuildRequest, _ capability.LogWriter) (capability.BuildResult, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, req)
+	f.mu.Unlock()
+	return capability.BuildResult{Digest: FakeBuildDigest}, nil
+}
+
+// Calls 返回构建调用记录快照。
+func (f *FakeBuilder) Calls() []capability.BuildRequest {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]capability.BuildRequest, len(f.calls))
+	copy(out, f.calls)
+	return out
+}
+
 var (
 	_ capability.Runtime     = (*FakeRuntime)(nil)
 	_ capability.RuntimeLogs = (*FakeRuntime)(nil)
+	_ capability.Builder     = (*FakeBuilder)(nil)
 )

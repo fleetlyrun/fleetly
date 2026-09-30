@@ -56,13 +56,15 @@ func HashToken(secret string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// TokenKind 报告明文的前缀归属（platform/invitation/unknown）。
+// TokenKind 报告明文的前缀归属（platform/invitation/hook/unknown）。
 func TokenKind(secret string) string {
 	switch {
 	case strings.HasPrefix(secret, TokenPrefix):
 		return "platform"
 	case strings.HasPrefix(secret, InvitationPrefix):
 		return "invitation"
+	case strings.HasPrefix(secret, HookPrefix):
+		return "hook"
 	default:
 		return "unknown"
 	}
