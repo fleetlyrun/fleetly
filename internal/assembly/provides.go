@@ -1,6 +1,9 @@
 package assembly
 
 import (
+	"context"
+	"path/filepath"
+
 	"github.com/google/wire"
 	"github.com/lynx-go/lynx"
 	"github.com/lynx-go/lynx/boot"
@@ -9,6 +12,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 //go:generate go run -mod=mod github.com/google/wire/cmd/wire
@@ -20,6 +24,7 @@ var ProviderSet = wire.NewSet(
 	boot.New,
 	NewAppConfig,
 	NewPolicySet,
+	NewStateDB,
 	systemgrpc.New,
 	NewGRPCServer,
 	NewGatewayServer,
@@ -30,6 +35,17 @@ var ProviderSet = wire.NewSet(
 	NewPreStopHooks,
 	NewPostStopHooks,
 )
+
+// NewStateDB 打开数据根下的控制面库（WAL + goose 前滚迁移在 Open 内完成；
+// 关闭经 wire cleanup 聚合到 OnPostStop）。engine/API 批次按聚合 repo 消费。
+func NewStateDB(app lynx.App, cfg *config.AppConfig) (*state.DB, func(), error) {
+	db, err := state.Open(context.Background(), filepath.Join(cfg.DataRoot(), "fleetly.db"), state.WallClock())
+	if err != nil {
+		return nil, nil, err
+	}
+	app.Logger().Info("state store opened", "path", cfg.DataRoot(), "driver", "sqlite", "mode", "wal")
+	return db, func() { _ = db.Close() }, nil
+}
 
 // NewAppConfig 从 lynx 配置源解码 AppConfig 并应用缺省。
 func NewAppConfig(app lynx.App) (*config.AppConfig, error) {

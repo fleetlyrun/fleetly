@@ -39,9 +39,30 @@ func TestMustRegisterRejects(t *testing.T) {
 	assert.Panics(t, func() { r.MustRegister(Event{Name: "a.b", Source: "s"}) })
 }
 
-// 链 C：usage 反扫（与 errcode 同构）。N0 骨架期事件集为空，此测试守
-// 住"入册即必须被引用"的纪律，随部署链首批事件生效。
-var eventExemptions = map[string]string{}
+// 链 C：usage 反扫（与 errcode 同构）。首批事件随 state 批次入册（Outbox
+// 落库为首个消费方），发射点随 engine admission/构建批次接入——落地后
+// 移除对应豁免条目（豁免条目必须带理由且必须仍在册，双向保鲜）。
+var eventExemptions = map[string]string{
+	"deployment.queued":       "engine admission batch lands the emitting call site",
+	"deployment.preparing":    "engine admission batch lands the emitting call site",
+	"deployment.building":     "engine admission batch lands the emitting call site",
+	"deployment.releasing":    "engine admission batch lands the emitting call site",
+	"deployment.observing":    "engine admission batch lands the emitting call site",
+	"deployment.succeeded":    "engine admission batch lands the emitting call site",
+	"deployment.failed":       "engine admission batch lands the emitting call site",
+	"deployment.rolling_back": "engine admission batch lands the emitting call site",
+	"deployment.superseded":   "engine admission batch lands the emitting call site",
+	"deployment.cancelled":    "engine admission batch lands the emitting call site",
+	"build.queued":            "build engine batch lands the emitting call site",
+	"build.building":          "build engine batch lands the emitting call site",
+	"build.succeeded":         "build engine batch lands the emitting call site",
+	"build.failed":            "build engine batch lands the emitting call site",
+	"build.cancelled":         "build engine batch lands the emitting call site",
+	"build.expired":           "build engine batch lands the emitting call site",
+	"node.joined":             "engine watch batch lands the emitting call site",
+	"node.left":               "engine watch batch lands the emitting call site",
+	"workload.drift_detected": "engine watch batch lands the emitting call site",
+}
 
 func TestRegistryEventsReferencedInProduction(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)

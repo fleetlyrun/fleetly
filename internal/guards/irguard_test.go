@@ -10,7 +10,7 @@ import (
 )
 
 // irOrchestratorTokens 是 IR（proto/fleetly/spec/**）禁用的编排器语义词
-//（架构 §4：IR 不含编排器 label、载体命名、约束语法、namespace、探针的
+// （架构 §4：IR 不含编排器 label、载体命名、约束语法、namespace、探针的
 // 编排器方言；平台自有实体名如 Task/TaskSpec 不在此列）。
 var irOrchestratorTokens = []string{
 	"service", "pod", "label", "selector", "unit",
@@ -21,7 +21,7 @@ var irOrchestratorTokens = []string{
 var irTokenRe = regexp.MustCompile(`(?i)\b(` + strings.Join(irOrchestratorTokens, "|") + `)s?\b`)
 
 // TestSpecIRHasNoOrchestratorVocabulary：Spec IR 的 proto 源零编排器词汇
-//（注释亦不使用——IR 是运行时中立的唯一边界，ADR-0001）。
+// （注释亦不使用——IR 是运行时中立的唯一边界，ADR-0001）。
 func TestSpecIRHasNoOrchestratorVocabulary(t *testing.T) {
 	root := repoRoot(t)
 	var hits []string

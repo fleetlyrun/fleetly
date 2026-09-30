@@ -1,0 +1,19 @@
+build.building	Build started executing.	added during implementation
+build.cancelled	Build cancelled.	added during implementation
+build.expired	Build expired by timeout watchdog.	added during implementation
+build.failed	Build failed.	added during implementation
+build.queued	Build accepted into build queue.	added during implementation
+build.succeeded	Build produced an image digest.	added during implementation
+deployment.building	Deployment entered build stage.	added during implementation
+deployment.cancelled	Deployment cancelled while queued or in flight.	added during implementation
+deployment.failed	Deployment reached failed terminal state.	added during implementation
+deployment.observing	Deployment entered health observation window.	added during implementation
+deployment.preparing	Deployment started preparing spec and materials.	added during implementation
+deployment.queued	Deployment accepted by admission queue.	added during implementation
+deployment.releasing	Deployment started releasing workloads to runtime.	added during implementation
+deployment.rolling_back	Deployment started replaying last successful revision.	added during implementation
+deployment.succeeded	Deployment reached succeeded terminal state.	added during implementation
+deployment.superseded	Deployment superseded by a newer one.	added during implementation
+node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
+node.left	Node left the cluster.	added during implementation
+workload.drift_detected	Observed workload state diverged from the ensured generation.	added during implementation
