@@ -113,6 +113,13 @@ type Engine struct {
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 
+	// managedGen 是受管域 Generation 实例态（C5：指纹/gen 不再是包级
+	// 全局——多 Engine 实例互不污染）。
+	managedGen managedGenState
+
+	// nodeLeftSeen 是 node.left 去抖实例态（C5：节点回归即清签名）。
+	nodeLeftSeen map[string]bool
+
 	// 构建面（F0.9）：Builder 端口、并发上限、构建输入登记与最近日志缓冲。
 	builder   capability.Builder
 	buildOpts buildOptions
@@ -185,6 +192,7 @@ func New(deps Deps, opts Options) *Engine {
 		buildLoop:    NewLoop("build", log),
 		managedLoop:  NewLoop("managed", log),
 		driftLoop:    NewLoop("drift", log),
+		nodeLeftSeen: map[string]bool{},
 		routes:       route.New(clock),
 		secrets:      secret.New(clock),
 		configs:      configrepo.New(clock),
@@ -228,11 +236,16 @@ func (e *Engine) Start(ctx context.Context) {
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	e.buildLoop.Kick()
 	e.managedLoop.Kick()
-	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环。
+	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环
+	//（Loop.Run 阻塞至 ctx 取消——与其他环同款 goroutine 形态）。
 	go func() {
 		e.rebuildBaselines(runCtx)
 	}()
-	e.driftScanLoop(runCtx)
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.driftScanLoop(runCtx)
+	}()
 }
 
 // StartWatch 只启动 Watch 消费（手动驱动形态配套：收敛循环不启动，观测

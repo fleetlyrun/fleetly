@@ -18,6 +18,11 @@ import (
 // Image 是受管 traefik 镜像（钉版；升级经 Platform 升级序，ADR-0015）。
 const Image = "traefik:v3.5.4"
 
+// acmeVolumeID 是受管 ACME 存储卷的平台 ID。fleetly- 前缀与用户 Volume
+// 名空间隔离（C5：用户卷名 "edge-acme" 不得撞上受管卷——载体名公式只按
+// VolumeID 拼，前缀即边界）。
+const acmeVolumeID = "fleetly-edge-acme"
+
 // Provider 是 traefik Edge Provider。
 type Provider struct {
 	// configEndpoint 是控制面 HTTP provider 拉取端点（受管实例的
@@ -138,7 +143,7 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 		},
 		Replicas: 1,
 		Volumes: []capability.VolumeMount{
-			{VolumeID: "fleetly-edge-acme", Target: "/acme"},
+			{VolumeID: acmeVolumeID, Target: "/acme"},
 		},
 	}}
 }

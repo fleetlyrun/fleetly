@@ -1,7 +1,9 @@
-last_seq=5
+last_seq=7
 SEQ	NAME	AGGREGATE	ID	CREATED
-1	deployment.queued	deployment	<ULID>	2026-01-01T00:00:00Z
-2	deployment.preparing	deployment	<ULID>	2026-01-01T00:00:00Z
-3	deployment.releasing	deployment	<ULID>	2026-01-01T00:00:00Z
-4	deployment.observing	deployment	<ULID>	2026-01-01T00:00:00Z
-5	deployment.succeeded	deployment	<ULID>	2026-01-01T00:02:00Z
+1	project.created	project	<ULID>	2026-01-01T00:00:00Z
+2	app.created	app	<ULID>	2026-01-01T00:00:00Z
+3	deployment.queued	deployment	<ULID>	2026-01-01T00:00:00Z
+4	deployment.preparing	deployment	<ULID>	2026-01-01T00:00:00Z
+5	deployment.releasing	deployment	<ULID>	2026-01-01T00:00:00Z
+6	deployment.observing	deployment	<ULID>	2026-01-01T00:00:00Z
+7	deployment.succeeded	deployment	<ULID>	2026-01-01T00:02:00Z

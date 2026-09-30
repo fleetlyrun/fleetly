@@ -99,7 +99,7 @@ func (e *Error) ToGRPCStatus() *status.Status {
 
 // Envelope 构造对外错误信封（errorID 为空时不落 error_id 键）。
 func (e *Error) Envelope(errorID string) *sharedv1.ErrorResponse {
-	env := &sharedv1.ErrorResponse{
+	envelope := &sharedv1.ErrorResponse{
 		Code:       e.code.ID,
 		Message:    e.message,
 		Suggestion: e.Suggestion(),
@@ -107,12 +107,12 @@ func (e *Error) Envelope(errorID string) *sharedv1.ErrorResponse {
 		Context:    make(map[string]string, len(e.context)+1),
 	}
 	for _, p := range e.context {
-		env.Context[p.Key] = p.Value
+		envelope.Context[p.Key] = p.Value
 	}
 	if errorID != "" {
-		env.Context["error_id"] = errorID
+		envelope.Context["error_id"] = errorID
 	}
-	return env
+	return envelope
 }
 
 // FromGRPCStatus 从 gRPC status 还原 *Error（无信封 detail 返回 false）。
@@ -168,13 +168,13 @@ func EnvelopeFromGRPCStatus(st *status.Status, errorID string) *sharedv1.ErrorRe
 	if e, ok := FromGRPCStatus(st); ok {
 		return e.Envelope(errorID)
 	}
-	env := &sharedv1.ErrorResponse{
+	envelope := &sharedv1.ErrorResponse{
 		Message: st.Message(),
 		Context: map[string]string{"error_id": errorID},
 	}
 	if st.Code() == codes.Internal || st.Code() == codes.Unknown {
-		env.Code = "E_INTERNAL" // 在册回落；其余机械 code 留空（诚实：无注册表语义）
-		env.Docs = errcode.DocsURL("E_INTERNAL")
+		envelope.Code = "E_INTERNAL" // 在册回落；其余机械 code 留空（诚实：无注册表语义）
+		envelope.Docs = errcode.DocsURL("E_INTERNAL")
 	}
-	return env
+	return envelope
 }

@@ -54,6 +54,10 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"pat":            regexp.MustCompile(`\bPAT\b`),
 	"vault entry":    wordRe(`vault[ _]entr(?:y|ies)`),
 	"password store": wordRe(`password[ _]store`),
+	// Invitation 词条（C4 入册）。
+	"signup link": wordRe(`signup[_ -]link|signup[_ -]links`),
+	"invite code": wordRe(`invite[_ -]code|invite[_ -]codes`),
+	"share link":  wordRe(`share[_ -]link|share[_ -]links`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。

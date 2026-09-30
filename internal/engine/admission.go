@@ -105,9 +105,13 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 
 		// 6. 受理落行 + 事件 + 审计。
+		baseline, err := e.lastDeployedRevision(ctx, tx, req.AppID)
+		if err != nil {
+			return err
+		}
 		d := &deployment.Deployment{
 			ID: newID, AppID: req.AppID,
-			FromRevision:   e.lastDeployedRevision(ctx, tx, req.AppID),
+			FromRevision:   baseline,
 			ToRevision:     req.RevisionID,
 			State:          deployment.StateQueued,
 			Generation:     gen,
@@ -162,28 +166,35 @@ func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment,
 }
 
 // lastDeployedRevision 返回 App 当前基线（最近一次终态成功的 to_revision；
-// 首次部署为空——回滚无对象，失败即终态，领域模型 §4）。
-func (e *Engine) lastDeployedRevision(ctx context.Context, tx *sql.Tx, appID string) string {
+// 首次部署为空——回滚无对象，失败即终态，领域模型 §4）。查询失败如实
+// 上抛（C5：吞错误按"首次"处理会在失败时缺回滚对象——错误面进不了
+// 事务，整单拒绝让调用方看到存储故障）。
+func (e *Engine) lastDeployedRevision(ctx context.Context, tx *sql.Tx, appID string) (string, error) {
 	rows, err := tx.QueryContext(ctx,
 		`SELECT to_revision FROM deployments WHERE app_id = ? AND state = 'succeeded'
 		 ORDER BY id DESC LIMIT 1`, appID)
 	if err != nil {
-		return "" // 基线解析失败按"首次"处理会在失败时缺少回滚对象——查不到即无成功基线
+		return "", fmt.Errorf("resolve baseline: %w", err)
 	}
 	defer rows.Close() //nolint:errcheck // 只读单行，关闭错误无处置面
 	if rows.Next() {
 		var rev string
-		if rows.Scan(&rev) == nil {
-			return rev
+		if err := rows.Scan(&rev); err != nil {
+			return "", fmt.Errorf("resolve baseline: %w", err)
 		}
+		return rev, nil
 	}
-	return ""
+	return "", nil
 }
 
 // transit 是四件一拍的组合点（状态 CAS + deployment.<state> 事件 + 审计；
 // 部署记录无 tombstone）。tx 由调用方事务传入。原地迁移（from 含 to，
 // 仅落 deadline/generation 等伴生字段）不发事件——事件是状态迁移的既成
 // 事实，状态未变不是迁移；审计照落。
+//
+// 审计 AfterFP（C5）：回放收口会把 to_revision 改写为实际运行的回放
+// 目标（终态事实修正）——该改写随审计指纹带出（"; to_revision=<id>"），
+// 消除"行上改了、审计看不见"的弯折。
 func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
 	if err := e.deployments.Transit(ctx, tx, d.ID, from, to, mut); err != nil {
 		return err
@@ -197,10 +208,14 @@ func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployme
 			return err
 		}
 	}
+	afterFP := string(fresh.State)
+	if fresh.ToRevision != d.ToRevision && fresh.ToRevision != "" {
+		afterFP = fmt.Sprintf("%s; to_revision=%s", fresh.State, fresh.ToRevision)
+	}
 	return e.audits.Append(ctx, tx, &audit.Entry{
 		ID: ulid.Make().String(), Source: audit.SourceSystem,
 		Action: "deployment.transit", Resource: "deployment/" + fresh.ID,
-		AfterFP: string(fresh.State),
+		AfterFP: afterFP,
 	})
 }
 

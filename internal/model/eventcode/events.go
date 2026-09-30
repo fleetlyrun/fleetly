@@ -46,6 +46,18 @@ var builtins = []Event{
 	{Name: "invitation.created", Summary: "An invitation was issued (single-use, time-boxed, role-bound).", Source: "added during implementation"},
 	{Name: "invitation.accepted", Summary: "An invitation was redeemed; the invitee became a user.", Source: "added during implementation"},
 
+	// 结构面写操作（C5 补齐："一切状态迁移写 Event"——此前结构面只有
+	// 审计无事件；与审计同事务落）。
+	{Name: "project.created", Summary: "A project was created.", Source: "internal/api/fleetlygrpc/structure.go CreateProject"},
+	{Name: "project.deleted", Summary: "A project was deleted (tombstoned).", Source: "internal/api/fleetlygrpc/structure.go DeleteProject"},
+	{Name: "app.created", Summary: "An app was created.", Source: "internal/api/fleetlygrpc/structure.go CreateApp"},
+	{Name: "app.deleted", Summary: "An app was deleted (teardown per ADR-0023).", Source: "internal/api/fleetlygrpc/structure.go DeleteApp"},
+	{Name: "secret.updated", Summary: "A secret value was set (fingerprint, never the value).", Source: "internal/api/fleetlygrpc/structure.go PutSecret"},
+	{Name: "secret.deleted", Summary: "A secret was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSecret"},
+	{Name: "config.updated", Summary: "A config version was written.", Source: "internal/api/fleetlygrpc/structure.go PutConfig"},
+	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/api/fleetlygrpc/structure.go CreateVolume"},
+	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/structure.go CreateNetwork"},
+
 	// Git 触发（F0.13 webhook 接收链）。
 	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go handlePush"},
 }

@@ -6,14 +6,14 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 )
 
-// nodeLeftDebounce 是节点离开对账的内存去抖（node.left 只发一次；控制面
-// 重启后可能重发一条——事件消费面按 node_id+状态幂等处理，注释诚实标注）。
-var nodeLeftSeen = map[string]bool{}
-
 // reconcileNodes 节点观测对账（F0.20 观测面）：DescribeCluster 快照 →
 // nodes 表 upsert（观测缓存）；快照中消失的节点发 node.left 事件（F0.19
 // Watch 流的 node 事件只覆盖加入路径，离开经周期对账检出——检出延迟 =
 // 对账节拍）。
+//
+// node.left 去抖是实例态（e.nodeLeftSeen，C5：不再是包级全局）：节点
+// 回归快照即清签名——同一节点再离开时再发（leave/join 循环不失真）；
+// 控制面重启后可能重发一条（消费面按 node_id+状态幂等处理，诚实标注）。
 func (e *Engine) reconcileNodes(ctx context.Context) {
 	view, err := e.runtime.DescribeCluster(ctx)
 	if err != nil {
@@ -23,6 +23,9 @@ func (e *Engine) reconcileNodes(ctx context.Context) {
 	present := map[string]bool{}
 	for _, n := range view.Nodes {
 		present[n.NodeID] = true
+		if e.nodeLeftSeen[n.NodeID] {
+			delete(e.nodeLeftSeen, n.NodeID) // 回归清除：再离开可再发
+		}
 		if err := e.nodes.Upsert(ctx, e.db.Runner(), &node.Node{
 			PlatformID: n.NodeID, CarrierID: n.CarrierID,
 			Hostname: n.Hostname, Role: n.Role, Available: n.Available,
@@ -36,10 +39,10 @@ func (e *Engine) reconcileNodes(ctx context.Context) {
 		return
 	}
 	for _, n := range cached {
-		if present[n.PlatformID] || nodeLeftSeen[n.PlatformID] {
+		if present[n.PlatformID] || e.nodeLeftSeen[n.PlatformID] {
 			continue
 		}
-		nodeLeftSeen[n.PlatformID] = true
+		e.nodeLeftSeen[n.PlatformID] = true
 		if _, err := e.outbox.Append(ctx, e.db.Runner(), "node.left", "node", n.PlatformID,
 			nodeLeftPayloadJSON(n.PlatformID, n.CarrierID)); err != nil {
 			e.log.Error("node reconcile: node.left event", "node", n.PlatformID, "err", err)

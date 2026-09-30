@@ -1,9 +1,12 @@
+app.created	An app was created.	internal/api/fleetlygrpc/structure.go CreateApp
+app.deleted	An app was deleted (teardown per ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp
 build.building	Build started executing.	added during implementation
 build.cancelled	Build cancelled.	added during implementation
 build.expired	Build expired by timeout watchdog.	added during implementation
 build.failed	Build failed.	added during implementation
 build.queued	Build accepted into build queue.	added during implementation
 build.succeeded	Build produced an image digest.	added during implementation
+config.updated	A config version was written.	internal/api/fleetlygrpc/structure.go PutConfig
 deployment.building	Deployment entered build stage.	added during implementation
 deployment.cancelled	Deployment cancelled while queued or in flight.	added during implementation
 deployment.failed	Deployment reached failed terminal state.	added during implementation
@@ -17,12 +20,18 @@ deployment.superseded	Deployment superseded by a newer one.	added during impleme
 hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush
 invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
+network.created	A project network was created.	internal/api/fleetlygrpc/structure.go CreateNetwork
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
+project.created	A project was created.	internal/api/fleetlygrpc/structure.go CreateProject
+project.deleted	A project was deleted (tombstoned).	internal/api/fleetlygrpc/structure.go DeleteProject
 role.created	A custom role was created from a scope set.	added during implementation
+secret.deleted	A secret was deleted.	internal/api/fleetlygrpc/structure.go DeleteSecret
+secret.updated	A secret value was set (fingerprint, never the value).	internal/api/fleetlygrpc/structure.go PutSecret
 team.created	A team was created.	added during implementation
 token.created	A token was minted (secret shown once at creation).	added during implementation
 token.revoked	A token was revoked; its next call will be rejected.	added during implementation
 user.created	A user was created and granted a role in a team.	added during implementation
+volume.created	A volume was created.	internal/api/fleetlygrpc/structure.go CreateVolume
 workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/engine/observ.go detectDrift + internal/engine/drift.go compareSpecs
 workload.stopped	A steady-state workload was observed stopped at the current generation.	internal/engine/drift.go emitSteadyStateStopped

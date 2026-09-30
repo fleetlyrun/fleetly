@@ -5,6 +5,7 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
@@ -21,11 +22,40 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
+// 结构面事件名（usage 反扫的字面量锚点；C5 补齐——结构写操作此前只有
+// 审计无事件）。
+const (
+	eventProjectCreated = "project.created"
+	eventProjectDeleted = "project.deleted"
+	eventAppCreated     = "app.created"
+	eventAppDeleted     = "app.deleted"
+	eventSecretUpdated  = "secret.updated"
+	eventSecretDeleted  = "secret.deleted"
+	eventConfigUpdated  = "config.updated"
+	eventVolumeCreated  = "volume.created"
+	eventNetworkCreated = "network.created"
+)
+
 // ---- Projects ----
 
 type ProjectsService struct {
 	structurev1.UnimplementedProjectsServiceServer
 	s *Services
+}
+
+// emitStructureEvent 是结构面写操作的 Outbox 事件（C5 补齐："一切状态
+// 迁移写 Event"——此前结构面只有审计）。与审计同事务落（写路径四件一拍
+// 的既有 tx 内追加）。
+func emitStructureEvent(ctx context.Context, tx *sql.Tx, s *Services, name, aggregate, id, projectID string) error {
+	payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID})
+	_, err := s.OutboxEvents.Append(ctx, tx, name, aggregate, id, payload)
+	return err
+}
+
+// structureEventPayload 是结构面事件的最小负载（字段只增）。
+type structureEventPayload struct {
+	ID        string `json:"id"`
+	ProjectID string `json:"project_id,omitempty"`
 }
 
 func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.CreateProjectRequest) (*structurev1.CreateProjectResponse, error) {
@@ -38,6 +68,9 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	}
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := svc.s.Projects.Create(ctx, tx, p); err != nil {
+			return err
+		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventProjectCreated, "project", p.ID, ""); err != nil {
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
@@ -76,6 +109,9 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 		if err := svc.s.Projects.SoftDelete(ctx, tx, req.GetId()); err != nil {
 			return err
 		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventProjectDeleted, "project", req.GetId(), ""); err != nil {
+			return err
+		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.delete",
 			Resource: "project/" + req.GetId(),
@@ -101,6 +137,9 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	a := &app.App{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName()}
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := svc.s.Apps.Create(ctx, tx, a); err != nil {
+			return err
+		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventAppCreated, "app", a.ID, a.ProjectID); err != nil {
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
@@ -179,6 +218,9 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
 			return err
 		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventAppDeleted, "app", req.GetId(), appRow.ProjectID); err != nil {
+			return err
+		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.delete",
 			Resource: "app/" + req.GetId(),
@@ -217,6 +259,9 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		if err := svc.s.Secrets.Upsert(ctx, tx, row); err != nil {
 			return err
 		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventSecretUpdated, "secret", row.Name, row.ProjectID); err != nil {
+			return err
+		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.put",
 			Resource: "secret/" + row.Name, AfterFP: row.Fingerprint,
@@ -243,6 +288,9 @@ func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.Lis
 func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.DeleteSecretRequest) (*structurev1.DeleteSecretResponse, error) {
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := svc.s.Secrets.SoftDelete(ctx, tx, req.GetProjectId(), req.GetName()); err != nil {
+			return err
+		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventSecretDeleted, "secret", req.GetName(), req.GetProjectId()); err != nil {
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
@@ -295,6 +343,9 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 	row := &configrepo.Config{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
 	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := svc.s.Configs.Create(ctx, tx, row); err != nil {
+			return err
+		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventConfigUpdated, "config", row.Name, row.ProjectID); err != nil {
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
@@ -356,6 +407,9 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		if err := svc.s.Volumes.Create(ctx, tx, row); err != nil {
 			return err
 		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventVolumeCreated, "volume", row.Name, row.ProjectID); err != nil {
+			return err
+		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.create",
 			Resource: "volume/" + row.Name, AfterFP: row.PinnedNodeID,
@@ -395,6 +449,9 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 	}
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := svc.s.Networks.Create(ctx, tx, row); err != nil {
+			return err
+		}
+		if err := emitStructureEvent(ctx, tx, svc.s, eventNetworkCreated, "network", row.Name, row.ProjectID); err != nil {
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
