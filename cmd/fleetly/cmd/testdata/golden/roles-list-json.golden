@@ -15,6 +15,7 @@
         "logs:admin",
         "networks:admin",
         "nodes:admin",
+        "platform:admin",
         "projects:admin",
         "revisions:admin",
         "roles:admin",

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"go.yaml.in/yaml/v3"
 
@@ -16,6 +17,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -118,7 +120,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App) (*spe
 		return s, nil
 	case req.GetComposeYaml() != "":
 		if req.GetHttpProbe() != "" || req.GetTcpProbe() != 0 {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe apply to image deploys; compose uses healthcheck.http_path/tcp_port")
+			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe are for image deploys; compose declares probes via healthcheck.http_path/tcp_port")
 		}
 		var doc spec.ComposeDoc
 		if err := yaml.Unmarshal([]byte(req.GetComposeYaml()), &doc); err != nil {
@@ -236,6 +238,58 @@ func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBu
 		out.Builds = append(out.Builds, buildMsg(b))
 	}
 	return out, nil
+}
+
+// StreamBuildLogs 读构建日志（B4）：先发最近缓冲，follow 时轮询增量续流
+// 至终态（诚实边界：仅实时+最近缓冲，持久化检索 N2）。未知 build id 是
+// 精确拒绝——不静默空流。
+func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest, stream deliveryv1.BuildsService_StreamBuildLogsServer) error {
+	if req.GetBuildId() == "" {
+		return apperr.New("E_INVALID_ARGUMENT", "build_id: must not be empty")
+	}
+	ctx := stream.Context()
+	if _, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId()); err != nil {
+		return mapStateError(err, "build")
+	}
+	sent := 0
+	flush := func(frames []capability.LogFrame) error {
+		for _, f := range frames[sent:] {
+			if err := stream.Send(&deliveryv1.StreamBuildLogsResponse{
+				BuildId: req.GetBuildId(),
+				Time:    f.Time.UTC().Format(timeFormatRFC3339),
+				Line:    f.Line,
+			}); err != nil {
+				return err
+			}
+		}
+		sent = len(frames)
+		return nil
+	}
+	if err := flush(svc.s.Engine.RecentBuildLogs(req.GetBuildId())); err != nil {
+		return err
+	}
+	if !req.GetFollow() {
+		return nil
+	}
+	// follow：至终态（终态后缓冲不再增长，最后一拍发尽收口）。
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+		}
+		if err := flush(svc.s.Engine.RecentBuildLogs(req.GetBuildId())); err != nil {
+			return err
+		}
+		if b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId()); err == nil && b.State.Terminal() {
+			frames := svc.s.Engine.RecentBuildLogs(req.GetBuildId())
+			if len(frames) == sent {
+				return nil
+			}
+		}
+	}
 }
 
 // scalarJSON 渲染 diff 标量（nil → 空串 = 缺失侧）。

@@ -1,5 +1,5 @@
 ID	NAME	TEAM	BUILTIN	SCOPES
-builtin-admin	admin	-	yes	[apps:admin audit:read builds:admin configs:admin deployments:admin events:admin invitations:admin logs:admin networks:admin nodes:admin projects:admin revisions:admin roles:admin routes:admin secrets:admin teams:admin tokens:admin users:admin volumes:admin]
+builtin-admin	admin	-	yes	[apps:admin audit:read builds:admin configs:admin deployments:admin events:admin invitations:admin logs:admin networks:admin nodes:admin platform:admin projects:admin revisions:admin roles:admin routes:admin secrets:admin teams:admin tokens:admin users:admin volumes:admin]
 builtin-member	member	-	yes	[apps:read builds:read builds:write configs:read configs:write deployments:read deployments:write events:read logs:read networks:read networks:write nodes:read projects:read revisions:read routes:read routes:write secrets:read secrets:write volumes:read volumes:write]
 builtin-owner	owner	-	yes	[*]
 <ULID>	deployer	default	no	[deployments:write]

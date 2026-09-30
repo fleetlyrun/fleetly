@@ -70,7 +70,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("deployments", "inspect deployments", newDeploymentsListVerb()),
 		newRollbackVerb(),
 		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
-		groupVerb("builds", "inspect builds", newBuildsListVerb()),
+		groupVerb("builds", "inspect builds and stream build logs", newBuildsListVerb(), newBuildsLogsVerb()),
 		groupVerb("hooks", "manage per-app git triggers (secrets shown once at mint/rotate)", newHooksSetVerb(), newHooksGetVerb(), newHooksRotateVerb()),
 		// Edge / Runtime 上下文。
 		newQuickstartVerb(),

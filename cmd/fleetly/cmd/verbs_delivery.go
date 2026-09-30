@@ -4,9 +4,12 @@ package cmd
 // routes/nodes（events/logs 随 C8 批接入）。
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/lynx-go/commands"
@@ -48,7 +51,7 @@ func newDeployVerb() commands.Command {
 				return usageErr(name, "--http-probe and --tcp-probe are mutually exclusive")
 			}
 			if (httpProbe != "" || tcpProbe != 0) && composeFile != "" {
-				return usageErr(name, "--http-probe/--tcp-probe apply to image deploys; compose uses healthcheck.http_path/tcp_port")
+				return usageErr(name, "--http-probe/--tcp-probe are for image deploys; compose declares probes via healthcheck.http_path/tcp_port")
 			}
 			compose := ""
 			if composeFile != "" {
@@ -243,6 +246,68 @@ func newBuildsListVerb() commands.Command {
 	}
 }
 
+// builds logs（B4）：读构建日志（最近缓冲 + follow 续流至终态；持久化
+// 检索 N2——诚实边界同 F0.25）。
+func newBuildsLogsVerb() commands.Command {
+	const name = "logs"
+	var build string
+	var follow bool
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Stream build logs (recent buffer; --follow keeps streaming until the build finishes)",
+		usage:    "builds logs --build BUILD_ID [--follow]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&build, "build", "", "build id (required)")
+			fs.BoolVar(&follow, "follow", false, "keep streaming new output")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if build == "" {
+				return usageErr(name, "--build is required")
+			}
+			ctx, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			stream, err := c.Builds.StreamBuildLogs(ctx, &deliveryv1.StreamBuildLogsRequest{
+				BuildId: build, Follow: follow,
+			})
+			if err != nil {
+				return err
+			}
+			compact := func(m proto.Message) (string, error) {
+				data, err := protoJSONMarshal.Marshal(m)
+				if err != nil {
+					return "", err
+				}
+				var buf bytes.Buffer
+				if err := json.Compact(&buf, data); err != nil {
+					return "", err
+				}
+				return buf.String(), nil
+			}
+			for {
+				frame, err := stream.Recv()
+				if err == io.EOF {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if jsonOut {
+					line, err := compact(frame)
+					if err != nil {
+						return err
+					}
+					_, _ = fmt.Fprintln(env.Stdout, line)
+					continue
+				}
+				_, _ = fmt.Fprintf(env.Stdout, "%s %s\n", frame.GetTime(), string(frame.GetLine()))
+			}
+		},
+	}
+}
+
 func newRoutesCreateVerb() commands.Command {
 	const name = "create"
 	var project, host, path, app, process, protocol, tlsMode string
@@ -336,16 +401,21 @@ func newNodesListVerb() commands.Command {
 }
 
 func newNodesEnrollVerb() commands.Command {
+	const name = "enroll"
+	var rotate bool
 	return &flaggedVerb{
-		name: "enroll", synopsis: "Print the worker join command (zero platform install on workers)",
-		usage: "nodes enroll",
+		name: name, synopsis: "Print the worker join command (zero platform install on workers)",
+		usage: "nodes enroll [--rotate]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.BoolVar(&rotate, "rotate", false, "invalidate all existing join tokens first (leak response)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			ctx, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{})
+			resp, err := c.Nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{Rotate: rotate})
 			if err != nil {
 				return err
 			}

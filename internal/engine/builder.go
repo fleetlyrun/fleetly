@@ -66,6 +66,11 @@ func (w *bufferWriter) WriteLog(_ context.Context, f capability.LogFrame) error 
 	return nil
 }
 
+// RecentBuildLogs 返回构建日志最近缓冲快照（旧→新；B4 读面消费）。
+func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
+	return e.buildLogs.recent(buildID)
+}
+
 // buildStep 是构建循环的收敛步：拾取 queued（并发余量内）→ 起 goroutine
 // 执行（per-Build 单写者：行级 CAS，goroutine 生命周期 = 该行写者）。
 func (e *Engine) buildStep(ctx context.Context) {

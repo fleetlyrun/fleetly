@@ -200,6 +200,49 @@
         ]
       }
     },
+    "/v1/builds/logs": {
+      "get": {
+        "summary": "StreamBuildLogs 读构建日志（B4：消费引擎最近缓冲——诚实边界同 F0.25\n\"仅实时+最近缓冲\"，持久化检索 N2；follow 随构建推进续流至终态）。",
+        "operationId": "BuildsService_StreamBuildLogs",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1StreamBuildLogsResponse"
+                }
+              },
+              "title": "Stream result of v1StreamBuildLogsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "build_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "follow",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "BuildsService"
+        ]
+      }
+    },
     "/v1/deployments": {
       "get": {
         "operationId": "DeploymentsService_ListDeployments",
@@ -757,6 +800,22 @@
           "title": "secret 是完整明文（flthook_ 前缀），仅首次配置铸造时返回一次；同一串\n用作 GitHub 仓库的 webhook secret。"
         }
       }
+    },
+    "v1StreamBuildLogsResponse": {
+      "type": "object",
+      "properties": {
+        "build_id": {
+          "type": "string"
+        },
+        "time": {
+          "type": "string"
+        },
+        "line": {
+          "type": "string",
+          "format": "byte"
+        }
+      },
+      "title": "StreamBuildLogsResponse 一帧构建日志（time RFC3339）。"
     }
   }
 }

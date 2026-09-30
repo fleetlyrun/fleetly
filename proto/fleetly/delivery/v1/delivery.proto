@@ -93,6 +93,16 @@ service BuildsService {
       api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
     };
   }
+
+  // StreamBuildLogs 读构建日志（B4：消费引擎最近缓冲——诚实边界同 F0.25
+  // "仅实时+最近缓冲"，持久化检索 N2；follow 随构建推进续流至终态）。
+  rpc StreamBuildLogs(StreamBuildLogsRequest) returns (stream StreamBuildLogsResponse) {
+    option (google.api.http) = { get: "/v1/builds/logs" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
+    };
+  }
 }
 
 // HooksService：per-App Git 触发配置 + GitHub push 接收面（F0.13）。配置
@@ -222,6 +232,19 @@ message Build {
 
 message ListBuildsRequest { string app_id = 1; }
 message ListBuildsResponse { repeated Build builds = 1; }
+
+// StreamBuildLogs（B4）：请求按 build id；follow 续流至终态。
+message StreamBuildLogsRequest {
+  string build_id = 1;
+  bool follow = 2;
+}
+
+// StreamBuildLogsResponse 一帧构建日志（time RFC3339）。
+message StreamBuildLogsResponse {
+  string build_id = 1;
+  string time = 2;
+  bytes line = 3;
+}
 
 // GitHook 是 per-App Git 触发配置投影（secret 永不回显——完整明文只在
 // 铸造响应出现一次）。

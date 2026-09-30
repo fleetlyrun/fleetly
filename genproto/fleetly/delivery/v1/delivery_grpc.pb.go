@@ -423,7 +423,8 @@ var RevisionsService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	BuildsService_ListBuilds_FullMethodName = "/fleetly.delivery.v1.BuildsService/ListBuilds"
+	BuildsService_ListBuilds_FullMethodName      = "/fleetly.delivery.v1.BuildsService/ListBuilds"
+	BuildsService_StreamBuildLogs_FullMethodName = "/fleetly.delivery.v1.BuildsService/StreamBuildLogs"
 )
 
 // BuildsServiceClient is the client API for BuildsService service.
@@ -431,6 +432,9 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type BuildsServiceClient interface {
 	ListBuilds(ctx context.Context, in *ListBuildsRequest, opts ...grpc.CallOption) (*ListBuildsResponse, error)
+	// StreamBuildLogs 读构建日志（B4：消费引擎最近缓冲——诚实边界同 F0.25
+	// "仅实时+最近缓冲"，持久化检索 N2；follow 随构建推进续流至终态）。
+	StreamBuildLogs(ctx context.Context, in *StreamBuildLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamBuildLogsResponse], error)
 }
 
 type buildsServiceClient struct {
@@ -451,11 +455,33 @@ func (c *buildsServiceClient) ListBuilds(ctx context.Context, in *ListBuildsRequ
 	return out, nil
 }
 
+func (c *buildsServiceClient) StreamBuildLogs(ctx context.Context, in *StreamBuildLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamBuildLogsResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &BuildsService_ServiceDesc.Streams[0], BuildsService_StreamBuildLogs_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamBuildLogsRequest, StreamBuildLogsResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildsService_StreamBuildLogsClient = grpc.ServerStreamingClient[StreamBuildLogsResponse]
+
 // BuildsServiceServer is the server API for BuildsService service.
 // All implementations must embed UnimplementedBuildsServiceServer
 // for forward compatibility.
 type BuildsServiceServer interface {
 	ListBuilds(context.Context, *ListBuildsRequest) (*ListBuildsResponse, error)
+	// StreamBuildLogs 读构建日志（B4：消费引擎最近缓冲——诚实边界同 F0.25
+	// "仅实时+最近缓冲"，持久化检索 N2；follow 随构建推进续流至终态）。
+	StreamBuildLogs(*StreamBuildLogsRequest, grpc.ServerStreamingServer[StreamBuildLogsResponse]) error
 	mustEmbedUnimplementedBuildsServiceServer()
 }
 
@@ -468,6 +494,9 @@ type UnimplementedBuildsServiceServer struct{}
 
 func (UnimplementedBuildsServiceServer) ListBuilds(context.Context, *ListBuildsRequest) (*ListBuildsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListBuilds not implemented")
+}
+func (UnimplementedBuildsServiceServer) StreamBuildLogs(*StreamBuildLogsRequest, grpc.ServerStreamingServer[StreamBuildLogsResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamBuildLogs not implemented")
 }
 func (UnimplementedBuildsServiceServer) mustEmbedUnimplementedBuildsServiceServer() {}
 func (UnimplementedBuildsServiceServer) testEmbeddedByValue()                       {}
@@ -508,6 +537,17 @@ func _BuildsService_ListBuilds_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BuildsService_StreamBuildLogs_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamBuildLogsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(BuildsServiceServer).StreamBuildLogs(m, &grpc.GenericServerStream[StreamBuildLogsRequest, StreamBuildLogsResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildsService_StreamBuildLogsServer = grpc.ServerStreamingServer[StreamBuildLogsResponse]
+
 // BuildsService_ServiceDesc is the grpc.ServiceDesc for BuildsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -520,7 +560,13 @@ var BuildsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _BuildsService_ListBuilds_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamBuildLogs",
+			Handler:       _BuildsService_StreamBuildLogs_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "fleetly/delivery/v1/delivery.proto",
 }
 
