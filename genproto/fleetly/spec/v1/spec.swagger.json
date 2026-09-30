@@ -1,0 +1,15 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Spec 是规范化的期望状态中间表示（CONTEXT.md Spec 词条）：运行时中立，\n不含编排器概念（无载体命名/标记/约束语法/探针方言——映射成编排器原语\n是 Provider 的事）。三种：AppSpec / TaskSpec / DatabaseSpec，均带\nschemaVersion（读入按 check-strategy：可读旧版+提示，拒绝跳代）。",
+    "version": "version not set"
+  },
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {},
+  "definitions": {}
+}

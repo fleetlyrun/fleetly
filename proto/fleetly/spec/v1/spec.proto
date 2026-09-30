@@ -1,0 +1,215 @@
+syntax = "proto3";
+
+// Spec 是规范化的期望状态中间表示（CONTEXT.md Spec 词条）：运行时中立，
+// 不含编排器概念（无载体命名/标记/约束语法/探针方言——映射成编排器原语
+// 是 Provider 的事）。三种：AppSpec / TaskSpec / DatabaseSpec，均带
+// schemaVersion（读入按 check-strategy：可读旧版+提示，拒绝跳代）。
+package fleetly.spec.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1;specv1";
+
+import "google/protobuf/duration.proto";
+
+// AppSpec 是长运行可部署单元的期望状态（App = 一个或多个 Process）。
+message AppSpec {
+  int32 schema_version = 1;
+  AppRef app = 2;
+  Source source = 3;
+  repeated ProcessSpec processes = 4;
+  BuildSpec build = 5;
+  // first_boot_jobs 是部署期 init job（数据库迁移等）：releasing 前串行
+  // 执行，失败即回滚。
+  repeated JobSpec first_boot_jobs = 6;
+}
+
+// AppRef 是 App 归属锚。
+message AppRef {
+  string id = 1;
+  string project = 2;
+}
+
+// Source 是 App 的来源三形态（Git 引用 / 镜像引用 / 上传产物）。
+message Source {
+  oneof kind {
+    GitSource git = 1;
+    ImageSource image = 2;
+    UploadSource upload = 3;
+  }
+}
+
+message GitSource {
+  // repo 是仓库 URL（部署 Token 形态，Token 不进 URL 路径段日志）。
+  string repo = 1;
+  // ref 是分支/标签/commit。
+  string ref = 2;
+}
+
+message ImageSource {
+  // ref 是镜像引用（私有仓库凭证经 Secret 解析分发）。
+  string ref = 1;
+}
+
+message UploadSource {
+  string id = 1;
+}
+
+// ProcessSpec 是 App 内的进程模板（web/worker…）。
+message ProcessSpec {
+  string name = 1;
+  oneof image_origin {
+    // image 是镜像直部署引用。
+    string image = 2;
+    // from_build 引用同 Spec Build 输出（Ensure 前由平台解析为 digest）。
+    string from_build = 3;
+  }
+  // command 覆盖镜像入口；空 = 镜像默认。
+  repeated string command = 4;
+  // env 是非敏感环境变量（Project/App 两级合成的归一化结果）。
+  map<string, string> env = 5;
+  // secret_refs 按名引用 Project Secret（注入时解析，值不进 Spec）。
+  repeated string secret_refs = 6;
+  // config_refs 按名引用 Project Config 版本化挂载文件。
+  repeated string config_refs = 7;
+  repeated PortSpec ports = 8;
+  HealthcheckSpec healthcheck = 9;
+  ResourcesSpec resources = 10;
+  int64 replicas = 11;
+  PlacementSpec placement = 12;
+  repeated VolumeAttachment volumes = 13;
+  // networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。
+  repeated string networks = 14;
+}
+
+// PortSpec 是进程监听端口声明（Route 投影来源）。
+message PortSpec {
+  int32 port = 1;
+  Protocol protocol = 2;
+}
+
+// Protocol 是 Route/端口协议（http/h2c/tcp）。
+enum Protocol {
+  PROTOCOL_UNSPECIFIED = 0;
+  PROTOCOL_HTTP = 1;
+  PROTOCOL_H2C = 2;
+  PROTOCOL_TCP = 3;
+}
+
+// HealthcheckSpec 是声明式探针（三选一 + 节律）。
+message HealthcheckSpec {
+  oneof probe {
+    string http_path = 1;
+    int32 tcp_port = 2;
+    ExecProbe exec = 3;
+  }
+  google.protobuf.Duration interval = 4;
+  google.protobuf.Duration timeout = 5;
+  google.protobuf.Duration start_period = 6;
+  int32 retries = 7;
+}
+
+message ExecProbe {
+  repeated string command = 1;
+}
+
+// ResourcesSpec 是每副本资源上限（v1 仅每 Process 上限）。
+message ResourcesSpec {
+  // cpu_millis 毫核（1000 = 1 CPU）。
+  int64 cpu_millis = 1;
+  int64 memory_mb = 2;
+}
+
+// PlacementSpec 是调度意图（节点选择约束；平台节点 ID 为锚——映射为
+// 编排器约束语法是 Provider 私有）。
+message PlacementSpec {
+  repeated string node_ids = 1;
+}
+
+// VolumeAttachment 是持久存储附件（无显式 Placement 时默认钉住节点）。
+message VolumeAttachment {
+  string volume_id = 1;
+  string target = 2;
+}
+
+// BuildSpec 是构建声明（dockerfile / railpack 钉版）。
+message BuildSpec {
+  // builder 是 Builder Provider 名（dockerfile / railpack / static）。
+  string builder = 1;
+  oneof strategy {
+    string dockerfile = 2;
+    RailpackBuilder railpack = 3;
+  }
+  repeated string cache_from = 4;
+}
+
+// RailpackBuilder 必须钉版本（防 plan 漂移，旧 spike 教训）。
+message RailpackBuilder {
+  string pinned_version = 1;
+}
+
+// JobSpec 是部署期一次性作业（first boot jobs）。
+message JobSpec {
+  string name = 1;
+  oneof image_origin {
+    string image = 2;
+    string from_build = 3;
+  }
+  repeated string command = 4;
+  map<string, string> env = 5;
+  repeated string secret_refs = 6;
+  // ttl 是作业硬超时（超时即失败回滚）。
+  google.protobuf.Duration ttl = 7;
+}
+
+// TaskSpec 是程序化工作负载的期望状态（ADR-0012：one-shot 与 resident
+// 双形态）。
+message TaskSpec {
+  int32 schema_version = 1;
+  TaskRef task = 2;
+  // process 是单进程模板（Task 无多进程形态）。
+  ProcessSpec process = 3;
+  // ttl_seconds 是 Run 生命周期上限（绝对 deadline 落库，ADR-0018；
+  // 上限 86400）。
+  int64 ttl_seconds = 4;
+  // owner_token 是属主 Token（Owner Lease 心跳保温；吊销触发宽限排空）。
+  string owner_token = 5;
+  // network_group 是 Task Network Group 名（Run 创建时刻挂靠）。
+  string network_group = 6;
+  // desired_concurrency 是 resident 形态的期望并发 Run 数（one-shot
+  // 恒 1）。
+  int64 desired_concurrency = 7;
+}
+
+// TaskRef 是 Task 归属锚。
+message TaskRef {
+  string id = 1;
+  string project = 2;
+}
+
+// DatabaseSpec 是托管数据服务的期望状态（模板渲染产物，走同一条 Runtime
+// 通道）。
+message DatabaseSpec {
+  int32 schema_version = 1;
+  DatabaseRef database = 2;
+  // engine 是模板引擎名（postgres / percona-pgvector / redis / mysql /
+  // mongodb…）。
+  string engine = 3;
+  string version = 4;
+  // credentials_ref 引用 Project Secret（连接串注入同样落 Secret）。
+  string credentials_ref = 5;
+  ResourcesSpec resources = 6;
+  BackupPolicySpec backup_policy = 7;
+}
+
+// DatabaseRef 是 Database 归属锚。
+message DatabaseRef {
+  string id = 1;
+  string project = 2;
+}
+
+// BackupPolicySpec 是默认备份策略（备份默认开，ADR-0020）。
+message BackupPolicySpec {
+  // interval 是备份周期（零值 = 引擎默认）。
+  google.protobuf.Duration interval = 1;
+  // retention 是保留窗口。
+  google.protobuf.Duration retention = 2;
+}
