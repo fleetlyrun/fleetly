@@ -59,9 +59,10 @@ docker cp "$WORKDIR/fleetlyd" "$DIND_CID":/usr/local/bin/fleetlyd
 docker cp "$WORKDIR/fleetly" "$DIND_CID":/usr/local/bin/fleetly
 
 # 4. fleetlyd 起服（setsid 脱离 exec 会话进程组——docker exec 会话结束
-# 时 dockerd 清理同进程组残留，是 exec 后台守护的知名坑）。
+# 时 dockerd 清理同进程组残留，是 exec 后台守护的知名坑）。数据根显式
+# /data：Bootstrap Token 落 /data/bootstrap-token（F0.2/F0.6）。
 log "starting fleetlyd"
-docker exec "$DIND_CID" sh -c 'setsid fleetlyd > /var/log/fleetlyd.log 2>&1 < /dev/null &'
+docker exec "$DIND_CID" sh -c 'setsid env FLEETLY_DATA_ROOT=/data fleetlyd > /var/log/fleetlyd.log 2>&1 < /dev/null &'
 sleep 1
 
 wait_fleetlyd() {
@@ -81,11 +82,44 @@ wait_fleetlyd() {
 log "waiting for fleetlyd"
 wait_fleetlyd
 
+# 4b. 身份链（F0.5~F0.7）：取 Bootstrap Token → login（凭据落盘）→ 建
+# admin 用户与 token → 吊销 bootstrap → 旧凭证下一个调用即 401 → 新
+# token 续链。此后全链以 CURRENT_TOKEN 行进。
+log "identity chain over bootstrap token"
+# MSYS（Windows Git-Bash）会把 /data 形参转成本机路径；sh -c 包住使
+# 路径在容器内解析。
+CURRENT_TOKEN=$(docker exec "$DIND_CID" sh -c 'tr -d "\r\n" < /data/bootstrap-token')
+if [ -z "$CURRENT_TOKEN" ]; then
+  echo "bootstrap token file missing or empty" >&2
+  exit 1
+fi
+
 cli() {
-  # 连接参数经 FLEETLY_ADDR 环境变量（conn 解析序：显式旗标 > env > 默认；
-  # 避开动词级 flag 与位置参数的顺序约束）。
-  docker exec -e FLEETLY_ADDR=127.0.0.1:9080 "$DIND_CID" fleetly "$@"
+  # 连接参数经 FLEETLY_ADDR/FLEETLY_TOKEN 环境变量（conn 解析序：
+  # 显式旗标 > env > 凭据文件；避开动词级 flag 和位置参数的顺序约束）。
+  docker exec -e FLEETLY_ADDR=127.0.0.1:9080 -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$DIND_CID" fleetly "$@"
 }
+
+docker exec -e FLEETLY_ADDR=127.0.0.1:9080 "$DIND_CID" fleetly login --token "$CURRENT_TOKEN" >/dev/null
+cli users create --role builtin-admin alice >/dev/null
+NEW_TOKEN=$(cli --json tokens create --role builtin-admin smoke-admin | sed -n 's/.*"secret": *"\([^"]*\)".*/\1/p' | head -1)
+if [ -z "$NEW_TOKEN" ]; then
+  echo "failed to mint admin token" >&2
+  exit 1
+fi
+
+BOOT_ID=$(cli --json whoami | sed -n 's/.*"token_id": *"\([^"]*\)".*/\1/p' | head -1)
+cli tokens revoke "$BOOT_ID" >/dev/null
+
+if cli projects list >/dev/null 2>&1; then
+  echo "revoked bootstrap token still works; expected 401" >&2
+  exit 1
+fi
+log "bootstrap revoked; next call rejected as expected"
+
+CURRENT_TOKEN="$NEW_TOKEN"
+cli audit --limit 3 >/dev/null
+log "identity chain green (login, user+token mint, revoke->401, audit)"
 
 # 5. 全链冒烟。
 log "creating project + app"

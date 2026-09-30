@@ -15,9 +15,9 @@
 - F0.4 `fleetly doctor`：Docker 版本/端口/磁盘/时间同步诊断，输出处置建议。
 
 **账号与权限（完整 Team/Role）**
-- F0.5 User/Team/Role/Token 全模型：多用户、内置角色（owner/admin/member）+ 自定义 Role（Scope 集合）、邀请流（一次性链接）。验收：双用户双角色权限差异 e2e。
-- F0.6 Token 全套：创建/列出/吊销（含 Bootstrap Token）；`resource:action` Scope、write⇒read；前缀化随机串、sha256 存储、last_used_at 节流记录。验收：吊销后进行中请求的下一个调用即 401。
-- F0.7 审计：全部写操作留痕（操作者/来源枚举 manual|api|cli|webhook|schedule/前后值指纹）。
+- F0.5 [x] User/Team/Role/Token 全模型：多用户、内置角色（owner/admin/member）+ 自定义 Role（Scope 集合）、邀请流（一次性链接）。验收：双用户双角色权限差异 e2e。
+- F0.6 [x] Token 全套：创建/列出/吊销（含 Bootstrap Token）；`resource:action` Scope、write⇒read；前缀化随机串、sha256 存储、last_used_at 节流记录。验收：吊销后进行中请求的下一个调用即 401。
+- F0.7 [x] 审计：全部写操作留痕（操作者/来源枚举 manual|api|cli|webhook|schedule/前后值指纹）。
 
 **应用与部署**
 - F0.8 [x] Project/App CRUD（API+CLI）；Spec 归一化两源：Compose 受控子集（白名单+受管字段显式拒绝+拒绝原因精确）与镜像直部署。
