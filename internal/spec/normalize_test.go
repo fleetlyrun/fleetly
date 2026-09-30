@@ -41,8 +41,14 @@ func TestNormalizeComposeSubset(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, spec.GetProcesses(), 2)
 
-	web := spec.GetProcesses()[0]
-	assert.Equal(t, "web", web.GetName())
+	// 服务来自 map，进程序不保证——按名取，不赌迭代顺序。
+	var web *specv1.ProcessSpec
+	for _, p := range spec.GetProcesses() {
+		if p.GetName() == "web" {
+			web = p
+		}
+	}
+	require.NotNil(t, web, "process web must exist")
 	assert.Equal(t, int64(2), web.GetReplicas())
 	assert.Equal(t, int64(1500), web.GetResources().GetCpuMillis())
 	assert.Equal(t, int64(512), web.GetResources().GetMemoryMb())
