@@ -16,10 +16,6 @@ import (
 // Injectors from wire.go:
 
 func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, func(), error) {
-	preStartHooks := NewPreStartHooks()
-	drainHooks := NewDrainHooks()
-	preStopHooks := NewPreStopHooks()
-	postStopHooks := NewPostStopHooks()
 	appConfig, err := NewAppConfig(app)
 	if err != nil {
 		return nil, nil, err
@@ -28,6 +24,10 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	if err != nil {
 		return nil, nil, err
 	}
+	preStartHooks := NewPreStartHooks(db, appConfig, app)
+	drainHooks := NewDrainHooks()
+	preStopHooks := NewPreStopHooks()
+	postStopHooks := NewPostStopHooks()
 	runtime, cleanup2, err := NewRuntimeProvider(app)
 	if err != nil {
 		cleanup()

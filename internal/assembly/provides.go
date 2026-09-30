@@ -13,6 +13,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
+	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/engine"
@@ -164,9 +165,14 @@ func NewAppConfig(app lynx.App) (*config.AppConfig, error) {
 // Console SPA embed 等可选编译面随对应批次挂入。
 func NewServiceFactories() []lynx.ServiceFactory { return nil }
 
-// NewPreStartHooks 启动前钩子（OnPreStart，先于监听）：当前为空；goose
-// 迁移与密封密钥初始化随 state 批次挂入。
-func NewPreStartHooks() boot.PreStartHooks { return nil }
+// NewPreStartHooks 启动前钩子（OnPreStart，先于监听）：identity 种子 +
+// Bootstrap Token 首启流（无用户时生成一次、journal 去重；F0.2/F0.6）。
+func NewPreStartHooks(db *state.DB, cfg *config.AppConfig, app lynx.App) boot.PreStartHooks {
+	return boot.PreStartHooks{func(ctx context.Context) error {
+		_, err := authn.EnsureBootstrapToken(ctx, db, cfg.DataRoot(), scopeResources(), app.Logger())
+		return err
+	}}
+}
 
 // NewDrainHooks 排水钩子（OnDrain，摘流窗口内执行）：当前为空；Managed
 // Provider 摘流随 Edge 批次挂入。
