@@ -2,6 +2,7 @@ package engine
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sync/atomic"
 
@@ -27,8 +28,38 @@ func (e *Engine) managedStep(ctx context.Context) {
 	e.publishRoutes(ctx)
 }
 
-// managedGen 是受管域 Generation（进程内单调；重启幂等重 Ensure）。
-var managedGen atomic.Uint64
+// 受管域 Generation 分配（进程内）：**指纹未变则 gen 不推进**。staging 真机
+// 教训（2026-09-30）：gen 进 ContainerSpec label，逐 tick +1 会让 swarm 每
+// tick 滚动替换 task——受管 traefik 繁殖到 115 实例把 4GB 主机内存打穿。
+// 语义修正：gen 是"已下发 Spec 的编号"，spec 未变复用当前 gen（同 gen 同
+// spec 的 Ensure 对载体是 no-op）；spec 变化（traefik 参数/网络挂靠变化）
+// 才 +1。重启后进程内态清零，首次重新分配：载体 gen 相同则完全 no-op，
+// 更高则一次性 update 收敛（重启维护窗语义，与用户域重放一致）。
+var (
+	managedGen atomic.Uint64
+	managedFP  atomic.Value // string：最近一次已分配 gen 的 spec 指纹
+)
+
+// managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map
+// 键排序，切片序取 ManagedWorkloads 稳定返回序；序列化失败退化为逐次
+// 唯一值——保守推进 gen，宁替换不漏变更）。
+func managedFingerprint(ws []capability.Workload) string {
+	b, err := json.Marshal(ws)
+	if err != nil {
+		return fmt.Sprintf("unserializable-%p", &ws)
+	}
+	return string(b)
+}
+
+// nextManagedGen 幂等分配：指纹同前且已有 gen → 复用；变化或首次 → +1。
+func nextManagedGen(fp string) uint64 {
+	if prev, ok := managedFP.Load().(string); ok && prev == fp && managedGen.Load() > 0 {
+		return managedGen.Load()
+	}
+	gen := managedGen.Add(1)
+	managedFP.Store(fp)
+	return gen
+}
 
 func (e *Engine) reconcileManaged(ctx context.Context) {
 	m, ok := e.edge.(capability.Managed)
@@ -43,7 +74,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 			ws[i].Networks = append(ws[i].Networks, nets...)
 		}
 	}
-	gen := managedGen.Add(1)
+	gen := nextManagedGen(managedFingerprint(ws))
 	ns := m.ManagedNamespace()
 	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), capability.Materials{}); err != nil {
 		e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
