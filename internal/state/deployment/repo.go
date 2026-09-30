@@ -43,30 +43,48 @@ func (s State) Active() bool {
 	return s != "" && !s.Terminal()
 }
 
-// ActiveStates 是全部活跃态（SQL IN 参数形态）。
-func ActiveStates() []string {
-	return []string{
-		string(StateQueued), string(StatePreparing), string(StateBuilding),
-		string(StateReleasing), string(StateObserving), string(StateRollingBack),
+// ActiveStates 是全部活跃态。
+func ActiveStates() []State {
+	return []State{
+		StateQueued, StatePreparing, StateBuilding,
+		StateReleasing, StateObserving, StateRollingBack,
+	}
+}
+
+// ActiveStateStrings 是活跃态的 SQL IN 参数形态。
+func ActiveStateStrings() []string {
+	out := make([]string, len(ActiveStates()))
+	for i, s := range ActiveStates() {
+		out[i] = string(s)
+	}
+	return out
+}
+
+// ActiveStatesNoQueued 是在途态（admission 显式 supersede 的抢占面：
+// preparing..rolling-back；queued 由 latest-wins 合并处理）。
+func ActiveStatesNoQueued() []State {
+	return []State{
+		StatePreparing, StateBuilding, StateReleasing, StateObserving, StateRollingBack,
 	}
 }
 
 // Deployment 是聚合行（部署记录永不删——审计单位）。
 type Deployment struct {
-	ID              string
-	AppID           string
-	FromRevision    string // 上一 Revision ID（首次部署为空）
-	ToRevision      string // 目标 Revision ID
-	State           State
-	Generation      uint64 // 本 Deployment 拟下发的 Generation（单调）
-	IdempotencyKey  string
-	CommitSHA       string
-	SupersededBy    string // 被哪个 Deployment 抢占（终态 superseded 时非空）
-	Error           string // 失败原因（英文，用户可见）
-	ObserveDeadline string // L3 观察窗绝对截止（RFC3339；空 = 不在观察期）
-	CreatedAt       string
-	UpdatedAt       string
-	FinishedAt      string
+	ID                string
+	AppID             string
+	FromRevision      string // 上一 Revision ID（首次部署为空）
+	ToRevision        string // 目标 Revision ID
+	State             State
+	Generation        uint64 // 本 Deployment 拟下发的 Generation（单调）
+	IdempotencyKey    string
+	CommitSHA         string
+	SupersededBy      string // 被哪个 Deployment 抢占（终态 superseded 时非空）
+	Error             string // 失败原因（英文，用户可见）
+	ObserveDeadline   string // 当前阶段绝对截止（L1 就绪等待 / L3 观察窗；RFC3339，空 = 不在限时阶段）
+	RollbackAttempted bool   // failed 自动回滚已尝试（=1 的 failed 是终态，不再自动重试）
+	CreatedAt         string
+	UpdatedAt         string
+	FinishedAt        string
 }
 
 // Repo 是 Deployment 聚合存取。
@@ -121,9 +139,11 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([
 
 // ActiveByApp 返回 App 全部活跃态 Deployment（应至多一条在途 + 任意排队）。
 func (r *Repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) ([]Deployment, error) {
+	states := ActiveStateStrings()
+	args := append([]any{appID}, toAny(states)...)
 	rows, err := run.QueryContext(ctx,
-		selectCols+" WHERE app_id = ? AND state IN ("+placeholders(len(ActiveStates()))+") ORDER BY id",
-		activeArgs(appID)...)
+		selectCols+" WHERE app_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY id",
+		args...)
 	if err != nil {
 		return nil, err
 	}
@@ -141,12 +161,50 @@ func (r *Repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) 
 
 // FindActiveByIdempotencyKey 返回持该键的活跃 Deployment（无 → ErrNotFound）。
 func (r *Repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner, key string) (*Deployment, error) {
-	states := ActiveStates()
+	states := ActiveStateStrings()
 	args := append([]any{key}, toAny(states)...)
 	row := run.QueryRowContext(ctx,
 		selectCols+" WHERE idempotency_key = ? AND state IN ("+placeholders(len(states))+") ORDER BY id LIMIT 1",
 		args...)
 	return scanDeployment(row.Scan)
+}
+
+// ListDriving 返回全部待驱动行：活跃态 + 待自动回滚的 failed（领域模型
+// §4：failed → (自动) rolling-back；rollback_attempted=1 或无 from_revision
+// 的 failed 是终态，不拾取）。
+func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Deployment, error) {
+	states := ActiveStateStrings()
+	args := toAny(states)
+	args = append(args, false)
+	rows, err := run.QueryContext(ctx,
+		selectCols+" WHERE state IN ("+placeholders(len(states))+")"+
+			" OR (state = 'failed' AND rollback_attempted = ? AND from_revision != '')"+
+			" ORDER BY id",
+		args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Deployment
+	for rows.Next() {
+		d, err := scanDeployment(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *d)
+	}
+	return out, rows.Err()
+}
+
+// NextGeneration 返回 App 下一 Generation（单调；Drift 判定与幂等重放的锚）。
+func (r *Repo) NextGeneration(ctx context.Context, run state.Runner, appID string) (uint64, error) {
+	var gen uint64
+	err := run.QueryRowContext(ctx,
+		`SELECT COALESCE(MAX(generation), 0) FROM deployments WHERE app_id = ?`, appID).Scan(&gen)
+	if err != nil {
+		return 0, err
+	}
+	return gen + 1, nil
 }
 
 // Transit 是状态 CAS：仅当当前状态 ∈ from 时迁移到 to（mut 可补充落
@@ -173,10 +231,12 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	_, err = run.ExecContext(ctx, `
 		UPDATE deployments SET
 			state = ?, generation = ?, error = ?, superseded_by = ?,
-			observe_deadline = ?, updated_at = ?, finished_at = ?
+			observe_deadline = ?, rollback_attempted = ?, to_revision = ?,
+			updated_at = ?, finished_at = ?
 		WHERE id = ? AND state = ?`,
 		string(cur.State), cur.Generation, cur.Error, cur.SupersededBy,
-		cur.ObserveDeadline, cur.UpdatedAt, cur.FinishedAt,
+		cur.ObserveDeadline, cur.RollbackAttempted, cur.ToRevision,
+		cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
 	return err
 }
@@ -184,19 +244,21 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 const selectCols = `
 	SELECT id, app_id, from_revision, to_revision, state, generation,
 	       idempotency_key, commit_sha, superseded_by, error, observe_deadline,
-	       created_at, updated_at, finished_at
+	       rollback_attempted, created_at, updated_at, finished_at
 	FROM deployments`
 
 func scanDeployment(scan func(dest ...any) error) (*Deployment, error) {
 	var d Deployment
 	var stateStr string
+	var rollback int
 	err := scan(&d.ID, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation,
 		&d.IdempotencyKey, &d.CommitSHA, &d.SupersededBy, &d.Error, &d.ObserveDeadline,
-		&d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
+		&rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
 	}
 	d.State = State(stateStr)
+	d.RollbackAttempted = rollback != 0
 	return &d, nil
 }
 
@@ -215,14 +277,6 @@ func joinStates(set []State) string {
 		parts[i] = string(s)
 	}
 	return strings.Join(parts, "|")
-}
-
-func activeArgs(appID string) []any {
-	args := []any{appID}
-	for _, s := range ActiveStates() {
-		args = append(args, s)
-	}
-	return args
 }
 
 func toAny(ss []string) []any {

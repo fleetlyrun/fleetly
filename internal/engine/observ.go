@@ -1,0 +1,273 @@
+package engine
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"time"
+
+	"google.golang.org/protobuf/encoding/protojson"
+
+	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/app"
+	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/node"
+)
+
+// transitAndReload 是驱动路径的迁移入口：自开事务完成四件一拍并返回
+// 刷新后的行（drive 循环据此链式推进）。
+func (e *Engine) transitAndReload(ctx context.Context, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) (*deployment.Deployment, error) {
+	var fresh *deployment.Deployment
+	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
+		if err := e.transit(ctx, tx, d, from, to, mut); err != nil {
+			return err
+		}
+		var err error
+		fresh, err = e.deployments.Get(ctx, tx, d.ID)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return fresh, nil
+}
+
+// loadSpec 反序列化 Revision 冻结体（protojson blob）。
+func (e *Engine) loadSpec(revID string) (*specv1.AppSpec, error) {
+	rev, err := e.revisions.Get(context.Background(), e.db.Runner(), revID)
+	if err != nil {
+		return nil, err
+	}
+	spec := &specv1.AppSpec{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(rev.Spec, spec); err != nil {
+		return nil, err
+	}
+	return spec, nil
+}
+
+// appTeam 解析 App 归属（Team 轴当前为单团队默认——Team 模型随账号批
+// F0.5 接入后从 Project 行实取）。
+func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, error) {
+	a, err := e.apps.Get(ctx, e.db.Runner(), appID)
+	if err != nil {
+		return "", nil, err
+	}
+	return "default", a, nil
+}
+
+// buildDigests 收集 App 最新成功构建的 digest（process → digest；C3 构建
+// 链接入后生效，当前恒空 → from_build 在投影期得到精确错误）。
+func (e *Engine) buildDigests(ctx context.Context, appID string) (map[string]string, error) {
+	return nil, nil
+}
+
+// recordEnsured 记录 Ensure 事实：归属缓存 + 各 Workload 的 Generation
+// （就绪门集合界定——被移除 process 的旧 workload 不再计入）+ App 级
+// 最近 Generation（Drift 对照锚）。进程内缓存，重启后由幂等重放的 Ensure
+// 重建。
+func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capability.Workload) {
+	e.expectMu.Lock()
+	e.expected[d.AppID] = gen
+	e.expectMu.Unlock()
+	e.obsMu.Lock()
+	for _, w := range ws {
+		e.workloadApp[w.ID] = d.AppID
+		e.ensuredGen[w.ID] = gen
+	}
+	e.obsMu.Unlock()
+}
+
+// releaseReady 是 L1 健康门：本 Deployment 下发的全部 Workload（gen 匹配
+// 的 Ensure 集合）均观测到 running。内存 Ensure 缓存为空（重启）时假阴性
+// → 驱动重新幂等 Ensure 后重建，语义自洽。
+func (e *Engine) releaseReady(d *deployment.Deployment) bool {
+	return e.releaseReadyGen(d, d.Generation)
+}
+
+func (e *Engine) releaseReadyGen(d *deployment.Deployment, gen uint64) bool {
+	e.obsMu.RLock()
+	defer e.obsMu.RUnlock()
+	count := 0
+	for wid, owner := range e.workloadApp {
+		if owner != d.AppID || e.ensuredGen[wid] != gen {
+			continue
+		}
+		count++
+		ev, seen := e.observations[wid]
+		// 就绪门：全部成员必须已观测且 running@gen（未观测 = 未就绪，
+		// 与看门狗语义相反——后者未观测不咬合）。
+		if !seen || ev.State != capability.WorkloadRunning || uint64(ev.Generation) != gen {
+			return false
+		}
+	}
+	return count > 0
+}
+
+// watchdogBite 是 L2 看门狗：当前 Generation 观测到 stopped → 咬合描述
+// （空串 = 未咬合）。
+func (e *Engine) watchdogBite(d *deployment.Deployment) string {
+	bite, _ := e.scanGeneration(d.AppID, d.Generation, func(ev capability.WorkloadEvent) string {
+		if ev.State == capability.WorkloadStopped {
+			return fmt.Sprintf("workload %s stopped (gen %d): %s", ev.WorkloadID, ev.Generation, ev.Message)
+		}
+		return ""
+	})
+	return bite
+}
+
+// scanGeneration 遍历某 App 在指定 Generation 下发的 Workload 集
+// （ensuredGen 界定：只有 gen 匹配的 Ensure 记录计入），返回（咬合描述,
+// 集合大小）。pred 返回非空即咬合（短路）；未观测的 Workload 不咬合
+// （等待/超时路径处理）。集合为空（重启后缓存未重建）由调用方解释。
+func (e *Engine) scanGeneration(appID string, gen uint64, pred func(capability.WorkloadEvent) string) (string, int) {
+	e.obsMu.RLock()
+	defer e.obsMu.RUnlock()
+	count := 0
+	for wid, owner := range e.workloadApp {
+		if owner != appID || e.ensuredGen[wid] != gen {
+			continue
+		}
+		count++
+		ev, seen := e.observations[wid]
+		if !seen {
+			continue
+		}
+		if msg := pred(ev); msg != "" {
+			return msg, count
+		}
+	}
+	return "", count
+}
+
+// consumeWatch 消费 Runtime Watch 流（连接断开自动重连；provider 内部
+// 已自愈事件流，此处兜底 ctx 生命周期的重连）。
+func (e *Engine) consumeWatch(ctx context.Context) {
+	for ctx.Err() == nil {
+		ch, err := e.runtime.Watch(ctx)
+		if err != nil {
+			e.log.Error("engine watch: open", "err", err)
+			if !sleepCtx(ctx, time.Second) {
+				return
+			}
+			continue
+		}
+		e.drainWatch(ctx, ch)
+	}
+}
+
+func (e *Engine) drainWatch(ctx context.Context, ch <-chan capability.WorkloadEvent) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case ev, ok := <-ch:
+			if !ok {
+				return // 流关闭 → 外层重连
+			}
+			e.handleObservation(ctx, ev)
+		}
+	}
+}
+
+// handleObservation：观测缓存刷新 + 节点锚定落库 + drift 检测 + Kick。
+func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEvent) {
+	if ev.NodeJoined != nil {
+		e.handleNodeJoined(ctx, ev.NodeJoined)
+		return
+	}
+	if ev.WorkloadID == "" {
+		return
+	}
+	e.obsMu.Lock()
+	e.observations[ev.WorkloadID] = ev
+	e.obsMu.Unlock()
+	e.detectDrift(ctx, ev)
+	e.loop.Kick()
+}
+
+// handleNodeJoined：节点观测缓存 upsert（nodes 表非权威）+ node.joined
+// 事件（仅铸造时发——引擎重启的重复锚定扫描不重复发事件）。
+func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined) {
+	now := state.FormatTime(e.clock.Now())
+	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
+		return e.nodes.Upsert(ctx, tx, &node.Node{
+			PlatformID: nj.NodeID, CarrierID: nj.CarrierID, Available: true,
+			FirstSeenAt: now, LastSeenAt: now,
+		})
+	})
+	if err != nil {
+		e.log.Error("engine watch: node upsert", "node", nj.NodeID, "err", err)
+	}
+	if !nj.Minted {
+		return
+	}
+	_, err = e.outbox.Append(ctx, e.db.Runner(), eventNodeJoined, "node", nj.NodeID,
+		nodeJoinedPayloadJSON(nj.NodeID, nj.CarrierID, nj.Minted))
+	if err != nil {
+		e.log.Error("engine watch: node.joined event", "node", nj.NodeID, "err", err)
+	}
+}
+
+// detectDrift：对照最近 Ensure 的 Generation（架构 §5 Drift 判定；检测
+// 默认开、收敛默认 opt-in——只发事件不动状态，ADR-0005）。去抖：同一
+// (workload, expected, observed) 签名不重复发；观测回归 expected 即清
+// 签名（下次偏离可再发）。
+func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
+	e.obsMu.RLock()
+	appID, owned := e.workloadApp[ev.WorkloadID]
+	e.obsMu.RUnlock()
+	if !owned {
+		return // 非平台管辖载体：观测缓存已登记，事件不落（孤儿面后续批）
+	}
+	e.expectMu.Lock()
+	expected := e.expected[appID]
+	e.expectMu.Unlock()
+
+	if expected != 0 && uint64(ev.Generation) == expected && !ev.Drift {
+		e.driftMu.Lock()
+		delete(e.drift, ev.WorkloadID)
+		e.driftMu.Unlock()
+		return
+	}
+	if expected == 0 && !ev.Drift {
+		return
+	}
+
+	sig := fmt.Sprintf("%d|%d|%v", expected, uint64(ev.Generation), ev.Drift)
+	e.driftMu.Lock()
+	if e.drift[ev.WorkloadID] == sig {
+		e.driftMu.Unlock()
+		return
+	}
+	e.drift[ev.WorkloadID] = sig
+	e.driftMu.Unlock()
+
+	_, err := e.outbox.Append(ctx, e.db.Runner(), eventWorkloadDrift, "workload", ev.WorkloadID,
+		driftEventPayloadJSON(ev, appID, expected))
+	if err != nil {
+		e.log.Error("engine watch: drift event", "workload", ev.WorkloadID, "err", err)
+	}
+}
+
+// parseDeadline 解析落库截止（空串/坏值 = nil）。
+func parseDeadline(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
+
+func sleepCtx(ctx context.Context, d time.Duration) bool {
+	select {
+	case <-ctx.Done():
+		return false
+	case <-time.After(d):
+		return true
+	}
+}

@@ -39,29 +39,17 @@ func TestMustRegisterRejects(t *testing.T) {
 	assert.Panics(t, func() { r.MustRegister(Event{Name: "a.b", Source: "s"}) })
 }
 
-// 链 C：usage 反扫（与 errcode 同构）。首批事件随 state 批次入册（Outbox
-// 落库为首个消费方），发射点随 engine admission/构建批次接入——落地后
-// 移除对应豁免条目（豁免条目必须带理由且必须仍在册，双向保鲜）。
+// 链 C：usage 反扫（与 errcode 同构）。deployment.* 与 workload.drift_*
+// 已由 engine 批次落地发射点；build.* 随构建引擎批次、node.left 随节点
+// 离开对账批次接入——落地后移除对应豁免条目（双向保鲜）。
 var eventExemptions = map[string]string{
-	"deployment.queued":       "engine admission batch lands the emitting call site",
-	"deployment.preparing":    "engine admission batch lands the emitting call site",
-	"deployment.building":     "engine admission batch lands the emitting call site",
-	"deployment.releasing":    "engine admission batch lands the emitting call site",
-	"deployment.observing":    "engine admission batch lands the emitting call site",
-	"deployment.succeeded":    "engine admission batch lands the emitting call site",
-	"deployment.failed":       "engine admission batch lands the emitting call site",
-	"deployment.rolling_back": "engine admission batch lands the emitting call site",
-	"deployment.superseded":   "engine admission batch lands the emitting call site",
-	"deployment.cancelled":    "engine admission batch lands the emitting call site",
-	"build.queued":            "build engine batch lands the emitting call site",
-	"build.building":          "build engine batch lands the emitting call site",
-	"build.succeeded":         "build engine batch lands the emitting call site",
-	"build.failed":            "build engine batch lands the emitting call site",
-	"build.cancelled":         "build engine batch lands the emitting call site",
-	"build.expired":           "build engine batch lands the emitting call site",
-	"node.joined":             "engine watch batch lands the emitting call site",
-	"node.left":               "engine watch batch lands the emitting call site",
-	"workload.drift_detected": "engine watch batch lands the emitting call site",
+	"build.queued":    "build engine batch lands the emitting call site",
+	"build.building":  "build engine batch lands the emitting call site",
+	"build.succeeded": "build engine batch lands the emitting call site",
+	"build.failed":    "build engine batch lands the emitting call site",
+	"build.cancelled": "build engine batch lands the emitting call site",
+	"build.expired":   "build engine batch lands the emitting call site",
+	"node.left":       "node-leave reconciliation batch lands the emitting call site",
 }
 
 func TestRegistryEventsReferencedInProduction(t *testing.T) {

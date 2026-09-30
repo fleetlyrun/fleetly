@@ -2,6 +2,7 @@ package assembly
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 
 	"github.com/google/wire"
@@ -11,7 +12,9 @@ import (
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
+	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
@@ -25,6 +28,9 @@ var ProviderSet = wire.NewSet(
 	NewAppConfig,
 	NewPolicySet,
 	NewStateDB,
+	NewRuntimeProvider,
+	NewEngine,
+	NewEngineService,
 	systemgrpc.New,
 	NewGRPCServer,
 	NewGatewayServer,
@@ -46,6 +52,48 @@ func NewStateDB(app lynx.App, cfg *config.AppConfig) (*state.DB, func(), error) 
 	app.Logger().Info("state store opened", "path", cfg.DataRoot(), "driver", "sqlite", "mode", "wal")
 	return db, func() { _ = db.Close() }, nil
 }
+
+// NewRuntimeProvider 经工厂注册表构造 Runtime Provider（cmd/fleetlyd 的
+// blank import 触发 swarm 自注册；配置层选择 Provider 名的能力随配置面
+// 扩展接入，当前缺省在册者）。
+func NewRuntimeProvider(app lynx.App) (capability.Runtime, func(), error) {
+	p, err := capability.Build(context.Background(), capability.KindRuntime, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	rt, ok := p.(capability.Runtime)
+	if !ok {
+		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Runtime port", p.Describe().Name)
+	}
+	return rt, func() {
+		if c, ok := rt.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
+	}, nil
+}
+
+// NewEngine 构造部署收敛引擎（参数当前取默认；配置面接入后从 AppConfig
+// 透传 queue 容量与观察窗）。
+func NewEngine(db *state.DB, rt capability.Runtime, app lynx.App) *engine.Engine {
+	return engine.New(db, rt, app.Logger(), engine.Options{})
+}
+
+// engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖
+// 框架，hermetic 测试保持纯净）。
+type engineService struct {
+	e *engine.Engine
+}
+
+func (s *engineService) Name() string               { return "engine" }
+func (s *engineService) Init(lynx.AppContext) error { return nil }
+func (s *engineService) Start(ctx context.Context) error {
+	s.e.Start(ctx)
+	return nil
+}
+func (s *engineService) Stop(ctx context.Context) error { return s.e.Stop(ctx) }
+
+// NewEngineService 构造托管服务。
+func NewEngineService(e *engine.Engine) lynx.Service { return &engineService{e: e} }
 
 // NewAppConfig 从 lynx 配置源解码 AppConfig 并应用缺省。
 func NewAppConfig(app lynx.App) (*config.AppConfig, error) {
@@ -76,12 +124,15 @@ func NewPreStopHooks() boot.PreStopHooks { return nil }
 // cleanup 已单独经 Bootstrap 返回值挂载。
 func NewPostStopHooks() boot.PostStopHooks { return nil }
 
-// NewServices 返回服务注册顺序：grpc → gateway。lynx 按注册顺序有界停止；
-// gateway 与 grpc 间为惰性共享连接，排水窗口（WithDrainTimeout）覆盖停止
-// 期间的残余转发请求。
+// NewServices 返回服务注册顺序：engine → grpc → gateway。lynx 按注册顺序
+// 启动、逆序停止——引擎最后停：服务面已摘流（gateway → grpc 先停）后引擎
+// 才排空（ADR-0005 优雅退出：在途 Ensure 可安全中断重放）。gateway 与
+// grpc 间为惰性共享连接，排水窗口（WithDrainTimeout）覆盖停止期间的残余
+// 转发请求。
 func NewServices(
+	engineSvc lynx.Service,
 	grpcServer *lynxgrpc.Server,
 	gateway *lynxhttp.Server,
 ) []lynx.Service {
-	return []lynx.Service{grpcServer, gateway}
+	return []lynx.Service{engineSvc, grpcServer, gateway}
 }
