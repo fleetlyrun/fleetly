@@ -22,6 +22,7 @@ type deploymentEventPayload struct {
 	Error           string `json:"error,omitempty"`
 	SupersededBy    string `json:"superseded_by,omitempty"`
 	ObserveDeadline string `json:"observe_deadline,omitempty"`
+	Kind            string `json:"kind,omitempty"`
 }
 
 // workload.drift_detected（per-Workload 粒度 + 去抖，2026-09-30 裁决）。
@@ -116,6 +117,11 @@ func driftEventPayloadJSON(ev capability.WorkloadEvent, appID string, expected u
 
 func nodeJoinedPayloadJSON(nodeID, carrierID string, minted bool) []byte {
 	b, _ := json.Marshal(nodeEventPayload{NodeID: nodeID, CarrierID: carrierID, Minted: minted})
+	return b
+}
+
+func nodeLeftPayloadJSON(nodeID, carrierID string) []byte {
+	b, _ := json.Marshal(nodeEventPayload{NodeID: nodeID, CarrierID: carrierID})
 	return b
 }
 

@@ -39,12 +39,8 @@ func TestMustRegisterRejects(t *testing.T) {
 	assert.Panics(t, func() { r.MustRegister(Event{Name: "a.b", Source: "s"}) })
 }
 
-// 链 C：usage 反扫（与 errcode 同构）。deployment.*/build.*/workload.
-// drift_detected/node.joined 已落地发射点；node.left 随节点离开对账批次
-// 接入后移除（豁免条目必须带理由且必须仍在册，双向保鲜）。
-var eventExemptions = map[string]string{
-	"node.left": "node-leave reconciliation batch lands the emitting call site",
-}
+// 链 C：usage 反扫（与 errcode 同构）。全部首批事件已落地发射点。
+var eventExemptions = map[string]string{}
 
 func TestRegistryEventsReferencedInProduction(t *testing.T) {
 	_, thisFile, _, ok := runtime.Caller(0)

@@ -19,6 +19,7 @@ import (
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
 func (e *Engine) managedStep(ctx context.Context) {
+	e.reconcileNodes(ctx) // 节点对账不依赖 Edge（观测面独立收敛）
 	if e.edge == nil {
 		return // Edge 未装配（可选项）：无受管面
 	}

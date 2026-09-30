@@ -21,6 +21,9 @@ type fakeRuntime struct {
 
 	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析面）
 
+	clusterOverride bool                 // 显式启用编程视图（空视图=节点全离开）
+	clusterView     capability.ClusterView // 可编程集群快照（节点对账面）
+
 	health capability.HealthReport
 }
 
@@ -81,6 +84,11 @@ func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef) (
 }
 
 func (f *fakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.clusterOverride {
+		return f.clusterView, nil // 空视图也是显式结果（节点全离开）
+	}
 	return capability.ClusterView{Nodes: []capability.NodeView{{
 		NodeID: "01JD0NODE00000000000000000", CarrierID: "swarmmanager", Role: "manager", Available: true,
 	}}}, nil

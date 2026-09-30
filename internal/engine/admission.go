@@ -21,6 +21,7 @@ type SubmitRequest struct {
 	IdempotencyKey string // 可选；活跃期去重
 	CommitSHA      string // 可选；git 触发的 commit 去重锚
 	Supersede      bool   // 显式抢占在途部署（ADR-0016）
+	Kind           string // 可选；来源标注（KindRollback 等，进审计）
 }
 
 // Submit 走 admission 判定（ADR-0016，判定全在单事务内）：
