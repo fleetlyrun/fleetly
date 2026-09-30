@@ -1,0 +1,4 @@
+app demo deployed from nginx:1.27 (deployment <ULID>, state succeeded)
+route demo.127.0.0.1.sslip.io -> demo:80 (tls none)
+open http://demo.127.0.0.1.sslip.io
+note: the sslip host resolves to 127.0.0.1 — reachable from this machine only; pass --addr <public-ip>:9080 for a public host

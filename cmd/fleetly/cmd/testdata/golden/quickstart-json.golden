@@ -1,0 +1,9 @@
+{
+  "project_id": "<ULID>",
+  "app_id": "<ULID>",
+  "deployment_id": "<ULID>",
+  "route_id": "<ULID>",
+  "host": "demo.127.0.0.1.sslip.io",
+  "url": "http://demo.127.0.0.1.sslip.io",
+  "state": "queued"
+}
