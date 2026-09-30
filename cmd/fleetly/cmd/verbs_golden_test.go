@@ -57,31 +57,37 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	type step struct {
 		verb string
 		args []string
+		// code 是期望退出码（默认 0；diff 类有变化 = 2，stdout 照常比较）。
+		code int
 	}
 	steps := []step{
-		{"projects create", []string{"projects", "create", "shop"}},
-		{"projects list", []string{"projects", "list"}},
-		{"apps create", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "web"}},
-		{"apps list", []string{"apps", "list", "--project", "GOLDEN_PROJECT"}},
-		{"deploy", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.27"}},
-		{"rollback", []string{"rollback", "--app", "GOLDEN_APP"}},
-		{"deployments list", []string{"deployments", "list", "--app", "GOLDEN_APP"}},
-		{"revisions list", []string{"revisions", "list", "--app", "GOLDEN_APP"}},
-		{"secrets put", []string{"secrets", "put", "--project", "GOLDEN_PROJECT", "--value", "s3cret", "api-token"}},
-		{"secrets list", []string{"secrets", "list", "--project", "GOLDEN_PROJECT"}},
-		{"configs put", []string{"configs", "put", "--project", "GOLDEN_PROJECT", "--value", "mode=gold", "app.ini"}},
-		{"configs list", []string{"configs", "list", "--project", "GOLDEN_PROJECT"}},
-		{"volumes create", []string{"volumes", "create", "--project", "GOLDEN_PROJECT", "data"}},
-		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "default"}},
-		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}},
-		{"routes list", []string{"routes", "list"}},
-		{"nodes list", []string{"nodes", "list"}},
-		{"nodes enroll", []string{"nodes", "enroll"}},
+		{"projects create", []string{"projects", "create", "shop"}, 0},
+		{"projects list", []string{"projects", "list"}, 0},
+		{"apps create", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "web"}, 0},
+		{"apps list", []string{"apps", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"deploy", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.27"}, 0},
+		{"rollback", []string{"rollback", "--app", "GOLDEN_APP"}, 0},
+		{"deployments list", []string{"deployments", "list", "--app", "GOLDEN_APP"}, 0},
+		{"revisions list", []string{"revisions", "list", "--app", "GOLDEN_APP"}, 0},
+		// 第二镜像 → R2（与 R1 有字段差）：revisions diff 的有变化形态。
+		{"deploy second image", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.26"}, 0},
+		{"revisions diff", []string{"revisions", "diff", "--app", "GOLDEN_APP", "--from", "1", "--to", "2"}, exitChanges},
+		{"builds list", []string{"builds", "list", "--app", "GOLDEN_APP"}, 0},
+		{"secrets put", []string{"secrets", "put", "--project", "GOLDEN_PROJECT", "--value", "s3cret", "api-token"}, 0},
+		{"secrets list", []string{"secrets", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"configs put", []string{"configs", "put", "--project", "GOLDEN_PROJECT", "--value", "mode=gold", "app.ini"}, 0},
+		{"configs list", []string{"configs", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"volumes create", []string{"volumes", "create", "--project", "GOLDEN_PROJECT", "data"}, 0},
+		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "default"}, 0},
+		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}, 0},
+		{"routes list", []string{"routes", "list"}, 0},
+		{"nodes list", []string{"nodes", "list"}, 0},
+		{"nodes enroll", []string{"nodes", "enroll"}, 0},
 		// 节点运维三动词（F0.19 RuntimeAdmin 面）：FakeRuntime 集群里的固定
 		// 平台节点 ID。含 'O'（非 ULID 字符）不进归一，golden 逐字确定。
-		{"nodes drain", []string{"nodes", "drain", "--node", goldenNodeID}},
-		{"nodes cordon", []string{"nodes", "cordon", "--node", goldenNodeID}},
-		{"nodes uncordon", []string{"nodes", "uncordon", "--node", goldenNodeID}},
+		{"nodes drain", []string{"nodes", "drain", "--node", goldenNodeID}, 0},
+		{"nodes cordon", []string{"nodes", "cordon", "--node", goldenNodeID}, 0},
+		{"nodes uncordon", []string{"nodes", "uncordon", "--node", goldenNodeID}, 0},
 	}
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
@@ -99,7 +105,11 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 			}
 			code, out, stderr := runCLI(t, args...)
-			if code != 0 || stderr != "" {
+			wantStderr := ""
+			if st.code == exitChanges {
+				wantStderr = "\n" // errChanges 渲染为空，框架打一行换行
+			}
+			if code != st.code || stderr != wantStderr {
 				t.Fatalf("%s: code=%d stderr=%q args=%q", st.verb, code, stderr, args)
 			}
 			// 捕获后续步骤需要的 ID（人类形态行：created project shop (id X)）。
@@ -123,7 +133,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 			}
 			code, out, stderr = runCLI(t, append(jsonArgs, "--json")...)
-			if code != 0 || stderr != "" {
+			if code != st.code || stderr != wantStderr {
 				t.Fatalf("%s --json: code=%d stderr=%q", st.verb, code, stderr)
 			}
 			compareGolden(t, goldenFile(st.verb)+"-json", normalizeGolden(out))

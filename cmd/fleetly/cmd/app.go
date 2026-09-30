@@ -35,8 +35,10 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 	app.HelpHeader = "fleetly - lightweight PaaS for humans and agents"
 	app.VerbTitle = "commands:"
 	app.HelpFooter = fmt.Sprintf("fleetly %s (run 'fleetly <command> --help' for details)", displayVersion(info))
+	// 旗标解析错误保持 UsageError 类型（退出码 64 契约靠类型分支；裸
+	// fmt.Errorf 会把用法错误降级成普通错误退 1——A5 断言钉死）。
 	app.FlagError = func(verb string, err error) error {
-		return fmt.Errorf("%s: bad arguments: %v", verb, err)
+		return &commands.UsageError{Usage: verb, Err: fmt.Errorf("%s: bad arguments: %v", verb, err)}
 	}
 	// 错误信封渲染：apperr 还原出 errcode + 处置提示 + docs 链接（Agent
 	// 与人类共用的可行动 stderr）；非信封错误默认单行。

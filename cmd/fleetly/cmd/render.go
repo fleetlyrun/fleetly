@@ -3,6 +3,7 @@ package cmd
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -59,7 +60,12 @@ func displayVersion(info buildinfo.BuildInfo) string {
 
 // renderErrorFor 是 CLI 错误信封 stderr 渲染（render 单点的一部分）：
 // apperr 信封还原成功时输出多行可行动提示；否则退回 err.Error() 单行。
+// errChanges 不是错误（diff 类动词的有变化信号，退出码 2 已承载语义），
+// 渲染为空——stdout 的 diff 输出才是内容面。
 func renderErrorFor(err error) string {
+	if errors.Is(err, errChanges) {
+		return ""
+	}
 	if env, ok := apperr.FromError(err); ok {
 		var b strings.Builder
 		b.WriteString(env.Error())

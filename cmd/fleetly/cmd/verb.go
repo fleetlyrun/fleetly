@@ -16,6 +16,10 @@ type flaggedVerb struct {
 	usage    string
 	setFlags func(fs *flag.FlagSet) // 可选：追加旗标声明
 	run      func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error
+
+	// subcommands 非空 = 动词组（groupVerb 装配时记录子命令名）。
+	// 覆盖守卫据此递归枚举组内子命令，组员与组本身同受双 golden 契约。
+	subcommands []string
 }
 
 func (v *flaggedVerb) Name() string     { return v.name }

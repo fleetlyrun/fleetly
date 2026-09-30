@@ -1,0 +1,14 @@
+{
+  "entries": [
+    {
+      "path": "processes[0].image",
+      "old_value": "nginx:1.27",
+      "new_value": "nginx:1.26"
+    },
+    {
+      "path": "source.image.ref",
+      "old_value": "nginx:1.27",
+      "new_value": "nginx:1.26"
+    }
+  ]
+}

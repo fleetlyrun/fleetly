@@ -183,7 +183,7 @@ func newRevisionsDiffVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			return renderOut(env, jsonOut, resp, func() {
+			if err := renderOut(env, jsonOut, resp, func() {
 				if len(resp.GetEntries()) == 0 {
 					_, _ = fmt.Fprintln(env.Stdout, "no differences")
 					return
@@ -192,7 +192,14 @@ func newRevisionsDiffVerb() commands.Command {
 				for _, e := range resp.GetEntries() {
 					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", e.GetPath(), e.GetOldValue(), e.GetNewValue())
 				}
-			})
+			}); err != nil {
+				return err
+			}
+			// 有变化 → 退出码 2（diff 类动词机器契约；stdout 照常是 diff 面）。
+			if len(resp.GetEntries()) > 0 {
+				return errChanges
+			}
+			return nil
 		},
 	}
 }

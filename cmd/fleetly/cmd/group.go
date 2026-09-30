@@ -19,9 +19,10 @@ func groupVerb(name, synopsis string, subs ...commands.Command) commands.Command
 	inner.Register(subs...)
 	subNames := inner.Names()
 	return &flaggedVerb{
-		name:     name,
-		synopsis: synopsis,
-		usage:    name + " <subcommand> [flags] (run without arguments to list subcommands)",
+		name:        name,
+		synopsis:    synopsis,
+		usage:       name + " <subcommand> [flags] (run without arguments to list subcommands)",
+		subcommands: subNames,
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) == 0 {
 				if jsonOut {
