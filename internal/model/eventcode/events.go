@@ -41,4 +41,7 @@ var builtins = []Event{
 	{Name: "token.revoked", Summary: "A token was revoked; its next call will be rejected.", Source: "added during implementation"},
 	{Name: "invitation.created", Summary: "An invitation was issued (single-use, time-boxed, role-bound).", Source: "added during implementation"},
 	{Name: "invitation.accepted", Summary: "An invitation was redeemed; the invitee became a user.", Source: "added during implementation"},
+
+	// Git 触发（F0.13 webhook 接收链）。
+	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go handlePush"},
 }

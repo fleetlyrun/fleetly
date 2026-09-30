@@ -42,31 +42,9 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	if err != nil {
 		return nil, err
 	}
-	body, err := marshalSpec(appSpec)
-	if err != nil {
-		return nil, mapStateError(err, "app spec")
-	}
 
 	// Revision 冻结（内容寻址复用：同内容只冻结一份；R1..Rn 序号 App 内单调）。
-	var rev *revision.Revision
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if existing, ferr := svc.s.Revisions.FindByDigest(ctx, tx, appRow.ID, revision.Digest(body)); ferr == nil {
-			rev = existing
-			return nil
-		}
-		seq, serr := svc.s.Revisions.NextSeq(ctx, tx, appRow.ID)
-		if serr != nil {
-			return serr
-		}
-		rev = &revision.Revision{ID: newID(), AppID: appRow.ID, Seq: seq, Spec: body}
-		if cerr := svc.s.Revisions.Create(ctx, tx, rev); cerr != nil {
-			return cerr
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
-			Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
-		})
-	})
+	rev, err := freezeRevision(ctx, svc.s, appRow, appSpec)
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}
@@ -80,6 +58,39 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		return nil, mapStateError(err, "deployment")
 	}
 	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d)}, nil
+}
+
+// freezeRevision 冻结 Revision（内容寻址复用：同内容只冻结一份；R1..Rn
+// 序号 App 内单调）。Deploy 与 webhook 触发共用——审计 actor/source 取
+// ctx（webhook 路径经 WithAuditOverride 标注）。
+func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *specv1.AppSpec) (*revision.Revision, error) {
+	body, err := marshalSpec(appSpec)
+	if err != nil {
+		return nil, err
+	}
+	var rev *revision.Revision
+	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		if existing, ferr := s.Revisions.FindByDigest(ctx, tx, appRow.ID, revision.Digest(body)); ferr == nil {
+			rev = existing
+			return nil
+		}
+		seq, serr := s.Revisions.NextSeq(ctx, tx, appRow.ID)
+		if serr != nil {
+			return serr
+		}
+		rev = &revision.Revision{ID: newID(), AppID: appRow.ID, Seq: seq, Spec: body}
+		if cerr := s.Revisions.Create(ctx, tx, rev); cerr != nil {
+			return cerr
+		}
+		return s.Audits.Append(ctx, tx, &audit.Entry{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
+			Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
+		})
+	})
+	if err != nil {
+		return nil, err
+	}
+	return rev, nil
 }
 
 // normalizeDeploySource 归一化两源：image 直投 / Compose 受控子集。

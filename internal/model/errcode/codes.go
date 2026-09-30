@@ -82,4 +82,11 @@ var builtins = []Code{
 		Source:     "added during implementation",
 		GRPC:       codes.PermissionDenied,
 	},
+	{
+		ID:         "E_INVALID_SIGNATURE",
+		Summary:    "The webhook signature verification failed.",
+		Suggestion: "Ensure the GitHub webhook secret matches the hook secret shown once by 'fleetly hooks set/rotate' (rotate the hook and update GitHub if the secret is lost).",
+		Source:     "internal/api/fleetlygrpc/webhook.go ReceiveWebhook",
+		GRPC:       codes.Unauthenticated,
+	},
 }

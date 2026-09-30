@@ -277,8 +277,26 @@ func withIdentity(ctx context.Context, id *Identity) context.Context {
 	return context.WithValue(ctx, ctxKey{}, id)
 }
 
-// ActorFromContext 返回审计 actor（匿名空串）。
+// auditOverride 是非请求路径触发面的审计标注（webhook 接收面：操作者
+// 不是任何平台身份——actor 落 hook:<App 名>、source 落 webhook）。
+type auditOverride struct {
+	actor  string
+	source audit.Source
+}
+
+type overrideKey struct{}
+
+// WithAuditOverride 覆盖审计 actor/source（engine 与服务层经
+// ActorFromContext/SourceFromContext 消费；请求路径不携带本标注）。
+func WithAuditOverride(ctx context.Context, actor string, source audit.Source) context.Context {
+	return context.WithValue(ctx, overrideKey{}, auditOverride{actor: actor, source: source})
+}
+
+// ActorFromContext 返回审计 actor（匿名空串；override 优先）。
 func ActorFromContext(ctx context.Context) string {
+	if ov, ok := ctx.Value(overrideKey{}).(auditOverride); ok && ov.actor != "" {
+		return ov.actor
+	}
 	if id, ok := FromContext(ctx); ok {
 		return id.Actor()
 	}
@@ -286,8 +304,12 @@ func ActorFromContext(ctx context.Context) string {
 }
 
 // SourceFromContext 返回审计来源：CLI 自标识头 → cli，经 gRPC 面的其余
-// 调用 → api（engine 自治动作不经本函数——自有 system 来源）。
+// 调用 → api（engine 自治动作不经本函数——自有 system 来源；override
+// 优先于两者）。
 func SourceFromContext(ctx context.Context) audit.Source {
+	if ov, ok := ctx.Value(overrideKey{}).(auditOverride); ok && ov.source != "" {
+		return ov.source
+	}
 	if ClientSourceFromContext(ctx) == "cli" {
 		return audit.SourceCLI
 	}

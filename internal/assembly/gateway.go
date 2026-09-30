@@ -62,7 +62,7 @@ func NewGatewayServer(
 		return nil, nil, err
 	}
 
-	srv := lynxhttp.NewServer(mux,
+	srv := lynxhttp.NewServer(mountHooks(mux, newHooksHandler(deliveryv1.NewHooksServiceClient(conn))),
 		lynxhttp.WithAddr(cfg.HTTPAddr()),
 		lynxhttp.WithLogger(app.Logger()),
 		// 长连接（SSE/WS）落地前保持保守读头超时；读写超时 0 由

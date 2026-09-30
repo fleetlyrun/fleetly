@@ -14,6 +14,7 @@ deployment.releasing	Deployment started releasing workloads to runtime.	added du
 deployment.rolling_back	Deployment started replaying last successful revision.	added during implementation
 deployment.succeeded	Deployment reached succeeded terminal state.	added during implementation
 deployment.superseded	Deployment superseded by a newer one.	added during implementation
+hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush
 invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
