@@ -10,6 +10,10 @@
 # 前置：本机 docker 可用；本脚本经 mise 任务或直接 sh 执行。
 set -eu
 
+# Git-Bash（MSYS）会把以 / 开头的容器侧路径参数转译成本机路径（/tmp、
+# /root 均实证命中；CI Linux 无此变量，天然 no-op）。
+export MSYS_NO_PATHCONV=1
+
 WORKDIR="$(mktemp -d)"
 DIND_CID=""
 
@@ -57,11 +61,12 @@ docker image save nginx:1.27 | docker exec -i "$DIND_CID" docker load >/dev/null
 # 3. 一行安装（F0.1 冒烟）：install.sh 的本地 bin-dir 模式在容器内走完
 # OS 检测 → Docker 检测 → swarm init → fleetlyd 起服（无 systemd 分支：
 # setsid 后台 + /var/log/fleetlyd.log）→ 健康等待。Releases 通道随首个
-# tag 批次生效。
+# tag 批次生效。容器侧路径用 /root（/tmp 是 MSYS 挂载点，宿侧 Git-Bash
+# 会转译 docker cp 的容器路径——实证坑）。
 log "running install.sh inside dind (FLEETLY_BIN_DIR mode)"
-docker cp "$WORKDIR/bins" "$DIND_CID":/tmp/bins
-docker cp install.sh "$DIND_CID":/tmp/install.sh
-docker exec -e FLEETLY_BIN_DIR=/tmp/bins "$DIND_CID" sh /tmp/install.sh
+docker cp "$WORKDIR/bins" "$DIND_CID":/root/bins
+docker cp install.sh "$DIND_CID":/root/install.sh
+docker exec -e FLEETLY_BIN_DIR=/root/bins "$DIND_CID" sh /root/install.sh
 
 # 3b. 身份链（F0.2 收口）：bootstrap → fleetly init（建 admin + 铸 CLI
 # token + 写凭据 + 默认吊销 bootstrap）→ 旧凭证下一个调用即 401。此后
