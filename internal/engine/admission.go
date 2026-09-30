@@ -8,6 +8,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
@@ -121,7 +122,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 		out = d
 		return e.audits.Append(ctx, tx, &audit.Entry{
-			ID: ulid.Make().String(), Source: audit.SourceAPI,
+			ID: ulid.Make().String(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "deployment.create", Resource: "deployment/" + d.ID,
 			AfterFP: d.ToRevision,
 		})

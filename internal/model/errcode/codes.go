@@ -75,4 +75,11 @@ var builtins = []Code{
 		Source:     "added during implementation",
 		GRPC:       codes.PermissionDenied,
 	},
+	{
+		ID:         "E_INVALID_INVITATION",
+		Summary:    "The invitation token is invalid, already used, or expired.",
+		Suggestion: "Ask an admin for a fresh invitation; invitation tokens are single-use and time-boxed.",
+		Source:     "added during implementation",
+		GRPC:       codes.PermissionDenied,
+	},
 }

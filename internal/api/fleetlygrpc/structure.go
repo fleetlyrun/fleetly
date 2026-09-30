@@ -8,6 +8,7 @@ import (
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
+	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
@@ -38,7 +39,7 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "project.create",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.create",
 			Resource: "project/" + p.ID, AfterFP: p.Name,
 		})
 	})
@@ -74,7 +75,7 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "project.delete",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.delete",
 			Resource: "project/" + req.GetId(),
 		})
 	})
@@ -101,7 +102,7 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "app.create",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.create",
 			Resource: "app/" + a.ID, AfterFP: a.Name,
 		})
 	})
@@ -137,7 +138,7 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "app.delete",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.delete",
 			Resource: "app/" + req.GetId(),
 		})
 	})
@@ -174,7 +175,7 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "secret.put",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.put",
 			Resource: "secret/" + row.Name, AfterFP: row.Fingerprint,
 		})
 	})
@@ -202,7 +203,7 @@ func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.De
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "secret.delete",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.delete",
 			Resource: "secret/" + req.GetName(),
 		})
 	})
@@ -229,7 +230,7 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "config.put",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "config.put",
 			Resource: "config/" + row.Name, AfterFP: material.Fingerprint(row.Content),
 		})
 	})
@@ -288,7 +289,7 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "volume.create",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.create",
 			Resource: "volume/" + row.Name, AfterFP: row.PinnedNodeID,
 		})
 	})
@@ -329,7 +330,7 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "network.create",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.create",
 			Resource: "network/" + row.Name, AfterFP: req.String(),
 		})
 	})

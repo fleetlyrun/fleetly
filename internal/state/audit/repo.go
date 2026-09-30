@@ -5,6 +5,7 @@ package audit
 
 import (
 	"context"
+	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -51,14 +52,53 @@ func (r *Repo) Append(ctx context.Context, run state.Runner, e *Entry) error {
 	return err
 }
 
-// List 返回审计（新→旧；limit 上界钳制；账号批扩展过滤参数）。
+// List 返回审计（新→旧；limit 上界钳制）。
 func (r *Repo) List(ctx context.Context, run state.Runner, limit int) ([]Entry, error) {
-	if limit <= 0 || limit > 1000 {
-		limit = 1000
+	return r.ListFiltered(ctx, run, Filter{Limit: limit})
+}
+
+// Filter 是审计查询面（F0.7）：actor/resource 精确、action 前缀、source
+// 枚举过滤；全部可空。
+type Filter struct {
+	Actor        string
+	Source       string
+	ActionPrefix string
+	Resource     string
+	Limit        int
+}
+
+// ListFiltered 按过滤返回审计（新→旧；limit 上界钳制；条件动态拼接但
+// 占位符参数化——无字符串拼接 SQL）。
+func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]Entry, error) {
+	if f.Limit <= 0 || f.Limit > 1000 {
+		f.Limit = 1000
 	}
-	rows, err := run.QueryContext(ctx, `
-		SELECT id, actor, source, action, resource, before_fp, after_fp, created_at
-		FROM audit ORDER BY id DESC LIMIT ?`, limit)
+	query := `SELECT id, actor, source, action, resource, before_fp, after_fp, created_at FROM audit`
+	var conds []string
+	var args []any
+	if f.Actor != "" {
+		conds = append(conds, "actor = ?")
+		args = append(args, f.Actor)
+	}
+	if f.Source != "" {
+		conds = append(conds, "source = ?")
+		args = append(args, f.Source)
+	}
+	if f.ActionPrefix != "" {
+		conds = append(conds, "action LIKE ? ESCAPE '\\'")
+		args = append(args, likePrefix(f.ActionPrefix))
+	}
+	if f.Resource != "" {
+		conds = append(conds, "resource = ?")
+		args = append(args, f.Resource)
+	}
+	if len(conds) > 0 {
+		query += " WHERE " + strings.Join(conds, " AND ")
+	}
+	query += " ORDER BY id DESC LIMIT ?"
+	args = append(args, f.Limit)
+
+	rows, err := run.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -74,4 +114,13 @@ func (r *Repo) List(ctx context.Context, run state.Runner, limit int) ([]Entry, 
 		out = append(out, e)
 	}
 	return out, rows.Err()
+}
+
+// likePrefix 把动作前缀转为 LIKE 模式（% _ 转义——动作名是受控词表，
+// 转义是纵深防御）。
+func likePrefix(p string) string {
+	escaped := strings.ReplaceAll(p, "\\", "\\\\")
+	escaped = strings.ReplaceAll(escaped, "%", "\\%")
+	escaped = strings.ReplaceAll(escaped, "_", "\\_")
+	return escaped + "%"
 }

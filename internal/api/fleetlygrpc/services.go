@@ -16,13 +16,19 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/invitation"
+	"github.com/fleetlyrun/fleetly/internal/state/membership"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
+	"github.com/fleetlyrun/fleetly/internal/state/role"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/team"
+	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
+	"github.com/fleetlyrun/fleetly/internal/state/user"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
@@ -46,31 +52,48 @@ type Services struct {
 	Routes       *route.Repo
 	Nodes        *node.Repo
 	Audits       *audit.Repo
+	Users        *user.Repo
+	Teams        *team.Repo
+	Roles        *role.Repo
+	Memberships  *membership.Repo
+	Tokens       *tokenrepo.Repo
+	Invitations  *invitation.Repo
+
+	// ScopeVocabulary 是 scope 词表（CreateRole 校验用；assembly 单一源
+	// 注入——服务面不自带词表）。
+	ScopeVocabulary []string
 
 	Log *slog.Logger
 }
 
-// NewServices 构造（repos 从 DB 时钟派生）。
-func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, log *slog.Logger) *Services {
+// NewServices 构造（repos 从 DB 时钟派生；vocab 是 scope 词表单一源）。
+func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, vocab []string, log *slog.Logger) *Services {
 	clock := db.Clock()
 	return &Services{
-		DB:           db,
-		Engine:       e,
-		Cipher:       c,
-		Runtime:      rt,
-		Projects:     project.New(clock),
-		Apps:         app.New(clock),
-		Deployments:  deployment.New(clock),
-		Revisions:    revision.New(clock),
-		Builds:       build.New(clock),
-		OutboxEvents: outbox.New(clock),
-		Secrets:      secret.New(clock),
-		Configs:      configrepo.New(clock),
-		Volumes:      volume.New(clock),
-		Networks:     networkrepo.New(clock),
-		Routes:       route.New(clock),
-		Nodes:        node.New(clock),
-		Audits:       audit.New(clock),
-		Log:          log,
+		DB:              db,
+		Engine:          e,
+		Cipher:          c,
+		Runtime:         rt,
+		Projects:        project.New(clock),
+		Apps:            app.New(clock),
+		Deployments:     deployment.New(clock),
+		Revisions:       revision.New(clock),
+		Builds:          build.New(clock),
+		OutboxEvents:    outbox.New(clock),
+		Secrets:         secret.New(clock),
+		Configs:         configrepo.New(clock),
+		Volumes:         volume.New(clock),
+		Networks:        networkrepo.New(clock),
+		Routes:          route.New(clock),
+		Nodes:           node.New(clock),
+		Audits:          audit.New(clock),
+		Users:           user.New(clock),
+		Teams:           team.New(clock),
+		Roles:           role.New(clock),
+		Memberships:     membership.New(clock),
+		Tokens:          tokenrepo.New(clock),
+		Invitations:     invitation.New(clock),
+		ScopeVocabulary: vocab,
+		Log:             log,
 	}
 }

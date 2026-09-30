@@ -134,9 +134,9 @@ func NewEngine(
 	}, engine.Options{DataRoot: cfg.DataRoot()})
 }
 
-// NewAPIServices 构造五上下文 API 服务依赖集。
+// NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入）。
 func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, app lynx.App) *fleetlygrpc.Services {
-	return fleetlygrpc.NewServices(db, e, cipher, rt, app.Logger())
+	return fleetlygrpc.NewServices(db, e, cipher, rt, ScopeResources(), app.Logger())
 }
 
 // engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖

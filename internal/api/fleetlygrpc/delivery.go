@@ -15,6 +15,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
+	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -62,7 +63,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 			return cerr
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "revision.create",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
 			Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
 		})
 	})

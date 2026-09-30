@@ -21,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/state/role"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
 	"github.com/fleetlyrun/fleetly/internal/state/user"
@@ -274,4 +275,21 @@ func withIdentity(ctx context.Context, id *Identity) context.Context {
 		return ctx
 	}
 	return context.WithValue(ctx, ctxKey{}, id)
+}
+
+// ActorFromContext 返回审计 actor（匿名空串）。
+func ActorFromContext(ctx context.Context) string {
+	if id, ok := FromContext(ctx); ok {
+		return id.Actor()
+	}
+	return ""
+}
+
+// SourceFromContext 返回审计来源：CLI 自标识头 → cli，经 gRPC 面的其余
+// 调用 → api（engine 自治动作不经本函数——自有 system 来源）。
+func SourceFromContext(ctx context.Context) audit.Source {
+	if ClientSourceFromContext(ctx) == "cli" {
+		return audit.SourceCLI
+	}
+	return audit.SourceAPI
 }

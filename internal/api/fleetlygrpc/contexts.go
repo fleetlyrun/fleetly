@@ -10,6 +10,7 @@ import (
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
+	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
@@ -72,7 +73,7 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "route.create",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.create",
 			Resource: "route/" + row.ID, AfterFP: row.Host,
 		})
 	})
@@ -104,7 +105,7 @@ func (svc *RoutesService) DeleteRoute(ctx context.Context, req *edgev1.DeleteRou
 			return err
 		}
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Source: audit.SourceAPI, Action: "route.delete",
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.delete",
 			Resource: "route/" + req.GetId(),
 		})
 	})

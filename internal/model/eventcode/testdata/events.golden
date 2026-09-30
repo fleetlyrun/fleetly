@@ -14,6 +14,13 @@ deployment.releasing	Deployment started releasing workloads to runtime.	added du
 deployment.rolling_back	Deployment started replaying last successful revision.	added during implementation
 deployment.succeeded	Deployment reached succeeded terminal state.	added during implementation
 deployment.superseded	Deployment superseded by a newer one.	added during implementation
+invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
+invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
+role.created	A custom role was created from a scope set.	added during implementation
+team.created	A team was created.	added during implementation
+token.created	A token was minted (secret shown once at creation).	added during implementation
+token.revoked	A token was revoked; its next call will be rejected.	added during implementation
+user.created	A user was created and granted a role in a team.	added during implementation
 workload.drift_detected	Observed workload state diverged from the ensured generation.	added during implementation

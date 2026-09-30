@@ -105,7 +105,7 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 		t.Fatalf("apitest: interceptors: %v", err)
 	}
 
-	services := fleetlygrpc.NewServices(db, eng, cipher, rt, log)
+	services := fleetlygrpc.NewServices(db, eng, cipher, rt, assembly.ScopeResources(), log)
 	srv := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(unary...),
 		grpc.ChainStreamInterceptor(stream...),

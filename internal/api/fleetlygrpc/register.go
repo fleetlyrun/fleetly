@@ -7,6 +7,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
@@ -27,4 +28,10 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	edgev1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
 	telemetryv1.RegisterEventsServiceServer(srv, &EventsService{s: s})
 	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})
+	identityv1.RegisterUsersServiceServer(srv, &UsersService{s: s})
+	identityv1.RegisterTeamsServiceServer(srv, &TeamsService{s: s})
+	identityv1.RegisterRolesServiceServer(srv, &RolesService{s: s})
+	identityv1.RegisterTokensServiceServer(srv, &TokensService{s: s})
+	identityv1.RegisterInvitationsServiceServer(srv, &InvitationsService{s: s})
+	identityv1.RegisterAuditQueryServiceServer(srv, &AuditQueryService{s: s})
 }

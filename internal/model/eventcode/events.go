@@ -32,4 +32,13 @@ var builtins = []Event{
 	// Drift 信号（per-Workload 粒度 + 去抖，2026-09-30 裁决；检测默认开、
 	// 收敛默认 opt-in，ADR-0005）。
 	{Name: "workload.drift_detected", Summary: "Observed workload state diverged from the ensured generation.", Source: "added during implementation"},
+
+	// Identity & Access（F0.5~F0.7 账号批）。
+	{Name: "user.created", Summary: "A user was created and granted a role in a team.", Source: "added during implementation"},
+	{Name: "team.created", Summary: "A team was created.", Source: "added during implementation"},
+	{Name: "role.created", Summary: "A custom role was created from a scope set.", Source: "added during implementation"},
+	{Name: "token.created", Summary: "A token was minted (secret shown once at creation).", Source: "added during implementation"},
+	{Name: "token.revoked", Summary: "A token was revoked; its next call will be rejected.", Source: "added during implementation"},
+	{Name: "invitation.created", Summary: "An invitation was issued (single-use, time-boxed, role-bound).", Source: "added during implementation"},
+	{Name: "invitation.accepted", Summary: "An invitation was redeemed; the invitee became a user.", Source: "added during implementation"},
 }
