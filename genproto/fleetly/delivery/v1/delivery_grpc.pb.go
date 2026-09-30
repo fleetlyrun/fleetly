@@ -523,3 +523,249 @@ var BuildsService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "fleetly/delivery/v1/delivery.proto",
 }
+
+const (
+	HooksService_SetGitHook_FullMethodName      = "/fleetly.delivery.v1.HooksService/SetGitHook"
+	HooksService_GetGitHook_FullMethodName      = "/fleetly.delivery.v1.HooksService/GetGitHook"
+	HooksService_RotateHookToken_FullMethodName = "/fleetly.delivery.v1.HooksService/RotateHookToken"
+	HooksService_ReceiveWebhook_FullMethodName  = "/fleetly.delivery.v1.HooksService/ReceiveWebhook"
+)
+
+// HooksServiceClient is the client API for HooksService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// HooksService：per-App Git 触发配置 + GitHub push 接收面（F0.13）。配置
+// 面走 apps 读写 Scope；接收面是 PUBLIC 档——HMAC 签名即凭证（与
+// AcceptInvitation 同款自认证模式）。接收面无 HTTP 绑定：验签必须对原始
+// 请求体字节计算（protojson 解码会改变字节形态），REST 入口
+// /v1/hooks/<token> 由 gateway 直挂原生 handler 经本服务转发。
+type HooksServiceClient interface {
+	// SetGitHook 建/改配置；无 Token 时铸造（明文只在本响应出现一次，
+	// 同一串兼作 GitHub webhook secret）。已配置过再 Set 只改配置不换 Token
+	// （换 Token 用 RotateHookToken）。
+	SetGitHook(ctx context.Context, in *SetGitHookRequest, opts ...grpc.CallOption) (*SetGitHookResponse, error)
+	GetGitHook(ctx context.Context, in *GetGitHookRequest, opts ...grpc.CallOption) (*GetGitHookResponse, error)
+	// RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret
+	// 同源双换；旧 Token 即刻失效）。
+	RotateHookToken(ctx context.Context, in *RotateHookTokenRequest, opts ...grpc.CallOption) (*RotateHookTokenResponse, error)
+	// ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
+	// gateway 原生 handler 直挂）。token 取 URL 段、payload 是原始请求体、
+	// event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
+	// X-Hub-Signature-256 头。
+	ReceiveWebhook(ctx context.Context, in *ReceiveWebhookRequest, opts ...grpc.CallOption) (*ReceiveWebhookResponse, error)
+}
+
+type hooksServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewHooksServiceClient(cc grpc.ClientConnInterface) HooksServiceClient {
+	return &hooksServiceClient{cc}
+}
+
+func (c *hooksServiceClient) SetGitHook(ctx context.Context, in *SetGitHookRequest, opts ...grpc.CallOption) (*SetGitHookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(SetGitHookResponse)
+	err := c.cc.Invoke(ctx, HooksService_SetGitHook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hooksServiceClient) GetGitHook(ctx context.Context, in *GetGitHookRequest, opts ...grpc.CallOption) (*GetGitHookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetGitHookResponse)
+	err := c.cc.Invoke(ctx, HooksService_GetGitHook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hooksServiceClient) RotateHookToken(ctx context.Context, in *RotateHookTokenRequest, opts ...grpc.CallOption) (*RotateHookTokenResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RotateHookTokenResponse)
+	err := c.cc.Invoke(ctx, HooksService_RotateHookToken_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hooksServiceClient) ReceiveWebhook(ctx context.Context, in *ReceiveWebhookRequest, opts ...grpc.CallOption) (*ReceiveWebhookResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReceiveWebhookResponse)
+	err := c.cc.Invoke(ctx, HooksService_ReceiveWebhook_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// HooksServiceServer is the server API for HooksService service.
+// All implementations must embed UnimplementedHooksServiceServer
+// for forward compatibility.
+//
+// HooksService：per-App Git 触发配置 + GitHub push 接收面（F0.13）。配置
+// 面走 apps 读写 Scope；接收面是 PUBLIC 档——HMAC 签名即凭证（与
+// AcceptInvitation 同款自认证模式）。接收面无 HTTP 绑定：验签必须对原始
+// 请求体字节计算（protojson 解码会改变字节形态），REST 入口
+// /v1/hooks/<token> 由 gateway 直挂原生 handler 经本服务转发。
+type HooksServiceServer interface {
+	// SetGitHook 建/改配置；无 Token 时铸造（明文只在本响应出现一次，
+	// 同一串兼作 GitHub webhook secret）。已配置过再 Set 只改配置不换 Token
+	// （换 Token 用 RotateHookToken）。
+	SetGitHook(context.Context, *SetGitHookRequest) (*SetGitHookResponse, error)
+	GetGitHook(context.Context, *GetGitHookRequest) (*GetGitHookResponse, error)
+	// RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret
+	// 同源双换；旧 Token 即刻失效）。
+	RotateHookToken(context.Context, *RotateHookTokenRequest) (*RotateHookTokenResponse, error)
+	// ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
+	// gateway 原生 handler 直挂）。token 取 URL 段、payload 是原始请求体、
+	// event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
+	// X-Hub-Signature-256 头。
+	ReceiveWebhook(context.Context, *ReceiveWebhookRequest) (*ReceiveWebhookResponse, error)
+	mustEmbedUnimplementedHooksServiceServer()
+}
+
+// UnimplementedHooksServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedHooksServiceServer struct{}
+
+func (UnimplementedHooksServiceServer) SetGitHook(context.Context, *SetGitHookRequest) (*SetGitHookResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetGitHook not implemented")
+}
+func (UnimplementedHooksServiceServer) GetGitHook(context.Context, *GetGitHookRequest) (*GetGitHookResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetGitHook not implemented")
+}
+func (UnimplementedHooksServiceServer) RotateHookToken(context.Context, *RotateHookTokenRequest) (*RotateHookTokenResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RotateHookToken not implemented")
+}
+func (UnimplementedHooksServiceServer) ReceiveWebhook(context.Context, *ReceiveWebhookRequest) (*ReceiveWebhookResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReceiveWebhook not implemented")
+}
+func (UnimplementedHooksServiceServer) mustEmbedUnimplementedHooksServiceServer() {}
+func (UnimplementedHooksServiceServer) testEmbeddedByValue()                      {}
+
+// UnsafeHooksServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to HooksServiceServer will
+// result in compilation errors.
+type UnsafeHooksServiceServer interface {
+	mustEmbedUnimplementedHooksServiceServer()
+}
+
+func RegisterHooksServiceServer(s grpc.ServiceRegistrar, srv HooksServiceServer) {
+	// If the following call panics, it indicates UnimplementedHooksServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&HooksService_ServiceDesc, srv)
+}
+
+func _HooksService_SetGitHook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetGitHookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HooksServiceServer).SetGitHook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HooksService_SetGitHook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HooksServiceServer).SetGitHook(ctx, req.(*SetGitHookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _HooksService_GetGitHook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGitHookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HooksServiceServer).GetGitHook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HooksService_GetGitHook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HooksServiceServer).GetGitHook(ctx, req.(*GetGitHookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _HooksService_RotateHookToken_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RotateHookTokenRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HooksServiceServer).RotateHookToken(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HooksService_RotateHookToken_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HooksServiceServer).RotateHookToken(ctx, req.(*RotateHookTokenRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _HooksService_ReceiveWebhook_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReceiveWebhookRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HooksServiceServer).ReceiveWebhook(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: HooksService_ReceiveWebhook_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HooksServiceServer).ReceiveWebhook(ctx, req.(*ReceiveWebhookRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// HooksService_ServiceDesc is the grpc.ServiceDesc for HooksService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var HooksService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.delivery.v1.HooksService",
+	HandlerType: (*HooksServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "SetGitHook",
+			Handler:    _HooksService_SetGitHook_Handler,
+		},
+		{
+			MethodName: "GetGitHook",
+			Handler:    _HooksService_GetGitHook_Handler,
+		},
+		{
+			MethodName: "RotateHookToken",
+			Handler:    _HooksService_RotateHookToken_Handler,
+		},
+		{
+			MethodName: "ReceiveWebhook",
+			Handler:    _HooksService_ReceiveWebhook_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/delivery/v1/delivery.proto",
+}

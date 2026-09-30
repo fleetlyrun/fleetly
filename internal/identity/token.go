@@ -12,10 +12,12 @@ import (
 	"strings"
 )
 
-// Token 前缀族：平台 Token `flt_`、邀请 Token `fltinv_`（泄露扫描的识别锚）。
+// Token 前缀族：平台 Token `flt_`、邀请 Token `fltinv_`、Git 触发 Token
+// `flthook_`（URL token 与 GitHub webhook secret 同源；泄露扫描的识别锚）。
 const (
 	TokenPrefix       = "flt_"
 	InvitationPrefix  = "fltinv_"
+	HookPrefix        = "flthook_"
 	secretAlphabetLen = 32 // 随机字节数（base64url 后 43 字符；256-bit 熵）
 )
 
@@ -31,6 +33,9 @@ func NewToken() (GeneratedToken, error) { return generate(TokenPrefix) }
 
 // NewInvitation 生成邀请 Token 材质。
 func NewInvitation() (GeneratedToken, error) { return generate(InvitationPrefix) }
+
+// NewHookToken 生成 Git 触发 Token 材质（URL 段与 webhook secret 同串）。
+func NewHookToken() (GeneratedToken, error) { return generate(HookPrefix) }
 
 func generate(prefix string) (GeneratedToken, error) {
 	raw := make([]byte, secretAlphabetLen)

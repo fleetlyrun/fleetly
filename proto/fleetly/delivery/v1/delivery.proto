@@ -95,6 +95,49 @@ service BuildsService {
   }
 }
 
+// HooksService：per-App Git 触发配置 + GitHub push 接收面（F0.13）。配置
+// 面走 apps 读写 Scope；接收面是 PUBLIC 档——HMAC 签名即凭证（与
+// AcceptInvitation 同款自认证模式）。接收面无 HTTP 绑定：验签必须对原始
+// 请求体字节计算（protojson 解码会改变字节形态），REST 入口
+// /v1/hooks/<token> 由 gateway 直挂原生 handler 经本服务转发。
+service HooksService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // SetGitHook 建/改配置；无 Token 时铸造（明文只在本响应出现一次，
+  // 同一串兼作 GitHub webhook secret）。已配置过再 Set 只改配置不换 Token
+  //（换 Token 用 RotateHookToken）。
+  rpc SetGitHook(SetGitHookRequest) returns (SetGitHookResponse) {
+    option (google.api.http) = { post: "/v1/apps/{app_id}/hook" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetGitHook(GetGitHookRequest) returns (GetGitHookResponse) {
+    option (google.api.http) = { get: "/v1/apps/{app_id}/hook" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "apps" op: SCOPE_OP_READ }
+    };
+  }
+  // RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret
+  // 同源双换；旧 Token 即刻失效）。
+  rpc RotateHookToken(RotateHookTokenRequest) returns (RotateHookTokenResponse) {
+    option (google.api.http) = { post: "/v1/apps/{app_id}/hook/rotate" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "apps" op: SCOPE_OP_WRITE }
+    };
+  }
+  // ReceiveWebhook 是 GitHub webhook 接收面（PUBLIC；gRPC-only——HTTP 侧由
+  // gateway 原生 handler 直挂）。token 取 URL 段、payload 是原始请求体、
+  // event/delivery/signature 对应 X-GitHub-Event / X-GitHub-Delivery /
+  // X-Hub-Signature-256 头。
+  rpc ReceiveWebhook(ReceiveWebhookRequest) returns (ReceiveWebhookResponse) {
+    option (grpcapi.v1.method_auth) = { access: ACCESS_LEVEL_PUBLIC };
+  }
+}
+
 // Deployment 是受监督迁移的行形态（状态机值 kebab-case 与存储一致）。
 message Deployment {
   string id = 1;
@@ -175,3 +218,56 @@ message Build {
 
 message ListBuildsRequest { string app_id = 1; }
 message ListBuildsResponse { repeated Build builds = 1; }
+
+// GitHook 是 per-App Git 触发配置投影（secret 永不回显——完整明文只在
+// 铸造响应出现一次）。
+message GitHook {
+  string app_id = 1;
+  string repo = 2;                  // 仓库 URL（构建检出源）
+  string branch = 3;                // 分支过滤（空 = 全部分支；tag 一律不触发）
+  string dockerfile = 4;            // 构建文件路径（缺省 Dockerfile）
+  repeated string watch_paths = 5;  // 触发路径前缀（空 = 全部变更触发）
+  string token_prefix = 6;          // URL token 前缀（泄露识别锚）
+  string created_at = 7;
+  string updated_at = 8;
+}
+
+message SetGitHookRequest {
+  string app_id = 1;
+  string repo = 2;
+  string branch = 3;
+  string dockerfile = 4;
+  repeated string watch_paths = 5;
+}
+
+message SetGitHookResponse {
+  GitHook hook = 1;
+  // secret 是完整明文（flthook_ 前缀），仅首次配置铸造时返回一次；同一串
+  // 用作 GitHub 仓库的 webhook secret。
+  string secret = 2;
+}
+
+message GetGitHookRequest { string app_id = 1; }
+message GetGitHookResponse { GitHook hook = 1; }
+
+message RotateHookTokenRequest { string app_id = 1; }
+message RotateHookTokenResponse {
+  GitHook hook = 1;
+  string secret = 2; // 新明文，仅此一次
+}
+
+message ReceiveWebhookRequest {
+  string token = 1;      // URL token 明文
+  bytes payload = 2;     // 原始请求体（验签对象）
+  string event = 3;      // X-GitHub-Event（ping/push）
+  string delivery = 4;   // X-GitHub-Delivery（重投去重键）
+  string signature = 5;  // X-Hub-Signature-256（"sha256=<hex>"）
+}
+
+message ReceiveWebhookResponse {
+  // status: pong（ping 事件）| accepted | skipped | duplicate | ignored
+  //（非 ping/push 事件）。
+  string status = 1;
+  string reason = 2; // skipped 细节（branch/path/skip 标记）
+  string deployment_id = 3;
+}

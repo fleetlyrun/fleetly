@@ -13,6 +13,9 @@
     },
     {
       "name": "BuildsService"
+    },
+    {
+      "name": "HooksService"
     }
   ],
   "consumes": [
@@ -22,6 +25,112 @@
     "application/json"
   ],
   "paths": {
+    "/v1/apps/{app_id}/hook": {
+      "get": {
+        "operationId": "HooksService_GetGitHook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetGitHookResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "HooksService"
+        ]
+      },
+      "post": {
+        "summary": "SetGitHook 建/改配置；无 Token 时铸造（明文只在本响应出现一次，\n同一串兼作 GitHub webhook secret）。已配置过再 Set 只改配置不换 Token\n（换 Token 用 RotateHookToken）。",
+        "operationId": "HooksService_SetGitHook",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetGitHookResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/HooksServiceSetGitHookBody"
+            }
+          }
+        ],
+        "tags": [
+          "HooksService"
+        ]
+      }
+    },
+    "/v1/apps/{app_id}/hook/rotate": {
+      "post": {
+        "summary": "RotateHookToken 吊销旧 Token 铸新（URL token 与 GitHub webhook secret\n同源双换；旧 Token 即刻失效）。",
+        "operationId": "HooksService_RotateHookToken",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RotateHookTokenResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": "#/definitions/v1ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/HooksServiceRotateHookTokenBody"
+            }
+          }
+        ],
+        "tags": [
+          "HooksService"
+        ]
+      }
+    },
     "/v1/apps/{app_id}/rollback": {
       "post": {
         "summary": "Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。",
@@ -309,6 +418,29 @@
         }
       }
     },
+    "HooksServiceRotateHookTokenBody": {
+      "type": "object"
+    },
+    "HooksServiceSetGitHookBody": {
+      "type": "object",
+      "properties": {
+        "repo": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "dockerfile": {
+          "type": "string"
+        },
+        "watch_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "v1Build": {
       "type": "object",
       "properties": {
@@ -495,6 +627,52 @@
         }
       }
     },
+    "v1GetGitHookResponse": {
+      "type": "object",
+      "properties": {
+        "hook": {
+          "$ref": "#/definitions/v1GitHook"
+        }
+      }
+    },
+    "v1GitHook": {
+      "type": "object",
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "repo": {
+          "type": "string",
+          "title": "仓库 URL（构建检出源）"
+        },
+        "branch": {
+          "type": "string",
+          "title": "分支过滤（空 = 全部分支；tag 一律不触发）"
+        },
+        "dockerfile": {
+          "type": "string",
+          "title": "构建文件路径（缺省 Dockerfile）"
+        },
+        "watch_paths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "title": "触发路径前缀（空 = 全部变更触发）"
+        },
+        "token_prefix": {
+          "type": "string",
+          "title": "URL token 前缀（泄露识别锚）"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "GitHook 是 per-App Git 触发配置投影（secret 永不回显——完整明文只在\n铸造响应出现一次）。"
+    },
     "v1ListBuildsResponse": {
       "type": "object",
       "properties": {
@@ -531,6 +709,22 @@
         }
       }
     },
+    "v1ReceiveWebhookResponse": {
+      "type": "object",
+      "properties": {
+        "status": {
+          "type": "string",
+          "title": "status: pong（ping 事件）| accepted | skipped | duplicate | ignored\n（非 ping/push 事件）。"
+        },
+        "reason": {
+          "type": "string",
+          "title": "skipped 细节（branch/path/skip 标记）"
+        },
+        "deployment_id": {
+          "type": "string"
+        }
+      }
+    },
     "v1Revision": {
       "type": "object",
       "properties": {
@@ -557,6 +751,30 @@
       "properties": {
         "deployment": {
           "$ref": "#/definitions/v1Deployment"
+        }
+      }
+    },
+    "v1RotateHookTokenResponse": {
+      "type": "object",
+      "properties": {
+        "hook": {
+          "$ref": "#/definitions/v1GitHook"
+        },
+        "secret": {
+          "type": "string",
+          "title": "新明文，仅此一次"
+        }
+      }
+    },
+    "v1SetGitHookResponse": {
+      "type": "object",
+      "properties": {
+        "hook": {
+          "$ref": "#/definitions/v1GitHook"
+        },
+        "secret": {
+          "type": "string",
+          "title": "secret 是完整明文（flthook_ 前缀），仅首次配置铸造时返回一次；同一串\n用作 GitHub 仓库的 webhook secret。"
         }
       }
     }

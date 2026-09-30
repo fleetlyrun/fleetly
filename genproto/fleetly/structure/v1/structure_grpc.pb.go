@@ -33,8 +33,8 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// ProjectsService：Project 聚合 CRUD（scope 注解先写好；enforcement 随
-// 账号批接管——fail-closed：没有执法者的限制是假限制，当前面为公开面）。
+// ProjectsService：Project 聚合 CRUD（scope 注解 + authn 拦截器执法；
+// 服务缺省档 SERVER——新增方法缺注解即启动红，不静默放行）。
 type ProjectsServiceClient interface {
 	CreateProject(ctx context.Context, in *CreateProjectRequest, opts ...grpc.CallOption) (*CreateProjectResponse, error)
 	GetProject(ctx context.Context, in *GetProjectRequest, opts ...grpc.CallOption) (*GetProjectResponse, error)
@@ -94,8 +94,8 @@ func (c *projectsServiceClient) DeleteProject(ctx context.Context, in *DeletePro
 // All implementations must embed UnimplementedProjectsServiceServer
 // for forward compatibility.
 //
-// ProjectsService：Project 聚合 CRUD（scope 注解先写好；enforcement 随
-// 账号批接管——fail-closed：没有执法者的限制是假限制，当前面为公开面）。
+// ProjectsService：Project 聚合 CRUD（scope 注解 + authn 拦截器执法；
+// 服务缺省档 SERVER——新增方法缺注解即启动红，不静默放行）。
 type ProjectsServiceServer interface {
 	CreateProject(context.Context, *CreateProjectRequest) (*CreateProjectResponse, error)
 	GetProject(context.Context, *GetProjectRequest) (*GetProjectResponse, error)

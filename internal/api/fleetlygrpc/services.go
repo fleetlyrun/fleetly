@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/hook"
 	"github.com/fleetlyrun/fleetly/internal/state/invitation"
 	"github.com/fleetlyrun/fleetly/internal/state/membership"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
@@ -58,6 +59,7 @@ type Services struct {
 	Memberships  *membership.Repo
 	Tokens       *tokenrepo.Repo
 	Invitations  *invitation.Repo
+	Hooks        *hook.Repo
 
 	// ScopeVocabulary 是 scope 词表（CreateRole 校验用；assembly 单一源
 	// 注入——服务面不自带词表）。
@@ -93,6 +95,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Memberships:     membership.New(clock),
 		Tokens:          tokenrepo.New(clock),
 		Invitations:     invitation.New(clock),
+		Hooks:           hook.New(clock),
 		ScopeVocabulary: vocab,
 		Log:             log,
 	}
