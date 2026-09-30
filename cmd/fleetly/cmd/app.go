@@ -46,6 +46,14 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 	app.Register(
 		newVersionCmd(info),
 		newStatusCmd(),
+		// 身份与访问（Identity 上下文）。
+		newLoginVerb(),
+		newWhoamiVerb(),
+		groupVerb("tokens", "manage tokens (secrets shown once at creation)", newTokensCreateVerb(), newTokensListVerb(), newTokensRevokeVerb()),
+		groupVerb("users", "manage users and invitations", newUsersCreateVerb(), newUsersListVerb(), newUsersInviteVerb(), newUsersAcceptVerb()),
+		groupVerb("roles", "manage roles (builtin owner/admin/member plus custom)", newRolesCreateVerb(), newRolesListVerb()),
+		groupVerb("teams", "manage teams", newTeamsCreateVerb(), newTeamsListVerb()),
+		newAuditVerb(),
 		// Structure 上下文（动词组：嵌套 Dispatch）。
 		groupVerb("projects", "manage projects", newProjectsCreateVerb(), newProjectsListVerb()),
 		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb()),

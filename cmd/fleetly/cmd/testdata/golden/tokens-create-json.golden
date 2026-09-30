@@ -1,0 +1,12 @@
+{
+  "token": {
+    "id": "<ULID>",
+    "name": "alice-cli-json",
+    "team_id": "default",
+    "user_id": "<ULID>",
+    "role_id": "builtin-admin",
+    "prefix": "<TOKEN>",
+    "created_at": "2026-01-01T00:00:00Z"
+  },
+  "secret": "<TOKEN>"
+}

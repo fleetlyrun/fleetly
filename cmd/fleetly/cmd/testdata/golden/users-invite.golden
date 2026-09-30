@@ -1,0 +1,2 @@
+invitation <ULID> expires 2026-01-02T00:00:00Z
+accept with: fleetly users accept --token <INVITATION> --name NAME

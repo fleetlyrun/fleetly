@@ -1,0 +1,10 @@
+{
+  "token_id": "<ULID>",
+  "token_name": "bootstrap",
+  "team_id": "default",
+  "role_id": "builtin-owner",
+  "role_name": "owner",
+  "scopes": [
+    "*"
+  ]
+}

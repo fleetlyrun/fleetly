@@ -1,0 +1,94 @@
+{
+  "entries": [
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "invitation.create",
+      "resource": "invitation/<ULID>",
+      "after_fp": "2026-01-02T00:00:00Z",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "invitation.create",
+      "resource": "invitation/<ULID>",
+      "after_fp": "2026-01-02T00:00:00Z",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "token.create",
+      "resource": "token/<ULID>",
+      "after_fp": "alice-cli-json",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "token.create",
+      "resource": "token/<ULID>",
+      "after_fp": "alice-cli",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "team.create",
+      "resource": "team/<ULID>",
+      "after_fp": "shop-json",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "team.create",
+      "resource": "team/<ULID>",
+      "after_fp": "shop",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "role.create",
+      "resource": "role/<ULID>",
+      "after_fp": "deployments:write",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "role.create",
+      "resource": "role/<ULID>",
+      "after_fp": "deployments:write",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "user.create",
+      "resource": "user/<ULID>",
+      "after_fp": "alice-json",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "actor": "token:bootstrap",
+      "source": "cli",
+      "action": "user.create",
+      "resource": "user/<ULID>",
+      "after_fp": "alice",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

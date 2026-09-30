@@ -17,14 +17,18 @@ import (
 
 // normalizeGolden 把非确定输出占位化（ULID 主键/短哈希指纹/内容寻址
 // digest——digest 由含 ULID 的 spec 派生，逐次不同；fake clock 时间戳
-// 确定不占位）。
+// 确定不占位；凭证明文随机逐次不同）。
 var (
-	ulidRe   = regexp.MustCompile(`[0-9A-HJKMNP-TV-Z]{26}`)
-	digestRe = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
-	fprRe    = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
+	ulidRe       = regexp.MustCompile(`[0-9A-HJKMNP-TV-Z]{26}`)
+	digestRe     = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
+	fprRe        = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
+	tokenRe      = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
+	invitationRe = regexp.MustCompile(`fltinv_[A-Za-z0-9_-]{4,}`)
 )
 
 func normalizeGolden(s string) string {
+	s = invitationRe.ReplaceAllString(s, "<INVITATION>")
+	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
 	s = ulidRe.ReplaceAllString(s, "<ULID>")
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")
 	s = fprRe.ReplaceAllString(s, "<FP>")

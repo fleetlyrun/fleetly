@@ -1,0 +1,5 @@
+token bootstrap (id <ULID>)
+user (no user attached)
+role owner
+team default
+scopes [*]

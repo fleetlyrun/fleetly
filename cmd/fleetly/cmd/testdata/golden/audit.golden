@@ -1,0 +1,11 @@
+ID	ACTOR	SOURCE	ACTION	RESOURCE	BEFORE	AFTER	CREATED
+<ULID>	token:bootstrap	cli	invitation.create	invitation/<ULID>		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	invitation.create	invitation/<ULID>		2026-01-02T00:00:00Z	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	token.create	token/<ULID>		alice-cli-json	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	token.create	token/<ULID>		alice-cli	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	team.create	team/<ULID>		shop-json	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	team.create	team/<ULID>		shop	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	role.create	role/<ULID>		deployments:write	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	role.create	role/<ULID>		deployments:write	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	user.create	user/<ULID>		alice-json	2026-01-01T00:00:00Z
+<ULID>	token:bootstrap	cli	user.create	user/<ULID>		alice	2026-01-01T00:00:00Z

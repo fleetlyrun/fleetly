@@ -1,0 +1,9 @@
+{
+  "id": "<ULID>",
+  "team_id": "default",
+  "name": "deployer-json",
+  "scopes": [
+    "deployments:write"
+  ],
+  "created_at": "2026-01-01T00:00:00Z"
+}

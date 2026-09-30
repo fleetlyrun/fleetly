@@ -1,0 +1,86 @@
+{
+  "roles": [
+    {
+      "id": "builtin-admin",
+      "name": "admin",
+      "builtin": true,
+      "scopes": [
+        "apps:admin",
+        "audit:read",
+        "builds:admin",
+        "configs:admin",
+        "deployments:admin",
+        "events:admin",
+        "invitations:admin",
+        "logs:admin",
+        "networks:admin",
+        "nodes:admin",
+        "projects:admin",
+        "revisions:admin",
+        "roles:admin",
+        "routes:admin",
+        "secrets:admin",
+        "teams:admin",
+        "tokens:admin",
+        "users:admin",
+        "volumes:admin"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "builtin-member",
+      "name": "member",
+      "builtin": true,
+      "scopes": [
+        "apps:read",
+        "builds:read",
+        "builds:write",
+        "configs:read",
+        "configs:write",
+        "deployments:read",
+        "deployments:write",
+        "events:read",
+        "logs:read",
+        "networks:read",
+        "networks:write",
+        "nodes:read",
+        "projects:read",
+        "revisions:read",
+        "routes:read",
+        "routes:write",
+        "secrets:read",
+        "secrets:write",
+        "volumes:read",
+        "volumes:write"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "builtin-owner",
+      "name": "owner",
+      "builtin": true,
+      "scopes": [
+        "*"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "team_id": "default",
+      "name": "deployer",
+      "scopes": [
+        "deployments:write"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "team_id": "default",
+      "name": "deployer-json",
+      "scopes": [
+        "deployments:write"
+      ],
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+E_INVALID_INVITATION: invitation is invalid or expired
+suggestion: Ask an admin for a fresh invitation; invitation tokens are single-use and time-boxed.
+docs: https://docs.fleetly.dev/errors/E_INVALID_INVITATION

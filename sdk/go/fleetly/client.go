@@ -16,6 +16,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -43,6 +44,13 @@ type Client struct {
 	Routes      edgev1.RoutesServiceClient
 	Events      telemetryv1.EventsServiceClient
 	Logs        telemetryv1.LogsServiceClient
+
+	Users       identityv1.UsersServiceClient
+	Teams       identityv1.TeamsServiceClient
+	Roles       identityv1.RolesServiceClient
+	Tokens      identityv1.TokensServiceClient
+	Invitations identityv1.InvitationsServiceClient
+	Audit       identityv1.AuditQueryServiceClient
 }
 
 // Options 是 Dial 的可选项累积器。
@@ -97,6 +105,13 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Routes:      edgev1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),
 		Logs:        telemetryv1.NewLogsServiceClient(conn),
+
+		Users:       identityv1.NewUsersServiceClient(conn),
+		Teams:       identityv1.NewTeamsServiceClient(conn),
+		Roles:       identityv1.NewRolesServiceClient(conn),
+		Tokens:      identityv1.NewTokensServiceClient(conn),
+		Invitations: identityv1.NewInvitationsServiceClient(conn),
+		Audit:       identityv1.NewAuditQueryServiceClient(conn),
 	}
 }
 
