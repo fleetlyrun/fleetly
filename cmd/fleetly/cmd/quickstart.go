@@ -149,16 +149,30 @@ func newQuickstartVerb() commands.Command {
 				return err
 			}
 
-			// 5. Route（sslip.io host 默认拼）。
+			// 5. Route（sslip.io host 默认拼；幂等复用：同 host 既有 Route
+			// 直接复用——重跑 quickstart 不因昨天的路由而 E_ALREADY_EXISTS）。
 			if host == "" {
 				host = sslipHost(serverAddr, appName)
 			}
-			route, err := c.Routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
-				ProjectId: projectID, Host: host, AppId: appID,
-				Process: "web", Port: int32(port), Protocol: "http", TlsMode: tlsMode, //nolint:gosec // 端口域内
-			})
+			rlist, err := c.Routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{})
 			if err != nil {
 				return err
+			}
+			var route *edgev1.Route
+			for _, r := range rlist.GetRoutes() {
+				if r.GetHost() == host {
+					route = r // 同 host 既有 Route 直接复用（列表携带全量字段）
+				}
+			}
+			if route == nil {
+				created, err := c.Routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+					ProjectId: projectID, Host: host, AppId: appID,
+					Process: "web", Port: int32(port), Protocol: "http", TlsMode: tlsMode, //nolint:gosec // 端口域内
+				})
+				if err != nil {
+					return err
+				}
+				route = created.GetRoute()
 			}
 
 			// 6. 等待 succeeded（轮询部署状态；终态即止）。
@@ -186,7 +200,7 @@ func newQuickstartVerb() commands.Command {
 			report := quickstartReport{
 				ProjectID: projectID, AppID: appID,
 				DeploymentID: dep.GetDeployment().GetId(),
-				RouteID:      route.GetRoute().GetId(),
+				RouteID:      route.GetId(),
 				Host:         host, URL: scheme + "://" + host,
 				State: state,
 			}
