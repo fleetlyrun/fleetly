@@ -20,12 +20,15 @@ import (
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
 func (e *Engine) managedStep(ctx context.Context) {
-	e.reconcileNodes(ctx) // 节点对账不依赖 Edge（观测面独立收敛）
+	// 全步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
+	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+	defer cancel()
+	e.reconcileNodes(stepCtx) // 节点对账不依赖 Edge（观测面独立收敛）
 	if e.edge == nil {
 		return // Edge 未装配（可选项）：无受管面
 	}
-	e.reconcileManaged(ctx)
-	e.publishRoutes(ctx)
+	e.reconcileManaged(stepCtx)
+	e.publishRoutes(stepCtx)
 }
 
 // 受管域 Generation 分配（进程内）：**指纹未变则 gen 不推进**。staging 真机

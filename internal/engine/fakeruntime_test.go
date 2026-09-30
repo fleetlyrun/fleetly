@@ -13,9 +13,10 @@ import (
 type fakeRuntime struct {
 	mu sync.Mutex
 
-	ensures  []ensureCall
-	failNext bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
-	removed  []capability.NamespaceRef
+	ensures    []ensureCall
+	failNext   bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
+	removed    []capability.NamespaceRef
+	blockPoint chan struct{} // 非空时 Ensure 阻塞直至关闭或 ctx 取消（hang 注入）
 
 	obsCh chan capability.WorkloadEvent
 
@@ -46,7 +47,14 @@ func (f *fakeRuntime) Describe() capability.ProviderDescriptor {
 
 func (f *fakeRuntime) Health(context.Context) capability.HealthReport { return f.health }
 
-func (f *fakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, _ capability.Materials) error {
+func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, _ capability.Materials) error {
+	if f.blockPoint != nil {
+		select {
+		case <-f.blockPoint:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ensures = append(f.ensures, ensureCall{

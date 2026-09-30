@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -100,6 +101,30 @@ func TestManagedGenerationStableAcrossTicks(t *testing.T) {
 	assert.Greater(t, calls[5].Gen, calls[4].Gen, "spec change must advance the generation")
 	assert.Equal(t, calls[5].Gen, calls[6].Gen, "new spec must stabilize on the new generation")
 	assert.Equal(t, calls[5].Gen, calls[7].Gen)
+}
+
+// 受管收敛步带界（staging 实证 2026-09-30：docker daemon 重启窗口的 API
+// hang 把无界单写者循环永久卡死，静默直至进程重启）：Runtime Ensure 挂起
+// 时 managedStep 必须在 ManagedStepTimeout 内返回，下一拍重试。
+func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
+	db, _ := statetest.New(t)
+	rt := newFakeRuntime()
+	rt.blockPoint = make(chan struct{}) // 永不关闭 = Ensure 永久挂起
+	e := New(Deps{DB: db, Runtime: rt, Edge: &fakeEdge{}, Logger: discardLogger()},
+		Options{ManagedStepTimeout: 50 * time.Millisecond})
+	ctx := context.Background()
+
+	done := make(chan struct{})
+	go func() {
+		e.managedStep(ctx)
+		close(done)
+	}()
+	select {
+	case <-done:
+		// 带界返回：收敛步被 deadline 切断，循环存活（下一拍重试）。
+	case <-time.After(2 * time.Second):
+		t.Fatal("managedStep must be bounded when the runtime hangs")
+	}
 }
 
 // Route 发布：后端地址经 Runtime.Addresses 解析填充（Addresses 假底座

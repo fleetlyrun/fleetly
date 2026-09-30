@@ -48,6 +48,10 @@ type Options struct {
 	BuildConcurrency int
 	// BuildTimeout 是单次构建硬超时（默认 15m；超时=expired 看门狗）。
 	BuildTimeout time.Duration
+	// ManagedStepTimeout 是受管收敛步硬上限（默认 30s）。staging 实证
+	//（2026-09-30）：docker daemon 重启/swarm 重建窗口内的 API hang 会把
+	// 无界的单写者循环永久卡死（静默直至进程重启）——受管步一律带界。
+	ManagedStepTimeout time.Duration
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 }
@@ -70,6 +74,9 @@ func (o *Options) fill() {
 	}
 	if o.BuildTimeout <= 0 {
 		o.BuildTimeout = 15 * time.Minute
+	}
+	if o.ManagedStepTimeout <= 0 {
+		o.ManagedStepTimeout = 30 * time.Second
 	}
 }
 
