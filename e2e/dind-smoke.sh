@@ -29,11 +29,13 @@ trap cleanup EXIT INT TERM
 log() { printf '==> %s\n' "$1"; }
 
 # 1. 交叉编译两个二进制（linux/amd64；纯 Go 零 cgo）——install.sh 的
-# bin-dir 模式消费。
-log "cross-compiling fleetlyd + fleetly (linux/amd64)"
+#    bin-dir 模式消费；h2cclient 同批（webhook 段的 HTTP 面自备——dind 无
+#    curl、apk 依赖出站网，离线确定性不赌网络）。
+log "cross-compiling fleetlyd + fleetly + h2cclient (linux/amd64)"
 mkdir -p "$WORKDIR/bins"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetlyd" ./cmd/fleetlyd
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetly" ./cmd/fleetly
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cclient" ./e2e/h2cclient
 
 # 2. 起 dind（privileged；29 线与生产对齐）。
 log "starting dind container"
@@ -287,11 +289,12 @@ cli events list --limit 5 >/dev/null
 cli nodes list >/dev/null
 
 # 6. webhook 段（F0.13，本段置尾）：配置 hook（首配铸造，secret 一次）→
-# 容器内 curl 直发 gateway :9081 /v1/hooks/<token>（HMAC 宿侧计算）。
-# 仓库指向 TEST-NET（192.0.2.1）：git clone 连接黑洞挂起——clone 在单写者
-# drive 步内同步执行，引擎循环会冻结到 5 分钟超时。置尾两点收益：commit
-# 去重窗确定性在场（去重锚只匹配活跃部署；真实仓库 clone 快败曾是本段
-# 的时序骰子），且脚本随后即结束，冻结的循环随容器清理一起埋葬。
+#    容器内经自备 h2cclient 直发 gateway :9081 /v1/hooks/<token>（HMAC
+#    宿侧计算；零出站依赖）。
+#    仓库指向 TEST-NET（192.0.2.1）：git clone 连接黑洞挂起——clone 在单写者
+#    drive 步内同步执行，引擎循环会冻结到 5 分钟超时。置尾两点收益：commit
+#    去重窗确定性在场（去重锚只匹配活跃部署；真实仓库 clone 快败曾是本段
+#    的时序骰子），且脚本随后即结束，冻结的循环随容器清理一起埋葬。
 log "webhook chain over the gateway HTTP face"
 HOOK_SECRET=$(cli --json hooks set --app "$APP_ID" --repo https://192.0.2.1/acme/shop.git --branch main --watch web/ \
   | sed -n 's/.*"secret": *"\([^"]*\)".*/\1/p' | head -1)
@@ -300,17 +303,16 @@ if [ -z "$HOOK_SECRET" ]; then
   exit 1
 fi
 
-docker exec "$DIND_CID" sh -c 'command -v curl >/dev/null 2>&1 || apk add --no-cache curl >/dev/null 2>&1'
-
 SIGN() {
   printf '%s' "$1" | openssl dgst -sha256 -hmac "$HOOK_SECRET" | sed -n 's/.*= *\([0-9a-f]*\).*/\1/p'
 }
 post_hook() {
   # $1 event $2 delivery $3 signature $4 payload-file → "code body"
-  code=$(docker exec "$DIND_CID" sh -c "curl -s -o /tmp/hook-body -w '%{http_code}' \
-    -X POST -H 'Content-Type: application/json' \
-    -H 'X-GitHub-Event: $1' -H 'X-GitHub-Delivery: $2' -H 'X-Hub-Signature-256: $3' \
-    --data-binary @/tmp/hook-payload http://127.0.0.1:9081/v1/hooks/$HOOK_SECRET")
+  code=$(docker exec "$DIND_CID" /root/bins/h2cclient -X POST -o /tmp/hook-body \
+    -H "Content-Type: application/json" \
+    -H "X-GitHub-Event: $1" -H "X-GitHub-Delivery: $2" -H "X-Hub-Signature-256: $3" \
+    -data "@$4" http://127.0.0.1:9081/v1/hooks/$HOOK_SECRET \
+    | sed -n 's/^STATUS \([0-9]*\).*/\1/p')
   body=$(docker exec "$DIND_CID" cat /tmp/hook-body)
   printf '%s %s' "$code" "$body"
 }
