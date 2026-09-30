@@ -94,15 +94,32 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 }
 
 // normalizeDeploySource 归一化两源：image 直投 / Compose 受控子集。
+// 直投形态的探针声明（http_probe/tcp_probe，B2）互斥；compose 形态的
+// 探针经 healthcheck 扩展键（直投旗标与 compose 互斥）。
 func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App) (*specv1.AppSpec, error) {
 	switch {
 	case req.GetImage() != "":
-		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName())
+		var probe *specv1.HealthcheckSpec
+		switch {
+		case req.GetHttpProbe() != "" && req.GetTcpProbe() != 0:
+			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe and tcp_probe are mutually exclusive")
+		case req.GetHttpProbe() != "":
+			probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: req.GetHttpProbe()}, Retries: 3}
+		case req.GetTcpProbe() != 0:
+			if req.GetTcpProbe() < 1 || req.GetTcpProbe() > 65535 {
+				return nil, apperr.New("E_INVALID_ARGUMENT", "tcp_probe: port out of range (1-65535)")
+			}
+			probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: req.GetTcpProbe()}, Retries: 3}
+		}
+		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe)
 		if err != nil {
 			return nil, mapValidationError(err)
 		}
 		return s, nil
 	case req.GetComposeYaml() != "":
+		if req.GetHttpProbe() != "" || req.GetTcpProbe() != 0 {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe apply to image deploys; compose uses healthcheck.http_path/tcp_port")
+		}
 		var doc spec.ComposeDoc
 		if err := yaml.Unmarshal([]byte(req.GetComposeYaml()), &doc); err != nil {
 			return nil, apperr.New("E_INVALID_ARGUMENT", "compose_yaml: invalid YAML: %s", err.Error()).WithCause(err)

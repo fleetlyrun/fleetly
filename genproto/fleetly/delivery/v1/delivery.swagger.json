@@ -504,6 +504,14 @@
         "process_name": {
           "type": "string",
           "title": "process_name 覆盖直投形态的进程名（默认 web）。"
+        },
+        "http_probe": {
+          "type": "string",
+          "title": "http_probe/tcp_probe 是直投形态的探针声明（B2：http/tcp 探针的 API\n声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。"
+        },
+        "tcp_probe": {
+          "type": "integer",
+          "format": "int32"
         }
       },
       "title": "DeployRequest 两源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。"

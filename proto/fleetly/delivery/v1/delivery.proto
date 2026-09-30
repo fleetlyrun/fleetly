@@ -168,6 +168,10 @@ message DeployRequest {
   bool supersede = 6;
   // process_name 覆盖直投形态的进程名（默认 web）。
   string process_name = 7;
+  // http_probe/tcp_probe 是直投形态的探针声明（B2：http/tcp 探针的 API
+  // 声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。
+  string http_probe = 8;
+  int32 tcp_probe = 9;
 }
 
 message DeployResponse { Deployment deployment = 1; }

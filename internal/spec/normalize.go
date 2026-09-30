@@ -7,13 +7,20 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
+
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 )
 
 // composeWhitelist 是受控子集的白名单（compose 顶层与服务键；只增）。
 var composeWhitelist = map[string]bool{
-	"services": true, // 顶层唯一入口（name/networks/volumes 顶层随对应批次）
+	"services": true, // 顶层唯一入口（name/networks 顶层不翻译）
+	// 顶层 volumes 声明：接受空声明（name: null/{}）——Volume 实体在平台侧
+	//（fleetly volumes create，钉住/驱动选项不入 compose）；带驱动的声明
+	// 显式拒绝（B2）。
+	"volumes": true,
 }
 
 var composeServiceWhitelist = map[string]bool{
@@ -24,6 +31,23 @@ var composeServiceWhitelist = map[string]bool{
 	"deploy":      true,
 	"healthcheck": true,
 	"networks":    true,
+	// N0 修复批 B2 声明面补齐：
+	"volumes": true, // 挂载平台 Volume（短语法 name:/target）
+	"secrets": true, // 按名引用 Project Secret → secret_refs
+}
+
+// composeHealthcheckWhitelist 是 healthcheck 子键白名单：compose 原生节律
+// 键 + fleetly 探针声明扩展（http_path/tcp_port——compose 无对应原语，
+// exec 探针走 test；三选一）。
+var composeHealthcheckWhitelist = map[string]bool{
+	"test":         true,
+	"interval":     true,
+	"timeout":      true,
+	"retries":      true,
+	"start_period": true,
+	"http_path":    true,
+	"tcp_port":     true,
+	"disable":      false, // 探针是平台健康门数据源，禁用探针不可声明
 }
 
 var composeDeployWhitelist = map[string]bool{
@@ -37,7 +61,8 @@ var composeDeployWhitelist = map[string]bool{
 }
 
 // ImageDeploy 归一化镜像直投：单 process web（名可指定，默认 web）。
-func ImageDeploy(appID, projectID, image string, processName string) (*specv1.AppSpec, error) {
+// probe 是可选探针声明（B2：http path 或 tcp port——二选一，nil = 无探针）。
+func ImageDeploy(appID, projectID, image string, processName string, probe *specv1.HealthcheckSpec) (*specv1.AppSpec, error) {
 	if processName == "" {
 		processName = "web"
 	}
@@ -50,7 +75,8 @@ func ImageDeploy(appID, projectID, image string, processName string) (*specv1.Ap
 			ImageOrigin: &specv1.ProcessSpec_Image{
 				Image: image,
 			},
-			Replicas: 1,
+			Replicas:    1,
+			Healthcheck: probe,
 		}},
 	}
 	if err := ValidateApp(spec); err != nil {
@@ -70,7 +96,20 @@ func NormalizeCompose(doc ComposeDoc, appID, projectID string) (*specv1.AppSpec,
 	for key := range doc {
 		if !composeWhitelist[key] {
 			return nil, invalidf("compose."+key,
-				"unsupported compose field (supported: services); use the platform API for this concern")
+				"unsupported compose field (supported: services, volumes); use the platform API for this concern")
+		}
+	}
+	// 顶层 volumes：只接受空声明（null/{}）——Volume 实体与驱动选项在平台侧。
+	if vols, ok := doc["volumes"].(map[string]any); ok {
+		for name, raw := range vols {
+			if raw == nil {
+				continue
+			}
+			if decl, ok := raw.(map[string]any); ok && len(decl) == 0 {
+				continue
+			}
+			return nil, invalidf("compose.volumes."+name,
+				"volume declarations with driver options are not translated; create the volume with 'fleetly volumes create' and mount it by name")
 		}
 	}
 	services, ok := doc["services"].(map[string]any)
@@ -190,6 +229,41 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 			}
 		}
 	}
+	// 卷挂载（B2）：短语法 name:/target——name 是平台 Volume 名（fleetly
+	// volumes create 的实体），target 容器内绝对路径。
+	if vols, ok := svc["volumes"].([]any); ok {
+		for _, raw := range vols {
+			s, ok := raw.(string)
+			if !ok {
+				return nil, "", invalidf(field+".volumes", "volume entry must be the short syntax \"name:/target\"")
+			}
+			name, target, found := strings.Cut(s, ":")
+			if !found || name == "" || !strings.HasPrefix(target, "/") {
+				return nil, "", invalidf(field+".volumes", "volume %q must be \"name:/target\" with an absolute target", s)
+			}
+			p.Volumes = append(p.Volumes, &specv1.VolumeAttachment{VolumeId: name, Target: target})
+		}
+	}
+	// Secret 引用（B2）：短语法 [name...] 或 {source: name}——值永不进
+	// compose（经 fleetly secrets put 落库，注入时解析，ADR-0014）。
+	if secs, ok := svc["secrets"].([]any); ok {
+		for _, raw := range secs {
+			var name string
+			switch v := raw.(type) {
+			case string:
+				name = v
+			case map[string]any:
+				name, _ = v["source"].(string)
+				if target, ok := v["target"].(string); ok && target != "" && target != name {
+					return nil, "", invalidf(field+".secrets", "secret %q: target remapping is not supported (injected at /run/secrets/<name>)", name)
+				}
+			}
+			if name == "" {
+				return nil, "", invalidf(field+".secrets", "secret entry must be a name or {source: name}")
+			}
+			p.SecretRefs = append(p.SecretRefs, name)
+		}
+	}
 	if hc, ok := svc["healthcheck"].(map[string]any); ok {
 		probe, err := composeHealthcheck(field+".healthcheck", hc)
 		if err != nil {
@@ -226,11 +300,38 @@ func composePort(field string, raw any) (*specv1.PortSpec, error) {
 	return spec, nil
 }
 
+// composeHealthcheck 归一探针声明（B2 补齐全键）：compose 原生 test
+// （exec 探针）+ 节律键（interval/timeout/retries/start_period）+ fleetly
+// 扩展声明 http_path/tcp_port（http/tcp 探针——compose 无对应原语）。
+// 探针三选一；disable 不可声明（探针是 L1 健康门数据源）。
 func composeHealthcheck(field string, hc map[string]any) (*specv1.HealthcheckSpec, error) {
+	for key := range hc {
+		if allowed, seen := composeHealthcheckWhitelist[key]; !seen {
+			return nil, invalidf(field+"."+key,
+				"unknown healthcheck field %q (supported: %s)", key, whitelistKeys(composeHealthcheckWhitelist))
+		} else if !allowed {
+			return nil, invalidf(field+"."+key,
+				"healthcheck field %q is managed by the platform and cannot be set from compose", key)
+		}
+	}
 	out := &specv1.HealthcheckSpec{Retries: 3}
+	// 探针三选一。
+	hasHTTP, hasTCP, hasExec := hc["http_path"] != nil, hc["tcp_port"] != nil, hc["test"] != nil
+	if (hasHTTP && hasTCP) || (hasHTTP && hasExec) || (hasTCP && hasExec) {
+		return nil, invalidf(field+".healthcheck", "probe is one of test, http_path or tcp_port")
+	}
+	if raw, ok := hc["http_path"].(string); ok && raw != "" {
+		out.Probe = &specv1.HealthcheckSpec_HttpPath{HttpPath: raw}
+	} else if hasHTTP {
+		return nil, invalidf(field+".healthcheck.http_path", "http_path must be a non-empty path string")
+	}
+	if raw, ok := hc["tcp_port"].(int); ok && raw > 0 {
+		out.Probe = &specv1.HealthcheckSpec_TcpPort{TcpPort: int32(raw)} //nolint:gosec // 端口域内
+	} else if hasTCP {
+		return nil, invalidf(field+".healthcheck.tcp_port", "tcp_port must be a port number 1-65535")
+	}
 	if test, ok := hc["test"].([]any); ok && len(test) > 1 {
-		// compose test 形态 ["CMD", ...] / ["CMD-SHELL", cmd]——exec 探针
-		//（http/tcp 探针经平台 API 声明，compose 无对应原语）。
+		// compose test 形态 ["CMD", ...] / ["CMD-SHELL", cmd]——exec 探针。
 		words := make([]string, 0, len(test))
 		for _, w := range test {
 			words = append(words, fmt.Sprintf("%v", w))
@@ -241,13 +342,44 @@ func composeHealthcheck(field string, hc map[string]any) (*specv1.HealthcheckSpe
 			exec = &specv1.ExecProbe{Command: words[1:]}
 		case "CMD-SHELL":
 			exec = &specv1.ExecProbe{Command: strings.Fields(strings.Join(words[1:], " "))}
+		default:
+			return nil, invalidf(field+".healthcheck.test", "test must start with CMD or CMD-SHELL")
 		}
-		if exec != nil {
-			out.Probe = &specv1.HealthcheckSpec_Exec{Exec: exec}
-		}
+		out.Probe = &specv1.HealthcheckSpec_Exec{Exec: exec}
 	}
-	_ = field
+	var err error
+	if out.Interval, err = composeDuration(field+".healthcheck.interval", hc["interval"]); err != nil {
+		return nil, err
+	}
+	if out.Timeout, err = composeDuration(field+".healthcheck.timeout", hc["timeout"]); err != nil {
+		return nil, err
+	}
+	if out.StartPeriod, err = composeDuration(field+".healthcheck.start_period", hc["start_period"]); err != nil {
+		return nil, err
+	}
+	if r, ok := hc["retries"].(int); ok && r > 0 {
+		out.Retries = int32(r) //nolint:gosec // 计数域内
+	}
+	if out.Probe == nil {
+		return nil, invalidf(field+".healthcheck", "healthcheck requires one of test, http_path or tcp_port")
+	}
 	return out, nil
+}
+
+// composeDuration 解析 compose 时长字面量（"30s"/"1m30s" 等 Go 形态）。
+func composeDuration(field string, raw any) (*durationpb.Duration, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	s, ok := raw.(string)
+	if !ok {
+		return nil, invalidf(field, "duration must be a string like \"30s\"")
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 {
+		return nil, invalidf(field, "duration %q must be positive (e.g. \"30s\")", s)
+	}
+	return durationpb.New(d), nil
 }
 
 func cpusToMillis(field, cpus string) (int64, error) {

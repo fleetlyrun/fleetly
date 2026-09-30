@@ -10,7 +10,7 @@ import (
 )
 
 func TestImageDeployNormalizes(t *testing.T) {
-	spec, err := ImageDeploy("app-1", "prj-1", "nginx:1.27", "")
+	spec, err := ImageDeploy("app-1", "prj-1", "nginx:1.27", "", nil)
 	require.NoError(t, err)
 	assert.Equal(t, int32(SchemaVersion), spec.GetSchemaVersion())
 	assert.Equal(t, "app-1", spec.GetApp().GetId())

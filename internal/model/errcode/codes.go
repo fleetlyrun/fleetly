@@ -62,6 +62,13 @@ var builtins = []Code{
 		GRPC:       codes.FailedPrecondition,
 	},
 	{
+		ID:         "E_QUOTA_EXCEEDED",
+		Summary:    "A project-level quota has been reached.",
+		Suggestion: "Remove unused entries of the quoted resource, or split the workload across projects.",
+		Source:     "internal/api/fleetlygrpc/structure.go PutConfig (F0.17 quota)",
+		GRPC:       codes.ResourceExhausted,
+	},
+	{
 		ID:         "E_SECRET_UNAVAILABLE",
 		Summary:    "The secret facility is unavailable or the referenced secret is missing.",
 		Suggestion: "Create the missing secret or restore the master key under the data root keys/ directory.",

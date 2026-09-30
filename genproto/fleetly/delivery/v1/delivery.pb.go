@@ -189,7 +189,11 @@ type DeployRequest struct {
 	CommitSha      string `protobuf:"bytes,5,opt,name=commit_sha,json=commitSha,proto3" json:"commit_sha,omitempty"`
 	Supersede      bool   `protobuf:"varint,6,opt,name=supersede,proto3" json:"supersede,omitempty"`
 	// process_name 覆盖直投形态的进程名（默认 web）。
-	ProcessName   string `protobuf:"bytes,7,opt,name=process_name,json=processName,proto3" json:"process_name,omitempty"`
+	ProcessName string `protobuf:"bytes,7,opt,name=process_name,json=processName,proto3" json:"process_name,omitempty"`
+	// http_probe/tcp_probe 是直投形态的探针声明（B2：http/tcp 探针的 API
+	// 声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。
+	HttpProbe     string `protobuf:"bytes,8,opt,name=http_probe,json=httpProbe,proto3" json:"http_probe,omitempty"`
+	TcpProbe      int32  `protobuf:"varint,9,opt,name=tcp_probe,json=tcpProbe,proto3" json:"tcp_probe,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -271,6 +275,20 @@ func (x *DeployRequest) GetProcessName() string {
 		return x.ProcessName
 	}
 	return ""
+}
+
+func (x *DeployRequest) GetHttpProbe() string {
+	if x != nil {
+		return x.HttpProbe
+	}
+	return ""
+}
+
+func (x *DeployRequest) GetTcpProbe() int32 {
+	if x != nil {
+		return x.TcpProbe
+	}
+	return 0
 }
 
 type DeployResponse struct {
@@ -1776,7 +1794,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\r \x01(\tR\tupdatedAt\x12\x1f\n" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
-	"finishedAt\"\xe8\x01\n" +
+	"finishedAt\"\xa4\x02\n" +
 	"\rDeployRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12!\n" +
@@ -1785,7 +1803,10 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"commit_sha\x18\x05 \x01(\tR\tcommitSha\x12\x1c\n" +
 	"\tsupersede\x18\x06 \x01(\bR\tsupersede\x12!\n" +
-	"\fprocess_name\x18\a \x01(\tR\vprocessName\"Q\n" +
+	"\fprocess_name\x18\a \x01(\tR\vprocessName\x12\x1d\n" +
+	"\n" +
+	"http_probe\x18\b \x01(\tR\thttpProbe\x12\x1b\n" +
+	"\ttcp_probe\x18\t \x01(\x05R\btcpProbe\"Q\n" +
 	"\x0eDeployResponse\x12?\n" +
 	"\n" +
 	"deployment\x18\x01 \x01(\v2\x1f.fleetly.delivery.v1.DeploymentR\n" +

@@ -9,5 +9,6 @@ E_NOT_CANCELLABLE	FailedPrecondition	The deployment has reached a terminal state
 E_NOT_FOUND	NotFound	The requested resource does not exist.	Check the resource id and list existing resources to confirm the target.	added during implementation
 E_NO_BASELINE	FailedPrecondition	The app has no successful deployment to roll back to.	Deploy at least one revision successfully before rolling back.	added during implementation
 E_QUEUE_FULL	ResourceExhausted	The deployment admission queue is full for this app.	Retry after in-flight deployments finish, or cancel a queued deployment to free a slot.	added during implementation
+E_QUOTA_EXCEEDED	ResourceExhausted	A project-level quota has been reached.	Remove unused entries of the quoted resource, or split the workload across projects.	internal/api/fleetlygrpc/structure.go PutConfig (F0.17 quota)
 E_SECRET_UNAVAILABLE	FailedPrecondition	The secret facility is unavailable or the referenced secret is missing.	Create the missing secret or restore the master key under the data root keys/ directory.	added during implementation
 E_UNAUTHENTICATED	Unauthenticated	The request carries no valid token.	Log in with a valid token ('fleetly login'), or check that the token has not been revoked.	added during implementation

@@ -5,11 +5,13 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
+	"errors"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/material"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
@@ -261,12 +263,37 @@ type ConfigsService struct {
 	s *Services
 }
 
+// Config 配额（F0.17 执法面，B2 落地）：per-Project 配置数上限与单值
+// 大小上限。N0 小团队口径的保守缺省；配置面接入 config.proto 后可覆盖。
+const (
+	maxConfigsPerProject = 100
+	maxConfigBytes       = 256 * 1024
+)
+
 func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutConfigRequest) (*structurev1.PutConfigResponse, error) {
 	if req.GetProjectId() == "" || req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
 	}
+	if len(req.GetContent()) > maxConfigBytes {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "content: exceeds the %d-byte per-config limit", maxConfigBytes)
+	}
+	// 数量配额按"Project 内配置名数"计（新名才占新位；同名 put 是新版本）。
+	existing, err := svc.s.Configs.Latest(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetName())
+	if err != nil && !errors.Is(err, state.ErrNotFound) {
+		return nil, mapStateError(err, "config")
+	}
+	if existing == nil {
+		latest, lerr := svc.s.Configs.LatestByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
+		if lerr != nil {
+			return nil, mapStateError(lerr, "config")
+		}
+		if len(latest) >= maxConfigsPerProject {
+			return nil, apperr.New("E_QUOTA_EXCEEDED",
+				"project %s already holds %d configs (limit %d)", req.GetProjectId(), len(latest), maxConfigsPerProject)
+		}
+	}
 	row := &configrepo.Config{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		if err := svc.s.Configs.Create(ctx, tx, row); err != nil {
 			return err
 		}

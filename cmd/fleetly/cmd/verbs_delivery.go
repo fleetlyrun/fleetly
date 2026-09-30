@@ -20,11 +20,12 @@ import (
 
 func newDeployVerb() commands.Command {
 	const name = "deploy"
-	var app, image, composeFile, process, idemKey, commit string
+	var app, image, composeFile, process, idemKey, commit, httpProbe string
+	var tcpProbe int
 	var supersede bool
 	return &flaggedVerb{
 		name: name, synopsis: "Deploy an app from an image or compose file",
-		usage: "deploy --app APP_ID (--image REF | --compose-file PATH) [--idempotency-key K] [--supersede]",
+		usage: "deploy --app APP_ID (--image REF | --compose-file PATH) [--idempotency-key K] [--supersede] [--http-probe PATH | --tcp-probe PORT]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
@@ -33,6 +34,8 @@ func newDeployVerb() commands.Command {
 			fs.StringVar(&idemKey, "idempotency-key", "", "admission idempotency key")
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
 			fs.BoolVar(&supersede, "supersede", false, "explicitly preempt any in-flight deployment")
+			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image deploys (e.g. /healthz)")
+			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image deploys")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if app == "" {
@@ -40,6 +43,12 @@ func newDeployVerb() commands.Command {
 			}
 			if (image == "") == (composeFile == "") {
 				return usageErr(name, "exactly one of --image or --compose-file is required")
+			}
+			if httpProbe != "" && tcpProbe != 0 {
+				return usageErr(name, "--http-probe and --tcp-probe are mutually exclusive")
+			}
+			if (httpProbe != "" || tcpProbe != 0) && composeFile != "" {
+				return usageErr(name, "--http-probe/--tcp-probe apply to image deploys; compose uses healthcheck.http_path/tcp_port")
 			}
 			compose := ""
 			if composeFile != "" {
@@ -57,6 +66,7 @@ func newDeployVerb() commands.Command {
 			resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
 				AppId: app, Image: image, ComposeYaml: compose, ProcessName: process,
 				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede,
+				HttpProbe: httpProbe, TcpProbe: int32(tcpProbe), //nolint:gosec // 端口域内
 			})
 			if err != nil {
 				return err
