@@ -68,14 +68,8 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			continue
 		}
 		svc := inspect.Service
-		if _, err := p.cli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{
-			Version:             svc.Version,
-			Spec:                spec,
-			EncodedRegistryAuth: auth,
-			QueryRegistry:       false,
-			Rollback:            "",
-		}); err != nil {
-			return fmt.Errorf("swarm ensure %s: update %s: %w", ns, spec.Name, err)
+		if err := p.updateServiceCAS(ctx, ns, spec, svc, auth); err != nil {
+			return err
 		}
 	}
 
@@ -88,6 +82,42 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		}
 	}
 	return nil
+}
+
+// updateServiceCAS 以版本号 CAS 更新服务，冲突时有界重试。引擎事件驱动
+// Kick 在滚动替换期会把幂等重 Ensure 压到近零间隔连拍，inspect 读到的
+// 版本可能落后 store 可见性（docker 29 真机实证："update out of
+// sequence"，发布中重部署即触发）——重取版本再试；同 spec 重放本身幂等，
+// 重试即正确（服务端拒绝的更新未生效）。
+func (p *Provider) updateServiceCAS(ctx context.Context, ns capability.NamespaceRef, spec swarm.ServiceSpec, current swarm.Service, auth string) error {
+	const maxAttempts = 3
+	svc := current
+	for attempt := 1; ; attempt++ {
+		_, err := p.cli.ServiceUpdate(ctx, svc.ID, client.ServiceUpdateOptions{
+			Version:             svc.Version,
+			Spec:                spec,
+			EncodedRegistryAuth: auth,
+			QueryRegistry:       false,
+			Rollback:            "",
+		})
+		if err == nil {
+			return nil
+		}
+		if !isUpdateOutOfSequence(err) || attempt >= maxAttempts {
+			return fmt.Errorf("swarm ensure %s: update %s: %w", ns, spec.Name, err)
+		}
+		inspect, ierr := p.cli.ServiceInspect(ctx, spec.Name, client.ServiceInspectOptions{})
+		if ierr != nil {
+			return fmt.Errorf("swarm ensure %s: re-inspect %s: %w", ns, spec.Name, ierr)
+		}
+		svc = inspect.Service
+	}
+}
+
+// isUpdateOutOfSequence 识别 swarmkit 版本冲突：swarmkit 以 code=Unknown
+// 返回，跨 API 边界无类型化哨兵，按其稳定文案匹配。
+func isUpdateOutOfSequence(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "update out of sequence")
 }
 
 // Remove 拆除隔离域内全部载体（幂等）。
