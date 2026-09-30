@@ -44,7 +44,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -104,7 +104,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -124,7 +124,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -156,7 +156,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -188,7 +188,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -208,7 +208,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -240,7 +240,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -268,7 +268,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -298,7 +298,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -318,7 +318,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -350,7 +350,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -378,7 +378,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -408,7 +408,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -428,7 +428,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -460,7 +460,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -490,7 +490,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -528,7 +528,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -548,7 +548,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -580,7 +580,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -608,7 +608,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -638,7 +638,7 @@
           "default": {
             "description": "An unexpected error response.",
             "schema": {
-              "$ref": "#/definitions/v1ErrorResponse"
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
             }
           }
         },
@@ -835,34 +835,6 @@
     },
     "v1DeleteUserResponse": {
       "type": "object"
-    },
-    "v1ErrorResponse": {
-      "type": "object",
-      "properties": {
-        "code": {
-          "type": "string",
-          "title": "稳定错误码字符串（如 \"E_INVALID_ARGUMENT\"），注册表校验只增。"
-        },
-        "message": {
-          "type": "string",
-          "title": "人读错误信息（面向运维/集成方，不承诺文案稳定）。"
-        },
-        "suggestion": {
-          "type": "string",
-          "title": "可执行的修复建议（处置提示，Agent 与人类共用）。"
-        },
-        "context": {
-          "type": "object",
-          "additionalProperties": {
-            "type": "string"
-          },
-          "title": "machine-readable 附加上下文键值对（如 error_id、资源 ID）。"
-        },
-        "docs": {
-          "type": "string",
-          "title": "错误码文档 URL（注册表派生）。"
-        }
-      }
     },
     "v1GetRoleResponse": {
       "type": "object",
