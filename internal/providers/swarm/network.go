@@ -28,31 +28,39 @@ func carrierNetworkName(ns capability.NamespaceRef, platformName string) string 
 // ensureNetworks create-or-get Workload 引用的全部平台网络（per-Project
 // overlay；egress:none 网络 = 独立 overlay + 不发布端口 + 不注入跨网 DNS
 // ——swarm v1 弱隔离，出网不阻断，能力边界经 Describe Notes 明示）。
+// 同域引用（w.Networks）与跨域引用（w.NetworkRefs——受管 Edge 挂项目网）
+// 都在此落载体；引用网络可能尚无任何用户 Workload 挂靠，首次由此创建。
 func (p *Provider) ensureNetworks(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload) error {
-	seen := map[string]bool{}
+	type netRef struct {
+		ns   capability.NamespaceRef
+		name string
+	}
+	refs := map[netRef]bool{}
 	for _, w := range ws {
 		for _, net := range w.Networks {
-			if seen[net] {
-				continue
-			}
-			seen[net] = true
-			name := carrierNetworkName(ns, net)
-			if _, err := p.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err == nil {
-				continue
-			}
-			labels := map[string]string{
-				labelNetManaged:  "true",
-				labelNetProject:  sanitizeNamePart(ns.Project),
-				labelNetPlatform: sanitizeNamePart(net),
-			}
-			if _, err := p.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
-				Driver: "overlay",
-				Labels: labels,
-				// swarm v1 弱隔离口径（领域模型 §6）：不设 Internal——
-				// 出网不阻断、明示弱隔离的诚实边界（架构 §10）。
-			}); err != nil {
-				return fmt.Errorf("swarm ensure network %s: create: %w", name, err)
-			}
+			refs[netRef{ns: ns, name: net}] = true
+		}
+		for _, ref := range w.NetworkRefs {
+			refs[netRef{ns: ref.Namespace, name: ref.Name}] = true
+		}
+	}
+	for ref := range refs {
+		name := carrierNetworkName(ref.ns, ref.name)
+		if _, err := p.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err == nil {
+			continue
+		}
+		labels := map[string]string{
+			labelNetManaged:  "true",
+			labelNetProject:  sanitizeNamePart(ref.ns.Project),
+			labelNetPlatform: sanitizeNamePart(ref.name),
+		}
+		if _, err := p.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
+			Driver: "overlay",
+			Labels: labels,
+			// swarm v1 弱隔离口径（领域模型 §6）：不设 Internal——
+			// 出网不阻断、明示弱隔离的诚实边界（架构 §10）。
+		}); err != nil {
+			return fmt.Errorf("swarm ensure network %s: create: %w", name, err)
 		}
 	}
 	return nil

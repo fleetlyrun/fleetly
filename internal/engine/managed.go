@@ -71,10 +71,10 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		return
 	}
 	ws := m.ManagedWorkloads()
-	nets := e.activeProjectNetworks(ctx)
+	refs := e.activeProjectNetworks(ctx)
 	for i := range ws {
-		if len(nets) > 0 {
-			ws[i].Networks = append(ws[i].Networks, nets...)
+		if len(refs) > 0 {
+			ws[i].NetworkRefs = append(ws[i].NetworkRefs, refs...)
 		}
 	}
 	gen := nextManagedGen(managedFingerprint(ws))
@@ -135,11 +135,25 @@ func (e *Engine) resolveBackend(ctx context.Context, rt route.Route) (capability
 	return ns, "", fmt.Errorf("no endpoint for process %q port %d", rt.Process, rt.Port)
 }
 
-// activeProjectNetworks 返回活跃 Project 网络名列表（受管 Edge 挂全部
-// 项目网以达后端；C5 overlay 批次落网络实体后实装，当前返回空——单
-// swarm 网络形态由 e2e 验证）。
-func (e *Engine) activeProjectNetworks(context.Context) []string {
-	return nil
+// activeProjectNetworks 返回全部活跃 Project 网络的引用列表（受管 Edge
+// 挂全部项目网以达后端；N0 修复批 B1 实装）。返回跨域引用形态——载体名
+// 是 Provider 私有公式，engine 不拼接。
+func (e *Engine) activeProjectNetworks(ctx context.Context) []capability.NetworkRef {
+	rows, err := e.networks.List(ctx, e.db.Runner())
+	if err != nil {
+		// 读面失败按"无网络"处理：受管 Ensure 照常（不挂新网），下一拍
+		// 重试——挂网是增量收敛，不是阻断条件。
+		e.log.Error("managed reconciler: list project networks", "err", err)
+		return nil
+	}
+	refs := make([]capability.NetworkRef, 0, len(rows))
+	for _, n := range rows {
+		refs = append(refs, capability.NetworkRef{
+			Namespace: capability.NamespaceRef{Team: "default", Project: n.ProjectID},
+			Name:      n.Name,
+		})
+	}
+	return refs
 }
 
 // PublishRoutesNow 触发一次即时 Route 发布（API 写路径在 Route 变更后

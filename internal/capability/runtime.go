@@ -118,10 +118,22 @@ type Workload struct {
 	Volumes []VolumeMount
 	// Networks 是网络附件（Project 网络名或 taskGroup:<name> 跨挂）。
 	Networks []string
+	// NetworkRefs 是跨隔离域网络挂靠（受管面专用形态）：引用另一 Project
+	// 的平台网络——载体名解析是 Provider 私有公式，engine 不拼载体名
+	//（N0 修复批 B1：受管 Edge 挂全部活跃 Project 网络以达后端）。同域
+	// 附件不由此面表达（同域直接用 Networks 平台名）。
+	NetworkRefs []NetworkRef
 	// Publish 是宿主端口发布声明（平台无关形态）。常规用户 Workload 不
 	// 发布宿主端口（流量一律经 Edge，架构坑清单）；受管 Edge 自身例外
 	//（80/443 入站是其部署形态的一部分）。
 	Publish []PortPublish
+}
+
+// NetworkRef 是一条跨隔离域网络引用（Namespace 定位网络归属域，Name 是
+// 该域内的平台网络名——与 Networks 元素同词汇，仅多域限定）。
+type NetworkRef struct {
+	Namespace NamespaceRef
+	Name      string
 }
 
 // PortPublish 是一条宿主端口发布（PublishedPort 宿主侧；TargetPort 容器

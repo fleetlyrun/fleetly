@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
@@ -115,10 +116,11 @@ type Engine struct {
 	routes *route.Repo
 
 	// 材料面（F0.17/18，ADR-0014）：Secret/Config/Volume repo 与 age 信封。
-	cipher  *material.Cipher
-	secrets *secret.Repo
-	configs *configrepo.Repo
-	volumes *volume.Repo
+	cipher   *material.Cipher
+	secrets  *secret.Repo
+	configs  *configrepo.Repo
+	volumes  *volume.Repo
+	networks *networkrepo.Repo // 受管 Edge 挂网真源（活跃 Project 网络全量）
 
 	buildInputMu sync.Mutex
 	buildInputs  map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
@@ -176,6 +178,7 @@ func New(deps Deps, opts Options) *Engine {
 		secrets:      secret.New(clock),
 		configs:      configrepo.New(clock),
 		volumes:      volume.New(clock),
+		networks:     networkrepo.New(clock),
 		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 		buildLogs:    newLogBuffer(500),
 		buildInputs:  make(map[string]capability.BuildRequest),

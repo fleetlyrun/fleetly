@@ -122,6 +122,27 @@ func TestPlacementConstraintsLabelFormula(t *testing.T) {
 	assert.Nil(t, placementConstraints(capability.Placement{}))
 }
 
+// B1 回归（N0 修复批）：跨域网络引用按引用自身的域解析载体名——受管
+// Edge（系统域）挂项目网，载体名绝不可用 workload 自己的域拼接。
+func TestNetworkRefsResolveUnderTheirOwnNamespace(t *testing.T) {
+	systemNS := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "edge"}
+	w := capability.Workload{
+		ID:      "fleetly-edge-traefik",
+		Process: "traefik",
+		Image:   "traefik:v3.5.4",
+		NetworkRefs: []capability.NetworkRef{
+			{Namespace: capability.NamespaceRef{Team: "default", Project: "01JD0PROJ00000000000000000"}, Name: "default"},
+			{Namespace: capability.NamespaceRef{Team: "default", Project: "01JD0PROJ00000000000000000"}, Name: "internal"},
+		},
+	}
+	spec := toServiceSpec(systemNS, w, capability.Generation(1), nil)
+	require.Len(t, spec.TaskTemplate.Networks, 2)
+	// sanitizeNamePart 小写化（swarm 名词表约束）。
+	assert.Equal(t, "fleetly-net-01jd0proj00000000000000000-default", spec.TaskTemplate.Networks[0].Target,
+		"carrier name must resolve under the referenced project, not the workload's own namespace")
+	assert.Equal(t, "fleetly-net-01jd0proj00000000000000000-internal", spec.TaskTemplate.Networks[1].Target)
+}
+
 func TestImageRegistryHost(t *testing.T) {
 	assert.Equal(t, "ghcr.io", imageRegistryHost("ghcr.io/acme/web:1"))
 	// host:port 形态整段为键（凭证表的地址形态）。

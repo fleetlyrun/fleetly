@@ -76,6 +76,27 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 	return out, rows.Err()
 }
 
+// List 返回全部活跃网络（跨 Project；受管 Edge 挂网的全量真源，N0 修复
+// 批 B1）。
+func (r *Repo) List(ctx context.Context, run state.Runner) ([]Network, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		FROM networks WHERE deleted_at = '' ORDER BY project_id, name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Network
+	for rows.Next() {
+		n, err := scanNetwork(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *n)
+	}
+	return out, rows.Err()
+}
+
 func scanNetwork(scan func(dest ...any) error) (*Network, error) {
 	var n Network
 	var egress int

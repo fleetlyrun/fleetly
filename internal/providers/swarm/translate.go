@@ -199,6 +199,13 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			Target: carrierNetworkName(ns, net),
 		})
 	}
+	// 跨域网络引用（受管 Edge 挂项目网）：载体名按引用自身的域解析——
+	// 域名与载体名公式都是 Provider 私有，engine 只发引用形态（B1）。
+	for _, ref := range w.NetworkRefs {
+		task.Networks = append(task.Networks, swarm.NetworkAttachmentConfig{
+			Target: carrierNetworkName(ref.Namespace, ref.Name),
+		})
+	}
 
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
