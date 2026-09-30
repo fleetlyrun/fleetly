@@ -1,0 +1,49 @@
+{
+  "deployments": [
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "from_revision": "<ULID>",
+      "to_revision": "<ULID>",
+      "state": "queued",
+      "generation": "4",
+      "created_at": "2026-01-01T00:02:00Z",
+      "updated_at": "2026-01-01T00:02:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "from_revision": "<ULID>",
+      "to_revision": "<ULID>",
+      "state": "superseded",
+      "generation": "3",
+      "superseded_by": "<ULID>",
+      "created_at": "2026-01-01T00:02:00Z",
+      "updated_at": "2026-01-01T00:02:00Z",
+      "finished_at": "2026-01-01T00:02:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "from_revision": "<ULID>",
+      "to_revision": "<ULID>",
+      "state": "superseded",
+      "generation": "2",
+      "superseded_by": "<ULID>",
+      "created_at": "2026-01-01T00:02:00Z",
+      "updated_at": "2026-01-01T00:02:00Z",
+      "finished_at": "2026-01-01T00:02:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "to_revision": "<ULID>",
+      "state": "succeeded",
+      "generation": "1",
+      "observe_deadline": "2026-01-01T00:01:00Z",
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:02:00Z",
+      "finished_at": "2026-01-01T00:02:00Z"
+    }
+  ]
+}

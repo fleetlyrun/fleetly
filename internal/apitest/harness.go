@@ -17,8 +17,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/statetest"
+	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
 // Harness 是进程内全链夹具。
@@ -33,19 +35,53 @@ type Harness struct {
 	server   *grpc.Server
 }
 
-// New 装配夹具：真 SQLite（temp）+ 真 engine（假 Runtime）+ 真 gRPC 服务
-// + bufconn。Edge/Builder/Cipher 不装配（对应面停用是诚实态）。
+// DialOpts 返回 SDK 拨号选项（CLI golden 夹具把 dialClient 接缝指向
+// bufconn：fleetly.Dial("bufnet", h.DialOpts()...)）。
+func (h *Harness) DialOpts() []sdk.Option {
+	return []sdk.Option{sdk.WithDialOptions(
+		grpc.WithContextDialer(func(context.Context, string) (net.Conn, error) {
+			return h.listener.Dial()
+		}),
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+	)}
+}
+
+// New 装配夹具（自动驱动形态：engine 真实节拍收敛）。
 func New(t testing.TB) *Harness {
+	return newHarness(t, true)
+}
+
+// NewManual 装配夹具（手动驱动形态：不启动收敛循环，测试经 Drive 控制
+// 状态推进——golden 确定性）。
+func NewManual(t testing.TB) *Harness {
+	return newHarness(t, false)
+}
+
+// Drive 手动驱动一轮收敛。
+func (h *Harness) Drive(ctx context.Context) {
+	h.Engine.DriveOnce(ctx)
+}
+
+func newHarness(t testing.TB, autostart bool) *Harness {
 	t.Helper()
 	ctx := context.Background()
 	db, clock := statetest.New(t)
+	cipher, err := material.LoadCipher(t.TempDir())
+	if err != nil {
+		t.Fatalf("apitest: master key: %v", err)
+	}
 	rt := &FakeRuntime{obs: make(chan capability.WorkloadEvent, 64)}
 	log := slog.New(slog.DiscardHandler)
-	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Logger: log}, engine.Options{})
-	eng.Start(ctx)
-	t.Cleanup(func() { _ = eng.Stop(ctx) })
+	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher, Logger: log}, engine.Options{})
+	if autostart {
+		eng.Start(ctx)
+		t.Cleanup(func() { _ = eng.Stop(ctx) })
+	} else {
+		eng.StartWatch(ctx) // 观测面照常消费（手动形态只省收敛节拍）
+		t.Cleanup(func() { _ = eng.Stop(ctx) })
+	}
 
-	services := fleetlygrpc.NewServices(db, eng, nil, rt, log)
+	services := fleetlygrpc.NewServices(db, eng, cipher, rt, log)
 	srv := grpc.NewServer()
 	fleetlygrpc.RegisterAll(srv, services)
 	listener := bufconn.Listen(64 * 1024)

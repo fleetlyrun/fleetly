@@ -188,7 +188,7 @@ func (e *Engine) Start(ctx context.Context) {
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	e.cancel = cancel
 	e.resetOrphanBuilds(runCtx)
-	e.wg.Add(4)
+	e.wg.Add(3)
 	go func() {
 		defer e.wg.Done()
 		e.loop.Run(runCtx, e.opts.Tick, e.step)
@@ -201,13 +201,20 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.managedLoop.Run(runCtx, e.opts.Tick, e.managedStep)
 	}()
-	go func() {
-		defer e.wg.Done()
-		e.consumeWatch(runCtx)
-	}()
+	e.StartWatch(runCtx)
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	e.buildLoop.Kick()
 	e.managedLoop.Kick()
+}
+
+// StartWatch 只启动 Watch 消费（手动驱动形态配套：收敛循环不启动，观测
+// 缓存仍需进——apitest golden 的确定性路径）。
+func (e *Engine) StartWatch(ctx context.Context) {
+	e.wg.Add(1)
+	go func() {
+		defer e.wg.Done()
+		e.consumeWatch(ctx)
+	}()
 }
 
 // resetOrphanBuilds 把崩溃遗留的 building 行重置 queued（重放：buildkit
@@ -255,3 +262,11 @@ func (e *Engine) Stop(ctx context.Context) error {
 
 // Loop 暴露收敛循环（apitest 与装配层 Kick 用；只读面）。
 func (e *Engine) Loop() *Loop { return e.loop }
+
+// DriveOnce 手动驱动一轮收敛（部署/构建/受管三线各一步；apitest 手动
+// 形态消费——golden 确定性：不依赖真实节拍）。
+func (e *Engine) DriveOnce(ctx context.Context) {
+	e.step(ctx)
+	e.buildStep(ctx)
+	e.managedStep(ctx)
+}

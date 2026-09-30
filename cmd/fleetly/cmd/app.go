@@ -46,6 +46,22 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 	app.Register(
 		newVersionCmd(info),
 		newStatusCmd(),
+		// Structure 上下文（动词组：嵌套 Dispatch）。
+		groupVerb("projects", "manage projects", newProjectsCreateVerb(), newProjectsListVerb()),
+		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb()),
+		groupVerb("secrets", "manage project secrets (values never returned)", newSecretsPutVerb(), newSecretsListVerb()),
+		groupVerb("configs", "manage versioned config files", newConfigsPutVerb(), newConfigsListVerb()),
+		groupVerb("volumes", "manage volumes", newVolumesCreateVerb()),
+		groupVerb("networks", "manage project networks", newNetworksCreateVerb()),
+		// Delivery 上下文。
+		newDeployVerb(),
+		groupVerb("deployments", "inspect deployments", newDeploymentsListVerb()),
+		newRollbackVerb(),
+		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
+		groupVerb("builds", "inspect builds", newBuildsListVerb()),
+		// Edge / Runtime 上下文。
+		groupVerb("routes", "manage routes", newRoutesCreateVerb(), newRoutesListVerb()),
+		groupVerb("nodes", "inspect cluster nodes and enrollment", newNodesListVerb(), newNodesEnrollVerb()),
 	)
 	return app
 }

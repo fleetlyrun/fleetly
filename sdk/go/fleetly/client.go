@@ -14,7 +14,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
+	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
+	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 )
 
 // DefaultTimeout 是单次 unary 调用的默认时长期望（调用方经 context 覆盖）。
@@ -24,6 +29,20 @@ const DefaultTimeout = 30 * time.Second
 type Client struct {
 	conn   *grpc.ClientConn
 	System systemv1.SystemServiceClient
+
+	Projects   structurev1.ProjectsServiceClient
+	Apps       structurev1.AppsServiceClient
+	Secrets    structurev1.SecretsServiceClient
+	Configs    structurev1.ConfigsServiceClient
+	Volumes    structurev1.VolumesServiceClient
+	Networks   structurev1.NetworksServiceClient
+	Deployments deliveryv1.DeploymentsServiceClient
+	Revisions  deliveryv1.RevisionsServiceClient
+	Builds     deliveryv1.BuildsServiceClient
+	Nodes      runtimev1.NodesServiceClient
+	Routes     edgev1.RoutesServiceClient
+	Events     telemetryv1.EventsServiceClient
+	Logs       telemetryv1.LogsServiceClient
 }
 
 // Options 是 Dial 的可选项累积器。
@@ -57,10 +76,28 @@ func Dial(addr string, opts ...Option) (*Client, error) {
 	if err != nil {
 		return nil, err
 	}
+	return newClient(conn), nil
+}
+
+// newClient 从已有连接构造类型化客户端（bufconn 夹具）。
+func newClient(conn *grpc.ClientConn) *Client {
 	return &Client{
-		conn:   conn,
-		System: systemv1.NewSystemServiceClient(conn),
-	}, nil
+		conn:       conn,
+		System:     systemv1.NewSystemServiceClient(conn),
+		Projects:   structurev1.NewProjectsServiceClient(conn),
+		Apps:       structurev1.NewAppsServiceClient(conn),
+		Secrets:    structurev1.NewSecretsServiceClient(conn),
+		Configs:    structurev1.NewConfigsServiceClient(conn),
+		Volumes:    structurev1.NewVolumesServiceClient(conn),
+		Networks:   structurev1.NewNetworksServiceClient(conn),
+		Deployments: deliveryv1.NewDeploymentsServiceClient(conn),
+		Revisions:  deliveryv1.NewRevisionsServiceClient(conn),
+		Builds:     deliveryv1.NewBuildsServiceClient(conn),
+		Nodes:      runtimev1.NewNodesServiceClient(conn),
+		Routes:     edgev1.NewRoutesServiceClient(conn),
+		Events:     telemetryv1.NewEventsServiceClient(conn),
+		Logs:       telemetryv1.NewLogsServiceClient(conn),
+	}
 }
 
 // Close 关闭底层连接。

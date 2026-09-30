@@ -1,0 +1,1 @@
+docker swarm join --token TESTTOKEN 127.0.0.1:2377

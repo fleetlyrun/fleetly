@@ -1,0 +1,12 @@
+{
+  "nodes": [
+    {
+      "platform_id": "01JD0NODE00000000000000000",
+      "carrier_id": "apimanager",
+      "role": "manager",
+      "available": true,
+      "first_seen_at": "2026-01-01T00:00:00Z",
+      "last_seen_at": "2026-01-01T00:02:00Z"
+    }
+  ]
+}

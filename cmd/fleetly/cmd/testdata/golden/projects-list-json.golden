@@ -1,0 +1,16 @@
+{
+  "projects": [
+    {
+      "id": "<ULID>",
+      "name": "shop",
+      "team_id": "default",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "name": "shop-json",
+      "team_id": "default",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}
