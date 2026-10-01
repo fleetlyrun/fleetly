@@ -63,3 +63,33 @@ func TestRESTGatewayServesIdentityAnnotationSurface(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, bare.Code)
 	assert.Contains(t, bare.Body.String(), `"code"`)
 }
+
+// TestRESTGatewayServesSelfDescription：能力自描述面（F1.4）经 REST 可达
+// （PUBLIC——零文档发现面，无凭证即可发现契约）；explain 未知名走统一
+// 错误信封 E_NOT_FOUND。
+func TestRESTGatewayServesSelfDescription(t *testing.T) {
+	h := apitest.New(t)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, nil)
+	require.NoError(t, err)
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/schema", nil))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	// 全量文档含 spec 与事件两类条目（夹具链接全部贡献方）。
+	body := rec.Body.String()
+	assert.Contains(t, body, `"name":"app"`)
+	assert.Contains(t, body, `"name":"deployment.succeeded"`)
+	assert.Contains(t, body, `"schema_json"`)
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/explain?resource=deployment.succeeded", nil))
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	assert.Contains(t, rec.Body.String(), `"kind":"event"`)
+	// schema_json 内嵌为转义字符串，断言不带引号的字段名即可。
+	assert.Contains(t, rec.Body.String(), "deployment_id")
+
+	rec = httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v1/system/explain?resource=no.such", nil))
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.Contains(t, rec.Body.String(), "E_NOT_FOUND")
+}

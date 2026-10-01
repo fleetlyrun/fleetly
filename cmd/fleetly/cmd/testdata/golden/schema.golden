@@ -1,0 +1,43 @@
+NAME	KIND	SUMMARY
+app	spec	AppSpec: desired state of a long-running deployable unit (an app is one or more processes).
+app.created	event	An app was created.
+app.deleted	event	An app was deleted (teardown per ADR-0023).
+app.teardown_aborted	event	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).
+build.building	event	Build started executing.
+build.cancelled	event	Build cancelled.
+build.expired	event	Build expired by timeout watchdog.
+build.failed	event	Build failed.
+build.queued	event	Build accepted into build queue.
+build.succeeded	event	Build produced an image digest.
+config.updated	event	A config version was written.
+database	spec	DatabaseSpec: desired state of a managed data service (template-rendered, rides the Runtime channel).
+deployment.building	event	Deployment entered build stage.
+deployment.cancelled	event	Deployment cancelled while queued or in flight.
+deployment.failed	event	Deployment reached failed terminal state.
+deployment.observing	event	Deployment entered health observation window.
+deployment.preparing	event	Deployment started preparing spec and materials.
+deployment.queued	event	Deployment accepted by admission queue.
+deployment.releasing	event	Deployment started releasing workloads to runtime.
+deployment.rolling_back	event	Deployment started replaying last successful revision.
+deployment.succeeded	event	Deployment reached succeeded terminal state.
+deployment.superseded	event	Deployment superseded by a newer one.
+hook.push_accepted	event	A verified webhook push triggered a deployment.
+invitation.accepted	event	An invitation was redeemed; the invitee became a user.
+invitation.created	event	An invitation was issued (single-use, time-boxed, role-bound).
+network.created	event	A project network was created.
+node.joined	event	Node joined the cluster and was anchored with a platform node ID.
+node.left	event	Node left the cluster.
+project.created	event	A project was created.
+project.deleted	event	A project was deleted (tombstoned).
+role.created	event	A custom role was created from a scope set.
+secret.deleted	event	A secret was deleted.
+secret.updated	event	A secret value was set (fingerprint, never the value).
+task	spec	TaskSpec: desired state of a programmatic workload (one-shot or resident, ADR-0012).
+team.created	event	A team was created.
+token.created	event	A token was minted (secret shown once at creation).
+token.revoked	event	A token was revoked; its next call will be rejected.
+user.created	event	A user was created and granted a role in a team.
+volume.created	event	A volume was created.
+workload.drift_detected	event	Observed workload diverged from the ensured generation or spec (ADR-0022).
+workload.stopped	event	A steady-state workload was observed stopped at the current generation.
+run 'fleetly explain <name>' for the full JSON Schema

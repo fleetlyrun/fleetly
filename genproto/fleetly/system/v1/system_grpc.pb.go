@@ -25,6 +25,8 @@ const _ = grpc.SupportPackageIsVersion9
 const (
 	SystemService_GetVersion_FullMethodName = "/fleetly.system.v1.SystemService/GetVersion"
 	SystemService_GetStatus_FullMethodName  = "/fleetly.system.v1.SystemService/GetStatus"
+	SystemService_GetSchema_FullMethodName  = "/fleetly.system.v1.SystemService/GetSchema"
+	SystemService_Explain_FullMethodName    = "/fleetly.system.v1.SystemService/Explain"
 )
 
 // SystemServiceClient is the client API for SystemService service.
@@ -35,6 +37,12 @@ type SystemServiceClient interface {
 	GetVersion(ctx context.Context, in *GetVersionRequest, opts ...grpc.CallOption) (*GetVersionResponse, error)
 	// GetStatus 返回控制面服务状态。
 	GetStatus(ctx context.Context, in *GetStatusRequest, opts ...grpc.CallOption) (*GetStatusResponse, error)
+	// GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload JSON
+	// Schema，Go 类型反射生成——`fleetly schema` 消费；ADR-0026 形状钉扎）。
+	GetSchema(ctx context.Context, in *GetSchemaRequest, opts ...grpc.CallOption) (*GetSchemaResponse, error)
+	// Explain 返回单个资源的自描述（Spec 种类 "app"/"task"/"database" 或
+	// 事件名 "deployment.succeeded"——`fleetly explain <资源>` 消费）。
+	Explain(ctx context.Context, in *ExplainRequest, opts ...grpc.CallOption) (*ExplainResponse, error)
 }
 
 type systemServiceClient struct {
@@ -65,6 +73,26 @@ func (c *systemServiceClient) GetStatus(ctx context.Context, in *GetStatusReques
 	return out, nil
 }
 
+func (c *systemServiceClient) GetSchema(ctx context.Context, in *GetSchemaRequest, opts ...grpc.CallOption) (*GetSchemaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSchemaResponse)
+	err := c.cc.Invoke(ctx, SystemService_GetSchema_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *systemServiceClient) Explain(ctx context.Context, in *ExplainRequest, opts ...grpc.CallOption) (*ExplainResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ExplainResponse)
+	err := c.cc.Invoke(ctx, SystemService_Explain_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SystemServiceServer is the server API for SystemService service.
 // All implementations must embed UnimplementedSystemServiceServer
 // for forward compatibility.
@@ -73,6 +101,12 @@ type SystemServiceServer interface {
 	GetVersion(context.Context, *GetVersionRequest) (*GetVersionResponse, error)
 	// GetStatus 返回控制面服务状态。
 	GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error)
+	// GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload JSON
+	// Schema，Go 类型反射生成——`fleetly schema` 消费；ADR-0026 形状钉扎）。
+	GetSchema(context.Context, *GetSchemaRequest) (*GetSchemaResponse, error)
+	// Explain 返回单个资源的自描述（Spec 种类 "app"/"task"/"database" 或
+	// 事件名 "deployment.succeeded"——`fleetly explain <资源>` 消费）。
+	Explain(context.Context, *ExplainRequest) (*ExplainResponse, error)
 	mustEmbedUnimplementedSystemServiceServer()
 }
 
@@ -88,6 +122,12 @@ func (UnimplementedSystemServiceServer) GetVersion(context.Context, *GetVersionR
 }
 func (UnimplementedSystemServiceServer) GetStatus(context.Context, *GetStatusRequest) (*GetStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetStatus not implemented")
+}
+func (UnimplementedSystemServiceServer) GetSchema(context.Context, *GetSchemaRequest) (*GetSchemaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSchema not implemented")
+}
+func (UnimplementedSystemServiceServer) Explain(context.Context, *ExplainRequest) (*ExplainResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method Explain not implemented")
 }
 func (UnimplementedSystemServiceServer) mustEmbedUnimplementedSystemServiceServer() {}
 func (UnimplementedSystemServiceServer) testEmbeddedByValue()                       {}
@@ -146,6 +186,42 @@ func _SystemService_GetStatus_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SystemService_GetSchema_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSchemaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).GetSchema(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_GetSchema_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).GetSchema(ctx, req.(*GetSchemaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SystemService_Explain_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ExplainRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SystemServiceServer).Explain(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SystemService_Explain_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SystemServiceServer).Explain(ctx, req.(*ExplainRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SystemService_ServiceDesc is the grpc.ServiceDesc for SystemService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -160,6 +236,14 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetStatus",
 			Handler:    _SystemService_GetStatus_Handler,
+		},
+		{
+			MethodName: "GetSchema",
+			Handler:    _SystemService_GetSchema_Handler,
+		},
+		{
+			MethodName: "Explain",
+			Handler:    _SystemService_Explain_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

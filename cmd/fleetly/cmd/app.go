@@ -49,6 +49,9 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newVersionCmd(info),
 		newStatusCmd(),
 		newDoctorVerb(),
+		// 能力自描述（F1.4，架构 §7：Agent 的零文档发现面）。
+		newSchemaCmd(),
+		newExplainVerb(),
 		// 身份与访问（Identity 上下文）。
 		newInitVerb(),
 		newLoginVerb(),

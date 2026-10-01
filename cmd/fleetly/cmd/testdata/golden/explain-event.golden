@@ -1,0 +1,44 @@
+deployment.succeeded (event) — Deployment reached succeeded terminal state.
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "additionalProperties": false,
+  "properties": {
+    "app_id": {
+      "type": "string"
+    },
+    "deployment_id": {
+      "type": "string"
+    },
+    "error": {
+      "type": "string"
+    },
+    "from_revision": {
+      "type": "string"
+    },
+    "generation": {
+      "type": "integer"
+    },
+    "kind": {
+      "type": "string"
+    },
+    "observe_deadline": {
+      "type": "string"
+    },
+    "state": {
+      "type": "string"
+    },
+    "superseded_by": {
+      "type": "string"
+    },
+    "to_revision": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "deployment_id",
+    "app_id",
+    "state",
+    "generation"
+  ],
+  "type": "object"
+}

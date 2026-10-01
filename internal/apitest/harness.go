@@ -17,9 +17,12 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/test/bufconn"
 
+	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/idem"
@@ -123,6 +126,9 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 		grpc.ChainStreamInterceptor(stream...),
 	)...)
 	fleetlygrpc.RegisterAll(srv, services)
+	// SystemService 与生产 NewGRPCServer 同挂（此前夹具缺席——schema/
+	// explain 自描述面需要全量注册贡献，夹具必须链到 assembly 同一面）。
+	systemv1.RegisterSystemServiceServer(srv, systemgrpc.New(buildinfo.BuildInfo{Version: "0.1.0-test"}))
 	if err := grpcapiinterceptor.AssertAllRegisteredHavePolicy(srv, policySet); err != nil {
 		t.Fatalf("apitest: policy coverage: %v", err)
 	}

@@ -261,6 +261,253 @@ func (x *GetStatusResponse) GetVersion() string {
 	return ""
 }
 
+// SchemaEntry 是一条可解释资源的自描述（寻址名/家族/摘要/契约体）。
+type SchemaEntry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// name 是 explain 的寻址名：spec 用领域名词（app/task/database），
+	// event 用事件名（deployment.succeeded）。
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// kind 是条目家族：spec | event。
+	Kind string `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	// summary 是一句英文摘要（事件面单源自 eventcode 注册表）。
+	Summary string `protobuf:"bytes,3,opt,name=summary,proto3" json:"summary,omitempty"`
+	// schema_json 是 JSON Schema（draft-07 子集）的 canonical 紧凑 JSON
+	// 文本；字段名 snake_case，与 CLI --json（protojson UseProtoNames）同
+	// 一拼写面。
+	SchemaJson    string `protobuf:"bytes,4,opt,name=schema_json,json=schemaJson,proto3" json:"schema_json,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SchemaEntry) Reset() {
+	*x = SchemaEntry{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SchemaEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SchemaEntry) ProtoMessage() {}
+
+func (x *SchemaEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SchemaEntry.ProtoReflect.Descriptor instead.
+func (*SchemaEntry) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *SchemaEntry) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *SchemaEntry) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *SchemaEntry) GetSummary() string {
+	if x != nil {
+		return x.Summary
+	}
+	return ""
+}
+
+func (x *SchemaEntry) GetSchemaJson() string {
+	if x != nil {
+		return x.SchemaJson
+	}
+	return ""
+}
+
+type GetSchemaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSchemaRequest) Reset() {
+	*x = GetSchemaRequest{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSchemaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSchemaRequest) ProtoMessage() {}
+
+func (x *GetSchemaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSchemaRequest.ProtoReflect.Descriptor instead.
+func (*GetSchemaRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{5}
+}
+
+type GetSchemaResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// entries 按名字典序（输出确定性是 golden 钉扎的前提）。
+	Entries       []*SchemaEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSchemaResponse) Reset() {
+	*x = GetSchemaResponse{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSchemaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSchemaResponse) ProtoMessage() {}
+
+func (x *GetSchemaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSchemaResponse.ProtoReflect.Descriptor instead.
+func (*GetSchemaResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetSchemaResponse) GetEntries() []*SchemaEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type ExplainRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// resource 命名一条自描述条目（空或未知名 → E_INVALID_ARGUMENT /
+	// E_NOT_FOUND，报错信息给出清单入口）。
+	Resource      string `protobuf:"bytes,1,opt,name=resource,proto3" json:"resource,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainRequest) Reset() {
+	*x = ExplainRequest{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainRequest) ProtoMessage() {}
+
+func (x *ExplainRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainRequest.ProtoReflect.Descriptor instead.
+func (*ExplainRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{7}
+}
+
+func (x *ExplainRequest) GetResource() string {
+	if x != nil {
+		return x.Resource
+	}
+	return ""
+}
+
+type ExplainResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entry         *SchemaEntry           `protobuf:"bytes,1,opt,name=entry,proto3" json:"entry,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ExplainResponse) Reset() {
+	*x = ExplainResponse{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ExplainResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ExplainResponse) ProtoMessage() {}
+
+func (x *ExplainResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ExplainResponse.ProtoReflect.Descriptor instead.
+func (*ExplainResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *ExplainResponse) GetEntry() *SchemaEntry {
+	if x != nil {
+		return x.Entry
+	}
+	return nil
+}
+
 var File_fleetly_system_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_system_proto_rawDesc = "" +
@@ -274,15 +521,30 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\x10GetStatusRequest\"c\n" +
 	"\x11GetStatusResponse\x124\n" +
 	"\x05state\x18\x01 \x01(\x0e2\x1e.fleetly.system.v1.StatusStateR\x05state\x12\x18\n" +
-	"\aversion\x18\x02 \x01(\tR\aversion*`\n" +
+	"\aversion\x18\x02 \x01(\tR\aversion\"p\n" +
+	"\vSchemaEntry\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
+	"\x04kind\x18\x02 \x01(\tR\x04kind\x12\x18\n" +
+	"\asummary\x18\x03 \x01(\tR\asummary\x12\x1f\n" +
+	"\vschema_json\x18\x04 \x01(\tR\n" +
+	"schemaJson\"\x12\n" +
+	"\x10GetSchemaRequest\"M\n" +
+	"\x11GetSchemaResponse\x128\n" +
+	"\aentries\x18\x01 \x03(\v2\x1e.fleetly.system.v1.SchemaEntryR\aentries\",\n" +
+	"\x0eExplainRequest\x12\x1a\n" +
+	"\bresource\x18\x01 \x01(\tR\bresource\"G\n" +
+	"\x0fExplainResponse\x124\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1e.fleetly.system.v1.SchemaEntryR\x05entry*`\n" +
 	"\vStatusState\x12\x1c\n" +
 	"\x18STATUS_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STATUS_STATE_HEALTHY\x10\x01\x12\x19\n" +
-	"\x15STATUS_STATE_DEGRADED\x10\x022\x81\x02\n" +
+	"\x15STATUS_STATE_DEGRADED\x10\x022\xe2\x03\n" +
 	"\rSystemService\x12u\n" +
 	"\n" +
 	"GetVersion\x12$.fleetly.system.v1.GetVersionRequest\x1a%.fleetly.system.v1.GetVersionResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/version\x12q\n" +
-	"\tGetStatus\x12#.fleetly.system.v1.GetStatusRequest\x1a$.fleetly.system.v1.GetStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x1a\x06\xf2\xc4\x19\x02\b\x01B\x98\x01\x92ARRP\n" +
+	"\tGetStatus\x12#.fleetly.system.v1.GetStatusRequest\x1a$.fleetly.system.v1.GetStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12q\n" +
+	"\tGetSchema\x12#.fleetly.system.v1.GetSchemaRequest\x1a$.fleetly.system.v1.GetSchemaResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/schema\x12l\n" +
+	"\aExplain\x12!.fleetly.system.v1.ExplainRequest\x1a\".fleetly.system.v1.ExplainResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/explain\x1a\x06\xf2\xc4\x19\x02\b\x01B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;systemv1b\x06proto3"
@@ -300,25 +562,36 @@ func file_fleetly_system_v1_system_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_system_v1_system_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 4)
+var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_fleetly_system_v1_system_proto_goTypes = []any{
 	(StatusState)(0),           // 0: fleetly.system.v1.StatusState
 	(*GetVersionRequest)(nil),  // 1: fleetly.system.v1.GetVersionRequest
 	(*GetVersionResponse)(nil), // 2: fleetly.system.v1.GetVersionResponse
 	(*GetStatusRequest)(nil),   // 3: fleetly.system.v1.GetStatusRequest
 	(*GetStatusResponse)(nil),  // 4: fleetly.system.v1.GetStatusResponse
+	(*SchemaEntry)(nil),        // 5: fleetly.system.v1.SchemaEntry
+	(*GetSchemaRequest)(nil),   // 6: fleetly.system.v1.GetSchemaRequest
+	(*GetSchemaResponse)(nil),  // 7: fleetly.system.v1.GetSchemaResponse
+	(*ExplainRequest)(nil),     // 8: fleetly.system.v1.ExplainRequest
+	(*ExplainResponse)(nil),    // 9: fleetly.system.v1.ExplainResponse
 }
 var file_fleetly_system_v1_system_proto_depIdxs = []int32{
 	0, // 0: fleetly.system.v1.GetStatusResponse.state:type_name -> fleetly.system.v1.StatusState
-	1, // 1: fleetly.system.v1.SystemService.GetVersion:input_type -> fleetly.system.v1.GetVersionRequest
-	3, // 2: fleetly.system.v1.SystemService.GetStatus:input_type -> fleetly.system.v1.GetStatusRequest
-	2, // 3: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
-	4, // 4: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	5, // 1: fleetly.system.v1.GetSchemaResponse.entries:type_name -> fleetly.system.v1.SchemaEntry
+	5, // 2: fleetly.system.v1.ExplainResponse.entry:type_name -> fleetly.system.v1.SchemaEntry
+	1, // 3: fleetly.system.v1.SystemService.GetVersion:input_type -> fleetly.system.v1.GetVersionRequest
+	3, // 4: fleetly.system.v1.SystemService.GetStatus:input_type -> fleetly.system.v1.GetStatusRequest
+	6, // 5: fleetly.system.v1.SystemService.GetSchema:input_type -> fleetly.system.v1.GetSchemaRequest
+	8, // 6: fleetly.system.v1.SystemService.Explain:input_type -> fleetly.system.v1.ExplainRequest
+	2, // 7: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
+	4, // 8: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
+	7, // 9: fleetly.system.v1.SystemService.GetSchema:output_type -> fleetly.system.v1.GetSchemaResponse
+	9, // 10: fleetly.system.v1.SystemService.Explain:output_type -> fleetly.system.v1.ExplainResponse
+	7, // [7:11] is the sub-list for method output_type
+	3, // [3:7] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	3, // [3:3] is the sub-list for extension extendee
+	0, // [0:3] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_system_v1_system_proto_init() }
@@ -332,7 +605,7 @@ func file_fleetly_system_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_system_v1_system_proto_rawDesc), len(file_fleetly_system_v1_system_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   4,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

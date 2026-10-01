@@ -16,6 +16,61 @@
     "application/json"
   ],
   "paths": {
+    "/v1/system/explain": {
+      "get": {
+        "summary": "Explain 返回单个资源的自描述（Spec 种类 \"app\"/\"task\"/\"database\" 或\n事件名 \"deployment.succeeded\"——`fleetly explain \u003c资源\u003e` 消费）。",
+        "operationId": "SystemService_Explain",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ExplainResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "resource",
+            "description": "resource 命名一条自描述条目（空或未知名 → E_INVALID_ARGUMENT /\nE_NOT_FOUND，报错信息给出清单入口）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
+    "/v1/system/schema": {
+      "get": {
+        "summary": "GetSchema 返回能力自描述全量文档（Spec 契约 + 事件 payload JSON\nSchema，Go 类型反射生成——`fleetly schema` 消费；ADR-0026 形状钉扎）。",
+        "operationId": "SystemService_GetSchema",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetSchemaResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "SystemService"
+        ]
+      }
+    },
     "/v1/system/status": {
       "get": {
         "summary": "GetStatus 返回控制面服务状态。",
@@ -64,6 +119,27 @@
     }
   },
   "definitions": {
+    "v1ExplainResponse": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "$ref": "#/definitions/v1SchemaEntry"
+        }
+      }
+    },
+    "v1GetSchemaResponse": {
+      "type": "object",
+      "properties": {
+        "entries": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SchemaEntry"
+          },
+          "title": "entries 按名字典序（输出确定性是 golden 钉扎的前提）。"
+        }
+      }
+    },
     "v1GetStatusResponse": {
       "type": "object",
       "properties": {
@@ -88,6 +164,28 @@
           "type": "string"
         }
       }
+    },
+    "v1SchemaEntry": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name 是 explain 的寻址名：spec 用领域名词（app/task/database），\nevent 用事件名（deployment.succeeded）。"
+        },
+        "kind": {
+          "type": "string",
+          "title": "kind 是条目家族：spec | event。"
+        },
+        "summary": {
+          "type": "string",
+          "title": "summary 是一句英文摘要（事件面单源自 eventcode 注册表）。"
+        },
+        "schema_json": {
+          "type": "string",
+          "title": "schema_json 是 JSON Schema（draft-07 子集）的 canonical 紧凑 JSON\n文本；字段名 snake_case，与 CLI --json（protojson UseProtoNames）同\n一拼写面。"
+        }
+      },
+      "title": "SchemaEntry 是一条可解释资源的自描述（寻址名/家族/摘要/契约体）。"
     },
     "v1StatusState": {
       "type": "string",
