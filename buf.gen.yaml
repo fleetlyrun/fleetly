@@ -1,6 +1,8 @@
 version: v2
 plugins:
-  - remote: buf.build/protocolbuffers/go:v1.36.10
+  # 版本与 mise [tools] 钉版一致（N0.1 P1-4：remote/local 两通道同版本，
+  # pb.go 链字节一致；openapiv2 的 $ref 渲染差见 buf.gen.local.yaml 头注）。
+  - remote: buf.build/protocolbuffers/go:v1.36.11
     out: genproto
     opt:
       - paths=source_relative

@@ -1,7 +1,15 @@
-# 本地插件形态（临时，不提交）：buf.build remote 插件不可达时的离线
-# 生成通道。插件版本与 buf.gen.yaml 的 remote 钉版一一相同，输出字节一致
-#（buf 内置编译器与插件版本是输出的全部变量）。网络恢复后回到
-# buf generate（remote）即可。
+# 本地插件生成通道（基线通道，N0.1 P1-4 定稿）：插件版本钉在 mise 任务
+# tools:protoc-plugins（protoc-gen-go v1.36.11 / go-grpc v1.6.0 /
+# gateway v2.27.4 / openapiv2 v2.27.3，go install 进仓内 .tmp-bin），与
+# buf.gen.yaml 的 remote 钉版一一对应；buf 内置编译器两通道同源。
+# `mise run generate:proto:local` 生成，`mise run generate:verify` 断言
+# 重生成零漂移——本通道是 genproto 基线的可复现通道（remote 不可达期间
+# 与恢复后均如此）。
+#
+# 已知唯一通道差：openapiv2 的 $ref 渲染——远端构建把引用解析为
+# #/definitions/v1ErrorResponse，本地保留 .fleetly.shared.v1.ErrorResponse
+# 原文；已提交 swagger 统一为本地风格。网络恢复后 `buf generate`
+#（remote）会整体翻回远端渲染（纯重渲染，悬置项有案）。
 version: v2
 plugins:
   - local: protoc-gen-go

@@ -11,15 +11,38 @@
 go = "1.26.6"              # go.mod `go 1.26.6`
 buf = "1.65.0"             # buf lint / buf generate（生成物零漂移）
 protoc = "31.1"            # generate:config（config.pb.go 生成工具锁定）
-protoc-gen-go = "1.36.11"  # generate:config（与 config.pb.go 头注释一致）
+protoc-gen-go = "1.36.11"  # generate:config；本地生成通道经 tools:protoc-plugins 同版本钉装
 golangci-lint = "2.12.2"   # lint:golangci（与 CI 同版本）
 
 [task_config]
 shell = "sh -o errexit -c"
 
+# 本地生成通道插件钉装（N0.1 P1-4）：四插件版本与 buf.gen.yaml 的 remote
+# 钉版一一对应（protocolbuffers/go v1.36.11 / grpc-go v1.6.0 / gateway
+# v2.27.4 / openapiv2 v2.27.3），装进仓内 .tmp-bin（gitignored）。走
+# go install + Go 代理——本机 api.github.com 不可达（aqua/mise registry
+# 后端装不了），CI 上同任务同样可复现。
+[tasks."tools:protoc-plugins"]
+description = "钉版安装本地生成通道四插件到 .tmp-bin"
+run = '''
+mkdir -p .tmp-bin
+GOBIN="$PWD/.tmp-bin" go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
+GOBIN="$PWD/.tmp-bin" go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.0
+GOBIN="$PWD/.tmp-bin" go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-grpc-gateway@v2.27.4
+GOBIN="$PWD/.tmp-bin" go install github.com/grpc-ecosystem/grpc-gateway/v2/protoc-gen-openapiv2@v2.27.3
+'''
+
 [tasks."generate:proto"]
-description = "buf lint + buf generate（genproto/**）"
+description = "buf lint + buf generate（genproto/**，remote 通道）"
 run = ["buf lint", "buf generate"]
+
+[tasks."generate:proto:local"]
+description = "buf lint + 本地插件通道生成（genproto/**，离线可复现基线通道）"
+run = '''
+export PATH="$PWD/.tmp-bin:$PATH"
+buf lint
+buf generate --template buf.gen.local.yaml
+'''
 
 [tasks."generate:config"]
 description = "config.proto -> config.pb.go"
@@ -35,11 +58,19 @@ env = { GOWORK = "off" }
 run = ["go mod tidy", "go run -mod=mod github.com/google/wire/cmd/wire"]
 
 [tasks."generate:all"]
-description = "generate:proto + generate:config + wire"
+description = "generate:proto:local + generate:config + wire（基线通道）"
 run = [
-  { task = "generate:proto" },
+  { task = "tools:protoc-plugins" },
+  { task = "generate:proto:local" },
   { task = "generate:config" },
   { task = "wire" },
+]
+
+[tasks."generate:verify"]
+description = "基线通道重生成后零漂移断言（genproto/config/wire）"
+run = [
+  { task = "generate:all" },
+  "git diff --exit-code -- genproto internal/config internal/assembly",
 ]
 
 [tasks."lint:proto"]
