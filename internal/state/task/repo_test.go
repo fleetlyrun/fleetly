@@ -129,7 +129,7 @@ func TestRunStateMachine(t *testing.T) {
 		ID: "01JD0RUN0000000000000000000", TaskID: "01JD0TASK00000000000000000",
 		ProjectID: "01JD0PRJ000000000000000000", State: run.StatePending,
 		WorkloadID: "01JD0RUN0000000000000000000", DNSName: "run-01jd0run0000000000000000000",
-		Deadline:   "2026-01-01T01:00:00Z",
+		Deadline: "2026-01-01T01:00:00Z",
 	}
 	require.NoError(t, runs.Create(ctx, db.Runner(), m))
 
@@ -182,8 +182,8 @@ func TestRunListByTaskAndStates(t *testing.T) {
 	states := []run.State{run.StatePending, run.StateRunning, run.StateStopping, run.StateStopped, run.StateFailed}
 	for i, s := range states {
 		m := &run.Run{
-			ID:        "01JD0RUN000000000000000000" + string(rune('0'+i)),
-			TaskID:    taskID, ProjectID: "01JD0PRJ000000000000000000", State: s,
+			ID:     "01JD0RUN000000000000000000" + string(rune('0'+i)),
+			TaskID: taskID, ProjectID: "01JD0PRJ000000000000000000", State: s,
 		}
 		require.NoError(t, runs.Create(ctx, db.Runner(), m))
 	}

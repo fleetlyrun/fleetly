@@ -96,6 +96,185 @@
                 "name": {
                   "type": "string"
                 },
+                "process": {
+                  "additionalProperties": false,
+                  "oneOf": [
+                    {
+                      "required": [
+                        "image"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "from_build"
+                      ]
+                    }
+                  ],
+                  "properties": {
+                    "command": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "config_refs": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "env": {
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "type": "object"
+                    },
+                    "from_build": {
+                      "type": "string"
+                    },
+                    "healthcheck": {
+                      "additionalProperties": false,
+                      "oneOf": [
+                        {
+                          "required": [
+                            "http_path"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "tcp_port"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "exec"
+                          ]
+                        }
+                      ],
+                      "properties": {
+                        "exec": {
+                          "additionalProperties": false,
+                          "properties": {
+                            "command": {
+                              "items": {
+                                "type": "string"
+                              },
+                              "type": "array"
+                            }
+                          },
+                          "type": "object"
+                        },
+                        "http_path": {
+                          "type": "string"
+                        },
+                        "interval": {
+                          "format": "duration",
+                          "type": "string"
+                        },
+                        "retries": {
+                          "type": "integer"
+                        },
+                        "start_period": {
+                          "format": "duration",
+                          "type": "string"
+                        },
+                        "tcp_port": {
+                          "type": "integer"
+                        },
+                        "timeout": {
+                          "format": "duration",
+                          "type": "string"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "image": {
+                      "type": "string"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "networks": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "placement": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "node_ids": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "ports": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "port": {
+                            "type": "integer"
+                          },
+                          "protocol": {
+                            "enum": [
+                              "PROTOCOL_UNSPECIFIED",
+                              "PROTOCOL_HTTP",
+                              "PROTOCOL_H2C",
+                              "PROTOCOL_TCP"
+                            ],
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    },
+                    "replicas": {
+                      "type": "integer"
+                    },
+                    "resources": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "cpu_millis": {
+                          "type": "integer"
+                        },
+                        "memory_mb": {
+                          "type": "integer"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "secret_refs": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    },
+                    "volumes": {
+                      "items": {
+                        "additionalProperties": false,
+                        "properties": {
+                          "read_only": {
+                            "type": "boolean"
+                          },
+                          "target": {
+                            "type": "string"
+                          },
+                          "volume_id": {
+                            "type": "string"
+                          }
+                        },
+                        "type": "object"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
                 "secret_refs": {
                   "items": {
                     "type": "string"
@@ -1264,6 +1443,54 @@
       }
     },
     {
+      "name": "lease.expired",
+      "kind": "event",
+      "summary": "A task's owner lease expired past grace; the pool drains.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "deadline": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "lease.renewed",
+      "kind": "event",
+      "summary": "A task's owner lease was renewed (deadline advanced).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "deadline": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "network.created",
       "kind": "event",
       "summary": "A project network was created.",
@@ -1405,6 +1632,216 @@
       }
     },
     {
+      "name": "run.created",
+      "kind": "event",
+      "summary": "A run was created and queued for carrier ensure.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "dns_name": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stop_reason": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "project_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "run.failed",
+      "kind": "event",
+      "summary": "A run reached the failed terminal state.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "dns_name": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stop_reason": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "project_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "run.running",
+      "kind": "event",
+      "summary": "A run's workload was observed running.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "dns_name": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stop_reason": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "project_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "run.stopped",
+      "kind": "event",
+      "summary": "A run reached the stopped terminal state.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "dns_name": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stop_reason": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "project_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "run.stopping",
+      "kind": "event",
+      "summary": "A run started stopping (stop reason carried on the row).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "dns_name": {
+            "type": "string"
+          },
+          "exit_code": {
+            "type": "integer"
+          },
+          "instance": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "run_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "stop_reason": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "task_id",
+          "project_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "secret.deleted",
       "kind": "event",
       "summary": "A secret was deleted.",
@@ -1462,6 +1899,9 @@
         "properties": {
           "desired_concurrency": {
             "type": "integer"
+          },
+          "form": {
+            "type": "string"
           },
           "network_group": {
             "type": "string"
@@ -1667,6 +2107,366 @@
             "type": "integer"
           }
         },
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.active",
+      "kind": "event",
+      "summary": "A drained task was revived by an owner lease renewal.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.completed",
+      "kind": "event",
+      "summary": "A one-shot task's run completed successfully.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.created",
+      "kind": "event",
+      "summary": "A task was created (one-shot or resident form).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.deleted",
+      "kind": "event",
+      "summary": "A task was deleted (carriers removed, row tombstoned).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.drained",
+      "kind": "event",
+      "summary": "A draining task reached drained state (all runs terminal).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.draining",
+      "kind": "event",
+      "summary": "A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.failed",
+      "kind": "event",
+      "summary": "A one-shot task's run failed.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task.updated",
+      "kind": "event",
+      "summary": "A task's desired concurrency was updated.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "dns_name": {
+            "type": "string"
+          },
+          "form": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "owner_token_id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "task_id",
+          "project_id",
+          "form",
+          "state"
+        ],
         "type": "object"
       }
     },

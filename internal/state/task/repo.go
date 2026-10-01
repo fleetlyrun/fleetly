@@ -2,7 +2,7 @@
 // 双形态 one-shot/resident；ADR-0012/0025）。行本身即受理真源（spec 冻结
 // protojson）；状态迁移一律经 Transit CAS（四件一拍的"状态"件，Outbox/审计
 // 由调用方同事务组合）。TTL 与 Owner Lease 的绝对 deadline 语义在 Run 行
-//（ADR-0018 墙钟续算）。
+// （ADR-0018 墙钟续算）。
 package task
 
 import (

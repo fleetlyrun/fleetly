@@ -1,0 +1,419 @@
+package engine
+
+// Task/Run 驱动测试（F1.5/F1.6，ADR-0012/0025）：one-shot 生命周期、resident
+// 池补足、Owner Lease 排空与复活、TTL janitor、属主吊销拉式排空、删除收口。
+// 手动驱动形态（taskStep 直调 + 观测经 handleObservation 直注）。
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
+	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/role"
+	"github.com/fleetlyrun/fleetly/internal/state/run"
+	"github.com/fleetlyrun/fleetly/internal/state/task"
+	"github.com/fleetlyrun/fleetly/internal/state/team"
+	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
+)
+
+const (
+	tTaskProject = "01JD0PROJ00000000000000000"
+)
+
+// createTaskRow 落一条 Task 行（spec 内 task.id 以行 ID 填充后冻结）。
+func createTaskRow(t *testing.T, e *Engine, id, name, form string, desired int64, ttl int64, group string) *task.Task {
+	t.Helper()
+	spec := fmt.Sprintf(`{"schema_version":1,"task":{"id":"%s","project":"%s"},`+
+		`"process":{"name":"run","image":"busybox:1.37","command":["/worker"]},`+
+		`"ttl_seconds":%d,"desired_concurrency":%d,"form":"%s"`, id, tTaskProject, ttl, desired, form)
+	if group != "" {
+		spec += fmt.Sprintf(`,"network_group":"%s"`, group)
+	}
+	row := &task.Task{
+		ID: id, ProjectID: tTaskProject, Name: name, Form: form,
+		State: task.StateActive, Spec: []byte(spec + "}"),
+		DesiredConcurrency: desired, DNSName: TaskDNSName(id),
+	}
+	require.NoError(t, e.tasks.Create(context.Background(), e.db.Runner(), row))
+	return row
+}
+
+func getTaskRow(t *testing.T, e *Engine, id string) *task.Task {
+	t.Helper()
+	row, err := e.tasks.Get(context.Background(), e.db.Runner(), id)
+	require.NoError(t, err)
+	return row
+}
+
+func getRunRow(t *testing.T, e *Engine, id string) *run.Run {
+	t.Helper()
+	row, err := e.runs.Get(context.Background(), e.db.Runner(), id)
+	require.NoError(t, err)
+	return row
+}
+
+func taskRuns(t *testing.T, e *Engine, taskID string) []run.Run {
+	t.Helper()
+	rows, err := e.runs.ListByTaskStates(context.Background(), e.db.Runner(), taskID,
+		[]run.State{run.StatePending, run.StateRunning, run.StateStopping, run.StateStopped, run.StateFailed})
+	require.NoError(t, err)
+	return rows
+}
+
+// observe 注入一条 Run 观测（经 handleObservation 走真实裁决路由）。
+func observe(t *testing.T, e *Engine, workloadID string, st capability.WorkloadState, exitCode *int) {
+	t.Helper()
+	e.handleObservation(context.Background(), capability.WorkloadEvent{
+		WorkloadID: workloadID, Generation: capability.Generation(1),
+		State: st, ExitCode: exitCode,
+	})
+}
+
+// TestTaskOneShotLifecycle：one-shot 全链——补足 1 Run → Ensure（never +
+// 双级 DNS + 网络组）→ running → completed（exit 0）→ Task 镜像 completed →
+// 空集收口残留载体。
+func TestTaskOneShotLifecycle(t *testing.T) {
+	e, rt, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000000"
+	createTaskRow(t, e, taskID, "migrate", task.FormOneShot, 1, 3600, "dispatcher")
+
+	e.taskStep(ctx)
+
+	runs := taskRuns(t, e, taskID)
+	require.Len(t, runs, 1, "one-shot replenishes exactly one run")
+	assert.Equal(t, run.StatePending, runs[0].State)
+	assert.Equal(t, RunDNSName(runs[0].ID), runs[0].DNSName)
+
+	calls := rt.calls()
+	require.NotEmpty(t, calls)
+	last := calls[len(calls)-1]
+	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: tTaskProject, Task: taskID}, last.NS)
+	require.Len(t, last.Spec, 1)
+	w := last.Spec["run"]
+	assert.Equal(t, runs[0].ID, w.ID)
+	assert.Equal(t, capability.RestartNever, w.Restart)
+	assert.Equal(t, int64(1), w.Replicas)
+	assert.Equal(t, []string{"taskgrp-dispatcher"}, w.Networks)
+	assert.Len(t, w.Addressing, 2)
+
+	// 观测裁决：running。
+	observe(t, e, runs[0].ID, capability.WorkloadRunning, nil)
+	assert.Equal(t, run.StateRunning, getRunRow(t, e, runs[0].ID).State)
+
+	// 自然完成（exit 0）：stopped/completed + Task 镜像。
+	zero := 0
+	observe(t, e, runs[0].ID, capability.WorkloadCompleted, &zero)
+	got := getRunRow(t, e, runs[0].ID)
+	assert.Equal(t, run.StateStopped, got.State)
+	assert.Equal(t, run.ReasonCompleted, got.StopReason)
+	require.NotNil(t, got.ExitCode)
+	assert.Equal(t, 0, *got.ExitCode)
+
+	e.taskStep(ctx) // 终态镜像 + 空集收口
+	assert.Equal(t, task.StateCompleted, getTaskRow(t, e, taskID).State)
+	// 事件链咬合：run.created → run.running → run.stopped；task.completed。
+	assert.Equal(t, []string{"run.created", "run.running", "run.stopped"},
+		eventNames(t, e, runs[0].ID))
+	assert.Contains(t, eventNames(t, e, taskID), "task.completed")
+	// 观测缓存回收（P1-7）。
+	_, cached := e.runObservation(runs[0].ID)
+	assert.False(t, cached, "terminal run observation must be recycled")
+}
+
+// TestTaskOneShotFailedTerminal：exit 非 0 → failed/failed；Task 镜像 failed。
+func TestTaskOneShotFailedTerminal(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000001"
+	createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 0, "")
+	e.taskStep(ctx)
+	runs := taskRuns(t, e, taskID)
+	require.Len(t, runs, 1)
+
+	one := 1
+	observe(t, e, runs[0].ID, capability.WorkloadFailed, &one)
+	got := getRunRow(t, e, runs[0].ID)
+	assert.Equal(t, run.StateFailed, got.State)
+	assert.Equal(t, run.ReasonFailed, got.StopReason)
+
+	e.taskStep(ctx)
+	assert.Equal(t, task.StateFailed, getTaskRow(t, e, taskID).State)
+}
+
+// TestTaskResidentPoolReplenish：desired=3 补足 3 Run；一 Run 失败 → 下一拍
+// 补足回 3（池是韧性单元，单 Run never 不重启）。
+func TestTaskResidentPoolReplenish(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000002"
+	createTaskRow(t, e, taskID, "dispatcher", task.FormResident, 3, 0, "dispatcher")
+
+	e.taskStep(ctx)
+	assert.Len(t, taskRuns(t, e, taskID), 3, "pool replenishes to desired concurrency")
+
+	// 一个 Run 失败（exit 1）。
+	runs := taskRuns(t, e, taskID)
+	one := 1
+	observe(t, e, runs[0].ID, capability.WorkloadFailed, &one)
+	assert.Equal(t, run.StateFailed, getRunRow(t, e, runs[0].ID).State)
+
+	e.taskStep(ctx) // 补足：3 活槽位
+	live := 0
+	for _, r := range taskRuns(t, e, taskID) {
+		if r.State.Active() {
+			live++
+		}
+	}
+	assert.Equal(t, 3, live, "failed slot is replenished")
+	assert.Equal(t, task.StateActive, getTaskRow(t, e, taskID).State)
+}
+
+// TestTaskLeaseExpiryDrainAndRevive（F1.6）：lease 超宽限 → 排空（runs
+// stopping/lease_expired）→ drained → RenewTask 复活 → 补足恢复。
+func TestTaskLeaseExpiryDrainAndRevive(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000003"
+	createTaskRow(t, e, taskID, "pool", task.FormResident, 2, 0, "")
+
+	e.taskStep(ctx)
+	assert.Len(t, taskRuns(t, e, taskID), 2)
+
+	// 续期一次：deadline = now + interval。
+	renewed, err := e.RenewTask(ctx, taskID)
+	require.NoError(t, err)
+	assert.Contains(t, eventNames(t, e, taskID), "lease.renewed")
+	require.NotEmpty(t, renewed.LeaseDeadline)
+
+	// 时钟推过 deadline + 宽限 → 排空（deadline = 续期时刻 + interval）。
+	clock.Advance(e.opts.TaskLeaseInterval + e.opts.TaskLeaseGrace + time.Second)
+
+	e.taskStep(ctx)
+	assert.Equal(t, task.StateDraining, getTaskRow(t, e, taskID).State)
+	for _, r := range taskRuns(t, e, taskID) {
+		assert.Equal(t, run.StateStopping, r.State)
+		assert.Equal(t, run.ReasonLeaseExpired, r.StopReason)
+	}
+	assert.Contains(t, eventNames(t, e, taskID), "lease.expired")
+	assert.Contains(t, eventNames(t, e, taskID), "task.draining")
+
+	// 观测 stopped → 全终态 → drained。
+	for _, r := range taskRuns(t, e, taskID) {
+		observe(t, e, r.ID, capability.WorkloadStopped, nil)
+	}
+	e.taskStep(ctx)
+	assert.Equal(t, task.StateDrained, getTaskRow(t, e, taskID).State)
+	assert.Contains(t, eventNames(t, e, taskID), "task.drained")
+
+	// 复活（"排空并补足"的补足半边）：RenewTask → active + 补足。
+	_, err = e.RenewTask(ctx, taskID)
+	require.NoError(t, err)
+	e.taskStep(ctx)
+	assert.Equal(t, task.StateActive, getTaskRow(t, e, taskID).State)
+	assert.Contains(t, eventNames(t, e, taskID), "task.active")
+	live := 0
+	for _, r := range taskRuns(t, e, taskID) {
+		if r.State.Active() {
+			live++
+		}
+	}
+	assert.Equal(t, 2, live, "pool replenishes after revival")
+}
+
+// TestTaskTTLLifecycle（ADR-0018 墙钟）：TTL deadline 过 → stopping/
+// ttl_expired；停止兜底 deadline 过 → stopped（观测缺位不悬挂）。
+func TestTaskTTLLifecycle(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000004"
+	createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 60, "")
+	e.taskStep(ctx)
+	runs := taskRuns(t, e, taskID)
+	require.Len(t, runs, 1)
+
+	// 时钟推过 TTL deadline（60s）。
+	clock.Advance(61 * time.Second)
+	e.taskStep(ctx)
+	got := getRunRow(t, e, runs[0].ID)
+	assert.Equal(t, run.StateStopping, got.State)
+	assert.Equal(t, run.ReasonTTLExpired, got.StopReason)
+
+	// 观测确认停止。
+	observe(t, e, runs[0].ID, capability.WorkloadStopped, nil)
+	got = getRunRow(t, e, runs[0].ID)
+	assert.Equal(t, run.StateStopped, got.State)
+	assert.Equal(t, run.ReasonTTLExpired, got.StopReason)
+
+	// 停止兜底路径（观测缺位）：再建一 Run，推过停止兜底 deadline。
+	clock.Advance(2 * time.Minute)
+	e.taskStep(ctx)
+	assert.Equal(t, task.StateCompleted, getTaskRow(t, e, taskID).State)
+}
+
+// TestTaskStopForce：StopTask force → runs stopping/stopped_by_user；
+// 全终态 → drained。
+func TestTaskStopForce(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000005"
+	createTaskRow(t, e, taskID, "", task.FormResident, 2, 0, "")
+	e.taskStep(ctx)
+	require.Len(t, taskRuns(t, e, taskID), 2)
+
+	_, err := e.StopTask(ctx, taskID, true)
+	require.NoError(t, err)
+	for _, r := range taskRuns(t, e, taskID) {
+		assert.Equal(t, run.StateStopping, r.State)
+		assert.Equal(t, run.ReasonStoppedByUser, r.StopReason)
+	}
+
+	for _, r := range taskRuns(t, e, taskID) {
+		observe(t, e, r.ID, capability.WorkloadStopped, nil)
+	}
+	e.taskStep(ctx)
+	assert.Equal(t, task.StateDrained, getTaskRow(t, e, taskID).State)
+}
+
+// TestOwnerRevokedDrainsTasks（P1-8 拉式口径）：属主 Token 吊销 → task 环
+// 周期扫描排空（owner_revoked）。
+func TestOwnerRevokedDrainsTasks(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	// FK 地基：team + role（engine 测试库不跑账号批种子）。
+	require.NoError(t, team.New(e.db.Clock()).Create(ctx, e.db.Runner(), &team.Team{ID: "default", Name: "default"}))
+	require.NoError(t, role.New(e.db.Clock()).Create(ctx, e.db.Runner(), &role.Role{
+		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
+	}))
+	tokenID := "01JD0TOK0000000000000000000"
+	require.NoError(t, tokenrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &tokenrepo.Token{
+		ID: tokenID, TeamID: "default", Name: "worker", RoleID: "builtin-member", SHA256: "aa", Prefix: "flt_x",
+	}))
+
+	taskID := "01JD0TASK00000000000000006"
+	createTaskRow(t, e, taskID, "pool", task.FormResident, 2, 0, "")
+	// 属主引用上锚（吊销扫描的锚——createTaskRow 不带属主面）。
+	_, execErr := e.db.Runner().ExecContext(ctx, `UPDATE tasks SET owner_token_id = ? WHERE id = ?`, tokenID, taskID)
+	require.NoError(t, execErr)
+	require.NoError(t, e.tasks.UpdateLease(ctx, e.db.Runner(), taskID,
+		state.FormatTime(e.clock.Now().Add(time.Hour)))) // lease 未过期：排空只因吊销
+
+	e.taskStep(ctx)
+	require.Len(t, taskRuns(t, e, taskID), 2)
+
+	// 吊销属主 Token。
+	_, err := e.tokens.Revoke(ctx, e.db.Runner(), tokenID)
+	require.NoError(t, err)
+
+	e.taskStep(ctx)
+	tk := getTaskRow(t, e, taskID)
+	assert.Equal(t, task.StateDraining, tk.State)
+	for _, r := range taskRuns(t, e, taskID) {
+		assert.Equal(t, run.ReasonOwnerRevoked, r.StopReason)
+	}
+}
+
+// TestTaskScale：resident 期望并发原地调整 + task.updated 事件。
+func TestTaskScale(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000007"
+	createTaskRow(t, e, taskID, "", task.FormResident, 1, 0, "")
+
+	scaled, err := e.ScaleTask(ctx, taskID, 4)
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), scaled.DesiredConcurrency)
+	assert.Contains(t, eventNames(t, e, taskID), "task.updated")
+
+	e.taskStep(ctx)
+	assert.Len(t, taskRuns(t, e, taskID), 4)
+}
+
+// TestTaskDeleteTeardown：DeleteTask 拆载体 + Run 终态化 + tombstone。
+func TestTaskDeleteTeardown(t *testing.T) {
+	e, rt, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000008"
+	createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 0, "")
+	e.taskStep(ctx)
+	runs := taskRuns(t, e, taskID)
+	require.Len(t, runs, 1)
+
+	require.NoError(t, e.DeleteTask(ctx, taskID))
+	assert.Equal(t, task.StateDeleted, getTaskRow(t, e, taskID).State)
+	assert.Equal(t, run.StateStopped, getRunRow(t, e, runs[0].ID).State)
+	assert.Equal(t, run.ReasonStoppedByUser, getRunRow(t, e, runs[0].ID).StopReason)
+	assert.Contains(t, eventNames(t, e, taskID), "task.deleted")
+
+	removed := rt.removedSnapshot()
+	require.Len(t, removed, 1)
+	assert.Equal(t, capability.NamespaceRef{Team: "default", Project: tTaskProject, Task: taskID}, removed[0])
+	// 幂等。
+	require.NoError(t, e.DeleteTask(ctx, taskID))
+}
+
+// TestStopRunSingle：单 Run 停止（stopped_by_user）；Task 下一拍补位。
+func TestStopRunSingle(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000009"
+	createTaskRow(t, e, taskID, "", task.FormResident, 1, 0, "")
+	e.taskStep(ctx)
+	runs := taskRuns(t, e, taskID)
+	require.Len(t, runs, 1)
+
+	stopped, err := e.StopRun(ctx, runs[0].ID)
+	require.NoError(t, err)
+	assert.Equal(t, run.StateStopping, stopped.State)
+	assert.Equal(t, run.ReasonStoppedByUser, stopped.StopReason)
+
+	observe(t, e, runs[0].ID, capability.WorkloadStopped, nil)
+	e.taskStep(ctx) // 补足 1
+	live := 0
+	for _, r := range taskRuns(t, e, taskID) {
+		if r.State.Active() {
+			live++
+		}
+	}
+	assert.Equal(t, 1, live)
+}
+
+// TestEnsureTaskWorkloadsSignatureSkip：期望集签名未变 → 跳过 Ensure
+// （swarm API 压力面）；周期到期 → 强制重放。
+func TestEnsureTaskWorkloadsSignatureSkip(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000A"
+	createTaskRow(t, e, taskID, "", task.FormResident, 1, 0, "")
+
+	e.taskStep(ctx)
+	n1 := len(rt.calls())
+	require.Positive(t, n1)
+
+	e.taskStep(ctx) // 签名未变 → 跳过
+	assert.Equal(t, n1, len(rt.calls()), "unchanged desired set must skip Ensure")
+
+	clock.Advance(e.opts.TaskReconcileInterval + time.Second)
+	e.taskStep(ctx) // 周期强制重放
+	assert.Equal(t, n1+1, len(rt.calls()), "reconcile interval must force re-ensure")
+}
+
+// TestProjectTaskSpecFields：投影细节断言（StopGrace 注入）。
+func TestProjectTaskSpecFields(t *testing.T) {
+	spec := &specv1.TaskSpec{
+		SchemaVersion: 1,
+		Task:          &specv1.TaskRef{Id: "01JTASK", Project: tTaskProject},
+		Process:       &specv1.ProcessSpec{Name: "run", ImageOrigin: &specv1.ProcessSpec_Image{Image: "busybox:1.37"}},
+	}
+	w, _, err := ProjectTask(spec, "default", "01JRUN", true)
+	require.NoError(t, err)
+	assert.Equal(t, "01JRUN", w.ID)
+	assert.Equal(t, capability.RestartNever, w.Restart)
+}

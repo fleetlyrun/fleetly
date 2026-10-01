@@ -271,11 +271,11 @@ type RegistryCredential struct {
 type WorkloadState string
 
 const (
-	WorkloadPending  WorkloadState = "pending"
-	WorkloadRunning  WorkloadState = "running"
-	WorkloadDegraded WorkloadState = "degraded"   // 副本部分失联/重启循环
-	WorkloadStopped  WorkloadState = "stopped"
-	WorkloadOrphaned WorkloadState = "orphaned"   // 对不上账：只登记永不自动删
+	WorkloadPending   WorkloadState = "pending"
+	WorkloadRunning   WorkloadState = "running"
+	WorkloadDegraded  WorkloadState = "degraded" // 副本部分失联/重启循环
+	WorkloadStopped   WorkloadState = "stopped"
+	WorkloadOrphaned  WorkloadState = "orphaned"  // 对不上账：只登记永不自动删
 	WorkloadCompleted WorkloadState = "completed" // one-shot 正常完成终态（退出码 0，ADR-0025 决策 2）
 	WorkloadFailed    WorkloadState = "failed"    // 一次性失败终态（退出码非 0 / rejected——不再被 degraded 吞并，ADR-0025 决策 2）
 )

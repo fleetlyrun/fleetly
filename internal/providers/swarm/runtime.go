@@ -236,8 +236,8 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		// 槽。Task 域例外（ADR-0025 决策 2/8）：one-shot Run 的终态任务
 		//（complete/failed）与排空缩零的 shutdown 任务必须可见，否则已完成
 		// 的 Run 整个不可见。
-		terminal := terminalTaskState(t.Status.State)
-		if t.DesiredState != swarm.TaskStateRunning && !(labels[labelTask] != "" && terminal) {
+		terminalVisible := labels[labelTask] != "" && terminalTaskState(t.Status.State)
+		if t.DesiredState != swarm.TaskStateRunning && !terminalVisible {
 			continue
 		}
 		gen, _ := strconv.ParseUint(labels[labelGeneration], 10, 64)
@@ -251,7 +251,7 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 			Instance:   t.ID,
 		}
 		// 终态观测携带退出码（complete=exit 0 形态；failed=非 0）。
-		if terminal {
+		if terminalTaskState(t.Status.State) {
 			code := t.Status.ContainerStatus.ExitCode
 			ev.ExitCode = &code
 		}
@@ -288,9 +288,9 @@ func taskStatusMessage(t swarm.Task) string {
 
 // taskEventState 把 swarm task 状态映射为观测状态（L1 数据源，N0 修复批
 // A2 收紧 + ADR-0025 决策 2）：仅 running 计 running——placement 落空
-//（new/allocated/assigned/preparing/pending/starting 族）计 pending，让 L1
+// （new/allocated/assigned/preparing/pending/starting 族）计 pending，让 L1
 // 门保持关闭直至真就绪或超时失败；complete/failed/rejected 是一次性终态
-//（completed/failed，不再被 degraded 吞并）；shutdown 计 stopped（Task 域
+// （completed/failed，不再被 degraded 吞并）；shutdown 计 stopped（Task 域
 // 排空缩零路径）。
 func taskEventState(s swarm.TaskState) capability.WorkloadState {
 	switch s {

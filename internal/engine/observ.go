@@ -205,12 +205,18 @@ func (e *Engine) drainWatch(ctx context.Context, ch <-chan capability.WorkloadEv
 }
 
 // handleObservation：观测缓存刷新 + 节点锚定落库 + drift 检测 + Kick。
+// C3 观测 verdict owner（批 0.5 裁决）：Run 观测先经 workloadRun 归属路由
+// 进 Run 状态机（taskobs.go），App 观测走部署面——两轨裁决权分立。
 func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEvent) {
 	if ev.NodeJoined != nil {
 		e.handleNodeJoined(ctx, ev.NodeJoined)
 		return
 	}
 	if ev.WorkloadID == "" {
+		return
+	}
+	if _, runOwned := e.runOwner(ev.WorkloadID); runOwned {
+		e.handleRunObservation(ctx, ev.WorkloadID, ev)
 		return
 	}
 	e.obsMu.Lock()
@@ -221,6 +227,14 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 	}
 	e.detectDrift(ctx, ev)
 	e.loop.Kick()
+}
+
+// runOwner 返回 Run 观测归属（workloadID → taskID；Task 域缓存组面）。
+func (e *Engine) runOwner(workloadID string) (string, bool) {
+	e.taskObsMu.RLock()
+	defer e.taskObsMu.RUnlock()
+	taskID, ok := e.workloadRun[workloadID]
+	return taskID, ok
 }
 
 // handleNodeJoined：节点观测缓存 upsert（nodes 表非权威）+ node.joined

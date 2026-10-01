@@ -21,14 +21,29 @@ deployment.superseded	Deployment superseded by a newer one.	added during impleme
 hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush
 invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
+lease.expired	A task's owner lease expired past grace; the pool drains.	internal/engine/task.go driveTask
+lease.renewed	A task's owner lease was renewed (deadline advanced).	internal/engine/task.go RenewTask
 network.created	A project network was created.	internal/api/fleetlygrpc/structure.go CreateNetwork
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
 project.created	A project was created.	internal/api/fleetlygrpc/structure.go CreateProject
 project.deleted	A project was deleted (tombstoned).	internal/api/fleetlygrpc/structure.go DeleteProject
 role.created	A custom role was created from a scope set.	added during implementation
+run.created	A run was created and queued for carrier ensure.	internal/engine/task.go createRun
+run.failed	A run reached the failed terminal state.	internal/engine/taskobs.go handleRunObservation
+run.running	A run's workload was observed running.	internal/engine/taskobs.go handleRunObservation
+run.stopped	A run reached the stopped terminal state.	internal/engine/taskobs.go handleRunObservation
+run.stopping	A run started stopping (stop reason carried on the row).	internal/engine/task.go stopRunRow
 secret.deleted	A secret was deleted.	internal/api/fleetlygrpc/structure.go DeleteSecret
 secret.updated	A secret value was set (fingerprint, never the value).	internal/api/fleetlygrpc/structure.go PutSecret
+task.active	A drained task was revived by an owner lease renewal.	internal/engine/task.go RenewTask
+task.completed	A one-shot task's run completed successfully.	internal/engine/task.go oneshotTerminal
+task.created	A task was created (one-shot or resident form).	internal/engine/events.go EventTaskCreated (emitted by the acceptance surface)
+task.deleted	A task was deleted (carriers removed, row tombstoned).	internal/engine/task.go DeleteTask
+task.drained	A draining task reached drained state (all runs terminal).	internal/engine/task.go driveTask
+task.draining	A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.	internal/engine/task.go drainTask
+task.failed	A one-shot task's run failed.	internal/engine/task.go oneshotTerminal
+task.updated	A task's desired concurrency was updated.	internal/engine/task.go ScaleTask
 team.created	A team was created.	added during implementation
 token.created	A token was minted (secret shown once at creation).	added during implementation
 token.revoked	A token was revoked; its next call will be rejected.	added during implementation

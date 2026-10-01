@@ -7,6 +7,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/run"
+	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
 
 // 事件 payload schema（Outbox payload 列；JSON、字段只增）。
@@ -68,6 +70,127 @@ type buildEventPayload struct {
 	State      string `json:"state"`
 	Digest     string `json:"digest,omitempty"`
 	Error      string `json:"error,omitempty"`
+}
+
+// task.* payload schema（F1.5/F1.6；字段只增）。draining 起因经 Reason
+// 携带（lease_expired / owner_revoked / stopped_by_user）。
+type taskEventPayload struct {
+	TaskID             string `json:"task_id"`
+	ProjectID          string `json:"project_id"`
+	Form               string `json:"form"`
+	State              string `json:"state"`
+	Name               string `json:"name,omitempty"`
+	DesiredConcurrency int64  `json:"desired_concurrency,omitempty"`
+	DNSName            string `json:"dns_name,omitempty"`
+	OwnerTokenID       string `json:"owner_token_id,omitempty"`
+	Reason             string `json:"reason,omitempty"`
+}
+
+// run.* payload schema（终态帧携带 stop_reason 与 exit_code）。
+type runEventPayload struct {
+	RunID      string `json:"run_id"`
+	TaskID     string `json:"task_id"`
+	ProjectID  string `json:"project_id"`
+	State      string `json:"state"`
+	StopReason string `json:"stop_reason,omitempty"`
+	ExitCode   *int   `json:"exit_code,omitempty"`
+	DNSName    string `json:"dns_name,omitempty"`
+	Instance   string `json:"instance,omitempty"`
+}
+
+// lease.* payload schema（Owner Lease 事实；ADR-0018 绝对 deadline RFC3339）。
+type leaseEventPayload struct {
+	TaskID   string `json:"task_id"`
+	Deadline string `json:"deadline,omitempty"`
+	Reason   string `json:"reason,omitempty"`
+}
+
+// Task/Run/Lease 事件名锚定（usage 反扫的字面量命中点）。
+const (
+	EventTaskCreated  = "task.created" // API 受理面发射（事件名与 payload 单源在 engine）
+	eventTaskUpdated  = "task.updated"
+	eventTaskDraining = "task.draining"
+	eventTaskDeleted  = "task.deleted"
+	eventLeaseRenewed = "lease.renewed"
+	eventLeaseExpired = "lease.expired"
+)
+
+// TaskCreatedEventJSON 构造 task.created payload（API 受理面消费）。
+func TaskCreatedEventJSON(t *task.Task) []byte { return taskEventPayloadJSON(t, "") }
+
+// eventTaskState 把 Task 状态映射为事件名（字面量锚定）。
+func eventTaskState(s task.State) string {
+	switch s {
+	case task.StateActive:
+		return "task.active" // 复活迁移（RenewTask 的 draining/drained → active）
+	case task.StateDraining:
+		return eventTaskDraining
+	case task.StateCompleted:
+		return "task.completed"
+	case task.StateFailed:
+		return "task.failed"
+	case task.StateDrained:
+		return "task.drained"
+	case task.StateDeleted:
+		return eventTaskDeleted
+	default:
+		return "task." + strings.ReplaceAll(string(s), "-", "_")
+	}
+}
+
+// eventRunState 把 Run 状态映射为事件名（字面量锚定）。
+func eventRunState(s run.State) string {
+	switch s {
+	case run.StatePending:
+		return "run.created"
+	case run.StateRunning:
+		return "run.running"
+	case run.StateStopping:
+		return "run.stopping"
+	case run.StateStopped:
+		return "run.stopped"
+	case run.StateFailed:
+		return "run.failed"
+	default:
+		return "run." + strings.ReplaceAll(string(s), "-", "_")
+	}
+}
+
+func taskEventPayloadJSON(t *task.Task, reason string) []byte {
+	b, _ := json.Marshal(taskEventPayload{
+		TaskID:             t.ID,
+		ProjectID:          t.ProjectID,
+		Form:               t.Form,
+		State:              string(t.State),
+		Name:               t.Name,
+		DesiredConcurrency: t.DesiredConcurrency,
+		DNSName:            t.DNSName,
+		OwnerTokenID:       t.OwnerTokenID,
+		Reason:             reason,
+	})
+	return b
+}
+
+func runEventPayloadJSON(m *run.Run) []byte {
+	b, _ := json.Marshal(runEventPayload{
+		RunID:      m.ID,
+		TaskID:     m.TaskID,
+		ProjectID:  m.ProjectID,
+		State:      string(m.State),
+		StopReason: m.StopReason,
+		ExitCode:   m.ExitCode,
+		DNSName:    m.DNSName,
+	})
+	return b
+}
+
+func leaseEventPayloadJSON(t *task.Task, reason string) []byte {
+	b, _ := json.Marshal(leaseEventPayload{
+		TaskID:   t.ID,
+		Deadline: t.LeaseDeadline,
+		Reason:   reason,
+	})
+	return b
 }
 
 func buildEventPayloadJSON(b *build.Build) []byte {

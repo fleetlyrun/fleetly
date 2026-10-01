@@ -61,4 +61,25 @@ var builtins = []Event{
 
 	// Git 触发（F0.13 webhook 接收链）。
 	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go handlePush"},
+
+	// Task 状态机（F1.5/F1.6，ADR-0012/0025：双形态程序化工作负载）。
+	{Name: "task.created", Summary: "A task was created (one-shot or resident form).", Source: "internal/engine/events.go EventTaskCreated (emitted by the acceptance surface)"},
+	{Name: "task.active", Summary: "A drained task was revived by an owner lease renewal.", Source: "internal/engine/task.go RenewTask"},
+	{Name: "task.updated", Summary: "A task's desired concurrency was updated.", Source: "internal/engine/task.go ScaleTask"},
+	{Name: "task.draining", Summary: "A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.", Source: "internal/engine/task.go drainTask"},
+	{Name: "task.completed", Summary: "A one-shot task's run completed successfully.", Source: "internal/engine/task.go oneshotTerminal"},
+	{Name: "task.failed", Summary: "A one-shot task's run failed.", Source: "internal/engine/task.go oneshotTerminal"},
+	{Name: "task.drained", Summary: "A draining task reached drained state (all runs terminal).", Source: "internal/engine/task.go driveTask"},
+	{Name: "task.deleted", Summary: "A task was deleted (carriers removed, row tombstoned).", Source: "internal/engine/task.go DeleteTask"},
+
+	// Run 状态机（pending → running → stopping → stopped | failed，ADR-0012）。
+	{Name: "run.created", Summary: "A run was created and queued for carrier ensure.", Source: "internal/engine/task.go createRun"},
+	{Name: "run.running", Summary: "A run's workload was observed running.", Source: "internal/engine/taskobs.go handleRunObservation"},
+	{Name: "run.stopping", Summary: "A run started stopping (stop reason carried on the row).", Source: "internal/engine/task.go stopRunRow"},
+	{Name: "run.stopped", Summary: "A run reached the stopped terminal state.", Source: "internal/engine/taskobs.go handleRunObservation"},
+	{Name: "run.failed", Summary: "A run reached the failed terminal state.", Source: "internal/engine/taskobs.go handleRunObservation"},
+
+	// Owner Lease（F1.6：resident 池的心跳租约事实；deadline 绝对 RFC3339）。
+	{Name: "lease.renewed", Summary: "A task's owner lease was renewed (deadline advanced).", Source: "internal/engine/task.go RenewTask"},
+	{Name: "lease.expired", Summary: "A task's owner lease expired past grace; the pool drains.", Source: "internal/engine/task.go driveTask"},
 }

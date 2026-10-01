@@ -26,8 +26,35 @@ type registryCredentialJSON struct {
 // resolveMaterials 装配 Ensure 材料（ADR-0014：平台已解析后随 Ensure 下发；
 // 值不落 Spec/日志——Revision 只冻结引用）。
 func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
-	materials := capability.Materials{}
 	refs := collectSecretRefs(spec)
+	hosts := collectImageHosts(spec)
+	return e.materialsFor(ctx, refs, hosts, projectID)
+}
+
+// materialsForProcess 装配单进程材料面（Task 域消费：TaskSpec.process 的
+// secret_refs + 镜像 host 凭证——与 App 域同一条解析通道，单一真源）。
+func (e *Engine) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec, projectID string) (capability.Materials, error) {
+	seen := map[string]bool{}
+	refs := make([]string, 0, len(p.GetSecretRefs()))
+	for _, ref := range p.GetSecretRefs() {
+		if !seen[ref] {
+			seen[ref] = true
+			refs = append(refs, ref)
+		}
+	}
+	sort.Strings(refs)
+	hosts := []string(nil)
+	if img := p.GetImage(); img != "" {
+		if host := imageRegistryHostOf(img); host != "" {
+			hosts = []string{host}
+		}
+	}
+	return e.materialsFor(ctx, refs, hosts, projectID)
+}
+
+// materialsFor 是材料解析的共用实现（registry 凭证 + Secret 文件注入）。
+func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, projectID string) (capability.Materials, error) {
+	materials := capability.Materials{}
 	if len(refs) > 0 && e.cipher == nil {
 		return materials, fmt.Errorf("secret refs present but the master key is not available (data root keys/ missing)")
 	}
@@ -36,7 +63,7 @@ func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, pro
 	// 错误分诊（Q-8）：ErrNotFound = 无凭证，匿名拉取是合法形态；其余错误
 	// （库故障等）上抛部署失败带原因——静默降级匿名拉取会让私有镜像部署
 	// 死在无诊断的 ImagePullBackOff 上。
-	for _, host := range collectImageHosts(spec) {
+	for _, host := range hosts {
 		row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, registrySecretPrefix+host)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {

@@ -53,4 +53,31 @@ func init() {
 	registerEventPayload(eventWorkloadStopped, stoppedEventPayload{})
 	registerEventPayload(eventNodeJoined, nodeEventPayload{})
 	registerEventPayload("node.left", nodeEventPayload{})
+
+	// Task 状态机（task.*，统一 payload 形态）。
+	for _, name := range []string{
+		EventTaskCreated,
+		"task.active",
+		eventTaskUpdated,
+		eventTaskDraining,
+		"task.completed",
+		"task.failed",
+		"task.drained",
+		eventTaskDeleted,
+	} {
+		registerEventPayload(name, taskEventPayload{})
+	}
+	// Run 状态机（run.*）。
+	for _, name := range []string{
+		"run.created",
+		"run.running",
+		"run.stopping",
+		"run.stopped",
+		"run.failed",
+	} {
+		registerEventPayload(name, runEventPayload{})
+	}
+	// Owner Lease（lease.*，task 聚合）。
+	registerEventPayload(eventLeaseRenewed, leaseEventPayload{})
+	registerEventPayload(eventLeaseExpired, leaseEventPayload{})
 }

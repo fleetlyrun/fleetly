@@ -22,7 +22,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
+	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/task"
+	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
@@ -62,6 +65,23 @@ type Options struct {
 	// DriftScanInterval 是漂移扫描节拍（默认 30s；ADR-0022 spec 对照 +
 	// 稳态看门狗共用此环）。
 	DriftScanInterval time.Duration
+	// TaskLeaseInterval 是 Owner Lease 续期步长（默认 30s：deadline =
+	// 续期时刻 + 步长；宽限叠加在其后，ADR-0012/F1.6）。
+	TaskLeaseInterval time.Duration
+	// TaskLeaseGrace 是租约过期宽限（默认 90s：超宽限未续期即排空回收）。
+	TaskLeaseGrace time.Duration
+	// TaskStopGrace 是 Run 停止宽限（默认 30s；SIGTERM 后强制收口前的
+	// 等待窗，映射 Workload.StopGrace）。
+	TaskStopGrace time.Duration
+	// TaskReconcileInterval 是 Task 域强制重放节拍（默认 60s；期望集签名
+	// 未变也周期收敛——自愈面，控制 per-tick swarm API 压力）。
+	TaskReconcileInterval time.Duration
+	// TaskOwnerRevokedRunToTTL 是属主吊销排空模式（ADR-0017 默认宽限排空
+	// = false；true = 跑完 TTL：只停补足不停止存量 Run）。
+	TaskOwnerRevokedRunToTTL bool
+	// TaskReplenishBurst 是单拍补足创建上限（默认 8；防一拍海量创建打爆
+	// swarm API——决策 7 压测锚的稳态面）。
+	TaskReplenishBurst int
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 }
@@ -91,6 +111,21 @@ func (o *Options) fill() {
 	if o.DriftScanInterval <= 0 {
 		o.DriftScanInterval = 30 * time.Second
 	}
+	if o.TaskLeaseInterval <= 0 {
+		o.TaskLeaseInterval = 30 * time.Second
+	}
+	if o.TaskLeaseGrace <= 0 {
+		o.TaskLeaseGrace = 90 * time.Second
+	}
+	if o.TaskStopGrace <= 0 {
+		o.TaskStopGrace = 30 * time.Second
+	}
+	if o.TaskReconcileInterval <= 0 {
+		o.TaskReconcileInterval = 60 * time.Second
+	}
+	if o.TaskReplenishBurst <= 0 {
+		o.TaskReplenishBurst = 8
+	}
 }
 
 // Engine 是部署收敛引擎：Deployment 状态机单写者 + admission + Runtime
@@ -112,9 +147,16 @@ type Engine struct {
 	nodes       *node.Repo
 	audits      *audit.Repo
 
+	// Task 域（F1.5/F1.6）：聚合 repo + 单写者环 + 属主 Token 行引用面
+	//（吊销排空拉式扫描，P1-8）。
+	tasks  *task.Repo
+	runs   *run.Repo
+	tokens *tokenrepo.Repo
+
 	loop        *Loop
 	buildLoop   *Loop
 	managedLoop *Loop
+	taskLoop    *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
 	driftLoop   *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
@@ -136,6 +178,22 @@ type Engine struct {
 	// 复查被串行化，不存在"复查后落行、重放再 Ensure 旧 Generation 与
 	// 驱动器对翻载体标签"的窗口（健康部署被 L1 误判回滚的根因）。
 	appLocks sync.Map // appID → *sync.Mutex
+
+	// taskLocks 是 Task 级互斥（驱动环与 DeleteTask 载体收口共享——
+	// appLocks 同款形态；深审裁决表 #16 的同构互斥）。
+	taskLocks sync.Map // taskID → *sync.Mutex
+
+	// Task 域观测缓存（P1-7 缓存分家：独立缓存组，与部署形状五 map 隔离；
+	// per-Run 终态回收随 handleRunObservation——恢复真源是 Task/Run 行，
+	// 不抄 rebuildBaselines）。
+	taskObsMu   sync.RWMutex
+	workloadRun map[string]string                   // workloadID(=runID) → taskID（观测路由/归属）
+	runObs      map[string]capability.WorkloadEvent // runID → 最新观测
+
+	// Task 域 Ensure 签名（幂等收敛跳过 + 周期强制重放；失败清空下拍重试）。
+	taskEnsuredMu  sync.Mutex
+	taskEnsured    map[string]string    // taskID → 期望集签名
+	taskLastEnsure map[string]time.Time // taskID → 最近 Ensure 时刻
 
 	// 构建面（F0.9）：Builder 端口、并发上限、构建输入登记与最近日志缓冲。
 	builder   capability.Builder
@@ -189,43 +247,57 @@ func New(deps Deps, opts Options) *Engine {
 	log := deps.Logger
 	clock := db.Clock()
 	return &Engine{
-		builder:      deps.Builder,
-		edge:         deps.Edge,
-		cipher:       deps.Cipher,
-		runtime:      deps.Runtime,
-		db:           db,
-		log:          log,
-		clock:        clock,
-		opts:         opts,
-		projects:     project.New(clock),
-		apps:         app.New(clock),
-		revisions:    revision.New(clock),
-		deployments:  deployment.New(clock),
-		builds:       build.New(clock),
-		outbox:       outbox.New(clock),
-		nodes:        node.New(clock),
-		audits:       audit.New(clock),
-		loop:         NewLoop("deployment", log),
-		buildLoop:    NewLoop("build", log),
-		managedLoop:  NewLoop("managed", log),
-		driftLoop:    NewLoop("drift", log),
-		nodeLeftSeen: map[string]bool{},
-		routes:       route.New(clock),
-		secrets:      secret.New(clock),
-		configs:      configrepo.New(clock),
-		volumes:      volume.New(clock),
-		networks:     networkrepo.New(clock),
-		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
-		buildLogs:    newLogBuffer(500),
-		buildInputs:  make(map[string]capability.BuildRequest),
-		observations: make(map[string]capability.WorkloadEvent),
-		workloadApp:  make(map[string]string),
-		ensuredGen:   make(map[string]uint64),
-		ensuredSpec:  make(map[string]capability.Workload),
-		expected:     make(map[string]uint64),
-		drift:        make(map[string]string),
-		stoppedSig:   make(map[string]string),
+		builder:        deps.Builder,
+		edge:           deps.Edge,
+		cipher:         deps.Cipher,
+		runtime:        deps.Runtime,
+		db:             db,
+		log:            log,
+		clock:          clock,
+		opts:           opts,
+		projects:       project.New(clock),
+		apps:           app.New(clock),
+		revisions:      revision.New(clock),
+		deployments:    deployment.New(clock),
+		builds:         build.New(clock),
+		outbox:         outbox.New(clock),
+		nodes:          node.New(clock),
+		audits:         audit.New(clock),
+		tasks:          task.New(clock),
+		runs:           run.New(clock),
+		tokens:         tokenrepo.New(clock),
+		loop:           NewLoop("deployment", log),
+		buildLoop:      NewLoop("build", log),
+		managedLoop:    NewLoop("managed", log),
+		taskLoop:       NewLoop("task", log),
+		driftLoop:      NewLoop("drift", log),
+		nodeLeftSeen:   map[string]bool{},
+		routes:         route.New(clock),
+		secrets:        secret.New(clock),
+		configs:        configrepo.New(clock),
+		volumes:        volume.New(clock),
+		networks:       networkrepo.New(clock),
+		buildOpts:      buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
+		buildLogs:      newLogBuffer(500),
+		buildInputs:    make(map[string]capability.BuildRequest),
+		observations:   make(map[string]capability.WorkloadEvent),
+		workloadApp:    make(map[string]string),
+		ensuredGen:     make(map[string]uint64),
+		ensuredSpec:    make(map[string]capability.Workload),
+		expected:       make(map[string]uint64),
+		drift:          make(map[string]string),
+		stoppedSig:     make(map[string]string),
+		workloadRun:    make(map[string]string),
+		runObs:         make(map[string]capability.WorkloadEvent),
+		taskEnsured:    make(map[string]string),
+		taskLastEnsure: make(map[string]time.Time),
 	}
+}
+
+// lockTask 取 Task 级互斥（惰性建；驱动环/DeleteTask 共享）。
+func (e *Engine) lockTask(taskID string) *sync.Mutex {
+	mu, _ := e.taskLocks.LoadOrStore(taskID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 // lockApp 取 App 级互斥（惰性建；admission/基线重放/收口共享）。
@@ -245,7 +317,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
 	e.runCtxMu.Unlock()
 	e.resetOrphanBuilds(runCtx)
-	e.wg.Add(3)
+	e.wg.Add(4)
 	go func() {
 		defer e.wg.Done()
 		e.loop.Run(runCtx, e.opts.Tick, e.step)
@@ -258,10 +330,15 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.managedLoop.Run(runCtx, e.opts.Tick, e.managedStep)
 	}()
+	go func() {
+		defer e.wg.Done()
+		e.taskLoop.Run(runCtx, e.opts.Tick, e.taskStep)
+	}()
 	e.StartWatch(runCtx)
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	e.buildLoop.Kick()
 	e.managedLoop.Kick()
+	e.taskLoop.Kick() // 启动即收敛：Task/Run 行 + 绝对 deadline 是恢复真源（P1-7）
 	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环
 	//（Loop.Run 阻塞至 ctx 取消——与其他环同款 goroutine 形态）。重放
 	// goroutine 计入 wg（N0.1 P2-11）：Stop 排水覆盖重放，不再裸奔。
@@ -347,10 +424,11 @@ func (e *Engine) Stop(ctx context.Context) error {
 // Loop 暴露收敛循环（apitest 与装配层 Kick 用；只读面）。
 func (e *Engine) Loop() *Loop { return e.loop }
 
-// DriveOnce 手动驱动一轮收敛（部署/构建/受管三线各一步；apitest 手动
-// 形态消费——golden 确定性：不依赖真实节拍）。
+// DriveOnce 手动驱动一轮收敛（部署/构建/受管/Task 四线各一步；apitest
+// 手动形态消费——golden 确定性：不依赖真实节拍）。
 func (e *Engine) DriveOnce(ctx context.Context) {
 	e.step(ctx)
 	e.buildStep(ctx)
 	e.managedStep(ctx)
+	e.taskStep(ctx)
 }
