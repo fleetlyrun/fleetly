@@ -98,6 +98,18 @@ func TestHooksHandlerErrorEnvelope(t *testing.T) {
 	assert.NotContains(t, rec.Body.String(), "flthook_wrong")
 }
 
+func TestHooksHandlerRejectsOversizePayload(t *testing.T) {
+	fake := &fakeHookClient{resp: &deliveryv1.ReceiveWebhookResponse{Status: "accepted"}}
+	h := newHooksHandler(fake)
+
+	// 超过 hookPayloadLimit（25MiB）的请求体：设计内 413，且不打到 gRPC 面
+	//（Q-11：大 payload 的拒绝语义由本层拥有，不依赖传输层兜底）。
+	body := strings.Repeat("x", hookPayloadLimit+1)
+	rec := post(h, fleetlygrpc.HooksURLPrefix+"flthook_t", body, nil)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Nil(t, fake.got, "oversize payload must be rejected before the gRPC hop")
+}
+
 func TestMountHooksRouting(t *testing.T) {
 	gw := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusTeapot) // gateway 面的哨兵码

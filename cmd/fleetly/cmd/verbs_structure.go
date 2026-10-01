@@ -53,10 +53,11 @@ func newProjectsCreateVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: args[0], TeamId: team})
 			if err != nil {
@@ -73,10 +74,11 @@ func newProjectsListVerb() commands.Command {
 	return &flaggedVerb{
 		name: "list", synopsis: "List projects", usage: "projects list",
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Projects.ListProjects(ctx, &structurev1.ListProjectsRequest{})
 			if err != nil {
@@ -105,10 +107,11 @@ func newAppsCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project, Name: args[0]})
 			if err != nil {
@@ -131,10 +134,11 @@ func newAppsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Apps.ListApps(ctx, &structurev1.ListAppsRequest{ProjectId: project})
 			if err != nil {
@@ -163,10 +167,11 @@ func newAppsDeleteVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app})
 			if err != nil {
@@ -200,10 +205,11 @@ func newSecretsPutVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: project, Name: args[0], Value: v})
 			if err != nil {
@@ -227,10 +233,11 @@ func newSecretsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Secrets.ListSecrets(ctx, &structurev1.ListSecretsRequest{ProjectId: project})
 			if err != nil {
@@ -267,10 +274,11 @@ func newConfigsPutVerb() commands.Command {
 			if err != nil {
 				return err
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: project, Name: args[0], Content: v})
 			if err != nil {
@@ -293,10 +301,11 @@ func newConfigsListVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Configs.ListConfigs(ctx, &structurev1.ListConfigsRequest{ProjectId: project})
 			if err != nil {
@@ -329,10 +338,11 @@ func newVolumesCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{
 				ProjectId: project, Name: args[0], PinnedNodeId: node,
@@ -365,10 +375,11 @@ func newNetworksCreateVerb() commands.Command {
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
 				ProjectId: project, Name: args[0], EgressNone: egressNone,

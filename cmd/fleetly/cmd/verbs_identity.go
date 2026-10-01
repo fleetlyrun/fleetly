@@ -34,10 +34,11 @@ func newTokensCreateVerb() commands.Command {
 			if role == "" {
 				return usageErr(name, "--role is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Tokens.CreateToken(ctx, &identityv1.CreateTokenRequest{
 				Name: args[0], TeamId: team, RoleId: role, UserId: user,
@@ -59,10 +60,11 @@ func newTokensListVerb() commands.Command {
 		synopsis: "List tokens (prefixes only; secrets never return)",
 		usage:    "tokens list",
 		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Tokens.ListTokens(ctx, &identityv1.ListTokensRequest{})
 			if err != nil {
@@ -93,10 +95,11 @@ func newTokensRevokeVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one ID argument")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Tokens.RevokeToken(ctx, &identityv1.RevokeTokenRequest{Id: args[0]})
 			if err != nil {
@@ -129,10 +132,11 @@ func newUsersCreateVerb() commands.Command {
 			if role == "" {
 				return usageErr(name, "--role is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Users.CreateUser(ctx, &identityv1.CreateUserRequest{
 				Name: args[0], TeamId: team, RoleId: role,
@@ -153,10 +157,11 @@ func newUsersListVerb() commands.Command {
 		synopsis: "List users",
 		usage:    "users list",
 		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Users.ListUsers(ctx, &identityv1.ListUsersRequest{})
 			if err != nil {
@@ -191,10 +196,11 @@ func newUsersInviteVerb() commands.Command {
 			if role == "" {
 				return usageErr(name, "--role is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Invitations.CreateInvitation(ctx, &identityv1.CreateInvitationRequest{
 				TeamId: team, RoleId: role, Ttl: ttl,
@@ -228,10 +234,11 @@ func newUsersAcceptVerb() commands.Command {
 			if token == "" || userName == "" {
 				return usageErr(name, "--token and --name are required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Invitations.AcceptInvitation(ctx, &identityv1.AcceptInvitationRequest{
 				Secret: token, UserName: userName,
@@ -268,10 +275,11 @@ func newRolesCreateVerb() commands.Command {
 			if len(scopes) == 0 {
 				return usageErr(name, "at least one --scope is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Roles.CreateRole(ctx, &identityv1.CreateRoleRequest{
 				Name: args[0], TeamId: team, Scopes: scopes,
@@ -292,10 +300,11 @@ func newRolesListVerb() commands.Command {
 		synopsis: "List roles (builtin owner/admin/member plus custom)",
 		usage:    "roles list",
 		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Roles.ListRoles(ctx, &identityv1.ListRolesRequest{})
 			if err != nil {
@@ -331,10 +340,11 @@ func newTeamsCreateVerb() commands.Command {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: args[0]})
 			if err != nil {
@@ -353,10 +363,11 @@ func newTeamsListVerb() commands.Command {
 		synopsis: "List teams",
 		usage:    "teams list",
 		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Teams.ListTeams(ctx, &identityv1.ListTeamsRequest{})
 			if err != nil {
@@ -393,10 +404,11 @@ func newAuditVerb() commands.Command {
 			if len(args) > 0 {
 				return usageErr(name, "unexpected argument(s)")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Audit.ListAudit(ctx, &identityv1.ListAuditRequest{
 				Source: source, Action: action, Actor: actor, Resource: resource, Limit: int32(limit), //nolint:gosec // 限额在服务端钳制

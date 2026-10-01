@@ -72,10 +72,11 @@ func newQuickstartVerb() commands.Command {
 			if tlsMode != "none" && tlsMode != "auto" {
 				return usageErr(name, "--tls must be none or auto")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			// sslip host 的 IP 锚取自连接地址（与 dialFromEnv 同一解析序：
 			// flag > env > 默认；凭据文件的 addr 不参与）。

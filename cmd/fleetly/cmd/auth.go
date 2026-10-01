@@ -146,10 +146,11 @@ func newWhoamiVerb() commands.Command {
 			if len(args) > 0 {
 				return usageErr("whoami", "unexpected argument(s)")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Users.WhoAmI(ctx, &identityv1.WhoAmIRequest{})
 			if err != nil {

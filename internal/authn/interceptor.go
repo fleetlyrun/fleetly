@@ -8,6 +8,7 @@ package authn
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -190,6 +191,13 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 	sha := identity.HashToken(secret)
 	tok, err := a.tokens.GetBySHA256(ctx, a.db.Runner(), sha)
 	if err != nil {
+		// 分诊（Q-24）：行不存在 = 凭证无效（正常拒绝面，静默）；其余 =
+		// 存储故障——伪装成"无效凭证"会吞掉故障真相，必须以 E_INTERNAL
+		// 大声失败（PUBLIC 面按匿名放行的既有语义不受影响）。
+		if !errors.Is(err, state.ErrNotFound) {
+			a.log.Error("authn: token lookup failed", "err", err)
+			return nil, apperr.New("E_INTERNAL", "token lookup failed").WithCause(err)
+		}
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid token")
 	}
 	if tok.Revoked {

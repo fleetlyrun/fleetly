@@ -28,10 +28,11 @@ func newEventsListVerb() commands.Command {
 			fs.Int64Var(&limit, "limit", 100, "max events (capped at 1000)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close()                                                                                             //nolint:errcheck // 进程退出路径
 			resp, err := c.Events.ListEvents(ctx, &telemetryv1.ListEventsRequest{AfterSeq: after, Limit: int32(limit)}) //nolint:gosec // 限额在服务端钳制
 			if err != nil {
@@ -69,10 +70,13 @@ func newLogsVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			// 流式动词：拨号豁免请求级 deadline（follow 会话长存活，
+			// 客户端 deadline 会腰斩尾随流；服务端流面不经 unary 超时拦截器）。
+			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			stream, err := c.Logs.StreamLogs(ctx, &telemetryv1.StreamLogsRequest{
 				AppId: app, Process: process, TailLines: tail, Follow: follow,

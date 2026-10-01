@@ -61,10 +61,11 @@ func newDeployVerb() commands.Command {
 				}
 				compose = string(data)
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
 				AppId: app, Image: image, ComposeYaml: compose, ProcessName: process,
@@ -92,10 +93,11 @@ func newDeploymentsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: app})
 			if err != nil {
@@ -125,10 +127,11 @@ func newRollbackVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app, ToRevision: to})
 			if err != nil {
@@ -152,10 +155,11 @@ func newRevisionsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: app})
 			if err != nil {
@@ -187,10 +191,11 @@ func newRevisionsDiffVerb() commands.Command {
 			if app == "" || from == 0 || to == 0 {
 				return usageErr(name, "--app, --from and --to are required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Revisions.DiffRevisions(ctx, &deliveryv1.DiffRevisionsRequest{AppId: app, FromSeq: from, ToSeq: to})
 			if err != nil {
@@ -227,10 +232,11 @@ func newBuildsListVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{AppId: app})
 			if err != nil {
@@ -264,10 +270,13 @@ func newBuildsLogsVerb() commands.Command {
 			if build == "" {
 				return usageErr(name, "--build is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			// 流式动词：拨号豁免请求级 deadline（follow 续流至构建终态，
+			// 时长由构建决定；服务端流面不经 unary 超时拦截器）。
+			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			stream, err := c.Builds.StreamBuildLogs(ctx, &deliveryv1.StreamBuildLogsRequest{
 				BuildId: build, Follow: follow,
@@ -329,10 +338,11 @@ func newRoutesCreateVerb() commands.Command {
 			if project == "" || host == "" || app == "" || process == "" || port == 0 {
 				return usageErr(name, "--project, --host, --app, --process and --port are required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
 				ProjectId: project, Host: host, Path: path, AppId: app, Process: process,
@@ -357,10 +367,11 @@ func newRoutesListVerb() commands.Command {
 		name: name, synopsis: "List routes", usage: "routes list [--project PROJECT_ID]",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "filter by project") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: project})
 			if err != nil {
@@ -381,10 +392,11 @@ func newNodesListVerb() commands.Command {
 	return &flaggedVerb{
 		name: "list", synopsis: "List observed cluster nodes", usage: "nodes list",
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Nodes.ListNodes(ctx, &runtimev1.ListNodesRequest{})
 			if err != nil {
@@ -410,10 +422,11 @@ func newNodesEnrollVerb() commands.Command {
 			fs.BoolVar(&rotate, "rotate", false, "invalidate all existing join tokens first (leak response)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Nodes.EnrollNode(ctx, &runtimev1.EnrollNodeRequest{Rotate: rotate})
 			if err != nil {
@@ -440,10 +453,11 @@ func newNodesAdminVerb(name, past, synopsis string, call func(ctx context.Contex
 			if nodeID == "" {
 				return usageErr(name, "--node is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := call(ctx, c, nodeID)
 			if err != nil {

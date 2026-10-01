@@ -112,10 +112,13 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	}
 
 	services := fleetlygrpc.NewServices(db, eng, cipher, rt, assembly.ScopeResources(), log)
-	srv := grpc.NewServer(
+	// 传输层选项与生产服务器同源（收包限额等，assembly.GRPCServerOptions
+	// 单一真源）——夹具缺同款限额会让大请求面（如 webhook payload）的
+	// 测试结果与生产漂移。
+	srv := grpc.NewServer(append(assembly.GRPCServerOptions(),
 		grpc.ChainUnaryInterceptor(unary...),
 		grpc.ChainStreamInterceptor(stream...),
-	)
+	)...)
 	fleetlygrpc.RegisterAll(srv, services)
 	if err := grpcapiinterceptor.AssertAllRegisteredHavePolicy(srv, policySet); err != nil {
 		t.Fatalf("apitest: policy coverage: %v", err)

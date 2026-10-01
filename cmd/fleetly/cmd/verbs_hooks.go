@@ -47,10 +47,11 @@ func newHooksSetVerb() commands.Command {
 			if app == "" || repo == "" {
 				return usageErr(name, "--app and --repo are required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
 				AppId: app, Repo: repo, Branch: branch, Dockerfile: dockerfile, WatchPaths: watch,
@@ -85,10 +86,11 @@ func newHooksGetVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Hooks.GetGitHook(ctx, &deliveryv1.GetGitHookRequest{AppId: app})
 			if err != nil {
@@ -118,10 +120,11 @@ func newHooksRotateVerb() commands.Command {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, c, err := dialFromEnv(ctx)
+			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
 			}
+			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Hooks.RotateHookToken(ctx, &deliveryv1.RotateHookTokenRequest{AppId: app})
 			if err != nil {
