@@ -68,7 +68,7 @@
 - F1.9 治理刹车：per-Project Task/Workload 数量配额、per-Token 创建速率、change freeze（按资源/动作封禁，拒绝带原因）。
 - F1.10 build-from-upload：流式 tar + 大小上限。
 - F1.11 zot 受管自宿：多节点镜像分发（digest/tag 直存）、构建推送目标。
-- F1.12 Database 最小集：postgres（含 percona/pgvector 模板）+ redis 模板、默认本地备份目标开箱即用、连接串注入 Secret、`fleetly db` 命令组。
+- F1.12 Database 最小集：postgres（含 percona/pgvector 模板）+ redis 模板、默认本地备份目标开箱即用、连接串注入 Secret、`fleetly databases` 命令组。
 - F1.13 首批 Skills：`skills/`（deploy-diagnose / task-pool / database-provision），随版本演进说明。
 - F1.14 构建器扩展：railpack（钉版本）+ static。
 - F1.15 **dogfooding 上线**：torchwood/messageloop 从零部署（staging 双节点重装已提前于 N0 完成，见 docs/runbooks/staging-fleetly.md——归档版退役、新 fleetly 现役）。验收：ADR-0012 清单逐项打勾 + messageloop 经 h2c Route 对外服务 + dispatcher 池租约/补足/回收全语义真机回归。
