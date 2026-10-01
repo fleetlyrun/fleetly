@@ -1,0 +1,9 @@
+id: <ULID>
+name: migrate
+form: one-shot
+state: active
+image: busybox:1.37
+dns: task-<ULID>
+network-group: dispatcher
+concurrency: 0/1
+lease-deadline: 

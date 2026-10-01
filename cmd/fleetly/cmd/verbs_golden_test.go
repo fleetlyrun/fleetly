@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -20,6 +21,7 @@ import (
 // 确定不占位；凭证明文随机逐次不同）。
 var (
 	ulidRe       = regexp.MustCompile(`[0-9A-HJKMNP-TV-Z]{26}`)
+	lowerULIDRe  = regexp.MustCompile(`[0-9a-hjkmnp-tv-z]{26}`) // engine 铸名（task-/run- DNS 名）
 	digestRe     = regexp.MustCompile(`\b[0-9a-f]{64}\b`)
 	fprRe        = regexp.MustCompile(`\b[0-9a-f]{16}\b`)
 	tokenRe      = regexp.MustCompile(`flt_[A-Za-z0-9_-]{4,}`)
@@ -35,9 +37,12 @@ func normalizeGolden(s string) string {
 	s = credPathRe.ReplaceAllString(s, "credentials saved: <CREDS>")
 	s = credJSONRe.ReplaceAllString(s, `"credentials_path": "<CREDS>"`)
 	s = tokenRe.ReplaceAllString(s, "<TOKEN>")
-	s = ulidRe.ReplaceAllString(s, "<ULID>")
+	// digest/指纹先行（完整十六进制串），铸名的小写 ULID 后行——顺序颠倒
+	// 会把 digest 中恰符合 ULID 字符集的 26 长段误占位（revisions_list 实证）。
 	s = digestRe.ReplaceAllString(s, "<DIGEST>")
 	s = fprRe.ReplaceAllString(s, "<FP>")
+	s = lowerULIDRe.ReplaceAllString(s, "<ULID>")
+	s = ulidRe.ReplaceAllString(s, "<ULID>")
 	return s
 }
 
@@ -91,11 +96,28 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"nodes drain", []string{"nodes", "drain", "--node", goldenNodeID}, 0},
 		{"nodes cordon", []string{"nodes", "cordon", "--node", goldenNodeID}, 0},
 		{"nodes uncordon", []string{"nodes", "uncordon", "--node", goldenNodeID}, 0},
+
+		// Automation 动词（F1.5/F1.6）：one-shot 全链 + resident 池。
+		{"tasks create", []string{"tasks", "create", "--project", "GOLDEN_PROJECT", "--name", "migrate",
+			"--image", "busybox:1.37", "--network-group", "dispatcher", "--env", "POOL=gold", "--ttl-seconds", "3600"}, 0},
+		{"tasks list", []string{"tasks", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"tasks get", []string{"tasks", "get", "--task", "GOLDEN_TASK"}, 0},
+		{"runs list", []string{"runs", "list", "--task", "GOLDEN_TASK"}, 0},
+		{"runs get", []string{"runs", "get", "--run", "GOLDEN_RUN"}, 0},
+		{"runs stop", []string{"runs", "stop", "--run", "GOLDEN_RUN"}, 0},
+		{"runs wait", []string{"runs", "wait", "--run", "GOLDEN_RUN"}, 0},
+		{"tasks create resident", []string{"tasks", "create", "--project", "GOLDEN_PROJECT", "--name", "dispatcher",
+			"--form", "resident", "--image", "ghcr.io/torchwood/dispatcher:1", "--concurrency", "2"}, 0},
+		{"tasks scale", []string{"tasks", "scale", "--task", "GOLDEN_TASK2", "--concurrency", "3"}, 0},
+		{"tasks renew", []string{"tasks", "renew", "--task", "GOLDEN_TASK2"}, 0},
+		{"tasks stop", []string{"tasks", "stop", "--task", "GOLDEN_TASK2", "--force"}, 0},
+		{"tasks delete", []string{"tasks", "delete", "--task", "GOLDEN_TASK"}, 0},
+		{"tasks delete resident", []string{"tasks", "delete", "--task", "GOLDEN_TASK2"}, 0},
 	}
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, appID string
+	var projectID, appID, taskID, task2ID, runID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -105,6 +127,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_APP" {
 					args[i] = appID
+				}
+				if a == "GOLDEN_TASK" {
+					args[i] = taskID
+				}
+				if a == "GOLDEN_TASK2" {
+					args[i] = task2ID
+				}
+				if a == "GOLDEN_RUN" {
+					args[i] = runID
 				}
 			}
 			code, out, stderr := runCLI(t, args...)
@@ -122,9 +153,30 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			if st.verb == "apps create" {
 				appID = extractTailID(out)
 			}
+			if st.verb == "tasks create" {
+				taskID = extractTaskID(t, out)
+				spawnTaskRun(t, h, taskID)
+				runID = firstRunID(t, h, taskID)
+			}
+			if st.verb == "tasks create resident" {
+				task2ID = extractTaskID(t, out)
+				h.Drive(sdk.WithToken(context.Background(), h.Token))
+			}
 			// deploy 后推进到 succeeded（rollback 的 golden 需要成功基线）。
 			if st.verb == "deploy" {
 				promoteToSucceeded(t, h, appID)
+			}
+			// runs stop 后收口到终态（runs wait 的前置：WaitRun 首帧即终态）。
+			if st.verb == "runs stop" {
+				h.Runtime.ReportStopped(runID, 1)
+				h.Drive(sdk.WithToken(context.Background(), h.Token))
+			}
+			// resident 池 stop --force 后注入停止观测（不驱动到 drained——
+			// --json 轮的 StopTask 需 draining 非终态；删除步不受影响）。
+			if st.verb == "tasks stop" {
+				for _, r := range taskRunIDs(t, h, task2ID) {
+					h.Runtime.ReportStopped(r, 1)
+				}
 			}
 			compareGolden(t, goldenFile(st.verb), normalizeGolden(out))
 
@@ -147,13 +199,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 // jsonArgOverrides 是 --json 轮的位置/唯一值替换（索引 → 新值；GOLDEN_*
 // 占位在运行时同样被替换）。
 var jsonArgOverrides = map[string]map[int]string{
-	"projects create": {2: "shop-json"},
-	"apps create":     {4: "web-json"},
-	"secrets put":     {6: "api-token-json"},
-	"configs put":     {6: "app-json.ini"},
-	"volumes create":  {4: "data-json"},
-	"networks create": {4: "default-json"},
-	"routes create":   {5: "json.127.0.0.1.sslip.io"},
+	"projects create":       {2: "shop-json"},
+	"apps create":           {4: "web-json"},
+	"secrets put":           {6: "api-token-json"},
+	"configs put":           {6: "app-json.ini"},
+	"volumes create":        {4: "data-json"},
+	"networks create":       {4: "default-json"},
+	"routes create":         {5: "json.127.0.0.1.sslip.io"},
+	"tasks create":          {5: "migrate-json"},
+	"tasks create resident": {5: "dispatcher-json"},
 }
 
 // extractTailID 取 "... (id X)" 尾部的 ID。
@@ -184,4 +238,52 @@ func promoteToSucceeded(t *testing.T, h *apitest.Harness, appID string) {
 		}
 	}
 	t.Fatal("deployment did not reach succeeded within the manual drive budget")
+}
+
+// taskCreatedRe 取人类形态 "task X created (...)" 的 ID。
+var taskCreatedRe = regexp.MustCompile(`task ([0-9A-HJKMNP-TV-Z]{26}) created`)
+
+func extractTaskID(t *testing.T, out string) string {
+	t.Helper()
+	m := taskCreatedRe.FindStringSubmatch(out)
+	if len(m) < 2 {
+		t.Fatalf("cannot extract task id from output: %q", out)
+	}
+	return m[1]
+}
+
+// spawnTaskRun 驱动补足 + 观测 running（后续 golden 步骤的状态确定性）。
+func spawnTaskRun(t *testing.T, h *apitest.Harness, taskID string) {
+	t.Helper()
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	h.Drive(ctx)
+	for _, r := range taskRunIDs(t, h, taskID) {
+		h.Runtime.ReportRunning(r, 1)
+	}
+	h.Drive(ctx)
+}
+
+// taskRunIDs 返回 Task 名下全部 Run 的 ID。
+func taskRunIDs(t *testing.T, h *apitest.Harness, taskID string) []string {
+	t.Helper()
+	rc := automationv1.NewRunsServiceClient(h.Conn)
+	resp, err := rc.ListRuns(sdk.WithToken(context.Background(), h.Token), &automationv1.ListRunsRequest{TaskId: taskID})
+	if err != nil {
+		t.Fatalf("list runs for golden fixture: %v", err)
+	}
+	var ids []string
+	for _, r := range resp.GetRuns() {
+		ids = append(ids, r.GetId())
+	}
+	return ids
+}
+
+// firstRunID 返回首条 Run ID（新→旧）。
+func firstRunID(t *testing.T, h *apitest.Harness, taskID string) string {
+	t.Helper()
+	ids := taskRunIDs(t, h, taskID)
+	if len(ids) == 0 {
+		t.Fatalf("no runs spawned for task %s", taskID)
+	}
+	return ids[0]
 }

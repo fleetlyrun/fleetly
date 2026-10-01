@@ -1,0 +1,13 @@
+{
+  "id": "<ULID>",
+  "project_id": "<ULID>",
+  "name": "dispatcher-json",
+  "form": "resident",
+  "state": "active",
+  "image": "ghcr.io/torchwood/dispatcher:1",
+  "desired_concurrency": "2",
+  "owner_token_id": "<ULID>",
+  "dns_name": "task-<ULID>",
+  "created_at": "2026-01-01T00:02:00Z",
+  "updated_at": "2026-01-01T00:02:00Z"
+}

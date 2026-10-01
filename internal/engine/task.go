@@ -47,7 +47,7 @@ var (
 	// ErrTaskTerminal 是生命周期动词命中终态行（终态事实不可改写）。
 	ErrTaskTerminal = errors.New("engine: task is in a terminal state")
 	// ErrNotResident 是仅 resident 形态适用的动词面（ScaleTask）。
-	ErrNotResident = errors.New("engine: verb applies to resident tasks only")
+	ErrNotResident = errors.New("engine: this verb targets resident tasks only")
 )
 
 // taskDrivingStates 是 Run 驱动集合（Ensure 期望集来源）。
@@ -456,7 +456,7 @@ func (e *Engine) ScaleTask(ctx context.Context, id string, desired int64) (*task
 			return err
 		}
 		if t.Form != task.FormResident {
-			return fmt.Errorf("%w: scaling applies to resident tasks (task %s is %s)", ErrNotResident, id, t.Form)
+			return fmt.Errorf("%w: scaling targets resident tasks (task %s is %s)", ErrNotResident, id, t.Form)
 		}
 		if t.State.Terminal() {
 			return fmt.Errorf("%w: task %s is %s", ErrTaskTerminal, id, t.State)

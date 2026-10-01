@@ -21,6 +21,7 @@
         "roles:admin",
         "routes:admin",
         "secrets:admin",
+        "tasks:admin",
         "teams:admin",
         "tokens:admin",
         "users:admin",
@@ -51,6 +52,8 @@
         "routes:write",
         "secrets:read",
         "secrets:write",
+        "tasks:read",
+        "tasks:write",
         "volumes:read",
         "volumes:write"
       ],

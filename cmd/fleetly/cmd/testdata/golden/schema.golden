@@ -24,15 +24,30 @@ deployment.superseded	event	Deployment superseded by a newer one.
 hook.push_accepted	event	A verified webhook push triggered a deployment.
 invitation.accepted	event	An invitation was redeemed; the invitee became a user.
 invitation.created	event	An invitation was issued (single-use, time-boxed, role-bound).
+lease.expired	event	A task's owner lease expired past grace; the pool drains.
+lease.renewed	event	A task's owner lease was renewed (deadline advanced).
 network.created	event	A project network was created.
 node.joined	event	Node joined the cluster and was anchored with a platform node ID.
 node.left	event	Node left the cluster.
 project.created	event	A project was created.
 project.deleted	event	A project was deleted (tombstoned).
 role.created	event	A custom role was created from a scope set.
+run.created	event	A run was created and queued for carrier ensure.
+run.failed	event	A run reached the failed terminal state.
+run.running	event	A run's workload was observed running.
+run.stopped	event	A run reached the stopped terminal state.
+run.stopping	event	A run started stopping (stop reason carried on the row).
 secret.deleted	event	A secret was deleted.
 secret.updated	event	A secret value was set (fingerprint, never the value).
 task	spec	TaskSpec: desired state of a programmatic workload (one-shot or resident, ADR-0012).
+task.active	event	A drained task was revived by an owner lease renewal.
+task.completed	event	A one-shot task's run completed successfully.
+task.created	event	A task was created (one-shot or resident form).
+task.deleted	event	A task was deleted (carriers removed, row tombstoned).
+task.drained	event	A draining task reached drained state (all runs terminal).
+task.draining	event	A task started draining: replenishment stopped; in-flight runs stop with grace or run out their TTL.
+task.failed	event	A one-shot task's run failed.
+task.updated	event	A task's desired concurrency was updated.
 team.created	event	A team was created.
 token.created	event	A token was minted (secret shown once at creation).
 token.revoked	event	A token was revoked; its next call will be rejected.

@@ -33,6 +33,10 @@ var acceptanceExemptions = map[string]string{
 	// 由 R-8 transit helper 承接，api 侧原语管不住也不该管）。
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":   "engine write path (admission transit owns the four-in-one-tx)",
 	"/fleetly.delivery.v1.DeploymentsService/Rollback": "engine write path (replays via Submit)",
+	// Task 删除是 engine 写路径（ADR-0023 同款"先收口后落账"：载体拆除
+	// 先于一切行写；Run 终态化与 tombstone 的四件一拍住在 engine 的
+	// transitTask/transitRun）。
+	"/fleetly.automation.v1.TasksService/DeleteTask": "engine write path (carrier teardown precedes row writes per ADR-0023)",
 }
 
 // fleetlygrpcHandlers 解析 fleetlygrpc 全部非测试 .go，产出方法名 →

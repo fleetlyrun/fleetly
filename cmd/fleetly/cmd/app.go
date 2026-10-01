@@ -75,6 +75,12 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
 		groupVerb("builds", "inspect builds and stream build logs", newBuildsListVerb(), newBuildsLogsVerb()),
 		groupVerb("hooks", "manage per-app git triggers (secrets shown once at mint/rotate)", newHooksSetVerb(), newHooksGetVerb(), newHooksRotateVerb()),
+		// Automation 上下文（F1.5/F1.6：Task 双形态 + Owner Lease + WaitRun）。
+		groupVerb("tasks", "manage programmatic workloads (one-shot executions and resident instance pools)",
+			newTasksCreateVerb(), newTasksListVerb(), newTasksGetVerb(), newTasksScaleVerb(),
+			newTasksStopVerb(), newTasksDeleteVerb(), newTasksRenewVerb()),
+		groupVerb("runs", "inspect and control task runs",
+			newRunsListVerb(), newRunsGetVerb(), newRunsStopVerb(), newRunsWaitVerb()),
 		// Edge / Runtime 上下文。
 		newQuickstartVerb(),
 		groupVerb("routes", "manage routes", newRoutesCreateVerb(), newRoutesListVerb()),

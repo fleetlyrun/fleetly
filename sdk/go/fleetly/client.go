@@ -14,6 +14,7 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
@@ -41,6 +42,8 @@ type Client struct {
 	Revisions   deliveryv1.RevisionsServiceClient
 	Builds      deliveryv1.BuildsServiceClient
 	Hooks       deliveryv1.HooksServiceClient
+	Tasks       automationv1.TasksServiceClient
+	Runs        automationv1.RunsServiceClient
 	Nodes       runtimev1.NodesServiceClient
 	Routes      edgev1.RoutesServiceClient
 	Events      telemetryv1.EventsServiceClient
@@ -103,6 +106,8 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Revisions:   deliveryv1.NewRevisionsServiceClient(conn),
 		Builds:      deliveryv1.NewBuildsServiceClient(conn),
 		Hooks:       deliveryv1.NewHooksServiceClient(conn),
+		Tasks:       automationv1.NewTasksServiceClient(conn),
+		Runs:        automationv1.NewRunsServiceClient(conn),
 		Nodes:       runtimev1.NewNodesServiceClient(conn),
 		Routes:      edgev1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),

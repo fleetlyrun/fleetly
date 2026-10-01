@@ -53,9 +53,9 @@ func mapStateError(err error, what string) error {
 	case errors.Is(err, engine.ErrTaskTerminal):
 		return apperr.New("E_CONFLICT", "task already reached a terminal state; create a new task instead").WithCause(err)
 	case errors.Is(err, engine.ErrTaskNotRenewable):
-		return apperr.New("E_INVALID_ARGUMENT", "one-shot tasks carry no owner lease; renew applies to resident tasks").WithCause(err)
+		return apperr.New("E_INVALID_ARGUMENT", "one-shot tasks carry no owner lease; renew targets resident tasks").WithCause(err)
 	case errors.Is(err, engine.ErrNotResident):
-		return apperr.New("E_INVALID_ARGUMENT", "verb applies to resident tasks only").WithCause(err)
+		return apperr.New("E_INVALID_ARGUMENT", "this verb targets resident tasks only").WithCause(err)
 	default:
 		var ae *apperr.Error
 		if errors.As(err, &ae) {

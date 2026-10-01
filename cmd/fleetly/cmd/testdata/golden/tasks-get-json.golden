@@ -1,0 +1,15 @@
+{
+  "id": "<ULID>",
+  "project_id": "<ULID>",
+  "name": "migrate",
+  "form": "one-shot",
+  "state": "active",
+  "image": "busybox:1.37",
+  "desired_concurrency": "1",
+  "ttl_seconds": "3600",
+  "network_group": "dispatcher",
+  "owner_token_id": "<ULID>",
+  "dns_name": "task-<ULID>",
+  "created_at": "2026-01-01T00:02:00Z",
+  "updated_at": "2026-01-01T00:02:00Z"
+}
