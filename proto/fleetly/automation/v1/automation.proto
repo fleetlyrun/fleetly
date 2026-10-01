@@ -1,0 +1,240 @@
+syntax = "proto3";
+
+// Automation 上下文（领域模型 §2）：程序化工作负载面——Task（one-shot/
+// resident 双形态）、Run 与 Owner Lease（ADR-0012/0025）。DNS 名是平台
+// API 面：per-Task 池级稳定名（活 Run 轮询解析）+ per-Run 稳定名。
+package fleetly.automation.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1;automationv1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+// TasksService 是 Task 聚合面。创建型动词在幂等执法面（Idempotency-Key
+// 头，ADR-0024）；List 带 after_task_id + limit 游标（ADR-0026 惯例）。
+service TasksService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // CreateTask 建程序化工作负载：one-shot（一次执行）或 resident（维持
+  // 期望并发数的常驻池）。owner_token_id 缺省 = 调用方 Token（行上记
+  // Token 引用非明文）。
+  rpc CreateTask(CreateTaskRequest) returns (CreateTaskResponse) {
+    option (google.api.http) = { post: "/v1/tasks" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetTask(GetTaskRequest) returns (GetTaskResponse) {
+    option (google.api.http) = { get: "/v1/tasks/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
+    };
+  }
+  // ListTasks 新→旧分页（游标 = ULID 创建序）。
+  rpc ListTasks(ListTasksRequest) returns (ListTasksResponse) {
+    option (google.api.http) = { get: "/v1/tasks" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
+    };
+  }
+  // ScaleTask 调整 resident 池期望并发（0 = 显式缩零；补足随下一拍）。
+  rpc ScaleTask(ScaleTaskRequest) returns (ScaleTaskResponse) {
+    option (google.api.http) = { post: "/v1/tasks/{id}/scale" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+  // StopTask 排空停止：停补足；force=false 存量 Run 自然收口（完成/TTL），
+  // force=true 宽限停止（StopGrace 路径）。全 Run 终态后 Task → drained。
+  rpc StopTask(StopTaskRequest) returns (StopTaskResponse) {
+    option (google.api.http) = { post: "/v1/tasks/{id}/stop" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+  // DeleteTask 删除（拆载体 + 存量 Run 终态化 + tombstone；幂等）。
+  rpc DeleteTask(DeleteTaskRequest) returns (DeleteTaskResponse) {
+    option (google.api.http) = { delete: "/v1/tasks/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+  // RenewTask 续期 Owner Lease（F1.6）：deadline 推进；排空态可复活
+  //（续期即属主在场的显式声明，补足随 active 恢复）。one-shot 无租约。
+  rpc RenewTask(RenewTaskRequest) returns (RenewTaskResponse) {
+    option (google.api.http) = { post: "/v1/tasks/{id}/renew" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+}
+
+// RunsService 是 Run 聚合面（Task 的一次执行）。WaitRun 是等待原语
+// （F1.3 收口面：随 Run 实体落地）——事件流过滤实现，终态帧后收流。
+service RunsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc GetRun(GetRunRequest) returns (GetRunResponse) {
+    option (google.api.http) = { get: "/v1/runs/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
+    };
+  }
+  // ListRuns 新→旧分页（游标 = ULID 创建序；task_id 过滤可选）。
+  rpc ListRuns(ListRunsRequest) returns (ListRunsResponse) {
+    option (google.api.http) = { get: "/v1/runs" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
+    };
+  }
+  // StopRun 停止单条 Run（stopped_by_user；resident 池下一拍补位）。
+  rpc StopRun(StopRunRequest) returns (StopRunResponse) {
+    option (google.api.http) = { post: "/v1/runs/{id}/stop" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+  // WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）
+  // 帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。
+  rpc WaitRun(WaitRunRequest) returns (stream WaitRunResponse) {
+    option (google.api.http) = { get: "/v1/runs/{id}/wait" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+// Task 是程序化工作负载行形态（状态值 kebab-case 与存储一致）。
+message Task {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string form = 4;   // one-shot | resident
+  string state = 5;  // active | draining | completed | failed | drained | deleted
+  string image = 6;
+  repeated string command = 7;
+  int64 desired_concurrency = 8;
+  int64 ttl_seconds = 9;
+  string network_group = 10;
+  string owner_token_id = 11;
+  // dns_name 是 per-Task 池级稳定 DNS（活 Run 轮询解析；engine 铸名，
+  // ADR-0025 决策 6——N4 换 Runtime 名字不变）。
+  string dns_name = 12;
+  string lease_deadline = 13;
+  int64 active_run_count = 14;
+  string created_at = 15;
+  string updated_at = 16;
+  string finished_at = 17;
+}
+
+// Run 是一次执行行形态（终态携带停止原因七枚举 + 退出码）。
+message Run {
+  string id = 1;
+  string task_id = 2;
+  string project_id = 3;
+  string state = 4;  // pending | running | stopping | stopped | failed
+  // stop_reason 七枚举：completed | failed | stopped_by_user | ttl_expired |
+  // lease_expired | owner_revoked | platform_drained（ADR-0012/0025 附录）。
+  string stop_reason = 5;
+  sint32 exit_code = 6;  // 0 = 未观测（proto3 无法区分 0 与未设——退出码 0
+                         // 的自然完成以 stop_reason=completed 表达）
+  string dns_name = 7;   // per-Run 稳定 DNS
+  string deadline = 8;
+  string created_at = 9;
+  string started_at = 10;
+  string finished_at = 11;
+}
+
+message CreateTaskRequest {
+  string project_id = 1;
+  // name 是项目内人读名（可选；活跃期唯一）。
+  string name = 2;
+  // form 双形态：one-shot | resident（空 = 按 desired_concurrency 推导）。
+  string form = 3;
+  // image 镜像直部署引用（私有仓库凭证经 Secret "registry:<host>" 解析）。
+  string image = 4;
+  repeated string command = 5;
+  // env 是非敏感环境变量（归一化结果；敏感值走 secret_refs）。
+  map<string, string> env = 6;
+  repeated string secret_refs = 7;
+  // resources 是每 Run 资源上限。
+  int64 cpu_millis = 8;
+  int64 memory_mb = 9;
+  // ttl_seconds 是 Run 生命周期上限（绝对 deadline 落库，ADR-0018；上限
+  // 86400；0 = 无 TTL）。
+  int64 ttl_seconds = 10;
+  // desired_concurrency 是 resident 期望并发 Run 数（one-shot 恒 1）。
+  int64 desired_concurrency = 11;
+  // network_group 是 Task Network Group 名（Run 创建时刻挂靠；App Process
+  // 经 taskGroup:<name> 跨挂）。
+  string network_group = 12;
+  // owner_token_id 是属主 Token 行引用（缺省 = 调用方 Token；吊销触发
+  // 宽限排空，ADR-0017）。
+  string owner_token_id = 13;
+  string idempotency_key = 14;
+}
+
+message CreateTaskResponse {
+  Task task = 1;
+}
+message GetTaskRequest { string id = 1; }
+message GetTaskResponse { Task task = 1; }
+message ListTasksRequest {
+  string project_id = 1;
+  // after_task_id 游标（上一页末条 id；空 = 首页）。
+  string after_task_id = 2;
+  int32 limit = 3;
+}
+message ListTasksResponse { repeated Task tasks = 1; }
+message ScaleTaskRequest {
+  string id = 1;
+  int64 desired_concurrency = 2;
+}
+message ScaleTaskResponse { Task task = 1; }
+message StopTaskRequest {
+  string id = 1;
+  bool force = 2;
+}
+message StopTaskResponse { Task task = 1; }
+message DeleteTaskRequest { string id = 1; }
+message DeleteTaskResponse {}
+message RenewTaskRequest { string id = 1; }
+message RenewTaskResponse { Task task = 1; }
+
+message GetRunRequest { string id = 1; }
+message GetRunResponse { Run run = 1; }
+message ListRunsRequest {
+  // task_id 过滤（空 = 全部 Run——高频面建议带过滤，torchwood 池规模）。
+  string task_id = 1;
+  // after_run_id 游标（上一页末条 id；空 = 首页）。
+  string after_run_id = 2;
+  int32 limit = 3;
+}
+message ListRunsResponse { repeated Run runs = 1; }
+message StopRunRequest { string id = 1; }
+message StopRunResponse { Run run = 1; }
+message WaitRunRequest { string id = 1; }
+// WaitRunResponse 是状态快照帧；流在终态帧后关闭。
+message WaitRunResponse { Run run = 1; }

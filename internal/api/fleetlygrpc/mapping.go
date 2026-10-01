@@ -50,6 +50,12 @@ func mapStateError(err error, what string) error {
 		return apperr.New("E_QUEUE_FULL", "deployment queue is full for this app").WithCause(err)
 	case errors.Is(err, engine.ErrNotCancellable):
 		return apperr.New("E_NOT_CANCELLABLE", "deployment already finished").WithCause(err)
+	case errors.Is(err, engine.ErrTaskTerminal):
+		return apperr.New("E_CONFLICT", "task already reached a terminal state; create a new task instead").WithCause(err)
+	case errors.Is(err, engine.ErrTaskNotRenewable):
+		return apperr.New("E_INVALID_ARGUMENT", "one-shot tasks carry no owner lease; renew applies to resident tasks").WithCause(err)
+	case errors.Is(err, engine.ErrNotResident):
+		return apperr.New("E_INVALID_ARGUMENT", "verb applies to resident tasks only").WithCause(err)
 	default:
 		var ae *apperr.Error
 		if errors.As(err, &ae) {

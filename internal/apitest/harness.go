@@ -332,6 +332,22 @@ func (f *FakeRuntime) ReportRunning(workloadID string, gen capability.Generation
 	f.obs <- capability.WorkloadEvent{WorkloadID: workloadID, Generation: gen, State: capability.WorkloadRunning}
 }
 
+// ReportStopped 注入 stopped 观测（Run 排空收口的终态确认面，F1.5/F1.6）。
+func (f *FakeRuntime) ReportStopped(workloadID string, gen capability.Generation) {
+	f.obs <- capability.WorkloadEvent{WorkloadID: workloadID, Generation: gen, State: capability.WorkloadStopped}
+}
+
+// ReportCompleted 注入 one-shot 完成观测（exit 0，ADR-0025 决策 2）。
+func (f *FakeRuntime) ReportCompleted(workloadID string, gen capability.Generation) {
+	code := 0
+	f.obs <- capability.WorkloadEvent{WorkloadID: workloadID, Generation: gen, State: capability.WorkloadCompleted, ExitCode: &code}
+}
+
+// ReportFailed 注入 one-shot 失败观测（exit 非 0）。
+func (f *FakeRuntime) ReportFailed(workloadID string, gen capability.Generation, exitCode int) {
+	f.obs <- capability.WorkloadEvent{WorkloadID: workloadID, Generation: gen, State: capability.WorkloadFailed, ExitCode: &exitCode}
+}
+
 // StreamLogs 实现 RuntimeLogs 子面（固定两帧——logs golden 的确定性底座；
 // Follow 不实现：测试只用非 follow 形态）。
 func (f *FakeRuntime) StreamLogs(_ context.Context, q capability.LogQuery, w capability.LogWriter) error {

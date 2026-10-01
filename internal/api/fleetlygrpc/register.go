@@ -5,6 +5,7 @@ package fleetlygrpc
 import (
 	"google.golang.org/grpc"
 
+	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
@@ -25,6 +26,8 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{s: s})
 	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})
 	deliveryv1.RegisterHooksServiceServer(srv, &HooksService{s: s})
+	automationv1.RegisterTasksServiceServer(srv, &TasksService{s: s})
+	automationv1.RegisterRunsServiceServer(srv, &RunsService{s: s})
 	runtimev1.RegisterNodesServiceServer(srv, &NodesService{s: s})
 	edgev1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
 	telemetryv1.RegisterEventsServiceServer(srv, &EventsService{s: s})

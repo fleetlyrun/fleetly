@@ -29,6 +29,7 @@ const (
 var memberWriteResources = map[string]bool{
 	"deployments": true,
 	"builds":      true,
+	"tasks":       true,
 	"secrets":     true,
 	"configs":     true,
 	"volumes":     true,

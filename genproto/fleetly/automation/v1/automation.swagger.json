@@ -1,0 +1,724 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Automation 上下文（领域模型 §2）：程序化工作负载面——Task（one-shot/\nresident 双形态）、Run 与 Owner Lease（ADR-0012/0025）。DNS 名是平台\nAPI 面：per-Task 池级稳定名（活 Run 轮询解析）+ per-Run 稳定名。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "TasksService"
+    },
+    {
+      "name": "RunsService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/runs": {
+      "get": {
+        "summary": "ListRuns 新→旧分页（游标 = ULID 创建序；task_id 过滤可选）。",
+        "operationId": "RunsService_ListRuns",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListRunsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "task_id",
+            "description": "task_id 过滤（空 = 全部 Run——高频面建议带过滤，torchwood 池规模）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_run_id",
+            "description": "after_run_id 游标（上一页末条 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "RunsService"
+        ]
+      }
+    },
+    "/v1/runs/{id}": {
+      "get": {
+        "operationId": "RunsService_GetRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetRunResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RunsService"
+        ]
+      }
+    },
+    "/v1/runs/{id}/stop": {
+      "post": {
+        "summary": "StopRun 停止单条 Run（stopped_by_user；resident 池下一拍补位）。",
+        "operationId": "RunsService_StopRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StopRunResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/RunsServiceStopRunBody"
+            }
+          }
+        ],
+        "tags": [
+          "RunsService"
+        ]
+      }
+    },
+    "/v1/runs/{id}/wait": {
+      "get": {
+        "summary": "WaitRun 是等待原语（架构 §7）：逐状态快照帧，终态（stopped/failed）\n帧后收流。流面豁免 unary 超时（与 WaitDeployment/WaitBuild 同款）。",
+        "operationId": "RunsService_WaitRun",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1WaitRunResponse"
+                }
+              },
+              "title": "Stream result of v1WaitRunResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "RunsService"
+        ]
+      }
+    },
+    "/v1/tasks": {
+      "get": {
+        "summary": "ListTasks 新→旧分页（游标 = ULID 创建序）。",
+        "operationId": "TasksService_ListTasks",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListTasksResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_task_id",
+            "description": "after_task_id 游标（上一页末条 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      },
+      "post": {
+        "summary": "CreateTask 建程序化工作负载：one-shot（一次执行）或 resident（维持\n期望并发数的常驻池）。owner_token_id 缺省 = 调用方 Token（行上记\nToken 引用非明文）。",
+        "operationId": "TasksService_CreateTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateTaskResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateTaskRequest"
+            }
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      }
+    },
+    "/v1/tasks/{id}": {
+      "get": {
+        "operationId": "TasksService_GetTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetTaskResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteTask 删除（拆载体 + 存量 Run 终态化 + tombstone；幂等）。",
+        "operationId": "TasksService_DeleteTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteTaskResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/renew": {
+      "post": {
+        "summary": "RenewTask 续期 Owner Lease（F1.6）：deadline 推进；排空态可复活\n（续期即属主在场的显式声明，补足随 active 恢复）。one-shot 无租约。",
+        "operationId": "TasksService_RenewTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RenewTaskResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TasksServiceRenewTaskBody"
+            }
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/scale": {
+      "post": {
+        "summary": "ScaleTask 调整 resident 池期望并发（0 = 显式缩零；补足随下一拍）。",
+        "operationId": "TasksService_ScaleTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ScaleTaskResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TasksServiceScaleTaskBody"
+            }
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      }
+    },
+    "/v1/tasks/{id}/stop": {
+      "post": {
+        "summary": "StopTask 排空停止：停补足；force=false 存量 Run 自然收口（完成/TTL），\nforce=true 宽限停止（StopGrace 路径）。全 Run 终态后 Task → drained。",
+        "operationId": "TasksService_StopTask",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1StopTaskResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/TasksServiceStopTaskBody"
+            }
+          }
+        ],
+        "tags": [
+          "TasksService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "RunsServiceStopRunBody": {
+      "type": "object"
+    },
+    "TasksServiceRenewTaskBody": {
+      "type": "object"
+    },
+    "TasksServiceScaleTaskBody": {
+      "type": "object",
+      "properties": {
+        "desired_concurrency": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "TasksServiceStopTaskBody": {
+      "type": "object",
+      "properties": {
+        "force": {
+          "type": "boolean"
+        }
+      }
+    },
+    "v1CreateTaskRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "title": "name 是项目内人读名（可选；活跃期唯一）。"
+        },
+        "form": {
+          "type": "string",
+          "title": "form 双形态：one-shot | resident（空 = 按 desired_concurrency 推导）。"
+        },
+        "image": {
+          "type": "string",
+          "title": "image 镜像直部署引用（私有仓库凭证经 Secret \"registry:\u003chost\u003e\" 解析）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "env 是非敏感环境变量（归一化结果；敏感值走 secret_refs）。"
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cpu_millis": {
+          "type": "string",
+          "format": "int64",
+          "title": "resources 是每 Run 资源上限。"
+        },
+        "memory_mb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "ttl_seconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "ttl_seconds 是 Run 生命周期上限（绝对 deadline 落库，ADR-0018；上限\n86400；0 = 无 TTL）。"
+        },
+        "desired_concurrency": {
+          "type": "string",
+          "format": "int64",
+          "title": "desired_concurrency 是 resident 期望并发 Run 数（one-shot 恒 1）。"
+        },
+        "network_group": {
+          "type": "string",
+          "title": "network_group 是 Task Network Group 名（Run 创建时刻挂靠；App Process\n经 taskGroup:\u003cname\u003e 跨挂）。"
+        },
+        "owner_token_id": {
+          "type": "string",
+          "title": "owner_token_id 是属主 Token 行引用（缺省 = 调用方 Token；吊销触发\n宽限排空，ADR-0017）。"
+        },
+        "idempotency_key": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateTaskResponse": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/definitions/v1Task"
+        }
+      }
+    },
+    "v1DeleteTaskResponse": {
+      "type": "object"
+    },
+    "v1GetRunResponse": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/v1Run"
+        }
+      }
+    },
+    "v1GetTaskResponse": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/definitions/v1Task"
+        }
+      }
+    },
+    "v1ListRunsResponse": {
+      "type": "object",
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Run"
+          }
+        }
+      }
+    },
+    "v1ListTasksResponse": {
+      "type": "object",
+      "properties": {
+        "tasks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Task"
+          }
+        }
+      }
+    },
+    "v1RenewTaskResponse": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/definitions/v1Task"
+        }
+      }
+    },
+    "v1Run": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "task_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "title": "pending | running | stopping | stopped | failed"
+        },
+        "stop_reason": {
+          "type": "string",
+          "title": "stop_reason 七枚举：completed | failed | stopped_by_user | ttl_expired |\nlease_expired | owner_revoked | platform_drained（ADR-0012/0025 附录）。"
+        },
+        "exit_code": {
+          "type": "integer",
+          "format": "int32",
+          "title": "0 = 未观测（proto3 无法区分 0 与未设——退出码 0"
+        },
+        "dns_name": {
+          "type": "string",
+          "description": "per-Run 稳定 DNS",
+          "title": "的自然完成以 stop_reason=completed 表达）"
+        },
+        "deadline": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        }
+      },
+      "title": "Run 是一次执行行形态（终态携带停止原因七枚举 + 退出码）。"
+    },
+    "v1ScaleTaskResponse": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/definitions/v1Task"
+        }
+      }
+    },
+    "v1StopRunResponse": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/v1Run"
+        }
+      }
+    },
+    "v1StopTaskResponse": {
+      "type": "object",
+      "properties": {
+        "task": {
+          "$ref": "#/definitions/v1Task"
+        }
+      }
+    },
+    "v1Task": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "form": {
+          "type": "string",
+          "title": "one-shot | resident"
+        },
+        "state": {
+          "type": "string",
+          "title": "active | draining | completed | failed | drained | deleted"
+        },
+        "image": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "desired_concurrency": {
+          "type": "string",
+          "format": "int64"
+        },
+        "ttl_seconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "network_group": {
+          "type": "string"
+        },
+        "owner_token_id": {
+          "type": "string"
+        },
+        "dns_name": {
+          "type": "string",
+          "title": "dns_name 是 per-Task 池级稳定 DNS（活 Run 轮询解析；engine 铸名，\nADR-0025 决策 6——N4 换 Runtime 名字不变）。"
+        },
+        "lease_deadline": {
+          "type": "string"
+        },
+        "active_run_count": {
+          "type": "string",
+          "format": "int64"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        }
+      },
+      "title": "Task 是程序化工作负载行形态（状态值 kebab-case 与存储一致）。"
+    },
+    "v1WaitRunResponse": {
+      "type": "object",
+      "properties": {
+        "run": {
+          "$ref": "#/definitions/v1Run"
+        }
+      },
+      "title": "WaitRunResponse 是状态快照帧；流在终态帧后关闭。"
+    }
+  }
+}

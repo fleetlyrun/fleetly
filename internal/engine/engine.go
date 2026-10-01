@@ -424,6 +424,9 @@ func (e *Engine) Stop(ctx context.Context) error {
 // Loop 暴露收敛循环（apitest 与装配层 Kick 用；只读面）。
 func (e *Engine) Loop() *Loop { return e.loop }
 
+// KickTasks 唤醒 Task 收敛环（API 受理面消费：创建/缩放/停止后立即驱动）。
+func (e *Engine) KickTasks() { e.taskLoop.Kick() }
+
 // DriveOnce 手动驱动一轮收敛（部署/构建/受管/Task 四线各一步；apitest
 // 手动形态消费——golden 确定性：不依赖真实节拍）。
 func (e *Engine) DriveOnce(ctx context.Context) {

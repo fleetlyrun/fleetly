@@ -12,6 +12,7 @@ import (
 	lynxhttp "github.com/lynx-go/lynx/server/http"
 	"google.golang.org/grpc"
 
+	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
@@ -53,6 +54,9 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		// 在原生挂法（mountHooks），不在此。
 		registerClient(deliveryv1.NewHooksServiceClient, deliveryv1.RegisterHooksServiceHandlerClient),
 		registerClient(runtimev1.NewNodesServiceClient, runtimev1.RegisterNodesServiceHandlerClient),
+		// Automation（F1.5/F1.6）：Task/Run 聚合面。
+		registerClient(automationv1.NewTasksServiceClient, automationv1.RegisterTasksServiceHandlerClient),
+		registerClient(automationv1.NewRunsServiceClient, automationv1.RegisterRunsServiceHandlerClient),
 		registerClient(edgev1.NewRoutesServiceClient, edgev1.RegisterRoutesServiceHandlerClient),
 		registerClient(telemetryv1.NewEventsServiceClient, telemetryv1.RegisterEventsServiceHandlerClient),
 		registerClient(telemetryv1.NewLogsServiceClient, telemetryv1.RegisterLogsServiceHandlerClient),

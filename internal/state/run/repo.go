@@ -114,6 +114,22 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Run, error)
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping') ORDER BY id")
 }
 
+// ListAfter 返回全局 Run 列表（新→旧 + after 游标；ListRuns 无过滤形态）。
+func (r *Repo) ListAfter(ctx context.Context, run state.Runner, afterID string, limit int) ([]Run, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := selectCols
+	args := []any{}
+	if afterID != "" {
+		q += " WHERE id < ?"
+		args = append(args, afterID)
+	}
+	q += " ORDER BY id DESC LIMIT ?"
+	args = append(args, limit)
+	return r.query(ctx, run, q, args...)
+}
+
 // ListByTaskStates 返回 Task 名下指定状态的 Run（补足判定的活槽位计数）。
 func (r *Repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID string, states []State) ([]Run, error) {
 	if len(states) == 0 {
@@ -128,6 +144,28 @@ func (r *Repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID st
 	}
 	return r.query(ctx, run,
 		selectCols+" WHERE task_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY id", args...)
+}
+
+// CountActiveByTasks 返回各 Task 的活 Run 计数（pending/running；列表投影
+// 的 active_run_count 单查询面——避免 N+1）。
+func (r *Repo) CountActiveByTasks(ctx context.Context, run state.Runner) (map[string]int, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT task_id, COUNT(*) FROM runs
+		WHERE state IN ('pending', 'running') GROUP BY task_id`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读聚合，关闭错误无处置面
+	out := map[string]int{}
+	for rows.Next() {
+		var taskID string
+		var n int
+		if err := rows.Scan(&taskID, &n); err != nil {
+			return nil, err
+		}
+		out[taskID] = n
+	}
+	return out, rows.Err()
 }
 
 // Transit 是状态 CAS：仅当当前状态 ∈ from 时迁移到 to（mut 可补充落

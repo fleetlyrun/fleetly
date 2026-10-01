@@ -26,7 +26,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
 	"github.com/fleetlyrun/fleetly/internal/state/role"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
+	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/task"
 	"github.com/fleetlyrun/fleetly/internal/state/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
 	"github.com/fleetlyrun/fleetly/internal/state/user"
@@ -45,6 +47,8 @@ type Services struct {
 	Deployments  *deployment.Repo
 	Revisions    *revision.Repo
 	Builds       *build.Repo
+	Tasks        *task.Repo
+	Runs         *run.Repo
 	OutboxEvents *outbox.Repo
 	Secrets      *secret.Repo
 	Configs      *configrepo.Repo
@@ -85,6 +89,8 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Deployments:     deployment.New(clock),
 		Revisions:       revision.New(clock),
 		Builds:          build.New(clock),
+		Tasks:           task.New(clock),
+		Runs:            run.New(clock),
 		OutboxEvents:    outbox.New(clock),
 		Secrets:         secret.New(clock),
 		Configs:         configrepo.New(clock),

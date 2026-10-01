@@ -5,6 +5,7 @@ import (
 
 	"github.com/lynx-go/grpcapi/authz"
 
+	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
@@ -22,6 +23,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 		systemv1.File_fleetly_system_v1_system_proto,
 		structurev1.File_fleetly_structure_v1_structure_proto,
 		deliveryv1.File_fleetly_delivery_v1_delivery_proto,
+		automationv1.File_fleetly_automation_v1_automation_proto,
 		runtimev1.File_fleetly_runtime_v1_runtime_proto,
 		edgev1.File_fleetly_edge_v1_edge_proto,
 		telemetryv1.File_fleetly_telemetry_v1_telemetry_proto,
@@ -37,7 +39,7 @@ func authzFiles() []protoreflect.FileDescriptor {
 func ScopeResources() []string {
 	return []string{
 		"projects", "apps", "secrets", "configs", "volumes", "networks",
-		"deployments", "revisions", "builds", "nodes", "routes", "events", "logs",
+		"deployments", "revisions", "builds", "tasks", "nodes", "routes", "events", "logs",
 		"users", "teams", "roles", "tokens", "invitations", "audit", "platform",
 	}
 }
