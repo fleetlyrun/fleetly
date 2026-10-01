@@ -102,6 +102,13 @@ func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 		if net == "" {
 			return invalidf(fmt.Sprintf("%s.networks[%d]", field, i), "must not be empty")
 		}
+		// 跨 Project 引用（ADR-0013 附录 A.2）：形态在此校验（叶子包无
+		// DB 面），存在性与批准态由受理/投影面裁决。
+		if IsCrossProjectRef(net) {
+			if err := validateCrossProjectRef(fmt.Sprintf("%s.networks[%d]", field, i), net); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -270,4 +277,41 @@ func IsNetworkGroupRef(net string) bool {
 // NetworkGroupName 剥离前缀返回组名。
 func NetworkGroupName(net string) string {
 	return strings.TrimPrefix(net, "taskGroup:")
+}
+
+// crossProjectPrefix 是跨 Project 引用前缀（ADR-0013 附录 A.2：spec
+// networks 第三形态，project 段一律平台 ID——名字跨 Team 可同名，不可作锚）。
+const crossProjectPrefix = "project:"
+
+// platformIDRe 钉死平台 ID 形态（26 位大写字母数字——newID 铸造的 ULID
+// 满足；比 Crockford 全集宽一位字母面：仓内 fixture 惯用 01JD0PROJ… 形）。
+var platformIDRe = regexp.MustCompile(`^[0-9A-Z]{26}$`)
+
+// IsCrossProjectRef 报告网络附件是否跨 Project 引用形态
+// （project:<project-id>/<network-name>）。
+func IsCrossProjectRef(net string) bool {
+	return strings.HasPrefix(net, crossProjectPrefix)
+}
+
+// CrossProjectRefParts 解析跨 Project 引用；非本形态 ok=false。
+func CrossProjectRefParts(net string) (projectID, networkName string, ok bool) {
+	projectID, networkName, found := strings.Cut(strings.TrimPrefix(net, crossProjectPrefix), "/")
+	if !found {
+		return "", "", false
+	}
+	return projectID, networkName, true
+}
+
+func validateCrossProjectRef(field, net string) error {
+	projectID, networkName, ok := CrossProjectRefParts(net)
+	if !ok {
+		return invalidf(field, "cross-project reference must be \"project:<project-id>/<network-name>\"")
+	}
+	if !platformIDRe.MatchString(projectID) {
+		return invalidf(field, "project part must be a platform project id (26-char uppercase), not a project name (names are only unique within a team)")
+	}
+	if networkName == "" {
+		return invalidf(field, "network name part must not be empty")
+	}
+	return nil
 }

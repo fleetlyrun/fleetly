@@ -31,6 +31,31 @@ func TestValidateAppAccepts(t *testing.T) {
 	assert.NoError(t, ValidateApp(validAppSpec()))
 }
 
+// 跨 Project 引用形态（ADR-0013 附录 A.2）：ULID 项目段 + 非空名段；
+// 名字段/坏形态拒绝（叶子包只管形态——存在性与批准态在受理/投影面）。
+func TestValidateAppCrossProjectNetworkRef(t *testing.T) {
+	s := validAppSpec()
+	s.Processes[0].Networks = []string{"project:01JD0PROJ00000000000000000/messaging"}
+	assert.NoError(t, ValidateApp(s))
+
+	s = validAppSpec()
+	s.Processes[0].Networks = []string{"project:shop/messaging"}
+	assert.ErrorContains(t, ValidateApp(s), "platform project id")
+
+	s = validAppSpec()
+	s.Processes[0].Networks = []string{"project:01JD0PROJ00000000000000000"}
+	assert.ErrorContains(t, ValidateApp(s), "project:<project-id>/<network-name>")
+
+	s = validAppSpec()
+	s.Processes[0].Networks = []string{"project:01JD0PROJ00000000000000000/"}
+	assert.ErrorContains(t, ValidateApp(s), "network name part must not be empty")
+
+	// taskGroup 形态与跨 Project 形态互不干扰（各自前缀词面）。
+	s = validAppSpec()
+	s.Processes[0].Networks = []string{"taskGroup:dispatch"}
+	assert.NoError(t, ValidateApp(s))
+}
+
 func TestValidateAppRejects(t *testing.T) {
 	s := validAppSpec()
 	s.SchemaVersion = 99

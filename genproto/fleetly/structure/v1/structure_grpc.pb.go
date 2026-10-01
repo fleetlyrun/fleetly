@@ -965,16 +965,38 @@ var VolumesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	NetworksService_CreateNetwork_FullMethodName = "/fleetly.structure.v1.NetworksService/CreateNetwork"
-	NetworksService_ListNetworks_FullMethodName  = "/fleetly.structure.v1.NetworksService/ListNetworks"
+	NetworksService_CreateNetwork_FullMethodName      = "/fleetly.structure.v1.NetworksService/CreateNetwork"
+	NetworksService_ListNetworks_FullMethodName       = "/fleetly.structure.v1.NetworksService/ListNetworks"
+	NetworksService_DeclareNetworkPeer_FullMethodName = "/fleetly.structure.v1.NetworksService/DeclareNetworkPeer"
+	NetworksService_ApproveNetworkPeer_FullMethodName = "/fleetly.structure.v1.NetworksService/ApproveNetworkPeer"
+	NetworksService_RevokeNetworkPeer_FullMethodName  = "/fleetly.structure.v1.NetworksService/RevokeNetworkPeer"
+	NetworksService_GetNetworkPeer_FullMethodName     = "/fleetly.structure.v1.NetworksService/GetNetworkPeer"
+	NetworksService_ListNetworkPeers_FullMethodName   = "/fleetly.structure.v1.NetworksService/ListNetworkPeers"
 )
 
 // NetworksServiceClient is the client API for NetworksService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// NetworksService：Network 聚合面 + 跨 Project peer 声明面（ADR-0013
+// 附录 A：成员③显式跨 Project 引用——双向声明、接收方批准、撤销即时
+// 隔离）。peer 动词 scope 复用 networks 资源（授权面等价于"管理网络"）。
 type NetworksServiceClient interface {
 	CreateNetwork(ctx context.Context, in *CreateNetworkRequest, opts ...grpc.CallOption) (*CreateNetworkResponse, error)
 	ListNetworks(ctx context.Context, in *ListNetworksRequest, opts ...grpc.CallOption) (*ListNetworksResponse, error)
+	// DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠
+	// 目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。
+	DeclareNetworkPeer(ctx context.Context, in *DeclareNetworkPeerRequest, opts ...grpc.CallOption) (*DeclareNetworkPeerResponse, error)
+	// ApproveNetworkPeer 是接收方批准（pending → approved）：网络归属方
+	// 同意挂靠。批准前引用不可投影（strict 投影 fail-closed）。
+	ApproveNetworkPeer(ctx context.Context, in *ApproveNetworkPeerRequest, opts ...grpc.CallOption) (*ApproveNetworkPeerResponse, error)
+	// RevokeNetworkPeer 撤销（任一侧；幂等）：即时隔离——引擎对受影响
+	// App 以 isolate 模式重收敛剥离附件（断存量，ADR-0013 附录 A.4）。
+	RevokeNetworkPeer(ctx context.Context, in *RevokeNetworkPeerRequest, opts ...grpc.CallOption) (*RevokeNetworkPeerResponse, error)
+	GetNetworkPeer(ctx context.Context, in *GetNetworkPeerRequest, opts ...grpc.CallOption) (*GetNetworkPeerResponse, error)
+	// ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /
+	// peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
+	ListNetworkPeers(ctx context.Context, in *ListNetworkPeersRequest, opts ...grpc.CallOption) (*ListNetworkPeersResponse, error)
 }
 
 type networksServiceClient struct {
@@ -1005,12 +1027,79 @@ func (c *networksServiceClient) ListNetworks(ctx context.Context, in *ListNetwor
 	return out, nil
 }
 
+func (c *networksServiceClient) DeclareNetworkPeer(ctx context.Context, in *DeclareNetworkPeerRequest, opts ...grpc.CallOption) (*DeclareNetworkPeerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeclareNetworkPeerResponse)
+	err := c.cc.Invoke(ctx, NetworksService_DeclareNetworkPeer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networksServiceClient) ApproveNetworkPeer(ctx context.Context, in *ApproveNetworkPeerRequest, opts ...grpc.CallOption) (*ApproveNetworkPeerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ApproveNetworkPeerResponse)
+	err := c.cc.Invoke(ctx, NetworksService_ApproveNetworkPeer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networksServiceClient) RevokeNetworkPeer(ctx context.Context, in *RevokeNetworkPeerRequest, opts ...grpc.CallOption) (*RevokeNetworkPeerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RevokeNetworkPeerResponse)
+	err := c.cc.Invoke(ctx, NetworksService_RevokeNetworkPeer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networksServiceClient) GetNetworkPeer(ctx context.Context, in *GetNetworkPeerRequest, opts ...grpc.CallOption) (*GetNetworkPeerResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetNetworkPeerResponse)
+	err := c.cc.Invoke(ctx, NetworksService_GetNetworkPeer_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networksServiceClient) ListNetworkPeers(ctx context.Context, in *ListNetworkPeersRequest, opts ...grpc.CallOption) (*ListNetworkPeersResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNetworkPeersResponse)
+	err := c.cc.Invoke(ctx, NetworksService_ListNetworkPeers_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // NetworksServiceServer is the server API for NetworksService service.
 // All implementations must embed UnimplementedNetworksServiceServer
 // for forward compatibility.
+//
+// NetworksService：Network 聚合面 + 跨 Project peer 声明面（ADR-0013
+// 附录 A：成员③显式跨 Project 引用——双向声明、接收方批准、撤销即时
+// 隔离）。peer 动词 scope 复用 networks 资源（授权面等价于"管理网络"）。
 type NetworksServiceServer interface {
 	CreateNetwork(context.Context, *CreateNetworkRequest) (*CreateNetworkResponse, error)
 	ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error)
+	// DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠
+	// 目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。
+	DeclareNetworkPeer(context.Context, *DeclareNetworkPeerRequest) (*DeclareNetworkPeerResponse, error)
+	// ApproveNetworkPeer 是接收方批准（pending → approved）：网络归属方
+	// 同意挂靠。批准前引用不可投影（strict 投影 fail-closed）。
+	ApproveNetworkPeer(context.Context, *ApproveNetworkPeerRequest) (*ApproveNetworkPeerResponse, error)
+	// RevokeNetworkPeer 撤销（任一侧；幂等）：即时隔离——引擎对受影响
+	// App 以 isolate 模式重收敛剥离附件（断存量，ADR-0013 附录 A.4）。
+	RevokeNetworkPeer(context.Context, *RevokeNetworkPeerRequest) (*RevokeNetworkPeerResponse, error)
+	GetNetworkPeer(context.Context, *GetNetworkPeerRequest) (*GetNetworkPeerResponse, error)
+	// ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /
+	// peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
+	ListNetworkPeers(context.Context, *ListNetworkPeersRequest) (*ListNetworkPeersResponse, error)
 	mustEmbedUnimplementedNetworksServiceServer()
 }
 
@@ -1026,6 +1115,21 @@ func (UnimplementedNetworksServiceServer) CreateNetwork(context.Context, *Create
 }
 func (UnimplementedNetworksServiceServer) ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNetworks not implemented")
+}
+func (UnimplementedNetworksServiceServer) DeclareNetworkPeer(context.Context, *DeclareNetworkPeerRequest) (*DeclareNetworkPeerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeclareNetworkPeer not implemented")
+}
+func (UnimplementedNetworksServiceServer) ApproveNetworkPeer(context.Context, *ApproveNetworkPeerRequest) (*ApproveNetworkPeerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ApproveNetworkPeer not implemented")
+}
+func (UnimplementedNetworksServiceServer) RevokeNetworkPeer(context.Context, *RevokeNetworkPeerRequest) (*RevokeNetworkPeerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeNetworkPeer not implemented")
+}
+func (UnimplementedNetworksServiceServer) GetNetworkPeer(context.Context, *GetNetworkPeerRequest) (*GetNetworkPeerResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetNetworkPeer not implemented")
+}
+func (UnimplementedNetworksServiceServer) ListNetworkPeers(context.Context, *ListNetworkPeersRequest) (*ListNetworkPeersResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNetworkPeers not implemented")
 }
 func (UnimplementedNetworksServiceServer) mustEmbedUnimplementedNetworksServiceServer() {}
 func (UnimplementedNetworksServiceServer) testEmbeddedByValue()                         {}
@@ -1084,6 +1188,96 @@ func _NetworksService_ListNetworks_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _NetworksService_DeclareNetworkPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeclareNetworkPeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworksServiceServer).DeclareNetworkPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworksService_DeclareNetworkPeer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworksServiceServer).DeclareNetworkPeer(ctx, req.(*DeclareNetworkPeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworksService_ApproveNetworkPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ApproveNetworkPeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworksServiceServer).ApproveNetworkPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworksService_ApproveNetworkPeer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworksServiceServer).ApproveNetworkPeer(ctx, req.(*ApproveNetworkPeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworksService_RevokeNetworkPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeNetworkPeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworksServiceServer).RevokeNetworkPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworksService_RevokeNetworkPeer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworksServiceServer).RevokeNetworkPeer(ctx, req.(*RevokeNetworkPeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworksService_GetNetworkPeer_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetNetworkPeerRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworksServiceServer).GetNetworkPeer(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworksService_GetNetworkPeer_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworksServiceServer).GetNetworkPeer(ctx, req.(*GetNetworkPeerRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworksService_ListNetworkPeers_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNetworkPeersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworksServiceServer).ListNetworkPeers(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworksService_ListNetworkPeers_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworksServiceServer).ListNetworkPeers(ctx, req.(*ListNetworkPeersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // NetworksService_ServiceDesc is the grpc.ServiceDesc for NetworksService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1098,6 +1292,26 @@ var NetworksService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNetworks",
 			Handler:    _NetworksService_ListNetworks_Handler,
+		},
+		{
+			MethodName: "DeclareNetworkPeer",
+			Handler:    _NetworksService_DeclareNetworkPeer_Handler,
+		},
+		{
+			MethodName: "ApproveNetworkPeer",
+			Handler:    _NetworksService_ApproveNetworkPeer_Handler,
+		},
+		{
+			MethodName: "RevokeNetworkPeer",
+			Handler:    _NetworksService_RevokeNetworkPeer_Handler,
+		},
+		{
+			MethodName: "GetNetworkPeer",
+			Handler:    _NetworksService_GetNetworkPeer_Handler,
+		},
+		{
+			MethodName: "ListNetworkPeers",
+			Handler:    _NetworksService_ListNetworkPeers_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

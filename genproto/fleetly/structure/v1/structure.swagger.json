@@ -312,6 +312,197 @@
         ]
       }
     },
+    "/v1/networks/peers": {
+      "get": {
+        "summary": "ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /\npeer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。",
+        "operationId": "NetworksService_ListNetworkPeers",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListNetworkPeersResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "network_id",
+            "description": "network_id 过滤（接收方视图：谁挂在我的网上）；peer_project_id 过滤\n（挂靠方视图：我挂在哪里）；两者都空 = 全部。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "peer_project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_peer_id",
+            "description": "after_peer_id 游标（上一页末条 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "NetworksService"
+        ]
+      },
+      "post": {
+        "summary": "DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠\n目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。",
+        "operationId": "NetworksService_DeclareNetworkPeer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeclareNetworkPeerResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1DeclareNetworkPeerRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NetworksService"
+        ]
+      }
+    },
+    "/v1/networks/peers/{id}": {
+      "get": {
+        "operationId": "NetworksService_GetNetworkPeer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetNetworkPeerResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "NetworksService"
+        ]
+      }
+    },
+    "/v1/networks/peers/{id}/approve": {
+      "post": {
+        "summary": "ApproveNetworkPeer 是接收方批准（pending → approved）：网络归属方\n同意挂靠。批准前引用不可投影（strict 投影 fail-closed）。",
+        "operationId": "NetworksService_ApproveNetworkPeer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ApproveNetworkPeerResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NetworksServiceApproveNetworkPeerBody"
+            }
+          }
+        ],
+        "tags": [
+          "NetworksService"
+        ]
+      }
+    },
+    "/v1/networks/peers/{id}/revoke": {
+      "post": {
+        "summary": "RevokeNetworkPeer 撤销（任一侧；幂等）：即时隔离——引擎对受影响\nApp 以 isolate 模式重收敛剥离附件（断存量，ADR-0013 附录 A.4）。",
+        "operationId": "NetworksService_RevokeNetworkPeer",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RevokeNetworkPeerResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/NetworksServiceRevokeNetworkPeerBody"
+            }
+          }
+        ],
+        "tags": [
+          "NetworksService"
+        ]
+      }
+    },
     "/v1/projects": {
       "get": {
         "operationId": "ProjectsService_ListProjects",
@@ -580,6 +771,12 @@
     }
   },
   "definitions": {
+    "NetworksServiceApproveNetworkPeerBody": {
+      "type": "object"
+    },
+    "NetworksServiceRevokeNetworkPeerBody": {
+      "type": "object"
+    },
     "v1App": {
       "type": "object",
       "properties": {
@@ -594,6 +791,14 @@
         },
         "created_at": {
           "type": "string"
+        }
+      }
+    },
+    "v1ApproveNetworkPeerResponse": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "$ref": "#/definitions/v1NetworkPeer"
         }
       }
     },
@@ -704,6 +909,27 @@
         }
       }
     },
+    "v1DeclareNetworkPeerRequest": {
+      "type": "object",
+      "properties": {
+        "network_id": {
+          "type": "string",
+          "title": "network_id 是目标网络行（接收方 Project 的活跃网络）。"
+        },
+        "peer_project_id": {
+          "type": "string",
+          "title": "peer_project_id 是挂靠方项目（声明方）。"
+        }
+      }
+    },
+    "v1DeclareNetworkPeerResponse": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "$ref": "#/definitions/v1NetworkPeer"
+        }
+      }
+    },
     "v1DeleteAppResponse": {
       "type": "object"
     },
@@ -726,6 +952,14 @@
       "properties": {
         "config": {
           "$ref": "#/definitions/v1Config"
+        }
+      }
+    },
+    "v1GetNetworkPeerResponse": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "$ref": "#/definitions/v1NetworkPeer"
         }
       }
     },
@@ -757,6 +991,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1Config"
+          }
+        }
+      }
+    },
+    "v1ListNetworkPeersResponse": {
+      "type": "object",
+      "properties": {
+        "peers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1NetworkPeer"
           }
         }
       }
@@ -830,6 +1076,40 @@
         }
       }
     },
+    "v1NetworkPeer": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "network_id": {
+          "type": "string"
+        },
+        "network_name": {
+          "type": "string"
+        },
+        "network_project_id": {
+          "type": "string"
+        },
+        "peer_project_id": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "title": "state: pending | approved | revoked（kebab，与 Task/Schedule 状态值\n拼写冻结同款）。"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "approved_at": {
+          "type": "string"
+        }
+      },
+      "title": "NetworkPeer 是一条跨 Project 挂靠声明（ADR-0013 附录 A.1）：挂靠方\n项目 declare（pending）→ 接收方 approve（approved）→ 任一侧 revoke\n（revoked；重新挂靠走新声明行）。network_* 是接收方（网络归属方）读\n投影；peer_project_id 是挂靠方（声明方）项目。"
+    },
     "v1Project": {
       "type": "object",
       "properties": {
@@ -892,6 +1172,14 @@
       "properties": {
         "secret": {
           "$ref": "#/definitions/v1Secret"
+        }
+      }
+    },
+    "v1RevokeNetworkPeerResponse": {
+      "type": "object",
+      "properties": {
+        "peer": {
+          "$ref": "#/definitions/v1NetworkPeer"
         }
       }
     },

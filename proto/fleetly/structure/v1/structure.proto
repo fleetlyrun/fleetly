@@ -162,6 +162,9 @@ service VolumesService {
   }
 }
 
+// NetworksService：Network 聚合面 + 跨 Project peer 声明面（ADR-0013
+// 附录 A：成员③显式跨 Project 引用——双向声明、接收方批准、撤销即时
+// 隔离）。peer 动词 scope 复用 networks 资源（授权面等价于"管理网络"）。
 service NetworksService {
   option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
@@ -174,6 +177,49 @@ service NetworksService {
   }
   rpc ListNetworks(ListNetworksRequest) returns (ListNetworksResponse) {
     option (google.api.http) = { get: "/v1/networks" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
+    };
+  }
+  // DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠
+  // 目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。
+  rpc DeclareNetworkPeer(DeclareNetworkPeerRequest) returns (DeclareNetworkPeerResponse) {
+    option (google.api.http) = { post: "/v1/networks/peers" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    };
+  }
+  // ApproveNetworkPeer 是接收方批准（pending → approved）：网络归属方
+  // 同意挂靠。批准前引用不可投影（strict 投影 fail-closed）。
+  rpc ApproveNetworkPeer(ApproveNetworkPeerRequest) returns (ApproveNetworkPeerResponse) {
+    option (google.api.http) = { post: "/v1/networks/peers/{id}/approve" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    };
+  }
+  // RevokeNetworkPeer 撤销（任一侧；幂等）：即时隔离——引擎对受影响
+  // App 以 isolate 模式重收敛剥离附件（断存量，ADR-0013 附录 A.4）。
+  rpc RevokeNetworkPeer(RevokeNetworkPeerRequest) returns (RevokeNetworkPeerResponse) {
+    option (google.api.http) = { post: "/v1/networks/peers/{id}/revoke" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetNetworkPeer(GetNetworkPeerRequest) returns (GetNetworkPeerResponse) {
+    option (google.api.http) = { get: "/v1/networks/peers/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
+    };
+  }
+  // ListNetworkPeers 新→旧分页（游标 = ULID 创建序；network_id /
+  // peer_project_id 过滤可选——接收方与挂靠方两侧视图同面）。
+  rpc ListNetworkPeers(ListNetworkPeersRequest) returns (ListNetworkPeersResponse) {
+    option (google.api.http) = { get: "/v1/networks/peers" };
     option (grpcapi.v1.method_auth) = {
       access: ACCESS_LEVEL_SERVER
       api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
@@ -278,3 +324,45 @@ message CreateNetworkRequest { string project_id = 1; string name = 2; bool egre
 message CreateNetworkResponse { Network network = 1; }
 message ListNetworksRequest { string project_id = 1; }
 message ListNetworksResponse { repeated Network networks = 1; }
+
+// NetworkPeer 是一条跨 Project 挂靠声明（ADR-0013 附录 A.1）：挂靠方
+// 项目 declare（pending）→ 接收方 approve（approved）→ 任一侧 revoke
+//（revoked；重新挂靠走新声明行）。network_* 是接收方（网络归属方）读
+// 投影；peer_project_id 是挂靠方（声明方）项目。
+message NetworkPeer {
+  string id = 1;
+  string network_id = 2;
+  string network_name = 3;
+  string network_project_id = 4;
+  string peer_project_id = 5;
+  // state: pending | approved | revoked（kebab，与 Task/Schedule 状态值
+  // 拼写冻结同款）。
+  string state = 6;
+  string created_at = 7;
+  string updated_at = 8;
+  string approved_at = 9;
+}
+
+message DeclareNetworkPeerRequest {
+  // network_id 是目标网络行（接收方 Project 的活跃网络）。
+  string network_id = 1;
+  // peer_project_id 是挂靠方项目（声明方）。
+  string peer_project_id = 2;
+}
+message DeclareNetworkPeerResponse { NetworkPeer peer = 1; }
+message ApproveNetworkPeerRequest { string id = 1; }
+message ApproveNetworkPeerResponse { NetworkPeer peer = 1; }
+message RevokeNetworkPeerRequest { string id = 1; }
+message RevokeNetworkPeerResponse { NetworkPeer peer = 1; }
+message GetNetworkPeerRequest { string id = 1; }
+message GetNetworkPeerResponse { NetworkPeer peer = 1; }
+message ListNetworkPeersRequest {
+  // network_id 过滤（接收方视图：谁挂在我的网上）；peer_project_id 过滤
+  //（挂靠方视图：我挂在哪里）；两者都空 = 全部。
+  string network_id = 1;
+  string peer_project_id = 2;
+  // after_peer_id 游标（上一页末条 id；空 = 首页）。
+  string after_peer_id = 3;
+  int32 limit = 4;
+}
+message ListNetworkPeersResponse { repeated NetworkPeer peers = 1; }
