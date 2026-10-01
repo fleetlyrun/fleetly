@@ -737,7 +737,7 @@
       "properties": {
         "status": {
           "type": "string",
-          "title": "status: pong（ping 事件）| accepted | skipped | duplicate | ignored\n（非 ping/push 事件）。"
+          "title": "status: pong（ping 事件）| accepted | skipped | ignored\n（非 ping/push 事件）。重投不设独立状态：同 delivery 重投经幂等键\n重放首次响应（ADR-0024/Q-21）。"
         },
         "reason": {
           "type": "string",

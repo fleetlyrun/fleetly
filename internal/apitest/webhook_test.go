@@ -130,10 +130,16 @@ func TestWebhookReceiveChain(t *testing.T) {
 	}
 
 	// 命中：accepted → queued；commit 去重（同 commit 不同 delivery 返回
-	// 既有 Deployment）；同 delivery 重投 → duplicate。
+	// 既有 Deployment）；同 delivery 带 gateway 派生幂等键重投 → 逐字节重放
+	// 首次响应（Q-21 收口：不再有独立 duplicate 状态）。
 	commit1 := "1111111111111111111111111111111111111111"
 	body1 := pushBody("refs/heads/main", commit1, "feat: one", "web/index.ts")
-	accepted, err := recv(secret, "push", "d-1", signPayload(secret, body1), body1)
+	withKey := func(delivery string) context.Context {
+		return sdk.WithIdempotencyKey(context.Background(), "webhook:"+delivery)
+	}
+	accepted, err := hooks.ReceiveWebhook(withKey("d-1"), &deliveryv1.ReceiveWebhookRequest{
+		Token: secret, Payload: []byte(body1), Event: "push", Delivery: "d-1", Signature: signPayload(secret, body1),
+	})
 	require.NoError(t, err)
 	assert.Equal(t, "accepted", accepted.GetStatus())
 	depID := accepted.GetDeploymentId()
@@ -144,9 +150,14 @@ func TestWebhookReceiveChain(t *testing.T) {
 	assert.Equal(t, "accepted", dupCommit.GetStatus())
 	assert.Equal(t, depID, dupCommit.GetDeploymentId(), "same active commit must dedup to the same deployment")
 
-	redelivered, err := recv(secret, "push", "d-1", signPayload(secret, body1), body1)
+	// 带 delivery 派生键（gateway 原生入口同款）重投：重放首次响应，受理
+	// 事实不重复（hook.push_accepted 事件恰好一条）。
+	redelivered, err := hooks.ReceiveWebhook(withKey("d-1"), &deliveryv1.ReceiveWebhookRequest{
+		Token: secret, Payload: []byte(body1), Event: "push", Delivery: "d-1", Signature: signPayload(secret, body1),
+	})
 	require.NoError(t, err)
-	assert.Equal(t, "duplicate", redelivered.GetStatus())
+	assert.Equal(t, accepted.GetStatus(), redelivered.GetStatus())
+	assert.Equal(t, depID, redelivered.GetDeploymentId(), "redelivery must replay the original response")
 
 	// 非 ping/push 事件 → ignored（200 语义，不失败）。
 	other, err := recv(secret, "issues", "d-9", signPayload(secret, "{}"), "{}")
@@ -188,14 +199,16 @@ func TestWebhookReceiveChain(t *testing.T) {
 	assert.Equal(t, "hook:web", actions["deployment.create"])
 	assert.Equal(t, "hook:web", actions["hook.push"])
 
-	found := false
+	// 事件计数钉重放语义：d-1 与 d-1b 两次执行各落一条 hook.push_accepted
+	//（2 条）；带幂等键的 d-1 重投是重放（不执行 handler）——不得出现第 3 条。
+	count := 0
 	after := int64(0)
-	for i := 0; i < 3 && !found; i++ {
+	for i := 0; i < 3; i++ {
 		evs, err := events.ListEvents(owner, &telemetryv1.ListEventsRequest{AfterSeq: after, Limit: 200})
 		require.NoError(t, err)
 		for _, ev := range evs.GetEvents() {
 			if ev.GetName() == "hook.push_accepted" && ev.GetAggregateId() == appID {
-				found = true
+				count++
 			}
 		}
 		if evs.GetLastSeq() == after {
@@ -203,5 +216,5 @@ func TestWebhookReceiveChain(t *testing.T) {
 		}
 		after = evs.GetLastSeq()
 	}
-	assert.True(t, found, "hook.push_accepted event must land in the outbox")
+	assert.Equal(t, 2, count, "two executed deliveries land two events; the keyed redelivery is a replay and must not append")
 }

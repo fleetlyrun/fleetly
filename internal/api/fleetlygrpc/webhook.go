@@ -1,9 +1,10 @@
 package fleetlygrpc
 
 // GitHub push webhook 接收链（F0.13）：验签（timing-safe HMAC-SHA256）→
-// delivery 重投去重 → ping/push 分发 → 过滤（tag/分支/skip 标记/
-// watchPaths）→ git 源 AppSpec 冻结 + admission（CommitSHA 去重锚）。
-// 审计行 source=webhook、actor=hook:<App 名>（WithAuditOverride）。
+// ping/push 分发 → 过滤（tag/分支/skip 标记/watchPaths）→ git 源 AppSpec
+// 冻结 + admission（CommitSHA 去重锚）。重投的幂等语义经通用 Idempotency-
+// Key（gateway 按 delivery 派生，ADR-0024/Q-21）。审计行 source=webhook、
+// actor=hook:<App 名>（WithAuditOverride）。
 //
 // Token 材料永不落日志：本文件的全部错误信息只携带 delivery 标识（gateway
 // 原生 handler 同一口径——见 assembly/gateway_hooks.go）。
@@ -81,15 +82,11 @@ func (svc *HooksService) ReceiveWebhook(ctx context.Context, req *deliveryv1.Rec
 			WithSuggestion("Ensure the GitHub webhook secret matches the hook secret shown once by 'fleetly hooks set/rotate' (rotate the hook and update GitHub if the secret is lost).")
 	}
 
-	// 重投去重（验签之后：无凭证的重复与首次同样拒）。
-	dup, err := svc.s.Hooks.RecordDelivery(ctx, svc.s.DB.Runner(), h.AppID, req.GetDelivery())
-	if err != nil {
-		return nil, mapStateError(err, "hook delivery")
-	}
-	if dup {
-		return &deliveryv1.ReceiveWebhookResponse{Status: "duplicate"}, nil
-	}
-
+	// 重投语义（Q-21 收口，ADR-0024）：gateway 派生幂等键 webhook:<delivery>，
+	// 同 delivery 重投由拦截器重放首次响应（不达此处）；无键直达的重投由
+	// admission 的 CommitSHA 去重。delivery 台账随受理事实一拍落库（见
+	// handlePush 末事务），不再先于副作用独立提交——两步形态的崩溃窗口会
+	// 把重投误判 duplicate 而丢部署。
 	switch req.GetEvent() {
 	case "ping":
 		return &deliveryv1.ReceiveWebhookResponse{Status: "pong"}, nil
@@ -147,8 +144,13 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 		return nil, mapStateError(err, "deployment")
 	}
 
-	// hook 受理事实（审计行 + outbox 事件）一拍落库。
+	// hook 受理事实（delivery 台账 + 审计行 + outbox 事件）一拍落库——台账
+	// 与效果同事务，重投不产生第二行事实（幂等键重放根本不达此处；无键
+	// 重投的部署侧去重由 admission CommitSHA 承担）。
 	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		if _, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, req.GetDelivery()); err != nil {
+			return err
+		}
 		if err := svc.s.Audits.Append(ctx, tx, &audit.Entry{
 			ID: newID(), Actor: "hook:" + appRow.Name, Source: audit.SourceWebhook,
 			Action: "hook.push", Resource: "app/" + appRow.ID, AfterFP: p.After,

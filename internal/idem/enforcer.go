@@ -61,6 +61,10 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.identity.v1.RolesService/CreateRole":          true,
 	"/fleetly.identity.v1.TokensService/CreateToken":        true,
 	"/fleetly.identity.v1.InvitationsService/CreateInvitation": true,
+	// webhook 接收面（Q-21 收口）：gateway 原生入口按 X-GitHub-Delivery 派生
+	// 键（webhook:<delivery>）——at-least-once 重投重放首次响应，去重锚与
+	// 副作用不再两步分立。动词不在创建型前缀集，由本表显式纳入。
+	"/fleetly.delivery.v1.HooksService/ReceiveWebhook": true,
 }
 
 // dualSourceBearing 是自带幂等键 body 字段的请求（DeployRequest.

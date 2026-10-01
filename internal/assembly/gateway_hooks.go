@@ -15,11 +15,13 @@ import (
 	"strings"
 
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
+	"github.com/fleetlyrun/fleetly/internal/idem"
 )
 
 // hooksReceiver 是接收面最小客户端面（adapter 只消费 ReceiveWebhook；
@@ -53,7 +55,14 @@ func newHooksHandler(client hooksReceiver) http.Handler {
 			writeHookStatus(w, http.StatusRequestEntityTooLarge, "too_large", "payload exceeds the 25 MiB limit")
 			return
 		}
-		resp, err := client.ReceiveWebhook(r.Context(), &deliveryv1.ReceiveWebhookRequest{
+	// Q-21 收口（ADR-0024）：按 X-GitHub-Delivery 派生幂等键——GitHub 的
+	// at-least-once 重投重放首次响应，接收面不再依赖"去重锚先于副作用独立
+	// 提交"的两步形态（崩溃窗口丢部署）。
+	callCtx := r.Context()
+	if d := r.Header.Get("X-GitHub-Delivery"); d != "" {
+		callCtx = metadata.AppendToOutgoingContext(callCtx, idem.HeaderKey, "webhook:"+d)
+	}
+	resp, err := client.ReceiveWebhook(callCtx, &deliveryv1.ReceiveWebhookRequest{
 			Token:     token,
 			Payload:   payload,
 			Event:     r.Header.Get("X-GitHub-Event"),

@@ -1747,7 +1747,7 @@ type ReceiveWebhookRequest struct {
 	Token         string                 `protobuf:"bytes,1,opt,name=token,proto3" json:"token,omitempty"`         // URL token 明文
 	Payload       []byte                 `protobuf:"bytes,2,opt,name=payload,proto3" json:"payload,omitempty"`     // 原始请求体（验签对象）
 	Event         string                 `protobuf:"bytes,3,opt,name=event,proto3" json:"event,omitempty"`         // X-GitHub-Event（ping/push）
-	Delivery      string                 `protobuf:"bytes,4,opt,name=delivery,proto3" json:"delivery,omitempty"`   // X-GitHub-Delivery（重投去重键）
+	Delivery      string                 `protobuf:"bytes,4,opt,name=delivery,proto3" json:"delivery,omitempty"`   // X-GitHub-Delivery（幂等键派生源，gateway 侧 webhook:<delivery>）
 	Signature     string                 `protobuf:"bytes,5,opt,name=signature,proto3" json:"signature,omitempty"` // X-Hub-Signature-256（"sha256=<hex>"）
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -1820,8 +1820,9 @@ func (x *ReceiveWebhookRequest) GetSignature() string {
 
 type ReceiveWebhookResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// status: pong（ping 事件）| accepted | skipped | duplicate | ignored
-	// （非 ping/push 事件）。
+	// status: pong（ping 事件）| accepted | skipped | ignored
+	// （非 ping/push 事件）。重投不设独立状态：同 delivery 重投经幂等键
+	// 重放首次响应（ADR-0024/Q-21）。
 	Status        string `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
 	Reason        string `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"` // skipped 细节（branch/path/skip 标记）
 	DeploymentId  string `protobuf:"bytes,3,opt,name=deployment_id,json=deploymentId,proto3" json:"deployment_id,omitempty"`
