@@ -161,9 +161,10 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	}
 	for _, v := range w.Volumes {
 		container.Mounts = append(container.Mounts, mount.Mount{
-			Type:   mount.TypeVolume,
-			Source: volumeCarrierName(v.VolumeID),
-			Target: v.Target,
+			Type:     mount.TypeVolume,
+			Source:   volumeCarrierName(v.VolumeID),
+			Target:   v.Target,
+			ReadOnly: v.ReadOnly,
 		})
 	}
 	// Secret 文件注入（值已落 swarm secret 载体；容器内 /run/secrets/<名>）。
@@ -270,7 +271,7 @@ func envSlice(env map[string]string) []string {
 
 // toSwarmHealthcheck 把声明式探针翻译为 swarm 探针方言。http 探针端口
 // 取值序（N0.1 P2-2 实装）：探针自带 tcp_port > 进程声明首端口 > 8080
-//（无任何端口声明时的诚实缺省）。
+// （无任何端口声明时的诚实缺省）。
 func toSwarmHealthcheck(h *capability.Healthcheck, w capability.Workload) *mobycontainer.HealthConfig {
 	hc := &mobycontainer.HealthConfig{
 		Interval:    h.Interval,

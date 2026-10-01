@@ -203,6 +203,8 @@ type VolumeMount struct {
 	VolumeID string
 	// Target 是容器内挂载路径。
 	Target string
+	// ReadOnly 是只读挂载（compose 短语法 name:/target:ro；缺省可写）。
+	ReadOnly bool
 }
 
 // Materials 是 Ensure 携带的分发材料（ADR-0014）：镜像拉取凭证与 Secret

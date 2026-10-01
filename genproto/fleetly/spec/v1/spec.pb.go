@@ -978,9 +978,11 @@ func (x *PlacementSpec) GetNodeIds() []string {
 
 // VolumeAttachment 是持久存储附件（无显式 Placement 时默认钉住节点）。
 type VolumeAttachment struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	VolumeId      string                 `protobuf:"bytes,1,opt,name=volume_id,json=volumeId,proto3" json:"volume_id,omitempty"`
-	Target        string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	VolumeId string                 `protobuf:"bytes,1,opt,name=volume_id,json=volumeId,proto3" json:"volume_id,omitempty"`
+	Target   string                 `protobuf:"bytes,2,opt,name=target,proto3" json:"target,omitempty"`
+	// read_only 是只读挂载（compose 短语法 name:/target:ro；缺省可写）。
+	ReadOnly      bool `protobuf:"varint,3,opt,name=read_only,json=readOnly,proto3" json:"read_only,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1027,6 +1029,13 @@ func (x *VolumeAttachment) GetTarget() string {
 		return x.Target
 	}
 	return ""
+}
+
+func (x *VolumeAttachment) GetReadOnly() bool {
+	if x != nil {
+		return x.ReadOnly
+	}
+	return false
 }
 
 // BuildSpec 是构建声明（dockerfile / railpack 钉版）。
@@ -1726,10 +1735,11 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"cpu_millis\x18\x01 \x01(\x03R\tcpuMillis\x12\x1b\n" +
 	"\tmemory_mb\x18\x02 \x01(\x03R\bmemoryMb\"*\n" +
 	"\rPlacementSpec\x12\x19\n" +
-	"\bnode_ids\x18\x01 \x03(\tR\anodeIds\"G\n" +
+	"\bnode_ids\x18\x01 \x03(\tR\anodeIds\"d\n" +
 	"\x10VolumeAttachment\x12\x1b\n" +
 	"\tvolume_id\x18\x01 \x01(\tR\bvolumeId\x12\x16\n" +
-	"\x06target\x18\x02 \x01(\tR\x06target\"\xb2\x01\n" +
+	"\x06target\x18\x02 \x01(\tR\x06target\x12\x1b\n" +
+	"\tread_only\x18\x03 \x01(\bR\breadOnly\"\xb2\x01\n" +
 	"\tBuildSpec\x12\x18\n" +
 	"\abuilder\x18\x01 \x01(\tR\abuilder\x12 \n" +
 	"\n" +

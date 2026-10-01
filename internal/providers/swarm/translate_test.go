@@ -123,10 +123,10 @@ func TestToServiceSpec(t *testing.T) {
 func TestHTTPProbePortFallbackOrder(t *testing.T) {
 	ports := []capability.WorkloadPort{{Port: 3000, Protocol: capability.ProtocolHTTP}}
 	cases := []struct {
-		name string
-		h    capability.Healthcheck
+		name  string
+		h     capability.Healthcheck
 		ports []capability.WorkloadPort
-		want int32
+		want  int32
 	}{
 		{"explicit tcp_port wins", capability.Healthcheck{HTTPPath: "/healthz", TCPPort: 9090}, ports, 9090},
 		{"declared first port fallback", capability.Healthcheck{HTTPPath: "/healthz"}, ports, 3000},
@@ -139,6 +139,17 @@ func TestHTTPProbePortFallbackOrder(t *testing.T) {
 			assert.Equal(t, fmt.Sprintf("wget -qO- http://127.0.0.1:%d/healthz || exit 1", tc.want), hc.Test[1])
 		})
 	}
+}
+
+// 只读挂载透传（N0.1 P2-3）：compose 短语法 :ro → VolumeAttachment
+// read_only → swarm mount.ReadOnly。
+func TestVolumeReadOnlyMountTranslation(t *testing.T) {
+	w := capability.Workload{ID: "wl_01H", Process: "web", Image: "nginx:1",
+		Volumes: []capability.VolumeMount{{VolumeID: "01VOL", Target: "/data", ReadOnly: true}}}
+	spec := toServiceSpec(capability.NamespaceRef{Team: "t", Project: "p", App: "a"}, w, capability.Generation(1), nil)
+	require.Len(t, spec.TaskTemplate.ContainerSpec.Mounts, 1)
+	assert.Equal(t, "/data", spec.TaskTemplate.ContainerSpec.Mounts[0].Target)
+	assert.True(t, spec.TaskTemplate.ContainerSpec.Mounts[0].ReadOnly)
 }
 
 func TestPlacementConstraintsLabelFormula(t *testing.T) {

@@ -47,10 +47,11 @@ func TestComposeDeclarativeSurface(t *testing.T) {
 	require.NotNil(t, web)
 	require.NotNil(t, db)
 
-	// 卷挂载 → VolumeAttachment。
+	// 卷挂载 → VolumeAttachment（无 mode → 可写缺省）。
 	require.Len(t, web.GetVolumes(), 1)
 	assert.Equal(t, "data", web.GetVolumes()[0].GetVolumeId())
 	assert.Equal(t, "/var/www", web.GetVolumes()[0].GetTarget())
+	assert.False(t, web.GetVolumes()[0].GetReadOnly())
 
 	// secret 引用 → secret_refs（短语法与 {source:} 同型）。
 	assert.Equal(t, []string{"api-token", "db-password"}, web.GetSecretRefs())
@@ -106,12 +107,25 @@ func TestComposeVolumeSecretRejections(t *testing.T) {
 		{"relative target", ComposeDoc{"services": map[string]any{"web": map[string]any{
 			"image": "nginx", "volumes": []any{"data:var/www"},
 		}}}, "absolute target"},
+		{"unknown mode", ComposeDoc{"services": map[string]any{"web": map[string]any{
+			"image": "nginx", "volumes": []any{"data:/var/www:z"},
+		}}}, "unknown mode \"z\" (expected ro or rw)"},
 		{"long syntax", ComposeDoc{"services": map[string]any{"web": map[string]any{
 			"image": "nginx", "volumes": []any{map[string]any{"source": "data"}},
 		}}}, "short syntax"},
 		{"secret target remap", ComposeDoc{"services": map[string]any{"web": map[string]any{
 			"image": "nginx", "secrets": []any{map[string]any{"source": "s", "target": "renamed"}},
 		}}}, "target remapping"},
+		{"secret uid subkey", ComposeDoc{"services": map[string]any{"web": map[string]any{
+			"image": "nginx", "secrets": []any{map[string]any{"source": "s", "uid": "1000"}},
+		}}}, "uid/gid/mode are not translated"},
+		{"secret mode subkey", ComposeDoc{"services": map[string]any{"web": map[string]any{
+			"image": "nginx", "secrets": []any{map[string]any{"source": "s", "mode": 0o400}},
+		}}}, "uid/gid/mode are not translated"},
+		{"top-level volumes list", ComposeDoc{
+			"volumes":  []any{"data"},
+			"services": map[string]any{"web": map[string]any{"image": "nginx"}},
+		}, "must be a mapping of volume names"},
 		{"top-level driver opts", ComposeDoc{
 			"volumes":  map[string]any{"data": map[string]any{"driver": "local"}},
 			"services": map[string]any{"web": map[string]any{"image": "nginx"}},
@@ -123,6 +137,28 @@ func TestComposeVolumeSecretRejections(t *testing.T) {
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), tc.want)
 		})
+	}
+}
+
+// 卷短语法 mode 解析（N0.1 P2-3：:ro 此前被吞进 target）。
+func TestComposeVolumeModeParsing(t *testing.T) {
+	for _, tc := range []struct {
+		entry    string
+		target   string
+		readOnly bool
+	}{
+		{"data:/var/www", "/var/www", false},
+		{"data:/var/www:ro", "/var/www", true},
+		{"data:/var/www:rw", "/var/www", false},
+	} {
+		doc := ComposeDoc{"services": map[string]any{"web": map[string]any{
+			"image": "nginx", "volumes": []any{tc.entry},
+		}}}
+		spec, err := NormalizeCompose(doc, "a", "p")
+		require.NoError(t, err, "entry %q", tc.entry)
+		vol := spec.GetProcesses()[0].GetVolumes()[0]
+		assert.Equal(t, tc.target, vol.GetTarget(), "entry %q: mode must not leak into target", tc.entry)
+		assert.Equal(t, tc.readOnly, vol.GetReadOnly(), "entry %q", tc.entry)
 	}
 }
 

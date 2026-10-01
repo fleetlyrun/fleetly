@@ -64,6 +64,7 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string) 
 			w.Volumes = append(w.Volumes, capability.VolumeMount{
 				VolumeID: vol.GetVolumeId(),
 				Target:   vol.GetTarget(),
+				ReadOnly: vol.GetReadOnly(),
 			})
 		}
 		workloads = append(workloads, w)

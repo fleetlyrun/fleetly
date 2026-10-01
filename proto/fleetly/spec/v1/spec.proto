@@ -128,6 +128,8 @@ message PlacementSpec {
 message VolumeAttachment {
   string volume_id = 1;
   string target = 2;
+  // read_only 是只读挂载（compose 短语法 name:/target:ro；缺省可写）。
+  bool read_only = 3;
 }
 
 // BuildSpec 是构建声明（dockerfile / railpack 钉版）。

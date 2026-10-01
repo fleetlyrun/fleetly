@@ -99,8 +99,14 @@ func NormalizeCompose(doc ComposeDoc, appID, projectID string) (*specv1.AppSpec,
 				"unsupported compose field (supported: services, volumes); use the platform API for this concern")
 		}
 	}
-	// 顶层 volumes：只接受空声明（null/{}）——Volume 实体与驱动选项在平台侧。
-	if vols, ok := doc["volumes"].(map[string]any); ok {
+	// 顶层 volumes：只接受空声明（null/{}）——Volume 实体与驱动选项在
+	// 平台侧。非 map 形态显式拒绝（N0.1 P2-3：此前类型断言失败被静默
+	// 跳过——列表/字符串形态的声明等于没校验）。
+	if raw, present := doc["volumes"]; present && raw != nil {
+		vols, ok := raw.(map[string]any)
+		if !ok {
+			return nil, invalidf("compose.volumes", "top-level volumes must be a mapping of volume names")
+		}
 		for name, raw := range vols {
 			if raw == nil {
 				continue
@@ -229,23 +235,37 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 			}
 		}
 	}
-	// 卷挂载（B2）：短语法 name:/target——name 是平台 Volume 名（fleetly
-	// volumes create 的实体），target 容器内绝对路径。
+	// 卷挂载（B2）：短语法 name:/target[:mode]——name 是平台 Volume 名
+	//（fleetly volumes create 的实体），target 容器内绝对路径，mode 可选
+	// ro/rw（N0.1 P2-3：此前 :ro 被吞进 target——mode 现在正确解析并在
+	// ro 时只读挂载）。
 	if vols, ok := svc["volumes"].([]any); ok {
 		for _, raw := range vols {
 			s, ok := raw.(string)
 			if !ok {
-				return nil, "", invalidf(field+".volumes", "volume entry must be the short syntax \"name:/target\"")
+				return nil, "", invalidf(field+".volumes", "volume entry must be the short syntax \"name:/target[:ro|rw]\"")
 			}
-			name, target, found := strings.Cut(s, ":")
+			name, rest, found := strings.Cut(s, ":")
+			target, mode, _ := strings.Cut(rest, ":")
 			if !found || name == "" || !strings.HasPrefix(target, "/") {
-				return nil, "", invalidf(field+".volumes", "volume %q must be \"name:/target\" with an absolute target", s)
+				return nil, "", invalidf(field+".volumes", "volume %q must be \"name:/target[:ro|rw]\" with an absolute target", s)
 			}
-			p.Volumes = append(p.Volumes, &specv1.VolumeAttachment{VolumeId: name, Target: target})
+			readOnly := false
+			switch mode {
+			case "":
+			case "ro":
+				readOnly = true
+			case "rw":
+			default:
+				return nil, "", invalidf(field+".volumes", "volume %q: unknown mode %q (expected ro or rw)", s, mode)
+			}
+			p.Volumes = append(p.Volumes, &specv1.VolumeAttachment{VolumeId: name, Target: target, ReadOnly: readOnly})
 		}
 	}
-	// Secret 引用（B2）：短语法 [name...] 或 {source: name}——值永不进
-	// compose（经 fleetly secrets put 落库，注入时解析，ADR-0014）。
+	// Secret 引用（B2）：短语法 [name...] 或长语法 {source: name}——值
+	// 永不进 compose（经 fleetly secrets put 落库，注入时解析，ADR-0014）。
+	// 长语法只认 source（target==name 容忍）；uid/gid/mode 等其余子键显式
+	// 拒绝（N0.1 P2-3：此前静默丢弃）。
 	if secs, ok := svc["secrets"].([]any); ok {
 		for _, raw := range secs {
 			var name string
@@ -253,6 +273,12 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 			case string:
 				name = v
 			case map[string]any:
+				for key := range v {
+					if key != "source" && key != "target" {
+						return nil, "", invalidf(field+".secrets",
+							"secret key %q is not supported (long syntax supports source only; uid/gid/mode are not translated)", key)
+					}
+				}
 				name, _ = v["source"].(string)
 				if target, ok := v["target"].(string); ok && target != "" && target != name {
 					return nil, "", invalidf(field+".secrets", "secret %q: target remapping is not supported (injected at /run/secrets/<name>)", name)
