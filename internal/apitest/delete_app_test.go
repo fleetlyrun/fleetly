@@ -2,6 +2,7 @@ package apitest_test
 
 import (
 	"context"
+	"regexp"
 	"sync"
 	"testing"
 
@@ -13,6 +14,15 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
+
+// appErrCode 从错误串提取应用码（E_XXX；gRPC 信封内嵌形态）。
+func appErrCode(t *testing.T, err error) string {
+	t.Helper()
+	require.Error(t, err)
+	m := regexp.MustCompile(`(E_[A-Z_]+)`).FindStringSubmatch(err.Error())
+	require.NotEmpty(t, m, "error must carry an app code: %v", err)
+	return m[1]
+}
 
 // ADR-0023 回归（N0 修复批 C2）：DeleteApp 收口语义——活跃部署拒绝
 // （E_CONFLICT）、终态后删除成功、引用路由随删、tombstone 生效（同项目
@@ -137,12 +147,17 @@ func TestDeleteDeployRaceInvariant(t *testing.T) {
 			continue
 		}
 		require.NotContains(t, err.Error(), "E_INTERNAL", "deploy must fail cleanly (not-found/queue-full), never internal")
+		require.Contains(t, []string{"E_NOT_FOUND", "E_QUEUE_FULL"}, appErrCode(t, err),
+			"deploy failures must be clean and classified")
 	}
 	for _, err := range deleteErrs {
 		if err == nil {
 			continue
 		}
-		require.Contains(t, err.Error(), "E_CONFLICT", "delete must only fail on active deployments")
+		// 合法失败形态：E_CONFLICT（活跃部署在）/ E_NOT_FOUND（并发双删，
+		// 对手先落 tombstone——TeardownApp 的活跃行 Get 撞已删）。
+		require.Contains(t, []string{"E_CONFLICT", "E_NOT_FOUND"}, appErrCode(t, err),
+			"delete must only fail on active deployments or a concurrent winner")
 	}
 
 	// 不变式：删成（GetApp 404）⇒ 该 App 不可能再有活跃部署。

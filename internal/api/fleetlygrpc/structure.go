@@ -195,6 +195,11 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 			"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), len(active))
 	}
 	if err := svc.s.Engine.TeardownApp(ctx, req.GetId()); err != nil {
+		// 并发双删：对手已落 tombstone（Get 活跃行口径）→ 同形 404；
+		// 其余收口失败保持 E_INTERNAL（App 未落账，可重试删除）。
+		if errors.Is(err, state.ErrNotFound) {
+			return nil, apperr.New("E_NOT_FOUND", "app %s not found", req.GetId())
+		}
 		return nil, apperr.New("E_INTERNAL", "app teardown failed").WithCause(err)
 	}
 	// 撤路由（软删；即时发布随 tombstone 后统一触发）。
