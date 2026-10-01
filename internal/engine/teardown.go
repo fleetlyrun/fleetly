@@ -13,8 +13,13 @@ import (
 
 // TeardownApp 拆除 App 的全部 Runtime 载体（幂等；Remove 对不存在对象不
 // 报错）并清归属/期望/drift/观测缓存。孤儿原则维持：Remove 只拆 fleetly
-// 标记域，非管辖载体只登记不自动删（CONTEXT.md Orphan）。
+// 标记域，非管辖载体只登记不自动删（CONTEXT.md Orphan）。与 admission/
+// 基线重放共享 App 级互斥（N0.1 P1-3）：收口期间受理与重放排队。
 func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
+	appMu := e.lockApp(appID)
+	appMu.Lock()
+	defer appMu.Unlock()
+
 	a, err := e.apps.Get(ctx, e.db.Runner(), appID)
 	if err != nil {
 		return err

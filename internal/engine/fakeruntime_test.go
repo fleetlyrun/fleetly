@@ -17,6 +17,9 @@ type fakeRuntime struct {
 	failNext   bool // 下一次 Ensure 失败（一次性注入；消费后自动清除）
 	removed    []capability.NamespaceRef
 	blockPoint chan struct{} // 非空时 Ensure 阻塞直至关闭或 ctx 取消（hang 注入）
+	// ensured 非空时每次 Ensure 入口非阻塞发信号（测试同步：探知某次
+	// Ensure 已进入并停在 blockPoint）。
+	ensureEntered chan struct{}
 
 	obsCh chan capability.WorkloadEvent
 
@@ -50,6 +53,12 @@ func (f *fakeRuntime) Describe() capability.ProviderDescriptor {
 func (f *fakeRuntime) Health(context.Context) capability.HealthReport { return f.health }
 
 func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, _ capability.Materials) error {
+	if f.ensureEntered != nil {
+		select {
+		case f.ensureEntered <- struct{}{}:
+		default:
+		}
+	}
 	if f.blockPoint != nil {
 		select {
 		case <-f.blockPoint:

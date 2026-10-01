@@ -17,11 +17,15 @@ import (
 // rebuildBaselines 按 succeeded 基线幂等重放 Ensure（启动一次）：每个
 // "最近部署为 succeeded"的 App 以行上 Generation 重下发——载体未变即
 // no-op，重建 workloadApp/expected/ensuredSpec 缓存。失败不阻断启动
-// （下一扫描拍兜底，drift 降级 gen-only/状态观测）。
+//（下一扫描拍兜底，drift 降级 gen-only/状态观测）。
 //
 // 有活跃部署的 App 跳过：在途驱动器拥有该 App 的 Ensure 权（基线重放
 // 与驱动互翻 Generation 标签会让载体多滚一轮——dind 场景 1 实证）；
-// 该 App 终态后下一次重启补上。
+// 该 App 终态后下一次重启补上。跳过判定有两层（N0.1 P1-3）：启动快照
+//（ListDriving 一次）只作初筛；每 App 重放前在 App 级互斥内复查
+// ActiveByApp——快照后受理的部署在此跳过，且 Submit 与重放共享同一
+// 互斥，"复查后落行、重放再 Ensure 旧 Generation 与驱动器对翻标签"
+// 的窗口不存在（健康部署被 L1 误判回滚的根因）。
 func (e *Engine) rebuildBaselines(ctx context.Context) {
 	driving, err := e.deployments.ListDriving(ctx, e.db.Runner())
 	if err != nil {
@@ -48,13 +52,30 @@ func (e *Engine) rebuildBaselines(ctx context.Context) {
 		if err != nil {
 			continue // 无成功基线（从未部署成功）：无可重放
 		}
-		stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
-		err = e.replayBaseline(stepCtx, &a, d)
-		cancel()
-		if err != nil {
-			e.log.Error("baseline replay: ensure", "app", a.ID, "generation", d.Generation, "err", err)
-		}
+		e.replayAppBaseline(ctx, &a, d)
 	}
+}
+
+// replayAppBaseline 在 App 级互斥内复查活跃部署并重放单 App 基线：
+// 有活跃即跳过（交给驱动器）；互斥与 Submit 共享，复查所见即终局。
+func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) {
+	appMu := e.lockApp(a.ID)
+	appMu.Lock()
+	defer appMu.Unlock()
+
+	active, err := e.deployments.ActiveByApp(ctx, e.db.Runner(), a.ID)
+	if err != nil {
+		e.log.Error("baseline replay: recheck active", "app", a.ID, "err", err)
+		return
+	}
+	if len(active) > 0 {
+		return // 快照后受理：驱动器拥有该 App 的 Ensure 权
+	}
+	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+	if err := e.replayBaseline(stepCtx, a, d); err != nil {
+		e.log.Error("baseline replay: ensure", "app", a.ID, "generation", d.Generation, "err", err)
+	}
+	cancel()
 }
 
 // replayBaseline 投影并 Ensure 单个 App 的基线（recordEnsured 重建缓存）。

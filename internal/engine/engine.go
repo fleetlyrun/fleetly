@@ -120,6 +120,12 @@ type Engine struct {
 	// nodeLeftSeen 是 node.left 去抖实例态（C5：节点回归即清签名）。
 	nodeLeftSeen map[string]bool
 
+	// appLocks 是 App 级互斥（admission/基线重放/收口共享，N0.1 P1-3）：
+	// 重放持有锁期间 Submit 排队——admission 落行与重放的 ActiveByApp
+	// 复查被串行化，不存在"复查后落行、重放再 Ensure 旧 Generation 与
+	// 驱动器对翻载体标签"的窗口（健康部署被 L1 误判回滚的根因）。
+	appLocks sync.Map // appID → *sync.Mutex
+
 	// 构建面（F0.9）：Builder 端口、并发上限、构建输入登记与最近日志缓冲。
 	builder   capability.Builder
 	buildOpts buildOptions
@@ -209,6 +215,12 @@ func New(deps Deps, opts Options) *Engine {
 		drift:        make(map[string]string),
 		stoppedSig:   make(map[string]string),
 	}
+}
+
+// lockApp 取 App 级互斥（惰性建；admission/基线重放/收口共享）。
+func (e *Engine) lockApp(appID string) *sync.Mutex {
+	mu, _ := e.appLocks.LoadOrStore(appID, &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 // Start 进入驱动：收敛循环 + Watch 消费。重复 Start 幂等（第二次为 no-op）。

@@ -43,6 +43,13 @@ type SubmitRequest struct {
 // 409 语义（收窄）：幂等键并发冲突由活跃唯一索引兜底（此处事务串行化后
 // 不会发生），保留给未来互斥资源锁；本面不产生 409。
 func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Deployment, error) {
+	// App 级互斥（N0.1 P1-3）：与基线重放/收口共享——admission 落行与
+	// 重放的复查被串行化（在途重放 Ensure 期间受理排队，锁内复查所见
+	// 即终局）。
+	appMu := e.lockApp(req.AppID)
+	appMu.Lock()
+	defer appMu.Unlock()
+
 	var out *deployment.Deployment
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		// 0. App 存活判定（API/webhook 的预读只是快速失败面；权威判定在此）。

@@ -33,6 +33,89 @@ func driftDeployToSucceeded(t *testing.T, e *Engine, rt *fakeRuntime, clock drif
 	return getDeployment(t, e, d.ID)
 }
 
+// 基线重放竞态回归（N0.1 P1-3）：重放 Ensure 在途时受理新部署——App 级
+// 互斥使 Submit 排队到重放收口之后，驱动器的 gen2 Ensure 是最后一次
+// 下发。旧实现的窗口：busy 集是启动快照，重放期间受理的部署由驱动器
+// Ensure 新 Generation，与重放的旧 Generation 对翻载体标签 → 健康部署
+// 被 L1 误判失败并回滚。
+func TestBaselineReplayRaceWithAdmission(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	before := len(rt.calls())
+	rt.mu.Lock()
+	rt.ensureEntered = make(chan struct{}, 8)
+	rt.blockPoint = make(chan struct{})
+	rt.mu.Unlock()
+
+	replayDone := make(chan struct{})
+	go func() {
+		defer close(replayDone)
+		e.rebuildBaselines(context.Background())
+	}()
+	<-rt.ensureEntered // 重放的 Ensure 已进入并停在 blockPoint
+
+	// 重放在途时受理新部署：Submit 必须等在 App 级互斥上。
+	rev2 := freezeSpec(t, e, 2, `{"schema_version":1,"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
+		`"source":{"image":{"ref":"nginx:1.28"}},"processes":[{"name":"web","image":"nginx:1.28","replicas":1}]}`)
+	type submitResult struct {
+		d   *deployment.Deployment
+		err error
+	}
+	submitCh := make(chan submitResult, 1)
+	go func() {
+		d, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev2})
+		submitCh <- submitResult{d: d, err: err}
+	}()
+	select {
+	case <-submitCh:
+		t.Fatal("submit must wait for the in-flight baseline replay (app-level mutex)")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	// 放行重放：gen1 重放完成后 Submit 才落行，驱动器的 gen2 Ensure 必然
+	// 是最后一次下发（对翻不可能）。
+	close(rt.blockPoint)
+	<-replayDone
+	res := <-submitCh
+	require.NoError(t, res.err)
+
+	e.step(context.Background())
+	e.handleObservation(context.Background(), workloadEventRunning(tAppID+"-web", 2))
+	e.step(context.Background())
+	clock.Advance(61 * time.Second)
+	e.step(context.Background())
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, res.d.ID).State,
+		"the deployment admitted mid-replay must converge, not be misjudged and rolled back")
+
+	calls := rt.calls()
+	require.Greater(t, len(calls), before)
+	assert.Equal(t, capability.Generation(2), calls[len(calls)-1].Gen,
+		"the driver's ensure must be the last dispatch (replay cannot flip the carrier back to the old generation)")
+}
+
+// 重放前复查（N0.1 P1-3 第二层）：快照后受理的活跃部署使该 App 的重放
+// 跳过（Ensure 权交给驱动器，不额外下发）。
+func TestBaselineReplayRecheckSkipsActiveApp(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	d1 := driftDeployToSucceeded(t, e, rt, clock, rev)
+	_ = d1
+
+	// 受理 gen2 但不驱动（活跃在场：queued 属活跃态）。
+	rev2 := freezeSpec(t, e, 2, `{"schema_version":1,"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
+		`"source":{"image":{"ref":"nginx:1.28"}},"processes":[{"name":"web","image":"nginx:1.28","replicas":1}]}`)
+	_, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
+
+	before := len(rt.calls())
+	appRow, err := e.apps.Get(context.Background(), e.db.Runner(), tAppID)
+	require.NoError(t, err)
+	e.replayAppBaseline(context.Background(), appRow, d1)
+	assert.Len(t, rt.calls(), before, "replay must skip an app with an active deployment")
+}
+
 // 启动基线重放：重启后（新 Engine 实例、缓存清空）按 succeeded 基线重放
 // Ensure——归属/期望缓存重建，drift 检测立即在场（无需下一次部署）。
 func TestStartupBaselineReplayRebuildsDriftCache(t *testing.T) {
