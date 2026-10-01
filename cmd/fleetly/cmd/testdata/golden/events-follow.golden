@@ -24,3 +24,10 @@
 24	volume.created	volume	data-json	2026-01-01T00:02:00Z
 25	network.created	network	default	2026-01-01T00:02:00Z
 26	network.created	network	default-json	2026-01-01T00:02:00Z
+27	project.created	project	<ULID>	2026-01-01T00:02:00Z
+28	project.created	project	<ULID>	2026-01-01T00:02:00Z
+29	network.created	network	bus	2026-01-01T00:02:00Z
+30	network.created	network	bus-json	2026-01-01T00:02:00Z
+31	network.peer_declared	network	<ULID>	2026-01-01T00:02:00Z
+32	network.peer_approved	network	<ULID>	2026-01-01T00:02:00Z
+33	network.peer_revoked	network	<ULID>	2026-01-01T00:02:00Z

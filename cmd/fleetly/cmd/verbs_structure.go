@@ -446,3 +446,143 @@ func newNetworksCreateVerb() commands.Command {
 		},
 	}
 }
+
+// ---- networks peers（跨 Project 挂靠声明，ADR-0013 附录 A） ----
+
+func newNetworksDeclareVerb() commands.Command {
+	const name = "declare"
+	var network, project string
+	var idem idemKeyFlag
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Declare a cross-project peer attachment (pending until the receiver approves)",
+		usage:    "networks declare --network NETWORK_ID --project PEER_PROJECT_ID",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&network, "network", "", "target network id (the receiving project's network, required)")
+			fs.StringVar(&project, "project", "", "attaching (peer) project id (required)")
+			idem.declare(fs)
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 0 {
+				return usageErr(name, "takes no positional arguments")
+			}
+			if network == "" || project == "" {
+				return usageErr(name, "--network and --project are required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
+			resp, err := c.Networks.DeclareNetworkPeer(ctx, &structurev1.DeclareNetworkPeerRequest{
+				NetworkId: network, PeerProjectId: project,
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetPeer(), func() {
+				_, _ = fmt.Fprintf(env.Stdout, "declared peer %s on network %s (state %s)\n",
+					resp.GetPeer().GetId(), resp.GetPeer().GetNetworkName(), resp.GetPeer().GetState())
+			})
+		},
+	}
+}
+
+func newNetworksApproveVerb() commands.Command {
+	const name = "approve"
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Approve a pending peer attachment (receiving project's side)",
+		usage:    "networks approve PEER_ID",
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one PEER_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Networks.ApproveNetworkPeer(ctx, &structurev1.ApproveNetworkPeerRequest{Id: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetPeer(), func() {
+				_, _ = fmt.Fprintf(env.Stdout, "approved peer %s (state %s)\n",
+					resp.GetPeer().GetId(), resp.GetPeer().GetState())
+			})
+		},
+	}
+}
+
+func newNetworksRevokeVerb() commands.Command {
+	const name = "revoke"
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Revoke a peer attachment (either side; isolates existing workloads immediately)",
+		usage:    "networks revoke PEER_ID",
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one PEER_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Networks.RevokeNetworkPeer(ctx, &structurev1.RevokeNetworkPeerRequest{Id: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetPeer(), func() {
+				_, _ = fmt.Fprintf(env.Stdout, "revoked peer %s (state %s)\n",
+					resp.GetPeer().GetId(), resp.GetPeer().GetState())
+			})
+		},
+	}
+}
+
+func newNetworksPeersVerb() commands.Command {
+	const name = "peers"
+	var network, project, after string
+	var limit int
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List cross-project peer declarations (filter by --network or --project)",
+		usage:    "networks peers [--network NETWORK_ID] [--project PEER_PROJECT_ID] [--after PEER_ID] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&network, "network", "", "filter by receiving network id")
+			fs.StringVar(&project, "project", "", "filter by attaching (peer) project id")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last peer id of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 0 {
+				return usageErr(name, "takes no positional arguments")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Networks.ListNetworkPeers(ctx, &structurev1.ListNetworkPeersRequest{
+				NetworkId: network, PeerProjectId: project, AfterPeerId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintln(env.Stdout, "ID\tSTATE\tNETWORK\tNETWORK_PROJECT\tPEER_PROJECT")
+				for _, p := range resp.GetPeers() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\n",
+						p.GetId(), p.GetState(), p.GetNetworkName(), p.GetNetworkProjectId(), p.GetPeerProjectId())
+				}
+			})
+		},
+	}
+}

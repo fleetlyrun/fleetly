@@ -24,3 +24,10 @@
 {"event":{"seq":"24","name":"volume.created","aggregate":"volume","aggregate_id":"data-json","payload":"{\"id\":\"data-json\",\"project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
 {"event":{"seq":"25","name":"network.created","aggregate":"network","aggregate_id":"default","payload":"{\"id\":\"default\",\"project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
 {"event":{"seq":"26","name":"network.created","aggregate":"network","aggregate_id":"default-json","payload":"{\"id\":\"default-json\",\"project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
+{"event":{"seq":"27","name":"project.created","aggregate":"project","aggregate_id":"<ULID>","payload":"{\"id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
+{"event":{"seq":"28","name":"project.created","aggregate":"project","aggregate_id":"<ULID>","payload":"{\"id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
+{"event":{"seq":"29","name":"network.created","aggregate":"network","aggregate_id":"bus","payload":"{\"id\":\"bus\",\"project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
+{"event":{"seq":"30","name":"network.created","aggregate":"network","aggregate_id":"bus-json","payload":"{\"id\":\"bus-json\",\"project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
+{"event":{"seq":"31","name":"network.peer_declared","aggregate":"network","aggregate_id":"<ULID>","payload":"{\"id\":\"<ULID>\",\"network_id\":\"<ULID>\",\"network_name\":\"bus\",\"network_project_id\":\"<ULID>\",\"peer_project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
+{"event":{"seq":"32","name":"network.peer_approved","aggregate":"network","aggregate_id":"<ULID>","payload":"{\"id\":\"<ULID>\",\"network_id\":\"<ULID>\",\"network_name\":\"bus\",\"network_project_id\":\"<ULID>\",\"peer_project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}
+{"event":{"seq":"33","name":"network.peer_revoked","aggregate":"network","aggregate_id":"<ULID>","payload":"{\"id\":\"<ULID>\",\"network_id\":\"<ULID>\",\"network_name\":\"bus\",\"network_project_id\":\"<ULID>\",\"peer_project_id\":\"<ULID>\"}","created_at":"2026-01-01T00:02:00Z"}}

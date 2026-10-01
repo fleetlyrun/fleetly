@@ -1,3 +1,7 @@
 [
-  "create"
+  "approve",
+  "create",
+  "declare",
+  "peers",
+  "revoke"
 ]

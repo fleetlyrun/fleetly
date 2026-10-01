@@ -67,7 +67,9 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("secrets", "manage project secrets (values never returned)", newSecretsPutVerb(), newSecretsListVerb()),
 		groupVerb("configs", "manage versioned config files", newConfigsPutVerb(), newConfigsListVerb()),
 		groupVerb("volumes", "manage volumes", newVolumesCreateVerb()),
-		groupVerb("networks", "manage project networks", newNetworksCreateVerb()),
+		groupVerb("networks", "manage project networks and cross-project peer attachments",
+			newNetworksCreateVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
+			newNetworksRevokeVerb(), newNetworksPeersVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),
 		groupVerb("deployments", "inspect deployments", newDeploymentsListVerb()),

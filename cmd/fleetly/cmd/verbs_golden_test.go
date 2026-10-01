@@ -86,6 +86,17 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "default"}, 0},
 		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}, 0},
 		{"routes list", []string{"routes", "list"}, 0},
+
+		// 跨 Project peer 声明链（F1.8，ADR-0013 附录 A）：接收方项目建网 →
+		// 挂靠方 declare（幂等键——--json 轮重放同响应）→ 接收方 approve →
+		// 双侧视图 list → revoke（幂等）。置于 events follow 前：重放面覆盖
+		// peer 三拍事件。
+		{"projects create messaging", []string{"projects", "create", "messaging"}, 0},
+		{"networks create messaging", []string{"networks", "create", "--project", "GOLDEN_PROJECT2", "bus"}, 0},
+		{"networks declare", []string{"networks", "declare", "--network", "GOLDEN_NETWORK", "--project", "GOLDEN_PROJECT", "--idempotency-key", "peer-declare"}, 0},
+		{"networks approve", []string{"networks", "approve", "GOLDEN_PEER"}, 0},
+		{"networks peers", []string{"networks", "peers", "--project", "GOLDEN_PROJECT"}, 0},
+		{"networks revoke", []string{"networks", "revoke", "GOLDEN_PEER"}, 0},
 		// 事件订阅面的有界形态（F1.2）：--replay 重放保留窗后退出（follow
 		// 无界不进 golden）。
 		{"events follow", []string{"events", "follow", "--replay"}, 0},
@@ -127,13 +138,22 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, appID, taskID, task2ID, runID, scheduleID string
+	var projectID, project2ID, networkID, peerID, appID, taskID, task2ID, runID, scheduleID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
 			for i, a := range args {
 				if a == "GOLDEN_PROJECT" {
 					args[i] = projectID
+				}
+				if a == "GOLDEN_PROJECT2" {
+					args[i] = project2ID
+				}
+				if a == "GOLDEN_NETWORK" {
+					args[i] = networkID
+				}
+				if a == "GOLDEN_PEER" {
+					args[i] = peerID
 				}
 				if a == "GOLDEN_APP" {
 					args[i] = appID
@@ -162,6 +182,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			// 捕获后续步骤需要的 ID（人类形态行：created project shop (id X)）。
 			if st.verb == "projects create" {
 				projectID = extractTailID(out)
+			}
+			if st.verb == "projects create messaging" {
+				project2ID = extractTailID(out)
+			}
+			if st.verb == "networks create messaging" {
+				networkID = extractTailID(out)
+			}
+			if st.verb == "networks declare" {
+				peerID = extractPeerID(t, out)
 			}
 			if st.verb == "apps create" {
 				appID = extractTailID(out)
@@ -215,16 +244,18 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 // jsonArgOverrides 是 --json 轮的位置/唯一值替换（索引 → 新值；GOLDEN_*
 // 占位在运行时同样被替换）。
 var jsonArgOverrides = map[string]map[int]string{
-	"projects create":       {2: "shop-json"},
-	"apps create":           {4: "web-json"},
-	"secrets put":           {6: "api-token-json"},
-	"configs put":           {6: "app-json.ini"},
-	"volumes create":        {4: "data-json"},
-	"networks create":       {4: "default-json"},
-	"routes create":         {5: "json.127.0.0.1.sslip.io"},
-	"tasks create":          {5: "migrate-json"},
-	"tasks create resident": {5: "dispatcher-json"},
-	"schedules create":      {5: "nightly-report-json"},
+	"projects create":           {2: "shop-json"},
+	"projects create messaging": {2: "messaging-json"},
+	"apps create":               {4: "web-json"},
+	"secrets put":               {6: "api-token-json"},
+	"configs put":               {6: "app-json.ini"},
+	"volumes create":            {4: "data-json"},
+	"networks create":           {4: "default-json"},
+	"networks create messaging": {4: "bus-json"},
+	"routes create":             {5: "json.127.0.0.1.sslip.io"},
+	"tasks create":              {5: "migrate-json"},
+	"tasks create resident":     {5: "dispatcher-json"},
+	"schedules create":          {5: "nightly-report-json"},
 }
 
 // extractTailID 取 "... (id X)" 尾部的 ID。
@@ -277,6 +308,18 @@ func extractScheduleID(t *testing.T, out string) string {
 	m := scheduleCreatedRe.FindStringSubmatch(out)
 	if len(m) < 2 {
 		t.Fatalf("cannot extract schedule id from output: %q", out)
+	}
+	return m[1]
+}
+
+// peerDeclaredRe 取人类形态 "declared peer X on network ..." 的 ID。
+var peerDeclaredRe = regexp.MustCompile(`declared peer ([0-9A-HJKMNP-TV-Z]{26}) on network`)
+
+func extractPeerID(t *testing.T, out string) string {
+	t.Helper()
+	m := peerDeclaredRe.FindStringSubmatch(out)
+	if len(m) < 2 {
+		t.Fatalf("cannot extract peer id from output: %q", out)
 	}
 	return m[1]
 }
