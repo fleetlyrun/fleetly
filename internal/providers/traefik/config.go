@@ -140,9 +140,10 @@ func routeKey(r capability.Route) string {
 		key += "-" + strings.Trim(r.Path, "/")
 	}
 	normalized := strings.NewReplacer(".", "-", "*", "-", "/", "-", "_", "-").Replace(key)
+	// hash.Hash 约定 Write 永不返回错（fnv 实现恒 nil），检错无处置面。
 	h := fnv.New64a()
-	h.Write([]byte(r.Host))
-	h.Write([]byte{0}) // 分隔符：("a","b/c") 与 ("a/b","c") 不共哈希
-	h.Write([]byte(r.Path))
+	_, _ = h.Write([]byte(r.Host))
+	_, _ = h.Write([]byte{0}) // 分隔符：("a","b/c") 与 ("a/b","c") 不共哈希
+	_, _ = h.Write([]byte(r.Path))
 	return fmt.Sprintf("%s-%012x", normalized, h.Sum64()&0xFFFFFFFFFFFF)
 }

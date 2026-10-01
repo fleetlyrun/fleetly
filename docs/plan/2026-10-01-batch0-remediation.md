@@ -1,5 +1,7 @@
 # 批 0 修复实施计划（2026-10-01，N1 前置）
 
+> **已完成（2026-10-01，五阶段还原点：e5ff05d → b996920 → 6d8ef07 → 8ea2344 → e950a14）**。终验：mise lint 0 issues（含一处 gosec G104 就地收口）、mise test 三 module -race 全过、generate:verify 零漂移（批 0 全程未动 proto，符合计划）。阶段验收记录与裁量决定见各 commit message；两项主审裁量：E_ALREADY_EXISTS 有记录退休（Create\* 显式唯一冲突映射随 F1 幂等批回挂）、projects delete CLI 动词补缺（原审计漏掉的 CLI/API 对等缺口）。新增待办两条随下批：user repo FK 归一缺口（DeleteUser 带活 Token 报 E_INTERNAL，与 team/role 不对称，随 identity 批与审计 Q-16 同域）；守卫 C 的子面清单在 RuntimeExec 定义落地时须同步（coverageguard 注释已写明）。
+
 | 项 | 值 |
 |---|---|
 | 底稿 | `docs/reports/2026-10-01-architecture-deep-audit.md` §8（真缺陷 10 组）+ §10（机制守卫 A~F） |
