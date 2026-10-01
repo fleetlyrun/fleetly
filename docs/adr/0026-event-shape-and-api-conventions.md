@@ -20,11 +20,11 @@ Event payload 订户四类（Console / Agent / Skills / torchwood），一次字
 - 票据端点 proto 定义随 F1.2；错误码（票据过期/重放）入册。
 - quickstart 私有轮询收编进 `--wait`（F-15）与本 ADR 无耦合，仍按 F1.3 执行。
 
-## 验收锚
+## 验收锚（F1.2 订阅面 2026-10-01 落地：d979463 + 阶段 2；F1.4 项随其批次）
 
-- [ ] payload JSON Schema 经 `fleetly schema` 暴露且 golden 钉死
-- [ ] payload 字段改名/删除在 CI 红（schema golden 漂移门）
-- [ ] 新增 List RPC 全部带 `after_*` 游标（评审清单项）
-- [ ] 票据：秒级 TTL、单用途、限路径；过期/重放被拒且有专用码
-- [ ] EventSource 无自定义头完成订阅并收到首事件（e2e）
-- [ ] lynx 流式长流不被优雅关停超时误杀（真机验证记录）
+- [ ] payload JSON Schema 经 `fleetly schema` 暴露且 golden 钉死（F1.4）
+- [ ] payload 字段改名/删除在 CI 红（schema golden 漂移门）（F1.4）
+- [ ] 新增 List RPC 全部带 `after_*` 游标（评审清单项；events 面已从之）
+- [x] 票据：秒级 TTL、单用途、限订阅路径（过期/重放拒绝；拒绝面=原生 401 minimal body，EventStreamSource 专用）
+- [x] EventSource 无自定义头完成订阅并收到首事件（httptest 级钉死 EventSource 契约形态——纯 GET+query 凭证；浏览器真机随 Console e2e 补）
+- [ ] lynx 流式长流不被优雅关停超时误杀（真机验证记录；staging 项）

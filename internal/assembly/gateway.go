@@ -19,6 +19,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
+	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/config"
 )
 
@@ -59,32 +60,38 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 }
 
 // NewGatewayHandler 构造 gateway 的 HTTP handler（grpc-gateway mux + 注解面
-// 全量注册 + 原生 webhook 挂法）。从 NewGatewayServer 抽出为独立入口：
-// apitest REST 冒烟经 httptest 驱动与生产完全同一清单与错误信封——清单
-// 漂移先在守卫 A 红，行为面在此冒烟红。
-func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface) (http.Handler, error) {
+// 全量注册 + 原生 webhook 挂法 + 原生 SSE 事件入口）。从 NewGatewayServer
+// 抽出为独立入口：apitest REST 冒烟经 httptest 驱动与生产完全同一清单与
+// 错误信封——清单漂移先在守卫 A 红，行为面在此冒烟红。eventsSrc 为 nil
+// 时跳过 SSE 挂载（不需要订阅面的 REST 冒烟）。
+func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, eventsSrc *fleetlygrpc.EventStreamSource) (http.Handler, error) {
 	mux := gateway.NewMux(gateway.MuxOptions{
 		ErrorHandler: newGatewayErrorHandler(logger),
 	})
 	if err := gateway.Register(context.Background(), mux, conn, gatewayRegistrations()...); err != nil {
 		return nil, err
 	}
-	return mountHooks(mux, newHooksHandler(deliveryv1.NewHooksServiceClient(conn))), nil
+	h := mountHooks(mux, newHooksHandler(deliveryv1.NewHooksServiceClient(conn)))
+	if eventsSrc != nil {
+		h = mountEventsSSE(h, newEventsSSEHandler(eventsSrc))
+	}
+	return h, nil
 }
 
 // NewGatewayServer 装配 REST gateway（grpc-gateway）：统一错误信封出口
 // （newGatewayErrorHandler，apperr 驱动）、protojson snake_case marshaler、
 // 整条 gateway 共享一条 gRPC 连接（gateway.Dial 惰性建连）。cleanup 关闭
-// 共享连接。
+// 共享连接。SSE 事件入口经 EventStreamSource 与 gRPC StreamEvents 同源。
 func NewGatewayServer(
 	app lynx.App,
 	cfg *config.AppConfig,
+	services *fleetlygrpc.Services,
 ) (*lynxhttp.Server, func(), error) {
 	conn, err := gateway.Dial(app.Context(), cfg.GRPCAddr(), gateway.DialConfig{})
 	if err != nil {
 		return nil, nil, err
 	}
-	handler, err := NewGatewayHandler(app.Logger(), conn)
+	handler, err := NewGatewayHandler(app.Logger(), conn, fleetlygrpc.NewEventStreamSource(services))
 	if err != nil {
 		_ = conn.Close()
 		return nil, nil, err
@@ -116,4 +123,13 @@ func registerClient[T any](
 	return func(ctx context.Context, mux *runtime.ServeMux, conn grpc.ClientConnInterface) error {
 		return register(ctx, mux, newClient(conn))
 	}
+}
+
+// mountEventsSSE 把 SSE 入口挂在 root mux 的精确路径（先于 gateway 的
+// "/" 回落；与 webhook 原生挂法同族）。
+func mountEventsSSE(gw http.Handler, sse http.Handler) http.Handler {
+	mux := http.NewServeMux()
+	mux.Handle(eventsSSEPath, sse)
+	mux.Handle("/", gw)
+	return mux
 }

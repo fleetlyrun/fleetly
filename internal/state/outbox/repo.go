@@ -86,7 +86,7 @@ func (r *Repo) EarliestSeq(ctx context.Context, run state.Runner) (int64, error)
 
 // TrimBefore 删除保留窗外的全部行（janitor 周期执行；返回清理行数供
 // 观测）。事件既成事实落审计后由本面回收——"只增"修订为"保留窗内只增"
-//（ADR-0026：订阅契约以 earliest_seq 划界，窗内不删不改）。
+// （ADR-0026：订阅契约以 earliest_seq 划界，窗内不删不改）。
 func (r *Repo) TrimBefore(ctx context.Context, run state.Runner, cutoff time.Time) (int64, error) {
 	res, err := run.ExecContext(ctx,
 		`DELETE FROM outbox WHERE created_at < ?`, state.FormatTime(cutoff))

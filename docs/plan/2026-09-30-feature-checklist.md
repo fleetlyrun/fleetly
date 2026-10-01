@@ -58,7 +58,7 @@
 ## N1 Agent 面 + torchwood 线（验收 = ADR-0012 能力清单全绿）
 
 - F1.1 [x] 幂等键：创建型 RPC + CLI `--idempotency-key`；同键同体重放、异体 409、24h 保留。〔2026-10-01 按 ADR-0024 三段落地：①Idempotency-Key 头 + 单表（key→指纹→响应引用→24h）+ 拦截器一份实现覆盖全部 15 个创建型 RPC + janitor（engine.NewLoop 骨架）；DeployRequest.idempotency_key 降级部署专锚（双源不一致 409）；CLI 14 动词 --idempotency-key 透传；守卫 TestIdempotencyCoversCreateVerbs 反扫（红灯实验过）②webhook 去重收口（Q-21：gateway 按 delivery 派生键重放；台账随效果同事务；duplicate 状态退役）③受理位 + 统一写原语（Services.commit：受理检查→聚合写→事件→审计一事务唯一拥有者；29 处手写编排归零；配额读入事务收口 TOCTOU；守卫 TestAcceptanceWritePathsGoThroughCommit + TestNoHandRolledTxChoreography）。附带修一隐性破损：grpc_test.go 自 6d8ef07 起拼错 statertest 从未被净编译（热 build cache 掩盖），本批 go clean -cache 炸出后修复〕
-- F1.2 事件流 follow：SSE + gRPC stream + `fleetly events follow --json`；断档 410 + 快照重同步。
+- F1.2 [x] 事件流 follow：SSE + gRPC stream + `fleetly events follow --json`；断档 410 + 快照重同步。〔2026-10-01 按 ADR-0026 两段落地：①outbox 保留窗契约（EarliestSeq+TrimBefore 7d，retention janitor 并入唯一 Loop 骨架；seq AUTOINCREMENT 不复用）+ E_EVENTS_GONE（REST 410；窗清空=任何正游标判档）+ GetEventStatus 重同步基准 + StreamEvents（重放+follow 250ms 轮询）+ CLI events follow（--replay 有界形态进 golden）②SSE 原生入口 /v1/events/follow（EventStreamSource 与 gRPC 面同源同口径；IssueEventTicket 60s 单用途票据；断档预检先于 200 出 410 信封；15s keepalive 帧喂代理）。残留真机项：lynx 优雅关停超时对流式长流的行为（staging 实证后闭 ADR-0026 锚）〕
 - F1.3 Wait 原语：WaitDeployment/WaitBuild/WaitRun + CLI `--wait`。
 - F1.4 能力自描述：`fleetly explain <资源>` / `fleetly schema`（JSON Schema 反射生成）。
 - F1.5 Task API：one-shot/resident 创建（镜像直部署、Variable+secretRefs、TTL、资源上限）、期望并发数、排空停止、列表/watch、per-Task + per-Run 双级稳定 DNS。

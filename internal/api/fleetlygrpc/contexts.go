@@ -268,7 +268,7 @@ func (svc *EventsService) eventsGoneCheck(ctx context.Context, afterSeq int64) e
 // 起升序），follow 时持续跟随直至客户端取消（流面不经 unary 超时拦截器，
 // 生命周期由取消信号管理——架构 §7 等待原语的数据源）。
 func (svc *EventsService) StreamEvents(req *telemetryv1.StreamEventsRequest, stream telemetryv1.EventsService_StreamEventsServer) error {
-	return svc.subscribe(stream.Context(), req.GetAfterSeq(), req.GetFollow(), func(ev *telemetryv1.Event) error {
+	return svc.s.subscribeEvents(stream.Context(), req.GetAfterSeq(), req.GetFollow(), func(ev *telemetryv1.Event) error {
 		return stream.Send(&telemetryv1.StreamEventsResponse{Event: ev})
 	})
 }
@@ -299,15 +299,15 @@ func (svc *EventsService) IssueEventTicket(ctx context.Context, _ *telemetryv1.I
 	return &telemetryv1.IssueEventTicketResponse{Ticket: ticket, ExpiresIn: int32(ttl.Seconds())}, nil //nolint:gosec // TTL 秒级
 }
 
-// subscribe 是订阅核心（gRPC 流与 SSE 原生入口同源同口径）：断档判定 →
-// 批次重放 → follow 轮询（ctx 取消收口）。
-func (svc *EventsService) subscribe(ctx context.Context, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
-	if err := svc.eventsGoneCheck(ctx, afterSeq); err != nil {
+// subscribeEvents 是订阅核心（gRPC 流与 SSE 原生入口同源同口径）：断档
+// 判定 → 批次重放 → follow 轮询（ctx 取消收口）。send 返回错误即收流。
+func (s *Services) subscribeEvents(ctx context.Context, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
+	if err := (&EventsService{s: s}).eventsGoneCheck(ctx, afterSeq); err != nil {
 		return err
 	}
 	cursor := afterSeq
 	for {
-		batch, err := svc.s.OutboxEvents.ListAfter(ctx, svc.s.DB.Runner(), cursor, 1000)
+		batch, err := s.OutboxEvents.ListAfter(ctx, s.DB.Runner(), cursor, 1000)
 		if err != nil {
 			return mapStateError(err, "events")
 		}

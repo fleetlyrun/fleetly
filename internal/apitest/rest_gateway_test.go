@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
+	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/assembly"
 	"github.com/fleetlyrun/fleetly/internal/identity"
@@ -27,7 +28,7 @@ import (
 // protojson snake_case 输出口径与 CLI --json 同源。
 func TestRESTGatewayServesIdentityAnnotationSurface(t *testing.T) {
 	h := apitest.New(t)
-	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn)
+	handler, err := assembly.NewGatewayHandler(slog.New(slog.DiscardHandler), h.Conn, fleetlygrpc.NewEventStreamSource(h.Services))
 	require.NoError(t, err)
 
 	get := func(path string) *httptest.ResponseRecorder {

@@ -11,7 +11,6 @@ package fleetlygrpc
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"strconv"
 	"sync"
 	"time"
 
@@ -70,9 +69,4 @@ func (s *eventTicketStore) sweepLocked() {
 			delete(s.tickets, t)
 		}
 	}
-}
-
-// expiresInSeconds 供响应面（测试可读的 TTL 秒数）。
-func (s *eventTicketStore) expiresInSeconds() string {
-	return strconv.FormatInt(int64(eventTicketTTL.Seconds()), 10)
 }

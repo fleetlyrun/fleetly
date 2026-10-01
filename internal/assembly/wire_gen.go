@@ -79,7 +79,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	httpServer, cleanup6, err := NewGatewayServer(app, appConfig)
+	httpServer, cleanup6, err := NewGatewayServer(app, appConfig, services)
 	if err != nil {
 		cleanup5()
 		cleanup4()

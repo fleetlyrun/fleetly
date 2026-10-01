@@ -25,7 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
-	"github.com/fleetlyrun/fleetly/internal/state/statetest"
+	"github.com/fleetlyrun/fleetly/internal/state/statertest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -35,10 +35,11 @@ type Harness struct {
 	Engine   *engine.Engine
 	Runtime  *FakeRuntime
 	Builder  *FakeBuilder
-	Clock    *statetest.FakeClock
-	Conn     *grpc.ClientConn // bufconn 连接（类型化客户端的底座）
-	Token    string           // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
-	DataRoot string           // 数据根（构建上下文预置等夹具操作用）
+	Clock    *statertest.FakeClock
+	Conn     *grpc.ClientConn      // bufconn 连接（类型化客户端的底座）
+	Token    string                // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
+	DataRoot string                // 数据根（构建上下文预置等夹具操作用）
+	Services *fleetlygrpc.Services // 服务依赖集（REST/SSE 冒烟构造原生入口用）
 
 	listener *bufconn.Listener
 	server   *grpc.Server
@@ -74,7 +75,7 @@ func (h *Harness) Drive(ctx context.Context) {
 func newHarness(t testing.TB, autostart bool) *Harness {
 	t.Helper()
 	ctx := context.Background()
-	db, clock := statetest.New(t)
+	db, clock := statertest.New(t)
 	cipher, err := material.LoadCipher(t.TempDir())
 	if err != nil {
 		t.Fatalf("apitest: master key: %v", err)
@@ -132,6 +133,7 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	return &Harness{
 		DB: db, Engine: eng, Runtime: rt, Builder: fb, Clock: clock,
 		Conn: dialBufconn(t, listener), Token: boot.Secret, DataRoot: dataRoot,
+		Services: services,
 		listener: listener, server: srv,
 	}
 }
