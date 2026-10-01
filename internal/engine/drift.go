@@ -166,6 +166,14 @@ func (e *Engine) driftScan(ctx context.Context) {
 
 // compareSpecs 逐载体对照观测 spec 与缓存期望 spec：失配 → drift 事件
 // （签名含 spec 指纹去抖；同一失配不重复发，回归即清）。
+//
+// 镜像逐字比对是正确口径（2026-10-01 双腿实证，N0.1 P1-2）：dind 里
+// `docker service create` CLI 会尝试把 tag 解析钉版为 repo:tag@sha256
+//（registry 不可达时存原样 tag 并告警）；但 fleetly 走 moby API 直传
+// spec，swarm 服务端不重写 spec.Image——staging 现役三个 tag 部署载体
+// spec 全为原样 tag，且 6 次部署 + 全天 30s 扫描零 drift 事件。假 drift
+// 假设（API 路径钉版）不成立；若未来出现钉版形态（如 CLI 人工改同 tag
+// 镜像），以显式证据重开此案，不在此预放行。
 func (e *Engine) compareSpecs(appID string, obs []capability.WorkloadObservation) {
 	e.expectMu.Lock()
 	expected := e.expected[appID]

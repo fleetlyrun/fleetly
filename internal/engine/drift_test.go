@@ -124,3 +124,48 @@ func TestSteadyStateWatchdogEmitsStopped(t *testing.T) {
 	e.driftScan(context.Background())
 	assert.Len(t, eventNames(t, e, tAppID+"-web"), 2, "recovery then another stop emits again")
 }
+
+// 防假 drift 回归（N0.1 P1-2 实证收口）：tag 与 digest 引用部署后的 spec
+// 对照拍不得产 workload.drift_detected。复审假设"docker 把 tag 钉版为
+// repo:tag@sha256 存入 spec → 逐字比对恒失配"经双腿实证推翻：
+//   - dind（docker:29）：`docker service create` CLI 确会尝试钉版（不可达
+//     时告警并存原样 tag）——钉版是 CLI 客户端行为；
+//   - staging 生产（fleetly 经 moby API 直传 spec）：三个现役 tag 载体
+//     spec.Image 全为原样 tag；6 次部署 + 全天 30s 扫描零 drift 事件。
+//
+// 本测试钉死"API 路径无钉版 → 逐字比对不产假 drift"；若未来观测到钉版
+// 形态（obs = want@sha256:…），须带实证重开 compareSpecs 对照口径。
+func TestNoFalseDriftOnTagDeploySpecCompare(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		image string
+	}{
+		{"tag reference", "nginx:1.27"},
+		{"digest reference", "nginx@sha256:0ea7efa44f5c0f2b1fd4b1c39c4d1c66da6b1d6d3e1f6c8c8e6d8ad5e9f2a7b1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e, rt, clock := newTestEngine(t)
+			specJSON := `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+				`"source":{"image":{"ref":"` + tc.image + `"}},"processes":[{"name":"web","image":"` + tc.image + `","replicas":1}]}`
+			rev := freezeSpec(t, e, 1, specJSON)
+			driftDeployToSucceeded(t, e, rt, clock, rev)
+
+			// 连拍两轮：首拍与去抖拍都不得出 drift（假 drift 的形态恰是
+			// "首拍一条、签名去抖后沉默"——两轮都零才钉死）。
+			e.driftScan(context.Background())
+			e.driftScan(context.Background())
+			for _, name := range eventNames(t, e, "") {
+				require.NotEqual(t, "workload.drift_detected", name,
+					"spec compare must not raise drift for an unmodified carrier (image %s)", tc.image)
+			}
+
+			// 对照面：真失配仍要报（防回归不等于放松执法）。
+			rt.mu.Lock()
+			rt.tamper = map[string]tamperEntry{tAppID + "-web": {image: "nginx:1.28"}}
+			rt.mu.Unlock()
+			e.driftScan(context.Background())
+			assert.Equal(t, []string{"workload.drift_detected"}, eventNames(t, e, tAppID+"-web"),
+				"a real image mismatch must still raise drift")
+		})
+	}
+}
