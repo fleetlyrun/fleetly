@@ -37,7 +37,11 @@ func mapStateError(err error, what string) error {
 	case errors.Is(err, state.ErrNotFound):
 		return apperr.New("E_NOT_FOUND", "%s not found", what).WithCause(err)
 	case errors.Is(err, state.ErrConflict):
-		return apperr.New("E_ALREADY_EXISTS", "%s already exists", what).WithCause(err)
+		// 中性冲突文案（Q-12）：ErrConflict 承载唯一约束命中、CAS 前置
+		// 不符、FK RESTRICT 三种形态，一律渲染 "already exists" 对后两者
+		// 是误导——统一 E_CONFLICT + 处置提示，具体原因留在 cause 链。
+		return apperr.New("E_CONFLICT",
+			"conflict: %s already exists or was changed concurrently; refresh and retry", what).WithCause(err)
 	case errors.Is(err, engine.ErrQueueFull):
 		return apperr.New("E_QUEUE_FULL", "deployment queue is full for this app").WithCause(err)
 	case errors.Is(err, engine.ErrNotCancellable):

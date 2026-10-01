@@ -112,8 +112,24 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, _ *structurev1.Lis
 	return out, nil
 }
 
+// DeleteProject 软删 Project（tombstone）。活跃 App 守卫（Q-15）：项目下
+// 有未 tombstone 的 App 即拒删（E_CONFLICT，提示先删 App——DeleteApp 自带
+// 活跃部署收口与路由撤除，ADR-0023 ③）。边界：Project 级材料
+// （Secret/Config/Volume/Network）不随 Project 删除——各自生命周期独立
+// （操作者按需先删材料再删 Project，本守卫不级联、不代删）。
 func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.DeleteProjectRequest) (*structurev1.DeleteProjectResponse, error) {
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// 守卫与 tombstone 同事务：并发建 App 的窗口闭合（单写者事务
+		// 串行）。apperr 原样穿透 mapStateError（errors.As 分支）。
+		apps, err := svc.s.Apps.ListByProject(ctx, tx, req.GetId())
+		if err != nil {
+			return err
+		}
+		if len(apps) > 0 {
+			return apperr.New("E_CONFLICT",
+				"project %s still holds %d app(s); delete them before deleting the project",
+				req.GetId(), len(apps))
+		}
 		if err := svc.s.Projects.SoftDelete(ctx, tx, req.GetId()); err != nil {
 			return err
 		}

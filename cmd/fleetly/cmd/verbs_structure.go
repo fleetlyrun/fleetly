@@ -94,6 +94,37 @@ func newProjectsListVerb() commands.Command {
 	}
 }
 
+// projects delete（Q-15）：项目下有未删 App 即拒（E_CONFLICT，先删
+// App）；Project 级材料（Secret/Config/Volume/Network）随各自生命周期
+// 不级联。
+func newProjectsDeleteVerb() commands.Command {
+	const name = "delete"
+	var project string
+	return &flaggedVerb{
+		name: name, synopsis: "Delete a project (refuses while it still holds apps)",
+		usage:    "projects delete --project PROJECT_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: project})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "deleted project %s\n", project)
+			})
+		},
+	}
+}
+
 func newAppsCreateVerb() commands.Command {
 	const name = "create"
 	var project string

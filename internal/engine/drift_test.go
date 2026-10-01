@@ -252,3 +252,58 @@ func TestNoFalseDriftOnTagDeploySpecCompare(t *testing.T) {
 		})
 	}
 }
+
+// commandSpec 是带入口覆盖命令的 spec 形态（C-11：Command 对照面）。
+const commandSpec = `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+	`"source":{"image":{"ref":"nginx:1.27"}},"processes":[` +
+	`{"name":"web","image":"nginx:1.27","replicas":1,"command":["sleep","3600"]}]}`
+
+// C-11 回归：人工改载体入口命令（docker service update --command 等价）
+// → workload.drift_detected 带明细（message 含期望/观测两侧命令）。
+func TestSpecDriftDetectedOnManualCommandEdit(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, commandSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	// 人工改命令（不动 fleetly 标记 = Generation 不变）。
+	rt.mu.Lock()
+	rt.tamper = map[string]tamperEntry{tAppID + "-web": {command: []string{"sleep", "9999"}}}
+	rt.mu.Unlock()
+	e.driftScan(context.Background())
+
+	require.Equal(t, []string{"workload.drift_detected"}, eventNames(t, e, tAppID+"-web"),
+		"a manual command edit must raise drift")
+	var payload string
+	evs, err := e.outbox.ListAfter(context.Background(), e.db.Runner(), 0, 100)
+	require.NoError(t, err)
+	for _, ev := range evs {
+		if ev.AggregateID == tAppID+"-web" {
+			payload = string(ev.Payload)
+		}
+	}
+	require.Contains(t, payload, "command", "the drift event must carry the command mismatch detail")
+	require.Contains(t, payload, "sleep", "the mismatch detail must show the observed command")
+
+	// 回归期望 → 签名清。
+	rt.mu.Lock()
+	rt.tamper = nil
+	rt.mu.Unlock()
+	e.driftScan(context.Background())
+	assert.Len(t, eventNames(t, e, tAppID+"-web"), 1)
+}
+
+// C-11 对翻否定面：带 command 部署后的对照拍零 drift（观测 = 期望命令，
+// nil/空切片等价；对翻否定断言沿用 TestNoFalseDriftOnTagDeploySpecCompare
+// 形态——两轮都零才钉死）。
+func TestNoFalseDriftOnCommandDeploySpecCompare(t *testing.T) {
+	e, rt, clock := newTestEngine(t)
+	rev := freezeSpec(t, e, 1, commandSpec)
+	driftDeployToSucceeded(t, e, rt, clock, rev)
+
+	e.driftScan(context.Background())
+	e.driftScan(context.Background())
+	for _, name := range eventNames(t, e, "") {
+		require.NotEqual(t, "workload.drift_detected", name,
+			"spec compare must not raise drift for an unmodified command carrier")
+	}
+}

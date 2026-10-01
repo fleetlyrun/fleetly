@@ -158,7 +158,9 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	if err := e.pinVolumes(ctx, ws, spec.GetApp().GetProject()); err != nil {
 		return e.failDeployment(ctx, d, "pin volumes: "+err.Error())
 	}
-	e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject())
+	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
+		return e.failDeployment(ctx, d, "merge volume pinning: "+err.Error())
+	}
 	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(d.Generation), materials); err != nil {
 		return e.failDeployment(ctx, d, "runtime ensure: "+err.Error())
 	}
@@ -231,7 +233,9 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 	if err != nil {
 		return e.rollbackFailed(ctx, d, "resolve materials: "+err.Error())
 	}
-	e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject())
+	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
+		return e.rollbackFailed(ctx, d, "merge volume pinning: "+err.Error())
+	}
 	// Replay 用新 Generation 幂等重下发（单调编号；Drift 对照同步刷新）。
 	// deadline 未设 = 首轮（gen 未推进）；已设 = 等待期（gen 已在行上）。
 	deadline := parseDeadline(d.ObserveDeadline)

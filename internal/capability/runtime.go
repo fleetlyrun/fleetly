@@ -77,8 +77,11 @@ type WorkloadObservation struct {
 	WorkloadID string
 	Generation Generation
 	Image      string
-	Replicas   int64
-	State      WorkloadState
+	// Command 是载体上的入口覆盖命令观测（ADR-0022 承诺的 spec 对照面；
+	// nil 与空切片等价 = 无覆盖/镜像默认）。
+	Command  []string
+	Replicas int64
+	State    WorkloadState
 }
 
 // ErrNodeNotFound 是 RuntimeAdmin 子面哨兵：平台节点 ID 对不上任何载体

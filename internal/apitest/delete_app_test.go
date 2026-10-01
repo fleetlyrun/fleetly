@@ -124,6 +124,60 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.Contains(t, err.Error(), "E_NOT_FOUND")
 }
 
+// Q-15 回归：DeleteProject 活跃 App 守卫——有未 tombstone 的 App 即拒删
+// （E_CONFLICT，提示先删 App）；删净 App 后可删（tombstone 生效，再删 404）。
+// Project 级材料不随删（各自生命周期，守卫不级联——代码面注释即边界）。
+func TestDeleteProjectSemantics(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+
+	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "guarded"})
+	require.NoError(t, err)
+	projectID := proj.GetProject().GetId()
+	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: projectID, Name: "web"})
+	require.NoError(t, err)
+
+	// 有活 App → E_CONFLICT（先删 App 的处置提示在文案）。
+	_, err = projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "E_CONFLICT")
+	require.Contains(t, err.Error(), "delete them before deleting the project")
+
+	// 拒删零副作用：Project 存活。
+	_, err = projects.GetProject(ctx, &structurev1.GetProjectRequest{Id: projectID})
+	require.NoError(t, err)
+
+	// 删净 App 后可删 Project。Project 读面语义（Get 含已删行、再删幂等）
+	// 是既有设计（tombstone 是事实不是秘密）——活跃面以 List 断言。
+	_, err = apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: app.GetApp().GetId()})
+	require.NoError(t, err)
+	_, err = projects.DeleteProject(ctx, &structurev1.DeleteProjectRequest{Id: projectID})
+	require.NoError(t, err)
+	list, err := projects.ListProjects(ctx, &structurev1.ListProjectsRequest{})
+	require.NoError(t, err)
+	for _, p := range list.GetProjects() {
+		require.NotEqual(t, projectID, p.GetId(), "deleted project must not be listed")
+	}
+}
+
+// Q-12 回归：state.ErrConflict 的通用映射是 E_CONFLICT 中性文案（唯一约束
+// 命中形态：同名 Project 再建），不再一律 "already exists"。
+func TestErrConflictMapsToConflictCode(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+
+	_, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dupe"})
+	require.NoError(t, err)
+	_, err = projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dupe"})
+	require.Error(t, err)
+	require.Equal(t, "E_CONFLICT", appErrCode(t, err), "unique-violation conflicts must surface E_CONFLICT")
+	require.Contains(t, err.Error(), "conflict:")
+	require.Contains(t, err.Error(), "refresh and retry")
+}
+
 // 并发删+部署竞态回归（N0.1 P1-1）：预检通过到 tombstone 落账之间受理
 // 部署的 TOCTOU 已由最终事务内 ActiveByApp 复查收口（与 Submit 的存活
 // 判定互为对偶；单连接事务串行）。任一交错下不变式成立：tombstone 与

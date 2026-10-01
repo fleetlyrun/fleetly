@@ -6,6 +6,7 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -169,7 +170,9 @@ func (svc *DeploymentsService) CancelDeployment(ctx context.Context, req *delive
 func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.RollbackRequest) (*deliveryv1.RollbackResponse, error) {
 	d, err := svc.s.Engine.Rollback(ctx, req.GetAppId(), req.GetToRevision())
 	if err != nil {
-		if strings.Contains(err.Error(), "no successful baseline") {
+		// 哨兵判定（Q-13）：engine 哨兵 → E_NO_BASELINE（映射目标不变，
+		// 只把文案 Contains 换成 errors.Is——文案再改不破坏错误契约）。
+		if errors.Is(err, engine.ErrNoSuccessfulBaseline) {
 			return nil, apperr.New("E_NO_BASELINE", "app %s has no successful deployment to roll back to", req.GetAppId()).WithCause(err)
 		}
 		return nil, mapStateError(err, "rollback")

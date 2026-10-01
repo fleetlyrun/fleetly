@@ -496,8 +496,11 @@ func (p *Provider) InspectWorkloads(ctx context.Context, ns capability.Namespace
 			WorkloadID: labels[labelWorkload],
 			Generation: capability.Generation(gen),
 			Image:      svc.Spec.TaskTemplate.ContainerSpec.Image,
-			Replicas:   1,
-			State:      capability.WorkloadRunning,
+			// 入口覆盖命令回读（ADR-0022 spec 对照：人工 docker service
+			// update --command 改载体须出 drift）。
+			Command:  svc.Spec.TaskTemplate.ContainerSpec.Command,
+			Replicas: 1,
+			State:    capability.WorkloadRunning,
 		}
 		if svc.Spec.Mode.Replicated != nil && svc.Spec.Mode.Replicated.Replicas != nil {
 			obs.Replicas = int64(*svc.Spec.Mode.Replicated.Replicas) //nolint:gosec // 副本计数域内（swarm 上限远小于 2^63）

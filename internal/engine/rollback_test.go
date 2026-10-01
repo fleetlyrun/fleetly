@@ -62,10 +62,12 @@ func TestRollbackReplayVerb(t *testing.T) {
 	assert.Equal(t, r1, rb2.ToRevision)
 }
 
-// Rollback 无成功基线 → 明确错误（首次部署无回滚对象）。
+// Rollback 无成功基线 → 明确错误（首次部署无回滚对象）。哨兵锚定
+// （Q-13）：API 层经 errors.Is 判定 E_NO_BASELINE，文案改写不得破坏契约。
 func TestRollbackWithoutBaseline(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	_, err := e.Rollback(context.Background(), tAppID, "")
+	require.ErrorIs(t, err, ErrNoSuccessfulBaseline)
 	assert.ErrorContains(t, err, "no successful baseline")
 }
 

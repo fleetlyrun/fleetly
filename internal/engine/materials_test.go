@@ -85,7 +85,7 @@ func TestVolumePinning(t *testing.T) {
 		Volumes: []capability.VolumeMount{{VolumeID: "data", Target: "/var/lib/data"}},
 	}}
 	require.NoError(t, e.pinVolumes(ctx, ws, tProjectID))
-	e.applyVolumePinning(ctx, ws, tProjectID)
+	require.NoError(t, e.applyVolumePinning(ctx, ws, tProjectID))
 
 	row, err := e.volumes.GetByName(ctx, db.Runner(), tProjectID, "data")
 	require.NoError(t, err)
@@ -100,4 +100,56 @@ func TestVolumePinning(t *testing.T) {
 	require.NoError(t, e.pinVolumes(ctx, ws, tProjectID))
 	row, _ = e.volumes.GetByName(ctx, db.Runner(), tProjectID, "data")
 	assert.Equal(t, "01JD0NODE00000000000000000", row.PinnedNodeID)
+}
+
+// Q-8 回归：registry Secret 查询的存储错误必须上抛（部署失败带原因），
+// 不得静默降级为匿名拉取——私有镜像会死在无诊断的拉取失败上。ErrNotFound
+// （无凭证）仍是合法匿名形态（TestResolveMaterials 已覆盖）。
+func TestResolveMaterialsRegistryLookupErrorPropagates(t *testing.T) {
+	db, _ := statetest.New(t)
+	cipher, err := material.LoadCipher(t.TempDir())
+	require.NoError(t, err)
+	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
+	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 3, `{"schema_version":1,`+
+		`"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
+		`"source":{"image":{"ref":"ghcr.io/acme/web:1"}},"processes":[`+
+		`{"name":"web","image":"ghcr.io/acme/web:1","replicas":1}]}`))
+	require.NoError(t, err)
+
+	// 存储故障注入：关库（与 authn Q-24 单测同款夹具形态）。
+	require.NoError(t, db.Close())
+	_, err = e.resolveMaterials(context.Background(), spec, tProjectID)
+	require.Error(t, err, "a registry credential lookup failure must fail the deployment, not degrade to anonymous pull")
+	assert.ErrorContains(t, err, "registry credential")
+	assert.ErrorContains(t, err, "ghcr.io")
+}
+
+// Q-8 回归：applyVolumePinning 的 GetByName 错误改硬失败——漏合并钉住 =
+// 无钉住调度（卷可能落到别的节点），比部署失败更糟。
+func TestApplyVolumePinningLookupErrorFails(t *testing.T) {
+	db, _ := statetest.New(t)
+	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: discardLogger()}, Options{})
+
+	// 引用不存在的卷：GetByName → ErrNotFound（此前被静默 continue）。
+	ws := []capability.Workload{{
+		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
+		Volumes: []capability.VolumeMount{{VolumeID: "ghost", Target: "/var/lib/data"}},
+	}}
+	err := e.applyVolumePinning(context.Background(), ws, tProjectID)
+	require.Error(t, err, "a volume lookup failure must fail instead of scheduling unpinned")
+	assert.ErrorContains(t, err, `volume "ghost"`)
+
+	// 存储故障注入：关库后已登记卷同样硬失败（不静默跳过合并）。
+	require.NoError(t, e.volumes.Create(context.Background(), db.Runner(), &volume.Volume{
+		ID: "01JD0VOL00000000000000001", ProjectID: tProjectID, Name: "data",
+		PinnedNodeID: "01JD0NODE00000000000000000",
+	}))
+	ws2 := []capability.Workload{{
+		ID: tAppID + "-web", Process: "web", Image: "nginx:1",
+		Volumes: []capability.VolumeMount{{VolumeID: "data", Target: "/var/lib/data"}},
+	}}
+	require.NoError(t, e.applyVolumePinning(context.Background(), ws2, tProjectID))
+	require.NoError(t, db.Close())
+	err = e.applyVolumePinning(context.Background(), ws2, tProjectID)
+	require.Error(t, err, "a storage failure must fail the merge instead of dropping the pin")
 }

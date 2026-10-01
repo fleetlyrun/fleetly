@@ -3,6 +3,7 @@ package traefik
 import (
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -125,11 +126,23 @@ func emptyDynamicConfig() []byte {
 	return []byte("{\n  \"http\": {\n    \"routers\": {},\n    \"services\": {}\n  }\n}\n")
 }
 
-// routeKey 生成稳定 router/service 键（host-path 归一）。
+// routeKey 生成稳定 router/service 键（host-path 归一 + 原始键短哈希）。
+//
+// 单射守卫（Q-10）：归一化清洗会把不同 (host,path) 撞成同键——如
+// ("a.b","/c") 与 ("a.b-c","") 都清洗为 "a-b-c"——traefik 的 router/service
+// 是同名 map，撞键即静默互覆（后路由吃掉前路由）。恒追加原始 (host,path)
+// 的 FNV-64a 低 48 位十六进制后缀：不同输入必不同键（哈希撞仅在 2^24 量级
+// 路由数下需要考虑），键仍落在 traefik 名字的 DNS 安全字符集
+// [a-z0-9-] 内，且纯函数确定性（同输入同键，重启/重发布不漂）。
 func routeKey(r capability.Route) string {
 	key := r.Host
 	if r.Path != "" && r.Path != "/" {
 		key += "-" + strings.Trim(r.Path, "/")
 	}
-	return strings.NewReplacer(".", "-", "*", "-", "/", "-", "_", "-").Replace(key)
+	normalized := strings.NewReplacer(".", "-", "*", "-", "/", "-", "_", "-").Replace(key)
+	h := fnv.New64a()
+	h.Write([]byte(r.Host))
+	h.Write([]byte{0}) // 分隔符：("a","b/c") 与 ("a/b","c") 不共哈希
+	h.Write([]byte(r.Path))
+	return fmt.Sprintf("%s-%012x", normalized, h.Sum64()&0xFFFFFFFFFFFF)
 }

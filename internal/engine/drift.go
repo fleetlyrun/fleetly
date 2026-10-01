@@ -101,7 +101,9 @@ func (e *Engine) replayBaseline(ctx context.Context, a *app.App, d *deployment.D
 	if err != nil {
 		return fmt.Errorf("resolve materials: %w", err)
 	}
-	e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject())
+	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
+		return fmt.Errorf("merge volume pinning: %w", err)
+	}
 	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(d.Generation), materials); err != nil {
 		return fmt.Errorf("runtime ensure: %w", err)
 	}
@@ -227,6 +229,10 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 		switch {
 		case o.Image != want.Image:
 			mismatch = fmt.Sprintf("image %q != expected %q", o.Image, want.Image)
+		case !sameCommand(o.Command, want.Command):
+			// 入口覆盖命令对照（ADR-0022）：nil 与空切片等价（无覆盖 =
+			// 镜像默认），逐元素比对防假 drift。
+			mismatch = fmt.Sprintf("command %q != expected %q", o.Command, want.Command)
 		case o.Replicas != want.Replicas:
 			mismatch = fmt.Sprintf("replicas %d != expected %d", o.Replicas, want.Replicas)
 		}
@@ -262,6 +268,20 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			e.log.Error("drift scan: event", "workload", p.wid, "err", err)
 		}
 	}
+}
+
+// sameCommand 逐元素比较入口覆盖命令（nil 与空切片等价：两者都是
+// "无覆盖，镜像默认"——载体观测与投影 spec 的切片形态差异不得产假 drift）。
+func sameCommand(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 // emitSteadyStateStopped 发稳态 workload.stopped（去抖：签名 = wid|gen|state；

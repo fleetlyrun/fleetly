@@ -36,6 +36,9 @@ var (
 	// ErrActiveDeployment 是 DeleteApp 收口的锁内预检命中活跃部署（ADR-0023
 	// 修订：拒绝于拆载体等一切副作用之前；API 层映射 E_CONFLICT）。
 	ErrActiveDeployment = errors.New("engine: app has active deployments")
+	// ErrNoSuccessfulBaseline 是 Rollback 无成功基线（首次部署无回滚对象；
+	// API 层映射 E_NO_BASELINE——Q-13：判定走 errors.Is，不靠文案匹配）。
+	ErrNoSuccessfulBaseline = errors.New("engine: no successful baseline to roll back to")
 )
 
 // Options 是引擎参数（装配注入；测试覆盖默认值）。

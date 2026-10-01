@@ -67,6 +67,26 @@ func TestDeployEndToEnd(t *testing.T) {
 	}, 2e9, 1e7)
 }
 
+// Q-13 回归：Rollback 无成功基线的错误映射走 engine 哨兵
+// （errors.Is，非文案 Contains）→ E_NO_BASELINE 稳定可编程分支。
+func TestRollbackNoBaselineMapsStable(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+
+	proj, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "rollback"})
+	require.NoError(t, err)
+	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
+	require.NoError(t, err)
+
+	_, err = deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app.GetApp().GetId()})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "E_NO_BASELINE")
+	require.Contains(t, err.Error(), "no successful deployment to roll back to")
+}
+
 func TestComposeDeployNormalizes(t *testing.T) {
 	h := apitest.New(t)
 	ctx := sdk.WithToken(context.Background(), h.Token) // owner 全权（bootstrap）

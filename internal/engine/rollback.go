@@ -27,7 +27,9 @@ func (e *Engine) Rollback(ctx context.Context, appID, toRevisionID string) (*dep
 			}
 		}
 		if toRevisionID == "" {
-			return nil, fmt.Errorf("engine: app %s has no successful baseline to roll back to", appID)
+			// 无成功基线：哨兵 wrap（Q-13：API 层经 errors.Is 映射
+			// E_NO_BASELINE，不靠文案 Contains）。
+			return nil, fmt.Errorf("%w: app %s", ErrNoSuccessfulBaseline, appID)
 		}
 	}
 	rev, err := e.revisions.Get(ctx, e.db.Runner(), toRevisionID)

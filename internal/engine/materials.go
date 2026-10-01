@@ -3,11 +3,13 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state"
 )
 
 // registrySecretPrefix 是镜像凭证 Secret 的命名约定（registry:<host>；
@@ -30,12 +32,17 @@ func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, pro
 		return materials, fmt.Errorf("secret refs present but the master key is not available (data root keys/ missing)")
 	}
 
-	// 镜像凭证：镜像引用的 registry host → Secret "registry:<host>"（无对应
-	// Secret = 匿名拉取）。
+	// 镜像凭证：镜像引用的 registry host → Secret "registry:<host>"。查询
+	// 错误分诊（Q-8）：ErrNotFound = 无凭证，匿名拉取是合法形态；其余错误
+	// （库故障等）上抛部署失败带原因——静默降级匿名拉取会让私有镜像部署
+	// 死在无诊断的 ImagePullBackOff 上。
 	for _, host := range collectImageHosts(spec) {
 		row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, registrySecretPrefix+host)
 		if err != nil {
-			continue
+			if errors.Is(err, state.ErrNotFound) {
+				continue
+			}
+			return materials, fmt.Errorf("lookup registry credential for %s: %w", host, err)
 		}
 		if e.cipher == nil {
 			return materials, fmt.Errorf("registry credential for %s present but the master key is not available", host)
@@ -121,12 +128,18 @@ func (e *Engine) firstAvailableNode(ctx context.Context) (string, error) {
 
 // applyVolumePinning 把卷钉住合并进 Workload Placement（卷 → 平台节点 ID
 // → 调度约束；卷钉住与 Placement 绑定一律以平台节点 ID 为锚）。
-func (e *Engine) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) {
+//
+// GetByName 错误一律硬失败（Q-8，与 pinVolumes 对偶）：漏合并钉住 = 无钉
+// 住调度 = 卷可能落到别的节点（数据不可见/风险），比部署失败更糟。
+func (e *Engine) applyVolumePinning(ctx context.Context, ws []capability.Workload, projectID string) error {
 	for i := range ws {
 		w := &ws[i] // 指针就地改（range 值副本会丢失 Placement 修改）
 		for _, v := range w.Volumes {
 			row, err := e.volumes.GetByName(ctx, e.db.Runner(), projectID, v.VolumeID)
-			if err != nil || row.PinnedNodeID == "" {
+			if err != nil {
+				return fmt.Errorf("volume %q: %w", v.VolumeID, err)
+			}
+			if row.PinnedNodeID == "" {
 				continue
 			}
 			seen := false
@@ -140,6 +153,7 @@ func (e *Engine) applyVolumePinning(ctx context.Context, ws []capability.Workloa
 			}
 		}
 	}
+	return nil
 }
 
 // collectSecretRefs 收集 spec 的全部 secret 引用（排序稳定）。

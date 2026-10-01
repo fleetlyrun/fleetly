@@ -23,7 +23,7 @@ var builtins = []Code{
 		ID:         "E_ALREADY_EXISTS",
 		Summary:    "A resource with the same unique key already exists.",
 		Suggestion: "Choose a different name, or fetch the existing resource instead of creating a new one.",
-		Source:     "internal/api/fleetlygrpc/mapping.go mapStateError (state.ErrConflict)",
+		Source:     "retired producer (batch 0 Q-12): generic state.ErrConflict now maps to E_CONFLICT; re-attach to an explicit unique-violation mapping before reuse",
 		GRPC:       codes.AlreadyExists,
 	},
 	{
@@ -57,8 +57,8 @@ var builtins = []Code{
 	{
 		ID:         "E_CONFLICT",
 		Summary:    "The operation conflicts with the resource's current state.",
-		Suggestion: "Resolve the state described in the message (cancel or wait for terminal states) and retry.",
-		Source:     "internal/api/fleetlygrpc/structure.go DeleteApp (ADR-0023)",
+		Suggestion: "Resolve the conflicting state named in the message (pick a unique name, refresh after a concurrent change, or cancel/wait for terminal states) and retry.",
+		Source:     "internal/api/fleetlygrpc/mapping.go mapStateError (state.ErrConflict); structure.go DeleteApp/DeleteProject (ADR-0023)",
 		GRPC:       codes.FailedPrecondition,
 	},
 	{

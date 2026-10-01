@@ -1,9 +1,9 @@
 {
   "http": {
     "routers": {
-      "api-127-0-0-1-sslip-io-v1": {
+      "api-127-0-0-1-sslip-io-v1-cbc889239445": {
         "rule": "Host(`api.127.0.0.1.sslip.io`) && PathPrefix(`/v1`)",
-        "service": "api-127-0-0-1-sslip-io-v1",
+        "service": "api-127-0-0-1-sslip-io-v1-cbc889239445",
         "tls": {
           "certResolver": "le",
           "domains": [
@@ -13,13 +13,13 @@
           ]
         }
       },
-      "plain-localhost": {
+      "plain-localhost-f60aa2de49cc": {
         "rule": "Host(`plain.localhost`)",
-        "service": "plain-localhost"
+        "service": "plain-localhost-f60aa2de49cc"
       },
-      "shop-127-0-0-1-sslip-io": {
+      "shop-127-0-0-1-sslip-io-8e2b0d27f4da": {
         "rule": "Host(`shop.127.0.0.1.sslip.io`)",
-        "service": "shop-127-0-0-1-sslip-io",
+        "service": "shop-127-0-0-1-sslip-io-8e2b0d27f4da",
         "tls": {
           "certResolver": "le",
           "domains": [
@@ -31,7 +31,7 @@
       }
     },
     "services": {
-      "api-127-0-0-1-sslip-io-v1": {
+      "api-127-0-0-1-sslip-io-v1-cbc889239445": {
         "loadBalancer": {
           "servers": [
             {
@@ -40,7 +40,7 @@
           ]
         }
       },
-      "plain-localhost": {
+      "plain-localhost-f60aa2de49cc": {
         "loadBalancer": {
           "servers": [
             {
@@ -49,7 +49,7 @@
           ]
         }
       },
-      "shop-127-0-0-1-sslip-io": {
+      "shop-127-0-0-1-sslip-io-8e2b0d27f4da": {
         "loadBalancer": {
           "servers": [
             {
@@ -62,14 +62,14 @@
   },
   "tcp": {
     "routers": {
-      "db-127-0-0-1-sslip-io": {
+      "db-127-0-0-1-sslip-io-d12ba02dc7f7": {
         "rule": "HostSNI(`db.127.0.0.1.sslip.io`)",
-        "service": "db-127-0-0-1-sslip-io",
+        "service": "db-127-0-0-1-sslip-io-d12ba02dc7f7",
         "tls": {}
       }
     },
     "services": {
-      "db-127-0-0-1-sslip-io": {
+      "db-127-0-0-1-sslip-io-d12ba02dc7f7": {
         "loadBalancer": {
           "servers": [
             {

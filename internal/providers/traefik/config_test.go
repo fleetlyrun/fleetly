@@ -2,6 +2,7 @@ package traefik
 
 import (
 	"context"
+	"encoding/json"
 	"flag"
 	"os"
 	"path/filepath"
@@ -47,6 +48,42 @@ func TestDynamicConfigGolden(t *testing.T) {
 func TestUnresolvedBackendRejected(t *testing.T) {
 	_, err := buildDynamicConfig([]capability.Route{{Host: "x.sslip.io", Process: "web", Port: 80}})
 	assert.ErrorContains(t, err, "no resolved backend address")
+}
+
+// Q-10 回归：routeKey 必须单射——归一化清洗的碰撞对 ("a.b","/c") 与
+// ("a.b-c","") 不得共用 router/service 键（同名 map 撞键 = 后路由静默
+// 互覆前路由）。两路由共存于同一配置，四键（2 router + 2 service）互异。
+func TestRouteKeyInjectiveOnNormalizedCollision(t *testing.T) {
+	collide := []capability.Route{
+		{Host: "a.b", Path: "/c", Process: "web", Port: 80,
+			Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.1:80"},
+		{Host: "a.b-c", Process: "api", Port: 8080,
+			Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.2:8080"},
+	}
+	k1, k2 := routeKey(collide[0]), routeKey(collide[1])
+	require.NotEqual(t, k1, k2, "the normalization-collision pair must produce distinct keys")
+
+	cfg, err := buildDynamicConfig(collide)
+	require.NoError(t, err)
+	var parsed struct {
+		HTTP struct {
+			Routers  map[string]json.RawMessage `json:"routers"`
+			Services map[string]json.RawMessage `json:"services"`
+		} `json:"http"`
+	}
+	require.NoError(t, json.Unmarshal(cfg, &parsed))
+	require.Len(t, parsed.HTTP.Routers, 2, "both routes must coexist as routers (collision would silently merge to one)")
+	require.Len(t, parsed.HTTP.Services, 2, "both routes must coexist as services")
+	require.Contains(t, parsed.HTTP.Routers, k1)
+	require.Contains(t, parsed.HTTP.Routers, k2)
+
+	// 键仍在 traefik 名字的安全字符集内（DNS label：字母数字与连字符）。
+	for _, k := range []string{k1, k2} {
+		for _, c := range k {
+			require.True(t, (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-',
+				"route key %q must stay DNS-safe", k)
+		}
+	}
 }
 
 // 受管形态声明完整性（80/443 发布 + ACME storage 卷）。

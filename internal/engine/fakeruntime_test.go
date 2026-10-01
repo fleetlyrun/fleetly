@@ -147,8 +147,8 @@ func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 		}
 		for _, w := range c.Spec {
 			obs = append(obs, capability.WorkloadObservation{
-				WorkloadID: w.ID, Generation: c.Gen, Image: w.Image, Replicas: w.Replicas,
-				State: capability.WorkloadRunning,
+				WorkloadID: w.ID, Generation: c.Gen, Image: w.Image, Command: w.Command,
+				Replicas: w.Replicas, State: capability.WorkloadRunning,
 			})
 		}
 		// 只取该域最近一次 Ensure（与真 Provider 的快照语义一致）。
@@ -160,6 +160,9 @@ func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 			if t.image != "" {
 				obs[i].Image = t.image
 			}
+			if t.command != nil {
+				obs[i].Command = t.command
+			}
 			if t.replicas != 0 {
 				obs[i].Replicas = t.replicas
 			}
@@ -168,9 +171,11 @@ func (f *fakeRuntime) InspectWorkloads(_ context.Context, ns capability.Namespac
 	return obs, nil
 }
 
-// tamperEntry 是人工改载体的注入面（场景 7）。
+// tamperEntry 是人工改载体的注入面（场景 7）。command 非 nil 即覆写
+// （含覆写为空切片 = 清掉入口覆盖）。
 type tamperEntry struct {
 	image    string
+	command  []string
 	replicas int64
 }
 
