@@ -29,9 +29,12 @@ N0 验收发现漂移检测三处口径缺口：
    succeeded"的 App 以行上 Generation 幂等重放 Ensure（载体未变即
    no-op）：重建归属/期望缓存，drift 立即在场，无需等下一次部署。
    不产生新的 Deployment 行（重放不是部署）。
-3. **看门狗稳态常驻（观测面）。** 稳态 App（最近部署 succeeded）的
-   当前 Generation 观测到 stopped/degraded → 发 `workload.stopped`
-   （新事件，去抖）。**只观测不迁移**：自动回滚仍是部署期语义
+3. **看门狗稳态常驻（观测面）。** 期望缓存登记面（用户 App 的最近
+   Ensure + 受管域 fleetly/system/\*——edge 是平台自身可用性，失明不可
+   接受）的当前 Generation 观测到 **stopped** → 发 `workload.stopped`
+   （新事件，去抖）。degraded 不走看门狗：spec 失配的 degraded 形态由
+   决策 1 的 `workload.drift_detected` 承载，两事件不重复咬同一信号。
+   **只观测不迁移**：自动回滚仍是部署期语义
    （ADR-0005：Ensure 是唯一写动词，收敛 opt-in 不变）；稳态处置由
    人/Agent 决定（重部署即收敛）。
 4. **RuntimeInspector 是可选子面**（同 RuntimeLogs/RuntimeAdmin 形态）。
