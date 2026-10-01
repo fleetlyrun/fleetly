@@ -14,7 +14,7 @@ import (
 )
 
 // B2 执法面回归（N0.1 P2-8）：Config 配额——per-Project 100 个上限
-//（E_QUOTA_EXCEEDED）、单值 256KiB 上限（E_INVALID_ARGUMENT）、同名 put
+// （E_QUOTA_EXCEEDED）、单值 256KiB 上限（E_INVALID_ARGUMENT）、同名 put
 // 是新版本不占新位。
 func TestConfigQuotaEnforcement(t *testing.T) {
 	h := apitest.New(t)

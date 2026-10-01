@@ -249,8 +249,11 @@ func (e *Engine) Start(ctx context.Context) {
 	e.buildLoop.Kick()
 	e.managedLoop.Kick()
 	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环
-	//（Loop.Run 阻塞至 ctx 取消——与其他环同款 goroutine 形态）。
+	//（Loop.Run 阻塞至 ctx 取消——与其他环同款 goroutine 形态）。重放
+	// goroutine 计入 wg（N0.1 P2-11）：Stop 排水覆盖重放，不再裸奔。
+	e.wg.Add(1)
 	go func() {
+		defer e.wg.Done()
 		e.rebuildBaselines(runCtx)
 	}()
 	e.wg.Add(1)

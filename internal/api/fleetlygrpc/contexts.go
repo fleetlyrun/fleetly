@@ -40,16 +40,16 @@ func (svc *NodesService) ListNodes(ctx context.Context, _ *runtimev1.ListNodesRe
 }
 
 func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNodeRequest) (*runtimev1.EnrollNodeResponse, error) {
-	kit, err := svc.s.Runtime.Enrollment(ctx, req.GetRotate())
-	if err != nil {
-		return nil, mapStateError(err, "enrollment")
-	}
 	// 材料生成与轮换都是集群面敏感动作：审计如实区分（EnrollNode 是
 	// platform:admin 档，C3）。
 	action := "node.enroll"
 	if req.GetRotate() {
 		action = "node.rotate_join_tokens"
 	}
+	// 轮换是破坏性动作（全部既有 join token 作废）：先审计后轮换
+	//（N0.1 P2-11）——审计落账失败时材料绝不作废；轮换失败时审计已在
+	// 场（意图可见，比"已轮换无痕"诚实）。普通材料生成只读，同样先记
+	// 后做不损失语义（读取意图本身敏感）。
 	if err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
 		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
@@ -57,6 +57,10 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 		})
 	}); err != nil {
 		return nil, err
+	}
+	kit, err := svc.s.Runtime.Enrollment(ctx, req.GetRotate())
+	if err != nil {
+		return nil, mapStateError(err, "enrollment")
 	}
 	return &runtimev1.EnrollNodeResponse{JoinCommand: kit.Command}, nil
 }

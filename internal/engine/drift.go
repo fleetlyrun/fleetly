@@ -139,13 +139,14 @@ func (e *Engine) driftScan(ctx context.Context) {
 		if !hasInspector {
 			continue
 		}
-		ns := capability.NamespaceRef{Team: "default", Project: "", App: appID}
-		if a, err := e.apps.Get(ctx, e.db.Runner(), appID); err == nil {
-			ns.Project = a.ProjectID
-		} else {
+		// 域解析走 appTeam（N0.1 P2-11：不再内联 Team:"default"——团队
+		// 解析单一真源，F0.5 从 Project 行实取时此处随动）。
+		team, a, err := e.appTeam(ctx, appID)
+		if err != nil {
 			e.log.Error("drift scan: resolve app", "app", appID, "err", err)
 			continue
 		}
+		ns := capability.NamespaceRef{Team: team, Project: a.ProjectID, App: appID}
 		scanCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 		obs, err := inspector.InspectWorkloads(scanCtx, ns)
 		cancel()
