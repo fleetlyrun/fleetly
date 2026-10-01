@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
+	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 )
 
 //go:generate go run -mod=mod github.com/google/wire/cmd/wire
@@ -44,7 +45,7 @@ var ProviderSet = wire.NewSet(
 	NewIdemEnforcer,
 	NewAPIServices,
 	NewEngineService,
-	NewIdemJanitorService,
+	NewRetentionJanitorService,
 	NewEdgeConfigServer,
 	systemgrpc.New,
 	NewGRPCServer,
@@ -149,38 +150,47 @@ func NewIdemEnforcer(db *state.DB, app lynx.App) *idem.Enforcer {
 	return idem.NewEnforcer(db, app.Logger())
 }
 
-// idemJanitorSweepInterval 是幂等记录的清理节拍（保留窗 24h、认领 TTL
-// 90s——十分钟粒度足够收敛积压，且 Sweep 是单条 DELETE，成本可忽略）。
-const idemJanitorSweepInterval = 10 * time.Minute
+// retentionSweepInterval 是保留窗清扫节拍（幂等记录 24h/认领 90s、事件
+// outbox 7d——十分钟粒度足够收敛积压，Sweep 均为单条 DELETE，成本可忽略）。
+const retentionSweepInterval = 10 * time.Minute
 
-// IdemJanitorService 把幂等 janitor 适配为 lynx 托管服务：复用 engine.
-// NewLoop 唯一循环骨架（架构 §0"每段只许有一份"），不自建 ticker。具名
-// 类型：wire 对 lynx.Service 同型多 provider 需可区分。
-type IdemJanitorService struct {
+// outboxRetention 是事件保留窗（ADR-0026）：窗内只增（订阅契约以
+// earliest_seq 划界），窗外由 retention janitor 回收——Task 事件量下
+// outbox 无界增长的自愈上限。7d = Console 隔周末重连不断档的宽裕缺省。
+const outboxRetention = 7 * 24 * time.Hour
+
+// RetentionJanitorService 把保留窗清扫（幂等记录 + 事件 outbox）适配为
+// lynx 托管服务：复用 engine.NewLoop 唯一循环骨架（架构 §0"每段只许有一
+// 份"），不自建 ticker。具名类型：wire 对 lynx.Service 同型多 provider
+// 需可区分。
+type RetentionJanitorService struct {
 	enforcer *idem.Enforcer
+	db       *state.DB
 	log      *slog.Logger
 }
 
-func (s *IdemJanitorService) Name() string               { return "idem-janitor" }
-func (s *IdemJanitorService) Init(lynx.AppContext) error { return nil }
-func (s *IdemJanitorService) Start(ctx context.Context) error {
-	engine.NewLoop("idem-janitor", s.log).Run(ctx, idemJanitorSweepInterval, func(ctx context.Context) {
-		n, err := s.enforcer.Sweep(ctx)
-		if err != nil {
-			s.log.Error("idem janitor: sweep", "err", err)
-			return
+func (s *RetentionJanitorService) Name() string               { return "retention-janitor" }
+func (s *RetentionJanitorService) Init(lynx.AppContext) error { return nil }
+func (s *RetentionJanitorService) Start(ctx context.Context) error {
+	engine.NewLoop("retention-janitor", s.log).Run(ctx, retentionSweepInterval, func(ctx context.Context) {
+		if n, err := s.enforcer.Sweep(ctx); err != nil {
+			s.log.Error("retention janitor: idempotency sweep", "err", err)
+		} else if n > 0 {
+			s.log.Info("retention janitor: swept expired idempotency records", "count", n)
 		}
-		if n > 0 {
-			s.log.Info("idem janitor: swept expired idempotency records", "count", n)
+		if n, err := outbox.New(s.db.Clock()).TrimBefore(ctx, s.db.Runner(), s.db.Clock().Now().Add(-outboxRetention)); err != nil {
+			s.log.Error("retention janitor: outbox trim", "err", err)
+		} else if n > 0 {
+			s.log.Info("retention janitor: trimmed outbox rows past the retention window", "count", n)
 		}
 	})
 	return nil
 }
-func (s *IdemJanitorService) Stop(context.Context) error { return nil }
+func (s *RetentionJanitorService) Stop(context.Context) error { return nil }
 
-// NewIdemJanitorService 构造 janitor 托管服务。
-func NewIdemJanitorService(enforcer *idem.Enforcer, app lynx.App) *IdemJanitorService {
-	return &IdemJanitorService{enforcer: enforcer, log: app.Logger()}
+// NewRetentionJanitorService 构造 janitor 托管服务。
+func NewRetentionJanitorService(enforcer *idem.Enforcer, db *state.DB, app lynx.App) *RetentionJanitorService {
+	return &RetentionJanitorService{enforcer: enforcer, db: db, log: app.Logger()}
 }
 
 // engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖
@@ -245,7 +255,7 @@ func NewPostStopHooks() boot.PostStopHooks { return nil }
 // 求面关闭后不再产生新记录，收尾 Sweep 由下次启动补上。
 func NewServices(
 	engineSvc lynx.Service,
-	idemJanitor *IdemJanitorService,
+	idemJanitor *RetentionJanitorService,
 	grpcServer *lynxgrpc.Server,
 	gateway *lynxhttp.Server,
 	edgeConfig *EdgeConfigServer,

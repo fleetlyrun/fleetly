@@ -49,6 +49,66 @@ func newEventsListVerb() commands.Command {
 	}
 }
 
+// newEventsFollowVerb 是订阅面（F1.2）：重放保留窗 + 持续跟随（Ctrl-C
+// 收口）。--replay 只重放随后退出（golden/脚本友好的有界形态）。
+func newEventsFollowVerb() commands.Command {
+	const name = "follow"
+	var after int64
+	var replay bool
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Follow platform events from the outbox (replay the retention window, then keep streaming)",
+		usage:    "events follow [--after-seq N] [--replay]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.Int64Var(&after, "after-seq", 0, "resume after this seq (0 = start of the retention window; a trimmed cursor returns 410 E_EVENTS_GONE)")
+			fs.BoolVar(&replay, "replay", false, "replay the retention window and exit (bounded form for scripts)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			// 流式动词：拨号豁免请求级 deadline（logs 同款纪律）。
+			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			stream, err := c.Events.StreamEvents(ctx, &telemetryv1.StreamEventsRequest{AfterSeq: after, Follow: !replay})
+			if err != nil {
+				return err
+			}
+			compact := func(m proto.Message) (string, error) {
+				data, err := protoJSONMarshal.Marshal(m)
+				if err != nil {
+					return "", err
+				}
+				var buf bytes.Buffer
+				if err := json.Compact(&buf, data); err != nil {
+					return "", err
+				}
+				return buf.String(), nil
+			}
+			for {
+				frame, err := stream.Recv()
+				if err == io.EOF {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				ev := frame.GetEvent()
+				if jsonOut {
+					line, err := compact(frame)
+					if err != nil {
+						return err
+					}
+					_, _ = fmt.Fprintln(env.Stdout, line)
+					continue
+				}
+				_, _ = fmt.Fprintf(env.Stdout, "%d\t%s\t%s\t%s\t%s\n", ev.GetSeq(), ev.GetName(), ev.GetAggregate(), ev.GetAggregateId(), ev.GetCreatedAt())
+			}
+		},
+	}
+}
+
 func newLogsVerb() commands.Command {
 	const name = "logs"
 	var app, process, since, until string

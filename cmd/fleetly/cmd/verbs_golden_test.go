@@ -81,6 +81,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "default"}, 0},
 		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}, 0},
 		{"routes list", []string{"routes", "list"}, 0},
+		// 事件订阅面的有界形态（F1.2）：--replay 重放保留窗后退出（follow
+		// 无界不进 golden）。
+		{"events follow", []string{"events", "follow", "--replay"}, 0},
 		{"nodes list", []string{"nodes", "list"}, 0},
 		{"nodes enroll", []string{"nodes", "enroll"}, 0},
 		// 节点运维三动词（F0.19 RuntimeAdmin 面）：FakeRuntime 集群里的固定

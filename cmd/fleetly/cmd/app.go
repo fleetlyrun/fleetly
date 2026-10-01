@@ -78,7 +78,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("nodes", "inspect cluster nodes and administer scheduling", newNodesListVerb(), newNodesEnrollVerb(),
 			newNodesDrainVerb(), newNodesCordonVerb(), newNodesUncordonVerb()),
 		// Telemetry 上下文。
-		groupVerb("events", "list platform events from the outbox", newEventsListVerb()),
+		groupVerb("events", "list and follow platform events from the outbox", newEventsListVerb(), newEventsFollowVerb()),
 		newLogsVerb(),
 	)
 	return app

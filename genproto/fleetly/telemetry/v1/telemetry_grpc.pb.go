@@ -22,17 +22,31 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	EventsService_ListEvents_FullMethodName = "/fleetly.telemetry.v1.EventsService/ListEvents"
+	EventsService_ListEvents_FullMethodName       = "/fleetly.telemetry.v1.EventsService/ListEvents"
+	EventsService_StreamEvents_FullMethodName     = "/fleetly.telemetry.v1.EventsService/StreamEvents"
+	EventsService_GetEventStatus_FullMethodName   = "/fleetly.telemetry.v1.EventsService/GetEventStatus"
+	EventsService_IssueEventTicket_FullMethodName = "/fleetly.telemetry.v1.EventsService/IssueEventTicket"
 )
 
 // EventsServiceClient is the client API for EventsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// EventsService：Outbox 读路径（F0.23；流式 follow 在 N1——断档 410 + 快照
-// 重同步随订阅面批次）。
+// EventsService：Outbox 读路径（F0.23 列表；F1.2 订阅面——gRPC 流 + SSE
+// （票据换键）+ 断档 410 + 快照重同步基准；保留窗与断档口径见 ADR-0026）。
 type EventsServiceClient interface {
 	ListEvents(ctx context.Context, in *ListEventsRequest, opts ...grpc.CallOption) (*ListEventsResponse, error)
+	// StreamEvents 是订阅面（gRPC server-streaming；Console/Agent 的等待原语
+	// 数据源）。follow=false 只重放保留窗随后收流；follow=true 持续跟随直至
+	// 客户端取消。after_seq 落在保留窗外 → E_EVENTS_GONE（410，重同步）。
+	StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEventsResponse], error)
+	// GetEventStatus 是断档判定与快照重同步的基准面：earliest_seq 定保留窗
+	// 起点（after_seq < earliest 即断档），last_seq 定重同步后的新游标。
+	GetEventStatus(ctx context.Context, in *GetEventStatusRequest, opts ...grpc.CallOption) (*GetEventStatusResponse, error)
+	// IssueEventTicket 为 SSE 订阅路径换一次性短时票据（ADR-0026：浏览器
+	// EventSource 不能设自定义头——Bearer 换秒级 TTL 单用途票据，SSE 以
+	// query 参数携带；限订阅路径，泄漏面受控）。
+	IssueEventTicket(ctx context.Context, in *IssueEventTicketRequest, opts ...grpc.CallOption) (*IssueEventTicketResponse, error)
 }
 
 type eventsServiceClient struct {
@@ -53,14 +67,64 @@ func (c *eventsServiceClient) ListEvents(ctx context.Context, in *ListEventsRequ
 	return out, nil
 }
 
+func (c *eventsServiceClient) StreamEvents(ctx context.Context, in *StreamEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamEventsResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &EventsService_ServiceDesc.Streams[0], EventsService_StreamEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[StreamEventsRequest, StreamEventsResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type EventsService_StreamEventsClient = grpc.ServerStreamingClient[StreamEventsResponse]
+
+func (c *eventsServiceClient) GetEventStatus(ctx context.Context, in *GetEventStatusRequest, opts ...grpc.CallOption) (*GetEventStatusResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetEventStatusResponse)
+	err := c.cc.Invoke(ctx, EventsService_GetEventStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *eventsServiceClient) IssueEventTicket(ctx context.Context, in *IssueEventTicketRequest, opts ...grpc.CallOption) (*IssueEventTicketResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IssueEventTicketResponse)
+	err := c.cc.Invoke(ctx, EventsService_IssueEventTicket_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // EventsServiceServer is the server API for EventsService service.
 // All implementations must embed UnimplementedEventsServiceServer
 // for forward compatibility.
 //
-// EventsService：Outbox 读路径（F0.23；流式 follow 在 N1——断档 410 + 快照
-// 重同步随订阅面批次）。
+// EventsService：Outbox 读路径（F0.23 列表；F1.2 订阅面——gRPC 流 + SSE
+// （票据换键）+ 断档 410 + 快照重同步基准；保留窗与断档口径见 ADR-0026）。
 type EventsServiceServer interface {
 	ListEvents(context.Context, *ListEventsRequest) (*ListEventsResponse, error)
+	// StreamEvents 是订阅面（gRPC server-streaming；Console/Agent 的等待原语
+	// 数据源）。follow=false 只重放保留窗随后收流；follow=true 持续跟随直至
+	// 客户端取消。after_seq 落在保留窗外 → E_EVENTS_GONE（410，重同步）。
+	StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[StreamEventsResponse]) error
+	// GetEventStatus 是断档判定与快照重同步的基准面：earliest_seq 定保留窗
+	// 起点（after_seq < earliest 即断档），last_seq 定重同步后的新游标。
+	GetEventStatus(context.Context, *GetEventStatusRequest) (*GetEventStatusResponse, error)
+	// IssueEventTicket 为 SSE 订阅路径换一次性短时票据（ADR-0026：浏览器
+	// EventSource 不能设自定义头——Bearer 换秒级 TTL 单用途票据，SSE 以
+	// query 参数携带；限订阅路径，泄漏面受控）。
+	IssueEventTicket(context.Context, *IssueEventTicketRequest) (*IssueEventTicketResponse, error)
 	mustEmbedUnimplementedEventsServiceServer()
 }
 
@@ -73,6 +137,15 @@ type UnimplementedEventsServiceServer struct{}
 
 func (UnimplementedEventsServiceServer) ListEvents(context.Context, *ListEventsRequest) (*ListEventsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListEvents not implemented")
+}
+func (UnimplementedEventsServiceServer) StreamEvents(*StreamEventsRequest, grpc.ServerStreamingServer[StreamEventsResponse]) error {
+	return status.Error(codes.Unimplemented, "method StreamEvents not implemented")
+}
+func (UnimplementedEventsServiceServer) GetEventStatus(context.Context, *GetEventStatusRequest) (*GetEventStatusResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEventStatus not implemented")
+}
+func (UnimplementedEventsServiceServer) IssueEventTicket(context.Context, *IssueEventTicketRequest) (*IssueEventTicketResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method IssueEventTicket not implemented")
 }
 func (UnimplementedEventsServiceServer) mustEmbedUnimplementedEventsServiceServer() {}
 func (UnimplementedEventsServiceServer) testEmbeddedByValue()                       {}
@@ -113,6 +186,53 @@ func _EventsService_ListEvents_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EventsService_StreamEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(StreamEventsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(EventsServiceServer).StreamEvents(m, &grpc.GenericServerStream[StreamEventsRequest, StreamEventsResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type EventsService_StreamEventsServer = grpc.ServerStreamingServer[StreamEventsResponse]
+
+func _EventsService_GetEventStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetEventStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EventsServiceServer).GetEventStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EventsService_GetEventStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EventsServiceServer).GetEventStatus(ctx, req.(*GetEventStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _EventsService_IssueEventTicket_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(IssueEventTicketRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EventsServiceServer).IssueEventTicket(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EventsService_IssueEventTicket_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EventsServiceServer).IssueEventTicket(ctx, req.(*IssueEventTicketRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // EventsService_ServiceDesc is the grpc.ServiceDesc for EventsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -124,8 +244,22 @@ var EventsService_ServiceDesc = grpc.ServiceDesc{
 			MethodName: "ListEvents",
 			Handler:    _EventsService_ListEvents_Handler,
 		},
+		{
+			MethodName: "GetEventStatus",
+			Handler:    _EventsService_GetEventStatus_Handler,
+		},
+		{
+			MethodName: "IssueEventTicket",
+			Handler:    _EventsService_IssueEventTicket_Handler,
+		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "StreamEvents",
+			Handler:       _EventsService_StreamEvents_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "fleetly/telemetry/v1/telemetry.proto",
 }
 

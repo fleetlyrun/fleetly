@@ -11,11 +11,11 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
-	"github.com/fleetlyrun/fleetly/internal/state/statetest"
+	"github.com/fleetlyrun/fleetly/internal/state/statertest"
 )
 
 func TestOutboxMonotonicSeq(t *testing.T) {
-	db, clock := statetest.New(t)
+	db, clock := statertest.New(t)
 	ctx := context.Background()
 	events := outbox.New(clock)
 
@@ -40,10 +40,24 @@ func TestOutboxMonotonicSeq(t *testing.T) {
 	seq, err := events.LastSeq(ctx, db.Runner())
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), seq)
+
+	// 保留窗（ADR-0026）：earliest_seq 划界 + 窗外回收（"只增"修订为
+	// "窗内只增"）；窗内行不受 trim 影响。
+	earliest, err := events.EarliestSeq(ctx, db.Runner())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), earliest)
+
+	clock.Advance(8 * 24 * time.Hour)
+	n, err := events.TrimBefore(ctx, db.Runner(), clock.Now().Add(-7*24*time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), n, "all three rows are outside the 7d window")
+	earliest, err = events.EarliestSeq(ctx, db.Runner())
+	require.NoError(t, err)
+	assert.Zero(t, earliest, "empty table reports earliest 0 (not a gap)")
 }
 
 func TestAuditAppendList(t *testing.T) {
-	db, clock := statetest.New(t)
+	db, clock := statertest.New(t)
 	ctx := context.Background()
 	audits := audit.New(clock)
 
@@ -60,7 +74,7 @@ func TestAuditAppendList(t *testing.T) {
 }
 
 func TestNodeObservationCache(t *testing.T) {
-	db, clock := statetest.New(t)
+	db, clock := statertest.New(t)
 	ctx := context.Background()
 	nodes := node.New(clock)
 

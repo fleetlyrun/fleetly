@@ -57,7 +57,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	engine := NewEngine(db, runtime, builder, edge, cipher, app, appConfig)
 	service := NewEngineService(engine)
 	enforcer := NewIdemEnforcer(db, app)
-	idemJanitorService := NewIdemJanitorService(enforcer, app)
+	retentionJanitorService := NewRetentionJanitorService(enforcer, db, app)
 	policySet, err := NewPolicySet()
 	if err != nil {
 		cleanup5()
@@ -98,7 +98,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	v := NewServices(service, idemJanitorService, server, httpServer, edgeConfigServer)
+	v := NewServices(service, retentionJanitorService, server, httpServer, edgeConfigServer)
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {

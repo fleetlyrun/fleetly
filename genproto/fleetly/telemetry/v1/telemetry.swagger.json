@@ -58,6 +58,108 @@
         ]
       }
     },
+    "/v1/events/status": {
+      "get": {
+        "summary": "GetEventStatus 是断档判定与快照重同步的基准面：earliest_seq 定保留窗\n起点（after_seq \u003c earliest 即断档），last_seq 定重同步后的新游标。",
+        "operationId": "EventsService_GetEventStatus",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetEventStatusResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "EventsService"
+        ]
+      }
+    },
+    "/v1/events/stream": {
+      "get": {
+        "summary": "StreamEvents 是订阅面（gRPC server-streaming；Console/Agent 的等待原语\n数据源）。follow=false 只重放保留窗随后收流；follow=true 持续跟随直至\n客户端取消。after_seq 落在保留窗外 → E_EVENTS_GONE（410，重同步）。",
+        "operationId": "EventsService_StreamEvents",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1StreamEventsResponse"
+                }
+              },
+              "title": "Stream result of v1StreamEventsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "after_seq",
+            "description": "after_seq 是游标（0 = 从保留窗最早开始；落在保留窗外 → 410）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "follow",
+            "description": "follow 持续跟随新事件（直至取消）；false = 重放保留窗后收流。",
+            "in": "query",
+            "required": false,
+            "type": "boolean"
+          }
+        ],
+        "tags": [
+          "EventsService"
+        ]
+      }
+    },
+    "/v1/events/ticket": {
+      "post": {
+        "summary": "IssueEventTicket 为 SSE 订阅路径换一次性短时票据（ADR-0026：浏览器\nEventSource 不能设自定义头——Bearer 换秒级 TTL 单用途票据，SSE 以\nquery 参数携带；限订阅路径，泄漏面受控）。",
+        "operationId": "EventsService_IssueEventTicket",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1IssueEventTicketResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1IssueEventTicketRequest"
+            }
+          }
+        ],
+        "tags": [
+          "EventsService"
+        ]
+      }
+    },
     "/v1/logs": {
       "get": {
         "operationId": "LogsService_StreamLogs",
@@ -154,6 +256,38 @@
       },
       "title": "Event 是 Outbox 行形态（单调 seq；payload 是 JSON 字节文本）。"
     },
+    "v1GetEventStatusResponse": {
+      "type": "object",
+      "properties": {
+        "earliest_seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "earliest_seq 是保留窗内最早事件 seq（断档判定锚：0 = 空表/全在窗内）。"
+        },
+        "last_seq": {
+          "type": "string",
+          "format": "int64",
+          "title": "last_seq 是当前最大 seq（快照重同步基准：重读列表后以它为新游标）。"
+        }
+      }
+    },
+    "v1IssueEventTicketRequest": {
+      "type": "object"
+    },
+    "v1IssueEventTicketResponse": {
+      "type": "object",
+      "properties": {
+        "ticket": {
+          "type": "string",
+          "title": "ticket 是一次性短时票据（秒级 TTL、单用途、限 SSE 订阅路径）。"
+        },
+        "expires_in": {
+          "type": "integer",
+          "format": "int32",
+          "title": "expires_in 是票据存活秒数。"
+        }
+      }
+    },
     "v1ListEventsResponse": {
       "type": "object",
       "properties": {
@@ -167,6 +301,15 @@
         "last_seq": {
           "type": "string",
           "format": "int64"
+        }
+      }
+    },
+    "v1StreamEventsResponse": {
+      "type": "object",
+      "properties": {
+        "event": {
+          "$ref": "#/definitions/v1Event",
+          "title": "event 是本帧事件（与 ListEvents 同一 Event 形态）。"
         }
       }
     },

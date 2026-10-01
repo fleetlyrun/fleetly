@@ -61,6 +61,10 @@ type Services struct {
 	Invitations  *invitation.Repo
 	Hooks        *hook.Repo
 
+	// eventTickets 是 SSE 订阅路径的一次性短时票据面（ADR-0026；铸造经
+	// IssueEventTicket，兑换限 SSE 原生入口）。
+	eventTickets *eventTicketStore
+
 	// ScopeVocabulary 是 scope 词表（CreateRole 校验用；assembly 单一源
 	// 注入——服务面不自带词表）。
 	ScopeVocabulary []string
@@ -96,6 +100,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Tokens:          tokenrepo.New(clock),
 		Invitations:     invitation.New(clock),
 		Hooks:           hook.New(clock),
+		eventTickets:    newEventTicketStore(clock),
 		ScopeVocabulary: vocab,
 		Log:             log,
 	}

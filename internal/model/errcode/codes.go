@@ -110,4 +110,11 @@ var builtins = []Code{
 		Source:     "internal/idem/enforcer.go (ADR-0024: header form, single table, interceptor enforcement)",
 		GRPC:       codes.AlreadyExists,
 	},
+	{
+		ID:         "E_EVENTS_GONE",
+		Summary:    "The requested event cursor is older than the earliest retained event (the retention window trimmed it).",
+		Suggestion: "Resynchronize: re-read the current state of the resources you track (list endpoints), then continue from the last_seq reported by GetEventStatus.",
+		Source:     "internal/api/fleetlygrpc/contexts.go EventsService (ADR-0026: retention window + 410 + snapshot resync)",
+		GRPC:       codes.FailedPrecondition,
+	},
 }

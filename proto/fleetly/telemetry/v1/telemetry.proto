@@ -20,13 +20,45 @@ option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
   }
 };
 
-// EventsService：Outbox 读路径（F0.23；流式 follow 在 N1——断档 410 + 快照
-// 重同步随订阅面批次）。
+// EventsService：Outbox 读路径（F0.23 列表；F1.2 订阅面——gRPC 流 + SSE
+//（票据换键）+ 断档 410 + 快照重同步基准；保留窗与断档口径见 ADR-0026）。
 service EventsService {
   option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
   rpc ListEvents(ListEventsRequest) returns (ListEventsResponse) {
     option (google.api.http) = { get: "/v1/events" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    };
+  }
+
+  // StreamEvents 是订阅面（gRPC server-streaming；Console/Agent 的等待原语
+  // 数据源）。follow=false 只重放保留窗随后收流；follow=true 持续跟随直至
+  // 客户端取消。after_seq 落在保留窗外 → E_EVENTS_GONE（410，重同步）。
+  rpc StreamEvents(StreamEventsRequest) returns (stream StreamEventsResponse) {
+    option (google.api.http) = { get: "/v1/events/stream" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    };
+  }
+
+  // GetEventStatus 是断档判定与快照重同步的基准面：earliest_seq 定保留窗
+  // 起点（after_seq < earliest 即断档），last_seq 定重同步后的新游标。
+  rpc GetEventStatus(GetEventStatusRequest) returns (GetEventStatusResponse) {
+    option (google.api.http) = { get: "/v1/events/status" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "events" op: SCOPE_OP_READ }
+    };
+  }
+
+  // IssueEventTicket 为 SSE 订阅路径换一次性短时票据（ADR-0026：浏览器
+  // EventSource 不能设自定义头——Bearer 换秒级 TTL 单用途票据，SSE 以
+  // query 参数携带；限订阅路径，泄漏面受控）。
+  rpc IssueEventTicket(IssueEventTicketRequest) returns (IssueEventTicketResponse) {
+    option (google.api.http) = { post: "/v1/events/ticket" body: "*" };
     option (grpcapi.v1.method_auth) = {
       access: ACCESS_LEVEL_SERVER
       api_key_scope: { resource: "events" op: SCOPE_OP_READ }
@@ -66,6 +98,36 @@ message ListEventsRequest {
 message ListEventsResponse {
   repeated Event events = 1;
   int64 last_seq = 2;
+}
+
+message StreamEventsRequest {
+  // after_seq 是游标（0 = 从保留窗最早开始；落在保留窗外 → 410）。
+  int64 after_seq = 1;
+  // follow 持续跟随新事件（直至取消）；false = 重放保留窗后收流。
+  bool follow = 2;
+}
+
+message StreamEventsResponse {
+  // event 是本帧事件（与 ListEvents 同一 Event 形态）。
+  Event event = 1;
+}
+
+message GetEventStatusRequest {}
+
+message GetEventStatusResponse {
+  // earliest_seq 是保留窗内最早事件 seq（断档判定锚：0 = 空表/全在窗内）。
+  int64 earliest_seq = 1;
+  // last_seq 是当前最大 seq（快照重同步基准：重读列表后以它为新游标）。
+  int64 last_seq = 2;
+}
+
+message IssueEventTicketRequest {}
+
+message IssueEventTicketResponse {
+  // ticket 是一次性短时票据（秒级 TTL、单用途、限 SSE 订阅路径）。
+  string ticket = 1;
+  // expires_in 是票据存活秒数。
+  int32 expires_in = 2;
 }
 
 message StreamLogsRequest {

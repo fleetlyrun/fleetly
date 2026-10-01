@@ -6,6 +6,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 	"time"
 
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
@@ -17,6 +18,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
+	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 )
 
@@ -208,6 +210,9 @@ type EventsService struct {
 }
 
 func (svc *EventsService) ListEvents(ctx context.Context, req *telemetryv1.ListEventsRequest) (*telemetryv1.ListEventsResponse, error) {
+	if err := svc.eventsGoneCheck(ctx, req.GetAfterSeq()); err != nil {
+		return nil, err
+	}
 	limit := req.GetLimit()
 	if limit <= 0 || limit > 1000 {
 		limit = 100
@@ -222,12 +227,115 @@ func (svc *EventsService) ListEvents(ctx context.Context, req *telemetryv1.ListE
 	}
 	out := &telemetryv1.ListEventsResponse{LastSeq: lastSeq}
 	for _, ev := range events {
-		out.Events = append(out.Events, &telemetryv1.Event{
-			Seq: ev.Seq, Name: ev.Name, Aggregate: ev.Aggregate, AggregateId: ev.AggregateID,
-			Payload: string(ev.Payload), CreatedAt: ev.CreatedAt,
-		})
+		out.Events = append(out.Events, eventMsg(&ev))
 	}
 	return out, nil
+}
+
+// streamEventsPollInterval 是 follow 模式的轮询拍（outbox 单调 seq 是权威
+// 源；拍取舍：Console/Agent 人机尺度下 250ms 足够即时，DB 压力可忽略）。
+const streamEventsPollInterval = 250 * time.Millisecond
+
+// eventsGoneCheck 断档判定（ADR-0026）：after_seq 落在保留窗外 → 410 带
+// earliest_seq 上下文（客户端重同步：重读所跟踪资源的列表 + 以
+// GetEventStatus.last_seq 为新游标）。0 = 从保留窗最早开始，非断档。
+// 窗被清空（earliest=0 且 last=0）时任何正游标都判档：游标指向的既成
+// 事实已不可达，诚实答案就是重同步（fresh install 同形——resync 同样
+// 正确）。seq 是 AUTOINCREMENT，清空后不复用，游标错位不会被掩盖。
+func (svc *EventsService) eventsGoneCheck(ctx context.Context, afterSeq int64) error {
+	if afterSeq <= 0 {
+		return nil
+	}
+	earliest, err := svc.s.OutboxEvents.EarliestSeq(ctx, svc.s.DB.Runner())
+	if err != nil {
+		return mapStateError(err, "events")
+	}
+	last, err := svc.s.OutboxEvents.LastSeq(ctx, svc.s.DB.Runner())
+	if err != nil {
+		return mapStateError(err, "events")
+	}
+	gone := (earliest > 0 && afterSeq < earliest) || (earliest == 0 && last == 0)
+	if gone {
+		return apperr.New("E_EVENTS_GONE",
+			"event cursor %d is older than the earliest retained event (the retention window trimmed it)", afterSeq).
+			WithContext("earliest_seq", strconv.FormatInt(earliest, 10)).
+			WithSuggestion("Resynchronize: re-read the current state of the resources you track, then continue from GetEventStatus.last_seq.")
+	}
+	return nil
+}
+
+// StreamEvents 是订阅面（gRPC server-streaming）：重放保留窗（after_seq
+// 起升序），follow 时持续跟随直至客户端取消（流面不经 unary 超时拦截器，
+// 生命周期由取消信号管理——架构 §7 等待原语的数据源）。
+func (svc *EventsService) StreamEvents(req *telemetryv1.StreamEventsRequest, stream telemetryv1.EventsService_StreamEventsServer) error {
+	return svc.subscribe(stream.Context(), req.GetAfterSeq(), req.GetFollow(), func(ev *telemetryv1.Event) error {
+		return stream.Send(&telemetryv1.StreamEventsResponse{Event: ev})
+	})
+}
+
+// GetEventStatus 是断档判定与快照重同步的基准（earliest_seq / last_seq）。
+func (svc *EventsService) GetEventStatus(ctx context.Context, _ *telemetryv1.GetEventStatusRequest) (*telemetryv1.GetEventStatusResponse, error) {
+	earliest, err := svc.s.OutboxEvents.EarliestSeq(ctx, svc.s.DB.Runner())
+	if err != nil {
+		return nil, mapStateError(err, "events")
+	}
+	last, err := svc.s.OutboxEvents.LastSeq(ctx, svc.s.DB.Runner())
+	if err != nil {
+		return nil, mapStateError(err, "events")
+	}
+	return &telemetryv1.GetEventStatusResponse{EarliestSeq: earliest, LastSeq: last}, nil
+}
+
+// IssueEventTicket 为 SSE 订阅路径换一次性短时票据（ADR-0026：浏览器
+// EventSource 不能设自定义头）。
+func (svc *EventsService) IssueEventTicket(ctx context.Context, _ *telemetryv1.IssueEventTicketRequest) (*telemetryv1.IssueEventTicketResponse, error) {
+	if _, ok := authn.FromContext(ctx); !ok {
+		return nil, apperr.New("E_UNAUTHENTICATED", "present a valid token to mint an event ticket")
+	}
+	ticket, ttl, err := svc.s.eventTickets.issue()
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "ticket generation failed").WithCause(err)
+	}
+	return &telemetryv1.IssueEventTicketResponse{Ticket: ticket, ExpiresIn: int32(ttl.Seconds())}, nil //nolint:gosec // TTL 秒级
+}
+
+// subscribe 是订阅核心（gRPC 流与 SSE 原生入口同源同口径）：断档判定 →
+// 批次重放 → follow 轮询（ctx 取消收口）。
+func (svc *EventsService) subscribe(ctx context.Context, afterSeq int64, follow bool, send func(*telemetryv1.Event) error) error {
+	if err := svc.eventsGoneCheck(ctx, afterSeq); err != nil {
+		return err
+	}
+	cursor := afterSeq
+	for {
+		batch, err := svc.s.OutboxEvents.ListAfter(ctx, svc.s.DB.Runner(), cursor, 1000)
+		if err != nil {
+			return mapStateError(err, "events")
+		}
+		for i := range batch {
+			if err := send(eventMsg(&batch[i])); err != nil {
+				return err
+			}
+			cursor = batch[i].Seq
+		}
+		if !follow {
+			return nil
+		}
+		if len(batch) == 0 {
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(streamEventsPollInterval):
+			}
+		}
+	}
+}
+
+// eventMsg 是 outbox 行 → 传输形态（单点，List 与订阅面共用）。
+func eventMsg(ev *outbox.Event) *telemetryv1.Event {
+	return &telemetryv1.Event{
+		Seq: ev.Seq, Name: ev.Name, Aggregate: ev.Aggregate, AggregateId: ev.AggregateID,
+		Payload: string(ev.Payload), CreatedAt: ev.CreatedAt,
+	}
 }
 
 // ---- Logs（F0.25：RuntimeLogs 直读；诚实边界——仅实时+最近缓冲，持久化

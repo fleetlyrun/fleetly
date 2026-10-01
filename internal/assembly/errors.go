@@ -32,8 +32,9 @@ const redactedInternalMessage = "internal server error"
 //     E_IDEMPOTENCY_KEY_CONFLICT（幂等键异体/在途/双源不一致）、
 //     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_SECRET_UNAVAILABLE
 //     （请求合法、当前状态不容——cancel/解绑/补件后可重试）；
-//   - 400/404/429/401/403/500 与机械映射一致（本就对，钉扎防漂移）：
-//     E_INVALID_ARGUMENT→400、E_NOT_FOUND→404、E_QUEUE_FULL 与
+//   - 400/404/409/410/429/401/403/500 与语义对照（本就对，钉扎防漂移）：
+//     E_INVALID_ARGUMENT→400、E_NOT_FOUND→404、E_EVENTS_GONE→410（断档：
+//     游标落在保留窗外，重同步）、E_QUEUE_FULL 与
 //     E_QUOTA_EXCEEDED→429（Retry-After 提取仍按 429 生效）、
 //     E_UNAUTHENTICATED 与 E_INVALID_SIGNATURE→401、E_FORBIDDEN 与
 //     E_INVALID_INVITATION→403、E_INTERNAL→500。
@@ -43,6 +44,7 @@ const redactedInternalMessage = "internal server error"
 var errcodeToHTTP = map[string]int{
 	"E_ALREADY_EXISTS":           http.StatusConflict,
 	"E_CONFLICT":                 http.StatusConflict,
+	"E_EVENTS_GONE":              http.StatusGone,
 	"E_FORBIDDEN":                http.StatusForbidden,
 	"E_IDEMPOTENCY_KEY_CONFLICT": http.StatusConflict,
 	"E_INTERNAL":                 http.StatusInternalServerError,

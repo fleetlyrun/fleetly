@@ -217,6 +217,285 @@ func (x *ListEventsResponse) GetLastSeq() int64 {
 	return 0
 }
 
+type StreamEventsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// after_seq 是游标（0 = 从保留窗最早开始；落在保留窗外 → 410）。
+	AfterSeq int64 `protobuf:"varint,1,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
+	// follow 持续跟随新事件（直至取消）；false = 重放保留窗后收流。
+	Follow        bool `protobuf:"varint,2,opt,name=follow,proto3" json:"follow,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamEventsRequest) Reset() {
+	*x = StreamEventsRequest{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamEventsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamEventsRequest) ProtoMessage() {}
+
+func (x *StreamEventsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamEventsRequest.ProtoReflect.Descriptor instead.
+func (*StreamEventsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *StreamEventsRequest) GetAfterSeq() int64 {
+	if x != nil {
+		return x.AfterSeq
+	}
+	return 0
+}
+
+func (x *StreamEventsRequest) GetFollow() bool {
+	if x != nil {
+		return x.Follow
+	}
+	return false
+}
+
+type StreamEventsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// event 是本帧事件（与 ListEvents 同一 Event 形态）。
+	Event         *Event `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StreamEventsResponse) Reset() {
+	*x = StreamEventsResponse{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StreamEventsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StreamEventsResponse) ProtoMessage() {}
+
+func (x *StreamEventsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StreamEventsResponse.ProtoReflect.Descriptor instead.
+func (*StreamEventsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *StreamEventsResponse) GetEvent() *Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+type GetEventStatusRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetEventStatusRequest) Reset() {
+	*x = GetEventStatusRequest{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetEventStatusRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetEventStatusRequest) ProtoMessage() {}
+
+func (x *GetEventStatusRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetEventStatusRequest.ProtoReflect.Descriptor instead.
+func (*GetEventStatusRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{5}
+}
+
+type GetEventStatusResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// earliest_seq 是保留窗内最早事件 seq（断档判定锚：0 = 空表/全在窗内）。
+	EarliestSeq int64 `protobuf:"varint,1,opt,name=earliest_seq,json=earliestSeq,proto3" json:"earliest_seq,omitempty"`
+	// last_seq 是当前最大 seq（快照重同步基准：重读列表后以它为新游标）。
+	LastSeq       int64 `protobuf:"varint,2,opt,name=last_seq,json=lastSeq,proto3" json:"last_seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetEventStatusResponse) Reset() {
+	*x = GetEventStatusResponse{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetEventStatusResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetEventStatusResponse) ProtoMessage() {}
+
+func (x *GetEventStatusResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetEventStatusResponse.ProtoReflect.Descriptor instead.
+func (*GetEventStatusResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *GetEventStatusResponse) GetEarliestSeq() int64 {
+	if x != nil {
+		return x.EarliestSeq
+	}
+	return 0
+}
+
+func (x *GetEventStatusResponse) GetLastSeq() int64 {
+	if x != nil {
+		return x.LastSeq
+	}
+	return 0
+}
+
+type IssueEventTicketRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueEventTicketRequest) Reset() {
+	*x = IssueEventTicketRequest{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[7]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueEventTicketRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueEventTicketRequest) ProtoMessage() {}
+
+func (x *IssueEventTicketRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[7]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueEventTicketRequest.ProtoReflect.Descriptor instead.
+func (*IssueEventTicketRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{7}
+}
+
+type IssueEventTicketResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// ticket 是一次性短时票据（秒级 TTL、单用途、限 SSE 订阅路径）。
+	Ticket string `protobuf:"bytes,1,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	// expires_in 是票据存活秒数。
+	ExpiresIn     int32 `protobuf:"varint,2,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *IssueEventTicketResponse) Reset() {
+	*x = IssueEventTicketResponse{}
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *IssueEventTicketResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*IssueEventTicketResponse) ProtoMessage() {}
+
+func (x *IssueEventTicketResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use IssueEventTicketResponse.ProtoReflect.Descriptor instead.
+func (*IssueEventTicketResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *IssueEventTicketResponse) GetTicket() string {
+	if x != nil {
+		return x.Ticket
+	}
+	return ""
+}
+
+func (x *IssueEventTicketResponse) GetExpiresIn() int32 {
+	if x != nil {
+		return x.ExpiresIn
+	}
+	return 0
+}
+
 type StreamLogsRequest struct {
 	state   protoimpl.MessageState `protogen:"open.v1"`
 	AppId   string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
@@ -234,7 +513,7 @@ type StreamLogsRequest struct {
 
 func (x *StreamLogsRequest) Reset() {
 	*x = StreamLogsRequest{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[3]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -246,7 +525,7 @@ func (x *StreamLogsRequest) String() string {
 func (*StreamLogsRequest) ProtoMessage() {}
 
 func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[3]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -259,7 +538,7 @@ func (x *StreamLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsRequest.ProtoReflect.Descriptor instead.
 func (*StreamLogsRequest) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{3}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StreamLogsRequest) GetAppId() string {
@@ -318,7 +597,7 @@ type StreamLogsResponse struct {
 
 func (x *StreamLogsResponse) Reset() {
 	*x = StreamLogsResponse{}
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[4]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -330,7 +609,7 @@ func (x *StreamLogsResponse) String() string {
 func (*StreamLogsResponse) ProtoMessage() {}
 
 func (x *StreamLogsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[4]
+	mi := &file_fleetly_telemetry_v1_telemetry_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -343,7 +622,7 @@ func (x *StreamLogsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StreamLogsResponse.ProtoReflect.Descriptor instead.
 func (*StreamLogsResponse) Descriptor() ([]byte, []int) {
-	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{4}
+	return file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StreamLogsResponse) GetWorkloadId() string {
@@ -399,7 +678,21 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x05limit\x18\x02 \x01(\x05R\x05limit\"d\n" +
 	"\x12ListEventsResponse\x123\n" +
 	"\x06events\x18\x01 \x03(\v2\x1b.fleetly.telemetry.v1.EventR\x06events\x12\x19\n" +
-	"\blast_seq\x18\x02 \x01(\x03R\alastSeq\"\xa7\x01\n" +
+	"\blast_seq\x18\x02 \x01(\x03R\alastSeq\"J\n" +
+	"\x13StreamEventsRequest\x12\x1b\n" +
+	"\tafter_seq\x18\x01 \x01(\x03R\bafterSeq\x12\x16\n" +
+	"\x06follow\x18\x02 \x01(\bR\x06follow\"I\n" +
+	"\x14StreamEventsResponse\x121\n" +
+	"\x05event\x18\x01 \x01(\v2\x1b.fleetly.telemetry.v1.EventR\x05event\"\x17\n" +
+	"\x15GetEventStatusRequest\"V\n" +
+	"\x16GetEventStatusResponse\x12!\n" +
+	"\fearliest_seq\x18\x01 \x01(\x03R\vearliestSeq\x12\x19\n" +
+	"\blast_seq\x18\x02 \x01(\x03R\alastSeq\"\x19\n" +
+	"\x17IssueEventTicketRequest\"Q\n" +
+	"\x18IssueEventTicketResponse\x12\x16\n" +
+	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
+	"\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xa7\x01\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -414,13 +707,22 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\tcontainer\x18\x02 \x01(\tR\tcontainer\x12\x12\n" +
 	"\x04node\x18\x03 \x01(\tR\x04node\x12\x12\n" +
 	"\x04time\x18\x04 \x01(\tR\x04time\x12\x12\n" +
-	"\x04line\x18\x05 \x01(\fR\x04line2\x9f\x01\n" +
+	"\x04line\x18\x05 \x01(\fR\x04line2\xf5\x04\n" +
 	"\rEventsService\x12\x85\x01\n" +
 	"\n" +
 	"ListEvents\x12'.fleetly.telemetry.v1.ListEventsRequest\x1a(.fleetly.telemetry.v1.ListEventsResponse\"$\xea\xc4\x19\x0e\b\x03\"\n" +
 	"\n" +
 	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\f\x12\n" +
-	"/v1/events\x1a\x06\xf2\xc4\x19\x02\b\x032\x9b\x01\n" +
+	"/v1/events\x12\x94\x01\n" +
+	"\fStreamEvents\x12).fleetly.telemetry.v1.StreamEventsRequest\x1a*.fleetly.telemetry.v1.StreamEventsResponse\"+\xea\xc4\x19\x0e\b\x03\"\n" +
+	"\n" +
+	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/events/stream0\x01\x12\x98\x01\n" +
+	"\x0eGetEventStatus\x12+.fleetly.telemetry.v1.GetEventStatusRequest\x1a,.fleetly.telemetry.v1.GetEventStatusResponse\"+\xea\xc4\x19\x0e\b\x03\"\n" +
+	"\n" +
+	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/events/status\x12\xa1\x01\n" +
+	"\x10IssueEventTicket\x12-.fleetly.telemetry.v1.IssueEventTicketRequest\x1a..fleetly.telemetry.v1.IssueEventTicketResponse\".\xea\xc4\x19\x0e\b\x03\"\n" +
+	"\n" +
+	"\x06events\x10\x01\x82\xd3\xe4\x93\x02\x16:\x01*\"\x11/v1/events/ticket\x1a\x06\xf2\xc4\x19\x02\b\x032\x9b\x01\n" +
 	"\vLogsService\x12\x83\x01\n" +
 	"\n" +
 	"StreamLogs\x12'.fleetly.telemetry.v1.StreamLogsRequest\x1a(.fleetly.telemetry.v1.StreamLogsResponse\" \xea\xc4\x19\f\b\x03\"\b\n" +
@@ -442,25 +744,38 @@ func file_fleetly_telemetry_v1_telemetry_proto_rawDescGZIP() []byte {
 	return file_fleetly_telemetry_v1_telemetry_proto_rawDescData
 }
 
-var file_fleetly_telemetry_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_fleetly_telemetry_v1_telemetry_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
 var file_fleetly_telemetry_v1_telemetry_proto_goTypes = []any{
-	(*Event)(nil),              // 0: fleetly.telemetry.v1.Event
-	(*ListEventsRequest)(nil),  // 1: fleetly.telemetry.v1.ListEventsRequest
-	(*ListEventsResponse)(nil), // 2: fleetly.telemetry.v1.ListEventsResponse
-	(*StreamLogsRequest)(nil),  // 3: fleetly.telemetry.v1.StreamLogsRequest
-	(*StreamLogsResponse)(nil), // 4: fleetly.telemetry.v1.StreamLogsResponse
+	(*Event)(nil),                    // 0: fleetly.telemetry.v1.Event
+	(*ListEventsRequest)(nil),        // 1: fleetly.telemetry.v1.ListEventsRequest
+	(*ListEventsResponse)(nil),       // 2: fleetly.telemetry.v1.ListEventsResponse
+	(*StreamEventsRequest)(nil),      // 3: fleetly.telemetry.v1.StreamEventsRequest
+	(*StreamEventsResponse)(nil),     // 4: fleetly.telemetry.v1.StreamEventsResponse
+	(*GetEventStatusRequest)(nil),    // 5: fleetly.telemetry.v1.GetEventStatusRequest
+	(*GetEventStatusResponse)(nil),   // 6: fleetly.telemetry.v1.GetEventStatusResponse
+	(*IssueEventTicketRequest)(nil),  // 7: fleetly.telemetry.v1.IssueEventTicketRequest
+	(*IssueEventTicketResponse)(nil), // 8: fleetly.telemetry.v1.IssueEventTicketResponse
+	(*StreamLogsRequest)(nil),        // 9: fleetly.telemetry.v1.StreamLogsRequest
+	(*StreamLogsResponse)(nil),       // 10: fleetly.telemetry.v1.StreamLogsResponse
 }
 var file_fleetly_telemetry_v1_telemetry_proto_depIdxs = []int32{
-	0, // 0: fleetly.telemetry.v1.ListEventsResponse.events:type_name -> fleetly.telemetry.v1.Event
-	1, // 1: fleetly.telemetry.v1.EventsService.ListEvents:input_type -> fleetly.telemetry.v1.ListEventsRequest
-	3, // 2: fleetly.telemetry.v1.LogsService.StreamLogs:input_type -> fleetly.telemetry.v1.StreamLogsRequest
-	2, // 3: fleetly.telemetry.v1.EventsService.ListEvents:output_type -> fleetly.telemetry.v1.ListEventsResponse
-	4, // 4: fleetly.telemetry.v1.LogsService.StreamLogs:output_type -> fleetly.telemetry.v1.StreamLogsResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
-	1, // [1:1] is the sub-list for extension type_name
-	1, // [1:1] is the sub-list for extension extendee
-	0, // [0:1] is the sub-list for field type_name
+	0,  // 0: fleetly.telemetry.v1.ListEventsResponse.events:type_name -> fleetly.telemetry.v1.Event
+	0,  // 1: fleetly.telemetry.v1.StreamEventsResponse.event:type_name -> fleetly.telemetry.v1.Event
+	1,  // 2: fleetly.telemetry.v1.EventsService.ListEvents:input_type -> fleetly.telemetry.v1.ListEventsRequest
+	3,  // 3: fleetly.telemetry.v1.EventsService.StreamEvents:input_type -> fleetly.telemetry.v1.StreamEventsRequest
+	5,  // 4: fleetly.telemetry.v1.EventsService.GetEventStatus:input_type -> fleetly.telemetry.v1.GetEventStatusRequest
+	7,  // 5: fleetly.telemetry.v1.EventsService.IssueEventTicket:input_type -> fleetly.telemetry.v1.IssueEventTicketRequest
+	9,  // 6: fleetly.telemetry.v1.LogsService.StreamLogs:input_type -> fleetly.telemetry.v1.StreamLogsRequest
+	2,  // 7: fleetly.telemetry.v1.EventsService.ListEvents:output_type -> fleetly.telemetry.v1.ListEventsResponse
+	4,  // 8: fleetly.telemetry.v1.EventsService.StreamEvents:output_type -> fleetly.telemetry.v1.StreamEventsResponse
+	6,  // 9: fleetly.telemetry.v1.EventsService.GetEventStatus:output_type -> fleetly.telemetry.v1.GetEventStatusResponse
+	8,  // 10: fleetly.telemetry.v1.EventsService.IssueEventTicket:output_type -> fleetly.telemetry.v1.IssueEventTicketResponse
+	10, // 11: fleetly.telemetry.v1.LogsService.StreamLogs:output_type -> fleetly.telemetry.v1.StreamLogsResponse
+	7,  // [7:12] is the sub-list for method output_type
+	2,  // [2:7] is the sub-list for method input_type
+	2,  // [2:2] is the sub-list for extension type_name
+	2,  // [2:2] is the sub-list for extension extendee
+	0,  // [0:2] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_telemetry_v1_telemetry_proto_init() }
@@ -474,7 +789,7 @@ func file_fleetly_telemetry_v1_telemetry_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_telemetry_v1_telemetry_proto_rawDesc), len(file_fleetly_telemetry_v1_telemetry_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   11,
 			NumExtensions: 0,
 			NumServices:   2,
 		},
