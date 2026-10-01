@@ -29,6 +29,7 @@ func newHooksSetVerb() commands.Command {
 	const name = "set"
 	var app, repo, branch, dockerfile string
 	var watch watchSlice
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Configure the per-app git trigger (mints a hook token on first set; secret shown once)",
@@ -39,6 +40,7 @@ func newHooksSetVerb() commands.Command {
 			fs.StringVar(&branch, "branch", "", "branch filter (default: every branch; tags never trigger)")
 			fs.StringVar(&dockerfile, "dockerfile", "", "dockerfile path inside the repo (default \"Dockerfile\")")
 			fs.Var(&watch, "watch", "watched path prefix, repeatable (default: every change triggers)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -53,6 +55,7 @@ func newHooksSetVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Hooks.SetGitHook(ctx, &deliveryv1.SetGitHookRequest{
 				AppId: app, Repo: repo, Branch: branch, Dockerfile: dockerfile, WatchPaths: watch,
 			})

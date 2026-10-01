@@ -103,4 +103,11 @@ var builtins = []Code{
 		Source:     "internal/api/fleetlygrpc/webhook.go ReceiveWebhook",
 		GRPC:       codes.Unauthenticated,
 	},
+	{
+		ID:         "E_IDEMPOTENCY_KEY_CONFLICT",
+		Summary:    "The Idempotency-Key is already used by a different or in-progress request, or conflicts with the request's own idempotency_key field.",
+		Suggestion: "Use a fresh key for each new request. A completed response replays for 24h under the same key and the same request body; an in-progress request returns this conflict until it completes.",
+		Source:     "internal/idem/enforcer.go (ADR-0024: header form, single table, interceptor enforcement)",
+		GRPC:       codes.AlreadyExists,
+	},
 }

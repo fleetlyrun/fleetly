@@ -3,7 +3,9 @@ package assembly
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
+	"time"
 
 	"github.com/google/wire"
 	"github.com/lynx-go/grpcapi/authz"
@@ -18,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -38,8 +41,10 @@ var ProviderSet = wire.NewSet(
 	NewEdgeProvider,
 	NewMaterialCipher,
 	NewEngine,
+	NewIdemEnforcer,
 	NewAPIServices,
 	NewEngineService,
+	NewIdemJanitorService,
 	NewEdgeConfigServer,
 	systemgrpc.New,
 	NewGRPCServer,
@@ -139,6 +144,45 @@ func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt 
 	return fleetlygrpc.NewServices(db, e, cipher, rt, ScopeResources(), app.Logger())
 }
 
+// NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。
+func NewIdemEnforcer(db *state.DB, app lynx.App) *idem.Enforcer {
+	return idem.NewEnforcer(db, app.Logger())
+}
+
+// idemJanitorSweepInterval 是幂等记录的清理节拍（保留窗 24h、认领 TTL
+// 90s——十分钟粒度足够收敛积压，且 Sweep 是单条 DELETE，成本可忽略）。
+const idemJanitorSweepInterval = 10 * time.Minute
+
+// IdemJanitorService 把幂等 janitor 适配为 lynx 托管服务：复用 engine.
+// NewLoop 唯一循环骨架（架构 §0"每段只许有一份"），不自建 ticker。具名
+// 类型：wire 对 lynx.Service 同型多 provider 需可区分。
+type IdemJanitorService struct {
+	enforcer *idem.Enforcer
+	log      *slog.Logger
+}
+
+func (s *IdemJanitorService) Name() string               { return "idem-janitor" }
+func (s *IdemJanitorService) Init(lynx.AppContext) error { return nil }
+func (s *IdemJanitorService) Start(ctx context.Context) error {
+	engine.NewLoop("idem-janitor", s.log).Run(ctx, idemJanitorSweepInterval, func(ctx context.Context) {
+		n, err := s.enforcer.Sweep(ctx)
+		if err != nil {
+			s.log.Error("idem janitor: sweep", "err", err)
+			return
+		}
+		if n > 0 {
+			s.log.Info("idem janitor: swept expired idempotency records", "count", n)
+		}
+	})
+	return nil
+}
+func (s *IdemJanitorService) Stop(context.Context) error { return nil }
+
+// NewIdemJanitorService 构造 janitor 托管服务。
+func NewIdemJanitorService(enforcer *idem.Enforcer, app lynx.App) *IdemJanitorService {
+	return &IdemJanitorService{enforcer: enforcer, log: app.Logger()}
+}
+
 // engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖
 // 框架，hermetic 测试保持纯净）。
 type engineService struct {
@@ -193,18 +237,20 @@ func NewPreStopHooks() boot.PreStopHooks { return nil }
 // cleanup 已单独经 Bootstrap 返回值挂载。
 func NewPostStopHooks() boot.PostStopHooks { return nil }
 
-// NewServices 返回服务注册顺序：engine → grpc → gateway → edgeconfig。
-// lynx 按注册顺序启动、逆序停止——引擎最后停：服务面已摘流（gateway →
-// grpc 先停）后引擎才排空（ADR-0005 优雅退出：在途 Ensure 可安全中断
-// 重放）。edgeconfig（受管 Edge 的配置拉取端点）最先停——受管实例轮询
-// 失败保留存量配置，无中断面。
+// NewServices 返回服务注册顺序：engine → idem-janitor → grpc → gateway →
+// edgeconfig。lynx 按注册顺序启动、逆序停止——引擎最后停：服务面已摘流
+// （gateway → grpc 先停）后引擎才排空（ADR-0005 优雅退出：在途 Ensure 可
+// 安全中断重放）。edgeconfig（受管 Edge 的配置拉取端点）最先停——受管
+// 实例轮询失败保留存量配置，无中断面。idem-janitor 在 grpc 之前停：新请
+// 求面关闭后不再产生新记录，收尾 Sweep 由下次启动补上。
 func NewServices(
 	engineSvc lynx.Service,
+	idemJanitor *IdemJanitorService,
 	grpcServer *lynxgrpc.Server,
 	gateway *lynxhttp.Server,
 	edgeConfig *EdgeConfigServer,
 ) []lynx.Service {
-	services := []lynx.Service{engineSvc, grpcServer, gateway}
+	services := []lynx.Service{engineSvc, idemJanitor, grpcServer, gateway}
 	if edgeConfig != nil {
 		services = append(services, edgeConfig)
 	}

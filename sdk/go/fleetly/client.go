@@ -128,3 +128,12 @@ func WithToken(ctx context.Context, token string) context.Context {
 	}
 	return metadata.AppendToOutgoingContext(ctx, "authorization", "Bearer "+token)
 }
+
+// WithIdempotencyKey 为创建型调用构造带幂等键的 context（ADR-0024：头
+// 形态通用幂等——同键同体重放返回同一响应、同键异体 409、24h 保留）。
+func WithIdempotencyKey(ctx context.Context, key string) context.Context {
+	if key == "" {
+		return ctx
+	}
+	return metadata.AppendToOutgoingContext(ctx, "idempotency-key", key)
+}

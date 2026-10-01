@@ -18,6 +18,7 @@ import (
 func newTokensCreateVerb() commands.Command {
 	const name = "create"
 	var team, role, user string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Mint a token (secret shown once; scopes come from the team role)",
@@ -26,6 +27,7 @@ func newTokensCreateVerb() commands.Command {
 			fs.StringVar(&team, "team", "", "team id (default \"default\")")
 			fs.StringVar(&role, "role", "", "role id granting the scope set (required)")
 			fs.StringVar(&user, "user", "", "optional owner user id")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -40,6 +42,7 @@ func newTokensCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Tokens.CreateToken(ctx, &identityv1.CreateTokenRequest{
 				Name: args[0], TeamId: team, RoleId: role, UserId: user,
 			})
@@ -117,6 +120,7 @@ func newTokensRevokeVerb() commands.Command {
 func newUsersCreateVerb() commands.Command {
 	const name = "create"
 	var team, role string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Create a user granted a role in a team",
@@ -124,6 +128,7 @@ func newUsersCreateVerb() commands.Command {
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&team, "team", "", "team id (default \"default\")")
 			fs.StringVar(&role, "role", "", "role id (required)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -138,6 +143,7 @@ func newUsersCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Users.CreateUser(ctx, &identityv1.CreateUserRequest{
 				Name: args[0], TeamId: team, RoleId: role,
 			})
@@ -260,6 +266,7 @@ func newRolesCreateVerb() commands.Command {
 	const name = "create"
 	var team string
 	var scopes multiFlag
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Create a custom role from resource:action scopes (write implies read)",
@@ -267,6 +274,7 @@ func newRolesCreateVerb() commands.Command {
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&team, "team", "", "team id (default \"default\")")
 			fs.Var(&scopes, "scope", "resource:action scope (repeatable)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -281,6 +289,7 @@ func newRolesCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Roles.CreateRole(ctx, &identityv1.CreateRoleRequest{
 				Name: args[0], TeamId: team, Scopes: scopes,
 			})
@@ -332,10 +341,12 @@ func newRolesListVerb() commands.Command {
 
 func newTeamsCreateVerb() commands.Command {
 	const name = "create"
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Create a team",
 		usage:    "teams create NAME",
+		setFlags: func(fs *flag.FlagSet) { idem.declare(fs) },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
@@ -346,6 +357,7 @@ func newTeamsCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: args[0]})
 			if err != nil {
 				return err

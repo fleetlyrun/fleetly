@@ -29,6 +29,7 @@ const redactedInternalMessage = "internal server error"
 // （批 0 复核回归：REST/SDK 按 409 写的重试逻辑不得静默破坏）。逐码盘点：
 //
 //   - 409 Conflict（状态冲突族）：E_ALREADY_EXISTS（唯一键已存在）、
+//     E_IDEMPOTENCY_KEY_CONFLICT（幂等键异体/在途/双源不一致）、
 //     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_SECRET_UNAVAILABLE
 //     （请求合法、当前状态不容——cancel/解绑/补件后可重试）；
 //   - 400/404/429/401/403/500 与机械映射一致（本就对，钉扎防漂移）：
@@ -40,20 +41,21 @@ const redactedInternalMessage = "internal server error"
 // gRPC code 的 gateway.DefaultCodeToHTTP 继续兜底无信封的机械错误
 // （Canceled→499、DeadlineExceeded→504 等）。
 var errcodeToHTTP = map[string]int{
-	"E_ALREADY_EXISTS":     http.StatusConflict,
-	"E_CONFLICT":           http.StatusConflict,
-	"E_FORBIDDEN":          http.StatusForbidden,
-	"E_INTERNAL":           http.StatusInternalServerError,
-	"E_INVALID_ARGUMENT":   http.StatusBadRequest,
-	"E_INVALID_INVITATION": http.StatusForbidden,
-	"E_INVALID_SIGNATURE":  http.StatusUnauthorized,
-	"E_NOT_CANCELLABLE":    http.StatusConflict,
-	"E_NOT_FOUND":          http.StatusNotFound,
-	"E_NO_BASELINE":        http.StatusConflict,
-	"E_QUEUE_FULL":         http.StatusTooManyRequests,
-	"E_QUOTA_EXCEEDED":     http.StatusTooManyRequests,
-	"E_SECRET_UNAVAILABLE": http.StatusConflict,
-	"E_UNAUTHENTICATED":    http.StatusUnauthorized,
+	"E_ALREADY_EXISTS":           http.StatusConflict,
+	"E_CONFLICT":                 http.StatusConflict,
+	"E_FORBIDDEN":                http.StatusForbidden,
+	"E_IDEMPOTENCY_KEY_CONFLICT": http.StatusConflict,
+	"E_INTERNAL":                 http.StatusInternalServerError,
+	"E_INVALID_ARGUMENT":         http.StatusBadRequest,
+	"E_INVALID_INVITATION":       http.StatusForbidden,
+	"E_INVALID_SIGNATURE":        http.StatusUnauthorized,
+	"E_NOT_CANCELLABLE":          http.StatusConflict,
+	"E_NOT_FOUND":                http.StatusNotFound,
+	"E_NO_BASELINE":              http.StatusConflict,
+	"E_QUEUE_FULL":               http.StatusTooManyRequests,
+	"E_QUOTA_EXCEEDED":           http.StatusTooManyRequests,
+	"E_SECRET_UNAVAILABLE":       http.StatusConflict,
+	"E_UNAUTHENTICATED":          http.StatusUnauthorized,
 }
 
 // resolveHTTPStatus 定 HTTP 状态：信封还原出在册错误码时以 errcodeToHTTP

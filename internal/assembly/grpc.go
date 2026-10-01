@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/systemgrpc"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/idem"
 )
 
 // grpcShutdownTimeout 是 gRPC 优雅关停上限（在途请求的排水窗口）。注意
@@ -74,10 +75,11 @@ func NewGRPCServer(
 	cfg *config.AppConfig,
 	policySet *authz.PolicySet,
 	authenticator *authn.Authenticator,
+	enforcer *idem.Enforcer,
 	system *systemgrpc.Service,
 	services *fleetlygrpc.Services,
 ) (*lynxgrpc.Server, error) {
-	unary, stream, err := NewInterceptors(policySet, authenticator)
+	unary, stream, err := NewInterceptors(policySet, authenticator, enforcer)
 	if err != nil {
 		return nil, err
 	}
@@ -106,8 +108,9 @@ func NewGRPCServer(
 
 // NewInterceptors 构造完整拦截器链（unary + 流式）——assembly 服务器与
 // apitest 夹具共用（夹具不经 lynx，但必须走同一条执法链，否则测试面与
-// 生产面漂移）。
-func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authenticator) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
+// 生产面漂移）。幂等拦截器在执法链（clientinfo/auth/validate）之后、请求
+// 超时之前：重放不消耗业务超时预算，鉴权失败不占幂等记录。
+func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authenticator, enforcer *idem.Enforcer) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
 	chain, err := grpcapiinterceptor.Assemble(
 		grpcapiinterceptor.ChainItem{
 			Slot:        grpcapiinterceptor.SlotClientInfo,
@@ -125,6 +128,7 @@ func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authentica
 	if err != nil {
 		return nil, nil, err
 	}
+	chain = append(chain, enforcer.Unary())
 	// 请求级超时挂链尾（最贴近 handler）：执法链（clientinfo/auth/validate）
 	// 在 deadline 外运行——超时的请求同样要过完整的执法与未来的审计/用量
 	// 面，且鉴权查询不被请求 deadline 误杀；流式链不加超时（follow 面豁免）。

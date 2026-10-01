@@ -46,9 +46,13 @@ func valueOrStdin(value string, _ *commands.Environment) (string, error) {
 func newProjectsCreateVerb() commands.Command {
 	const name = "create"
 	var team string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Create a project", usage: "projects create NAME [--team TEAM]",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&team, "team", "default", "owning team") },
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&team, "team", "default", "owning team")
+			idem.declare(fs)
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
@@ -59,6 +63,7 @@ func newProjectsCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: args[0], TeamId: team})
 			if err != nil {
 				return err
@@ -128,9 +133,13 @@ func newProjectsDeleteVerb() commands.Command {
 func newAppsCreateVerb() commands.Command {
 	const name = "create"
 	var project string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Create an app in a project", usage: "apps create --project PROJECT_ID NAME",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "owning project id (required)") },
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "owning project id (required)")
+			idem.declare(fs)
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
 				return usageErr(name, "expected exactly one NAME argument")
@@ -144,6 +153,7 @@ func newAppsCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: project, Name: args[0]})
 			if err != nil {
 				return err
@@ -218,12 +228,14 @@ func newAppsDeleteVerb() commands.Command {
 func newSecretsPutVerb() commands.Command {
 	const name = "put"
 	var project, value string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Create or update a secret (value from --value or stdin)",
 		usage: "secrets put --project PROJECT_ID NAME [--value VALUE]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
 			fs.StringVar(&value, "value", "", "secret value (empty = read stdin)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -242,6 +254,7 @@ func newSecretsPutVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Secrets.PutSecret(ctx, &structurev1.PutSecretRequest{ProjectId: project, Name: args[0], Value: v})
 			if err != nil {
 				return err
@@ -287,12 +300,14 @@ func newSecretsListVerb() commands.Command {
 func newConfigsPutVerb() commands.Command {
 	const name = "put"
 	var project, value string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Write a new config version from --value or stdin",
 		usage: "configs put --project PROJECT_ID NAME [--value CONTENT]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
 			fs.StringVar(&value, "value", "", "config content (empty = read stdin)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -311,6 +326,7 @@ func newConfigsPutVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Configs.PutConfig(ctx, &structurev1.PutConfigRequest{ProjectId: project, Name: args[0], Content: v})
 			if err != nil {
 				return err
@@ -355,12 +371,14 @@ func newConfigsListVerb() commands.Command {
 func newVolumesCreateVerb() commands.Command {
 	const name = "create"
 	var project, node string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Create a volume (pinned on first mount by default)",
 		usage: "volumes create --project PROJECT_ID NAME [--node PLATFORM_NODE_ID]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
 			fs.StringVar(&node, "node", "", "pin to a platform node id (default: pinned on first mount)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -375,6 +393,7 @@ func newVolumesCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Volumes.CreateVolume(ctx, &structurev1.CreateVolumeRequest{
 				ProjectId: project, Name: args[0], PinnedNodeId: node,
 			})
@@ -392,12 +411,14 @@ func newNetworksCreateVerb() commands.Command {
 	const name = "create"
 	var project string
 	var egressNone bool
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Create a project network (egress:none is weak isolation on swarm v1)",
 		usage: "networks create --project PROJECT_ID NAME [--egress-none]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
 			fs.BoolVar(&egressNone, "egress-none", false, "declare egress:none (weak isolation on swarm: outbound NOT blocked)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if len(args) != 1 {
@@ -412,6 +433,7 @@ func newNetworksCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
 				ProjectId: project, Name: args[0], EgressNone: egressNone,
 			})

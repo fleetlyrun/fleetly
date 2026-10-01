@@ -34,7 +34,7 @@ func newDeployVerb() commands.Command {
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
 			fs.StringVar(&composeFile, "compose-file", "", "compose file path (controlled subset)")
 			fs.StringVar(&process, "process", "", "process name for image deploys (default web)")
-			fs.StringVar(&idemKey, "idempotency-key", "", "admission idempotency key")
+			fs.StringVar(&idemKey, "idempotency-key", "", "idempotency key: same key+body replays the same response for 24h (sent as the Idempotency-Key header and the deployment dedup anchor)")
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
 			fs.BoolVar(&supersede, "supersede", false, "explicitly preempt any in-flight deployment")
 			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image deploys (absolute path, e.g. /healthz; probe port = --tcp-probe if set, else the first declared port, else 8080)")
@@ -67,6 +67,9 @@ func newDeployVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			// 头（通用幂等）与 body 字段（部署去重锚）同值下发——ADR-0024
+			// 双源一致性：不一致即 409。
+			ctx = fleetly.WithIdempotencyKey(ctx, idemKey)
 			resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
 				AppId: app, Image: image, ComposeYaml: compose, ProcessName: process,
 				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede,
@@ -116,12 +119,14 @@ func newDeploymentsListVerb() commands.Command {
 func newRollbackVerb() commands.Command {
 	const name = "rollback"
 	var app, to string
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Roll back an app by replaying a revision (first-class verb)",
 		usage: "rollback --app APP_ID [--to REVISION_ID] (default: last successful baseline)",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&to, "to", "", "target revision id (default: last succeeded baseline)")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if app == "" {
@@ -133,6 +138,7 @@ func newRollbackVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app, ToRevision: to})
 			if err != nil {
 				return err
@@ -321,6 +327,7 @@ func newRoutesCreateVerb() commands.Command {
 	const name = "create"
 	var project, host, path, app, process, protocol, tlsMode string
 	var port int
+	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Create a route (host/path -> app process port)",
 		usage: "routes create --project P --host H --app A --process NAME --port N [--protocol http|h2c|tcp] [--tls auto|none]",
@@ -333,6 +340,7 @@ func newRoutesCreateVerb() commands.Command {
 			fs.IntVar(&port, "port", 0, "target port (required)")
 			fs.StringVar(&protocol, "protocol", "http", "backend protocol: http | h2c | tcp")
 			fs.StringVar(&tlsMode, "tls", "auto", "tls mode: auto | none")
+			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if project == "" || host == "" || app == "" || process == "" || port == 0 {
@@ -344,6 +352,7 @@ func newRoutesCreateVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
 			resp, err := c.Routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
 				ProjectId: project, Host: host, Path: path, AppId: app, Process: process,
 				Port:     int32(port), //nolint:gosec // 端口域内

@@ -26,7 +26,8 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/authn"
-	"github.com/fleetlyrun/fleetly/internal/state/statetest"
+	"github.com/fleetlyrun/fleetly/internal/idem"
+	"github.com/fleetlyrun/fleetly/internal/state/statertest"
 )
 
 // TestUnaryTimeoutInterceptorCancelsHandler 直接驱动拦截器：挂死形态的
@@ -49,10 +50,12 @@ func TestUnaryTimeoutInterceptorCancelsHandler(t *testing.T) {
 // 量级对齐 grpcUnaryTimeout（assembly 服务器与 apitest 夹具共用本构造，
 // 链尾挂载对两面同时生效）。
 func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
-	db, _ := statetest.New(t)
+	db, _ := statertest.New(t)
 	policySet, err := NewPolicySet()
 	require.NoError(t, err)
-	unary, stream, err := NewInterceptors(policySet, authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)))
+	unary, stream, err := NewInterceptors(policySet,
+		authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
+		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)))
 	require.NoError(t, err)
 	require.NotEmpty(t, unary)
 	require.NotEmpty(t, stream)
