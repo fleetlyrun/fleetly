@@ -21,10 +21,16 @@ N0 的 DeleteApp 只落 tombstone：载体继续跑、Route 继续服务、`Runt
    ④ **落 tombstone + 审计**（四件一拍的结构面）。
 2. **孤儿原则维持**（CONTEXT.md Orphan）：非平台管辖载体只登记永不自动删；
    Remove 只拆 fleetly 标记域。
-3. **顺序与失败语义**：②在③④前（先停流量面再拆数据面记账——与
+3. **swarm secret 载体不随 App 删除**（现状即设计，N0.1 P2-4 复审澄清）：
+   secret 载体按"名+指纹"命名（`ensureSecrets`），同值 Secret 被多个 App
+   引用时共享同一载体——Remove 无法按 App 边界拆除。故 Remove 只拆域内
+   service；secret 载体随最后引用者消失成为无引用载体，其回收走 Project
+   级 Secret 删除触发的 GC 路径（N1 材料批次，届时以引用计数落地——
+   本 ADR 不预设实现）。
+4. **顺序与失败语义**：②在③④前（先停流量面再拆数据面记账——与
    RuntimeAdmin 同款"先变更后留痕"：副作用不可与审计同事务）。②失败即
    整体失败（tombstone 不落——App 保持可操作，可重试删除）。
-4. **ID 永不复用**（D-MN-8 同族）：tombstone 后同 Project 同名可新建（新
+5. **ID 永不复用**（D-MN-8 同族）：tombstone 后同 Project 同名可新建（新
    ULID），旧 ID 的部署/审计历史永续。
 
 ## 后果
