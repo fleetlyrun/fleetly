@@ -6,6 +6,7 @@ package apitest_test
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -105,18 +106,29 @@ func TestTaskOneShotAPILifecycle(t *testing.T) {
 	assert.Equal(t, "stopped", gotRun.GetRun().GetState())
 	assert.Equal(t, "stopped_by_user", gotRun.GetRun().GetStopReason())
 
-	gotTask, err := tc.GetTask(ctx, &automationv1.GetTaskRequest{Id: taskID})
-	require.NoError(t, err)
-	assert.Equal(t, "drained", gotTask.GetTask().GetState())
+	// 排空收口对 stopped 观测的消费是异步的（观测 goroutine 与驱动步竞
+	// 态，负载下偶发一步之差）——有界轮询驱动至 drained，而非单步断言。
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		gotTask, err := tc.GetTask(ctx, &automationv1.GetTaskRequest{Id: taskID})
+		require.NoError(t, err)
+		if gotTask.GetTask().GetState() == "drained" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("task did not reach drained within 5s (state %s)", gotTask.GetTask().GetState())
+		}
+		driveTaskStep(t, h, ctx)
+	}
 
 	// 删除（幂等）+ tombstone 后行仍可读。
 	_, err = tc.DeleteTask(ctx, &automationv1.DeleteTaskRequest{Id: taskID})
 	require.NoError(t, err)
 	_, err = tc.DeleteTask(ctx, &automationv1.DeleteTaskRequest{Id: taskID})
 	require.NoError(t, err)
-	gotTask, err = tc.GetTask(ctx, &automationv1.GetTaskRequest{Id: taskID})
+	deletedTask, err := tc.GetTask(ctx, &automationv1.GetTaskRequest{Id: taskID})
 	require.NoError(t, err)
-	assert.Equal(t, "deleted", gotTask.GetTask().GetState())
+	assert.Equal(t, "deleted", deletedTask.GetTask().GetState())
 }
 
 func TestTaskResidentPoolAndScale(t *testing.T) {
