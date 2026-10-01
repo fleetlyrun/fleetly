@@ -127,9 +127,13 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 }
 
 // resolveBackend 解析 Route 后端地址（Runtime.Addresses 按 process+port
-// 匹配；Project 团队轴当前单团队默认）。
+// 匹配；Team 轴从 Project 行实取，ADR-0028）。
 func (e *Engine) resolveBackend(ctx context.Context, rt route.Route) (capability.NamespaceRef, string, error) {
-	ns := capability.NamespaceRef{Team: "default", Project: rt.ProjectID, App: rt.AppID}
+	team, err := e.projectTeam(ctx, rt.ProjectID)
+	if err != nil {
+		return capability.NamespaceRef{}, "", err
+	}
+	ns := capability.NamespaceRef{Team: team, Project: rt.ProjectID, App: rt.AppID}
 	eps, err := e.runtime.Addresses(ctx, ns)
 	if err != nil {
 		return ns, "", fmt.Errorf("addresses %s: %w", ns, err)
@@ -144,7 +148,8 @@ func (e *Engine) resolveBackend(ctx context.Context, rt route.Route) (capability
 
 // activeProjectNetworks 返回全部活跃 Project 网络的引用列表（受管 Edge
 // 挂全部项目网以达后端；N0 修复批 B1 实装）。返回跨域引用形态——载体名
-// 是 Provider 私有公式，engine 不拼接。
+// 是 Provider 私有公式，engine 不拼接。Team 轴从 Project 行实取（ADR-0028；
+// 批量读 Project 行，避免 per-network 点查）。
 func (e *Engine) activeProjectNetworks(ctx context.Context) []capability.NetworkRef {
 	rows, err := e.networks.List(ctx, e.db.Runner())
 	if err != nil {
@@ -153,10 +158,26 @@ func (e *Engine) activeProjectNetworks(ctx context.Context) []capability.Network
 		e.log.Error("managed reconciler: list project networks", "err", err)
 		return nil
 	}
+	projects, err := e.projects.List(ctx, e.db.Runner())
+	if err != nil {
+		e.log.Error("managed reconciler: list projects", "err", err)
+		return nil
+	}
+	teams := make(map[string]string, len(projects))
+	for i := range projects {
+		teams[projects[i].ID] = projects[i].TeamID
+	}
 	refs := make([]capability.NetworkRef, 0, len(rows))
 	for _, n := range rows {
+		// 已删 Project 的残留网络行无团队可解析：跳过（挂靠以 Project
+		// 存活为前提——材料不随 Project 删除级联是 ADR 口径，受管挂网面
+		// 只对活跃 Project 负责）。
+		team, ok := teams[n.ProjectID]
+		if !ok {
+			continue
+		}
 		refs = append(refs, capability.NetworkRef{
-			Namespace: capability.NamespaceRef{Team: "default", Project: n.ProjectID},
+			Namespace: capability.NamespaceRef{Team: team, Project: n.ProjectID},
 			Name:      n.Name,
 		})
 	}

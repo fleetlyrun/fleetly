@@ -49,14 +49,18 @@ func (e *Engine) loadSpec(ctx context.Context, revID string) (*specv1.AppSpec, e
 	return spec, nil
 }
 
-// appTeam 解析 App 归属（Team 轴当前为单团队默认——Team 模型随账号批
-// F0.5 接入后从 Project 行实取）。
+// appTeam 解析 App 归属（团队解析单一真源，N0.1 P2-11 / ADR-0028 接实：
+// 从 Project 行实取 team_id，不再回退字面量）。
 func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, error) {
 	a, err := e.apps.Get(ctx, e.db.Runner(), appID)
 	if err != nil {
 		return "", nil, err
 	}
-	return "default", a, nil
+	team, err := e.projectTeam(ctx, a.ProjectID)
+	if err != nil {
+		return "", nil, err
+	}
+	return team, a, nil
 }
 
 // buildDigests 解析 Deployment 目标 Revision 的构建产物（from_build 进程

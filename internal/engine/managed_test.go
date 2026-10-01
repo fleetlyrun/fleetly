@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 	"github.com/fleetlyrun/fleetly/internal/state/statetest"
 )
@@ -130,11 +131,15 @@ func TestManagedStepBoundedWhenRuntimeHangs(t *testing.T) {
 // Route 发布：后端地址经 Runtime.Addresses 解析填充（Addresses 假底座
 // 返回 VIP），未解析的 Route 跳过不阻断全量发布。
 func TestRoutePublishResolvesBackends(t *testing.T) {
-	db, _ := statetest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	edge := &fakeEdge{}
 	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
+	// Team 轴接实（ADR-0028）：后端域解析从 Project 行实取团队。
+	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
+		ID: tProjectID, Name: "shop", TeamID: "default",
+	}))
 
 	// web process 的后端地址（VIP 形态）。
 	rt.mu.Lock()

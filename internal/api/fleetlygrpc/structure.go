@@ -13,6 +13,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -101,9 +102,12 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	}
 	p := &project.Project{ID: newID(), Name: req.GetName(), TeamID: req.GetTeamId()}
 	if p.TeamID == "" {
-		p.TeamID = "default"
+		p.TeamID = identity.DefaultTeamID
 	}
+	// Team 轴接实（ADR-0028）：归属 Team 必须存在——Project 落在不存在的
+	// Team 上会让域解析（engine projectTeam）悬空。
 	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Projects.Create(ctx, tx, p)
 		},

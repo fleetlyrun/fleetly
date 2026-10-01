@@ -68,7 +68,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	u := &user.User{ID: newID(), Name: req.GetName()}
 	m := &membership.Membership{ID: newID(), UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
 	err := svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleExists(req.GetRoleId())},
+		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
 				return err
@@ -300,7 +300,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		ID: newID(), Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),
 		RoleID: req.GetRoleId(), SHA256: material.SHA256, Prefix: material.Prefix,
 	}
-	checks := []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleExists(req.GetRoleId())}
+	checks := []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)}
 	if req.GetUserId() != "" {
 		checks = append(checks, svc.s.userExists(req.GetUserId()))
 	}

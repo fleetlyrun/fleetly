@@ -22,19 +22,25 @@ func TestProjectCRUD(t *testing.T) {
 	require.NoError(t, projects.Create(ctx, db.Runner(), p))
 	assert.Equal(t, "2026-01-01T00:00:00Z", p.CreatedAt, "clock-injected timestamp")
 
-	// 同名冲突（活跃唯一；唯一约束命中 → ErrAlreadyExists）。
-	err := projects.Create(ctx, db.Runner(), &project.Project{ID: "01JD0PROJ00000000000000001", Name: "shop"})
+	// 同 Team 同名冲突（ADR-0028 口径 (team_id, name)；唯一约束命中 →
+	// ErrAlreadyExists）；跨 Team 同名并存合法。
+	err := projects.Create(ctx, db.Runner(), &project.Project{ID: "01JD0PROJ00000000000000001", Name: "shop", TeamID: "default"})
 	assert.ErrorIs(t, err, state.ErrAlreadyExists)
+	require.NoError(t, projects.Create(ctx, db.Runner(), &project.Project{
+		ID: "01JD0PROJ00000000000000002", Name: "shop", TeamID: "01JTEAM0000000000000000000",
+	}))
 
-	got, err := projects.GetByName(ctx, db.Runner(), "shop")
+	got, err := projects.GetByNameInTeam(ctx, db.Runner(), "default", "shop")
 	require.NoError(t, err)
 	assert.Equal(t, p.ID, got.ID)
+	_, err = projects.GetByNameInTeam(ctx, db.Runner(), "01JTEAM0000000000000000000", "shop")
+	require.NoError(t, err, "同名项目跨 Team 并存，team 域内各自命中")
 
-	// tombstone：软删后同名可复用、GetByName 不再命中、Get 直读仍在。
+	// tombstone：软删后同名可复用、team 域查询不再命中、Get 直读仍在。
 	require.NoError(t, projects.SoftDelete(ctx, db.Runner(), p.ID))
-	_, err = projects.GetByName(ctx, db.Runner(), "shop")
+	_, err = projects.GetByNameInTeam(ctx, db.Runner(), "default", "shop")
 	assert.ErrorIs(t, err, state.ErrNotFound)
-	require.NoError(t, projects.Create(ctx, db.Runner(), &project.Project{ID: "01JD0PROJ00000000000000002", Name: "shop"}))
+	require.NoError(t, projects.Create(ctx, db.Runner(), &project.Project{ID: "01JD0PROJ00000000000000003", Name: "shop", TeamID: "default"}))
 	got, err = projects.Get(ctx, db.Runner(), p.ID)
 	require.NoError(t, err)
 	assert.True(t, got.Deleted())

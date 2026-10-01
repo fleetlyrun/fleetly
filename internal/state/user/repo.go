@@ -73,11 +73,15 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]User, error) {
 	return out, rows.Err()
 }
 
-// Delete 按 ID 删行（引用完整性由 memberships FK RESTRICT 把守——有
-// membership 的用户先解绑再删）。
+// Delete 按 ID 删行。仍被 Token 引用时 FK RESTRICT 归一为 state.ErrConflict
+// （ADR-0028 user repo FK 归一，对齐 role repo 先例——先吊销/删名下 Token
+// 再删用户，不再误导 E_INTERNAL）；有 membership 的用户已在 API 层先解绑。
 func (r *Repo) Delete(ctx context.Context, run state.Runner, id string) error {
 	res, err := run.ExecContext(ctx, `DELETE FROM users WHERE id = ?`, id)
 	if err != nil {
+		if state.IsForeignKeyViolation(err) {
+			return fmt.Errorf("%w: user %s is still referenced by tokens; revoke or delete them first", state.ErrConflict, id)
+		}
 		return err
 	}
 	n, err := res.RowsAffected()

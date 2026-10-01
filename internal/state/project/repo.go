@@ -32,7 +32,8 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同名活跃 Project 冲突返回 state.ErrAlreadyExists。
+// Create 落一行；同 Team 同名活跃 Project 冲突返回 state.ErrAlreadyExists
+// （ADR-0028：唯一性口径 (team_id, name)——同名项目跨 Team 并存）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, p *Project) error {
 	now := state.FormatTime(r.clock.Now())
 	p.CreatedAt, p.UpdatedAt = now, now
@@ -41,7 +42,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, p *Project) error {
 		VALUES (?, ?, ?, ?, ?, '')`,
 		p.ID, p.Name, p.TeamID, p.CreatedAt, p.UpdatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: project name %q already exists", state.ErrAlreadyExists, p.Name)
+		return fmt.Errorf("%w: project name %q already exists in team %s", state.ErrAlreadyExists, p.Name, p.TeamID)
 	}
 	return err
 }
@@ -54,11 +55,12 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Project, 
 	return scanProject(row)
 }
 
-// GetByName 按名读活跃行（无或已删 → state.ErrNotFound）。
-func (r *Repo) GetByName(ctx context.Context, run state.Runner, name string) (*Project, error) {
+// GetByNameInTeam 在 Team 内按名读活跃行（ADR-0028：名字唯一性只在
+// Team 内成立——跨 Team 同名并存，裸名查询语义不再成立）。
+func (r *Repo) GetByNameInTeam(ctx context.Context, run state.Runner, teamID, name string) (*Project, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, name, team_id, created_at, updated_at, deleted_at
-		FROM projects WHERE name = ? AND deleted_at = ''`, name)
+		FROM projects WHERE team_id = ? AND name = ? AND deleted_at = ''`, teamID, name)
 	return scanProject(row)
 }
 

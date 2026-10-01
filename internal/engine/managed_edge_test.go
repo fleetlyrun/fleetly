@@ -9,18 +9,23 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
-	"github.com/fleetlyrun/fleetly/internal/state/statertest"
+	"github.com/fleetlyrun/fleetly/internal/state/project"
+	"github.com/fleetlyrun/fleetly/internal/state/statetest"
 )
 
 // B1 回归（N0 修复批）：受管 Edge 挂全部活跃 Project 网络——引用形态
 // （NamespaceRef+平台名，engine 不拼载体名）；网络集变化推进受管 gen
-// （一次性收敛，不逐 tick 滚动）。
+// （一次性收敛，不逐 tick 滚动）。Team 轴（ADR-0028）：引用 Namespace 的
+// Team 从 Project 行实取。
 func TestManagedEdgeAttachesProjectNetworks(t *testing.T) {
-	db, _ := statertest.New(t)
+	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
 	edge := &fakeEdge{}
 	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
 	ctx := context.Background()
+	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{
+		ID: tProjectID, Name: "shop", TeamID: "default",
+	}))
 
 	e.managedStep(ctx)
 	genBefore := rt.calls()[len(rt.calls())-1].Gen
@@ -53,7 +58,7 @@ func TestManagedEdgeAttachesProjectNetworks(t *testing.T) {
 // edge 载体在当前受管 gen 停止 → workload.stopped（平台自身可用性失明
 // 不可接受）。
 func TestManagedEdgeCoveredBySteadyStateWatchdog(t *testing.T) {
-	db, _ := statertest.New(t)
+	db, _ := statetest.New(t)
 	rt := newFakeRuntime()
 	edge := &fakeEdge{}
 	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})

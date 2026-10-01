@@ -211,9 +211,14 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
 	// Ensure：期望集 = 驱动 Run 的 Workload（pending/running → 1 副本，
 	// stopping → 0 副本承载 SIGTERM+StopGrace）；域内收敛移除终态 Run 的
 	// 残留载体。签名比对 + 周期强制重放控制 API 压力。
+	team, err := e.taskTeam(ctx, t)
+	if err != nil {
+		e.log.Error("task drive: resolve team", "task", t.ID, "err", err)
+		return
+	}
 	ws := make([]capability.Workload, 0, len(runs))
 	for i := range runs {
-		w, _, err := ProjectTask(spec, taskTeam(t), runs[i].ID, runs[i].State != run.StateStopping)
+		w, _, err := ProjectTask(spec, team, runs[i].ID, runs[i].State != run.StateStopping)
 		if err != nil {
 			e.log.Error("task drive: project run", "run", runs[i].ID, "err", err)
 			continue
@@ -262,7 +267,12 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	if ensured && lastSig == sig && e.clock.Now().Before(lastAt.Add(e.opts.TaskReconcileInterval)) {
 		return
 	}
-	ns := capability.NamespaceRef{Team: taskTeam(t), Project: t.ProjectID, Task: t.ID}
+	team, err := e.taskTeam(ctx, t)
+	if err != nil {
+		e.log.Error("task ensure: resolve team", "task", t.ID, "err", err)
+		return
+	}
+	ns := capability.NamespaceRef{Team: team, Project: t.ProjectID, Task: t.ID}
 	materials, err := e.resolveTaskMaterials(ctx, t)
 	if err != nil {
 		e.log.Error("task ensure: materials", "task", t.ID, "err", err)
@@ -495,7 +505,11 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 	if t.State == task.StateDeleted {
 		return nil // 幂等
 	}
-	ns := capability.NamespaceRef{Team: taskTeam(t), Project: t.ProjectID, Task: t.ID}
+	team, err := e.taskTeam(ctx, t)
+	if err != nil {
+		return err
+	}
+	ns := capability.NamespaceRef{Team: team, Project: t.ProjectID, Task: t.ID}
 	if err := e.runtime.Remove(ctx, ns); err != nil {
 		return fmt.Errorf("runtime remove: %w", err)
 	}
@@ -604,8 +618,21 @@ func (e *Engine) resolveTaskMaterials(ctx context.Context, t *task.Task) (capabi
 	return e.materialsForProcess(ctx, spec.GetProcess(), t.ProjectID)
 }
 
-// taskTeam 是 Task 域归属轴（N0 单团队默认；Team 轴接实随 F1.8，P1-10）。
-func taskTeam(t *task.Task) string { return "default" }
+// taskTeam 是 Task 域归属轴（ADR-0028 接实：从 Project 行实取 team_id）。
+func (e *Engine) taskTeam(ctx context.Context, t *task.Task) (string, error) {
+	return e.projectTeam(ctx, t.ProjectID)
+}
+
+// projectTeam 从 Project 行实取团队（域解析的单一真源：appTeam/taskTeam/
+// resolveBackend/activeProjectNetworks 全部经此——ADR-0028"零 default 字面量"
+// 的落点）。
+func (e *Engine) projectTeam(ctx context.Context, projectID string) (string, error) {
+	p, err := e.projects.Get(ctx, e.db.Runner(), projectID)
+	if err != nil {
+		return "", fmt.Errorf("resolve project %s: %w", projectID, err)
+	}
+	return p.TeamID, nil
+}
 
 // loadTaskSpec 反序列化 Task 行冻结体（protojson blob）。
 func loadTaskSpec(blob []byte) (*specv1.TaskSpec, error) {

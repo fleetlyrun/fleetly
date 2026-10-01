@@ -60,7 +60,9 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		ExpiresAt: stateFormatTime(svc.s.DB.Clock().Now().Add(ttl)),
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleExists(req.GetRoleId())},
+		// roleInTeam（Q-16 同族面）：邀请绑 team+role——不一致的邀请兑换出
+		// 跨 Team membership，同洞同修。
+		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Invitations.Create(ctx, tx, inv)
 		},
