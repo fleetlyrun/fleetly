@@ -61,6 +61,17 @@ service DeploymentsService {
       api_key_scope: { resource: "deployments" op: SCOPE_OP_WRITE }
     };
   }
+
+  // WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
+  // 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
+  // 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
+  rpc WaitDeployment(WaitDeploymentRequest) returns (stream WaitDeploymentResponse) {
+    option (google.api.http) = { get: "/v1/deployments/{deployment_id}/wait" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "deployments" op: SCOPE_OP_READ }
+    };
+  }
 }
 
 service RevisionsService {
@@ -98,6 +109,15 @@ service BuildsService {
   // "仅实时+最近缓冲"，持久化检索 N2；follow 随构建推进续流至终态）。
   rpc StreamBuildLogs(StreamBuildLogsRequest) returns (stream StreamBuildLogsResponse) {
     option (google.api.http) = { get: "/v1/builds/logs" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
+    };
+  }
+
+  // WaitBuild 是构建等待原语（F1.3，架构 §7）：状态快照帧，终态帧后收流。
+  rpc WaitBuild(WaitBuildRequest) returns (stream WaitBuildResponse) {
+    option (google.api.http) = { get: "/v1/builds/{build_id}/wait" };
     option (grpcapi.v1.method_auth) = {
       access: ACCESS_LEVEL_SERVER
       api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
@@ -193,6 +213,10 @@ message ListDeploymentsRequest { string app_id = 1; }
 message ListDeploymentsResponse { repeated Deployment deployments = 1; }
 message CancelDeploymentRequest { string id = 1; }
 message RollbackRequest { string app_id = 1; string to_revision = 2; }
+message WaitDeploymentRequest { string deployment_id = 1; }
+// WaitDeploymentResponse 是状态快照帧；流在终态帧后关闭（终态集见
+// Deployment.state 注释）。
+message WaitDeploymentResponse { Deployment deployment = 1; }
 
 message Revision {
   string id = 1;
@@ -245,6 +269,10 @@ message StreamBuildLogsResponse {
   string time = 2;
   bytes line = 3;
 }
+
+message WaitBuildRequest { string build_id = 1; }
+// WaitBuildResponse 是状态快照帧；流在终态帧后关闭。
+message WaitBuildResponse { Build build = 1; }
 
 // GitHook 是 per-App Git 触发配置投影（secret 永不回显——完整明文只在
 // 铸造响应出现一次）。

@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"time"
 
 	"github.com/lynx-go/commands"
 
@@ -72,7 +71,13 @@ func newQuickstartVerb() commands.Command {
 			if tlsMode != "none" && tlsMode != "auto" {
 				return usageErr(name, "--tls must be none or auto")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
+			// 等待是流式长等待：豁免请求级 deadline（F-15 收编后等待不再受
+			// 120s 请求 deadline 腰斩）。
+			var dialOpts []dialOption
+			if !noWait {
+				dialOpts = append(dialOpts, noDeadline())
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
 			if err != nil {
 				return err
 			}
@@ -176,21 +181,13 @@ func newQuickstartVerb() commands.Command {
 				route = created.GetRoute()
 			}
 
-			// 6. 等待 succeeded（轮询部署状态；终态即止）。
+			// 6. 等待 succeeded（F-15 收编：等待原语取代私有 120×1s 轮询——
+			// 帧只跟自己部署的那条，不再是"该 App 最新一条"的口径漂移）。
 			state := dep.GetDeployment().GetState()
 			if !noWait {
-				for i := 0; i < 120; i++ {
-					list, lerr := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: appID})
-					if lerr != nil {
-						return lerr
-					}
-					if len(list.GetDeployments()) > 0 {
-						state = list.GetDeployments()[0].GetState()
-						if state == "succeeded" || state == "failed" || state == "cancelled" || state == "superseded" {
-							break
-						}
-					}
-					time.Sleep(1 * time.Second)
+				state, err = waitDeploymentFrames(ctx, c, dep.GetDeployment().GetId(), nil)
+				if err != nil {
+					return err
 				}
 			}
 

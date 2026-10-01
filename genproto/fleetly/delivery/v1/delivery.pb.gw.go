@@ -226,6 +226,35 @@ func local_request_DeploymentsService_Rollback_0(ctx context.Context, marshaler 
 	return msg, metadata, err
 }
 
+func request_DeploymentsService_WaitDeployment_0(ctx context.Context, marshaler runtime.Marshaler, client DeploymentsServiceClient, req *http.Request, pathParams map[string]string) (DeploymentsService_WaitDeploymentClient, runtime.ServerMetadata, error) {
+	var (
+		protoReq WaitDeploymentRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["deployment_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "deployment_id")
+	}
+	protoReq.DeploymentId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "deployment_id", err)
+	}
+	stream, err := client.WaitDeployment(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+}
+
 var filter_RevisionsService_ListRevisions_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
 
 func request_RevisionsService_ListRevisions_0(ctx context.Context, marshaler runtime.Marshaler, client RevisionsServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
@@ -348,6 +377,35 @@ func request_BuildsService_StreamBuildLogs_0(ctx context.Context, marshaler runt
 		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
 	}
 	stream, err := client.StreamBuildLogs(ctx, &protoReq)
+	if err != nil {
+		return nil, metadata, err
+	}
+	header, err := stream.Header()
+	if err != nil {
+		return nil, metadata, err
+	}
+	metadata.HeaderMD = header
+	return stream, metadata, nil
+}
+
+func request_BuildsService_WaitBuild_0(ctx context.Context, marshaler runtime.Marshaler, client BuildsServiceClient, req *http.Request, pathParams map[string]string) (BuildsService_WaitBuildClient, runtime.ServerMetadata, error) {
+	var (
+		protoReq WaitBuildRequest
+		metadata runtime.ServerMetadata
+		err      error
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	val, ok := pathParams["build_id"]
+	if !ok {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "missing parameter %s", "build_id")
+	}
+	protoReq.BuildId, err = runtime.String(val)
+	if err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "type mismatch, parameter: %s, error: %v", "build_id", err)
+	}
+	stream, err := client.WaitBuild(ctx, &protoReq)
 	if err != nil {
 		return nil, metadata, err
 	}
@@ -595,6 +653,13 @@ func RegisterDeploymentsServiceHandlerServer(ctx context.Context, mux *runtime.S
 		forward_DeploymentsService_Rollback_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
+	mux.Handle(http.MethodGet, pattern_DeploymentsService_WaitDeployment_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
+	})
+
 	return nil
 }
 
@@ -676,6 +741,13 @@ func RegisterBuildsServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 	})
 
 	mux.Handle(http.MethodGet, pattern_BuildsService_StreamBuildLogs_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
+		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+		return
+	})
+
+	mux.Handle(http.MethodGet, pattern_BuildsService_WaitBuild_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
 		err := status.Error(codes.Unimplemented, "streaming calls are not yet supported in the in-process transport")
 		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
 		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
@@ -876,6 +948,23 @@ func RegisterDeploymentsServiceHandlerClient(ctx context.Context, mux *runtime.S
 		}
 		forward_DeploymentsService_Rollback_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_DeploymentsService_WaitDeployment_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.DeploymentsService/WaitDeployment", runtime.WithHTTPPathPattern("/v1/deployments/{deployment_id}/wait"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_DeploymentsService_WaitDeployment_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_DeploymentsService_WaitDeployment_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
@@ -885,6 +974,7 @@ var (
 	pattern_DeploymentsService_ListDeployments_0  = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "deployments"}, ""))
 	pattern_DeploymentsService_CancelDeployment_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "deployments", "id", "cancel"}, ""))
 	pattern_DeploymentsService_Rollback_0         = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "apps", "app_id", "rollback"}, ""))
+	pattern_DeploymentsService_WaitDeployment_0   = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "deployments", "deployment_id", "wait"}, ""))
 )
 
 var (
@@ -893,6 +983,7 @@ var (
 	forward_DeploymentsService_ListDeployments_0  = runtime.ForwardResponseMessage
 	forward_DeploymentsService_CancelDeployment_0 = runtime.ForwardResponseMessage
 	forward_DeploymentsService_Rollback_0         = runtime.ForwardResponseMessage
+	forward_DeploymentsService_WaitDeployment_0   = runtime.ForwardResponseStream
 )
 
 // RegisterRevisionsServiceHandlerFromEndpoint is same as RegisterRevisionsServiceHandler but
@@ -1048,17 +1139,36 @@ func RegisterBuildsServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		}
 		forward_BuildsService_StreamBuildLogs_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_BuildsService_WaitBuild_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.BuildsService/WaitBuild", runtime.WithHTTPPathPattern("/v1/builds/{build_id}/wait"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_BuildsService_WaitBuild_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_BuildsService_WaitBuild_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
 var (
 	pattern_BuildsService_ListBuilds_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "builds"}, ""))
 	pattern_BuildsService_StreamBuildLogs_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "builds", "logs"}, ""))
+	pattern_BuildsService_WaitBuild_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "builds", "build_id", "wait"}, ""))
 )
 
 var (
 	forward_BuildsService_ListBuilds_0      = runtime.ForwardResponseMessage
 	forward_BuildsService_StreamBuildLogs_0 = runtime.ForwardResponseStream
+	forward_BuildsService_WaitBuild_0       = runtime.ForwardResponseStream
 )
 
 // RegisterHooksServiceHandlerFromEndpoint is same as RegisterHooksServiceHandler but

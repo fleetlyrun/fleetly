@@ -243,6 +243,43 @@
         ]
       }
     },
+    "/v1/builds/{build_id}/wait": {
+      "get": {
+        "summary": "WaitBuild 是构建等待原语（F1.3，架构 §7）：状态快照帧，终态帧后收流。",
+        "operationId": "BuildsService_WaitBuild",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1WaitBuildResponse"
+                }
+              },
+              "title": "Stream result of v1WaitBuildResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "build_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "BuildsService"
+        ]
+      }
+    },
     "/v1/deployments": {
       "get": {
         "operationId": "DeploymentsService_ListDeployments",
@@ -297,6 +334,43 @@
             "schema": {
               "$ref": "#/definitions/v1DeployRequest"
             }
+          }
+        ],
+        "tags": [
+          "DeploymentsService"
+        ]
+      }
+    },
+    "/v1/deployments/{deployment_id}/wait": {
+      "get": {
+        "summary": "WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态\n快照帧，终态帧后收流。Agent/Console 的\"部署-等待-验证\"循环不必自写\n轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。",
+        "operationId": "DeploymentsService_WaitDeployment",
+        "responses": {
+          "200": {
+            "description": "A successful response.(streaming responses)",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "$ref": "#/definitions/v1WaitDeploymentResponse"
+                }
+              },
+              "title": "Stream result of v1WaitDeploymentResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "deployment_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
           }
         ],
         "tags": [
@@ -816,6 +890,24 @@
         }
       },
       "title": "StreamBuildLogsResponse 一帧构建日志（time RFC3339）。"
+    },
+    "v1WaitBuildResponse": {
+      "type": "object",
+      "properties": {
+        "build": {
+          "$ref": "#/definitions/v1Build"
+        }
+      },
+      "title": "WaitBuildResponse 是状态快照帧；流在终态帧后关闭。"
+    },
+    "v1WaitDeploymentResponse": {
+      "type": "object",
+      "properties": {
+        "deployment": {
+          "$ref": "#/definitions/v1Deployment"
+        }
+      },
+      "title": "WaitDeploymentResponse 是状态快照帧；流在终态帧后关闭（终态集见\nDeployment.state 注释）。"
     }
   }
 }

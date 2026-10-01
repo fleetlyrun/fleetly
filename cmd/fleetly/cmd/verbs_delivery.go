@@ -1,7 +1,8 @@
 package cmd
 
 // Delivery 与运维动词：deploy/deployments/rollback/revisions/builds/
-// routes/nodes（events/logs 随 C8 批接入）。
+// routes/nodes（events/logs 随 C8 批接入）。等待原语（F1.3，架构 §7）：
+// deploy/rollback 的 --wait 经 WaitDeployment 流收至终态，不自写轮询。
 
 import (
 	"bytes"
@@ -21,14 +22,70 @@ import (
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
+// waitDeploymentFrames 经等待原语收流至终态（F1.3）：逐帧回调，返回终态。
+// 流式长等待——调用方须以 noDeadline 拨号（服务端流面不经 unary 超时）。
+func waitDeploymentFrames(ctx context.Context, c *fleetly.Client, depID string, onFrame func(frame *deliveryv1.WaitDeploymentResponse) error) (string, error) {
+	stream, err := c.Deployments.WaitDeployment(ctx, &deliveryv1.WaitDeploymentRequest{DeploymentId: depID})
+	if err != nil {
+		return "", err
+	}
+	final := ""
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return final, nil
+		}
+		if err != nil {
+			return final, err
+		}
+		final = frame.GetDeployment().GetState()
+		if onFrame != nil {
+			if err := onFrame(frame); err != nil {
+				return final, err
+			}
+		}
+	}
+}
+
+// waitOnFrame 渲染一帧等待输出：机器形态 jsonl（protojson 归一空白），
+// 人类形态状态行。
+func waitOnFrame(env *commands.Environment, jsonOut bool, depID string) func(*deliveryv1.WaitDeploymentResponse) error {
+	return func(frame *deliveryv1.WaitDeploymentResponse) error {
+		if jsonOut {
+			data, err := protoJSONMarshal.Marshal(frame)
+			if err != nil {
+				return err
+			}
+			var buf bytes.Buffer
+			if err := json.Compact(&buf, data); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(env.Stdout, buf.String())
+			return err
+		}
+		d := frame.GetDeployment()
+		_, err := fmt.Fprintf(env.Stdout, "deployment %s %s\n", depID, d.GetState())
+		return err
+	}
+}
+
+// requireSucceeded 是 --wait 的终态裁决：非 succeeded 终态即错误（退出码
+// 非零——机器契约）。
+func requireSucceeded(depID, final string) error {
+	if final != "succeeded" {
+		return fmt.Errorf("deployment %s ended in state %s", depID, final)
+	}
+	return nil
+}
+
 func newDeployVerb() commands.Command {
 	const name = "deploy"
 	var app, image, composeFile, process, idemKey, commit, httpProbe string
 	var tcpProbe int
-	var supersede bool
+	var supersede, wait bool
 	return &flaggedVerb{
 		name: name, synopsis: "Deploy an app from an image or compose file",
-		usage: "deploy --app APP_ID (--image REF | --compose-file PATH) [--idempotency-key K] [--supersede] [--http-probe PATH | --tcp-probe PORT]",
+		usage: "deploy --app APP_ID (--image REF | --compose-file PATH) [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
@@ -37,6 +94,7 @@ func newDeployVerb() commands.Command {
 			fs.StringVar(&idemKey, "idempotency-key", "", "idempotency key: same key+body replays the same response for 24h (sent as the Idempotency-Key header and the deployment dedup anchor)")
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
 			fs.BoolVar(&supersede, "supersede", false, "explicitly preempt any in-flight deployment")
+			fs.BoolVar(&wait, "wait", false, "wait for the deployment to reach a terminal state (streams state transitions; non-zero exit unless succeeded)")
 			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image deploys (absolute path, e.g. /healthz; probe port = --tcp-probe if set, else the first declared port, else 8080)")
 			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image deploys")
 		},
@@ -61,7 +119,12 @@ func newDeployVerb() commands.Command {
 				}
 				compose = string(data)
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
+			// --wait 是流式长等待：豁免请求级 deadline。
+			var dialOpts []dialOption
+			if wait {
+				dialOpts = append(dialOpts, noDeadline())
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
 			if err != nil {
 				return err
 			}
@@ -77,6 +140,14 @@ func newDeployVerb() commands.Command {
 			})
 			if err != nil {
 				return err
+			}
+			depID := resp.GetDeployment().GetId()
+			if wait {
+				final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
+				if werr != nil {
+					return werr
+				}
+				return requireSucceeded(depID, final)
 			}
 			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
 				d := resp.GetDeployment()
@@ -119,20 +190,26 @@ func newDeploymentsListVerb() commands.Command {
 func newRollbackVerb() commands.Command {
 	const name = "rollback"
 	var app, to string
+	var wait bool
 	var idem idemKeyFlag
 	return &flaggedVerb{
 		name: name, synopsis: "Roll back an app by replaying a revision (first-class verb)",
-		usage: "rollback --app APP_ID [--to REVISION_ID] (default: last successful baseline)",
+		usage: "rollback --app APP_ID [--to REVISION_ID] [--wait] (default target: last successful baseline)",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&to, "to", "", "target revision id (default: last succeeded baseline)")
+			fs.BoolVar(&wait, "wait", false, "wait for the replay deployment to reach a terminal state (non-zero exit unless succeeded)")
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			ctx, cancel, c, err := dialFromEnv(ctx)
+			var dialOpts []dialOption
+			if wait {
+				dialOpts = append(dialOpts, noDeadline())
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
 			if err != nil {
 				return err
 			}
@@ -142,6 +219,14 @@ func newRollbackVerb() commands.Command {
 			resp, err := c.Deployments.Rollback(ctx, &deliveryv1.RollbackRequest{AppId: app, ToRevision: to})
 			if err != nil {
 				return err
+			}
+			depID := resp.GetDeployment().GetId()
+			if wait {
+				final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
+				if werr != nil {
+					return werr
+				}
+				return requireSucceeded(depID, final)
 			}
 			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
 				d := resp.GetDeployment()

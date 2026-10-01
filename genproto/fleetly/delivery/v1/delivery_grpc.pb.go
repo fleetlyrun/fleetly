@@ -28,6 +28,7 @@ const (
 	DeploymentsService_ListDeployments_FullMethodName  = "/fleetly.delivery.v1.DeploymentsService/ListDeployments"
 	DeploymentsService_CancelDeployment_FullMethodName = "/fleetly.delivery.v1.DeploymentsService/CancelDeployment"
 	DeploymentsService_Rollback_FullMethodName         = "/fleetly.delivery.v1.DeploymentsService/Rollback"
+	DeploymentsService_WaitDeployment_FullMethodName   = "/fleetly.delivery.v1.DeploymentsService/WaitDeployment"
 )
 
 // DeploymentsServiceClient is the client API for DeploymentsService service.
@@ -41,6 +42,10 @@ type DeploymentsServiceClient interface {
 	CancelDeployment(ctx context.Context, in *CancelDeploymentRequest, opts ...grpc.CallOption) (*CancelDeploymentResponse, error)
 	// Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。
 	Rollback(ctx context.Context, in *RollbackRequest, opts ...grpc.CallOption) (*RollbackResponse, error)
+	// WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
+	// 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
+	// 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
+	WaitDeployment(ctx context.Context, in *WaitDeploymentRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitDeploymentResponse], error)
 }
 
 type deploymentsServiceClient struct {
@@ -101,6 +106,25 @@ func (c *deploymentsServiceClient) Rollback(ctx context.Context, in *RollbackReq
 	return out, nil
 }
 
+func (c *deploymentsServiceClient) WaitDeployment(ctx context.Context, in *WaitDeploymentRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitDeploymentResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DeploymentsService_ServiceDesc.Streams[0], DeploymentsService_WaitDeployment_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WaitDeploymentRequest, WaitDeploymentResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DeploymentsService_WaitDeploymentClient = grpc.ServerStreamingClient[WaitDeploymentResponse]
+
 // DeploymentsServiceServer is the server API for DeploymentsService service.
 // All implementations must embed UnimplementedDeploymentsServiceServer
 // for forward compatibility.
@@ -112,6 +136,10 @@ type DeploymentsServiceServer interface {
 	CancelDeployment(context.Context, *CancelDeploymentRequest) (*CancelDeploymentResponse, error)
 	// Rollback 是一等动词（F0.11）：Revision Replay——空目标回上一成功基线。
 	Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error)
+	// WaitDeployment 是等待原语（F1.3，架构 §7）：事件流过滤实现——逐状态
+	// 快照帧，终态帧后收流。Agent/Console 的"部署-等待-验证"循环不必自写
+	// 轮询。WaitRun 随 Run 实体（F1.5/6）落地，不预发空面。
+	WaitDeployment(*WaitDeploymentRequest, grpc.ServerStreamingServer[WaitDeploymentResponse]) error
 	mustEmbedUnimplementedDeploymentsServiceServer()
 }
 
@@ -136,6 +164,9 @@ func (UnimplementedDeploymentsServiceServer) CancelDeployment(context.Context, *
 }
 func (UnimplementedDeploymentsServiceServer) Rollback(context.Context, *RollbackRequest) (*RollbackResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Rollback not implemented")
+}
+func (UnimplementedDeploymentsServiceServer) WaitDeployment(*WaitDeploymentRequest, grpc.ServerStreamingServer[WaitDeploymentResponse]) error {
+	return status.Error(codes.Unimplemented, "method WaitDeployment not implemented")
 }
 func (UnimplementedDeploymentsServiceServer) mustEmbedUnimplementedDeploymentsServiceServer() {}
 func (UnimplementedDeploymentsServiceServer) testEmbeddedByValue()                            {}
@@ -248,6 +279,17 @@ func _DeploymentsService_Rollback_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DeploymentsService_WaitDeployment_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WaitDeploymentRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DeploymentsServiceServer).WaitDeployment(m, &grpc.GenericServerStream[WaitDeploymentRequest, WaitDeploymentResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DeploymentsService_WaitDeploymentServer = grpc.ServerStreamingServer[WaitDeploymentResponse]
+
 // DeploymentsService_ServiceDesc is the grpc.ServiceDesc for DeploymentsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -276,7 +318,13 @@ var DeploymentsService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DeploymentsService_Rollback_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "WaitDeployment",
+			Handler:       _DeploymentsService_WaitDeployment_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "fleetly/delivery/v1/delivery.proto",
 }
 
@@ -425,6 +473,7 @@ var RevisionsService_ServiceDesc = grpc.ServiceDesc{
 const (
 	BuildsService_ListBuilds_FullMethodName      = "/fleetly.delivery.v1.BuildsService/ListBuilds"
 	BuildsService_StreamBuildLogs_FullMethodName = "/fleetly.delivery.v1.BuildsService/StreamBuildLogs"
+	BuildsService_WaitBuild_FullMethodName       = "/fleetly.delivery.v1.BuildsService/WaitBuild"
 )
 
 // BuildsServiceClient is the client API for BuildsService service.
@@ -435,6 +484,8 @@ type BuildsServiceClient interface {
 	// StreamBuildLogs 读构建日志（B4：消费引擎最近缓冲——诚实边界同 F0.25
 	// "仅实时+最近缓冲"，持久化检索 N2；follow 随构建推进续流至终态）。
 	StreamBuildLogs(ctx context.Context, in *StreamBuildLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamBuildLogsResponse], error)
+	// WaitBuild 是构建等待原语（F1.3，架构 §7）：状态快照帧，终态帧后收流。
+	WaitBuild(ctx context.Context, in *WaitBuildRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitBuildResponse], error)
 }
 
 type buildsServiceClient struct {
@@ -474,6 +525,25 @@ func (c *buildsServiceClient) StreamBuildLogs(ctx context.Context, in *StreamBui
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type BuildsService_StreamBuildLogsClient = grpc.ServerStreamingClient[StreamBuildLogsResponse]
 
+func (c *buildsServiceClient) WaitBuild(ctx context.Context, in *WaitBuildRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitBuildResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &BuildsService_ServiceDesc.Streams[1], BuildsService_WaitBuild_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WaitBuildRequest, WaitBuildResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildsService_WaitBuildClient = grpc.ServerStreamingClient[WaitBuildResponse]
+
 // BuildsServiceServer is the server API for BuildsService service.
 // All implementations must embed UnimplementedBuildsServiceServer
 // for forward compatibility.
@@ -482,6 +552,8 @@ type BuildsServiceServer interface {
 	// StreamBuildLogs 读构建日志（B4：消费引擎最近缓冲——诚实边界同 F0.25
 	// "仅实时+最近缓冲"，持久化检索 N2；follow 随构建推进续流至终态）。
 	StreamBuildLogs(*StreamBuildLogsRequest, grpc.ServerStreamingServer[StreamBuildLogsResponse]) error
+	// WaitBuild 是构建等待原语（F1.3，架构 §7）：状态快照帧，终态帧后收流。
+	WaitBuild(*WaitBuildRequest, grpc.ServerStreamingServer[WaitBuildResponse]) error
 	mustEmbedUnimplementedBuildsServiceServer()
 }
 
@@ -497,6 +569,9 @@ func (UnimplementedBuildsServiceServer) ListBuilds(context.Context, *ListBuildsR
 }
 func (UnimplementedBuildsServiceServer) StreamBuildLogs(*StreamBuildLogsRequest, grpc.ServerStreamingServer[StreamBuildLogsResponse]) error {
 	return status.Error(codes.Unimplemented, "method StreamBuildLogs not implemented")
+}
+func (UnimplementedBuildsServiceServer) WaitBuild(*WaitBuildRequest, grpc.ServerStreamingServer[WaitBuildResponse]) error {
+	return status.Error(codes.Unimplemented, "method WaitBuild not implemented")
 }
 func (UnimplementedBuildsServiceServer) mustEmbedUnimplementedBuildsServiceServer() {}
 func (UnimplementedBuildsServiceServer) testEmbeddedByValue()                       {}
@@ -548,6 +623,17 @@ func _BuildsService_StreamBuildLogs_Handler(srv interface{}, stream grpc.ServerS
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type BuildsService_StreamBuildLogsServer = grpc.ServerStreamingServer[StreamBuildLogsResponse]
 
+func _BuildsService_WaitBuild_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WaitBuildRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(BuildsServiceServer).WaitBuild(m, &grpc.GenericServerStream[WaitBuildRequest, WaitBuildResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildsService_WaitBuildServer = grpc.ServerStreamingServer[WaitBuildResponse]
+
 // BuildsService_ServiceDesc is the grpc.ServiceDesc for BuildsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -564,6 +650,11 @@ var BuildsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			StreamName:    "StreamBuildLogs",
 			Handler:       _BuildsService_StreamBuildLogs_Handler,
+			ServerStreams: true,
+		},
+		{
+			StreamName:    "WaitBuild",
+			Handler:       _BuildsService_WaitBuild_Handler,
 			ServerStreams: true,
 		},
 	},
