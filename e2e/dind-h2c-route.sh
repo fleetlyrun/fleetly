@@ -1,8 +1,12 @@
 #!/bin/sh
-# e2e dind h2c route（N0 修复批 B1）：受管 traefik 挂项目网的端到端回归
-# ——quickstart 全链（project → network 实体 → compose 部署（networks 挂
-# 网）→ route → succeeded → HTTP 200）+ h2c Route 端到端（messageloop 形态：
-# curl --http2-prior-knowledge 全链 h2c，whoami 的 Proto 行是直接证据）。
+# e2e dind h2c route（N0 修复批 B1 + N0.1 收口）：受管 traefik 挂项目网的
+# 端到端回归——quickstart 全链（project → network 实体 → compose 部署
+#（networks 挂网）→ route → succeeded → HTTP 200）+ h2c Route 端到端。
+#
+# h2c 后端是自备的 h2cserver（stdlib http.Server Protocols，scratch 镜像
+# 在 dind 内 build，零外网镜像依赖）：whoami 不说 h2c（N0.1 实证——对先行
+# 知识前奏回 HTTP/1.1 字节，traefik 的 h2c:// 后端拨号不回退 → 500），
+# "messageloop 形态"需要真 h2c 后端；客户端 h2cclient -h2c 先行知识直连。
 #
 # ACME/TLS 不在本脚本（dind 无公网 DNS/80-443 不可达；LE 真机随 staging
 # 批）。镜像离线预载：宿侧 save → dind load；traefik 以本地 v3.5 别名
@@ -26,11 +30,12 @@ trap cleanup EXIT INT TERM
 
 log() { printf '==> %s\n' "$1"; }
 
-log "cross-compiling fleetlyd + fleetly + h2cclient (linux/amd64)"
+log "cross-compiling fleetlyd + fleetly + h2cclient + h2cserver (linux/amd64)"
 mkdir -p "$WORKDIR/bins"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetlyd" ./cmd/fleetlyd
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetly" ./cmd/fleetly
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cclient" ./e2e/h2cclient
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cserver" ./e2e/h2cserver
 
 log "starting dind container"
 DIND_CID=$(docker run -d --privileged --name fleetly-e2e-h2c-"$$" \
@@ -62,6 +67,14 @@ log "preloading traefik + whoami into dind"
 docker image save traefik:v3.5 | docker exec -i "$DIND_CID" docker load >/dev/null
 docker image save traefik/whoami:v1.10 | docker exec -i "$DIND_CID" docker load >/dev/null
 docker exec "$DIND_CID" docker tag traefik:v3.5 traefik:v3.5.4
+
+# h2c 回显后端镜像：dind 内 scratch build（零外网依赖；CGO 关静态可直入
+# scratch）。
+log "building h2c backend image inside dind"
+docker exec "$DIND_CID" mkdir -p /root/h2csrc
+docker cp "$WORKDIR/bins/h2cserver" "$DIND_CID":/root/h2csrc/h2cserver
+docker exec "$DIND_CID" sh -c \
+  'printf "FROM scratch\nCOPY h2cserver /h2cserver\nEXPOSE 8080\nENTRYPOINT [\"/h2cserver\"]\n" > /root/h2csrc/Dockerfile && docker build -t h2cbackend:local /root/h2csrc >/dev/null'
 
 # install.sh 的 setsid env 会继承本 exec 的环境 → Edge 端点直达 fleetlyd。
 log "running install.sh inside dind (edge config endpoint wired)"
@@ -170,17 +183,38 @@ case "$body" in
   *) echo "quickstart route did not answer (last body: $body)" >&2; exit 1 ;;
 esac
 
-log "h2c route end to end (messageloop shape)"
+log "h2c route end to end (messageloop shape: h2c backend + prior-knowledge client)"
+# 后端换成真 h2c 服务（h2cserver scratch 镜像）——whoami 不说 h2c，
+# traefik 的 h2c:// 拨号不回退，用 whoami 只能得 500。
+cli apps create --project "$PROJECT_ID" h2cback >/dev/null
+H2C_APP_ID=$(cli --json apps list --project "$PROJECT_ID" \
+  | grep -B3 '"h2cback"' | grep '"id"' | head -1 \
+  | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p')
+if [ -z "$H2C_APP_ID" ]; then
+  echo "could not resolve the h2cback app id" >&2
+  exit 1
+fi
+docker exec "$DIND_CID" sh -c \
+  'printf "services:\n  web:\n    image: h2cbackend:local\n    ports:\n      - \"8080\"\n    networks:\n      - default\n" > /root/h2c-compose.yml'
+cli deploy --app "$H2C_APP_ID" --compose-file /root/h2c-compose.yml >/dev/null
+APP_ID_SAVE="$APP_ID"; APP_ID="$H2C_APP_ID"
+wait_state succeeded
+APP_ID="$APP_ID_SAVE"
+log "h2c backend deployment succeeded"
+
 cli routes create --project "$PROJECT_ID" --host "h2c.$DIND_IP.sslip.io" \
-  --app "$APP_ID" --process web --port 80 --protocol h2c --tls none >/dev/null
-# traefik 5s poll 拉配置 + 后端就绪。断言锚：客户端 PROTO 行（协商 h2c）
-# 与 whoami 体的 HTTP/2.0 行（后端收到 h2c）。
+  --app "$H2C_APP_ID" --process web --port 8080 --protocol h2c --tls none >/dev/null
+# traefik 5s poll 拉配置 + 后端就绪。断言锚：客户端先行知识协商出
+# PROTO HTTP/2.0（client↔traefik h2c）与回显体 PROTO-LINE HTTP/2.0
+#（traefik↔backend h2c）——两跳各自有据。break 条件必须是后端回显锚：
+# traefik 对任意 Host 都以 h2c 应答（PROTO 行首拍即中），只 break 在
+# PROTO 行会把传播窗口当失败（N0 假阳性的镜像教训）。
 i=0
 h2body=""
 while [ "$i" -lt 45 ]; do
-  h2body=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "h2c.$DIND_IP.sslip.io" "http://$DIND_IP/" || true)
+  h2body=$(docker exec "$DIND_CID" /root/bins/h2cclient -h2c -host "h2c.$DIND_IP.sslip.io" "http://$DIND_IP/" || true)
   case "$h2body" in
-    *PROTO\ HTTP/2.0*|*HTTP/2.0*) break ;;
+    *PROTO-LINE\ HTTP/2.0*) break ;;
   esac
   i=$((i + 1))
   sleep 2
@@ -193,7 +227,7 @@ case "$h2body" in
     ;;
 esac
 case "$h2body" in
-  *HTTP/2.0*) log "backend received HTTP/2.0 (whoami proto line)" ;;
+  *PROTO-LINE\ HTTP/2.0*) log "backend received HTTP/2.0 (h2cserver proto line)" ;;
   *) echo "backend did not receive h2c (body: $h2body)" >&2; exit 1 ;;
 esac
 

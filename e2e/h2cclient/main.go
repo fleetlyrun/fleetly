@@ -33,17 +33,25 @@ func main() {
 	bodyFile := flag.String("o", "", "write the response body to this file as well")
 	headers := headerFlags{}
 	flag.Var(&headers, "H", "request header \"Name: Value\" (repeatable)")
+	h2cPrior := flag.Bool("h2c", false, "h2c prior knowledge: speak unencrypted HTTP/2 immediately (fails rather than falling back to HTTP/1.1)")
 	timeout := flag.Duration("timeout", 10*time.Second, "request timeout")
 	flag.Parse()
 	if flag.NArg() != 1 {
 		fmt.Fprintln(os.Stderr, "usage: h2cclient [-host HOST] [-X METHOD] [-data @FILE] URL")
 		os.Exit(64)
 	}
-	// h2c 明文先行知识：标准库 http.Protocols（Go 1.24+）声明未加密 HTTP/2
-	//（x/net/http2.Transport 已弃用且 stdlib 已覆盖此面）。
+	// h2c 明文先行知识：标准库 http.Protocols（Go 1.24+）。语义坑
+	//（N0.1 收口实证）：HTTP1 与 UnencryptedHTTP2 双开时，http:// 请求
+	// 只走 HTTP/1.1——先行知识必须只声明 UnencryptedHTTP2。-h2c 旗标
+	// 切到先行知识形态（服务端不是 h2c 时直接失败，不静默降级 1.1）；
+	// 缺省（webhook/普通探活腿）保持 HTTP/1.1 兼容形态。
 	protocols := &http.Protocols{}
-	protocols.SetHTTP1(true)
-	protocols.SetUnencryptedHTTP2(true)
+	if *h2cPrior {
+		protocols.SetUnencryptedHTTP2(true)
+	} else {
+		protocols.SetHTTP1(true)
+		protocols.SetUnencryptedHTTP2(true)
+	}
 	tr := &http.Transport{Protocols: protocols}
 	client := &http.Client{Transport: tr, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	ctx, cancel := context.WithTimeout(context.Background(), *timeout)
