@@ -104,6 +104,10 @@ _Avoid_: apply, release, rollout, deploy(名词单用)
 创建型请求的入队判定：去重、latest-wins 合并、supersede 抢占、queue 满反馈。
 _Avoid_: throttle(另指限流), gate
 
+**Acceptance**:
+受理位——创建型/删除型写请求的受理判定面：父资源存活、配额、删除守卫、归属校验；api 层可枚举 module。与 Admission 分立：Acceptance 答"收不收"，Admission 答"怎么排"（ADR-0024）。
+_Avoid_: gate, middleware(泛称), validation layer
+
 ### 运行时与中间表示
 
 **Spec**:
