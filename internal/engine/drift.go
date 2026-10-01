@@ -81,7 +81,7 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 
 // replayBaseline 投影并 Ensure 单个 App 的基线（recordEnsured 重建缓存）。
 func (e *Engine) replayBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) error {
-	spec, err := e.loadSpec(d.ToRevision)
+	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return fmt.Errorf("load revision spec: %w", err)
 	}

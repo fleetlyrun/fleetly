@@ -151,9 +151,15 @@ func (e *Engine) buildStep(ctx context.Context) {
 		if b.State != build.StateQueued || running >= e.buildOpts.Concurrency {
 			continue
 		}
+		// 拾取前置检（D-4）：无进程内登记的 queued 行不允许空拾取——无输入
+		// 的执行只会弹跳或误终态。归它或等登记，见 buildPickable。
+		if !e.buildPickable(ctx, &b) {
+			continue
+		}
 		// CAS queued→building（四件一拍）后立即返回；执行在 goroutine（构建
 		// 生命周期绑定进程而非收敛步——step ctx 取消不等构建，优雅退出由
-		// executeBuild 内的 shutdown 路径回 queued 重放）。
+		// executeBuild 内的 shutdown 路径回 queued 重放）。goroutine 计入
+		// wg（Q-7）：Stop 取消 runCtx 即有界排水，不默等构建超时。
 		fresh, err := e.transitBuild(ctx, &b,
 			[]build.State{build.StateQueued}, build.StateBuilding, nil)
 		if err != nil {
@@ -161,53 +167,110 @@ func (e *Engine) buildStep(ctx context.Context) {
 			continue
 		}
 		running++
-		go e.executeBuild(fresh) //nolint:gosec // 构建goroutine 生命周期即 Build 行写者（架构 §6 per-线单写者）
+		e.wg.Add(1)
+		go func() {
+			defer e.wg.Done()
+			e.executeBuild(fresh)
+		}() //nolint:gosec // 构建 goroutine 生命周期即 Build 行写者（架构 §6 per-线单写者）
 	}
 }
 
-// executeBuild 执行一次构建（goroutine；ctx = 进程生命期，超时独立控制）。
-// 幂等重放：崩溃遗留的 building 行由 Start 重置 queued 重跑（buildkit 缓存
-// 保证重放成本可控）。
-func (e *Engine) executeBuild(b *build.Build) {
-	runCtx, cancel := context.WithTimeout(context.Background(), e.buildOpts.Timeout)
-	defer cancel()
+// buildPickable 是 queued 行的拾取前置检（D-4）：无进程内输入登记的行
+// 只有两种来路——①归属部署仍活跃（重启后待 driveBuilding 幂等重建登记，
+// 本拍跳过等登记落地）；②归属部署已终态（取消/抢占后遗留的孤儿行）→
+// 一跳到终态 cancelled（同步、无 goroutine），禁止拾取执行形成
+// queued↔building 振荡。已登记的行正常放行。
+func (e *Engine) buildPickable(ctx context.Context, b *build.Build) bool {
+	e.buildInputMu.Lock()
+	_, registered := e.buildInputs[b.ID]
+	e.buildInputMu.Unlock()
+	if registered {
+		return true
+	}
+	owner, err := e.buildOwnerActive(ctx, b)
+	if err != nil {
+		// 归属判定失败（存储故障）：保守跳过本拍——不基于不确定的探测销毁行。
+		e.log.Error("build step: probe owner", "build", b.ID, "err", err)
+		return false
+	}
+	if owner {
+		return false // 部署驱动将在 driveBuilding 内重建输入（下拍拾取）
+	}
+	if _, err := e.transitBuild(ctx, b,
+		[]build.State{build.StateQueued}, build.StateCancelled,
+		func(m *build.Build) { m.Error = "orphaned build: owning deployment is no longer active" }); err != nil {
+		e.log.Error("build step: cancel orphan", "build", b.ID, "err", err)
+	}
+	return false
+}
 
-	// 构建输入在 building 前由部署驱动备好（buildInputs 落在行外的内存
-	// 登记表；重启丢失时按 queued 重放路径重建）。
+// buildOwnerActive 报告 Build 的归属部署是否仍活跃（同 App 且目标
+// Revision 一致：该部署进入 building 态时 driveBuilding 会重建输入登记）。
+func (e *Engine) buildOwnerActive(ctx context.Context, b *build.Build) (bool, error) {
+	active, err := e.deployments.ActiveByApp(ctx, e.db.Runner(), b.AppID)
+	if err != nil {
+		return false, err
+	}
+	for i := range active {
+		if active[i].ToRevision == b.RevisionID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// executeBuild 执行一次构建（goroutine；根 = 引擎进程生命期 runCtx，构建
+// 超时独立包裹其上）。幂等重放：崩溃遗留的 building 行由 Start 重置
+// queued 重跑（buildkit 缓存保证重放成本可控）。
+func (e *Engine) executeBuild(b *build.Build) {
+	// Q-7：根取引擎 runCtx（Start 物化；Stop 取消 → 下方 runCtx.Err() 分支
+	// 优雅回 queued，排水有界），超时独立包裹（Stop 不默等 15m 看门狗）。
+	runCtx, cancel := context.WithTimeout(e.buildRootCtx(), e.buildOpts.Timeout)
+	defer cancel()
+	// 终态落库 ctx：runCtx 超时/被取消后仍需写库（脱离取消链、保留值链）。
+	finishCtx := context.WithoutCancel(runCtx)
+
+	// 构建输入在 building 前由部署驱动备好（buildInputs 是行外内存登记表；
+	// 重启丢失由 driveBuilding 幂等重建，拾取前置检已拦无登记行——到达
+	// 此分支即防御纵深）。
 	e.buildInputMu.Lock()
 	input, ok := e.buildInputs[b.ID]
 	e.buildInputMu.Unlock()
 	if !ok {
-		// 无输入登记（重启遗留）：回 queued 等部署驱动重新登记。
-		if _, err := e.transitBuild(runCtx, b,
-			[]build.State{build.StateBuilding}, build.StateQueued, nil); err != nil {
-			e.log.Error("build: reset orphan to queued", "build", b.ID, "err", err)
+		// 无输入登记且无人会再登记（孤儿形态：部署已不在/输入丢失）→
+		// 一跳到终态 cancelled。不得回 queued 弹跳——那正是 queued↔building
+		// 无限振荡的根因（D-4）。
+		if _, err := e.transitBuild(finishCtx, b,
+			[]build.State{build.StateBuilding}, build.StateCancelled,
+			func(m *build.Build) { m.Error = "build input lost: no registered input for this build" }); err != nil {
+			e.log.Error("build: cancel without input", "build", b.ID, "err", err)
 		}
+		e.buildLoop.Kick()
 		return
 	}
 
 	result, err := e.builder.Build(runCtx, input, &bufferWriter{engine: e, buildID: b.ID})
 	switch {
 	case err == nil:
-		if _, terr := e.transitBuild(runCtx, b,
+		if _, terr := e.transitBuild(finishCtx, b,
 			[]build.State{build.StateBuilding}, build.StateSucceeded,
 			func(m *build.Build) { m.Digest = result.Digest }); terr != nil {
 			e.log.Error("build: transit succeeded", "build", b.ID, "err", terr)
 		}
 	case isContextTimeout(runCtx, err):
-		if _, terr := e.transitBuild(context.Background(), b,
+		if _, terr := e.transitBuild(finishCtx, b,
 			[]build.State{build.StateBuilding}, build.StateExpired,
 			func(m *build.Build) { m.Error = "build timed out" }); terr != nil {
 			e.log.Error("build: transit expired", "build", b.ID, "err", terr)
 		}
 	case runCtx.Err() != nil:
 		// 进程退出路径（优雅退出）：回 queued，重启后重放。
-		if _, terr := e.transitBuild(context.Background(), b,
+		if _, terr := e.transitBuild(finishCtx, b,
 			[]build.State{build.StateBuilding}, build.StateQueued, nil); terr != nil {
 			e.log.Error("build: reset on shutdown", "build", b.ID, "err", terr)
 		}
 	default:
-		if _, terr := e.transitBuild(context.Background(), b,
+		if _, terr := e.transitBuild(finishCtx, b,
 			[]build.State{build.StateBuilding}, build.StateFailed,
 			func(m *build.Build) { m.Error = err.Error() }); terr != nil {
 			e.log.Error("build: transit failed", "build", b.ID, "err", terr)

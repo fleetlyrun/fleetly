@@ -57,6 +57,41 @@ func TestDeploymentTransitCAS(t *testing.T) {
 	assert.True(t, got.State.Terminal())
 }
 
+// RowsAffected 纵深防御（Q-5）：前置 Get 与 UPDATE 之间行状态被并发迁移
+// → UPDATE 命中 0 行，Transit 必须归一 ErrConflict，不得静默当成功。
+// 夹具用 mut 作同步点确定交错（单连接池下 Get 与 UPDATE 之间不持连接）。
+func TestDeploymentTransitConcurrentStateReturnsConflict(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	deployments := deployment.New(clock)
+
+	d := newDeployment("01JD0DEPLOY0000000000000000", "")
+	require.NoError(t, deployments.Create(ctx, db.Runner(), d))
+
+	inMut := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- deployments.Transit(ctx, db.Runner(), d.ID,
+			[]deployment.State{deployment.StateQueued}, deployment.StatePreparing,
+			func(m *deployment.Deployment) {
+				close(inMut) // 前置 Get 已过，停在 UPDATE 前
+				<-release
+			})
+	}()
+	<-inMut
+	// 并发迁移：行状态改走（Transit 的 UPDATE WHERE state='queued' 落 0 行）。
+	_, err := db.Runner().ExecContext(ctx,
+		`UPDATE deployments SET state = ? WHERE id = ?`, string(deployment.StateSuperseded), d.ID)
+	require.NoError(t, err)
+	close(release)
+
+	assert.ErrorIs(t, <-done, state.ErrConflict)
+	got, err := deployments.Get(ctx, db.Runner(), d.ID)
+	require.NoError(t, err)
+	assert.Equal(t, deployment.StateSuperseded, got.State, "the concurrent writer's state stands")
+}
+
 func TestAdmissionDedup(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()

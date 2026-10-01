@@ -145,12 +145,21 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if to.Terminal() && cur.FinishedAt == "" {
 		cur.FinishedAt = cur.UpdatedAt
 	}
-	_, err = run.ExecContext(ctx, `
+	res, err := run.ExecContext(ctx, `
 		UPDATE builds SET state = ?, digest = ?, error = ?, updated_at = ?, finished_at = ?
 		WHERE id = ? AND state = ?`,
 		string(cur.State), cur.Digest, cur.Error, cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
-	return err
+	if err != nil {
+		return err
+	}
+	// CAS 纵深防御（Q-5）：前置 Get 与 UPDATE 之间状态被并发迁移时
+	// RowsAffected=0——显式归一 ErrConflict，不静默当成功（对照
+	// secret/hook repo 的 RowsAffected 正例）。
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("%w: build %s state changed concurrently", state.ErrConflict, id)
+	}
+	return nil
 }
 
 const selectCols = `

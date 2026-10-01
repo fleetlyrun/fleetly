@@ -35,9 +35,10 @@ func (e *Engine) transitAndReload(ctx context.Context, d *deployment.Deployment,
 	return fresh, nil
 }
 
-// loadSpec 反序列化 Revision 冻结体（protojson blob）。
-func (e *Engine) loadSpec(revID string) (*specv1.AppSpec, error) {
-	rev, err := e.revisions.Get(context.Background(), e.db.Runner(), revID)
+// loadSpec 反序列化 Revision 冻结体（protojson blob）。ctx 透传取消链
+// （Q-6：驱动/回放路径的关停可取消，不再内嵌 Background 脱链）。
+func (e *Engine) loadSpec(ctx context.Context, revID string) (*specv1.AppSpec, error) {
+	rev, err := e.revisions.Get(ctx, e.db.Runner(), revID)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +63,7 @@ func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, e
 // → digest 映射；无成功构建返回 nil → 投影期得到精确错误）。Build 是
 // Revision 级单产物：全部 from_build 进程共用同一 digest。
 func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (map[string]string, error) {
-	spec, err := e.loadSpec(d.ToRevision)
+	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return nil, err
 	}

@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
@@ -34,7 +36,13 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	if e.builder == nil {
 		return e.failDeployment(ctx, d, "no builder provider wired; image-source deployments are supported in this batch")
 	}
-	spec, err := e.loadSpec(d.ToRevision)
+	// revSeq 是构建产物命名锚（LocalImageRef）：读取失败必须硬失败——静默
+	// 用 0 会撞 r0 tag（审计 Q-9；同驱动步内 revision 必在）。
+	rev, err := e.revisions.Get(ctx, e.db.Runner(), d.ToRevision)
+	if err != nil {
+		return e.failDeployment(ctx, d, "resolve revision for build: "+err.Error())
+	}
+	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
@@ -44,10 +52,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 			[]deployment.State{deployment.StateBuilding}, deployment.StateReleasing, nil)
 	}
 
-	revSeq := int64(0)
-	if rev, err := e.revisions.Get(ctx, e.db.Runner(), d.ToRevision); err == nil {
-		revSeq = rev.Seq
-	}
+	revSeq := rev.Seq
 	existing, err := e.builds.ListByRevision(ctx, e.db.Runner(), d.ToRevision)
 	if err != nil {
 		return nil, err
@@ -58,7 +63,12 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 			return e.transitAndReload(ctx, d,
 				[]deployment.State{deployment.StateBuilding}, deployment.StateReleasing, nil)
 		case build.StateQueued, build.StateBuilding:
-			return nil, nil // 在途：tick 再进
+			// 在途：确认进程内输入登记仍在（D-4：重启丢失时在此幂等重建，
+			// 否则构建循环拾取后永陷无输入路径），然后等构建推进。
+			if err := e.ensureBuildInput(ctx, d, spec, revSeq, &b); err != nil {
+				return e.failDeployment(ctx, d, "rebuild build input: "+err.Error())
+			}
+			return nil, nil // 等构建完成（tick 再进）
 		default:
 			// 终态失败（failed/cancelled/expired）→ 部署失败。
 			return e.failDeployment(ctx, d, fmt.Sprintf("build %s: %s (%s)", b.ID, b.State, b.Error))
@@ -98,6 +108,37 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	}
 	e.buildLoop.Kick()
 	return nil, nil // 等构建完成（tick 再进）
+}
+
+// ensureBuildInput 保证在途 Build 行有进程内输入登记（D-4 根修）：
+// buildInputs 是内存表，重启即丢——既有 queued/building 行在此幂等重建
+// （prepareBuildInput 本身幂等：检出目录已存在即跳过 clone），重建失败
+// 走 failDeployment（调用方收口）。building 行且无登记 = 本进程没有执行
+// goroutine（崩溃遗留且未经 Start 重置）→ 回 queued 交构建循环重拾。
+func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
+	e.buildInputMu.Lock()
+	_, ok := e.buildInputs[b.ID]
+	e.buildInputMu.Unlock()
+	if ok {
+		return nil // 本进程已登记（正常路径）
+	}
+	input, err := e.prepareBuildInput(ctx, d, spec, revSeq)
+	if err != nil {
+		return err
+	}
+	input.BuildID = b.ID
+	e.buildInputMu.Lock()
+	e.buildInputs[b.ID] = input
+	e.buildInputMu.Unlock()
+	if b.State == build.StateBuilding {
+		// CAS 冲突 = 并发写者已迁移该行（如竞态回 queued）：容忍，下拍复查。
+		if _, err := e.transitBuild(ctx, b,
+			[]build.State{build.StateBuilding}, build.StateQueued, nil); err != nil && !errors.Is(err, state.ErrConflict) {
+			return err
+		}
+	}
+	e.buildLoop.Kick() // 登记即拾取（不等下个兜底拍）
+	return nil
 }
 
 // prepareBuildInput 组装构建输入：git 源浅检出到数据根（幂等：已存在跳过

@@ -116,6 +116,11 @@ type Engine struct {
 	cancel      context.CancelFunc
 	wg          sync.WaitGroup
 
+	// runCtx 是 Start 物化的进程生命期 ctx（Q-7）：构建 goroutine 的派生
+	// 根——Stop 取消它即有界排水（executeBuild 的优雅退出路径接管）。
+	runCtxMu sync.Mutex
+	runCtx   context.Context
+
 	// managedGen 是受管域 Generation 实例态（C5：指纹/gen 不再是包级
 	// 全局——多 Engine 实例互不污染）。
 	managedGen managedGenState
@@ -233,6 +238,9 @@ func (e *Engine) Start(ctx context.Context) {
 	}
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	e.cancel = cancel
+	e.runCtxMu.Lock()
+	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
+	e.runCtxMu.Unlock()
 	e.resetOrphanBuilds(runCtx)
 	e.wg.Add(3)
 	go func() {
@@ -276,8 +284,22 @@ func (e *Engine) StartWatch(ctx context.Context) {
 	}()
 }
 
+// buildRootCtx 返回构建 goroutine 的派生根：Start 后是进程生命期 runCtx
+// （Stop 取消 → executeBuild 优雅退出回 queued，排水有界）；未 Start 的
+// 手动驱动形态（测试 DriveOnce）无 Stop 排水语义，退化为 Background 根
+// （构建 goroutine 生命周期 = Build 行写者，独立于驱动调用的 ctx）。
+func (e *Engine) buildRootCtx() context.Context {
+	e.runCtxMu.Lock()
+	defer e.runCtxMu.Unlock()
+	if e.runCtx != nil {
+		return e.runCtx
+	}
+	return context.Background()
+}
+
 // resetOrphanBuilds 把崩溃遗留的 building 行重置 queued（重放：buildkit
-// 缓存幂等；无输入登记的孤儿在 executeBuild 内再回 queued 等登记）。
+// 缓存幂等）。输入登记不在此重建——driveBuilding 见到在途行时幂等重建
+// （D-4）；归属部署已终态的孤儿行由 buildStep 前置检一跳到终态。
 func (e *Engine) resetOrphanBuilds(ctx context.Context) {
 	if e.builder == nil {
 		return

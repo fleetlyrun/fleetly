@@ -39,7 +39,7 @@ func TestResolveMaterials(t *testing.T) {
 	const ghcrSpec = `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
 		`"source":{"image":{"ref":"ghcr.io/acme/web:1"}},"processes":[` +
 		`{"name":"web","image":"ghcr.io/acme/web:1","replicas":1,"secret_refs":["api-token"]}]}`
-	spec, err := e.loadSpec(freezeSpec(t, e, 1, ghcrSpec))
+	spec, err := e.loadSpec(ctx, freezeSpec(t, e, 1, ghcrSpec))
 	require.NoError(t, err)
 
 	putSecret(t, e, tProjectID, "api-token", []byte("tok-123"))
@@ -61,7 +61,7 @@ func TestResolveMaterialsMissingSecretFails(t *testing.T) {
 	db, _ := statetest.New(t)
 	cipher, _ := material.LoadCipher(t.TempDir())
 	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Cipher: cipher, Logger: discardLogger()}, Options{})
-	spec, err := e.loadSpec(freezeSpec(t, e, 2, `{"schema_version":1,`+
+	spec, err := e.loadSpec(context.Background(), freezeSpec(t, e, 2, `{"schema_version":1,`+
 		`"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
 		`"source":{"image":{"ref":"nginx:1"}},"processes":[`+
 		`{"name":"web","image":"nginx:1","replicas":1,"secret_refs":["nope"]}]}`))

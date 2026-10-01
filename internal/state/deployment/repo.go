@@ -236,7 +236,7 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	if to.Terminal() && cur.FinishedAt == "" {
 		cur.FinishedAt = cur.UpdatedAt
 	}
-	_, err = run.ExecContext(ctx, `
+	res, err := run.ExecContext(ctx, `
 		UPDATE deployments SET
 			state = ?, generation = ?, error = ?, superseded_by = ?,
 			observe_deadline = ?, rollback_attempted = ?, to_revision = ?,
@@ -246,7 +246,18 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 		cur.ObserveDeadline, cur.RollbackAttempted, cur.ToRevision,
 		cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
-	return err
+	if err != nil {
+		return err
+	}
+	// CAS 纵深防御（Q-5）：前置 Get 与 UPDATE 之间状态被并发迁移时
+	// RowsAffected=0——必须显式归一 ErrConflict，不得静默当成功（对照
+	// secret/hook repo 的 RowsAffected 正例；单连接串行下不可达，放开
+	// 连接池后是最后防线）。
+	if n, _ := res.RowsAffected(); n == 0 {
+		return fmt.Errorf("%w: deployment %s state changed concurrently, want one of %s",
+			state.ErrConflict, id, joinStates(from))
+	}
+	return nil
 }
 
 const selectCols = `

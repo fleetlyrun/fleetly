@@ -98,7 +98,7 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 // 接入，当前为空集）。镜像直投 → releasing；需构建 → building（build
 // engine 拾取）。
 func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	spec, err := e.loadSpec(d.ToRevision)
+	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
@@ -135,7 +135,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 // 重放触发 Provider 的 update 事件恢复观测流；同 spec 的 update 对载体
 // 是 no-op，代价可接受（场景 1 重放语义）。
 func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	spec, err := e.loadSpec(d.ToRevision)
+	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
@@ -211,7 +211,7 @@ func (e *Engine) startRollback(ctx context.Context, d *deployment.Deployment) (*
 // rollback：Revision Replay——重新下发 from_revision 的 Spec（永不编排器
 // 原生回滚，ADR-0005；Ensure 域内收敛天然重建人工删除的载体，场景 2）。
 func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	spec, err := e.loadSpec(d.FromRevision)
+	spec, err := e.loadSpec(ctx, d.FromRevision)
 	if err != nil {
 		return e.rollbackFailed(ctx, d, "load rollback revision: "+err.Error())
 	}
