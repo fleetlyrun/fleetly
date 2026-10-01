@@ -26,13 +26,37 @@
 - F1.5 设计批落地字段集；schemaVersion 评审随 proto 变更。
 - C5（swarm watcher/reconcile 拆分 + dockerAPI seam 抬高）排本批之后（同文件动刀，一次到位不付二次返工）。
 - 停止原因枚举值表以 ADR-0012 七枚举为准，字段集细则（枚举映射表）随 F1.5 proto 评审定稿进本 ADR 附录。
+- JobSpec 重塑实况（F1.5 落地）：`ProcessSpec process = 8` 嵌套形态为唯一读取面；旧标量字段（image_origin/command/env/secret_refs）`deprecated` 退役但保留号——buf breaking FILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略（如首个发布版 tag 基线）变更。firstBootJobs 执行接线（部署链等待/回滚编排）随后续部署链批——一次性 Run 机制已就绪，解锁条件成立。
+
+## 附录 A：停止原因映射表（F1.5 定稿，ADR-0012 七枚举）
+
+终态对（Run.state, stop_reason）与触发源——事件 payload（run.stopped/run.failed）携带同款字段：
+
+| Run 终态 | stop_reason | 触发源 | 观测/判定锚 |
+|---|---|---|---|
+| stopped | completed | 进程自然退出（退出码 0） | WorkloadEvent.State=completed + ExitCode=0（swarm task complete） |
+| failed | failed | 进程失败（退出码非 0 / rejected） | WorkloadEvent.State=failed + ExitCode≠0 |
+| stopped | stopped_by_user | StopTask(force)/StopRun/DeleteTask | stopping 起因预写；观测 stopped 确认或停止兜底 deadline |
+| stopped | ttl_expired | TTL 绝对 deadline 到期（janitor） | 行 deadline（ADR-0018 墙钟）→ stopping → 终态 |
+| stopped | lease_expired | Owner Lease 超宽限未续期 | task 行 lease_deadline + TaskLeaseGrace → drainTask |
+| stopped | owner_revoked | 属主 Token 吊销 → 宽限排空（可配置跑完 TTL） | task 环拉式扫 revoked Token（P1-8；owner_token_id 行引用） |
+| stopped | platform_drained | 平台侧移除载体（节点排空/人工拆载体——非用户起因的 stopped 观测） | 活跃 Run 收到 stopped 观测且无 stopping 起因 |
+
+载体生命周期声明映射（决策 1）：
+
+| Workload.Restart | 语义 | swarm | k8s（N4 推演） |
+|---|---|---|---|
+| 零值/always | 长运行（退出由编排器重启） | RestartPolicyConditionAny | Always |
+| never | 一次性（退出即终态；Run 一律 never——池补足由平台承担） | RestartPolicyConditionNone | Never |
+
+DNS 铸名公式（决策 6，engine 真源）：per-Task 池级稳定名 `task-<taskID 小写>`（活 Run 别名轮询）；per-Run 稳定名 `run-<runID 小写>`；Task Network Group 平台网络名 `taskgrp-<group>`（App Process `taskGroup:<name>` 跨挂经投影层翻译至同名）。
 
 ## 验收锚
 
-- [ ] one-shot Workload 退出即终态、不被重启；七枚举停止原因全映射可观测
-- [ ] 已完成 task 在 Watch 流可见（ExitCode / Reason / 实例身份）
-- [ ] 同输入 Workload 两次翻译逐字节稳定（确定性守卫 E 扩到新字段序）
+- [x] one-shot Workload 退出即终态、不被重启（RestartNever → swarm none；契约测试 + engine 终态镜像测试）；七枚举停止原因全映射可观测（映射表附录 A + run 终态事件 payload 携带）
+- [x] 已完成 task 在 Watch 流可见（swarm pollTasks Task 域豁免：终态任务含 exit code/原因原文/实例身份上报；映射测试钉死）
+- [x] 同输入 Workload 两次翻译逐字节稳定（确定性守卫 E fixture 扩到 StopGrace/Addressing 新字段序）
 - [ ] 两级 DNS 在 dind 实证：池级 RR + per-Run 稳定名（swarm alias RR 行为结论落档）
 - [ ] swarm API 压测锚点（per-Run service × torchwood 池规模）
-- [ ] taskGroup 翻译在投影层有单测；translate.go 谎言注释消灭
+- [x] taskGroup 翻译在投影层有单测（TestProjectTranslatesTaskGroupRefs）；translate.go 谎言注释消灭
 - [ ] N4 k3s 推演复跑：核心 6 方法零改动吸收全部新字段
