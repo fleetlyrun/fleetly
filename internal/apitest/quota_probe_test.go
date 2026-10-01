@@ -2,6 +2,7 @@ package apitest_test
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestConfigQuotaEnforcement(t *testing.T) {
 	// 数量上限：1（big）+ 99 个新名 = 100 满；第 101 个新名拒配额。
 	for i := 0; i < 99; i++ {
 		_, err = configs.PutConfig(ctx, &structurev1.PutConfigRequest{
-			ProjectId: pid, Name: "c" + twoDigits(i), Content: "v",
+			ProjectId: pid, Name: fmt.Sprintf("c%02d", i), Content: "v",
 		})
 		require.NoError(t, err)
 	}
@@ -92,11 +93,4 @@ func TestDeployProbeDeclarationValidation(t *testing.T) {
 	// 合法形态照常受理（http 单独声明）。
 	_, err = deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: id, Image: "nginx:1.27", HttpProbe: "/healthz"})
 	require.NoError(t, err)
-}
-
-func twoDigits(i int) string {
-	if i < 10 {
-		return "0" + string(rune('0'+i))
-	}
-	return string(rune('0'+i/10)) + string(rune('0'+i%10))
 }
