@@ -74,3 +74,56 @@ jobs:
 
       - name: dind smoke (deploy → succeeded → rollback → read paths)
         run: mise run e2e:dind
+
+  # N0.1 P2-9：h2c / 双节点两件 e2e 进 CI（并行 job，镜像按脚本实际依赖
+  # 预拉——dind 内不走外网，宿侧 image save | load 注入，与 smoke 同款）。
+  e2e-h2c:
+    name: E2E (dind managed traefik + h2c route)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull traefik:v3.5
+          docker pull traefik/whoami:v1.10
+
+      - name: h2c route e2e (managed traefik on the project network)
+        run: mise run e2e:h2c
+
+  e2e-twonode:
+    name: E2E (dind two-node enroll + volume pinning)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull nginx:1.27
+
+      - name: two-node e2e (enroll join → dual-node deploy → volume pinning)
+        run: mise run e2e:twonode
