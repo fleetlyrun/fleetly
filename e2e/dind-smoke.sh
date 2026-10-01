@@ -3,7 +3,9 @@
 # install.sh 一行安装（bin-dir 模式，F0.1）→ fleetlyd（真 swarm Runtime +
 # 真 Builder）→ fleetly init 身份链（F0.2）→ doctor 冒烟（F0.4）→
 # 全链 project → app → deploy(image) → succeeded → 优雅退出与被杀重放
-# 回归（F0.12 场景 1/2）→ rollback → read paths →
+# 回归（F0.12 场景 1/2）→ 零 drift 断言（N0.1 P1-2 证据闭环：tag 镜像
+# spec 逐字过 moby API 存真，扫描 ≥2 拍零 workload.drift_detected）→
+# rollback → read paths →
 # webhook HTTP 段（F0.13：容器内 curl 直发 gateway）。
 # h2c Route 端到端（traefik 受管）随 nightly 多拓扑批接入（镜像拉取与
 # ACME 时窗不适合单节点 smoke 的预算）。
@@ -150,6 +152,7 @@ wait_state() {
 log "waiting for deployment to succeed (state machine over real swarm)"
 wait_state succeeded
 log "deployment succeeded"
+DRIFT_ANCHOR=$(date +%s) # 零 drift 断言窗起点（首个 tag 镜像部署成功）
 
 log "verifying swarm carriers exist"
 # 载体名 = fleetly-<team>-<projectID>-<appID>-<process>（ULID 进名字）；
@@ -277,6 +280,40 @@ if [ "$(deployment_states | wc -w)" -ne 3 ]; then
   exit 1
 fi
 log "scenario 2: window continued after restart (succeeded at +$((DONE_AT - OBS_AT))s)"
+
+# 4d. 零 drift 断言（证据闭环，N0.1 P1-2）：compareSpecs 对镜像逐字比对，
+#     前提是 moby API 不把 tag 引用钉版成 repo:tag@sha256 存入 service
+#     spec（CLI 路径才会钉版）。该前提此前只有 staging 实证与 fake 单测
+#     （回显 spec，无证伪力）——此处用真实 swarm 钉死：自首个 tag 部署
+#     succeeded 起已历场景 1/2 的重放与两次重启（重启后 spec 缓存重建会
+#     重扫，钉版形态必然再发），窗满 ≥70s（drift 扫描周期 30s，≥2 拍）
+#     后窗口内必须零 workload.drift_detected。有界轮询 fail-fast；失败
+#     输出事件片段辅助诊断。
+log "zero-drift assertion over the tag-deploy window (spec pass-through pin)"
+i=0
+while :; do
+  ELAPSED=$(($(date +%s) - DRIFT_ANCHOR))
+  DRIFT_EVENTS=$(cli --json events list --limit 200 | grep -c '"name": *"workload.drift_detected"') || true
+  if [ -z "$DRIFT_EVENTS" ]; then
+    echo "events list read failed (empty count)" >&2
+    exit 1
+  fi
+  if [ "$DRIFT_EVENTS" -ne 0 ]; then
+    echo "zero-drift assertion failed: $DRIFT_EVENTS workload.drift_detected event(s) within ${ELAPSED}s of the first tag deploy" >&2
+    cli --json events list --limit 200 | grep -B 4 -A 2 '"workload.drift_detected"' >&2 || true
+    exit 1
+  fi
+  if [ "$ELAPSED" -ge 70 ]; then
+    break
+  fi
+  if [ "$i" -ge 24 ]; then # 24 拍 x 5s：窗满兜底上界（既有等待段下正常路径到不了）
+    echo "zero-drift window did not elapse in time (elapsed=${ELAPSED}s)" >&2
+    exit 1
+  fi
+  i=$((i + 1))
+  sleep 5
+done
+log "zero workload.drift_detected events (window ${ELAPSED}s >= 2 scan beats)"
 
 # 5. 回滚与读路径（在 webhook 段之前：后者会冻结引擎循环，见段注）。
 log "rollback (Revision Replay)"
