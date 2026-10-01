@@ -19,7 +19,7 @@ CONTEXT.md：新增 **Acceptance（受理位）** 词条（随 ADR-0024）。
 | 项 | 时点 | 说明 |
 |---|---|---|
 | C2 materialize module | **已完成（2026-10-01）** | engine 三份物化序列合一 + 三路一致性质测试（TestMaterializeThreePathsIdentical）|
-| C4 RegisterAll 反向守卫 | **立即先行** | 镜像 guard A，纯守卫独立小 commit |
+| C4 RegisterAll 反向守卫 | **已完成（2026-10-01）** | 镜像 guard A（grpcguard_test.go，红灯实验过）；CONTEXT.md 新 Avoid 词（middleware/validation layer）已入措辞分诊表 banned |
 | C3 观测 verdict owner | N1 Task 设计批 | 与 P1-7 缓存形状分家同批，一次重排 observ |
 | C5 swarm dockerAPI seam | F1.5 之后 | D-1 字段定形后拆 watcher/reconcile，一次到位 |
 | C6 契约上提 capability | F1.11 设计批 | registry host 归一 + 防清空哨兵；Source seam（git clone 住 engine）随 F1.10/同批裁决 |

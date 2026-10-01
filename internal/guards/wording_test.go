@@ -58,6 +58,10 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	"signup link": wordRe(`signup[_ -]link|signup[_ -]links`),
 	"invite code": wordRe(`invite[_ -]code|invite[_ -]codes`),
 	"share link":  wordRe(`share[_ -]link|share[_ -]links`),
+	// Acceptance 词条（ADR-0024 入册）。lynx 的 WithMiddleware 是库 API
+	// 标识符（词边界内嵌不命中）；泛称义（把受理位叫 middleware）命中即红。
+	"middleware":       wordRe(`middleware|middlewares`),
+	"validation layer": wordRe(`validation[ _]layer`),
 }
 
 // wordRe 构造大小写不敏感、词边界的匹配器（多形态以 | 预展开）。
