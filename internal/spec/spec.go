@@ -160,14 +160,29 @@ func ValidateTask(s *specv1.TaskSpec) error {
 	if s == nil {
 		return invalidf("task", "spec is nil")
 	}
-	if v := s.GetSchemaVersion(); v <= 0 || v > SchemaVersion {
-		return invalidf("task.schema_version", "unsupported schema version %d (current %d)", v, SchemaVersion)
-	}
 	if s.GetTask().GetId() == "" {
 		return invalidf("task.id", "must not be empty")
 	}
 	if s.GetTask().GetProject() == "" {
 		return invalidf("task.project", "must not be empty")
+	}
+	return validateTaskCommon(s)
+}
+
+// ValidateTaskTemplate 校验 Schedule 的冻结 TaskSpec 模板（F1.7，
+// ADR-0018）：与 ValidateTask 同规则，唯 task ref 缺席——身份锚由
+// Schedule 行提供（project 在行上、task id 由 fire 时铸造）。
+func ValidateTaskTemplate(s *specv1.TaskSpec) error {
+	if s == nil {
+		return invalidf("task", "spec is nil")
+	}
+	return validateTaskCommon(s)
+}
+
+// validateTaskCommon 是两校验面的共用体（ref 在场性由各自入口裁决）。
+func validateTaskCommon(s *specv1.TaskSpec) error {
+	if v := s.GetSchemaVersion(); v <= 0 || v > SchemaVersion {
+		return invalidf("task.schema_version", "unsupported schema version %d (current %d)", v, SchemaVersion)
 	}
 	if err := ValidateProcess("task.process", s.GetProcess()); err != nil {
 		return err

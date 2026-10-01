@@ -1459,6 +1459,708 @@ func (x *WaitRunResponse) GetRun() *Run {
 	return nil
 }
 
+// Schedule 是周期触发规则行形态（状态值 kebab-case 与存储一致）。
+// image/command/ttl_seconds 是冻结 TaskSpec 模板的读投影（每拍铸出的
+// one-shot Task 继承）。
+type Schedule struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Id        string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Name      string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`
+	State     string                 `protobuf:"bytes,4,opt,name=state,proto3" json:"state,omitempty"` // active | deleted
+	// cron 是 5 字段表达式（minute hour day-of-month month day-of-week；
+	// 描述符不支持——区间语义非墙钟）。字段名是表达式语义，实体名仍是
+	// Schedule（CONTEXT.md Avoid: cron 作实体名）。
+	Cron string `protobuf:"bytes,5,opt,name=cron,proto3" json:"cron,omitempty"`
+	// timezone 是 IANA 时区名（ADR-0018：随 Schedule 持久化，跨夏令时按
+	// 墙钟解释——春跳缺口拍点当日不触发，Vixie cron 同款）。
+	Timezone string `protobuf:"bytes,6,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	// next_fire_at 是下一拍绝对时刻（RFC3339 UTC；控制面重启按墙钟续算，
+	// 错过窗口补跑一拍——ADR-0018 附录 A）。
+	NextFireAt string `protobuf:"bytes,7,opt,name=next_fire_at,json=nextFireAt,proto3" json:"next_fire_at,omitempty"`
+	// last_task_id 是最近一拍铸出的 Task（重叠 skip 判定锚 + 导航面）。
+	LastTaskId    string   `protobuf:"bytes,8,opt,name=last_task_id,json=lastTaskId,proto3" json:"last_task_id,omitempty"`
+	Image         string   `protobuf:"bytes,9,opt,name=image,proto3" json:"image,omitempty"`
+	Command       []string `protobuf:"bytes,10,rep,name=command,proto3" json:"command,omitempty"`
+	TtlSeconds    int64    `protobuf:"varint,11,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	CreatedAt     string   `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	UpdatedAt     string   `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Schedule) Reset() {
+	*x = Schedule{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Schedule) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Schedule) ProtoMessage() {}
+
+func (x *Schedule) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Schedule.ProtoReflect.Descriptor instead.
+func (*Schedule) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *Schedule) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *Schedule) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *Schedule) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *Schedule) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *Schedule) GetCron() string {
+	if x != nil {
+		return x.Cron
+	}
+	return ""
+}
+
+func (x *Schedule) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *Schedule) GetNextFireAt() string {
+	if x != nil {
+		return x.NextFireAt
+	}
+	return ""
+}
+
+func (x *Schedule) GetLastTaskId() string {
+	if x != nil {
+		return x.LastTaskId
+	}
+	return ""
+}
+
+func (x *Schedule) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *Schedule) GetCommand() []string {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+func (x *Schedule) GetTtlSeconds() int64 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *Schedule) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *Schedule) GetUpdatedAt() string {
+	if x != nil {
+		return x.UpdatedAt
+	}
+	return ""
+}
+
+type CreateScheduleRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// name 是项目内人读名（可选；活跃期唯一）。
+	Name string `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	// cron 是 5 字段表达式（必填）。
+	Cron string `protobuf:"bytes,3,opt,name=cron,proto3" json:"cron,omitempty"`
+	// timezone 是 IANA 时区名（空 = UTC）。
+	Timezone string `protobuf:"bytes,4,opt,name=timezone,proto3" json:"timezone,omitempty"`
+	// 以下为冻结 TaskSpec 模板字段（每拍铸 one-shot Task 继承）。
+	Image      string            `protobuf:"bytes,5,opt,name=image,proto3" json:"image,omitempty"`
+	Command    []string          `protobuf:"bytes,6,rep,name=command,proto3" json:"command,omitempty"`
+	Env        map[string]string `protobuf:"bytes,7,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	SecretRefs []string          `protobuf:"bytes,8,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
+	CpuMillis  int64             `protobuf:"varint,9,opt,name=cpu_millis,json=cpuMillis,proto3" json:"cpu_millis,omitempty"`
+	MemoryMb   int64             `protobuf:"varint,10,opt,name=memory_mb,json=memoryMb,proto3" json:"memory_mb,omitempty"`
+	// ttl_seconds 是每拍 Run 的生命周期上限（上限 86400；0 = 无 TTL）。
+	TtlSeconds     int64  `protobuf:"varint,11,opt,name=ttl_seconds,json=ttlSeconds,proto3" json:"ttl_seconds,omitempty"`
+	NetworkGroup   string `protobuf:"bytes,12,opt,name=network_group,json=networkGroup,proto3" json:"network_group,omitempty"`
+	IdempotencyKey string `protobuf:"bytes,13,opt,name=idempotency_key,json=idempotencyKey,proto3" json:"idempotency_key,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *CreateScheduleRequest) Reset() {
+	*x = CreateScheduleRequest{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateScheduleRequest) ProtoMessage() {}
+
+func (x *CreateScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateScheduleRequest.ProtoReflect.Descriptor instead.
+func (*CreateScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *CreateScheduleRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetCron() string {
+	if x != nil {
+		return x.Cron
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetTimezone() string {
+	if x != nil {
+		return x.Timezone
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetImage() string {
+	if x != nil {
+		return x.Image
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetCommand() []string {
+	if x != nil {
+		return x.Command
+	}
+	return nil
+}
+
+func (x *CreateScheduleRequest) GetEnv() map[string]string {
+	if x != nil {
+		return x.Env
+	}
+	return nil
+}
+
+func (x *CreateScheduleRequest) GetSecretRefs() []string {
+	if x != nil {
+		return x.SecretRefs
+	}
+	return nil
+}
+
+func (x *CreateScheduleRequest) GetCpuMillis() int64 {
+	if x != nil {
+		return x.CpuMillis
+	}
+	return 0
+}
+
+func (x *CreateScheduleRequest) GetMemoryMb() int64 {
+	if x != nil {
+		return x.MemoryMb
+	}
+	return 0
+}
+
+func (x *CreateScheduleRequest) GetTtlSeconds() int64 {
+	if x != nil {
+		return x.TtlSeconds
+	}
+	return 0
+}
+
+func (x *CreateScheduleRequest) GetNetworkGroup() string {
+	if x != nil {
+		return x.NetworkGroup
+	}
+	return ""
+}
+
+func (x *CreateScheduleRequest) GetIdempotencyKey() string {
+	if x != nil {
+		return x.IdempotencyKey
+	}
+	return ""
+}
+
+type CreateScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CreateScheduleResponse) Reset() {
+	*x = CreateScheduleResponse{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CreateScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CreateScheduleResponse) ProtoMessage() {}
+
+func (x *CreateScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CreateScheduleResponse.ProtoReflect.Descriptor instead.
+func (*CreateScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *CreateScheduleResponse) GetSchedule() *Schedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+type GetScheduleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetScheduleRequest) Reset() {
+	*x = GetScheduleRequest{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetScheduleRequest) ProtoMessage() {}
+
+func (x *GetScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetScheduleRequest.ProtoReflect.Descriptor instead.
+func (*GetScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *GetScheduleRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type GetScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetScheduleResponse) Reset() {
+	*x = GetScheduleResponse{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetScheduleResponse) ProtoMessage() {}
+
+func (x *GetScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetScheduleResponse.ProtoReflect.Descriptor instead.
+func (*GetScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *GetScheduleResponse) GetSchedule() *Schedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
+type ListSchedulesRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// after_schedule_id 游标（上一页末条 id；空 = 首页）。
+	AfterScheduleId string `protobuf:"bytes,2,opt,name=after_schedule_id,json=afterScheduleId,proto3" json:"after_schedule_id,omitempty"`
+	Limit           int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListSchedulesRequest) Reset() {
+	*x = ListSchedulesRequest{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSchedulesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSchedulesRequest) ProtoMessage() {}
+
+func (x *ListSchedulesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSchedulesRequest.ProtoReflect.Descriptor instead.
+func (*ListSchedulesRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *ListSchedulesRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *ListSchedulesRequest) GetAfterScheduleId() string {
+	if x != nil {
+		return x.AfterScheduleId
+	}
+	return ""
+}
+
+func (x *ListSchedulesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListSchedulesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedules     []*Schedule            `protobuf:"bytes,1,rep,name=schedules,proto3" json:"schedules,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListSchedulesResponse) Reset() {
+	*x = ListSchedulesResponse{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListSchedulesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListSchedulesResponse) ProtoMessage() {}
+
+func (x *ListSchedulesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListSchedulesResponse.ProtoReflect.Descriptor instead.
+func (*ListSchedulesResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *ListSchedulesResponse) GetSchedules() []*Schedule {
+	if x != nil {
+		return x.Schedules
+	}
+	return nil
+}
+
+type DeleteScheduleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteScheduleRequest) Reset() {
+	*x = DeleteScheduleRequest{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteScheduleRequest) ProtoMessage() {}
+
+func (x *DeleteScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteScheduleRequest.ProtoReflect.Descriptor instead.
+func (*DeleteScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *DeleteScheduleRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type DeleteScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *DeleteScheduleResponse) Reset() {
+	*x = DeleteScheduleResponse{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *DeleteScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DeleteScheduleResponse) ProtoMessage() {}
+
+func (x *DeleteScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DeleteScheduleResponse.ProtoReflect.Descriptor instead.
+func (*DeleteScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{32}
+}
+
+type TriggerScheduleRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerScheduleRequest) Reset() {
+	*x = TriggerScheduleRequest{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerScheduleRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerScheduleRequest) ProtoMessage() {}
+
+func (x *TriggerScheduleRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerScheduleRequest.ProtoReflect.Descriptor instead.
+func (*TriggerScheduleRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *TriggerScheduleRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+// TriggerScheduleResponse 携带触发后的行（last_task_id = 本拍 Task）。
+type TriggerScheduleResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Schedule      *Schedule              `protobuf:"bytes,1,opt,name=schedule,proto3" json:"schedule,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerScheduleResponse) Reset() {
+	*x = TriggerScheduleResponse{}
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerScheduleResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerScheduleResponse) ProtoMessage() {}
+
+func (x *TriggerScheduleResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_automation_v1_automation_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerScheduleResponse.ProtoReflect.Descriptor instead.
+func (*TriggerScheduleResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_automation_v1_automation_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *TriggerScheduleResponse) GetSchedule() *Schedule {
+	if x != nil {
+		return x.Schedule
+	}
+	return nil
+}
+
 var File_fleetly_automation_v1_automation_proto protoreflect.FileDescriptor
 
 const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
@@ -1577,7 +2279,70 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\x0eWaitRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"?\n" +
 	"\x0fWaitRunResponse\x12,\n" +
-	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run2\xec\a\n" +
+	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"\xe6\x02\n" +
+	"\bSchedule\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
+	"\x04name\x18\x03 \x01(\tR\x04name\x12\x14\n" +
+	"\x05state\x18\x04 \x01(\tR\x05state\x12\x12\n" +
+	"\x04cron\x18\x05 \x01(\tR\x04cron\x12\x1a\n" +
+	"\btimezone\x18\x06 \x01(\tR\btimezone\x12 \n" +
+	"\fnext_fire_at\x18\a \x01(\tR\n" +
+	"nextFireAt\x12 \n" +
+	"\flast_task_id\x18\b \x01(\tR\n" +
+	"lastTaskId\x12\x14\n" +
+	"\x05image\x18\t \x01(\tR\x05image\x12\x18\n" +
+	"\acommand\x18\n" +
+	" \x03(\tR\acommand\x12\x1f\n" +
+	"\vttl_seconds\x18\v \x01(\x03R\n" +
+	"ttlSeconds\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\f \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"updated_at\x18\r \x01(\tR\tupdatedAt\"\xf7\x03\n" +
+	"\x15CreateScheduleRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
+	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
+	"\x04cron\x18\x03 \x01(\tR\x04cron\x12\x1a\n" +
+	"\btimezone\x18\x04 \x01(\tR\btimezone\x12\x14\n" +
+	"\x05image\x18\x05 \x01(\tR\x05image\x12\x18\n" +
+	"\acommand\x18\x06 \x03(\tR\acommand\x12G\n" +
+	"\x03env\x18\a \x03(\v25.fleetly.automation.v1.CreateScheduleRequest.EnvEntryR\x03env\x12\x1f\n" +
+	"\vsecret_refs\x18\b \x03(\tR\n" +
+	"secretRefs\x12\x1d\n" +
+	"\n" +
+	"cpu_millis\x18\t \x01(\x03R\tcpuMillis\x12\x1b\n" +
+	"\tmemory_mb\x18\n" +
+	" \x01(\x03R\bmemoryMb\x12\x1f\n" +
+	"\vttl_seconds\x18\v \x01(\x03R\n" +
+	"ttlSeconds\x12#\n" +
+	"\rnetwork_group\x18\f \x01(\tR\fnetworkGroup\x12'\n" +
+	"\x0fidempotency_key\x18\r \x01(\tR\x0eidempotencyKey\x1a6\n" +
+	"\bEnvEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"U\n" +
+	"\x16CreateScheduleResponse\x12;\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"$\n" +
+	"\x12GetScheduleRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"R\n" +
+	"\x13GetScheduleResponse\x12;\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule\"w\n" +
+	"\x14ListSchedulesRequest\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12*\n" +
+	"\x11after_schedule_id\x18\x02 \x01(\tR\x0fafterScheduleId\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"V\n" +
+	"\x15ListSchedulesResponse\x12=\n" +
+	"\tschedules\x18\x01 \x03(\v2\x1f.fleetly.automation.v1.ScheduleR\tschedules\"'\n" +
+	"\x15DeleteScheduleRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x18\n" +
+	"\x16DeleteScheduleResponse\"(\n" +
+	"\x16TriggerScheduleRequest\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"V\n" +
+	"\x17TriggerScheduleResponse\x12;\n" +
+	"\bschedule\x18\x01 \x01(\v2\x1f.fleetly.automation.v1.ScheduleR\bschedule2\xec\a\n" +
 	"\fTasksService\x12\x88\x01\n" +
 	"\n" +
 	"CreateTask\x12(.fleetly.automation.v1.CreateTaskRequest\x1a).fleetly.automation.v1.CreateTaskResponse\"%\xea\xc4\x19\r\b\x03\"\t\n" +
@@ -1604,7 +2369,18 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\aStopRun\x12%.fleetly.automation.v1.StopRunRequest\x1a&.fleetly.automation.v1.StopRunResponse\".\xea\xc4\x19\r\b\x03\"\t\n" +
 	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x17:\x01*\"\x12/v1/runs/{id}/stop\x12\x87\x01\n" +
 	"\aWaitRun\x12%.fleetly.automation.v1.WaitRunRequest\x1a&.fleetly.automation.v1.WaitRunResponse\"+\xea\xc4\x19\r\b\x03\"\t\n" +
-	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/runs/{id}/wait0\x01\x1a\x06\xf2\xc4\x19\x02\b\x03B\xa0\x01\x92ARRP\n" +
+	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/runs/{id}/wait0\x01\x1a\x06\xf2\xc4\x19\x02\b\x032\xa6\x06\n" +
+	"\x10SchedulesService\x12\x98\x01\n" +
+	"\x0eCreateSchedule\x12,.fleetly.automation.v1.CreateScheduleRequest\x1a-.fleetly.automation.v1.CreateScheduleResponse\")\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x12:\x01*\"\r/v1/schedules\x12\x91\x01\n" +
+	"\vGetSchedule\x12).fleetly.automation.v1.GetScheduleRequest\x1a*.fleetly.automation.v1.GetScheduleResponse\"+\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/schedules/{id}\x12\x92\x01\n" +
+	"\rListSchedules\x12+.fleetly.automation.v1.ListSchedulesRequest\x1a,.fleetly.automation.v1.ListSchedulesResponse\"&\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05tasks\x10\x01\x82\xd3\xe4\x93\x02\x0f\x12\r/v1/schedules\x12\x9a\x01\n" +
+	"\x0eDeleteSchedule\x12,.fleetly.automation.v1.DeleteScheduleRequest\x1a-.fleetly.automation.v1.DeleteScheduleResponse\"+\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x14*\x12/v1/schedules/{id}\x12\xa8\x01\n" +
+	"\x0fTriggerSchedule\x12-.fleetly.automation.v1.TriggerScheduleRequest\x1a..fleetly.automation.v1.TriggerScheduleResponse\"6\xea\xc4\x19\r\b\x03\"\t\n" +
+	"\x05tasks\x10\x02\x82\xd3\xe4\x93\x02\x1f:\x01*\"\x1a/v1/schedules/{id}/trigger\x1a\x06\xf2\xc4\x19\x02\b\x03B\xa0\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZIgithub.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1;automationv1b\x06proto3"
@@ -1621,36 +2397,48 @@ func file_fleetly_automation_v1_automation_proto_rawDescGZIP() []byte {
 	return file_fleetly_automation_v1_automation_proto_rawDescData
 }
 
-var file_fleetly_automation_v1_automation_proto_msgTypes = make([]protoimpl.MessageInfo, 25)
+var file_fleetly_automation_v1_automation_proto_msgTypes = make([]protoimpl.MessageInfo, 37)
 var file_fleetly_automation_v1_automation_proto_goTypes = []any{
-	(*Task)(nil),               // 0: fleetly.automation.v1.Task
-	(*Run)(nil),                // 1: fleetly.automation.v1.Run
-	(*CreateTaskRequest)(nil),  // 2: fleetly.automation.v1.CreateTaskRequest
-	(*CreateTaskResponse)(nil), // 3: fleetly.automation.v1.CreateTaskResponse
-	(*GetTaskRequest)(nil),     // 4: fleetly.automation.v1.GetTaskRequest
-	(*GetTaskResponse)(nil),    // 5: fleetly.automation.v1.GetTaskResponse
-	(*ListTasksRequest)(nil),   // 6: fleetly.automation.v1.ListTasksRequest
-	(*ListTasksResponse)(nil),  // 7: fleetly.automation.v1.ListTasksResponse
-	(*ScaleTaskRequest)(nil),   // 8: fleetly.automation.v1.ScaleTaskRequest
-	(*ScaleTaskResponse)(nil),  // 9: fleetly.automation.v1.ScaleTaskResponse
-	(*StopTaskRequest)(nil),    // 10: fleetly.automation.v1.StopTaskRequest
-	(*StopTaskResponse)(nil),   // 11: fleetly.automation.v1.StopTaskResponse
-	(*DeleteTaskRequest)(nil),  // 12: fleetly.automation.v1.DeleteTaskRequest
-	(*DeleteTaskResponse)(nil), // 13: fleetly.automation.v1.DeleteTaskResponse
-	(*RenewTaskRequest)(nil),   // 14: fleetly.automation.v1.RenewTaskRequest
-	(*RenewTaskResponse)(nil),  // 15: fleetly.automation.v1.RenewTaskResponse
-	(*GetRunRequest)(nil),      // 16: fleetly.automation.v1.GetRunRequest
-	(*GetRunResponse)(nil),     // 17: fleetly.automation.v1.GetRunResponse
-	(*ListRunsRequest)(nil),    // 18: fleetly.automation.v1.ListRunsRequest
-	(*ListRunsResponse)(nil),   // 19: fleetly.automation.v1.ListRunsResponse
-	(*StopRunRequest)(nil),     // 20: fleetly.automation.v1.StopRunRequest
-	(*StopRunResponse)(nil),    // 21: fleetly.automation.v1.StopRunResponse
-	(*WaitRunRequest)(nil),     // 22: fleetly.automation.v1.WaitRunRequest
-	(*WaitRunResponse)(nil),    // 23: fleetly.automation.v1.WaitRunResponse
-	nil,                        // 24: fleetly.automation.v1.CreateTaskRequest.EnvEntry
+	(*Task)(nil),                    // 0: fleetly.automation.v1.Task
+	(*Run)(nil),                     // 1: fleetly.automation.v1.Run
+	(*CreateTaskRequest)(nil),       // 2: fleetly.automation.v1.CreateTaskRequest
+	(*CreateTaskResponse)(nil),      // 3: fleetly.automation.v1.CreateTaskResponse
+	(*GetTaskRequest)(nil),          // 4: fleetly.automation.v1.GetTaskRequest
+	(*GetTaskResponse)(nil),         // 5: fleetly.automation.v1.GetTaskResponse
+	(*ListTasksRequest)(nil),        // 6: fleetly.automation.v1.ListTasksRequest
+	(*ListTasksResponse)(nil),       // 7: fleetly.automation.v1.ListTasksResponse
+	(*ScaleTaskRequest)(nil),        // 8: fleetly.automation.v1.ScaleTaskRequest
+	(*ScaleTaskResponse)(nil),       // 9: fleetly.automation.v1.ScaleTaskResponse
+	(*StopTaskRequest)(nil),         // 10: fleetly.automation.v1.StopTaskRequest
+	(*StopTaskResponse)(nil),        // 11: fleetly.automation.v1.StopTaskResponse
+	(*DeleteTaskRequest)(nil),       // 12: fleetly.automation.v1.DeleteTaskRequest
+	(*DeleteTaskResponse)(nil),      // 13: fleetly.automation.v1.DeleteTaskResponse
+	(*RenewTaskRequest)(nil),        // 14: fleetly.automation.v1.RenewTaskRequest
+	(*RenewTaskResponse)(nil),       // 15: fleetly.automation.v1.RenewTaskResponse
+	(*GetRunRequest)(nil),           // 16: fleetly.automation.v1.GetRunRequest
+	(*GetRunResponse)(nil),          // 17: fleetly.automation.v1.GetRunResponse
+	(*ListRunsRequest)(nil),         // 18: fleetly.automation.v1.ListRunsRequest
+	(*ListRunsResponse)(nil),        // 19: fleetly.automation.v1.ListRunsResponse
+	(*StopRunRequest)(nil),          // 20: fleetly.automation.v1.StopRunRequest
+	(*StopRunResponse)(nil),         // 21: fleetly.automation.v1.StopRunResponse
+	(*WaitRunRequest)(nil),          // 22: fleetly.automation.v1.WaitRunRequest
+	(*WaitRunResponse)(nil),         // 23: fleetly.automation.v1.WaitRunResponse
+	(*Schedule)(nil),                // 24: fleetly.automation.v1.Schedule
+	(*CreateScheduleRequest)(nil),   // 25: fleetly.automation.v1.CreateScheduleRequest
+	(*CreateScheduleResponse)(nil),  // 26: fleetly.automation.v1.CreateScheduleResponse
+	(*GetScheduleRequest)(nil),      // 27: fleetly.automation.v1.GetScheduleRequest
+	(*GetScheduleResponse)(nil),     // 28: fleetly.automation.v1.GetScheduleResponse
+	(*ListSchedulesRequest)(nil),    // 29: fleetly.automation.v1.ListSchedulesRequest
+	(*ListSchedulesResponse)(nil),   // 30: fleetly.automation.v1.ListSchedulesResponse
+	(*DeleteScheduleRequest)(nil),   // 31: fleetly.automation.v1.DeleteScheduleRequest
+	(*DeleteScheduleResponse)(nil),  // 32: fleetly.automation.v1.DeleteScheduleResponse
+	(*TriggerScheduleRequest)(nil),  // 33: fleetly.automation.v1.TriggerScheduleRequest
+	(*TriggerScheduleResponse)(nil), // 34: fleetly.automation.v1.TriggerScheduleResponse
+	nil,                             // 35: fleetly.automation.v1.CreateTaskRequest.EnvEntry
+	nil,                             // 36: fleetly.automation.v1.CreateScheduleRequest.EnvEntry
 }
 var file_fleetly_automation_v1_automation_proto_depIdxs = []int32{
-	24, // 0: fleetly.automation.v1.CreateTaskRequest.env:type_name -> fleetly.automation.v1.CreateTaskRequest.EnvEntry
+	35, // 0: fleetly.automation.v1.CreateTaskRequest.env:type_name -> fleetly.automation.v1.CreateTaskRequest.EnvEntry
 	0,  // 1: fleetly.automation.v1.CreateTaskResponse.task:type_name -> fleetly.automation.v1.Task
 	0,  // 2: fleetly.automation.v1.GetTaskResponse.task:type_name -> fleetly.automation.v1.Task
 	0,  // 3: fleetly.automation.v1.ListTasksResponse.tasks:type_name -> fleetly.automation.v1.Task
@@ -1661,33 +2449,48 @@ var file_fleetly_automation_v1_automation_proto_depIdxs = []int32{
 	1,  // 8: fleetly.automation.v1.ListRunsResponse.runs:type_name -> fleetly.automation.v1.Run
 	1,  // 9: fleetly.automation.v1.StopRunResponse.run:type_name -> fleetly.automation.v1.Run
 	1,  // 10: fleetly.automation.v1.WaitRunResponse.run:type_name -> fleetly.automation.v1.Run
-	2,  // 11: fleetly.automation.v1.TasksService.CreateTask:input_type -> fleetly.automation.v1.CreateTaskRequest
-	4,  // 12: fleetly.automation.v1.TasksService.GetTask:input_type -> fleetly.automation.v1.GetTaskRequest
-	6,  // 13: fleetly.automation.v1.TasksService.ListTasks:input_type -> fleetly.automation.v1.ListTasksRequest
-	8,  // 14: fleetly.automation.v1.TasksService.ScaleTask:input_type -> fleetly.automation.v1.ScaleTaskRequest
-	10, // 15: fleetly.automation.v1.TasksService.StopTask:input_type -> fleetly.automation.v1.StopTaskRequest
-	12, // 16: fleetly.automation.v1.TasksService.DeleteTask:input_type -> fleetly.automation.v1.DeleteTaskRequest
-	14, // 17: fleetly.automation.v1.TasksService.RenewTask:input_type -> fleetly.automation.v1.RenewTaskRequest
-	16, // 18: fleetly.automation.v1.RunsService.GetRun:input_type -> fleetly.automation.v1.GetRunRequest
-	18, // 19: fleetly.automation.v1.RunsService.ListRuns:input_type -> fleetly.automation.v1.ListRunsRequest
-	20, // 20: fleetly.automation.v1.RunsService.StopRun:input_type -> fleetly.automation.v1.StopRunRequest
-	22, // 21: fleetly.automation.v1.RunsService.WaitRun:input_type -> fleetly.automation.v1.WaitRunRequest
-	3,  // 22: fleetly.automation.v1.TasksService.CreateTask:output_type -> fleetly.automation.v1.CreateTaskResponse
-	5,  // 23: fleetly.automation.v1.TasksService.GetTask:output_type -> fleetly.automation.v1.GetTaskResponse
-	7,  // 24: fleetly.automation.v1.TasksService.ListTasks:output_type -> fleetly.automation.v1.ListTasksResponse
-	9,  // 25: fleetly.automation.v1.TasksService.ScaleTask:output_type -> fleetly.automation.v1.ScaleTaskResponse
-	11, // 26: fleetly.automation.v1.TasksService.StopTask:output_type -> fleetly.automation.v1.StopTaskResponse
-	13, // 27: fleetly.automation.v1.TasksService.DeleteTask:output_type -> fleetly.automation.v1.DeleteTaskResponse
-	15, // 28: fleetly.automation.v1.TasksService.RenewTask:output_type -> fleetly.automation.v1.RenewTaskResponse
-	17, // 29: fleetly.automation.v1.RunsService.GetRun:output_type -> fleetly.automation.v1.GetRunResponse
-	19, // 30: fleetly.automation.v1.RunsService.ListRuns:output_type -> fleetly.automation.v1.ListRunsResponse
-	21, // 31: fleetly.automation.v1.RunsService.StopRun:output_type -> fleetly.automation.v1.StopRunResponse
-	23, // 32: fleetly.automation.v1.RunsService.WaitRun:output_type -> fleetly.automation.v1.WaitRunResponse
-	22, // [22:33] is the sub-list for method output_type
-	11, // [11:22] is the sub-list for method input_type
-	11, // [11:11] is the sub-list for extension type_name
-	11, // [11:11] is the sub-list for extension extendee
-	0,  // [0:11] is the sub-list for field type_name
+	36, // 11: fleetly.automation.v1.CreateScheduleRequest.env:type_name -> fleetly.automation.v1.CreateScheduleRequest.EnvEntry
+	24, // 12: fleetly.automation.v1.CreateScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
+	24, // 13: fleetly.automation.v1.GetScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
+	24, // 14: fleetly.automation.v1.ListSchedulesResponse.schedules:type_name -> fleetly.automation.v1.Schedule
+	24, // 15: fleetly.automation.v1.TriggerScheduleResponse.schedule:type_name -> fleetly.automation.v1.Schedule
+	2,  // 16: fleetly.automation.v1.TasksService.CreateTask:input_type -> fleetly.automation.v1.CreateTaskRequest
+	4,  // 17: fleetly.automation.v1.TasksService.GetTask:input_type -> fleetly.automation.v1.GetTaskRequest
+	6,  // 18: fleetly.automation.v1.TasksService.ListTasks:input_type -> fleetly.automation.v1.ListTasksRequest
+	8,  // 19: fleetly.automation.v1.TasksService.ScaleTask:input_type -> fleetly.automation.v1.ScaleTaskRequest
+	10, // 20: fleetly.automation.v1.TasksService.StopTask:input_type -> fleetly.automation.v1.StopTaskRequest
+	12, // 21: fleetly.automation.v1.TasksService.DeleteTask:input_type -> fleetly.automation.v1.DeleteTaskRequest
+	14, // 22: fleetly.automation.v1.TasksService.RenewTask:input_type -> fleetly.automation.v1.RenewTaskRequest
+	16, // 23: fleetly.automation.v1.RunsService.GetRun:input_type -> fleetly.automation.v1.GetRunRequest
+	18, // 24: fleetly.automation.v1.RunsService.ListRuns:input_type -> fleetly.automation.v1.ListRunsRequest
+	20, // 25: fleetly.automation.v1.RunsService.StopRun:input_type -> fleetly.automation.v1.StopRunRequest
+	22, // 26: fleetly.automation.v1.RunsService.WaitRun:input_type -> fleetly.automation.v1.WaitRunRequest
+	25, // 27: fleetly.automation.v1.SchedulesService.CreateSchedule:input_type -> fleetly.automation.v1.CreateScheduleRequest
+	27, // 28: fleetly.automation.v1.SchedulesService.GetSchedule:input_type -> fleetly.automation.v1.GetScheduleRequest
+	29, // 29: fleetly.automation.v1.SchedulesService.ListSchedules:input_type -> fleetly.automation.v1.ListSchedulesRequest
+	31, // 30: fleetly.automation.v1.SchedulesService.DeleteSchedule:input_type -> fleetly.automation.v1.DeleteScheduleRequest
+	33, // 31: fleetly.automation.v1.SchedulesService.TriggerSchedule:input_type -> fleetly.automation.v1.TriggerScheduleRequest
+	3,  // 32: fleetly.automation.v1.TasksService.CreateTask:output_type -> fleetly.automation.v1.CreateTaskResponse
+	5,  // 33: fleetly.automation.v1.TasksService.GetTask:output_type -> fleetly.automation.v1.GetTaskResponse
+	7,  // 34: fleetly.automation.v1.TasksService.ListTasks:output_type -> fleetly.automation.v1.ListTasksResponse
+	9,  // 35: fleetly.automation.v1.TasksService.ScaleTask:output_type -> fleetly.automation.v1.ScaleTaskResponse
+	11, // 36: fleetly.automation.v1.TasksService.StopTask:output_type -> fleetly.automation.v1.StopTaskResponse
+	13, // 37: fleetly.automation.v1.TasksService.DeleteTask:output_type -> fleetly.automation.v1.DeleteTaskResponse
+	15, // 38: fleetly.automation.v1.TasksService.RenewTask:output_type -> fleetly.automation.v1.RenewTaskResponse
+	17, // 39: fleetly.automation.v1.RunsService.GetRun:output_type -> fleetly.automation.v1.GetRunResponse
+	19, // 40: fleetly.automation.v1.RunsService.ListRuns:output_type -> fleetly.automation.v1.ListRunsResponse
+	21, // 41: fleetly.automation.v1.RunsService.StopRun:output_type -> fleetly.automation.v1.StopRunResponse
+	23, // 42: fleetly.automation.v1.RunsService.WaitRun:output_type -> fleetly.automation.v1.WaitRunResponse
+	26, // 43: fleetly.automation.v1.SchedulesService.CreateSchedule:output_type -> fleetly.automation.v1.CreateScheduleResponse
+	28, // 44: fleetly.automation.v1.SchedulesService.GetSchedule:output_type -> fleetly.automation.v1.GetScheduleResponse
+	30, // 45: fleetly.automation.v1.SchedulesService.ListSchedules:output_type -> fleetly.automation.v1.ListSchedulesResponse
+	32, // 46: fleetly.automation.v1.SchedulesService.DeleteSchedule:output_type -> fleetly.automation.v1.DeleteScheduleResponse
+	34, // 47: fleetly.automation.v1.SchedulesService.TriggerSchedule:output_type -> fleetly.automation.v1.TriggerScheduleResponse
+	32, // [32:48] is the sub-list for method output_type
+	16, // [16:32] is the sub-list for method input_type
+	16, // [16:16] is the sub-list for extension type_name
+	16, // [16:16] is the sub-list for extension extendee
+	0,  // [0:16] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_automation_v1_automation_proto_init() }
@@ -1701,9 +2504,9 @@ func file_fleetly_automation_v1_automation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_automation_v1_automation_proto_rawDesc), len(file_fleetly_automation_v1_automation_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   25,
+			NumMessages:   37,
 			NumExtensions: 0,
-			NumServices:   2,
+			NumServices:   3,
 		},
 		GoTypes:           file_fleetly_automation_v1_automation_proto_goTypes,
 		DependencyIndexes: file_fleetly_automation_v1_automation_proto_depIdxs,

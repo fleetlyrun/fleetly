@@ -54,9 +54,10 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		// 在原生挂法（mountHooks），不在此。
 		registerClient(deliveryv1.NewHooksServiceClient, deliveryv1.RegisterHooksServiceHandlerClient),
 		registerClient(runtimev1.NewNodesServiceClient, runtimev1.RegisterNodesServiceHandlerClient),
-		// Automation（F1.5/F1.6）：Task/Run 聚合面。
+		// Automation（F1.5/F1.6/F1.7）：Task/Run/Schedule 聚合面。
 		registerClient(automationv1.NewTasksServiceClient, automationv1.RegisterTasksServiceHandlerClient),
 		registerClient(automationv1.NewRunsServiceClient, automationv1.RegisterRunsServiceHandlerClient),
+		registerClient(automationv1.NewSchedulesServiceClient, automationv1.RegisterSchedulesServiceHandlerClient),
 		registerClient(edgev1.NewRoutesServiceClient, edgev1.RegisterRoutesServiceHandlerClient),
 		registerClient(telemetryv1.NewEventsServiceClient, telemetryv1.RegisterEventsServiceHandlerClient),
 		registerClient(telemetryv1.NewLogsServiceClient, telemetryv1.RegisterLogsServiceHandlerClient),

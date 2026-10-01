@@ -57,6 +57,7 @@ var EnforcedMethods = map[string]bool{
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":         true,
 	"/fleetly.delivery.v1.HooksService/SetGitHook":             true,
 	"/fleetly.automation.v1.TasksService/CreateTask":           true,
+	"/fleetly.automation.v1.SchedulesService/CreateSchedule":   true,
 	"/fleetly.identity.v1.UsersService/CreateUser":             true,
 	"/fleetly.identity.v1.TeamsService/CreateTeam":             true,
 	"/fleetly.identity.v1.RolesService/CreateRole":             true,

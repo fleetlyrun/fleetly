@@ -10,6 +10,9 @@
     },
     {
       "name": "RunsService"
+    },
+    {
+      "name": "SchedulesService"
     }
   ],
   "consumes": [
@@ -168,6 +171,180 @@
         ],
         "tags": [
           "RunsService"
+        ]
+      }
+    },
+    "/v1/schedules": {
+      "get": {
+        "summary": "ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态\n事实可见，与 ListTasks 同款）。",
+        "operationId": "SchedulesService_ListSchedules",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSchedulesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_schedule_id",
+            "description": "after_schedule_id 游标（上一页末条 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SchedulesService"
+        ]
+      },
+      "post": {
+        "summary": "CreateSchedule 建周期触发规则：5 字段 cron 表达式 + IANA 时区名\n（空 = UTC；跨夏令时按墙钟解释，ADR-0018）。首拍时刻按表达式即刻\n铸出（next_fire_at 绝对时刻落行）。",
+        "operationId": "SchedulesService_CreateSchedule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateScheduleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateScheduleRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SchedulesService"
+        ]
+      }
+    },
+    "/v1/schedules/{id}": {
+      "get": {
+        "operationId": "SchedulesService_GetSchedule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetScheduleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SchedulesService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteSchedule 删除（tombstone；幂等）。已铸出的 Task 不受影响——\n跑完自然收口（Schedule 只拥有\"何时拍\"，不拥有在途执行）。",
+        "operationId": "SchedulesService_DeleteSchedule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteScheduleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SchedulesService"
+        ]
+      }
+    },
+    "/v1/schedules/{id}/trigger": {
+      "post": {
+        "summary": "TriggerSchedule 手动触发（RunNow 语义）：立即铸一拍 Task；cron 节奏\n不动。上一拍 Run 未终态时拒绝（先停上一拍或等其收口）。",
+        "operationId": "SchedulesService_TriggerSchedule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TriggerScheduleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/SchedulesServiceTriggerScheduleBody"
+            }
+          }
+        ],
+        "tags": [
+          "SchedulesService"
         ]
       }
     },
@@ -428,6 +605,9 @@
     "RunsServiceStopRunBody": {
       "type": "object"
     },
+    "SchedulesServiceTriggerScheduleBody": {
+      "type": "object"
+    },
     "TasksServiceRenewTaskBody": {
       "type": "object"
     },
@@ -445,6 +625,75 @@
       "properties": {
         "force": {
           "type": "boolean"
+        }
+      }
+    },
+    "v1CreateScheduleRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "title": "name 是项目内人读名（可选；活跃期唯一）。"
+        },
+        "cron": {
+          "type": "string",
+          "title": "cron 是 5 字段表达式（必填）。"
+        },
+        "timezone": {
+          "type": "string",
+          "title": "timezone 是 IANA 时区名（空 = UTC）。"
+        },
+        "image": {
+          "type": "string",
+          "title": "以下为冻结 TaskSpec 模板字段（每拍铸 one-shot Task 继承）。"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "secret_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "cpu_millis": {
+          "type": "string",
+          "format": "int64"
+        },
+        "memory_mb": {
+          "type": "string",
+          "format": "int64"
+        },
+        "ttl_seconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "ttl_seconds 是每拍 Run 的生命周期上限（上限 86400；0 = 无 TTL）。"
+        },
+        "network_group": {
+          "type": "string"
+        },
+        "idempotency_key": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateScheduleResponse": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "$ref": "#/definitions/v1Schedule"
         }
       }
     },
@@ -525,6 +774,9 @@
         }
       }
     },
+    "v1DeleteScheduleResponse": {
+      "type": "object"
+    },
     "v1DeleteTaskResponse": {
       "type": "object"
     },
@@ -533,6 +785,14 @@
       "properties": {
         "run": {
           "$ref": "#/definitions/v1Run"
+        }
+      }
+    },
+    "v1GetScheduleResponse": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "$ref": "#/definitions/v1Schedule"
         }
       }
     },
@@ -552,6 +812,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1Run"
+          }
+        }
+      }
+    },
+    "v1ListSchedulesResponse": {
+      "type": "object",
+      "properties": {
+        "schedules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Schedule"
           }
         }
       }
@@ -628,6 +900,60 @@
           "$ref": "#/definitions/v1Task"
         }
       }
+    },
+    "v1Schedule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "title": "active | deleted"
+        },
+        "cron": {
+          "type": "string",
+          "title": "cron 是 5 字段表达式（minute hour day-of-month month day-of-week；\n描述符不支持——区间语义非墙钟）。字段名是表达式语义，实体名仍是\nSchedule（CONTEXT.md Avoid: cron 作实体名）。"
+        },
+        "timezone": {
+          "type": "string",
+          "title": "timezone 是 IANA 时区名（ADR-0018：随 Schedule 持久化，跨夏令时按\n墙钟解释——春跳缺口拍点当日不触发，Vixie cron 同款）。"
+        },
+        "next_fire_at": {
+          "type": "string",
+          "title": "next_fire_at 是下一拍绝对时刻（RFC3339 UTC；控制面重启按墙钟续算，\n错过窗口补跑一拍——ADR-0018 附录 A）。"
+        },
+        "last_task_id": {
+          "type": "string",
+          "title": "last_task_id 是最近一拍铸出的 Task（重叠 skip 判定锚 + 导航面）。"
+        },
+        "image": {
+          "type": "string"
+        },
+        "command": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "ttl_seconds": {
+          "type": "string",
+          "format": "int64"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "Schedule 是周期触发规则行形态（状态值 kebab-case 与存储一致）。\nimage/command/ttl_seconds 是冻结 TaskSpec 模板的读投影（每拍铸出的\none-shot Task 继承）。"
     },
     "v1StopRunResponse": {
       "type": "object",
@@ -710,6 +1036,15 @@
         }
       },
       "title": "Task 是程序化工作负载行形态（状态值 kebab-case 与存储一致）。"
+    },
+    "v1TriggerScheduleResponse": {
+      "type": "object",
+      "properties": {
+        "schedule": {
+          "$ref": "#/definitions/v1Schedule"
+        }
+      },
+      "title": "TriggerScheduleResponse 携带触发后的行（last_task_id = 本拍 Task）。"
     },
     "v1WaitRunResponse": {
       "type": "object",

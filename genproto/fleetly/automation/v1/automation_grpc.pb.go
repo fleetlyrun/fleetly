@@ -611,3 +611,289 @@ var RunsService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "fleetly/automation/v1/automation.proto",
 }
+
+const (
+	SchedulesService_CreateSchedule_FullMethodName  = "/fleetly.automation.v1.SchedulesService/CreateSchedule"
+	SchedulesService_GetSchedule_FullMethodName     = "/fleetly.automation.v1.SchedulesService/GetSchedule"
+	SchedulesService_ListSchedules_FullMethodName   = "/fleetly.automation.v1.SchedulesService/ListSchedules"
+	SchedulesService_DeleteSchedule_FullMethodName  = "/fleetly.automation.v1.SchedulesService/DeleteSchedule"
+	SchedulesService_TriggerSchedule_FullMethodName = "/fleetly.automation.v1.SchedulesService/TriggerSchedule"
+)
+
+// SchedulesServiceClient is the client API for SchedulesService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// SchedulesService 是 Schedule 聚合面（F1.7，ADR-0018 时区 cron）：周期
+// 触发规则，到期拍从冻结 TaskSpec 模板铸一条 one-shot Task（执行机制
+// 复用 Task/Run 全链）。scope 复用 tasks 资源——与 RunsService 同款先例
+// （Schedule 的授权面等价于"反复创建 Task"；词汇冻结见 CONTEXT.md）。
+// List 带 after_schedule_id + limit 游标（ADR-0026 惯例）；CreateSchedule
+// 在幂等执法面（Idempotency-Key 头，ADR-0024）。
+type SchedulesServiceClient interface {
+	// CreateSchedule 建周期触发规则：5 字段 cron 表达式 + IANA 时区名
+	// （空 = UTC；跨夏令时按墙钟解释，ADR-0018）。首拍时刻按表达式即刻
+	// 铸出（next_fire_at 绝对时刻落行）。
+	CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error)
+	GetSchedule(ctx context.Context, in *GetScheduleRequest, opts ...grpc.CallOption) (*GetScheduleResponse, error)
+	// ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态
+	// 事实可见，与 ListTasks 同款）。
+	ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error)
+	// DeleteSchedule 删除（tombstone；幂等）。已铸出的 Task 不受影响——
+	// 跑完自然收口（Schedule 只拥有"何时拍"，不拥有在途执行）。
+	DeleteSchedule(ctx context.Context, in *DeleteScheduleRequest, opts ...grpc.CallOption) (*DeleteScheduleResponse, error)
+	// TriggerSchedule 手动触发（RunNow 语义）：立即铸一拍 Task；cron 节奏
+	// 不动。上一拍 Run 未终态时拒绝（先停上一拍或等其收口）。
+	TriggerSchedule(ctx context.Context, in *TriggerScheduleRequest, opts ...grpc.CallOption) (*TriggerScheduleResponse, error)
+}
+
+type schedulesServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSchedulesServiceClient(cc grpc.ClientConnInterface) SchedulesServiceClient {
+	return &schedulesServiceClient{cc}
+}
+
+func (c *schedulesServiceClient) CreateSchedule(ctx context.Context, in *CreateScheduleRequest, opts ...grpc.CallOption) (*CreateScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateScheduleResponse)
+	err := c.cc.Invoke(ctx, SchedulesService_CreateSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *schedulesServiceClient) GetSchedule(ctx context.Context, in *GetScheduleRequest, opts ...grpc.CallOption) (*GetScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetScheduleResponse)
+	err := c.cc.Invoke(ctx, SchedulesService_GetSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *schedulesServiceClient) ListSchedules(ctx context.Context, in *ListSchedulesRequest, opts ...grpc.CallOption) (*ListSchedulesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSchedulesResponse)
+	err := c.cc.Invoke(ctx, SchedulesService_ListSchedules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *schedulesServiceClient) DeleteSchedule(ctx context.Context, in *DeleteScheduleRequest, opts ...grpc.CallOption) (*DeleteScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteScheduleResponse)
+	err := c.cc.Invoke(ctx, SchedulesService_DeleteSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *schedulesServiceClient) TriggerSchedule(ctx context.Context, in *TriggerScheduleRequest, opts ...grpc.CallOption) (*TriggerScheduleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TriggerScheduleResponse)
+	err := c.cc.Invoke(ctx, SchedulesService_TriggerSchedule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SchedulesServiceServer is the server API for SchedulesService service.
+// All implementations must embed UnimplementedSchedulesServiceServer
+// for forward compatibility.
+//
+// SchedulesService 是 Schedule 聚合面（F1.7，ADR-0018 时区 cron）：周期
+// 触发规则，到期拍从冻结 TaskSpec 模板铸一条 one-shot Task（执行机制
+// 复用 Task/Run 全链）。scope 复用 tasks 资源——与 RunsService 同款先例
+// （Schedule 的授权面等价于"反复创建 Task"；词汇冻结见 CONTEXT.md）。
+// List 带 after_schedule_id + limit 游标（ADR-0026 惯例）；CreateSchedule
+// 在幂等执法面（Idempotency-Key 头，ADR-0024）。
+type SchedulesServiceServer interface {
+	// CreateSchedule 建周期触发规则：5 字段 cron 表达式 + IANA 时区名
+	// （空 = UTC；跨夏令时按墙钟解释，ADR-0018）。首拍时刻按表达式即刻
+	// 铸出（next_fire_at 绝对时刻落行）。
+	CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error)
+	GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error)
+	// ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态
+	// 事实可见，与 ListTasks 同款）。
+	ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error)
+	// DeleteSchedule 删除（tombstone；幂等）。已铸出的 Task 不受影响——
+	// 跑完自然收口（Schedule 只拥有"何时拍"，不拥有在途执行）。
+	DeleteSchedule(context.Context, *DeleteScheduleRequest) (*DeleteScheduleResponse, error)
+	// TriggerSchedule 手动触发（RunNow 语义）：立即铸一拍 Task；cron 节奏
+	// 不动。上一拍 Run 未终态时拒绝（先停上一拍或等其收口）。
+	TriggerSchedule(context.Context, *TriggerScheduleRequest) (*TriggerScheduleResponse, error)
+	mustEmbedUnimplementedSchedulesServiceServer()
+}
+
+// UnimplementedSchedulesServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSchedulesServiceServer struct{}
+
+func (UnimplementedSchedulesServiceServer) CreateSchedule(context.Context, *CreateScheduleRequest) (*CreateScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateSchedule not implemented")
+}
+func (UnimplementedSchedulesServiceServer) GetSchedule(context.Context, *GetScheduleRequest) (*GetScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSchedule not implemented")
+}
+func (UnimplementedSchedulesServiceServer) ListSchedules(context.Context, *ListSchedulesRequest) (*ListSchedulesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSchedules not implemented")
+}
+func (UnimplementedSchedulesServiceServer) DeleteSchedule(context.Context, *DeleteScheduleRequest) (*DeleteScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSchedule not implemented")
+}
+func (UnimplementedSchedulesServiceServer) TriggerSchedule(context.Context, *TriggerScheduleRequest) (*TriggerScheduleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TriggerSchedule not implemented")
+}
+func (UnimplementedSchedulesServiceServer) mustEmbedUnimplementedSchedulesServiceServer() {}
+func (UnimplementedSchedulesServiceServer) testEmbeddedByValue()                          {}
+
+// UnsafeSchedulesServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SchedulesServiceServer will
+// result in compilation errors.
+type UnsafeSchedulesServiceServer interface {
+	mustEmbedUnimplementedSchedulesServiceServer()
+}
+
+func RegisterSchedulesServiceServer(s grpc.ServiceRegistrar, srv SchedulesServiceServer) {
+	// If the following call panics, it indicates UnimplementedSchedulesServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SchedulesService_ServiceDesc, srv)
+}
+
+func _SchedulesService_CreateSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulesServiceServer).CreateSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SchedulesService_CreateSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulesServiceServer).CreateSchedule(ctx, req.(*CreateScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SchedulesService_GetSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulesServiceServer).GetSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SchedulesService_GetSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulesServiceServer).GetSchedule(ctx, req.(*GetScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SchedulesService_ListSchedules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSchedulesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulesServiceServer).ListSchedules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SchedulesService_ListSchedules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulesServiceServer).ListSchedules(ctx, req.(*ListSchedulesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SchedulesService_DeleteSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulesServiceServer).DeleteSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SchedulesService_DeleteSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulesServiceServer).DeleteSchedule(ctx, req.(*DeleteScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SchedulesService_TriggerSchedule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TriggerScheduleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SchedulesServiceServer).TriggerSchedule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SchedulesService_TriggerSchedule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SchedulesServiceServer).TriggerSchedule(ctx, req.(*TriggerScheduleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SchedulesService_ServiceDesc is the grpc.ServiceDesc for SchedulesService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SchedulesService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.automation.v1.SchedulesService",
+	HandlerType: (*SchedulesServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateSchedule",
+			Handler:    _SchedulesService_CreateSchedule_Handler,
+		},
+		{
+			MethodName: "GetSchedule",
+			Handler:    _SchedulesService_GetSchedule_Handler,
+		},
+		{
+			MethodName: "ListSchedules",
+			Handler:    _SchedulesService_ListSchedules_Handler,
+		},
+		{
+			MethodName: "DeleteSchedule",
+			Handler:    _SchedulesService_DeleteSchedule_Handler,
+		},
+		{
+			MethodName: "TriggerSchedule",
+			Handler:    _SchedulesService_TriggerSchedule_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/automation/v1/automation.proto",
+}

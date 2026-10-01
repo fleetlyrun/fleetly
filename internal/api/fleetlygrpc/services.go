@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/role"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
+	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 	"github.com/fleetlyrun/fleetly/internal/state/team"
@@ -49,6 +50,7 @@ type Services struct {
 	Builds       *build.Repo
 	Tasks        *task.Repo
 	Runs         *run.Repo
+	Schedules    *schedule.Repo
 	OutboxEvents *outbox.Repo
 	Secrets      *secret.Repo
 	Configs      *configrepo.Repo
@@ -91,6 +93,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Builds:          build.New(clock),
 		Tasks:           task.New(clock),
 		Runs:            run.New(clock),
+		Schedules:       schedule.New(clock),
 		OutboxEvents:    outbox.New(clock),
 		Secrets:         secret.New(clock),
 		Configs:         configrepo.New(clock),

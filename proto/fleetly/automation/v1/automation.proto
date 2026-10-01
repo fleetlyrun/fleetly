@@ -126,6 +126,61 @@ service RunsService {
   }
 }
 
+// SchedulesService 是 Schedule 聚合面（F1.7，ADR-0018 时区 cron）：周期
+// 触发规则，到期拍从冻结 TaskSpec 模板铸一条 one-shot Task（执行机制
+// 复用 Task/Run 全链）。scope 复用 tasks 资源——与 RunsService 同款先例
+//（Schedule 的授权面等价于"反复创建 Task"；词汇冻结见 CONTEXT.md）。
+// List 带 after_schedule_id + limit 游标（ADR-0026 惯例）；CreateSchedule
+// 在幂等执法面（Idempotency-Key 头，ADR-0024）。
+service SchedulesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // CreateSchedule 建周期触发规则：5 字段 cron 表达式 + IANA 时区名
+  //（空 = UTC；跨夏令时按墙钟解释，ADR-0018）。首拍时刻按表达式即刻
+  // 铸出（next_fire_at 绝对时刻落行）。
+  rpc CreateSchedule(CreateScheduleRequest) returns (CreateScheduleResponse) {
+    option (google.api.http) = { post: "/v1/schedules" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetSchedule(GetScheduleRequest) returns (GetScheduleResponse) {
+    option (google.api.http) = { get: "/v1/schedules/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
+    };
+  }
+  // ListSchedules 新→旧分页（游标 = ULID 创建序；含 tombstone——终态
+  // 事实可见，与 ListTasks 同款）。
+  rpc ListSchedules(ListSchedulesRequest) returns (ListSchedulesResponse) {
+    option (google.api.http) = { get: "/v1/schedules" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_READ }
+    };
+  }
+  // DeleteSchedule 删除（tombstone；幂等）。已铸出的 Task 不受影响——
+  // 跑完自然收口（Schedule 只拥有"何时拍"，不拥有在途执行）。
+  rpc DeleteSchedule(DeleteScheduleRequest) returns (DeleteScheduleResponse) {
+    option (google.api.http) = { delete: "/v1/schedules/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+  // TriggerSchedule 手动触发（RunNow 语义）：立即铸一拍 Task；cron 节奏
+  // 不动。上一拍 Run 未终态时拒绝（先停上一拍或等其收口）。
+  rpc TriggerSchedule(TriggerScheduleRequest) returns (TriggerScheduleResponse) {
+    option (google.api.http) = { post: "/v1/schedules/{id}/trigger" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "tasks" op: SCOPE_OP_WRITE }
+    };
+  }
+}
+
 // Task 是程序化工作负载行形态（状态值 kebab-case 与存储一致）。
 message Task {
   string id = 1;
@@ -238,3 +293,66 @@ message StopRunResponse { Run run = 1; }
 message WaitRunRequest { string id = 1; }
 // WaitRunResponse 是状态快照帧；流在终态帧后关闭。
 message WaitRunResponse { Run run = 1; }
+
+// Schedule 是周期触发规则行形态（状态值 kebab-case 与存储一致）。
+// image/command/ttl_seconds 是冻结 TaskSpec 模板的读投影（每拍铸出的
+// one-shot Task 继承）。
+message Schedule {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string state = 4;      // active | deleted
+  // cron 是 5 字段表达式（minute hour day-of-month month day-of-week；
+  // 描述符不支持——区间语义非墙钟）。字段名是表达式语义，实体名仍是
+  // Schedule（CONTEXT.md Avoid: cron 作实体名）。
+  string cron = 5;
+  // timezone 是 IANA 时区名（ADR-0018：随 Schedule 持久化，跨夏令时按
+  // 墙钟解释——春跳缺口拍点当日不触发，Vixie cron 同款）。
+  string timezone = 6;
+  // next_fire_at 是下一拍绝对时刻（RFC3339 UTC；控制面重启按墙钟续算，
+  // 错过窗口补跑一拍——ADR-0018 附录 A）。
+  string next_fire_at = 7;
+  // last_task_id 是最近一拍铸出的 Task（重叠 skip 判定锚 + 导航面）。
+  string last_task_id = 8;
+  string image = 9;
+  repeated string command = 10;
+  int64 ttl_seconds = 11;
+  string created_at = 12;
+  string updated_at = 13;
+}
+
+message CreateScheduleRequest {
+  string project_id = 1;
+  // name 是项目内人读名（可选；活跃期唯一）。
+  string name = 2;
+  // cron 是 5 字段表达式（必填）。
+  string cron = 3;
+  // timezone 是 IANA 时区名（空 = UTC）。
+  string timezone = 4;
+  // 以下为冻结 TaskSpec 模板字段（每拍铸 one-shot Task 继承）。
+  string image = 5;
+  repeated string command = 6;
+  map<string, string> env = 7;
+  repeated string secret_refs = 8;
+  int64 cpu_millis = 9;
+  int64 memory_mb = 10;
+  // ttl_seconds 是每拍 Run 的生命周期上限（上限 86400；0 = 无 TTL）。
+  int64 ttl_seconds = 11;
+  string network_group = 12;
+  string idempotency_key = 13;
+}
+message CreateScheduleResponse { Schedule schedule = 1; }
+message GetScheduleRequest { string id = 1; }
+message GetScheduleResponse { Schedule schedule = 1; }
+message ListSchedulesRequest {
+  string project_id = 1;
+  // after_schedule_id 游标（上一页末条 id；空 = 首页）。
+  string after_schedule_id = 2;
+  int32 limit = 3;
+}
+message ListSchedulesResponse { repeated Schedule schedules = 1; }
+message DeleteScheduleRequest { string id = 1; }
+message DeleteScheduleResponse {}
+message TriggerScheduleRequest { string id = 1; }
+// TriggerScheduleResponse 携带触发后的行（last_task_id = 本拍 Task）。
+message TriggerScheduleResponse { Schedule schedule = 1; }

@@ -44,6 +44,7 @@ type Client struct {
 	Hooks       deliveryv1.HooksServiceClient
 	Tasks       automationv1.TasksServiceClient
 	Runs        automationv1.RunsServiceClient
+	Schedules   automationv1.SchedulesServiceClient
 	Nodes       runtimev1.NodesServiceClient
 	Routes      edgev1.RoutesServiceClient
 	Events      telemetryv1.EventsServiceClient
@@ -108,6 +109,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Hooks:       deliveryv1.NewHooksServiceClient(conn),
 		Tasks:       automationv1.NewTasksServiceClient(conn),
 		Runs:        automationv1.NewRunsServiceClient(conn),
+		Schedules:   automationv1.NewSchedulesServiceClient(conn),
 		Nodes:       runtimev1.NewNodesServiceClient(conn),
 		Routes:      edgev1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),

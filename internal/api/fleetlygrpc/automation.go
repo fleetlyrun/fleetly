@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"time"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -17,8 +18,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
+	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
 
@@ -298,6 +301,62 @@ func mapTaskVerbError(err error) error {
 	return mapStateError(err, "task")
 }
 
+// ---- Schedules（F1.7，ADR-0018） ----
+
+type SchedulesService struct {
+	automationv1.UnimplementedSchedulesServiceServer
+	s *Services
+}
+
+// normalizeCreateSchedule 归一化创建源：5 字段 cron + IANA 时区 + Task 模板
+// 字段 → 冻结 TaskSpec 模板（task ref 留空——fire 时铸新 Task；form 恒
+// one-shot：Schedule 的每一拍都是一次 one-shot 执行）与首拍绝对时刻
+// （now 由调用方注入时钟提供）。
+func normalizeCreateSchedule(req *automationv1.CreateScheduleRequest, now time.Time) (*specv1.TaskSpec, string, string, error) {
+	if req.GetProjectId() == "" {
+		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
+	}
+	if req.GetImage() == "" {
+		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "image: must not be empty (schedules fire one-shot tasks; build sources are an app surface)")
+	}
+	if req.GetCpuMillis() < 0 || req.GetMemoryMb() < 0 {
+		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "cpu_millis/memory_mb: must not be negative")
+	}
+	if req.GetTtlSeconds() < 0 || req.GetTtlSeconds() > 86400 {
+		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "ttl_seconds: must be within [0, 86400] (ADR-0018)")
+	}
+	sched, err := schedule.ParseCron(req.GetCron(), req.GetTimezone())
+	if err != nil {
+		return nil, "", "", apperr.New("E_INVALID_ARGUMENT", "cron: %s", err.Error())
+	}
+	timezone := req.GetTimezone()
+	if timezone == "" {
+		timezone = "UTC" // 显式归一：时区随行持久化（空串不落库）
+	}
+	p := &specv1.ProcessSpec{
+		Name:        "run",
+		ImageOrigin: &specv1.ProcessSpec_Image{Image: req.GetImage()},
+		Command:     req.GetCommand(),
+		Env:         req.GetEnv(),
+		SecretRefs:  req.GetSecretRefs(),
+	}
+	if req.GetCpuMillis() > 0 || req.GetMemoryMb() > 0 {
+		p.Resources = &specv1.ResourcesSpec{CpuMillis: req.GetCpuMillis(), MemoryMb: req.GetMemoryMb()}
+	}
+	s := &specv1.TaskSpec{
+		SchemaVersion:      spec.SchemaVersion,
+		Process:            p,
+		TtlSeconds:         req.GetTtlSeconds(),
+		NetworkGroup:       req.GetNetworkGroup(),
+		DesiredConcurrency: 1,
+		Form:               spec.FormOneShot,
+	}
+	if err := spec.ValidateTaskTemplate(s); err != nil {
+		return nil, "", "", mapValidationError(err)
+	}
+	return s, timezone, state.FormatTime(sched.Next(now)), nil
+}
+
 // taskMsg 把 Task 行投影为 proto 消息（镜像/命令/变量从冻结 Spec 还原）。
 func (s *Services) taskMsg(row *task.Task) *automationv1.Task {
 	msg := &automationv1.Task{
@@ -328,6 +387,146 @@ func runMsg(row *run.Run) *automationv1.Run {
 	}
 	if row.ExitCode != nil {
 		msg.ExitCode = int32(*row.ExitCode) //nolint:gosec // 退出码域 int→int32 无溢出面
+	}
+	return msg
+}
+
+// CreateSchedule 受理 + 冻结模板 + 落行（四件一拍：schedule.created 事件
+// + 审计）+ 唤醒到期拍环。
+func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automationv1.CreateScheduleRequest) (*automationv1.CreateScheduleResponse, error) {
+	taskSpec, timezone, nextFire, err := normalizeCreateSchedule(req, svc.s.DB.Clock().Now())
+	if err != nil {
+		return nil, err
+	}
+	body, err := marshalSpec(taskSpec)
+	if err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "schedule template: %s", err.Error()).WithCause(err)
+	}
+	row := &schedule.Schedule{
+		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
+		State: schedule.StateActive, CronExpr: req.GetCron(), Timezone: timezone,
+		Spec: body, NextFireAt: nextFire,
+	}
+	err = svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Schedules.Create(ctx, tx, row)
+		},
+		events: []eventFact{{
+			// payload 字段全部在行上（时间戳不在 payload 面）——静态构造
+			// 与 write 后求值等价（task.created 同款口径）。
+			name: engine.EventScheduleCreated, aggregate: "schedule", id: row.ID,
+			payload: engine.ScheduleCreatedEventJSON(row),
+		}},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Action: "schedule.create", Resource: "schedule/" + row.ID, AfterFP: row.CronExpr,
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "schedule")
+	}
+	svc.s.Engine.KickSchedules()
+	return &automationv1.CreateScheduleResponse{Schedule: scheduleMsg(row)}, nil
+}
+
+func (svc *SchedulesService) GetSchedule(ctx context.Context, req *automationv1.GetScheduleRequest) (*automationv1.GetScheduleResponse, error) {
+	row, err := svc.s.Schedules.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "schedule")
+	}
+	return &automationv1.GetScheduleResponse{Schedule: scheduleMsg(row)}, nil
+}
+
+func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv1.ListSchedulesRequest) (*automationv1.ListSchedulesResponse, error) {
+	if req.GetProjectId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
+	}
+	rows, err := svc.s.Schedules.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterScheduleId(), listLimit(req.GetLimit()))
+	if err != nil {
+		return nil, mapStateError(err, "schedule")
+	}
+	out := &automationv1.ListSchedulesResponse{}
+	for i := range rows {
+		out.Schedules = append(out.Schedules, scheduleMsg(&rows[i]))
+	}
+	return out, nil
+}
+
+// DeleteSchedule tombstone（幂等：已删行直接成功）。已铸 Task 不受影响——
+// 跑完自然收口（引擎无载体可拆，纯行面走 commit 原语）。
+func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automationv1.DeleteScheduleRequest) (*automationv1.DeleteScheduleResponse, error) {
+	row, err := svc.s.Schedules.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "schedule")
+	}
+	if row.State.Terminal() {
+		return &automationv1.DeleteScheduleResponse{}, nil // 幂等
+	}
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Schedules.Transit(ctx, tx, row.ID, schedule.StateActive, schedule.StateDeleted)
+		},
+		events: []eventFact{{
+			name: "schedule.deleted", aggregate: "schedule", id: row.ID,
+			payload: engine.ScheduleDeletedEventJSON(row),
+		}},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Action: "schedule.delete", Resource: "schedule/" + row.ID,
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "schedule")
+	}
+	return &automationv1.DeleteScheduleResponse{}, nil
+}
+
+// TriggerSchedule 手动触发（RunNow 语义）：engine 铸一拍 Task；重叠与
+// 终态哨兵映射为可行动错误。
+func (svc *SchedulesService) TriggerSchedule(ctx context.Context, req *automationv1.TriggerScheduleRequest) (*automationv1.TriggerScheduleResponse, error) {
+	row, err := svc.s.Engine.TriggerSchedule(ctx, req.GetId())
+	if err != nil {
+		return nil, mapScheduleVerbError(err)
+	}
+	return &automationv1.TriggerScheduleResponse{Schedule: scheduleMsg(row)}, nil
+}
+
+// mapScheduleVerbError 映射 Schedule 动词哨兵。
+func mapScheduleVerbError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var ae *apperr.Error
+	if errors.As(err, &ae) {
+		return ae
+	}
+	switch {
+	case errors.Is(err, engine.ErrScheduleOverlapping):
+		return apperr.New("E_CONFLICT",
+			"the previous fired run is still in flight; stop it (runs stop) or wait for it to finish before triggering again").WithCause(err)
+	case errors.Is(err, engine.ErrScheduleTerminal):
+		return apperr.New("E_CONFLICT", "schedule already deleted").WithCause(err)
+	}
+	return mapStateError(err, "schedule")
+}
+
+// scheduleMsg 把 Schedule 行投影为 proto 消息（模板镜像/命令/TTL 从冻结
+// Spec 还原——taskMsg 同款口径）。
+func scheduleMsg(row *schedule.Schedule) *automationv1.Schedule {
+	msg := &automationv1.Schedule{
+		Id: row.ID, ProjectId: row.ProjectID, Name: row.Name, State: string(row.State),
+		Cron: row.CronExpr, Timezone: row.Timezone,
+		NextFireAt: row.NextFireAt, LastTaskId: row.LastTaskID,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
+	ts := &specv1.TaskSpec{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(row.Spec, ts); err == nil {
+		if p := ts.GetProcess(); p != nil {
+			msg.Image = p.GetImage()
+			msg.Command = p.GetCommand()
+		}
+		msg.TtlSeconds = ts.GetTtlSeconds()
 	}
 	return msg
 }

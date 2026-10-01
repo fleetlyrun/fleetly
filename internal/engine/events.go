@@ -154,6 +154,11 @@ func ScheduleCreatedEventJSON(s *schedule.Schedule) []byte {
 	return scheduleEventPayloadJSON(s, "", "")
 }
 
+// ScheduleDeletedEventJSON 构造 schedule.deleted payload（API 受理面消费）。
+func ScheduleDeletedEventJSON(s *schedule.Schedule) []byte {
+	return scheduleEventPayloadJSON(s, "", "")
+}
+
 // eventTaskState 把 Task 状态映射为事件名（字面量锚定）。
 func eventTaskState(s task.State) string {
 	switch s {
