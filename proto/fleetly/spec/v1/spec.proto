@@ -148,18 +148,24 @@ message RailpackBuilder {
   string pinned_version = 1;
 }
 
-// JobSpec 是部署期一次性作业（first boot jobs）。
+// JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
+// Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
+// 与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/
+// secret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking
+// FILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。
 message JobSpec {
   string name = 1;
   oneof image_origin {
-    string image = 2;
-    string from_build = 3;
+    string image = 2 [deprecated = true];
+    string from_build = 3 [deprecated = true];
   }
-  repeated string command = 4;
-  map<string, string> env = 5;
-  repeated string secret_refs = 6;
+  repeated string command = 4 [deprecated = true];
+  map<string, string> env = 5 [deprecated = true];
+  repeated string secret_refs = 6 [deprecated = true];
   // ttl 是作业硬超时（超时即失败回滚）。
   google.protobuf.Duration ttl = 7;
+  // process 是单进程模板（重塑后的唯一读取面）。
+  ProcessSpec process = 8;
 }
 
 // TaskSpec 是程序化工作负载的期望状态（ADR-0012：one-shot 与 resident
@@ -179,6 +185,9 @@ message TaskSpec {
   // desired_concurrency 是 resident 形态的期望并发 Run 数（one-shot
   // 恒 1）。
   int64 desired_concurrency = 7;
+  // form 是双形态声明（"one-shot" | "resident"；空 = 按
+  // desired_concurrency 推导：>1 即 resident，否则 one-shot）。
+  string form = 8;
 }
 
 // TaskRef 是 Task 归属锚。

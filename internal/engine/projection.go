@@ -2,9 +2,11 @@ package engine
 
 import (
 	"fmt"
+	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	specir "github.com/fleetlyrun/fleetly/internal/spec"
 )
 
 // Project 把 Revision 冻结的 AppSpec 投影为 Runtime 无关的 Workload 集
@@ -67,9 +69,71 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string) 
 				ReadOnly: vol.GetReadOnly(),
 			})
 		}
+		// taskGroup 翻译责任在 engine 投影层（ADR-0025 决策 5）：声明的
+		// 网络组名（taskGroup:<name> 跨挂）在此翻译为实际平台网络名再
+		// 下发——Provider 收到的 Networks 一律是平台网络名。
+		for i, net := range w.Networks {
+			if specir.IsNetworkGroupRef(net) {
+				w.Networks[i] = TaskGroupNetworkName(specir.NetworkGroupName(net))
+			}
+		}
 		workloads = append(workloads, w)
 	}
 	return workloads, ns, nil
+}
+
+// ProjectTask 把 TaskSpec 的一个 Run 投影为 Runtime 无关 Workload（Task
+// 域 ns：NamespaceRef.Task 轴，ADR-0025 决策 4）。Run Workload 一律
+// RestartNever（退出即终态——resident 池的补足由平台承担，不靠编排器
+// 重启）；Addressing 携带双级稳定 DNS（池级轮询 + per-Run 稳定名）；
+// network_group 翻译为平台网络名（同决策 5）。
+func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool) (capability.Workload, capability.NamespaceRef, error) {
+	if t.GetProcess().GetImage() == "" {
+		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("task %s process has no image origin (build source is an app-only surface)", t.GetTask().GetId())
+	}
+	ns := capability.NamespaceRef{Team: team, Project: t.GetTask().GetProject(), Task: t.GetTask().GetId()}
+	p := t.GetProcess()
+	w := capability.Workload{
+		ID:       runID,
+		Process:  "run",
+		Image:    p.GetImage(),
+		Command:  p.GetCommand(),
+		Env:      p.GetEnv(),
+		Replicas: 1,
+		Restart:  capability.RestartNever,
+	}
+	if !running {
+		w.Replicas = 0 // 排空中：缩零承载 SIGTERM+StopGrace 停止路径
+	}
+	if res := p.GetResources(); res != nil {
+		w.Resources = &capability.Resources{CPUMillis: res.GetCpuMillis(), MemoryMB: res.GetMemoryMb()}
+	}
+	if g := t.GetNetworkGroup(); g != "" {
+		w.Networks = []string{TaskGroupNetworkName(g)}
+	}
+	w.Addressing = []capability.Address{
+		{Name: TaskDNSName(t.GetTask().GetId())},
+		{Name: RunDNSName(runID)},
+	}
+	return w, ns, nil
+}
+
+// TaskGroupNetworkName 把 Task Network Group 名翻译为平台网络名（Project
+// 域；App Process 的 taskGroup:<name> 跨挂与 Task 自身 network_group 挂靠
+// 在此归一——单一翻译真源，ADR-0025 决策 5）。
+func TaskGroupNetworkName(group string) string {
+	return "taskgrp-" + strings.ToLower(group)
+}
+
+// TaskDNSName 铸 per-Task 池级稳定 DNS 名（活 Run 轮询解析；公式住 engine
+// ——名字是平台 API 面，N4 换 Runtime 名字不变，ADR-0025 决策 6/R-3）。
+func TaskDNSName(taskID string) string {
+	return "task-" + strings.ToLower(taskID)
+}
+
+// RunDNSName 铸 per-Run 稳定 DNS 名（同决策 6：engine 铸名公式真源）。
+func RunDNSName(runID string) string {
+	return "run-" + strings.ToLower(runID)
 }
 
 // WorkloadID 合成平台 Workload ID（app ULID + process 名：唯一、稳定、

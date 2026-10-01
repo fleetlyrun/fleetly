@@ -92,16 +92,24 @@ var ErrNodeNotFound = errors.New("node not found")
 // CONTEXT.md Generation 词条）。
 type Generation uint64
 
-// NamespaceRef 标识 Provider 侧隔离域（Team/Project/App 级）；字段为平台
-// 实体标识，不含编排器概念。
+// NamespaceRef 标识 Provider 侧隔离域；字段为平台实体标识，不含编排器概念。
+// .App 是 App 域主体（AppSpec 投影的 Workload 集合边界）；.Task 是 Task 域
+// 主体（Run Workload 池边界，App 为空时有效——ADR-0025 决策 4：拒把 Task ID
+// 塞 .App 字段，词汇污染）。
 type NamespaceRef struct {
 	Team    string
 	Project string
 	App     string
+	Task    string
 }
 
 // String 返回稳定展示形态（日志/审计用）。
-func (n NamespaceRef) String() string { return n.Team + "/" + n.Project + "/" + n.App }
+func (n NamespaceRef) String() string {
+	if n.Task != "" {
+		return n.Team + "/" + n.Project + "/task:" + n.Task
+	}
+	return n.Team + "/" + n.Project + "/" + n.App
+}
 
 // Protocol 是 Route/端口协议（CONTEXT.md Route 词条：http/h2c/tcp）。
 type Protocol string
@@ -151,6 +159,38 @@ type Workload struct {
 	// 发布宿主端口（流量一律经 Edge，架构坑清单）；受管 Edge 自身例外
 	//（80/443 入站是其部署形态的一部分）。
 	Publish []PortPublish
+	// Restart 是生命周期声明（ADR-0025 决策 1，语义按 ADR-0012 停止原因
+	// 映射：长运行=any、one-shot Run=never——进程退出即终态，池形态由
+	// 平台补足）。零值 = Provider 缺省（长运行 any）。
+	Restart RestartPolicy
+	// StopGrace 是停止宽限（SIGTERM 后强制 SIGKILL 前的等待窗；零值 =
+	// Provider 缺省）。
+	StopGrace time.Duration
+	// Addressing 是平台标准 DNS 名声明（ADR-0025 决策 6/R-3：铸名公式住
+	// engine——名字是平台 API 面，N4 换 Runtime 不变；Provider 把声明映射
+	// 为自己的原语：swarm=网络别名、k8s=Service 名）。
+	Addressing []Address
+}
+
+// RestartPolicy 是 Workload 生命周期声明（ADR-0025）。
+type RestartPolicy string
+
+const (
+	// RestartDefault 是零值：Provider 缺省（等价长运行语义）。
+	RestartDefault RestartPolicy = ""
+	// RestartAlways 是长运行语义：进程退出由编排器重启（swarm: any；
+	// k8s: Always）。
+	RestartAlways RestartPolicy = "always"
+	// RestartNever 是一次性语义：退出即终态、不重启（swarm: none；k8s:
+	// Never）——Run Workload 一律 never，补足由平台池语义承担。
+	RestartNever RestartPolicy = "never"
+)
+
+// Address 是一条平台标准 DNS 名声明（engine 铸名，Provider 映射原语）。
+type Address struct {
+	// Name 是平台标准 DNS 裸名（网络内可解析；如 task-<id> 池级轮询、
+	// run-<id> per-Run 稳定名）。
+	Name string
 }
 
 // NetworkRef 是一条跨隔离域网络引用（Namespace 定位网络归属域，Name 是
@@ -233,10 +273,18 @@ type WorkloadState string
 const (
 	WorkloadPending  WorkloadState = "pending"
 	WorkloadRunning  WorkloadState = "running"
-	WorkloadDegraded WorkloadState = "degraded" // 副本部分失联/重启循环
+	WorkloadDegraded WorkloadState = "degraded"   // 副本部分失联/重启循环
 	WorkloadStopped  WorkloadState = "stopped"
-	WorkloadOrphaned WorkloadState = "orphaned" // 对不上账：只登记永不自动删
+	WorkloadOrphaned WorkloadState = "orphaned"   // 对不上账：只登记永不自动删
+	WorkloadCompleted WorkloadState = "completed" // one-shot 正常完成终态（退出码 0，ADR-0025 决策 2）
+	WorkloadFailed    WorkloadState = "failed"    // 一次性失败终态（退出码非 0 / rejected——不再被 degraded 吞并，ADR-0025 决策 2）
 )
+
+// Terminal 报告是否一次性终态观测（one-shot 语义面；长运行 Workload 的
+// 失联/劣化仍走 degraded/stopped，不由此判定）。
+func (s WorkloadState) Terminal() bool {
+	return s == WorkloadCompleted || s == WorkloadFailed
+}
 
 // WorkloadEvent 是 Watch 流元素：状态迁移的既成事实。
 type WorkloadEvent struct {
@@ -254,6 +302,13 @@ type WorkloadEvent struct {
 	Node string
 	// Message 是人读补充（容器退出原因等；用户可见文本英文）。
 	Message string
+	// ExitCode 是终态退出码（nil = 未观测/非终态观测；ADR-0025 决策 2）。
+	ExitCode *int
+	// Reason 是编排器侧终态补充原文（容器退出原因等；用户可见文本英文）。
+	Reason string
+	// Instance 是实例身份（编排器 task ID / slot——Run 观测对账锚，
+	// ADR-0025 决策 2）。
+	Instance string
 
 	// NodeJoined 非空时是节点加入事件（Provider 完成平台 ID 锚定后的
 	// node.joined 上报：首次观测 → 铸造平台 ID → 写回载体标记 → 事件）。

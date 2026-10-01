@@ -77,6 +77,50 @@ func TestValidateTaskTTLBound(t *testing.T) {
 	assert.ErrorContains(t, ValidateTask(over), "86400")
 }
 
+// Task 双形态与网络组的校验面（F1.5，ADR-0012/0025）。
+func TestValidateTaskFormAndNetworkGroup(t *testing.T) {
+	base := func() *specv1.TaskSpec {
+		return &specv1.TaskSpec{
+			SchemaVersion: SchemaVersion,
+			Task:          &specv1.TaskRef{Id: "tsk_01H", Project: "prj_01H"},
+			Process:       &specv1.ProcessSpec{Name: "runner", ImageOrigin: &specv1.ProcessSpec_Image{Image: "busybox:1.37"}},
+		}
+	}
+	// 空声明推导：desired>1 → resident；否则 one-shot。
+	assert.Equal(t, FormOneShot, TaskForm(base()))
+	r := base()
+	r.DesiredConcurrency = 4
+	assert.Equal(t, FormResident, TaskForm(r))
+
+	oneShot := base()
+	oneShot.Form = FormOneShot
+	oneShot.DesiredConcurrency = 2
+	assert.ErrorContains(t, ValidateTask(oneShot), "one-shot")
+
+	badForm := base()
+	badForm.Form = "cron"
+	assert.ErrorContains(t, ValidateTask(badForm), `must be one of "one-shot" or "resident"`)
+
+	withGroup := base()
+	withGroup.Form = FormResident
+	withGroup.NetworkGroup = "dispatcher"
+	assert.NoError(t, ValidateTask(withGroup))
+
+	for _, bad := range []string{"Dispatcher", "-lead", "trail-", "a b", ""} {
+		g := base()
+		g.NetworkGroup = bad
+		if bad == "" {
+			continue // 空组 = 不挂网络组，合法
+		}
+		assert.ErrorContains(t, ValidateTask(g), "network_group", "group %q", bad)
+	}
+
+	// Task 的网络附件只有 network_group 一条轨。
+	crossNet := base()
+	crossNet.Process.Networks = []string{"default"}
+	assert.ErrorContains(t, ValidateTask(crossNet), "network_group only")
+}
+
 func TestNetworkGroupRef(t *testing.T) {
 	assert.True(t, IsNetworkGroupRef("taskGroup:dispatcher"))
 	assert.Equal(t, "dispatcher", NetworkGroupName("taskGroup:dispatcher"))

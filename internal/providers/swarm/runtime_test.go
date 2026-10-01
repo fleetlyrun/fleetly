@@ -25,8 +25,10 @@ func TestTaskEventStateTight(t *testing.T) {
 		{swarm.TaskStatePending, capability.WorkloadPending},
 		{swarm.TaskStateReady, capability.WorkloadPending},
 		{swarm.TaskStateStarting, capability.WorkloadPending},
-		{swarm.TaskStateFailed, capability.WorkloadDegraded},
-		{swarm.TaskStateRejected, capability.WorkloadDegraded},
+		// ADR-0025 决策 2：一次性失败终态不再被 degraded 吞并（failed ≠
+		// running，L1 门语义不变——门要求 running 才开）。
+		{swarm.TaskStateFailed, capability.WorkloadFailed},
+		{swarm.TaskStateRejected, capability.WorkloadFailed},
 	} {
 		if got := taskEventState(tc.task); got != tc.want {
 			t.Errorf("taskEventState(%s) = %s, want %s", tc.task, got, tc.want)

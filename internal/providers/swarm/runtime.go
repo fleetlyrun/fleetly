@@ -227,13 +227,17 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		svcLabels[sid] = svc.Service.Spec.Labels
 	}
 	for _, t := range tasks.Items {
-		// 历史任务（已被替换/关闭：desired 不是 running）不计观测——
-		// 只看活槽位，避免滚动替换期的旧 task 状态污染 last-write-wins 槽。
-		if t.DesiredState != swarm.TaskStateRunning {
-			continue
-		}
 		labels := svcLabels[t.ServiceID]
 		if labels[labelManaged] != "true" {
+			continue
+		}
+		// 历史任务（已被替换/关闭：desired 不是 running）不计观测——
+		// App 域只看活槽位，避免滚动替换期的旧 task 状态污染 last-write-wins
+		// 槽。Task 域例外（ADR-0025 决策 2/8）：one-shot Run 的终态任务
+		//（complete/failed）与排空缩零的 shutdown 任务必须可见，否则已完成
+		// 的 Run 整个不可见。
+		terminal := terminalTaskState(t.Status.State)
+		if t.DesiredState != swarm.TaskStateRunning && !(labels[labelTask] != "" && terminal) {
 			continue
 		}
 		gen, _ := strconv.ParseUint(labels[labelGeneration], 10, 64)
@@ -242,7 +246,14 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 			Generation: capability.Generation(gen),
 			State:      taskEventState(t.Status.State),
 			Node:       labels[labelNodeID],
-			Message:    string(t.Status.State),
+			Message:    taskStatusMessage(t),
+			Reason:     t.Status.Err,
+			Instance:   t.ID,
+		}
+		// 终态观测携带退出码（complete=exit 0 形态；failed=非 0）。
+		if terminal {
+			code := t.Status.ContainerStatus.ExitCode
+			ev.ExitCode = &code
 		}
 		if ev.WorkloadID == "" {
 			continue
@@ -256,16 +267,41 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 	return nil
 }
 
+// terminalTaskState 报告 swarm task 状态是否一次性终态（ADR-0025 决策 2：
+// 完成/失败/关闭/rejected——终态观测携带退出码与实例身份）。
+func terminalTaskState(s swarm.TaskState) bool {
+	switch s {
+	case swarm.TaskStateComplete, swarm.TaskStateFailed, swarm.TaskStateShutdown, swarm.TaskStateRejected:
+		return true
+	default:
+		return false
+	}
+}
+
+// taskStatusMessage 是观测的人读补充（终态带编排器原因原文）。
+func taskStatusMessage(t swarm.Task) string {
+	if t.Status.Err != "" {
+		return string(t.Status.State) + ": " + t.Status.Err
+	}
+	return string(t.Status.State)
+}
+
 // taskEventState 把 swarm task 状态映射为观测状态（L1 数据源，N0 修复批
-// A2 收紧）：仅 running 计 running——placement 落空（new/allocated/
-// assigned/preparing/pending/starting 族）计 pending，让 L1 门保持关闭直至
-// 真就绪或超时失败；failed/rejected 计 degraded。
+// A2 收紧 + ADR-0025 决策 2）：仅 running 计 running——placement 落空
+//（new/allocated/assigned/preparing/pending/starting 族）计 pending，让 L1
+// 门保持关闭直至真就绪或超时失败；complete/failed/rejected 是一次性终态
+//（completed/failed，不再被 degraded 吞并）；shutdown 计 stopped（Task 域
+// 排空缩零路径）。
 func taskEventState(s swarm.TaskState) capability.WorkloadState {
 	switch s {
 	case swarm.TaskStateRunning:
 		return capability.WorkloadRunning
+	case swarm.TaskStateComplete:
+		return capability.WorkloadCompleted
 	case swarm.TaskStateFailed, swarm.TaskStateRejected:
-		return capability.WorkloadDegraded
+		return capability.WorkloadFailed
+	case swarm.TaskStateShutdown:
+		return capability.WorkloadStopped
 	default:
 		return capability.WorkloadPending
 	}

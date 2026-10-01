@@ -1183,7 +1183,11 @@ func (x *RailpackBuilder) GetPinnedVersion() string {
 	return ""
 }
 
-// JobSpec 是部署期一次性作业（first boot jobs）。
+// JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归
+// Task——部署期特例）。C-13 重塑：进程模板共享 ProcessSpec（process 字段，
+// 与 TaskSpec 同款嵌套形态）；旧标量字段（image_origin/command/env/
+// secret_refs）保留号退役（deprecated，读取面一律走 process——buf breaking
+// FILE 档下零消费者字段删除亦红，彻底删除待 breaking 基线策略变更）。
 type JobSpec struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
@@ -1192,11 +1196,16 @@ type JobSpec struct {
 	//	*JobSpec_Image
 	//	*JobSpec_FromBuild
 	ImageOrigin isJobSpec_ImageOrigin `protobuf_oneof:"image_origin"`
-	Command     []string              `protobuf:"bytes,4,rep,name=command,proto3" json:"command,omitempty"`
-	Env         map[string]string     `protobuf:"bytes,5,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
-	SecretRefs  []string              `protobuf:"bytes,6,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
+	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
+	Command []string `protobuf:"bytes,4,rep,name=command,proto3" json:"command,omitempty"`
+	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
+	Env map[string]string `protobuf:"bytes,5,rep,name=env,proto3" json:"env,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
+	SecretRefs []string `protobuf:"bytes,6,rep,name=secret_refs,json=secretRefs,proto3" json:"secret_refs,omitempty"`
 	// ttl 是作业硬超时（超时即失败回滚）。
-	Ttl           *durationpb.Duration `protobuf:"bytes,7,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	Ttl *durationpb.Duration `protobuf:"bytes,7,opt,name=ttl,proto3" json:"ttl,omitempty"`
+	// process 是单进程模板（重塑后的唯一读取面）。
+	Process       *ProcessSpec `protobuf:"bytes,8,opt,name=process,proto3" json:"process,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1245,6 +1254,7 @@ func (x *JobSpec) GetImageOrigin() isJobSpec_ImageOrigin {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
 func (x *JobSpec) GetImage() string {
 	if x != nil {
 		if x, ok := x.ImageOrigin.(*JobSpec_Image); ok {
@@ -1254,6 +1264,7 @@ func (x *JobSpec) GetImage() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
 func (x *JobSpec) GetFromBuild() string {
 	if x != nil {
 		if x, ok := x.ImageOrigin.(*JobSpec_FromBuild); ok {
@@ -1263,6 +1274,7 @@ func (x *JobSpec) GetFromBuild() string {
 	return ""
 }
 
+// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
 func (x *JobSpec) GetCommand() []string {
 	if x != nil {
 		return x.Command
@@ -1270,6 +1282,7 @@ func (x *JobSpec) GetCommand() []string {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
 func (x *JobSpec) GetEnv() map[string]string {
 	if x != nil {
 		return x.Env
@@ -1277,6 +1290,7 @@ func (x *JobSpec) GetEnv() map[string]string {
 	return nil
 }
 
+// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
 func (x *JobSpec) GetSecretRefs() []string {
 	if x != nil {
 		return x.SecretRefs
@@ -1291,15 +1305,24 @@ func (x *JobSpec) GetTtl() *durationpb.Duration {
 	return nil
 }
 
+func (x *JobSpec) GetProcess() *ProcessSpec {
+	if x != nil {
+		return x.Process
+	}
+	return nil
+}
+
 type isJobSpec_ImageOrigin interface {
 	isJobSpec_ImageOrigin()
 }
 
 type JobSpec_Image struct {
+	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
 	Image string `protobuf:"bytes,2,opt,name=image,proto3,oneof"`
 }
 
 type JobSpec_FromBuild struct {
+	// Deprecated: Marked as deprecated in fleetly/spec/v1/spec.proto.
 	FromBuild string `protobuf:"bytes,3,opt,name=from_build,json=fromBuild,proto3,oneof"`
 }
 
@@ -1325,8 +1348,11 @@ type TaskSpec struct {
 	// desired_concurrency 是 resident 形态的期望并发 Run 数（one-shot
 	// 恒 1）。
 	DesiredConcurrency int64 `protobuf:"varint,7,opt,name=desired_concurrency,json=desiredConcurrency,proto3" json:"desired_concurrency,omitempty"`
-	unknownFields      protoimpl.UnknownFields
-	sizeCache          protoimpl.SizeCache
+	// form 是双形态声明（"one-shot" | "resident"；空 = 按
+	// desired_concurrency 推导：>1 即 resident，否则 one-shot）。
+	Form          string `protobuf:"bytes,8,opt,name=form,proto3" json:"form,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *TaskSpec) Reset() {
@@ -1406,6 +1432,13 @@ func (x *TaskSpec) GetDesiredConcurrency() int64 {
 		return x.DesiredConcurrency
 	}
 	return 0
+}
+
+func (x *TaskSpec) GetForm() string {
+	if x != nil {
+		return x.Form
+	}
+	return ""
 }
 
 // TaskRef 是 Task 归属锚。
@@ -1751,21 +1784,22 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\n" +
 	"\bstrategy\"8\n" +
 	"\x0fRailpackBuilder\x12%\n" +
-	"\x0epinned_version\x18\x01 \x01(\tR\rpinnedVersion\"\xbb\x02\n" +
+	"\x0epinned_version\x18\x01 \x01(\tR\rpinnedVersion\"\x87\x03\n" +
 	"\aJobSpec\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
-	"\x05image\x18\x02 \x01(\tH\x00R\x05image\x12\x1f\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1a\n" +
+	"\x05image\x18\x02 \x01(\tB\x02\x18\x01H\x00R\x05image\x12#\n" +
 	"\n" +
-	"from_build\x18\x03 \x01(\tH\x00R\tfromBuild\x12\x18\n" +
-	"\acommand\x18\x04 \x03(\tR\acommand\x123\n" +
-	"\x03env\x18\x05 \x03(\v2!.fleetly.spec.v1.JobSpec.EnvEntryR\x03env\x12\x1f\n" +
-	"\vsecret_refs\x18\x06 \x03(\tR\n" +
+	"from_build\x18\x03 \x01(\tB\x02\x18\x01H\x00R\tfromBuild\x12\x1c\n" +
+	"\acommand\x18\x04 \x03(\tB\x02\x18\x01R\acommand\x127\n" +
+	"\x03env\x18\x05 \x03(\v2!.fleetly.spec.v1.JobSpec.EnvEntryB\x02\x18\x01R\x03env\x12#\n" +
+	"\vsecret_refs\x18\x06 \x03(\tB\x02\x18\x01R\n" +
 	"secretRefs\x12+\n" +
-	"\x03ttl\x18\a \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x1a6\n" +
+	"\x03ttl\x18\a \x01(\v2\x19.google.protobuf.DurationR\x03ttl\x126\n" +
+	"\aprocess\x18\b \x01(\v2\x1c.fleetly.spec.v1.ProcessSpecR\aprocess\x1a6\n" +
 	"\bEnvEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x0e\n" +
-	"\fimage_origin\"\xaf\x02\n" +
+	"\fimage_origin\"\xc3\x02\n" +
 	"\bTaskSpec\x12%\n" +
 	"\x0eschema_version\x18\x01 \x01(\x05R\rschemaVersion\x12,\n" +
 	"\x04task\x18\x02 \x01(\v2\x18.fleetly.spec.v1.TaskRefR\x04task\x126\n" +
@@ -1775,7 +1809,8 @@ const file_fleetly_spec_v1_spec_proto_rawDesc = "" +
 	"\vowner_token\x18\x05 \x01(\tR\n" +
 	"ownerToken\x12#\n" +
 	"\rnetwork_group\x18\x06 \x01(\tR\fnetworkGroup\x12/\n" +
-	"\x13desired_concurrency\x18\a \x01(\x03R\x12desiredConcurrency\"3\n" +
+	"\x13desired_concurrency\x18\a \x01(\x03R\x12desiredConcurrency\x12\x12\n" +
+	"\x04form\x18\b \x01(\tR\x04form\"3\n" +
 	"\aTaskRef\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aproject\x18\x02 \x01(\tR\aproject\"\xd0\x02\n" +
@@ -1863,18 +1898,19 @@ var file_fleetly_spec_v1_spec_proto_depIdxs = []int32{
 	15, // 19: fleetly.spec.v1.BuildSpec.railpack:type_name -> fleetly.spec.v1.RailpackBuilder
 	23, // 20: fleetly.spec.v1.JobSpec.env:type_name -> fleetly.spec.v1.JobSpec.EnvEntry
 	24, // 21: fleetly.spec.v1.JobSpec.ttl:type_name -> google.protobuf.Duration
-	18, // 22: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
-	7,  // 23: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
-	20, // 24: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
-	11, // 25: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
-	21, // 26: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
-	24, // 27: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
-	24, // 28: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
-	29, // [29:29] is the sub-list for method output_type
-	29, // [29:29] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	7,  // 22: fleetly.spec.v1.JobSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	18, // 23: fleetly.spec.v1.TaskSpec.task:type_name -> fleetly.spec.v1.TaskRef
+	7,  // 24: fleetly.spec.v1.TaskSpec.process:type_name -> fleetly.spec.v1.ProcessSpec
+	20, // 25: fleetly.spec.v1.DatabaseSpec.database:type_name -> fleetly.spec.v1.DatabaseRef
+	11, // 26: fleetly.spec.v1.DatabaseSpec.resources:type_name -> fleetly.spec.v1.ResourcesSpec
+	21, // 27: fleetly.spec.v1.DatabaseSpec.backup_policy:type_name -> fleetly.spec.v1.BackupPolicySpec
+	24, // 28: fleetly.spec.v1.BackupPolicySpec.interval:type_name -> google.protobuf.Duration
+	24, // 29: fleetly.spec.v1.BackupPolicySpec.retention:type_name -> google.protobuf.Duration
+	30, // [30:30] is the sub-list for method output_type
+	30, // [30:30] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_spec_v1_spec_proto_init() }

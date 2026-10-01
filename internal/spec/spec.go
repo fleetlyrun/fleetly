@@ -5,6 +5,7 @@ package spec
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
@@ -154,7 +155,7 @@ func validateSource(src *specv1.Source) error {
 	return nil
 }
 
-// ValidateTask 校验 TaskSpec。
+// ValidateTask 校验 TaskSpec（F1.5，ADR-0012/0025）。
 func ValidateTask(s *specv1.TaskSpec) error {
 	if s == nil {
 		return invalidf("task", "spec is nil")
@@ -171,6 +172,11 @@ func ValidateTask(s *specv1.TaskSpec) error {
 	if err := ValidateProcess("task.process", s.GetProcess()); err != nil {
 		return err
 	}
+	// Task 的网络附件只有 network_group 一条轨（Run 创建时刻挂靠，
+	// ADR-0012）；process.networks 是 App Process 的跨挂面，TaskSpec 禁用。
+	if len(s.GetProcess().GetNetworks()) > 0 {
+		return invalidf("task.process.networks", "tasks attach via network_group only (process.networks is an app-process surface)")
+	}
 	// ADR-0018：TTL 上限 86400s。
 	if ttl := s.GetTtlSeconds(); ttl < 0 || ttl > 86400 {
 		return invalidf("task.ttl_seconds", "must be within [0, 86400]")
@@ -178,8 +184,47 @@ func ValidateTask(s *specv1.TaskSpec) error {
 	if s.GetDesiredConcurrency() < 0 {
 		return invalidf("task.desired_concurrency", "must not be negative")
 	}
+	// 双形态显式声明时校验值；空 = 按 desired_concurrency 推导。
+	switch form := TaskForm(s); form {
+	case FormOneShot:
+		if s.GetDesiredConcurrency() > 1 {
+			return invalidf("task.form", "one-shot tasks cannot declare desired_concurrency > 1")
+		}
+	case FormResident:
+	default:
+		return invalidf("task.form", "must be one of \"one-shot\" or \"resident\" (got %q)", s.GetForm())
+	}
+	if g := s.GetNetworkGroup(); g != "" && !validNetworkGroupName(g) {
+		return invalidf("task.network_group", "must match %[1]s (got %q)", networkGroupNamePattern, g)
+	}
 	return nil
 }
+
+// TaskForm 返回解析后的双形态（空声明按 desired_concurrency 推导：>1 即
+// resident，否则 one-shot）。
+func TaskForm(s *specv1.TaskSpec) string {
+	if f := s.GetForm(); f != "" {
+		return f
+	}
+	if s.GetDesiredConcurrency() > 1 {
+		return FormResident
+	}
+	return FormOneShot
+}
+
+// Task 双形态常量（存储/事件值 kebab-case，与 Deployment.state 同款拼写冻结）。
+const (
+	FormOneShot  = "one-shot"
+	FormResident = "resident"
+)
+
+// networkGroupNamePattern 钉死网络组名格式（DNS label 安全：组名直接进
+// 平台网络名与 DNS 面；首尾须为字母数字）。
+const networkGroupNamePattern = `[a-z0-9]([a-z0-9-]{0,36}[a-z0-9])?`
+
+var networkGroupNameRe = regexp.MustCompile(`^` + networkGroupNamePattern + `$`)
+
+func validNetworkGroupName(g string) bool { return networkGroupNameRe.MatchString(g) }
 
 // ValidateDatabase 校验 DatabaseSpec。
 func ValidateDatabase(s *specv1.DatabaseSpec) error {

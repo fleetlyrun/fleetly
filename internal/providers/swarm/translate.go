@@ -22,10 +22,11 @@ import (
 const (
 	// labelManaged 标记 fleetly 管辖的载体（列表/收敛的选择器）。
 	labelManaged = "fleetly.managed"
-	// 归属标记：ns 三元组 + Workload/Process。
+	// 归属标记：ns 四元组（App/Task 域主体互斥，ADR-0025 决策 4）+ Workload/Process。
 	labelTeam     = "fleetly.ns.team"
 	labelProject  = "fleetly.ns.project"
 	labelApp      = "fleetly.ns.app"
+	labelTask     = "fleetly.ns.task"
 	labelWorkload = "fleetly.workload.id"
 	labelProcess  = "fleetly.process"
 	// labelGeneration 搬运平台 Generation（幂等重放与 Drift 判定锚）。
@@ -38,14 +39,24 @@ const (
 
 	// namePrefix 是载体命名公式前缀：fleetly-<team>-<prj>-<app>-<proc>。
 	namePrefix = "fleetly"
+	// runNamePrefix 是 Task 域 Run 载体命名公式前缀：fleetly-run-<run id>
+	//（Run Workload ID = run id，域内天然唯一；ADR-0025 决策 7 混合拓扑的
+	// per-Run service）。
+	runNamePrefix = "fleetly-run"
 	// swarmServiceNameLimit 是 swarm 服务名上限（DNS label 约束 63）。
 	swarmServiceNameLimit = 63
 )
 
-// serviceName 计算载体服务名：fleetly-<team>-<prj>-<app>-<proc>；超长时
-// 截断并以稳定哈希后缀兜底（唯一性以 fleetly.* 标记锚定，架构 §5）。
-func serviceName(ns capability.NamespaceRef, process string) string {
-	full := strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, process}, "-")
+// workloadServiceName 计算载体服务名：App 域 = fleetly-<team>-<prj>-<app>-
+// <proc>；Task 域 = fleetly-run-<run id>（决策 4/7）。超长时截断并以稳定
+// 哈希后缀兜底（唯一性以 fleetly.* 标记锚定，架构 §5）。
+func workloadServiceName(ns capability.NamespaceRef, w capability.Workload) string {
+	var full string
+	if ns.Task != "" {
+		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
+	} else {
+		full = strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, w.Process}, "-")
+	}
 	full = sanitizeNamePart(full)
 	if len(full) <= swarmServiceNameLimit {
 		return full
@@ -115,28 +126,40 @@ func parsePortsLabel(v string) []capability.WorkloadPort {
 	return ports
 }
 
-// workloadLabels 构造归属标记集。
+// workloadLabels 构造归属标记集（App/Task 域主体互斥：Task 域不带空
+// labelApp——空值标记会破选择器全等匹配）。
 func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) map[string]string {
-	return map[string]string{
+	labels := map[string]string{
 		labelManaged:    "true",
 		labelTeam:       sanitizeNamePart(ns.Team),
 		labelProject:    sanitizeNamePart(ns.Project),
-		labelApp:        sanitizeNamePart(ns.App),
 		labelWorkload:   w.ID,
 		labelProcess:    sanitizeNamePart(w.Process),
 		labelGeneration: strconv.FormatUint(uint64(gen), 10),
 		labelPorts:      portsLabelValue(w.Ports),
 	}
+	if ns.Task != "" {
+		labels[labelTask] = sanitizeNamePart(ns.Task)
+	} else {
+		labels[labelApp] = sanitizeNamePart(ns.App)
+	}
+	return labels
 }
 
-// nsSelector 是隔离域的列表过滤器（label 全等匹配）。
+// nsSelector 是隔离域的列表过滤器（label 全等匹配；域主体按 App/Task 轴
+// 分支，与 workloadLabels 同构）。
 func nsSelector(ns capability.NamespaceRef) map[string]string {
-	return map[string]string{
+	selector := map[string]string{
 		labelManaged: "true",
 		labelTeam:    sanitizeNamePart(ns.Team),
 		labelProject: sanitizeNamePart(ns.Project),
-		labelApp:     sanitizeNamePart(ns.App),
 	}
+	if ns.Task != "" {
+		selector[labelTask] = sanitizeNamePart(ns.Task)
+	} else {
+		selector[labelApp] = sanitizeNamePart(ns.App)
+	}
+	return selector
 }
 
 // toServiceSpec 把平台 Workload 翻译为 swarm ServiceSpec。
@@ -147,7 +170,12 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 //   - Env 排序：swarm update 以 spec 变更为准，排序保幂等 diff 稳定。
 //   - Placement → 节点 label 约束公式（node.labels.fleetly.node.id==<id>）。
 //   - Networks 按名引用（网络存在性由 engine 侧网络 reconciler 保证；
-//     taskGroup:<name> 前缀由 engine 已翻译为实际网络名）。
+//     taskGroup:<name> 前缀已由 engine 投影层翻译为实际网络名，ADR-0025
+//     决策 5）。
+//   - Restart → swarm 重启策略（never=none：one-shot Run 退出即终态，
+//     ADR-0025 决策 1）；StopGrace → StopGracePeriod。
+//   - Addressing → 网络别名（平台标准 DNS 名的 swarm 原语映射，ADR-0025
+//     决策 6；跨服务 alias 的 DNS RR 行为 e2e 实证后定稿）。
 func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretCarriers map[string]string) swarm.ServiceSpec {
 	container := &swarm.ContainerSpec{
 		Image:    w.Image,
@@ -155,6 +183,10 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		Command:  w.Command,
 		Env:      envSlice(w.Env),
 		Hostname: "{{.Service.Name}}",
+	}
+	if w.StopGrace > 0 {
+		grace := w.StopGrace
+		container.StopGracePeriod = &grace
 	}
 	if w.Healthcheck != nil {
 		container.Healthcheck = toSwarmHealthcheck(w.Healthcheck, w)
@@ -183,7 +215,9 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	task := swarm.TaskSpec{
 		ContainerSpec: container,
 		RestartPolicy: &swarm.RestartPolicy{
-			Condition: swarm.RestartPolicyConditionAny,
+			// ADR-0025 决策 1：生命周期声明映射（缺省/always=any；
+			// never=none——Run Workload 一律 never）。
+			Condition: restartPolicyCondition(w.Restart),
 		},
 	}
 	if w.Resources != nil {
@@ -197,13 +231,16 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	if constraints := placementConstraints(w.Placement); len(constraints) > 0 {
 		task.Placement = &swarm.Placement{Constraints: constraints}
 	}
+	aliases := addressAliases(w.Addressing)
 	for _, net := range w.Networks {
 		task.Networks = append(task.Networks, swarm.NetworkAttachmentConfig{
-			Target: carrierNetworkName(ns, net),
+			Target:  carrierNetworkName(ns, net),
+			Aliases: aliases,
 		})
 	}
 	// 跨域网络引用（受管 Edge 挂项目网）：载体名按引用自身的域解析——
 	// 域名与载体名公式都是 Provider 私有，engine 只发引用形态（B1）。
+	// 别名不挂跨域附件（平台 DNS 名是域内 API 面）。
 	for _, ref := range w.NetworkRefs {
 		task.Networks = append(task.Networks, swarm.NetworkAttachmentConfig{
 			Target: carrierNetworkName(ref.Namespace, ref.Name),
@@ -212,7 +249,7 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 
 	return swarm.ServiceSpec{
 		Annotations: swarm.Annotations{
-			Name:   serviceName(ns, w.Process),
+			Name:   workloadServiceName(ns, w),
 			Labels: container.Labels,
 		},
 		TaskTemplate: task,
@@ -228,6 +265,29 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			FailureAction: swarm.UpdateFailureActionPause,
 		},
 	}
+}
+
+// restartPolicyCondition 把平台生命周期声明映射为 swarm 重启条件（ADR-0025
+// 决策 1：长运行=any、one-shot=never）。
+func restartPolicyCondition(r capability.RestartPolicy) swarm.RestartPolicyCondition {
+	if r == capability.RestartNever {
+		return swarm.RestartPolicyConditionNone
+	}
+	return swarm.RestartPolicyConditionAny
+}
+
+// addressAliases 把平台标准 DNS 名声明映射为 swarm 网络别名（排序稳定：
+// 幂等 diff 逐字节稳定）。
+func addressAliases(addressing []capability.Address) []string {
+	if len(addressing) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(addressing))
+	for _, a := range addressing {
+		names = append(names, sanitizeNamePart(a.Name))
+	}
+	sort.Strings(names)
+	return names
 }
 
 // endpointSpec 翻译宿主端口发布声明（routing mesh 模式；仅受管 Edge 形态使用）。

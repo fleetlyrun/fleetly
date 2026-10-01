@@ -22,7 +22,14 @@ func base64DecodeString(s string) (string, error) {
 
 func TestServiceNameFormula(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
-	assert.Equal(t, "fleetly-acme-shop-web-web", serviceName(ns, "web"))
+	assert.Equal(t, "fleetly-acme-shop-web-web", workloadServiceName(ns, capability.Workload{Process: "web"}))
+}
+
+// Task 域命名（ADR-0025 决策 4/7）：Run 载体按 run id 命名，域内天然唯一。
+func TestRunServiceNameFormula(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Task: "01JTASK"}
+	w := capability.Workload{ID: "01JRUN"}
+	assert.Equal(t, "fleetly-run-01jrun", workloadServiceName(ns, w))
 }
 
 func TestServiceNameTruncationStable(t *testing.T) {
@@ -31,11 +38,11 @@ func TestServiceNameTruncationStable(t *testing.T) {
 		Project: strings.Repeat("p", 30),
 		App:     strings.Repeat("a", 20),
 	}
-	name := serviceName(ns, "web")
+	name := workloadServiceName(ns, capability.Workload{Process: "web"})
 	assert.LessOrEqual(t, len(name), 63, "swarm DNS label limit")
 	// 同输入稳定；不同 process 可区分（截断段 + 哈希后缀）。
-	assert.Equal(t, name, serviceName(ns, "web"))
-	assert.NotEqual(t, name, serviceName(ns, "worker"))
+	assert.Equal(t, name, workloadServiceName(ns, capability.Workload{Process: "web"}))
+	assert.NotEqual(t, name, workloadServiceName(ns, capability.Workload{Process: "worker"}))
 }
 
 func TestSanitizeNamePart(t *testing.T) {
@@ -144,6 +151,13 @@ func deterministicFixture() (capability.NamespaceRef, capability.Workload, capab
 			{VolumeID: "01VOLB", Target: "/cache", ReadOnly: true},
 		},
 		Networks: []string{"default", "internal"},
+		// 生命周期加宽面（ADR-0025 决策 1/6）：StopGrace/Addressing 进
+		// 确定性 fixture——别名翻译若引入遍历序泄漏在此翻红。
+		StopGrace: 15e9, // 15s
+		Addressing: []capability.Address{
+			{Name: "task-01japp"},
+			{Name: "run-01jrun"},
+		},
 	}
 	// ≥2 个不同 secret 载体（P1-14 的触发面：map → ContainerSpec.Secrets）。
 	carriers := map[string]string{ //nolint:gosec // 载体名样本（非凭据值）

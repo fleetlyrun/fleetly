@@ -102,9 +102,10 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
 	if len(spec.GetFirstBootJobs()) > 0 {
-		// 诚实拒绝：部署期 init job 依赖一次性 Workload 形态（Automation
-		// 批次，N1）；半吊子实现会静默跳过迁移逻辑。
-		return e.failDeployment(ctx, d, "first boot jobs are not supported yet; they land with the automation batch")
+		// 诚实拒绝：部署期 init job 的执行面 = 一次性 Run 机制（已随
+		// F1.5 落地），部署链等待/回滚接线随后续部署链批接入——半吊子
+		// 实现会静默跳过迁移逻辑。
+		return e.failDeployment(ctx, d, "first boot jobs are not supported yet; deploy-time job wiring lands with the deployment-chain batch")
 	}
 	team, _, err := e.appTeam(ctx, d.AppID)
 	if err != nil {
