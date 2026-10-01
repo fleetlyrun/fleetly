@@ -24,6 +24,9 @@ invitation.created	An invitation was issued (single-use, time-boxed, role-bound)
 lease.expired	A task's owner lease expired past grace; the pool drains.	internal/engine/task.go driveTask
 lease.renewed	A task's owner lease was renewed (deadline advanced).	internal/engine/task.go RenewTask
 network.created	A project network was created.	internal/api/fleetlygrpc/structure.go CreateNetwork
+network.peer_approved	The receiving project approved a peer attachment; references become projectable.	internal/api/fleetlygrpc/structure.go ApproveNetworkPeer
+network.peer_declared	A peer project declared intent to attach to a network (pending; needs receiver approval).	internal/api/fleetlygrpc/structure.go DeclareNetworkPeer
+network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/api/fleetlygrpc/structure.go RevokeNetworkPeer
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
 project.created	A project was created.	internal/api/fleetlygrpc/structure.go CreateProject

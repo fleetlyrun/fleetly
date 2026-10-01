@@ -46,18 +46,21 @@ const ClaimTTL = 90 * time.Second
 // TestIdempotencyCoversCreateVerbs 以 proto 为源反向对账：创建型动词
 // （Create/Deploy/Submit/Put/Set/Rollback）落网或豁免带理由，死条目红。
 var EnforcedMethods = map[string]bool{
-	"/fleetly.structure.v1.ProjectsService/CreateProject":      true,
-	"/fleetly.structure.v1.AppsService/CreateApp":              true,
-	"/fleetly.structure.v1.SecretsService/PutSecret":           true,
-	"/fleetly.structure.v1.ConfigsService/PutConfig":           true,
-	"/fleetly.structure.v1.VolumesService/CreateVolume":        true,
-	"/fleetly.structure.v1.NetworksService/CreateNetwork":      true,
-	"/fleetly.edge.v1.RoutesService/CreateRoute":               true,
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":           true,
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":         true,
-	"/fleetly.delivery.v1.HooksService/SetGitHook":             true,
-	"/fleetly.automation.v1.TasksService/CreateTask":           true,
-	"/fleetly.automation.v1.SchedulesService/CreateSchedule":   true,
+	"/fleetly.structure.v1.ProjectsService/CreateProject":    true,
+	"/fleetly.structure.v1.AppsService/CreateApp":            true,
+	"/fleetly.structure.v1.SecretsService/PutSecret":         true,
+	"/fleetly.structure.v1.ConfigsService/PutConfig":         true,
+	"/fleetly.structure.v1.VolumesService/CreateVolume":      true,
+	"/fleetly.structure.v1.NetworksService/CreateNetwork":    true,
+	"/fleetly.edge.v1.RoutesService/CreateRoute":             true,
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":         true,
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":       true,
+	"/fleetly.delivery.v1.HooksService/SetGitHook":           true,
+	"/fleetly.automation.v1.TasksService/CreateTask":         true,
+	"/fleetly.automation.v1.SchedulesService/CreateSchedule": true,
+	// peer 声明是创建型动词（落 pending 行；动词名不在创建型前缀集，显式
+	// 纳入——与 ReceiveWebhook 同款先例）。
+	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": true,
 	"/fleetly.identity.v1.UsersService/CreateUser":             true,
 	"/fleetly.identity.v1.TeamsService/CreateTeam":             true,
 	"/fleetly.identity.v1.RolesService/CreateRole":             true,

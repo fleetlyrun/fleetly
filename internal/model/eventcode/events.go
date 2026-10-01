@@ -59,6 +59,12 @@ var builtins = []Event{
 	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/api/fleetlygrpc/structure.go CreateVolume"},
 	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/structure.go CreateNetwork"},
 
+	// 跨 Project peer 声明三拍（F1.8，ADR-0013 附录 A.1：双向声明、接收方
+	// 批准、撤销即时隔离）。
+	{Name: "network.peer_declared", Summary: "A peer project declared intent to attach to a network (pending; needs receiver approval).", Source: "internal/api/fleetlygrpc/structure.go DeclareNetworkPeer"},
+	{Name: "network.peer_approved", Summary: "The receiving project approved a peer attachment; references become projectable.", Source: "internal/api/fleetlygrpc/structure.go ApproveNetworkPeer"},
+	{Name: "network.peer_revoked", Summary: "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).", Source: "internal/api/fleetlygrpc/structure.go RevokeNetworkPeer"},
+
 	// Git 触发（F0.13 webhook 接收链）。
 	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go handlePush"},
 

@@ -169,6 +169,24 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
     },
     {
+      "name": "network.peer_approved",
+      "kind": "event",
+      "summary": "The receiving project approved a peer attachment; references become projectable.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"network_id\":{\"type\":\"string\"},\"network_name\":{\"type\":\"string\"},\"network_project_id\":{\"type\":\"string\"},\"peer_project_id\":{\"type\":\"string\"}},\"required\":[\"id\",\"network_id\",\"network_name\",\"network_project_id\",\"peer_project_id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "network.peer_declared",
+      "kind": "event",
+      "summary": "A peer project declared intent to attach to a network (pending; needs receiver approval).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"network_id\":{\"type\":\"string\"},\"network_name\":{\"type\":\"string\"},\"network_project_id\":{\"type\":\"string\"},\"peer_project_id\":{\"type\":\"string\"}},\"required\":[\"id\",\"network_id\",\"network_name\",\"network_project_id\",\"peer_project_id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "network.peer_revoked",
+      "kind": "event",
+      "summary": "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"network_id\":{\"type\":\"string\"},\"network_name\":{\"type\":\"string\"},\"network_project_id\":{\"type\":\"string\"},\"peer_project_id\":{\"type\":\"string\"}},\"required\":[\"id\",\"network_id\",\"network_name\",\"network_project_id\",\"peer_project_id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "node.joined",
       "kind": "event",
       "summary": "Node joined the cluster and was anchored with a platform node ID.",

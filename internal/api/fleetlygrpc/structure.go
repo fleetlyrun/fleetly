@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
+	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
@@ -40,6 +41,11 @@ const (
 	eventConfigUpdated      = "config.updated"
 	eventVolumeCreated      = "volume.created"
 	eventNetworkCreated     = "network.created"
+	// 跨 Project peer 声明面（F1.8，ADR-0013 附录 A.1）：三拍事件，
+	// aggregate=network（挂接收方网络 ID——事件流沿网络聚合面订阅）。
+	eventNetworkPeerDeclared = "network.peer_declared"
+	eventNetworkPeerApproved = "network.peer_approved"
+	eventNetworkPeerRevoked  = "network.peer_revoked"
 )
 
 // ---- Projects ----
@@ -584,4 +590,207 @@ func (svc *NetworksService) ListNetworks(ctx context.Context, req *structurev1.L
 		out.Networks = append(out.Networks, networkMsg(row))
 	}
 	return out, nil
+}
+
+// ---- Network Peers（跨 Project 挂靠声明，ADR-0013 附录 A.1） ----
+
+// networkPeerEventPayload 是 peer 三拍事件的载荷（字段只增）。
+type networkPeerEventPayload struct {
+	ID               string `json:"id"`
+	NetworkID        string `json:"network_id"`
+	NetworkName      string `json:"network_name"`
+	NetworkProjectID string `json:"network_project_id"`
+	PeerProjectID    string `json:"peer_project_id"`
+}
+
+// networkPeerEvent 构造 peer 事件事实（aggregate=network，id=网络行）。
+func networkPeerEvent(name string, p *networkpeer.Peer, net *networkrepo.Network) eventFact {
+	payload, _ := json.Marshal(networkPeerEventPayload{ //nolint:errcheck // 结构体字段恒可序列化
+		ID: p.ID, NetworkID: p.NetworkID, NetworkName: net.Name,
+		NetworkProjectID: net.ProjectID, PeerProjectID: p.PeerProjectID,
+	})
+	return eventFact{name: name, aggregate: "network", id: p.NetworkID, payload: payload}
+}
+
+// networkPeerAudits 是双方审计（ADR-0013：挂靠计入两侧）：网络侧 +
+// 挂靠项目侧各一行，action 同名（ListAudit 的 action/resource 过滤面
+// 两侧各自可答"谁挂在我的网上/我挂在哪里"）。
+func networkPeerAudits(ctx context.Context, action string, p *networkpeer.Peer, net *networkrepo.Network) []*audit.Entry {
+	fp := fmt.Sprintf("peer_project=%s network=%s state=%s", p.PeerProjectID, net.Name, p.State)
+	mk := func(resource string) *audit.Entry {
+		return &audit.Entry{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
+			Action: action, Resource: resource, AfterFP: fp,
+		}
+	}
+	return []*audit.Entry{
+		mk("network/" + net.Name + "/peers/" + p.ID),
+		mk("project/" + p.PeerProjectID + "/peers/" + p.ID),
+	}
+}
+
+// loadPeerNetwork 读 peer 声明指向的网络行（活跃口径；A.1：批准面只对
+// 活跃网络有意义——已删网络的挂靠无接收方）。
+func (svc *NetworksService) loadPeerNetwork(ctx context.Context, networkID string) (*networkrepo.Network, error) {
+	net, err := svc.s.Networks.GetByID(ctx, svc.s.DB.Runner(), networkID)
+	if err != nil {
+		return nil, mapStateError(err, "network")
+	}
+	return net, nil
+}
+
+// DeclareNetworkPeer 是挂靠方声明（pending 行）：peer 项目请求挂靠目标
+// 网络。双向声明的第一拍；批准前引用不可投影（strict fail-closed）。
+func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structurev1.DeclareNetworkPeerRequest) (*structurev1.DeclareNetworkPeerResponse, error) {
+	if req.GetNetworkId() == "" || req.GetPeerProjectId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "network_id and peer_project_id: must not be empty")
+	}
+	net, err := svc.loadPeerNetwork(ctx, req.GetNetworkId())
+	if err != nil {
+		return nil, err
+	}
+	if net.ProjectID == req.GetPeerProjectId() {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"peer_project_id %s owns network %q; same-project attachment uses the project-local network name",
+			req.GetPeerProjectId(), net.Name)
+	}
+	p := &networkpeer.Peer{ID: newID(), NetworkID: net.ID, PeerProjectID: req.GetPeerProjectId()}
+	err = svc.s.commit(ctx, writeFact{
+		// 双侧父资源存活（事务内）：网络归属方与挂靠方项目都必须在场。
+		checks: []acceptanceCheck{
+			svc.s.parentProjectAlive(net.ProjectID),
+			svc.s.parentProjectAlive(req.GetPeerProjectId()),
+		},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.NetworkPeers.Create(ctx, tx, p)
+		},
+		events: []eventFact{networkPeerEvent(eventNetworkPeerDeclared, p, net)},
+		audits: networkPeerAudits(ctx, "network.peer_declare", p, net),
+	})
+	if err != nil {
+		return nil, mapStateError(err, "network peer")
+	}
+	return &structurev1.DeclareNetworkPeerResponse{Peer: networkPeerMsg(p, net)}, nil
+}
+
+// ApproveNetworkPeer 是接收方批准（pending → approved）。已批准幂等返回；
+// 已撤销的行不可复活（重新挂靠走新声明）。
+func (svc *NetworksService) ApproveNetworkPeer(ctx context.Context, req *structurev1.ApproveNetworkPeerRequest) (*structurev1.ApproveNetworkPeerResponse, error) {
+	p, err := svc.s.NetworkPeers.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "network peer")
+	}
+	net, err := svc.loadPeerNetwork(ctx, p.NetworkID)
+	if err != nil {
+		return nil, err
+	}
+	if p.State == networkpeer.StateApproved {
+		return &structurev1.ApproveNetworkPeerResponse{Peer: networkPeerMsg(p, net)}, nil // 幂等
+	}
+	if p.State == networkpeer.StateRevoked {
+		return nil, apperr.New("E_CONFLICT",
+			"peer declaration %s was revoked; declare a new one to re-attach", p.ID)
+	}
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.NetworkPeers.Approve(ctx, tx, p.ID)
+		},
+		events: []eventFact{networkPeerEvent(eventNetworkPeerApproved, p, net)},
+		audits: networkPeerAudits(ctx, "network.peer_approve", p, net),
+	})
+	if err != nil {
+		return nil, mapStateError(err, "network peer")
+	}
+	fresh, gerr := svc.s.NetworkPeers.Get(ctx, svc.s.DB.Runner(), p.ID)
+	if gerr != nil {
+		return nil, mapStateError(gerr, "network peer")
+	}
+	return &structurev1.ApproveNetworkPeerResponse{Peer: networkPeerMsg(fresh, net)}, nil
+}
+
+// RevokeNetworkPeer 撤销（任一侧；幂等）：即时隔离——撤销落账后引擎对
+// 受影响 App isolate 重收敛剥离附件（断存量，A.4）。剥离失败不回滚撤销
+// （受理面已生效），漂移扫描拍兜底重收敛。
+func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structurev1.RevokeNetworkPeerRequest) (*structurev1.RevokeNetworkPeerResponse, error) {
+	p, err := svc.s.NetworkPeers.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "network peer")
+	}
+	if p.State == networkpeer.StateRevoked {
+		return &structurev1.RevokeNetworkPeerResponse{Peer: networkPeerMsg(p, nil)}, nil // 幂等
+	}
+	// 网络行可能已删（先删网络后撤声明的次序）：审计名缺失不阻断撤销——
+	// 撤销的语义就是摘除挂靠，接收网络在不在都成立。
+	net := &networkrepo.Network{ID: p.NetworkID}
+	if active, nerr := svc.s.Networks.GetByID(ctx, svc.s.DB.Runner(), p.NetworkID); nerr == nil {
+		net = active
+	}
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.NetworkPeers.Revoke(ctx, tx, p.ID)
+		},
+		events: []eventFact{networkPeerEvent(eventNetworkPeerRevoked, p, net)},
+		audits: networkPeerAudits(ctx, "network.peer_revoke", p, net),
+	})
+	if err != nil {
+		return nil, mapStateError(err, "network peer")
+	}
+	// 即时隔离（A.4）：撤销已生效，剥离是收敛动作——失败记日志，漂移拍自愈。
+	if serr := svc.s.Engine.IsolateNetworkPeer(ctx, p.NetworkID, p.PeerProjectID); serr != nil {
+		if svc.s.Log != nil {
+			svc.s.Log.Warn("network peer revoke: isolation reconverge deferred to the drift tick", "peer", p.ID, "err", serr)
+		}
+	}
+	fresh, gerr := svc.s.NetworkPeers.Get(ctx, svc.s.DB.Runner(), p.ID)
+	if gerr != nil {
+		return nil, mapStateError(gerr, "network peer")
+	}
+	return &structurev1.RevokeNetworkPeerResponse{Peer: networkPeerMsg(fresh, net)}, nil
+}
+
+func (svc *NetworksService) GetNetworkPeer(ctx context.Context, req *structurev1.GetNetworkPeerRequest) (*structurev1.GetNetworkPeerResponse, error) {
+	p, err := svc.s.NetworkPeers.Get(ctx, svc.s.DB.Runner(), req.GetId())
+	if err != nil {
+		return nil, mapStateError(err, "network peer")
+	}
+	return &structurev1.GetNetworkPeerResponse{Peer: networkPeerMsg(p, svc.peerNetProjection(ctx, p))}, nil
+}
+
+// ListNetworkPeers 新→旧分页（ADR-0026 after_* + limit）。network_id /
+// peer_project_id 过滤可选（接收方与挂靠方两侧视图同面）。
+func (svc *NetworksService) ListNetworkPeers(ctx context.Context, req *structurev1.ListNetworkPeersRequest) (*structurev1.ListNetworkPeersResponse, error) {
+	list, err := svc.s.NetworkPeers.List(ctx, svc.s.DB.Runner(),
+		req.GetNetworkId(), req.GetPeerProjectId(), req.GetAfterPeerId(), int(req.GetLimit()))
+	if err != nil {
+		return nil, mapStateError(err, "network peer")
+	}
+	out := &structurev1.ListNetworkPeersResponse{}
+	for i := range list {
+		out.Peers = append(out.Peers, networkPeerMsg(&list[i], svc.peerNetProjection(ctx, &list[i])))
+	}
+	return out, nil
+}
+
+// peerNetProjection 读声明指向的网络行（读投影便捷字段；行已删 → 空值，
+// 不阻断列表）。
+func (svc *NetworksService) peerNetProjection(ctx context.Context, p *networkpeer.Peer) *networkrepo.Network {
+	net, err := svc.s.Networks.GetByID(ctx, svc.s.DB.Runner(), p.NetworkID)
+	if err != nil {
+		return &networkrepo.Network{ID: p.NetworkID}
+	}
+	return net
+}
+
+// networkPeerMsg 行 → proto 映射（网络侧便捷字段来自读投影）。
+func networkPeerMsg(p *networkpeer.Peer, net *networkrepo.Network) *structurev1.NetworkPeer {
+	msg := &structurev1.NetworkPeer{
+		Id: p.ID, PeerProjectId: p.PeerProjectID, State: string(p.State),
+		CreatedAt: p.CreatedAt, UpdatedAt: p.UpdatedAt, ApprovedAt: p.ApprovedAt,
+	}
+	if net != nil {
+		msg.NetworkId = p.NetworkID
+		msg.NetworkName = net.Name
+		msg.NetworkProjectId = net.ProjectID
+	}
+	return msg
 }

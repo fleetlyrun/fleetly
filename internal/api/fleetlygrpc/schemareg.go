@@ -71,6 +71,14 @@ func init() {
 	} {
 		registerEventPayload(name, structureEventPayload{})
 	}
+	// 跨 Project peer 三拍（networkPeerEventPayload，structure.go 单源）。
+	for _, name := range []string{
+		eventNetworkPeerDeclared,
+		eventNetworkPeerApproved,
+		eventNetworkPeerRevoked,
+	} {
+		registerEventPayload(name, networkPeerEventPayload{})
+	}
 	// 身份面。
 	registerEventPayload("user.created", nameEventPayload{})
 	registerEventPayload("team.created", nameEventPayload{})
