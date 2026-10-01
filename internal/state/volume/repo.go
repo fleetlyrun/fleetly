@@ -32,8 +32,8 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同 Project 同名冲突返回 state.ErrConflict。pinnedNodeID
-// 为空表示待钉住（首次挂载时由引擎分配——分配后不可变）。
+// Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
+// pinnedNodeID 为空表示待钉住（首次挂载时由引擎分配——分配后不可变）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, v *Volume) error {
 	now := state.FormatTime(r.clock.Now())
 	v.CreatedAt, v.UpdatedAt = now, now
@@ -42,7 +42,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, v *Volume) error {
 		VALUES (?, ?, ?, ?, ?, ?, '')`,
 		v.ID, v.ProjectID, v.Name, v.PinnedNodeID, v.CreatedAt, v.UpdatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: volume %q already exists in project", state.ErrConflict, v.Name)
+		return fmt.Errorf("%w: volume %q already exists in project", state.ErrAlreadyExists, v.Name)
 	}
 	return err
 }

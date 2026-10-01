@@ -28,7 +28,7 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同 Team 内同名冲突返回 state.ErrConflict。
+// Create 落一行；同 Team 内同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
 	ro.CreatedAt = state.FormatTime(r.clock.Now())
 	scopes, err := json.Marshal(ro.Scopes)
@@ -40,7 +40,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, ro *Role) error {
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		ro.ID, ro.TeamID, ro.Name, boolInt(ro.Builtin), string(scopes), ro.CreatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: role name %q already exists", state.ErrConflict, ro.Name)
+		return fmt.Errorf("%w: role name %q already exists", state.ErrAlreadyExists, ro.Name)
 	}
 	return err
 }

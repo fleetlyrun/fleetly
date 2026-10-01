@@ -26,7 +26,7 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同 User 同 Team 重复授权返回 state.ErrConflict。
+// Create 落一行；同 User 同 Team 重复授权返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, m *Membership) error {
 	m.CreatedAt = state.FormatTime(r.clock.Now())
 	_, err := run.ExecContext(ctx, `
@@ -34,7 +34,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, m *Membership) erro
 		VALUES (?, ?, ?, ?, ?)`,
 		m.ID, m.UserID, m.TeamID, m.RoleID, m.CreatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: user %s already has a role in team %s", state.ErrConflict, m.UserID, m.TeamID)
+		return fmt.Errorf("%w: user %s already has a role in team %s", state.ErrAlreadyExists, m.UserID, m.TeamID)
 	}
 	return err
 }

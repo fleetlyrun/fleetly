@@ -16,11 +16,10 @@ import (
 var codeExemptions = map[string]string{
 	// 示例形态（勿仿）："E_RESERVED": "reserved for X batch (ADR-NNNN); do not reuse",
 	//
-	// 批 0 Q-12：state.ErrConflict 的通用映射统一为 E_CONFLICT（中性冲突
-	// 文案），唯一约束命中不再有专门生产者。注册表只增：码保留在册，
-	// 待 Create* 显式唯一冲突映射（如前置查名）落地时再挂生产者并摘除
-	// 本豁免（双向保鲜）。
-	"E_ALREADY_EXISTS": "producer retired in batch 0 (Q-12): generic ErrConflict maps to E_CONFLICT; re-attach to an explicit unique-violation mapping before reuse",
+	// E_ALREADY_EXISTS 曾随批 0 Q-12 退休（producer 退役进豁免）；2026-10-01
+	// 批 0 复核恢复唯一约束违例的专门映射（state.ErrAlreadyExists → 本码，
+	// REST 409 回归修复），生产者回归即摘除豁免——豁免清单只对"确属预留"
+	// 的码保鲜。
 }
 
 func TestRegistryCodesReferencedInProduction(t *testing.T) {

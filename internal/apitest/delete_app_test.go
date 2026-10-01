@@ -16,6 +16,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -162,18 +163,34 @@ func TestDeleteProjectSemantics(t *testing.T) {
 	}
 }
 
-// Q-12 回归：state.ErrConflict 的通用映射是 E_CONFLICT 中性文案（唯一约束
-// 命中形态：同名 Project 再建），不再一律 "already exists"。
-func TestErrConflictMapsToConflictCode(t *testing.T) {
+// 批 0 复核回归（Q-12 的再修正）：错误分类按成因分立——唯一约束命中
+// （同名 Project 再建）映射 E_ALREADY_EXISTS（REST 409），而 CAS 前置
+// 不符与 FK RESTRICT 保持 E_CONFLICT + 中性冲突文案（不误导为 "already
+// exists"）。REST 侧行为断言在 rest_errors_test.go；此处钉 gRPC 面分类。
+func TestErrConflictClassificationSplit(t *testing.T) {
 	h := apitest.New(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	teams := identityv1.NewTeamsServiceClient(h.Conn)
+	tokens := identityv1.NewTokensServiceClient(h.Conn)
 
+	// 唯一约束命中 → E_ALREADY_EXISTS。
 	_, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dupe"})
 	require.NoError(t, err)
 	_, err = projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dupe"})
 	require.Error(t, err)
-	require.Equal(t, "E_CONFLICT", appErrCode(t, err), "unique-violation conflicts must surface E_CONFLICT")
+	require.Equal(t, "E_ALREADY_EXISTS", appErrCode(t, err), "unique-violation conflicts must surface E_ALREADY_EXISTS")
+
+	// FK RESTRICT 拒删（Token 行仍引用 Team）→ E_CONFLICT + 中性文案。
+	team, err := teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: "conflict-team"})
+	require.NoError(t, err)
+	_, err = tokens.CreateToken(ctx, &identityv1.CreateTokenRequest{
+		Name: "conflict-token", TeamId: team.GetTeam().GetId(), RoleId: identity.RoleMemberID,
+	})
+	require.NoError(t, err)
+	_, err = teams.DeleteTeam(ctx, &identityv1.DeleteTeamRequest{Id: team.GetTeam().GetId()})
+	require.Error(t, err)
+	require.Equal(t, "E_CONFLICT", appErrCode(t, err), "FK-referenced deletes stay E_CONFLICT")
 	require.Contains(t, err.Error(), "conflict:")
 	require.Contains(t, err.Error(), "refresh and retry")
 }

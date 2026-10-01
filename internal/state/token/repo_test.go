@@ -7,7 +7,7 @@ package token
 import (
 	"context"
 	"database/sql"
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/fleetlyrun/fleetly/internal/identity"
@@ -158,14 +158,14 @@ func TestIdentityFlow(t *testing.T) {
 		t.Fatalf("admin scopes not refreshed after vocabulary growth: %v", admin.Scopes)
 	}
 
-	// 同名用户冲突。
+	// 同名用户冲突（唯一约束命中 → ErrAlreadyExists，与 CAS/FK 冲突分立）。
 	err = repos.users.Create(ctx, db.Runner(), &user.User{ID: "01USER00000000000000000001", Name: "alice"})
-	if err == nil || !isConflict(err) {
-		t.Fatalf("duplicate user name must conflict, got %v", err)
+	if err == nil || !errors.Is(err, state.ErrAlreadyExists) {
+		t.Fatalf("duplicate user name must be ErrAlreadyExists, got %v", err)
 	}
 
 	// 内置角色拒删；membership 引用的角色拒删。
-	if err := repos.roles.Delete(ctx, db.Runner(), identity.RoleAdminID); err == nil || !isConflict(err) {
+	if err := repos.roles.Delete(ctx, db.Runner(), identity.RoleAdminID); err == nil || !errors.Is(err, state.ErrConflict) {
 		t.Fatalf("builtin delete must conflict, got %v", err)
 	}
 	custom := &role.Role{ID: "01ROLE00000000000000000000", TeamID: identity.DefaultTeamID, Name: "deployer", Scopes: []string{"deployments:write"}}
@@ -178,8 +178,8 @@ func TestIdentityFlow(t *testing.T) {
 			TeamID: identity.DefaultTeamID, RoleID: custom.ID,
 		})
 	})
-	if err == nil || !isConflict(err) {
-		t.Fatalf("second membership in same team must conflict, got %v", err)
+	if err == nil || !errors.Is(err, state.ErrAlreadyExists) {
+		t.Fatalf("second membership in same team must be ErrAlreadyExists, got %v", err)
 	}
 
 	// 邀请：摘要查询、单次消费、二消费冲突。
@@ -202,12 +202,10 @@ func TestIdentityFlow(t *testing.T) {
 	if err := repos.invitations.MarkConsumed(ctx, db.Runner(), got.ID); err != nil {
 		t.Fatalf("MarkConsumed: %v", err)
 	}
-	if err := repos.invitations.MarkConsumed(ctx, db.Runner(), got.ID); err == nil || !isConflict(err) {
+	if err := repos.invitations.MarkConsumed(ctx, db.Runner(), got.ID); err == nil || !errors.Is(err, state.ErrConflict) {
 		t.Fatalf("second consume must conflict, got %v", err)
 	}
 }
-
-func isConflict(err error) bool { return err != nil && strings.Contains(err.Error(), "conflict") }
 
 type identityRepos struct {
 	users       *user.Repo

@@ -32,7 +32,7 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同 Project 内同名冲突返回 state.ErrConflict。
+// Create 落一行；同 Project 内同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, a *App) error {
 	now := state.FormatTime(r.clock.Now())
 	a.CreatedAt, a.UpdatedAt = now, now
@@ -41,7 +41,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, a *App) error {
 		VALUES (?, ?, ?, ?, ?, '')`,
 		a.ID, a.ProjectID, a.Name, a.CreatedAt, a.UpdatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: app name %q already exists in project", state.ErrConflict, a.Name)
+		return fmt.Errorf("%w: app name %q already exists in project", state.ErrAlreadyExists, a.Name)
 	}
 	return err
 }

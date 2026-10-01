@@ -22,9 +22,9 @@ func TestProjectCRUD(t *testing.T) {
 	require.NoError(t, projects.Create(ctx, db.Runner(), p))
 	assert.Equal(t, "2026-01-01T00:00:00Z", p.CreatedAt, "clock-injected timestamp")
 
-	// 同名冲突（活跃唯一）。
+	// 同名冲突（活跃唯一；唯一约束命中 → ErrAlreadyExists）。
 	err := projects.Create(ctx, db.Runner(), &project.Project{ID: "01JD0PROJ00000000000000001", Name: "shop"})
-	assert.ErrorIs(t, err, state.ErrConflict)
+	assert.ErrorIs(t, err, state.ErrAlreadyExists)
 
 	got, err := projects.GetByName(ctx, db.Runner(), "shop")
 	require.NoError(t, err)
@@ -49,9 +49,10 @@ func TestAppCRUD(t *testing.T) {
 	a := &app.App{ID: "01JD0APP000000000000000000", ProjectID: projectID, Name: "web"}
 	require.NoError(t, apps.Create(ctx, db.Runner(), a))
 
-	// 同 Project 同名冲突；跨 Project 同名合法（资源名只在 Project 内唯一）。
+	// 同 Project 同名冲突（唯一约束命中 → ErrAlreadyExists）；跨 Project
+	// 同名合法（资源名只在 Project 内唯一）。
 	err := apps.Create(ctx, db.Runner(), &app.App{ID: "01JD0APP000000000000000001", ProjectID: projectID, Name: "web"})
-	assert.ErrorIs(t, err, state.ErrConflict)
+	assert.ErrorIs(t, err, state.ErrAlreadyExists)
 	require.NoError(t, apps.Create(ctx, db.Runner(), &app.App{
 		ID: "01JD0APP000000000000000002", ProjectID: "01JD0PROJ00000000000000009", Name: "web",
 	}))

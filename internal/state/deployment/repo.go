@@ -95,7 +95,7 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行（活跃态幂等键唯一索引防并发重复入队 → ErrConflict）。
+// Create 落一行（活跃态幂等键唯一索引防并发重复入队 → ErrAlreadyExists）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) error {
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt = now, now
@@ -108,7 +108,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) erro
 		d.ID, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation,
 		d.IdempotencyKey, d.CommitSHA, d.CreatedAt, d.UpdatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: an active deployment already holds idempotency key %q", state.ErrConflict, d.IdempotencyKey)
+		return fmt.Errorf("%w: an active deployment already holds idempotency key %q", state.ErrAlreadyExists, d.IdempotencyKey)
 	}
 	return err
 }

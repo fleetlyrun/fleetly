@@ -37,7 +37,7 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同 Project 内 host+path 冲突返回 state.ErrConflict。
+// Create 落一行；同 Project 内 host+path 冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
 	now := state.FormatTime(r.clock.Now())
 	rt.CreatedAt, rt.UpdatedAt = now, now
@@ -47,7 +47,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
 		rt.ID, rt.ProjectID, rt.Host, normalizePath(rt.Path), rt.AppID, rt.Process,
 		rt.Port, string(rt.Protocol), rt.TLSMode, rt.CreatedAt, rt.UpdatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: route %s%s already exists in project", state.ErrConflict, rt.Host, rt.Path)
+		return fmt.Errorf("%w: route %s%s already exists in project", state.ErrAlreadyExists, rt.Host, rt.Path)
 	}
 	return err
 }

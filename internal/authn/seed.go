@@ -23,9 +23,9 @@ func EnsureSeed(ctx context.Context, db *state.DB, resources []string) error {
 		if err := teams.Create(ctx, tx, &team.Team{
 			ID: identity.DefaultTeamID, Name: identity.DefaultTeamID,
 		}); err != nil {
-			// default Team 已存在（幂等重启）时 repo 返回 ErrConflict 链：
-			// 吞掉并继续刷内置角色，其余错误上抛。
-			if errors.Is(err, state.ErrConflict) {
+			// default Team 已存在（幂等重启）时 repo 返回 ErrAlreadyExists
+			// 链：吞掉并继续刷内置角色，其余错误上抛。
+			if errors.Is(err, state.ErrAlreadyExists) {
 				// 已存在的场景仍要刷新内置角色，落到下方循环。
 			} else {
 				return err

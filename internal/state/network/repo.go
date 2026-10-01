@@ -5,6 +5,7 @@ package networkrepo
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
 )
@@ -30,7 +31,7 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同 Project 同名冲突返回 state.ErrConflict。
+// Create 落一行；同 Project 同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
 	now := state.FormatTime(r.clock.Now())
 	n.CreatedAt = now
@@ -43,7 +44,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
 		VALUES (?, ?, ?, ?, ?, '')`,
 		n.ID, n.ProjectID, n.Name, egress, n.CreatedAt)
 	if state.IsUniqueViolation(err) {
-		return state.ErrConflict
+		return fmt.Errorf("%w: network name %q already exists in project", state.ErrAlreadyExists, n.Name)
 	}
 	return err
 }

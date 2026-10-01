@@ -39,7 +39,8 @@ func Digest(spec []byte) string {
 }
 
 // Create 落一行（digest 由 spec 派生；同 App 序号唯一、同 App 同内容唯一
-// ——重复冻结同内容 → state.ErrConflict，调用方应改走 FindByDigest 复用）。
+// ——重复冻结同内容 → state.ErrAlreadyExists，调用方应改走 FindByDigest
+// 复用）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) error {
 	now := state.FormatTime(r.clock.Now())
 	rev.CreatedAt = now
@@ -49,7 +50,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rev *Revision) erro
 		VALUES (?, ?, ?, ?, ?, ?)`,
 		rev.ID, rev.AppID, rev.Seq, rev.Digest, rev.Spec, rev.CreatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: revision with identical spec already frozen for app", state.ErrConflict)
+		return fmt.Errorf("%w: revision with identical spec already frozen for app", state.ErrAlreadyExists)
 	}
 	return err
 }

@@ -100,9 +100,10 @@ func TestAdmissionDedup(t *testing.T) {
 	d := newDeployment("01JD0DEPLOY0000000000000000", "deploy-42")
 	require.NoError(t, deployments.Create(ctx, db.Runner(), d))
 
-	// 活跃期同幂等键并发入队 → 唯一索引拒绝（admission 事务内判定）。
+	// 活跃期同幂等键并发入队 → 唯一索引拒绝（ErrAlreadyExists；admission
+	// 事务内判定）。
 	err := deployments.Create(ctx, db.Runner(), newDeployment("01JD0DEPLOY0000000000000001", "deploy-42"))
-	assert.ErrorIs(t, err, state.ErrConflict)
+	assert.ErrorIs(t, err, state.ErrAlreadyExists)
 
 	// 终态释放幂等键：完成后同键可再入队。
 	require.NoError(t, deployments.Transit(ctx, db.Runner(), d.ID,

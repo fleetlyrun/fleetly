@@ -36,12 +36,16 @@ func mapStateError(err error, what string) error {
 		return nil
 	case errors.Is(err, state.ErrNotFound):
 		return apperr.New("E_NOT_FOUND", "%s not found", what).WithCause(err)
+	case errors.Is(err, state.ErrAlreadyExists):
+		// 唯一约束命中（批 0 复核回归：与 CAS/FK 冲突重新分立）——gRPC
+		// AlreadyExists，REST 409；重名重试语义不静默退化成 400。
+		return apperr.New("E_ALREADY_EXISTS", "%s already exists", what).WithCause(err)
 	case errors.Is(err, state.ErrConflict):
-		// 中性冲突文案（Q-12）：ErrConflict 承载唯一约束命中、CAS 前置
-		// 不符、FK RESTRICT 三种形态，一律渲染 "already exists" 对后两者
-		// 是误导——统一 E_CONFLICT + 处置提示，具体原因留在 cause 链。
+		// 中性冲突文案（Q-12）：ErrConflict 承载 CAS 前置不符与 FK
+		// RESTRICT（唯一约束命中已分流 E_ALREADY_EXISTS）——文案只说
+		// "被并发改动或仍被引用"，具体原因留在 cause 链。
 		return apperr.New("E_CONFLICT",
-			"conflict: %s already exists or was changed concurrently; refresh and retry", what).WithCause(err)
+			"conflict: %s was changed concurrently or is still referenced; refresh and retry", what).WithCause(err)
 	case errors.Is(err, engine.ErrQueueFull):
 		return apperr.New("E_QUEUE_FULL", "deployment queue is full for this app").WithCause(err)
 	case errors.Is(err, engine.ErrNotCancellable):

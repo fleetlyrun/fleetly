@@ -24,14 +24,14 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同名冲突返回 state.ErrConflict。
+// Create 落一行；同名冲突返回 state.ErrAlreadyExists。
 func (r *Repo) Create(ctx context.Context, run state.Runner, t *Team) error {
 	t.CreatedAt = state.FormatTime(r.clock.Now())
 	_, err := run.ExecContext(ctx, `
 		INSERT INTO teams (id, name, created_at) VALUES (?, ?, ?)`,
 		t.ID, t.Name, t.CreatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: team name %q already exists", state.ErrConflict, t.Name)
+		return fmt.Errorf("%w: team name %q already exists", state.ErrAlreadyExists, t.Name)
 	}
 	return err
 }

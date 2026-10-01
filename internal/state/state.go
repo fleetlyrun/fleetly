@@ -30,7 +30,13 @@ var migrationsFS embed.FS
 var (
 	// ErrNotFound 是目标行不存在（读路径）。
 	ErrNotFound = fmt.Errorf("state: not found")
-	// ErrConflict 是乐观并发冲突（CAS 前置状态不符 / 唯一约束命中）。
+	// ErrAlreadyExists 是唯一约束命中（同唯一键的活跃行已存在）。与
+	// ErrConflict 分立：唯一冲突对外是 E_ALREADY_EXISTS（gRPC
+	// AlreadyExists → REST 409），CAS 前置不符与 FK RESTRICT 是 E_CONFLICT
+	// ——REST/SDK 消费方按 409 写的"重名重试"逻辑不得静默退化（批 0
+	// 复核回归：IsUniqueViolation 归一点不变，只是分类更诚实）。
+	ErrAlreadyExists = fmt.Errorf("state: already exists")
+	// ErrConflict 是乐观并发冲突（CAS 前置状态不符 / FK RESTRICT 拒删）。
 	ErrConflict = fmt.Errorf("state: conflict")
 )
 
@@ -53,7 +59,7 @@ func FormatTime(t time.Time) string { return t.UTC().Format(time.RFC3339) }
 
 // IsUniqueViolation 报告 sqlite 唯一约束命中（modernc 驱动以
 // SQLITE_CONSTRAINT 文本承载约束错误，类型面不完整；聚合 repo 据此把
-// 唯一冲突归一为 ErrConflict）。
+// 唯一冲突归一为 ErrAlreadyExists）。
 func IsUniqueViolation(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "constraint failed: UNIQUE")
 }

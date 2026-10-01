@@ -28,13 +28,14 @@ func TestRevisionImmutableSequence(t *testing.T) {
 		require.NoError(t, revisions.Create(ctx, db.Runner(), rev))
 	}
 
-	// 同 App 同内容重复冻结 → 冲突（内容寻址复用走 FindByDigest）。
+	// 同 App 同内容重复冻结 → 唯一约束命中（ErrAlreadyExists；内容寻址
+	// 复用走 FindByDigest）。
 	dup := &revision.Revision{
 		ID: "01JD0REV000000000000000009", AppID: appID,
 		Seq: 3, Spec: []byte(`{"a":1}`),
 	}
 	err := revisions.Create(ctx, db.Runner(), dup)
-	assert.ErrorIs(t, err, state.ErrConflict)
+	assert.ErrorIs(t, err, state.ErrAlreadyExists)
 
 	// digest 派生自 spec 内容；FindByDigest 复用既有冻结体。
 	digest := revision.Digest([]byte(`{"a":1}`))
