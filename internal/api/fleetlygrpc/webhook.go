@@ -147,7 +147,7 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 	// hook 受理事实（delivery 台账 + 审计行 + outbox 事件）一拍落库——台账
 	// 与效果同事务，重投不产生第二行事实（幂等键重放根本不达此处；无键
 	// 重投的部署侧去重由 admission CommitSHA 承担）。
-	payload, err := json.Marshal(map[string]string{"branch": branch, "commit": p.After, "deployment": d.ID})
+	payload, err := json.Marshal(hookPushAcceptedPayload{Branch: branch, Commit: p.After, Deployment: d.ID})
 	if err != nil {
 		return nil, mapStateError(err, "hook push")
 	}

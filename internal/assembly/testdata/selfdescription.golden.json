@@ -1,0 +1,1831 @@
+{
+  "entries": [
+    {
+      "name": "app",
+      "kind": "spec",
+      "summary": "AppSpec: desired state of a long-running deployable unit (an app is one or more processes).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "build": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "required": [
+                  "dockerfile"
+                ]
+              },
+              {
+                "required": [
+                  "railpack"
+                ]
+              }
+            ],
+            "properties": {
+              "builder": {
+                "type": "string"
+              },
+              "cache_from": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "dockerfile": {
+                "type": "string"
+              },
+              "railpack": {
+                "additionalProperties": false,
+                "properties": {
+                  "pinned_version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          },
+          "first_boot_jobs": {
+            "items": {
+              "additionalProperties": false,
+              "oneOf": [
+                {
+                  "required": [
+                    "image"
+                  ]
+                },
+                {
+                  "required": [
+                    "from_build"
+                  ]
+                }
+              ],
+              "properties": {
+                "command": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "env": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "from_build": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "secret_refs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "ttl": {
+                  "format": "duration",
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "processes": {
+            "items": {
+              "additionalProperties": false,
+              "oneOf": [
+                {
+                  "required": [
+                    "image"
+                  ]
+                },
+                {
+                  "required": [
+                    "from_build"
+                  ]
+                }
+              ],
+              "properties": {
+                "command": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "config_refs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "env": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "from_build": {
+                  "type": "string"
+                },
+                "healthcheck": {
+                  "additionalProperties": false,
+                  "oneOf": [
+                    {
+                      "required": [
+                        "http_path"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "tcp_port"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "exec"
+                      ]
+                    }
+                  ],
+                  "properties": {
+                    "exec": {
+                      "additionalProperties": false,
+                      "properties": {
+                        "command": {
+                          "items": {
+                            "type": "string"
+                          },
+                          "type": "array"
+                        }
+                      },
+                      "type": "object"
+                    },
+                    "http_path": {
+                      "type": "string"
+                    },
+                    "interval": {
+                      "format": "duration",
+                      "type": "string"
+                    },
+                    "retries": {
+                      "type": "integer"
+                    },
+                    "start_period": {
+                      "format": "duration",
+                      "type": "string"
+                    },
+                    "tcp_port": {
+                      "type": "integer"
+                    },
+                    "timeout": {
+                      "format": "duration",
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "image": {
+                  "type": "string"
+                },
+                "name": {
+                  "type": "string"
+                },
+                "networks": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "placement": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "node_ids": {
+                      "items": {
+                        "type": "string"
+                      },
+                      "type": "array"
+                    }
+                  },
+                  "type": "object"
+                },
+                "ports": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "port": {
+                        "type": "integer"
+                      },
+                      "protocol": {
+                        "enum": [
+                          "PROTOCOL_UNSPECIFIED",
+                          "PROTOCOL_HTTP",
+                          "PROTOCOL_H2C",
+                          "PROTOCOL_TCP"
+                        ],
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                },
+                "replicas": {
+                  "type": "integer"
+                },
+                "resources": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "cpu_millis": {
+                      "type": "integer"
+                    },
+                    "memory_mb": {
+                      "type": "integer"
+                    }
+                  },
+                  "type": "object"
+                },
+                "secret_refs": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "volumes": {
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "read_only": {
+                        "type": "boolean"
+                      },
+                      "target": {
+                        "type": "string"
+                      },
+                      "volume_id": {
+                        "type": "string"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "type": "array"
+                }
+              },
+              "type": "object"
+            },
+            "type": "array"
+          },
+          "schema_version": {
+            "type": "integer"
+          },
+          "source": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "required": [
+                  "git"
+                ]
+              },
+              {
+                "required": [
+                  "image"
+                ]
+              },
+              {
+                "required": [
+                  "upload"
+                ]
+              }
+            ],
+            "properties": {
+              "git": {
+                "additionalProperties": false,
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  },
+                  "repo": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "image": {
+                "additionalProperties": false,
+                "properties": {
+                  "ref": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "upload": {
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "app.created",
+      "kind": "event",
+      "summary": "An app was created.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "app.deleted",
+      "kind": "event",
+      "summary": "An app was deleted (teardown per ADR-0023).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "app.teardown_aborted",
+      "kind": "event",
+      "summary": "An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "build.building",
+      "kind": "event",
+      "summary": "Build started executing.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "build_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build_id",
+          "app_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "build.cancelled",
+      "kind": "event",
+      "summary": "Build cancelled.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "build_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build_id",
+          "app_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "build.expired",
+      "kind": "event",
+      "summary": "Build expired by timeout watchdog.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "build_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build_id",
+          "app_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "build.failed",
+      "kind": "event",
+      "summary": "Build failed.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "build_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build_id",
+          "app_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "build.queued",
+      "kind": "event",
+      "summary": "Build accepted into build queue.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "build_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build_id",
+          "app_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "build.succeeded",
+      "kind": "event",
+      "summary": "Build produced an image digest.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "build_id": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "revision_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "build_id",
+          "app_id",
+          "state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "config.updated",
+      "kind": "event",
+      "summary": "A config version was written.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "database",
+      "kind": "spec",
+      "summary": "DatabaseSpec: desired state of a managed data service (template-rendered, rides the Runtime channel).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "backup_policy": {
+            "additionalProperties": false,
+            "properties": {
+              "interval": {
+                "format": "duration",
+                "type": "string"
+              },
+              "retention": {
+                "format": "duration",
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "credentials_ref": {
+            "type": "string"
+          },
+          "database": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "engine": {
+            "type": "string"
+          },
+          "resources": {
+            "additionalProperties": false,
+            "properties": {
+              "cpu_millis": {
+                "type": "integer"
+              },
+              "memory_mb": {
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          },
+          "schema_version": {
+            "type": "integer"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.building",
+      "kind": "event",
+      "summary": "Deployment entered build stage.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.cancelled",
+      "kind": "event",
+      "summary": "Deployment cancelled while queued or in flight.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.failed",
+      "kind": "event",
+      "summary": "Deployment reached failed terminal state.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.observing",
+      "kind": "event",
+      "summary": "Deployment entered health observation window.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.preparing",
+      "kind": "event",
+      "summary": "Deployment started preparing spec and materials.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.queued",
+      "kind": "event",
+      "summary": "Deployment accepted by admission queue.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.releasing",
+      "kind": "event",
+      "summary": "Deployment started releasing workloads to runtime.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.rolling_back",
+      "kind": "event",
+      "summary": "Deployment started replaying last successful revision.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.succeeded",
+      "kind": "event",
+      "summary": "Deployment reached succeeded terminal state.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "deployment.superseded",
+      "kind": "event",
+      "summary": "Deployment superseded by a newer one.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string"
+          },
+          "from_revision": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "observe_deadline": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "superseded_by": {
+            "type": "string"
+          },
+          "to_revision": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "state",
+          "generation"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "hook.push_accepted",
+      "kind": "event",
+      "summary": "A verified webhook push triggered a deployment.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "branch": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "deployment": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "branch",
+          "commit",
+          "deployment"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "invitation.accepted",
+      "kind": "event",
+      "summary": "An invitation was redeemed; the invitee became a user.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "user": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "user"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "invitation.created",
+      "kind": "event",
+      "summary": "An invitation was issued (single-use, time-boxed, role-bound).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "role": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "network.created",
+      "kind": "event",
+      "summary": "A project network was created.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "node.joined",
+      "kind": "event",
+      "summary": "Node joined the cluster and was anchored with a platform node ID.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "carrier_id": {
+            "type": "string"
+          },
+          "minted": {
+            "type": "boolean"
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "node.left",
+      "kind": "event",
+      "summary": "Node left the cluster.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "carrier_id": {
+            "type": "string"
+          },
+          "minted": {
+            "type": "boolean"
+          },
+          "node_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "node_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "project.created",
+      "kind": "event",
+      "summary": "A project was created.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "project.deleted",
+      "kind": "event",
+      "summary": "A project was deleted (tombstoned).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "role.created",
+      "kind": "event",
+      "summary": "A custom role was created from a scope set.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "scopes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          }
+        },
+        "required": [
+          "scopes"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "secret.deleted",
+      "kind": "event",
+      "summary": "A secret was deleted.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "secret.updated",
+      "kind": "event",
+      "summary": "A secret value was set (fingerprint, never the value).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "task",
+      "kind": "spec",
+      "summary": "TaskSpec: desired state of a programmatic workload (one-shot or resident, ADR-0012).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "desired_concurrency": {
+            "type": "integer"
+          },
+          "network_group": {
+            "type": "string"
+          },
+          "owner_token": {
+            "type": "string"
+          },
+          "process": {
+            "additionalProperties": false,
+            "oneOf": [
+              {
+                "required": [
+                  "image"
+                ]
+              },
+              {
+                "required": [
+                  "from_build"
+                ]
+              }
+            ],
+            "properties": {
+              "command": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "config_refs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "env": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "from_build": {
+                "type": "string"
+              },
+              "healthcheck": {
+                "additionalProperties": false,
+                "oneOf": [
+                  {
+                    "required": [
+                      "http_path"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "tcp_port"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "exec"
+                    ]
+                  }
+                ],
+                "properties": {
+                  "exec": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "command": {
+                        "items": {
+                          "type": "string"
+                        },
+                        "type": "array"
+                      }
+                    },
+                    "type": "object"
+                  },
+                  "http_path": {
+                    "type": "string"
+                  },
+                  "interval": {
+                    "format": "duration",
+                    "type": "string"
+                  },
+                  "retries": {
+                    "type": "integer"
+                  },
+                  "start_period": {
+                    "format": "duration",
+                    "type": "string"
+                  },
+                  "tcp_port": {
+                    "type": "integer"
+                  },
+                  "timeout": {
+                    "format": "duration",
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "image": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "networks": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "placement": {
+                "additionalProperties": false,
+                "properties": {
+                  "node_ids": {
+                    "items": {
+                      "type": "string"
+                    },
+                    "type": "array"
+                  }
+                },
+                "type": "object"
+              },
+              "ports": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "port": {
+                      "type": "integer"
+                    },
+                    "protocol": {
+                      "enum": [
+                        "PROTOCOL_UNSPECIFIED",
+                        "PROTOCOL_HTTP",
+                        "PROTOCOL_H2C",
+                        "PROTOCOL_TCP"
+                      ],
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              "replicas": {
+                "type": "integer"
+              },
+              "resources": {
+                "additionalProperties": false,
+                "properties": {
+                  "cpu_millis": {
+                    "type": "integer"
+                  },
+                  "memory_mb": {
+                    "type": "integer"
+                  }
+                },
+                "type": "object"
+              },
+              "secret_refs": {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              "volumes": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "read_only": {
+                      "type": "boolean"
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "volume_id": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            },
+            "type": "object"
+          },
+          "schema_version": {
+            "type": "integer"
+          },
+          "task": {
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "project": {
+                "type": "string"
+              }
+            },
+            "type": "object"
+          },
+          "ttl_seconds": {
+            "type": "integer"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "team.created",
+      "kind": "event",
+      "summary": "A team was created.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "token.created",
+      "kind": "event",
+      "summary": "A token was minted (secret shown once at creation).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "token.revoked",
+      "kind": "event",
+      "summary": "A token was revoked; its next call will be rejected.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "null"
+      }
+    },
+    {
+      "name": "user.created",
+      "kind": "event",
+      "summary": "A user was created and granted a role in a team.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "volume.created",
+      "kind": "event",
+      "summary": "A volume was created.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "active_deployments": {
+            "type": "integer"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workload.drift_detected",
+      "kind": "event",
+      "summary": "Observed workload diverged from the ensured generation or spec (ADR-0022).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "expected_generation": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "observed_generation": {
+            "type": "integer"
+          },
+          "observed_state": {
+            "type": "string"
+          },
+          "workload_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workload_id",
+          "app_id",
+          "expected_generation",
+          "observed_generation",
+          "observed_state"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "workload.stopped",
+      "kind": "event",
+      "summary": "A steady-state workload was observed stopped at the current generation.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "message": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "workload_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "workload_id",
+          "app_id",
+          "generation",
+          "state"
+        ],
+        "type": "object"
+      }
+    }
+  ]
+}

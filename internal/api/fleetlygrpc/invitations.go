@@ -64,7 +64,7 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Invitations.Create(ctx, tx, inv)
 		},
-		events: []eventFact{identityEvent("invitation.created", "invitation", inv.ID, map[string]string{"role": inv.RoleID})},
+		events: []eventFact{identityEvent("invitation.created", "invitation", inv.ID, invitationCreatedPayload{Role: inv.RoleID})},
 		audits: []*audit.Entry{identityAudit(ctx, "invitation.create", "invitation/"+inv.ID, "", inv.ExpiresAt)},
 	})
 	if err != nil {
@@ -122,7 +122,7 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 			}
 			return svc.s.Invitations.MarkConsumed(ctx, tx, inv.ID)
 		},
-		events: []eventFact{identityEvent("invitation.accepted", "invitation", inv.ID, map[string]string{"user": u.Name})},
+		events: []eventFact{identityEvent("invitation.accepted", "invitation", inv.ID, invitationAcceptedPayload{User: u.Name})},
 		audits: []*audit.Entry{{
 			ID: newID(), Actor: "user:" + u.Name, Source: audit.SourceManual,
 			Action: "invitation.accept", Resource: "invitation/" + inv.ID,

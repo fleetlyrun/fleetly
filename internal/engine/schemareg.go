@@ -1,0 +1,56 @@
+package engine
+
+// 事件 payload schema 自描述注册（F1.4，架构 §7"扩展面各自注入合并"）：
+// engine 是部署链/构建链/观测链事件 payload 形状的拥有方，在本 init 把
+// events.go 的 payload 结构体反射进 internal/schema 注册表。事件名字面量
+// 同时是 usage 反扫锚；summary 单源取 eventcode 注册表。完备性（在册事件
+// 必有 schema）由 internal/assembly 的守卫对账——新事件入册而漏注册即红。
+
+import (
+	"github.com/fleetlyrun/fleetly/internal/model/eventcode"
+	"github.com/fleetlyrun/fleetly/internal/schema"
+)
+
+// registerEventPayload 登记一个事件名的 payload schema（summary 取
+// eventcode 单源；未在册事件名在此 panic——schema 面不先于注册表存在）。
+func registerEventPayload(name string, payload any) {
+	e, ok := eventcode.Get(name)
+	if !ok {
+		panic("engine: schema registration for event " + name + " which is not in the eventcode registry")
+	}
+	schema.Register(schema.KindEvent, name, e.Summary, schema.Reflect(payload))
+}
+
+func init() {
+	// Deployment 状态机（deployment.*，统一 payload 形态）。
+	for _, name := range []string{
+		"deployment.queued",
+		"deployment.preparing",
+		"deployment.building",
+		"deployment.releasing",
+		"deployment.observing",
+		"deployment.succeeded",
+		"deployment.failed",
+		"deployment.rolling_back",
+		"deployment.superseded",
+		"deployment.cancelled",
+	} {
+		registerEventPayload(name, deploymentEventPayload{})
+	}
+	// Build 状态机（build.*）。
+	for _, name := range []string{
+		"build.queued",
+		"build.building",
+		"build.succeeded",
+		"build.failed",
+		"build.cancelled",
+		"build.expired",
+	} {
+		registerEventPayload(name, buildEventPayload{})
+	}
+	// 观测链（workload.* / node.*）。
+	registerEventPayload(eventWorkloadDrift, driftEventPayload{})
+	registerEventPayload(eventWorkloadStopped, stoppedEventPayload{})
+	registerEventPayload(eventNodeJoined, nodeEventPayload{})
+	registerEventPayload("node.left", nodeEventPayload{})
+}

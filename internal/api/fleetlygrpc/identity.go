@@ -75,7 +75,7 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 			}
 			return svc.s.Memberships.Create(ctx, tx, m)
 		},
-		events: []eventFact{identityEvent("user.created", "user", u.ID, map[string]string{"name": u.Name})},
+		events: []eventFact{identityEvent("user.created", "user", u.ID, nameEventPayload{Name: u.Name})},
 		audits: []*audit.Entry{identityAudit(ctx, "user.create", "user/"+u.ID, "", u.Name)},
 	})
 	if err != nil {
@@ -146,7 +146,7 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Teams.Create(ctx, tx, t)
 		},
-		events: []eventFact{identityEvent("team.created", "team", t.ID, map[string]string{"name": t.Name})},
+		events: []eventFact{identityEvent("team.created", "team", t.ID, nameEventPayload{Name: t.Name})},
 		audits: []*audit.Entry{identityAudit(ctx, "team.create", "team/"+t.ID, "", t.Name)},
 	})
 	if err != nil {
@@ -222,7 +222,7 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Roles.Create(ctx, tx, ro)
 		},
-		events: []eventFact{identityEvent("role.created", "role", ro.ID, map[string][]string{"scopes": ro.Scopes})},
+		events: []eventFact{identityEvent("role.created", "role", ro.ID, roleEventPayload{Scopes: ro.Scopes})},
 		audits: []*audit.Entry{identityAudit(ctx, "role.create", "role/"+ro.ID, "", joinStrings(ro.Scopes))},
 	})
 	if err != nil {
@@ -309,7 +309,7 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Tokens.Create(ctx, tx, t)
 		},
-		events: []eventFact{identityEvent("token.created", "token", t.ID, map[string]string{"name": t.Name})},
+		events: []eventFact{identityEvent("token.created", "token", t.ID, nameEventPayload{Name: t.Name})},
 		audits: []*audit.Entry{identityAudit(ctx, "token.create", "token/"+t.ID, "", t.Name)},
 	})
 	if err != nil {

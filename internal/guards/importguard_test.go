@@ -42,12 +42,14 @@ func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 // leafSubtrees 是叶子包子树（架构 §2：叶子不 import 任何其他 internal
 // 包）。model/spec 自架构 §2 起即叶子；capability/identity 是 C-12 扩面
 // （capability 只 import 标准库，identity 只加 lynx 外部库——现况干净，
-// 违例属裁决项：报修不走守卫豁免）。
+// 违例属裁决项：报修不走守卫豁免）；schema 是 F1.4 自描述真源（只 import
+// genproto 与标准库，engine/api 层反向注入注册——保持叶子防层析下沉）。
 var leafSubtrees = []string{
 	"internal/model/",
 	"internal/spec/",
 	"internal/capability/",
 	"internal/identity/",
+	"internal/schema/",
 }
 
 // fleetlyInternal 报告 import 是否 fleetly 主 module 的 internal 包。
