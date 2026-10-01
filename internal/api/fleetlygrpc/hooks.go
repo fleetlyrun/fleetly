@@ -67,14 +67,14 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			WatchPaths:  normalizeWatchPaths(req.GetWatchPaths()),
 			TokenSHA256: material.SHA256, TokenPrefix: material.Prefix, SecretCiphertext: ciphertext,
 		}
-		txErr := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-			if err := svc.s.Hooks.Create(ctx, tx, row); err != nil {
-				return err
-			}
-			return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+		txErr := svc.s.commit(ctx, writeFact{
+			write: func(ctx context.Context, tx *sql.Tx) error {
+				return svc.s.Hooks.Create(ctx, tx, row)
+			},
+			audits: []*audit.Entry{{
 				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 				Action: "hook.create", Resource: "app/" + appRow.ID, AfterFP: row.Repo + "@" + row.Branch,
-			})
+			}},
 		})
 		if txErr != nil {
 			return nil, mapStateError(txErr, "hook")
@@ -87,14 +87,14 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	existing.Branch = normalizeBranch(req.GetBranch())
 	existing.Dockerfile = normalizeDockerfile(req.GetDockerfile())
 	existing.WatchPaths = normalizeWatchPaths(req.GetWatchPaths())
-	txErr := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if err := svc.s.Hooks.UpdateConfig(ctx, tx, existing); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	txErr := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Hooks.UpdateConfig(ctx, tx, existing)
+		},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "hook.update", Resource: "app/" + appRow.ID, AfterFP: existing.Repo + "@" + existing.Branch,
-		})
+		}},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")
@@ -124,14 +124,14 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the hook secret failed: %v", err)
 	}
-	txErr := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if err := svc.s.Hooks.RotateToken(ctx, tx, req.GetAppId(), material.SHA256, material.Prefix, ciphertext); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	txErr := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Hooks.RotateToken(ctx, tx, req.GetAppId(), material.SHA256, material.Prefix, ciphertext)
+		},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "hook.rotate", Resource: "app/" + req.GetAppId(),
-		})
+		}},
 	})
 	if txErr != nil {
 		return nil, mapStateError(txErr, "hook")

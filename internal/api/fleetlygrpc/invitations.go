@@ -59,20 +59,13 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 		CreatedBy: authn.ActorFromContext(ctx),
 		ExpiresAt: stateFormatTime(svc.s.DB.Clock().Now().Add(ttl)),
 	}
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := svc.s.Teams.Get(ctx, tx, teamID); err != nil {
-			return err
-		}
-		if _, err := svc.s.Roles.Get(ctx, tx, req.GetRoleId()); err != nil {
-			return err
-		}
-		if err := svc.s.Invitations.Create(ctx, tx, inv); err != nil {
-			return err
-		}
-		if err := emitIdentityEvent(ctx, svc.s, tx, "invitation.created", "invitation", inv.ID, map[string]string{"role": inv.RoleID}); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "invitation.create", "invitation/"+inv.ID, "", inv.ExpiresAt))
+	err = svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleExists(req.GetRoleId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Invitations.Create(ctx, tx, inv)
+		},
+		events: []eventFact{identityEvent("invitation.created", "invitation", inv.ID, map[string]string{"role": inv.RoleID})},
+		audits: []*audit.Entry{identityAudit(ctx, "invitation.create", "invitation/"+inv.ID, "", inv.ExpiresAt)},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "invitation")
@@ -119,24 +112,22 @@ func (svc *InvitationsService) AcceptInvitation(ctx context.Context, req *identi
 
 	u := &user.User{ID: newID(), Name: req.GetUserName()}
 	m := &membership.Membership{ID: newID(), UserID: u.ID, TeamID: inv.TeamID, RoleID: inv.RoleID}
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if err := svc.s.Users.Create(ctx, tx, u); err != nil {
-			return err
-		}
-		if err := svc.s.Memberships.Create(ctx, tx, m); err != nil {
-			return err
-		}
-		if err := svc.s.Invitations.MarkConsumed(ctx, tx, inv.ID); err != nil {
-			return err
-		}
-		if err := emitIdentityEvent(ctx, svc.s, tx, "invitation.accepted", "invitation", inv.ID, map[string]string{"user": u.Name}); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
+				return err
+			}
+			if err := svc.s.Memberships.Create(ctx, tx, m); err != nil {
+				return err
+			}
+			return svc.s.Invitations.MarkConsumed(ctx, tx, inv.ID)
+		},
+		events: []eventFact{identityEvent("invitation.accepted", "invitation", inv.ID, map[string]string{"user": u.Name})},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: "user:" + u.Name, Source: audit.SourceManual,
 			Action: "invitation.accept", Resource: "invitation/" + inv.ID,
 			AfterFP: u.Name,
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "invitation")

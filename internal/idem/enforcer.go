@@ -1,5 +1,5 @@
 // Package idem 承载通用幂等执法（ADR-0024）：Idempotency-Key 头 + 单表
-//（key → 方法 → 请求体指纹 → 响应引用 → 24h 保留）+ 拦截器一份实现覆盖
+// （key → 方法 → 请求体指纹 → 响应引用 → 24h 保留）+ 拦截器一份实现覆盖
 // 全部创建型 RPC。三层语义：
 //
 //   - 同键同体重放 → 返回同一响应（不执行 handler）；
@@ -46,20 +46,20 @@ const ClaimTTL = 90 * time.Second
 // TestIdempotencyCoversCreateVerbs 以 proto 为源反向对账：创建型动词
 // （Create/Deploy/Submit/Put/Set/Rollback）落网或豁免带理由，死条目红。
 var EnforcedMethods = map[string]bool{
-	"/fleetly.structure.v1.ProjectsService/CreateProject":   true,
-	"/fleetly.structure.v1.AppsService/CreateApp":           true,
-	"/fleetly.structure.v1.SecretsService/PutSecret":        true,
-	"/fleetly.structure.v1.ConfigsService/PutConfig":        true,
-	"/fleetly.structure.v1.VolumesService/CreateVolume":     true,
-	"/fleetly.structure.v1.NetworksService/CreateNetwork":   true,
-	"/fleetly.edge.v1.RoutesService/CreateRoute":            true,
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":        true,
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":      true,
-	"/fleetly.delivery.v1.HooksService/SetGitHook":          true,
-	"/fleetly.identity.v1.UsersService/CreateUser":          true,
-	"/fleetly.identity.v1.TeamsService/CreateTeam":          true,
-	"/fleetly.identity.v1.RolesService/CreateRole":          true,
-	"/fleetly.identity.v1.TokensService/CreateToken":        true,
+	"/fleetly.structure.v1.ProjectsService/CreateProject":      true,
+	"/fleetly.structure.v1.AppsService/CreateApp":              true,
+	"/fleetly.structure.v1.SecretsService/PutSecret":           true,
+	"/fleetly.structure.v1.ConfigsService/PutConfig":           true,
+	"/fleetly.structure.v1.VolumesService/CreateVolume":        true,
+	"/fleetly.structure.v1.NetworksService/CreateNetwork":      true,
+	"/fleetly.edge.v1.RoutesService/CreateRoute":               true,
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":           true,
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":         true,
+	"/fleetly.delivery.v1.HooksService/SetGitHook":             true,
+	"/fleetly.identity.v1.UsersService/CreateUser":             true,
+	"/fleetly.identity.v1.TeamsService/CreateTeam":             true,
+	"/fleetly.identity.v1.RolesService/CreateRole":             true,
+	"/fleetly.identity.v1.TokensService/CreateToken":           true,
 	"/fleetly.identity.v1.InvitationsService/CreateInvitation": true,
 	// webhook 接收面（Q-21 收口）：gateway 原生入口按 X-GitHub-Delivery 派生
 	// 键（webhook:<delivery>）——at-least-once 重投重放首次响应，去重锚与

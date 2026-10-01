@@ -50,11 +50,11 @@ func (svc *NodesService) EnrollNode(ctx context.Context, req *runtimev1.EnrollNo
 	//（N0.1 P2-11）——审计落账失败时材料绝不作废；轮换失败时审计已在
 	// 场（意图可见，比"已轮换无痕"诚实）。普通材料生成只读，同样先记
 	// 后做不损失语义（读取意图本身敏感）。
-	if err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	if err := svc.s.commit(ctx, writeFact{
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: action, Resource: "cluster/join-material",
-		})
+		}},
 	}); err != nil {
 		return nil, err
 	}
@@ -113,11 +113,11 @@ func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, o
 		}
 		return apperr.New("E_INTERNAL", "node administration failed").WithCause(err)
 	}
-	return svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	return svc.s.commit(ctx, writeFact{
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: action, Resource: "node/" + nodeID,
-		})
+		}},
 	})
 }
 
@@ -145,23 +145,21 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 		AppID: req.GetAppId(), Process: req.GetProcess(), Port: req.GetPort(),
 		Protocol: protocol, TLSMode: tlsMode,
 	}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 父资源存活校验（批 0 复核，同族面）：路由挂在不存在/已删的
-		// Project 或 App 下此前直接成功（routes 无 FK）——活路由指向已删
-		// App 会让 Edge 全量发布把流量钉在 tombstone 上。
-		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
-			return err
-		}
-		if err := svc.s.requireProjectApp(ctx, tx, req.GetProjectId(), req.GetAppId()); err != nil {
-			return err
-		}
-		if err := svc.s.Routes.Create(ctx, tx, row); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	// 父资源存活校验（批 0 复核，同族面）：路由挂在不存在/已删的
+	// Project 或 App 下此前直接成功（routes 无 FK）——活路由指向已删
+	// App 会让 Edge 全量发布把流量钉在 tombstone 上。
+	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{
+			svc.s.parentProjectAlive(req.GetProjectId()),
+			svc.s.projectAppAlive(req.GetProjectId(), req.GetAppId()),
+		},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Routes.Create(ctx, tx, row)
+		},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.create",
 			Resource: "route/" + row.ID, AfterFP: row.Host,
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "route")
@@ -186,14 +184,14 @@ func (svc *RoutesService) ListRoutes(ctx context.Context, req *edgev1.ListRoutes
 }
 
 func (svc *RoutesService) DeleteRoute(ctx context.Context, req *edgev1.DeleteRouteRequest) (*edgev1.DeleteRouteResponse, error) {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if err := svc.s.Routes.SoftDelete(ctx, tx, req.GetId()); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Routes.SoftDelete(ctx, tx, req.GetId())
+		},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "route.delete",
 			Resource: "route/" + req.GetId(),
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "route")

@@ -57,7 +57,7 @@
 
 ## N1 Agent 面 + torchwood 线（验收 = ADR-0012 能力清单全绿）
 
-- F1.1 幂等键：创建型 RPC + CLI `--idempotency-key`；同键同体重放、异体 409、24h 保留。
+- F1.1 [x] 幂等键：创建型 RPC + CLI `--idempotency-key`；同键同体重放、异体 409、24h 保留。〔2026-10-01 按 ADR-0024 三段落地：①Idempotency-Key 头 + 单表（key→指纹→响应引用→24h）+ 拦截器一份实现覆盖全部 15 个创建型 RPC + janitor（engine.NewLoop 骨架）；DeployRequest.idempotency_key 降级部署专锚（双源不一致 409）；CLI 14 动词 --idempotency-key 透传；守卫 TestIdempotencyCoversCreateVerbs 反扫（红灯实验过）②webhook 去重收口（Q-21：gateway 按 delivery 派生键重放；台账随效果同事务；duplicate 状态退役）③受理位 + 统一写原语（Services.commit：受理检查→聚合写→事件→审计一事务唯一拥有者；29 处手写编排归零；配额读入事务收口 TOCTOU；守卫 TestAcceptanceWritePathsGoThroughCommit + TestNoHandRolledTxChoreography）。附带修一隐性破损：grpc_test.go 自 6d8ef07 起拼错 statertest 从未被净编译（热 build cache 掩盖），本批 go clean -cache 炸出后修复〕
 - F1.2 事件流 follow：SSE + gRPC stream + `fleetly events follow --json`；断档 410 + 快照重同步。
 - F1.3 Wait 原语：WaitDeployment/WaitBuild/WaitRun + CLI `--wait`。
 - F1.4 能力自描述：`fleetly explain <资源>` / `fleetly schema`（JSON Schema 反射生成）。

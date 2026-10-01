@@ -147,22 +147,20 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 	// hook 受理事实（delivery 台账 + 审计行 + outbox 事件）一拍落库——台账
 	// 与效果同事务，重投不产生第二行事实（幂等键重放根本不达此处；无键
 	// 重投的部署侧去重由 admission CommitSHA 承担）。
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, req.GetDelivery()); err != nil {
+	payload, err := json.Marshal(map[string]string{"branch": branch, "commit": p.After, "deployment": d.ID})
+	if err != nil {
+		return nil, mapStateError(err, "hook push")
+	}
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			_, err := svc.s.Hooks.RecordDelivery(ctx, tx, h.AppID, req.GetDelivery())
 			return err
-		}
-		if err := svc.s.Audits.Append(ctx, tx, &audit.Entry{
+		},
+		events: []eventFact{{name: "hook.push_accepted", aggregate: "app", id: appRow.ID, payload: payload}},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: "hook:" + appRow.Name, Source: audit.SourceWebhook,
 			Action: "hook.push", Resource: "app/" + appRow.ID, AfterFP: p.After,
-		}); err != nil {
-			return err
-		}
-		payload, err := json.Marshal(map[string]string{"branch": branch, "commit": p.After, "deployment": d.ID})
-		if err != nil {
-			return err
-		}
-		_, err = svc.s.OutboxEvents.Append(ctx, tx, "hook.push_accepted", "app", appRow.ID, payload)
-		return err
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "hook push")

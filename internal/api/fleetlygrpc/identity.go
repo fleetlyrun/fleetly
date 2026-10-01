@@ -8,7 +8,6 @@ package fleetlygrpc
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 
 	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
@@ -24,21 +23,12 @@ import (
 )
 
 // identityAudit 是 identity 写路径的审计行构造（actor + 来源从 authn ctx）。
+// outbox 事件经 acceptance.go 的 identityEvent 构造（写原语事实段）。
 func identityAudit(ctx context.Context, action, resource, beforeFP, afterFP string) *audit.Entry {
 	return &audit.Entry{
 		ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 		Action: action, Resource: resource, BeforeFP: beforeFP, AfterFP: afterFP,
 	}
-}
-
-// emitIdentityEvent 落 outbox 事件（payload 是最小 JSON 面）。
-func emitIdentityEvent(ctx context.Context, s *Services, tx *sql.Tx, name, aggregate, id string, payload any) error {
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-	_, err = s.OutboxEvents.Append(ctx, tx, name, aggregate, id, data)
-	return err
 }
 
 // ---- Users ----
@@ -77,23 +67,16 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	}
 	u := &user.User{ID: newID(), Name: req.GetName()}
 	m := &membership.Membership{ID: newID(), UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := svc.s.Teams.Get(ctx, tx, teamID); err != nil {
-			return err
-		}
-		if _, err := svc.s.Roles.Get(ctx, tx, req.GetRoleId()); err != nil {
-			return err
-		}
-		if err := svc.s.Users.Create(ctx, tx, u); err != nil {
-			return err
-		}
-		if err := svc.s.Memberships.Create(ctx, tx, m); err != nil {
-			return err
-		}
-		if err := emitIdentityEvent(ctx, svc.s, tx, "user.created", "user", u.ID, map[string]string{"name": u.Name}); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "user.create", "user/"+u.ID, "", u.Name))
+	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleExists(req.GetRoleId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
+				return err
+			}
+			return svc.s.Memberships.Create(ctx, tx, m)
+		},
+		events: []eventFact{identityEvent("user.created", "user", u.ID, map[string]string{"name": u.Name})},
+		audits: []*audit.Entry{identityAudit(ctx, "user.create", "user/"+u.ID, "", u.Name)},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "user")
@@ -124,18 +107,22 @@ func (svc *UsersService) ListUsers(ctx context.Context, _ *identityv1.ListUsersR
 // DeleteUser 删用户（先解绑 memberships；仍有 Token 引用时 FK 拒——先吊销
 // 或删名下 Token）。
 func (svc *UsersService) DeleteUser(ctx context.Context, req *identityv1.DeleteUserRequest) (*identityv1.DeleteUserResponse, error) {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		u, err := svc.s.Users.Get(ctx, tx, req.GetId())
-		if err != nil {
-			return err
-		}
-		if _, err := tx.ExecContext(ctx, `DELETE FROM memberships WHERE user_id = ?`, req.GetId()); err != nil {
-			return err
-		}
-		if err := svc.s.Users.Delete(ctx, tx, req.GetId()); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "user.delete", "user/"+req.GetId(), u.Name, ""))
+	// 审计的行读随写路径（事务内读-删同生共死）；裸 memberships 清理的
+	// FK 归一（repo 的 DeleteByUser 带 team 过滤、语义不同）随 ADR-0028 批。
+	entry := identityAudit(ctx, "user.delete", "user/"+req.GetId(), "", "")
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			u, err := svc.s.Users.Get(ctx, tx, req.GetId())
+			if err != nil {
+				return err
+			}
+			entry.BeforeFP = u.Name
+			if _, err := tx.ExecContext(ctx, `DELETE FROM memberships WHERE user_id = ?`, req.GetId()); err != nil {
+				return err
+			}
+			return svc.s.Users.Delete(ctx, tx, req.GetId())
+		},
+		audits: []*audit.Entry{entry},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "user")
@@ -155,14 +142,12 @@ func (svc *TeamsService) CreateTeam(ctx context.Context, req *identityv1.CreateT
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
 	t := &team.Team{ID: newID(), Name: req.GetName()}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if err := svc.s.Teams.Create(ctx, tx, t); err != nil {
-			return err
-		}
-		if err := emitIdentityEvent(ctx, svc.s, tx, "team.created", "team", t.ID, map[string]string{"name": t.Name}); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "team.create", "team/"+t.ID, "", t.Name))
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Teams.Create(ctx, tx, t)
+		},
+		events: []eventFact{identityEvent("team.created", "team", t.ID, map[string]string{"name": t.Name})},
+		audits: []*audit.Entry{identityAudit(ctx, "team.create", "team/"+t.ID, "", t.Name)},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "team")
@@ -191,15 +176,17 @@ func (svc *TeamsService) ListTeams(ctx context.Context, _ *identityv1.ListTeamsR
 }
 
 func (svc *TeamsService) DeleteTeam(ctx context.Context, req *identityv1.DeleteTeamRequest) (*identityv1.DeleteTeamResponse, error) {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		t, err := svc.s.Teams.Get(ctx, tx, req.GetId())
-		if err != nil {
-			return err
-		}
-		if err := svc.s.Teams.Delete(ctx, tx, req.GetId()); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "team.delete", "team/"+req.GetId(), t.Name, ""))
+	entry := identityAudit(ctx, "team.delete", "team/"+req.GetId(), "", "")
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			t, err := svc.s.Teams.Get(ctx, tx, req.GetId())
+			if err != nil {
+				return err
+			}
+			entry.BeforeFP = t.Name
+			return svc.s.Teams.Delete(ctx, tx, req.GetId())
+		},
+		audits: []*audit.Entry{entry},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "team")
@@ -230,17 +217,13 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 		teamID = identity.DefaultTeamID
 	}
 	ro := &role.Role{ID: newID(), TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := svc.s.Teams.Get(ctx, tx, teamID); err != nil {
-			return err
-		}
-		if err := svc.s.Roles.Create(ctx, tx, ro); err != nil {
-			return err
-		}
-		if err := emitIdentityEvent(ctx, svc.s, tx, "role.created", "role", ro.ID, map[string][]string{"scopes": ro.Scopes}); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "role.create", "role/"+ro.ID, "", joinStrings(ro.Scopes)))
+	err = svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.teamExists(teamID)},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Roles.Create(ctx, tx, ro)
+		},
+		events: []eventFact{identityEvent("role.created", "role", ro.ID, map[string][]string{"scopes": ro.Scopes})},
+		audits: []*audit.Entry{identityAudit(ctx, "role.create", "role/"+ro.ID, "", joinStrings(ro.Scopes))},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "role")
@@ -269,15 +252,17 @@ func (svc *RolesService) ListRoles(ctx context.Context, _ *identityv1.ListRolesR
 }
 
 func (svc *RolesService) DeleteRole(ctx context.Context, req *identityv1.DeleteRoleRequest) (*identityv1.DeleteRoleResponse, error) {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		ro, err := svc.s.Roles.Get(ctx, tx, req.GetId())
-		if err != nil {
-			return err
-		}
-		if err := svc.s.Roles.Delete(ctx, tx, req.GetId()); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "role.delete", "role/"+req.GetId(), joinStrings(ro.Scopes), ""))
+	entry := identityAudit(ctx, "role.delete", "role/"+req.GetId(), "", "")
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			ro, err := svc.s.Roles.Get(ctx, tx, req.GetId())
+			if err != nil {
+				return err
+			}
+			entry.BeforeFP = joinStrings(ro.Scopes)
+			return svc.s.Roles.Delete(ctx, tx, req.GetId())
+		},
+		audits: []*audit.Entry{entry},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "role")
@@ -315,25 +300,17 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 		ID: newID(), Name: req.GetName(), TeamID: teamID, UserID: req.GetUserId(),
 		RoleID: req.GetRoleId(), SHA256: material.SHA256, Prefix: material.Prefix,
 	}
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if _, err := svc.s.Teams.Get(ctx, tx, teamID); err != nil {
-			return err
-		}
-		if _, err := svc.s.Roles.Get(ctx, tx, req.GetRoleId()); err != nil {
-			return err
-		}
-		if req.GetUserId() != "" {
-			if _, err := svc.s.Users.Get(ctx, tx, req.GetUserId()); err != nil {
-				return err
-			}
-		}
-		if err := svc.s.Tokens.Create(ctx, tx, t); err != nil {
-			return err
-		}
-		if err := emitIdentityEvent(ctx, svc.s, tx, "token.created", "token", t.ID, map[string]string{"name": t.Name}); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "token.create", "token/"+t.ID, "", t.Name))
+	checks := []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleExists(req.GetRoleId())}
+	if req.GetUserId() != "" {
+		checks = append(checks, svc.s.userExists(req.GetUserId()))
+	}
+	err = svc.s.commit(ctx, writeFact{
+		checks: checks,
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Tokens.Create(ctx, tx, t)
+		},
+		events: []eventFact{identityEvent("token.created", "token", t.ID, map[string]string{"name": t.Name})},
+		audits: []*audit.Entry{identityAudit(ctx, "token.create", "token/"+t.ID, "", t.Name)},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "token")
@@ -362,19 +339,25 @@ func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListToke
 }
 
 // RevokeToken 吊销（幂等；验收锚：进行中请求的下一个调用即 401——authn
-// 拦截器逐请求查表）。
+// 拦截器逐请求查表）。事件与审计的载荷字段来自事务内 Revoke 的返回行，
+// 经切片元素就地填充（write 先于 events/audits 段执行）。
 func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.RevokeTokenRequest) (*identityv1.RevokeTokenResponse, error) {
 	var revoked *tokenrepo.Token
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		t, err := svc.s.Tokens.Revoke(ctx, tx, req.GetId())
-		if err != nil {
-			return err
-		}
-		revoked = t
-		if err := emitIdentityEvent(ctx, svc.s, tx, "token.revoked", "token", t.ID, map[string]string{"name": t.Name}); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, identityAudit(ctx, "token.revoke", "token/"+t.ID, t.Name, ""))
+	events := []eventFact{identityEvent("token.revoked", "token", req.GetId(), nil)}
+	entry := identityAudit(ctx, "token.revoke", "token/"+req.GetId(), "", "")
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			t, err := svc.s.Tokens.Revoke(ctx, tx, req.GetId())
+			if err != nil {
+				return err
+			}
+			revoked = t
+			events[0] = events[0].withPayload(map[string]string{"name": t.Name})
+			entry.BeforeFP = t.Name
+			return nil
+		},
+		events: events,
+		audits: []*audit.Entry{entry},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "token")

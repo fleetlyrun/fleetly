@@ -48,16 +48,8 @@ type ProjectsService struct {
 	s *Services
 }
 
-// emitStructureEvent 是结构面写操作的 Outbox 事件（C5 补齐："一切状态
-// 迁移写 Event"——此前结构面只有审计）。与审计同事务落（写路径四件一拍
-// 的既有 tx 内追加）。
-func emitStructureEvent(ctx context.Context, tx *sql.Tx, s *Services, name, aggregate, id, projectID string) error {
-	payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID})
-	_, err := s.OutboxEvents.Append(ctx, tx, name, aggregate, id, payload)
-	return err
-}
-
-// structureEventPayload 是结构面事件的最小负载（字段只增）。
+// structureEventPayload 是结构面事件的最小负载（字段只增；事件事实经
+// acceptance.go 的 structureEvent 构造）。
 type structureEventPayload struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id,omitempty"`
@@ -111,17 +103,15 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	if p.TeamID == "" {
 		p.TeamID = "default"
 	}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if err := svc.s.Projects.Create(ctx, tx, p); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventProjectCreated, "project", p.ID, ""); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Projects.Create(ctx, tx, p)
+		},
+		events: []eventFact{structureEvent(eventProjectCreated, "project", p.ID, "")},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.create",
 			Resource: "project/" + p.ID, AfterFP: p.Name,
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -161,29 +151,19 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, _ *structurev1.Lis
 // 可建"；批 0 复核：此前 CreateApp 无校验、apps.project_id 无 FK，该窗口
 // 实际敞开，注释宣称的"窗口闭合"不成立，已随对偶守卫落地闭合）。
 func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.DeleteProjectRequest) (*structurev1.DeleteProjectResponse, error) {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶闭合
-		// （本侧拒绝"删除时仍有 App"；CreateApp 侧拒绝"删除后挂 App"；
-		// 单写者事务串行，见函数注释）。
-		apps, err := svc.s.Apps.ListByProject(ctx, tx, req.GetId())
-		if err != nil {
-			return err
-		}
-		if len(apps) > 0 {
-			return apperr.New("E_CONFLICT",
-				"project %s still holds %d app(s); delete them before deleting the project",
-				req.GetId(), len(apps))
-		}
-		if err := svc.s.Projects.SoftDelete(ctx, tx, req.GetId()); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventProjectDeleted, "project", req.GetId(), ""); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	err := svc.s.commit(ctx, writeFact{
+		// 删除守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶
+		// 闭合（本侧拒绝"删除时仍有 App"；CreateApp 侧受理检查拒绝"删除
+		// 后挂 App"；单写者事务串行，见函数注释）。
+		checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Projects.SoftDelete(ctx, tx, req.GetId())
+		},
+		events: []eventFact{structureEvent(eventProjectDeleted, "project", req.GetId(), "")},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.delete",
 			Resource: "project/" + req.GetId(),
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -203,23 +183,19 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
 	}
 	a := &app.App{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName()}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
-		// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
-		// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。
-		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
-			return err
-		}
-		if err := svc.s.Apps.Create(ctx, tx, a); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventAppCreated, "app", a.ID, a.ProjectID); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
+	// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
+	// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。
+	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Apps.Create(ctx, tx, a)
+		},
+		events: []eventFact{structureEvent(eventAppCreated, "app", a.ID, a.ProjectID)},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.create",
 			Resource: "app/" + a.ID, AfterFP: a.Name,
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "app")
@@ -292,43 +268,47 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	// tombstone 事务：复查、App tombstone、撤路由、事件、审计同生共死。
 	// aborted 非零 ⇔ 复查命中活跃部署（整单回滚的哨兵，见下方残余面）。
 	var aborted int
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+	err = svc.s.commit(ctx, writeFact{
 		// TOCTOU 复查：收口后、落账前受理的活跃部署在此拒绝——整单回滚
-		// （无 tombstone、无路由删除；与 Submit 的存活判定互为对偶，单连接
+		//（无 tombstone、无路由删除；与 Submit 的存活判定互为对偶，单连接
 		// 事务串行下窗口闭合）。
-		active, err := svc.s.Deployments.ActiveByApp(ctx, tx, req.GetId())
-		if err != nil {
-			return err
-		}
-		if len(active) > 0 {
-			aborted = len(active)
-			return errDeleteAborted
-		}
-		if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
-			return err
-		}
-		// 撤路由与 tombstone 同事务（ADR-0023 修订）：复查通过前路由不得
-		// 消失——拒绝路径不碰路由（managedStep 的周期发布因此只可能见到
-		// "App 与路由同逝"的一致状态）。
-		routes, err := svc.s.Routes.List(ctx, tx)
-		if err != nil {
-			return err
-		}
-		for _, rt := range routes {
-			if rt.AppID != req.GetId() {
-				continue
-			}
-			if err := svc.s.Routes.SoftDelete(ctx, tx, rt.ID); err != nil {
+		checks: []acceptanceCheck{func(ctx context.Context, tx *sql.Tx) error {
+			active, err := svc.s.Deployments.ActiveByApp(ctx, tx, req.GetId())
+			if err != nil {
 				return err
 			}
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventAppDeleted, "app", req.GetId(), appRow.ProjectID); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+			if len(active) > 0 {
+				aborted = len(active)
+				return errDeleteAborted
+			}
+			return nil
+		}},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
+				return err
+			}
+			// 撤路由与 tombstone 同事务（ADR-0023 修订）：复查通过前路由
+			// 不得消失——拒绝路径不碰路由（managedStep 的周期发布因此只
+			// 可能见到"App 与路由同逝"的一致状态）。
+			routes, err := svc.s.Routes.List(ctx, tx)
+			if err != nil {
+				return err
+			}
+			for _, rt := range routes {
+				if rt.AppID != req.GetId() {
+					continue
+				}
+				if err := svc.s.Routes.SoftDelete(ctx, tx, rt.ID); err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		events: []eventFact{structureEvent(eventAppDeleted, "app", req.GetId(), appRow.ProjectID)},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "app.delete",
 			Resource: "app/" + req.GetId(),
-		})
+		}},
 	})
 	if err != nil {
 		if aborted > 0 {
@@ -354,15 +334,13 @@ var errDeleteAborted = errors.New("app delete: teardown aborted by a deployment 
 
 // recordTeardownAbort 落 teardown-aborted 事件 + 审计（同事务）。
 func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID string, active int) error {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID, ActiveDeployments: active})
-		if _, err := svc.s.OutboxEvents.Append(ctx, tx, eventAppTeardownAborted, "app", id, payload); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID, ActiveDeployments: active}) //nolint:errcheck // 结构体字段恒可序列化
+	err := svc.s.commit(ctx, writeFact{
+		events: []eventFact{{name: eventAppTeardownAborted, aggregate: "app", id: id, payload: payload}},
+		audits: []*audit.Entry{{
 			ID: newID(), Source: audit.SourceSystem, Action: "app.teardown_abort",
 			Resource: "app/" + id, AfterFP: fmt.Sprintf("active_deployments=%d", active),
-		})
+		}},
 	})
 	if err != nil {
 		return apperr.New("E_INTERNAL", "app teardown abort could not be recorded").WithCause(err)
@@ -392,22 +370,18 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(req.GetValue())),
 	}
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-		// 不存在/已删的 Project 下。
-		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
-			return err
-		}
-		if err := svc.s.Secrets.Upsert(ctx, tx, row); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventSecretUpdated, "secret", row.Name, row.ProjectID); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
+	// 不存在/已删的 Project 下。
+	err = svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Secrets.Upsert(ctx, tx, row)
+		},
+		events: []eventFact{structureEvent(eventSecretUpdated, "secret", row.Name, row.ProjectID)},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.put",
 			Resource: "secret/" + row.Name, AfterFP: row.Fingerprint,
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -428,17 +402,15 @@ func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.Lis
 }
 
 func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.DeleteSecretRequest) (*structurev1.DeleteSecretResponse, error) {
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if err := svc.s.Secrets.SoftDelete(ctx, tx, req.GetProjectId(), req.GetName()); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventSecretDeleted, "secret", req.GetName(), req.GetProjectId()); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Secrets.SoftDelete(ctx, tx, req.GetProjectId(), req.GetName())
+		},
+		events: []eventFact{structureEvent(eventSecretDeleted, "secret", req.GetName(), req.GetProjectId())},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "secret.delete",
 			Resource: "secret/" + req.GetName(),
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -467,38 +439,22 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 	if len(req.GetContent()) > maxConfigBytes {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "content: exceeds the %d-byte per-config limit", maxConfigBytes)
 	}
-	// 数量配额按"Project 内配置名数"计（新名才占新位；同名 put 是新版本）。
-	existing, err := svc.s.Configs.Latest(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetName())
-	if err != nil && !errors.Is(err, state.ErrNotFound) {
-		return nil, mapStateError(err, "config")
-	}
-	if existing == nil {
-		latest, lerr := svc.s.Configs.LatestByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
-		if lerr != nil {
-			return nil, mapStateError(lerr, "config")
-		}
-		if len(latest) >= maxConfigsPerProject {
-			return nil, apperr.New("E_QUOTA_EXCEEDED",
-				"project %s already holds %d configs (limit %d)", req.GetProjectId(), len(latest), maxConfigsPerProject)
-		}
-	}
+	// 数量配额按"Project 内配置名数"计（新名才占新位；同名 put 是新版本）
+	// ——受理位检查（事务内读，ADR-0024：与写同事务，无先读后写 TOCTOU）。
 	row := &configrepo.Config{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
-	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-		// 不存在/已删的 Project 下。
-		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
-			return err
-		}
-		if err := svc.s.Configs.Create(ctx, tx, row); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventConfigUpdated, "config", row.Name, row.ProjectID); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{
+			svc.s.parentProjectAlive(req.GetProjectId()),
+			svc.s.configQuota(req.GetProjectId(), req.GetName()),
+		},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Configs.Create(ctx, tx, row)
+		},
+		events: []eventFact{structureEvent(eventConfigUpdated, "config", row.Name, row.ProjectID)},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "config.put",
 			Resource: "config/" + row.Name, AfterFP: material.Fingerprint(row.Content),
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "config")
@@ -550,22 +506,18 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
 		PinnedNodeID: req.GetPinnedNodeId(),
 	}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-		// 不存在/已删的 Project 下。
-		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
-			return err
-		}
-		if err := svc.s.Volumes.Create(ctx, tx, row); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventVolumeCreated, "volume", row.Name, row.ProjectID); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
+	// 不存在/已删的 Project 下。
+	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Volumes.Create(ctx, tx, row)
+		},
+		events: []eventFact{structureEvent(eventVolumeCreated, "volume", row.Name, row.ProjectID)},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "volume.create",
 			Resource: "volume/" + row.Name, AfterFP: row.PinnedNodeID,
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "volume")
@@ -599,22 +551,18 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 	row := &networkrepo.Network{
 		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), EgressNone: req.GetEgressNone(),
 	}
-	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
-		// 不存在/已删的 Project 下。
-		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
-			return err
-		}
-		if err := svc.s.Networks.Create(ctx, tx, row); err != nil {
-			return err
-		}
-		if err := emitStructureEvent(ctx, tx, svc.s, eventNetworkCreated, "network", row.Name, row.ProjectID); err != nil {
-			return err
-		}
-		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
+	// 不存在/已删的 Project 下。
+	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Networks.Create(ctx, tx, row)
+		},
+		events: []eventFact{structureEvent(eventNetworkCreated, "network", row.Name, row.ProjectID)},
+		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "network.create",
 			Resource: "network/" + row.Name, AfterFP: req.String(),
-		})
+		}},
 	})
 	if err != nil {
 		return nil, mapStateError(err, "network")

@@ -71,23 +71,33 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 		return nil, err
 	}
 	var rev *revision.Revision
-	err = s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		if existing, ferr := s.Revisions.FindByDigest(ctx, tx, appRow.ID, revision.Digest(body)); ferr == nil {
-			rev = existing
+	var created *audit.Entry
+	err = s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			if existing, ferr := s.Revisions.FindByDigest(ctx, tx, appRow.ID, revision.Digest(body)); ferr == nil {
+				rev = existing
+				return nil // 内容寻址复用：不冻结新行、不落新审计
+			}
+			seq, serr := s.Revisions.NextSeq(ctx, tx, appRow.ID)
+			if serr != nil {
+				return serr
+			}
+			rev = &revision.Revision{ID: newID(), AppID: appRow.ID, Seq: seq, Spec: body}
+			if cerr := s.Revisions.Create(ctx, tx, rev); cerr != nil {
+				return cerr
+			}
+			created = &audit.Entry{
+				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
+				Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
+			}
 			return nil
-		}
-		seq, serr := s.Revisions.NextSeq(ctx, tx, appRow.ID)
-		if serr != nil {
-			return serr
-		}
-		rev = &revision.Revision{ID: newID(), AppID: appRow.ID, Seq: seq, Spec: body}
-		if cerr := s.Revisions.Create(ctx, tx, rev); cerr != nil {
-			return cerr
-		}
-		return s.Audits.Append(ctx, tx, &audit.Entry{
-			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "revision.create",
-			Resource: "revision/" + rev.ID, AfterFP: rev.Digest,
-		})
+		},
+		auditsFrom: func() []*audit.Entry {
+			if created == nil {
+				return nil
+			}
+			return []*audit.Entry{created}
+		},
 	})
 	if err != nil {
 		return nil, err

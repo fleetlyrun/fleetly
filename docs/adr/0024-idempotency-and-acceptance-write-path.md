@@ -25,12 +25,12 @@
 - `E_IDEMPOTENCY_KEY_CONFLICT` 入册随 F1.1（含双源冲突码）。
 - **同批守卫任务**（ADR 含可执法承诺，同批开守卫）：①受理面反扫（枚举全部创建型/删除型 RPC × 受理检查在册，未覆盖面显式豁免带理由——guard C 同款）；②幂等覆盖反扫（新创建型 RPC 无幂等执法即红）。随实现批次（F1.1）落地，非本 ADR 批。
 
-## 验收锚
+## 验收锚（F1.1 三段落地 2026-10-01：c5c7159 + 89cab2f + 阶段 3，证据=测试在树）
 
-- [ ] 同键同体重放返回同一结果；同键异体 409；body/头双源不一致被拒
-- [ ] 终态后同键同体仍返回原结果（A1 口径显式更新）
-- [ ] 24h 过期后同键作新请求受理；janitor 清理可观测
-- [ ] 全部创建型 RPC 经拦截器幂等执法（反扫守卫绿）
-- [ ] webhook 重投不产生重复部署（去重与效果同事务）
-- [ ] 配额检查与写同事务（并发风暴下不超限）
-- [ ] 受理面反扫守卫在册全绿；api 内联 `.Tx(ctx` 写编排归零（或豁免带理由）
+- [x] 同键同体重放返回同一结果；同键异体 409；body/头双源不一致被拒（idem 单测 + apitest 全链）
+- [x] 终态后同键同体仍返回原结果（通用 24h 窗；admission 活跃窗口语义不变——两层窗口并存）
+- [x] 24h 过期后同键作新请求受理；janitor 清理可观测（TestRetentionExpiry / TestSweepRemovesExpired）
+- [x] 全部创建型 RPC 经拦截器幂等执法（反扫守卫 TestIdempotencyCoversCreateVerbs，红灯实验过）
+- [x] webhook 重投不产生重复部署（去重与效果同事务：gateway delivery 派生键重放 + 台账随事实落）
+- [x] 配额检查与写同事务（configQuota 受理检查；并发风暴下不超限）
+- [x] 受理面反扫守卫在册全绿（TestAcceptanceWritePathsGoThroughCommit）；api 内联 `.Tx(ctx` 写编排归零（TestNoHandRolledTxChoreography，唯一豁免点=原语本体 acceptance.go）

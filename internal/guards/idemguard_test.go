@@ -32,6 +32,13 @@ var createVerbPrefixes = []string{"Create", "Deploy", "Submit", "Put", "Set", "R
 // FullMethod 集（/包.服务/方法）。逐行状态机：package → service → rpc。
 func protoCreateMethods(t *testing.T) map[string]bool {
 	t.Helper()
+	return scanProtoMethods(t, createVerbPrefixes)
+}
+
+// scanProtoMethods 是 proto 服务面的共享行扫描器（动词前缀参数化；幂等
+// 守卫与受理面守卫共用）。返回 /包.服务/方法 全径集。
+func scanProtoMethods(t *testing.T, prefixes []string) map[string]bool {
+	t.Helper()
 	methods := map[string]bool{}
 	err := walkRepoFiles(t, "proto", ".proto", func(path string, scan *bufio.Scanner) {
 		pkg, svc := "", ""
@@ -51,7 +58,7 @@ func protoCreateMethods(t *testing.T) map[string]bool {
 					continue
 				}
 				method, _, _ := strings.Cut(fields[0], "(")
-				for _, p := range createVerbPrefixes {
+				for _, p := range prefixes {
 					if strings.HasPrefix(method, p) {
 						methods["/"+pkg+"."+svc+"/"+method] = true
 						break
@@ -64,7 +71,7 @@ func protoCreateMethods(t *testing.T) map[string]bool {
 		t.Fatal(err)
 	}
 	if len(methods) < 10 {
-		t.Fatalf("proto create-verb scan found only %d methods — guard is blind, fix the scan", len(methods))
+		t.Fatalf("proto verb scan found only %d methods — guard is blind, fix the scan", len(methods))
 	}
 	return methods
 }
