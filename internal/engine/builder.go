@@ -22,36 +22,92 @@ type buildOptions struct {
 
 // logBuffer 是构建日志最近缓冲（诚实边界："仅实时+最近缓冲"，F0.9/F0.25
 // 同口径；持久化检索 N2）。有界环形，最新优先快照供读取面。
+//
+// 帧带 per-Build 单调序列号（N0.1 P2-1）：回绕丢帧后读取面按 seq 续流，
+// 不依赖 len(frames) 位置——"游标=长度"假设在环形截断后静默停发。
+// 终态 Build 的缓冲保留最近 retainedTerminalBuilds 个，其余回收（frames
+// map 只增不清会随时间泄漏）。
 type logBuffer struct {
-	mu     sync.Mutex
-	frames map[string][]capability.LogFrame
-	cap    int
+	mu      sync.Mutex
+	frames  map[string][]seqFrame
+	nextSeq map[string]int64
+	terminal []string // 终态完成序（旧→新）
+	cap     int
 }
+
+// seqFrame 是带序列号的日志帧。
+type seqFrame struct {
+	seq int64
+	f   capability.LogFrame
+}
+
+// retainedTerminalBuilds 是终态 Build 日志缓冲保留数（最近的可回读，更早
+// 的回收；活跃 Build 不回收）。
+const retainedTerminalBuilds = 8
 
 func newLogBuffer(capacity int) *logBuffer {
 	if capacity <= 0 {
 		capacity = 500
 	}
-	return &logBuffer{frames: map[string][]capability.LogFrame{}, cap: capacity}
+	return &logBuffer{
+		frames:  map[string][]seqFrame{},
+		nextSeq: map[string]int64{},
+		cap:     capacity,
+	}
 }
 
 func (b *logBuffer) write(buildID string, f capability.LogFrame) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	buf := append(b.frames[buildID], f)
+	seq := b.nextSeq[buildID]
+	b.nextSeq[buildID] = seq + 1
+	buf := append(b.frames[buildID], seqFrame{seq: seq, f: f})
 	if len(buf) > b.cap {
 		buf = buf[len(buf)-b.cap:]
 	}
 	b.frames[buildID] = buf
 }
 
-// recent 返回最近缓冲快照（旧→新）。
-func (b *logBuffer) recent(buildID string) []capability.LogFrame {
+// recentAfter 返回 seq 大于 after 的帧（旧→新）与本次见到的最新 seq（无
+// 新帧时原样回传 after——游标不动）。
+func (b *logBuffer) recentAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	out := make([]capability.LogFrame, len(b.frames[buildID]))
-	copy(out, b.frames[buildID])
+	var out []capability.LogFrame
+	last := after
+	for _, sf := range b.frames[buildID] {
+		if sf.seq <= after {
+			continue
+		}
+		out = append(out, sf.f)
+		last = sf.seq
+	}
+	return out, last
+}
+
+// recent 返回最近缓冲快照（旧→新；首个消费面，apitest/golden 同形态）。
+func (b *logBuffer) recent(buildID string) []capability.LogFrame {
+	out, _ := b.recentAfter(buildID, -1)
+	if out == nil {
+		return []capability.LogFrame{}
+	}
 	return out
+}
+
+// markTerminal 登记终态完成并回收超龄终态缓冲（幂等：重复登记同 ID 忽略）。
+func (b *logBuffer) markTerminal(buildID string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if n := len(b.terminal); n > 0 && b.terminal[n-1] == buildID {
+		return
+	}
+	b.terminal = append(b.terminal, buildID)
+	if len(b.terminal) > retainedTerminalBuilds {
+		drop := b.terminal[0]
+		b.terminal = b.terminal[1:]
+		delete(b.frames, drop)
+		delete(b.nextSeq, drop)
+	}
 }
 
 // bufferWriter 适配 LogWriter → 环形缓冲。
@@ -69,6 +125,12 @@ func (w *bufferWriter) WriteLog(_ context.Context, f capability.LogFrame) error 
 // RecentBuildLogs 返回构建日志最近缓冲快照（旧→新；B4 读面消费）。
 func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
 	return e.buildLogs.recent(buildID)
+}
+
+// RecentBuildLogsAfter 返回 seq 大于 after 的日志帧（旧→新）与最新 seq
+//（follow 续流游标；N0.1 P2-1）。
+func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
+	return e.buildLogs.recentAfter(buildID, after)
 }
 
 // buildStep 是构建循环的收敛步：拾取 queued（并发余量内）→ 起 goroutine
@@ -179,6 +241,10 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 	})
 	if err != nil {
 		return nil, err
+	}
+	if fresh.State.Terminal() {
+		// 终态登记触发超龄缓冲回收（frames map 只增不清会泄漏，N0.1 P2-1）。
+		e.buildLogs.markTerminal(b.ID)
 	}
 	return fresh, nil
 }

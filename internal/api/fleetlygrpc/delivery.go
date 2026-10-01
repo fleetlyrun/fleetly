@@ -17,7 +17,6 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
-	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -242,7 +241,8 @@ func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBu
 
 // StreamBuildLogs 读构建日志（B4）：先发最近缓冲，follow 时轮询增量续流
 // 至终态（诚实边界：仅实时+最近缓冲，持久化检索 N2）。未知 build id 是
-// 精确拒绝——不静默空流。
+// 精确拒绝——不静默空流。游标用帧序列号（N0.1 P2-1）：环形缓冲回绕丢帧
+// 后按 seq 续流，不受 len 位置假象影响。
 func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest, stream deliveryv1.BuildsService_StreamBuildLogsServer) error {
 	if req.GetBuildId() == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "build_id: must not be empty")
@@ -251,9 +251,11 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 	if _, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId()); err != nil {
 		return mapStateError(err, "build")
 	}
-	sent := 0
-	flush := func(frames []capability.LogFrame) error {
-		for _, f := range frames[sent:] {
+	var lastSeq int64 = -1
+	newFrames := 0
+	flush := func() error {
+		frames, last := svc.s.Engine.RecentBuildLogsAfter(req.GetBuildId(), lastSeq)
+		for _, f := range frames {
 			if err := stream.Send(&deliveryv1.StreamBuildLogsResponse{
 				BuildId: req.GetBuildId(),
 				Time:    f.Time.UTC().Format(timeFormatRFC3339),
@@ -262,16 +264,16 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 				return err
 			}
 		}
-		sent = len(frames)
+		lastSeq, newFrames = last, len(frames)
 		return nil
 	}
-	if err := flush(svc.s.Engine.RecentBuildLogs(req.GetBuildId())); err != nil {
+	if err := flush(); err != nil {
 		return err
 	}
 	if !req.GetFollow() {
 		return nil
 	}
-	// follow：至终态（终态后缓冲不再增长，最后一拍发尽收口）。
+	// follow：至终态（终态后缓冲不再增长，最后一拍无新帧即收口）。
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -280,14 +282,11 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 			return nil
 		case <-ticker.C:
 		}
-		if err := flush(svc.s.Engine.RecentBuildLogs(req.GetBuildId())); err != nil {
+		if err := flush(); err != nil {
 			return err
 		}
-		if b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId()); err == nil && b.State.Terminal() {
-			frames := svc.s.Engine.RecentBuildLogs(req.GetBuildId())
-			if len(frames) == sent {
-				return nil
-			}
+		if b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId()); err == nil && b.State.Terminal() && newFrames == 0 {
+			return nil
 		}
 	}
 }
