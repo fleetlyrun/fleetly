@@ -39,17 +39,24 @@ func TestOrchestratorSDKConfinedToProviders(t *testing.T) {
 	}
 }
 
-// leafSubtrees 是叶子包子树（架构 §2：model/spec 不 import 任何其他
-// internal 包）。
-var leafSubtrees = []string{"internal/model/", "internal/spec/"}
+// leafSubtrees 是叶子包子树（架构 §2：叶子不 import 任何其他 internal
+// 包）。model/spec 自架构 §2 起即叶子；capability/identity 是 C-12 扩面
+// （capability 只 import 标准库，identity 只加 lynx 外部库——现况干净，
+// 违例属裁决项：报修不走守卫豁免）。
+var leafSubtrees = []string{
+	"internal/model/",
+	"internal/spec/",
+	"internal/capability/",
+	"internal/identity/",
+}
 
 // fleetlyInternal 报告 import 是否 fleetly 主 module 的 internal 包。
 func fleetlyInternal(imp string) bool {
 	return strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/internal/")
 }
 
-// TestLeafPackagesPurity：internal/model/** 与 internal/spec/** 不得 import
-// 子树之外的任何 fleetly internal 包（叶子纯度；子树内部互引合法，
+// TestLeafPackagesPurity：叶子子树（model/spec/capability/identity）不得
+// import 子树之外的任何 fleetly internal 包（叶子纯度；子树内部互引合法，
 // 如 model/errcode 平级协作）。
 func TestLeafPackagesPurity(t *testing.T) {
 	for _, f := range scanGoFiles(t) {
@@ -66,7 +73,7 @@ func TestLeafPackagesPurity(t *testing.T) {
 		}
 		for _, imp := range f.imports {
 			if fleetlyInternal(imp) && !strings.HasPrefix(imp, "github.com/fleetlyrun/fleetly/"+own) {
-				t.Errorf("leaf package %s imports %q — model/spec must not depend on other internal packages (架构 §2)", f.rel, imp)
+				t.Errorf("leaf package %s imports %q — leaf subtrees (model/spec/capability/identity) must not depend on other internal packages (架构 §2)", f.rel, imp)
 			}
 		}
 	}

@@ -2,6 +2,7 @@ package assembly
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	runtimev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/runtime/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
@@ -24,25 +26,19 @@ import (
 // follow，N1）时读写超时维持 0、仅保留此头超时。
 const httpReadHeaderTimeout = 10 * time.Second
 
-// NewGatewayServer 装配 REST gateway（grpc-gateway）：统一错误信封出口
-// （newGatewayErrorHandler，apperr 驱动）、protojson snake_case marshaler、
-// 整条 gateway 共享一条 gRPC 连接（gateway.Dial 惰性建连）。cleanup 关闭
-// 共享连接。
-func NewGatewayServer(
-	app lynx.App,
-	cfg *config.AppConfig,
-) (*lynxhttp.Server, func(), error) {
-	mux := gateway.NewMux(gateway.MuxOptions{
-		ErrorHandler: newGatewayErrorHandler(app.Logger()),
-	})
-
-	conn, err := gateway.Dial(app.Context(), cfg.GRPCAddr(), gateway.DialConfig{})
-	if err != nil {
-		return nil, nil, err
-	}
-
-	register := []gateway.RegisterFunc{
+// gatewayRegistrations 是 REST 注解面的完整挂载清单（守卫 A 的对账对象：
+// genproto 每个 Register*HandlerClient 必须在此出现，P1-13/A-9——identity
+// 六服务曾整面漏挂）。ReceiveWebhook 唯一例外：HMAC 需原始请求体字节，
+// 走 gateway_hooks.go 的原生挂法，不进本清单。
+func gatewayRegistrations() []gateway.RegisterFunc {
+	return []gateway.RegisterFunc{
 		registerClient(systemv1.NewSystemServiceClient, systemv1.RegisterSystemServiceHandlerClient),
+		registerClient(identityv1.NewUsersServiceClient, identityv1.RegisterUsersServiceHandlerClient),
+		registerClient(identityv1.NewTeamsServiceClient, identityv1.RegisterTeamsServiceHandlerClient),
+		registerClient(identityv1.NewRolesServiceClient, identityv1.RegisterRolesServiceHandlerClient),
+		registerClient(identityv1.NewTokensServiceClient, identityv1.RegisterTokensServiceHandlerClient),
+		registerClient(identityv1.NewInvitationsServiceClient, identityv1.RegisterInvitationsServiceHandlerClient),
+		registerClient(identityv1.NewAuditQueryServiceClient, identityv1.RegisterAuditQueryServiceHandlerClient),
 		registerClient(structurev1.NewProjectsServiceClient, structurev1.RegisterProjectsServiceHandlerClient),
 		registerClient(structurev1.NewAppsServiceClient, structurev1.RegisterAppsServiceHandlerClient),
 		registerClient(structurev1.NewSecretsServiceClient, structurev1.RegisterSecretsServiceHandlerClient),
@@ -52,17 +48,49 @@ func NewGatewayServer(
 		registerClient(deliveryv1.NewDeploymentsServiceClient, deliveryv1.RegisterDeploymentsServiceHandlerClient),
 		registerClient(deliveryv1.NewRevisionsServiceClient, deliveryv1.RegisterRevisionsServiceHandlerClient),
 		registerClient(deliveryv1.NewBuildsServiceClient, deliveryv1.RegisterBuildsServiceHandlerClient),
+		// Hooks 配置面（Set/Get/Rotate）：注解面 RPC；接收面 ReceiveWebhook
+		// 在原生挂法（mountHooks），不在此。
+		registerClient(deliveryv1.NewHooksServiceClient, deliveryv1.RegisterHooksServiceHandlerClient),
 		registerClient(runtimev1.NewNodesServiceClient, runtimev1.RegisterNodesServiceHandlerClient),
 		registerClient(edgev1.NewRoutesServiceClient, edgev1.RegisterRoutesServiceHandlerClient),
 		registerClient(telemetryv1.NewEventsServiceClient, telemetryv1.RegisterEventsServiceHandlerClient),
 		registerClient(telemetryv1.NewLogsServiceClient, telemetryv1.RegisterLogsServiceHandlerClient),
 	}
-	if err := gateway.Register(app.Context(), mux, conn, register...); err != nil {
+}
+
+// NewGatewayHandler 构造 gateway 的 HTTP handler（grpc-gateway mux + 注解面
+// 全量注册 + 原生 webhook 挂法）。从 NewGatewayServer 抽出为独立入口：
+// apitest REST 冒烟经 httptest 驱动与生产完全同一清单与错误信封——清单
+// 漂移先在守卫 A 红，行为面在此冒烟红。
+func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface) (http.Handler, error) {
+	mux := gateway.NewMux(gateway.MuxOptions{
+		ErrorHandler: newGatewayErrorHandler(logger),
+	})
+	if err := gateway.Register(context.Background(), mux, conn, gatewayRegistrations()...); err != nil {
+		return nil, err
+	}
+	return mountHooks(mux, newHooksHandler(deliveryv1.NewHooksServiceClient(conn))), nil
+}
+
+// NewGatewayServer 装配 REST gateway（grpc-gateway）：统一错误信封出口
+// （newGatewayErrorHandler，apperr 驱动）、protojson snake_case marshaler、
+// 整条 gateway 共享一条 gRPC 连接（gateway.Dial 惰性建连）。cleanup 关闭
+// 共享连接。
+func NewGatewayServer(
+	app lynx.App,
+	cfg *config.AppConfig,
+) (*lynxhttp.Server, func(), error) {
+	conn, err := gateway.Dial(app.Context(), cfg.GRPCAddr(), gateway.DialConfig{})
+	if err != nil {
+		return nil, nil, err
+	}
+	handler, err := NewGatewayHandler(app.Logger(), conn)
+	if err != nil {
 		_ = conn.Close()
 		return nil, nil, err
 	}
 
-	srv := lynxhttp.NewServer(mountHooks(mux, newHooksHandler(deliveryv1.NewHooksServiceClient(conn))),
+	srv := lynxhttp.NewServer(handler,
 		lynxhttp.WithAddr(cfg.HTTPAddr()),
 		lynxhttp.WithLogger(app.Logger()),
 		// 长连接（SSE/WS）落地前保持保守读头超时；读写超时 0 由

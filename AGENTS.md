@@ -32,3 +32,5 @@ mise run lint           # go vet/gofmt + golangci + buf lint
 ## 提交纪律
 
 小步提交（骨架/守卫/地基/部署链/账号/引导各自成 commit）；每完成一个 F 项在 `docs/plan/2026-09-30-feature-checklist.md` 标 `[x]` 并随该 commit 更新。用户可见行为变更的 commit 必须含对应 golden/守卫更新。
+
+ADR 含可静态执法的承诺时，须同批开守卫任务（ADR-0001→irguard 为范式）；ADR 模板含验收锚小节（可测承诺逐条列为可勾选项）。
