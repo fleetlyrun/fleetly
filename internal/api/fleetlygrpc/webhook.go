@@ -63,8 +63,9 @@ func (svc *HooksService) ReceiveWebhook(ctx context.Context, req *deliveryv1.Rec
 		// 不区分"行不存在"与"App 已删"——对发送方只呈现"凭证无效"。
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token")
 	}
+	// App 已删（Get 活跃行口径）与行不存在同形——对发送方只呈现"凭证无效"。
 	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), h.AppID)
-	if err != nil || appRow.Deleted() {
+	if err != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token")
 	}
 

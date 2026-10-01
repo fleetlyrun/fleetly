@@ -27,6 +27,10 @@ type SubmitRequest struct {
 
 // Submit 走 admission 判定（ADR-0016，判定全在单事务内）：
 //
+//  0. App 存活判定（ADR-0023 统一口径）：已删 App 一律不存在，事务内
+//     拒绝（E_NOT_FOUND）——与 DeleteApp 最终事务的 ActiveByApp 复查
+//     互为对偶：单连接事务串行下，删除与受理的先后在此闭合，删后
+//     deploy 不再重建载体；
 //  1. 同幂等键（活跃）→ 返回既有（去重）；
 //  2. 同 App 同 commit（活跃）→ 返回既有（webhook 重复投递去重）；
 //  3. 每 App 排队容量 → ErrQueueFull（背压反馈，非冲突）；
@@ -41,6 +45,11 @@ type SubmitRequest struct {
 func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Deployment, error) {
 	var out *deployment.Deployment
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
+		// 0. App 存活判定（API/webhook 的预读只是快速失败面；权威判定在此）。
+		if _, err := e.apps.Get(ctx, tx, req.AppID); err != nil {
+			return err
+		}
+
 		// 1. 幂等键去重。
 		if req.IdempotencyKey != "" {
 			existing, err := e.deployments.FindActiveByIdempotencyKey(ctx, tx, req.IdempotencyKey)

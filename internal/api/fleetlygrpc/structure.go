@@ -176,6 +176,8 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 // DeleteApp 收口删除（ADR-0023）：活跃部署拒绝（E_CONFLICT，先 cancel/等
 // 终态）→ engine 收口拆载体 → 撤路由 → tombstone + 审计。副作用不可与
 // 审计同事务：先收口后落账，收口失败即整体失败（App 保持可操作）。
+// tombstone 事务内复查 ActiveByApp（TOCTOU 收口）：预检到落账之间受理的
+// 部署在此拒绝——与 Submit 的存活判定互为对偶，单连接事务串行下窗口闭合。
 func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAppRequest) (*structurev1.DeleteAppResponse, error) {
 	if req.GetId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
@@ -183,9 +185,6 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
-	}
-	if appRow.Deleted() {
-		return nil, apperr.New("E_NOT_FOUND", "app %s not found", req.GetId())
 	}
 	active, err := svc.s.Deployments.ActiveByApp(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
@@ -215,6 +214,17 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	}
 
 	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// TOCTOU 复查：预检通过后、tombstone 落账前受理的活跃部署在此
+		// 拒绝（App 保持可操作，可重试删除；teardown 副作用由在途部署的
+		// Ensure 重放收口）。
+		active, err := svc.s.Deployments.ActiveByApp(ctx, tx, req.GetId())
+		if err != nil {
+			return err
+		}
+		if len(active) > 0 {
+			return apperr.New("E_CONFLICT",
+				"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), len(active))
+		}
 		if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
 			return err
 		}

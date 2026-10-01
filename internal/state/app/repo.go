@@ -46,11 +46,12 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, a *App) error {
 	return err
 }
 
-// Get 按 ID 直读（含已删行）。
+// Get 按 ID 读活跃行（ADR-0023 统一口径：tombstone 后一律不存在——
+// 已删行对 Get/GetByName/List 同构隐藏，删除语义不在读面分叉）。
 func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*App, error) {
 	row := run.QueryRowContext(ctx, `
 		SELECT id, project_id, name, created_at, updated_at, deleted_at
-		FROM apps WHERE id = ?`, id)
+		FROM apps WHERE id = ? AND deleted_at = ''`, id)
 	return scanApp(row)
 }
 
@@ -102,17 +103,22 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]App, error) {
 	return out, rows.Err()
 }
 
-// SoftDelete 落 tombstone（幂等；四件一拍的 tombstone 件）。
+// SoftDelete 落 tombstone（tombstone 件）。命中 0 行（不存在或已删）返回
+// ErrNotFound——与 Get 口径一致："已删"对调用方即"不存在"（再删 404）。
 func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())
-	_, err := run.ExecContext(ctx, `
+	res, err := run.ExecContext(ctx, `
 		UPDATE apps SET deleted_at = ?, updated_at = ?
 		WHERE id = ? AND deleted_at = ''`, now, now, id)
 	if err != nil {
 		return err
 	}
-	if _, err := r.Get(ctx, run, id); err != nil {
+	n, err := res.RowsAffected()
+	if err != nil {
 		return err
+	}
+	if n == 0 {
+		return state.ErrNotFound
 	}
 	return nil
 }

@@ -45,9 +45,6 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
-	if appRow.Deleted() {
-		return nil, apperr.New("E_NOT_FOUND", "app %s has been deleted", appRow.ID)
-	}
 
 	existing, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), appRow.ID)
 	if err != nil && !errors.Is(err, state.ErrNotFound) {

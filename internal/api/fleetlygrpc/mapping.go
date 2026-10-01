@@ -28,6 +28,8 @@ import (
 )
 
 // mapStateError 把 repo/engine 哨兵映射为 apperr 信封（API 层唯一出口）。
+// 已是 *apperr.Error 的错误原样穿透（handler 在事务 fn 内组合的应用错误
+// 不二次包裹——二次包裹会把 E_CONFLICT 之类吞成 E_INTERNAL）。
 func mapStateError(err error, what string) error {
 	switch {
 	case err == nil:
@@ -41,6 +43,10 @@ func mapStateError(err error, what string) error {
 	case errors.Is(err, engine.ErrNotCancellable):
 		return apperr.New("E_NOT_CANCELLABLE", "deployment already finished").WithCause(err)
 	default:
+		var ae *apperr.Error
+		if errors.As(err, &ae) {
+			return ae
+		}
 		return apperr.New("E_INTERNAL", "internal error").WithCause(err)
 	}
 }
