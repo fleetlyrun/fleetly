@@ -28,11 +28,11 @@ type buildOptions struct {
 // 终态 Build 的缓冲保留最近 retainedTerminalBuilds 个，其余回收（frames
 // map 只增不清会随时间泄漏）。
 type logBuffer struct {
-	mu      sync.Mutex
-	frames  map[string][]seqFrame
-	nextSeq map[string]int64
+	mu       sync.Mutex
+	frames   map[string][]seqFrame
+	nextSeq  map[string]int64
 	terminal []string // 终态完成序（旧→新）
-	cap     int
+	cap      int
 }
 
 // seqFrame 是带序列号的日志帧。
@@ -128,7 +128,7 @@ func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
 }
 
 // RecentBuildLogsAfter 返回 seq 大于 after 的日志帧（旧→新）与最新 seq
-//（follow 续流游标；N0.1 P2-1）。
+// （follow 续流游标；N0.1 P2-1）。
 func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
 	return e.buildLogs.recentAfter(buildID, after)
 }

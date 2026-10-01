@@ -53,7 +53,7 @@ func TestSubmitRejectsDeletedApp(t *testing.T) {
 }
 
 // 统一口径（N0.1 P1-1）：repo 读面对已删行同构隐藏——Get 与 List 同形
-//（DeleteApp 再删 404 的根），SoftDelete 命中 0 行返回 ErrNotFound。
+// （DeleteApp 再删 404 的根），SoftDelete 命中 0 行返回 ErrNotFound。
 func TestAppRepoHidesTombstonedRows(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
