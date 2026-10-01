@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/robfig/cron/v3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -165,5 +164,5 @@ func TestParseCronTimezoneAndDST(t *testing.T) {
 	// 空 timezone 按 UTC（创建面归一为显式值的防御半边）。
 	sched, err = schedule.ParseCron("0 0 * * *", "")
 	require.NoError(t, err)
-	var _ cron.Schedule = sched // 接口面钉住（robfig Schedule 是 Next 的契约）
+	assert.NotNil(t, sched, "robfig Schedule（Next 的契约面）解析成功")
 }
