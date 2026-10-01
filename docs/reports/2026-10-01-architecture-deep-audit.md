@@ -229,7 +229,43 @@ R-2（事件负载钉扎）、R-3（DNS 归属）、R-4（幂等键形态）、R
 
 ---
 
-## 8. 审计方法与可信度说明
+## 8. 重分类：真缺陷 vs 待办未实现（2026-10-01 补，主审复核）
+
+§1~§3 的 P0/P1 按"返工风险"切级，混了两类性质不同的发现。本节按**性质**重切（补验三处：CreateProject 持久化 team_id 于 `structure.go:73-76`；config_refs 经两条现役源均不可达——`spec_file` 标注"随 API 扩展批"未开放（`delivery.proto:169`）、compose 白名单不含 configs；webhook 25MiB 错位坐实——原生 handler 收 25MiB 后经共享 gRPC conn 调 ReceiveWebhook（`gateway_hooks.go:5,47-56`），过 4MB 默认上限）。
+
+### A. 真缺陷——已交付功能/契约今天就错（批 0 修复对象）
+
+| # | 发现 | 触发条件 | 性质 |
+|---|---|---|---|
+| A-1 | **D-4 构建孤儿重启死循环**（唯一 P0 级真缺陷） | fleetlyd 在 Build 进行中重启/崩溃 | 行为错：无限热循环 + 部署永卡 building + 取消不停 |
+| A-2 | P1-15 StreamLogs follow 只见第一个容器 | 任何多副本/多进程 App + `--follow` | 行为错：已交付功能静默丢日志（F0.25 面） |
+| A-3 | P1-14 swarm secrets 遍历序不确定 | ≥2 个 secret_refs 的 App + 重放（L1 期每 tick 重 Ensure/重启基线重放） | 确定性破缺（代码层确证）；是否实际触发滚动需 dind 实证 |
+| A-4 | Q-10 traefik routeKey 有损归一化碰撞 | 同 Project 内 `(host="a.b", path="/c")` 与 `(host="a.b-c")` 类命名 | 行为错：一条路由静默不生效（用户可构造） |
+| A-5 | Q-11 webhook 25MiB/4MB 错位 | 4MB~25MiB 的 GitHub payload | 行为错：设计内大小死于不透明 ResourceExhausted |
+| A-6 | Q-15 DeleteProject 无守卫 | 删有活跃 App/路由的项目 | 语义错：删了项目、App 继续跑路由继续发（ADR-0023 精神未覆盖） |
+| A-7 | P1-2/Q-3 API 面无请求超时 + grpcTimeout 注释错位 | docker hang（staging 实证过的形态）落在同步 API 路径 | 行为错：客户端无限挂起；注释谎报语义（`go doc` 证实 WithTimeout=优雅关停） |
+| A-8 | C-11 drift spec 对照缺 Command | `docker service update --command` 人工改载体 | 口径收窄：已交付功能低于 ADR-0022 承诺（镜像/副本/命令） |
+| A-9 | P1-13 REST 契约已发布未挂载 | 任何人按 OpenAPI 调 identity REST 面 | 契约错：proto 注解/openapi 已发布、运行时 404 |
+| A-10 | 错误面小缺陷群 | 各自低频 | 误导/观测缺失：Q-8（凭证查询吞错降级匿名拉取）、Q-12（ErrConflict 文案一律 "already exists"）、Q-24（存储故障报 invalid token 无日志）、Q-19（L1 权威数据源失败无诊断）、Q-20（inspect 瞬时错误走 create 撞名）、Q-9（revSeq=0 撞 tag）、Q-21（webhook 去重窗口破坏 at-least-once）、Q-6（loadSpec 脱离取消链）、Q-7（构建 goroutine 不入排水 wg） |
+
+### B. 灰色——API 已暴露但语义未闭合（不是错，但不是诚实的"未实现"）
+
+- **P1-10 Team 轴**：CreateTeam/`CreateProjectRequest.team_id`（`structure.proto:192`）已收数据并持久化，但引擎三处硬编码 "default"、scope 执法不含 team 维度——用户能建"什么都不隔离"的团队；连带 Q-16（token 的 role/team 不交叉校验）。处置：要么文档/Console 明示"v1 单团队执法"，要么 R-7 裁决接实时点。
+- **D-2 内的 taskGroup 注释漂移**：`translate.go:148-150` 注释声称"engine 已翻译"，实际 `projection.go:38` 原样透传；行为面是响亮失败（挂不存在的网 → 部署失败），可接受，但注释撒谎。随 F1.8 落地或先改注释。
+
+### C. 待办未实现——规划内功能尚未到实现时点（不是 bug；报告列为 P0/P1 是"前置设计裁决/结构前置"性质）
+
+D-1（Workload 生命周期/WorkloadEvent 终态字段——swarm 硬编码 ConditionANY 对**已交付的长运行 App 是正确行为**）、D-2 主体（Task 载体拓扑）、D-3（幂等键 24h/同键异体语义——现状符合 ADR-0016 N0 修正口径，`admission_idem_test` 钉的正是 N0 语义）、P1-1 的 SSE 部分（EventSource 401 是 F1.2 未落地的自然结果）、P1-3（outbox trim/410——"只增"是 N0 有意设计）、P1-4（分页）、P1-5（managed 泛化——deletion test 文化本就等第二个实例）、P1-6（transit 抽象）、P1-7（Run 观测缓存）、P1-8（治理刹车）、P1-9（双级 DNS）、P1-11（只读闸门）、P1-12（DatabaseSpec storage——proto 零消费者）、C-6（schemaVersion 读面——单版本不可证伪）、C-13（JobSpec 重塑——零消费者窗口）、C-15（config_refs 通道——**经补验两条现役源均不可达**，纯待办）、C-16（两级变量）、C-8/C-9（N2 签名）、C-17（RuntimeExec）、F-14（fleetly.local 迁移口径）、F-15（quickstart 轮询收编）。
+
+### D. 防护/加固——今天不出错，缺护栏或容量余量
+
+C-10（Inspector 断言）、C-12（叶子纯度守卫覆盖 capability/identity——现状无违例，纯护栏）、Q-5（Transit RowsAffected——单连接掩蔽）、Q-13（错误文本 Contains 耦合——现工作）、Q-14（gRPC recovery——无已知 panic 路径）、Q-17（secret 配额不对称）、Q-25（锁序文档）、E-8（Volume.Pin 审计——审计口径本限"Token/人/Agent 写操作"，pin 是系统内部写，属口径裁量）、E-10（node.joined 原子性——观测面小窗口）、Q-18（指纹 pepper）、Q-22/Q-23/Q-26/E-11（容量与效率余量）。
+
+**重分类结论**：真缺陷共 10 组（A-1 唯一 P0 级，A-2~A-9 为已交付面上的确定缺陷，A-10 为低频误导/观测缺失）——全部落在批 0 修复范围，与 §7 切分一致；原报告的 D-1/D-2/D-3 P0 定级**维持**（它们是"N1 开工前必须拍板/补字段"的前置裁决，不是 bug），但读法应是"还没做"，不是"做错了"。
+
+---
+
+## 9. 审计方法与可信度说明
 
 - 四路子审各自独立读完全部指定真源与代码后产出；主审合并前对**全部 P0/P1 的 file:line 证据逐条亲验**（含 D-1 的 swarm 重启策略硬编码与 container 事件丢弃、D-4 的四环证据链、P1-2 的 lynx `WithTimeout` 语义经 `go doc` 官方文档证实、P1-14/P1-15/Q-10/Q-15 的源码复核），P2 抽样核验约 15 处零误报。
 - 两处子审标"未验证"的运行时行为如实保留标注：swarmkit 对 Secrets 仅顺序差异是否触发 task 重建（P1-14）、swarm 跨服务 alias 的 DNS RR 行为（R-3）、k3s Enrollment 轮换对存量 agent 的影响（裁决表 #1）。建议分别以 dind e2e 实证后关闭。
