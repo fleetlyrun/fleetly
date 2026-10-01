@@ -1,6 +1,7 @@
 package swarm
 
 import (
+	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -115,6 +116,75 @@ func TestToServiceSpec(t *testing.T) {
 	require.Len(t, spec.TaskTemplate.ContainerSpec.Secrets, 1)
 	assert.Equal(t, "fleetly-sec-api-token-ab12cd34", spec.TaskTemplate.ContainerSpec.Secrets[0].SecretName)
 	assert.Equal(t, "api-token", spec.TaskTemplate.ContainerSpec.Secrets[0].File.Name)
+}
+
+// deterministicFixture 是守卫 E 的负载样本：刻意覆盖全部 map 来源字段
+// （env、≥2 secret 载体）与切片来源字段（≥2 networks、≥2 volumes、
+// ≥2 ports），任何一处遍历序泄漏都会让逐字节对照翻红。
+func deterministicFixture() (capability.NamespaceRef, capability.Workload, capability.Generation, map[string]string) {
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	w := capability.Workload{
+		ID:      "wl_01H",
+		Process: "web",
+		Image:   "ghcr.io/acme/web@sha256:abc",
+		Command: []string{"/app/server"},
+		Env:     map[string]string{"ZED": "26", "ALPHA": "1", "MID": "13"},
+		Ports: []capability.WorkloadPort{
+			{Port: 8080, Protocol: capability.ProtocolH2C},
+			{Port: 5432, Protocol: capability.ProtocolTCP},
+		},
+		Replicas: 3,
+		Healthcheck: &capability.Healthcheck{
+			HTTPPath: "/healthz",
+			Interval: 5e9, // 5s
+		},
+		Resources: &capability.Resources{CPUMillis: 500, MemoryMB: 256},
+		Volumes: []capability.VolumeMount{
+			{VolumeID: "01VOLA", Target: "/data"},
+			{VolumeID: "01VOLB", Target: "/cache", ReadOnly: true},
+		},
+		Networks: []string{"default", "internal"},
+	}
+	// ≥2 个不同 secret 载体（P1-14 的触发面：map → ContainerSpec.Secrets）。
+	carriers := map[string]string{ //nolint:gosec // 载体名样本（非凭据值）
+		"z-token":   "fleetly-sec-z-token-99aa88bb",
+		"a-token":   "fleetly-sec-a-token-11bb22cc",
+		"m-key.pem": "fleetly-sec-m-key-pem-55dd66ee",
+	}
+	return ns, w, capability.Generation(42), carriers
+}
+
+// TestToServiceSpecDeterministic 守卫 E（批 0）：同一输入连续调用
+// toServiceSpec，json.Marshal 结果必须逐字节相等——swarm update 以 spec
+// 变更为准，map 遍历序泄漏（env/secrets/将来任何 map 来源字段）会把幂等
+// 重放变成假变更、触发无意义的滚动替换（P1-14 的泛化守卫）。
+func TestToServiceSpecDeterministic(t *testing.T) {
+	ns, w, gen, carriers := deterministicFixture()
+
+	marshal := func() []byte {
+		b, err := json.Marshal(toServiceSpec(ns, w, gen, carriers))
+		require.NoError(t, err)
+		return b
+	}
+	first, second := marshal(), marshal()
+	assert.True(t, bytes.Equal(first, second),
+		"toServiceSpec must be byte-for-byte deterministic: first=%s second=%s", first, second)
+
+	// 多 secret 重放变体（P1-14 直接回归面）：同输入第三次及后续调用
+	// 仍逐字节相等——map 内部序在多次遍历间漂移也不得渗进 spec。
+	for i := 0; i < 20; i++ {
+		again := marshal()
+		assert.True(t, bytes.Equal(first, again),
+			"replay #%d drifted: first=%s again=%s", i+3, first, again)
+	}
+
+	// 排序结果本身符合先例（platformName 升序），钉死排序键的选择。
+	spec := toServiceSpec(ns, w, gen, carriers)
+	names := make([]string, 0, len(spec.TaskTemplate.ContainerSpec.Secrets))
+	for _, s := range spec.TaskTemplate.ContainerSpec.Secrets {
+		names = append(names, s.File.Name)
+	}
+	assert.Equal(t, []string{"a-token", "m-key.pem", "z-token"}, names)
 }
 
 // http 探针端口回落序（N0.1 P2-2 实装）：tcp_port 优先 > 进程声明首端口

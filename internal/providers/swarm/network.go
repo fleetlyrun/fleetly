@@ -46,8 +46,13 @@ func (p *Provider) ensureNetworks(ctx context.Context, ns capability.NamespaceRe
 	}
 	for ref := range refs {
 		name := carrierNetworkName(ref.ns, ref.name)
-		if _, err := p.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{}); err == nil {
-			continue
+		if err := p.inspectNetworkCarrier(ctx, name); err == nil {
+			continue // create-or-get 的 get 半边：已存在即复用
+		} else if !isNotFound(err) {
+			// Q-20：inspect 失败 ≠ 不存在——权限/连接类错误必须上抛带
+			// 原因，不得伪装 404 触发 create（撞既有载体名只会得到误导性
+			// 的"already exists"）。对照 service 路径 isNotFound 先例。
+			return fmt.Errorf("swarm ensure network %s: inspect: %w", name, err)
 		}
 		labels := map[string]string{
 			labelNetManaged:  "true",
@@ -64,6 +69,16 @@ func (p *Provider) ensureNetworks(ctx context.Context, ns capability.NamespaceRe
 		}
 	}
 	return nil
+}
+
+// inspectNetworkCarrier 查网络载体存在性（测试缝优先；存在返回 nil，
+// 不存在返回 NotFound，其余错误原样带出）。
+func (p *Provider) inspectNetworkCarrier(ctx context.Context, name string) error {
+	if p.networkInspect != nil {
+		return p.networkInspect(ctx, name)
+	}
+	_, err := p.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+	return err
 }
 
 // secretCarrierName 是 Secret 载体名（版本化：fleetly-sec-<name>-<fp8>；
@@ -84,8 +99,12 @@ func (p *Provider) ensureSecrets(ctx context.Context, m capability.Materials) (m
 	for name, value := range m.SecretFiles {
 		carrier := secretCarrierName(name, fingerprintHex(value))
 		out[name] = carrier
-		if _, err := p.cli.SecretInspect(ctx, carrier, client.SecretInspectOptions{}); err == nil {
-			continue
+		if err := p.inspectSecretCarrier(ctx, carrier); err == nil {
+			continue // create-or-get 的 get 半边：已存在即复用
+		} else if !isNotFound(err) {
+			// Q-20：同 ensureNetworks——非 NotFound 错误上抛带原因，不
+			// 伪装 404 触发 create。
+			return nil, fmt.Errorf("swarm ensure secret %s: inspect: %w", carrier, err)
 		}
 		if _, err := p.cli.SecretCreate(ctx, client.SecretCreateOptions{
 			Spec: swarm.SecretSpec{
@@ -103,6 +122,16 @@ func (p *Provider) ensureSecrets(ctx context.Context, m capability.Materials) (m
 		}
 	}
 	return out, nil
+}
+
+// inspectSecretCarrier 查 Secret 载体存在性（测试缝优先；语义同
+// inspectNetworkCarrier）。
+func (p *Provider) inspectSecretCarrier(ctx context.Context, name string) error {
+	if p.secretInspect != nil {
+		return p.secretInspect(ctx, name)
+	}
+	_, err := p.cli.SecretInspect(ctx, name, client.SecretInspectOptions{})
+	return err
 }
 
 // fingerprintHex 是材料值的短指纹（载体版本名用；非对账指纹）。

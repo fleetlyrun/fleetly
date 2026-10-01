@@ -14,8 +14,10 @@ package swarm
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -24,13 +26,25 @@ import (
 // Provider 是 swarm Runtime Provider。
 type Provider struct {
 	cli *client.Client
+
+	// 可注入的最小 docker 面缝（hermetic 单测注入 fake，不依赖真 daemon；
+	// nil = 真实现直连 cli）。只覆盖需要无 daemon 测试的窄路径：
+	//   - listContainers/openContainerLog：日志合流（Q-4/P1-15）。
+	//   - networkInspect/secretInspect：材料 create-or-get 分诊（Q-20）。
+	// 缝契约与真实现一致（如日志流读端必须在 ctx 取消时解除阻塞）。
+	listContainers   func(ctx context.Context, ns capability.NamespaceRef) ([]container.Summary, error)
+	openContainerLog func(ctx context.Context, containerID string, opts client.ContainerLogsOptions) (io.ReadCloser, error)
+	networkInspect   func(ctx context.Context, name string) error
+	secretInspect    func(ctx context.Context, name string) error
 }
 
-// 编译期契约断言：核心面 + 三个子面（F0.19 全契约）。
+// 编译期契约断言：核心面 + 三个子面，共四个面（F0.19 全契约；C-10 补
+// Inspector 面——缺此断言则接口改名时静默降级 gen-only 无红灯）。
 var (
-	_ capability.Runtime      = (*Provider)(nil)
-	_ capability.RuntimeLogs  = (*Provider)(nil)
-	_ capability.RuntimeAdmin = (*Provider)(nil)
+	_ capability.Runtime          = (*Provider)(nil)
+	_ capability.RuntimeLogs      = (*Provider)(nil)
+	_ capability.RuntimeAdmin     = (*Provider)(nil)
+	_ capability.RuntimeInspector = (*Provider)(nil)
 )
 
 // New 构造 Provider：host 为 daemon 端点（空 = DOCKER_HOST / 默认套接字）。

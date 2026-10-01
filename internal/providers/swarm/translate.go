@@ -168,9 +168,11 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		})
 	}
 	// Secret 文件注入（值已落 swarm secret 载体；容器内 /run/secrets/<名>）。
-	for platformName, carrier := range secretCarriers {
+	// 按 platformName 排序后遍历（对照 envSlice 先例）：map 遍历序随机，
+	// 排序保 spec 逐字节稳定——幂等重放的 diff 不产生假变更（P1-14）。
+	for _, platformName := range sortedKeys(secretCarriers) {
 		container.Secrets = append(container.Secrets, &swarm.SecretReference{
-			SecretName: carrier,
+			SecretName: secretCarriers[platformName],
 			File: &swarm.SecretReferenceFileTarget{
 				Name: platformName,
 				Mode: 0o400,
@@ -255,13 +257,20 @@ func replicasMode(replicas int64) swarm.ServiceMode {
 	return swarm.ServiceMode{Replicated: &swarm.ReplicatedService{Replicas: &r}}
 }
 
-// envSlice 把 env map 翻译为排序的 KEY=VALUE 切片（幂等 diff 稳定）。
-func envSlice(env map[string]string) []string {
-	keys := make([]string, 0, len(env))
-	for k := range env {
+// sortedKeys 返回 map 键的排序切片：map 遍历序随机，翻译路径凡 map →
+// 切片的落点都必须经此归一（幂等 diff 逐字节稳定；守卫 E 钉死）。
+func sortedKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	return keys
+}
+
+// envSlice 把 env map 翻译为排序的 KEY=VALUE 切片（幂等 diff 稳定）。
+func envSlice(env map[string]string) []string {
+	keys := sortedKeys(env)
 	out := make([]string, 0, len(keys))
 	for _, k := range keys {
 		out = append(out, k+"="+env[k])

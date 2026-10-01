@@ -3,6 +3,7 @@ package swarm
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
@@ -167,7 +168,13 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 			if ctx.Err() != nil {
 				return
 			}
-			time.Sleep(time.Second)
+			// ctx 感知退避（Q-19）：time.Sleep 不看 ctx，停机/取消期间
+			// 会白等一秒才退出。
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Second):
+			}
 			eventsRes = p.cli.Events(ctx, client.EventsListOptions{
 				Filters: client.Filters{}.Add("type", "service", "node", "container"),
 			})
@@ -186,8 +193,14 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 		case <-anchorTicker.C:
 			// 锚定扫描同时充当节点存活观测（node leave 事件经 mapEvent）；
 			// 任务轮询补充 service 事件缺 labels 时的观测权威（L1 数据源）。
-			_ = p.anchorNodes(ctx, out)
-			_ = p.pollTasks(ctx, out)
+			// 失败不致命（下拍重试）但绝不静默（Q-19）：pollTasks 是 L1
+			// 就绪的权威数据源，静默失败 = 部署无诊断卡到超时。
+			if err := p.anchorNodes(ctx, out); err != nil {
+				slog.Warn("swarm watch: node anchoring scan failed", "error", err)
+			}
+			if err := p.pollTasks(ctx, out); err != nil {
+				slog.Warn("swarm watch: task poll failed; readiness observation degraded until next tick", "error", err)
+			}
 		}
 	}
 }
