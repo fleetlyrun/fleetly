@@ -146,6 +146,15 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 		Protocol: protocol, TLSMode: tlsMode,
 	}
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// 父资源存活校验（批 0 复核，同族面）：路由挂在不存在/已删的
+		// Project 或 App 下此前直接成功（routes 无 FK）——活路由指向已删
+		// App 会让 Edge 全量发布把流量钉在 tombstone 上。
+		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
+			return err
+		}
+		if err := svc.s.requireProjectApp(ctx, tx, req.GetProjectId(), req.GetAppId()); err != nil {
+			return err
+		}
 		if err := svc.s.Routes.Create(ctx, tx, row); err != nil {
 			return err
 		}

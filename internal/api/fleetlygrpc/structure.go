@@ -66,6 +66,43 @@ type structureEventPayload struct {
 	ActiveDeployments int `json:"active_deployments,omitempty"`
 }
 
+// requireActiveProject 在调用方事务内校验 Project 存活（ADR-0023 活跃行
+// 口径：tombstone 后一律不存在）。全部"创建时引用父 Project"的写面共用
+// （CreateApp/Route/Volume/Network/PutSecret/PutConfig）。与写操作同事务：
+// 单写者串行下与 DeleteProject 的活跃 App 守卫构成对偶——任一交错下
+// "项目存活 ⇔ 子资源可建"（批 0 复核：apps.project_id 无 FK，删除后建
+// 子资源此前直接成功）。
+func (s *Services) requireActiveProject(ctx context.Context, run state.Runner, id string) error {
+	p, err := s.Projects.Get(ctx, run, id)
+	if err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return apperr.New("E_NOT_FOUND", "project %s not found", id)
+		}
+		return err
+	}
+	if p.Deleted() {
+		return apperr.New("E_NOT_FOUND", "project %s not found", id)
+	}
+	return nil
+}
+
+// requireProjectApp 在调用方事务内校验 App 在指定 Project 内存活（Route
+// 的父引用面：apps 活跃行口径 + 归属一致——跨项目悬空引用按"本项目无此
+// App"拒绝）。
+func (s *Services) requireProjectApp(ctx context.Context, run state.Runner, projectID, appID string) error {
+	a, err := s.Apps.Get(ctx, run, appID)
+	if err != nil {
+		if errors.Is(err, state.ErrNotFound) {
+			return apperr.New("E_NOT_FOUND", "app %s not found in project %s", appID, projectID)
+		}
+		return err
+	}
+	if a.ProjectID != projectID {
+		return apperr.New("E_NOT_FOUND", "app %s not found in project %s", appID, projectID)
+	}
+	return nil
+}
+
 func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.CreateProjectRequest) (*structurev1.CreateProjectResponse, error) {
 	if req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
@@ -117,10 +154,17 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, _ *structurev1.Lis
 // 活跃部署收口与路由撤除，ADR-0023 ③）。边界：Project 级材料
 // （Secret/Config/Volume/Network）不随 Project 删除——各自生命周期独立
 // （操作者按需先删材料再删 Project，本守卫不级联、不代删）。
+//
+// 删除后窗口：本守卫只保证"删除瞬间无活跃 App"；删除落账后 CreateApp 面
+// 不得再向已删项目挂 App——由 CreateApp 事务内的 requireActiveProject 对偶
+// 守卫承载（两守卫同处各自事务、单写者串行，任一交错下"项目存活 ⇔ App
+// 可建"；批 0 复核：此前 CreateApp 无校验、apps.project_id 无 FK，该窗口
+// 实际敞开，注释宣称的"窗口闭合"不成立，已随对偶守卫落地闭合）。
 func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.DeleteProjectRequest) (*structurev1.DeleteProjectResponse, error) {
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// 守卫与 tombstone 同事务：并发建 App 的窗口闭合（单写者事务
-		// 串行）。apperr 原样穿透 mapStateError（errors.As 分支）。
+		// 守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶闭合
+		// （本侧拒绝"删除时仍有 App"；CreateApp 侧拒绝"删除后挂 App"；
+		// 单写者事务串行，见函数注释）。
 		apps, err := svc.s.Apps.ListByProject(ctx, tx, req.GetId())
 		if err != nil {
 			return err
@@ -160,6 +204,12 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	}
 	a := &app.App{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName()}
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
+		// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
+		// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。
+		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
+			return err
+		}
 		if err := svc.s.Apps.Create(ctx, tx, a); err != nil {
 			return err
 		}
@@ -343,6 +393,11 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(req.GetValue())),
 	}
 	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
+		// 不存在/已删的 Project 下。
+		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
+			return err
+		}
 		if err := svc.s.Secrets.Upsert(ctx, tx, row); err != nil {
 			return err
 		}
@@ -429,6 +484,11 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 	}
 	row := &configrepo.Config{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
 	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
+		// 不存在/已删的 Project 下。
+		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
+			return err
+		}
 		if err := svc.s.Configs.Create(ctx, tx, row); err != nil {
 			return err
 		}
@@ -491,6 +551,11 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 		PinnedNodeID: req.GetPinnedNodeId(),
 	}
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
+		// 不存在/已删的 Project 下。
+		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
+			return err
+		}
 		if err := svc.s.Volumes.Create(ctx, tx, row); err != nil {
 			return err
 		}
@@ -535,6 +600,11 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), EgressNone: req.GetEgressNone(),
 	}
 	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
+		// 不存在/已删的 Project 下。
+		if err := svc.s.requireActiveProject(ctx, tx, req.GetProjectId()); err != nil {
+			return err
+		}
 		if err := svc.s.Networks.Create(ctx, tx, row); err != nil {
 			return err
 		}
