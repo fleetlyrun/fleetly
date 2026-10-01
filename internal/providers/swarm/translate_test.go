@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -100,10 +101,11 @@ func TestToServiceSpec(t *testing.T) {
 	assert.Equal(t, int64(500_000_000), spec.TaskTemplate.Resources.Limits.NanoCPUs)
 	assert.Equal(t, int64(256*1024*1024), spec.TaskTemplate.Resources.Limits.MemoryBytes)
 
-	// 探针方言：http → CMD-SHELL wget。
+	// 探针方言：http → CMD-SHELL wget；端口回落序实装（N0.1 P2-2）——
+	// 本例无 tcp_port、声明首端口 8080 → 探针打声明端口。
 	require.NotNil(t, cs.Healthcheck)
 	assert.Equal(t, "CMD-SHELL", cs.Healthcheck.Test[0])
-	assert.Contains(t, cs.Healthcheck.Test[1], "/healthz")
+	assert.Equal(t, "wget -qO- http://127.0.0.1:8080/healthz || exit 1", cs.Healthcheck.Test[1])
 
 	// 网络按名引用。
 	require.Len(t, spec.TaskTemplate.Networks, 1)
@@ -113,6 +115,30 @@ func TestToServiceSpec(t *testing.T) {
 	require.Len(t, spec.TaskTemplate.ContainerSpec.Secrets, 1)
 	assert.Equal(t, "fleetly-sec-api-token-ab12cd34", spec.TaskTemplate.ContainerSpec.Secrets[0].SecretName)
 	assert.Equal(t, "api-token", spec.TaskTemplate.ContainerSpec.Secrets[0].File.Name)
+}
+
+// http 探针端口回落序（N0.1 P2-2 实装）：tcp_port 优先 > 进程声明首端口
+// > 8080（无任何声明的诚实缺省——旧实现注释宣称回落声明端口、实际恒
+// 8080）。
+func TestHTTPProbePortFallbackOrder(t *testing.T) {
+	ports := []capability.WorkloadPort{{Port: 3000, Protocol: capability.ProtocolHTTP}}
+	cases := []struct {
+		name string
+		h    capability.Healthcheck
+		ports []capability.WorkloadPort
+		want int32
+	}{
+		{"explicit tcp_port wins", capability.Healthcheck{HTTPPath: "/healthz", TCPPort: 9090}, ports, 9090},
+		{"declared first port fallback", capability.Healthcheck{HTTPPath: "/healthz"}, ports, 3000},
+		{"no declaration -> 8080", capability.Healthcheck{HTTPPath: "/healthz"}, nil, 8080},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := capability.Workload{ID: "wl", Process: "web", Image: "nginx:1", Ports: tc.ports, Healthcheck: &tc.h}
+			hc := toSwarmHealthcheck(w.Healthcheck, w)
+			assert.Equal(t, fmt.Sprintf("wget -qO- http://127.0.0.1:%d/healthz || exit 1", tc.want), hc.Test[1])
+		})
+	}
 }
 
 func TestPlacementConstraintsLabelFormula(t *testing.T) {

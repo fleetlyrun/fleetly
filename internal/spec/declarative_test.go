@@ -79,6 +79,7 @@ func TestComposeProbeRejections(t *testing.T) {
 	}{
 		{"both probes", map[string]any{"http_path": "/h", "tcp_port": 80}, "one of test, http_path or tcp_port"},
 		{"probe and test", map[string]any{"http_path": "/h", "test": []any{"CMD", "true"}}, "one of test, http_path or tcp_port"},
+		{"relative http path", map[string]any{"http_path": "healthz"}, "starting with '/'"},
 		{"disable managed", map[string]any{"tcp_port": 80, "disable": true}, "managed by the platform"},
 		{"unknown key", map[string]any{"tcp_port": 80, "bad_key": 1}, "unknown healthcheck field"},
 		{"no probe", map[string]any{"interval": "5s"}, "requires one of test"},

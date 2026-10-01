@@ -321,9 +321,12 @@ func composeHealthcheck(field string, hc map[string]any) (*specv1.HealthcheckSpe
 		return nil, invalidf(field+".healthcheck", "probe is one of test, http_path or tcp_port")
 	}
 	if raw, ok := hc["http_path"].(string); ok && raw != "" {
+		if !strings.HasPrefix(raw, "/") {
+			return nil, invalidf(field+".healthcheck.http_path", "http_path must be an absolute path starting with '/'")
+		}
 		out.Probe = &specv1.HealthcheckSpec_HttpPath{HttpPath: raw}
 	} else if hasHTTP {
-		return nil, invalidf(field+".healthcheck.http_path", "http_path must be a non-empty path string")
+		return nil, invalidf(field+".healthcheck.http_path", "http_path must be a non-empty path string starting with '/'")
 	}
 	if raw, ok := hc["tcp_port"].(int); ok && raw > 0 {
 		out.Probe = &specv1.HealthcheckSpec_TcpPort{TcpPort: int32(raw)} //nolint:gosec // 端口域内

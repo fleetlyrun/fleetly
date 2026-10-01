@@ -105,6 +105,9 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App) (*spe
 		case req.GetHttpProbe() != "" && req.GetTcpProbe() != 0:
 			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe and tcp_probe are mutually exclusive")
 		case req.GetHttpProbe() != "":
+			if !strings.HasPrefix(req.GetHttpProbe(), "/") {
+				return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe: must be an absolute path starting with '/'")
+			}
 			probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: req.GetHttpProbe()}, Retries: 3}
 		case req.GetTcpProbe() != 0:
 			if req.GetTcpProbe() < 1 || req.GetTcpProbe() > 65535 {

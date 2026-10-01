@@ -37,7 +37,7 @@ func newDeployVerb() commands.Command {
 			fs.StringVar(&idemKey, "idempotency-key", "", "admission idempotency key")
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
 			fs.BoolVar(&supersede, "supersede", false, "explicitly preempt any in-flight deployment")
-			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image deploys (e.g. /healthz)")
+			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image deploys (absolute path, e.g. /healthz; probe port = --tcp-probe if set, else the first declared port, else 8080)")
 			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image deploys")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {

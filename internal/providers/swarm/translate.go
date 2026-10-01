@@ -157,7 +157,7 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		Hostname: "{{.Service.Name}}",
 	}
 	if w.Healthcheck != nil {
-		container.Healthcheck = toSwarmHealthcheck(w.Healthcheck)
+		container.Healthcheck = toSwarmHealthcheck(w.Healthcheck, w)
 	}
 	for _, v := range w.Volumes {
 		container.Mounts = append(container.Mounts, mount.Mount{
@@ -268,8 +268,10 @@ func envSlice(env map[string]string) []string {
 	return out
 }
 
-// toSwarmHealthcheck 把声明式探针翻译为 swarm 探针方言。
-func toSwarmHealthcheck(h *capability.Healthcheck) *mobycontainer.HealthConfig {
+// toSwarmHealthcheck 把声明式探针翻译为 swarm 探针方言。http 探针端口
+// 取值序（N0.1 P2-2 实装）：探针自带 tcp_port > 进程声明首端口 > 8080
+//（无任何端口声明时的诚实缺省）。
+func toSwarmHealthcheck(h *capability.Healthcheck, w capability.Workload) *mobycontainer.HealthConfig {
 	hc := &mobycontainer.HealthConfig{
 		Interval:    h.Interval,
 		Timeout:     h.Timeout,
@@ -278,7 +280,7 @@ func toSwarmHealthcheck(h *capability.Healthcheck) *mobycontainer.HealthConfig {
 	}
 	switch {
 	case h.HTTPPath != "":
-		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`wget -qO- http://127.0.0.1:%d%s || exit 1`, firstHTTPOrTCPPort(h), h.HTTPPath)}
+		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`wget -qO- http://127.0.0.1:%d%s || exit 1`, httpProbePort(h, w.Ports), h.HTTPPath)}
 	case h.TCPPort != 0:
 		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`nc -z 127.0.0.1 %d || exit 1`, h.TCPPort)}
 	case h.Exec != nil:
@@ -289,10 +291,14 @@ func toSwarmHealthcheck(h *capability.Healthcheck) *mobycontainer.HealthConfig {
 	return hc
 }
 
-// firstHTTPOrTCPPort 为 http 探针取进程端口（探针未带端口时回落声明端口）。
-func firstHTTPOrTCPPort(h *capability.Healthcheck) int32 {
+// httpProbePort 解析 http 探针端口：探针自带 tcp_port 优先，回落进程
+// 声明首端口；无任何声明才是 8080。
+func httpProbePort(h *capability.Healthcheck, ports []capability.WorkloadPort) int32 {
 	if h.TCPPort != 0 {
 		return h.TCPPort
+	}
+	if len(ports) > 0 {
+		return ports[0].Port
 	}
 	return 8080
 }
