@@ -1,0 +1,3 @@
+ID	NAME	CRON	TIMEZONE	NEXT_FIRE	STATE	LAST_TASK
+<ULID>	nightly-report-json	0 12 * * *	Asia/Tokyo	2026-01-01T03:00:00Z	active	
+<ULID>	nightly-report	0 12 * * *	Asia/Tokyo	2026-01-01T03:00:00Z	active	

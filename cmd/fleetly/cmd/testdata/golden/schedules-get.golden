@@ -1,0 +1,7 @@
+id: <ULID>
+name: nightly-report
+state: active
+cron: 0 12 * * * (Asia/Tokyo)
+next_fire: 2026-01-01T03:00:00Z
+last_task: 
+image: busybox:1.37

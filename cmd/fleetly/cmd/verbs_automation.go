@@ -536,3 +536,203 @@ func sleepCtxCLI(ctx context.Context) bool {
 		return true
 	}
 }
+
+// ---- Schedules（F1.7，ADR-0018 时区 cron） ----
+
+func newSchedulesCreateVerb() commands.Command {
+	const name = "create"
+	var project, schedName, cronExpr, timezone, image, networkGroup, command string
+	var env envSlice
+	var secretRefs stringSlice
+	var cpuMillis, memoryMb, ttl int64
+	var idem idemKeyFlag
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Create a schedule (timezone-aware cron firing one-shot tasks)",
+		usage:    "schedules create --project PROJECT_ID --cron EXPR --image REF [--name NAME] [--timezone IANA_NAME] [--command A,B,...] [--env KEY=VALUE]... [--secret-ref NAME]... [--cpu-millis N] [--memory-mb N] [--ttl-seconds S] [--network-group GROUP]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&schedName, "name", "", "human-readable name, unique per project while active")
+			fs.StringVar(&cronExpr, "cron", "", "5-field cron expression: minute hour day-of-month month day-of-week (required)")
+			fs.StringVar(&timezone, "timezone", "", "IANA timezone name interpreted as wall clock across DST (default UTC)")
+			fs.StringVar(&image, "image", "", "image reference fired each occurrence (required)")
+			fs.StringVar(&command, "command", "", "entrypoint override as a comma-separated list (default: image entrypoint)")
+			fs.Var(&env, "env", "non-sensitive environment variable KEY=VALUE, repeatable")
+			fs.Var(&secretRefs, "secret-ref", "project secret to inject (by name), repeatable")
+			fs.Int64Var(&cpuMillis, "cpu-millis", 0, "per-run CPU limit in milli-cores (1000 = 1 CPU)")
+			fs.Int64Var(&memoryMb, "memory-mb", 0, "per-run memory limit in MB")
+			fs.Int64Var(&ttl, "ttl-seconds", 0, "per-run lifetime cap in seconds (absolute deadline; max 86400; 0 = no TTL)")
+			fs.StringVar(&networkGroup, "network-group", "", "task network group name (fired runs attach at creation)")
+			idem.declare(fs)
+		},
+		run: func(ctx context.Context, env2 *commands.Environment, args []string, jsonOut bool) error {
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			if cronExpr == "" {
+				return usageErr(name, "--cron is required")
+			}
+			if image == "" {
+				return usageErr(name, "--image is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
+			var cmdList []string
+			if command != "" {
+				cmdList = strings.Split(command, ",")
+			}
+			resp, err := c.Schedules.CreateSchedule(ctx, &automationv1.CreateScheduleRequest{
+				ProjectId: project, Name: schedName, Cron: cronExpr, Timezone: timezone,
+				Image: image, Command: cmdList, Env: env.envMap(), SecretRefs: secretRefs,
+				CpuMillis: cpuMillis, MemoryMb: memoryMb, TtlSeconds: ttl, NetworkGroup: networkGroup,
+			})
+			if err != nil {
+				return err
+			}
+			s := resp.GetSchedule()
+			return renderOut(env2, jsonOut, s, func() {
+				_, _ = fmt.Fprintf(env2.Stdout, "schedule %s created (next fire %s, %s %s)\n",
+					s.GetId(), s.GetNextFireAt(), s.GetCron(), s.GetTimezone())
+			})
+		},
+	}
+}
+
+func newSchedulesListVerb() commands.Command {
+	const name = "list"
+	var project, after string
+	var limit int
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List schedules in a project (newest first)",
+		usage:    "schedules list --project PROJECT_ID [--after SCHEDULE_ID] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last schedule id of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Schedules.ListSchedules(ctx, &automationv1.ListSchedulesRequest{
+				ProjectId: project, AfterScheduleId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tCRON\tTIMEZONE\tNEXT_FIRE\tSTATE\tLAST_TASK")
+				for _, s := range resp.GetSchedules() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n",
+						s.GetId(), s.GetName(), s.GetCron(), s.GetTimezone(),
+						s.GetNextFireAt(), s.GetState(), s.GetLastTaskId())
+				}
+			})
+		},
+	}
+}
+
+func newSchedulesGetVerb() commands.Command {
+	const name = "get"
+	var id string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Show one schedule",
+		usage:    "schedules get --schedule SCHEDULE_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if id == "" {
+				return usageErr(name, "--schedule is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Schedules.GetSchedule(ctx, &automationv1.GetScheduleRequest{Id: id})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetSchedule(), func() {
+				s := resp.GetSchedule()
+				_, _ = fmt.Fprintf(env.Stdout, "id: %s\nname: %s\nstate: %s\ncron: %s (%s)\nnext_fire: %s\nlast_task: %s\nimage: %s\n",
+					s.GetId(), s.GetName(), s.GetState(), s.GetCron(), s.GetTimezone(),
+					s.GetNextFireAt(), s.GetLastTaskId(), s.GetImage())
+			})
+		},
+	}
+}
+
+func newSchedulesTriggerVerb() commands.Command {
+	const name = "trigger"
+	var id string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Fire a schedule now (RunNow semantics; the cron cadence is not shifted)",
+		usage:    "schedules trigger --schedule SCHEDULE_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if id == "" {
+				return usageErr(name, "--schedule is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Schedules.TriggerSchedule(ctx, &automationv1.TriggerScheduleRequest{Id: id})
+			if err != nil {
+				return err
+			}
+			s := resp.GetSchedule()
+			return renderOut(env, jsonOut, s, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "schedule %s fired (task %s, next fire %s)\n",
+					id, s.GetLastTaskId(), s.GetNextFireAt())
+			})
+		},
+	}
+}
+
+func newSchedulesDeleteVerb() commands.Command {
+	const name = "delete"
+	var id string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Delete a schedule (tombstone; already-spawned tasks run to completion)",
+		usage:    "schedules delete --schedule SCHEDULE_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if id == "" {
+				return usageErr(name, "--schedule is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			if _, err := c.Schedules.DeleteSchedule(ctx, &automationv1.DeleteScheduleRequest{Id: id}); err != nil {
+				return err
+			}
+			if jsonOut {
+				return writeJSON(env.Stdout, map[string]string{"deleted": id})
+			}
+			_, err = fmt.Fprintf(env.Stdout, "schedule %s deleted\n", id)
+			return err
+		},
+	}
+}

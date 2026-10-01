@@ -113,11 +113,21 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"tasks stop", []string{"tasks", "stop", "--task", "GOLDEN_TASK2", "--force"}, 0},
 		{"tasks delete", []string{"tasks", "delete", "--task", "GOLDEN_TASK"}, 0},
 		{"tasks delete resident", []string{"tasks", "delete", "--task", "GOLDEN_TASK2"}, 0},
+
+		// Automation 动词（F1.7）：Schedule 时区 cron——create（东京 12:00 =
+		// UTC 03:00，fake 时钟已推过若干分钟不影响当日拍点）→ list/get →
+		// trigger（立即铸 Task；下一拍不动）→ delete。
+		{"schedules create", []string{"schedules", "create", "--project", "GOLDEN_PROJECT", "--name", "nightly-report",
+			"--cron", "0 12 * * *", "--timezone", "Asia/Tokyo", "--image", "busybox:1.37", "--ttl-seconds", "3600"}, 0},
+		{"schedules list", []string{"schedules", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"schedules get", []string{"schedules", "get", "--schedule", "GOLDEN_SCHEDULE"}, 0},
+		{"schedules trigger", []string{"schedules", "trigger", "--schedule", "GOLDEN_SCHEDULE"}, 0},
+		{"schedules delete", []string{"schedules", "delete", "--schedule", "GOLDEN_SCHEDULE"}, 0},
 	}
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, appID, taskID, task2ID, runID string
+	var projectID, appID, taskID, task2ID, runID, scheduleID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -136,6 +146,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_RUN" {
 					args[i] = runID
+				}
+				if a == "GOLDEN_SCHEDULE" {
+					args[i] = scheduleID
 				}
 			}
 			code, out, stderr := runCLI(t, args...)
@@ -161,6 +174,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			if st.verb == "tasks create resident" {
 				task2ID = extractTaskID(t, out)
 				h.Drive(sdk.WithToken(context.Background(), h.Token))
+			}
+			if st.verb == "schedules create" {
+				scheduleID = extractScheduleID(t, out)
 			}
 			// deploy 后推进到 succeeded（rollback 的 golden 需要成功基线）。
 			if st.verb == "deploy" {
@@ -208,6 +224,7 @@ var jsonArgOverrides = map[string]map[int]string{
 	"routes create":         {5: "json.127.0.0.1.sslip.io"},
 	"tasks create":          {5: "migrate-json"},
 	"tasks create resident": {5: "dispatcher-json"},
+	"schedules create":      {5: "nightly-report-json"},
 }
 
 // extractTailID 取 "... (id X)" 尾部的 ID。
@@ -248,6 +265,18 @@ func extractTaskID(t *testing.T, out string) string {
 	m := taskCreatedRe.FindStringSubmatch(out)
 	if len(m) < 2 {
 		t.Fatalf("cannot extract task id from output: %q", out)
+	}
+	return m[1]
+}
+
+// scheduleCreatedRe 取人类形态 "schedule X created (...)" 的 ID。
+var scheduleCreatedRe = regexp.MustCompile(`schedule ([0-9A-HJKMNP-TV-Z]{26}) created`)
+
+func extractScheduleID(t *testing.T, out string) string {
+	t.Helper()
+	m := scheduleCreatedRe.FindStringSubmatch(out)
+	if len(m) < 2 {
+		t.Fatalf("cannot extract schedule id from output: %q", out)
 	}
 	return m[1]
 }
