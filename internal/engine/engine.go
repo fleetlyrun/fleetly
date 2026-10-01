@@ -17,6 +17,7 @@ import (
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
+	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
@@ -43,6 +44,10 @@ var (
 	// ErrNoSuccessfulBaseline 是 Rollback 无成功基线（首次部署无回滚对象；
 	// API 层映射 E_NO_BASELINE——Q-13：判定走 errors.Is，不靠文案匹配）。
 	ErrNoSuccessfulBaseline = errors.New("engine: no successful baseline to roll back to")
+	// ErrCrossProjectRefNotApproved 是部署受理命中未批准的跨 Project 网络
+	// 引用（ADR-0013 附录 A.3 fail-closed：declare+approve 或移除引用；
+	// API 层映射 E_CONFLICT）。
+	ErrCrossProjectRefNotApproved = errors.New("engine: cross-project network reference is not approved")
 )
 
 // Options 是引擎参数（装配注入；测试覆盖默认值）。
@@ -157,6 +162,10 @@ type Engine struct {
 	// Schedule 域（F1.7）：聚合 repo + 到期拍环（fire 铸 one-shot Task 后
 	// 交 taskLoop 驱动——Schedule 只拥有"何时拍"）。
 	schedules *schedule.Repo
+
+	// 跨 Project peer 声明（F1.8，ADR-0013 附录 A）：批准态真源——
+	// 投影翻译（strict/isolate）与撤销隔离的解析面。
+	peerDecls *networkpeer.Repo
 
 	loop         *Loop
 	buildLoop    *Loop
@@ -273,6 +282,7 @@ func New(deps Deps, opts Options) *Engine {
 		runs:           run.New(clock),
 		tokens:         tokenrepo.New(clock),
 		schedules:      schedule.New(clock),
+		peerDecls:      networkpeer.New(clock),
 		loop:           NewLoop("deployment", log),
 		buildLoop:      NewLoop("build", log),
 		managedLoop:    NewLoop("managed", log),

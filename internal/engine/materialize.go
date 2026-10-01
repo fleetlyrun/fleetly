@@ -20,7 +20,12 @@ import (
 //
 // 幂等：同 Generation 重放安全（Ensure 幂等；pinVolumes 只钉未钉卷——
 // 成功基线引用的卷必然已钉，重放路径空转，不触发 DescribeCluster）。
-func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revision string, gen uint64) error {
+//
+// isolate（ADR-0013 附录 A.3/A.4）：跨 Project 引用未 approved 时剥离
+// 而非失败——撤销隔离收敛与基线重放用（隔离是收敛不变式：重启/失败后
+// 由漂移扫描拍与重放持续重申）。部署链（release/rollback/prepare）恒
+// strict。
+func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revision string, gen uint64, isolate bool) error {
 	spec, err := e.loadSpec(ctx, revision)
 	if err != nil {
 		return fmt.Errorf("load revision spec: %w", err)
@@ -29,11 +34,15 @@ func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revi
 	if err != nil {
 		return fmt.Errorf("resolve app: %w", err)
 	}
+	peers, err := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, isolate)
+	if err != nil {
+		return fmt.Errorf("resolve cross-project network peers: %w", err)
+	}
 	digests, err := e.buildDigests(ctx, d)
 	if err != nil {
 		return fmt.Errorf("resolve build digests: %w", err)
 	}
-	ws, ns, err := Project(spec, team, digests)
+	ws, ns, err := Project(spec, team, digests, peers)
 	if err != nil {
 		return fmt.Errorf("project spec: %w", err)
 	}

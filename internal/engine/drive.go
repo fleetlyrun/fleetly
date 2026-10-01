@@ -111,12 +111,17 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve app: "+err.Error())
 	}
-	// 投影预检：from_build 无产物在有 Build 声明时合法（building 态产出；
-	// releasing 前再次投影校验）；无 Build 声明的 from_build 是永久错误，
-	// 此处精确失败。
+	// 投影预检（strict）：from_build 无产物在有 Build 声明时合法（building
+	// 态产出；releasing 前再次投影校验）；无 Build 声明的 from_build 是
+	// 永久错误，此处精确失败。跨 Project 引用未 approved 同样 fail-closed
+	//（ADR-0013 附录 A.3——受理面已拒一次，此处是部署链内的第二道）。
 	digests, derr := e.buildDigests(ctx, d)
 	if derr == nil && (digests != nil || spec.GetBuild() == nil) {
-		_, _, derr = Project(spec, team, digests)
+		peers, perr := e.resolvePeerRefs(ctx, e.db.Runner(), spec.GetApp().GetProject(), spec, false)
+		if perr == nil {
+			_, _, perr = Project(spec, team, digests, peers)
+		}
+		derr = perr
 	}
 	if derr != nil {
 		return e.failDeployment(ctx, d, "project spec: "+derr.Error())
@@ -135,7 +140,7 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 // 重放触发 Provider 的 update 事件恢复观测流；同 spec 的 update 对载体
 // 是 no-op，代价可接受（场景 1 重放语义）。
 func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	if err := e.materialize(ctx, d, d.ToRevision, d.Generation); err != nil {
+	if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
 		return e.failDeployment(ctx, d, err.Error())
 	}
 
@@ -199,7 +204,7 @@ func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deplo
 			return e.rollbackFailed(ctx, d, "next generation: "+err.Error())
 		}
 	}
-	if err := e.materialize(ctx, d, d.FromRevision, gen); err != nil {
+	if err := e.materialize(ctx, d, d.FromRevision, gen, false); err != nil {
 		return e.rollbackFailed(ctx, d, err.Error())
 	}
 	if e.releaseReadyGen(d, gen) {

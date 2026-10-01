@@ -49,6 +49,14 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, n *Network) error {
 	return err
 }
 
+// GetByID 按 ID 直读活跃行（peer 声明解析面：声明行只挂活跃网络）。
+func (r *Repo) GetByID(ctx context.Context, run state.Runner, id string) (*Network, error) {
+	row := run.QueryRowContext(ctx, `
+		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		FROM networks WHERE id = ? AND deleted_at = ''`, id)
+	return scanNetwork(row.Scan)
+}
+
 // GetByName 读活跃行。
 func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name string) (*Network, error) {
 	row := run.QueryRowContext(ctx, `

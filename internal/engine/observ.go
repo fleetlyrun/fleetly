@@ -42,8 +42,13 @@ func (e *Engine) loadSpec(ctx context.Context, revID string) (*specv1.AppSpec, e
 	if err != nil {
 		return nil, err
 	}
+	return unmarshalSpec(rev.Spec)
+}
+
+// unmarshalSpec 反序列化 AppSpec 冻结体（Revision 行与受理预检共用）。
+func unmarshalSpec(blob []byte) (*specv1.AppSpec, error) {
 	spec := &specv1.AppSpec{}
-	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(rev.Spec, spec); err != nil {
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(blob, spec); err != nil {
 		return nil, err
 	}
 	return spec, nil

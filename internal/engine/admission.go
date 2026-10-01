@@ -53,7 +53,14 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	var out *deployment.Deployment
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		// 0. App 存活判定（API/webhook 的预读只是快速失败面；权威判定在此）。
-		if _, err := e.apps.Get(ctx, tx, req.AppID); err != nil {
+		appRow, err := e.apps.Get(ctx, tx, req.AppID)
+		if err != nil {
+			return err
+		}
+		// 0.5 跨 Project 引用受理预检（ADR-0013 附录 A.3 fail-closed 第一道；
+		// prepare 的投影预检是第二道）：未 approved 的引用拒绝入队——
+		// 排队中途被撤销仍会在 prepare/投影失败至终态，双道闭合。
+		if err := e.CheckPeerRefs(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
 			return err
 		}
 

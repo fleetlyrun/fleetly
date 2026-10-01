@@ -73,14 +73,15 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 		return // 快照后受理：驱动器拥有该 App 的 Ensure 权
 	}
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
-	if err := e.materialize(stepCtx, d, d.ToRevision, d.Generation); err != nil {
+	if err := e.materialize(stepCtx, d, d.ToRevision, d.Generation, true); err != nil {
 		e.log.Error("baseline replay: ensure", "app", a.ID, "generation", d.Generation, "err", err)
 	}
 	cancel()
 }
 
 // driftScan 一拍漂移扫描：spec 对照（RuntimeInspector 可用时）+ 稳态
-// 看门狗。每 App 一次 Inspect（N0 小团队规模）；错误逐 App 记日志不阻断。
+// 看门狗 + 跨域附件隔离不变式（F1.8）。每 App 一次 Inspect（N0 小团队
+// 规模）；错误逐 App 记日志不阻断。
 func (e *Engine) driftScan(ctx context.Context) {
 	inspector, hasInspector := e.runtime.(capability.RuntimeInspector)
 
@@ -160,6 +161,10 @@ func (e *Engine) driftScan(ctx context.Context) {
 	for _, c := range candidates {
 		e.emitSteadyStateStopped(ctx, c.wid, c.ev)
 	}
+
+	// 跨 Project 附件隔离不变式（ADR-0013 附录 A.4）：已撤销的挂靠在
+	// 下一拍被剥离重收敛（撤销即时隔离的自愈兜底）。
+	e.enforcePeerIsolation(ctx)
 }
 
 // compareSpecs 逐载体对照观测 spec 与缓存期望 spec：失配 → drift 事件

@@ -9,13 +9,23 @@ import (
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 )
 
+// PeerRefs 是跨 Project 引用的解析结果（ADR-0013 附录 A.3）：spec 引用串
+// （project:<id>/<name>）→ 解析后的跨域引用。缺席语义由模式决定：
+// strict（Isolate=false）缺席 = fail-closed 错误；isolate 缺席 = 剥离
+// （撤销隔离收敛）。解析真源在 engine（peers.go resolvePeerRefs）。
+type PeerRefs struct {
+	Refs    map[string]capability.NetworkRef
+	Isolate bool
+}
+
 // Project 把 Revision 冻结的 AppSpec 投影为 Runtime 无关的 Workload 集
 // （架构 §4 投影规则：探针/卷钉住/网络附件在 IR 是声明，映射成编排器
 // 原语是 Provider 的事）。Team 取 Project 行（归属轴），调用方负责解析。
 //
 // from_build 解析：buildDigests 提供同名构建产物 digest（Ensure 前由平台
 // 解析——Revision 只冻结引用，产物随 Build 行走）；缺失即校验错误。
-func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string) ([]capability.Workload, capability.NamespaceRef, error) {
+// 跨 Project 引用经 peers 翻译为 NetworkRefs（ADR-0013 附录 A.3）。
+func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string, peers PeerRefs) ([]capability.Workload, capability.NamespaceRef, error) {
 	ns := capability.NamespaceRef{Team: team, Project: spec.GetApp().GetProject(), App: spec.GetApp().GetId()}
 	workloads := make([]capability.Workload, 0, len(spec.GetProcesses()))
 	for _, p := range spec.GetProcesses() {
@@ -71,12 +81,31 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string) 
 		}
 		// taskGroup 翻译责任在 engine 投影层（ADR-0025 决策 5）：声明的
 		// 网络组名（taskGroup:<name> 跨挂）在此翻译为实际平台网络名再
-		// 下发——Provider 收到的 Networks 一律是平台网络名。
-		for i, net := range w.Networks {
-			if specir.IsNetworkGroupRef(net) {
-				w.Networks[i] = TaskGroupNetworkName(specir.NetworkGroupName(net))
+		// 下发——Provider 收到的 Networks 一律是平台网络名。跨 Project
+		// 引用（project:<id>/<name>）经 peers 解析为 NetworkRefs（ADR-0013
+		// 附录 A.3）：approved → 跨域附件；未 approved 由模式裁决
+		//（strict 错误 / isolate 剥离）——同域 Networks 不混入跨域形态。
+		networks := make([]string, 0, len(w.Networks))
+		for _, net := range w.Networks {
+			switch {
+			case specir.IsNetworkGroupRef(net):
+				networks = append(networks, TaskGroupNetworkName(specir.NetworkGroupName(net)))
+			case specir.IsCrossProjectRef(net):
+				ref, ok := peers.Refs[net]
+				if !ok {
+					if peers.Isolate {
+						continue // 隔离收敛：未批准引用剥离（A.4）
+					}
+					return nil, ns, fmt.Errorf(
+						"process %q references cross-project network %q which is not approved by the receiving project; declare and approve the peer, or remove the reference (ADR-0013)",
+						p.GetName(), net)
+				}
+				w.NetworkRefs = append(w.NetworkRefs, ref)
+			default:
+				networks = append(networks, net)
 			}
 		}
+		w.Networks = networks
 		workloads = append(workloads, w)
 	}
 	return workloads, ns, nil

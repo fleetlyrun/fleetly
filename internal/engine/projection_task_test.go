@@ -23,7 +23,7 @@ func TestProjectTranslatesTaskGroupRefs(t *testing.T) {
 			Networks:    []string{"default", "taskGroup:dispatcher", "taskgrp-plain"},
 		}},
 	}
-	ws, ns, err := Project(spec, "acme", nil)
+	ws, ns, err := Project(spec, "acme", nil, PeerRefs{})
 	require.NoError(t, err)
 	assert.Equal(t, capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP"}, ns)
 	require.Len(t, ws, 1)
