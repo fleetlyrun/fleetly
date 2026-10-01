@@ -171,17 +171,9 @@ func (s *Services) teamExists(id string) acceptanceCheck {
 	}
 }
 
-// roleExists：创建型请求引用的 Role 必须存在。
-func (s *Services) roleExists(id string) acceptanceCheck {
-	return func(ctx context.Context, tx *sql.Tx) error {
-		_, err := s.Roles.Get(ctx, tx, id)
-		return err
-	}
-}
-
-// roleInTeam：Q-16（ADR-0028）——Role 与 Team 归属一致性。内置角色是
-// 平台级模板（team_id 空），可在任意 Team 授予；自定义 Role 必须属于
-// 同一 Team，跨 Team 引用 409。
+// roleInTeam：Role 存在性 + 与 Team 归属一致性（Q-16，ADR-0028）。内置
+// 角色是平台级模板（team_id 空），可在任意 Team 授予；自定义 Role 必须
+// 属于同一 Team，跨 Team 引用 409。
 func (s *Services) roleInTeam(roleID, teamID string) acceptanceCheck {
 	return func(ctx context.Context, tx *sql.Tx) error {
 		ro, err := s.Roles.Get(ctx, tx, roleID)
