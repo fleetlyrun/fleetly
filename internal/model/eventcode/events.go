@@ -82,4 +82,11 @@ var builtins = []Event{
 	// Owner Lease（F1.6：resident 池的心跳租约事实；deadline 绝对 RFC3339）。
 	{Name: "lease.renewed", Summary: "A task's owner lease was renewed (deadline advanced).", Source: "internal/engine/task.go RenewTask"},
 	{Name: "lease.expired", Summary: "A task's owner lease expired past grace; the pool drains.", Source: "internal/engine/task.go driveTask"},
+
+	// Schedule 状态机（F1.7，ADR-0018 时区 cron：周期触发规则，到期拍从
+	// 冻结模板铸 one-shot Task）。
+	{Name: "schedule.created", Summary: "A schedule was created (timezone-aware cron, first fire time computed).", Source: "internal/engine/events.go EventScheduleCreated (emitted by the acceptance surface)"},
+	{Name: "schedule.fired", Summary: "A schedule fired and spawned a one-shot task (source: cron or manual).", Source: "internal/engine/schedule.go spawnScheduleTask"},
+	{Name: "schedule.skipped", Summary: "A due schedule fire was skipped because the previous run is still in flight (reason: overlap).", Source: "internal/engine/schedule.go fireSchedule"},
+	{Name: "schedule.deleted", Summary: "A schedule was deleted (tombstoned; already-spawned tasks run to completion).", Source: "internal/api/fleetlygrpc/automation.go DeleteSchedule"},
 }

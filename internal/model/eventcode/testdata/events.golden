@@ -34,6 +34,10 @@ run.failed	A run reached the failed terminal state.	internal/engine/taskobs.go h
 run.running	A run's workload was observed running.	internal/engine/taskobs.go handleRunObservation
 run.stopped	A run reached the stopped terminal state.	internal/engine/taskobs.go handleRunObservation
 run.stopping	A run started stopping (stop reason carried on the row).	internal/engine/task.go stopRunRow
+schedule.created	A schedule was created (timezone-aware cron, first fire time computed).	internal/engine/events.go EventScheduleCreated (emitted by the acceptance surface)
+schedule.deleted	A schedule was deleted (tombstoned; already-spawned tasks run to completion).	internal/api/fleetlygrpc/automation.go DeleteSchedule
+schedule.fired	A schedule fired and spawned a one-shot task (source: cron or manual).	internal/engine/schedule.go spawnScheduleTask
+schedule.skipped	A due schedule fire was skipped because the previous run is still in flight (reason: overlap).	internal/engine/schedule.go fireSchedule
 secret.deleted	A secret was deleted.	internal/api/fleetlygrpc/structure.go DeleteSecret
 secret.updated	A secret value was set (fingerprint, never the value).	internal/api/fleetlygrpc/structure.go PutSecret
 task.active	A drained task was revived by an owner lease renewal.	internal/engine/task.go RenewTask

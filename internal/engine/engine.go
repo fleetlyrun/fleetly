@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
+	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
@@ -153,13 +154,18 @@ type Engine struct {
 	runs   *run.Repo
 	tokens *tokenrepo.Repo
 
-	loop        *Loop
-	buildLoop   *Loop
-	managedLoop *Loop
-	taskLoop    *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
-	driftLoop   *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
-	cancel      context.CancelFunc
-	wg          sync.WaitGroup
+	// Schedule 域（F1.7）：聚合 repo + 到期拍环（fire 铸 one-shot Task 后
+	// 交 taskLoop 驱动——Schedule 只拥有"何时拍"）。
+	schedules *schedule.Repo
+
+	loop         *Loop
+	buildLoop    *Loop
+	managedLoop  *Loop
+	taskLoop     *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
+	scheduleLoop *Loop // Schedule 到期拍环（F1.7）
+	driftLoop    *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
 
 	// runCtx 是 Start 物化的进程生命期 ctx（Q-7）：构建 goroutine 的派生
 	// 根——Stop 取消它即有界排水（executeBuild 的优雅退出路径接管）。
@@ -266,10 +272,12 @@ func New(deps Deps, opts Options) *Engine {
 		tasks:          task.New(clock),
 		runs:           run.New(clock),
 		tokens:         tokenrepo.New(clock),
+		schedules:      schedule.New(clock),
 		loop:           NewLoop("deployment", log),
 		buildLoop:      NewLoop("build", log),
 		managedLoop:    NewLoop("managed", log),
 		taskLoop:       NewLoop("task", log),
+		scheduleLoop:   NewLoop("schedule", log),
 		driftLoop:      NewLoop("drift", log),
 		nodeLeftSeen:   map[string]bool{},
 		routes:         route.New(clock),
@@ -317,7 +325,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
 	e.runCtxMu.Unlock()
 	e.resetOrphanBuilds(runCtx)
-	e.wg.Add(4)
+	e.wg.Add(5)
 	go func() {
 		defer e.wg.Done()
 		e.loop.Run(runCtx, e.opts.Tick, e.step)
@@ -334,11 +342,16 @@ func (e *Engine) Start(ctx context.Context) {
 		defer e.wg.Done()
 		e.taskLoop.Run(runCtx, e.opts.Tick, e.taskStep)
 	}()
+	go func() {
+		defer e.wg.Done()
+		e.scheduleLoop.Run(runCtx, e.opts.Tick, e.scheduleStep)
+	}()
 	e.StartWatch(runCtx)
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	e.buildLoop.Kick()
 	e.managedLoop.Kick()
-	e.taskLoop.Kick() // 启动即收敛：Task/Run 行 + 绝对 deadline 是恢复真源（P1-7）
+	e.taskLoop.Kick()     // 启动即收敛：Task/Run 行 + 绝对 deadline 是恢复真源（P1-7）
+	e.scheduleLoop.Kick() // 启动即收敛：next_fire_at 是绝对时刻——错过窗口补跑一拍（ADR-0018 附录 A）
 	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环
 	//（Loop.Run 阻塞至 ctx 取消——与其他环同款 goroutine 形态）。重放
 	// goroutine 计入 wg（N0.1 P2-11）：Stop 排水覆盖重放，不再裸奔。
@@ -427,11 +440,16 @@ func (e *Engine) Loop() *Loop { return e.loop }
 // KickTasks 唤醒 Task 收敛环（API 受理面消费：创建/缩放/停止后立即驱动）。
 func (e *Engine) KickTasks() { e.taskLoop.Kick() }
 
-// DriveOnce 手动驱动一轮收敛（部署/构建/受管/Task 四线各一步；apitest
-// 手动形态消费——golden 确定性：不依赖真实节拍）。
+// KickSchedules 唤醒 Schedule 到期拍环（API 受理面消费：创建后立即判定）。
+func (e *Engine) KickSchedules() { e.scheduleLoop.Kick() }
+
+// DriveOnce 手动驱动一轮收敛（部署/构建/受管/Schedule/Task 五线各一步；
+// apitest 手动形态消费——golden 确定性：不依赖真实节拍。scheduleStep 先于
+// taskStep：同一轮 Drive 内铸出的 Task 即刻进补足链）。
 func (e *Engine) DriveOnce(ctx context.Context) {
 	e.step(ctx)
 	e.buildStep(ctx)
 	e.managedStep(ctx)
+	e.scheduleStep(ctx)
 	e.taskStep(ctx)
 }

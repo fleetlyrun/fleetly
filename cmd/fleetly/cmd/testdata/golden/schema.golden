@@ -37,6 +37,10 @@ run.failed	event	A run reached the failed terminal state.
 run.running	event	A run's workload was observed running.
 run.stopped	event	A run reached the stopped terminal state.
 run.stopping	event	A run started stopping (stop reason carried on the row).
+schedule.created	event	A schedule was created (timezone-aware cron, first fire time computed).
+schedule.deleted	event	A schedule was deleted (tombstoned; already-spawned tasks run to completion).
+schedule.fired	event	A schedule fired and spawned a one-shot task (source: cron or manual).
+schedule.skipped	event	A due schedule fire was skipped because the previous run is still in flight (reason: overlap).
 secret.deleted	event	A secret was deleted.
 secret.updated	event	A secret value was set (fingerprint, never the value).
 task	spec	TaskSpec: desired state of a programmatic workload (one-shot or resident, ADR-0012).

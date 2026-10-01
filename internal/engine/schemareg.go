@@ -80,4 +80,13 @@ func init() {
 	// Owner Lease（lease.*，task 聚合）。
 	registerEventPayload(eventLeaseRenewed, leaseEventPayload{})
 	registerEventPayload(eventLeaseExpired, leaseEventPayload{})
+	// Schedule 状态机（schedule.*，统一 payload 形态，F1.7）。
+	for _, name := range []string{
+		EventScheduleCreated,
+		eventScheduleFired,
+		eventScheduleSkipped,
+		eventScheduleDeleted,
+	} {
+		registerEventPayload(name, scheduleEventPayload{})
+	}
 }

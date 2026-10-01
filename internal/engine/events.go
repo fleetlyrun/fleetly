@@ -8,6 +8,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
+	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
 
@@ -105,6 +106,28 @@ type leaseEventPayload struct {
 	Reason   string `json:"reason,omitempty"`
 }
 
+// schedule.* payload schema（F1.7，ADR-0018；字段只增）。fired 携带 source
+// （cron | manual）与本拍铸出的 last_task_id；skipped 携带 reason（overlap）。
+type scheduleEventPayload struct {
+	ScheduleID string `json:"schedule_id"`
+	ProjectID  string `json:"project_id"`
+	Name       string `json:"name,omitempty"`
+	Timezone   string `json:"timezone,omitempty"`
+	NextFireAt string `json:"next_fire_at,omitempty"`
+	LastTaskID string `json:"last_task_id,omitempty"`
+	Source     string `json:"source,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+// Schedule 触发源（fired 事件的 source 值，冻结字面量）。
+const (
+	ScheduleSourceCron   = "cron"   // 到期拍（scheduleStep 驱动环）
+	ScheduleSourceManual = "manual" // TriggerSchedule 手动触发
+)
+
+// 重叠 skip 起因（skipped 事件的 reason 值）。
+const scheduleSkipReasonOverlap = "overlap"
+
 // Task/Run/Lease 事件名锚定（usage 反扫的字面量命中点）。
 const (
 	EventTaskCreated  = "task.created" // API 受理面发射（事件名与 payload 单源在 engine）
@@ -115,8 +138,21 @@ const (
 	eventLeaseExpired = "lease.expired"
 )
 
+// Schedule 事件名锚定（usage 反扫的字面量命中点，F1.7）。
+const (
+	EventScheduleCreated = "schedule.created" // API 受理面发射（事件名与 payload 单源在 engine）
+	eventScheduleFired   = "schedule.fired"   // engine 驱动环/手动触发发射
+	eventScheduleSkipped = "schedule.skipped" // engine 驱动环发射（重叠 skip）
+	eventScheduleDeleted = "schedule.deleted" // API 受理面发射（tombstone）
+)
+
 // TaskCreatedEventJSON 构造 task.created payload（API 受理面消费）。
 func TaskCreatedEventJSON(t *task.Task) []byte { return taskEventPayloadJSON(t, "") }
+
+// ScheduleCreatedEventJSON 构造 schedule.created payload（API 受理面消费）。
+func ScheduleCreatedEventJSON(s *schedule.Schedule) []byte {
+	return scheduleEventPayloadJSON(s, "", "")
+}
 
 // eventTaskState 把 Task 状态映射为事件名（字面量锚定）。
 func eventTaskState(s task.State) string {
@@ -189,6 +225,20 @@ func leaseEventPayloadJSON(t *task.Task, reason string) []byte {
 		TaskID:   t.ID,
 		Deadline: t.LeaseDeadline,
 		Reason:   reason,
+	})
+	return b
+}
+
+func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byte {
+	b, _ := json.Marshal(scheduleEventPayload{
+		ScheduleID: s.ID,
+		ProjectID:  s.ProjectID,
+		Name:       s.Name,
+		Timezone:   s.Timezone,
+		NextFireAt: s.NextFireAt,
+		LastTaskID: s.LastTaskID,
+		Source:     source,
+		Reason:     reason,
 	})
 	return b
 }

@@ -229,6 +229,30 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"dns_name\":{\"type\":\"string\"},\"exit_code\":{\"type\":\"integer\"},\"instance\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"run_id\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"},\"stop_reason\":{\"type\":\"string\"},\"task_id\":{\"type\":\"string\"}},\"required\":[\"run_id\",\"task_id\",\"project_id\",\"state\"],\"type\":\"object\"}"
     },
     {
+      "name": "schedule.created",
+      "kind": "event",
+      "summary": "A schedule was created (timezone-aware cron, first fire time computed).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"last_task_id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"next_fire_at\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"schedule_id\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"timezone\":{\"type\":\"string\"}},\"required\":[\"schedule_id\",\"project_id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "schedule.deleted",
+      "kind": "event",
+      "summary": "A schedule was deleted (tombstoned; already-spawned tasks run to completion).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"last_task_id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"next_fire_at\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"schedule_id\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"timezone\":{\"type\":\"string\"}},\"required\":[\"schedule_id\",\"project_id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "schedule.fired",
+      "kind": "event",
+      "summary": "A schedule fired and spawned a one-shot task (source: cron or manual).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"last_task_id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"next_fire_at\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"schedule_id\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"timezone\":{\"type\":\"string\"}},\"required\":[\"schedule_id\",\"project_id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "schedule.skipped",
+      "kind": "event",
+      "summary": "A due schedule fire was skipped because the previous run is still in flight (reason: overlap).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"last_task_id\":{\"type\":\"string\"},\"name\":{\"type\":\"string\"},\"next_fire_at\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"reason\":{\"type\":\"string\"},\"schedule_id\":{\"type\":\"string\"},\"source\":{\"type\":\"string\"},\"timezone\":{\"type\":\"string\"}},\"required\":[\"schedule_id\",\"project_id\"],\"type\":\"object\"}"
+    },
+    {
       "name": "secret.deleted",
       "kind": "event",
       "summary": "A secret was deleted.",
