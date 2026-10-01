@@ -33,6 +33,9 @@ var (
 	ErrQueueFull = errors.New("engine: deployment queue is full")
 	// ErrNotCancellable 是目标 Deployment 已终态（取消只作用于排队/在途）。
 	ErrNotCancellable = errors.New("engine: deployment already finished")
+	// ErrActiveDeployment 是 DeleteApp 收口的锁内预检命中活跃部署（ADR-0023
+	// 修订：拒绝于拆载体等一切副作用之前；API 层映射 E_CONFLICT）。
+	ErrActiveDeployment = errors.New("engine: app has active deployments")
 )
 
 // Options 是引擎参数（装配注入；测试覆盖默认值）。

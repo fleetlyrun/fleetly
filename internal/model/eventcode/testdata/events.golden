@@ -1,5 +1,6 @@
 app.created	An app was created.	internal/api/fleetlygrpc/structure.go CreateApp
 app.deleted	An app was deleted (teardown per ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp
+app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)
 build.building	Build started executing.	added during implementation
 build.cancelled	Build cancelled.	added during implementation
 build.expired	Build expired by timeout watchdog.	added during implementation

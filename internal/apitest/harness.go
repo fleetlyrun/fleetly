@@ -156,6 +156,14 @@ type FakeRuntime struct {
 	adminErr    error                     // RuntimeAdmin 动词注入错误（SetAdminErr 设置）
 	adminOps    []AdminCall
 	obs         chan capability.WorkloadEvent
+
+	// removeBlock 非空时 Remove 阻塞直至关闭或 ctx 取消（teardown 竞态
+	// 注入；与 engine 测试假底座的 Ensure blockPoint 同款）。仅经
+	// ArmRemoveBlock 在启动 goroutine 前布置，免锁读写与该模式一致。
+	removeBlock chan struct{}
+	// removeEntered 非空时 Remove 入口非阻塞发信号（探知 teardown 已停
+	// 在 removeBlock）。
+	removeEntered chan struct{}
 }
 
 // AdminCall 是一次 RuntimeAdmin 动词记录。
@@ -190,11 +198,33 @@ func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws [
 	return nil
 }
 
-func (f *FakeRuntime) Remove(_ context.Context, ns capability.NamespaceRef) error {
+func (f *FakeRuntime) Remove(ctx context.Context, ns capability.NamespaceRef) error {
+	if f.removeEntered != nil {
+		select {
+		case f.removeEntered <- struct{}{}:
+		default:
+		}
+	}
+	if f.removeBlock != nil {
+		select {
+		case <-f.removeBlock:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.removed = append(f.removed, ns)
 	return nil
+}
+
+// ArmRemoveBlock 使下一次 Remove 阻塞在注入点，返回入口信号与解除函数。
+// DeleteApp 拒删竞态的确定性交错面：探知 teardown 已停在 Remove（appMu
+// 仍被持有）后布置中间态，消除调度骰子（ADR-0023 修订回归）。
+func (f *FakeRuntime) ArmRemoveBlock() (entered <-chan struct{}, release func()) {
+	f.removeEntered = make(chan struct{})
+	f.removeBlock = make(chan struct{})
+	return f.removeEntered, func() { close(f.removeBlock) }
 }
 
 // Removed 返回 Remove 记录快照（ADR-0023 收口断言）。

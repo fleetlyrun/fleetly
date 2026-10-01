@@ -7,10 +7,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"fmt"
 
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -29,11 +31,14 @@ const (
 	eventProjectDeleted = "project.deleted"
 	eventAppCreated     = "app.created"
 	eventAppDeleted     = "app.deleted"
-	eventSecretUpdated  = "secret.updated"
-	eventSecretDeleted  = "secret.deleted"
-	eventConfigUpdated  = "config.updated"
-	eventVolumeCreated  = "volume.created"
-	eventNetworkCreated = "network.created"
+	// teardown-aborted（ADR-0023 修订）：收口拆载体后、落账前受理的活跃
+	// 部署使删除被拒——载体已拆这一残余面不留静默（在途部署重放自愈）。
+	eventAppTeardownAborted = "app.teardown_aborted"
+	eventSecretUpdated      = "secret.updated"
+	eventSecretDeleted      = "secret.deleted"
+	eventConfigUpdated      = "config.updated"
+	eventVolumeCreated      = "volume.created"
+	eventNetworkCreated     = "network.created"
 )
 
 // ---- Projects ----
@@ -56,6 +61,9 @@ func emitStructureEvent(ctx context.Context, tx *sql.Tx, s *Services, name, aggr
 type structureEventPayload struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id,omitempty"`
+	// ActiveDeployments 是 teardown-aborted 事件的诊断字段（拒删时收口后
+	// 复查所见的活跃部署数；其余结构面事件恒缺省）。
+	ActiveDeployments int `json:"active_deployments,omitempty"`
 }
 
 func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.CreateProjectRequest) (*structurev1.CreateProjectResponse, error) {
@@ -174,10 +182,17 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 }
 
 // DeleteApp 收口删除（ADR-0023）：活跃部署拒绝（E_CONFLICT，先 cancel/等
-// 终态）→ engine 收口拆载体 → 撤路由 → tombstone + 审计。副作用不可与
-// 审计同事务：先收口后落账，收口失败即整体失败（App 保持可操作）。
-// tombstone 事务内复查 ActiveByApp（TOCTOU 收口）：预检到落账之间受理的
-// 部署在此拒绝——与 Submit 的存活判定互为对偶，单连接事务串行下窗口闭合。
+// 终态）→ engine 收口拆载体 → tombstone + 撤路由 + 审计一事务落账。副作用
+// 不可与审计同事务：先收口后落账，收口失败即整体失败（App 保持可操作）。
+//
+// 拒删不变式"App 存活 ⇒ 路由不得消失"由三道复查承载（ADR-0023 修订）：
+//  1. 无锁预检：常规拒绝发生在零副作用阶段；
+//  2. TeardownApp 锁内预检：与 Submit 共享 appMu，拆载体前所见即受理
+//     终局——预检与收口之间受理的部署在副作用前拒绝；
+//  3. tombstone 事务内复查：与 App tombstone、撤路由、审计同生共死——
+//     收口后落账前受理的活跃部署使整单回滚（无 tombstone、无路由删除），
+//     已拆载体由在途部署的 Ensure/回滚重放自愈，teardown-aborted 事件 +
+//     审计留痕（不静默）。
 func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAppRequest) (*structurev1.DeleteAppResponse, error) {
 	if req.GetId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
@@ -196,42 +211,50 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	}
 	if err := svc.s.Engine.TeardownApp(ctx, req.GetId()); err != nil {
 		// 并发双删：对手已落 tombstone（Get 活跃行口径）→ 同形 404；
+		// 锁内预检命中活跃部署 → E_CONFLICT（零副作用，App 保持可操作）；
 		// 其余收口失败保持 E_INTERNAL（App 未落账，可重试删除）。
-		if errors.Is(err, state.ErrNotFound) {
+		switch {
+		case errors.Is(err, state.ErrNotFound):
 			return nil, apperr.New("E_NOT_FOUND", "app %s not found", req.GetId())
+		case errors.Is(err, engine.ErrActiveDeployment):
+			return nil, apperr.New("E_CONFLICT",
+				"app %s has active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId()).WithCause(err)
 		}
 		return nil, apperr.New("E_INTERNAL", "app teardown failed").WithCause(err)
 	}
-	// 撤路由（软删；即时发布随 tombstone 后统一触发）。
-	routes, err := svc.s.Routes.List(ctx, svc.s.DB.Runner())
-	if err != nil {
-		return nil, mapStateError(err, "route")
-	}
-	for _, rt := range routes {
-		if rt.AppID != req.GetId() {
-			continue
-		}
-		if err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-			return svc.s.Routes.SoftDelete(ctx, tx, rt.ID)
-		}); err != nil {
-			return nil, mapStateError(err, "route")
-		}
-	}
 
+	// tombstone 事务：复查、App tombstone、撤路由、事件、审计同生共死。
+	// aborted 非零 ⇔ 复查命中活跃部署（整单回滚的哨兵，见下方残余面）。
+	var aborted int
 	err = svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
-		// TOCTOU 复查：预检通过后、tombstone 落账前受理的活跃部署在此
-		// 拒绝（App 保持可操作，可重试删除；teardown 副作用由在途部署的
-		// Ensure 重放收口）。
+		// TOCTOU 复查：收口后、落账前受理的活跃部署在此拒绝——整单回滚
+		// （无 tombstone、无路由删除；与 Submit 的存活判定互为对偶，单连接
+		// 事务串行下窗口闭合）。
 		active, err := svc.s.Deployments.ActiveByApp(ctx, tx, req.GetId())
 		if err != nil {
 			return err
 		}
 		if len(active) > 0 {
-			return apperr.New("E_CONFLICT",
-				"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), len(active))
+			aborted = len(active)
+			return errDeleteAborted
 		}
 		if err := svc.s.Apps.SoftDelete(ctx, tx, req.GetId()); err != nil {
 			return err
+		}
+		// 撤路由与 tombstone 同事务（ADR-0023 修订）：复查通过前路由不得
+		// 消失——拒绝路径不碰路由（managedStep 的周期发布因此只可能见到
+		// "App 与路由同逝"的一致状态）。
+		routes, err := svc.s.Routes.List(ctx, tx)
+		if err != nil {
+			return err
+		}
+		for _, rt := range routes {
+			if rt.AppID != req.GetId() {
+				continue
+			}
+			if err := svc.s.Routes.SoftDelete(ctx, tx, rt.ID); err != nil {
+				return err
+			}
 		}
 		if err := emitStructureEvent(ctx, tx, svc.s, eventAppDeleted, "app", req.GetId(), appRow.ProjectID); err != nil {
 			return err
@@ -242,10 +265,43 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 		})
 	})
 	if err != nil {
+		if aborted > 0 {
+			// 残余面（ADR-0023 修订）：载体已拆而活跃部署在——不静默：
+			// teardown-aborted 事件 + 审计留痕后按 E_CONFLICT 拒绝；在途
+			// 部署的 Ensure/回滚重放自愈重建载体，路由未被触碰。留痕失败
+			// 即整体失败（不做静默的 E_CONFLICT）。
+			if rerr := svc.recordTeardownAbort(ctx, req.GetId(), appRow.ProjectID, aborted); rerr != nil {
+				return nil, rerr
+			}
+			return nil, apperr.New("E_CONFLICT",
+				"app %s has %d active deployment(s); cancel them or wait for a terminal state before deleting", req.GetId(), aborted)
+		}
 		return nil, mapStateError(err, "app")
 	}
 	svc.s.Engine.PublishRoutesNow() // Edge 全量发布即时触发（撤流收口）
 	return &structurev1.DeleteAppResponse{}, nil
+}
+
+// errDeleteAborted 是 tombstone 事务复查命中活跃部署的回滚哨兵（事务内
+// 错误只触发回滚；对外形态由 aborted 分支的 E_CONFLICT 承载）。
+var errDeleteAborted = errors.New("app delete: teardown aborted by a deployment admitted mid-delete")
+
+// recordTeardownAbort 落 teardown-aborted 事件 + 审计（同事务）。
+func (svc *AppsService) recordTeardownAbort(ctx context.Context, id, projectID string, active int) error {
+	err := svc.s.DB.Tx(ctx, func(tx *sql.Tx) error {
+		payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID, ActiveDeployments: active})
+		if _, err := svc.s.OutboxEvents.Append(ctx, tx, eventAppTeardownAborted, "app", id, payload); err != nil {
+			return err
+		}
+		return svc.s.Audits.Append(ctx, tx, &audit.Entry{
+			ID: newID(), Source: audit.SourceSystem, Action: "app.teardown_abort",
+			Resource: "app/" + id, AfterFP: fmt.Sprintf("active_deployments=%d", active),
+		})
+	})
+	if err != nil {
+		return apperr.New("E_INTERNAL", "app teardown abort could not be recorded").WithCause(err)
+	}
+	return nil
 }
 
 // ---- Secrets（值永不回显；写路径审计全落） ----

@@ -2,16 +2,21 @@ package apitest_test
 
 import (
 	"context"
+	"database/sql"
 	"regexp"
 	"sync"
 	"testing"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/stretchr/testify/require"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	edgev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/edge/v1"
+	identityv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/identity/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -22,6 +27,18 @@ func appErrCode(t *testing.T, err error) string {
 	m := regexp.MustCompile(`(E_[A-Z_]+)`).FindStringSubmatch(err.Error())
 	require.NotEmpty(t, m, "error must carry an app code: %v", err)
 	return m[1]
+}
+
+// routeListed 报告 routeID 是否在 ListRoutes 结果可见（List 是活跃行
+// 口径——可见即未软删）。
+func routeListed(t *testing.T, list *edgev1.ListRoutesResponse, routeID string) bool {
+	t.Helper()
+	for _, r := range list.GetRoutes() {
+		if r.GetId() == routeID {
+			return true
+		}
+	}
+	return false
 }
 
 // ADR-0023 回归（N0 修复批 C2）：DeleteApp 收口语义——活跃部署拒绝
@@ -54,6 +71,14 @@ func TestDeleteAppSemantics(t *testing.T) {
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "E_CONFLICT")
 	require.Contains(t, err.Error(), "active deployment")
+
+	// 拒删零副作用（ADR-0023 修订）：E_CONFLICT 路径不拆载体、不碰路由
+	// （不变式"App 存活 ⇒ 路由不得消失"的常规面）。
+	require.Empty(t, h.Runtime.Removed(), "rejected delete must not tear down carriers")
+	preRouteList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	require.NoError(t, err)
+	require.True(t, routeListed(t, preRouteList, route.GetRoute().GetId()),
+		"rejected delete must not touch routes")
 
 	// 取消到终态 → 删除成功。
 	list, err := deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: appID})
@@ -175,4 +200,183 @@ func TestDeleteDeployRaceInvariant(t *testing.T) {
 		require.True(t, terminal[d.GetState()],
 			"tombstoned app must hold no active deployment (state=%s)", d.GetState())
 	}
+}
+
+// teardown-aborted 残余面的确定性回归（ADR-0023 修订）：收口停在 Remove
+// 时落一条 queued 部署行——等价于"收口后、落账前受理"的竞态结局（Submit
+// 与 teardown 共享 appMu，此处以注入替代调度骰子）。落账复查必须整单回滚：
+// App 存活、路由未动、载体已拆的事实以 teardown-aborted 事件 + 审计留痕
+// （不静默），在途部署重放自愈。缺陷形态（复审实证）：路由先于复查软删，
+// 同交错下 App 存活而路由已撤——活 App 零流量、无事件。
+func TestDeleteAppTeardownAbortKeepsRoute(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+	routes := edgev1.NewRoutesServiceClient(h.Conn)
+	events := telemetryv1.NewEventsServiceClient(h.Conn)
+	auditq := identityv1.NewAuditQueryServiceClient(h.Conn)
+
+	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "abort"})
+	require.NoError(t, err)
+	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
+	require.NoError(t, err)
+	appID := app.GetApp().GetId()
+	route, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+		ProjectId: proj.GetProject().GetId(), Host: "abort.teardown.test",
+		AppId: appID, Process: "web", Port: 8000,
+	})
+	require.NoError(t, err)
+	routeID := route.GetRoute().GetId()
+
+	// 冻结一个真 Revision（deploy 后即取消；行留终态）——planted 行指向
+	// 它可在引擎拾取后停在被 L1 门钉住的 releasing 态（假时钟不走，
+	// ReleaseTimeout 永不到期），避免 planted 行在复查前被驱动成终态的
+	// 残余竞态。
+	dep, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+	require.NoError(t, err)
+	revID := dep.GetDeployment().GetToRevision()
+	require.NotEmpty(t, revID)
+	_, err = deployments.CancelDeployment(ctx, &deliveryv1.CancelDeploymentRequest{Id: dep.GetDeployment().GetId()})
+	require.NoError(t, err)
+
+	// 收口停在 Remove（锁内预检已通过、appMu 仍被持有）；窗口内落 queued
+	// 行（行形态与 admission 产物一致）。
+	entered, release := h.Runtime.ArmRemoveBlock()
+	errCh := make(chan error, 1)
+	go func() {
+		_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+		errCh <- err
+	}()
+	<-entered
+	planted := &deployment.Deployment{
+		ID: ulid.Make().String(), AppID: appID,
+		ToRevision: revID, State: deployment.StateQueued, Generation: 2,
+	}
+	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {
+		return deployment.New(h.Clock).Create(ctx, tx, planted)
+	}))
+	release()
+
+	// 落账复查命中活跃部署 → 整单回滚 → E_CONFLICT；App 保持可操作。
+	err = <-errCh
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "E_CONFLICT")
+	require.Contains(t, err.Error(), "active deployment")
+
+	// 不变式：App 存活 ⇒ 路由仍在（拒绝路径不碰路由；可见即未软删）。
+	_, err = apps.GetApp(ctx, &structurev1.GetAppRequest{Id: appID})
+	require.NoError(t, err)
+	routeList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	require.NoError(t, err)
+	require.True(t, routeListed(t, routeList, routeID),
+		"app alive ⇒ routes referencing it must survive an aborted delete")
+
+	// 收口确实拆了载体（残余面成立的前提）；tombstone 未落（app.deleted
+	// 不在），已拆事实以 teardown-aborted 事件 + 审计留痕。
+	require.Len(t, h.Runtime.Removed(), 1, "teardown must have removed carriers before the abort")
+	evs, err := events.ListEvents(ctx, &telemetryv1.ListEventsRequest{Limit: 200})
+	require.NoError(t, err)
+	var abortedPayload string
+	deletedSeen := false
+	for _, ev := range evs.GetEvents() {
+		switch ev.GetName() {
+		case "app.teardown_aborted":
+			abortedPayload = ev.GetPayload()
+		case "app.deleted":
+			deletedSeen = true
+		}
+	}
+	require.NotEmpty(t, abortedPayload, "aborted teardown must be recorded as an event (never silent)")
+	require.Contains(t, abortedPayload, `"active_deployments":1`, "event must carry the diagnostic count")
+	require.False(t, deletedSeen, "aborted delete must not tombstone the app")
+	entries, err := auditq.ListAudit(ctx, &identityv1.ListAuditRequest{Action: "app.", Limit: 100})
+	require.NoError(t, err)
+	actions := map[string]bool{}
+	for _, e := range entries.GetEntries() {
+		actions[e.GetAction()] = true
+	}
+	require.True(t, actions["app.teardown_abort"], "aborted teardown must be audited")
+	require.False(t, actions["app.delete"], "aborted delete must not audit a deletion")
+}
+
+// 删+部署并发风暴下"App 存活 ⇒ 路由不得消失"（ADR-0023 修订不变式的
+// 路由面扩展——TestDeleteDeployRaceInvariant 不建路由，覆盖不到"拒绝
+// 路径已撤路由"的静默丢流量缺陷）。
+func TestDeleteAppRoutesRaceInvariant(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+	routes := edgev1.NewRoutesServiceClient(h.Conn)
+
+	proj, err := structurev1.NewProjectsServiceClient(h.Conn).CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "route-race"})
+	require.NoError(t, err)
+	app, err := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
+	require.NoError(t, err)
+	appID := app.GetApp().GetId()
+	route, err := routes.CreateRoute(ctx, &edgev1.CreateRouteRequest{
+		ProjectId: proj.GetProject().GetId(), Host: "race.teardown.test",
+		AppId: appID, Process: "web", Port: 8000,
+	})
+	require.NoError(t, err)
+
+	const rounds = 8
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	var deployErrs, deleteErrs []error
+	for i := 0; i < rounds; i++ {
+		wg.Add(2)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: appID, Image: "nginx:1.27"})
+			mu.Lock()
+			deployErrs = append(deployErrs, err)
+			mu.Unlock()
+		}()
+		go func() {
+			defer wg.Done()
+			<-start
+			_, err := apps.DeleteApp(ctx, &structurev1.DeleteAppRequest{Id: appID})
+			mu.Lock()
+			deleteErrs = append(deleteErrs, err)
+			mu.Unlock()
+		}()
+	}
+	close(start)
+	wg.Wait()
+
+	for _, err := range deployErrs {
+		if err == nil {
+			continue
+		}
+		require.NotContains(t, err.Error(), "E_INTERNAL", "deploy must fail cleanly (not-found/queue-full), never internal")
+		require.Contains(t, []string{"E_NOT_FOUND", "E_QUEUE_FULL"}, appErrCode(t, err),
+			"deploy failures must be clean and classified")
+	}
+	for _, err := range deleteErrs {
+		if err == nil {
+			continue
+		}
+		// 合法失败形态：E_CONFLICT（活跃部署在，含 teardown-aborted 残余
+		// 面）/ E_NOT_FOUND（并发双删，对手先落 tombstone）。
+		require.Contains(t, []string{"E_CONFLICT", "E_NOT_FOUND"}, appErrCode(t, err),
+			"delete must only fail on active deployments or a concurrent winner")
+	}
+
+	// 终局不变式：App 存活 ⇔ 路由可见（ListRoutes 活跃行口径——可见即
+	// 未软删）。App 被删则引用路由必同逝；任一交错下"活 App 零路由"
+	// （缺陷形态）都不可出现。
+	_, getErr := apps.GetApp(ctx, &structurev1.GetAppRequest{Id: appID})
+	routeList, err := routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: proj.GetProject().GetId()})
+	require.NoError(t, err)
+	listed := routeListed(t, routeList, route.GetRoute().GetId())
+	if getErr == nil {
+		require.True(t, listed, "app alive ⇒ routes referencing it must never be withdrawn by rejected deletes")
+		return
+	}
+	require.Contains(t, getErr.Error(), "E_NOT_FOUND")
+	require.False(t, listed, "deleted app ⇒ referencing routes withdrawn atomically with the tombstone")
 }
