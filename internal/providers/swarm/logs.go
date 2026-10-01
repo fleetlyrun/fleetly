@@ -55,7 +55,9 @@ func (p *Provider) streamContainerLogs(ctx context.Context, c container.Summary,
 	opts := client.ContainerLogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
-		Follow:     true,
+		// Follow 透传调用方（N0.1 P2-12：此前硬编码 true——真实 swarm 下
+		// 不带 --follow 的 `fleetly logs` 会挂住到 ctx 超时）。
+		Follow:     q.Follow,
 		Timestamps: true,
 	}
 	if q.TailLines > 0 {
