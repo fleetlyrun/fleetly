@@ -34,9 +34,10 @@ type fakeRuntime struct {
 }
 
 type ensureCall struct {
-	NS   capability.NamespaceRef
-	Gen  capability.Generation
-	Spec map[string]capability.Workload // process → workload
+	NS        capability.NamespaceRef
+	Gen       capability.Generation
+	Spec      map[string]capability.Workload // process → workload
+	Materials capability.Materials
 }
 
 func newFakeRuntime() *fakeRuntime {
@@ -52,7 +53,7 @@ func (f *fakeRuntime) Describe() capability.ProviderDescriptor {
 
 func (f *fakeRuntime) Health(context.Context) capability.HealthReport { return f.health }
 
-func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, _ capability.Materials) error {
+func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, materials capability.Materials) error {
 	if f.ensureEntered != nil {
 		select {
 		case f.ensureEntered <- struct{}{}:
@@ -69,7 +70,7 @@ func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.ensures = append(f.ensures, ensureCall{
-		NS: ns, Gen: gen,
+		NS: ns, Gen: gen, Materials: materials,
 		Spec: func() map[string]capability.Workload {
 			m := make(map[string]capability.Workload, len(ws))
 			for _, w := range ws {

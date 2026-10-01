@@ -73,42 +73,10 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 		return // 快照后受理：驱动器拥有该 App 的 Ensure 权
 	}
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
-	if err := e.replayBaseline(stepCtx, a, d); err != nil {
+	if err := e.materialize(stepCtx, d, d.ToRevision, d.Generation); err != nil {
 		e.log.Error("baseline replay: ensure", "app", a.ID, "generation", d.Generation, "err", err)
 	}
 	cancel()
-}
-
-// replayBaseline 投影并 Ensure 单个 App 的基线（recordEnsured 重建缓存）。
-func (e *Engine) replayBaseline(ctx context.Context, a *app.App, d *deployment.Deployment) error {
-	spec, err := e.loadSpec(ctx, d.ToRevision)
-	if err != nil {
-		return fmt.Errorf("load revision spec: %w", err)
-	}
-	team, _, err := e.appTeam(ctx, a.ID)
-	if err != nil {
-		return fmt.Errorf("resolve app: %w", err)
-	}
-	digests, err := e.buildDigests(ctx, d)
-	if err != nil {
-		return fmt.Errorf("resolve build digests: %w", err)
-	}
-	ws, ns, err := Project(spec, team, digests)
-	if err != nil {
-		return fmt.Errorf("project spec: %w", err)
-	}
-	materials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
-	if err != nil {
-		return fmt.Errorf("resolve materials: %w", err)
-	}
-	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
-		return fmt.Errorf("merge volume pinning: %w", err)
-	}
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(d.Generation), materials); err != nil {
-		return fmt.Errorf("runtime ensure: %w", err)
-	}
-	e.recordEnsured(d, d.Generation, ws)
-	return nil
 }
 
 // driftScan 一拍漂移扫描：spec 对照（RuntimeInspector 可用时）+ 稳态

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 )
@@ -128,43 +127,16 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateReleasing, nil)
 }
 
-// release：投影 Workload 下发 Runtime（唯一写动词 Ensure，同 Generation
-// 重放安全）；L1 健康门 = 全部 Workload 观测到 running（gen 匹配）。
+// release：物化（materialize 单序列）下发 Runtime（唯一写动词 Ensure，同
+// Generation 重放安全）；L1 健康门 = 全部 Workload 观测到 running（gen 匹配）。
 //
 // L1 等待期（deadline 已设）每步仍幂等重 Ensure：重启后观测缓存为空，
 // 重放触发 Provider 的 update 事件恢复观测流；同 spec 的 update 对载体
 // 是 no-op，代价可接受（场景 1 重放语义）。
 func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	spec, err := e.loadSpec(ctx, d.ToRevision)
-	if err != nil {
-		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
+	if err := e.materialize(ctx, d, d.ToRevision, d.Generation); err != nil {
+		return e.failDeployment(ctx, d, err.Error())
 	}
-	team, _, err := e.appTeam(ctx, d.AppID)
-	if err != nil {
-		return e.failDeployment(ctx, d, "resolve app: "+err.Error())
-	}
-	digests, err := e.buildDigests(ctx, d)
-	if err != nil {
-		return e.failDeployment(ctx, d, "resolve build digests: "+err.Error())
-	}
-	ws, ns, err := Project(spec, team, digests)
-	if err != nil {
-		return e.failDeployment(ctx, d, "project spec: "+err.Error())
-	}
-	materials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
-	if err != nil {
-		return e.failDeployment(ctx, d, "resolve materials: "+err.Error())
-	}
-	if err := e.pinVolumes(ctx, ws, spec.GetApp().GetProject()); err != nil {
-		return e.failDeployment(ctx, d, "pin volumes: "+err.Error())
-	}
-	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
-		return e.failDeployment(ctx, d, "merge volume pinning: "+err.Error())
-	}
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(d.Generation), materials); err != nil {
-		return e.failDeployment(ctx, d, "runtime ensure: "+err.Error())
-	}
-	e.recordEnsured(d, d.Generation, ws)
 
 	deadline := parseDeadline(d.ObserveDeadline)
 	if deadline == nil {
@@ -212,45 +184,23 @@ func (e *Engine) startRollback(ctx context.Context, d *deployment.Deployment) (*
 
 // rollback：Revision Replay——重新下发 from_revision 的 Spec（永不编排器
 // 原生回滚，ADR-0005；Ensure 域内收敛天然重建人工删除的载体，场景 2）。
+// 物化走 materialize 单序列（与 release/基线重放同源）。
 func (e *Engine) rollback(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	spec, err := e.loadSpec(ctx, d.FromRevision)
-	if err != nil {
-		return e.rollbackFailed(ctx, d, "load rollback revision: "+err.Error())
-	}
-	team, _, err := e.appTeam(ctx, d.AppID)
-	if err != nil {
-		return e.rollbackFailed(ctx, d, "resolve app: "+err.Error())
-	}
-	digests, err := e.buildDigests(ctx, d)
-	if err != nil {
-		return e.rollbackFailed(ctx, d, "resolve build digests: "+err.Error())
-	}
-	ws, ns, err := Project(spec, team, digests)
-	if err != nil {
-		return e.rollbackFailed(ctx, d, "project rollback spec: "+err.Error())
-	}
-	rollbackMaterials, err := e.resolveMaterials(ctx, spec, spec.GetApp().GetProject())
-	if err != nil {
-		return e.rollbackFailed(ctx, d, "resolve materials: "+err.Error())
-	}
-	if err := e.applyVolumePinning(ctx, ws, spec.GetApp().GetProject()); err != nil {
-		return e.rollbackFailed(ctx, d, "merge volume pinning: "+err.Error())
-	}
 	// Replay 用新 Generation 幂等重下发（单调编号；Drift 对照同步刷新）。
 	// deadline 未设 = 首轮（gen 未推进）；已设 = 等待期（gen 已在行上）。
+	// gen 在物化前取（物化失败不落行，号未持久化，重试同号无损）。
 	deadline := parseDeadline(d.ObserveDeadline)
 	gen := d.Generation
 	if deadline == nil {
+		var err error
 		gen, err = e.deployments.NextGeneration(ctx, e.db.Runner(), d.AppID)
 		if err != nil {
 			return e.rollbackFailed(ctx, d, "next generation: "+err.Error())
 		}
 	}
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), rollbackMaterials); err != nil {
-		return e.rollbackFailed(ctx, d, "rollback ensure: "+err.Error())
+	if err := e.materialize(ctx, d, d.FromRevision, gen); err != nil {
+		return e.rollbackFailed(ctx, d, err.Error())
 	}
-	e.recordEnsured(d, gen, ws)
-
 	if e.releaseReadyGen(d, gen) {
 		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
 		return e.transitAndReload(ctx, d,

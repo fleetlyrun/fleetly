@@ -18,7 +18,7 @@ CONTEXT.md：新增 **Acceptance（受理位）** 词条（随 ADR-0024）。
 
 | 项 | 时点 | 说明 |
 |---|---|---|
-| C2 materialize module | **立即先行** | engine 三份物化序列合一 + 三路一致性质测试；无裁决纠缠，独立小 commit |
+| C2 materialize module | **已完成（2026-10-01）** | engine 三份物化序列合一 + 三路一致性质测试（TestMaterializeThreePathsIdentical）|
 | C4 RegisterAll 反向守卫 | **立即先行** | 镜像 guard A，纯守卫独立小 commit |
 | C3 观测 verdict owner | N1 Task 设计批 | 与 P1-7 缓存形状分家同批，一次重排 observ |
 | C5 swarm dockerAPI seam | F1.5 之后 | D-1 字段定形后拆 watcher/reconcile，一次到位 |
