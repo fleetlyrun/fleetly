@@ -8,6 +8,7 @@ package engine
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -136,6 +137,11 @@ func (e *Engine) driftScan(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		// 受管域键（fleetly/system/*）只入看门狗（expected 已登记），不进
+		// spec 对照——非 App 行键，App 表解析面跳过（否则每拍一条噪声错）。
+		if strings.HasPrefix(appID, managedDomainKeyPrefix) {
+			continue
+		}
 		if !hasInspector {
 			continue
 		}
@@ -154,7 +160,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 			e.log.Error("drift scan: inspect", "app", appID, "err", err)
 			continue
 		}
-		e.compareSpecs(appID, obs)
+		e.compareSpecs(ctx, appID, obs)
 	}
 
 	// 稳态看门狗：观测槽里当前 Generation 的 stopped（去抖；回 running 清）。
@@ -187,7 +193,8 @@ func (e *Engine) driftScan(ctx context.Context) {
 }
 
 // compareSpecs 逐载体对照观测 spec 与缓存期望 spec：失配 → drift 事件
-// （签名含 spec 指纹去抖；同一失配不重复发，回归即清）。
+// （签名含 spec 指纹去抖；同一失配不重复发，回归即清）。obsMu.RLock 只
+// 护缓存读——事件落账在锁外、经调用链 ctx（关停可取消；N0.1 P2-10）。
 //
 // 镜像逐字比对是正确口径（2026-10-01 双腿实证，N0.1 P1-2）：dind 里
 // `docker service create` CLI 会尝试把 tag 解析钉版为 repo:tag@sha256
@@ -196,12 +203,17 @@ func (e *Engine) driftScan(ctx context.Context) {
 // spec 全为原样 tag，且 6 次部署 + 全天 30s 扫描零 drift 事件。假 drift
 // 假设（API 路径钉版）不成立；若未来出现钉版形态（如 CLI 人工改同 tag
 // 镜像），以显式证据重开此案，不在此预放行。
-func (e *Engine) compareSpecs(appID string, obs []capability.WorkloadObservation) {
+func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation) {
 	e.expectMu.Lock()
 	expected := e.expected[appID]
 	e.expectMu.Unlock()
+
+	type pendingDrift struct {
+		wid string
+		ev  capability.WorkloadEvent
+	}
+	var pending []pendingDrift
 	e.obsMu.RLock()
-	defer e.obsMu.RUnlock()
 	for _, o := range obs {
 		want, ok := e.ensuredSpec[o.WorkloadID]
 		if !ok {
@@ -232,15 +244,22 @@ func (e *Engine) compareSpecs(appID string, obs []capability.WorkloadObservation
 		}
 		e.drift[o.WorkloadID] = sig
 		e.driftMu.Unlock()
-		ev := capability.WorkloadEvent{
-			WorkloadID: o.WorkloadID, Generation: o.Generation,
-			State:   capability.WorkloadDegraded,
-			Message: "spec drift: " + mismatch,
-		}
-		if _, err := e.outbox.Append(context.Background(), e.db.Runner(),
-			eventWorkloadDrift, "workload", o.WorkloadID,
-			driftEventPayloadJSON(ev, appID, expected)); err != nil {
-			e.log.Error("drift scan: event", "workload", o.WorkloadID, "err", err)
+		pending = append(pending, pendingDrift{
+			wid: o.WorkloadID,
+			ev: capability.WorkloadEvent{
+				WorkloadID: o.WorkloadID, Generation: o.Generation,
+				State:   capability.WorkloadDegraded,
+				Message: "spec drift: " + mismatch,
+			},
+		})
+	}
+	e.obsMu.RUnlock()
+
+	for _, p := range pending {
+		if _, err := e.outbox.Append(ctx, e.db.Runner(),
+			eventWorkloadDrift, "workload", p.wid,
+			driftEventPayloadJSON(p.ev, appID, expected)); err != nil {
+			e.log.Error("drift scan: event", "workload", p.wid, "err", err)
 		}
 	}
 }
@@ -277,11 +296,11 @@ func (e *Engine) clearStoppedSig(wid string) {
 }
 
 // driftScanLoop 周期扫描（DriftScanInterval 节拍；架构 §0 唯一骨架——
-// 经 engine.NewLoop 收敛，不自建 ticker）。
+// 经 engine.NewLoop 收敛，不自建 ticker）。整拍不设总预算（N0.1 P2-10：
+// ManagedStepTimeout÷N 的总预算语义让多 App 拍随规模劣化）——每 App 的
+// Inspect 各自带 ManagedStepTimeout 界，拍间由 ctx 取消收口。
 func (e *Engine) driftScanLoop(ctx context.Context) {
 	e.driftLoop.Run(ctx, e.opts.DriftScanInterval, func(ctx context.Context) {
-		scanCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
-		e.driftScan(scanCtx)
-		cancel()
+		e.driftScan(ctx)
 	})
 }

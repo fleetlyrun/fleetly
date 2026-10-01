@@ -59,6 +59,10 @@ func (m *managedGenState) next(fp string) uint64 {
 	return gen
 }
 
+// managedDomainKeyPrefix 是受管域在归属/期望缓存中的键前缀
+// （fleetly/system/<process>——非 App 行键，App 表解析面据此跳过）。
+const managedDomainKeyPrefix = "fleetly/system/"
+
 func (e *Engine) reconcileManaged(ctx context.Context) {
 	m, ok := e.edge.(capability.Managed)
 	if !ok {
@@ -80,10 +84,18 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	}
 	for _, w := range ws {
 		e.obsMu.Lock()
-		e.workloadApp[w.ID] = "fleetly/system/" + w.Process // 归属登记（观测/drift 面）
+		e.workloadApp[w.ID] = managedDomainKeyPrefix + w.Process // 归属登记（观测/drift 面）
 		e.ensuredGen[w.ID] = gen
 		e.obsMu.Unlock()
 	}
+	// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
+	// edge 载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
+	// 不可接受）。键与归属登记同形（fleetly/system/<process>）。
+	e.expectMu.Lock()
+	for _, w := range ws {
+		e.expected[managedDomainKeyPrefix+w.Process] = gen
+	}
+	e.expectMu.Unlock()
 }
 
 // publishRoutes 全量发布 Route（后端地址经 Runtime.Addresses 解析；解析

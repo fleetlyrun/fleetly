@@ -48,3 +48,25 @@ func TestManagedEdgeAttachesProjectNetworks(t *testing.T) {
 	e.managedStep(ctx)
 	assert.Equal(t, last.Gen, rt.calls()[len(rt.calls())-1].Gen)
 }
+
+// 受管 edge 纳入稳态看门狗（N0.1 P2-10）：expected 随受管 Ensure 登记——
+// edge 载体在当前受管 gen 停止 → workload.stopped（平台自身可用性失明
+// 不可接受）。
+func TestManagedEdgeCoveredBySteadyStateWatchdog(t *testing.T) {
+	db, _ := statertest.New(t)
+	rt := newFakeRuntime()
+	edge := &fakeEdge{}
+	e := New(Deps{DB: db, Runtime: rt, Edge: edge, Logger: discardLogger()}, Options{})
+	ctx := context.Background()
+
+	e.managedStep(ctx) // 受管 Ensure + 归属/期望登记
+	gen := rt.calls()[len(rt.calls())-1].Gen
+
+	e.handleObservation(ctx, capability.WorkloadEvent{
+		WorkloadID: "fleetly-edge-fake", Generation: gen,
+		State: capability.WorkloadStopped, Message: "edge down",
+	})
+	e.driftScan(ctx)
+	assert.Equal(t, []string{"workload.stopped"}, eventNames(t, e, "fleetly-edge-fake"),
+		"a stopped managed edge carrier must raise workload.stopped")
+}
