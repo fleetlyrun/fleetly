@@ -85,6 +85,37 @@ func ImageDeploy(appID, projectID, image string, processName string, probe *spec
 	return spec, nil
 }
 
+// UploadDeploy 归一化上传产物形态（F1.10，ADR-0019 附录 A）：Source.upload
+// + dockerfile 构建 + 单进程 from_build（与 git 源 webhook 路径同构；
+// from_build 的 digest 解析按进程名，值本身只要求非空）。
+func UploadDeploy(appID, projectID, uploadID, dockerfile, processName string, probe *specv1.HealthcheckSpec) (*specv1.AppSpec, error) {
+	if processName == "" {
+		processName = "web"
+	}
+	if dockerfile == "" {
+		dockerfile = "Dockerfile"
+	}
+	s := &specv1.AppSpec{
+		SchemaVersion: SchemaVersion,
+		App:           &specv1.AppRef{Id: appID, Project: projectID},
+		Source:        &specv1.Source{Kind: &specv1.Source_Upload{Upload: &specv1.UploadSource{Id: uploadID}}},
+		Build: &specv1.BuildSpec{
+			Builder:  "dockerfile",
+			Strategy: &specv1.BuildSpec_Dockerfile{Dockerfile: dockerfile},
+		},
+		Processes: []*specv1.ProcessSpec{{
+			Name:        processName,
+			ImageOrigin: &specv1.ProcessSpec_FromBuild{FromBuild: processName},
+			Replicas:    1,
+			Healthcheck: probe,
+		}},
+	}
+	if err := ValidateApp(s); err != nil {
+		return nil, err
+	}
+	return s, nil
+}
+
 // ComposeDoc 是 Compose 文档的解码面（原生 map 类型——yaml.v3 对命名
 // map 类型会递归复用该类型填充嵌套 map，导致 map[string]any 断言失败；
 // 白名单在 map 层执法）。

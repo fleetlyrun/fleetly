@@ -92,4 +92,6 @@ func init() {
 	// 治理面（freezeEventPayload，governance.go 单源）。
 	registerEventPayload(eventFreezeSet, freezeEventPayload{})
 	registerEventPayload(eventFreezeLifted, freezeEventPayload{})
+	// 上传产物面（uploadStoredPayload，uploads.go 单源；F1.10）。
+	registerEventPayload(eventUploadStored, uploadStoredPayload{})
 }

@@ -31,11 +31,13 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 	"github.com/fleetlyrun/fleetly/internal/state/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
 	"github.com/fleetlyrun/fleetly/internal/state/user"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
+	"github.com/fleetlyrun/fleetly/internal/upload"
 )
 
 // Services 聚合全部 API 依赖（装配注入；Runtime 面收窄为 Enrollment 消费）。
@@ -71,6 +73,11 @@ type Services struct {
 	Invitations  *invitation.Repo
 	Hooks        *hook.Repo
 
+	// Uploads 是上传产物行 repo；UploadStore 是 blob 面（内容寻址落盘，
+	// ADR-0019 附录 A）。限额走缺省（512MiB/4GiB，ADR 钉值）。
+	Uploads     *sourceupload.Repo
+	UploadStore *upload.Store
+
 	// eventTickets 是 SSE 订阅路径的一次性短时票据面（ADR-0026；铸造经
 	// IssueEventTicket，兑换限 SSE 原生入口）。
 	eventTickets *eventTicketStore
@@ -82,8 +89,9 @@ type Services struct {
 	Log *slog.Logger
 }
 
-// NewServices 构造（repos 从 DB 时钟派生；vocab 是 scope 词表单一源）。
-func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, vocab []string, log *slog.Logger) *Services {
+// NewServices 构造（repos 从 DB 时钟派生；vocab 是 scope 词表单一源；
+// dataRoot 是上传产物 blob 根）。
+func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capability.Runtime, dataRoot string, vocab []string, log *slog.Logger) *Services {
 	clock := db.Clock()
 	return &Services{
 		DB:              db,
@@ -115,6 +123,8 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Tokens:          tokenrepo.New(clock),
 		Invitations:     invitation.New(clock),
 		Hooks:           hook.New(clock),
+		Uploads:         sourceupload.New(clock),
+		UploadStore:     upload.NewStore(dataRoot, 0, 0),
 		eventTickets:    newEventTicketStore(clock),
 		ScopeVocabulary: vocab,
 		Log:             log,

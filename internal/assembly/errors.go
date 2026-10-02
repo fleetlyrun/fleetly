@@ -33,12 +33,15 @@ const redactedInternalMessage = "internal server error"
 //     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_SECRET_UNAVAILABLE /
 //     E_CHANGE_FROZEN（请求合法、当前状态不容——cancel/解绑/补件/lift
 //     冻结后可重试）；
-//   - 400/404/409/410/429/401/403/500 与语义对照（本就对，钉扎防漂移）：
-//     E_INVALID_ARGUMENT→400、E_NOT_FOUND→404、E_EVENTS_GONE→410（断档：
-//     游标落在保留窗外，重同步）、E_QUEUE_FULL 与 E_QUOTA_EXCEEDED 与
-//     E_RATE_LIMITED→429（Retry-After 提取仍按 429 生效——E_RATE_LIMITED
-//     携带 RetryInfo detail）、E_UNAUTHENTICATED 与 E_INVALID_SIGNATURE→401、
-//     E_FORBIDDEN 与 E_INVALID_INVITATION→403、E_INTERNAL→500。
+//   - 400/404/409/410/413/429/401/403/500 与语义对照（本就对，钉扎防漂移）：
+//     E_INVALID_ARGUMENT→400、E_NOT_FOUND→404、E_EVENTS_GONE 与
+//     E_UPLOAD_UNAVAILABLE→410（断档/产物已扫：重同步或重传）、
+//     E_UPLOAD_TOO_LARGE→413（设计内的 payload 超限形态，webhook 413 同款；
+//     Q-11 限额错位教训——不得死于不透明 RESOURCE_EXHAUSTED）、
+//     E_QUEUE_FULL 与 E_QUOTA_EXCEEDED 与 E_RATE_LIMITED→429（Retry-After
+//     提取仍按 429 生效——E_RATE_LIMITED 携带 RetryInfo detail）、
+//     E_UNAUTHENTICATED 与 E_INVALID_SIGNATURE→401、E_FORBIDDEN 与
+//     E_INVALID_INVITATION→403、E_INTERNAL→500。
 //
 // gRPC code 的 gateway.DefaultCodeToHTTP 继续兜底无信封的机械错误
 // （Canceled→499、DeadlineExceeded→504 等）。
@@ -61,6 +64,8 @@ var errcodeToHTTP = map[string]int{
 	"E_RATE_LIMITED":             http.StatusTooManyRequests,
 	"E_SECRET_UNAVAILABLE":       http.StatusConflict,
 	"E_UNAUTHENTICATED":          http.StatusUnauthorized,
+	"E_UPLOAD_TOO_LARGE":         http.StatusRequestEntityTooLarge,
+	"E_UPLOAD_UNAVAILABLE":       http.StatusGone,
 }
 
 // resolveHTTPStatus 定 HTTP 状态：信封还原出在册错误码时以 errcodeToHTTP

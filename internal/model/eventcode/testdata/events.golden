@@ -56,6 +56,7 @@ task.updated	A task's desired concurrency was updated.	internal/engine/task.go S
 team.created	A team was created.	added during implementation
 token.created	A token was minted (secret shown once at creation).	added during implementation
 token.revoked	A token was revoked; its next call will be rejected.	added during implementation
+upload.stored	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).	internal/api/fleetlygrpc/uploads.go UploadSource
 user.created	A user was created and granted a role in a team.	added during implementation
 volume.created	A volume was created.	internal/api/fleetlygrpc/structure.go CreateVolume
 workload.drift_detected	Observed workload diverged from the ensured generation or spec (ADR-0022).	internal/engine/observ.go detectDrift + internal/engine/drift.go compareSpecs

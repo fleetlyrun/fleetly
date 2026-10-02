@@ -114,7 +114,10 @@ func NewGRPCServer(
 // 生产面漂移）。链序（ADR-0017/0024）：执法链（clientinfo/auth/validate）
 // → 冻结拦截器（拒绝不占幂等记录）→ 幂等执法器（重放不消耗业务超时
 // 预算、鉴权失败不占幂等记录）→ 创建速率限制器（仅实际执行计数——
-// 重放不消耗预算）→ 请求超时。流式链不加治理面（创建型动词均为 unary）。
+// 重放不消耗预算）→ 请求超时。流式链：authn → 冻结（首帧 RecvMsg 执法，
+// F1.10 起 client-streaming 写面在封禁面——ADR-0019 附录 A.2）；幂等/
+// 速率/超时保持 unary 面（上传的自然幂等=内容寻址，限额刹车=大小上限与
+// 项目存量配额，流生命周期由取消信号管理）。
 func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
 	chain, err := grpcapiinterceptor.Assemble(
 		grpcapiinterceptor.ChainItem{
@@ -140,7 +143,12 @@ func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authentica
 	chain = append(chain, limiter.Unary())
 	// 请求级超时挂链尾（最贴近 handler）：执法链（clientinfo/auth/validate）
 	// 在 deadline 外运行——超时的请求同样要过完整的执法与未来的审计/用量
-	// 面，且鉴权查询不被请求 deadline 误杀；流式链不加超时（follow 面豁免）。
+	// 面，且鉴权查询不被请求 deadline 误杀；流式链不加超时（follow 面与
+	// 上传流面豁免——生命周期由取消信号管理，上传另有 15m 流硬上限）。
 	chain = append(chain, newUnaryTimeoutInterceptor(grpcUnaryTimeout))
-	return chain, []grpc.StreamServerInterceptor{authenticator.Stream()}, nil
+	stream := []grpc.StreamServerInterceptor{authenticator.Stream()}
+	if freeze != nil {
+		stream = append(stream, freeze.Stream())
+	}
+	return chain, stream, nil
 }

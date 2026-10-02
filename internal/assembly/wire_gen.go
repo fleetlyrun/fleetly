@@ -65,7 +65,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	}
 	service := NewEngineService(engine)
 	enforcer := NewIdemEnforcer(db, app)
-	retentionJanitorService := NewRetentionJanitorService(enforcer, db, app)
+	retentionJanitorService := NewRetentionJanitorService(enforcer, db, appConfig, app)
 	policySet, err := NewPolicySet()
 	if err != nil {
 		cleanup5()
@@ -79,7 +79,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	rateLimiter := NewRateLimiter(db)
 	freezeGuard := NewFreezeGuard(db, app)
 	systemgrpcService := systemgrpc.New(info)
-	services := NewAPIServices(db, engine, cipher, runtime, app)
+	services := NewAPIServices(db, engine, cipher, runtime, appConfig, app)
 	server, err := NewGRPCServer(app, appConfig, policySet, authenticator, enforcer, rateLimiter, freezeGuard, systemgrpcService, services)
 	if err != nil {
 		cleanup5()

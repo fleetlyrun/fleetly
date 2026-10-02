@@ -131,4 +131,18 @@ var builtins = []Code{
 		Source:     "internal/api/fleetlygrpc/contexts.go EventsService (ADR-0026: retention window + 410 + snapshot resync)",
 		GRPC:       codes.FailedPrecondition,
 	},
+	{
+		ID:         "E_UPLOAD_TOO_LARGE",
+		Summary:    "The uploaded source exceeds the per-upload size limit.",
+		Suggestion: "Exclude build-irrelevant files from the directory (e.g. .git), or build from a git reference instead.",
+		Source:     "internal/api/fleetlygrpc/uploads.go UploadSource (ADR-0019 appendix A.3: streaming byte budget, 512MiB default)",
+		GRPC:       codes.ResourceExhausted,
+	},
+	{
+		ID:         "E_UPLOAD_UNAVAILABLE",
+		Summary:    "The uploaded source referenced by this deploy no longer has its blob on disk.",
+		Suggestion: "The upload was likely affected by a retention sweep or a data-root migration; upload the source again and redeploy.",
+		Source:     "internal/api/fleetlygrpc/delivery.go Deploy (ADR-0019 appendix A.5)",
+		GRPC:       codes.FailedPrecondition,
+	},
 }

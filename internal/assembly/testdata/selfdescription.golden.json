@@ -2830,6 +2830,40 @@
       }
     },
     {
+      "name": "upload.stored",
+      "kind": "event",
+      "summary": "An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "deduplicated": {
+            "type": "boolean"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "project_id": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "project_id",
+          "digest",
+          "size_bytes",
+          "deduplicated"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "user.created",
       "kind": "event",
       "summary": "A user was created and granted a role in a team.",

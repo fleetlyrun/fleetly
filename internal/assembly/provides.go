@@ -2,6 +2,7 @@ package assembly
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"log/slog"
 	"path/filepath"
@@ -25,6 +26,8 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/outbox"
+	"github.com/fleetlyrun/fleetly/internal/state/sourceupload"
+	"github.com/fleetlyrun/fleetly/internal/upload"
 )
 
 //go:generate go run -mod=mod github.com/google/wire/cmd/wire
@@ -148,9 +151,10 @@ func NewEngine(
 	}, engine.Options{DataRoot: cfg.DataRoot(), ScheduleOverlap: overlap}), nil
 }
 
-// NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入）。
-func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, app lynx.App) *fleetlygrpc.Services {
-	return fleetlygrpc.NewServices(db, e, cipher, rt, ScopeResources(), app.Logger())
+// NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；
+// dataRoot 透传给上传产物 blob 面）。
+func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt capability.Runtime, cfg *config.AppConfig, app lynx.App) *fleetlygrpc.Services {
+	return fleetlygrpc.NewServices(db, e, cipher, rt, cfg.DataRoot(), ScopeResources(), app.Logger())
 }
 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。
@@ -180,13 +184,23 @@ const retentionSweepInterval = 10 * time.Minute
 // outbox 无界增长的自愈上限。7d = Console 隔周末重连不断档的宽裕缺省。
 const outboxRetention = 7 * 24 * time.Hour
 
-// RetentionJanitorService 把保留窗清扫（幂等记录 + 事件 outbox）适配为
-// lynx 托管服务：复用 engine.NewLoop 唯一循环骨架（架构 §0"每段只许有一
+// uploadRetention 是上传产物保留窗（ADR-0019 附录 A.3）：未被任何 Revision
+// 引用的上传行过窗清扫；引用=spec 体内含 upload id（Revision 冻结先于
+// engine.Submit，部署路径天然受保护）。孤儿 tmp（崩溃遗留）>1h 清理。
+const (
+	uploadRetention = 7 * 24 * time.Hour
+	uploadTmpAge    = 1 * time.Hour
+)
+
+// RetentionJanitorService 把保留窗清扫（幂等记录 + 事件 outbox + 上传产物）
+// 适配为 lynx 托管服务：复用 engine.NewLoop 唯一循环骨架（架构 §0"每段只许有一
 // 份"），不自建 ticker。具名类型：wire 对 lynx.Service 同型多 provider
 // 需可区分。
 type RetentionJanitorService struct {
 	enforcer *idem.Enforcer
 	db       *state.DB
+	uploads  *sourceupload.Repo
+	blobs    *upload.Store
 	log      *slog.Logger
 }
 
@@ -204,14 +218,54 @@ func (s *RetentionJanitorService) Start(ctx context.Context) error {
 		} else if n > 0 {
 			s.log.Info("retention janitor: trimmed outbox rows past the retention window", "count", n)
 		}
+		s.sweepUploads(ctx)
+		if n, err := s.blobs.SweepOrphanTmp(uploadTmpAge); err != nil {
+			s.log.Error("retention janitor: upload tmp sweep", "err", err)
+		} else if n > 0 {
+			s.log.Info("retention janitor: removed orphaned upload staging files", "count", n)
+		}
 	})
 	return nil
 }
 func (s *RetentionJanitorService) Stop(context.Context) error { return nil }
 
+// sweepUploads 清扫过保留窗且未被任何 Revision 引用的上传行；末行删除时
+// blob 一并删除（refcount=行数，ADR-0019 附录 A.3）。
+func (s *RetentionJanitorService) sweepUploads(ctx context.Context) {
+	cutoff := state.FormatTime(s.db.Clock().Now().Add(-uploadRetention))
+	stale, err := s.uploads.SweepUnreferenced(ctx, s.db.Runner(), cutoff)
+	if err != nil {
+		s.log.Error("retention janitor: upload sweep scan", "err", err)
+		return
+	}
+	swept := 0
+	for _, u := range stale {
+		if err := s.db.Tx(ctx, func(tx *sql.Tx) error {
+			return s.uploads.Delete(ctx, tx, u.ID)
+		}); err != nil {
+			s.log.Error("retention janitor: upload row delete", "upload", u.ID, "err", err)
+			continue
+		}
+		swept++
+		if n, cerr := s.uploads.CountByDigest(ctx, s.db.Runner(), u.Digest); cerr == nil && n == 0 {
+			if derr := s.blobs.DeleteBlob(u.Digest); derr != nil {
+				s.log.Error("retention janitor: upload blob delete", "digest", u.Digest, "err", derr)
+			}
+		}
+	}
+	if swept > 0 {
+		s.log.Info("retention janitor: swept unreferenced uploads past the retention window", "count", swept)
+	}
+}
+
 // NewRetentionJanitorService 构造 janitor 托管服务。
-func NewRetentionJanitorService(enforcer *idem.Enforcer, db *state.DB, app lynx.App) *RetentionJanitorService {
-	return &RetentionJanitorService{enforcer: enforcer, db: db, log: app.Logger()}
+func NewRetentionJanitorService(enforcer *idem.Enforcer, db *state.DB, cfg *config.AppConfig, app lynx.App) *RetentionJanitorService {
+	return &RetentionJanitorService{
+		enforcer: enforcer, db: db,
+		uploads: sourceupload.New(db.Clock()),
+		blobs:   upload.NewStore(cfg.DataRoot(), 0, 0),
+		log:     app.Logger(),
+	}
 }
 
 // engineService 把引擎适配为 lynx 托管服务（组合根职责：engine 包不依赖

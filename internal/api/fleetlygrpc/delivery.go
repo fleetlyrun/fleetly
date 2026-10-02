@@ -23,6 +23,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
+	"github.com/fleetlyrun/fleetly/internal/state/sourceupload"
 )
 
 type DeploymentsService struct {
@@ -30,7 +31,8 @@ type DeploymentsService struct {
 	s *Services
 }
 
-// Deploy 归一化两源（F0.8）并受理部署（admission 判定全在 engine.Submit）。
+// Deploy 归一化三源（image 直投 / Compose 受控子集 / 上传产物）并受理部署
+// （admission 判定全在 engine.Submit）。
 func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.DeployRequest) (*deliveryv1.DeployResponse, error) {
 	if req.GetAppId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
@@ -40,7 +42,28 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		return nil, mapStateError(err, "app")
 	}
 
-	appSpec, err := normalizeDeploySource(req, appRow)
+	// 上传产物形态的受理前置：行存在、归属同 Project、blob 在盘（跨项目
+	// 引用拒绝——Upload 是 project 级材料，ADR-0019 附录 A.1）。
+	var uploadRow *sourceupload.Upload
+	if uid := req.GetUploadId(); uid != "" {
+		row, err := svc.s.Uploads.Get(ctx, svc.s.DB.Runner(), uid)
+		if err != nil {
+			return nil, mapStateError(err, "upload")
+		}
+		if row.ProjectID != appRow.ProjectID {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"upload %s belongs to project %s, not project %s; upload the source again within the app's project",
+				uid, row.ProjectID, appRow.ProjectID)
+		}
+		if !svc.s.UploadStore.BlobExists(row.Digest) {
+			return nil, apperr.New("E_UPLOAD_UNAVAILABLE",
+				"the uploaded source %s no longer has its blob on disk (digest %s)", uid, row.Digest).
+				WithSuggestion("The upload was likely affected by a retention sweep or data-root migration; upload the source again.")
+		}
+		uploadRow = row
+	}
+
+	appSpec, err := normalizeDeploySource(req, appRow, uploadRow)
 	if err != nil {
 		return nil, err
 	}
@@ -105,27 +128,36 @@ func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *
 	return rev, nil
 }
 
-// normalizeDeploySource 归一化两源：image 直投 / Compose 受控子集。
-// 直投形态的探针声明（http_probe/tcp_probe，B2）互斥；compose 形态的
-// 探针经 healthcheck 扩展键（直投旗标与 compose 互斥）。
-func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App) (*specv1.AppSpec, error) {
+// normalizeDeploySource 归一化三源：image 直投 / Compose 受控子集 / 上传
+// 产物。直投与上传形态的探针声明（http_probe/tcp_probe，B2）互斥；compose
+// 形态的探针经 healthcheck 扩展键（直投/上传旗标与 compose 互斥）。
+func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploadRow *sourceupload.Upload) (*specv1.AppSpec, error) {
+	sources := 0
+	for _, v := range []string{req.GetImage(), req.GetComposeYaml(), req.GetUploadId()} {
+		if v != "" {
+			sources++
+		}
+	}
+	if sources > 1 {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "image, compose_yaml and upload_id are mutually exclusive; exactly one source form per deploy")
+	}
+	var probe *specv1.HealthcheckSpec
+	switch {
+	case req.GetHttpProbe() != "" && req.GetTcpProbe() != 0:
+		return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe and tcp_probe are mutually exclusive")
+	case req.GetHttpProbe() != "":
+		if !strings.HasPrefix(req.GetHttpProbe(), "/") {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe: must be an absolute path starting with '/'")
+		}
+		probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: req.GetHttpProbe()}, Retries: 3}
+	case req.GetTcpProbe() != 0:
+		if req.GetTcpProbe() < 1 || req.GetTcpProbe() > 65535 {
+			return nil, apperr.New("E_INVALID_ARGUMENT", "tcp_probe: port out of range (1-65535)")
+		}
+		probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: req.GetTcpProbe()}, Retries: 3}
+	}
 	switch {
 	case req.GetImage() != "":
-		var probe *specv1.HealthcheckSpec
-		switch {
-		case req.GetHttpProbe() != "" && req.GetTcpProbe() != 0:
-			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe and tcp_probe are mutually exclusive")
-		case req.GetHttpProbe() != "":
-			if !strings.HasPrefix(req.GetHttpProbe(), "/") {
-				return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe: must be an absolute path starting with '/'")
-			}
-			probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: req.GetHttpProbe()}, Retries: 3}
-		case req.GetTcpProbe() != 0:
-			if req.GetTcpProbe() < 1 || req.GetTcpProbe() > 65535 {
-				return nil, apperr.New("E_INVALID_ARGUMENT", "tcp_probe: port out of range (1-65535)")
-			}
-			probe = &specv1.HealthcheckSpec{Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: req.GetTcpProbe()}, Retries: 3}
-		}
 		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe)
 		if err != nil {
 			return nil, mapValidationError(err)
@@ -133,7 +165,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App) (*spe
 		return s, nil
 	case req.GetComposeYaml() != "":
 		if req.GetHttpProbe() != "" || req.GetTcpProbe() != 0 {
-			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe are for image deploys; compose declares probes via healthcheck.http_path/tcp_port")
+			return nil, apperr.New("E_INVALID_ARGUMENT", "http_probe/tcp_probe are for image or upload deploys; compose declares probes via healthcheck.http_path/tcp_port")
 		}
 		var doc spec.ComposeDoc
 		if err := yaml.Unmarshal([]byte(req.GetComposeYaml()), &doc); err != nil {
@@ -144,8 +176,15 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App) (*spe
 			return nil, mapValidationError(err)
 		}
 		return s, nil
+	case req.GetUploadId() != "":
+		// uploadRow 已在 Deploy 受理前置解析（行存在 + 归属 + blob 在盘）。
+		s, err := spec.UploadDeploy(appRow.ID, appRow.ProjectID, uploadRow.ID, req.GetDockerfile(), req.GetProcessName(), probe)
+		if err != nil {
+			return nil, mapValidationError(err)
+		}
+		return s, nil
 	default:
-		return nil, apperr.New("E_INVALID_ARGUMENT", "one of image or compose_yaml is required")
+		return nil, apperr.New("E_INVALID_ARGUMENT", "one of image, compose_yaml or upload_id is required")
 	}
 }
 

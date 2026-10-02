@@ -17,6 +17,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -87,6 +88,10 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.automation.v1.SchedulesService/TriggerSchedule":  {field: "id", kind: scopeSchedule},
 	"/fleetly.edge.v1.RoutesService/CreateRoute":               {field: "project_id", kind: scopeProject},
 	"/fleetly.edge.v1.RoutesService/DeleteRoute":               {field: "id", kind: scopeRoute},
+	// 上传产物接入（F1.10，ADR-0019 附录 A.2）：client-streaming 写面——
+	// Team 锚在首帧 meta.project_id（流式拦截器首帧 RecvMsg 执法；点路径
+	// 读嵌套字段）。
+	"/fleetly.delivery.v1.BuildsService/UploadSource": {field: "meta.project_id", kind: scopeProject},
 }
 
 // FreezeGuard 是冻结执法器（拦截器一份实现覆盖全部封禁面动词）。
@@ -129,27 +134,36 @@ func (g *FreezeGuard) Unary() grpc.UnaryServerInterceptor {
 		if !ok {
 			return handler(ctx, req)
 		}
-		team, resolved, err := g.resolveTeam(ctx, req, scope)
-		if err != nil {
+		if err := g.enforce(ctx, req, scope); err != nil {
 			return nil, err
 		}
-		if !resolved {
-			return handler(ctx, req) // 寻址失败放行：受理位给出诚实拒绝
-		}
-		rows, err := g.freezes.ActiveForTeam(ctx, g.db.Runner(), team)
-		if err != nil {
-			return nil, apperr.New("E_INTERNAL", "change freeze lookup failed").WithCause(err)
-		}
-		if len(rows) == 0 {
-			return handler(ctx, req)
-		}
-		f := rows[0]
-		return nil, apperr.New("E_CHANGE_FROZEN",
-			"changes are frozen for team %s: %s", team, f.Reason).
-			WithContext("freeze_id", f.ID).
-			WithContext("team_id", f.TeamID).
-			WithSuggestion("This change freeze is lifted by an operator ('fleetly freeze lift " + f.ID + "'); read-only and stop verbs stay available during the freeze.")
+		return handler(ctx, req)
 	}
+}
+
+// enforce 执行一次冻结判定（unary 请求与流式首帧共用）：寻址失败放行交由
+// 受理位拒绝；命中活跃冻结 → E_CHANGE_FROZEN（信封带冻结 reason 与 id）。
+func (g *FreezeGuard) enforce(ctx context.Context, req any, scope freezeScope) error {
+	team, resolved, err := g.resolveTeam(ctx, req, scope)
+	if err != nil {
+		return err
+	}
+	if !resolved {
+		return nil // 寻址失败放行：受理位给出诚实拒绝
+	}
+	rows, err := g.freezes.ActiveForTeam(ctx, g.db.Runner(), team)
+	if err != nil {
+		return apperr.New("E_INTERNAL", "change freeze lookup failed").WithCause(err)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	f := rows[0]
+	return apperr.New("E_CHANGE_FROZEN",
+		"changes are frozen for team %s: %s", team, f.Reason).
+		WithContext("freeze_id", f.ID).
+		WithContext("team_id", f.TeamID).
+		WithSuggestion("This change freeze is lifted by an operator ('fleetly freeze lift " + f.ID + "'); read-only and stop verbs stay available during the freeze.")
 }
 
 // resolveTeam 解析请求的治理 Team。resolved=false 表示寻址失败（空字段或
@@ -248,15 +262,30 @@ func resolutionError(err error) (string, bool, error) {
 	return "", false, apperr.New("E_INTERNAL", "change freeze team resolution failed").WithCause(err)
 }
 
-// reqField 经 protoreflect 读请求的 string 字段（寻址锚）。
+// reqField 经 protoreflect 读请求的 string 字段（寻址锚；点路径形态
+// "meta.project_id" 支持嵌套消息——流式首帧的 Team 锚在元信息帧内）。
 func reqField(req any, name string) string {
 	m, ok := req.(proto.Message)
 	if !ok {
 		return ""
 	}
-	fd := m.ProtoReflect().Descriptor().Fields().ByName(protoreflect.Name(name))
-	if fd == nil || fd.Kind() != protoreflect.StringKind {
-		return ""
+	v := m.ProtoReflect()
+	parts := strings.Split(name, ".")
+	for i, part := range parts {
+		fd := v.Descriptor().Fields().ByName(protoreflect.Name(part))
+		if fd == nil {
+			return ""
+		}
+		if i == len(parts)-1 {
+			if fd.Kind() != protoreflect.StringKind {
+				return ""
+			}
+			return v.Get(fd).String()
+		}
+		if fd.Kind() != protoreflect.MessageKind {
+			return ""
+		}
+		v = v.Get(fd).Message()
 	}
-	return m.ProtoReflect().Get(fd).String()
+	return ""
 }

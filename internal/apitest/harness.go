@@ -120,7 +120,7 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 		t.Fatalf("apitest: interceptors: %v", err)
 	}
 
-	services := fleetlygrpc.NewServices(db, eng, cipher, rt, assembly.ScopeResources(), log)
+	services := fleetlygrpc.NewServices(db, eng, cipher, rt, dataRoot, assembly.ScopeResources(), log)
 	// 传输层选项与生产服务器同源（收包限额等，assembly.GRPCServerOptions
 	// 单一真源）——夹具缺同款限额会让大请求面（如 webhook payload）的
 	// 测试结果与生产漂移。

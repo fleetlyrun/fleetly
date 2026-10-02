@@ -100,4 +100,8 @@ var builtins = []Event{
 	// 动作有界入册；命中拒绝不落事件（重试风暴自放大防护））。
 	{Name: "freeze.set", Summary: "A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.", Source: "internal/api/fleetlygrpc/governance.go SetChangeFreeze"},
 	{Name: "freeze.lifted", Summary: "A change freeze was lifted; change verbs in scope are accepted again.", Source: "internal/api/fleetlygrpc/governance.go LiftChangeFreeze"},
+
+	// 上传产物（F1.10，ADR-0019 附录 A：内容寻址构建材料接入；重传去重
+	// 不落第二行事实）。
+	{Name: "upload.stored", Summary: "An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).", Source: "internal/api/fleetlygrpc/uploads.go UploadSource"},
 }
