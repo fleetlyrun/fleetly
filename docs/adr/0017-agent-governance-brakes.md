@@ -96,17 +96,24 @@ ADR-0018 附录 A.3。
 恒诚实拒绝（显式动作给显式反馈）。第三选项（queue/等待）仍不预支——
 torchwood 规模实证（F1.15）后再议。
 
-### 验收锚（F1.9，2026-10-02 落地批次勾验）
+### 验收锚（F1.9 五段落地 2026-10-02：65da953 裁决 + e3bef99 配额 + 06551f6 速率 + a4019a7 冻结 + 50b48aa 旋钮，证据=测试在树）
 
-- [ ] 配额：CreateTask / CreateApp / ScaleTask / 到期拍 / 手动拍五面执法，
-      并发创建不超限（engine + apitest）。
-- [ ] 速率：预算耗尽 → E_RATE_LIMITED（429/ResourceExhausted）；
-      窗口翻转恢复；幂等重放不消耗预算（单测 + apitest）。
-- [ ] 冻结：set → 封禁面拒绝（含 webhook push 与跨 Team 资源轴）→ lift
+- [x] 配额：CreateTask / CreateApp / ScaleTask / 到期拍 / 手动拍五面执法
+      （TestTaskAndAppQuotaEnforcement / TestScaleTaskQuota /
+      TestScheduleQuotaSkips / TestTaskStatsByProject；并发安全由 SQLite
+      单写连接的事务内读结构性保证——ADR-0024 同款口径）。
+- [x] 速率：预算耗尽 → E_RATE_LIMITED（429/ResourceExhausted）；窗口
+      翻转恢复；幂等重放不消耗预算（TestRateLimiterFixedWindow /
+      TestRateLimiterScopeExemptions + TestCreateRateLimitEnforcement）。
+- [x] 冻结：set → 封禁面拒绝（含 webhook push 与跨 Team 资源轴）→ lift
       恢复；停止族豁免在冻结期可用；全局与 per-Team 两形态；freeze.set /
-      freeze.lifted 三链入册。
-- [ ] 冻结面反扫守卫：proto 变更型动词 ↔ 冻结表/豁免清单双向保鲜
-      （freezeguard）。
-- [ ] 旋钮：skip 默认行为不变；fire 允许并行拍；无效值启动红
-      （engine + assembly）。
-- [ ] CLI freeze 动词组双形态 golden。
+      freeze.lifted 三链入册（TestChangeFreezeLifecycle /
+      TestFreezeGuardTeamAxis / TestFreezeGuardPassThroughOnMissingRows）。
+- [x] 冻结面反扫守卫：proto 变更型动词 ↔ 冻结表/豁免清单双向保鲜
+      （TestFreezeSurfaceCompleteClassification，红灯实验过——DiffRevisions
+      未分类即红）。
+- [x] 旋钮：skip 默认行为不变；fire 允许并行拍；无效值启动红
+      （TestScheduleOverlapSkips / TestScheduleOverlapPolicyFires /
+      TestParseScheduleOverlap + TestNewEngineOverlapPolicyFailsFast）。
+- [x] CLI freeze 动词组双形态 golden（freeze 组裸形态 + set/lift/list/
+      list-after-lift 四动词 ×2）。

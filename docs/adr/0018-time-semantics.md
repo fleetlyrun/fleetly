@@ -78,5 +78,6 @@ schedule_overlap_policy）：`skip` | `fire`（重叠时照常拍，允许并行
       eventcode + schemareg + golden。
 - [ ] 真机：长周期 Schedule（跨真实 DST 边界 + 跨 daemon 升级窗口）在
       staging 双节点跑一轮昼夜观察（F1.15 dogfooding 随手项）。
-- [ ] 重叠策略旋钮：skip 默认行为不变；fire 允许并行拍；无效值启动红
-      （F1.9，ADR-0017 附录 A.4）。
+- [x] 重叠策略旋钮：skip 默认行为不变；fire 允许并行拍；无效值启动红
+      （F1.9 落地：TestScheduleOverlapPolicyFires / TestParseScheduleOverlap /
+      TestNewEngineOverlapPolicyFailsFast）。
