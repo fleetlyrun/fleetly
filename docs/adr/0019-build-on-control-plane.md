@@ -48,3 +48,53 @@ Source 第三形态（上传产物）的契约、执法、存储与清理裁决�
 - [x] tar 路径逃逸（../ 前缀 / 绝对路径 / symlink / hardlink / 反斜杠 / 重复条目）拒绝（upload 单测 TestExtractTarRejectsUnsafe）
 - [x] 未引用上传过保留窗清扫（含 blob 末行 GC）；被 Revision 引用的上传不清扫（sourceupload 单测 TestSweepUnreferenced；janitor 接线 assembly sweepUploads）
 - [x] freezeguard 三桶分类含 UploadSource；AssertAllRegisteredHavePolicy 通过（authz 注解在位）（guards 全绿 + apitest 夹具 fail-closed 断言）
+
+## 附录 B：受管 zot 自宿与 digest 直存（F1.11，2026-10-02）
+
+构建产物从"本机 daemon 导入"升为"推送受管仓库、worker 从仓库拉"。词汇真源：Registry（CONTEXT.md，OCI 镜像仓库 Capability，拉取来源与推送目标）；行/产物词汇沿用 Build/Digest。
+
+### B.1 受管形态
+
+- **zot 以受管 Workload 形态自宿**（ADR-0004 通用 reconciler，traefik 先例）：`internal/providers/zot` 实现 Registry 端口 + Managed 声明 + MaterialsSource 子面（config/htpasswd 经 Materials.SecretFiles 走 ADR-0014 载体通道，容器内 `/run/secrets/`；值变更=新载体指纹名=service spec 变更=滚动替换，凭证轮换因此自愈）。受管域 ns=`fleetly/system/registry`；**不挂项目网**（zot 无需触达用户后端，可达性=发布端口），与 Edge 挂网语义的差别在 reconciler 内显式分叉。
+- **镜像钉版**（ADR-0021 口径）：`ghcr.io/project-zot/zot-minimal:v2.1.21`（minimal 变体：htpasswd 认证是核心能力非扩展；升级经 Platform 升级序，ADR-0015）。
+- **端口发布 5000**（routing mesh；`Workload.Publish` 声明——发布面仍是受管形态专属不变式）；数据卷 `fleetly-registry-zot`（swarm 具名卷自动建，本地卷）挂 `/var/lib/registry`。
+
+### B.2 地址与网络
+
+- **镜像引用地址 = 环境变量 `FLEETLY_REGISTRY_ADDR`**（含端口，如 `10.124.0.3:5000`；与 `FLEETLY_EDGE_CONFIG_ENDPOINT` 同款 env 注入文化，install.sh 物化进 unit）。地址是平台级配置，**不进 Revision 冻结体**——Revision 冻结 `from_build` 引用与 Build digest，完整引用在投影期组合（换址后重放即用新址，无迁移面）。
+- **HTTP 明文（集群内网）**：全部节点 dockerd 带 `--insecure-registry <addr>`（install.sh 写 daemon drop-in；worker 加入时同款——runbook 责任）。TLS 面随内部 CA 批次另裁（IP 形态地址拿不到 LE 证书是硬约束）。
+- 未配置 `FLEETLY_REGISTRY_ADDR` → Registry Provider 不装配（Edge 同款诚实降级）：镜像直投部署不受影响，build 源部署在 prepare 精确失败（见 B.5①）。
+
+### B.3 凭证面
+
+- **单一平台凭证**：username=`fleetly` + 首启随机密码，落 `<DataRoot>/keys/registry.json`（0o600，与 KEK 同目录文化，备份随数据根）。htpasswd=bcrypt。
+- **分发三面同源**（平台凭证是唯一真源）：①zot 自身（htpasswd 材料经 MaterialsSource）；②构建推送（`BuildRequest.PushCred` → daemon ImagePush 的 X-Registry-Auth）；③worker 拉取（`materialsFor` 对 managed host 直接注入平台凭证 → swarm EncodedRegistryAuth——F0.18 场景 13 真机实证过的通道）。
+- **managed host 上项目级 Secret `registry:<host>` 不参与**：平台凭证覆盖（用户无法也不需要为平台仓库自配凭证）；其余 host 走既有 Secret 查询通道不变。
+- **轮换** = 删凭证文件 + 重启（B.1 载体指纹链自愈滚动）；自动化随配置面批次。
+
+### B.4 digest 直存与引用形态
+
+- **推送后冻结 manifest digest**（`Build.Digest`）；from_build 投影为 `<addr>/<app-id>@sha256:<digest>`；tag 形态 `<addr>/<app-id>:r<seq>` 仅作推送目标与本机缓存命名。`LocalImageRef`/`LocalImageDigestRef` 是唯一命名真源（勿散落副本）。
+- **动机 = docker29 真机坑**（digest-pull 后 digest 不落 tag、digest-pull save/load 丢 tag）：Revision 冻结 digest + 下发 digest 引用，绕开 tag 语义全部坑；重放/回滚天然钉版。
+- **ADR-0022 漂移对照核对**：digest 引用不可变，对照只会更稳；"swarm 不重写 spec.Image"的既有实证结论对 digest 形态同样成立（tag 形态的 CLI 钉版假 drift 面不适用于 digest 引用）。
+
+### B.5 诚实边界
+
+1. **无单节点退化形态**：无 Registry Provider 时 build 源部署精确失败（"managed registry is required"）。理由：N0 本机导入形态的 digest=裸 image ID，真机 swarm 的 service create 根本不可拉取（本就不可用），诚实拒绝优于静默死路。
+2. **数据卷节点本地、无钉住**（traefik acme 同款边界）：zot 重调度到别的节点=镜像丢失；运行中服务不受影响（镜像已在节点上），新部署触发重建自愈。受管 Workload 数据钉住另批。
+3. **镜像 GC 延后**：zot 内镜像只增不清（Revision 引用对账 + 清理面随保留窗批次）。
+4. **单平台构建**（控制面架构）；多 arch 随 F1.14 构建器扩展。
+
+### B.6 推送机制
+
+- **docker-driver（daemon 内嵌 buildkit）不支持 image exporter push**——推送走 **daemon ImagePush**（`docker push` 同路径）：Solve（moby exporter 导入本机，缓存与本地调试保留）→ ImagePush(target, X-Registry-Auth) → digest 从推送流 aux（`containerimage.digest` 面）回填，RepoDigests 兜底。本机导入保留（构建缓存复用 + 推送即 `docker push` 语义）。
+
+### 验收锚（F1.11，证据=测试在树 / runbook 记录）
+
+- [ ] zot Provider：凭证持久（同 dataRoot 二次构造同密码）、htpasswd bcrypt 可验、ManagedWorkloads 钉版形态（image/publish/volume）、Materials 含 config+htpasswd（zot 单测）
+- [ ] build 源 + 无 registry → prepare 精确失败；有 registry → BuildRequest.Target=`<addr>/<app>:r<seq>` 且 PushCred 注入；from_build 投影=`<addr>/<app>@sha256:<digest>`（engine 单测）
+- [ ] managed host 平台凭证注入且项目 Secret `registry:<host>` 不参与；非 managed host 走 Secret 通道不变（engine 单测）
+- [ ] reconcileManaged 双 Provider：zot 域无项目网挂靠、Materials 透传（engine 单测）
+- [ ] dockerbuild 推送凭证编码 + digest 提取（单测）；推送链真机实证随 staging/F1.15（runbook 记录）
+- [ ] install.sh：daemon insecure-registry drop-in + unit 注入 FLEETLY_REGISTRY_ADDR（存在 daemon.json 时不覆盖，打印人工指引——诚实不破坏）
+- [ ] staging 真机：受管 zot 起服（停手工 n0-zot 让位端口）+ 构建推送 + 双节点 digest 拉取（runbook 记录）
