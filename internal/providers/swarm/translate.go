@@ -316,7 +316,10 @@ func addressAliases(addressing []capability.Address) []string {
 	return names
 }
 
-// endpointSpec 翻译宿主端口发布声明（routing mesh 模式；仅受管 Edge 形态使用）。
+// endpointSpec 翻译宿主端口发布声明（routing mesh 模式；受管 Edge/zot 形态
+// 使用）。Mode 显式 vip——服务端对空 Mode 物化为 vip，发送形态与回读形态
+// 一致是 no-op 比对的前提（staging 真机实证：受管 zot 恒不等 → update 风暴
+// → 滚动替换把无钉住载体漂到无卷节点，2026-10-02）。
 func endpointSpec(publish []capability.PortPublish) *swarm.EndpointSpec {
 	if len(publish) == 0 {
 		return nil
@@ -330,7 +333,7 @@ func endpointSpec(publish []capability.PortPublish) *swarm.EndpointSpec {
 			TargetPort:    uint32(p.TargetPort),    //nolint:gosec
 		})
 	}
-	return &swarm.EndpointSpec{Ports: ports}
+	return &swarm.EndpointSpec{Mode: swarm.ResolutionModeVIP, Ports: ports}
 }
 
 // replicasMode 把期望副本数映射为服务模式（负数钳 0——排空态；钳后

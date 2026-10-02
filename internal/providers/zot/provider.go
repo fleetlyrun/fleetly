@@ -13,6 +13,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -50,6 +51,11 @@ const healthTimeout = 3 * time.Second
 type Provider struct {
 	addr string
 	cred capability.RegistryCredential
+
+	// htpasswdOnce/htpasswd：进程内一次铸的 bcrypt 行（见 htpasswdLine——
+	// 随机盐无确定性口子，逐拍新铸 = 载体指纹恒变 = 受管域无限滚替）。
+	htpasswdOnce sync.Once
+	htpasswd     string
 }
 
 // 编译期契约断言：Registry 端口 + 受管形态声明 + 材料子面。
@@ -179,10 +185,13 @@ func (p *Provider) ManagedNamespace() capability.NamespaceRef {
 // htpasswd 经材料通道注入（ManagedMaterials）。
 func (p *Provider) ManagedWorkloads() []capability.Workload {
 	return []capability.Workload{{
-		ID:       "fleetly-registry-zot",
-		Process:  "zot",
-		Image:    Image,
-		Command:  []string{"zot", "serve", "/run/secrets/" + configFile},
+		ID:      "fleetly-registry-zot",
+		Process: "zot",
+		Image:   Image,
+		// 入口用镜像 ENTRYPOINT 的绝对路径形态（zot-minimal 的二进制名是
+		// zot-linux-amd64-minimal，PATH 查找 "zot" 恒败——staging 真机实证
+		// runc "executable file not found" preparing 死循环，2026-10-02）。
+		Command:  []string{"/usr/local/bin/zot-linux-amd64-minimal", "serve", "/run/secrets/" + configFile},
 		Ports:    []capability.WorkloadPort{{Port: publishPort, Protocol: capability.ProtocolHTTP}},
 		Publish:  []capability.PortPublish{{PublishedPort: publishPort, TargetPort: publishPort}},
 		Replicas: 1,
@@ -202,8 +211,10 @@ func (p *Provider) ManagedMaterials() capability.Materials {
 			"address": "0.0.0.0",
 			"port":    fmt.Sprintf("%d", publishPort),
 			"auth": map[string]any{
+				// zot v2.1.21 的 htpasswd 块只收 path（用户名在文件行内；
+				// 多余 user 键 = 解码失败启动即退，staging 真机实证
+				// 2026-10-02）。
 				"htpasswd": map[string]any{
-					"user": credentialUser,
 					"path": "/run/secrets/" + htpasswdFile,
 				},
 			},
@@ -213,19 +224,29 @@ func (p *Provider) ManagedMaterials() capability.Materials {
 	cfgBytes, _ := json.Marshal(cfg)
 	return capability.Materials{SecretFiles: map[string][]byte{
 		configFile:   cfgBytes,
-		htpasswdFile: []byte(htpasswdLine(credentialUser, p.cred.Secret)),
+		htpasswdFile: []byte(p.htpasswdLine(credentialUser, p.cred.Secret)),
 	}}
 }
 
-// htpasswd 铸一行 bcrypt 形态（zot 支持 bcrypt；apache2 htpasswd -B 同款）。
-func htpasswdLine(username, password string) string {
-	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		// bcrypt 对合法输入不失败；到这里即编程错误，空哈希会拒绝一切
-		// 认证——fail loud 比静默可用更安全。
-		return username + ":$invalid$"
-	}
-	return username + ":" + string(h)
+// htpasswdLine 铸一行 bcrypt 形态（zot 支持 bcrypt；apache2 htpasswd -B 同款）。
+// **进程内一次铸**（bcrypt 随机盐无口子可传确定性盐）：每次调用都新铸会让
+// 同密码的载体指纹恒变 → 受管域无限滚替（staging 真机实证 2026-10-02：zot
+// update 风暴把无钉住载体滚到无卷节点 preparing 打转）。进程内缓存 = 收敛环
+// 每拍重放稳定；进程重启新盐一次滚动替换（语义 = 凭证轮换同款，可接受）。
+func (p *Provider) htpasswdLine(username, password string) string {
+	p.htpasswdOnce.Do(func() {
+		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			// bcrypt 对合法输入不失败；到这里即编程错误，空哈希会拒绝一切
+			// 认证——fail loud 比静默可用更安全。
+			p.htpasswd = username + ":$invalid$"
+			return
+		}
+		// golang bcrypt 原生 $2a$ 前缀（F1.11 真机基线形态；$2y$ 生态惯例
+		// 在 zot 的验证面未被证实——staging 真机 401 实测回退，2026-10-02）。
+		p.htpasswd = username + ":" + string(h)
+	})
+	return p.htpasswd
 }
 
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。地址与数据根经环境

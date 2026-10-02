@@ -76,7 +76,9 @@ func TestManagedWorkloadsShape(t *testing.T) {
 	assert.Equal(t, storageRoot, w.Volumes[0].Target)
 	assert.Empty(t, w.Networks, "managed registry must not attach project networks (B.1)")
 	require.Len(t, w.Command, 3)
-	assert.Equal(t, "zot", w.Command[0])
+	// 入口是镜像 ENTRYPOINT 的绝对路径形态（zot-minimal 二进制名带平台
+	// 后缀，PATH 查找 "zot" 恒败——staging 真机实证，2026-10-02）。
+	assert.Equal(t, "/usr/local/bin/zot-linux-amd64-minimal", w.Command[0])
 	assert.True(t, strings.HasSuffix(w.Command[2], configFile), "serve must point at the material-injected config")
 }
 
@@ -98,7 +100,7 @@ func TestManagedMaterials(t *testing.T) {
 	assert.Equal(t, "0.0.0.0", httpc["address"])
 	assert.Equal(t, "5000", httpc["port"])
 	auth := httpc["auth"].(map[string]any)["htpasswd"].(map[string]any)
-	assert.Equal(t, credentialUser, auth["user"])
+	assert.NotContains(t, auth, "user", "zot v2.1.21 htpasswd block rejects extra keys (username lives in the file)")
 	assert.Equal(t, "/run/secrets/"+htpasswdFile, auth["path"])
 	storage := cfg["storage"].(map[string]any)
 	assert.Equal(t, storageRoot, storage["rootDirectory"])

@@ -195,6 +195,13 @@ func canonicalSpecJSON(spec swarm.ServiceSpec) string {
 		delete(uc, "Monitor")
 		delete(uc, "MaxFailureRatio")
 	}
+	// EndpointSpec.Mode：服务端对空物化为 vip（防御性双侧剥离——endpointSpec
+	// 已显式 vip，此处兜住历史行与未来方言差）。
+	if es, ok := m["EndpointSpec"].(map[string]any); ok {
+		if mode, _ := es["Mode"].(string); mode == "" || mode == "vip" {
+			delete(es, "Mode")
+		}
+	}
 	out, err := json.Marshal(m)
 	if err != nil {
 		return ""
