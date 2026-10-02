@@ -46,7 +46,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	cipher, cleanup5, err := NewMaterialCipher(appConfig)
+	registry, cleanup5, err := NewRegistryProvider(app)
 	if err != nil {
 		cleanup4()
 		cleanup3()
@@ -54,8 +54,18 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	engine, err := NewEngine(db, runtime, builder, edge, cipher, app, appConfig)
+	cipher, cleanup6, err := NewMaterialCipher(appConfig)
 	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
+	engine, err := NewEngine(db, runtime, builder, edge, registry, cipher, app, appConfig)
+	if err != nil {
+		cleanup6()
 		cleanup5()
 		cleanup4()
 		cleanup3()
@@ -68,6 +78,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	retentionJanitorService := NewRetentionJanitorService(enforcer, db, appConfig, app)
 	policySet, err := NewPolicySet()
 	if err != nil {
+		cleanup6()
 		cleanup5()
 		cleanup4()
 		cleanup3()
@@ -82,6 +93,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	services := NewAPIServices(db, engine, cipher, runtime, appConfig, app)
 	server, err := NewGRPCServer(app, appConfig, policySet, authenticator, enforcer, rateLimiter, freezeGuard, systemgrpcService, services)
 	if err != nil {
+		cleanup6()
 		cleanup5()
 		cleanup4()
 		cleanup3()
@@ -89,8 +101,9 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	httpServer, cleanup6, err := NewGatewayServer(app, appConfig, services)
+	httpServer, cleanup7, err := NewGatewayServer(app, appConfig, services)
 	if err != nil {
+		cleanup6()
 		cleanup5()
 		cleanup4()
 		cleanup3()
@@ -100,6 +113,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	}
 	edgeConfigServer, err := NewEdgeConfigServer(app, appConfig, edge)
 	if err != nil {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()
@@ -112,6 +126,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	v2 := NewServiceFactories()
 	bootstrap := boot.New(preStartHooks, drainHooks, preStopHooks, postStopHooks, v, v2)
 	return bootstrap, func() {
+		cleanup7()
 		cleanup6()
 		cleanup5()
 		cleanup4()

@@ -44,6 +44,7 @@ var ProviderSet = wire.NewSet(
 	NewRuntimeProvider,
 	NewBuilderProvider,
 	NewEdgeProvider,
+	NewRegistryProvider,
 	NewMaterialCipher,
 	NewEngine,
 	NewIdemEnforcer,
@@ -121,6 +122,26 @@ func NewBuilderProvider() (capability.Builder, func(), error) {
 	}, nil
 }
 
+// NewRegistryProvider 构造 Registry Provider（zot 受管自宿；可选能力——
+// 未配置 FLEETLY_REGISTRY_ADDR 时返回 nil，Registry 面停用：镜像直投部署
+// 不受影响，build 源部署在 prepare 精确失败，ADR-0019 附录 B.2/B.5①）。
+func NewRegistryProvider(app lynx.App) (capability.Registry, func(), error) {
+	providers := capability.RegisteredFactories()
+	if len(providers[capability.KindRegistry]) == 0 {
+		return nil, func() {}, nil
+	}
+	p, err := capability.Build(context.Background(), capability.KindRegistry, "")
+	if err != nil {
+		app.Logger().Warn("registry provider unavailable; build-source deployments disabled", "err", err)
+		return nil, func() {}, nil
+	}
+	reg, ok := p.(capability.Registry)
+	if !ok {
+		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Registry port", p.Describe().Name)
+	}
+	return reg, func() {}, nil
+}
+
 // NewMaterialCipher 打开数据根 KEK（首启生成；ADR-0014 信封加密根）。
 func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) {
 	c, err := material.LoadCipher(cfg.DataRoot())
@@ -138,6 +159,7 @@ func NewEngine(
 	rt capability.Runtime,
 	b capability.Builder,
 	edge capability.Edge,
+	reg capability.Registry,
 	cipher *material.Cipher,
 	app lynx.App,
 	cfg *config.AppConfig,
@@ -147,7 +169,7 @@ func NewEngine(
 		return nil, err
 	}
 	return engine.New(engine.Deps{
-		DB: db, Runtime: rt, Builder: b, Edge: edge, Cipher: cipher, Logger: app.Logger(),
+		DB: db, Runtime: rt, Builder: b, Edge: edge, Registry: reg, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{DataRoot: cfg.DataRoot(), ScheduleOverlap: overlap}), nil
 }
 

@@ -15,7 +15,7 @@ import (
 func TestNewEngineOverlapPolicyFailsFast(t *testing.T) {
 	cfg := config.WithDefaults(&config.AppConfig{})
 	cfg.Engine = &config.Engine{ScheduleOverlapPolicy: "queue"}
-	_, err := NewEngine(nil, nil, nil, nil, nil, nil, cfg)
+	_, err := NewEngine(nil, nil, nil, nil, nil, nil, nil, cfg)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "schedule_overlap_policy")
 	assert.Contains(t, err.Error(), "queue")

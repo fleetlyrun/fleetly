@@ -19,6 +19,7 @@ import (
 	_ "github.com/fleetlyrun/fleetly/internal/providers/dockerbuild"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/traefik"
+	_ "github.com/fleetlyrun/fleetly/internal/providers/zot"
 )
 
 // version/commit/date 由 mise build 的 ldflags 注入。
