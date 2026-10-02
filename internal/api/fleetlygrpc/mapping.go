@@ -118,7 +118,7 @@ func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 		State: string(d.State), Generation: d.Generation, IdempotencyKey: d.IdempotencyKey,
 		CommitSha: d.CommitSHA, SupersededBy: d.SupersededBy, Error: d.Error,
 		ObserveDeadline: d.ObserveDeadline, CreatedAt: d.CreatedAt, UpdatedAt: d.UpdatedAt,
-		FinishedAt: d.FinishedAt,
+		FinishedAt: d.FinishedAt, FirstBootTaskId: engine.FirstBootTaskID(&d),
 	}
 }
 

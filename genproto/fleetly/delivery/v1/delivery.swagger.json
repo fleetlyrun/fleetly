@@ -738,6 +738,10 @@
         },
         "finished_at": {
           "type": "string"
+        },
+        "first_boot_task_id": {
+          "type": "string",
+          "title": "first_boot_task_id 是部署当前锚定的 firstBootJobs 作业 Task（releasing\n态 jobs 子相位非空；无作业或已完成为空。ADR-0030）。"
         }
       },
       "title": "Deployment 是受监督迁移的行形态（状态机值 kebab-case 与存储一致）。"

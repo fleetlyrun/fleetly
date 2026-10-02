@@ -45,6 +45,9 @@ type Deployment struct {
 	CreatedAt       string                 `protobuf:"bytes,12,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt       string                 `protobuf:"bytes,13,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	FinishedAt      string                 `protobuf:"bytes,14,opt,name=finished_at,json=finishedAt,proto3" json:"finished_at,omitempty"`
+	// first_boot_task_id 是部署当前锚定的 firstBootJobs 作业 Task（releasing
+	// 态 jobs 子相位非空；无作业或已完成为空。ADR-0030）。
+	FirstBootTaskId string `protobuf:"bytes,15,opt,name=first_boot_task_id,json=firstBootTaskId,proto3" json:"first_boot_task_id,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -173,6 +176,13 @@ func (x *Deployment) GetUpdatedAt() string {
 func (x *Deployment) GetFinishedAt() string {
 	if x != nil {
 		return x.FinishedAt
+	}
+	return ""
+}
+
+func (x *Deployment) GetFirstBootTaskId() string {
+	if x != nil {
+		return x.FirstBootTaskId
 	}
 	return ""
 }
@@ -2465,7 +2475,7 @@ var File_fleetly_delivery_v1_delivery_proto protoreflect.FileDescriptor
 
 const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
-	"\"fleetly/delivery/v1/delivery.proto\x12\x13fleetly.delivery.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xbc\x03\n" +
+	"\"fleetly/delivery/v1/delivery.proto\x12\x13fleetly.delivery.v1\x1a\x1cgoogle/api/annotations.proto\x1a.protoc-gen-openapiv2/options/annotations.proto\x1a\x16grpcapi/v1/authz.proto\"\xe9\x03\n" +
 	"\n" +
 	"Deployment\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x15\n" +
@@ -2489,7 +2499,8 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\r \x01(\tR\tupdatedAt\x12\x1f\n" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
-	"finishedAt\"\xe1\x02\n" +
+	"finishedAt\x12+\n" +
+	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\"\xe1\x02\n" +
 	"\rDeployRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12!\n" +
