@@ -68,9 +68,10 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		return nil, nil, err
 	}
 	authenticator := NewAuthenticator(db, policySet, app)
+	rateLimiter := NewRateLimiter(db)
 	systemgrpcService := systemgrpc.New(info)
 	services := NewAPIServices(db, engine, cipher, runtime, app)
-	server, err := NewGRPCServer(app, appConfig, policySet, authenticator, enforcer, systemgrpcService, services)
+	server, err := NewGRPCServer(app, appConfig, policySet, authenticator, enforcer, rateLimiter, systemgrpcService, services)
 	if err != nil {
 		cleanup5()
 		cleanup4()

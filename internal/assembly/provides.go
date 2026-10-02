@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/governance"
 	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -43,6 +44,7 @@ var ProviderSet = wire.NewSet(
 	NewMaterialCipher,
 	NewEngine,
 	NewIdemEnforcer,
+	NewRateLimiter,
 	NewAPIServices,
 	NewEngineService,
 	NewRetentionJanitorService,
@@ -148,6 +150,13 @@ func NewAPIServices(db *state.DB, e *engine.Engine, cipher *material.Cipher, rt 
 // NewIdemEnforcer 构造通用幂等执法器（ADR-0024：拦截器 + janitor sweep 面）。
 func NewIdemEnforcer(db *state.DB, app lynx.App) *idem.Enforcer {
 	return idem.NewEnforcer(db, app.Logger())
+}
+
+// NewRateLimiter 构造创建速率限制器（ADR-0017 附录 A.2 缺省：60s 固定窗 /
+// 每 Token 120 次，内存计数——控制面单进程）。配置面接入后从 AppConfig
+// 透传窗与预算。
+func NewRateLimiter(db *state.DB) *governance.RateLimiter {
+	return governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
 }
 
 // retentionSweepInterval 是保留窗清扫节拍（幂等记录 24h/认领 90s、事件

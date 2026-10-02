@@ -25,6 +25,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/buildinfo"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/governance"
 	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -112,7 +113,8 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	}
 	authenticator := authn.NewAuthenticator(db, policySet, assembly.ScopeResources(), log)
 	enforcer := idem.NewEnforcer(db, log)
-	unary, stream, err := assembly.NewInterceptors(policySet, authenticator, enforcer)
+	limiter := governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
+	unary, stream, err := assembly.NewInterceptors(policySet, authenticator, enforcer, limiter)
 	if err != nil {
 		t.Fatalf("apitest: interceptors: %v", err)
 	}

@@ -149,7 +149,7 @@ func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.C
 		if credErr != nil {
 			id = nil
 		}
-		return withIdentity(ctx, id), nil
+		return WithIdentity(ctx, id), nil
 	case authz.AccessServer:
 		if credErr != nil {
 			return nil, credErr
@@ -171,7 +171,7 @@ func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.C
 				WithContext("required_scope", rule.Resource+":"+string(rule.Op))
 		}
 		a.touchLastUsed(id)
-		return withIdentity(ctx, id), nil
+		return WithIdentity(ctx, id), nil
 	default:
 		// END_USER/PERMISSION/SYSTEM 档 v1 未启用：fail-closed 拒。
 		return nil, apperr.New("E_FORBIDDEN", "this method is not available in the current release").
@@ -278,7 +278,9 @@ func ClientSourceFromContext(ctx context.Context) string {
 	return "api"
 }
 
-func withIdentity(ctx context.Context, id *Identity) context.Context {
+// WithIdentity 注入身份（请求路径由 guard 内部使用；导出面供拦截器链
+// 下游与测试夹具注入——WithAuditOverride 同族）。
+func WithIdentity(ctx context.Context, id *Identity) context.Context {
 	if id == nil {
 		return ctx
 	}

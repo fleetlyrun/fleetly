@@ -8,9 +8,12 @@ package apperr
 
 import (
 	"fmt"
+	"time"
 
+	"google.golang.org/genproto/googleapis/rpc/errdetails"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/durationpb"
 
 	sharedv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/shared/v1"
 	"github.com/fleetlyrun/fleetly/internal/model/errcode"
@@ -23,6 +26,7 @@ type Error struct {
 	suggestion string // 空串 = 用注册表默认
 	context    []kv   // 保序键值对（含 error_id 等运行时锚）
 	cause      error
+	retryAfter *time.Duration // 非 nil 时 status 附加 RetryInfo detail（REST 429 的 Retry-After 源）
 }
 
 type kv struct{ Key, Value string }
@@ -52,6 +56,14 @@ func (e *Error) WithSuggestion(s string) *Error {
 // WithCause 包装底层错误（errors.Is/As 链保持连通）。
 func (e *Error) WithCause(cause error) *Error {
 	e.cause = cause
+	return e
+}
+
+// WithRetryAfter 附加 gRPC RetryInfo detail（链式）。REST 面由 gateway 的
+// 429 出口提取为 Retry-After 头（向上取整至少 1s）；机器面读信封
+// retry_after_seconds 上下文。
+func (e *Error) WithRetryAfter(d time.Duration) *Error {
+	e.retryAfter = &d
 	return e
 }
 
@@ -88,11 +100,19 @@ func (e *Error) GRPCStatus() *status.Status {
 }
 
 // ToGRPCStatus 构造携带信封 detail 的完整 status；detail 序列化失败
-// （理论上不可达：消息均为简单标量）时退化为纯 status。
+// （理论上不可达：消息均为简单标量）时退化为纯 status。retryAfter 非空时
+// 追加 RetryInfo detail（gateway 429 出口的 Retry-After 源）。
 func (e *Error) ToGRPCStatus() *status.Status {
 	st := status.New(e.code.GRPC, e.Error())
 	if withDetail, err := st.WithDetails(e.Envelope("")); err == nil {
-		return withDetail
+		st = withDetail
+	}
+	if e.retryAfter != nil {
+		if withDetail, err := st.WithDetails(&errdetails.RetryInfo{
+			RetryDelay: durationpb.New(*e.retryAfter),
+		}); err == nil {
+			return withDetail
+		}
 	}
 	return st
 }

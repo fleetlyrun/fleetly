@@ -65,7 +65,14 @@ var builtins = []Code{
 		ID:         "E_QUOTA_EXCEEDED",
 		Summary:    "A project-level quota has been reached.",
 		Suggestion: "Remove unused entries of the quoted resource, or split the workload across projects.",
-		Source:     "internal/api/fleetlygrpc/structure.go PutConfig (F0.17 quota)",
+		Source:     "internal/api/fleetlygrpc/acceptance.go taskQuota/appQuota; structure.go configQuota (F0.17) / PutConfig",
+		GRPC:       codes.ResourceExhausted,
+	},
+	{
+		ID:         "E_RATE_LIMITED",
+		Summary:    "The token has exhausted its create-request budget for the current rate window.",
+		Suggestion: "Retry after retry_after_seconds (REST also carries Retry-After). Idempotent replays do not consume budget: reuse the same Idempotency-Key to safely re-fetch a completed response.",
+		Source:     "internal/governance/ratelimit.go (ADR-0017 appendix A.2: per-token fixed window, in-memory, single-process control plane)",
 		GRPC:       codes.ResourceExhausted,
 	},
 	{

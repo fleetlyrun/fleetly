@@ -26,6 +26,7 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/governance"
 	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/state/statertest"
 )
@@ -55,7 +56,8 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 	require.NoError(t, err)
 	unary, stream, err := NewInterceptors(policySet,
 		authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
-		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)))
+		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)),
+		governance.NewRateLimiter(db.Clock(), 0, 0))
 	require.NoError(t, err)
 	require.NotEmpty(t, unary)
 	require.NotEmpty(t, stream)
