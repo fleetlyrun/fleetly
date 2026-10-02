@@ -64,7 +64,7 @@ func newDatabaseFixture(t *testing.T, engine, connectURL string) (*Engine, *fake
 // 收敛：Ensure 到 Database 域 ns + 模板钉版投影 + 凭证材料 + 卷挂载 +
 // db-<id> 寻址。
 func TestDatabaseReconcileConverges(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly"
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, _ := newDatabaseFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -114,7 +114,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 // gen 重启安全语义：指纹未变多 tick 同号重放（载体不滚）；网集变化推进
 // gen 一次后在新值稳定（managed_edge_test 钉死语义的用户域版）。
 func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly"
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, _ := newDatabaseFixture(t, "postgres", url)
 	ctx := context.Background()
 
@@ -163,7 +163,7 @@ func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 
 // pgvector 模板：上游镜像 + 首启建扩展的 init 脚本命令。
 func TestDatabasePgvectorTemplateRenders(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly"
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, _ := newDatabaseFixture(t, "pgvector", url)
 	ctx := context.Background()
 
@@ -194,7 +194,7 @@ func TestDatabaseCredentialMissingBlocksEnsure(t *testing.T) {
 
 // 收口：Runtime.Remove 到 Database 域 + 归属/期望/观测缓存清理。
 func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
-	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly"
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, _ := newDatabaseFixture(t, "postgres", url)
 	ctx := context.Background()
 	e.databaseStep(ctx)
