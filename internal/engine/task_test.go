@@ -176,6 +176,38 @@ func TestTaskResidentPoolReplenish(t *testing.T) {
 	assert.Equal(t, task.StateActive, getTaskRow(t, e, taskID).State)
 }
 
+// TestTaskResidentPoolScaleDownDrains（staging 真机实证缺口，2026-10-02）：
+// ScaleTask 缩容（desired 4→2）→ drive 排空过量（stopping/platform_drained，
+// 停新保老）→ 存量收敛到 2。
+func TestTaskResidentPoolScaleDownDrains(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK00000000000000009"
+	createTaskRow(t, e, taskID, "dispatcher", task.FormResident, 4, 0, "dispatcher")
+
+	e.taskStep(ctx)
+	assert.Len(t, taskRuns(t, e, taskID), 4, "pool replenishes to 4")
+
+	_, err := e.ScaleTask(ctx, taskID, 2)
+	require.NoError(t, err)
+
+	e.taskStep(ctx) // 过量排空：4 活 → 2 停 + 2 活
+	all := taskRuns(t, e, taskID)
+	stopped, live := 0, 0
+	for _, r := range all {
+		switch {
+		case r.State == run.StateStopping:
+			assert.Equal(t, run.ReasonPlatformDrained, r.StopReason, "scale-down drain stamps platform_drained")
+			stopped++
+		case r.State.Active():
+			live++
+		}
+	}
+	assert.Equal(t, 2, stopped, "excess runs drain")
+	assert.Equal(t, 2, live, "warm runs survive scale-down")
+	assert.Equal(t, task.StateActive, getTaskRow(t, e, taskID).State, "scale-down keeps the pool active")
+}
+
 // TestTaskLeaseExpiryDrainAndRevive（F1.6）：lease 超宽限 → 排空（runs
 // stopping/lease_expired）→ drained → RenewTask 复活 → 补足恢复。
 func TestTaskLeaseExpiryDrainAndRevive(t *testing.T) {

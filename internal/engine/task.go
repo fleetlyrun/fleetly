@@ -203,6 +203,20 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
 				live++
 			}
 		}
+		// 过量排空（ScaleTask 缩容的收敛半边，staging 真机实证缺口
+		// 2026-10-02：此前只有补足——缩容后池维持过量直到停止/租约过期）：
+		// 停新保老（列表新→旧，头部即最新；长者已预热）。原因 =
+		// platform_drained（平台排空，ADR-0012 七枚举）。
+		for i := 0; i < len(runs) && live > int(want); i++ {
+			if !runs[i].State.Active() {
+				continue
+			}
+			if err := e.stopRunRow(ctx, &runs[i], run.ReasonPlatformDrained, now); err != nil {
+				e.log.Error("task drive: excess drain", "run", runs[i].ID, "err", err)
+				break
+			}
+			live--
+		}
 		created := false
 		for n := live; n < int(want) && n-live < e.opts.TaskReplenishBurst; n++ {
 			if err := e.createRun(ctx, t, spec, now); err != nil {
