@@ -29,6 +29,7 @@ type AppConfig struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Server        *Server                `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
 	Data          *Data                  `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	Engine        *Engine                `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -73,6 +74,13 @@ func (x *AppConfig) GetServer() *Server {
 func (x *AppConfig) GetData() *Data {
 	if x != nil {
 		return x.Data
+	}
+	return nil
+}
+
+func (x *AppConfig) GetEngine() *Engine {
+	if x != nil {
+		return x.Engine
 	}
 	return nil
 }
@@ -265,14 +273,63 @@ func (x *Data) GetRoot() string {
 	return ""
 }
 
+type Engine struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// schedule_overlap_policy 是 Schedule 重叠策略（ADR-0018 A.3 修订 /
+	// ADR-0017 附录 A.4）："skip"（默认——上一拍 Run 未终态时跳过本拍）或
+	// "fire"（照常拍，允许并行拍）；空值回退 "skip"；非法值启动失败
+	// （fail-fast，不静默回退）。env 形态 FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY。
+	ScheduleOverlapPolicy string `protobuf:"bytes,1,opt,name=schedule_overlap_policy,json=scheduleOverlapPolicy,proto3" json:"schedule_overlap_policy,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *Engine) Reset() {
+	*x = Engine{}
+	mi := &file_config_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Engine) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Engine) ProtoMessage() {}
+
+func (x *Engine) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Engine.ProtoReflect.Descriptor instead.
+func (*Engine) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Engine) GetScheduleOverlapPolicy() string {
+	if x != nil {
+		return x.ScheduleOverlapPolicy
+	}
+	return ""
+}
+
 var File_config_proto protoreflect.FileDescriptor
 
 const file_config_proto_rawDesc = "" +
 	"\n" +
-	"\fconfig.proto\x12\x11fleetly.config.v1\"k\n" +
+	"\fconfig.proto\x12\x11fleetly.config.v1\"\x9e\x01\n" +
 	"\tAppConfig\x121\n" +
 	"\x06server\x18\x01 \x01(\v2\x19.fleetly.config.v1.ServerR\x06server\x12+\n" +
-	"\x04data\x18\x02 \x01(\v2\x17.fleetly.config.v1.DataR\x04data\"b\n" +
+	"\x04data\x18\x02 \x01(\v2\x17.fleetly.config.v1.DataR\x04data\x121\n" +
+	"\x06engine\x18\x03 \x01(\v2\x19.fleetly.config.v1.EngineR\x06engine\"b\n" +
 	"\x06Server\x12+\n" +
 	"\x04grpc\x18\x01 \x01(\v2\x17.fleetly.config.v1.GRPCR\x04grpc\x12+\n" +
 	"\x04http\x18\x02 \x01(\v2\x17.fleetly.config.v1.HTTPR\x04http\"\x1a\n" +
@@ -281,7 +338,9 @@ const file_config_proto_rawDesc = "" +
 	"\x04HTTP\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04Data\x12\x12\n" +
-	"\x04root\x18\x01 \x01(\tR\x04rootB/Z-github.com/fleetlyrun/fleetly/internal/configb\x06proto3"
+	"\x04root\x18\x01 \x01(\tR\x04root\"@\n" +
+	"\x06Engine\x126\n" +
+	"\x17schedule_overlap_policy\x18\x01 \x01(\tR\x15scheduleOverlapPolicyB/Z-github.com/fleetlyrun/fleetly/internal/configb\x06proto3"
 
 var (
 	file_config_proto_rawDescOnce sync.Once
@@ -295,24 +354,26 @@ func file_config_proto_rawDescGZIP() []byte {
 	return file_config_proto_rawDescData
 }
 
-var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_config_proto_goTypes = []any{
 	(*AppConfig)(nil), // 0: fleetly.config.v1.AppConfig
 	(*Server)(nil),    // 1: fleetly.config.v1.Server
 	(*GRPC)(nil),      // 2: fleetly.config.v1.GRPC
 	(*HTTP)(nil),      // 3: fleetly.config.v1.HTTP
 	(*Data)(nil),      // 4: fleetly.config.v1.Data
+	(*Engine)(nil),    // 5: fleetly.config.v1.Engine
 }
 var file_config_proto_depIdxs = []int32{
 	1, // 0: fleetly.config.v1.AppConfig.server:type_name -> fleetly.config.v1.Server
 	4, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
-	2, // 2: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
-	3, // 3: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
-	4, // [4:4] is the sub-list for method output_type
-	4, // [4:4] is the sub-list for method input_type
-	4, // [4:4] is the sub-list for extension type_name
-	4, // [4:4] is the sub-list for extension extendee
-	0, // [0:4] is the sub-list for field type_name
+	5, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
+	2, // 3: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
+	3, // 4: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
+	5, // [5:5] is the sub-list for method output_type
+	5, // [5:5] is the sub-list for method input_type
+	5, // [5:5] is the sub-list for extension type_name
+	5, // [5:5] is the sub-list for extension extendee
+	0, // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_config_proto_init() }
@@ -326,7 +387,7 @@ func file_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_proto_rawDesc), len(file_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

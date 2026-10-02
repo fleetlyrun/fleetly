@@ -11,10 +11,11 @@ package engine
 //   - 错过窗口补跑一拍：重启/停机跨过 next_fire_at 后，恢复的第一拍把错过
 //     的窗口补跑一次（sched.Next(now) 从当前时刻续算——不按过期拍点追补
 //     多次，也不静默跳过；一拍最多一个 Run）；
-//   - 重叠 skip：上一拍铸出的 Task 仍有未终态 Run（pending/running/
-//     stopping）时跳过本拍（schedule.skipped 事件携带 reason=overlap），
-//     next_fire_at 照常推进。skip 策略固定、不做配置面（torchwood 规模的
-//     实证需求出现前不预支旋钮——F1.9 治理批再议）。
+//   - 重叠 skip（默认）：上一拍铸出的 Task 仍有未终态 Run（pending/
+//     running/stopping）时跳过本拍（schedule.skipped 事件携带
+//     reason=overlap），next_fire_at 照常推进。策略经
+//     FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY 可配置（skip|fire——fire
+//     照常拍允许并行拍；ADR-0018 A.3 修订 / ADR-0017 附录 A.4）。
 
 import (
 	"context"
@@ -82,7 +83,7 @@ func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now tim
 		e.log.Error("schedule fire: overlap check", "schedule", s.ID, "err", err)
 		return
 	}
-	if overlapping {
+	if overlapping && e.opts.ScheduleOverlap != ScheduleOverlapFire {
 		e.skipSchedule(ctx, s, next, scheduleSkipReasonOverlap)
 		return
 	}

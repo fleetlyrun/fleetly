@@ -187,6 +187,37 @@ func TestTriggerScheduleOverlapRejected(t *testing.T) {
 	assert.ErrorIs(t, err, ErrScheduleOverlapping)
 }
 
+// TestScheduleOverlapPolicyFires（ADR-0017 附录 A.4）：fire 策略下重叠时
+// 照常拍（允许并行拍）；手动触发在重叠下恒诚实拒绝（旋钮只改到期拍）。
+func TestScheduleOverlapPolicyFires(t *testing.T) {
+	e, _, clock := newTestEngineOpts(t, Options{ScheduleOverlap: ScheduleOverlapFire})
+	ctx := context.Background()
+	sid := "01JD0SCHD00000000000000008"
+	createScheduleRow(t, e, sid, "", "0 * * * *", "UTC", "2026-01-01T00:00:00Z")
+
+	e.scheduleStep(ctx) // 第一拍
+	first := getScheduleRow(t, e, sid).LastTaskID
+	require.NotEmpty(t, first)
+	e.taskStep(ctx)
+	require.Len(t, taskRuns(t, e, first), 1)
+
+	// 下一拍到期，上一拍 Run 仍活 → fire 策略照常拍（并行拍）。
+	clock.Advance(time.Hour)
+	e.scheduleStep(ctx)
+
+	s := getScheduleRow(t, e, sid)
+	assert.NotEqual(t, first, s.LastTaskID, "fire policy must spawn despite the overlap")
+	assert.Equal(t, "2026-01-01T02:00:00Z", s.NextFireAt)
+	assert.NotContains(t, eventNames(t, e, sid), "schedule.skipped")
+
+	// 手动触发在重叠下恒拒绝（显式动作给显式反馈）——重叠真源是上一拍
+	// Task 的未终态 Run，先驱动第二拍补足 Run 再断言。
+	e.taskStep(ctx)
+	require.Len(t, taskRuns(t, e, s.LastTaskID), 1)
+	_, err := e.TriggerSchedule(ctx, sid)
+	assert.ErrorIs(t, err, ErrScheduleOverlapping)
+}
+
 // TestScheduleQuotaSkips（ADR-0017 附录 A.1）：项目配额满时到期拍 → skip
 // （事件 + 节奏照常推进，不铸 Task）；手动拍诚实拒绝。
 func TestScheduleQuotaSkips(t *testing.T) {
@@ -207,6 +238,29 @@ func TestScheduleQuotaSkips(t *testing.T) {
 	// 手动拍 → 诚实拒绝（API 面 E_QUOTA_EXCEEDED）。
 	_, err := e.TriggerSchedule(ctx, sid)
 	assert.ErrorIs(t, err, ErrTaskQuota)
+}
+
+// TestParseScheduleOverlap：值域 fail-fast（空值回退 skip，非法值报错）。
+func TestParseScheduleOverlap(t *testing.T) {
+	for _, tc := range []struct {
+		in      string
+		want    string
+		wantErr bool
+	}{
+		{"", ScheduleOverlapSkip, false},
+		{"skip", ScheduleOverlapSkip, false},
+		{"fire", ScheduleOverlapFire, false},
+		{"queue", "", true},
+		{"SKIP", "", true},
+	} {
+		got, err := ParseScheduleOverlap(tc.in)
+		if tc.wantErr {
+			assert.Error(t, err, "input %q", tc.in)
+			continue
+		}
+		assert.NoError(t, err)
+		assert.Equal(t, tc.want, got)
+	}
 }
 
 // TestScheduleTerminalNoFire：tombstone 行不再拍（ListDriving 不拾取）；

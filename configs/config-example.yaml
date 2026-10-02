@@ -8,3 +8,8 @@ server:
     addr: ":9081"
 data:
   root: "./data"
+engine:
+  # Schedule 重叠策略（ADR-0018 A.3 修订 / ADR-0017 附录 A.4）：
+  # skip（默认）= 上一拍 Run 未终态时跳过本拍；fire = 照常拍（允许并行拍）。
+  # 非法值启动失败（fail-fast）。env：FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY。
+  schedule_overlap_policy: "skip"

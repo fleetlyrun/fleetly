@@ -10,6 +10,7 @@ option go_package = "github.com/fleetlyrun/fleetly/internal/config";
 message AppConfig {
   Server server = 1;
   Data data = 2;
+  Engine engine = 3;
 }
 
 message Server {
@@ -31,4 +32,12 @@ message Data {
   // 数据根：SQLite、密封密钥等平台私有状态的落盘目录；
   // 空值回退默认 "./data"。
   string root = 1;
+}
+
+message Engine {
+  // schedule_overlap_policy 是 Schedule 重叠策略（ADR-0018 A.3 修订 /
+  // ADR-0017 附录 A.4）："skip"（默认——上一拍 Run 未终态时跳过本拍）或
+  // "fire"（照常拍，允许并行拍）；空值回退 "skip"；非法值启动失败
+  //（fail-fast，不静默回退）。env 形态 FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY。
+  string schedule_overlap_policy = 1;
 }

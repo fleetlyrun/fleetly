@@ -30,9 +30,15 @@ const (
 // handleObservation 直注——不依赖真实节拍）。
 func newTestEngine(t *testing.T) (*Engine, *fakeRuntime, *statetest.FakeClock) {
 	t.Helper()
+	return newTestEngineOpts(t, Options{})
+}
+
+// newTestEngineOpts 同 newTestEngine，但注入 Options（重叠策略旋钮等）。
+func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *statetest.FakeClock) {
+	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Logger: discardLogger()}, Options{})
+	e := New(Deps{DB: db, Runtime: rt, Logger: discardLogger()}, opts)
 	t.Cleanup(func() { _ = e.Stop(context.Background()) })
 
 	ctx := context.Background()

@@ -54,7 +54,15 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	engine := NewEngine(db, runtime, builder, edge, cipher, app, appConfig)
+	engine, err := NewEngine(db, runtime, builder, edge, cipher, app, appConfig)
+	if err != nil {
+		cleanup5()
+		cleanup4()
+		cleanup3()
+		cleanup2()
+		cleanup()
+		return nil, nil, err
+	}
 	service := NewEngineService(engine)
 	enforcer := NewIdemEnforcer(db, app)
 	retentionJanitorService := NewRetentionJanitorService(enforcer, db, app)

@@ -47,8 +47,9 @@ Task**，此后补足 / 观测 / TTL / 终态镜像全走 F1.5 既有链——Sc
 策略默认 skip（最少惊异选项）；F1.9 治理批起开放旋钮
 `FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY`（AppConfig.Engine.
 schedule_overlap_policy）：`skip` | `fire`（重叠时照常拍，允许并行拍），
-无效值启动失败（裁决全文见 ADR-0017 附录 A.4）。第三选项（queue/等待）
-仍不预支——torchwood 规模实证后再议。
+无效值启动失败（裁决全文见 ADR-0017 附录 A.4）。旋钮只改**到期拍**行为：
+手动触发恒诚实拒绝（显式动作给显式反馈——先停上一拍再触发）。第三选项
+（queue/等待）仍不预支——torchwood 规模实证后再议。
 
 ### A.4 派生裁决
 

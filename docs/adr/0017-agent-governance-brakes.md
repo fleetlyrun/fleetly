@@ -92,8 +92,9 @@ ADR-0018 附录 A.3。
 重叠策略从固定 skip 改为可配置：`FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY`
 （AppConfig.Engine.schedule_overlap_policy）取 `skip`（默认，行为不变）或
 `fire`（重叠时照常拍，允许并行拍）。无效值启动失败（fail-fast，不静默
-回退 skip）。第三选项（queue/等待）仍不预支——torchwood 规模实证（F1.15）
-后再议。
+回退 skip）。旋钮只改**到期拍**行为：手动触发（TriggerSchedule）在重叠下
+恒诚实拒绝（显式动作给显式反馈）。第三选项（queue/等待）仍不预支——
+torchwood 规模实证（F1.15）后再议。
 
 ### 验收锚（F1.9，2026-10-02 落地批次勾验）
 

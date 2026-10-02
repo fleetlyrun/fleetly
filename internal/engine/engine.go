@@ -85,6 +85,11 @@ type Options struct {
 	// TaskOwnerRevokedRunToTTL 是属主吊销排空模式（ADR-0017 默认宽限排空
 	// = false；true = 跑完 TTL：只停补足不停止存量 Run）。
 	TaskOwnerRevokedRunToTTL bool
+	// ScheduleOverlap 是 Schedule 重叠策略（ADR-0018 A.3 修订 / ADR-0017
+	// 附录 A.4）：skip（默认——上一拍 Run 未终态时跳过本拍）或 fire（照常
+	// 拍，允许并行拍）。值域由 ParseScheduleOverlap 把守（装配解析配置后
+	// 注入；空值回退 skip）。
+	ScheduleOverlap string
 	// TaskReplenishBurst 是单拍补足创建上限（默认 8；防一拍海量创建打爆
 	// swarm API——决策 7 压测锚的稳态面）。
 	TaskReplenishBurst int
@@ -131,6 +136,33 @@ func (o *Options) fill() {
 	}
 	if o.TaskReplenishBurst <= 0 {
 		o.TaskReplenishBurst = 8
+	}
+	if o.ScheduleOverlap == "" {
+		o.ScheduleOverlap = ScheduleOverlapSkip
+	}
+}
+
+// Schedule 重叠策略值（ADR-0017 附录 A.4 修订 ADR-0018 A.3）。
+const (
+	// ScheduleOverlapSkip：上一拍铸出的 Task 仍有未终态 Run 时跳过本拍
+	//（schedule.skipped reason=overlap）——最少惊异默认。
+	ScheduleOverlapSkip = "skip"
+	// ScheduleOverlapFire：重叠时照常拍，允许并行拍（torchwood 类并行
+	// 派发的实证形态）。
+	ScheduleOverlapFire = "fire"
+)
+
+// ParseScheduleOverlap 归一配置值：空值/合法值直通，非法值报错
+// （fail-fast——配置错误不得静默回退成 skip）。
+func ParseScheduleOverlap(s string) (string, error) {
+	switch s {
+	case "", ScheduleOverlapSkip:
+		return ScheduleOverlapSkip, nil
+	case ScheduleOverlapFire:
+		return ScheduleOverlapFire, nil
+	default:
+		return "", fmt.Errorf("engine: schedule_overlap_policy must be %q or %q, got %q",
+			ScheduleOverlapSkip, ScheduleOverlapFire, s)
 	}
 }
 

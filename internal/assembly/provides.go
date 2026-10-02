@@ -118,8 +118,6 @@ func NewBuilderProvider() (capability.Builder, func(), error) {
 	}, nil
 }
 
-// NewEngine 构造部署收敛引擎（参数当前取默认；配置面接入后从 AppConfig
-// 透传 queue 容量/观察窗/构建并发）。
 // NewMaterialCipher 打开数据根 KEK（首启生成；ADR-0014 信封加密根）。
 func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) {
 	c, err := material.LoadCipher(cfg.DataRoot())
@@ -129,6 +127,9 @@ func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) 
 	return c, func() {}, nil
 }
 
+// NewEngine 构造部署收敛引擎（重叠策略旋钮从 AppConfig 透传并 fail-fast
+// 校验——ADR-0017 附录 A.4；其余参数当前取默认，配置面接入后从 AppConfig
+// 继续透传 queue 容量/观察窗/构建并发）。
 func NewEngine(
 	db *state.DB,
 	rt capability.Runtime,
@@ -137,10 +138,14 @@ func NewEngine(
 	cipher *material.Cipher,
 	app lynx.App,
 	cfg *config.AppConfig,
-) *engine.Engine {
+) (*engine.Engine, error) {
+	overlap, err := engine.ParseScheduleOverlap(cfg.ScheduleOverlapPolicy())
+	if err != nil {
+		return nil, err
+	}
 	return engine.New(engine.Deps{
 		DB: db, Runtime: rt, Builder: b, Edge: edge, Cipher: cipher, Logger: app.Logger(),
-	}, engine.Options{DataRoot: cfg.DataRoot()})
+	}, engine.Options{DataRoot: cfg.DataRoot(), ScheduleOverlap: overlap}), nil
 }
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入）。

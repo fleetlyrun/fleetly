@@ -11,6 +11,10 @@ const (
 	// DefaultDataRoot 平台私有状态（SQLite/密封密钥）落盘目录；容器形态
 	// 经 FLEETLY_DATA_ROOT 覆盖为 bind 卷（F0.1 安装链）。
 	DefaultDataRoot = "./data"
+	// DefaultScheduleOverlapPolicy 是 Schedule 重叠策略缺省（ADR-0018 A.3
+	// 修订：skip = 上一拍 Run 未终态时跳过本拍；fire = 照常拍）。值域
+	// 执法在 engine.ParseScheduleOverlap（fail-fast）。
+	DefaultScheduleOverlapPolicy = "skip"
 )
 
 // WithDefaults 就地填充空缺省字段，返回同一实例（链式）。
@@ -39,6 +43,12 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	if c.Data.GetRoot() == "" {
 		c.Data.Root = DefaultDataRoot
 	}
+	if c.GetEngine() == nil {
+		c.Engine = &Engine{}
+	}
+	if c.GetEngine().GetScheduleOverlapPolicy() == "" {
+		c.Engine.ScheduleOverlapPolicy = DefaultScheduleOverlapPolicy
+	}
 	return c
 }
 
@@ -62,4 +72,13 @@ func (c *AppConfig) DataRoot() string {
 		return root
 	}
 	return DefaultDataRoot
+}
+
+// ScheduleOverlapPolicy 是带缺省的 Schedule 重叠策略访问器（容忍 nil 链；
+// 值域执法在 engine.ParseScheduleOverlap）。
+func (c *AppConfig) ScheduleOverlapPolicy() string {
+	if p := c.GetEngine().GetScheduleOverlapPolicy(); p != "" {
+		return p
+	}
+	return DefaultScheduleOverlapPolicy
 }
