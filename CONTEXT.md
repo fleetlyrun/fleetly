@@ -108,6 +108,10 @@ _Avoid_: throttle(另指限流), gate
 受理位——创建型/删除型写请求的受理判定面：父资源存活、配额、删除守卫、归属校验；api 层可枚举 module。与 Admission 分立：Acceptance 答"收不收"，Admission 答"怎么排"（ADR-0024）。
 _Avoid_: gate, middleware(泛称), validation layer
 
+**Change Freeze**:
+变更冻结窗——按资源所属 Team 封禁变更型动词的治理刹车：全局或 per-Team、带原因拒绝、停止族豁免（ADR-0017）。
+_Avoid_: maintenance window, block, lock
+
 ### 运行时与中间表示
 
 **Spec**:

@@ -36,7 +36,7 @@ Task**，此后补足 / 观测 / TTL / 终态镜像全走 F1.5 既有链——Sc
 要丢弃可停掉补跑 Run）。重启安全的机制基础：拍点状态只有 `next_fire_at`
 绝对时刻一行，无进程内计时器状态可丢。
 
-### A.3 重叠：skip（固定，暂无旋钮）
+### A.3 重叠：skip（默认，可配置）
 
 到期时上一拍铸出的 Task 仍有未终态 Run（pending/running/stopping——
 **Run 状态是真源**，Task 终态镜像随驱动环有一拍延迟）→ 跳过本拍：落
@@ -44,8 +44,11 @@ Task**，此后补足 / 观测 / TTL / 终态镜像全走 F1.5 既有链——Sc
 手动触发（TriggerSchedule）同判定下诚实拒绝（E_CONFLICT，先停上一拍或
 等其收口），且**不移动** `next_fire_at`——cron 节奏不被手动拍打乱。
 
-策略固定、不做配置面：skip/queue/并行三选一是 torchwood 规模实证后才
-值得付的旋钮（F1.9 治理批再议），N1 默认 skip 是最少惊异选项。
+策略默认 skip（最少惊异选项）；F1.9 治理批起开放旋钮
+`FLEETLY_ENGINE_SCHEDULE_OVERLAP_POLICY`（AppConfig.Engine.
+schedule_overlap_policy）：`skip` | `fire`（重叠时照常拍，允许并行拍），
+无效值启动失败（裁决全文见 ADR-0017 附录 A.4）。第三选项（queue/等待）
+仍不预支——torchwood 规模实证后再议。
 
 ### A.4 派生裁决
 
@@ -74,3 +77,5 @@ Task**，此后补足 / 观测 / TTL / 终态镜像全走 F1.5 既有链——Sc
       eventcode + schemareg + golden。
 - [ ] 真机：长周期 Schedule（跨真实 DST 边界 + 跨 daemon 升级窗口）在
       staging 双节点跑一轮昼夜观察（F1.15 dogfooding 随手项）。
+- [ ] 重叠策略旋钮：skip 默认行为不变；fire 允许并行拍；无效值启动红
+      （F1.9，ADR-0017 附录 A.4）。

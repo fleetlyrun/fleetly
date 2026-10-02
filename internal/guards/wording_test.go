@@ -125,6 +125,10 @@ var skippedTokens = map[string]string{
 	"deploy":   "仅禁名词单用；动词义（deploy the app）合法",
 	"throttle": "另指限流（F1.9 创建速率）合法；Admission 同义词语境禁",
 	"gate":     "健康门（L1 门）语境合法；Admission 同义词语境人工评审",
+	// Change Freeze 词条（ADR-0017 附录 A 入册，F1.9）。
+	"maintenance window": "运维通用短语；Change Freeze 同义词语境人工评审",
+	"block":              "通用词（blocker/阻塞义、FakeRuntime removeBlock 标识符）合法；tsuru Block 同义词语境禁",
+	"lock":               "Go sync 锁语境（mu.Lock）合法；Change Freeze 同义词语境人工评审",
 	// ---- 运行时 ----
 	"manifest":        "通用词；Spec 同义词语境人工评审",
 	"config":          "Config 是 fleetly 冻结实体 + 配置通用词；泛指义合法",
