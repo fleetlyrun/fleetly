@@ -120,6 +120,39 @@ func TestTaskListAndOwnerScan(t *testing.T) {
 	assert.Len(t, driving, 2)
 }
 
+// TestTaskStatsByProject（ADR-0017 附录 A.1 配额口径）：非终态行计数与
+// desired_concurrency 之和；终态行不占位；按 Project 隔离。
+func TestTaskStatsByProject(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	tasks := task.New(clock)
+
+	active := newTask("01JD0TASK00000000000000000", "keep-a")
+	active.DesiredConcurrency = 3
+	require.NoError(t, tasks.Create(ctx, db.Runner(), active))
+	filler := newTask("01JD0TASK00000000000000001", "keep-b")
+	filler.DesiredConcurrency = 4
+	require.NoError(t, tasks.Create(ctx, db.Runner(), filler))
+	done := newTask("01JD0TASK00000000000000002", "done")
+	done.DesiredConcurrency = 10
+	require.NoError(t, tasks.Create(ctx, db.Runner(), done))
+	require.NoError(t, tasks.Transit(ctx, db.Runner(), done.ID,
+		[]task.State{task.StateActive}, task.StateCompleted, nil))
+	other := newTask("01JD0TASK00000000000000003", "other-project")
+	other.ProjectID = "01JD0PRJ000000000000000001"
+	require.NoError(t, tasks.Create(ctx, db.Runner(), other))
+
+	n, sum, err := tasks.StatsByProject(ctx, db.Runner(), "01JD0PRJ000000000000000000")
+	require.NoError(t, err)
+	assert.Equal(t, 2, n, "terminal tasks must not count toward the quota")
+	assert.EqualValues(t, 7, sum, "desired concurrency sums non-terminal rows only")
+
+	n, sum, err = tasks.StatsByProject(ctx, db.Runner(), "01JD0PRJ000000000000000001")
+	require.NoError(t, err)
+	assert.Equal(t, 1, n)
+	assert.EqualValues(t, 1, sum)
+}
+
 func TestRunStateMachine(t *testing.T) {
 	db, clock := statetest.New(t)
 	ctx := context.Background()

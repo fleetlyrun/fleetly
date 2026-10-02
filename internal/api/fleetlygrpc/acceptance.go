@@ -21,6 +21,7 @@ import (
 	"errors"
 
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
+	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 )
@@ -135,6 +136,46 @@ func (s *Services) configQuota(projectID, name string) acceptanceCheck {
 		if len(latest) >= maxConfigsPerProject {
 			return apperr.New("E_QUOTA_EXCEEDED",
 				"project %s already holds %d configs (limit %d)", projectID, len(latest), maxConfigsPerProject)
+		}
+		return nil
+	}
+}
+
+// taskQuota：Task 数量与并发总量配额（ADR-0017 附录 A.1，F1.9）：非终态
+// Task 行数与 desired_concurrency 之和双上限；desired 是本单新增量（one-shot
+// 归一后 ≥1，resident 缩零初态合法为 0）。收口 F1.5 挂账的 per-Task
+// desired_concurrency sanity 上限——per-Task 上限由项目总量承载。读在
+// 事务内（SQLite 单写连接串行，与写同事务无 TOCTOU）。
+func (s *Services) taskQuota(projectID string, desired int64) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		active, sum, err := s.Tasks.StatsByProject(ctx, tx, projectID)
+		if err != nil {
+			return err
+		}
+		if active >= engine.MaxTasksPerProject {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"project %s already holds %d active tasks (limit %d); delete or drain tasks first",
+				projectID, active, engine.MaxTasksPerProject)
+		}
+		if sum+desired > engine.MaxTaskConcurrencyPerProject {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"project %s desired concurrency %d + %d new would exceed the limit %d",
+				projectID, sum, desired, engine.MaxTaskConcurrencyPerProject)
+		}
+		return nil
+	}
+}
+
+// appQuota：活跃 App 数配额（ADR-0017 附录 A.1，F1.9；同族受理检查）。
+func (s *Services) appQuota(projectID string) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		n, err := s.Apps.CountByProject(ctx, tx, projectID)
+		if err != nil {
+			return err
+		}
+		if n >= maxAppsPerProject {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"project %s already holds %d apps (limit %d)", projectID, n, maxAppsPerProject)
 		}
 		return nil
 	}

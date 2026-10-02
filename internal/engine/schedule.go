@@ -83,23 +83,35 @@ func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now tim
 		return
 	}
 	if overlapping {
-		err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-			if err := e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, next, s.LastTaskID); err != nil {
-				return err
-			}
-			skipped := *s
-			skipped.NextFireAt = next
-			_, err := e.outbox.Append(ctx, tx, eventScheduleSkipped, "schedule", s.ID,
-				scheduleEventPayloadJSON(&skipped, "", scheduleSkipReasonOverlap))
-			return err
-		})
-		if err != nil && !errors.Is(err, state.ErrConflict) {
-			e.log.Error("schedule fire: skip", "schedule", s.ID, "err", err)
-		}
+		e.skipSchedule(ctx, s, next, scheduleSkipReasonOverlap)
 		return
 	}
 	if _, err := e.spawnScheduleTask(ctx, s, ScheduleSourceCron, next); err != nil {
+		if errors.Is(err, ErrTaskQuota) {
+			// 超配额 skip（ADR-0017 附录 A.1）：与重叠 skip 同形——不静默
+			// 丢拍、不追补、schedule.skipped 事件可观测，节奏照常推进。
+			e.skipSchedule(ctx, s, next, scheduleSkipReasonQuota)
+			return
+		}
 		e.log.Error("schedule fire: spawn task", "schedule", s.ID, "err", err)
+	}
+}
+
+// skipSchedule 处理一次跳拍：Fire CAS 推进 next_fire_at + schedule.skipped
+// 事件（同事务；CAS 失败 = 另一拍先落，静默让位）。
+func (e *Engine) skipSchedule(ctx context.Context, s *schedule.Schedule, next, reason string) {
+	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
+		if err := e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, next, s.LastTaskID); err != nil {
+			return err
+		}
+		skipped := *s
+		skipped.NextFireAt = next
+		_, err := e.outbox.Append(ctx, tx, eventScheduleSkipped, "schedule", s.ID,
+			scheduleEventPayloadJSON(&skipped, "", reason))
+		return err
+	})
+	if err != nil && !errors.Is(err, state.ErrConflict) {
+		e.log.Error("schedule fire: skip", "schedule", s.ID, "reason", reason, "err", err)
 	}
 }
 
@@ -167,6 +179,16 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, so
 	fired := *s
 	fired.NextFireAt, fired.LastTaskID = nextFireAt, taskID
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
+		// 配额检查（含本拍自占一位；ADR-0017 附录 A.1）：超限返回哨兵——
+		// 到期拍调用方转 skip，手动拍调用方诚实拒绝。
+		active, sum, err := e.tasks.StatsByProject(ctx, tx, s.ProjectID)
+		if err != nil {
+			return err
+		}
+		if active >= MaxTasksPerProject || sum+1 > MaxTaskConcurrencyPerProject {
+			return fmt.Errorf("%w: project %s active tasks %d, desired concurrency %d + 1",
+				ErrTaskQuota, s.ProjectID, active, sum)
+		}
 		if err := e.tasks.Create(ctx, tx, row); err != nil {
 			return err
 		}

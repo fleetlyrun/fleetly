@@ -336,6 +336,33 @@ func TestTaskScale(t *testing.T) {
 	assert.Len(t, taskRuns(t, e, taskID), 4)
 }
 
+// TestScaleTaskQuota（ADR-0017 附录 A.1）：并发总量配额在写事务内按净增量
+// 执法——超限拒绝、等值/缩量放行；终态 Task 不占位。
+func TestScaleTaskQuota(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	a := createTaskRow(t, e, "01JD0TASK0000000000000000A", "pool-a", task.FormResident, 150, 0, "")
+	b := createTaskRow(t, e, "01JD0TASK0000000000000000B", "pool-b", task.FormResident, 50, 0, "")
+
+	_, err := e.ScaleTask(ctx, a.ID, 151) // sum 200 + 净增 1 → 超限
+	assert.ErrorIs(t, err, ErrTaskQuota)
+
+	got, err := e.ScaleTask(ctx, a.ID, 150) // 等值改写零净增 → 放行
+	require.NoError(t, err)
+	assert.EqualValues(t, 150, got.DesiredConcurrency)
+
+	got, err = e.ScaleTask(ctx, a.ID, 100) // 缩量放行
+	require.NoError(t, err)
+	assert.EqualValues(t, 100, got.DesiredConcurrency)
+
+	// 终态 Task 的 desired 不进统计：b completed 后总量回到 100，可扩满 200。
+	require.NoError(t, e.tasks.Transit(ctx, e.db.Runner(), b.ID,
+		[]task.State{task.StateActive}, task.StateCompleted, nil))
+	got, err = e.ScaleTask(ctx, a.ID, 200)
+	require.NoError(t, err)
+	assert.EqualValues(t, 200, got.DesiredConcurrency)
+}
+
 // TestTaskDeleteTeardown：DeleteTask 拆载体 + Run 终态化 + tombstone。
 func TestTaskDeleteTeardown(t *testing.T) {
 	e, rt, _ := newTestEngine(t)

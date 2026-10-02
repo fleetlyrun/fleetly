@@ -25,9 +25,10 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
 
-// maxTaskConcurrency 是 desired_concurrency 的受理位 sanity 域（治理配额
-// 归 F1.9/ADR-0017；此处只拦误写）。
-const maxTaskConcurrency = 100
+// Task 配额缺省住 internal/engine（域拥有者：受理位、ScaleTask、Schedule
+// 到期拍共用单一数值源；ADR-0017 附录 A.1）。desired_concurrency 的
+// E_INVALID_ARGUMENT 面只保留非负检查——上限由项目并发总量配额承载
+// （F1.5 sanity 上限 100 已收口）。
 
 type TasksService struct {
 	automationv1.UnimplementedTasksServiceServer
@@ -49,8 +50,8 @@ func normalizeCreateTask(req *automationv1.CreateTaskRequest, taskID string) (*s
 	if req.GetCpuMillis() < 0 || req.GetMemoryMb() < 0 {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "cpu_millis/memory_mb: must not be negative")
 	}
-	if req.GetDesiredConcurrency() < 0 || req.GetDesiredConcurrency() > maxTaskConcurrency {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "desired_concurrency: must be within [0, %d]", int64(maxTaskConcurrency))
+	if req.GetDesiredConcurrency() < 0 {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "desired_concurrency: must not be negative")
 	}
 	if req.GetTtlSeconds() < 0 || req.GetTtlSeconds() > 86400 {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "ttl_seconds: must be within [0, 86400] (ADR-0018)")
@@ -134,7 +135,10 @@ func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.Creat
 		NetworkGroup: req.GetNetworkGroup(), DNSName: engine.TaskDNSName(taskID),
 	}
 	err = svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		checks: []acceptanceCheck{
+			svc.s.parentProjectAlive(req.GetProjectId()),
+			svc.s.taskQuota(req.GetProjectId(), row.DesiredConcurrency),
+		},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Tasks.Create(ctx, tx, row)
 		},
@@ -186,8 +190,8 @@ func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTa
 }
 
 func (svc *TasksService) ScaleTask(ctx context.Context, req *automationv1.ScaleTaskRequest) (*automationv1.ScaleTaskResponse, error) {
-	if req.GetDesiredConcurrency() < 0 || req.GetDesiredConcurrency() > maxTaskConcurrency {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "desired_concurrency: must be within [0, %d]", int64(maxTaskConcurrency))
+	if req.GetDesiredConcurrency() < 0 {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "desired_concurrency: must not be negative")
 	}
 	row, err := svc.s.Engine.ScaleTask(ctx, req.GetId(), req.GetDesiredConcurrency())
 	if err != nil {
@@ -297,6 +301,12 @@ func mapTaskVerbError(err error) error {
 	var ae *apperr.Error
 	if errors.As(err, &ae) {
 		return ae
+	}
+	if errors.Is(err, engine.ErrTaskQuota) {
+		return apperr.New("E_QUOTA_EXCEEDED",
+			"scaling this task would exceed the project concurrency limit %d", engine.MaxTaskConcurrencyPerProject).
+			WithCause(err).
+			WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
 	}
 	return mapStateError(err, "task")
 }
@@ -507,6 +517,11 @@ func mapScheduleVerbError(err error) error {
 			"the previous fired run is still in flight; stop it (runs stop) or wait for it to finish before triggering again").WithCause(err)
 	case errors.Is(err, engine.ErrScheduleTerminal):
 		return apperr.New("E_CONFLICT", "schedule already deleted").WithCause(err)
+	case errors.Is(err, engine.ErrTaskQuota):
+		// 手动拍超配额诚实拒绝（到期拍走 skip；ADR-0017 附录 A.1）。
+		return apperr.New("E_QUOTA_EXCEEDED",
+			"firing this schedule would exceed the project task quota (%d tasks / %d desired concurrency)",
+			engine.MaxTasksPerProject, engine.MaxTaskConcurrencyPerProject).WithCause(err)
 	}
 	return mapStateError(err, "schedule")
 }

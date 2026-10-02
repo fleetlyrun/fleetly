@@ -83,6 +83,18 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 	return out, rows.Err()
 }
 
+// CountByProject 返回 Project 内活跃 App 行数（ADR-0017 附录 A.1 配额
+// 口径；受理位在事务内读）。
+func (r *Repo) CountByProject(ctx context.Context, run state.Runner, projectID string) (int, error) {
+	var n int
+	err := run.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM apps WHERE project_id = ? AND deleted_at = ''`, projectID).Scan(&n)
+	if err != nil {
+		return 0, state.MapScanErr(err)
+	}
+	return n, nil
+}
+
 // List 返回全部活跃 App（ADR-0022 启动基线重放的枚举面）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]App, error) {
 	rows, err := run.QueryContext(ctx, `

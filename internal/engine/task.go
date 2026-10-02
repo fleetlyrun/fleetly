@@ -48,6 +48,20 @@ var (
 	ErrTaskTerminal = errors.New("engine: task is in a terminal state")
 	// ErrNotResident 是仅 resident 形态适用的动词面（ScaleTask）。
 	ErrNotResident = errors.New("engine: this verb targets resident tasks only")
+	// ErrTaskQuota 是 per-Project Task 配额命中（ADR-0017 附录 A.1；API 层
+	// 映射 E_QUOTA_EXCEEDED）。
+	ErrTaskQuota = errors.New("engine: project task quota exceeded")
+)
+
+// Task 配额缺省（ADR-0017 附录 A.1，F1.9）：单一数值源——受理位
+// （CreateTask）、ScaleTask 增量检查与 Schedule 拍共用；配置面接入
+// AppConfig 后可覆盖。
+const (
+	// MaxTasksPerProject 是 per-Project 非终态 Task 行数上限。
+	MaxTasksPerProject = 100
+	// MaxTaskConcurrencyPerProject 是 per-Project 非终态 Task 的
+	// desired_concurrency 之和上限（期望 Run 总量 = Workload 数量真源口径）。
+	MaxTaskConcurrencyPerProject = 200
 )
 
 // taskDrivingStates 是 Run 驱动集合（Ensure 期望集来源）。
@@ -470,6 +484,18 @@ func (e *Engine) ScaleTask(ctx context.Context, id string, desired int64) (*task
 		}
 		if t.State.Terminal() {
 			return fmt.Errorf("%w: task %s is %s", ErrTaskTerminal, id, t.State)
+		}
+		// 配额增量检查（ADR-0017 附录 A.1）：本单对项目并发总量的净增量 =
+		// 新值 − 现值；事务内读（SQLite 单写连接串行，无 TOCTOU）。
+		if delta := desired - t.DesiredConcurrency; delta > 0 {
+			_, sum, err := e.tasks.StatsByProject(ctx, tx, t.ProjectID)
+			if err != nil {
+				return err
+			}
+			if sum+delta > MaxTaskConcurrencyPerProject {
+				return fmt.Errorf("%w: project %s desired concurrency %d + %d would exceed %d",
+					ErrTaskQuota, t.ProjectID, sum, delta, MaxTaskConcurrencyPerProject)
+			}
 		}
 		if err := e.tasks.Transit(ctx, tx, id,
 			[]task.State{task.StateActive}, task.StateActive,

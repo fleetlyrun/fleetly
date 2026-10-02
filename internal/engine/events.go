@@ -125,8 +125,11 @@ const (
 	ScheduleSourceManual = "manual" // TriggerSchedule 手动触发
 )
 
-// 重叠 skip 起因（skipped 事件的 reason 值）。
-const scheduleSkipReasonOverlap = "overlap"
+// skip 起因（skipped 事件的 reason 值）。
+const (
+	scheduleSkipReasonOverlap = "overlap"        // 上一拍 Run 未终态（ADR-0018 A.3）
+	scheduleSkipReasonQuota   = "quota_exceeded" // 项目配额满（ADR-0017 附录 A.1）
+)
 
 // Task/Run/Lease 事件名锚定（usage 反扫的字面量命中点）。
 const (

@@ -187,6 +187,28 @@ func TestTriggerScheduleOverlapRejected(t *testing.T) {
 	assert.ErrorIs(t, err, ErrScheduleOverlapping)
 }
 
+// TestScheduleQuotaSkips（ADR-0017 附录 A.1）：项目配额满时到期拍 → skip
+// （事件 + 节奏照常推进，不铸 Task）；手动拍诚实拒绝。
+func TestScheduleQuotaSkips(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	sid := "01JD0SCHD00000000000000007"
+	createScheduleRow(t, e, sid, "", "0 * * * *", "UTC", "2026-01-01T00:00:00Z")
+	// 同项目灌满并发总量（desired=200 的一条 resident）。
+	createTaskRow(t, e, "01JD0TASK0000000000000000Q", "filler", task.FormResident, MaxTaskConcurrencyPerProject, 0, "")
+
+	e.scheduleStep(ctx) // 到期拍 → 配额满 → skip
+
+	s := getScheduleRow(t, e, sid)
+	assert.Empty(t, s.LastTaskID, "quota-full fire must not spawn")
+	assert.Equal(t, "2026-01-01T01:00:00Z", s.NextFireAt, "cadence advances on quota skip")
+	assert.Contains(t, eventNames(t, e, sid), "schedule.skipped")
+
+	// 手动拍 → 诚实拒绝（API 面 E_QUOTA_EXCEEDED）。
+	_, err := e.TriggerSchedule(ctx, sid)
+	assert.ErrorIs(t, err, ErrTaskQuota)
+}
+
 // TestScheduleTerminalNoFire：tombstone 行不再拍（ListDriving 不拾取）；
 // 已铸 Task 不受删除影响（跑完自然收口——DeleteSchedule 语义）。
 func TestScheduleTerminalNoFire(t *testing.T) {

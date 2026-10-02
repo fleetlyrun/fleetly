@@ -127,6 +127,21 @@ func (r *Repo) ListByOwner(ctx context.Context, run state.Runner, tokenID string
 		selectCols+" WHERE owner_token_id = ? AND state IN ('active', 'draining') ORDER BY id", tokenID)
 }
 
+// StatsByProject 返回 Project 内非终态 Task 的配额口径统计（ADR-0017
+// 附录 A.1）：活跃行数与 desired_concurrency 之和（受理位与引擎配额检查
+// 共用，事务内读）。
+func (r *Repo) StatsByProject(ctx context.Context, run state.Runner, projectID string) (active int, desiredSum int64, err error) {
+	row := run.QueryRowContext(ctx, `
+		SELECT COUNT(*), COALESCE(SUM(desired_concurrency), 0)
+		FROM tasks
+		WHERE project_id = ? AND state NOT IN ('completed', 'failed', 'drained', 'deleted')`,
+		projectID)
+	if err := row.Scan(&active, &desiredSum); err != nil {
+		return 0, 0, state.MapScanErr(err)
+	}
+	return active, desiredSum, nil
+}
+
 // Transit 是状态 CAS：仅当当前状态 ∈ from 时迁移到 to（mut 可补充落
 // lease_deadline/desired_concurrency 等字段）。前置不符 → ErrConflict；
 // 行不存在 → ErrNotFound。UPDATE 带 state 前置条件作并发防御纵深。

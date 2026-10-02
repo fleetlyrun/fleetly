@@ -195,9 +195,13 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	a := &app.App{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName()}
 	// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
 	// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
-	// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。
+	// ——DeleteProject 守卫的"窗口闭合"承诺以此对偶守卫成立。数量配额
+	// （ADR-0017 附录 A.1）与存活校验同住受理位（事务内读）。
 	err := svc.s.commit(ctx, writeFact{
-		checks: []acceptanceCheck{svc.s.parentProjectAlive(req.GetProjectId())},
+		checks: []acceptanceCheck{
+			svc.s.parentProjectAlive(req.GetProjectId()),
+			svc.s.appQuota(req.GetProjectId()),
+		},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Apps.Create(ctx, tx, a)
 		},
@@ -440,6 +444,10 @@ type ConfigsService struct {
 const (
 	maxConfigsPerProject = 100
 	maxConfigBytes       = 256 * 1024
+	// maxAppsPerProject 是 per-Project 活跃 App 数上限（ADR-0017 附录 A.1，
+	// F1.9）：Workload 的 App 来源面。Task 轴两枚配额住 engine（域拥有者，
+	// ScaleTask/到期拍共用）。
+	maxAppsPerProject = 50
 )
 
 func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutConfigRequest) (*structurev1.PutConfigResponse, error) {
