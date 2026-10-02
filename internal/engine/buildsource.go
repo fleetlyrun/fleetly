@@ -19,6 +19,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/upload"
 )
 
 // localImageDomain 是本地构建镜像的命名域（N0 单节点形态：产物导入本机
@@ -141,28 +142,82 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 	return nil
 }
 
-// prepareBuildInput 组装构建输入：git 源浅检出到数据根（幂等：已存在跳过
-// ——Revision 冻结体的检出是纯函数）；Target 是本地镜像命名域引用。
+// prepareBuildInput 组装构建输入：git 源浅检出 / 上传产物解包到数据根
+// （幂等：已存在跳过——Revision 冻结体 + 内容寻址 blob = 纯函数）；Target
+// 是本地镜像命名域引用。
 func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64) (capability.BuildRequest, error) {
-	git := spec.GetSource().GetGit()
-	if git == nil {
-		return capability.BuildRequest{}, fmt.Errorf("build requires a git source (upload lands with the automation batch)")
-	}
-	if e.opts.DataRoot == "" {
-		return capability.BuildRequest{}, fmt.Errorf("data root is not configured for source checkout")
-	}
-	dir := filepath.Join(e.opts.DataRoot, "contexts", d.ToRevision)
-	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		if err := e.cloneSource(ctx, git.GetRepo(), git.GetRef(), dir); err != nil {
+	var contextDir string
+	switch origin := spec.GetSource().GetKind().(type) {
+	case *specv1.Source_Git:
+		if e.opts.DataRoot == "" {
+			return capability.BuildRequest{}, fmt.Errorf("data root is not configured for source checkout")
+		}
+		dir := filepath.Join(e.opts.DataRoot, "contexts", d.ToRevision)
+		if _, err := os.Stat(dir); os.IsNotExist(err) {
+			if err := e.cloneSource(ctx, origin.Git.GetRepo(), origin.Git.GetRef(), dir); err != nil {
+				return capability.BuildRequest{}, err
+			}
+		}
+		contextDir = dir
+	case *specv1.Source_Upload:
+		dir, err := e.extractUploadContext(ctx, origin.Upload.GetId(), d.ToRevision)
+		if err != nil {
 			return capability.BuildRequest{}, err
 		}
+		contextDir = dir
+	default:
+		return capability.BuildRequest{}, fmt.Errorf("build requires a git or upload source")
 	}
 	dockerfile := spec.GetBuild().GetDockerfile()
 	return capability.BuildRequest{
-		ContextDir: dir,
+		ContextDir: contextDir,
 		Dockerfile: dockerfile,
 		Target:     LocalImageRef(d.AppID, revSeq),
 	}, nil
+}
+
+// extractUploadContext 把上传产物 blob 解包为构建上下文（ADR-0019 附录
+// A.4）：行回行 digest → blob → tar 安全解包到 tmp 目录后原子 rename 到
+// contexts/<revision>（幂等：目标已存在跳过；解包失败 tmp 全弃，不留半
+// 截上下文被后续拍误判完整）。
+func (e *Engine) extractUploadContext(ctx context.Context, uploadID, revisionID string) (string, error) {
+	if e.opts.DataRoot == "" {
+		return "", fmt.Errorf("data root is not configured for source extraction")
+	}
+	row, err := e.uploads.Get(ctx, e.db.Runner(), uploadID)
+	if err != nil {
+		return "", fmt.Errorf("resolve upload source %s: %w", uploadID, err)
+	}
+	dir := filepath.Join(e.opts.DataRoot, "contexts", revisionID)
+	if _, serr := os.Stat(dir); serr == nil {
+		return dir, nil // 幂等：Revision 冻结体 + 内容寻址 blob，已解包即纯函数结果
+	}
+	blob := upload.BlobPath(e.opts.DataRoot, row.Digest)
+	f, err := os.Open(blob) //nolint:gosec // 数据根私有目录
+	if err != nil {
+		return "", fmt.Errorf("open upload blob for digest %s (upload %s): %w", row.Digest, uploadID, err)
+	}
+	tmp := dir + ".extracting"
+	_ = os.RemoveAll(tmp) // 上次失败遗留（正常路径 rename 已带走）
+	if err := upload.ExtractTar(tmp, f, row.SizeBytes); err != nil {
+		_ = f.Close()
+		_ = os.RemoveAll(tmp)
+		return "", fmt.Errorf("extract upload %s: %w", uploadID, err)
+	}
+	if err := f.Close(); err != nil {
+		_ = os.RemoveAll(tmp)
+		return "", fmt.Errorf("close upload blob: %w", err)
+	}
+	if err := os.Rename(tmp, dir); err != nil {
+		// 并发解包（同 Revision 双驱动）先行落位：容忍并清理本侧 tmp。
+		if _, serr := os.Stat(dir); serr == nil {
+			_ = os.RemoveAll(tmp)
+			return dir, nil
+		}
+		_ = os.RemoveAll(tmp)
+		return "", fmt.Errorf("publish extracted context: %w", err)
+	}
+	return dir, nil
 }
 
 // cloneSource 浅检出（ref 为分支/tag；commit 精确检出用 checkout 二段式）。

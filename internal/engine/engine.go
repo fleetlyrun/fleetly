@@ -26,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/sourceupload"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
@@ -199,6 +200,10 @@ type Engine struct {
 	// 投影翻译（strict/isolate）与撤销隔离的解析面。
 	peerDecls *networkpeer.Repo
 
+	// 上传产物行（F1.10，ADR-0019 附录 A）：构建输入解析面（upload id →
+	// digest → blob 解包）。
+	uploads *sourceupload.Repo
+
 	loop         *Loop
 	buildLoop    *Loop
 	managedLoop  *Loop
@@ -315,6 +320,7 @@ func New(deps Deps, opts Options) *Engine {
 		tokens:         tokenrepo.New(clock),
 		schedules:      schedule.New(clock),
 		peerDecls:      networkpeer.New(clock),
+		uploads:        sourceupload.New(clock),
 		loop:           NewLoop("deployment", log),
 		buildLoop:      NewLoop("build", log),
 		managedLoop:    NewLoop("managed", log),
