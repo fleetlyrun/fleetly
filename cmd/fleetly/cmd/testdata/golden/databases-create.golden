@@ -1,0 +1,4 @@
+created database shop (id <ULID>)
+engine postgres 17-bookworm
+credential secret database:shop (value never shown; reference it from app process secret_refs)
+connect in-network at db-<ULID>:5432

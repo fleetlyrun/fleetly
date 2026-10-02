@@ -1,0 +1,7 @@
+id <ULID>
+name shop
+engine postgres 17-bookworm
+status pending
+credential secret database:shop (value never shown)
+in-network endpoint db-<ULID>:5432
+created 2026-01-01T00:00:00Z

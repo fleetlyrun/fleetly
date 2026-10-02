@@ -1,0 +1,13 @@
+{
+  "id": "<ULID>",
+  "project_id": "<ULID>",
+  "name": "shop",
+  "engine": "postgres",
+  "version": "17-bookworm",
+  "credentials_ref": "database:shop",
+  "host": "db-<ULID>",
+  "port": 5432,
+  "status": "pending",
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z"
+}

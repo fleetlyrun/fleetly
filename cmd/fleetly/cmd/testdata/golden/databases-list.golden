@@ -1,0 +1,3 @@
+ID	NAME	ENGINE	VERSION	STATUS	CREDENTIALS	CREATED
+<ULID>	cache	redis	7.4	pending	database:cache	2026-01-01T00:00:00Z
+<ULID>	shop	postgres	17-bookworm	pending	database:shop	2026-01-01T00:00:00Z

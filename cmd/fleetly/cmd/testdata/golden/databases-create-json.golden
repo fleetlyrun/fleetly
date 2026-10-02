@@ -1,0 +1,13 @@
+{
+  "id": "<ULID>",
+  "project_id": "<ULID>",
+  "name": "cache",
+  "engine": "redis",
+  "version": "7.4",
+  "credentials_ref": "database:cache",
+  "host": "db-<ULID>",
+  "port": 6379,
+  "status": "pending",
+  "created_at": "2026-01-01T00:00:00Z",
+  "updated_at": "2026-01-01T00:00:00Z"
+}

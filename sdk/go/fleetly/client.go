@@ -39,6 +39,7 @@ type Client struct {
 	Configs     structurev1.ConfigsServiceClient
 	Volumes     structurev1.VolumesServiceClient
 	Networks    structurev1.NetworksServiceClient
+	Databases   structurev1.DatabasesServiceClient
 	Deployments deliveryv1.DeploymentsServiceClient
 	Revisions   deliveryv1.RevisionsServiceClient
 	Builds      deliveryv1.BuildsServiceClient
@@ -105,6 +106,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Configs:     structurev1.NewConfigsServiceClient(conn),
 		Volumes:     structurev1.NewVolumesServiceClient(conn),
 		Networks:    structurev1.NewNetworksServiceClient(conn),
+		Databases:   structurev1.NewDatabasesServiceClient(conn),
 		Deployments: deliveryv1.NewDeploymentsServiceClient(conn),
 		Revisions:   deliveryv1.NewRevisionsServiceClient(conn),
 		Builds:      deliveryv1.NewBuildsServiceClient(conn),
