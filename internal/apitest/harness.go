@@ -200,9 +200,10 @@ type AdminCall struct {
 
 // EnsureCall 是一次 Ensure 记录。
 type EnsureCall struct {
-	NS   capability.NamespaceRef
-	Gen  capability.Generation
-	Spec map[string]capability.Workload
+	NS        capability.NamespaceRef
+	Gen       capability.Generation
+	Spec      map[string]capability.Workload
+	Materials capability.Materials // secret 文件注入等分发材料（job 面断言用）
 }
 
 func (f *FakeRuntime) Describe() capability.ProviderDescriptor {
@@ -213,14 +214,14 @@ func (f *FakeRuntime) Health(context.Context) capability.HealthReport {
 	return capability.HealthReport{Healthy: true}
 }
 
-func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, _ capability.Materials) error {
+func (f *FakeRuntime) Ensure(_ context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	spec := make(map[string]capability.Workload, len(ws))
 	for _, w := range ws {
 		spec[w.Process] = w
 	}
-	f.ensures = append(f.ensures, EnsureCall{NS: ns, Gen: gen, Spec: spec})
+	f.ensures = append(f.ensures, EnsureCall{NS: ns, Gen: gen, Spec: spec, Materials: m})
 	return nil
 }
 

@@ -21,6 +21,9 @@ var composeWhitelist = map[string]bool{
 	//（fleetly volumes create，钉住/驱动选项不入 compose）；带驱动的声明
 	// 显式拒绝（B2）。
 	"volumes": true,
+	// firstBootJobs 扩展键（ADR-0033）：部署期 init job 声明，语义面是
+	// ADR-0030 引擎链。
+	"x-fleetly-first-boot-jobs": true,
 }
 
 var composeServiceWhitelist = map[string]bool{
@@ -58,6 +61,30 @@ var composeDeployWhitelist = map[string]bool{
 	"rollback_config": false,
 	"placement":       false, // Placement 以平台节点 ID 为锚（compose 约束语法不翻译）
 	"labels":          false,
+}
+
+// composeJobWhitelist 是 first boot job 的字段白名单（ADR-0033 最小面：
+// 复用 compose 服务词汇；from_build 在 compose intake 不可达——App 无
+// Build 声明）。
+var composeJobWhitelist = map[string]bool{
+	"name":        true,
+	"image":       true,
+	"command":     true,
+	"environment": true,
+	"secrets":     true,
+	"ttl":         true,
+}
+
+// composeJobRejections 是 job 禁面键的拒绝理由（ADR-0030 决策 8 同口径；
+// networks 指向缺省挂靠）。键名层即拒，不待 IR 层。
+var composeJobRejections = map[string]string{
+	"volumes":     "deploy-time jobs cannot mount volumes; use a Task for volume-mounting jobs",
+	"configs":     "deploy-time jobs cannot mount configs; pass what the job needs via environment or secrets",
+	"ports":       "ports are not meaningful on a one-shot job",
+	"healthcheck": "healthchecks are not meaningful on a one-shot job",
+	"placement":   "placement is not supported on deploy-time jobs",
+	"replicas":    "a deploy-time job is a single one-shot run",
+	"networks":    "deploy-time jobs attach to every active project network by default (db-<id> included); narrowing is not declarable from compose",
 }
 
 // ImageDeploy 归一化镜像直投：单 process web（名可指定，默认 web）。
@@ -227,6 +254,15 @@ func NormalizeCompose(doc ComposeDoc, appID, projectID string) (*specv1.AppSpec,
 	}
 	spec.Source = &specv1.Source{Kind: &specv1.Source_Image{Image: &specv1.ImageSource{Ref: firstImage}}}
 
+	// firstBootJobs 扩展键（ADR-0033）：受控子集的部署期 init job 声明。
+	if raw, present := doc["x-fleetly-first-boot-jobs"]; present && raw != nil {
+		jobs, err := composeFirstBootJobs(raw)
+		if err != nil {
+			return nil, err
+		}
+		spec.FirstBootJobs = jobs
+	}
+
 	if err := ValidateApp(spec); err != nil {
 		return nil, err
 	}
@@ -253,15 +289,16 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 	} else {
 		return nil, "", invalidf(field+".image", "service %q has no image (build lands with the git batch)", name)
 	}
-	if cmd, ok := svc["command"].(string); ok && cmd != "" {
-		p.Command = strings.Fields(cmd)
+	cmd, err := composeCommand(field+".command", svc["command"])
+	if err != nil {
+		return nil, "", err
 	}
-	if env, ok := svc["environment"].(map[string]any); ok {
-		p.Env = map[string]string{}
-		for k, v := range env {
-			p.Env[k] = fmt.Sprintf("%v", v)
-		}
+	p.Command = cmd
+	env, err := composeEnv(field+".environment", svc["environment"])
+	if err != nil {
+		return nil, "", err
 	}
+	p.Env = env
 	if ports, ok := svc["ports"].([]any); ok {
 		for i, raw := range ports {
 			port, err := composePort(field+".ports", raw)
@@ -339,34 +376,15 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 			p.Volumes = append(p.Volumes, &specv1.VolumeAttachment{VolumeId: name, Target: target, ReadOnly: readOnly})
 		}
 	}
-	// Secret 引用（B2）：短语法 [name...] 或长语法 {source: name}——值
-	// 永不进 compose（经 fleetly secrets put 落库，注入时解析，ADR-0014）。
-	// 长语法只认 source（target==name 容忍）；uid/gid/mode 等其余子键显式
-	// 拒绝（N0.1 P2-3：此前静默丢弃）。
-	if secs, ok := svc["secrets"].([]any); ok {
-		for _, raw := range secs {
-			var name string
-			switch v := raw.(type) {
-			case string:
-				name = v
-			case map[string]any:
-				for key := range v {
-					if key != "source" && key != "target" {
-						return nil, "", invalidf(field+".secrets",
-							"secret key %q is not supported (long syntax supports source only; uid/gid/mode are not translated)", key)
-					}
-				}
-				name, _ = v["source"].(string)
-				if target, ok := v["target"].(string); ok && target != "" && target != name {
-					return nil, "", invalidf(field+".secrets", "secret %q: target remapping is not supported (injected at /run/secrets/<name>)", name)
-				}
-			}
-			if name == "" {
-				return nil, "", invalidf(field+".secrets", "secret entry must be a name or {source: name}")
-			}
-			p.SecretRefs = append(p.SecretRefs, name)
-		}
+	// Secret 引用（B2，服务与 job 共用助手）：短语法 [name...] 或长语法
+	// {source: name}——值永不进 compose（经 fleetly secrets put 落库，注入
+	// 时解析，ADR-0014）。长语法只认 source（target==name 容忍）；uid/gid/
+	// mode 等其余子键显式拒绝（N0.1 P2-3：此前静默丢弃）。
+	refs, err := composeSecretRefs(field+".secrets", svc["secrets"])
+	if err != nil {
+		return nil, "", err
 	}
+	p.SecretRefs = refs
 	if hc, ok := svc["healthcheck"].(map[string]any); ok {
 		probe, err := composeHealthcheck(field+".healthcheck", hc)
 		if err != nil {
@@ -375,6 +393,169 @@ func composeService(name string, svc map[string]any) (*specv1.ProcessSpec, strin
 		p.Healthcheck = probe
 	}
 	return p, p.GetImage(), nil
+}
+
+// composeCommand 翻译 command 两形态（ADR-0033）：string → Fields 切分
+// （compose shell 形态，语义与既有服务面一致），list → 字面 argv（引号/
+// 空格保真——"读 secret 文件 → export → exec"的 sh -c 包装是必需形态：
+// Secret 注入是文件面而非 env 插值，ADR-0014）。
+func composeCommand(field string, raw any) ([]string, error) {
+	switch v := raw.(type) {
+	case nil:
+		return nil, nil
+	case string:
+		if v == "" {
+			return nil, nil
+		}
+		return strings.Fields(v), nil
+	case []any:
+		argv := make([]string, 0, len(v))
+		for i, item := range v {
+			s, ok := item.(string)
+			if !ok || s == "" {
+				return nil, invalidf(fmt.Sprintf("%s[%d]", field, i), "list-form command entries must be non-empty strings")
+			}
+			argv = append(argv, s)
+		}
+		if len(argv) == 0 {
+			return nil, nil
+		}
+		return argv, nil
+	default:
+		return nil, invalidf(field, "command must be a string or a list of strings")
+	}
+}
+
+// composeEnv 翻译 environment 两形态：map（K: V）与 list（["K=V"]——compose
+// 原生第二形态；此前 map 断言失败被静默丢弃，ADR-0033 修复为显式拒绝/翻译）。
+func composeEnv(field string, raw any) (map[string]string, error) {
+	switch v := raw.(type) {
+	case nil:
+		return nil, nil
+	case map[string]any:
+		env := make(map[string]string, len(v))
+		for k, val := range v {
+			env[k] = fmt.Sprintf("%v", val)
+		}
+		return env, nil
+	case []any:
+		env := make(map[string]string, len(v))
+		for i, item := range v {
+			s, ok := item.(string)
+			if !ok {
+				return nil, invalidf(fmt.Sprintf("%s[%d]", field, i), "list-form environment entries must be strings like \"KEY=value\"")
+			}
+			k, val, found := strings.Cut(s, "=")
+			if !found || k == "" {
+				return nil, invalidf(fmt.Sprintf("%s[%d]", field, i), "list-form environment entry %q must be \"KEY=value\" with a non-empty key", s)
+			}
+			env[k] = val
+		}
+		return env, nil
+	default:
+		return nil, invalidf(field, "environment must be a mapping or a list of \"KEY=value\" strings")
+	}
+}
+
+// composeSecretRefs 翻译 secrets（服务与 job 共用面）：短语法 [name...] /
+// 长语法 {source: name}——值永不进 compose（经 fleetly secrets put 落库，
+// 注入时解析，ADR-0014）。长语法只认 source（target==name 容忍）；
+// uid/gid/mode 等其余子键显式拒绝（N0.1 P2-3：此前静默丢弃）。
+func composeSecretRefs(field string, raw any) ([]string, error) {
+	if raw == nil {
+		return nil, nil
+	}
+	secs, ok := raw.([]any)
+	if !ok {
+		return nil, invalidf(field, "secrets must be a list of names or {source: name} mappings")
+	}
+	refs := make([]string, 0, len(secs))
+	for _, entry := range secs {
+		var name string
+		switch v := entry.(type) {
+		case string:
+			name = v
+		case map[string]any:
+			for key := range v {
+				if key != "source" && key != "target" {
+					return nil, invalidf(field,
+						"secret key %q is not supported (long syntax supports source only; uid/gid/mode are not translated)", key)
+				}
+			}
+			name, _ = v["source"].(string)
+			if target, ok := v["target"].(string); ok && target != "" && target != name {
+				return nil, invalidf(field, "secret %q: target remapping is not supported (injected at /run/secrets/<name>)", name)
+			}
+		}
+		if name == "" {
+			return nil, invalidf(field, "secret entry must be a name or {source: name}")
+		}
+		refs = append(refs, name)
+	}
+	return refs, nil
+}
+
+// composeFirstBootJobs 翻译 x-fleetly-first-boot-jobs 扩展键（ADR-0033）：
+// 白名单最小面 + 禁面键名层即拒（理由与 ValidateJob 同口径，ADR-0030
+// 决策 8）；ttl 值域与 JobSpec 禁面由 ValidateApp→ValidateJob 既有执法。
+// 执行语义（串行/游标/回滚不重跑）是 ADR-0030 引擎链，本层只喂食。
+func composeFirstBootJobs(raw any) ([]*specv1.JobSpec, error) {
+	list, ok := raw.([]any)
+	if !ok {
+		return nil, invalidf("compose.x-fleetly-first-boot-jobs", "must be a list of job mappings")
+	}
+	jobs := make([]*specv1.JobSpec, 0, len(list))
+	for i, rawJob := range list {
+		field := fmt.Sprintf("compose.x-fleetly-first-boot-jobs[%d]", i)
+		m, ok := rawJob.(map[string]any)
+		if !ok {
+			return nil, invalidf(field, "job must be a mapping")
+		}
+		for key := range m {
+			if composeJobWhitelist[key] {
+				continue
+			}
+			if reason, banned := composeJobRejections[key]; banned {
+				return nil, invalidf(field+"."+key, "%s", reason)
+			}
+			return nil, invalidf(field+"."+key,
+				"unsupported field %q for a first boot job (supported: %s)", key, whitelistKeys(composeJobWhitelist))
+		}
+		name, ok := m["name"].(string)
+		if !ok || name == "" {
+			return nil, invalidf(field+".name", "must be a non-empty string")
+		}
+		image, ok := m["image"].(string)
+		if !ok || image == "" {
+			return nil, invalidf(field+".image", "must be a non-empty image reference (from_build jobs are not reachable from compose)")
+		}
+		p := &specv1.ProcessSpec{Name: name, ImageOrigin: &specv1.ProcessSpec_Image{Image: image}}
+		cmd, err := composeCommand(field+".command", m["command"])
+		if err != nil {
+			return nil, err
+		}
+		p.Command = cmd
+		env, err := composeEnv(field+".environment", m["environment"])
+		if err != nil {
+			return nil, err
+		}
+		p.Env = env
+		refs, err := composeSecretRefs(field+".secrets", m["secrets"])
+		if err != nil {
+			return nil, err
+		}
+		p.SecretRefs = refs
+		j := &specv1.JobSpec{Name: name, Process: p}
+		if rawTTL := m["ttl"]; rawTTL != nil {
+			ttl, err := composeDuration(field+".ttl", rawTTL)
+			if err != nil {
+				return nil, err
+			}
+			j.Ttl = ttl
+		}
+		jobs = append(jobs, j)
+	}
+	return jobs, nil
 }
 
 func composePort(field string, raw any) (*specv1.PortSpec, error) {

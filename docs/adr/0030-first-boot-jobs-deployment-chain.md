@@ -143,9 +143,9 @@ ADR 收口全部裁决。执行机制已备：一次性 Run（F1.5/F1.6）落地
   （TestFirstBootQuotaBoundedRetry）
 - [x] 三链咬合：`deployment.first_boot_job` eventcode + schemareg +
   golden 同 commit；errcode 零新码
-- [ ] API/CLI：Deployment 消息暴露 first_boot_task_id（字段 + mapping
-  接通 engine.FirstBootTaskID 单源公式已落）；**protojson golden 随
-  intake 面批补**——intake 缺位下无 API 可达夹具能置起该字段（apitest
-  不直注 revision 行，守夹具约定），字段为空时 protojson 省略故现存
-  golden 零漂移
+- [x] API/CLI：Deployment 消息暴露 first_boot_task_id（字段 + mapping
+  接通 engine.FirstBootTaskID 单源公式已落）；protojson golden 已随
+  ADR-0033 intake 面批补——compose 扩展键夹具驱动全链，releasing 等 job
+  终态的 deployment golden 钉 first_boot_task_id 在场（done 游标下归空
+  由 apitest 全链断言）
 - [ ] staging 真机实证：部署期迁移 job 端到端（随 F1.15 dogfooding）

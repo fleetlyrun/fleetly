@@ -71,6 +71,159 @@ func TestComposeDeclarativeSurface(t *testing.T) {
 	assert.Equal(t, "20s", dbhc.GetStartPeriod().AsDuration().String())
 }
 
+// firstBootJobs 扩展键翻译（ADR-0033）：job 白名单最小面 → JobSpec
+// （ProcessSpec 嵌套形态）；执行语义是 ADR-0030 引擎链，本面只喂食。
+func TestComposeFirstBootJobs(t *testing.T) {
+	doc := ComposeDoc{
+		"services": map[string]any{
+			"web": map[string]any{"image": "nginx:1.27"},
+		},
+		"x-fleetly-first-boot-jobs": []any{
+			map[string]any{
+				"name":    "migrate",
+				"image":   "migrate/migrate:v4.18.1",
+				"command": []any{"sh", "-c", "migrate -database \"$(cat /run/secrets/database:pg)\" up"},
+				"secrets": []any{"database:pg"},
+				"ttl":     "300s",
+			},
+			map[string]any{
+				"name":        "roles-sig",
+				"image":       "ghcr.io/example/app:sha-1",
+				"command":     "app admin sync-roles-sig",
+				"environment": []any{"MODE=deploy", "BATCH=16"},
+				"ttl":         "1m",
+			},
+		},
+	}
+	spec, err := NormalizeCompose(doc, "app-1", "prj-1")
+	require.NoError(t, err)
+	require.Len(t, spec.GetFirstBootJobs(), 2)
+
+	migrate := spec.GetFirstBootJobs()[0]
+	assert.Equal(t, "migrate", migrate.GetName())
+	assert.Equal(t, "5m0s", migrate.GetTtl().AsDuration().String())
+	p := migrate.GetProcess()
+	require.NotNil(t, p)
+	assert.Equal(t, "migrate/migrate:v4.18.1", p.GetImage())
+	// command list 形态 → 字面 argv（引号/空格保真）。
+	assert.Equal(t, []string{"sh", "-c", "migrate -database \"$(cat /run/secrets/database:pg)\" up"}, p.GetCommand())
+	assert.Equal(t, []string{"database:pg"}, p.GetSecretRefs())
+	assert.Equal(t, "migrate", p.GetName(), "process name must default to the job name")
+
+	sig := spec.GetFirstBootJobs()[1]
+	p2 := sig.GetProcess()
+	// command string 形态 → Fields 切分（与服务面同语义）；environment list
+	// 形态 → map。
+	assert.Equal(t, []string{"app", "admin", "sync-roles-sig"}, p2.GetCommand())
+	assert.Equal(t, map[string]string{"MODE": "deploy", "BATCH": "16"}, p2.GetEnv())
+	assert.Empty(t, p2.GetSecretRefs())
+}
+
+// 服务面伴随扩宽（ADR-0033）：command list 形态 → 字面 argv；environment
+// list 形态 → map（此前 map 断言失败被静默丢弃）；string/map 形态语义不变。
+func TestComposeCommandEnvListForms(t *testing.T) {
+	doc := ComposeDoc{
+		"services": map[string]any{
+			"web": map[string]any{
+				"image":       "nginx:1.27",
+				"command":     []any{"sh", "-c", "exec nginx -g 'daemon off;'"},
+				"environment": []any{"MODE=prod", "B=2"},
+			},
+			"worker": map[string]any{
+				"image":       "busybox:1.37",
+				"command":     "sh -c while true",
+				"environment": map[string]any{"K": "v"},
+			},
+		},
+	}
+	spec, err := NormalizeCompose(doc, "a", "p")
+	require.NoError(t, err)
+	var web, worker *specv1.ProcessSpec
+	for _, p := range spec.GetProcesses() {
+		switch p.GetName() {
+		case "web":
+			web = p
+		case "worker":
+			worker = p
+		}
+	}
+	require.NotNil(t, web)
+	require.NotNil(t, worker)
+	assert.Equal(t, []string{"sh", "-c", "exec nginx -g 'daemon off;'"}, web.GetCommand())
+	assert.Equal(t, map[string]string{"MODE": "prod", "B": "2"}, web.GetEnv())
+	assert.Equal(t, []string{"sh", "-c", "while", "true"}, worker.GetCommand())
+	assert.Equal(t, map[string]string{"K": "v"}, worker.GetEnv())
+}
+
+// firstBootJobs 拒绝面：禁面键键名层即拒（ADR-0030 决策 8 同口径）；
+// 未知键/缺必填/非法形态精确拒绝。
+func TestComposeFirstBootJobRejections(t *testing.T) {
+	base := func(job map[string]any) ComposeDoc {
+		return ComposeDoc{
+			"services":                  map[string]any{"web": map[string]any{"image": "nginx"}},
+			"x-fleetly-first-boot-jobs": []any{job},
+		}
+	}
+	cases := []struct {
+		name string
+		doc  ComposeDoc
+		want string
+	}{
+		{"unknown key", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "bad": 1}), "unsupported field \"bad\" for a first boot job"},
+		{"no name", base(map[string]any{"image": "i", "ttl": "1m"}), "name"},
+		{"no image", base(map[string]any{"name": "j", "ttl": "1m"}), "image"},
+		{"no ttl", base(map[string]any{"name": "j", "image": "i"}), "hard timeout"},
+		{"volumes", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "volumes": []any{"d:/d"}}), "cannot mount volumes"},
+		{"configs", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "configs": []any{"c"}}), "cannot mount configs"},
+		{"ports", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "ports": []any{"8080"}}), "not meaningful"},
+		{"healthcheck", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "healthcheck": map[string]any{"tcp_port": 80}}), "not meaningful"},
+		{"placement", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "placement": map[string]any{}}), "not supported"},
+		{"replicas", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "replicas": 2}), "single one-shot run"},
+		{"networks", base(map[string]any{"name": "j", "image": "i", "ttl": "1m", "networks": []any{"default"}}), "every active project network"},
+		{"ttl over cap", base(map[string]any{"name": "j", "image": "i", "ttl": "86401s"}), "86400s"},
+		{"ttl not duration", base(map[string]any{"name": "j", "image": "i", "ttl": 300}), "duration must be a string"},
+		{"job not mapping", ComposeDoc{
+			"services":                  map[string]any{"web": map[string]any{"image": "nginx"}},
+			"x-fleetly-first-boot-jobs": []any{"migrate"},
+		}, "job must be a mapping"},
+		{"key not list", ComposeDoc{
+			"services":                  map[string]any{"web": map[string]any{"image": "nginx"}},
+			"x-fleetly-first-boot-jobs": map[string]any{"name": "j"},
+		}, "must be a list of job mappings"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := NormalizeCompose(tc.doc, "a", "p")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
+// command/environment/secrets 非法形态精确拒绝（伴随扩宽的负面）。
+func TestComposeCommandEnvSecretRejections(t *testing.T) {
+	cases := []struct {
+		name string
+		svc  map[string]any
+		want string
+	}{
+		{"command number", map[string]any{"image": "i", "command": 42}, "command must be a string or a list"},
+		{"command list int entry", map[string]any{"image": "i", "command": []any{"sh", 1}}, "list-form command entries"},
+		{"env list no eq", map[string]any{"image": "i", "environment": []any{"MODE"}}, "must be \"KEY=value\""},
+		{"env list empty key", map[string]any{"image": "i", "environment": []any{"=v"}}, "non-empty key"},
+		{"env number", map[string]any{"image": "i", "environment": 42}, "environment must be a mapping"},
+		{"secrets map form", map[string]any{"image": "i", "secrets": map[string]any{"s": map[string]any{"file": "x"}}}, "secrets must be a list"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			doc := ComposeDoc{"services": map[string]any{"web": tc.svc}}
+			_, err := NormalizeCompose(doc, "a", "p")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+		})
+	}
+}
+
 // 探针三选一 + 受管/未知键精确拒绝。
 func TestComposeProbeRejections(t *testing.T) {
 	cases := []struct {
