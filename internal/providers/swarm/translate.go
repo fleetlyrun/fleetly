@@ -220,6 +220,9 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	// 引用 id+名双发（swarmkit validateSecretRefsSpec 要求）；UID/GID 显式
 	// "0"——docker CLI 客户端补零而 raw API 空串会让 agent 的 strconv.Atoi
 	// 在容器启动期炸掉（staging 真机实证 2026-10-02，同 id+名双发同批）。
+	// Mode 0444（docker/compose 生态缺省）：0400 会把非 root USER 镜像
+	//（torchwood/messageloop 皆 10001）挡在文件外——staging 真机实证
+	// Permission denied → env 导出空串 → 启动期 fail-closed。
 	for _, platformName := range sortedKeys(secretCarriers) {
 		c := secretCarriers[platformName]
 		container.Secrets = append(container.Secrets, &swarm.SecretReference{
@@ -229,7 +232,7 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 				Name: platformName,
 				UID:  "0",
 				GID:  "0",
-				Mode: 0o400,
+				Mode: 0o444,
 			},
 		})
 	}

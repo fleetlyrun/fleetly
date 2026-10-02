@@ -619,6 +619,9 @@ func composeHealthcheck(field string, hc map[string]any) (*specv1.HealthcheckSpe
 	}
 	if test, ok := hc["test"].([]any); ok && len(test) > 1 {
 		// compose test 形态 ["CMD", ...] / ["CMD-SHELL", cmd]——exec 探针。
+		// CMD-SHELL 的载荷是**单个 shell 字符串**：按空白切分会撕碎引号结构
+		//（staging 真机实证：bash -c 'exec 3<>/dev/tcp/...' 被切成碎 argv →
+		// 探针恒败 unexpected EOF，2026-10-02）——整体经 sh -c 承载。
 		words := make([]string, 0, len(test))
 		for _, w := range test {
 			words = append(words, fmt.Sprintf("%v", w))
@@ -628,7 +631,7 @@ func composeHealthcheck(field string, hc map[string]any) (*specv1.HealthcheckSpe
 		case "CMD":
 			exec = &specv1.ExecProbe{Command: words[1:]}
 		case "CMD-SHELL":
-			exec = &specv1.ExecProbe{Command: strings.Fields(strings.Join(words[1:], " "))}
+			exec = &specv1.ExecProbe{Command: []string{"sh", "-c", strings.Join(words[1:], " ")}}
 		default:
 			return nil, invalidf(field+".healthcheck.test", "test must start with CMD or CMD-SHELL")
 		}

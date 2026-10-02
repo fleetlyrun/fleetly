@@ -330,3 +330,22 @@ func TestImageDeployProbeDeclaration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, int32(5432), s.GetProcesses()[0].GetHealthcheck().GetTcpPort())
 }
+
+// CMD-SHELL 探针的引号结构保真（staging 真机实证修复，2026-10-02）：载荷
+// 是单个 shell 字符串，按空白切分会撕碎引号（bash -c 'exec 3<>/dev/tcp/...'
+// → 碎 argv → 探针恒败 unexpected EOF）——整体经 sh -c 承载。
+func TestComposeCMDShellProbeQuoting(t *testing.T) {
+	doc := ComposeDoc{"services": map[string]any{
+		"minio": map[string]any{
+			"image": "pgsty/silo:1",
+			"healthcheck": map[string]any{
+				"test": []any{"CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"},
+			},
+		},
+	}}
+	spec, err := NormalizeCompose(doc, "a", "p")
+	require.NoError(t, err)
+	hc := spec.GetProcesses()[0].GetHealthcheck()
+	require.NotNil(t, hc.GetExec())
+	assert.Equal(t, []string{"sh", "-c", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/9000'"}, hc.GetExec().GetCommand())
+}
