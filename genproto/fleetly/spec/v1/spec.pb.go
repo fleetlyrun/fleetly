@@ -1500,11 +1500,11 @@ type DatabaseSpec struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SchemaVersion int32                  `protobuf:"varint,1,opt,name=schema_version,json=schemaVersion,proto3" json:"schema_version,omitempty"`
 	Database      *DatabaseRef           `protobuf:"bytes,2,opt,name=database,proto3" json:"database,omitempty"`
-	// engine 是模板引擎名（postgres / percona-pgvector / redis / mysql /
-	// mongodb…）。
+	// engine 是模板引擎名（postgres / pgvector / redis / mysql /
+	// mongodb…；值域真源 = engine 模板注册表，ADR-0029）。
 	Engine  string `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
 	Version string `protobuf:"bytes,4,opt,name=version,proto3" json:"version,omitempty"`
-	// credentials_ref 引用 Project Secret（连接串注入同样落 Secret）。
+	// credentials_ref 引用 Project Secret（值 = 完整连接 URL，ADR-0029）。
 	CredentialsRef string            `protobuf:"bytes,5,opt,name=credentials_ref,json=credentialsRef,proto3" json:"credentials_ref,omitempty"`
 	Resources      *ResourcesSpec    `protobuf:"bytes,6,opt,name=resources,proto3" json:"resources,omitempty"`
 	BackupPolicy   *BackupPolicySpec `protobuf:"bytes,7,opt,name=backup_policy,json=backupPolicy,proto3" json:"backup_policy,omitempty"`

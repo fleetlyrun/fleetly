@@ -23,6 +23,7 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	structurev1.RegisterConfigsServiceServer(srv, &ConfigsService{s: s})
 	structurev1.RegisterVolumesServiceServer(srv, &VolumesService{s: s})
 	structurev1.RegisterNetworksServiceServer(srv, &NetworksService{s: s})
+	structurev1.RegisterDatabasesServiceServer(srv, &DatabasesService{s: s})
 	deliveryv1.RegisterDeploymentsServiceServer(srv, &DeploymentsService{s: s})
 	deliveryv1.RegisterRevisionsServiceServer(srv, &RevisionsService{s: s})
 	deliveryv1.RegisterBuildsServiceServer(srv, &BuildsService{s: s})

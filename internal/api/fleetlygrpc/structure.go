@@ -376,6 +376,13 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	if svc.s.Cipher == nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
+	// 数据库凭证保留前缀（ADR-0029 决策 6）：值必须恒为完整连接 URL
+	//（单真源），用户覆写会破坏凭证三面。
+	if engine.IsDatabaseCredentialSecret(req.GetName()) {
+		return nil, apperr.New("E_CONFLICT",
+			"secret name %q is reserved for platform-managed database credentials; database secrets are minted by 'fleetly databases create'",
+			req.GetName())
+	}
 	ct, err := svc.s.Cipher.Seal([]byte(req.GetValue()))
 	if err != nil {
 		return nil, mapStateError(err, "secret")

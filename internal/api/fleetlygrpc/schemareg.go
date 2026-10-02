@@ -94,4 +94,7 @@ func init() {
 	registerEventPayload(eventFreezeLifted, freezeEventPayload{})
 	// 上传产物面（uploadStoredPayload，uploads.go 单源；F1.10）。
 	registerEventPayload(eventUploadStored, uploadStoredPayload{})
+	// 数据库面（structureEventPayload，databases.go 单源；F1.12/ADR-0029）。
+	registerEventPayload(eventDatabaseCreated, structureEventPayload{})
+	registerEventPayload(eventDatabaseDeleted, structureEventPayload{})
 }

@@ -965,6 +965,240 @@ var VolumesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	DatabasesService_CreateDatabase_FullMethodName = "/fleetly.structure.v1.DatabasesService/CreateDatabase"
+	DatabasesService_GetDatabase_FullMethodName    = "/fleetly.structure.v1.DatabasesService/GetDatabase"
+	DatabasesService_ListDatabases_FullMethodName  = "/fleetly.structure.v1.DatabasesService/ListDatabases"
+	DatabasesService_DeleteDatabase_FullMethodName = "/fleetly.structure.v1.DatabasesService/DeleteDatabase"
+)
+
+// DatabasesServiceClient is the client API for DatabasesService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// DatabasesService：托管数据服务聚合面（ADR-0029）。凭证值永不回显——
+// 响应只携带 Secret 名与去密码连接面（host/port）；App 经 secret_refs
+// 引用 credentials_ref 取完整连接 URL。
+type DatabasesServiceClient interface {
+	CreateDatabase(ctx context.Context, in *CreateDatabaseRequest, opts ...grpc.CallOption) (*CreateDatabaseResponse, error)
+	GetDatabase(ctx context.Context, in *GetDatabaseRequest, opts ...grpc.CallOption) (*GetDatabaseResponse, error)
+	// ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，
+	// ADR-0026 惯例）。
+	ListDatabases(ctx context.Context, in *ListDatabasesRequest, opts ...grpc.CallOption) (*ListDatabasesResponse, error)
+	// DeleteDatabase 收口删除（ADR-0029 决策 8）：拆载体 → tombstone 一
+	// 事务（事件 + 审计）；数据卷与凭证 Secret 不随删（Project 级材料，
+	// 备份保留义）。
+	DeleteDatabase(ctx context.Context, in *DeleteDatabaseRequest, opts ...grpc.CallOption) (*DeleteDatabaseResponse, error)
+}
+
+type databasesServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewDatabasesServiceClient(cc grpc.ClientConnInterface) DatabasesServiceClient {
+	return &databasesServiceClient{cc}
+}
+
+func (c *databasesServiceClient) CreateDatabase(ctx context.Context, in *CreateDatabaseRequest, opts ...grpc.CallOption) (*CreateDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_CreateDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databasesServiceClient) GetDatabase(ctx context.Context, in *GetDatabaseRequest, opts ...grpc.CallOption) (*GetDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_GetDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databasesServiceClient) ListDatabases(ctx context.Context, in *ListDatabasesRequest, opts ...grpc.CallOption) (*ListDatabasesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListDatabasesResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_ListDatabases_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *databasesServiceClient) DeleteDatabase(ctx context.Context, in *DeleteDatabaseRequest, opts ...grpc.CallOption) (*DeleteDatabaseResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteDatabaseResponse)
+	err := c.cc.Invoke(ctx, DatabasesService_DeleteDatabase_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// DatabasesServiceServer is the server API for DatabasesService service.
+// All implementations must embed UnimplementedDatabasesServiceServer
+// for forward compatibility.
+//
+// DatabasesService：托管数据服务聚合面（ADR-0029）。凭证值永不回显——
+// 响应只携带 Secret 名与去密码连接面（host/port）；App 经 secret_refs
+// 引用 credentials_ref 取完整连接 URL。
+type DatabasesServiceServer interface {
+	CreateDatabase(context.Context, *CreateDatabaseRequest) (*CreateDatabaseResponse, error)
+	GetDatabase(context.Context, *GetDatabaseRequest) (*GetDatabaseResponse, error)
+	// ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，
+	// ADR-0026 惯例）。
+	ListDatabases(context.Context, *ListDatabasesRequest) (*ListDatabasesResponse, error)
+	// DeleteDatabase 收口删除（ADR-0029 决策 8）：拆载体 → tombstone 一
+	// 事务（事件 + 审计）；数据卷与凭证 Secret 不随删（Project 级材料，
+	// 备份保留义）。
+	DeleteDatabase(context.Context, *DeleteDatabaseRequest) (*DeleteDatabaseResponse, error)
+	mustEmbedUnimplementedDatabasesServiceServer()
+}
+
+// UnimplementedDatabasesServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedDatabasesServiceServer struct{}
+
+func (UnimplementedDatabasesServiceServer) CreateDatabase(context.Context, *CreateDatabaseRequest) (*CreateDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateDatabase not implemented")
+}
+func (UnimplementedDatabasesServiceServer) GetDatabase(context.Context, *GetDatabaseRequest) (*GetDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDatabase not implemented")
+}
+func (UnimplementedDatabasesServiceServer) ListDatabases(context.Context, *ListDatabasesRequest) (*ListDatabasesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListDatabases not implemented")
+}
+func (UnimplementedDatabasesServiceServer) DeleteDatabase(context.Context, *DeleteDatabaseRequest) (*DeleteDatabaseResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteDatabase not implemented")
+}
+func (UnimplementedDatabasesServiceServer) mustEmbedUnimplementedDatabasesServiceServer() {}
+func (UnimplementedDatabasesServiceServer) testEmbeddedByValue()                          {}
+
+// UnsafeDatabasesServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to DatabasesServiceServer will
+// result in compilation errors.
+type UnsafeDatabasesServiceServer interface {
+	mustEmbedUnimplementedDatabasesServiceServer()
+}
+
+func RegisterDatabasesServiceServer(s grpc.ServiceRegistrar, srv DatabasesServiceServer) {
+	// If the following call panics, it indicates UnimplementedDatabasesServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&DatabasesService_ServiceDesc, srv)
+}
+
+func _DatabasesService_CreateDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).CreateDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_CreateDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).CreateDatabase(ctx, req.(*CreateDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabasesService_GetDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).GetDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_GetDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).GetDatabase(ctx, req.(*GetDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabasesService_ListDatabases_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListDatabasesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).ListDatabases(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_ListDatabases_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).ListDatabases(ctx, req.(*ListDatabasesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _DatabasesService_DeleteDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteDatabaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(DatabasesServiceServer).DeleteDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: DatabasesService_DeleteDatabase_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(DatabasesServiceServer).DeleteDatabase(ctx, req.(*DeleteDatabaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// DatabasesService_ServiceDesc is the grpc.ServiceDesc for DatabasesService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var DatabasesService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.structure.v1.DatabasesService",
+	HandlerType: (*DatabasesServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateDatabase",
+			Handler:    _DatabasesService_CreateDatabase_Handler,
+		},
+		{
+			MethodName: "GetDatabase",
+			Handler:    _DatabasesService_GetDatabase_Handler,
+		},
+		{
+			MethodName: "ListDatabases",
+			Handler:    _DatabasesService_ListDatabases_Handler,
+		},
+		{
+			MethodName: "DeleteDatabase",
+			Handler:    _DatabasesService_DeleteDatabase_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/structure/v1/structure.proto",
+}
+
+const (
 	NetworksService_CreateNetwork_FullMethodName      = "/fleetly.structure.v1.NetworksService/CreateNetwork"
 	NetworksService_ListNetworks_FullMethodName       = "/fleetly.structure.v1.NetworksService/ListNetworks"
 	NetworksService_DeclareNetworkPeer_FullMethodName = "/fleetly.structure.v1.NetworksService/DeclareNetworkPeer"

@@ -8,6 +8,8 @@ build.failed	Build failed.	added during implementation
 build.queued	Build accepted into build queue.	added during implementation
 build.succeeded	Build produced an image digest.	added during implementation
 config.updated	A config version was written.	internal/api/fleetlygrpc/structure.go PutConfig
+database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/api/fleetlygrpc/databases.go CreateDatabase
+database.deleted	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/api/fleetlygrpc/databases.go DeleteDatabase
 deployment.building	Deployment entered build stage.	added during implementation
 deployment.cancelled	Deployment cancelled while queued or in flight.	added during implementation
 deployment.failed	Deployment reached failed terminal state.	added during implementation

@@ -27,6 +27,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/freeze"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
@@ -50,6 +51,7 @@ const (
 	scopePeer                       // peer id → Peer → Network → Project
 	scopeRoute                      // route id → Route → Project
 	scopeHookToken                  // hook token 明文 → hash → Hook → App → Project
+	scopeDatabase                   // database id → Database → Project（ADR-0029）
 )
 
 // freezeScope 声明一个冻结面动词的 Team 解析方式（field 是请求字段名）。
@@ -75,6 +77,8 @@ var FrozenVerbs = map[string]freezeScope{
 	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": {field: "network_id", kind: scopeNetwork},
 	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer": {field: "id", kind: scopePeer},
 	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":  {field: "id", kind: scopePeer},
+	"/fleetly.structure.v1.DatabasesService/CreateDatabase":    {field: "project_id", kind: scopeProject},
+	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":    {field: "id", kind: scopeDatabase},
 	"/fleetly.delivery.v1.DeploymentsService/Deploy":           {field: "app_id", kind: scopeApp},
 	"/fleetly.delivery.v1.DeploymentsService/Rollback":         {field: "app_id", kind: scopeApp},
 	"/fleetly.delivery.v1.HooksService/SetGitHook":             {field: "app_id", kind: scopeApp},
@@ -108,6 +112,7 @@ type FreezeGuard struct {
 	peers     *networkpeer.Repo
 	hooks     *hook.Repo
 	routes    *route.Repo
+	databases *dbrepo.Repo
 }
 
 // NewFreezeGuard 构造执法器（repo 族从 DB 时钟派生）。
@@ -124,6 +129,7 @@ func NewFreezeGuard(db *state.DB, log *slog.Logger) *FreezeGuard {
 		peers:     networkpeer.New(clock),
 		hooks:     hook.New(clock),
 		routes:    route.New(clock),
+		databases: dbrepo.New(clock),
 	}
 }
 
@@ -232,6 +238,12 @@ func (g *FreezeGuard) resolveTeam(ctx context.Context, req any, scope freezeScop
 			return resolutionError(err)
 		}
 		return g.teamOfProject(ctx, run, a.ProjectID)
+	case scopeDatabase:
+		d, err := g.databases.Get(ctx, run, ref)
+		if err != nil {
+			return resolutionError(err)
+		}
+		return g.teamOfProject(ctx, run, d.ProjectID)
 	default:
 		return "", false, nil // 不可达：表构造面自约束
 	}

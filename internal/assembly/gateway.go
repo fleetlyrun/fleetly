@@ -48,6 +48,7 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		registerClient(structurev1.NewConfigsServiceClient, structurev1.RegisterConfigsServiceHandlerClient),
 		registerClient(structurev1.NewVolumesServiceClient, structurev1.RegisterVolumesServiceHandlerClient),
 		registerClient(structurev1.NewNetworksServiceClient, structurev1.RegisterNetworksServiceHandlerClient),
+		registerClient(structurev1.NewDatabasesServiceClient, structurev1.RegisterDatabasesServiceHandlerClient),
 		registerClient(deliveryv1.NewDeploymentsServiceClient, deliveryv1.RegisterDeploymentsServiceHandlerClient),
 		registerClient(deliveryv1.NewRevisionsServiceClient, deliveryv1.RegisterRevisionsServiceHandlerClient),
 		registerClient(deliveryv1.NewBuildsServiceClient, deliveryv1.RegisterBuildsServiceHandlerClient),

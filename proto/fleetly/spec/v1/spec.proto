@@ -201,11 +201,11 @@ message TaskRef {
 message DatabaseSpec {
   int32 schema_version = 1;
   DatabaseRef database = 2;
-  // engine 是模板引擎名（postgres / percona-pgvector / redis / mysql /
-  // mongodb…）。
+  // engine 是模板引擎名（postgres / pgvector / redis / mysql /
+  // mongodb…；值域真源 = engine 模板注册表，ADR-0029）。
   string engine = 3;
   string version = 4;
-  // credentials_ref 引用 Project Secret（连接串注入同样落 Secret）。
+  // credentials_ref 引用 Project Secret（值 = 完整连接 URL，ADR-0029）。
   string credentials_ref = 5;
   ResourcesSpec resources = 6;
   BackupPolicySpec backup_policy = 7;

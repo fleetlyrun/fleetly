@@ -21,6 +21,9 @@
       "name": "VolumesService"
     },
     {
+      "name": "DatabasesService"
+    },
+    {
       "name": "NetworksService"
     }
   ],
@@ -249,6 +252,140 @@
         ],
         "tags": [
           "ConfigsService"
+        ]
+      }
+    },
+    "/v1/databases": {
+      "get": {
+        "summary": "ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，\nADR-0026 惯例）。",
+        "operationId": "DatabasesService_ListDatabases",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListDatabasesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_database_id",
+            "description": "after_database_id 游标（上一页末条 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      },
+      "post": {
+        "operationId": "DatabasesService_CreateDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateDatabaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
+    "/v1/databases/{id}": {
+      "get": {
+        "operationId": "DatabasesService_GetDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1GetDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      },
+      "delete": {
+        "summary": "DeleteDatabase 收口删除（ADR-0029 决策 8）：拆载体 → tombstone 一\n事务（事件 + 审计）；数据卷与凭证 Secret 不随删（Project 级材料，\n备份保留义）。",
+        "operationId": "DatabasesService_DeleteDatabase",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteDatabaseResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "DatabasesService"
         ]
       }
     },
@@ -846,6 +983,29 @@
         }
       }
     },
+    "v1CreateDatabaseRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string",
+          "title": "engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。"
+        }
+      }
+    },
+    "v1CreateDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1Database"
+        }
+      }
+    },
     "v1CreateNetworkRequest": {
       "type": "object",
       "properties": {
@@ -909,6 +1069,51 @@
         }
       }
     },
+    "v1Database": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string",
+          "title": "version 是模板钉版短名（版本矩阵随 F2，本批每引擎单一钉版）。"
+        },
+        "credentials_ref": {
+          "type": "string",
+          "title": "credentials_ref 是凭证 Secret 名（值 = 完整连接 URL，永不回显；App\n经 process secret_refs 文件注入直用）。"
+        },
+        "host": {
+          "type": "string",
+          "title": "host 是网内 DNS 名（db-\u003cid\u003e，仅项目网内可解析——诚实连接面）。"
+        },
+        "port": {
+          "type": "integer",
+          "format": "int32",
+          "title": "port 是模板服务端口。"
+        },
+        "status": {
+          "type": "string",
+          "title": "status: pending | running | degraded | stopped（收敛环推进）。"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无\nRevision/Deployment 面）。"
+    },
     "v1DeclareNetworkPeerRequest": {
       "type": "object",
       "properties": {
@@ -933,6 +1138,9 @@
     "v1DeleteAppResponse": {
       "type": "object"
     },
+    "v1DeleteDatabaseResponse": {
+      "type": "object"
+    },
     "v1DeleteProjectResponse": {
       "type": "object"
     },
@@ -952,6 +1160,14 @@
       "properties": {
         "config": {
           "$ref": "#/definitions/v1Config"
+        }
+      }
+    },
+    "v1GetDatabaseResponse": {
+      "type": "object",
+      "properties": {
+        "database": {
+          "$ref": "#/definitions/v1Database"
         }
       }
     },
@@ -991,6 +1207,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1Config"
+          }
+        }
+      }
+    },
+    "v1ListDatabasesResponse": {
+      "type": "object",
+      "properties": {
+        "databases": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Database"
           }
         }
       }

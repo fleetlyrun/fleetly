@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/freeze"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
@@ -78,6 +79,9 @@ type Services struct {
 	Uploads     *sourceupload.Repo
 	UploadStore *upload.Store
 
+	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
+	Databases *dbrepo.Repo
+
 	// eventTickets 是 SSE 订阅路径的一次性短时票据面（ADR-0026；铸造经
 	// IssueEventTicket，兑换限 SSE 原生入口）。
 	eventTickets *eventTicketStore
@@ -125,6 +129,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Hooks:           hook.New(clock),
 		Uploads:         sourceupload.New(clock),
 		UploadStore:     upload.NewStore(dataRoot, 0, 0),
+		Databases:       dbrepo.New(clock),
 		eventTickets:    newEventTicketStore(clock),
 		ScopeVocabulary: vocab,
 		Log:             log,

@@ -162,6 +162,47 @@ service VolumesService {
   }
 }
 
+// DatabasesService：托管数据服务聚合面（ADR-0029）。凭证值永不回显——
+// 响应只携带 Secret 名与去密码连接面（host/port）；App 经 secret_refs
+// 引用 credentials_ref 取完整连接 URL。
+service DatabasesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc CreateDatabase(CreateDatabaseRequest) returns (CreateDatabaseResponse) {
+    option (google.api.http) = { post: "/v1/databases" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc GetDatabase(GetDatabaseRequest) returns (GetDatabaseResponse) {
+    option (google.api.http) = { get: "/v1/databases/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    };
+  }
+  // ListDatabases 新→旧分页（after_database_id 游标 = ULID 创建序，
+  // ADR-0026 惯例）。
+  rpc ListDatabases(ListDatabasesRequest) returns (ListDatabasesResponse) {
+    option (google.api.http) = { get: "/v1/databases" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    };
+  }
+  // DeleteDatabase 收口删除（ADR-0029 决策 8）：拆载体 → tombstone 一
+  // 事务（事件 + 审计）；数据卷与凭证 Secret 不随删（Project 级材料，
+  // 备份保留义）。
+  rpc DeleteDatabase(DeleteDatabaseRequest) returns (DeleteDatabaseResponse) {
+    option (google.api.http) = { delete: "/v1/databases/{id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
 // NetworksService：Network 聚合面 + 跨 Project peer 声明面（ADR-0013
 // 附录 A：成员③显式跨 Project 引用——双向声明、接收方批准、撤销即时
 // 隔离）。peer 动词 scope 复用 networks 资源（授权面等价于"管理网络"）。
@@ -310,6 +351,47 @@ message CreateVolumeRequest { string project_id = 1; string name = 2; string pin
 message CreateVolumeResponse { Volume volume = 1; }
 message ListVolumesRequest { string project_id = 1; }
 message ListVolumesResponse { repeated Volume volumes = 1; }
+
+// Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无
+// Revision/Deployment 面）。
+message Database {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string engine = 4;
+  // version 是模板钉版短名（版本矩阵随 F2，本批每引擎单一钉版）。
+  string version = 5;
+  // credentials_ref 是凭证 Secret 名（值 = 完整连接 URL，永不回显；App
+  // 经 process secret_refs 文件注入直用）。
+  string credentials_ref = 6;
+  // host 是网内 DNS 名（db-<id>，仅项目网内可解析——诚实连接面）。
+  string host = 7;
+  // port 是模板服务端口。
+  int32 port = 8;
+  // status: pending | running | degraded | stopped（收敛环推进）。
+  string status = 9;
+  string created_at = 10;
+  string updated_at = 11;
+}
+
+message CreateDatabaseRequest {
+  string project_id = 1;
+  string name = 2;
+  // engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。
+  string engine = 3;
+}
+message CreateDatabaseResponse { Database database = 1; }
+message GetDatabaseRequest { string id = 1; }
+message GetDatabaseResponse { Database database = 1; }
+message ListDatabasesRequest {
+  string project_id = 1;
+  // after_database_id 游标（上一页末条 id；空 = 首页）。
+  string after_database_id = 2;
+  int32 limit = 3;
+}
+message ListDatabasesResponse { repeated Database databases = 1; }
+message DeleteDatabaseRequest { string id = 1; }
+message DeleteDatabaseResponse {}
 
 message Network {
   string id = 1;

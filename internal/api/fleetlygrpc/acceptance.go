@@ -181,6 +181,40 @@ func (s *Services) appQuota(projectID string) acceptanceCheck {
 	}
 }
 
+// databaseQuota：活跃 Database 数配额（ADR-0029 决策 10；同族受理检查——
+// 库是长驻真实资源）。
+func (s *Services) databaseQuota(projectID string) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		n, err := s.Databases.CountByProject(ctx, tx, projectID)
+		if err != nil {
+			return err
+		}
+		if n >= maxDatabasesPerProject {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"project %s already holds %d databases (limit %d); delete unused ones first",
+				projectID, n, maxDatabasesPerProject)
+		}
+		return nil
+	}
+}
+
+// projectHasNetwork：CreateDatabase 的可达性前置（ADR-0029 决策 5）——
+// 数据库挂全部活跃项目网，零网项目的库不可达；拒绝优于静默孤岛。
+func (s *Services) projectHasNetwork(projectID string) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		nets, err := s.Networks.ListByProject(ctx, tx, projectID)
+		if err != nil {
+			return err
+		}
+		if len(nets) == 0 {
+			return apperr.New("E_CONFLICT",
+				"project %s has no networks; a database attaches the project's active networks and would be unreachable - create a network first ('fleetly networks create --project %s default')",
+				projectID, projectID)
+		}
+		return nil
+	}
+}
+
 // structureEvent 构造结构面事件的 Outbox 事实（负载字段只增）。
 func structureEvent(name, aggregate, id, projectID string) eventFact {
 	payload, _ := json.Marshal(structureEventPayload{ID: id, ProjectID: projectID}) //nolint:errcheck // 结构体字段恒可序列化

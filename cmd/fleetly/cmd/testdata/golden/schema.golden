@@ -11,6 +11,8 @@ build.queued	event	Build accepted into build queue.
 build.succeeded	event	Build produced an image digest.
 config.updated	event	A config version was written.
 database	spec	DatabaseSpec: desired state of a managed data service (template-rendered, rides the Runtime channel).
+database.created	event	A database was created from a template; the platform minted its credential secret (value never returned).
+database.deleted	event	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).
 deployment.building	event	Deployment entered build stage.
 deployment.cancelled	event	Deployment cancelled while queued or in flight.
 deployment.failed	event	Deployment reached failed terminal state.

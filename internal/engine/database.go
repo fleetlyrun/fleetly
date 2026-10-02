@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -33,6 +34,13 @@ const dbCredentialSecretPrefix = "database:"
 // 公式）。
 func DBCredentialSecretName(databaseName string) string {
 	return dbCredentialSecretPrefix + databaseName
+}
+
+// IsDatabaseCredentialSecret 报告 Secret 名是否落在数据库凭证保留前缀
+// （API PutSecret 的受理守卫消费：用户覆写会破坏连接串单真源——值必须
+// 恒为完整连接 URL，ADR-0029 决策 6）。
+func IsDatabaseCredentialSecret(name string) bool {
+	return strings.HasPrefix(name, dbCredentialSecretPrefix)
 }
 
 // KickDatabases 唤醒 Database 收敛环（API 受理面消费：创建/删除后立即
@@ -107,7 +115,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 		return
 	}
 	if err := e.applyVolumePinning(stepCtx, ws, row.ProjectID); err != nil {
-		e.log.Error("database reconcile: apply volume pinning", "database", row.ID, "err", err)
+		e.log.Error("database reconcile: volume pinning merge", "database", row.ID, "err", err)
 		return
 	}
 	gen, err := e.databases.EnsureGeneration(stepCtx, e.db.Runner(), row.ID, managedFingerprint(ws))
