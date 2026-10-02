@@ -73,7 +73,8 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 		Version:    "1",
 		Notes: []string{
 			"builds always run on the control-plane node with the local daemon (ADR-0019)",
-			"build cache is node-local; multi-node cache distribution lands with the registry batch",
+			"built images are pushed to the managed registry and dispatched by digest (ADR-0019 appendix B)",
+			"build cache is node-local; multi-node cache distribution lands with the builder-expansion batch",
 		},
 	}
 }

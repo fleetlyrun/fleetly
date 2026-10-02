@@ -2,21 +2,27 @@ package dockerbuild
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
 	"github.com/moby/buildkit/session/exporter"
 	"github.com/moby/buildkit/session/exporter/exporterprovider"
+	"github.com/moby/moby/client"
 	"github.com/tonistiigi/fsutil"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
 
 // Build 执行一次构建：context 本地目录 → dockerfile.v0 前端 → docker
-// exporter 导入本机 daemon（镜像以 Target 命名；多节点镜像分发随 zot
-// Registry 批次 N1 接入）。进度流实时写 w（F0.9 构建日志实时流）；
-// ctx 取消即中止（cancelled 由 engine 落状态）。
+// exporter 导入本机 daemon（镜像以 Target 命名，构建缓存与本地调试保留）
+// → daemon ImagePush 推送到 Target 仓库（docker-driver 不支持 buildkit
+// image exporter push，推送走 `docker push` 同路径，ADR-0019 附录 B.6）；
+// digest=推送产物的 manifest digest（Revision 冻结锚）。进度流实时写 w
+// （F0.9 构建日志实时流）；ctx 取消即中止（cancelled 由 engine 落状态）。
 func (p *Provider) Build(ctx context.Context, req capability.BuildRequest, w capability.LogWriter) (capability.BuildResult, error) {
 	if req.ContextDir == "" {
 		return capability.BuildResult{}, fmt.Errorf("dockerbuild: build context directory is required")
@@ -49,7 +55,7 @@ func (p *Provider) Build(ctx context.Context, req capability.BuildRequest, w cap
 	}
 	// docker exporter 经 session 由 client 侧声明（buildx docker-driver 同
 	// 模式：daemon 内嵌 buildkit 回调 FindExporters，产物导入本机 daemon
-	// 镜像库，--load 等价；N0 单节点分发形态，zot Registry 批次转 push）。
+	// 镜像库，--load 等价；多节点分发经随后推送承担，附录 B.6）。
 	sessionExporter := exporterprovider.New(func(ctx context.Context, md map[string][]byte, refs []string) ([]*exporter.ExporterRequest, error) {
 		return []*exporter.ExporterRequest{{
 			// "moby" 是 dockerd 内嵌 buildkit 的镜像导出器名（写 daemon
@@ -74,19 +80,106 @@ func (p *Provider) Build(ctx context.Context, req capability.BuildRequest, w cap
 	if err != nil {
 		return capability.BuildResult{}, fmt.Errorf("dockerbuild: solve: %w", err)
 	}
+	_ = resp
 
-	// digest 取本机镜像 ID（N0 本地不可变标识；Registry 批次接入后转为
-	// 仓库 digest）。
-	inspect, err := p.cli.ImageInspect(ctx, target)
+	digest, err := p.pushBuiltImage(ctx, req, target, w)
 	if err != nil {
-		return capability.BuildResult{}, fmt.Errorf("dockerbuild: inspect built image: %w", err)
+		return capability.BuildResult{}, err
 	}
-	digest := inspect.ID
-	if digest == "" {
-		return capability.BuildResult{}, fmt.Errorf("dockerbuild: built image %s has no id", target)
-	}
-	_ = resp // exporter 响应 attrs 在 Registry 批次消费（push URL/真正的 digest）
 	return capability.BuildResult{Digest: digest}, nil
+}
+
+// pushBuiltImage 推送本机镜像到 Target 仓库并回填 manifest digest（推送流
+// aux 优先；RepoDigests 兜底——旧 daemon 可能不回 aux）。推送流文本行进
+// 构建日志（与 buildkit 步骤日志同一条实时流）。
+func (p *Provider) pushBuiltImage(ctx context.Context, req capability.BuildRequest, target string, w capability.LogWriter) (string, error) {
+	auth := ""
+	if req.PushCred != nil {
+		var err error
+		auth, err = encodeRegistryAuth(*req.PushCred)
+		if err != nil {
+			return "", fmt.Errorf("dockerbuild: encode push credentials: %w", err)
+		}
+	}
+	push, err := p.cli.ImagePush(ctx, target, client.ImagePushOptions{RegistryAuth: auth})
+	if err != nil {
+		return "", fmt.Errorf("dockerbuild: push %s: %w", target, err)
+	}
+	digest := ""
+	for msg, err := range push.JSONMessages(ctx) {
+		if err != nil {
+			return "", fmt.Errorf("dockerbuild: push %s: %w", target, err)
+		}
+		if msg.Error != nil {
+			return "", fmt.Errorf("dockerbuild: push %s: %s", target, msg.Error.Message)
+		}
+		if d := digestFromAux(msg.Aux); d != "" {
+			digest = d
+		}
+		if s := strings.TrimSpace(msg.Stream); s != "" && w != nil {
+			_ = w.WriteLog(ctx, capability.LogFrame{WorkloadID: req.BuildID, Container: "push", Line: []byte(s)})
+		}
+	}
+	if digest == "" {
+		// RepoDigests 兜底：推送后 daemon 记录 <repo>@sha256:<digest>。
+		inspect, err := p.cli.ImageInspect(ctx, target)
+		if err != nil {
+			return "", fmt.Errorf("dockerbuild: inspect pushed image: %w", err)
+		}
+		repo := targetRepoPrefix(target)
+		for _, rd := range inspect.RepoDigests {
+			if at := strings.LastIndex(rd, "@"); at > 0 && strings.HasPrefix(rd, repo) {
+				digest = rd[at+1:]
+				break
+			}
+		}
+	}
+	if digest == "" {
+		return "", fmt.Errorf("dockerbuild: push %s: no manifest digest reported", target)
+	}
+	return digest, nil
+}
+
+// pushAuxJSON 是推送流 aux 载荷的 digest 面。
+type pushAuxJSON struct {
+	Digest string `json:"digest"`
+}
+
+// digestFromAux 从 aux 载荷提取 manifest digest（非 digest 载荷返回空）。
+func digestFromAux(aux *json.RawMessage) string {
+	if aux == nil || len(*aux) == 0 {
+		return ""
+	}
+	var a pushAuxJSON
+	if err := json.Unmarshal(*aux, &a); err != nil || a.Digest == "" {
+		return ""
+	}
+	return a.Digest
+}
+
+// targetRepoPrefix 返回推送目标去掉 tag 的 repo 前缀（RepoDigests 匹配用；
+// tag 分隔=最后一个斜杠之后的冒号——host:port 的冒号必在斜杠前）。
+func targetRepoPrefix(target string) string {
+	slash := strings.LastIndex(target, "/")
+	if c := strings.LastIndex(target, ":"); c > slash {
+		return target[:c]
+	}
+	return target
+}
+
+// encodeRegistryAuth 把平台凭证编码为 X-Registry-Auth 头值（base64 JSON；
+// swarm Provider 同款编码与 map 形态，providers 互不 import 各持一份——
+// map 键不触发 gosec G117 的结构体字段模式）。
+func encodeRegistryAuth(c capability.RegistryCredential) (string, error) {
+	payload, err := json.Marshal(map[string]string{
+		"username":      c.Username,
+		"password":      c.Secret,
+		"serveraddress": c.Server,
+	})
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(payload), nil
 }
 
 // streamProgress 把 buildkit SolveStatus 流翻译为日志帧（Vertex = 步骤名、
