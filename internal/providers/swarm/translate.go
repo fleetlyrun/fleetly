@@ -191,7 +191,7 @@ func nsSelector(ns capability.NamespaceRef) map[string]string {
 //     ADR-0025 决策 1）；StopGrace → StopGracePeriod。
 //   - Addressing → 网络别名（平台标准 DNS 名的 swarm 原语映射，ADR-0025
 //     决策 6；跨服务 alias 的 DNS RR 行为 e2e 实证后定稿）。
-func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretCarriers map[string]string) swarm.ServiceSpec {
+func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation, secretCarriers map[string]secretCarrier) swarm.ServiceSpec {
 	container := &swarm.ContainerSpec{
 		Image:    w.Image,
 		Labels:   workloadLabels(ns, w, gen),
@@ -217,9 +217,12 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	// Secret 文件注入（值已落 swarm secret 载体；容器内 /run/secrets/<名>）。
 	// 按 platformName 排序后遍历（对照 envSlice 先例）：map 遍历序随机，
 	// 排序保 spec 逐字节稳定——幂等重放的 diff 不产生假变更（P1-14）。
+	// 引用 id+名双发（swarmkit validateSecretRefsSpec 要求，见 secretCarrier）。
 	for _, platformName := range sortedKeys(secretCarriers) {
+		c := secretCarriers[platformName]
 		container.Secrets = append(container.Secrets, &swarm.SecretReference{
-			SecretName: secretCarriers[platformName],
+			SecretID:   c.id,
+			SecretName: c.name,
 			File: &swarm.SecretReferenceFileTarget{
 				Name: platformName,
 				Mode: 0o400,

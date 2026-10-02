@@ -35,7 +35,7 @@ type Provider struct {
 	listContainers   func(ctx context.Context, ns capability.NamespaceRef) ([]container.Summary, error)
 	openContainerLog func(ctx context.Context, containerID string, opts client.ContainerLogsOptions) (io.ReadCloser, error)
 	networkInspect   func(ctx context.Context, name string) error
-	secretInspect    func(ctx context.Context, name string) error
+	secretInspect    func(ctx context.Context, name string) (client.SecretInspectResult, error)
 }
 
 // 编译期契约断言：核心面 + 三个子面，共四个面（F0.19 全契约；C-10 补

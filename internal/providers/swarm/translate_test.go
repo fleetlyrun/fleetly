@@ -108,8 +108,8 @@ func TestToServiceSpec(t *testing.T) {
 		Resources: &capability.Resources{CPUMillis: 500, MemoryMB: 256},
 		Networks:  []string{"default"},
 	}
-	spec := toServiceSpec(ns, w, capability.Generation(2), map[string]string{ //nolint:gosec // 载体名样本（非凭据值）
-		"api-token": "fleetly-sec-api-token-ab12cd34",
+	spec := toServiceSpec(ns, w, capability.Generation(2), map[string]secretCarrier{ //nolint:gosec // 载体名样本（非凭据值）
+		"api-token": {id: "secid01", name: "fleetly-sec-api-token-ab12cd34"},
 	})
 
 	assert.Equal(t, "fleetly-acme-shop-web-web", spec.Name)
@@ -134,16 +134,18 @@ func TestToServiceSpec(t *testing.T) {
 	require.Len(t, spec.TaskTemplate.Networks, 1)
 	// 平台网络名映射为载体名（Provider 私有公式；平台永不解析）。
 	assert.Equal(t, "fleetly-net-shop-default", spec.TaskTemplate.Networks[0].Target)
-	// Secret 文件注入：载体引用 + /run/secrets/<平台名>，值不进 env/label。
+	// Secret 文件注入：载体引用（id+名双发——swarmkit validateSecretRefsSpec
+	// 要求）+ /run/secrets/<平台名>，值不进 env/label。
 	require.Len(t, spec.TaskTemplate.ContainerSpec.Secrets, 1)
 	assert.Equal(t, "fleetly-sec-api-token-ab12cd34", spec.TaskTemplate.ContainerSpec.Secrets[0].SecretName)
+	assert.Equal(t, "secid01", spec.TaskTemplate.ContainerSpec.Secrets[0].SecretID, "raw API must carry the resolved secret id (docker CLI resolves client-side)")
 	assert.Equal(t, "api-token", spec.TaskTemplate.ContainerSpec.Secrets[0].File.Name)
 }
 
 // deterministicFixture 是守卫 E 的负载样本：刻意覆盖全部 map 来源字段
 // （env、≥2 secret 载体）与切片来源字段（≥2 networks、≥2 volumes、
 // ≥2 ports），任何一处遍历序泄漏都会让逐字节对照翻红。
-func deterministicFixture() (capability.NamespaceRef, capability.Workload, capability.Generation, map[string]string) {
+func deterministicFixture() (capability.NamespaceRef, capability.Workload, capability.Generation, map[string]secretCarrier) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
 	w := capability.Workload{
 		ID:      "wl_01H",
@@ -175,10 +177,10 @@ func deterministicFixture() (capability.NamespaceRef, capability.Workload, capab
 		},
 	}
 	// ≥2 个不同 secret 载体（P1-14 的触发面：map → ContainerSpec.Secrets）。
-	carriers := map[string]string{ //nolint:gosec // 载体名样本（非凭据值）
-		"z-token":   "fleetly-sec-z-token-99aa88bb",
-		"a-token":   "fleetly-sec-a-token-11bb22cc",
-		"m-key.pem": "fleetly-sec-m-key-pem-55dd66ee",
+	carriers := map[string]secretCarrier{ //nolint:gosec // 载体名样本（非凭据值）
+		"z-token":   {id: "secidzz", name: "fleetly-sec-z-token-99aa88bb"},
+		"a-token":   {id: "secidaa", name: "fleetly-sec-a-token-11bb22cc"},
+		"m-key.pem": {id: "secidmm", name: "fleetly-sec-m-key-pem-55dd66ee"},
 	}
 	return ns, w, capability.Generation(42), carriers
 }

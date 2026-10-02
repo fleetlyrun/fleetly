@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/containerd/errdefs"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -34,7 +35,9 @@ func TestEnsureNetworksInspectErrorPropagates(t *testing.T) {
 
 func TestEnsureSecretsInspectErrorPropagates(t *testing.T) {
 	cause := errors.New("secret inspect: unauthorized")
-	p := &Provider{secretInspect: func(context.Context, string) error { return cause }}
+	p := &Provider{secretInspect: func(context.Context, string) (client.SecretInspectResult, error) {
+		return client.SecretInspectResult{}, cause
+	}}
 	m := capability.Materials{SecretFiles: map[string][]byte{ //nolint:gosec // 测试样本值（非凭据）
 		"api-token": []byte("sample"),
 	}}
