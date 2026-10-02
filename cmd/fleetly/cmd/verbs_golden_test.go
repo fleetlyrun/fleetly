@@ -6,9 +6,13 @@ package cmd
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/require"
 
 	automationv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/automation/v1"
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
@@ -143,7 +147,22 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"freeze list", []string{"freeze", "list"}, 0},
 		{"freeze lift", []string{"freeze", "lift", "GOLDEN_FREEZE"}, 0},
 		{"freeze list after lift", []string{"freeze", "list"}, 0},
+
+		// Upload 动词（F1.10，ADR-0019 附录 A）：put（目录 → 确定性 tar →
+		// 内容寻址）→ list → deploy --from-dir 全链（上传先于 Deploy 完成；
+		// manual 夹具不驱动，部署停在 queued——确定性输出。--json 轮同目录
+		// 重传命中内容寻址去重：deduplicated=true 且同一 upload id）。
+		{"uploads put", []string{"uploads", "put", "--project", "GOLDEN_PROJECT", "GOLDEN_SRCDIR"}, 0},
+		{"uploads list", []string{"uploads", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"deploy from dir", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR"}, 0},
 	}
+
+	// GOLDEN_SRCDIR 是上传 golden 的固定内容目录（确定性 tar → digest 确定，
+	// golden 逐字稳定；路径本身不进输出）。
+	srcDir := t.TempDir()
+	require.NoError(t, os.MkdirAll(filepath.Join(srcDir, "web"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(srcDir, "web", "index.html"), []byte("golden\n"), 0o600))
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
@@ -181,6 +200,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_FREEZE" {
 					args[i] = freezeID
+				}
+				if a == "GOLDEN_SRCDIR" {
+					args[i] = srcDir
 				}
 			}
 			code, out, stderr := runCLI(t, args...)

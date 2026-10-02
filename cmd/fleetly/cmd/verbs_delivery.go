@@ -80,36 +80,47 @@ func requireSucceeded(depID, final string) error {
 
 func newDeployVerb() commands.Command {
 	const name = "deploy"
-	var app, image, composeFile, process, idemKey, commit, httpProbe string
+	var app, image, composeFile, fromDir, dockerfile, process, idemKey, commit, httpProbe string
 	var tcpProbe int
 	var supersede, wait bool
 	return &flaggedVerb{
-		name: name, synopsis: "Deploy an app from an image or compose file",
-		usage: "deploy --app APP_ID (--image REF | --compose-file PATH) [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
+		name: name, synopsis: "Deploy an app from an image, compose file, or uploaded directory",
+		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR) [--dockerfile PATH] [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
 			fs.StringVar(&composeFile, "compose-file", "", "compose file path (controlled subset)")
-			fs.StringVar(&process, "process", "", "process name for image deploys (default web)")
+			fs.StringVar(&fromDir, "from-dir", "", "local directory to tar and upload as build source (F1.10; .git is never uploaded)")
+			fs.StringVar(&dockerfile, "dockerfile", "", "dockerfile path inside the uploaded source (default Dockerfile; --from-dir only)")
+			fs.StringVar(&process, "process", "", "process name for image and upload deploys (default web)")
 			fs.StringVar(&idemKey, "idempotency-key", "", "idempotency key: same key+body replays the same response for 24h (sent as the Idempotency-Key header and the deployment dedup anchor)")
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
 			fs.BoolVar(&supersede, "supersede", false, "explicitly preempt any in-flight deployment")
 			fs.BoolVar(&wait, "wait", false, "wait for the deployment to reach a terminal state (streams state transitions; non-zero exit unless succeeded)")
-			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image deploys (absolute path, e.g. /healthz; probe port = --tcp-probe if set, else the first declared port, else 8080)")
-			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image deploys")
+			fs.StringVar(&httpProbe, "http-probe", "", "http health probe path for image and upload deploys (absolute path, e.g. /healthz)")
+			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image and upload deploys")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
-			if (image == "") == (composeFile == "") {
-				return usageErr(name, "exactly one of --image or --compose-file is required")
+			sources := 0
+			for _, v := range []string{image, composeFile, fromDir} {
+				if v != "" {
+					sources++
+				}
+			}
+			if sources != 1 {
+				return usageErr(name, "exactly one of --image, --compose-file or --from-dir is required")
 			}
 			if httpProbe != "" && tcpProbe != 0 {
 				return usageErr(name, "--http-probe and --tcp-probe are mutually exclusive")
 			}
 			if (httpProbe != "" || tcpProbe != 0) && composeFile != "" {
-				return usageErr(name, "--http-probe/--tcp-probe are for image deploys; compose declares probes via healthcheck.http_path/tcp_port")
+				return usageErr(name, "--http-probe/--tcp-probe are for image or upload deploys; compose declares probes via healthcheck.http_path/tcp_port")
+			}
+			if dockerfile != "" && fromDir == "" {
+				return usageErr(name, "--dockerfile is only valid together with --from-dir")
 			}
 			compose := ""
 			if composeFile != "" {
@@ -119,9 +130,9 @@ func newDeployVerb() commands.Command {
 				}
 				compose = string(data)
 			}
-			// --wait 是流式长等待：豁免请求级 deadline。
+			// --wait 与 --from-dir 的上传流都是流式长面：豁免请求级 deadline。
 			var dialOpts []dialOption
-			if wait {
+			if wait || fromDir != "" {
 				dialOpts = append(dialOpts, noDeadline())
 			}
 			ctx, cancel, c, err := dialFromEnv(ctx, dialOpts...)
@@ -130,11 +141,38 @@ func newDeployVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
+			var uploadID string
+			if fromDir != "" {
+				info, serr := os.Stat(fromDir) //nolint:gosec // 用户显式指定的输入路径
+				if serr != nil {
+					return fmt.Errorf("stat %s: %w", fromDir, serr)
+				}
+				if !info.IsDir() {
+					return usageErr(name, "--from-dir must be a directory")
+				}
+				projectID, perr := appProjectID(ctx, c, app)
+				if perr != nil {
+					return perr
+				}
+				up, uerr := uploadDir(ctx, c, projectID, fromDir)
+				if uerr != nil {
+					return uerr
+				}
+				uploadID = up.GetId()
+			}
 			// 头（通用幂等）与 body 字段（部署去重锚）同值下发——ADR-0024
-			// 双源一致性：不一致即 409。
+			// 双源一致性：不一致即 409。--from-dir 形态上传先行完成，Deploy
+			// 仍按普通 unary 走（ctx 无 deadline 时显式附 120s 上限）。
+			if _, ok := ctx.Deadline(); !ok {
+				var dctx context.Context
+				dctx, cancel2 := context.WithTimeout(ctx, cliRequestTimeout)
+				defer cancel2()
+				ctx = dctx
+			}
 			ctx = fleetly.WithIdempotencyKey(ctx, idemKey)
 			resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
-				AppId: app, Image: image, ComposeYaml: compose, ProcessName: process,
+				AppId: app, Image: image, ComposeYaml: compose, UploadId: uploadID, Dockerfile: dockerfile,
+				ProcessName:    process,
 				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede,
 				HttpProbe: httpProbe, TcpProbe: int32(tcpProbe), //nolint:gosec // 端口域内
 			})

@@ -60,6 +60,7 @@ task.updated	event	A task's desired concurrency was updated.
 team.created	event	A team was created.
 token.created	event	A token was minted (secret shown once at creation).
 token.revoked	event	A token was revoked; its next call will be rejected.
+upload.stored	event	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).
 user.created	event	A user was created and granted a role in a team.
 volume.created	event	A volume was created.
 workload.drift_detected	event	Observed workload diverged from the ensured generation or spec (ADR-0022).

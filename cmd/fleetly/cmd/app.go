@@ -79,6 +79,8 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		newRollbackVerb(),
 		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
 		groupVerb("builds", "inspect builds and stream build logs", newBuildsListVerb(), newBuildsLogsVerb()),
+		groupVerb("uploads", "upload and list build source directories (content-addressed; re-uploads deduplicate)",
+			newUploadsPutVerb(), newUploadsListVerb()),
 		groupVerb("hooks", "manage per-app git triggers (secrets shown once at mint/rotate)", newHooksSetVerb(), newHooksGetVerb(), newHooksRotateVerb()),
 		// Automation 上下文（F1.5/F1.6/F1.7：Task 双形态 + Owner Lease +
 		// WaitRun + 时区 cron Schedule）。
