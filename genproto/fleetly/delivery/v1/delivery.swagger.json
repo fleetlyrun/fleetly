@@ -521,6 +521,50 @@
           "RevisionsService"
         ]
       }
+    },
+    "/v1/uploads": {
+      "get": {
+        "summary": "ListUploads 列项目上传产物（after_upload_id + limit 游标，ADR-0026\nList 惯例）。",
+        "operationId": "BuildsService_ListUploads",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListUploadsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_upload_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "BuildsService"
+        ]
+      }
     }
   },
   "definitions": {
@@ -620,18 +664,26 @@
         },
         "process_name": {
           "type": "string",
-          "title": "process_name 覆盖直投形态的进程名（默认 web）。"
+          "title": "process_name 覆盖直投/上传形态的进程名（默认 web）。"
         },
         "http_probe": {
           "type": "string",
-          "title": "http_probe/tcp_probe 是直投形态的探针声明（B2：http/tcp 探针的 API\n声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。"
+          "title": "http_probe/tcp_probe 是直投与上传形态的探针声明（B2：http/tcp 探针的\nAPI 声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。"
         },
         "tcp_probe": {
           "type": "integer",
           "format": "int32"
+        },
+        "upload_id": {
+          "type": "string",
+          "title": "upload_id 是上传产物形态（F1.10，ADR-0019 附录 A）：引用 UploadSource\n返回的 id，与 image/compose_yaml 互斥；归属项目必须与 App 一致。"
+        },
+        "dockerfile": {
+          "type": "string",
+          "title": "dockerfile 是上传形态的构建文件路径（tar 内相对路径，缺省 Dockerfile）。"
         }
       },
-      "title": "DeployRequest 两源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。"
+      "title": "DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。"
     },
     "v1DeployResponse": {
       "type": "object",
@@ -806,6 +858,18 @@
         }
       }
     },
+    "v1ListUploadsResponse": {
+      "type": "object",
+      "properties": {
+        "uploads": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Upload"
+          }
+        }
+      }
+    },
     "v1ReceiveWebhookResponse": {
       "type": "object",
       "properties": {
@@ -890,6 +954,57 @@
         }
       },
       "title": "StreamBuildLogsResponse 一帧构建日志（time RFC3339）。"
+    },
+    "v1Upload": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "title": "Upload 是上传产物行投影（ListUploads 读面）。"
+    },
+    "v1UploadSourceMeta": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        }
+      },
+      "title": "UploadSourceMeta 是上传首帧：Upload 是 project 级材料（与 Secret/Config\n同口径——跨 App 共享，归属校验在 Deploy 受理位）。"
+    },
+    "v1UploadSourceResponse": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string",
+          "title": "sha256 hex（内容寻址）"
+        },
+        "size_bytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "deduplicated": {
+          "type": "boolean"
+        }
+      },
+      "title": "UploadSourceResponse 是上传终态：id 是后续 Deploy 的 upload_id。同字节\n重传返回同一 id（deduplicated=true）。"
     },
     "v1WaitBuildResponse": {
       "type": "object",

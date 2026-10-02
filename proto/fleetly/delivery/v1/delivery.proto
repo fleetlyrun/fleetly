@@ -123,6 +123,28 @@ service BuildsService {
       api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
     };
   }
+
+  // UploadSource（F1.10，ADR-0019 附录 A）是仓内首个 client-streaming 写
+  // 面：首帧 meta（project_id），余帧 chunk（tar 字节流），EOF 后内容寻址
+  // 落库。gRPC-only：client-streaming 无 HTTP 注解面（先例=ReceiveWebhook
+  // 无 HTTP 绑定；REST/Console 形态随 Console 批次另行裁决）。同字节重传
+  // 天然幂等：同 digest 返回同一引用（deduplicated=true）。
+  rpc UploadSource(stream UploadSourceRequest) returns (UploadSourceResponse) {
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "builds" op: SCOPE_OP_WRITE }
+    };
+  }
+
+  // ListUploads 列项目上传产物（after_upload_id + limit 游标，ADR-0026
+  // List 惯例）。
+  rpc ListUploads(ListUploadsRequest) returns (ListUploadsResponse) {
+    option (google.api.http) = { get: "/v1/uploads" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "builds" op: SCOPE_OP_READ }
+    };
+  }
 }
 
 // HooksService：per-App Git 触发配置 + GitHub push 接收面（F0.13）。配置
@@ -186,7 +208,7 @@ message Deployment {
   string finished_at = 14;
 }
 
-// DeployRequest 两源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。
+// DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。
 message DeployRequest {
   string app_id = 1;
   // image 直投形态（如 nginx:1.27）。
@@ -196,12 +218,17 @@ message DeployRequest {
   string idempotency_key = 4;
   string commit_sha = 5;
   bool supersede = 6;
-  // process_name 覆盖直投形态的进程名（默认 web）。
+  // process_name 覆盖直投/上传形态的进程名（默认 web）。
   string process_name = 7;
-  // http_probe/tcp_probe 是直投形态的探针声明（B2：http/tcp 探针的 API
-  // 声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。
+  // http_probe/tcp_probe 是直投与上传形态的探针声明（B2：http/tcp 探针的
+  // API 声明面，互斥；compose 形态经 healthcheck.http_path/tcp_port 扩展键）。
   string http_probe = 8;
   int32 tcp_probe = 9;
+  // upload_id 是上传产物形态（F1.10，ADR-0019 附录 A）：引用 UploadSource
+  // 返回的 id，与 image/compose_yaml 互斥；归属项目必须与 App 一致。
+  string upload_id = 10;
+  // dockerfile 是上传形态的构建文件路径（tar 内相对路径，缺省 Dockerfile）。
+  string dockerfile = 11;
 }
 
 message DeployResponse { Deployment deployment = 1; }
@@ -273,6 +300,47 @@ message StreamBuildLogsResponse {
 message WaitBuildRequest { string build_id = 1; }
 // WaitBuildResponse 是状态快照帧；流在终态帧后关闭。
 message WaitBuildResponse { Build build = 1; }
+
+// UploadSourceRequest 是上传流的单帧：首帧 meta（且仅一次），余帧 chunk。
+// chunk 建议 ≤1MiB（单条消息远小于 gRPC 收包上限 32MiB；总量上限由服务端
+// 字节计数执法，见 ADR-0019 附录 A.3）。
+message UploadSourceRequest {
+  oneof part {
+    UploadSourceMeta meta = 1;
+    bytes chunk = 2;
+  }
+}
+
+// UploadSourceMeta 是上传首帧：Upload 是 project 级材料（与 Secret/Config
+// 同口径——跨 App 共享，归属校验在 Deploy 受理位）。
+message UploadSourceMeta {
+  string project_id = 1;
+}
+
+// UploadSourceResponse 是上传终态：id 是后续 Deploy 的 upload_id。同字节
+// 重传返回同一 id（deduplicated=true）。
+message UploadSourceResponse {
+  string id = 1;
+  string digest = 2;    // sha256 hex（内容寻址）
+  int64 size_bytes = 3;
+  bool deduplicated = 4;
+}
+
+// Upload 是上传产物行投影（ListUploads 读面）。
+message Upload {
+  string id = 1;
+  string project_id = 2;
+  string digest = 3;
+  int64 size_bytes = 4;
+  string created_at = 5;
+}
+
+message ListUploadsRequest {
+  string project_id = 1;
+  string after_upload_id = 2;
+  int32 limit = 3;
+}
+message ListUploadsResponse { repeated Upload uploads = 1; }
 
 // GitHook 是 per-App Git 触发配置投影（secret 永不回显——完整明文只在
 // 铸造响应出现一次）。

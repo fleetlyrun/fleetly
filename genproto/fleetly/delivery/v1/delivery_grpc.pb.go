@@ -474,6 +474,8 @@ const (
 	BuildsService_ListBuilds_FullMethodName      = "/fleetly.delivery.v1.BuildsService/ListBuilds"
 	BuildsService_StreamBuildLogs_FullMethodName = "/fleetly.delivery.v1.BuildsService/StreamBuildLogs"
 	BuildsService_WaitBuild_FullMethodName       = "/fleetly.delivery.v1.BuildsService/WaitBuild"
+	BuildsService_UploadSource_FullMethodName    = "/fleetly.delivery.v1.BuildsService/UploadSource"
+	BuildsService_ListUploads_FullMethodName     = "/fleetly.delivery.v1.BuildsService/ListUploads"
 )
 
 // BuildsServiceClient is the client API for BuildsService service.
@@ -486,6 +488,15 @@ type BuildsServiceClient interface {
 	StreamBuildLogs(ctx context.Context, in *StreamBuildLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamBuildLogsResponse], error)
 	// WaitBuild 是构建等待原语（F1.3，架构 §7）：状态快照帧，终态帧后收流。
 	WaitBuild(ctx context.Context, in *WaitBuildRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WaitBuildResponse], error)
+	// UploadSource（F1.10，ADR-0019 附录 A）是仓内首个 client-streaming 写
+	// 面：首帧 meta（project_id），余帧 chunk（tar 字节流），EOF 后内容寻址
+	// 落库。gRPC-only：client-streaming 无 HTTP 注解面（先例=ReceiveWebhook
+	// 无 HTTP 绑定；REST/Console 形态随 Console 批次另行裁决）。同字节重传
+	// 天然幂等：同 digest 返回同一引用（deduplicated=true）。
+	UploadSource(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[UploadSourceRequest, UploadSourceResponse], error)
+	// ListUploads 列项目上传产物（after_upload_id + limit 游标，ADR-0026
+	// List 惯例）。
+	ListUploads(ctx context.Context, in *ListUploadsRequest, opts ...grpc.CallOption) (*ListUploadsResponse, error)
 }
 
 type buildsServiceClient struct {
@@ -544,6 +555,29 @@ func (c *buildsServiceClient) WaitBuild(ctx context.Context, in *WaitBuildReques
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type BuildsService_WaitBuildClient = grpc.ServerStreamingClient[WaitBuildResponse]
 
+func (c *buildsServiceClient) UploadSource(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[UploadSourceRequest, UploadSourceResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &BuildsService_ServiceDesc.Streams[2], BuildsService_UploadSource_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[UploadSourceRequest, UploadSourceResponse]{ClientStream: stream}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildsService_UploadSourceClient = grpc.ClientStreamingClient[UploadSourceRequest, UploadSourceResponse]
+
+func (c *buildsServiceClient) ListUploads(ctx context.Context, in *ListUploadsRequest, opts ...grpc.CallOption) (*ListUploadsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListUploadsResponse)
+	err := c.cc.Invoke(ctx, BuildsService_ListUploads_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // BuildsServiceServer is the server API for BuildsService service.
 // All implementations must embed UnimplementedBuildsServiceServer
 // for forward compatibility.
@@ -554,6 +588,15 @@ type BuildsServiceServer interface {
 	StreamBuildLogs(*StreamBuildLogsRequest, grpc.ServerStreamingServer[StreamBuildLogsResponse]) error
 	// WaitBuild 是构建等待原语（F1.3，架构 §7）：状态快照帧，终态帧后收流。
 	WaitBuild(*WaitBuildRequest, grpc.ServerStreamingServer[WaitBuildResponse]) error
+	// UploadSource（F1.10，ADR-0019 附录 A）是仓内首个 client-streaming 写
+	// 面：首帧 meta（project_id），余帧 chunk（tar 字节流），EOF 后内容寻址
+	// 落库。gRPC-only：client-streaming 无 HTTP 注解面（先例=ReceiveWebhook
+	// 无 HTTP 绑定；REST/Console 形态随 Console 批次另行裁决）。同字节重传
+	// 天然幂等：同 digest 返回同一引用（deduplicated=true）。
+	UploadSource(grpc.ClientStreamingServer[UploadSourceRequest, UploadSourceResponse]) error
+	// ListUploads 列项目上传产物（after_upload_id + limit 游标，ADR-0026
+	// List 惯例）。
+	ListUploads(context.Context, *ListUploadsRequest) (*ListUploadsResponse, error)
 	mustEmbedUnimplementedBuildsServiceServer()
 }
 
@@ -572,6 +615,12 @@ func (UnimplementedBuildsServiceServer) StreamBuildLogs(*StreamBuildLogsRequest,
 }
 func (UnimplementedBuildsServiceServer) WaitBuild(*WaitBuildRequest, grpc.ServerStreamingServer[WaitBuildResponse]) error {
 	return status.Error(codes.Unimplemented, "method WaitBuild not implemented")
+}
+func (UnimplementedBuildsServiceServer) UploadSource(grpc.ClientStreamingServer[UploadSourceRequest, UploadSourceResponse]) error {
+	return status.Error(codes.Unimplemented, "method UploadSource not implemented")
+}
+func (UnimplementedBuildsServiceServer) ListUploads(context.Context, *ListUploadsRequest) (*ListUploadsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListUploads not implemented")
 }
 func (UnimplementedBuildsServiceServer) mustEmbedUnimplementedBuildsServiceServer() {}
 func (UnimplementedBuildsServiceServer) testEmbeddedByValue()                       {}
@@ -634,6 +683,31 @@ func _BuildsService_WaitBuild_Handler(srv interface{}, stream grpc.ServerStream)
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type BuildsService_WaitBuildServer = grpc.ServerStreamingServer[WaitBuildResponse]
 
+func _BuildsService_UploadSource_Handler(srv interface{}, stream grpc.ServerStream) error {
+	return srv.(BuildsServiceServer).UploadSource(&grpc.GenericServerStream[UploadSourceRequest, UploadSourceResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildsService_UploadSourceServer = grpc.ClientStreamingServer[UploadSourceRequest, UploadSourceResponse]
+
+func _BuildsService_ListUploads_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListUploadsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BuildsServiceServer).ListUploads(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BuildsService_ListUploads_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BuildsServiceServer).ListUploads(ctx, req.(*ListUploadsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // BuildsService_ServiceDesc is the grpc.ServiceDesc for BuildsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -644,6 +718,10 @@ var BuildsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListBuilds",
 			Handler:    _BuildsService_ListBuilds_Handler,
+		},
+		{
+			MethodName: "ListUploads",
+			Handler:    _BuildsService_ListUploads_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{
@@ -656,6 +734,11 @@ var BuildsService_ServiceDesc = grpc.ServiceDesc{
 			StreamName:    "WaitBuild",
 			Handler:       _BuildsService_WaitBuild_Handler,
 			ServerStreams: true,
+		},
+		{
+			StreamName:    "UploadSource",
+			Handler:       _BuildsService_UploadSource_Handler,
+			ClientStreams: true,
 		},
 	},
 	Metadata: "fleetly/delivery/v1/delivery.proto",

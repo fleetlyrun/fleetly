@@ -417,6 +417,41 @@ func request_BuildsService_WaitBuild_0(ctx context.Context, marshaler runtime.Ma
 	return stream, metadata, nil
 }
 
+var filter_BuildsService_ListUploads_0 = &utilities.DoubleArray{Encoding: map[string]int{}, Base: []int(nil), Check: []int(nil)}
+
+func request_BuildsService_ListUploads_0(ctx context.Context, marshaler runtime.Marshaler, client BuildsServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListUploadsRequest
+		metadata runtime.ServerMetadata
+	)
+	if req.Body != nil {
+		_, _ = io.Copy(io.Discard, req.Body)
+	}
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_BuildsService_ListUploads_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := client.ListUploads(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+}
+
+func local_request_BuildsService_ListUploads_0(ctx context.Context, marshaler runtime.Marshaler, server BuildsServiceServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var (
+		protoReq ListUploadsRequest
+		metadata runtime.ServerMetadata
+	)
+	if err := req.ParseForm(); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	if err := runtime.PopulateQueryParameters(&protoReq, req.Form, filter_BuildsService_ListUploads_0); err != nil {
+		return nil, metadata, status.Errorf(codes.InvalidArgument, "%v", err)
+	}
+	msg, err := server.ListUploads(ctx, &protoReq)
+	return msg, metadata, err
+}
+
 func request_HooksService_SetGitHook_0(ctx context.Context, marshaler runtime.Marshaler, client HooksServiceClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
 	var (
 		protoReq SetGitHookRequest
@@ -752,6 +787,26 @@ func RegisterBuildsServiceHandlerServer(ctx context.Context, mux *runtime.ServeM
 		_, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
 		runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
 		return
+	})
+	mux.Handle(http.MethodGet, pattern_BuildsService_ListUploads_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		var stream runtime.ServerTransportStream
+		ctx = grpc.NewContextWithServerTransportStream(ctx, &stream)
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateIncomingContext(ctx, mux, req, "/fleetly.delivery.v1.BuildsService/ListUploads", runtime.WithHTTPPathPattern("/v1/uploads"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_BuildsService_ListUploads_0(annotatedContext, inboundMarshaler, server, req, pathParams)
+		md.HeaderMD, md.TrailerMD = metadata.Join(md.HeaderMD, stream.Header()), metadata.Join(md.TrailerMD, stream.Trailer())
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_BuildsService_ListUploads_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 	})
 
 	return nil
@@ -1156,6 +1211,23 @@ func RegisterBuildsServiceHandlerClient(ctx context.Context, mux *runtime.ServeM
 		}
 		forward_BuildsService_WaitBuild_0(annotatedContext, mux, outboundMarshaler, w, req, func() (proto.Message, error) { return resp.Recv() }, mux.GetForwardResponseOptions()...)
 	})
+	mux.Handle(http.MethodGet, pattern_BuildsService_ListUploads_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		annotatedContext, err := runtime.AnnotateContext(ctx, mux, req, "/fleetly.delivery.v1.BuildsService/ListUploads", runtime.WithHTTPPathPattern("/v1/uploads"))
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_BuildsService_ListUploads_0(annotatedContext, inboundMarshaler, client, req, pathParams)
+		annotatedContext = runtime.NewServerMetadataContext(annotatedContext, md)
+		if err != nil {
+			runtime.HTTPError(annotatedContext, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		forward_BuildsService_ListUploads_0(annotatedContext, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+	})
 	return nil
 }
 
@@ -1163,12 +1235,14 @@ var (
 	pattern_BuildsService_ListBuilds_0      = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "builds"}, ""))
 	pattern_BuildsService_StreamBuildLogs_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2}, []string{"v1", "builds", "logs"}, ""))
 	pattern_BuildsService_WaitBuild_0       = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 1, 0, 4, 1, 5, 2, 2, 3}, []string{"v1", "builds", "build_id", "wait"}, ""))
+	pattern_BuildsService_ListUploads_0     = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1}, []string{"v1", "uploads"}, ""))
 )
 
 var (
 	forward_BuildsService_ListBuilds_0      = runtime.ForwardResponseMessage
 	forward_BuildsService_StreamBuildLogs_0 = runtime.ForwardResponseStream
 	forward_BuildsService_WaitBuild_0       = runtime.ForwardResponseStream
+	forward_BuildsService_ListUploads_0     = runtime.ForwardResponseMessage
 )
 
 // RegisterHooksServiceHandlerFromEndpoint is same as RegisterHooksServiceHandler but
