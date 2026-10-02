@@ -27,6 +27,11 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
           "required": [
             "railpack"
           ]
+        },
+        {
+          "required": [
+            "static"
+          ]
         }
       ],
       "properties": {
@@ -46,6 +51,15 @@ app (spec) — AppSpec: desired state of a long-running deployable unit (an app 
           "additionalProperties": false,
           "properties": {
             "pinned_version": {
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "static": {
+          "additionalProperties": false,
+          "properties": {
+            "output_dir": {
               "type": "string"
             }
           },

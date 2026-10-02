@@ -155,6 +155,12 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"uploads put", []string{"uploads", "put", "--project", "GOLDEN_PROJECT", "GOLDEN_SRCDIR"}, 0},
 		{"uploads list", []string{"uploads", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"deploy from dir", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR"}, 0},
+		// Builder strategy 面（F1.14，ADR-0032）：railpack 钉版形态与 static
+		// 产物目录形态（manual 夹具不驱动，部署停在 queued——确定性输出）。
+		{"deploy from dir railpack", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR",
+			"--builder", "railpack", "--railpack-version", "0.39.0"}, 0},
+		{"deploy from dir static", []string{"deploy", "--app", "GOLDEN_APP", "--from-dir", "GOLDEN_SRCDIR",
+			"--builder", "static", "--output-dir", "web"}, 0},
 	}
 
 	// GOLDEN_SRCDIR 是上传 golden 的固定内容目录（确定性 tar → digest 确定，

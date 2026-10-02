@@ -80,18 +80,21 @@ func requireSucceeded(depID, final string) error {
 
 func newDeployVerb() commands.Command {
 	const name = "deploy"
-	var app, image, composeFile, fromDir, dockerfile, process, idemKey, commit, httpProbe string
+	var app, image, composeFile, fromDir, dockerfile, builder, railpackVersion, outputDir, process, idemKey, commit, httpProbe string
 	var tcpProbe int
 	var supersede, wait bool
 	return &flaggedVerb{
 		name: name, synopsis: "Deploy an app from an image, compose file, or uploaded directory",
-		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR) [--dockerfile PATH] [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
+		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
 			fs.StringVar(&composeFile, "compose-file", "", "compose file path (controlled subset)")
 			fs.StringVar(&fromDir, "from-dir", "", "local directory to tar and upload as build source (F1.10; .git is never uploaded)")
-			fs.StringVar(&dockerfile, "dockerfile", "", "dockerfile path inside the uploaded source (default Dockerfile; --from-dir only)")
+			fs.StringVar(&builder, "builder", "", "builder for --from-dir deploys: dockerfile (default), railpack (zero-config source builds, version-pinned) or static (serve an artifact directory)")
+			fs.StringVar(&dockerfile, "dockerfile", "", "dockerfile path inside the uploaded source (default Dockerfile; dockerfile builder only)")
+			fs.StringVar(&railpackVersion, "railpack-version", "", "pinned railpack version, bare semver like 0.39.0 (required with --builder railpack)")
+			fs.StringVar(&outputDir, "output-dir", "", "artifact directory inside the uploaded source to serve (default .; static builder only)")
 			fs.StringVar(&process, "process", "", "process name for image and upload deploys (default web)")
 			fs.StringVar(&idemKey, "idempotency-key", "", "idempotency key: same key+body replays the same response for 24h (sent as the Idempotency-Key header and the deployment dedup anchor)")
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
@@ -119,8 +122,31 @@ func newDeployVerb() commands.Command {
 			if (httpProbe != "" || tcpProbe != 0) && composeFile != "" {
 				return usageErr(name, "--http-probe/--tcp-probe are for image or upload deploys; compose declares probes via healthcheck.http_path/tcp_port")
 			}
-			if dockerfile != "" && fromDir == "" {
-				return usageErr(name, "--dockerfile is only valid together with --from-dir")
+			if fromDir == "" && (builder != "" || dockerfile != "" || railpackVersion != "" || outputDir != "") {
+				return usageErr(name, "--builder/--dockerfile/--railpack-version/--output-dir are for --from-dir deploys only")
+			}
+			switch builder {
+			case "":
+			case "dockerfile":
+				if railpackVersion != "" || outputDir != "" {
+					return usageErr(name, "--railpack-version/--output-dir are for the railpack/static builders")
+				}
+			case "railpack":
+				if railpackVersion == "" {
+					return usageErr(name, "--railpack-version is required with --builder railpack (a bare semver; a mismatched pin fails the build with the platform's version)")
+				}
+				if dockerfile != "" {
+					return usageErr(name, "--dockerfile is for the dockerfile builder; railpack detects the source")
+				}
+			case "static":
+				if railpackVersion != "" {
+					return usageErr(name, "--railpack-version is for the railpack builder")
+				}
+				if dockerfile != "" {
+					return usageErr(name, "--dockerfile is for the dockerfile builder; static serves an artifact directory")
+				}
+			default:
+				return usageErr(name, fmt.Sprintf("unknown --builder %q (supported: dockerfile, railpack, static)", builder))
 			}
 			compose := ""
 			if composeFile != "" {
@@ -172,6 +198,7 @@ func newDeployVerb() commands.Command {
 			ctx = fleetly.WithIdempotencyKey(ctx, idemKey)
 			resp, err := c.Deployments.Deploy(ctx, &deliveryv1.DeployRequest{
 				AppId: app, Image: image, ComposeYaml: compose, UploadId: uploadID, Dockerfile: dockerfile,
+				Builder: builder, RailpackVersion: railpackVersion, OutputDir: outputDir,
 				ProcessName:    process,
 				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede,
 				HttpProbe: httpProbe, TcpProbe: int32(tcpProbe), //nolint:gosec // 端口域内
