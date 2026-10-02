@@ -99,13 +99,13 @@ func gitBuildSpec() string {
 		`"build":{"builder":"dockerfile","dockerfile":"Dockerfile"}}`
 }
 
-// newBuildEngine 建 git+build 场景引擎（fake builder + temp 数据根 +
-// project/app 夹具行）。
+// newBuildEngine 建 git+build 场景引擎（fake builder + fake registry +
+// temp 数据根 + project/app 夹具行）。
 func newBuildEngine(t *testing.T, fb *fakeBuilder) (*Engine, *fakeRuntime) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Builder: fb, Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
+	e := New(Deps{DB: db, Runtime: rt, Builder: fb, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, app.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
@@ -154,21 +154,26 @@ func TestDeployBuildChain(t *testing.T) {
 	assert.Equal(t, "sha256:built", b.Digest)
 	bcalls := fb.snapshot()
 	require.Len(t, bcalls, 1)
-	assert.Equal(t, LocalImageRef(tAppID, revSeq), bcalls[0].Target)
+	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tAppID, revSeq), bcalls[0].Target)
 	assert.Equal(t, contextDir, bcalls[0].ContextDir)
+	require.NotNil(t, bcalls[0].PushCred, "managed registry credential must ride the build request (B.3 face 2)")
+	assert.Equal(t, fakeRegistryAddr, bcalls[0].PushCred.Server)
 
 	// 日志进最近缓冲。
 	recent := e.buildLogs.recent(b.ID)
 	require.Len(t, recent, 1)
 	assert.Equal(t, "FROM busybox", string(recent[0].Line))
 
-	// 部署续走：building → releasing（from_build 解析为 digest）。
+	// 部署续走：building → releasing（from_build 解析为受管仓库 digest 引用）。
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
 	require.Equal(t, deployment.StateReleasing, d.State)
 	calls := rt.calls()
 	require.NotEmpty(t, calls)
-	assert.Equal(t, "sha256:built", calls[0].Spec["web"].Image)
+	assert.Equal(t, LocalImageDigestRef(fakeRegistryAddr, tAppID, "sha256:built"), calls[0].Spec["web"].Image)
+	// 拉取凭证面（B.3 分发面③）：managed host 平台凭证注入。
+	assert.Equal(t, capability.RegistryCredential{Server: fakeRegistryAddr, Username: "fleetly", Secret: "test-secret"},
+		calls[0].Materials.RegistryAuth[fakeRegistryAddr])
 
 	assert.Equal(t, []string{"build.queued", "build.building", "build.succeeded"}, eventNames(t, e, b.ID))
 }

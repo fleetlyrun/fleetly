@@ -111,6 +111,14 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	if err != nil {
 		return e.failDeployment(ctx, d, "resolve app: "+err.Error())
 	}
+	// 受管仓库前置门（ADR-0019 附录 B.5①）：Build 声明存在的部署需要
+	// 推送目标——无 Registry Provider 时在此精确失败，不进 building 走
+	// 到一半才死（本机导入退化形态已裁决不做：裸 image ID 引用真机
+	// swarm 不可拉取）。
+	if spec.GetBuild() != nil && e.registry == nil {
+		return e.failDeployment(ctx, d,
+			"no registry provider wired; build-source deployments require the managed registry (set FLEETLY_REGISTRY_ADDR on the control plane)")
+	}
 	// 投影预检（strict）：from_build 无产物在有 Build 声明时合法（building
 	// 态产出；releasing 前再次投影校验）；无 Build 声明的 from_build 是
 	// 永久错误，此处精确失败。跨 Project 引用未 approved 同样 fail-closed

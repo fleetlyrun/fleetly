@@ -25,7 +25,7 @@ func restartEngine(t *testing.T, e *Engine) *Engine {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 	require.NoError(t, e.Stop(ctx), "engine must drain within the bound")
-	return New(Deps{DB: e.db, Runtime: e.runtime, Builder: e.builder, Logger: e.log}, e.opts)
+	return New(Deps{DB: e.db, Runtime: e.runtime, Builder: e.builder, Registry: e.registry, Logger: e.log}, e.opts)
 }
 
 // driveToTerminal 有界拍手动驱动新引擎直至 Deployment 终态：每拍注入
@@ -86,7 +86,7 @@ func TestCrashRecoveryBuildInFlightRestart(t *testing.T) {
 	assert.Equal(t, "sha256:built", builds[0].Digest)
 	calls := fb.snapshot()
 	require.Len(t, calls, 2, "one cancelled attempt plus one replayed run")
-	assert.Equal(t, LocalImageRef(tAppID, revSeq), calls[1].Target)
+	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tAppID, revSeq), calls[1].Target)
 	assert.Equal(t, contextDir, calls[1].ContextDir)
 }
 

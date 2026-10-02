@@ -14,7 +14,9 @@ import (
 // 一份通用 reconciler——Provider 声明部署形态，reconciler 经 Runtime
 // Ensure 下发，与用户 Workload 同一条通道）：
 //
-//  1. Ensure 受管 Workload（Managed 声明 + 活跃 Project 网络合并；受管域
+//  1. Ensure 受管 Workload（Managed 声明；MaterialsSource 子面的材料随
+//     Ensure 注入（zot config/htpasswd，F1.11）；活跃 Project 网络合并仅
+//     Edge（跨网触达后端）——zot 靠发布端口可达，不挂项目网；受管域
 //     Generation 进程内单调——重启重新 Ensure 幂等收敛）；
 //  2. Route 发布：routes 表全量 → Runtime.Addresses 解析后端 → Edge.
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
@@ -63,39 +65,86 @@ func (m *managedGenState) next(fp string) uint64 {
 // （fleetly/system/<process>——非 App 行键，App 表解析面据此跳过）。
 const managedDomainKeyPrefix = "fleetly/system/"
 
-func (e *Engine) reconcileManaged(ctx context.Context) {
-	m, ok := e.edge.(capability.Managed)
-	if !ok {
-		e.log.Warn("edge provider is not managed-selfhosted; skipping reconciler")
-		return
-	}
-	ws := m.ManagedWorkloads()
-	refs := e.activeProjectNetworks(ctx)
-	for i := range ws {
-		if len(refs) > 0 {
-			ws[i].NetworkRefs = append(ws[i].NetworkRefs, refs...)
+// managedProviderDecl 是一个受管 Provider 的 reconciler 投影：声明 +
+// 是否挂活跃项目网（Edge 要跨网触达后端；zot 只需被发布端口可达，附录
+// B.1）。
+type managedProviderDecl struct {
+	m             capability.Managed
+	attachNetwork bool
+}
+
+// managedProviders 列出在册受管 Provider（注册序稳定：Edge 先于 Registry
+// ——Route 面优先收敛）。
+func (e *Engine) managedProviders() []managedProviderDecl {
+	var out []managedProviderDecl
+	if e.edge != nil {
+		if m, ok := e.edge.(capability.Managed); ok {
+			out = append(out, managedProviderDecl{m: m, attachNetwork: true})
+		} else {
+			e.log.Warn("edge provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
-	gen := e.managedGen.next(managedFingerprint(ws))
-	ns := m.ManagedNamespace()
-	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), capability.Materials{}); err != nil {
-		e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
+	if e.registry != nil {
+		if m, ok := e.registry.(capability.Managed); ok {
+			out = append(out, managedProviderDecl{m: m, attachNetwork: false})
+		} else {
+			e.log.Warn("registry provider is not managed-selfhosted; skipping reconciler")
+		}
+	}
+	return out
+}
+
+func (e *Engine) reconcileManaged(ctx context.Context) {
+	decls := e.managedProviders()
+	if len(decls) == 0 {
 		return
 	}
-	for _, w := range ws {
-		e.obsMu.Lock()
-		e.workloadApp[w.ID] = managedDomainKeyPrefix + w.Process // 归属登记（观测/drift 面）
-		e.ensuredGen[w.ID] = gen
-		e.obsMu.Unlock()
+	refs := e.activeProjectNetworks(ctx)
+	// 逐 Provider 组装下发集（Edge 合并活跃项目网——跨网触达后端；zot
+	// 不挂——发布端口可达，附录 B.1）。
+	ensured := make([][]capability.Workload, len(decls))
+	var all []capability.Workload
+	for i, decl := range decls {
+		ws := decl.m.ManagedWorkloads()
+		if decl.attachNetwork {
+			for j := range ws {
+				if len(refs) > 0 {
+					ws[j].NetworkRefs = append(ws[j].NetworkRefs, refs...)
+				}
+			}
+		}
+		ensured[i] = ws
+		all = append(all, ws...)
 	}
-	// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
-	// edge 载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
-	// 不可接受）。键与归属登记同形（fleetly/system/<process>）。
-	e.expectMu.Lock()
-	for _, w := range ws {
-		e.expected[managedDomainKeyPrefix+w.Process] = gen
+	// 指纹覆盖全部受管域的完整下发集（Generation=已下发 Spec 的单调编号，
+	// CONTEXT.md——网引用集变化也推进 gen，一次性收敛不逐 tick 滚动）。
+	gen := e.managedGen.next(managedFingerprint(all))
+	for i, decl := range decls {
+		ws := ensured[i]
+		materials := capability.Materials{}
+		if src, ok := decl.m.(capability.MaterialsSource); ok {
+			materials = src.ManagedMaterials()
+		}
+		ns := decl.m.ManagedNamespace()
+		if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
+			e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
+			continue // 单 Provider 失败不阻断其余受管面收敛
+		}
+		for _, w := range ws {
+			e.obsMu.Lock()
+			e.workloadApp[w.ID] = managedDomainKeyPrefix + w.Process // 归属登记（观测/drift 面）
+			e.ensuredGen[w.ID] = gen
+			e.obsMu.Unlock()
+		}
+		// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
+		// 受管载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
+		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。
+		e.expectMu.Lock()
+		for _, w := range ws {
+			e.expected[managedDomainKeyPrefix+w.Process] = gen
+		}
+		e.expectMu.Unlock()
 	}
-	e.expectMu.Unlock()
 }
 
 // publishRoutes 全量发布 Route（后端地址经 Runtime.Addresses 解析；解析

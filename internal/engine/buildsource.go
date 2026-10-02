@@ -22,13 +22,17 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/upload"
 )
 
-// localImageDomain 是本地构建镜像的命名域（N0 单节点形态：产物导入本机
-// daemon；多节点分发随 zot Registry 批次 N1 替换为真仓库地址）。
-const localImageDomain = "fleetly.local"
+// LocalImageRef 组装构建推送目标（tag 形态：受管仓库地址 + app + Revision
+// 序号可读 tag；仅作推送目标与本机缓存命名——Revision 冻结的是 digest，
+// ADR-0019 附录 B.4）。本文件是本地镜像命名的唯一真源（勿散落副本）。
+func LocalImageRef(registryAddr, appID string, revSeq int64) string {
+	return fmt.Sprintf("%s/%s:r%d", registryAddr, strings.ToLower(appID), revSeq)
+}
 
-// LocalImageRef 组装本地镜像引用（app + Revision 序号可读形态）。
-func LocalImageRef(appID string, revSeq int64) string {
-	return fmt.Sprintf("%s/%s:r%d", localImageDomain, strings.ToLower(appID), revSeq)
+// LocalImageDigestRef 组装 from_build 的下发引用（digest 形态：绕开 tag
+// 语义的全部 docker29 真机坑——digest-pull 不落 tag、save/load 丢 tag）。
+func LocalImageDigestRef(registryAddr, appID, digest string) string {
+	return fmt.Sprintf("%s/%s@%s", registryAddr, strings.ToLower(appID), digest)
 }
 
 // driveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、
@@ -144,8 +148,12 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 
 // prepareBuildInput 组装构建输入：git 源浅检出 / 上传产物解包到数据根
 // （幂等：已存在跳过——Revision 冻结体 + 内容寻址 blob = 纯函数）；Target
-// 是本地镜像命名域引用。
+// 是受管仓库推送目标（tag 形态）+ 平台推送凭证（附录 B.3 分发面②）。
 func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64) (capability.BuildRequest, error) {
+	endpoint, err := e.registryEndpoint(ctx)
+	if err != nil {
+		return capability.BuildRequest{}, err
+	}
 	var contextDir string
 	switch origin := spec.GetSource().GetKind().(type) {
 	case *specv1.Source_Git:
@@ -169,11 +177,33 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 		return capability.BuildRequest{}, fmt.Errorf("build requires a git or upload source")
 	}
 	dockerfile := spec.GetBuild().GetDockerfile()
+	pushCred := &endpoint.Cred
+	if endpoint.Cred.Username == "" && endpoint.Cred.Secret == "" {
+		pushCred = nil // 匿名仓库合法形态（受管 zot 恒有凭证；缺省留 nil）
+	}
 	return capability.BuildRequest{
 		ContextDir: contextDir,
 		Dockerfile: dockerfile,
-		Target:     LocalImageRef(d.AppID, revSeq),
+		Target:     LocalImageRef(endpoint.Addr, d.AppID, revSeq),
+		PushCred:   pushCred,
 	}, nil
+}
+
+// registryEndpoint 解析受管仓库端点（推送目标/下发引用/平台凭证的共同
+// 真源）。无 Registry Provider = build 源部署的精确失败（附录 B.5①——
+// 不做本机导入退化形态：裸 image ID 引用真机 swarm 不可拉取）。
+func (e *Engine) registryEndpoint(ctx context.Context) (capability.RegistryEndpoint, error) {
+	if e.registry == nil {
+		return capability.RegistryEndpoint{}, fmt.Errorf("no registry provider wired; build-source deployments require the managed registry (set FLEETLY_REGISTRY_ADDR on the control plane)")
+	}
+	endpoint, err := e.registry.Endpoint(ctx)
+	if err != nil {
+		return capability.RegistryEndpoint{}, fmt.Errorf("resolve managed registry endpoint: %w", err)
+	}
+	if endpoint.Addr == "" {
+		return capability.RegistryEndpoint{}, fmt.Errorf("managed registry endpoint returned an empty address")
+	}
+	return endpoint, nil
 }
 
 // extractUploadContext 把上传产物 blob 解包为构建上下文（ADR-0019 附录

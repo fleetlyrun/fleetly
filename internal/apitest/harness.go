@@ -39,6 +39,7 @@ type Harness struct {
 	Engine   *engine.Engine
 	Runtime  *FakeRuntime
 	Builder  *FakeBuilder
+	Registry *FakeRegistry
 	Clock    *statertest.FakeClock
 	Conn     *grpc.ClientConn      // bufconn 连接（类型化客户端的底座）
 	Token    string                // Bootstrap Token 明文（owner 全权；CLI golden 夹具经 FLEETLY_TOKEN 注入）
@@ -86,11 +87,12 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	}
 	rt := &FakeRuntime{obs: make(chan capability.WorkloadEvent, 64)}
 	fb := &FakeBuilder{}
+	freg := &FakeRegistry{}
 	log := slog.New(slog.DiscardHandler)
 	dataRoot := t.TempDir()
-	// 假 Builder + 数据根：git 触发链的 building→releasing 推进底座
-	//（检出目录由测试预置跳过真实 clone）。
-	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher, Builder: fb, Logger: log},
+	// 假 Builder + 假 Registry + 数据根：git 触发链的 building→releasing
+	// 推进底座（检出目录由测试预置跳过真实 clone；推送目标=假受管仓库）。
+	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher, Builder: fb, Registry: freg, Logger: log},
 		engine.Options{DataRoot: dataRoot})
 	if autostart {
 		eng.Start(ctx)
@@ -140,7 +142,7 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	t.Cleanup(srv.Stop)
 
 	return &Harness{
-		DB: db, Engine: eng, Runtime: rt, Builder: fb, Clock: clock,
+		DB: db, Engine: eng, Runtime: rt, Builder: fb, Registry: freg, Clock: clock,
 		Conn: dialBufconn(t, listener), Token: boot.Secret, DataRoot: dataRoot,
 		Services: services,
 		listener: listener, server: srv,
@@ -406,4 +408,26 @@ var (
 	_ capability.RuntimeLogs  = (*FakeRuntime)(nil)
 	_ capability.RuntimeAdmin = (*FakeRuntime)(nil)
 	_ capability.Builder      = (*FakeBuilder)(nil)
+	_ capability.Registry     = (*FakeRegistry)(nil)
 )
+
+// FakeRegistryAddr 是 apitest 假受管仓库地址（引用形态断言锚）。
+const FakeRegistryAddr = "reg.apitest:5000"
+
+// FakeRegistry 是假受管仓库底座（engine 构建链的推送目标；地址/凭证固定）。
+type FakeRegistry struct{}
+
+func (f *FakeRegistry) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "apitest-registry", Capability: capability.KindRegistry, Version: "test"}
+}
+
+func (f *FakeRegistry) Health(context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+
+func (f *FakeRegistry) Endpoint(context.Context) (capability.RegistryEndpoint, error) {
+	return capability.RegistryEndpoint{
+		Addr: FakeRegistryAddr,
+		Cred: capability.RegistryCredential{Server: FakeRegistryAddr, Username: "fleetly", Secret: "apitest"},
+	}, nil
+}

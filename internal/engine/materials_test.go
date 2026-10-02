@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"hash/fnv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -15,13 +17,16 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
-// putSecret 落一条 Secret（age 信封）。
+// putSecret 落一条 Secret（age 信封）。ID 从名字哈希派生（同名前缀的
+// registry Secret 不撞行 ID）。
 func putSecret(t *testing.T, e *Engine, projectID, name string, value []byte) {
 	t.Helper()
 	ct, err := e.cipher.Seal(value)
 	require.NoError(t, err)
+	h := fnv.New32a()
+	_, _ = h.Write([]byte(name))
 	require.NoError(t, e.secrets.Upsert(context.Background(), e.db.Runner(), &secret.Secret{
-		ID: "01JD0SEC0000000000000000" + name[:1], ProjectID: projectID,
+		ID: "01JD0SEC" + fmt.Sprintf("%018x", uint64(h.Sum32())), ProjectID: projectID,
 		Name: name, Ciphertext: ct, Fingerprint: material.Fingerprint(value),
 	}))
 }

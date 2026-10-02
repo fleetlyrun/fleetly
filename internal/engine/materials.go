@@ -24,10 +24,20 @@ type registryCredentialJSON struct {
 }
 
 // resolveMaterials 装配 Ensure 材料（ADR-0014：平台已解析后随 Ensure 下发；
-// 值不落 Spec/日志——Revision 只冻结引用）。
+// 值不落 Spec/日志——Revision 只冻结引用）。Build 声明存在的 spec 额外
+// 携带受管仓库 host（from_build 下发引用的拉取凭证面，附录 B.3 分发面③）。
 func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, projectID string) (capability.Materials, error) {
 	refs := collectSecretRefs(spec)
 	hosts := collectImageHosts(spec)
+	if spec.GetBuild() != nil && e.registry != nil {
+		endpoint, err := e.registry.Endpoint(ctx)
+		if err != nil {
+			return capability.Materials{}, fmt.Errorf("resolve managed registry endpoint: %w", err)
+		}
+		if endpoint.Addr != "" && !contains(hosts, endpoint.Addr) {
+			hosts = append(hosts, endpoint.Addr)
+		}
+	}
 	return e.materialsFor(ctx, refs, hosts, projectID)
 }
 
@@ -53,10 +63,25 @@ func (e *Engine) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec,
 }
 
 // materialsFor 是材料解析的共用实现（registry 凭证 + Secret 文件注入）。
+// 受管仓库 host 的凭证由平台直接注入（managed host 上项目级 Secret
+// registry:<host> 不参与——平台凭证是唯一真源，ADR-0019 附录 B.3）。
 func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, projectID string) (capability.Materials, error) {
 	materials := capability.Materials{}
 	if len(refs) > 0 && e.cipher == nil {
 		return materials, fmt.Errorf("secret refs present but the master key is not available (data root keys/ missing)")
+	}
+
+	// 受管仓库端点（managed host 判定 + 平台凭证来源）。无 Registry =
+	// 无平台凭证面（build 源部署已在 prepare 前置门精确失败）。
+	var managed *capability.RegistryEndpoint
+	if e.registry != nil {
+		endpoint, err := e.registry.Endpoint(ctx)
+		if err != nil {
+			return materials, fmt.Errorf("resolve managed registry endpoint: %w", err)
+		}
+		if endpoint.Addr != "" {
+			managed = &endpoint
+		}
 	}
 
 	// 镜像凭证：镜像引用的 registry host → Secret "registry:<host>"。查询
@@ -64,6 +89,14 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 	// （库故障等）上抛部署失败带原因——静默降级匿名拉取会让私有镜像部署
 	// 死在无诊断的 ImagePullBackOff 上。
 	for _, host := range hosts {
+		if managed != nil && host == managed.Addr {
+			// 平台仓库：平台凭证直注（三面同源的分发面③）。
+			if materials.RegistryAuth == nil {
+				materials.RegistryAuth = map[string]capability.RegistryCredential{}
+			}
+			materials.RegistryAuth[host] = managed.Cred
+			continue
+		}
 		row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, registrySecretPrefix+host)
 		if err != nil {
 			if errors.Is(err, state.ErrNotFound) {
@@ -240,6 +273,15 @@ func imageRegistryHostOf(image string) string {
 func containsDotOrColon(s string) bool {
 	for i := 0; i < len(s); i++ {
 		if s[i] == '.' || s[i] == ':' {
+			return true
+		}
+	}
+	return false
+}
+
+func contains(list []string, v string) bool {
+	for _, s := range list {
+		if s == v {
 			return true
 		}
 	}

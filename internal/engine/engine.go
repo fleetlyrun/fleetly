@@ -256,6 +256,10 @@ type Engine struct {
 	edge   capability.Edge
 	routes *route.Repo
 
+	// Registry 面（F1.11，ADR-0019 附录 B）：构建推送目标 + from_build
+	// 引用组合 + 平台拉取凭证 + 受管 zot 自宿。
+	registry capability.Registry
+
 	// 材料面（F0.17/18，ADR-0014）：Secret/Config/Volume repo 与 age 信封。
 	cipher   *material.Cipher
 	secrets  *secret.Repo
@@ -284,12 +288,13 @@ type Engine struct {
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
 // 反馈，不静默）。
 type Deps struct {
-	DB      *state.DB
-	Runtime capability.Runtime
-	Builder capability.Builder // 可空：构建链停用（镜像直投不受影响）
-	Edge    capability.Edge    // 可空：Route 发布与受管自宿停用
-	Cipher  *material.Cipher   // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
-	Logger  *slog.Logger
+	DB       *state.DB
+	Runtime  capability.Runtime
+	Builder  capability.Builder  // 可空：构建链停用（镜像直投不受影响）
+	Edge     capability.Edge     // 可空：Route 发布与受管自宿停用
+	Registry capability.Registry // 可空：build 源部署精确失败（附录 B.5①）
+	Cipher   *material.Cipher    // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
+	Logger   *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -301,6 +306,7 @@ func New(deps Deps, opts Options) *Engine {
 	return &Engine{
 		builder:        deps.Builder,
 		edge:           deps.Edge,
+		registry:       deps.Registry,
 		cipher:         deps.Cipher,
 		runtime:        deps.Runtime,
 		db:             db,

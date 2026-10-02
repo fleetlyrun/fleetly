@@ -69,8 +69,10 @@ func (e *Engine) appTeam(ctx context.Context, appID string) (string, *app.App, e
 }
 
 // buildDigests 解析 Deployment 目标 Revision 的构建产物（from_build 进程
-// → digest 映射；无成功构建返回 nil → 投影期得到精确错误）。Build 是
-// Revision 级单产物：全部 from_build 进程共用同一 digest。
+// → 下发镜像引用映射；无成功构建返回 nil → 投影期得到精确错误）。Build 是
+// Revision 级单产物：全部 from_build 进程共用同一 digest。引用是 digest
+// 形态完整引用（<registry>/<app>@sha256:...——地址是平台级配置不进冻结体，
+// 投影期组合，ADR-0019 附录 B.4）。
 func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (map[string]string, error) {
 	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
@@ -85,6 +87,12 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 	if len(fromBuild) == 0 {
 		return nil, nil
 	}
+	// 端点先解析（缺 Registry 的精确失败优先于"无产物"——诊断顺序：先
+	// 平台缺件，再产物缺席）。
+	endpoint, err := e.registryEndpoint(ctx)
+	if err != nil {
+		return nil, err
+	}
 	builds, err := e.builds.ListByRevision(ctx, e.db.Runner(), d.ToRevision)
 	if err != nil {
 		return nil, err
@@ -92,8 +100,9 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 	for _, b := range builds {
 		if b.State == build.StateSucceeded && b.Digest != "" {
 			out := make(map[string]string, len(fromBuild))
+			ref := LocalImageDigestRef(endpoint.Addr, d.AppID, b.Digest)
 			for _, name := range fromBuild {
-				out[name] = b.Digest
+				out[name] = ref
 			}
 			return out, nil
 		}
