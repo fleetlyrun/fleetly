@@ -232,6 +232,14 @@ message DeployRequest {
   string upload_id = 10;
   // dockerfile 是上传形态的构建文件路径（tar 内相对路径，缺省 Dockerfile）。
   string dockerfile = 11;
+  // builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；
+  // 缺省 dockerfile；image/compose 形态携带即拒）。
+  string builder = 12;
+  // railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，
+  // bare semver，须等于平台钉版）。
+  string railpack_version = 13;
+  // output_dir 是 static 形态的产物目录（builder=static 可选，缺省 "."）。
+  string output_dir = 14;
 }
 
 message DeployResponse { Deployment deployment = 1; }

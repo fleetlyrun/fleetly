@@ -141,6 +141,12 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 	if sources > 1 {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "image, compose_yaml and upload_id are mutually exclusive; exactly one source form per deploy")
 	}
+	// builder 面是上传形态专属（ADR-0032）：image 直投无构建、compose 受控
+	// 子集无构建源，携带即拒。
+	if req.GetUploadId() == "" && (req.GetBuilder() != "" || req.GetRailpackVersion() != "" || req.GetOutputDir() != "") {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"builder, railpack_version and output_dir are for upload deploys only; image and compose deploys do not carry a builder")
+	}
 	var probe *specv1.HealthcheckSpec
 	switch {
 	case req.GetHttpProbe() != "" && req.GetTcpProbe() != 0:
@@ -178,7 +184,28 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		return s, nil
 	case req.GetUploadId() != "":
 		// uploadRow 已在 Deploy 受理前置解析（行存在 + 归属 + blob 在盘）。
-		s, err := spec.UploadDeploy(appRow.ID, appRow.ProjectID, uploadRow.ID, req.GetDockerfile(), req.GetProcessName(), probe)
+		if req.GetBuilder() != "" && req.GetBuilder() != spec.BuilderDockerfile && req.GetDockerfile() != "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"dockerfile is only set with the dockerfile builder (got builder %q); railpack builds detect the source, static serves an artifact directory", req.GetBuilder())
+		}
+		if req.GetRailpackVersion() != "" && req.GetBuilder() != spec.BuilderRailpack {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"railpack_version is only set with the railpack builder (got %q)", builderOrDefault(req.GetBuilder()))
+		}
+		if req.GetOutputDir() != "" && req.GetBuilder() != spec.BuilderStatic {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"output_dir is only set with the static builder (got %q)", builderOrDefault(req.GetBuilder()))
+		}
+		if req.GetBuilder() == spec.BuilderRailpack && req.GetRailpackVersion() == "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"railpack_version is required for railpack builds (a bare semver like \"0.39.0\"; the platform's version appears in the build error if they mismatch)")
+		}
+		s, err := spec.UploadDeploy(spec.UploadDeployInput{
+			AppID: appRow.ID, Project: appRow.ProjectID, UploadID: uploadRow.ID,
+			ProcessName: req.GetProcessName(), Builder: req.GetBuilder(),
+			Dockerfile: req.GetDockerfile(), RailpackVersion: req.GetRailpackVersion(),
+			OutputDir: req.GetOutputDir(), Probe: probe,
+		})
 		if err != nil {
 			return nil, mapValidationError(err)
 		}
@@ -186,6 +213,14 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 	default:
 		return nil, apperr.New("E_INVALID_ARGUMENT", "one of image, compose_yaml or upload_id is required")
 	}
+}
+
+// builderOrDefault 是错误文本用的 builder 缺省名（空 = dockerfile 轨）。
+func builderOrDefault(b string) string {
+	if b == "" {
+		return spec.BuilderDockerfile
+	}
+	return b
 }
 
 func (svc *DeploymentsService) GetDeployment(ctx context.Context, req *deliveryv1.GetDeploymentRequest) (*deliveryv1.GetDeploymentResponse, error) {

@@ -132,20 +132,30 @@ message VolumeAttachment {
   bool read_only = 3;
 }
 
-// BuildSpec 是构建声明（dockerfile / railpack 钉版）。
+// BuildSpec 是构建声明（dockerfile / railpack 钉版 / static，ADR-0032）。
 message BuildSpec {
-  // builder 是 Builder Provider 名（dockerfile / railpack / static）。
+  // builder 是 Builder Provider 名（dockerfile / railpack / static），与
+  // strategy oneof 形态配对（叶子 ValidateBuild 执法）。
   string builder = 1;
   oneof strategy {
     string dockerfile = 2;
     RailpackBuilder railpack = 3;
+    StaticBuilder static = 5;
   }
   repeated string cache_from = 4;
 }
 
-// RailpackBuilder 必须钉版本（防 plan 漂移，旧 spike 教训）。
+// RailpackBuilder 必须钉版本（防 plan 漂移，旧 spike 教训；ADR-0032：
+// bare semver，须等于平台钉版常量——Build 期执法，错误文本带平台版本）。
 message RailpackBuilder {
   string pinned_version = 1;
+}
+
+// StaticBuilder 是产物目录包装声明（ADR-0032）：上传上下文的产物子目录
+// 整体 COPY 进钉版 Caddy 伺服镜像；无构建步（源码构建是 railpack 的地盘）。
+message StaticBuilder {
+  // output_dir 是产物目录（context 内相对路径，缺省 "."；拒 .. 与绝对路径）。
+  string output_dir = 1;
 }
 
 // JobSpec 是部署期一次性作业（first boot jobs，ADR-0007 词汇裁决：词条归

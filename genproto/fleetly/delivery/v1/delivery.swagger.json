@@ -681,6 +681,18 @@
         "dockerfile": {
           "type": "string",
           "title": "dockerfile 是上传形态的构建文件路径（tar 内相对路径，缺省 Dockerfile）。"
+        },
+        "builder": {
+          "type": "string",
+          "title": "builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；\n缺省 dockerfile；image/compose 形态携带即拒）。"
+        },
+        "railpack_version": {
+          "type": "string",
+          "title": "railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，\nbare semver，须等于平台钉版）。"
+        },
+        "output_dir": {
+          "type": "string",
+          "title": "output_dir 是 static 形态的产物目录（builder=static 可选，缺省 \".\"）。"
         }
       },
       "title": "DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。"

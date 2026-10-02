@@ -5,6 +5,7 @@ package spec
 
 import (
 	"fmt"
+	"path"
 	"regexp"
 	"strings"
 	"time"
@@ -45,6 +46,9 @@ func ValidateApp(s *specv1.AppSpec) error {
 		return invalidf("app.project", "must not be empty")
 	}
 	if err := validateSource(s.GetSource()); err != nil {
+		return err
+	}
+	if err := ValidateBuild("app.build", s.GetBuild()); err != nil {
 		return err
 	}
 	if len(s.GetProcesses()) == 0 {
@@ -137,6 +141,90 @@ func ValidateJob(field string, j *specv1.JobSpec) error {
 				return err
 			}
 		}
+	}
+	return nil
+}
+
+// BuilderNames 是 builder 名值域（CONTEXT.md Builder 词条单源冻结：
+// dockerfile、railpack、static；词条变更走 ADR——叶子无注册表面，值域
+// 漂移=词汇漂移）。名与 strategy oneof 形态一一配对。
+const (
+	BuilderDockerfile = "dockerfile"
+	BuilderRailpack   = "railpack"
+	BuilderStatic     = "static"
+)
+
+// bareSemverRe 钉死 railpack 钉版形态（bare semver：拒 v 前缀/latest/空，
+// ADR-0032——钉版可被漂移形态绕过等于没钉）。
+var bareSemverRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
+
+// ValidateBuild 校验构建声明（ADR-0032）：builder 名值域与 strategy 配对、
+// railpack pinned_version bare semver、static output_dir 路径逃逸
+// fail-closed（tar-slip 同理）。nil = 无构建声明（镜像直投），合法。
+// strategy oneof 缺席=非法（归一化面恒填充；存量行防御性路由在 engine）。
+func ValidateBuild(field string, b *specv1.BuildSpec) error {
+	if b == nil {
+		return nil
+	}
+	name := b.GetBuilder()
+	require := func(want string) error {
+		if name != want {
+			return invalidf(field+".builder", "strategy %q requires builder %q (builder name and strategy form must pair)", want, want)
+		}
+		return nil
+	}
+	switch strategy := b.GetStrategy().(type) {
+	case *specv1.BuildSpec_Dockerfile:
+		if err := require(BuilderDockerfile); err != nil {
+			return err
+		}
+		// 空 = 平台缺省 Dockerfile（Provider 同语义）；路径逃逸仍 fail-closed。
+		if err := validateRelPath(field+".dockerfile", strategy.Dockerfile); err != nil {
+			return err
+		}
+	case *specv1.BuildSpec_Railpack:
+		if err := require(BuilderRailpack); err != nil {
+			return err
+		}
+		v := strategy.Railpack.GetPinnedVersion()
+		if !bareSemverRe.MatchString(v) {
+			return invalidf(field+".railpack.pinned_version",
+				"must be a bare semver like \"0.39.0\" (got %q; no v prefix, no latest — pinning prevents build-plan drift)", v)
+		}
+	case *specv1.BuildSpec_Static:
+		if err := require(BuilderStatic); err != nil {
+			return err
+		}
+		out := strategy.Static.GetOutputDir()
+		if out == "" {
+			return invalidf(field+".static.output_dir", "must not be empty; use \".\" for the context root")
+		}
+		if err := validateRelPath(field+".static.output_dir", out); err != nil {
+			return err
+		}
+	default:
+		return invalidf(field, "a strategy is required (dockerfile, railpack or static)")
+	}
+	for i, cf := range b.GetCacheFrom() {
+		if strings.TrimSpace(cf) == "" {
+			return invalidf(fmt.Sprintf("%s.cache_from[%d]", field, i), "must not be empty")
+		}
+	}
+	return nil
+}
+
+// validateRelPath 校验上下文内相对路径（空=合法缺省；拒绝对路径与 ..
+// 逃逸；反斜杠一并拒——Windows 形态路径在 Linux 上下文里只会静默失配）。
+func validateRelPath(field, p string) error {
+	if p == "" {
+		return nil
+	}
+	if strings.Contains(p, "\\") {
+		return invalidf(field, "must use forward slashes (got %q)", p)
+	}
+	clean := path.Clean(p)
+	if path.IsAbs(p) || clean == ".." || strings.HasPrefix(clean, "../") {
+		return invalidf(field, "must stay inside the build context (got %q)", p)
 	}
 	return nil
 }

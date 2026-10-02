@@ -85,29 +85,75 @@ func ImageDeploy(appID, projectID, image string, processName string, probe *spec
 	return spec, nil
 }
 
-// UploadDeploy 归一化上传产物形态（F1.10，ADR-0019 附录 A）：Source.upload
-// + dockerfile 构建 + 单进程 from_build（与 git 源 webhook 路径同构；
-// from_build 的 digest 解析按进程名，值本身只要求非空）。
-func UploadDeploy(appID, projectID, uploadID, dockerfile, processName string, probe *specv1.HealthcheckSpec) (*specv1.AppSpec, error) {
+// UploadDeployInput 是上传产物形态的部署输入（三 strategy 旗标经此组装
+// BuildSpec，ADR-0032；Builder 空值按 Dockerfile 缺省轨处理）。
+type UploadDeployInput struct {
+	AppID    string
+	Project  string
+	UploadID string
+	// ProcessName 是进程名（缺省 web）。
+	ProcessName string
+	// Builder 是构建器名（dockerfile|railpack|static；空 = dockerfile）。
+	Builder string
+	// Dockerfile 是 dockerfile 形态的构建文件路径（缺省 Dockerfile）。
+	Dockerfile string
+	// RailpackVersion 是 railpack 形态的钉版（必填，bare semver）。
+	RailpackVersion string
+	// OutputDir 是 static 形态的产物目录（缺省 "."）。
+	OutputDir string
+	// Probe 是可选探针声明（http path 或 tcp port）。
+	Probe *specv1.HealthcheckSpec
+}
+
+// UploadDeploy 归一化上传产物形态（F1.10，ADR-0019 附录 A；strategy 面
+// ADR-0032）：Source.upload + BuildSpec（三 strategy）+ 单进程 from_build
+// （与 git 源 webhook 路径同构；from_build 的 digest 解析按进程名，值本身
+// 只要求非空）。
+func UploadDeploy(in UploadDeployInput) (*specv1.AppSpec, error) {
+	builder := in.Builder
+	if builder == "" {
+		builder = BuilderDockerfile
+	}
+	var build *specv1.BuildSpec
+	switch builder {
+	case BuilderDockerfile:
+		dockerfile := in.Dockerfile
+		if dockerfile == "" {
+			dockerfile = "Dockerfile"
+		}
+		build = &specv1.BuildSpec{Builder: builder, Strategy: &specv1.BuildSpec_Dockerfile{Dockerfile: dockerfile}}
+	case BuilderRailpack:
+		build = &specv1.BuildSpec{
+			Builder:  builder,
+			Strategy: &specv1.BuildSpec_Railpack{Railpack: &specv1.RailpackBuilder{PinnedVersion: in.RailpackVersion}},
+		}
+	case BuilderStatic:
+		outputDir := in.OutputDir
+		if outputDir == "" {
+			outputDir = "."
+		}
+		build = &specv1.BuildSpec{
+			Builder:  builder,
+			Strategy: &specv1.BuildSpec_Static{Static: &specv1.StaticBuilder{OutputDir: outputDir}},
+		}
+	default:
+		return nil, invalidf("build.builder",
+			"unknown builder %q (supported: dockerfile, railpack, static)", builder)
+	}
+	processName := in.ProcessName
 	if processName == "" {
 		processName = "web"
 	}
-	if dockerfile == "" {
-		dockerfile = "Dockerfile"
-	}
 	s := &specv1.AppSpec{
 		SchemaVersion: SchemaVersion,
-		App:           &specv1.AppRef{Id: appID, Project: projectID},
-		Source:        &specv1.Source{Kind: &specv1.Source_Upload{Upload: &specv1.UploadSource{Id: uploadID}}},
-		Build: &specv1.BuildSpec{
-			Builder:  "dockerfile",
-			Strategy: &specv1.BuildSpec_Dockerfile{Dockerfile: dockerfile},
-		},
+		App:           &specv1.AppRef{Id: in.AppID, Project: in.Project},
+		Source:        &specv1.Source{Kind: &specv1.Source_Upload{Upload: &specv1.UploadSource{Id: in.UploadID}}},
+		Build:         build,
 		Processes: []*specv1.ProcessSpec{{
 			Name:        processName,
 			ImageOrigin: &specv1.ProcessSpec_FromBuild{FromBuild: processName},
 			Replicas:    1,
-			Healthcheck: probe,
+			Healthcheck: in.Probe,
 		}},
 	}
 	if err := ValidateApp(s); err != nil {

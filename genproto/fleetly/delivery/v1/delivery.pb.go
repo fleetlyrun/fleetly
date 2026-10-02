@@ -208,7 +208,15 @@ type DeployRequest struct {
 	// 返回的 id，与 image/compose_yaml 互斥；归属项目必须与 App 一致。
 	UploadId string `protobuf:"bytes,10,opt,name=upload_id,json=uploadId,proto3" json:"upload_id,omitempty"`
 	// dockerfile 是上传形态的构建文件路径（tar 内相对路径，缺省 Dockerfile）。
-	Dockerfile    string `protobuf:"bytes,11,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`
+	Dockerfile string `protobuf:"bytes,11,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`
+	// builder 是上传形态的构建器选择（dockerfile|railpack|static，ADR-0032；
+	// 缺省 dockerfile；image/compose 形态携带即拒）。
+	Builder string `protobuf:"bytes,12,opt,name=builder,proto3" json:"builder,omitempty"`
+	// railpack_version 是 railpack 形态的钉版声明（builder=railpack 必填，
+	// bare semver，须等于平台钉版）。
+	RailpackVersion string `protobuf:"bytes,13,opt,name=railpack_version,json=railpackVersion,proto3" json:"railpack_version,omitempty"`
+	// output_dir 是 static 形态的产物目录（builder=static 可选，缺省 "."）。
+	OutputDir     string `protobuf:"bytes,14,opt,name=output_dir,json=outputDir,proto3" json:"output_dir,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -316,6 +324,27 @@ func (x *DeployRequest) GetUploadId() string {
 func (x *DeployRequest) GetDockerfile() string {
 	if x != nil {
 		return x.Dockerfile
+	}
+	return ""
+}
+
+func (x *DeployRequest) GetBuilder() string {
+	if x != nil {
+		return x.Builder
+	}
+	return ""
+}
+
+func (x *DeployRequest) GetRailpackVersion() string {
+	if x != nil {
+		return x.RailpackVersion
+	}
+	return ""
+}
+
+func (x *DeployRequest) GetOutputDir() string {
+	if x != nil {
+		return x.OutputDir
 	}
 	return ""
 }
@@ -2500,7 +2529,7 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"updated_at\x18\r \x01(\tR\tupdatedAt\x12\x1f\n" +
 	"\vfinished_at\x18\x0e \x01(\tR\n" +
 	"finishedAt\x12+\n" +
-	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\"\xe1\x02\n" +
+	"\x12first_boot_task_id\x18\x0f \x01(\tR\x0ffirstBootTaskId\"\xc5\x03\n" +
 	"\rDeployRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x14\n" +
 	"\x05image\x18\x02 \x01(\tR\x05image\x12!\n" +
@@ -2517,7 +2546,11 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	" \x01(\tR\buploadId\x12\x1e\n" +
 	"\n" +
 	"dockerfile\x18\v \x01(\tR\n" +
-	"dockerfile\"Q\n" +
+	"dockerfile\x12\x18\n" +
+	"\abuilder\x18\f \x01(\tR\abuilder\x12)\n" +
+	"\x10railpack_version\x18\r \x01(\tR\x0frailpackVersion\x12\x1d\n" +
+	"\n" +
+	"output_dir\x18\x0e \x01(\tR\toutputDir\"Q\n" +
 	"\x0eDeployResponse\x12?\n" +
 	"\n" +
 	"deployment\x18\x01 \x01(\v2\x1f.fleetly.delivery.v1.DeploymentR\n" +
