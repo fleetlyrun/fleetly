@@ -32,6 +32,9 @@ type BuildRequest struct {
 	CacheFrom []string
 	// Target 是镜像推送目标（含 tag；digest 由 Registry 回填）。
 	Target string
+	// PushCred 是推送目标仓库的凭证（nil = 匿名推送；受管仓库由平台
+	// 注入，ADR-0019 附录 B.3）。
+	PushCred *RegistryCredential
 	// SecretFiles 是 Secret 材料落盘（路径 → 值；构建期临时，Provider
 	// 负责不落最终镜像层）。
 	SecretFiles map[string][]byte
@@ -65,6 +68,16 @@ type Managed interface {
 	ManagedWorkloads() []Workload
 	// ManagedNamespace 返回受管隔离域（平台系统域，与用户 Project 分离）。
 	ManagedNamespace() NamespaceRef
+}
+
+// MaterialsSource 是受管 Provider 的材料声明子面（可选；ConfigSource 同款
+// 形态）：需要向受管 Workload 注入文件材料（如 zot 的 config/htpasswd）的
+// Provider 实现，reconciler 经 Runtime Ensure 的 Materials 通道下发（值走
+// secret 载体，不落 env/label，ADR-0014）。
+type MaterialsSource interface {
+	// ManagedMaterials 返回受管域的材料集（幂等纯函数——值源自平台持久
+	// 状态，如数据根凭证文件；值变更=载体指纹变更=滚动替换）。
+	ManagedMaterials() Materials
 }
 
 // ConfigSource 是受管 Edge 的配置拉取数据面（Provider 经 HTTP provider

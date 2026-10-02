@@ -254,8 +254,9 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		},
 		TaskTemplate: task,
 		Mode:         replicasMode(w.Replicas),
-		// 端口发布仅限受管 Edge 的部署形态（Workload.Publish 显式声明）；
-		// 用户 Workload 一律不发布宿主端口（流量经 Edge，见函数注释）。
+		// 端口发布仅限受管形态的部署声明（Workload.Publish 显式——Edge
+		// 80/443、受管 zot 5000）；用户 Workload 一律不发布宿主端口（流量
+		// 经 Edge，见函数注释）。
 		EndpointSpec: endpointSpec(w.Publish),
 		// UpdateConfig 语义由平台 Deployment 状态机掌管（滚动与回滚 =
 		// Replay），编排器原生回滚不用（ADR-0005）。
