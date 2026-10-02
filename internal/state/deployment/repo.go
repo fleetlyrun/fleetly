@@ -8,6 +8,7 @@ package deployment
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/state"
@@ -80,11 +81,32 @@ type Deployment struct {
 	CommitSHA         string
 	SupersededBy      string // 被哪个 Deployment 抢占（终态 superseded 时非空）
 	Error             string // 失败原因（英文，用户可见）
-	ObserveDeadline   string // 当前阶段绝对截止（L1 就绪等待 / L3 观察窗；RFC3339，空 = 不在限时阶段）
+	ObserveDeadline   string // 当前阶段绝对截止（job 等待 / L1 就绪等待 / L3 观察窗；RFC3339，空 = 不在限时阶段；消歧真源 = FirstBoot 游标，ADR-0030）
+	FirstBoot         string // firstBootJobs 游标（'' 未开始 | '<idx>:<taskID>' 等待中 | 'done' 全部完成；ADR-0030）
 	RollbackAttempted bool   // failed 自动回滚已尝试（=1 的 failed 是终态，不再自动重试）
 	CreatedAt         string
 	UpdatedAt         string
 	FinishedAt        string
+}
+
+// firstBootDone 是 first_boot 游标的完成哨兵（区分"未开始"空值）。
+const FirstBootDone = "done"
+
+// FirstBootAnchor 解析游标：返回 (job 下标, 锚定 Task ID, 是否等待中)。
+// 'done' 与非法形态返回 ok=false（等待外形态由调用方按序处理）。
+func (d *Deployment) FirstBootAnchor() (idx int, taskID string, ok bool) {
+	if d.FirstBoot == "" || d.FirstBoot == FirstBootDone {
+		return 0, "", false
+	}
+	head, tail, found := strings.Cut(d.FirstBoot, ":")
+	if !found || tail == "" {
+		return 0, "", false
+	}
+	n, err := strconv.Atoi(head)
+	if err != nil || n < 0 {
+		return 0, "", false
+	}
+	return n, tail, true
 }
 
 // Repo 是 Deployment 聚合存取。
@@ -103,8 +125,8 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) erro
 		INSERT INTO deployments
 			(id, app_id, from_revision, to_revision, state, generation,
 			 idempotency_key, commit_sha, superseded_by, error, observe_deadline,
-			 created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, '')`,
+			 first_boot, created_at, updated_at, finished_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '', ?, ?, '')`,
 		d.ID, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation,
 		d.IdempotencyKey, d.CommitSHA, d.CreatedAt, d.UpdatedAt)
 	if state.IsUniqueViolation(err) {
@@ -239,11 +261,11 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 	res, err := run.ExecContext(ctx, `
 		UPDATE deployments SET
 			state = ?, generation = ?, error = ?, superseded_by = ?,
-			observe_deadline = ?, rollback_attempted = ?, to_revision = ?,
-			updated_at = ?, finished_at = ?
+			observe_deadline = ?, first_boot = ?, rollback_attempted = ?,
+			to_revision = ?, updated_at = ?, finished_at = ?
 		WHERE id = ? AND state = ?`,
 		string(cur.State), cur.Generation, cur.Error, cur.SupersededBy,
-		cur.ObserveDeadline, cur.RollbackAttempted, cur.ToRevision,
+		cur.ObserveDeadline, cur.FirstBoot, cur.RollbackAttempted, cur.ToRevision,
 		cur.UpdatedAt, cur.FinishedAt,
 		id, string(origState))
 	if err != nil {
@@ -263,7 +285,7 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 const selectCols = `
 	SELECT id, app_id, from_revision, to_revision, state, generation,
 	       idempotency_key, commit_sha, superseded_by, error, observe_deadline,
-	       rollback_attempted, created_at, updated_at, finished_at
+	       first_boot, rollback_attempted, created_at, updated_at, finished_at
 	FROM deployments`
 
 func scanDeployment(scan func(dest ...any) error) (*Deployment, error) {
@@ -272,7 +294,7 @@ func scanDeployment(scan func(dest ...any) error) (*Deployment, error) {
 	var rollback int
 	err := scan(&d.ID, &d.AppID, &d.FromRevision, &d.ToRevision, &stateStr, &d.Generation,
 		&d.IdempotencyKey, &d.CommitSHA, &d.SupersededBy, &d.Error, &d.ObserveDeadline,
-		&rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
+		&d.FirstBoot, &rollback, &d.CreatedAt, &d.UpdatedAt, &d.FinishedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
 	}

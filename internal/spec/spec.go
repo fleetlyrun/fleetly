@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 )
@@ -58,6 +59,84 @@ func ValidateApp(s *specv1.AppSpec) error {
 			return invalidf("app.processes[%d].name", "duplicate process name %q", p.GetName())
 		}
 		seen[p.GetName()] = true
+	}
+	jobNames := map[string]bool{}
+	for i, j := range s.GetFirstBootJobs() {
+		if err := ValidateJob(fmt.Sprintf("app.first_boot_jobs[%d]", i), j); err != nil {
+			return err
+		}
+		if jobNames[j.GetName()] {
+			return invalidf("app.first_boot_jobs[%d].name", "duplicate first boot job name %q", j.GetName())
+		}
+		jobNames[j.GetName()] = true
+	}
+	return nil
+}
+
+// ValidateJob 校验部署期一次性作业（firstBootJobs，ADR-0030）。禁面
+// fail-closed：Task 域不渲染的面（卷/config）与一次性执行无意义的面
+// （探针/端口/placement/多副本）一律拒绝且理由精确；网络三形态与 App
+// Process 同域（缺省挂靠由引擎铸造面裁决——全部活跃项目网）。
+func ValidateJob(field string, j *specv1.JobSpec) error {
+	if j == nil {
+		return invalidf(field, "job is nil")
+	}
+	if j.GetName() == "" {
+		return invalidf(field+".name", "must not be empty")
+	}
+	p := j.GetProcess()
+	if p == nil {
+		return invalidf(field+".process", "process template is required (C-13 reshaped form)")
+	}
+	switch origin := p.GetImageOrigin().(type) {
+	case *specv1.ProcessSpec_Image:
+		if origin.Image == "" {
+			return invalidf(field+".process.image", "must not be empty")
+		}
+	case *specv1.ProcessSpec_FromBuild:
+		if origin.FromBuild == "" {
+			return invalidf(field+".process.from_build", "must not be empty")
+		}
+	default:
+		return invalidf(field+".process", "image or from_build is required")
+	}
+	// process.name 空 = 铸造时落 job.name（单一名字真源）；非空须相等，
+	// 静默分叉比拒绝更糟。
+	if n := p.GetName(); n != "" && n != j.GetName() {
+		return invalidf(field+".process.name", "must be empty or equal to the job name %q (got %q)", j.GetName(), n)
+	}
+	// ttl 必填（ADR-0030 决策 4）：无界等待的部署不是合法状态。
+	ttl := j.GetTtl().AsDuration()
+	if ttl <= 0 || ttl > 86400*time.Second {
+		return invalidf(field+".ttl", "deploy-time jobs must declare a hard timeout within (0s, 86400s] (got %s)", ttl)
+	}
+	if len(p.GetVolumes()) > 0 {
+		return invalidf(field+".process.volumes", "deploy-time jobs cannot mount volumes; use a Task for volume-mounting jobs")
+	}
+	if len(p.GetConfigRefs()) > 0 {
+		return invalidf(field+".process.config_refs", "deploy-time jobs cannot mount configs; pass what the job needs via env or secret_refs")
+	}
+	if len(p.GetPorts()) > 0 {
+		return invalidf(field+".process.ports", "ports are not meaningful on a one-shot job")
+	}
+	if p.GetHealthcheck() != nil {
+		return invalidf(field+".process.healthcheck", "healthchecks are not meaningful on a one-shot job")
+	}
+	if p.GetPlacement() != nil {
+		return invalidf(field+".process.placement", "placement is not supported on deploy-time jobs")
+	}
+	if p.GetReplicas() > 1 {
+		return invalidf(field+".process.replicas", "a deploy-time job is a single one-shot run")
+	}
+	for i, net := range p.GetNetworks() {
+		if net == "" {
+			return invalidf(fmt.Sprintf("%s.process.networks[%d]", field, i), "must not be empty")
+		}
+		if IsCrossProjectRef(net) {
+			if err := validateCrossProjectRef(fmt.Sprintf("%s.process.networks[%d]", field, i), net); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

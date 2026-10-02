@@ -89,6 +89,97 @@ func TestValidateAppRejects(t *testing.T) {
 	assert.ErrorContains(t, ValidateApp(s), "http_path, tcp_port or exec")
 }
 
+// validJob 合法 job 模板（ValidateJob/ValidateApp 挂钩测试的基准）。
+func validJob(name string) *specv1.JobSpec {
+	return &specv1.JobSpec{
+		Name: name,
+		Ttl:  durationpb.New(10 * time.Minute),
+		Process: &specv1.ProcessSpec{
+			ImageOrigin: &specv1.ProcessSpec_Image{Image: "busybox:1.37"},
+			Command:     []string{"/migrate"},
+		},
+	}
+}
+
+// ValidateJob（ADR-0030 决策 8）：ttl 必填有界；禁面 fail-closed 且理由
+// 精确；process.name 空 = 铸造时落 job.name，非空须相等。
+func TestValidateJob(t *testing.T) {
+	assert.NoError(t, ValidateJob("app.first_boot_jobs[0]", validJob("migrate")))
+
+	s := validAppSpec()
+	s.FirstBootJobs = []*specv1.JobSpec{validJob("migrate")}
+	assert.NoError(t, ValidateApp(s), "a valid job passes the app-level hook")
+
+	s.FirstBootJobs = []*specv1.JobSpec{validJob("migrate"), validJob("migrate")}
+	assert.ErrorContains(t, ValidateApp(s), "duplicate first boot job name")
+
+	noTTL := validJob("migrate")
+	noTTL.Ttl = nil
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", noTTL), "ttl")
+
+	zeroTTL := validJob("migrate")
+	zeroTTL.Ttl = durationpb.New(0)
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", zeroTTL), "ttl")
+
+	overTTL := validJob("migrate")
+	overTTL.Ttl = durationpb.New(25 * time.Hour)
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", overTTL), "ttl")
+
+	unnamed := validJob("")
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", unnamed), "name")
+
+	nilProcess := validJob("migrate")
+	nilProcess.Process = nil
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", nilProcess), "process template")
+
+	mismatch := validJob("migrate")
+	mismatch.Process.Name = "other"
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", mismatch), "equal to the job name")
+
+	match := validJob("migrate")
+	match.Process.Name = "migrate"
+	assert.NoError(t, ValidateJob("app.first_boot_jobs[0]", match))
+
+	volumes := validJob("migrate")
+	volumes.Process.Volumes = []*specv1.VolumeAttachment{{VolumeId: "data", Target: "/data"}}
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", volumes), "volumes")
+
+	configs := validJob("migrate")
+	configs.Process.ConfigRefs = []string{"app.conf"}
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", configs), "config_refs")
+
+	ports := validJob("migrate")
+	ports.Process.Ports = []*specv1.PortSpec{{Port: 8080, Protocol: specv1.Protocol_PROTOCOL_HTTP}}
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", ports), "ports")
+
+	probe := validJob("migrate")
+	probe.Process.Healthcheck = &specv1.HealthcheckSpec{
+		Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: 8080},
+	}
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", probe), "healthcheck")
+
+	place := validJob("migrate")
+	place.Process.Placement = &specv1.PlacementSpec{NodeIds: []string{"01JD0NODE00000000000000000"}}
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", place), "placement")
+
+	multi := validJob("migrate")
+	multi.Process.Replicas = 2
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", multi), "single one-shot run")
+
+	// 网络三形态与 App Process 同域（形态校验；存在性/批准态在受理与投影面）。
+	nets := validJob("migrate")
+	nets.Process.Networks = []string{"default", "taskGroup:dispatcher", "project:01JD0PROJ00000000000000000/main"}
+	assert.NoError(t, ValidateJob("app.first_boot_jobs[0]", nets))
+
+	badNet := validJob("migrate")
+	badNet.Process.Networks = []string{"project:shop/main"}
+	assert.ErrorContains(t, ValidateJob("app.first_boot_jobs[0]", badNet), "platform project id")
+
+	fromBuild := validJob("migrate")
+	fromBuild.Process.ImageOrigin = &specv1.ProcessSpec_FromBuild{FromBuild: "web"}
+	assert.NoError(t, ValidateJob("app.first_boot_jobs[0]", fromBuild))
+}
+
 func TestValidateTaskTTLBound(t *testing.T) {
 	base := &specv1.TaskSpec{
 		SchemaVersion: SchemaVersion,
