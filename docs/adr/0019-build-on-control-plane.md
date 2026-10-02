@@ -83,7 +83,7 @@ Source 第三形态（上传产物）的契约、执法、存储与清理裁决�
 1. **无单节点退化形态**：无 Registry Provider 时 build 源部署精确失败（"managed registry is required"）。理由：N0 本机导入形态的 digest=裸 image ID，真机 swarm 的 service create 根本不可拉取（本就不可用），诚实拒绝优于静默死路。
 2. **数据卷节点本地、无钉住**（traefik acme 同款边界）：zot 重调度到别的节点=镜像丢失；运行中服务不受影响（镜像已在节点上），新部署触发重建自愈。受管 Workload 数据钉住另批。
 3. **镜像 GC 延后**：zot 内镜像只增不清（Revision 引用对账 + 清理面随保留窗批次）。
-4. **单平台构建**（控制面架构）；多 arch 随 F1.14 构建器扩展。
+4. **单平台构建**（控制面架构）；多 arch 延后（原口径"随 F1.14 构建器扩展"经 ADR-0032 重裁：F1.14 是 railpack/static 双 builder 从空面到真面，多 arch 仍延后至真实多 arch 节点出现）。
 
 ### B.6 推送机制
 

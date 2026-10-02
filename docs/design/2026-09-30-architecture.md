@@ -73,7 +73,7 @@ AppSpec {
   processes: [ { name, image|fromBuild, command, env, secretRefs, configRefs,
                  ports[{port, protocol(http|h2c|tcp)}], healthcheck{http|tcp|exec, grace}, resources{cpu,mem},
                  replicas, placement, volumes[], networks[] } ]
-  build: { builder, dockerfile|railpack{pinnedVersion}, cacheFrom }
+  build: { builder, dockerfile|railpack{pinnedVersion}|static{outputDir}, cacheFrom }   # F1.14
   firstBootJobs: [...]            # 部署期 init job（迁移等）
 }
 TaskSpec   { …同 processes 单元素 + ttl + ownerToken + networkGroup }
