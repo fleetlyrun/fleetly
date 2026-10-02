@@ -13,6 +13,7 @@ database.deleted	A database was deleted (carriers torn down, row tombstoned; vol
 deployment.building	Deployment entered build stage.	added during implementation
 deployment.cancelled	Deployment cancelled while queued or in flight.	added during implementation
 deployment.failed	Deployment reached failed terminal state.	added during implementation
+deployment.first_boot_job	A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).	internal/engine/firstboot.go mintFirstBootJob
 deployment.observing	Deployment entered health observation window.	added during implementation
 deployment.preparing	Deployment started preparing spec and materials.	added during implementation
 deployment.queued	Deployment accepted by admission queue.	added during implementation

@@ -56,11 +56,23 @@ type nodeEventPayload struct {
 	Minted    bool   `json:"minted,omitempty"`
 }
 
+// deployment.first_boot_job（ADR-0030：jobs 子相位每次铸造即发——job 的
+// 生命周期观测面复用 task.*/run.*，本事件补部署→Task 的因果链）。
+type firstBootJobEventPayload struct {
+	DeploymentID string `json:"deployment_id"`
+	AppID        string `json:"app_id"`
+	Generation   uint64 `json:"generation"`
+	JobIndex     int    `json:"job_index"`
+	JobName      string `json:"job_name"`
+	TaskID       string `json:"task_id"`
+}
+
 // 事件名锚定（usage 反扫的字面量命中点）。
 const (
-	eventWorkloadDrift   = "workload.drift_detected"
-	eventWorkloadStopped = "workload.stopped"
-	eventNodeJoined      = "node.joined"
+	eventWorkloadDrift     = "workload.drift_detected"
+	eventWorkloadStopped   = "workload.stopped"
+	eventNodeJoined        = "node.joined"
+	eventFirstBootJobFired = "deployment.first_boot_job"
 )
 
 // build.* payload schema。
@@ -326,6 +338,18 @@ func nodeJoinedPayloadJSON(nodeID, carrierID string, minted bool) []byte {
 
 func nodeLeftPayloadJSON(nodeID, carrierID string) []byte {
 	b, _ := json.Marshal(nodeEventPayload{NodeID: nodeID, CarrierID: carrierID})
+	return b
+}
+
+func firstBootJobEventPayloadJSON(d *deployment.Deployment, idx int, jobName, taskID string) []byte {
+	b, _ := json.Marshal(firstBootJobEventPayload{
+		DeploymentID: d.ID,
+		AppID:        d.AppID,
+		Generation:   d.Generation,
+		JobIndex:     idx,
+		JobName:      jobName,
+		TaskID:       taskID,
+	})
 	return b
 }
 

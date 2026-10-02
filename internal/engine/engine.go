@@ -60,6 +60,10 @@ type Options struct {
 	ObserveWindow time.Duration
 	// ReleaseTimeout 是 L1 就绪等待上限（默认 120s；超时即失败回滚）。
 	ReleaseTimeout time.Duration
+	// FirstBootWaitGrace 是 firstBootJobs 等待窗在作业 ttl 之上的余量
+	//（默认 2m：mint→Run 创建滞后 + 终态观测滞后；镜像拉取计入 Run 自身
+	// TTL——deadline 从 Run 创建起算，ADR-0030 决策 4）。
+	FirstBootWaitGrace time.Duration
 	// Tick 是收敛循环兜底节拍（默认 1s）。
 	Tick time.Duration
 	// BuildConcurrency 是并发构建上限（默认 2，F0.9）。
@@ -108,6 +112,9 @@ func (o *Options) fill() {
 	}
 	if o.ReleaseTimeout <= 0 {
 		o.ReleaseTimeout = 120 * time.Second
+	}
+	if o.FirstBootWaitGrace <= 0 {
+		o.FirstBootWaitGrace = 2 * time.Minute
 	}
 	if o.Tick <= 0 {
 		o.Tick = time.Second

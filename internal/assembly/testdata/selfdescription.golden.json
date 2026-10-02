@@ -1093,6 +1093,44 @@
       }
     },
     {
+      "name": "deployment.first_boot_job",
+      "kind": "event",
+      "summary": "A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "type": "string"
+          },
+          "deployment_id": {
+            "type": "string"
+          },
+          "generation": {
+            "type": "integer"
+          },
+          "job_index": {
+            "type": "integer"
+          },
+          "job_name": {
+            "type": "string"
+          },
+          "task_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "deployment_id",
+          "app_id",
+          "generation",
+          "job_index",
+          "job_name",
+          "task_id"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "deployment.observing",
       "kind": "event",
       "summary": "Deployment entered health observation window.",

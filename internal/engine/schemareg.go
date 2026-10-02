@@ -37,6 +37,9 @@ func init() {
 	} {
 		registerEventPayload(name, deploymentEventPayload{})
 	}
+	// firstBootJobs 链接线（ADR-0030）：铸造事件 + 部署因果链（job 生命周期
+	// 观测面复用 task.*/run.* 既有注册）。
+	registerEventPayload(eventFirstBootJobFired, firstBootJobEventPayload{})
 	// Build 状态机（build.*）。
 	for _, name := range []string{
 		"build.queued",

@@ -51,6 +51,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	defer appMu.Unlock()
 
 	var out *deployment.Deployment
+	var supersededIDs []string
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		// 0. App 存活判定（API/webhook 的预读只是快速失败面；权威判定在此）。
 		appRow, err := e.apps.Get(ctx, tx, req.AppID)
@@ -108,7 +109,9 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		newID := ulid.Make().String()
 
 		// 4. 显式 supersede 抢占在途（至多一条；观察窗与发布权即时移交——
-		// 在途 Generation 由本新 Deployment 收口）。
+		// 在途 Generation 由本新 Deployment 收口）。被抢占部署锚定的
+		// firstBootJobs 在事务后 best-effort 强停（ADR-0030 决策 6——
+		// StopTask 自开事务，不得嵌套）。
 		if req.Supersede {
 			for _, d := range inFlight {
 				if err := e.transit(ctx, tx, d,
@@ -116,6 +119,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 					func(m *deployment.Deployment) { m.SupersededBy = newID }); err != nil {
 					return err
 				}
+				supersededIDs = append(supersededIDs, d.ID)
 			}
 		}
 		// 5. latest-wins：既有 queued 全部让位（active 按 id 升序 → queued 亦然）。
@@ -157,6 +161,13 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	if err != nil {
 		return nil, err
 	}
+	for _, id := range supersededIDs {
+		if fresh, err := e.deployments.Get(ctx, e.db.Runner(), id); err == nil {
+			e.abandonFirstBootJobs(ctx, fresh)
+		} else {
+			e.log.Error("submit: supersede abandon lookup", "deployment", id, "err", err)
+		}
+	}
 	e.loop.Kick()
 	return out, nil
 }
@@ -164,6 +175,8 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 // Cancel 取消排队或在途 Deployment（ADR-0016：排队与在途均可取消）。
 // 在途取消是"停止推进"语义：当前 step 收尾后不再迁移；已下发的
 // Workload 由后续部署或 Remove 收口（N0 不自动拆除——诚实暴露）。
+// jobs 等待中的部署取消后，锚定 job Task best-effort 强停（ADR-0030
+// 决策 6：审计携带操作者）。
 func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment, error) {
 	var out *deployment.Deployment
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
@@ -184,6 +197,7 @@ func (e *Engine) Cancel(ctx context.Context, id string) (*deployment.Deployment,
 	if err != nil {
 		return nil, err
 	}
+	e.abandonFirstBootJobs(ctx, out)
 	e.loop.Kick()
 	return out, nil
 }

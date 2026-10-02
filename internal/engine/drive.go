@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 )
@@ -95,17 +96,18 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 
 // prepare：Spec 归一化校验 + 投影 + 材料装配（F0.17 材料解析随材料批次
 // 接入，当前为空集）。镜像直投 → releasing；需构建 → building（build
-// engine 拾取）。
+// engine 拾取）。firstBootJobs 的结构校验在此先行（受理面 ValidateApp
+// 同规则；此处是部署链内防御 + 更早失败：坏 job 不等构建完才死）——
+// 执行在 releasing 态前半（firstboot.go，ADR-0030）。
 func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
 		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
 	}
-	if len(spec.GetFirstBootJobs()) > 0 {
-		// 诚实拒绝：部署期 init job 的执行面 = 一次性 Run 机制（已随
-		// F1.5 落地），部署链等待/回滚接线随后续部署链批接入——半吊子
-		// 实现会静默跳过迁移逻辑。
-		return e.failDeployment(ctx, d, "first boot jobs are not supported yet; deploy-time job wiring lands with the deployment-chain batch")
+	for i, j := range spec.GetFirstBootJobs() {
+		if verr := specir.ValidateJob(fmt.Sprintf("app.first_boot_jobs[%d]", i), j); verr != nil {
+			return e.failDeployment(ctx, d, "first boot job: "+verr.Error())
+		}
 	}
 	team, _, err := e.appTeam(ctx, d.AppID)
 	if err != nil {
@@ -141,13 +143,27 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 	return e.transitAndReload(ctx, d, []deployment.State{deployment.StatePreparing}, deployment.StateReleasing, nil)
 }
 
-// release：物化（materialize 单序列）下发 Runtime（唯一写动词 Ensure，同
-// Generation 重放安全）；L1 健康门 = 全部 Workload 观测到 running（gen 匹配）。
+// release：jobs 子相位（firstBootJobs，ADR-0030——串行执行部署期 init
+// job，失败即回滚；旧 Revision 载体原样在服）→ 物化（materialize 单序列）
+// 下发 Runtime（唯一写动词 Ensure，同 Generation 重放安全）；L1 健康门 =
+// 全部 Workload 观测到 running（gen 匹配）。
 //
 // L1 等待期（deadline 已设）每步仍幂等重 Ensure：重启后观测缓存为空，
 // 重放触发 Provider 的 update 事件恢复观测流；同 spec 的 update 对载体
-// 是 no-op，代价可接受（场景 1 重放语义）。
+// 是 no-op，代价可接受（场景 1 重放语义）。observe_deadline 在两子相位
+// 复用（job 等待 / L1），消歧真源 = first_boot 游标。
 func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
+	spec, err := e.loadSpec(ctx, d.ToRevision)
+	if err != nil {
+		return e.failDeployment(ctx, d, "load revision spec: "+err.Error())
+	}
+	jobsDone, err := e.driveFirstBootJobs(ctx, d, spec)
+	if err != nil {
+		return e.failDeployment(ctx, d, err.Error())
+	}
+	if !jobsDone {
+		return nil, nil // 等 job 终态（tick 再进）
+	}
 	if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
 		return e.failDeployment(ctx, d, err.Error())
 	}
@@ -251,9 +267,11 @@ func (e *Engine) rollbackFailed(ctx context.Context, d *deployment.Deployment, r
 }
 
 // failDeployment：任意阶段失败 → failed（四件一拍；自动回滚由 failed
-// 分支接手）。
+// 分支接手）。ObserveDeadline 是相位局部截止（job 等待/L1/L3），进 failed
+// 即终止该相位——残留会让 rollback 误读为"等待期已设、gen 已推进"
+// （ADR-0030：job 等待截止不泄漏进回滚相位）。
 func (e *Engine) failDeployment(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error) {
 	return e.transitAndReload(ctx, d,
 		deployment.ActiveStatesNoQueued(), deployment.StateFailed,
-		func(m *deployment.Deployment) { m.Error = reason })
+		func(m *deployment.Deployment) { m.Error, m.ObserveDeadline = reason, "" })
 }

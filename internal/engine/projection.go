@@ -117,6 +117,11 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string, 
 // RestartNever（退出即终态——resident 池的补足由平台承担，不靠编排器
 // 重启）；Addressing 携带双级稳定 DNS（池级轮询 + per-Run 稳定名）；
 // network_group 翻译为平台网络名（同决策 5）。
+//
+// process.networks 是 firstBootJobs 铸造面的挂靠通道（ADR-0030 决策 7）：
+// API 受理面禁用该字段（validateTaskCommon），engine 铸造的部署期 job 例外
+// ——铸造时已解析为平台网络名（taskGroup:/project: 引用不复存在），此处
+// 原样透传。
 func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool) (capability.Workload, capability.NamespaceRef, error) {
 	if t.GetProcess().GetImage() == "" {
 		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("task %s process has no image origin (build source is an app-only surface)", t.GetTask().GetId())
@@ -141,11 +146,31 @@ func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool) (c
 	if g := t.GetNetworkGroup(); g != "" {
 		w.Networks = []string{TaskGroupNetworkName(g)}
 	}
+	// 部署期 job 的挂靠网（铸时解析、平台网络名原样；与 network_group
+	// 并存时合并去重——铸造面二选一，防御性合并不产生第二语义）。
+	if nets := p.GetNetworks(); len(nets) > 0 {
+		merged := append([]string(nil), w.Networks...)
+		for _, net := range nets {
+			if !containsString(merged, net) {
+				merged = append(merged, net)
+			}
+		}
+		w.Networks = merged
+	}
 	w.Addressing = []capability.Address{
 		{Name: TaskDNSName(t.GetTask().GetId())},
 		{Name: RunDNSName(runID)},
 	}
 	return w, ns, nil
+}
+
+func containsString(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }
 
 // ProjectDatabase 把 DatabaseSpec 投影为用户域受管 Workload（ADR-0029）：

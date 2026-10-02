@@ -16,6 +16,7 @@ database.deleted	event	A database was deleted (carriers torn down, row tombstone
 deployment.building	event	Deployment entered build stage.
 deployment.cancelled	event	Deployment cancelled while queued or in flight.
 deployment.failed	event	Deployment reached failed terminal state.
+deployment.first_boot_job	event	A deploy-time first boot job was minted as a one-shot task; the deployment waits in releasing for its terminal state before materializing carriers (ADR-0030).
 deployment.observing	event	Deployment entered health observation window.
 deployment.preparing	event	Deployment started preparing spec and materials.
 deployment.queued	event	Deployment accepted by admission queue.

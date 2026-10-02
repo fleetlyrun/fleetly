@@ -30,23 +30,38 @@ import (
 // ——读失败剥离等于假隔离）。
 func (e *Engine) resolvePeerRefs(ctx context.Context, run state.Runner, consumerProjectID string, spec *specv1.AppSpec, isolate bool) (PeerRefs, error) {
 	out := PeerRefs{Refs: map[string]capability.NetworkRef{}, Isolate: isolate}
+	resolve := func(net string) error {
+		if !specir.IsCrossProjectRef(net) {
+			return nil
+		}
+		if _, done := out.Refs[net]; done {
+			return nil // 同引用多进程共享一次解析
+		}
+		ref, approved, err := e.resolveOnePeerRef(ctx, run, consumerProjectID, net)
+		if err != nil {
+			return err
+		}
+		if approved {
+			out.Refs[net] = ref
+		} else if !isolate {
+			return fmt.Errorf("%w: %s (receiving project has not approved this attachment; declare and approve the peer, or remove the reference)",
+				ErrCrossProjectRefNotApproved, net)
+		}
+		return nil
+	}
 	for _, p := range spec.GetProcesses() {
 		for _, net := range p.GetNetworks() {
-			if !specir.IsCrossProjectRef(net) {
-				continue
-			}
-			if _, done := out.Refs[net]; done {
-				continue // 同引用多进程共享一次解析
-			}
-			ref, approved, err := e.resolveOnePeerRef(ctx, run, consumerProjectID, net)
-			if err != nil {
+			if err := resolve(net); err != nil {
 				return PeerRefs{}, err
 			}
-			if approved {
-				out.Refs[net] = ref
-			} else if !isolate {
-				return PeerRefs{}, fmt.Errorf("%w: %s (receiving project has not approved this attachment; declare and approve the peer, or remove the reference)",
-					ErrCrossProjectRefNotApproved, net)
+		}
+	}
+	// firstBootJobs 的挂靠网同域（ADR-0030 决策 7）：受理预检与本解析
+	// 一并覆盖 job 引用（部署链恒 strict）。
+	for _, j := range spec.GetFirstBootJobs() {
+		for _, net := range j.GetProcess().GetNetworks() {
+			if err := resolve(net); err != nil {
+				return PeerRefs{}, err
 			}
 		}
 	}
