@@ -28,6 +28,9 @@ func TestProjectTranslatesTaskGroupRefs(t *testing.T) {
 	assert.Equal(t, capability.NamespaceRef{Team: "acme", Project: "shop", App: "01JAPP"}, ns)
 	require.Len(t, ws, 1)
 	assert.Equal(t, []string{"default", "taskgrp-dispatcher", "taskgrp-plain"}, ws[0].Networks)
+	// ADR-0034：App Process 网络别名 = 进程名（compose 服务名互访语义）。
+	require.Len(t, ws[0].Addressing, 1)
+	assert.Equal(t, "web", ws[0].Addressing[0].Name)
 }
 
 // TestProjectTaskRunWorkload（ADR-0025 决策 2/4/6）：Run Workload 投影——

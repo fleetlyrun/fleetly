@@ -36,7 +36,7 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string, 
 		}
 		w := capability.Workload{
 			// Workload ID 是确定性合成串（领域模型 §3：ULID 或等价——唯一
-			// 且跨 Deployment 稳定，Ensure 走 update 路径而非反复重建）。
+			// 且跨 Deployment 稳定，Ensure 走 update 路径而非重建）。
 			ID:      WorkloadID(spec.GetApp().GetId(), p.GetName()),
 			Process: p.GetName(),
 			Image:   image,
@@ -50,6 +50,10 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string, 
 			}(),
 			Networks: p.GetNetworks(),
 		}
+		// 网络别名 = 进程名（ADR-0034：compose 服务名互访语义补全——
+		// Provider 把 Addressing 映射为挂靠网络的别名；Task 域双级 DNS
+		// 同通道，ADR-0025 决策 6）。
+		w.Addressing = []capability.Address{{Name: p.GetName()}}
 		for _, port := range p.GetPorts() {
 			w.Ports = append(w.Ports, capability.WorkloadPort{
 				Port:     port.GetPort(),
