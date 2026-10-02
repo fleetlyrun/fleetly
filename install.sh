@@ -15,6 +15,8 @@
 #   FLEETLY_BIN_DIR   本地二进制目录（含 fleetlyd 与 fleetly；跳过下载）
 #   FLEETLY_DATA_ROOT 数据根（默认 /var/lib/fleetly）
 #   FLEETLY_ADVERTISE_ADDR  swarm advertise 地址（默认自动探测默认路由 IP）
+#   FLEETLY_REGISTRY_ADDR   受管仓库地址（默认 <advertise>:5000；空 = 禁用
+#                           构建链——镜像直投部署不受影响）
 set -eu
 
 log() { printf '==> %s\n' "$1"; }
@@ -97,12 +99,39 @@ else
   fi
 fi
 
+# ---- 4b. 受管仓库的 daemon 信任面（F1.11，ADR-0019 附录 B.2） ----
+# 平台仓库走集群内网 HTTP；daemon 推送/拉取都需要 --insecure-registry。
+# 已有 daemon.json 时不覆盖（诚实不破坏）——打印人工指引，并跳过仓库注入。
+ADDR="${FLEETLY_ADVERTISE_ADDR:-}"
+if [ -z "$ADDR" ]; then
+  ADDR="$(ip route get 1.1.1.1 2>/dev/null | grep -o 'src [0-9.]*' | head -1 | grep -o '[0-9.]*')" || true
+fi
+REGISTRY_ADDR="${FLEETLY_REGISTRY_ADDR:-}"
+[ -z "$REGISTRY_ADDR" ] && [ -n "$ADDR" ] && REGISTRY_ADDR="$ADDR:5000"
+if [ -n "$REGISTRY_ADDR" ]; then
+  if [ -f /etc/docker/daemon.json ]; then
+    log "NOTE: /etc/docker/daemon.json exists — add \"$REGISTRY_ADDR\" to insecure-registries manually if missing"
+  else
+    log "trusting managed registry $REGISTRY_ADDR (insecure-registry drop-in)"
+    mkdir -p /etc/docker
+    printf '{"insecure-registries":["%s"]}\n' "$REGISTRY_ADDR" > /etc/docker/daemon.json
+    (service docker restart || systemctl restart docker) >/dev/null 2>&1 || true
+    sleep 2
+    docker info >/dev/null 2>&1 || die "docker daemon did not come back after the insecure-registry drop-in"
+  fi
+fi
+
 # ---- 5. 数据根 + fleetlyd 起服 ----
 DATA_ROOT="${FLEETLY_DATA_ROOT:-/var/lib/fleetly}"
 mkdir -p "$DATA_ROOT"
 
 start_fleetlyd_systemd() {
   log "starting fleetlyd via systemd"
+  REG_ENV=""
+  if [ -n "$REGISTRY_ADDR" ]; then
+    REG_ENV="Environment=FLEETLY_REGISTRY_ADDR=$REGISTRY_ADDR
+"
+  fi
   cat > /etc/systemd/system/fleetlyd.service <<UNIT
 [Unit]
 Description=fleetlyd control plane
@@ -112,7 +141,7 @@ Wants=network-online.target
 [Service]
 ExecStart=$BIN_DIR/fleetlyd
 Environment=FLEETLY_DATA_ROOT=$DATA_ROOT
-Restart=always
+${REG_ENV}Restart=always
 RestartSec=3
 
 [Install]
@@ -126,7 +155,7 @@ start_fleetlyd_background() {
   # 无 systemd 环境（容器/最小镜像）：setsid 脱离会话进程组 + 日志落盘
   #（与 e2e dind 同款形态；进程托管随容器形态批次收口）。
   log "no systemd — starting fleetlyd in background (log: /var/log/fleetlyd.log)"
-  setsid env FLEETLY_DATA_ROOT="$DATA_ROOT" \
+  setsid env FLEETLY_DATA_ROOT="$DATA_ROOT" FLEETLY_REGISTRY_ADDR="${REGISTRY_ADDR:-}" \
     "$BIN_DIR/fleetlyd" > /var/log/fleetlyd.log 2>&1 < /dev/null &
 }
 
