@@ -3,6 +3,7 @@ package engine
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -143,6 +144,45 @@ func ProjectTask(t *specv1.TaskSpec, team string, runID string, running bool) (c
 	w.Addressing = []capability.Address{
 		{Name: TaskDNSName(t.GetTask().GetId())},
 		{Name: RunDNSName(runID)},
+	}
+	return w, ns, nil
+}
+
+// ProjectDatabase 把 DatabaseSpec 投影为用户域受管 Workload（ADR-0029）：
+// Database 域 ns（NamespaceRef.Database 轴）；镜像/端口/卷目标来自模板
+// 注册表（模板参数不可变，无 Revision 冻结面——IR 仍是投影单真源）。
+// volumeName 是挂靠卷的 Project 内卷名（= 数据库名的确定性公式）；挂网
+// networks 是 Project 活跃网络全集（受理位已保证非空）。
+func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks []string, tpl dbTemplate) (capability.Workload, capability.NamespaceRef, error) {
+	if s.GetDatabase().GetId() == "" || s.GetDatabase().GetProject() == "" {
+		return capability.Workload{}, capability.NamespaceRef{}, fmt.Errorf("database spec has no identity ref")
+	}
+	ns := capability.NamespaceRef{Team: team, Project: s.GetDatabase().GetProject(), Database: s.GetDatabase().GetId()}
+	env, command := tpl.workloadRender()
+	w := capability.Workload{
+		// Workload ID = Database 行 ID（域内唯一、跨收敛稳定——Ensure 走
+		// update 路径而非反复重建）。
+		ID:       s.GetDatabase().GetId(),
+		Process:  tpl.engine,
+		Image:    tpl.image,
+		Command:  command,
+		Env:      env,
+		Replicas: 1,
+		Networks: networks,
+		Ports: []capability.WorkloadPort{
+			{Port: tpl.port, Protocol: capability.ProtocolTCP},
+		},
+		Healthcheck: &capability.Healthcheck{
+			TCPPort:     tpl.port,
+			Interval:    dbConnectTimeout,
+			Timeout:     5 * time.Second,
+			StartPeriod: 60 * time.Second, // 首启初始化（initdb/AOF）给足宽限
+			Retries:     3,
+		},
+		Volumes: []capability.VolumeMount{
+			{VolumeID: volumeName, Target: tpl.dataTarget},
+		},
+		Addressing: []capability.Address{{Name: DatabaseDNSName(s.GetDatabase().GetId())}},
 	}
 	return w, ns, nil
 }

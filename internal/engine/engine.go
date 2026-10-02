@@ -15,6 +15,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
@@ -204,6 +205,11 @@ type Engine struct {
 	// digest → blob 解包）。
 	uploads *sourceupload.Repo
 
+	// Database 域（F1.12，ADR-0029）：聚合 repo + 用户域受管收敛环
+	//（第三条部署轨——挂项目网供 App 连，与 App 部署链/受管域分立）。
+	databases    *dbrepo.Repo
+	databaseLoop *Loop
+
 	loop         *Loop
 	buildLoop    *Loop
 	managedLoop  *Loop
@@ -327,9 +333,11 @@ func New(deps Deps, opts Options) *Engine {
 		schedules:      schedule.New(clock),
 		peerDecls:      networkpeer.New(clock),
 		uploads:        sourceupload.New(clock),
+		databases:      dbrepo.New(clock),
 		loop:           NewLoop("deployment", log),
 		buildLoop:      NewLoop("build", log),
 		managedLoop:    NewLoop("managed", log),
+		databaseLoop:   NewLoop("database", log),
 		taskLoop:       NewLoop("task", log),
 		scheduleLoop:   NewLoop("schedule", log),
 		driftLoop:      NewLoop("drift", log),
@@ -379,7 +387,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
 	e.runCtxMu.Unlock()
 	e.resetOrphanBuilds(runCtx)
-	e.wg.Add(5)
+	e.wg.Add(6)
 	go func() {
 		defer e.wg.Done()
 		e.loop.Run(runCtx, e.opts.Tick, e.step)
@@ -394,6 +402,10 @@ func (e *Engine) Start(ctx context.Context) {
 	}()
 	go func() {
 		defer e.wg.Done()
+		e.databaseLoop.Run(runCtx, e.opts.Tick, e.databaseStep)
+	}()
+	go func() {
+		defer e.wg.Done()
 		e.taskLoop.Run(runCtx, e.opts.Tick, e.taskStep)
 	}()
 	go func() {
@@ -404,6 +416,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
 	e.buildLoop.Kick()
 	e.managedLoop.Kick()
+	e.databaseLoop.Kick() // 启动即收敛：数据库行 + 行上指纹是重放真源
 	e.taskLoop.Kick()     // 启动即收敛：Task/Run 行 + 绝对 deadline 是恢复真源（P1-7）
 	e.scheduleLoop.Kick() // 启动即收敛：next_fire_at 是绝对时刻——错过窗口补跑一拍（ADR-0018 附录 A）
 	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环
@@ -497,13 +510,14 @@ func (e *Engine) KickTasks() { e.taskLoop.Kick() }
 // KickSchedules 唤醒 Schedule 到期拍环（API 受理面消费：创建后立即判定）。
 func (e *Engine) KickSchedules() { e.scheduleLoop.Kick() }
 
-// DriveOnce 手动驱动一轮收敛（部署/构建/受管/Schedule/Task 五线各一步；
-// apitest 手动形态消费——golden 确定性：不依赖真实节拍。scheduleStep 先于
-// taskStep：同一轮 Drive 内铸出的 Task 即刻进补足链）。
+// DriveOnce 手动驱动一轮收敛（部署/构建/受管/Database/Schedule/Task 六线
+// 各一步；apitest 手动形态消费——golden 确定性：不依赖真实节拍）。scheduleStep 先于
+// taskStep：同一轮 Drive 内铸出的 Task 即刻进补足链。
 func (e *Engine) DriveOnce(ctx context.Context) {
 	e.step(ctx)
 	e.buildStep(ctx)
 	e.managedStep(ctx)
+	e.databaseStep(ctx)
 	e.scheduleStep(ctx)
 	e.taskStep(ctx)
 }

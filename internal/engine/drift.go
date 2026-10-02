@@ -108,9 +108,10 @@ func (e *Engine) driftScan(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		// 受管域键（fleetly/system/*）只入看门狗（expected 已登记），不进
-		// spec 对照——非 App 行键，App 表解析面跳过（否则每拍一条噪声错）。
-		if strings.HasPrefix(appID, managedDomainKeyPrefix) {
+		// 受管域键（fleetly/system/*）与 Database 域键（database/*）只入
+		// 看门狗（expected 已登记），不进 spec 对照——非 App 行键，App 表
+		// 解析面跳过（否则每拍一条噪声错）。
+		if strings.HasPrefix(appID, managedDomainKeyPrefix) || strings.HasPrefix(appID, databaseDomainKeyPrefix) {
 			continue
 		}
 		if !hasInspector {
