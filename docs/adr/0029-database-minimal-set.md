@@ -72,8 +72,11 @@ F1.12 要求 postgres（含 pgvector 形态）+ redis 模板、默认本地备�
 7. **备份口径（本批先钉，ADR-0020 承接）**：
    - **本地目标开箱即用（本批交付）**：`internal/providers/localobjectstore`
      实现 capability.ObjectStore（DataRoot/backups/ 目录；Put/Get/List/
-     Delete），注册 KindObjectStore 工厂——零配置默认在册，能力自描述
-     面与 doctor 自动可见。外置 S3 Provider 随 F2。
+     Delete，键钳制防路径穿越），注册 KindObjectStore 工厂——零配置默认
+     在册（RegisteredFactories 注册面即所见；doctor/schema 的 Provider 列
+     面尚不存在，外置 S3 Provider 随 F2 一并接装配消费面——备份执行链
+     落地时 Build 进图）。对象键段禁反斜杠/盘符/穿越段；Windows 控制
+     面文件名禁 ":"——备份执行器铸键用无冒号时间戳形态。
    - **触发形态裁决**：**定时**（backup_interval 缺省 24h）+ 保留窗滚动
      （缺省 7d）；"随版本触发"不采纳（本批模板参数不可变，无版本事件
      面）。执行面 = 平台铸造 one-shot Run 跑模板的备份命令、产物写
@@ -132,8 +135,8 @@ F1.12 要求 postgres（含 pgvector 形态）+ redis 模板、默认本地备�
   Generation 一次
 - [x] 删除收口：Runtime.Remove 先行、tombstone 事件+审计同事务；卷与
   Secret 残留（备份保留）
-- [x] 本地 ObjectStore 开箱：能力发现面含 objectstore Provider；
-  Put/Get/List/Delete 有测试
+- [x] 本地 ObjectStore 开箱：工厂注册进 RegisteredFactories（注册面即
+  所见）；Put/Get/List/Delete 有测试
 - [x] ListDatabases 走 after_database_id + limit（ADR-0026 惯例面 +1）
 - [ ] 备份执行链 + 恢复演练（F2；ADR-0020 验收 N2 e2e 不变）
 - [ ] staging 真机实证（受管形态起服 + App 经项目网连接 + 双节点卷
