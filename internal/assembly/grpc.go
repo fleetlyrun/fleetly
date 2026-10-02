@@ -78,10 +78,11 @@ func NewGRPCServer(
 	authenticator *authn.Authenticator,
 	enforcer *idem.Enforcer,
 	limiter *governance.RateLimiter,
+	freeze *governance.FreezeGuard,
 	system *systemgrpc.Service,
 	services *fleetlygrpc.Services,
 ) (*lynxgrpc.Server, error) {
-	unary, stream, err := NewInterceptors(policySet, authenticator, enforcer, limiter)
+	unary, stream, err := NewInterceptors(policySet, authenticator, enforcer, limiter, freeze)
 	if err != nil {
 		return nil, err
 	}
@@ -110,11 +111,11 @@ func NewGRPCServer(
 
 // NewInterceptors 构造完整拦截器链（unary + 流式）——assembly 服务器与
 // apitest 夹具共用（夹具不经 lynx，但必须走同一条执法链，否则测试面与
-// 生产面漂移）。幂等拦截器在执法链（clientinfo/auth/validate）之后：
-// 重放不消耗业务超时预算，鉴权失败不占幂等记录。创建速率限制器在幂等
-// 执法器之后（ADR-0017 附录 A.2：仅实际执行计数——重放不消耗预算）、
-// 请求超时之前。流式链不加速率面（创建型动词均为 unary）。
-func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
+// 生产面漂移）。链序（ADR-0017/0024）：执法链（clientinfo/auth/validate）
+// → 冻结拦截器（拒绝不占幂等记录）→ 幂等执法器（重放不消耗业务超时
+// 预算、鉴权失败不占幂等记录）→ 创建速率限制器（仅实际执行计数——
+// 重放不消耗预算）→ 请求超时。流式链不加治理面（创建型动词均为 unary）。
+func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authenticator, enforcer *idem.Enforcer, limiter *governance.RateLimiter, freeze *governance.FreezeGuard) ([]grpc.UnaryServerInterceptor, []grpc.StreamServerInterceptor, error) {
 	chain, err := grpcapiinterceptor.Assemble(
 		grpcapiinterceptor.ChainItem{
 			Slot:        grpcapiinterceptor.SlotClientInfo,
@@ -131,6 +132,9 @@ func NewInterceptors(policySet *authz.PolicySet, authenticator *authn.Authentica
 	)
 	if err != nil {
 		return nil, nil, err
+	}
+	if freeze != nil {
+		chain = append(chain, freeze.Unary())
 	}
 	chain = append(chain, enforcer.Unary())
 	chain = append(chain, limiter.Unary())

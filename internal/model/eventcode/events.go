@@ -93,6 +93,11 @@ var builtins = []Event{
 	// 冻结模板铸 one-shot Task）。
 	{Name: "schedule.created", Summary: "A schedule was created (timezone-aware cron, first fire time computed).", Source: "internal/engine/events.go EventScheduleCreated (emitted by the acceptance surface)"},
 	{Name: "schedule.fired", Summary: "A schedule fired and spawned a one-shot task (source: cron or manual).", Source: "internal/engine/schedule.go spawnScheduleTask"},
-	{Name: "schedule.skipped", Summary: "A due schedule fire was skipped because the previous run is still in flight (reason: overlap).", Source: "internal/engine/schedule.go fireSchedule"},
+	{Name: "schedule.skipped", Summary: "A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).", Source: "internal/engine/schedule.go fireSchedule/skipSchedule"},
 	{Name: "schedule.deleted", Summary: "A schedule was deleted (tombstoned; already-spawned tasks run to completion).", Source: "internal/api/fleetlygrpc/automation.go DeleteSchedule"},
+
+	// Change Freeze（F1.9，ADR-0017 附录 A.3：变更冻结窗 set/lift——管理
+	// 动作有界入册；命中拒绝不落事件（重试风暴自放大防护））。
+	{Name: "freeze.set", Summary: "A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.", Source: "internal/api/fleetlygrpc/governance.go SetChangeFreeze"},
+	{Name: "freeze.lifted", Summary: "A change freeze was lifted; change verbs in scope are accepted again.", Source: "internal/api/fleetlygrpc/governance.go LiftChangeFreeze"},
 }

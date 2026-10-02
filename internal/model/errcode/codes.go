@@ -76,6 +76,13 @@ var builtins = []Code{
 		GRPC:       codes.ResourceExhausted,
 	},
 	{
+		ID:         "E_CHANGE_FROZEN",
+		Summary:    "A change freeze is active for the team owning this resource; the change verb is refused with the freeze reason.",
+		Suggestion: "Read-only and stop verbs stay available during the freeze. An operator lifts it with 'fleetly freeze lift <id>' (the freeze_id context names the row).",
+		Source:     "internal/governance/freeze.go (ADR-0017 appendix A.3: team-scoped change freeze, tsuru Block semantics)",
+		GRPC:       codes.FailedPrecondition,
+	},
+	{
 		ID:         "E_SECRET_UNAVAILABLE",
 		Summary:    "The secret facility is unavailable or the referenced secret is missing.",
 		Suggestion: "Create the missing secret or restore the master key under the data root keys/ directory.",

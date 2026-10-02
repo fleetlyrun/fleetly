@@ -45,6 +45,7 @@ var ProviderSet = wire.NewSet(
 	NewEngine,
 	NewIdemEnforcer,
 	NewRateLimiter,
+	NewFreezeGuard,
 	NewAPIServices,
 	NewEngineService,
 	NewRetentionJanitorService,
@@ -157,6 +158,12 @@ func NewIdemEnforcer(db *state.DB, app lynx.App) *idem.Enforcer {
 // 透传窗与预算。
 func NewRateLimiter(db *state.DB) *governance.RateLimiter {
 	return governance.NewRateLimiter(db.Clock(), governance.DefaultRateWindow, governance.DefaultRateBudget)
+}
+
+// NewFreezeGuard 构造变更冻结执法器（ADR-0017 附录 A.3：拦截器 + Team
+// 逐级回行解析）。
+func NewFreezeGuard(db *state.DB, app lynx.App) *governance.FreezeGuard {
+	return governance.NewFreezeGuard(db, app.Logger())
 }
 
 // retentionSweepInterval 是保留窗清扫节拍（幂等记录 24h/认领 90s、事件

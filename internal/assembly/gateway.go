@@ -35,6 +35,7 @@ const httpReadHeaderTimeout = 10 * time.Second
 func gatewayRegistrations() []gateway.RegisterFunc {
 	return []gateway.RegisterFunc{
 		registerClient(systemv1.NewSystemServiceClient, systemv1.RegisterSystemServiceHandlerClient),
+		registerClient(systemv1.NewGovernanceServiceClient, systemv1.RegisterGovernanceServiceHandlerClient),
 		registerClient(identityv1.NewUsersServiceClient, identityv1.RegisterUsersServiceHandlerClient),
 		registerClient(identityv1.NewTeamsServiceClient, identityv1.RegisterTeamsServiceHandlerClient),
 		registerClient(identityv1.NewRolesServiceClient, identityv1.RegisterRolesServiceHandlerClient),

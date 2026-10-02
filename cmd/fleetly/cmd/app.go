@@ -61,6 +61,9 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("roles", "manage roles (builtin owner/admin/member plus custom)", newRolesCreateVerb(), newRolesListVerb()),
 		groupVerb("teams", "manage teams", newTeamsCreateVerb(), newTeamsListVerb()),
 		newAuditVerb(),
+		// Governance 上下文（F1.9：Change Freeze 治理刹车）。
+		groupVerb("freeze", "manage change freezes (refuse change verbs with a reason until lifted)",
+			newFreezeSetVerb(), newFreezeLiftVerb(), newFreezeListVerb()),
 		// Structure 上下文（动词组：嵌套 Dispatch）。
 		groupVerb("projects", "manage projects", newProjectsCreateVerb(), newProjectsListVerb(), newProjectsDeleteVerb()),
 		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsDeleteVerb()),

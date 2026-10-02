@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+// Governance 服务：治理刹车管理面（ADR-0017 附录 A.3，F1.9）。Change
+// Freeze（变更冻结窗）按资源所属 Team 封禁变更型动词——本服务只拥有冻结
+// 窗的生命周期（set/lift/list），执法在 governance 拦截器（authn 之后、
+// 幂等执法器之前）。scope 挂 platform 资源（集群面权力，C3 口径）。
+package fleetly.system.v1;
+
+option go_package = "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;systemv1";
+
+import "google/api/annotations.proto";
+import "protoc-gen-openapiv2/options/annotations.proto";
+import "grpcapi/v1/authz.proto";
+
+// 统一 default 错误响应（运行时错误体即 fleetly.shared.v1.ErrorResponse），
+// 文件级声明自动填充到本文件全部 operation。
+option (grpc.gateway.protoc_gen_openapiv2.options.openapiv2_swagger) = {
+  responses: {
+    key: "default"
+    value: {
+      description: "An unexpected error response."
+      schema: { json_schema: { ref: ".fleetly.shared.v1.ErrorResponse" } }
+    }
+  }
+};
+
+service GovernanceService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // SetChangeFreeze 落一条活跃冻结（team_id 空 = 全局冻结行；scope 已有
+  // 活跃冻结 → E_CONFLICT，先 lift）。创建型动词（幂等执法面）。
+  rpc SetChangeFreeze(SetChangeFreezeRequest) returns (SetChangeFreezeResponse) {
+    option (google.api.http) = { post: "/v1/governance/freezes" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    };
+  }
+
+  // LiftChangeFreeze 解除一条冻结（落 lifted_at；已 lift 再 lift 幂等成功）。
+  rpc LiftChangeFreeze(LiftChangeFreezeRequest) returns (LiftChangeFreezeResponse) {
+    option (google.api.http) = { post: "/v1/governance/freezes/{id}/lift" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    };
+  }
+
+  // ListChangeFreezes 列冻结窗（含历史；after_* + limit 惯例，ADR-0026）。
+  rpc ListChangeFreezes(ListChangeFreezesRequest) returns (ListChangeFreezesResponse) {
+    option (google.api.http) = { get: "/v1/governance/freezes" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "platform" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+message ChangeFreeze {
+  string id = 1;
+  // team_id 空串 = 全局冻结行（封禁全部 Team）。
+  string team_id = 2;
+  // reason 必填：拒绝信封回带（Agent 可读出"为何冻结/何时能再动"）。
+  string reason = 3;
+  string created_by = 4;
+  string created_at = 5;
+  // lifted_at 空串 = 活跃冻结；非空 = 已解除（历史行）。
+  string lifted_at = 6;
+}
+
+message SetChangeFreezeRequest {
+  // team_id 空串 = 全局冻结（全部 Team 的变更型动词封禁）。
+  string team_id = 1;
+  string reason = 2;
+}
+message SetChangeFreezeResponse { ChangeFreeze freeze = 1; }
+
+message LiftChangeFreezeRequest { string id = 1; }
+message LiftChangeFreezeResponse { ChangeFreeze freeze = 1; }
+
+message ListChangeFreezesRequest {
+  // after_freeze_id 游标（上一页末条 id；空 = 首页）。
+  string after_freeze_id = 1;
+  int32 limit = 2;
+}
+message ListChangeFreezesResponse { repeated ChangeFreeze freezes = 1; }

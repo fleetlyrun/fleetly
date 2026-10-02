@@ -29,8 +29,9 @@ const DefaultTimeout = 30 * time.Second
 
 // Client 是平台的类型化入口；零值不可用，经 Dial 构造。
 type Client struct {
-	conn   *grpc.ClientConn
-	System systemv1.SystemServiceClient
+	conn       *grpc.ClientConn
+	System     systemv1.SystemServiceClient
+	Governance systemv1.GovernanceServiceClient
 
 	Projects    structurev1.ProjectsServiceClient
 	Apps        structurev1.AppsServiceClient
@@ -97,6 +98,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 	return &Client{
 		conn:        conn,
 		System:      systemv1.NewSystemServiceClient(conn),
+		Governance:  systemv1.NewGovernanceServiceClient(conn),
 		Projects:    structurev1.NewProjectsServiceClient(conn),
 		Apps:        structurev1.NewAppsServiceClient(conn),
 		Secrets:     structurev1.NewSecretsServiceClient(conn),

@@ -134,11 +134,20 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"schedules get", []string{"schedules", "get", "--schedule", "GOLDEN_SCHEDULE"}, 0},
 		{"schedules trigger", []string{"schedules", "trigger", "--schedule", "GOLDEN_SCHEDULE"}, 0},
 		{"schedules delete", []string{"schedules", "delete", "--schedule", "GOLDEN_SCHEDULE"}, 0},
+
+		// Governance 动词（F1.9）：freeze set（全局；幂等键让 --json 轮重放
+		// 同响应——同键再 Set 会撞活跃冻结唯一索引，declare 同款手法）→
+		// list（active）→ lift → list（历史行可见）。冻结期拒绝面的断言在
+		// apitest（CLI 错误信封含随机 error_id，不可 golden）。
+		{"freeze set", []string{"freeze", "set", "--all", "--reason", "golden maintenance", "--idempotency-key", "freeze-set"}, 0},
+		{"freeze list", []string{"freeze", "list"}, 0},
+		{"freeze lift", []string{"freeze", "lift", "GOLDEN_FREEZE"}, 0},
+		{"freeze list after lift", []string{"freeze", "list"}, 0},
 	}
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, project2ID, networkID, peerID, appID, taskID, task2ID, runID, scheduleID string
+	var projectID, project2ID, networkID, peerID, appID, taskID, task2ID, runID, scheduleID, freezeID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -169,6 +178,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_SCHEDULE" {
 					args[i] = scheduleID
+				}
+				if a == "GOLDEN_FREEZE" {
+					args[i] = freezeID
 				}
 			}
 			code, out, stderr := runCLI(t, args...)
@@ -206,6 +218,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			}
 			if st.verb == "schedules create" {
 				scheduleID = extractScheduleID(t, out)
+			}
+			if st.verb == "freeze set" {
+				freezeID = extractTailID(out)
 			}
 			// deploy 后推进到 succeeded（rollback 的 golden 需要成功基线）。
 			if st.verb == "deploy" {

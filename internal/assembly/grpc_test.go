@@ -57,7 +57,8 @@ func TestNewInterceptorsBoundsUnaryHandler(t *testing.T) {
 	unary, stream, err := NewInterceptors(policySet,
 		authn.NewAuthenticator(db, policySet, ScopeResources(), slog.New(slog.DiscardHandler)),
 		idem.NewEnforcer(db, slog.New(slog.DiscardHandler)),
-		governance.NewRateLimiter(db.Clock(), 0, 0))
+		governance.NewRateLimiter(db.Clock(), 0, 0),
+		governance.NewFreezeGuard(db, slog.New(slog.DiscardHandler)))
 	require.NoError(t, err)
 	require.NotEmpty(t, unary)
 	require.NotEmpty(t, stream)

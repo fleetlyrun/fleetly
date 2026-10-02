@@ -1,0 +1,200 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "title": "Governance 服务：治理刹车管理面（ADR-0017 附录 A.3，F1.9）。Change\nFreeze（变更冻结窗）按资源所属 Team 封禁变更型动词——本服务只拥有冻结\n窗的生命周期（set/lift/list），执法在 governance 拦截器（authn 之后、\n幂等执法器之前）。scope 挂 platform 资源（集群面权力，C3 口径）。",
+    "version": "version not set"
+  },
+  "tags": [
+    {
+      "name": "GovernanceService"
+    }
+  ],
+  "consumes": [
+    "application/json"
+  ],
+  "produces": [
+    "application/json"
+  ],
+  "paths": {
+    "/v1/governance/freezes": {
+      "get": {
+        "summary": "ListChangeFreezes 列冻结窗（含历史；after_* + limit 惯例，ADR-0026）。",
+        "operationId": "GovernanceService_ListChangeFreezes",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListChangeFreezesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "after_freeze_id",
+            "description": "after_freeze_id 游标（上一页末条 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "GovernanceService"
+        ]
+      },
+      "post": {
+        "summary": "SetChangeFreeze 落一条活跃冻结（team_id 空 = 全局冻结行；scope 已有\n活跃冻结 → E_CONFLICT，先 lift）。创建型动词（幂等执法面）。",
+        "operationId": "GovernanceService_SetChangeFreeze",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1SetChangeFreezeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1SetChangeFreezeRequest"
+            }
+          }
+        ],
+        "tags": [
+          "GovernanceService"
+        ]
+      }
+    },
+    "/v1/governance/freezes/{id}/lift": {
+      "post": {
+        "summary": "LiftChangeFreeze 解除一条冻结（落 lifted_at；已 lift 再 lift 幂等成功）。",
+        "operationId": "GovernanceService_LiftChangeFreeze",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1LiftChangeFreezeResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/GovernanceServiceLiftChangeFreezeBody"
+            }
+          }
+        ],
+        "tags": [
+          "GovernanceService"
+        ]
+      }
+    }
+  },
+  "definitions": {
+    "GovernanceServiceLiftChangeFreezeBody": {
+      "type": "object"
+    },
+    "v1ChangeFreeze": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "team_id": {
+          "type": "string",
+          "title": "team_id 空串 = 全局冻结行（封禁全部 Team）。"
+        },
+        "reason": {
+          "type": "string",
+          "title": "reason 必填：拒绝信封回带（Agent 可读出\"为何冻结/何时能再动\"）。"
+        },
+        "created_by": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        },
+        "lifted_at": {
+          "type": "string",
+          "title": "lifted_at 空串 = 活跃冻结；非空 = 已解除（历史行）。"
+        }
+      }
+    },
+    "v1LiftChangeFreezeResponse": {
+      "type": "object",
+      "properties": {
+        "freeze": {
+          "$ref": "#/definitions/v1ChangeFreeze"
+        }
+      }
+    },
+    "v1ListChangeFreezesResponse": {
+      "type": "object",
+      "properties": {
+        "freezes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1ChangeFreeze"
+          }
+        }
+      }
+    },
+    "v1SetChangeFreezeRequest": {
+      "type": "object",
+      "properties": {
+        "team_id": {
+          "type": "string",
+          "title": "team_id 空串 = 全局冻结（全部 Team 的变更型动词封禁）。"
+        },
+        "reason": {
+          "type": "string"
+        }
+      }
+    },
+    "v1SetChangeFreezeResponse": {
+      "type": "object",
+      "properties": {
+        "freeze": {
+          "$ref": "#/definitions/v1ChangeFreeze"
+        }
+      }
+    }
+  }
+}

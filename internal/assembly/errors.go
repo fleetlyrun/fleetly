@@ -30,8 +30,9 @@ const redactedInternalMessage = "internal server error"
 //
 //   - 409 Conflict（状态冲突族）：E_ALREADY_EXISTS（唯一键已存在）、
 //     E_IDEMPOTENCY_KEY_CONFLICT（幂等键异体/在途/双源不一致）、
-//     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_SECRET_UNAVAILABLE
-//     （请求合法、当前状态不容——cancel/解绑/补件后可重试）；
+//     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_SECRET_UNAVAILABLE /
+//     E_CHANGE_FROZEN（请求合法、当前状态不容——cancel/解绑/补件/lift
+//     冻结后可重试）；
 //   - 400/404/409/410/429/401/403/500 与语义对照（本就对，钉扎防漂移）：
 //     E_INVALID_ARGUMENT→400、E_NOT_FOUND→404、E_EVENTS_GONE→410（断档：
 //     游标落在保留窗外，重同步）、E_QUEUE_FULL 与 E_QUOTA_EXCEEDED 与
@@ -43,6 +44,7 @@ const redactedInternalMessage = "internal server error"
 // （Canceled→499、DeadlineExceeded→504 等）。
 var errcodeToHTTP = map[string]int{
 	"E_ALREADY_EXISTS":           http.StatusConflict,
+	"E_CHANGE_FROZEN":            http.StatusConflict,
 	"E_CONFLICT":                 http.StatusConflict,
 	"E_EVENTS_GONE":              http.StatusGone,
 	"E_FORBIDDEN":                http.StatusForbidden,

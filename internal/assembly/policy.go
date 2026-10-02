@@ -21,6 +21,7 @@ import (
 func authzFiles() []protoreflect.FileDescriptor {
 	return []protoreflect.FileDescriptor{
 		systemv1.File_fleetly_system_v1_system_proto,
+		systemv1.File_fleetly_system_v1_governance_proto,
 		structurev1.File_fleetly_structure_v1_structure_proto,
 		deliveryv1.File_fleetly_delivery_v1_delivery_proto,
 		automationv1.File_fleetly_automation_v1_automation_proto,

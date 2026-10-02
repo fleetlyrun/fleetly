@@ -18,6 +18,8 @@ deployment.releasing	Deployment started releasing workloads to runtime.	added du
 deployment.rolling_back	Deployment started replaying last successful revision.	added during implementation
 deployment.succeeded	Deployment reached succeeded terminal state.	added during implementation
 deployment.superseded	Deployment superseded by a newer one.	added during implementation
+freeze.lifted	A change freeze was lifted; change verbs in scope are accepted again.	internal/api/fleetlygrpc/governance.go LiftChangeFreeze
+freeze.set	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.	internal/api/fleetlygrpc/governance.go SetChangeFreeze
 hook.push_accepted	A verified webhook push triggered a deployment.	internal/api/fleetlygrpc/webhook.go handlePush
 invitation.accepted	An invitation was redeemed; the invitee became a user.	added during implementation
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
@@ -40,7 +42,7 @@ run.stopping	A run started stopping (stop reason carried on the row).	internal/e
 schedule.created	A schedule was created (timezone-aware cron, first fire time computed).	internal/engine/events.go EventScheduleCreated (emitted by the acceptance surface)
 schedule.deleted	A schedule was deleted (tombstoned; already-spawned tasks run to completion).	internal/api/fleetlygrpc/automation.go DeleteSchedule
 schedule.fired	A schedule fired and spawned a one-shot task (source: cron or manual).	internal/engine/schedule.go spawnScheduleTask
-schedule.skipped	A due schedule fire was skipped because the previous run is still in flight (reason: overlap).	internal/engine/schedule.go fireSchedule
+schedule.skipped	A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).	internal/engine/schedule.go fireSchedule/skipSchedule
 secret.deleted	A secret was deleted.	internal/api/fleetlygrpc/structure.go DeleteSecret
 secret.updated	A secret value was set (fingerprint, never the value).	internal/api/fleetlygrpc/structure.go PutSecret
 task.active	A drained task was revived by an owner lease renewal.	internal/engine/task.go RenewTask

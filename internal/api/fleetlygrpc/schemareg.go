@@ -89,4 +89,7 @@ func init() {
 	registerEventPayload("invitation.accepted", invitationAcceptedPayload{})
 	// 触发面。
 	registerEventPayload("hook.push_accepted", hookPushAcceptedPayload{})
+	// 治理面（freezeEventPayload，governance.go 单源）。
+	registerEventPayload(eventFreezeSet, freezeEventPayload{})
+	registerEventPayload(eventFreezeLifted, freezeEventPayload{})
 }

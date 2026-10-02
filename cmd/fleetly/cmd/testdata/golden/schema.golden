@@ -21,6 +21,8 @@ deployment.releasing	event	Deployment started releasing workloads to runtime.
 deployment.rolling_back	event	Deployment started replaying last successful revision.
 deployment.succeeded	event	Deployment reached succeeded terminal state.
 deployment.superseded	event	Deployment superseded by a newer one.
+freeze.lifted	event	A change freeze was lifted; change verbs in scope are accepted again.
+freeze.set	event	A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.
 hook.push_accepted	event	A verified webhook push triggered a deployment.
 invitation.accepted	event	An invitation was redeemed; the invitee became a user.
 invitation.created	event	An invitation was issued (single-use, time-boxed, role-bound).
@@ -43,7 +45,7 @@ run.stopping	event	A run started stopping (stop reason carried on the row).
 schedule.created	event	A schedule was created (timezone-aware cron, first fire time computed).
 schedule.deleted	event	A schedule was deleted (tombstoned; already-spawned tasks run to completion).
 schedule.fired	event	A schedule fired and spawned a one-shot task (source: cron or manual).
-schedule.skipped	event	A due schedule fire was skipped because the previous run is still in flight (reason: overlap).
+schedule.skipped	event	A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).
 secret.deleted	event	A secret was deleted.
 secret.updated	event	A secret value was set (fingerprint, never the value).
 task	spec	TaskSpec: desired state of a programmatic workload (one-shot or resident, ADR-0012).

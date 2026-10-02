@@ -70,6 +70,8 @@ var EnforcedMethods = map[string]bool{
 	// 键（webhook:<delivery>）——at-least-once 重投重放首次响应，去重锚与
 	// 副作用不再两步分立。动词不在创建型前缀集，由本表显式纳入。
 	"/fleetly.delivery.v1.HooksService/ReceiveWebhook": true,
+	// change freeze 落行是创建型动词（Set 前缀；ADR-0017 附录 A.3）。
+	"/fleetly.system.v1.GovernanceService/SetChangeFreeze": true,
 }
 
 // dualSourceBearing 是自带幂等键 body 字段的请求（DeployRequest.

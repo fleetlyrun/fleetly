@@ -1381,6 +1381,58 @@
       }
     },
     {
+      "name": "freeze.lifted",
+      "kind": "event",
+      "summary": "A change freeze was lifted; change verbs in scope are accepted again.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "team_id",
+          "reason"
+        ],
+        "type": "object"
+      }
+    },
+    {
+      "name": "freeze.set",
+      "kind": "event",
+      "summary": "A change freeze was set for a team (or globally); change verbs in scope are refused with the reason.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          },
+          "team_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "team_id",
+          "reason"
+        ],
+        "type": "object"
+      }
+    },
+    {
       "name": "hook.push_accepted",
       "kind": "event",
       "summary": "A verified webhook push triggered a deployment.",
@@ -2066,7 +2118,7 @@
     {
       "name": "schedule.skipped",
       "kind": "event",
-      "summary": "A due schedule fire was skipped because the previous run is still in flight (reason: overlap).",
+      "summary": "A due schedule fire was skipped (reason: overlap while the previous run is in flight, or quota_exceeded when the project is at its task quota).",
       "schema": {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "additionalProperties": false,

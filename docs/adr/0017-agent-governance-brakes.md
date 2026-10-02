@@ -57,8 +57,8 @@ ADR-0018 附录 A.3。
 
 - **载体**：单表 `change_freezes`（id、team_id、reason、created_by、
   created_at、lifted_at）；`team_id=''` 是全局冻结行；每 scope 至多一条
-  活跃行（部分唯一索引，Set 命中活跃冻结 → E_CONFLICT，先 lift 再 set）；
-  lift = 落 lifted_at（幂等：已 lift 再 lift 成功）。
+  活跃行（部分唯一索引，Set 命中活跃冻结 → E_ALREADY_EXISTS，先 lift
+  再 set）；lift = 落 lifted_at（幂等：已 lift 再 lift 成功）。
 - **判定轴 = 资源所属 Team**（ADR-0028 Team 轴）：命中活跃冻结
   （team_id ∈ {'', 资源所属 Team}）即拒。调用方所属 Team 不参与判定
   ——跨 Team 管理 Token 不得借道自家 Team 绕过目标 Team 的冻结。
@@ -82,7 +82,7 @@ ADR-0018 附录 A.3。
   409——与 E_CONFLICT 族同映射面），信封带冻结 reason 与 freeze id。
   拒绝不落事件/审计（A.2 同款自放大防护）。
 - **事件**：freeze.set / freeze.lifted（管理动作有界，eventcode 三链
-  入册）；**管理面**：GovernanceService（system 包，platform:write/read）
+  入册）。**管理面**：GovernanceService（system 包，platform:write/read）
   SetChangeFreeze / LiftChangeFreeze / ListChangeFreezes（after_* 惯例）；
   SetChangeFreeze 进幂等执法面（Set 前缀创建型动词）。CLI
   `fleetly freeze set|lift|list`。

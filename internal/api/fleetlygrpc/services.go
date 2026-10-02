@@ -16,6 +16,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/freeze"
 	"github.com/fleetlyrun/fleetly/internal/state/hook"
 	"github.com/fleetlyrun/fleetly/internal/state/invitation"
 	"github.com/fleetlyrun/fleetly/internal/state/membership"
@@ -58,6 +59,7 @@ type Services struct {
 	Volumes      *volume.Repo
 	Networks     *networkrepo.Repo
 	NetworkPeers *networkpeer.Repo
+	Freezes      *freeze.Repo
 	Routes       *route.Repo
 	Nodes        *node.Repo
 	Audits       *audit.Repo
@@ -102,6 +104,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Volumes:         volume.New(clock),
 		Networks:        networkrepo.New(clock),
 		NetworkPeers:    networkpeer.New(clock),
+		Freezes:         freeze.New(clock),
 		Routes:          route.New(clock),
 		Nodes:           node.New(clock),
 		Audits:          audit.New(clock),
