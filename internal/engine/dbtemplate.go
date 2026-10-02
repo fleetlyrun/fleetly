@@ -118,6 +118,22 @@ func (t dbTemplate) workloadRender() (env map[string]string, command []string) {
 	}
 }
 
+// probeCommand 渲染模板的引擎原生存活探针（exec 形态）。不依赖通用 TCP
+// 探针方言（Provider 的 nc 翻译）：镜像未必带 nc（staging 真机实证
+// pgvector:pg17-bookworm 无 nc——探针永败 → unhealthy 滚替循环，2026-10-02
+// F1.15）；引擎自带客户端工具（pg_isready/redis-cli）必在场。redis 探针
+// 不带凭证：NOAUTH 错误回复同样证明服务在服（连接失败才非零）。
+func (t dbTemplate) probeCommand() []string {
+	switch t.engine {
+	case "postgres", "pgvector":
+		return []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", t.user, "-d", t.dbName}
+	case "redis":
+		return []string{"redis-cli", "-p", "6379", "ping"}
+	default:
+		return nil // 不可达：值域由注册表封闭
+	}
+}
+
 // materialsRender 渲染 DB Workload 的凭证材料（密码经 URL 解析取得——
 // 单真源是 Secret 里的连接串，ADR-0029 决策 6）。
 func (t dbTemplate) materialsRender(password string) map[string][]byte {

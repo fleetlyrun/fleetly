@@ -202,7 +202,9 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks [
 			{Port: tpl.port, Protocol: capability.ProtocolTCP},
 		},
 		Healthcheck: &capability.Healthcheck{
-			TCPPort:     tpl.port,
+			// 引擎原生 exec 探针（模板单源：pg_isready/redis-cli——镜像必带；
+			// 通用 TCP 方言的 nc 假设在 bookworm 系镜像不成立，真机实证）。
+			Exec:        tpl.probeCommand(),
 			Interval:    dbConnectTimeout,
 			Timeout:     5 * time.Second,
 			StartPeriod: 60 * time.Second, // 首启初始化（initdb/AOF）给足宽限

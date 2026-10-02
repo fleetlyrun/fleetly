@@ -217,7 +217,9 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	// Secret 文件注入（值已落 swarm secret 载体；容器内 /run/secrets/<名>）。
 	// 按 platformName 排序后遍历（对照 envSlice 先例）：map 遍历序随机，
 	// 排序保 spec 逐字节稳定——幂等重放的 diff 不产生假变更（P1-14）。
-	// 引用 id+名双发（swarmkit validateSecretRefsSpec 要求，见 secretCarrier）。
+	// 引用 id+名双发（swarmkit validateSecretRefsSpec 要求）；UID/GID 显式
+	// "0"——docker CLI 客户端补零而 raw API 空串会让 agent 的 strconv.Atoi
+	// 在容器启动期炸掉（staging 真机实证 2026-10-02，同 id+名双发同批）。
 	for _, platformName := range sortedKeys(secretCarriers) {
 		c := secretCarriers[platformName]
 		container.Secrets = append(container.Secrets, &swarm.SecretReference{
@@ -225,6 +227,8 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			SecretName: c.name,
 			File: &swarm.SecretReferenceFileTarget{
 				Name: platformName,
+				UID:  "0",
+				GID:  "0",
 				Mode: 0o400,
 			},
 		})
@@ -373,7 +377,16 @@ func toSwarmHealthcheck(h *capability.Healthcheck, w capability.Workload) *mobyc
 	case h.TCPPort != 0:
 		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`nc -z 127.0.0.1 %d || exit 1`, h.TCPPort)}
 	case h.Exec != nil:
-		hc.Test = h.Exec
+		// IR 的 exec 探针是干净 argv；docker 探针 Test 方言要求首元素为
+		// CMD/CMD-SHELL——裸 argv 会被 daemon 当作无探针（State.Health
+		// 物化为 none，任务永滞 starting；staging 真机实证 2026-10-02，
+		// F1.15 真机件⑥）。compose 面 test 自带前缀直通，此处只归一缺前缀
+		// 形态（engine 模板探针）。
+		if len(h.Exec) > 0 && (h.Exec[0] == "CMD" || h.Exec[0] == "CMD-SHELL") {
+			hc.Test = h.Exec
+		} else {
+			hc.Test = append([]string{"CMD"}, h.Exec...)
+		}
 	default:
 		hc.Test = []string{"NONE"}
 	}

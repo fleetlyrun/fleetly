@@ -88,7 +88,9 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	assert.Equal(t, "/run/secrets/"+dbPasswordFile, w.Env["POSTGRES_PASSWORD_FILE"])
 	assert.Equal(t, int64(1), w.Replicas)
 	require.NotNil(t, w.Healthcheck)
-	assert.Equal(t, int32(5432), w.Healthcheck.TCPPort)
+	// 引擎原生 exec 探针（模板单源；通用 TCP 方言的 nc 假设不成立，
+	// staging 真机实证 2026-10-02）。
+	assert.Equal(t, []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "fleetly", "-d", "fleetly"}, w.Healthcheck.Exec)
 	// 密码文件材料（值来自连接串回读——单真源）。
 	assert.Equal(t, []byte("secretpw"), last.Materials.SecretFiles[dbPasswordFile])
 	// 首挂钉住合并进 Placement（fake 集群默认一节点可用）。
@@ -158,7 +160,7 @@ func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 	conf := string(last.Materials.SecretFiles[dbRedisConfFile])
 	assert.Contains(t, conf, "requirepass redispw")
 	assert.Contains(t, conf, "appendonly yes")
-	assert.Equal(t, int32(6379), w.Healthcheck.TCPPort)
+	assert.Equal(t, []string{"redis-cli", "-p", "6379", "ping"}, w.Healthcheck.Exec)
 }
 
 // pgvector 模板：上游镜像 + 首启建扩展的 init 脚本命令。

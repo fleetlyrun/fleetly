@@ -2,6 +2,7 @@ package swarm
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -47,6 +48,9 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 	desired := make(map[string]struct{}, len(ws))
 	for _, w := range ws {
 		spec := toServiceSpec(ns, w, gen, secretCarriers)
+		// 网络引用名→ID 先行解析（服务端对名字输入会改写为 ID——发送
+		// ID 使回读形态与发送形态一致，no-op 比对的前提）。
+		spec = p.resolveNetworkTargets(ctx, spec)
 		desired[spec.Name] = struct{}{}
 
 		auth, err := p.registryAuthFor(ctx, w.Image, m)
@@ -69,6 +73,14 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			continue
 		}
 		svc := inspect.Service
+		if serviceSpecEqual(spec, svc.Spec) {
+			// 语义等价即跳过 update——受管域收敛环每拍重放 Ensure，
+			// 无条件 update 会让 identical spec 也滚替任务（update 产
+			// 事件 → Kick → 再 update 的自激环；staging 真机实证：
+			// 受管库载体 20s 内 49 次版本推进、postgres 反复优雅退出
+			// 永不停稳，2026-10-02）。
+			continue
+		}
 		if err := p.updateServiceCAS(ctx, ns, spec, svc, auth); err != nil {
 			return err
 		}
@@ -119,6 +131,94 @@ func (p *Provider) updateServiceCAS(ctx context.Context, ns capability.Namespace
 // 返回，跨 API 边界无类型化哨兵，按其稳定文案匹配。
 func isUpdateOutOfSequence(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "update out of sequence")
+}
+
+// serviceSpecEqual 判定期望 spec 与现存服务 spec 语义等价：JSON 投影
+// canonical 化（map 键排序 + 服务端归一化产物剥离）后逐字节比对。等价 =
+// update 是 no-op，调用方据此跳过。比对失败（marshal 异常）一律视为不等
+// （保守：多一次 update 无害，漏 update 才有害）。
+func serviceSpecEqual(desired swarm.ServiceSpec, current swarm.ServiceSpec) bool {
+	return canonicalSpecJSON(desired) != "" &&
+		canonicalSpecJSON(desired) == canonicalSpecJSON(current)
+}
+
+// canonicalSpecJSON 把 spec 归一为可比较的 JSON 字节串。
+//
+// 服务端归一化产物（staging 真机 inspect 对照实录，2026-10-02）在两侧一致剥离——
+// 只比较平台受管字段：
+//   - TaskTemplate.ContainerSpec.DNSConfig（空对象服务端物化）
+//   - TaskTemplate.ContainerSpec.Isolation（"default" 缺省）
+//   - TaskTemplate.Resources（零值对象服务端物化）
+//   - TaskTemplate.RestartPolicy 的 Delay/MaxAttempts/Window（服务端缺省
+//     节律；平台只管 Condition）
+//   - TaskTemplate.Runtime（"container" 缺省）
+//   - TaskTemplate.ForceUpdate（服务端回滚自增）
+//   - RollbackConfig 整体（服务端缺省物化，平台不管理）
+//   - UpdateConfig 的 Monitor/MaxFailureRatio（服务端缺省，平台不管理）
+//
+// Networks[].Target 的名字→ID 服务端解析在 Ensure 侧先行解析（发 ID 而非
+// 名，服务端不再改写）。
+func canonicalSpecJSON(spec swarm.ServiceSpec) string {
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return ""
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return ""
+	}
+	tt, _ := m["TaskTemplate"].(map[string]any)
+	if tt != nil {
+		tt["ForceUpdate"] = 0
+		if rt, ok := tt["Runtime"].(string); ok && (rt == "" || rt == "container") {
+			delete(tt, "Runtime")
+		}
+		if rp, ok := tt["RestartPolicy"].(map[string]any); ok {
+			delete(rp, "Delay")
+			delete(rp, "MaxAttempts")
+			delete(rp, "Window")
+		}
+		if cs, ok := tt["ContainerSpec"].(map[string]any); ok {
+			if d, ok := cs["DNSConfig"].(map[string]any); ok && len(d) == 0 {
+				delete(cs, "DNSConfig")
+			}
+			if iso, ok := cs["Isolation"].(string); ok && (iso == "" || iso == "default") {
+				delete(cs, "Isolation")
+			}
+		}
+		if res, ok := tt["Resources"].(map[string]any); ok && len(res) == 0 {
+			delete(tt, "Resources")
+		}
+	}
+	delete(m, "RollbackConfig")
+	if uc, ok := m["UpdateConfig"].(map[string]any); ok {
+		delete(uc, "Monitor")
+		delete(uc, "MaxFailureRatio")
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// resolveNetworkTargets 把 TaskTemplate.Networks[].Target 从平台网络载体
+// 名解析为 swarm 网络 ID——服务端对 create/update 的名字输入会改写为 ID，
+// 先行解析使发送形态与回读形态一致（no-op 比对的前提）。解析失败的引用
+// 原样保留（update 路径的既有行为；服务端会给出名字级错误）。
+func (p *Provider) resolveNetworkTargets(ctx context.Context, spec swarm.ServiceSpec) swarm.ServiceSpec {
+	nets := spec.TaskTemplate.Networks
+	if len(nets) == 0 {
+		return spec
+	}
+	for i := range nets {
+		n, err := p.cli.NetworkInspect(ctx, nets[i].Target, client.NetworkInspectOptions{})
+		if err != nil {
+			continue
+		}
+		nets[i].Target = n.Network.ID
+	}
+	return spec
 }
 
 // Remove 拆除隔离域内全部载体（幂等）。
