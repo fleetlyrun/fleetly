@@ -22,11 +22,13 @@ import (
 const (
 	// labelManaged 标记 fleetly 管辖的载体（列表/收敛的选择器）。
 	labelManaged = "fleetly.managed"
-	// 归属标记：ns 四元组（App/Task 域主体互斥，ADR-0025 决策 4）+ Workload/Process。
+	// 归属标记：ns 四元组（App/Task/Database 域主体互斥，ADR-0025 决策 4 /
+	// ADR-0029）+ Workload/Process。
 	labelTeam     = "fleetly.ns.team"
 	labelProject  = "fleetly.ns.project"
 	labelApp      = "fleetly.ns.app"
 	labelTask     = "fleetly.ns.task"
+	labelDatabase = "fleetly.ns.database"
 	labelWorkload = "fleetly.workload.id"
 	labelProcess  = "fleetly.process"
 	// labelGeneration 搬运平台 Generation（幂等重放与 Drift 判定锚）。
@@ -43,18 +45,25 @@ const (
 	//（Run Workload ID = run id，域内天然唯一；ADR-0025 决策 7 混合拓扑的
 	// per-Run service）。
 	runNamePrefix = "fleetly-run"
+	// dbNamePrefix 是 Database 域载体命名公式前缀：fleetly-db-<database id>
+	//（Workload ID = database 行 ID，域内唯一；ADR-0029）。
+	dbNamePrefix = "fleetly-db"
 	// swarmServiceNameLimit 是 swarm 服务名上限（DNS label 约束 63）。
 	swarmServiceNameLimit = 63
 )
 
 // workloadServiceName 计算载体服务名：App 域 = fleetly-<team>-<prj>-<app>-
-// <proc>；Task 域 = fleetly-run-<run id>（决策 4/7）。超长时截断并以稳定
-// 哈希后缀兜底（唯一性以 fleetly.* 标记锚定，架构 §5）。
+// <proc>；Task 域 = fleetly-run-<run id>（决策 4/7）；Database 域 =
+// fleetly-db-<database id>（ADR-0029）。超长时截断并以稳定哈希后缀兜底
+// （唯一性以 fleetly.* 标记锚定，架构 §5）。
 func workloadServiceName(ns capability.NamespaceRef, w capability.Workload) string {
 	var full string
-	if ns.Task != "" {
+	switch {
+	case ns.Task != "":
 		full = strings.Join([]string{runNamePrefix, w.ID}, "-")
-	} else {
+	case ns.Database != "":
+		full = strings.Join([]string{dbNamePrefix, w.ID}, "-")
+	default:
 		full = strings.Join([]string{namePrefix, ns.Team, ns.Project, ns.App, w.Process}, "-")
 	}
 	full = sanitizeNamePart(full)
@@ -126,8 +135,8 @@ func parsePortsLabel(v string) []capability.WorkloadPort {
 	return ports
 }
 
-// workloadLabels 构造归属标记集（App/Task 域主体互斥：Task 域不带空
-// labelApp——空值标记会破选择器全等匹配）。
+// workloadLabels 构造归属标记集（App/Task/Database 域主体互斥：Task 与
+// Database 域不带空 labelApp——空值标记会破选择器全等匹配）。
 func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) map[string]string {
 	labels := map[string]string{
 		labelManaged:    "true",
@@ -138,25 +147,31 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labelGeneration: strconv.FormatUint(uint64(gen), 10),
 		labelPorts:      portsLabelValue(w.Ports),
 	}
-	if ns.Task != "" {
+	switch {
+	case ns.Task != "":
 		labels[labelTask] = sanitizeNamePart(ns.Task)
-	} else {
+	case ns.Database != "":
+		labels[labelDatabase] = sanitizeNamePart(ns.Database)
+	default:
 		labels[labelApp] = sanitizeNamePart(ns.App)
 	}
 	return labels
 }
 
-// nsSelector 是隔离域的列表过滤器（label 全等匹配；域主体按 App/Task 轴
-// 分支，与 workloadLabels 同构）。
+// nsSelector 是隔离域的列表过滤器（label 全等匹配；域主体按 App/Task/
+// Database 轴分支，与 workloadLabels 同构）。
 func nsSelector(ns capability.NamespaceRef) map[string]string {
 	selector := map[string]string{
 		labelManaged: "true",
 		labelTeam:    sanitizeNamePart(ns.Team),
 		labelProject: sanitizeNamePart(ns.Project),
 	}
-	if ns.Task != "" {
+	switch {
+	case ns.Task != "":
 		selector[labelTask] = sanitizeNamePart(ns.Task)
-	} else {
+	case ns.Database != "":
+		selector[labelDatabase] = sanitizeNamePart(ns.Database)
+	default:
 		selector[labelApp] = sanitizeNamePart(ns.App)
 	}
 	return selector

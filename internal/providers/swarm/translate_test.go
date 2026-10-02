@@ -32,6 +32,21 @@ func TestRunServiceNameFormula(t *testing.T) {
 	assert.Equal(t, "fleetly-run-01jrun", workloadServiceName(ns, w))
 }
 
+// Database 域命名（ADR-0029）：载体按 database 行 ID 命名；标记与选择器
+// 携带 database 轴、不带空 labelApp（互斥主体）。
+func TestDatabaseDomainNamingAndLabels(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Database: "01JDB01"}
+	w := capability.Workload{ID: "01JDB01", Process: "postgres"}
+	assert.Equal(t, "fleetly-db-01jdb01", workloadServiceName(ns, w))
+	labels := workloadLabels(ns, w, capability.Generation(3))
+	assert.Equal(t, "01jdb01", labels[labelDatabase])
+	assert.NotContains(t, labels, labelApp, "database domain must not carry an empty app label")
+	selector := nsSelector(ns)
+	for k, v := range selector {
+		assert.Equal(t, v, labels[k], "selector key %s", k)
+	}
+}
+
 func TestServiceNameTruncationStable(t *testing.T) {
 	ns := capability.NamespaceRef{
 		Team:    strings.Repeat("t", 30),

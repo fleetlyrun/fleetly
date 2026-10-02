@@ -95,18 +95,23 @@ type Generation uint64
 // NamespaceRef 标识 Provider 侧隔离域；字段为平台实体标识，不含编排器概念。
 // .App 是 App 域主体（AppSpec 投影的 Workload 集合边界）；.Task 是 Task 域
 // 主体（Run Workload 池边界，App 为空时有效——ADR-0025 决策 4：拒把 Task ID
-// 塞 .App 字段，词汇污染）。
+// 塞 .App 字段，词汇污染）；.Database 是 Database 域主体（用户域受管数据
+// 服务边界，App/Task 为空时有效——ADR-0029 同款词汇分立）。
 type NamespaceRef struct {
-	Team    string
-	Project string
-	App     string
-	Task    string
+	Team     string
+	Project  string
+	App      string
+	Task     string
+	Database string
 }
 
 // String 返回稳定展示形态（日志/审计用）。
 func (n NamespaceRef) String() string {
 	if n.Task != "" {
 		return n.Team + "/" + n.Project + "/task:" + n.Task
+	}
+	if n.Database != "" {
+		return n.Team + "/" + n.Project + "/db:" + n.Database
 	}
 	return n.Team + "/" + n.Project + "/" + n.App
 }
