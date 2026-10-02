@@ -1,4 +1,4 @@
-package dockerbuild
+package builders
 
 import (
 	"encoding/base64"

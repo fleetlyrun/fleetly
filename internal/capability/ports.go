@@ -22,10 +22,17 @@ type Builder interface {
 type BuildRequest struct {
 	// BuildID 是平台构建 ID（进度/日志归属锚）。
 	BuildID string
+	// Builder 是路由名（BuildSpec.builder：dockerfile|railpack|static，
+	// ADR-0032——engine 按此分派 Provider）。
+	Builder string
 	// Source 是构建上下文（git 检出目录或上传产物目录，控制面本地路径）。
 	ContextDir string
 	// Dockerfile 是相对 ContextDir 的路径；空 = "Dockerfile"。
 	Dockerfile string
+	// Railpack 是 railpack strategy 载荷（nil = 非 railpack，ADR-0032）。
+	Railpack *RailpackInput
+	// Static 是 static strategy 载荷（nil = 非 static，ADR-0032）。
+	Static *StaticInput
 	// Args 是构建参数（已解析的非敏感 ARG）。
 	Args map[string]string
 	// CacheFrom 是缓存来源引用。
@@ -38,6 +45,20 @@ type BuildRequest struct {
 	// SecretFiles 是 Secret 材料落盘（路径 → 值；构建期临时，Provider
 	// 负责不落最终镜像层）。
 	SecretFiles map[string][]byte
+}
+
+// RailpackInput 是 railpack strategy 的构建输入（ADR-0032：钉版宿主二进制
+// prepare 产 plan + 钉版 frontend 镜像执行）。
+type RailpackInput struct {
+	// PinnedVersion 是 spec 钉版（bare semver；须等于平台钉版常量——
+	// Provider Build 期执法，错误文本带平台版本）。
+	PinnedVersion string
+}
+
+// StaticInput 是 static strategy 的构建输入（ADR-0032：产物目录包装）。
+type StaticInput struct {
+	// OutputDir 是产物目录（context 内相对路径，归一化面已填非空）。
+	OutputDir string
 }
 
 // BuildResult 是构建产物。

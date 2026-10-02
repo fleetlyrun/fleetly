@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
@@ -368,7 +369,7 @@ func TestFirstBootNetworksDeclared(t *testing.T) {
 func TestFirstBootFromBuildDigest(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	e.registry = newFakeRegistry()
-	e.builder = &fakeBuilder{digest: tFakeDigest} // driveBuilding 前置门：builder 在册（产物行已直落，不执行）
+	e.builders = map[string]capability.Builder{specir.BuilderDockerfile: &fakeBuilder{digest: tFakeDigest}} // driveBuilding 前置门：builder 在册（产物行已直落，不执行）
 	ctx := context.Background()
 	spec := fmt.Sprintf(`{"schema_version":1,"app":{"id":"%s","project":"%s"},`+
 		`"source":{"git":{"repo":"https://git.test/x.git","ref":"main"}},`+

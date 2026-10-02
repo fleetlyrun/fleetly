@@ -32,6 +32,11 @@
                 "required": [
                   "railpack"
                 ]
+              },
+              {
+                "required": [
+                  "static"
+                ]
               }
             ],
             "properties": {
@@ -51,6 +56,15 @@
                 "additionalProperties": false,
                 "properties": {
                   "pinned_version": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              },
+              "static": {
+                "additionalProperties": false,
+                "properties": {
+                  "output_dir": {
                     "type": "string"
                   }
                 },

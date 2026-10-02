@@ -15,8 +15,9 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/config"
 
 	// 编译期 Provider 注册（blank import 触发工厂自注册；架构 §2：
-	// providers 只准经注册表间接装配，全仓唯此一处）。
-	_ "github.com/fleetlyrun/fleetly/internal/providers/dockerbuild"
+	// providers 只准经注册表间接装配，全仓唯此一处）。builders 是 Builder
+	// 家族单包三 Provider（ADR-0032）。
+	_ "github.com/fleetlyrun/fleetly/internal/providers/builders"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/localobjectstore"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/traefik"

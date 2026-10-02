@@ -15,6 +15,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
@@ -38,7 +39,7 @@ func LocalImageDigestRef(registryAddr, appID, digest string) string {
 // driveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、
 // digest 复用；无构建则直通 releasing（领域模型 §4：building 可跳过）。
 func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
-	if e.builder == nil {
+	if len(e.builders) == 0 {
 		return e.failDeployment(ctx, d, "no builder provider wired; image-source deployments are supported in this batch")
 	}
 	// revSeq 是构建产物命名锚（LocalImageRef）：读取失败必须硬失败——静默
@@ -176,17 +177,45 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 	default:
 		return capability.BuildRequest{}, fmt.Errorf("build requires a git or upload source")
 	}
-	dockerfile := spec.GetBuild().GetDockerfile()
 	pushCred := &endpoint.Cred
 	if endpoint.Cred.Username == "" && endpoint.Cred.Secret == "" {
 		pushCred = nil // 匿名仓库合法形态（受管 zot 恒有凭证；缺省留 nil）
 	}
-	return capability.BuildRequest{
+	input := capability.BuildRequest{
+		// builderName 按 strategy oneof 消歧（受理面已执法 builder 名与形态
+		// 配对；strategy 缺席 = 存量行，防御性按 dockerfile 路由——存量全部
+		// 是 dockerfile strategy，见 ADR-0032 决策 8）。
+		Builder:    builderName(spec.GetBuild()),
 		ContextDir: contextDir,
-		Dockerfile: dockerfile,
 		Target:     LocalImageRef(endpoint.Addr, d.AppID, revSeq),
 		PushCred:   pushCred,
-	}, nil
+	}
+	switch strategy := spec.GetBuild().GetStrategy().(type) {
+	case *specv1.BuildSpec_Railpack:
+		input.Railpack = &capability.RailpackInput{PinnedVersion: strategy.Railpack.GetPinnedVersion()}
+	case *specv1.BuildSpec_Static:
+		outputDir := strategy.Static.GetOutputDir()
+		if outputDir == "" {
+			outputDir = "." // 归一化面恒填充；防御性兜底
+		}
+		input.Static = &capability.StaticInput{OutputDir: outputDir}
+	default:
+		input.Dockerfile = spec.GetBuild().GetDockerfile()
+	}
+	return input, nil
+}
+
+// builderName 按 strategy oneof 返回路由名（strategy 缺席 = dockerfile，
+// 存量行防御轨；受理面 ValidateBuild 保证新行名与形态配对）。
+func builderName(b *specv1.BuildSpec) string {
+	switch b.GetStrategy().(type) {
+	case *specv1.BuildSpec_Railpack:
+		return specir.BuilderRailpack
+	case *specv1.BuildSpec_Static:
+		return specir.BuilderStatic
+	default:
+		return specir.BuilderDockerfile
+	}
 }
 
 // registryEndpoint 解析受管仓库端点（推送目标/下发引用/平台凭证的共同

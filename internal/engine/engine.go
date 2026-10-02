@@ -260,8 +260,9 @@ type Engine struct {
 	taskEnsured    map[string]string    // taskID → 期望集签名
 	taskLastEnsure map[string]time.Time // taskID → 最近 Ensure 时刻
 
-	// 构建面（F0.9）：Builder 端口、并发上限、构建输入登记与最近日志缓冲。
-	builder   capability.Builder
+	// 构建面（F0.9/F1.14）：Builder 家族（名→Provider，spec 路由）、并发
+	// 上限、构建输入登记与最近日志缓冲（ADR-0032）。
+	builders  map[string]capability.Builder
 	buildOpts buildOptions
 	buildLogs *logBuffer
 
@@ -303,10 +304,10 @@ type Engine struct {
 type Deps struct {
 	DB       *state.DB
 	Runtime  capability.Runtime
-	Builder  capability.Builder  // 可空：构建链停用（镜像直投不受影响）
-	Edge     capability.Edge     // 可空：Route 发布与受管自宿停用
-	Registry capability.Registry // 可空：build 源部署精确失败（附录 B.5①）
-	Cipher   *material.Cipher    // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
+	Builders map[string]capability.Builder // 可空/空 map：构建链停用（镜像直投不受影响；ADR-0032 spec 路由家族）
+	Edge     capability.Edge               // 可空：Route 发布与受管自宿停用
+	Registry capability.Registry           // 可空：build 源部署精确失败（附录 B.5①）
+	Cipher   *material.Cipher              // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
 	Logger   *slog.Logger
 }
 
@@ -317,7 +318,7 @@ func New(deps Deps, opts Options) *Engine {
 	log := deps.Logger
 	clock := db.Clock()
 	return &Engine{
-		builder:        deps.Builder,
+		builders:       deps.Builders,
 		edge:           deps.Edge,
 		registry:       deps.Registry,
 		cipher:         deps.Cipher,
@@ -468,7 +469,7 @@ func (e *Engine) buildRootCtx() context.Context {
 // 缓存幂等）。输入登记不在此重建——driveBuilding 见到在途行时幂等重建
 // （D-4）；归属部署已终态的孤儿行由 buildStep 前置检一跳到终态。
 func (e *Engine) resetOrphanBuilds(ctx context.Context) {
-	if e.builder == nil {
+	if len(e.builders) == 0 {
 		return
 	}
 	active, err := e.builds.ListActive(ctx, e.db.Runner())

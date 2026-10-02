@@ -1,4 +1,4 @@
-package dockerbuild
+package builders
 
 import (
 	"context"
@@ -28,7 +28,7 @@ func TestBuildAgainstLocalDaemon(t *testing.T) {
 		t.Skip("set FLEETLY_TEST_REGISTRY_ADDR to an insecure-registry-trusted local registry to exercise the push path")
 	}
 	ctx := context.Background()
-	p, err := New(ctx, "")
+	p, err := NewDockerfile(ctx, "")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = p.Close() })
 
@@ -42,6 +42,7 @@ func TestBuildAgainstLocalDaemon(t *testing.T) {
 	target := regAddr + "/build-smoke:test"
 	res, err := p.Build(ctx, capability.BuildRequest{
 		BuildID:    "build-smoke-1",
+		Builder:    "dockerfile",
 		ContextDir: dir,
 		Target:     target,
 	}, &logCollector{&lines})

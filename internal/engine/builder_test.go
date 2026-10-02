@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
@@ -105,7 +106,10 @@ func newBuildEngine(t *testing.T, fb *fakeBuilder) (*Engine, *fakeRuntime) {
 	t.Helper()
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Builder: fb, Registry: newFakeRegistry(), Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
+	e := New(Deps{DB: db, Runtime: rt,
+		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
+		Registry: newFakeRegistry(),
+		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, app.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))

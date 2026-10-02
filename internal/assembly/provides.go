@@ -42,7 +42,7 @@ var ProviderSet = wire.NewSet(
 	NewStateDB,
 	NewAuthenticator,
 	NewRuntimeProvider,
-	NewBuilderProvider,
+	NewBuilderProviders,
 	NewEdgeProvider,
 	NewRegistryProvider,
 	NewMaterialCipher,
@@ -100,24 +100,31 @@ func NewRuntimeProvider(app lynx.App) (capability.Runtime, func(), error) {
 	}, nil
 }
 
-// NewBuilderProvider 构造 Builder Provider（dockerfile 经 /session 连本机
-// daemon 内嵌 buildkit；可选能力——无在册者时返回 nil，构建链停用）。
-func NewBuilderProvider() (capability.Builder, func(), error) {
-	providers := capability.RegisteredFactories()
-	if len(providers[capability.KindBuilder]) == 0 {
+// NewBuilderProviders 构造 Builder 家族（ADR-0032：Builder 是 spec 路由
+// 家族——全部在册 Provider 一并构造，BuildSpec.builder 是路由键；可选
+// 能力——无在册者时返回 nil，构建链停用）。
+func NewBuilderProviders() (map[string]capability.Builder, func(), error) {
+	names := capability.RegisteredFactories()[capability.KindBuilder]
+	builders := make(map[string]capability.Builder, len(names))
+	for _, name := range names {
+		p, err := capability.Build(context.Background(), capability.KindBuilder, name)
+		if err != nil {
+			return nil, nil, fmt.Errorf("assembly: builder %s: %w", name, err)
+		}
+		b, ok := p.(capability.Builder)
+		if !ok {
+			return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Builder port", name)
+		}
+		builders[name] = b
+	}
+	if len(builders) == 0 {
 		return nil, func() {}, nil
 	}
-	p, err := capability.Build(context.Background(), capability.KindBuilder, "")
-	if err != nil {
-		return nil, nil, err
-	}
-	b, ok := p.(capability.Builder)
-	if !ok {
-		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Builder port", p.Describe().Name)
-	}
-	return b, func() {
-		if c, ok := b.(interface{ Close() error }); ok {
-			_ = c.Close()
+	return builders, func() {
+		for _, b := range builders {
+			if c, ok := b.(interface{ Close() error }); ok {
+				_ = c.Close()
+			}
 		}
 	}, nil
 }
@@ -157,7 +164,7 @@ func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) 
 func NewEngine(
 	db *state.DB,
 	rt capability.Runtime,
-	b capability.Builder,
+	b map[string]capability.Builder,
 	edge capability.Edge,
 	reg capability.Registry,
 	cipher *material.Cipher,
@@ -169,7 +176,7 @@ func NewEngine(
 		return nil, err
 	}
 	return engine.New(engine.Deps{
-		DB: db, Runtime: rt, Builder: b, Edge: edge, Registry: reg, Cipher: cipher, Logger: app.Logger(),
+		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{DataRoot: cfg.DataRoot(), ScheduleOverlap: overlap}), nil
 }
 

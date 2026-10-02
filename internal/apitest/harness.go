@@ -28,6 +28,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/governance"
 	"github.com/fleetlyrun/fleetly/internal/idem"
 	"github.com/fleetlyrun/fleetly/internal/material"
+	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/statertest"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
@@ -92,7 +93,14 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	dataRoot := t.TempDir()
 	// 假 Builder + 假 Registry + 数据根：git 触发链的 building→releasing
 	// 推进底座（检出目录由测试预置跳过真实 clone；推送目标=假受管仓库）。
-	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher, Builder: fb, Registry: freg, Logger: log},
+	// Builder 家族三名全在册同一 fake（ADR-0032 路由面——Calls() 捕获路由
+	// 名与 strategy 载荷，全链用例按 spec 的 builder 分派）。
+	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher,
+		Builders: map[string]capability.Builder{
+			specir.BuilderDockerfile: fb,
+			specir.BuilderRailpack:   fb,
+			specir.BuilderStatic:     fb,
+		}, Registry: freg, Logger: log},
 		engine.Options{DataRoot: dataRoot})
 	if autostart {
 		eng.Start(ctx)

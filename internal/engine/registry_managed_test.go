@@ -14,6 +14,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/material"
+	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
@@ -27,7 +28,9 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 	fb := &fakeBuilder{digest: "sha256:built"}
 	db, clock := statetest.New(t)
 	rt := newFakeRuntime()
-	e := New(Deps{DB: db, Runtime: rt, Builder: fb, Logger: discardLogger()}, Options{DataRoot: t.TempDir()})
+	e := New(Deps{DB: db, Runtime: rt,
+		Builders: map[string]capability.Builder{specir.BuilderDockerfile: fb},
+		Logger:   discardLogger()}, Options{DataRoot: t.TempDir()})
 	ctx := context.Background()
 	require.NoError(t, project.New(clock).Create(ctx, db.Runner(), &project.Project{ID: tProjectID, Name: "shop", TeamID: "default"}))
 	require.NoError(t, app.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))

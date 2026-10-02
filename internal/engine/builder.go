@@ -3,6 +3,8 @@ package engine
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -249,7 +251,23 @@ func (e *Engine) executeBuild(b *build.Build) {
 		return
 	}
 
-	result, err := e.builder.Build(runCtx, input, &bufferWriter{engine: e, buildID: b.ID})
+	// 路由解析（ADR-0032）：input.Builder 是 Revision 冻结体的分派键；未知
+	// 名（未装配的 Provider 或漂移名）→ 精确终态失败（不 panic、不弹回
+	// queued 重试——重试不会让未装配的 Provider 出现）。
+	builder, ok := e.builders[input.Builder]
+	if !ok {
+		if _, terr := e.transitBuild(finishCtx, b,
+			[]build.State{build.StateBuilding}, build.StateFailed,
+			func(m *build.Build) {
+				m.Error = fmt.Sprintf("builder %q is not wired on this platform (wired: %s)", input.Builder, strings.Join(sortedBuilderNames(e.builders), ", "))
+			}); terr != nil {
+			e.log.Error("build: transit unwired-builder failure", "build", b.ID, "err", terr)
+		}
+		e.buildLoop.Kick()
+		return
+	}
+
+	result, err := builder.Build(runCtx, input, &bufferWriter{engine: e, buildID: b.ID})
 	switch {
 	case err == nil:
 		if _, terr := e.transitBuild(finishCtx, b,
@@ -323,4 +341,14 @@ func buildStateIn(set []build.State, s build.State) bool {
 
 func isContextTimeout(ctx context.Context, err error) bool {
 	return ctx.Err() != nil && (err == context.DeadlineExceeded || strings.Contains(err.Error(), "context deadline exceeded"))
+}
+
+// sortedBuilderNames 返回在册 builder 名（排序稳定，供失败文本与日志）。
+func sortedBuilderNames(builders map[string]capability.Builder) []string {
+	names := make([]string, 0, len(builders))
+	for name := range builders {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }

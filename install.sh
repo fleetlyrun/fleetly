@@ -17,6 +17,9 @@
 #   FLEETLY_ADVERTISE_ADDR  swarm advertise 地址（默认自动探测默认路由 IP）
 #   FLEETLY_REGISTRY_ADDR   受管仓库地址（默认 <advertise>:5000；空 = 禁用
 #                           构建链——镜像直投部署不受影响）
+#
+# railpack 构建器（零配置源码构建）随脚本钉版安装（F1.14，ADR-0032）；
+# 版段与 internal/providers/builders 的 railpackPinnedVersion 同 commit 纪律。
 set -eu
 
 log() { printf '==> %s\n' "$1"; }
@@ -119,6 +122,30 @@ if [ -n "$REGISTRY_ADDR" ]; then
     sleep 2
     docker info >/dev/null 2>&1 || die "docker daemon did not come back after the insecure-registry drop-in"
   fi
+fi
+
+# ---- 4c. railpack 构建器钉版安装（F1.14，ADR-0032）----
+# 平台钉版常量的 shell 面（与 internal/providers/builders 的
+# railpackPinnedVersion 同 commit 纪律——guards 静态断言两处一致）。
+# 失败不阻断安装：railpack 部署会精确失败，其余能力不受影响。
+RAILPACK_VERSION="0.39.0"
+if command -v railpack >/dev/null 2>&1 && railpack --version 2>/dev/null | grep -q "$RAILPACK_VERSION"; then
+  log "railpack $RAILPACK_VERSION already present"
+else
+  case "$ARCH" in
+    amd64) RTARGET="x86_64-unknown-linux-musl" ;;
+    arm64) RTARGET="arm64-unknown-linux-musl" ;;
+  esac
+  RAILPACK_URL="https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/railpack-v${RAILPACK_VERSION}-${RTARGET}.tar.gz"
+  log "installing railpack $RAILPACK_VERSION (builder for zero-config source deploys)"
+  RTMP="$(mktemp -d)"
+  if curl -fsSL "$RAILPACK_URL" -o "$RTMP/railpack.tar.gz" 2>/dev/null && tar -xzf "$RTMP/railpack.tar.gz" -C "$RTMP" 2>/dev/null \
+     && [ -f "$RTMP/railpack" ]; then
+    install -m 0755 "$RTMP/railpack" "$BIN_DIR/railpack"
+  else
+    log "NOTE: railpack download failed — railpack deploys will fail precisely until you install railpack $RAILPACK_VERSION (see $RAILPACK_URL)"
+  fi
+  rm -rf "$RTMP"
 fi
 
 # ---- 5. 数据根 + fleetlyd 起服 ----
