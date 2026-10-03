@@ -148,10 +148,17 @@ func (e *Engine) prepare(ctx context.Context, d *deployment.Deployment) (*deploy
 // 下发 Runtime（唯一写动词 Ensure，同 Generation 重放安全）；L1 健康门 =
 // 全部 Workload 观测到 running（gen 匹配）。
 //
-// L1 等待期（deadline 已设）每步仍幂等重 Ensure：重启后观测缓存为空，
-// 重放触发 Provider 的 update 事件恢复观测流；同 spec 的 update 对载体
-// 是 no-op，代价可接受（场景 1 重放语义）。observe_deadline 在两子相位
-// 复用（job 等待 / L1），消歧真源 = first_boot 游标。
+// L1 等待期（deadline 已设）历史每拍幂等重 Ensure：重启后观测缓存为空，
+// 重放触发 Provider 的 update 事件恢复观测流（场景 1 重放语义）。N1 C17
+// 起等待期物化走签名短路：行锚签名（revision+gen+相位——Revision 冻结体
+// 不可变，行锚即内容锚）未变且未到强制重放节拍 → 跳过重物化（loadSpec 后
+// 半的 peer 解析/Secret 解密/卷钉住/Ensure 全套）。语义保持三锚：重启备忘
+// 丢失 → 首拍全量物化（观测流恢复路径不变，只是从每拍降到首拍）；签名外
+// 输入漂移（Secret 轮换、peer 批准、卷钉住、环外载体变更）由
+// ReconcileReplayInterval 强制重放兜底（滞后有界，终态同）；Ensure 失败
+// 检测窗从每拍放宽到节拍（Task 域 ensureTaskWorkloads 先例同口径）。
+// observe_deadline 在两子相位复用（job 等待 / L1），消歧真源 = first_boot
+// 游标。
 func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deployment.Deployment, error) {
 	spec, err := e.loadSpec(ctx, d.ToRevision)
 	if err != nil {
@@ -164,8 +171,12 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	if !jobsDone {
 		return nil, nil // 等 job 终态（tick 再进）
 	}
-	if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
+	if e.releaseMaterializeFresh(d) {
+		// 签名短路（C17）：等待期重物化跳过，观测门/超时门照常判定。
+	} else if err := e.materialize(ctx, d, d.ToRevision, d.Generation, false); err != nil {
 		return e.failDeployment(ctx, d, err.Error())
+	} else {
+		e.rememberReleaseMaterialize(d)
 	}
 
 	deadline := parseDeadline(d.ObserveDeadline)
@@ -177,6 +188,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 			func(m *deployment.Deployment) { m.ObserveDeadline = l1 })
 	}
 	if e.releaseReady(d) {
+		e.ensureForget(e.releaseEnsure, d.ID) // 离开 releasing：物化备忘随相位作废
 		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
 		return e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateObserving,
@@ -185,7 +197,27 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 	if e.clock.Now().After(*deadline) {
 		return e.failDeployment(ctx, d, "health gate L1 timed out waiting for workloads to become ready")
 	}
-	return nil, nil // 等观测或到期（tick 再进，幂等重 Ensure）
+	return nil, nil // 等观测或到期（tick 再进；等待期物化签名短路）
+}
+
+// releaseEnsureSignature 是 releasing 等待期物化的行锚签名（C17）：
+// revision（冻结体不可变 → 行锚即内容锚）+ gen + 相位。签名未变 + 未到
+// ReconcileReplayInterval → materialize 可跳过。
+func releaseEnsureSignature(d *deployment.Deployment) string {
+	return d.ToRevision + "\x00" + fmt.Sprint(d.Generation) + "\x00" + string(d.State)
+}
+
+// releaseMaterializeFresh 报告该 Deployment 的等待期物化可短路（C17）。
+func (e *Engine) releaseMaterializeFresh(d *deployment.Deployment) bool {
+	_, fresh := e.ensureFresh(e.releaseEnsure, d.ID, releaseEnsureSignature(d), e.clock.Now())
+	return fresh
+}
+
+// rememberReleaseMaterialize 落等待期物化备忘（仅 materialize 成功后）。
+func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
+	e.ensureRemember(e.releaseEnsure, d.ID, ensureMemo{
+		sig: releaseEnsureSignature(d), gen: d.Generation, at: e.clock.Now(),
+	})
 }
 
 // observe：L3 观察窗到期 → succeeded；L2 看门狗 = 当前 Generation 观测
@@ -278,8 +310,10 @@ func (e *Engine) rollbackFailed(ctx context.Context, d *deployment.Deployment, r
 // failDeployment：任意阶段失败 → failed（四件一拍；自动回滚由 failed
 // 分支接手）。ObserveDeadline 是相位局部截止（job 等待/L1/L3），进 failed
 // 即终止该相位——残留会让 rollback 误读为"等待期已设、gen 已推进"
-// （ADR-0030：job 等待截止不泄漏进回滚相位）。
+// （ADR-0030：job 等待截止不泄漏进回滚相位）。等待期物化备忘随相位终止
+// 作废（C17）。
 func (e *Engine) failDeployment(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error) {
+	e.ensureForget(e.releaseEnsure, d.ID)
 	return e.transitAndReload(ctx, d,
 		deployment.ActiveStatesNoQueued(), deployment.StateFailed,
 		func(m *deployment.Deployment) { m.Error, m.ObserveDeadline = reason, "" })
