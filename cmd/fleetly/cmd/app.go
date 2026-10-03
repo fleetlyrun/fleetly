@@ -78,7 +78,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),
-		groupVerb("deployments", "inspect deployments", newDeploymentsListVerb()),
+		groupVerb("deployments", "inspect and cancel deployments", newDeploymentsListVerb(), newDeploymentsCancelVerb()),
 		newRollbackVerb(),
 		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
 		groupVerb("builds", "inspect builds and stream build logs", newBuildsListVerb(), newBuildsLogsVerb()),

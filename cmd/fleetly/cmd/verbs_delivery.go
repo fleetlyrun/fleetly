@@ -222,6 +222,38 @@ func newDeployVerb() commands.Command {
 	}
 }
 
+// newDeploymentsCancelVerb 构造 deployments cancel（ADR-0016 CLI 补面）：
+// CancelDeployment 的 API/REST 面在册而 CLI 缺席，Agent 语义断裂。幂等
+// 语义照 API——排队/在途可取消（终态拒：E_NOT_CANCELLABLE 信封，随机
+// error_id 不可 golden，错误面断言在 apitest）。
+func newDeploymentsCancelVerb() commands.Command {
+	const name = "cancel"
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Cancel a queued or in-flight deployment (terminal deployments refuse)",
+		usage:    "deployments cancel DEPLOYMENT_ID",
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one DEPLOYMENT_ID argument")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Deployments.CancelDeployment(ctx, &deliveryv1.CancelDeploymentRequest{Id: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
+				d := resp.GetDeployment()
+				_, _ = fmt.Fprintf(env.Stdout, "deployment %s cancelled (revision %s, generation %d)\n", d.GetId(), d.GetToRevision(), d.GetGeneration())
+			})
+		},
+	}
+}
+
 func newDeploymentsListVerb() commands.Command {
 	const name = "list"
 	var app string

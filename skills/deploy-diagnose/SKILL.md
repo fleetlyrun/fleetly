@@ -68,9 +68,13 @@ the causal chain; logs and builds are the evidence underneath.
    fleetly revisions diff --app APP_ID --from 3 --to 4
    ```
 
-6. Recovery verbs — pick per the triage table, do not stack them blindly:
+6. Recovery verbs — pick per the triage table, do not stack them blindly.
+   Cancel clears a queued or in-flight deployment first (terminal states
+   refuse with E_NOT_CANCELLABLE); rollback and re-deploy submit the
+   replacement:
 
    ```bash
+   fleetly deployments cancel DEPLOYMENT_ID
    fleetly rollback --app APP_ID --wait
    fleetly deploy --app APP_ID --image IMAGE --wait
    fleetly deploy --app APP_ID --from-dir DIR --wait
