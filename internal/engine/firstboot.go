@@ -315,6 +315,43 @@ func (e *Engine) firstBootJobNetworks(ctx context.Context, d *deployment.Deploym
 	return out, nil
 }
 
+// CheckFirstBootNetworks 是受理面的 firstBootJobs 裸网名在场性预检（B12
+// P3-5，fail-closed）：裸网名（非 taskGroup:/project: 引用形态——
+// specir.IsNetworkGroupRef/IsCrossProjectRef 是形态判定真源）按项目内
+// 平台网名解析，项目内无该网即拒绝入队——否则 typo 冻结进 spec，要到
+// job Ensure（编排器面）超时才暴露。taskGroup:/project: 形态不在此重复
+// 执法：前者缺组由受管域收敛创建，后者由 CheckPeerRefs strict 预检。
+// 存储错误如实上抛（与受理面整体拒绝语义一致）。Revision 读取经调用方
+// 事务 Runner（所见即受理终局；CheckPeerRefs 同款形态，各持一次读——
+// 受理是冷路径，换取两个预检各自自洽）。
+func (e *Engine) CheckFirstBootNetworks(ctx context.Context, run state.Runner, projectID, revisionID string) error {
+	rev, err := e.revisions.Get(ctx, run, revisionID)
+	if err != nil {
+		return err
+	}
+	spec, err := unmarshalSpec(rev.Spec)
+	if err != nil {
+		return err
+	}
+	for i, j := range spec.GetFirstBootJobs() {
+		for _, net := range j.GetProcess().GetNetworks() {
+			if specir.IsNetworkGroupRef(net) || specir.IsCrossProjectRef(net) {
+				continue
+			}
+			_, err := e.networks.GetByName(ctx, run, projectID, net)
+			if err == nil {
+				continue
+			}
+			if errors.Is(err, state.ErrNotFound) {
+				return fmt.Errorf("%w: first boot job %q (app.first_boot_jobs[%d]) attaches network %q which does not exist in project %s; create the network, reference it as taskGroup:<group> or project:<project-id>/<name>, or drop the attachment",
+					ErrFirstBootNetworkUnknown, j.GetName(), i, net, projectID)
+			}
+			return fmt.Errorf("resolve network %s in project %s: %w", net, projectID, err)
+		}
+	}
+	return nil
+}
+
 // abandonFirstBootJobs 是取消/抢占的 job 收口（ADR-0030 决策 6）：游标
 // 锚定的活跃 Task best-effort 强停（审计携带操作者；已终态不动；错误容忍
 // 记日志——job 自带 ttl，收口失败也有界）。

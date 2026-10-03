@@ -195,7 +195,16 @@ func (e *Engine) observe(ctx context.Context, d *deployment.Deployment) (*deploy
 		return e.failDeployment(ctx, d, "health gate L2 watchdog: "+bad)
 	}
 	deadline := parseDeadline(d.ObserveDeadline)
-	if deadline == nil || e.clock.Now().Before(*deadline) {
+	if deadline == nil {
+		// 观察窗缺失（崩溃窗口/半途行）：补设观察窗——与 release 的 nil L1
+		// 截止补设对称（原地迁移，state 不变无事件）。不补设则 nil 被读作
+		// "窗内"，该行永久滞留 observing，无外部事件可收敛。
+		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
+		return e.transitAndReload(ctx, d,
+			[]deployment.State{deployment.StateObserving}, deployment.StateObserving,
+			func(m *deployment.Deployment) { m.ObserveDeadline = window })
+	}
+	if e.clock.Now().Before(*deadline) {
 		return nil, nil // 观察窗内（tick 再进）
 	}
 	return e.transitAndReload(ctx, d,

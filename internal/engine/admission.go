@@ -64,6 +64,12 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		if err := e.CheckPeerRefs(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
 			return err
 		}
+		// 0.6 firstBootJobs 裸网名在场性预检（B12 P3-5 fail-closed）：项目内
+		// 无该网的裸网名拒绝入队——typo 在受理位显式失败，不冻结进 spec
+		// 等 job 超时才暴露。
+		if err := e.CheckFirstBootNetworks(ctx, tx, appRow.ProjectID, req.RevisionID); err != nil {
+			return err
+		}
 
 		// 1. 幂等键去重（键作用域 = App，B10：异 App 同键各自独立受理）。
 		if req.IdempotencyKey != "" {

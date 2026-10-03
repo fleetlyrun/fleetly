@@ -12,6 +12,7 @@ import (
 	"context"
 	"log/slog"
 	"runtime/debug"
+	"sync"
 	"time"
 )
 
@@ -24,6 +25,10 @@ type Loop struct {
 	log  *slog.Logger
 	kick chan struct{}
 	done chan struct{}
+	// doneOnce 守护 done 的单次关闭（B12 P3-6 修面）：Stop 后重启会再次
+	// 进入 Run（Start 见 cancel=nil 放行），裸 close 二次触发 panic——
+	// done 观察面只保首任循环的关闭信号（当前无消费方）。
+	doneOnce sync.Once
 }
 
 // NewLoop 构造循环（name 供日志与观测面）。
@@ -52,7 +57,7 @@ func (l *Loop) Done() <-chan struct{} { return l.done }
 // 当前 step 收尾（in-flight Ensure 完成或被其内部 ctx 取消）即返回，
 // 不再开始新 step——重启后按 Generation 幂等重放（领域模型场景 1）。
 func (l *Loop) Run(ctx context.Context, tick time.Duration, step func(context.Context)) {
-	defer close(l.done)
+	defer l.doneOnce.Do(func() { close(l.done) })
 	ticker := time.NewTicker(tick)
 	defer ticker.Stop()
 	for {

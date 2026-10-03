@@ -111,18 +111,26 @@ func TestScheduleFireCAS(t *testing.T) {
 	assert.Equal(t, "2026-01-02T09:30:00Z", got.NextFireAt)
 	assert.Equal(t, "01JD0TSK00000000000000000", got.LastTaskID)
 
-	// 手动拍记账：last_task_id 推进、next_fire_at 不动。
-	require.NoError(t, repo.RecordFire(ctx, db.Runner(), s.ID, "01JD0TSK00000000000000001"))
+	// 手动拍记账（CAS 锚 = 读行时的旧 last_task_id）：last_task_id 推进、
+	// next_fire_at 不动。
+	require.NoError(t, repo.RecordFire(ctx, db.Runner(), s.ID, "01JD0TSK00000000000000000", "01JD0TSK00000000000000001"))
 	got, err = repo.Get(ctx, db.Runner(), s.ID)
 	require.NoError(t, err)
 	assert.Equal(t, "2026-01-02T09:30:00Z", got.NextFireAt)
+	assert.Equal(t, "01JD0TSK00000000000000001", got.LastTaskID)
+
+	// B12 P3-4：CAS 锚失配（并发双拍的输家形态）→ ErrConflict，行不动。
+	err = repo.RecordFire(ctx, db.Runner(), s.ID, "01JD0TSK00000000000000000", "01JD0TSK00000000000000002")
+	assert.ErrorIs(t, err, state.ErrConflict)
+	got, err = repo.Get(ctx, db.Runner(), s.ID)
+	require.NoError(t, err)
 	assert.Equal(t, "01JD0TSK00000000000000001", got.LastTaskID)
 
 	// tombstone 后 Fire/RecordFire 均拒。
 	require.NoError(t, repo.Transit(ctx, db.Runner(), s.ID, schedule.StateActive, schedule.StateDeleted))
 	assert.ErrorIs(t, repo.Fire(ctx, db.Runner(), s.ID,
 		"2026-01-02T09:30:00Z", "2026-01-03T09:30:00Z", "x"), state.ErrConflict)
-	assert.ErrorIs(t, repo.RecordFire(ctx, db.Runner(), s.ID, "x"), state.ErrConflict)
+	assert.ErrorIs(t, repo.RecordFire(ctx, db.Runner(), s.ID, "01JD0TSK00000000000000001", "x"), state.ErrConflict)
 
 	// 不存在的行 → ErrNotFound。
 	assert.ErrorIs(t, repo.Fire(ctx, db.Runner(), "01JD0SCH000000000000099", "", "", ""), state.ErrNotFound)

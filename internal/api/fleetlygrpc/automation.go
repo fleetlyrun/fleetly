@@ -358,6 +358,12 @@ func mapTaskVerbError(err error) error {
 			WithCause(err).
 			WithSuggestion("Scale down other tasks in the project, or delete finished tasks to free quota.")
 	}
+	if errors.Is(err, engine.ErrTaskDraining) {
+		// 排空中缩容（B12 P3-2）：显式冲突 + 可行动建议，不落裸 CAS 文案。
+		return apperr.New("E_CONFLICT", "%s", err.Error()).
+			WithCause(err).
+			WithSuggestion("Renew the task to revive the pool before scaling, or wait for the drain to finish.")
+	}
 	return mapStateError(err, "task")
 }
 

@@ -135,10 +135,20 @@ func (e *Engine) TriggerSchedule(ctx context.Context, id string) (*schedule.Sche
 		return nil, fmt.Errorf("%w: schedule %s previous task %s still has live runs", ErrScheduleOverlapping, id, s.LastTaskID)
 	}
 	if _, err := e.spawnScheduleTask(ctx, s, ScheduleSourceManual, s.NextFireAt); err != nil {
-		return nil, err
+		return nil, mapTriggerConflict(err, id)
 	}
 	e.taskLoop.Kick()
 	return e.schedules.Get(ctx, e.db.Runner(), id)
+}
+
+// mapTriggerConflict 把铸 Task 事务的 CAS 冲突归一为重叠语义（B12 P3-4：
+// 输家识别到赢家已铸——赢家铸的即"上一拍"，对重叠判定的并发窗口补位）。
+// 其余错误（配额/存储）原样上抛。
+func mapTriggerConflict(err error, id string) error {
+	if errors.Is(err, state.ErrConflict) {
+		return fmt.Errorf("%w: schedule %s was fired concurrently", ErrScheduleOverlapping, id)
+	}
+	return err
 }
 
 // scheduleOverlapping 判定上一拍 Task 是否仍有未终态 Run（重叠 skip 锚：
@@ -207,7 +217,10 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, so
 				return err
 			}
 		} else {
-			if err := e.schedules.RecordFire(ctx, tx, s.ID, taskID); err != nil {
+			// 手动拍的 CAS 锚（B12 P3-4）：fromLastTaskID = 触发时读行的旧
+			// 值——并发双拍输家的锚失配 → ErrConflict 整单回滚（Task 行不
+			// 落孤账），至多一铸。
+			if err := e.schedules.RecordFire(ctx, tx, s.ID, s.LastTaskID, taskID); err != nil {
 				return err
 			}
 		}

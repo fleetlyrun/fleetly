@@ -5,8 +5,10 @@ package engine
 // 手动驱动形态（taskStep 直调 + 观测经 handleObservation 直注）。
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"sort"
 	"testing"
 	"time"
@@ -19,6 +21,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/role"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
+	"github.com/fleetlyrun/fleetly/internal/state/statetest"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 	"github.com/fleetlyrun/fleetly/internal/state/team"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
@@ -567,6 +570,75 @@ func TestOwnerRevokedDrainsTasks(t *testing.T) {
 	for _, r := range taskRuns(t, e, taskID) {
 		assert.Equal(t, run.ReasonOwnerRevoked, r.StopReason)
 	}
+}
+
+// TestScaleTaskDrainingRejected（B12 P3-2）：draining Task 的 ScaleTask
+// 不再落裸 CAS 冲突（"并发改动"文案误导）——显式哨兵 + 可行动文案，行
+// 零写入。
+func TestScaleTaskDrainingRejected(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000J"
+	createTaskRow(t, e, taskID, "pool", task.FormResident, 2, 0, "")
+
+	_, err := e.StopTask(ctx, taskID, false)
+	require.NoError(t, err)
+	require.Equal(t, task.StateDraining, getTaskRow(t, e, taskID).State)
+
+	_, err = e.ScaleTask(ctx, taskID, 5)
+	require.ErrorIs(t, err, ErrTaskDraining)
+	assert.Contains(t, err.Error(), taskID, "the message names the task")
+	assert.Contains(t, err.Error(), "draining")
+
+	// 诚实拒绝 = 零写入：期望并发保持原值。
+	assert.EqualValues(t, 2, getTaskRow(t, e, taskID).DesiredConcurrency)
+
+	// 终态与 active 形态不受新前置影响（既有语义回归）。
+	require.NoError(t, e.tasks.Transit(ctx, e.db.Runner(), taskID,
+		[]task.State{task.StateDraining}, task.StateDrained, nil))
+	_, err = e.ScaleTask(ctx, taskID, 5)
+	assert.ErrorIs(t, err, ErrTaskTerminal)
+}
+
+// TestSweepRevokedOwnersStorageFaultContinues（B12 P3-3）：单 token 存储
+// 故障只记日志继续——整轮清扫不再中断（修复前首个错误 return，其余
+// token 名下 Task 的吊销排空集体滞留）。故障注入：先列（库活着）后断连，
+// 此后一切 token 读失败——两个 token 各自失败各记一条，证明循环走完全轮。
+func TestSweepRevokedOwnersStorageFaultContinues(t *testing.T) {
+	var logs bytes.Buffer
+	db, _ := statetest.New(t)
+	e := New(Deps{DB: db, Runtime: newFakeRuntime(), Logger: slog.New(slog.NewTextHandler(&logs, nil))}, Options{})
+	t.Cleanup(func() { _ = e.Stop(context.Background()) })
+	ctx := context.Background()
+
+	// FK 地基（engine 测试库不跑账号批种子）。
+	require.NoError(t, team.New(db.Clock()).Create(ctx, db.Runner(), &team.Team{ID: "default", Name: "default"}))
+	require.NoError(t, role.New(db.Clock()).Create(ctx, db.Runner(), &role.Role{
+		ID: "builtin-member", Name: "member", Builtin: true, Scopes: []string{"tasks:read"},
+	}))
+	tokA := "01JD0TOK000000000000000000A"
+	tokB := "01JD0TOK000000000000000000B"
+	for i, id := range []string{tokA, tokB} {
+		require.NoError(t, tokenrepo.New(db.Clock()).Create(ctx, db.Runner(), &tokenrepo.Token{
+			ID: id, TeamID: "default", Name: fmt.Sprintf("worker-%d", i), RoleID: "builtin-member",
+			SHA256: fmt.Sprintf("aa%d%d", i, i), Prefix: "flt_x",
+		}))
+	}
+	taskA := createTaskRow(t, e, "01JD0TASK0000000000000000K", "pool-a", task.FormResident, 1, 0, "")
+	taskB := createTaskRow(t, e, "01JD0TASK0000000000000000L", "pool-b", task.FormResident, 1, 0, "")
+	for _, tc := range []struct{ task, token string }{{taskA.ID, tokA}, {taskB.ID, tokB}} {
+		_, err := db.Runner().ExecContext(ctx, `UPDATE tasks SET owner_token_id = ? WHERE id = ?`, tc.token, tc.task)
+		require.NoError(t, err)
+	}
+
+	tasks, err := e.tasks.ListDriving(ctx, db.Runner())
+	require.NoError(t, err)
+	require.NoError(t, db.Close()) // 存储故障注入：断连后一切读失败
+
+	// 修复语义：整轮走完不报错，两个 token 都被访问（各记一条日志）。
+	e.sweepRevokedOwners(ctx, tasks)
+	assert.Contains(t, logs.String(), tokA)
+	assert.Contains(t, logs.String(), tokB)
 }
 
 // TestTaskScale：resident 期望并发原地调整 + task.updated 事件。

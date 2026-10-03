@@ -46,6 +46,9 @@ var (
 	ErrTaskNotRenewable = errors.New("engine: task carries no owner lease")
 	// ErrTaskTerminal 是生命周期动词命中终态行（终态事实不可改写）。
 	ErrTaskTerminal = errors.New("engine: task is in a terminal state")
+	// ErrTaskDraining 是缩容动词命中排空中行（B12 P3-2：排空中期望并发
+	// 无意义——先复活或等排空收口；裸 ErrConflict 的"并发改动"文案误导）。
+	ErrTaskDraining = errors.New("engine: task is draining")
 	// ErrNotResident 是仅 resident 形态适用的动词面（ScaleTask）。
 	ErrNotResident = errors.New("engine: this verb targets resident tasks only")
 	// ErrTaskQuota 是 per-Project Task 配额命中（ADR-0017 附录 A.1；API 层
@@ -76,9 +79,7 @@ func (e *Engine) taskStep(ctx context.Context) {
 		e.log.Error("task step: list driving", "err", err)
 		return
 	}
-	if err := e.sweepRevokedOwners(ctx, tasks); err != nil {
-		e.log.Error("task step: sweep revoked owners", "err", err)
-	}
+	e.sweepRevokedOwners(ctx, tasks)
 	if err := e.sweepZombieRuns(ctx); err != nil {
 		e.log.Error("task step: sweep zombie runs", "err", err)
 	}
@@ -90,7 +91,9 @@ func (e *Engine) taskStep(ctx context.Context) {
 // sweepRevokedOwners 是属主吊销排空的拉式扫描（P1-8：吊销排空走 task 环
 // 周期扫 revoked 属主——拉式、重启安全；Task 行记 owner_token_id 引用）。
 // 默认宽限排空（宽限停止存量 Run）；TaskOwnerRevokedRunToTTL 配置跑完 TTL。
-func (e *Engine) sweepRevokedOwners(ctx context.Context, tasks []task.Task) error {
+// 单 token 存储故障只记日志继续（B12 P3-3）：一坏 token 中断整轮会让其余
+// token 名下 Task 的吊销排空集体滞留——拉式扫描的可用性真源是"扫完"。
+func (e *Engine) sweepRevokedOwners(ctx context.Context, tasks []task.Task) {
 	byToken := map[string][]*task.Task{}
 	for i := range tasks {
 		t := &tasks[i]
@@ -105,7 +108,8 @@ func (e *Engine) sweepRevokedOwners(ctx context.Context, tasks []task.Task) erro
 			if errors.Is(err, state.ErrNotFound) {
 				continue // 行不存在防御：Token 行只吊销不删
 			}
-			return fmt.Errorf("lookup owner token %s: %w", tokenID, err)
+			e.log.Error("task step: lookup owner token", "token", tokenID, "err", err)
+			continue
 		}
 		if !tok.Revoked {
 			continue
@@ -114,7 +118,6 @@ func (e *Engine) sweepRevokedOwners(ctx context.Context, tasks []task.Task) erro
 			e.drainTask(ctx, t, run.ReasonOwnerRevoked)
 		}
 	}
-	return nil
 }
 
 // sweepZombieRuns 收口僵尸 Run：终态 Task（completed/failed/drained/
@@ -588,6 +591,12 @@ func (e *Engine) ScaleTask(ctx context.Context, id string, desired int64) (*task
 		}
 		if t.State.Terminal() {
 			return fmt.Errorf("%w: task %s is %s", ErrTaskTerminal, id, t.State)
+		}
+		if t.State == task.StateDraining {
+			// 排空中缩容无意义（B12 P3-2）：期望并发被排空忽略，且无补足
+			// 半边——诚实拒绝并指路（复活/等收口），不落裸 CAS 冲突文案。
+			return fmt.Errorf("%w: task %s is draining; scaling has no effect while the pool is draining",
+				ErrTaskDraining, id)
 		}
 		// 配额增量检查（ADR-0017 附录 A.1）：本单对项目并发总量的净增量 =
 		// 新值 − 现值；事务内读（SQLite 单写连接串行，无 TOCTOU）。

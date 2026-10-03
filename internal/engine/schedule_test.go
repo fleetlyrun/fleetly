@@ -14,6 +14,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
@@ -238,6 +239,38 @@ func TestScheduleQuotaSkips(t *testing.T) {
 	// 手动拍 → 诚实拒绝（API 面 E_QUOTA_EXCEEDED）。
 	_, err := e.TriggerSchedule(ctx, sid)
 	assert.ErrorIs(t, err, ErrTaskQuota)
+}
+
+// TestTriggerScheduleConcurrentSingleMint（B12 P3-4）：并发双拍的交错
+// 等价形态——A/B 各自在对方提交前完成 Get+重叠判定，持同一触发时快照
+// 进入铸 Task 事务。RecordFire 的 CAS 锚使输家识别到赢家已铸 → 整单回滚
+// （Task 行不落孤账），至多一铸；CAS 输家在 TriggerSchedule 面诚实拒绝。
+func TestTriggerScheduleConcurrentSingleMint(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	sid := "01JD0SCHD00000000000000009"
+	createScheduleRow(t, e, sid, "", "0 0 * * *", "UTC", "2026-01-02T00:00:00Z")
+
+	s := getScheduleRow(t, e, sid) // A/B 共同的触发时快照（锚 = 旧 last_task_id）
+	winner, err := e.spawnScheduleTask(ctx, s, ScheduleSourceManual, s.NextFireAt)
+	require.NoError(t, err)
+	require.Equal(t, winner.ID, getScheduleRow(t, e, sid).LastTaskID)
+
+	// 输家：同快照重入 → RecordFire 锚失配 → ErrConflict 整单回滚。
+	loser, err := e.spawnScheduleTask(ctx, s, ScheduleSourceManual, s.NextFireAt)
+	assert.ErrorIs(t, err, state.ErrConflict)
+	assert.Nil(t, loser, "the losing mint rolls back its task row")
+
+	// 全库至多一条已铸 Task（双铸防御：孤账零落）。
+	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
+	require.NoError(t, err)
+	require.Len(t, tasks, 1)
+	assert.Equal(t, winner.ID, tasks[0].ID)
+
+	// 映射面：CAS 输家 → ErrScheduleOverlapping（诚实拒绝）；其余错误
+	// （配额等）原样穿透。
+	assert.ErrorIs(t, mapTriggerConflict(state.ErrConflict, sid), ErrScheduleOverlapping)
+	assert.ErrorIs(t, mapTriggerConflict(ErrTaskQuota, sid), ErrTaskQuota)
 }
 
 // TestParseScheduleOverlap：值域 fail-fast（空值回退 skip，非法值报错）。

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -332,6 +333,61 @@ func TestNodeJoinedAnchoring(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "swarmabc", n.CarrierID)
 	assert.True(t, n.Available)
+}
+
+// B12 P3-1 回归：observing 相位 ObserveDeadline 缺失（崩溃窗口/半途行
+// 等价形态）→ 补设观察窗——与 release 的 nil L1 截止补设处置对称。修复
+// 前 nil 被读作"窗内"，行永久滞留 observing，无外部事件可收敛。
+func TestObserveBackfillsMissingDeadline(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+	rev := freezeSpec(t, e, 1, tImageSpec)
+	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	require.NoError(t, err)
+	e.step(ctx)
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
+	e.step(ctx)
+	require.Equal(t, deployment.StateObserving, getDeployment(t, e, d.ID).State)
+
+	// 注入缺失形态：观察窗列清空（半途行的事实形态）。
+	_, err = e.db.Runner().ExecContext(ctx,
+		`UPDATE deployments SET observe_deadline = '' WHERE id = ?`, d.ID)
+	require.NoError(t, err)
+
+	e.step(ctx)
+	got := getDeployment(t, e, d.ID)
+	assert.Equal(t, deployment.StateObserving, got.State, "backfill keeps the phase (in-place transit)")
+	require.NotEmpty(t, got.ObserveDeadline, "missing observe window must be backfilled, not read as inside-window")
+
+	// 补设的窗口走满照常收口 succeeded。
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	assert.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d.ID).State)
+}
+
+// B12 P3-6 回归：Start/Stop 并发与双 Stop 的健壮性。cancel 判空/赋值/
+// 置 nil 在 lifecycleMu 一拍内完成——-race 门禁；并发双 Start 只有一路
+// 生效（否则双发全套收敛循环 goroutine）。
+func TestStartStopConcurrentAndIdempotent(t *testing.T) {
+	e, _, _ := newTestEngine(t) // 手动驱动形态：未 Start
+	ctx := context.Background()
+
+	var wg sync.WaitGroup
+	wg.Add(4)
+	for i := 0; i < 2; i++ {
+		go func() { defer wg.Done(); e.Start(ctx) }()
+	}
+	for i := 0; i < 2; i++ {
+		go func() { defer wg.Done(); _ = e.Stop(ctx) }()
+	}
+	wg.Wait()
+
+	// 并发风暴后引擎处于干净终局：再 Stop 安全（排水幂等）。
+	require.NoError(t, e.Stop(ctx))
+
+	// 未 Start 的引擎 Stop 是安全 no-op（cancel=nil 面兜底）。
+	e2, _, _ := newTestEngine(t)
+	require.NoError(t, e2.Stop(ctx))
 }
 
 func workloadEventRunning(wid string, gen uint64) capability.WorkloadEvent {

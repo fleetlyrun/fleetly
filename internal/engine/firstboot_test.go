@@ -344,6 +344,8 @@ func TestFirstBootNetworksDeclared(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
 	createProjectNetwork(t, e, "01JD0NET00000000000000001", "default")
+	// 裸网名在场性是受理预检（B12 P3-5）：声明的 workers 须先建网。
+	createProjectNetwork(t, e, "01JD0NET00000000000000002", "workers")
 	spec := jobsSpec(8, `{"name":"migrate","ttl":"300s","process":`+
 		`{"image":"busybox:1.37","command":["/migrate"],"networks":["workers","taskGroup:dispatcher"]}}`)
 	revID := freezeSpec(t, e, 1, spec)
@@ -578,4 +580,36 @@ func filterPrefix(names []string, prefix string) []string {
 		}
 	}
 	return out
+}
+
+// TestFirstBootBareNetworkAdmissionPrecheck（B12 P3-5）：firstBootJobs
+// 声明的裸网名在项目内无行 → 受理 fail-closed（typo 不冻结进 spec 等
+// job 超时才暴露）；建网后同 Revision 受理放行；taskGroup:/project: 引用
+// 形态不在此预检（各自既有面执法）。
+func TestFirstBootBareNetworkAdmissionPrecheck(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+
+	spec := jobsSpec(1, `{"name":"migrate","ttl":"60s","process":`+
+		`{"image":"busybox:1.37","command":["/migrate"],"networks":["ghost"]}}`)
+	revID := freezeSpec(t, e, 1, spec)
+
+	// 项目内无 ghost 网 → 受理拒绝（零副作用：不入队）。
+	_, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	require.ErrorIs(t, err, ErrFirstBootNetworkUnknown)
+	assert.Contains(t, err.Error(), `job "migrate"`, "the message names the job")
+	assert.Contains(t, err.Error(), "ghost")
+
+	// 项目内建网 → 同 Revision 受理放行。
+	createProjectNetwork(t, e, "01JD0NET00000000000000005", "ghost")
+	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	require.NoError(t, err)
+	require.Equal(t, deployment.StateQueued, d.State)
+
+	// 引用形态不预检在场性：taskGroup: 缺组合法（受管域收敛创建的面）。
+	refSpec := jobsSpec(2, `{"name":"attach","ttl":"60s","process":`+
+		`{"image":"busybox:1.37","command":["/attach"],"networks":["taskGroup:dispatcher"]}}`)
+	rev2 := freezeSpec(t, e, 2, refSpec)
+	_, err = e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	require.NoError(t, err)
 }

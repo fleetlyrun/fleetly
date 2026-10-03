@@ -50,6 +50,10 @@ var (
 	// 引用（ADR-0013 附录 A.3 fail-closed：declare+approve 或移除引用；
 	// API 层映射 E_CONFLICT）。
 	ErrCrossProjectRefNotApproved = errors.New("engine: cross-project network reference is not approved")
+	// ErrFirstBootNetworkUnknown 是 firstBootJobs 受理命中项目内不存在的
+	// 裸网名（B12 P3-5 fail-closed：建网/taskGroup:/project: 引用/删附件；
+	// API 层映射 E_INVALID_ARGUMENT）。
+	ErrFirstBootNetworkUnknown = errors.New("engine: first boot job attaches an unknown network")
 )
 
 // Options 是引擎参数（装配注入；测试覆盖默认值）。
@@ -226,6 +230,12 @@ type Engine struct {
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
 
+	// lifecycleMu 同步引擎生命周期（B12 P3-6）：Start 全程持锁（cancel
+	// 判空/赋值 + wg.Add）与 Stop 全程持锁（cancel 置 nil + wg.Wait 排水）
+	// 互斥——裸读写 cancel 是数据竞争，Add/Wait 重叠是 WaitGroup 竞争，
+	// 并发双 Start 会双发全套收敛循环 goroutine。
+	lifecycleMu sync.Mutex
+
 	// runCtx 是 Start 物化的进程生命期 ctx（Q-7）：构建 goroutine 的派生
 	// 根——Stop 取消它即有界排水（executeBuild 的优雅退出路径接管）。
 	runCtxMu sync.Mutex
@@ -393,8 +403,13 @@ func (e *Engine) lockApp(appID string) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
-// Start 进入驱动：收敛循环 + Watch 消费。重复 Start 幂等（第二次为 no-op）。
+// Start 进入驱动：收敛循环 + Watch 消费。重复 Start 幂等（第二次为
+// no-op）。全程持 lifecycleMu（B12 P3-6）：判空/赋 cancel 与 wg.Add 对
+// 并发 Stop 的 wg.Wait 互斥——裸读写是数据竞争，且并发双 Start 会双发
+// 全套收敛循环 goroutine。Stop 后重启（cancel 已置 nil）沿旧语义放行。
 func (e *Engine) Start(ctx context.Context) {
+	e.lifecycleMu.Lock()
+	defer e.lifecycleMu.Unlock()
 	if e.cancel != nil {
 		return
 	}
@@ -498,8 +513,13 @@ func (e *Engine) resetOrphanBuilds(ctx context.Context) {
 }
 
 // Stop 有界排空：取消循环并等待在途 step（Ensure 由 step 内 ctx 收口）
-// 返回。in-flight Ensure 可安全中断重放（ADR-0005 优雅退出）。
+// 返回。in-flight Ensure 可安全中断重放（ADR-0005 优雅退出）。全程持
+// lifecycleMu（B12 P3-6）：排水等待与并发 Start 的 wg.Add 互斥，双 Stop
+// 串行在锁上（后者见 cancel=nil 幂等返回 nil）；Start 未完整（cancel 尚
+// 未落）同样安全 no-op。
 func (e *Engine) Stop(ctx context.Context) error {
+	e.lifecycleMu.Lock()
+	defer e.lifecycleMu.Unlock()
 	if e.cancel == nil {
 		return nil
 	}

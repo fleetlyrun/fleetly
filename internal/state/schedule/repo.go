@@ -129,21 +129,26 @@ func (r *Repo) Fire(ctx context.Context, run state.Runner, id, from, next, lastT
 }
 
 // RecordFire 是手动触发的记账面：last_task_id 推进、next_fire_at 不动
-// （cron 节奏不被手动拍打乱）。行不活跃 → ErrConflict；不存在 →
-// ErrNotFound。
-func (r *Repo) RecordFire(ctx context.Context, run state.Runner, id, lastTaskID string) error {
+// （cron 节奏不被手动拍打乱）。fromLastTaskID 是 CAS 锚（调用方读行时的
+// 旧值，B12 P3-4）：并发双拍时输家的锚失配 → ErrConflict——与 Task 落行
+// 同事务整体回滚，双铸防御。行不活跃 → ErrConflict；不存在 → ErrNotFound。
+func (r *Repo) RecordFire(ctx context.Context, run state.Runner, id, fromLastTaskID, lastTaskID string) error {
 	res, err := run.ExecContext(ctx, `
 		UPDATE schedules SET last_task_id = ?, updated_at = ?
-		WHERE id = ? AND state = 'active'`,
-		lastTaskID, state.FormatTime(r.clock.Now()), id)
+		WHERE id = ? AND state = 'active' AND last_task_id = ?`,
+		lastTaskID, state.FormatTime(r.clock.Now()), id, fromLastTaskID)
 	if err != nil {
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if _, gerr := r.Get(ctx, run, id); gerr != nil {
+		cur, gerr := r.Get(ctx, run, id)
+		if gerr != nil {
 			return gerr
 		}
-		return fmt.Errorf("%w: schedule %s is not active", state.ErrConflict, id)
+		if cur.State != StateActive {
+			return fmt.Errorf("%w: schedule %s is not active", state.ErrConflict, id)
+		}
+		return fmt.Errorf("%w: schedule %s last_task_id changed concurrently", state.ErrConflict, id)
 	}
 	return nil
 }
