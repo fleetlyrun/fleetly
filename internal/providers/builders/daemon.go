@@ -100,6 +100,33 @@ type solveRequest struct {
 	FrontendAttrs map[string]string
 }
 
+// vcsExcludePatterns 是构建上下文的默认排除面（收尾批 E27）：顶层 VCS
+// 元数据目录。缺陷=COPY . . 把 .git 烙进镜像层（git 历史泄入产物，公开
+// push 即泄源）且每次构建全量搬运 VCS 目录（上下文上传随历史增长放大）。
+// 裁决=只排 VCS 元数据（.git/.svn/.hg），只排顶层——嵌套的 .git 与
+// node_modules 等用户域内容属 .dockerignore/spec 裁决域，平台不越权
+// （buildx 缺省行为同口径：VCS 排除只在上下文根）。
+//
+// 收口点=solveAndPush 的 context mount 组装（三 Builder Provider 共享的
+// 唯一上下文入口；dockerfile mount 是平台自产目录，无用户内容不过滤）。
+// 排除机制=fsutil.NewFilterFS（buildx .dockerignore 过滤同一机制，
+// patternmatcher 语义：顶层 ".git" 命中该目录及其全部后代，无 glob 不
+// 误伤同名子路径）。
+var vcsExcludePatterns = []string{".git", ".svn", ".hg"}
+
+// newContextFS 组装构建上下文 mount（VCS 排除后的 fsutil.FS）。
+func newContextFS(dir string) (fsutil.FS, error) {
+	f, err := fsutil.NewFS(dir)
+	if err != nil {
+		return nil, err
+	}
+	filtered, err := fsutil.NewFilterFS(f, &fsutil.FilterOpt{ExcludePatterns: vcsExcludePatterns})
+	if err != nil {
+		return nil, err
+	}
+	return filtered, nil
+}
+
 // solveAndPush 执行 Solve（docker exporter 经 session 由 client 侧声明，
 // 产物导入本机 daemon 镜像库，--load 等价）→ daemon ImagePush 推送 Target
 // → digest 从推送流 aux 回填（RepoDigests 兜底）。进度流与推送流文本行
@@ -124,7 +151,7 @@ func (d *daemonClients) solveAndPush(ctx context.Context, req capability.BuildRe
 		errCh <- streamProgress(ctx, req.BuildID, w, statusCh)
 	}()
 
-	contextFS, err := fsutil.NewFS(req.ContextDir)
+	contextFS, err := newContextFS(req.ContextDir)
 	if err != nil {
 		return "", fmt.Errorf("builders: context dir: %w", err)
 	}
