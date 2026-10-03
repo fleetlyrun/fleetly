@@ -25,11 +25,6 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// databaseDomainKeyPrefix 是 Database 域在归属/期望缓存中的键前缀
-// （database/<id>——非 App 行键；driftScan 的 spec 对照面据此跳过，稳态
-// 看门狗面保留，managed 域键同款）。
-const databaseDomainKeyPrefix = "database/"
-
 // dbCredentialSecretPrefix 是数据库凭证 Secret 的命名约定（database:<name>；
 // registry:<host> 先例。值 = 完整连接 URL，ADR-0029 决策 6）。
 const dbCredentialSecretPrefix = "database:"
@@ -174,11 +169,11 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。
 	e.obs.mu.Lock()
-	e.obs.workloadApp[w.ID] = databaseDomainKeyPrefix + row.ID
+	e.obs.workloadApp[w.ID] = databaseOwner(row.ID)
 	e.obs.ensuredGen[w.ID] = gen
 	e.obs.mu.Unlock()
 	e.expect.mu.Lock()
-	e.expect.expected[databaseDomainKeyPrefix+row.ID] = gen
+	e.expect.expected[databaseOwner(row.ID)] = gen
 	e.expect.mu.Unlock()
 	e.advanceDatabaseStatus(stepCtx, row, gen)
 }
@@ -321,7 +316,7 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	delete(e.obs.ensuredGen, row.ID)
 	e.obs.mu.Unlock()
 	e.expect.mu.Lock()
-	delete(e.expect.expected, databaseDomainKeyPrefix+row.ID)
+	delete(e.expect.expected, databaseOwner(row.ID))
 	e.expect.mu.Unlock()
 	e.ensureForget(e.database.ensure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
 	return nil

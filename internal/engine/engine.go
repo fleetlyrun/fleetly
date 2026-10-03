@@ -200,13 +200,36 @@ type taskDomain struct {
 	locks       sync.Map                            // taskID → *sync.Mutex（驱动环/DeleteTask 收口共享；appLocks 同款不清退裁决 E30）
 }
 
+// ownerDomain 是观测归属的域判别。
+type ownerDomain uint8
+
+const (
+	ownerApp      ownerDomain = iota // App 进程载体
+	ownerDatabase                    // Database 载体（ADR-0029）
+	ownerSystem                      // 受管域进程载体（fleetly/system）
+)
+
+// workloadOwner 是 workloadID 与 Drift 期望锚的类型化归属（域 + 域内锚
+// ID）。取代三套字符串前缀词汇（appID 直填 / database/<id> /
+// fleetly/system/<process>）——观测路由与看门狗按域分派不再前缀匹配；
+// workload.stopped 载荷的 app_id 字段仅 App 域载体携带（词汇回归
+// CONTEXT.md：app_id 是 App 行 ID，不是内部路由键——架构评审第二轮
+// 候选 5 行为批，2026-10-03）。
+type workloadOwner struct {
+	domain ownerDomain
+	id     string // App 行 ID / Database 行 ID / 受管进程名
+}
+
+func appOwner(appID string) workloadOwner      { return workloadOwner{ownerApp, appID} }
+func databaseOwner(id string) workloadOwner    { return workloadOwner{ownerDatabase, id} }
+func systemOwner(process string) workloadOwner { return workloadOwner{ownerSystem, process} }
+
 // observDomain 是观测枢纽（全部域共用的载体观测/归属/就绪门——Watch
-// 消费单点路由写这里，各域读自己的键；归属 map 的键前缀分域：App 直填
-// appID / database/<id> / fleetly/system/<process>）。
+// 消费单点路由写这里，各域读自己的键）。
 type observDomain struct {
 	mu           sync.RWMutex
 	observations map[string]capability.WorkloadEvent // workloadID → 最新观测
-	workloadApp  map[string]string                   // workloadID → 归属域键（观测路由/drift 跳过面）
+	workloadApp  map[string]workloadOwner            // workloadID → 归属（观测路由/drift 跳过面）
 	ensuredGen   map[string]uint64                   // workloadID → 最近 Ensure 的 Generation（就绪门集合界定）
 	ensuredSpec  map[string]capability.Workload      // workloadID → 最近 Ensure 的投影 spec（ADR-0022 spec 对照 drift）
 }
@@ -220,10 +243,10 @@ type driftDomain struct {
 	stoppedSig map[string]string // workloadID → 稳态 stopped 签名
 }
 
-// expectDomain 是 Drift 对照锚（域键 → 最近 Ensure 的 Generation）。
+// expectDomain 是 Drift 对照锚（类型化归属 → 最近 Ensure 的 Generation）。
 type expectDomain struct {
 	mu       sync.Mutex
-	expected map[string]uint64
+	expected map[workloadOwner]uint64
 }
 
 // managedDomain 是受管域状态（Generation 实例态（C5：多 Engine 实例互不
@@ -453,10 +476,10 @@ func New(deps Deps, opts Options) *Engine {
 	e.build.logs = newLogBuffer(500)
 	e.build.inputs = make(map[string]capability.BuildRequest)
 	e.obs.observations = make(map[string]capability.WorkloadEvent)
-	e.obs.workloadApp = make(map[string]string)
+	e.obs.workloadApp = make(map[string]workloadOwner)
 	e.obs.ensuredGen = make(map[string]uint64)
 	e.obs.ensuredSpec = make(map[string]capability.Workload)
-	e.expect.expected = make(map[string]uint64)
+	e.expect.expected = make(map[workloadOwner]uint64)
 	e.drift.sig = make(map[string]string)
 	e.drift.stoppedSig = make(map[string]string)
 	e.task.workloadRun = make(map[string]string)

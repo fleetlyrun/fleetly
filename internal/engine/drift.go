@@ -8,7 +8,6 @@ package engine
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -96,23 +95,22 @@ func (e *Engine) driftScan(ctx context.Context) {
 		inFlight[d.AppID] = true
 	}
 
-	// 扫描面 = 当前期望缓存（启动基线重放或部署 Ensure 建立）。
+	// 扫描面 = 当前期望缓存（启动基线重放或部署 Ensure 建立）。spec 对照
+	// 只走 App 域 owner——Database/受管域 owner 只入看门狗（expected 已
+	// 登记），不进 App 表解析面（否则每拍一条噪声错；typed owner 域分派
+	// 取代前缀匹配）。
 	e.expect.mu.Lock()
 	appIDs := make([]string, 0, len(e.expect.expected))
-	for appID := range e.expect.expected {
-		appIDs = append(appIDs, appID)
+	for owner := range e.expect.expected {
+		if owner.domain == ownerApp {
+			appIDs = append(appIDs, owner.id)
+		}
 	}
 	e.expect.mu.Unlock()
 
 	for _, appID := range appIDs {
 		if ctx.Err() != nil {
 			return
-		}
-		// 受管域键（fleetly/system/*）与 Database 域键（database/*）只入
-		// 看门狗（expected 已登记），不进 spec 对照——非 App 行键，App 表
-		// 解析面跳过（否则每拍一条噪声错）。
-		if strings.HasPrefix(appID, managedDomainKeyPrefix) || strings.HasPrefix(appID, databaseDomainKeyPrefix) {
-			continue
 		}
 		if inspector == nil {
 			continue
@@ -140,21 +138,26 @@ func (e *Engine) driftScan(ctx context.Context) {
 		wid string
 		ev  capability.WorkloadEvent
 	}
-	expected := map[string]uint64{}
+	expected := map[workloadOwner]uint64{}
 	e.expect.mu.Lock()
-	for appID, gen := range e.expect.expected {
-		expected[appID] = gen
+	for owner, gen := range e.expect.expected {
+		expected[owner] = gen
 	}
 	e.expect.mu.Unlock()
 
 	var candidates []wlObs
 	e.obs.mu.RLock()
-	for wid, appID := range e.obs.workloadApp {
-		if expected[appID] == 0 || inFlight[appID] {
+	for wid, owner := range e.obs.workloadApp {
+		if expected[owner] == 0 {
+			continue
+		}
+		// 在途 App 不发稳态 stopped（部署中的停止是部署链的事）；非 App
+		// 域（Database/受管）无在途概念，恒可判。
+		if owner.domain == ownerApp && inFlight[owner.id] {
 			continue
 		}
 		ev, seen := e.obs.observations[wid]
-		if seen && ev.State == capability.WorkloadStopped && uint64(ev.Generation) == expected[appID] {
+		if seen && ev.State == capability.WorkloadStopped && uint64(ev.Generation) == expected[owner] {
 			candidates = append(candidates, wlObs{wid: wid, ev: ev})
 		}
 	}
@@ -181,7 +184,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 // 镜像），以显式证据重开此案，不在此预放行。
 func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation) {
 	e.expect.mu.Lock()
-	expected := e.expect.expected[appID]
+	expected := e.expect.expected[appOwner(appID)]
 	e.expect.mu.Unlock()
 
 	type pendingDrift struct {
@@ -238,7 +241,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 	for _, p := range pending {
 		if _, err := e.outbox.Append(ctx, e.db.Runner(),
 			eventWorkloadDrift, "workload", p.wid,
-			driftEventPayloadJSON(p.ev, appID, expected)); err != nil {
+			driftEventPayloadJSON(p.ev, appOwner(appID), expected)); err != nil {
 			e.log.Error("drift scan: event", "workload", p.wid, "err", err)
 		}
 	}
@@ -269,10 +272,15 @@ func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capa
 	}
 	e.drift.stoppedSig[wid] = sig
 	e.drift.stoppedMu.Unlock()
+	// app_id 仅 App 域载体携带（typed owner 行为批）：内部路由键不再漏进
+	// 用户可见载荷——数据库/受管载体的 stopped 事件不带伪 app_id。
 	appID := func() string {
 		e.obs.mu.RLock()
 		defer e.obs.mu.RUnlock()
-		return e.obs.workloadApp[wid]
+		if owner, ok := e.obs.workloadApp[wid]; ok && owner.domain == ownerApp {
+			return owner.id
+		}
+		return ""
 	}()
 	_, err := e.outbox.Append(ctx, e.db.Runner(), eventWorkloadStopped, "workload", wid,
 		stoppedEventPayloadJSON(wid, appID, ev))

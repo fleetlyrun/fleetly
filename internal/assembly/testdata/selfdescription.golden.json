@@ -3034,7 +3034,6 @@
         },
         "required": [
           "workload_id",
-          "app_id",
           "expected_generation",
           "observed_generation",
           "observed_state"
@@ -3068,7 +3067,6 @@
         },
         "required": [
           "workload_id",
-          "app_id",
           "generation",
           "state"
         ],

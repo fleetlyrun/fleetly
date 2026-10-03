@@ -25,7 +25,7 @@ func TestTeardownAppRemovesCarriersAndClearsCaches(t *testing.T) {
 
 	// 缓存收口：归属/期望清空（drift/steady-state 不再咬已删 App）。
 	e.expect.mu.Lock()
-	_, hasExpected := e.expect.expected[tAppID]
+	_, hasExpected := e.expect.expected[appOwner(tAppID)]
 	e.expect.mu.Unlock()
 	assert.False(t, hasExpected, "expected-generation cache must be cleared")
 	e.obs.mu.RLock()

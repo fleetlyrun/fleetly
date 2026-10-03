@@ -275,7 +275,7 @@ func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
 	assert.False(t, hasObs)
 	assert.False(t, hasOwner)
 	e.expect.mu.Lock()
-	_, hasExpected := e.expect.expected[databaseDomainKeyPrefix+tDatabaseID]
+	_, hasExpected := e.expect.expected[databaseOwner(tDatabaseID)]
 	e.expect.mu.Unlock()
 	assert.False(t, hasExpected)
 

@@ -61,10 +61,6 @@ func (m *managedGenState) next(fp string) uint64 {
 	return gen
 }
 
-// managedDomainKeyPrefix 是受管域在归属/期望缓存中的键前缀
-// （fleetly/system/<process>——非 App 行键，App 表解析面据此跳过）。
-const managedDomainKeyPrefix = "fleetly/system/"
-
 // managedProviderDecl 是一个受管 Provider 的 reconciler 投影：声明 +
 // 材料源子面（FacesOf 探测产物）+ 是否挂活跃项目网（Edge 要跨网触达
 // 后端；zot 只需被发布端口可达，附录 B.1）。
@@ -150,7 +146,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		e.ensureRemember(e.managed.ensure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
 		for _, w := range ws {
 			e.obs.mu.Lock()
-			e.obs.workloadApp[w.ID] = managedDomainKeyPrefix + w.Process // 归属登记（观测/drift 面）
+			e.obs.workloadApp[w.ID] = systemOwner(w.Process) // 归属登记（观测/drift 面）
 			e.obs.ensuredGen[w.ID] = gen
 			e.obs.mu.Unlock()
 		}
@@ -159,7 +155,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。
 		e.expect.mu.Lock()
 		for _, w := range ws {
-			e.expect.expected[managedDomainKeyPrefix+w.Process] = gen
+			e.expect.expected[systemOwner(w.Process)] = gen
 		}
 		e.expect.mu.Unlock()
 	}

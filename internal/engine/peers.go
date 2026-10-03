@@ -178,11 +178,11 @@ func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 		if len(ensured.NetworkRefs) == 0 {
 			continue
 		}
-		appID := e.obs.workloadApp[wid]
-		if appID == "" {
+		owner := e.obs.workloadApp[wid]
+		if owner.domain != ownerApp {
 			continue
 		}
-		appRefs[appID] = append(appRefs[appID], ensured.NetworkRefs...)
+		appRefs[owner.id] = append(appRefs[owner.id], ensured.NetworkRefs...)
 	}
 	e.obs.mu.RUnlock()
 	if len(appRefs) == 0 {

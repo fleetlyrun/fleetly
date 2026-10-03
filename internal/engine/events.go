@@ -31,8 +31,10 @@ type deploymentEventPayload struct {
 // workload.drift_detected（per-Workload 粒度 + 去抖，2026-09-30 裁决；
 // ADR-0022 起 gen 偏离与 spec 失配双路径共用）。
 type driftEventPayload struct {
-	WorkloadID         string `json:"workload_id"`
-	AppID              string `json:"app_id"`
+	WorkloadID string `json:"workload_id"`
+	// AppID 仅 App 域载体携带（omitted 于 Database/受管载体——app_id 是
+	// App 行 ID，不是内部路由键；架构评审第二轮候选 5 行为批）。
+	AppID              string `json:"app_id,omitempty"`
 	ExpectedGeneration uint64 `json:"expected_generation"`
 	ObservedGeneration uint64 `json:"observed_generation"`
 	ObservedState      string `json:"observed_state"`
@@ -43,7 +45,9 @@ type driftEventPayload struct {
 // 当前 Generation 观测到 stopped——只观测不迁移，处置由人/Agent 决定）。
 type stoppedEventPayload struct {
 	WorkloadID string `json:"workload_id"`
-	AppID      string `json:"app_id"`
+	// AppID 仅 App 域载体携带（omitted 于 Database/受管载体——app_id 是
+	// App 行 ID，不是内部路由键；架构评审第二轮候选 5 行为批）。
+	AppID      string `json:"app_id,omitempty"`
 	Generation uint64 `json:"generation"`
 	State      string `json:"state"`
 	Message    string `json:"message,omitempty"`
@@ -308,7 +312,12 @@ func deploymentEventPayloadJSON(d *deployment.Deployment) []byte {
 	return b
 }
 
-func driftEventPayloadJSON(ev capability.WorkloadEvent, appID string, expected uint64) []byte {
+func driftEventPayloadJSON(ev capability.WorkloadEvent, owner workloadOwner, expected uint64) []byte {
+	// app_id 仅 App 域载体携带（同 stopped 载荷口径）。
+	appID := ""
+	if owner.domain == ownerApp {
+		appID = owner.id
+	}
 	b, _ := json.Marshal(driftEventPayload{
 		WorkloadID:         ev.WorkloadID,
 		AppID:              appID,

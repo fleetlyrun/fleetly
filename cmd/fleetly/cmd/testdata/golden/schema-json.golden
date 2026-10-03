@@ -406,13 +406,13 @@
       "name": "workload.drift_detected",
       "kind": "event",
       "summary": "Observed workload diverged from the ensured generation or spec (ADR-0022).",
-      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"expected_generation\":{\"type\":\"integer\"},\"message\":{\"type\":\"string\"},\"observed_generation\":{\"type\":\"integer\"},\"observed_state\":{\"type\":\"string\"},\"workload_id\":{\"type\":\"string\"}},\"required\":[\"workload_id\",\"app_id\",\"expected_generation\",\"observed_generation\",\"observed_state\"],\"type\":\"object\"}"
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"expected_generation\":{\"type\":\"integer\"},\"message\":{\"type\":\"string\"},\"observed_generation\":{\"type\":\"integer\"},\"observed_state\":{\"type\":\"string\"},\"workload_id\":{\"type\":\"string\"}},\"required\":[\"workload_id\",\"expected_generation\",\"observed_generation\",\"observed_state\"],\"type\":\"object\"}"
     },
     {
       "name": "workload.stopped",
       "kind": "event",
       "summary": "A steady-state workload was observed stopped at the current generation.",
-      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"generation\":{\"type\":\"integer\"},\"message\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"},\"workload_id\":{\"type\":\"string\"}},\"required\":[\"workload_id\",\"app_id\",\"generation\",\"state\"],\"type\":\"object\"}"
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"generation\":{\"type\":\"integer\"},\"message\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"},\"workload_id\":{\"type\":\"string\"}},\"required\":[\"workload_id\",\"generation\",\"state\"],\"type\":\"object\"}"
     }
   ]
 }

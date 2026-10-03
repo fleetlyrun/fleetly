@@ -57,7 +57,7 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 	e.obs.mu.Lock()
 	var wids []string
 	for wid, owner := range e.obs.workloadApp {
-		if owner == appID {
+		if owner.domain == ownerApp && owner.id == appID {
 			wids = append(wids, wid)
 		}
 	}
@@ -69,7 +69,7 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 	}
 	e.obs.mu.Unlock()
 	e.expect.mu.Lock()
-	delete(e.expect.expected, appID)
+	delete(e.expect.expected, appOwner(appID))
 	e.expect.mu.Unlock()
 	e.drift.mu.Lock()
 	for _, wid := range wids {

@@ -98,11 +98,11 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 // Ensure 或启动基线重放重建（ADR-0022）。
 func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capability.Workload) {
 	e.expect.mu.Lock()
-	e.expect.expected[d.AppID] = gen
+	e.expect.expected[appOwner(d.AppID)] = gen
 	e.expect.mu.Unlock()
 	e.obs.mu.Lock()
 	for _, w := range ws {
-		e.obs.workloadApp[w.ID] = d.AppID
+		e.obs.workloadApp[w.ID] = appOwner(d.AppID)
 		e.obs.ensuredGen[w.ID] = gen
 		e.obs.ensuredSpec[w.ID] = w
 	}
@@ -121,7 +121,7 @@ func (e *Engine) releaseReadyGen(d *deployment.Deployment, gen uint64) bool {
 	defer e.obs.mu.RUnlock()
 	count := 0
 	for wid, owner := range e.obs.workloadApp {
-		if owner != d.AppID || e.obs.ensuredGen[wid] != gen {
+		if owner.domain != ownerApp || owner.id != d.AppID || e.obs.ensuredGen[wid] != gen {
 			continue
 		}
 		count++
@@ -159,7 +159,7 @@ func (e *Engine) scanGeneration(appID string, gen uint64, pred func(capability.W
 	defer e.obs.mu.RUnlock()
 	count := 0
 	for wid, owner := range e.obs.workloadApp {
-		if owner != appID || e.obs.ensuredGen[wid] != gen {
+		if owner.domain != ownerApp || owner.id != appID || e.obs.ensuredGen[wid] != gen {
 			continue
 		}
 		count++
@@ -266,13 +266,13 @@ func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined
 // 签名（下次偏离可再发）。
 func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	e.obs.mu.RLock()
-	appID, owned := e.obs.workloadApp[ev.WorkloadID]
+	owner, owned := e.obs.workloadApp[ev.WorkloadID]
 	e.obs.mu.RUnlock()
 	if !owned {
 		return // 非平台管辖载体：观测缓存已登记，事件不落（孤儿面后续批）
 	}
 	e.expect.mu.Lock()
-	expected := e.expect.expected[appID]
+	expected := e.expect.expected[owner]
 	e.expect.mu.Unlock()
 
 	if expected != 0 && uint64(ev.Generation) == expected && !ev.Drift {
@@ -295,7 +295,7 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	e.drift.mu.Unlock()
 
 	_, err := e.outbox.Append(ctx, e.db.Runner(), eventWorkloadDrift, "workload", ev.WorkloadID,
-		driftEventPayloadJSON(ev, appID, expected))
+		driftEventPayloadJSON(ev, owner, expected))
 	if err != nil {
 		e.log.Error("engine watch: drift event", "workload", ev.WorkloadID, "err", err)
 	}
