@@ -88,6 +88,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"configs list", []string{"configs", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"volumes create", []string{"volumes", "create", "--project", "GOLDEN_PROJECT", "data"}, 0},
 		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "default"}, 0},
+		// 只读 list：--json 轮幂等重跑同响应（本轮仅 default 一网——messaging
+		// 的网在后续步骤才建）。
+		{"networks list", []string{"networks", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}, 0},
 		{"routes list", []string{"routes", "list"}, 0},
 

@@ -447,6 +447,44 @@ func newNetworksCreateVerb() commands.Command {
 	}
 }
 
+// newNetworksListVerb 构造 networks list：ListNetworks 的 CLI 面（此前仅
+// quickstart 内部消费，分诊表引用的是死动词）。输出字段对齐 proto Network
+// 消息（project 过滤已含 project 维度，不重复列）。
+func newNetworksListVerb() commands.Command {
+	const name = "list"
+	var project string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List a project's networks",
+		usage:    "networks list --project PROJECT_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 0 {
+				return usageErr(name, "takes no positional arguments")
+			}
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.Networks.ListNetworks(ctx, &structurev1.ListNetworksRequest{ProjectId: project})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintln(env.Stdout, "ID\tNAME\tEGRESS_NONE\tCREATED")
+				for _, n := range resp.GetNetworks() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%t\t%s\n", n.GetId(), n.GetName(), n.GetEgressNone(), n.GetCreatedAt())
+				}
+			})
+		},
+	}
+}
+
 // ---- networks peers（跨 Project 挂靠声明，ADR-0013 附录 A） ----
 
 func newNetworksDeclareVerb() commands.Command {

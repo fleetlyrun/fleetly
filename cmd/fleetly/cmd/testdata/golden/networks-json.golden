@@ -2,6 +2,7 @@
   "approve",
   "create",
   "declare",
+  "list",
   "peers",
   "revoke"
 ]

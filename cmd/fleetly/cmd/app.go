@@ -71,7 +71,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("configs", "manage versioned config files", newConfigsPutVerb(), newConfigsListVerb()),
 		groupVerb("volumes", "manage volumes", newVolumesCreateVerb()),
 		groupVerb("networks", "manage project networks and cross-project peer attachments",
-			newNetworksCreateVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
+			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
 			newNetworksRevokeVerb(), newNetworksPeersVerb()),
 		// 托管数据服务（F1.12，ADR-0029）。
 		groupVerb("databases", "manage managed data services (postgres/pgvector/redis templates; credential values never shown)",
