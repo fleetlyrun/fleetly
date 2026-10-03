@@ -130,14 +130,17 @@ func NewBuilderProviders() (map[string]capability.Builder, func(), error) {
 }
 
 // NewRegistryProvider 构造 Registry Provider（zot 受管自宿；可选能力——
-// 未配置 FLEETLY_REGISTRY_ADDR 时返回 nil，Registry 面停用：镜像直投部署
-// 不受影响，build 源部署在 prepare 精确失败，ADR-0019 附录 B.2/B.5①）。
-func NewRegistryProvider(app lynx.App) (capability.Registry, func(), error) {
+// config.registry.addr 与 env FLEETLY_REGISTRY_ADDR 皆未配置时返回 nil，
+// Registry 面停用：镜像直投部署不受影响，build 源部署在 prepare 精确失败，
+// ADR-0019 附录 B.2/B.5①）。config 值优先（ADR-0036）：经装配 ctx 注入
+// 工厂，env 是同键旧通道兜底。
+func NewRegistryProvider(app lynx.App, cfg *config.AppConfig) (capability.Registry, func(), error) {
 	providers := capability.RegisteredFactories()
 	if len(providers[capability.KindRegistry]) == 0 {
 		return nil, func() {}, nil
 	}
-	p, err := capability.Build(context.Background(), capability.KindRegistry, "")
+	ctx := capability.WithRegistryAddr(context.Background(), cfg.RegistryAddr())
+	p, err := capability.Build(ctx, capability.KindRegistry, "")
 	if err != nil {
 		app.Logger().Warn("registry provider unavailable; build-source deployments disabled", "err", err)
 		return nil, func() {}, nil

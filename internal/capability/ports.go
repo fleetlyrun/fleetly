@@ -166,6 +166,26 @@ type RegistryEndpoint struct {
 	Cred RegistryCredential
 }
 
+// registryAddrKey 是 Registry 参考地址的装配期 ctx 注入键（唯一写入点在
+// internal/assembly 的 NewRegistryProvider）。
+type registryAddrKey struct{}
+
+// WithRegistryAddr 把 Registry 参考地址挂进装配 ctx：config.registry.addr
+// 是地址唯一契约源，工厂经 RegistryAddrFromContext 读取；空值不注入
+// （工厂 env 旧通道兜底维持旧行为，ADR-0036）。
+func WithRegistryAddr(ctx context.Context, addr string) context.Context {
+	if addr == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, registryAddrKey{}, addr)
+}
+
+// RegistryAddrFromContext 读回装配期注入的 Registry 参考地址（未注入 = 空）。
+func RegistryAddrFromContext(ctx context.Context) string {
+	addr, _ := ctx.Value(registryAddrKey{}).(string)
+	return addr
+}
+
 // Logging 是日志 Capability 端口（VictoriaLogs 受管自宿为默认；N2 持久
 // 检索，N0 诚实标注"仅实时+最近缓冲"）。
 type Logging interface {

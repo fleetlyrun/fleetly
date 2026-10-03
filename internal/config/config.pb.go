@@ -26,10 +26,12 @@ const (
 )
 
 type AppConfig struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Server        *Server                `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
-	Data          *Data                  `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
-	Engine        *Engine                `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
+	state  protoimpl.MessageState `protogen:"open.v1"`
+	Server *Server                `protobuf:"bytes,1,opt,name=server,proto3" json:"server,omitempty"`
+	Data   *Data                  `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	Engine *Engine                `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
+	// 受管镜像仓库面（ADR-0036）：引用地址可配置，空值 = 停用（现状）。
+	Registry      *Registry `protobuf:"bytes,4,opt,name=registry,proto3" json:"registry,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -85,10 +87,19 @@ func (x *AppConfig) GetEngine() *Engine {
 	return nil
 }
 
+func (x *AppConfig) GetRegistry() *Registry {
+	if x != nil {
+		return x.Registry
+	}
+	return nil
+}
+
 type Server struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Grpc          *GRPC                  `protobuf:"bytes,1,opt,name=grpc,proto3" json:"grpc,omitempty"`
-	Http          *HTTP                  `protobuf:"bytes,2,opt,name=http,proto3" json:"http,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Grpc  *GRPC                  `protobuf:"bytes,1,opt,name=grpc,proto3" json:"grpc,omitempty"`
+	Http  *HTTP                  `protobuf:"bytes,2,opt,name=http,proto3" json:"http,omitempty"`
+	// Edge config 拉取端点（traefik HTTP provider 的控制面侧监听，ADR-0036）。
+	EdgeConfig    *EdgeConfig `protobuf:"bytes,3,opt,name=edge_config,json=edgeConfig,proto3" json:"edge_config,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -133,6 +144,13 @@ func (x *Server) GetGrpc() *GRPC {
 func (x *Server) GetHttp() *HTTP {
 	if x != nil {
 		return x.Http
+	}
+	return nil
+}
+
+func (x *Server) GetEdgeConfig() *EdgeConfig {
+	if x != nil {
+		return x.EdgeConfig
 	}
 	return nil
 }
@@ -227,6 +245,102 @@ func (x *HTTP) GetAddr() string {
 	return ""
 }
 
+type EdgeConfig struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Edge config 拉取端点（traefik HTTP provider 的控制面侧）监听地址；
+	// 空值回退默认 ":9082"。该端点无认证（traefik HTTP provider 不支持
+	// 凭证的既知形态），公网可达 = 任意人可改写全量路由——钉内网/VPC
+	// 地址或以防火墙封公网（ADR-0036）。
+	Addr          string `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EdgeConfig) Reset() {
+	*x = EdgeConfig{}
+	mi := &file_config_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EdgeConfig) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EdgeConfig) ProtoMessage() {}
+
+func (x *EdgeConfig) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EdgeConfig.ProtoReflect.Descriptor instead.
+func (*EdgeConfig) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *EdgeConfig) GetAddr() string {
+	if x != nil {
+		return x.Addr
+	}
+	return ""
+}
+
+type Registry struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// 受管仓库引用地址（含端口，如 10.124.0.3:5000）：镜像引用与 dockerd
+	// --insecure-registry 的同一真源；空值 = 受管仓库停用（build 源部署
+	// 在 prepare 精确失败）。与旧通道 env FLEETLY_REGISTRY_ADDR 同键，
+	// config 值优先（ADR-0036）。env 形态 FLEETLY_REGISTRY_ADDR。
+	Addr          string `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *Registry) Reset() {
+	*x = Registry{}
+	mi := &file_config_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *Registry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*Registry) ProtoMessage() {}
+
+func (x *Registry) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use Registry.ProtoReflect.Descriptor instead.
+func (*Registry) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *Registry) GetAddr() string {
+	if x != nil {
+		return x.Addr
+	}
+	return ""
+}
+
 type Data struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// 数据根：SQLite、密封密钥等平台私有状态的落盘目录；
@@ -238,7 +352,7 @@ type Data struct {
 
 func (x *Data) Reset() {
 	*x = Data{}
-	mi := &file_config_proto_msgTypes[4]
+	mi := &file_config_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -250,7 +364,7 @@ func (x *Data) String() string {
 func (*Data) ProtoMessage() {}
 
 func (x *Data) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[4]
+	mi := &file_config_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -263,7 +377,7 @@ func (x *Data) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Data.ProtoReflect.Descriptor instead.
 func (*Data) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{4}
+	return file_config_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *Data) GetRoot() string {
@@ -286,7 +400,7 @@ type Engine struct {
 
 func (x *Engine) Reset() {
 	*x = Engine{}
-	mi := &file_config_proto_msgTypes[5]
+	mi := &file_config_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -298,7 +412,7 @@ func (x *Engine) String() string {
 func (*Engine) ProtoMessage() {}
 
 func (x *Engine) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[5]
+	mi := &file_config_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -311,7 +425,7 @@ func (x *Engine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Engine.ProtoReflect.Descriptor instead.
 func (*Engine) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{5}
+	return file_config_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Engine) GetScheduleOverlapPolicy() string {
@@ -325,17 +439,25 @@ var File_config_proto protoreflect.FileDescriptor
 
 const file_config_proto_rawDesc = "" +
 	"\n" +
-	"\fconfig.proto\x12\x11fleetly.config.v1\"\x9e\x01\n" +
+	"\fconfig.proto\x12\x11fleetly.config.v1\"\xd7\x01\n" +
 	"\tAppConfig\x121\n" +
 	"\x06server\x18\x01 \x01(\v2\x19.fleetly.config.v1.ServerR\x06server\x12+\n" +
 	"\x04data\x18\x02 \x01(\v2\x17.fleetly.config.v1.DataR\x04data\x121\n" +
-	"\x06engine\x18\x03 \x01(\v2\x19.fleetly.config.v1.EngineR\x06engine\"b\n" +
+	"\x06engine\x18\x03 \x01(\v2\x19.fleetly.config.v1.EngineR\x06engine\x127\n" +
+	"\bregistry\x18\x04 \x01(\v2\x1b.fleetly.config.v1.RegistryR\bregistry\"\xa2\x01\n" +
 	"\x06Server\x12+\n" +
 	"\x04grpc\x18\x01 \x01(\v2\x17.fleetly.config.v1.GRPCR\x04grpc\x12+\n" +
-	"\x04http\x18\x02 \x01(\v2\x17.fleetly.config.v1.HTTPR\x04http\"\x1a\n" +
+	"\x04http\x18\x02 \x01(\v2\x17.fleetly.config.v1.HTTPR\x04http\x12>\n" +
+	"\vedge_config\x18\x03 \x01(\v2\x1d.fleetly.config.v1.EdgeConfigR\n" +
+	"edgeConfig\"\x1a\n" +
 	"\x04GRPC\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04HTTP\x12\x12\n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\" \n" +
+	"\n" +
+	"EdgeConfig\x12\x12\n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1e\n" +
+	"\bRegistry\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04Data\x12\x12\n" +
 	"\x04root\x18\x01 \x01(\tR\x04root\"@\n" +
@@ -354,26 +476,30 @@ func file_config_proto_rawDescGZIP() []byte {
 	return file_config_proto_rawDescData
 }
 
-var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
+var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
 var file_config_proto_goTypes = []any{
-	(*AppConfig)(nil), // 0: fleetly.config.v1.AppConfig
-	(*Server)(nil),    // 1: fleetly.config.v1.Server
-	(*GRPC)(nil),      // 2: fleetly.config.v1.GRPC
-	(*HTTP)(nil),      // 3: fleetly.config.v1.HTTP
-	(*Data)(nil),      // 4: fleetly.config.v1.Data
-	(*Engine)(nil),    // 5: fleetly.config.v1.Engine
+	(*AppConfig)(nil),  // 0: fleetly.config.v1.AppConfig
+	(*Server)(nil),     // 1: fleetly.config.v1.Server
+	(*GRPC)(nil),       // 2: fleetly.config.v1.GRPC
+	(*HTTP)(nil),       // 3: fleetly.config.v1.HTTP
+	(*EdgeConfig)(nil), // 4: fleetly.config.v1.EdgeConfig
+	(*Registry)(nil),   // 5: fleetly.config.v1.Registry
+	(*Data)(nil),       // 6: fleetly.config.v1.Data
+	(*Engine)(nil),     // 7: fleetly.config.v1.Engine
 }
 var file_config_proto_depIdxs = []int32{
 	1, // 0: fleetly.config.v1.AppConfig.server:type_name -> fleetly.config.v1.Server
-	4, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
-	5, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
-	2, // 3: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
-	3, // 4: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
-	5, // [5:5] is the sub-list for method output_type
-	5, // [5:5] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	6, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
+	7, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
+	5, // 3: fleetly.config.v1.AppConfig.registry:type_name -> fleetly.config.v1.Registry
+	2, // 4: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
+	3, // 5: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
+	4, // 6: fleetly.config.v1.Server.edge_config:type_name -> fleetly.config.v1.EdgeConfig
+	7, // [7:7] is the sub-list for method output_type
+	7, // [7:7] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_config_proto_init() }
@@ -387,7 +513,7 @@ func file_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_proto_rawDesc), len(file_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   6,
+			NumMessages:   8,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

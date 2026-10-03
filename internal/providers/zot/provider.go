@@ -249,15 +249,18 @@ func (p *Provider) htpasswdLine(username, password string) string {
 	return p.htpasswd
 }
 
-// init 自注册工厂（cmd/fleetlyd blank import 触发）。地址与数据根经环境
-// 变量注入（FLEETLY_EDGE_CONFIG_ENDPOINT 同款 env 文化；install.sh 物化
-// 进 unit——附录 B.2）。地址为空 = Registry 面停用（build 源部署在 prepare
-// 精确失败，附录 B.5①）。
+// init 自注册工厂（cmd/fleetlyd blank import 触发）。地址解析序：装配 ctx
+// （config.registry.addr，唯一契约源，ADR-0036）优先，env FLEETLY_REGISTRY_ADDR
+// 是 install.sh 物化进 unit 的旧通道兜底。两者皆空 = Registry 面停用
+// （build 源部署在 prepare 精确失败，附录 B.5①）。
 func init() {
-	capability.RegisterFactory(capability.KindRegistry, "zot", func(context.Context) (capability.Provider, error) {
-		addr := os.Getenv("FLEETLY_REGISTRY_ADDR")
+	capability.RegisterFactory(capability.KindRegistry, "zot", func(ctx context.Context) (capability.Provider, error) {
+		addr := capability.RegistryAddrFromContext(ctx)
 		if addr == "" {
-			return nil, fmt.Errorf("zot provider: FLEETLY_REGISTRY_ADDR is not set; the managed registry stays disabled")
+			addr = os.Getenv("FLEETLY_REGISTRY_ADDR")
+		}
+		if addr == "" {
+			return nil, fmt.Errorf("zot provider: registry address is not configured (config registry.addr or FLEETLY_REGISTRY_ADDR); the managed registry stays disabled")
 		}
 		dataRoot := os.Getenv("FLEETLY_DATA_ROOT")
 		if dataRoot == "" {

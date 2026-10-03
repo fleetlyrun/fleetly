@@ -94,7 +94,7 @@
 - **受管 zot 边界（ADR-0019 附录 B.5）**：数据卷节点本地无钉住（zot 重调度=镜像丢失，重部署触发重建自愈；运行中服务不受影响）；镜像无 GC（只增）；新 worker 加入时 dockerd 必须带同款 `--insecure-registry 10.124.0.3:5000`。
 - **ssh 命令里的 `$()`/管道在 Windows 侧会被转义吃掉**——远程复杂操作一律写脚本→scp→sh（本 runbook 2026-10-02 的全部诊断脚本在 manager `/root/dogfooding/`）。
 
-### 端口暴露矩阵（操作者责任）
+### 端口暴露矩阵（操作者责任 + 平台自证，ADR-0036）
 
 控制面与受管数据面的端口**全部只允许 VPC/内网可达**（云防火墙/安全组封公网入口；下表是本 runbook 拓扑的核对清单，任何新端口入网前先在此登记）：
 
@@ -105,7 +105,31 @@
 | 9082 | Edge config 拉取端点（traefik HTTP provider） | **无认证**（traefik HTTP provider 不支持凭证的既知形态） | 仅 VPC/内网，**公网可达 = 任意人可改写全量路由** |
 | 5000 | 受管 zot（镜像仓库） | HTTP 明文 + 单一平台凭证（htpasswd） | 仅 VPC/内网；两台 dockerd 的 `--insecure-registry` 同依赖此形态 |
 
+**绑面配置化（ADR-0036）**：四面绑址/引用地址全部可配置（缺省 = 上表现状，升级不静默改绑）。本拓扑的收窄配置示例（fleetlyd 配置文件，钉 VPC eth1 地址）：
+
+```yaml
+server:
+  grpc:
+    addr: "10.124.0.3:9080"   # 注意：CLI 的 FLEETLY_ADDR=127.0.0.1:9080 需同步改指（或经跳板）
+  http:
+    addr: "10.124.0.3:9081"
+  edge_config:
+    addr: "10.124.0.3:9082"
+registry:
+  addr: "10.124.0.3:5000"     # 与旧通道 env FLEETLY_REGISTRY_ADDR 同键，config 值优先
+```
+
+**自证**（防火墙失配从人工核对降为一条命令）：manager 侧带同组 env 跑 doctor——
+
+```sh
+FLEETLY_EDGE_CONFIG_ENDPOINT=http://10.124.0.3:9082/edge/config \
+FLEETLY_REGISTRY_ADDR=10.124.0.3:5000 \
+fleetly doctor
+```
+
+`edge config exposure` / `registry exposure` 两检查对配置地址做公网可达性探测：公网可达即 fail/warn，公网地址不可达 = `self-certified` ok；`bind surface` 行汇报 gRPC/gateway/edge config 三面生效绑址，通配绑定（`0.0.0.0`/`::`/`:port`）显式 warn——钉绑后把同值经 `--bind-grpc` / `--bind-http` / `--bind-edge-config` 传给 doctor 消警示。
+
 已知边界（记档不遮掩）：
 
-1. **zot 平台凭证全域可读**：任何租户可拉他人镜像——单租户窗口下接受；多租户前必须按租户隔离或经 Edge 前置认证（随 ADR 批，不静默升级）。
-2. **9082 无认证**：traefik HTTP provider 无凭证机制的既知形态，绑定面收窄（回环/Unix socket/防火墙白名单）随后续批次；当前防线只有网络位置（VPC 内网）。
+1. **zot 平台凭证全域可读**：任何租户可拉他人镜像——单租户窗口下接受；多租户前必须按租户隔离或经 Edge 前置认证（per-Project 凭证/前置认证已裁决推迟 N2，ADR-0036 决策 3，不静默升级）。
+2. **9082 无认证**：traefik HTTP provider 无凭证机制的既知形态；绑面已可配置（ADR-0036 `server.edge_config.addr`，可钉回环/VPC 地址）且 doctor 可自证公网不可达；防火墙白名单仍是对外边界，Unix socket 形态仍挂账。

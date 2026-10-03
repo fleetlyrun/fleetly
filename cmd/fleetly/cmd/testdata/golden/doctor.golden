@@ -4,7 +4,11 @@
 [ok  ] clock drift              within tolerance
 [ok  ] fleetlyd grpc (:9080)    listening
 [ok  ] gateway http (:9081)     listening
+[ok  ] edge config exposure     not configured (edge config endpoint stays disabled)
+[ok  ] registry exposure        not configured (managed registry stays disabled)
+[warn] bind surface             grpc :9080, gateway http :9081, edge config :9082 (wildcard: server.grpc.addr, server.http.addr, server.edge_config.addr)
+        advice: wildcard binds listen on every interface; pin the listed config keys to a loopback/VPC address, or enforce the VPC firewall boundary (runbook: port exposure matrix)
 [ok  ] disk                     128.0 GiB free
 [ok  ] fleetlyd 127.0.0.1:9080  healthy, server 0.1.0-test
 
-8 ok, 0 warning(s), 0 failed
+10 ok, 1 warning(s), 0 failed

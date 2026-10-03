@@ -1,9 +1,10 @@
 package cmd
 
 // fleetly doctor（F0.4）：本机诊断（Docker 版本/daemon 可达/swarm 态/
-// fleetlyd 端口监听/磁盘余量/时钟漂移）+ 远程 fleetlyd status 合流，输出
-// 处置建议。探针全部是包级接缝（golden 注入确定性假探针；真机行为由
-// dind smoke 锚定）。--json 双形态；任一 fail 退出码 1（可脚本分支）。
+// fleetlyd 端口监听/端口暴露自证/磁盘余量/时钟漂移）+ 远程 fleetlyd
+// status 合流，输出处置建议。探针全部是包级接缝（golden 注入确定性假
+// 探针；真机行为由 dind smoke 锚定）。--json 双形态；任一 fail 退出码 1
+//（可脚本分支）。
 
 import (
 	"context"
@@ -14,6 +15,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -81,12 +83,21 @@ const (
 func newDoctorVerb() commands.Command {
 	const name = "doctor"
 	var addr string
+	var ex exposureTargets
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "Diagnose the local install (docker, ports, disk, clock) and the remote fleetlyd",
-		usage:    "doctor [--addr ADDR] (local checks probe this machine; remote merges 'fleetly status')",
+		synopsis: "Diagnose the local install (docker, ports, exposure, disk, clock) and the remote fleetlyd",
+		usage:    "doctor [--addr ADDR] [--registry-addr ADDR] [--edge-config-endpoint URL] [--bind-grpc ADDR] [--bind-http ADDR] [--bind-edge-config ADDR]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&addr, "addr", "", fmt.Sprintf("fleetlyd gRPC address to merge status from (env %s)", envAddr))
+			// 暴露自证输入（ADR-0036）：地址旗标缺省回退 daemon 同键 env
+			//（与 install.sh 注入 unit 的一组键）；bind 三面缺省 = config
+			// 缺省——操作者钉绑后应把同值传进来，自证才有真凭据。
+			fs.StringVar(&ex.edgeEndpoint, "edge-config-endpoint", "", fmt.Sprintf("edge config endpoint URL to self-certify (default: env %s)", envEdgeConfigEndpoint))
+			fs.StringVar(&ex.registryAddr, "registry-addr", "", fmt.Sprintf("managed registry address to self-certify (default: env %s)", envRegistryAddr))
+			fs.StringVar(&ex.bindGRPC, "bind-grpc", config.DefaultGRPCAddr, "fleetlyd gRPC bind address as configured (server.grpc.addr)")
+			fs.StringVar(&ex.bindHTTP, "bind-http", config.DefaultHTTPAddr, "gateway HTTP bind address as configured (server.http.addr)")
+			fs.StringVar(&ex.bindEdge, "bind-edge-config", config.DefaultEdgeConfigAddr, "edge config endpoint bind address as configured (server.edge_config.addr)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -95,7 +106,7 @@ func newDoctorVerb() commands.Command {
 			if addr == "" {
 				addr = envOr(envAddr, defaultAddr)
 			}
-			report := runDoctorProbes(ctx, addr)
+			report := runDoctorProbes(ctx, addr, ex.resolved())
 			if jsonOut {
 				return writeJSON(env.Stdout, report)
 			}
@@ -109,7 +120,7 @@ func newDoctorVerb() commands.Command {
 }
 
 // runDoctorProbes 跑全部探针并汇总（探针失败本身就是诊断结论，不中断）。
-func runDoctorProbes(ctx context.Context, addr string) doctorReport {
+func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) doctorReport {
 	var checks []doctorCheck
 	local := func(c doctorCheck) doctorCheck { c.Area = "local"; return c }
 
@@ -172,6 +183,13 @@ func runDoctorProbes(ctx context.Context, addr string) doctorReport {
 		} else {
 			checks = append(checks, local(doctorCheck{Name: p.name, Status: checkOK, Detail: "listening"}))
 		}
+	}
+
+	// 端口暴露自证（ADR-0036）：对配置地址探测公网可达性（公网可达即
+	// fail/warn，自证不可达即 ok）+ 汇报三面生效绑址（通配绑定显式警示）。
+	// 探测复用 probePort 接缝（golden 注入确定性假探针）。
+	for _, c := range runExposureChecks(ex, probePort) {
+		checks = append(checks, local(c))
 	}
 
 	// 磁盘余量（数据根所在卷；doctor 在哪跑就查哪）。

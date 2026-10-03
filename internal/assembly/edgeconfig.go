@@ -13,15 +13,12 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/config"
 )
 
-// DefaultEdgeConfigAddr 是受管 Edge 拉取动态配置的内部端点（traefik
-// --providers.http.endpoint 的目标；独立于公共 REST 面——这是平台与受管
-// 组件的私有通道，不进公共 API 契约。配置面接入 config.proto 后可覆盖）。
-const DefaultEdgeConfigAddr = ":9082"
-
 // NewEdgeConfigServer 装配受管 Edge 配置拉取端点（GET /edge/config 返回
 // 全量动态配置；traefik 按 pollInterval 拉取——控制面是配置真源，端点
-// 永不返回裸 {}，防配置清空事故）。数据面经 capability.ConfigSource
-// 子面（providers 不被 assembly 直接 import，守卫见 internal/guards）。
+// 永不返回裸 {}，防配置清空事故）。监听地址经 config.server.edge_config.addr
+// 可配置（缺省 ":9082" = 现状，ADR-0036——无认证端点，收窄是显式动作）。
+// 数据面经 capability.ConfigSource 子面（providers 不被 assembly 直接
+// import，守卫见 internal/guards）。
 func NewEdgeConfigServer(app lynx.App, cfg *config.AppConfig, edge capability.Edge) (*EdgeConfigServer, error) {
 	if edge == nil {
 		return nil, nil // Edge 未装配：无拉取端点（受管面停用的诚实降级）
@@ -44,7 +41,7 @@ func NewEdgeConfigServer(app lynx.App, cfg *config.AppConfig, edge capability.Ed
 		_, _ = w.Write(body) //nolint:errcheck // 只读快照写出，错误无处置面
 	})
 	srv := lynxhttp.NewServer(mux,
-		lynxhttp.WithAddr(DefaultEdgeConfigAddr),
+		lynxhttp.WithAddr(cfg.EdgeConfigAddr()),
 		lynxhttp.WithLogger(app.Logger()),
 		lynxhttp.WithServerOptions(func(s *http.Server) {
 			s.ReadTimeout = 10 * time.Second

@@ -27,6 +27,10 @@ func injectDoctorProbes(t *testing.T, dk dockerProbeResult, portErr error, diskF
 }
 
 func TestGoldenDoctor(t *testing.T) {
+	// 暴露自证输入钉空（ADR-0036）：golden 断言不依赖环境变量——真机
+	// 由 dind smoke 锚定，夹具路径永远是"未配置面 + 缺省绑面"。
+	t.Setenv(envEdgeConfigEndpoint, "")
+	t.Setenv(envRegistryAddr, "")
 	injectDoctorProbes(t,
 		dockerProbeResult{
 			ClientVersion: "29.7.2", ServerVersion: "29.7.2", SwarmState: "active",
@@ -50,6 +54,8 @@ func TestGoldenDoctor(t *testing.T) {
 }
 
 func TestDoctorFailuresExitNonZero(t *testing.T) {
+	t.Setenv(envEdgeConfigEndpoint, "")
+	t.Setenv(envRegistryAddr, "")
 	injectDoctorProbes(t,
 		dockerProbeResult{Err: "exec: docker: not found"},
 		errors.New("connection refused"), 1<<30, nil,

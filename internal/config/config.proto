@@ -11,11 +11,15 @@ message AppConfig {
   Server server = 1;
   Data data = 2;
   Engine engine = 3;
+  // 受管镜像仓库面（ADR-0036）：引用地址可配置，空值 = 停用（现状）。
+  Registry registry = 4;
 }
 
 message Server {
   GRPC grpc = 1;
   HTTP http = 2;
+  // Edge config 拉取端点（traefik HTTP provider 的控制面侧监听，ADR-0036）。
+  EdgeConfig edge_config = 3;
 }
 
 message GRPC {
@@ -25,6 +29,22 @@ message GRPC {
 
 message HTTP {
   // REST gateway（grpc-gateway）监听地址；空值回退默认 ":9081"。
+  string addr = 1;
+}
+
+message EdgeConfig {
+  // Edge config 拉取端点（traefik HTTP provider 的控制面侧）监听地址；
+  // 空值回退默认 ":9082"。该端点无认证（traefik HTTP provider 不支持
+  // 凭证的既知形态），公网可达 = 任意人可改写全量路由——钉内网/VPC
+  // 地址或以防火墙封公网（ADR-0036）。
+  string addr = 1;
+}
+
+message Registry {
+  // 受管仓库引用地址（含端口，如 10.124.0.3:5000）：镜像引用与 dockerd
+  // --insecure-registry 的同一真源；空值 = 受管仓库停用（build 源部署
+  // 在 prepare 精确失败）。与旧通道 env FLEETLY_REGISTRY_ADDR 同键，
+  // config 值优先（ADR-0036）。env 形态 FLEETLY_REGISTRY_ADDR。
   string addr = 1;
 }
 

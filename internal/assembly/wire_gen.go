@@ -46,7 +46,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	registry, cleanup5, err := NewRegistryProvider(app)
+	registry, cleanup5, err := NewRegistryProvider(app, appConfig)
 	if err != nil {
 		cleanup4()
 		cleanup3()

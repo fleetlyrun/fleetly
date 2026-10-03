@@ -8,6 +8,11 @@ const (
 	// DefaultHTTPAddr REST gateway 监听地址（与 gRPC 端口配对，避开常见
 	// 开发机占用段 8080）。
 	DefaultHTTPAddr = ":9081"
+	// DefaultEdgeConfigAddr Edge config 拉取端点（traefik HTTP provider 的
+	// 控制面侧）监听地址。缺省通配绑定维持 ADR-0019 批次的现状——收窄是
+	// 显式配置动作，不静默改绑（ADR-0036）；无认证端点，公网必须由防火墙
+	// 封死或钉内网地址。
+	DefaultEdgeConfigAddr = ":9082"
 	// DefaultDataRoot 平台私有状态（SQLite/密封密钥）落盘目录；容器形态
 	// 经 FLEETLY_DATA_ROOT 覆盖为 bind 卷（F0.1 安装链）。
 	DefaultDataRoot = "./data"
@@ -37,6 +42,12 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	if c.Server.Http.GetAddr() == "" {
 		c.Server.Http.Addr = DefaultHTTPAddr
 	}
+	if c.Server.GetEdgeConfig() == nil {
+		c.Server.EdgeConfig = &EdgeConfig{}
+	}
+	if c.Server.EdgeConfig.GetAddr() == "" {
+		c.Server.EdgeConfig.Addr = DefaultEdgeConfigAddr
+	}
 	if c.GetData() == nil {
 		c.Data = &Data{}
 	}
@@ -52,7 +63,8 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	return c
 }
 
-// GRPCAddr / HTTPAddr / DataRoot 是带缺省的只读访问器（容忍 nil 链）。
+// GRPCAddr / HTTPAddr / EdgeConfigAddr / DataRoot 是带缺省的只读访问器
+// （容忍 nil 链）。
 func (c *AppConfig) GRPCAddr() string {
 	if addr := c.GetServer().GetGrpc().GetAddr(); addr != "" {
 		return addr
@@ -65,6 +77,20 @@ func (c *AppConfig) HTTPAddr() string {
 		return addr
 	}
 	return DefaultHTTPAddr
+}
+
+// EdgeConfigAddr 是带缺省的 Edge config 拉取端点监听地址访问器（容忍 nil 链）。
+func (c *AppConfig) EdgeConfigAddr() string {
+	if addr := c.GetServer().GetEdgeConfig().GetAddr(); addr != "" {
+		return addr
+	}
+	return DefaultEdgeConfigAddr
+}
+
+// RegistryAddr 是受管仓库引用地址访问器（容忍 nil 链）。无缺省可回退：
+// 空值 = 受管仓库停用，与未设 env 的现状一致（ADR-0036）。
+func (c *AppConfig) RegistryAddr() string {
+	return c.GetRegistry().GetAddr()
 }
 
 func (c *AppConfig) DataRoot() string {
