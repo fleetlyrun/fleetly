@@ -98,23 +98,8 @@ func (e *Engine) taskStep(ctx context.Context) {
 	}
 }
 
-// groupDrivingRunsByTask 把全量 driving Run 行按 Task 分组，组内保持
-// 新→旧（id DESC）序——ListDriving 全局 id ASC，逐组原地反转即得与
-// ListByTaskStates 完全一致的方向锚（P1 修复#7：过量排空"停新保老"
-// 依赖此序，方向倒置即停老保新，2026-10-02 实证缺陷）。
-func groupDrivingRunsByTask(runs []run.Run) map[string][]run.Run {
-	out := make(map[string][]run.Run)
-	for i := range runs {
-		out[runs[i].TaskID] = append(out[runs[i].TaskID], runs[i])
-	}
-	for id := range out {
-		g := out[id]
-		for l, r := 0, len(g)-1; l < r; l, r = l+1, r-1 {
-			g[l], g[r] = g[r], g[l]
-		}
-	}
-	return out
-}
+// groupDrivingRunsByTask（分组 + 有序视图构造）与 runsByTask 不变量
+//（方向锚/双占用规则）收口在 taskview.go。
 
 // sweepRevokedOwners 是属主吊销排空的拉式扫描（P1-8：吊销排空走 task 环
 // 周期扫 revoked 属主——拉式、重启安全；Task 行记 owner_token_id 引用）。
@@ -171,11 +156,17 @@ func (e *Engine) sweepZombieRuns(ctx context.Context) error {
 	return nil
 }
 
-// driveTask 驱动单个 Task 一拍：lease 到期排空 → janitor（TTL/停止兜底）→
-// 终态镜像/排空收口 → 补足 → Ensure（期望集收敛）。持有 Task 级互斥
-// （DeleteTask 的载体收口与本环互斥，与 appLocks 同款）。runs 是本拍批量
-// 预取的本 Task 驱动 Run 集（新→旧序，taskStep 分组产物——N1 C18）。
-func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs []run.Run) {
+// driveTask 驱动单个 Task 一拍，显式序列（顺序即语义；行集不变量
+// ——方向锚与双占用规则——收口在 taskview.go 的 runsByTask）：
+//
+//	lease 到期排空 → Run janitor（TTL/停止兜底）→ 排空补停 →
+//	one-shot 终态镜像（早退段）→ 排空完成收口（早退段）→
+//	补足/过量排空 → Ensure（期望集收敛）
+//
+// 持有 Task 级互斥（DeleteTask 的载体收口与本环互斥，与 appLocks
+// 同款）。runs 是本拍批量预取的本 Task 驱动 Run 视图（新→旧，
+// taskStep 分组产物——N1 C18）。
+func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs runsByTask) {
 	mu := e.lockTask(t.ID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -187,21 +178,40 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs []run.Run) {
 	}
 	now := e.clock.Now()
 
-	// lease_expired（resident + active + 绝对 deadline 超宽限，ADR-0018 墙钟
-	// 口径）：排空（停补足 + 宽限停止存量 Run）+ lease.expired 事件；属主
-	// 续期可复活（RenewTask 的补足半边）。
-	if t.State == task.StateActive && t.Form == task.FormResident && t.LeaseDeadline != "" {
-		if deadline := parseDeadline(t.LeaseDeadline); deadline != nil && now.After(deadline.Add(e.opts.TaskLeaseGrace)) {
-			e.drainTask(ctx, t, run.ReasonLeaseExpired)
-			if err := e.outboxAppend(ctx, eventLeaseExpired, "task", t.ID,
-				leaseEventPayloadJSON(t, "lease deadline exceeded grace")); err != nil {
-				e.log.Error("task drive: lease.expired event", "task", t.ID, "err", err)
-			}
+	e.driveLeaseExpiry(ctx, t, now)
+	e.driveRunJanitor(ctx, runs, now)
+	e.driveDrainReStop(ctx, t, runs, now)
+	if e.driveOneshotMirror(ctx, t) {
+		return // 终态镜像段已收口（或空集 Ensure 失败留拍重试）：本拍止步
+	}
+	if e.driveDrainCompletion(ctx, t, runs) {
+		return // 排空完成段已收口（同上，Ensure 成功才迁移）
+	}
+	runs = e.driveReplenish(ctx, t, spec, runs, now)
+	e.driveEnsure(ctx, t, spec, runs)
+}
+
+// driveLeaseExpiry：resident + active + 绝对 deadline 超宽限（ADR-0018
+// 墙钟口径）→ 排空（停补足 + 宽限停止存量 Run）+ lease.expired 事件；
+// 属主续期可复活（RenewTask 的补足半边）。不早退——janitor 与收口段
+// 本拍照跑。
+func (e *Engine) driveLeaseExpiry(ctx context.Context, t *task.Task, now time.Time) {
+	if t.State != task.StateActive || t.Form != task.FormResident || t.LeaseDeadline == "" {
+		return
+	}
+	if deadline := parseDeadline(t.LeaseDeadline); deadline != nil && now.After(deadline.Add(e.opts.TaskLeaseGrace)) {
+		e.drainTask(ctx, t, run.ReasonLeaseExpired)
+		if err := e.outboxAppend(ctx, eventLeaseExpired, "task", t.ID,
+			leaseEventPayloadJSON(t, "lease deadline exceeded grace")); err != nil {
+			e.log.Error("task drive: lease.expired event", "task", t.ID, "err", err)
 		}
 	}
+}
 
-	// janitor：TTL 到期 → stopping/ttl_expired（deadline 覆写为停止收口
-	// 兜底）；stopping 超兜底 → stopped（观测缺位时的收口保底，不悬挂）。
+// driveRunJanitor：Run janitor——TTL 到期 → stopping/ttl_expired（deadline
+// 覆写为停止收口兜底）；stopping 超兜底 → stopped（观测缺位时的收口
+// 保底，不悬挂）。行经 stopRunRow/transitRunFour 原地刷新，视图随迁。
+func (e *Engine) driveRunJanitor(ctx context.Context, runs runsByTask, now time.Time) {
 	for i := range runs {
 		m := &runs[i]
 		if m.State.Active() && m.Deadline != "" {
@@ -221,140 +231,152 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs []run.Run) {
 			}
 		}
 	}
+}
 
-	// 排空补停（P1 修复 2026-10-02：draining Task 的存量 Run 收口保证）。
-	// 排空路径（drainTask/StopTask force）对存量 Run 的停止是一拍内尽力
-	// 而为：单条失败只记日志、或旧代码 StopTask 不持 Task 互斥时与补足竞
-	// 态漏停新铸 Run——残留的 pending/running 被 Ensure 以 1 副本持续保活，
-	// janitor 只管 TTL/停止兜底（resident 无 TTL 即永不触发），Task 永久卡
-	// draining。
-	//
-	// 触发锚与起因都取行事实：同 Task 已有 stopping 兄弟 = 宽限排空确已发
-	// 起，起因复用其 stop_reason（排空发起时的语义已落行，重启后仍可判）。
-	// 不做无条件补停的取舍：属主吊销的跑完 TTL 模式（TaskOwnerRevokedRunTo
-	// TTL）与 StopTask 非强停的自然收口语义都刻意让存量 Run 续跑到
-	// TTL/完成——两者均不产生 stopping 行，天然豁免；Task 行无起因列，内
-	// 存态重启即失，行事实是最小且诚实的真源。
-	if t.State == task.StateDraining {
-		drainReason := ""
-		for i := range runs {
-			if runs[i].State == run.StateStopping && runs[i].StopReason != "" {
-				drainReason = runs[i].StopReason
-				break
-			}
-		}
-		if drainReason != "" {
-			for i := range runs {
-				if !runs[i].State.Active() {
-					continue
-				}
-				if err := e.stopRunRow(ctx, &runs[i], drainReason, now); err != nil {
-					// 并发已迁移（观测路径收口）= 目标已达，静默让位。
-					if !errors.Is(err, state.ErrConflict) {
-						e.log.Error("task drive: drain re-stop", "run", runs[i].ID, "err", err)
-					}
-				}
-			}
-		}
-	}
-
-	// 终态镜像与排空收口（行事实 → Task 态）。收口次序（E29-2 反转）：
-	// 空集 Ensure 先行且成功后才落终态迁移——修复前先迁移后 Ensure，Ensure
-	// 失败/进程崩溃窗口下 Task 已终态退出驱动集（ListDriving 不拾取终态
-	// 行），run service 残留（swarm 0/1 形态）无人重试。失败路径 Task 保持
-	// active/draining 留在驱动集，下拍重试（重入安全：Ensure 幂等签名跳过，
-	// 迁移 CAS 幂等）。
-	if t.State == task.StateActive && t.Form == task.FormOneShot {
-		if to := e.oneshotTerminalState(ctx, t); to != "" {
-			// 唯一 Run 已终态：空集 Ensure 收口残留载体，成功后 Task 镜像
-			// 其成败。
-			if err := e.ensureTaskWorkloads(ctx, t, nil); err != nil {
-				return
-			}
-			if err := e.transitTaskFour(ctx, t, []task.State{task.StateActive}, to, nil); err != nil {
-				e.log.Error("task drive: mirror terminal", "task", t.ID, "err", err)
-			}
-			return
-		}
-	}
-	if t.State == task.StateDraining && len(runs) == 0 {
-		// 排空完成：残留载体收敛移除（空集 Ensure）→ drained。
-		if err := e.ensureTaskWorkloads(ctx, t, nil); err != nil {
-			return
-		}
-		if err := e.transitTaskFour(ctx, t,
-			[]task.State{task.StateDraining}, task.StateDrained, nil); err != nil && !errors.Is(err, state.ErrConflict) {
-			e.log.Error("task drive: drained", "task", t.ID, "err", err)
-		}
+// driveDrainReStop：排空补停（P1 修复 2026-10-02：draining Task 的存量
+// Run 收口保证）。排空路径（drainTask/StopTask force）对存量 Run 的停止
+// 是一拍内尽力而为：单条失败只记日志、或旧代码 StopTask 不持 Task 互斥
+// 时与补足竞态漏停新铸 Run——残留的 pending/running 被 Ensure 以 1 副本
+// 持续保活，janitor 只管 TTL/停止兜底（resident 无 TTL 即永不触发），
+// Task 永久卡 draining。
+//
+// 触发锚与起因都取行事实（drainAnchorReason）：同 Task 已有 stopping
+// 兄弟 = 宽限排空确已发起，起因复用其 stop_reason（排空发起时的语义已
+// 落行，重启后仍可判）。不做无条件补停的取舍：属主吊销的跑完 TTL 模式
+// （TaskOwnerRevokedRunToTTL）与 StopTask 非强停的自然收口语义都刻意让
+// 存量 Run 续跑到 TTL/完成——两者均不产生 stopping 行，天然豁免；Task
+// 行无起因列，内存态重启即失，行事实是最小且诚实的真源。
+func (e *Engine) driveDrainReStop(ctx context.Context, t *task.Task, runs runsByTask, now time.Time) {
+	if t.State != task.StateDraining {
 		return
 	}
-
-	// 补足（active only）：one-shot 期望 1；resident 期望 desired_concurrency。
-	// 活槽位 = pending/running（resident 的 stopping 是收口态不占位）；one-shot
-	// 例外：stopping 也是占位（一次性语义——唯一 Run 停止收口中即补第二 Run
-	// = job 多跑一次，且 Task 终态后第二 Run 成僵尸、Schedule 重叠判定永久
-	// skip）。突增上限防一拍海量创建（swarm API 压力面，决策 7 压测锚）。
-	if t.State == task.StateActive {
-		want := t.DesiredConcurrency
-		if t.Form == task.FormOneShot {
-			want = 1
+	drainReason := runs.drainAnchorReason()
+	if drainReason == "" {
+		return
+	}
+	for i := range runs {
+		if !runs[i].State.Active() {
+			continue
 		}
-		live := 0
-		for i := range runs {
-			if runs[i].State.Active() {
-				live++
-			}
-		}
-		// 过量排空（ScaleTask 缩容的收敛半边，staging 真机实证缺口
-		// 2026-10-02：此前只有补足——缩容后池维持过量直到停止/租约过期）：
-		// 停新保老（列表新→旧，头部即最新；长者已预热）。原因 =
-		// platform_drained（平台排空，ADR-0012 七枚举）。
-		for i := 0; i < len(runs) && live > int(want); i++ {
-			if !runs[i].State.Active() {
-				continue
-			}
-			if err := e.stopRunRow(ctx, &runs[i], run.ReasonPlatformDrained, now); err != nil {
-				if !errors.Is(err, state.ErrConflict) {
-					// 基础设施错误：本拍止步（一错即断会放大抖动，下拍重试）。
-					e.log.Error("task drive: excess drain", "run", runs[i].ID, "err", err)
-					break
-				}
-				// CAS 冲突 = 该 Run 已被并发迁移出活跃态（观测路径收口等）：
-				// 槽位照常让出，继续排空其余（一错即 break 会把单条竞态放大
-				// 成整拍排空停滞，下拍幂等收敛）。
-				live--
-				continue
-			}
-			live--
-		}
-		// 占用数：resident 按活槽位；one-shot 按全部 driving 行（runs 列表
-		// 来自 taskDrivingStates，含 stopping）。
-		occupied := live
-		if t.Form == task.FormOneShot {
-			occupied = len(runs)
-		}
-		created := false
-		for n := occupied; n < int(want) && n-occupied < e.opts.TaskReplenishBurst; n++ {
-			if err := e.createRun(ctx, t, spec, now); err != nil {
-				e.log.Error("task drive: replenish", "task", t.ID, "err", err)
-				break
-			}
-			created = true
-		}
-		if created {
-			// 补足后重列：新 Run 同拍进期望集（否则首拍 Ensure 空集——
-			// 对新建 Task 是空域无害，对补位拍会白白推迟一拍收敛）。
-			if refreshed, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, taskDrivingStates); err == nil {
-				runs = refreshed
-			} else {
-				e.log.Error("task drive: relist runs", "task", t.ID, "err", err)
+		if err := e.stopRunRow(ctx, &runs[i], drainReason, now); err != nil {
+			// 并发已迁移（观测路径收口）= 目标已达，静默让位。
+			if !errors.Is(err, state.ErrConflict) {
+				e.log.Error("task drive: drain re-stop", "run", runs[i].ID, "err", err)
 			}
 		}
 	}
+}
 
-	// Ensure：期望集 = 驱动 Run 的 Workload（pending/running → 1 副本，
-	// stopping → 0 副本承载 SIGTERM+StopGrace）；域内收敛移除终态 Run 的
-	// 残留载体。签名比对 + 周期强制重放控制 API 压力。
+// driveOneshotMirror：one-shot 终态镜像（行事实 → Task 态）。收口次序
+// （E29-2 反转）：空集 Ensure 先行且成功后才落终态迁移——修复前先迁移
+// 后 Ensure，Ensure 失败/进程崩溃窗口下 Task 已终态退出驱动集
+// （ListDriving 不拾取终态行），run service 残留（swarm 0/1 形态）无人
+// 重试。失败路径 Task 保持 active 留在驱动集，下拍重试（重入安全：
+// Ensure 幂等签名跳过、迁移 CAS 幂等）。
+//
+// 返回 true = 本段已接管本拍（镜像已落或空集 Ensure 失败留拍重试），
+// 调用方跳过其后全部段。
+func (e *Engine) driveOneshotMirror(ctx context.Context, t *task.Task) bool {
+	if t.State != task.StateActive || t.Form != task.FormOneShot {
+		return false
+	}
+	to := e.oneshotTerminalState(ctx, t)
+	if to == "" {
+		return false // 唯一 Run 未终态：进入补足/Ensure 段
+	}
+	// 唯一 Run 已终态：空集 Ensure 收口残留载体，成功后 Task 镜像其成败。
+	if err := e.ensureTaskWorkloads(ctx, t, nil); err != nil {
+		return true
+	}
+	if err := e.transitTaskFour(ctx, t, []task.State{task.StateActive}, to, nil); err != nil {
+		e.log.Error("task drive: mirror terminal", "task", t.ID, "err", err)
+	}
+	return true
+}
+
+// driveDrainCompletion：排空完成收口——残留载体收敛移除（空集 Ensure）
+// → drained。收口次序同 driveOneshotMirror（E29-2：Ensure 成功才迁移）。
+// 返回 true = 本段已接管本拍。
+func (e *Engine) driveDrainCompletion(ctx context.Context, t *task.Task, runs runsByTask) bool {
+	if t.State != task.StateDraining || len(runs) != 0 {
+		return false
+	}
+	if err := e.ensureTaskWorkloads(ctx, t, nil); err != nil {
+		return true
+	}
+	if err := e.transitTaskFour(ctx, t,
+		[]task.State{task.StateDraining}, task.StateDrained, nil); err != nil && !errors.Is(err, state.ErrConflict) {
+		e.log.Error("task drive: drained", "task", t.ID, "err", err)
+	}
+	return true
+}
+
+// driveReplenish：补足与过量排空（active only）。one-shot 期望 1；
+// resident 期望 desired_concurrency。过量排空（ScaleTask 缩容的收敛
+// 半边，staging 真机实证缺口 2026-10-02：此前只有补足——缩容后池维持
+// 过量直到停止/租约过期）：停新保老（方向锚：视图头部即最新，长者已
+// 预热）。原因 = platform_drained（平台排空，ADR-0012 七枚举）。
+// 突增上限防一拍海量创建（swarm API 压力面，决策 7 压测锚）。补足成功
+// 后重列刷新视图（新 Run 同拍进期望集——否则首拍 Ensure 空集，对补位
+// 拍会白白推迟一拍收敛）。
+func (e *Engine) driveReplenish(ctx context.Context, t *task.Task, spec *specv1.TaskSpec, runs runsByTask, now time.Time) runsByTask {
+	if t.State != task.StateActive {
+		return runs
+	}
+	want := t.DesiredConcurrency
+	if t.Form == task.FormOneShot {
+		want = 1
+	}
+	live := runs.liveCount()
+	for i := 0; i < len(runs) && live > int(want); i++ {
+		if !runs[i].State.Active() {
+			continue
+		}
+		if err := e.stopRunRow(ctx, &runs[i], run.ReasonPlatformDrained, now); err != nil {
+			if !errors.Is(err, state.ErrConflict) {
+				// 基础设施错误：本拍止步（一错即断会放大抖动，下拍重试）。
+				e.log.Error("task drive: excess drain", "run", runs[i].ID, "err", err)
+				break
+			}
+			// CAS 冲突 = 该 Run 已被并发迁移出活跃态（观测路径收口等）：
+			// 槽位照常让出，继续排空其余（一错即 break 会把单条竞态放大
+			// 成整拍排空停滞，下拍幂等收敛）。
+			live--
+			continue
+		}
+		live--
+	}
+	// 补足锚（双占用规则，见 taskview.go）：one-shot 按全量驱动行
+	//（occupiedFor 判定点）；resident 按 live 账本——过量排空让出的槽位
+	//（含 CAS 冲突行——并发已迁移，槽位事实已让出）即时可见，不能按
+	// 行集现态重数。
+	occupied := live
+	if t.Form == task.FormOneShot {
+		occupied = runs.occupiedFor(t.Form)
+	}
+	created := false
+	for n := occupied; n < int(want) && n-occupied < e.opts.TaskReplenishBurst; n++ {
+		if err := e.createRun(ctx, t, spec, now); err != nil {
+			e.log.Error("task drive: replenish", "task", t.ID, "err", err)
+			break
+		}
+		created = true
+	}
+	if !created {
+		return runs
+	}
+	refreshed, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, taskDrivingStates)
+	if err != nil {
+		e.log.Error("task drive: relist runs", "task", t.ID, "err", err)
+		return runs
+	}
+	return newRunsByTask(refreshed)
+}
+
+// driveEnsure：期望集收敛——期望集 = 驱动 Run 的 Workload（pending/
+// running → 1 副本，stopping → 0 副本承载 SIGTERM+StopGrace）；域内
+// 收敛移除终态 Run 的残留载体。签名比对 + 周期强制重放控制 API 压力。
+func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.TaskSpec, runs runsByTask) {
 	team, err := e.taskTeam(ctx, t)
 	if err != nil {
 		e.log.Error("task drive: resolve team", "task", t.ID, "err", err)
@@ -370,8 +392,8 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs []run.Run) {
 		w.StopGrace = e.opts.TaskStopGrace
 		ws = append(ws, w)
 	}
-	// 周期收敛路径：失败日志已记、签名已清，下拍重试（终态收口路径见上，
-	// 以返回值门控迁移）。
+	// 周期收敛路径：失败日志已记、签名已清，下拍重试（终态收口路径见
+	// driveOneshotMirror/driveDrainCompletion，以返回值门控迁移）。
 	_ = e.ensureTaskWorkloads(ctx, t, ws)
 }
 
