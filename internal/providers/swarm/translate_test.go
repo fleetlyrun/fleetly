@@ -3,7 +3,6 @@ package swarm
 import (
 	"bytes"
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,11 +13,6 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
-
-func base64DecodeString(s string) (string, error) {
-	b, err := base64.StdEncoding.DecodeString(s)
-	return string(b), err
-}
 
 func TestServiceNameFormula(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
@@ -296,26 +290,9 @@ func TestNetworkRefsResolveUnderTheirOwnNamespace(t *testing.T) {
 	assert.Equal(t, "fleetly-net-01jd0proj00000000000000000-internal", spec.TaskTemplate.Networks[1].Target)
 }
 
-func TestImageRegistryHost(t *testing.T) {
-	assert.Equal(t, "ghcr.io", imageRegistryHost("ghcr.io/acme/web:1"))
-	// host:port 形态整段为键（凭证表的地址形态）。
-	assert.Equal(t, "registry.example.com:5000", imageRegistryHost("registry.example.com:5000/team/app@sha256:x"))
-	assert.Equal(t, "localhost:5000", imageRegistryHost("localhost:5000/app"))
-	assert.Equal(t, "docker.io", imageRegistryHost("nginx:1.27"))
-	assert.Equal(t, "docker.io", imageRegistryHost("library/nginx:1.27"))
-}
-
-func TestEncodeRegistryAuth(t *testing.T) {
-	enc, err := encodeRegistryAuth(capability.RegistryCredential{
-		Server: "ghcr.io", Username: "u", Secret: "s",
-	})
-	require.NoError(t, err)
-	assert.NotContains(t, enc, "ghcr.io") // base64 不明文
-	decoded, err := base64DecodeString(enc)
-	require.NoError(t, err)
-	assert.Contains(t, decoded, `"username":"u"`)
-	assert.Contains(t, decoded, `"serveraddress":"ghcr.io"`)
-}
+// TestImageRegistryHost / TestEncodeRegistryAuth 已随单源收口迁至
+// internal/capability/registryauth_test.go（2026-10-03 架构评审候选 5：
+// engine/swarm/builders 三面共用规则的单点锚定）。
 
 // TestRegistryAuthNeverEntersCarrierSpec 守卫 ADR-0014 / F0.18：私有镜像
 // 凭证只经 EncodedRegistryAuth 通道随 ServiceCreate/Update 下发（swarmkit
@@ -341,7 +318,7 @@ func TestRegistryAuthNeverEntersCarrierSpec(t *testing.T) {
 	blob, err := json.Marshal(spec)
 	require.NoError(t, err)
 
-	encoded, err := encodeRegistryAuth(cred)
+	encoded, err := capability.EncodeRegistryAuth(cred)
 	require.NoError(t, err)
 
 	// serveraddress 是镜像引用的公开部分（本就在 image 里），不作 needle；

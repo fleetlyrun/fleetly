@@ -66,7 +66,7 @@ func (e *Engine) materialsForProcess(ctx context.Context, p *specv1.ProcessSpec,
 	sort.Strings(refs)
 	hosts := []string(nil)
 	if img := p.GetImage(); img != "" {
-		if host := imageRegistryHostOf(img); host != "" {
+		if host := capability.ImageRegistryHost(img); host != "" {
 			hosts = []string{host}
 		}
 	}
@@ -248,7 +248,7 @@ func collectImageHosts(spec *specv1.AppSpec) []string {
 	seen := map[string]bool{}
 	var out []string
 	add := func(image string) {
-		if host := imageRegistryHostOf(image); host != "" && !seen[host] {
+		if host := capability.ImageRegistryHost(image); host != "" && !seen[host] {
 			seen[host] = true
 			out = append(out, host)
 		}
@@ -265,30 +265,8 @@ func collectImageHosts(spec *specv1.AppSpec) []string {
 	return out
 }
 
-// imageRegistryHostOf 提取镜像引用的 registry 主机（与 swarm Provider 的
-// host 归一同口径）。
-func imageRegistryHostOf(image string) string {
-	for i := 0; i < len(image); i++ {
-		if image[i] != '/' {
-			continue
-		}
-		first := image[:i]
-		if containsDotOrColon(first) || first == "localhost" {
-			return first
-		}
-		break
-	}
-	return "docker.io"
-}
-
-func containsDotOrColon(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] == '.' || s[i] == ':' {
-			return true
-		}
-	}
-	return false
-}
+// 镜像引用的 registry 主机提取已单源化至 capability.ImageRegistryHost
+//（2026-10-03 架构评审候选 5：engine/swarm/builders 三面各持一份的收口）。
 
 func contains(list []string, v string) bool {
 	for _, s := range list {

@@ -936,26 +936,16 @@ func (p *Provider) registryAuthFor(ctx context.Context, image string, m capabili
 	if len(m.RegistryAuth) == 0 {
 		return "", nil
 	}
-	host := imageRegistryHost(image)
+	host := capability.ImageRegistryHost(image)
 	cred, ok := m.RegistryAuth[host]
 	if !ok {
 		return "", nil
 	}
-	return encodeRegistryAuth(cred)
+	return capability.EncodeRegistryAuth(cred)
 }
 
-// imageRegistryHost 提取镜像引用的仓库主机（含默认 docker.io 归一）。
-func imageRegistryHost(image string) string {
-	if i := strings.IndexByte(image, '/'); i >= 0 {
-		first := image[:i]
-		// 含 . 或 : 或 == localhost 视为 registry 主机，否则为默认仓库
-		// 的官方镜像命名空间。
-		if strings.ContainsAny(first, ".:") || first == "localhost" {
-			return first
-		}
-	}
-	return "docker.io"
-}
+// imageRegistryHost 与 encodeRegistryAuth 已单源化至 capability
+//（2026-10-03 架构评审候选 5：engine/swarm/builders 三面各持一份的收口）。
 
 // stripCIDRPrefix 已随 netip.Prefix 迁移退役（VIP 直接取 Addr().String()）。
 

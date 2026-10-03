@@ -12,7 +12,6 @@ package builders
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -230,7 +229,7 @@ func (d *daemonClients) pushBuiltImage(ctx context.Context, req capability.Build
 	auth := ""
 	if req.PushCred != nil {
 		var err error
-		auth, err = encodeRegistryAuth(*req.PushCred)
+		auth, err = capability.EncodeRegistryAuth(*req.PushCred)
 		if err != nil {
 			return "", fmt.Errorf("builders: encode push credentials: %w", err)
 		}
@@ -301,20 +300,9 @@ func targetRepoPrefix(target string) string {
 	return target
 }
 
-// encodeRegistryAuth 把平台凭证编码为 X-Registry-Auth 头值（base64 JSON；
-// swarm Provider 同款编码与 map 形态，providers 互不 import 各持一份——
-// map 键不触发 gosec G117 的结构体字段模式）。
-func encodeRegistryAuth(c capability.RegistryCredential) (string, error) {
-	payload, err := json.Marshal(map[string]string{
-		"username":      c.Username,
-		"password":      c.Secret,
-		"serveraddress": c.Server,
-	})
-	if err != nil {
-		return "", err
-	}
-	return base64.StdEncoding.EncodeToString(payload), nil
-}
+// encodeRegistryAuth 已单源化至 capability.EncodeRegistryAuth（推送凭证
+// 的 X-Registry-Auth 形态三面共用；2026-10-03 架构评审候选 5 收口——
+// 此前 swarm/builders 各持一份逐字副本，map 形态注释随迁 capability）。
 
 // streamProgress 把 buildkit SolveStatus 流翻译为日志帧（Vertex = 步骤名、
 // VertexLog = 步骤日志行；错误返回给 Solve 调用方合并上抛）。

@@ -1,31 +1,15 @@
 package builders
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-
-	"github.com/fleetlyrun/fleetly/internal/capability"
 )
 
-// TestEncodeRegistryAuth 钉推送凭证编码（X-Registry-Auth = base64 JSON；
-// daemon 认证面）。
-func TestEncodeRegistryAuth(t *testing.T) {
-	enc, err := encodeRegistryAuth(capability.RegistryCredential{
-		Server: "10.124.0.3:5000", Username: "fleetly", Secret: "pw",
-	})
-	require.NoError(t, err)
-	raw, err := base64.StdEncoding.DecodeString(enc)
-	require.NoError(t, err)
-	var got map[string]string
-	require.NoError(t, json.Unmarshal(raw, &got))
-	assert.Equal(t, map[string]string{
-		"username": "fleetly", "password": "pw", "serveraddress": "10.124.0.3:5000",
-	}, got)
-}
+// TestEncodeRegistryAuth 已随单源收口迁至
+// internal/capability/registryauth_test.go（X-Registry-Auth 编码形态的
+// 单点锚定；builders 侧经 push_seam_test.go 的凭证透传用例继续覆盖）。
 
 // TestDigestFromAux 钉推送流 aux 的 digest 提取（非 digest 载荷容忍为空）。
 func TestDigestFromAux(t *testing.T) {

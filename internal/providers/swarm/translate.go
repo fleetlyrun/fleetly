@@ -2,9 +2,7 @@ package swarm
 
 import (
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strconv"
@@ -442,16 +440,5 @@ func cpuMillisToNano(millis int64) int64 {
 	return millis * 1_000_000
 }
 
-// encodeRegistryAuth 把拉取凭证编码为 X-Registry-Auth 形态（base64 JSON；
-// 凭证不落载体 label 或明文 env，ADR-0014）。
-func encodeRegistryAuth(c capability.RegistryCredential) (string, error) {
-	payload, err := json.Marshal(map[string]string{
-		"username":      c.Username,
-		"password":      c.Secret,
-		"serveraddress": c.Server,
-	})
-	if err != nil {
-		return "", fmt.Errorf("encode registry auth: %w", err)
-	}
-	return base64.StdEncoding.EncodeToString(payload), nil
-}
+// encodeRegistryAuth 已单源化至 capability.EncodeRegistryAuth（拉取凭证
+// 的 X-Registry-Auth 形态三面共用；2026-10-03 架构评审候选 5 收口）。
