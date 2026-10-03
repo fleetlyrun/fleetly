@@ -471,7 +471,7 @@ func (e *Engine) oneshotTerminalState(ctx context.Context, t *task.Task) task.St
 // 次序：Ensure 成功才迁移），周期收敛路径忽略之（日志已记，下拍重试）。
 func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []capability.Workload) error {
 	sig := workloadSetSignature(ws)
-	if _, fresh := e.ensureFresh(e.taskEnsure, t.ID, sig, e.clock.Now()); fresh {
+	if _, fresh := e.ensureFresh(e.task.ensure, t.ID, sig, e.clock.Now()); fresh {
 		return nil
 	}
 	// 下发段带界（boundedStep，Options.ManagedStepTimeout 的实证背景）：
@@ -493,17 +493,17 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	}
 	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(1), materials); err != nil {
 		e.log.Error("task ensure", "task", t.ID, "err", err)
-		e.ensureForget(e.taskEnsure, t.ID) // 失败清签名：下拍重试
+		e.ensureForget(e.task.ensure, t.ID) // 失败清签名：下拍重试
 		return err
 	}
 	// 归属登记（观测路由：Run 观测 → Run 状态机）。
-	e.taskObsMu.Lock()
+	e.task.obsMu.Lock()
 	for _, w := range ws {
-		e.workloadRun[w.ID] = t.ID
+		e.task.workloadRun[w.ID] = t.ID
 	}
-	e.taskObsMu.Unlock()
+	e.task.obsMu.Unlock()
 	now := e.clock.Now()
-	e.ensureRemember(e.taskEnsure, t.ID, ensureMemo{sig: sig, at: now})
+	e.ensureRemember(e.task.ensure, t.ID, ensureMemo{sig: sig, at: now})
 	return nil
 }
 
@@ -777,7 +777,7 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 	}
 	// 缓存收口（P1-7 分家面：Task 域缓存组按 Task/Run 键清理）。
 	e.drainRunObsForTask(id)
-	e.ensureForget(e.taskEnsure, id)
+	e.ensureForget(e.task.ensure, id)
 
 	return e.db.Tx(ctx, func(tx *sql.Tx) error {
 		driving, err := e.runs.ListDriving(ctx, tx)

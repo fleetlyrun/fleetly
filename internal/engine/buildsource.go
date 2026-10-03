@@ -87,9 +87,9 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	}
 	buildID := ulid.Make().String()
 	input.BuildID = buildID
-	e.buildInputMu.Lock()
-	e.buildInputs[buildID] = input
-	e.buildInputMu.Unlock()
+	e.build.inputsMu.Lock()
+	e.build.inputs[buildID] = input
+	e.build.inputsMu.Unlock()
 
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
 		queued := &build.Build{
@@ -117,9 +117,9 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 // 走 failDeployment（调用方收口）。building 行且无登记 = 本进程没有执行
 // goroutine（崩溃遗留且未经 Start 重置）→ 回 queued 交构建循环重拾。
 func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
-	e.buildInputMu.Lock()
-	_, ok := e.buildInputs[b.ID]
-	e.buildInputMu.Unlock()
+	e.build.inputsMu.Lock()
+	_, ok := e.build.inputs[b.ID]
+	e.build.inputsMu.Unlock()
 	if ok {
 		return nil // 本进程已登记（正常路径）
 	}
@@ -128,9 +128,9 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 		return err
 	}
 	input.BuildID = b.ID
-	e.buildInputMu.Lock()
-	e.buildInputs[b.ID] = input
-	e.buildInputMu.Unlock()
+	e.build.inputsMu.Lock()
+	e.build.inputs[b.ID] = input
+	e.build.inputsMu.Unlock()
 	if b.State == build.StateBuilding {
 		// CAS 冲突 = 并发写者已迁移该行（如竞态回 queued）：容忍，下拍复查。
 		if _, err := e.transitBuild(ctx, b,

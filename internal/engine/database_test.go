@@ -103,11 +103,11 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, uint64(1), fresh.Generation)
 	assert.NotEmpty(t, fresh.SpecFingerprint, "spec fingerprint persisted alongside the generation")
-	e.obsMu.Lock()
-	e.observations[tDatabaseID] = capability.WorkloadEvent{
+	e.obs.mu.Lock()
+	e.obs.observations[tDatabaseID] = capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	}
-	e.obsMu.Unlock()
+	e.obs.mu.Unlock()
 	e.databaseStep(ctx)
 	fresh, err = e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)
@@ -153,11 +153,11 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	require.Len(t, rt.calls(), 1)
 
 	// 短路拍：观测 running@gen1 到达（Watch 流路径），Ensure 不重发而状态照推。
-	e.obsMu.Lock()
-	e.observations[tDatabaseID] = capability.WorkloadEvent{
+	e.obs.mu.Lock()
+	e.obs.observations[tDatabaseID] = capability.WorkloadEvent{
 		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
 	}
-	e.obsMu.Unlock()
+	e.obs.mu.Unlock()
 	e.databaseStep(ctx)
 	assert.Len(t, rt.calls(), 1, "the short-circuited tick must not re-Ensure")
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
@@ -268,15 +268,15 @@ func TestTeardownDatabaseRemovesCarriers(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "default", Project: tProjectID, Database: tDatabaseID}
 	require.Contains(t, rt.removedSnapshot(), ns)
 
-	e.obsMu.RLock()
-	_, hasObs := e.observations[tDatabaseID]
-	_, hasOwner := e.workloadApp[tDatabaseID]
-	e.obsMu.RUnlock()
+	e.obs.mu.RLock()
+	_, hasObs := e.obs.observations[tDatabaseID]
+	_, hasOwner := e.obs.workloadApp[tDatabaseID]
+	e.obs.mu.RUnlock()
 	assert.False(t, hasObs)
 	assert.False(t, hasOwner)
-	e.expectMu.Lock()
-	_, hasExpected := e.expected[databaseDomainKeyPrefix+tDatabaseID]
-	e.expectMu.Unlock()
+	e.expect.mu.Lock()
+	_, hasExpected := e.expect.expected[databaseDomainKeyPrefix+tDatabaseID]
+	e.expect.mu.Unlock()
 	assert.False(t, hasExpected)
 
 	// 不存在/已删：NotFound（对齐 TeardownApp 口径）。

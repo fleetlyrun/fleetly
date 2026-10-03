@@ -127,7 +127,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	}
 	// 指纹覆盖全部受管域的完整下发集（Generation=已下发 Spec 的单调编号，
 	// CONTEXT.md——网引用集变化也推进 gen，一次性收敛不逐 tick 滚动）。
-	gen := e.managedGen.next(managedFingerprint(all))
+	gen := e.managed.gen.next(managedFingerprint(all))
 	now := e.clock.Now()
 	for i, decl := range decls {
 		ws := ensured[i]
@@ -135,7 +135,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		// 签名短路（C16）：上次成功 Ensure 的完整签名未变且未到强制重放
 		// 节拍 → 跳过本拍 Ensure（材料解析+下发全套）。环外变更（人工改
 		// 载体、载体漂移）由强制重放节拍兜底（Options.ReconcileReplayInterval）。
-		if _, fresh := e.ensureFresh(e.managedEnsure, ns.String(), sigs[i], now); fresh {
+		if _, fresh := e.ensureFresh(e.managed.ensure, ns.String(), sigs[i], now); fresh {
 			continue
 		}
 		materials := capability.Materials{}
@@ -144,24 +144,24 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 		if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
 			e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
-			e.ensureForget(e.managedEnsure, ns.String()) // 失败清签名：下拍重试
-			continue                                     // 单 Provider 失败不阻断其余受管面收敛
+			e.ensureForget(e.managed.ensure, ns.String()) // 失败清签名：下拍重试
+			continue                                      // 单 Provider 失败不阻断其余受管面收敛
 		}
-		e.ensureRemember(e.managedEnsure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
+		e.ensureRemember(e.managed.ensure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
 		for _, w := range ws {
-			e.obsMu.Lock()
-			e.workloadApp[w.ID] = managedDomainKeyPrefix + w.Process // 归属登记（观测/drift 面）
-			e.ensuredGen[w.ID] = gen
-			e.obsMu.Unlock()
+			e.obs.mu.Lock()
+			e.obs.workloadApp[w.ID] = managedDomainKeyPrefix + w.Process // 归属登记（观测/drift 面）
+			e.obs.ensuredGen[w.ID] = gen
+			e.obs.mu.Unlock()
 		}
 		// 稳态看门狗登记（N0.1 P2-10）：受管域 expected 也落在期望缓存——
 		// 受管载体挂掉要报 workload.stopped（受管面是平台自身可用性，失明
 		// 不可接受）。键与归属登记同形（fleetly/system/<process>）。
-		e.expectMu.Lock()
+		e.expect.mu.Lock()
 		for _, w := range ws {
-			e.expected[managedDomainKeyPrefix+w.Process] = gen
+			e.expect.expected[managedDomainKeyPrefix+w.Process] = gen
 		}
-		e.expectMu.Unlock()
+		e.expect.mu.Unlock()
 	}
 }
 
@@ -190,13 +190,13 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	routes, err := e.routes.List(ctx, e.db.Runner())
 	if err != nil {
 		e.log.Error("route publish: list", "err", err)
-		e.ensureForget(e.routesPub, routesPubKey) // 指纹失真：下拍强制全量
+		e.ensureForget(e.edgeMemo.pub, routesPubKey) // 指纹失真：下拍强制全量
 		return
 	}
 	now := e.clock.Now()
 	sig := routesFingerprint(routes)
-	forced := e.routesPubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
-	_, fresh := e.ensureFresh(e.routesPub, routesPubKey, sig, now)
+	forced := e.edgeMemo.pubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
+	_, fresh := e.ensureFresh(e.edgeMemo.pub, routesPubKey, sig, now)
 	if fresh && !forced {
 		return
 	}
@@ -217,10 +217,10 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	}
 	if err := e.edge.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: edge rejected config", "err", err)
-		e.ensureForget(e.routesPub, routesPubKey) // 发布失败：下拍强制重试全量
+		e.ensureForget(e.edgeMemo.pub, routesPubKey) // 发布失败：下拍强制重试全量
 		return
 	}
-	e.ensureRemember(e.routesPub, routesPubKey, ensureMemo{sig: sig, at: now})
+	e.ensureRemember(e.edgeMemo.pub, routesPubKey, ensureMemo{sig: sig, at: now})
 }
 
 // routesPubKey 是 Route 发布单槽的恒定键（发布面无多键维度——行集指纹
@@ -320,6 +320,6 @@ func (e *Engine) activeProjectNetworks(ctx context.Context) []capability.Network
 // Kick；测试直调）。置即时信号消费于下一拍——短路对本次发布失效（C16b
 // 的强制绕过通道），随后恢复签名节律。
 func (e *Engine) PublishRoutesNow() {
-	e.routesPubNow.Store(true)
+	e.edgeMemo.pubNow.Store(true)
 	e.managedLoop.Kick()
 }

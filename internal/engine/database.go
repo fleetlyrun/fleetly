@@ -132,7 +132,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	}
 	sig := managedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" + credentialFingerprint(sec.Ciphertext)
 	now := e.clock.Now()
-	if memo, fresh := e.ensureFresh(e.dbEnsure, row.ID, sig, now); fresh {
+	if memo, fresh := e.ensureFresh(e.database.ensure, row.ID, sig, now); fresh {
 		e.advanceDatabaseStatus(stepCtx, row, memo.gen)
 		return
 	}
@@ -167,19 +167,19 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	}
 	if err := e.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials); err != nil {
 		e.log.Error("database reconcile: ensure", "database", row.ID, "generation", gen, "err", err)
-		e.ensureForget(e.dbEnsure, row.ID) // 失败清签名：下拍重试
+		e.ensureForget(e.database.ensure, row.ID) // 失败清签名：下拍重试
 		return
 	}
-	e.ensureRemember(e.dbEnsure, row.ID, ensureMemo{sig: sig, gen: gen, at: now})
+	e.ensureRemember(e.database.ensure, row.ID, ensureMemo{sig: sig, gen: gen, at: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。
-	e.obsMu.Lock()
-	e.workloadApp[w.ID] = databaseDomainKeyPrefix + row.ID
-	e.ensuredGen[w.ID] = gen
-	e.obsMu.Unlock()
-	e.expectMu.Lock()
-	e.expected[databaseDomainKeyPrefix+row.ID] = gen
-	e.expectMu.Unlock()
+	e.obs.mu.Lock()
+	e.obs.workloadApp[w.ID] = databaseDomainKeyPrefix + row.ID
+	e.obs.ensuredGen[w.ID] = gen
+	e.obs.mu.Unlock()
+	e.expect.mu.Lock()
+	e.expect.expected[databaseDomainKeyPrefix+row.ID] = gen
+	e.expect.mu.Unlock()
 	e.advanceDatabaseStatus(stepCtx, row, gen)
 }
 
@@ -206,9 +206,9 @@ func credentialFingerprint(ciphertext []byte) string {
 
 // observationOf 读单 Workload 的最新观测（观测缓存拷贝）。
 func (e *Engine) observationOf(workloadID string) (capability.WorkloadEvent, bool) {
-	e.obsMu.RLock()
-	defer e.obsMu.RUnlock()
-	ev, ok := e.observations[workloadID]
+	e.obs.mu.RLock()
+	defer e.obs.mu.RUnlock()
+	ev, ok := e.obs.observations[workloadID]
 	return ev, ok
 }
 
@@ -315,14 +315,14 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	if removeErr != nil {
 		return fmt.Errorf("database teardown: %w", removeErr)
 	}
-	e.obsMu.Lock()
-	delete(e.observations, row.ID)
-	delete(e.workloadApp, row.ID)
-	delete(e.ensuredGen, row.ID)
-	e.obsMu.Unlock()
-	e.expectMu.Lock()
-	delete(e.expected, databaseDomainKeyPrefix+row.ID)
-	e.expectMu.Unlock()
-	e.ensureForget(e.dbEnsure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
+	e.obs.mu.Lock()
+	delete(e.obs.observations, row.ID)
+	delete(e.obs.workloadApp, row.ID)
+	delete(e.obs.ensuredGen, row.ID)
+	e.obs.mu.Unlock()
+	e.expect.mu.Lock()
+	delete(e.expect.expected, databaseDomainKeyPrefix+row.ID)
+	e.expect.mu.Unlock()
+	e.ensureForget(e.database.ensure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
 	return nil
 }

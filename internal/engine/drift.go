@@ -97,12 +97,12 @@ func (e *Engine) driftScan(ctx context.Context) {
 	}
 
 	// 扫描面 = 当前期望缓存（启动基线重放或部署 Ensure 建立）。
-	e.expectMu.Lock()
-	appIDs := make([]string, 0, len(e.expected))
-	for appID := range e.expected {
+	e.expect.mu.Lock()
+	appIDs := make([]string, 0, len(e.expect.expected))
+	for appID := range e.expect.expected {
 		appIDs = append(appIDs, appID)
 	}
-	e.expectMu.Unlock()
+	e.expect.mu.Unlock()
 
 	for _, appID := range appIDs {
 		if ctx.Err() != nil {
@@ -141,24 +141,24 @@ func (e *Engine) driftScan(ctx context.Context) {
 		ev  capability.WorkloadEvent
 	}
 	expected := map[string]uint64{}
-	e.expectMu.Lock()
-	for appID, gen := range e.expected {
+	e.expect.mu.Lock()
+	for appID, gen := range e.expect.expected {
 		expected[appID] = gen
 	}
-	e.expectMu.Unlock()
+	e.expect.mu.Unlock()
 
 	var candidates []wlObs
-	e.obsMu.RLock()
-	for wid, appID := range e.workloadApp {
+	e.obs.mu.RLock()
+	for wid, appID := range e.obs.workloadApp {
 		if expected[appID] == 0 || inFlight[appID] {
 			continue
 		}
-		ev, seen := e.observations[wid]
+		ev, seen := e.obs.observations[wid]
 		if seen && ev.State == capability.WorkloadStopped && uint64(ev.Generation) == expected[appID] {
 			candidates = append(candidates, wlObs{wid: wid, ev: ev})
 		}
 	}
-	e.obsMu.RUnlock()
+	e.obs.mu.RUnlock()
 	for _, c := range candidates {
 		e.emitSteadyStateStopped(ctx, c.wid, c.ev)
 	}
@@ -180,18 +180,18 @@ func (e *Engine) driftScan(ctx context.Context) {
 // 假设（API 路径钉版）不成立；若未来出现钉版形态（如 CLI 人工改同 tag
 // 镜像），以显式证据重开此案，不在此预放行。
 func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capability.WorkloadObservation) {
-	e.expectMu.Lock()
-	expected := e.expected[appID]
-	e.expectMu.Unlock()
+	e.expect.mu.Lock()
+	expected := e.expect.expected[appID]
+	e.expect.mu.Unlock()
 
 	type pendingDrift struct {
 		wid string
 		ev  capability.WorkloadEvent
 	}
 	var pending []pendingDrift
-	e.obsMu.RLock()
+	e.obs.mu.RLock()
 	for _, o := range obs {
-		want, ok := e.ensuredSpec[o.WorkloadID]
+		want, ok := e.obs.ensuredSpec[o.WorkloadID]
 		if !ok {
 			continue // 非平台管辖（孤儿面：只登记原则）
 		}
@@ -211,19 +211,19 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			mismatch = fmt.Sprintf("replicas %d != expected %d", o.Replicas, want.Replicas)
 		}
 		if mismatch == "" {
-			e.driftMu.Lock()
-			delete(e.drift, o.WorkloadID)
-			e.driftMu.Unlock()
+			e.drift.mu.Lock()
+			delete(e.drift.sig, o.WorkloadID)
+			e.drift.mu.Unlock()
 			continue
 		}
 		sig := fmt.Sprintf("spec|%s", mismatch)
-		e.driftMu.Lock()
-		if e.drift[o.WorkloadID] == sig {
-			e.driftMu.Unlock()
+		e.drift.mu.Lock()
+		if e.drift.sig[o.WorkloadID] == sig {
+			e.drift.mu.Unlock()
 			continue
 		}
-		e.drift[o.WorkloadID] = sig
-		e.driftMu.Unlock()
+		e.drift.sig[o.WorkloadID] = sig
+		e.drift.mu.Unlock()
 		pending = append(pending, pendingDrift{
 			wid: o.WorkloadID,
 			ev: capability.WorkloadEvent{
@@ -233,7 +233,7 @@ func (e *Engine) compareSpecs(ctx context.Context, appID string, obs []capabilit
 			},
 		})
 	}
-	e.obsMu.RUnlock()
+	e.obs.mu.RUnlock()
 
 	for _, p := range pending {
 		if _, err := e.outbox.Append(ctx, e.db.Runner(),
@@ -262,17 +262,17 @@ func sameCommand(a, b []string) bool {
 // 观测回 running/degraded 清签名）。
 func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capability.WorkloadEvent) {
 	sig := fmt.Sprintf("stopped|%d", uint64(ev.Generation))
-	e.stoppedMu.Lock()
-	if e.stoppedSig[wid] == sig {
-		e.stoppedMu.Unlock()
+	e.drift.stoppedMu.Lock()
+	if e.drift.stoppedSig[wid] == sig {
+		e.drift.stoppedMu.Unlock()
 		return
 	}
-	e.stoppedSig[wid] = sig
-	e.stoppedMu.Unlock()
+	e.drift.stoppedSig[wid] = sig
+	e.drift.stoppedMu.Unlock()
 	appID := func() string {
-		e.obsMu.RLock()
-		defer e.obsMu.RUnlock()
-		return e.workloadApp[wid]
+		e.obs.mu.RLock()
+		defer e.obs.mu.RUnlock()
+		return e.obs.workloadApp[wid]
 	}()
 	_, err := e.outbox.Append(ctx, e.db.Runner(), eventWorkloadStopped, "workload", wid,
 		stoppedEventPayloadJSON(wid, appID, ev))
@@ -284,9 +284,9 @@ func (e *Engine) emitSteadyStateStopped(ctx context.Context, wid string, ev capa
 // clearStoppedSig 观测脱离 stopped（running/degraded）时清稳态签名（下次
 // 停止可再发）。
 func (e *Engine) clearStoppedSig(wid string) {
-	e.stoppedMu.Lock()
-	delete(e.stoppedSig, wid)
-	e.stoppedMu.Unlock()
+	e.drift.stoppedMu.Lock()
+	delete(e.drift.stoppedSig, wid)
+	e.drift.stoppedMu.Unlock()
 }
 
 // driftScanLoop 周期扫描（DriftScanInterval 节拍；架构 §0 唯一骨架——

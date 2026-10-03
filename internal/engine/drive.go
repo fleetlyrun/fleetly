@@ -188,7 +188,7 @@ func (e *Engine) release(ctx context.Context, d *deployment.Deployment) (*deploy
 			func(m *deployment.Deployment) { m.ObserveDeadline = l1 })
 	}
 	if e.releaseReady(d) {
-		e.ensureForget(e.releaseEnsure, d.ID) // 离开 releasing：物化备忘随相位作废
+		e.ensureForget(e.delivery.release, d.ID) // 离开 releasing：物化备忘随相位作废
 		window := state.FormatTime(e.clock.Now().Add(e.opts.ObserveWindow))
 		return e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateObserving,
@@ -209,13 +209,13 @@ func releaseEnsureSignature(d *deployment.Deployment) string {
 
 // releaseMaterializeFresh 报告该 Deployment 的等待期物化可短路（C17）。
 func (e *Engine) releaseMaterializeFresh(d *deployment.Deployment) bool {
-	_, fresh := e.ensureFresh(e.releaseEnsure, d.ID, releaseEnsureSignature(d), e.clock.Now())
+	_, fresh := e.ensureFresh(e.delivery.release, d.ID, releaseEnsureSignature(d), e.clock.Now())
 	return fresh
 }
 
 // rememberReleaseMaterialize 落等待期物化备忘（仅 materialize 成功后）。
 func (e *Engine) rememberReleaseMaterialize(d *deployment.Deployment) {
-	e.ensureRemember(e.releaseEnsure, d.ID, ensureMemo{
+	e.ensureRemember(e.delivery.release, d.ID, ensureMemo{
 		sig: releaseEnsureSignature(d), gen: d.Generation, at: e.clock.Now(),
 	})
 }
@@ -313,7 +313,7 @@ func (e *Engine) rollbackFailed(ctx context.Context, d *deployment.Deployment, r
 // （ADR-0030：job 等待截止不泄漏进回滚相位）。等待期物化备忘随相位终止
 // 作废（C17）。
 func (e *Engine) failDeployment(ctx context.Context, d *deployment.Deployment, reason string) (*deployment.Deployment, error) {
-	e.ensureForget(e.releaseEnsure, d.ID)
+	e.ensureForget(e.delivery.release, d.ID)
 	return e.transitAndReload(ctx, d,
 		deployment.ActiveStatesNoQueued(), deployment.StateFailed,
 		func(m *deployment.Deployment) { m.Error, m.ObserveDeadline = reason, "" })

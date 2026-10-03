@@ -173,18 +173,18 @@ func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectI
 // 复核读失败不剥离（假隔离比迟隔离糟，下一拍重试）。
 func (e *Engine) enforcePeerIsolation(ctx context.Context) {
 	appRefs := map[string][]capability.NetworkRef{}
-	e.obsMu.RLock()
-	for wid, ensured := range e.ensuredSpec {
+	e.obs.mu.RLock()
+	for wid, ensured := range e.obs.ensuredSpec {
 		if len(ensured.NetworkRefs) == 0 {
 			continue
 		}
-		appID := e.workloadApp[wid]
+		appID := e.obs.workloadApp[wid]
 		if appID == "" {
 			continue
 		}
 		appRefs[appID] = append(appRefs[appID], ensured.NetworkRefs...)
 	}
-	e.obsMu.RUnlock()
+	e.obs.mu.RUnlock()
 	if len(appRefs) == 0 {
 		return
 	}

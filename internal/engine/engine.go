@@ -184,6 +184,99 @@ func ParseScheduleOverlap(s string) (string, error) {
 	}
 }
 
+// ---- 域状态（架构评审第二轮候选 5，2026-10-03）：行为住各域文件，状态
+// 随域绑定——加环/加域不再横穿 Engine 结构体。锁语义零漂移：ensure 备忘
+// 族仍共用 Engine.ensureMu 单锁（五张 memo map 分住各域子结构）；观测/
+// 漂移/期望各域锁照旧。 ----
+
+// taskDomain 是 Task 域状态（行为 task.go/taskobs.go/taskview.go；P1-7
+// 缓存分家口径不变；per-Run 终态回收随 handleRunObservation——恢复真源
+// 是 Task/Run 行，不抄 rebuildBaselines）。
+type taskDomain struct {
+	obsMu       sync.RWMutex
+	workloadRun map[string]string                   // workloadID(=runID) → taskID（观测路由/归属）
+	runObs      map[string]capability.WorkloadEvent // runID → 最新观测
+	ensure      map[string]ensureMemo               // taskID → 期望集签名备忘（2026-10-03 收编通用 ensureMemo）
+	locks       sync.Map                            // taskID → *sync.Mutex（驱动环/DeleteTask 收口共享；appLocks 同款不清退裁决 E30）
+}
+
+// observDomain 是观测枢纽（全部域共用的载体观测/归属/就绪门——Watch
+// 消费单点路由写这里，各域读自己的键；归属 map 的键前缀分域：App 直填
+// appID / database/<id> / fleetly/system/<process>）。
+type observDomain struct {
+	mu           sync.RWMutex
+	observations map[string]capability.WorkloadEvent // workloadID → 最新观测
+	workloadApp  map[string]string                   // workloadID → 归属域键（观测路由/drift 跳过面）
+	ensuredGen   map[string]uint64                   // workloadID → 最近 Ensure 的 Generation（就绪门集合界定）
+	ensuredSpec  map[string]capability.Workload      // workloadID → 最近 Ensure 的投影 spec（ADR-0022 spec 对照 drift）
+}
+
+// driftDomain 是漂移扫描域的去抖签名（spec 对照签名 + 稳态 stopped 签名，
+// ADR-0022）。
+type driftDomain struct {
+	mu         sync.Mutex
+	sig        map[string]string // workloadID → 最后 drift 签名
+	stoppedMu  sync.Mutex
+	stoppedSig map[string]string // workloadID → 稳态 stopped 签名
+}
+
+// expectDomain 是 Drift 对照锚（域键 → 最近 Ensure 的 Generation）。
+type expectDomain struct {
+	mu       sync.Mutex
+	expected map[string]uint64
+}
+
+// managedDomain 是受管域状态（Generation 实例态（C5：多 Engine 实例互不
+// 污染）+ Ensure 备忘）。
+type managedDomain struct {
+	gen    managedGenState
+	ensure map[string]ensureMemo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
+}
+
+// databaseDomain 是 Database 域状态（ADR-0029 用户域收敛环）。
+type databaseDomain struct {
+	ensure map[string]ensureMemo // databaseID → 上次成功 Ensure
+}
+
+// deliveryDomain 是部署链 releasing 物化备忘（Deployment 行锚）。
+type deliveryDomain struct {
+	release map[string]ensureMemo
+}
+
+// edgeState 是 Route 发布备忘与即时发布信号（受管 Edge 面）。
+type edgeState struct {
+	pub    map[string]ensureMemo // 发布单槽（键恒 routesPubKey；routesFingerprint 行集内容指纹）
+	pubNow atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
+}
+
+// buildDomain 是构建面状态（输入登记 + 最近日志缓冲；并发/超时是 Options
+// 派生面，留在 Engine.opts/buildOpts）。
+type buildDomain struct {
+	inputsMu sync.Mutex
+	inputs   map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
+	logs     *logBuffer
+}
+
+// 收敛域签名短路备忘族（N1 C16/C17：每拍全量无条件重活的跳过判定面）：
+// 记忆"上次成功 Ensure 的完整签名 + 时刻"，签名未变且未到强制重放节拍
+// 即跳过本拍；Ensure 失败不落/清签名（下拍重试）；重启丢失首拍全量自愈。
+// ensureMemo 的域内键与签名字面由各域定义（受管=namespace，Database=行
+// ID，releasing=Deployment 行锚，Task=taskID，Route 发布=单槽恒键）。
+// 签名构造族（域内"全部输入"的口径各自冻结，政策刻意分立不合流）：
+// workloadSetSignature（Task 语义等价缩面）/ managedFingerprint（受管
+// 全量保守）/ materialsFingerprint / routesFingerprint（行集内容指纹）/
+// releaseEnsureSignature（行锚）。
+
+// ring 是收敛环注册项（Start/DriveOnce 表驱动：goroutine 挂载、启动
+// Kick、手动驱动序走同一张表——新环 = 表加一行 + 一个 Loop 字段；表序
+// 即 DriveOnce 手动驱动序（schedule 先于 task：同一轮内铸出的 Task 即刻
+// 进补足链））。
+type ring struct {
+	name string
+	loop *Loop
+	step func(context.Context)
+}
+
 // Engine 是部署收敛引擎：Deployment 状态机单写者 + admission + Runtime
 // Watch 消费。写路径全部四件一拍（CAS + Outbox + 审计；部署记录无
 // tombstone）；决策读平台权威表，观测缓存仅作信号（架构 §6）。
@@ -223,17 +316,33 @@ type Engine struct {
 
 	// Database 域（F1.12，ADR-0029）：聚合 repo + 用户域受管收敛环
 	//（第三条部署轨——挂项目网供 App 连，与 App 部署链/受管域分立）。
-	databases    *dbrepo.Repo
-	databaseLoop *Loop
+	databases *dbrepo.Repo
 
 	loop         *Loop
 	buildLoop    *Loop
 	managedLoop  *Loop
+	databaseLoop *Loop
 	taskLoop     *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
 	scheduleLoop *Loop // Schedule 到期拍环（F1.7）
 	driftLoop    *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
+	rings        []ring
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
+
+	// 域状态（各域行为文件就近消费；域类型注释见上）。
+	task     taskDomain
+	obs      observDomain
+	drift    driftDomain
+	expect   expectDomain
+	managed  managedDomain
+	database databaseDomain
+	delivery deliveryDomain
+	edgeMemo edgeState
+	build    buildDomain
+
+	// ensureMu 是收敛域签名短路备忘族的共用锁（五张 memo map 分住各域
+	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。
+	ensureMu sync.Mutex
 
 	// lifecycleMu 同步引擎生命周期（B12 P3-6）：Start 全程持锁（cancel
 	// 判空/赋值 + wg.Add）与 Stop 全程持锁（cancel 置 nil + wg.Wait 排水）
@@ -246,11 +355,7 @@ type Engine struct {
 	runCtxMu sync.Mutex
 	runCtx   context.Context
 
-	// managedGen 是受管域 Generation 实例态（C5：指纹/gen 不再是包级
-	// 全局——多 Engine 实例互不污染）。
-	managedGen managedGenState
-
-	// nodeLeftSeen 是 node.left 去抖实例态（C5：节点回归即清签名）。
+	// nodeLeftSeen 是 node.left 去抖实例态（节点回归即清签名）。
 	nodeLeftSeen map[string]bool
 
 	// appLocks 是 App 级互斥（admission/基线重放/收口共享，N0.1 P1-3）：
@@ -267,43 +372,9 @@ type Engine struct {
 	// flight 复杂度，收益配不上风险。
 	appLocks sync.Map // appID → *sync.Mutex
 
-	// taskLocks 是 Task 级互斥（驱动环与 DeleteTask 载体收口共享——
-	// appLocks 同款形态与同款不清退裁决；深审裁决表 #16 的同构互斥）。
-	taskLocks sync.Map // taskID → *sync.Mutex
-
-	// Task 域观测缓存（P1-7 缓存分家：独立缓存组，与部署形状五 map 隔离；
-	// per-Run 终态回收随 handleRunObservation——恢复真源是 Task/Run 行，
-	// 不抄 rebuildBaselines）。
-	taskObsMu   sync.RWMutex
-	workloadRun map[string]string                   // workloadID(=runID) → taskID（观测路由/归属）
-	runObs      map[string]capability.WorkloadEvent // runID → 最新观测
-
-	// Task 域 Ensure 签名（幂等收敛跳过 + 周期强制重放；失败清空下拍重试）。
-	// 2026-10-03 收编通用 ensureMemo（此前独立的 taskEnsured/taskLastEnsure
-	// 双 map + 专锁是同一协议的第三份实例化；协议与节拍单点见下）。
-	taskEnsure map[string]ensureMemo // taskID → 期望集签名备忘
-
-	// 收敛域签名短路备忘（N1 C16/C17：每拍全量无条件重活的跳过判定面）。
-	// 记忆"上次成功 Ensure 的完整签名 + 时刻"：签名未变且未到强制重放节拍
-	// 即跳过本拍；Ensure 失败不落/清签名（下拍重试）；重启丢失首拍全量自愈。
-	// ensureMemo 的域内键与签名字面由各域定义（受管=namespace，Database=行
-	// ID，releasing=Deployment 行锚，Task=taskID，Route 发布=单槽恒键）。
-	// 签名构造族（域内"全部输入"的口径各自冻结，政策刻意分立不合流）：
-	// workloadSetSignature（Task 语义等价缩面）/ managedFingerprint（受管
-	// 全量保守）/ materialsFingerprint / routesFingerprint（行集内容指纹）/
-	// releaseEnsureSignature（行锚）。
-	ensureMu      sync.Mutex
-	managedEnsure map[string]ensureMemo // namespace → 受管域上次成功 Ensure
-	dbEnsure      map[string]ensureMemo // databaseID → Database 域上次成功 Ensure
-	releaseEnsure map[string]ensureMemo // deploymentID → releasing 物化上次成功
-	routesPub     map[string]ensureMemo // Route 发布单槽（键恒 routesPubKey）
-	routesPubNow  atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
-
-	// 构建面（F0.9/F1.14）：Builder 家族（名→Provider，spec 路由）、并发
-	// 上限、构建输入登记与最近日志缓冲（ADR-0032）。
+	// 构建面（F0.9/F1.14）：Builder 家族（名→Provider，spec 路由）。
 	builders  map[string]capability.Builder
 	buildOpts buildOptions
-	buildLogs *logBuffer
 
 	// Edge 面（F0.15）：Route 全量发布 + 受管 Provider reconciler。
 	edge   capability.Edge
@@ -319,23 +390,6 @@ type Engine struct {
 	configs  *configrepo.Repo
 	volumes  *volume.Repo
 	networks *networkrepo.Repo // 受管 Edge 挂网真源（活跃 Project 网络全量）
-
-	buildInputMu sync.Mutex
-	buildInputs  map[string]capability.BuildRequest // buildID → 登记输入（重启丢失即回 queued 重放）
-
-	obsMu        sync.RWMutex
-	observations map[string]capability.WorkloadEvent // workloadID → 最新观测
-	workloadApp  map[string]string                   // workloadID → appID（归属缓存，Ensure 时刷新）
-	ensuredGen   map[string]uint64                   // workloadID → 最近 Ensure 的 Generation（就绪门集合界定）
-	ensuredSpec  map[string]capability.Workload      // workloadID → 最近 Ensure 的投影 spec（ADR-0022 spec 对照 drift）
-
-	expectMu sync.Mutex
-	expected map[string]uint64 // appID → 最近 Ensure 的 Generation（Drift 对照锚）
-
-	driftMu    sync.Mutex
-	drift      map[string]string // workloadID → 最后 drift 签名（去抖）
-	stoppedMu  sync.Mutex
-	stoppedSig map[string]string // workloadID → 稳态 stopped 签名（去抖，ADR-0022）
 }
 
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
@@ -356,67 +410,79 @@ func New(deps Deps, opts Options) *Engine {
 	db := deps.DB
 	log := deps.Logger
 	clock := db.Clock()
-	return &Engine{
-		builders:      deps.Builders,
-		edge:          deps.Edge,
-		registry:      deps.Registry,
-		cipher:        deps.Cipher,
-		runtime:       deps.Runtime,
-		db:            db,
-		log:           log,
-		clock:         clock,
-		opts:          opts,
-		projects:      project.New(clock),
-		apps:          app.New(clock),
-		revisions:     revision.New(clock),
-		deployments:   deployment.New(clock),
-		builds:        build.New(clock),
-		outbox:        outbox.New(clock),
-		nodes:         node.New(clock),
-		audits:        audit.New(clock),
-		tasks:         task.New(clock),
-		runs:          run.New(clock),
-		tokens:        tokenrepo.New(clock),
-		schedules:     schedule.New(clock),
-		peerDecls:     networkpeer.New(clock),
-		uploads:       sourceupload.New(clock),
-		databases:     dbrepo.New(clock),
-		loop:          NewLoop("deployment", log),
-		buildLoop:     NewLoop("build", log),
-		managedLoop:   NewLoop("managed", log),
-		databaseLoop:  NewLoop("database", log),
-		taskLoop:      NewLoop("task", log),
-		scheduleLoop:  NewLoop("schedule", log),
-		driftLoop:     NewLoop("drift", log),
-		nodeLeftSeen:  map[string]bool{},
-		routes:        route.New(clock),
-		secrets:       secret.New(clock),
-		configs:       configrepo.New(clock),
-		volumes:       volume.New(clock),
-		networks:      networkrepo.New(clock),
-		buildOpts:     buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
-		buildLogs:     newLogBuffer(500),
-		buildInputs:   make(map[string]capability.BuildRequest),
-		observations:  make(map[string]capability.WorkloadEvent),
-		workloadApp:   make(map[string]string),
-		ensuredGen:    make(map[string]uint64),
-		ensuredSpec:   make(map[string]capability.Workload),
-		expected:      make(map[string]uint64),
-		drift:         make(map[string]string),
-		stoppedSig:    make(map[string]string),
-		workloadRun:   make(map[string]string),
-		runObs:        make(map[string]capability.WorkloadEvent),
-		taskEnsure:    make(map[string]ensureMemo),
-		managedEnsure: make(map[string]ensureMemo),
-		dbEnsure:      make(map[string]ensureMemo),
-		releaseEnsure: make(map[string]ensureMemo),
-		routesPub:     make(map[string]ensureMemo),
+	e := &Engine{
+		builders:     deps.Builders,
+		edge:         deps.Edge,
+		registry:     deps.Registry,
+		cipher:       deps.Cipher,
+		runtime:      deps.Runtime,
+		db:           db,
+		log:          log,
+		clock:        clock,
+		opts:         opts,
+		projects:     project.New(clock),
+		apps:         app.New(clock),
+		revisions:    revision.New(clock),
+		deployments:  deployment.New(clock),
+		builds:       build.New(clock),
+		outbox:       outbox.New(clock),
+		nodes:        node.New(clock),
+		audits:       audit.New(clock),
+		tasks:        task.New(clock),
+		runs:         run.New(clock),
+		tokens:       tokenrepo.New(clock),
+		schedules:    schedule.New(clock),
+		peerDecls:    networkpeer.New(clock),
+		uploads:      sourceupload.New(clock),
+		databases:    dbrepo.New(clock),
+		loop:         NewLoop("deployment", log),
+		buildLoop:    NewLoop("build", log),
+		managedLoop:  NewLoop("managed", log),
+		databaseLoop: NewLoop("database", log),
+		taskLoop:     NewLoop("task", log),
+		scheduleLoop: NewLoop("schedule", log),
+		driftLoop:    NewLoop("drift", log),
+		nodeLeftSeen: map[string]bool{},
+		routes:       route.New(clock),
+		secrets:      secret.New(clock),
+		configs:      configrepo.New(clock),
+		volumes:      volume.New(clock),
+		networks:     networkrepo.New(clock),
+		buildOpts:    buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
 	}
+	e.build.logs = newLogBuffer(500)
+	e.build.inputs = make(map[string]capability.BuildRequest)
+	e.obs.observations = make(map[string]capability.WorkloadEvent)
+	e.obs.workloadApp = make(map[string]string)
+	e.obs.ensuredGen = make(map[string]uint64)
+	e.obs.ensuredSpec = make(map[string]capability.Workload)
+	e.expect.expected = make(map[string]uint64)
+	e.drift.sig = make(map[string]string)
+	e.drift.stoppedSig = make(map[string]string)
+	e.task.workloadRun = make(map[string]string)
+	e.task.runObs = make(map[string]capability.WorkloadEvent)
+	e.task.ensure = make(map[string]ensureMemo)
+	e.managed.ensure = make(map[string]ensureMemo)
+	e.database.ensure = make(map[string]ensureMemo)
+	e.delivery.release = make(map[string]ensureMemo)
+	e.edgeMemo.pub = make(map[string]ensureMemo)
+	// 环表（表序 = DriveOnce 手动驱动序：schedule 先于 task——同一轮内
+	// 铸出的 Task 即刻进补足链；goroutine 挂载/Kick 顺序随表，环间独立
+	// 无依赖）。
+	e.rings = []ring{
+		{name: "deployment", loop: e.loop, step: e.step},
+		{name: "build", loop: e.buildLoop, step: e.buildStep},
+		{name: "managed", loop: e.managedLoop, step: e.managedStep},
+		{name: "database", loop: e.databaseLoop, step: e.databaseStep},
+		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
+		{name: "task", loop: e.taskLoop, step: e.taskStep},
+	}
+	return e
 }
 
 // lockTask 取 Task 级互斥（惰性建；驱动环/DeleteTask 共享）。
 func (e *Engine) lockTask(taskID string) *sync.Mutex {
-	mu, _ := e.taskLocks.LoadOrStore(taskID, &sync.Mutex{})
+	mu, _ := e.task.locks.LoadOrStore(taskID, &sync.Mutex{})
 	return mu.(*sync.Mutex)
 }
 
@@ -487,38 +553,18 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
 	e.runCtxMu.Unlock()
 	e.resetOrphanBuilds(runCtx)
-	e.wg.Add(6)
-	go func() {
-		defer e.wg.Done()
-		e.loop.Run(runCtx, e.opts.Tick, e.step)
-	}()
-	go func() {
-		defer e.wg.Done()
-		e.buildLoop.Run(runCtx, e.opts.Tick, e.buildStep)
-	}()
-	go func() {
-		defer e.wg.Done()
-		e.managedLoop.Run(runCtx, e.opts.Tick, e.managedStep)
-	}()
-	go func() {
-		defer e.wg.Done()
-		e.databaseLoop.Run(runCtx, e.opts.Tick, e.databaseStep)
-	}()
-	go func() {
-		defer e.wg.Done()
-		e.taskLoop.Run(runCtx, e.opts.Tick, e.taskStep)
-	}()
-	go func() {
-		defer e.wg.Done()
-		e.scheduleLoop.Run(runCtx, e.opts.Tick, e.scheduleStep)
-	}()
+	e.wg.Add(len(e.rings))
+	for _, r := range e.rings {
+		r := r
+		go func() {
+			defer e.wg.Done()
+			r.loop.Run(runCtx, e.opts.Tick, r.step)
+		}()
+	}
 	e.StartWatch(runCtx)
-	e.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
-	e.buildLoop.Kick()
-	e.managedLoop.Kick()
-	e.databaseLoop.Kick() // 启动即收敛：数据库行 + 行上指纹是重放真源
-	e.taskLoop.Kick()     // 启动即收敛：Task/Run 行 + 绝对 deadline 是恢复真源（P1-7）
-	e.scheduleLoop.Kick() // 启动即收敛：next_fire_at 是绝对时刻——错过窗口补跑一拍（ADR-0018 附录 A）
+	for _, r := range e.rings {
+		r.loop.Kick() // 启动即收敛：进程重启后按 Generation 幂等重放（场景 1）
+	}
 	// ADR-0022：启动基线重放（异步；重建归属/期望缓存）+ 漂移扫描环
 	//（Loop.Run 阻塞至 ctx 取消——与其他环同款 goroutine 形态）。重放
 	// goroutine 计入 wg（N0.1 P2-11）：Stop 排水覆盖重放，不再裸奔。
@@ -580,7 +626,7 @@ func (e *Engine) resetOrphanBuilds(ctx context.Context) {
 	}
 }
 
-// Stop 有界排空：取消循环并等待在途 step（Ensure 由 step 内 ctx 收口）
+// Stop 有界排水：取消循环并等待在途 step（Ensure 由 step 内 ctx 收口）
 // 返回。in-flight Ensure 可安全中断重放（ADR-0005 优雅退出）。全程持
 // lifecycleMu（B12 P3-6）：排水等待与并发 Start 的 wg.Add 互斥，双 Stop
 // 串行在锁上（后者见 cancel=nil 幂等返回 nil）；Start 未完整（cancel 尚
@@ -615,14 +661,11 @@ func (e *Engine) KickTasks() { e.taskLoop.Kick() }
 // KickSchedules 唤醒 Schedule 到期拍环（API 受理面消费：创建后立即判定）。
 func (e *Engine) KickSchedules() { e.scheduleLoop.Kick() }
 
-// DriveOnce 手动驱动一轮收敛（部署/构建/受管/Database/Schedule/Task 六线
-// 各一步；apitest 手动形态消费——golden 确定性：不依赖真实节拍）。scheduleStep 先于
-// taskStep：同一轮 Drive 内铸出的 Task 即刻进补足链。
+// DriveOnce 手动驱动一轮收敛（环表序逐步——schedule 先于 task：同一轮
+// Drive 内铸出的 Task 即刻进补足链；apitest 手动形态消费，golden 确定性
+// 不依赖真实节拍）。
 func (e *Engine) DriveOnce(ctx context.Context) {
-	e.step(ctx)
-	e.buildStep(ctx)
-	e.managedStep(ctx)
-	e.databaseStep(ctx)
-	e.scheduleStep(ctx)
-	e.taskStep(ctx)
+	for _, r := range e.rings {
+		r.step(ctx)
+	}
 }

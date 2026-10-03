@@ -27,9 +27,9 @@ import (
 //	观测 stopped        + 行 pending/running    → stopped/platform_drained
 //	（载体被平台侧移除：节点排空/人工拆载体——诚实归类，不伪装成败）
 func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capability.WorkloadEvent) {
-	e.taskObsMu.Lock()
-	e.runObs[runID] = ev
-	e.taskObsMu.Unlock()
+	e.task.obsMu.Lock()
+	e.task.runObs[runID] = ev
+	e.task.obsMu.Unlock()
 
 	m, err := e.runs.Get(ctx, e.db.Runner(), runID)
 	if err != nil {
@@ -85,28 +85,28 @@ func (e *Engine) handleRunObservation(ctx context.Context, runID string, ev capa
 // 裁决，不等 janitor 扫描；归属映射保留至 Task 收口——期间迟到观测按
 // 终态行幂等丢弃）。
 func (e *Engine) recycleRunObs(runID string) {
-	e.taskObsMu.Lock()
-	delete(e.runObs, runID)
-	e.taskObsMu.Unlock()
+	e.task.obsMu.Lock()
+	delete(e.task.runObs, runID)
+	e.task.obsMu.Unlock()
 }
 
 // runObservation 返回 Run 的最新观测（诊断/测试面；不存在返回零值）。
 func (e *Engine) runObservation(runID string) (capability.WorkloadEvent, bool) {
-	e.taskObsMu.RLock()
-	defer e.taskObsMu.RUnlock()
-	ev, ok := e.runObs[runID]
+	e.task.obsMu.RLock()
+	defer e.task.obsMu.RUnlock()
+	ev, ok := e.task.runObs[runID]
 	return ev, ok
 }
 
 // drainRunObsForTask 清理 Task 名下全部观测缓存（workloadRun 归属映射 +
 // runObs 观测槽；DeleteTask 消费——workload ID 即 run ID，一键双清）。
 func (e *Engine) drainRunObsForTask(taskID string) {
-	e.taskObsMu.Lock()
-	for wid, owner := range e.workloadRun {
+	e.task.obsMu.Lock()
+	for wid, owner := range e.task.workloadRun {
 		if owner == taskID {
-			delete(e.workloadRun, wid)
-			delete(e.runObs, wid)
+			delete(e.task.workloadRun, wid)
+			delete(e.task.runObs, wid)
 		}
 	}
-	e.taskObsMu.Unlock()
+	e.task.obsMu.Unlock()
 }

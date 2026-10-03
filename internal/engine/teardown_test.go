@@ -24,13 +24,13 @@ func TestTeardownAppRemovesCarriersAndClearsCaches(t *testing.T) {
 	assert.Equal(t, "default/"+tProjectID+"/"+tAppID, removed[0].String())
 
 	// 缓存收口：归属/期望清空（drift/steady-state 不再咬已删 App）。
-	e.expectMu.Lock()
-	_, hasExpected := e.expected[tAppID]
-	e.expectMu.Unlock()
+	e.expect.mu.Lock()
+	_, hasExpected := e.expect.expected[tAppID]
+	e.expect.mu.Unlock()
 	assert.False(t, hasExpected, "expected-generation cache must be cleared")
-	e.obsMu.RLock()
-	_, hasOwner := e.workloadApp[tAppID+"-web"]
-	e.obsMu.RUnlock()
+	e.obs.mu.RLock()
+	_, hasOwner := e.obs.workloadApp[tAppID+"-web"]
+	e.obs.mu.RUnlock()
 	assert.False(t, hasOwner, "ownership cache must be cleared")
 
 	// 幂等：再拆一次不报错、不重复计数。

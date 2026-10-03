@@ -54,32 +54,32 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 
 	// 缓存收口：先收集该 App 名下的 Workload 集，再逐面清（drift/稳态
 	// 签名只按 workloadID 键，跨 App 不得误删）。
-	e.obsMu.Lock()
+	e.obs.mu.Lock()
 	var wids []string
-	for wid, owner := range e.workloadApp {
+	for wid, owner := range e.obs.workloadApp {
 		if owner == appID {
 			wids = append(wids, wid)
 		}
 	}
 	for _, wid := range wids {
-		delete(e.workloadApp, wid)
-		delete(e.ensuredGen, wid)
-		delete(e.ensuredSpec, wid)
-		delete(e.observations, wid)
+		delete(e.obs.workloadApp, wid)
+		delete(e.obs.ensuredGen, wid)
+		delete(e.obs.ensuredSpec, wid)
+		delete(e.obs.observations, wid)
 	}
-	e.obsMu.Unlock()
-	e.expectMu.Lock()
-	delete(e.expected, appID)
-	e.expectMu.Unlock()
-	e.driftMu.Lock()
+	e.obs.mu.Unlock()
+	e.expect.mu.Lock()
+	delete(e.expect.expected, appID)
+	e.expect.mu.Unlock()
+	e.drift.mu.Lock()
 	for _, wid := range wids {
-		delete(e.drift, wid)
+		delete(e.drift.sig, wid)
 	}
-	e.driftMu.Unlock()
-	e.stoppedMu.Lock()
+	e.drift.mu.Unlock()
+	e.drift.stoppedMu.Lock()
 	for _, wid := range wids {
-		delete(e.stoppedSig, wid)
+		delete(e.drift.stoppedSig, wid)
 	}
-	e.stoppedMu.Unlock()
+	e.drift.stoppedMu.Unlock()
 	return nil
 }

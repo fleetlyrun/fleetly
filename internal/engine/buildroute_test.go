@@ -179,7 +179,7 @@ func TestExecuteBuildUnwiredBuilderFailsPrecisely(t *testing.T) {
 	b := &build.Build{ID: "01JD0B00000000000000000UN", AppID: tAppID,
 		RevisionID: "01JD0REV0000000000000000F1", State: build.StateBuilding}
 	require.NoError(t, e.builds.Create(ctx, e.db.Runner(), b))
-	e.buildInputs[b.ID] = capability.BuildRequest{BuildID: b.ID, Builder: "nope", ContextDir: "."}
+	e.build.inputs[b.ID] = capability.BuildRequest{BuildID: b.ID, Builder: "nope", ContextDir: "."}
 	e.executeBuild(b)
 	got, err := e.builds.Get(ctx, e.db.Runner(), b.ID)
 	require.NoError(t, err)

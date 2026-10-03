@@ -303,7 +303,7 @@ func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.
 	}
 	if fresh.State.Terminal() {
 		// 终态登记触发超龄缓冲回收（frames map 只增不清会泄漏，N0.1 P2-1）。
-		e.buildLogs.markTerminal(b.ID)
+		e.build.logs.markTerminal(b.ID)
 	}
 	return fresh, nil
 }

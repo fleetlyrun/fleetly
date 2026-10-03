@@ -116,19 +116,19 @@ type bufferWriter struct {
 
 func (w *bufferWriter) WriteLog(_ context.Context, f capability.LogFrame) error {
 	f.WorkloadID = w.buildID
-	w.engine.buildLogs.write(w.buildID, f)
+	w.engine.build.logs.write(w.buildID, f)
 	return nil
 }
 
 // RecentBuildLogs 返回构建日志最近缓冲快照（旧→新；B4 读面消费）。
 func (e *Engine) RecentBuildLogs(buildID string) []capability.LogFrame {
-	return e.buildLogs.recent(buildID)
+	return e.build.logs.recent(buildID)
 }
 
 // RecentBuildLogsAfter 返回 seq 大于 after 的日志帧（旧→新）与最新 seq
 // （follow 续流游标；N0.1 P2-1）。
 func (e *Engine) RecentBuildLogsAfter(buildID string, after int64) ([]capability.LogFrame, int64) {
-	return e.buildLogs.recentAfter(buildID, after)
+	return e.build.logs.recentAfter(buildID, after)
 }
 
 // buildStep 是构建循环的收敛步：拾取 queued（并发余量内）→ 起 goroutine
@@ -179,9 +179,9 @@ func (e *Engine) buildStep(ctx context.Context) {
 // 一跳到终态 cancelled（同步、无 goroutine），禁止拾取执行形成
 // queued↔building 振荡。已登记的行正常放行。
 func (e *Engine) buildPickable(ctx context.Context, b *build.Build) bool {
-	e.buildInputMu.Lock()
-	_, registered := e.buildInputs[b.ID]
-	e.buildInputMu.Unlock()
+	e.build.inputsMu.Lock()
+	_, registered := e.build.inputs[b.ID]
+	e.build.inputsMu.Unlock()
 	if registered {
 		return true
 	}
@@ -231,9 +231,9 @@ func (e *Engine) executeBuild(b *build.Build) {
 	// 构建输入在 building 前由部署驱动备好（buildInputs 是行外内存登记表；
 	// 重启丢失由 driveBuilding 幂等重建，拾取前置检已拦无登记行——到达
 	// 此分支即防御纵深）。
-	e.buildInputMu.Lock()
-	input, ok := e.buildInputs[b.ID]
-	e.buildInputMu.Unlock()
+	e.build.inputsMu.Lock()
+	input, ok := e.build.inputs[b.ID]
+	e.build.inputsMu.Unlock()
 	if !ok {
 		// 无输入登记且无人会再登记（孤儿形态：部署已不在/输入丢失）→
 		// 一跳到终态 cancelled。不得回 queued 弹跳——那正是 queued↔building

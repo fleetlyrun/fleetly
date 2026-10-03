@@ -97,16 +97,16 @@ func (e *Engine) buildDigests(ctx context.Context, d *deployment.Deployment) (ma
 // App 级最近 Generation（Drift 对照锚）。进程内缓存，重启后由幂等重放的
 // Ensure 或启动基线重放重建（ADR-0022）。
 func (e *Engine) recordEnsured(d *deployment.Deployment, gen uint64, ws []capability.Workload) {
-	e.expectMu.Lock()
-	e.expected[d.AppID] = gen
-	e.expectMu.Unlock()
-	e.obsMu.Lock()
+	e.expect.mu.Lock()
+	e.expect.expected[d.AppID] = gen
+	e.expect.mu.Unlock()
+	e.obs.mu.Lock()
 	for _, w := range ws {
-		e.workloadApp[w.ID] = d.AppID
-		e.ensuredGen[w.ID] = gen
-		e.ensuredSpec[w.ID] = w
+		e.obs.workloadApp[w.ID] = d.AppID
+		e.obs.ensuredGen[w.ID] = gen
+		e.obs.ensuredSpec[w.ID] = w
 	}
-	e.obsMu.Unlock()
+	e.obs.mu.Unlock()
 }
 
 // releaseReady 是 L1 健康门：本 Deployment 下发的全部 Workload（gen 匹配
@@ -117,15 +117,15 @@ func (e *Engine) releaseReady(d *deployment.Deployment) bool {
 }
 
 func (e *Engine) releaseReadyGen(d *deployment.Deployment, gen uint64) bool {
-	e.obsMu.RLock()
-	defer e.obsMu.RUnlock()
+	e.obs.mu.RLock()
+	defer e.obs.mu.RUnlock()
 	count := 0
-	for wid, owner := range e.workloadApp {
-		if owner != d.AppID || e.ensuredGen[wid] != gen {
+	for wid, owner := range e.obs.workloadApp {
+		if owner != d.AppID || e.obs.ensuredGen[wid] != gen {
 			continue
 		}
 		count++
-		ev, seen := e.observations[wid]
+		ev, seen := e.obs.observations[wid]
 		// 就绪门：全部成员必须已观测且 running@gen（未观测 = 未就绪，
 		// 与看门狗语义相反——后者未观测不咬合）。
 		if !seen || ev.State != capability.WorkloadRunning || uint64(ev.Generation) != gen {
@@ -155,15 +155,15 @@ func (e *Engine) watchdogBite(d *deployment.Deployment) string {
 // 集合大小）。pred 返回非空即咬合（短路）；未观测的 Workload 不咬合
 // （等待/超时路径处理）。集合为空（重启后缓存未重建）由调用方解释。
 func (e *Engine) scanGeneration(appID string, gen uint64, pred func(capability.WorkloadEvent) string) (string, int) {
-	e.obsMu.RLock()
-	defer e.obsMu.RUnlock()
+	e.obs.mu.RLock()
+	defer e.obs.mu.RUnlock()
 	count := 0
-	for wid, owner := range e.workloadApp {
-		if owner != appID || e.ensuredGen[wid] != gen {
+	for wid, owner := range e.obs.workloadApp {
+		if owner != appID || e.obs.ensuredGen[wid] != gen {
 			continue
 		}
 		count++
-		ev, seen := e.observations[wid]
+		ev, seen := e.obs.observations[wid]
 		if !seen {
 			continue
 		}
@@ -219,9 +219,9 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 		e.handleRunObservation(ctx, ev.WorkloadID, ev)
 		return
 	}
-	e.obsMu.Lock()
-	e.observations[ev.WorkloadID] = ev
-	e.obsMu.Unlock()
+	e.obs.mu.Lock()
+	e.obs.observations[ev.WorkloadID] = ev
+	e.obs.mu.Unlock()
 	if ev.State != capability.WorkloadStopped {
 		e.clearStoppedSig(ev.WorkloadID) // 稳态 stopped 去抖解除（ADR-0022）
 	}
@@ -231,9 +231,9 @@ func (e *Engine) handleObservation(ctx context.Context, ev capability.WorkloadEv
 
 // runOwner 返回 Run 观测归属（workloadID → taskID；Task 域缓存组面）。
 func (e *Engine) runOwner(workloadID string) (string, bool) {
-	e.taskObsMu.RLock()
-	defer e.taskObsMu.RUnlock()
-	taskID, ok := e.workloadRun[workloadID]
+	e.task.obsMu.RLock()
+	defer e.task.obsMu.RUnlock()
+	taskID, ok := e.task.workloadRun[workloadID]
 	return taskID, ok
 }
 
@@ -265,20 +265,20 @@ func (e *Engine) handleNodeJoined(ctx context.Context, nj *capability.NodeJoined
 // (workload, expected, observed) 签名不重复发；观测回归 expected 即清
 // 签名（下次偏离可再发）。
 func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
-	e.obsMu.RLock()
-	appID, owned := e.workloadApp[ev.WorkloadID]
-	e.obsMu.RUnlock()
+	e.obs.mu.RLock()
+	appID, owned := e.obs.workloadApp[ev.WorkloadID]
+	e.obs.mu.RUnlock()
 	if !owned {
 		return // 非平台管辖载体：观测缓存已登记，事件不落（孤儿面后续批）
 	}
-	e.expectMu.Lock()
-	expected := e.expected[appID]
-	e.expectMu.Unlock()
+	e.expect.mu.Lock()
+	expected := e.expect.expected[appID]
+	e.expect.mu.Unlock()
 
 	if expected != 0 && uint64(ev.Generation) == expected && !ev.Drift {
-		e.driftMu.Lock()
-		delete(e.drift, ev.WorkloadID)
-		e.driftMu.Unlock()
+		e.drift.mu.Lock()
+		delete(e.drift.sig, ev.WorkloadID)
+		e.drift.mu.Unlock()
 		return
 	}
 	if expected == 0 && !ev.Drift {
@@ -286,13 +286,13 @@ func (e *Engine) detectDrift(ctx context.Context, ev capability.WorkloadEvent) {
 	}
 
 	sig := fmt.Sprintf("%d|%d|%v", expected, uint64(ev.Generation), ev.Drift)
-	e.driftMu.Lock()
-	if e.drift[ev.WorkloadID] == sig {
-		e.driftMu.Unlock()
+	e.drift.mu.Lock()
+	if e.drift.sig[ev.WorkloadID] == sig {
+		e.drift.mu.Unlock()
 		return
 	}
-	e.drift[ev.WorkloadID] = sig
-	e.driftMu.Unlock()
+	e.drift.sig[ev.WorkloadID] = sig
+	e.drift.mu.Unlock()
 
 	_, err := e.outbox.Append(ctx, e.db.Runner(), eventWorkloadDrift, "workload", ev.WorkloadID,
 		driftEventPayloadJSON(ev, appID, expected))

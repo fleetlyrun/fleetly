@@ -164,7 +164,7 @@ func TestDeployBuildChain(t *testing.T) {
 	assert.Equal(t, fakeRegistryAddr, bcalls[0].PushCred.Server)
 
 	// 日志进最近缓冲。
-	recent := e.buildLogs.recent(b.ID)
+	recent := e.build.logs.recent(b.ID)
 	require.Len(t, recent, 1)
 	assert.Equal(t, "FROM busybox", string(recent[0].Line))
 
