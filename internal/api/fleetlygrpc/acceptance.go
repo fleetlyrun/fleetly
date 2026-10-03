@@ -273,3 +273,17 @@ func (s *Services) userExists(id string) acceptanceCheck {
 		return err
 	}
 }
+
+// userInTeam：有属主 Token 的铸造位收口（ADR-0038）——creator 必须在目标
+// Team 持 membership，否则 Token 在实时收窄语义下铸出即死（求交恒空）。
+// 无 owner 豁免：给无 membership 的用户铸跨队 Token 从来不是合法运维。
+func (s *Services) userInTeam(userID, teamID string) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		_, err := s.Memberships.GetByUser(ctx, tx, userID, teamID)
+		if err != nil {
+			return apperr.New("E_CONFLICT",
+				"user %s holds no membership in team %s; a user-bound token is capped by its creator's current access (ADR-0038) and would carry no authority", userID, teamID)
+		}
+		return nil
+	}
+}

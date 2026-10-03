@@ -192,10 +192,10 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 **讨论项（T3 三级 ability，预期否决）**：coolify 的 `read/write/write:sensitive` 对应的敏感可见面，在 fleetly 被 Secret 模型结构性消除——**值永不回显、只回指纹**，不存在"读明文"API 面。Console 的 Secret 列表可见性走既有行级授权（ADR-0035）。**建议：不引入三级 ability**，理由=敏感轴已内化在实体模型而非权限粒度。
 
 **验收锚**：
-- [ ] creator 降权后 Token 立即失去对应面（apitest：降权 → 同 Token 请求 403 + 审计事件）
-- [ ] creator 被删 → Token 全失效
-- [ ] scope 声明表 + 守卫反扫入 CI（新增写面 RPC 未声明即红）
-- [ ] 语义写入 ADR-0035 增补节或新 ADR
+- [x] creator 降权后 Token 立即失去对应面（apitest：WhoAmI 面收窄 + 写面 403 + 审计事件；ADR-0038，2026-10-04）
+- [x] creator 被删 → Token 全失效（FK 结构性盖住 + resolve 兜底分支 reason=creator_deleted；ADR-0038）
+- [x] scope 声明表 + 守卫反扫入 CI（新增写面 RPC 未声明即红）（TestScopeDeclarationsMatchVerbs：方向误标/未知动词/豁免保鲜三面把守；ADR-0038）
+- [x] 语义写入 ADR-0035 增补节或新 ADR（ADR-0038 独立成篇）
 
 **开放问题**：Token 的"绑定 Project 集"与 creator 当前可访问 Project 集求交后为空时，Token 是报 403 还是 401 语义？
 **→ 裁决（2026-10-03）**：403 带原因——Agent 可判定"找管理员"而非"重新认证"。T3 同日否决（§0.1）。

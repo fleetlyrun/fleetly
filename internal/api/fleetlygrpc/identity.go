@@ -318,7 +318,9 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 	}
 	checks := []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)}
 	if req.GetUserId() != "" {
-		checks = append(checks, svc.s.userExists(req.GetUserId()))
+		// 铸造位收口（ADR-0038）：creator 须在目标 Team 持 membership——
+		// 实时收窄语义下无 membership 的属主 Token 铸出即死，受理位拒绝。
+		checks = append(checks, svc.s.userExists(req.GetUserId()), svc.s.userInTeam(req.GetUserId(), teamID))
 	}
 	err = svc.s.commit(ctx, writeFact{
 		checks: checks,

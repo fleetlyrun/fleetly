@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/oklog/ulid/v2"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 
@@ -23,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
+	membershiprepo "github.com/fleetlyrun/fleetly/internal/state/membership"
 	rolerepo "github.com/fleetlyrun/fleetly/internal/state/role"
 	tokenrepo "github.com/fleetlyrun/fleetly/internal/state/token"
 	"github.com/fleetlyrun/fleetly/internal/state/user"
@@ -38,6 +40,10 @@ const bearerPrefix = "Bearer "
 // lastUsedInterval 是 last_used_at 节流间隔（F0.6：勿每请求写库——
 // SQLite 单写者减压；进程内 per-Token 时间戳，重启丢失可接受）。
 const lastUsedInterval = 60 * time.Second
+
+// narrowingAuditInterval 是收窄拒绝审计的节流间隔（ADR-0038：拒绝路径可
+// 能被重试循环反复命中——同 Token 60s 内只落一条审计行，同 lastUsed 形态）。
+const narrowingAuditInterval = 60 * time.Second
 
 // Identity 是一次成功解析的操作者身份（ctx 注入形态；审计 actor、
 // WhoAmI、服务层归属判定共用）。
@@ -78,25 +84,30 @@ func FromContext(ctx context.Context) (*Identity, bool) {
 
 // Authenticator 是拦截器依赖集（assembly 与 apitest 夹具共用构造）。
 type Authenticator struct {
-	db       *state.DB
-	policy   *authz.PolicySet
-	log      *slog.Logger
-	roles    *rolerepo.Repo
-	users    *user.Repo
-	tokens   *tokenrepo.Repo
-	vocab    []string
-	lastMu   sync.Mutex
-	lastUsed map[string]time.Time
+	db          *state.DB
+	policy      *authz.PolicySet
+	log         *slog.Logger
+	roles       *rolerepo.Repo
+	users       *user.Repo
+	tokens      *tokenrepo.Repo
+	memberships *membershiprepo.Repo
+	audits      *audit.Repo
+	vocab       []string
+	lastMu      sync.Mutex
+	lastUsed    map[string]time.Time
+	lastNarrow  map[string]time.Time
 }
 
 // NewAuthenticator 构造（vocab 是 scope 词表——assembly 单一源注入）。
 func NewAuthenticator(db *state.DB, policy *authz.PolicySet, vocab []string, log *slog.Logger) *Authenticator {
 	return &Authenticator{
 		db: db, policy: policy, log: log,
-		roles:  rolerepo.New(db.Clock()),
-		users:  user.New(db.Clock()),
-		tokens: tokenrepo.New(db.Clock()),
-		vocab:  vocab, lastUsed: map[string]time.Time{},
+		roles:       rolerepo.New(db.Clock()),
+		users:       user.New(db.Clock()),
+		tokens:      tokenrepo.New(db.Clock()),
+		memberships: membershiprepo.New(db.Clock()),
+		audits:      audit.New(db.Clock()),
+		vocab:       vocab, lastUsed: map[string]time.Time{}, lastNarrow: map[string]time.Time{},
 	}
 }
 
@@ -235,12 +246,108 @@ func (a *Authenticator) resolve(ctx context.Context) (*Identity, error) {
 		Scopes: scopes, scopeSet: set,
 	}
 	if tok.UserID != "" {
-		if u, err := a.users.Get(ctx, a.db.Runner(), tok.UserID); err == nil {
-			id.UserName = u.Name
+		u, err := a.users.Get(ctx, a.db.Runner(), tok.UserID)
+		if err != nil {
+			// creator 已删 = Token 终态失效（ADR-0038）。FK 把守下正常不可达
+			//（删用户须先吊销名下 Token），DB 手工清理与未来删除面放行时兜底。
+			if errors.Is(err, state.ErrNotFound) {
+				a.auditNarrowing(ctx, tok, "creator_deleted")
+				return nil, a.narrowingErr(tok, "creator_deleted",
+					"the token's creator account no longer exists, so the token no longer carries any authority")
+			}
+			a.log.Error("authn: creator lookup failed", "token", tok.Name, "err", err)
+			return nil, apperr.New("E_INTERNAL", "token creator lookup failed").WithCause(err)
 		}
-		// 用户行缺失（FK 把守下的不可达）：用户名留空，actor 落 token 形态。
+		id.UserName = u.Name
+		// 实时收窄（ADR-0038 / P6 T1）：有属主 Token 的有效授权 =
+		// min(声明, creator 当前)——creator 在 Token 所在 Team 的 membership
+		// 角色是"当前授权"真源，逐请求求交。
+		if err := a.narrowToCreator(ctx, tok, id); err != nil {
+			return nil, err
+		}
 	}
 	return id, nil
+}
+
+// narrowToCreator 把 Identity 的 scope 面收窄到 creator 当前授权（原地改
+// id.Scopes/scopeSet）。全失（membership 消失/交集为空）返回 403 带原因
+// （Agent 可判定"找管理员"而非"重新认证"——P6 裁决）。
+func (a *Authenticator) narrowToCreator(ctx context.Context, tok *tokenrepo.Token, id *Identity) error {
+	m, err := a.memberships.GetByUser(ctx, a.db.Runner(), tok.UserID, tok.TeamID)
+	if err != nil {
+		if !errors.Is(err, state.ErrNotFound) {
+			a.log.Error("authn: creator membership lookup failed", "token", tok.Name, "err", err)
+			return apperr.New("E_INTERNAL", "token creator membership lookup failed").WithCause(err)
+		}
+		a.auditNarrowing(ctx, tok, "creator_not_in_team")
+		return a.narrowingErr(tok, "creator_not_in_team",
+			"the token's creator is no longer a member of the token's team, so the token no longer carries any authority")
+	}
+	if m.RoleID == tok.RoleID {
+		return nil // 同角色：creator 授权恒覆盖声明，求交 = 声明（免读快路径）
+	}
+	crole, err := a.roles.Get(ctx, a.db.Runner(), m.RoleID)
+	if err != nil {
+		// membership 角色失联是引用完整性破坏（FK 把守下的不可达）：大声失败
+		// 而非静默放行（收窄不可判定时拒绝是 fail-closed）。
+		a.log.Error("authn: creator membership references missing role", "token", tok.Name, "role", m.RoleID)
+		return apperr.New("E_INTERNAL", "token creator membership references an unavailable role")
+	}
+	grants, err := identity.ParseScopes(crole.Scopes, a.vocab)
+	if err != nil {
+		a.log.Error("authn: creator membership role carries scopes outside vocabulary", "role", crole.Name, "err", err)
+		return apperr.New("E_INTERNAL", "token creator role carries invalid scopes")
+	}
+	effective := identity.Meet(id.Scopes, grants)
+	if len(effective) == 0 {
+		a.auditNarrowing(ctx, tok, "empty_scope_intersection")
+		return a.narrowingErr(tok, "empty_scope_intersection",
+			"the token's declared scopes no longer intersect its creator's current access, so the token no longer carries any authority")
+	}
+	if len(effective) != len(id.Scopes) {
+		a.log.Info("authn: token narrowed to creator authority",
+			"token", tok.Name, "declared", len(id.Scopes), "effective", len(effective))
+	}
+	set, err := identity.DotForm(effective)
+	if err != nil {
+		return apperr.New("E_UNAUTHENTICATED", "token role carries invalid scopes")
+	}
+	id.Scopes = effective
+	id.scopeSet = set
+	return nil
+}
+
+// narrowingErr 铸收窄 403（带原因与去向建议——收窄是管理面事实，不是认证
+// 失败；E_UNAUTHENTICATED 会误导 Agent 走重新认证）。
+func (a *Authenticator) narrowingErr(tok *tokenrepo.Token, reason, detail string) error {
+	return apperr.New("E_FORBIDDEN", "%s (token %q)", detail, tok.Name).
+		WithContext("token", tok.Name).
+		WithContext("reason", reason).
+		WithSuggestion("The token's authority is capped by its creator's current access (ADR-0038). Ask a team admin to restore the creator's access, or revoke this token and mint a new one.")
+}
+
+// auditNarrowing 落"收窄生效"审计行（节流：同 Token 60s 一条——重试循环
+// 不刷屏；audit.Append 的 Team 轴由 ctx 注入，拦截器已带调用方 Team）。
+func (a *Authenticator) auditNarrowing(ctx context.Context, tok *tokenrepo.Token, reason string) {
+	now := time.Now()
+	a.lastMu.Lock()
+	if last, ok := a.lastNarrow[tok.ID]; ok && now.Sub(last) < narrowingAuditInterval {
+		a.lastMu.Unlock()
+		return
+	}
+	a.lastNarrow[tok.ID] = now
+	a.lastMu.Unlock()
+	entry := &audit.Entry{
+		ID:       ulid.Make().String(),
+		Actor:    "token:" + tok.Name,
+		Source:   SourceFromContext(ctx),
+		Action:   "token.narrowed_denied",
+		Resource: "token/" + tok.ID,
+		AfterFP:  reason,
+	}
+	if err := a.audits.Append(audit.WithTeam(ctx, tok.TeamID), a.db.Runner(), entry); err != nil {
+		a.log.Warn("authn: narrowing audit append failed", "token", tok.Name, "err", err)
+	}
 }
 
 // touchLastUsed 节流记录（内存时间戳 + 独立轻 UPDATE；错误只记日志——

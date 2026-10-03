@@ -25,7 +25,7 @@ _Avoid_: permission, policy
 _Avoid_: grant, capability(授权义)
 
 **Token**:
-携带 Scope 的凭证，服务人与 Agent。首启由 Bootstrap Token 引导，一切 Token 可吊销。
+携带 Scope 的凭证，服务人与 Agent。首启由 Bootstrap Token 引导，一切 Token 可吊销。有属主（user）Token 的有效授权 = min(声明, creator 当前授权)，逐请求求交（ADR-0038）。
 _Avoid_: API key, PAT, credential
 
 **Invitation**:

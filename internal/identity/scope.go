@@ -137,3 +137,77 @@ func Expand(scopes []Scope) []string {
 	sort.Strings(out)
 	return out
 }
+
+// actionRank 是蕴含阶梯的序（read < write < admin；P6 实时收窄的覆盖判定）。
+func actionRank(action string) int {
+	switch action {
+	case "admin":
+		return 3
+	case "write":
+		return 2
+	default:
+		return 1
+	}
+}
+
+// Meet 是 Token 实时收窄的求交算子（ADR-0038 / P6 T1）：有效授权 =
+// min(声明, creator 当前)。同资源按蕴含阶梯取低档（声明 apps:admin ×
+// creator apps:write → apps:write；声明 apps:write × creator apps:read →
+// apps:read），creator 侧无该资源即丢弃；声明 `*` 收敛为 creator 完整
+// 授权集（creator 持 `*` 则保持 `*`）。纯域函数：不查库、不涉角色解析；
+// 与输入序无关（creator 同资源多档先归一到最高档，`*` 收敛按资源字典序
+// 输出——P7 确定性纪律）。空集返回 nil（零交集——调用方按 403 带原因拒绝）。
+func Meet(declared, creatorGrants []Scope) []Scope {
+	best := map[string]string{} // resource → creator 侧最高档 action
+	wildcard := false
+	for _, c := range creatorGrants {
+		if c.Resource == "*" {
+			wildcard = true
+			continue
+		}
+		if cur, ok := best[c.Resource]; !ok || actionRank(c.Action) > actionRank(cur) {
+			best[c.Resource] = c.Action
+		}
+	}
+	sortedResources := make([]string, 0, len(best))
+	for res := range best {
+		sortedResources = append(sortedResources, res)
+	}
+	sort.Strings(sortedResources)
+
+	out := make([]Scope, 0, len(declared))
+	seen := map[string]bool{}
+	add := func(s Scope) {
+		key := s.String()
+		if !seen[key] {
+			seen[key] = true
+			out = append(out, s)
+		}
+	}
+	for _, s := range declared {
+		switch {
+		case s.Resource == "*" && wildcard:
+			add(s)
+		case s.Resource == "*":
+			for _, res := range sortedResources {
+				add(Scope{Resource: res, Action: best[res]})
+			}
+		case wildcard:
+			add(s)
+		default:
+			grant, ok := best[s.Resource]
+			if !ok {
+				continue
+			}
+			if actionRank(grant) >= actionRank(s.Action) {
+				add(s)
+			} else {
+				add(Scope{Resource: s.Resource, Action: grant}) // 阶梯降档
+			}
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
