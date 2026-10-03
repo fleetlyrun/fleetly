@@ -203,4 +203,18 @@ case "$CONSTRAINT" in
   *) echo "placement constraint missing/wrong: $CONSTRAINT" >&2; exit 1 ;;
 esac
 
+# P3 单机假设审计（docs/reviews/2026-10-03-single-node-assumption-audit.md
+# 发现 A）：StreamLogs 的容器发现走 manager 本节点的 ContainerList——
+# 调度到 worker 的容器日志静默缺失（已知边界，修复归宿=F2.4 日志管线
+# 重做）。本断言把"manager 节点容器日志可见"的现状下限钉进 e2e：
+# web 双副本必有其一在 manager，日志流不得为空。F2.4 落地后应升级为
+# "两节点容器日志都在流内"。
+log "asserting log stream covers manager-node containers (known boundary until F2.4)"
+LOG_LINES=$(cli --json logs --app "$APP_ID" --process web --tail 50 | grep -c '"' || true)
+if [ "${LOG_LINES:-0}" -eq 0 ]; then
+  echo "log stream returned no frames for web (expected at least the manager-node replica)" >&2
+  exit 1
+fi
+log "log stream live for manager-node replicas ($LOG_LINES frames)"
+
 log "TWO-NODE E2E PASSED"
