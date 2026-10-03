@@ -32,6 +32,30 @@ import (
 type daemonClients struct {
 	cli *client.Client
 	bk  *bkclient.Client
+
+	// 推送面函数值 seam（2026-10-03 架构评审候选 6）：ImagePush/ImageInspect
+	// 是 moby 具体客户端调用，transport 级假面够不到（buildkit session
+	// hijack 太深）——digest 回退与推送错误映射此前只有 FLEETLY_TEST_DOCKER=1
+	// 真机可测。seam 形态同 swarm Provider provider.go 的函数值位；零值回退
+	// 生产实现（生产构造不注入，测试直接注入假面）。
+	imagePush    func(ctx context.Context, target, registryAuth string) (client.ImagePushResponse, error)
+	imageInspect func(ctx context.Context, target string) (client.ImageInspectResult, error)
+}
+
+// pushImage 推送镜像（seam 零值 = 生产实现）。
+func (d *daemonClients) pushImage(ctx context.Context, target, registryAuth string) (client.ImagePushResponse, error) {
+	if d.imagePush != nil {
+		return d.imagePush(ctx, target, registryAuth)
+	}
+	return d.cli.ImagePush(ctx, target, client.ImagePushOptions{RegistryAuth: registryAuth})
+}
+
+// inspectImage 读镜像元数据（seam 零值 = 生产实现）。
+func (d *daemonClients) inspectImage(ctx context.Context, target string) (client.ImageInspectResult, error) {
+	if d.imageInspect != nil {
+		return d.imageInspect(ctx, target)
+	}
+	return d.cli.ImageInspect(ctx, target)
 }
 
 // newDaemonClients 构造双通道客户端：host 为 daemon 端点（空 = DOCKER_HOST
@@ -211,7 +235,7 @@ func (d *daemonClients) pushBuiltImage(ctx context.Context, req capability.Build
 			return "", fmt.Errorf("builders: encode push credentials: %w", err)
 		}
 	}
-	push, err := d.cli.ImagePush(ctx, target, client.ImagePushOptions{RegistryAuth: auth})
+	push, err := d.pushImage(ctx, target, auth)
 	if err != nil {
 		return "", fmt.Errorf("builders: push %s: %w", target, err)
 	}
@@ -232,7 +256,7 @@ func (d *daemonClients) pushBuiltImage(ctx context.Context, req capability.Build
 	}
 	if digest == "" {
 		// RepoDigests 兜底：推送后 daemon 记录 <repo>@sha256:<digest>。
-		inspect, ierr := d.cli.ImageInspect(ctx, target)
+		inspect, ierr := d.inspectImage(ctx, target)
 		if ierr != nil {
 			return "", fmt.Errorf("builders: inspect pushed image: %w", ierr)
 		}
