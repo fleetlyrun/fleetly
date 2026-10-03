@@ -148,6 +148,25 @@ else
   rm -rf "$RTMP"
 fi
 
+# ---- 4d. restic（Platform Backup，F2.2/ADR-0039）钉版安装 ----
+# 平台钉版常量的 shell 面（与 internal/engine 的 PinnedResticVersion 同
+# commit 纪律——guards 静态断言两处一致）。失败不阻断安装：Platform
+# Backup 停用并精确提示，Database 备份轨不受影响。
+RESTIC_VERSION="0.19.1"
+if command -v restic >/dev/null 2>&1 && restic version 2>/dev/null | grep -q "restic $RESTIC_VERSION "; then
+  log "restic $RESTIC_VERSION already present"
+else
+  RSTMP="$(mktemp -d)"
+  log "installing restic $RESTIC_VERSION (platform backup engine)"
+  if curl -fsSL "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${ARCH}.bz2" -o "$RSTMP/restic.bz2" 2>/dev/null \
+     && bunzip2 "$RSTMP/restic.bz2" 2>/dev/null && [ -f "$RSTMP/restic" ]; then
+    install -m 0755 "$RSTMP/restic" "$BIN_DIR/restic"
+  else
+    log "NOTE: restic download failed — platform backups stay disabled until you install restic $RESTIC_VERSION"
+  fi
+  rm -rf "$RSTMP"
+fi
+
 # ---- 5. 数据根 + fleetlyd 起服 ----
 DATA_ROOT="${FLEETLY_DATA_ROOT:-/var/lib/fleetly}"
 mkdir -p "$DATA_ROOT"

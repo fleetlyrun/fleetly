@@ -113,6 +113,12 @@ type Options struct {
 	// 流式执行面——单写者环卡死即时间看门狗失明，ManagedStepTimeout 同
 	// 源教训）。
 	BackupTimeout time.Duration
+	// PlatformBackup 是控制面 restic 快照配置（nil = Platform Backup 停用
+	//——装配缺省注入，nil 只属测试形态；ADR-0039）。
+	PlatformBackup *PlatformBackupConfig
+	// ResticPath 是 restic 二进制路径缝（测试注入假可执行；空 = 生产
+	// exec.LookPath 探测——缺席即 Platform Backup 停用的探测面）。
+	ResticPath string
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 }

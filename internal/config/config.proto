@@ -13,6 +13,31 @@ message AppConfig {
   Engine engine = 3;
   // 受管镜像仓库面（ADR-0036）：引用地址可配置，空值 = 停用（现状）。
   Registry registry = 4;
+  // Platform Backup 面（F2.2，ADR-0039）：restic 快照节拍/保留/外置仓。
+  PlatformBackup platform_backup = 5;
+}
+
+// PlatformBackup 是控制面导出（CONTEXT.md 词条）的配置面：本地仓恒在
+//（数据根内，ADR-0020 同机诚实边界），s3 在场 = 追加外置仓（restic 原生
+// S3 backend；捎带 backups/ 目录离机——F2.8 ObjectStore s3 前的离机路径）。
+message PlatformBackup {
+  // interval_secs 是快照节拍（空值回退 86400 = 24h）。
+  int64 interval_secs = 1;
+  // retention_secs 是保留窗（空值回退 604800 = 7d；restic forget
+  // --keep-within 同口径）。
+  int64 retention_secs = 2;
+  // s3 是外置仓配置；缺席 = 仅本地仓（"同机备份非灾备"诚实边界）。
+  PlatformBackupS3 s3 = 3;
+}
+
+message PlatformBackupS3 {
+  // endpoint 是 S3 兼容端点（含端口，如 s3.amazonaws.com 或自宿 RustFS）。
+  string endpoint = 1;
+  string bucket = 2;
+  // prefix 是仓内路径前缀（空 = 桶根）。
+  string prefix = 3;
+  string access_key_id = 4;
+  string secret_access_key = 5;
 }
 
 message Server {

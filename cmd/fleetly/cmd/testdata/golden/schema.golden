@@ -40,6 +40,8 @@ network.peer_declared	event	A peer project declared intent to attach to a networ
 network.peer_revoked	event	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).
 node.joined	event	Node joined the cluster and was anchored with a platform node ID.
 node.left	event	Node left the cluster.
+platform.backup_failed	event	A platform backup failed; the payload carries the restic error tail.
+platform.backup_succeeded	event	A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.
 project.created	event	A project was created.
 project.deleted	event	A project was deleted (tombstoned).
 role.created	event	A custom role was created from a scope set.

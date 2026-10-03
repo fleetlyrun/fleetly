@@ -20,6 +20,12 @@ const (
 	// 修订：skip = 上一拍 Run 未终态时跳过本拍；fire = 照常拍）。值域
 	// 执法在 engine.ParseScheduleOverlap（fail-fast）。
 	DefaultScheduleOverlapPolicy = "skip"
+	// DefaultPlatformBackupIntervalSecs 是 Platform Backup 快照节拍缺省
+	//（24h，ADR-0029 决策 7 口径；ADR-0039）。
+	DefaultPlatformBackupIntervalSecs = int64(86400)
+	// DefaultPlatformBackupRetentionSecs 是 Platform Backup 保留窗缺省
+	//（7d，restic forget --keep-within 同口径）。
+	DefaultPlatformBackupRetentionSecs = int64(604800)
 )
 
 // WithDefaults 就地填充空缺省字段，返回同一实例（链式）。
@@ -59,6 +65,15 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	}
 	if c.GetEngine().GetScheduleOverlapPolicy() == "" {
 		c.Engine.ScheduleOverlapPolicy = DefaultScheduleOverlapPolicy
+	}
+	if c.GetPlatformBackup() == nil {
+		c.PlatformBackup = &PlatformBackup{}
+	}
+	if c.GetPlatformBackup().GetIntervalSecs() <= 0 {
+		c.PlatformBackup.IntervalSecs = DefaultPlatformBackupIntervalSecs
+	}
+	if c.GetPlatformBackup().GetRetentionSecs() <= 0 {
+		c.PlatformBackup.RetentionSecs = DefaultPlatformBackupRetentionSecs
 	}
 	return c
 }
@@ -113,4 +128,29 @@ func (c *AppConfig) ScheduleOverlapPolicy() string {
 		return p
 	}
 	return DefaultScheduleOverlapPolicy
+}
+
+// PlatformBackupInterval 是快照节拍访问器（容忍 nil 链；ADR-0039）。
+func (c *AppConfig) PlatformBackupInterval() int64 {
+	if v := c.GetPlatformBackup().GetIntervalSecs(); v > 0 {
+		return v
+	}
+	return DefaultPlatformBackupIntervalSecs
+}
+
+// PlatformBackupRetention 是保留窗访问器（容忍 nil 链；ADR-0039）。
+func (c *AppConfig) PlatformBackupRetention() int64 {
+	if v := c.GetPlatformBackup().GetRetentionSecs(); v > 0 {
+		return v
+	}
+	return DefaultPlatformBackupRetentionSecs
+}
+
+// PlatformBackupS3 返回外置仓配置（nil = 未配置——仅本地仓的诚实边界）。
+func (c *AppConfig) PlatformBackupS3() *PlatformBackupS3 {
+	s3 := c.GetPlatformBackup().GetS3()
+	if s3 == nil || s3.GetEndpoint() == "" || s3.GetBucket() == "" {
+		return nil
+	}
+	return s3
 }

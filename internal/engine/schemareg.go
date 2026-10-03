@@ -96,4 +96,6 @@ func init() {
 	registerEventPayload(eventBackupSucceeded, backupEventPayload{})
 	registerEventPayload(eventBackupFailed, backupEventPayload{})
 	registerEventPayload(eventDatabaseRestored, databaseRestoredEventPayload{})
+	registerEventPayload(eventPlatformBackupOK, platformBackupEventPayload{})
+	registerEventPayload(eventPlatformBackupFail, platformBackupEventPayload{})
 }

@@ -116,4 +116,8 @@ var builtins = []Event{
 	{Name: "database.backup_succeeded", Summary: "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).", Source: "internal/engine/backup.go executeOneBackup"},
 	{Name: "database.backup_failed", Summary: "A database backup failed; the payload carries the error tail (utility container stderr included).", Source: "internal/engine/backup.go executeOneBackup"},
 	{Name: "database.restored", Summary: "A database restore completed (stream into a running target or volume pre-seeding before first start).", Source: "internal/engine/backup.go restoreDatabase"},
+
+	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
+	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/engine/backup.go platformBackupPass"},
+	{Name: "platform.backup_failed", Summary: "A platform backup failed; the payload carries the restic error tail.", Source: "internal/engine/backup.go platformBackupPass"},
 }

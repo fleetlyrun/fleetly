@@ -191,10 +191,19 @@ const (
 
 // Backup 事件名锚定（F2.2，ADR-0039；usage 反扫的字面量命中点）。
 const (
-	eventBackupSucceeded  = "database.backup_succeeded" // engine 备份环发射
-	eventBackupFailed     = "database.backup_failed"    // engine 备份环发射
-	eventDatabaseRestored = "database.restored"         // engine 恢复面发射（成功；失败走行 restore_error）
+	eventBackupSucceeded    = "database.backup_succeeded" // engine 备份环发射
+	eventBackupFailed       = "database.backup_failed"    // engine 备份环发射
+	eventDatabaseRestored   = "database.restored"         // engine 恢复面发射（成功；失败走行 restore_error）
+	eventPlatformBackupOK   = "platform.backup_succeeded" // engine 平台备份面发射
+	eventPlatformBackupFail = "platform.backup_failed"    // engine 平台备份面发射
 )
+
+// platform.backup_* payload schema（restic 链整体成败；快照细节在仓库
+// 自身——事件只携带节拍事实）。
+type platformBackupEventPayload struct {
+	Retention string `json:"retention,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
 
 // TaskCreatedEventJSON 构造 task.created payload（API 受理面消费）。
 func TaskCreatedEventJSON(t *task.Task) []byte { return taskEventPayloadJSON(t, "") }
@@ -306,6 +315,12 @@ func databaseRestoredEventJSON(db *dbrepo.Database, src *backup.Backup) []byte {
 		FromBackup: src.ID,
 		ObjectKey:  src.ObjectKey,
 	})
+	return b
+}
+
+// platformBackupEventJSON 构造 platform.backup_* payload。
+func platformBackupEventJSON(retention, errMsg string) []byte {
+	b, _ := json.Marshal(platformBackupEventPayload{Retention: retention, Error: errMsg})
 	return b
 }
 

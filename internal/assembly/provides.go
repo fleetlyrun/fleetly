@@ -213,10 +213,26 @@ func NewEngine(
 	if err != nil {
 		return nil, err
 	}
+	// Platform Backup 配置快照（ADR-0039）：缺省节拍/保留经 config 访问器；
+	// s3 未配置 = 仅本地仓。
+	pb := &engine.PlatformBackupConfig{
+		Interval:  time.Duration(cfg.PlatformBackupInterval()) * time.Second,
+		Retention: time.Duration(cfg.PlatformBackupRetention()) * time.Second,
+	}
+	if s3 := cfg.PlatformBackupS3(); s3 != nil {
+		pb.S3 = &engine.S3RepoConfig{
+			Endpoint: s3.GetEndpoint(), Bucket: s3.GetBucket(), Prefix: s3.GetPrefix(),
+			AccessKeyID: s3.GetAccessKeyId(), SecretAccessKey: s3.GetSecretAccessKey(),
+		}
+	}
 	return engine.New(engine.Deps{
 		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg,
 		ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
-	}, engine.Options{DataRoot: cfg.DataRoot(), ScheduleOverlap: overlap}), nil
+	}, engine.Options{
+		DataRoot:        cfg.DataRoot(),
+		ScheduleOverlap: overlap,
+		PlatformBackup:  pb,
+	}), nil
 }
 
 // NewAPIServices 构造六上下文 API 服务依赖集（scope 词表单一源注入；

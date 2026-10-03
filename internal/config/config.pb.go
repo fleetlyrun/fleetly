@@ -31,9 +31,11 @@ type AppConfig struct {
 	Data   *Data                  `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
 	Engine *Engine                `protobuf:"bytes,3,opt,name=engine,proto3" json:"engine,omitempty"`
 	// 受管镜像仓库面（ADR-0036）：引用地址可配置，空值 = 停用（现状）。
-	Registry      *Registry `protobuf:"bytes,4,opt,name=registry,proto3" json:"registry,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	Registry *Registry `protobuf:"bytes,4,opt,name=registry,proto3" json:"registry,omitempty"`
+	// Platform Backup 面（F2.2，ADR-0039）：restic 快照节拍/保留/外置仓。
+	PlatformBackup *PlatformBackup `protobuf:"bytes,5,opt,name=platform_backup,json=platformBackup,proto3" json:"platform_backup,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *AppConfig) Reset() {
@@ -94,6 +96,158 @@ func (x *AppConfig) GetRegistry() *Registry {
 	return nil
 }
 
+func (x *AppConfig) GetPlatformBackup() *PlatformBackup {
+	if x != nil {
+		return x.PlatformBackup
+	}
+	return nil
+}
+
+// PlatformBackup 是控制面导出（CONTEXT.md 词条）的配置面：本地仓恒在
+// （数据根内，ADR-0020 同机诚实边界），s3 在场 = 追加外置仓（restic 原生
+// S3 backend；捎带 backups/ 目录离机——F2.8 ObjectStore s3 前的离机路径）。
+type PlatformBackup struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// interval_secs 是快照节拍（空值回退 86400 = 24h）。
+	IntervalSecs int64 `protobuf:"varint,1,opt,name=interval_secs,json=intervalSecs,proto3" json:"interval_secs,omitempty"`
+	// retention_secs 是保留窗（空值回退 604800 = 7d；restic forget
+	// --keep-within 同口径）。
+	RetentionSecs int64 `protobuf:"varint,2,opt,name=retention_secs,json=retentionSecs,proto3" json:"retention_secs,omitempty"`
+	// s3 是外置仓配置；缺席 = 仅本地仓（"同机备份非灾备"诚实边界）。
+	S3            *PlatformBackupS3 `protobuf:"bytes,3,opt,name=s3,proto3" json:"s3,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlatformBackup) Reset() {
+	*x = PlatformBackup{}
+	mi := &file_config_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformBackup) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformBackup) ProtoMessage() {}
+
+func (x *PlatformBackup) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformBackup.ProtoReflect.Descriptor instead.
+func (*PlatformBackup) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *PlatformBackup) GetIntervalSecs() int64 {
+	if x != nil {
+		return x.IntervalSecs
+	}
+	return 0
+}
+
+func (x *PlatformBackup) GetRetentionSecs() int64 {
+	if x != nil {
+		return x.RetentionSecs
+	}
+	return 0
+}
+
+func (x *PlatformBackup) GetS3() *PlatformBackupS3 {
+	if x != nil {
+		return x.S3
+	}
+	return nil
+}
+
+type PlatformBackupS3 struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// endpoint 是 S3 兼容端点（含端口，如 s3.amazonaws.com 或自宿 RustFS）。
+	Endpoint string `protobuf:"bytes,1,opt,name=endpoint,proto3" json:"endpoint,omitempty"`
+	Bucket   string `protobuf:"bytes,2,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	// prefix 是仓内路径前缀（空 = 桶根）。
+	Prefix          string `protobuf:"bytes,3,opt,name=prefix,proto3" json:"prefix,omitempty"`
+	AccessKeyId     string `protobuf:"bytes,4,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	SecretAccessKey string `protobuf:"bytes,5,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *PlatformBackupS3) Reset() {
+	*x = PlatformBackupS3{}
+	mi := &file_config_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformBackupS3) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformBackupS3) ProtoMessage() {}
+
+func (x *PlatformBackupS3) ProtoReflect() protoreflect.Message {
+	mi := &file_config_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformBackupS3.ProtoReflect.Descriptor instead.
+func (*PlatformBackupS3) Descriptor() ([]byte, []int) {
+	return file_config_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *PlatformBackupS3) GetEndpoint() string {
+	if x != nil {
+		return x.Endpoint
+	}
+	return ""
+}
+
+func (x *PlatformBackupS3) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *PlatformBackupS3) GetPrefix() string {
+	if x != nil {
+		return x.Prefix
+	}
+	return ""
+}
+
+func (x *PlatformBackupS3) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+func (x *PlatformBackupS3) GetSecretAccessKey() string {
+	if x != nil {
+		return x.SecretAccessKey
+	}
+	return ""
+}
+
 type Server struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	Grpc  *GRPC                  `protobuf:"bytes,1,opt,name=grpc,proto3" json:"grpc,omitempty"`
@@ -106,7 +260,7 @@ type Server struct {
 
 func (x *Server) Reset() {
 	*x = Server{}
-	mi := &file_config_proto_msgTypes[1]
+	mi := &file_config_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -118,7 +272,7 @@ func (x *Server) String() string {
 func (*Server) ProtoMessage() {}
 
 func (x *Server) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[1]
+	mi := &file_config_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -131,7 +285,7 @@ func (x *Server) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Server.ProtoReflect.Descriptor instead.
 func (*Server) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{1}
+	return file_config_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *Server) GetGrpc() *GRPC {
@@ -165,7 +319,7 @@ type GRPC struct {
 
 func (x *GRPC) Reset() {
 	*x = GRPC{}
-	mi := &file_config_proto_msgTypes[2]
+	mi := &file_config_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -177,7 +331,7 @@ func (x *GRPC) String() string {
 func (*GRPC) ProtoMessage() {}
 
 func (x *GRPC) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[2]
+	mi := &file_config_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -190,7 +344,7 @@ func (x *GRPC) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GRPC.ProtoReflect.Descriptor instead.
 func (*GRPC) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{2}
+	return file_config_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *GRPC) GetAddr() string {
@@ -210,7 +364,7 @@ type HTTP struct {
 
 func (x *HTTP) Reset() {
 	*x = HTTP{}
-	mi := &file_config_proto_msgTypes[3]
+	mi := &file_config_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -222,7 +376,7 @@ func (x *HTTP) String() string {
 func (*HTTP) ProtoMessage() {}
 
 func (x *HTTP) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[3]
+	mi := &file_config_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -235,7 +389,7 @@ func (x *HTTP) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use HTTP.ProtoReflect.Descriptor instead.
 func (*HTTP) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{3}
+	return file_config_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *HTTP) GetAddr() string {
@@ -263,7 +417,7 @@ type EdgeConfig struct {
 
 func (x *EdgeConfig) Reset() {
 	*x = EdgeConfig{}
-	mi := &file_config_proto_msgTypes[4]
+	mi := &file_config_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -275,7 +429,7 @@ func (x *EdgeConfig) String() string {
 func (*EdgeConfig) ProtoMessage() {}
 
 func (x *EdgeConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[4]
+	mi := &file_config_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -288,7 +442,7 @@ func (x *EdgeConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use EdgeConfig.ProtoReflect.Descriptor instead.
 func (*EdgeConfig) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{4}
+	return file_config_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *EdgeConfig) GetAddr() string {
@@ -318,7 +472,7 @@ type Registry struct {
 
 func (x *Registry) Reset() {
 	*x = Registry{}
-	mi := &file_config_proto_msgTypes[5]
+	mi := &file_config_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -330,7 +484,7 @@ func (x *Registry) String() string {
 func (*Registry) ProtoMessage() {}
 
 func (x *Registry) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[5]
+	mi := &file_config_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -343,7 +497,7 @@ func (x *Registry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Registry.ProtoReflect.Descriptor instead.
 func (*Registry) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{5}
+	return file_config_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *Registry) GetAddr() string {
@@ -364,7 +518,7 @@ type Data struct {
 
 func (x *Data) Reset() {
 	*x = Data{}
-	mi := &file_config_proto_msgTypes[6]
+	mi := &file_config_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -376,7 +530,7 @@ func (x *Data) String() string {
 func (*Data) ProtoMessage() {}
 
 func (x *Data) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[6]
+	mi := &file_config_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -389,7 +543,7 @@ func (x *Data) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Data.ProtoReflect.Descriptor instead.
 func (*Data) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{6}
+	return file_config_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *Data) GetRoot() string {
@@ -412,7 +566,7 @@ type Engine struct {
 
 func (x *Engine) Reset() {
 	*x = Engine{}
-	mi := &file_config_proto_msgTypes[7]
+	mi := &file_config_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -424,7 +578,7 @@ func (x *Engine) String() string {
 func (*Engine) ProtoMessage() {}
 
 func (x *Engine) ProtoReflect() protoreflect.Message {
-	mi := &file_config_proto_msgTypes[7]
+	mi := &file_config_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -437,7 +591,7 @@ func (x *Engine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Engine.ProtoReflect.Descriptor instead.
 func (*Engine) Descriptor() ([]byte, []int) {
-	return file_config_proto_rawDescGZIP(), []int{7}
+	return file_config_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *Engine) GetScheduleOverlapPolicy() string {
@@ -451,12 +605,23 @@ var File_config_proto protoreflect.FileDescriptor
 
 const file_config_proto_rawDesc = "" +
 	"\n" +
-	"\fconfig.proto\x12\x11fleetly.config.v1\"\xd7\x01\n" +
+	"\fconfig.proto\x12\x11fleetly.config.v1\"\xa3\x02\n" +
 	"\tAppConfig\x121\n" +
 	"\x06server\x18\x01 \x01(\v2\x19.fleetly.config.v1.ServerR\x06server\x12+\n" +
 	"\x04data\x18\x02 \x01(\v2\x17.fleetly.config.v1.DataR\x04data\x121\n" +
 	"\x06engine\x18\x03 \x01(\v2\x19.fleetly.config.v1.EngineR\x06engine\x127\n" +
-	"\bregistry\x18\x04 \x01(\v2\x1b.fleetly.config.v1.RegistryR\bregistry\"\xa2\x01\n" +
+	"\bregistry\x18\x04 \x01(\v2\x1b.fleetly.config.v1.RegistryR\bregistry\x12J\n" +
+	"\x0fplatform_backup\x18\x05 \x01(\v2!.fleetly.config.v1.PlatformBackupR\x0eplatformBackup\"\x91\x01\n" +
+	"\x0ePlatformBackup\x12#\n" +
+	"\rinterval_secs\x18\x01 \x01(\x03R\fintervalSecs\x12%\n" +
+	"\x0eretention_secs\x18\x02 \x01(\x03R\rretentionSecs\x123\n" +
+	"\x02s3\x18\x03 \x01(\v2#.fleetly.config.v1.PlatformBackupS3R\x02s3\"\xae\x01\n" +
+	"\x10PlatformBackupS3\x12\x1a\n" +
+	"\bendpoint\x18\x01 \x01(\tR\bendpoint\x12\x16\n" +
+	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x16\n" +
+	"\x06prefix\x18\x03 \x01(\tR\x06prefix\x12\"\n" +
+	"\raccess_key_id\x18\x04 \x01(\tR\vaccessKeyId\x12*\n" +
+	"\x11secret_access_key\x18\x05 \x01(\tR\x0fsecretAccessKey\"\xa2\x01\n" +
 	"\x06Server\x12+\n" +
 	"\x04grpc\x18\x01 \x01(\v2\x17.fleetly.config.v1.GRPCR\x04grpc\x12+\n" +
 	"\x04http\x18\x02 \x01(\v2\x17.fleetly.config.v1.HTTPR\x04http\x12>\n" +
@@ -490,30 +655,34 @@ func file_config_proto_rawDescGZIP() []byte {
 	return file_config_proto_rawDescData
 }
 
-var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_config_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_config_proto_goTypes = []any{
-	(*AppConfig)(nil),  // 0: fleetly.config.v1.AppConfig
-	(*Server)(nil),     // 1: fleetly.config.v1.Server
-	(*GRPC)(nil),       // 2: fleetly.config.v1.GRPC
-	(*HTTP)(nil),       // 3: fleetly.config.v1.HTTP
-	(*EdgeConfig)(nil), // 4: fleetly.config.v1.EdgeConfig
-	(*Registry)(nil),   // 5: fleetly.config.v1.Registry
-	(*Data)(nil),       // 6: fleetly.config.v1.Data
-	(*Engine)(nil),     // 7: fleetly.config.v1.Engine
+	(*AppConfig)(nil),        // 0: fleetly.config.v1.AppConfig
+	(*PlatformBackup)(nil),   // 1: fleetly.config.v1.PlatformBackup
+	(*PlatformBackupS3)(nil), // 2: fleetly.config.v1.PlatformBackupS3
+	(*Server)(nil),           // 3: fleetly.config.v1.Server
+	(*GRPC)(nil),             // 4: fleetly.config.v1.GRPC
+	(*HTTP)(nil),             // 5: fleetly.config.v1.HTTP
+	(*EdgeConfig)(nil),       // 6: fleetly.config.v1.EdgeConfig
+	(*Registry)(nil),         // 7: fleetly.config.v1.Registry
+	(*Data)(nil),             // 8: fleetly.config.v1.Data
+	(*Engine)(nil),           // 9: fleetly.config.v1.Engine
 }
 var file_config_proto_depIdxs = []int32{
-	1, // 0: fleetly.config.v1.AppConfig.server:type_name -> fleetly.config.v1.Server
-	6, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
-	7, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
-	5, // 3: fleetly.config.v1.AppConfig.registry:type_name -> fleetly.config.v1.Registry
-	2, // 4: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
-	3, // 5: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
-	4, // 6: fleetly.config.v1.Server.edge_config:type_name -> fleetly.config.v1.EdgeConfig
-	7, // [7:7] is the sub-list for method output_type
-	7, // [7:7] is the sub-list for method input_type
-	7, // [7:7] is the sub-list for extension type_name
-	7, // [7:7] is the sub-list for extension extendee
-	0, // [0:7] is the sub-list for field type_name
+	3, // 0: fleetly.config.v1.AppConfig.server:type_name -> fleetly.config.v1.Server
+	8, // 1: fleetly.config.v1.AppConfig.data:type_name -> fleetly.config.v1.Data
+	9, // 2: fleetly.config.v1.AppConfig.engine:type_name -> fleetly.config.v1.Engine
+	7, // 3: fleetly.config.v1.AppConfig.registry:type_name -> fleetly.config.v1.Registry
+	1, // 4: fleetly.config.v1.AppConfig.platform_backup:type_name -> fleetly.config.v1.PlatformBackup
+	2, // 5: fleetly.config.v1.PlatformBackup.s3:type_name -> fleetly.config.v1.PlatformBackupS3
+	4, // 6: fleetly.config.v1.Server.grpc:type_name -> fleetly.config.v1.GRPC
+	5, // 7: fleetly.config.v1.Server.http:type_name -> fleetly.config.v1.HTTP
+	6, // 8: fleetly.config.v1.Server.edge_config:type_name -> fleetly.config.v1.EdgeConfig
+	9, // [9:9] is the sub-list for method output_type
+	9, // [9:9] is the sub-list for method input_type
+	9, // [9:9] is the sub-list for extension type_name
+	9, // [9:9] is the sub-list for extension extendee
+	0, // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_config_proto_init() }
@@ -527,7 +696,7 @@ func file_config_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_config_proto_rawDesc), len(file_config_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   0,
 		},

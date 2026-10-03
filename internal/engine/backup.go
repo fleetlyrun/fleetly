@@ -30,12 +30,37 @@ import (
 func (e *Engine) KickBackups() { e.backupLoop.Kick() }
 
 // backupStep 是 Backup 环的单次推进：恢复（用户在等，最高优先）→ 调度
-// → 执行一件 → 保留滚动。
+// → 执行一件 → 保留滚动 → Platform Backup 节拍。
 func (e *Engine) backupStep(ctx context.Context) {
 	e.restorePass(ctx)
 	e.schedulePass(ctx)
 	e.executeOneBackup(ctx)
 	e.prunePass(ctx)
+	e.platformBackupPass(ctx)
+}
+
+// platformBackupPass 到点执行 Platform Backup（restic 链；ADR-0039 决策 9）
+// ——事件按整体成败落，节拍锚只在全链成功推进。
+func (e *Engine) platformBackupPass(ctx context.Context) {
+	cfg := e.opts.PlatformBackup
+	if cfg == nil || !e.platformBackupDue(*cfg) {
+		return
+	}
+	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
+	defer cancel()
+	if err := e.runPlatformBackup(execCtx, *cfg); err != nil {
+		e.log.Error("platform backup failed", "err", err)
+		if _, aerr := e.outbox.Append(ctx, e.db.Runner(), eventPlatformBackupFail, "platform", "platform-backup",
+			platformBackupEventJSON("", err.Error())); aerr != nil {
+			e.log.Error("platform backup: emit event", "err", aerr)
+		}
+		return
+	}
+	e.log.Info("platform backup completed", "retention", cfg.Retention.String())
+	if _, aerr := e.outbox.Append(ctx, e.db.Runner(), eventPlatformBackupOK, "platform", "platform-backup",
+		platformBackupEventJSON(cfg.Retention.String(), "")); aerr != nil {
+		e.log.Error("platform backup: emit event", "err", aerr)
+	}
 }
 
 // backupChainReady 报告执行链装配面（ObjectStore/Utility 缺席 = 备份停用，

@@ -37,6 +37,8 @@ network.peer_declared	A peer project declared intent to attach to a network (pen
 network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/api/fleetlygrpc/structure.go RevokeNetworkPeer
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
+platform.backup_failed	A platform backup failed; the payload carries the restic error tail.	internal/engine/backup.go platformBackupPass
+platform.backup_succeeded	A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.	internal/engine/backup.go platformBackupPass
 project.created	A project was created.	internal/api/fleetlygrpc/structure.go CreateProject
 project.deleted	A project was deleted (tombstoned).	internal/api/fleetlygrpc/structure.go DeleteProject
 role.created	A custom role was created from a scope set.	added during implementation

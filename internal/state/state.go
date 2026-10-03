@@ -135,6 +135,16 @@ func (d *DB) Clock() Clock { return d.clock }
 // Runner，不新增查询语义）。
 func (d *DB) Runner() Runner { return d.db }
 
+// VacuumInto 铸在线一致快照到 target（Platform Backup 的 SQLite 面，
+// ADR-0039：VACUUM INTO 不阻塞并发写、产出独立完整库文件；live 库三件
+// 排除在备份集外，恢复面以快照为准）。target 已存在时报错（调用方先清）。
+func (d *DB) VacuumInto(ctx context.Context, target string) error {
+	if _, err := d.db.ExecContext(ctx, "VACUUM INTO ?", target); err != nil {
+		return fmt.Errorf("state: vacuum into %s: %w", target, err)
+	}
+	return nil
+}
+
 // migrate 执行 goose 前滚（只加法；失败=恢复 Platform Backup 重放，
 // 架构 §8）。
 func migrate(ctx context.Context, db *sql.DB) error {

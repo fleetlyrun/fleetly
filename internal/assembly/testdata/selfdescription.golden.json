@@ -1930,6 +1930,42 @@
       }
     },
     {
+      "name": "platform.backup_failed",
+      "kind": "event",
+      "summary": "A platform backup failed; the payload carries the restic error tail.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "retention": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
+      "name": "platform.backup_succeeded",
+      "kind": "event",
+      "summary": "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.",
+      "schema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "retention": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      }
+    },
+    {
       "name": "project.created",
       "kind": "event",
       "summary": "A project was created.",
