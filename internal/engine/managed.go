@@ -101,8 +101,11 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	}
 	refs := e.activeProjectNetworks(ctx)
 	// 逐 Provider 组装下发集（Edge 合并活跃项目网——跨网触达后端；zot
-	// 不挂——发布端口可达，附录 B.1）。
+	// 不挂——发布端口可达，附录 B.1）并预计算签名（C16：Ensure 全部输入
+	// 的指纹——下发集含网引用集 + 材料；任一输入变化即短路失效，无需
+	// 额外 Kick 通道）。
 	ensured := make([][]capability.Workload, len(decls))
+	sigs := make([]string, len(decls))
 	var all []capability.Workload
 	for i, decl := range decls {
 		ws := decl.m.ManagedWorkloads()
@@ -115,21 +118,35 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 		ensured[i] = ws
 		all = append(all, ws...)
-	}
-	// 指纹覆盖全部受管域的完整下发集（Generation=已下发 Spec 的单调编号，
-	// CONTEXT.md——网引用集变化也推进 gen，一次性收敛不逐 tick 滚动）。
-	gen := e.managedGen.next(managedFingerprint(all))
-	for i, decl := range decls {
-		ws := ensured[i]
 		materials := capability.Materials{}
 		if src, ok := decl.m.(capability.MaterialsSource); ok {
 			materials = src.ManagedMaterials()
 		}
+		sigs[i] = managedFingerprint(ws) + "\x00" + materialsFingerprint(materials)
+	}
+	// 指纹覆盖全部受管域的完整下发集（Generation=已下发 Spec 的单调编号，
+	// CONTEXT.md——网引用集变化也推进 gen，一次性收敛不逐 tick 滚动）。
+	gen := e.managedGen.next(managedFingerprint(all))
+	now := e.clock.Now()
+	for i, decl := range decls {
+		ws := ensured[i]
 		ns := decl.m.ManagedNamespace()
+		// 签名短路（C16）：上次成功 Ensure 的完整签名未变且未到强制重放
+		// 节拍 → 跳过本拍 Ensure（材料解析+下发全套）。环外变更（人工改
+		// 载体、载体漂移）由强制重放节拍兜底（Options.ReconcileReplayInterval）。
+		if _, fresh := e.ensureFresh(e.managedEnsure, ns.String(), sigs[i], now); fresh {
+			continue
+		}
+		materials := capability.Materials{}
+		if src, ok := decl.m.(capability.MaterialsSource); ok {
+			materials = src.ManagedMaterials()
+		}
 		if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
 			e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
-			continue // 单 Provider 失败不阻断其余受管面收敛
+			e.ensureForget(e.managedEnsure, ns.String()) // 失败清签名：下拍重试
+			continue                                     // 单 Provider 失败不阻断其余受管面收敛
 		}
+		e.ensureRemember(e.managedEnsure, ns.String(), ensureMemo{sig: sigs[i], gen: gen, at: now})
 		for _, w := range ws {
 			e.obsMu.Lock()
 			e.workloadApp[w.ID] = managedDomainKeyPrefix + w.Process // 归属登记（观测/drift 面）
@@ -147,12 +164,41 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	}
 }
 
+// materialsFingerprint 返回材料的稳定指纹（json.Marshal 对 map 键排序；
+// []byte 走 base64——确定性序列化。序列化失败退化为逐次唯一值——保守
+// 推进，宁重下发不漏变更，managedFingerprint 同款取舍）。
+func materialsFingerprint(m capability.Materials) string {
+	b, err := json.Marshal(struct {
+		RegistryAuth map[string]capability.RegistryCredential `json:"registry_auth,omitempty"`
+		SecretFiles  map[string][]byte                        `json:"secret_files,omitempty"`
+	}{m.RegistryAuth, m.SecretFiles})
+	if err != nil {
+		return fmt.Sprintf("unserializable-%p", &m)
+	}
+	return string(b)
+}
+
 // publishRoutes 全量发布 Route（后端地址经 Runtime.Addresses 解析；解析
 // 不到的跳过——诚实降级，不阻断其余 Route）。
+//
+// 签名短路（N1 C16b）：行集指纹未变且未到强制重放节拍 → 跳过解析与发布
+// （每秒全量 Routes.List + per-Route Addresses + Publish 的稳态面收敛为
+// 一次轻量指纹比对）。后端地址不是行集的一部分——载体漂移/Dead backend
+// 撤流由 PublishRoutesNow 即时触发与强制重放节拍兜底（滞后有界，终态同）。
 func (e *Engine) publishRoutes(ctx context.Context) {
 	routes, err := e.routes.List(ctx, e.db.Runner())
 	if err != nil {
 		e.log.Error("route publish: list", "err", err)
+		e.forgetPublishedRoutes() // 指纹失真：下拍强制全量
+		return
+	}
+	now := e.clock.Now()
+	sig := routesFingerprint(routes)
+	forced := e.routesPubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
+	e.ensureMu.Lock()
+	skip := !forced && sig == e.routesPubSig && now.Before(e.routesPubAt.Add(e.opts.ReconcileReplayInterval))
+	e.ensureMu.Unlock()
+	if skip {
 		return
 	}
 	publish := make([]capability.Route, 0, len(routes))
@@ -172,7 +218,51 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	}
 	if err := e.edge.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: edge rejected config", "err", err)
+		e.forgetPublishedRoutes() // 发布失败：下拍强制重试全量
+		return
 	}
+	e.ensureMu.Lock()
+	e.routesPubSig, e.routesPubAt = sig, now
+	e.ensureMu.Unlock()
+}
+
+// forgetPublishedRoutes 作废 Route 发布签名（列表/发布失败与 API 触发面
+// 消费：下一拍无条件全量重发布）。
+func (e *Engine) forgetPublishedRoutes() {
+	e.ensureMu.Lock()
+	e.routesPubSig = ""
+	e.ensureMu.Unlock()
+}
+
+// routesFingerprint 返回活跃 Route 行集的轻量聚合指纹（行内容 +
+// updated_at；List 返回 id 升序——序列化序稳定。C16b：routes 表无版本列，
+// 行集内容指纹是变更号的最小等价物）。
+func routesFingerprint(rows []route.Route) string {
+	type fpRow struct {
+		ID        string `json:"id"`
+		Host      string `json:"host"`
+		Path      string `json:"path"`
+		AppID     string `json:"app"`
+		Process   string `json:"process"`
+		Port      int32  `json:"port"`
+		Protocol  string `json:"protocol"`
+		TLSMode   string `json:"tls"`
+		UpdatedAt string `json:"updated_at"`
+	}
+	out := make([]fpRow, len(rows))
+	for i := range rows {
+		out[i] = fpRow{
+			ID: rows[i].ID, Host: rows[i].Host, Path: rows[i].Path,
+			AppID: rows[i].AppID, Process: rows[i].Process, Port: rows[i].Port,
+			Protocol: string(rows[i].Protocol), TLSMode: rows[i].TLSMode,
+			UpdatedAt: rows[i].UpdatedAt,
+		}
+	}
+	b, err := json.Marshal(out)
+	if err != nil {
+		return fmt.Sprintf("unserializable-%p", &rows) // 保守推进：宁重发布不漏变更
+	}
+	return string(b)
 }
 
 // resolveBackend 解析 Route 后端地址（Runtime.Addresses 按 process+port
@@ -234,5 +324,9 @@ func (e *Engine) activeProjectNetworks(ctx context.Context) []capability.Network
 }
 
 // PublishRoutesNow 触发一次即时 Route 发布（API 写路径在 Route 变更后
-// Kick；测试直调）。
-func (e *Engine) PublishRoutesNow() { e.managedLoop.Kick() }
+// Kick；测试直调）。置即时信号消费于下一拍——短路对本次发布失效（C16b
+// 的强制绕过通道），随后恢复签名节律。
+func (e *Engine) PublishRoutesNow() {
+	e.routesPubNow.Store(true)
+	e.managedLoop.Kick()
+}

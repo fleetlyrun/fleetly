@@ -113,8 +113,9 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	assert.Equal(t, dbrepo.StatusRunning, fresh.Status)
 }
 
-// gen 重启安全语义：指纹未变多 tick 同号重放（载体不滚）；网集变化推进
-// gen 一次后在新值稳定（managed_edge_test 钉死语义的用户域版）。
+// gen 重启安全语义：指纹未变多 tick 不重下发（载体不滚；N1 C16 短路——
+// 稳态零 Ensure 调用）；网集变化推进 gen 一次后在新值稳定（managed_edge_test
+// 钉死语义的用户域版）。
 func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
 	e, rt, _ := newDatabaseFixture(t, "postgres", url)
@@ -124,12 +125,10 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 		e.databaseStep(ctx)
 	}
 	calls := rt.calls()
-	require.Len(t, calls, 4)
-	for _, c := range calls {
-		assert.Equal(t, calls[0].Gen, c.Gen, "unchanged projection must replay the same generation")
-	}
+	require.Len(t, calls, 1, "unchanged inputs must short-circuit to a single Ensure (C16)")
+	assert.Equal(t, capability.Generation(1), calls[0].Gen, "unchanged projection stays on its generation")
 
-	// 新项目网 → 网集变化 → gen 恰好推进一次，随后稳定。
+	// 新项目网 → 网集变化 → 短路失效，恰好一次重下发（gen 推进），随后稳定。
 	require.NoError(t, networkrepo.New(e.db.Clock()).Create(ctx, e.db.Runner(), &networkrepo.Network{
 		ID: "01JD0NET000000000000000002", ProjectID: tProjectID, Name: "internal",
 	}))
@@ -137,11 +136,73 @@ func TestDatabaseGenerationStableAcrossTicks(t *testing.T) {
 		e.databaseStep(ctx)
 	}
 	calls = rt.calls()
-	require.Len(t, calls, 7)
-	assert.Greater(t, calls[4].Gen, calls[3].Gen, "network-set change must advance the generation")
-	assert.Equal(t, calls[4].Gen, calls[5].Gen)
-	assert.Equal(t, calls[4].Gen, calls[6].Gen)
-	assert.Len(t, calls[6].Spec["postgres"].Networks, 2)
+	require.Len(t, calls, 2, "network-set change must produce exactly one new Ensure")
+	assert.Greater(t, uint64(calls[1].Gen), uint64(calls[0].Gen), "network-set change must advance the generation")
+	assert.Len(t, calls[1].Spec["postgres"].Networks, 2)
+}
+
+// N1 C16：签名短路的短路拍不停状态收敛——观测 running 到达后，跳过 Ensure
+// 的拍照样把行状态推进 running（观测缓存独立于 Ensure）。
+func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, rt, _ := newDatabaseFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	e.databaseStep(ctx)
+	require.Len(t, rt.calls(), 1)
+
+	// 短路拍：观测 running@gen1 到达（Watch 流路径），Ensure 不重发而状态照推。
+	e.obsMu.Lock()
+	e.observations[tDatabaseID] = capability.WorkloadEvent{
+		WorkloadID: tDatabaseID, Generation: 1, State: capability.WorkloadRunning,
+	}
+	e.obsMu.Unlock()
+	e.databaseStep(ctx)
+	assert.Len(t, rt.calls(), 1, "the short-circuited tick must not re-Ensure")
+	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
+	require.NoError(t, err)
+	assert.Equal(t, dbrepo.StatusRunning, fresh.Status, "status must advance on the skipped tick")
+
+	// 凭证轮换（密文变化）→ 短路失效重下发（新密码材料随 Ensure）。
+	cipher := e.cipher
+	ct, err := cipher.Seal([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly"))
+	require.NoError(t, err)
+	require.NoError(t, secret.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
+		ID: "01JD0SEC000000000000000001", ProjectID: tProjectID,
+		Name: DBCredentialSecretName(tDatabaseName), Ciphertext: ct,
+		Fingerprint: material.Fingerprint([]byte("postgresql://fleetly:newpw@db-01jd0db000000000000000000:5432/fleetly")),
+	}))
+	e.databaseStep(ctx)
+	calls := rt.calls()
+	require.Len(t, calls, 2, "credential rotation must invalidate the short-circuit")
+	assert.Equal(t, []byte("newpw"), calls[1].Materials.SecretFiles[dbPasswordFile])
+}
+
+// N1 C16：凭证 Secret 读失败 = 不 Ensure 不落签名（诚实失败语义与短路
+// 互不破坏：失败拍清签名，恢复后下拍重下发）。
+func TestDatabaseCredentialFailureClearsSignature(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, rt, row := newDatabaseFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	e.databaseStep(ctx)
+	require.Len(t, rt.calls(), 1)
+
+	// 软删凭证 → 短路拍预读失败 → 不 Ensure。
+	require.NoError(t, secret.New(e.db.Clock()).SoftDelete(ctx, e.db.Runner(), tProjectID, row.CredentialsRef))
+	e.databaseStep(ctx)
+	assert.Len(t, rt.calls(), 1, "credential lookup failure must not reach Ensure")
+
+	// 恢复凭证 → 下拍重下发（签名此前已被失败拍拒绝）。软删行不复用
+	// ID（Upsert 走 GetByName 活跃行判定，旧 ID 已占主键）。
+	ct, err := e.cipher.Seal([]byte(url))
+	require.NoError(t, err)
+	require.NoError(t, secret.New(e.db.Clock()).Upsert(ctx, e.db.Runner(), &secret.Secret{
+		ID: "01JD0SEC0000000000000000R1", ProjectID: tProjectID,
+		Name: row.CredentialsRef, Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(url)),
+	}))
+	e.databaseStep(ctx)
+	require.Len(t, rt.calls(), 2, "recovered credentials must re-Ensure (no stale signature)")
 }
 
 // redis 模板：requirepass 配置文件材料 + 干净 argv（不落明文）。

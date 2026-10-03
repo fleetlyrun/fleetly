@@ -8,6 +8,8 @@ package engine
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -17,6 +19,7 @@ import (
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
+	"github.com/fleetlyrun/fleetly/internal/state/secret"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 	"github.com/oklog/ulid/v2"
 )
@@ -66,6 +69,12 @@ func (e *Engine) databaseStep(ctx context.Context) {
 // reconcileDatabase 收敛单行：投影（模板 + 项目网 + 寻址 + 卷）→ 材料
 // （凭证 Secret 解密回读）→ gen 口（指纹变化才推进）→ Ensure → 归属登记
 // 与状态推进。
+//
+// 签名短路（N1 C16）：Ensure 全部输入的指纹（投影集 + 寻址域 + 凭证密文
+// 指纹）未变且未到强制重放节拍 → 跳过解密/卷补建/钉住/gen 口/Ensure 全套
+// 重活，仅保留观测驱动的状态推进（观测缓存与 Ensure 无关，短路拍照常收
+// 敛状态）。凭证以 Secret 行密文摘要为材料指纹的代理——轮换/重封装改变
+// 密文即短路失效，无需解密（宁重下发不漏变更）。
 func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	// 单步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
@@ -94,7 +103,21 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 		e.log.Error("database reconcile: project spec", "database", row.ID, "err", err)
 		return
 	}
-	materials, err := e.databaseMaterials(stepCtx, row, tpl)
+	// 凭证 Secret 行预读（不解密）：短路签名的材料面 + 下发段的解密输入
+	// 单源。读失败与既有材料失败路径同形（不 Ensure，载体保持现状）。
+	sec, err := e.secrets.GetByName(stepCtx, e.db.Runner(), row.ProjectID, row.CredentialsRef)
+	if err != nil {
+		e.log.Error("database reconcile: resolve credentials", "database", row.ID,
+			"err", fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err))
+		return
+	}
+	sig := managedFingerprint([]capability.Workload{w}) + "\x00" + ns.String() + "\x00" + credentialFingerprint(sec.Ciphertext)
+	now := e.clock.Now()
+	if memo, fresh := e.ensureFresh(e.dbEnsure, row.ID, sig, now); fresh {
+		e.advanceDatabaseStatus(stepCtx, row, memo.gen)
+		return
+	}
+	materials, err := e.databaseMaterials(stepCtx, row, tpl, sec)
 	if err != nil {
 		// 凭证面失败 = 不 Ensure（载体保持现状），下一拍重试——静默拆载体
 		// 比收敛失败更糟。
@@ -125,8 +148,10 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	}
 	if err := e.runtime.Ensure(stepCtx, ns, ws, capability.Generation(gen), materials); err != nil {
 		e.log.Error("database reconcile: ensure", "database", row.ID, "generation", gen, "err", err)
+		e.ensureForget(e.dbEnsure, row.ID) // 失败清签名：下拍重试
 		return
 	}
+	e.ensureRemember(e.dbEnsure, row.ID, ensureMemo{sig: sig, gen: gen, at: now})
 	// 归属/期望登记（观测路由 + 稳态看门狗；driftScan 对 database/ 前缀
 	// 跳过 spec 对照——非 App 行键）。
 	e.obsMu.Lock()
@@ -136,14 +161,28 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	e.expectMu.Lock()
 	e.expected[databaseDomainKeyPrefix+row.ID] = gen
 	e.expectMu.Unlock()
+	e.advanceDatabaseStatus(stepCtx, row, gen)
+}
 
-	// 状态推进（观测缓存，gen 匹配才采信——旧 gen 的迟到观测不翻状态）。
-	ev, seen := e.observationOf(w.ID)
+// advanceDatabaseStatus 从观测缓存推进行状态（gen 匹配才采信——旧 gen 的
+// 迟到观测不翻状态）。Ensure 成功拍与签名短路拍共用（短路拍 Ensure 不发，
+// 状态收敛不停——观测经 Watch 流独立到达）。
+func (e *Engine) advanceDatabaseStatus(ctx context.Context, row *dbrepo.Database, gen uint64) {
+	// 观测缓存键 = 投影 Workload ID = 数据库行 ID（ProjectDatabase 铸造式；
+	// database_test 以行 ID 注入观测即依赖此恒等）。
+	ev, seen := e.observationOf(row.ID)
 	if status, ok := dbStatusFromObservation(ev, gen); ok && seen && status != row.Status {
-		if err := e.databases.SetStatus(stepCtx, e.db.Runner(), row.ID, status); err != nil {
+		if err := e.databases.SetStatus(ctx, e.db.Runner(), row.ID, status); err != nil {
 			e.log.Error("database reconcile: set status", "database", row.ID, "err", err)
 		}
 	}
+}
+
+// credentialFingerprint 是凭证密文的轻量摘要（短路签名的材料面；sha256
+// 截断——防碰撞足够，密文不可逆）。
+func credentialFingerprint(ciphertext []byte) string {
+	sum := sha256.Sum256(ciphertext)
+	return hex.EncodeToString(sum[:8])
 }
 
 // observationOf 读单 Workload 的最新观测（观测缓存拷贝）。
@@ -177,14 +216,11 @@ func dbStatusFromObservation(ev capability.WorkloadEvent, gen uint64) (string, b
 // databaseMaterials 装配 DB Workload 的凭证材料：解密凭证 Secret → 连接
 // 串 → 密码回读 → 模板渲染（postgres 密码文件 / redis 配置文件）。密码
 // 不进 env/label/argv（ADR-0014 材料纪律；值经载体按值指纹命名随 spec
-// diff 分发——轮换 Secret 即滚动替换，zot 附录 B 同款机制）。
-func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tpl dbTemplate) (capability.Materials, error) {
+// diff 分发——轮换 Secret 即滚动替换，zot 附录 B 同款机制）。sec 由调用方
+// 预读传入（短路签名的同一次读取——不做二次点查）。
+func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tpl dbTemplate, sec *secret.Secret) (capability.Materials, error) {
 	if e.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("database credentials require the master key (data root keys/ missing)")
-	}
-	sec, err := e.secrets.GetByName(ctx, e.db.Runner(), row.ProjectID, row.CredentialsRef)
-	if err != nil {
-		return capability.Materials{}, fmt.Errorf("lookup credential secret %q: %w", row.CredentialsRef, err)
 	}
 	plain, err := e.cipher.Open(sec.Ciphertext)
 	if err != nil {
@@ -268,5 +304,6 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	e.expectMu.Lock()
 	delete(e.expected, databaseDomainKeyPrefix+row.ID)
 	e.expectMu.Unlock()
+	e.ensureForget(e.dbEnsure, row.ID) // 签名随域收口作废（同 ID 永不复用，防御性清理）
 	return nil
 }

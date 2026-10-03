@@ -30,6 +30,7 @@ type fakeRuntime struct {
 	obsCh chan capability.WorkloadEvent
 
 	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析面）
+	addrCalls []capability.NamespaceRef        // Addresses 调用记录（C16b 短路断言面）
 
 	clusterOverride bool                   // 显式启用编程视图（空视图=节点全离开）
 	clusterView     capability.ClusterView // 可编程集群快照（节点对账面）
@@ -119,7 +120,17 @@ func (f *fakeRuntime) Watch(context.Context) (<-chan capability.WorkloadEvent, e
 func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef) ([]capability.Endpoint, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.addrCalls = append(f.addrCalls, ns)
 	return f.endpoints[ns.String()], nil
+}
+
+// addrCallsSnapshot 返回 Addresses 调用快照（publishRoutes 短路断言面）。
+func (f *fakeRuntime) addrCallsSnapshot() []capability.NamespaceRef {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]capability.NamespaceRef, len(f.addrCalls))
+	copy(out, f.addrCalls)
+	return out
 }
 
 func (f *fakeRuntime) DescribeCluster(context.Context) (capability.ClusterView, error) {

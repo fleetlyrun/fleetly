@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -103,6 +104,12 @@ type Options struct {
 	// TaskReplenishBurst 是单拍补足创建上限（默认 8；防一拍海量创建打爆
 	// swarm API——决策 7 压测锚的稳态面）。
 	TaskReplenishBurst int
+	// ReconcileReplayInterval 是收敛域签名短路的统一强制重放节拍（默认
+	// 60s；Task 域 TaskReconcileInterval 先例的全域推广）：受管/Database
+	// Ensure、releasing 等待期物化、Route 发布在签名未变时跳过重活，但
+	// 自愈窗口不得无限期关闭——环外变更（人工改载体、载体漂移、Secret
+	// 重封装等签名外输入）由本节拍的强制重放兜底收敛，滞后有界。
+	ReconcileReplayInterval time.Duration
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 }
@@ -149,6 +156,9 @@ func (o *Options) fill() {
 	}
 	if o.TaskReplenishBurst <= 0 {
 		o.TaskReplenishBurst = 8
+	}
+	if o.ReconcileReplayInterval <= 0 {
+		o.ReconcileReplayInterval = 60 * time.Second
 	}
 	if o.ScheduleOverlap == "" {
 		o.ScheduleOverlap = ScheduleOverlapSkip
@@ -270,6 +280,19 @@ type Engine struct {
 	taskEnsured    map[string]string    // taskID → 期望集签名
 	taskLastEnsure map[string]time.Time // taskID → 最近 Ensure 时刻
 
+	// 收敛域签名短路备忘（N1 C16/C17：每拍全量无条件重活的跳过判定面）。
+	// 记忆"上次成功 Ensure 的完整签名 + 时刻"：签名未变且未到强制重放节拍
+	// 即跳过本拍；Ensure 失败不落/清签名（下拍重试）；重启丢失首拍全量自愈。
+	// ensureMemo 的域内键与签名字面由各域定义（受管=namespace，Database=行
+	// ID，releasing=Deployment 行锚，Route 发布单槽）。
+	ensureMu      sync.Mutex
+	managedEnsure map[string]ensureMemo // namespace → 受管域上次成功 Ensure
+	dbEnsure      map[string]ensureMemo // databaseID → Database 域上次成功 Ensure
+	releaseEnsure map[string]ensureMemo // deploymentID → releasing 物化上次成功
+	routesPubSig  string                // Route 发布：上次全量发布的行集指纹
+	routesPubAt   time.Time             // Route 发布：上次全量发布时刻（强制重放节拍锚）
+	routesPubNow  atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
+
 	// 构建面（F0.9/F1.14）：Builder 家族（名→Provider，spec 路由）、并发
 	// 上限、构建输入登记与最近日志缓冲（ADR-0032）。
 	builders  map[string]capability.Builder
@@ -379,6 +402,9 @@ func New(deps Deps, opts Options) *Engine {
 		runObs:         make(map[string]capability.WorkloadEvent),
 		taskEnsured:    make(map[string]string),
 		taskLastEnsure: make(map[string]time.Time),
+		managedEnsure:  make(map[string]ensureMemo),
+		dbEnsure:       make(map[string]ensureMemo),
+		releaseEnsure:  make(map[string]ensureMemo),
 	}
 }
 
@@ -395,6 +421,42 @@ func (e *Engine) lockTask(taskID string) *sync.Mutex {
 // 收敛步本就是失败下拍重试语义，带界无损。
 func (e *Engine) boundedStep(ctx context.Context) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+}
+
+// ensureMemo 是收敛域"上次成功 Ensure"的备忘（N1 C16/C17）：sig 是该域
+// Ensure 全部输入的签名字面（域内定义），at 驱动周期强制重放（签名未变也
+// 周期收敛——自愈面，Task 域 TaskReconcileInterval 先例同款节律），gen 备
+// 短路拍需要下发编号的消费面（Database 状态推进）。
+type ensureMemo struct {
+	sig string
+	gen uint64
+	at  time.Time
+}
+
+// ensureFresh 报告键上备忘是否存在且（签名未变 + 未到强制重放节拍）——
+// 双条件同时成立才允许跳过本拍重活。
+func (e *Engine) ensureFresh(memo map[string]ensureMemo, key, sig string, now time.Time) (ensureMemo, bool) {
+	e.ensureMu.Lock()
+	rec, ok := memo[key]
+	e.ensureMu.Unlock()
+	if !ok || rec.sig != sig || now.After(rec.at.Add(e.opts.ReconcileReplayInterval)) {
+		return ensureMemo{}, false
+	}
+	return rec, true
+}
+
+// ensureRemember 落/刷键上备忘（仅成功路径调用）。
+func (e *Engine) ensureRemember(memo map[string]ensureMemo, key string, rec ensureMemo) {
+	e.ensureMu.Lock()
+	memo[key] = rec
+	e.ensureMu.Unlock()
+}
+
+// ensureForget 清键上备忘（Ensure 失败/域收口；缺失为 no-op）。
+func (e *Engine) ensureForget(memo map[string]ensureMemo, key string) {
+	e.ensureMu.Lock()
+	delete(memo, key)
+	e.ensureMu.Unlock()
 }
 
 // lockApp 取 App 级互斥（惰性建；admission/基线重放/收口共享）。
