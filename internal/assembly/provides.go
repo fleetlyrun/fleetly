@@ -46,6 +46,7 @@ var ProviderSet = wire.NewSet(
 	NewBuilderProviders,
 	NewEdgeProvider,
 	NewRegistryProvider,
+	NewObjectStore,
 	NewMaterialCipher,
 	NewEngine,
 	NewIdemEnforcer,
@@ -178,6 +179,22 @@ func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) 
 	return c, func() {}, nil
 }
 
+// NewObjectStore 经工厂注册表构造 ObjectStore 端口（ADR-0039：本地目标
+// 开箱即用——cmd/fleetlyd 的 blank import 触发 localobjectstore 自注册，
+// 与 Runtime/Registry 同款装配通道；外置 S3 Provider 选择面随 F2.8）。
+func NewObjectStore(app lynx.App) (capability.ObjectStore, func(), error) {
+	p, err := capability.Build(context.Background(), capability.KindObjectStore, "")
+	if err != nil {
+		return nil, nil, err
+	}
+	store, ok := p.(capability.ObjectStore)
+	if !ok {
+		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the ObjectStore port", p.Describe().Name)
+	}
+	logCapabilityFaces(app.Logger(), "objectstore", store)
+	return store, func() {}, nil
+}
+
 // NewEngine 构造部署收敛引擎（重叠策略旋钮从 AppConfig 透传并 fail-fast
 // 校验——ADR-0017 附录 A.4；其余参数当前取默认，配置面接入后从 AppConfig
 // 继续透传 queue 容量/观察窗/构建并发）。
@@ -187,6 +204,7 @@ func NewEngine(
 	b map[string]capability.Builder,
 	edge capability.Edge,
 	reg capability.Registry,
+	store capability.ObjectStore,
 	cipher *material.Cipher,
 	app lynx.App,
 	cfg *config.AppConfig,
@@ -196,7 +214,8 @@ func NewEngine(
 		return nil, err
 	}
 	return engine.New(engine.Deps{
-		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg, Cipher: cipher, Logger: app.Logger(),
+		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg,
+		ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{DataRoot: cfg.DataRoot(), ScheduleOverlap: overlap}), nil
 }
 
