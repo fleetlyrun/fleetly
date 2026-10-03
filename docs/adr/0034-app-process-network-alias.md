@@ -48,10 +48,20 @@ F1.15 dogfooding 评估确认这是多服务栈的必备缺口。App Process 投
 
 ## 验收锚
 
-- [ ] projection：App Process Workload 携带 `Addressing=[{Name: 进程名}]`
-  （engine 投影测试断言）
-- [ ] Provider 侧别名映射既有测试覆盖（translate_task_test/translate_test
-  Addressing→Aliases 先例）；App 域经同一通道无新分支
-- [ ] 存量 golden 零漂移（别名不进 API 面）
-- [ ] staging 真机：torchwood 栈内 `redis:6379`/`http://dispatcher:9070`/
-  `http://minio:9000` 按服务名互访实证（随 F1.15 dogfooding）
+- [x] projection：App Process Workload 携带 `Addressing=[{Name: 进程名}]`
+  （engine 投影测试断言）〔461c05f：internal/engine/projection.go 单点
+  `w.Addressing = []capability.Address{{Name: p.GetName()}}` +
+  projection_task_test.go（TestProjectTranslatesTaskGroupRefs）断言〕
+- [x] Provider 侧别名映射既有测试覆盖（translate_task_test/translate_test
+  Addressing→Aliases 先例）；App 域经同一通道无新分支〔toServiceSpec 单通道
+  （internal/providers/swarm/translate.go `addressAliases`，逐附件网络落
+  Aliases）；translate_task_test.go TestTaskDomainLifecycleMapping 断言
+  Addressing→Aliases 排序稳定、translate_test.go 确定性夹具携带 Addressing；
+  461c05f 零 Provider 改动=无新分支实证〕
+- [x] 存量 golden 零漂移（别名不进 API 面）〔461c05f 改动面=ADR +
+  projection.go + 投影测试三文件，零 golden 触碰；全量 cmd golden 绿（该
+  commit 门禁）〕
+- [x] staging 真机：torchwood 栈内 `redis:6379`/`http://dispatcher:9070`/
+  `http://minio:9000` 按服务名互访实证（随 F1.15 dogfooding）〔runbook
+  docs/runbooks/staging-fleetly.md 真机八件①：栈内服务名互访
+  （redis/minio/dispatcher/server）全靠本 ADR 别名，2026-10-02〕

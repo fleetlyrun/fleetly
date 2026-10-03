@@ -259,12 +259,33 @@ var wordingExemptions = map[string]map[string]string{
 	"apply": {
 		"cmd/fleetlyd/main.go": "lynx boot.Bootstrap.Apply 是框架 API（钩子/服务挂载面）；ADR-0007 禁的是部署语义 apply，框架方法名不可更名",
 	},
+	// genproto 的 .pb.gw.go（批 D 扩面裁决：生成物入扫面后的唯一命中族，
+	// 逐条豁免）：protoc-gen-grpc-gateway 生成模板的固定注释——
+	// runtime.WithMiddlewares/HTTP middlewares 是 grpc-gateway 库自身术语，
+	// 非平台受理位命名；生成物手改即错，命中随模板再生成。新增 service
+	// 包再命中时同理由追加（强制分诊不静默）。
+	"middleware": {
+		"genproto/fleetly/automation/v1/automation.pb.gw.go": "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/delivery/v1/delivery.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/edge/v1/edge.pb.gw.go":             "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/identity/v1/identity.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/runtime/v1/runtime.pb.gw.go":       "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/structure/v1/structure.pb.gw.go":   "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/system/v1/governance.pb.gw.go":     "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/system/v1/system.pb.gw.go":         "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+		"genproto/fleetly/telemetry/v1/telemetry.pb.gw.go":   "grpc-gateway generated boilerplate comment (library's own middleware term), not platform admission naming",
+	},
 }
 
-// TestNoBannedWording：扫描生产 .go（含测试，排除生成物与守卫自身——
-// 本文件即含禁词字面量）与 .proto，命中禁词即红。命中处确属 Provider
-// 实现术语等合法语境时，将该 token 从 bannedPatterns 挪入 skippedTokens
-// 并写明理由（分诊表即白名单，双向保鲜）。
+// TestNoBannedWording：扫描生产 .go（含测试，守卫自身除外——本文件即含
+// 禁词字面量）与 .proto，批 D 扩面再加 skills/**/*.md（Agent 面用户可见
+// 英文——词汇冻结对 Agent 面同样生效）与 install.sh（安装脚本面向用户
+// 终端）。词汇契约=全仓文本面（批 D 裁决）：生成物（.pb.go/wire_gen.go，
+// 含 genproto 生成面与 swagger 之外的全部生成 .go）不再豁免——生成文本
+// 随仓发布、面向 SDK/网关消费方（扩面时全量生成物零命中实证；未来命中
+// 逐条带理由豁免进 wordingExemptions）。命中处确属 Provider 实现术语等
+// 合法语境时，将该 token 从 bannedPatterns 挪入 skippedTokens 并写明
+// 理由（分诊表即白名单，双向保鲜）。
 func TestNoBannedWording(t *testing.T) {
 	root := repoRoot(t)
 	var hits []string
@@ -281,13 +302,18 @@ func TestNoBannedWording(t *testing.T) {
 			return nil
 		}
 		rel = filepath.ToSlash(rel)
-		if !strings.HasPrefix(rel, "internal/") && !strings.HasPrefix(rel, "cmd/") && !strings.HasPrefix(rel, "proto/") {
+		inScope := scanGoModulePath(rel) ||
+			strings.HasPrefix(rel, "proto/") ||
+			strings.HasPrefix(rel, "skills/") ||
+			rel == "install.sh"
+		if !inScope {
 			return nil
 		}
-		if !strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, ".proto") {
+		isSkillDoc := strings.HasPrefix(rel, "skills/") && strings.HasSuffix(rel, ".md")
+		if !strings.HasSuffix(rel, ".go") && !strings.HasSuffix(rel, ".proto") && !isSkillDoc && rel != "install.sh" {
 			return nil
 		}
-		if generatedFile(rel) || strings.HasPrefix(rel, "internal/guards/") {
+		if strings.HasPrefix(rel, "internal/guards/") {
 			return nil
 		}
 		content := readFileLF(t, rel)

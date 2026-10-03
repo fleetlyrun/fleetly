@@ -9,7 +9,7 @@ Tasks are programmatic workloads in two forms (ADR-0012): **one-shot** (a
 single execution; the task mirrors its run's outcome) and **resident** (a pool
 kept at a desired concurrency; each run is a carrier). Schedules fire one-shot
 tasks from a frozen template. Owner leases keep resident pools claimed: a
-resident task without a renewal heartbeart drains after grace.
+resident task that misses its lease deadline drains after grace.
 
 Key semantics the commands assume:
 
@@ -28,7 +28,7 @@ Key semantics the commands assume:
 - **DNS**: every task has a stable pool name `task-<id>` (round-robins across
   live runs) and every run a stable `run-<id>` name, inside its task network
   group (`taskgrp-<group>`).
-- **Quotas**: per-project caps apply (100 active tasks, 200 desired
+- **Quotas**: per-project caps (100 active tasks, 200 desired
   concurrency); a quota rejection names the numbers.
 - **Command**: each `--command` occurrence is one argv element of the
   entrypoint override (repeat the flag per element; the default is the image
@@ -39,8 +39,8 @@ Key semantics the commands assume:
 - Create a one-shot job or a resident pool, scale it, or drain it.
 - A pool is losing runs (`run.failed`, `lease.expired`, `task.draining` in the
   event stream) and needs diagnosis or revival.
-- A dispatcher lost its heartbeat and you must decide: renew, drain, or let
-  TTL run out.
+- A dispatcher missed its lease deadline and you must decide: renew, drain,
+  or let TTL run out.
 - Move periodic work onto schedules (timezone-aware cron) instead of cron-in-a-container.
 
 ## Command sequences
@@ -66,7 +66,7 @@ fleetly runs wait --run RUN_ID
 fleetly runs get --run RUN_ID --json
 ```
 
-Owner lease keep-alive (resident pools; step is the lease interval, default
+Renew the owner lease (resident pools; step is the lease interval, default
 30s; missing past deadline + grace = drain):
 
 ```bash
@@ -95,7 +95,7 @@ fleetly schedules delete --schedule SCHEDULE_ID
 
 | Symptom (event / state / errcode) | Probe next | Action |
 | --- | --- | --- |
-| `lease.expired` then `task.draining` on a healthy dispatcher | `fleetly tasks get --task TASK_ID --json` (lease deadline) | If the owner is alive, resume `tasks renew` heartbeats and the pool replenishes after revival; otherwise let it drain or delete it. |
+| `lease.expired` then `task.draining` on a healthy dispatcher | `fleetly tasks get --task TASK_ID --json` (lease deadline) | If the owner is alive, resume `tasks renew` and the pool replenishes after revival; otherwise let it drain or delete it. |
 | `task.draining` with `owner_revoked` | `fleetly tokens list --json` (is the owner token revoked?) | Intentional revocation drains by design (grace-stop, or run-to-TTL per platform config). Re-point the workload at a fresh token by recreating the task with `--owner-token-id TOKEN_ID`. |
 | Runs stuck `pending`, never `running` | `fleetly runs list --task TASK_ID --json`, `fleetly nodes list --json` | Unschedulable placement (no matching node) or image pull failure. Check the image reference and cluster capacity; stop and recreate if the spec is wrong. |
 | `run.failed` with non-zero exit, pool size holds | `fleetly runs get --run RUN_ID --json` (exit_code) | The pool already replaced the slot. Fix the workload; run-scoped log retrieval is a known gap (log face is app-scoped) — make the entrypoint print diagnostics. |

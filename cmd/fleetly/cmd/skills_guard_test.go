@@ -1,9 +1,10 @@
 package cmd
 
 // Skills-CLI 一致性守卫（F1.13，ADR-0031 决策 4）：skills/**/SKILL.md 里的
-// fleetly 调用是字面可执行命令（机器契约的文档投影）。执法面两路：围栏代码
+// fleetly 调用是字面可执行命令（机器契约的文档投影）。执法面三路：围栏代码
 // 块内 fleetly 行 + 围栏外散文/表格的单反引号内联 span（后者曾失明——
-// 分诊表引用死动词存活至今的根因）。逐条经进程内真实 CLI 逐字执行
+// 分诊表引用死动词存活至今的根因）+ 三章节在场性（批 D 扩面，ADR-0031
+// 决策 2 的正文章节约定由测试承载）。逐条经进程内真实 CLI 逐字执行
 // （dialClient 接缝毒化——拨号即拒，零网络零副作用）：退出码 0/1 = 命令
 // 路径与旗标解析成立（动词+旗标名+值类型都在册）；64 = 命令本身不再合法
 // （动词消亡/旗标改名或删除/值类型错）即时红。围栏纪律（无 shell 元字符）
@@ -30,6 +31,23 @@ var skillsRoot = filepath.Join("..", "..", "..", "skills")
 
 // skillsFrontmatterRe 剥取 YAML frontmatter 块（首个 --- 围栏）。
 var skillsFrontmatterRe = regexp.MustCompile(`(?s)\A---\n(.*?)\n---\n`)
+
+// skillRequiredSections 是正文章节约定的在场性清单（ADR-0031 决策 2，
+// 批 D 进守卫）：三章节各司一职——触发场景（何时用它）、命令序列（围栏
+// 调用）、失败分诊（症状→探针→动作）。缺章即红：章节约定是形态冻结面，
+// 偏离形态须修订 ADR（ADR-0031 后果节），不接受局部漂移。
+var skillRequiredSections = []string{"## When to use", "## Command sequences", "## Failure triage"}
+
+// hasSectionHeading 报告 body 是否含该章节标题行（行级精确匹配：标题
+// 文字与层级都是约定面——`###` 降级同属漂移）。
+func hasSectionHeading(body, heading string) bool {
+	for _, raw := range strings.Split(body, "\n") {
+		if strings.TrimSpace(raw) == heading {
+			return true
+		}
+	}
+	return false
+}
 
 func TestSkillsFencedCommandsResolve(t *testing.T) {
 	files, err := filepath.Glob(filepath.Join(skillsRoot, "*", "SKILL.md"))
@@ -60,7 +78,10 @@ func TestSkillsFencedCommandsResolve(t *testing.T) {
 }
 
 // TestSkillsGuardRedLight 是守卫的常驻红灯实验（ADR-0031 验收锚）：死动词、
-// 死旗标、旗标落在位置参数之后三种漂移必须被咬住——守卫自身失明即红。
+// 死旗标、旗标落在位置参数之后、围栏元字符、frontmatter 名不符、内联死
+// 动词、缺章节七种漂移必须被咬住——守卫自身失明即红。断言按"错误集中
+// 含目标错误"判（红灯夹具体不携带齐备章节时，章节错误先于目标错误出现，
+// 目标错误在不在才是本实验的判据）。
 func TestSkillsGuardRedLight(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -105,22 +126,29 @@ func TestSkillsGuardRedLight(t *testing.T) {
 			body: "---\nname: inline-dead-verb\ndescription: d\n---\nTriage row: probe with `fleetly bogus-verb list --json` next.\n",
 			want: `inline command no longer resolves`,
 		},
+		{
+			// 三章节在场性（批 D 扩面）：缺章即红——前两章在场、缺分诊章
+			// 的形态，唯一错误须点名缺失章节（ADR-0031 决策 2）。
+			name: "missing-section",
+			body: "---\nname: missing-section\ndescription: d\n---\n## When to use\n\n- x\n\n## Command sequences\n\n```bash\nfleetly events list --limit 50\n```\n",
+			want: `missing required section "## Failure triage"`,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			errs := skillLint(tc.name, tc.body)
-			if len(errs) == 0 {
-				t.Fatalf("guard went blind: expected an error containing %q", tc.want)
+			for _, e := range errs {
+				if strings.Contains(e.Error(), tc.want) {
+					return
+				}
 			}
-			if !strings.Contains(errs[0].Error(), tc.want) {
-				t.Fatalf("wrong error: want %q, got %q", tc.want, errs[0])
-			}
+			t.Fatalf("guard went blind: expected an error containing %q, got %v", tc.want, errs)
 		})
 	}
 }
 
 // skillLint 是守卫的纯检查核（真实 skills 与红灯实验共用）：frontmatter
-// （ADR-0031 决策 1/3）+ 围栏 fleetly 行与内联 fleetly span 的 CLI 解析级
-// 契约。
+// （ADR-0031 决策 1/3）+ 三章节在场性（决策 2，批 D）+ 围栏 fleetly 行与
+// 内联 fleetly span 的 CLI 解析级契约。
 func skillLint(dir, body string) []error {
 	var errs []error
 	m := skillsFrontmatterRe.FindStringSubmatch(body)
@@ -145,6 +173,12 @@ func skillLint(dir, body string) []error {
 	}
 	if description == "" {
 		errs = append(errs, fmt.Errorf("skills/%s/SKILL.md: frontmatter description must be non-empty (hosts load skills by it)", dir))
+	}
+	// 三章节在场性（ADR-0031 决策 2）：触发/命令/分诊缺一即红。
+	for _, section := range skillRequiredSections {
+		if !hasSectionHeading(body, section) {
+			errs = append(errs, fmt.Errorf("skills/%s/SKILL.md: missing required section %q (ADR-0031 decision 2 fixes the body outline: trigger scenes / command sequences / failure triage)", dir, section))
+		}
 	}
 	// 拨号接缝毒化：检查核永不触网（含 localhost 开发实例），动词在解析与
 	// 本地校验后于拨号处确定性失败——退出码 0/1 = 命令路径与旗标解析成立，

@@ -25,7 +25,11 @@ func repoRoot(t *testing.T) string {
 	return filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 }
 
-// generatedFile 报告 rel 是否生成物（buf/protoc/wire），守卫不扫生成物。
+// generatedFile 报告 rel 是否生成物（buf/protoc/wire）。import 守卫不扫
+// 生成物：import 结构由 buf/wire 生成模板决定，改它必须走再生成而不是改
+// 依赖（手改生成物本身就是错，AGENTS.md 生成物纪律）。词汇扫描（
+// wording_test.go）裁决相反——生成文本随仓发布、面向 SDK/网关消费方，是
+// 全仓文本面的一部分，禁词契约不豁免生成物（批 D 裁决，2026-10-03）。
 func generatedFile(rel string) bool {
 	return strings.HasSuffix(rel, ".pb.go") ||
 		strings.HasSuffix(rel, ".pb.gw.go") ||
@@ -39,9 +43,34 @@ type goFile struct {
 	imports []string
 }
 
-// scanGoFiles 枚举 internal/ 与 cmd/ 下全部 .go（含测试；排除生成物与
-// 守卫自身），用 go/parser 提取 import 集（比文本扫描精确：无视注释与
-// build tag 干扰）。
+// scanModulePrefixes 是守卫执法面的 module/目录前缀集（批 D 扩面：主
+// module 之外纳入 sdk/go 与 genproto 两 module——SDK 与契约生成 module
+// 同在守卫契约面上）。
+var scanModulePrefixes = []string{
+	"internal/",
+	"cmd/",
+	"sdk/go/",
+	"genproto/",
+}
+
+// scanGoModulePath 报告 rel（斜杠分隔）是否落 Go 执法面（scanGoFiles 与
+// 词汇扫描共用的前缀裁决；词汇扫描另加 proto/skills/install.sh 面）。
+func scanGoModulePath(rel string) bool {
+	for _, p := range scanModulePrefixes {
+		if strings.HasPrefix(rel, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// scanGoFiles 枚举主 module（internal/、cmd/）与 sdk/go、genproto 两
+// module 的全部 .go（含测试；排除生成物与守卫自身），用 go/parser 提取
+// import 集（比文本扫描精确：无视注释与 build tag 干扰）。批 D 扩面：
+// sdk/go（手写客户端）与 genproto 此前在执法面外——SDK 模块的依赖方向
+// 同受架构 §2 约束（编排器 SDK 圈禁、providers 只准 cmd 消费）。genproto
+// 现状全是生成物（generatedFile 排除），前缀在册是让该 module 将来出现
+// 的任何手写文件即落执法面。
 func scanGoFiles(t *testing.T) []goFile {
 	t.Helper()
 	root := repoRoot(t)
@@ -61,7 +90,7 @@ func scanGoFiles(t *testing.T) []goFile {
 		if !strings.HasSuffix(rel, ".go") {
 			return nil
 		}
-		if !strings.HasPrefix(rel, "internal/") && !strings.HasPrefix(rel, "cmd/") {
+		if !scanGoModulePath(rel) {
 			return nil
 		}
 		if generatedFile(rel) || strings.HasPrefix(rel, "internal/guards/") {
