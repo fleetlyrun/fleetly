@@ -90,9 +90,6 @@ type Options struct {
 	// TaskStopGrace 是 Run 停止宽限（默认 30s；SIGTERM 后强制收口前的
 	// 等待窗，映射 Workload.StopGrace）。
 	TaskStopGrace time.Duration
-	// TaskReconcileInterval 是 Task 域强制重放节拍（默认 60s；期望集签名
-	// 未变也周期收敛——自愈面，控制 per-tick swarm API 压力）。
-	TaskReconcileInterval time.Duration
 	// TaskOwnerRevokedRunToTTL 是属主吊销排空模式（ADR-0017 默认宽限排空
 	// = false；true = 跑完 TTL：只停补足不停止存量 Run）。
 	TaskOwnerRevokedRunToTTL bool
@@ -105,10 +102,11 @@ type Options struct {
 	// swarm API——决策 7 压测锚的稳态面）。
 	TaskReplenishBurst int
 	// ReconcileReplayInterval 是收敛域签名短路的统一强制重放节拍（默认
-	// 60s；Task 域 TaskReconcileInterval 先例的全域推广）：受管/Database
-	// Ensure、releasing 等待期物化、Route 发布在签名未变时跳过重活，但
-	// 自愈窗口不得无限期关闭——环外变更（人工改载体、载体漂移、Secret
-	// 重封装等签名外输入）由本节拍的强制重放兜底收敛，滞后有界。
+	// 60s；Task 域先例的全域推广，2026-10-03 起 Task 域同用本节拍——
+	// 双旋钮退役）：受管/Database/Task Ensure、releasing 等待期物化、
+	// Route 发布在签名未变时跳过重活，但自愈窗口不得无限期关闭——环外
+	// 变更（人工改载体、载体漂移、Secret 重封装等签名外输入）由本节拍的
+	// 强制重放兜底收敛，滞后有界。
 	ReconcileReplayInterval time.Duration
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
@@ -150,9 +148,6 @@ func (o *Options) fill() {
 	}
 	if o.TaskStopGrace <= 0 {
 		o.TaskStopGrace = 30 * time.Second
-	}
-	if o.TaskReconcileInterval <= 0 {
-		o.TaskReconcileInterval = 60 * time.Second
 	}
 	if o.TaskReplenishBurst <= 0 {
 		o.TaskReplenishBurst = 8
@@ -284,21 +279,24 @@ type Engine struct {
 	runObs      map[string]capability.WorkloadEvent // runID → 最新观测
 
 	// Task 域 Ensure 签名（幂等收敛跳过 + 周期强制重放；失败清空下拍重试）。
-	taskEnsuredMu  sync.Mutex
-	taskEnsured    map[string]string    // taskID → 期望集签名
-	taskLastEnsure map[string]time.Time // taskID → 最近 Ensure 时刻
+	// 2026-10-03 收编通用 ensureMemo（此前独立的 taskEnsured/taskLastEnsure
+	// 双 map + 专锁是同一协议的第三份实例化；协议与节拍单点见下）。
+	taskEnsure map[string]ensureMemo // taskID → 期望集签名备忘
 
 	// 收敛域签名短路备忘（N1 C16/C17：每拍全量无条件重活的跳过判定面）。
 	// 记忆"上次成功 Ensure 的完整签名 + 时刻"：签名未变且未到强制重放节拍
 	// 即跳过本拍；Ensure 失败不落/清签名（下拍重试）；重启丢失首拍全量自愈。
 	// ensureMemo 的域内键与签名字面由各域定义（受管=namespace，Database=行
-	// ID，releasing=Deployment 行锚，Route 发布单槽）。
+	// ID，releasing=Deployment 行锚，Task=taskID，Route 发布=单槽恒键）。
+	// 签名构造族（域内"全部输入"的口径各自冻结，政策刻意分立不合流）：
+	// workloadSetSignature（Task 语义等价缩面）/ managedFingerprint（受管
+	// 全量保守）/ materialsFingerprint / routesFingerprint（行集内容指纹）/
+	// releaseEnsureSignature（行锚）。
 	ensureMu      sync.Mutex
 	managedEnsure map[string]ensureMemo // namespace → 受管域上次成功 Ensure
 	dbEnsure      map[string]ensureMemo // databaseID → Database 域上次成功 Ensure
 	releaseEnsure map[string]ensureMemo // deploymentID → releasing 物化上次成功
-	routesPubSig  string                // Route 发布：上次全量发布的行集指纹
-	routesPubAt   time.Time             // Route 发布：上次全量发布时刻（强制重放节拍锚）
+	routesPub     map[string]ensureMemo // Route 发布单槽（键恒 routesPubKey）
 	routesPubNow  atomic.Bool           // PublishRoutesNow 即时发布信号（消费即清）
 
 	// 构建面（F0.9/F1.14）：Builder 家族（名→Provider，spec 路由）、并发
@@ -359,60 +357,60 @@ func New(deps Deps, opts Options) *Engine {
 	log := deps.Logger
 	clock := db.Clock()
 	return &Engine{
-		builders:       deps.Builders,
-		edge:           deps.Edge,
-		registry:       deps.Registry,
-		cipher:         deps.Cipher,
-		runtime:        deps.Runtime,
-		db:             db,
-		log:            log,
-		clock:          clock,
-		opts:           opts,
-		projects:       project.New(clock),
-		apps:           app.New(clock),
-		revisions:      revision.New(clock),
-		deployments:    deployment.New(clock),
-		builds:         build.New(clock),
-		outbox:         outbox.New(clock),
-		nodes:          node.New(clock),
-		audits:         audit.New(clock),
-		tasks:          task.New(clock),
-		runs:           run.New(clock),
-		tokens:         tokenrepo.New(clock),
-		schedules:      schedule.New(clock),
-		peerDecls:      networkpeer.New(clock),
-		uploads:        sourceupload.New(clock),
-		databases:      dbrepo.New(clock),
-		loop:           NewLoop("deployment", log),
-		buildLoop:      NewLoop("build", log),
-		managedLoop:    NewLoop("managed", log),
-		databaseLoop:   NewLoop("database", log),
-		taskLoop:       NewLoop("task", log),
-		scheduleLoop:   NewLoop("schedule", log),
-		driftLoop:      NewLoop("drift", log),
-		nodeLeftSeen:   map[string]bool{},
-		routes:         route.New(clock),
-		secrets:        secret.New(clock),
-		configs:        configrepo.New(clock),
-		volumes:        volume.New(clock),
-		networks:       networkrepo.New(clock),
-		buildOpts:      buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
-		buildLogs:      newLogBuffer(500),
-		buildInputs:    make(map[string]capability.BuildRequest),
-		observations:   make(map[string]capability.WorkloadEvent),
-		workloadApp:    make(map[string]string),
-		ensuredGen:     make(map[string]uint64),
-		ensuredSpec:    make(map[string]capability.Workload),
-		expected:       make(map[string]uint64),
-		drift:          make(map[string]string),
-		stoppedSig:     make(map[string]string),
-		workloadRun:    make(map[string]string),
-		runObs:         make(map[string]capability.WorkloadEvent),
-		taskEnsured:    make(map[string]string),
-		taskLastEnsure: make(map[string]time.Time),
-		managedEnsure:  make(map[string]ensureMemo),
-		dbEnsure:       make(map[string]ensureMemo),
-		releaseEnsure:  make(map[string]ensureMemo),
+		builders:      deps.Builders,
+		edge:          deps.Edge,
+		registry:      deps.Registry,
+		cipher:        deps.Cipher,
+		runtime:       deps.Runtime,
+		db:            db,
+		log:           log,
+		clock:         clock,
+		opts:          opts,
+		projects:      project.New(clock),
+		apps:          app.New(clock),
+		revisions:     revision.New(clock),
+		deployments:   deployment.New(clock),
+		builds:        build.New(clock),
+		outbox:        outbox.New(clock),
+		nodes:         node.New(clock),
+		audits:        audit.New(clock),
+		tasks:         task.New(clock),
+		runs:          run.New(clock),
+		tokens:        tokenrepo.New(clock),
+		schedules:     schedule.New(clock),
+		peerDecls:     networkpeer.New(clock),
+		uploads:       sourceupload.New(clock),
+		databases:     dbrepo.New(clock),
+		loop:          NewLoop("deployment", log),
+		buildLoop:     NewLoop("build", log),
+		managedLoop:   NewLoop("managed", log),
+		databaseLoop:  NewLoop("database", log),
+		taskLoop:      NewLoop("task", log),
+		scheduleLoop:  NewLoop("schedule", log),
+		driftLoop:     NewLoop("drift", log),
+		nodeLeftSeen:  map[string]bool{},
+		routes:        route.New(clock),
+		secrets:       secret.New(clock),
+		configs:       configrepo.New(clock),
+		volumes:       volume.New(clock),
+		networks:      networkrepo.New(clock),
+		buildOpts:     buildOptions{Concurrency: opts.BuildConcurrency, Timeout: opts.BuildTimeout},
+		buildLogs:     newLogBuffer(500),
+		buildInputs:   make(map[string]capability.BuildRequest),
+		observations:  make(map[string]capability.WorkloadEvent),
+		workloadApp:   make(map[string]string),
+		ensuredGen:    make(map[string]uint64),
+		ensuredSpec:   make(map[string]capability.Workload),
+		expected:      make(map[string]uint64),
+		drift:         make(map[string]string),
+		stoppedSig:    make(map[string]string),
+		workloadRun:   make(map[string]string),
+		runObs:        make(map[string]capability.WorkloadEvent),
+		taskEnsure:    make(map[string]ensureMemo),
+		managedEnsure: make(map[string]ensureMemo),
+		dbEnsure:      make(map[string]ensureMemo),
+		releaseEnsure: make(map[string]ensureMemo),
+		routesPub:     make(map[string]ensureMemo),
 	}
 }
 
@@ -432,9 +430,9 @@ func (e *Engine) boundedStep(ctx context.Context) (context.Context, context.Canc
 }
 
 // ensureMemo 是收敛域"上次成功 Ensure"的备忘（N1 C16/C17）：sig 是该域
-// Ensure 全部输入的签名字面（域内定义），at 驱动周期强制重放（签名未变也
-// 周期收敛——自愈面，Task 域 TaskReconcileInterval 先例同款节律），gen 备
-// 短路拍需要下发编号的消费面（Database 状态推进）。
+// Ensure 全部输入的签名字面（域内定义，见字段处签名构造族清单），at 驱动
+// 周期强制重放（签名未变也周期收敛——自愈面，ReconcileReplayInterval 统一
+// 节拍），gen 备短路拍需要下发编号的消费面（Database 状态推进）。
 type ensureMemo struct {
 	sig string
 	gen uint64

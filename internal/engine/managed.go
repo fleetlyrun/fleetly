@@ -189,16 +189,14 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	routes, err := e.routes.List(ctx, e.db.Runner())
 	if err != nil {
 		e.log.Error("route publish: list", "err", err)
-		e.forgetPublishedRoutes() // 指纹失真：下拍强制全量
+		e.ensureForget(e.routesPub, routesPubKey) // 指纹失真：下拍强制全量
 		return
 	}
 	now := e.clock.Now()
 	sig := routesFingerprint(routes)
 	forced := e.routesPubNow.CompareAndSwap(true, false) // API 写路径即时触发绕过短路
-	e.ensureMu.Lock()
-	skip := !forced && sig == e.routesPubSig && now.Before(e.routesPubAt.Add(e.opts.ReconcileReplayInterval))
-	e.ensureMu.Unlock()
-	if skip {
+	_, fresh := e.ensureFresh(e.routesPub, routesPubKey, sig, now)
+	if fresh && !forced {
 		return
 	}
 	publish := make([]capability.Route, 0, len(routes))
@@ -218,21 +216,15 @@ func (e *Engine) publishRoutes(ctx context.Context) {
 	}
 	if err := e.edge.PublishRoutes(ctx, publish); err != nil {
 		e.log.Error("route publish: edge rejected config", "err", err)
-		e.forgetPublishedRoutes() // 发布失败：下拍强制重试全量
+		e.ensureForget(e.routesPub, routesPubKey) // 发布失败：下拍强制重试全量
 		return
 	}
-	e.ensureMu.Lock()
-	e.routesPubSig, e.routesPubAt = sig, now
-	e.ensureMu.Unlock()
+	e.ensureRemember(e.routesPub, routesPubKey, ensureMemo{sig: sig, at: now})
 }
 
-// forgetPublishedRoutes 作废 Route 发布签名（列表/发布失败与 API 触发面
-// 消费：下一拍无条件全量重发布）。
-func (e *Engine) forgetPublishedRoutes() {
-	e.ensureMu.Lock()
-	e.routesPubSig = ""
-	e.ensureMu.Unlock()
-}
+// routesPubKey 是 Route 发布单槽的恒定键（发布面无多键维度——行集指纹
+// 即全部输入；单槽经通用 ensureMemo 协议承载，2026-10-03 收编）。
+const routesPubKey = "routes"
 
 // routesFingerprint 返回活跃 Route 行集的轻量聚合指纹（行内容 +
 // updated_at；List 返回 id 升序——序列化序稳定。C16b：routes 表无版本列，

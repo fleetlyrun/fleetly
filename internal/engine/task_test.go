@@ -340,7 +340,7 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 	rt.ensureEntered = make(chan struct{}, 8)
 	rt.blockPoint = make(chan struct{})
 	rt.mu.Unlock()
-	clock.Advance(e.opts.TaskReconcileInterval + time.Second)
+	clock.Advance(e.opts.ReconcileReplayInterval + time.Second)
 
 	done := make(chan struct{})
 	go func() {
@@ -787,7 +787,7 @@ func TestEnsureTaskWorkloadsSignatureSkip(t *testing.T) {
 	e.taskStep(ctx) // 签名未变 → 跳过
 	assert.Equal(t, n1, len(rt.calls()), "unchanged desired set must skip Ensure")
 
-	clock.Advance(e.opts.TaskReconcileInterval + time.Second)
+	clock.Advance(e.opts.ReconcileReplayInterval + time.Second)
 	e.taskStep(ctx) // 周期强制重放
 	assert.Equal(t, n1+1, len(rt.calls()), "reconcile interval must force re-ensure")
 }
