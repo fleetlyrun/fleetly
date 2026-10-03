@@ -22,6 +22,7 @@ import (
 const (
 	tProjectID = "01JD0PROJ00000000000000000"
 	tAppID     = "01JD0APP000000000000000000"
+	tApp2ID    = "01JD0APP000000000000000001" // 跨 App 场景的第二 App
 	tImageSpec = `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
 		`"source":{"image":{"ref":"nginx:1.27"}},"processes":[{"name":"web","image":"nginx:1.27","replicas":1}]}`
 )
@@ -54,12 +55,18 @@ func newTestEngineOpts(t *testing.T, opts Options) (*Engine, *fakeRuntime, *stat
 // freezeSpec 冻结一条 Revision 并返回其 ID（n 保证跨调用唯一）。
 func freezeSpec(t *testing.T, e *Engine, n int, specJSON string) string {
 	t.Helper()
+	return freezeSpecForApp(t, e, tAppID, n, specJSON)
+}
+
+// freezeSpecForApp 同 freezeSpec，但锚定指定 App（跨 App 场景夹具）。
+func freezeSpecForApp(t *testing.T, e *Engine, appID string, n int, specJSON string) string {
+	t.Helper()
 	rev := &revision.Revision{
-		ID: fmt.Sprintf("01JD0REV0000000000000000%d", n), AppID: tAppID,
+		ID: fmt.Sprintf("01JD0REV0000000000000000%d", n), AppID: appID,
 		Spec: []byte(specJSON),
 	}
 	var err error
-	rev.Seq, err = e.revisions.NextSeq(context.Background(), e.db.Runner(), tAppID)
+	rev.Seq, err = e.revisions.NextSeq(context.Background(), e.db.Runner(), appID)
 	require.NoError(t, err)
 	require.NoError(t, e.revisions.Create(context.Background(), e.db.Runner(), rev))
 	return rev.ID
@@ -376,7 +383,12 @@ func TestWatchdogIgnoresStaleGenerationStops(t *testing.T) {
 }
 
 func imageSpecFor(ref string) string {
-	return `{"schema_version":1,"app":{"id":"` + tAppID + `","project":"` + tProjectID + `"},` +
+	return imageSpecForApp(tAppID, ref)
+}
+
+// imageSpecForApp 构造锚定指定 App 的 image 直投 spec（跨 App 场景夹具）。
+func imageSpecForApp(appID, ref string) string {
+	return `{"schema_version":1,"app":{"id":"` + appID + `","project":"` + tProjectID + `"},` +
 		`"source":{"image":{"ref":"` + ref + `"}},"processes":[{"name":"web","image":"` + ref + `","replicas":1}]}`
 }
 

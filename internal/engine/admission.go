@@ -65,9 +65,9 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			return err
 		}
 
-		// 1. 幂等键去重。
+		// 1. 幂等键去重（键作用域 = App，B10：异 App 同键各自独立受理）。
 		if req.IdempotencyKey != "" {
-			existing, err := e.deployments.FindActiveByIdempotencyKey(ctx, tx, req.IdempotencyKey)
+			existing, err := e.deployments.FindActiveByIdempotencyKey(ctx, tx, req.AppID, req.IdempotencyKey)
 			if err == nil {
 				out = existing
 				return nil

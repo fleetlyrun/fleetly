@@ -132,7 +132,9 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) erro
 		d.ID, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation,
 		d.IdempotencyKey, d.CommitSHA, d.FirstBoot, d.CreatedAt, d.UpdatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: an active deployment already holds idempotency key %q", state.ErrAlreadyExists, d.IdempotencyKey)
+		// 唯一索引作用域是 App 内（B10）：冲突 = 同 App 同键已有活跃行。
+		return fmt.Errorf("%w: an active deployment in app %s already holds idempotency key %q",
+			state.ErrAlreadyExists, d.AppID, d.IdempotencyKey)
 	}
 	return err
 }
@@ -183,12 +185,15 @@ func (r *Repo) ActiveByApp(ctx context.Context, run state.Runner, appID string) 
 	return out, rows.Err()
 }
 
-// FindActiveByIdempotencyKey 返回持该键的活跃 Deployment（无 → ErrNotFound）。
-func (r *Repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner, key string) (*Deployment, error) {
+// FindActiveByIdempotencyKey 返回该 App 内持该键的活跃 Deployment（无 →
+// ErrNotFound）。键的作用域是 App（B10）：异 App 同键不命中——作用域
+// 收紧后的正确语义，异 App 的键不在本 App 作用域内；存量迁移窗口若出现
+// 跨 App 同键活跃行，对本 App 亦视同无键。
+func (r *Repo) FindActiveByIdempotencyKey(ctx context.Context, run state.Runner, appID, key string) (*Deployment, error) {
 	states := ActiveStateStrings()
-	args := append([]any{key}, toAny(states)...)
+	args := append([]any{appID, key}, toAny(states)...)
 	row := run.QueryRowContext(ctx,
-		selectCols+" WHERE idempotency_key = ? AND state IN ("+placeholders(len(states))+") ORDER BY id LIMIT 1",
+		selectCols+" WHERE app_id = ? AND idempotency_key = ? AND state IN ("+placeholders(len(states))+") ORDER BY id LIMIT 1",
 		args...)
 	return scanDeployment(row.Scan)
 }

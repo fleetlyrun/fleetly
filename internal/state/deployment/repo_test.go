@@ -111,13 +111,41 @@ func TestAdmissionDedup(t *testing.T) {
 		func(m *deployment.Deployment) { m.SupersededBy = "01JD0DEPLOY0000000000000002" }))
 	require.NoError(t, deployments.Create(ctx, db.Runner(), newDeployment("01JD0DEPLOY0000000000000002", "deploy-42")))
 
-	found, err := deployments.FindActiveByIdempotencyKey(ctx, db.Runner(), "deploy-42")
+	found, err := deployments.FindActiveByIdempotencyKey(ctx, db.Runner(), d.AppID, "deploy-42")
 	require.NoError(t, err)
 	assert.Equal(t, "01JD0DEPLOY0000000000000002", found.ID)
 
 	active, err := deployments.ActiveByApp(ctx, db.Runner(), d.AppID)
 	require.NoError(t, err)
 	assert.Len(t, active, 1)
+}
+
+// B10：幂等键唯一索引作用域 = App——异 App 同键活跃行共存（旧全局索引
+// 会拒绝），同 App 同键仍唯一。
+func TestIdempotencyKeyUniqueWithinAppScope(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	deployments := deployment.New(clock)
+
+	a := newDeployment("01JD0DEPLOY0000000000000000", "deploy-42")
+	require.NoError(t, deployments.Create(ctx, db.Runner(), a))
+	// 异 App 复用同键：受理共存（B10 收紧后的合法形态）。
+	b := newDeployment("01JD0DEPLOY0000000000000001", "deploy-42")
+	b.AppID = "01JD0APP000000000000000001"
+	require.NoError(t, deployments.Create(ctx, db.Runner(), b))
+
+	// 同 App 同键：唯一索引仍拒绝。
+	err := deployments.Create(ctx, db.Runner(), newDeployment("01JD0DEPLOY0000000000000002", "deploy-42"))
+	assert.ErrorIs(t, err, state.ErrAlreadyExists)
+
+	// 查询按 App 命中：b 的键查不到 a 的行，反之亦然。
+	for _, tc := range []struct{ app, want string }{
+		{a.AppID, a.ID}, {b.AppID, b.ID},
+	} {
+		found, err := deployments.FindActiveByIdempotencyKey(ctx, db.Runner(), tc.app, "deploy-42")
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, found.ID)
+	}
 }
 
 func TestBuildTransit(t *testing.T) {
