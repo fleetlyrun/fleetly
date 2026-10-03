@@ -378,6 +378,15 @@ func (e *Engine) lockTask(taskID string) *sync.Mutex {
 	return mu.(*sync.Mutex)
 }
 
+// boundedStep 给受管收敛步派生 ManagedStepTimeout 硬上限 ctx（统一入口：
+// managed.go/database.go/drift.go 既有 stepCtx 形态的共用底座）。engine.go
+// Options.ManagedStepTimeout 注释的实证背景——docker API hang 卡死单写者
+// 环，TTL janitor/租约排空/停止兜底全住环上，卡死即全部时间看门狗失明。
+// 收敛步本就是失败下拍重试语义，带界无损。
+func (e *Engine) boundedStep(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
+}
+
 // lockApp 取 App 级互斥（惰性建；admission/基线重放/收口共享）。
 func (e *Engine) lockApp(appID string) *sync.Mutex {
 	mu, _ := e.appLocks.LoadOrStore(appID, &sync.Mutex{})

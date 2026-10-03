@@ -26,6 +26,13 @@ import (
 // 由漂移扫描拍与重放持续重申）。部署链（release/rollback/prepare）恒
 // strict。
 func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revision string, gen uint64, isolate bool) error {
+	// 全序列带界（boundedStep，Options.ManagedStepTimeout 的实证背景）：
+	// Ensure 与其上游 DescribeCluster（卷钉住）都跑在部署单写者环上，无界
+	// hang 即卡死部署收敛。收口在序列唯一真源处（本函数头），release/
+	// rollback/基线重放三消费面统一覆盖，后增消费面不可遗漏。
+	ctx, cancel := e.boundedStep(ctx)
+	defer cancel()
+
 	spec, err := e.loadSpec(ctx, revision)
 	if err != nil {
 		return fmt.Errorf("load revision spec: %w", err)

@@ -316,6 +316,52 @@ func TestStopTaskConcurrentWithDrive(t *testing.T) {
 	}
 }
 
+// TestTaskEnsureBoundedByManagedStepTimeout（P1 修复 2026-10-02）：Ensure
+// hang 超过 ManagedStepTimeout 不卡死 Task 单写者环——带界 Ensure 按时返
+// 回（失败清签名下拍重试），下一拍恢复收敛。staging 实证形态：docker API
+// hang 卡死环，TTL janitor/租约排空/停止兜底全失明。
+func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
+	e, rt, clock := newTestEngineOpts(t, Options{ManagedStepTimeout: 100 * time.Millisecond})
+	ctx := context.Background()
+	taskA := "01JD0TASK0000000000000000G"
+	taskB := "01JD0TASK0000000000000000H"
+	createTaskRow(t, e, taskA, "pool-a", task.FormResident, 1, 0, "")
+	createTaskRow(t, e, taskB, "pool-b", task.FormResident, 1, 0, "")
+
+	e.taskStep(ctx) // 基线：两 Task 各补足 + Ensure 成功
+	baseline := len(rt.calls())
+	require.Equal(t, 2, baseline)
+
+	// 注入 hang + 推过强制重放节拍（下一拍两 Task 都要真下发）。
+	rt.mu.Lock()
+	rt.ensureEntered = make(chan struct{}, 8)
+	rt.blockPoint = make(chan struct{})
+	rt.mu.Unlock()
+	clock.Advance(e.opts.TaskReconcileInterval + time.Second)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		e.taskStep(ctx) // 两次带界 Ensure：各按 ManagedStepTimeout 超时返回
+	}()
+	select {
+	case <-rt.ensureEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("ensure never entered the block point")
+	}
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("taskStep hung past ManagedStepTimeout — unbounded runtime call on the single-writer loop")
+	}
+
+	// hang 解除后的下一拍：失败清签名 → 两 Task 全量重 Ensure 收敛。
+	close(rt.blockPoint)
+	e.taskStep(ctx)
+	assert.Equal(t, baseline+2, len(rt.calls()),
+		"both tasks re-ensure on the next tick after the bounded failure")
+}
+
 // TestTaskLeaseExpiryDrainAndRevive（F1.6）：lease 超宽限 → 排空（runs
 // stopping/lease_expired）→ drained → RenewTask 复活 → 补足恢复。
 func TestTaskLeaseExpiryDrainAndRevive(t *testing.T) {

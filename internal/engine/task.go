@@ -373,6 +373,12 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	if ensured && lastSig == sig && e.clock.Now().Before(lastAt.Add(e.opts.TaskReconcileInterval)) {
 		return
 	}
+	// 下发段带界（boundedStep，Options.ManagedStepTimeout 的实证背景）：
+	// 材料解析与 runtime.Ensure 都跑在 Task 单写者环上，无界 hang 卡死整
+	// 个环（janitor/租约排空/停止兜底/补足全住环上）。Ensure 失败本就是
+	// 清签名下拍重试语义，带界无损。
+	ctx, cancel := e.boundedStep(ctx)
+	defer cancel()
 	team, err := e.taskTeam(ctx, t)
 	if err != nil {
 		e.log.Error("task ensure: resolve team", "task", t.ID, "err", err)
