@@ -6,6 +6,8 @@ package localobjectstore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -14,6 +16,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
@@ -76,49 +79,59 @@ func (p *Provider) probeWritable(context.Context) error {
 	return os.Remove(name)
 }
 
-// Put 写一个对象（原子落位：tmp+rename；reader 由调用方关闭）。rename 前
-// fsync：跨进程崩溃安全——掉电/崩溃后 rename 已落但数据未落盘的形态会让
-// 备份对象空壳/半截（备份的可信度=可恢复性，sync 是落位承诺的一部分；
-// Windows 上 File.Sync() 同样可用）。
-func (p *Provider) Put(_ context.Context, key string, r io.Reader) error {
+// Put 写一个对象（原子落位：tmp+rename；reader 由调用方关闭），流式
+// 铸 sha256 摘要并回执（restore verify 的校验锚，端口契约见 capability
+// ObjectStore）。rename 前 fsync：跨进程崩溃安全——掉电/崩溃后 rename
+// 已落但数据未落盘的形态会让备份对象空壳/半截（备份的可信度=可恢复性，
+// sync 是落位承诺的一部分；Windows 上 File.Sync() 同样可用）。
+func (p *Provider) Put(ctx context.Context, key string, r io.Reader) (capability.ObjectInfo, error) {
+	if err := ctx.Err(); err != nil {
+		return capability.ObjectInfo{}, err // 入界检查（端口契约；本地写受磁盘限速无长挂面）
+	}
 	path, err := p.objectPath(key)
 	if err != nil {
-		return err
+		return capability.ObjectInfo{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
-		return err
+		return capability.ObjectInfo{}, err
 	}
 	tmp := path + ".tmp"
 	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // G304：键已经 safeKey 钳制（无遍历/绝对路径）
 	if err != nil {
-		return err
+		return capability.ObjectInfo{}, err
 	}
-	if _, err := io.Copy(f, r); err != nil {
+	h := sha256.New()
+	size, err := io.Copy(io.MultiWriter(f, h), r)
+	if err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
-		return err
+		return capability.ObjectInfo{}, err
 	}
 	if err := fileSync(f); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
-		return err
+		return capability.ObjectInfo{}, err
 	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)
-		return err
+		return capability.ObjectInfo{}, err
 	}
 	if err := os.Rename(tmp, path); err != nil {
 		_ = os.Remove(tmp)
-		return err
+		return capability.ObjectInfo{}, err
 	}
-	return nil
+	return capability.ObjectInfo{Key: key, Size: size, Digest: hex.EncodeToString(h.Sum(nil))}, nil
 }
 
 // fileSync 是 fsync 的注入缝（单测注入失败形态钉错误路径；生产 = File.Sync）。
 var fileSync = func(f *os.File) error { return f.Sync() }
 
-// Get 读一个对象（调用方负责 Close）。
-func (p *Provider) Get(_ context.Context, key string) (io.ReadCloser, error) {
+// Get 读一个对象（调用方负责 Close）。ctx 贯通读流（端口契约）：取消
+// 即关底层文件——在途 Read 以错误返回，GB 级 restore 可中途放弃。
+func (p *Provider) Get(ctx context.Context, key string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err // 入界取消：不开无用句柄
+	}
 	path, err := p.objectPath(key)
 	if err != nil {
 		return nil, err
@@ -126,18 +139,62 @@ func (p *Provider) Get(_ context.Context, key string) (io.ReadCloser, error) {
 	f, err := os.Open(path) //nolint:gosec // G304：键已经 safeKey 钳制
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, fmt.Errorf("localobjectstore: object %q not found", key)
+			return nil, fmt.Errorf("localobjectstore: object %q: %w", key, capability.ErrObjectNotFound)
 		}
 		return nil, err
 	}
-	return f, nil
+	return newCtxFile(ctx, f), nil
 }
 
-// List 列举前缀下对象键（前缀空 = 全部；排序稳定。尾斜杠是目录前缀的
-// 自然形态，剥后再钳）。遍历按前缀剪枝：命中键必然住在前缀的父目录
+// ctxFile 是 ctx 贯通的文件读流：ctx 取消与显式 Close 双路径各只生效
+// 一次（once 守 close 信号），看门狗 goroutine 随 Close 退出。
+type ctxFile struct {
+	f    *os.File
+	done chan struct{}
+	once sync.Once
+}
+
+func newCtxFile(ctx context.Context, f *os.File) *ctxFile {
+	c := &ctxFile{f: f, done: make(chan struct{})}
+	go func() {
+		select {
+		case <-ctx.Done():
+			_ = c.f.Close() // 取消即断流（幂等：Close 后在途 Read 报错）
+		case <-c.done:
+		}
+	}()
+	return c
+}
+
+func (c *ctxFile) Read(p []byte) (int, error) { return c.f.Read(p) }
+
+func (c *ctxFile) Close() error {
+	c.once.Do(func() { close(c.done) })
+	return c.f.Close()
+}
+
+// Stat 回读单个对象的元数据（不读体、不重算 digest——端口契约）。
+func (p *Provider) Stat(_ context.Context, key string) (capability.ObjectInfo, error) {
+	path, err := p.objectPath(key)
+	if err != nil {
+		return capability.ObjectInfo{}, err
+	}
+	st, err := os.Stat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return capability.ObjectInfo{}, fmt.Errorf("localobjectstore: object %q: %w", key, capability.ErrObjectNotFound)
+		}
+		return capability.ObjectInfo{}, err
+	}
+	return capability.ObjectInfo{Key: key, Size: st.Size(), ModTime: st.ModTime()}, nil
+}
+
+// List 列举前缀下对象（含元数据：size/modtime——保留窗滚动按存储属性
+// 排序，不解析键名；前缀空 = 全部，排序稳定。尾斜杠是目录前缀的自然
+// 形态，剥后再钳）。遍历按前缀剪枝：命中键必然住在前缀的父目录
 // （dirPrefix）子树内，其余子树整枝跳过——备份根随年限增长后，按库列举
 // 不再退化为全根遍历（剪枝语义 = WalkDir 的 SkipDir，结果集不变）。
-func (p *Provider) List(_ context.Context, prefix string) ([]string, error) {
+func (p *Provider) List(_ context.Context, prefix string) ([]capability.ObjectInfo, error) {
 	if prefix != "" {
 		prefix = strings.TrimSuffix(prefix, "/")
 		if prefix != "" {
@@ -153,7 +210,7 @@ func (p *Provider) List(_ context.Context, prefix string) ([]string, error) {
 	if i := strings.LastIndexByte(prefix, '/'); i >= 0 {
 		dirPrefix = prefix[:i]
 	}
-	var out []string
+	var out []capability.ObjectInfo
 	base := p.root
 	walkErr := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -184,13 +241,17 @@ func (p *Provider) List(_ context.Context, prefix string) ([]string, error) {
 		if prefix != "" && !strings.HasPrefix(key, prefix) {
 			return nil
 		}
-		out = append(out, key)
+		info, ierr := d.Info()
+		if ierr != nil {
+			return ierr
+		}
+		out = append(out, capability.ObjectInfo{Key: key, Size: info.Size(), ModTime: info.ModTime()})
 		return nil
 	})
 	if walkErr != nil {
 		return nil, walkErr
 	}
-	sort.Strings(out)
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out, nil
 }
 

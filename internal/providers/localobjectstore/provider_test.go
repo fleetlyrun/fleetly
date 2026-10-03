@@ -2,6 +2,8 @@ package localobjectstore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -9,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -31,8 +34,19 @@ func TestPutGetListDeleteRoundTrip(t *testing.T) {
 	const k1 = "backups/shop/db1/20261002T000000Z.archive"
 	const k2 = "backups/shop/db2/20261002T000000Z.archive"
 
-	require.NoError(t, p.Put(ctx, k1, strings.NewReader("payload-1")))
-	require.NoError(t, p.Put(ctx, k2, strings.NewReader("payload-2")))
+	info1, err := p.Put(ctx, k1, strings.NewReader("payload-1"))
+	require.NoError(t, err)
+	assert.Equal(t, capability.ObjectInfo{Key: k1, Size: 9, Digest: sha256Hex("payload-1")}, info1)
+	_, err = p.Put(ctx, k2, strings.NewReader("payload-2"))
+	require.NoError(t, err)
+
+	// Stat：元数据回读（size/modtime；digest 不重算——端口契约）。
+	st, err := p.Stat(ctx, k1)
+	require.NoError(t, err)
+	assert.Equal(t, k1, st.Key)
+	assert.Equal(t, int64(9), st.Size)
+	assert.False(t, st.ModTime.IsZero())
+	assert.Empty(t, st.Digest)
 
 	got, err := p.Get(ctx, k1)
 	require.NoError(t, err)
@@ -43,10 +57,14 @@ func TestPutGetListDeleteRoundTrip(t *testing.T) {
 
 	all, err := p.List(ctx, "")
 	require.NoError(t, err)
-	assert.Len(t, all, 2)
+	require.Len(t, all, 2)
+	assert.Equal(t, k1, all[0].Key)
+	assert.Equal(t, int64(9), all[0].Size)
+	assert.False(t, all[0].ModTime.IsZero())
 	db1, err := p.List(ctx, "backups/shop/db1/")
 	require.NoError(t, err)
-	assert.Equal(t, []string{k1}, db1)
+	require.Len(t, db1, 1)
+	assert.Equal(t, k1, db1[0].Key)
 
 	require.NoError(t, p.Delete(ctx, k1))
 	// 幂等删除：不存在不报错。
@@ -56,7 +74,52 @@ func TestPutGetListDeleteRoundTrip(t *testing.T) {
 	assert.Len(t, all, 1)
 
 	_, err = p.Get(ctx, k1)
-	assert.Error(t, err)
+	assert.ErrorIs(t, err, capability.ErrObjectNotFound)
+	_, err = p.Stat(ctx, k1)
+	assert.ErrorIs(t, err, capability.ErrObjectNotFound)
+}
+
+// sha256Hex 铸期望摘要（回执校验的参照）。
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
+
+// Get 的 ctx 贯通（端口契约）：取消即断流——在途 Read 报错，不悬挂。
+func TestGetCancelledMidStream(t *testing.T) {
+	p := newProvider(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	const k = "backups/shop/db1/big.archive"
+	_, err := p.Put(context.Background(), k, strings.NewReader(strings.Repeat("x", 4096)))
+	require.NoError(t, err)
+
+	r, err := p.Get(ctx, k)
+	require.NoError(t, err)
+	buf := make([]byte, 16)
+	_, err = r.Read(buf)
+	require.NoError(t, err)
+	cancel()
+	// 看门狗关闭与在途 Read 有调度窗口：有界轮询断流生效（不悬挂）。
+	deadline := time.Now().Add(2 * time.Second)
+	for err == nil {
+		if time.Now().After(deadline) {
+			t.Fatal("read after cancel must fail, not hang")
+		}
+		_, err = r.Read(buf)
+		time.Sleep(time.Millisecond)
+	}
+	_ = r.Close()
+}
+
+// Get 的入界取消：取消后新开读直接拒绝（不打开无用句柄）。
+func TestGetCancelledBeforeOpen(t *testing.T) {
+	p := newProvider(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	_, err := p.Put(context.Background(), "backups/shop/db1/x.archive", strings.NewReader("x"))
+	require.NoError(t, err)
+	cancel()
+	_, err = p.Get(ctx, "backups/shop/db1/x.archive")
+	require.ErrorIs(t, err, context.Canceled)
 }
 
 // 键钳制：路径穿越/盘符/反斜杠/空段一律拒绝（端口不信任调用方）。
@@ -67,7 +130,8 @@ func TestKeySanitizationRejectsTraversal(t *testing.T) {
 		"../escape", "a/../../escape", "/absolute", "C:/win", `back\slash`,
 		"a//b", "a/./b", "", ".",
 	} {
-		assert.Error(t, p.Put(ctx, key, strings.NewReader("x")), "key %q must be rejected", key)
+		_, err := p.Put(ctx, key, strings.NewReader("x"))
+		assert.Error(t, err, "key %q must be rejected", key)
 	}
 	// List 前缀同受钳制。
 	_, err := p.List(ctx, "../escape")
@@ -141,23 +205,32 @@ func TestListPrunedPrefixResultUnchanged(t *testing.T) {
 		"backups/other/db1/20261002T000000Z.archive",
 	}
 	for _, k := range keys {
-		require.NoError(t, p.Put(ctx, k, strings.NewReader("x")))
+		_, err := p.Put(ctx, k, strings.NewReader("x"))
+		require.NoError(t, err)
 	}
 	all, err := p.List(ctx, "")
 	require.NoError(t, err)
 	require.Len(t, all, 4)
+	allKeys := make([]string, len(all))
+	for i := range all {
+		allKeys[i] = all[i].Key
+	}
 
 	for _, prefix := range []string{"backups/shop/db1/", "backups/shop/db1", "backups/shop/", "backups"} {
 		got, err := p.List(ctx, prefix)
 		require.NoError(t, err, "prefix %q", prefix)
 		norm := strings.TrimSuffix(prefix, "/") // List 尾斜杠归一（结果语义按归一后前缀）
 		var want []string
-		for _, k := range all {
+		for _, k := range allKeys {
 			if strings.HasPrefix(k, norm) {
 				want = append(want, k)
 			}
 		}
-		assert.Equal(t, want, got, "pruned listing must equal the full-scan filter for prefix %q", prefix)
+		gotKeys := make([]string, len(got))
+		for i := range got {
+			gotKeys[i] = got[i].Key
+		}
+		assert.Equal(t, want, gotKeys, "pruned listing must equal the full-scan filter for prefix %q", prefix)
 	}
 }
 
@@ -169,7 +242,7 @@ func TestPutSyncFailureFailsWithoutLanding(t *testing.T) {
 	fileSync = func(*os.File) error { return errors.New("injected sync failure") }
 	t.Cleanup(func() { fileSync = prev })
 
-	err := p.Put(context.Background(), "backups/shop/db1/x.archive", strings.NewReader("x"))
+	_, err := p.Put(context.Background(), "backups/shop/db1/x.archive", strings.NewReader("x"))
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "injected sync failure")
 

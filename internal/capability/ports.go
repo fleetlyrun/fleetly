@@ -2,6 +2,7 @@ package capability
 
 import (
 	"context"
+	"errors"
 	"io"
 	"time"
 )
@@ -218,17 +219,42 @@ type SeriesPoint struct {
 	Value float64
 }
 
+// ErrObjectNotFound 是对象键缺失的端口哨兵（Get/Stat 返回；保留策略
+// 执行器与恢复面据此分辨缺键与存储故障——F2.2 消费）。
+var ErrObjectNotFound = errors.New("capability: object not found")
+
+// ObjectInfo 是对象的元数据面（三个消费形态共用）：Put 的回执（Size 与
+// Digest 流式铸造——restore verify 的校验锚：备份行记录回执摘要，恢复
+// 时调用方重算流比对）；List 的列举项（含 ModTime——保留窗滚动按存储
+// 属性排序，不再从键名解析时间戳）；Stat 的回读。Digest 只在 Put 回执
+// 恒有（sha256 hex）——List/Stat 不重算（存储无义务）。
+type ObjectInfo struct {
+	Key     string
+	Size    int64
+	Digest  string
+	ModTime time.Time
+}
+
 // ObjectStore 是 S3 兼容对象存储 Capability 端口（Backup 与产物承载；
-// 默认本地备份目标开箱即用，外置 S3 可配，ADR-0020）。
+// 默认本地备份目标开箱即用，外置 S3 可配，ADR-0020）。Get 的 ctx 贯通
+// 读流（GB 级 restore 可中途取消）；Put 的 ctx 是入界检查（本地写受磁盘
+// 限速，无长挂面）。
+//
+// 键契约（全 adapter 同构）：正斜杠分层路径，每段非空且不为 "."/".."，
+// 禁反斜杠与 Windows 盘符形态（首段单字母+冒号）。键语法是端口语义，
+// adapter 是钳制执法者（穿越是对象存储端口的第一攻击面——端口不信任
+// 调用方；local 的 safeKey 即执法实现）。
 type ObjectStore interface {
 	Provider
 
-	// Put 上传一个对象。
-	Put(ctx context.Context, key string, r io.Reader) error
-	// Get 下载一个对象。
+	// Put 上传一个对象并回执元数据（digest 流式铸造）。
+	Put(ctx context.Context, key string, r io.Reader) (ObjectInfo, error)
+	// Get 下载一个对象（ctx 取消即断流；调用方负责 Close）。
 	Get(ctx context.Context, key string) (io.ReadCloser, error)
-	// List 列举前缀下对象键。
-	List(ctx context.Context, prefix string) ([]string, error)
-	// Delete 删除对象（保留策略执行器用）。
+	// Stat 回读单个对象的元数据（不读体、不重算 digest）。
+	Stat(ctx context.Context, key string) (ObjectInfo, error)
+	// List 列举前缀下对象（含元数据；前缀空 = 全部，排序稳定）。
+	List(ctx context.Context, prefix string) ([]ObjectInfo, error)
+	// Delete 删除对象（幂等：不存在不报错——保留策略执行器用）。
 	Delete(ctx context.Context, key string) error
 }
