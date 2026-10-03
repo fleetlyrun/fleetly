@@ -118,7 +118,10 @@ fi
 CURRENT_TOKEN="$NEW_TOKEN"
 
 cli() {
-  docker exec -e FLEETLY_ADDR="127.0.0.1:9080" -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$DIND_CID" fleetly "$@"
+  # FLEETLY_ADDR 用 dind IP（h2c-route 先例）：quickstart 的 sslip host 由
+  # 此拼出——探针 Host 头与路由 host 天然同源（127.0.0.1 会铸出
+  # demo.127.0.0.1.sslip.io，探针打 $DIND_IP 形态即恒 404）。
+  docker exec -e FLEETLY_ADDR="$DIND_IP:9080" -e FLEETLY_TOKEN="$CURRENT_TOKEN" "$DIND_CID" fleetly "$@"
 }
 cli whoami >/dev/null
 log "identity chain green"
@@ -237,7 +240,8 @@ i=0
 until probe_ready; do
   i=$((i + 1))
   if [ "$i" -ge 45 ]; then
-    echo "route did not become healthy before upgrade (90s)" >&2
+    echo "route did not become healthy before upgrade (90s; last status: ${code:-none})" >&2
+    docker exec "$DIND_CID" docker service ls >&2 || true
     exit 1
   fi
   sleep 2
