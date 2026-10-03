@@ -435,13 +435,13 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 			"name: secret names must match %q, start with a letter or digit, and must not contain \"..\" (got %q; secret names become /run/secrets/<name> paths)",
 			spec.SecretNamePattern, req.GetName())
 	}
-	ct, err := svc.s.Cipher.Seal([]byte(req.GetValue()))
+	sealed, err := svc.s.Cipher.Produce([]byte(req.GetValue()))
 	if err != nil {
 		return nil, mapStateError(err, "secret")
 	}
 	row := &secret.Secret{
 		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
-		Ciphertext: ct, Fingerprint: material.Fingerprint([]byte(req.GetValue())),
+		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 	}
 	// 父资源存活校验（批 0 复核，同族面）：Project 级材料不得落在
 	// 不存在/已删的 Project 下。

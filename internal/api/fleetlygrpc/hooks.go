@@ -71,7 +71,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 		if merr != nil {
 			return nil, apperr.New("E_INTERNAL", "hook token generation failed")
 		}
-		ciphertext, serr := svc.s.Cipher.Seal([]byte(material.Secret))
+		sealed, serr := svc.s.Cipher.Produce([]byte(material.Secret))
 		if serr != nil {
 			return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the hook secret failed: %v", serr)
 		}
@@ -79,7 +79,7 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 			AppID: appRow.ID, Repo: strings.TrimSpace(req.GetRepo()),
 			Branch: normalizeBranch(req.GetBranch()), Dockerfile: normalizeDockerfile(req.GetDockerfile()),
 			WatchPaths:  normalizeWatchPaths(req.GetWatchPaths()),
-			TokenSHA256: material.SHA256, TokenPrefix: material.Prefix, SecretCiphertext: ciphertext,
+			TokenSHA256: material.SHA256, TokenPrefix: material.Prefix, SecretCiphertext: sealed.Ciphertext,
 		}
 		txErr := svc.s.commit(ctx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error {
@@ -143,13 +143,13 @@ func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.Ro
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "hook token generation failed")
 	}
-	ciphertext, err := svc.s.Cipher.Seal([]byte(material.Secret))
+	sealed, err := svc.s.Cipher.Produce([]byte(material.Secret))
 	if err != nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "sealing the hook secret failed: %v", err)
 	}
 	txErr := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Hooks.RotateToken(ctx, tx, req.GetAppId(), material.SHA256, material.Prefix, ciphertext)
+			return svc.s.Hooks.RotateToken(ctx, tx, req.GetAppId(), material.SHA256, material.Prefix, sealed.Ciphertext)
 		},
 		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),

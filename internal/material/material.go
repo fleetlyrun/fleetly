@@ -179,3 +179,29 @@ func Fingerprint(value []byte) string {
 	sum := sha256.Sum256(value)
 	return hex.EncodeToString(sum[:8])
 }
+
+// SealedValue 是一次密封写的产品：密文 + 值指纹的同源配对（派生自同一次
+// Produce 的同一明文）。写侧密封的唯一入口（2026-10-03 架构评审候选 7
+// 收口：secret.put / database 凭证 / hook secret 双面此前各自手搓
+// "Seal + Fingerprint" 两连调——配对一致性只靠两行相邻调用自觉，一处
+// 重构错位即"封的是 A、指纹打的是 B"的静默错账）。维护面 admin rewrap
+// 的单密文重封不经本入口（指纹恒定，行上不动）。
+type SealedValue struct {
+	Ciphertext  []byte
+	Fingerprint string
+}
+
+// Produce 密封明文并铸同源指纹。
+func (c *Cipher) Produce(plaintext []byte) (SealedValue, error) {
+	ct, err := c.Seal(plaintext)
+	if err != nil {
+		return SealedValue{}, err
+	}
+	return SealedValue{Ciphertext: ct, Fingerprint: Fingerprint(plaintext)}, nil
+}
+
+// String 是脱敏形态（日志/错误文本安全面）：只露指纹——密文会滚（age
+// 随机 nonce，无对账价值），明文永不进字符串面。
+func (v SealedValue) String() string {
+	return "sealed:" + v.Fingerprint
+}

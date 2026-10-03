@@ -17,7 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
-	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -67,14 +66,14 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "database connection url could not be minted").WithCause(err)
 	}
-	ciphertext, err := svc.s.Cipher.Seal([]byte(url))
+	sealed, err := svc.s.Cipher.Produce([]byte(url))
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "database credential could not be sealed").WithCause(err)
 	}
 	secretName := engine.DBCredentialSecretName(req.GetName())
 	secretRow := &secret.Secret{
 		ID: newID(), ProjectID: req.GetProjectId(), Name: secretName,
-		Ciphertext: ciphertext, Fingerprint: material.Fingerprint([]byte(url)),
+		Ciphertext: sealed.Ciphertext, Fingerprint: sealed.Fingerprint,
 	}
 	row := &dbrepo.Database{
 		ID: id, ProjectID: req.GetProjectId(), Name: req.GetName(),
