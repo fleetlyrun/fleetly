@@ -35,13 +35,37 @@
 
 runbook 新增"端口暴露矩阵（操作者责任）"：9080/9081/9082/5000 必须 VPC-only；zot 平台凭证全域可读（任何租户可拉他人镜像——单租户窗口接受，多租户前须按租户隔离或 Edge 前置认证，随 ADR 批）；9082 无认证为 traefik HTTP provider 既知形态。
 
-## 审查确认的遗留挂账（未修，按优先级）
+**收尾批升级（ADR-0036，0c8b9ce）**：四面绑址全部可配置（缺省=现状）、doctor 新增暴露面自证（公网可达探测 + 绑面汇报）、per-Project 凭证/Edge 前置认证裁决推迟 N2（API 面已由 ADR-0035 行级授权保护，zot 暴露是网络层问题——绑面收窄即消除公网面）。"操作者责任"升级为"平台可配置+可自证"。
 
-1. **per-Project/Team 行级授权整体缺席**（多条越权读写路径的共同根因；ADR-0028 已承认 v1 挂账）——N2 Console 前必须立 ADR 批落地。
-2. zot 按租户隔离或 Edge 前置认证；控制面 TLS / 默认绑面收窄。
-3. 幂等键全局作用域（跨 App 复用同键静默拿到他人部署）——索引+查询加 app_id。
-4. TCP/http 探针方言文档化或 busybox 兼容方言 / spec 覆写。
-5. 进程名字符集白名单（P1-13）。
-6. builder 名双真源（叶子常量 vs 注册字面量）对账守卫；守卫扫描面扩 sdk/genproto 两 module。
-7. 性能面：受管/数据库环 1s 全量收敛+全量 Route 重发布短路；pollTasks 全集群 TaskList+逐服务 inspect；resolveNetworkTargets memo；no-op 跳过对 daemon 版本漂移的断路器（lastIssued 记忆）。
-8. 其余 P2/P3：`.git` 不排除出构建上下文、zot htpasswd 重启滚替（持久化 keys/registry-htpasswd）、KEK 轮换工具化、旧 List 族分页、WaitBuild CLI、多 Token 属主委托、StreamLogs 团队轴硬编码、buildkit 缓存跨租户、static output_dir 字符集、孤儿载体清理面、DeleteTask/Teardown 三处 API 路径 runtime.Remove 带界。
+## 审查确认的遗留挂账（收尾批进度，勾账带 commit 号）
+
+1. **[✓ 已修] per-Project/Team 行级授权整体缺席**（多条越权读写路径的共同根因；ADR-0028 已承认 v1 挂账）——ADR-0035（801ebb9）：受理位统一判定（资源归属 Team == 调用方 Team；default-Team owner 平台豁免）、Get/Delete/List/动词/写面全覆盖、ListRuns 强制过滤、审计 team 轴（迁移 00017）、apitest 跨 Team 验收矩阵。
+2. **[✓ 已修] zot 按租户隔离或 Edge 前置认证；控制面 TLS / 默认绑面收窄**——ADR-0036（0c8b9ce）：绑面四点可配置 + doctor 自证；per-Project 凭证按 ADR-0036 裁决推迟 N2。
+3. **[ ] 幂等键全局作用域（跨 App 复用同键静默拿到他人部署）——索引+查询加 app_id。**（收尾批 B10）
+4. **[ ] TCP/http 探针方言文档化或 busybox 兼容方言 / spec 覆写。**（收尾批 B8）
+5. **[ ] 进程名字符集白名单（P1-13）。**（收尾批 B9）
+6. **[ ] builder 名双真源（叶子常量 vs 注册字面量）对账守卫；守卫扫描面扩 sdk/genproto 两 module。**（收尾批 D26）
+7. **[ ] 性能面：受管/数据库环 1s 全量收敛+全量 Route 重发布短路；pollTasks 全集群 TaskList+逐服务 inspect；resolveNetworkTargets memo；no-op 跳过对 daemon 版本漂移的断路器（lastIssued 记忆）。**（收尾批 C16~C21）
+8. 其余 P2/P3：
+   - [✓ 已修] KEK 轮换工具化（4e3fbfb：`fleetlyd admin rewrap`，dry-run 缺省，runbook 操作序）
+   - [✓ 已修] StreamLogs 团队轴硬编码（801ebb9：App→Project 实取，随 ADR-0035 授权同点闭合）
+   - [✓ 已修] buildkit 缓存跨租户（b8f7402：dockerfile 轨 BUILDKIT_CACHE_MOUNT_NS per-App，railpack 同粒度）
+   - [✓ 已修] Secret 名字符集白名单（3c6f69d：spec.SecretNamePattern 三入口统一，防 /run/secrets 路径逃逸）
+   - [ ] `.git` 不排除出构建上下文（收尾批 E27）
+   - [ ] zot htpasswd 重启滚替（持久化 keys/registry-htpasswd）（收尾批 E28）
+   - [ ] 旧 List 族分页（收尾批 D23）
+   - [ ] WaitBuild CLI（收尾批 D22）
+   - [ ] 多 Token 属主委托（tasks create --owner-token-id 透传）（收尾批 D24）
+   - [ ] static output_dir 字符集（收尾批 B11）
+   - [ ] 孤儿载体清理面（收尾批 E29）
+   - [ ] DeleteTask/Teardown 三处 API 路径 runtime.Remove 带界（收尾批 B15）
+
+## 收尾批补录（批 A 安全收尾，2026-10-03）
+
+- **ADR-0035 行级授权**（801ebb9）：审查实录"遗留挂账"首项闭合；关键裁决——平台例外通道=default Team 的 builtin-owner（他队 owner 是队管理员不跨队，networkpeer 安全批测试钉死的边界）；tombstone 行保持可授权（GetProject 可读已删行的既定契约不分叉）；ListRuns 无过滤形态从 API 面移除。
+- **ADR-0036 绑面+自证**（0c8b9ce）：见上节。
+- **Secret 名/Dockerfile 路径入口校验 + routes create tls=none 警告**（3c6f69d）：A3+A7；夹具禁词基线修复 aae61a3。
+- **KEK 轮换**（4e3fbfb）：material 多 key 装载（现役+退役）+ `fleetlyd admin rewrap`（dry-run 缺省、单事务全量、幂等）+ runbook 操作序。
+- **dockerfile 轨缓存命名空间**（b8f7402）：A5。
+- **存量 flaky 修复**：TestComposeFirstBootDeployEndToEnd 的 ensure 扫描包 Eventually（Run 行先于 Ensure 落账的窗口）。
+

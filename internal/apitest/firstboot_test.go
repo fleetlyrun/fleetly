@@ -72,14 +72,20 @@ func TestComposeFirstBootDeployEndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, list.GetRuns(), 1)
 	runID := list.GetRuns()[0].GetId()
+	// Run 行先于 workload Ensure 落账（engine 拍内两步）——扫描包 Eventually
+	// 等待 job 域 ensure 出现（裸扫描在行落账与 Ensure 之间的窗口上偶发空手，
+	// -race 下确定性复现；下方 carrier ensure 同款先例）。
 	var jobEnsure *apitest.EnsureCall
-	for i := range h.Runtime.Calls() {
-		c := h.Runtime.Calls()[i]
-		if c.NS.Task == taskID {
-			jobEnsure = &h.Runtime.Calls()[i]
+	require.Eventually(t, func() bool {
+		for i := range h.Runtime.Calls() {
+			c := h.Runtime.Calls()[i]
+			if c.NS.Task == taskID {
+				jobEnsure = &h.Runtime.Calls()[i]
+				return true
+			}
 		}
-	}
-	require.NotNil(t, jobEnsure, "job task-domain ensure must be recorded")
+		return false
+	}, 3e9, 1e7, "job task-domain ensure must be recorded")
 	w := jobEnsure.Spec["run"]
 	require.NotNil(t, w)
 	assert.Equal(t, runID, w.ID)
