@@ -69,13 +69,59 @@ func waitOnFrame(env *commands.Environment, jsonOut bool, depID string) func(*de
 	}
 }
 
-// requireSucceeded 是 --wait 的终态裁决：非 succeeded 终态即错误（退出码
-// 非零——机器契约）。
-func requireSucceeded(depID, final string) error {
+// requireSucceeded 是等待原语的终态裁决：非 succeeded 终态即错误（退出码
+// 非零——机器契约）。kind 是名词（deployment/build），错误文案与信封对齐。
+func requireSucceeded(kind, id, final string) error {
 	if final != "succeeded" {
-		return fmt.Errorf("deployment %s ended in state %s", depID, final)
+		return fmt.Errorf("%s %s ended in state %s", kind, id, final)
 	}
 	return nil
+}
+
+// waitBuildFrames 经 WaitBuild 收流至终态（F1.3）：逐帧回调，返回终态。
+// 流式长等待——调用方须以 noDeadline 拨号（服务端流面不经 unary 超时）。
+func waitBuildFrames(ctx context.Context, c *fleetly.Client, buildID string, onFrame func(frame *deliveryv1.WaitBuildResponse) error) (string, error) {
+	stream, err := c.Builds.WaitBuild(ctx, &deliveryv1.WaitBuildRequest{BuildId: buildID})
+	if err != nil {
+		return "", err
+	}
+	final := ""
+	for {
+		frame, err := stream.Recv()
+		if err == io.EOF {
+			return final, nil
+		}
+		if err != nil {
+			return final, err
+		}
+		final = frame.GetBuild().GetState()
+		if onFrame != nil {
+			if err := onFrame(frame); err != nil {
+				return final, err
+			}
+		}
+	}
+}
+
+// waitBuildOnFrame 渲染一帧构建等待输出（形态同 waitOnFrame）。
+func waitBuildOnFrame(env *commands.Environment, jsonOut bool, buildID string) func(*deliveryv1.WaitBuildResponse) error {
+	return func(frame *deliveryv1.WaitBuildResponse) error {
+		if jsonOut {
+			data, err := protoJSONMarshal.Marshal(frame)
+			if err != nil {
+				return err
+			}
+			var buf bytes.Buffer
+			if err := json.Compact(&buf, data); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintln(env.Stdout, buf.String())
+			return err
+		}
+		b := frame.GetBuild()
+		_, err := fmt.Fprintf(env.Stdout, "build %s %s\n", buildID, b.GetState())
+		return err
+	}
 }
 
 func newDeployVerb() commands.Command {
@@ -212,12 +258,75 @@ func newDeployVerb() commands.Command {
 				if werr != nil {
 					return werr
 				}
-				return requireSucceeded(depID, final)
+				return requireSucceeded("deployment", depID, final)
 			}
 			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
 				d := resp.GetDeployment()
 				_, _ = fmt.Fprintf(env.Stdout, "deployment %s %s (revision %s, generation %d)\n", d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration())
 			})
+		},
+	}
+}
+
+// newDeploymentsWaitVerb 构造 deployments wait（standalone 等待面，F1.15
+// torchwood 迁移场景）：webhook 等外部触发链提交的部署无法经 deploy --wait
+// 附带等待——standalone 动词附着到在途部署收流至终态。终态裁决同 --wait
+// （非 succeeded 非零退出）。
+func newDeploymentsWaitVerb() commands.Command {
+	const name = "wait"
+	var depID string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Wait for a deployment to reach a terminal state (streams state transitions; non-zero exit unless succeeded)",
+		usage:    "deployments wait --deployment DEPLOYMENT_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&depID, "deployment", "", "deployment id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if depID == "" {
+				return usageErr(name, "--deployment is required")
+			}
+			// 流式长等待：拨号豁免请求级 deadline（deploy --wait 同款纪律）。
+			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			final, werr := waitDeploymentFrames(ctx, c, depID, waitOnFrame(env, jsonOut, depID))
+			if werr != nil {
+				return werr
+			}
+			return requireSucceeded("deployment", depID, final)
+		},
+	}
+}
+
+// newBuildsWaitVerb 构造 builds wait（WaitBuild 的 CLI 面）：构建行由
+// git/upload 触发链异步铸出，Agent 需附着等待其终态（F1.3 原语收口面，
+// 不自写轮询）。终态裁决同 deployments wait。
+func newBuildsWaitVerb() commands.Command {
+	const name = "wait"
+	var buildID string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Wait for a build to reach a terminal state (streams state transitions; non-zero exit unless succeeded)",
+		usage:    "builds wait --build BUILD_ID",
+		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&buildID, "build", "", "build id (required)") },
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if buildID == "" {
+				return usageErr(name, "--build is required")
+			}
+			// 流式长等待：拨号豁免请求级 deadline（wait 家族同款纪律）。
+			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			final, werr := waitBuildFrames(ctx, c, buildID, waitBuildOnFrame(env, jsonOut, buildID))
+			if werr != nil {
+				return werr
+			}
+			return requireSucceeded("build", buildID, final)
 		},
 	}
 }
@@ -323,7 +432,7 @@ func newRollbackVerb() commands.Command {
 				if werr != nil {
 					return werr
 				}
-				return requireSucceeded(depID, final)
+				return requireSucceeded("deployment", depID, final)
 			}
 			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
 				d := resp.GetDeployment()

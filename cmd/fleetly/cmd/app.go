@@ -78,10 +78,10 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),
-		groupVerb("deployments", "inspect and cancel deployments", newDeploymentsListVerb(), newDeploymentsCancelVerb()),
+		groupVerb("deployments", "inspect, wait for and cancel deployments", newDeploymentsListVerb(), newDeploymentsWaitVerb(), newDeploymentsCancelVerb()),
 		newRollbackVerb(),
 		groupVerb("revisions", "inspect frozen revisions", newRevisionsListVerb(), newRevisionsDiffVerb()),
-		groupVerb("builds", "inspect builds and stream build logs", newBuildsListVerb(), newBuildsLogsVerb()),
+		groupVerb("builds", "inspect and wait for builds, stream build logs", newBuildsListVerb(), newBuildsWaitVerb(), newBuildsLogsVerb()),
 		groupVerb("uploads", "upload and list build source directories (content-addressed; re-uploads deduplicate)",
 			newUploadsPutVerb(), newUploadsListVerb()),
 		groupVerb("hooks", "manage per-app git triggers (secrets shown once at mint/rotate)", newHooksSetVerb(), newHooksGetVerb(), newHooksRotateVerb()),

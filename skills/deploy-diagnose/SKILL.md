@@ -71,10 +71,15 @@ the causal chain; logs and builds are the evidence underneath.
 6. Recovery verbs — pick per the triage table, do not stack them blindly.
    Cancel clears a queued or in-flight deployment first (terminal states
    refuse with E_NOT_CANCELLABLE); rollback and re-deploy submit the
-   replacement:
+   replacement. To attach to a deployment or build already in flight
+   (webhook-triggered chains submit outside your session), use the standalone
+   wait verbs — they stream state transitions and exit non-zero unless the
+   row ends `succeeded`:
 
    ```bash
    fleetly deployments cancel DEPLOYMENT_ID
+   fleetly deployments wait --deployment DEPLOYMENT_ID
+   fleetly builds wait --build BUILD_ID
    fleetly rollback --app APP_ID --wait
    fleetly deploy --app APP_ID --image IMAGE --wait
    fleetly deploy --app APP_ID --from-dir DIR --wait

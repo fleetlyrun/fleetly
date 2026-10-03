@@ -75,6 +75,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"apps create", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "web"}, 0},
 		{"apps list", []string{"apps", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"deploy", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.27"}, 0},
+		// standalone 等待面（D22）：deploy 步已驱动到 succeeded（promoteToSucceeded
+		// 后置），wait 附着终态行——单帧即收，--json 轮幂等重放同响应。
+		{"deployments wait", []string{"deployments", "wait", "--deployment", "GOLDEN_DEPLOYMENT"}, 0},
 		{"rollback", []string{"rollback", "--app", "GOLDEN_APP"}, 0},
 		{"deployments list", []string{"deployments", "list", "--app", "GOLDEN_APP"}, 0},
 		{"revisions list", []string{"revisions", "list", "--app", "GOLDEN_APP"}, 0},
@@ -191,7 +194,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, project2ID, networkID, peerID, appID, app2ID, taskID, task2ID, runID, scheduleID, freezeID string
+	var projectID, project2ID, networkID, peerID, appID, app2ID, taskID, task2ID, runID, scheduleID, freezeID, deployID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -213,6 +216,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_APP2" {
 					args[i] = app2ID
+				}
+				if a == "GOLDEN_DEPLOYMENT" {
+					args[i] = deployID
 				}
 				if a == "GOLDEN_TASK" {
 					args[i] = taskID
@@ -278,8 +284,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			if st.verb == "freeze set" {
 				freezeID = extractTailID(out)
 			}
-			// deploy 后推进到 succeeded（rollback 的 golden 需要成功基线）。
+			// deploy 后推进到 succeeded（rollback 的 golden 需要成功基线）；
+			// 部署 ID 取自人类形态首行（"deployment X queued ..."）——下一
+			// 步 deployments wait 的附着锚。
 			if st.verb == "deploy" {
+				m := deploymentQueuedRe.FindStringSubmatch(out)
+				if len(m) < 2 {
+					t.Fatalf("cannot extract deployment id from deploy output: %q", out)
+				}
+				deployID = m[1]
 				promoteToSucceeded(t, h, appID)
 			}
 			// compose 扩展键部署驱动到锚定即止（releasing 等 job 终态——
