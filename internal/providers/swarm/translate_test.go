@@ -124,11 +124,12 @@ func TestToServiceSpec(t *testing.T) {
 	assert.Equal(t, int64(500_000_000), spec.TaskTemplate.Resources.Limits.NanoCPUs)
 	assert.Equal(t, int64(256*1024*1024), spec.TaskTemplate.Resources.Limits.MemoryBytes)
 
-	// 探针方言：http → CMD-SHELL wget；端口回落序实装（N0.1 P2-2）——
-	// 本例无 tcp_port、声明首端口 8080 → 探针打声明端口。
+	// 探针方言：http → CMD-SHELL wget（busybox 兼容形态）；端口回落序
+	// 实装（N0.1 P2-2）——本例无 tcp_port、声明首端口 8080 → 探针打声明
+	// 端口。
 	require.NotNil(t, cs.Healthcheck)
 	assert.Equal(t, "CMD-SHELL", cs.Healthcheck.Test[0])
-	assert.Equal(t, "wget -qO- http://127.0.0.1:8080/healthz || exit 1", cs.Healthcheck.Test[1])
+	assert.Equal(t, "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1", cs.Healthcheck.Test[1])
 
 	// 网络按名引用。
 	require.Len(t, spec.TaskTemplate.Networks, 1)
@@ -237,9 +238,23 @@ func TestHTTPProbePortFallbackOrder(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			w := capability.Workload{ID: "wl", Process: "web", Image: "nginx:1", Ports: tc.ports, Healthcheck: &tc.h}
 			hc := toSwarmHealthcheck(w.Healthcheck, w)
-			assert.Equal(t, fmt.Sprintf("wget -qO- http://127.0.0.1:%d/healthz || exit 1", tc.want), hc.Test[1])
+			assert.Equal(t, fmt.Sprintf("wget -q -O /dev/null http://127.0.0.1:%d/healthz || exit 1", tc.want), hc.Test[1])
 		})
 	}
+}
+
+// 探针方言钉死 busybox 兼容形态（N1 审查 P1-11）：`nc -z` 是 GNU/openbsd
+// 扩展（busybox nc 无 -z、distroless 无 nc——恒失败把健康载体打成
+// unhealthy），`wget -qO-` 合并短旗标在 busybox wget 上不可靠。镜像假设
+// 在 Describe Notes 声明。
+func TestHealthcheckDialectsBusyboxCompatible(t *testing.T) {
+	w := capability.Workload{ID: "wl", Process: "web", Image: "nginx:1"}
+
+	httpHC := toSwarmHealthcheck(&capability.Healthcheck{HTTPPath: "/healthz"}, w)
+	assert.Equal(t, []string{"CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"}, httpHC.Test)
+
+	tcpHC := toSwarmHealthcheck(&capability.Healthcheck{TCPPort: 5432}, w)
+	assert.Equal(t, []string{"CMD-SHELL", "nc -w 2 127.0.0.1 5432 </dev/null || exit 1"}, tcpHC.Test)
 }
 
 // 只读挂载透传（N0.1 P2-3）：compose 短语法 :ro → VolumeAttachment

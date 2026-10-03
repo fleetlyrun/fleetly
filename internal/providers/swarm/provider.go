@@ -73,6 +73,9 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 			// 能力发现端点的诚实边界声明（架构 §10）。
 			"network isolation is soft: per-project overlay without NetworkPolicy; egress:none is weak (outbound not blocked)",
 			"workload identity is carried by fleetly.* labels; platform node IDs never reuse",
+			// 镜像假设声明（N1 审查 P1-11）：shell 探针方言假定镜像自带
+			// busybox 兼容的 nc/wget；无 shell 工具的镜像走 exec 探针。
+			"tcp/http probes assume the image ships busybox-compatible nc/wget; distroless images should declare an exec probe",
 		},
 	}
 }

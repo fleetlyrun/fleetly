@@ -367,9 +367,12 @@ func envSlice(env map[string]string) []string {
 	return out
 }
 
-// toSwarmHealthcheck 把声明式探针翻译为 swarm 探针方言。http 探针端口
-// 取值序（N0.1 P2-2 实装）：探针自带 tcp_port > 进程声明首端口 > 8080
-// （无任何端口声明时的诚实缺省）。
+// toSwarmHealthcheck 把声明式探针翻译为 swarm 探针方言。shell 探针钉死
+// busybox 兼容形态（N1 审查 P1-11）：`nc -z` 是 GNU/openbsd 扩展（busybox
+// nc 无 -z，distroless 干脆无 nc——恒失败把健康载体打成 unhealthy），
+// `wget -qO-` 的合并短旗标在 busybox wget 上不可靠。http 探针端口取值序
+// （N0.1 P2-2 实装）：探针自带 tcp_port > 进程声明首端口 > 8080（无任何
+// 端口声明时的诚实缺省）。镜像假设在 Provider Describe Notes 声明。
 func toSwarmHealthcheck(h *capability.Healthcheck, w capability.Workload) *mobycontainer.HealthConfig {
 	hc := &mobycontainer.HealthConfig{
 		Interval:    h.Interval,
@@ -379,9 +382,11 @@ func toSwarmHealthcheck(h *capability.Healthcheck, w capability.Workload) *mobyc
 	}
 	switch {
 	case h.HTTPPath != "":
-		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`wget -qO- http://127.0.0.1:%d%s || exit 1`, httpProbePort(h, w.Ports), h.HTTPPath)}
+		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`wget -q -O /dev/null http://127.0.0.1:%d%s || exit 1`, httpProbePort(h, w.Ports), h.HTTPPath)}
 	case h.TCPPort != 0:
-		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`nc -z 127.0.0.1 %d || exit 1`, h.TCPPort)}
+		// stdin 立即 EOF + -w 超时：连接建立即探活成功（busybox nc 无 -z
+		// 的等价形态），拒绝/超时非零退出。
+		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`nc -w 2 127.0.0.1 %d </dev/null || exit 1`, h.TCPPort)}
 	case h.Exec != nil:
 		// IR 的 exec 探针是干净 argv；docker 探针 Test 方言要求首元素为
 		// CMD/CMD-SHELL——裸 argv 会被 daemon 当作无探针（State.Health
