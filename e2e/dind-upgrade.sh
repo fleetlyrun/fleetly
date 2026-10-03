@@ -97,6 +97,9 @@ docker exec "$DIND_CID" docker tag traefik:v3.5 traefik:v3.5.4
 log "running install.sh inside dind with OLD binaries"
 docker cp "$WORKDIR/bins-old" "$DIND_CID":/root/bins
 docker cp install.sh "$DIND_CID":/root/install.sh
+# 探针客户端随旧二进制同批注入（步骤 7 的路由就绪探针要用；bins-old 只含
+# 平台双件——漏此步则探针 90s 全空"status: none"）。
+docker cp "$WORKDIR/bins-new/h2cclient" "$DIND_CID":/root/bins/h2cclient
 docker exec -e FLEETLY_BIN_DIR=/root/bins \
   -e FLEETLY_EDGE_CONFIG_ENDPOINT="http://$DIND_IP:9082/edge/config" \
   "$DIND_CID" sh /root/install.sh
@@ -275,7 +278,6 @@ probe || true
 
 docker cp "$WORKDIR/bins-new/fleetlyd" "$DIND_CID":/usr/local/bin/fleetlyd
 docker cp "$WORKDIR/bins-new/fleetly" "$DIND_CID":/usr/local/bin/fleetly
-docker cp "$WORKDIR/bins-new/h2cclient" "$DIND_CID":/root/bins/h2cclient
 
 log "UPGRADE: starting NEW fleetlyd (goose rollforward + managed reconcile)"
 docker exec -e FLEETLY_EDGE_CONFIG_ENDPOINT="http://$DIND_IP:9082/edge/config" "$DIND_CID" sh -c \

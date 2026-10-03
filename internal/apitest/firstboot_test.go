@@ -68,9 +68,15 @@ func TestComposeFirstBootDeployEndToEnd(t *testing.T) {
 
 	// 铸出的 job Task 是无名 one-shot（schedule 先例），Run 材料面带
 	// secret 文件注入（与 App 域同一条解析通道）。
-	list, err := runs.ListRuns(ctx, &automationv1.ListRunsRequest{TaskId: taskID})
-	require.NoError(t, err)
-	require.Len(t, list.GetRuns(), 1)
+	var list *automationv1.ListRunsResponse
+	require.Eventually(t, func() bool {
+		got, err := runs.ListRuns(ctx, &automationv1.ListRunsRequest{TaskId: taskID})
+		if err != nil {
+			return false
+		}
+		list = got
+		return len(got.GetRuns()) == 1
+	}, 3e9, 1e7, "job run row must land after the task anchor becomes visible")
 	runID := list.GetRuns()[0].GetId()
 	// Run 行先于 workload Ensure 落账（engine 拍内两步）——扫描包 Eventually
 	// 等待 job 域 ensure 出现（裸扫描在行落账与 Ensure 之间的窗口上偶发空手，
