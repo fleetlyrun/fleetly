@@ -284,10 +284,73 @@ func TestTaskTTLLifecycle(t *testing.T) {
 	assert.Equal(t, run.StateStopped, got.State)
 	assert.Equal(t, run.ReasonTTLExpired, got.StopReason)
 
-	// 停止兜底路径（观测缺位）：再建一 Run，推过停止兜底 deadline。
+	// 停止兜底路径（观测缺位）：推过停止兜底 deadline → stopped → Task
+	// 镜像 completed。修复后语义：stopping 也是 one-shot 占位——全链只有
+	// 这一条 Run，不补第二 Run（旧行为在 stopping 后立即补足，job 被多跑
+	// 一次 + 僵尸 Run 悬挂）。
 	clock.Advance(2 * time.Minute)
 	e.taskStep(ctx)
 	assert.Equal(t, task.StateCompleted, getTaskRow(t, e, taskID).State)
+	assert.Len(t, taskRuns(t, e, taskID), 1, "one-shot never grows a second run")
+}
+
+// TestTaskOneShotStoppingNoReplenish（修复钉死）：one-shot Run 停止收口中
+// 也是占位——TTL janitor 迁 stopping 后同拍不补第二 Run；停止兜底收口
+// stopped → Task 镜像 completed，无 driving 残留。
+func TestTaskOneShotStoppingNoReplenish(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000B"
+	createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 60, "")
+	e.taskStep(ctx)
+	runs := taskRuns(t, e, taskID)
+	require.Len(t, runs, 1)
+
+	// TTL 到期 → janitor stopping（停止收口兜底 deadline 落行）。
+	clock.Advance(61 * time.Second)
+	e.taskStep(ctx)
+	require.Equal(t, run.StateStopping, getRunRow(t, e, runs[0].ID).State)
+	require.Len(t, taskRuns(t, e, taskID), 1,
+		"stopping occupies the one-shot slot: no second run may be minted")
+
+	// 停止兜底（观测缺位）：推过收口截止 → stopped → 同拍镜像 completed。
+	clock.Advance(2*e.opts.TaskStopGrace + 11*time.Second)
+	e.taskStep(ctx)
+	got := getRunRow(t, e, runs[0].ID)
+	assert.Equal(t, run.StateStopped, got.State)
+	assert.Equal(t, run.ReasonTTLExpired, got.StopReason)
+	assert.Equal(t, task.StateCompleted, getTaskRow(t, e, taskID).State)
+	driving, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), taskID, taskDrivingStates)
+	require.NoError(t, err)
+	assert.Empty(t, driving, "no driving runs may outlive a terminal one-shot task")
+	assert.Len(t, taskRuns(t, e, taskID), 1, "exactly one run ever existed")
+}
+
+// TestTaskZombieRunSweep：pre-fix 存量僵尸（终态 Task + driving Run 行）→
+// taskStep 收口 stopped/platform_drained（幂等 CAS；Task 行不动）。Run 行
+// 是 Schedule 重叠判定的真源——僵尸收口即解挂永久 skip。
+func TestTaskZombieRunSweep(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000C"
+	createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 3600, "")
+	// 直落存量形态：Task 已终态、Run 停在 driving（绕过补足链）。
+	require.NoError(t, e.tasks.Transit(ctx, e.db.Runner(), taskID,
+		[]task.State{task.StateActive}, task.StateCompleted, nil))
+	runID := "01JD0RUN00000000000000000001"
+	require.NoError(t, e.runs.Create(ctx, e.db.Runner(), &run.Run{
+		ID: runID, TaskID: taskID, ProjectID: tTaskProject,
+		State: run.StateStopping, StopReason: run.ReasonStoppedByUser,
+		WorkloadID: runID, DNSName: RunDNSName(runID),
+	}))
+
+	e.taskStep(ctx)
+
+	got := getRunRow(t, e, runID)
+	assert.Equal(t, run.StateStopped, got.State, "the zombie run is closed")
+	assert.Equal(t, run.ReasonPlatformDrained, got.StopReason, "zombie runs close as platform_drained")
+	assert.Equal(t, task.StateCompleted, getTaskRow(t, e, taskID).State,
+		"the terminal task row is untouched")
 }
 
 // TestTaskStopForce：StopTask force → runs stopping/stopped_by_user；

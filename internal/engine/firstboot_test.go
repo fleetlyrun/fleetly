@@ -17,6 +17,7 @@ import (
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
+	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
@@ -428,6 +429,136 @@ func TestFirstBootQuotaBoundedRetry(t *testing.T) {
 	d = getDeployment(t, e, d.ID)
 	require.Equal(t, deployment.StateFailed, d.State)
 	assert.Contains(t, d.Error, "quota")
+}
+
+// TestRollbackDeploymentSkipsFirstBootJobs：显式 rollback 创建的**新**
+// Deployment 直落 done 游标（ADR-0030 决策 5）——目标 Revision 声明
+// firstBootJobs 也不重跑（迁移已应用，重跑反而破坏）；审计标注
+// kind=rollback（Kind 不再是死参数）。
+func TestRollbackDeploymentSkipsFirstBootJobs(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+
+	// R1：带 job 的 spec 走完整链到 succeeded（job 执行一轮，合法）。
+	r1 := freezeSpec(t, e, 1, jobsSpec(11, tMigrateJob))
+	first, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
+	require.NoError(t, err)
+	e.step(ctx) // 铸 job → 等待
+	d := getDeployment(t, e, first.ID)
+	require.Equal(t, deployment.StateReleasing, d.State)
+	completeJobTask(t, e, d)
+	e.step(ctx) // done → materialize → L1
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
+	e.step(ctx)
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, first.ID).State)
+	tasksAfterR1 := taskCount(t, e)
+
+	// R2：第二 revision（无 job）部署成功。
+	r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
+	second, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+	require.NoError(t, err)
+	e.step(ctx)
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 2))
+	e.step(ctx)
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, second.ID).State)
+
+	// 显式 rollback 回 R1（spec 带 jobs）。
+	rb, err := e.Rollback(ctx, tAppID, r1)
+	require.NoError(t, err)
+	e.step(ctx) // queued → preparing → releasing →（游标 done）→ carrier
+	d = getDeployment(t, e, rb.ID)
+	require.Equal(t, deployment.StateReleasing, d.State, "deployment error: %s", d.Error)
+	assert.Equal(t, deployment.FirstBootDone, d.FirstBoot,
+		"the rollback deployment lands with the done cursor, never the empty one")
+
+	// carrier 相位照常：running → observing → succeeded。
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 3))
+	e.step(ctx)
+	require.Equal(t, deployment.StateObserving, getDeployment(t, e, rb.ID).State)
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	d = getDeployment(t, e, rb.ID)
+	require.Equal(t, deployment.StateSucceeded, d.State)
+
+	// 零重铸：无 job Task 新增、无 first_boot_job 事件。
+	assert.Equal(t, tasksAfterR1, taskCount(t, e), "rollback never re-mints first boot jobs")
+	assert.Empty(t, filterPrefix(eventNames(t, e, rb.ID), "deployment.first_boot_job"),
+		"no first boot job events on the rollback deployment")
+}
+
+// TestRollbackAuditAnnotatesKind：deployment.create 审计携带来源标注
+// （AfterFP 后缀 "; kind=rollback"）；常规部署不带后缀。
+func TestRollbackAuditAnnotatesKind(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	revID := freezeSpec(t, e, 3, imageSpecFor("nginx:1.26"))
+
+	plain, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	require.NoError(t, err)
+	entries, err := e.audits.ListFiltered(ctx, e.db.Runner(),
+		audit.Filter{ActionPrefix: "deployment.create", Resource: "deployment/" + plain.ID})
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.NotContains(t, entries[0].AfterFP, "kind=", "plain deploys carry no kind annotation")
+
+	rb, err := e.Rollback(ctx, tAppID, revID)
+	require.NoError(t, err)
+	entries, err = e.audits.ListFiltered(ctx, e.db.Runner(),
+		audit.Filter{ActionPrefix: "deployment.create", Resource: "deployment/" + rb.ID})
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	assert.Contains(t, entries[0].AfterFP, "kind=rollback",
+		"the rollback submission is identifiable in the audit stream")
+}
+
+// TestFirstBootLateCompletionNotL1Timeout：job 完成观测晚于等待截止（控制
+// 面停机跨窗/环卡滞形态）→ done 迁移清空的截止对 release 可见——进
+// carrier 相位自设新 L1 deadline，不误判 "L1 timed out" 假回滚。
+func TestFirstBootLateCompletionNotL1Timeout(t *testing.T) {
+	e, _, clock := newTestEngine(t)
+	ctx := context.Background()
+	revID := freezeSpec(t, e, 1, jobsSpec(12, tMigrateJob))
+	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	require.NoError(t, err)
+	e.step(ctx) // 铸 job → 等待（deadline = ttl 600s + grace 2m）
+	d = getDeployment(t, e, d.ID)
+	require.Equal(t, deployment.StateReleasing, d.State)
+	row := mintedJobTask(t, e, d)
+	e.taskStep(ctx)
+	runs := taskRuns(t, e, row.ID)
+	require.Len(t, runs, 1)
+
+	// 停机跨窗：时钟推过 job 等待截止（完成观测迟到）。
+	clock.Advance(600*time.Second + e.opts.FirstBootWaitGrace + time.Minute)
+
+	// job 实际完成：completed 观测 → Run 终态（pending 直收，不查截止）→
+	// Task 镜像——行终态先于 deploy 拍落库。
+	zero := 0
+	observe(t, e, runs[0].ID, capability.WorkloadCompleted, &zero)
+	e.taskStep(ctx)
+	require.Equal(t, task.StateCompleted, getTaskRow(t, e, row.ID).State)
+
+	e.step(ctx) // done 迁移（截止清空对调用方可见）→ carrier 相位自设 L1
+	d = getDeployment(t, e, d.ID)
+	require.Equal(t, deployment.StateReleasing, d.State,
+		"late job completion must not fail as L1 timeout (error: %s)", d.Error)
+	assert.Equal(t, deployment.FirstBootDone, d.FirstBoot)
+	assert.NotEmpty(t, d.ObserveDeadline, "carrier phase self-sets a fresh L1 deadline")
+	l1 := parseDeadline(d.ObserveDeadline)
+	require.NotNil(t, l1)
+	assert.True(t, e.clock.Now().Before(*l1), "the fresh L1 deadline must be in the future")
+
+	// carrier 相位照常走到 succeeded。
+	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
+	e.step(ctx)
+	require.Equal(t, deployment.StateObserving, getDeployment(t, e, d.ID).State)
+	clock.Advance(61 * time.Second)
+	e.step(ctx)
+	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, d.ID).State)
 }
 
 // taskCount 数项目 Task 行（零重铸断言的口径）。

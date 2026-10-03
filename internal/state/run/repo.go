@@ -114,6 +114,17 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Run, error)
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping') ORDER BY id")
 }
 
+// ListDrivingOfTerminalTasks 返回终态 Task（completed/failed/drained/
+// deleted）名下的 driving 态 Run（僵尸收口面：正常链路不产生，pre-fix
+// 存量行在此显形——Schedule 重叠判定以 Run 行为真源，僵尸行会让该
+// Schedule 永久 skip）。
+func (r *Repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner) ([]Run, error) {
+	return r.query(ctx, run,
+		selectCols+" WHERE state IN ('pending', 'running', 'stopping')"+
+			" AND task_id IN (SELECT id FROM tasks WHERE state IN ('completed', 'failed', 'drained', 'deleted'))"+
+			" ORDER BY id")
+}
+
 // ListAfter 返回全局 Run 列表（新→旧 + after 游标；ListRuns 无过滤形态）。
 func (r *Repo) ListAfter(ctx context.Context, run state.Runner, afterID string, limit int) ([]Run, error) {
 	if limit <= 0 || limit > maxListLimit {

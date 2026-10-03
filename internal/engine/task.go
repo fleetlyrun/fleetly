@@ -79,6 +79,9 @@ func (e *Engine) taskStep(ctx context.Context) {
 	if err := e.sweepRevokedOwners(ctx, tasks); err != nil {
 		e.log.Error("task step: sweep revoked owners", "err", err)
 	}
+	if err := e.sweepZombieRuns(ctx); err != nil {
+		e.log.Error("task step: sweep zombie runs", "err", err)
+	}
 	for i := range tasks {
 		e.driveTask(ctx, &tasks[i])
 	}
@@ -109,6 +112,29 @@ func (e *Engine) sweepRevokedOwners(ctx context.Context, tasks []task.Task) erro
 		}
 		for _, t := range owned {
 			e.drainTask(ctx, t, run.ReasonOwnerRevoked)
+		}
+	}
+	return nil
+}
+
+// sweepZombieRuns 收口僵尸 Run：终态 Task（completed/failed/drained/
+// deleted）名下仍处 driving 态的 Run 行逐条终态化（stopped/
+// platform_drained；幂等 CAS，冲突即跳过——并发已收口以行现状为准）。
+// 正常链路不再产生此类行（one-shot 补足把 stopping 计入占位）；此处清扫
+// pre-fix 存量（staging 库已有），否则 Schedule 重叠判定（Run 行为真源）
+// 被僵尸行永久 skip。终态 Task 不进 ListDriving，本扫是其唯一收口路径。
+func (e *Engine) sweepZombieRuns(ctx context.Context) error {
+	zombies, err := e.runs.ListDrivingOfTerminalTasks(ctx, e.db.Runner())
+	if err != nil {
+		return err
+	}
+	for i := range zombies {
+		if err := e.transitRunFour(ctx, &zombies[i],
+			taskDrivingStates, run.StateStopped,
+			func(r *run.Run) { r.StopReason, r.Deadline = run.ReasonPlatformDrained, "" }); err != nil {
+			if !errors.Is(err, state.ErrConflict) {
+				e.log.Error("task step: zombie run sweep", "run", zombies[i].ID, "err", err)
+			}
 		}
 	}
 	return nil
@@ -190,8 +216,10 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
 	}
 
 	// 补足（active only）：one-shot 期望 1；resident 期望 desired_concurrency。
-	// 活槽位 = pending/running（stopping 是收口态不占位）。突增上限防一拍
-	// 海量创建（swarm API 压力面，决策 7 压测锚）。
+	// 活槽位 = pending/running（resident 的 stopping 是收口态不占位）；one-shot
+	// 例外：stopping 也是占位（一次性语义——唯一 Run 停止收口中即补第二 Run
+	// = job 多跑一次，且 Task 终态后第二 Run 成僵尸、Schedule 重叠判定永久
+	// skip）。突增上限防一拍海量创建（swarm API 压力面，决策 7 压测锚）。
 	if t.State == task.StateActive {
 		want := t.DesiredConcurrency
 		if t.Form == task.FormOneShot {
@@ -217,8 +245,14 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
 			}
 			live--
 		}
+		// 占用数：resident 按活槽位；one-shot 按全部 driving 行（runs 列表
+		// 来自 taskDrivingStates，含 stopping）。
+		occupied := live
+		if t.Form == task.FormOneShot {
+			occupied = len(runs)
+		}
 		created := false
-		for n := live; n < int(want) && n-live < e.opts.TaskReplenishBurst; n++ {
+		for n := occupied; n < int(want) && n-occupied < e.opts.TaskReplenishBurst; n++ {
 			if err := e.createRun(ctx, t, spec, now); err != nil {
 				e.log.Error("task drive: replenish", "task", t.ID, "err", err)
 				break

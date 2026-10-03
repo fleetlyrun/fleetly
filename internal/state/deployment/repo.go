@@ -121,14 +121,16 @@ func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 func (r *Repo) Create(ctx context.Context, run state.Runner, d *Deployment) error {
 	now := state.FormatTime(r.clock.Now())
 	d.CreatedAt, d.UpdatedAt = now, now
+	// first_boot 游标随行落库（提交方直落形态：回滚部署带 done 游标——
+	// ADR-0030 决策 5；常规部署为空串 = 未开始）。
 	_, err := run.ExecContext(ctx, `
 		INSERT INTO deployments
 			(id, app_id, from_revision, to_revision, state, generation,
 			 idempotency_key, commit_sha, superseded_by, error, observe_deadline,
 			 first_boot, created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', '', ?, ?, '')`,
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', '', '', ?, ?, ?, '')`,
 		d.ID, d.AppID, d.FromRevision, d.ToRevision, string(d.State), d.Generation,
-		d.IdempotencyKey, d.CommitSHA, d.CreatedAt, d.UpdatedAt)
+		d.IdempotencyKey, d.CommitSHA, d.FirstBoot, d.CreatedAt, d.UpdatedAt)
 	if state.IsUniqueViolation(err) {
 		return fmt.Errorf("%w: an active deployment already holds idempotency key %q", state.ErrAlreadyExists, d.IdempotencyKey)
 	}

@@ -22,7 +22,7 @@ type SubmitRequest struct {
 	IdempotencyKey string // 可选；活跃期去重
 	CommitSHA      string // 可选；git 触发的 commit 去重锚
 	Supersede      bool   // 显式抢占在途部署（ADR-0016）
-	Kind           string // 可选；来源标注（KindRollback 等，进审计）
+	Kind           string // 可选；来源标注（KindRollback：审计标注 + first_boot 游标直落 done——回滚永不重跑 firstBootJobs，ADR-0030 决策 5）
 }
 
 // Submit 走 admission 判定（ADR-0016，判定全在单事务内）：
@@ -145,6 +145,12 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			IdempotencyKey: req.IdempotencyKey,
 			CommitSHA:      req.CommitSHA,
 		}
+		if req.Kind == KindRollback {
+			// 回放部署直落 done 游标（ADR-0030 决策 5）：回滚（自动/显式）
+			// 永不重跑 firstBootJobs——迁移已应用，重跑反而破坏。release 的
+			// driveFirstBootJobs 见 done 游标直接进 carrier 子相位。
+			d.FirstBoot = deployment.FirstBootDone
+		}
 		if err := e.deployments.Create(ctx, tx, d); err != nil {
 			return err
 		}
@@ -152,10 +158,16 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			return err
 		}
 		out = d
+		// 审计带来源标注（transit 的 AfterFP 后缀同款形态）：Kind 不再是
+		// 死参数——回放部署在审计流里可辨（"; kind=rollback"）。
+		afterFP := d.ToRevision
+		if req.Kind != "" {
+			afterFP = fmt.Sprintf("%s; kind=%s", d.ToRevision, req.Kind)
+		}
 		return e.audits.Append(ctx, tx, &audit.Entry{
 			ID: ulid.Make().String(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
 			Action: "deployment.create", Resource: "deployment/" + d.ID,
-			AfterFP: d.ToRevision,
+			AfterFP: afterFP,
 		})
 	})
 	if err != nil {

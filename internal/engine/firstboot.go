@@ -76,14 +76,20 @@ func (e *Engine) driveFirstBootJobs(ctx context.Context, d *deployment.Deploymen
 			return false, nil
 		}
 		// 全部完成：游标落 done 并清等待截止（carrier 子相位首拍自设 L1）。
-		if _, err := e.transitAndReload(ctx, d,
+		fresh, err := e.transitAndReload(ctx, d,
 			[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
 			func(m *deployment.Deployment) {
 				m.FirstBoot = deployment.FirstBootDone
 				m.ObserveDeadline = ""
-			}); err != nil {
+			})
+		if err != nil {
 			return false, err
 		}
+		// 回写驱动行（jobs→carrier 交界，本函数唯一继续被调用方消费的返回
+		// 点）：release 持有的 d 必须看见清空的 ObserveDeadline——否则 job
+		// 完成观测晚于等待截止（控制面停机跨窗/环卡滞）时，旧截止被误当 L1
+		// 截止判超时，健康载体假回滚（L1 窗从未开启却判超时）。
+		*d = *fresh
 		return true, nil
 	case firstBootPending:
 		deadline := parseDeadline(d.ObserveDeadline)
