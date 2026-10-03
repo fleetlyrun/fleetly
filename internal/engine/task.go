@@ -196,6 +196,42 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
 		}
 	}
 
+	// 排空补停（P1 修复 2026-10-02：draining Task 的存量 Run 收口保证）。
+	// 排空路径（drainTask/StopTask force）对存量 Run 的停止是一拍内尽力
+	// 而为：单条失败只记日志、或旧代码 StopTask 不持 Task 互斥时与补足竞
+	// 态漏停新铸 Run——残留的 pending/running 被 Ensure 以 1 副本持续保活，
+	// janitor 只管 TTL/停止兜底（resident 无 TTL 即永不触发），Task 永久卡
+	// draining。
+	//
+	// 触发锚与起因都取行事实：同 Task 已有 stopping 兄弟 = 宽限排空确已发
+	// 起，起因复用其 stop_reason（排空发起时的语义已落行，重启后仍可判）。
+	// 不做无条件补停的取舍：属主吊销的跑完 TTL 模式（TaskOwnerRevokedRunTo
+	// TTL）与 StopTask 非强停的自然收口语义都刻意让存量 Run 续跑到
+	// TTL/完成——两者均不产生 stopping 行，天然豁免；Task 行无起因列，内
+	// 存态重启即失，行事实是最小且诚实的真源。
+	if t.State == task.StateDraining {
+		drainReason := ""
+		for i := range runs {
+			if runs[i].State == run.StateStopping && runs[i].StopReason != "" {
+				drainReason = runs[i].StopReason
+				break
+			}
+		}
+		if drainReason != "" {
+			for i := range runs {
+				if !runs[i].State.Active() {
+					continue
+				}
+				if err := e.stopRunRow(ctx, &runs[i], drainReason, now); err != nil {
+					// 并发已迁移（观测路径收口）= 目标已达，静默让位。
+					if !errors.Is(err, state.ErrConflict) {
+						e.log.Error("task drive: drain re-stop", "run", runs[i].ID, "err", err)
+					}
+				}
+			}
+		}
+	}
+
 	// 终态镜像与排空收口（行事实 → Task 态）。
 	if t.State == task.StateActive && t.Form == task.FormOneShot {
 		if e.oneshotTerminal(ctx, t) {
@@ -240,8 +276,16 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
 				continue
 			}
 			if err := e.stopRunRow(ctx, &runs[i], run.ReasonPlatformDrained, now); err != nil {
-				e.log.Error("task drive: excess drain", "run", runs[i].ID, "err", err)
-				break
+				if !errors.Is(err, state.ErrConflict) {
+					// 基础设施错误：本拍止步（一错即断会放大抖动，下拍重试）。
+					e.log.Error("task drive: excess drain", "run", runs[i].ID, "err", err)
+					break
+				}
+				// CAS 冲突 = 该 Run 已被并发迁移出活跃态（观测路径收口等）：
+				// 槽位照常让出，继续排空其余（一错即 break 会把单条竞态放大
+				// 成整拍排空停滞，下拍幂等收敛）。
+				live--
+				continue
 			}
 			live--
 		}
@@ -474,8 +518,14 @@ func (e *Engine) RenewTask(ctx context.Context, id string) (*task.Task, error) {
 
 // StopTask 排空停止（F1.5）：停止补足；force=false 存量 Run 自然收口
 // （完成/TTL），force=true 宽限停止（StopGrace 路径）。draining 收口后
-// Task → drained。
+// Task → drained。全程持有 Task 级互斥（DeleteTask 先例）：与持锁的
+// driveTask 串行——否则强停列 Run 与补足铸 Run 竞态，新铸 Run 漏停（由
+// 排空补停兜底收敛，但锁纪律下窗口本身不存在）。
 func (e *Engine) StopTask(ctx context.Context, id string, force bool) (*task.Task, error) {
+	mu := e.lockTask(id)
+	mu.Lock()
+	defer mu.Unlock()
+
 	var out *task.Task
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		t, err := e.tasks.Get(ctx, tx, id)

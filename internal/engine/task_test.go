@@ -219,6 +219,103 @@ func TestTaskResidentPoolScaleDownDrains(t *testing.T) {
 	assert.Equal(t, []string{allIDs[0], allIDs[1]}, liveIDs, "the two oldest runs survive")
 }
 
+// TestDrainingTaskReStopsOrphanRuns（P1 修复 2026-10-02）：强停后人为复活
+// 一条 Run（漏停行事实形态：停止单条失败只记日志/旧代码不持锁与补足竞态
+// 漏停新铸 Run）→ 下一拍排空补停（复用行上排空起因）→ 观测收口 → Task
+// 收敛 drained，不再永久卡 draining。
+func TestDrainingTaskReStopsOrphanRuns(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000D"
+	createTaskRow(t, e, taskID, "pool", task.FormResident, 2, 0, "")
+	e.taskStep(ctx)
+	require.Len(t, taskRuns(t, e, taskID), 2)
+	runs := taskRuns(t, e, taskID) // 新→旧
+	older, newer := runs[1].ID, runs[0].ID
+
+	// 强停：两条 Run 均 stopping/stopped_by_user。
+	_, err := e.StopTask(ctx, taskID, true)
+	require.NoError(t, err)
+	require.Equal(t, task.StateDraining, getTaskRow(t, e, taskID).State)
+
+	// 人为复活一条（state 回 running、deadline 清零回活跃态；行上残留的
+	// stop_reason 保持——正是竞态漏停行的事实形态）。
+	_, err = e.db.Runner().ExecContext(ctx,
+		`UPDATE runs SET state = 'running', deadline = '' WHERE id = ?`, newer)
+	require.NoError(t, err)
+	require.Equal(t, run.StateRunning, getRunRow(t, e, newer).State)
+
+	e.taskStep(ctx) // 排空补停：stopping 兄弟 = 宽限排空已发起 → 补停复活 Run
+	got := getRunRow(t, e, newer)
+	assert.Equal(t, run.StateStopping, got.State, "the orphan run is re-stopped by the draining task")
+	assert.Equal(t, run.ReasonStoppedByUser, got.StopReason, "re-stop reuses the drain's stamped reason")
+
+	// 观测收口：全终态 → Task 收敛 drained。
+	for _, id := range []string{older, newer} {
+		observe(t, e, id, capability.WorkloadStopped, nil)
+	}
+	e.taskStep(ctx)
+	assert.Equal(t, task.StateDrained, getTaskRow(t, e, taskID).State, "the draining task converges")
+}
+
+// TestStopTaskSoftKeepsNaturalCompletion：force=false 的自然收口语义不被
+// 排空补停越权——无 stopping 行 = 宽限排空未发起（属主吊销跑完 TTL 模式
+// 同一豁免面），存量 Run 续跑到完成/TTL。
+func TestStopTaskSoftKeepsNaturalCompletion(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000E"
+	createTaskRow(t, e, taskID, "pool", task.FormResident, 1, 0, "")
+	e.taskStep(ctx)
+	require.Len(t, taskRuns(t, e, taskID), 1)
+	runID := taskRuns(t, e, taskID)[0].ID
+	observe(t, e, runID, capability.WorkloadRunning, nil)
+
+	_, err := e.StopTask(ctx, taskID, false)
+	require.NoError(t, err)
+	e.taskStep(ctx)
+
+	assert.Equal(t, task.StateDraining, getTaskRow(t, e, taskID).State)
+	got := getRunRow(t, e, runID)
+	assert.Equal(t, run.StateRunning, got.State, "soft stop leaves the run to natural completion")
+	assert.Empty(t, got.StopReason)
+}
+
+// TestStopTaskConcurrentWithDrive：强停与驱动环并发（锁纪律回归形态）：
+// 并发拍结束后观测收口，Task 必须收敛 drained 且无活跃 Run 残留——旧代
+// 码 StopTask 不持 Task 互斥，强停可与补足竞态漏停新铸 Run（悬挂形态；
+// 锁纪律 + 排空补停双保险下的等价收敛验证）。
+func TestStopTaskConcurrentWithDrive(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000F"
+	createTaskRow(t, e, taskID, "pool", task.FormResident, 2, 0, "")
+	e.taskStep(ctx)
+	require.Len(t, taskRuns(t, e, taskID), 2)
+
+	driving := make(chan struct{})
+	go func() {
+		defer close(driving)
+		for i := 0; i < 20; i++ {
+			e.taskStep(ctx)
+		}
+	}()
+	_, err := e.StopTask(ctx, taskID, true)
+	require.NoError(t, err)
+	<-driving
+
+	for _, r := range taskRuns(t, e, taskID) {
+		observe(t, e, r.ID, capability.WorkloadStopped, nil)
+	}
+	for i := 0; i < 5 && getTaskRow(t, e, taskID).State != task.StateDrained; i++ {
+		e.taskStep(ctx)
+	}
+	assert.Equal(t, task.StateDrained, getTaskRow(t, e, taskID).State)
+	for _, r := range taskRuns(t, e, taskID) {
+		assert.True(t, r.State.Terminal(), "no active run may outlive a forced stop: %s %s", r.ID, r.State)
+	}
+}
+
 // TestTaskLeaseExpiryDrainAndRevive（F1.6）：lease 超宽限 → 排空（runs
 // stopping/lease_expired）→ drained → RenewTask 复活 → 补足恢复。
 func TestTaskLeaseExpiryDrainAndRevive(t *testing.T) {
