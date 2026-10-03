@@ -113,14 +113,26 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 		return nil, err
 	}
 	p := &project.Project{ID: newID(), Name: req.GetName(), TeamID: teamID}
-	// Team 轴接实（ADR-0028）：归属 Team 必须存在——Project 落在不存在的
-	// Team 上会让域解析（engine projectTeam）悬空。
+	// default 网络随项目出生（F-C，2026-10-03 staging 实证）：compose 引用
+	// `networks: [default]` 而表行缺失时会静默半物化——swarm 侧 overlay 由
+	// workload Ensure 建了，networks 表（受管 Edge 挂靠真源）却无行，traefik
+	// 永不挂靠该网 → 路由 502。出生即建行，引用面与挂靠面同源；overlay
+	// 本身仍随首个 workload 物化（表行不建网，无空跑）。
+	net := &networkrepo.Network{ID: newID(), ProjectID: p.ID, Name: "default"}
+	// Team 轴接实（ADR-0028）：归属 Team 必须存在——Project 落在不存在
+	// 的 Team 上会让域解析（engine projectTeam）悬空。
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
-			return svc.s.Projects.Create(ctx, tx, p)
+			if err := svc.s.Projects.Create(ctx, tx, p); err != nil {
+				return err
+			}
+			return svc.s.Networks.Create(ctx, tx, net)
 		},
-		events: []eventFact{structureEvent(eventProjectCreated, "project", p.ID, "")},
+		events: []eventFact{
+			structureEvent(eventProjectCreated, "project", p.ID, ""),
+			structureEvent(eventNetworkCreated, "network", net.Name, net.ProjectID),
+		},
 		audits: []*audit.Entry{{
 			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "project.create",
 			Resource: "project/" + p.ID, AfterFP: p.Name,

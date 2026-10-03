@@ -1,3 +1,4 @@
 ID	NAME	EGRESS_NONE	CREATED
-<ULID>	default	false	2026-01-01T00:02:00Z
-<ULID>	default-json	false	2026-01-01T00:02:00Z
+<ULID>	default	false	2026-01-01T00:00:00Z
+<ULID>	internal	false	2026-01-01T00:02:00Z
+<ULID>	internal-json	false	2026-01-01T00:02:00Z

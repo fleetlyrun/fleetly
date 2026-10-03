@@ -7,6 +7,7 @@ package apitest_test
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -18,21 +19,18 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state/project"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
-// databaseFixture 组装：项目 + 网络，返回 (h, ctx, projectID)。
+// databaseFixture 组装：项目（default 网络随出生面自带，F-C），返回
+// (h, ctx, projectID)。
 func databaseFixture(t *testing.T) (*apitest.Harness, context.Context, string) {
 	t.Helper()
 	h := apitest.NewManual(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
 	projects := structurev1.NewProjectsServiceClient(h.Conn)
-	networks := structurev1.NewNetworksServiceClient(h.Conn)
 	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "shop"})
-	require.NoError(t, err)
-	_, err = networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
-		ProjectId: p.GetProject().GetId(), Name: "default",
-	})
 	require.NoError(t, err)
 	return h, ctx, p.GetProject().GetId()
 }
@@ -147,7 +145,9 @@ func TestDatabaseLifecycle(t *testing.T) {
 	assert.NotEqual(t, row.GetId(), reborn.GetDatabase().GetId())
 }
 
-// 零网项目 → Conflict（可达性前置，fail-closed）。
+// 零网项目 → Conflict（可达性前置，fail-closed）。F-C 之后 API 创建路径
+// 恒带出生 default 网络——零网只剩存量形态（出生面落地前的旧行、外部
+// 写入），守卫作为 fail-closed 防线照旧有效，直插状态层构造两种形态。
 func TestDatabaseCreateRequiresProjectNetwork(t *testing.T) {
 	h := apitest.NewManual(t)
 	ctx := sdk.WithToken(context.Background(), h.Token)
@@ -155,11 +155,26 @@ func TestDatabaseCreateRequiresProjectNetwork(t *testing.T) {
 	p, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "lonely"})
 	require.NoError(t, err)
 
-	_, err = structurev1.NewDatabasesServiceClient(h.Conn).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
-		ProjectId: p.GetProject().GetId(), Name: "db", Engine: "redis",
-	})
-	require.Error(t, err)
-	assert.Equal(t, codes.FailedPrecondition, status.Code(err))
+	createDB := func(projectID string) error {
+		_, err := structurev1.NewDatabasesServiceClient(h.Conn).CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+			ProjectId: projectID, Name: "db", Engine: "redis",
+		})
+		return err
+	}
+
+	// 形态一：出生面之前的存量零网项目（直插状态层）。
+	legacy := &project.Project{ID: "01JD0LEGACY000000000000000A", Name: "legacy-nonet", TeamID: "default"}
+	require.NoError(t, project.New(h.DB.Clock()).Create(ctx, h.DB.Runner(), legacy))
+	require.Error(t, createDB(legacy.ID), "legacy zero-network project must fail closed")
+	assert.Equal(t, codes.FailedPrecondition, status.Code(createDB(legacy.ID)))
+
+	// 形态二：出生 default 行被拆（无 API 删除面——直删复刻）。
+	require.NoError(t, h.DB.Tx(ctx, func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(ctx, "DELETE FROM networks WHERE project_id = ?", p.GetProject().GetId())
+		return err
+	}))
+	require.Error(t, createDB(p.GetProject().GetId()), "project with its default network removed must fail closed")
+	assert.Equal(t, codes.FailedPrecondition, status.Code(createDB(p.GetProject().GetId())))
 }
 
 // 事件两拍：database.created / database.deleted（structureEvent 载荷形态）。

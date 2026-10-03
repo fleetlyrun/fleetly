@@ -104,11 +104,13 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// 分页读面：name 字典序首页截断（app-json.ini < app.ini）。
 		{"configs list page", []string{"configs", "list", "--project", "GOLDEN_PROJECT", "--limit", "1"}, 0},
 		{"volumes create", []string{"volumes", "create", "--project", "GOLDEN_PROJECT", "data"}, 0},
-		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "default"}, 0},
-		// 只读 list：--json 轮幂等重跑同响应（本轮仅 default 一网——messaging
-		// 的网在后续步骤才建）。
+		// default 网络随项目出生（F-C）——本步建的是第二个网 internal，
+		// 动词面照常覆盖；list 形态 = 出生 default + internal 两行。
+		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "internal"}, 0},
+		// 只读 list：--json 轮幂等重跑同响应（本轮 default+internal 两网——
+		// messaging 的网在后续步骤才建）。
 		{"networks list", []string{"networks", "list", "--project", "GOLDEN_PROJECT"}, 0},
-		// 分页读面：name 字典序首页截断（default < default-json）。
+		// 分页读面：name 字典序首页截断（default < internal）。
 		{"networks list page", []string{"networks", "list", "--project", "GOLDEN_PROJECT", "--limit", "1"}, 0},
 		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}, 0},
 		{"routes list", []string{"routes", "list"}, 0},
@@ -374,7 +376,7 @@ var jsonArgOverrides = map[string]map[int]string{
 	"secrets put":               {6: "api-token-json"},
 	"configs put":               {6: "app-json.ini"},
 	"volumes create":            {4: "data-json"},
-	"networks create":           {4: "default-json"},
+	"networks create":           {4: "internal-json"},
 	"networks create messaging": {4: "bus-json"},
 	"routes create":             {5: "json.127.0.0.1.sslip.io"},
 	"tasks create":              {5: "migrate-json"},

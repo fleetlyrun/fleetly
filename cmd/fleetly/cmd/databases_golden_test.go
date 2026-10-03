@@ -8,19 +8,15 @@ import (
 	"testing"
 )
 
-// seedDatabaseProject 建项目 + 网络，返回 projectID。
+// seedDatabaseProject 建项目并返回 projectID。default 网络随项目出生
+// （F-C：出生即建行），无需再显式播种——数据库可达性前置已由出生面保证。
 func seedDatabaseProject(t *testing.T, name string) string {
 	t.Helper()
 	code, out, stderr := runCLI(t, "projects", "create", name)
 	if code != 0 || stderr != "" {
 		t.Fatalf("seed project: code=%d stderr=%q", code, stderr)
 	}
-	projectID := extractTailID(out)
-	code, _, stderr = runCLI(t, "networks", "create", "--project", projectID, "default")
-	if code != 0 || stderr != "" {
-		t.Fatalf("seed network: code=%d stderr=%q", code, stderr)
-	}
-	return projectID
+	return extractTailID(out)
 }
 
 // createDatabase 建库并返回 (dbID, 人类形态输出)。

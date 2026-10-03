@@ -101,8 +101,8 @@ func TestRowLevelTeamAuthorization(t *testing.T) {
 	require.NoError(t, err)
 	_, err = configs.PutConfig(owner, &structurev1.PutConfigRequest{ProjectId: projAID, Name: "env", Content: `{"LOG_LEVEL":"info"}`})
 	require.NoError(t, err)
-	_, err = networks.CreateNetwork(owner, &structurev1.CreateNetworkRequest{ProjectId: projAID, Name: "default"})
-	require.NoError(t, err)
+	// default 网络随项目出生（F-C）——跨队读面按名直取的样本行由出生面
+	// 提供，无需显式建。
 	taskA, err := tasks.CreateTask(owner, &automationv1.CreateTaskRequest{ProjectId: projAID, Name: "migrate", Image: "nginx:1.27"})
 	require.NoError(t, err)
 	taskAID := taskA.GetTask().GetId()

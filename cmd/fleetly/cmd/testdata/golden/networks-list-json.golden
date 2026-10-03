@@ -4,12 +4,18 @@
       "id": "<ULID>",
       "project_id": "<ULID>",
       "name": "default",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "project_id": "<ULID>",
+      "name": "internal",
       "created_at": "2026-01-01T00:02:00Z"
     },
     {
       "id": "<ULID>",
       "project_id": "<ULID>",
-      "name": "default-json",
+      "name": "internal-json",
       "created_at": "2026-01-01T00:02:00Z"
     }
   ]

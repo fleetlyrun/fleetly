@@ -10,6 +10,14 @@
     },
     {
       "seq": "2",
+      "name": "network.created",
+      "aggregate": "network",
+      "aggregate_id": "default",
+      "payload": "{\"id\":\"default\",\"project_id\":\"<ULID>\"}",
+      "created_at": "2026-01-01T00:00:00Z"
+    },
+    {
+      "seq": "3",
       "name": "app.created",
       "aggregate": "app",
       "aggregate_id": "<ULID>",
@@ -17,7 +25,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "seq": "3",
+      "seq": "4",
       "name": "deployment.queued",
       "aggregate": "deployment",
       "aggregate_id": "<ULID>",
@@ -25,7 +33,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "seq": "4",
+      "seq": "5",
       "name": "deployment.preparing",
       "aggregate": "deployment",
       "aggregate_id": "<ULID>",
@@ -33,7 +41,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "seq": "5",
+      "seq": "6",
       "name": "deployment.releasing",
       "aggregate": "deployment",
       "aggregate_id": "<ULID>",
@@ -41,7 +49,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "seq": "6",
+      "seq": "7",
       "name": "deployment.observing",
       "aggregate": "deployment",
       "aggregate_id": "<ULID>",
@@ -49,7 +57,7 @@
       "created_at": "2026-01-01T00:00:00Z"
     },
     {
-      "seq": "7",
+      "seq": "8",
       "name": "deployment.succeeded",
       "aggregate": "deployment",
       "aggregate_id": "<ULID>",
@@ -57,5 +65,5 @@
       "created_at": "2026-01-01T00:02:00Z"
     }
   ],
-  "last_seq": "7"
+  "last_seq": "8"
 }
