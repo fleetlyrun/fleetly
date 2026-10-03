@@ -83,6 +83,38 @@ func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID
 	return out, rows.Err()
 }
 
+// ListAll 读全表行（含 tombstone）：离线维护面（KEK 重封）专用——墓碑
+// 行的密文同样要可解（undelete 路径依赖），含密文列故禁止 API 回显面
+// 消费。
+func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Secret, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT id, project_id, name, ciphertext, fingerprint, created_at, updated_at, deleted_at
+		FROM secrets`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Secret
+	for rows.Next() {
+		s, err := scanSecret(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *s)
+	}
+	return out, rows.Err()
+}
+
+// UpdateCiphertext 重写密文（KEK 重封专用：fingerprint 是明文的函数，
+// 重封不变；updated_at 随写推进）。行不存在不报错——调用方（rewrap）的
+// 行列表与本写同窗口，无并发删除面。
+func (r *Repo) UpdateCiphertext(ctx context.Context, run state.Runner, id string, ciphertext []byte) error {
+	_, err := run.ExecContext(ctx, `
+		UPDATE secrets SET ciphertext = ?, updated_at = ? WHERE id = ?`,
+		ciphertext, state.FormatTime(r.clock.Now()), id)
+	return err
+}
+
 // SoftDelete 落 tombstone（幂等）。
 func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, projectID, name string) error {
 	now := state.FormatTime(r.clock.Now())

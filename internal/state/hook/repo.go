@@ -100,6 +100,34 @@ func (r *Repo) RotateToken(ctx context.Context, run state.Runner, appID, sha, pr
 	return nil
 }
 
+// ListAll 读全表行：离线维护面（KEK 重封）专用（含 webhook secret 信封
+// 列，禁止回显面消费）。
+func (r *Repo) ListAll(ctx context.Context, run state.Runner) ([]Hook, error) {
+	rows, err := run.QueryContext(ctx, selectColumns)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Hook
+	for rows.Next() {
+		h, err := scanOne(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *h)
+	}
+	return out, rows.Err()
+}
+
+// UpdateSecretCiphertext 重封 webhook secret 信封（KEK 重封专用；URL
+// token 材料与信封无关，不动）。
+func (r *Repo) UpdateSecretCiphertext(ctx context.Context, run state.Runner, appID string, ciphertext []byte) error {
+	_, err := run.ExecContext(ctx, `
+		UPDATE app_hooks SET secret_ciphertext = ?, updated_at = ? WHERE app_id = ?`,
+		ciphertext, state.FormatTime(r.clock.Now()), appID)
+	return err
+}
+
 // RecordDelivery 落一行重投去重锚；返回 true = 该 delivery 已出现过
 // （重投）。顺带清理保留窗外的旧行。
 func (r *Repo) RecordDelivery(ctx context.Context, run state.Runner, appID, delivery string) (bool, error) {

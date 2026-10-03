@@ -4,6 +4,7 @@ package main
 
 import (
 	"log"
+	"os"
 	"time"
 
 	"github.com/lynx-go/lynx"
@@ -42,6 +43,11 @@ func setupApp(app lynx.App) error {
 }
 
 func main() {
+	// admin 离线维护面（停机窗口子命令）：不进 lynx runner——数据根被
+	// 守护进程持有时禁止维护操作（见 admin.go）。
+	if len(os.Args) > 1 && os.Args[1] == "admin" {
+		os.Exit(runAdmin(os.Args[2:]))
+	}
 	runner := lynx.NewRunner(setupApp,
 		lynx.WithName("Fleetly"),
 		lynx.WithVersion(version),
