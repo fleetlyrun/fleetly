@@ -47,6 +47,12 @@ var freezeExemptions = map[string]string{
 	"/fleetly.system.v1.GovernanceService/ListChangeFreezes": "the freeze surface itself",
 	// 订阅票据铸造：读路径的凭证面。
 	"/fleetly.telemetry.v1.EventsService/IssueEventTicket": "read-path auth: minting a subscription ticket changes no platform state",
+	// Backup 触发（F2.2，ADR-0039 决策 10）：保护性操作——只铸台账行 +
+	// 只读导出运行中的库；冻结窗（变更冻结语义）不得停摆备份。
+	"/fleetly.structure.v1.DatabasesService/TriggerBackup": "protective operation: backup trigger writes only a ledger row and exports a running database read-only; a change freeze must not stop backups (ADR-0039)",
+	// VerifyBackup：无状态迁移的校验面（重算摘要比对回执——读路径的
+	// 执行面，动词名不在读前缀集，豁免登记）。
+	"/fleetly.structure.v1.DatabasesService/VerifyBackup": "read-path execution: recomputes the object digest against the ledger receipt, changes no platform state",
 }
 
 // freezeReadPrefixes 是读面前缀（无副作用，免冻结分类；Diff 是两 Revision

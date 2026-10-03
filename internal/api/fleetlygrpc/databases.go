@@ -20,6 +20,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
+	"github.com/fleetlyrun/fleetly/internal/state/backup"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
 )
@@ -67,6 +68,28 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "database connection url could not be minted").WithCause(err)
 	}
+	// 恢复源受理（ADR-0039）：同 Project + 引擎一致 + 成功有产物；挂起位
+	// 与聚合行同事务落（重启安全——备份环按行重放）。
+	var restoreSrc *backup.Backup
+	if req.GetRestoreFromBackup() != "" {
+		src, err := svc.s.Backups.Get(ctx, svc.s.DB.Runner(), req.GetRestoreFromBackup())
+		if err != nil {
+			return nil, mapStateError(err, "backup")
+		}
+		if src.ProjectID != req.GetProjectId() {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"restore_from_backup: backup %s belongs to another project", src.ID)
+		}
+		if src.Engine != req.GetEngine() {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"restore_from_backup: backup engine %q does not match the requested engine %q", src.Engine, req.GetEngine())
+		}
+		if src.Status != backup.StatusSucceeded || src.ObjectKey == "" {
+			return nil, apperr.New("E_INVALID_ARGUMENT",
+				"restore_from_backup: backup %s is not a succeeded backup with an object", src.ID)
+		}
+		restoreSrc = src
+	}
 	sealed, err := svc.s.Cipher.Produce([]byte(url))
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "database credential could not be sealed").WithCause(err)
@@ -91,7 +114,13 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 			if err := svc.s.Secrets.Upsert(ctx, tx, secretRow); err != nil {
 				return err
 			}
-			return svc.s.Databases.Create(ctx, tx, row)
+			if err := svc.s.Databases.Create(ctx, tx, row); err != nil {
+				return err
+			}
+			if restoreSrc != nil {
+				return svc.s.Databases.SetRestorePending(ctx, tx, row.ID, restoreSrc.ID)
+			}
+			return nil
 		},
 		events: []eventFact{structureEvent(eventDatabaseCreated, "database", row.ID, row.ProjectID)},
 		audits: []*audit.Entry{{
@@ -103,6 +132,9 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 		return nil, mapStateError(err, "database")
 	}
 	svc.s.Engine.KickDatabases()
+	if restoreSrc != nil {
+		svc.s.Engine.KickBackups()
+	}
 	return &structurev1.CreateDatabaseResponse{Database: databaseMsg(row)}, nil
 }
 
@@ -171,6 +203,92 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 	return &structurev1.DeleteDatabaseResponse{}, nil
 }
 
+// TriggerBackup 手动触发（ADR-0039）：铸一行 pending 台账 + 审计，Kick
+// 备份环；执行完成事实由事件与 ListBackups 观测（触发不等执行——
+// 备份时长无上界承诺，同步面不成立）。
+func (svc *DatabasesService) TriggerBackup(ctx context.Context, req *structurev1.TriggerBackupRequest) (*structurev1.TriggerBackupResponse, error) {
+	if req.GetDatabaseId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
+	}
+	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+		return nil, err
+	}
+	row := &backup.Backup{
+		ID: newID(), ProjectID: db.ProjectID, DatabaseID: db.ID,
+		Engine: db.Engine, RetentionSecs: db.BackupRetentionSecs,
+	}
+	err = svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.Backups.Create(ctx, tx, row)
+		},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.backup_trigger",
+			Resource: "database/" + db.ID, AfterFP: row.ID,
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "backup")
+	}
+	svc.s.Engine.KickBackups()
+	return &structurev1.TriggerBackupResponse{Backup: backupMsg(row)}, nil
+}
+
+// ListBackups 新→旧分页（ADR-0026 after_* + limit）。
+func (svc *DatabasesService) ListBackups(ctx context.Context, req *structurev1.ListBackupsRequest) (*structurev1.ListBackupsResponse, error) {
+	if req.GetDatabaseId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "database_id: must not be empty")
+	}
+	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetDatabaseId())
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+		return nil, err
+	}
+	list, err := svc.s.Backups.ListByDatabase(ctx, svc.s.DB.Runner(),
+		req.GetDatabaseId(), req.GetAfterBackupId(), int(req.GetLimit()))
+	if err != nil {
+		return nil, mapStateError(err, "backup")
+	}
+	out := &structurev1.ListBackupsResponse{}
+	for i := range list {
+		out.Backups = append(out.Backups, backupMsg(&list[i]))
+	}
+	return out, nil
+}
+
+// VerifyBackup 重算摘要比对回执（ADR-0039 决策 8；执行链未装配时精确
+// 失败——不做"永远 ok"的假验证）。
+func (svc *DatabasesService) VerifyBackup(ctx context.Context, req *structurev1.VerifyBackupRequest) (*structurev1.VerifyBackupResponse, error) {
+	if req.GetBackupId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "backup_id: must not be empty")
+	}
+	row, err := svc.s.Backups.Get(ctx, svc.s.DB.Runner(), req.GetBackupId())
+	if err != nil {
+		return nil, mapStateError(err, "backup")
+	}
+	db, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), row.DatabaseID)
+	if err != nil {
+		return nil, mapStateError(err, "database")
+	}
+	if err := svc.s.authorizeProjectID(ctx, db.ProjectID); err != nil {
+		return nil, err
+	}
+	if row.Status != backup.StatusSucceeded || row.ObjectKey == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"backup %s is not a succeeded backup with an object (status %s)", row.ID, row.Status)
+	}
+	ok, detail, err := svc.s.Engine.VerifyBackup(ctx, req.GetBackupId())
+	if err != nil {
+		return nil, apperr.New("E_INTERNAL", "backup verification failed").WithCause(err)
+	}
+	return &structurev1.VerifyBackupResponse{Ok: ok, Digest: row.Digest, Error: detail}, nil
+}
+
 // databaseMsg 行 → proto 映射（version/port 来自模板注册表单源；host 是
 // 网内 DNS 名——诚实连接面，值/密码永不出现）。
 func databaseMsg(row *dbrepo.Database) *structurev1.Database {
@@ -178,12 +296,25 @@ func databaseMsg(row *dbrepo.Database) *structurev1.Database {
 		Id: row.ID, ProjectId: row.ProjectID, Name: row.Name,
 		Engine: row.Engine, CredentialsRef: row.CredentialsRef, Status: row.Status,
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-		Host: engine.DatabaseDNSName(row.ID),
+		Host:              engine.DatabaseDNSName(row.ID),
+		LastBackupAt:      row.LastBackupAt,
+		RestoreFromBackup: row.RestoreFromBackup,
+		RestoreError:      row.RestoreError,
 	}
 	if info, ok := dbtemplate.InfoFor(row.Engine); ok {
 		msg.Version, msg.Port = info.Version, info.Port
 	}
 	return msg
+}
+
+// backupMsg 台账行 → proto 映射。
+func backupMsg(row *backup.Backup) *structurev1.Backup {
+	return &structurev1.Backup{
+		Id: row.ID, ProjectId: row.ProjectID, DatabaseId: row.DatabaseID, Engine: row.Engine,
+		ObjectKey: row.ObjectKey, Digest: row.Digest, SizeBytes: row.SizeBytes,
+		Status: row.Status, Error: row.Error,
+		StartedAt: row.StartedAt, FinishedAt: row.FinishedAt, CreatedAt: row.CreatedAt,
+	}
 }
 
 // mintDatabasePassword 铸随机密码（hex 48 字符；crypto/rand 失败即内部

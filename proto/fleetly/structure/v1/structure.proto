@@ -201,6 +201,32 @@ service DatabasesService {
       api_key_scope: { resource: "databases" op: SCOPE_OP_ADMIN }
     };
   }
+  // TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick
+  // 备份环；完成事实由 database.backup_succeeded/backup_failed 事件与
+  // ListBackups 观测（触发不等执行）。
+  rpc TriggerBackup(TriggerBackupRequest) returns (TriggerBackupResponse) {
+    option (google.api.http) = { post: "/v1/databases/{database_id}/backups" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_WRITE }
+    };
+  }
+  // ListBackups 新→旧分页（ADR-0026 after_* + limit）。
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {
+    option (google.api.http) = { get: "/v1/databases/{database_id}/backups" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    };
+  }
+  // VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。
+  rpc VerifyBackup(VerifyBackupRequest) returns (VerifyBackupResponse) {
+    option (google.api.http) = { post: "/v1/backups/{backup_id}/verify" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "databases" op: SCOPE_OP_READ }
+    };
+  }
 }
 
 // NetworksService：Network 聚合面 + 跨 Project peer 声明面（ADR-0013
@@ -395,6 +421,14 @@ message Database {
   string status = 9;
   string created_at = 10;
   string updated_at = 11;
+  // last_backup_at 是最近一次成功 Backup 的完成时刻（'' = 从未成功；
+  // 定时调度锚，ADR-0039）。
+  string last_backup_at = 12;
+  // restore_from_backup 在场 = 恢复挂起（备份环执行中；ADR-0039）。
+  string restore_from_backup = 13;
+  // restore_error 是最近一次恢复失败的事实（半恢复态重试不可幂等——
+  // 诚实留给用户重建）。
+  string restore_error = 14;
 }
 
 message CreateDatabaseRequest {
@@ -402,6 +436,10 @@ message CreateDatabaseRequest {
   string name = 2;
   // engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。
   string engine = 3;
+  // restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =
+  // 新库挂起恢复（备份环执行：流式注入或卷预置）。engine 仍必填且须与
+  // 源备份引擎一致（跨引擎恢复拒绝）。
+  string restore_from_backup = 4;
 }
 message CreateDatabaseResponse { Database database = 1; }
 message GetDatabaseRequest { string id = 1; }
@@ -415,6 +453,41 @@ message ListDatabasesRequest {
 message ListDatabasesResponse { repeated Database databases = 1; }
 message DeleteDatabaseRequest { string id = 1; }
 message DeleteDatabaseResponse {}
+
+// Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执
+// （object_key/digest/size = verify 锚）；credential 值永不出现。
+message Backup {
+  string id = 1;
+  string project_id = 2;
+  string database_id = 3;
+  string engine = 4;
+  string object_key = 5;
+  string digest = 6;
+  int64 size_bytes = 7;
+  // status: pending | running | succeeded | failed。
+  string status = 8;
+  string error = 9;
+  string started_at = 10;
+  string finished_at = 11;
+  string created_at = 12;
+}
+message TriggerBackupRequest { string database_id = 1; }
+message TriggerBackupResponse { Backup backup = 1; }
+message ListBackupsRequest {
+  string database_id = 1;
+  // after_backup_id 游标（上一页末条 id；空 = 首页）。
+  string after_backup_id = 2;
+  int32 limit = 3;
+}
+message ListBackupsResponse { repeated Backup backups = 1; }
+// VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
+// 性——腐损/截断可检出；可恢复性由恢复演练承担）。
+message VerifyBackupRequest { string backup_id = 1; }
+message VerifyBackupResponse {
+  bool ok = 1;
+  string digest = 2;
+  string error = 3;
+}
 
 message Network {
   string id = 1;

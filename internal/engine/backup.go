@@ -9,6 +9,8 @@ package engine
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -217,6 +219,41 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	succ := *b
 	succ.ObjectKey, succ.Digest, succ.SizeBytes = key, info.Digest, info.Size
 	e.emitBackupEvent(ctx, eventBackupSucceeded, &succ, "")
+}
+
+// VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整
+// 性——腐损/截断可检出；API VerifyBackup 与恢复演练的共用单源）。ok=false
+// 时 errText 携带可诊断差异（用户可见文本英文）。
+func (e *Engine) VerifyBackup(ctx context.Context, backupID string) (bool, string, error) {
+	if e.objectStore == nil {
+		return false, "", fmt.Errorf("backup: object store is not assembled")
+	}
+	b, err := e.backups.Get(ctx, e.db.Runner(), backupID)
+	if err != nil {
+		return false, "", err
+	}
+	if b.Status != backup.StatusSucceeded || b.ObjectKey == "" {
+		return false, "", fmt.Errorf("backup %s is not a succeeded backup with an object", backupID)
+	}
+	obj, err := e.objectStore.Get(ctx, b.ObjectKey)
+	if err != nil {
+		return false, "", fmt.Errorf("read backup object %q: %w", b.ObjectKey, err)
+	}
+	defer func() { _ = obj.Close() }()
+	h := sha256.New()
+	size, err := io.Copy(h, obj)
+	if err != nil {
+		return false, "", fmt.Errorf("stream backup object %q: %w", b.ObjectKey, err)
+	}
+	digest := hex.EncodeToString(h.Sum(nil))
+	switch {
+	case digest != b.Digest:
+		return false, fmt.Sprintf("digest mismatch: object recomputes to %s, ledger records %s", digest, b.Digest), nil
+	case size != b.SizeBytes:
+		return false, fmt.Sprintf("size mismatch: object reads %d bytes, ledger records %d", size, b.SizeBytes), nil
+	default:
+		return true, "", nil
+	}
 }
 
 // stderrTail 截取 stderr 尾部（错误报文面；有界防刷屏）。

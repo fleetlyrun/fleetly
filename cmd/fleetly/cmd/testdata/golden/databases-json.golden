@@ -1,6 +1,9 @@
 [
+  "backup",
+  "backups",
   "create",
   "delete",
   "get",
-  "list"
+  "list",
+  "verify"
 ]

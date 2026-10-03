@@ -1,4 +1,7 @@
+backup
+backups
 create
 delete
 get
 list
+verify

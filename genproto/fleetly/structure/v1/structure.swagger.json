@@ -166,6 +166,45 @@
         ]
       }
     },
+    "/v1/backups/{backup_id}/verify": {
+      "post": {
+        "summary": "VerifyBackup 重算对象摘要比对回执（ADR-0039 决策 8）。",
+        "operationId": "DatabasesService_VerifyBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1VerifyBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "backup_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabasesServiceVerifyBackupBody"
+            }
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
     "/v1/configs": {
       "get": {
         "operationId": "ConfigsService_ListConfigs",
@@ -350,6 +389,88 @@
             "required": true,
             "schema": {
               "$ref": "#/definitions/v1CreateDatabaseRequest"
+            }
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      }
+    },
+    "/v1/databases/{database_id}/backups": {
+      "get": {
+        "summary": "ListBackups 新→旧分页（ADR-0026 after_* + limit）。",
+        "operationId": "DatabasesService_ListBackups",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListBackupsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "database_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "after_backup_id",
+            "description": "after_backup_id 游标（上一页末条 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "DatabasesService"
+        ]
+      },
+      "post": {
+        "summary": "TriggerBackup 手动触发（ADR-0039）：立即铸一行 pending 台账并 Kick\n备份环；完成事实由 database.backup_succeeded/backup_failed 事件与\nListBackups 观测（触发不等执行）。",
+        "operationId": "DatabasesService_TriggerBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TriggerBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "database_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/DatabasesServiceTriggerBackupBody"
             }
           }
         ],
@@ -980,6 +1101,13 @@
     }
   },
   "definitions": {
+    "DatabasesServiceTriggerBackupBody": {
+      "type": "object"
+    },
+    "DatabasesServiceVerifyBackupBody": {
+      "type": "object",
+      "title": "VerifyBackup 重算对象 sha256 比对 Put 回执（ADR-0039 决策 8：静态完整\n性——腐损/截断可检出；可恢复性由恢复演练承担）。"
+    },
     "NetworksServiceApproveNetworkPeerBody": {
       "type": "object"
     },
@@ -1010,6 +1138,50 @@
           "$ref": "#/definitions/v1NetworkPeer"
         }
       }
+    },
+    "v1Backup": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "database_id": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string"
+        },
+        "object_key": {
+          "type": "string"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "size_bytes": {
+          "type": "string",
+          "format": "int64"
+        },
+        "status": {
+          "type": "string",
+          "title": "status: pending | running | succeeded | failed。"
+        },
+        "error": {
+          "type": "string"
+        },
+        "started_at": {
+          "type": "string"
+        },
+        "finished_at": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      },
+      "title": "Backup 是一次备份的台账行（ADR-0039）：成功行携带 ObjectStore 回执\n（object_key/digest/size = verify 锚）；credential 值永不出现。"
     },
     "v1Config": {
       "type": "object",
@@ -1067,6 +1239,10 @@
         "engine": {
           "type": "string",
           "title": "engine 值域 = 模板注册表（postgres / pgvector / redis，ADR-0029）。"
+        },
+        "restore_from_backup": {
+          "type": "string",
+          "title": "restore_from_backup 是可选恢复源（ADR-0039）：成功备份行 id；在场 =\n新库挂起恢复（备份环执行：流式注入或卷预置）。engine 仍必填且须与\n源备份引擎一致（跨引擎恢复拒绝）。"
         }
       }
     },
@@ -1182,6 +1358,18 @@
         },
         "updated_at": {
           "type": "string"
+        },
+        "last_backup_at": {
+          "type": "string",
+          "title": "last_backup_at 是最近一次成功 Backup 的完成时刻（'' = 从未成功；\n定时调度锚，ADR-0039）。"
+        },
+        "restore_from_backup": {
+          "type": "string",
+          "title": "restore_from_backup 在场 = 恢复挂起（备份环执行中；ADR-0039）。"
+        },
+        "restore_error": {
+          "type": "string",
+          "title": "restore_error 是最近一次恢复失败的事实（半恢复态重试不可幂等——\n诚实留给用户重建）。"
         }
       },
       "title": "Database 是托管有状态服务行（ADR-0029：模板参数创建即不可变，无\nRevision/Deployment 面）。"
@@ -1267,6 +1455,18 @@
           "items": {
             "type": "object",
             "$ref": "#/definitions/v1App"
+          }
+        }
+      }
+    },
+    "v1ListBackupsResponse": {
+      "type": "object",
+      "properties": {
+        "backups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1Backup"
           }
         }
       }
@@ -1500,6 +1700,28 @@
           "title": "fingerprint 是值指纹（值永不回显，ADR-0014）。"
         },
         "updated_at": {
+          "type": "string"
+        }
+      }
+    },
+    "v1TriggerBackupResponse": {
+      "type": "object",
+      "properties": {
+        "backup": {
+          "$ref": "#/definitions/v1Backup"
+        }
+      }
+    },
+    "v1VerifyBackupResponse": {
+      "type": "object",
+      "properties": {
+        "ok": {
+          "type": "boolean"
+        },
+        "digest": {
+          "type": "string"
+        },
+        "error": {
           "type": "string"
         }
       }

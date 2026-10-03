@@ -191,3 +191,46 @@ func TestDatabaseEvents(t *testing.T) {
 	names := peerEventNames(t, ctx, h, "database", created.GetDatabase().GetId())
 	assert.Equal(t, []string{"database.created", "database.deleted"}, names)
 }
+
+// Backup 动词面（F2.2，ADR-0039）：触发铸 pending 台账行、列表、pending
+// 行 verify 拒绝、恢复受理位（挂起位落行 + 跨引擎/跨 Project 拒绝）。
+// 执行链（工具容器 + ObjectStore）由 engine 环测与 dind 演练承载——
+// apitest 面钉受理与回显契约。
+func TestDatabaseBackupSurfaces(t *testing.T) {
+	h, ctx, projectID := databaseFixture(t)
+	dbs := structurev1.NewDatabasesServiceClient(h.Conn)
+
+	created, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: projectID, Name: "shop", Engine: "postgres",
+	})
+	require.NoError(t, err)
+	dbID := created.GetDatabase().GetId()
+
+	// 手动触发：pending 台账行（触发不等执行）。
+	trig, err := dbs.TriggerBackup(ctx, &structurev1.TriggerBackupRequest{DatabaseId: dbID})
+	require.NoError(t, err)
+	assert.Equal(t, "pending", trig.GetBackup().GetStatus())
+	assert.Equal(t, "postgres", trig.GetBackup().GetEngine())
+
+	// 列表：行在场（新→旧）。
+	list, err := dbs.ListBackups(ctx, &structurev1.ListBackupsRequest{DatabaseId: dbID})
+	require.NoError(t, err)
+	require.Len(t, list.GetBackups(), 1)
+	assert.Equal(t, trig.GetBackup().GetId(), list.GetBackups()[0].GetId())
+
+	// pending 行 verify → InvalidArgument（成功行才可验）。
+	_, err = dbs.VerifyBackup(ctx, &structurev1.VerifyBackupRequest{BackupId: trig.GetBackup().GetId()})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err))
+
+	// 跨 Project 恢复源 → InvalidArgument（源 Project 内是唯一恢复面）。
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	other, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "other"})
+	require.NoError(t, err)
+	_, err = dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
+		ProjectId: other.GetProject().GetId(), Name: "restored", Engine: "postgres",
+		RestoreFromBackup: trig.GetBackup().GetId(),
+	})
+	require.Error(t, err)
+	assert.Equal(t, codes.InvalidArgument, status.Code(err), "cross-project restore source must be rejected")
+}

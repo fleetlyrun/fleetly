@@ -14,6 +14,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
+	"github.com/fleetlyrun/fleetly/internal/state/backup"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -83,6 +84,10 @@ type Services struct {
 	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
 	Databases *dbrepo.Repo
 
+	// Backups 是 Backup 台账 repo（F2.2，ADR-0039；对象面经 Engine——
+	// ObjectStore 端口是 engine 执行链的装配物）。
+	Backups *backup.Repo
+
 	// Anchor 是「聚合行 → Project → Team」归属解析图（freeze 与行级授权
 	// 共用单源，架构评审第二轮候选 3；ADR-0017 附录 A.3 / ADR-0035）。
 	Anchor *anchor.Anchor
@@ -135,6 +140,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Uploads:         sourceupload.New(clock),
 		UploadStore:     upload.NewStore(dataRoot, 0, 0),
 		Databases:       dbrepo.New(clock),
+		Backups:         backup.New(clock),
 		Anchor:          anchor.New(clock),
 		eventTickets:    newEventTicketStore(clock),
 		ScopeVocabulary: vocab,

@@ -80,3 +80,64 @@ func TestGoldenDatabasesLifecycle(t *testing.T) {
 	}
 	compareGolden(t, "databases-delete-json", normalizeGolden(out))
 }
+
+// TestGoldenDatabasesBackup：备份动词组双形态（F2.2，ADR-0039）。golden
+// 夹具引擎无 ObjectStore/Utility 装配——触发后行恒 pending（执行面由
+// engine 环测与 dind 演练承担），列表/触发回显形态确定性成立。
+func TestGoldenDatabasesBackup(t *testing.T) {
+	_ = newGoldenHarness(t)
+	projectID := seedDatabaseProject(t, "dbs-backup")
+	dbID, _ := createDatabase(t, projectID, "postgres", "shop", false)
+
+	code, out, stderr := runCLI(t, "databases", "backup", dbID)
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases backup: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-backup", normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, "databases", "backup", dbID, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases backup --json: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-backup-json", normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, "databases", "backups", dbID)
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases backups: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-backups", normalizeGolden(out))
+
+	code, out, stderr = runCLI(t, "databases", "backups", dbID, "--json")
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases backups --json: code=%d stderr=%q", code, stderr)
+	}
+	compareGolden(t, "databases-backups-json", normalizeGolden(out))
+
+	// verify：golden 夹具无执行链装配，pending 行的拒绝面即确定性输出
+	//（E_INVALID_ARGUMENT 信封 stderr；成功面由 e2e 演练承载）。
+	code, out, stderr = runCLI(t, "databases", "backup", dbID)
+	if code != 0 || stderr != "" {
+		t.Fatalf("databases backup round 3: code=%d stderr=%q", code, stderr)
+	}
+	backupID := extractTailID(out)
+	code, _, stderr = runCLI(t, "databases", "verify", backupID)
+	if code == 0 {
+		t.Fatalf("verifying a pending backup must fail, got exit 0")
+	}
+	compareGolden(t, "databases-verify", normalizeGolden(stderr))
+	code, _, stderr = runCLI(t, "databases", "verify", backupID, "--json")
+	if code == 0 {
+		t.Fatalf("verifying a pending backup (--json) must fail, got exit 0")
+	}
+	compareGolden(t, "databases-verify-json", normalizeGolden(stderr))
+
+	// 恢复受理拒绝面（engine 不匹配）：postgres 备份源进 redis 库——
+	// 旗标前置（Go flag 首位置参停析，围栏约定），E_INVALID_ARGUMENT 钉死
+	//（恢复链路全绿面在 e2e 演练）。
+	code, _, stderr = runCLI(t, "databases", "create", "--project", projectID,
+		"--engine", "redis", "--restore-from-backup", backupID, "restored")
+	if code == 0 {
+		t.Fatalf("cross-engine restore must be rejected, got exit 0")
+	}
+	compareGolden(t, "databases-restore-mismatch", normalizeGolden(stderr))
+}
