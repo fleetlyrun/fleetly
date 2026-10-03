@@ -87,3 +87,65 @@ func TestExitCodesAreStable(t *testing.T) {
 		assert.True(t, stderr == "" || stderr == "\n", "changes exit must not render an error envelope, got %q", stderr)
 	})
 }
+
+// TestFlagVerbsRejectPositionalArgs 是取参形态裁决的执法面（ADR-0006 附录，
+// D25）：旗标形态动词（usage 不含位置参数）对多余位置参数一律 64，不再裸
+// 放行——位置参数会被 Agent 误当合法取参面，静默吞掉是第三种取参形态的
+// 滋生口。守卫在拨号前（noArgs 先于连接），无需夹具。逐一枚举全部旗标形
+// 态动词——新增旗标形态动词必须入表（漏表的动词多余位置参数会裸放行）。
+func TestFlagVerbsRejectPositionalArgs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"deploy", []string{"deploy", "STRAY"}},
+		{"rollback", []string{"rollback", "STRAY"}},
+		{"deployments list", []string{"deployments", "list", "STRAY"}},
+		{"deployments wait", []string{"deployments", "wait", "STRAY"}},
+		{"revisions list", []string{"revisions", "list", "STRAY"}},
+		{"revisions diff", []string{"revisions", "diff", "STRAY"}},
+		{"builds list", []string{"builds", "list", "STRAY"}},
+		{"builds wait", []string{"builds", "wait", "STRAY"}},
+		{"builds logs", []string{"builds", "logs", "STRAY"}},
+		{"routes list", []string{"routes", "list", "STRAY"}},
+		{"nodes list", []string{"nodes", "list", "STRAY"}},
+		{"nodes enroll", []string{"nodes", "enroll", "STRAY"}},
+		{"nodes drain", []string{"nodes", "drain", "STRAY"}},
+		{"tasks create", []string{"tasks", "create", "STRAY"}},
+		{"tasks list", []string{"tasks", "list", "STRAY"}},
+		{"tasks get", []string{"tasks", "get", "STRAY"}},
+		{"tasks scale", []string{"tasks", "scale", "STRAY"}},
+		{"tasks stop", []string{"tasks", "stop", "STRAY"}},
+		{"tasks delete", []string{"tasks", "delete", "STRAY"}},
+		{"tasks renew", []string{"tasks", "renew", "STRAY"}},
+		{"runs list", []string{"runs", "list", "STRAY"}},
+		{"runs get", []string{"runs", "get", "STRAY"}},
+		{"runs stop", []string{"runs", "stop", "STRAY"}},
+		{"runs wait", []string{"runs", "wait", "STRAY"}},
+		{"schedules create", []string{"schedules", "create", "STRAY"}},
+		{"schedules list", []string{"schedules", "list", "STRAY"}},
+		{"schedules get", []string{"schedules", "get", "STRAY"}},
+		{"schedules trigger", []string{"schedules", "trigger", "STRAY"}},
+		{"schedules delete", []string{"schedules", "delete", "STRAY"}},
+		{"events list", []string{"events", "list", "STRAY"}},
+		{"events follow", []string{"events", "follow", "STRAY"}},
+		{"logs", []string{"logs", "STRAY"}},
+		{"projects list", []string{"projects", "list", "STRAY"}},
+		{"projects delete", []string{"projects", "delete", "STRAY"}},
+		{"apps list", []string{"apps", "list", "STRAY"}},
+		{"apps delete", []string{"apps", "delete", "STRAY"}},
+		{"secrets list", []string{"secrets", "list", "STRAY"}},
+		{"configs list", []string{"configs", "list", "STRAY"}},
+		{"databases list", []string{"databases", "list", "STRAY"}},
+		{"uploads list", []string{"uploads", "list", "STRAY"}},
+		{"tokens list", []string{"tokens", "list", "STRAY"}},
+		{"users list", []string{"users", "list", "STRAY"}},
+		{"roles list", []string{"roles", "list", "STRAY"}},
+		{"teams list", []string{"teams", "list", "STRAY"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, _, _ := runCLI(t, tc.args...)
+			assert.Equal(t, exitUsage, code, "flag-form verb must reject stray positional args: %v", tc.args)
+		})
+	}
+}

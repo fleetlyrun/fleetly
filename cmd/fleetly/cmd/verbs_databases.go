@@ -71,6 +71,9 @@ func newDatabasesListVerb() commands.Command {
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}

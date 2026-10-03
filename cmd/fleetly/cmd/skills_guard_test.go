@@ -88,6 +88,12 @@ func TestSkillsGuardRedLight(t *testing.T) {
 			want: `must stay literal`,
 		},
 		{
+			// & 同受元字符禁令（D25）：后台化/命令拼接进围栏行同样劈链。
+			name: "shell-metacharacter-ampersand-in-fence",
+			body: "---\nname: shell-metacharacter-ampersand-in-fence\ndescription: d\n---\n```bash\nfleetly events list --limit 50 & more\n```\n",
+			want: `must stay literal`,
+		},
+		{
 			name: "frontmatter-name-mismatch",
 			body: "---\nname: other\ndescription: d\n---\n```bash\nfleetly events list --limit 50\n```\n",
 			want: `must equal the directory name`,
@@ -150,7 +156,7 @@ func skillLint(dir, body string) []error {
 	defer func() { dialClient = origDial }()
 
 	for _, line := range fencedFleetlyLines(body) {
-		for _, meta := range []string{"|", "$", "`", ";", "\\", ">", "<"} {
+		for _, meta := range []string{"|", "&", "$", "`", ";", "\\", ">", "<"} {
 			if strings.Contains(line, meta) {
 				errs = append(errs, fmt.Errorf("skills/%s/SKILL.md: fenced fleetly line must stay literal (move pipelines to prose; found %q):\n  %s",
 					dir, meta, line))

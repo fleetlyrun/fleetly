@@ -28,6 +28,9 @@ func newEventsListVerb() commands.Command {
 			fs.Int64Var(&limit, "limit", 100, "max events (capped at 1000)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -64,6 +67,9 @@ func newEventsFollowVerb() commands.Command {
 			fs.BoolVar(&replay, "replay", false, "replay the retention window and exit (bounded form for scripts)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			// 流式动词：拨号豁免请求级 deadline（logs 同款纪律）。
 			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
 			if err != nil {
@@ -127,6 +133,9 @@ func newLogsVerb() commands.Command {
 			fs.BoolVar(&follow, "follow", false, "keep streaming new output")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}

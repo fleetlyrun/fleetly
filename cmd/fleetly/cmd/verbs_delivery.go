@@ -150,6 +150,9 @@ func newDeployVerb() commands.Command {
 			fs.IntVar(&tcpProbe, "tcp-probe", 0, "tcp health probe port for image and upload deploys")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
@@ -281,6 +284,9 @@ func newDeploymentsWaitVerb() commands.Command {
 		usage:    "deployments wait --deployment DEPLOYMENT_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&depID, "deployment", "", "deployment id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if depID == "" {
 				return usageErr(name, "--deployment is required")
 			}
@@ -312,6 +318,9 @@ func newBuildsWaitVerb() commands.Command {
 		usage:    "builds wait --build BUILD_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&buildID, "build", "", "build id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if buildID == "" {
 				return usageErr(name, "--build is required")
 			}
@@ -370,6 +379,9 @@ func newDeploymentsListVerb() commands.Command {
 		name: name, synopsis: "List deployments for an app", usage: "deployments list --app APP_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
@@ -408,6 +420,9 @@ func newRollbackVerb() commands.Command {
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
@@ -449,6 +464,9 @@ func newRevisionsListVerb() commands.Command {
 		name: name, synopsis: "List frozen revisions for an app", usage: "revisions list --app APP_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
@@ -485,6 +503,9 @@ func newRevisionsDiffVerb() commands.Command {
 			fs.Int64Var(&to, "to", 0, "to revision seq (required)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" || from == 0 || to == 0 {
 				return usageErr(name, "--app, --from and --to are required")
 			}
@@ -526,6 +547,9 @@ func newBuildsListVerb() commands.Command {
 		name: name, synopsis: "List builds for an app", usage: "builds list --app APP_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
@@ -564,6 +588,9 @@ func newBuildsLogsVerb() commands.Command {
 			fs.BoolVar(&follow, "follow", false, "keep streaming new output")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if build == "" {
 				return usageErr(name, "--build is required")
 			}
@@ -634,6 +661,9 @@ func newRoutesCreateVerb() commands.Command {
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" || host == "" || app == "" || process == "" || port == 0 {
 				return usageErr(name, "--project, --host, --app, --process and --port are required")
 			}
@@ -670,6 +700,9 @@ func newRoutesListVerb() commands.Command {
 		name: name, synopsis: "List routes", usage: "routes list [--project PROJECT_ID]",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "filter by project") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -692,9 +725,13 @@ func newRoutesListVerb() commands.Command {
 }
 
 func newNodesListVerb() commands.Command {
+	const name = "list"
 	return &flaggedVerb{
-		name: "list", synopsis: "List observed cluster nodes", usage: "nodes list",
+		name: name, synopsis: "List observed cluster nodes", usage: "nodes list",
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -725,6 +762,9 @@ func newNodesEnrollVerb() commands.Command {
 			fs.BoolVar(&rotate, "rotate", false, "invalidate all existing join tokens first (leak response)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -753,6 +793,9 @@ func newNodesAdminVerb(name, past, synopsis string, call func(ctx context.Contex
 			fs.StringVar(&nodeID, "node", "", "platform node id (required)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if nodeID == "" {
 				return usageErr(name, "--node is required")
 			}

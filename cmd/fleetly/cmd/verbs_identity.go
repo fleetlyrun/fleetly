@@ -58,11 +58,15 @@ func newTokensCreateVerb() commands.Command {
 }
 
 func newTokensListVerb() commands.Command {
+	const name = "list"
 	return &flaggedVerb{
-		name:     "list",
+		name:     name,
 		synopsis: "List tokens (prefixes only; secrets never return)",
 		usage:    "tokens list",
-		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -158,11 +162,15 @@ func newUsersCreateVerb() commands.Command {
 }
 
 func newUsersListVerb() commands.Command {
+	const name = "list"
 	return &flaggedVerb{
-		name:     "list",
+		name:     name,
 		synopsis: "List users",
 		usage:    "users list",
-		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -304,11 +312,15 @@ func newRolesCreateVerb() commands.Command {
 }
 
 func newRolesListVerb() commands.Command {
+	const name = "list"
 	return &flaggedVerb{
-		name:     "list",
+		name:     name,
 		synopsis: "List roles (builtin owner/admin/member plus custom)",
 		usage:    "roles list",
-		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -370,11 +382,15 @@ func newTeamsCreateVerb() commands.Command {
 }
 
 func newTeamsListVerb() commands.Command {
+	const name = "list"
 	return &flaggedVerb{
-		name:     "list",
+		name:     name,
 		synopsis: "List teams",
 		usage:    "teams list",
-		run: func(ctx context.Context, env *commands.Environment, _ []string, jsonOut bool) error {
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err

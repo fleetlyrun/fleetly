@@ -143,6 +143,9 @@ func newTasksCreateVerb() commands.Command {
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env2 *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
@@ -214,6 +217,9 @@ func newTasksListVerb() commands.Command {
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
@@ -250,6 +256,9 @@ func newTasksGetVerb() commands.Command {
 		usage:    "tasks get --task TASK_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
@@ -286,6 +295,9 @@ func newTasksScaleVerb() commands.Command {
 			fs.Int64Var(&concurrency, "concurrency", 0, "desired run count (0 drains the pool to zero)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
@@ -319,6 +331,9 @@ func newTasksStopVerb() commands.Command {
 			fs.BoolVar(&force, "force", false, "grace-stop in-flight runs now (default: let them finish or run out their TTL)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
@@ -348,6 +363,9 @@ func newTasksDeleteVerb() commands.Command {
 		usage:    "tasks delete --task TASK_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
@@ -378,6 +396,9 @@ func newTasksRenewVerb() commands.Command {
 		usage:    "tasks renew --task TASK_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "task", "", "task id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--task is required")
 			}
@@ -413,6 +434,9 @@ func newRunsListVerb() commands.Command {
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if (taskID == "") == (projectID == "") {
 				return usageErr(name, "exactly one of --task or --project is required")
 			}
@@ -448,6 +472,9 @@ func newRunsGetVerb() commands.Command {
 		usage:    "runs get --run RUN_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "run", "", "run id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--run is required")
 			}
@@ -479,6 +506,9 @@ func newRunsStopVerb() commands.Command {
 		usage:    "runs stop --run RUN_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "run", "", "run id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--run is required")
 			}
@@ -508,6 +538,9 @@ func newRunsWaitVerb() commands.Command {
 		usage:    "runs wait --run RUN_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "run", "", "run id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--run is required")
 			}
@@ -568,6 +601,9 @@ func newSchedulesCreateVerb() commands.Command {
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env2 *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
@@ -615,6 +651,9 @@ func newSchedulesListVerb() commands.Command {
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
@@ -651,6 +690,9 @@ func newSchedulesGetVerb() commands.Command {
 		usage:    "schedules get --schedule SCHEDULE_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--schedule is required")
 			}
@@ -683,6 +725,9 @@ func newSchedulesTriggerVerb() commands.Command {
 		usage:    "schedules trigger --schedule SCHEDULE_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--schedule is required")
 			}
@@ -714,6 +759,9 @@ func newSchedulesDeleteVerb() commands.Command {
 		usage:    "schedules delete --schedule SCHEDULE_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&id, "schedule", "", "schedule id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if id == "" {
 				return usageErr(name, "--schedule is required")
 			}

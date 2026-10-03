@@ -76,9 +76,13 @@ func newProjectsCreateVerb() commands.Command {
 }
 
 func newProjectsListVerb() commands.Command {
+	const name = "list"
 	return &flaggedVerb{
-		name: "list", synopsis: "List projects", usage: "projects list",
+		name: name, synopsis: "List projects", usage: "projects list",
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -110,6 +114,9 @@ func newProjectsDeleteVerb() commands.Command {
 		usage:    "projects delete --project PROJECT_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
@@ -172,6 +179,9 @@ func newAppsListVerb() commands.Command {
 		name: name, synopsis: "List apps in a project", usage: "apps list --project PROJECT_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
@@ -205,6 +215,9 @@ func newAppsDeleteVerb() commands.Command {
 		usage:    "apps delete --app APP_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if app == "" {
 				return usageErr(name, "--app is required")
 			}
@@ -274,6 +287,9 @@ func newSecretsListVerb() commands.Command {
 		usage:    "secrets list --project PROJECT_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
@@ -345,6 +361,9 @@ func newConfigsListVerb() commands.Command {
 		name: name, synopsis: "List config latest versions", usage: "configs list --project PROJECT_ID",
 		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "project id (required)") },
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
 			if project == "" {
 				return usageErr(name, "--project is required")
 			}
