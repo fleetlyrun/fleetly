@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
@@ -26,6 +27,12 @@ import (
 // Provider 是 swarm Runtime Provider。
 type Provider struct {
 	cli *client.Client
+
+	// Ensure no-op 断路器账本（runtime.go lastIssued 组注释：服务名 →
+	// 最近确认服务端持有的 canonical spec JSON）。互斥保护：Ensure 来自
+	// 各部署单写者环，可并发进入同一 Provider。
+	ledgerMu   sync.Mutex
+	lastIssued map[string]string
 
 	// 可注入的最小 docker 面缝（hermetic 单测注入 fake，不依赖真 daemon；
 	// nil = 真实现直连 cli）。只覆盖需要无 daemon 测试的窄路径：

@@ -30,7 +30,17 @@ const anchoringPollInterval = 10 * time.Second
 // create-or-update（update 以 spec 全量替换 + 版本号），不在期望集内的
 // 域内服务移除——同 Generation 重放安全（领域模型场景 1：发布中途被杀，
 // 重启后按 Generation 幂等重下发）。
-func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) error {
+//
+// 稳态短路两道闸（受管域每拍重放，写面必须收敛到零）：
+//   - no-op 断路器（内存账本，lastIssued）：期望 canonical 与最近一次确认
+//     服务端持有的完全一致即跳过 update 判定链——daemon 版本漂移新增物化
+//     字段时（inspect 回读多出平台不管理的字段）serviceSpecEqual 恒不等，
+//     无此闸会每拍重发 update 自激复燃（update 产事件 → Kick → 再
+//     update）。已知边界：平台侧手工改动载体在期望不变时不再自愈（spec
+//     对照 drift 经 InspectWorkloads 观测面仍可见，ADR-0022）。
+//   - serviceSpecEqual（inspect 回读比对）：修复前的既有闸，兜住账本作废
+//     （失败重置）后的第一拍。
+func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) (err error) {
 	// 期望集载体名 + 碰撞前置拒绝（N1 收尾批 B9）：不同 Workload 折叠成同
 	// 载体名（进程名仅差特殊字符经 sanitize 同形，如 web.1 / web-1）会让
 	// 后者静默覆盖前者——一进程无声丢失。spec 侧字符集白名单是主防线，此
@@ -44,6 +54,15 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		}
 		desired[name] = w.ID
 	}
+
+	// 断路器账本整拍作废（C19-1）：Ensure 失败 = 拍内收敛未完成，本拍期
+	// 望集的落账条目可信度作废，下拍保守重发（重发先过 serviceSpecEqual
+	// 门，代价一次 inspect 读，无风暴面）。
+	defer func() {
+		if err != nil {
+			p.forgetLastIssued(sortedKeys(desired)...)
+		}
+	}()
 
 	// 材料先行（ADR-0014）：网络 create-or-get + Secret 载体落盘，再翻译
 	// 载体 spec（引用载体名）。
@@ -60,16 +79,26 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		return fmt.Errorf("swarm ensure %s: list existing: %w", ns, err)
 	}
 
+	// 网络目标解析的 per-Ensure 备忘（C19-3）：拍内多 Workload 引用同名
+	// 网络只探一次 daemon；Ensure 序结束随局部变量废弃。
+	resolvedNets := map[string]netResolve{}
 	for _, w := range ws {
 		spec := toServiceSpec(ns, w, gen, secretCarriers)
 		// 网络引用名→ID 先行解析（服务端对名字输入会改写为 ID——发送
 		// ID 使回读形态与发送形态一致，no-op 比对的前提）。
-		spec = p.resolveNetworkTargets(ctx, spec)
+		spec, nerr := p.resolveNetworkTargets(ctx, spec, resolvedNets)
+		if nerr != nil {
+			return fmt.Errorf("swarm ensure %s: %w", ns, nerr)
+		}
 
 		auth, err := p.registryAuthFor(ctx, w.Image, m)
 		if err != nil {
 			return fmt.Errorf("swarm ensure %s: %w", ns, err)
 		}
+
+		// 期望 spec canonical 只算一次（C19-4）：断路器比对、等价判定、
+		// 落账三处共用（此前等价判定内部双算 desired 侧）。
+		desiredJSON := canonicalSpecJSON(spec)
 
 		inspect, err := p.cli.ServiceInspect(ctx, spec.Name, client.ServiceInspectOptions{})
 		if err != nil {
@@ -83,20 +112,29 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			}); err != nil {
 				return fmt.Errorf("swarm ensure %s: create %s: %w", ns, spec.Name, err)
 			}
+			p.recordLastIssued(spec.Name, desiredJSON) // create 即入账：服务端已持有该 spec
 			continue
 		}
 		svc := inspect.Service
-		if serviceSpecEqual(spec, svc.Spec) {
+		if desiredJSON != "" && desiredJSON == p.lastIssuedOf(spec.Name) {
+			// no-op 断路器（C19-1）：期望与最近一次确认下发一致 → update
+			// 判定链整体短路。服务级 inspect 已完成，服务意外缺失仍会在
+			// 下一拍由 404 分支重建（账本只在写确认时落，不豁免存在性检查）。
+			continue
+		}
+		if serviceSpecEqualJSON(desiredJSON, svc.Spec) {
 			// 语义等价即跳过 update——受管域收敛环每拍重放 Ensure，
 			// 无条件 update 会让 identical spec 也滚替任务（update 产
 			// 事件 → Kick → 再 update 的自激环；staging 真机实证：
 			// 受管库载体 20s 内 49 次版本推进、postgres 反复优雅退出
 			// 永不停稳，2026-10-02）。
+			p.recordLastIssued(spec.Name, desiredJSON) // 服务端现态即期望：回填账本（作废后重建）
 			continue
 		}
-		if err := p.updateServiceCAS(ctx, ns, spec, svc, auth); err != nil {
-			return err
+		if uerr := p.updateServiceCAS(ctx, ns, spec, svc, auth); uerr != nil {
+			return uerr // update 失败：defer 整拍作废账本，下拍重发（C19-1）
 		}
+		p.recordLastIssued(spec.Name, desiredJSON)
 	}
 
 	// 域内收敛：期望集之外的 fleetly 管辖服务移除。
@@ -105,6 +143,7 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 			if _, err := p.cli.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil && !isNotFound(err) {
 				return fmt.Errorf("swarm ensure %s: remove stale %s: %w", ns, svc.Spec.Name, err)
 			}
+			p.forgetLastIssued(svc.Spec.Name) // 服务删除即清账（不复活、不泄漏）
 		}
 	}
 	return nil
@@ -146,13 +185,47 @@ func isUpdateOutOfSequence(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "update out of sequence")
 }
 
-// serviceSpecEqual 判定期望 spec 与现存服务 spec 语义等价：JSON 投影
+// serviceSpecEqualJSON 判定期望 spec（canonical JSON，调用方单算传入，
+// C19-4：与断路器/落账共用同一份）与现存服务 spec 语义等价：JSON 投影
 // canonical 化（map 键排序 + 服务端归一化产物剥离）后逐字节比对。等价 =
-// update 是 no-op，调用方据此跳过。比对失败（marshal 异常）一律视为不等
-// （保守：多一次 update 无害，漏 update 才有害）。
-func serviceSpecEqual(desired swarm.ServiceSpec, current swarm.ServiceSpec) bool {
-	return canonicalSpecJSON(desired) != "" &&
-		canonicalSpecJSON(desired) == canonicalSpecJSON(current)
+// update 是 no-op，调用方据此跳过。比对失败（desiredJSON 为空 = marshal
+// 异常）一律视为不等（保守：多一次 update 无害，漏 update 才有害）。
+func serviceSpecEqualJSON(desiredJSON string, current swarm.ServiceSpec) bool {
+	return desiredJSON != "" && desiredJSON == canonicalSpecJSON(current)
+}
+
+// no-op 断路器账本（C19-1）：服务名 → 最近一次确认服务端持有的期望
+// canonical spec JSON。账本写入只发生在服务端确认持有该 spec 的时刻
+// （create 成功 / update 成功 / inspect 等价回读），清账三时点：update 或
+// Ensure 失败（整拍作废，下拍保守重发）、服务删除（域内收敛与 Remove）。
+// 键是全局服务名（命名公式内嵌 ns 四元组，跨 ns 天然不撞）；账本单进程
+// 内存态，重启即冷（首轮由 serviceSpecEqual 门兜住，无正确性依赖）。
+// Ensure 可来自不同部署单写者环并发执行，账本互斥保护。
+
+// recordLastIssued 落账。
+func (p *Provider) recordLastIssued(name, canonical string) {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	if p.lastIssued == nil {
+		p.lastIssued = map[string]string{}
+	}
+	p.lastIssued[name] = canonical
+}
+
+// lastIssuedOf 读账。
+func (p *Provider) lastIssuedOf(name string) string {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	return p.lastIssued[name]
+}
+
+// forgetLastIssued 批量清账。
+func (p *Provider) forgetLastIssued(names ...string) {
+	p.ledgerMu.Lock()
+	defer p.ledgerMu.Unlock()
+	for _, n := range names {
+		delete(p.lastIssued, n)
+	}
 }
 
 // canonicalSpecJSON 把 spec 归一为可比较的 JSON 字节串。
@@ -222,23 +295,46 @@ func canonicalSpecJSON(spec swarm.ServiceSpec) string {
 	return string(out)
 }
 
+// netResolve 是网络引用的 per-Ensure 解析备忘值（C19-3）。
+type netResolve struct {
+	id      string // 解析到的 swarm 网络 ID
+	missing bool   // 404 哨兵：载体不存在，名字原样保留
+}
+
 // resolveNetworkTargets 把 TaskTemplate.Networks[].Target 从平台网络载体
 // 名解析为 swarm 网络 ID——服务端对 create/update 的名字输入会改写为 ID，
-// 先行解析使发送形态与回读形态一致（no-op 比对的前提）。解析失败的引用
-// 原样保留（update 路径的既有行为；服务端会给出名字级错误）。
-func (p *Provider) resolveNetworkTargets(ctx context.Context, spec swarm.ServiceSpec) swarm.ServiceSpec {
+// 先行解析使发送形态与回读形态一致（no-op 比对的前提）。
+//
+// resolved 是 per-Ensure 备忘（键=载体名）：同拍内多 Workload 引用同名网
+// 络只探一次 daemon，Ensure 序结束随局部变量废弃。解析分诊（Q-20，
+// network.go ensureNetworks 同款先例）：NotFound → 载体缺失，名字原样保
+// 留交给服务端名字级错误如实暴露（ensureNetworks 已 create-or-get，404 =
+// 引用与载体脱节的 bug 形态）；其余错误上抛带原因——inspect 失败 ≠ 不存
+// 在，吞掉会把权限/连接类故障伪装成"无需解析"，推迟到服务端误导性报错
+// （修复前任何错误都 continue 吞掉）。
+func (p *Provider) resolveNetworkTargets(ctx context.Context, spec swarm.ServiceSpec, resolved map[string]netResolve) (swarm.ServiceSpec, error) {
 	nets := spec.TaskTemplate.Networks
-	if len(nets) == 0 {
-		return spec
-	}
 	for i := range nets {
-		n, err := p.cli.NetworkInspect(ctx, nets[i].Target, client.NetworkInspectOptions{})
-		if err != nil {
-			continue
+		name := nets[i].Target
+		res, ok := resolved[name]
+		if !ok {
+			n, err := p.cli.NetworkInspect(ctx, name, client.NetworkInspectOptions{})
+			switch {
+			case err == nil:
+				res = netResolve{id: n.Network.ID}
+			case isNotFound(err):
+				res = netResolve{missing: true}
+			default:
+				return swarm.ServiceSpec{}, fmt.Errorf("resolve network %s: %w", name, err)
+			}
+			resolved[name] = res
 		}
-		nets[i].Target = n.Network.ID
+		if res.missing {
+			continue // 保留名字原样：服务端给出名字级错误（404 语义不变）
+		}
+		nets[i].Target = res.id
 	}
-	return spec
+	return spec, nil
 }
 
 // Remove 拆除隔离域内全部载体（幂等）。
@@ -251,6 +347,7 @@ func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error
 		if _, err := p.cli.ServiceRemove(ctx, svc.ID, client.ServiceRemoveOptions{}); err != nil && !isNotFound(err) {
 			return fmt.Errorf("swarm remove %s: %w", ns, err)
 		}
+		p.forgetLastIssued(svc.Spec.Name) // 服务删除即清账（断路器账本不复活）
 	}
 	return nil
 }
@@ -361,37 +458,45 @@ func (p *Provider) watchRound(ctx context.Context, out chan<- capability.Workloa
 	}
 }
 
-// pollTasks 用 TaskList 快照生成 workload 观测：swarm 的 service 事件
-// Actor.Attributes 不携带 spec labels（Generation 观测缺锚），任务快照
-// 从任务级 ContainerSpec.Labels（创建时冻结）还原平台标记、服务级
-// Spec.Labels 兜底（taskLabels）——10s 轮询是 L1 的权威路径，事件流提供
-// 即时唤醒。
+// pollTasks 生成 workload 观测：先按 managed 标记列出受管服务（选择器
+// 真源 = translate.go 的 labelManaged，与 Ensure/listNsServices 同一标记），
+// 再逐服务按 service 过滤列任务——调用量级 = 受管服务数 + 1，而非修复前
+// 的全集群 TaskList（每条任务×每服务一次 inspect 的 N+1）。服务级
+// Spec.Labels 由列表直接随行（修复前要逐服务 ServiceInspect 才能拿到），
+// 任务级 ContainerSpec.Labels 优先（B14-1）经 taskLabels 兜底合并——
+// swarm 的 service 事件 Actor.Attributes 不携带 spec labels（Generation
+// 观测缺锚），10s 轮询是 L1 的权威路径，事件流提供即时唤醒。
+//
+// 单服务任务列表失败不中断整轮（C19-2 哨兵）：记 Warn（带服务名）继续其
+// 余服务——修复前 ServiceInspect 失败 continue 但不入 memo，同服务的每个
+// 任务都重复撞一次失败调用（N+1 放大），且失败静默无诊断线索。
 func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.WorkloadEvent) error {
-	tasks, err := p.cli.TaskList(ctx, client.TaskListOptions{})
+	services, err := p.cli.ServiceList(ctx, client.ServiceListOptions{
+		Filters: client.Filters{}.Add("label", labelManaged+"=true"),
+	})
 	if err != nil {
-		return fmt.Errorf("task list: %w", err)
+		return fmt.Errorf("managed service list: %w", err)
 	}
-	svcLabels := map[string]map[string]string{}
-	for _, t := range tasks.Items {
-		sid := t.ServiceID
-		if _, ok := svcLabels[sid]; ok {
-			continue
-		}
-		svc, err := p.cli.ServiceInspect(ctx, sid, client.ServiceInspectOptions{})
+	for i := range services.Items {
+		svc := services.Items[i]
+		tasks, err := p.cli.TaskList(ctx, client.TaskListOptions{
+			Filters: client.Filters{}.Add("service", svc.ID),
+		})
 		if err != nil {
+			// 哨兵：单服务失败只降级该服务的本轮观测，其余服务照常。
+			slog.Warn("swarm watch: task poll skipped a service until next tick", "service", svc.Spec.Name, "error", err)
 			continue
 		}
-		svcLabels[sid] = svc.Service.Spec.Labels
-	}
-	for _, t := range tasks.Items {
-		ev, ok := taskEvent(t, taskLabels(t, svcLabels[t.ServiceID]))
-		if !ok {
-			continue
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case out <- ev:
+		for _, t := range tasks.Items {
+			ev, ok := taskEvent(t, taskLabels(t, svc.Spec.Labels))
+			if !ok {
+				continue
+			}
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case out <- ev:
+			}
 		}
 	}
 	return nil
@@ -534,7 +639,10 @@ func serviceEventState(action string) capability.WorkloadState {
 
 // anchorNodes 扫描全部节点：无平台 ID 标记者铸造 ULID、写回节点 label、
 // 上报 node.joined（架构 §5 节点身份锚定契约义务；D-MN-8 节点 ID 永不
-// 复用——锚定后平台权威表持有映射）。
+// 复用——锚定后平台权威表持有映射）。out 可为 nil：对账模式
+// （DescribeCluster）只铸造写回锚定标记，不上报——向 nil channel 发送会
+// 永久阻塞到 ctx 取消（观测对账没有事件消费方，joined 上报是 Watch 锚定
+// 扫描的职责）。
 //
 // 并发锚定竞态（Watch 初始扫描与 DescribeCluster 对账同拍运行）：节点
 // 版本被另一路径推进时 NodeUpdate 报 out of sequence——重取版本重试；
@@ -554,6 +662,9 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 		}
 		if minted == "" {
 			continue // 他方已完成锚定（复用其 label，不重复上报 joined）
+		}
+		if out == nil {
+			continue // 对账模式：只铸造写回，不上报（joined 归 Watch 锚定扫描）
 		}
 		select {
 		case <-ctx.Done():
