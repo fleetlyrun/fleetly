@@ -23,41 +23,17 @@ import (
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/reflect/protoreflect"
 
+	"github.com/fleetlyrun/fleetly/internal/anchor"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
-	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/state"
-	"github.com/fleetlyrun/fleetly/internal/state/app"
-	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/freeze"
-	"github.com/fleetlyrun/fleetly/internal/state/hook"
-	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
-	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
-	"github.com/fleetlyrun/fleetly/internal/state/project"
-	"github.com/fleetlyrun/fleetly/internal/state/route"
-	"github.com/fleetlyrun/fleetly/internal/state/schedule"
-	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
 
-// scopeKind 是寻址字段到所属 Team 的解析链。
-type scopeKind int
-
-const (
-	scopeTeam      scopeKind = iota // 字段值即 team_id（CreateProject）
-	scopeProject                    // project_id → Project 行
-	scopeApp                        // app_id → App → Project
-	scopeTask                       // task id → Task → Project
-	scopeSchedule                   // schedule id → Schedule → Project
-	scopeNetwork                    // network_id → Network → Project
-	scopePeer                       // peer id → Peer → Network → Project
-	scopeRoute                      // route id → Route → Project
-	scopeHookToken                  // hook token 明文 → hash → Hook → App → Project
-	scopeDatabase                   // database id → Database → Project（ADR-0029）
-)
-
-// freezeScope 声明一个冻结面动词的 Team 解析方式（field 是请求字段名）。
+// freezeScope 声明一个冻结面动词的 Team 解析方式（field 是请求字段名；
+// kind 走 anchor 解析图——归属链单源，架构评审第二轮候选 3）。
 type freezeScope struct {
 	field string
-	kind  scopeKind
+	kind  anchor.Kind
 }
 
 // FrozenVerbs 是封禁面（ADR-0017 附录 A.3：Workload 与结构变更族；豁免面
@@ -65,37 +41,37 @@ type freezeScope struct {
 // 守卫双向对账）。
 var FrozenVerbs = map[string]freezeScope{
 	// structure：全部变更动词。
-	"/fleetly.structure.v1.ProjectsService/CreateProject":      {field: "team_id", kind: scopeTeam},
-	"/fleetly.structure.v1.ProjectsService/DeleteProject":      {field: "id", kind: scopeProject},
-	"/fleetly.structure.v1.AppsService/CreateApp":              {field: "project_id", kind: scopeProject},
-	"/fleetly.structure.v1.AppsService/DeleteApp":              {field: "id", kind: scopeApp},
-	"/fleetly.structure.v1.SecretsService/PutSecret":           {field: "project_id", kind: scopeProject},
-	"/fleetly.structure.v1.SecretsService/DeleteSecret":        {field: "project_id", kind: scopeProject},
-	"/fleetly.structure.v1.ConfigsService/PutConfig":           {field: "project_id", kind: scopeProject},
-	"/fleetly.structure.v1.VolumesService/CreateVolume":        {field: "project_id", kind: scopeProject},
-	"/fleetly.structure.v1.NetworksService/CreateNetwork":      {field: "project_id", kind: scopeProject},
-	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": {field: "network_id", kind: scopeNetwork},
-	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer": {field: "id", kind: scopePeer},
-	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":  {field: "id", kind: scopePeer},
-	"/fleetly.structure.v1.DatabasesService/CreateDatabase":    {field: "project_id", kind: scopeProject},
-	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":    {field: "id", kind: scopeDatabase},
-	"/fleetly.delivery.v1.DeploymentsService/Deploy":           {field: "app_id", kind: scopeApp},
-	"/fleetly.delivery.v1.DeploymentsService/Rollback":         {field: "app_id", kind: scopeApp},
-	"/fleetly.delivery.v1.HooksService/SetGitHook":             {field: "app_id", kind: scopeApp},
-	"/fleetly.delivery.v1.HooksService/RotateHookToken":        {field: "app_id", kind: scopeApp},
-	"/fleetly.delivery.v1.HooksService/ReceiveWebhook":         {field: "token", kind: scopeHookToken},
-	"/fleetly.automation.v1.TasksService/CreateTask":           {field: "project_id", kind: scopeProject},
-	"/fleetly.automation.v1.TasksService/ScaleTask":            {field: "id", kind: scopeTask},
-	"/fleetly.automation.v1.TasksService/DeleteTask":           {field: "id", kind: scopeTask},
-	"/fleetly.automation.v1.SchedulesService/CreateSchedule":   {field: "project_id", kind: scopeProject},
-	"/fleetly.automation.v1.SchedulesService/DeleteSchedule":   {field: "id", kind: scopeSchedule},
-	"/fleetly.automation.v1.SchedulesService/TriggerSchedule":  {field: "id", kind: scopeSchedule},
-	"/fleetly.edge.v1.RoutesService/CreateRoute":               {field: "project_id", kind: scopeProject},
-	"/fleetly.edge.v1.RoutesService/DeleteRoute":               {field: "id", kind: scopeRoute},
+	"/fleetly.structure.v1.ProjectsService/CreateProject":      {field: "team_id", kind: anchor.KindTeam},
+	"/fleetly.structure.v1.ProjectsService/DeleteProject":      {field: "id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.AppsService/CreateApp":              {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.AppsService/DeleteApp":              {field: "id", kind: anchor.KindApp},
+	"/fleetly.structure.v1.SecretsService/PutSecret":           {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.SecretsService/DeleteSecret":        {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.ConfigsService/PutConfig":           {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.VolumesService/CreateVolume":        {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.NetworksService/CreateNetwork":      {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": {field: "network_id", kind: anchor.KindNetwork},
+	"/fleetly.structure.v1.NetworksService/ApproveNetworkPeer": {field: "id", kind: anchor.KindPeer},
+	"/fleetly.structure.v1.NetworksService/RevokeNetworkPeer":  {field: "id", kind: anchor.KindPeer},
+	"/fleetly.structure.v1.DatabasesService/CreateDatabase":    {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.structure.v1.DatabasesService/DeleteDatabase":    {field: "id", kind: anchor.KindDatabase},
+	"/fleetly.delivery.v1.DeploymentsService/Deploy":           {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.DeploymentsService/Rollback":         {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.HooksService/SetGitHook":             {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.HooksService/RotateHookToken":        {field: "app_id", kind: anchor.KindApp},
+	"/fleetly.delivery.v1.HooksService/ReceiveWebhook":         {field: "token", kind: anchor.KindHookToken},
+	"/fleetly.automation.v1.TasksService/CreateTask":           {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.automation.v1.TasksService/ScaleTask":            {field: "id", kind: anchor.KindTask},
+	"/fleetly.automation.v1.TasksService/DeleteTask":           {field: "id", kind: anchor.KindTask},
+	"/fleetly.automation.v1.SchedulesService/CreateSchedule":   {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.automation.v1.SchedulesService/DeleteSchedule":   {field: "id", kind: anchor.KindSchedule},
+	"/fleetly.automation.v1.SchedulesService/TriggerSchedule":  {field: "id", kind: anchor.KindSchedule},
+	"/fleetly.edge.v1.RoutesService/CreateRoute":               {field: "project_id", kind: anchor.KindProject},
+	"/fleetly.edge.v1.RoutesService/DeleteRoute":               {field: "id", kind: anchor.KindRoute},
 	// 上传产物接入（F1.10，ADR-0019 附录 A.2）：client-streaming 写面——
 	// Team 锚在首帧 meta.project_id（流式拦截器首帧 RecvMsg 执法；点路径
 	// 读嵌套字段）。
-	"/fleetly.delivery.v1.BuildsService/UploadSource": {field: "meta.project_id", kind: scopeProject},
+	"/fleetly.delivery.v1.BuildsService/UploadSource": {field: "meta.project_id", kind: anchor.KindProject},
 }
 
 // FreezeGuard 是冻结执法器（拦截器一份实现覆盖全部封禁面动词）。
@@ -103,33 +79,16 @@ type FreezeGuard struct {
 	db      *state.DB
 	log     *slog.Logger
 	freezes *freeze.Repo
-
-	projects  *project.Repo
-	apps      *app.Repo
-	tasks     *task.Repo
-	schedules *schedule.Repo
-	networks  *networkrepo.Repo
-	peers     *networkpeer.Repo
-	hooks     *hook.Repo
-	routes    *route.Repo
-	databases *dbrepo.Repo
+	anchor  *anchor.Anchor
 }
 
-// NewFreezeGuard 构造执法器（repo 族从 DB 时钟派生）。
+// NewFreezeGuard 构造执法器（归属解析图与 repo 从 DB 时钟派生）。
 func NewFreezeGuard(db *state.DB, log *slog.Logger) *FreezeGuard {
 	clock := db.Clock()
 	return &FreezeGuard{
 		db: db, log: log,
-		freezes:   freeze.New(clock),
-		projects:  project.New(clock),
-		apps:      app.New(clock),
-		tasks:     task.New(clock),
-		schedules: schedule.New(clock),
-		networks:  networkrepo.New(clock),
-		peers:     networkpeer.New(clock),
-		hooks:     hook.New(clock),
-		routes:    route.New(clock),
-		databases: dbrepo.New(clock),
+		freezes: freeze.New(clock),
+		anchor:  anchor.New(clock),
 	}
 }
 
@@ -172,97 +131,22 @@ func (g *FreezeGuard) enforce(ctx context.Context, req any, scope freezeScope) e
 		WithSuggestion("This change freeze is lifted by an operator ('fleetly freeze lift " + f.ID + "'); read-only and stop verbs stay available during the freeze.")
 }
 
-// resolveTeam 解析请求的治理 Team。resolved=false 表示寻址失败（空字段或
-// 行不存在）——放行交由受理位拒绝；存储故障 fail-closed（E_INTERNAL）。
+// resolveTeam 解析请求的治理 Team（归属链经 anchor 解析图单源，方法表
+// 见 internal/anchor）。resolved=false 表示寻址失败（空字段、行缺失或
+// Team 轴外的行）——放行交由受理位拒绝；存储故障 fail-closed（E_INTERNAL）。
 func (g *FreezeGuard) resolveTeam(ctx context.Context, req any, scope freezeScope) (string, bool, error) {
 	ref := reqField(req, scope.field)
 	if ref == "" {
 		return "", false, nil
 	}
-	run := g.db.Runner()
-	switch scope.kind {
-	case scopeTeam:
-		return ref, true, nil
-	case scopeProject:
-		return g.teamOfProject(ctx, run, ref)
-	case scopeApp:
-		a, err := g.apps.Get(ctx, run, ref)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, a.ProjectID)
-	case scopeTask:
-		tk, err := g.tasks.Get(ctx, run, ref)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, tk.ProjectID)
-	case scopeSchedule:
-		s, err := g.schedules.Get(ctx, run, ref)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, s.ProjectID)
-	case scopeNetwork:
-		n, err := g.networks.GetByID(ctx, run, ref)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, n.ProjectID)
-	case scopePeer:
-		p, err := g.peers.Get(ctx, run, ref)
-		if err != nil {
-			return resolutionError(err)
-		}
-		n, err := g.networks.GetByID(ctx, run, p.NetworkID)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, n.ProjectID)
-	case scopeRoute:
-		rt, err := g.routes.Get(ctx, run, ref)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, rt.ProjectID)
-	case scopeHookToken:
-		if identity.TokenKind(ref) != "hook" {
-			return "", false, nil // 非法凭证：接收面自会 401
-		}
-		h, err := g.hooks.GetByTokenSHA256(ctx, run, identity.HashToken(ref))
-		if err != nil {
-			return resolutionError(err)
-		}
-		a, err := g.apps.Get(ctx, run, h.AppID)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, a.ProjectID)
-	case scopeDatabase:
-		d, err := g.databases.Get(ctx, run, ref)
-		if err != nil {
-			return resolutionError(err)
-		}
-		return g.teamOfProject(ctx, run, d.ProjectID)
-	default:
-		return "", false, nil // 不可达：表构造面自约束
-	}
-}
-
-// teamOfProject 回行到 Project 的 Team；行不存在（含 tombstone）按寻址
-// 失败放行。
-func (g *FreezeGuard) teamOfProject(ctx context.Context, run state.Runner, projectID string) (string, bool, error) {
-	if projectID == "" {
-		return "", false, nil
-	}
-	p, err := g.projects.Get(ctx, run, projectID)
+	team, err := g.anchor.TeamOf(ctx, g.db.Runner(), scope.kind, ref)
 	if err != nil {
 		return resolutionError(err)
 	}
-	if p.TeamID == "" {
+	if team == "" {
 		return "", false, nil // Team 轴外的行（不可达，ADR-0028 后必有 Team）
 	}
-	return p.TeamID, true, nil
+	return team, true, nil
 }
 
 // resolutionError 分辨解析失败：NotFound 放行（受理位拒绝），存储故障

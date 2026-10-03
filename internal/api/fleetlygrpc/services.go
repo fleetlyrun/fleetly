@@ -7,6 +7,7 @@ package fleetlygrpc
 import (
 	"log/slog"
 
+	"github.com/fleetlyrun/fleetly/internal/anchor"
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/material"
@@ -82,6 +83,10 @@ type Services struct {
 	// Databases 是 Database 聚合 repo（F1.12，ADR-0029）。
 	Databases *dbrepo.Repo
 
+	// Anchor 是「聚合行 → Project → Team」归属解析图（freeze 与行级授权
+	// 共用单源，架构评审第二轮候选 3；ADR-0017 附录 A.3 / ADR-0035）。
+	Anchor *anchor.Anchor
+
 	// eventTickets 是 SSE 订阅路径的一次性短时票据面（ADR-0026；铸造经
 	// IssueEventTicket，兑换限 SSE 原生入口）。
 	eventTickets *eventTicketStore
@@ -130,6 +135,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Uploads:         sourceupload.New(clock),
 		UploadStore:     upload.NewStore(dataRoot, 0, 0),
 		Databases:       dbrepo.New(clock),
+		Anchor:          anchor.New(clock),
 		eventTickets:    newEventTicketStore(clock),
 		ScopeVocabulary: vocab,
 		Log:             log,

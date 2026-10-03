@@ -12,7 +12,9 @@ package fleetlygrpc
 
 import (
 	"context"
+	"errors"
 
+	"github.com/fleetlyrun/fleetly/internal/anchor"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/identity"
@@ -54,35 +56,47 @@ func teamAuthorized(ctx context.Context, resourceTeam string) error {
 }
 
 // authorizeTeamForProject 校验 Project 行的归属 Team。tombstone 行保持可
-// 授权（ADR-0035）：GetProject 按设计可读已删行（"tombstone 是事实不是秘
-// 密"），归属判定对已删行同样成立；活跃性拒绝由各写面事务内的
+// 授权（ADR-0035）：GetProject 按设计可读已删行（"tombstone 是事实不是
+// 秘密"），归属判定对已删行同样成立；活跃性拒绝由各写面事务内的
 // requireActiveProject 承载（不在此分叉读语义）。
 func (s *Services) authorizeTeamForProject(ctx context.Context, p *project.Project) error {
 	return teamAuthorized(ctx, p.TeamID)
 }
 
-// authorizeProjectID 载 Project 行并校验归属（行不存在 → E_NOT_FOUND）。
-// 全部"请求携带 project_id"的受理位共用（List 面授权、写面前置）。
-func (s *Services) authorizeProjectID(ctx context.Context, projectID string) error {
-	p, err := s.Projects.Get(ctx, s.DB.Runner(), projectID)
-	if err != nil {
-		return mapStateError(err, "project")
+// mapAnchorError 把 anchor 解析错误映射为 API 信封：链上哪跳行缺失就报
+// 哪跳的 404（anchor.NotFoundError.Resource 是文案单词真源，与分散各
+// handler 的 mapStateError 逐字一致）；其余错误走 mapStateError 缺省
+// （存储故障 E_INTERNAL）。
+func mapAnchorError(err error) error {
+	var nf *anchor.NotFoundError
+	if errors.As(err, &nf) {
+		return mapStateError(err, nf.Resource)
 	}
-	return s.authorizeTeamForProject(ctx, p)
+	return mapStateError(err, "resource")
 }
 
-// authorizeAppRow 校验 App 行归属（载 App → Project 行；行已载的调用点共用，
+// authorizeProjectID 校验 project_id 的归属（行不存在 → E_NOT_FOUND）。
+// 全部"请求携带 project_id"的受理位共用（List 面授权、写面前置）。
+func (s *Services) authorizeProjectID(ctx context.Context, projectID string) error {
+	team, err := s.Anchor.TeamOf(ctx, s.DB.Runner(), anchor.KindProject, projectID)
+	if err != nil {
+		return mapAnchorError(err)
+	}
+	return teamAuthorized(ctx, team)
+}
+
+// authorizeAppRow 校验 App 行归属（经 Project 终点腿；行已载的调用点共用，
 // 避免双读）。
 func (s *Services) authorizeAppRow(ctx context.Context, a *app.App) error {
-	p, err := s.Projects.Get(ctx, s.DB.Runner(), a.ProjectID)
+	team, err := s.Anchor.TeamOfProjectID(ctx, s.DB.Runner(), a.ProjectID)
 	if err != nil {
-		return mapStateError(err, "project")
+		return mapAnchorError(err)
 	}
-	return s.authorizeTeamForProject(ctx, p)
+	return teamAuthorized(ctx, team)
 }
 
 // authorizeAppID 载 App 行并校验归属（返回行供调用点复用——Deploy/Rollback
-// 等本就要 App 行）。
+// 等本就要 App 行；生命周期动词走活跃档 Get）。
 func (s *Services) authorizeAppID(ctx context.Context, appID string) (*app.App, error) {
 	a, err := s.Apps.Get(ctx, s.DB.Runner(), appID)
 	if err != nil {
@@ -94,77 +108,59 @@ func (s *Services) authorizeAppID(ctx context.Context, appID string) (*app.App, 
 	return a, nil
 }
 
-// ---- 按全局 ID 直取面的载行授权族（ADR-0035 决策 4：行不存在保持 404，
-// 存在但非本队 → E_FORBIDDEN；Project 锚行自带 project_id，App 锚行经
-// App → Project 二跳） ----
+// ---- 按全局 ID 直取面的授权族（ADR-0035 决策 4：行不存在保持 404，
+// 存在但非本队 → E_FORBIDDEN；归属链经 anchor 解析图单源——链上每跳
+// 缺失由 anchor.NotFoundError 携带资源名，本族不再各自载行） ----
 
-// authorizeTaskID 载 Task 行并校验归属（生命周期动词 Scale/Stop/Delete/
-// Renew 与 GetTask 共用——engine 动词在 handler 前置授权，engine 内部机制
+// authorizeTaskID 校验 Task 归属（生命周期动词 Scale/Stop/Delete/Renew
+// 与 GetTask 共用——engine 动词在 handler 前置授权，engine 内部机制
 // 不看 Team）。
 func (s *Services) authorizeTaskID(ctx context.Context, taskID string) error {
-	row, err := s.Tasks.Get(ctx, s.DB.Runner(), taskID)
-	if err != nil {
-		return mapStateError(err, "task")
-	}
-	return s.authorizeProjectID(ctx, row.ProjectID)
+	return s.authorizeAnchored(ctx, anchor.KindTask, taskID)
 }
 
-// authorizeRunID 载 Run 行并校验归属（Get/Stop/Wait 共用）。
+// authorizeRunID 校验 Run 归属（Get/Stop/Wait 共用）。
 func (s *Services) authorizeRunID(ctx context.Context, runID string) error {
-	row, err := s.Runs.Get(ctx, s.DB.Runner(), runID)
-	if err != nil {
-		return mapStateError(err, "run")
-	}
-	return s.authorizeProjectID(ctx, row.ProjectID)
+	return s.authorizeAnchored(ctx, anchor.KindRun, runID)
 }
 
-// authorizeScheduleID 载 Schedule 行并校验归属（Get/Delete/Trigger 共用）。
+// authorizeScheduleID 校验 Schedule 归属（Get/Delete/Trigger 共用）。
 func (s *Services) authorizeScheduleID(ctx context.Context, scheduleID string) error {
-	row, err := s.Schedules.Get(ctx, s.DB.Runner(), scheduleID)
-	if err != nil {
-		return mapStateError(err, "schedule")
-	}
-	return s.authorizeProjectID(ctx, row.ProjectID)
+	return s.authorizeAnchored(ctx, anchor.KindSchedule, scheduleID)
 }
 
-// authorizeDeploymentID 载 Deployment 行并校验归属（Get/Cancel/Wait 共用）。
+// authorizeDeploymentID 校验 Deployment 归属（Get/Cancel/Wait 共用；App
+// 锚走 Any 档——部署历史在 App 删除后仍可授权）。
 func (s *Services) authorizeDeploymentID(ctx context.Context, deploymentID string) error {
-	row, err := s.Deployments.Get(ctx, s.DB.Runner(), deploymentID)
-	if err != nil {
-		return mapStateError(err, "deployment")
-	}
-	return s.authorizeAppIDOnly(ctx, row.AppID)
+	return s.authorizeAnchored(ctx, anchor.KindDeployment, deploymentID)
 }
 
-// authorizeBuildID 载 Build 行并校验归属（StreamLogs/Wait 共用）。
+// authorizeBuildID 校验 Build 归属（StreamLogs/Wait 共用；App 锚走 Any 档）。
 func (s *Services) authorizeBuildID(ctx context.Context, buildID string) error {
-	row, err := s.Builds.Get(ctx, s.DB.Runner(), buildID)
-	if err != nil {
-		return mapStateError(err, "build")
-	}
-	return s.authorizeAppIDOnly(ctx, row.AppID)
+	return s.authorizeAnchored(ctx, anchor.KindBuild, buildID)
 }
 
-// authorizeRouteID 载 Route 行并校验归属（Delete 共用）。
+// authorizeRouteID 校验 Route 归属（Delete 共用）。
 func (s *Services) authorizeRouteID(ctx context.Context, routeID string) error {
-	row, err := s.Routes.Get(ctx, s.DB.Runner(), routeID)
-	if err != nil {
-		return mapStateError(err, "route")
-	}
-	return s.authorizeProjectID(ctx, row.ProjectID)
+	return s.authorizeAnchored(ctx, anchor.KindRoute, routeID)
 }
 
-// authorizeAppIDOnly 载 App 行校验归属（内部锚点复用：authorizeDeploymentID
-// 等已持 App ID 不需要行返回的场合）。行读含 tombstone（GetAnyByID，
-// ADR-0035）：ListDeployments/ListRevisions/ListBuilds 等审计型读面在 App
-// 删除后仍须过授权（归属是已删行上的事实）；活跃性拒绝由各动词自身的
-// 活跃行 Get/engine 受理承载。
+// authorizeAppIDOnly 校验 App 行归属（内部锚点复用：已持 App ID 不需要
+// 行返回的场合）。行读含 tombstone（Any 档，ADR-0035）：ListDeployments/
+// ListRevisions/ListBuilds 等审计型读面在 App 删除后仍须过授权（归属是
+// 已删行上的事实）；活跃性拒绝由各动词自身的活跃行 Get/engine 受理承载。
 func (s *Services) authorizeAppIDOnly(ctx context.Context, appID string) error {
-	a, err := s.Apps.GetAnyByID(ctx, s.DB.Runner(), appID)
+	return s.authorizeAnchored(ctx, anchor.KindAnyApp, appID)
+}
+
+// authorizeAnchored 是按全局 ID 直取面的共用底座：anchor 全链解析归属
+// Team → 行级比对（错误分层见 mapAnchorError）。
+func (s *Services) authorizeAnchored(ctx context.Context, kind anchor.Kind, id string) error {
+	team, err := s.Anchor.TeamOf(ctx, s.DB.Runner(), kind, id)
 	if err != nil {
-		return mapStateError(err, "app")
+		return mapAnchorError(err)
 	}
-	return s.authorizeAppRow(ctx, a)
+	return teamAuthorized(ctx, team)
 }
 
 // authorizeTokenRow 校验 Token 行归属（identity 面 Get/Revoke；Token 行
