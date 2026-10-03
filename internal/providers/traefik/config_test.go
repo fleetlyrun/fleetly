@@ -50,6 +50,35 @@ func TestUnresolvedBackendRejected(t *testing.T) {
 	assert.ErrorContains(t, err, "no resolved backend address")
 }
 
+// 纵深防线（安全批 P0）：host/path 白名单外（反引号注入形态等）的路由
+// 被跳过并留错误日志，合法路由照常发布——存量行绕过受理面校验的兜底。
+func TestInvalidHostOrPathRouteSkipped(t *testing.T) {
+	valid := capability.Route{Host: "ok.127.0.0.1.sslip.io", Path: "/api", Process: "web", Port: 80,
+		Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.1:80"}
+	cfg, err := buildDynamicConfig([]capability.Route{
+		valid,
+		{Host: "evil`.sslip.io", Process: "web", Port: 80, Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.2:80"}, // 反引号注入
+		{Host: "under_score.sslip.io", Process: "web", Port: 80, Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.3:80"},
+		{Host: "", Process: "web", Port: 80, Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.4:80"},
+		{Host: "long.sslip.io", Path: "/bad`path", Process: "web", Port: 80,
+			Protocol: capability.ProtocolHTTP, BackendAddr: "10.0.0.5:80"}, // path 注入
+	})
+	require.NoError(t, err, "invalid routes must be skipped, not fail the whole publication")
+	var parsed struct {
+		HTTP struct {
+			Routers map[string]json.RawMessage `json:"routers"`
+		} `json:"http"`
+	}
+	require.NoError(t, json.Unmarshal(cfg, &parsed))
+	require.Len(t, parsed.HTTP.Routers, 1, "only the valid route may be published")
+	require.Contains(t, parsed.HTTP.Routers, routeKey(valid))
+	// 发布串里不得出现任何用户供给的恶意形态（规则定界符反引号本身合法，
+	// 注入面是"恶意串穿透进规则串"）。
+	assert.NotContains(t, string(cfg), "evil`", "the backtick host must not reach the published config")
+	assert.NotContains(t, string(cfg), "under_score", "the underscore host must not reach the published config")
+	assert.NotContains(t, string(cfg), "bad`path", "the backtick path must not reach the published config")
+}
+
 // Q-10 回归：routeKey 必须单射——归一化清洗的碰撞对 ("a.b","/c") 与
 // ("a.b-c","") 不得共用 router/service 键（同名 map 撞键 = 后路由静默
 // 互覆前路由）。两路由共存于同一配置，四键（2 router + 2 service）互异。

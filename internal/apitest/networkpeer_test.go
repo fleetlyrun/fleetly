@@ -18,6 +18,7 @@ import (
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/apitest"
+	"github.com/fleetlyrun/fleetly/internal/identity"
 	sdk "github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
 
@@ -144,4 +145,61 @@ func TestNetworkPeerLifecycle(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, redeclared.GetPeer().GetId(), replay.GetPeer().GetId(), "same key + body must replay the same declaration")
+}
+
+// TestApproveNetworkPeerReceiverTeamOnly（安全批 P1，ADR-0013 语义执法）：
+// 批准是接收方（网络归属项目所属团队）的动作——另一 team 的 token 直批
+// E_FORBIDDEN（PermissionDenied），同 team token 照常批准。
+func TestApproveNetworkPeerReceiverTeamOnly(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	networks := structurev1.NewNetworksServiceClient(h.Conn)
+	teams := identityv1.NewTeamsServiceClient(h.Conn)
+	tokens := identityv1.NewTokensServiceClient(h.Conn)
+
+	// 接收方项目（default team）+ 网络；挂靠方项目（default team，声明
+	// 面不校验发起方归属——挂靠方本就任意项目发起）。
+	receiver, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "receiver"})
+	require.NoError(t, err)
+	consumer, err := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "consumer"})
+	require.NoError(t, err)
+	net, err := networks.CreateNetwork(ctx, &structurev1.CreateNetworkRequest{
+		ProjectId: receiver.GetProject().GetId(), Name: "bus",
+	})
+	require.NoError(t, err)
+	declared, err := networks.DeclareNetworkPeer(ctx, &structurev1.DeclareNetworkPeerRequest{
+		NetworkId: net.GetNetwork().GetId(), PeerProjectId: consumer.GetProject().GetId(),
+	})
+	require.NoError(t, err)
+	peerID := declared.GetPeer().GetId()
+
+	// 另一 team 的全权 token：scope 面全通过，归属面被拒（PermissionDenied）。
+	other, err := teams.CreateTeam(ctx, &identityv1.CreateTeamRequest{Name: "outsiders"})
+	require.NoError(t, err)
+	foreignTok, err := tokens.CreateToken(ctx, &identityv1.CreateTokenRequest{
+		Name: "outsider-cli", TeamId: other.GetTeam().GetId(), RoleId: identity.RoleOwnerID,
+	})
+	require.NoError(t, err)
+	foreignCtx := sdk.WithToken(context.Background(), foreignTok.GetSecret())
+
+	_, err = networks.ApproveNetworkPeer(foreignCtx, &structurev1.ApproveNetworkPeerRequest{Id: peerID})
+	require.Error(t, err, "a foreign-team token must not be able to self-approve a peer declaration")
+	assert.Equal(t, codes.PermissionDenied, status.Code(err))
+	assert.Contains(t, err.Error(), "E_FORBIDDEN")
+
+	// 批准未发生：default team（接收方）随后照常批准成功。
+	approved, err := networks.ApproveNetworkPeer(ctx, &structurev1.ApproveNetworkPeerRequest{Id: peerID})
+	require.NoError(t, err)
+	assert.Equal(t, "approved", approved.GetPeer().GetState())
+
+	// 同 team 的第二个 token 也能走幂等批准（接收方团队内互信）。
+	sameTeamTok, err := tokens.CreateToken(ctx, &identityv1.CreateTokenRequest{
+		Name: "receiver-cli", TeamId: identity.DefaultTeamID, RoleId: identity.RoleOwnerID,
+	})
+	require.NoError(t, err)
+	again, err := networks.ApproveNetworkPeer(sdk.WithToken(context.Background(), sameTeamTok.GetSecret()),
+		&structurev1.ApproveNetworkPeerRequest{Id: peerID})
+	require.NoError(t, err)
+	assert.Equal(t, "approved", again.GetPeer().GetState())
 }

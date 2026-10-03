@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"log/slog"
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -71,6 +72,19 @@ func buildDynamicConfig(routes []capability.Route) ([]byte, error) {
 	for _, r := range routes {
 		if r.BackendAddr == "" {
 			return nil, fmt.Errorf("traefik config: route %s%s has no resolved backend address", r.Host, r.Path)
+		}
+		// 纵深防线（安全批 P0）：host/path 会原样内插进反引号定界的规则串
+		//（Host(`%s`) / PathPrefix(`%s`) / HostSNI(`%s`)），白名单外的形态
+		//（反引号/空白/控制字符）可注入规则。存量行绕过受理面校验的兜底：
+		// 非法路由跳过并留错误日志（engine publishRoutes 的"backend
+		// unresolved, skipping route"同款先例），不阻断其余路由发布。
+		if err := capability.ValidateRouteHost(r.Host); err != nil {
+			slog.Error("traefik config: invalid route host, skipping route", "host", r.Host, "err", err)
+			continue
+		}
+		if err := capability.ValidateRoutePath(r.Path); err != nil {
+			slog.Error("traefik config: invalid route path, skipping route", "host", r.Host, "path", r.Path, "err", err)
+			continue
 		}
 		name := routeKey(r)
 		switch r.Protocol {

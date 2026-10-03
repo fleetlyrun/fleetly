@@ -134,6 +134,15 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 	if req.GetProjectId() == "" || req.GetHost() == "" || req.GetAppId() == "" || req.GetProcess() == "" || req.GetPort() == 0 {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id, host, app_id, process and port: must not be empty")
 	}
+	// 受理面校验（安全批 P0）：host/path 原样内插进 traefik 规则的反引号
+	// 定界符内（Host(`%s`)），反引号等元字符可注入/劫持路由规则；白名单
+	// 与 Edge Provider 纵深面共用同一真源（capability.ValidateRouteHost）。
+	if err := capability.ValidateRouteHost(req.GetHost()); err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
+	}
+	if err := capability.ValidateRoutePath(req.GetPath()); err != nil {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "%v", err)
+	}
 	protocol := capability.Protocol(req.GetProtocol())
 	if protocol == "" {
 		protocol = capability.ProtocolHTTP

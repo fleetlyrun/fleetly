@@ -37,7 +37,9 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Create 落一行；同 Project 内 host+path 冲突返回 state.ErrAlreadyExists。
+// Create 落一行；host+path 全局冲突（跨项目同 host 同为活跃行）返回
+// state.ErrAlreadyExists（安全批：host 命名空间是平台级资产，唯一索引
+// 已从项目内升级为全局——idx_routes_host_path）。
 func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
 	now := state.FormatTime(r.clock.Now())
 	rt.CreatedAt, rt.UpdatedAt = now, now
@@ -47,7 +49,7 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, rt *Route) error {
 		rt.ID, rt.ProjectID, rt.Host, normalizePath(rt.Path), rt.AppID, rt.Process,
 		rt.Port, string(rt.Protocol), rt.TLSMode, rt.CreatedAt, rt.UpdatedAt)
 	if state.IsUniqueViolation(err) {
-		return fmt.Errorf("%w: route %s%s already exists in project", state.ErrAlreadyExists, rt.Host, rt.Path)
+		return fmt.Errorf("%w: route %s%s already exists (host+path is globally unique across projects)", state.ErrAlreadyExists, rt.Host, rt.Path)
 	}
 	return err
 }

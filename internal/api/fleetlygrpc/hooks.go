@@ -13,6 +13,7 @@ import (
 	"database/sql"
 	"errors"
 	"strings"
+	"unicode"
 
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
@@ -38,8 +39,14 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	if req.GetAppId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
 	}
-	if strings.TrimSpace(req.GetRepo()) == "" {
-		return nil, apperr.New("E_INVALID_ARGUMENT", "repo: must not be empty (the git URL builds are checked out from)")
+	// 受理面防线（安全批）：repo 会冻结进 GitSource 并由控制面原样送进
+	// `git clone` 的 argv——ext::/--upload-pack= 等传输形态在 root 控制面
+	// 上等价任意命令执行（P0）。create 与 update 两路径都在此处拦截。
+	if err := validateGitRepo(req.GetRepo()); err != nil {
+		return nil, err
+	}
+	if err := validateGitBranch(normalizeBranch(req.GetBranch())); err != nil {
+		return nil, err
 	}
 	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
@@ -181,4 +188,43 @@ func normalizeWatchPaths(paths []string) []string {
 		out = append(out, p)
 	}
 	return out
+}
+
+// validateGitRepo 校验 hook 仓库 URL（受理面，P0 防线）：repo 经 webhook
+// 触发冻结进 GitSource 后由控制面以 root 原样送进 `git clone` 的 argv——
+// `ext::sh -c ...`、`--upload-pack=` 等传输形态等价任意命令执行。因此只
+// 接受 https:// 直连仓库：明文 http、git、ssh、file、本地路径与 ext 一律
+// 拒绝；控制字符与空白逐字节拒绝（防 argv 拼接注入与日志走私）。
+func validateGitRepo(repo string) error {
+	r := strings.TrimSpace(repo)
+	if r == "" {
+		return apperr.New("E_INVALID_ARGUMENT", "repo: must not be empty (the git URL builds are checked out from)")
+	}
+	if !strings.HasPrefix(r, "https://") {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"repo: only https:// direct repository URLs are supported (got %q); http, git, ssh, file and ext transports are rejected", r)
+	}
+	for i := 0; i < len(r); i++ {
+		if c := rune(r[i]); unicode.IsSpace(c) || unicode.IsControl(c) {
+			return apperr.New("E_INVALID_ARGUMENT",
+				"repo: must not contain whitespace or control characters (byte offset %d)", i)
+		}
+	}
+	return nil
+}
+
+// validateGitBranch 校验 hook 分支过滤（防线加深）：branch 会进
+// `git clone --branch` 的参数位，控制字符/空白形态一律拒绝。空值合法
+// （= 全部分支）。
+func validateGitBranch(branch string) error {
+	if branch == "" {
+		return nil
+	}
+	for i := 0; i < len(branch); i++ {
+		if c := rune(branch[i]); unicode.IsSpace(c) || unicode.IsControl(c) {
+			return apperr.New("E_INVALID_ARGUMENT",
+				"branch: must not contain whitespace or control characters (byte offset %d)", i)
+		}
+	}
+	return nil
 }

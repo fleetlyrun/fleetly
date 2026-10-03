@@ -654,6 +654,32 @@ func (svc *NetworksService) loadPeerNetwork(ctx context.Context, networkID strin
 	return net, nil
 }
 
+// requirePeerReceiverTeam 校验调用方归属于接收方团队（ADR-0013：网络
+// peer 的批准权在网络归属项目所属团队）。调用方身份从 authn ctx 取
+// （Token 的 Team 轴，CreateUser/CreateToken 同源）；网络归属项目的 Team
+// 实取自 project 行。不等即 E_FORBIDDEN——P1 修复前按行 ID 直批不比对
+// 归属，任意项目的持有者可单向自助批准跨项目挂靠（越权网络接入）。
+// declare 侧不动：挂靠方本就任意项目发起（声明≠批准）。
+func (svc *NetworksService) requirePeerReceiverTeam(ctx context.Context, net *networkrepo.Network) error {
+	id, ok := authn.FromContext(ctx)
+	if !ok {
+		return apperr.New("E_UNAUTHENTICATED", "present a valid token to approve a network peer")
+	}
+	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), net.ProjectID)
+	if err != nil {
+		return mapStateError(err, "project")
+	}
+	if proj.Deleted() {
+		return apperr.New("E_NOT_FOUND", "project %s not found", net.ProjectID)
+	}
+	if proj.TeamID != id.TeamID {
+		return apperr.New("E_FORBIDDEN",
+			"only a token of team %s (owning the network's project) can approve this peer declaration", proj.TeamID).
+			WithSuggestion("Ask the receiving project's team to approve the declaration, or revoke it.")
+	}
+	return nil
+}
+
 // DeclareNetworkPeer 是挂靠方声明（pending 行）：peer 项目请求挂靠目标
 // 网络。双向声明的第一拍；批准前引用不可投影（strict fail-closed）。
 func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structurev1.DeclareNetworkPeerRequest) (*structurev1.DeclareNetworkPeerResponse, error) {
@@ -689,7 +715,8 @@ func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structu
 }
 
 // ApproveNetworkPeer 是接收方批准（pending → approved）。已批准幂等返回；
-// 已撤销的行不可复活（重新挂靠走新声明）。
+// 已撤销的行不可复活（重新挂靠走新声明）。批准前校验调用方归属于接收方
+// 团队（ADR-0013 语义执法，安全批 P1）——任意团队不得单向自助批准。
 func (svc *NetworksService) ApproveNetworkPeer(ctx context.Context, req *structurev1.ApproveNetworkPeerRequest) (*structurev1.ApproveNetworkPeerResponse, error) {
 	p, err := svc.s.NetworkPeers.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
@@ -697,6 +724,9 @@ func (svc *NetworksService) ApproveNetworkPeer(ctx context.Context, req *structu
 	}
 	net, err := svc.loadPeerNetwork(ctx, p.NetworkID)
 	if err != nil {
+		return nil, err
+	}
+	if err := svc.requirePeerReceiverTeam(ctx, net); err != nil {
 		return nil, err
 	}
 	if p.State == networkpeer.StateApproved {

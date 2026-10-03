@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -258,6 +259,38 @@ func (p *Provider) Watch(ctx context.Context) (<-chan capability.WorkloadEvent, 
 
 func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.WorkloadEvent) {
 	defer close(out)
+	// panic 护栏（安全批 P0）：本 goroutine 无 recover，任务翻译/轮询路径
+	// 的任何 panic 都会击穿整个 fleetlyd（进程崩溃循环）。整个循环包一层
+	// for + 内层 recover：非 ctx 取消的 panic 记错误日志后重开循环（观测
+	// 流保命，不永久消失）；ctx 已取消则正常收口（不吞取消）。
+	for {
+		if p.watchRound(ctx, out) {
+			return
+		}
+		if ctx.Err() != nil {
+			return
+		}
+		// panic 后退避再重开（避免错误形态零间隔自激）；重开会重建事件流
+		// 与锚定节拍器（断流自愈的既有语义）。
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// watchRound 跑一轮事件循环（事件流 + 节点锚定 + 任务轮询）。返回 true =
+// 正常收口（ctx 取消或事件流关闭）；false = panic 击穿（recover 接住，
+// 由调用方决定重开）。
+func (p *Provider) watchRound(ctx context.Context, out chan<- capability.WorkloadEvent) (normal bool) {
+	defer func() {
+		if r := recover(); r != nil {
+			slog.Error("swarm watch: recovered from panic; restarting the watch loop",
+				"panic", r, "stack", string(debug.Stack()))
+			normal = false
+		}
+	}()
 	eventsRes := p.cli.Events(ctx, client.EventsListOptions{
 		Filters: client.Filters{}.Add("type", "service", "node", "container"),
 	})
@@ -266,20 +299,20 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 	for {
 		select {
 		case <-ctx.Done():
-			return
+			return true
 		case _, ok := <-eventsRes.Err:
 			if !ok {
-				return
+				return true
 			}
 			// 事件流错误（含 EOF）：退避后重开（daemon 重启等场景）。
 			if ctx.Err() != nil {
-				return
+				return true
 			}
 			// ctx 感知退避（Q-19）：time.Sleep 不看 ctx，停机/取消期间
 			// 会白等一秒才退出。
 			select {
 			case <-ctx.Done():
-				return
+				return true
 			case <-time.After(time.Second):
 			}
 			eventsRes = p.cli.Events(ctx, client.EventsListOptions{
@@ -294,7 +327,7 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 				select {
 				case out <- ev:
 				case <-ctx.Done():
-					return
+					return true
 				}
 			}
 		case <-anchorTicker.C:
@@ -334,35 +367,8 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		svcLabels[sid] = svc.Service.Spec.Labels
 	}
 	for _, t := range tasks.Items {
-		labels := svcLabels[t.ServiceID]
-		if labels[labelManaged] != "true" {
-			continue
-		}
-		// 历史任务（已被替换/关闭：desired 不是 running）不计观测——
-		// App 域只看活槽位，避免滚动替换期的旧 task 状态污染 last-write-wins
-		// 槽。Task 域例外（ADR-0025 决策 2/8）：one-shot Run 的终态任务
-		//（complete/failed）与排空缩零的 shutdown 任务必须可见，否则已完成
-		// 的 Run 整个不可见。
-		terminalVisible := labels[labelTask] != "" && terminalTaskState(t.Status.State)
-		if t.DesiredState != swarm.TaskStateRunning && !terminalVisible {
-			continue
-		}
-		gen, _ := strconv.ParseUint(labels[labelGeneration], 10, 64)
-		ev := capability.WorkloadEvent{
-			WorkloadID: labels[labelWorkload],
-			Generation: capability.Generation(gen),
-			State:      taskEventState(t.Status.State),
-			Node:       labels[labelNodeID],
-			Message:    taskStatusMessage(t),
-			Reason:     t.Status.Err,
-			Instance:   t.ID,
-		}
-		// 终态观测携带退出码（complete=exit 0 形态；failed=非 0）。
-		if terminalTaskState(t.Status.State) {
-			code := t.Status.ContainerStatus.ExitCode
-			ev.ExitCode = &code
-		}
-		if ev.WorkloadID == "" {
+		ev, ok := taskEvent(t, svcLabels[t.ServiceID])
+		if !ok {
 			continue
 		}
 		select {
@@ -372,6 +378,49 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		}
 	}
 	return nil
+}
+
+// taskEvent 由单条 Task 快照构造观测事件（纯函数，pollTasks 与单测共用；
+// ok=false 表示该任务不计观测）。抽成纯函数是因为 pollTasks 依赖真
+// daemon 客户端——终态 nil ContainerStatus 的回归面在纯函数上钉（安全批
+// P0）。
+func taskEvent(t swarm.Task, labels map[string]string) (capability.WorkloadEvent, bool) {
+	if labels[labelManaged] != "true" {
+		return capability.WorkloadEvent{}, false
+	}
+	// 历史任务（已被替换/关闭：desired 不是 running）不计观测——
+	// App 域只看活槽位，避免滚动替换期的旧 task 状态污染 last-write-wins
+	// 槽。Task 域例外（ADR-0025 决策 2）：one-shot Run 的终态任务
+	//（complete/failed）与排空缩零的 shutdown 任务必须可见，否则已完成
+	// 的 Run 整个不可见。
+	terminalVisible := labels[labelTask] != "" && terminalTaskState(t.Status.State)
+	if t.DesiredState != swarm.TaskStateRunning && !terminalVisible {
+		return capability.WorkloadEvent{}, false
+	}
+	gen, _ := strconv.ParseUint(labels[labelGeneration], 10, 64)
+	ev := capability.WorkloadEvent{
+		WorkloadID: labels[labelWorkload],
+		Generation: capability.Generation(gen),
+		State:      taskEventState(t.Status.State),
+		Node:       labels[labelNodeID],
+		Message:    taskStatusMessage(t),
+		Reason:     t.Status.Err,
+		Instance:   t.ID,
+	}
+	// 终态观测携带退出码（complete=exit 0 形态；failed=非 0）。ContainerStatus
+	// 是指针：rejected/shutdown 等未建容器的终态为 nil——解引用会击穿
+	// Watch goroutine（P0）。nil 时退出码保持缺失（下游对 failed+nil 显示
+	// unknown 的既有语义）。
+	if terminalTaskState(t.Status.State) {
+		if cs := t.Status.ContainerStatus; cs != nil {
+			code := cs.ExitCode
+			ev.ExitCode = &code
+		}
+	}
+	if ev.WorkloadID == "" {
+		return capability.WorkloadEvent{}, false
+	}
+	return ev, true
 }
 
 // terminalTaskState 报告 swarm task 状态是否一次性终态（ADR-0025 决策 2：

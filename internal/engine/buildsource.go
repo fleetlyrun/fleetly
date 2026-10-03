@@ -287,21 +287,13 @@ func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string) error {
 	if err := os.MkdirAll(filepath.Dir(dir), 0o750); err != nil {
 		return err
 	}
-	// ref 可为 commit sha：先浅克隆默认分支再 checkout 会失败（浅历史不含
-	// 目标 commit）——对 sha 形态退化为全量 clone + checkout（小仓可接受；
-	// blobless 优化随 Git 集成批次）。
-	isSHA := isHexSHA(ref)
-	args := []string{"clone", "--quiet"}
-	if !isSHA {
-		args = append(args, "--depth", "1", "--branch", ref)
-	}
-	args = append(args, repo, dir)
+	args := gitCloneArgs(repo, ref, dir)
 	cmd := exec.CommandContext(cloneCtx, "git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// 输出可能含 URL（带 token）——剥离 repo 串后再入错误文本。
 		return fmt.Errorf("git clone: %v: %s", err, stripSecret(out, repo))
 	}
-	if isSHA {
+	if isHexSHA(ref) {
 		// ref 取自 Revision 冻结体（已冻结的不可变输入，非调用方实时注入）。
 		co := exec.CommandContext(cloneCtx, "git", "-C", dir, "checkout", "--quiet", ref) //nolint:gosec // ref 来自冻结体
 		if out, err := co.CombinedOutput(); err != nil {
@@ -309,6 +301,30 @@ func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string) error {
 		}
 	}
 	return nil
+}
+
+// gitCloneArgs 组装 `git` 的 clone argv（单测钉死的执行面防线；两个 ref
+// 形态——sha 全量 / 分支浅克隆——都过同一构造）：
+//   - `-c protocol.ext.allow=never -c protocol.file.allow=never`（必须在
+//     clone 子命令之前）：禁 ext/file 传输——`ext::sh -c ...` 等价任意命令
+//     执行、本地路径 clone 可被用于越权读文件。这是纵深防线的存量行兜底：
+//     受理面校验只拦新写入，已冻结进 Revision GitSource 的 repo 仍会走到
+//     这里（P0）。
+//   - `--` 终结选项解析：repo/dir 即使以 `-` 开头（如 `--upload-pack=`
+//     形态）也不再被吞作旗标执行。
+func gitCloneArgs(repo, ref, dir string) []string {
+	args := []string{
+		"-c", "protocol.ext.allow=never",
+		"-c", "protocol.file.allow=never",
+		"clone", "--quiet",
+	}
+	if !isHexSHA(ref) {
+		// ref 可为 commit sha：先浅克隆默认分支再 checkout 会失败（浅历史
+		// 不含目标 commit）——对 sha 形态退化为全量 clone + checkout（小仓
+		// 可接受；blobless 优化随 Git 集成批次）。
+		args = append(args, "--depth", "1", "--branch", ref)
+	}
+	return append(args, "--", repo, dir)
 }
 
 // isHexSHA 报告 ref 是否 40 位 hex（commit 形态；短 sha 7 位同样处理）。
