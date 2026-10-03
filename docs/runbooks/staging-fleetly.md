@@ -100,6 +100,44 @@
 
 **教训（Windows 本机远程操作）**：cmd → ssh → sh 三层引号嵌套必炸（`\$VAR` 转义层丢失）；复杂远程操作一律写脚本 scp 过去 `sh`，简单命令内联且零变量零嵌套引号。
 
+## 2026-10-03 记录·二（bb5259d 全链路重验：升级滚动替换事故 + 回归矩阵）
+
+**换装**：`eec4236-n1-final` → **`bb5259d-archreview`**（架构评审两轮收尾）。Windows 本机 `GOOS=linux` 交叉构建（版本注入 `bb5259d-archreview`）→ scp /tmp/n2bin → **停机 tar 快照**（/root/fleetly-data-prearch2-20261003.tar.gz，512M）→ install → drop-in 双文件核验（registry.conf + railpack.conf）→ doctor 10 ok / 0 fail。
+
+### 事故（P0）：升级即全量滚动替换 → torchwood-pg WAL 损坏
+
+- **机制链**：bb5259d 改了 Workload IR 形状（评审候选 4~7：ObjectStore port/anchor 归属/环表 substruct/typed owner/探针全解析+Addresses 期望集）→ 换装首启 `managedFingerprint` 全域漂移 → `EnsureGeneration` gen 推进（db `fleetly.generation` 2→3，traefik 同窗口 13:14:32 被更新+任务搬迁 manager→node2）→ swarm 真更新=滚动替换 → **pgvector 在 start-first + 单卷钉住 + 10s StopGrace 编排下被硬杀** → WAL `invalid checkpoint record`（13:14:34 非正常关停）→ 崩溃循环 → torchwood server 连锁崩溃（`db-<id>` 无 endpoint）→ tw.dev 502。
+- **对照实证**：同二进制重启零 churn（本次 13:37 重启与当日 10:52 重启均未替换任何任务；traefik 任务上一次变更在换装前 21 小时）——指纹同版本内稳定，churn 只发生在**二进制变更首启**。
+- **救援实录**（13:36 全程 ~7 分钟）：`systemctl stop fleetlyd`（traefik 持留末次配置）→ `docker service update --replicas 0` 冻结崩溃循环 → **卷 tar 留底**（/root/torchwood-pg-vol-pre-resetwal-20261003.tar.gz，11M）→ `pg_resetwal -f`（必须 `--user 999:999`，root 被拒）→ `--replicas 1` 起库（ready to accept connections）→ torchwood server 自愈 → tw.dev 200。同二进制重启 daemon 验证零 churn 后收口。
+- **修复方向（修复批挂账，本批未动代码）**：① swarm Ensure 侧做语义等价比较、豁免 generation 标签（升级不改语义不滚动）② 数据库域 UpdateConfig 改 stop-first + StopGrace 提到 60s 级 ③ 升级操作纪律（见下）。
+- **操作纪律（升级口径）**：**任何 fleetlyd 换二进制 = 预期全部工作负载滚动重启**；换装前先快照受管库卷（`docker run --rm -v <vol>:/d -v /root:/o busybox tar czf /o/<db>-pre-upgrade.tar.gz -C /d .` 一类）。
+- 附带教训：`fleetlyd` 无 version 子命令——**未知参数会以默认配置直接引导 daemon**（本次误触在 /root/data 生成流浪库，靠真 daemon 占 :9080 才没起来；已清理）。版本核对用 `journalctl service.version` 或 `fleetly version`（CLI）。
+
+### 全链路回归矩阵（bb5259d-archreview 真机，scratch 项目 archprobe 已清）
+
+| 验收 | 结果 | 关键证据 |
+|---|---|---|
+| from-dir 构建链 | ✅ | Dockerfile→build→push zot→digest 下发 `10.124.0.3:5000/<app>@sha256:ff99e6c8...`（digest 直存绕 tag 坑）；building→releasing→observing→succeeded 全状态机 |
+| 双节点 digest 拉取 | ✅ | compose 钉 digest replicas=2 → 双节点 Running（node2+manager）；受管仓凭证平台直注（materials.go 域内注入），载体 spec 零凭证 |
+| 探针翻译（候选 7 IR） | ✅ | compose exec healthcheck（CMD 数组）逐字落 swarm Healthcheck：`["CMD","wget","-q","-O","/dev/null","http://localhost/"]` + Interval/Timeout/Retries |
+| 路由 + 证书 | ✅ | arch.dev.fleetly.run：路由创建→LE staging 签发→200 且 body 内容校验过；traefik 挂靠收敛（见下 F-C） |
+| identical 重部署 | ✅（设计语义） | 重部署=新 revision=新 Generation=合法 rollout（gen 2→3 双节点滚动）——修 3 的 no-op 指 tick 级自激；tick 级实证：20 分钟无 churn + 同二进制重启零 churn。**勿再把「identical 重部署不滚动」当预期** |
+| 受管库生命周期 | ✅ | redis 模板 create→running→delete（载体拆、卷+凭证保留语义在 CLI 文案可见） |
+| schedule 引拍 + one-shot 铸造 | ✅ | */2 UTC 恰时引拍（13:48:00Z 恰一次）、`last_task_id` 落位、task `completed`、next_fire 重算 13:50；命令 argv 元素保真（echo arch-fire） |
+| 事件 owner 词汇（typed owner） | ✅ | `deployment.succeeded` 载荷带 `app_id`；run/task 事件带 `dns_name`（run-\<id\>/task-\<id\>）；schedule.fired 带 timezone/next_fire_at/last_task_id/source=cron |
+| resident Run 池 | ✅ | concurrency=2 → 2 run（per-Run=service `fleetly-run-<runid>`）；stop --force → stopped_by_user → drained → delete |
+| lynx SSE | ✅ | `events follow --replay` 555 行有界回放 |
+| uploads（objectstore 入口） | ✅ | 2MiB put → digest sha256:7673c6e2 入库 + list |
+| C2 删除语义 | ✅ | apps delete → 载体+引用路由全拆 → 404；project delete 干净 |
+
+**F-C（P2，挂账）**：compose 引用 `networks: [default]` 但 networks 表无行时**静默半物化**——swarm 侧 overlay 建了、表行没有，traefik 挂靠（真源=`activeProjectNetworks` 读 networks 表）永不收敛 → 路由 502。纪律：**compose 引用前先 `fleetly networks create --project <p> default`**（e2e 同款流程）；平台侧「未声明网络自动建行或显式拒绝」挂账。
+
+**重启后路由冷窗（行为可接受）**：daemon 重启后若后端暂不可达，首次 publish 对应路由诚实跳过（journal `route publish: backend unresolved, skipping route`），下一拍后端回来即重发布——实测 13:37:46 跳过 → 13:38:47 全量恢复（~60s 有界）。static.dev 的跳过是 ADR-0032 既有缺口（upload 面端口声明），非本轮回归。
+
+**P3 日志噪音**：`engine drive: unexpected driving state succeeded`（deployment 01M40ZXP2，终态行撞 driving 路径的单次 error，非循环）——留修复批顺手收。
+
+**DST 闭锚**：automation-4bdcbf35 已挂（本地 10-04 00:45 = 16:45Z 一次性），闭锚结果另记小节。换装窗口 13:36-13:38 停机两拍内 DST 钟无漏拍争议（next_fire 重算正确，13:40 拍照常引燃）。
+
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 
 数据根 `keys/master.agekey` 是平台 Secret（含受管库凭证）与 hook webhook secret 的 age 信封 KEK（ADR-0014）。泄露应对与例行轮换走本序（工具化前为手工 SQL 重写，废弃）。文件名约定即协议：`master.agekey` = 现役（唯一加密钥）；`master-*.agekey` = 退役（仅解封，rewrap 与 daemon 一并装载）；其他文件名（如 `master.agekey.bak`）不进装载面。
