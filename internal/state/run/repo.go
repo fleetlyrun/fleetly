@@ -108,6 +108,23 @@ func (r *Repo) ListByTask(ctx context.Context, run state.Runner, taskID, afterID
 	return r.query(ctx, run, q, args...)
 }
 
+// ListByProject 返回 Project 内 Run（新→旧 + after 游标；ADR-0035 ListRuns
+// 的 project 过滤面——runs 行自带冗余 project_id，免二跳）。
+func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Run, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := selectCols + " WHERE project_id = ?"
+	args := []any{projectID}
+	if afterID != "" {
+		q += " AND id < ?"
+		args = append(args, afterID)
+	}
+	q += " ORDER BY id DESC LIMIT ?"
+	args = append(args, limit)
+	return r.query(ctx, run, q, args...)
+}
+
 // ListDriving 返回全部待驱动行（pending/running/stopping）。
 func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Run, error) {
 	return r.query(ctx, run,
@@ -123,22 +140,6 @@ func (r *Repo) ListDrivingOfTerminalTasks(ctx context.Context, run state.Runner)
 		selectCols+" WHERE state IN ('pending', 'running', 'stopping')"+
 			" AND task_id IN (SELECT id FROM tasks WHERE state IN ('completed', 'failed', 'drained', 'deleted'))"+
 			" ORDER BY id")
-}
-
-// ListAfter 返回全局 Run 列表（新→旧 + after 游标；ListRuns 无过滤形态）。
-func (r *Repo) ListAfter(ctx context.Context, run state.Runner, afterID string, limit int) ([]Run, error) {
-	if limit <= 0 || limit > maxListLimit {
-		limit = defaultListLimit
-	}
-	q := selectCols
-	args := []any{}
-	if afterID != "" {
-		q += " WHERE id < ?"
-		args = append(args, afterID)
-	}
-	q += " ORDER BY id DESC LIMIT ?"
-	args = append(args, limit)
-	return r.query(ctx, run, q, args...)
 }
 
 // ListByTaskStates 返回 Task 名下指定状态的 Run（新→旧，与 ListByTask

@@ -24,14 +24,37 @@ const (
 
 // Entry 是一条审计记录（前后值指纹：敏感值不进审计，只留指纹）。
 type Entry struct {
-	ID        string
-	Actor     string // 操作者（Token 名/用户名；system 动作为空）
-	Source    Source
-	Action    string // 如 "project.create"
-	Resource  string // 如 "project/<id>"
-	BeforeFP  string // 变更前指纹（创建为空）
-	AfterFP   string // 变更后指纹（删除为空）
+	ID       string
+	Actor    string // 操作者（Token 名/用户名；system 动作为空）
+	Source   Source
+	Action   string // 如 "project.create"
+	Resource string // 如 "project/<id>"
+	BeforeFP string // 变更前指纹（创建为空）
+	AfterFP  string // 变更后指纹（删除为空）
+	// TeamID 是操作者的 Team 轴（ADR-0035）：写入时由 Append 从 ctx 铸入
+	// （调用方显式置空 = system/无身份动作）。'' = 平台级行（ListAudit 对
+	// 全部 Team 可见——内容是动作名+资源 ID+指纹，无值载荷）。
+	TeamID    string
 	CreatedAt string
+}
+
+// ctxTeamKey 是审计 Team 轴的 ctx 载键（ADR-0035）：authn 拦截器为已认证
+// 请求注入调用方 Team，webhook 面显式注入 App 归属 Team。独立于 authn 包
+// 定义（audit 是叶子 repo，不 import authn——方向只许 authn → audit）。
+type ctxTeamKey struct{}
+
+// WithTeam 在 ctx 标注审计 Team 轴（请求路径由 authn 拦截器统一注入，
+// 非请求路径（webhook）按资源归属显式注入）。
+func WithTeam(ctx context.Context, teamID string) context.Context {
+	return context.WithValue(ctx, ctxTeamKey{}, teamID)
+}
+
+// TeamFromContext 返回 ctx 标注的审计 Team（无标注 = 空串 = 平台级行）。
+func TeamFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(ctxTeamKey{}).(string); ok {
+		return v
+	}
+	return ""
 }
 
 // Repo 是审计存取（只增）。
@@ -42,13 +65,18 @@ type Repo struct {
 // New 构造 repo。
 func New(clock state.Clock) *Repo { return &Repo{clock: clock} }
 
-// Append 落一条审计（四件一拍的"审计"件）。
+// Append 落一条审计（四件一拍的"审计"件）。Team 轴统一铸入点：Entry 未
+// 显式携带时从 ctx 取（ADR-0035——全部调用方（api/engine/webhook）零改动
+// 获得 Team 标注；system/无身份动作显式留空 = 平台级行）。
 func (r *Repo) Append(ctx context.Context, run state.Runner, e *Entry) error {
+	if e.TeamID == "" {
+		e.TeamID = TeamFromContext(ctx)
+	}
 	e.CreatedAt = state.FormatTime(r.clock.Now())
 	_, err := run.ExecContext(ctx, `
-		INSERT INTO audit (id, actor, source, action, resource, before_fp, after_fp, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		e.ID, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.CreatedAt)
+		INSERT INTO audit (id, actor, source, action, resource, before_fp, after_fp, team_id, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		e.ID, e.Actor, string(e.Source), e.Action, e.Resource, e.BeforeFP, e.AfterFP, e.TeamID, e.CreatedAt)
 	return err
 }
 
@@ -58,13 +86,15 @@ func (r *Repo) List(ctx context.Context, run state.Runner, limit int) ([]Entry, 
 }
 
 // Filter 是审计查询面（F0.7）：actor/resource 精确、action 前缀、source
-// 枚举过滤；全部可空。
+// 枚举、Team 轴（ADR-0035）；全部可空。
 type Filter struct {
 	Actor        string
 	Source       string
 	ActionPrefix string
 	Resource     string
-	Limit        int
+	// Team 非空 = 行级过滤（team_id = Team 或 ''平台级行；ADR-0035 决策 6）。
+	Team  string
+	Limit int
 }
 
 // ListFiltered 按过滤返回审计（新→旧；limit 上界钳制；条件动态拼接但
@@ -73,7 +103,7 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 	if f.Limit <= 0 || f.Limit > 1000 {
 		f.Limit = 1000
 	}
-	query := `SELECT id, actor, source, action, resource, before_fp, after_fp, created_at FROM audit`
+	query := `SELECT id, actor, source, action, resource, before_fp, after_fp, team_id, created_at FROM audit`
 	var conds []string
 	var args []any
 	if f.Actor != "" {
@@ -92,6 +122,10 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 		conds = append(conds, "resource = ?")
 		args = append(args, f.Resource)
 	}
+	if f.Team != "" {
+		conds = append(conds, "(team_id = ? OR team_id = '')")
+		args = append(args, f.Team)
+	}
 	if len(conds) > 0 {
 		query += " WHERE " + strings.Join(conds, " AND ")
 	}
@@ -107,7 +141,7 @@ func (r *Repo) ListFiltered(ctx context.Context, run state.Runner, f Filter) ([]
 	for rows.Next() {
 		var e Entry
 		var src string
-		if err := rows.Scan(&e.ID, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Actor, &src, &e.Action, &e.Resource, &e.BeforeFP, &e.AfterFP, &e.TeamID, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		e.Source = Source(src)

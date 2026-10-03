@@ -60,6 +60,11 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 		return apperr.New("E_INVALID_ARGUMENT", "meta.project_id: must not be empty")
 	}
 	projectID := meta.GetProjectId()
+	// 行级授权（ADR-0035）：首帧后、tmp 落盘前拒绝——越权上传不占暂存与
+	// 字节预算。
+	if err := svc.s.authorizeProjectID(ctx, projectID); err != nil {
+		return err
+	}
 
 	recv, err := svc.s.UploadStore.Begin()
 	if err != nil {
@@ -154,6 +159,9 @@ func (svc *BuildsService) UploadSource(stream deliveryv1.BuildsService_UploadSou
 func (svc *BuildsService) ListUploads(ctx context.Context, req *deliveryv1.ListUploadsRequest) (*deliveryv1.ListUploadsResponse, error) {
 	if req.GetProjectId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
+	}
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
 	}
 	rows, err := svc.s.Uploads.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterUploadId(), listLimit(req.GetLimit()))
 	if err != nil {

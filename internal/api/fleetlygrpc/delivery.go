@@ -37,9 +37,10 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	if req.GetAppId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
 	}
-	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	// 行级授权（ADR-0035）：App 归属 Team 比对（载行供归一化复用）。
+	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, err
 	}
 
 	// 上传产物形态的受理前置：行存在、归属同 Project、blob 在盘（跨项目
@@ -224,6 +225,9 @@ func builderOrDefault(b string) string {
 }
 
 func (svc *DeploymentsService) GetDeployment(ctx context.Context, req *deliveryv1.GetDeploymentRequest) (*deliveryv1.GetDeploymentResponse, error) {
+	if err := svc.s.authorizeDeploymentID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	d, err := svc.s.Deployments.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
@@ -232,6 +236,9 @@ func (svc *DeploymentsService) GetDeployment(ctx context.Context, req *deliveryv
 }
 
 func (svc *DeploymentsService) ListDeployments(ctx context.Context, req *deliveryv1.ListDeploymentsRequest) (*deliveryv1.ListDeploymentsResponse, error) {
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Deployments.ListByApp(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
@@ -244,6 +251,9 @@ func (svc *DeploymentsService) ListDeployments(ctx context.Context, req *deliver
 }
 
 func (svc *DeploymentsService) CancelDeployment(ctx context.Context, req *deliveryv1.CancelDeploymentRequest) (*deliveryv1.CancelDeploymentResponse, error) {
+	if err := svc.s.authorizeDeploymentID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	d, err := svc.s.Engine.Cancel(ctx, req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
@@ -252,6 +262,9 @@ func (svc *DeploymentsService) CancelDeployment(ctx context.Context, req *delive
 }
 
 func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.RollbackRequest) (*deliveryv1.RollbackResponse, error) {
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
 	d, err := svc.s.Engine.Rollback(ctx, req.GetAppId(), req.GetToRevision())
 	if err != nil {
 		// 哨兵判定（Q-13）：engine 哨兵 → E_NO_BASELINE（映射目标不变，
@@ -272,6 +285,9 @@ type RevisionsService struct {
 }
 
 func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.ListRevisionsRequest) (*deliveryv1.ListRevisionsResponse, error) {
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Revisions.ListByApp(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "revision")
@@ -288,6 +304,11 @@ func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.
 func (svc *RevisionsService) DiffRevisions(ctx context.Context, req *deliveryv1.DiffRevisionsRequest) (*deliveryv1.DiffRevisionsResponse, error) {
 	if req.GetAppId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
+	}
+	// 行级授权（ADR-0035）：diff 回读两侧冻结 spec 全文（含 env/secret 引用
+	// 名）——跨租户读面。
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
 	}
 	from, err := svc.s.Revisions.GetBySeq(ctx, svc.s.DB.Runner(), req.GetAppId(), req.GetFromSeq())
 	if err != nil {
@@ -318,6 +339,9 @@ type BuildsService struct {
 }
 
 func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBuildsRequest) (*deliveryv1.ListBuildsResponse, error) {
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Builds.ListByApp(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "build")
@@ -338,8 +362,9 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 		return apperr.New("E_INVALID_ARGUMENT", "build_id: must not be empty")
 	}
 	ctx := stream.Context()
-	if _, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId()); err != nil {
-		return mapStateError(err, "build")
+	// 行级授权（ADR-0035）：载 Build 行比对归属（未知 id 由此给出 404）。
+	if err := svc.s.authorizeBuildID(ctx, req.GetBuildId()); err != nil {
+		return err
 	}
 	var lastSeq int64 = -1
 	newFrames := 0

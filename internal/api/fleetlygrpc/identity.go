@@ -65,9 +65,16 @@ func (svc *UsersService) CreateUser(ctx context.Context, req *identityv1.CreateU
 	if teamID == "" {
 		teamID = identity.DefaultTeamID
 	}
+	// Team 轴（ADR-0035 决策 5）：membership 目标 Team 缺省 = 调用方 Team；
+	// 显式他队目标仅平台 owner 可。
+	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	teamID = resolvedTeam
 	u := &user.User{ID: newID(), Name: req.GetName()}
 	m := &membership.Membership{ID: newID(), UserID: u.ID, TeamID: teamID, RoleID: req.GetRoleId()}
-	err := svc.s.commit(ctx, writeFact{
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID), svc.s.roleInTeam(req.GetRoleId(), teamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			if err := svc.s.Users.Create(ctx, tx, u); err != nil {
@@ -216,6 +223,13 @@ func (svc *RolesService) CreateRole(ctx context.Context, req *identityv1.CreateR
 	if teamID == "" {
 		teamID = identity.DefaultTeamID
 	}
+	// Team 轴（ADR-0035 决策 5）：自定义 Role 落在调用方 Team（他队目标仅
+	// 平台 owner 可）。
+	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	teamID = resolvedTeam
 	ro := &role.Role{ID: newID(), TeamID: teamID, Name: req.GetName(), Scopes: identity.ScopeStrings(scopes)}
 	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(teamID)},
@@ -288,9 +302,11 @@ func (svc *TokensService) CreateToken(ctx context.Context, req *identityv1.Creat
 	if req.GetRoleId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "role_id: must not be empty (tokens get scopes via a team role)")
 	}
-	teamID := req.GetTeamId()
-	if teamID == "" {
-		teamID = identity.DefaultTeamID
+	// Team 轴（ADR-0035 决策 5）：铸 Token 的目标 Team 缺省 = 调用方 Team
+	//（此前缺省 default——跨队铸造零校验是提权面）；显式他队仅平台 owner。
+	teamID, err := resolveTargetTeam(ctx, req.GetTeamId())
+	if err != nil {
+		return nil, err
 	}
 	material, err := identity.NewToken()
 	if err != nil {
@@ -323,16 +339,27 @@ func (svc *TokensService) GetToken(ctx context.Context, req *identityv1.GetToken
 	if err != nil {
 		return nil, mapStateError(err, "token")
 	}
+	if err := svc.s.authorizeTokenRow(ctx, t); err != nil {
+		return nil, err
+	}
 	return &identityv1.GetTokenResponse{Token: tokenMsg(t)}, nil
 }
 
+// ListTokens 非 owner 按 Team 过滤（ADR-0035：Token 名/前缀是敏感目录面）。
 func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListTokensRequest) (*identityv1.ListTokensResponse, error) {
+	teamID, owner, err := callerTeam(ctx)
+	if err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Tokens.List(ctx, svc.s.DB.Runner())
 	if err != nil {
 		return nil, mapStateError(err, "token")
 	}
 	out := &identityv1.ListTokensResponse{}
 	for i := range list {
+		if !owner && list[i].TeamID != teamID {
+			continue
+		}
 		out.Tokens = append(out.Tokens, tokenMsg(&list[i]))
 	}
 	return out, nil
@@ -340,8 +367,16 @@ func (svc *TokensService) ListTokens(ctx context.Context, _ *identityv1.ListToke
 
 // RevokeToken 吊销（幂等；验收锚：进行中请求的下一个调用即 401——authn
 // 拦截器逐请求查表）。事件与审计的载荷字段来自事务内 Revoke 的返回行，
-// 经切片元素就地填充（write 先于 events/audits 段执行）。
+// 经切片元素就地填充（write 先于 events/audits 段执行）。行级授权
+// （ADR-0035）：吊销他队 Token 是提权面。
 func (svc *TokensService) RevokeToken(ctx context.Context, req *identityv1.RevokeTokenRequest) (*identityv1.RevokeTokenResponse, error) {
+	if row, err := svc.s.Tokens.Get(ctx, svc.s.DB.Runner(), req.GetId()); err == nil {
+		if aerr := svc.s.authorizeTokenRow(ctx, row); aerr != nil {
+			return nil, aerr
+		}
+	} else {
+		return nil, mapStateError(err, "token")
+	}
 	var revoked *tokenrepo.Token
 	events := []eventFact{identityEvent("token.revoked", "token", req.GetId(), nil)}
 	entry := identityAudit(ctx, "token.revoke", "token/"+req.GetId(), "", "")
@@ -376,14 +411,24 @@ func (svc *AuditQueryService) ListAudit(ctx context.Context, req *identityv1.Lis
 	if src := req.GetSource(); src != "" && !validAuditSource(src) {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "source: unknown source %q", src)
 	}
+	// Team 轴（ADR-0035 决策 6）：非 owner 过滤本队行 + ''平台级行（system
+	// 动作与迁移前存量；内容无值载荷）。
+	filter := audit.Filter{
+		Actor: req.GetActor(), Source: req.GetSource(),
+		ActionPrefix: req.GetAction(), Resource: req.GetResource(),
+	}
+	if _, owner, err := callerTeam(ctx); err != nil {
+		return nil, err
+	} else if !owner {
+		id, _ := authn.FromContext(ctx)
+		filter.Team = id.TeamID
+	}
 	limit := int(req.GetLimit())
 	if limit <= 0 || limit > 1000 {
 		limit = 100
 	}
-	list, err := svc.s.Audits.ListFiltered(ctx, svc.s.DB.Runner(), audit.Filter{
-		Actor: req.GetActor(), Source: req.GetSource(),
-		ActionPrefix: req.GetAction(), Resource: req.GetResource(), Limit: limit,
-	})
+	filter.Limit = limit
+	list, err := svc.s.Audits.ListFiltered(ctx, svc.s.DB.Runner(), filter)
 	if err != nil {
 		return nil, mapStateError(err, "audit")
 	}

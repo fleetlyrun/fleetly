@@ -281,11 +281,14 @@ message RenewTaskResponse { Task task = 1; }
 message GetRunRequest { string id = 1; }
 message GetRunResponse { Run run = 1; }
 message ListRunsRequest {
-  // task_id 过滤（空 = 全部 Run——高频面建议带过滤，torchwood 池规模）。
+  // task_id 过滤（与 project_id 二选一——无过滤的全平台 Run 列表是跨 Team
+  // 泄漏面，ADR-0035 起强制过滤）。
   string task_id = 1;
   // after_run_id 游标（上一页末条 id；空 = 首页）。
   string after_run_id = 2;
   int32 limit = 3;
+  // project_id 过滤（ADR-0035 only-add；与 task_id 互斥）。
+  string project_id = 4;
 }
 message ListRunsResponse { repeated Run runs = 1; }
 message StopRunRequest { string id = 1; }

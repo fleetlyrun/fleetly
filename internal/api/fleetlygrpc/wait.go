@@ -27,6 +27,10 @@ func (svc *DeploymentsService) WaitDeployment(req *deliveryv1.WaitDeploymentRequ
 		return apperr.New("E_INVALID_ARGUMENT", "deployment_id: must not be empty")
 	}
 	ctx := stream.Context()
+	// 行级授权（ADR-0035）：流面前置（首帧行读即 404 的语义不变）。
+	if err := svc.s.authorizeDeploymentID(ctx, req.GetDeploymentId()); err != nil {
+		return err
+	}
 	last := ""
 	send := func() error {
 		d, err := svc.s.Deployments.Get(ctx, svc.s.DB.Runner(), req.GetDeploymentId())
@@ -55,6 +59,10 @@ func (svc *BuildsService) WaitBuild(req *deliveryv1.WaitBuildRequest, stream del
 		return apperr.New("E_INVALID_ARGUMENT", "build_id: must not be empty")
 	}
 	ctx := stream.Context()
+	// 行级授权（ADR-0035）：同构前置。
+	if err := svc.s.authorizeBuildID(ctx, req.GetBuildId()); err != nil {
+		return err
+	}
 	last := ""
 	send := func() error {
 		b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId())

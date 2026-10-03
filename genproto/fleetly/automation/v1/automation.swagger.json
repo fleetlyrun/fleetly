@@ -43,7 +43,7 @@
         "parameters": [
           {
             "name": "task_id",
-            "description": "task_id 过滤（空 = 全部 Run——高频面建议带过滤，torchwood 池规模）。",
+            "description": "task_id 过滤（与 project_id 二选一——无过滤的全平台 Run 列表是跨 Team\n泄漏面，ADR-0035 起强制过滤）。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -61,6 +61,13 @@
             "required": false,
             "type": "integer",
             "format": "int32"
+          },
+          {
+            "name": "project_id",
+            "description": "project_id 过滤（ADR-0035 only-add；与 task_id 互斥）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
           }
         ],
         "tags": [

@@ -403,18 +403,22 @@ func newTasksRenewVerb() commands.Command {
 
 func newRunsListVerb() commands.Command {
 	const name = "list"
-	var taskID, after string
+	var taskID, projectID, after string
 	var limit int
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "List runs (newest first; optionally filtered by task)",
-		usage:    "runs list [--task TASK_ID] [--after RUN_ID] [--limit N]",
+		synopsis: "List runs (newest first; filter by task or project - one is required)",
+		usage:    "runs list (--task TASK_ID | --project PROJECT_ID) [--after RUN_ID] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&taskID, "task", "", "filter by task id (recommended for high-volume pools)")
+			fs.StringVar(&projectID, "project", "", "filter by project id (ADR-0035: an unfiltered run list spans every team's runs)")
 			fs.StringVar(&after, "after", "", "pagination cursor: the last run id of the previous page")
 			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if (taskID == "") == (projectID == "") {
+				return usageErr(name, "exactly one of --task or --project is required")
+			}
 			ctx, cancel, c, err := dialFromEnv(ctx)
 			if err != nil {
 				return err
@@ -422,7 +426,7 @@ func newRunsListVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			resp, err := c.Runs.ListRuns(ctx, &automationv1.ListRunsRequest{
-				TaskId: taskID, AfterRunId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+				TaskId: taskID, ProjectId: projectID, AfterRunId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
 			})
 			if err != nil {
 				return err

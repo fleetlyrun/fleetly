@@ -48,9 +48,11 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	if err := validateGitBranch(normalizeBranch(req.GetBranch())); err != nil {
 		return nil, err
 	}
-	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
+	// 行级授权（ADR-0035）：App 归属 Team 比对（载行复用；Apps.Get 活跃行
+	// 口径——tombstone App 在此即 404）。
+	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
 	if err != nil {
-		return nil, mapStateError(err, "app")
+		return nil, err
 	}
 
 	existing, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), appRow.ID)
@@ -110,6 +112,10 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 }
 
 func (svc *HooksService) GetGitHook(ctx context.Context, req *deliveryv1.GetGitHookRequest) (*deliveryv1.GetGitHookResponse, error) {
+	// 行级授权（ADR-0035）：hook 配置挂在 App 轴上。
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
 	row, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
 		return nil, mapStateError(err, "hook")
@@ -118,8 +124,13 @@ func (svc *HooksService) GetGitHook(ctx context.Context, req *deliveryv1.GetGitH
 }
 
 // RotateHookToken 吊销旧串铸新（URL token 与 GitHub webhook secret 同源
-// 双换；GitHub 侧需同步更新 webhook secret）。
+// 双换；GitHub 侧需同步更新 webhook secret）。行级授权（ADR-0035）载 App
+// 行比对归属——顺带闭合批 1 记档的"不校验 App 存活"：Apps.Get 活跃行口
+// 径，tombstone App 即 404（此前 rotate 对已删 App 静默换串成功）。
 func (svc *HooksService) RotateHookToken(ctx context.Context, req *deliveryv1.RotateHookTokenRequest) (*deliveryv1.RotateHookTokenResponse, error) {
+	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
+		return nil, err
+	}
 	if _, err := svc.s.Hooks.Get(ctx, svc.s.DB.Runner(), req.GetAppId()); err != nil {
 		return nil, mapStateError(err, "hook")
 	}

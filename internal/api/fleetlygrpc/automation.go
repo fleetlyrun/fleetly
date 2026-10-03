@@ -114,6 +114,10 @@ func (svc *TasksService) resolveOwnerToken(ctx context.Context, req *automationv
 
 // CreateTask 受理 + 冻结 Spec + 落行（四件一拍：task.created 事件 + 审计）。
 func (svc *TasksService) CreateTask(ctx context.Context, req *automationv1.CreateTaskRequest) (*automationv1.CreateTaskResponse, error) {
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	owner, err := svc.resolveOwnerToken(ctx, req)
 	if err != nil {
 		return nil, err
@@ -165,12 +169,18 @@ func (svc *TasksService) GetTask(ctx context.Context, req *automationv1.GetTaskR
 	if err != nil {
 		return nil, mapStateError(err, "task")
 	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
+	}
 	return &automationv1.GetTaskResponse{Task: svc.s.taskMsg(row)}, nil
 }
 
 func (svc *TasksService) ListTasks(ctx context.Context, req *automationv1.ListTasksRequest) (*automationv1.ListTasksResponse, error) {
 	if req.GetProjectId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
+	}
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
 	}
 	rows, err := svc.s.Tasks.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterTaskId(), listLimit(req.GetLimit()))
 	if err != nil {
@@ -193,6 +203,10 @@ func (svc *TasksService) ScaleTask(ctx context.Context, req *automationv1.ScaleT
 	if req.GetDesiredConcurrency() < 0 {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "desired_concurrency: must not be negative")
 	}
+	// 行级授权（ADR-0035）：engine 动词在 handler 前置。
+	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	row, err := svc.s.Engine.ScaleTask(ctx, req.GetId(), req.GetDesiredConcurrency())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
@@ -201,6 +215,9 @@ func (svc *TasksService) ScaleTask(ctx context.Context, req *automationv1.ScaleT
 }
 
 func (svc *TasksService) StopTask(ctx context.Context, req *automationv1.StopTaskRequest) (*automationv1.StopTaskResponse, error) {
+	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	row, err := svc.s.Engine.StopTask(ctx, req.GetId(), req.GetForce())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
@@ -209,6 +226,9 @@ func (svc *TasksService) StopTask(ctx context.Context, req *automationv1.StopTas
 }
 
 func (svc *TasksService) DeleteTask(ctx context.Context, req *automationv1.DeleteTaskRequest) (*automationv1.DeleteTaskResponse, error) {
+	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	if err := svc.s.Engine.DeleteTask(ctx, req.GetId()); err != nil {
 		return nil, mapTaskVerbError(err)
 	}
@@ -216,6 +236,9 @@ func (svc *TasksService) DeleteTask(ctx context.Context, req *automationv1.Delet
 }
 
 func (svc *TasksService) RenewTask(ctx context.Context, req *automationv1.RenewTaskRequest) (*automationv1.RenewTaskResponse, error) {
+	if err := svc.s.authorizeTaskID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	row, err := svc.s.Engine.RenewTask(ctx, req.GetId())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
@@ -235,16 +258,37 @@ func (svc *RunsService) GetRun(ctx context.Context, req *automationv1.GetRunRequ
 	if err != nil {
 		return nil, mapStateError(err, "run")
 	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
+	}
 	return &automationv1.GetRunResponse{Run: runMsg(row)}, nil
 }
 
+// ListRuns 收紧（ADR-0035 决策 4）：task_id 与 project_id 必须给其一——
+// 无过滤的全平台 Run 列表是跨 Team 泄漏面本身；两者都给属参数矛盾。
 func (svc *RunsService) ListRuns(ctx context.Context, req *automationv1.ListRunsRequest) (*automationv1.ListRunsResponse, error) {
 	var rows []run.Run
 	var err error
-	if tid := req.GetTaskId(); tid != "" {
-		rows, err = svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), tid, req.GetAfterRunId(), listLimit(req.GetLimit()))
-	} else {
-		rows, err = svc.s.Runs.ListAfter(ctx, svc.s.DB.Runner(), req.GetAfterRunId(), listLimit(req.GetLimit()))
+	switch {
+	case req.GetTaskId() != "" && req.GetProjectId() != "":
+		return nil, apperr.New("E_INVALID_ARGUMENT", "task_id and project_id are mutually exclusive; provide one filter")
+	case req.GetTaskId() != "":
+		tk, terr := svc.s.Tasks.Get(ctx, svc.s.DB.Runner(), req.GetTaskId())
+		if terr != nil {
+			return nil, mapStateError(terr, "task")
+		}
+		if aerr := svc.s.authorizeProjectID(ctx, tk.ProjectID); aerr != nil {
+			return nil, aerr
+		}
+		rows, err = svc.s.Runs.ListByTask(ctx, svc.s.DB.Runner(), req.GetTaskId(), req.GetAfterRunId(), listLimit(req.GetLimit()))
+	case req.GetProjectId() != "":
+		if aerr := svc.s.authorizeProjectID(ctx, req.GetProjectId()); aerr != nil {
+			return nil, aerr
+		}
+		rows, err = svc.s.Runs.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterRunId(), listLimit(req.GetLimit()))
+	default:
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"task_id or project_id: one filter is required (an unfiltered run list spans every team's runs)")
 	}
 	if err != nil {
 		return nil, mapStateError(err, "run")
@@ -257,6 +301,9 @@ func (svc *RunsService) ListRuns(ctx context.Context, req *automationv1.ListRuns
 }
 
 func (svc *RunsService) StopRun(ctx context.Context, req *automationv1.StopRunRequest) (*automationv1.StopRunResponse, error) {
+	if err := svc.s.authorizeRunID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	row, err := svc.s.Engine.StopRun(ctx, req.GetId())
 	if err != nil {
 		return nil, mapTaskVerbError(err)
@@ -271,6 +318,9 @@ func (svc *RunsService) WaitRun(req *automationv1.WaitRunRequest, stream automat
 		return apperr.New("E_INVALID_ARGUMENT", "id: must not be empty")
 	}
 	ctx := stream.Context()
+	if err := svc.s.authorizeRunID(ctx, req.GetId()); err != nil {
+		return err
+	}
 	last := ""
 	send := func() error {
 		row, err := svc.s.Runs.Get(ctx, svc.s.DB.Runner(), req.GetId())
@@ -404,6 +454,10 @@ func runMsg(row *run.Run) *automationv1.Run {
 // CreateSchedule 受理 + 冻结模板 + 落行（四件一拍：schedule.created 事件
 // + 审计）+ 唤醒到期拍环。
 func (svc *SchedulesService) CreateSchedule(ctx context.Context, req *automationv1.CreateScheduleRequest) (*automationv1.CreateScheduleResponse, error) {
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	taskSpec, timezone, nextFire, err := normalizeCreateSchedule(req, svc.s.DB.Clock().Now())
 	if err != nil {
 		return nil, err
@@ -445,12 +499,18 @@ func (svc *SchedulesService) GetSchedule(ctx context.Context, req *automationv1.
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
 	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
+	}
 	return &automationv1.GetScheduleResponse{Schedule: scheduleMsg(row)}, nil
 }
 
 func (svc *SchedulesService) ListSchedules(ctx context.Context, req *automationv1.ListSchedulesRequest) (*automationv1.ListSchedulesResponse, error) {
 	if req.GetProjectId() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
+	}
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
 	}
 	rows, err := svc.s.Schedules.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId(), req.GetAfterScheduleId(), listLimit(req.GetLimit()))
 	if err != nil {
@@ -469,6 +529,9 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 	row, err := svc.s.Schedules.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "schedule")
+	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
 	}
 	if row.State.Terminal() {
 		return &automationv1.DeleteScheduleResponse{}, nil // 幂等
@@ -495,6 +558,9 @@ func (svc *SchedulesService) DeleteSchedule(ctx context.Context, req *automation
 // TriggerSchedule 手动触发（RunNow 语义）：engine 铸一拍 Task；重叠与
 // 终态哨兵映射为可行动错误。
 func (svc *SchedulesService) TriggerSchedule(ctx context.Context, req *automationv1.TriggerScheduleRequest) (*automationv1.TriggerScheduleResponse, error) {
+	if err := svc.s.authorizeScheduleID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	row, err := svc.s.Engine.TriggerSchedule(ctx, req.GetId())
 	if err != nil {
 		return nil, mapScheduleVerbError(err)

@@ -13,7 +13,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
-	"github.com/fleetlyrun/fleetly/internal/identity"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
@@ -106,13 +105,16 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	if req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "name: must not be empty")
 	}
-	p := &project.Project{ID: newID(), Name: req.GetName(), TeamID: req.GetTeamId()}
-	if p.TeamID == "" {
-		p.TeamID = identity.DefaultTeamID
+	// Team 轴（ADR-0035 决策 5）：目标 Team 缺省 = 调用方 Team；显式他队
+	// 目标仅平台 owner 可（行级落子面）。
+	teamID, err := resolveTargetTeam(ctx, req.GetTeamId())
+	if err != nil {
+		return nil, err
 	}
+	p := &project.Project{ID: newID(), Name: req.GetName(), TeamID: teamID}
 	// Team 轴接实（ADR-0028）：归属 Team 必须存在——Project 落在不存在的
 	// Team 上会让域解析（engine projectTeam）悬空。
-	err := svc.s.commit(ctx, writeFact{
+	err = svc.s.commit(ctx, writeFact{
 		checks: []acceptanceCheck{svc.s.teamExists(p.TeamID)},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Projects.Create(ctx, tx, p)
@@ -134,11 +136,25 @@ func (svc *ProjectsService) GetProject(ctx context.Context, req *structurev1.Get
 	if err != nil {
 		return nil, mapStateError(err, "project")
 	}
+	if err := svc.s.authorizeTeamForProject(ctx, p); err != nil {
+		return nil, err
+	}
 	return &structurev1.GetProjectResponse{Project: projectMsg(p)}, nil
 }
 
+// ListProjects 非 owner 按 Team 过滤（ADR-0035 List 面：过滤而非逐行拒绝）；
+// owner（平台管理员）全量。
 func (svc *ProjectsService) ListProjects(ctx context.Context, _ *structurev1.ListProjectsRequest) (*structurev1.ListProjectsResponse, error) {
-	list, err := svc.s.Projects.List(ctx, svc.s.DB.Runner())
+	teamID, owner, err := callerTeam(ctx)
+	if err != nil {
+		return nil, err
+	}
+	var list []project.Project
+	if owner {
+		list, err = svc.s.Projects.List(ctx, svc.s.DB.Runner())
+	} else {
+		list, err = svc.s.Projects.ListByTeam(ctx, svc.s.DB.Runner(), teamID)
+	}
 	if err != nil {
 		return nil, mapStateError(err, "project")
 	}
@@ -161,6 +177,10 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, _ *structurev1.Lis
 // 可建"；批 0 复核：此前 CreateApp 无校验、apps.project_id 无 FK，该窗口
 // 实际敞开，注释宣称的"窗口闭合"不成立，已随对偶守卫落地闭合）。
 func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.DeleteProjectRequest) (*structurev1.DeleteProjectResponse, error) {
+	// 行级授权（ADR-0035）：载行比对归属 Team（不存在 → 既有 404 形态）。
+	if err := svc.s.authorizeProjectID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	err := svc.s.commit(ctx, writeFact{
 		// 删除守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶
 		// 闭合（本侧拒绝"删除时仍有 App"；CreateApp 侧受理检查拒绝"删除
@@ -192,6 +212,11 @@ func (svc *AppsService) CreateApp(ctx context.Context, req *structurev1.CreateAp
 	if req.GetProjectId() == "" || req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
 	}
+	// 行级授权（ADR-0035）：创建在他队 Project 下 = 越权落子，受理前置拒
+	//（Project 的 Team 归属不可变，无 TOCTOU 面）。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	a := &app.App{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName()}
 	// 父资源存活校验（批 0 复核）：apps.project_id 无 FK，不校验则对
 	// 不存在/已删 project 建 App 直接成功，活 App 落已删项目、路由照发
@@ -222,10 +247,20 @@ func (svc *AppsService) GetApp(ctx context.Context, req *structurev1.GetAppReque
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
+	if err := svc.s.authorizeAppRow(ctx, a); err != nil {
+		return nil, err
+	}
 	return &structurev1.GetAppResponse{App: appMsg(a)}, nil
 }
 
 func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsRequest) (*structurev1.ListAppsResponse, error) {
+	if req.GetProjectId() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id: must not be empty")
+	}
+	// 行级授权（ADR-0035 List 面）：project 锚先授权再查询。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Apps.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
@@ -256,6 +291,9 @@ func (svc *AppsService) DeleteApp(ctx context.Context, req *structurev1.DeleteAp
 	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "app")
+	}
+	if err := svc.s.authorizeAppRow(ctx, appRow); err != nil {
+		return nil, err
 	}
 	active, err := svc.s.Deployments.ActiveByApp(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
@@ -376,6 +414,10 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 	if svc.s.Cipher == nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
+	// 行级授权（ADR-0035）：写面受理前置（Project Team 归属不可变，无 TOCTOU）。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	// 数据库凭证保留前缀（ADR-0029 决策 6）：值必须恒为完整连接 URL
 	//（单真源），用户覆写会破坏凭证三面。
 	if engine.IsDatabaseCredentialSecret(req.GetName()) {
@@ -411,6 +453,9 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 }
 
 func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.ListSecretsRequest) (*structurev1.ListSecretsResponse, error) {
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Secrets.ListFingerprints(ctx, svc.s.DB.Runner(), req.GetProjectId())
 	if err != nil {
 		return nil, mapStateError(err, "secret")
@@ -423,6 +468,11 @@ func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.Lis
 }
 
 func (svc *SecretsService) DeleteSecret(ctx context.Context, req *structurev1.DeleteSecretRequest) (*structurev1.DeleteSecretResponse, error) {
+	// 行级授权（ADR-0035）：此前 (project_id,name) 直删零校验——知道
+	// project id 即可删别队 secret。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Secrets.SoftDelete(ctx, tx, req.GetProjectId(), req.GetName())
@@ -464,6 +514,10 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 	if len(req.GetContent()) > maxConfigBytes {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "content: exceeds the %d-byte per-config limit", maxConfigBytes)
 	}
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	// 数量配额按"Project 内配置名数"计（新名才占新位；同名 put 是新版本）
 	// ——受理位检查（事务内读，ADR-0024：与写同事务，无先读后写 TOCTOU）。
 	row := &configrepo.Config{ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Content: []byte(req.GetContent())}
@@ -488,6 +542,10 @@ func (svc *ConfigsService) PutConfig(ctx context.Context, req *structurev1.PutCo
 }
 
 func (svc *ConfigsService) GetConfig(ctx context.Context, req *structurev1.GetConfigRequest) (*structurev1.GetConfigResponse, error) {
+	// 行级授权（ADR-0035）：Config 回读 env 内容——跨租户读面的大头。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	var (
 		row *configrepo.Config
 		err error
@@ -504,6 +562,9 @@ func (svc *ConfigsService) GetConfig(ctx context.Context, req *structurev1.GetCo
 }
 
 func (svc *ConfigsService) ListConfigs(ctx context.Context, req *structurev1.ListConfigsRequest) (*structurev1.ListConfigsResponse, error) {
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	// 列表面只回 Project 内最新版（版本明细随版本面扩展）。
 	list, err := svc.s.Configs.LatestByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
 	if err != nil {
@@ -526,6 +587,10 @@ type VolumesService struct {
 func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.CreateVolumeRequest) (*structurev1.CreateVolumeResponse, error) {
 	if req.GetProjectId() == "" || req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
+	}
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
 	}
 	row := &volume.Volume{
 		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(),
@@ -551,6 +616,9 @@ func (svc *VolumesService) CreateVolume(ctx context.Context, req *structurev1.Cr
 }
 
 func (svc *VolumesService) ListVolumes(ctx context.Context, req *structurev1.ListVolumesRequest) (*structurev1.ListVolumesResponse, error) {
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Volumes.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
 	if err != nil {
 		return nil, mapStateError(err, "volume")
@@ -572,6 +640,10 @@ type NetworksService struct {
 func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.CreateNetworkRequest) (*structurev1.CreateNetworkResponse, error) {
 	if req.GetProjectId() == "" || req.GetName() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
+	}
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
 	}
 	row := &networkrepo.Network{
 		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), EgressNone: req.GetEgressNone(),
@@ -596,6 +668,9 @@ func (svc *NetworksService) CreateNetwork(ctx context.Context, req *structurev1.
 }
 
 func (svc *NetworksService) ListNetworks(ctx context.Context, req *structurev1.ListNetworksRequest) (*structurev1.ListNetworksResponse, error) {
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Networks.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
 	if err != nil {
 		return nil, mapStateError(err, "network")
@@ -655,15 +730,18 @@ func (svc *NetworksService) loadPeerNetwork(ctx context.Context, networkID strin
 }
 
 // requirePeerReceiverTeam 校验调用方归属于接收方团队（ADR-0013：网络
-// peer 的批准权在网络归属项目所属团队）。调用方身份从 authn ctx 取
-// （Token 的 Team 轴，CreateUser/CreateToken 同源）；网络归属项目的 Team
-// 实取自 project 行。不等即 E_FORBIDDEN——P1 修复前按行 ID 直批不比对
-// 归属，任意项目的持有者可单向自助批准跨项目挂靠（越权网络接入）。
-// declare 侧不动：挂靠方本就任意项目发起（声明≠批准）。
+// peer 的批准权在网络归属项目所属团队；ADR-0035 owner 豁免）。调用方身份
+// 从 authn ctx 取（Token 的 Team 轴）；网络归属项目的 Team 实取自 project
+// 行。不等即 E_FORBIDDEN——P1 修复前按行 ID 直批不比对归属，任意项目的
+// 持有者可单向自助批准跨项目挂靠（越权网络接入）。declare 侧不动：挂靠方
+// 本就任意项目发起（声明≠批准；归属校验在挂靠方自己的 Project 上）。
 func (svc *NetworksService) requirePeerReceiverTeam(ctx context.Context, net *networkrepo.Network) error {
-	id, ok := authn.FromContext(ctx)
-	if !ok {
-		return apperr.New("E_UNAUTHENTICATED", "present a valid token to approve a network peer")
+	teamID, owner, err := callerTeam(ctx)
+	if err != nil {
+		return err
+	}
+	if owner {
+		return nil
 	}
 	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), net.ProjectID)
 	if err != nil {
@@ -672,12 +750,36 @@ func (svc *NetworksService) requirePeerReceiverTeam(ctx context.Context, net *ne
 	if proj.Deleted() {
 		return apperr.New("E_NOT_FOUND", "project %s not found", net.ProjectID)
 	}
-	if proj.TeamID != id.TeamID {
+	if proj.TeamID != teamID {
 		return apperr.New("E_FORBIDDEN",
 			"only a token of team %s (owning the network's project) can approve this peer declaration", proj.TeamID).
 			WithSuggestion("Ask the receiving project's team to approve the declaration, or revoke it.")
 	}
 	return nil
+}
+
+// authorizePeerSide 校验调用方属于声明任一侧的 Team（ADR-0035）：网络归属
+// 方（receiver）或挂靠方（peer project）都可视/撤声明——声明是双边事实。
+// 网络行已删时只按挂靠方判定（撤销语义本就覆盖"接收网络已逝"）。
+func (svc *NetworksService) authorizePeerSide(ctx context.Context, p *networkpeer.Peer) error {
+	teamID, owner, err := callerTeam(ctx)
+	if err != nil {
+		return err
+	}
+	if owner {
+		return nil
+	}
+	if net, nerr := svc.s.Networks.GetByID(ctx, svc.s.DB.Runner(), p.NetworkID); nerr == nil {
+		if proj, perr := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), net.ProjectID); perr == nil && !proj.Deleted() && proj.TeamID == teamID {
+			return nil
+		}
+	}
+	if err := svc.s.authorizeProjectID(ctx, p.PeerProjectID); err == nil {
+		return nil
+	}
+	return apperr.New("E_FORBIDDEN",
+		"peer declaration %s belongs to another team; only a token of either side's team can view or revoke it", p.ID).
+		WithSuggestion("Check the declaration id with the team that created it.")
 }
 
 // DeclareNetworkPeer 是挂靠方声明（pending 行）：peer 项目请求挂靠目标
@@ -694,6 +796,11 @@ func (svc *NetworksService) DeclareNetworkPeer(ctx context.Context, req *structu
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"peer_project_id %s owns network %q; same-project attachment uses the project-local network name",
 			req.GetPeerProjectId(), net.Name)
+	}
+	// 行级授权（ADR-0035）：挂靠方发起声明——Peer Project 必须归属调用方
+	// Team（receiver 侧由 Approve 的 requirePeerReceiverTeam 把守）。
+	if err := svc.s.authorizeProjectID(ctx, req.GetPeerProjectId()); err != nil {
+		return nil, err
 	}
 	p := &networkpeer.Peer{ID: newID(), NetworkID: net.ID, PeerProjectID: req.GetPeerProjectId()}
 	err = svc.s.commit(ctx, writeFact{
@@ -761,6 +868,10 @@ func (svc *NetworksService) RevokeNetworkPeer(ctx context.Context, req *structur
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
 	}
+	// 行级授权（ADR-0035）：撤销是任一侧的权利——双边归属判定。
+	if err := svc.authorizePeerSide(ctx, p); err != nil {
+		return nil, err
+	}
 	if p.State == networkpeer.StateRevoked {
 		return &structurev1.RevokeNetworkPeerResponse{Peer: networkPeerMsg(p, nil)}, nil // 幂等
 	}
@@ -798,11 +909,15 @@ func (svc *NetworksService) GetNetworkPeer(ctx context.Context, req *structurev1
 	if err != nil {
 		return nil, mapStateError(err, "network peer")
 	}
+	if err := svc.authorizePeerSide(ctx, p); err != nil {
+		return nil, err
+	}
 	return &structurev1.GetNetworkPeerResponse{Peer: networkPeerMsg(p, svc.peerNetProjection(ctx, p))}, nil
 }
 
 // ListNetworkPeers 新→旧分页（ADR-0026 after_* + limit）。network_id /
-// peer_project_id 过滤可选（接收方与挂靠方两侧视图同面）。
+// peer_project_id 过滤可选（接收方与挂靠方两侧视图同面）。行级过滤
+// （ADR-0035）：非 owner 只见本 Team 任一侧在场的声明。
 func (svc *NetworksService) ListNetworkPeers(ctx context.Context, req *structurev1.ListNetworkPeersRequest) (*structurev1.ListNetworkPeersResponse, error) {
 	list, err := svc.s.NetworkPeers.List(ctx, svc.s.DB.Runner(),
 		req.GetNetworkId(), req.GetPeerProjectId(), req.GetAfterPeerId(), int(req.GetLimit()))
@@ -811,9 +926,20 @@ func (svc *NetworksService) ListNetworkPeers(ctx context.Context, req *structure
 	}
 	out := &structurev1.ListNetworkPeersResponse{}
 	for i := range list {
-		out.Peers = append(out.Peers, networkPeerMsg(&list[i], svc.peerNetProjection(ctx, &list[i])))
+		p := &list[i]
+		if !svc.peerVisibleToCaller(ctx, p) {
+			continue
+		}
+		out.Peers = append(out.Peers, networkPeerMsg(p, svc.peerNetProjection(ctx, p)))
 	}
 	return out, nil
+}
+
+// peerVisibleToCaller 是 List 面的单行归属判定（owner 恒可见；网络已删的
+// 行按挂靠方一侧判定）。判定失败按不可见处理——List 面不因解析故障放大
+// 为整页错误（行级执法 fail-closed：未见即拒）。
+func (svc *NetworksService) peerVisibleToCaller(ctx context.Context, p *networkpeer.Peer) bool {
+	return svc.authorizePeerSide(ctx, p) == nil
 }
 
 // peerNetProjection 读声明指向的网络行（读投影便捷字段；行已删 → 空值，

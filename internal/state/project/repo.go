@@ -84,6 +84,27 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Project, error) {
 	return out, rows.Err()
 }
 
+// ListByTeam 返回 Team 内全部活跃行（ADR-0035 行级授权的 List 面过滤锚；
+// ListProjects 非 owner 消费）。
+func (r *Repo) ListByTeam(ctx context.Context, run state.Runner, teamID string) ([]Project, error) {
+	rows, err := run.QueryContext(ctx, `
+		SELECT id, name, team_id, created_at, updated_at, deleted_at
+		FROM projects WHERE deleted_at = '' AND team_id = ? ORDER BY id`, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Project
+	for rows.Next() {
+		var p Project
+		if err := rows.Scan(&p.ID, &p.Name, &p.TeamID, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // SoftDelete 落 tombstone（四件一拍的 tombstone 件；Outbox/审计由调用方
 // 同事务组合）。幂等：已删行不报错。
 func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {

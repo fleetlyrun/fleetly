@@ -131,6 +131,16 @@ type wrappedStream struct {
 
 func (w *wrappedStream) Context() context.Context { return w.ctx }
 
+// withRequestIdentity 注入身份 + 审计 Team 轴（ADR-0035：已认证请求的
+// 审计行 Team 从调用方身份统一铸入；匿名面不标注——审计行落 ”=平台级）。
+func withRequestIdentity(ctx context.Context, id *Identity) context.Context {
+	ctx = WithIdentity(ctx, id)
+	if id != nil {
+		ctx = audit.WithTeam(ctx, id.TeamID)
+	}
+	return ctx
+}
+
 // guard 是执法主体：解析 → 面档判定 → scope 检查 → identity 注入。
 func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.Context, error) {
 	policy, ok := a.policy.Get(fullMethod)
@@ -149,7 +159,7 @@ func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.C
 		if credErr != nil {
 			id = nil
 		}
-		return WithIdentity(ctx, id), nil
+		return withRequestIdentity(ctx, id), nil
 	case authz.AccessServer:
 		if credErr != nil {
 			return nil, credErr
@@ -171,7 +181,7 @@ func (a *Authenticator) guard(ctx context.Context, fullMethod string) (context.C
 				WithContext("required_scope", rule.Resource+":"+string(rule.Op))
 		}
 		a.touchLastUsed(id)
-		return WithIdentity(ctx, id), nil
+		return withRequestIdentity(ctx, id), nil
 	default:
 		// END_USER/PERMISSION/SYSTEM 档 v1 未启用：fail-closed 拒。
 		return nil, apperr.New("E_FORBIDDEN", "this method is not available in the current release").

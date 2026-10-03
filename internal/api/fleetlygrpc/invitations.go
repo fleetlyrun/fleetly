@@ -50,6 +50,13 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 	if teamID == "" {
 		teamID = identity.DefaultTeamID
 	}
+	// Team 轴（ADR-0035 决策 5）：邀请入队的目标 Team 缺省 = 调用方 Team；
+	// 显式他队目标仅平台 owner 可（跨队邀请 = 跨队 membership 提权面）。
+	resolvedTeam, err := resolveTargetTeam(ctx, teamID)
+	if err != nil {
+		return nil, err
+	}
+	teamID = resolvedTeam
 	material, err := identity.NewInvitation()
 	if err != nil {
 		return nil, apperr.New("E_INTERNAL", "invitation material generation failed")
@@ -75,13 +82,22 @@ func (svc *InvitationsService) CreateInvitation(ctx context.Context, req *identi
 	return &identityv1.CreateInvitationResponse{Invitation: invitationMsg(inv), Secret: material.Secret}, nil
 }
 
+// ListInvitations 非 owner 按 Team 过滤（ADR-0035：邀请密文哈希与目标队
+// 是治理目录面）。
 func (svc *InvitationsService) ListInvitations(ctx context.Context, _ *identityv1.ListInvitationsRequest) (*identityv1.ListInvitationsResponse, error) {
+	teamID, owner, err := callerTeam(ctx)
+	if err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Invitations.List(ctx, svc.s.DB.Runner())
 	if err != nil {
 		return nil, mapStateError(err, "invitation")
 	}
 	out := &identityv1.ListInvitationsResponse{}
 	for i := range list {
+		if !owner && list[i].TeamID != teamID {
+			continue
+		}
 		out.Invitations = append(out.Invitations, invitationMsg(&list[i]))
 	}
 	return out, nil

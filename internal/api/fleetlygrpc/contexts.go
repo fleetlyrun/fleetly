@@ -147,6 +147,10 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 	if protocol == "" {
 		protocol = capability.ProtocolHTTP
 	}
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	tlsMode := req.GetTlsMode()
 	if tlsMode == "" {
 		tlsMode = "auto"
@@ -179,7 +183,13 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 	return &edgev1.CreateRouteResponse{Route: routeMsg(*row)}, nil
 }
 
+// ListRoutes 非 owner 按 Team 过滤（ADR-0035 List 面：行级过滤在内存比对
+// 调用方 Team 的 project 集合；owner 全量）。
 func (svc *RoutesService) ListRoutes(ctx context.Context, req *edgev1.ListRoutesRequest) (*edgev1.ListRoutesResponse, error) {
+	teamProjects, all, err := svc.s.teamProjectFilter(ctx)
+	if err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Routes.List(ctx, svc.s.DB.Runner())
 	if err != nil {
 		return nil, mapStateError(err, "route")
@@ -189,12 +199,19 @@ func (svc *RoutesService) ListRoutes(ctx context.Context, req *edgev1.ListRoutes
 		if req.GetProjectId() != "" && r.ProjectID != req.GetProjectId() {
 			continue
 		}
+		if !all && !teamProjects[r.ProjectID] {
+			continue
+		}
 		out.Routes = append(out.Routes, routeMsg(r))
 	}
 	return out, nil
 }
 
 func (svc *RoutesService) DeleteRoute(ctx context.Context, req *edgev1.DeleteRouteRequest) (*edgev1.DeleteRouteResponse, error) {
+	// 行级授权（ADR-0035）：此前 ID 直删零校验。
+	if err := svc.s.authorizeRouteID(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	err := svc.s.commit(ctx, writeFact{
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Routes.SoftDelete(ctx, tx, req.GetId())
@@ -355,7 +372,8 @@ type LogsService struct {
 	s *Services
 }
 
-// StreamLogs 转发 RuntimeLogs 流（appID → 隔离域解析经 app 行）。
+// StreamLogs 转发 RuntimeLogs 流（appID → 隔离域解析经 app 行 + project 行
+// ——Team 轴实取，不再硬编码 default；ADR-0035 行级授权同调用点）。
 func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
 	logs, ok := svc.s.Runtime.(capability.RuntimeLogs)
 	if !ok {
@@ -364,11 +382,21 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 	if req.GetAppId() == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
 	}
-	appRow, err := svc.s.Apps.Get(stream.Context(), svc.s.DB.Runner(), req.GetAppId())
+	ctx := stream.Context()
+	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), req.GetAppId())
 	if err != nil {
 		return mapStateError(err, "app")
 	}
-	q, err := logQueryFromRequest(appRow, req)
+	// 行级授权（ADR-0035）+ NamespaceRef.Team 实取（App → Project 行，
+	// resolveBackend 同族——api 面硬编码 "default" 漏网在此闭合）。
+	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), appRow.ProjectID)
+	if err != nil {
+		return mapStateError(err, "project")
+	}
+	if err := svc.s.authorizeTeamForProject(ctx, proj); err != nil {
+		return err
+	}
+	q, err := logQueryFromRequest(proj.TeamID, appRow, req)
 	if err != nil {
 		return err
 	}
@@ -381,10 +409,11 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 
 // logQueryFromRequest 把 RPC 请求翻译为 RuntimeLogs 查询：process 过滤经
 // 投影公式合成 Workload ID（公式真源 engine.WorkloadID，不散拼）；时间窗
-// RFC3339（空 = 不限，坏值精确拒绝）。
-func logQueryFromRequest(appRow *app.App, req *telemetryv1.StreamLogsRequest) (capability.LogQuery, error) {
+// RFC3339（空 = 不限，坏值精确拒绝）。team 是 App 归属 Project 的 Team 轴
+// （ADR-0028 resolveBackend 同族——调用方实取传入）。
+func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLogsRequest) (capability.LogQuery, error) {
 	q := capability.LogQuery{
-		Namespace: capability.NamespaceRef{Team: "default", Project: appRow.ProjectID, App: appRow.ID},
+		Namespace: capability.NamespaceRef{Team: team, Project: appRow.ProjectID, App: appRow.ID},
 		TailLines: req.GetTailLines(),
 		Follow:    req.GetFollow(),
 	}

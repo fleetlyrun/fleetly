@@ -63,6 +63,16 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 	return scanApp(row)
 }
 
+// GetAnyByID 按 ID 读行（含 tombstone；ADR-0035 授权专用面——App 删除后
+// ListDeployments/ListRevisions/ListBuilds 等审计型读面仍须过行级授权，
+// 归属判定需要已删行的 project_id；不改变 Get 的活跃行语义）。
+func (r *Repo) GetAnyByID(ctx context.Context, run state.Runner, id string) (*App, error) {
+	row := run.QueryRowContext(ctx, `
+		SELECT id, project_id, name, created_at, updated_at, deleted_at
+		FROM apps WHERE id = ?`, id)
+	return scanApp(row)
+}
+
 // ListByProject 返回 Project 内全部活跃 App。
 func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]App, error) {
 	rows, err := run.QueryContext(ctx, `

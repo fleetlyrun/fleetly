@@ -69,6 +69,11 @@ func (svc *HooksService) ReceiveWebhook(ctx context.Context, req *deliveryv1.Rec
 	if err != nil {
 		return nil, apperr.New("E_UNAUTHENTICATED", "invalid hook token")
 	}
+	// 审计 Team 轴（ADR-0035 决策 6）：PUBLIC 面无调用方身份——按 App 归属
+	// Project 的 Team 标注（hook 触发的部署/冻结审计行归属资源 Team）。
+	if proj, perr := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), appRow.ProjectID); perr == nil {
+		ctx = audit.WithTeam(ctx, proj.TeamID)
+	}
 
 	secret, err := svc.s.Cipher.Open(h.SecretCiphertext)
 	if err != nil {

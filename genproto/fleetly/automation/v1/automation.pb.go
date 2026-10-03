@@ -1178,11 +1178,14 @@ func (x *GetRunResponse) GetRun() *Run {
 
 type ListRunsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// task_id 过滤（空 = 全部 Run——高频面建议带过滤，torchwood 池规模）。
+	// task_id 过滤（与 project_id 二选一——无过滤的全平台 Run 列表是跨 Team
+	// 泄漏面，ADR-0035 起强制过滤）。
 	TaskId string `protobuf:"bytes,1,opt,name=task_id,json=taskId,proto3" json:"task_id,omitempty"`
 	// after_run_id 游标（上一页末条 id；空 = 首页）。
-	AfterRunId    string `protobuf:"bytes,2,opt,name=after_run_id,json=afterRunId,proto3" json:"after_run_id,omitempty"`
-	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	AfterRunId string `protobuf:"bytes,2,opt,name=after_run_id,json=afterRunId,proto3" json:"after_run_id,omitempty"`
+	Limit      int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	// project_id 过滤（ADR-0035 only-add；与 task_id 互斥）。
+	ProjectId     string `protobuf:"bytes,4,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1236,6 +1239,13 @@ func (x *ListRunsRequest) GetLimit() int32 {
 		return x.Limit
 	}
 	return 0
+}
+
+func (x *ListRunsRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
 }
 
 type ListRunsResponse struct {
@@ -2264,12 +2274,14 @@ const file_fleetly_automation_v1_automation_proto_rawDesc = "" +
 	"\rGetRunRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\">\n" +
 	"\x0eGetRunResponse\x12,\n" +
-	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"b\n" +
+	"\x03run\x18\x01 \x01(\v2\x1a.fleetly.automation.v1.RunR\x03run\"\x81\x01\n" +
 	"\x0fListRunsRequest\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12 \n" +
 	"\fafter_run_id\x18\x02 \x01(\tR\n" +
 	"afterRunId\x12\x14\n" +
-	"\x05limit\x18\x03 \x01(\x05R\x05limit\"B\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x04 \x01(\tR\tprojectId\"B\n" +
 	"\x10ListRunsResponse\x12.\n" +
 	"\x04runs\x18\x01 \x03(\v2\x1a.fleetly.automation.v1.RunR\x04runs\" \n" +
 	"\x0eStopRunRequest\x12\x0e\n" +

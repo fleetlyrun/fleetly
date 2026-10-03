@@ -57,6 +57,10 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if svc.s.Cipher == nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
 	}
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 
 	id := newID()
 	url, err := engine.DatabaseConnectionURL(req.GetEngine(), id, mintDatabasePassword())
@@ -107,11 +111,17 @@ func (svc *DatabasesService) GetDatabase(ctx context.Context, req *structurev1.G
 	if err != nil {
 		return nil, mapStateError(err, "database")
 	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
+	}
 	return &structurev1.GetDatabaseResponse{Database: databaseMsg(row)}, nil
 }
 
 // ListDatabases 新→旧分页（ADR-0026 after_* + limit）。
 func (svc *DatabasesService) ListDatabases(ctx context.Context, req *structurev1.ListDatabasesRequest) (*structurev1.ListDatabasesResponse, error) {
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
 	list, err := svc.s.Databases.ListByProject(ctx, svc.s.DB.Runner(),
 		req.GetProjectId(), req.GetAfterDatabaseId(), int(req.GetLimit()))
 	if err != nil {
@@ -134,6 +144,9 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 	row, err := svc.s.Databases.Get(ctx, svc.s.DB.Runner(), req.GetId())
 	if err != nil {
 		return nil, mapStateError(err, "database")
+	}
+	if err := svc.s.authorizeProjectID(ctx, row.ProjectID); err != nil {
+		return nil, err
 	}
 	if err := svc.s.Engine.TeardownDatabase(ctx, req.GetId()); err != nil {
 		if errors.Is(err, state.ErrNotFound) {
