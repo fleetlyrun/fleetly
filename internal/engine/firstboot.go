@@ -26,7 +26,6 @@ import (
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
-	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
@@ -224,37 +223,31 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 	wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.FirstBootWaitGrace))
 	cursor := fmt.Sprintf("%d:%s", idx, taskID)
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		// 配额（ADR-0017 附录 A.1；含本 job 自占一位）：命中返回哨兵，调用方
-		// 转有界等待。
-		active, sum, err := e.tasks.StatsByProject(ctx, tx, row.ProjectID)
-		if err != nil {
-			return err
-		}
-		if active >= MaxTasksPerProject || sum+1 > MaxTaskConcurrencyPerProject {
-			return fmt.Errorf("%w: project %s active tasks %d, desired concurrency %d + 1",
-				ErrTaskQuota, row.ProjectID, active, sum)
-		}
-		if err := e.tasks.Create(ctx, tx, row); err != nil {
-			return err
-		}
-		if _, err := e.outbox.Append(ctx, tx, EventTaskCreated, "task", row.ID, TaskCreatedEventJSON(row)); err != nil {
-			return err
-		}
-		if err := e.audits.Append(ctx, tx, &audit.Entry{
-			ID: ulid.Make().String(), Source: audit.SourceSystem,
-			Action: "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
-		}); err != nil {
-			return err
-		}
-		// 游标推进 + 等待截止（原地迁移：无状态事件；审计随 transit 落）。
-		if err := e.transit(ctx, tx, d,
-			[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
-			func(m *deployment.Deployment) { m.FirstBoot, m.ObserveDeadline = cursor, wait }); err != nil {
-			return err
-		}
-		_, err = e.outbox.Append(ctx, tx, eventFirstBootJobFired, "deployment", d.ID,
-			firstBootJobEventPayloadJSON(d, idx, job.GetName(), taskID))
-		return err
+		return e.commitWrite(ctx, tx, writeFact{
+			// 配额（ADR-0017 附录 A.1；含本 job 自占一位）：命中返回哨兵，
+			// 调用方转有界等待。
+			checks: []func(ctx context.Context, tx *sql.Tx) error{
+				func(ctx context.Context, tx *sql.Tx) error { return e.taskSpawnQuota(ctx, tx, row.ProjectID, 1) },
+			},
+			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
+			events: []func() eventFact{func() eventFact {
+				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row)}
+			}},
+			audits: []auditFact{{action: "task.create", resource: "task/" + row.ID, afterFP: row.Form}},
+			steps: []writeStep{{
+				// 游标推进 + 等待截止（原地迁移：无状态事件；审计随 transit
+				// 落）+ first_boot_job 事实事件（部署→Task 因果链）。
+				write: func(ctx context.Context, tx *sql.Tx) error {
+					return e.transit(ctx, tx, d,
+						[]deployment.State{deployment.StateReleasing}, deployment.StateReleasing,
+						func(m *deployment.Deployment) { m.FirstBoot, m.ObserveDeadline = cursor, wait })
+				},
+				events: []func() eventFact{func() eventFact {
+					return eventFact{name: eventFirstBootJobFired, aggregate: "deployment", id: d.ID,
+						payload: firstBootJobEventPayloadJSON(d, idx, job.GetName(), taskID)}
+				}},
+			}},
+		})
 	})
 	if err != nil {
 		return nil, err

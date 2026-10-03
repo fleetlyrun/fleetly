@@ -17,7 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
-	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/upload"
@@ -93,20 +92,16 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	e.buildInputMu.Unlock()
 
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := e.builds.Create(ctx, tx, &build.Build{
+		queued := &build.Build{
 			ID: buildID, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
-		}); err != nil {
-			return err
 		}
-		if _, err := e.outbox.Append(ctx, tx, eventBuildState(build.StateQueued), "build", buildID,
-			buildEventPayloadJSON(&build.Build{
-				ID: buildID, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
-			})); err != nil {
-			return err
-		}
-		return e.audits.Append(ctx, tx, &audit.Entry{
-			ID: ulid.Make().String(), Source: audit.SourceSystem,
-			Action: "build.create", Resource: "build/" + buildID,
+		return e.commitWrite(ctx, tx, writeFact{
+			write: func(ctx context.Context, tx *sql.Tx) error { return e.builds.Create(ctx, tx, queued) },
+			events: []func() eventFact{func() eventFact {
+				return eventFact{name: eventBuildState(build.StateQueued), aggregate: "build", id: buildID,
+					payload: buildEventPayloadJSON(queued)}
+			}},
+			audits: []auditFact{{action: "build.create", resource: "build/" + buildID}},
 		})
 	})
 	if err != nil {

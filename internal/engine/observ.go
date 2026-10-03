@@ -17,24 +17,6 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/node"
 )
 
-// transitAndReload 是驱动路径的迁移入口：自开事务完成四件一拍并返回
-// 刷新后的行（drive 循环据此链式推进）。
-func (e *Engine) transitAndReload(ctx context.Context, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) (*deployment.Deployment, error) {
-	var fresh *deployment.Deployment
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := e.transit(ctx, tx, d, from, to, mut); err != nil {
-			return err
-		}
-		var err error
-		fresh, err = e.deployments.Get(ctx, tx, d.ID)
-		return err
-	})
-	if err != nil {
-		return nil, err
-	}
-	return fresh, nil
-}
-
 // loadSpec 反序列化 Revision 冻结体（protojson blob）。ctx 透传取消链
 // （Q-6：驱动/回放路径的关停可取消，不再内嵌 Background 脱链）。
 func (e *Engine) loadSpec(ctx context.Context, revID string) (*specv1.AppSpec, error) {

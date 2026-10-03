@@ -2,17 +2,13 @@ package engine
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-
 	"github.com/fleetlyrun/fleetly/internal/capability"
-	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 )
 
@@ -297,47 +293,7 @@ func (e *Engine) executeBuild(b *build.Build) {
 	e.buildLoop.Kick() // 释放并发位，立即拾取下一个
 }
 
-// transitBuild 是 Build 的四件一拍（CAS + build.<state> 事件 + 审计）。
-func (e *Engine) transitBuild(ctx context.Context, b *build.Build, from []build.State, to build.State, mut func(*build.Build)) (*build.Build, error) {
-	var fresh *build.Build
-	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := e.builds.Transit(ctx, tx, b.ID, from, to, mut); err != nil {
-			return err
-		}
-		var err error
-		fresh, err = e.builds.Get(ctx, tx, b.ID)
-		if err != nil {
-			return err
-		}
-		if fresh.State != to || !buildStateIn(from, to) {
-			if _, err := e.outbox.Append(ctx, tx, eventBuildState(to), "build", b.ID, buildEventPayloadJSON(fresh)); err != nil {
-				return err
-			}
-		}
-		return e.audits.Append(ctx, tx, &audit.Entry{
-			ID: ulid.Make().String(), Source: audit.SourceSystem,
-			Action: "build.transit", Resource: "build/" + b.ID,
-			AfterFP: string(fresh.State),
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	if fresh.State.Terminal() {
-		// 终态登记触发超龄缓冲回收（frames map 只增不清会泄漏，N0.1 P2-1）。
-		e.buildLogs.markTerminal(b.ID)
-	}
-	return fresh, nil
-}
-
-func buildStateIn(set []build.State, s build.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
+// transitBuild（Build 四件一）已收口至 transition.go。
 
 func isContextTimeout(ctx context.Context, err error) bool {
 	return ctx.Err() != nil && (err == context.DeadlineExceeded || strings.Contains(err.Error(), "context deadline exceeded"))

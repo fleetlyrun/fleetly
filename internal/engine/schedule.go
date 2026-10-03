@@ -28,9 +28,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
-	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/state"
-	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/schedule"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
@@ -99,17 +97,21 @@ func (e *Engine) fireSchedule(ctx context.Context, s *schedule.Schedule, now tim
 }
 
 // skipSchedule 处理一次跳拍：Fire CAS 推进 next_fire_at + schedule.skipped
-// 事件（同事务；CAS 失败 = 另一拍先落，静默让位）。
+// 事件（同事务；CAS 失败 = 另一拍先落，静默让位）。跳拍是"未发生"事实
+// 而非动作，不留审计。
 func (e *Engine) skipSchedule(ctx context.Context, s *schedule.Schedule, next, reason string) {
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
-		if err := e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, next, s.LastTaskID); err != nil {
-			return err
-		}
-		skipped := *s
-		skipped.NextFireAt = next
-		_, err := e.outbox.Append(ctx, tx, eventScheduleSkipped, "schedule", s.ID,
-			scheduleEventPayloadJSON(&skipped, "", reason))
-		return err
+		return e.commitWrite(ctx, tx, writeFact{
+			write: func(ctx context.Context, tx *sql.Tx) error {
+				return e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, next, s.LastTaskID)
+			},
+			events: []func() eventFact{func() eventFact {
+				skipped := *s
+				skipped.NextFireAt = next
+				return eventFact{name: eventScheduleSkipped, aggregate: "schedule", id: s.ID,
+					payload: scheduleEventPayloadJSON(&skipped, "", reason)}
+			}},
+		})
 	})
 	if err != nil && !errors.Is(err, state.ErrConflict) {
 		e.log.Error("schedule fire: skip", "schedule", s.ID, "reason", reason, "err", err)
@@ -190,47 +192,33 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, so
 	fired := *s
 	fired.NextFireAt, fired.LastTaskID = nextFireAt, taskID
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		// 配额检查（含本拍自占一位；ADR-0017 附录 A.1）：超限返回哨兵——
-		// 到期拍调用方转 skip，手动拍调用方诚实拒绝。
-		active, sum, err := e.tasks.StatsByProject(ctx, tx, s.ProjectID)
-		if err != nil {
-			return err
-		}
-		if active >= MaxTasksPerProject || sum+1 > MaxTaskConcurrencyPerProject {
-			return fmt.Errorf("%w: project %s active tasks %d, desired concurrency %d + 1",
-				ErrTaskQuota, s.ProjectID, active, sum)
-		}
-		if err := e.tasks.Create(ctx, tx, row); err != nil {
-			return err
-		}
-		if _, err := e.outbox.Append(ctx, tx, EventTaskCreated, "task", row.ID, TaskCreatedEventJSON(row)); err != nil {
-			return err
-		}
-		if err := e.audits.Append(ctx, tx, &audit.Entry{
-			ID: ulid.Make().String(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "task.create", Resource: "task/" + row.ID, AfterFP: row.Form,
-		}); err != nil {
-			return err
-		}
-		if source == ScheduleSourceCron {
-			if err := e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, nextFireAt, taskID); err != nil {
-				return err
-			}
-		} else {
-			// 手动拍的 CAS 锚（B12 P3-4）：fromLastTaskID = 触发时读行的旧
-			// 值——并发双拍输家的锚失配 → ErrConflict 整单回滚（Task 行不
-			// 落孤账），至多一铸。
-			if err := e.schedules.RecordFire(ctx, tx, s.ID, s.LastTaskID, taskID); err != nil {
-				return err
-			}
-		}
-		if _, err := e.outbox.Append(ctx, tx, eventScheduleFired, "schedule", s.ID,
-			scheduleEventPayloadJSON(&fired, source, "")); err != nil {
-			return err
-		}
-		return e.audits.Append(ctx, tx, &audit.Entry{
-			ID: ulid.Make().String(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "schedule.fire", Resource: "schedule/" + s.ID, AfterFP: taskID,
+		return e.commitWrite(ctx, tx, writeFact{
+			// 配额检查（含本拍自占一位；ADR-0017 附录 A.1）：超限返回哨兵——
+			// 到期拍调用方转 skip，手动拍调用方诚实拒绝。
+			checks: []func(ctx context.Context, tx *sql.Tx) error{
+				func(ctx context.Context, tx *sql.Tx) error { return e.taskSpawnQuota(ctx, tx, s.ProjectID, 1) },
+			},
+			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
+			events: []func() eventFact{func() eventFact {
+				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row)}
+			}},
+			audits: []auditFact{{action: "task.create", resource: "task/" + row.ID, afterFP: row.Form, actorCtx: true}},
+			steps: []writeStep{{
+				write: func(ctx context.Context, tx *sql.Tx) error {
+					if source == ScheduleSourceCron {
+						return e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, nextFireAt, taskID)
+					}
+					// 手动拍的 CAS 锚（B12 P3-4）：fromLastTaskID = 触发时读行
+					// 的旧值——并发双拍输家的锚失配 → ErrConflict 整单回滚
+					//（Task 行不落孤账），至多一铸。
+					return e.schedules.RecordFire(ctx, tx, s.ID, s.LastTaskID, taskID)
+				},
+				events: []func() eventFact{func() eventFact {
+					return eventFact{name: eventScheduleFired, aggregate: "schedule", id: s.ID,
+						payload: scheduleEventPayloadJSON(&fired, source, "")}
+				}},
+				audits: []auditFact{{action: "schedule.fire", resource: "schedule/" + s.ID, afterFP: taskID, actorCtx: true}},
+			}},
 		})
 	})
 	if err != nil {

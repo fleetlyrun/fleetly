@@ -8,9 +8,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
-	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/state"
-	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 )
 
@@ -157,24 +155,26 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			// driveFirstBootJobs 见 done 游标直接进 carrier 子相位。
 			d.FirstBoot = deployment.FirstBootDone
 		}
-		if err := e.deployments.Create(ctx, tx, d); err != nil {
-			return err
-		}
-		if err := e.emitDeploymentEvent(ctx, tx, d); err != nil {
-			return err
-		}
-		out = d
-		// 审计带来源标注（transit 的 AfterFP 后缀同款形态）：Kind 不再是
-		// 死参数——回放部署在审计流里可辨（"; kind=rollback"）。
+		// 6. 受理落行 + 事件 + 审计（commitWrite 序列真源）。审计带来源
+		// 标注（transit 的 AfterFP 后缀同款形态）：Kind 不再是死参数——
+		// 回放部署在审计流里可辨（"; kind=rollback"）。
 		afterFP := d.ToRevision
 		if req.Kind != "" {
 			afterFP = fmt.Sprintf("%s; kind=%s", d.ToRevision, req.Kind)
 		}
-		return e.audits.Append(ctx, tx, &audit.Entry{
-			ID: ulid.Make().String(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx),
-			Action: "deployment.create", Resource: "deployment/" + d.ID,
-			AfterFP: afterFP,
-		})
+		if err := e.commitWrite(ctx, tx, writeFact{
+			write: func(ctx context.Context, tx *sql.Tx) error {
+				return e.deployments.Create(ctx, tx, d)
+			},
+			events: []func() eventFact{func() eventFact {
+				return eventFact{name: eventStateName(d.State), aggregate: "deployment", id: d.ID, payload: deploymentEventPayloadJSON(d)}
+			}},
+			audits: []auditFact{{action: "deployment.create", resource: "deployment/" + d.ID, afterFP: afterFP, actorCtx: true}},
+		}); err != nil {
+			return err
+		}
+		out = d
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -243,51 +243,7 @@ func (e *Engine) lastDeployedRevision(ctx context.Context, tx *sql.Tx, appID str
 	return "", nil
 }
 
-// transit 是四件一拍的组合点（状态 CAS + deployment.<state> 事件 + 审计；
-// 部署记录无 tombstone）。tx 由调用方事务传入。原地迁移（from 含 to，
-// 仅落 deadline/generation 等伴生字段）不发事件——事件是状态迁移的既成
-// 事实，状态未变不是迁移；审计照落。
-//
-// 审计 AfterFP（C5）：回放收口会把 to_revision 改写为实际运行的回放
-// 目标（终态事实修正）——该改写随审计指纹带出（"; to_revision=<id>"），
-// 消除"行上改了、审计看不见"的弯折。
-func (e *Engine) transit(ctx context.Context, tx *sql.Tx, d *deployment.Deployment, from []deployment.State, to deployment.State, mut func(*deployment.Deployment)) error {
-	if err := e.deployments.Transit(ctx, tx, d.ID, from, to, mut); err != nil {
-		return err
-	}
-	fresh, err := e.deployments.Get(ctx, tx, d.ID)
-	if err != nil {
-		return err
-	}
-	if fresh.State != to || !stateIn(from, to) {
-		if err := e.emitDeploymentEvent(ctx, tx, fresh); err != nil {
-			return err
-		}
-	}
-	afterFP := string(fresh.State)
-	if fresh.ToRevision != d.ToRevision && fresh.ToRevision != "" {
-		afterFP = fmt.Sprintf("%s; to_revision=%s", fresh.State, fresh.ToRevision)
-	}
-	return e.audits.Append(ctx, tx, &audit.Entry{
-		ID: ulid.Make().String(), Source: audit.SourceSystem,
-		Action: "deployment.transit", Resource: "deployment/" + fresh.ID,
-		AfterFP: afterFP,
-	})
-}
-
-// stateIn 报告 to 是否在 from 集（原地迁移判定）。
-func stateIn(set []deployment.State, s deployment.State) bool {
-	for _, v := range set {
-		if v == s {
-			return true
-		}
-	}
-	return false
-}
-
-// emitDeploymentEvent 落 deployment.<state> 事件（事件名经 eventStateName
-// 映射，字面量锚定在 events.go）。
-func (e *Engine) emitDeploymentEvent(ctx context.Context, tx *sql.Tx, d *deployment.Deployment) error {
-	_, err := e.outbox.Append(ctx, tx, eventStateName(d.State), "deployment", d.ID, deploymentEventPayloadJSON(d))
-	return err
-}
+// transit（四件一的 Deployment 前门）与 transitAndReload 已收口至
+// transition.go——序列与规则（原地迁移不发事件、AfterFP 修正）单点拥有。
+// deployment 事件的发射面也随之前门化（eventStateName 字面量锚定在
+// events.go，usage 反扫不受影响）。
