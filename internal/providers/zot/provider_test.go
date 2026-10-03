@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -152,6 +153,9 @@ func TestManagedWorkloadsShape(t *testing.T) {
 	require.Len(t, w.Volumes, 1)
 	assert.Equal(t, "fleetly-registry-zot", w.Volumes[0].VolumeID)
 	assert.Equal(t, storageRoot, w.Volumes[0].Target)
+	// 数据面停止宽限：滚动替换（密码轮换/升级）不得落进编排器缺省 10s
+	// 硬杀窗（staging pgvector 同类事故实证，2026-10-03）。
+	assert.Equal(t, 60*time.Second, w.StopGrace)
 	assert.Empty(t, w.Networks, "managed registry must not attach project networks (B.1)")
 	require.Len(t, w.Command, 3)
 	// 入口是镜像 ENTRYPOINT 的绝对路径形态（zot-minimal 二进制名带平台

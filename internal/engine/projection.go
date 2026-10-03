@@ -249,6 +249,10 @@ func ProjectDatabase(s *specv1.DatabaseSpec, team, volumeName string, networks [
 		Env:      env,
 		Replicas: 1,
 		Networks: networks,
+		// 数据面停止宽限：pg/redis 干净关停（含恢复期）远超编排器缺省的
+		// 10s——滚动替换窗口硬杀会把 WAL/AOF 留在损坏态（staging pgvector
+		// 事故实证，2026-10-03）。60s 给足快速关停与检查点收口。
+		StopGrace: 60 * time.Second,
 		Ports: []capability.WorkloadPort{
 			{Port: tpl.Meta().Port, Protocol: capability.ProtocolTCP},
 		},

@@ -251,13 +251,26 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		// 经 Edge，见函数注释）。
 		EndpointSpec: endpointSpec(w.Publish),
 		// UpdateConfig 语义由平台 Deployment 状态机掌管（滚动与回滚 =
-		// Replay），编排器原生回滚不用（ADR-0005）。
+		// Replay），编排器原生回滚不用（ADR-0005）。顺序按数据面分流
+		// （rolloutOrder）：挂卷负载必须 stop-first——start-first 的新任务
+		// 与单副本卷钉住互斥，抢不到卷只会让 swarm 超时硬杀旧任务
+		// （staging pgvector WAL 损坏事故实证，2026-10-03）。
 		UpdateConfig: &swarm.UpdateConfig{
 			Parallelism:   1,
-			Order:         swarm.UpdateOrderStartFirst,
+			Order:         rolloutOrder(w),
 			FailureAction: swarm.UpdateFailureActionPause,
 		},
 	}
+}
+
+// rolloutOrder 把滚动顺序按数据面与否分流：挂卷负载 stop-first（数据卷
+// 单写者，先停旧再起新；硬杀窗见 toServiceSpec UpdateConfig 注释），无卷
+// 负载维持 start-first（先起新再停旧，无争用面、切换更平滑）。
+func rolloutOrder(w capability.Workload) swarm.UpdateOrder {
+	if len(w.Volumes) > 0 {
+		return swarm.UpdateOrderStopFirst
+	}
+	return swarm.UpdateOrderStartFirst
 }
 
 // restartPolicyCondition 把平台生命周期声明映射为 swarm 重启条件（ADR-0025

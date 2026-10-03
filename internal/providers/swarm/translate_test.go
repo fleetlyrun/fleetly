@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -214,6 +216,32 @@ func TestVolumeReadOnlyMountTranslation(t *testing.T) {
 	require.Len(t, spec.TaskTemplate.ContainerSpec.Mounts, 1)
 	assert.Equal(t, "/data", spec.TaskTemplate.ContainerSpec.Mounts[0].Target)
 	assert.True(t, spec.TaskTemplate.ContainerSpec.Mounts[0].ReadOnly)
+}
+
+// TestRolloutOrderByVolumePresence（staging pgvector WAL 事故回归钉，
+// 2026-10-03）：挂卷负载滚动必须 stop-first——start-first 的新任务与单副本
+// 卷钉住互斥，swarm 超时硬杀旧任务即数据损坏；无卷负载维持 start-first。
+// StopGrace → StopGracePeriod 的透传同批钉死（零值不设=编排器缺省 10s）。
+func TestRolloutOrderByVolumePresence(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", Database: "01JDB01"}
+
+	stateful := capability.Workload{
+		ID: "01JDB01", Process: "postgres", Image: "postgres:17",
+		StopGrace: 60e9, // 60s
+		Volumes:   []capability.VolumeMount{{VolumeID: "pg", Target: "/var/lib/postgresql/data"}},
+	}
+	spec := toServiceSpec(ns, stateful, capability.Generation(1), nil)
+	require.NotNil(t, spec.UpdateConfig)
+	assert.Equal(t, swarm.UpdateOrderStopFirst, spec.UpdateConfig.Order,
+		"volume-backed workloads must roll stop-first (start-first races the single-writer volume and gets the old task hard-killed)")
+	require.NotNil(t, spec.TaskTemplate.ContainerSpec.StopGracePeriod)
+	assert.Equal(t, 60*time.Second, *spec.TaskTemplate.ContainerSpec.StopGracePeriod)
+
+	stateless := capability.Workload{ID: "wl_01H", Process: "web", Image: "nginx:1"}
+	spec = toServiceSpec(ns, stateless, capability.Generation(1), nil)
+	require.NotNil(t, spec.UpdateConfig)
+	assert.Equal(t, swarm.UpdateOrderStartFirst, spec.UpdateConfig.Order)
+	assert.Nil(t, spec.TaskTemplate.ContainerSpec.StopGracePeriod, "zero StopGrace must stay unset (engine default, not provider-invented)")
 }
 
 func TestPlacementConstraintsLabelFormula(t *testing.T) {

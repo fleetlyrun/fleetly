@@ -207,6 +207,10 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 		Ports:    []capability.WorkloadPort{{Port: publishPort, Protocol: capability.ProtocolHTTP}},
 		Publish:  []capability.PortPublish{{PublishedPort: publishPort, TargetPort: publishPort}},
 		Replicas: 1,
+		// 数据面停止宽限：滚动替换（密码轮换/升级）窗口给足优雅收口，
+		// 编排器缺省 10s 硬杀窗对挂卷负载不安全（staging pgvector 同类
+		// 事故实证，2026-10-03）。
+		StopGrace: 60 * time.Second,
 		Volumes: []capability.VolumeMount{
 			{VolumeID: volumeID, Target: storageRoot},
 		},

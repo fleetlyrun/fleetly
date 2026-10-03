@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -86,6 +87,9 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	require.Len(t, w.Volumes, 1)
 	assert.Equal(t, tDatabaseName, w.Volumes[0].VolumeID, "volume name = database name formula")
 	assert.Equal(t, "/var/lib/postgresql/data", w.Volumes[0].Target)
+	// 数据面停止宽限（升级/轮换滚动替换的优雅收口窗）：编排器缺省 10s
+	// 硬杀窗会把 WAL 留在损坏态（staging pgvector 事故实证，2026-10-03）。
+	assert.Equal(t, 60*time.Second, w.StopGrace, "database workload must carry an explicit generous stop grace")
 	assert.Equal(t, "/run/secrets/"+dbtemplate.PasswordFile, w.Env["POSTGRES_PASSWORD_FILE"])
 	assert.Equal(t, int64(1), w.Replicas)
 	require.NotNil(t, w.Healthcheck)
