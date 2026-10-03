@@ -2,7 +2,7 @@
 
 | 状态 | 日期 | 关联 |
 |---|---|---|
-| 审查完成 + P0/P1 修复落地（九 commit `58f901d..2e4be81` + G204 nolint 收尾，全门禁绿） | 2026-10-03 | 五路独立子代理审查（架构一致性 / engine 正确性与性能 / Provider 层 / API 与 CLI 契约 / 安全对抗）；docs/plan/2026-09-30-feature-checklist.md F1.1~F1.15 |
+| 审查完成 + P0/P1 修复落地（九 commit `58f901d..2e4be81` + G204 nolint 收尾，全门禁绿）；遗留全清批落地（批 A~E 30 件，`801ebb9..caedcf1` 25 commit，全门禁绿） | 2026-10-03 | 五路独立子代理审查（架构一致性 / engine 正确性与性能 / Provider 层 / API 与 CLI 契约 / 安全对抗）；docs/plan/2026-09-30-feature-checklist.md F1.1~F1.15 |
 
 ## 审查结论
 
@@ -41,24 +41,26 @@ runbook 新增"端口暴露矩阵（操作者责任）"：9080/9081/9082/5000 �
 
 1. **[✓ 已修] per-Project/Team 行级授权整体缺席**（多条越权读写路径的共同根因；ADR-0028 已承认 v1 挂账）——ADR-0035（801ebb9）：受理位统一判定（资源归属 Team == 调用方 Team；default-Team owner 平台豁免）、Get/Delete/List/动词/写面全覆盖、ListRuns 强制过滤、审计 team 轴（迁移 00017）、apitest 跨 Team 验收矩阵。
 2. **[✓ 已修] zot 按租户隔离或 Edge 前置认证；控制面 TLS / 默认绑面收窄**——ADR-0036（0c8b9ce）：绑面四点可配置 + doctor 自证；per-Project 凭证按 ADR-0036 裁决推迟 N2。
-3. **[ ] 幂等键全局作用域（跨 App 复用同键静默拿到他人部署）——索引+查询加 app_id。**（收尾批 B10）
-4. **[ ] TCP/http 探针方言文档化或 busybox 兼容方言 / spec 覆写。**（收尾批 B8）
-5. **[ ] 进程名字符集白名单（P1-13）。**（收尾批 B9）
-6. **[ ] builder 名双真源（叶子常量 vs 注册字面量）对账守卫；守卫扫描面扩 sdk/genproto 两 module。**（收尾批 D26）
-7. **[ ] 性能面：受管/数据库环 1s 全量收敛+全量 Route 重发布短路；pollTasks 全集群 TaskList+逐服务 inspect；resolveNetworkTargets memo；no-op 跳过对 daemon 版本漂移的断路器（lastIssued 记忆）。**（收尾批 C16~C21）
+3. **[✓ 已修] 幂等键全局作用域（跨 App 复用同键静默拿到他人部署）**——迁移 00018（fee4f2c）：索引 (app_id, idempotency_key) + 查询带 app 维（存量异 App 同键行视同无键=作用域收紧语义）。
+4. **[✓ 已修] TCP/http 探针方言**（c3361ac）：busybox 兼容方言（`nc -w 2 host port </dev/null` / `wget -q -O /dev/null`）+ swarm Describe Notes 文档化镜像假设（distroless 应声明 exec 探针）。
+5. **[✓ 已修] 进程名字符集白名单（P1-13）**（90e5c0a）：spec processNamePattern（DNS label 同网络组名）+ swarm Ensure 期同载体名不同 workloadID 碰撞显式报错（折叠面闭合）。
+6. **[✓ 已修] builder 名对账守卫；守卫扫描面扩 sdk/genproto**（af7ae8a）：buildernamesguard 双向对账 + 扫描面纳两 module + 禁词扫描扩 skills/install.sh + ADR-0031 三章节在场性进 skillLint + ADR-0034 验收锚全勾。
+7. **[✓ 已修] 性能面**：受管/数据库环 Ensure 签名短路 + Route 发布行集指纹短路 + 强制重放节拍兜底（3f8e89a）；releasing materialize 签名短路（4aa0fa1）；taskStep N+1 批量化（4cf2ae2）；pollTasks 改受管服务收敛 + no-op 断路器（lastIssued 账本）+ resolveNetworkTargets memo + canonical 单算 + DescribeCluster nil 槽挂起修复（e010d50）；事件流订阅收敛 + Events since 续传（d790952）；listLimit 钳上界（5a67e84）。已知取舍：no-op 断路器下平台侧手改载体不再自动回写（drift Inspect 仍可见，注释钉死）。
 8. 其余 P2/P3：
    - [✓ 已修] KEK 轮换工具化（4e3fbfb：`fleetlyd admin rewrap`，dry-run 缺省，runbook 操作序）
    - [✓ 已修] StreamLogs 团队轴硬编码（801ebb9：App→Project 实取，随 ADR-0035 授权同点闭合）
    - [✓ 已修] buildkit 缓存跨租户（b8f7402：dockerfile 轨 BUILDKIT_CACHE_MOUNT_NS per-App，railpack 同粒度）
    - [✓ 已修] Secret 名字符集白名单（3c6f69d：spec.SecretNamePattern 三入口统一，防 /run/secrets 路径逃逸）
-   - [ ] `.git` 不排除出构建上下文（收尾批 E27）
-   - [ ] zot htpasswd 重启滚替（持久化 keys/registry-htpasswd）（收尾批 E28）
-   - [ ] 旧 List 族分页（收尾批 D23）
-   - [ ] WaitBuild CLI（收尾批 D22）
-   - [ ] 多 Token 属主委托（tasks create --owner-token-id 透传）（收尾批 D24）
-   - [ ] static output_dir 字符集（收尾批 B11）
-   - [ ] 孤儿载体清理面（收尾批 E29）
-   - [ ] DeleteTask/Teardown 三处 API 路径 runtime.Remove 带界（收尾批 B15）
+   - [✓ 已修] `.git` 不排除出构建上下文（adbace7：fsutil ExcludePatterns 顶层 VCS 元数据，三 Builder 共享收口）
+   - [✓ 已修] zot htpasswd 重启滚替（662f783：keys/registry-htpasswd 持久化 0o600，凭证轮换识别为重铸而非损坏）
+   - [✓ 已修] 旧 List 族分页（8cf6929：十面 after_*+limit only-add + repo 游标化 + CLI 透传 + golden 18 新增零漂移；uploads/freeze CLI 旗标透传同批）
+   - [✓ 已修] WaitBuild CLI（7b4ef7a：builds wait + standalone deployments wait，非 succeeded 终态非零退出，独立 golden 形态）
+   - [✓ 已修] 多 Token 属主委托（444d68d：tasks create --owner-token-id 透传 + --command 可重复旗标唯一形态）
+   - [✓ 已修] static output_dir 字符集（a6ea5cd：spec.StaticOutputDirPattern 受理位 + builder 防御纵深）
+   - [✓ 已修] 孤儿载体清理面（5fd610a：RuntimeHygiene SweepOrphanSecrets 四重判定+宽限窗+每拍预算；one-shot 终态残留根修=空集 Ensure 成功后才落终态迁移 + 兜底扫窗）
+   - [✓ 已修] DeleteTask/Teardown 三处 API 路径 runtime.Remove 带界（ebdad88：boundedStep 三处 + materials registry.Endpoint 补界 + ImagePush 裁决注释钉死调用方 BuildTimeout 硬界）
+
+**批 B~E 其余补录**（正确性/健壮性，2026-10-03）：engine P3 六件+Loop.done 双闭 panic 连带修复+IsolateNetworkPeer 吞错上抛（f3db731/75be57b）；swarm gen 归属任务级 labels 优先+Watch 锚定降级重试+节点版本竞态三连重试（39e4288）；取参形态冻结 ADR-0006 附录+守卫元字符补 &+42 旗标动词 noArgs 守卫（81e6784）；localObjectStore 并发/剪枝/fsync 三件+railpack env 白名单+锁表清退裁决不做（理由注释钉死）（caedcf1）。
 
 ## 收尾批补录（批 A 安全收尾，2026-10-03）
 
