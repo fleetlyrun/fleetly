@@ -80,10 +80,14 @@ schedule_overlap_policy）：`skip` | `fire`（重叠时照常拍，允许并行
       `systemctl restart fleetlyd`，重启后下一拍恰一次（10:52/10:54 各一
       task）、next_fire_at 重算正确（10:56:00Z）、无漏拍无双发；用户池
       Workload 全程 running 零扰动。runbook 2026-10-03 节）。
-- [ ] 真机：跨真实 DST 边界（Sydney 观察钟 2026-10-03 已植
+- [x] 真机：跨真实 DST 边界（Sydney 观察钟 2026-10-03 已植
       staging：*/20 Australia/Sydney 跨 2026-10-04 02:00→03:00 春令 =
       16:00Z 跳变；创建时 next fire 11:00Z=21:00 AEST 换算已实证，
-      边界穿越核验随当日收尾批闭锚）。
+      边界穿越核验随当日收尾批闭锚）。（2026-10-03 16:42Z 核验 PASS：
+      拍点逐拍恰一次无双发无漏拍——15:40Z（01:40 AEST）→ 16:00Z
+      （03:00 AEDT，缺口拍归一到同一物理时刻、真实间隔恰 20 分钟）→
+      16:20Z → 16:40Z 稳定推进；next_fire_at 边界后重算 17:00:00Z
+      正确；当日两次 daemon 停机窗均不扰动。runbook 2026-10-03 节）。
 - [x] 重叠策略旋钮：skip 默认行为不变；fire 允许并行拍；无效值启动红
       （F1.9 落地：TestScheduleOverlapPolicyFires / TestParseScheduleOverlap /
       TestNewEngineOverlapPolicyFailsFast）。

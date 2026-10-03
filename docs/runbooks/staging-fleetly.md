@@ -96,7 +96,7 @@
 | ADR-0018 Schedule 跨 daemon 重启窗 | ✅ | 拍点间窗口重启：重启后下一拍恰一次（10:52/10:54 各一 task）、next_fire_at 重算正确（10:56:00Z）、无漏拍无双发；用户池 Workload 全程 running 零扰动（ADR-0015 迷你证据） |
 | E29 孤儿载体清扫实效 | ✅ | `docker secret ls | grep -c fleetly-sec-`：1300+（zot 风暴遗产）→ 当日 136 → **36 稳定**（=现役载体集；100/拍预算限流如期清空积压） |
 
-**DST 观察钟（ADR-0018 剩余锚在跑）**：n0probe schedule `dst-boundary-observe`（*/20 Australia/Sydney，busybox echo）跨悉尼夏令时边界（2026-10-04 02:00→03:00 春令 = 2026-10-03 16:00Z 跳变）；创建时 next fire 11:00Z=21:00 AEST 换算已实证，边界穿越核验随当日收尾批闭锚后删钟。
+**DST 观察钟（ADR-0018 剩余锚）——已闭锚 PASS（2026-10-03 16:42Z 核验，钟已删）**：n0probe schedule `dst-boundary-observe`（*/20 Australia/Sydney，busybox echo）跨悉尼夏令时边界（2026-10-04 02:00→03:00 春令 = 2026-10-03 16:00Z 跳变）**逐拍恰一次、无双发无漏拍**：边界两侧事件流 seq 592-611 完整记录 15:40Z（01:40 AEST 最后一拍）→ 16:00Z（03:00 AEDT——02:00 AEST 墙钟槽不存在，归一到同一物理时刻触发，真实间隔恰 20 分钟）→ 16:20Z → 16:40Z（03:40 AEDT）稳定推进；每拍 task.created + schedule.fired + task.completed 三事件齐、next_fire_at 边界后重算 17:00:00Z（04:00 AEDT）正确。创建时换算（next fire 11:00Z=21:00 AEST）+ 当日 fleetlyd 两次停机窗（10:52 重启窗实证、13:36-13:38 换装窗）均不扰动拍点。判定：Spring-forward 缺口拍处理与 Vixie cron 语义一致且全程真实间隔稳定。核验后钟已删（后续自动化 f1e951fd/4bdcbf35 复读此处：锚已闭、钟已删，无需动作）。
 
 **教训（Windows 本机远程操作）**：cmd → ssh → sh 三层引号嵌套必炸（`\$VAR` 转义层丢失）；复杂远程操作一律写脚本 scp 过去 `sh`，简单命令内联且零变量零嵌套引号。
 
