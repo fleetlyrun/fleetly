@@ -73,6 +73,12 @@ var taskDrivingStates = []run.State{run.StatePending, run.StateRunning, run.Stat
 // taskStep 是 Task 收敛环的单次推进：属主吊销拉式扫描 → 逐 Task 驱动
 // （janitor/补足/Ensure/终态收口）。单写者（Loop 串行）；观测裁决在
 // consumeWatch goroutine 经 CAS 并发写行，互不阻塞。
+//
+// 驱动 Run 集一次批量取回（N1 C18：此前逐 Task ListByTaskStates 是 N+1
+// 查询——每秒 N 个 Task 即 N 次点查；runs.ListDriving 单查询全量后按
+// Task 分组，行集与逐 Task 查询完全一致——同状态集、同组内 id DESC 方向
+// 锚，僵尸 Run（终态 Task 名下）随分组丢弃，其收口是 sweepZombieRuns 的
+// 专属路径）。
 func (e *Engine) taskStep(ctx context.Context) {
 	tasks, err := e.tasks.ListDriving(ctx, e.db.Runner())
 	if err != nil {
@@ -83,9 +89,33 @@ func (e *Engine) taskStep(ctx context.Context) {
 	if err := e.sweepZombieRuns(ctx); err != nil {
 		e.log.Error("task step: sweep zombie runs", "err", err)
 	}
-	for i := range tasks {
-		e.driveTask(ctx, &tasks[i])
+	runs, err := e.runs.ListDriving(ctx, e.db.Runner())
+	if err != nil {
+		e.log.Error("task step: list driving runs", "err", err)
+		return
 	}
+	byTask := groupDrivingRunsByTask(runs)
+	for i := range tasks {
+		e.driveTask(ctx, &tasks[i], byTask[tasks[i].ID])
+	}
+}
+
+// groupDrivingRunsByTask 把全量 driving Run 行按 Task 分组，组内保持
+// 新→旧（id DESC）序——ListDriving 全局 id ASC，逐组原地反转即得与
+// ListByTaskStates 完全一致的方向锚（P1 修复#7：过量排空"停新保老"
+// 依赖此序，方向倒置即停老保新，2026-10-02 实证缺陷）。
+func groupDrivingRunsByTask(runs []run.Run) map[string][]run.Run {
+	out := make(map[string][]run.Run)
+	for i := range runs {
+		out[runs[i].TaskID] = append(out[runs[i].TaskID], runs[i])
+	}
+	for id := range out {
+		g := out[id]
+		for l, r := 0, len(g)-1; l < r; l, r = l+1, r-1 {
+			g[l], g[r] = g[r], g[l]
+		}
+	}
+	return out
 }
 
 // sweepRevokedOwners 是属主吊销排空的拉式扫描（P1-8：吊销排空走 task 环
@@ -145,8 +175,9 @@ func (e *Engine) sweepZombieRuns(ctx context.Context) error {
 
 // driveTask 驱动单个 Task 一拍：lease 到期排空 → janitor（TTL/停止兜底）→
 // 终态镜像/排空收口 → 补足 → Ensure（期望集收敛）。持有 Task 级互斥
-// （DeleteTask 的载体收口与本环互斥，与 appLocks 同款）。
-func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
+// （DeleteTask 的载体收口与本环互斥，与 appLocks 同款）。runs 是本拍批量
+// 预取的本 Task 驱动 Run 集（新→旧序，taskStep 分组产物——N1 C18）。
+func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs []run.Run) {
 	mu := e.lockTask(t.ID)
 	mu.Lock()
 	defer mu.Unlock()
@@ -169,12 +200,6 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task) {
 				e.log.Error("task drive: lease.expired event", "task", t.ID, "err", err)
 			}
 		}
-	}
-
-	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, taskDrivingStates)
-	if err != nil {
-		e.log.Error("task drive: list runs", "task", t.ID, "err", err)
-		return
 	}
 
 	// janitor：TTL 到期 → stopping/ttl_expired（deadline 覆写为停止收口

@@ -792,6 +792,34 @@ func TestEnsureTaskWorkloadsSignatureSkip(t *testing.T) {
 	assert.Equal(t, n1+1, len(rt.calls()), "reconcile interval must force re-ensure")
 }
 
+// TestGroupDrivingRunsByTask（N1 C18）：批量分组与逐 Task ListByTaskStates
+// 等价——行集一致（同状态集、跨 Task 不串组）且组内保持 id DESC 方向锚
+// （P1 修复#7：过量排空"停新保老"依赖此序）。空集与僵尸行（终态 Task 名下，
+// 分组丢弃由 sweepZombieRuns 专属收口）形态钉死。
+func TestGroupDrivingRunsByTask(t *testing.T) {
+	runs := []run.Run{
+		{ID: "01JD0RUN0000000000000000A1", TaskID: "01JD0TASK00000000000000001", State: run.StateRunning},
+		{ID: "01JD0RUN0000000000000000A2", TaskID: "01JD0TASK00000000000000001", State: run.StatePending},
+		{ID: "01JD0RUN0000000000000000B1", TaskID: "01JD0TASK00000000000000002", State: run.StateStopping},
+		{ID: "01JD0RUN0000000000000000A3", TaskID: "01JD0TASK00000000000000001", State: run.StateRunning},
+		{ID: "01JD0RUN0000000000000000Z9", TaskID: "01JD0TASK0000000000000000Z", State: run.StatePending}, // 僵尸（终态 Task）
+	}
+	got := groupDrivingRunsByTask(runs)
+	require.Len(t, got, 3, "the helper groups faithfully; the zombie task's group is dropped by taskStep (driving tasks only)")
+
+	first := got["01JD0TASK00000000000000001"]
+	require.Len(t, first, 3)
+	assert.Equal(t, "01JD0RUN0000000000000000A3", first[0].ID, "per-task order must be id DESC (newest first)")
+	assert.Equal(t, "01JD0RUN0000000000000000A2", first[1].ID)
+	assert.Equal(t, "01JD0RUN0000000000000000A1", first[2].ID)
+
+	second := got["01JD0TASK00000000000000002"]
+	require.Len(t, second, 1)
+	assert.Equal(t, run.StateStopping, second[0].State, "stopping rides the same driving set as before")
+
+	assert.Empty(t, groupDrivingRunsByTask(nil))
+}
+
 // TestProjectTaskSpecFields：投影细节断言（StopGrace 注入）。
 func TestProjectTaskSpecFields(t *testing.T) {
 	spec := &specv1.TaskSpec{
