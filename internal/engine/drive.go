@@ -90,6 +90,15 @@ func (e *Engine) driveOnce(ctx context.Context, d *deployment.Deployment) (*depl
 		return e.rollback(ctx, d)
 
 	default:
+		// 终态行撞进 driving 集（列举与驱动的并发竞态：行在 list 与 drive
+		// 之间被并发步骤收进终态）不是错误——停驱即可，下一拍列举自然
+		// 剔除。staging 实证 2026-10-03：succeeded 行单次 error 噪音。
+		// failed 有独立分支（回滚）；真正的非法值仍报错（状态机拼写出
+		// 的新值宁可吵不可哑）。
+		switch d.State {
+		case deployment.StateSucceeded, deployment.StateSuperseded, deployment.StateCancelled:
+			return nil, nil
+		}
 		return nil, fmt.Errorf("unexpected driving state %s", d.State)
 	}
 }
