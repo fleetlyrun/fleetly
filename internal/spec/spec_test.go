@@ -90,6 +90,39 @@ func TestValidateAppRejects(t *testing.T) {
 	assert.ErrorContains(t, ValidateApp(s), "http_path, tcp_port or exec")
 }
 
+// TestValidateImageRefInjection 镜像引用注入家族回归（P2 注入守卫）：
+// 逃逸面字符（空白/控制字符/反引号）在 Source 与进程 image 两面一律拒绝；
+// `$`/`;`/`&` 无空白时不构成逃逸（ref 永不进 shell，语法面归 daemon）。
+func TestValidateImageRefInjection(t *testing.T) {
+	for _, ref := range []string{
+		"nginx:1.27$x",       // 无空白 shell 元字符——非逃逸面，daemon 裁决语法
+		"nginx:1.27;touch",   // 同上（无分隔即无注入面）
+		"reg:5000/a/b:c-d.e", // registry 端口 + 仓库路径 + tag 合法形态
+		"img@sha256:abcdef",  // digest 形态
+	} {
+		assert.NoError(t, validateImageRef("app.source.image.ref", ref), "ref %q must be legal", ref)
+	}
+	assert.ErrorContains(t, validateImageRef("app.source.image.ref", ""), "must not be empty")
+	for _, ref := range []string{
+		"nginx:1.27 x",       // 内嵌空白（; touch 家族的载体）
+		"nginx:1.27`id`",     // 反引号定界逃逸
+		"nginx:1.27\n$(id)",  // 换行 + 命令替换
+		"nginx:1.27\x00\x1f", // 控制字符
+		"nginx:1.27\x7f",     // DEL
+	} {
+		assert.ErrorContains(t, validateImageRef("app.source.image.ref", ref), "forbidden character")
+	}
+
+	// 两入口接线：Source 面与进程面共用同一口径。
+	s := validAppSpec()
+	s.Source.Kind = &specv1.Source_Image{Image: &specv1.ImageSource{Ref: "nginx:1.27 `id`"}}
+	assert.ErrorContains(t, ValidateApp(s), "app.source.image.ref")
+
+	s = validAppSpec()
+	s.Processes[0].ImageOrigin = &specv1.ProcessSpec_Image{Image: "nginx:1.27\t$(id)"}
+	assert.ErrorContains(t, ValidateApp(s), "processes[0].image")
+}
+
 // 进程名字符集白名单（N1 收尾批 B9）：进程名进 swarm 服务名与平台 DNS
 // 面，仅差特殊字符的名字（web.1 / web-1）经载体名 sanitize 折叠成同名
 // 载体——一进程无声丢失，白名单在 spec 入口拒绝折叠源头。合法形态与

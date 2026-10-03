@@ -251,6 +251,23 @@ func validateRelPath(field, p string) error {
 	return nil
 }
 
+// imageRefForbiddenRe 匹配镜像引用中的注入/荒谬字符（P2 注入守卫，docs/
+// design/2026-10-03-optimization-proposals.md）：控制字符、空白与反引号。
+// 完整 reference 语法归 daemon/registry 裁决——这里只堵 shell/配置定界的
+// 逃逸面与不可传输形态（ref 经 daemon API 与配置文件传播，永不进 shell）。
+var imageRefForbiddenRe = regexp.MustCompile("[\\s\\x00-\\x1f\\x7f`]")
+
+// validateImageRef 校验镜像引用（Source.Image.Ref 与进程 image 同口径）。
+func validateImageRef(field, ref string) error {
+	if ref == "" {
+		return invalidf(field, "must not be empty")
+	}
+	if bad := imageRefForbiddenRe.FindString(ref); bad != "" {
+		return invalidf(field, "image reference %q contains forbidden character %q", ref, bad)
+	}
+	return nil
+}
+
 // ValidateProcess 校验单个进程模板（TaskSpec 单元素复用同口径）。
 func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 	if p == nil {
@@ -268,8 +285,8 @@ func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 	}
 	switch origin := p.GetImageOrigin().(type) {
 	case *specv1.ProcessSpec_Image:
-		if origin.Image == "" {
-			return invalidf(field+".image", "must not be empty")
+		if err := validateImageRef(field+".image", origin.Image); err != nil {
+			return err
 		}
 	case *specv1.ProcessSpec_FromBuild:
 		if origin.FromBuild == "" {
@@ -358,8 +375,8 @@ func validateSource(src *specv1.Source) error {
 			return invalidf("app.source.git.ref", "must not be empty")
 		}
 	case *specv1.Source_Image:
-		if origin.Image.GetRef() == "" {
-			return invalidf("app.source.image.ref", "must not be empty")
+		if err := validateImageRef("app.source.image.ref", origin.Image.GetRef()); err != nil {
+			return err
 		}
 	case *specv1.Source_Upload:
 		if origin.Upload.GetId() == "" {
