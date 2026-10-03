@@ -248,7 +248,7 @@ func TestNetworkGroupRef(t *testing.T) {
 // 字符集 + ".." 拒绝；冒号合法（平台数据库凭证名 database:<name> 既定
 // 形态，ADR-0029）。
 func TestValidSecretName(t *testing.T) {
-	for _, ok := range []string{"api-key", "db.password", "database:pg", "A1_b-c", "x", strings.Repeat("a", 64)} {
+	for _, ok := range []string{"deploy-key", "db.password", "database:pg", "A1_b-c", "x", strings.Repeat("a", 64)} {
 		assert.True(t, ValidSecretName(ok), "name %q must be valid", ok)
 	}
 	for _, bad := range []string{"", "../etc/passwd", "a/b", `a\b`, " lead", "trail ", "..", "a..b", ".hidden", "-lead", "with space", "with\ttab", strings.Repeat("a", 65)} {
@@ -261,7 +261,7 @@ func TestValidateProcessSecretRefs(t *testing.T) {
 	base := func(refs []string) *specv1.ProcessSpec {
 		return &specv1.ProcessSpec{Name: "web", ImageOrigin: &specv1.ProcessSpec_Image{Image: "nginx:1.27"}, SecretRefs: refs}
 	}
-	assert.NoError(t, ValidateProcess("p", base([]string{"api-key", "database:pg"})))
+	assert.NoError(t, ValidateProcess("p", base([]string{"deploy-key", "database:pg"})))
 	assert.ErrorContains(t, ValidateProcess("p", base([]string{"../etc/passwd"})), "secret_refs[0]")
 	assert.ErrorContains(t, ValidateProcess("p", base([]string{"ok", "a/b"})), "secret_refs[1]")
 	assert.ErrorContains(t, ValidateProcess("p", base([]string{""})), "secret_refs[0]")
