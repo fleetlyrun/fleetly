@@ -2,6 +2,8 @@ package zot
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -39,6 +41,82 @@ func TestCredentialPersistRoundTrip(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "keys", credentialFile), []byte("{"), 0o600))
 	_, err = New("10.0.0.1:5000", dir)
 	require.Error(t, err, "malformed credential must fail loudly")
+}
+
+// TestHTPasswdPersistsAcrossConstructions 钉 E28：htpasswd 行持久化于
+// keys/registry-htpasswd——双次 New 同行（重启不再新铸 = 受管载体指纹不
+// 随进程重启漂移）；文件权限 0o600 同凭证口径；行可验当前密码。
+func TestHTPasswdPersistsAcrossConstructions(t *testing.T) {
+	dir := t.TempDir()
+	p1, err := New("10.0.0.1:5000", dir)
+	require.NoError(t, err)
+	p2, err := New("10.0.0.1:5000", dir)
+	require.NoError(t, err)
+
+	line1 := string(p1.ManagedMaterials().SecretFiles[htpasswdFile])
+	line2 := string(p2.ManagedMaterials().SecretFiles[htpasswdFile])
+	require.NotEmpty(t, line1)
+	assert.Equal(t, line1, line2, "htpasswd line must persist across constructions (restart-stable carrier fingerprint)")
+
+	path := filepath.Join(dir, "keys", htpasswdStoreFile)
+	b, err := os.ReadFile(path) //nolint:gosec // 测试读数据根私有目录
+	require.NoError(t, err)
+	assert.Equal(t, line1, strings.TrimRight(string(b), "\r\n"), "persisted file must hold the served line")
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	if runtime.GOOS != "windows" { // POSIX 权限位（Windows 无此语义）
+		assert.Equal(t, os.FileMode(0o600), info.Mode().Perm(), "htpasswd file must be owner-only like the credential")
+	}
+}
+
+// TestHTPasswdCorruptFailsLoudly 钉 E28：损坏/异主行拒绝构造（fail loud），
+// 不静默再生成——静默会把凭证面故障伪装成正常重启。
+func TestHTPasswdCorruptFailsLoudly(t *testing.T) {
+	dir := t.TempDir()
+	_, err := New("10.0.0.1:5000", dir)
+	require.NoError(t, err)
+	path := filepath.Join(dir, "keys", htpasswdStoreFile)
+
+	// 异主 bcrypt 哈希（对其他密码有效）不算损坏——那是轮换形态，由
+	// TestHTPasswdFollowsCredentialRotation 钉自愈；此处只钉形态坏面
+	//（无冒号结构/空文件/他人用户名的行都进不了验证面）。
+	for name, content := range map[string]string{
+		"garbage":    "not-a-bcrypt-line",
+		"empty":      "",
+		"other-user": "mallory:$2a$10$7EqJtq98hPqEX7fNZaFWoOhi5B0S4M0Zzq7JcXTYceHcYf0oEJ2HW",
+	} {
+		require.NoError(t, os.WriteFile(path, []byte(content), 0o600))
+		_, err := New("10.0.0.1:5000", dir)
+		require.Error(t, err, "%s must fail loudly", name)
+		assert.Contains(t, err.Error(), "malformed", "%s must be reported as malformed", name)
+	}
+}
+
+// TestHTPasswdFollowsCredentialRotation 钉 E28 轮换自愈：凭证文件换新密码
+// 后（轮换序 = 删 registry.json 重启的物化形态），htpasswd 旧行按
+// mismatch 识别为轮换并重铸覆写——三面（zot/推送/拉取）同源自愈。
+func TestHTPasswdFollowsCredentialRotation(t *testing.T) {
+	dir := t.TempDir()
+	p1, err := New("10.0.0.1:5000", dir)
+	require.NoError(t, err)
+	oldLine := string(p1.ManagedMaterials().SecretFiles[htpasswdFile])
+
+	// 物化轮换：新密码落凭证文件（tmp+rename 的并发形态此处直写等价）。
+	raw := make([]byte, passwordBytes)
+	_, err = rand.Read(raw)
+	require.NoError(t, err)
+	newPassword := hex.EncodeToString(raw)
+	credBytes, err := json.Marshal(map[string]string{"username": credentialUser, "password": newPassword})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "keys", credentialFile), credBytes, 0o600))
+
+	p2, err := New("10.0.0.1:5000", dir)
+	require.NoError(t, err)
+	newLine := string(p2.ManagedMaterials().SecretFiles[htpasswdFile])
+	assert.NotEqual(t, oldLine, newLine, "rotated credential must mint a new htpasswd line")
+	assert.Equal(t, credentialUser+":", newLine[:len(credentialUser)+1])
+	require.NoError(t, bcrypt.CompareHashAndPassword([]byte(strings.SplitN(newLine, ":", 2)[1]), []byte(newPassword)),
+		"new line must verify against the rotated password")
 }
 
 // TestEndpointCarriesPlatformCredential 钉附录 B.3：端点携带平台凭证

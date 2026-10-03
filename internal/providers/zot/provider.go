@@ -9,11 +9,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"os"
 	"path/filepath"
-	"sync"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -39,6 +40,11 @@ const (
 	// credentialFile 是平台凭证落盘（<DataRoot>/keys/ 下，与 KEK 同目录
 	// 文化；0o600，备份随数据根）。
 	credentialFile = "registry.json"
+	// htpasswdStoreFile 是 htpasswd 行落盘（keys/ 下与凭证同居，0o600 同
+	// 凭证口径；收尾批 E28——缺陷=每次进程启动现铸 bcrypt 行（随机盐无
+	// 确定性口子）= 载体指纹恒变 = 进程重启即受管域滚替，crash-loop 放大
+	// 为节点拉取凭证失效雪崩）。
+	htpasswdStoreFile = "registry-htpasswd" //nolint:gosec // G101 误报：文件名非机密（内容是 bcrypt 哈希）
 	// passwordBytes 是随机密码字节数（hex 后 48 字符）。
 	passwordBytes = 24
 )
@@ -52,10 +58,10 @@ type Provider struct {
 	addr string
 	cred capability.RegistryCredential
 
-	// htpasswdOnce/htpasswd：进程内一次铸的 bcrypt 行（见 htpasswdLine——
-	// 随机盐无确定性口子，逐拍新铸 = 载体指纹恒变 = 受管域无限滚替）。
-	htpasswdOnce sync.Once
-	htpasswd     string
+	// htpasswd 是构造期定型的 bcrypt 行（loadOrPersistHTPasswd：读用已
+	// 持久行或新铸落盘——进程内恒定，收敛环每拍重放稳定；进程重启复用
+	// 同一行，载体指纹不再随重启漂移，E28）。
+	htpasswd string
 }
 
 // 编译期契约断言：Registry 端口 + 受管形态声明 + 材料子面。
@@ -66,13 +72,18 @@ var (
 )
 
 // New 构造 Provider：addr 是镜像引用地址（含端口，如 10.124.0.3:5000），
-// dataRoot 是平台数据根（凭证持久化位置）。凭证首启生成、之后原样复用
-// （幂等：同 dataRoot 二次构造同密码——轮换走删文件重启，附录 B.3）。
+// dataRoot 是平台数据根（凭证与 htpasswd 持久化位置）。凭证与 htpasswd
+// 首启生成、之后原样复用（幂等：同 dataRoot 二次构造同密码同行——轮换走
+// 删文件重启，附录 B.3）。损坏/不可读 fail loud，不静默再生成。
 func New(addr, dataRoot string) (*Provider, error) {
 	if addr == "" {
 		return nil, fmt.Errorf("zot provider: registry address is required")
 	}
 	cred, err := loadOrGenerateCredential(dataRoot)
+	if err != nil {
+		return nil, err
+	}
+	line, err := loadOrPersistHTPasswd(dataRoot, credentialUser, cred.Password)
 	if err != nil {
 		return nil, err
 	}
@@ -83,6 +94,7 @@ func New(addr, dataRoot string) (*Provider, error) {
 			Username: credentialUser,
 			Secret:   cred.Password,
 		},
+		htpasswd: line,
 	}, nil
 }
 
@@ -224,29 +236,76 @@ func (p *Provider) ManagedMaterials() capability.Materials {
 	cfgBytes, _ := json.Marshal(cfg)
 	return capability.Materials{SecretFiles: map[string][]byte{
 		configFile:   cfgBytes,
-		htpasswdFile: []byte(p.htpasswdLine(credentialUser, p.cred.Secret)),
+		htpasswdFile: []byte(p.htpasswd),
 	}}
 }
 
-// htpasswdLine 铸一行 bcrypt 形态（zot 支持 bcrypt；apache2 htpasswd -B 同款）。
-// **进程内一次铸**（bcrypt 随机盐无口子可传确定性盐）：每次调用都新铸会让
-// 同密码的载体指纹恒变 → 受管域无限滚替（staging 真机实证 2026-10-02：zot
-// update 风暴把无钉住载体滚到无卷节点 preparing 打转）。进程内缓存 = 收敛环
-// 每拍重放稳定；进程重启新盐一次滚动替换（语义 = 凭证轮换同款，可接受）。
-func (p *Provider) htpasswdLine(username, password string) string {
-	p.htpasswdOnce.Do(func() {
-		h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if err != nil {
-			// bcrypt 对合法输入不失败；到这里即编程错误，空哈希会拒绝一切
-			// 认证——fail loud 比静默可用更安全。
-			p.htpasswd = username + ":$invalid$"
-			return
+// loadOrPersistHTPasswd 读或铸 htpasswd 行并持久化（E28 单一真源：存在即
+// 读用；不存在即铸+落盘 tmp+rename 原子位；0o600 同凭证口径）。判定序：
+//   - 文件在且 bcrypt 行验证通过当前密码 → 原样复用（重启稳定 = 载体指纹
+//     稳定，本件的缺陷修复面）；
+//   - 文件在但哈希对当前密码 ErrMismatchedHashAndPassword → 凭证已轮换，
+//     重铸覆写（三面同源自愈：凭证文件删除重启的轮换序，只删 registry.json
+//     即完成，htpasswd 随行）；
+//   - 文件在但形态坏/读取失败 → fail loud（静默再生成会把"凭证面坏了"
+//     伪装成正常重启，认证问题将无从诊断）；
+//   - 落盘失败 → fail loud（滚替回退到逐重启新铸的缺陷形态，宁可拒绝
+//     启动）。
+func loadOrPersistHTPasswd(dataRoot, username, password string) (string, error) {
+	if dataRoot == "" {
+		return "", fmt.Errorf("zot provider: data root is required for the registry htpasswd")
+	}
+	dir := filepath.Join(dataRoot, "keys")
+	path := filepath.Join(dir, htpasswdStoreFile)
+	b, err := os.ReadFile(path) //nolint:gosec // 数据根私有目录（G304/G703）
+	if err == nil {
+		line := strings.TrimRight(string(b), "\r\n")
+		hash := ""
+		if u, h, ok := strings.Cut(line, ":"); ok && u == username {
+			hash = h
 		}
-		// golang bcrypt 原生 $2a$ 前缀（F1.11 真机基线形态；$2y$ 生态惯例
-		// 在 zot 的验证面未被证实——staging 真机 401 实测回退，2026-10-02）。
-		p.htpasswd = username + ":" + string(h)
-	})
-	return p.htpasswd
+		switch verr := bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)); {
+		case verr == nil:
+			return line, nil // 现役行：原样复用（载体指纹稳定）
+		case errors.Is(verr, bcrypt.ErrMismatchedHashAndPassword):
+			// 凭证已轮换：重铸覆写（不视作损坏——轮换是合法显式动作）。
+		default:
+			return "", fmt.Errorf("zot provider: htpasswd file %s is malformed: %v", path, verr)
+		}
+	} else if !os.IsNotExist(err) {
+		return "", fmt.Errorf("zot provider: read htpasswd: %w", err)
+	}
+	line, err := mintHTPasswdLine(username, password)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(dir, 0o750); err != nil { //nolint:gosec // 数据根私有目录
+		return "", fmt.Errorf("zot provider: htpasswd dir: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, []byte(line), 0o600); err != nil { //nolint:gosec // 数据根私有目录
+		return "", fmt.Errorf("zot provider: write htpasswd: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil { //nolint:gosec // 数据根私有目录
+		_ = os.Remove(tmp) //nolint:gosec // 数据根私有目录
+		return "", fmt.Errorf("zot provider: publish htpasswd: %w", err)
+	}
+	return line, nil
+}
+
+// mintHTPasswdLine 铸一行 bcrypt 形态（zot 支持 bcrypt；apache2 htpasswd -B
+// 同款）。bcrypt 随机盐无口子可传确定性盐——行因此不可复算、只能持久化
+// （E28 前的进程内 once 形态是同一约束的局部解）。bcrypt 对合法输入不
+// 失败；到这里即编程错误，上抛拒绝构造（修复前落 "$invalid$" 死行拒绝
+// 一切认证——现在 fail loud 在构造期就暴露）。
+func mintHTPasswdLine(username, password string) (string, error) {
+	h, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return "", fmt.Errorf("zot provider: mint htpasswd: %w", err)
+	}
+	// golang bcrypt 原生 $2a$ 前缀（F1.11 真机基线形态；$2y$ 生态惯例
+	// 在 zot 的验证面未被证实——staging 真机 401 实测回退，2026-10-02）。
+	return username + ":" + string(h), nil
 }
 
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。地址解析序：装配 ctx
