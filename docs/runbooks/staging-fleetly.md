@@ -104,12 +104,13 @@
 
 **换装**：`eec4236-n1-final` → **`bb5259d-archreview`**（架构评审两轮收尾）。Windows 本机 `GOOS=linux` 交叉构建（版本注入 `bb5259d-archreview`）→ scp /tmp/n2bin → **停机 tar 快照**（/root/fleetly-data-prearch2-20261003.tar.gz，512M）→ install → drop-in 双文件核验（registry.conf + railpack.conf）→ doctor 10 ok / 0 fail。
 
-### 事故（P0）：升级即全量滚动替换 → torchwood-pg WAL 损坏
+### 事故（P0）：升级一次性滚动替换对有状态负载不安全 → torchwood-pg WAL 损坏
 
-- **机制链**：bb5259d 改了 Workload IR 形状（评审候选 4~7：ObjectStore port/anchor 归属/环表 substruct/typed owner/探针全解析+Addresses 期望集）→ 换装首启 `managedFingerprint` 全域漂移 → `EnsureGeneration` gen 推进（db `fleetly.generation` 2→3，traefik 同窗口 13:14:32 被更新+任务搬迁 manager→node2）→ swarm 真更新=滚动替换 → **pgvector 在 start-first + 单卷钉住 + 10s StopGrace 编排下被硬杀** → WAL `invalid checkpoint record`（13:14:34 非正常关停）→ 崩溃循环 → torchwood server 连锁崩溃（`db-<id>` 无 endpoint）→ tw.dev 502。
-- **对照实证**：同二进制重启零 churn（本次 13:37 重启与当日 10:52 重启均未替换任何任务；traefik 任务上一次变更在换装前 21 小时）——指纹同版本内稳定，churn 只发生在**二进制变更首启**。
+- **前提**：换装首启全量滚动替换本身是候选 7 记录在案的一次性代价（bb5259d 提交说明：label 消失+方言归一使存量 service spec diff 变化，"daemon 升级时预期全量滚一次"，staging 现付最低——设计已接受）。**本轮真机暴露的是该滚动对有状态负载的数据安全缺口**。
+- **机制链**：bb5259d 改 Workload IR 形状 → 换装首启 `managedFingerprint` 全域漂移 → `EnsureGeneration` gen 推进（db `fleetly.generation` 2→3，traefik 同窗口 13:14:32 被更新+任务搬迁 manager→node2）→ swarm 滚动替换 → **pgvector 在 start-first + 单卷钉住 + 10s StopGrace 编排下被硬杀** → WAL `invalid checkpoint record`（13:14:34 非正常关停）→ 崩溃循环 → torchwood server 连锁崩溃（`db-<id>` 无 endpoint）→ tw.dev 502。
+- **对照实证**：同二进制重启零 churn（本次 13:37 重启与当日 10:52 重启均未替换任何任务；traefik 任务上一次变更在换装前 21 小时）——指纹同版本内稳定，churn 只发生在**二进制变更首启**，与候选 7 的预告一致。
 - **救援实录**（13:36 全程 ~7 分钟）：`systemctl stop fleetlyd`（traefik 持留末次配置）→ `docker service update --replicas 0` 冻结崩溃循环 → **卷 tar 留底**（/root/torchwood-pg-vol-pre-resetwal-20261003.tar.gz，11M）→ `pg_resetwal -f`（必须 `--user 999:999`，root 被拒）→ `--replicas 1` 起库（ready to accept connections）→ torchwood server 自愈 → tw.dev 200。同二进制重启 daemon 验证零 churn 后收口。
-- **修复方向（修复批挂账，本批未动代码）**：① swarm Ensure 侧做语义等价比较、豁免 generation 标签（升级不改语义不滚动）② 数据库域 UpdateConfig 改 stop-first + StopGrace 提到 60s 级 ③ 升级操作纪律（见下）。
+- **修复方向（修复批挂账，本批未动代码）**：① 数据库域（及一切挂卷受管面）UpdateConfig 改 stop-first + StopGrace 提到 60s 级——滚动替换不得硬杀数据面 ② 升级操作纪律（见下）③ 若一次滚动代价想免：Ensure 侧语义等价比较豁免 generation 标签（与候选 7 已接受裁决冲突，仅作备选重议）。
 - **操作纪律（升级口径）**：**任何 fleetlyd 换二进制 = 预期全部工作负载滚动重启**；换装前先快照受管库卷（`docker run --rm -v <vol>:/d -v /root:/o busybox tar czf /o/<db>-pre-upgrade.tar.gz -C /d .` 一类）。
 - 附带教训：`fleetlyd` 无 version 子命令——**未知参数会以默认配置直接引导 daemon**（本次误触在 /root/data 生成流浪库，靠真 daemon 占 :9080 才没起来；已清理）。版本核对用 `journalctl service.version` 或 `fleetly version`（CLI）。
 
