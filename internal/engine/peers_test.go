@@ -113,6 +113,31 @@ func TestCrossProjectPeerIsolationSelfHeals(t *testing.T) {
 	assert.Empty(t, lastEnsure(rt).Spec["web"].NetworkRefs, "the isolation invariant must re-converge on the drift tick")
 }
 
+// B13 回归：IsolateNetworkPeer 的 LatestSucceeded 非 NotFound 错误（存储
+// 故障）不吞——吞掉 = 剥离静默跳过 = 假隔离。NotFound 仍是唯一合法的
+// "无基线可剥离"形态（锚定 App 无成功基线时隔离照常走完，不报错）。
+func TestIsolateNetworkPeerStorageFaultPropagates(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+	providerID := seedCrossProjectPeer(t, e, true)
+
+	revID := freezeSpec(t, e, 1, peerSpec(providerID))
+	deployToSucceeded(t, e, revID)
+
+	// 存储故障注入（builder_test 同款形态）：基线读面不可用。
+	_, err := e.db.Runner().ExecContext(ctx, `DROP TABLE deployments`)
+	require.NoError(t, err)
+
+	err = e.IsolateNetworkPeer(ctx, "01JD0NET000000000000000007", tProjectID)
+	require.Error(t, err, "a storage fault in the baseline lookup must not be swallowed")
+	assert.Contains(t, err.Error(), tAppID, "the error names the app whose baseline lookup failed")
+
+	// NotFound（无成功基线）仍视为"无可剥离"：另一 App 无基线 → 走完不报错。
+	e2, _, _ := newTestEngine(t)
+	seedCrossProjectPeer(t, e2, true)
+	require.NoError(t, e2.IsolateNetworkPeer(ctx, "01JD0NET000000000000000007", tProjectID))
+}
+
 // 引用目标缺失（项目/网络不存在）在 strict 与 isolate 两侧的口径：
 // strict 拒；isolate 剥离。
 func TestCrossProjectPeerMissingTarget(t *testing.T) {

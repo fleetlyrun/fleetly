@@ -147,7 +147,13 @@ func (e *Engine) IsolateNetworkPeer(ctx context.Context, networkID, peerProjectI
 		}
 		d, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), apps[i].ID)
 		if err != nil {
-			continue // 无成功基线：无可剥离的存量附件
+			if errors.Is(err, state.ErrNotFound) {
+				continue // 无成功基线：无可剥离的存量附件
+			}
+			// 存储故障不吞（B13）：吞掉 = 剥离静默跳过 = 假隔离——按包内
+			// 原则恒上抛（调用方记录，漂移扫描拍兜底重试；撤销本身不回滚，
+			// 受理面已生效）。NotFound 是唯一合法的"无基线可剥离"形态。
+			return fmt.Errorf("isolate peer: load succeeded baseline of app %s: %w", apps[i].ID, err)
 		}
 		spec, err := e.loadSpec(ctx, d.ToRevision)
 		if err != nil {
