@@ -259,6 +259,16 @@ var wordingExemptions = map[string]map[string]string{
 	"apply": {
 		"cmd/fleetlyd/main.go": "lynx boot.Bootstrap.Apply 是框架 API（钩子/服务挂载面）；ADR-0007 禁的是部署语义 apply，框架方法名不可更名",
 	},
+	// dbtemplate 备份执行链（F2.2，ADR-0039）：pg_dump/mysqldump/mongodump
+	// 是引擎原生命令名、dump.rdb 是 redis 数据文件名——外部工具专有名，
+	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。
+	// 新引擎工具名继续在此追加（强制分诊不静默）。
+	"dump": {
+		"internal/engine/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
+		"internal/engine/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
+		"internal/engine/dbtemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",
+		"internal/engine/dbtemplate/redis.go":           "dump.rdb 是 redis 数据文件名（RDB 恢复预置路径，ADR-0039），非平台词汇面",
+	},
 	// genproto 的 .pb.gw.go（批 D 扩面裁决：生成物入扫面后的唯一命中族，
 	// 逐条豁免）：protoc-gen-grpc-gateway 生成模板的固定注释——
 	// runtime.WithMiddlewares/HTTP middlewares 是 grpc-gateway 库自身术语，

@@ -7,6 +7,7 @@ package dbtemplate
 // 拼接、零变量）。探针用 mongosh ping——驱动拓扑探测面，授权前可用。
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 )
@@ -45,16 +46,19 @@ func (mongoTemplate) Probe() []string {
 	return []string{"mongosh", "--quiet", "--eval", "db.adminCommand('ping')"}
 }
 
-func (mongoTemplate) Materials(password string) map[string][]byte {
+func (mongoTemplate) Materials(password string) (map[string][]byte, error) {
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
 	conf := "storage:\n  dbPath: /data/db\nnet:\n  port: 27017\nsecurity:\n  authorization: enabled\n"
 	// 首启初始化脚本（空数据卷时 entrypoint 以本地无认证模式执行一次）：
-	// 建业务库与账号。密码是平台生成的 hex 串（URL/JS 双安全字符集）。
+	// 建业务库与账号。密码经渲染面字符集闸（单引号串不可转义，纵深防御）。
 	initJS := "db.getSiblingDB('" + moDBName + "').createUser({user: '" + moUser +
 		"', pwd: '" + password + "', roles: [{role: 'readWrite', db: '" + moDBName + "'}]});\n"
 	return map[string][]byte{
 		MongoConfFile:   []byte(conf),
 		MongoInitJSFile: []byte(initJS),
-	}
+	}, nil
 }
 
 func (mongoTemplate) ConnURL(host, password string) string {
@@ -67,5 +71,47 @@ func (mongoTemplate) ConnURL(host, password string) string {
 	return u.String()
 }
 
-func (mongoTemplate) BackupCommand() string { return "" } // F2.2 空槽
-func (mongoTemplate) ImageDigest() string   { return "" } // F2.7 空槽
+// moBackupConfigFile 是备份/恢复工具的凭证材料文件名（database tools
+// --config 的 JSON 形态——经 encoding/json Marshal 结构化生成，转义由
+// 构造承担，零手拼文本）。
+const moBackupConfigFile = "database-backup-config"
+
+// moBackupMaterials 渲染 --config JSON（备份/恢复共用：{"uri": ConnURL}）。
+func moBackupMaterials(host, password string) (map[string][]byte, error) {
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	cfg, err := json.Marshal(map[string]string{"uri": mongoTemplate{}.ConnURL(host, password)})
+	if err != nil {
+		return nil, fmt.Errorf("dbtemplate: render mongo tools config: %w", err)
+	}
+	return map[string][]byte{moBackupConfigFile: cfg}, nil
+}
+
+func (mongoTemplate) Backup(host, password string) (BackupSpec, error) {
+	files, err := moBackupMaterials(host, password)
+	if err != nil {
+		return BackupSpec{}, err
+	}
+	// --archive --gzip：单流 BSON 归档走 stdout（--db 限业务库）。
+	return BackupSpec{
+		Argv: []string{"mongodump", "--config=/run/secrets/" + moBackupConfigFile,
+			"--archive", "--gzip", "--db", moDBName},
+		SecretFiles: files,
+	}, nil
+}
+
+func (mongoTemplate) Restore(host, password string) (RestoreSpec, error) {
+	files, err := moBackupMaterials(host, password)
+	if err != nil {
+		return RestoreSpec{}, err
+	}
+	// 归档流走 stdin；目标库同名（ns 映射恒等，模板库名冻结）。
+	return RestoreSpec{
+		Mode:        RestoreStream,
+		Argv:        []string{"mongorestore", "--config=/run/secrets/" + moBackupConfigFile, "--archive", "--gzip"},
+		SecretFiles: files,
+	}, nil
+}
+
+func (mongoTemplate) ImageDigest() string { return "" } // F2.7 空槽

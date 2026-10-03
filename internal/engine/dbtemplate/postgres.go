@@ -40,8 +40,11 @@ func (postgresTemplate) Probe() []string {
 	return []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", pgUser, "-d", pgDBName}
 }
 
-func (postgresTemplate) Materials(password string) map[string][]byte {
-	return map[string][]byte{PasswordFile: []byte(password)}
+func (postgresTemplate) Materials(password string) (map[string][]byte, error) {
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	return map[string][]byte{PasswordFile: []byte(password)}, nil
 }
 
 func (postgresTemplate) ConnURL(host, password string) string {
@@ -54,5 +57,47 @@ func (postgresTemplate) ConnURL(host, password string) string {
 	return u.String()
 }
 
-func (postgresTemplate) BackupCommand() string { return "" } // F2.2 空槽
-func (postgresTemplate) ImageDigest() string   { return "" } // F2.7 空槽
+// pgBackupPassFile 是备份/恢复工具的凭证材料文件名（PGPASSFILE 行格式
+// host:port:db:user:password——冒号在该格式中不可转义，字符集闸是唯一
+// 防线；与 Workload 的 POSTGRES_PASSWORD_FILE 形态分立，同名同内容会互
+// 相污染语义）。
+const pgBackupPassFile = "database-backup-pgpass"
+
+// pgBackupMaterials 渲染备份/恢复共用的 pgpass 材料。
+func pgBackupMaterials(host, password string) (map[string][]byte, error) {
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	return map[string][]byte{pgBackupPassFile: []byte(
+		fmt.Sprintf("%s:5432:%s:%s:%s\n", host, pgDBName, pgUser, password))}, nil
+}
+
+func (postgresTemplate) Backup(host, password string) (BackupSpec, error) {
+	files, err := pgBackupMaterials(host, password)
+	if err != nil {
+		return BackupSpec{}, err
+	}
+	// custom 格式（-Fc）：压缩 + TOC + 支持非寻位 stdin 恢复（pg_restore
+	// 对管道输入整档缓冲）；产物走 stdout。
+	return BackupSpec{
+		Argv:        []string{"pg_dump", "-h", host, "-p", "5432", "-U", pgUser, "-d", pgDBName, "--format=custom"},
+		Env:         map[string]string{"PGPASSFILE": "/run/secrets/" + pgBackupPassFile},
+		SecretFiles: files,
+	}, nil
+}
+
+func (postgresTemplate) Restore(host, password string) (RestoreSpec, error) {
+	files, err := pgBackupMaterials(host, password)
+	if err != nil {
+		return RestoreSpec{}, err
+	}
+	// 无文件参数 = 从 stdin 读档（工具容器 stdin 由执行器接 ObjectStore）。
+	return RestoreSpec{
+		Mode:        RestoreStream,
+		Argv:        []string{"pg_restore", "-h", host, "-p", "5432", "-U", pgUser, "-d", pgDBName, "--no-password"},
+		Env:         map[string]string{"PGPASSFILE": "/run/secrets/" + pgBackupPassFile},
+		SecretFiles: files,
+	}, nil
+}
+
+func (postgresTemplate) ImageDigest() string { return "" } // F2.7 空槽

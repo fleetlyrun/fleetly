@@ -47,16 +47,79 @@ type Template interface {
 	// 无 nc，F1.15）。
 	Probe() []string
 	// Materials 渲染 DB Workload 的凭证材料（密码经 URL 解析取得——单真源
-	// 是 Secret 里的连接串，ADR-0029 决策 6）。
-	Materials(password string) map[string][]byte
+	// 是 Secret 里的连接串，ADR-0029 决策 6）。密码超出安全字符集返回
+	// 错误（渲染面 fail-closed，见 validatePassword）。
+	Materials(password string) (map[string][]byte, error)
 	// ConnURL 铸连接串（host 由调用方注入——铸名公式真源在 engine）。
 	ConnURL(host, password string) string
-	// BackupCommand 是备份执行链的引擎命令（F2.2 预留空槽，ADR-0029 决策
-	// 7：执行链落地前恒空串；接口一次定形，届时只填实现）。
-	BackupCommand() string
+	// Backup 渲染备份执行（ADR-0039 决策 5）：完整 argv + 凭证材料 +
+	// env；dump 产物走工具容器 stdout（执行器流送 ObjectStore）。host 是
+	// engine 铸的网内 DNS 名（db-<id>）。
+	Backup(host, password string) (BackupSpec, error)
+	// Restore 渲染恢复执行：流式（stdin 注入运行中的库）或预置卷（redis
+	// 形态——RDB 仅启动时装载，ADR-0039 决策 5）。
+	Restore(host, password string) (RestoreSpec, error)
 	// ImageDigest 是镜像 digest 钉定面（F2.7 预留空槽：空串 = 未钉，现状
 	// tag 级钉定；门禁随 F2.7 落）。
 	ImageDigest() string
+}
+
+// BackupSpec 是一次备份的引擎渲染产物（argv 纯数组、零 shell 拼串——args
+// 数组文化，shellguard 射程不变）。执行器（engine 备份环）把 SecretFiles
+// 落为工具容器的 /run/secrets/<名>（与 DB Workload 材料同语义），stdout
+// 流式写 ObjectStore（digest 由 Put 流式铸造）。
+type BackupSpec struct {
+	Argv []string
+	// Env 只承载路径引用类值；唯一登记例外 = redis REDISCLI_AUTH（redis-cli
+	// 无文件面，ADR-0039 决策 5 例外注）。
+	Env         map[string]string
+	SecretFiles map[string][]byte
+}
+
+// RestoreMode 是恢复执行形态。
+type RestoreMode string
+
+const (
+	// RestoreStream：dump 经工具容器 stdin 注入运行中的目标库
+	// （pg_restore / mysql / mongorestore）。
+	RestoreStream RestoreMode = "stream"
+	// RestorePreseed：dump 经工具容器 stdin 落为数据卷内文件（redis RDB
+	// 仅启动装载——恢复发生在库首启前；执行器把库的平台卷挂到
+	// SeedMountPoint 后执行 Argv）。
+	RestorePreseed RestoreMode = "preseed"
+)
+
+// SeedMountPoint 是预置卷形态下工具容器挂载数据卷的容器内固定挂点
+// （模板 argv 与 engine 执行器共用的单源常量）。
+const SeedMountPoint = "/seed"
+
+// RestoreSpec 是一次恢复的引擎渲染产物。
+type RestoreSpec struct {
+	Mode RestoreMode
+	// Argv：stream 形态 = 恢复客户端（stdin = dump）；preseed 形态 =
+	// 落盘命令（stdin = dump，写进 SeedMountPoint 下的卷内路径）。
+	Argv        []string
+	Env         map[string]string
+	SecretFiles map[string][]byte
+}
+
+// validatePassword 是渲染面的共享安全闸：密码只准 [0-9A-Za-z]。动机是
+// 引擎渲染面的并集约束——pgpass 行格式冒号不可转义、redis.conf 行语法
+// 空白即断、mongosh init 脚本单引号串、mysql INI 换行即注入；平台铸造
+// 公式 = hex 48（crypto/rand），用户面无覆写通道（PutSecret 拒 database:
+// 保留前缀），本闸是纵深防御而非受理位（hostile 值到不了这里也照样拒）。
+func validatePassword(password string) error {
+	if password == "" {
+		return fmt.Errorf("dbtemplate: password must not be empty")
+	}
+	for i := 0; i < len(password); i++ {
+		c := password[i]
+		if c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' {
+			continue
+		}
+		return fmt.Errorf("dbtemplate: password carries characters outside the render-safe set [0-9A-Za-z]")
+	}
+	return nil
 }
 
 // registry 是值域注册表（受理位校验与投影共用的单源；实现集即值域）。

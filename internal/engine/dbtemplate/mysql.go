@@ -47,11 +47,14 @@ func (mysqlTemplate) Probe() []string {
 	return []string{"mysqladmin", "ping", "-h", "127.0.0.1"}
 }
 
-func (mysqlTemplate) Materials(password string) map[string][]byte {
+func (mysqlTemplate) Materials(password string) (map[string][]byte, error) {
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
 	return map[string][]byte{
 		MySQLPasswordFile:     []byte(password),
 		MySQLRootPasswordFile: []byte(password),
-	}
+	}, nil
 }
 
 func (mysqlTemplate) ConnURL(host, password string) string {
@@ -64,5 +67,44 @@ func (mysqlTemplate) ConnURL(host, password string) string {
 	return u.String()
 }
 
-func (mysqlTemplate) BackupCommand() string { return "" } // F2.2 空槽
-func (mysqlTemplate) ImageDigest() string   { return "" } // F2.7 空槽
+// myBackupDefaultsFile 是备份/恢复工具的凭证材料文件名（mysql 客户端
+// --defaults-extra-file 的 INI 形态；ini 单节断言见 injection 家族测试）。
+const myBackupDefaultsFile = "database-backup-defaults"
+
+// myBackupMaterials 渲染 [client] INI（备份/恢复共用；--defaults-extra-file
+// 必须是首参——mysql 客户端只读首参位置的 defaults 文件，后置即静默无效）。
+func myBackupMaterials(host, password string) (map[string][]byte, error) {
+	if err := validatePassword(password); err != nil {
+		return nil, err
+	}
+	return map[string][]byte{myBackupDefaultsFile: []byte(
+		"[client]\nhost=" + host + "\nuser=" + myUser + "\npassword=" + password + "\n")}, nil
+}
+
+func (mysqlTemplate) Backup(host, password string) (BackupSpec, error) {
+	files, err := myBackupMaterials(host, password)
+	if err != nil {
+		return BackupSpec{}, err
+	}
+	// --single-transaction：InnoDB 一致快照不锁表；SQL 文本 dump 走 stdout。
+	return BackupSpec{
+		Argv: []string{"mysqldump", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile,
+			"--single-transaction", "--routines", "--triggers", "--events", myDBName},
+		SecretFiles: files,
+	}, nil
+}
+
+func (mysqlTemplate) Restore(host, password string) (RestoreSpec, error) {
+	files, err := myBackupMaterials(host, password)
+	if err != nil {
+		return RestoreSpec{}, err
+	}
+	// 目标库由模板 env 面（MYSQL_DATABASE）首启建好；SQL 流走 stdin。
+	return RestoreSpec{
+		Mode:        RestoreStream,
+		Argv:        []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile, myDBName},
+		SecretFiles: files,
+	}, nil
+}
+
+func (mysqlTemplate) ImageDigest() string { return "" } // F2.7 空槽

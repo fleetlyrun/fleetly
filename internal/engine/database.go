@@ -244,7 +244,13 @@ func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tp
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
-	return capability.Materials{SecretFiles: tpl.Materials(password)}, nil
+	files, err := tpl.Materials(password)
+	if err != nil {
+		// 渲染面字符集闸（dbtemplate.validatePassword）：fail-closed，载体
+		// 保持现状不受扰。
+		return capability.Materials{}, fmt.Errorf("render materials for engine %q: %w", row.Engine, err)
+	}
+	return capability.Materials{SecretFiles: files}, nil
 }
 
 // ensureDatabaseVolume 幂等补建挂靠卷行（名 = 数据库名；NotFound 即建，
