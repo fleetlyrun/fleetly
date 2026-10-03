@@ -251,7 +251,12 @@ type EdgeConfig struct {
 	// 空值回退默认 ":9082"。该端点无认证（traefik HTTP provider 不支持
 	// 凭证的既知形态），公网可达 = 任意人可改写全量路由——钉内网/VPC
 	// 地址或以防火墙封公网（ADR-0036）。
-	Addr          string `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
+	Addr string `protobuf:"bytes,1,opt,name=addr,proto3" json:"addr,omitempty"`
+	// 拉取端点共享令牌（ADR-0036 N2 兑现）：非空时端点要求
+	// X-Fleetly-Edge-Token 头常量时间比对（traefik 经
+	// --providers.http.headers 同头携带），空 = 无认证现状（收窄是显式
+	// 动作，升级零扰动）。多租户启用前的必选项。
+	AuthToken     string `protobuf:"bytes,2,opt,name=auth_token,json=authToken,proto3" json:"auth_token,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -289,6 +294,13 @@ func (*EdgeConfig) Descriptor() ([]byte, []int) {
 func (x *EdgeConfig) GetAddr() string {
 	if x != nil {
 		return x.Addr
+	}
+	return ""
+}
+
+func (x *EdgeConfig) GetAuthToken() string {
+	if x != nil {
+		return x.AuthToken
 	}
 	return ""
 }
@@ -453,10 +465,12 @@ const file_config_proto_rawDesc = "" +
 	"\x04GRPC\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04HTTP\x12\x12\n" +
-	"\x04addr\x18\x01 \x01(\tR\x04addr\" \n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\"?\n" +
 	"\n" +
 	"EdgeConfig\x12\x12\n" +
-	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1e\n" +
+	"\x04addr\x18\x01 \x01(\tR\x04addr\x12\x1d\n" +
+	"\n" +
+	"auth_token\x18\x02 \x01(\tR\tauthToken\"\x1e\n" +
 	"\bRegistry\x12\x12\n" +
 	"\x04addr\x18\x01 \x01(\tR\x04addr\"\x1a\n" +
 	"\x04Data\x12\x12\n" +

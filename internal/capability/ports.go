@@ -187,6 +187,27 @@ func RegistryAddrFromContext(ctx context.Context) string {
 	return addr
 }
 
+// edgeAuthTokenKey 是 Edge 拉取端点共享令牌的装配 ctx 载键（消费方：
+// traefik Provider 工厂——受管实例以 --providers.http.headers 同头携带；
+// 注入方是 internal/assembly 的 NewEdgeProvider，ADR-0036 N2 兑现）。
+type edgeAuthTokenKey struct{}
+
+// WithEdgeAuthToken 把拉取端点共享令牌挂进装配 ctx：
+// config.server.edge_config.auth_token 是唯一契约源，空值不注入（端点
+// 无认证现状维持，升级零扰动）。
+func WithEdgeAuthToken(ctx context.Context, token string) context.Context {
+	if token == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, edgeAuthTokenKey{}, token)
+}
+
+// EdgeAuthTokenFromContext 读回装配期注入的共享令牌（未注入 = 空）。
+func EdgeAuthTokenFromContext(ctx context.Context) string {
+	token, _ := ctx.Value(edgeAuthTokenKey{}).(string)
+	return token
+}
+
 // Logging 是日志 Capability 端口（VictoriaLogs 受管自宿为默认；N2 持久
 // 检索，N0 诚实标注"仅实时+最近缓冲"）。
 type Logging interface {

@@ -75,7 +75,7 @@
 
 ## N2 数据观测信任 + 最小 Console
 
-- F2.1 Database 全矩阵：mysql/mongo 模板、版本升级路径、跨节点迁移。〔N2 前注（2026-10-03 收尾批）：①随批裁决 ADR-0036 推迟到 N2 的承诺——per-Project registry 凭证 / Edge 前置认证（多租户前不得跳过；9082 edge config Unix socket 形态同批裁决）；②DB 浏览器接入形态已选型（docs/research/2026-10-01-db-browser-selection.md——按需实例 + launcher token + 默认只读；pgweb/redis-commander 主选、Adminer 6.x 随本批终选）〕
+- F2.1 Database 全矩阵：mysql/mongo 模板、版本升级路径、跨节点迁移。〔N2 前注（2026-10-03 收尾批）：①随批裁决 ADR-0036 推迟到 N2 的承诺——per-Project registry 凭证 / Edge 前置认证（多租户前不得跳过；9082 edge config Unix socket 形态同批裁决）；②DB 浏览器接入形态已选型（docs/research/2026-10-01-db-browser-selection.md——按需实例 + launcher token + 默认只读；pgweb/redis-commander 主选、Adminer 6.x 随本批终选）〕〔**矩阵半已落地（2026-10-04，全门禁绿）**：mysql:8.4（\`_FILE\` 密码文件双材料，root 同值单真源）/mongo:8.0（无 \`\_FILE\` 变体→mongod.conf+init 脚本双材料经 \`sh -c\` 拷入 entrypoint 初始化目录，密码只落材料文件；mongosh ping 预认证豁免探针）入 dbtemplate 值域（五引擎）；CLI/skill/帮助文本值域同步；引擎往返特殊字符密码钉。**ADR-0036 两承诺**：Edge 前置认证已落（\`server.edge_config.auth_token\` 共享令牌头 + traefik providers.http.headers 原生通道，Unix socket 形态否决；缺省关=升级零扰动）；per-Project registry 凭证设计定稿入 ADR-0036 N2 兑现节、实现排 N2b 初（仓布局前缀+accessControl+per-Project 端点面+staging 迁移）。**Adminer 6.1.1 终选**（MySQL 核心方言）+ Mongoku（Mongo，Adminer 插件太年轻）——报告 §8.1。**P7 digest 确定性性质测试**随批入仓（managedFingerprint/materialsFingerprint 1000 次稳定 + map 构造序 200 轮无关；schema CanonicalJSON 同款）。余项：版本升级路径、跨节点迁移〕
 - F2.2 备份深化：restic、外置 S3 目标、保留策略；**恢复演练**（verify + 试恢复到临时实例）为验收必过项。
 - F2.3 平台升级工具：升级序（Platform Backup 前置→替换→goose 前滚→Managed Provider 逐个 reconcile→解除只读）+ 失败回滚路径；**升级零扰动 e2e**（用户 Workload 零重启/路由零中断，ADR-0015 验收）。〔含受管域 Placement 钉住收口（F1.15 挂账：受管 zot 无钉住——spec 变更滚动替换可把 task 漂到无卷节点 preparing 打转；runbook 临时操作序 drain node2 不可长持）〕
 - F2.4 Logging Provider：VictoriaLogs 受管自宿；日志持久化、检索（时间/文本/容器过滤）、脱敏。

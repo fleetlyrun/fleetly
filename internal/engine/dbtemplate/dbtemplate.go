@@ -64,6 +64,8 @@ var registry = map[string]Template{
 	"postgres": postgresTemplate{},
 	"pgvector": pgvectorTemplate{},
 	"redis":    redisTemplate{},
+	"mysql":    mysqlTemplate{},
+	"mongo":    mongoTemplate{},
 }
 
 // Engines 返回在册引擎值域（受理位校验消费；排序稳定）。

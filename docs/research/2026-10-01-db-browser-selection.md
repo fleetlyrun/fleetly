@@ -88,6 +88,24 @@ C2 推论：候选必须是**独立部署的服务端 web 应用**（桌面/Elec
 - **iframe 行为未证实项**：redis-commander/DbGate/Mongoku 的 XFO/CSP 需 PoC 实测（pgweb/Adminer 已证实）。
 - **落地批次建议**：N1（F1.12 Database 最小集）不带浏览器（CLI 面为主）；浏览器随 N2b/N3 Console 面落地，PoC（iframe 实测 + pgweb connect-backend 与 fleetlyd 对接验证）可在 N2 前插入。本文不改动功能清单。
 
+## 8.1 终选（2026-10-04，F2.1 批——MySQL/Mongo 通道）
+
+F2.1 把 mysql/mongo 收进模板矩阵（dbtemplate 值域五引擎），浏览器通道随之终选：
+
+- **MySQL → Adminer 6.1.1**：核心方言（非插件）+ PHP 单文件 ~550KB（按需
+  实例冷启动最轻）+ credentials 插件与 `verifyLoginToken()`（6.1.0+）官方面
+  向外部认证——launcher token 桥接的模式 b 生态最厚。SSRF 史的攻击面
+  （用户自填 server 参数）由平台接管连接目标结构性消除（§7.3）。
+- **Mongo → Mongoku**（huggingface，MIT，活跃）：Adminer 的 Mongo 支持
+  是年轻插件（矩阵 §4"方言"行），不把数据库通道押在插件成熟度上；
+  Mongoku 单方言专注 + env 注入连接（C1 可行）。iframe XFO 行为未证实
+  → 随浏览器落地批 PoC（§8 既有项，与 redis-commander/DbGate 同批）。
+- **组合路线定型**：pgweb（PG）+ redis-commander（Redis）+ Adminer
+  （MySQL）+ Mongoku（Mongo）四件按需实例；DbGate 仍为"单工具全栈"
+  备选，触发条件不变（§8）。全部走 digest 钉定（F2.7 同纪律）。
+
+本文其余结论（形态 B 按需实例、launcher token、默认只读双保险）不变。
+
 ## 9. 来源
 
 - pgweb：repo/README/wiki（[sosedoff/pgweb](https://github.com/sosedoff/pgweb)、[Connect-Backend wiki](https://github.com/sosedoff/pgweb/wiki/Connect-Backend)、`pkg/command/options.go`）、v0.17.0 release 资产（~7MB）

@@ -74,7 +74,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
 			newNetworksRevokeVerb(), newNetworksPeersVerb()),
 		// 托管数据服务（F1.12，ADR-0029）。
-		groupVerb("databases", "manage managed data services (postgres/pgvector/redis templates; credential values never shown)",
+		groupVerb("databases", "manage managed data services (postgres/pgvector/redis/mysql/mongo templates; credential values never shown)",
 			newDatabasesCreateVerb(), newDatabasesListVerb(), newDatabasesGetVerb(), newDatabasesDeleteVerb()),
 		// Delivery 上下文。
 		newDeployVerb(),

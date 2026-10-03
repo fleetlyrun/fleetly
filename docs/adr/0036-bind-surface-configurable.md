@@ -38,3 +38,33 @@ runbook"端口暴露矩阵（操作者责任）"把 9080/9081/9082/5000 全部�
 - [x] doctor 探测 hermetic：地址分类与探测分支为纯函数 + 注入探针，单测不拨真网（Windows 本机确定性）（0c8b9ce）
 - [x] golden 双形态（doctor/doctor-json）全量再生成，仅新增检查行；runbook 端口矩阵同步"绑面配置化"说明与配置示例（0c8b9ce + runbook 端口矩阵节）
 - [x] mise run test + mise run lint 全绿（0c8b9ce 随批全门禁绿）
+
+## N2 兑现（2026-10-04，F2.1 批）
+
+决策 3 的两项推迟承诺在本批部分兑现，形态裁决如下：
+
+1. **Edge 前置认证 = 共享令牌头（已落地）**：`server.edge_config.auth_token`
+   （config 新字段，空 = 无认证现状）。非空时拉取端点要求
+   `X-Fleetly-Edge-Token` 头常量时间比对（traefik http provider 原生
+   `--providers.http.headers` 通道——proto 旧注释"traefik 不支持凭证形态"
+   系误记，已勘正）；受管 traefik 命令随 token 增同名头。**9082 Unix
+   socket 形态否决**：traefik http provider 无 unix scheme 支持，容器内
+   挂 socket 还要额外卷面——令牌头是原生能力零新机制。缺省关闭（收窄是
+   显式动作、升级零扰动）；**多租户启用前置项 = 置值**（doctor bind
+   surface 面提示随 Console 批）。
+2. **per-Project registry 凭证（设计定稿，实现排 N2b 初）**：凭证域隔离
+   的完整形态 = 镜像仓布局带 Project 前缀（`<addr>/<projectID>/<appID>`，
+   LocalImageRef 唯一真源改公式）+ zot accessControl per-Project 用户
+   （`<projectID>/**` 仓库门禁）+ 凭证按 Project 铸造分发（capability
+   Registry 增可选 per-Project 端点面；zot htpasswd/config 材料随活跃
+   Project 集再生成 = 项目创建/删除一次受管滚动，60s stop-grace 数据面
+   无扰）。存量迁移：扁平仓旧 digest 引用保持全用户可读（存量暴露不
+   扩大不收缩），新内容全走前缀布局。排期理由：涉及 staging 在役 zot
+   滚动与 Revision 冻结引用兼容面，与 F2.4/F2.5 同批风险叠加过大；
+   多租户启用（Invitation 面开放）前完成即满足决策 3 的"不得跳过"。
+
+验收锚（N2 兑现部分）：
+- [x] auth_token 空：端点无认证、traefik 命令逐位不变（升级零扰动断言）
+- [x] auth_token 非空：缺失/错值头 → 401（响应体零配置字节）；正确值 → 200 + 快照（常量时间比对）
+- [x] config 访问器缺省/显式/nil 链三态钉死；wire 装配透传（config→ctx 唯一契约源 + env 同键兜底）
+- [ ] per-Project 凭证（N2b 初：仓布局前缀 + accessControl + per-Project 端点面 + staging 迁移实录）

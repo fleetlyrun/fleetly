@@ -305,6 +305,23 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "redispw", password)
 
-	_, err = DatabaseConnectionURL("mysql", tDatabaseID, "x")
+	// F2.1 矩阵扩展：mysql/mongo 同一往返（密码特殊字符走百分号编码）。
+	my, err := DatabaseConnectionURL("mysql", tDatabaseID, "p: w@rd")
+	require.NoError(t, err)
+	assert.Equal(t,
+		fmt.Sprintf("mysql://fleetly:p%%3A%%20w%%40rd@%s:3306/fleetly", DatabaseDNSName(tDatabaseID)), my)
+	password, err = dbtemplate.PasswordFromURL(my)
+	require.NoError(t, err)
+	assert.Equal(t, "p: w@rd", password)
+
+	mo, err := DatabaseConnectionURL("mongo", tDatabaseID, "mongopw")
+	require.NoError(t, err)
+	assert.Equal(t,
+		fmt.Sprintf("mongodb://fleetly:mongopw@%s:27017/fleetly", DatabaseDNSName(tDatabaseID)), mo)
+	password, err = dbtemplate.PasswordFromURL(mo)
+	require.NoError(t, err)
+	assert.Equal(t, "mongopw", password)
+
+	_, err = DatabaseConnectionURL("oracle", tDatabaseID, "x")
 	assert.Error(t, err, "engine value domain is closed by the template registry")
 }

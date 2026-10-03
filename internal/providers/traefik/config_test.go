@@ -19,7 +19,7 @@ var update = flag.Bool("update", false, "rewrite golden files")
 // 动态配置翻译 golden（h2c/http/tcp + TLS 标注；F0.15 验收：h2c 后端
 // 路由可通——messageloop 形态）。
 func TestDynamicConfigGolden(t *testing.T) {
-	p, err := New("http://fleetlyd:9082/edge/config", "ops@example.com")
+	p, err := New("http://fleetlyd:9082/edge/config", "ops@example.com", "")
 	require.NoError(t, err)
 	require.NoError(t, p.PublishRoutes(context.Background(), []capability.Route{
 		{Host: "shop.127.0.0.1.sslip.io", Path: "/", Process: "web", Port: 8080,
@@ -117,7 +117,7 @@ func TestRouteKeyInjectiveOnNormalizedCollision(t *testing.T) {
 
 // 受管形态声明完整性（80/443 发布 + ACME storage 卷）。
 func TestManagedWorkloadDeclaration(t *testing.T) {
-	p, err := New("http://fleetlyd:9082/edge/config", "")
+	p, err := New("http://fleetlyd:9082/edge/config", "", "")
 	require.NoError(t, err)
 	ws := p.ManagedWorkloads()
 	require.Len(t, ws, 1)
@@ -129,6 +129,17 @@ func TestManagedWorkloadDeclaration(t *testing.T) {
 	}, w.Publish)
 	assert.Equal(t, capability.NamespaceRef{Team: "fleetly", Project: "system", App: "edge"}, p.ManagedNamespace())
 	assert.Contains(t, joinCommand(w.Command), "--certificatesresolvers.le.acme.httpchallenge.entrypoint=web")
+	assert.NotContains(t, joinCommand(w.Command), "X-Fleetly-Edge-Token",
+		"empty token must keep the command byte-identical to the no-auth form (upgrade zero-disturbance)")
+}
+
+// 共享令牌开关（ADR-0036 N2 兑现）：令牌非空 → 受管命令携带同名头；空 →
+// 零新增参数（无认证现状逐位不变）。
+func TestManagedWorkloadAuthTokenHeader(t *testing.T) {
+	p, err := New("http://fleetlyd:9082/edge/config", "", "s3cret-edge-token")
+	require.NoError(t, err)
+	cmd := joinCommand(p.ManagedWorkloads()[0].Command)
+	assert.Contains(t, cmd, "--providers.http.headers.X-Fleetly-Edge-Token=s3cret-edge-token")
 }
 
 func joinCommand(cmd []string) string {

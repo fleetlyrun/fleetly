@@ -43,7 +43,7 @@ func TestDatabaseLifecycle(t *testing.T) {
 
 	// 值域外 engine → InvalidArgument（列合法值）。
 	_, err := dbs.CreateDatabase(ctx, &structurev1.CreateDatabaseRequest{
-		ProjectId: projectID, Name: "shop", Engine: "mysql",
+		ProjectId: projectID, Name: "shop", Engine: "oracle",
 	})
 	require.Error(t, err)
 	assert.Equal(t, codes.InvalidArgument, status.Code(err))

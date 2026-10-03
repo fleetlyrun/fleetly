@@ -43,3 +43,13 @@ func TestBindAccessorsTolerateNil(t *testing.T) {
 	assert.Equal(t, DefaultEdgeConfigAddr, (*AppConfig)(nil).EdgeConfigAddr())
 	assert.Empty(t, (*AppConfig)(nil).RegistryAddr())
 }
+
+// 拉取端点共享令牌（ADR-0036 N2 兑现）：缺省空 = 无认证现状（升级零
+// 扰动）；显式值原样透传；nil 链安全。
+func TestEdgeConfigAuthToken(t *testing.T) {
+	assert.Empty(t, WithDefaults(&AppConfig{}).EdgeConfigAuthToken(),
+		"unset token keeps the endpoint unauthenticated (current behavior)")
+	c := WithDefaults(&AppConfig{Server: &Server{EdgeConfig: &EdgeConfig{AuthToken: "edge-secret"}}})
+	assert.Equal(t, "edge-secret", c.EdgeConfigAuthToken())
+	assert.Empty(t, (*AppConfig)(nil).EdgeConfigAuthToken())
+}

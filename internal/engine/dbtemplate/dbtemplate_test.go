@@ -13,17 +13,22 @@ import (
 )
 
 func TestRegistryValueDomain(t *testing.T) {
-	assert.Equal(t, []string{"pgvector", "postgres", "redis"}, dbtemplate.Engines())
+	assert.Equal(t, []string{"mongo", "mysql", "pgvector", "postgres", "redis"}, dbtemplate.Engines())
 
-	_, ok := dbtemplate.For("mysql")
+	_, ok := dbtemplate.For("oracle")
 	assert.False(t, ok, "unregistered engine must not resolve")
 
 	info, ok := dbtemplate.InfoFor("postgres")
 	require.True(t, ok)
 	assert.Equal(t, dbtemplate.Info{Version: "17-bookworm", Port: 5432}, info)
 
-	_, ok = dbtemplate.InfoFor("mysql")
-	assert.False(t, ok)
+	info, ok = dbtemplate.InfoFor("mysql")
+	require.True(t, ok)
+	assert.Equal(t, dbtemplate.Info{Version: "8.4", Port: 3306}, info)
+
+	info, ok = dbtemplate.InfoFor("mongo")
+	require.True(t, ok)
+	assert.Equal(t, dbtemplate.Info{Version: "8.0", Port: 27017}, info)
 }
 
 func TestTemplateFaces(t *testing.T) {
@@ -81,6 +86,37 @@ func TestTemplateFaces(t *testing.T) {
 				dbtemplate.RedisConfFile: []byte("requirepass secretpw\nappendonly yes\n"),
 			},
 			connURL: "redis://:secretpw@db-01j8:6379/0",
+		},
+		{ //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+			engine:     "mysql",
+			meta:       dbtemplate.Info{Version: "8.4", Port: 3306},
+			image:      "mysql:8.4",
+			dataTarget: "/var/lib/mysql",
+			env: map[string]string{
+				"MYSQL_DATABASE":           "fleetly",
+				"MYSQL_USER":               "fleetly",
+				"MYSQL_PASSWORD_FILE":      "/run/secrets/" + dbtemplate.MySQLPasswordFile,
+				"MYSQL_ROOT_PASSWORD_FILE": "/run/secrets/" + dbtemplate.MySQLRootPasswordFile,
+			},
+			probe:     []string{"mysqladmin", "ping", "-h", "127.0.0.1"},
+			materials: map[string][]byte{dbtemplate.MySQLPasswordFile: []byte("secretpw"), dbtemplate.MySQLRootPasswordFile: []byte("secretpw")},
+			connURL:   "mysql://fleetly:secretpw@db-01j8:3306/fleetly",
+		},
+		{ //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+			engine:     "mongo",
+			meta:       dbtemplate.Info{Version: "8.0", Port: 27017},
+			image:      "mongo:8.0",
+			dataTarget: "/data/db",
+			command: []string{"sh", "-c",
+				"cp /run/secrets/" + dbtemplate.MongoInitJSFile + " /docker-entrypoint-initdb.d/10-fleetly-user.js" +
+					" && exec docker-entrypoint.sh mongod --config /run/secrets/" + dbtemplate.MongoConfFile},
+			probe: []string{"mongosh", "--quiet", "--eval", "db.adminCommand('ping')"},
+			materials: map[string][]byte{
+				dbtemplate.MongoConfFile: []byte("storage:\n  dbPath: /data/db\nnet:\n  port: 27017\nsecurity:\n  authorization: enabled\n"),
+				dbtemplate.MongoInitJSFile: []byte(
+					"db.getSiblingDB('fleetly').createUser({user: 'fleetly', pwd: 'secretpw', roles: [{role: 'readWrite', db: 'fleetly'}]});\n"),
+			},
+			connURL: "mongodb://fleetly:secretpw@db-01j8:27017/fleetly",
 		},
 	} {
 		t.Run(tc.engine, func(t *testing.T) {

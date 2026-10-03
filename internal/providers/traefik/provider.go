@@ -29,6 +29,9 @@ type Provider struct {
 	// --providers.http.endpoint 值）。
 	configEndpoint string
 	acmeEmail      string
+	// authToken 是拉取端点共享令牌（空 = 端点无认证现状；非空经
+	// --providers.http.headers 同头携带，ADR-0036 N2 兑现）。
+	authToken string
 
 	mu     sync.RWMutex
 	schema []byte // 最近发布的全量动态配置（拉取端点快照）
@@ -40,8 +43,10 @@ var (
 	_ capability.Managed = (*Provider)(nil)
 )
 
-// New 构造 Provider。configEndpoint 形如 http://fleetlyd:9082/edge/config。
-func New(configEndpoint, acmeEmail string) (*Provider, error) {
+// New 构造 Provider。configEndpoint 形如 http://fleetlyd:9082/edge/config；
+// authToken 非空时受管实例以 X-Fleetly-Edge-Token 头携带（端点侧常量时间
+// 比对——空串维持无认证现状，升级零扰动）。
+func New(configEndpoint, acmeEmail, authToken string) (*Provider, error) {
 	if configEndpoint == "" {
 		return nil, fmt.Errorf("traefik provider: config endpoint is required")
 	}
@@ -51,6 +56,7 @@ func New(configEndpoint, acmeEmail string) (*Provider, error) {
 	return &Provider{
 		configEndpoint: configEndpoint,
 		acmeEmail:      acmeEmail,
+		authToken:      authToken,
 		schema:         emptyDynamicConfig(),
 	}, nil
 }
@@ -116,23 +122,32 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 		ID:      "fleetly-edge-traefik",
 		Process: "traefik",
 		Image:   Image,
-		Command: []string{
-			"traefik",
-			"--entryPoints.web.address=:80",
-			"--entryPoints.websecure.address=:443",
-			// HTTP provider：控制面是配置真源（poll 拉取全量配置）。
-			"--providers.http.endpoint=" + p.configEndpoint,
-			"--providers.http.pollInterval=5s",
-			// LE HTTP-01（traefik 原生；staging CA 防误触发生产配额，
-			// 生产 CA 随安装引导批切换）。
-			"--certificatesresolvers.le.acme.email=" + p.acmeEmail,
-			"--certificatesresolvers.le.acme.storage=/acme/acme.json",
-			"--certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory",
-			"--certificatesresolvers.le.acme.httpchallenge=true",
-			"--certificatesresolvers.le.acme.httpchallenge.entrypoint=web",
-			// 观测面（api 只读 dashboard，随 Console 批次决定暴露）。
-			"--api.dashboard=false",
-		},
+		Command: func() []string {
+			cmd := []string{
+				"traefik",
+				"--entryPoints.web.address=:80",
+				"--entryPoints.websecure.address=:443",
+				// HTTP provider：控制面是配置真源（poll 拉取全量配置）。
+				"--providers.http.endpoint=" + p.configEndpoint,
+				"--providers.http.pollInterval=5s",
+				// LE HTTP-01（traefik 原生；staging CA 防误触发生产配额，
+				// 生产 CA 随安装引导批切换）。
+				"--certificatesresolvers.le.acme.email=" + p.acmeEmail,
+				"--certificatesresolvers.le.acme.storage=/acme/acme.json",
+				"--certificatesresolvers.le.acme.caserver=https://acme-staging-v02.api.letsencrypt.org/directory",
+				"--certificatesresolvers.le.acme.httpchallenge=true",
+				"--certificatesresolvers.le.acme.httpchallenge.entrypoint=web",
+				// 观测面（api 只读 dashboard，随 Console 批次决定暴露）。
+				"--api.dashboard=false",
+			}
+			if p.authToken != "" {
+				// 端点共享令牌（ADR-0036 N2 兑现）：traefik http provider
+				// 的自定义头通道；令牌变更 = 载体 spec 变更 = 一次滚动
+				// 替换（opt-in 动作窗口，操作者自知）。
+				cmd = append(cmd, "--providers.http.headers.X-Fleetly-Edge-Token="+p.authToken)
+			}
+			return cmd
+		}(),
 		Ports: []capability.WorkloadPort{
 			{Port: 80, Protocol: capability.ProtocolHTTP},
 			{Port: 443, Protocol: capability.ProtocolTCP},
@@ -149,9 +164,14 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 }
 
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。端点与邮箱经环境
-// 变量注入（配置面随 API 批次落 config.proto）。
+// 变量注入，令牌走装配 ctx（config.server.edge_config.auth_token，唯一
+// 契约源）+ env FLEETLY_EDGE_AUTH_TOKEN 同键兜底（ADR-0036 形态）。
 func init() {
-	capability.RegisterFactory(capability.KindEdge, "traefik", func(context.Context) (capability.Provider, error) {
-		return New(os.Getenv("FLEETLY_EDGE_CONFIG_ENDPOINT"), os.Getenv("FLEETLY_EDGE_ACME_EMAIL"))
+	capability.RegisterFactory(capability.KindEdge, "traefik", func(ctx context.Context) (capability.Provider, error) {
+		token := capability.EdgeAuthTokenFromContext(ctx)
+		if token == "" {
+			token = os.Getenv("FLEETLY_EDGE_AUTH_TOKEN")
+		}
+		return New(os.Getenv("FLEETLY_EDGE_CONFIG_ENDPOINT"), os.Getenv("FLEETLY_EDGE_ACME_EMAIL"), token)
 	})
 }

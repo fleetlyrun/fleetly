@@ -19,11 +19,11 @@ func newDatabasesCreateVerb() commands.Command {
 	var project, engine string
 	var idem idemKeyFlag
 	return &flaggedVerb{
-		name: name, synopsis: "Create a database from a template (postgres / pgvector / redis)",
+		name: name, synopsis: "Create a database from a template (postgres / pgvector / redis / mysql / mongo)",
 		usage: "databases create --project PROJECT_ID --engine ENGINE NAME",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "owning project id (required)")
-			fs.StringVar(&engine, "engine", "", "template engine: postgres | pgvector | redis (required)")
+			fs.StringVar(&engine, "engine", "", "template engine: postgres | pgvector | redis | mysql | mongo (required)")
 			idem.declare(fs)
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {

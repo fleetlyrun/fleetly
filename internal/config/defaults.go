@@ -87,6 +87,12 @@ func (c *AppConfig) EdgeConfigAddr() string {
 	return DefaultEdgeConfigAddr
 }
 
+// EdgeConfigAuthToken 是拉取端点共享令牌访问器（容忍 nil 链）。空 = 无
+// 认证现状（ADR-0036 N2 兑现：多租户启用前必须置值）。
+func (c *AppConfig) EdgeConfigAuthToken() string {
+	return c.GetServer().GetEdgeConfig().GetAuthToken()
+}
+
 // RegistryAddr 是受管仓库引用地址访问器（容忍 nil 链）。无缺省可回退：
 // 空值 = 受管仓库停用，与未设 env 的现状一致（ADR-0036）。
 func (c *AppConfig) RegistryAddr() string {

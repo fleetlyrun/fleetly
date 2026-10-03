@@ -39,7 +39,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	edge, cleanup4, err := NewEdgeProvider(app)
+	edge, cleanup4, err := NewEdgeProvider(app, appConfig)
 	if err != nil {
 		cleanup3()
 		cleanup2()

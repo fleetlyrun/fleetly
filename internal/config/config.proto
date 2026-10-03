@@ -38,6 +38,11 @@ message EdgeConfig {
   // 凭证的既知形态），公网可达 = 任意人可改写全量路由——钉内网/VPC
   // 地址或以防火墙封公网（ADR-0036）。
   string addr = 1;
+  // 拉取端点共享令牌（ADR-0036 N2 兑现）：非空时端点要求
+  // X-Fleetly-Edge-Token 头常量时间比对（traefik 经
+  // --providers.http.headers 同头携带），空 = 无认证现状（收窄是显式
+  // 动作，升级零扰动）。多租户启用前的必选项。
+  string auth_token = 2;
 }
 
 message Registry {

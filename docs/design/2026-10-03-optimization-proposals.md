@@ -212,8 +212,8 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 - 守卫：canonical 化函数的单测包含"重复调用 1000 次 digest 稳定"+"map 序打乱输入 digest 不变"两条性质测试。
 
 **验收锚**：
-- [ ] 性质测试入仓（稳定性 + 输入序无关性）
-- [ ] N2 备份链/模板链实施时本纪律进对应 ADR 验收锚
+- [x] 性质测试入仓（稳定性 + 输入序无关性）（2026-10-04 F2.1 批：managedFingerprint/materialsFingerprint + schema CanonicalJSON——1000 次稳定 + map 构造序 200 轮无关）
+- [x] N2 备份链/模板链实施时本纪律进对应 ADR 验收锚（ADR-0036 N2 兑现节引用；F2.2 备份批随批落）
 
 ---
 

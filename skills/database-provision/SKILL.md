@@ -1,6 +1,6 @@
 ---
 name: database-provision
-description: Provision a managed database (postgres/pgvector/redis) on fleetly and wire an app to it — create the project network precondition, mint the database and its credential secret, inject the connection URL into the app via secret_refs, and verify connectivity through db-<id> DNS on the project network. Use when an app needs a database with zero credential handling.
+description: Provision a managed database (postgres/pgvector/redis/mysql/mongo) on fleetly and wire an app to it — create the project network precondition, mint the database and its credential secret, inject the connection URL into the app via secret_refs, and verify connectivity through db-<id> DNS on the project network. Use when an app needs a database with zero credential handling.
 ---
 
 # database-provision
@@ -17,14 +17,16 @@ network of the project, and seals one project secret per database:
   (lowercase) on the project's networks — an app process must declare the
   same network to connect.
 - **Templates**: engines are `postgres`, `pgvector` (vector extension
-  installed on first boot), `redis`; versions are pinned by the platform.
+  installed on first boot), `redis`, `mysql`, `mongo`; versions are pinned
+  by the platform.
 - **Deletion** keeps the volume and the credential secret (backup-retention
   semantics); IDs are never reused — recreating the same name mints a fresh
   credential.
 
 ## When to use
 
-- An app needs postgres/redis with platform-managed credentials.
+- An app needs a managed database (postgres/pgvector/redis/mysql/mongo) with
+  platform-managed credentials.
 - You must wire an existing app to an existing database (secret injection).
 - Verifying a database is up and app↔database connectivity works.
 
@@ -40,8 +42,8 @@ network of the project, and seals one project secret per database:
    ```
 
 2. Create the database (engine value domain is exactly `postgres`,
-   `pgvector`, `redis`; creation is idempotent-key eligible; flags come
-   before the NAME positional):
+   `pgvector`, `redis`, `mysql`, `mongo`; creation is idempotent-key
+   eligible; flags come before the NAME positional):
 
    ```bash
    fleetly databases create --project PROJECT_ID --engine postgres NAME
@@ -101,6 +103,8 @@ network of the project, and seals one project secret per database:
 
 - Backups land with F2 (local object store target is registered already);
   restore/verify surfaces do not exist yet — do not promise them.
-- mysql/mongodb templates and version matrices are F2.
+- Version upgrade paths for existing instances and cross-node volume
+  migration are F2.1 follow-ups; a database runs its pinned image version
+  for its lifetime.
 - One schema/database per managed instance (`fleetly` database); multiple app
   schemas over one instance is an app-level concern.
