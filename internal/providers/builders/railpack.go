@@ -53,12 +53,15 @@ type cmdOutcome struct {
 	ExitCode int
 }
 
-// runCmd 是执行接 seam（真机 exec.CommandContext + CombinedOutput；单测
+// runCmd 是执行接缝（真机 exec.CommandContext + CombinedOutput；单测
 // 注入假底座——退出码是 railpack 约定语义面，结构化承载避免测面反构
-// *exec.ExitError）。
+// *exec.ExitError）。子进程环境 = railpackChildEnv 瘦身集（不继承
+// fleetlyd 全家桶）。
 var runCmd = func(ctx context.Context, name string, args ...string) cmdOutcome {
 	//nolint:gosec // 二进制路径来自平台 env（操作者信任域，同 cloneSource 冻结 ref 口径）；spec 面只有钉版常量可执法
-	out, err := exec.CommandContext(ctx, name, args...).CombinedOutput()
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = railpackChildEnv(os.Environ())
+	out, err := cmd.CombinedOutput()
 	oc := cmdOutcome{Combined: out, Err: err, ExitCode: -1}
 	var ee *exec.ExitError
 	if errors.As(err, &ee) {
@@ -67,10 +70,40 @@ var runCmd = func(ctx context.Context, name string, args ...string) cmdOutcome {
 	return oc
 }
 
+// railpackChildEnv 是 railpack 子进程（版本探测 + prepare）的环境瘦身集
+// （E30：缺陷=exec 继承 os.Environ() 全家桶——FLEETLY_DATA_ROOT/KEK 面/
+// 引导 Token 等控制面敏感 env 全部进入 railpack 进程，随其自身日志/计划
+// 生成的面外泄面不可控）。裁到构建必要集：PATH/HOME（工具与缓存定位）、
+// Windows 临时目录三形态、代理族（构建期网络出口的正常通道）。显式
+// deny-by-default：不在集内的 env 一律不传（平台键前缀也在不传之列）。
+func railpackChildEnv(environ []string) []string {
+	allow := map[string]bool{
+		"PATH": true, "HOME": true,
+		"TMPDIR": true, "TEMP": true, "TMP": true,
+		"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true,
+		"http_proxy": true, "https_proxy": true, "no_proxy": true,
+	}
+	var out []string
+	for _, kv := range environ {
+		if i := strings.IndexByte(kv, '='); i > 0 && allow[kv[:i]] {
+			out = append(out, kv)
+		}
+	}
+	return out
+}
+
 // NewRailpack 构造 Provider：host 为 daemon 端点；二进制路径 env
 // FLEETLY_RAILPACK_BIN（缺省 PATH 上的 railpack）。构造期探测二进制版本
 // （缺席/不匹配不阻断装配——Health 面 + Build 期精确失败，其余 builder
 // 不受影响，ADR-0032 决策 4）。
+//
+// 构造期 ctx 契约（E30 注释钉死现状）：ctx 只界定构造期工作——daemon 双
+// 通道客户端建立（newDaemonClients）与 15s 带界的版本探测（内部再派生
+// probeCtx，构造期最长挂 15s）；New 成功返回后 Provider 与该 ctx 解耦，
+// Build/Health 各自携带调用期 ctx。推论：构造期 ctx 已取消/超时 → 版本
+// 探测失败 → version 为空 → Health 报 not runnable、Build 期精确失败
+// （Provider 半残但可诊断）；装配方应传无界 ctx（装配层现状 =
+// context.Background()，assembly.NewBuilderProviders）。
 func NewRailpack(ctx context.Context, host string) (*RailpackProvider, error) {
 	d, err := newDaemonClients(ctx, host)
 	if err != nil {

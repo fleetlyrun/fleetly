@@ -262,10 +262,18 @@ type Engine struct {
 	// 重放持有锁期间 Submit 排队——admission 落行与重放的 ActiveByApp
 	// 复查被串行化，不存在"复查后落行、重放再 Ensure 旧 Generation 与
 	// 驱动器对翻载体标签"的窗口（健康部署被 L1 误判回滚的根因）。
+	//
+	// 终态清条目裁决（E30）：不做。理由：①条目量级 = 进程生命期内曾被
+	// 锁过的 App/Task 数（1 锁 ≈ 8B + sync.Map 槽位），趋势随受理速率缓
+	// 增、无爆发面，v1 规模（N0 小团队）距关切量级几个数量级；②天真的
+	// 终态删键不安全——他方 goroutine（API 动词/驱动环/观测路径并发）
+	// 正持锁时删 key，新 lockTask 会铸出第二把锁，同 ID 两个临界区并行
+	// = 互斥破环，比有界泄漏有害得多；正确的清退需要引头计数/single-
+	// flight 复杂度，收益配不上风险。
 	appLocks sync.Map // appID → *sync.Mutex
 
 	// taskLocks 是 Task 级互斥（驱动环与 DeleteTask 载体收口共享——
-	// appLocks 同款形态；深审裁决表 #16 的同构互斥）。
+	// appLocks 同款形态与同款不清退裁决；深审裁决表 #16 的同构互斥）。
 	taskLocks sync.Map // taskID → *sync.Mutex
 
 	// Task 域观测缓存（P1-7 缓存分家：独立缓存组，与部署形状五 map 隔离；

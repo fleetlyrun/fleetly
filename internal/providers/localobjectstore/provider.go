@@ -64,14 +64,22 @@ func (p *Provider) probeWritable(context.Context) error {
 	if err := os.MkdirAll(p.root, 0o750); err != nil {
 		return err
 	}
-	probe := filepath.Join(p.root, ".probe")
-	if err := os.WriteFile(probe, nil, 0o600); err != nil {
+	// 探测文件用唯一名（CreateTemp）：探测面可能并发进入（健康检查节拍与
+	// doctor 自证同拍、多进程共数据根的误配形态）——固定名会让并发方互删
+	// 探测文件，Remove 撞 ErrNotExist 被误判为不可写（假 unhealthy）。
+	probe, err := os.CreateTemp(p.root, ".probe-")
+	if err != nil {
 		return err
 	}
-	return os.Remove(probe)
+	name := probe.Name()
+	_ = probe.Close()
+	return os.Remove(name)
 }
 
-// Put 写一个对象（原子落位：tmp+rename；reader 由调用方关闭）。
+// Put 写一个对象（原子落位：tmp+rename；reader 由调用方关闭）。rename 前
+// fsync：跨进程崩溃安全——掉电/崩溃后 rename 已落但数据未落盘的形态会让
+// 备份对象空壳/半截（备份的可信度=可恢复性，sync 是落位承诺的一部分；
+// Windows 上 File.Sync() 同样可用）。
 func (p *Provider) Put(_ context.Context, key string, r io.Reader) error {
 	path, err := p.objectPath(key)
 	if err != nil {
@@ -90,6 +98,11 @@ func (p *Provider) Put(_ context.Context, key string, r io.Reader) error {
 		_ = os.Remove(tmp)
 		return err
 	}
+	if err := fileSync(f); err != nil {
+		_ = f.Close()
+		_ = os.Remove(tmp)
+		return err
+	}
 	if err := f.Close(); err != nil {
 		_ = os.Remove(tmp)
 		return err
@@ -100,6 +113,9 @@ func (p *Provider) Put(_ context.Context, key string, r io.Reader) error {
 	}
 	return nil
 }
+
+// fileSync 是 fsync 的注入缝（单测注入失败形态钉错误路径；生产 = File.Sync）。
+var fileSync = func(f *os.File) error { return f.Sync() }
 
 // Get 读一个对象（调用方负责 Close）。
 func (p *Provider) Get(_ context.Context, key string) (io.ReadCloser, error) {
@@ -118,7 +134,9 @@ func (p *Provider) Get(_ context.Context, key string) (io.ReadCloser, error) {
 }
 
 // List 列举前缀下对象键（前缀空 = 全部；排序稳定。尾斜杠是目录前缀的
-// 自然形态，剥后再钳）。
+// 自然形态，剥后再钳）。遍历按前缀剪枝：命中键必然住在前缀的父目录
+// （dirPrefix）子树内，其余子树整枝跳过——备份根随年限增长后，按库列举
+// 不再退化为全根遍历（剪枝语义 = WalkDir 的 SkipDir，结果集不变）。
 func (p *Provider) List(_ context.Context, prefix string) ([]string, error) {
 	if prefix != "" {
 		prefix = strings.TrimSuffix(prefix, "/")
@@ -130,6 +148,11 @@ func (p *Provider) List(_ context.Context, prefix string) ([]string, error) {
 			prefix = cleaned
 		}
 	}
+	// dirPrefix 是前缀所在的目录（无斜杠 = 前缀即文件名形态，父目录为根）。
+	dirPrefix := ""
+	if i := strings.LastIndexByte(prefix, '/'); i >= 0 {
+		dirPrefix = prefix[:i]
+	}
 	var out []string
 	base := p.root
 	walkErr := filepath.WalkDir(base, func(path string, d fs.DirEntry, err error) error {
@@ -140,6 +163,14 @@ func (p *Provider) List(_ context.Context, prefix string) ([]string, error) {
 			return err
 		}
 		if d.IsDir() {
+			rel, rerr := filepath.Rel(base, path)
+			if rerr != nil {
+				return rerr
+			}
+			rel = filepath.ToSlash(rel)
+			if rel != "." && !dirMayContain(rel, dirPrefix) {
+				return fs.SkipDir // 不可能命中前缀的子树整枝剪掉
+			}
 			return nil
 		}
 		if strings.HasSuffix(d.Name(), ".tmp") {
@@ -161,6 +192,20 @@ func (p *Provider) List(_ context.Context, prefix string) ([]string, error) {
 	}
 	sort.Strings(out)
 	return out, nil
+}
+
+// dirMayContain 报告目录 relDir 是否可能含 dirPrefix 前缀下的键：relDir
+// 是 dirPrefix 的祖先（通往它的必经路径）或其子树成员，二者其一才可能
+// 命中。组件级比较（带尾斜杠）——纯字符串前缀会把 "db1" 误判进 "db10"
+// 子树。剪枝只动遍历量，结果集判定仍由调用方的 HasPrefix 把守。
+func dirMayContain(relDir, dirPrefix string) bool {
+	if dirPrefix == "" {
+		return true // 无前缀 = 全根遍历
+	}
+	if relDir == dirPrefix {
+		return true
+	}
+	return strings.HasPrefix(dirPrefix, relDir+"/") || strings.HasPrefix(relDir, dirPrefix+"/")
 }
 
 // Delete 删除一个对象（幂等：不存在不报错——保留策略执行器按清单滚动，

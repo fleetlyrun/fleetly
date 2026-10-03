@@ -54,6 +54,27 @@ func TestRailpackFrontendRef(t *testing.T) {
 	assert.Equal(t, "0.39.0", railpackPinnedVersion, "platform pin is the archived-verified baseline (ADR-0021)")
 }
 
+// TestRailpackChildEnvSlimming 钉 E30 env 瘦身：deny-by-default 白名单——
+// PATH/HOME/临时目录/代理族通过，控制面全家桶（数据根/平台键面）不传。
+func TestRailpackChildEnvSlimming(t *testing.T) {
+	environ := []string{
+		"PATH=/usr/local/bin",
+		"HOME=/root",
+		"TMPDIR=/tmp",
+		"HTTPS_PROXY=http://proxy:3128",
+		"no_proxy=localhost",
+		"FLEETLY_DATA_ROOT=/var/lib/fleetly",
+		"FLEETLY_RAILPACK_BIN=/usr/bin/railpack",
+		"DOCKER_HOST=tcp://10.0.0.5:2375",
+		"=::=::\\", // Windows 怪形条目（无名字段）：不进
+	}
+	got := railpackChildEnv(environ)
+	assert.ElementsMatch(t, []string{
+		"PATH=/usr/local/bin", "HOME=/root", "TMPDIR=/tmp",
+		"HTTPS_PROXY=http://proxy:3128", "no_proxy=localhost",
+	}, got, "only the build-essential allowlist passes through")
+}
+
 // newRailpackForTest 构造版本可控的 Provider（daemon 客户端惰性连接，
 // 版本检查先于任何 daemon 调用——本测试面零 daemon 依赖）。
 func newRailpackForTest(t *testing.T, version string) *RailpackProvider {

@@ -181,6 +181,12 @@ func (p *Provider) updateServiceCAS(ctx context.Context, ns capability.Namespace
 
 // isUpdateOutOfSequence 识别 swarmkit 版本冲突：swarmkit 以 code=Unknown
 // 返回，跨 API 边界无类型化哨兵，按其稳定文案匹配。
+//
+// 已验证 daemon 版本（E30 注释钉死）：docker 29.x 真机（staging 实证锚
+// 2026-09-30 见 docker 29.8——节点 label 过滤盲区同批；"update out of
+// sequence" 于发布中重部署在 docker 29 真机复现，C19 批）。文案匹配的
+// 失效形态是 daemon 升级后改写错误文案（重试退化为单发失败）——升级
+// daemon 时须真机重验本匹配与 isNodeVersionRace 的两文案同族。
 func isUpdateOutOfSequence(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "update out of sequence")
 }
