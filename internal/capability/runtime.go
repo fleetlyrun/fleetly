@@ -32,7 +32,12 @@ type Runtime interface {
 	Watch(ctx context.Context) (<-chan WorkloadEvent, error)
 
 	// Addresses 返回隔离域的可达地址（VIP/DNS 端点等平台无关形态）。
-	Addresses(ctx context.Context, ns NamespaceRef) ([]Endpoint, error)
+	// expected 是调用方的期望 Workload 集（engine 手持的 Ensure 投影）：
+	// 端点端口取自期望集的声明端口——Provider 载体原生不承载"声明端口"
+	// 概念（swarm service 无容器端口面），期望集注入取代 Provider 侧的
+	// 平行编码（端口 label 编解码，架构评审第二轮候选 7）。未匹配到期望
+	// 集成员的服务不计入端点。
+	Addresses(ctx context.Context, ns NamespaceRef, expected []Workload) ([]Endpoint, error)
 
 	// DescribeCluster 返回集群观测视图（节点缓存，非权威——平台以 ID
 	// 查权威表判定归属）。
@@ -231,11 +236,20 @@ type WorkloadPort struct {
 	Protocol Protocol
 }
 
-// Healthcheck 是声明式健康探针（L1 健康门数据源）。
+// Healthcheck 是声明式健康探针（L1 健康门数据源）。探针是全解析 IR：
+// 端口回退链与 exec 方言归一由 engine 投影时一次解析（HTTPPort 恒显式、
+// Exec 恒干净 argv——不带 CMD/CMD-SHELL 方言前缀），Provider 只做原语
+// 映射不再推导引擎策略（架构评审第二轮候选 7）。
 type Healthcheck struct {
 	// 三选一：HTTPPath/TCPPort/Exec 至少其一。
 	HTTPPath string
-	TCPPort  int32
+	// TCPPort 是探针自带的 tcp 口声明（tcp 探针的探测口；http 探针
+	// 回退链的输入之一）。
+	TCPPort int32
+	// HTTPPort 是 http 探针的显式端口（HTTPPath 非空时由 engine 解析：
+	// 探针自带 tcp_port > 进程声明首端口 > 8080 诚实缺省）；非 http
+	// 探针恒 0。
+	HTTPPort int32
 	Exec     []string
 	// Interval/Timeout/StartPeriod 是探测节律；Retries 是连续失败阈值。
 	Interval    time.Duration

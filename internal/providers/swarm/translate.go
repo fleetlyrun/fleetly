@@ -31,8 +31,9 @@ const (
 	labelProcess  = "fleetly.process"
 	// labelGeneration 搬运平台 Generation（幂等重放与 Drift 判定锚）。
 	labelGeneration = "fleetly.generation"
-	// labelPorts 记录声明端口（"8080/http,5432/tcp"；Addresses 回读用）。
-	labelPorts = "fleetly.ports"
+	// labelPorts（声明端口 label）已退役（架构评审第二轮候选 7：Addresses
+	// 期望集注入取代平行编码）；升级期存量 service 上的旧 label 由一次性
+	// 滚动更新消除（spec diff 变化，staging 在役代价已付）。
 
 	// 节点锚定标记（D-MN-8：平台节点 ID 先于 placement 存在、永不复用）。
 	labelNodeID = "fleetly.node.id"
@@ -99,42 +100,11 @@ func sanitizeNamePart(s string) string {
 	return out
 }
 
-// portsLabelValue 序列化端口声明（Addresses 回读）。
-func portsLabelValue(ports []capability.WorkloadPort) string {
-	parts := make([]string, 0, len(ports))
-	for _, p := range ports {
-		parts = append(parts, fmt.Sprintf("%d/%s", p.Port, p.Protocol))
-	}
-	sort.Strings(parts)
-	return strings.Join(parts, ",")
-}
-
-// parsePortsLabel 还原端口声明。
-func parsePortsLabel(v string) []capability.WorkloadPort {
-	var ports []capability.WorkloadPort
-	for _, part := range strings.Split(v, ",") {
-		if part == "" {
-			continue
-		}
-		slash := strings.LastIndex(part, "/")
-		if slash < 0 {
-			continue
-		}
-		n, err := strconv.Atoi(part[:slash])
-		if err != nil || n < 1 || n > 65535 {
-			continue
-		}
-		ports = append(ports, capability.WorkloadPort{
-			// G109：n 已钳 [1,65535]，int32 无溢出面。
-			Port:     int32(n), //nolint:gosec
-			Protocol: capability.Protocol(part[slash+1:]),
-		})
-	}
-	return ports
-}
-
 // workloadLabels 构造归属标记集（App/Task/Database 域主体互斥：Task 与
-// Database 域不带空 labelApp——空值标记会破选择器全等匹配）。
+// Database 域不带空 labelApp——空值标记会破选择器全等匹配）。声明端口
+// 不再入 label（ Addresses 期望集注入取代平行编码——架构评审第二轮
+// 候选 7；升级期 label 消失触发存量 service 一次性滚动更新，staging 在役
+// 代价已付）。
 func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capability.Generation) map[string]string {
 	labels := map[string]string{
 		labelManaged:    "true",
@@ -143,7 +113,6 @@ func workloadLabels(ns capability.NamespaceRef, w capability.Workload, gen capab
 		labelWorkload:   w.ID,
 		labelProcess:    sanitizeNamePart(w.Process),
 		labelGeneration: strconv.FormatUint(uint64(gen), 10),
-		labelPorts:      portsLabelValue(w.Ports),
 	}
 	switch {
 	case ns.Task != "":
@@ -202,7 +171,7 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		container.StopGracePeriod = &grace
 	}
 	if w.Healthcheck != nil {
-		container.Healthcheck = toSwarmHealthcheck(w.Healthcheck, w)
+		container.Healthcheck = toSwarmHealthcheck(w.Healthcheck)
 	}
 	for _, v := range w.Volumes {
 		container.Mounts = append(container.Mounts, mount.Mount{
@@ -365,13 +334,14 @@ func envSlice(env map[string]string) []string {
 	return out
 }
 
-// toSwarmHealthcheck 把声明式探针翻译为 swarm 探针方言。shell 探针钉死
-// busybox 兼容形态（N1 审查 P1-11）：`nc -z` 是 GNU/openbsd 扩展（busybox
-// nc 无 -z，distroless 干脆无 nc——恒失败把健康载体打成 unhealthy），
-// `wget -qO-` 的合并短旗标在 busybox wget 上不可靠。http 探针端口取值序
-// （N0.1 P2-2 实装）：探针自带 tcp_port > 进程声明首端口 > 8080（无任何
-// 端口声明时的诚实缺省）。镜像假设在 Provider Describe Notes 声明。
-func toSwarmHealthcheck(h *capability.Healthcheck, w capability.Workload) *mobycontainer.HealthConfig {
+// toSwarmHealthcheck 把声明式探针翻译为 swarm 探针方言。探针是全解析
+// IR（架构评审第二轮候选 7）：http 端口由 engine 解析为 h.HTTPPort（回退
+// 链单源在 engine 投影），exec 恒干净 argv（方言归一在投影期）——本函数
+// 只做原语映射。shell 探针钉死 busybox 兼容形态（N1 审查 P1-11）：`nc -z`
+// 是 GNU/openbsd 扩展（busybox nc 无 -z，distroless 干脆无 nc——恒失败把
+// 健康载体打成 unhealthy），`wget -qO-` 的合并短旗标在 busybox wget 上
+// 不可靠。镜像假设在 Provider Describe Notes 声明。
+func toSwarmHealthcheck(h *capability.Healthcheck) *mobycontainer.HealthConfig {
 	hc := &mobycontainer.HealthConfig{
 		Interval:    h.Interval,
 		Timeout:     h.Timeout,
@@ -380,38 +350,21 @@ func toSwarmHealthcheck(h *capability.Healthcheck, w capability.Workload) *mobyc
 	}
 	switch {
 	case h.HTTPPath != "":
-		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`wget -q -O /dev/null http://127.0.0.1:%d%s || exit 1`, httpProbePort(h, w.Ports), h.HTTPPath)}
+		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`wget -q -O /dev/null http://127.0.0.1:%d%s || exit 1`, h.HTTPPort, h.HTTPPath)}
 	case h.TCPPort != 0:
 		// stdin 立即 EOF + -w 超时：连接建立即探活成功（busybox nc 无 -z
 		// 的等价形态），拒绝/超时非零退出。
 		hc.Test = []string{"CMD-SHELL", fmt.Sprintf(`nc -w 2 127.0.0.1 %d </dev/null || exit 1`, h.TCPPort)}
 	case h.Exec != nil:
-		// IR 的 exec 探针是干净 argv；docker 探针 Test 方言要求首元素为
+		// IR 的 exec 探针恒干净 argv；docker 探针 Test 方言要求首元素为
 		// CMD/CMD-SHELL——裸 argv 会被 daemon 当作无探针（State.Health
 		// 物化为 none，任务永滞 starting；staging 真机实证 2026-10-02，
-		// F1.15 真机件⑥）。compose 面 test 自带前缀直通，此处只归一缺前缀
-		// 形态（engine 模板探针）。
-		if len(h.Exec) > 0 && (h.Exec[0] == "CMD" || h.Exec[0] == "CMD-SHELL") {
-			hc.Test = h.Exec
-		} else {
-			hc.Test = append([]string{"CMD"}, h.Exec...)
-		}
+		// F1.15 真机件⑥）。
+		hc.Test = append([]string{"CMD"}, h.Exec...)
 	default:
 		hc.Test = []string{"NONE"}
 	}
 	return hc
-}
-
-// httpProbePort 解析 http 探针端口：探针自带 tcp_port 优先，回落进程
-// 声明首端口；无任何声明才是 8080。
-func httpProbePort(h *capability.Healthcheck, ports []capability.WorkloadPort) int32 {
-	if h.TCPPort != 0 {
-		return h.TCPPort
-	}
-	if len(ports) > 0 {
-		return ports[0].Port
-	}
-	return 8080
 }
 
 // placementConstraints 把节点选择翻译为 swarm 约束公式（label 公式，

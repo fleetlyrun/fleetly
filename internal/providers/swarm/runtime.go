@@ -782,13 +782,24 @@ func (p *Provider) mintNodeID(ctx context.Context, node swarm.Node) (string, err
 }
 
 // Addresses 返回隔离域可达地址（overlay VIP / 服务 DNS 名；平台无关形态）。
-func (p *Provider) Addresses(ctx context.Context, ns capability.NamespaceRef) ([]capability.Endpoint, error) {
+// 端点端口取自期望集的声明端口（engine 注入——载体原生不承载声明端口，
+// 期望集取代端口 label 平行编码，架构评审第二轮候选 7）：服务按 process
+// label 匹配期望集成员，未匹配的服务不计入端点。
+func (p *Provider) Addresses(ctx context.Context, ns capability.NamespaceRef, expected []capability.Workload) ([]capability.Endpoint, error) {
+	byProcess := make(map[string]capability.Workload, len(expected))
+	for _, w := range expected {
+		byProcess[sanitizeNamePart(w.Process)] = w // label 侧是净化后的进程名
+	}
 	services, err := p.listNsServices(ctx, ns)
 	if err != nil {
 		return nil, fmt.Errorf("swarm addresses %s: %w", ns, err)
 	}
 	var endpoints []capability.Endpoint
 	for _, svc := range services {
+		w, ok := byProcess[svc.Spec.Labels[labelProcess]]
+		if !ok {
+			continue // 非期望集成员（stale 载体/期望未重放）不计入
+		}
 		addr := svc.Spec.Name // overlay DNS 名（网络内可解析）
 		for _, vip := range svc.Endpoint.VirtualIPs {
 			if vip.Addr.IsValid() {
@@ -796,10 +807,10 @@ func (p *Provider) Addresses(ctx context.Context, ns capability.NamespaceRef) ([
 				break
 			}
 		}
-		for _, port := range parsePortsLabel(svc.Spec.Labels[labelPorts]) {
+		for _, port := range w.Ports {
 			endpoints = append(endpoints, capability.Endpoint{
 				Addr:    addr,
-				Process: svc.Spec.Labels[labelProcess],
+				Process: w.Process,
 				Port:    port.Port,
 			})
 		}

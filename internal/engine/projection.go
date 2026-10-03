@@ -11,6 +11,60 @@ import (
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 )
 
+// resolvedHealthcheck 把 spec 冻结探针解析为全解析 IR（探针策略单源在
+// engine——Provider 只做原语映射，架构评审第二轮候选 7）：
+// ① http 探针端口回退链：探针自带 tcp_port > 进程声明首端口 > 8080
+// （无任何端口声明时的诚实缺省；与此前 swarm Provider 内的同链逐值一致，
+// 策略回归引擎）；② exec 方言归一：proto 面可能直写的 docker 方言前缀
+// （CMD/CMD-SHELL）在投影期展开为干净 argv（CMD-SHELL 载荷经 sh -c 承载
+// ——spec 归一层 compose 面同款语义）。
+func resolvedHealthcheck(hc *specv1.HealthcheckSpec, ports []capability.WorkloadPort) *capability.Healthcheck {
+	out := &capability.Healthcheck{
+		HTTPPath:    hc.GetHttpPath(),
+		TCPPort:     hc.GetTcpPort(),
+		Exec:        normalizeProbeExec(hc.GetExec().GetCommand()),
+		Interval:    hc.GetInterval().AsDuration(),
+		Timeout:     hc.GetTimeout().AsDuration(),
+		StartPeriod: hc.GetStartPeriod().AsDuration(),
+		Retries:     hc.GetRetries(),
+	}
+	if out.HTTPPath != "" {
+		out.HTTPPort = probeHTTPPort(out.TCPPort, ports)
+	}
+	return out
+}
+
+// probeHTTPPort 解析 http 探针端口回退链：探针自带 tcp_port 优先（spec
+// oneof 下不可与 http_path 共存，防直接构造 IR 的输入）> 进程声明首端口
+// > 8080（无任何声明的诚实缺省）。与此前 swarm Provider 内的同链逐值
+// 一致——策略回归引擎（架构评审第二轮候选 7）。
+func probeHTTPPort(tcpPort int32, ports []capability.WorkloadPort) int32 {
+	if tcpPort != 0 {
+		return tcpPort
+	}
+	if len(ports) > 0 {
+		return ports[0].Port
+	}
+	return 8080
+}
+
+// normalizeProbeExec 归一 exec 探针方言：CMD 前缀剥壳；CMD-SHELL 载荷
+// （单个 shell 字符串）经 sh -c 承载——按空白切分会撕碎引号结构（staging
+// 真机实证 2026-10-02）；无前缀已是干净 argv 直通。
+func normalizeProbeExec(exec []string) []string {
+	if len(exec) == 0 {
+		return exec
+	}
+	switch exec[0] {
+	case "CMD":
+		return exec[1:]
+	case "CMD-SHELL":
+		return []string{"sh", "-c", strings.Join(exec[1:], " ")}
+	default:
+		return exec
+	}
+}
+
 // PeerRefs 是跨 Project 引用的解析结果（ADR-0013 附录 A.3）：spec 引用串
 // （project:<id>/<name>）→ 解析后的跨域引用。缺席语义由模式决定：
 // strict（Isolate=false）缺席 = fail-closed 错误；isolate 缺席 = 剥离
@@ -62,15 +116,7 @@ func Project(spec *specv1.AppSpec, team string, buildDigests map[string]string, 
 			})
 		}
 		if hc := p.GetHealthcheck(); hc != nil {
-			w.Healthcheck = &capability.Healthcheck{
-				HTTPPath:    hc.GetHttpPath(),
-				TCPPort:     hc.GetTcpPort(),
-				Exec:        hc.GetExec().GetCommand(),
-				Interval:    hc.GetInterval().AsDuration(),
-				Timeout:     hc.GetTimeout().AsDuration(),
-				StartPeriod: hc.GetStartPeriod().AsDuration(),
-				Retries:     hc.GetRetries(),
-			}
+			w.Healthcheck = resolvedHealthcheck(hc, w.Ports)
 		}
 		if res := p.GetResources(); res != nil {
 			w.Resources = &capability.Resources{CPUMillis: res.GetCpuMillis(), MemoryMB: res.GetMemoryMb()}

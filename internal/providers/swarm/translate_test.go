@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 	"testing"
 
@@ -60,16 +59,6 @@ func TestSanitizeNamePart(t *testing.T) {
 	assert.Equal(t, namePrefix, sanitizeNamePart("___"))
 }
 
-func TestPortsLabelRoundTrip(t *testing.T) {
-	ports := []capability.WorkloadPort{
-		{Port: 5432, Protocol: capability.ProtocolTCP},
-		{Port: 8080, Protocol: capability.ProtocolHTTP},
-		{Port: 9090, Protocol: capability.ProtocolH2C},
-	}
-	back := parsePortsLabel(portsLabelValue(ports))
-	assert.ElementsMatch(t, ports, back)
-}
-
 func TestWorkloadLabels(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
 	w := capability.Workload{ID: "wl_01H", Process: "web", Image: "nginx:1"}
@@ -85,6 +74,8 @@ func TestWorkloadLabels(t *testing.T) {
 	}
 }
 
+// 探针方言：全解析 IR（HTTPPort 恒显式——端口回退链策略在 engine 投影
+// 单源，见 internal/engine resolvedHealthcheck；本测试只钉原语映射）。
 func TestToServiceSpec(t *testing.T) {
 	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
 	w := capability.Workload{
@@ -97,6 +88,7 @@ func TestToServiceSpec(t *testing.T) {
 		Replicas: 3,
 		Healthcheck: &capability.Healthcheck{
 			HTTPPath: "/healthz",
+			HTTPPort: 8080,
 			Interval: 5e9, // 5s
 		},
 		Resources: &capability.Resources{CPUMillis: 500, MemoryMB: 256},
@@ -118,9 +110,8 @@ func TestToServiceSpec(t *testing.T) {
 	assert.Equal(t, int64(500_000_000), spec.TaskTemplate.Resources.Limits.NanoCPUs)
 	assert.Equal(t, int64(256*1024*1024), spec.TaskTemplate.Resources.Limits.MemoryBytes)
 
-	// 探针方言：http → CMD-SHELL wget（busybox 兼容形态）；端口回落序
-	// 实装（N0.1 P2-2）——本例无 tcp_port、声明首端口 8080 → 探针打声明
-	// 端口。
+	// 探针方言：http → CMD-SHELL wget（busybox 兼容形态）打 IR 显式端口
+	//（端口由 engine 解析，Provider 不推导）。
 	require.NotNil(t, cs.Healthcheck)
 	assert.Equal(t, "CMD-SHELL", cs.Healthcheck.Test[0])
 	assert.Equal(t, "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1", cs.Healthcheck.Test[1])
@@ -155,6 +146,7 @@ func deterministicFixture() (capability.NamespaceRef, capability.Workload, capab
 		Replicas: 3,
 		Healthcheck: &capability.Healthcheck{
 			HTTPPath: "/healthz",
+			HTTPPort: 8080,
 			Interval: 5e9, // 5s
 		},
 		Resources: &capability.Resources{CPUMillis: 500, MemoryMB: 256},
@@ -211,44 +203,6 @@ func TestToServiceSpecDeterministic(t *testing.T) {
 		names = append(names, s.File.Name)
 	}
 	assert.Equal(t, []string{"a-token", "m-key.pem", "z-token"}, names)
-}
-
-// http 探针端口回落序（N0.1 P2-2 实装）：tcp_port 优先 > 进程声明首端口
-// > 8080（无任何声明的诚实缺省——旧实现注释宣称回落声明端口、实际恒
-// 8080）。
-func TestHTTPProbePortFallbackOrder(t *testing.T) {
-	ports := []capability.WorkloadPort{{Port: 3000, Protocol: capability.ProtocolHTTP}}
-	cases := []struct {
-		name  string
-		h     capability.Healthcheck
-		ports []capability.WorkloadPort
-		want  int32
-	}{
-		{"explicit tcp_port wins", capability.Healthcheck{HTTPPath: "/healthz", TCPPort: 9090}, ports, 9090},
-		{"declared first port fallback", capability.Healthcheck{HTTPPath: "/healthz"}, ports, 3000},
-		{"no declaration -> 8080", capability.Healthcheck{HTTPPath: "/healthz"}, nil, 8080},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			w := capability.Workload{ID: "wl", Process: "web", Image: "nginx:1", Ports: tc.ports, Healthcheck: &tc.h}
-			hc := toSwarmHealthcheck(w.Healthcheck, w)
-			assert.Equal(t, fmt.Sprintf("wget -q -O /dev/null http://127.0.0.1:%d/healthz || exit 1", tc.want), hc.Test[1])
-		})
-	}
-}
-
-// 探针方言钉死 busybox 兼容形态（N1 审查 P1-11）：`nc -z` 是 GNU/openbsd
-// 扩展（busybox nc 无 -z、distroless 无 nc——恒失败把健康载体打成
-// unhealthy），`wget -qO-` 合并短旗标在 busybox wget 上不可靠。镜像假设
-// 在 Describe Notes 声明。
-func TestHealthcheckDialectsBusyboxCompatible(t *testing.T) {
-	w := capability.Workload{ID: "wl", Process: "web", Image: "nginx:1"}
-
-	httpHC := toSwarmHealthcheck(&capability.Healthcheck{HTTPPath: "/healthz"}, w)
-	assert.Equal(t, []string{"CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"}, httpHC.Test)
-
-	tcpHC := toSwarmHealthcheck(&capability.Healthcheck{TCPPort: 5432}, w)
-	assert.Equal(t, []string{"CMD-SHELL", "nc -w 2 127.0.0.1 5432 </dev/null || exit 1"}, tcpHC.Test)
 }
 
 // 只读挂载透传（N0.1 P2-3）：compose 短语法 :ro → VolumeAttachment

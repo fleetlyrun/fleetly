@@ -267,7 +267,7 @@ func (f *FakeRuntime) Watch(context.Context) (<-chan capability.WorkloadEvent, e
 	return f.obs, nil
 }
 
-func (f *FakeRuntime) Addresses(context.Context, capability.NamespaceRef) ([]capability.Endpoint, error) {
+func (f *FakeRuntime) Addresses(context.Context, capability.NamespaceRef, []capability.Workload) ([]capability.Endpoint, error) {
 	return nil, nil
 }
 

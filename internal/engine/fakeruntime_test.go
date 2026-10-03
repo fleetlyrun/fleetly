@@ -117,7 +117,7 @@ func (f *fakeRuntime) Watch(context.Context) (<-chan capability.WorkloadEvent, e
 	return f.obsCh, nil
 }
 
-func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef) ([]capability.Endpoint, error) {
+func (f *fakeRuntime) Addresses(_ context.Context, ns capability.NamespaceRef, _ []capability.Workload) ([]capability.Endpoint, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.addrCalls = append(f.addrCalls, ns)
