@@ -31,11 +31,16 @@ type Provider struct {
 	// nil = 真实现直连 cli）。只覆盖需要无 daemon 测试的窄路径：
 	//   - listContainers/openContainerLog：日志合流（Q-4/P1-15）。
 	//   - networkInspect/secretInspect：材料 create-or-get 分诊（Q-20）。
+	//   - nodeList/events：节点列表与事件流（Watch 初始锚定降级 B14-2 的
+	//     hermetic 面——nil cli 走真客户端会在 Events 内部 goroutine panic，
+	//     watchRound 的 recover 护栏接不住跨 goroutine panic）。
 	// 缝契约与真实现一致（如日志流读端必须在 ctx 取消时解除阻塞）。
 	listContainers   func(ctx context.Context, ns capability.NamespaceRef) ([]container.Summary, error)
 	openContainerLog func(ctx context.Context, containerID string, opts client.ContainerLogsOptions) (io.ReadCloser, error)
 	networkInspect   func(ctx context.Context, name string) error
 	secretInspect    func(ctx context.Context, name string) (client.SecretInspectResult, error)
+	nodeList         func(ctx context.Context) (client.NodeListResult, error)
+	events           func(ctx context.Context, opts client.EventsListOptions) client.EventsResult
 }
 
 // 编译期契约断言：核心面 + 三个子面，共四个面（F0.19 全契约；C-10 补

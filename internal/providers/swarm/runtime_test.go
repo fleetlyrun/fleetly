@@ -2,9 +2,13 @@ package swarm
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
+	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -70,4 +74,36 @@ func TestEnsureRejectsCarrierNameCollision(t *testing.T) {
 	assert.Contains(t, err.Error(), "wl_01B")
 	assert.Contains(t, err.Error(), `"fleetly-acme-shop-web-web-1"`, "error names the collapsed carrier")
 	assert.Contains(t, err.Error(), "carrier name collision")
+}
+
+// TestWatchDegradesOnInitialAnchorFailure（B14-2）：初始锚定失败不再关闭
+// Watch 整门——daemon 短暂不可达时 Watch 照常打开观测流（消费方语义不
+// 变：channel 关闭 = ctx 取消），节点锚定交由循环内 10s 节拍兜底重试。
+// nodeList/events 缝注入使 daemon 不可达形态 hermetic（真客户端在 Events
+// 内部 goroutine 跑流，nil cli 的 panic 跨 goroutine，护栏接不住）；事件
+// 流即刻关闭使 watchRound 正常收口（事件流关闭=return true 的既有语义），
+// ctx 取消后循环退出并关闭观测流。
+func TestWatchDegradesOnInitialAnchorFailure(t *testing.T) {
+	closedErr := make(chan error)
+	close(closedErr)
+	closedMsg := make(chan events.Message)
+	close(closedMsg)
+	p := &Provider{
+		nodeList: func(context.Context) (client.NodeListResult, error) {
+			return client.NodeListResult{}, errors.New("injected: daemon unreachable")
+		},
+		events: func(context.Context, client.EventsListOptions) client.EventsResult {
+			return client.EventsResult{Messages: closedMsg, Err: closedErr}
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ch, err := p.Watch(ctx)
+	require.NoError(t, err, "initial anchor failure must degrade, not fail Watch")
+	require.NotNil(t, ch)
+	cancel()
+	select {
+	case <-ch:
+	case <-time.After(5 * time.Second):
+		t.Fatal("watch loop must close the stream on ctx cancel (existing semantics)")
+	}
 }

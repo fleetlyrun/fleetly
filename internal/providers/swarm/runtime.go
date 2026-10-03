@@ -260,10 +260,14 @@ func (p *Provider) Remove(ctx context.Context, ns capability.NamespaceRef) error
 // 事件流断开自动重连（provider 内自愈；消费方只感知 channel 关闭 =
 // ctx 取消）。
 func (p *Provider) Watch(ctx context.Context) (<-chan capability.WorkloadEvent, error) {
-	// 启动即做一次锚定扫描：新节点即刻上报 node.joined。
+	// 启动即做一次锚定扫描：新节点即刻上报 node.joined。失败降级不关闭
+	// Watch 整门（B14-2）：daemon 短暂不可达（启动竞态/重启窗口）曾让
+	// Watch 直接报错，观测流整体开天窗直至重开成功；锚定扫描本就有 10s
+	// 节拍兜底（anchoringPollInterval），降级为记日志、循环内重试——事件
+	// 流与任务轮询不被初始锚定牵连，节点加入检出最多延迟一个节拍。
 	out := make(chan capability.WorkloadEvent, 64)
 	if err := p.anchorNodes(ctx, out); err != nil {
-		return nil, fmt.Errorf("swarm watch: initial node anchoring: %w", err)
+		slog.Warn("swarm watch: initial node anchoring failed; degraded to periodic rescan", "error", err)
 	}
 	go p.watchLoop(ctx, out)
 	return out, nil
@@ -303,7 +307,7 @@ func (p *Provider) watchRound(ctx context.Context, out chan<- capability.Workloa
 			normal = false
 		}
 	}()
-	eventsRes := p.cli.Events(ctx, client.EventsListOptions{
+	eventsRes := p.eventsStream(ctx, client.EventsListOptions{
 		Filters: client.Filters{}.Add("type", "service", "node", "container"),
 	})
 	anchorTicker := time.NewTicker(anchoringPollInterval)
@@ -327,7 +331,7 @@ func (p *Provider) watchRound(ctx context.Context, out chan<- capability.Workloa
 				return true
 			case <-time.After(time.Second):
 			}
-			eventsRes = p.cli.Events(ctx, client.EventsListOptions{
+			eventsRes = p.eventsStream(ctx, client.EventsListOptions{
 				Filters: client.Filters{}.Add("type", "service", "node", "container"),
 			})
 			continue
@@ -359,8 +363,9 @@ func (p *Provider) watchRound(ctx context.Context, out chan<- capability.Workloa
 
 // pollTasks 用 TaskList 快照生成 workload 观测：swarm 的 service 事件
 // Actor.Attributes 不携带 spec labels（Generation 观测缺锚），任务快照
-// 从 Service.Spec.Labels 还原平台标记——10s 轮询是 L1 的权威路径，事件
-// 流提供即时唤醒。
+// 从任务级 ContainerSpec.Labels（创建时冻结）还原平台标记、服务级
+// Spec.Labels 兜底（taskLabels）——10s 轮询是 L1 的权威路径，事件流提供
+// 即时唤醒。
 func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.WorkloadEvent) error {
 	tasks, err := p.cli.TaskList(ctx, client.TaskListOptions{})
 	if err != nil {
@@ -379,7 +384,7 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		svcLabels[sid] = svc.Service.Spec.Labels
 	}
 	for _, t := range tasks.Items {
-		ev, ok := taskEvent(t, svcLabels[t.ServiceID])
+		ev, ok := taskEvent(t, taskLabels(t, svcLabels[t.ServiceID]))
 		if !ok {
 			continue
 		}
@@ -390,6 +395,18 @@ func (p *Provider) pollTasks(ctx context.Context, out chan<- capability.Workload
 		}
 	}
 	return nil
+}
+
+// taskLabels 返回任务观测的身份标记集：任务级 ContainerSpec.Labels 优先
+// （B14-1：任务创建时冻结的 spec——滚动窗口内旧任务的 Generation 归属锚
+// 定在创建时的 gen；服务级 Spec.Labels 恒是当前值，滚动窗口内旧任务会被
+// 误归因到新 gen）；任务级缺失（Spec 未回填形态）回退服务级——修复前的
+// 既有取法，兜底不回退。
+func taskLabels(t swarm.Task, serviceLabels map[string]string) map[string]string {
+	if t.Spec.ContainerSpec != nil && len(t.Spec.ContainerSpec.Labels) > 0 {
+		return t.Spec.ContainerSpec.Labels
+	}
+	return serviceLabels
 }
 
 // taskEvent 由单条 Task 快照构造观测事件（纯函数，pollTasks 与单测共用；
@@ -523,7 +540,7 @@ func serviceEventState(action string) capability.WorkloadState {
 // 版本被另一路径推进时 NodeUpdate 报 out of sequence——重取版本重试；
 // 发现他方已完成锚定（label 已在）即复用，不二次铸造。
 func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.WorkloadEvent) error {
-	list, err := p.cli.NodeList(ctx, client.NodeListOptions{})
+	list, err := p.nodes(ctx)
 	if err != nil {
 		return fmt.Errorf("node list: %w", err)
 	}
@@ -549,6 +566,25 @@ func (p *Provider) anchorNodes(ctx context.Context, out chan<- capability.Worklo
 		}
 	}
 	return nil
+}
+
+// nodes 列出集群节点（可注入缝；nil = 真 daemon 直连——provider.go 的
+// 缝契约：覆盖 Watch 初始锚定降级的 hermetic 测试面）。
+func (p *Provider) nodes(ctx context.Context) (client.NodeListResult, error) {
+	if p.nodeList != nil {
+		return p.nodeList(ctx)
+	}
+	return p.cli.NodeList(ctx, client.NodeListOptions{})
+}
+
+// eventsStream 订阅 daemon 事件流（可注入缝；nil = 真 daemon 直连——
+// 真客户端在 Events 内部 goroutine 里跑流，nil cli 的 panic 跨 goroutine，
+// recover 护栏接不住，缝是 Watch 降级 hermetic 测试的唯一通路）。
+func (p *Provider) eventsStream(ctx context.Context, opts client.EventsListOptions) client.EventsResult {
+	if p.events != nil {
+		return p.events(ctx, opts)
+	}
+	return p.cli.Events(ctx, opts)
 }
 
 // mintNodeID 铸造并写回单节点锚定标记；返回铸造的平台 ID（空串 = 他方
