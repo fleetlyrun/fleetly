@@ -24,9 +24,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/oklog/ulid/v2"
-	"google.golang.org/protobuf/encoding/protojson"
-
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/schedule"
@@ -167,43 +164,23 @@ func (e *Engine) scheduleOverlapping(ctx context.Context, lastTaskID string) (bo
 }
 
 // spawnScheduleTask 从冻结模板铸一条 one-shot Task 并同事务记账/发事件：
-// 任务行 + task.created + 审计 + Fire CAS（到期拍：next_fire_at 推进）或
-// RecordFire（手动拍：只记 last_task_id）+ schedule.fired + 审计。CAS 失败
-// 整单回滚（双发防御——Task 行不落孤账）。Name 留空：终态 Task 永久占名
-// （tasks 唯一索引含终态行），拍出的 Task 靠 schedule.last_task_id 与事件
-// 导航，不占项目名位。
+// 铸造骨架（行形状/四件/Kick）经 mintOneShotTask 原语（minttask.go），本
+// 函数只保留 schedule 域差异——载模板 + Fire CAS（到期拍：next_fire_at
+// 推进）或 RecordFire（手动拍：只记 last_task_id）+ schedule.fired 事件。
+// CAS 失败整单回滚（双发防御——Task 行不落孤账，B12 P3-4 手动拍锚）。
 func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, source, nextFireAt string) (*task.Task, error) {
-	tmpl, err := loadTaskSpec(s.Spec)
-	if err != nil {
-		return nil, fmt.Errorf("load schedule template: %w", err)
-	}
-	taskID := ulid.Make().String()
-	tmpl.Task = &specv1.TaskRef{Id: taskID, Project: s.ProjectID}
-	body, err := protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(tmpl)
-	if err != nil {
-		return nil, fmt.Errorf("marshal fired task spec: %w", err)
-	}
-	row := &task.Task{
-		ID: taskID, ProjectID: s.ProjectID, Name: "",
-		Form: task.FormOneShot, State: task.StateActive, Spec: body,
-		DesiredConcurrency: 1, NetworkGroup: tmpl.GetNetworkGroup(),
-		DNSName: TaskDNSName(taskID),
-	}
-	fired := *s
-	fired.NextFireAt, fired.LastTaskID = nextFireAt, taskID
-	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.commitWrite(ctx, tx, writeFact{
-			// 配额检查（含本拍自占一位；ADR-0017 附录 A.1）：超限返回哨兵——
-			// 到期拍调用方转 skip，手动拍调用方诚实拒绝。
-			checks: []func(ctx context.Context, tx *sql.Tx) error{
-				func(ctx context.Context, tx *sql.Tx) error { return e.taskSpawnQuota(ctx, tx, s.ProjectID, 1) },
-			},
-			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row)}
-			}},
-			audits: []auditFact{{action: "task.create", resource: "task/" + row.ID, afterFP: row.Form, actorCtx: true}},
-			steps: []writeStep{{
+	return e.mintOneShotTask(ctx, s.ProjectID,
+		func() (*specv1.TaskSpec, error) {
+			tmpl, err := loadTaskSpec(s.Spec)
+			if err != nil {
+				return nil, fmt.Errorf("load schedule template: %w", err)
+			}
+			return tmpl, nil
+		},
+		func(taskID string) []writeStep {
+			fired := *s
+			fired.NextFireAt, fired.LastTaskID = nextFireAt, taskID
+			return []writeStep{{
 				write: func(ctx context.Context, tx *sql.Tx) error {
 					if source == ScheduleSourceCron {
 						return e.schedules.Fire(ctx, tx, s.ID, s.NextFireAt, nextFireAt, taskID)
@@ -218,12 +195,7 @@ func (e *Engine) spawnScheduleTask(ctx context.Context, s *schedule.Schedule, so
 						payload: scheduleEventPayloadJSON(&fired, source, "")}
 				}},
 				audits: []auditFact{{action: "schedule.fire", resource: "schedule/" + s.ID, afterFP: taskID, actorCtx: true}},
-			}},
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	e.taskLoop.Kick() // 新 Task 即刻驱动（补足 Run 不等节拍）
-	return row, nil
+			}}
+		},
+		true)
 }

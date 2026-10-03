@@ -20,14 +20,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/oklog/ulid/v2"
-	"google.golang.org/protobuf/encoding/protojson"
-
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
-	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/task"
 )
 
@@ -150,39 +146,32 @@ func (e *Engine) firstBootOutcome(ctx context.Context, taskID string) (firstBoot
 	if !t.State.Terminal() {
 		return firstBootPending, ""
 	}
-	// Task 终态镜像以 Run 为真源：成败判定同样回到 Run 的终态对
-	//（state, stop_reason）——Task.completed 可能是 ttl_expired 镜像。
-	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), taskID, []run.State{run.StateStopped, run.StateFailed})
+	// Task 终态镜像以 Run 为真源：成败判定走判读单源（oneshotRunVerdict
+	// 五档判别 + 域映射：job 等待面把 ttl/早停也判失败）。
+	verdict, why, err := e.oneshotRunVerdict(ctx, taskID)
 	if err != nil {
 		return firstBootFailed, fmt.Sprintf("list terminal runs: %v", err)
 	}
-	if len(runs) == 0 {
-		return firstBootFailed, "reached a terminal task state with no terminal run"
-	}
-	m := &runs[0] // ListByTaskStates 新→旧：首行 = 唯一 Run
-	switch {
-	case m.State == run.StateFailed:
-		code := "unknown"
-		if m.ExitCode != nil {
-			code = fmt.Sprintf("%d", *m.ExitCode)
-		}
-		return firstBootFailed, fmt.Sprintf("failed (exit code %s)", code)
-	case m.StopReason == run.ReasonCompleted:
+	switch verdict {
+	case oneshotSucceeded:
 		return firstBootCompleted, ""
-	case m.StopReason == run.ReasonTTLExpired:
-		return firstBootFailed, "exceeded its ttl and was stopped (raise ttl or fix the job)"
+	case oneshotPending:
+		return firstBootFailed, "reached a terminal task state with no terminal run"
 	default:
-		return firstBootFailed, fmt.Sprintf("was stopped early (stop_reason %s)", m.StopReason)
+		return firstBootFailed, why
 	}
 }
 
 // mintFirstBootJob 铸造第 idx 个 job 的 one-shot Task 并同事务记账/发事件/
-// 推进游标（spawnScheduleTask 同款防御：游标非空 ⇒ Task 行必在）。
+// 推进游标（铸造骨架经 mintOneShotTask 原语；本函数保留 firstBoot 域差异
+// ——JobSpec 校验/镜像解析/挂网装配 + 游标 transit 与 first_boot_job 事实
+// 事件。spawnScheduleTask 同款防御：游标非空 ⇒ Task 行必在）。
 func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, jobs []*specv1.JobSpec, idx int) (*task.Task, error) {
 	job := jobs[idx]
 	if verr := specir.ValidateJob(fmt.Sprintf("app.first_boot_jobs[%d]", idx), job); verr != nil {
 		return nil, fmt.Errorf("first boot job %q: %w", job.GetName(), verr)
 	}
+	p := job.GetProcess()
 	image, err := e.firstBootJobImage(ctx, d, job)
 	if err != nil {
 		return nil, err
@@ -191,11 +180,8 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 	if err != nil {
 		return nil, err
 	}
-	taskID := ulid.Make().String()
-	p := job.GetProcess()
 	minted := &specv1.TaskSpec{
 		SchemaVersion: specir.SchemaVersion,
-		Task:          &specv1.TaskRef{Id: taskID, Project: spec.GetApp().GetProject()},
 		TtlSeconds:    int64(job.GetTtl().AsDuration().Seconds()),
 		Process: &specv1.ProcessSpec{
 			Name:     job.GetName(),
@@ -211,30 +197,12 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 	if len(p.GetSecretRefs()) > 0 {
 		minted.Process.SecretRefs = p.GetSecretRefs()
 	}
-	body, err := protojson.MarshalOptions{EmitUnpopulated: false, UseProtoNames: true}.Marshal(minted)
-	if err != nil {
-		return nil, fmt.Errorf("marshal first boot task spec: %w", err)
-	}
-	row := &task.Task{
-		ID: taskID, ProjectID: spec.GetApp().GetProject(), Name: "",
-		Form: task.FormOneShot, State: task.StateActive, Spec: body,
-		DesiredConcurrency: 1, DNSName: TaskDNSName(taskID),
-	}
 	wait := state.FormatTime(e.clock.Now().Add(job.GetTtl().AsDuration() + e.opts.FirstBootWaitGrace))
-	cursor := fmt.Sprintf("%d:%s", idx, taskID)
-	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
-		return e.commitWrite(ctx, tx, writeFact{
-			// 配额（ADR-0017 附录 A.1；含本 job 自占一位）：命中返回哨兵，
-			// 调用方转有界等待。
-			checks: []func(ctx context.Context, tx *sql.Tx) error{
-				func(ctx context.Context, tx *sql.Tx) error { return e.taskSpawnQuota(ctx, tx, row.ProjectID, 1) },
-			},
-			write: func(ctx context.Context, tx *sql.Tx) error { return e.tasks.Create(ctx, tx, row) },
-			events: []func() eventFact{func() eventFact {
-				return eventFact{name: EventTaskCreated, aggregate: "task", id: row.ID, payload: TaskCreatedEventJSON(row)}
-			}},
-			audits: []auditFact{{action: "task.create", resource: "task/" + row.ID, afterFP: row.Form}},
-			steps: []writeStep{{
+	return e.mintOneShotTask(ctx, spec.GetApp().GetProject(),
+		func() (*specv1.TaskSpec, error) { return minted, nil },
+		func(taskID string) []writeStep {
+			cursor := fmt.Sprintf("%d:%s", idx, taskID)
+			return []writeStep{{
 				// 游标推进 + 等待截止（原地迁移：无状态事件；审计随 transit
 				// 落）+ first_boot_job 事实事件（部署→Task 因果链）。
 				write: func(ctx context.Context, tx *sql.Tx) error {
@@ -246,14 +214,9 @@ func (e *Engine) mintFirstBootJob(ctx context.Context, d *deployment.Deployment,
 					return eventFact{name: eventFirstBootJobFired, aggregate: "deployment", id: d.ID,
 						payload: firstBootJobEventPayloadJSON(d, idx, job.GetName(), taskID)}
 				}},
-			}},
-		})
-	})
-	if err != nil {
-		return nil, err
-	}
-	e.taskLoop.Kick() // 新 Task 即刻驱动（补足 Run 不等节拍）
-	return row, nil
+			}}
+		},
+		false)
 }
 
 // firstBootJobImage 解析 job 镜像：image 直用；from_build 经 buildDigests

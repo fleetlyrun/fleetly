@@ -522,6 +522,72 @@ func TestTaskOneShotStoppingNoReplenish(t *testing.T) {
 	assert.Len(t, taskRuns(t, e, taskID), 1, "exactly one run ever existed")
 }
 
+// TestOneshotRunVerdictOutcomes：判读单源（oneshotRunVerdict）五档判别的
+// 直测。域映射由 firstboot/task 既有 e2e 钉死（含 ttl 在两域分叉的实锚
+// ——TestTaskTTLLifecycle 镜像 completed、TestFirstBootTTLExpiryFails 判
+// 失败）；此处钉读取面本身，补 StoppedEarly 与 nil 退出码两档。
+func TestOneshotRunVerdictOutcomes(t *testing.T) {
+	e, _, _ := newTestEngine(t)
+	ctx := context.Background()
+
+	// seedRun 直落一条 Run 行（判读测试只关心行集形状，不走驱动链；
+	// exit_code Create 恒 NULL——终态码正常经观测迁移写，此处直补列）。
+	seedRun := func(t *testing.T, taskID, runID string, st run.State, reason string, exit *int) {
+		t.Helper()
+		createTaskRow(t, e, taskID, "", task.FormOneShot, 1, 60, "")
+		require.NoError(t, e.runs.Create(ctx, e.db.Runner(), &run.Run{
+			ID: runID, TaskID: taskID, ProjectID: tTaskProject,
+			State: st, StopReason: reason,
+		}))
+		if exit != nil {
+			_, err := e.db.Runner().ExecContext(ctx,
+				"UPDATE runs SET exit_code = ? WHERE id = ?", *exit, runID)
+			require.NoError(t, err)
+		}
+	}
+	exit1 := 1
+
+	for _, tc := range []struct {
+		name    string
+		taskID  string
+		runID   string
+		state   run.State
+		reason  string
+		exit    *int
+		want    oneshotVerdict
+		wantWhy string
+	}{
+		{"succeeded", "01JD0TASK0000000000000000C", "01JD0RUN00000000000000000C",
+			run.StateStopped, run.ReasonCompleted, nil, oneshotSucceeded, ""},
+		{"run-failed-exit", "01JD0TASK0000000000000000D", "01JD0RUN00000000000000000D",
+			run.StateFailed, run.ReasonFailed, &exit1, oneshotRunFailed, "failed (exit code 1)"},
+		{"run-failed-no-exit", "01JD0TASK0000000000000000E", "01JD0RUN00000000000000000E",
+			run.StateFailed, run.ReasonFailed, nil, oneshotRunFailed, "failed (exit code unknown)"},
+		{"ttl-expired", "01JD0TASK0000000000000000F", "01JD0RUN00000000000000000F",
+			run.StateStopped, run.ReasonTTLExpired, nil, oneshotTTLExpired, "exceeded its ttl"},
+		{"stopped-early", "01JD0TASK0000000000000000G", "01JD0RUN00000000000000000G",
+			run.StateStopped, run.ReasonStoppedByUser, nil, oneshotStoppedEarly, "was stopped early (stop_reason stopped_by_user)"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			seedRun(t, tc.taskID, tc.runID, tc.state, tc.reason, tc.exit)
+			verdict, why, err := e.oneshotRunVerdict(ctx, tc.taskID)
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, verdict)
+			if tc.wantWhy == "" {
+				assert.Empty(t, why)
+			} else {
+				assert.Contains(t, why, tc.wantWhy)
+			}
+		})
+	}
+
+	// pending 档：唯一 Run 未终态（终态对查询读不到行）。
+	seedRun(t, "01JD0TASK0000000000000000H", "01JD0RUN00000000000000000H", run.StateRunning, "", nil)
+	verdict, _, err := e.oneshotRunVerdict(ctx, "01JD0TASK0000000000000000H")
+	require.NoError(t, err)
+	assert.Equal(t, oneshotPending, verdict)
+}
+
 // TestTaskZombieRunSweep：pre-fix 存量僵尸（终态 Task + driving Run 行）→
 // taskStep 收口 stopped/platform_drained（幂等 CAS；Task 行不动）。Run 行
 // 是 Schedule 重叠判定的真源——僵尸收口即解挂永久 skip。

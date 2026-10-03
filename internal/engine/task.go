@@ -397,22 +397,71 @@ func (e *Engine) driveEnsure(ctx context.Context, t *task.Task, spec *specv1.Tas
 	_ = e.ensureTaskWorkloads(ctx, t, ws)
 }
 
+// oneshotVerdict 是 one-shot Task 唯一 Run 终态对的判读档位（Run 终态对
+// 是真源：Task 行的终态镜像随 taskStep 有拍延迟，成败判定回到 Run）。
+// 五档是原始结局的判别——域语义映射归调用方：task 环只把 RunFailed 镜像
+// 为 failed（ttl 到期是 Run 生命周期完结 → completed），firstboot 把
+// TTLExpired/StoppedEarly 判为 job 失败（等待面语义）。判读单源收编的是
+// 「读终态对 + 判别 + 人读描述」，不是各域的成败政策。
+type oneshotVerdict int
+
+const (
+	oneshotPending      oneshotVerdict = iota // 唯一 Run 未终态（无终态 Run 可读）
+	oneshotSucceeded                          // Run (stopped, completed)
+	oneshotRunFailed                          // Run (failed)——why: exit code
+	oneshotTTLExpired                         // Run (stopped, ttl_expired)——why: ttl 句
+	oneshotStoppedEarly                       // Run (stopped, 其他 reason)——why: stop_reason
+)
+
+// oneshotRunVerdict 读 one-shot Task 唯一 Run 的终态对并判读结局（此前
+// firstBootOutcome 与 oneshotTerminalState 各持一份读取口径——读取与判别
+// 收编一处，F2.2 备份执行链直接消费 why）。why 文案与 deployment 失败
+// 原因同面；读失败以 err 单独返回，处置策略归调用方（task 环下拍重试、
+// firstboot 记失败）。
+func (e *Engine) oneshotRunVerdict(ctx context.Context, taskID string) (oneshotVerdict, string, error) {
+	runs, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), taskID, []run.State{run.StateStopped, run.StateFailed})
+	if err != nil {
+		return oneshotRunFailed, "", err
+	}
+	if len(runs) == 0 {
+		return oneshotPending, "", nil
+	}
+	m := &runs[0] // ListByTaskStates 新→旧：首行 = 唯一 Run
+	switch {
+	case m.State == run.StateFailed:
+		code := "unknown"
+		if m.ExitCode != nil {
+			code = fmt.Sprintf("%d", *m.ExitCode)
+		}
+		return oneshotRunFailed, fmt.Sprintf("failed (exit code %s)", code), nil
+	case m.StopReason == run.ReasonCompleted:
+		return oneshotSucceeded, "", nil
+	case m.StopReason == run.ReasonTTLExpired:
+		return oneshotTTLExpired, "exceeded its ttl and was stopped (raise ttl or fix the job)", nil
+	default:
+		return oneshotStoppedEarly, fmt.Sprintf("was stopped early (stop_reason %s)", m.StopReason), nil
+	}
+}
+
 // oneshotTerminalState 返回 one-shot Task 唯一 Run 的终态迁移目标
 // （completed/failed；唯一 Run 未终态或行集不可读返回零值——迁移与检测
 // 分离，检测先于空集 Ensure，迁移在 Ensure 成功后，见 driveTask 收口次序）。
+// 域映射：仅 RunFailed → failed（ttl 到期/早停在 task 域是生命周期完结
+// → completed）。判读经 oneshotRunVerdict 单源；读失败记日志下拍重试。
 func (e *Engine) oneshotTerminalState(ctx context.Context, t *task.Task) task.State {
-	all, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, []run.State{run.StateStopped, run.StateFailed})
+	verdict, _, err := e.oneshotRunVerdict(ctx, t.ID)
 	if err != nil {
 		e.log.Error("task drive: list terminal runs", "task", t.ID, "err", err)
 		return ""
 	}
-	if len(all) == 0 {
+	switch verdict {
+	case oneshotRunFailed:
+		return task.StateFailed
+	case oneshotSucceeded, oneshotTTLExpired, oneshotStoppedEarly:
+		return task.StateCompleted
+	default:
 		return ""
 	}
-	if all[0].State == run.StateFailed { // ListByTaskStates 新→旧：首行 = 唯一 Run
-		return task.StateFailed
-	}
-	return task.StateCompleted
 }
 
 // ensureTaskWorkloads 以签名比对 + 周期强制收口下发 Task 域期望集（签名
