@@ -152,6 +152,10 @@ staging 真机验收（14:53-14:56）：
 
 升级纪律执行实录：换装前快照 `fleetly-vol-torchwood-pg`（7.6M）+ `fleetly-vol-fleetly-registry-zot`（126M）至 /root/upgrade-b4cfea0/ + 数据根 tar；zot 卷名实测为 `fleetly-vol-fleetly-registry-zot`（runbook F1.11 节的 `fleetly-registry-zot` 是服务名非卷名，已勘正使用）。存量零网项目（n0reg/n0probe）不受出生面影响——如需 default 网络仍走显式 `networks create`。
 
+### 升级矩阵 CI（P1，2026-10-03 挂）
+
+本节的真机验收已有 CI 常态回归锚：`e2e/dind-upgrade.sh`（CI job `e2e-upgrade`，`mise run e2e:upgrade` 本地可跑）——HEAD~1 旧版装到 HEAD 新版，三件负载（web+Route / 第二 App / 受管 postgres）断言升级全程**路由零失败、Workload 零重启、数据库零滚动**（ADR-0015 验收的 CI 化）。staging 手工升级前可先本地跑一轮同款脚本预热；脚本首跑若在 CI 红，按 job 日志取证（升级路径 vs 环境面分离诊断）。
+
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 
 数据根 `keys/master.agekey` 是平台 Secret（含受管库凭证）与 hook webhook secret 的 age 信封 KEK（ADR-0014）。泄露应对与例行轮换走本序（工具化前为手工 SQL 重写，废弃）。文件名约定即协议：`master.agekey` = 现役（唯一加密钥）；`master-*.agekey` = 退役（仅解封，rewrap 与 daemon 一并装载）；其他文件名（如 `master.agekey.bak`）不进装载面。

@@ -52,12 +52,14 @@
 **取舍**：dind 升级测试的版本配对需要"旧版二进制"获取机制（build 行内容寻址复用的坑：直接 checkout 旧 tag 构建，不依赖缓存）。矩阵全量（N-2、N-3）暂缓——发布节奏未成型，先钉最新前一版。
 
 **验收锚**：
-- [ ] `e2e/dind-upgrade.sh` 在 CI 绿（单配对 latest-tag→HEAD）
-- [ ] 数据面 stop-first 修复批以本脚本为验收（红→绿记录进 runbook）
-- [ ] runbook `staging-fleetly.md` 升级章节引用本脚本为前置检查
+- [x] `e2e/dind-upgrade.sh` + `mise run e2e:upgrade` + CI job `e2e-upgrade` 落地〔2026-10-03：旧版=HEAD~1 的 worktree 构建（仓尚无 tag，连续验证"上一版→本版"；tag 通道随发布节奏切换，ci.yml fetch-depth:2 为前提）；本地结构验证走通安装/身份链/三件负载部署（本机 Windows Docker Desktop 当日病灶——docker cp 大文件进 dind 产生"可见不可开"的坏 inode，完整断言链未本地跑完，**CI 首跑为验证真源**）〕
+- [ ] CI `e2e-upgrade` 首绿（含 database 负载——受管 DB 在 dind 属首跑面，首轮若 pending 复现则取 CI 日志诊断：本机首跑曾卡 `pending` 超时，现场被环境病灶污染未取证，疑点=离线 dind 受管 postgres 环境面 vs 升级路径，待 CI 干净环境区分）
+- [x] runbook `staging-fleetly.md` 升级章引用本脚本为前置检查〔2026-10-03〕
+- 注：数据面 stop-first 修复本体已由同日修复批先行落地并真机验收（`3b3dd85` + runbook `9674340`），本脚本锚语义调整为**回归锚**（每次 push 验证"上一版→本版"升级零扰动）。
 
 **开放问题**：旧版二进制取 git tag 直接构建，还是引发布产物 CDN？
 **→ 裁决（2026-10-03）**：git tag checkout 构建——零外部依赖，不绑发布节奏。
+**→ 落地实录（2026-10-03）**：仓尚无任何 git tag，先行形态=HEAD~1 worktree 构建（比 tag 配对更连续：每 commit 验证一次升路）；首个 tag 发布后切 latest-tag→HEAD。
 
 ---
 
@@ -76,9 +78,9 @@
 **取舍**：真执行测试比 golden 慢，放 guards 单独的 `TestInjection*` 前缀，不拖累常规测试节拍。SQL 面用解析器断言（不真连库）。
 
 **验收锚**：
-- [ ] 四类生成面各至少一组执行型注入用例，payload 家族统一（`;`/反引号/`$()`/`&&`）
-- [ ] dbtemplate 的 BackupCommand 落地（N2）时同批补第五组
-- [ ] 守卫自验证：故意注入一处应红的样例（红测试的 meta 测试，参考禁词扫描的白名单双向保鲜做法）
+- [x] 注入守卫落地（2026-10-03 实录，形态按 fleetly 实际修正）：① **shellguard**（`internal/guards/shellguard_test.go`，AST 静态红线：exec.Command* 禁 shell 解释器与裸 `-c`——把"args 数组、永不 shell 拼串"的架构承诺钉成 CI 红线，零豁免全绿）；② **validateImageRef**（`internal/spec`：Source 与进程 image 双面接入，逃逸字符族=空白/控制字符/反引号，语法面诚实归 daemon；payload 家族单测 `TestValidateImageRefInjection`）；③ 核对确认既有防线：git clone（`--` 终结选项解析 + 禁 ext/file 传输，安全批遗产）与 traefik 规则内插（`ValidateRouteHost/Path` 双面白名单）已在位——原案"四类真执行用例"中的 traefik/git 两面无需重造
+- [ ] dbtemplate 的 BackupCommand 落地（N2，F2.2）时同批补 SQL 解析器级断言（单语句校验，不走 shell）——shellguard 头注释已挂账
+- [ ] meta 红测试（守卫自验证）顺延：shellguard 当前零豁免条目，首条豁免出现时再立（届时有真实红样例）
 
 **开放问题**：无实质分歧。
 
@@ -94,9 +96,9 @@
 - 每个发现的处置三选一：①多节点安全（补双节点 e2e 断言）；②隐式假设（开 issue 进 N2 修）；③显式单机裁决（文档记录边界，如 ADR-0019 同类）。
 
 **验收锚**：
-- [ ] 审查文档入仓，每发现带路径与处置裁决
-- [ ] 发现中的违例清零或全部有显式裁决挂账
-- [ ] 双节点 e2e（`dind-two-node.sh`）按发现清单补断言
+- [x] 审查文档入仓（2026-10-03：`docs/reviews/2026-10-03-single-node-assumption-audit.md`，发现 A~G 逐面处置）
+- [x] 发现中的违例清零或全部有显式裁决挂账〔唯一真缺陷=发现 A（StreamLogs 容器发现走 manager 本节点 ContainerList，远端容器日志静默缺失——zane 同款病灶），修复归宿 **F2.4 日志管线重做**（采集面天然多节点），F2.4 前诚实边界="日志流仅覆盖 manager 节点容器"〕
+- [x] 双节点 e2e（`dind-two-node.sh`）按发现清单补断言〔尾部新增"日志流覆盖 manager 侧副本"现状下限断言，F2.4 落地后升级为两节点全覆盖〕
 
 ---
 
@@ -111,8 +113,8 @@
 **取舍**：体积红线是粗尺，会有"合理大文件"例外（迁移 SQL、golden 夹具——golden 在 testdata 不扫；生成物已排除）。粗尺的价值是防 5806 行级的事故，不是防 1300 行的边界。
 
 **验收锚**：
-- [ ] sizeguard 入 CI，现仓全绿或例外白名单带理由
-- [ ] `normalize.go`（628 行）等现有较大文件评估：拆分或白名单（逐个裁决，不整体豁免）
+- [x] sizeguard 入 CI（`internal/guards/sizeguard_test.go`，阈值 1200，范围 internal/cmd/e2e 非生成物），现仓全绿零豁免〔2026-10-03；现仓最大正常文件 spec/normalize.go 628 行〕
+- [x] `normalize.go`（628 行）评估：低于红线近一倍，不拆不豁免（首批白名单为空）
 
 **开放问题**：阈值 1200 还是 1000？
 **→ 裁决（2026-10-03）**：1200。现仓最大正常文件 628 行，留一倍余量；1000 会在未来 spec 演进时立刻制造白名单噪音。

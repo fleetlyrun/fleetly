@@ -127,3 +127,37 @@ jobs:
 
       - name: two-node e2e (enroll join → dual-node deploy → volume pinning)
         run: mise run e2e:twonode
+
+  # P1（优化方案提案 2026-10-03）：升级矩阵 CI 的单配对形态。旧版 =
+  # HEAD~1 的 worktree 构建（fetch-depth ≥2 是前提）；三件负载零扰动断言
+  # = ADR-0015 验收的 CI 化。tag 通道成型后切 latest-tag→HEAD 配对。
+  e2e-upgrade:
+    name: E2E (dind upgrade matrix HEAD~1 -> HEAD)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # HEAD~1（旧版二进制源）必须在 fetched 历史内。
+          fetch-depth: 2
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull images
+        run: |
+          docker pull docker:29-dind
+          docker pull nginx:1.27
+          docker pull traefik:v3.5
+          docker pull traefik/whoami:v1.10
+          docker pull postgres:17-bookworm
+
+      - name: upgrade matrix (route zero-fail + workload zero-restart + db zero-roll)
+        run: mise run e2e:upgrade

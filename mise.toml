@@ -126,3 +126,7 @@ run = "sh e2e/dind-h2c-route.sh"
 [tasks."e2e:twonode"]
 description = "e2e dind 双节点：enroll join + 双节点部署 + 卷钉住（F0.20）"
 run = "sh e2e/dind-two-node.sh"
+
+[tasks."e2e:upgrade"]
+description = "e2e dind 升级矩阵（P1：HEAD~1→HEAD 零扰动断言，ADR-0015 验收 CI 化）"
+run = "sh e2e/dind-upgrade.sh"
