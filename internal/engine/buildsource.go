@@ -288,6 +288,9 @@ func (e *Engine) cloneSource(ctx context.Context, repo, ref, dir string) error {
 		return err
 	}
 	args := gitCloneArgs(repo, ref, dir)
+	// nolint:gosec // G204 变量子进程的信任域在受理面：repo 经 hooks.go 的
+	// https:// 白名单+控制字符拒绝，argv 构造带 -- 分隔与 protocol.ext/file
+	// .allow=never 双防线（58f901d）——此处非注入面。
 	cmd := exec.CommandContext(cloneCtx, "git", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		// 输出可能含 URL（带 token）——剥离 repo 串后再入错误文本。
