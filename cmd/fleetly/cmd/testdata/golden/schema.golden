@@ -11,8 +11,11 @@ build.queued	event	Build accepted into build queue.
 build.succeeded	event	Build produced an image digest.
 config.updated	event	A config version was written.
 database	spec	DatabaseSpec: desired state of a managed data service (template-rendered, rides the Runtime channel).
+database.backup_failed	event	A database backup failed; the payload carries the error tail (utility container stderr included).
+database.backup_succeeded	event	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).
 database.created	event	A database was created from a template; the platform minted its credential secret (value never returned).
 database.deleted	event	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).
+database.restored	event	A database restore completed (stream into a running target or volume pre-seeding before first start).
 deployment.building	event	Deployment entered build stage.
 deployment.cancelled	event	Deployment cancelled while queued or in flight.
 deployment.failed	event	Deployment reached failed terminal state.

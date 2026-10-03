@@ -110,4 +110,10 @@ var builtins = []Event{
 	// 状态由 status 列承载，停机告警走既有 workload.stopped 稳态看门狗）。
 	{Name: "database.created", Summary: "A database was created from a template; the platform minted its credential secret (value never returned).", Source: "internal/api/fleetlygrpc/databases.go CreateDatabase"},
 	{Name: "database.deleted", Summary: "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).", Source: "internal/api/fleetlygrpc/databases.go DeleteDatabase"},
+
+	// Backup 执行链（F2.2，ADR-0039：成功携带 ObjectStore 回执三元组；
+	// 恢复失败不落事件——行 restore_error 是事实面）。
+	{Name: "database.backup_succeeded", Summary: "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).", Source: "internal/engine/backup.go executeOneBackup"},
+	{Name: "database.backup_failed", Summary: "A database backup failed; the payload carries the error tail (utility container stderr included).", Source: "internal/engine/backup.go executeOneBackup"},
+	{Name: "database.restored", Summary: "A database restore completed (stream into a running target or volume pre-seeding before first start).", Source: "internal/engine/backup.go restoreDatabase"},
 }

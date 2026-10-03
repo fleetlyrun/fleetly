@@ -92,4 +92,8 @@ func init() {
 	} {
 		registerEventPayload(name, scheduleEventPayload{})
 	}
+	// Backup 执行链（F2.2，ADR-0039；restored 独立 payload 形态）。
+	registerEventPayload(eventBackupSucceeded, backupEventPayload{})
+	registerEventPayload(eventBackupFailed, backupEventPayload{})
+	registerEventPayload(eventDatabaseRestored, databaseRestoredEventPayload{})
 }

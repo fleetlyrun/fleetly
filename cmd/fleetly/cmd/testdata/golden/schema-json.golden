@@ -73,6 +73,18 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_policy\":{\"additionalProperties\":false,\"properties\":{\"interval\":{\"format\":\"duration\",\"type\":\"string\"},\"retention\":{\"format\":\"duration\",\"type\":\"string\"}},\"type\":\"object\"},\"credentials_ref\":{\"type\":\"string\"},\"database\":{\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"project\":{\"type\":\"string\"}},\"type\":\"object\"},\"engine\":{\"type\":\"string\"},\"resources\":{\"additionalProperties\":false,\"properties\":{\"cpu_millis\":{\"type\":\"integer\"},\"memory_mb\":{\"type\":\"integer\"}},\"type\":\"object\"},\"schema_version\":{\"type\":\"integer\"},\"version\":{\"type\":\"string\"}},\"type\":\"object\"}"
     },
     {
+      "name": "database.backup_failed",
+      "kind": "event",
+      "summary": "A database backup failed; the payload carries the error tail (utility container stderr included).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_id\":{\"type\":\"string\"},\"database_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"engine\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"}},\"required\":[\"backup_id\",\"database_id\",\"project_id\",\"engine\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "database.backup_succeeded",
+      "kind": "event",
+      "summary": "A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"backup_id\":{\"type\":\"string\"},\"database_id\":{\"type\":\"string\"},\"digest\":{\"type\":\"string\"},\"engine\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"size_bytes\":{\"type\":\"integer\"}},\"required\":[\"backup_id\",\"database_id\",\"project_id\",\"engine\"],\"type\":\"object\"}"
+    },
+    {
       "name": "database.created",
       "kind": "event",
       "summary": "A database was created from a template; the platform minted its credential secret (value never returned).",
@@ -83,6 +95,12 @@
       "kind": "event",
       "summary": "A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).",
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"active_deployments\":{\"type\":\"integer\"},\"id\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"id\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "database.restored",
+      "kind": "event",
+      "summary": "A database restore completed (stream into a running target or volume pre-seeding before first start).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"database_id\":{\"type\":\"string\"},\"from_backup\":{\"type\":\"string\"},\"object_key\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"}},\"required\":[\"database_id\",\"project_id\",\"from_backup\"],\"type\":\"object\"}"
     },
     {
       "name": "deployment.building",

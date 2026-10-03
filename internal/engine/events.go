@@ -5,7 +5,9 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/state/backup"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
+	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 	"github.com/fleetlyrun/fleetly/internal/state/run"
 	"github.com/fleetlyrun/fleetly/internal/state/schedule"
@@ -135,6 +137,28 @@ type scheduleEventPayload struct {
 	Reason     string `json:"reason,omitempty"`
 }
 
+// backup.* / database.restored payload schema（F2.2，ADR-0039；字段只增）。
+// 统一形态：成功携带 ObjectStore 回执三元组（key/digest/size），失败携带
+// error（用户可见文本英文）。
+type backupEventPayload struct {
+	BackupID   string `json:"backup_id"`
+	DatabaseID string `json:"database_id"`
+	ProjectID  string `json:"project_id"`
+	Engine     string `json:"engine"`
+	ObjectKey  string `json:"object_key,omitempty"`
+	Digest     string `json:"digest,omitempty"`
+	SizeBytes  int64  `json:"size_bytes,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
+// database.restored payload schema（恢复完成事实：目标库 + 源备份）。
+type databaseRestoredEventPayload struct {
+	DatabaseID string `json:"database_id"`
+	ProjectID  string `json:"project_id"`
+	FromBackup string `json:"from_backup"`
+	ObjectKey  string `json:"object_key,omitempty"`
+}
+
 // Schedule 触发源（fired 事件的 source 值，冻结字面量）。
 const (
 	ScheduleSourceCron   = "cron"   // 到期拍（scheduleStep 驱动环）
@@ -163,6 +187,13 @@ const (
 	eventScheduleFired   = "schedule.fired"   // engine 驱动环/手动触发发射
 	eventScheduleSkipped = "schedule.skipped" // engine 驱动环发射（重叠 skip）
 	eventScheduleDeleted = "schedule.deleted" // API 受理面发射（tombstone）
+)
+
+// Backup 事件名锚定（F2.2，ADR-0039；usage 反扫的字面量命中点）。
+const (
+	eventBackupSucceeded  = "database.backup_succeeded" // engine 备份环发射
+	eventBackupFailed     = "database.backup_failed"    // engine 备份环发射
+	eventDatabaseRestored = "database.restored"         // engine 恢复面发射（成功；失败走行 restore_error）
 )
 
 // TaskCreatedEventJSON 构造 task.created payload（API 受理面消费）。
@@ -263,6 +294,17 @@ func scheduleEventPayloadJSON(s *schedule.Schedule, source, reason string) []byt
 		LastTaskID: s.LastTaskID,
 		Source:     source,
 		Reason:     reason,
+	})
+	return b
+}
+
+// databaseRestoredEventJSON 构造 database.restored payload（恢复面单源）。
+func databaseRestoredEventJSON(db *dbrepo.Database, src *backup.Backup) []byte {
+	b, _ := json.Marshal(databaseRestoredEventPayload{
+		DatabaseID: db.ID,
+		ProjectID:  db.ProjectID,
+		FromBackup: src.ID,
+		ObjectKey:  src.ObjectKey,
 	})
 	return b
 }

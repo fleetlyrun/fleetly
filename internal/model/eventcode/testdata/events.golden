@@ -8,8 +8,11 @@ build.failed	Build failed.	added during implementation
 build.queued	Build accepted into build queue.	added during implementation
 build.succeeded	Build produced an image digest.	added during implementation
 config.updated	A config version was written.	internal/api/fleetlygrpc/structure.go PutConfig
+database.backup_failed	A database backup failed; the payload carries the error tail (utility container stderr included).	internal/engine/backup.go executeOneBackup
+database.backup_succeeded	A database backup completed; the payload carries the object key, sha256 digest and size (the restore-verification anchors).	internal/engine/backup.go executeOneBackup
 database.created	A database was created from a template; the platform minted its credential secret (value never returned).	internal/api/fleetlygrpc/databases.go CreateDatabase
 database.deleted	A database was deleted (carriers torn down, row tombstoned; volume and credential secret retained as project materials).	internal/api/fleetlygrpc/databases.go DeleteDatabase
+database.restored	A database restore completed (stream into a running target or volume pre-seeding before first start).	internal/engine/backup.go restoreDatabase
 deployment.building	Deployment entered build stage.	added during implementation
 deployment.cancelled	Deployment cancelled while queued or in flight.	added during implementation
 deployment.failed	Deployment reached failed terminal state.	added during implementation

@@ -14,6 +14,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
+	"github.com/fleetlyrun/fleetly/internal/state/backup"
 	"github.com/fleetlyrun/fleetly/internal/state/build"
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -108,6 +109,10 @@ type Options struct {
 	// 变更（人工改载体、载体漂移、Secret 重封装等签名外输入）由本节拍的
 	// 强制重放兜底收敛，滞后有界。
 	ReconcileReplayInterval time.Duration
+	// BackupTimeout 是单次备份/恢复执行硬上限（默认 15m；GB 级 Backup 的
+	// 流式执行面——单写者环卡死即时间看门狗失明，ManagedStepTimeout 同
+	// 源教训）。
+	BackupTimeout time.Duration
 	// DataRoot 是平台数据根（构建上下文与 git 检出落盘）。
 	DataRoot string
 }
@@ -133,6 +138,9 @@ func (o *Options) fill() {
 	}
 	if o.BuildTimeout <= 0 {
 		o.BuildTimeout = 15 * time.Minute
+	}
+	if o.BackupTimeout <= 0 {
+		o.BackupTimeout = 15 * time.Minute
 	}
 	if o.ManagedStepTimeout <= 0 {
 		o.ManagedStepTimeout = 30 * time.Second
@@ -341,10 +349,18 @@ type Engine struct {
 	//（第三条部署轨——挂项目网供 App 连，与 App 部署链/受管域分立）。
 	databases *dbrepo.Repo
 
+	// Backup 域（F2.2，ADR-0039）：台账 repo + 备份环 + 执行链装配面
+	//（ObjectStore 端口 = 产物承载；Utility 子面 = 工具容器执行，装配期
+	// 经 FacesOf 从 Runtime 探测）。
+	backups     *backup.Repo
+	objectStore capability.ObjectStore
+	utility     capability.RuntimeUtility
+
 	loop         *Loop
 	buildLoop    *Loop
 	managedLoop  *Loop
 	databaseLoop *Loop
+	backupLoop   *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
 	taskLoop     *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
 	scheduleLoop *Loop // Schedule 到期拍环（F1.7）
 	driftLoop    *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
@@ -418,13 +434,14 @@ type Engine struct {
 // Deps 是引擎依赖（装配注入；可选依赖为 nil 时对应能力停用并给出精确
 // 反馈，不静默）。
 type Deps struct {
-	DB       *state.DB
-	Runtime  capability.Runtime
-	Builders map[string]capability.Builder // 可空/空 map：构建链停用（镜像直投不受影响；ADR-0032 spec 路由家族）
-	Edge     capability.Edge               // 可空：Route 发布与受管自宿停用
-	Registry capability.Registry           // 可空：build 源部署精确失败（附录 B.5①）
-	Cipher   *material.Cipher              // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
-	Logger   *slog.Logger
+	DB          *state.DB
+	Runtime     capability.Runtime
+	Builders    map[string]capability.Builder // 可空/空 map：构建链停用（镜像直投不受影响；ADR-0032 spec 路由家族）
+	Edge        capability.Edge               // 可空：Route 发布与受管自宿停用
+	Registry    capability.Registry           // 可空：build 源部署精确失败（附录 B.5①）
+	ObjectStore capability.ObjectStore        // 可空：备份链停用（ADR-0039；本地目标零配置在册，缺席 = 装配缺口）
+	Cipher      *material.Cipher              // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
+	Logger      *slog.Logger
 }
 
 // New 构造引擎（不启动；Start 后进入驱动）。
@@ -437,6 +454,8 @@ func New(deps Deps, opts Options) *Engine {
 		builders:     deps.Builders,
 		edge:         deps.Edge,
 		registry:     deps.Registry,
+		objectStore:  deps.ObjectStore,
+		utility:      capability.FacesOf(deps.Runtime).Utility,
 		cipher:       deps.Cipher,
 		runtime:      deps.Runtime,
 		db:           db,
@@ -458,10 +477,12 @@ func New(deps Deps, opts Options) *Engine {
 		peerDecls:    networkpeer.New(clock),
 		uploads:      sourceupload.New(clock),
 		databases:    dbrepo.New(clock),
+		backups:      backup.New(clock),
 		loop:         NewLoop("deployment", log),
 		buildLoop:    NewLoop("build", log),
 		managedLoop:  NewLoop("managed", log),
 		databaseLoop: NewLoop("database", log),
+		backupLoop:   NewLoop("backup", log),
 		taskLoop:     NewLoop("task", log),
 		scheduleLoop: NewLoop("schedule", log),
 		driftLoop:    NewLoop("drift", log),
@@ -497,6 +518,7 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "build", loop: e.buildLoop, step: e.buildStep},
 		{name: "managed", loop: e.managedLoop, step: e.managedStep},
 		{name: "database", loop: e.databaseLoop, step: e.databaseStep},
+		{name: "backup", loop: e.backupLoop, step: e.backupStep},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
 	}
@@ -576,6 +598,7 @@ func (e *Engine) Start(ctx context.Context) {
 	e.runCtx = runCtx // 构建goroutine 派生根（Q-7：Stop 取消 → 有界排水）
 	e.runCtxMu.Unlock()
 	e.resetOrphanBuilds(runCtx)
+	e.sweepInterruptedBackups(runCtx)
 	e.wg.Add(len(e.rings))
 	for _, r := range e.rings {
 		r := r

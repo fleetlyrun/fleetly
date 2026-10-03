@@ -37,9 +37,17 @@ type Database struct {
 	BackupIntervalSecs  int64
 	BackupRetentionSecs int64
 	Status              string
-	CreatedAt           string
-	UpdatedAt           string
-	DeletedAt           string
+	// LastBackupAt 是最近一次成功 Backup 的完成时刻（定时调度锚；
+	// '' = 从未成功，调度锚退回 created_at，migration 00019）。
+	LastBackupAt string
+	// RestoreFromBackup 在场 = 恢复挂起（备份环执行；ADR-0039 决策 6）。
+	RestoreFromBackup string
+	// RestoreError 是最近一次恢复失败的报文（成功恢复不清此列——历史
+	// 事实；挂起列清位才是"无恢复在途"的判定锚）。
+	RestoreError string
+	CreatedAt    string
+	UpdatedAt    string
+	DeletedAt    string
 }
 
 // Deleted 报告 tombstone 状态。
@@ -102,6 +110,13 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID, a
 // List 返回全部活跃行（收敛环的枚举面；按 id 升序稳定遍历）。
 func (r *Repo) List(ctx context.Context, run state.Runner) ([]Database, error) {
 	return r.query(ctx, run, selectCols+` WHERE deleted_at = '' ORDER BY id`)
+}
+
+// ListRestorePending 返回恢复挂起中的活跃行（备份环恢复面的枚举面；
+// 挂起列在场即恢复在途，ADR-0039 决策 6）。
+func (r *Repo) ListRestorePending(ctx context.Context, run state.Runner) ([]Database, error) {
+	return r.query(ctx, run,
+		selectCols+` WHERE deleted_at = '' AND restore_from_backup != '' ORDER BY id`)
 }
 
 // CountByProject 返回 Project 内活跃行数（受理位配额口径）。
@@ -172,6 +187,43 @@ func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) erro
 	return nil
 }
 
+// SetLastBackupAt 落调度锚（成功 Backup 的完成时刻；幂等写）。
+func (r *Repo) SetLastBackupAt(ctx context.Context, run state.Runner, id, at string) error {
+	_, err := run.ExecContext(ctx,
+		`UPDATE databases SET last_backup_at = ? WHERE id = ?`, at, id)
+	return err
+}
+
+// SetRestorePending 落恢复挂起（API 创建面消费：restore_from_backup 指向
+// 一颗成功备份行；备份环执行后清位）。
+func (r *Repo) SetRestorePending(ctx context.Context, run state.Runner, id, backupID string) error {
+	now := state.FormatTime(r.clock.Now())
+	_, err := run.ExecContext(ctx, `
+		UPDATE databases SET restore_from_backup = ?, updated_at = ?
+		WHERE id = ? AND deleted_at = ''`, backupID, now, id)
+	return err
+}
+
+// SetRestoreError 落恢复失败事实（挂起清位 + error 留痕；半恢复态重试
+// 不可幂等，诚实留给用户重建——ADR-0039 决策 6）。
+func (r *Repo) SetRestoreError(ctx context.Context, run state.Runner, id, errMsg string) error {
+	now := state.FormatTime(r.clock.Now())
+	_, err := run.ExecContext(ctx, `
+		UPDATE databases SET restore_from_backup = '', restore_error = ?, updated_at = ?
+		WHERE id = ?`, errMsg, now, id)
+	return err
+}
+
+// ClearRestoreSucceeded 清恢复挂起（成功路径；restore_error 不动——历史
+// 事实保留）。
+func (r *Repo) ClearRestoreSucceeded(ctx context.Context, run state.Runner, id string) error {
+	now := state.FormatTime(r.clock.Now())
+	_, err := run.ExecContext(ctx, `
+		UPDATE databases SET restore_from_backup = '', updated_at = ?
+		WHERE id = ?`, now, id)
+	return err
+}
+
 const (
 	defaultListLimit = 50
 	maxListLimit     = 200
@@ -179,7 +231,8 @@ const (
 
 const selectCols = `
 	SELECT id, project_id, name, engine, credentials_ref,
-		generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status, created_at, updated_at, deleted_at
+		generation, spec_fingerprint, backup_interval_secs, backup_retention_secs, status,
+		last_backup_at, restore_from_backup, restore_error, created_at, updated_at, deleted_at
 	FROM databases`
 
 func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...any) ([]Database, error) {
@@ -202,8 +255,9 @@ func (r *Repo) query(ctx context.Context, run state.Runner, q string, args ...an
 func scanDatabase(scan func(dest ...any) error) (*Database, error) {
 	var d Database
 	err := scan(&d.ID, &d.ProjectID, &d.Name, &d.Engine, &d.CredentialsRef,
-		&d.Generation, &d.SpecFingerprint, &d.BackupIntervalSecs, &d.BackupRetentionSecs,
-		&d.Status, &d.CreatedAt, &d.UpdatedAt, &d.DeletedAt)
+		&d.Generation, &d.SpecFingerprint, &d.BackupIntervalSecs, &d.BackupRetentionSecs, &d.Status,
+		&d.LastBackupAt, &d.RestoreFromBackup, &d.RestoreError,
+		&d.CreatedAt, &d.UpdatedAt, &d.DeletedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
 	}

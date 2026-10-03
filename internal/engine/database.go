@@ -90,6 +90,16 @@ func (e *Engine) databaseStep(ctx context.Context) {
 // 敛状态）。凭证以 Secret 行密文摘要为材料指纹的代理——轮换/重封装改变
 // 密文即短路失效，无需解密（宁重下发不漏变更）。
 func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
+	// 恢复挂起中的预置卷形态（redis）：载体首启前不 Ensure——空卷首启即
+	// 数据丢失，预置完成由 backup 环清位后收敛（ADR-0039 决策 6；探测只
+	// 消费 Mode，密码传占位值过渲染闸）。
+	if row.RestoreFromBackup != "" {
+		if tpl, ok := dbtemplate.For(row.Engine); ok {
+			if spec, err := tpl.Restore(DatabaseDNSName(row.ID), "probe"); err == nil && spec.Mode == dbtemplate.RestorePreseed {
+				return
+			}
+		}
+	}
 	// 单步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 	defer cancel()
