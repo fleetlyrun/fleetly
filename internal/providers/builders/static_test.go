@@ -47,6 +47,13 @@ func TestCleanStaticOutputDir(t *testing.T) {
 		_, err := cleanStaticOutputDir(bad)
 		assert.Error(t, err, "input %q must be rejected (context escape)", bad)
 	}
+	// 字符集白名单（N1 收尾批 B11）：output_dir 内插进生成 Dockerfile 的
+	// COPY 指令——`-` 开头会被前端解析为旗标、空白/元字符破坏指令语法；
+	// builder 侧防御纵深与 spec.ValidateBuild 受理执法共用 spec 单一真源。
+	for _, bad := range []string{"-dist", "-rf,npx", "a b", "dist;rm", "d$X", "d#t"} {
+		_, err := cleanStaticOutputDir(bad)
+		assert.Error(t, err, "input %q must be rejected (Dockerfile metacharacter surface)", bad)
+	}
 }
 
 func TestStaticBuildRejectsMismatchedPayload(t *testing.T) {

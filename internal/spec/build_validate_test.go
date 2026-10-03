@@ -72,6 +72,18 @@ func TestValidateBuild(t *testing.T) {
 			require.Error(t, err, "dir %q", bad)
 		}
 	})
+	// 字符集白名单（N1 收尾批 B11）：output_dir 内插进生成 Dockerfile 的
+	// COPY 指令——`-` 开头会被解析为旗标、空白/元字符破坏指令语法。
+	t.Run("static output_dir charset whitelist", func(t *testing.T) {
+		for _, bad := range []string{"-dist", "-rf,npx", "a b", "dist;rm", "d$X", "d#t", "d`t", "d(t)", "d*t", "d\\t"} {
+			err := ValidateBuild("app.build", static(BuilderStatic, bad))
+			require.Error(t, err, "dir %q", bad)
+			assert.Contains(t, err.Error(), "output_dir", "rejection names the field for dir %q", bad)
+		}
+		for _, good := range []string{".", "dist", "client/build", "dist_v2", "my-dist/out.put", "v1.0-beta"} {
+			assert.NoError(t, ValidateBuild("app.build", static(BuilderStatic, good)), "dir %q", good)
+		}
+	})
 	t.Run("dockerfile path escapes reject", func(t *testing.T) {
 		for _, bad := range []string{"../Dockerfile", "/etc/passwd", "a\\Dockerfile"} {
 			assert.Error(t, ValidateBuild("app.build", dockerfile(BuilderDockerfile, bad)), "path %q", bad)

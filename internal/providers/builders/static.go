@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/spec"
 )
 
 // staticServerImage 是钉版伺服镜像（major.minor + 变体档，ADR-0032 决策 6：
@@ -124,7 +125,10 @@ func staticDockerfile(outputDir string) string {
 }
 
 // cleanStaticOutputDir 归一并复验产物目录（叶子校验在受理面已执法；此处
-// 防御纵深——Revision 冻结体可能先于校验面存在）。
+// 防御纵深——Revision 冻结体可能先于校验面存在）。字符集白名单
+// （N1 收尾批 B11）：output_dir 内插进生成 Dockerfile 的 COPY 指令——
+// `-` 开头会被 dockerfile.v0 前端解析为旗标，空白/Dockerfile 语法元字符
+// 破坏指令语法；谓词与受理面（spec.ValidateBuild）共用单一真源。
 func cleanStaticOutputDir(outputDir string) (string, error) {
 	if outputDir == "" {
 		return ".", nil
@@ -132,6 +136,9 @@ func cleanStaticOutputDir(outputDir string) (string, error) {
 	clean := path.Clean(outputDir)
 	if path.IsAbs(outputDir) || clean == ".." || strings.HasPrefix(clean, "../") || strings.Contains(outputDir, "\\") {
 		return "", fmt.Errorf("static: output_dir %q must stay inside the build context", outputDir)
+	}
+	if !spec.ValidStaticOutputDir(clean) {
+		return "", fmt.Errorf("static: output_dir %q may only contain letters, digits, dot, slash and underscore and must not start with \"-\" (it is interpolated into a COPY instruction)", outputDir)
 	}
 	return clean, nil
 }

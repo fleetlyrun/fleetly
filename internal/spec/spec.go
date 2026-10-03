@@ -158,6 +158,21 @@ const (
 // ADR-0032——钉版可被漂移形态绕过等于没钉）。
 var bareSemverRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
+// staticOutputDirRe 钉死 static output_dir 字符集（N1 收尾批 B11）：产物
+// 目录内插进生成 Dockerfile 的 COPY 指令并进 dockerfile.v0 前端路径面
+// ——`-` 开头可被解析为旗标，空白/Dockerfile 语法元字符破坏指令语法；
+// 白名单拒掉整面。与 validateRelPath 的结构逃逸检查互补（形态 × 结构
+// 双轴）。ValidateBuild 受理执法 + builders 翻译面防御纵深共用本真源。
+const StaticOutputDirPattern = `[A-Za-z0-9._/-]+`
+
+var staticOutputDirRe = regexp.MustCompile(`^` + StaticOutputDirPattern + `$`)
+
+// ValidStaticOutputDir 报告产物目录是否落在白名单字符集且不以 "-" 开头
+// （`-` 开头在 Dockerfile 指令里是旗标位）。
+func ValidStaticOutputDir(dir string) bool {
+	return staticOutputDirRe.MatchString(dir) && !strings.HasPrefix(dir, "-")
+}
+
 // ValidateBuild 校验构建声明（ADR-0032）：builder 名值域与 strategy 配对、
 // railpack pinned_version bare semver、static output_dir 路径逃逸
 // fail-closed（tar-slip 同理）。nil = 无构建声明（镜像直投），合法。
@@ -201,6 +216,13 @@ func ValidateBuild(field string, b *specv1.BuildSpec) error {
 		}
 		if err := validateRelPath(field+".static.output_dir", out); err != nil {
 			return err
+		}
+		// 字符集白名单（N1 收尾批 B11）：output_dir 内插进生成 Dockerfile
+		// 的 COPY 指令——`-` 开头会被解析为旗标、空白/元字符破坏指令
+		// 语法；白名单在受理入口拒绝（builder 侧 clean 面防御纵深）。
+		if !ValidStaticOutputDir(out) {
+			return invalidf(field+".static.output_dir",
+				"may only contain letters, digits, dot, slash and underscore and must not start with \"-\" (got %q; it is interpolated into a COPY instruction)", out)
 		}
 	default:
 		return invalidf(field, "a strategy is required (dockerfile, railpack or static)")
