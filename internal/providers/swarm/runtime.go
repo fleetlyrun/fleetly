@@ -31,6 +31,20 @@ const anchoringPollInterval = 10 * time.Second
 // 域内服务移除——同 Generation 重放安全（领域模型场景 1：发布中途被杀，
 // 重启后按 Generation 幂等重下发）。
 func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []capability.Workload, gen capability.Generation, m capability.Materials) error {
+	// 期望集载体名 + 碰撞前置拒绝（N1 收尾批 B9）：不同 Workload 折叠成同
+	// 载体名（进程名仅差特殊字符经 sanitize 同形，如 web.1 / web-1）会让
+	// 后者静默覆盖前者——一进程无声丢失。spec 侧字符集白名单是主防线，此
+	// 处对存量 Revision 与绕过路径 fail-closed；纯检先于任何材料/服务副
+	// 作用（同 Generation 重放安全不变：同 Workload 重复出现不算碰撞）。
+	desired := make(map[string]string, len(ws))
+	for _, w := range ws {
+		name := workloadServiceName(ns, w)
+		if prev, ok := desired[name]; ok && prev != w.ID {
+			return fmt.Errorf("swarm ensure %s: workloads %s and %s both resolve to service name %q (carrier name collision; process names must be distinct DNS labels)", ns, prev, w.ID, name)
+		}
+		desired[name] = w.ID
+	}
+
 	// 材料先行（ADR-0014）：网络 create-or-get + Secret 载体落盘，再翻译
 	// 载体 spec（引用载体名）。
 	if err := p.ensureNetworks(ctx, ns, ws); err != nil {
@@ -46,13 +60,11 @@ func (p *Provider) Ensure(ctx context.Context, ns capability.NamespaceRef, ws []
 		return fmt.Errorf("swarm ensure %s: list existing: %w", ns, err)
 	}
 
-	desired := make(map[string]struct{}, len(ws))
 	for _, w := range ws {
 		spec := toServiceSpec(ns, w, gen, secretCarriers)
 		// 网络引用名→ID 先行解析（服务端对名字输入会改写为 ID——发送
 		// ID 使回读形态与发送形态一致，no-op 比对的前提）。
 		spec = p.resolveNetworkTargets(ctx, spec)
-		desired[spec.Name] = struct{}{}
 
 		auth, err := p.registryAuthFor(ctx, w.Image, m)
 		if err != nil {

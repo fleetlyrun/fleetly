@@ -237,6 +237,13 @@ func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 	if p.GetName() == "" {
 		return invalidf(field+".name", "must not be empty")
 	}
+	// 进程名字符集白名单（N1 收尾批 B9）：名字直接进 swarm 服务名与 DNS
+	// 面，白名单外形态经载体名 sanitize 折叠（web.1 与 web-1 同名）——
+	// 静默丢失一进程，入口即拒。
+	if !processNameRe.MatchString(p.GetName()) {
+		return invalidf(field+".name",
+			"process name %q must match %q (names become swarm service names; use lowercase letters, digits and inner hyphens)", p.GetName(), processNamePattern)
+	}
 	switch origin := p.GetImageOrigin().(type) {
 	case *specv1.ProcessSpec_Image:
 		if origin.Image == "" {
@@ -427,6 +434,16 @@ const networkGroupNamePattern = `[a-z0-9]([a-z0-9-]{0,36}[a-z0-9])?`
 var networkGroupNameRe = regexp.MustCompile(`^` + networkGroupNamePattern + `$`)
 
 func validNetworkGroupName(g string) bool { return networkGroupNameRe.MatchString(g) }
+
+// processNamePattern 钉死进程名字符集（N1 收尾批 B9）：进程名进 swarm
+// 服务名与平台 DNS 面——仅差特殊字符的名字（web.1 / web-1）经载体名
+// sanitize 折叠成同名载体，一进程无声丢失；白名单在 spec 入口拒绝折叠
+// 源头。形态与网络组名同款 DNS label；TaskSpec 进程名由平台铸造为
+// "run"（合法），first_boot_jobs 的进程名铸时落 job 名且走 Task 域
+// （载体名不含进程名），均不受影响。
+const processNamePattern = networkGroupNamePattern
+
+var processNameRe = regexp.MustCompile(`^` + processNamePattern + `$`)
 
 // SecretNamePattern 钉死 Secret 名字符集（N1 收尾批 A3：防路径逃逸——
 // 引用名原样成为容器内 /run/secrets/<名> 文件目标与 swarm 载体名成分，

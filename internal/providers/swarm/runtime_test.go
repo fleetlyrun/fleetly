@@ -1,9 +1,12 @@
 package swarm
 
 import (
+	"context"
 	"testing"
 
 	"github.com/moby/moby/api/types/swarm"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
@@ -48,4 +51,23 @@ func TestServiceEventStateTight(t *testing.T) {
 			t.Errorf("serviceEventState(%s) = %s, want %s", action, got, want)
 		}
 	}
+}
+
+// 载体名碰撞显式拒绝（N1 收尾批 B9）：进程名仅差特殊字符（web.1 /
+// web-1）经 sanitize 折叠成同载体名——旧行为后者静默覆盖前者，一进程
+// 无声丢失。Ensure 期碰撞前置检是纯检：先于任何材料/服务副作用，零值
+// Provider（nil cli）即可 hermetic 测试。
+func TestEnsureRejectsCarrierNameCollision(t *testing.T) {
+	p := &Provider{}
+	ns := capability.NamespaceRef{Team: "acme", Project: "shop", App: "web"}
+	ws := []capability.Workload{
+		{ID: "wl_01A", Process: "web.1", Image: "nginx:1"},
+		{ID: "wl_01B", Process: "web-1", Image: "nginx:1"},
+	}
+	err := p.Ensure(context.Background(), ns, ws, capability.Generation(1), capability.Materials{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "wl_01A", "error names both colliding workloads")
+	assert.Contains(t, err.Error(), "wl_01B")
+	assert.Contains(t, err.Error(), `"fleetly-acme-shop-web-web-1"`, "error names the collapsed carrier")
+	assert.Contains(t, err.Error(), "carrier name collision")
 }

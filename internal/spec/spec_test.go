@@ -90,6 +90,38 @@ func TestValidateAppRejects(t *testing.T) {
 	assert.ErrorContains(t, ValidateApp(s), "http_path, tcp_port or exec")
 }
 
+// 进程名字符集白名单（N1 收尾批 B9）：进程名进 swarm 服务名与平台 DNS
+// 面，仅差特殊字符的名字（web.1 / web-1）经载体名 sanitize 折叠成同名
+// 载体——一进程无声丢失，白名单在 spec 入口拒绝折叠源头。合法形态与
+// 网络组名同款 DNS label；TaskSpec 进程名是平台铸的 "run"（合法）。
+func TestValidateProcessNameCharset(t *testing.T) {
+	valid := []string{
+		"web", "worker", "api", "run", // 既有夹具形态不破
+		"web-1", "a", "0", "w-0",
+		"a" + strings.Repeat("b", 36) + "c", // 38 字符上界
+	}
+	for _, n := range valid {
+		s := validAppSpec()
+		s.Processes[0].Name = n
+		assert.NoErrorf(t, ValidateApp(s), "process name %q must be accepted", n)
+	}
+
+	invalid := []string{
+		"Web", "WEB", // 大写拒（DNS label 小写锚定）
+		"web.1", "web_1", "web/1", "web:1", // 特殊字符（sanitize 折叠源头）
+		"-web", "web-", "-", // 首尾连字符拒
+		"web ", " web", "滥用", // 空白与非 ASCII
+		"a" + strings.Repeat("b", 37) + "c", // 39 字符超界
+	}
+	for _, n := range invalid {
+		s := validAppSpec()
+		s.Processes[0].Name = n
+		err := ValidateApp(s)
+		require.Errorf(t, err, "process name %q must be rejected", n)
+		assert.Contains(t, err.Error(), "app.processes[0].name", "rejection names the field (got %q)", n)
+	}
+}
+
 // validJob 合法 job 模板（ValidateJob/ValidateApp 挂钩测试的基准）。
 func validJob(name string) *specv1.JobSpec {
 	return &specv1.JobSpec{
