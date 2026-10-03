@@ -131,7 +131,7 @@
 | uploads（objectstore 入口） | ✅ | 2MiB put → digest sha256:7673c6e2 入库 + list |
 | C2 删除语义 | ✅ | apps delete → 载体+引用路由全拆 → 404；project delete 干净 |
 
-**F-C（P2，挂账）**：compose 引用 `networks: [default]` 但 networks 表无行时**静默半物化**——swarm 侧 overlay 建了、表行没有，traefik 挂靠（真源=`activeProjectNetworks` 读 networks 表）永不收敛 → 路由 502。纪律：**compose 引用前先 `fleetly networks create --project <p> default`**（e2e 同款流程）；平台侧「未声明网络自动建行或显式拒绝」挂账。
+**F-C（P2，已收口）**：compose 引用 `networks: [default]` 但 networks 表无行时**静默半物化**——swarm 侧 overlay 建了、表行没有，traefik 挂靠（真源=`activeProjectNetworks` 读 networks 表）永不收敛 → 路由 502。**已由出生网络收口（31bcd86，2026-10-03）**：项目创建同事务建 default 网络行，新项目不再需要显式 `networks create default`（显式重复建必撞 E_ALREADY_EXISTS）；存量零网项目（出生面之前创建，如 n0reg/n0probe）仍走显式建。
 
 **重启后路由冷窗（行为可接受）**：daemon 重启后若后端暂不可达，首次 publish 对应路由诚实跳过（journal `route publish: backend unresolved, skipping route`），下一拍后端回来即重发布——实测 13:37:46 跳过 → 13:38:47 全量恢复（~60s 有界）。static.dev 的跳过是 ADR-0032 既有缺口（upload 面端口声明），非本轮回归。
 

@@ -96,10 +96,10 @@ if [ "${n:-0}" -lt 2 ]; then
 fi
 log "two nodes Ready in the cluster"
 
-log "creating project + network + volume + app"
+log "creating project + volume + app (default network rides project birth)"
 cli projects create twonode >/dev/null
 PROJECT_ID=$(cli --json projects list | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
-cli networks create --project "$PROJECT_ID" default >/dev/null
+# default 网络由项目出生同事务建行（31bcd86）——显式再建必撞 E_ALREADY_EXISTS。
 cli volumes create --project "$PROJECT_ID" data >/dev/null
 cli apps create --project "$PROJECT_ID" shop >/dev/null
 APP_ID=$(cli --json apps list --project "$PROJECT_ID" | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)

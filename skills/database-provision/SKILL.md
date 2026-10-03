@@ -30,8 +30,10 @@ network of the project, and seals one project secret per database:
 
 ## Command sequences
 
-1. The project needs at least one active network (creation is fail-closed
-   without one — a database on a zero-network project would be unreachable):
+1. Every project is born with its `default` network (created in the same
+   transaction as the project — projects from fleetly builds since 2026-10-03
+   carry it automatically). Only a pre-birth project with zero networks needs
+   the explicit form (it fails with `E_ALREADY_EXISTS` when the row exists):
 
    ```bash
    fleetly networks create --project PROJECT_ID default

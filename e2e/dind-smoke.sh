@@ -386,12 +386,20 @@ case "$resp" in
 esac
 WEBHOOK_DEP=$(printf '%s' "$resp" | sed -n 's/.*"deployment_id": *"\([^"]*\)".*/\1/p' | head -1)
 
-# 同 delivery 重投 → duplicate；同 commit 新 delivery → 既有部署去重。
+# 同 delivery 重投 → 幂等重放首响应（Q-21/ADR-0024：无独立 duplicate 状态，
+# 逐字节重放——status 仍 accepted 且 deployment_id 与首投一致）；同 commit
+# 新 delivery → 既有部署去重。
 resp=$(post_hook push d-push-1 "sha256=$SIG")
 case "$resp" in
-  200\ *duplicate*) log "redelivery deduped" ;;
-  *) echo "expected duplicate, got: $resp" >&2; exit 1 ;;
+  200\ *accepted*) ;;
+  *) echo "expected idempotent replay, got: $resp" >&2; exit 1 ;;
 esac
+REPLAY_DEP=$(printf '%s' "$resp" | sed -n 's/.*"deployment_id": *"\([^"]*\)".*/\1/p' | head -1)
+if [ "$REPLAY_DEP" != "$WEBHOOK_DEP" ]; then
+  echo "redelivery must replay the original deployment ($REPLAY_DEP != $WEBHOOK_DEP)" >&2
+  exit 1
+fi
+log "redelivery replayed the original response (deployment $REPLAY_DEP)"
 resp=$(post_hook push d-push-1b "sha256=$SIG")
 case "$resp" in
   200\ *accepted*) ;;

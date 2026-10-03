@@ -191,12 +191,16 @@ fi
 log "database host: $DB_HOST"
 
 # 6. 基线：三件负载的载体 task 行数（升级后必须零新增——零重启/零滚动）。
+#    载体选择走归属 label（fleetly.ns.*）而非名字：App 域服务名公式
+#    fleetly-<team>-<prj>-<app>-<proc> 超长时截断+哈希（translate.go），不保
+#    证含完整平台 ID——label 值才是全等锚（值与 ID 同为 sanitize 小写形态）。
 svc_of() {
-  docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep "$1" | head -1
+  docker exec "$DIND_CID" docker service ls --filter "label=$1" --format '{{.Name}}' | head -1
 }
-WEB_SVC=$(svc_of "$WEB_APP_ID")
-WORKER_SVC=$(svc_of "$WORKER_APP_ID")
-DB_SVC=$(svc_of "$DB_HOST")
+lc() { printf '%s' "$1" | tr '[:upper:]' '[:lower:]'; }
+WEB_SVC=$(svc_of "fleetly.ns.app=$(lc "$WEB_APP_ID")")
+WORKER_SVC=$(svc_of "fleetly.ns.app=$(lc "$WORKER_APP_ID")")
+DB_SVC=$(svc_of "fleetly.ns.database=$(lc "${DB_HOST#db-}")")
 if [ -z "$WEB_SVC" ] || [ -z "$WORKER_SVC" ] || [ -z "$DB_SVC" ]; then
   echo "carrier not found (web=$WEB_SVC worker=$WORKER_SVC db=$DB_SVC)" >&2
   exit 1
