@@ -3,8 +3,10 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/lynx-go/lynx"
@@ -28,6 +30,17 @@ import (
 // version/commit/date 由 mise build 的 ldflags 注入。
 var version, commit, date string
 
+// validateFirstArg 拒绝非旗标首参：fleetlyd 除 admin 外不收任何子命令，
+// 而未知位置参数会被 runner 静默吞掉并直接引导 daemon（默认配置 = 流浪
+// 数据根 + bootstrap token + 抢端口，staging 实证 2026-10-03）。只查首参
+// ——旗标值（`--config-dir /path` 的 /path）永不落首位。
+func validateFirstArg(args []string) error {
+	if len(args) == 0 || strings.HasPrefix(args[0], "-") || args[0] == "admin" {
+		return nil
+	}
+	return fmt.Errorf("unknown argument %q: fleetlyd takes no subcommands besides \"admin\" and no positional arguments; a stray word here would boot a daemon with default config", args[0])
+}
+
 // setupApp 组装依赖图：cleanup（wire 聚合的资源清理）挂 OnPostStop——
 // 全部服务 Stop、排水完成后、Run 返回前逆序执行（lynx v1.10 语义），
 // 不得提前到 OnPreStop（排水期在途请求仍需底层连接）。
@@ -47,6 +60,14 @@ func main() {
 	// 守护进程持有时禁止维护操作（见 admin.go）。
 	if len(os.Args) > 1 && os.Args[1] == "admin" {
 		os.Exit(runAdmin(os.Args[2:]))
+	}
+	// 未知非旗标首参守卫（staging 实证 2026-10-03：`fleetlyd version` 一类
+	// 笔误会绕过参数校验、以默认配置引导一个流浪 daemon——建库、铸
+	// bootstrap token、抢端口）。只查首参：旗标值位置参数（如
+	// `--config-dir /path` 的 /path）永不落首位，不受影响。
+	if err := validateFirstArg(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
 	}
 	runner := lynx.NewRunner(setupApp,
 		lynx.WithName("Fleetly"),
