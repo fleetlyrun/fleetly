@@ -372,12 +372,18 @@ func (p *Provider) Watch(ctx context.Context) (<-chan capability.WorkloadEvent, 
 
 func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.WorkloadEvent) {
 	defer close(out)
-	// panic 护栏（安全批 P0）：本 goroutine 无 recover，任务翻译/轮询路径
-	// 的任何 panic 都会击穿整个 fleetlyd（进程崩溃循环）。整个循环包一层
-	// for + 内层 recover：非 ctx 取消的 panic 记错误日志后重开循环（观测
-	// 流保命，不永久消失）；ctx 已取消则正常收口（不吞取消）。
+	// 事件水位锚（C20-2）：跨轮保存最后已见事件的时间戳，事件流断开重开
+	// 时从锚后续传（Events API 的 since 形态）——从"现在"重放会漏掉断开
+	// 窗口内的事件（daemon 重启窗口、网络抖动）。panic 击穿重开同样保留
+	// 水位（watchRound 的 named return 在 recover 后仍持有最后赋值）。
+	since := ""
 	for {
-		if p.watchRound(ctx, out) {
+		// panic 护栏（安全批 P0）：任务翻译/轮询路径的任何 panic 都会击穿
+		// 整个 fleetlyd（进程崩溃循环）——watchRound 内层 recover 接住后
+		// 重开循环（观测流保命，不永久消失）；ctx 已取消则正常收口。
+		anchor, normal := p.watchRound(ctx, out, since)
+		since = anchor
+		if normal {
 			return
 		}
 		if ctx.Err() != nil {
@@ -393,10 +399,12 @@ func (p *Provider) watchLoop(ctx context.Context, out chan<- capability.Workload
 	}
 }
 
-// watchRound 跑一轮事件循环（事件流 + 节点锚定 + 任务轮询）。返回 true =
-// 正常收口（ctx 取消或事件流关闭）；false = panic 击穿（recover 接住，
-// 由调用方决定重开）。
-func (p *Provider) watchRound(ctx context.Context, out chan<- capability.WorkloadEvent) (normal bool) {
+// watchRound 跑一轮事件循环（事件流 + 节点锚定 + 任务轮询）。since 是进
+// 入本轮的水位锚（空 = 只看现在）；返回 anchor = 本轮最后已见事件的时间
+// 戳（调用方作下轮续传锚），normal = 正常收口（ctx 取消或事件流关闭），
+// false = panic 击穿（recover 接住，由调用方决定重开）。
+func (p *Provider) watchRound(ctx context.Context, out chan<- capability.WorkloadEvent, since string) (anchor string, normal bool) {
+	anchor = since
 	defer func() {
 		if r := recover(); r != nil {
 			slog.Error("swarm watch: recovered from panic; restarting the watch loop",
@@ -405,42 +413,50 @@ func (p *Provider) watchRound(ctx context.Context, out chan<- capability.Workloa
 		}
 	}()
 	eventsRes := p.eventsStream(ctx, client.EventsListOptions{
-		Filters: client.Filters{}.Add("type", "service", "node", "container"),
+		Since:   anchor,
+		Filters: watchEventFilters(),
 	})
 	anchorTicker := time.NewTicker(anchoringPollInterval)
 	defer anchorTicker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			return true
+			return anchor, true
 		case _, ok := <-eventsRes.Err:
 			if !ok {
-				return true
+				return anchor, true
 			}
-			// 事件流错误（含 EOF）：退避后重开（daemon 重启等场景）。
+			// 事件流错误（含 EOF）：退避后重开（daemon 重启等场景），
+			// 从水位锚续传（C20-2：断开窗口事件不丢）。
 			if ctx.Err() != nil {
-				return true
+				return anchor, true
 			}
 			// ctx 感知退避（Q-19）：time.Sleep 不看 ctx，停机/取消期间
 			// 会白等一秒才退出。
 			select {
 			case <-ctx.Done():
-				return true
+				return anchor, true
 			case <-time.After(time.Second):
 			}
 			eventsRes = p.eventsStream(ctx, client.EventsListOptions{
-				Filters: client.Filters{}.Add("type", "service", "node", "container"),
+				Since:   anchor,
+				Filters: watchEventFilters(),
 			})
 			continue
 		case msg, ok := <-eventsRes.Messages:
 			if !ok {
 				continue
 			}
+			// 水位推进先于映射：未映射事件同样标记时间事实（下一轮锚
+			// 覆盖全部已见事件，不重放）。
+			if a := eventAnchor(msg); a != "" {
+				anchor = a
+			}
 			if ev, ok := p.mapEvent(msg); ok {
 				select {
 				case out <- ev:
 				case <-ctx.Done():
-					return true
+					return anchor, true
 				}
 			}
 		case <-anchorTicker.C:
@@ -455,6 +471,31 @@ func (p *Provider) watchRound(ctx context.Context, out chan<- capability.Workloa
 				slog.Warn("swarm watch: task poll failed; readiness observation degraded until next tick", "error", err)
 			}
 		}
+	}
+}
+
+// watchEventFilters 是 Watch 事件订阅的过滤器：只订阅 mapEvent 有映射的
+// 类型。container 不订阅（C20-1）：mapEvent 无 container 分支，订阅即无
+// 消费者——daemon 把全集群最高频的事件流（start/die/oom/health…）灌进
+// 无缓冲 Messages，每条白占一次循环调度再被丢弃；任务状态观测的权威是
+// pollTasks 轮询，不依赖容器事件。
+func watchEventFilters() client.Filters {
+	return client.Filters{}.Add("type", "service", "node")
+}
+
+// eventAnchor 把事件时间戳折算为 Events 重开的 since 锚（docker Events
+// API 的 "<sec>.<nano>" unix 形态，客户端 GetTimestamp 原样透传）。锚按
+// daemon 语义含端点（>= since），重开可能重放锚点事件一条——观测是
+// last-write-wins 幂等槽位，重复无害；漏事件才是害。零时间事件返回空串
+// （不推进水位：异常/无时间戳消息不产生假锚）。
+func eventAnchor(msg events.Message) string {
+	switch {
+	case msg.TimeNano > 0:
+		return fmt.Sprintf("%d.%09d", msg.TimeNano/int64(time.Second), msg.TimeNano%int64(time.Second))
+	case msg.Time > 0:
+		return strconv.FormatInt(msg.Time, 10)
+	default:
+		return ""
 	}
 }
 
