@@ -21,6 +21,12 @@ type fakeRuntime struct {
 	// Ensure 已进入并停在 blockPoint）。
 	ensureEntered chan struct{}
 
+	// removeBlock 非空时 Remove 阻塞直至关闭或 ctx 取消（B15-1 hang 注入；
+	// Ensure 的 blockPoint 同款形态，apitest FakeRuntime.ArmRemoveBlock 对偶）。
+	removeBlock chan struct{}
+	// removeEntered 非空时 Remove 入口非阻塞发信号（探知已停在 removeBlock）。
+	removeEntered chan struct{}
+
 	obsCh chan capability.WorkloadEvent
 
 	endpoints map[string][]capability.Endpoint // ns → 后端地址（Route 解析面）
@@ -86,7 +92,20 @@ func (f *fakeRuntime) Ensure(ctx context.Context, ns capability.NamespaceRef, ws
 	return nil
 }
 
-func (f *fakeRuntime) Remove(_ context.Context, ns capability.NamespaceRef) error {
+func (f *fakeRuntime) Remove(ctx context.Context, ns capability.NamespaceRef) error {
+	if f.removeEntered != nil {
+		select {
+		case f.removeEntered <- struct{}{}:
+		default:
+		}
+	}
+	if f.removeBlock != nil {
+		select {
+		case <-f.removeBlock:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.removed = append(f.removed, ns)

@@ -166,6 +166,15 @@ func (d *daemonClients) solveAndPush(ctx context.Context, req capability.BuildRe
 // pushBuiltImage 推送本机镜像到 Target 仓库并回填 manifest digest（推送流
 // aux 优先；RepoDigests 兜底——旧 daemon 可能不回 aux）。推送流文本行进
 // 构建日志（与 buildkit 步骤日志同一条实时流）。
+//
+// 带界裁决（B15-3）：ImagePush 不在本层另设空闲上限——ctx 由调用链上游
+// 统一带界：executeBuild 以 BuildTimeout 硬超时包裹整条构建链
+// （internal/engine/builder.go:230 context.WithTimeout(buildRootCtx(),
+// buildOpts.Timeout)，Options.BuildTimeout 缺省 15m 见 engine.go:75，
+// 超时=expired 看门狗落行），Stop 取消经 buildRootCtx 传导（排水有界，
+// 回 queued 重放）。推送大镜像的长尾不该被第二重超时误杀，取消语义已在
+// 上游钉死；若未来出现不经 executeBuild 的调用方，须自带同等硬界再进本
+// 函数。
 func (d *daemonClients) pushBuiltImage(ctx context.Context, req capability.BuildRequest, target string, w capability.LogWriter) (string, error) {
 	auth := ""
 	if req.PushCred != nil {

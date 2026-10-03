@@ -16,6 +16,17 @@ import (
 // ADR-0014：凭证存 Secret，Ensure 解析后按节点分发）。
 const registrySecretPrefix = "registry:"
 
+// managedEndpoint 给受管仓库端点解析补独立硬界（B15-2）：Endpoint 是
+// registry Provider 的外部调用，可独立 hang——序列级界（materialize 序列
+// 头 / ensureTaskWorkloads 下发段）虽覆盖既有消费面，但 hang 会吃光整段
+// 预算让 Ensure 饿死；独立界让端点解析先失败，预算留给后续步。双重
+// WithTimeout 取 min，语义不变（drift.go 既有形态）。
+func (e *Engine) managedEndpoint(ctx context.Context) (capability.RegistryEndpoint, error) {
+	ctx, cancel := e.boundedStep(ctx)
+	defer cancel()
+	return e.registry.Endpoint(ctx)
+}
+
 // registryCredentialJSON 是 registry Secret 值的结构。
 type registryCredentialJSON struct {
 	Server   string `json:"server"`
@@ -30,7 +41,7 @@ func (e *Engine) resolveMaterials(ctx context.Context, spec *specv1.AppSpec, pro
 	refs := collectSecretRefs(spec)
 	hosts := collectImageHosts(spec)
 	if spec.GetBuild() != nil && e.registry != nil {
-		endpoint, err := e.registry.Endpoint(ctx)
+		endpoint, err := e.managedEndpoint(ctx)
 		if err != nil {
 			return capability.Materials{}, fmt.Errorf("resolve managed registry endpoint: %w", err)
 		}
@@ -75,7 +86,7 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 	// 无平台凭证面（build 源部署已在 prepare 前置门精确失败）。
 	var managed *capability.RegistryEndpoint
 	if e.registry != nil {
-		endpoint, err := e.registry.Endpoint(ctx)
+		endpoint, err := e.managedEndpoint(ctx)
 		if err != nil {
 			return materials, fmt.Errorf("resolve managed registry endpoint: %w", err)
 		}

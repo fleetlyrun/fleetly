@@ -41,8 +41,15 @@ func (e *Engine) TeardownApp(ctx context.Context, appID string) error {
 		return fmt.Errorf("resolve app: %w", err)
 	}
 	ns := capability.NamespaceRef{Team: team, Project: a.ProjectID, App: a.ID}
-	if err := e.runtime.Remove(ctx, ns); err != nil {
-		return fmt.Errorf("runtime remove: %w", err)
+	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
+	// 卡住 API 调用本身（与收敛环卡死同害——docker hang 时 DeleteApp 的
+	// gRPC 永不返回，且 appMu 被握死堵住同 App 全部受理/重放）。带
+	// ManagedStepTimeout 硬上限，超时如实上抛（App 保持可操作，可重试删除）。
+	rctx, rcancel := e.boundedStep(ctx)
+	removeErr := e.runtime.Remove(rctx, ns)
+	rcancel()
+	if removeErr != nil {
+		return fmt.Errorf("runtime remove: %w", removeErr)
 	}
 
 	// 缓存收口：先收集该 App 名下的 Workload 集，再逐面清（drift/稳态

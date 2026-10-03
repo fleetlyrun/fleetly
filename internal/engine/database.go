@@ -251,8 +251,14 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 		return err
 	}
 	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Database: row.ID}
-	if err := e.runtime.Remove(ctx, ns); err != nil {
-		return fmt.Errorf("database teardown: %w", err)
+	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
+	// 卡住 API 调用本身（与收敛环卡死同害）。带 ManagedStepTimeout 硬上限，
+	// 超时如实上抛（API 404/冲突语义不变，行保持可重试收口）。
+	rctx, rcancel := e.boundedStep(ctx)
+	removeErr := e.runtime.Remove(rctx, ns)
+	rcancel()
+	if removeErr != nil {
+		return fmt.Errorf("database teardown: %w", removeErr)
 	}
 	e.obsMu.Lock()
 	delete(e.observations, row.ID)

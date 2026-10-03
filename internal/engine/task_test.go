@@ -365,6 +365,45 @@ func TestTaskEnsureBoundedByManagedStepTimeout(t *testing.T) {
 		"both tasks re-ensure on the next tick after the bounded failure")
 }
 
+// TestDeleteTaskRemoveBoundedByManagedStepTimeout（B15-1）：API 请求路径的
+// runtime.Remove 挂死不再卡住 DeleteTask 调用本身——带界 Remove 按
+// ManagedStepTimeout 超时返回（批 3 判定"请求 ctx 有界"被审查复核反转：
+// Remove 挂死 = API 调用挂死 + lockTask 被握死堵住驱动环，与收敛环卡死
+// 同害）。失败不落半途状态：载体拆不掉则 tombstone 不落，解除后重试收口。
+func TestDeleteTaskRemoveBoundedByManagedStepTimeout(t *testing.T) {
+	e, rt, _ := newTestEngineOpts(t, Options{ManagedStepTimeout: 100 * time.Millisecond})
+	ctx := context.Background()
+	taskID := "01JD0TASK0000000000000000K"
+	createTaskRow(t, e, taskID, "", task.FormResident, 1, 0, "")
+
+	rt.mu.Lock()
+	rt.removeEntered = make(chan struct{}, 1)
+	rt.removeBlock = make(chan struct{})
+	rt.mu.Unlock()
+
+	done := make(chan error, 1)
+	go func() { done <- e.DeleteTask(ctx, taskID) }()
+	select {
+	case <-rt.removeEntered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("remove never entered the block point")
+	}
+	select {
+	case err := <-done:
+		require.Error(t, err, "bounded Remove must surface the timeout, not hang")
+		assert.Contains(t, err.Error(), "runtime remove")
+	case <-time.After(5 * time.Second):
+		t.Fatal("DeleteTask hung past ManagedStepTimeout — unbounded runtime.Remove on the API path")
+	}
+	assert.Empty(t, rt.removedSnapshot(), "a hung Remove must not record a completed removal")
+
+	// 挂死解除后的重试收口：DeleteTask 幂等重入（失败未落任何状态）。
+	close(rt.removeBlock)
+	require.NoError(t, e.DeleteTask(ctx, taskID))
+	assert.Equal(t, task.StateDeleted, getTaskRow(t, e, taskID).State)
+	require.Len(t, rt.removedSnapshot(), 1)
+}
+
 // TestTaskLeaseExpiryDrainAndRevive（F1.6）：lease 超宽限 → 排空（runs
 // stopping/lease_expired）→ drained → RenewTask 复活 → 补足恢复。
 func TestTaskLeaseExpiryDrainAndRevive(t *testing.T) {

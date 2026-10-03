@@ -649,8 +649,14 @@ func (e *Engine) DeleteTask(ctx context.Context, id string) error {
 		return err
 	}
 	ns := capability.NamespaceRef{Team: team, Project: t.ProjectID, Task: t.ID}
-	if err := e.runtime.Remove(ctx, ns); err != nil {
-		return fmt.Errorf("runtime remove: %w", err)
+	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
+	// 卡住 API 调用本身（与收敛环卡死同害），且 lockTask 被握死堵住驱动环
+	// 同 Task 全部驱动。带 ManagedStepTimeout 硬上限，超时如实上抛。
+	rctx, rcancel := e.boundedStep(ctx)
+	removeErr := e.runtime.Remove(rctx, ns)
+	rcancel()
+	if removeErr != nil {
+		return fmt.Errorf("runtime remove: %w", removeErr)
 	}
 	// 缓存收口（P1-7 分家面：Task 域缓存组按 Task/Run 键清理）。
 	e.drainRunObsForTask(id)
