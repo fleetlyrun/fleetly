@@ -219,11 +219,11 @@ _Avoid_: restore, revert
 _Avoid_: recovery(泛指), replay
 
 **Backup**:
-数据面备份（Database、Volume）。
+数据面备份（Database、Volume）；产物经 ObjectStore 承载（ADR-0039）。
 _Avoid_: dump, snapshot(混用)
 
 **Platform Backup**:
-控制面导出：数据库、密封密钥、Capability 配置。
+控制面导出：数据库、密封密钥、Capability 配置（restic 承载，ADR-0039）。
 _Avoid_: state backup, full backup
 
 **Bootstrap Token**:
