@@ -28,6 +28,12 @@ F1.12 要求 postgres（含 pgvector 形态）+ redis 模板、默认本地备�
    渲染方式，住 engine（投影知识，`internal/engine/dbtemplate.go`）。值域
    本批 = `postgres` / `pgvector` / `redis`，缺省模板钉版（ADR-0021 口径，
    zot 先例）：
+   > 落位修订（2026-10-03）：随 F2.7 目录化提前（架构评审第二轮候选 1，
+   > grilling 共识），`internal/engine/dbtemplate.go` →
+   > `internal/engine/dbtemplate/` 子包——per-engine 接口 adapter
+   > （`dbtemplate.Template`，注册表零 switch；预留 F2.2 `BackupCommand`
+   > 与 digest 钉定空槽）。注册表真源语义不变；DNS 铸名与连接串组合公式
+   > 仍住 engine（模板 ConnURL 收 host 注入）。
    - postgres → `postgres:17-bookworm`（major+suite 级钉：trixie 基座
      启动坑 docker-library/postgres#1363 规避；精确 patch 钉随 F2 版本
      矩阵；PG17 数据目录 `/var/lib/postgresql/data`——PG18 迁移路径坑

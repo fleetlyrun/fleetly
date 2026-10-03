@@ -16,6 +16,7 @@ import (
 
 	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	specir "github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -44,6 +45,24 @@ func DBCredentialSecretName(databaseName string) string {
 // 恒为完整连接 URL，ADR-0029 决策 6）。
 func IsDatabaseCredentialSecret(name string) bool {
 	return strings.HasPrefix(name, dbCredentialSecretPrefix)
+}
+
+// DatabaseDNSName 铸 per-Database 稳定 DNS 名（engine 铸名公式真源，
+// TaskDNSName 先例；Provider 经 Addressing 声明映射为自己的原语）。模板
+// 子包不拥有铸名——ConnURL 收 host 注入（dbtemplate 包注释）。
+func DatabaseDNSName(databaseID string) string {
+	return "db-" + strings.ToLower(databaseID)
+}
+
+// DatabaseConnectionURL 铸连接串（API 创建面消费的单源公式；组合 =
+// 模板查询 + 铸名 + 模板 ConnURL）。host 是网内 DNS 名 db-<id>——只在
+// 项目网内可解析，这是诚实的连接面。
+func DatabaseConnectionURL(engineName, databaseID, password string) (string, error) {
+	tpl, ok := dbtemplate.For(engineName)
+	if !ok {
+		return "", fmt.Errorf("engine: unknown database engine %q", engineName)
+	}
+	return tpl.ConnURL(DatabaseDNSName(databaseID), password), nil
 }
 
 // KickDatabases 唤醒 Database 收敛环（API 受理面消费：创建/删除后立即
@@ -80,7 +99,7 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 	defer cancel()
 
-	tpl, ok := dbTemplateFor(row.Engine)
+	tpl, ok := dbtemplate.For(row.Engine)
 	if !ok {
 		// 受理位已校验值域；此处防御模板下线后的存量行（诚实记日志，
 		// 载体保持现状不受扰）。
@@ -218,7 +237,7 @@ func dbStatusFromObservation(ev capability.WorkloadEvent, gen uint64) (string, b
 // 不进 env/label/argv（ADR-0014 材料纪律；值经载体按值指纹命名随 spec
 // diff 分发——轮换 Secret 即滚动替换，zot 附录 B 同款机制）。sec 由调用方
 // 预读传入（短路签名的同一次读取——不做二次点查）。
-func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tpl dbTemplate, sec *secret.Secret) (capability.Materials, error) {
+func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tpl dbtemplate.Template, sec *secret.Secret) (capability.Materials, error) {
 	if e.cipher == nil {
 		return capability.Materials{}, fmt.Errorf("database credentials require the master key (data root keys/ missing)")
 	}
@@ -226,11 +245,11 @@ func (e *Engine) databaseMaterials(ctx context.Context, row *dbrepo.Database, tp
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("decrypt credential secret %q: %w", row.CredentialsRef, err)
 	}
-	password, err := dbPasswordFromURL(string(plain))
+	password, err := dbtemplate.PasswordFromURL(string(plain))
 	if err != nil {
 		return capability.Materials{}, fmt.Errorf("credential secret %q: %w", row.CredentialsRef, err)
 	}
-	return capability.Materials{SecretFiles: tpl.materialsRender(password)}, nil
+	return capability.Materials{SecretFiles: tpl.Materials(password)}, nil
 }
 
 // ensureDatabaseVolume 幂等补建挂靠卷行（名 = 数据库名；NotFound 即建，
@@ -264,12 +283,12 @@ func (e *Engine) projectNetworkNames(ctx context.Context, projectID string) []st
 
 // databaseSpecFromRow 由行 + 模板组装 DatabaseSpec（IR 单真源：投影输入
 // 恒经 spec 形态，叶子校验可用）。
-func databaseSpecFromRow(row *dbrepo.Database, tpl dbTemplate) *specv1.DatabaseSpec {
+func databaseSpecFromRow(row *dbrepo.Database, tpl dbtemplate.Template) *specv1.DatabaseSpec {
 	return &specv1.DatabaseSpec{
 		SchemaVersion:  specir.SchemaVersion,
 		Database:       &specv1.DatabaseRef{Id: row.ID, Project: row.ProjectID},
 		Engine:         row.Engine,
-		Version:        tpl.version,
+		Version:        tpl.Meta().Version,
 		CredentialsRef: row.CredentialsRef,
 	}
 }

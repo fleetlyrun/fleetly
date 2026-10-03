@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -85,14 +86,14 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	require.Len(t, w.Volumes, 1)
 	assert.Equal(t, tDatabaseName, w.Volumes[0].VolumeID, "volume name = database name formula")
 	assert.Equal(t, "/var/lib/postgresql/data", w.Volumes[0].Target)
-	assert.Equal(t, "/run/secrets/"+dbPasswordFile, w.Env["POSTGRES_PASSWORD_FILE"])
+	assert.Equal(t, "/run/secrets/"+dbtemplate.PasswordFile, w.Env["POSTGRES_PASSWORD_FILE"])
 	assert.Equal(t, int64(1), w.Replicas)
 	require.NotNil(t, w.Healthcheck)
 	// 引擎原生 exec 探针（模板单源；通用 TCP 方言的 nc 假设不成立，
 	// staging 真机实证 2026-10-02）。
 	assert.Equal(t, []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "fleetly", "-d", "fleetly"}, w.Healthcheck.Exec)
 	// 密码文件材料（值来自连接串回读——单真源）。
-	assert.Equal(t, []byte("secretpw"), last.Materials.SecretFiles[dbPasswordFile])
+	assert.Equal(t, []byte("secretpw"), last.Materials.SecretFiles[dbtemplate.PasswordFile])
 	// 首挂钉住合并进 Placement（fake 集群默认一节点可用）。
 	assert.Equal(t, []string{"01JD0NODE00000000000000000"}, w.Placement.NodeIDs)
 
@@ -175,7 +176,7 @@ func TestDatabaseShortCircuitKeepsStatusAdvancing(t *testing.T) {
 	e.databaseStep(ctx)
 	calls := rt.calls()
 	require.Len(t, calls, 2, "credential rotation must invalidate the short-circuit")
-	assert.Equal(t, []byte("newpw"), calls[1].Materials.SecretFiles[dbPasswordFile])
+	assert.Equal(t, []byte("newpw"), calls[1].Materials.SecretFiles[dbtemplate.PasswordFile])
 }
 
 // N1 C16：凭证 Secret 读失败 = 不 Ensure 不落签名（诚实失败语义与短路
@@ -217,8 +218,8 @@ func TestDatabaseRedisTemplateMaterials(t *testing.T) {
 	last := calls[len(calls)-1]
 	w := last.Spec["redis"]
 	assert.Equal(t, "redis:7.4", w.Image)
-	assert.Equal(t, []string{"redis-server", "/run/secrets/" + dbRedisConfFile}, w.Command)
-	conf := string(last.Materials.SecretFiles[dbRedisConfFile])
+	assert.Equal(t, []string{"redis-server", "/run/secrets/" + dbtemplate.RedisConfFile}, w.Command)
+	conf := string(last.Materials.SecretFiles[dbtemplate.RedisConfFile])
 	assert.Contains(t, conf, "requirepass redispw")
 	assert.Contains(t, conf, "appendonly yes")
 	assert.Equal(t, []string{"redis-cli", "-p", "6379", "ping"}, w.Healthcheck.Exec)
@@ -289,14 +290,14 @@ func TestDatabaseConnectionURLRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t,
 		fmt.Sprintf("postgresql://fleetly:p%%3A%%20w%%40rd@%s:5432/fleetly", DatabaseDNSName(tDatabaseID)), pg)
-	password, err := dbPasswordFromURL(pg)
+	password, err := dbtemplate.PasswordFromURL(pg)
 	require.NoError(t, err)
 	assert.Equal(t, "p: w@rd", password)
 
 	rd, err := DatabaseConnectionURL("redis", tDatabaseID, "redispw")
 	require.NoError(t, err)
 	assert.Equal(t, "redis://:redispw@db-01jd0db000000000000000000:6379/0", rd)
-	password, err = dbPasswordFromURL(rd)
+	password, err = dbtemplate.PasswordFromURL(rd)
 	require.NoError(t, err)
 	assert.Equal(t, "redispw", password)
 

@@ -17,6 +17,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
+	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -49,9 +50,9 @@ func (svc *DatabasesService) CreateDatabase(ctx context.Context, req *structurev
 	if req.GetProjectId() == "" || req.GetName() == "" || req.GetEngine() == "" {
 		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id, name and engine: must not be empty")
 	}
-	if _, ok := engine.DatabaseEngineInfoFor(req.GetEngine()); !ok {
+	if _, ok := dbtemplate.InfoFor(req.GetEngine()); !ok {
 		return nil, apperr.New("E_INVALID_ARGUMENT",
-			"engine: %q is not a registered template (available: %v)", req.GetEngine(), engine.DBEngines())
+			"engine: %q is not a registered template (available: %v)", req.GetEngine(), dbtemplate.Engines())
 	}
 	if svc.s.Cipher == nil {
 		return nil, apperr.New("E_SECRET_UNAVAILABLE", "the secret facility is unavailable (no master key)")
@@ -179,7 +180,7 @@ func databaseMsg(row *dbrepo.Database) *structurev1.Database {
 		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
 		Host: engine.DatabaseDNSName(row.ID),
 	}
-	if info, ok := engine.DatabaseEngineInfoFor(row.Engine); ok {
+	if info, ok := dbtemplate.InfoFor(row.Engine); ok {
 		msg.Version, msg.Port = info.Version, info.Port
 	}
 	return msg
