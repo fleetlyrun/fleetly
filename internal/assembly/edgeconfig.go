@@ -23,8 +23,8 @@ func NewEdgeConfigServer(app lynx.App, cfg *config.AppConfig, edge capability.Ed
 	if edge == nil {
 		return nil, nil // Edge 未装配：无拉取端点（受管面停用的诚实降级）
 	}
-	src, ok := edge.(capability.ConfigSource)
-	if !ok {
+	src := capability.FacesOf(edge).ConfigSource // 配置源子面（FacesOf 协商点）
+	if src == nil {
 		return nil, fmt.Errorf("assembly: edge provider %s does not expose a config snapshot", edge.Describe().Name)
 	}
 	mux := http.NewServeMux()
@@ -77,5 +77,6 @@ func NewEdgeProvider(app lynx.App) (capability.Edge, func(), error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Edge port", p.Describe().Name)
 	}
+	logCapabilityFaces(app.Logger(), "edge", edge)
 	return edge, func() {}, nil
 }

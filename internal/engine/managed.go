@@ -66,27 +66,28 @@ func (m *managedGenState) next(fp string) uint64 {
 const managedDomainKeyPrefix = "fleetly/system/"
 
 // managedProviderDecl 是一个受管 Provider 的 reconciler 投影：声明 +
-// 是否挂活跃项目网（Edge 要跨网触达后端；zot 只需被发布端口可达，附录
-// B.1）。
+// 材料源子面（FacesOf 探测产物）+ 是否挂活跃项目网（Edge 要跨网触达
+// 后端；zot 只需被发布端口可达，附录 B.1）。
 type managedProviderDecl struct {
 	m             capability.Managed
+	materials     capability.MaterialsSource
 	attachNetwork bool
 }
 
 // managedProviders 列出在册受管 Provider（注册序稳定：Edge 先于 Registry
-// ——Route 面优先收敛）。
+// ——Route 面优先收敛）。受管/材料源子面经 FacesOf 协商点探测。
 func (e *Engine) managedProviders() []managedProviderDecl {
 	var out []managedProviderDecl
 	if e.edge != nil {
-		if m, ok := e.edge.(capability.Managed); ok {
-			out = append(out, managedProviderDecl{m: m, attachNetwork: true})
+		if faces := capability.FacesOf(e.edge); faces.Managed != nil {
+			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: true})
 		} else {
 			e.log.Warn("edge provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
 	if e.registry != nil {
-		if m, ok := e.registry.(capability.Managed); ok {
-			out = append(out, managedProviderDecl{m: m, attachNetwork: false})
+		if faces := capability.FacesOf(e.registry); faces.Managed != nil {
+			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
 		} else {
 			e.log.Warn("registry provider is not managed-selfhosted; skipping reconciler")
 		}
@@ -119,8 +120,8 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		ensured[i] = ws
 		all = append(all, ws...)
 		materials := capability.Materials{}
-		if src, ok := decl.m.(capability.MaterialsSource); ok {
-			materials = src.ManagedMaterials()
+		if decl.materials != nil {
+			materials = decl.materials.ManagedMaterials()
 		}
 		sigs[i] = managedFingerprint(ws) + "\x00" + materialsFingerprint(materials)
 	}
@@ -138,8 +139,8 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 			continue
 		}
 		materials := capability.Materials{}
-		if src, ok := decl.m.(capability.MaterialsSource); ok {
-			materials = src.ManagedMaterials()
+		if decl.materials != nil {
+			materials = decl.materials.ManagedMaterials()
 		}
 		if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
 			e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)

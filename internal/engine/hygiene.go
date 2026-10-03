@@ -21,8 +21,8 @@ import (
 // 该子面时静默跳过（与 Inspector 的降级文化一致，返回 0,nil）。maxDelete
 // 是单次删除预算（janitor 节拍限流防 API 风暴）。
 func (e *Engine) SweepOrphanSecretCarriers(ctx context.Context, maxDelete int) (int, error) {
-	h, ok := e.runtime.(capability.RuntimeHygiene)
-	if !ok || maxDelete <= 0 {
+	h := capability.FacesOf(e.runtime).Hygiene // 清扫子面（FacesOf 协商点）
+	if h == nil || maxDelete <= 0 {
 		return 0, nil
 	}
 	return h.SweepOrphanSecrets(ctx, maxDelete)

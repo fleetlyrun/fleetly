@@ -106,8 +106,8 @@ func (svc *NodesService) nodeAdmin(ctx context.Context, nodeID, action string, o
 	if nodeID == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "node_id: must not be empty")
 	}
-	admin, ok := svc.s.Runtime.(capability.RuntimeAdmin)
-	if !ok {
+	admin := capability.FacesOf(svc.s.Runtime).Admin // 节点管理子面（FacesOf 协商点）
+	if admin == nil {
 		return apperr.New("E_INTERNAL", "the runtime provider does not expose node administration")
 	}
 	if err := op(admin, nodeID); err != nil {
@@ -376,8 +376,8 @@ type LogsService struct {
 // StreamLogs 转发 RuntimeLogs 流（appID → 隔离域解析经 app 行 + project 行
 // ——Team 轴实取，不再硬编码 default；ADR-0035 行级授权同调用点）。
 func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
-	logs, ok := svc.s.Runtime.(capability.RuntimeLogs)
-	if !ok {
+	logs := capability.FacesOf(svc.s.Runtime).Logs // 日志子面（FacesOf 协商点）
+	if logs == nil {
 		return apperr.New("E_INTERNAL", "the runtime provider does not expose container logs")
 	}
 	if req.GetAppId() == "" {

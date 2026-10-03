@@ -83,7 +83,7 @@ func (e *Engine) replayAppBaseline(ctx context.Context, a *app.App, d *deploymen
 // 看门狗 + 跨域附件隔离不变式（F1.8）。每 App 一次 Inspect（N0 小团队
 // 规模）；错误逐 App 记日志不阻断。
 func (e *Engine) driftScan(ctx context.Context) {
-	inspector, hasInspector := e.runtime.(capability.RuntimeInspector)
+	inspector := capability.FacesOf(e.runtime).Inspector // spec 对照子面（FacesOf 协商点；nil = Provider 未提供）
 
 	// 在途 App 集（稳态判定：不在途才发 workload.stopped）。
 	driving, err := e.deployments.ListDriving(ctx, e.db.Runner())
@@ -114,7 +114,7 @@ func (e *Engine) driftScan(ctx context.Context) {
 		if strings.HasPrefix(appID, managedDomainKeyPrefix) || strings.HasPrefix(appID, databaseDomainKeyPrefix) {
 			continue
 		}
-		if !hasInspector {
+		if inspector == nil {
 			continue
 		}
 		// 域解析走 appTeam（N0.1 P2-11：不再内联 Team:"default"——团队

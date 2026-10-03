@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/wire"
@@ -93,11 +94,26 @@ func NewRuntimeProvider(app lynx.App) (capability.Runtime, func(), error) {
 	if !ok {
 		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Runtime port", p.Describe().Name)
 	}
+	logCapabilityFaces(app.Logger(), "runtime", rt)
 	return rt, func() {
 		if c, ok := rt.(interface{ Close() error }); ok {
 			_ = c.Close()
 		}
 	}, nil
+}
+
+// logCapabilityFaces 打一行能力提供面矩阵（FacesOf 协商点的可观测枚举，
+// 2026-10-03 架构评审候选 4：可选子面的降级文化此前只活在 8 处断言点
+// 注释里——启动期一行日志让"谁提供什么面"可查；GetStatus 扩字段随
+// F0.19 能力降级矩阵批次设计）。
+func logCapabilityFaces(l *slog.Logger, kind string, p capability.Provider) {
+	faces := capability.FacesOf(p)
+	offered := faces.Offered()
+	if len(offered) == 0 {
+		l.Info("capability faces", "kind", kind, "provider", p.Describe().Name, "faces", "none")
+		return
+	}
+	l.Info("capability faces", "kind", kind, "provider", p.Describe().Name, "faces", strings.Join(offered, ","))
 }
 
 // NewBuilderProviders 构造 Builder 家族（ADR-0032：Builder 是 spec 路由
@@ -149,6 +165,7 @@ func NewRegistryProvider(app lynx.App, cfg *config.AppConfig) (capability.Regist
 	if !ok {
 		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Registry port", p.Describe().Name)
 	}
+	logCapabilityFaces(app.Logger(), "registry", reg)
 	return reg, func() {}, nil
 }
 
