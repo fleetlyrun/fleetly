@@ -65,7 +65,8 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 	return scanNetwork(row.Scan)
 }
 
-// ListByProject 返回 Project 全部活跃网络。
+// ListByProject 返回 Project 全部活跃网络（全量面——配额检查与引擎挂网
+// 装配消费；API 分页读面走 ListByProjectPage）。
 func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]Network, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, project_id, name, egress_none, created_at, deleted_at
@@ -84,6 +85,44 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 	}
 	return out, rows.Err()
 }
+
+// ListByProjectPage 是 ListByProject 的分页读面（ADR-0026 after_* + limit；
+// 游标轴 = 既有排序轴 name 字典序升序——既有响应序不变）。limit<=0 或
+// >200 回落/钳制缺省 50。
+func (r *Repo) ListByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]Network, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := `
+		SELECT id, project_id, name, egress_none, created_at, deleted_at
+		FROM networks WHERE project_id = ? AND deleted_at = ''`
+	args := []any{projectID}
+	if afterName != "" {
+		q += ` AND name > ?`
+		args = append(args, afterName)
+	}
+	q += ` ORDER BY name ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Network
+	for rows.Next() {
+		n, err := scanNetwork(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *n)
+	}
+	return out, rows.Err()
+}
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)
 
 // List 返回全部活跃网络（跨 Project；受管 Edge 挂网的全量真源，N0 修复
 // 批 B1）。

@@ -144,17 +144,18 @@ func (svc *ProjectsService) GetProject(ctx context.Context, req *structurev1.Get
 }
 
 // ListProjects 非 owner 按 Team 过滤（ADR-0035 List 面：过滤而非逐行拒绝）；
-// owner（平台管理员）全量。
-func (svc *ProjectsService) ListProjects(ctx context.Context, _ *structurev1.ListProjectsRequest) (*structurev1.ListProjectsResponse, error) {
+// owner（平台管理员）全量。两种形态同带分页（ADR-0026 after_* + limit）。
+func (svc *ProjectsService) ListProjects(ctx context.Context, req *structurev1.ListProjectsRequest) (*structurev1.ListProjectsResponse, error) {
 	teamID, owner, err := callerTeam(ctx)
 	if err != nil {
 		return nil, err
 	}
+	limit := listLimit(req.GetLimit())
 	var list []project.Project
 	if owner {
-		list, err = svc.s.Projects.List(ctx, svc.s.DB.Runner())
+		list, err = svc.s.Projects.ListPage(ctx, svc.s.DB.Runner(), req.GetAfterProjectId(), limit)
 	} else {
-		list, err = svc.s.Projects.ListByTeam(ctx, svc.s.DB.Runner(), teamID)
+		list, err = svc.s.Projects.ListByTeamPage(ctx, svc.s.DB.Runner(), teamID, req.GetAfterProjectId(), limit)
 	}
 	if err != nil {
 		return nil, mapStateError(err, "project")
@@ -262,7 +263,8 @@ func (svc *AppsService) ListApps(ctx context.Context, req *structurev1.ListAppsR
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Apps.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
+	list, err := svc.s.Apps.ListByProjectPage(ctx, svc.s.DB.Runner(),
+		req.GetProjectId(), req.GetAfterAppId(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "app")
 	}
@@ -464,7 +466,8 @@ func (svc *SecretsService) ListSecrets(ctx context.Context, req *structurev1.Lis
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Secrets.ListFingerprints(ctx, svc.s.DB.Runner(), req.GetProjectId())
+	list, err := svc.s.Secrets.ListFingerprints(ctx, svc.s.DB.Runner(),
+		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "secret")
 	}
@@ -573,8 +576,10 @@ func (svc *ConfigsService) ListConfigs(ctx context.Context, req *structurev1.Lis
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	// 列表面只回 Project 内最新版（版本明细随版本面扩展）。
-	list, err := svc.s.Configs.LatestByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
+	// 列表面只回 Project 内最新版（版本明细随版本面扩展）；分页只动行集
+	//（每行仍是该 name 最新版，ADR-0026 after_* + limit）。
+	list, err := svc.s.Configs.LatestByProjectPage(ctx, svc.s.DB.Runner(),
+		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "config")
 	}
@@ -679,7 +684,8 @@ func (svc *NetworksService) ListNetworks(ctx context.Context, req *structurev1.L
 	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Networks.ListByProject(ctx, svc.s.DB.Runner(), req.GetProjectId())
+	list, err := svc.s.Networks.ListByProjectPage(ctx, svc.s.DB.Runner(),
+		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "network")
 	}

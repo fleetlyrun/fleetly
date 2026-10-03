@@ -82,6 +82,48 @@ func (r *Repo) List(ctx context.Context, run state.Runner) ([]Route, error) {
 	return out, rows.Err()
 }
 
+// ListPage 分页读面（ADR-0026 after_* + limit；游标轴 = ULID 创建序升序
+// ——既有响应序不变）。projectID 过滤可选（过滤语义与既有内存过滤一致，
+// 下推 SQL 使游标分页与过滤叠加）；projectID 为空 = 全量分页。limit<=0
+// 或 >200 回落/钳制缺省 50。
+func (r *Repo) ListPage(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]Route, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := `SELECT id, project_id, host, path, app_id, process, port, protocol, tls_mode, created_at, updated_at, deleted_at
+		FROM routes WHERE deleted_at = ''`
+	args := []any{}
+	if projectID != "" {
+		q += ` AND project_id = ?`
+		args = append(args, projectID)
+	}
+	if afterID != "" {
+		q += ` AND id > ?`
+		args = append(args, afterID)
+	}
+	q += ` ORDER BY id ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Route
+	for rows.Next() {
+		rt, err := scanRoute(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *rt)
+	}
+	return out, rows.Err()
+}
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)
+
 // SoftDelete 落 tombstone（幂等）。
 func (r *Repo) SoftDelete(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())

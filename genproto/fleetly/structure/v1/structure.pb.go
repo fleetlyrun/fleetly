@@ -289,9 +289,13 @@ func (x *GetProjectResponse) GetProject() *Project {
 }
 
 type ListProjectsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// after_project_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID
+	// 创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+	AfterProjectId string `protobuf:"bytes,1,opt,name=after_project_id,json=afterProjectId,proto3" json:"after_project_id,omitempty"`
+	Limit          int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ListProjectsRequest) Reset() {
@@ -322,6 +326,20 @@ func (x *ListProjectsRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListProjectsRequest.ProtoReflect.Descriptor instead.
 func (*ListProjectsRequest) Descriptor() ([]byte, []int) {
 	return file_fleetly_structure_v1_structure_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ListProjectsRequest) GetAfterProjectId() string {
+	if x != nil {
+		return x.AfterProjectId
+	}
+	return ""
+}
+
+func (x *ListProjectsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListProjectsResponse struct {
@@ -701,8 +719,12 @@ func (x *GetAppResponse) GetApp() *App {
 }
 
 type ListAppsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// after_app_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建序
+	// 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+	AfterAppId    string `protobuf:"bytes,2,opt,name=after_app_id,json=afterAppId,proto3" json:"after_app_id,omitempty"`
+	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -742,6 +764,20 @@ func (x *ListAppsRequest) GetProjectId() string {
 		return x.ProjectId
 	}
 	return ""
+}
+
+func (x *ListAppsRequest) GetAfterAppId() string {
+	if x != nil {
+		return x.AfterAppId
+	}
+	return ""
+}
+
+func (x *ListAppsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListAppsResponse struct {
@@ -1051,8 +1087,12 @@ func (x *PutSecretResponse) GetSecret() *Secret {
 }
 
 type ListSecretsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name
+	// 字典序升序（既有排序轴不变；分页只动行集，每行仍是最新指纹面）。
+	AfterName     string `protobuf:"bytes,2,opt,name=after_name,json=afterName,proto3" json:"after_name,omitempty"`
+	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1092,6 +1132,20 @@ func (x *ListSecretsRequest) GetProjectId() string {
 		return x.ProjectId
 	}
 	return ""
+}
+
+func (x *ListSecretsRequest) GetAfterName() string {
+	if x != nil {
+		return x.AfterName
+	}
+	return ""
+}
+
+func (x *ListSecretsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListSecretsResponse struct {
@@ -1520,8 +1574,12 @@ func (x *GetConfigResponse) GetConfig() *Config {
 }
 
 type ListConfigsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name
+	// 字典序升序（既有排序轴不变；分页只动行集，每行仍是该 name 最新版）。
+	AfterName     string `protobuf:"bytes,2,opt,name=after_name,json=afterName,proto3" json:"after_name,omitempty"`
+	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1561,6 +1619,20 @@ func (x *ListConfigsRequest) GetProjectId() string {
 		return x.ProjectId
 	}
 	return ""
+}
+
+func (x *ListConfigsRequest) GetAfterName() string {
+	if x != nil {
+		return x.AfterName
+	}
+	return ""
+}
+
+func (x *ListConfigsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListConfigsResponse struct {
@@ -2567,8 +2639,12 @@ func (x *CreateNetworkResponse) GetNetwork() *Network {
 }
 
 type ListNetworksRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name
+	// 字典序升序（既有排序轴不变；ADR-0026 after_* + limit 惯例）。
+	AfterName     string `protobuf:"bytes,2,opt,name=after_name,json=afterName,proto3" json:"after_name,omitempty"`
+	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2608,6 +2684,20 @@ func (x *ListNetworksRequest) GetProjectId() string {
 		return x.ProjectId
 	}
 	return ""
+}
+
+func (x *ListNetworksRequest) GetAfterName() string {
+	if x != nil {
+		return x.AfterName
+	}
+	return ""
+}
+
+func (x *ListNetworksRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListNetworksResponse struct {
@@ -3266,8 +3356,10 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x11GetProjectRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"M\n" +
 	"\x12GetProjectResponse\x127\n" +
-	"\aproject\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.ProjectR\aproject\"\x15\n" +
-	"\x13ListProjectsRequest\"Q\n" +
+	"\aproject\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.ProjectR\aproject\"U\n" +
+	"\x13ListProjectsRequest\x12(\n" +
+	"\x10after_project_id\x18\x01 \x01(\tR\x0eafterProjectId\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"Q\n" +
 	"\x14ListProjectsResponse\x129\n" +
 	"\bprojects\x18\x01 \x03(\v2\x1d.fleetly.structure.v1.ProjectR\bprojects\"&\n" +
 	"\x14DeleteProjectRequest\x12\x0e\n" +
@@ -3289,10 +3381,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\rGetAppRequest\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\"=\n" +
 	"\x0eGetAppResponse\x12+\n" +
-	"\x03app\x18\x01 \x01(\v2\x19.fleetly.structure.v1.AppR\x03app\"0\n" +
+	"\x03app\x18\x01 \x01(\v2\x19.fleetly.structure.v1.AppR\x03app\"h\n" +
 	"\x0fListAppsRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"A\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12 \n" +
+	"\fafter_app_id\x18\x02 \x01(\tR\n" +
+	"afterAppId\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"A\n" +
 	"\x10ListAppsResponse\x12-\n" +
 	"\x04apps\x18\x01 \x03(\v2\x19.fleetly.structure.v1.AppR\x04apps\"\"\n" +
 	"\x10DeleteAppRequest\x12\x0e\n" +
@@ -3312,10 +3407,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x14\n" +
 	"\x05value\x18\x03 \x01(\tR\x05value\"I\n" +
 	"\x11PutSecretResponse\x124\n" +
-	"\x06secret\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.SecretR\x06secret\"3\n" +
+	"\x06secret\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.SecretR\x06secret\"h\n" +
 	"\x12ListSecretsRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"M\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1d\n" +
+	"\n" +
+	"after_name\x18\x02 \x01(\tR\tafterName\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"M\n" +
 	"\x13ListSecretsResponse\x126\n" +
 	"\asecrets\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.SecretR\asecrets\"H\n" +
 	"\x13DeleteSecretRequest\x12\x1d\n" +
@@ -3345,10 +3443,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x18\n" +
 	"\aversion\x18\x03 \x01(\x03R\aversion\"I\n" +
 	"\x11GetConfigResponse\x124\n" +
-	"\x06config\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.ConfigR\x06config\"3\n" +
+	"\x06config\x18\x01 \x01(\v2\x1c.fleetly.structure.v1.ConfigR\x06config\"h\n" +
 	"\x12ListConfigsRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"M\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1d\n" +
+	"\n" +
+	"after_name\x18\x02 \x01(\tR\tafterName\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"M\n" +
 	"\x13ListConfigsResponse\x126\n" +
 	"\aconfigs\x18\x01 \x03(\v2\x1c.fleetly.structure.v1.ConfigR\aconfigs\"\x90\x01\n" +
 	"\x06Volume\x12\x0e\n" +
@@ -3424,10 +3525,13 @@ const file_fleetly_structure_v1_structure_proto_rawDesc = "" +
 	"\vegress_none\x18\x03 \x01(\bR\n" +
 	"egressNone\"P\n" +
 	"\x15CreateNetworkResponse\x127\n" +
-	"\anetwork\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.NetworkR\anetwork\"4\n" +
+	"\anetwork\x18\x01 \x01(\v2\x1d.fleetly.structure.v1.NetworkR\anetwork\"i\n" +
 	"\x13ListNetworksRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"Q\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1d\n" +
+	"\n" +
+	"after_name\x18\x02 \x01(\tR\tafterName\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"Q\n" +
 	"\x14ListNetworksResponse\x129\n" +
 	"\bnetworks\x18\x01 \x03(\v2\x1d.fleetly.structure.v1.NetworkR\bnetworks\"\xaa\x02\n" +
 	"\vNetworkPeer\x12\x0e\n" +

@@ -120,7 +120,12 @@ func (x *Node) GetLastSeenAt() string {
 }
 
 type ListNodesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// after_node_id 游标（上一页末条 platform_id；空 = 首页）。nodes 是
+	// 观测缓存表（非权威），无 ULID 主键——游标轴 = platform_id 字典序
+	// 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+	AfterNodeId   string `protobuf:"bytes,1,opt,name=after_node_id,json=afterNodeId,proto3" json:"after_node_id,omitempty"`
+	Limit         int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -153,6 +158,20 @@ func (x *ListNodesRequest) ProtoReflect() protoreflect.Message {
 // Deprecated: Use ListNodesRequest.ProtoReflect.Descriptor instead.
 func (*ListNodesRequest) Descriptor() ([]byte, []int) {
 	return file_fleetly_runtime_v1_runtime_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *ListNodesRequest) GetAfterNodeId() string {
+	if x != nil {
+		return x.AfterNodeId
+	}
+	return ""
+}
+
+func (x *ListNodesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListNodesResponse struct {
@@ -547,8 +566,10 @@ const file_fleetly_runtime_v1_runtime_proto_rawDesc = "" +
 	"\tavailable\x18\x05 \x01(\bR\tavailable\x12\"\n" +
 	"\rfirst_seen_at\x18\x06 \x01(\tR\vfirstSeenAt\x12 \n" +
 	"\flast_seen_at\x18\a \x01(\tR\n" +
-	"lastSeenAt\"\x12\n" +
-	"\x10ListNodesRequest\"C\n" +
+	"lastSeenAt\"L\n" +
+	"\x10ListNodesRequest\x12\"\n" +
+	"\rafter_node_id\x18\x01 \x01(\tR\vafterNodeId\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"C\n" +
 	"\x11ListNodesResponse\x12.\n" +
 	"\x05nodes\x18\x01 \x03(\v2\x18.fleetly.runtime.v1.NodeR\x05nodes\"+\n" +
 	"\x11EnrollNodeRequest\x12\x16\n" +

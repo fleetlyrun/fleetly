@@ -33,6 +33,22 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "after_node_id",
+            "description": "after_node_id 游标（上一页末条 platform_id；空 = 首页）。nodes 是\n观测缓存表（非权威），无 ULID 主键——游标轴 = platform_id 字典序\n升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
         "tags": [
           "NodesService"
         ]

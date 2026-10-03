@@ -280,7 +280,12 @@ message CreateProjectRequest { string name = 1; string team_id = 2; }
 message CreateProjectResponse { Project project = 1; }
 message GetProjectRequest { string id = 1; }
 message GetProjectResponse { Project project = 1; }
-message ListProjectsRequest {}
+message ListProjectsRequest {
+  // after_project_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID
+  // 创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+  string after_project_id = 1;
+  int32 limit = 2;
+}
 message ListProjectsResponse { repeated Project projects = 1; }
 message DeleteProjectRequest { string id = 1; }
 message DeleteProjectResponse {}
@@ -296,7 +301,13 @@ message CreateAppRequest { string project_id = 1; string name = 2; }
 message CreateAppResponse { App app = 1; }
 message GetAppRequest { string id = 1; }
 message GetAppResponse { App app = 1; }
-message ListAppsRequest { string project_id = 1; }
+message ListAppsRequest {
+  string project_id = 1;
+  // after_app_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建序
+  // 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+  string after_app_id = 2;
+  int32 limit = 3;
+}
 message ListAppsResponse { repeated App apps = 1; }
 message DeleteAppRequest { string id = 1; }
 message DeleteAppResponse {}
@@ -317,7 +328,13 @@ message PutSecretRequest {
   string value = 3;
 }
 message PutSecretResponse { Secret secret = 1; }
-message ListSecretsRequest { string project_id = 1; }
+message ListSecretsRequest {
+  string project_id = 1;
+  // after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name
+  // 字典序升序（既有排序轴不变；分页只动行集，每行仍是最新指纹面）。
+  string after_name = 2;
+  int32 limit = 3;
+}
 message ListSecretsResponse { repeated Secret secrets = 1; }
 message DeleteSecretRequest { string project_id = 1; string name = 2; }
 message DeleteSecretResponse {}
@@ -336,7 +353,13 @@ message PutConfigRequest { string project_id = 1; string name = 2; string conten
 message PutConfigResponse { Config config = 1; }
 message GetConfigRequest { string project_id = 1; string name = 2; int64 version = 3; }
 message GetConfigResponse { Config config = 1; }
-message ListConfigsRequest { string project_id = 1; }
+message ListConfigsRequest {
+  string project_id = 1;
+  // after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name
+  // 字典序升序（既有排序轴不变；分页只动行集，每行仍是该 name 最新版）。
+  string after_name = 2;
+  int32 limit = 3;
+}
 message ListConfigsResponse { repeated Config configs = 1; }
 
 message Volume {
@@ -404,7 +427,13 @@ message Network {
 
 message CreateNetworkRequest { string project_id = 1; string name = 2; bool egress_none = 3; }
 message CreateNetworkResponse { Network network = 1; }
-message ListNetworksRequest { string project_id = 1; }
+message ListNetworksRequest {
+  string project_id = 1;
+  // after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name
+  // 字典序升序（既有排序轴不变；ADR-0026 after_* + limit 惯例）。
+  string after_name = 2;
+  int32 limit = 3;
+}
 message ListNetworksResponse { repeated Network networks = 1; }
 
 // NetworkPeer 是一条跨 Project 挂靠声明（ADR-0013 附录 A.1）：挂靠方

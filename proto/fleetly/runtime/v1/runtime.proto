@@ -76,7 +76,13 @@ message Node {
   string last_seen_at = 7;
 }
 
-message ListNodesRequest {}
+message ListNodesRequest {
+  // after_node_id 游标（上一页末条 platform_id；空 = 首页）。nodes 是
+  // 观测缓存表（非权威），无 ULID 主键——游标轴 = platform_id 字典序
+  // 升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。
+  string after_node_id = 1;
+  int32 limit = 2;
+}
 message ListNodesResponse { repeated Node nodes = 1; }
 message EnrollNodeRequest {
   // rotate 先轮换全部 join token（worker+manager；泄漏处置：旧材料即刻

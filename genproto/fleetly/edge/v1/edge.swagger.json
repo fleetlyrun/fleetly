@@ -39,6 +39,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_route_id",
+            "description": "after_route_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建\n序升序（既有响应序不变；ADR-0026 after_* + limit 惯例——project/\nTeam 过滤语义不变，与游标叠加）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [

@@ -247,7 +247,13 @@ message GetDeploymentResponse { Deployment deployment = 1; }
 message CancelDeploymentResponse { Deployment deployment = 1; }
 message RollbackResponse { Deployment deployment = 1; }
 message GetDeploymentRequest { string id = 1; }
-message ListDeploymentsRequest { string app_id = 1; }
+message ListDeploymentsRequest {
+  string app_id = 1;
+  // after_deployment_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID
+  // 创建序；ADR-0026 after_* + limit 惯例）。
+  string after_deployment_id = 2;
+  int32 limit = 3;
+}
 message ListDeploymentsResponse { repeated Deployment deployments = 1; }
 message CancelDeploymentRequest { string id = 1; }
 message RollbackRequest { string app_id = 1; string to_revision = 2; }
@@ -264,7 +270,13 @@ message Revision {
   string created_at = 5;
 }
 
-message ListRevisionsRequest { string app_id = 1; }
+message ListRevisionsRequest {
+  string app_id = 1;
+  // after_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = App 内 R1..Rn
+  // 单调序号升序（既有响应序不变，events 面同款升序形态；ADR-0026）。
+  int64 after_seq = 2;
+  int32 limit = 3;
+}
 message ListRevisionsResponse { repeated Revision revisions = 1; }
 
 message DiffEntry {
@@ -292,7 +304,13 @@ message Build {
   string finished_at = 8;
 }
 
-message ListBuildsRequest { string app_id = 1; }
+message ListBuildsRequest {
+  string app_id = 1;
+  // after_build_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID 创建
+  // 序；ADR-0026 after_* + limit 惯例）。
+  string after_build_id = 2;
+  int32 limit = 3;
+}
 message ListBuildsResponse { repeated Build builds = 1; }
 
 // StreamBuildLogs（B4）：请求按 build id；follow 续流至终态。

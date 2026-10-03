@@ -54,3 +54,38 @@ func TestBuildTransitConflictPaths(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, build.StateFailed, got.State, "the concurrent writer's state stands")
 }
+
+// ADR-0026 List 分页（after_* + limit）：新→旧序、游标跳过、limit 截断与
+// 钳制（<=0 或 >200 回落/钳缺省 50）。
+func TestBuildListByAppPagination(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	builds := build.New(clock)
+
+	const appID = "01JD0APP000000000000000000"
+	// 逆序落三行（ULID 时间序与落序相反，验证 ORDER BY id DESC）。
+	ids := []string{"01JD0BUILD0000000000000000A", "01JD0BUILD0000000000000000B", "01JD0BUILD0000000000000000C"}
+	for _, id := range ids {
+		require.NoError(t, builds.Create(ctx, db.Runner(), &build.Build{
+			ID: id, AppID: appID, RevisionID: "01JD0REV000000000000000000", State: build.StateQueued,
+		}))
+	}
+
+	page1, err := builds.ListByApp(ctx, db.Runner(), appID, "", 2)
+	require.NoError(t, err)
+	require.Len(t, page1, 2)
+	assert.Equal(t, ids[2], page1[0].ID, "newest first")
+	assert.Equal(t, ids[1], page1[1].ID)
+
+	page2, err := builds.ListByApp(ctx, db.Runner(), appID, page1[len(page1)-1].ID, 2)
+	require.NoError(t, err)
+	require.Len(t, page2, 1)
+	assert.Equal(t, ids[0], page2[0].ID, "cursor skips the first page")
+
+	// limit 钳制：<=0 回落缺省 50（三行全回），>200 钳上界（不截断小夹具）。
+	for _, limit := range []int{0, -1, 500} {
+		got, err := builds.ListByApp(ctx, db.Runner(), appID, "", limit)
+		require.NoError(t, err)
+		assert.Len(t, got, 3, "limit %d clamps into range and returns all rows", limit)
+	}
+}

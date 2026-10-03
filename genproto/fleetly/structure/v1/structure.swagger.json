@@ -57,6 +57,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_app_id",
+            "description": "after_app_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建序\n升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [
@@ -175,6 +189,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_name",
+            "description": "after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name\n字典序升序（既有排序轴不变；分页只动行集，每行仍是该 name 最新版）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [
@@ -412,6 +440,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_name",
+            "description": "after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name\n字典序升序（既有排序轴不变；ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [
@@ -657,6 +699,22 @@
             }
           }
         },
+        "parameters": [
+          {
+            "name": "after_project_id",
+            "description": "after_project_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID\n创建序升序（既有响应序不变；ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
         "tags": [
           "ProjectsService"
         ]
@@ -773,6 +831,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_name",
+            "description": "after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name\n字典序升序（既有排序轴不变；分页只动行集，每行仍是最新指纹面）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [

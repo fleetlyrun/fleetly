@@ -70,9 +70,21 @@ func (r *Repo) Get(ctx context.Context, run state.Runner, id string) (*Build, er
 	return scanBuild(row.Scan)
 }
 
-// ListByApp 返回 App 全部 Build（新→旧）。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([]Build, error) {
-	rows, err := run.QueryContext(ctx, selectCols+" WHERE app_id = ? ORDER BY id DESC", appID)
+// ListByApp 返回 App 全部 Build（新→旧 + after 游标；ADR-0026 after_* +
+// limit 惯例——游标 = ULID 创建序）。limit<=0 或 >200 回落/钳制缺省 50。
+func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID, afterID string, limit int) ([]Build, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := selectCols + " WHERE app_id = ?"
+	args := []any{appID}
+	if afterID != "" {
+		q += " AND id < ?"
+		args = append(args, afterID)
+	}
+	q += " ORDER BY id DESC LIMIT ?"
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -186,3 +198,8 @@ func stateIn(set []State, s State) bool {
 	}
 	return false
 }
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)

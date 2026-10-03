@@ -72,3 +72,51 @@ func TestAppCRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, list)
 }
+
+// ADR-0026 List 分页（after_* + limit）：全局（owner）与 Team 过滤两种
+// 形态、游标跳过、limit 截断与钳制（<=0 或 >200 回落/钳缺省 50）。
+func TestProjectListPagination(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	projects := project.New(clock)
+
+	// 逆序落三行（ULID 时间序与落序相反，验证 ORDER BY id ASC 既有序不变）。
+	teamA, teamB := "01JTEAM000000000000000000A", "01JTEAM000000000000000000B"
+	rows := []*project.Project{
+		{ID: "01JD0PROJ00000000000000000C", Name: "gamma", TeamID: teamA},
+		{ID: "01JD0PROJ00000000000000000A", Name: "alpha", TeamID: teamA},
+		{ID: "01JD0PROJ00000000000000000B", Name: "beta", TeamID: teamB},
+	}
+	for _, p := range rows {
+		require.NoError(t, projects.Create(ctx, db.Runner(), p))
+	}
+
+	// owner 全局面：id 升序（创建序）。
+	page1, err := projects.ListPage(ctx, db.Runner(), "", 2)
+	require.NoError(t, err)
+	require.Len(t, page1, 2)
+	assert.Equal(t, rows[1].ID, page1[0].ID, "ascending ULID creation order")
+	assert.Equal(t, rows[2].ID, page1[1].ID)
+
+	page2, err := projects.ListPage(ctx, db.Runner(), page1[len(page1)-1].ID, 2)
+	require.NoError(t, err)
+	require.Len(t, page2, 1)
+	assert.Equal(t, rows[0].ID, page2[0].ID, "cursor skips the first page")
+
+	// Team 过滤与分页叠加（ADR-0035 List 面过滤不回退）。
+	teamPage, err := projects.ListByTeamPage(ctx, db.Runner(), teamA, "", 1)
+	require.NoError(t, err)
+	require.Len(t, teamPage, 1)
+	assert.Equal(t, rows[1].ID, teamPage[0].ID)
+	teamPage2, err := projects.ListByTeamPage(ctx, db.Runner(), teamA, teamPage[0].ID, 1)
+	require.NoError(t, err)
+	require.Len(t, teamPage2, 1)
+	assert.Equal(t, rows[0].ID, teamPage2[0].ID)
+
+	// limit 钳制：<=0 回落缺省 50（三行全回），>200 钳上界（不截断小夹具）。
+	for _, limit := range []int{0, -3, 1000} {
+		got, err := projects.ListPage(ctx, db.Runner(), "", limit)
+		require.NoError(t, err)
+		assert.Len(t, got, 3, "limit %d clamps into range and returns all rows", limit)
+	}
+}

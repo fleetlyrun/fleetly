@@ -2,6 +2,7 @@ package deployment_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -145,6 +146,45 @@ func TestIdempotencyKeyUniqueWithinAppScope(t *testing.T) {
 		found, err := deployments.FindActiveByIdempotencyKey(ctx, db.Runner(), tc.app, "deploy-42")
 		require.NoError(t, err)
 		assert.Equal(t, tc.want, found.ID)
+	}
+}
+
+// ADR-0026 List 分页（after_* + limit）：新→旧序、游标跳过、limit 截断与
+// 钳制（<=0 或 >200 回落/钳缺省 50）。
+func TestDeploymentListByAppPagination(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	deployments := deployment.New(clock)
+
+	const appID = "01JD0APP000000000000000000"
+	// 逆序落三行（ULID 时间序与落序相反，验证 ORDER BY id DESC）。
+	ids := []string{"01JD0DEP0000000000000000000A", "01JD0DEP0000000000000000000B", "01JD0DEP0000000000000000000C"}
+	for i, id := range ids {
+		d := newDeployment(id, fmt.Sprintf("deploy-%d", i))
+		d.AppID = appID
+		require.NoError(t, deployments.Create(ctx, db.Runner(), d))
+	}
+
+	page1, err := deployments.ListByApp(ctx, db.Runner(), appID, "", 2)
+	require.NoError(t, err)
+	require.Len(t, page1, 2)
+	assert.Equal(t, ids[2], page1[0].ID, "newest first")
+	assert.Equal(t, ids[1], page1[1].ID)
+
+	page2, err := deployments.ListByApp(ctx, db.Runner(), appID, page1[len(page1)-1].ID, 2)
+	require.NoError(t, err)
+	require.Len(t, page2, 1)
+	assert.Equal(t, ids[0], page2[0].ID, "cursor skips the first page")
+
+	page3, err := deployments.ListByApp(ctx, db.Runner(), appID, ids[0], 2)
+	require.NoError(t, err)
+	assert.Empty(t, page3, "past-the-end page is empty")
+
+	// limit 钳制：<=0 回落缺省 50（三行全回），>200 钳上界（不截断小夹具）。
+	for _, limit := range []int{0, -5, 300} {
+		got, err := deployments.ListByApp(ctx, db.Runner(), appID, "", limit)
+		require.NoError(t, err)
+		assert.Len(t, got, 3, "limit %d clamps into range and returns all rows", limit)
 	}
 }
 

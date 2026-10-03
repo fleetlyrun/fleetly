@@ -1,0 +1,11 @@
+{
+  "revisions": [
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "seq": "1",
+      "digest": "<DIGEST>",
+      "created_at": "2026-01-01T00:00:00Z"
+    }
+  ]
+}

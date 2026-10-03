@@ -290,8 +290,13 @@ func (x *CreateRouteResponse) GetRoute() *Route {
 }
 
 type ListRoutesRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// after_route_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建
+	// 序升序（既有响应序不变；ADR-0026 after_* + limit 惯例——project/
+	// Team 过滤语义不变，与游标叠加）。
+	AfterRouteId  string `protobuf:"bytes,2,opt,name=after_route_id,json=afterRouteId,proto3" json:"after_route_id,omitempty"`
+	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -331,6 +336,20 @@ func (x *ListRoutesRequest) GetProjectId() string {
 		return x.ProjectId
 	}
 	return ""
+}
+
+func (x *ListRoutesRequest) GetAfterRouteId() string {
+	if x != nil {
+		return x.AfterRouteId
+	}
+	return ""
+}
+
+func (x *ListRoutesRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListRoutesResponse struct {
@@ -487,10 +506,12 @@ const file_fleetly_edge_v1_edge_proto_rawDesc = "" +
 	"\bprotocol\x18\a \x01(\tR\bprotocol\x12\x19\n" +
 	"\btls_mode\x18\b \x01(\tR\atlsMode\"C\n" +
 	"\x13CreateRouteResponse\x12,\n" +
-	"\x05route\x18\x01 \x01(\v2\x16.fleetly.edge.v1.RouteR\x05route\"2\n" +
+	"\x05route\x18\x01 \x01(\v2\x16.fleetly.edge.v1.RouteR\x05route\"n\n" +
 	"\x11ListRoutesRequest\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x01 \x01(\tR\tprojectId\"D\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12$\n" +
+	"\x0eafter_route_id\x18\x02 \x01(\tR\fafterRouteId\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"D\n" +
 	"\x12ListRoutesResponse\x12.\n" +
 	"\x06routes\x18\x01 \x03(\v2\x16.fleetly.edge.v1.RouteR\x06routes\"$\n" +
 	"\x12DeleteRouteRequest\x12\x0e\n" +

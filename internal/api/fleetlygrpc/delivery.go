@@ -239,7 +239,8 @@ func (svc *DeploymentsService) ListDeployments(ctx context.Context, req *deliver
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Deployments.ListByApp(ctx, svc.s.DB.Runner(), req.GetAppId())
+	list, err := svc.s.Deployments.ListByApp(ctx, svc.s.DB.Runner(),
+		req.GetAppId(), req.GetAfterDeploymentId(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
 	}
@@ -288,7 +289,8 @@ func (svc *RevisionsService) ListRevisions(ctx context.Context, req *deliveryv1.
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Revisions.ListByApp(ctx, svc.s.DB.Runner(), req.GetAppId())
+	list, err := svc.s.Revisions.ListByApp(ctx, svc.s.DB.Runner(),
+		req.GetAppId(), req.GetAfterSeq(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "revision")
 	}
@@ -342,7 +344,8 @@ func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBu
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Builds.ListByApp(ctx, svc.s.DB.Runner(), req.GetAppId())
+	list, err := svc.s.Builds.ListByApp(ctx, svc.s.DB.Runner(),
+		req.GetAppId(), req.GetAfterBuildId(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "build")
 	}

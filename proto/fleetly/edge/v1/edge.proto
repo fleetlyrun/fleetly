@@ -73,7 +73,14 @@ message CreateRouteRequest {
 }
 
 message CreateRouteResponse { Route route = 1; }
-message ListRoutesRequest { string project_id = 1; }
+message ListRoutesRequest {
+  string project_id = 1;
+  // after_route_id 游标（上一页末条 id；空 = 首页）。游标轴 = ULID 创建
+  // 序升序（既有响应序不变；ADR-0026 after_* + limit 惯例——project/
+  // Team 过滤语义不变，与游标叠加）。
+  string after_route_id = 2;
+  int32 limit = 3;
+}
 message ListRoutesResponse { repeated Route routes = 1; }
 message DeleteRouteRequest { string id = 1; }
 message DeleteRouteResponse {}

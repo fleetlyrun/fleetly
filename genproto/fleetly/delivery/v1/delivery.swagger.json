@@ -193,6 +193,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_build_id",
+            "description": "after_build_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID 创建\n序；ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [
@@ -303,6 +317,20 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_deployment_id",
+            "description": "after_deployment_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID\n创建序；ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [
@@ -469,6 +497,21 @@
             "in": "query",
             "required": false,
             "type": "string"
+          },
+          {
+            "name": "after_seq",
+            "description": "after_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = App 内 R1..Rn\n单调序号升序（既有响应序不变，events 面同款升序形态；ADR-0026）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
           }
         ],
         "tags": [

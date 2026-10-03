@@ -73,7 +73,8 @@ func (r *Repo) GetAnyByID(ctx context.Context, run state.Runner, id string) (*Ap
 	return scanApp(row)
 }
 
-// ListByProject 返回 Project 内全部活跃 App。
+// ListByProject 返回 Project 内全部活跃 App（全量面——删除守卫与引擎
+// 隔离扫描消费；API 分页读面走 ListByProjectPage）。
 func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID string) ([]App, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT id, project_id, name, created_at, updated_at, deleted_at
@@ -92,6 +93,44 @@ func (r *Repo) ListByProject(ctx context.Context, run state.Runner, projectID st
 	}
 	return out, rows.Err()
 }
+
+// ListByProjectPage 是 ListByProject 的分页读面（ADR-0026 after_* + limit；
+// 游标轴 = ULID 创建序升序——既有响应序不变）。limit<=0 或 >200 回落/
+// 钳制缺省 50。
+func (r *Repo) ListByProjectPage(ctx context.Context, run state.Runner, projectID, afterID string, limit int) ([]App, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := `
+		SELECT id, project_id, name, created_at, updated_at, deleted_at
+		FROM apps WHERE project_id = ? AND deleted_at = ''`
+	args := []any{projectID}
+	if afterID != "" {
+		q += ` AND id > ?`
+		args = append(args, afterID)
+	}
+	q += ` ORDER BY id ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []App
+	for rows.Next() {
+		a, err := scanAppRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *a)
+	}
+	return out, rows.Err()
+}
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)
 
 // CountByProject 返回 Project 内活跃 App 行数（ADR-0017 附录 A.1 配额
 // 口径；受理位在事务内读）。

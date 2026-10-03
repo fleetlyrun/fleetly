@@ -100,11 +100,24 @@ func (r *Repo) NextSeq(ctx context.Context, run state.Runner, appID string) (int
 	return seq + 1, nil
 }
 
-// ListByApp 返回 App 全部 Revision（序号升序）。
-func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([]Revision, error) {
-	rows, err := run.QueryContext(ctx, `
+// ListByApp 返回 App 全部 Revision（R1..Rn 序号升序 + after 游标；
+// ADR-0026 after_* + limit 惯例——游标轴 = App 内单调 seq，升序即既有
+// 响应序，events 面同款形态）。limit<=0 或 >200 回落/钳制缺省 50。
+func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string, afterSeq int64, limit int) ([]Revision, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := `
 		SELECT id, app_id, seq, digest, spec, created_at
-		FROM revisions WHERE app_id = ? ORDER BY seq`, appID)
+		FROM revisions WHERE app_id = ?`
+	args := []any{appID}
+	if afterSeq > 0 {
+		q += " AND seq > ?"
+		args = append(args, afterSeq)
+	}
+	q += " ORDER BY seq ASC LIMIT ?"
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +132,11 @@ func (r *Repo) ListByApp(ctx context.Context, run state.Runner, appID string) ([
 	}
 	return out, rows.Err()
 }
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)
 
 func scanRevision(scan func(dest ...any) error) (*Revision, error) {
 	var rev Revision

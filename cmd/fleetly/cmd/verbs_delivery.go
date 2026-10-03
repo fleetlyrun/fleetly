@@ -374,10 +374,17 @@ func newDeploymentsCancelVerb() commands.Command {
 
 func newDeploymentsListVerb() commands.Command {
 	const name = "list"
-	var app string
+	var app, after string
+	var limit int
 	return &flaggedVerb{
-		name: name, synopsis: "List deployments for an app", usage: "deployments list --app APP_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		name:     name,
+		synopsis: "List deployments for an app (newest first)",
+		usage:    "deployments list --app APP_ID [--after DEPLOYMENT_ID] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last deployment id of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -391,7 +398,9 @@ func newDeploymentsListVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{AppId: app})
+			resp, err := c.Deployments.ListDeployments(ctx, &deliveryv1.ListDeploymentsRequest{
+				AppId: app, AfterDeploymentId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
 			if err != nil {
 				return err
 			}
@@ -460,9 +469,17 @@ func newRollbackVerb() commands.Command {
 func newRevisionsListVerb() commands.Command {
 	const name = "list"
 	var app string
+	var after int64
+	var limit int
 	return &flaggedVerb{
-		name: name, synopsis: "List frozen revisions for an app", usage: "revisions list --app APP_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		name:     name,
+		synopsis: "List frozen revisions for an app (R1..Rn order)",
+		usage:    "revisions list --app APP_ID [--after SEQ] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.Int64Var(&after, "after", 0, "pagination cursor: the seq of the last revision of the previous page (0 = first page)")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -476,7 +493,9 @@ func newRevisionsListVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: app})
+			resp, err := c.Revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{
+				AppId: app, AfterSeq: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
 			if err != nil {
 				return err
 			}
@@ -542,10 +561,17 @@ func newRevisionsDiffVerb() commands.Command {
 
 func newBuildsListVerb() commands.Command {
 	const name = "list"
-	var app string
+	var app, after string
+	var limit int
 	return &flaggedVerb{
-		name: name, synopsis: "List builds for an app", usage: "builds list --app APP_ID",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&app, "app", "", "app id (required)") },
+		name:     name,
+		synopsis: "List builds for an app (newest first)",
+		usage:    "builds list --app APP_ID [--after BUILD_ID] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&app, "app", "", "app id (required)")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last build id of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -559,7 +585,9 @@ func newBuildsListVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{AppId: app})
+			resp, err := c.Builds.ListBuilds(ctx, &deliveryv1.ListBuildsRequest{
+				AppId: app, AfterBuildId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
 			if err != nil {
 				return err
 			}
@@ -695,10 +723,17 @@ func newRoutesCreateVerb() commands.Command {
 
 func newRoutesListVerb() commands.Command {
 	const name = "list"
-	var project string
+	var project, after string
+	var limit int
 	return &flaggedVerb{
-		name: name, synopsis: "List routes", usage: "routes list [--project PROJECT_ID]",
-		setFlags: func(fs *flag.FlagSet) { fs.StringVar(&project, "project", "", "filter by project") },
+		name:     name,
+		synopsis: "List routes",
+		usage:    "routes list [--project PROJECT_ID] [--after ROUTE_ID] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "filter by project")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last route id of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -709,7 +744,9 @@ func newRoutesListVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{ProjectId: project})
+			resp, err := c.Routes.ListRoutes(ctx, &edgev1.ListRoutesRequest{
+				ProjectId: project, AfterRouteId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
 			if err != nil {
 				return err
 			}
@@ -726,8 +763,16 @@ func newRoutesListVerb() commands.Command {
 
 func newNodesListVerb() commands.Command {
 	const name = "list"
+	var after string
+	var limit int
 	return &flaggedVerb{
-		name: name, synopsis: "List observed cluster nodes", usage: "nodes list",
+		name:     name,
+		synopsis: "List observed cluster nodes",
+		usage:    "nodes list [--after NODE_ID] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&after, "after", "", "pagination cursor: the last platform node id of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
 				return err
@@ -738,7 +783,9 @@ func newNodesListVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Nodes.ListNodes(ctx, &runtimev1.ListNodesRequest{})
+			resp, err := c.Nodes.ListNodes(ctx, &runtimev1.ListNodesRequest{
+				AfterNodeId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
 			if err != nil {
 				return err
 			}

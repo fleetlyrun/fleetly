@@ -29,8 +29,9 @@ type NodesService struct {
 	s *Services
 }
 
-func (svc *NodesService) ListNodes(ctx context.Context, _ *runtimev1.ListNodesRequest) (*runtimev1.ListNodesResponse, error) {
-	list, err := svc.s.Nodes.List(ctx, svc.s.DB.Runner())
+func (svc *NodesService) ListNodes(ctx context.Context, req *runtimev1.ListNodesRequest) (*runtimev1.ListNodesResponse, error) {
+	list, err := svc.s.Nodes.ListPage(ctx, svc.s.DB.Runner(),
+		req.GetAfterNodeId(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "node")
 	}
@@ -184,21 +185,21 @@ func (svc *RoutesService) CreateRoute(ctx context.Context, req *edgev1.CreateRou
 }
 
 // ListRoutes 非 owner 按 Team 过滤（ADR-0035 List 面：行级过滤在内存比对
-// 调用方 Team 的 project 集合；owner 全量）。
+// 调用方 Team 的 project 集合；owner 全量）。project 过滤下推 SQL 与游标
+// 分页叠加（过滤语义不变）；Team 过滤在分页后的页内比对（peers 可见性
+// 过滤同款形态——过滤语义不变，非 owner 的页可能稀疏）。
 func (svc *RoutesService) ListRoutes(ctx context.Context, req *edgev1.ListRoutesRequest) (*edgev1.ListRoutesResponse, error) {
 	teamProjects, all, err := svc.s.teamProjectFilter(ctx)
 	if err != nil {
 		return nil, err
 	}
-	list, err := svc.s.Routes.List(ctx, svc.s.DB.Runner())
+	list, err := svc.s.Routes.ListPage(ctx, svc.s.DB.Runner(),
+		req.GetProjectId(), req.GetAfterRouteId(), listLimit(req.GetLimit()))
 	if err != nil {
 		return nil, mapStateError(err, "route")
 	}
 	out := &edgev1.ListRoutesResponse{}
 	for _, r := range list {
-		if req.GetProjectId() != "" && r.ProjectID != req.GetProjectId() {
-			continue
-		}
 		if !all && !teamProjects[r.ProjectID] {
 			continue
 		}

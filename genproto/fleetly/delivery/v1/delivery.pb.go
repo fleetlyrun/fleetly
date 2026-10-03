@@ -570,10 +570,14 @@ func (x *GetDeploymentRequest) GetId() string {
 }
 
 type ListDeploymentsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state protoimpl.MessageState `protogen:"open.v1"`
+	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// after_deployment_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID
+	// 创建序；ADR-0026 after_* + limit 惯例）。
+	AfterDeploymentId string `protobuf:"bytes,2,opt,name=after_deployment_id,json=afterDeploymentId,proto3" json:"after_deployment_id,omitempty"`
+	Limit             int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *ListDeploymentsRequest) Reset() {
@@ -611,6 +615,20 @@ func (x *ListDeploymentsRequest) GetAppId() string {
 		return x.AppId
 	}
 	return ""
+}
+
+func (x *ListDeploymentsRequest) GetAfterDeploymentId() string {
+	if x != nil {
+		return x.AfterDeploymentId
+	}
+	return ""
+}
+
+func (x *ListDeploymentsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListDeploymentsResponse struct {
@@ -920,8 +938,12 @@ func (x *Revision) GetCreatedAt() string {
 }
 
 type ListRevisionsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// after_seq 游标（上一页末条 seq；0 = 首页）。游标轴 = App 内 R1..Rn
+	// 单调序号升序（既有响应序不变，events 面同款升序形态；ADR-0026）。
+	AfterSeq      int64 `protobuf:"varint,2,opt,name=after_seq,json=afterSeq,proto3" json:"after_seq,omitempty"`
+	Limit         int32 `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -961,6 +983,20 @@ func (x *ListRevisionsRequest) GetAppId() string {
 		return x.AppId
 	}
 	return ""
+}
+
+func (x *ListRevisionsRequest) GetAfterSeq() int64 {
+	if x != nil {
+		return x.AfterSeq
+	}
+	return 0
+}
+
+func (x *ListRevisionsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListRevisionsResponse struct {
@@ -1273,8 +1309,12 @@ func (x *Build) GetFinishedAt() string {
 }
 
 type ListBuildsRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	AppId         string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	AppId string                 `protobuf:"bytes,1,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	// after_build_id 游标（上一页末条 id；空 = 首页）。新→旧（ULID 创建
+	// 序；ADR-0026 after_* + limit 惯例）。
+	AfterBuildId  string `protobuf:"bytes,2,opt,name=after_build_id,json=afterBuildId,proto3" json:"after_build_id,omitempty"`
+	Limit         int32  `protobuf:"varint,3,opt,name=limit,proto3" json:"limit,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1314,6 +1354,20 @@ func (x *ListBuildsRequest) GetAppId() string {
 		return x.AppId
 	}
 	return ""
+}
+
+func (x *ListBuildsRequest) GetAfterBuildId() string {
+	if x != nil {
+		return x.AfterBuildId
+	}
+	return ""
+}
+
+func (x *ListBuildsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
 }
 
 type ListBuildsResponse struct {
@@ -2568,9 +2622,11 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"deployment\x18\x01 \x01(\v2\x1f.fleetly.delivery.v1.DeploymentR\n" +
 	"deployment\"&\n" +
 	"\x14GetDeploymentRequest\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\tR\x02id\"/\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"u\n" +
 	"\x16ListDeploymentsRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\"\\\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12.\n" +
+	"\x13after_deployment_id\x18\x02 \x01(\tR\x11afterDeploymentId\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"\\\n" +
 	"\x17ListDeploymentsResponse\x12A\n" +
 	"\vdeployments\x18\x01 \x03(\v2\x1f.fleetly.delivery.v1.DeploymentR\vdeployments\")\n" +
 	"\x17CancelDeploymentRequest\x12\x0e\n" +
@@ -2591,9 +2647,11 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\x03seq\x18\x03 \x01(\x03R\x03seq\x12\x16\n" +
 	"\x06digest\x18\x04 \x01(\tR\x06digest\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\x05 \x01(\tR\tcreatedAt\"-\n" +
+	"created_at\x18\x05 \x01(\tR\tcreatedAt\"`\n" +
 	"\x14ListRevisionsRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\"T\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x1b\n" +
+	"\tafter_seq\x18\x02 \x01(\x03R\bafterSeq\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"T\n" +
 	"\x15ListRevisionsResponse\x12;\n" +
 	"\trevisions\x18\x01 \x03(\v2\x1d.fleetly.delivery.v1.RevisionR\trevisions\"Y\n" +
 	"\tDiffEntry\x12\x12\n" +
@@ -2617,9 +2675,11 @@ const file_fleetly_delivery_v1_delivery_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\a \x01(\tR\tcreatedAt\x12\x1f\n" +
 	"\vfinished_at\x18\b \x01(\tR\n" +
-	"finishedAt\"*\n" +
+	"finishedAt\"f\n" +
 	"\x11ListBuildsRequest\x12\x15\n" +
-	"\x06app_id\x18\x01 \x01(\tR\x05appId\"H\n" +
+	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12$\n" +
+	"\x0eafter_build_id\x18\x02 \x01(\tR\fafterBuildId\x12\x14\n" +
+	"\x05limit\x18\x03 \x01(\x05R\x05limit\"H\n" +
 	"\x12ListBuildsResponse\x122\n" +
 	"\x06builds\x18\x01 \x03(\v2\x1a.fleetly.delivery.v1.BuildR\x06builds\"K\n" +
 	"\x16StreamBuildLogsRequest\x12\x19\n" +

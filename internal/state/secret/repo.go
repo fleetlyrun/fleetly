@@ -62,12 +62,25 @@ func (r *Repo) GetByName(ctx context.Context, run state.Runner, projectID, name 
 	return scanSecret(row.Scan)
 }
 
-// ListFingerprints 返回 Project 全部活跃 Secret 的指纹面（回显契约：值
-// 永不出现）。
-func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID string) ([]Secret, error) {
-	rows, err := run.QueryContext(ctx, `
+// ListFingerprints 返回 Project 活跃 Secret 的指纹面（回显契约：值永不
+// 出现）。name 字典序升序 + after 游标（ADR-0026 after_* + limit 惯例
+// ——游标轴 = 既有排序轴 name，分页只动行集不改每行形态）。limit<=0 或
+// >200 回落/钳制缺省 50。
+func (r *Repo) ListFingerprints(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]Secret, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := `
 		SELECT id, project_id, name, NULL, fingerprint, created_at, updated_at, deleted_at
-		FROM secrets WHERE project_id = ? AND deleted_at = '' ORDER BY name`, projectID)
+		FROM secrets WHERE project_id = ? AND deleted_at = ''`
+	args := []any{projectID}
+	if afterName != "" {
+		q += ` AND name > ?`
+		args = append(args, afterName)
+	}
+	q += ` ORDER BY name LIMIT ?`
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -140,3 +153,8 @@ func scanSecret(scan func(dest ...any) error) (*Secret, error) {
 	}
 	return &s, nil
 }
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)

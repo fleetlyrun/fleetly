@@ -193,16 +193,20 @@ func newUploadsPutVerb() commands.Command {
 	}
 }
 
-// newUploadsListVerb：列项目上传产物（新→旧）。
+// newUploadsListVerb：列项目上传产物（新→旧；--after/--limit 游标分页，
+// ADR-0026 惯例）。
 func newUploadsListVerb() commands.Command {
 	const name = "list"
-	var project string
+	var project, after string
+	var limit int
 	return &flaggedVerb{
 		name:     name,
-		synopsis: "List uploaded sources for a project",
-		usage:    "uploads list --project PROJECT_ID",
+		synopsis: "List uploaded sources for a project (newest first)",
+		usage:    "uploads list --project PROJECT_ID [--after UPLOAD_ID] [--limit N]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last upload id of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
 		},
 		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
 			if err := noArgs(name, args); err != nil {
@@ -217,7 +221,9 @@ func newUploadsListVerb() commands.Command {
 			}
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
-			resp, err := c.Builds.ListUploads(ctx, &deliveryv1.ListUploadsRequest{ProjectId: project})
+			resp, err := c.Builds.ListUploads(ctx, &deliveryv1.ListUploadsRequest{
+				ProjectId: project, AfterUploadId: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
 			if err != nil {
 				return err
 			}

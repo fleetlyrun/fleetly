@@ -1,0 +1,15 @@
+{
+  "routes": [
+    {
+      "id": "<ULID>",
+      "project_id": "<ULID>",
+      "host": "shop.127.0.0.1.sslip.io",
+      "app_id": "<ULID>",
+      "process": "web",
+      "port": 8080,
+      "protocol": "h2c",
+      "tls_mode": "auto",
+      "created_at": "2026-01-01T00:02:00Z"
+    }
+  ]
+}

@@ -73,7 +73,8 @@ func (r *Repo) GetVersion(ctx context.Context, run state.Runner, projectID, name
 	return scanConfig(row.Scan)
 }
 
-// LatestByProject 返回 Project 内每个 name 的最新版本（列表面）。
+// LatestByProject 返回 Project 内每个 name 的最新版本（全量列表面——
+// 配额执法与引擎装配面消费；API 分页读面走 LatestByProjectPage）。
 func (r *Repo) LatestByProject(ctx context.Context, run state.Runner, projectID string) ([]Config, error) {
 	rows, err := run.QueryContext(ctx, `
 		SELECT c.id, c.project_id, c.name, c.version, c.content, c.created_at
@@ -95,6 +96,46 @@ func (r *Repo) LatestByProject(ctx context.Context, run state.Runner, projectID 
 	}
 	return out, rows.Err()
 }
+
+// LatestByProjectPage 是 List 的分页读面（ADR-0026 after_* + limit；游标
+// 轴 = 既有排序轴 name 字典序升序）。每行仍是该 name 的最新版本（分页只
+// 动行集不改每行形态）。limit<=0 或 >200 回落/钳制缺省 50。
+func (r *Repo) LatestByProjectPage(ctx context.Context, run state.Runner, projectID, afterName string, limit int) ([]Config, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	q := `
+		SELECT c.id, c.project_id, c.name, c.version, c.content, c.created_at
+		FROM configs c
+		JOIN (SELECT name, MAX(version) AS v FROM configs WHERE project_id = ? GROUP BY name) m
+		  ON c.name = m.name AND c.version = m.v AND c.project_id = ?`
+	args := []any{projectID, projectID}
+	if afterName != "" {
+		q += ` WHERE c.name > ?`
+		args = append(args, afterName)
+	}
+	q += ` ORDER BY c.name ASC LIMIT ?`
+	args = append(args, limit)
+	rows, err := run.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close() //nolint:errcheck // 只读列表，关闭错误无处置面
+	var out []Config
+	for rows.Next() {
+		c, err := scanConfig(rows.Scan)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *c)
+	}
+	return out, rows.Err()
+}
+
+const (
+	defaultListLimit = 50
+	maxListLimit     = 200
+)
 
 // ListVersions 返回全部版本（旧→新）。
 func (r *Repo) ListVersions(ctx context.Context, run state.Runner, projectID, name string) ([]Config, error) {

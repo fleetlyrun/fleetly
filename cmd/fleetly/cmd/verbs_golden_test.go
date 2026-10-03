@@ -72,30 +72,48 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 	steps := []step{
 		{"projects create", []string{"projects", "create", "shop"}, 0},
 		{"projects list", []string{"projects", "list"}, 0},
+		// 分页读面（ADR-0026）：只读幂等进主流——--json 轮同参重跑安全。
+		{"projects list page", []string{"projects", "list", "--limit", "1"}, 0},
 		{"apps create", []string{"apps", "create", "--project", "GOLDEN_PROJECT", "web"}, 0},
 		{"apps list", []string{"apps", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"apps list page", []string{"apps", "list", "--project", "GOLDEN_PROJECT", "--limit", "1"}, 0},
 		{"deploy", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.27"}, 0},
 		// standalone 等待面（D22）：deploy 步已驱动到 succeeded（promoteToSucceeded
 		// 后置），wait 附着终态行——单帧即收，--json 轮幂等重放同响应。
 		{"deployments wait", []string{"deployments", "wait", "--deployment", "GOLDEN_DEPLOYMENT"}, 0},
 		{"rollback", []string{"rollback", "--app", "GOLDEN_APP"}, 0},
 		{"deployments list", []string{"deployments", "list", "--app", "GOLDEN_APP"}, 0},
+		// after 游标形态（新→旧）：锚 = 人工轮回滚部署（倒数第二新）——页
+		// 跳过 --json 轮重放再铸的最新行，落更旧两行（游标截断非空形态）。
+		{"deployments list after", []string{"deployments", "list", "--app", "GOLDEN_APP", "--after", "GOLDEN_ROLLBACK_DEPLOYMENT"}, 0},
 		{"revisions list", []string{"revisions", "list", "--app", "GOLDEN_APP"}, 0},
+		// 分页读面：R1..Rn 升序的首页截断。
+		{"revisions list page", []string{"revisions", "list", "--app", "GOLDEN_APP", "--limit", "1"}, 0},
 		// 第二镜像 → R2（与 R1 有字段差）：revisions diff 的有变化形态。
 		{"deploy second image", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.26"}, 0},
 		{"revisions diff", []string{"revisions", "diff", "--app", "GOLDEN_APP", "--from", "1", "--to", "2"}, exitChanges},
 		{"builds list", []string{"builds", "list", "--app", "GOLDEN_APP"}, 0},
+		// 分页读面：空行集 + limit（镜像直投无构建行）。
+		{"builds list page", []string{"builds", "list", "--app", "GOLDEN_APP", "--limit", "1"}, 0},
 		{"secrets put", []string{"secrets", "put", "--project", "GOLDEN_PROJECT", "--value", "s3cret", "api-token"}, 0},
 		{"secrets list", []string{"secrets", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		// after 游标形态（name 字典序轴）：api-token 之后的页（api-token-json 行）。
+		{"secrets list after", []string{"secrets", "list", "--project", "GOLDEN_PROJECT", "--after", "api-token"}, 0},
 		{"configs put", []string{"configs", "put", "--project", "GOLDEN_PROJECT", "--value", "mode=gold", "app.ini"}, 0},
 		{"configs list", []string{"configs", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		// 分页读面：name 字典序首页截断（app-json.ini < app.ini）。
+		{"configs list page", []string{"configs", "list", "--project", "GOLDEN_PROJECT", "--limit", "1"}, 0},
 		{"volumes create", []string{"volumes", "create", "--project", "GOLDEN_PROJECT", "data"}, 0},
 		{"networks create", []string{"networks", "create", "--project", "GOLDEN_PROJECT", "default"}, 0},
 		// 只读 list：--json 轮幂等重跑同响应（本轮仅 default 一网——messaging
 		// 的网在后续步骤才建）。
 		{"networks list", []string{"networks", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		// 分页读面：name 字典序首页截断（default < default-json）。
+		{"networks list page", []string{"networks", "list", "--project", "GOLDEN_PROJECT", "--limit", "1"}, 0},
 		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}, 0},
 		{"routes list", []string{"routes", "list"}, 0},
+		// 分页读面：ULID 创建序首页截断（首建路由行）。
+		{"routes list page", []string{"routes", "list", "--limit", "1"}, 0},
 
 		// 跨 Project peer 声明链（F1.8，ADR-0013 附录 A）：接收方项目建网 →
 		// 挂靠方 declare（幂等键——--json 轮重放同响应）→ 接收方 approve →
@@ -197,7 +215,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 
 	// GOLDEN_PROJECT/GOLDEN_APP 占位替换为夹具真实 ID（项目 ID 是 ULID，
 	// 归一后可预测）。
-	var projectID, project2ID, networkID, peerID, appID, app2ID, taskID, task2ID, runID, scheduleID, freezeID, deployID string
+	var projectID, project2ID, networkID, peerID, appID, app2ID, taskID, task2ID, runID, scheduleID, freezeID, deployID, rollbackDeployID string
 	for _, st := range steps {
 		t.Run(st.verb, func(t *testing.T) {
 			args := st.args
@@ -222,6 +240,9 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				if a == "GOLDEN_DEPLOYMENT" {
 					args[i] = deployID
+				}
+				if a == "GOLDEN_ROLLBACK_DEPLOYMENT" {
+					args[i] = rollbackDeployID
 				}
 				if a == "GOLDEN_TASK" {
 					args[i] = taskID
@@ -297,6 +318,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				}
 				deployID = m[1]
 				promoteToSucceeded(t, h, appID)
+			}
+			// 回滚部署 ID 取自人类形态首行（deployments list after 的游标锚
+			// ——人工轮铸行，其后 --json 轮再铸的最新行被游标跳过）。
+			if st.verb == "rollback" {
+				m := rollbackDeploymentRe.FindStringSubmatch(out)
+				if len(m) < 2 {
+					t.Fatalf("cannot extract rollback deployment id from output: %q", out)
+				}
+				rollbackDeployID = m[1]
 			}
 			// compose 扩展键部署驱动到锚定即止（releasing 等 job 终态——
 			// 下一步 deployments list 的 golden 钉 first_boot_task_id 在场；
@@ -397,6 +427,10 @@ func promoteToSucceeded(t *testing.T, h *apitest.Harness, appID string) {
 	}
 	t.Fatal("deployment did not reach succeeded within the manual drive budget")
 }
+
+// rollbackDeploymentRe 取 rollback 人类形态 "rolling back via deployment X"
+// 的部署 ID（deployments list after 步的游标锚）。
+var rollbackDeploymentRe = regexp.MustCompile(`rolling back via deployment ([0-9A-HJKMNP-TV-Z]{26})`)
 
 // taskCreatedRe 取人类形态 "task X created (...)" 的 ID。
 var taskCreatedRe = regexp.MustCompile(`task ([0-9A-HJKMNP-TV-Z]{26}) created`)

@@ -2,8 +2,10 @@ package engine
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
+	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
 )
 
@@ -15,22 +17,17 @@ import (
 // to_revision）；无成功基线返回明确错误（首次部署无回滚对象）。
 func (e *Engine) Rollback(ctx context.Context, appID, toRevisionID string) (*deployment.Deployment, error) {
 	if toRevisionID == "" {
-		list, err := e.deployments.ListByApp(ctx, e.db.Runner(), appID)
+		// 最新成功基线（ADR-0022）：LatestSucceeded = succeeded 行按 ULID
+		// 创建序取最新——与既逐行扫描取首个 succeeded 的语义相同（列表分页
+		// 化后不再全量扫，见 deployment.ListByApp 的 ADR-0026 形态）。
+		base, err := e.deployments.LatestSucceeded(ctx, e.db.Runner(), appID)
 		if err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				return nil, fmt.Errorf("%w: app %s", ErrNoSuccessfulBaseline, appID)
+			}
 			return nil, err
 		}
-		// ListByApp 新→旧：首个 succeeded 即最新成功基线。
-		for i := range list {
-			if list[i].State == deployment.StateSucceeded {
-				toRevisionID = list[i].ToRevision
-				break
-			}
-		}
-		if toRevisionID == "" {
-			// 无成功基线：哨兵 wrap（Q-13：API 层经 errors.Is 映射
-			// E_NO_BASELINE，不靠文案 Contains）。
-			return nil, fmt.Errorf("%w: app %s", ErrNoSuccessfulBaseline, appID)
-		}
+		toRevisionID = base.ToRevision
 	}
 	rev, err := e.revisions.Get(ctx, e.db.Runner(), toRevisionID)
 	if err != nil {

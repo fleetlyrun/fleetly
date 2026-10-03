@@ -1,0 +1,2 @@
+ID	HOST	PATH	APP	PROCESS	PORT	PROTO	TLS
+<ULID>	shop.127.0.0.1.sslip.io		<ULID>	web	8080	h2c	auto
