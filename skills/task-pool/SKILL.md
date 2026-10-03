@@ -22,12 +22,17 @@ Key semantics the commands assume:
   grace-stopped (SIGTERM, then force-kill after the stop grace).
 - **Lease**: `tasks renew` advances an absolute deadline; past deadline +
   grace the pool drains (`lease.expired`). A revoked owner token drains the
-  task's runs the same way.
+  task's runs the same way. `--owner-token-id TOKEN_ID` pins an owner other
+  than the calling token (e.g. a dedicated pipeline token whose revocation
+  drains the pool).
 - **DNS**: every task has a stable pool name `task-<id>` (round-robins across
   live runs) and every run a stable `run-<id>` name, inside its task network
   group (`taskgrp-<group>`).
 - **Quotas**: per-project caps apply (100 active tasks, 200 desired
   concurrency); a quota rejection names the numbers.
+- **Command**: each `--command` occurrence is one argv element of the
+  entrypoint override (repeat the flag per element; the default is the image
+  entrypoint).
 
 ## When to use
 
@@ -52,10 +57,11 @@ fleetly tasks stop --task TASK_ID --force
 fleetly tasks delete --task TASK_ID
 ```
 
-One-shot execution with a bounded wait (exit code mirrors the run outcome):
+One-shot execution with a bounded wait (exit code mirrors the run outcome;
+`--command` repeats once per argv element):
 
 ```bash
-fleetly tasks create --project PROJECT_ID --name JOB_NAME --form one-shot --image IMAGE --command CMD --ttl-seconds 600 --wait
+fleetly tasks create --project PROJECT_ID --name JOB_NAME --form one-shot --image IMAGE --command CMD --command ARG --ttl-seconds 600 --wait
 fleetly runs wait --run RUN_ID
 fleetly runs get --run RUN_ID --json
 ```
@@ -90,7 +96,7 @@ fleetly schedules delete --schedule SCHEDULE_ID
 | Symptom (event / state / errcode) | Probe next | Action |
 | --- | --- | --- |
 | `lease.expired` then `task.draining` on a healthy dispatcher | `fleetly tasks get --task TASK_ID --json` (lease deadline) | If the owner is alive, resume `tasks renew` heartbeats and the pool replenishes after revival; otherwise let it drain or delete it. |
-| `task.draining` with `owner_revoked` | `fleetly tokens list --json` (is the owner token revoked?) | Intentional revocation drains by design (grace-stop, or run-to-TTL per platform config). Re-point the workload at a fresh token by recreating the task. |
+| `task.draining` with `owner_revoked` | `fleetly tokens list --json` (is the owner token revoked?) | Intentional revocation drains by design (grace-stop, or run-to-TTL per platform config). Re-point the workload at a fresh token by recreating the task with `--owner-token-id TOKEN_ID`. |
 | Runs stuck `pending`, never `running` | `fleetly runs list --task TASK_ID --json`, `fleetly nodes list --json` | Unschedulable placement (no matching node) or image pull failure. Check the image reference and cluster capacity; stop and recreate if the spec is wrong. |
 | `run.failed` with non-zero exit, pool size holds | `fleetly runs get --run RUN_ID --json` (exit_code) | The pool already replaced the slot. Fix the workload; run-scoped log retrieval is a known gap (log face is app-scoped) — make the entrypoint print diagnostics. |
 | `schedule.skipped` with `reason=overlap` | `fleetly tasks list --project PROJECT_ID --json` (previous fire still live) | Expected under the default skip policy: the previous occurrence's run has not finished. Shorten the run (TTL) or move to the fire policy if parallel fires are wanted. |

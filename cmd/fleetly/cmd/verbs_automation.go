@@ -44,7 +44,7 @@ func (e envSlice) envMap() map[string]string {
 	return m
 }
 
-// stringSlice 是可重复字符串旗标的通用形态（--secret-ref）。
+// stringSlice 是可重复字符串旗标的通用形态（--secret-ref/--command）。
 type stringSlice []string
 
 func (s *stringSlice) String() string { return strings.Join(*s, ",") }
@@ -114,8 +114,8 @@ func requireRunOK(runID, final string) error {
 
 func newTasksCreateVerb() commands.Command {
 	const name = "create"
-	var project, taskName, form, image, networkGroup string
-	var command string
+	var project, taskName, form, image, networkGroup, ownerTokenID string
+	var command stringSlice
 	var env envSlice
 	var secretRefs stringSlice
 	var cpuMillis, memoryMb, ttl, concurrency int64
@@ -124,13 +124,13 @@ func newTasksCreateVerb() commands.Command {
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Create a task (one-shot execution or resident instance pool)",
-		usage:    "tasks create --project PROJECT_ID --image REF [--name NAME] [--form one-shot|resident] [--concurrency N] [--ttl-seconds S] [--network-group GROUP] [--env KEY=VALUE]... [--secret-ref NAME]... [--cpu-millis N] [--memory-mb N] [--wait]",
+		usage:    "tasks create --project PROJECT_ID --image REF [--name NAME] [--form one-shot|resident] [--concurrency N] [--ttl-seconds S] [--network-group GROUP] [--command ARG]... [--env KEY=VALUE]... [--secret-ref NAME]... [--cpu-millis N] [--memory-mb N] [--owner-token-id TOKEN_ID] [--wait]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
 			fs.StringVar(&taskName, "name", "", "human-readable name, unique per project while active")
 			fs.StringVar(&form, "form", "", "task form: one-shot or resident (default: derived from concurrency > 1)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy, required)")
-			fs.StringVar(&command, "command", "", "entrypoint override as a comma-separated list (default: image entrypoint)")
+			fs.Var(&command, "command", "entrypoint override element, repeatable (each occurrence is one argv element; default: image entrypoint)")
 			fs.Var(&env, "env", "non-sensitive environment variable KEY=VALUE, repeatable")
 			fs.Var(&secretRefs, "secret-ref", "project secret to inject (by name), repeatable")
 			fs.Int64Var(&cpuMillis, "cpu-millis", 0, "per-run CPU limit in milli-cores (1000 = 1 CPU)")
@@ -138,6 +138,7 @@ func newTasksCreateVerb() commands.Command {
 			fs.Int64Var(&ttl, "ttl-seconds", 0, "run lifetime cap in seconds (absolute deadline; max 86400; 0 = no TTL)")
 			fs.Int64Var(&concurrency, "concurrency", 0, "desired concurrency for resident pools (one-shot is always 1)")
 			fs.StringVar(&networkGroup, "network-group", "", "task network group name (runs attach at creation; app processes cross-attach via taskGroup:<name>)")
+			fs.StringVar(&ownerTokenID, "owner-token-id", "", "owning token id (default: the calling token; its revocation drains the pool, ADR-0017)")
 			fs.BoolVar(&wait, "wait", false, "wait for the run to reach a terminal state (streams state transitions; non-zero exit on failure)")
 			idem.declare(fs)
 		},
@@ -159,16 +160,12 @@ func newTasksCreateVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			ctx = idem.bind(ctx)
-			var cmdList []string
-			if command != "" {
-				cmdList = strings.Split(command, ",")
-			}
 			resp, err := c.Tasks.CreateTask(ctx, &automationv1.CreateTaskRequest{
 				ProjectId: project, Name: taskName, Form: form, Image: image,
-				Command: cmdList, Env: env.envMap(), SecretRefs: secretRefs,
+				Command: command, Env: env.envMap(), SecretRefs: secretRefs,
 				CpuMillis: cpuMillis, MemoryMb: memoryMb,
 				TtlSeconds: ttl, DesiredConcurrency: concurrency,
-				NetworkGroup: networkGroup,
+				NetworkGroup: networkGroup, OwnerTokenId: ownerTokenID,
 			})
 			if err != nil {
 				return err
@@ -545,7 +542,8 @@ func sleepCtxCLI(ctx context.Context) bool {
 
 func newSchedulesCreateVerb() commands.Command {
 	const name = "create"
-	var project, schedName, cronExpr, timezone, image, networkGroup, command string
+	var project, schedName, cronExpr, timezone, image, networkGroup string
+	var command stringSlice
 	var env envSlice
 	var secretRefs stringSlice
 	var cpuMillis, memoryMb, ttl int64
@@ -553,14 +551,14 @@ func newSchedulesCreateVerb() commands.Command {
 	return &flaggedVerb{
 		name:     name,
 		synopsis: "Create a schedule (timezone-aware cron firing one-shot tasks)",
-		usage:    "schedules create --project PROJECT_ID --cron EXPR --image REF [--name NAME] [--timezone IANA_NAME] [--command A,B,...] [--env KEY=VALUE]... [--secret-ref NAME]... [--cpu-millis N] [--memory-mb N] [--ttl-seconds S] [--network-group GROUP]",
+		usage:    "schedules create --project PROJECT_ID --cron EXPR --image REF [--name NAME] [--timezone IANA_NAME] [--command ARG]... [--env KEY=VALUE]... [--secret-ref NAME]... [--cpu-millis N] [--memory-mb N] [--ttl-seconds S] [--network-group GROUP]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&project, "project", "", "project id (required)")
 			fs.StringVar(&schedName, "name", "", "human-readable name, unique per project while active")
 			fs.StringVar(&cronExpr, "cron", "", "5-field cron expression: minute hour day-of-month month day-of-week (required)")
 			fs.StringVar(&timezone, "timezone", "", "IANA timezone name interpreted as wall clock across DST (default UTC)")
 			fs.StringVar(&image, "image", "", "image reference fired each occurrence (required)")
-			fs.StringVar(&command, "command", "", "entrypoint override as a comma-separated list (default: image entrypoint)")
+			fs.Var(&command, "command", "entrypoint override element, repeatable (each occurrence is one argv element; default: image entrypoint)")
 			fs.Var(&env, "env", "non-sensitive environment variable KEY=VALUE, repeatable")
 			fs.Var(&secretRefs, "secret-ref", "project secret to inject (by name), repeatable")
 			fs.Int64Var(&cpuMillis, "cpu-millis", 0, "per-run CPU limit in milli-cores (1000 = 1 CPU)")
@@ -586,13 +584,9 @@ func newSchedulesCreateVerb() commands.Command {
 			defer cancel()
 			defer c.Close() //nolint:errcheck // 进程退出路径
 			ctx = idem.bind(ctx)
-			var cmdList []string
-			if command != "" {
-				cmdList = strings.Split(command, ",")
-			}
 			resp, err := c.Schedules.CreateSchedule(ctx, &automationv1.CreateScheduleRequest{
 				ProjectId: project, Name: schedName, Cron: cronExpr, Timezone: timezone,
-				Image: image, Command: cmdList, Env: env.envMap(), SecretRefs: secretRefs,
+				Image: image, Command: command, Env: env.envMap(), SecretRefs: secretRefs,
 				CpuMillis: cpuMillis, MemoryMb: memoryMb, TtlSeconds: ttl, NetworkGroup: networkGroup,
 			})
 			if err != nil {

@@ -5,6 +5,11 @@
   "form": "one-shot",
   "state": "active",
   "image": "busybox:1.37",
+  "command": [
+    "sh",
+    "-c",
+    "migrate up"
+  ],
   "desired_concurrency": "1",
   "ttl_seconds": "3600",
   "network_group": "dispatcher",

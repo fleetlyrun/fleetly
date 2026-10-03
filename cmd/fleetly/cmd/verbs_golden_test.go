@@ -118,9 +118,11 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"nodes cordon", []string{"nodes", "cordon", "--node", goldenNodeID}, 0},
 		{"nodes uncordon", []string{"nodes", "uncordon", "--node", goldenNodeID}, 0},
 
-		// Automation 动词（F1.5/F1.6）：one-shot 全链 + resident 池。
+		// Automation 动词（F1.5/F1.6）：one-shot 全链 + resident 池。tasks
+		// create 的 --command 走可重复旗标形态（D24：每次一 argv 元素）。
 		{"tasks create", []string{"tasks", "create", "--project", "GOLDEN_PROJECT", "--name", "migrate",
-			"--image", "busybox:1.37", "--network-group", "dispatcher", "--env", "POOL=gold", "--ttl-seconds", "3600"}, 0},
+			"--image", "busybox:1.37", "--network-group", "dispatcher", "--env", "POOL=gold", "--ttl-seconds", "3600",
+			"--command", "sh", "--command", "-c", "--command", "migrate up"}, 0},
 		{"tasks list", []string{"tasks", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"tasks get", []string{"tasks", "get", "--task", "GOLDEN_TASK"}, 0},
 		{"runs list", []string{"runs", "list", "--task", "GOLDEN_TASK"}, 0},
@@ -139,7 +141,8 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		// UTC 03:00，fake 时钟已推过若干分钟不影响当日拍点）→ list/get →
 		// trigger（立即铸 Task；下一拍不动）→ delete。
 		{"schedules create", []string{"schedules", "create", "--project", "GOLDEN_PROJECT", "--name", "nightly-report",
-			"--cron", "0 12 * * *", "--timezone", "Asia/Tokyo", "--image", "busybox:1.37", "--ttl-seconds", "3600"}, 0},
+			"--cron", "0 12 * * *", "--timezone", "Asia/Tokyo", "--image", "busybox:1.37", "--ttl-seconds", "3600",
+			"--command", "sh", "--command", "-c", "--command", "nightly report"}, 0},
 		{"schedules list", []string{"schedules", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		{"schedules get", []string{"schedules", "get", "--schedule", "GOLDEN_SCHEDULE"}, 0},
 		{"schedules trigger", []string{"schedules", "trigger", "--schedule", "GOLDEN_SCHEDULE"}, 0},
