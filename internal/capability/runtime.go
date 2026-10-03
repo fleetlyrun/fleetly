@@ -3,6 +3,7 @@ package capability
 import (
 	"context"
 	"errors"
+	"io"
 	"time"
 )
 
@@ -87,6 +88,56 @@ type RuntimeHygiene interface {
 	// 不计错。maxDelete 是单次调用删除上限（调用方节拍限流防 API 风暴）。
 	// 返回实际删除数；列表级错误上抛，单体删除失败不中断（计入下一拍）。
 	SweepOrphanSecrets(ctx context.Context, maxDelete int) (int, error)
+}
+
+// RuntimeUtility 是工具执行子面（ADR-0039 备份执行链）：在控制面 daemon
+// 上铸一次性工具容器——镜像由平台给定（数据库模板镜像，自带引擎客户端
+// 工具），附着平台网络（经 attachable overlay 达 db-<id> DNS，多节点），
+// 材料文件只读 bind（/run/secrets/ 同语义），可选平台卷挂载（预置卷恢复
+// 形态）。stdin/stdout 由调用方持有流经纪（Backup 产物 → ObjectStore.Put
+// / ObjectStore.Get → 恢复流）。控制面节点单机假设 = ADR-0019 构建同款合法形态。
+// 载体结束即删（中断同样清理，零残留）；不进 Watch 观测面（非 Workload）。
+type RuntimeUtility interface {
+	// RunUtility 执行一次性工具容器并等待退出。stdout/stderr 流式转发给
+	// 调用方 writer（Backup 产物面在途消费；stderr 由调用方收尾部作报文）。
+	// 退出码非零返回错误（语义域归调用方）；网络不可附着等环境性失败由
+	// 实现带可行动文本（存量网络 flag-day 指引）。
+	RunUtility(ctx context.Context, req UtilityRequest, stdout, stderr io.Writer) error
+}
+
+// UtilityRequest 是一次工具容器执行的输入。
+type UtilityRequest struct {
+	// ID 是平台工具执行 ID（载体命名与日志归属锚，ULID）。
+	ID string
+	// Namespace 定位 Project 域（网络载体名解析锚）。
+	Namespace NamespaceRef
+	// Image 是镜像引用（模板镜像；daemon 本地缺失时匿名拉取——模板钉版
+	// 皆公共镜像）。
+	Image string
+	// Argv 是完整命令（数组形态；零 shell——shellguard 射程延续）。
+	Argv []string
+	// Env 是附加 env（值可携带密码的唯一登记例外 = redis REDISCLI_AUTH，
+	// ADR-0039 决策 5；一次性平台容器内，无持久面）。
+	Env map[string]string
+	// Networks 是平台网络附件（Project 网名；Provider 解析载体名并附着）。
+	Networks []string
+	// SecretFiles 是材料文件（名 → 值；只读 bind 到 /run/secrets/<名>，
+	// swarm secret 注入同语义、daemon 容器经 bind 承载）。
+	SecretFiles map[string][]byte
+	// Volume 是可选平台卷挂载（预置卷恢复形态；VolumeID 平台锚，Provider
+	// 解析卷载体名）。
+	Volume *UtilityVolumeMount
+	// Stdin 非空时接容器 stdin（恢复流；EOF 即半关）。
+	Stdin io.Reader
+}
+
+// UtilityVolumeMount 是工具容器的平台卷挂载。
+type UtilityVolumeMount struct {
+	VolumeID string
+	// Target 是容器内挂点（预置卷恢复 = dbtemplate.SeedMountPoint 单源）。
+	Target string
+	// ReadOnly 是只读挂载（预置卷恢复写 dump.rdb = false）。
+	ReadOnly bool
 }
 
 // WorkloadObservation 是一条载体观测（ADR-0022：drift spec 对照的数据

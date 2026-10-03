@@ -16,6 +16,7 @@ type ProviderFaces struct {
 	Admin     RuntimeAdmin     // 节点管理（Drain/Cordon 等）
 	Inspector RuntimeInspector // spec 对照 drift（ADR-0022）
 	Hygiene   RuntimeHygiene   // 孤儿载体清扫（E29-1）
+	Utility   RuntimeUtility   // 一次性工具容器执行（ADR-0039 备份执行链）
 	// 跨 Capability 子面（受管自宿 ADR-0004 与其材料/配置源）
 	Managed         Managed         // 受管部署声明
 	MaterialsSource MaterialsSource // 受管域材料集
@@ -39,6 +40,9 @@ func FacesOf(p Provider) ProviderFaces {
 	if v, ok := p.(RuntimeHygiene); ok {
 		f.Hygiene = v
 	}
+	if v, ok := p.(RuntimeUtility); ok {
+		f.Utility = v
+	}
 	if v, ok := p.(Managed); ok {
 		f.Managed = v
 	}
@@ -54,7 +58,7 @@ func FacesOf(p Provider) ProviderFaces {
 // Offered 返回已提供的面名（稳定序：Runtime 子面在前，跨 Capability
 // 子面殿后；装配期日志/诊断枚举面）。
 func (f ProviderFaces) Offered() []string {
-	out := make([]string, 0, 7)
+	out := make([]string, 0, 8)
 	if f.Logs != nil {
 		out = append(out, "logs")
 	}
@@ -66,6 +70,9 @@ func (f ProviderFaces) Offered() []string {
 	}
 	if f.Hygiene != nil {
 		out = append(out, "hygiene")
+	}
+	if f.Utility != nil {
+		out = append(out, "utility")
 	}
 	if f.Managed != nil {
 		out = append(out, "managed")

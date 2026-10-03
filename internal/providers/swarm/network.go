@@ -62,6 +62,11 @@ func (p *Provider) ensureNetworks(ctx context.Context, ns capability.NamespaceRe
 		if _, err := p.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
 			Driver: "overlay",
 			Labels: labels,
+			// attachable：工具容器（daemon 一次性容器，ADR-0039 备份执行
+			// 链）可入项目网解析 db-<id>——swarm 服务不受影响，仅放行
+			// 控制面侧附着。存量非 attachable 网络不改不炸（附着失败带
+			// flag-day 指引）。
+			Attachable: true,
 			// swarm v1 弱隔离口径（领域模型 §6）：不设 Internal——
 			// 出网不阻断、明示弱隔离的诚实边界（架构 §10）。
 		}); err != nil {

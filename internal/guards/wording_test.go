@@ -264,6 +264,7 @@ var wordingExemptions = map[string]map[string]string{
 	// 非平台 Backup 词汇面使用（ADR-0007 禁的是把 dump 当 Backup 同义词）。
 	// 新引擎工具名继续在此追加（强制分诊不静默）。
 	"dump": {
+		"internal/capability/runtime.go":                 "dump.rdb 是 redis 数据文件名（预置卷恢复挂载注释，ADR-0039），非平台词汇面",
 		"internal/engine/dbtemplate/dbtemplate.go":      "pg_dump 等 dump 工具是引擎原生命令名（ADR-0039 备份执行链），非平台词汇面",
 		"internal/engine/dbtemplate/dbtemplate_test.go": "渲染钉板断言引擎原生命令名（pg_dump/mysqldump/mongodump/dump.rdb），非平台词汇面",
 		"internal/engine/dbtemplate/mysql.go":           "mysqldump 是 mysql 引擎原生命令名（ADR-0039），非平台词汇面",

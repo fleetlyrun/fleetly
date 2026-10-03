@@ -24,17 +24,21 @@ import (
 // 按 method+path 路由（/vX.Y 前缀剥离），带服务/任务/网络/节点的内存存
 // 储、调用计数与按次故障注入。
 type fakeDaemon struct {
-	mu      sync.Mutex
-	store   map[string]swarm.Service // 服务存储（键 = Spec.Name，ID = "srv-"+名）
-	secrets map[string]swarm.Secret  // Secret 存储（键 = Spec.Name，ID = "sec-"+名；孤儿清扫面 E29）
-	tasks   map[string][]swarm.Task  // service ID → 任务快照
-	nets    map[string]string        // 网络载体名 → 网络 ID
-	nodes   []swarm.Node             // 节点表（NodeUpdate 原地改写）
-	mutate  func(*swarm.ServiceSpec) // 服务端物化模拟（daemon 版本漂移形态）
-	fail    map[string]int           // 路由键 → 剩余故障次数（500）
-	counts  map[string]int           // 路由键 → 调用次数
-	keys    []string                 // 路由键序列（量级断言）
-	qs      map[string]url.Values    // 路由键 → 最近一次请求的 query（过滤断言）
+	mu         sync.Mutex
+	store      map[string]swarm.Service // 服务存储（键 = Spec.Name，ID = "srv-"+名）
+	secrets    map[string]swarm.Secret  // Secret 存储（键 = Spec.Name，ID = "sec-"+名；孤儿清扫面 E29）
+	tasks      map[string][]swarm.Task  // service ID → 任务快照
+	nets       map[string]string        // 网络载体名 → 网络 ID
+	netCreates []struct {               // 网络创建选项流水（attachable 断言，ADR-0039）
+		name string
+		opts client.NetworkCreateOptions
+	}
+	nodes  []swarm.Node             // 节点表（NodeUpdate 原地改写）
+	mutate func(*swarm.ServiceSpec) // 服务端物化模拟（daemon 版本漂移形态）
+	fail   map[string]int           // 路由键 → 剩余故障次数（500）
+	counts map[string]int           // 路由键 → 调用次数
+	keys   []string                 // 路由键序列（量级断言）
+	qs     map[string]url.Values    // 路由键 → 最近一次请求的 query（过滤断言）
 }
 
 func newFakeDaemon() *fakeDaemon {
@@ -114,6 +118,21 @@ func (f *fakeDaemon) secretCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.secrets)
+}
+
+// networkCreates 返回网络创建流水拷贝（attachable 断言）。
+func (f *fakeDaemon) networkCreates() []struct {
+	name string
+	opts client.NetworkCreateOptions
+} {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]struct {
+		name string
+		opts client.NetworkCreateOptions
+	}, len(f.netCreates))
+	copy(out, f.netCreates)
+	return out
 }
 
 // RoundTrip 实现 http.RoundTripper：按 method+path 路由（版本前缀剥离）。
@@ -231,6 +250,25 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 			return http.StatusOK, network.Inspect{Network: network.Network{Name: name, ID: id}}, true
 		}
 		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("network %s not found", name)}, true
+	case key == "POST /networks/create":
+		// 网络创建流水（attachable/labels 断言）：body = Name + 内嵌
+		// NetworkCreateOptions（client 无 json tag，PascalCase 即 wire 面）。
+		var body struct {
+			Name string
+			client.NetworkCreateOptions
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			return http.StatusBadRequest, map[string]string{"message": err.Error()}, true
+		}
+		f.netCreates = append(f.netCreates, struct {
+			name string
+			opts client.NetworkCreateOptions
+		}{body.Name, body.NetworkCreateOptions})
+		if f.nets == nil {
+			f.nets = map[string]string{}
+		}
+		f.nets[body.Name] = "net-" + body.Name
+		return http.StatusCreated, client.NetworkCreateResult{ID: "net-" + body.Name}, true
 	case key == "GET /nodes":
 		return http.StatusOK, f.nodes, true
 	case strings.HasPrefix(key, "POST /nodes/") && strings.HasSuffix(key, "/update"):
