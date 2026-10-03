@@ -24,7 +24,7 @@ Event payload 订户四类（Console / Agent / Skills / torchwood），一次字
 
 - [x] payload JSON Schema 经 `fleetly schema` 暴露且 golden 钉死（F1.4：SystemService.GetSchema/Explain + `internal/assembly/testdata/selfdescription.golden.json` 漂移门 + CLI schema/explain 双形态 golden）
 - [x] payload 字段改名/删除在 CI 红（schema golden 漂移门）（F1.4：TestSelfDescriptionGoldenPinned；eventcode 完备性对账同批——新事件入册漏注册 schema 亦红）
-- [ ] 新增 List RPC 全部带 `after_*` 游标（评审清单项；events 面已从之）
+- [x] 新增 List RPC 全部带 `after_*` 游标（评审清单项；events 面已从之）（N1 收尾批 8cf6929：十面 List after_*+limit only-add + repo 游标化 + CLI 透传；其后面 ListSchedules/ListUploads/ListNetworks/ListDatabases 均从之）
 - [x] 票据：秒级 TTL、单用途、限订阅路径（过期/重放拒绝；拒绝面=原生 401 minimal body，EventStreamSource 专用）
 - [x] EventSource 无自定义头完成订阅并收到首事件（httptest 级钉死 EventSource 契约形态——纯 GET+query 凭证；浏览器真机随 Console e2e 补）
-- [ ] lynx 流式长流不被优雅关停超时误杀（真机验证记录；staging 项）
+- [x] lynx 流式长流不被优雅关停超时误杀（真机验证记录；staging 项）（2026-10-03 收尾批真机：`systemctl restart fleetlyd` 时活跃 StreamEvents 流在 30s drain 窗内持续投递（关停信号后仍送达 seq 431/432 两事件），引擎观测环同窗照常收口 run 终态；超窗后 HTTP/2 GOAWAY `NO_ERROR` + `debug data: "graceful_stop"` 显式收流，客户端立即干净退出可凭游标重同步——无误杀、无静默截断。runbook 2026-10-03 节）

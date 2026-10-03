@@ -34,11 +34,11 @@ N1 审查确认：全部数据面 RPC 按**全局 ID 直取**资源，scope 门�
 
 ## 验收锚
 
-- [ ] 跨 Team 夹具：team B member Token 读/写 team A 资源（GetApp/GetTask/GetRun/GetConfig/DiffRevisions/GetDeployment 等）→ `E_FORBIDDEN`；同队访问不受影响
-- [ ] ListProjects/ListTokens 非 owner 只见本队；owner 全见
-- [ ] ListRuns 无 task_id 且无 project_id → `E_INVALID_ARGUMENT`；`project_id` 过滤可用且跨队拒绝
-- [ ] CreateToken/CreateUser/CreateRole/CreateInvitation/CreateProject 目标 Team ≠ 调用方 Team → `E_FORBIDDEN`（owner 豁免）；缺省 = 调用方 Team
-- [ ] PutSecret/DeleteSecret/GetConfig/Deploy/Rollback/UploadSource/Hooks 面：跨队目标 Project/App → `E_FORBIDDEN`（Upload 在首帧后、落盘前拒绝）
-- [ ] 审计行带 team_id（迁移 00017）；ListAudit 非 owner 过滤本队 + `''`
-- [ ] SetChangeFreeze 跨队/非 owner 全局 → `E_FORBIDDEN`
-- [ ] 单 Team 全量回归零漂移（apitest + golden + engine 门禁绿）
+- [x] 跨 Team 夹具：team B member Token 读/写 team A 资源（GetApp/GetTask/GetRun/GetConfig/DiffRevisions/GetDeployment 等）→ `E_FORBIDDEN`；同队访问不受影响（N1 收尾批 801ebb9：apitest 跨 Team 验收矩阵）
+- [x] ListProjects/ListTokens 非 owner 只见本队；owner 全见（801ebb9）
+- [x] ListRuns 无 task_id 且无 project_id → `E_INVALID_ARGUMENT`；`project_id` 过滤可用且跨队拒绝（801ebb9：无过滤形态从 API 面移除，CLI 前置要求 --task/--project）
+- [x] CreateToken/CreateUser/CreateRole/CreateInvitation/CreateProject 目标 Team ≠ 调用方 Team → `E_FORBIDDEN`（owner 豁免）；缺省 = 调用方 Team（801ebb9；Q-16 roleInTeam 先行 F1.8 前置批）
+- [x] PutSecret/DeleteSecret/GetConfig/Deploy/Rollback/UploadSource/Hooks 面：跨队目标 Project/App → `E_FORBIDDEN`（Upload 在首帧后、落盘前拒绝）（801ebb9：FreezeGuard.Stream 同款首帧执法先例）
+- [x] 审计行带 team_id（迁移 00017）；ListAudit 非 owner 过滤本队 + `''`（801ebb9）
+- [x] SetChangeFreeze 跨队/非 owner 全局 → `E_FORBIDDEN`（801ebb9）
+- [x] 单 Team 全量回归零漂移（apitest + golden + engine 门禁绿）（801ebb9：全门禁绿随批）

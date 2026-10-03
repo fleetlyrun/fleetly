@@ -76,8 +76,14 @@ schedule_overlap_policy）：`skip` | `fire`（重叠时照常拍，允许并行
       F1.5 机制复用的 API 面证据）。
 - [x] 三链咬合：schedule.created/fired/skipped/deleted 事件入册
       eventcode + schemareg + golden。
-- [ ] 真机：长周期 Schedule（跨真实 DST 边界 + 跨 daemon 升级窗口）在
-      staging 双节点跑一轮昼夜观察（F1.15 dogfooding 随手项）。
+- [x] 真机：跨 daemon 升级窗口（2026-10-03 收尾批真机：拍点间窗口
+      `systemctl restart fleetlyd`，重启后下一拍恰一次（10:52/10:54 各一
+      task）、next_fire_at 重算正确（10:56:00Z）、无漏拍无双发；用户池
+      Workload 全程 running 零扰动。runbook 2026-10-03 节）。
+- [ ] 真机：跨真实 DST 边界（Sydney 观察钟 2026-10-03 已植
+      staging：*/20 Australia/Sydney 跨 2026-10-04 02:00→03:00 春令 =
+      16:00Z 跳变；创建时 next fire 11:00Z=21:00 AEST 换算已实证，
+      边界穿越核验随当日收尾批闭锚）。
 - [x] 重叠策略旋钮：skip 默认行为不变；fire 允许并行拍；无效值启动红
       （F1.9 落地：TestScheduleOverlapPolicyFires / TestParseScheduleOverlap /
       TestNewEngineOverlapPolicyFailsFast）。

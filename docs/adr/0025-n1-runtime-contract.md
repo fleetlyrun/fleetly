@@ -56,7 +56,7 @@ DNS 铸名公式（决策 6，engine 真源）：per-Task 池级稳定名 `task-
 - [x] one-shot Workload 退出即终态、不被重启（RestartNever → swarm none；契约测试 + engine 终态镜像测试）；七枚举停止原因全映射可观测（映射表附录 A + run 终态事件 payload 携带）
 - [x] 已完成 task 在 Watch 流可见（swarm pollTasks Task 域豁免：终态任务含 exit code/原因原文/实例身份上报；映射测试钉死）
 - [x] 同输入 Workload 两次翻译逐字节稳定（确定性守卫 E fixture 扩到 StopGrace/Addressing 新字段序）
-- [ ] 两级 DNS 在 dind 实证：池级 RR + per-Run 稳定名（swarm alias RR 行为结论落档）
-- [ ] swarm API 压测锚点（per-Run service × torchwood 池规模）
+- [x] 两级 DNS 在 dind 实证：池级 RR + per-Run 稳定名（swarm alias RR 行为结论落档）（2026-10-03 收尾批以 staging 双节点真机覆盖：n0probe dstcheck 池 concurrency=2——`task-<id>` 4 次查询 10.0.5.4/10.0.5.2 轮转；`run-<id>` 各自单一稳定 IP（.2/.4 恰对号）；run 容器命名 `fleetly-run-<id>` 在位。runbook 2026-10-03 节）
+- [ ] swarm API 压测锚点（per-Run service × torchwood 池规模）（未做；触发 = torchwood dispatcher 客户端移植新 Tasks API 上量后随 N3 性能批实测，池语义已按 ADR-0012 平台面真机回归）
 - [x] taskGroup 翻译在投影层有单测（TestProjectTranslatesTaskGroupRefs）；translate.go 谎言注释消灭
 - [ ] N4 k3s 推演复跑：核心 6 方法零改动吸收全部新字段

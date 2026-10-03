@@ -138,6 +138,6 @@ F1.12 要求 postgres（含 pgvector 形态）+ redis 模板、默认本地备�
 - [x] 本地 ObjectStore 开箱：工厂注册进 RegisteredFactories（注册面即
   所见）；Put/Get/List/Delete 有测试
 - [x] ListDatabases 走 after_database_id + limit（ADR-0026 惯例面 +1）
-- [ ] 备份执行链 + 恢复演练（F2；ADR-0020 验收 N2 e2e 不变）
-- [ ] staging 真机实证（受管形态起服 + App 经项目网连接 + 双节点卷
-  钉住；随 F1.15 批记录）
+- [ ] 备份执行链 + 恢复演练（F2；ADR-0020 验收 N2 e2e 不变）（排期 = 功能清单 F2.2，验收必过项）
+- [x] staging 真机实证（受管形态起服 + App 经项目网连接 + 双节点卷
+  钉住；随 F1.15 批记录）（F1.15 ⑥：pgvector torchwood-pg running + App/migrate job 经项目网连 db-<id> 跨节点 + 卷钉住 manager；runbook 2026-10-02 节）

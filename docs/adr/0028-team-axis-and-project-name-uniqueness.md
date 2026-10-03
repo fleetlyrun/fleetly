@@ -22,8 +22,8 @@
 
 ## 验收锚
 
-- [ ] 引擎/装配零 `"default"` 团队字面量（守卫或 grep 锚在册）
-- [ ] 同名项目在不同 Team 并存；跨 Team 撞名 409
-- [ ] CreateToken / CreateUser 的 role/team 不一致被拒
-- [ ] 存量库迁移：新索引生效、旧索引有序退场、迁移可回滚安全
-- [ ] user repo FK 违例映射 E_CONFLICT（不再 E_INTERNAL）
+- [x] 引擎/装配零 `"default"` 团队字面量（守卫或 grep 锚在册）（F1.8 前置批：TestEngineAssemblyNoDefaultTeamLiteral AST 级反扫）
+- [x] 同名项目在不同 Team 并存；跨 Team 撞名 409（F1.8 前置批：(team_id,name) 部分唯一索引 + apitest）
+- [x] CreateToken / CreateUser 的 role/team 不一致被拒（F1.8 前置批 Q-16：roleInTeam 受理检查——CreateUser/CreateToken/CreateInvitation 三面）
+- [x] 存量库迁移：新索引生效、旧索引有序退场、迁移可回滚安全（F1.8 前置批：idx_projects_name → (team_id,name) 先建后删同事务）
+- [x] user repo FK 违例映射 E_CONFLICT（不再 E_INTERNAL）（F1.8 前置批：FK RESTRICT → ErrConflict 归一）

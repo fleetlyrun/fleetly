@@ -31,10 +31,10 @@ runbook"端口暴露矩阵（操作者责任）"把 9080/9081/9082/5000 全部�
 
 ## 验收锚
 
-- [ ] `server.edge_config.addr` 缺省 `:9082` = 现状；显式值透传到 Edge 拉取端点监听（config 解析测试钉死缺省与透传）
-- [ ] `registry.addr` 缺省空 = 受管仓库停用（现状）；显式值经装配 ctx 注入 zot 工厂且优先于 env `FLEETLY_REGISTRY_ADDR`；env 旧通道单独可用（zot 工厂测试钉死三态）
-- [ ] doctor exposure 检查：公网可达 edge config → fail、registry → warn；私网/回环可达 → ok；公网不可达 → ok（self-certified）；未配置 → ok（not configured）；通配 → warn（unable to self-certify）
-- [ ] doctor bind surface：`0.0.0.0`/`::`/`:port` 通配绑定显式 warn + 处置建议；全部钉定 → ok（pinned）
-- [ ] doctor 探测 hermetic：地址分类与探测分支为纯函数 + 注入探针，单测不拨真网（Windows 本机确定性）
-- [ ] golden 双形态（doctor/doctor-json）全量再生成，仅新增检查行；runbook 端口矩阵同步"绑面配置化"说明与配置示例
-- [ ] mise run test + mise run lint 全绿
+- [x] `server.edge_config.addr` 缺省 `:9082` = 现状；显式值透传到 Edge 拉取端点监听（config 解析测试钉死缺省与透传）（N1 收尾批 0c8b9ce）
+- [x] `registry.addr` 缺省空 = 受管仓库停用（现状）；显式值经装配 ctx 注入 zot 工厂且优先于 env `FLEETLY_REGISTRY_ADDR`；env 旧通道单独可用（zot 工厂测试钉死三态）（0c8b9ce）
+- [x] doctor exposure 检查：公网可达 edge config → fail、registry → warn；私网/回环可达 → ok；公网不可达 → ok（self-certified）；未配置 → ok（not configured）；通配 → warn（unable to self-certify）（0c8b9ce：分类与探测分支纯函数 + 注入探针单测）
+- [x] doctor bind surface：`0.0.0.0`/`::`/`:port` 通配绑定显式 warn + 处置建议；全部钉定 → ok（pinned）（0c8b9ce）
+- [x] doctor 探测 hermetic：地址分类与探测分支为纯函数 + 注入探针，单测不拨真网（Windows 本机确定性）（0c8b9ce）
+- [x] golden 双形态（doctor/doctor-json）全量再生成，仅新增检查行；runbook 端口矩阵同步"绑面配置化"说明与配置示例（0c8b9ce + runbook 端口矩阵节）
+- [x] mise run test + mise run lint 全绿（0c8b9ce 随批全门禁绿）

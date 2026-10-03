@@ -91,10 +91,10 @@ Source 第三形态（上传产物）的契约、执法、存储与清理裁决�
 
 ### 验收锚（F1.11，证据=测试在树 / runbook 记录）
 
-- [ ] zot Provider：凭证持久（同 dataRoot 二次构造同密码）、htpasswd bcrypt 可验、ManagedWorkloads 钉版形态（image/publish/volume）、Materials 含 config+htpasswd（zot 单测）
-- [ ] build 源 + 无 registry → prepare 精确失败；有 registry → BuildRequest.Target=`<addr>/<app>:r<seq>` 且 PushCred 注入；from_build 投影=`<addr>/<app>@sha256:<digest>`（engine 单测）
-- [ ] managed host 平台凭证注入且项目 Secret `registry:<host>` 不参与；非 managed host 走 Secret 通道不变（engine 单测）
-- [ ] reconcileManaged 双 Provider：zot 域无项目网挂靠、Materials 透传（engine 单测）
-- [ ] dockerbuild 推送凭证编码 + digest 提取（单测）；推送链真机实证随 staging/F1.15（runbook 记录）
-- [ ] install.sh：daemon insecure-registry drop-in + unit 注入 FLEETLY_REGISTRY_ADDR（存在 daemon.json 时不覆盖，打印人工指引——诚实不破坏）
-- [ ] staging 真机：受管 zot 起服（停手工 n0-zot 让位端口）+ 构建推送 + 双节点 digest 拉取（runbook 记录）
+- [x] zot Provider：凭证持久（同 dataRoot 二次构造同密码）、htpasswd bcrypt 可验、ManagedWorkloads 钉版形态（image/publish/volume）、Materials 含 config+htpasswd（zot 单测）（F1.11 批 zot 单测；重启滚替收口 662f783——keys/registry-htpasswd 持久化 0o600，F1.15 真机 zot 四连修 9-11 同批闭环）
+- [x] build 源 + 无 registry → prepare 精确失败；有 registry → BuildRequest.Target=`<addr>/<app>:r<seq>` 且 PushCred 注入；from_build 投影=`<addr>/<app>@sha256:<digest>`（engine 单测）（F1.11 批 engine 单测；推送链 digest 回退链 hermetic 化 a113721）
+- [x] managed host 平台凭证注入且项目 Secret `registry:<host>` 不参与；非 managed host 走 Secret 通道不变（engine 单测）（F1.11 批 engine 单测——materialsFor managed host 直注平台凭证）
+- [x] reconcileManaged 双 Provider：zot 域无项目网挂靠、Materials 透传（engine 单测）（F1.11 批 managed_edge_test——指纹覆盖完整下发集）
+- [x] dockerbuild 推送凭证编码 + digest 提取（单测）；推送链真机实证随 staging/F1.15（runbook 记录）（F1.11 批单测 + a113721 hermetic；真机 F1.15 ⑤ runbook 2026-10-02 节）
+- [x] install.sh：daemon insecure-registry drop-in + unit 注入 FLEETLY_REGISTRY_ADDR（存在 daemon.json 时不覆盖，打印人工指引——诚实不破坏）（F1.11 批；runbook 拓扑节在位实证——双节点 drop-in + unit env）
+- [x] staging 真机：受管 zot 起服（停手工 n0-zot 让位端口）+ 构建推送 + 双节点 digest 拉取（runbook 记录）（F1.15 ⑤：buildprobe 构建→push zot→node2 以 `@sha256:3ba27221...` 拉起 Running）

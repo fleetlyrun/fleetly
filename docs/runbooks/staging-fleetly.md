@@ -78,12 +78,27 @@
 **运维事实（记入操作序）**：
 - **unit drop-in 会丢**：FLEETLY_REGISTRY_ADDR 曾消失（build 链精确报错自愈提示）；现以 `/etc/systemd/system/fleetlyd.service.d/registry.conf` + `railpack.conf` 双 drop-in 固化——fleetlyd 换二进制后 `systemctl restart` 前必查 drop-in 存活。
 - **n0-zot 幽灵**：被 docker daemon 重启复活（--restart unless-stopped），占宿主 5000 收流→manager 上一切 401 全来自它。已 `docker update --restart=no` + stop。任何"端口被谁收流"排查先 `docker ps -a` 全表。
-- **受管 zot 无钉住**（B.5②边界真咬人）：任何 spec 变更的滚动替换都可能把 task 漂到无卷节点 preparing 打转。临时操作序：`docker node update --availability=drain fleetly-node2` → 待 task 落 manager Running → `active` 恢复。**平台侧钉住=挂账**。
+- **受管 zot 无钉住**（B.5②边界真咬人）：任何 spec 变更的滚动替换都可能把 task 漂到无卷节点 preparing 打转。临时操作序：`docker node update --availability=drain fleetly-node2` → 待 task 落 manager Running → `active` 恢复。**平台侧钉住=挂账，落期 F2.3**。
 - **build 行按 (revision, builder) 内容寻址复用**：改源（哪怕加注释）才铸新 build；排查"修复不生效"先想到旧 build 行重放。
-- **swarm secret 载体已 1300+**（zot 风暴遗产）——孤儿清理面挂账；run 服务残留（终态 task 的 0/1 service）清理面挂账。
+- **swarm secret 载体已 1300+**（zot 风暴遗产）——**已闭合**：N1 收尾批 5fd610a RuntimeHygiene 孤儿清扫面，2026-10-03 真机实效 1300+→36 稳定（见当日记录节）；run 服务残留同批根修+兜底扫窗。
 - torchwood 镜像 sha-78ea1a4 的 `configs/config.yaml` 不会被 ENTRYPOINT 自动加载——addr 类键必须显式 env（v0.1 形态同款教训再现）。
 
 **挂账（F1.15 收口时的诚实边界）**：torchwood dispatcher 客户端仍是 v0.1 vendored 契约（对新 Tasks API 的移植=torchwood 侧独立批；池语义已按 ADR-0012 以平台 API 面真机回归）；mlbridge→torchwood 的 E2E 凭据接线（torchwood 首管引导+scoped key）未走完（ml-tw-projects 现为占位值）；GHCR 私有镜像直投未实证（机制=zot 私拉 F0.18 同款 registry: 凭证，无私有 GHCR 镜像可测）。
+
+## 2026-10-03 记录（N2 前收尾批：真机锚闭环，全部门禁绿随批）
+
+四枚 ADR 真机验收锚当日闭环（fleetlyd `eec4236-n1-final` 在位，测试物随批清理）：
+
+| 锚 | 结果 | 关键证据 |
+|---|---|---|
+| ADR-0025 两级 DNS（池级 RR + per-Run 稳定名） | ✅ | n0probe 自建 dstcheck 池（concurrency=2，双节点分布）：`task-<id>` 4 次查询 10.0.5.4/10.0.5.2 轮转；`run-<id>` 各自单一稳定 IP 恰对号（.2/.4）；run 容器命名 `fleetly-run-<id>`。dind 实证以 staging 双节点真机覆盖 |
+| ADR-0026 lynx 长流 vs 优雅关停 | ✅ | 活跃 StreamEvents 流（71s 长流）遇 `systemctl restart`：30s drain 窗内持续投递（关停信号后仍送达 2 事件，引擎观测环同窗照常收口 run 终态）；超窗后 HTTP/2 GOAWAY `NO_ERROR` + `graceful_stop` 显式收流，客户端立即干净退出可凭游标重同步——无误杀无静默截断 |
+| ADR-0018 Schedule 跨 daemon 重启窗 | ✅ | 拍点间窗口重启：重启后下一拍恰一次（10:52/10:54 各一 task）、next_fire_at 重算正确（10:56:00Z）、无漏拍无双发；用户池 Workload 全程 running 零扰动（ADR-0015 迷你证据） |
+| E29 孤儿载体清扫实效 | ✅ | `docker secret ls | grep -c fleetly-sec-`：1300+（zot 风暴遗产）→ 当日 136 → **36 稳定**（=现役载体集；100/拍预算限流如期清空积压） |
+
+**DST 观察钟（ADR-0018 剩余锚在跑）**：n0probe schedule `dst-boundary-observe`（*/20 Australia/Sydney，busybox echo）跨悉尼夏令时边界（2026-10-04 02:00→03:00 春令 = 2026-10-03 16:00Z 跳变）；创建时 next fire 11:00Z=21:00 AEST 换算已实证，边界穿越核验随当日收尾批闭锚后删钟。
+
+**教训（Windows 本机远程操作）**：cmd → ssh → sh 三层引号嵌套必炸（`\$VAR` 转义层丢失）；复杂远程操作一律写脚本 scp 过去 `sh`，简单命令内联且零变量零嵌套引号。
 
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 

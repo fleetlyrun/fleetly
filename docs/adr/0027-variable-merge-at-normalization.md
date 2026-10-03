@@ -4,6 +4,8 @@
 |---|---|---|
 | Accepted | 2026-10-01 | R-5 裁决（批 0.5）、ADR-0002（Revision 冻结/回放唯一实现）、ADR-0011（环境即 Project）、CONTEXT.md Variable 词条 |
 
+**排期**：功能清单 F2.9（N1 诚实挂账收口批）。现状 = F1.5 的 Variable 为 env 直传形态（两级实体未建）；SharedVariable 实体与归一化期合成落地时闭本 ADR 验收锚。
+
 ## 背景
 
 两级变量（Project 级 SharedVariable 在下、App 级 Variable 覆盖）的合成时机两案：**(a) 归一化期合成**——Revision 冻结最终形态；**(b) Ensure 前动态解析**——改共享变量即时生效但 Revision 不再是行为真源，Drift/diff 语义被掏空。`spec.proto:67-68` 注释押注 (a) 但代码未写，N1 引入 Variable 前必须显式裁决。

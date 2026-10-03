@@ -148,4 +148,4 @@ ADR 收口全部裁决。执行机制已备：一次性 Run（F1.5/F1.6）落地
   ADR-0033 intake 面批补——compose 扩展键夹具驱动全链，releasing 等 job
   终态的 deployment golden 钉 first_boot_task_id 在场（done 游标下归空
   由 apitest 全链断言）
-- [ ] staging 真机实证：部署期迁移 job 端到端（随 F1.15 dogfooding）
+- [x] staging 真机实证：部署期迁移 job 端到端（随 F1.15 dogfooding）（F1.15 ⑦：compose `x-fleetly-first-boot-jobs` migrate→roles-sig 串行执行、失败即回滚、部署 succeeded；runbook 2026-10-02 节）
