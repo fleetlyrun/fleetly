@@ -225,6 +225,23 @@ probe() {
     echo "probe failed with status: $code" >&2
   fi
 }
+# 路由就绪窗（dind-h2c-route.sh 同款）：quickstart 返回 ≠ traefik 已发布
+#——就绪重试不进零失败预算（预算只覆盖升级序列本身）。
+probe_ready() {
+  code=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "demo.$DIND_IP.sslip.io" \
+    -o /tmp/probe-body "http://$DIND_IP/" \
+    | sed -n 's/^STATUS \([0-9]*\).*/\1/p')
+  [ "$code" = "200" ]
+}
+i=0
+until probe_ready; do
+  i=$((i + 1))
+  if [ "$i" -ge 45 ]; then
+    echo "route did not become healthy before upgrade (90s)" >&2
+    exit 1
+  fi
+  sleep 2
+done
 probe || true
 if [ "$PROBE_FAILS" -ne 0 ]; then
   echo "route not healthy before upgrade; aborting" >&2
