@@ -14,6 +14,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/authn"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/material"
+	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
@@ -424,6 +425,13 @@ func (svc *SecretsService) PutSecret(ctx context.Context, req *structurev1.PutSe
 		return nil, apperr.New("E_CONFLICT",
 			"secret name %q is reserved for platform-managed database credentials; database secrets are minted by 'fleetly databases create'",
 			req.GetName())
+	}
+	// 名字符集白名单（N1 收尾批 A3）：secret 名成为容器内 /run/secrets/<名>
+	// 文件目标——受理面拒路径逃逸形态（/、\、空白、控制字符与 ".."）。
+	if !spec.ValidSecretName(req.GetName()) {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"name: secret names must match %q, start with a letter or digit, and must not contain \"..\" (got %q; secret names become /run/secrets/<name> paths)",
+			spec.SecretNamePattern, req.GetName())
 	}
 	ct, err := svc.s.Cipher.Seal([]byte(req.GetValue()))
 	if err != nil {

@@ -277,6 +277,19 @@ func ValidateProcess(field string, p *specv1.ProcessSpec) error {
 			}
 		}
 	}
+	// Secret 引用名字符集（N1 收尾批 A3）：引用名原样成为容器内
+	// /run/secrets/<名> 的文件目标（swarm translate 原样透传）——白名单是
+	// 路径逃逸的唯一入口防线（/、\、空白、控制字符与 ".." 全拒；冒号合法：
+	// 平台数据库凭证名 database:<name> 是既定形态，ADR-0029）。
+	for i, ref := range p.GetSecretRefs() {
+		if ref == "" {
+			return invalidf(fmt.Sprintf("%s.secret_refs[%d]", field, i), "must not be empty")
+		}
+		if !ValidSecretName(ref) {
+			return invalidf(fmt.Sprintf("%s.secret_refs[%d]", field, i),
+				"secret name %q must match %q and must not contain \"..\" (secret names become /run/secrets/<name> paths)", ref, SecretNamePattern)
+		}
+	}
 	return nil
 }
 
@@ -414,6 +427,22 @@ const networkGroupNamePattern = `[a-z0-9]([a-z0-9-]{0,36}[a-z0-9])?`
 var networkGroupNameRe = regexp.MustCompile(`^` + networkGroupNamePattern + `$`)
 
 func validNetworkGroupName(g string) bool { return networkGroupNameRe.MatchString(g) }
+
+// SecretNamePattern 钉死 Secret 名字符集（N1 收尾批 A3：防路径逃逸——
+// 引用名原样成为容器内 /run/secrets/<名> 文件目标与 swarm 载体名成分，
+// /、\、空白与控制字符全拒；首字符字母数字挡住 "." 与 "-" 开头形态；
+// 冒号合法=平台数据库凭证名 database:<name> 既定形态（ADR-0029）；长度
+// 上界 64 对齐载体名预算）。PutSecret 受理面与 spec 校验（compose secrets
+// / task secret_refs）共用本真源。
+const SecretNamePattern = `[A-Za-z0-9][A-Za-z0-9:._-]{0,63}` //nolint:gosec // 字符集正则字面量, 非凭证值
+
+var secretNameRe = regexp.MustCompile(`^` + SecretNamePattern + `$`)
+
+// ValidSecretName 报告 Secret 名是否落在白名单字符集且不含 ".."（无 "/"
+// 时 ".." 只能以子串形态出现——仍拒：好名字不疼，坏名字不赌）。
+func ValidSecretName(name string) bool {
+	return secretNameRe.MatchString(name) && !strings.Contains(name, "..")
+}
 
 // ValidateDatabase 校验 DatabaseSpec。
 func ValidateDatabase(s *specv1.DatabaseSpec) error {

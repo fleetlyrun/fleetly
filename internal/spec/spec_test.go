@@ -1,6 +1,7 @@
 package spec
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -241,6 +242,29 @@ func TestNetworkGroupRef(t *testing.T) {
 	assert.True(t, IsNetworkGroupRef("taskGroup:dispatcher"))
 	assert.Equal(t, "dispatcher", NetworkGroupName("taskGroup:dispatcher"))
 	assert.False(t, IsNetworkGroupRef("project-net"))
+}
+
+// Secret 名字符集（N1 收尾批 A3）：防 /run/secrets/<名> 路径逃逸——白名单
+// 字符集 + ".." 拒绝；冒号合法（平台数据库凭证名 database:<name> 既定
+// 形态，ADR-0029）。
+func TestValidSecretName(t *testing.T) {
+	for _, ok := range []string{"api-key", "db.password", "database:pg", "A1_b-c", "x", strings.Repeat("a", 64)} {
+		assert.True(t, ValidSecretName(ok), "name %q must be valid", ok)
+	}
+	for _, bad := range []string{"", "../etc/passwd", "a/b", `a\b`, " lead", "trail ", "..", "a..b", ".hidden", "-lead", "with space", "with\ttab", strings.Repeat("a", 65)} {
+		assert.False(t, ValidSecretName(bad), "name %q must be rejected", bad)
+	}
+}
+
+// SecretRefs 入口校验（task/compose 共用面）：逃逸形态拒并带精确字段名。
+func TestValidateProcessSecretRefs(t *testing.T) {
+	base := func(refs []string) *specv1.ProcessSpec {
+		return &specv1.ProcessSpec{Name: "web", ImageOrigin: &specv1.ProcessSpec_Image{Image: "nginx:1.27"}, SecretRefs: refs}
+	}
+	assert.NoError(t, ValidateProcess("p", base([]string{"api-key", "database:pg"})))
+	assert.ErrorContains(t, ValidateProcess("p", base([]string{"../etc/passwd"})), "secret_refs[0]")
+	assert.ErrorContains(t, ValidateProcess("p", base([]string{"ok", "a/b"})), "secret_refs[1]")
+	assert.ErrorContains(t, ValidateProcess("p", base([]string{""})), "secret_refs[0]")
 }
 
 func TestValidateDatabase(t *testing.T) {

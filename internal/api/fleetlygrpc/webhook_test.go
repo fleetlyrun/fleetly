@@ -114,3 +114,18 @@ func TestPushPayloadParse(t *testing.T) {
 		t.Fatal("all-zero after (branch deletion) must be recognizable")
 	}
 }
+
+// N1 收尾批 A7：Dockerfile 路径入口校验（与 branch 同口径）——控制字符/
+// 空白/上下文逃逸形态在受理位拒绝（buildkit 的 context 边界是纵深第二层）。
+func TestValidateDockerfile(t *testing.T) {
+	for _, ok := range []string{"", "Dockerfile", "docker/Dockerfile", "build/Dockerfile.prod"} {
+		if err := validateDockerfile(ok); err != nil {
+			t.Fatalf("path %q must be accepted: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"../escape/Dockerfile", "a/../b", `a\b`, "with space", "with\ttab", "/etc/passwd"} {
+		if err := validateDockerfile(bad); err == nil {
+			t.Fatalf("path %q must be rejected", bad)
+		}
+	}
+}

@@ -546,6 +546,9 @@ func newRoutesCreateVerb() commands.Command {
 			return renderOut(env, jsonOut, resp.GetRoute(), func() {
 				r := resp.GetRoute()
 				_, _ = fmt.Fprintf(env.Stdout, "created route %s -> %s:%d (%s)\n", r.GetHost(), r.GetProcess(), r.GetPort(), r.GetProtocol())
+				if r.GetTlsMode() == "none" {
+					_, _ = fmt.Fprintf(env.Stdout, "warning: TLS is disabled for %s - traffic to this route is plaintext until you recreate it with --tls auto\n", r.GetHost())
+				}
 			})
 		},
 	}

@@ -490,6 +490,12 @@ func composeSecretRefs(field string, raw any) ([]string, error) {
 		if name == "" {
 			return nil, invalidf(field, "secret entry must be a name or {source: name}")
 		}
+		// 名字符集（N1 收尾批 A3）：引用名原样成为 /run/secrets/<名> 路径——
+		// 翻译层即拒（ValidateProcess 兜底，此处给 compose 侧精确字段名）。
+		if !ValidSecretName(name) {
+			return nil, invalidf(field,
+				"secret name %q must match %q and must not contain \"..\" (secret names become /run/secrets/<name> paths)", name, SecretNamePattern)
+		}
 		refs = append(refs, name)
 	}
 	return refs, nil

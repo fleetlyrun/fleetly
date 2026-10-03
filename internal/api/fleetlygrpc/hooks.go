@@ -48,6 +48,11 @@ func (svc *HooksService) SetGitHook(ctx context.Context, req *deliveryv1.SetGitH
 	if err := validateGitBranch(normalizeBranch(req.GetBranch())); err != nil {
 		return nil, err
 	}
+	// Dockerfile 路径入口校验（N1 收尾批 A7）：归一后校验（create 与
+	// update 两路径共用）。
+	if err := validateDockerfile(normalizeDockerfile(req.GetDockerfile())); err != nil {
+		return nil, err
+	}
 	// 行级授权（ADR-0035）：App 归属 Team 比对（载行复用；Apps.Get 活跃行
 	// 口径——tombstone App 在此即 404）。
 	appRow, err := svc.s.authorizeAppID(ctx, req.GetAppId())
@@ -183,6 +188,27 @@ func normalizeDockerfile(d string) string {
 		return "Dockerfile"
 	}
 	return strings.Trim(d, "/")
+}
+
+// validateDockerfile 校验构建文件路径（N1 收尾批 A7，入口校验与 branch 同
+// 口径）：路径进 buildkit solve 的 filename 与构建上下文读取——控制字符/
+// 空白逐字节拒绝（argv/日志走私面），".."/"/" 前缀与反斜杠拒绝（上下文
+// 目录逃逸的受理面防线；buildkit 自身还有一层 context 边界执法——纵深）。
+func validateDockerfile(d string) error {
+	if d == "" {
+		return nil
+	}
+	for i := 0; i < len(d); i++ {
+		if c := rune(d[i]); unicode.IsSpace(c) || unicode.IsControl(c) {
+			return apperr.New("E_INVALID_ARGUMENT",
+				"dockerfile: must not contain whitespace or control characters (byte offset %d)", i)
+		}
+	}
+	if strings.Contains(d, "..") || strings.Contains(d, "\\") || strings.HasPrefix(d, "/") {
+		return apperr.New("E_INVALID_ARGUMENT",
+			"dockerfile: %q must stay a relative path inside the build context (no \"..\" segments or backslashes)", d)
+	}
+	return nil
 }
 
 // normalizeWatchPaths 归一触发路径（剥空白项与首尾斜杠、去重保序；空集 =
