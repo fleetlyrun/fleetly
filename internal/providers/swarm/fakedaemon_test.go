@@ -24,26 +24,28 @@ import (
 // 按 method+path 路由（/vX.Y 前缀剥离），带服务/任务/网络/节点的内存存
 // 储、调用计数与按次故障注入。
 type fakeDaemon struct {
-	mu     sync.Mutex
-	store  map[string]swarm.Service // 服务存储（键 = Spec.Name，ID = "srv-"+名）
-	tasks  map[string][]swarm.Task  // service ID → 任务快照
-	nets   map[string]string        // 网络载体名 → 网络 ID
-	nodes  []swarm.Node             // 节点表（NodeUpdate 原地改写）
-	mutate func(*swarm.ServiceSpec) // 服务端物化模拟（daemon 版本漂移形态）
-	fail   map[string]int           // 路由键 → 剩余故障次数（500）
-	counts map[string]int           // 路由键 → 调用次数
-	keys   []string                 // 路由键序列（量级断言）
-	qs     map[string]url.Values    // 路由键 → 最近一次请求的 query（过滤断言）
+	mu      sync.Mutex
+	store   map[string]swarm.Service // 服务存储（键 = Spec.Name，ID = "srv-"+名）
+	secrets map[string]swarm.Secret  // Secret 存储（键 = Spec.Name，ID = "sec-"+名；孤儿清扫面 E29）
+	tasks   map[string][]swarm.Task  // service ID → 任务快照
+	nets    map[string]string        // 网络载体名 → 网络 ID
+	nodes   []swarm.Node             // 节点表（NodeUpdate 原地改写）
+	mutate  func(*swarm.ServiceSpec) // 服务端物化模拟（daemon 版本漂移形态）
+	fail    map[string]int           // 路由键 → 剩余故障次数（500）
+	counts  map[string]int           // 路由键 → 调用次数
+	keys    []string                 // 路由键序列（量级断言）
+	qs      map[string]url.Values    // 路由键 → 最近一次请求的 query（过滤断言）
 }
 
 func newFakeDaemon() *fakeDaemon {
 	return &fakeDaemon{
-		store:  map[string]swarm.Service{},
-		tasks:  map[string][]swarm.Task{},
-		nets:   map[string]string{},
-		fail:   map[string]int{},
-		counts: map[string]int{},
-		qs:     map[string]url.Values{},
+		store:   map[string]swarm.Service{},
+		secrets: map[string]swarm.Secret{},
+		tasks:   map[string][]swarm.Task{},
+		nets:    map[string]string{},
+		fail:    map[string]int{},
+		counts:  map[string]int{},
+		qs:      map[string]url.Values{},
 	}
 }
 
@@ -94,6 +96,24 @@ func (f *fakeDaemon) addService(spec swarm.ServiceSpec) swarm.Service {
 	}
 	f.store[spec.Name] = svc
 	return svc
+}
+
+// addSecret 预置存量 Secret 载体（孤儿清扫面的现役/孤儿/宽限窗形态）。
+func (f *fakeDaemon) addSecret(sec swarm.Secret) swarm.Secret {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if sec.ID == "" {
+		sec.ID = "sec-" + sec.Spec.Name
+	}
+	f.secrets[sec.Spec.Name] = sec
+	return sec
+}
+
+// secretCount 返回存量 Secret 数（清扫结果断言）。
+func (f *fakeDaemon) secretCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.secrets)
 }
 
 // RoundTrip 实现 http.RoundTripper：按 method+path 路由（版本前缀剥离）。
@@ -177,6 +197,23 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 			delete(f.store, svc.Spec.Name)
 		}
 		return http.StatusOK, map[string]string{}, true
+	case key == "GET /secrets":
+		items := make([]swarm.Secret, 0, len(f.secrets))
+		for _, sec := range f.secrets {
+			items = append(items, sec)
+		}
+		items = filterSecrets(items, decodeFilters(r.URL.Query()))
+		sort.Slice(items, func(i, j int) bool { return items[i].Spec.Name < items[j].Spec.Name })
+		return http.StatusOK, items, true
+	case strings.HasPrefix(key, "DELETE /secrets/"):
+		ref := strings.TrimPrefix(key, "DELETE /secrets/")
+		for name, sec := range f.secrets {
+			if name == ref || sec.ID == ref {
+				delete(f.secrets, name)
+				return http.StatusOK, map[string]string{}, true
+			}
+		}
+		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("secret %s not found", ref)}, true
 	case key == "GET /tasks":
 		filters := decodeFilters(r.URL.Query())
 		items := make([]swarm.Task, 0)
@@ -246,6 +283,30 @@ func decodeFilters(q url.Values) map[string]map[string]bool {
 	var f map[string]map[string]bool
 	_ = json.Unmarshal([]byte(raw), &f)
 	return f
+}
+
+// filterSecrets 按 label 全等过滤 Secret（filterServices 的 Secret 面孪生：
+// 真 daemon 的服务端过滤语义，fake 只实现测试用到的 label 项）。
+func filterSecrets(items []swarm.Secret, filters map[string]map[string]bool) []swarm.Secret {
+	labels := filters["label"]
+	if len(labels) == 0 {
+		return items
+	}
+	out := items[:0]
+	for _, sec := range items {
+		match := true
+		for kv := range labels {
+			k, v, _ := strings.Cut(kv, "=")
+			if sec.Spec.Labels[k] != v {
+				match = false
+				break
+			}
+		}
+		if match {
+			out = append(out, sec)
+		}
+	}
+	return out
 }
 
 // filterServices 按 label 全等过滤（真 daemon 的服务端过滤语义，fake 只

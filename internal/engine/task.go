@@ -260,18 +260,30 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs []run.Run) {
 		}
 	}
 
-	// 终态镜像与排空收口（行事实 → Task 态）。
+	// 终态镜像与排空收口（行事实 → Task 态）。收口次序（E29-2 反转）：
+	// 空集 Ensure 先行且成功后才落终态迁移——修复前先迁移后 Ensure，Ensure
+	// 失败/进程崩溃窗口下 Task 已终态退出驱动集（ListDriving 不拾取终态
+	// 行），run service 残留（swarm 0/1 形态）无人重试。失败路径 Task 保持
+	// active/draining 留在驱动集，下拍重试（重入安全：Ensure 幂等签名跳过，
+	// 迁移 CAS 幂等）。
 	if t.State == task.StateActive && t.Form == task.FormOneShot {
-		if e.oneshotTerminal(ctx, t) {
-			// 唯一 Run 已终态：Task 镜像其成败，Ensure 空集收口残留载体
-			//（one-shot 完成后 service 仍驻留 swarm——收敛移除）。
-			e.ensureTaskWorkloads(ctx, t, nil)
+		if to := e.oneshotTerminalState(ctx, t); to != "" {
+			// 唯一 Run 已终态：空集 Ensure 收口残留载体，成功后 Task 镜像
+			// 其成败。
+			if err := e.ensureTaskWorkloads(ctx, t, nil); err != nil {
+				return
+			}
+			if err := e.transitTaskFour(ctx, t, []task.State{task.StateActive}, to, nil); err != nil {
+				e.log.Error("task drive: mirror terminal", "task", t.ID, "err", err)
+			}
 			return
 		}
 	}
 	if t.State == task.StateDraining && len(runs) == 0 {
-		// 排空完成：残留载体收敛移除（Ensure 空集）→ drained。
-		e.ensureTaskWorkloads(ctx, t, nil)
+		// 排空完成：残留载体收敛移除（空集 Ensure）→ drained。
+		if err := e.ensureTaskWorkloads(ctx, t, nil); err != nil {
+			return
+		}
 		if err := e.transitTaskFour(ctx, t,
 			[]task.State{task.StateDraining}, task.StateDrained, nil); err != nil && !errors.Is(err, state.ErrConflict) {
 			e.log.Error("task drive: drained", "task", t.ID, "err", err)
@@ -360,46 +372,42 @@ func (e *Engine) driveTask(ctx context.Context, t *task.Task, runs []run.Run) {
 		w.StopGrace = e.opts.TaskStopGrace
 		ws = append(ws, w)
 	}
-	e.ensureTaskWorkloads(ctx, t, ws)
+	// 周期收敛路径：失败日志已记、签名已清，下拍重试（终态收口路径见上，
+	// 以返回值门控迁移）。
+	_ = e.ensureTaskWorkloads(ctx, t, ws)
 }
 
-// oneshotTerminal 判定 one-shot Task 的唯一 Run 是否已终态并镜像其成败
-// （completed/failed）。返回 true = 镜像已落（或此前已落）。
-func (e *Engine) oneshotTerminal(ctx context.Context, t *task.Task) bool {
+// oneshotTerminalState 返回 one-shot Task 唯一 Run 的终态迁移目标
+// （completed/failed；唯一 Run 未终态或行集不可读返回零值——迁移与检测
+// 分离，检测先于空集 Ensure，迁移在 Ensure 成功后，见 driveTask 收口次序）。
+func (e *Engine) oneshotTerminalState(ctx context.Context, t *task.Task) task.State {
 	all, err := e.runs.ListByTaskStates(ctx, e.db.Runner(), t.ID, []run.State{run.StateStopped, run.StateFailed})
 	if err != nil {
 		e.log.Error("task drive: list terminal runs", "task", t.ID, "err", err)
-		return false
+		return ""
 	}
 	if len(all) == 0 {
-		return false
+		return ""
 	}
-	latest := &all[0] // ListByTaskStates 新→旧：首行 = 唯一 Run
-	to := task.StateCompleted
-	if latest.State == run.StateFailed {
-		to = task.StateFailed
+	if all[0].State == run.StateFailed { // ListByTaskStates 新→旧：首行 = 唯一 Run
+		return task.StateFailed
 	}
-	if t.State == to {
-		return true // 镜像已落（幂等重入）
-	}
-	if err := e.transitTaskFour(ctx, t, []task.State{task.StateActive}, to, nil); err != nil {
-		e.log.Error("task drive: mirror terminal", "task", t.ID, "err", err)
-		return false
-	}
-	return true
+	return task.StateCompleted
 }
 
 // ensureTaskWorkloads 以签名比对 + 周期强制收口下发 Task 域期望集（签名
 // 未变且未到期 = 跳过，控制 per-tick swarm API 压力；失败清签名下拍重试；
-// 重启后缓存丢失 → 首拍全量重放自愈）。
-func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []capability.Workload) {
+// 重启后缓存丢失 → 首拍全量重放自愈）。返回值是收口成败信号：终态收口
+// 路径（driveTask 的镜像/排空迁移）据此决定是否落终态迁移（E29-2 收口
+// 次序：Ensure 成功才迁移），周期收敛路径忽略之（日志已记，下拍重试）。
+func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []capability.Workload) error {
 	sig := workloadSetSignature(ws)
 	e.taskEnsuredMu.Lock()
 	lastSig, ensured := e.taskEnsured[t.ID]
 	lastAt := e.taskLastEnsure[t.ID]
 	e.taskEnsuredMu.Unlock()
 	if ensured && lastSig == sig && e.clock.Now().Before(lastAt.Add(e.opts.TaskReconcileInterval)) {
-		return
+		return nil
 	}
 	// 下发段带界（boundedStep，Options.ManagedStepTimeout 的实证背景）：
 	// 材料解析与 runtime.Ensure 都跑在 Task 单写者环上，无界 hang 卡死整
@@ -410,20 +418,20 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	team, err := e.taskTeam(ctx, t)
 	if err != nil {
 		e.log.Error("task ensure: resolve team", "task", t.ID, "err", err)
-		return
+		return err
 	}
 	ns := capability.NamespaceRef{Team: team, Project: t.ProjectID, Task: t.ID}
 	materials, err := e.resolveTaskMaterials(ctx, t)
 	if err != nil {
 		e.log.Error("task ensure: materials", "task", t.ID, "err", err)
-		return
+		return err
 	}
 	if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(1), materials); err != nil {
 		e.log.Error("task ensure", "task", t.ID, "err", err)
 		e.taskEnsuredMu.Lock()
 		delete(e.taskEnsured, t.ID) // 失败清签名：下拍重试
 		e.taskEnsuredMu.Unlock()
-		return
+		return err
 	}
 	// 归属登记（观测路由：Run 观测 → Run 状态机）。
 	e.taskObsMu.Lock()
@@ -436,6 +444,7 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	e.taskEnsured[t.ID] = sig
 	e.taskLastEnsure[t.ID] = now
 	e.taskEnsuredMu.Unlock()
+	return nil
 }
 
 // drainTask 发起排空：task → draining（task.draining 事件携带起因）；

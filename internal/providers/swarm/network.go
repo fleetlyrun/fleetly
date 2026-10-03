@@ -81,14 +81,19 @@ func (p *Provider) inspectNetworkCarrier(ctx context.Context, name string) error
 	return err
 }
 
+// secretCarrierPrefix 是 Secret 载体命名前缀（孤儿清扫的判定锚之一，
+// E29；载体名 = fleetly-sec-<platformName>-<fp8>）。
+const secretCarrierPrefix = "fleetly-sec-" //nolint:gosec // G101 误报：载体名前缀非机密（指纹后缀非凭证值）
+
 // secretCarrierName 是 Secret 载体名（版本化：fleetly-sec-<name>-<fp8>；
-// swarm secret 不可变——值变更走新版本名，旧版本残留按孤儿策略只登记）。
+// swarm secret 不可变——值变更走新版本名，旧版本残留按孤儿策略清理，
+// E29 前只登记——zot 逐重启新盐时期积压 1300+ 孤儿）。
 func secretCarrierName(platformName, fingerprintHex string) string {
 	fp := fingerprintHex
 	if len(fp) > 8 {
 		fp = fp[:8]
 	}
-	return sanitizeNamePart("fleetly-sec-" + platformName + "-" + fp)
+	return sanitizeNamePart(secretCarrierPrefix + platformName + "-" + fp)
 }
 
 // secretCarrier 是 Secret 载体的引用面（id + 名双发——swarmkit

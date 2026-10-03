@@ -75,7 +75,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 	}
 	service := NewEngineService(engine)
 	enforcer := NewIdemEnforcer(db, app)
-	retentionJanitorService := NewRetentionJanitorService(enforcer, db, appConfig, app)
+	retentionJanitorService := NewRetentionJanitorService(enforcer, db, appConfig, engine, app)
 	policySet, err := NewPolicySet()
 	if err != nil {
 		cleanup6()

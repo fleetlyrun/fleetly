@@ -244,3 +244,57 @@ func TestRunListByTaskAndStates(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, driving, 3)
 }
+
+func TestTaskListRecentlyFinished(t *testing.T) {
+	db, clock := statetest.New(t)
+	ctx := context.Background()
+	tasks := task.New(clock)
+
+	// 旧收口（窗前）→ 推进时钟 → 窗内 completed/failed/drained + deleted +
+	// 未收口（finished_at 空）。
+	old := newTask("01JD0TASK00000000000000000", "old")
+	require.NoError(t, tasks.Create(ctx, db.Runner(), old))
+	require.NoError(t, tasks.Transit(ctx, db.Runner(), old.ID,
+		[]task.State{task.StateActive}, task.StateCompleted, nil))
+	clock.Advance(8 * 24 * time.Hour)
+
+	in := func(id, name string, to task.State) {
+		tk := newTask(id, name)
+		tk.Form = task.FormResident
+		require.NoError(t, tasks.Create(ctx, db.Runner(), tk))
+		require.NoError(t, tasks.Transit(ctx, db.Runner(), tk.ID,
+			[]task.State{task.StateActive}, task.StateDraining, nil))
+		require.NoError(t, tasks.Transit(ctx, db.Runner(), tk.ID,
+			[]task.State{task.StateDraining}, to, nil))
+	}
+	in("01JD0TASK00000000000000001", "done", task.StateCompleted)
+	clock.Advance(time.Second)
+	in("01JD0TASK00000000000000002", "boom", task.StateFailed)
+	clock.Advance(time.Second)
+	in("01JD0TASK00000000000000003", "idle", task.StateDrained)
+	clock.Advance(time.Second)
+	in("01JD0TASK00000000000000004", "gone", task.StateDeleted)
+	active := newTask("01JD0TASK00000000000000005", "still-driving")
+	require.NoError(t, tasks.Create(ctx, db.Runner(), active))
+
+	// 窗内三行，新→旧；窗外/deleted/未收口不在列。
+	got, err := tasks.ListRecentlyFinished(ctx, db.Runner(), "2026-01-08T00:00:00Z", 50)
+	require.NoError(t, err)
+	require.Len(t, got, 3)
+	assert.Equal(t, []string{
+		"01JD0TASK00000000000000003",
+		"01JD0TASK00000000000000002",
+		"01JD0TASK00000000000000001",
+	}, []string{got[0].ID, got[1].ID, got[2].ID}, "newest finish first (residue lives in recent terminations)")
+
+	// limit 钳制。
+	limited, err := tasks.ListRecentlyFinished(ctx, db.Runner(), "2026-01-08T00:00:00Z", 2)
+	require.NoError(t, err)
+	assert.Len(t, limited, 2)
+	assert.Equal(t, "01JD0TASK00000000000000003", limited[0].ID)
+
+	// 全窗为空。
+	none, err := tasks.ListRecentlyFinished(ctx, db.Runner(), "2030-01-01T00:00:00Z", 50)
+	require.NoError(t, err)
+	assert.Empty(t, none)
+}

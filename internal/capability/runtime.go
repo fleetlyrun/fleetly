@@ -71,6 +71,19 @@ type RuntimeInspector interface {
 	InspectWorkloads(ctx context.Context, ns NamespaceRef) ([]WorkloadObservation, error)
 }
 
+// RuntimeHygiene 是载体卫生子面（收尾批 E29：孤儿 Secret 载体清理；按
+// 需实现——未实现时卫生清扫静默跳过，与 Inspector 的降级文化一致）。
+// 与 WorkloadOrphaned 的"只登记永不自动删"分立：那是 Workload 载体观测
+// 面（归属不明的用户域状态须人裁）；这里是材料通道的派生副本——现役值
+// 真源在平台侧（ADR-0014），无引用副本删除零信息损失。
+type RuntimeHygiene interface {
+	// SweepOrphanSecrets 删除非现役的受管 Secret 载体（现役集由 Provider
+	// 依现存服务的引用关系自判定，平台无需下发期望集）。幂等：已不存在
+	// 不计错。maxDelete 是单次调用删除上限（调用方节拍限流防 API 风暴）。
+	// 返回实际删除数；列表级错误上抛，单体删除失败不中断（计入下一拍）。
+	SweepOrphanSecrets(ctx context.Context, maxDelete int) (int, error)
+}
+
 // WorkloadObservation 是一条载体观测（ADR-0022：drift spec 对照的数据
 // 面——字段只增；未观测字段零值 = 该 Provider 无此面）。
 type WorkloadObservation struct {

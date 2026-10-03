@@ -224,8 +224,18 @@ const (
 	uploadTmpAge    = 1 * time.Hour
 )
 
-// RetentionJanitorService 把保留窗清扫（幂等记录 + 事件 outbox + 上传产物）
-// 适配为 lynx 托管服务：复用 engine.NewLoop 唯一循环骨架（架构 §0"每段只许有一
+// 载体卫生清扫面（收尾批 E29）：孤儿 Secret 载体删除预算（每拍上限——
+// staging zot 风暴存量 1300+，100/拍×10 分钟节拍 ≈ 2 小时清空，稳态近零）
+// 与终态 Task 残留载体清扫的候选窗/每拍行数。窗取 7d 与事件/上传保留窗同
+// 文化；行序新→旧（近期收口才是残留实际所在），已收敛行是幂等 no-op。
+const (
+	orphanSecretDeleteBudget = 100
+	terminalCarrierWindow    = 7 * 24 * time.Hour
+	terminalCarrierLimit     = 20
+)
+
+// RetentionJanitorService 把保留窗清扫（幂等记录 + 事件 outbox + 上传产物
+// + 载体卫生）适配为 lynx 托管服务：复用 engine.NewLoop 唯一循环骨架（架构 §0"每段只许有一
 // 份"），不自建 ticker。具名类型：wire 对 lynx.Service 同型多 provider
 // 需可区分。
 type RetentionJanitorService struct {
@@ -233,6 +243,7 @@ type RetentionJanitorService struct {
 	db       *state.DB
 	uploads  *sourceupload.Repo
 	blobs    *upload.Store
+	engine   *engine.Engine
 	log      *slog.Logger
 }
 
@@ -255,6 +266,18 @@ func (s *RetentionJanitorService) Start(ctx context.Context) error {
 			s.log.Error("retention janitor: upload tmp sweep", "err", err)
 		} else if n > 0 {
 			s.log.Info("retention janitor: removed orphaned upload staging files", "count", n)
+		}
+		// 载体卫生（E29）：删除面在 engine/Runtime Provider，本服务只供节
+		// 拍与预算（幂等可重放：预算内下一拍续清）。
+		if n, err := s.engine.SweepOrphanSecretCarriers(ctx, orphanSecretDeleteBudget); err != nil {
+			s.log.Error("retention janitor: orphan secret sweep", "err", err)
+		} else if n > 0 {
+			s.log.Info("retention janitor: removed orphaned secret carriers", "count", n)
+		}
+		if n, err := s.engine.SweepTerminalTaskCarriers(ctx, terminalCarrierWindow, terminalCarrierLimit); err != nil {
+			s.log.Error("retention janitor: terminal task carrier sweep", "err", err)
+		} else if n > 0 {
+			s.log.Info("retention janitor: swept residual carriers of terminal tasks", "count", n)
 		}
 	})
 	return nil
@@ -290,12 +313,15 @@ func (s *RetentionJanitorService) sweepUploads(ctx context.Context) {
 	}
 }
 
-// NewRetentionJanitorService 构造 janitor 托管服务。
-func NewRetentionJanitorService(enforcer *idem.Enforcer, db *state.DB, cfg *config.AppConfig, app lynx.App) *RetentionJanitorService {
+// NewRetentionJanitorService 构造 janitor 托管服务（engine 注入 = 载体
+// 卫生面的消费口：engine 拥有 Task 域 ns 解析真源与 RuntimeHygiene 子面
+// 判定，本服务只供节拍与预算）。
+func NewRetentionJanitorService(enforcer *idem.Enforcer, db *state.DB, cfg *config.AppConfig, e *engine.Engine, app lynx.App) *RetentionJanitorService {
 	return &RetentionJanitorService{
 		enforcer: enforcer, db: db,
 		uploads: sourceupload.New(db.Clock()),
 		blobs:   upload.NewStore(cfg.DataRoot(), 0, 0),
+		engine:  e,
 		log:     app.Logger(),
 	}
 }

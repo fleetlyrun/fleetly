@@ -57,6 +57,7 @@ var (
 	_ capability.RuntimeLogs      = (*Provider)(nil)
 	_ capability.RuntimeAdmin     = (*Provider)(nil)
 	_ capability.RuntimeInspector = (*Provider)(nil)
+	_ capability.RuntimeHygiene   = (*Provider)(nil)
 )
 
 // New 构造 Provider：host 为 daemon 端点（空 = DOCKER_HOST / 默认套接字）。

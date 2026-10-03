@@ -121,6 +121,22 @@ func (r *Repo) ListDriving(ctx context.Context, run state.Runner) ([]Task, error
 		selectCols+" WHERE state IN ('active', 'draining') ORDER BY id")
 }
 
+// ListRecentlyFinished 返回收口时刻在窗内的终态 Task（收尾批 E29-2 残留
+// 载体清扫的候选集）。deleted 不在列——其载体拆除是 DeleteTask 自身的
+// Remove 步（先收口后落账），tombstone 无残留面。finished_at 是 RFC3339
+// UTC 串（state.FormatTime），字典序即时序。limit 钳制与 ListByProject
+// 同口径（<=0 或超上限回落/钳缺省）。新→旧序（finished_at DESC）：近期
+// 收口的行才是残留的实际所在（崩溃/失败窗口），旧行近乎必然已收敛。
+func (r *Repo) ListRecentlyFinished(ctx context.Context, run state.Runner, since string, limit int) ([]Task, error) {
+	if limit <= 0 || limit > maxListLimit {
+		limit = defaultListLimit
+	}
+	return r.query(ctx, run,
+		selectCols+" WHERE state IN ('completed', 'failed', 'drained')"+
+			" AND finished_at != '' AND finished_at >= ?"+
+			" ORDER BY finished_at DESC LIMIT ?", since, limit)
+}
+
 // ListByOwner 返回属主 Token 名下活跃行（吊销排空的拉式扫描面，P1-8）。
 func (r *Repo) ListByOwner(ctx context.Context, run state.Runner, tokenID string) ([]Task, error) {
 	return r.query(ctx, run,
