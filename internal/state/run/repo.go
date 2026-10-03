@@ -141,7 +141,9 @@ func (r *Repo) ListAfter(ctx context.Context, run state.Runner, afterID string, 
 	return r.query(ctx, run, q, args...)
 }
 
-// ListByTaskStates 返回 Task 名下指定状态的 Run（补足判定的活槽位计数）。
+// ListByTaskStates 返回 Task 名下指定状态的 Run（新→旧，与 ListByTask
+// 同一惯例；顺序是过量排空的方向锚——升序会把"停新保老"倒置成停老保新，
+// 2026-10-02 实证缺陷）。
 func (r *Repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID string, states []State) ([]Run, error) {
 	if len(states) == 0 {
 		return nil, nil
@@ -154,7 +156,7 @@ func (r *Repo) ListByTaskStates(ctx context.Context, run state.Runner, taskID st
 		args = append(args, string(s))
 	}
 	return r.query(ctx, run,
-		selectCols+" WHERE task_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY id", args...)
+		selectCols+" WHERE task_id = ? AND state IN ("+placeholders(len(states))+") ORDER BY id DESC", args...)
 }
 
 // CountActiveByTasks 返回各 Task 的活 Run 计数（pending/running；列表投影

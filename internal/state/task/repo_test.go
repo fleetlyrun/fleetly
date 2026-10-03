@@ -230,11 +230,14 @@ func TestRunListByTaskAndStates(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, next, 2)
 
-	// 活槽位计数（补足判定面）。
+	// 活槽位计数（补足判定面）+ 新→旧钉死（过量排空的方向锚：升序会把
+	// "停新保老"倒置成停老保新）。
 	live, err := runs.ListByTaskStates(ctx, db.Runner(), taskID,
 		[]run.State{run.StatePending, run.StateRunning})
 	require.NoError(t, err)
-	assert.Len(t, live, 2)
+	require.Len(t, live, 2)
+	assert.Equal(t, "01JD0RUN0000000000000000001", live[0].ID)
+	assert.Equal(t, "01JD0RUN0000000000000000000", live[1].ID)
 
 	// 驱动拾取：pending/running/stopping。
 	driving, err := runs.ListDriving(ctx, db.Runner())
