@@ -139,6 +139,19 @@
 
 **DST 闭锚**：automation-4bdcbf35 已挂（本地 10-04 00:45 = 16:45Z 一次性），闭锚结果另记小节。换装窗口 13:36-13:38 停机两拍内 DST 钟无漏拍争议（next_fire 重算正确，13:40 拍照常引燃）。
 
+### 修复批落地（同日 b4cfea0-upgrade-safety，四件全绿随批推送）
+
+staging 真机验收（14:53-14:56）：
+
+| 修复 | 真机证据 |
+|---|---|
+| 数据面滚动安全（3b3dd85：挂卷负载 stop-first + db/zot StopGrace 60s） | 换装首启滚动如期发生（db updated 14:55:05），**postgres 干净关停**（14:54:54 shut down，无 PANIC/无 invalid checkpoint）→ 1 秒后新任务 ready；spec 实证 `order=stop-first grace=60s`。本次仅数据面滚一次（app 负载指纹未变不受扰，与"最后一次滚动"预判一致）；torchwood server 全程 Running，tw.dev 200 |
+| default 网络随项目出生（31bcd86，F-C 根修） | `projects create birthprobe` → networks list 即见 default 行（同秒）；traefik 挂靠真源与 compose 引用面同源，半物化窗口关闭 |
+| fleetlyd 首参守卫（841ca20） | `fleetlyd version` → exit 2 + 明确报错，不再引导流浪 daemon（/root/data 零产物） |
+| drive 终态安静停驱（b4cfea0） | 换装窗口 journal 无 "unexpected driving state" 噪音 |
+
+升级纪律执行实录：换装前快照 `fleetly-vol-torchwood-pg`（7.6M）+ `fleetly-vol-fleetly-registry-zot`（126M）至 /root/upgrade-b4cfea0/ + 数据根 tar；zot 卷名实测为 `fleetly-vol-fleetly-registry-zot`（runbook F1.11 节的 `fleetly-registry-zot` 是服务名非卷名，已勘正使用）。存量零网项目（n0reg/n0probe）不受出生面影响——如需 default 网络仍走显式 `networks create`。
+
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 
 数据根 `keys/master.agekey` 是平台 Secret（含受管库凭证）与 hook webhook secret 的 age 信封 KEK（ADR-0014）。泄露应对与例行轮换走本序（工具化前为手工 SQL 重写，废弃）。文件名约定即协议：`master.agekey` = 现役（唯一加密钥）；`master-*.agekey` = 退役（仅解封，rewrap 与 daemon 一并装载）；其他文件名（如 `master.agekey.bak`）不进装载面。
