@@ -261,13 +261,19 @@ CI 升级零扰动锚咬出**全域滚动缺陷**（b6f59f3 根治）：受管 G
 
 **staging 真机锚（7232da4-f25final）**：daemon 重启后**五件受管域全部零滚**（traefik/zot/victorialogs/victoriametrics/cadvisor task id 不变）+ 零 drift 事件 + 服务全绿——与 F2.4 时代"每次重启各滚一次"对照，升级零扰动语义首次全量成立。
 
-## 2026-10-04 记录·五（F2.8 ObjectStore S3 Provider：离机备份通道，staging 换装待所有者）
+## 2026-10-04 记录·五（F2.8 ObjectStore S3 Provider 换装 + 真机全链验证）
 
-ADR-0042 落地（64f07f0..11b34c7，CI run 37217410590 六 job 全绿含 e2e S3 离机腿）。**staging 换装未做**——本批按"CI 绿 + 本地门禁即交付"交付，换装留给所有者（换装序走下方"平台升级操作序"）。
+ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全绿含 e2e S3 离机腿）。**换装**：7232da4-f25final → **8b7f51d-f28final（现役）**，按平台升级操作序：前置快照 3e4e1fb9 + 五卷 tar `/root/upgrade-8b7f51d/vols/`；**升级重启零滚锚过**（五受管域 task 龄 7h/5h 原样 + torchwood-pg 21 表锚不变 + 新 daemon 日志干净）；无新迁移。
 
-**新能力面（换装后生效）**：`platform_backup.s3` 五元组在场 → ObjectStore 装配切 s3 Provider（数据库备份对象直写远端桶，键 `backups/<projectID>/<databaseID>/<ts>-<id>`）+ restic 外置仓同批启用（同桶 `<prefix>/`——**prefix 勿取 `backups`**，对象键与仓前缀双命名空间）；缺席 → local 现状零差。staging 物化：`/etc/fleetlyd.env` 追加五件 `FLEETLY_PLATFORM_BACKUP_S3_*`（endpoint http:// 前缀=明文；桶须预建——Provider 探测不代建）后同文件重启。
+**F2.8 真机验证（全绿后已回退复原）**：临时 silo 容器（manager loopback 9100，复用仓内已在的 pgsty/silo 镜像）+ systemd drop-in `12-objectstore-s3.conf` 五元组 → 重启切 s3（capability faces 锚）→ **验证链七锚**：①daemon 日志 objectstore/s3；②新库（f28probe）备份成功且 `object_key/size` 与桶内 mcli stat 精确一致（1330B）；③verify ok（S3 Get 重算 digest）；④本地 backups/ 计数不变（真离机）；⑤恢复到新库数据断言 F28_STAGING_OK；⑥platform backup 对 restic s3 仓 roundtrip（517MiB 入桶，config/data/keys/snapshots 齐）；⑦内置告警 platform-offsite-backup → ok。回退：drop-in 删除重启（provider=local 复原）+ 验证项目/库/卷/silo 清扫；受管域风暴后稳定无新滚。
 
-**边界（ADR-0042）**：①**切换不迁移**——切 s3 前的台账行对象留本地 `backups/`（restic 备份集捎带离机），这些行对新端点 verify/restore 诚实报 object not found；②secret_access_key 沿用 config 明文（env 文件 0600，建议专用低权 access key；信封化挂账）；③RustFS opt-in 自宿挂账不做（自宿推荐 silo——MinIO 社区版 2026-02 EOL 的社区续命版，e2e 假端点已用 `pgsty/silo:RELEASE.2026-09-16T00-00-00Z` 验过全链）。消警：五元组在场 = platform-offsite-backup 内置规则归位（24h 窗口径不变）。
+**真机咬出四实录（产品挂账两件）**：
+1. **验证类存储负载必须 bind 卷**：silo 容器 /data 落 overlayfs（无 bind 卷）时 517MiB 平台备份引发 manager I/O 停滞（silo 自报 "unable to write+read for 32.6s"）→ docker API 超时 → 平台备份一次失败 + daemon reconcile 全面 deadline。改 host bind 卷后全绿。
+2. **观测失败被当 drift → 受管域假滚动（产品挂账）**：I/O 风暴期（docker API 停滞）受管 reconciler 的 InspectWorkloads/list 失败被当作 spec 失配处理——五受管域连滚三次；删除操作期 traefik 又假滚一次（zot 同拍滚动是项目材料语义、预期）。与 7232da4 的重启零滚语义冲突：**观测错误不得触发 spec 对照判 drift**（Ensure 前置观测失败的保守化），待专属批根修。
+3. **项目删除不级联库（既有行为实录）**：`projects delete` 后库行仍 running、服务/卷原样；须逐库 `databases delete`（载体拆 + 卷/凭证保留）再手工 `docker volume rm`。
+4. **legacy 项目网不 attachable 使 torchwood-pg 定时备份持续失败**（F2.2 已知挂账，错误文本自带 runbook 指引；s3 链路无辜——失败链经 s3objectstore Put 包装报出，链路语义正确）。
+
+**新能力面（物化指引）**：`platform_backup.s3` 五元组在场 → ObjectStore 装配切 s3 Provider（数据库备份对象直写远端桶，键 `backups/<projectID>/<databaseID>/<ts>-<id>`）+ restic 外置仓同批启用（同桶 `<prefix>/`——**prefix 勿取 `backups`**，双命名空间）；缺席 → local 现状零差。staging 物化：unit drop-in 五件 `Environment=FLEETLY_PLATFORM_BACKUP_S3_*`（endpoint `http://` 前缀=明文；**桶须预建**——Provider 探测不代建）。**边界（ADR-0042）**：切前台账行对象留本地 `backups/`（restic 备份集捎带离机），对新端点 verify/restore 诚实报 object not found；凭证 config 明文（0600，专用低权 key 建议；信封化挂账）；RustFS 自宿挂账（自宿推荐 silo——MinIO 社区版 2026-02 EOL 的社区续命版）。消警：五元组在场 = 内置规则归位（staging 现无真实离机端点，告警已重新武装——诚实姿态）。
 
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
