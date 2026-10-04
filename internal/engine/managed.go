@@ -41,6 +41,12 @@ func (e *Engine) managedStep(ctx context.Context) {
 type managedGenState struct {
 	gen atomic.Uint64
 	fp  atomic.Value // string：最近一次已分配 gen 的 spec 指纹
+	// adopted 标记首见指纹已沿用（seedFromRuntime 播种后的第一拍不 +1——
+	// 播种值本身来自载体现行 spec，是"已下发"事实而非新变更）。
+	adopted atomic.Bool
+	// seeded 标记本进程已做过载体观测播种（一次性；观测失败也置位——
+	// 冷启 gen=1 兜底，与旧行为一致）。
+	seeded atomic.Bool
 }
 
 // managedFingerprint 返回受管 Workload 集的稳定指纹（json.Marshal 对 map
@@ -54,14 +60,33 @@ func managedFingerprint(ws []capability.Workload) string {
 	return string(b)
 }
 
-// next 幂等分配：指纹同前且已有 gen → 复用；变化或首次 → +1。
+// next 幂等分配：指纹同前且已有 gen → 复用；首见 → 沿用现值（seedFromRuntime
+// 播种的载体现行 gen，或未播种时 0→1）；变化 → +1（重启续接语义，见
+// seedFromRuntime 注释）。
 func (m *managedGenState) next(fp string) uint64 {
-	if prev, ok := m.fp.Load().(string); ok && prev == fp && m.gen.Load() > 0 {
+	prev, hasFP := m.fp.Load().(string)
+	if hasFP && prev == fp && m.gen.Load() > 0 {
 		return m.gen.Load()
 	}
-	gen := m.gen.Add(1)
+	if !hasFP && m.adopted.CompareAndSwap(false, true) {
+		// 首见：指纹即载体现行形态（播种来源或进程冷启的第一拍）——沿用
+		// 现值，不制造假变更。
+		m.fp.Store(fp)
+		if m.gen.Load() == 0 {
+			return m.gen.Add(1)
+		}
+		return m.gen.Load()
+	}
 	m.fp.Store(fp)
-	return gen
+	return m.gen.Add(1)
+}
+
+// seedFromRuntime 用载体观测的现行 Generation 播种计数器（重启续接）。
+// 缺席（首装/观测失败）不播种——next 冷启取 1。
+func (m *managedGenState) seedFromRuntime(gen uint64) {
+	if gen > m.gen.Load() {
+		m.gen.Store(gen)
+	}
 }
 
 // managedProviderDecl 是一个受管 Provider 的 reconciler 投影：声明 +
@@ -215,7 +240,6 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 	// 额外 Kick 通道）。
 	ensured := make([][]capability.Workload, len(decls))
 	sigs := make([]string, len(decls))
-	var all []capability.Workload
 	for i, decl := range decls {
 		ws := decl.m.ManagedWorkloads()
 		if decl.attachNetwork {
@@ -227,17 +251,32 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 		applyManagedVolumePinning(ws, pinNode)
 		ensured[i] = ws
-		all = append(all, ws...)
 		materials := e.managedMaterials(decl, projectIDs)
 		sigs[i] = managedFingerprint(ws) + "\x00" + materialsFingerprint(materials)
 	}
-	// 指纹覆盖全部受管域的完整下发集（Generation=已下发 Spec 的单调编号，
-	// CONTEXT.md——网引用集变化也推进 gen，一次性收敛不逐 tick 滚动）。
-	gen := e.managed.gen.next(managedFingerprint(all))
+	// per-受管域 Generation（F2.5 修复）：每域独立计数，从载体观测播种
+	// （重启续接——gen 标签持久在 spec 而计数器进程内重置，会把全部受管
+	// 域滚一遍；traefik stop-first = 路由中断，CI 升级零扰动锚实证）。
+	// 指纹 = 本域 Workload 集 + 材料（sig 同源）——任一输入变化才推进本
+	// 域 gen；新增受管 Provider 不再放大成全域滚动。
 	now := e.clock.Now()
 	for i, decl := range decls {
 		ws := ensured[i]
 		ns := decl.m.ManagedNamespace()
+		gst := e.gensFor(ns.String())
+		if !gst.seeded.Load() {
+			// 载体现行 Generation 播种（重启续接）：Inspector 是可选子面
+			// （FacesOf 协商），缺席/失败不播种——冷启 gen=1 兜底（旧行为）。
+			if insp := capability.FacesOf(e.runtime).Inspector; insp != nil {
+				if obs, oerr := insp.InspectWorkloads(ctx, ns); oerr == nil {
+					for _, o := range obs {
+						gst.seedFromRuntime(uint64(o.Generation))
+					}
+				}
+			}
+			gst.seeded.Store(true)
+		}
+		gen := gst.next(sigs[i])
 		// 签名短路（C16）：上次成功 Ensure 的完整签名未变且未到强制重放
 		// 节拍 → 跳过本拍 Ensure（材料解析+下发全套）。环外变更（人工改
 		// 载体、载体漂移）由强制重放节拍兜底（Options.ReconcileReplayInterval）。
@@ -266,6 +305,21 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 		e.expect.mu.Unlock()
 	}
+}
+
+// gensFor 返回（惰性建）该受管域的 Generation 计数器。
+func (e *Engine) gensFor(nsKey string) *managedGenState {
+	e.ensureMu.Lock()
+	defer e.ensureMu.Unlock()
+	if e.managed.gens == nil {
+		e.managed.gens = map[string]*managedGenState{}
+	}
+	st, ok := e.managed.gens[nsKey]
+	if !ok {
+		st = &managedGenState{}
+		e.managed.gens[nsKey] = st
+	}
+	return st
 }
 
 // managedMaterials 解析一个受管 Provider 的本拍材料：per-Project 面在场

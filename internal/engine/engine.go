@@ -269,7 +269,11 @@ type expectDomain struct {
 // managedDomain 是受管域状态（Generation 实例态（C5：多 Engine 实例互不
 // 污染）+ Ensure 备忘）。
 type managedDomain struct {
-	gen    managedGenState
+	// gens 是 per-受管域 Generation 计数（F2.5 修复：全局单计数把任一
+	// Provider 指纹变化放大成全部受管域滚动——新增受管 Provider 或 zot
+	// 材料随 Project 集变化都会把 Edge 滚一遍（traefik stop-first = 路由
+	// 中断，升级零扰动锚实证）。键 = ManagedNamespace().String()。
+	gens   map[string]*managedGenState
 	ensure map[string]ensureMemo // namespace → 上次成功 Ensure（managedFingerprint 全量保守口径）
 }
 
@@ -544,6 +548,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.task.runObs = make(map[string]capability.WorkloadEvent)
 	e.task.ensure = make(map[string]ensureMemo)
 	e.managed.ensure = make(map[string]ensureMemo)
+	e.managed.gens = make(map[string]*managedGenState)
 	e.database.ensure = make(map[string]ensureMemo)
 	e.delivery.release = make(map[string]ensureMemo)
 	e.edgeMemo.pub = make(map[string]ensureMemo)
