@@ -479,7 +479,16 @@ while [ "$i" -lt 45 ]; do
   if [ "${n:-0}" -gt 0 ]; then POINTS=1; break; fi
   i=$((i + 1)); sleep 2
 done
-[ "$POINTS" = "1" ] || { echo "metrics query returned no points for the cadvisor series" >&2; exit 1; }
+if [ "$POINTS" != "1" ]; then
+  echo "metrics query returned no points for the cadvisor series" >&2
+  echo "--- raw query output ---" >&2
+  cli --json metrics query 'max(container_cpu_usage_seconds_total{job="fleetly-cadvisor"})' >&2 2>&1 || true
+  echo "--- fleetlyd journal tail (metrics) ---" >&2
+  docker exec "$DIND_CID" sh -c 'grep -o "\"msg\":\"[^\"]*metrics[^\"]*\".*" /var/log/fleetlyd.log | tail -5' >&2 2>&1 || true
+  echo "--- cadvisor endpoint direct ---" >&2
+  docker exec "$DIND_CID" sh -c 'NODE_ADDR=$(docker node inspect self --format "{{.Status.Addr}}" 2>/dev/null); echo node-addr=$NODE_ADDR; wget -q -O - http://127.0.0.1:8080/metrics 2>/dev/null | grep -c container_cpu_usage_seconds_total' >&2 2>&1 || true
+  exit 1
+fi
 log "cadvisor series queryable through the managed store"
 
 # 阈值规则全链：memory > 1B（必越限）→ 采集遍内评估 → alerts list 见
