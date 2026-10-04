@@ -140,17 +140,17 @@ BackupCommand` 空槽（ADR-0029 决策 2 预留）与 `providers/localobjectsto
 
 ## 验收锚
 
-- [ ] 五引擎槽填实（argv + 材料面 + redis 预置卷特例）+ 注入家族四件
-- [ ] RuntimeUtility 子面：daemon 工具容器执行（网络附着/材料 bind/平台卷/
+- [x] 五引擎槽填实（argv + 材料面 + redis 预置卷特例）+ 注入家族四件
+- [x] RuntimeUtility 子面：daemon 工具容器执行（网络附着/材料 bind/平台卷/
       stdio/超时/容器清扫），FacesOf/Offered 扩面
-- [ ] 项目网络 attachable + 存量网精确错误路径
-- [ ] backups 表 + 调度环：24h/7d 滚动（ModTime 排序）+ 手动 Trigger +
+- [x] 项目网络 attachable + 存量网精确错误路径
+- [x] backups 表 + 调度环：24h/7d 滚动（ModTime 排序）+ 手动 Trigger +
       verify digest 重算 + 行/对象同删
-- [ ] 恢复：restore_from_backup 环内恢复（三引擎流式 + redis 预置卷）+
+- [x] 恢复：restore_from_backup 环内恢复（三引擎流式 + redis 预置卷）+
       database.restored 事件 + 失败清挂起落 error
-- [ ] e2e dind-backup.sh 四引擎演练全绿（ADR-0020 必过锚）
-- [ ] Platform Backup：restic 0.19.1 钉版守卫 + 本地仓 roundtrip +
+- [x] e2e dind-backup.sh 四引擎演练全绿（ADR-0020 必过锚）
+- [x] Platform Backup：restic 0.19.1 钉版守卫 + 本地仓 roundtrip +
       forget 保留 + 密钥排除 + S3 仓可配 + 缺席降级
-- [ ] API/守卫/CLI 全喂食：idem/freeze/grpc/gateway/authz + errcode/
+- [x] API/守卫/CLI 全喂食：idem/freeze/grpc/gateway/authz + errcode/
       eventcode 同批 + CLI 双形态 golden + groups 清单
-- [ ] shellguard 挂账行实录更新 + 提案 P2 勾账（偏差注）
+- [x] shellguard 挂账行实录更新 + 提案 P2 勾账（偏差注）

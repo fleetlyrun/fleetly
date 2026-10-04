@@ -130,3 +130,7 @@ run = "sh e2e/dind-two-node.sh"
 [tasks."e2e:upgrade"]
 description = "e2e dind 升级矩阵（P1：HEAD~1→HEAD 零扰动断言，ADR-0015 验收 CI 化）"
 run = "sh e2e/dind-upgrade.sh"
+
+[tasks."e2e:backup"]
+description = "e2e dind 备份演练（F2.2：四引擎恢复演练 + Platform Backup 本地仓 roundtrip，ADR-0039/0020 验收必过项）"
+run = "sh e2e/dind-backup.sh"

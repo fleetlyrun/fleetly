@@ -161,3 +161,29 @@ jobs:
 
       - name: upgrade matrix (route zero-fail + workload zero-restart + db zero-roll)
         run: mise run e2e:upgrade
+
+  # F2.2（ADR-0039/0020）：恢复演练是 Backup 功能的验收必过项——四引擎
+  # 创建→种子→备份→verify→恢复到新库→数据断言（pg/mysql/mongo 流式 +
+  # redis 预置卷）+ Platform Backup 本地仓 roundtrip。
+  e2e-backup:
+    name: E2E (dind backup drill, four engines + platform)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
+          restore-keys: go-${{ runner.os }}-
+
+      - name: Pre-pull dind base
+        run: docker pull docker:29-dind
+
+      - name: backup drill (backup -> verify -> restore to new database -> data assertions)
+        run: mise run e2e:backup

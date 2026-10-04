@@ -27,8 +27,13 @@ import (
 // 扫变量子进程面，二者互补。豁免条目登记在 shellguardWhitelist，每条带
 // 理由注释，条目不再命中即红（白名单双向保鲜惯例）。
 //
-// 挂账：dbtemplate BackupCommand（N2，F2.2）落地时，生成的 SQL 走解析器
-// 断言（单语句校验），不走 shell——届时同批扩展解析器级注入用例。
+// 挂账实录（F2.2，ADR-0039 决策 11）：dbtemplate 备份/恢复渲染落地形态
+// = 纯 argv 数组 + 结构化材料文件（INI/JSON/pgpass），零 shell、零平台
+// 生成 SQL（mysqldump 产物是数据不是平台生成 SQL；库/用户初始化走镜像
+// env 面）——原文预期的"生成的 SQL"面不存在。P2 的解析器级注入断言以
+// 渲染面注入家族落地（dbtemplate TestInjectionBackupRenders：敌意密码
+// 三面全拒 + 敌意 host argv 形状不变性 + mysql INI 解析器恰一节断言 +
+// mongo config JSON 往返 + redis conf 行级钉）。
 var shellguardWhitelist = map[string]string{
 	// 当前零豁免：args 数组形态是全仓唯一实践。
 }

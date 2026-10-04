@@ -79,7 +79,7 @@
 
 **验收锚**：
 - [x] 注入守卫落地（2026-10-03 实录，形态按 fleetly 实际修正）：① **shellguard**（`internal/guards/shellguard_test.go`，AST 静态红线：exec.Command* 禁 shell 解释器与裸 `-c`——把"args 数组、永不 shell 拼串"的架构承诺钉成 CI 红线，零豁免全绿）；② **validateImageRef**（`internal/spec`：Source 与进程 image 双面接入，逃逸字符族=空白/控制字符/反引号，语法面诚实归 daemon；payload 家族单测 `TestValidateImageRefInjection`）；③ 核对确认既有防线：git clone（`--` 终结选项解析 + 禁 ext/file 传输，安全批遗产）与 traefik 规则内插（`ValidateRouteHost/Path` 双面白名单）已在位——原案"四类真执行用例"中的 traefik/git 两面无需重造
-- [ ] dbtemplate 的 BackupCommand 落地（N2，F2.2）时同批补 SQL 解析器级断言（单语句校验，不走 shell）——shellguard 头注释已挂账
+- [x] dbtemplate 的 BackupCommand 落地（N2，F2.2）时同批补 SQL 解析器级断言（单语句校验，不走 shell）——shellguard 头注释已挂账〔2026-10-04 实录：落地形态为纯 argv 渲染对 + 结构化材料文件（ADR-0039 决策 5/11），零 shell、零平台生成 SQL——原文预期的 SQL 生成面不存在（mysqldump 产物是数据；库/用户初始化走镜像 env 面）。解析器级断言以渲染面注入家族落地：`internal/engine/dbtemplate/dbtemplate_test.go` TestInjectionBackupRenders（敌意密码三面全拒 / 敌意 host argv 形状不变性 / mysql defaults INI 解析器恰一节 [client] 断言 = "单语句校验"的结构化文本等价物 / mongo config JSON 往返 / redis conf 行级钉）；shellguard 头注释挂账行同步实录化〕
 - [ ] meta 红测试（守卫自验证）顺延：shellguard 当前零豁免条目，首条豁免出现时再立（届时有真实红样例）
 
 **开放问题**：无实质分歧。
