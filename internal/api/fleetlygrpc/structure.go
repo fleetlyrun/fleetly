@@ -141,6 +141,10 @@ func (svc *ProjectsService) CreateProject(ctx context.Context, req *structurev1.
 	if err != nil {
 		return nil, mapStateError(err, "project")
 	}
+	// per-Project registry 材料即时滚动（ADR-0036 N2 兑现节 2）：新 Project
+	// 的 zot 用户不等下一受管节拍——首构建可与节拍竞速（staging 实录推送
+	// 401 一次失败）。
+	svc.s.Engine.KickManagedLoop()
 	return &structurev1.CreateProjectResponse{Project: projectMsg(p)}, nil
 }
 
@@ -212,6 +216,8 @@ func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.
 	if err != nil {
 		return nil, mapStateError(err, "project")
 	}
+	// 同 CreateProject：htpasswd 摘行（真撤销面）随活跃集即时再生。
+	svc.s.Engine.KickManagedLoop()
 	return &structurev1.DeleteProjectResponse{}, nil
 }
 

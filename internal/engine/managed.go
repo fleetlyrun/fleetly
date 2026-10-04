@@ -453,3 +453,11 @@ func (e *Engine) PublishRoutesNow() {
 	e.edgeMemo.pubNow.Store(true)
 	e.managedLoop.Kick()
 }
+
+// KickManagedLoop 触发一次即时受管收敛（API 写路径在 Project 创建/删除后
+// Kick；测试直调）。zot per-Project 材料随活跃集再生成（ADR-0036 N2 兑现
+// 节 2）——Kick 把项目变更的滚动窗从"下一节拍"缩到即时（staging 实录：
+// 新项目首构建可先于节拍到达，推送 401 一次失败）。
+func (e *Engine) KickManagedLoop() {
+	e.managedLoop.Kick()
+}

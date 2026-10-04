@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 
 	bkclient "github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/session"
@@ -39,6 +40,10 @@ type daemonClients struct {
 	// 生产实现（生产构造不注入，测试直接注入假面）。
 	imagePush    func(ctx context.Context, target, registryAuth string) (client.ImagePushResponse, error)
 	imageInspect func(ctx context.Context, target string) (client.ImageInspectResult, error)
+
+	// pushRetryBackoff 是推送 401 退避步长（测试注入缩窗；零值 = 生产常量
+	// pushUnauthorizedBackoff，同 seam 零值回退文化）。
+	pushRetryBackoff time.Duration
 }
 
 // pushImage 推送镜像（seam 零值 = 生产实现）。
@@ -213,9 +218,26 @@ func (d *daemonClients) solveAndPush(ctx context.Context, req capability.BuildRe
 	return d.pushBuiltImage(ctx, req, req.Target, w)
 }
 
-// pushBuiltImage 推送本机镜像到 Target 仓库并回填 manifest digest（推送流
+// pushUnauthorizedRetries/Backoff 是推送 401 的有界退避面（ADR-0036 N2
+// 兑现节 2）：per-Project 凭证随活跃 Project 集再生的受管滚动可能晚于
+// 新项目首构建的推送到达（staging 实录：项目创建后立即部署，推送 HEAD
+// 401 一次失败）——Kick 已把节拍窗缩到即时，这里吸收残余的滚动时长
+// （任务替换数十秒量级）。判定只认 "unauthorized" 文本（不匹配 "401"——
+// digest hex 里会出现该子串，误判会把真故障拖成静默长退避）。
+const (
+	pushUnauthorizedRetries = 9
+	pushUnauthorizedBackoff = 10 * time.Second
+)
+
+// isUnauthorized 报告错误文本是否 401 形态（docker 推送流的 "unexpected
+// status ... 401 Unauthorized"）。
+func isUnauthorized(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "unauthorized")
+} // pushBuiltImage 推送本机镜像到 Target 仓库并回填 manifest digest（推送流
 // aux 优先；RepoDigests 兜底——旧 daemon 可能不回 aux）。推送流文本行进
-// 构建日志（与 buildkit 步骤日志同一条实时流）。
+// 构建日志（与 buildkit 步骤日志同一条实时流）。401 形态走有界退避重试
+// （见 pushUnauthorizedRetries；推送幂等——layer 存在性即 HEAD 探测，
+// 重试天然断点续传）。
 //
 // 带界裁决（B15-3）：ImagePush 不在本层另设空闲上限——ctx 由调用链上游
 // 统一带界：executeBuild 以 BuildTimeout 硬超时包裹整条构建链
@@ -234,6 +256,28 @@ func (d *daemonClients) pushBuiltImage(ctx context.Context, req capability.Build
 			return "", fmt.Errorf("builders: encode push credentials: %w", err)
 		}
 	}
+	for attempt := 0; ; attempt++ {
+		digest, err := d.pushOnce(ctx, req, target, auth, w)
+		if err == nil || attempt >= pushUnauthorizedRetries || !isUnauthorized(err) {
+			return digest, err
+		}
+		backoff := d.pushRetryBackoff
+		if backoff <= 0 {
+			backoff = pushUnauthorizedBackoff
+		}
+		_ = w.WriteLog(ctx, capability.LogFrame{WorkloadID: req.BuildID, Container: "push",
+			Line: []byte(fmt.Sprintf("push rejected as unauthorized (attempt %d); waiting %s for the managed registry to roll the project credential\n",
+				attempt+1, backoff))})
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-time.After(backoff):
+		}
+	}
+}
+
+// pushOnce 执行一次完整推送并解析 digest。
+func (d *daemonClients) pushOnce(ctx context.Context, req capability.BuildRequest, target, auth string, w capability.LogWriter) (string, error) {
 	push, err := d.pushImage(ctx, target, auth)
 	if err != nil {
 		return "", fmt.Errorf("builders: push %s: %w", target, err)
