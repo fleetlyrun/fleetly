@@ -86,7 +86,7 @@ func TestCrashRecoveryBuildInFlightRestart(t *testing.T) {
 	assert.Equal(t, "sha256:built", builds[0].Digest)
 	calls := fb.snapshot()
 	require.Len(t, calls, 2, "one cancelled attempt plus one replayed run")
-	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tAppID, revSeq), calls[1].Target)
+	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tProjectID, tAppID, revSeq), calls[1].Target)
 	assert.Equal(t, contextDir, calls[1].ContextDir)
 }
 

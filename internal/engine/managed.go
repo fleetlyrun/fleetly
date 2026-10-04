@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync/atomic"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -63,11 +64,14 @@ func (m *managedGenState) next(fp string) uint64 {
 
 // managedProviderDecl 是一个受管 Provider 的 reconciler 投影：声明 +
 // 材料源子面（FacesOf 探测产物）+ 是否挂活跃项目网（Edge 要跨网触达
-// 后端；zot 只需被发布端口可达，附录 B.1）。
+// 后端；zot 只需被发布端口可达，附录 B.1）+ per-Project 材料面（zot
+// htpasswd/config 随活跃 Project 集再生成，ADR-0036 N2 兑现节 2；nil =
+// 无集依赖，走 MaterialsSource）。
 type managedProviderDecl struct {
-	m             capability.Managed
-	materials     capability.MaterialsSource
-	attachNetwork bool
+	m                capability.Managed
+	materials        capability.MaterialsSource
+	projectMaterials capability.ProjectScopedMaterials
+	attachNetwork    bool
 }
 
 // anyManagedVolume 报告下发集内是否有挂卷的受管 Workload（钉住判定）。
@@ -114,8 +118,14 @@ func (e *Engine) managedProviders() []managedProviderDecl {
 		}
 	}
 	if e.registry != nil {
-		if faces := capability.FacesOf(e.registry); faces.Managed != nil {
-			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
+		faces := capability.FacesOf(e.registry)
+		if faces.Managed != nil {
+			out = append(out, managedProviderDecl{
+				m:                faces.Managed,
+				materials:        faces.MaterialsSource,
+				projectMaterials: faces.ProjectScopedMaterials,
+				attachNetwork:    false,
+			})
 		} else {
 			e.log.Warn("registry provider is not managed-selfhosted; skipping reconciler")
 		}
@@ -129,10 +139,33 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		return
 	}
 	refs := e.activeProjectNetworks(ctx)
+	// 活跃 Project 集（zot per-Project 材料的输入，ADR-0036 N2 兑现节 2）。
+	// 读失败 = 本拍受管面整组不下发（清签名下拍重试，pinNode 失败同款
+	// 取向）：空集喂给材料面会把全部项目用户滚出 htpasswd（在场 workload
+	// 拉取 401），比晚一拍收敛更糟。
+	needProjects := false
+	for _, decl := range decls {
+		if decl.projectMaterials != nil {
+			needProjects = true
+			break
+		}
+	}
+	var projectIDs []string
+	if needProjects {
+		ids, perr := e.activeProjectIDs(ctx)
+		if perr != nil {
+			e.log.Error("managed reconciler: list projects for registry materials", "err", perr)
+			for _, decl := range decls {
+				e.ensureForget(e.managed.ensure, decl.m.ManagedNamespace().String())
+			}
+			return
+		}
+		projectIDs = ids
+	}
 	// 受管域 Placement 钉住（F2.3 收口 F1.15 挂账）：带卷的受管 Workload
 	// 钉控制面节点——swarm 无卷感知调度，spec 变更滚动替换可把 task 漂到
-	// 无卷节点 preparing 打转（受管卷都是控制面节点的本地卷）。锚解析失
-	// 败 = 本拍受管面整组不下发（清签名下拍重试）：漏钉住 = 无钉住调度，
+	// 无卷节点 preparing 打转（受管卷都是控制面节点的本地卷）。锚解析
+	// 失败 = 本拍受管面整组不下发（清签名下拍重试）：漏钉住 = 无钉住调度，
 	// 比部署失败更糟（applyVolumePinning 的 Q-8 同款取舍）。
 	pinNode := ""
 	needPin := false
@@ -172,10 +205,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		applyManagedVolumePinning(ws, pinNode)
 		ensured[i] = ws
 		all = append(all, ws...)
-		materials := capability.Materials{}
-		if decl.materials != nil {
-			materials = decl.materials.ManagedMaterials()
-		}
+		materials := e.managedMaterials(decl, projectIDs)
 		sigs[i] = managedFingerprint(ws) + "\x00" + materialsFingerprint(materials)
 	}
 	// 指纹覆盖全部受管域的完整下发集（Generation=已下发 Spec 的单调编号，
@@ -191,10 +221,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		if _, fresh := e.ensureFresh(e.managed.ensure, ns.String(), sigs[i], now); fresh {
 			continue
 		}
-		materials := capability.Materials{}
-		if decl.materials != nil {
-			materials = decl.materials.ManagedMaterials()
-		}
+		materials := e.managedMaterials(decl, projectIDs)
 		if err := e.runtime.Ensure(ctx, ns, ws, capability.Generation(gen), materials); err != nil {
 			e.log.Error("managed reconciler: ensure", "namespace", ns.String(), "err", err)
 			e.ensureForget(e.managed.ensure, ns.String()) // 失败清签名：下拍重试
@@ -216,6 +243,20 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		}
 		e.expect.mu.Unlock()
 	}
+}
+
+// managedMaterials 解析一个受管 Provider 的本拍材料：per-Project 面在场
+// 走活跃集再生成（zot htpasswd/config，ADR-0036 N2 兑现节 2），否则走
+// MaterialsSource 子面（现状）。projectIDs 只在 projectMaterials 非 nil
+// 时被消费（调用方保证读失败时已整组返回）。
+func (e *Engine) managedMaterials(decl managedProviderDecl, projectIDs []string) capability.Materials {
+	if decl.projectMaterials != nil {
+		return decl.projectMaterials.ManagedMaterialsFor(projectIDs)
+	}
+	if decl.materials != nil {
+		return decl.materials.ManagedMaterials()
+	}
+	return capability.Materials{}
 }
 
 // materialsFingerprint 返回材料的稳定指纹（json.Marshal 对 map 键排序；
@@ -349,6 +390,22 @@ func (e *Engine) appWorkloadExpectations(appID string) []capability.Workload {
 		}
 	}
 	return out
+}
+
+// activeProjectIDs 返回全部活跃 Project ID（排序稳定——材料铸造字节稳定
+// 的输入序契约）。读失败上抛：调用方（reconcileManaged）按"整组不下发"
+// 收口，绝不以空集代偿（空集 = 把全部项目用户滚出 htpasswd）。
+func (e *Engine) activeProjectIDs(ctx context.Context) ([]string, error) {
+	projects, err := e.projects.List(ctx, e.db.Runner())
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(projects))
+	for i := range projects {
+		ids = append(ids, projects[i].ID)
+	}
+	sort.Strings(ids)
+	return ids, nil
 }
 
 // activeProjectNetworks 返回全部活跃 Project 网络的引用列表（受管 Edge

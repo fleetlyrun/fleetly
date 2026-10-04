@@ -22,17 +22,27 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/upload"
 )
 
-// LocalImageRef 组装构建推送目标（tag 形态：受管仓库地址 + app + Revision
-// 序号可读 tag；仅作推送目标与本机缓存命名——Revision 冻结的是 digest，
-// ADR-0019 附录 B.4）。本文件是本地镜像命名的唯一真源（勿散落副本）。
-func LocalImageRef(registryAddr, appID string, revSeq int64) string {
-	return fmt.Sprintf("%s/%s:r%d", registryAddr, strings.ToLower(appID), revSeq)
+// buildRepo 组装构建产物所在的仓名（不含 registry 地址；<projectID>/<appID>
+// 双段小写——docker 引用要求仓库名小写，ULID 大写形态无损小写化）。本文件
+// 是本地镜像命名的唯一真源（勿散落副本）。前纲布局是 per-Project 凭证域
+// 隔离的地基（ADR-0036 N2 兑现节 2）；存量扁平行的回退见 buildDigests。
+func buildRepo(projectID, appID string) string {
+	return strings.ToLower(projectID) + "/" + strings.ToLower(appID)
+}
+
+// LocalImageRef 组装构建推送目标（tag 形态：受管仓库地址 + Project 前纲 +
+// app + Revision 序号可读 tag；仅作推送目标与本机缓存命名——Revision 冻结
+// 的是 digest，ADR-0019 附录 B.4）。
+func LocalImageRef(registryAddr, projectID, appID string, revSeq int64) string {
+	return fmt.Sprintf("%s/%s:r%d", registryAddr, buildRepo(projectID, appID), revSeq)
 }
 
 // LocalImageDigestRef 组装 from_build 的下发引用（digest 形态：绕开 tag
 // 语义的全部 docker29 真机坑——digest-pull 不落 tag、save/load 丢 tag）。
-func LocalImageDigestRef(registryAddr, appID, digest string) string {
-	return fmt.Sprintf("%s/%s@%s", registryAddr, strings.ToLower(appID), digest)
+// repo 是产物所在仓名：新构建 = buildRepo 前纲；存量行（repo 空）= 扁平
+// 回退 lower(appID)——由调用方 buildDigests 判别。
+func LocalImageDigestRef(registryAddr, repo, digest string) string {
+	return fmt.Sprintf("%s/%s@%s", registryAddr, repo, digest)
 }
 
 // driveBuilding 是 Deployment 的 building 态驱动：Revision 级构建一次、
@@ -80,8 +90,13 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 		}
 	}
 
-	// 无 Build 行：准备输入并受理（事件 + 审计同事务）。
-	input, err := e.prepareBuildInput(ctx, d, spec, revSeq)
+	// 无 Build 行：准备输入并受理（事件 + 审计同事务）。projectID 解析自
+	// App 行（推送目标前纲与 Build 行 repo 同源一次定型）。
+	a, err := e.apps.Get(ctx, e.db.Runner(), d.AppID)
+	if err != nil {
+		return e.failDeployment(ctx, d, "resolve app for build: "+err.Error())
+	}
+	input, err := e.prepareBuildInput(ctx, d, spec, revSeq, a.ProjectID)
 	if err != nil {
 		return e.failDeployment(ctx, d, "prepare build input: "+err.Error())
 	}
@@ -94,6 +109,7 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 	err = e.db.Tx(ctx, func(tx *sql.Tx) error {
 		queued := &build.Build{
 			ID: buildID, AppID: d.AppID, RevisionID: d.ToRevision, State: build.StateQueued,
+			Repo: buildRepo(a.ProjectID, d.AppID),
 		}
 		return e.commitWrite(ctx, tx, writeFact{
 			write: func(ctx context.Context, tx *sql.Tx) error { return e.builds.Create(ctx, tx, queued) },
@@ -116,6 +132,8 @@ func (e *Engine) driveBuilding(ctx context.Context, d *deployment.Deployment) (*
 // （prepareBuildInput 本身幂等：检出目录已存在即跳过 clone），重建失败
 // 走 failDeployment（调用方收口）。building 行且无登记 = 本进程没有执行
 // goroutine（崩溃遗留且未经 Start 重置）→ 回 queued 交构建循环重拾。
+// 存量在途行（repo 空，前纲切换升级窗口）按新公式重放输入——产物将落
+// 前纲仓，repo 补章与之一致（StampRepo 幂等一次性）。
 func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, b *build.Build) error {
 	e.build.inputsMu.Lock()
 	_, ok := e.build.inputs[b.ID]
@@ -123,7 +141,11 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 	if ok {
 		return nil // 本进程已登记（正常路径）
 	}
-	input, err := e.prepareBuildInput(ctx, d, spec, revSeq)
+	a, err := e.apps.Get(ctx, e.db.Runner(), d.AppID)
+	if err != nil {
+		return fmt.Errorf("resolve app for build input rebuild: %w", err)
+	}
+	input, err := e.prepareBuildInput(ctx, d, spec, revSeq, a.ProjectID)
 	if err != nil {
 		return err
 	}
@@ -131,6 +153,11 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 	e.build.inputsMu.Lock()
 	e.build.inputs[b.ID] = input
 	e.build.inputsMu.Unlock()
+	if b.Repo == "" {
+		if err := e.builds.StampRepo(ctx, e.db.Runner(), b.ID, buildRepo(a.ProjectID, d.AppID)); err != nil {
+			return fmt.Errorf("stamp legacy build repo: %w", err)
+		}
+	}
 	if b.State == build.StateBuilding {
 		// CAS 冲突 = 并发写者已迁移该行（如竞态回 queued）：容忍，下拍复查。
 		if _, err := e.transitBuild(ctx, b,
@@ -144,8 +171,9 @@ func (e *Engine) ensureBuildInput(ctx context.Context, d *deployment.Deployment,
 
 // prepareBuildInput 组装构建输入：git 源浅检出 / 上传产物解包到数据根
 // （幂等：已存在跳过——Revision 冻结体 + 内容寻址 blob = 纯函数）；Target
-// 是受管仓库推送目标（tag 形态）+ 平台推送凭证（附录 B.3 分发面②）。
-func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64) (capability.BuildRequest, error) {
+// 是受管仓库推送目标（Project 前纲 tag 形态）+ 推送凭证（per-Project 铸造
+// 分发，ADR-0036 N2 兑现节 2；面缺席回退平台凭证——升级零扰动序）。
+func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment, spec *specv1.AppSpec, revSeq int64, projectID string) (capability.BuildRequest, error) {
 	endpoint, err := e.registryEndpoint(ctx)
 	if err != nil {
 		return capability.BuildRequest{}, err
@@ -173,7 +201,12 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 		return capability.BuildRequest{}, fmt.Errorf("build requires a git or upload source")
 	}
 	pushCred := &endpoint.Cred
-	if endpoint.Cred.Username == "" && endpoint.Cred.Secret == "" {
+	if projectCred, err := e.projectPushCred(ctx, projectID, endpoint); err != nil {
+		return capability.BuildRequest{}, err
+	} else if projectCred != nil {
+		pushCred = projectCred
+	}
+	if pushCred.Username == "" && pushCred.Secret == "" {
 		pushCred = nil // 匿名仓库合法形态（受管 zot 恒有凭证；缺省留 nil）
 	}
 	input := capability.BuildRequest{
@@ -182,7 +215,7 @@ func (e *Engine) prepareBuildInput(ctx context.Context, d *deployment.Deployment
 		// 是 dockerfile strategy，见 ADR-0032 决策 8）。
 		Builder:    builderName(spec.GetBuild()),
 		ContextDir: contextDir,
-		Target:     LocalImageRef(endpoint.Addr, d.AppID, revSeq),
+		Target:     LocalImageRef(endpoint.Addr, projectID, d.AppID, revSeq),
 		PushCred:   pushCred,
 	}
 	switch strategy := spec.GetBuild().GetStrategy().(type) {
@@ -228,6 +261,37 @@ func (e *Engine) registryEndpoint(ctx context.Context) (capability.RegistryEndpo
 		return capability.RegistryEndpoint{}, fmt.Errorf("managed registry endpoint returned an empty address")
 	}
 	return endpoint, nil
+}
+
+// registryProjectEndpoints 返回 Registry 的 per-Project 端点面（nil = 面
+// 未提供，调用方回退平台凭证——升级零扰动序）。
+func (e *Engine) registryProjectEndpoints() capability.ProjectEndpoints {
+	if e.registry == nil {
+		return nil
+	}
+	return capability.FacesOf(e.registry).ProjectEndpoints
+}
+
+// projectPushCred 解析该 Project 的推送凭证（zot per-Project 用户推自家
+// 前纲仓，ADR-0036 N2 兑现节 2）。面缺席返回 nil（调用方用平台凭证）；
+// 面在场但铸造失败/端点地址不一致 → 精确失败（部署 fail loud，不静默降
+// 级平台凭证——那会把域隔离静默升级成全域写）。
+func (e *Engine) projectPushCred(ctx context.Context, projectID string, platform capability.RegistryEndpoint) (*capability.RegistryCredential, error) {
+	pe := e.registryProjectEndpoints()
+	if pe == nil {
+		return nil, nil
+	}
+	ep, err := pe.EndpointForProject(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve project registry credential for %s: %w", projectID, err)
+	}
+	if ep.Addr != platform.Addr {
+		return nil, fmt.Errorf("project registry endpoint %q does not match the managed address %q", ep.Addr, platform.Addr)
+	}
+	if ep.Cred.Username == "" || ep.Cred.Secret == "" {
+		return nil, fmt.Errorf("project registry credential for %s is empty", projectID)
+	}
+	return &ep.Cred, nil
 }
 
 // extractUploadContext 把上传产物 blob 解包为构建上下文（ADR-0019 附录

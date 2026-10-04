@@ -101,11 +101,27 @@ func (e *Engine) materialsFor(ctx context.Context, refs, hosts []string, project
 	// 死在无诊断的 ImagePullBackOff 上。
 	for _, host := range hosts {
 		if managed != nil && host == managed.Addr {
-			// 平台仓库：平台凭证直注（三面同源的分发面③）。
+			// 平台仓库：受管 host 凭证直注。per-Project 面在场时用所属
+			// Project 的凭证（zot <projectID>/** 仓门禁，ADR-0036 N2 兑现
+			// 节 2；面缺席回退平台凭证——升级零扰动序；铸造失败精确失败
+			// 不静默降级——静默换凭证会让拉取死在无诊断的 401 上）。
+			cred := managed.Cred
+			if pe := e.registryProjectEndpoints(); pe != nil {
+				ep, err := pe.EndpointForProject(ctx, projectID)
+				if err != nil {
+					return materials, fmt.Errorf("resolve project registry credential for %s: %w", projectID, err)
+				}
+				if ep.Addr != "" && ep.Addr != managed.Addr {
+					return materials, fmt.Errorf("project registry endpoint %q does not match the managed address %q", ep.Addr, managed.Addr)
+				}
+				if ep.Cred.Username != "" || ep.Cred.Secret != "" {
+					cred = ep.Cred
+				}
+			}
 			if materials.RegistryAuth == nil {
 				materials.RegistryAuth = map[string]capability.RegistryCredential{}
 			}
-			materials.RegistryAuth[host] = managed.Cred
+			materials.RegistryAuth[host] = cred
 			continue
 		}
 		row, err := e.secrets.GetByName(ctx, e.db.Runner(), projectID, registrySecretPrefix+host)

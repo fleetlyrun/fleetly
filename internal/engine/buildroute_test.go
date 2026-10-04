@@ -115,10 +115,10 @@ func TestPrepareBuildInputDispatchesStrategy(t *testing.T) {
 			revID, revSeq := freezeStrategySpec(t, e, tc.revID, tc.buildJSON)
 			spec, err := e.loadSpec(ctx, revID)
 			require.NoError(t, err)
-			input, err := e.prepareBuildInput(ctx, &deployment.Deployment{AppID: tAppID, ToRevision: revID}, spec, revSeq)
+			input, err := e.prepareBuildInput(ctx, &deployment.Deployment{AppID: tAppID, ToRevision: revID}, spec, revSeq, tProjectID)
 			require.NoError(t, err)
 			tc.verify(t, input)
-			assert.Equal(t, LocalImageRef(fakeRegistryAddr, tAppID, revSeq), input.Target)
+			assert.Equal(t, LocalImageRef(fakeRegistryAddr, tProjectID, tAppID, revSeq), input.Target)
 			require.NotNil(t, input.PushCred, "the push target and credential are strategy-invariant")
 		})
 	}
@@ -165,7 +165,7 @@ func TestPrepareBuildInputLegacySpecRoutesDockerfile(t *testing.T) {
 	spec, err := e.loadSpec(ctx, revID)
 	require.NoError(t, err)
 	spec.Build.Strategy = nil // 剥掉 strategy：存量防御形态（oneof 字段一并清空）
-	input, err := e.prepareBuildInput(ctx, &deployment.Deployment{AppID: tAppID, ToRevision: revID}, spec, revSeq)
+	input, err := e.prepareBuildInput(ctx, &deployment.Deployment{AppID: tAppID, ToRevision: revID}, spec, revSeq, tProjectID)
 	require.NoError(t, err)
 	assert.Equal(t, specir.BuilderDockerfile, input.Builder)
 	assert.Empty(t, input.Dockerfile, "empty dockerfile rides the port default (\"Dockerfile\"), same semantics")

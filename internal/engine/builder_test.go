@@ -158,7 +158,7 @@ func TestDeployBuildChain(t *testing.T) {
 	assert.Equal(t, "sha256:built", b.Digest)
 	bcalls := fb.snapshot()
 	require.Len(t, bcalls, 1)
-	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tAppID, revSeq), bcalls[0].Target)
+	assert.Equal(t, LocalImageRef(fakeRegistryAddr, tProjectID, tAppID, revSeq), bcalls[0].Target)
 	assert.Equal(t, contextDir, bcalls[0].ContextDir)
 	require.NotNil(t, bcalls[0].PushCred, "managed registry credential must ride the build request (B.3 face 2)")
 	assert.Equal(t, fakeRegistryAddr, bcalls[0].PushCred.Server)
@@ -174,7 +174,7 @@ func TestDeployBuildChain(t *testing.T) {
 	require.Equal(t, deployment.StateReleasing, d.State)
 	calls := rt.calls()
 	require.NotEmpty(t, calls)
-	assert.Equal(t, LocalImageDigestRef(fakeRegistryAddr, tAppID, "sha256:built"), calls[0].Spec["web"].Image)
+	assert.Equal(t, LocalImageDigestRef(fakeRegistryAddr, buildRepo(tProjectID, tAppID), "sha256:built"), calls[0].Spec["web"].Image)
 	// 拉取凭证面（B.3 分发面③）：managed host 平台凭证注入。
 	assert.Equal(t, capability.RegistryCredential{Server: fakeRegistryAddr, Username: "fleetly", Secret: "test-secret"},
 		calls[0].Materials.RegistryAuth[fakeRegistryAddr])
