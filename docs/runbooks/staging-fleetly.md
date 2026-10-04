@@ -238,6 +238,21 @@ staging 真机验收（14:53-14:56）：
 - 换装二进制要带 `-ldflags "-X main.version=<commit>-<tag>"`（裸 go build 的 service.version 空，journal 排障少一个锚）。
 
 
+## 2026-10-04 记录·四（F2.5 VictoriaMetrics/cAdvisor 上线：告警全链真机绿 + 三修）
+
+**换装**：fc38727-f24final → **cfbb59c-f25d（现役）**。goose v21→v22（00022_alerting）干净前滚；Platform Backup 前置（004e03c8）。配置面新增：unit drop-in `11-metrics.conf` 物化 `FLEETLY_METRICS_ADDR=10.124.0.3:8428`（install.sh 已同源内置给新装）。
+
+**受管面**：VM 单节点（`fleetly-fleetly-system-metrics-victoriametrics` 1/1，8428 mesh）+ cadvisor 全局（`fleetly-fleetly-system-metrics-cadvisor` **2/2 双节点 task**——每节点一个 host:8080 端点）。首启滚动卡死一次（旧 task 占 host 8080 + start-first 双 task 争位——`docker service rm` 后 reconciler 重建即愈；host 端口类全局服务的滚动序语义挂账观察）。
+
+**真机咬出三修（2d01193）**：
+1. **域材料默认挂全域 Workload 咬死 cadvisor**：VM 密码材料（swarm secret → /run/secrets/）注入同域的 cadvisor，其镜像无该目录且 overlayfs 只读 → mountpoint 创建失败 crash-loop。修 = IR 新增 `Workload.SkipMaterials`（显式退出面；无状态采集端不收存储凭证——本就是安全正确取向）。
+2. **swarm Command 是全量 argv**：只给旗标会把入口二进制丢掉（`exec "--housekeeping_interval=15s" not found`）。zot 绝对路径先例再证——受管域 Command 恒写全量。
+3. **cgroup v2 systemd 形态 + 标签值小写**：容器 id 是 `/system.slice/docker-<id>.scope`（非 `/docker/<id>`）——放弃前缀硬编码，app 标签非空即平台过滤器；`fleetly.ns.app` 标签值经 sanitizeNamePart 已小写，规则行的大写 ULID 在评估面归一比对。
+
+**验收锚（真机绿）**：VM 1/1 + cadvisor 2/2（全局双节点）；8428 无凭证 401；`metrics query` 返回 cadvisor 序列（job=fleetly-cadvisor 归因标签入库）；**阈值规则全链**（tw app memory > 1B → 15s 内 firing → alerts list 可见）；通道 create/test(不可达端点 delivered=false 诚实)/delete；doctor 告警行（无通道 warn 带可行动建议）；用户域零扰动（26 服务基线不变）。QuerySeries 单序列首形态（多序列取首个——Console 批扩展）记档。
+
+**端口表 +1**：8428 VM（basic auth 平台凭证）；**8080 cadvisor（每节点 host 直绑，无认证——VPC-only 边界，多租户前挂账：前置认证代理或节点防火墙收窄）**。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
@@ -327,6 +342,8 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 | 9082 | Edge config 拉取端点（traefik HTTP provider） | **无认证**（traefik HTTP provider 不支持凭证的既知形态） | 仅 VPC/内网，**公网可达 = 任意人可改写全量路由** |
 | 5000 | 受管 zot（镜像仓库） | HTTP 明文 + 单一平台凭证（htpasswd） | 仅 VPC/内网；两台 dockerd 的 `--insecure-registry` 同依赖此形态 |
 | 9428 | 受管 VictoriaLogs（日志存储，F2.4） | basic auth（keys/victorialogs.json 随机密码；VL 单租户——域隔离由平台查询构造执法） | 仅 VPC/内网；mesh 端点无凭证 401 已实证 |
+| 8428 | 受管 VictoriaMetrics（指标存储，F2.5） | basic auth（keys/victoriametrics.json 随机密码；单租户同 VL 口径） | 仅 VPC/内网 |
+| 8080 | 受管 cAdvisor（每节点指标采集端，F2.5） | **无认证**（cadvisor 无认证面；host 直绑每节点） | 仅 VPC/内网；**多租户前挂账**（前置认证代理或节点防火墙收窄） |
 
 **绑面配置化（ADR-0036）**：四面绑址/引用地址全部可配置（缺省 = 上表现状，升级不静默改绑）。本拓扑的收窄配置示例（fleetlyd 配置文件，钉 VPC eth1 地址）：
 
