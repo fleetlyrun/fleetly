@@ -67,4 +67,12 @@ runbook"端口暴露矩阵（操作者责任）"把 9080/9081/9082/5000 全部�
 - [x] auth_token 空：端点无认证、traefik 命令逐位不变（升级零扰动断言）
 - [x] auth_token 非空：缺失/错值头 → 401（响应体零配置字节）；正确值 → 200 + 快照（常量时间比对）
 - [x] config 访问器缺省/显式/nil 链三态钉死；wire 装配透传（config→ctx 唯一契约源 + env 同键兜底）
-- [ ] per-Project 凭证（N2b 初：仓布局前缀 + accessControl + per-Project 端点面 + staging 迁移实录）
+- [x] per-Project 凭证（N2b 初：仓布局前缀 + accessControl + per-Project 端点面 + staging 迁移实录）
+  ——2026-10-04 落地（c8c8360..c7de917 五 commit）：capability 双子面
+  （ProjectEndpoints/ProjectScopedMaterials，FacesOf 协商）+ zot per-Project
+  凭证（keys/registry-projects/，E28 按面）+ accessControl 门禁
+  （`<projectID>/**` 用户门禁、`*` 扁平可读、无 `**` catch-all——
+  doublestar 最长匹配实证）+ builds.repo 列存量回退 + reconciler 喂活跃
+  集（读失败整组不下发）。staging 迁移实录与验收锚见 runbook
+  2026-10-04 记录·二（含真机咬出的首构建竞速：API Kick + 推送 401
+  有界退避双修）。

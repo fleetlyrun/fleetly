@@ -16,7 +16,7 @@
 
 - swarm 双节点（manager advertise **10.124.0.3**——eth0 的 10.48.0.x 是跨 VPC 假象地址，advertise/raft 绝不可用）。
 - 受管 edge：traefik（80/443，LE **staging** CA；ACME 卷 `fleetly-edge-acme`）。
-- **受管仓库：zot**（F1.11，ADR-0019 附录 B）：受管 Workload 形态（fleetly/system/registry 域，发布 5000 routing mesh），镜像 `ghcr.io/project-zot/zot-minimal:v2.1.21` 钉版，数据卷 `fleetly-registry-zot`。平台凭证在 `/var/lib/fleetly/keys/registry.json`（0o600；轮换=删文件+重启 fleetlyd——htpasswd 载体指纹变→受管域滚动替换，三面自愈）。构建推送目标=`10.124.0.3:5000/<app>:r<seq>`，from_build 下发=`10.124.0.3:5000/<app>@sha256:<digest>`（digest 直存，绕开 docker29 tag 坑）。unit 注入 `FLEETLY_REGISTRY_ADDR=10.124.0.3:5000`。旧手工 `n0-zot` 已停（容器保留作回滚资料；F0.18 场景 13 证据在上表）。
+- **受管仓库：zot**（F1.11，ADR-0019 附录 B）：受管 Workload 形态（fleetly/system/registry 域，发布 5000 routing mesh），镜像 `ghcr.io/project-zot/zot-minimal:v2.1.21` 钉版，数据卷 `fleetly-registry-zot`。**per-Project 凭证域隔离已上线（2026-10-04，ADR-0036 N2 兑现节 2）**：平台凭证（adminPolicy 全域）在 `/var/lib/fleetly/keys/registry.json`；per-Project 凭证在 `/var/lib/fleetly/keys/registry-projects/<projectID>.json`（用户名=projectID，密码+bcrypt 行同文件）；zot config 带 accessControl——`<projectID>/**` 仓门禁该用户 read/create/update、`*`（扁平存量仓）defaultPolicy read 全用户可读、其余拒绝。构建推送目标=`10.124.0.3:5000/<projectID>/<app>:r<seq>`（双段小写），from_build 下发=`10.124.0.3:5000/<repo>@sha256:<digest>`（repo 取 builds.repo 列；存量行空 = 扁平回退 `<app>`）。项目创建/删除经 API Kick 即时滚动 zot（htpasswd 摘/增行）；凭证轮换=删对应 json+重启 fleetlyd。unit 注入 `FLEETLY_REGISTRY_ADDR=10.124.0.3:5000`。旧手工 `n0-zot` 已停（容器保留作回滚资料；F0.18 场景 13 证据在上表）。
 - 验收应用：project `n0reg`（私有镜像双节点部署）、`n0probe`（exec 探针）、quickstart `n0demo`（route n0.dev.fleetly.run, tls auto）。
 
 ### 受管 zot 接管实录（F1.11 部署时操作序）
@@ -183,6 +183,29 @@ staging 真机验收（14:53-14:56）：
 - pkill -f 自匹配：ssh 远端命令行含 pattern 即自杀（会话无输出退出）——按 PID kill。
 - db 任务每次替换泄漏一枚匿名卷（镜像 VOLUME 遗产）：本机已积 1680 枚——RuntimeHygiene 扫匿名孤儿卷**挂账**。
 - 升级断言面：**路由 200 ≠ 数据在场**——数据核对步已进升级操作序第 5 步。
+
+## 2026-10-04 记录·二（per-Project registry 凭证域隔离上线：迁移实录 + 竞速修复）
+
+**换装**：22b2f1a-staging2 → 4d4a88d-perproj → **c7de917-perproj2（现役）**。goose v19→v20（00020_builds_repo）干净前滚；Platform Backup 前后各一（04b6bff0/692ba6ef）+ 手工卷 tar（zot 133MB + torchwood-pg 662MB 至 upgrade-4d4a88d-perproj/vols/——本批 zot 只滚材料不触卷，纪律仍全量执行）。
+
+**迁移前置信（前置真机验证，防 crash-loop 于未然）**：升级前在 manager 起临时 zot 容器（127.0.0.1:5050，挂同形状 config+htpasswd 夹具）打满 12 项权限矩阵——自有前纲读 404-allowed/写 400-allowed、跨 Project 读写 403、扁平仓全用户可读+写 403、admin 全域、匿名 401——全对后才动平台。**zot v2.1.21 accessControl 语义实证**：未匹配任何 pattern 的仓对非 admin 拒绝；glob 是 doublestar（`*` 不跨 `/`、`**` 跨段）；多 pattern 命中取最长——**不可加 `"**"` catch-all**（会压过 `*` 反噬扁平仓可读）。config 键 camelCase（viper/mapstructure 大小写不敏感）；`accessControl` 在 `http` 块下。
+
+**迁移实录（升级序五步走完）**：zot 恰滚一次（config 增 accessControl + htpasswd 增 5 项目用户行）；traefik/db 零滚动；tw 200 + ml-api 415 + torchwood-pg 21 表 + tw_secrets 在场（数据核对步）；用户域任务零扰动。
+
+**验收锚（真机）**：
+- **存量兼容**：扁平仓 buildprobe r2（`10.124.0.3:5000/<appid>@digest`）对 per-Project 用户 GET 200、写 403——存量 digest 引用全用户可读不断流（暴露不扩大不收缩）；builds 表存量行 repo 空 → 投影扁平回退（DB 实查双态在场）。
+- **新内容前纲**：scratch 项目 regprobe dockerfile 构建全链 succeeded——推送目标双段小写前纲、builds.repo 列定型、swarm 任务 image = `<addr>/<projectID>/<appID>@sha256:...`、catalog 扁平+前纲共存。
+- **域隔离**：同 URL 异凭证对照——自有项目 404-allowed vs messaging 凭证 403-denied（读与写双面）。
+- **撤销面**：项目删除 → 45s 内其 zot 用户 401（htpasswd 摘行即时滚动）；仓库数据留存但门禁已撤（keys/ 残留 json 无害——ULID 不复用）。
+
+**竞速事故与修复（本批真机咬出）**：项目创建后**同秒**部署 → 构建推送 HEAD blob 401 一次失败（zot 用户随活跃集再生的受管滚动晚于首构建到达：节拍 ~60s + 滚动时长；且失败 Build 行按 Revision 一次性语义使同内容重试直接继承失败——需换内容铸新 Revision 才会真重推）。修复 c7de917：①Project 创建/删除 API 写路径 KickManagedLoop（滚动窗缩到即时）；②builder 推送 401 有界退避（10×10s，判定只认 unauthorized 文本——digest hex 含 "401" 不得误判）。**回归绿**：raceprobe 项目同秒部署首试即 succeeded。
+
+### 工程事实（本批积累·二）
+
+- **`docker secret inspect` 读不回载荷**（.Spec.Data 恒 null——write-only）；zot-minimal 容器无 cat/sh；`docker cp` 从 tmpfs 挂载（/run/secrets）取文件恒 0 字节——材料核验走行为面（真实凭证打权限矩阵），字节面无门。
+- `fleetlyd --version` 不是版本旗标——会**当场起一个旁路 daemon**（cwd 相对数据根 ./data 会被凭空铸出 + bootstrap token；绑定失败 30s 排水退出）。已铸杂散数据根要即时清（rm -rf /root/data 实录）；版本看 journalctl 的 service.version。
+- scratch 项目源目录（--from-dir）内容寻址：同内容重部署复用同 Revision——终态失败 Build 行会被继承，重试需改内容。
+- curl 探 staging 路由要 -k（LE staging CA 不入系统信任根）；manager 直跑 `https://` 探针 exit 60 属预期。
 
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
