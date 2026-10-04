@@ -156,6 +156,34 @@ staging 真机验收（14:53-14:56）：
 
 本节的真机验收已有 CI 常态回归锚：`e2e/dind-upgrade.sh`（CI job `e2e-upgrade`，`mise run e2e:upgrade` 本地可跑）——HEAD~1 旧版装到 HEAD 新版，三件负载（web+Route / 第二 App / 受管 postgres）断言升级全程**路由零失败、Workload 零重启、数据库零滚动**（ADR-0015 验收的 CI 化）。staging 手工升级前可先本地跑一轮同款脚本预热；脚本首跑若在 CI 红，按 job 日志取证（升级路径 vs 环境面分离诊断）。
 
+## 2026-10-04 记录（c8c0c56 换装实录：两 P0 事故与恢复 + F2.2/F2.3 链真机验收）
+
+**换装**：b4cfea0-upgrade-safety → c8c0c56-f23（升级序五步、旧版无 platform 组走手工快照回退轨道），随后同日两次热修换装至 **22b2f1a-staging2（现役）**。restic 0.19.1 按 install.sh 4d 节补装（旧装机无此节；bunzip2 缺件 apt 补）。goose v18→v19（00019_backups）干净前滚；用户域任务行零扰动（15h Running 不变）；**受管钉住首滚未发生**——zot/traefik 换装前后约束同值（node.labels.fleetly.node.id 钉 manager）不滚，仅 db 因 DataTarget 变更滚一次。
+
+### P0 ①（数据丢失级）：镜像 VOLUME 匿名卷遮蔽命名卷 → db 任务替换即空库服现
+
+- **机制**：刷新版 postgres:17-bookworm（18+ 布局入口）镜像 VOLUME 声明 `/var/lib/postgresql/data`——docker 对"嵌套在命名卷内部的镜像 VOLUME 路径"铸**匿名卷**并遮蔽命名卷同名子目录。F2.2 父目录挂法（DataTarget=/var/lib/postgresql）+ 入口默认 PGDATA 正中遮蔽：initdb 与服务全落匿名卷（per-task 新铸）。
+- **咬出链**：10-03 14:55 b4cfea0 首滚即中招——torchwood-pg 空库服现 14h（pg_isready healthcheck + 前端 200 全程掩盖）；10-04 04:32 c8c0c56 换装再次触发。取证三件：container Mounts 双卷铁证（命名卷@/var/lib/postgresql + 匿名卷@/var/lib/postgresql/data）、system identifier 分歧、base/16384 高 OID 孤儿文件（catalog 空而文件在——resetwal 后遗形态）。**真簇（21 表）自 /root/upgrade-b4cfea0 卷 tar 起回**——belt-and-suspenders 纪律救命实录。
+- **修复**：7cd19b8——postgres/pgvector 模板显式 `PGDATA=/var/lib/postgresql/pgdata`（父挂内、镜像 VOLUME 路径之外；创建/存量双态成立）。锚=TestVolumeShadowContract（per-engine DataTarget×镜像 VOLUME 契约）+ e2e dind-backup 任务替换存活锚（`--force` 滚任务后种子行在场——该回归此前对 CI 不可见：种子后源库任务从不替换）。
+- **staging 恢复**：停服窗内 `<卷>/data → <卷>/pgdata` 改名归位（b4 tar 真簇），7cd19b8 起服 reconcile 滚一次 → 21 表 + tw_secrets 全回、server outbox 错误清零、tw.dev 200。
+
+### P0 ②：Platform Backup systemd 面缓存目录缺席
+
+- restic 子进程 env 无 HOME/XDG_CACHE_HOME（systemd unit 形态；dind/e2e 恒有 HOME 故 CI 不红）→ "unable to locate cache directory" 拒跑。修复 22b2f1a（resticEnvFrom 双缺补 `XDG_CACHE_HOME=platform-backups/cache`，域内缓存随备份排除）+ e11398c（ListPlatformSnapshots 旁门直拼 os.Environ 漏补丁——备份链绿但回读 exit 1 同因）。
+- **Platform Backup 真机首验绿**：快照 fa94c59f；变更后备份 4cd3a003。
+
+### F2.2 备份链 staging 真机验收（scratch 项目形态）
+
+- **存量边界咬实**：torchwood/messaging/n0reg/n0probe 四个 pre-F2.2 项目网无 attachable 位——Database Backup 的 utility 附着被拒（ADR-0039 §47 预告的精确错误路径）。`docker network update --attachable` 不存在；平台无 networks delete/recreate 动词——**网络重建动词缺口挂账**（错误文案承诺的 runbook 指引即本节：等动词落地，勿手工拆网——service 级 network-rm/add 会被平台 reconcile 回滚）。
+- **scratch 项目（出生即 attachable）全链绿**：pgvector 建库→种子→backup succeeded→verify ok=true→delete→**卷真删**（等容器 GC，rm 循环到成功）→同名 recreate `--restore-from-backup`→anchor 表回归。首轮"恢复绿"实为同名卷残留数据（volume rm 被 GC 窗挡下且被 2>/dev/null 吞）——**恢复证明必须空卷起家**；恢复是异步任务，断言要等。
+
+### 工程事实（本批积累）
+
+- **`docker service logs` 在本 daemon（29.8.1）可无限挂起**（对已删/不存在服务尤甚——10-02 起三只僵尸即此，连带 nettest3/4、mgrtest 残留）；诊断一律容器级 `timeout 20 docker logs <cid>`，service 级禁用。
+- pkill -f 自匹配：ssh 远端命令行含 pattern 即自杀（会话无输出退出）——按 PID kill。
+- db 任务每次替换泄漏一枚匿名卷（镜像 VOLUME 遗产）：本机已积 1680 枚——RuntimeHygiene 扫匿名孤儿卷**挂账**。
+- 升级断言面：**路由 200 ≠ 数据在场**——数据核对步已进升级操作序第 5 步。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
@@ -165,10 +193,14 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
    fleetly platform backup        # 同步执行；失败即中止升级（E_PLATFORM_BACKUP_FAILED）
    fleetly platform backups       # 快照在场核对
    ```
-2. **手工卷快照（belt-and-suspenders，沿用 b4cfea0 纪律）**：受管库卷与 zot 卷 tar 至 /root/upgrade-<版本>/（卷名公式 `fleetly-vol-<名>`；受管域已钉控制面节点——F2.3b，不存在漂移到 node2 的卷）。
+   前置条件：restic 0.19.1 在场（install.sh 4d 节；旧装机手动补）；systemd 面缓存目录已修（22b2f1a 起——旧版报 "unable to locate cache directory" 即此）。
+2. **手工卷快照（belt-and-suspenders，沿用 b4cfea0 纪律）**：受管库卷与 zot 卷 tar 至 /root/upgrade-<版本>/（卷名公式 `fleetly-vol-<名>`；受管域已钉控制面节点——F2.3b，不存在漂移到 node2 的卷）。**10-04 实录：这一步是空库事故里真数据唯一的完整来源——不可省**。
 3. **排水替换**：`systemctl stop fleetlyd`（30s 排水窗）→ `install -m 0755 <新版>/fleetlyd /usr/local/bin/fleetlyd`（fleetly CLI 同批）→ `systemctl start fleetlyd`。
-4. **健康核对**：`fleetly status` / `fleetly doctor`；journal 无 goose 报错。
-5. **升级零扰动断言**（CI 锚的手工同款）：`docker service ps` 三件负载 task 行零新增；Route 探针 200。
+4. **健康核对**：`fleetly status` / `fleetly doctor`；journal 无 goose 报错。首启路由冷窗 ~60s（后端未解析诚实跳过→下一拍重发布）属已知有界行为。
+5. **升级零扰动断言**（CI 锚的手工同款 + 10-04 补强）：
+   - `docker service ps` 三件负载 task 行零新增（受管域 spec 变更除外——预期滚一次）；
+   - Route 探针 200；
+   - **数据面核对**：受管库 exec 查已知表（表数/行数）——**路由 200 ≠ 数据在场**（前端+进程级 healthcheck 曾掩盖空库 14h，见 10-04 记录 P0 ①）。
 
 ### 失败回滚路径（goose 前滚失败 = daemon 拒引导）
 
@@ -190,16 +222,18 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
   5. 失败数据根保留取证（`/var/lib/fleetly.failed-*`），确认稳定后清理。
 - **边界**：Platform Restore 期间控制面只读语义 = 恢复窗口内不引导服务；受管库卷/zot 卷不在 Platform Backup 集内（平台只快照数据根）——数据面回滚依赖第 2 步的手工卷快照。
 
-### staging pg 旧布局卷 flag-day（F2.2 挂账，随本批记序）
+### staging pg 旧布局卷迁移（F2.2 挂账；2026-10-04 实录改写——原六步序作废）
 
-F2.2 修复 postgres 数据目录布局（postgres:17-bookworm 2026-10 刷新镜像带 18+ 入口：挂 data 子路径判 unused mount 拒启——DataTarget 已改挂父目录 /var/lib/postgresql）。**存量旧布局卷（内容在卷根、无 data 子目录）在新挂法下不入库**——torchwood-pg 的卷属此列，迁移 = 重建+恢复（F2.2 链路承担）：
+**勘误**：原「backup→verify→delete→volume rm→recreate --restore」六步序有绿门之下的数据丢失洞——升到 F2.2+ 的首启 db 滚动会把旧布局卷变成**空库服现**（镜像 VOLUME 遮蔽，见 10-04 记录 P0 ①），随后的 backup 捕获空库、verify 也照绿；且同名 recreate 在卷未真删时复用残留数据=假恢复（10-04 实录两连踩）。真机实际的布局迁移形态=**停服窗内卷内目录改名**（2026-10-04 torchwood-pg 实操成功）：
 
 1. `fleetly platform backup`（前置）。
-2. `fleetly databases backup <torchwood-pg 的 db id>` → 等 `database.backup_succeeded` 事件 → `fleetly databases verify <backup-id>`（digest 重算绿才继续）。
-3. `fleetly databases delete <db id>`（拆载体；卷行与凭证 Secret 保留——复活语义）。
-4. ops：`docker volume rm fleetly-vol-torchwood-pg`（载体卷清除——卷行保留无妨，同名重建时复用行 + 新建载体卷即新布局）。
-5. `fleetly databases create --engine pgvector --restore-from-backup <backup-id> torchwood-pg`（同名 → Secret `database:torchwood-pg` 覆写新 URL；**DNS host 随新行 ID 变**——平台注入面的消费方自动跟新，直连 URL 的消费方重读 Secret）。
-6. 数据核对（torchwood 查询面）+ `fleetly platform backup`（变更后备份）。
+2. 手工卷 tar（belt-and-suspenders）。
+3. 停控制面（`systemctl stop fleetlyd`，防 reconcile 干扰）+ `docker service update --replicas 0 <db service>` 冻结。
+4. 卷内改名（helper 容器）：原始旧布局（数据在卷根）= 卷根内容全部 `mv` 进 `<卷>/pgdata/`；F2.2 过渡形态（数据在 `<卷>/data`，遮蔽修复前的空库期）= `mv <卷>/data <卷>/pgdata`。
+5. `--replicas 1` 起库 → **数据核对**（已知表行数）→ `systemctl start fleetlyd`。
+6. 变更后 `fleetly platform backup`。
+
+重建+恢复（delete → 真删卷 → recreate `--restore-from-backup`）保留为**灾备路径**（CI e2e 四引擎演练常态回归）。真机操作要点（10-04 scratch 实录）：删库后容器 GC 有窗，`docker volume rm` 需循环到成功（残留即假恢复）；恢复是异步任务，库状态先 running、数据后到（等 `database.restore_*` 收口或隔 30s 断言）。**pre-F2.2 存量项目网不 attachable 会挡 Database Backup/Restore 的 utility 附着**（见 10-04 记录——重建动词缺口挂账）。
 
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 
