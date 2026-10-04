@@ -41,6 +41,7 @@ func ScopeResources() []string {
 	return []string{
 		"projects", "apps", "secrets", "configs", "volumes", "networks", "databases",
 		"deployments", "revisions", "builds", "tasks", "nodes", "routes", "events", "logs",
+		"metrics", "alerts", "channels",
 		"users", "teams", "roles", "tokens", "invitations", "audit", "platform",
 	}
 }

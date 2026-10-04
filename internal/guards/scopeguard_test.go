@@ -29,7 +29,7 @@ var mutatingVerbs = []string{
 // readVerbs 是读型动词前缀（op 必须 READ）。
 var readVerbs = []string{
 	"Get", "List", "Stream", "Wait", "Diff", "Explain", "WhoAmI",
-	"Follow", "Watch", "Verify",
+	"Follow", "Watch", "Verify", "Query",
 }
 
 // scopeOpExemptions 是 FullMethod → 豁免理由（表与动词方向不一致的唯一
@@ -38,6 +38,9 @@ var scopeOpExemptions = map[string]string{
 	// 票据交换面：铸的是只读 SSE 短票，events:read 对应被交换的能力而非
 	// 铸造动作本身（ADR-0026 EventSource 无自定义头）。
 	"/fleetly.telemetry.v1.EventsService/IssueEventTicket": "mints a read-only SSE ticket; events:read matches the delegated capability, not the mint action",
+	// 通道测试面（F2.5）：channels:write 对应通道配置权；测试载荷是配置权
+	// 的诊断行使（channels:read 不足以承载——测试发的是出站流量）。
+	"/fleetly.telemetry.v1.AlertingService/TestNotificationChannel": "sends one outbound test payload; channels:write matches the configuration authority being exercised (ADR-0041)",
 }
 
 // methodVerb 从 FullMethod 取动词段（"/pkg.Svc/CreateApp" → "CreateApp"）。

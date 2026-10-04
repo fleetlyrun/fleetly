@@ -98,4 +98,9 @@ func init() {
 	registerEventPayload(eventDatabaseRestored, databaseRestoredEventPayload{})
 	registerEventPayload(eventPlatformBackupOK, platformBackupEventPayload{})
 	registerEventPayload(eventPlatformBackupFail, platformBackupEventPayload{})
+	// 阈值告警（F2.5，ADR-0041 决策 3：迁移沿才发；channel_failed 独立
+	// 诊断载荷）。
+	registerEventPayload(eventAlertFired, alertEventPayload{})
+	registerEventPayload(eventAlertResolved, alertEventPayload{})
+	registerEventPayload(eventAlertChannelFail, alertChannelFailedPayload{})
 }

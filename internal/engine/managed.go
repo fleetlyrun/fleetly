@@ -109,8 +109,8 @@ func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
 }
 
 // managedProviders 列出在册受管 Provider（注册序稳定：Edge → Registry →
-// Logging——Route 面优先收敛，日志面殿后）。受管/材料源子面经 FacesOf
-// 协商点探测。
+// Logging → Metrics——Route 面优先收敛，观测面殿后）。受管/材料源子面经
+// FacesOf 协商点探测。
 func (e *Engine) managedProviders() []managedProviderDecl {
 	var out []managedProviderDecl
 	if e.edge != nil {
@@ -141,6 +141,16 @@ func (e *Engine) managedProviders() []managedProviderDecl {
 			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
 		} else {
 			e.log.Warn("logging provider is not managed-selfhosted; skipping reconciler")
+		}
+	}
+	if e.metrics != nil {
+		faces := capability.FacesOf(e.metrics)
+		if faces.Managed != nil {
+			// 不挂项目网（VM mesh 端点 + cadvisor host 端点都经节点地址
+			// 可达，ADR-0041）。
+			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
+		} else {
+			e.log.Warn("metrics provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
 	return out

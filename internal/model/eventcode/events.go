@@ -120,4 +120,10 @@ var builtins = []Event{
 	// Platform Backup（F2.2，ADR-0039：restic 链整体成败；快照细节在仓库自身）。
 	{Name: "platform.backup_succeeded", Summary: "A platform backup (restic snapshot of the control-plane data root) completed on all configured repos.", Source: "internal/engine/backup.go platformBackupPass"},
 	{Name: "platform.backup_failed", Summary: "A platform backup failed; the payload carries the restic error tail.", Source: "internal/engine/backup.go platformBackupPass"},
+
+	// 阈值告警（F2.5，ADR-0041 决策 3：状态迁移沿才落——不逐拍轰炸；
+	// resolved 携带同一规则锚）。
+	{Name: "alert.fired", Summary: "A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.", Source: "internal/engine/metrics.go evaluateRules"},
+	{Name: "alert.resolved", Summary: "A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).", Source: "internal/engine/metrics.go evaluateRules"},
+	{Name: "alert.channel_failed", Summary: "A notification channel delivery failed; the channel row records the error tail (diagnostics face).", Source: "internal/engine/metrics.go dispatchAlert"},
 }

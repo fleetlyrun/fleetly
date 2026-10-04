@@ -1,3 +1,6 @@
+alert.channel_failed	A notification channel delivery failed; the channel row records the error tail (diagnostics face).	internal/engine/metrics.go dispatchAlert
+alert.fired	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.	internal/engine/metrics.go evaluateRules
+alert.resolved	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).	internal/engine/metrics.go evaluateRules
 app.created	An app was created.	internal/api/fleetlygrpc/structure.go CreateApp
 app.deleted	An app was deleted (teardown per ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp
 app.teardown_aborted	An app delete was aborted after teardown because a deployment was admitted mid-delete; the in-flight deployment rebuilds the carriers (ADR-0023).	internal/api/fleetlygrpc/structure.go DeleteApp (recordTeardownAbort)

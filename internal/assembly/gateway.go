@@ -64,6 +64,9 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 		registerClient(edgev1.NewRoutesServiceClient, edgev1.RegisterRoutesServiceHandlerClient),
 		registerClient(telemetryv1.NewEventsServiceClient, telemetryv1.RegisterEventsServiceHandlerClient),
 		registerClient(telemetryv1.NewLogsServiceClient, telemetryv1.RegisterLogsServiceHandlerClient),
+		// Metrics/Alerting（F2.5，ADR-0041）：查询面 + 告警配置面。
+		registerClient(telemetryv1.NewMetricsServiceClient, telemetryv1.RegisterMetricsServiceHandlerClient),
+		registerClient(telemetryv1.NewAlertingServiceClient, telemetryv1.RegisterAlertingServiceHandlerClient),
 	}
 }
 

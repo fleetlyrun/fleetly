@@ -47,6 +47,7 @@ var ProviderSet = wire.NewSet(
 	NewEdgeProvider,
 	NewRegistryProvider,
 	NewLoggingProvider,
+	NewMetricsProvider,
 	NewObjectStore,
 	NewMaterialCipher,
 	NewEngine,
@@ -200,6 +201,32 @@ func NewLoggingProvider(app lynx.App, cfg *config.AppConfig) (capability.Logging
 	return lg, func() {}, nil
 }
 
+// NewMetricsProvider 构造 Metrics Provider（VictoriaMetrics 受管自宿；可选
+// 能力——config.metrics.addr 未配置时返回 nil，Metrics 面停用：零采集/零
+// 告警、查询精确失败，ADR-0041）。
+func NewMetricsProvider(app lynx.App, cfg *config.AppConfig) (capability.Metrics, func(), error) {
+	providers := capability.RegisteredFactories()
+	if len(providers[capability.KindMetrics]) == 0 {
+		return nil, func() {}, nil
+	}
+	if cfg.MetricsAddr() == "" {
+		app.Logger().Info("metrics address not configured; the managed metrics store stays disabled (no collection, no alerting)")
+		return nil, func() {}, nil
+	}
+	ctx := capability.WithMetricsAddr(context.Background(), cfg.MetricsAddr())
+	ctx = capability.WithMetricsRetentionDays(ctx, cfg.MetricsRetentionDays())
+	p, err := capability.Build(ctx, capability.KindMetrics, "")
+	if err != nil {
+		return nil, nil, fmt.Errorf("assembly: metrics provider: %w", err)
+	}
+	m, ok := p.(capability.Metrics)
+	if !ok {
+		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Metrics port", p.Describe().Name)
+	}
+	logCapabilityFaces(app.Logger(), "metrics", m)
+	return m, func() {}, nil
+}
+
 // NewMaterialCipher 打开数据根 KEK（首启生成；ADR-0014 信封加密根）。
 func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) {
 	c, err := material.LoadCipher(cfg.DataRoot())
@@ -235,6 +262,7 @@ func NewEngine(
 	edge capability.Edge,
 	reg capability.Registry,
 	logs capability.Logging,
+	mtr capability.Metrics,
 	store capability.ObjectStore,
 	cipher *material.Cipher,
 	app lynx.App,
@@ -258,7 +286,7 @@ func NewEngine(
 	}
 	return engine.New(engine.Deps{
 		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg, Logging: logs,
-		ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
+		Metrics: mtr, ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{
 		DataRoot:        cfg.DataRoot(),
 		ScheduleOverlap: overlap,

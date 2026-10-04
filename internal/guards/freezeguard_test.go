@@ -56,11 +56,19 @@ var freezeExemptions = map[string]string{
 	// VerifyBackup：无状态迁移的校验面（重算摘要比对回执——读路径的
 	// 执行面，动词名不在读前缀集，豁免登记）。
 	"/fleetly.structure.v1.DatabasesService/VerifyBackup": "read-path execution: recomputes the object digest against the ledger receipt, changes no platform state",
+	// 告警面（F2.5，ADR-0041）：通道/规则是运维配置不是变更控制面
+	//（ADR-0017 冻结语义 = Workload 与结构变更族）；通道无 Team 锚
+	//（平台级），test 是诊断动作。
+	"/fleetly.telemetry.v1.AlertingService/CreateNotificationChannel": "alerting configuration is operational, not a change-controlled workload (ADR-0017)",
+	"/fleetly.telemetry.v1.AlertingService/TestNotificationChannel":   "diagnostics: sends one test payload, changes no platform state",
+	"/fleetly.telemetry.v1.AlertingService/DeleteNotificationChannel": "alerting configuration is operational, not a change-controlled workload",
+	"/fleetly.telemetry.v1.AlertingService/CreateAlertRule":           "alerting configuration is operational, not a change-controlled workload",
+	"/fleetly.telemetry.v1.AlertingService/DeleteAlertRule":           "alerting configuration is operational, not a change-controlled workload",
 }
 
 // freezeReadPrefixes 是读面前缀（无副作用，免冻结分类；Diff 是两 Revision
-// 对照的读面）。
-var freezeReadPrefixes = []string{"Get", "List", "Wait", "Stream", "WhoAmI", "Explain", "Diff"}
+// 对照的读面；Query 是指标查询的读面，F2.5）。
+var freezeReadPrefixes = []string{"Get", "List", "Wait", "Stream", "Query", "WhoAmI", "Explain", "Diff"}
 
 // isReadVerb 报告方法名是否落读面前缀。
 func isReadVerb(fullMethod string) bool {

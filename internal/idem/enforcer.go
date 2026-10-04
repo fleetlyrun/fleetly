@@ -63,10 +63,13 @@ var EnforcedMethods = map[string]bool{
 	// 纳入——与 ReceiveWebhook 同款先例）。
 	"/fleetly.structure.v1.NetworksService/DeclareNetworkPeer": true,
 	"/fleetly.identity.v1.UsersService/CreateUser":             true,
-	"/fleetly.identity.v1.TeamsService/CreateTeam":             true,
-	"/fleetly.identity.v1.RolesService/CreateRole":             true,
-	"/fleetly.identity.v1.TokensService/CreateToken":           true,
-	"/fleetly.identity.v1.InvitationsService/CreateInvitation": true,
+	// 告警面创建动词（F2.5，ADR-0041：通道名唯一/规则行落库——重放安全）。
+	"/fleetly.telemetry.v1.AlertingService/CreateNotificationChannel": true,
+	"/fleetly.telemetry.v1.AlertingService/CreateAlertRule":           true,
+	"/fleetly.identity.v1.TeamsService/CreateTeam":                    true,
+	"/fleetly.identity.v1.RolesService/CreateRole":                    true,
+	"/fleetly.identity.v1.TokensService/CreateToken":                  true,
+	"/fleetly.identity.v1.InvitationsService/CreateInvitation":        true,
 	// webhook 接收面（Q-21 收口）：gateway 原生入口按 X-GitHub-Delivery 派生
 	// 键（webhook:<delivery>）——at-least-once 重投重放首次响应，去重锚与
 	// 副作用不再两步分立。动词不在创建型前缀集，由本表显式纳入。
