@@ -249,3 +249,163 @@ var SystemService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "fleetly/system/v1/system.proto",
 }
+
+const (
+	PlatformService_TriggerPlatformBackup_FullMethodName = "/fleetly.system.v1.PlatformService/TriggerPlatformBackup"
+	PlatformService_ListPlatformBackups_FullMethodName   = "/fleetly.system.v1.PlatformService/ListPlatformBackups"
+)
+
+// PlatformServiceClient is the client API for PlatformService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// PlatformService 是平台级操作面（`fleetly platform` 消费；与 SystemService
+// 的公开诊断面分立——本面全部要凭证）。首个动词族 = Platform Backup
+// （ADR-0039 决策 10；升级序前置=F2.3 的消费面，ADR-0015）。
+type PlatformServiceClient interface {
+	// TriggerPlatformBackup 立即同步执行一次 Platform Backup（不走节拍锚；
+	// 执行时长受平台备份超时上界约束）。restic 缺席/链失败 = 精确失败。
+	// 升级序的前置动词（ADR-0015：Platform Backup 前置）。在幂等执法面
+	// （ADR-0024；ADR-0039 决策 10）。
+	TriggerPlatformBackup(ctx context.Context, in *TriggerPlatformBackupRequest, opts ...grpc.CallOption) (*TriggerPlatformBackupResponse, error)
+	// ListPlatformBackups 列举本地仓快照（restic snapshots 直读，零状态行
+	// ——仓库自身即事实源，ADR-0039 决策 10）；新→旧分页（ADR-0026）。
+	ListPlatformBackups(ctx context.Context, in *ListPlatformBackupsRequest, opts ...grpc.CallOption) (*ListPlatformBackupsResponse, error)
+}
+
+type platformServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewPlatformServiceClient(cc grpc.ClientConnInterface) PlatformServiceClient {
+	return &platformServiceClient{cc}
+}
+
+func (c *platformServiceClient) TriggerPlatformBackup(ctx context.Context, in *TriggerPlatformBackupRequest, opts ...grpc.CallOption) (*TriggerPlatformBackupResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TriggerPlatformBackupResponse)
+	err := c.cc.Invoke(ctx, PlatformService_TriggerPlatformBackup_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *platformServiceClient) ListPlatformBackups(ctx context.Context, in *ListPlatformBackupsRequest, opts ...grpc.CallOption) (*ListPlatformBackupsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListPlatformBackupsResponse)
+	err := c.cc.Invoke(ctx, PlatformService_ListPlatformBackups_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// PlatformServiceServer is the server API for PlatformService service.
+// All implementations must embed UnimplementedPlatformServiceServer
+// for forward compatibility.
+//
+// PlatformService 是平台级操作面（`fleetly platform` 消费；与 SystemService
+// 的公开诊断面分立——本面全部要凭证）。首个动词族 = Platform Backup
+// （ADR-0039 决策 10；升级序前置=F2.3 的消费面，ADR-0015）。
+type PlatformServiceServer interface {
+	// TriggerPlatformBackup 立即同步执行一次 Platform Backup（不走节拍锚；
+	// 执行时长受平台备份超时上界约束）。restic 缺席/链失败 = 精确失败。
+	// 升级序的前置动词（ADR-0015：Platform Backup 前置）。在幂等执法面
+	// （ADR-0024；ADR-0039 决策 10）。
+	TriggerPlatformBackup(context.Context, *TriggerPlatformBackupRequest) (*TriggerPlatformBackupResponse, error)
+	// ListPlatformBackups 列举本地仓快照（restic snapshots 直读，零状态行
+	// ——仓库自身即事实源，ADR-0039 决策 10）；新→旧分页（ADR-0026）。
+	ListPlatformBackups(context.Context, *ListPlatformBackupsRequest) (*ListPlatformBackupsResponse, error)
+	mustEmbedUnimplementedPlatformServiceServer()
+}
+
+// UnimplementedPlatformServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedPlatformServiceServer struct{}
+
+func (UnimplementedPlatformServiceServer) TriggerPlatformBackup(context.Context, *TriggerPlatformBackupRequest) (*TriggerPlatformBackupResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TriggerPlatformBackup not implemented")
+}
+func (UnimplementedPlatformServiceServer) ListPlatformBackups(context.Context, *ListPlatformBackupsRequest) (*ListPlatformBackupsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListPlatformBackups not implemented")
+}
+func (UnimplementedPlatformServiceServer) mustEmbedUnimplementedPlatformServiceServer() {}
+func (UnimplementedPlatformServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafePlatformServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to PlatformServiceServer will
+// result in compilation errors.
+type UnsafePlatformServiceServer interface {
+	mustEmbedUnimplementedPlatformServiceServer()
+}
+
+func RegisterPlatformServiceServer(s grpc.ServiceRegistrar, srv PlatformServiceServer) {
+	// If the following call panics, it indicates UnimplementedPlatformServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&PlatformService_ServiceDesc, srv)
+}
+
+func _PlatformService_TriggerPlatformBackup_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TriggerPlatformBackupRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).TriggerPlatformBackup(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_TriggerPlatformBackup_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).TriggerPlatformBackup(ctx, req.(*TriggerPlatformBackupRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _PlatformService_ListPlatformBackups_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListPlatformBackupsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(PlatformServiceServer).ListPlatformBackups(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: PlatformService_ListPlatformBackups_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(PlatformServiceServer).ListPlatformBackups(ctx, req.(*ListPlatformBackupsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// PlatformService_ServiceDesc is the grpc.ServiceDesc for PlatformService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var PlatformService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.system.v1.PlatformService",
+	HandlerType: (*PlatformServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "TriggerPlatformBackup",
+			Handler:    _PlatformService_TriggerPlatformBackup_Handler,
+		},
+		{
+			MethodName: "ListPlatformBackups",
+			Handler:    _PlatformService_ListPlatformBackups_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/system/v1/system.proto",
+}

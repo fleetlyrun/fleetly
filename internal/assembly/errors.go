@@ -31,8 +31,8 @@ const redactedInternalMessage = "internal server error"
 //   - 409 Conflict（状态冲突族）：E_ALREADY_EXISTS（唯一键已存在）、
 //     E_IDEMPOTENCY_KEY_CONFLICT（幂等键异体/在途/双源不一致）、
 //     E_CONFLICT / E_NOT_CANCELLABLE / E_NO_BASELINE / E_SECRET_UNAVAILABLE /
-//     E_CHANGE_FROZEN（请求合法、当前状态不容——cancel/解绑/补件/lift
-//     冻结后可重试）；
+//     E_CHANGE_FROZEN / E_PLATFORM_BACKUP_FAILED（请求合法、当前状态不容
+//     ——cancel/解绑/补件/lift 冻结/装 restic 后可重试）；
 //   - 400/404/409/410/413/429/401/403/500 与语义对照（本就对，钉扎防漂移）：
 //     E_INVALID_ARGUMENT→400、E_NOT_FOUND→404、E_EVENTS_GONE 与
 //     E_UPLOAD_UNAVAILABLE→410（断档/产物已扫：重同步或重传）、
@@ -59,6 +59,7 @@ var errcodeToHTTP = map[string]int{
 	"E_NOT_CANCELLABLE":          http.StatusConflict,
 	"E_NOT_FOUND":                http.StatusNotFound,
 	"E_NO_BASELINE":              http.StatusConflict,
+	"E_PLATFORM_BACKUP_FAILED":   http.StatusConflict,
 	"E_QUEUE_FULL":               http.StatusTooManyRequests,
 	"E_QUOTA_EXCEEDED":           http.StatusTooManyRequests,
 	"E_RATE_LIMITED":             http.StatusTooManyRequests,

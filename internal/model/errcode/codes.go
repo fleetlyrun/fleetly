@@ -145,4 +145,11 @@ var builtins = []Code{
 		Source:     "internal/api/fleetlygrpc/delivery.go Deploy (ADR-0019 appendix A.5)",
 		GRPC:       codes.FailedPrecondition,
 	},
+	{
+		ID:         "E_PLATFORM_BACKUP_FAILED",
+		Summary:    "The platform backup chain failed or is unavailable (restic missing, platform backup not configured, or the restic run failed).",
+		Suggestion: "Install the pinned restic version and retry; a failed platform backup is a hard stop for the upgrade sequence (ADR-0015: backup precedes the swap). The platform.backup_failed event carries the chain detail.",
+		Source:     "internal/api/fleetlygrpc/platform.go TriggerPlatformBackup/ListPlatformBackups (ADR-0039 decision 10; F2.3 upgrade precondition)",
+		GRPC:       codes.FailedPrecondition,
+	},
 }

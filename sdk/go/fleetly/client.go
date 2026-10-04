@@ -32,6 +32,7 @@ type Client struct {
 	conn       *grpc.ClientConn
 	System     systemv1.SystemServiceClient
 	Governance systemv1.GovernanceServiceClient
+	Platform   systemv1.PlatformServiceClient
 
 	Projects    structurev1.ProjectsServiceClient
 	Apps        structurev1.AppsServiceClient
@@ -100,6 +101,7 @@ func newClient(conn *grpc.ClientConn) *Client {
 		conn:        conn,
 		System:      systemv1.NewSystemServiceClient(conn),
 		Governance:  systemv1.NewGovernanceServiceClient(conn),
+		Platform:    systemv1.NewPlatformServiceClient(conn),
 		Projects:    structurev1.NewProjectsServiceClient(conn),
 		Apps:        structurev1.NewAppsServiceClient(conn),
 		Secrets:     structurev1.NewSecretsServiceClient(conn),

@@ -7,6 +7,9 @@
   "tags": [
     {
       "name": "SystemService"
+    },
+    {
+      "name": "PlatformService"
     }
   ],
   "consumes": [
@@ -16,6 +19,76 @@
     "application/json"
   ],
   "paths": {
+    "/v1/platform/backups": {
+      "get": {
+        "summary": "ListPlatformBackups 列举本地仓快照（restic snapshots 直读，零状态行\n——仓库自身即事实源，ADR-0039 决策 10）；新→旧分页（ADR-0026）。",
+        "operationId": "PlatformService_ListPlatformBackups",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListPlatformBackupsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "after_snapshot_id",
+            "description": "after_snapshot_id 游标（上一页末条快照短 id；空 = 首页）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "PlatformService"
+        ]
+      },
+      "post": {
+        "summary": "TriggerPlatformBackup 立即同步执行一次 Platform Backup（不走节拍锚；\n执行时长受平台备份超时上界约束）。restic 缺席/链失败 = 精确失败。\n升级序的前置动词（ADR-0015：Platform Backup 前置）。在幂等执法面\n（ADR-0024；ADR-0039 决策 10）。",
+        "operationId": "PlatformService_TriggerPlatformBackup",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TriggerPlatformBackupResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1TriggerPlatformBackupRequest"
+            }
+          }
+        ],
+        "tags": [
+          "PlatformService"
+        ]
+      }
+    },
     "/v1/system/explain": {
       "get": {
         "summary": "Explain 返回单个资源的自描述（Spec 种类 \"app\"/\"task\"/\"database\" 或\n事件名 \"deployment.succeeded\"——`fleetly explain \u003c资源\u003e` 消费）。",
@@ -165,6 +238,36 @@
         }
       }
     },
+    "v1ListPlatformBackupsResponse": {
+      "type": "object",
+      "properties": {
+        "snapshots": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1PlatformSnapshot"
+          }
+        }
+      }
+    },
+    "v1PlatformSnapshot": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "title": "restic 短 id"
+        },
+        "time": {
+          "type": "string",
+          "title": "RFC3339"
+        },
+        "hostname": {
+          "type": "string",
+          "title": "快照主机名（控制面节点）"
+        }
+      },
+      "title": "PlatformSnapshot 是本地仓快照行投影（restic snapshots 直读面）。"
+    },
     "v1SchemaEntry": {
       "type": "object",
       "properties": {
@@ -195,6 +298,18 @@
         "STATUS_STATE_DEGRADED"
       ],
       "default": "STATUS_STATE_UNSPECIFIED"
+    },
+    "v1TriggerPlatformBackupRequest": {
+      "type": "object"
+    },
+    "v1TriggerPlatformBackupResponse": {
+      "type": "object",
+      "properties": {
+        "snapshot": {
+          "$ref": "#/definitions/v1PlatformSnapshot"
+        }
+      },
+      "title": "TriggerPlatformBackupResponse 携带本次执行后本地仓最新快照（整体成败\n由 RPC 错误面承载；失败仓/外置仓细节进 platform.backup_failed 事件）。"
     }
   }
 }

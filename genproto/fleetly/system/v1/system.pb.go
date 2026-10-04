@@ -508,6 +508,246 @@ func (x *ExplainResponse) GetEntry() *SchemaEntry {
 	return nil
 }
 
+type TriggerPlatformBackupRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerPlatformBackupRequest) Reset() {
+	*x = TriggerPlatformBackupRequest{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerPlatformBackupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerPlatformBackupRequest) ProtoMessage() {}
+
+func (x *TriggerPlatformBackupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerPlatformBackupRequest.ProtoReflect.Descriptor instead.
+func (*TriggerPlatformBackupRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{9}
+}
+
+// TriggerPlatformBackupResponse 携带本次执行后本地仓最新快照（整体成败
+// 由 RPC 错误面承载；失败仓/外置仓细节进 platform.backup_failed 事件）。
+type TriggerPlatformBackupResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Snapshot      *PlatformSnapshot      `protobuf:"bytes,1,opt,name=snapshot,proto3" json:"snapshot,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *TriggerPlatformBackupResponse) Reset() {
+	*x = TriggerPlatformBackupResponse{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *TriggerPlatformBackupResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*TriggerPlatformBackupResponse) ProtoMessage() {}
+
+func (x *TriggerPlatformBackupResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use TriggerPlatformBackupResponse.ProtoReflect.Descriptor instead.
+func (*TriggerPlatformBackupResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *TriggerPlatformBackupResponse) GetSnapshot() *PlatformSnapshot {
+	if x != nil {
+		return x.Snapshot
+	}
+	return nil
+}
+
+type ListPlatformBackupsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// after_snapshot_id 游标（上一页末条快照短 id；空 = 首页）。
+	AfterSnapshotId string `protobuf:"bytes,1,opt,name=after_snapshot_id,json=afterSnapshotId,proto3" json:"after_snapshot_id,omitempty"`
+	Limit           int32  `protobuf:"varint,2,opt,name=limit,proto3" json:"limit,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *ListPlatformBackupsRequest) Reset() {
+	*x = ListPlatformBackupsRequest{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPlatformBackupsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPlatformBackupsRequest) ProtoMessage() {}
+
+func (x *ListPlatformBackupsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPlatformBackupsRequest.ProtoReflect.Descriptor instead.
+func (*ListPlatformBackupsRequest) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *ListPlatformBackupsRequest) GetAfterSnapshotId() string {
+	if x != nil {
+		return x.AfterSnapshotId
+	}
+	return ""
+}
+
+func (x *ListPlatformBackupsRequest) GetLimit() int32 {
+	if x != nil {
+		return x.Limit
+	}
+	return 0
+}
+
+type ListPlatformBackupsResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Snapshots     []*PlatformSnapshot    `protobuf:"bytes,1,rep,name=snapshots,proto3" json:"snapshots,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ListPlatformBackupsResponse) Reset() {
+	*x = ListPlatformBackupsResponse{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ListPlatformBackupsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ListPlatformBackupsResponse) ProtoMessage() {}
+
+func (x *ListPlatformBackupsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ListPlatformBackupsResponse.ProtoReflect.Descriptor instead.
+func (*ListPlatformBackupsResponse) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *ListPlatformBackupsResponse) GetSnapshots() []*PlatformSnapshot {
+	if x != nil {
+		return x.Snapshots
+	}
+	return nil
+}
+
+// PlatformSnapshot 是本地仓快照行投影（restic snapshots 直读面）。
+type PlatformSnapshot struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`             // restic 短 id
+	Time          string                 `protobuf:"bytes,2,opt,name=time,proto3" json:"time,omitempty"`         // RFC3339
+	Hostname      string                 `protobuf:"bytes,3,opt,name=hostname,proto3" json:"hostname,omitempty"` // 快照主机名（控制面节点）
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PlatformSnapshot) Reset() {
+	*x = PlatformSnapshot{}
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PlatformSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PlatformSnapshot) ProtoMessage() {}
+
+func (x *PlatformSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_fleetly_system_v1_system_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PlatformSnapshot.ProtoReflect.Descriptor instead.
+func (*PlatformSnapshot) Descriptor() ([]byte, []int) {
+	return file_fleetly_system_v1_system_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *PlatformSnapshot) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *PlatformSnapshot) GetTime() string {
+	if x != nil {
+		return x.Time
+	}
+	return ""
+}
+
+func (x *PlatformSnapshot) GetHostname() string {
+	if x != nil {
+		return x.Hostname
+	}
+	return ""
+}
+
 var File_fleetly_system_v1_system_proto protoreflect.FileDescriptor
 
 const file_fleetly_system_v1_system_proto_rawDesc = "" +
@@ -534,7 +774,19 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"\x0eExplainRequest\x12\x1a\n" +
 	"\bresource\x18\x01 \x01(\tR\bresource\"G\n" +
 	"\x0fExplainResponse\x124\n" +
-	"\x05entry\x18\x01 \x01(\v2\x1e.fleetly.system.v1.SchemaEntryR\x05entry*`\n" +
+	"\x05entry\x18\x01 \x01(\v2\x1e.fleetly.system.v1.SchemaEntryR\x05entry\"\x1e\n" +
+	"\x1cTriggerPlatformBackupRequest\"`\n" +
+	"\x1dTriggerPlatformBackupResponse\x12?\n" +
+	"\bsnapshot\x18\x01 \x01(\v2#.fleetly.system.v1.PlatformSnapshotR\bsnapshot\"^\n" +
+	"\x1aListPlatformBackupsRequest\x12*\n" +
+	"\x11after_snapshot_id\x18\x01 \x01(\tR\x0fafterSnapshotId\x12\x14\n" +
+	"\x05limit\x18\x02 \x01(\x05R\x05limit\"`\n" +
+	"\x1bListPlatformBackupsResponse\x12A\n" +
+	"\tsnapshots\x18\x01 \x03(\v2#.fleetly.system.v1.PlatformSnapshotR\tsnapshots\"R\n" +
+	"\x10PlatformSnapshot\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
+	"\x04time\x18\x02 \x01(\tR\x04time\x12\x1a\n" +
+	"\bhostname\x18\x03 \x01(\tR\bhostname*`\n" +
 	"\vStatusState\x12\x1c\n" +
 	"\x18STATUS_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STATUS_STATE_HEALTHY\x10\x01\x12\x19\n" +
@@ -544,7 +796,12 @@ const file_fleetly_system_v1_system_proto_rawDesc = "" +
 	"GetVersion\x12$.fleetly.system.v1.GetVersionRequest\x1a%.fleetly.system.v1.GetVersionResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/version\x12q\n" +
 	"\tGetStatus\x12#.fleetly.system.v1.GetStatusRequest\x1a$.fleetly.system.v1.GetStatusResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/status\x12q\n" +
 	"\tGetSchema\x12#.fleetly.system.v1.GetSchemaRequest\x1a$.fleetly.system.v1.GetSchemaResponse\"\x19\x82\xd3\xe4\x93\x02\x13\x12\x11/v1/system/schema\x12l\n" +
-	"\aExplain\x12!.fleetly.system.v1.ExplainRequest\x1a\".fleetly.system.v1.ExplainResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/explain\x1a\x06\xf2\xc4\x19\x02\b\x01B\x98\x01\x92ARRP\n" +
+	"\aExplain\x12!.fleetly.system.v1.ExplainRequest\x1a\".fleetly.system.v1.ExplainResponse\"\x1a\x82\xd3\xe4\x93\x02\x14\x12\x12/v1/system/explain\x1a\x06\xf2\xc4\x19\x02\b\x012\xf4\x02\n" +
+	"\x0fPlatformService\x12\xaf\x01\n" +
+	"\x15TriggerPlatformBackup\x12/.fleetly.system.v1.TriggerPlatformBackupRequest\x1a0.fleetly.system.v1.TriggerPlatformBackupResponse\"3\xea\xc4\x19\x10\b\x03\"\f\n" +
+	"\bplatform\x10\x02\x82\xd3\xe4\x93\x02\x19:\x01*\"\x14/v1/platform/backups\x12\xa6\x01\n" +
+	"\x13ListPlatformBackups\x12-.fleetly.system.v1.ListPlatformBackupsRequest\x1a..fleetly.system.v1.ListPlatformBackupsResponse\"0\xea\xc4\x19\x10\b\x03\"\f\n" +
+	"\bplatform\x10\x01\x82\xd3\xe4\x93\x02\x16\x12\x14/v1/platform/backups\x1a\x06\xf2\xc4\x19\x02\b\x03B\x98\x01\x92ARRP\n" +
 	"\adefault\x12E\n" +
 	"\x1dAn unexpected error response.\x12$\n" +
 	"\"\x1a .fleetly.shared.v1.ErrorResponseZAgithub.com/fleetlyrun/fleetly/genproto/fleetly/system/v1;systemv1b\x06proto3"
@@ -562,36 +819,47 @@ func file_fleetly_system_v1_system_proto_rawDescGZIP() []byte {
 }
 
 var file_fleetly_system_v1_system_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_fleetly_system_v1_system_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_fleetly_system_v1_system_proto_goTypes = []any{
-	(StatusState)(0),           // 0: fleetly.system.v1.StatusState
-	(*GetVersionRequest)(nil),  // 1: fleetly.system.v1.GetVersionRequest
-	(*GetVersionResponse)(nil), // 2: fleetly.system.v1.GetVersionResponse
-	(*GetStatusRequest)(nil),   // 3: fleetly.system.v1.GetStatusRequest
-	(*GetStatusResponse)(nil),  // 4: fleetly.system.v1.GetStatusResponse
-	(*SchemaEntry)(nil),        // 5: fleetly.system.v1.SchemaEntry
-	(*GetSchemaRequest)(nil),   // 6: fleetly.system.v1.GetSchemaRequest
-	(*GetSchemaResponse)(nil),  // 7: fleetly.system.v1.GetSchemaResponse
-	(*ExplainRequest)(nil),     // 8: fleetly.system.v1.ExplainRequest
-	(*ExplainResponse)(nil),    // 9: fleetly.system.v1.ExplainResponse
+	(StatusState)(0),                      // 0: fleetly.system.v1.StatusState
+	(*GetVersionRequest)(nil),             // 1: fleetly.system.v1.GetVersionRequest
+	(*GetVersionResponse)(nil),            // 2: fleetly.system.v1.GetVersionResponse
+	(*GetStatusRequest)(nil),              // 3: fleetly.system.v1.GetStatusRequest
+	(*GetStatusResponse)(nil),             // 4: fleetly.system.v1.GetStatusResponse
+	(*SchemaEntry)(nil),                   // 5: fleetly.system.v1.SchemaEntry
+	(*GetSchemaRequest)(nil),              // 6: fleetly.system.v1.GetSchemaRequest
+	(*GetSchemaResponse)(nil),             // 7: fleetly.system.v1.GetSchemaResponse
+	(*ExplainRequest)(nil),                // 8: fleetly.system.v1.ExplainRequest
+	(*ExplainResponse)(nil),               // 9: fleetly.system.v1.ExplainResponse
+	(*TriggerPlatformBackupRequest)(nil),  // 10: fleetly.system.v1.TriggerPlatformBackupRequest
+	(*TriggerPlatformBackupResponse)(nil), // 11: fleetly.system.v1.TriggerPlatformBackupResponse
+	(*ListPlatformBackupsRequest)(nil),    // 12: fleetly.system.v1.ListPlatformBackupsRequest
+	(*ListPlatformBackupsResponse)(nil),   // 13: fleetly.system.v1.ListPlatformBackupsResponse
+	(*PlatformSnapshot)(nil),              // 14: fleetly.system.v1.PlatformSnapshot
 }
 var file_fleetly_system_v1_system_proto_depIdxs = []int32{
-	0, // 0: fleetly.system.v1.GetStatusResponse.state:type_name -> fleetly.system.v1.StatusState
-	5, // 1: fleetly.system.v1.GetSchemaResponse.entries:type_name -> fleetly.system.v1.SchemaEntry
-	5, // 2: fleetly.system.v1.ExplainResponse.entry:type_name -> fleetly.system.v1.SchemaEntry
-	1, // 3: fleetly.system.v1.SystemService.GetVersion:input_type -> fleetly.system.v1.GetVersionRequest
-	3, // 4: fleetly.system.v1.SystemService.GetStatus:input_type -> fleetly.system.v1.GetStatusRequest
-	6, // 5: fleetly.system.v1.SystemService.GetSchema:input_type -> fleetly.system.v1.GetSchemaRequest
-	8, // 6: fleetly.system.v1.SystemService.Explain:input_type -> fleetly.system.v1.ExplainRequest
-	2, // 7: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
-	4, // 8: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
-	7, // 9: fleetly.system.v1.SystemService.GetSchema:output_type -> fleetly.system.v1.GetSchemaResponse
-	9, // 10: fleetly.system.v1.SystemService.Explain:output_type -> fleetly.system.v1.ExplainResponse
-	7, // [7:11] is the sub-list for method output_type
-	3, // [3:7] is the sub-list for method input_type
-	3, // [3:3] is the sub-list for extension type_name
-	3, // [3:3] is the sub-list for extension extendee
-	0, // [0:3] is the sub-list for field type_name
+	0,  // 0: fleetly.system.v1.GetStatusResponse.state:type_name -> fleetly.system.v1.StatusState
+	5,  // 1: fleetly.system.v1.GetSchemaResponse.entries:type_name -> fleetly.system.v1.SchemaEntry
+	5,  // 2: fleetly.system.v1.ExplainResponse.entry:type_name -> fleetly.system.v1.SchemaEntry
+	14, // 3: fleetly.system.v1.TriggerPlatformBackupResponse.snapshot:type_name -> fleetly.system.v1.PlatformSnapshot
+	14, // 4: fleetly.system.v1.ListPlatformBackupsResponse.snapshots:type_name -> fleetly.system.v1.PlatformSnapshot
+	1,  // 5: fleetly.system.v1.SystemService.GetVersion:input_type -> fleetly.system.v1.GetVersionRequest
+	3,  // 6: fleetly.system.v1.SystemService.GetStatus:input_type -> fleetly.system.v1.GetStatusRequest
+	6,  // 7: fleetly.system.v1.SystemService.GetSchema:input_type -> fleetly.system.v1.GetSchemaRequest
+	8,  // 8: fleetly.system.v1.SystemService.Explain:input_type -> fleetly.system.v1.ExplainRequest
+	10, // 9: fleetly.system.v1.PlatformService.TriggerPlatformBackup:input_type -> fleetly.system.v1.TriggerPlatformBackupRequest
+	12, // 10: fleetly.system.v1.PlatformService.ListPlatformBackups:input_type -> fleetly.system.v1.ListPlatformBackupsRequest
+	2,  // 11: fleetly.system.v1.SystemService.GetVersion:output_type -> fleetly.system.v1.GetVersionResponse
+	4,  // 12: fleetly.system.v1.SystemService.GetStatus:output_type -> fleetly.system.v1.GetStatusResponse
+	7,  // 13: fleetly.system.v1.SystemService.GetSchema:output_type -> fleetly.system.v1.GetSchemaResponse
+	9,  // 14: fleetly.system.v1.SystemService.Explain:output_type -> fleetly.system.v1.ExplainResponse
+	11, // 15: fleetly.system.v1.PlatformService.TriggerPlatformBackup:output_type -> fleetly.system.v1.TriggerPlatformBackupResponse
+	13, // 16: fleetly.system.v1.PlatformService.ListPlatformBackups:output_type -> fleetly.system.v1.ListPlatformBackupsResponse
+	11, // [11:17] is the sub-list for method output_type
+	5,  // [5:11] is the sub-list for method input_type
+	5,  // [5:5] is the sub-list for extension type_name
+	5,  // [5:5] is the sub-list for extension extendee
+	0,  // [0:5] is the sub-list for field type_name
 }
 
 func init() { file_fleetly_system_v1_system_proto_init() }
@@ -605,9 +873,9 @@ func file_fleetly_system_v1_system_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_fleetly_system_v1_system_proto_rawDesc), len(file_fleetly_system_v1_system_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   9,
+			NumMessages:   14,
 			NumExtensions: 0,
-			NumServices:   1,
+			NumServices:   2,
 		},
 		GoTypes:           file_fleetly_system_v1_system_proto_goTypes,
 		DependencyIndexes: file_fleetly_system_v1_system_proto_depIdxs,

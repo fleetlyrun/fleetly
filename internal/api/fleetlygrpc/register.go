@@ -42,4 +42,5 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	identityv1.RegisterInvitationsServiceServer(srv, &InvitationsService{s: s})
 	identityv1.RegisterAuditQueryServiceServer(srv, &AuditQueryService{s: s})
 	systemv1.RegisterGovernanceServiceServer(srv, &GovernanceService{s: s})
+	systemv1.RegisterPlatformServiceServer(srv, &PlatformService{s: s})
 }

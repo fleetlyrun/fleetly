@@ -209,6 +209,12 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"deploy supersede", []string{"deploy", "--app", "GOLDEN_APP2", "--image", "nginx:1.28", "--supersede"}, 0},
 		{"deploy commit dedup", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.29",
 			"--commit", "deadbeefcafe0000000000000000000000000000"}, 0},
+
+		// Platform 动词（F2.3，ADR-0039 决策 10）：手动触发（同步执行——
+		// 幂等键让 --json 轮重放同响应）与快照列举（假 restic 的 canned
+		// 集；golden 双形态）。
+		{"platform backup", []string{"platform", "backup", "--idempotency-key", "platform-backup-1"}, 0},
+		{"platform backups", []string{"platform", "backups"}, 0},
 	}
 
 	// GOLDEN_SRCDIR 是上传 golden 的固定内容目录（确定性 tar → digest 确定，

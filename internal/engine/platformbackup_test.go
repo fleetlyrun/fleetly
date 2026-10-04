@@ -177,6 +177,68 @@ func TestPlatformBackupUnavailableDegrades(t *testing.T) {
 	assert.False(t, e.platformBackupDue(*e.opts.PlatformBackup), "unavailable binary: never due")
 }
 
+// 手动触发（F2.3，ADR-0039 决策 9/10）：同步执行 + 最新快照回读 + 成败
+// 事件与审计一拍落账；未配置面精确失败。触发不走节拍锚（直接执行）。
+func TestTriggerPlatformBackupManual(t *testing.T) {
+	ctx := context.Background()
+	cfg := &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour}
+
+	t.Run("succeeds and returns the newest snapshot", func(t *testing.T) {
+		e, fr, _ := withFakeRestic(t, cfg)
+		// 仓里已有两条 + 本次新铸一条（假面 snapshots 固定回读集）。
+		fr.snapsOut = `[{"short_id":"aaaa1111","time":"2026-10-04T10:00:00Z","hostname":"cp"},
+{"short_id":"bbbb2222","time":"2026-10-04T11:00:00Z","hostname":"cp"}]`
+		snap, err := e.TriggerPlatformBackup(ctx)
+		require.NoError(t, err)
+		assert.Equal(t, "bbbb2222", snap.ID, "the newest snapshot rides the trigger response")
+		assert.Equal(t, "cp", snap.Hostname)
+		// 事件 + 审计一拍落账（成功形态）。
+		names := eventNames(t, e, "platform-backup")
+		assert.Contains(t, names, eventPlatformBackupOK)
+		assert.NotContains(t, names, eventPlatformBackupFail)
+		assert.Contains(t, auditActions(t, e, "platform/"), "platform.backup_trigger")
+	})
+
+	t.Run("chain failure surfaces the error and the failed event", func(t *testing.T) {
+		e, fr, _ := withFakeRestic(t, cfg)
+		fr.execErr = context.DeadlineExceeded
+		_, err := e.TriggerPlatformBackup(ctx)
+		require.Error(t, err)
+		names := eventNames(t, e, "platform-backup")
+		assert.Contains(t, names, eventPlatformBackupFail, "the failed run is a recorded fact")
+		assert.Contains(t, auditActions(t, e, "platform/"), "platform.backup_trigger")
+	})
+
+	t.Run("not configured is a precise failure", func(t *testing.T) {
+		e, _, _ := withFakeRestic(t, nil)
+		_, err := e.TriggerPlatformBackup(ctx)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "not configured")
+	})
+
+	t.Run("empty repo after success is an invariant violation", func(t *testing.T) {
+		e, fr, _ := withFakeRestic(t, cfg)
+		fr.snapsOut = `[]`
+		_, err := e.TriggerPlatformBackup(ctx)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "no snapshots")
+	})
+}
+
+// 列举面：新→旧（time 降序——分页游标的确定性前提）。
+func TestListPlatformSnapshotsNewestFirst(t *testing.T) {
+	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	fr.snapsOut = `[{"short_id":"old00001","time":"2026-10-01T00:00:00Z","hostname":"cp"},
+{"short_id":"new00002","time":"2026-10-04T00:00:00Z","hostname":"cp"},
+{"short_id":"mid00003","time":"2026-10-02T00:00:00Z","hostname":"cp"}]`
+	snaps, err := e.ListPlatformSnapshots(context.Background())
+	require.NoError(t, err)
+	require.Len(t, snaps, 3)
+	assert.Equal(t, "new00002", snaps[0].ID)
+	assert.Equal(t, "mid00003", snaps[1].ID)
+	assert.Equal(t, "old00001", snaps[2].ID)
+}
+
 // 列举面：restic snapshots --json 直读。
 func TestPlatformBackupListSnapshots(t *testing.T) {
 	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{

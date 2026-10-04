@@ -73,12 +73,21 @@ func NewManual(t testing.TB) *Harness {
 	return newHarness(t, false)
 }
 
+// EngineOption 是夹具引擎选项的覆写器（缺省 DataRoot 之上叠加——CLI
+// golden 的 Platform Backup 假 restic 面等）。
+type EngineOption func(*engine.Options)
+
+// NewManualOpts 装配夹具（手动驱动 + 引擎选项覆写）。
+func NewManualOpts(t testing.TB, mutators ...EngineOption) *Harness {
+	return newHarness(t, false, mutators...)
+}
+
 // Drive 手动驱动一轮收敛。
 func (h *Harness) Drive(ctx context.Context) {
 	h.Engine.DriveOnce(ctx)
 }
 
-func newHarness(t testing.TB, autostart bool) *Harness {
+func newHarness(t testing.TB, autostart bool, mutators ...EngineOption) *Harness {
 	t.Helper()
 	ctx := context.Background()
 	db, clock := statertest.New(t)
@@ -95,13 +104,17 @@ func newHarness(t testing.TB, autostart bool) *Harness {
 	// 推进底座（检出目录由测试预置跳过真实 clone；推送目标=假受管仓库）。
 	// Builder 家族三名全在册同一 fake（ADR-0032 路由面——Calls() 捕获路由
 	// 名与 strategy 载荷，全链用例按 spec 的 builder 分派）。
+	opts := engine.Options{DataRoot: dataRoot}
+	for _, m := range mutators {
+		m(&opts)
+	}
 	eng := engine.New(engine.Deps{DB: db, Runtime: rt, Cipher: cipher,
 		Builders: map[string]capability.Builder{
 			specir.BuilderDockerfile: fb,
 			specir.BuilderRailpack:   fb,
 			specir.BuilderStatic:     fb,
 		}, Registry: freg, Logger: log},
-		engine.Options{DataRoot: dataRoot})
+		opts)
 	if autostart {
 		eng.Start(ctx)
 		t.Cleanup(func() { _ = eng.Stop(ctx) })

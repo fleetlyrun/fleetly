@@ -49,6 +49,34 @@ service SystemService {
   }
 }
 
+// PlatformService 是平台级操作面（`fleetly platform` 消费；与 SystemService
+// 的公开诊断面分立——本面全部要凭证）。首个动词族 = Platform Backup
+// （ADR-0039 决策 10；升级序前置=F2.3 的消费面，ADR-0015）。
+service PlatformService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // TriggerPlatformBackup 立即同步执行一次 Platform Backup（不走节拍锚；
+  // 执行时长受平台备份超时上界约束）。restic 缺席/链失败 = 精确失败。
+  // 升级序的前置动词（ADR-0015：Platform Backup 前置）。在幂等执法面
+  //（ADR-0024；ADR-0039 决策 10）。
+  rpc TriggerPlatformBackup(TriggerPlatformBackupRequest) returns (TriggerPlatformBackupResponse) {
+    option (google.api.http) = { post: "/v1/platform/backups" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "platform" op: SCOPE_OP_WRITE }
+    };
+  }
+  // ListPlatformBackups 列举本地仓快照（restic snapshots 直读，零状态行
+  // ——仓库自身即事实源，ADR-0039 决策 10）；新→旧分页（ADR-0026）。
+  rpc ListPlatformBackups(ListPlatformBackupsRequest) returns (ListPlatformBackupsResponse) {
+    option (google.api.http) = { get: "/v1/platform/backups" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "platform" op: SCOPE_OP_READ }
+    };
+  }
+}
+
 message GetVersionRequest {}
 
 message GetVersionResponse {
@@ -100,4 +128,29 @@ enum StatusState {
   STATUS_STATE_UNSPECIFIED = 0;
   STATUS_STATE_HEALTHY = 1;
   STATUS_STATE_DEGRADED = 2;
+}
+
+message TriggerPlatformBackupRequest {}
+
+// TriggerPlatformBackupResponse 携带本次执行后本地仓最新快照（整体成败
+// 由 RPC 错误面承载；失败仓/外置仓细节进 platform.backup_failed 事件）。
+message TriggerPlatformBackupResponse {
+  PlatformSnapshot snapshot = 1;
+}
+
+message ListPlatformBackupsRequest {
+  // after_snapshot_id 游标（上一页末条快照短 id；空 = 首页）。
+  string after_snapshot_id = 1;
+  int32 limit = 2;
+}
+
+message ListPlatformBackupsResponse {
+  repeated PlatformSnapshot snapshots = 1;
+}
+
+// PlatformSnapshot 是本地仓快照行投影（restic snapshots 直读面）。
+message PlatformSnapshot {
+  string id = 1;       // restic 短 id
+  string time = 2;     // RFC3339
+  string hostname = 3; // 快照主机名（控制面节点）
 }

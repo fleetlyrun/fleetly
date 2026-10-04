@@ -14,6 +14,7 @@ package engine
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -21,6 +22,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -318,8 +320,58 @@ type PlatformSnapshot struct {
 	Tags     []string  `json:"tags"`
 }
 
+// TriggerPlatformBackup 立即同步执行一次 Platform Backup（ADR-0039 决策 9
+// 手动面：直接执行不走节拍锚——F2.3 升级序的前置动词执行体，ADR-0015）。
+// 执行时长受 BackupTimeout 上界约束；与节拍环的并发互斥由 restic 仓锁兜
+// 底（同仓并发 backup 一方持锁一方精确失败，无半写态）。成败事件 + 审计
+// 一拍落账（节拍环同款事件面；手动面加操作者审计）。
+func (e *Engine) TriggerPlatformBackup(ctx context.Context) (*PlatformSnapshot, error) {
+	cfg := e.opts.PlatformBackup
+	if cfg == nil {
+		return nil, fmt.Errorf("platform backup: not configured on this control plane")
+	}
+	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
+	defer cancel()
+	runErr := e.runPlatformBackup(execCtx, *cfg)
+
+	// 事件 + 审计（失败也落——成败事实与节拍环同面；审计带操作者）。
+	eventName, payload := eventPlatformBackupOK, platformBackupEventJSON(cfg.Retention.String(), "")
+	if runErr != nil {
+		eventName, payload = eventPlatformBackupFail, platformBackupEventJSON("", runErr.Error())
+	}
+	if err := e.db.Tx(ctx, func(tx *sql.Tx) error {
+		return e.commitWrite(ctx, tx, writeFact{
+			events: []func() eventFact{func() eventFact {
+				return eventFact{name: eventName, aggregate: "platform", id: "platform-backup", payload: payload}
+			}},
+			audits: []auditFact{{action: "platform.backup_trigger", resource: "platform/platform-backup", actorCtx: true}},
+		})
+	}); err != nil {
+		e.log.Error("platform backup: record manual run", "err", err)
+	}
+	if runErr != nil {
+		return nil, runErr
+	}
+	// 回读本地仓最新快照（触发响应携带；restic 短 id）。
+	snaps, err := e.ListPlatformSnapshots(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("platform backup: listing the fresh snapshot: %w", err)
+	}
+	if len(snaps) == 0 {
+		return nil, fmt.Errorf("platform backup: succeeded but the local repo lists no snapshots")
+	}
+	newest := &snaps[0]
+	for i := range snaps[1:] {
+		if snaps[i+1].Time.After(newest.Time) {
+			newest = &snaps[i+1]
+		}
+	}
+	return newest, nil
+}
+
 // ListPlatformSnapshots 列举本地仓快照（restic snapshots --json 直读，
-// 零状态行——仓库自身即事实源，ADR-0039 决策 10）。
+// 零状态行——仓库自身即事实源，ADR-0039 决策 10）；新→旧（time 降序，
+// 分页游标的确定性前提）。
 func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot, error) {
 	if !e.PlatformBackupAvailable() {
 		return nil, fmt.Errorf("platform backup: restic binary not found")
@@ -345,5 +397,6 @@ func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot,
 	if err := json.Unmarshal(out, &snaps); err != nil {
 		return nil, fmt.Errorf("restic snapshots parse: %w", err)
 	}
+	sort.Slice(snaps, func(i, j int) bool { return snaps[i].Time.After(snaps[j].Time) })
 	return snaps, nil
 }

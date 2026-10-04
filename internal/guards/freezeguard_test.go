@@ -50,6 +50,9 @@ var freezeExemptions = map[string]string{
 	// Backup 触发（F2.2，ADR-0039 决策 10）：保护性操作——只铸台账行 +
 	// 只读导出运行中的库；冻结窗（变更冻结语义）不得停摆备份。
 	"/fleetly.structure.v1.DatabasesService/TriggerBackup": "protective operation: backup trigger writes only a ledger row and exports a running database read-only; a change freeze must not stop backups (ADR-0039)",
+	// Platform Backup 手动触发（F2.3，ADR-0039 决策 10）：保护性操作——
+	// 冻结期备份不停摆同理由；升级序的前置动词更不得被冻结拦停。
+	"/fleetly.system.v1.PlatformService/TriggerPlatformBackup": "protective operation: a snapshot of the control-plane state reduces risk during a freeze; upgrade sequencing depends on it (ADR-0039/ADR-0015)",
 	// VerifyBackup：无状态迁移的校验面（重算摘要比对回执——读路径的
 	// 执行面，动词名不在读前缀集，豁免登记）。
 	"/fleetly.structure.v1.DatabasesService/VerifyBackup": "read-path execution: recomputes the object digest against the ledger receipt, changes no platform state",
