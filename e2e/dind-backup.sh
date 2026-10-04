@@ -208,6 +208,30 @@ docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d fleetly \
 PG_COUNT=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM drill")
 [ "$PG_COUNT" = "1" ] || fail "postgres seed count=$PG_COUNT"
 
+# 任务替换存活锚（2026-10-04 staging 实录回归钉）：postgres 系父目录挂法
+# 曾被镜像 VOLUME 声明的匿名卷遮蔽命名卷 data/ 子目录——任务替换 = 新空
+# 卷 = initdb 空库。dbtemplate 以显式 PGDATA 收口；本锚 --force 滚一次任
+# 务，种子行必须原样在场（挂载面任何回归在此即红）。
+log "[postgres] task-replacement survival anchor"
+PG_OLD_CID="$PG_CID"
+docker exec "$DIND_CID" docker service update --force \
+  "fleetly-db-$(printf '%s' "$PG_SRC" | tr 'A-Z' 'a-z')" >/dev/null \
+  || fail "postgres force replacement"
+i=0
+while [ "$i" -lt 120 ]; do
+  PG_CID=$(db_container_id "$PG_SRC")
+  if [ -n "$PG_CID" ] && [ "$PG_CID" != "$PG_OLD_CID" ]; then
+    if docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d fleetly -tAc "SELECT 1" >/dev/null 2>&1; then
+      break
+    fi
+  fi
+  i=$((i + 1)); sleep 2
+done
+[ -n "$PG_CID" ] && [ "$PG_CID" != "$PG_OLD_CID" ] || fail "postgres replacement container never served"
+PG_COUNT2=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM drill")
+[ "$PG_COUNT2" = "1" ] || fail "postgres data lost across task replacement (count=$PG_COUNT2)"
+log "[postgres] data survived task replacement"
+
 log "[postgres] backup + verify"
 PG_BACKUP=$(backup_and_verify "$PG_SRC")
 

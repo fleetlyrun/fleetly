@@ -21,11 +21,19 @@ func (postgresTemplate) Image() string  { return "postgres:17-bookworm" }
 
 // DataTarget 挂父目录而非 /var/lib/postgresql/data：2026-10 刷新的
 // postgres:17-bookworm 镜像带 18+ 目录布局入口（docker-library/postgres
-// #1259）——挂在 data 子路径会被判"unused mount"拒启（dind 实证）；挂
-// 父目录对旧/新入口双兼容（旧：initdb 落 <卷>/data；新：落 <卷>/17/docker）。
-// 存量旧布局卷（数据在卷根）的迁移 = 重建 + 备份恢复（F2.2 链路，ADR-0029
+// #1259）——挂在 data 子路径会被判"unused mount"拒启（dind 实证）。
+// 存量旧布局卷（数据在卷根）的迁移见 runbook（卷内目录改名即可，ADR-0029
 // "版本升级路径"口径）。
 func (postgresTemplate) DataTarget() string { return "/var/lib/postgresql" }
+
+// pgDataDir 是 postgres 系的显式 PGDATA（容器内路径），必须落在 DataTarget
+// 挂载面内部且避开镜像 VOLUME 声明路径 /var/lib/postgresql/data：刷新版
+// 镜像在该路径声明 VOLUME，docker 对"嵌套在命名卷内部的镜像 VOLUME 路径"
+// 铸匿名卷——遮蔽命名卷同名子目录（2026-10-04 staging 实录：每次任务替换
+// = 新匿名空卷 = initdb 空库，数据隐形丢失且 healthcheck 全绿掩盖）。显式
+// PGDATA 把 initdb 与服务都钉进命名卷，任务替换数据存活（e2e 任务替换存活
+// 锚钉死该回归）。
+const pgDataDir = "/var/lib/postgresql/pgdata"
 
 // user / dbName 是 postgres 系的连接账号与库名（模板冻结值）。
 const (
@@ -38,6 +46,7 @@ func (postgresTemplate) Workload() (map[string]string, []string) {
 		"POSTGRES_USER":          pgUser,
 		"POSTGRES_DB":            pgDBName,
 		"POSTGRES_PASSWORD_FILE": "/run/secrets/" + PasswordFile,
+		"PGDATA":                 pgDataDir,
 	}, nil
 }
 

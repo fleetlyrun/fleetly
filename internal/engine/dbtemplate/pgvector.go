@@ -20,6 +20,7 @@ func (pgvectorTemplate) Workload() (map[string]string, []string) {
 		"POSTGRES_USER":          pgUser,
 		"POSTGRES_DB":            pgDBName,
 		"POSTGRES_PASSWORD_FILE": "/run/secrets/" + PasswordFile,
+		"PGDATA":                 pgDataDir, // 与 postgres 基座同值：避开镜像 VOLUME 遮蔽（见 postgres.go pgDataDir 注）
 	}
 	// pgvector 扩展须在首启初始化期建（postgres 镜像的
 	// docker-entrypoint-initdb.d 机制；argv 不含任何凭证值）。

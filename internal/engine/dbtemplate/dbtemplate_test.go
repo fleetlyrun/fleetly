@@ -54,6 +54,7 @@ func TestTemplateFaces(t *testing.T) {
 				"POSTGRES_USER":          "fleetly",
 				"POSTGRES_DB":            "fleetly",
 				"POSTGRES_PASSWORD_FILE": "/run/secrets/" + dbtemplate.PasswordFile,
+				"PGDATA":                 "/var/lib/postgresql/pgdata",
 			},
 			probe:     []string{"pg_isready", "-h", "127.0.0.1", "-p", "5432", "-U", "fleetly", "-d", "fleetly"},
 			materials: map[string][]byte{dbtemplate.PasswordFile: []byte("secretpw")},
@@ -68,6 +69,7 @@ func TestTemplateFaces(t *testing.T) {
 				"POSTGRES_USER":          "fleetly",
 				"POSTGRES_DB":            "fleetly",
 				"POSTGRES_PASSWORD_FILE": "/run/secrets/" + dbtemplate.PasswordFile,
+				"PGDATA":                 "/var/lib/postgresql/pgdata",
 			},
 			command: []string{"bash", "-c",
 				"mkdir -p /docker-entrypoint-initdb.d && " +
@@ -326,6 +328,50 @@ func parseINI(t *testing.T, text string) ([]string, map[string]string) {
 		}
 	}
 	return sections, keys
+}
+
+// TestVolumeShadowContract：镜像 VOLUME 遮蔽契约（2026-10-04 staging
+// 实录的静态执法面）。docker 对"嵌套在命名卷内部的镜像 VOLUME 路径"铸
+// 匿名卷并遮蔽命名卷同名子目录——数据面卷模板必须二选一：
+//   - DataTarget 与镜像 VOLUME 路径精确重合（挂载覆盖声明，无匿名卷）；
+//   - 或（postgres 系父目录挂法）显式 PGDATA 钉进命名卷内部、且不落在
+//     镜像 VOLUME 路径之下。
+//
+// 违反任一形态 = 任务替换即空库服现（数据隐形丢失），本表钉死。
+func TestVolumeShadowContract(t *testing.T) {
+	for _, tc := range []struct {
+		engine      string
+		volumePath  string // 引擎镜像的 VOLUME 声明路径
+		expectExact bool   // true: DataTarget 必须与 volumePath 精确重合
+	}{
+		{engine: "postgres", volumePath: "/var/lib/postgresql/data"}, // 父挂 + PGDATA 重定向
+		{engine: "pgvector", volumePath: "/var/lib/postgresql/data"},
+		{engine: "mysql", volumePath: "/var/lib/mysql", expectExact: true},
+		{engine: "mongo", volumePath: "/data/db", expectExact: true},
+		{engine: "redis", volumePath: "/data", expectExact: true},
+	} {
+		t.Run(tc.engine, func(t *testing.T) {
+			tpl, ok := dbtemplate.For(tc.engine)
+			require.True(t, ok)
+			target := tpl.DataTarget()
+			if tc.expectExact {
+				assert.Equal(t, tc.volumePath, target,
+					"%s: DataTarget must coincide with the image VOLUME path (exact mount, no shadow)", tc.engine)
+				return
+			}
+			// 父挂形态：PGDATA 必须在场、落在 DataTarget 内部、且不在镜像
+			// VOLUME 路径之下（其下任意路径都在匿名卷里）。
+			env, _ := tpl.Workload()
+			pgdata, ok := env["PGDATA"]
+			require.True(t, ok, "%s: parent-mount DataTarget requires explicit PGDATA", tc.engine)
+			assert.True(t, strings.HasPrefix(pgdata, target+"/"),
+				"%s: PGDATA %q must live inside DataTarget %q", tc.engine, pgdata, target)
+			assert.NotEqual(t, tc.volumePath, pgdata,
+				"%s: PGDATA must not sit on the image VOLUME path %q (anonymous volume shadows it)", tc.engine, tc.volumePath)
+			assert.False(t, strings.HasPrefix(pgdata, tc.volumePath+"/"),
+				"%s: PGDATA %q must not live under the image VOLUME path %q", tc.engine, pgdata, tc.volumePath)
+		})
+	}
 }
 
 // TestReservedSlotsVacant：F2.7 digest 钉定的预留空槽现状（恒空）——
