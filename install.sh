@@ -219,11 +219,20 @@ UNIT
 
 start_fleetlyd_background() {
   # 无 systemd 环境（容器/最小镜像）：setsid 脱离会话进程组 + 日志落盘
-  #（与 e2e dind 同款形态；进程托管随容器形态批次收口）。
+  #（与 e2e dind 同款形态；进程托管随容器形态批次收口）。env 落
+  # /etc/fleetlyd.env——崩溃恢复类重启（e2e 场景）经同文件重建进程，
+  # 不再手拼 env 丢受管面地址（F2.5 真机实证：重启丢 FLEETLY_METRICS_ADDR
+  # = Metrics 面静默停用）。
   log "no systemd — starting fleetlyd in background (log: /var/log/fleetlyd.log)"
-  setsid env FLEETLY_DATA_ROOT="$DATA_ROOT" FLEETLY_REGISTRY_ADDR="${REGISTRY_ADDR:-}" \
-    FLEETLY_LOGGING_ADDR="${LOGGING_ADDR:-}" \
-    FLEETLY_METRICS_ADDR="${METRICS_ADDR:-}" \
+  cat > /etc/fleetlyd.env <<ENVEOF
+FLEETLY_DATA_ROOT=$DATA_ROOT
+FLEETLY_REGISTRY_ADDR=${REGISTRY_ADDR:-}
+FLEETLY_LOGGING_ADDR=${LOGGING_ADDR:-}
+FLEETLY_METRICS_ADDR=${METRICS_ADDR:-}
+ENVEOF
+  chmod 0600 /etc/fleetlyd.env
+  # shellcheck disable=SC2046
+  setsid env $(grep -v '^$' /etc/fleetlyd.env | tr '\n' ' ') \
     "$BIN_DIR/fleetlyd" > /var/log/fleetlyd.log 2>&1 < /dev/null &
 }
 

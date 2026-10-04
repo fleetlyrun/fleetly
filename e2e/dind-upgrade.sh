@@ -309,7 +309,7 @@ docker cp "$WORKDIR/bins-new/fleetly" "$DIND_CID":/usr/local/bin/fleetly
 
 log "UPGRADE: starting NEW fleetlyd (goose rollforward + managed reconcile)"
 docker exec -e FLEETLY_EDGE_CONFIG_ENDPOINT="http://$DIND_IP:9082/edge/config" "$DIND_CID" sh -c \
-  'setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
+  'setsid env $(grep -v "^$" /etc/fleetlyd.env | tr "\n" " ") /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
 
 i=0
 while [ "$i" -lt 60 ]; do

@@ -167,8 +167,11 @@ docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep -q "fleetl
 #   场景 2：observing 中 SIGTERM（宽限契约：有界退出）→ 重启观察窗续算
 #   （deadline 持久化在 deployment 行，不整窗重开——验收口径见断言）。
 restart_fleetlyd() {
+  # env 同源 /etc/fleetlyd.env（install.sh 无 systemd 形态落的启动 env）——
+  # 手拼 env 会丢受管面地址（F2.5 实证：丢 FLEETLY_METRICS_ADDR = Metrics
+  # 面静默停用，采集/查询全灭）。
   docker exec "$DIND_CID" sh -c \
-    'setsid env FLEETLY_DATA_ROOT=/var/lib/fleetly /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
+    'setsid env $(grep -v "^$" /etc/fleetlyd.env | tr "\n" " ") /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
   i=0
   while [ "$i" -lt 60 ]; do
     if cli whoami >/dev/null 2>&1; then
