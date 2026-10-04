@@ -259,6 +259,39 @@ func TestPlatformBackupListSnapshots(t *testing.T) {
 	assert.Equal(t, "mgr", probes[0].Hostname)
 }
 
+// systemd 形态环境（HOME/XDG_CACHE_HOME 双缺）补丁：XDG_CACHE_HOME 钉进
+// 域内缓存目录 + 目录真建 + 缓存路径进备份排除集（2026-10-04 staging
+// 实录锚——restic "unable to locate cache directory" 拒跑面）。
+func TestResticEnvSystemdCacheDir(t *testing.T) {
+	e, fr, _ := withFakeRestic(t, &PlatformBackupConfig{Interval: time.Hour, Retention: 24 * time.Hour})
+	repo := resticRepo{repo: "/r", env: map[string]string{"RESTIC_PASSWORD": "pw"}}
+
+	t.Run("homeless env gets XDG_CACHE_HOME pinned into the domain", func(t *testing.T) {
+		env := e.resticEnvFrom([]string{"PATH=/usr/bin"}, repo)
+		want := "XDG_CACHE_HOME=" + e.platformBackupPath(resticCacheSubdir)
+		assert.Contains(t, env, want)
+		st, err := os.Stat(e.platformBackupPath(resticCacheSubdir))
+		require.NoError(t, err)
+		assert.True(t, st.IsDir(), "cache directory is really created")
+	})
+
+	t.Run("env carrying HOME is passed through untouched", func(t *testing.T) {
+		env := e.resticEnvFrom([]string{"PATH=/usr/bin", "HOME=/root"}, repo)
+		for _, kv := range env {
+			assert.NotContains(t, kv, "XDG_CACHE_HOME=", "HOME already locates a cache dir; no override")
+		}
+	})
+
+	t.Run("backup excludes the cache directory", func(t *testing.T) {
+		ctx := context.Background()
+		require.NoError(t, e.runPlatformBackup(ctx, *e.opts.PlatformBackup))
+		calls := fr.snapshotCalls()
+		require.Len(t, calls, 4)
+		assert.Contains(t, strings.Join(calls[1], " "), e.platformBackupPath(resticCacheSubdir),
+			"cache dir must ride the backup exclusion set")
+	})
+}
+
 // snapshotCalls 返回假面调用快照（argv 数组拷贝）。
 func (f *fakeRestic) snapshotCalls() [][]string {
 	f.mu.Lock()

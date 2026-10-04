@@ -149,7 +149,8 @@ func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig
 			// 仓密排除（决策 9：仓密进仓自锁的循环依赖——恢复所需的密在
 			// 仓外，runbook 提示离机保管）。
 			"--exclude", filepath.Join(e.opts.DataRoot, "keys", platformRepoKeyFile),
-			"--exclude", e.platformBackupPath(platformRepoSubdir)); err != nil {
+			"--exclude", e.platformBackupPath(platformRepoSubdir),
+			"--exclude", e.platformBackupPath(resticCacheSubdir)); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -293,7 +294,7 @@ func (e *Engine) resticRun(ctx context.Context, repo resticRepo, args ...string)
 			return err
 		}
 	}
-	out, err := resticExec(ctx, bin, append([]string{"-r", repo.repo}, args...), append(os.Environ(), envPairs(repo.env)...))
+	out, err := resticExec(ctx, bin, append([]string{"-r", repo.repo}, args...), e.resticEnv(repo))
 	if err != nil {
 		tail := stderrTail(string(out))
 		if tail == "" {
@@ -302,6 +303,39 @@ func (e *Engine) resticRun(ctx context.Context, repo resticRepo, args ...string)
 		return fmt.Errorf("restic %s (repo %s): %s", args[0], repo.repo, tail)
 	}
 	return nil
+}
+
+// resticCacheSubdir 是 restic 客户端缓存目录（platform-backups 域内；
+// systemd 环境无 HOME/XDG_CACHE_HOME——restic "unable to locate cache
+// directory" 拒跑（2026-10-04 staging 实录；dind/e2e 上下文恒有 HOME 故
+// CI 不红）。域内自管缓存随备份排除（与仓目录同待遇，见 exclude 集）。
+const resticCacheSubdir = "cache"
+
+// resticEnv 组装 restic 子进程环境：os.Environ + 仓面凭证。
+func (e *Engine) resticEnv(repo resticRepo) []string {
+	return e.resticEnvFrom(os.Environ(), repo)
+}
+
+// resticEnvFrom 是 resticEnv 的可测形态（base 注入——systemd 无 HOME 面
+// 在测试机不可复现，参数化补测）：HOME 与 XDG_CACHE_HOME 双缺（systemd
+// 形态）时补 XDG_CACHE_HOME 钉进域内缓存目录。
+func (e *Engine) resticEnvFrom(base []string, repo resticRepo) []string {
+	env := append(append([]string{}, base...), envPairs(repo.env)...)
+	hasHome := false
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "HOME=") || strings.HasPrefix(kv, "XDG_CACHE_HOME=") {
+			hasHome = true
+			break
+		}
+	}
+	if !hasHome {
+		dir := e.platformBackupPath(resticCacheSubdir)
+		if err := os.MkdirAll(dir, 0o700); err == nil {
+			env = append(env, "XDG_CACHE_HOME="+dir)
+		}
+		// 建目录失败不阻断：环境原样透传，restic 自行报错（错误链完整）。
+	}
+	return env
 }
 
 func envPairs(m map[string]string) []string {
