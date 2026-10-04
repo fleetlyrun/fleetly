@@ -263,7 +263,30 @@ func (e *Engine) executeBuild(b *build.Build) {
 		return
 	}
 
-	result, err := builder.Build(runCtx, input, &bufferWriter{engine: e, buildID: b.ID})
+	// 出口单点（P11/ADR-0040 决策 3）：builder 的日志 writer 经
+	// buildLogWriter 链——脱敏（值→指纹短形态）→ 环形缓冲（live 面）+
+	// VL ingest（kind=build 持久化）。域盖戳（team/project）解析失败不
+	// 阻断构建： stamps 缺席时按 build_id 仍可检索。
+	var ingester *buildLogIngester
+	if e.logging != nil {
+		ingester = &buildLogIngester{e: e, buildID: b.ID}
+		if a, aerr := e.apps.Get(finishCtx, e.db.Runner(), b.AppID); aerr == nil {
+			ingester.app = b.AppID
+			ingester.project = a.ProjectID
+			if team, terr := e.projectTeam(finishCtx, a.ProjectID); terr == nil {
+				ingester.team = team
+			}
+		}
+	}
+	writer := &buildLogWriter{
+		inner:  &bufferWriter{engine: e, buildID: b.ID},
+		redact: buildRedactionTable(&input),
+		ingest: ingester,
+	}
+	result, err := builder.Build(runCtx, input, writer)
+	if ingester != nil {
+		ingester.flush(context.WithoutCancel(runCtx)) // 终批（best-effort；丢批告警不阻断终态）
+	}
 	switch {
 	case err == nil:
 		if _, terr := e.transitBuild(finishCtx, b,

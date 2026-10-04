@@ -27,10 +27,12 @@ func (e *Engine) managedStep(ctx context.Context) {
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 	defer cancel()
 	e.reconcileNodes(stepCtx) // 节点对账不依赖 Edge（观测面独立收敛）
-	if e.edge == nil {
-		return // Edge 未装配（可选项）：无受管面
-	}
+	// 受管面按在册 Provider 各自收敛（Edge 缺席不阻断 Registry/Logging——
+	// ADR-0040 起 Logging 是独立受管面）。
 	e.reconcileManaged(stepCtx)
+	if e.edge == nil {
+		return // Edge 未装配（可选项）：无 Route 发布面
+	}
 	e.publishRoutes(stepCtx)
 }
 
@@ -106,8 +108,9 @@ func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
 	}
 }
 
-// managedProviders 列出在册受管 Provider（注册序稳定：Edge 先于 Registry
-// ——Route 面优先收敛）。受管/材料源子面经 FacesOf 协商点探测。
+// managedProviders 列出在册受管 Provider（注册序稳定：Edge → Registry →
+// Logging——Route 面优先收敛，日志面殿后）。受管/材料源子面经 FacesOf
+// 协商点探测。
 func (e *Engine) managedProviders() []managedProviderDecl {
 	var out []managedProviderDecl
 	if e.edge != nil {
@@ -128,6 +131,16 @@ func (e *Engine) managedProviders() []managedProviderDecl {
 			})
 		} else {
 			e.log.Warn("registry provider is not managed-selfhosted; skipping reconciler")
+		}
+	}
+	if e.logging != nil {
+		faces := capability.FacesOf(e.logging)
+		if faces.Managed != nil {
+			// 不挂项目网（发布端口可达——zot 同款分叉，附录 B.1；采集与
+			// 检索都经 mesh 端点，ADR-0040）。
+			out = append(out, managedProviderDecl{m: faces.Managed, materials: faces.MaterialsSource, attachNetwork: false})
+		} else {
+			e.log.Warn("logging provider is not managed-selfhosted; skipping reconciler")
 		}
 	}
 	return out

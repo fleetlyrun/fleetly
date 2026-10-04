@@ -19,6 +19,7 @@ import (
 	configrepo "github.com/fleetlyrun/fleetly/internal/state/config"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
 	"github.com/fleetlyrun/fleetly/internal/state/deployment"
+	"github.com/fleetlyrun/fleetly/internal/state/logcursor"
 	networkrepo "github.com/fleetlyrun/fleetly/internal/state/network"
 	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/state/node"
@@ -362,11 +363,17 @@ type Engine struct {
 	objectStore capability.ObjectStore
 	utility     capability.RuntimeUtility
 
+	// Logging 域（F2.4，ADR-0040）：受管日志存储 Provider + 采集环（域流
+	// 账本/游标 repo；build 日志出口经同 Provider 持久化——见 buildlog.go）。
+	logging capability.Logging
+	logpipe logpipeState
+
 	loop         *Loop
 	buildLoop    *Loop
 	managedLoop  *Loop
 	databaseLoop *Loop
 	backupLoop   *Loop // Backup 环（调度/执行/恢复/保留，ADR-0039）
+	loggingLoop  *Loop // 采集环（域流对账，ADR-0040；流本体在 goroutine）
 	taskLoop     *Loop // Task/Run 收敛环（janitor/补足/Ensure/收口）
 	scheduleLoop *Loop // Schedule 到期拍环（F1.7）
 	driftLoop    *Loop // ADR-0022 漂移扫描环（spec 对照 + 稳态看门狗）
@@ -445,6 +452,7 @@ type Deps struct {
 	Builders    map[string]capability.Builder // 可空/空 map：构建链停用（镜像直投不受影响；ADR-0032 spec 路由家族）
 	Edge        capability.Edge               // 可空：Route 发布与受管自宿停用
 	Registry    capability.Registry           // 可空：build 源部署精确失败（附录 B.5①）
+	Logging     capability.Logging            // 可空：采集/检索面停用——logs 回退 Runtime 实时路径、build 日志回退环形缓冲（ADR-0040）
 	ObjectStore capability.ObjectStore        // 可空：备份链停用（ADR-0039；本地目标零配置在册，缺席 = 装配缺口）
 	Cipher      *material.Cipher              // 可空：Secret 面停用（引用 Secret 的部署得精确错误）
 	Logger      *slog.Logger
@@ -460,6 +468,7 @@ func New(deps Deps, opts Options) *Engine {
 		builders:     deps.Builders,
 		edge:         deps.Edge,
 		registry:     deps.Registry,
+		logging:      deps.Logging,
 		objectStore:  deps.ObjectStore,
 		utility:      capability.FacesOf(deps.Runtime).Utility,
 		cipher:       deps.Cipher,
@@ -489,6 +498,7 @@ func New(deps Deps, opts Options) *Engine {
 		managedLoop:  NewLoop("managed", log),
 		databaseLoop: NewLoop("database", log),
 		backupLoop:   NewLoop("backup", log),
+		loggingLoop:  NewLoop("logging", log),
 		taskLoop:     NewLoop("task", log),
 		scheduleLoop: NewLoop("schedule", log),
 		driftLoop:    NewLoop("drift", log),
@@ -502,6 +512,8 @@ func New(deps Deps, opts Options) *Engine {
 	}
 	e.build.logs = newLogBuffer(500)
 	e.build.inputs = make(map[string]capability.BuildRequest)
+	e.logpipe.streams = make(map[string]context.CancelFunc)
+	e.logpipe.cursors = logcursor.New(clock)
 	e.obs.observations = make(map[string]capability.WorkloadEvent)
 	e.obs.workloadApp = make(map[string]workloadOwner)
 	e.obs.ensuredGen = make(map[string]uint64)
@@ -525,6 +537,7 @@ func New(deps Deps, opts Options) *Engine {
 		{name: "managed", loop: e.managedLoop, step: e.managedStep},
 		{name: "database", loop: e.databaseLoop, step: e.databaseStep},
 		{name: "backup", loop: e.backupLoop, step: e.backupStep},
+		{name: "logging", loop: e.loggingLoop, step: e.loggingStep},
 		{name: "schedule", loop: e.scheduleLoop, step: e.scheduleStep},
 		{name: "task", loop: e.taskLoop, step: e.taskStep},
 	}
