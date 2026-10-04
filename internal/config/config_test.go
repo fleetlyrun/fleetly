@@ -3,7 +3,11 @@ package config
 import (
 	"testing"
 
+	"github.com/lynx-go/lynx"
+	"github.com/spf13/pflag"
+	"github.com/spf13/viper"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // 绑面字段的缺省语义（ADR-0036）：不配置 = 原行为——edge config 仍
@@ -67,4 +71,30 @@ func TestLoggingDefaults(t *testing.T) {
 	assert.Equal(t, DefaultLoggingRetentionDays, c.LoggingRetentionDays())
 	assert.Empty(t, (*AppConfig)(nil).LoggingAddr())
 	assert.Equal(t, DefaultLoggingRetentionDays, (*AppConfig)(nil).LoggingRetentionDays())
+}
+
+// TestEnvPlatformBackupS3FiveTuple 钉五元组的 env 覆盖通道（ADR-0042：装配
+// 在场选择与 restic 外置仓共用此块；install.sh 的 env 文件形态依赖嵌套键
+// 逐叶生效——lynx 结构体通道，viper 裸 Unmarshal 不吃 env-only 嵌套键的
+// 已知坑在此钉死）。
+func TestEnvPlatformBackupS3FiveTuple(t *testing.T) {
+	t.Setenv("FLEETLY_PLATFORM_BACKUP_S3_ENDPOINT", "http://127.0.0.1:9000")
+	t.Setenv("FLEETLY_PLATFORM_BACKUP_S3_BUCKET", "fleetly-backups")
+	t.Setenv("FLEETLY_PLATFORM_BACKUP_S3_PREFIX", "platform-repo")
+	t.Setenv("FLEETLY_PLATFORM_BACKUP_S3_ACCESS_KEY_ID", "ak")
+	t.Setenv("FLEETLY_PLATFORM_BACKUP_S3_SECRET_ACCESS_KEY", "sk")
+
+	v := viper.New()
+	cs := lynx.NewViperConfig(v)
+	require.NoError(t, ConfigureConfigSource(pflag.NewFlagSet("t", pflag.ContinueOnError), cs))
+
+	var c AppConfig
+	require.NoError(t, UnmarshalConfig(cs, &c))
+	s3 := c.PlatformBackupS3()
+	require.NotNil(t, s3, "the env-only five-tuple must reach the config struct")
+	assert.Equal(t, "http://127.0.0.1:9000", s3.GetEndpoint())
+	assert.Equal(t, "fleetly-backups", s3.GetBucket())
+	assert.Equal(t, "platform-repo", s3.GetPrefix())
+	assert.Equal(t, "ak", s3.GetAccessKeyId())
+	assert.Equal(t, "sk", s3.GetSecretAccessKey())
 }

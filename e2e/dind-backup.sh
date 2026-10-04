@@ -387,17 +387,19 @@ docker exec "$DIND_CID" docker run -d --name fleetly-e2e-silo \
   -e MINIO_ROOT_USER=fleetly-e2e \
   -e MINIO_ROOT_PASSWORD=e2e-offsite-key \
   "$SILO_IMAGE" server /data >/dev/null || fail "silo start"
-# 就绪门：dind 侧 busybox nc 探测发布端口（不依赖 silo 镜像内工具面）。mcli
-# 的 alias set 自身会签名探测端点——服务器未就绪时连 alias 都设不上
-# （2026-10-04 CI 实录：run 后 ~1.5s 内 connection refused）。
+# 就绪门：mcli 的 alias set 自身会签名探测端点——服务器未就绪时 connection
+# refused（CI 两轮实录：run 后 ~2.5s 仍在初始化；nc -z 探到的是 dockerd 的
+# userland-proxy 端口绑定，不是 silo 本体，不可用作门）。对 alias set 重试
+# 即就绪探针，零健康路径/镜像工具面假设。
 i=0
 while [ "$i" -lt 30 ]; do
-  docker exec "$DIND_CID" nc -z 127.0.0.1 9000 >/dev/null 2>&1 && break
+  if docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
+    mcli alias set e2e http://127.0.0.1:9000 fleetly-e2e e2e-offsite-key >/dev/null 2>&1; then
+    break
+  fi
   i=$((i + 1)); sleep 1
 done
-[ "$i" -lt 30 ] || fail "silo port never came up"
-docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
-  mcli alias set e2e http://127.0.0.1:9000 fleetly-e2e e2e-offsite-key >/dev/null || fail "mcli alias"
+[ "$i" -lt 30 ] || fail "silo never became ready (mcli alias probe)"
 i=0
 while [ "$i" -lt 30 ]; do
   docker exec "$DIND_CID" docker exec fleetly-e2e-silo mcli mb e2e/fleetly-backups >/dev/null 2>&1 && break
