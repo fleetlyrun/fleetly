@@ -1,0 +1,2 @@
+stored shared variable DATABASE_URL
+affected apps (redeploy to pick up the new value): <ULID>, <ULID>

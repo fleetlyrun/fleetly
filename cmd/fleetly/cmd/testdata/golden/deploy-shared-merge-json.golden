@@ -1,0 +1,16 @@
+{
+  "deployment": {
+    "id": "<ULID>",
+    "app_id": "<ULID>",
+    "from_revision": "<ULID>",
+    "to_revision": "<ULID>",
+    "state": "queued",
+    "generation": "17",
+    "created_at": "2026-01-01T00:02:00Z",
+    "updated_at": "2026-01-01T00:02:00Z"
+  },
+  "admission": {
+    "outcome": "merged",
+    "position": 2
+  }
+}

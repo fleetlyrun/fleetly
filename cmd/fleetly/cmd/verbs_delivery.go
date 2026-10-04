@@ -129,9 +129,10 @@ func newDeployVerb() commands.Command {
 	var app, image, composeFile, fromDir, dockerfile, builder, railpackVersion, outputDir, process, idemKey, commit, httpProbe string
 	var tcpProbe int
 	var supersede, wait bool
+	var appEnv envSlice
 	return &flaggedVerb{
 		name: name, synopsis: "Deploy an app from an image, compose file, or uploaded directory",
-		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
+		usage: "deploy --app APP_ID (--image REF | --compose-file PATH | --from-dir DIR) [--builder dockerfile|railpack|static] [--dockerfile PATH] [--railpack-version SEMVER] [--output-dir DIR] [--env KEY=VALUE]... [--idempotency-key K] [--supersede] [--wait] [--http-probe PATH | --tcp-probe PORT]",
 		setFlags: func(fs *flag.FlagSet) {
 			fs.StringVar(&app, "app", "", "app id (required)")
 			fs.StringVar(&image, "image", "", "image reference (direct image deploy)")
@@ -142,6 +143,7 @@ func newDeployVerb() commands.Command {
 			fs.StringVar(&railpackVersion, "railpack-version", "", "pinned railpack version, bare semver like 0.39.0 (required with --builder railpack)")
 			fs.StringVar(&outputDir, "output-dir", "", "artifact directory inside the uploaded source to serve (default .; static builder only)")
 			fs.StringVar(&process, "process", "", "process name for image and upload deploys (default web)")
+			fs.Var(&appEnv, "env", "app-level variable KEY=VALUE, repeatable (overrides project shared variables; image and upload deploys only)")
 			fs.StringVar(&idemKey, "idempotency-key", "", "idempotency key: same key+body replays the same response for 24h (sent as the Idempotency-Key header and the deployment dedup anchor)")
 			fs.StringVar(&commit, "commit", "", "commit sha (webhook dedup anchor)")
 			fs.BoolVar(&supersede, "supersede", false, "explicitly preempt any in-flight deployment")
@@ -170,6 +172,9 @@ func newDeployVerb() commands.Command {
 			}
 			if (httpProbe != "" || tcpProbe != 0) && composeFile != "" {
 				return usageErr(name, "--http-probe/--tcp-probe are for image or upload deploys; compose declares probes via healthcheck.http_path/tcp_port")
+			}
+			if len(appEnv) > 0 && composeFile != "" {
+				return usageErr(name, "--env is for image or upload deploys; compose declares variables via each service's environment")
 			}
 			if fromDir == "" && (builder != "" || dockerfile != "" || railpackVersion != "" || outputDir != "") {
 				return usageErr(name, "--builder/--dockerfile/--railpack-version/--output-dir are for --from-dir deploys only")
@@ -249,6 +254,7 @@ func newDeployVerb() commands.Command {
 				AppId: app, Image: image, ComposeYaml: compose, UploadId: uploadID, Dockerfile: dockerfile,
 				Builder: builder, RailpackVersion: railpackVersion, OutputDir: outputDir,
 				ProcessName:    process,
+				Env:            appEnv.envMap(),
 				IdempotencyKey: idemKey, CommitSha: commit, Supersede: supersede,
 				HttpProbe: httpProbe, TcpProbe: int32(tcpProbe), //nolint:gosec // 端口域内
 			})

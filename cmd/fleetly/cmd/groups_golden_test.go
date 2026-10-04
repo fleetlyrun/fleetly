@@ -7,7 +7,7 @@ import (
 )
 
 func TestGoldenVerbGroups(t *testing.T) {
-	groups := []string{"tokens", "users", "roles", "teams", "freeze", "projects", "apps", "secrets", "configs", "volumes", "networks", "databases", "deployments", "revisions", "builds", "uploads", "hooks", "tasks", "runs", "schedules", "routes", "nodes", "events", "platform"}
+	groups := []string{"tokens", "users", "roles", "teams", "freeze", "projects", "apps", "secrets", "configs", "shared-variables", "volumes", "networks", "databases", "deployments", "revisions", "builds", "uploads", "hooks", "tasks", "runs", "schedules", "routes", "nodes", "events", "platform"}
 	for _, g := range groups {
 		t.Run(g, func(t *testing.T) {
 			code, out, stderr := runCLI(t, g)

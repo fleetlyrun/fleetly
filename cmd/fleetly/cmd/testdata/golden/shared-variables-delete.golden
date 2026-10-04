@@ -1,0 +1,2 @@
+deleted shared variable CACHE_HOST
+affected apps (redeploy to pick up the new value): <ULID>

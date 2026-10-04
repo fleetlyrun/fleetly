@@ -1,0 +1,16 @@
+{
+  "entries": [
+    {
+      "path": "processes[0].env.DATABASE_URL",
+      "new_value": "postgres://golden"
+    },
+    {
+      "path": "processes[0].env.LOG_LEVEL",
+      "old_value": "warn"
+    },
+    {
+      "path": "processes[0].env.ONLY_APP",
+      "old_value": "1"
+    }
+  ]
+}

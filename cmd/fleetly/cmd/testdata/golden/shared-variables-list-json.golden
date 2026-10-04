@@ -1,0 +1,18 @@
+{
+  "variables": [
+    {
+      "id": "<ULID>",
+      "project_id": "<ULID>",
+      "name": "CACHE_HOST",
+      "value": "cache.internal",
+      "updated_at": "2026-01-01T00:02:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "project_id": "<ULID>",
+      "name": "DATABASE_URL",
+      "value": "postgres://golden-v2",
+      "updated_at": "2026-01-01T00:02:00Z"
+    }
+  ]
+}

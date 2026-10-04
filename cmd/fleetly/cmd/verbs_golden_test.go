@@ -210,6 +210,30 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"deploy commit dedup", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.29",
 			"--commit", "deadbeefcafe0000000000000000000000000000"}, 0},
 
+		// 两级变量合成（F2.9，ADR-0043）：App 级 env 直传（--env）→ 共享
+		// 变量 put → 归一化期合成进 R5（Project 层在下）→ 改共享变量的
+		// 受影响 App 提示 → 删除同理。置于 events follow 后：事件重放
+		// golden 不受本段新事件影响。
+		{"deploy env direct", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.25",
+			"--env", "LOG_LEVEL=warn", "--env", "ONLY_APP=1"}, 0},
+		{"revisions diff env", []string{"revisions", "diff", "--app", "GOLDEN_APP", "--from", "6", "--to", "7"}, exitChanges},
+		{"shared-variables put", []string{"shared-variables", "put", "--project", "GOLDEN_PROJECT",
+			"--value", "postgres://golden", "DATABASE_URL"}, 0},
+		{"deploy shared merge", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.25"}, 0},
+		{"revisions diff shared merge", []string{"revisions", "diff", "--app", "GOLDEN_APP", "--from", "7", "--to", "8"}, exitChanges},
+		// 改值（v1 冻结在 R5）与新增键（R5 缺席）都提示同一受影响 App；
+		// 重部署取新值由 deploy cache merge 步兑现（R6 冻结两层合成）。
+		{"shared-variables put update", []string{"shared-variables", "put", "--project", "GOLDEN_PROJECT",
+			"--value", "postgres://golden-v2", "DATABASE_URL"}, 0},
+		{"shared-variables put cache", []string{"shared-variables", "put", "--project", "GOLDEN_PROJECT",
+			"--value", "cache.internal", "CACHE_HOST"}, 0},
+		{"deploy cache merge", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.24"}, 0},
+		{"shared-variables list", []string{"shared-variables", "list", "--project", "GOLDEN_PROJECT"}, 0},
+		{"shared-variables list page", []string{"shared-variables", "list", "--project", "GOLDEN_PROJECT",
+			"--after", "DATABASE_URL"}, 0},
+		{"shared-variables delete", []string{"shared-variables", "delete", "--project", "GOLDEN_PROJECT",
+			"CACHE_HOST"}, 0},
+
 		// Platform 动词（F2.3，ADR-0039 决策 10）：手动触发（同步执行——
 		// 幂等键让 --json 轮重放同响应）与快照列举（假 restic 的 canned
 		// 集；golden 双形态）。
@@ -336,6 +360,10 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 				deployID = m[1]
 				promoteToSucceeded(t, h, appID)
 			}
+			// 变量段的三次部署（F2.9）不驱动：断言面是 Revision 冻结体
+			//（Deploy RPC 内同步完成）与受影响提示，不依赖部署终态；驱动
+			// 收口会推进假时钟且迭代数随调度漂移（-race 下时间戳不稳）。
+			// 部署行留在 queued（from-dir 步同款先例——manual 夹具不驱动）。
 			// 回滚部署 ID 取自人类形态首行（deployments list after 的游标锚
 			// ——人工轮铸行，其后 --json 轮再铸的最新行被游标跳过）。
 			if st.verb == "rollback" {
@@ -374,7 +402,7 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 			}
 			code, out, stderr = runCLI(t, append(jsonArgs, "--json")...)
 			if code != st.code || stderr != wantStderr {
-				t.Fatalf("%s --json: code=%d stderr=%q", st.verb, code, stderr)
+				t.Fatalf("%s --json: code=%d stderr=%q", st.verb, st.code, stderr)
 			}
 			compareGolden(t, goldenFile(st.verb)+"-json", normalizeGolden(out))
 		})
@@ -390,6 +418,9 @@ var jsonArgOverrides = map[string]map[int]string{
 	"apps create fbjobs":        {4: "fbjobs-json"},
 	"secrets put":               {6: "api-token-json"},
 	"configs put":               {6: "app-json.ini"},
+	// 删除步的 --json 轮换名（CACHE_HOST 已被人轮删——重删 404 非零退出；
+	// DATABASE_URL 在场，受影响提示同形）。
+	"shared-variables delete":   {4: "DATABASE_URL"},
 	"volumes create":            {4: "data-json"},
 	"networks create":           {4: "internal-json"},
 	"networks create messaging": {4: "bus-json"},

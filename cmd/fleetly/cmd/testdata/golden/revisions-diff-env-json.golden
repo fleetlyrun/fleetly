@@ -1,0 +1,18 @@
+{
+  "entries": [
+    {
+      "path": "processes[0].env",
+      "new_value": "map[LOG_LEVEL:warn ONLY_APP:1]"
+    },
+    {
+      "path": "processes[0].image",
+      "old_value": "nginx:1.29",
+      "new_value": "nginx:1.25"
+    },
+    {
+      "path": "source.image.ref",
+      "old_value": "nginx:1.29",
+      "new_value": "nginx:1.25"
+    }
+  ]
+}

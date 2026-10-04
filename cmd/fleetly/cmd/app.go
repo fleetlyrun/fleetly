@@ -69,6 +69,11 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		groupVerb("apps", "manage apps", newAppsCreateVerb(), newAppsListVerb(), newAppsDeleteVerb()),
 		groupVerb("secrets", "manage project secrets (values never returned)", newSecretsPutVerb(), newSecretsListVerb()),
 		groupVerb("configs", "manage versioned config files", newConfigsPutVerb(), newConfigsListVerb()),
+		// 共享变量（F2.9，ADR-0043）：Project 级变量层——归一化期合成进
+		// 部署（App 层 env 覆盖同键）；改共享变量需重部署才生效（响应提示
+		// 受影响 App）。
+		groupVerb("shared-variables", "manage project shared variables (merged under app-level env at deploy; values are returned)",
+			newSharedVarsPutVerb(), newSharedVarsListVerb(), newSharedVarsDeleteVerb()),
 		groupVerb("volumes", "manage volumes", newVolumesCreateVerb()),
 		groupVerb("networks", "manage project networks and cross-project peer attachments",
 			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),

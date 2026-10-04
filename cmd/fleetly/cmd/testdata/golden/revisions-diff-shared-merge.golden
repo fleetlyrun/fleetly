@@ -1,0 +1,4 @@
+PATH	OLD	NEW
+processes[0].env.DATABASE_URL		postgres://golden
+processes[0].env.LOG_LEVEL	warn	
+processes[0].env.ONLY_APP	1	

@@ -1,8 +1,9 @@
 package cmd
 
-// Structure 上下文动词（projects/apps/secrets/configs/volumes/networks）。
-// 全部 --json 双形态（golden 钉死）；人类形态为稳定的行式输出。旗标经
-// 闭包变量捕获（commands.Flagged 契约：SetFlags 声明、Run 读字段）。
+// Structure 上下文动词（projects/apps/secrets/configs/shared-variables/
+// volumes/networks）。全部 --json 双形态（golden 钉死）；人类形态为稳定
+// 的行式输出。旗标经闭包变量捕获（commands.Flagged 契约：SetFlags 声明、
+// Run 读字段）。
 
 import (
 	"context"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/lynx-go/commands"
 	"google.golang.org/protobuf/proto"
@@ -418,6 +420,134 @@ func newConfigsListVerb() commands.Command {
 				for _, cf := range resp.GetConfigs() {
 					_, _ = fmt.Fprintf(env.Stdout, "%s\t%d\t%s\n", cf.GetName(), cf.GetVersion(), cf.GetCreatedAt())
 				}
+			})
+		},
+	}
+}
+
+// renderAffectedApps 是受影响 App 提示的人类形态（ADR-0043 决策 4 的近似
+// 口径——"may need a redeploy"；改共享变量不触发任何自动重部署）。
+func renderAffectedApps(env *commands.Environment, affected []string) {
+	if len(affected) == 0 {
+		return
+	}
+	_, _ = fmt.Fprintf(env.Stdout, "affected apps (redeploy to pick up the new value): %s\n", strings.Join(affected, ", "))
+}
+
+func newSharedVarsPutVerb() commands.Command {
+	const name = "put"
+	var project, value string
+	var idem idemKeyFlag
+	return &flaggedVerb{
+		name: name, synopsis: "Create or update a project shared variable (value from --value or stdin)",
+		usage: "shared-variables put --project PROJECT_ID NAME [--value VALUE]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&value, "value", "", "variable value (empty = read stdin)")
+			idem.declare(fs)
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one NAME argument")
+			}
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			v, err := valueOrStdin(value, env)
+			if err != nil {
+				return err
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
+			resp, err := c.SharedVars.PutSharedVariable(ctx, &structurev1.PutSharedVariableRequest{ProjectId: project, Name: args[0], Value: v})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "stored shared variable %s\n", resp.GetVariable().GetName())
+				renderAffectedApps(env, resp.GetAffectedApps())
+			})
+		},
+	}
+}
+
+func newSharedVarsListVerb() commands.Command {
+	const name = "list"
+	var project, after string
+	var limit int
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "List project shared variables (values are returned)",
+		usage:    "shared-variables list --project PROJECT_ID [--after NAME] [--limit N]",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id (required)")
+			fs.StringVar(&after, "after", "", "pagination cursor: the last variable name of the previous page")
+			fs.IntVar(&limit, "limit", 50, "page size (max 200)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if err := noArgs(name, args); err != nil {
+				return err
+			}
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.SharedVars.ListSharedVariables(ctx, &structurev1.ListSharedVariablesRequest{
+				ProjectId: project, AfterName: after, Limit: int32(limit), //nolint:gosec // 旗标域内钳制
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintln(env.Stdout, "NAME\tVALUE\tUPDATED")
+				for _, v := range resp.GetVariables() {
+					_, _ = fmt.Fprintf(env.Stdout, "%s\t%s\t%s\n", v.GetName(), v.GetValue(), v.GetUpdatedAt())
+				}
+			})
+		},
+	}
+}
+
+func newSharedVarsDeleteVerb() commands.Command {
+	const name = "delete"
+	var project string
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Delete a project shared variable",
+		usage:    "shared-variables delete --project PROJECT_ID NAME",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id (required)")
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one NAME argument")
+			}
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			ctx, cancel, c, err := dialFromEnv(ctx)
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			resp, err := c.SharedVars.DeleteSharedVariable(ctx, &structurev1.DeleteSharedVariableRequest{ProjectId: project, Name: args[0]})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "deleted shared variable %s\n", args[0])
+				renderAffectedApps(env, resp.GetAffectedApps())
 			})
 		},
 	}

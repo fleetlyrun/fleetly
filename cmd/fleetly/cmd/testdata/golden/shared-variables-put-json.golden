@@ -1,0 +1,13 @@
+{
+  "variable": {
+    "id": "<ULID>",
+    "project_id": "<ULID>",
+    "name": "DATABASE_URL",
+    "value": "postgres://golden",
+    "updated_at": "2026-01-01T00:02:00Z"
+  },
+  "affected_apps": [
+    "<ULID>",
+    "<ULID>"
+  ]
+}

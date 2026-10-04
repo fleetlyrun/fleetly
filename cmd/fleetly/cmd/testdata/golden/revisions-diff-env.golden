@@ -1,0 +1,4 @@
+PATH	OLD	NEW
+processes[0].env		map[LOG_LEVEL:warn ONLY_APP:1]
+processes[0].image	nginx:1.29	nginx:1.25
+source.image.ref	nginx:1.29	nginx:1.25
