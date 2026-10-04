@@ -133,7 +133,7 @@ func TestRailpackFullChainRoutesToRailpackProvider(t *testing.T) {
 	revID, _ := freezeStrategySpec(t, e, "01JD0REV0000000000000000D4",
 		`{"builder":"railpack","railpack":{"pinned_version":"0.39.0"}}`)
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	got := getDeployment(t, e, d.ID)

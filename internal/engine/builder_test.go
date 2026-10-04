@@ -140,7 +140,7 @@ func TestDeployBuildChain(t *testing.T) {
 
 	revID, revSeq, contextDir := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B1")
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // preparing → building → driveBuilding（受理 Build 行）
 	d = getDeployment(t, e, d.ID)
@@ -189,7 +189,7 @@ func TestBuildFailureFailsDeployment(t *testing.T) {
 	ctx := context.Background()
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B2")
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	e.buildStep(ctx)
@@ -214,7 +214,7 @@ func TestUnresolvableSourceFailsPrecisely(t *testing.T) {
 		ID: revID, AppID: tAppID, Seq: seq, Spec: []byte(gitBuildSpec()),
 	}))
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	final := getDeployment(t, e, d.ID)
@@ -253,7 +253,7 @@ func TestBuildRevisionReadFailureFailsDeployment(t *testing.T) {
 	ctx := context.Background()
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B7")
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // → building（prepare 已过；revSeq 读取在 building 驱动步）
 	require.Equal(t, deployment.StateBuilding, getDeployment(t, e, d.ID).State)

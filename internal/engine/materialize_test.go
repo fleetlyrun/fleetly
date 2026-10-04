@@ -40,7 +40,7 @@ func TestMaterializeThreePathsIdentical(t *testing.T) {
 	rt.mu.Lock()
 	rt.failNext = true
 	rt.mu.Unlock()
-	d2, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
 	require.NoError(t, err)
 	e.step(ctx) // releasing Ensure 失败 → failed → rolling-back → 重放 v1（新 gen）
 	rb := getDeployment(t, e, d2.ID)

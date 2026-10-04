@@ -263,9 +263,31 @@ func newDeployVerb() commands.Command {
 				}
 				return requireSucceeded("deployment", depID, final)
 			}
-			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
+			// 响应直渲染（P10）：admission 判定附注与 deployment 同体输出
+			//（uploads put 同款先例——响应携带实体外字段时渲染响应本体）。
+			return renderOut(env, jsonOut, resp, func() {
 				d := resp.GetDeployment()
-				_, _ = fmt.Fprintf(env.Stdout, "deployment %s %s (revision %s, generation %d)\n", d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration())
+				a := resp.GetAdmission()
+				// 人类形态打印判定："并入队列第 N 位/与既有部署去重"
+				//（P10 提案原文锚）；merged/superseded 追加归因后缀。
+				switch a.GetOutcome() {
+				case "deduplicated":
+					_, _ = fmt.Fprintf(env.Stdout,
+						"deployment %s %s (revision %s, generation %d; deduplicated: matched the existing deployment)\n",
+						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration())
+				case "merged":
+					_, _ = fmt.Fprintf(env.Stdout,
+						"deployment %s %s (revision %s, generation %d, queue position %d; merged earlier queued requests)\n",
+						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
+				case "superseded":
+					_, _ = fmt.Fprintf(env.Stdout,
+						"deployment %s %s (revision %s, generation %d, queue position %d; superseded the in-flight deployment)\n",
+						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
+				default:
+					_, _ = fmt.Fprintf(env.Stdout,
+						"deployment %s %s (revision %s, generation %d, queue position %d)\n",
+						d.GetId(), d.GetState(), d.GetToRevision(), d.GetGeneration(), a.GetPosition())
+				}
 			})
 		},
 	}
@@ -458,7 +480,7 @@ func newRollbackVerb() commands.Command {
 				}
 				return requireSucceeded("deployment", depID, final)
 			}
-			return renderOut(env, jsonOut, resp.GetDeployment(), func() {
+			return renderOut(env, jsonOut, resp, func() {
 				d := resp.GetDeployment()
 				_, _ = fmt.Fprintf(env.Stdout, "rolling back via deployment %s (target %s)\n", d.GetId(), d.GetToRevision())
 			})

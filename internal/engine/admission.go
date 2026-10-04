@@ -23,7 +23,54 @@ type SubmitRequest struct {
 	Kind           string // 可选；来源标注（KindRollback：审计标注 + first_boot 游标直落 done——回滚永不重跑 firstBootJobs，ADR-0030 决策 5）
 }
 
-// Submit 走 admission 判定（ADR-0016，判定全在单事务内）：
+// AdmissionOutcome 是 admission 判定形态（P10 响应显式化；取值与 proto
+// Admission.outcome 一致，kebab-case 用户可见）。
+type AdmissionOutcome string
+
+const (
+	// AdmissionQueued：新受理，无合并无抢占。
+	AdmissionQueued AdmissionOutcome = "queued"
+	// AdmissionMerged：latest-wins——既有 queued 请求被本请求合并取代。
+	AdmissionMerged AdmissionOutcome = "merged"
+	// AdmissionSuperseded：显式 supersede 抢占在途（同批合并的 queued 不另
+	// 报——显式动作优先归因）。
+	AdmissionSuperseded AdmissionOutcome = "superseded"
+	// AdmissionDeduplicated：同幂等键或同 commit 命中活跃既有部署。
+	AdmissionDeduplicated AdmissionOutcome = "deduplicated"
+)
+
+// Admission 是 Submit 的判定附注（ADR-0016 语义的响应面）：调用方可判定
+// "去重命中/排队第几位"。幂等层命中（ADR-0024）在 api 层逐字节重放原始
+// 响应、不产生 Admission——幂等层与 admission 去重由此分立。
+type Admission struct {
+	Outcome  AdmissionOutcome
+	Position int    // per-App 串行管线位次（1 = 队头/下一执行）
+	Existing string // deduplicated 时命中的既有部署 ID
+}
+
+// admissionPosition 算目标部署在活跃集内的串行位次（1 = 队头）：在途部署
+// 排在 queued 前；双在途按 Generation 序（per-App 串行下至多一条在途，
+// 代次序是防御形态）。被合并/被抢占的行已离场，天然不计位。
+func admissionPosition(active []deployment.Deployment, target *deployment.Deployment) int {
+	pos := 1
+	for i := range active {
+		x := &active[i]
+		if x.ID == target.ID {
+			continue
+		}
+		switch {
+		case x.State != deployment.StateQueued && target.State == deployment.StateQueued:
+			pos++
+		case x.State != deployment.StateQueued && target.State != deployment.StateQueued && x.Generation < target.Generation:
+			pos++
+		}
+	}
+	return pos
+}
+
+// Submit 走 admission 判定（ADR-0016，判定全在单事务内；返回值第二件是
+// 判定附注 Admission——P10 响应显式化，outcome/position 与判定同事务产
+// 出，所见即终局）：
 //
 //  0. App 存活判定（ADR-0023 统一口径）：已删 App 一律不存在，事务内
 //     拒绝（E_NOT_FOUND）——与 DeleteApp 最终事务的 ActiveByApp 复查
@@ -40,7 +87,7 @@ type SubmitRequest struct {
 //
 // 409 语义（收窄）：幂等键并发冲突由活跃唯一索引兜底（此处事务串行化后
 // 不会发生），保留给未来互斥资源锁；本面不产生 409。
-func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Deployment, error) {
+func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Deployment, *Admission, error) {
 	// App 级互斥（N0.1 P1-3）：与基线重放/收口共享——admission 落行与
 	// 重放的复查被串行化（在途重放 Ensure 期间受理排队，锁内复查所见
 	// 即终局）。
@@ -49,6 +96,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 	defer appMu.Unlock()
 
 	var out *deployment.Deployment
+	var adm *Admission
 	var supersededIDs []string
 	err := e.db.Tx(ctx, func(tx *sql.Tx) error {
 		// 0. App 存活判定（API/webhook 的预读只是快速失败面；权威判定在此）。
@@ -70,10 +118,16 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 
 		// 1. 幂等键去重（键作用域 = App，B10：异 App 同键各自独立受理）。
+		//    命中即 deduplicated 附注（位次 = 既有部署在活跃集内的位置）。
 		if req.IdempotencyKey != "" {
 			existing, err := e.deployments.FindActiveByIdempotencyKey(ctx, tx, req.AppID, req.IdempotencyKey)
 			if err == nil {
+				active, aerr := e.deployments.ActiveByApp(ctx, tx, req.AppID)
+				if aerr != nil {
+					return aerr
+				}
 				out = existing
+				adm = &Admission{Outcome: AdmissionDeduplicated, Position: admissionPosition(active, existing), Existing: existing.ID}
 				return nil
 			}
 			if !errors.Is(err, state.ErrNotFound) {
@@ -91,6 +145,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 			// 2. commit 去重（活跃同 commit → 既有）。
 			if req.CommitSHA != "" && d.CommitSHA == req.CommitSHA {
 				out = d
+				adm = &Admission{Outcome: AdmissionDeduplicated, Position: admissionPosition(active, d), Existing: d.ID}
 				return nil
 			}
 			if d.State == deployment.StateQueued {
@@ -173,11 +228,25 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}); err != nil {
 			return err
 		}
+		// 判定附注：显式抢占 > latest-wins 合并 > 朴素受理；位次 = 剩余
+		// 在途数 + 1（supersede 时在途已全部转场，位次恒 1）。
+		outcome := AdmissionQueued
+		switch {
+		case len(supersededIDs) > 0:
+			outcome = AdmissionSuperseded
+		case len(queued) > 0:
+			outcome = AdmissionMerged
+		}
+		position := 1
+		if !req.Supersede {
+			position += len(inFlight)
+		}
 		out = d
+		adm = &Admission{Outcome: outcome, Position: position}
 		return nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, id := range supersededIDs {
 		if fresh, err := e.deployments.Get(ctx, e.db.Runner(), id); err == nil {
@@ -187,7 +256,7 @@ func (e *Engine) Submit(ctx context.Context, req SubmitRequest) (*deployment.Dep
 		}
 	}
 	e.loop.Kick()
-	return out, nil
+	return out, adm, nil
 }
 
 // Cancel 取消排队或在途 Deployment（ADR-0016：排队与在途均可取消）。

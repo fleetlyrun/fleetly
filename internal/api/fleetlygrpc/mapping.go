@@ -129,6 +129,19 @@ func deploymentMsg(d deployment.Deployment) *deliveryv1.Deployment {
 	}
 }
 
+// admissionMsg 是 Submit 判定附注的响应投影（P10；nil 安全——engine 旧
+// 路径缺附注时投影零值面由调用方豁免）。
+func admissionMsg(a *engine.Admission) *deliveryv1.Admission {
+	if a == nil {
+		return nil
+	}
+	return &deliveryv1.Admission{
+		Outcome: string(a.Outcome),
+		//nolint:gosec // 位次域 = 活跃部署数 + 1（排队容量上限内，远小于 int32）
+		Position: int32(a.Position), ExistingDeployment: a.Existing,
+	}
+}
+
 func buildMsg(b build.Build) *deliveryv1.Build {
 	return &deliveryv1.Build{
 		Id: b.ID, AppId: b.AppID, RevisionId: b.RevisionID, State: string(b.State),

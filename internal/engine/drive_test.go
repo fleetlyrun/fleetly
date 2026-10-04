@@ -19,7 +19,7 @@ func TestDriveTerminalRowIsQuiet(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 
 	// 驱动到 succeeded 终态（admission_idem_test 同款配方）。

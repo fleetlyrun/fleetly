@@ -149,6 +149,12 @@ func TestWebhookReceiveChain(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "accepted", dupCommit.GetStatus())
 	assert.Equal(t, depID, dupCommit.GetDeploymentId(), "same active commit must dedup to the same deployment")
+	// P10 Agent 场景锚：同 commit 重发 → admission 附注明示 deduplicated +
+	// 既有引用（幂等层命中的重放不标 deduplicated——重放轮 d-1 的响应
+	// 逐字节等于首次，形态天然分立）。
+	require.NotNil(t, dupCommit.GetAdmission())
+	assert.Equal(t, "deduplicated", dupCommit.GetAdmission().GetOutcome())
+	assert.Equal(t, depID, dupCommit.GetAdmission().GetExistingDeployment())
 
 	// 带 delivery 派生键（gateway 原生入口同款）重投：重放首次响应，受理
 	// 事实不重复（hook.push_accepted 事件恰好一条）。

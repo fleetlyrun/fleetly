@@ -36,7 +36,7 @@ func TestBuildSourceWithoutRegistryFailsAtPrepare(t *testing.T) {
 	require.NoError(t, app.New(clock).Create(ctx, db.Runner(), &app.App{ID: tAppID, ProjectID: tProjectID, Name: "web"}))
 
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000C1")
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 
 	e.step(ctx) // preparing → 前置门精确失败（不进 building）

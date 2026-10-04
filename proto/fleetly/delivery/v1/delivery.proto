@@ -242,10 +242,35 @@ message DeployRequest {
   string output_dir = 14;
 }
 
-message DeployResponse { Deployment deployment = 1; }
+// Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式
+// 化——调用方（尤其 Agent）可判定"去重命中/排队第几位"，UI/API/webhook
+// 三入口一致）。
+message Admission {
+  // outcome 四形态：queued（新受理，无合并无抢占）| merged（latest-wins：
+  // 既有 queued 请求被本请求合并取代）| superseded（显式 supersede 抢占
+  // 在途部署；同批合并的 queued 不另报）| deduplicated（同幂等键或同
+  // commit 命中活跃既有部署）。幂等层命中（ADR-0024）逐字节重放原始
+  // 响应、不标 deduplicated——幂等层与 admission 去重在响应里天然分立。
+  string outcome = 1;
+  // position 是本部署在 per-App 串行管线中的位次（1 = 队头/下一执行）；
+  // 在途部署在前计位，被合并/被抢占的不计。deduplicated 时是命中既有
+  // 部署的位次。
+  int32 position = 2;
+  // existing_deployment 在 outcome=deduplicated 时携带命中的既有部署引用
+  //（与 deployment 字段同值——单独携带供程序化消费，不必比对）。
+  string existing_deployment = 3;
+}
+
+message DeployResponse {
+  Deployment deployment = 1;
+  Admission admission = 2;
+}
 message GetDeploymentResponse { Deployment deployment = 1; }
 message CancelDeploymentResponse { Deployment deployment = 1; }
-message RollbackResponse { Deployment deployment = 1; }
+message RollbackResponse {
+  Deployment deployment = 1;
+  Admission admission = 2;
+}
 message GetDeploymentRequest { string id = 1; }
 message ListDeploymentsRequest {
   string app_id = 1;
@@ -423,4 +448,8 @@ message ReceiveWebhookResponse {
   string status = 1;
   string reason = 2; // skipped 细节（branch/path/skip 标记）
   string deployment_id = 3;
+  // admission 在 status=accepted 时携带（push 触发部署的判定附注——
+  // 同 commit 重复投递可见 deduplicated + existing_deployment；skipped/
+  // ignored/pong 不携带）。
+  Admission admission = 4;
 }

@@ -18,7 +18,7 @@ import (
 func TestIdempotencyKeyReusableAfterTerminalState(t *testing.T) {
 	submit := func(t *testing.T, e *Engine, rev string) *deployment.Deployment {
 		t.Helper()
-		d, err := e.Submit(context.Background(), SubmitRequest{
+		d, _, err := e.Submit(context.Background(), SubmitRequest{
 			AppID: tAppID, RevisionID: rev, IdempotencyKey: "agent-fixed-key",
 		})
 		require.NoError(t, err)
@@ -74,19 +74,19 @@ func TestIdempotencyKeyScopedPerApp(t *testing.T) {
 	rev1 := freezeSpec(t, e, 1, tImageSpec)
 	rev2 := freezeSpecForApp(t, e, tApp2ID, 2, imageSpecForApp(tApp2ID, "nginx:1.27"))
 
-	a, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev1, IdempotencyKey: "shared-key"})
+	a, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev1, IdempotencyKey: "shared-key"})
 	require.NoError(t, err)
-	b, err := e.Submit(ctx, SubmitRequest{AppID: tApp2ID, RevisionID: rev2, IdempotencyKey: "shared-key"})
+	b, _, err := e.Submit(ctx, SubmitRequest{AppID: tApp2ID, RevisionID: rev2, IdempotencyKey: "shared-key"})
 	require.NoError(t, err)
 	assert.NotEqual(t, a.ID, b.ID, "the same key in another app must admit independently")
 	assert.Equal(t, tAppID, deploymentAppID(t, e, a.ID))
 	assert.Equal(t, tApp2ID, deploymentAppID(t, e, b.ID))
 
 	// 同 App 活跃期重放：去重返回既有（既有行为保持）。
-	a2, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev1, IdempotencyKey: "shared-key"})
+	a2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev1, IdempotencyKey: "shared-key"})
 	require.NoError(t, err)
 	assert.Equal(t, a.ID, a2.ID)
-	b2, err := e.Submit(ctx, SubmitRequest{AppID: tApp2ID, RevisionID: rev2, IdempotencyKey: "shared-key"})
+	b2, _, err := e.Submit(ctx, SubmitRequest{AppID: tApp2ID, RevisionID: rev2, IdempotencyKey: "shared-key"})
 	require.NoError(t, err)
 	assert.Equal(t, b.ID, b2.ID)
 }

@@ -80,7 +80,7 @@ func TestFirstBootSerialConverge(t *testing.T) {
 		`{"name":"seed","ttl":"300s","process":{"image":"busybox:1.37","command":["/seed"]}}`)
 	revID := freezeSpec(t, e, 1, spec)
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 
 	e.step(ctx) // queued → preparing → releasing → 铸 job0 → 等待
@@ -164,7 +164,7 @@ func TestFirstBootJobFailureRollsBack(t *testing.T) {
 
 	// 成功基线（无 job）。
 	base := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
-	first, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: base})
+	first, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: base})
 	require.NoError(t, err)
 	e.step(ctx)
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
@@ -175,7 +175,7 @@ func TestFirstBootJobFailureRollsBack(t *testing.T) {
 
 	// 带失败 job 的 R2。
 	r2 := freezeSpec(t, e, 2, jobsSpec(2, tMigrateJob))
-	second, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+	second, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
 	require.NoError(t, err)
 	e.step(ctx) // 铸 job0 → 等待
 	d := getDeployment(t, e, second.ID)
@@ -217,7 +217,7 @@ func TestFirstBootWaitTimeoutForceStops(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, jobsSpec(3, tMigrateJob))
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // 铸 job（ttl 600s + grace 2m）
 	d = getDeployment(t, e, d.ID)
@@ -241,7 +241,7 @@ func TestFirstBootTTLExpiryFails(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, jobsSpec(4, tMigrateJob))
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
@@ -271,7 +271,7 @@ func TestFirstBootRestartReplayZeroRemint(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, jobsSpec(5, tMigrateJob))
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
@@ -303,7 +303,7 @@ func TestFirstBootCancelAbandonsJob(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, jobsSpec(6, tMigrateJob))
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
@@ -323,14 +323,14 @@ func TestFirstBootSupersedeAbandonsJob(t *testing.T) {
 	e, _, _ := newTestEngine(t)
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, jobsSpec(7, tMigrateJob))
-	first, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	first, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	d := getDeployment(t, e, first.ID)
 	row := mintedJobTask(t, e, d)
 
 	r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
-	_, err = e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2, Supersede: true})
+	_, _, err = e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2, Supersede: true})
 	require.NoError(t, err)
 	assert.Equal(t, deployment.StateSuperseded, getDeployment(t, e, first.ID).State)
 	assert.Equal(t, task.StateDraining, getTaskRow(t, e, row.ID).State,
@@ -349,7 +349,7 @@ func TestFirstBootNetworksDeclared(t *testing.T) {
 	spec := jobsSpec(8, `{"name":"migrate","ttl":"300s","process":`+
 		`{"image":"busybox:1.37","command":["/migrate"],"networks":["workers","taskGroup:dispatcher"]}}`)
 	revID := freezeSpec(t, e, 1, spec)
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
@@ -363,7 +363,7 @@ func TestFirstBootNetworksDeclared(t *testing.T) {
 	bad := jobsSpec(9, `{"name":"migrate","ttl":"300s","process":`+
 		`{"image":"busybox:1.37","command":["/migrate"],"networks":["project:01JD9PROJ99999999999999999/main"]}}`)
 	badRev := freezeSpec(t, e2, 1, bad)
-	_, err = e2.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: badRev})
+	_, _, err = e2.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: badRev})
 	require.ErrorIs(t, err, ErrCrossProjectRefNotApproved)
 }
 
@@ -393,7 +393,7 @@ func TestFirstBootFromBuildDigest(t *testing.T) {
 		[]build.State{build.StateBuilding}, build.StateSucceeded,
 		func(m *build.Build) { m.Digest = tFakeDigest }))
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // building → releasing（build 已成）→ 铸 job
 	d = getDeployment(t, e, d.ID)
@@ -410,7 +410,7 @@ func TestFirstBootQuotaBoundedRetry(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, jobsSpec(10, tMigrateJob))
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 
 	// 灌满 per-Project Task 配额（100 活跃行；job 自身还要占一位）。
@@ -443,7 +443,7 @@ func TestRollbackDeploymentSkipsFirstBootJobs(t *testing.T) {
 
 	// R1：带 job 的 spec 走完整链到 succeeded（job 执行一轮，合法）。
 	r1 := freezeSpec(t, e, 1, jobsSpec(11, tMigrateJob))
-	first, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
+	first, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
 	require.NoError(t, err)
 	e.step(ctx) // 铸 job → 等待
 	d := getDeployment(t, e, first.ID)
@@ -459,7 +459,7 @@ func TestRollbackDeploymentSkipsFirstBootJobs(t *testing.T) {
 
 	// R2：第二 revision（无 job）部署成功。
 	r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.28"))
-	second, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+	second, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
 	require.NoError(t, err)
 	e.step(ctx)
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 2))
@@ -469,7 +469,7 @@ func TestRollbackDeploymentSkipsFirstBootJobs(t *testing.T) {
 	require.Equal(t, deployment.StateSucceeded, getDeployment(t, e, second.ID).State)
 
 	// 显式 rollback 回 R1（spec 带 jobs）。
-	rb, err := e.Rollback(ctx, tAppID, r1)
+	rb, _, err := e.Rollback(ctx, tAppID, r1)
 	require.NoError(t, err)
 	e.step(ctx) // queued → preparing → releasing →（游标 done）→ carrier
 	d = getDeployment(t, e, rb.ID)
@@ -499,7 +499,7 @@ func TestRollbackAuditAnnotatesKind(t *testing.T) {
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 3, imageSpecFor("nginx:1.26"))
 
-	plain, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	plain, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	entries, err := e.audits.ListFiltered(ctx, e.db.Runner(),
 		audit.Filter{ActionPrefix: "deployment.create", Resource: "deployment/" + plain.ID})
@@ -507,7 +507,7 @@ func TestRollbackAuditAnnotatesKind(t *testing.T) {
 	require.Len(t, entries, 1)
 	assert.NotContains(t, entries[0].AfterFP, "kind=", "plain deploys carry no kind annotation")
 
-	rb, err := e.Rollback(ctx, tAppID, revID)
+	rb, _, err := e.Rollback(ctx, tAppID, revID)
 	require.NoError(t, err)
 	entries, err = e.audits.ListFiltered(ctx, e.db.Runner(),
 		audit.Filter{ActionPrefix: "deployment.create", Resource: "deployment/" + rb.ID})
@@ -524,7 +524,7 @@ func TestFirstBootLateCompletionNotL1Timeout(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, jobsSpec(12, tMigrateJob))
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // 铸 job → 等待（deadline = ttl 600s + grace 2m）
 	d = getDeployment(t, e, d.ID)
@@ -595,14 +595,14 @@ func TestFirstBootBareNetworkAdmissionPrecheck(t *testing.T) {
 	revID := freezeSpec(t, e, 1, spec)
 
 	// 项目内无 ghost 网 → 受理拒绝（零副作用：不入队）。
-	_, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.ErrorIs(t, err, ErrFirstBootNetworkUnknown)
 	assert.Contains(t, err.Error(), `job "migrate"`, "the message names the job")
 	assert.Contains(t, err.Error(), "ghost")
 
 	// 项目内建网 → 同 Revision 受理放行。
 	createProjectNetwork(t, e, "01JD0NET00000000000000005", "ghost")
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	require.Equal(t, deployment.StateQueued, d.State)
 
@@ -610,6 +610,6 @@ func TestFirstBootBareNetworkAdmissionPrecheck(t *testing.T) {
 	refSpec := jobsSpec(2, `{"name":"attach","ttl":"60s","process":`+
 		`{"image":"busybox:1.37","command":["/attach"],"networks":["taskGroup:dispatcher"]}}`)
 	rev2 := freezeSpec(t, e, 2, refSpec)
-	_, err = e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	_, _, err = e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev2})
 	require.NoError(t, err)
 }

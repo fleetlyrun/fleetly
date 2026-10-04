@@ -16,7 +16,7 @@ import (
 func deployToSucceeded(t *testing.T, e *Engine, revID string) *deployment.Deployment {
 	t.Helper()
 	ctx := context.Background()
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx)
 	d = getDeployment(t, e, d.ID)
@@ -47,17 +47,17 @@ func TestRollbackReplayVerb(t *testing.T) {
 	deployToSucceeded(t, e, r2)
 
 	// 在途一条（r2 再部署）后 Rollback：抢占在途、目标 = 上一成功基线 r2。
-	inFlight, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+	inFlight, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
 	require.NoError(t, err)
 	e.step(ctx) // → releasing（在途）
 
-	rb, err := e.Rollback(ctx, tAppID, "")
+	rb, _, err := e.Rollback(ctx, tAppID, "")
 	require.NoError(t, err)
 	assert.Equal(t, r2, rb.ToRevision, "empty target rolls back to the last succeeded baseline")
 	assert.Equal(t, deployment.StateSuperseded, getDeployment(t, e, inFlight.ID).State, "rollback preempts in-flight")
 
 	// 显式目标回放（r1）。
-	rb2, err := e.Rollback(ctx, tAppID, r1)
+	rb2, _, err := e.Rollback(ctx, tAppID, r1)
 	require.NoError(t, err)
 	assert.Equal(t, r1, rb2.ToRevision)
 }
@@ -66,7 +66,7 @@ func TestRollbackReplayVerb(t *testing.T) {
 // （Q-13）：API 层经 errors.Is 判定 E_NO_BASELINE，文案改写不得破坏契约。
 func TestRollbackWithoutBaseline(t *testing.T) {
 	e, _, _ := newTestEngine(t)
-	_, err := e.Rollback(context.Background(), tAppID, "")
+	_, _, err := e.Rollback(context.Background(), tAppID, "")
 	require.ErrorIs(t, err, ErrNoSuccessfulBaseline)
 	assert.ErrorContains(t, err, "no successful baseline")
 }
@@ -78,7 +78,7 @@ func TestScenario1KilledMidReleaseReplay(t *testing.T) {
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx)
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)

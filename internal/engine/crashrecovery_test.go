@@ -58,7 +58,7 @@ func TestCrashRecoveryBuildInFlightRestart(t *testing.T) {
 	ctx := context.Background()
 	revID, revSeq, contextDir := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B4")
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // → building + Build 行受理（旧实例登记输入）
 	b, ok := lastBuild(t, e, revID)
@@ -99,7 +99,7 @@ func TestCrashRecoveryOrphanBuildAfterCancel(t *testing.T) {
 	ctx := context.Background()
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B5")
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // → building + Build 行受理
 	b, ok := lastBuild(t, e, revID)
@@ -134,7 +134,7 @@ func TestCrashRecoveryKilledBuildingRow(t *testing.T) {
 	ctx := context.Background()
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B6")
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.step(ctx) // → building + queued Build 行
 	// 硬杀等价：行被拍到 building（本进程无执行 goroutine），实例整体丢弃。
@@ -162,7 +162,7 @@ func TestStopDuringBuildDrainsBounded(t *testing.T) {
 	ctx := context.Background()
 	revID, _, _ := freezeGitBuildSpec(t, e, "01JD0REV0000000000000000B9")
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	e.Start(ctx)
 	<-fb.entered // 构建在途

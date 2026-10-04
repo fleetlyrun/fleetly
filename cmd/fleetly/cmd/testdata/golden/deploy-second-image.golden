@@ -1,1 +1,1 @@
-deployment <ULID> queued (revision <ULID>, generation 5)
+deployment <ULID> queued (revision <ULID>, generation 5, queue position 1; merged earlier queued requests)

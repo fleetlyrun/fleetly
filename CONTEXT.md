@@ -101,7 +101,7 @@ _Avoid_: version, snapshot
 _Avoid_: apply, release, rollout, deploy(名词单用)
 
 **Admission**:
-创建型请求的入队判定：去重、latest-wins 合并、supersede 抢占、queue 满反馈。
+创建型请求的入队判定：去重、latest-wins 合并、supersede 抢占、queue 满反馈。受理响应附注（P10）：outcome=queued|merged|superseded|deduplicated + position（per-App 串行位次，1=队头）+ existing_deployment（deduplicated 时的既有引用）；幂等层命中（ADR-0024）重放原始响应、不标 deduplicated——两机制分立。
 _Avoid_: throttle(另指限流), gate
 
 **Acceptance**:

@@ -19,7 +19,7 @@ func TestPendingObservationsNeverPassL1(t *testing.T) {
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx) // → releasing（Ensure gen=1 + L1 deadline）
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
@@ -53,7 +53,7 @@ func TestReleaseWaitMaterializeShortCircuit(t *testing.T) {
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx) // → releasing（materialize #1 + L1 deadline）
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
@@ -86,7 +86,7 @@ func TestReleaseWaitMaterializeReplayWindow(t *testing.T) {
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 2, tImageSpec)
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx) // → releasing（materialize #1 + L1 deadline）
 	require.Len(t, rt.calls(), 1)

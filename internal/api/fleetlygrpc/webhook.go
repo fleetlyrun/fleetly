@@ -142,7 +142,7 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 	// 审计标注：操作者是 hook 本身（source=webhook、actor=hook:<App 名>）——
 	// revision 冻结与 engine.Submit 的审计行经 ctx 消费同一标注。
 	ctx = authn.WithAuditOverride(ctx, "hook:"+appRow.Name, audit.SourceWebhook)
-	d, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
+	d, adm, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
 		AppID: appRow.ID, RevisionID: rev.ID, CommitSHA: p.After,
 	})
 	if err != nil {
@@ -170,7 +170,9 @@ func (svc *HooksService) handlePush(ctx context.Context, req *deliveryv1.Receive
 	if err != nil {
 		return nil, mapStateError(err, "hook push")
 	}
-	return &deliveryv1.ReceiveWebhookResponse{Status: "accepted", DeploymentId: d.ID}, nil
+	// admission 附注随 accepted 携带（P10 三入口一致）：同 commit 重复投递
+	// 可见 deduplicated + 既有引用。
+	return &deliveryv1.ReceiveWebhookResponse{Status: "accepted", DeploymentId: d.ID, Admission: admissionMsg(adm)}, nil
 }
 
 // verifyHMAC 校验 X-Hub-Signature-256 形态（"sha256=<hex>"；timing-safe）。

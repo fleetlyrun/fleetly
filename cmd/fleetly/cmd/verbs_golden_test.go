@@ -200,6 +200,15 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"deploy compose jobs", []string{"deploy", "--app", "GOLDEN_APP2", "--compose-file", "GOLDEN_COMPOSE",
 			"--idempotency-key", "compose-jobs-1"}, 0},
 		{"deployments list first boot", []string{"deployments", "list", "--app", "GOLDEN_APP2"}, 0},
+
+		// P10 判定附注四形态收官步：superseded（app2 compose 部署已驱动到
+		// releasing 在途——显式抢占；--json 轮同参重发落在 merged）与
+		// deduplicated（app1 尾部 queued 先被 merged 受理；--json 轮同
+		// commit 重发命中 admission 去重拿既有引用——Agent 场景锚，不设
+		// 幂等键：幂等层重放会掩盖 engine 层去重形态）。
+		{"deploy supersede", []string{"deploy", "--app", "GOLDEN_APP2", "--image", "nginx:1.28", "--supersede"}, 0},
+		{"deploy commit dedup", []string{"deploy", "--app", "GOLDEN_APP", "--image", "nginx:1.29",
+			"--commit", "deadbeefcafe0000000000000000000000000000"}, 0},
 	}
 
 	// GOLDEN_SRCDIR 是上传 golden 的固定内容目录（确定性 tar → digest 确定，

@@ -645,6 +645,25 @@
         }
       }
     },
+    "v1Admission": {
+      "type": "object",
+      "properties": {
+        "outcome": {
+          "type": "string",
+          "title": "outcome 四形态：queued（新受理，无合并无抢占）| merged（latest-wins：\n既有 queued 请求被本请求合并取代）| superseded（显式 supersede 抢占\n在途部署；同批合并的 queued 不另报）| deduplicated（同幂等键或同\ncommit 命中活跃既有部署）。幂等层命中（ADR-0024）逐字节重放原始\n响应、不标 deduplicated——幂等层与 admission 去重在响应里天然分立。"
+        },
+        "position": {
+          "type": "integer",
+          "format": "int32",
+          "title": "position 是本部署在 per-App 串行管线中的位次（1 = 队头/下一执行）；\n在途部署在前计位，被合并/被抢占的不计。deduplicated 时是命中既有\n部署的位次。"
+        },
+        "existing_deployment": {
+          "type": "string",
+          "title": "existing_deployment 在 outcome=deduplicated 时携带命中的既有部署引用\n（与 deployment 字段同值——单独携带供程序化消费，不必比对）。"
+        }
+      },
+      "title": "Admission 是创建型部署受理的判定附注（P10：ADR-0016 语义的响应面显式\n化——调用方（尤其 Agent）可判定\"去重命中/排队第几位\"，UI/API/webhook\n三入口一致）。"
+    },
     "v1Build": {
       "type": "object",
       "properties": {
@@ -745,6 +764,9 @@
       "properties": {
         "deployment": {
           "$ref": "#/definitions/v1Deployment"
+        },
+        "admission": {
+          "$ref": "#/definitions/v1Admission"
         }
       }
     },
@@ -942,6 +964,10 @@
         },
         "deployment_id": {
           "type": "string"
+        },
+        "admission": {
+          "$ref": "#/definitions/v1Admission",
+          "title": "admission 在 status=accepted 时携带（push 触发部署的判定附注——\n同 commit 重复投递可见 deduplicated + existing_deployment；skipped/\nignored/pong 不携带）。"
         }
       }
     },
@@ -971,6 +997,9 @@
       "properties": {
         "deployment": {
           "$ref": "#/definitions/v1Deployment"
+        },
+        "admission": {
+          "$ref": "#/definitions/v1Admission"
         }
       }
     },

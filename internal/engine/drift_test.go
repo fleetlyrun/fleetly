@@ -22,7 +22,7 @@ type driftClock interface {
 // driftDeployToSucceeded 走完整链到 succeeded（基线形态）。
 func driftDeployToSucceeded(t *testing.T, e *Engine, rt *fakeRuntime, clock driftClock, rev string) *deployment.Deployment {
 	t.Helper()
-	d, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(context.Background())
 	e.handleObservation(context.Background(), workloadEventRunning(tAppID+"-web", 1))
@@ -65,7 +65,7 @@ func TestBaselineReplayRaceWithAdmission(t *testing.T) {
 	}
 	submitCh := make(chan submitResult, 1)
 	go func() {
-		d, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev2})
+		d, _, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev2})
 		submitCh <- submitResult{d: d, err: err}
 	}()
 	select {
@@ -106,7 +106,7 @@ func TestBaselineReplayRecheckSkipsActiveApp(t *testing.T) {
 	// 受理 gen2 但不驱动（活跃在场：queued 属活跃态）。
 	rev2 := freezeSpec(t, e, 2, `{"schema_version":1,"app":{"id":"`+tAppID+`","project":"`+tProjectID+`"},`+
 		`"source":{"image":{"ref":"nginx:1.28"}},"processes":[{"name":"web","image":"nginx:1.28","replicas":1}]}`)
-	_, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev2})
+	_, _, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev2})
 	require.NoError(t, err)
 
 	before := len(rt.calls())

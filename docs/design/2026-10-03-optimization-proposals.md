@@ -257,7 +257,9 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 - CLI `--json` golden 同批更新；`deployments create` 人类形态打印"已并入队列第 N 位/与既有部署去重（commit 相同）"。
 - 幂等键命中（idem 层）与 admission 去重（engine 层）在响应里可区分——两套机制容易混淆，字段显式分立。
 
-**验收锚**：[ ] 四种 outcome 各一条 golden；[ ] Agent 场景测试：同 commit 重发 → 拿到既有引用而非新部署。
+**验收锚**：
+- [x] 四种 outcome 各一条 golden〔2026-10-04：CLI golden 流收官步 deploy-supersede（superseded）/deploy-commit-dedup（--json 轮 deduplicated + existing_deployment 引用）+ 既有步形态刷新（queued/merged 携 position；golden 流中段 h.Drive 后在途恒前方——position 2 是诚实形态）。deploy/rollback --json 改渲染响应本体（`{deployment, admission}`，uploads put 同款先例）；webhook accepted 响应同批携带〕
+- [x] Agent 场景测试：同 commit 重发 → 拿到既有引用而非新部署〔2026-10-04：apitest TestDeployCommitDedupAdmission（Deploy RPC 面）+ webhook d-1b 轮（engine 层 commit 去重 → admission=deduplicated + existing；幂等层重放轮逐字节等于首次响应，不标 deduplicated——两机制形态天然分立，落地实录与裁决一致）〕
 
 ---
 

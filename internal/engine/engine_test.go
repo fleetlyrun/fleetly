@@ -100,7 +100,7 @@ func TestDeployImageHappyPath(t *testing.T) {
 	ctx := context.Background()
 	revID := freezeSpec(t, e, 1, tImageSpec)
 
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.NoError(t, err)
 	assert.Equal(t, deployment.StateQueued, d.State)
 	assert.Equal(t, uint64(1), d.Generation)
@@ -149,7 +149,7 @@ func TestFailureAutoRollbackReplay(t *testing.T) {
 
 	// 先落一条成功基线（R1 = nginx:1.26）。
 	r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
-	first, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
+	first, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
 	require.NoError(t, err)
 	e.step(ctx)
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
@@ -161,7 +161,7 @@ func TestFailureAutoRollbackReplay(t *testing.T) {
 	// 再部署 R2（nginx:1.27），注入 Ensure 失败 → 自动回滚到 R1。
 	rt.failNext = true // R2 首次下发即失败
 	r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.27"))
-	second, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+	second, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
 	require.NoError(t, err)
 	e.step(ctx) // preparing → releasing → Ensure 失败 → failed → rolling-back（回放 Ensure）
 	d := getDeployment(t, e, second.ID)
@@ -190,52 +190,81 @@ func TestFailureAutoRollbackReplay(t *testing.T) {
 }
 
 // admission：同幂等键去重、commit 去重、latest-wins 合并、queue_full、
-// 显式 supersede、排队与在途取消（ADR-0016 场景 9）。
+// 显式 supersede、排队与在途取消（ADR-0016 场景 9）；P10 判定附注
+// （outcome/position/existing）四形态逐路断言。
 func TestAdmissionSemantics(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("idempotency key dedup returns existing", func(t *testing.T) {
 		e, _, _ := newTestEngine(t)
 		rev := freezeSpec(t, e, 1, tImageSpec)
-		a, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, IdempotencyKey: "k1"})
+		a, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, IdempotencyKey: "k1"})
 		require.NoError(t, err)
-		b, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, IdempotencyKey: "k1"})
+		b, adm, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, IdempotencyKey: "k1"})
 		require.NoError(t, err)
 		assert.Equal(t, a.ID, b.ID)
+		require.NotNil(t, adm)
+		assert.Equal(t, AdmissionDeduplicated, adm.Outcome)
+		assert.Equal(t, a.ID, adm.Existing)
+		assert.Equal(t, 1, adm.Position)
 	})
 
 	t.Run("commit sha dedup", func(t *testing.T) {
 		e, _, _ := newTestEngine(t)
 		rev := freezeSpec(t, e, 1, tImageSpec)
-		a, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, CommitSHA: "abc123"})
+		a, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, CommitSHA: "abc123"})
 		require.NoError(t, err)
-		b, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, CommitSHA: "abc123"})
+		b, adm, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev, CommitSHA: "abc123"})
 		require.NoError(t, err)
 		assert.Equal(t, a.ID, b.ID)
+		require.NotNil(t, adm)
+		assert.Equal(t, AdmissionDeduplicated, adm.Outcome)
+		assert.Equal(t, a.ID, adm.Existing)
 	})
 
 	t.Run("latest wins merges queued", func(t *testing.T) {
 		e, _, _ := newTestEngine(t)
 		r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
 		r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.27"))
-		a, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
+		a, firstAdm, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
 		require.NoError(t, err)
-		b, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+		require.Equal(t, AdmissionQueued, firstAdm.Outcome)
+		require.Equal(t, 1, firstAdm.Position)
+		b, adm, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
 		require.NoError(t, err)
 		assert.Equal(t, uint64(2), b.Generation)
+		require.NotNil(t, adm)
+		assert.Equal(t, AdmissionMerged, adm.Outcome)
+		assert.Equal(t, 1, adm.Position, "merged predecessor leaves the queue head to the new request")
+		assert.Empty(t, adm.Existing)
 		e.step(ctx) // latest-wins 收口 + 驱动最新
 		assert.Equal(t, deployment.StateSuperseded, getDeployment(t, e, a.ID).State)
 		assert.Equal(t, b.ID, getDeployment(t, e, a.ID).SupersededBy)
 		assert.Equal(t, deployment.StateReleasing, getDeployment(t, e, b.ID).State)
 	})
 
+	t.Run("queued behind in-flight counts position", func(t *testing.T) {
+		e, _, _ := newTestEngine(t)
+		r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
+		r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.27"))
+		_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
+		require.NoError(t, err)
+		e.step(ctx) // → releasing（在途，默认不抢占）
+		b, adm, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2})
+		require.NoError(t, err)
+		require.NotNil(t, adm)
+		assert.Equal(t, AdmissionQueued, adm.Outcome)
+		assert.Equal(t, 2, adm.Position, "an in-flight deployment sits ahead in the per-app pipeline")
+		require.NotEmpty(t, b.ID)
+	})
+
 	t.Run("queue full is explicit feedback", func(t *testing.T) {
 		e, _, _ := newTestEngine(t)
 		e.opts.QueueCapacity = 1
 		rev := freezeSpec(t, e, 1, tImageSpec)
-		_, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+		_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 		require.NoError(t, err)
-		_, err = e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+		_, _, err = e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 		assert.ErrorIs(t, err, ErrQueueFull)
 	})
 
@@ -243,13 +272,16 @@ func TestAdmissionSemantics(t *testing.T) {
 		e, _, _ := newTestEngine(t)
 		r1 := freezeSpec(t, e, 1, imageSpecFor("nginx:1.26"))
 		r2 := freezeSpec(t, e, 2, imageSpecFor("nginx:1.27"))
-		a, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
+		a, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r1})
 		require.NoError(t, err)
 		e.step(ctx) // a → releasing（在途）
 		require.Equal(t, deployment.StateReleasing, getDeployment(t, e, a.ID).State)
 
-		b, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2, Supersede: true})
+		b, adm, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: r2, Supersede: true})
 		require.NoError(t, err)
+		require.NotNil(t, adm)
+		assert.Equal(t, AdmissionSuperseded, adm.Outcome)
+		assert.Equal(t, 1, adm.Position, "preempted in-flight rows do not count ahead")
 		assert.Equal(t, deployment.StateSuperseded, getDeployment(t, e, a.ID).State)
 		assert.Equal(t, b.ID, getDeployment(t, e, a.ID).SupersededBy)
 	})
@@ -257,7 +289,7 @@ func TestAdmissionSemantics(t *testing.T) {
 	t.Run("cancel queued and in-flight", func(t *testing.T) {
 		e, _, _ := newTestEngine(t)
 		rev := freezeSpec(t, e, 1, tImageSpec)
-		a, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+		a, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 		require.NoError(t, err)
 		out, err := e.Cancel(ctx, a.ID)
 		require.NoError(t, err)
@@ -273,7 +305,7 @@ func TestEngineRestartReplaysInFlightGeneration(t *testing.T) {
 	e, rt, _ := newTestEngine(t)
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx) // → releasing（Ensure gen=1 + L1 deadline 落库）
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d.ID).State)
@@ -295,7 +327,7 @@ func TestDriftDetectionDebounced(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx) // Ensure gen=1
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
@@ -342,7 +374,7 @@ func TestObserveBackfillsMissingDeadline(t *testing.T) {
 	e, _, clock := newTestEngine(t)
 	ctx := context.Background()
 	rev := freezeSpec(t, e, 1, tImageSpec)
-	d, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx)
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
@@ -404,7 +436,7 @@ func TestWatchdogIgnoresStaleGenerationStops(t *testing.T) {
 
 	// gen1 部署走完整链到 succeeded（基线）。
 	rev := freezeSpec(t, e, 1, tImageSpec)
-	d1, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d1, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx)
 	e.handleObservation(ctx, workloadEventRunning(tAppID+"-web", 1))
@@ -415,7 +447,7 @@ func TestWatchdogIgnoresStaleGenerationStops(t *testing.T) {
 
 	// gen2 部署（同 spec 重部署 = 滚动更新形态）：running@2 先到，
 	// 旧代 stopped@1 迟到覆盖观测槽。
-	d2, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
+	d2, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.NoError(t, err)
 	e.step(ctx)
 	require.Equal(t, deployment.StateReleasing, getDeployment(t, e, d2.ID).State)

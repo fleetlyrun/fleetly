@@ -75,7 +75,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 		return nil, mapStateError(err, "revision")
 	}
 
-	d, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
+	d, adm, err := svc.s.Engine.Submit(ctx, engine.SubmitRequest{
 		AppID: appRow.ID, RevisionID: rev.ID,
 		IdempotencyKey: req.GetIdempotencyKey(), CommitSHA: req.GetCommitSha(),
 		Supersede: req.GetSupersede(),
@@ -83,7 +83,7 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 	if err != nil {
 		return nil, mapStateError(err, "deployment")
 	}
-	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d)}, nil
+	return &deliveryv1.DeployResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
 }
 
 // freezeRevision 冻结 Revision（内容寻址复用：同内容只冻结一份；R1..Rn
@@ -266,7 +266,7 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 	if err := svc.s.authorizeAppIDOnly(ctx, req.GetAppId()); err != nil {
 		return nil, err
 	}
-	d, err := svc.s.Engine.Rollback(ctx, req.GetAppId(), req.GetToRevision())
+	d, adm, err := svc.s.Engine.Rollback(ctx, req.GetAppId(), req.GetToRevision())
 	if err != nil {
 		// 哨兵判定（Q-13）：engine 哨兵 → E_NO_BASELINE（映射目标不变，
 		// 只把文案 Contains 换成 errors.Is——文案再改不破坏错误契约）。
@@ -275,7 +275,7 @@ func (svc *DeploymentsService) Rollback(ctx context.Context, req *deliveryv1.Rol
 		}
 		return nil, mapStateError(err, "rollback")
 	}
-	return &deliveryv1.RollbackResponse{Deployment: deploymentMsg(*d)}, nil
+	return &deliveryv1.RollbackResponse{Deployment: deploymentMsg(*d), Admission: admissionMsg(adm)}, nil
 }
 
 // ---- Revisions ----

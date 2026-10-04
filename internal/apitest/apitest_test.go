@@ -106,12 +106,48 @@ func TestComposeDeployNormalizes(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, revs.GetRevisions(), 1)
 
-	// 同内容重复部署：Revision 内容寻址复用。
+	// 同内容重复部署：Revision 内容寻址复用；admission 附注排队于在途之后
+	//（P10：harness 自动驱动首条已 releasing，位次 2——无幂等键/commit 锚
+	// 不去重、不合并 queued）。
 	dep2, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{AppId: app.GetApp().GetId(), ComposeYaml: compose})
 	require.NoError(t, err)
 	revs2, _ := revisions.ListRevisions(ctx, &deliveryv1.ListRevisionsRequest{AppId: app.GetApp().GetId()})
 	require.Len(t, revs2.GetRevisions(), 1, "identical spec reuses the frozen revision")
 	assert.NotEqual(t, dep.GetDeployment().GetId(), dep2.GetDeployment().GetId(), "but deployments are distinct")
+	require.NotNil(t, dep2.GetAdmission())
+	assert.Equal(t, "queued", dep2.GetAdmission().GetOutcome())
+	assert.Equal(t, int32(2), dep2.GetAdmission().GetPosition(), "the in-flight deployment sits ahead in the pipeline")
+}
+
+// P10 Agent 场景：同 commit 重发（无幂等键——幂等层重放会掩盖 engine 层
+// 去重）→ 拿到既有引用而非新部署，admission 明示 deduplicated。
+func TestDeployCommitDedupAdmission(t *testing.T) {
+	h := apitest.New(t)
+	ctx := sdk.WithToken(context.Background(), h.Token)
+	projects := structurev1.NewProjectsServiceClient(h.Conn)
+	apps := structurev1.NewAppsServiceClient(h.Conn)
+	deployments := deliveryv1.NewDeploymentsServiceClient(h.Conn)
+
+	proj, _ := projects.CreateProject(ctx, &structurev1.CreateProjectRequest{Name: "dedup"})
+	app, _ := apps.CreateApp(ctx, &structurev1.CreateAppRequest{ProjectId: proj.GetProject().GetId(), Name: "web"})
+
+	commit := "2222222222222222222222222222222222222222"
+	first, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+		AppId: app.GetApp().GetId(), Image: "nginx:1.27", CommitSha: commit,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, first.GetAdmission())
+	assert.Equal(t, "queued", first.GetAdmission().GetOutcome())
+
+	again, err := deployments.Deploy(ctx, &deliveryv1.DeployRequest{
+		AppId: app.GetApp().GetId(), Image: "nginx:1.27", CommitSha: commit,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, first.GetDeployment().GetId(), again.GetDeployment().GetId(),
+		"same active commit must return the existing deployment, not a new one")
+	require.NotNil(t, again.GetAdmission())
+	assert.Equal(t, "deduplicated", again.GetAdmission().GetOutcome())
+	assert.Equal(t, first.GetDeployment().GetId(), again.GetAdmission().GetExistingDeployment())
 }
 
 func TestComposeRejectedField(t *testing.T) {

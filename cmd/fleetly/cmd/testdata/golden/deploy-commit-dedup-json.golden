@@ -5,12 +5,14 @@
     "from_revision": "<ULID>",
     "to_revision": "<ULID>",
     "state": "queued",
-    "generation": "12",
+    "generation": "13",
+    "commit_sha": "<ULID>00000000000000",
     "created_at": "2026-01-01T00:02:00Z",
     "updated_at": "2026-01-01T00:02:00Z"
   },
   "admission": {
-    "outcome": "merged",
-    "position": 2
+    "outcome": "deduplicated",
+    "position": 2,
+    "existing_deployment": "<ULID>"
   }
 }

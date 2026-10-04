@@ -55,7 +55,7 @@ func TestCrossProjectPeerStrictAdmission(t *testing.T) {
 	providerID := seedCrossProjectPeer(t, e, false)
 
 	revID := freezeSpec(t, e, 1, peerSpec(providerID))
-	_, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.ErrorIs(t, err, ErrCrossProjectRefNotApproved, "unapproved reference must be rejected at admission")
 	assert.Contains(t, err.Error(), "project:"+providerID+"/bus")
 
@@ -93,7 +93,7 @@ func TestCrossProjectPeerRevokeIsolates(t *testing.T) {
 	assert.Equal(t, []string{"default"}, w.Networks, "same-domain networks survive the strip")
 
 	// 撤销后再部署同引用：受理位重新拒绝（fail-closed 重声明）。
-	_, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
+	_, _, err := e.Submit(ctx, SubmitRequest{AppID: tAppID, RevisionID: revID})
 	require.ErrorIs(t, err, ErrCrossProjectRefNotApproved)
 }
 

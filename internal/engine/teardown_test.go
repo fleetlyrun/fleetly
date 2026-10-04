@@ -48,7 +48,7 @@ func TestSubmitRejectsDeletedApp(t *testing.T) {
 	}))
 	rev := freezeSpec(t, e, 1, tImageSpec)
 
-	_, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev})
+	_, _, err := e.Submit(context.Background(), SubmitRequest{AppID: tAppID, RevisionID: rev})
 	require.ErrorIs(t, err, state.ErrNotFound, "submitting to a tombstoned app must be rejected in-transaction")
 }
 
