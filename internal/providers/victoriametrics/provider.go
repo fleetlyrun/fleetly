@@ -216,8 +216,11 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 			Ports:   []capability.WorkloadPort{{Port: cadvisorPort, Protocol: capability.ProtocolHTTP}},
 			Publish: []capability.PortPublish{{PublishedPort: cadvisorPort, TargetPort: cadvisorPort, Mode: capability.PublishModeHost}},
 			// 每节点一 task（docker stats 无集群 API——多节点采集的端点形态，
-			// ADR-0041 决策 2）。
-			Global: true,
+			// ADR-0041 决策 2）。Replicas=1 是全局形态的 per-node 期望数
+			//（翻译 Global 优先忽略计数；spec 对照面 InspectWorkloads 对
+			// 全局服务报 1——缺省 0 会每拍假 drift，CI 升级矩阵实证）。
+			Global:   true,
+			Replicas: 1,
 			// 不挂域材料：无状态采集端不接收 VM 凭证（镜像无 /run/secrets，
 			// secret 挂载会启动失败——staging 实证 2026-10-04）。
 			SkipMaterials: true,

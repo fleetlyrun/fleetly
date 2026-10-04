@@ -74,6 +74,7 @@ func TestManagedWorkloadsShape(t *testing.T) {
 	cd := ws[1]
 	assert.Equal(t, "gcr.io/cadvisor/cadvisor:v0.55.1", cd.Image)
 	assert.True(t, cd.Global, "cadvisor must schedule one task per node")
+	assert.EqualValues(t, 1, cd.Replicas, "global form carries the per-node desired count for spec-parity drift comparison")
 	require.Len(t, cd.Publish, 1)
 	assert.Equal(t, capability.PublishModeHost, cd.Publish[0].Mode, "cadvisor endpoint is host-published per node")
 	assert.Equal(t, int32(8080), cd.Publish[0].PublishedPort)
