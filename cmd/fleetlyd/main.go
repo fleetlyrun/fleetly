@@ -22,6 +22,7 @@ import (
 	// 家族单包三 Provider（ADR-0032）。
 	_ "github.com/fleetlyrun/fleetly/internal/providers/builders"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/localobjectstore"
+	_ "github.com/fleetlyrun/fleetly/internal/providers/s3objectstore"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/traefik"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/victorialogs"

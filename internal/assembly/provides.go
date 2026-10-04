@@ -236,11 +236,13 @@ func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) 
 	return c, func() {}, nil
 }
 
-// NewObjectStore 经工厂注册表构造 ObjectStore 端口（ADR-0039：本地目标
-// 开箱即用——cmd/fleetlyd 的 blank import 触发 localobjectstore 自注册，
-// 与 Runtime/Registry 同款装配通道；外置 S3 Provider 选择面随 F2.8）。
-func NewObjectStore(app lynx.App) (capability.ObjectStore, func(), error) {
-	p, err := capability.Build(context.Background(), capability.KindObjectStore, "")
+// NewObjectStore 经工厂注册表构造 ObjectStore 端口（ADR-0039 本地目标
+// 开箱即用；ADR-0042 装配选择 = 在场驱动：platform_backup.s3 五元组在场
+// → s3 Provider，缺席 → local Provider（升级零扰动）。选择谓词与「同机
+// 备份非灾备」告警解除谓词是同一谓词——消警路径零改动）。
+func NewObjectStore(app lynx.App, cfg *config.AppConfig) (capability.ObjectStore, func(), error) {
+	name, ctx := objectStoreSelection(cfg)
+	p, err := capability.Build(ctx, capability.KindObjectStore, name)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -250,6 +252,22 @@ func NewObjectStore(app lynx.App) (capability.ObjectStore, func(), error) {
 	}
 	logCapabilityFaces(app.Logger(), "objectstore", store)
 	return store, func() {}, nil
+}
+
+// objectStoreSelection 是装配选择的决策面（纯函数可测——assembly 测试不
+// import providers，选择语义在此钉死）：s3 五元组在场 → 名 "s3" + 配置
+// 经装配 ctx 注入（config 是唯一契约源，ADR-0042 决策 2）；缺席 → "local"
+// 且不注入（s3 工厂被显式选择而无配置时在工厂面精确失败）。
+func objectStoreSelection(cfg *config.AppConfig) (string, context.Context) {
+	ctx := context.Background()
+	s3 := cfg.PlatformBackupS3()
+	if s3 == nil {
+		return "local", ctx
+	}
+	return "s3", capability.WithObjectStoreS3(ctx, &capability.ObjectStoreS3Config{
+		Endpoint: s3.GetEndpoint(), Bucket: s3.GetBucket(),
+		AccessKeyID: s3.GetAccessKeyId(), SecretAccessKey: s3.GetSecretAccessKey(),
+	})
 }
 
 // NewEngine 构造部署收敛引擎（重叠策略旋钮从 AppConfig 透传并 fail-fast

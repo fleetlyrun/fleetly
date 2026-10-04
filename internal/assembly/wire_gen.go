@@ -73,7 +73,7 @@ func wireBootstrap(app lynx.App, info buildinfo.BuildInfo) (*boot.Bootstrap, fun
 		cleanup()
 		return nil, nil, err
 	}
-	objectStore, cleanup8, err := NewObjectStore(app)
+	objectStore, cleanup8, err := NewObjectStore(app, appConfig)
 	if err != nil {
 		cleanup7()
 		cleanup6()
