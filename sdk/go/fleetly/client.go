@@ -52,6 +52,8 @@ type Client struct {
 	Routes      edgev1.RoutesServiceClient
 	Events      telemetryv1.EventsServiceClient
 	Logs        telemetryv1.LogsServiceClient
+	Metrics     telemetryv1.MetricsServiceClient
+	Alerting    telemetryv1.AlertingServiceClient
 
 	Users       identityv1.UsersServiceClient
 	Teams       identityv1.TeamsServiceClient
@@ -120,6 +122,8 @@ func newClient(conn *grpc.ClientConn) *Client {
 		Routes:      edgev1.NewRoutesServiceClient(conn),
 		Events:      telemetryv1.NewEventsServiceClient(conn),
 		Logs:        telemetryv1.NewLogsServiceClient(conn),
+		Metrics:     telemetryv1.NewMetricsServiceClient(conn),
+		Alerting:    telemetryv1.NewAlertingServiceClient(conn),
 
 		Users:       identityv1.NewUsersServiceClient(conn),
 		Teams:       identityv1.NewTeamsServiceClient(conn),

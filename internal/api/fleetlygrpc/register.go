@@ -35,6 +35,8 @@ func RegisterAll(srv *grpc.Server, s *Services) {
 	edgev1.RegisterRoutesServiceServer(srv, &RoutesService{s: s})
 	telemetryv1.RegisterEventsServiceServer(srv, &EventsService{s: s})
 	telemetryv1.RegisterLogsServiceServer(srv, &LogsService{s: s})
+	telemetryv1.RegisterMetricsServiceServer(srv, &MetricsService{s: s})
+	telemetryv1.RegisterAlertingServiceServer(srv, &AlertingService{s: s})
 	identityv1.RegisterUsersServiceServer(srv, &UsersService{s: s})
 	identityv1.RegisterTeamsServiceServer(srv, &TeamsService{s: s})
 	identityv1.RegisterRolesServiceServer(srv, &RolesService{s: s})

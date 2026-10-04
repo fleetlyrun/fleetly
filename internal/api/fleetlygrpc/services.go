@@ -52,6 +52,9 @@ type Services struct {
 	// Logging 是受管日志存储（可空 = Logging 面停用：text 检索路径精确
 	// 失败、logs 回退 Runtime 实时路径——ADR-0040 双径）。
 	Logging capability.Logging
+	// Metrics 是受管指标存储（可空 = Metrics 面停用：查询精确失败、零采集
+	// 零告警——ADR-0041）。
+	Metrics capability.Metrics
 
 	Projects     *project.Repo
 	Apps         *app.Repo
@@ -116,6 +119,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Cipher:          c,
 		Runtime:         rt,
 		Logging:         e.LoggingProvider(),
+		Metrics:         e.MetricsProvider(),
 		Projects:        project.New(clock),
 		Apps:            app.New(clock),
 		Deployments:     deployment.New(clock),

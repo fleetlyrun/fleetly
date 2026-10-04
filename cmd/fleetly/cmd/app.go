@@ -104,6 +104,14 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 		// Telemetry 上下文。
 		groupVerb("events", "list and follow platform events from the outbox", newEventsListVerb(), newEventsFollowVerb()),
 		newLogsVerb(),
+		// Metrics/Alerting 上下文（F2.5，ADR-0041）。
+		groupVerb("metrics", "query the managed metrics store (PromQL pass-through)", newMetricsQueryVerb()),
+		groupVerb("channels", "manage notification channels for alerting (credentials are write-only)",
+			newChannelsCreateVerb(), newChannelsTestVerb(), newChannelsListVerb(), newChannelsDeleteVerb()),
+		groupVerb("alerts", "manage threshold alert rules and list current alert states",
+			groupVerb("rules", "manage threshold alert rules",
+				newAlertsRulesCreateVerb(), newAlertsRulesListVerb(), newAlertsRulesDeleteVerb()),
+			newAlertsListVerb()),
 		// Platform 上下文（F2.3，ADR-0039 决策 10）：平台级操作面——
 		// Platform Backup 手动触发/列举（升级序前置动词）。
 		groupVerb("platform", "platform-level operations (backup before upgrades, list snapshots)",

@@ -1,4 +1,7 @@
 NAME	KIND	SUMMARY
+alert.channel_failed	event	A notification channel delivery failed; the channel row records the error tail (diagnostics face).
+alert.fired	event	A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.
+alert.resolved	event	A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).
 app	spec	AppSpec: desired state of a long-running deployable unit (an app is one or more processes).
 app.created	event	An app was created.
 app.deleted	event	An app was deleted (teardown per ADR-0023).

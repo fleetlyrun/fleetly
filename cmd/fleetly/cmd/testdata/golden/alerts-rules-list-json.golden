@@ -1,0 +1,26 @@
+{
+  "rules": [
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "metric": "memory_working_set_bytes",
+      "threshold": 1048576,
+      "for_seconds": "300",
+      "enabled": true,
+      "state": "ok",
+      "state_since": "2026-01-01T00:02:00Z",
+      "created_at": "2026-01-01T00:02:00Z"
+    },
+    {
+      "id": "<ULID>",
+      "app_id": "<ULID>",
+      "metric": "memory_working_set_bytes",
+      "threshold": 5242880,
+      "for_seconds": "300",
+      "enabled": true,
+      "state": "ok",
+      "state_since": "2026-01-01T00:02:00Z",
+      "created_at": "2026-01-01T00:02:00Z"
+    }
+  ]
+}

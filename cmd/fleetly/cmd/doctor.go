@@ -15,6 +15,7 @@ import (
 	"github.com/lynx-go/commands"
 
 	systemv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/system/v1"
+	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/config"
 	"github.com/fleetlyrun/fleetly/sdk/go/fleetly"
 )
@@ -59,10 +60,11 @@ type dockerProbeResult struct {
 
 // 探针接缝（golden 注入；真机走 exec/RPC/系统调用）。
 var (
-	probeDocker = execDockerProbe
-	probePort   = execPortProbe
-	probeDisk   = syscallDiskProbe
-	probeRemote = rpcRemoteProbe
+	probeDocker   = execDockerProbe
+	probePort     = execPortProbe
+	probeDisk     = syscallDiskProbe
+	probeRemote   = rpcRemoteProbe
+	probeAlerting = rpcAlertingProbe
 )
 
 const (
@@ -215,6 +217,34 @@ func runDoctorProbes(ctx context.Context, addr string, ex exposureTargets) docto
 		}
 	}
 
+	// 告警通道与异地备份持续告警面（F2.2 挂账消化，F2.5/ADR-0041）：无通道
+	// = 任何告警到不了人；内置规则 firing = Platform Backup 24h+ 无异地仓。
+	if chs, sts, aerr := probeAlerting(ctx, addr); aerr == nil {
+		switch {
+		case len(chs) == 0:
+			checks = append(checks, doctorCheck{
+				Area: "alerting", Name: "notification channels", Status: checkWarn,
+				Detail: "no notification channel configured",
+				Advice: "run `fleetly channels create ...` so backup failures and threshold alerts reach someone",
+			})
+		default:
+			checks = append(checks, doctorCheck{
+				Area: "alerting", Name: "notification channels", Status: checkOK,
+				Detail: fmt.Sprintf("%d channel(s) configured", len(chs)),
+			})
+		}
+		for _, st := range sts {
+			if !st.GetSystem() || st.GetState() != "firing" {
+				continue
+			}
+			checks = append(checks, doctorCheck{
+				Area: "alerting", Name: st.GetRuleId(), Status: checkWarn,
+				Detail: "firing since " + st.GetStateSince(),
+				Advice: "configure an offsite backup repo (platform_backup.s3) to clear this alert",
+			})
+		}
+	}
+
 	// 远程 fleetlyd 合流（status 面，PUBLIC）。
 	if resp, err := probeRemote(ctx, addr); err != nil {
 		checks = append(checks, doctorCheck{
@@ -300,6 +330,27 @@ func execPortProbe(addr string) error {
 }
 
 // rpcRemoteProbe 拉 fleetlyd status（PUBLIC 面；凭证可选携带）。
+// rpcAlertingProbe 拉告警面观测（通道列表 + 现行状态；认证面同 resolveToken）。
+func rpcAlertingProbe(ctx context.Context, addr string) ([]*telemetryv1.NotificationChannel, []*telemetryv1.AlertState, error) {
+	callCtx, cancel := context.WithTimeout(ctx, fleetly.DefaultTimeout)
+	defer cancel()
+	c, err := dialClient(addr)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer c.Close() //nolint:errcheck // 进程退出路径
+	authed := fleetly.WithToken(callCtx, resolveToken(""))
+	chs, err := c.Alerting.ListNotificationChannels(authed, &telemetryv1.ListNotificationChannelsRequest{})
+	if err != nil {
+		return nil, nil, err
+	}
+	sts, err := c.Alerting.ListAlertStates(authed, &telemetryv1.ListAlertStatesRequest{})
+	if err != nil {
+		return nil, nil, err
+	}
+	return chs.GetChannels(), sts.GetStates(), nil
+}
+
 func rpcRemoteProbe(ctx context.Context, addr string) (*systemv1.GetStatusResponse, error) {
 	callCtx, cancel := context.WithTimeout(ctx, fleetly.DefaultTimeout)
 	defer cancel()

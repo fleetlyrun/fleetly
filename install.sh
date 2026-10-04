@@ -17,6 +17,7 @@
 #   FLEETLY_ADVERTISE_ADDR  swarm advertise 地址（默认自动探测默认路由 IP）
 #   FLEETLY_REGISTRY_ADDR   受管仓库地址（默认 <advertise>:5000；空 = 禁用
 #   FLEETLY_LOGGING_ADDR    受管日志存储地址（默认 <advertise>:9428；空 = 禁用
+#   FLEETLY_METRICS_ADDR    受管指标存储地址（默认 <advertise>:8428；空 = 禁用
 #                           构建链——镜像直投部署不受影响）
 #
 # railpack 构建器（零配置源码构建）随脚本钉版安装（F1.14，ADR-0032）；
@@ -177,6 +178,11 @@ mkdir -p "$DATA_ROOT"
 LOGGING_ADDR="${FLEETLY_LOGGING_ADDR:-}"
 [ -z "$LOGGING_ADDR" ] && [ -n "$ADDR" ] && LOGGING_ADDR="$ADDR:9428"
 
+# 受管指标存储端点（F2.5，ADR-0041）：同源物化（<advertise>:8428）；空 =
+# Metrics 面停用（零采集/零告警）。
+METRICS_ADDR="${FLEETLY_METRICS_ADDR:-}"
+[ -z "$METRICS_ADDR" ] && [ -n "$ADDR" ] && METRICS_ADDR="$ADDR:8428"
+
 start_fleetlyd_systemd() {
   log "starting fleetlyd via systemd"
   EXTRA_ENV=""
@@ -186,6 +192,10 @@ start_fleetlyd_systemd() {
   fi
   if [ -n "$LOGGING_ADDR" ]; then
     EXTRA_ENV="${EXTRA_ENV}Environment=FLEETLY_LOGGING_ADDR=$LOGGING_ADDR
+"
+  fi
+  if [ -n "$METRICS_ADDR" ]; then
+    EXTRA_ENV="${EXTRA_ENV}Environment=FLEETLY_METRICS_ADDR=$METRICS_ADDR
 "
   fi
   cat > /etc/systemd/system/fleetlyd.service <<UNIT
@@ -213,6 +223,7 @@ start_fleetlyd_background() {
   log "no systemd — starting fleetlyd in background (log: /var/log/fleetlyd.log)"
   setsid env FLEETLY_DATA_ROOT="$DATA_ROOT" FLEETLY_REGISTRY_ADDR="${REGISTRY_ADDR:-}" \
     FLEETLY_LOGGING_ADDR="${LOGGING_ADDR:-}" \
+    FLEETLY_METRICS_ADDR="${METRICS_ADDR:-}" \
     "$BIN_DIR/fleetlyd" > /var/log/fleetlyd.log 2>&1 < /dev/null &
 }
 

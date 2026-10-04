@@ -197,8 +197,16 @@ _Avoid_: storage, bucket, S3(泛指)
 _Avoid_: observability(泛指单一系统), log pipeline
 
 **Metrics**:
-指标 Capability：容器指标采集、查询、阈值告警与通知通道。
+指标 Capability：cadvisor 全局采集（每节点端点）+ 控制面集中抓取入库；PromQL 查询面；阈值告警评估在引擎原生完成（ADR-0041）。
 _Avoid_: monitoring(泛指), telemetry(另指事件面)
+
+**Alert Rule**:
+per-App 阈值规则（cpu_percent | memory_working_set_bytes；持续窗后迁移 firing，回落归位；状态迁移沿才通知，ADR-0041）。
+_Avoid_: alarm, monitor(动词泛指)
+
+**Notification Channel**:
+通知通道实体（webhook | telegram；配置 age 信封只写不读——URL/bot_token 是凭证材料，ADR-0041）。
+_Avoid_: notifier, sink
 
 **Managed Provider**:
 由平台以普通 Workload 形式托管部署的 Provider 实例。

@@ -1,0 +1,24 @@
+{
+  "states": [
+    {
+      "rule_id": "<ULID>",
+      "app_id": "<ULID>",
+      "metric": "memory_working_set_bytes",
+      "state": "ok",
+      "state_since": "2026-01-01T00:02:00Z"
+    },
+    {
+      "rule_id": "<ULID>",
+      "app_id": "<ULID>",
+      "metric": "memory_working_set_bytes",
+      "state": "ok",
+      "state_since": "2026-01-01T00:02:00Z"
+    },
+    {
+      "rule_id": "platform-offsite-backup",
+      "metric": "platform_offsite_backup",
+      "state": "ok",
+      "system": true
+    }
+  ]
+}

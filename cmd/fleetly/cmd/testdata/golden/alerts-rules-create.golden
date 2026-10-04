@@ -1,0 +1,1 @@
+created alert rule <ULID> (memory_working_set_bytes > 1.048576e+06, for 300s)

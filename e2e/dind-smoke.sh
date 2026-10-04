@@ -453,4 +453,56 @@ log "hook + audit read paths"
 cli hooks get --app "$APP_ID" >/dev/null
 cli audit --source webhook --limit 5 >/dev/null
 
+# ---- F2.5 Metrics/Alerting 面（ADR-0041）----
+# install.sh 物化 FLEETLY_METRICS_ADDR（同 registry/logging 源）——受管
+# VM + cadvisor 全局端随新版起服。等待受管双件 1/1（全局服务单节点也是
+# 1/1；镜像拉取有窗）。
+log "waiting for the managed metrics store (VM + cAdvisor)"
+i=0
+while [ "$i" -lt 120 ]; do
+  vm=$(docker exec "$DIND_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-victoriametrics --format '{{.Replicas}}' 2>/dev/null)
+  cd_=$(docker exec "$DIND_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-cadvisor --format '{{.Replicas}}' 2>/dev/null)
+  [ "$vm" = "1/1" ] && [ "$cd_" = "1/1" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "${vm:-}" = "1/1" ] || { echo "victoria-metrics never became 1/1 (got ${vm:-none})" >&2; exit 1; }
+[ "${cd_:-}" = "1/1" ] || { echo "cadvisor never became 1/1 (got ${cd_:-none})" >&2; exit 1; }
+log "managed VM + cAdvisor running"
+
+# 采集环落地：cadvisor 序列经 engine 推入 VM——metrics query 返回点集
+#（container_cpu_usage_seconds_total 是 cadvisor 必有序列）。
+log "asserting metrics query returns scraped series"
+POINTS=0
+i=0
+while [ "$i" -lt 45 ]; do
+  n=$(cli --json metrics query 'max(container_cpu_usage_seconds_total{job="fleetly-cadvisor"})' 2>/dev/null | grep -c '"value"' || true)
+  if [ "${n:-0}" -gt 0 ]; then POINTS=1; break; fi
+  i=$((i + 1)); sleep 2
+done
+[ "$POINTS" = "1" ] || { echo "metrics query returned no points for the cadvisor series" >&2; exit 1; }
+log "cadvisor series queryable through the managed store"
+
+# 阈值规则全链：memory > 1B（必越限）→ 采集遍内评估 → alerts list 见
+# firing（通道派发无接收端不影响状态机——delivery 失败记 last_failure 是
+# 诚实面）。
+cli alerts rules create --app "$APP_ID" --metric memory_working_set_bytes --threshold 1 >/dev/null
+FIRING=0
+i=0
+while [ "$i" -lt 45 ]; do
+  st=$(cli --json alerts list 2>/dev/null | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
+  [ "$st" = "firing" ] && FIRING=1 && break
+  i=$((i + 1)); sleep 2
+done
+[ "$FIRING" = "1" ] || { echo "memory threshold rule never reached firing" >&2; cli --json alerts list >&2 || true; exit 1; }
+log "threshold alert fired and is listed"
+
+# 通道链（无接收端形态）：登记 webhook 通道 + test —— delivered=false +
+# 错误文本是响应数据（age 信封写面 + 解封派发面双绿即锚）。
+CH_ID=$(cli channels create --name ops-hook --kind webhook --url http://127.0.0.1:1/x | sed -n 's/.*(id \([^)]*\)).*/\1/p')
+[ -n "$CH_ID" ] || { echo "channel create produced no id" >&2; exit 1; }
+cli --json channels test --channel "$CH_ID" | grep -q '"delivered":false' || {
+  echo "channel test should report delivered=false for an unreachable endpoint" >&2; exit 1
+}
+log "notification channel test payload dispatched (unreachable endpoint reported honestly)"
+
 log "SMOKE PASSED"

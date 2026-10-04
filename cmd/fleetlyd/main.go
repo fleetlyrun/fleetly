@@ -25,6 +25,7 @@ import (
 	_ "github.com/fleetlyrun/fleetly/internal/providers/swarm"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/traefik"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/victorialogs"
+	_ "github.com/fleetlyrun/fleetly/internal/providers/victoriametrics"
 	_ "github.com/fleetlyrun/fleetly/internal/providers/zot"
 )
 

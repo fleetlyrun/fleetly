@@ -1,6 +1,24 @@
 {
   "entries": [
     {
+      "name": "alert.channel_failed",
+      "kind": "event",
+      "summary": "A notification channel delivery failed; the channel row records the error tail (diagnostics face).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"channel_id\":{\"type\":\"string\"},\"error\":{\"type\":\"string\"}},\"required\":[\"channel_id\",\"error\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "alert.fired",
+      "kind": "event",
+      "summary": "A threshold alert rule transitioned to firing (breach held for the rule's for-window); notification channels were attempted.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"metric\":{\"type\":\"string\"},\"rule_id\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"},\"threshold\":{\"type\":\"number\"},\"value\":{\"type\":\"number\"}},\"required\":[\"rule_id\",\"metric\",\"state\"],\"type\":\"object\"}"
+    },
+    {
+      "name": "alert.resolved",
+      "kind": "event",
+      "summary": "A firing threshold alert rule transitioned back to ok (observed value fell below the threshold).",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"app_id\":{\"type\":\"string\"},\"metric\":{\"type\":\"string\"},\"rule_id\":{\"type\":\"string\"},\"state\":{\"type\":\"string\"},\"threshold\":{\"type\":\"number\"},\"value\":{\"type\":\"number\"}},\"required\":[\"rule_id\",\"metric\",\"state\"],\"type\":\"object\"}"
+    },
+    {
       "name": "app",
       "kind": "spec",
       "summary": "AppSpec: desired state of a long-running deployable unit (an app is one or more processes).",
