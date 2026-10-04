@@ -164,9 +164,10 @@ jobs:
 
   # F2.2（ADR-0039/0020）：恢复演练是 Backup 功能的验收必过项——四引擎
   # 创建→种子→备份→verify→恢复到新库→数据断言（pg/mysql/mongo 流式 +
-  # redis 预置卷）+ Platform Backup 本地仓 roundtrip。
+  # redis 预置卷）+ Platform Backup 本地仓 roundtrip + F2.8 S3 离机腿
+  # （silo 假端点：对象落桶 + restic 外置仓 + 消警，ADR-0042）。
   e2e-backup:
-    name: E2E (dind backup drill, four engines + platform)
+    name: E2E (dind backup drill, four engines + platform + s3)
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -182,8 +183,10 @@ jobs:
           key: go-${{ runner.os }}-${{ hashFiles('go.sum', 'genproto/go.sum', 'sdk/go/go.sum') }}
           restore-keys: go-${{ runner.os }}-
 
-      - name: Pre-pull dind base
-        run: docker pull docker:29-dind
+      - name: Pre-pull dind base + silo (S3 fake endpoint)
+        run: |
+          docker pull docker:29-dind
+          docker pull pgsty/silo:RELEASE.2026-09-16T00-00-00Z
 
       - name: backup drill (backup -> verify -> restore to new database -> data assertions)
         run: mise run e2e:backup

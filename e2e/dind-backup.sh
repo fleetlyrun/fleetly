@@ -367,4 +367,109 @@ KEY_IN_SNAPSHOT=$(docker exec "$DIND_CID" sh -c \
 
 log "[platform] local repo roundtrip green"
 
-log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + platform backup roundtrip"
+# ---- S3 ObjectStore 腿（F2.8，ADR-0042）：silo 假端点 + 在场驱动换装 ----
+# MinIO 社区版 2026-02 EOL，S3 兼容假端点用社区续命版 silo（pgsty/silo 钉版；
+# 镜像自带 mcli——建桶与断言零额外镜像）。五元组经 /etc/fleetlyd.env 注入
+# （env 键 = FLEETLY_PLATFORM_BACKUP_S3_*，lynx 结构体通道逐叶生效）+ 同文件
+# 重启 fleetlyd：装配选择切 s3 Provider，restic 外置仓同批指向同桶
+# （prefix=platform-repo——对象键 backups/ 与仓前缀双命名空间，ADR-0042 决策 1）。
+SILO_IMAGE=pgsty/silo:RELEASE.2026-09-16T00-00-00Z
+log "[s3] starting silo as the S3-compatible fake endpoint ($SILO_IMAGE)"
+if docker image inspect "$SILO_IMAGE" >/dev/null 2>&1; then
+  docker image save "$SILO_IMAGE" | docker exec -i "$DIND_CID" docker load >/dev/null || fail "load $SILO_IMAGE"
+else
+  docker exec "$DIND_CID" docker pull -q "$SILO_IMAGE" >/dev/null \
+    || docker exec "$DIND_CID" docker pull -q "$SILO_IMAGE" >/dev/null \
+    || fail "pull $SILO_IMAGE"
+fi
+docker exec "$DIND_CID" docker run -d --name fleetly-e2e-silo \
+  -p 127.0.0.1:9000:9000 \
+  -e MINIO_ROOT_USER=fleetly-e2e \
+  -e MINIO_ROOT_PASSWORD=e2e-offsite-key \
+  "$SILO_IMAGE" server /data >/dev/null || fail "silo start"
+docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
+  mcli alias set e2e http://127.0.0.1:9000 fleetly-e2e e2e-offsite-key >/dev/null || fail "mcli alias"
+i=0
+while [ "$i" -lt 30 ]; do
+  docker exec "$DIND_CID" docker exec fleetly-e2e-silo mcli mb e2e/fleetly-backups >/dev/null 2>&1 && break
+  docker exec "$DIND_CID" docker exec fleetly-e2e-silo mcli ls e2e/fleetly-backups >/dev/null 2>&1 && break
+  i=$((i + 1)); sleep 1
+done
+[ "$i" -lt 30 ] || fail "silo never became ready"
+
+log "[s3] switching fleetlyd to the s3 object store (platform_backup.s3 five-tuple)"
+LOCAL_OBJECTS_BEFORE=$(docker exec "$DIND_CID" sh -c "find /var/lib/fleetly/backups -type f | wc -l")
+docker exec "$DIND_CID" sh -c "printf '%s\n' \
+  FLEETLY_PLATFORM_BACKUP_S3_ENDPOINT=http://127.0.0.1:9000 \
+  FLEETLY_PLATFORM_BACKUP_S3_BUCKET=fleetly-backups \
+  FLEETLY_PLATFORM_BACKUP_S3_PREFIX=platform-repo \
+  FLEETLY_PLATFORM_BACKUP_S3_ACCESS_KEY_ID=fleetly-e2e \
+  FLEETLY_PLATFORM_BACKUP_S3_SECRET_ACCESS_KEY=e2e-offsite-key \
+  >> /etc/fleetlyd.env" || fail "append s3 env"
+docker exec "$DIND_CID" pkill -x fleetlyd || true
+i=0
+while [ "$i" -lt 30 ] && docker exec "$DIND_CID" pgrep -x fleetlyd >/dev/null 2>&1; do
+  i=$((i + 1)); sleep 1
+done
+docker exec "$DIND_CID" pgrep -x fleetlyd >/dev/null 2>&1 && fail "fleetlyd did not stop"
+docker exec "$DIND_CID" sh -c "setsid env \$(grep -v '^\$' /etc/fleetlyd.env | tr '\n' ' ') /usr/local/bin/fleetlyd >> /var/log/fleetlyd.log 2>&1 < /dev/null &" || fail "fleetlyd restart"
+i=0
+while [ "$i" -lt 60 ]; do
+  cli status >/dev/null 2>&1 && break
+  i=$((i + 1)); sleep 1
+done
+[ "$i" -lt 60 ] || fail "fleetlyd did not come back with the s3 config"
+docker exec "$DIND_CID" sh -c "grep -E 'kind=objectstore provider=s3|\"kind\":\"objectstore\",\"provider\":\"s3\"' /var/log/fleetlyd.log | tail -1" | grep -q "s3" \
+  || fail "objectstore provider did not switch to s3 (log tail: $(docker exec "$DIND_CID" tail -5 /var/log/fleetlyd.log 2>/dev/null))"
+
+log "[s3] database backup lands in the bucket (fresh postgres drill)"
+cli databases create --project "$PROJECT_ID" --engine postgres pgs3 >/dev/null
+PGS3_SRC=$(db_id_by_name pgs3)
+[ -n "$PGS3_SRC" ] || fail "pgs3 source id"
+wait_db_running "$PGS3_SRC"
+PGS3_CID=$(db_container_id "$PGS3_SRC")
+[ -n "$PGS3_CID" ] || fail "pgs3 source container"
+docker exec "$DIND_CID" docker exec "$PGS3_CID" psql -U fleetly -d fleetly \
+  -c "CREATE TABLE drill(k text, v text); INSERT INTO drill VALUES (\$\$probe\$\$, \$\$DRILL_S3\$\$);" >/dev/null \
+  || fail "pgs3 seed"
+PGS3_BACKUP=$(backup_and_verify "$PGS3_SRC")
+S3_KEY=$(cli --json databases backups "$PGS3_SRC" \
+  | sed -n "s/.*\"object_key\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+[ -n "$S3_KEY" ] || fail "backup row carries no object_key"
+case "$S3_KEY" in
+  backups/"$PROJECT_ID"/"$PGS3_SRC"/*) ;;
+  *) fail "object key $S3_KEY does not follow backups/<project>/<database>/<ts> (project=$PROJECT_ID db=$PGS3_SRC)" ;;
+esac
+log "[s3] object present in the bucket with ledger size (key: $S3_KEY)"
+S3_SIZE=$(cli --json databases backups "$PGS3_SRC" \
+  | sed -n "s/.*\"size_bytes\": *\([0-9]*\).*/\1/p" | head -1)
+[ -n "$S3_SIZE" ] || fail "backup row carries no size_bytes"
+docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
+  mcli stat --json e2e/fleetly-backups/"$S3_KEY" | grep -q "\"size\": *$S3_SIZE" \
+  || fail "object $S3_KEY missing in bucket or size mismatch (ledger=$S3_SIZE)"
+LOCAL_OBJECTS_AFTER=$(docker exec "$DIND_CID" sh -c "find /var/lib/fleetly/backups -type f | wc -l")
+[ "$LOCAL_OBJECTS_AFTER" = "$LOCAL_OBJECTS_BEFORE" ] \
+  || fail "local object count changed during the s3 leg ($LOCAL_OBJECTS_BEFORE -> $LOCAL_OBJECTS_AFTER): backup did not go off-machine"
+
+log "[s3] restoring from the off-machine backup"
+PGS3_DST=$(restore_target postgres pgs3-restored "$PGS3_BACKUP")
+[ -n "$PGS3_DST" ] || fail "pgs3 restore target id"
+wait_restore_done "$PGS3_DST"
+PGS3_DST_CID=$(db_container_id "$PGS3_DST")
+[ -n "$PGS3_DST_CID" ] || fail "pgs3 restore target container"
+PGS3_RESTORED=$(docker exec "$DIND_CID" docker exec "$PGS3_DST_CID" psql -U fleetly -d fleetly -tAc "SELECT v FROM drill LIMIT 1")
+[ "$PGS3_RESTORED" = "DRILL_S3" ] || fail "pgs3 restored value=$PGS3_RESTORED"
+
+log "[s3] platform backup round-trips into the same bucket (restic external repo)"
+cli platform backup --json | sed -n "s/.*\"id\": *\"\([^\"]*\)\".*/\1/p" | head -1 | grep -q . \
+  || fail "platform backup against the s3 repo failed"
+docker exec "$DIND_CID" docker exec fleetly-e2e-silo mcli ls e2e/fleetly-backups/platform-repo/ \
+  | grep -q "data" || fail "restic external repo not present under the platform-repo prefix"
+
+log "[s3] offsite alert stays resolved with s3 configured"
+cli --json alerts list | grep -A 4 '"rule_id": *"platform-offsite-backup"' | grep -q '"state": *"ok"' \
+  || fail "platform-offsite-backup is not ok with the s3 repo configured"
+
+log "[s3] off-machine leg green (object store + restic repo dual-track)"
+
+log "ALL DRILLS GREEN: postgres/mysql/mongo stream restores + redis preseed restore + platform backup roundtrip + s3 off-machine leg"
