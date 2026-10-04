@@ -432,7 +432,12 @@ while [ "$i" -lt 60 ]; do
   i=$((i + 1)); sleep 1
 done
 [ "$i" -lt 60 ] || fail "fleetlyd did not come back with the s3 config"
-docker exec "$DIND_CID" sh -c "grep -E 'kind=objectstore provider=s3|\"kind\":\"objectstore\",\"provider\":\"s3\"' /var/log/fleetlyd.log | tail -1" | grep -q "s3" \
+# 装配选择锚：daemon 日志的 capability faces 行须含 objectstore + s3。zap
+# 字段序不稳定（kind 与 provider 不保证相邻——run 37217928650 实录），三段
+# 式行内过滤与字段序无关。
+docker exec "$DIND_CID" sh -c \
+  'grep "capability faces" /var/log/fleetlyd.log | grep "\"kind\":\"objectstore\"" | grep "\"provider\":\"s3\"" | tail -1' \
+  | grep -q . \
   || fail "objectstore provider did not switch to s3 (log tail: $(docker exec "$DIND_CID" tail -5 /var/log/fleetlyd.log 2>/dev/null))"
 
 log "[s3] database backup lands in the bucket (fresh postgres drill)"
