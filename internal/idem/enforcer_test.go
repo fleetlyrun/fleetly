@@ -115,8 +115,21 @@ func TestInflightConflictThenReplay(t *testing.T) {
 
 	close(release)
 	<-done
-	r, err := call(t, e, "k1", projReq("shop"), handler)
-	require.NoError(t, err, "after completion the same key+body replays")
+	// handler 返回 ≠ 回放账已落：拦截器在 handler 返回后才写响应行——CI
+	// 负载下该窗放大（裸读即 flake，2026-10-04 CI 实证）。有界重试收敛窗
+	// 口（在途态的重复调用不执行 handler——认领行恒在场，无假执行面）。
+	var (
+		r    any
+		rerr error
+	)
+	for i := 0; i < 40; i++ {
+		r, rerr = call(t, e, "k1", projReq("shop"), handler)
+		if rerr == nil {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	require.NoError(t, rerr, "after completion the same key+body replays")
 	assert.NotNil(t, r)
 }
 
