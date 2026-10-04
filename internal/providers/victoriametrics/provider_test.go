@@ -82,6 +82,7 @@ func TestManagedWorkloadsShape(t *testing.T) {
 		assert.True(t, b.ReadOnly, "collector binds must be read-only")
 	}
 	assert.Empty(t, cd.Volumes, "collector is stateless — no pin face")
+	assert.True(t, cd.SkipMaterials, "collector must not receive the store credential (ADR-0041)")
 }
 
 // TestMaterialsStableAcrossRestarts 钉 E28：材料字节跨构造稳定。

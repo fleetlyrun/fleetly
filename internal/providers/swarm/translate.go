@@ -201,6 +201,12 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	// Mode 0444（docker/compose 生态缺省）：0400 会把非 root USER 镜像
 	//（torchwood/messageloop 皆 10001）挡在文件外——staging 真机实证
 	// Permission denied → env 导出空串 → 启动期 fail-closed。
+	// SkipMaterials：域材料默认挂全域 Workload；显式退出面（ADR-0041 的
+	// cadvisor——无状态采集端不接收存储凭证，且其镜像无 /run/secrets 目录，
+	// secret mountpoint 建在只读 overlay 上会启动失败，staging 实证）。
+	if w.SkipMaterials {
+		secretCarriers = nil
+	}
 	for _, platformName := range sortedKeys(secretCarriers) {
 		c := secretCarriers[platformName]
 		container.Secrets = append(container.Secrets, &swarm.SecretReference{

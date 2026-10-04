@@ -164,9 +164,15 @@ func (e *Engine) parseCadvisor(nodeID string, body []byte, now time.Time) []cont
 			}
 		case "container_cpu_usage_seconds_total", "container_memory_working_set_bytes":
 			id := labels["id"]
-			app := labels["container_label_fleetly_ns_app"]
-			if !strings.HasPrefix(id, "/docker/") || app == "" {
-				continue // 平台 Workload 载体之外（cgroup 聚合/系统容器）
+			app := strings.ToLower(labels["container_label_fleetly_ns_app"])
+			if app == "" || id == "/" {
+				// 平台 Workload 载体之外（cgroup 聚合/系统容器）——app 标签
+				// 非空即过滤器（只有平台 Workload 带 fleetly_ns_app；id 形态
+				// 因 cgroup 驱动而异：/docker/<id>（v1）或
+				// /system.slice/docker-<id>.scope（v2 systemd，staging 实证），
+				// 不做前缀硬编码）。label 值经 sanitizeNamePart 已小写——
+				// appID（大写 ULID）在评估面同归一。
+				continue
 			}
 			v, err := strconv.ParseFloat(value, 64)
 			if err != nil {
@@ -287,8 +293,9 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 	if len(rules) == 0 {
 		return
 	}
-	// App 聚合样本（max）。
-	agg := map[string]map[string]float64{} // appID → metric → value
+	// App 聚合样本（max）。键 = 小写 appID（cadvisor 标签值经
+	// sanitizeNamePart 小写化——与规则行的大写 ULID 在此归一）。
+	agg := map[string]map[string]float64{} // lower(appID) → metric → value
 	for _, s := range samples {
 		m := agg[s.app]
 		if m == nil {
@@ -304,7 +311,7 @@ func (e *Engine) evaluateRules(ctx context.Context, samples []containerSample, n
 	}
 	for i := range rules {
 		rule := &rules[i]
-		value := agg[rule.AppID][rule.Metric]
+		value := agg[strings.ToLower(rule.AppID)][rule.Metric]
 		observed := value != 0 // 零 = 无样本（cpu 率首拍/容器缺席）——不评估
 		if observed {
 			if err := e.alertRules.Observe(ctx, e.db.Runner(), rule.ID, value, state.FormatTime(now)); err != nil {

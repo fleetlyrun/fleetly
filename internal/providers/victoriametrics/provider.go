@@ -209,15 +209,18 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 			ID:      cadvisorID,
 			Process: "cadvisor",
 			Image:   CadvisorImage,
-			// cadvisor 镜像 ENTRYPOINT ['/usr/bin/cadvisor', '-logtostderr']
-			//（镜像 config 实证）——不覆盖入口，只补旗标：housekeeping 节拍
-			// 钉 15s（与采集环节拍对齐，默认 1s 的采样密度对小微负载是浪费）。
-			Command: []string{"--housekeeping_interval=15s"},
+			// Command 是全量 argv（swarm 语义=入口覆盖，zot 绝对路径先例）：
+			// cadvisor 入口 + -logtostderr（镜像 ENTRYPOINT 原样）+ 采集节拍
+			// 15s（与采集环对齐；默认 1s 采样密度对小微负载是浪费）。
+			Command: []string{"/usr/bin/cadvisor", "-logtostderr", "--housekeeping_interval=15s"},
 			Ports:   []capability.WorkloadPort{{Port: cadvisorPort, Protocol: capability.ProtocolHTTP}},
 			Publish: []capability.PortPublish{{PublishedPort: cadvisorPort, TargetPort: cadvisorPort, Mode: capability.PublishModeHost}},
 			// 每节点一 task（docker stats 无集群 API——多节点采集的端点形态，
 			// ADR-0041 决策 2）。
 			Global: true,
+			// 不挂域材料：无状态采集端不接收 VM 凭证（镜像无 /run/secrets，
+			// secret 挂载会启动失败——staging 实证 2026-10-04）。
+			SkipMaterials: true,
 			// 官方 run 形态的只读绑定面（/var/run 含 docker.sock 供容器元数据；
 			// 不用 privileged——cpu/mem 主链只读挂载面够）。
 			HostBinds: []capability.HostBind{

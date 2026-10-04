@@ -250,6 +250,10 @@ type Workload struct {
 	// true 时 Replicas 不参与调度；用户 Spec 投影面不暴露（受管域专用
 	// 声明，投影白名单不进）。
 	Global bool
+	// SkipMaterials 声明本 Workload 不挂域材料（ADR-0041：同受管域的无状态
+	// 采集端（cadvisor）不接收存储凭证——材料默认挂全域 Workload，本位是
+	// 显式退出面；缺省 false = 挂（既有受管域零值兼容）。
+	SkipMaterials bool
 	// HostBinds 是宿主文件系统只读绑定声明（受管采集面专用：cadvisor 的
 	// / /var/run /sys /var/lib/docker；swarm=bind mount，k8s=hostPath）。
 	// 与 Volumes（平台命名卷）分立：bind 的 Source 是宿主绝对路径，平台

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -50,10 +51,10 @@ func cadvisorFixture(cpu float64, mem float64) string {
 	return fmt.Sprintf(`# HELP container_cpu_usage_seconds_total Total CPU time consumed.
 # TYPE container_cpu_usage_seconds_total counter
 container_cpu_usage_seconds_total{boot_id="b",id="/",image=""} 999999 1767225600000
-container_cpu_usage_seconds_total{boot_id="b",id="/docker/abc123",image="alpine:3.20",name="fleetly-x-web",container_label_fleetly_ns_app="01APP",container_label_fleetly_ns_project="01PROJ"} %f 1767225600000
+container_cpu_usage_seconds_total{boot_id="b",id="/system.slice/docker-abc123.scope",image="alpine:3.20",name="fleetly-x-web",container_label_fleetly_ns_app="01app",container_label_fleetly_ns_project="01proj"} %f 1767225600000
 # TYPE container_memory_working_set_bytes gauge
 container_memory_working_set_bytes{boot_id="b",id="/"} 999999999
-container_memory_working_set_bytes{boot_id="b",id="/docker/abc123",image="alpine:3.20",container_label_fleetly_ns_app="01APP"} %f
+container_memory_working_set_bytes{boot_id="b",id="/system.slice/docker-abc123.scope",image="alpine:3.20",container_label_fleetly_ns_app="01app"} %f
 # TYPE machine_cpu_cores gauge
 machine_cpu_cores{} 2
 `, cpu, mem)
@@ -78,8 +79,8 @@ func TestParseCadvisor(t *testing.T) {
 	// 15s 内 3 核秒 → 0.2 核 / 2 核 = 10%。
 	assert.InDelta(t, 10.0, s1[0].cpuRate, 0.01)
 	assert.InDelta(t, 2048, s1[0].memBytes, 0.001)
-	assert.Equal(t, "01APP", s1[0].app)
-	assert.Equal(t, "/docker/abc123", s1[0].id)
+	assert.Equal(t, "01app", s1[0].app, "app label value is lowercased (sanitizeNamePart downstream)")
+	assert.Equal(t, "/system.slice/docker-abc123.scope", s1[0].id)
 }
 
 // TestEvaluateRulesStateMachine 钉状态机：越限首见起窗 → for 窗满 → firing
@@ -110,7 +111,7 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 
 	// 首拍：越限（mem=2048>1000）→ 起窗，不 firing。
 	now := clock.Now()
-	e.evaluateRules(ctx, []containerSample{{app: tAppID, id: "/docker/x", memBytes: 2048}}, now)
+	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, now)
 	row, err := e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
 	require.NoError(t, err)
 	assert.Equal(t, alertrule.StateOK, row.State)
@@ -118,20 +119,20 @@ func TestEvaluateRulesStateMachine(t *testing.T) {
 
 	// 窗内（+10s）：仍不 firing。
 	clock.Advance(10 * time.Second)
-	e.evaluateRules(ctx, []containerSample{{app: tAppID, id: "/docker/x", memBytes: 2048}}, clock.Now())
+	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
 	row, _ = e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 
 	// 窗满（+21s）：firing + webhook 派发。
 	clock.Advance(21 * time.Second)
-	e.evaluateRules(ctx, []containerSample{{app: tAppID, id: "/docker/x", memBytes: 2048}}, clock.Now())
+	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 2048}}, clock.Now())
 	row, _ = e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
 	assert.Equal(t, alertrule.StateFiring, row.State)
 	_, hit := gotPayloads.Load("/")
 	assert.True(t, hit, "firing transition must dispatch to the webhook channel")
 
 	// 回落：ok + resolved 派发。
-	e.evaluateRules(ctx, []containerSample{{app: tAppID, id: "/docker/x", memBytes: 500}}, clock.Now())
+	e.evaluateRules(ctx, []containerSample{{app: strings.ToLower(tAppID), id: "/system.slice/docker-x.scope", memBytes: 500}}, clock.Now())
 	row, _ = e.AlertRuleRepo().Get(ctx, db.Runner(), "rule1")
 	assert.Equal(t, alertrule.StateOK, row.State)
 
