@@ -355,6 +355,43 @@ type SeriesPoint struct {
 	Value float64
 }
 
+// ObjectStoreS3Config 是外置 S3 兼容 ObjectStore 目标的配置面（ADR-0042：
+// 复用 platform_backup.s3 五元组——Backup 是唯一消费方；prefix 归 restic
+// 仓专用，ObjectStore 不消费——对象键落桶根 backups/ 命名空间）。
+type ObjectStoreS3Config struct {
+	// Endpoint 是 S3 兼容端点（含端口；http:// 前缀 = 明文，无 scheme =
+	// TLS——与 restic s3 backend 同语义）。
+	Endpoint string
+	// Bucket 是目标桶（须已存在——Provider 探测不代建，AWS 面建桶是
+	// 账号级动作）。
+	Bucket string
+	// AccessKeyID / SecretAccessKey 是端点凭证（config 明文形态的边界见
+	// ADR-0042 决策 4：config 文件 0600，建议专用低权 key）。
+	AccessKeyID     string
+	SecretAccessKey string
+}
+
+// objectStoreS3Key 是外置 S3 目标配置的装配期 ctx 载键（唯一写入点在
+// internal/assembly 的 NewObjectStore；消费方：s3objectstore Provider 工厂，
+// ADR-0042）。
+type objectStoreS3Key struct{}
+
+// WithObjectStoreS3 把外置 S3 目标配置挂进装配 ctx：config.platform_backup.s3
+// 在场是唯一契约源（无 env 旧通道，本批首生即带键）。nil 不注入。
+func WithObjectStoreS3(ctx context.Context, cfg *ObjectStoreS3Config) context.Context {
+	if cfg == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, objectStoreS3Key{}, cfg)
+}
+
+// ObjectStoreS3FromContext 读回外置 S3 目标配置（未注入 = nil——s3 工厂
+// 据此精确失败，不静默回退 local）。
+func ObjectStoreS3FromContext(ctx context.Context) *ObjectStoreS3Config {
+	cfg, _ := ctx.Value(objectStoreS3Key{}).(*ObjectStoreS3Config)
+	return cfg
+}
+
 // ErrObjectNotFound 是对象键缺失的端口哨兵（Get/Stat 返回；保留策略
 // 执行器与恢复面据此分辨缺键与存储故障——F2.2 消费）。
 var ErrObjectNotFound = errors.New("capability: object not found")
