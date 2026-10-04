@@ -231,4 +231,25 @@ case "$h2body" in
   *) echo "backend did not receive h2c (body: $h2body)" >&2; exit 1 ;;
 esac
 
+# P9 发布前校验：畸形 Route（反引号注入形态）在受理位拒绝并给精确原因
+#（不是等 traefik 静默拒载）；拒绝后存量双路由（HTTP + h2c）继续服务。
+log "P9: malformed route rejected at acceptance with a precise reason"
+if cli routes create --project "$PROJECT_ID" --host 'evil`host.127.0.0.1.sslip.io' \
+  --app "$H2C_APP_ID" --process web --port 8080 >/tmp/p9route.out 2>&1; then
+  echo "malformed host must be rejected (got: $(cat /tmp/p9route.out))" >&2
+  exit 1
+fi
+case "$(cat /tmp/p9route.out)" in
+  *must\ be\ a\ DNS\ hostname*) log "precise rejection reason surfaced" ;;
+  *) echo "rejection carried no precise reason: $(cat /tmp/p9route.out)" >&2; exit 1 ;;
+esac
+p9http=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "demo.$DIND_IP.sslip.io" "http://$DIND_IP/" || true)
+case "$p9http" in *Hostname*) log "existing HTTP route still serving after rejection" ;;
+  *) echo "existing HTTP route broke after a rejected route attempt (body: $p9http)" >&2; exit 1 ;;
+esac
+p9h2c=$(docker exec "$DIND_CID" /root/bins/h2cclient -h2c -host "h2c.$DIND_IP.sslip.io" "http://$DIND_IP/" || true)
+case "$p9h2c" in *PROTO-LINE\ HTTP/2.0*) log "existing h2c route still serving after rejection" ;;
+  *) echo "existing h2c route broke after a rejected route attempt (body: $p9h2c)" >&2; exit 1 ;;
+esac
+
 log "H2C ROUTE E2E PASSED"

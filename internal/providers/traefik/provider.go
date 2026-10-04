@@ -83,9 +83,15 @@ func (p *Provider) Health(context.Context) capability.HealthReport {
 }
 
 // PublishRoutes 更新全量动态配置快照（幂等；traefik 按 pollInterval 拉取）。
+// 发布前预检（P9）：生成物不过 schema 级校验 → 整快照拒绝、旧快照继续
+// 服务——与 traefik 侧拒载语义（真机实证：整份丢弃 + last-known-good
+// 服务 + 零日志）对齐，且把 5s poll 窗口与静默面在控制面侧提前消除。
 func (p *Provider) PublishRoutes(_ context.Context, routes []capability.Route) error {
 	schema, err := buildDynamicConfig(routes)
 	if err != nil {
+		return err
+	}
+	if err := validateDynamicConfig(schema); err != nil {
 		return err
 	}
 	p.mu.Lock()

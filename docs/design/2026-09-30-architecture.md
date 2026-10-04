@@ -138,7 +138,7 @@ type RuntimeAdmin interface { Drain/Cordon/... }    // 子面，CLI 管理操作
 | Capability | 引导期依赖 | 故障影响 |
 |---|---|---|
 | Runtime | 必须 | 平台不可部署；已运行 Workload 不受影响（控制面单点诚实暴露） |
-| Edge（配置发布） | 否 | 受管 Edge Workload 存活时存量路由继续服务，Route 变更失败并明示；受管 Edge Workload 自身宕机 = 全量路由中断（独立事故等级，单列通报） |
+| Edge（配置发布） | 否 | 受管 Edge Workload 存活时存量路由继续服务，Route 变更失败并明示；发布前 schema 级预检（P9：traefik 无配置校验面——2026-10-04 真机核对 v3.5.6，子命令仅 healthcheck/version、API 全只读、坏快照**整份拒载且零日志**、last-known-good 继续服务），预检红 = 整快照拒绝、旧快照继续服务（控制面侧提前闭合 traefik 拒载语义，消除 5s poll 窗口与静默面）；发布后加载确认未落地（traefik 只读 API 面的暴露是安全权衡，随 Console/证书观测批裁决——IssueCertificate 观测同批）；受管 Edge Workload 自身宕机 = 全量路由中断（独立事故等级，单列通报） |
 | Logging/Metrics | 否 | 部署照常；查询面报"能力不可用" |
 | Registry | 多节点强烈建议 | 构建推送失败；未预拉到节点的 digest 新部署同样失败（已运行 Workload 不受影响） |
 | ObjectStore | 否 | 备份失败；运行不受影响 |

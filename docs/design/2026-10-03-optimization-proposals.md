@@ -239,12 +239,13 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 - 发布后确认：traefik 实际加载确认（poll 间隔 5s 内的回读或事件），失败回滚该次发布。
 
 **验收锚**：
-- [ ] 发布畸形 Route → 拒绝并给精确原因（不是等 traefik 静默拒载）
-- [ ] 校验失败不影响存量路由（e2e 断言）
-- [ ] 降级矩阵行更新（Edge 配置发布行的行为细化）
+- [x] 发布畸形 Route → 拒绝并给精确原因（不是等 traefik 静默拒载）〔2026-10-04：受理位白名单（安全批 P0 已建，host/path 单真源 `capability.ValidateRouteHost/Path`）+ 新增**发布前 schema 级预检** `validateDynamicConfig`——JSON 严格回读（未知字段=形态漂移）/router.service 引用闭合/规则精确落生成语法（Host/PathPrefix/HostSNI + 反引号定界）/servers URL scheme 合面；预检红=整快照拒绝且快照不换（单测钉死）；畸形 host 的 e2e 断言进 dind-h2c-route.sh（拒绝文案锚 "must be a DNS hostname"）〕
+- [x] 校验失败不影响存量路由（e2e 断言）〔2026-10-04：e2e 断言拒绝尝试后 HTTP/h2c 双存量路由继续服务；**traefik 侧行为真机实证**（见开放问题结论）——坏快照整份拒载 + last-known-good 继续匹配转发（502 来自死后端、路由仍在），控制面预检把同一语义提前到发布位〕
+- [x] 降级矩阵行更新（Edge 配置发布行的行为细化）〔2026-10-04：架构 §8 Edge 行带真机核对实录 + 预检语义 + 发布后确认未落地的边界注〕
 
 **开放问题**：traefik 校验能力的真机核对（v3 API 是否暴露 config validate）——若不可用，schema 级校验的覆盖边界要诚实记录。
 **→ 裁决（2026-10-03）**：真机核对为实施前置动作（非裁决项）；不可用则降级 schema 级校验，边界诚实记录进降级矩阵行。
+**→ 真机核对实录（2026-10-04，本机 Docker Desktop + traefik:v3.5=3.5.6 实跑，钉版 v3.5.4 同系）**：①子命令面仅 `healthcheck`/`version`——无 config validate/check 子命令（traefik#2077 长期开口）；②API 面全只读遥测（/api/http/routers、/api/rawdata 等），POST /api/validate=404；③坏动态配置行为=**整文件原子拒载**（同文件好路由一并不加载）+ **last-known-good 继续服务**（502 实证路由仍匹配转发）+ **拒载零日志**（docker logs 恒空——日志面不可依赖，API 面差异是唯一观测通道）；④顺带：file provider 目录模式不收 .json 扩展（.toml/.yml/.yaml）——fleetly 走 HTTP provider（内容 JSON）不受影响。**结论：降级轨道生效**；发布后加载确认（traefik 只读 API 回读）未随批落地——API 面暴露是安全权衡（集群内可达即事实开放，无原生 token 认证），随 Console/证书观测批（IssueCertificate 的"经 traefik API 读证书状态"同批）一并裁决。
 
 ---
 

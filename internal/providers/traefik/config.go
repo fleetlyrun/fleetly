@@ -1,10 +1,14 @@
 package traefik
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"log/slog"
+	"net/url"
+	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -160,4 +164,83 @@ func routeKey(r capability.Route) string {
 	_, _ = h.Write([]byte{0}) // 分隔符：("a","b/c") 与 ("a/b","c") 不共哈希
 	_, _ = h.Write([]byte(r.Path))
 	return fmt.Sprintf("%s-%012x", normalized, h.Sum64()&0xFFFFFFFFFFFF)
+}
+
+// httpRuleRe 是生成器产出的 HTTP 规则语法全集（P9 预检的 schema 面）：
+// Host(`h`) 可选 && PathPrefix(`p`)；定界段内禁反引号（注入面）。
+var httpRuleRe = regexp.MustCompile(`^Host\(` + "`" + `[^` + "`" + `]+` + "`" + `\)( && PathPrefix\(` + "`" + `[^` + "`" + `]+` + "`" + `\))?$`)
+
+// tcpRuleRe 是 TCP 规则语法全集：HostSNI(`h`)。
+var tcpRuleRe = regexp.MustCompile(`^HostSNI\(` + "`" + `[^` + "`" + `]+` + "`" + `\)$`)
+
+// validateDynamicConfig 是发布前 schema 级预检（P9；裁决=降级轨道）：
+// traefik 无配置校验面（真机核对 2026-10-04：v3.5.6 子命令仅 healthcheck/
+// version、API 全只读、POST /api/validate 404），拒载行为=整快照丢弃 +
+// last-known-good 继续服务且零日志——控制面在发布侧提前闭合同一语义：
+// 生成物不过预检 → 整快照拒绝、旧快照继续服务（5s poll 窗口与静默面
+// 一并消除）。校验内容（生成器不变量，红=生成器 bug 或漏网输入）：
+//  1. JSON 严格回读（未知字段 = 形态漂移）；
+//  2. router.service 引用闭合（HTTP/TCP 各自面内）；
+//  3. 规则串精确落在生成语法内（Host/PathPrefix/HostSNI + 反引号定界）；
+//  4. servers[].url 可解析且 scheme 合面（http/h2c；tcp://）。
+func validateDynamicConfig(schema []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(schema))
+	dec.DisallowUnknownFields()
+	var cfg dynamicConfig
+	if err := dec.Decode(&cfg); err != nil {
+		return fmt.Errorf("traefik precheck: snapshot is not valid dynamic config: %w", err)
+	}
+	if cfg.HTTP != nil {
+		for name, r := range cfg.HTTP.Routers {
+			if !httpRuleRe.MatchString(r.Rule) {
+				return fmt.Errorf("traefik precheck: http router %s rule is outside the generated grammar: %s", name, r.Rule)
+			}
+			if _, ok := cfg.HTTP.Services[r.Service]; !ok {
+				return fmt.Errorf("traefik precheck: http router %s references missing service %s", name, r.Service)
+			}
+		}
+		for name, s := range cfg.HTTP.Services {
+			if err := validateServerURLs(name, s.LoadBalancer.Servers, map[string]bool{"http": true, "h2c": true}); err != nil {
+				return err
+			}
+		}
+	}
+	if cfg.TCP != nil {
+		for name, r := range cfg.TCP.Routers {
+			if !tcpRuleRe.MatchString(r.Rule) {
+				return fmt.Errorf("traefik precheck: tcp router %s rule is outside the generated grammar: %s", name, r.Rule)
+			}
+			if _, ok := cfg.TCP.Services[r.Service]; !ok {
+				return fmt.Errorf("traefik precheck: tcp router %s references missing service %s", name, r.Service)
+			}
+		}
+		for name, s := range cfg.TCP.Services {
+			if err := validateServerURLs(name, s.LoadBalancer.Servers, map[string]bool{"tcp": true}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// validateServerURLs 校验 loadBalancer.servers 的 URL 形态（scheme 白名单
+// + host:port 非空）。
+func validateServerURLs(service string, servers []server, allowed map[string]bool) error {
+	for i, srv := range servers {
+		u, err := url.Parse(srv.URL)
+		if err != nil || !allowed[u.Scheme] || u.Host == "" {
+			return fmt.Errorf("traefik precheck: service %s server[%d] has an invalid url %q (want scheme %v with host:port)",
+				service, i, srv.URL, keysOf(allowed))
+		}
+	}
+	return nil
+}
+
+func keysOf(m map[string]bool) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	sort.Strings(out)
+	return out
 }
