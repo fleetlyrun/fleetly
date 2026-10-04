@@ -18,7 +18,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/client"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
@@ -36,18 +36,19 @@ type Provider struct {
 
 	// 可注入的最小 docker 面缝（hermetic 单测注入 fake，不依赖真 daemon；
 	// nil = 真实现直连 cli）。只覆盖需要无 daemon 测试的窄路径：
-	//   - listContainers/openContainerLog：日志合流（Q-4/P1-15）。
+	//   - listServices/openServiceLog：日志合流（Q-4/P1-15；集群面
+	//     ServiceLogs 形态，ADR-0040）。
 	//   - networkInspect/secretInspect：材料 create-or-get 分诊（Q-20）。
 	//   - nodeList/events：节点列表与事件流（Watch 初始锚定降级 B14-2 的
 	//     hermetic 面——nil cli 走真客户端会在 Events 内部 goroutine panic，
 	//     watchRound 的 recover 护栏接不住跨 goroutine panic）。
 	// 缝契约与真实现一致（如日志流读端必须在 ctx 取消时解除阻塞）。
-	listContainers   func(ctx context.Context, ns capability.NamespaceRef) ([]container.Summary, error)
-	openContainerLog func(ctx context.Context, containerID string, opts client.ContainerLogsOptions) (io.ReadCloser, error)
-	networkInspect   func(ctx context.Context, name string) error
-	secretInspect    func(ctx context.Context, name string) (client.SecretInspectResult, error)
-	nodeList         func(ctx context.Context) (client.NodeListResult, error)
-	events           func(ctx context.Context, opts client.EventsListOptions) client.EventsResult
+	listServices   func(ctx context.Context, ns capability.NamespaceRef) ([]swarm.Service, error)
+	openServiceLog func(ctx context.Context, serviceID string, opts client.ServiceLogsOptions) (io.ReadCloser, error)
+	networkInspect func(ctx context.Context, name string) error
+	secretInspect  func(ctx context.Context, name string) (client.SecretInspectResult, error)
+	nodeList       func(ctx context.Context) (client.NodeListResult, error)
+	events         func(ctx context.Context, opts client.EventsListOptions) client.EventsResult
 	// utilityExec 是工具容器 daemon 生命周期的函数值缝（ADR-0039；nil =
 	// 生产实现 daemonUtilityExec。attach 走 postHijacked 独立 dialer，
 	// 传输级假面够不到——builders push seam 同款理由）。
