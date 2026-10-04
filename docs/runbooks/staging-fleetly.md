@@ -156,6 +156,51 @@ staging 真机验收（14:53-14:56）：
 
 本节的真机验收已有 CI 常态回归锚：`e2e/dind-upgrade.sh`（CI job `e2e-upgrade`，`mise run e2e:upgrade` 本地可跑）——HEAD~1 旧版装到 HEAD 新版，三件负载（web+Route / 第二 App / 受管 postgres）断言升级全程**路由零失败、Workload 零重启、数据库零滚动**（ADR-0015 验收的 CI 化）。staging 手工升级前可先本地跑一轮同款脚本预热；脚本首跑若在 CI 红，按 job 日志取证（升级路径 vs 环境面分离诊断）。
 
+## 平台升级操作序（F2.3 工具化，2026-10-04）
+
+ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
+
+1. **Platform Backup 前置（硬停分支——备份没成=不得动二进制）**：
+   ```sh
+   fleetly platform backup        # 同步执行；失败即中止升级（E_PLATFORM_BACKUP_FAILED）
+   fleetly platform backups       # 快照在场核对
+   ```
+2. **手工卷快照（belt-and-suspenders，沿用 b4cfea0 纪律）**：受管库卷与 zot 卷 tar 至 /root/upgrade-<版本>/（卷名公式 `fleetly-vol-<名>`；受管域已钉控制面节点——F2.3b，不存在漂移到 node2 的卷）。
+3. **排水替换**：`systemctl stop fleetlyd`（30s 排水窗）→ `install -m 0755 <新版>/fleetlyd /usr/local/bin/fleetlyd`（fleetly CLI 同批）→ `systemctl start fleetlyd`。
+4. **健康核对**：`fleetly status` / `fleetly doctor`；journal 无 goose 报错。
+5. **升级零扰动断言**（CI 锚的手工同款）：`docker service ps` 三件负载 task 行零新增；Route 探针 200。
+
+### 失败回滚路径（goose 前滚失败 = daemon 拒引导）
+
+- **特征**：新版起服即退（`state: goose up` 报错；启动序 = 先迁移后服务——迁移不过不引导，不存在半迁移服务态）。
+- **回滚序**（数据根恢复 = Platform Backup 重放，ADR-0015"失败回滚 = 恢复备份重放"）：
+  1. `systemctl stop fleetlyd`。
+  2. 数据根旁路重建（旧数据根整体移走，不原地覆写）：
+     ```sh
+     mv /var/lib/fleetly /var/lib/fleetly.failed-<日期>
+     mkdir -p /var/lib/fleetly
+     cd /var/lib/fleetly
+     RESTIC_PASSWORD=$(cat /var/lib/fleetly.failed-<日期>/keys/platform-backup.key) \
+       restic -r /var/lib/fleetly.failed-<日期>/platform-backups/restic \
+       restore latest --target /var/lib/fleetly
+     # 仓密在备份集外（离机保管）——若数据根整体移走后 keys/ 缺失，从离机副本取回 platform-backup.key
+     ```
+  3. **旧版二进制回装**（goose 只前滚：新版迁移已写入的库，旧版二进制读不懂 schema——这正是要恢复备份而非直接回装的原因）。
+  4. `systemctl start fleetlyd` + `fleetly status`。
+  5. 失败数据根保留取证（`/var/lib/fleetly.failed-*`），确认稳定后清理。
+- **边界**：Platform Restore 期间控制面只读语义 = 恢复窗口内不引导服务；受管库卷/zot 卷不在 Platform Backup 集内（平台只快照数据根）——数据面回滚依赖第 2 步的手工卷快照。
+
+### staging pg 旧布局卷 flag-day（F2.2 挂账，随本批记序）
+
+F2.2 修复 postgres 数据目录布局（postgres:17-bookworm 2026-10 刷新镜像带 18+ 入口：挂 data 子路径判 unused mount 拒启——DataTarget 已改挂父目录 /var/lib/postgresql）。**存量旧布局卷（内容在卷根、无 data 子目录）在新挂法下不入库**——torchwood-pg 的卷属此列，迁移 = 重建+恢复（F2.2 链路承担）：
+
+1. `fleetly platform backup`（前置）。
+2. `fleetly databases backup <torchwood-pg 的 db id>` → 等 `database.backup_succeeded` 事件 → `fleetly databases verify <backup-id>`（digest 重算绿才继续）。
+3. `fleetly databases delete <db id>`（拆载体；卷行与凭证 Secret 保留——复活语义）。
+4. ops：`docker volume rm fleetly-vol-torchwood-pg`（载体卷清除——卷行保留无妨，同名重建时复用行 + 新建载体卷即新布局）。
+5. `fleetly databases create --engine pgvector --restore-from-backup <backup-id> torchwood-pg`（同名 → Secret `database:torchwood-pg` 覆写新 URL；**DNS host 随新行 ID 变**——平台注入面的消费方自动跟新，直连 URL 的消费方重读 Secret）。
+6. 数据核对（torchwood 查询面）+ `fleetly platform backup`（变更后备份）。
+
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 
 数据根 `keys/master.agekey` 是平台 Secret（含受管库凭证）与 hook webhook secret 的 age 信封 KEK（ADR-0014）。泄露应对与例行轮换走本序（工具化前为手工 SQL 重写，废弃）。文件名约定即协议：`master.agekey` = 现役（唯一加密钥）；`master-*.agekey` = 退役（仅解封，rewrap 与 daemon 一并装载）；其他文件名（如 `master.agekey.bak`）不进装载面。
@@ -180,7 +225,7 @@ staging 真机验收（14:53-14:56）：
 - 归档版残留：`/var/lib/fleetly.archived-20260930`、`/root/fleetly-archive-*`、`/opt/fleetly`（旧二进制+config）——回滚资料，退役不迁移；确认不再回滚后可清。
 - manager 内存 4GB 是硬约束：受管面每实例 ~86MB 级，任何"逐拍滚动替换"类回归都会很快显形。
 - nodes 表会保留历史行（swarm 重建前后平台 ID 不同、旧行 available=false）——观测缓存非权威、ID 永不复用，CLI 侧按 available=true 取现行。
-- **受管 zot 边界（ADR-0019 附录 B.5）**：数据卷节点本地无钉住（zot 重调度=镜像丢失，重部署触发重建自愈；运行中服务不受影响）；镜像无 GC（只增）；新 worker 加入时 dockerd 必须带同款 `--insecure-registry 10.124.0.3:5000`。
+- **受管 zot 边界（ADR-0019 附录 B.5）**：~~数据卷节点本地无钉住~~（F2.3b 429b521 收口：带卷受管 Workload 钉控制面节点——zot/edge 均已钉住；spec 变更不再漂移）；镜像无 GC（只增）；新 worker 加入时 dockerd 必须带同款 `--insecure-registry 10.124.0.3:5000`。
 - **ssh 命令里的 `$()`/管道在 Windows 侧会被转义吃掉**——远程复杂操作一律写脚本→scp→sh（本 runbook 2026-10-02 的全部诊断脚本在 manager `/root/dogfooding/`）。
 
 ### 端口暴露矩阵（操作者责任 + 平台自证，ADR-0036）

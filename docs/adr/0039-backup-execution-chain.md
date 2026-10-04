@@ -154,3 +154,10 @@ BackupCommand` 空槽（ADR-0029 决策 2 预留）与 `providers/localobjectsto
 - [x] API/守卫/CLI 全喂食：idem/freeze/grpc/gateway/authz + errcode/
       eventcode 同批 + CLI 双形态 golden + groups 清单
 - [x] shellguard 挂账行实录更新 + 提案 P2 勾账（偏差注）
+- [x] TriggerPlatformBackup/ListPlatformBackups 随 F2.3 落地（2026-10-04，
+      75a3d31：PlatformService 与 SystemService 公开诊断面分立，platform:
+      write/read scope；同步执行语义与数据库轨"触发不等执行"分立——
+      restic 链对数据根是本地操作；errcode +1 带锚 E_PLATFORM_BACKUP_FAILED
+      =升级序硬停分支；两个 Trigger 进 idem 面（databases 面随批补录——
+      本 ADR 决策 10 承诺的兑现注）；升级序消费链 = e2e/dind-upgrade.sh
+      前置腿 + runbook 平台升级操作序，F2.3 批收官）

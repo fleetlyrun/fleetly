@@ -13,9 +13,10 @@
 #
 # 旧版来源：HEAD~1——仓尚无 git tag（Releases 通道随首 tag 批次生效），
 # 连续验证"上一版→本版"；tag 通道成型后切 latest-tag→HEAD 配对。
-# 升级动作 = 真实用户路径：SIGTERM 优雅退出（30s 排水窗）→ 二进制替换 →
-# 起新版（启动自动 goose 前滚 + Managed Provider reconcile）。Platform
-# Backup 前置与失败回滚路径属 F2.3 升级工具批，本脚本不含（升上来单向）。
+# 升级动作 = 真实用户路径：Platform Backup 前置（F2.3，ADR-0015——备份
+# 先于 goose 前滚，失败回滚的原料）→ SIGTERM 优雅退出（30s 排水窗）→
+# 二进制替换 → 起新版（启动自动 goose 前滚 + Managed Provider reconcile）。
+# 前置腿自旧版（≥75a3d31）起可用——旧版已携带 platform backup 动词。
 #
 # 前置：本机 docker 可用且可拉取 nginx:1.27 / traefik:v3.5 /
 # traefik/whoami:v1.10 / postgres:17-bookworm（宿侧 pull 后 save|load 注入
@@ -255,6 +256,33 @@ if [ "$PROBE_FAILS" -ne 0 ]; then
   exit 1
 fi
 log "route probe green pre-upgrade"
+
+# 7b. Platform Backup 前置（F2.3，ADR-0015：备份先于二进制替换——失败
+#     回滚路径的原料；备份没成=不得动二进制）。restic 缺席时双通道注入
+#     （install.sh 下载失败的确定性回退——dind-backup.sh 同款：宿侧
+#     .tmp-local-restic 资产优先，仓内 wget 兜底）。
+if ! docker exec "$DIND_CID" restic version >/dev/null 2>&1; then
+  log "restic missing in dind; provisioning (dual channel)"
+  if [ -f ".tmp-local-restic" ]; then
+    docker cp .tmp-local-restic "$DIND_CID":/root/restic
+    docker exec "$DIND_CID" chmod +x /root/restic
+    docker exec "$DIND_CID" mv /root/restic /usr/local/bin/restic
+  else
+    docker exec "$DIND_CID" sh -c \
+      'wget -q -O /root/restic.bz2 https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2 && bunzip2 -f /root/restic.bz2 && chmod +x /root/restic && mv /root/restic /usr/local/bin/restic' \
+      || { echo "restic unavailable; the upgrade precondition requires it (or provide a .tmp-local-restic asset)" >&2; exit 1; }
+  fi
+fi
+SNAP_ID=$(cli platform backup | sed -n 's/^platform backup snapshot \([^ ]*\) .*/\1/p')
+if [ -z "$SNAP_ID" ]; then
+  echo "platform backup precondition failed (no snapshot id returned)" >&2
+  exit 1
+fi
+cli platform backups | grep -q "$SNAP_ID" || {
+  echo "the fresh platform snapshot is not listed" >&2
+  exit 1
+}
+log "platform backup green pre-upgrade (snapshot $SNAP_ID)"
 
 # 8. 升级序列（真实用户路径）。SIGTERM → 排水窗内退出 → 替换二进制 →
 #    起新版 → 等 ready。全程探针持续：控制面两代交替，路由不得断。
