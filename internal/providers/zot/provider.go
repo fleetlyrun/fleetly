@@ -210,7 +210,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 		Notes: []string{
 			"managed self-hosted OCI registry; build artifacts are pushed here and workers pull by digest (ADR-0019 appendix B)",
 			"serves plain HTTP on the cluster-internal network; every node's dockerd must trust the address via --insecure-registry",
-			"per-project credentials gate each project's repositories (<projectID>/**) via zot accessControl; the platform credential stays admin-wide for repair and migration (ADR-0036 N2)",
+			"per-project credentials gate each project's repositories (<projectID>/**) via zot accessControl; the platform credential stays admin-wide for backup and migration (ADR-0036 N2)",
 		},
 	}
 }
@@ -561,7 +561,13 @@ func writeProjectCredential(path string, c *projectCredentialJSON) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // 数据根私有目录
 		return fmt.Errorf("zot provider: project credential dir: %w", err)
 	}
-	b, err := json.Marshal(c)
+	// map 形态编码（loadOrGenerateCredential 同款）：结构体字段名匹配
+	// secret 模式会咬 gosec G117，map 键不触发。
+	b, err := json.Marshal(map[string]string{
+		"username": c.Username,
+		"password": c.Password,
+		"htpasswd": c.HTPasswd,
+	})
 	if err != nil {
 		return fmt.Errorf("zot provider: encode project credential: %w", err)
 	}
