@@ -834,6 +834,8 @@ func (p *Provider) DescribeCluster(ctx context.Context) (capability.ClusterView,
 			NodeID:    node.Spec.Labels[labelNodeID],
 			CarrierID: node.ID,
 			Hostname:  node.Description.Hostname,
+			// Addr 是 advertise 地址观测（受管采集端点寻址锚，ADR-0041）。
+			Addr:      node.Status.Addr,
 			Role:      string(node.Spec.Role),
 			Available: node.Status.State == swarm.NodeStateReady,
 			Labels:    node.Spec.Labels,

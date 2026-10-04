@@ -278,7 +278,7 @@ func TestDescribeClusterAnchorsWithoutEventSink(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 	view, err := p.DescribeCluster(ctx)
-	require.NoError(t, err, "the reconciliation anchor pass must not hang on the nil event sink")
+	require.NoError(t, err, "the reconciliation anchor pass must not hang on the nil event consumer")
 	require.Len(t, view.Nodes, 1)
 	assert.Equal(t, "carrier-1", view.Nodes[0].CarrierID)
 	assert.NotEmpty(t, view.Nodes[0].NodeID, "the node must leave anchored (minted platform id visible)")

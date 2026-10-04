@@ -181,6 +181,17 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			ReadOnly: v.ReadOnly,
 		})
 	}
+	// 宿主只读绑定（受管采集面专用，ADR-0041：cadvisor 的 / /var/run /sys
+	// /var/lib/docker）。bind 的 Source 是宿主绝对路径——路径缺席在任务
+	// 启动期失败面呈现（Ensure 不预检）。
+	for _, b := range w.HostBinds {
+		container.Mounts = append(container.Mounts, mount.Mount{
+			Type:     mount.TypeBind,
+			Source:   b.Source,
+			Target:   b.Target,
+			ReadOnly: b.ReadOnly,
+		})
+	}
 	// Secret 文件注入（值已落 swarm secret 载体；容器内 /run/secrets/<名>）。
 	// 按 platformName 排序后遍历（对照 envSlice 先例）：map 遍历序随机，
 	// 排序保 spec 逐字节稳定——幂等重放的 diff 不产生假变更（P1-14）。
@@ -245,7 +256,7 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 			Labels: container.Labels,
 		},
 		TaskTemplate: task,
-		Mode:         replicasMode(w.Replicas),
+		Mode:         serviceMode(w),
 		// 端口发布仅限受管形态的部署声明（Workload.Publish 显式——Edge
 		// 80/443、受管 zot 5000）；用户 Workload 一律不发布宿主端口（流量
 		// 经 Edge，见函数注释）。
@@ -296,19 +307,25 @@ func addressAliases(addressing []capability.Address) []string {
 	return names
 }
 
-// endpointSpec 翻译宿主端口发布声明（routing mesh 模式；受管 Edge/zot 形态
-// 使用）。Mode 显式 vip——服务端对空 Mode 物化为 vip，发送形态与回读形态
+// endpointSpec 翻译宿主端口发布声明（受管 Edge/zot/VL/VM 形态使用）。
+// Mode 显式 vip——服务端对空 Mode 物化为 vip，发送形态与回读形态
 // 一致是 no-op 比对的前提（staging 真机实证：受管 zot 恒不等 → update 风暴
-// → 滚动替换把无钉住载体漂到无卷节点，2026-10-02）。
+// → 滚动替换把无钉住载体漂到无卷节点，2026-10-02）。PublishMode 缺省 =
+// mesh（既有 Workload 零值兼容）；host 模式 = 宿主网络栈直绑（受管
+// cadvisor 每节点端点，ADR-0041）。
 func endpointSpec(publish []capability.PortPublish) *swarm.EndpointSpec {
 	if len(publish) == 0 {
 		return nil
 	}
 	ports := make([]swarm.PortConfig, 0, len(publish))
 	for _, p := range publish {
+		mode := swarm.PortConfigPublishModeIngress
+		if p.Mode == capability.PublishModeHost {
+			mode = swarm.PortConfigPublishModeHost
+		}
 		ports = append(ports, swarm.PortConfig{
 			Protocol:      network.TCP,
-			PublishMode:   swarm.PortConfigPublishModeIngress,
+			PublishMode:   mode,
 			PublishedPort: uint32(p.PublishedPort), //nolint:gosec // 端口域 int32→uint32 无符号扩展
 			TargetPort:    uint32(p.TargetPort),    //nolint:gosec
 		})
@@ -316,9 +333,14 @@ func endpointSpec(publish []capability.PortPublish) *swarm.EndpointSpec {
 	return &swarm.EndpointSpec{Mode: swarm.ResolutionModeVIP, Ports: ports}
 }
 
-// replicasMode 把期望副本数映射为服务模式（负数钳 0——排空态；钳后
-// int64 → uint64 无溢出面）。
-func replicasMode(replicas int64) swarm.ServiceMode {
+// serviceMode 把调度形态声明映射为 swarm 服务模式：Global 声明（受管采集
+// 面每节点一 task，ADR-0041）优先；否则 Replicated（负数钳 0——排空态；
+// 钳后 int64 → uint64 无溢出面）。
+func serviceMode(w capability.Workload) swarm.ServiceMode {
+	if w.Global {
+		return swarm.ServiceMode{Global: &swarm.GlobalService{}}
+	}
+	replicas := w.Replicas
 	if replicas < 0 {
 		replicas = 0
 	}
