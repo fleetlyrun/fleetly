@@ -455,7 +455,7 @@ case "$S3_KEY" in
 esac
 log "[s3] object present in the bucket with ledger size (key: $S3_KEY)"
 S3_SIZE=$(cli --json databases backups "$PGS3_SRC" \
-  | sed -n "s/.*\"size_bytes\": *\([0-9]*\).*/\1/p" | head -1)
+  | sed -n "s/.*\"size_bytes\": *\"\([0-9]*\)\".*/\1/p" | head -1)
 [ -n "$S3_SIZE" ] || fail "backup row carries no size_bytes"
 docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
   mcli stat --json e2e/fleetly-backups/"$S3_KEY" | grep -q "\"size\": *$S3_SIZE" \
