@@ -81,6 +81,90 @@ service LogsService {
   }
 }
 
+// MetricsService：指标查询面（ADR-0041）：PromQL 透传（Console F2.6 图表
+// 的数据源；CLI 诊断面）。Metrics 面停用时精确失败。行级隔离由调用方
+// 查询构造承载（App 域标签过滤）——存储是平台单租户。
+service MetricsService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc QueryMetrics(QueryMetricsRequest) returns (QueryMetricsResponse) {
+    option (google.api.http) = { get: "/v1/metrics" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "metrics" op: SCOPE_OP_READ }
+    };
+  }
+}
+
+// AlertingService：阈值告警规则 + 通知通道（ADR-0041 决策 3/4）。通道是
+// 平台级配置（channels 资源）；规则按 App 归属行级授权（alerts 资源）。
+service AlertingService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  // CreateNotificationChannel 登记一条通知通道（webhook/telegram；配置
+  // age 信封入库——URL/token 只写不读）。
+  rpc CreateNotificationChannel(CreateNotificationChannelRequest) returns (CreateNotificationChannelResponse) {
+    option (google.api.http) = { post: "/v1/channels" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "channels" op: SCOPE_OP_WRITE }
+    };
+  }
+  // TestNotificationChannel 即时发一条测试载荷（通道验收锚；配置错误
+  // 原样上抛）。
+  rpc TestNotificationChannel(TestNotificationChannelRequest) returns (TestNotificationChannelResponse) {
+    option (google.api.http) = { post: "/v1/channels/{channel_id}/test" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "channels" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListNotificationChannels(ListNotificationChannelsRequest) returns (ListNotificationChannelsResponse) {
+    option (google.api.http) = { get: "/v1/channels" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "channels" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteNotificationChannel(DeleteNotificationChannelRequest) returns (DeleteNotificationChannelResponse) {
+    option (google.api.http) = { delete: "/v1/channels/{channel_id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "channels" op: SCOPE_OP_WRITE }
+    };
+  }
+  // CreateAlertRule 登记一条 per-App 阈值规则（评估在采集遍内原生完成）。
+  rpc CreateAlertRule(CreateAlertRuleRequest) returns (CreateAlertRuleResponse) {
+    option (google.api.http) = { post: "/v1/alerts/rules" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "alerts" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListAlertRules(ListAlertRulesRequest) returns (ListAlertRulesResponse) {
+    option (google.api.http) = { get: "/v1/alerts/rules" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "alerts" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteAlertRule(DeleteAlertRuleRequest) returns (DeleteAlertRuleResponse) {
+    option (google.api.http) = { delete: "/v1/alerts/rules/{rule_id}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "alerts" op: SCOPE_OP_WRITE }
+    };
+  }
+  // ListAlertStates 是现行告警状态面（含系统内置规则行）。
+  rpc ListAlertStates(ListAlertStatesRequest) returns (ListAlertStatesResponse) {
+    option (google.api.http) = { get: "/v1/alerts" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "alerts" op: SCOPE_OP_READ }
+    };
+  }
+}
+
 // Event 是 Outbox 行形态（单调 seq；payload 是 JSON 字节文本）。
 message Event {
   int64 seq = 1;
@@ -154,4 +238,142 @@ message StreamLogsResponse {
   string node = 3;
   string time = 4;
   bytes line = 5;
+}
+
+// ---- Metrics（ADR-0041）----
+
+message QueryMetricsRequest {
+  // query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*
+  // 序列标签——CLI/Console 侧构造）。
+  string query = 1;
+  // start/end 是时间窗（RFC3339；空 end = 现在，空 start = end 前 1h）。
+  string start = 2;
+  string end = 3;
+  // step_seconds 是采样步长（0 = 缺省 15s）。
+  int64 step_seconds = 4;
+}
+
+message QueryMetricsResponse {
+  repeated MetricSeries series = 1;
+}
+
+message MetricSeries {
+  map<string, string> labels = 1;
+  repeated MetricPoint points = 2;
+}
+
+message MetricPoint {
+  string time = 1;
+  double value = 2;
+}
+
+// ---- Alerting（ADR-0041）----
+
+message NotificationChannel {
+  string id = 1;
+  string name = 2;
+  // kind: webhook | telegram（值域见 CONTEXT.md Notification Channel 词条）。
+  string kind = 3;
+  bool enabled = 4;
+  // last_failure 是最近一次派发失败摘要（空 = 无失败/未派发过；配置载荷
+  // 永不回显——只回 id/name/kind 形态，凭证单向）。
+  string last_failure = 5;
+  string created_at = 6;
+}
+
+message CreateNotificationChannelRequest {
+  // name 是通道名（全局唯一；人类引用锚）。
+  string name = 1;
+  string kind = 2;
+  // webhook 形态：url 是接收端点（可含凭证查询串——age 信封入库）。
+  string url = 3;
+  // telegram 形态：bot_token 与 chat_id（age 信封入库）。
+  string bot_token = 4;
+  string chat_id = 5;
+}
+
+message CreateNotificationChannelResponse {
+  NotificationChannel channel = 1;
+}
+
+message TestNotificationChannelRequest {
+  string channel_id = 1;
+}
+
+message TestNotificationChannelResponse {
+  // delivered 是送达回执（false + error 文本 = 配置/网络面失败）。
+  bool delivered = 1;
+  string error = 2;
+}
+
+message ListNotificationChannelsRequest {}
+
+message ListNotificationChannelsResponse {
+  repeated NotificationChannel channels = 1;
+}
+
+message DeleteNotificationChannelRequest {
+  string channel_id = 1;
+}
+
+message DeleteNotificationChannelResponse {}
+
+message AlertRule {
+  string id = 1;
+  string app_id = 2;
+  // metric: cpu_percent | memory_working_set_bytes（值域冻结）。
+  string metric = 3;
+  double threshold = 4;
+  // for_seconds 是持续窗（连续越限 ≥ 本值才迁移 firing；0 = 立即；
+  // 采样近似语义见 ADR-0041）。
+  int64 for_seconds = 5;
+  bool enabled = 6;
+  // state: ok | firing（现行评估态）。
+  string state = 7;
+  string state_since = 8;
+  string created_at = 9;
+}
+
+message CreateAlertRuleRequest {
+  string app_id = 1;
+  string metric = 2;
+  double threshold = 3;
+  int64 for_seconds = 4;
+}
+
+message CreateAlertRuleResponse {
+  AlertRule rule = 1;
+}
+
+message ListAlertRulesRequest {
+  // app_id 过滤（空 = 全部）。
+  string app_id = 1;
+}
+
+message ListAlertRulesResponse {
+  repeated AlertRule rules = 1;
+}
+
+message DeleteAlertRuleRequest {
+  string rule_id = 1;
+}
+
+message DeleteAlertRuleResponse {}
+
+message AlertState {
+  string rule_id = 1;
+  string app_id = 2;
+  string metric = 3;
+  string state = 4;
+  string state_since = 5;
+  // observed_value 是最近一次评估值（firing 判定依据；NaN = 无样本）。
+  double observed_value = 6;
+  // system 标记内置规则行（platform-offsite-backup；不可删）。
+  bool system = 7;
+}
+
+message ListAlertStatesRequest {}
+
+message ListAlertStatesResponse {
+  repeated AlertState states = 1;
 }

@@ -10,6 +10,12 @@
     },
     {
       "name": "LogsService"
+    },
+    {
+      "name": "MetricsService"
+    },
+    {
+      "name": "AlertingService"
     }
   ],
   "consumes": [
@@ -19,6 +25,243 @@
     "application/json"
   ],
   "paths": {
+    "/v1/alerts": {
+      "get": {
+        "summary": "ListAlertStates 是现行告警状态面（含系统内置规则行）。",
+        "operationId": "AlertingService_ListAlertStates",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAlertStatesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/alerts/rules": {
+      "get": {
+        "operationId": "AlertingService_ListAlertRules",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListAlertRulesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "app_id",
+            "description": "app_id 过滤（空 = 全部）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      },
+      "post": {
+        "summary": "CreateAlertRule 登记一条 per-App 阈值规则（评估在采集遍内原生完成）。",
+        "operationId": "AlertingService_CreateAlertRule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateAlertRuleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateAlertRuleRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/alerts/rules/{rule_id}": {
+      "delete": {
+        "operationId": "AlertingService_DeleteAlertRule",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteAlertRuleResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "rule_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/channels": {
+      "get": {
+        "operationId": "AlertingService_ListNotificationChannels",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListNotificationChannelsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "tags": [
+          "AlertingService"
+        ]
+      },
+      "post": {
+        "summary": "CreateNotificationChannel 登记一条通知通道（webhook/telegram；配置\nage 信封入库——URL/token 只写不读）。",
+        "operationId": "AlertingService_CreateNotificationChannel",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1CreateNotificationChannelResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1CreateNotificationChannelRequest"
+            }
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/channels/{channel_id}": {
+      "delete": {
+        "operationId": "AlertingService_DeleteNotificationChannel",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteNotificationChannelResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
+    "/v1/channels/{channel_id}/test": {
+      "post": {
+        "summary": "TestNotificationChannel 即时发一条测试载荷（通道验收锚；配置错误\n原样上抛）。",
+        "operationId": "AlertingService_TestNotificationChannel",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1TestNotificationChannelResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "channel_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/AlertingServiceTestNotificationChannelBody"
+            }
+          }
+        ],
+        "tags": [
+          "AlertingService"
+        ]
+      }
+    },
     "/v1/events": {
       "get": {
         "operationId": "EventsService_ListEvents",
@@ -235,9 +478,194 @@
           "LogsService"
         ]
       }
+    },
+    "/v1/metrics": {
+      "get": {
+        "operationId": "MetricsService_QueryMetrics",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1QueryMetricsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "query",
+            "description": "query 是 PromQL（透传；App 域过滤经 container_label_fleetly_ns_*\n序列标签——CLI/Console 侧构造）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "start",
+            "description": "start/end 是时间窗（RFC3339；空 end = 现在，空 start = end 前 1h）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "step_seconds",
+            "description": "step_seconds 是采样步长（0 = 缺省 15s）。",
+            "in": "query",
+            "required": false,
+            "type": "string",
+            "format": "int64"
+          }
+        ],
+        "tags": [
+          "MetricsService"
+        ]
+      }
     }
   },
   "definitions": {
+    "AlertingServiceTestNotificationChannelBody": {
+      "type": "object"
+    },
+    "v1AlertRule": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "metric": {
+          "type": "string",
+          "title": "metric: cpu_percent | memory_working_set_bytes（值域冻结）。"
+        },
+        "threshold": {
+          "type": "number",
+          "format": "double"
+        },
+        "for_seconds": {
+          "type": "string",
+          "format": "int64",
+          "title": "for_seconds 是持续窗（连续越限 ≥ 本值才迁移 firing；0 = 立即；\n采样近似语义见 ADR-0041）。"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "state": {
+          "type": "string",
+          "title": "state: ok | firing（现行评估态）。"
+        },
+        "state_since": {
+          "type": "string"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      }
+    },
+    "v1AlertState": {
+      "type": "object",
+      "properties": {
+        "rule_id": {
+          "type": "string"
+        },
+        "app_id": {
+          "type": "string"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string"
+        },
+        "state_since": {
+          "type": "string"
+        },
+        "observed_value": {
+          "type": "number",
+          "format": "double",
+          "title": "observed_value 是最近一次评估值（firing 判定依据；NaN = 无样本）。"
+        },
+        "system": {
+          "type": "boolean",
+          "title": "system 标记内置规则行（platform-offsite-backup；不可删）。"
+        }
+      }
+    },
+    "v1CreateAlertRuleRequest": {
+      "type": "object",
+      "properties": {
+        "app_id": {
+          "type": "string"
+        },
+        "metric": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number",
+          "format": "double"
+        },
+        "for_seconds": {
+          "type": "string",
+          "format": "int64"
+        }
+      }
+    },
+    "v1CreateAlertRuleResponse": {
+      "type": "object",
+      "properties": {
+        "rule": {
+          "$ref": "#/definitions/v1AlertRule"
+        }
+      }
+    },
+    "v1CreateNotificationChannelRequest": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "title": "name 是通道名（全局唯一；人类引用锚）。"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string",
+          "title": "webhook 形态：url 是接收端点（可含凭证查询串——age 信封入库）。"
+        },
+        "bot_token": {
+          "type": "string",
+          "title": "telegram 形态：bot_token 与 chat_id（age 信封入库）。"
+        },
+        "chat_id": {
+          "type": "string"
+        }
+      }
+    },
+    "v1CreateNotificationChannelResponse": {
+      "type": "object",
+      "properties": {
+        "channel": {
+          "$ref": "#/definitions/v1NotificationChannel"
+        }
+      }
+    },
+    "v1DeleteAlertRuleResponse": {
+      "type": "object"
+    },
+    "v1DeleteNotificationChannelResponse": {
+      "type": "object"
+    },
     "v1Event": {
       "type": "object",
       "properties": {
@@ -295,6 +723,30 @@
         }
       }
     },
+    "v1ListAlertRulesResponse": {
+      "type": "object",
+      "properties": {
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AlertRule"
+          }
+        }
+      }
+    },
+    "v1ListAlertStatesResponse": {
+      "type": "object",
+      "properties": {
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1AlertState"
+          }
+        }
+      }
+    },
     "v1ListEventsResponse": {
       "type": "object",
       "properties": {
@@ -308,6 +760,85 @@
         "last_seq": {
           "type": "string",
           "format": "int64"
+        }
+      }
+    },
+    "v1ListNotificationChannelsResponse": {
+      "type": "object",
+      "properties": {
+        "channels": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1NotificationChannel"
+          }
+        }
+      }
+    },
+    "v1MetricPoint": {
+      "type": "object",
+      "properties": {
+        "time": {
+          "type": "string"
+        },
+        "value": {
+          "type": "number",
+          "format": "double"
+        }
+      }
+    },
+    "v1MetricSeries": {
+      "type": "object",
+      "properties": {
+        "labels": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "points": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MetricPoint"
+          }
+        }
+      }
+    },
+    "v1NotificationChannel": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string",
+          "title": "kind: webhook | telegram（值域见 CONTEXT.md Notification Channel 词条）。"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "last_failure": {
+          "type": "string",
+          "title": "last_failure 是最近一次派发失败摘要（空 = 无失败/未派发过；配置载荷\n永不回显——只回 id/name/kind 形态，凭证单向）。"
+        },
+        "created_at": {
+          "type": "string"
+        }
+      }
+    },
+    "v1QueryMetricsResponse": {
+      "type": "object",
+      "properties": {
+        "series": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1MetricSeries"
+          }
         }
       }
     },
@@ -341,6 +872,18 @@
         }
       },
       "title": "StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container\n是载体归因标识——swarm 形态为 task ID，ADR-0040）。"
+    },
+    "v1TestNotificationChannelResponse": {
+      "type": "object",
+      "properties": {
+        "delivered": {
+          "type": "boolean",
+          "title": "delivered 是送达回执（false + error 文本 = 配置/网络面失败）。"
+        },
+        "error": {
+          "type": "string"
+        }
+      }
     }
   }
 }

@@ -17,6 +17,8 @@ message AppConfig {
   PlatformBackup platform_backup = 5;
   // Logging 面（F2.4，ADR-0040）：受管 VictoriaLogs 检索端点与保留窗。
   Logging logging = 6;
+  // Metrics 面（F2.5，ADR-0041）：受管 VictoriaMetrics 端点与保留窗。
+  Metrics metrics = 7;
 }
 
 // PlatformBackup 是控制面导出（CONTEXT.md 词条）的配置面：本地仓恒在
@@ -87,6 +89,16 @@ message Logging {
   // routing mesh 发布地址）；install.sh 与 registry.addr 同源物化。
   string addr = 1;
   // retention_days 是保留窗天数（空值回退 30；VL -retentionPeriod 同口径）。
+  int64 retention_days = 2;
+}
+
+// Metrics 是受管指标面配置（ADR-0041）：addr 空 = Metrics 面停用
+//（零采集/零告警、查询精确失败——升级零扰动）。
+message Metrics {
+  // 受管 VictoriaMetrics 端点（含端口，如 10.124.0.3:8428，routing mesh
+  // 发布地址）；install.sh 与 registry.addr 同源物化。
+  string addr = 1;
+  // retention_days 是保留窗天数（空值回退 30；VM -retentionPeriod 同口径）。
   int64 retention_days = 2;
 }
 

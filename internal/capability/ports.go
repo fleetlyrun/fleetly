@@ -272,6 +272,48 @@ func LoggingRetentionDaysFromContext(ctx context.Context) int64 {
 	return days
 }
 
+// metricsAddrKey 是 Metrics 端点的装配期 ctx 载键（唯一写入点在
+// internal/assembly 的 NewMetricsProvider；消费方：victoriametrics Provider
+// 工厂——daemon 经该地址访问受管指标存储的导入/查询面，ADR-0041）。
+type metricsAddrKey struct{}
+
+// WithMetricsAddr 把受管指标存储端点挂进装配 ctx：
+// config.metrics.addr 是地址唯一契约源，空值不注入（Metrics 面停用——
+// 零采集/零告警/查询精确失败，升级零扰动）。
+func WithMetricsAddr(ctx context.Context, addr string) context.Context {
+	if addr == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, metricsAddrKey{}, addr)
+}
+
+// MetricsAddrFromContext 读回装配期注入的指标存储端点（未注入 = 空）。
+func MetricsAddrFromContext(ctx context.Context) string {
+	addr, _ := ctx.Value(metricsAddrKey{}).(string)
+	return addr
+}
+
+// metricsRetentionKey 是指标保留窗天数的装配期 ctx 载键（消费方：
+// victoriametrics Provider 工厂——受管 argv -retentionPeriod 同口径，
+// ADR-0041）。
+type metricsRetentionKey struct{}
+
+// WithMetricsRetentionDays 把保留窗天数挂进装配 ctx（config 缺省 30 已在
+// config 层落定；0 不注入——工厂按自身缺省取 30）。
+func WithMetricsRetentionDays(ctx context.Context, days int64) context.Context {
+	if days <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, metricsRetentionKey{}, days)
+}
+
+// MetricsRetentionDaysFromContext 读回保留窗天数（未注入 = 0，工厂自取
+// 缺省）。
+func MetricsRetentionDaysFromContext(ctx context.Context) int64 {
+	days, _ := ctx.Value(metricsRetentionKey{}).(int64)
+	return days
+}
+
 // Logging 是日志 Capability 端口（VictoriaLogs 受管自宿为默认；ADR-0040：
 // 持久化检索 + 采集承载。无 text 的实时跟随归 Runtime.StreamLogs——双径
 // 路由在 API 面，本端口只承接检索路径与采集回灌）。
@@ -287,13 +329,18 @@ type Logging interface {
 	Query(ctx context.Context, q LogQuery, w LogWriter) error
 }
 
-// Metrics 是指标 Capability 端口（victoria 系受管自宿；容器 CPU/内存基础
-// 图表 + 阈值告警，N2）。
+// Metrics 是指标 Capability 端口（VictoriaMetrics 受管自宿为默认；ADR-0041：
+// 采集环回灌 + PromQL 查询面。告警评估在 engine 内存样本上原生完成——不经
+// 本端口）。
 type Metrics interface {
 	Provider
 
-	// QuerySeries 查询指标序列（PromQL 子集透传；N2 落地）。
-	QuerySeries(ctx context.Context, query string, start, end time.Time) (Series, error)
+	// ImportPrometheus 推送一段 Prometheus exposition 文本入库（采集环
+	// 每节拍回灌；extraLabels 是平台归因标签——job/node，VM extra_label
+	// 通道）。成功即样本可查（VM 流式导入）。
+	ImportPrometheus(ctx context.Context, body []byte, extraLabels map[string]string) error
+	// QuerySeries 查询指标序列（PromQL 透传；Console 图表与 CLI 诊断面）。
+	QuerySeries(ctx context.Context, query string, start, end time.Time, step time.Duration) (Series, error)
 }
 
 // Series 是一段指标序列。

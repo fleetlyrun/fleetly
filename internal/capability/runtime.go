@@ -245,6 +245,17 @@ type Workload struct {
 	// 发布宿主端口（流量一律经 Edge，架构坑清单）；受管 Edge 自身例外
 	//（80/443 入站是其部署形态的一部分）。
 	Publish []PortPublish
+	// Global 是每节点一任务的全局调度声明（ADR-0041 决策 2：受管采集面
+	// 专用——cadvisor 每节点端点；swarm=Mode.Global，k8s=DaemonSet）。
+	// true 时 Replicas 不参与调度；用户 Spec 投影面不暴露（受管域专用
+	// 声明，投影白名单不进）。
+	Global bool
+	// HostBinds 是宿主文件系统只读绑定声明（受管采集面专用：cadvisor 的
+	// / /var/run /sys /var/lib/docker；swarm=bind mount，k8s=hostPath）。
+	// 与 Volumes（平台命名卷）分立：bind 的 Source 是宿主绝对路径，平台
+	// 不做存在性保证（Provider 侧 Ensure 失败面呈现）。用户 Spec 投影面
+	// 不暴露。
+	HostBinds []HostBind
 	// Restart 是生命周期声明（ADR-0025 决策 1，语义按 ADR-0012 停止原因
 	// 映射：长运行=any、one-shot Run=never——进程退出即终态，池形态由
 	// 平台补足）。零值 = Provider 缺省（长运行 any）。
@@ -291,6 +302,31 @@ type NetworkRef struct {
 type PortPublish struct {
 	PublishedPort int32
 	TargetPort    int32
+	// Mode 是发布模式（ADR-0041 决策 2）：空/PublishModeMesh = routing
+	// mesh（现状缺省，既有 Workload 零值兼容）；PublishModeHost = 宿主
+	// 网络栈直绑（每节点一个端点——受管采集端点形态）。
+	Mode PublishMode
+}
+
+// PublishMode 是端口发布模式（空值 = mesh 缺省）。
+type PublishMode string
+
+const (
+	// PublishModeMesh 是 routing mesh 发布（缺省——现状零值兼容）。
+	PublishModeMesh PublishMode = ""
+	// PublishModeHost 是宿主网络栈直绑（每节点一个端点；swarm
+	// PortConfigPublishModeHost）。
+	PublishModeHost PublishMode = "host"
+)
+
+// HostBind 是一条宿主文件系统绑定（受管采集面专用，ADR-0041）。
+type HostBind struct {
+	// Source 是宿主绝对路径（平台不做存在性保证）。
+	Source string
+	// Target 是容器内挂点。
+	Target string
+	// ReadOnly 恒为 true 语义（字段保留对称性；采集面只读）。
+	ReadOnly bool
 }
 
 // WorkloadPort 是进程监听端口声明。
@@ -444,6 +480,9 @@ type NodeView struct {
 	CarrierID string
 	// Hostname 是观测主机名。
 	Hostname string
+	// Addr 是节点可达地址观测（swarm advertise 地址——受管采集端点的
+	// 寻址锚，ADR-0041；观测缓存非权威，空 = Provider 未提供）。
+	Addr string
 	// Role 是编排器角色观测（manager/worker；镜像内事实，非平台语义）。
 	Role string
 	// Available 是节点可用性观测。

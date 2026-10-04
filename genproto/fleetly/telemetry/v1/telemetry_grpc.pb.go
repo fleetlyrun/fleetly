@@ -375,3 +375,499 @@ var LogsService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "fleetly/telemetry/v1/telemetry.proto",
 }
+
+const (
+	MetricsService_QueryMetrics_FullMethodName = "/fleetly.telemetry.v1.MetricsService/QueryMetrics"
+)
+
+// MetricsServiceClient is the client API for MetricsService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// MetricsService：指标查询面（ADR-0041）：PromQL 透传（Console F2.6 图表
+// 的数据源；CLI 诊断面）。Metrics 面停用时精确失败。行级隔离由调用方
+// 查询构造承载（App 域标签过滤）——存储是平台单租户。
+type MetricsServiceClient interface {
+	QueryMetrics(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error)
+}
+
+type metricsServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewMetricsServiceClient(cc grpc.ClientConnInterface) MetricsServiceClient {
+	return &metricsServiceClient{cc}
+}
+
+func (c *metricsServiceClient) QueryMetrics(ctx context.Context, in *QueryMetricsRequest, opts ...grpc.CallOption) (*QueryMetricsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(QueryMetricsResponse)
+	err := c.cc.Invoke(ctx, MetricsService_QueryMetrics_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// MetricsServiceServer is the server API for MetricsService service.
+// All implementations must embed UnimplementedMetricsServiceServer
+// for forward compatibility.
+//
+// MetricsService：指标查询面（ADR-0041）：PromQL 透传（Console F2.6 图表
+// 的数据源；CLI 诊断面）。Metrics 面停用时精确失败。行级隔离由调用方
+// 查询构造承载（App 域标签过滤）——存储是平台单租户。
+type MetricsServiceServer interface {
+	QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error)
+	mustEmbedUnimplementedMetricsServiceServer()
+}
+
+// UnimplementedMetricsServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedMetricsServiceServer struct{}
+
+func (UnimplementedMetricsServiceServer) QueryMetrics(context.Context, *QueryMetricsRequest) (*QueryMetricsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method QueryMetrics not implemented")
+}
+func (UnimplementedMetricsServiceServer) mustEmbedUnimplementedMetricsServiceServer() {}
+func (UnimplementedMetricsServiceServer) testEmbeddedByValue()                        {}
+
+// UnsafeMetricsServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to MetricsServiceServer will
+// result in compilation errors.
+type UnsafeMetricsServiceServer interface {
+	mustEmbedUnimplementedMetricsServiceServer()
+}
+
+func RegisterMetricsServiceServer(s grpc.ServiceRegistrar, srv MetricsServiceServer) {
+	// If the following call panics, it indicates UnimplementedMetricsServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&MetricsService_ServiceDesc, srv)
+}
+
+func _MetricsService_QueryMetrics_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(QueryMetricsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MetricsServiceServer).QueryMetrics(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MetricsService_QueryMetrics_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MetricsServiceServer).QueryMetrics(ctx, req.(*QueryMetricsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// MetricsService_ServiceDesc is the grpc.ServiceDesc for MetricsService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var MetricsService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.telemetry.v1.MetricsService",
+	HandlerType: (*MetricsServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "QueryMetrics",
+			Handler:    _MetricsService_QueryMetrics_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/telemetry/v1/telemetry.proto",
+}
+
+const (
+	AlertingService_CreateNotificationChannel_FullMethodName = "/fleetly.telemetry.v1.AlertingService/CreateNotificationChannel"
+	AlertingService_TestNotificationChannel_FullMethodName   = "/fleetly.telemetry.v1.AlertingService/TestNotificationChannel"
+	AlertingService_ListNotificationChannels_FullMethodName  = "/fleetly.telemetry.v1.AlertingService/ListNotificationChannels"
+	AlertingService_DeleteNotificationChannel_FullMethodName = "/fleetly.telemetry.v1.AlertingService/DeleteNotificationChannel"
+	AlertingService_CreateAlertRule_FullMethodName           = "/fleetly.telemetry.v1.AlertingService/CreateAlertRule"
+	AlertingService_ListAlertRules_FullMethodName            = "/fleetly.telemetry.v1.AlertingService/ListAlertRules"
+	AlertingService_DeleteAlertRule_FullMethodName           = "/fleetly.telemetry.v1.AlertingService/DeleteAlertRule"
+	AlertingService_ListAlertStates_FullMethodName           = "/fleetly.telemetry.v1.AlertingService/ListAlertStates"
+)
+
+// AlertingServiceClient is the client API for AlertingService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// AlertingService：阈值告警规则 + 通知通道（ADR-0041 决策 3/4）。通道是
+// 平台级配置（channels 资源）；规则按 App 归属行级授权（alerts 资源）。
+type AlertingServiceClient interface {
+	// CreateNotificationChannel 登记一条通知通道（webhook/telegram；配置
+	// age 信封入库——URL/token 只写不读）。
+	CreateNotificationChannel(ctx context.Context, in *CreateNotificationChannelRequest, opts ...grpc.CallOption) (*CreateNotificationChannelResponse, error)
+	// TestNotificationChannel 即时发一条测试载荷（通道验收锚；配置错误
+	// 原样上抛）。
+	TestNotificationChannel(ctx context.Context, in *TestNotificationChannelRequest, opts ...grpc.CallOption) (*TestNotificationChannelResponse, error)
+	ListNotificationChannels(ctx context.Context, in *ListNotificationChannelsRequest, opts ...grpc.CallOption) (*ListNotificationChannelsResponse, error)
+	DeleteNotificationChannel(ctx context.Context, in *DeleteNotificationChannelRequest, opts ...grpc.CallOption) (*DeleteNotificationChannelResponse, error)
+	// CreateAlertRule 登记一条 per-App 阈值规则（评估在采集遍内原生完成）。
+	CreateAlertRule(ctx context.Context, in *CreateAlertRuleRequest, opts ...grpc.CallOption) (*CreateAlertRuleResponse, error)
+	ListAlertRules(ctx context.Context, in *ListAlertRulesRequest, opts ...grpc.CallOption) (*ListAlertRulesResponse, error)
+	DeleteAlertRule(ctx context.Context, in *DeleteAlertRuleRequest, opts ...grpc.CallOption) (*DeleteAlertRuleResponse, error)
+	// ListAlertStates 是现行告警状态面（含系统内置规则行）。
+	ListAlertStates(ctx context.Context, in *ListAlertStatesRequest, opts ...grpc.CallOption) (*ListAlertStatesResponse, error)
+}
+
+type alertingServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAlertingServiceClient(cc grpc.ClientConnInterface) AlertingServiceClient {
+	return &alertingServiceClient{cc}
+}
+
+func (c *alertingServiceClient) CreateNotificationChannel(ctx context.Context, in *CreateNotificationChannelRequest, opts ...grpc.CallOption) (*CreateNotificationChannelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateNotificationChannelResponse)
+	err := c.cc.Invoke(ctx, AlertingService_CreateNotificationChannel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertingServiceClient) TestNotificationChannel(ctx context.Context, in *TestNotificationChannelRequest, opts ...grpc.CallOption) (*TestNotificationChannelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestNotificationChannelResponse)
+	err := c.cc.Invoke(ctx, AlertingService_TestNotificationChannel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertingServiceClient) ListNotificationChannels(ctx context.Context, in *ListNotificationChannelsRequest, opts ...grpc.CallOption) (*ListNotificationChannelsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListNotificationChannelsResponse)
+	err := c.cc.Invoke(ctx, AlertingService_ListNotificationChannels_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertingServiceClient) DeleteNotificationChannel(ctx context.Context, in *DeleteNotificationChannelRequest, opts ...grpc.CallOption) (*DeleteNotificationChannelResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteNotificationChannelResponse)
+	err := c.cc.Invoke(ctx, AlertingService_DeleteNotificationChannel_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertingServiceClient) CreateAlertRule(ctx context.Context, in *CreateAlertRuleRequest, opts ...grpc.CallOption) (*CreateAlertRuleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CreateAlertRuleResponse)
+	err := c.cc.Invoke(ctx, AlertingService_CreateAlertRule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertingServiceClient) ListAlertRules(ctx context.Context, in *ListAlertRulesRequest, opts ...grpc.CallOption) (*ListAlertRulesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAlertRulesResponse)
+	err := c.cc.Invoke(ctx, AlertingService_ListAlertRules_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertingServiceClient) DeleteAlertRule(ctx context.Context, in *DeleteAlertRuleRequest, opts ...grpc.CallOption) (*DeleteAlertRuleResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteAlertRuleResponse)
+	err := c.cc.Invoke(ctx, AlertingService_DeleteAlertRule_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *alertingServiceClient) ListAlertStates(ctx context.Context, in *ListAlertStatesRequest, opts ...grpc.CallOption) (*ListAlertStatesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListAlertStatesResponse)
+	err := c.cc.Invoke(ctx, AlertingService_ListAlertStates_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AlertingServiceServer is the server API for AlertingService service.
+// All implementations must embed UnimplementedAlertingServiceServer
+// for forward compatibility.
+//
+// AlertingService：阈值告警规则 + 通知通道（ADR-0041 决策 3/4）。通道是
+// 平台级配置（channels 资源）；规则按 App 归属行级授权（alerts 资源）。
+type AlertingServiceServer interface {
+	// CreateNotificationChannel 登记一条通知通道（webhook/telegram；配置
+	// age 信封入库——URL/token 只写不读）。
+	CreateNotificationChannel(context.Context, *CreateNotificationChannelRequest) (*CreateNotificationChannelResponse, error)
+	// TestNotificationChannel 即时发一条测试载荷（通道验收锚；配置错误
+	// 原样上抛）。
+	TestNotificationChannel(context.Context, *TestNotificationChannelRequest) (*TestNotificationChannelResponse, error)
+	ListNotificationChannels(context.Context, *ListNotificationChannelsRequest) (*ListNotificationChannelsResponse, error)
+	DeleteNotificationChannel(context.Context, *DeleteNotificationChannelRequest) (*DeleteNotificationChannelResponse, error)
+	// CreateAlertRule 登记一条 per-App 阈值规则（评估在采集遍内原生完成）。
+	CreateAlertRule(context.Context, *CreateAlertRuleRequest) (*CreateAlertRuleResponse, error)
+	ListAlertRules(context.Context, *ListAlertRulesRequest) (*ListAlertRulesResponse, error)
+	DeleteAlertRule(context.Context, *DeleteAlertRuleRequest) (*DeleteAlertRuleResponse, error)
+	// ListAlertStates 是现行告警状态面（含系统内置规则行）。
+	ListAlertStates(context.Context, *ListAlertStatesRequest) (*ListAlertStatesResponse, error)
+	mustEmbedUnimplementedAlertingServiceServer()
+}
+
+// UnimplementedAlertingServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAlertingServiceServer struct{}
+
+func (UnimplementedAlertingServiceServer) CreateNotificationChannel(context.Context, *CreateNotificationChannelRequest) (*CreateNotificationChannelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateNotificationChannel not implemented")
+}
+func (UnimplementedAlertingServiceServer) TestNotificationChannel(context.Context, *TestNotificationChannelRequest) (*TestNotificationChannelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestNotificationChannel not implemented")
+}
+func (UnimplementedAlertingServiceServer) ListNotificationChannels(context.Context, *ListNotificationChannelsRequest) (*ListNotificationChannelsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListNotificationChannels not implemented")
+}
+func (UnimplementedAlertingServiceServer) DeleteNotificationChannel(context.Context, *DeleteNotificationChannelRequest) (*DeleteNotificationChannelResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteNotificationChannel not implemented")
+}
+func (UnimplementedAlertingServiceServer) CreateAlertRule(context.Context, *CreateAlertRuleRequest) (*CreateAlertRuleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateAlertRule not implemented")
+}
+func (UnimplementedAlertingServiceServer) ListAlertRules(context.Context, *ListAlertRulesRequest) (*ListAlertRulesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAlertRules not implemented")
+}
+func (UnimplementedAlertingServiceServer) DeleteAlertRule(context.Context, *DeleteAlertRuleRequest) (*DeleteAlertRuleResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteAlertRule not implemented")
+}
+func (UnimplementedAlertingServiceServer) ListAlertStates(context.Context, *ListAlertStatesRequest) (*ListAlertStatesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAlertStates not implemented")
+}
+func (UnimplementedAlertingServiceServer) mustEmbedUnimplementedAlertingServiceServer() {}
+func (UnimplementedAlertingServiceServer) testEmbeddedByValue()                         {}
+
+// UnsafeAlertingServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AlertingServiceServer will
+// result in compilation errors.
+type UnsafeAlertingServiceServer interface {
+	mustEmbedUnimplementedAlertingServiceServer()
+}
+
+func RegisterAlertingServiceServer(s grpc.ServiceRegistrar, srv AlertingServiceServer) {
+	// If the following call panics, it indicates UnimplementedAlertingServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AlertingService_ServiceDesc, srv)
+}
+
+func _AlertingService_CreateNotificationChannel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateNotificationChannelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).CreateNotificationChannel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_CreateNotificationChannel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).CreateNotificationChannel(ctx, req.(*CreateNotificationChannelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertingService_TestNotificationChannel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestNotificationChannelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).TestNotificationChannel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_TestNotificationChannel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).TestNotificationChannel(ctx, req.(*TestNotificationChannelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertingService_ListNotificationChannels_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListNotificationChannelsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).ListNotificationChannels(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_ListNotificationChannels_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).ListNotificationChannels(ctx, req.(*ListNotificationChannelsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertingService_DeleteNotificationChannel_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteNotificationChannelRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).DeleteNotificationChannel(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_DeleteNotificationChannel_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).DeleteNotificationChannel(ctx, req.(*DeleteNotificationChannelRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertingService_CreateAlertRule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateAlertRuleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).CreateAlertRule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_CreateAlertRule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).CreateAlertRule(ctx, req.(*CreateAlertRuleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertingService_ListAlertRules_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAlertRulesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).ListAlertRules(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_ListAlertRules_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).ListAlertRules(ctx, req.(*ListAlertRulesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertingService_DeleteAlertRule_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAlertRuleRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).DeleteAlertRule(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_DeleteAlertRule_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).DeleteAlertRule(ctx, req.(*DeleteAlertRuleRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AlertingService_ListAlertStates_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListAlertStatesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AlertingServiceServer).ListAlertStates(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AlertingService_ListAlertStates_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AlertingServiceServer).ListAlertStates(ctx, req.(*ListAlertStatesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// AlertingService_ServiceDesc is the grpc.ServiceDesc for AlertingService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AlertingService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.telemetry.v1.AlertingService",
+	HandlerType: (*AlertingServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "CreateNotificationChannel",
+			Handler:    _AlertingService_CreateNotificationChannel_Handler,
+		},
+		{
+			MethodName: "TestNotificationChannel",
+			Handler:    _AlertingService_TestNotificationChannel_Handler,
+		},
+		{
+			MethodName: "ListNotificationChannels",
+			Handler:    _AlertingService_ListNotificationChannels_Handler,
+		},
+		{
+			MethodName: "DeleteNotificationChannel",
+			Handler:    _AlertingService_DeleteNotificationChannel_Handler,
+		},
+		{
+			MethodName: "CreateAlertRule",
+			Handler:    _AlertingService_CreateAlertRule_Handler,
+		},
+		{
+			MethodName: "ListAlertRules",
+			Handler:    _AlertingService_ListAlertRules_Handler,
+		},
+		{
+			MethodName: "DeleteAlertRule",
+			Handler:    _AlertingService_DeleteAlertRule_Handler,
+		},
+		{
+			MethodName: "ListAlertStates",
+			Handler:    _AlertingService_ListAlertStates_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/telemetry/v1/telemetry.proto",
+}

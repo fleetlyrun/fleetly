@@ -29,6 +29,9 @@ const (
 	// DefaultLoggingRetentionDays 是受管日志保留窗缺省（30d，VL
 	// -retentionPeriod 同口径；ADR-0040）。
 	DefaultLoggingRetentionDays = int64(30)
+	// DefaultMetricsRetentionDays 是受管指标保留窗缺省（30d，VM
+	// -retentionPeriod 同口径；ADR-0041）。
+	DefaultMetricsRetentionDays = int64(30)
 )
 
 // WithDefaults 就地填充空缺省字段，返回同一实例（链式）。
@@ -83,6 +86,12 @@ func WithDefaults(c *AppConfig) *AppConfig {
 	}
 	if c.GetLogging().GetRetentionDays() <= 0 {
 		c.Logging.RetentionDays = DefaultLoggingRetentionDays
+	}
+	if c.GetMetrics() == nil {
+		c.Metrics = &Metrics{}
+	}
+	if c.GetMetrics().GetRetentionDays() <= 0 {
+		c.Metrics.RetentionDays = DefaultMetricsRetentionDays
 	}
 	return c
 }
@@ -176,4 +185,18 @@ func (c *AppConfig) LoggingRetentionDays() int64 {
 		return v
 	}
 	return DefaultLoggingRetentionDays
+}
+
+// MetricsAddr 是受管指标存储端点访问器（容忍 nil 链）。无缺省可回退：
+// 空值 = Metrics 面停用（ADR-0041——零采集/零告警，查询精确失败）。
+func (c *AppConfig) MetricsAddr() string {
+	return c.GetMetrics().GetAddr()
+}
+
+// MetricsRetentionDays 是指标保留窗天数访问器（容忍 nil 链；ADR-0041）。
+func (c *AppConfig) MetricsRetentionDays() int64 {
+	if v := c.GetMetrics().GetRetentionDays(); v > 0 {
+		return v
+	}
+	return DefaultMetricsRetentionDays
 }
