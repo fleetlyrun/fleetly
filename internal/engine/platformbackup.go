@@ -422,10 +422,13 @@ func (e *Engine) ListPlatformSnapshots(ctx context.Context) ([]PlatformSnapshot,
 			return nil, err
 		}
 	}
-	out, err := resticExec(ctx, bin, []string{"-r", local.repo, "snapshots", "--json"},
-		append(os.Environ(), envPairs(local.env)...))
+	out, err := resticExec(ctx, bin, []string{"-r", local.repo, "snapshots", "--json"}, e.resticEnv(local))
 	if err != nil {
-		return nil, fmt.Errorf("restic snapshots (repo %s): %w", local.repo, err)
+		tail := stderrTail(string(out))
+		if tail == "" {
+			tail = err.Error()
+		}
+		return nil, fmt.Errorf("restic snapshots (repo %s): %s", local.repo, tail)
 	}
 	var snaps []PlatformSnapshot
 	if err := json.Unmarshal(out, &snaps); err != nil {
