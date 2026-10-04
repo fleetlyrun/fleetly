@@ -70,6 +70,38 @@ type managedProviderDecl struct {
 	attachNetwork bool
 }
 
+// anyManagedVolume 报告下发集内是否有挂卷的受管 Workload（钉住判定）。
+func anyManagedVolume(ws []capability.Workload) bool {
+	for _, w := range ws {
+		if len(w.Volumes) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// applyManagedVolumePinning 把控制面节点锚合并进挂卷 Workload 的
+// Placement（幂等去重；空锚 = 无钉住面——卷外 Workload 保持调度自由）。
+func applyManagedVolumePinning(ws []capability.Workload, nodeID string) {
+	if nodeID == "" {
+		return
+	}
+	for i := range ws {
+		if len(ws[i].Volumes) == 0 {
+			continue
+		}
+		seen := false
+		for _, id := range ws[i].Placement.NodeIDs {
+			if id == nodeID {
+				seen = true
+			}
+		}
+		if !seen {
+			ws[i].Placement.NodeIDs = append(ws[i].Placement.NodeIDs, nodeID)
+		}
+	}
+}
+
 // managedProviders 列出在册受管 Provider（注册序稳定：Edge 先于 Registry
 // ——Route 面优先收敛）。受管/材料源子面经 FacesOf 协商点探测。
 func (e *Engine) managedProviders() []managedProviderDecl {
@@ -97,6 +129,30 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 		return
 	}
 	refs := e.activeProjectNetworks(ctx)
+	// 受管域 Placement 钉住（F2.3 收口 F1.15 挂账）：带卷的受管 Workload
+	// 钉控制面节点——swarm 无卷感知调度，spec 变更滚动替换可把 task 漂到
+	// 无卷节点 preparing 打转（受管卷都是控制面节点的本地卷）。锚解析失
+	// 败 = 本拍受管面整组不下发（清签名下拍重试）：漏钉住 = 无钉住调度，
+	// 比部署失败更糟（applyVolumePinning 的 Q-8 同款取舍）。
+	pinNode := ""
+	needPin := false
+	for _, decl := range decls {
+		if anyManagedVolume(decl.m.ManagedWorkloads()) {
+			needPin = true
+			break
+		}
+	}
+	if needPin {
+		node, err := e.controlPlaneNode(ctx)
+		if err != nil {
+			e.log.Error("managed reconciler: control-plane node for volume pinning", "err", err)
+			for _, decl := range decls {
+				e.ensureForget(e.managed.ensure, decl.m.ManagedNamespace().String())
+			}
+			return
+		}
+		pinNode = node
+	}
 	// 逐 Provider 组装下发集（Edge 合并活跃项目网——跨网触达后端；zot
 	// 不挂——发布端口可达，附录 B.1）并预计算签名（C16：Ensure 全部输入
 	// 的指纹——下发集含网引用集 + 材料；任一输入变化即短路失效，无需
@@ -113,6 +169,7 @@ func (e *Engine) reconcileManaged(ctx context.Context) {
 				}
 			}
 		}
+		applyManagedVolumePinning(ws, pinNode)
 		ensured[i] = ws
 		all = append(all, ws...)
 		materials := capability.Materials{}
