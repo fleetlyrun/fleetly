@@ -387,6 +387,15 @@ docker exec "$DIND_CID" docker run -d --name fleetly-e2e-silo \
   -e MINIO_ROOT_USER=fleetly-e2e \
   -e MINIO_ROOT_PASSWORD=e2e-offsite-key \
   "$SILO_IMAGE" server /data >/dev/null || fail "silo start"
+# 就绪门：dind 侧 busybox nc 探测发布端口（不依赖 silo 镜像内工具面）。mcli
+# 的 alias set 自身会签名探测端点——服务器未就绪时连 alias 都设不上
+# （2026-10-04 CI 实录：run 后 ~1.5s 内 connection refused）。
+i=0
+while [ "$i" -lt 30 ]; do
+  docker exec "$DIND_CID" nc -z 127.0.0.1 9000 >/dev/null 2>&1 && break
+  i=$((i + 1)); sleep 1
+done
+[ "$i" -lt 30 ] || fail "silo port never came up"
 docker exec "$DIND_CID" docker exec fleetly-e2e-silo \
   mcli alias set e2e http://127.0.0.1:9000 fleetly-e2e e2e-offsite-key >/dev/null || fail "mcli alias"
 i=0
@@ -406,13 +415,15 @@ docker exec "$DIND_CID" sh -c "printf '%s\n' \
   FLEETLY_PLATFORM_BACKUP_S3_ACCESS_KEY_ID=fleetly-e2e \
   FLEETLY_PLATFORM_BACKUP_S3_SECRET_ACCESS_KEY=e2e-offsite-key \
   >> /etc/fleetlyd.env" || fail "append s3 env"
-docker exec "$DIND_CID" pkill -x fleetlyd || true
+docker exec "$DIND_CID" pkill -TERM fleetlyd || true
 i=0
-while [ "$i" -lt 30 ] && docker exec "$DIND_CID" pgrep -x fleetlyd >/dev/null 2>&1; do
+while [ "$i" -lt 30 ] && docker exec "$DIND_CID" pgrep fleetlyd >/dev/null 2>&1; do
   i=$((i + 1)); sleep 1
 done
-docker exec "$DIND_CID" pgrep -x fleetlyd >/dev/null 2>&1 && fail "fleetlyd did not stop"
-docker exec "$DIND_CID" sh -c "setsid env \$(grep -v '^\$' /etc/fleetlyd.env | tr '\n' ' ') /usr/local/bin/fleetlyd >> /var/log/fleetlyd.log 2>&1 < /dev/null &" || fail "fleetlyd restart"
+docker exec "$DIND_CID" pgrep fleetlyd >/dev/null 2>&1 && fail "fleetlyd did not stop"
+# 同文件同源重启（dind-upgrade.sh 的既证形态：ENVARGS 展开 + 空回退）。
+docker exec "$DIND_CID" sh -c \
+  'ENVARGS="$(grep -v "^$" /etc/fleetlyd.env 2>/dev/null | tr "\n" " ")"; [ -n "$ENVARGS" ] || ENVARGS="FLEETLY_DATA_ROOT=/var/lib/fleetly"; setsid env $ENVARGS /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &' || fail "fleetlyd restart"
 i=0
 while [ "$i" -lt 60 ]; do
   cli status >/dev/null 2>&1 && break
