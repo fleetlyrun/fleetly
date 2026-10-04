@@ -141,7 +141,7 @@ else
   RAILPACK_URL="https://github.com/railwayapp/railpack/releases/download/v${RAILPACK_VERSION}/railpack-v${RAILPACK_VERSION}-${RTARGET}.tar.gz"
   log "installing railpack $RAILPACK_VERSION (builder for zero-config source deploys)"
   RTMP="$(mktemp -d)"
-  if curl -fsSL "$RAILPACK_URL" -o "$RTMP/railpack.tar.gz" 2>/dev/null && tar -xzf "$RTMP/railpack.tar.gz" -C "$RTMP" 2>/dev/null \
+  if curl -fsSL --retry 3 --retry-delay 2 "$RAILPACK_URL" -o "$RTMP/railpack.tar.gz" 2>/dev/null && tar -xzf "$RTMP/railpack.tar.gz" -C "$RTMP" 2>/dev/null \
      && [ -f "$RTMP/railpack" ]; then
     install -m 0755 "$RTMP/railpack" "$BIN_DIR/railpack"
   else
@@ -160,7 +160,7 @@ if command -v restic >/dev/null 2>&1 && restic version 2>/dev/null | grep -q "re
 else
   RSTMP="$(mktemp -d)"
   log "installing restic $RESTIC_VERSION (platform backup engine)"
-  if curl -fsSL "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${ARCH}.bz2" -o "$RSTMP/restic.bz2" 2>/dev/null \
+  if curl -fsSL --retry 3 --retry-delay 2 "https://github.com/restic/restic/releases/download/v${RESTIC_VERSION}/restic_${RESTIC_VERSION}_linux_${ARCH}.bz2" -o "$RSTMP/restic.bz2" 2>/dev/null \
      && bunzip2 "$RSTMP/restic.bz2" 2>/dev/null && [ -f "$RSTMP/restic" ]; then
     install -m 0755 "$RSTMP/restic" "$BIN_DIR/restic"
   else

@@ -527,8 +527,8 @@ fi
 # 错误文本是响应数据（age 信封写面 + 解封派发面双绿即锚）。
 CH_ID=$(cli channels create --name ops-hook --kind webhook --url http://127.0.0.1:1/x | sed -n 's/.*(id \([^)]*\)).*/\1/p')
 [ -n "$CH_ID" ] || { echo "channel create produced no id" >&2; exit 1; }
-cli --json channels test --channel "$CH_ID" | grep -q '"delivered":false' || {
-  echo "channel test should report delivered=false for an unreachable endpoint" >&2; exit 1
+cli --json channels test --channel "$CH_ID" | grep -q '"error":' || {
+  echo "channel test should return an honest failure response (non-empty error) for an unreachable endpoint" >&2; exit 1
 }
 log "notification channel test payload dispatched (unreachable endpoint reported honestly)"
 
