@@ -90,8 +90,20 @@ func (svc *DeploymentsService) Deploy(ctx context.Context, req *deliveryv1.Deplo
 
 // freezeRevision 冻结 Revision（内容寻址复用：同内容只冻结一份；R1..Rn
 // 序号 App 内单调）。Deploy 与 webhook 触发共用——审计 actor/source 取
-// ctx（webhook 路径经 WithAuditOverride 标注）。
+// ctx（webhook 路径经 WithAuditOverride 标注）。两级变量合成的唯一咽喉
+// （ADR-0027/0043）：冻结前把 Project 层 SharedVariable 合成进全部进程
+// （App 层 env 覆盖同键），Revision 冻结的即最终生效集——所有源形态
+// （image/compose/upload/git push）经此归一。
 func freezeRevision(ctx context.Context, s *Services, appRow *app.App, appSpec *specv1.AppSpec) (*revision.Revision, error) {
+	if vars, err := s.SharedVariables.ListActive(ctx, s.DB.Runner(), appRow.ProjectID); err != nil {
+		return nil, err
+	} else if len(vars) > 0 {
+		shared := make(map[string]string, len(vars))
+		for _, v := range vars {
+			shared[v.Name] = v.Value
+		}
+		spec.MergeSharedEnv(appSpec, shared)
+	}
 	body, err := marshalSpec(appSpec)
 	if err != nil {
 		return nil, err
@@ -150,6 +162,12 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 		return nil, apperr.New("E_INVALID_ARGUMENT",
 			"builder, railpack_version and output_dir are for upload deploys only; image and compose deploys do not carry a builder")
 	}
+	// env 是 image/upload 形态的 App 级变量直传（ADR-0043 决策 2）：compose
+	// 自带 environment 声明面，携带即拒（http_probe 旗标同款先例）。
+	if req.GetComposeYaml() != "" && len(req.GetEnv()) > 0 {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"env is for image or upload deploys; compose declares variables via each service's environment")
+	}
 	var probe *specv1.HealthcheckSpec
 	switch {
 	case req.GetHttpProbe() != "" && req.GetTcpProbe() != 0:
@@ -167,7 +185,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 	}
 	switch {
 	case req.GetImage() != "":
-		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe)
+		s, err := spec.ImageDeploy(appRow.ID, appRow.ProjectID, req.GetImage(), req.GetProcessName(), probe, req.GetEnv())
 		if err != nil {
 			return nil, mapValidationError(err)
 		}
@@ -207,7 +225,7 @@ func normalizeDeploySource(req *deliveryv1.DeployRequest, appRow *app.App, uploa
 			AppID: appRow.ID, Project: appRow.ProjectID, UploadID: uploadRow.ID,
 			ProcessName: req.GetProcessName(), Builder: req.GetBuilder(),
 			Dockerfile: req.GetDockerfile(), RailpackVersion: req.GetRailpackVersion(),
-			OutputDir: req.GetOutputDir(), Probe: probe,
+			OutputDir: req.GetOutputDir(), Probe: probe, Env: req.GetEnv(),
 		})
 		if err != nil {
 			return nil, mapValidationError(err)

@@ -9,6 +9,9 @@ import (
 	"errors"
 	"fmt"
 
+	"google.golang.org/protobuf/encoding/protojson"
+
+	specv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/spec/v1"
 	structurev1 "github.com/fleetlyrun/fleetly/genproto/fleetly/structure/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
@@ -23,6 +26,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/networkpeer"
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
@@ -39,8 +43,12 @@ const (
 	eventSecretUpdated      = "secret.updated"
 	eventSecretDeleted      = "secret.deleted"
 	eventConfigUpdated      = "config.updated"
-	eventVolumeCreated      = "volume.created"
-	eventNetworkCreated     = "network.created"
+	// SharedVariable 面（F2.9，ADR-0043）：与 secret.* 同款三链（事件 +
+	// 审计 + golden）；aggregate=variable（事件名 <聚合>.<事实> 惯例）。
+	eventVariableUpdated = "variable.updated"
+	eventVariableDeleted = "variable.deleted"
+	eventVolumeCreated   = "volume.created"
+	eventNetworkCreated  = "network.created"
 	// 跨 Project peer 声明面（F1.8，ADR-0013 附录 A.1）：三拍事件，
 	// aggregate=network（挂接收方网络 ID——事件流沿网络聚合面订阅）。
 	eventNetworkPeerDeclared = "network.peer_declared"
@@ -530,6 +538,10 @@ type ConfigsService struct {
 const (
 	maxConfigsPerProject = 100
 	maxConfigBytes       = 256 * 1024
+	// SharedVariable 配额（F2.9，ADR-0043 决策 5）：Configs 先例同口径；
+	// 值面按 env 值量级收一档（env 是进程环境面不是文件面）。
+	maxSharedVariablesPerProject = 100
+	maxVariableBytes             = 16 * 1024
 	// maxAppsPerProject 是 per-Project 活跃 App 数上限（ADR-0017 附录 A.1，
 	// F1.9）：Workload 的 App 来源面。Task 轴两枚配额住 engine（域拥有者，
 	// ScaleTask/到期拍共用）。
@@ -606,6 +618,187 @@ func (svc *ConfigsService) ListConfigs(ctx context.Context, req *structurev1.Lis
 		out.Configs = append(out.Configs, configMsg(row, false))
 	}
 	return out, nil
+}
+
+// ---- SharedVariables（Project 级共享变量，ADR-0043） ----
+
+type SharedVariablesService struct {
+	structurev1.UnimplementedSharedVariablesServiceServer
+	s *Services
+}
+
+// PutSharedVariable 落/覆盖一条共享变量，响应携带受影响 App 提示（近似
+// 口径，ADR-0043 决策 4——改共享变量不触发任何自动重部署，提示"哪些 App
+// 重部署会取新值"）。
+func (svc *SharedVariablesService) PutSharedVariable(ctx context.Context, req *structurev1.PutSharedVariableRequest) (*structurev1.PutSharedVariableResponse, error) {
+	if req.GetProjectId() == "" || req.GetName() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
+	}
+	// 名 = env 键形态（ADR-0043 决策 2）：变量名直接成为容器 env 键。
+	if !spec.ValidEnvName(req.GetName()) {
+		return nil, apperr.New("E_INVALID_ARGUMENT",
+			"name: variable names must match %q (variable names become environment keys; got %q)",
+			spec.EnvNamePattern, req.GetName())
+	}
+	if len(req.GetValue()) > maxVariableBytes {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "value: exceeds the %d-byte per-variable limit", maxVariableBytes)
+	}
+	// 行级授权（ADR-0035）：写面受理前置。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
+	row := &sharedvariable.SharedVariable{
+		ID: newID(), ProjectID: req.GetProjectId(), Name: req.GetName(), Value: req.GetValue(),
+	}
+	// 数量配额按"Project 内活跃名数"计（同名 put 是覆盖不占新位）——
+	// 受理位检查（事务内读，ADR-0024 同款）。
+	err := svc.s.commit(ctx, writeFact{
+		checks: []acceptanceCheck{
+			svc.s.parentProjectAlive(req.GetProjectId()),
+			svc.s.sharedVariableQuota(req.GetProjectId(), req.GetName()),
+		},
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.SharedVariables.Upsert(ctx, tx, row)
+		},
+		events: []eventFact{structureEvent(eventVariableUpdated, "variable", row.Name, row.ProjectID)},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "variable.put",
+			Resource: "variable/" + row.Name, AfterFP: row.Value,
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "variable")
+	}
+	affected, err := svc.s.affectedApps(ctx, req.GetProjectId(), req.GetName(), req.GetValue())
+	if err != nil {
+		return nil, err
+	}
+	return &structurev1.PutSharedVariableResponse{Variable: sharedVariableMsg(*row), AffectedApps: affected}, nil
+}
+
+func (svc *SharedVariablesService) ListSharedVariables(ctx context.Context, req *structurev1.ListSharedVariablesRequest) (*structurev1.ListSharedVariablesResponse, error) {
+	// 行级授权（ADR-0035）：值明文回显（非敏感契约）——跨租户读面。
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
+	list, err := svc.s.SharedVariables.ListPage(ctx, svc.s.DB.Runner(),
+		req.GetProjectId(), req.GetAfterName(), listLimit(req.GetLimit()))
+	if err != nil {
+		return nil, mapStateError(err, "variable")
+	}
+	out := &structurev1.ListSharedVariablesResponse{}
+	for _, row := range list {
+		out.Variables = append(out.Variables, sharedVariableMsg(row))
+	}
+	return out, nil
+}
+
+func (svc *SharedVariablesService) DeleteSharedVariable(ctx context.Context, req *structurev1.DeleteSharedVariableRequest) (*structurev1.DeleteSharedVariableResponse, error) {
+	if req.GetProjectId() == "" || req.GetName() == "" {
+		return nil, apperr.New("E_INVALID_ARGUMENT", "project_id and name: must not be empty")
+	}
+	if err := svc.s.authorizeProjectID(ctx, req.GetProjectId()); err != nil {
+		return nil, err
+	}
+	err := svc.s.commit(ctx, writeFact{
+		write: func(ctx context.Context, tx *sql.Tx) error {
+			return svc.s.SharedVariables.SoftDelete(ctx, tx, req.GetProjectId(), req.GetName())
+		},
+		events: []eventFact{structureEvent(eventVariableDeleted, "variable", req.GetName(), req.GetProjectId())},
+		audits: []*audit.Entry{{
+			ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "variable.delete",
+			Resource: "variable/" + req.GetName(),
+		}},
+	})
+	if err != nil {
+		return nil, mapStateError(err, "variable")
+	}
+	// 删除后的受影响口径：键从共享层消失——最新冻结 env 仍带该键的 App
+	// 重部署会失去它（absentValue 哨兵）。
+	affected, err := svc.s.affectedApps(ctx, req.GetProjectId(), req.GetName(), absentValue)
+	if err != nil {
+		return nil, err
+	}
+	return &structurev1.DeleteSharedVariableResponse{AffectedApps: affected}, nil
+}
+
+// absentValue 是受影响口径的"键已从共享层消失"哨兵：任一进程 env 带该键
+// 即受影响（冻结值与新状态恒不等）。
+const absentValue = "\x00absent"
+
+// sharedVariableQuota 是 per-Project 共享变量数配额检查（Configs 同款：
+// 新名才占新位）。
+func (s *Services) sharedVariableQuota(projectID, name string) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := s.SharedVariables.GetByName(ctx, tx, projectID, name); err == nil {
+			return nil
+		} else if !errors.Is(err, state.ErrNotFound) {
+			return err
+		}
+		active, err := s.SharedVariables.ListActive(ctx, tx, projectID)
+		if err != nil {
+			return err
+		}
+		if len(active) >= maxSharedVariablesPerProject {
+			return apperr.New("E_QUOTA_EXCEEDED",
+				"project %s already holds %d shared variables (limit %d)", projectID, len(active), maxSharedVariablesPerProject)
+		}
+		return nil
+	}
+}
+
+// affectedApps 计算受影响 App 提示（ADR-0043 决策 4 的近似口径）：项目内
+// 有 ≥1 Revision 的 App，其最新冻结 env 会因本次变更而不同（任一进程
+// env[KEY] 与变更后状态不等；键缺席亦算——重冻结会补进）。App 层覆盖
+// 同键的 App 会误报（冻结形态是扁平 map 无键来源账本）——提示是 DX 附注
+// 不是行为承诺，误报代价 = 一次幂等重部署。
+func (s *Services) affectedApps(ctx context.Context, projectID, name, newValue string) ([]string, error) {
+	apps, err := s.Apps.ListByProject(ctx, s.DB.Runner(), projectID)
+	if err != nil {
+		return nil, err
+	}
+	var affected []string
+	for _, a := range apps {
+		rev, err := s.Revisions.Latest(ctx, s.DB.Runner(), a.ID)
+		if errors.Is(err, state.ErrNotFound) {
+			continue // 从未部署过的 App 首次部署自然取新值
+		}
+		if err != nil {
+			return nil, err
+		}
+		if revisionUsesDifferentValue(rev.Spec, name, newValue) {
+			affected = append(affected, a.ID)
+		}
+	}
+	return affected, nil
+}
+
+// revisionUsesDifferentValue 报告冻结 spec 的任一进程 env[KEY] 与变更后
+// 状态不同（absentValue 哨兵 = 键应消失：在场即不同）。反序列化失败按
+// 不受影响处理——提示面不因冻结体解析问题放大故障。
+func revisionUsesDifferentValue(blob []byte, name, newValue string) bool {
+	s := &specv1.AppSpec{}
+	if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(blob, s); err != nil {
+		return false
+	}
+	differs := func(env map[string]string) bool {
+		v, ok := env[name]
+		if newValue == absentValue {
+			return ok
+		}
+		return !ok || v != newValue
+	}
+	for _, p := range s.GetProcesses() {
+		if differs(p.GetEnv()) {
+			return true
+		}
+	}
+	for _, j := range s.GetFirstBootJobs() {
+		if differs(j.GetProcess().GetEnv()) {
+			return true
+		}
+	}
+	return false
 }
 
 // ---- Volumes ----

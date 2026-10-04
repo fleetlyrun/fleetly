@@ -57,6 +57,10 @@ var builtins = []Event{
 	{Name: "secret.updated", Summary: "A secret value was set (fingerprint, never the value).", Source: "internal/api/fleetlygrpc/structure.go PutSecret"},
 	{Name: "secret.deleted", Summary: "A secret was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSecret"},
 	{Name: "config.updated", Summary: "A config version was written.", Source: "internal/api/fleetlygrpc/structure.go PutConfig"},
+	// 共享变量（F2.9，ADR-0043）：值明文可回显，事件只记事实不带值——
+	// 与审计行同口径。
+	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/api/fleetlygrpc/structure.go PutSharedVariable"},
+	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSharedVariable"},
 	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/api/fleetlygrpc/structure.go CreateVolume"},
 	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/structure.go CreateNetwork"},
 

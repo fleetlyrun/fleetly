@@ -89,7 +89,12 @@ var composeJobRejections = map[string]string{
 
 // ImageDeploy 归一化镜像直投：单 process web（名可指定，默认 web）。
 // probe 是可选探针声明（B2：http path 或 tcp port——二选一，nil = 无探针）。
-func ImageDeploy(appID, projectID, image string, processName string, probe *specv1.HealthcheckSpec) (*specv1.AppSpec, error) {
+// env 是 App 级变量直传（ADR-0043 决策 2：键按 EnvNamePattern 受理面即拒；
+// Project 层 SharedVariable 的合成在冻结咽喉，此处只落 App 层）。
+func ImageDeploy(appID, projectID, image string, processName string, probe *specv1.HealthcheckSpec, env map[string]string) (*specv1.AppSpec, error) {
+	if err := ValidateEnvKeys("image.env", env); err != nil {
+		return nil, err
+	}
 	if processName == "" {
 		processName = "web"
 	}
@@ -104,6 +109,7 @@ func ImageDeploy(appID, projectID, image string, processName string, probe *spec
 			},
 			Replicas:    1,
 			Healthcheck: probe,
+			Env:         env,
 		}},
 	}
 	if err := ValidateApp(spec); err != nil {
@@ -130,6 +136,9 @@ type UploadDeployInput struct {
 	OutputDir string
 	// Probe 是可选探针声明（http path 或 tcp port）。
 	Probe *specv1.HealthcheckSpec
+	// Env 是 App 级变量直传（ADR-0043 决策 2；键按 EnvNamePattern 受理面
+	// 即拒——与 image 直投同口径）。
+	Env map[string]string
 }
 
 // UploadDeploy 归一化上传产物形态（F1.10，ADR-0019 附录 A；strategy 面
@@ -137,6 +146,9 @@ type UploadDeployInput struct {
 // （与 git 源 webhook 路径同构；from_build 的 digest 解析按进程名，值本身
 // 只要求非空）。
 func UploadDeploy(in UploadDeployInput) (*specv1.AppSpec, error) {
+	if err := ValidateEnvKeys("upload.env", in.Env); err != nil {
+		return nil, err
+	}
 	builder := in.Builder
 	if builder == "" {
 		builder = BuilderDockerfile
@@ -181,6 +193,7 @@ func UploadDeploy(in UploadDeployInput) (*specv1.AppSpec, error) {
 			ImageOrigin: &specv1.ProcessSpec_FromBuild{FromBuild: processName},
 			Replicas:    1,
 			Healthcheck: in.Probe,
+			Env:         in.Env,
 		}},
 	}
 	if err := ValidateApp(s); err != nil {

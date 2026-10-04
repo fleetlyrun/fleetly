@@ -24,6 +24,7 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/state/project"
 	"github.com/fleetlyrun/fleetly/internal/state/route"
 	"github.com/fleetlyrun/fleetly/internal/state/secret"
+	"github.com/fleetlyrun/fleetly/internal/state/sharedvariable"
 	"github.com/fleetlyrun/fleetly/internal/state/volume"
 )
 
@@ -101,6 +102,12 @@ func configMsg(c configrepo.Config, withContent bool) *structurev1.Config {
 		out.Content = string(c.Content)
 	}
 	return out
+}
+
+// sharedVariableMsg 值明文回显（非敏感契约，ADR-0043 决策 1——指纹形态
+// 是 Secrets 的面，共享变量是 Configs 桶）。
+func sharedVariableMsg(v sharedvariable.SharedVariable) *structurev1.SharedVariable {
+	return &structurev1.SharedVariable{Id: v.ID, ProjectId: v.ProjectID, Name: v.Name, Value: v.Value, UpdatedAt: v.UpdatedAt}
 }
 
 func volumeMsg(v volume.Volume) *structurev1.Volume {

@@ -755,6 +755,13 @@
         "output_dir": {
           "type": "string",
           "title": "output_dir 是 static 形态的产物目录（builder=static 可选，缺省 \".\"）。"
+        },
+        "env": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "env 是 App 级变量直传（ADR-0043 决策 2）：image/upload 形态的单进程\n环境变量；归一化期覆盖 Project 层 SharedVariable（同键）。compose 形态\n自带 environment 声明面，携带即拒。"
         }
       },
       "title": "DeployRequest 三源（互斥；spec_file 已归一化 AppSpec JSON 随 API 扩展批）。"

@@ -18,6 +18,9 @@
       "name": "ConfigsService"
     },
     {
+      "name": "SharedVariablesService"
+    },
+    {
       "name": "VolumesService"
     },
     {
@@ -1039,6 +1042,116 @@
         ]
       }
     },
+    "/v1/shared-variables": {
+      "get": {
+        "operationId": "SharedVariablesService_ListSharedVariables",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1ListSharedVariablesResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "after_name",
+            "description": "after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name\n字典序升序（ADR-0026 after_* + limit 惯例）。",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "type": "integer",
+            "format": "int32"
+          }
+        ],
+        "tags": [
+          "SharedVariablesService"
+        ]
+      },
+      "put": {
+        "operationId": "SharedVariablesService_PutSharedVariable",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1PutSharedVariableResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1PutSharedVariableRequest"
+            }
+          }
+        ],
+        "tags": [
+          "SharedVariablesService"
+        ]
+      }
+    },
+    "/v1/shared-variables/{project_id}/{name}": {
+      "delete": {
+        "operationId": "SharedVariablesService_DeleteSharedVariable",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1DeleteSharedVariableResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "project_id",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "type": "string"
+          }
+        ],
+        "tags": [
+          "SharedVariablesService"
+        ]
+      }
+    },
     "/v1/volumes": {
       "get": {
         "operationId": "VolumesService_ListVolumes",
@@ -1407,6 +1520,17 @@
     "v1DeleteSecretResponse": {
       "type": "object"
     },
+    "v1DeleteSharedVariableResponse": {
+      "type": "object",
+      "properties": {
+        "affected_apps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
     "v1GetAppResponse": {
       "type": "object",
       "properties": {
@@ -1543,6 +1667,18 @@
         }
       }
     },
+    "v1ListSharedVariablesResponse": {
+      "type": "object",
+      "properties": {
+        "variables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "$ref": "#/definitions/v1SharedVariable"
+          }
+        }
+      }
+    },
     "v1ListVolumesResponse": {
       "type": "object",
       "properties": {
@@ -1675,6 +1811,36 @@
         }
       }
     },
+    "v1PutSharedVariableRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string",
+          "title": "name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符）。"
+        },
+        "value": {
+          "type": "string"
+        }
+      }
+    },
+    "v1PutSharedVariableResponse": {
+      "type": "object",
+      "properties": {
+        "variable": {
+          "$ref": "#/definitions/v1SharedVariable"
+        },
+        "affected_apps": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "title": "affected_apps 是受影响 App 提示（近似口径，ADR-0043 决策 4）：项目内\n已有 Revision 且最新冻结 env 会因本次变更而不同的 App——重部署取新值；\n不触发任何自动重部署。"
+    },
     "v1RevokeNetworkPeerResponse": {
       "type": "object",
       "properties": {
@@ -1703,6 +1869,27 @@
           "type": "string"
         }
       }
+    },
+    "v1SharedVariable": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "value": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      },
+      "title": "SharedVariable 是 Project 级共享变量（ADR-0043）：值明文回显——非敏感\n契约与 env 同源（敏感值走 Secrets）；归一化期作为 Project 层合成进\nAppSpec（App 层 env 覆盖）。"
     },
     "v1TriggerBackupResponse": {
       "type": "object",

@@ -143,6 +143,36 @@ service ConfigsService {
   }
 }
 
+// SharedVariablesService：Project 级共享变量（ADR-0043）。值可回显（非
+// 敏感契约——敏感值走 Secrets）；归一化期合成进 AppSpec（Project 层在
+// 下、App 层 env 覆盖，ADR-0027），改共享变量需重部署才生效——响应携带
+// 受影响 App 提示（近似口径）。
+service SharedVariablesService {
+  option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
+
+  rpc PutSharedVariable(PutSharedVariableRequest) returns (PutSharedVariableResponse) {
+    option (google.api.http) = { put: "/v1/shared-variables" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "shared_variables" op: SCOPE_OP_WRITE }
+    };
+  }
+  rpc ListSharedVariables(ListSharedVariablesRequest) returns (ListSharedVariablesResponse) {
+    option (google.api.http) = { get: "/v1/shared-variables" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "shared_variables" op: SCOPE_OP_READ }
+    };
+  }
+  rpc DeleteSharedVariable(DeleteSharedVariableRequest) returns (DeleteSharedVariableResponse) {
+    option (google.api.http) = { delete: "/v1/shared-variables/{project_id}/{name}" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "shared_variables" op: SCOPE_OP_ADMIN }
+    };
+  }
+}
+
 service VolumesService {
   option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
@@ -387,6 +417,41 @@ message ListConfigsRequest {
   int32 limit = 3;
 }
 message ListConfigsResponse { repeated Config configs = 1; }
+
+// SharedVariable 是 Project 级共享变量（ADR-0043）：值明文回显——非敏感
+// 契约与 env 同源（敏感值走 Secrets）；归一化期作为 Project 层合成进
+// AppSpec（App 层 env 覆盖）。
+message SharedVariable {
+  string id = 1;
+  string project_id = 2;
+  string name = 3;
+  string value = 4;
+  string updated_at = 5;
+}
+
+message PutSharedVariableRequest {
+  string project_id = 1;
+  // name 是 env 键形态（[A-Za-z_][A-Za-z0-9_]*，≤64 字符）。
+  string name = 2;
+  string value = 3;
+}
+// affected_apps 是受影响 App 提示（近似口径，ADR-0043 决策 4）：项目内
+// 已有 Revision 且最新冻结 env 会因本次变更而不同的 App——重部署取新值；
+// 不触发任何自动重部署。
+message PutSharedVariableResponse {
+  SharedVariable variable = 1;
+  repeated string affected_apps = 2;
+}
+message ListSharedVariablesRequest {
+  string project_id = 1;
+  // after_name 游标（上一页末条 name；空 = 首页）。游标轴 = 项目内 name
+  // 字典序升序（ADR-0026 after_* + limit 惯例）。
+  string after_name = 2;
+  int32 limit = 3;
+}
+message ListSharedVariablesResponse { repeated SharedVariable variables = 1; }
+message DeleteSharedVariableRequest { string project_id = 1; string name = 2; }
+message DeleteSharedVariableResponse { repeated string affected_apps = 1; }
 
 message Volume {
   string id = 1;

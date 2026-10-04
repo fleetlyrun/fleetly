@@ -32,9 +32,12 @@ var memberWriteResources = map[string]bool{
 	"tasks":       true,
 	"secrets":     true,
 	"configs":     true,
-	"volumes":     true,
-	"networks":    true,
-	"routes":      true,
+	// 共享变量是部署材料（ADR-0043）：与 secrets/configs 同桶——member
+	// 可写不可拆家（project/app 建删仍不开放）。
+	"shared_variables": true,
+	"volumes":          true,
+	"networks":         true,
+	"routes":           true,
 }
 
 // memberExcludedResources 是 member 角色完全不获得的资源集（"不能管人、

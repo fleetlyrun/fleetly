@@ -319,14 +319,14 @@ func TestComposeVolumeModeParsing(t *testing.T) {
 func TestImageDeployProbeDeclaration(t *testing.T) {
 	s, err := ImageDeploy("a", "p", "nginx:1.27", "", &specv1.HealthcheckSpec{
 		Probe: &specv1.HealthcheckSpec_HttpPath{HttpPath: "/healthz"}, Retries: 3,
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.Len(t, s.GetProcesses(), 1)
 	assert.Equal(t, "/healthz", s.GetProcesses()[0].GetHealthcheck().GetHttpPath())
 
 	s, err = ImageDeploy("a", "p", "nginx:1.27", "worker", &specv1.HealthcheckSpec{
 		Probe: &specv1.HealthcheckSpec_TcpPort{TcpPort: 5432},
-	})
+	}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, int32(5432), s.GetProcesses()[0].GetHealthcheck().GetTcpPort())
 }

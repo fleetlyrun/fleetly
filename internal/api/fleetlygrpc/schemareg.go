@@ -66,6 +66,8 @@ func init() {
 		eventSecretUpdated,
 		eventSecretDeleted,
 		eventConfigUpdated,
+		eventVariableUpdated,
+		eventVariableDeleted,
 		eventVolumeCreated,
 		eventNetworkCreated,
 	} {

@@ -1,6 +1,6 @@
 ID	NAME	TEAM	BUILTIN	SCOPES
-builtin-admin	admin	-	yes	[alerts:admin apps:admin audit:read builds:admin channels:admin configs:admin databases:admin deployments:admin events:admin invitations:admin logs:admin metrics:admin networks:admin nodes:admin platform:admin projects:admin revisions:admin roles:admin routes:admin secrets:admin tasks:admin teams:admin tokens:admin users:admin volumes:admin]
-builtin-member	member	-	yes	[alerts:read apps:read builds:read builds:write channels:read configs:read configs:write databases:read deployments:read deployments:write events:read logs:read metrics:read networks:read networks:write nodes:read projects:read revisions:read routes:read routes:write secrets:read secrets:write tasks:read tasks:write volumes:read volumes:write]
+builtin-admin	admin	-	yes	[alerts:admin apps:admin audit:read builds:admin channels:admin configs:admin databases:admin deployments:admin events:admin invitations:admin logs:admin metrics:admin networks:admin nodes:admin platform:admin projects:admin revisions:admin roles:admin routes:admin secrets:admin shared_variables:admin tasks:admin teams:admin tokens:admin users:admin volumes:admin]
+builtin-member	member	-	yes	[alerts:read apps:read builds:read builds:write channels:read configs:read configs:write databases:read deployments:read deployments:write events:read logs:read metrics:read networks:read networks:write nodes:read projects:read revisions:read routes:read routes:write secrets:read secrets:write shared_variables:read shared_variables:write tasks:read tasks:write volumes:read volumes:write]
 builtin-owner	owner	-	yes	[*]
 <ULID>	deployer	default	no	[deployments:write]
 <ULID>	deployer-json	default	no	[deployments:write]

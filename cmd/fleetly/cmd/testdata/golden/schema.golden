@@ -73,6 +73,8 @@ token.created	event	A token was minted (secret shown once at creation).
 token.revoked	event	A token was revoked; its next call will be rejected.
 upload.stored	event	An uploaded source was stored (content-addressed; payload carries id, digest, size and deduplicated).
 user.created	event	A user was created and granted a role in a team.
+variable.deleted	event	A project shared variable was deleted.
+variable.updated	event	A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).
 volume.created	event	A volume was created.
 workload.drift_detected	event	Observed workload diverged from the ensured generation or spec (ADR-0022).
 workload.stopped	event	A steady-state workload was observed stopped at the current generation.

@@ -825,6 +825,195 @@ var ConfigsService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	SharedVariablesService_PutSharedVariable_FullMethodName    = "/fleetly.structure.v1.SharedVariablesService/PutSharedVariable"
+	SharedVariablesService_ListSharedVariables_FullMethodName  = "/fleetly.structure.v1.SharedVariablesService/ListSharedVariables"
+	SharedVariablesService_DeleteSharedVariable_FullMethodName = "/fleetly.structure.v1.SharedVariablesService/DeleteSharedVariable"
+)
+
+// SharedVariablesServiceClient is the client API for SharedVariablesService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// SharedVariablesService：Project 级共享变量（ADR-0043）。值可回显（非
+// 敏感契约——敏感值走 Secrets）；归一化期合成进 AppSpec（Project 层在
+// 下、App 层 env 覆盖，ADR-0027），改共享变量需重部署才生效——响应携带
+// 受影响 App 提示（近似口径）。
+type SharedVariablesServiceClient interface {
+	PutSharedVariable(ctx context.Context, in *PutSharedVariableRequest, opts ...grpc.CallOption) (*PutSharedVariableResponse, error)
+	ListSharedVariables(ctx context.Context, in *ListSharedVariablesRequest, opts ...grpc.CallOption) (*ListSharedVariablesResponse, error)
+	DeleteSharedVariable(ctx context.Context, in *DeleteSharedVariableRequest, opts ...grpc.CallOption) (*DeleteSharedVariableResponse, error)
+}
+
+type sharedVariablesServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewSharedVariablesServiceClient(cc grpc.ClientConnInterface) SharedVariablesServiceClient {
+	return &sharedVariablesServiceClient{cc}
+}
+
+func (c *sharedVariablesServiceClient) PutSharedVariable(ctx context.Context, in *PutSharedVariableRequest, opts ...grpc.CallOption) (*PutSharedVariableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PutSharedVariableResponse)
+	err := c.cc.Invoke(ctx, SharedVariablesService_PutSharedVariable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sharedVariablesServiceClient) ListSharedVariables(ctx context.Context, in *ListSharedVariablesRequest, opts ...grpc.CallOption) (*ListSharedVariablesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListSharedVariablesResponse)
+	err := c.cc.Invoke(ctx, SharedVariablesService_ListSharedVariables_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *sharedVariablesServiceClient) DeleteSharedVariable(ctx context.Context, in *DeleteSharedVariableRequest, opts ...grpc.CallOption) (*DeleteSharedVariableResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(DeleteSharedVariableResponse)
+	err := c.cc.Invoke(ctx, SharedVariablesService_DeleteSharedVariable_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// SharedVariablesServiceServer is the server API for SharedVariablesService service.
+// All implementations must embed UnimplementedSharedVariablesServiceServer
+// for forward compatibility.
+//
+// SharedVariablesService：Project 级共享变量（ADR-0043）。值可回显（非
+// 敏感契约——敏感值走 Secrets）；归一化期合成进 AppSpec（Project 层在
+// 下、App 层 env 覆盖，ADR-0027），改共享变量需重部署才生效——响应携带
+// 受影响 App 提示（近似口径）。
+type SharedVariablesServiceServer interface {
+	PutSharedVariable(context.Context, *PutSharedVariableRequest) (*PutSharedVariableResponse, error)
+	ListSharedVariables(context.Context, *ListSharedVariablesRequest) (*ListSharedVariablesResponse, error)
+	DeleteSharedVariable(context.Context, *DeleteSharedVariableRequest) (*DeleteSharedVariableResponse, error)
+	mustEmbedUnimplementedSharedVariablesServiceServer()
+}
+
+// UnimplementedSharedVariablesServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedSharedVariablesServiceServer struct{}
+
+func (UnimplementedSharedVariablesServiceServer) PutSharedVariable(context.Context, *PutSharedVariableRequest) (*PutSharedVariableResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutSharedVariable not implemented")
+}
+func (UnimplementedSharedVariablesServiceServer) ListSharedVariables(context.Context, *ListSharedVariablesRequest) (*ListSharedVariablesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListSharedVariables not implemented")
+}
+func (UnimplementedSharedVariablesServiceServer) DeleteSharedVariable(context.Context, *DeleteSharedVariableRequest) (*DeleteSharedVariableResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteSharedVariable not implemented")
+}
+func (UnimplementedSharedVariablesServiceServer) mustEmbedUnimplementedSharedVariablesServiceServer() {
+}
+func (UnimplementedSharedVariablesServiceServer) testEmbeddedByValue() {}
+
+// UnsafeSharedVariablesServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to SharedVariablesServiceServer will
+// result in compilation errors.
+type UnsafeSharedVariablesServiceServer interface {
+	mustEmbedUnimplementedSharedVariablesServiceServer()
+}
+
+func RegisterSharedVariablesServiceServer(s grpc.ServiceRegistrar, srv SharedVariablesServiceServer) {
+	// If the following call panics, it indicates UnimplementedSharedVariablesServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&SharedVariablesService_ServiceDesc, srv)
+}
+
+func _SharedVariablesService_PutSharedVariable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutSharedVariableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SharedVariablesServiceServer).PutSharedVariable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SharedVariablesService_PutSharedVariable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SharedVariablesServiceServer).PutSharedVariable(ctx, req.(*PutSharedVariableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SharedVariablesService_ListSharedVariables_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListSharedVariablesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SharedVariablesServiceServer).ListSharedVariables(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SharedVariablesService_ListSharedVariables_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SharedVariablesServiceServer).ListSharedVariables(ctx, req.(*ListSharedVariablesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SharedVariablesService_DeleteSharedVariable_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteSharedVariableRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SharedVariablesServiceServer).DeleteSharedVariable(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SharedVariablesService_DeleteSharedVariable_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SharedVariablesServiceServer).DeleteSharedVariable(ctx, req.(*DeleteSharedVariableRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// SharedVariablesService_ServiceDesc is the grpc.ServiceDesc for SharedVariablesService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var SharedVariablesService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "fleetly.structure.v1.SharedVariablesService",
+	HandlerType: (*SharedVariablesServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "PutSharedVariable",
+			Handler:    _SharedVariablesService_PutSharedVariable_Handler,
+		},
+		{
+			MethodName: "ListSharedVariables",
+			Handler:    _SharedVariablesService_ListSharedVariables_Handler,
+		},
+		{
+			MethodName: "DeleteSharedVariable",
+			Handler:    _SharedVariablesService_DeleteSharedVariable_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "fleetly/structure/v1/structure.proto",
+}
+
+const (
 	VolumesService_CreateVolume_FullMethodName = "/fleetly.structure.v1.VolumesService/CreateVolume"
 	VolumesService_ListVolumes_FullMethodName  = "/fleetly.structure.v1.VolumesService/ListVolumes"
 )
