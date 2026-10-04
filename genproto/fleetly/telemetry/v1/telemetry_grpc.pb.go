@@ -271,8 +271,9 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// LogsService：RuntimeLogs 直读（F0.25；诚实标注——仅实时 + 最近缓冲，
-// 持久化检索 N2）。
+// LogsService：日志查询双径入口（ADR-0040）：无 text = Runtime 实时路径
+// （follow/since/tail，集群面）；text = 持久化检索路径（VictoriaLogs
+// 保留窗 + 全文过滤）。Logging 面停用时检索路径精确失败。
 type LogsServiceClient interface {
 	StreamLogs(ctx context.Context, in *StreamLogsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[StreamLogsResponse], error)
 }
@@ -308,8 +309,9 @@ type LogsService_StreamLogsClient = grpc.ServerStreamingClient[StreamLogsRespons
 // All implementations must embed UnimplementedLogsServiceServer
 // for forward compatibility.
 //
-// LogsService：RuntimeLogs 直读（F0.25；诚实标注——仅实时 + 最近缓冲，
-// 持久化检索 N2）。
+// LogsService：日志查询双径入口（ADR-0040）：无 text = Runtime 实时路径
+// （follow/since/tail，集群面）；text = 持久化检索路径（VictoriaLogs
+// 保留窗 + 全文过滤）。Logging 面停用时检索路径精确失败。
 type LogsServiceServer interface {
 	StreamLogs(*StreamLogsRequest, grpc.ServerStreamingServer[StreamLogsResponse]) error
 	mustEmbedUnimplementedLogsServiceServer()

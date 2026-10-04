@@ -15,6 +15,8 @@ message AppConfig {
   Registry registry = 4;
   // Platform Backup 面（F2.2，ADR-0039）：restic 快照节拍/保留/外置仓。
   PlatformBackup platform_backup = 5;
+  // Logging 面（F2.4，ADR-0040）：受管 VictoriaLogs 检索端点与保留窗。
+  Logging logging = 6;
 }
 
 // PlatformBackup 是控制面导出（CONTEXT.md 词条）的配置面：本地仓恒在
@@ -76,6 +78,16 @@ message Registry {
   // 在 prepare 精确失败）。与旧通道 env FLEETLY_REGISTRY_ADDR 同键，
   // config 值优先（ADR-0036）。env 形态 FLEETLY_REGISTRY_ADDR。
   string addr = 1;
+}
+
+// Logging 是受管日志面配置（ADR-0040）：addr 空 = Logging 面停用
+//（logs 回退 Runtime 实时路径、build 日志回退环形缓冲——升级零扰动）。
+message Logging {
+  // 受管 VictoriaLogs 检索/采集端点（含端口，如 10.124.0.3:9428，
+  // routing mesh 发布地址）；install.sh 与 registry.addr 同源物化。
+  string addr = 1;
+  // retention_days 是保留窗天数（空值回退 30；VL -retentionPeriod 同口径）。
+  int64 retention_days = 2;
 }
 
 message Data {

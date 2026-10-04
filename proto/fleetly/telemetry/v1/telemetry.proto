@@ -66,8 +66,9 @@ service EventsService {
   }
 }
 
-// LogsService：RuntimeLogs 直读（F0.25；诚实标注——仅实时 + 最近缓冲，
-// 持久化检索 N2）。
+// LogsService：日志查询双径入口（ADR-0040）：无 text = Runtime 实时路径
+//（follow/since/tail，集群面）；text = 持久化检索路径（VictoriaLogs
+// 保留窗 + 全文过滤）。Logging 面停用时检索路径精确失败。
 service LogsService {
   option (grpcapi.v1.service_auth) = { default_access: ACCESS_LEVEL_SERVER };
 
@@ -136,13 +137,17 @@ message StreamLogsRequest {
   // tail_lines 尾部行数（0 = 全量最近缓冲）；follow 持续跟随。
   int64 tail_lines = 3;
   bool follow = 4;
-  // since/until 是时间窗（RFC3339；空 = 不限）。RuntimeLogs 直读边界：
-  // 窗口作用于最近缓冲，不回溯持久化检索（N2）。
+  // since/until 是时间窗（RFC3339；空 = 不限）。实时路径（无 text）窗口
+  // 作用于最近缓冲；text 检索路径窗口作用于保留窗（ADR-0040 双径）。
   string since = 5;
   string until = 6;
+  // text 是文本过滤（ADR-0040 检索路径）：非空时经持久化日志存储全保留窗
+  // 匹配；与 follow 组合 = 实时尾随检索（≥5s 批汇延迟）。
+  string text = 7;
 }
 
-// StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339）。
+// StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container
+// 是载体归因标识——swarm 形态为 task ID，ADR-0040）。
 message StreamLogsResponse {
   string workload_id = 1;
   string container = 2;

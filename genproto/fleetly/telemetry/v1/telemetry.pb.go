@@ -503,10 +503,13 @@ type StreamLogsRequest struct {
 	// tail_lines 尾部行数（0 = 全量最近缓冲）；follow 持续跟随。
 	TailLines int64 `protobuf:"varint,3,opt,name=tail_lines,json=tailLines,proto3" json:"tail_lines,omitempty"`
 	Follow    bool  `protobuf:"varint,4,opt,name=follow,proto3" json:"follow,omitempty"`
-	// since/until 是时间窗（RFC3339；空 = 不限）。RuntimeLogs 直读边界：
-	// 窗口作用于最近缓冲，不回溯持久化检索（N2）。
-	Since         string `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
-	Until         string `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"`
+	// since/until 是时间窗（RFC3339；空 = 不限）。实时路径（无 text）窗口
+	// 作用于最近缓冲；text 检索路径窗口作用于保留窗（ADR-0040 双径）。
+	Since string `protobuf:"bytes,5,opt,name=since,proto3" json:"since,omitempty"`
+	Until string `protobuf:"bytes,6,opt,name=until,proto3" json:"until,omitempty"`
+	// text 是文本过滤（ADR-0040 检索路径）：非空时经持久化日志存储全保留窗
+	// 匹配；与 follow 组合 = 实时尾随检索（≥5s 批汇延迟）。
+	Text          string `protobuf:"bytes,7,opt,name=text,proto3" json:"text,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -583,7 +586,15 @@ func (x *StreamLogsRequest) GetUntil() string {
 	return ""
 }
 
-// StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339）。
+func (x *StreamLogsRequest) GetText() string {
+	if x != nil {
+		return x.Text
+	}
+	return ""
+}
+
+// StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container
+// 是载体归因标识——swarm 形态为 task ID，ADR-0040）。
 type StreamLogsResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	WorkloadId    string                 `protobuf:"bytes,1,opt,name=workload_id,json=workloadId,proto3" json:"workload_id,omitempty"`
@@ -692,7 +703,7 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"\x18IssueEventTicketResponse\x12\x16\n" +
 	"\x06ticket\x18\x01 \x01(\tR\x06ticket\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xa7\x01\n" +
+	"expires_in\x18\x02 \x01(\x05R\texpiresIn\"\xbb\x01\n" +
 	"\x11StreamLogsRequest\x12\x15\n" +
 	"\x06app_id\x18\x01 \x01(\tR\x05appId\x12\x18\n" +
 	"\aprocess\x18\x02 \x01(\tR\aprocess\x12\x1d\n" +
@@ -700,7 +711,8 @@ const file_fleetly_telemetry_v1_telemetry_proto_rawDesc = "" +
 	"tail_lines\x18\x03 \x01(\x03R\ttailLines\x12\x16\n" +
 	"\x06follow\x18\x04 \x01(\bR\x06follow\x12\x14\n" +
 	"\x05since\x18\x05 \x01(\tR\x05since\x12\x14\n" +
-	"\x05until\x18\x06 \x01(\tR\x05until\"\x8f\x01\n" +
+	"\x05until\x18\x06 \x01(\tR\x05until\x12\x12\n" +
+	"\x04text\x18\a \x01(\tR\x04text\"\x8f\x01\n" +
 	"\x12StreamLogsResponse\x12\x1f\n" +
 	"\vworkload_id\x18\x01 \x01(\tR\n" +
 	"workloadId\x12\x1c\n" +

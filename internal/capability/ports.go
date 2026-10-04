@@ -230,14 +230,60 @@ func EdgeAuthTokenFromContext(ctx context.Context) string {
 	return token
 }
 
-// Logging 是日志 Capability 端口（VictoriaLogs 受管自宿为默认；N2 持久
-// 检索，N0 诚实标注"仅实时+最近缓冲"）。
+// loggingAddrKey 是 Logging 检索端点的装配期 ctx 载键（唯一写入点在
+// internal/assembly 的 NewLoggingProvider；消费方：VictoriaLogs Provider
+// 工厂——daemon 经该地址访问受管存储的 ingest/query 面，ADR-0040）。
+type loggingAddrKey struct{}
+
+// WithLoggingAddr 把受管日志存储端点挂进装配 ctx：
+// config.logging.addr 是地址唯一契约源，空值不注入（Logging 面停用，
+// zot 同款诚实降级——logs 回退 Runtime 实时路径）。
+func WithLoggingAddr(ctx context.Context, addr string) context.Context {
+	if addr == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, loggingAddrKey{}, addr)
+}
+
+// LoggingAddrFromContext 读回装配期注入的日志存储端点（未注入 = 空）。
+func LoggingAddrFromContext(ctx context.Context) string {
+	addr, _ := ctx.Value(loggingAddrKey{}).(string)
+	return addr
+}
+
+// loggingRetentionKey 是日志保留窗天数的装配期 ctx 载键（消费方：
+// VictoriaLogs Provider 工厂——受管 argv -retentionPeriod 同口径，
+// ADR-0040）。
+type loggingRetentionKey struct{}
+
+// WithLoggingRetentionDays 把保留窗天数挂进装配 ctx（config 缺省 30 已在
+// config 层落定；0 不注入——工厂按自身缺省取 30）。
+func WithLoggingRetentionDays(ctx context.Context, days int64) context.Context {
+	if days <= 0 {
+		return ctx
+	}
+	return context.WithValue(ctx, loggingRetentionKey{}, days)
+}
+
+// LoggingRetentionDaysFromContext 读回保留窗天数（未注入 = 0，工厂自取
+// 缺省）。
+func LoggingRetentionDaysFromContext(ctx context.Context) int64 {
+	days, _ := ctx.Value(loggingRetentionKey{}).(int64)
+	return days
+}
+
+// Logging 是日志 Capability 端口（VictoriaLogs 受管自宿为默认；ADR-0040：
+// 持久化检索 + 采集承载。无 text 的实时跟随归 Runtime.StreamLogs——双径
+// 路由在 API 面，本端口只承接检索路径与采集回灌）。
 type Logging interface {
 	Provider
 
-	// Ingest 摄入一批日志帧（采集回拨通道）。
+	// Ingest 摄入一批日志帧（采集环与 build 日志出口的回灌通道；批次内
+	// 帧序保持，成功即调用方推进游标）。
 	Ingest(ctx context.Context, frames []LogFrame) error
-	// Query 持久化检索（时间/文本/容器过滤；N2 落地）。
+	// Query 持久化检索（时间/文本/容器过滤）。Text 非空时走全文匹配；
+	// Follow 经存储端实时尾随承载（若实现支持），批汇延迟由实现方诚实
+	// 标注。行级隔离由调用方查询构造执法（本端口单租户凭证）。
 	Query(ctx context.Context, q LogQuery, w LogWriter) error
 }
 

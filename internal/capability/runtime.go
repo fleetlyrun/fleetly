@@ -463,7 +463,7 @@ type EnrollKit struct {
 	ExpiresAt time.Time
 }
 
-// LogQuery 是日志读取查询（时间窗/tail/容器过滤）。
+// LogQuery 是日志读取查询（时间窗/tail/容器过滤/文本匹配）。
 type LogQuery struct {
 	// Namespace 限定隔离域；WorkloadID 进一步限定单个 Workload。
 	Namespace  NamespaceRef
@@ -474,6 +474,8 @@ type LogQuery struct {
 	TailLines int64
 	// Follow 持续跟随。
 	Follow bool
+	// Text 是文本过滤（ADR-0040 检索路径）：非空时只返回包含该子串的行。
+	Text string
 }
 
 // LogWriter 是日志帧接收端（流式背压由实现负责）。
@@ -482,6 +484,14 @@ type LogWriter interface {
 	WriteLog(ctx context.Context, frame LogFrame) error
 }
 
+// 日志源类别（ADR-0040：Ingest 承载面的域归因）。
+const (
+	// LogKindRuntime 是容器运行时日志（采集环）。
+	LogKindRuntime = "runtime"
+	// LogKindBuild 是构建日志（build 出口单点，P11 脱敏下游）。
+	LogKindBuild = "build"
+)
+
 // LogFrame 是一帧容器日志。
 type LogFrame struct {
 	WorkloadID string
@@ -489,4 +499,13 @@ type LogFrame struct {
 	Node       string
 	Time       time.Time
 	Line       []byte
+	// 域归因（ADR-0040 Ingest 承载面）：采集环与 build 出口填充——
+	// 持久化存储按这些字段建立可检索维度；实时路径消费端可忽略。
+	Team    string
+	Project string
+	App     string
+	// Kind 是日志源类别（LogKindRuntime/LogKindBuild）。
+	Kind string
+	// Source 是源内标识：build 形态 = Build ID。
+	Source string
 }

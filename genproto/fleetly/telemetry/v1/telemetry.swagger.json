@@ -212,13 +212,20 @@
           },
           {
             "name": "since",
-            "description": "since/until 是时间窗（RFC3339；空 = 不限）。RuntimeLogs 直读边界：\n窗口作用于最近缓冲，不回溯持久化检索（N2）。",
+            "description": "since/until 是时间窗（RFC3339；空 = 不限）。实时路径（无 text）窗口\n作用于最近缓冲；text 检索路径窗口作用于保留窗（ADR-0040 双径）。",
             "in": "query",
             "required": false,
             "type": "string"
           },
           {
             "name": "until",
+            "in": "query",
+            "required": false,
+            "type": "string"
+          },
+          {
+            "name": "text",
+            "description": "text 是文本过滤（ADR-0040 检索路径）：非空时经持久化日志存储全保留窗\n匹配；与 follow 组合 = 实时尾随检索（≥5s 批汇延迟）。",
             "in": "query",
             "required": false,
             "type": "string"
@@ -333,7 +340,7 @@
           "format": "byte"
         }
       },
-      "title": "StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339）。"
+      "title": "StreamLogsResponse 一帧日志（workload 标注归属；时间 RFC3339；container\n是载体归因标识——swarm 形态为 task ID，ADR-0040）。"
     }
   }
 }
