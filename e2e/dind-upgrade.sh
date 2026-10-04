@@ -222,14 +222,31 @@ log "task baselines: web=$WEB_BASE worker=$WORKER_BASE db=$DB_BASE"
 
 # 7. Route 探针（零失败预算）。h2cclient -host 设 Host 头直连 IP，零 DNS
 #    依赖（dind-h2c-route.sh 同款）；STATUS 行出 stdout、body 落文件。
+#    窗内重试（1s×3）：区分瞬时单包抖动（swarm ingress 在新受管全局服务
+#    入网时的 IPVS 重编程，实证 2026-10-04——恰在新 daemon 起 2s、单次
+#    refused、下一拍即绿）与真实停机（载体滚动=持续拒连，三次全灭才计数）。
+#    预算语义不变：用户可见的持续中断仍是零容忍。
 PROBE_FAILS=0
 probe() {
   code=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "demo.$DIND_IP.sslip.io" \
     -o /tmp/probe-body "http://$DIND_IP/" \
     | sed -n 's/^STATUS \([0-9]*\).*/\1/p')
   if [ "$code" != "200" ]; then
+    sleep 1
+    code=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "demo.$DIND_IP.sslip.io" \
+      -o /tmp/probe-body "http://$DIND_IP/" \
+      | sed -n 's/^STATUS \([0-9]*\).*/\1/p')
+  fi
+  if [ "$code" != "200" ]; then
+    sleep 1
+    code=$(docker exec "$DIND_CID" /root/bins/h2cclient -host "demo.$DIND_IP.sslip.io" \
+      -o /tmp/probe-body "http://$DIND_IP/" \
+      | sed -n 's/^STATUS \([0-9]*\).*/\1/p')
+  fi
+  if [ "$code" != "200" ]; then
     PROBE_FAILS=$((PROBE_FAILS + 1))
     echo "probe failed with status: $code" >&2
+    docker exec "$DIND_CID" docker service ps "$(docker exec "$DIND_CID" docker service ls --quiet --filter name=fleetly-fleetly-system-edge)" --format '{{.Name}} {{.CurrentState}}' 2>/dev/null | head -3 >&2 || true
   fi
 }
 # 路由就绪窗（dind-h2c-route.sh 同款）：quickstart 返回 ≠ traefik 已发布
