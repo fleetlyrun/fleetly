@@ -39,6 +39,10 @@ type Build struct {
 	RevisionID string
 	State      State
 	Digest     string
+	// Repo 是产物所在仓库名（不含 registry 地址，<projectID>/<appID> 前
+	// 纲；空 = 存量扁平布局 <appID>——投影期回退，ADR-0036 N2 兑现节 2）。
+	// 创建时定型不可变：与 digest 同为产物定位事实。
+	Repo       string
 	Error      string
 	CreatedAt  string
 	UpdatedAt  string
@@ -58,9 +62,9 @@ func (r *Repo) Create(ctx context.Context, run state.Runner, b *Build) error {
 	now := state.FormatTime(r.clock.Now())
 	b.CreatedAt, b.UpdatedAt = now, now
 	_, err := run.ExecContext(ctx, `
-		INSERT INTO builds (id, app_id, revision_id, state, digest, error, created_at, updated_at, finished_at)
-		VALUES (?, ?, ?, ?, '', '', ?, ?, '')`,
-		b.ID, b.AppID, b.RevisionID, string(b.State), b.CreatedAt, b.UpdatedAt)
+		INSERT INTO builds (id, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at)
+		VALUES (?, ?, ?, ?, '', ?, '', ?, ?, '')`,
+		b.ID, b.AppID, b.RevisionID, string(b.State), b.Repo, b.CreatedAt, b.UpdatedAt)
 	return err
 }
 
@@ -139,6 +143,15 @@ func (r *Repo) ListActive(ctx context.Context, run state.Runner) ([]Build, error
 	return out, rows.Err()
 }
 
+// StampRepo 给存量在途行补章 repo（前纲切换的兼容面：升级时点 queued/
+// building 的行按新公式重放输入，产物将落前缀仓——repo 必须与之一致；
+// WHERE repo=” 使补章幂等一次性，已章行不受扰）。
+func (r *Repo) StampRepo(ctx context.Context, run state.Runner, id, repo string) error {
+	_, err := run.ExecContext(ctx,
+		`UPDATE builds SET repo = ? WHERE id = ? AND repo = ''`, repo, id)
+	return err
+}
+
 // Transit 是状态 CAS（同 deployment.Transit 口径；mut 补充 digest/error）。
 func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []State, to State, mut func(*Build)) error {
 	cur, err := r.Get(ctx, run, id)
@@ -175,13 +188,13 @@ func (r *Repo) Transit(ctx context.Context, run state.Runner, id string, from []
 }
 
 const selectCols = `
-	SELECT id, app_id, revision_id, state, digest, error, created_at, updated_at, finished_at
+	SELECT id, app_id, revision_id, state, digest, repo, error, created_at, updated_at, finished_at
 	FROM builds`
 
 func scanBuild(scan func(dest ...any) error) (*Build, error) {
 	var b Build
 	var stateStr string
-	err := scan(&b.ID, &b.AppID, &b.RevisionID, &stateStr, &b.Digest, &b.Error,
+	err := scan(&b.ID, &b.AppID, &b.RevisionID, &stateStr, &b.Digest, &b.Repo, &b.Error,
 		&b.CreatedAt, &b.UpdatedAt, &b.FinishedAt)
 	if err != nil {
 		return nil, state.MapScanErr(err)
