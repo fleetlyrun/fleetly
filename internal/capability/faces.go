@@ -21,6 +21,9 @@ type ProviderFaces struct {
 	Managed         Managed         // 受管部署声明
 	MaterialsSource MaterialsSource // 受管域材料集
 	ConfigSource    ConfigSource    // 全量动态配置快照
+	// Registry 子面（ADR-0036 N2 兑现节 2：per-Project 凭证域隔离）
+	ProjectEndpoints       ProjectEndpoints       // per-Project 端点/凭证
+	ProjectScopedMaterials ProjectScopedMaterials // 材料随活跃 Project 集再生成
 }
 
 // FacesOf 探测一个 Provider 的可选子面。duck-typing 单点：实现即拥有
@@ -52,6 +55,12 @@ func FacesOf(p Provider) ProviderFaces {
 	if v, ok := p.(ConfigSource); ok {
 		f.ConfigSource = v
 	}
+	if v, ok := p.(ProjectEndpoints); ok {
+		f.ProjectEndpoints = v
+	}
+	if v, ok := p.(ProjectScopedMaterials); ok {
+		f.ProjectScopedMaterials = v
+	}
 	return f
 }
 
@@ -82,6 +91,12 @@ func (f ProviderFaces) Offered() []string {
 	}
 	if f.ConfigSource != nil {
 		out = append(out, "config")
+	}
+	if f.ProjectEndpoints != nil {
+		out = append(out, "project-endpoints")
+	}
+	if f.ProjectScopedMaterials != nil {
+		out = append(out, "project-materials")
 	}
 	return out
 }

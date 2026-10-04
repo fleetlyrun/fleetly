@@ -29,6 +29,10 @@ func (p *fakeFaceProvider) ManagedWorkloads() []Workload                        
 func (p *fakeFaceProvider) ManagedNamespace() NamespaceRef                       { return NamespaceRef{} }
 func (p *fakeFaceProvider) ManagedMaterials() Materials                          { return Materials{} }
 func (p *fakeFaceProvider) ConfigSnapshot() []byte                               { return nil }
+func (p *fakeFaceProvider) EndpointForProject(context.Context, string) (RegistryEndpoint, error) {
+	return RegistryEndpoint{}, nil
+}
+func (p *fakeFaceProvider) ManagedMaterialsFor([]string) Materials { return Materials{} }
 
 func TestFacesOfAllOffered(t *testing.T) {
 	p := &fakeFaceProvider{}
@@ -40,7 +44,10 @@ func TestFacesOfAllOffered(t *testing.T) {
 	assert.NotNil(t, f.Managed)
 	assert.NotNil(t, f.MaterialsSource)
 	assert.NotNil(t, f.ConfigSource)
-	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "managed", "materials", "config"},
+	assert.NotNil(t, f.ProjectEndpoints)
+	assert.NotNil(t, f.ProjectScopedMaterials)
+	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "managed", "materials", "config",
+		"project-endpoints", "project-materials"},
 		f.Offered(), "enumeration order is frozen")
 }
 
@@ -59,16 +66,22 @@ func TestFacesOfNoneOffered(t *testing.T) {
 	assert.Nil(t, f.Managed)
 	assert.Nil(t, f.MaterialsSource)
 	assert.Nil(t, f.ConfigSource)
+	assert.Nil(t, f.ProjectEndpoints)
+	assert.Nil(t, f.ProjectScopedMaterials)
 	assert.Empty(t, f.Offered())
 }
 
-// partialFaceProvider 实现两个不面目（logs + materials——跨面目混搭）。
+// partialFaceProvider 实现两个不面目（logs + materials——跨面目混搭；
+// project-endpoints 单挂——Registry 双子面彼此独立，ADR-0036 N2 兑现）。
 type partialFaceProvider struct {
 	bareFaceProvider
 }
 
 func (p *partialFaceProvider) StreamLogs(context.Context, LogQuery, LogWriter) error { return nil }
 func (p *partialFaceProvider) ManagedMaterials() Materials                           { return Materials{} }
+func (p *partialFaceProvider) EndpointForProject(context.Context, string) (RegistryEndpoint, error) {
+	return RegistryEndpoint{}, nil
+}
 
 func TestFacesOfPartial(t *testing.T) {
 	f := FacesOf(&partialFaceProvider{})
@@ -76,5 +89,7 @@ func TestFacesOfPartial(t *testing.T) {
 	assert.Nil(t, f.Admin)
 	assert.NotNil(t, f.MaterialsSource)
 	assert.Nil(t, f.Managed, "MaterialsSource does not imply Managed (独立子面)")
-	assert.Equal(t, []string{"logs", "materials"}, f.Offered())
+	assert.NotNil(t, f.ProjectEndpoints)
+	assert.Nil(t, f.ProjectScopedMaterials, "ProjectEndpoints does not imply ProjectScopedMaterials (独立子面)")
+	assert.Equal(t, []string{"logs", "materials", "project-endpoints"}, f.Offered())
 }

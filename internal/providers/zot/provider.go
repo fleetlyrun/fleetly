@@ -2,6 +2,10 @@
 // （ADR-0004——以普通 Workload 形态跑在 Runtime 上，经通用 reconciler
 // 部署；ADR-0019 附录 B 是本形态的裁决真源）。构建产物推送目标与
 // worker 拉取来源；digest 直存（Revision 冻结 digest，引用在投影期组合）。
+// per-Project 凭证域隔离（ADR-0036 N2 兑现节 2）：仓布局带 Project 前缀
+// （<addr>/<projectID>/<appID>）+ accessControl per-Project 用户
+// （<projectID>/** 仓门禁）；扁平仓旧 digest 引用保持全用户可读（defaultPolicy
+// read on "*"——存量暴露不扩大不收缩），新内容全走前缀布局。
 package zot
 
 import (
@@ -14,7 +18,9 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -23,7 +29,7 @@ import (
 )
 
 // Image 是受管 zot 镜像（钉版，ADR-0021 口径；minimal 变体：htpasswd 认证
-// 是核心能力非扩展。升级经 Platform 升级序，ADR-0015）。
+// 与 accessControl 门禁是核心能力非扩展。升级经 Platform 升级序，ADR-0015）。
 const Image = "ghcr.io/project-zot/zot-minimal:v2.1.21"
 
 // 受管形态常量（ADR-0019 附录 B.1）：端口发布 5000（routing mesh）、数据卷
@@ -35,7 +41,8 @@ const (
 	configFile   = "zot-config"
 	htpasswdFile = "zot-htpasswd" //nolint:gosec // G101 误报：文件名非机密（内容是 bcrypt 哈希）
 
-	// credentialUser 是平台凭证用户名（密码首启随机生成，见 credentialFile）。
+	// credentialUser 是平台凭证用户名（adminPolicy 面：全域读写——备份/
+	// 迁移/修复用；密码首启随机生成，见 credentialFile）。
 	credentialUser = "fleetly" //nolint:gosec // G101 误报：用户名非机密，密码随机生成落盘
 	// credentialFile 是平台凭证落盘（<DataRoot>/keys/ 下，与 KEK 同目录
 	// 文化；0o600，备份随数据根）。
@@ -45,8 +52,15 @@ const (
 	// 确定性口子）= 载体指纹恒变 = 进程重启即受管域滚替，crash-loop 放大
 	// 为节点拉取凭证失效雪崩）。
 	htpasswdStoreFile = "registry-htpasswd" //nolint:gosec // G101 误报：文件名非机密（内容是 bcrypt 哈希）
+	// projectCredDir 是 per-Project 凭证目录（<DataRoot>/keys/ 下；一
+	// Project 一文件：密码 + 已铸 bcrypt 行——行不可复算，落盘是唯一稳定
+	// 源，E28 按面适用）。
+	projectCredDir = "registry-projects" //nolint:gosec // G101 误报：目录名非机密
 	// passwordBytes 是随机密码字节数（hex 后 48 字符）。
 	passwordBytes = 24
+	// projectIDMaxLen 是 projectID 作为凭证文件名/仓前缀/htpasswd 用户名
+	// 三面共用的长度上限（防御面；ULID 26 位恒过）。
+	projectIDMaxLen = 64
 )
 
 // healthTimeout 是 Health 的 TCP 探测上限（managedLoop 全步 30s 带界的
@@ -56,19 +70,50 @@ const healthTimeout = 3 * time.Second
 // Provider 是 zot Registry Provider。
 type Provider struct {
 	addr string
-	cred capability.RegistryCredential
+	// dataRoot 是凭证持久化根（构造期定型；per-Project 凭证与平台凭证
+	// 同根不同文件，轮换/备份口径一致）。
+	dataRoot string
+	cred     capability.RegistryCredential
 
 	// htpasswd 是构造期定型的 bcrypt 行（loadOrPersistHTPasswd：读用已
 	// 持久行或新铸落盘——进程内恒定，收敛环每拍重放稳定；进程重启复用
 	// 同一行，载体指纹不再随重启漂移，E28）。
 	htpasswd string
+
+	// projects 是 per-Project 凭证的进程内缓存（首次访问读盘/铸造，之后
+	// 原样复用——收敛环每拍全量重放时不再逐 Project 做 bcrypt 验算；
+	// 键 = projectID）。
+	projectsMu sync.Mutex
+	projects   map[string]*projectCredential
+	// lastMaterials 是最近一次成功铸造的材料（单 Project 读盘失败时的
+	// 稳定集回退——见 ManagedMaterialsFor 失败语义）。
+	lastMaterials *capability.Materials
 }
 
-// 编译期契约断言：Registry 端口 + 受管形态声明 + 材料子面。
+// projectCredential 是一个 Project 的铸造产物（持久化于
+// keys/registry-projects/<projectID>.json）：密码是分发面真源，htpasswd
+// 行是已铸 bcrypt 形态（原字节复用——随机盐不可复算，E28 按面适用）。
+type projectCredential struct {
+	Username string
+	Password string
+	HTPasswd string
+}
+
+// projectCredentialJSON 是 per-Project 凭证文件的落盘结构。
+type projectCredentialJSON struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+	HTPasswd string `json:"htpasswd"` //nolint:gosec // G101 误报：键名非机密（值是 bcrypt 哈希）
+}
+
+// 编译期契约断言：Registry 端口 + 受管形态声明 + 材料子面（含 per-Project
+// 扩展面，ADR-0036 N2 兑现节 2）。
 var (
-	_ capability.Registry        = (*Provider)(nil)
-	_ capability.Managed         = (*Provider)(nil)
-	_ capability.MaterialsSource = (*Provider)(nil)
+	_ capability.Registry               = (*Provider)(nil)
+	_ capability.Managed                = (*Provider)(nil)
+	_ capability.MaterialsSource        = (*Provider)(nil)
+	_ capability.ProjectEndpoints       = (*Provider)(nil)
+	_ capability.ProjectScopedMaterials = (*Provider)(nil)
 )
 
 // New 构造 Provider：addr 是镜像引用地址（含端口，如 10.124.0.3:5000），
@@ -88,13 +133,15 @@ func New(addr, dataRoot string) (*Provider, error) {
 		return nil, err
 	}
 	return &Provider{
-		addr: addr,
+		addr:     addr,
+		dataRoot: dataRoot,
 		cred: capability.RegistryCredential{
 			Server:   addr,
 			Username: credentialUser,
 			Secret:   cred.Password,
 		},
 		htpasswd: line,
+		projects: map[string]*projectCredential{},
 	}, nil
 }
 
@@ -163,7 +210,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 		Notes: []string{
 			"managed self-hosted OCI registry; build artifacts are pushed here and workers pull by digest (ADR-0019 appendix B)",
 			"serves plain HTTP on the cluster-internal network; every node's dockerd must trust the address via --insecure-registry",
-			"single platform credential held by the control plane and distributed to builds and workers through the material channel",
+			"per-project credentials gate each project's repositories (<projectID>/**) via zot accessControl; the platform credential stays admin-wide for repair and migration (ADR-0036 N2)",
 		},
 	}
 }
@@ -180,10 +227,24 @@ func (p *Provider) Health(ctx context.Context) capability.HealthReport {
 	return capability.HealthReport{Healthy: true, Details: "managed registry reachable at " + p.addr}
 }
 
-// Endpoint 实现 Registry 端口：推送/拉取端点与平台凭证（材料分发与构建
-// 推送的同一真源，附录 B.3）。
+// Endpoint 实现 Registry 端口：推送/拉取端点与平台凭证（adminPolicy 面——
+// 备份/迁移/修复；Project 域的分发走 EndpointForProject，ADR-0036 N2）。
 func (p *Provider) Endpoint(context.Context) (capability.RegistryEndpoint, error) {
 	return capability.RegistryEndpoint{Addr: p.addr, Cred: p.cred}, nil
+}
+
+// EndpointForProject 实现 ProjectEndpoints 子面：该 Project 的端点与凭证
+// （用户名 = projectID，仓门禁 <projectID>/**；铸造幂等——首次访问铸一次
+// 落盘，之后原样复用）。
+func (p *Provider) EndpointForProject(_ context.Context, projectID string) (capability.RegistryEndpoint, error) {
+	c, err := p.projectCredential(projectID)
+	if err != nil {
+		return capability.RegistryEndpoint{}, err
+	}
+	return capability.RegistryEndpoint{
+		Addr: p.addr,
+		Cred: capability.RegistryCredential{Server: p.addr, Username: c.Username, Secret: c.Password},
+	}, nil
 }
 
 // ManagedNamespace 返回平台系统隔离域（与用户 Project 分离）。
@@ -217,10 +278,101 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 	}}
 }
 
-// ManagedMaterials 实现 MaterialsSource 子面：zot 配置（存储根 + 监听 +
-// htpasswd 认证引用）。幂等纯函数——密码变更（轮换）=载体指纹变更=受管
-// 域滚动替换，凭证三面（zot/推送/拉取）同源自愈。
+// ManagedMaterials 实现 MaterialsSource 子面：等价 ManagedMaterialsFor 空
+// 集（平台用户 + 扁平仓 defaultPolicy read——零 Project 与有 Project 同一
+// config 形状，单一铸造路径）。幂等纯函数。
 func (p *Provider) ManagedMaterials() capability.Materials {
+	return p.ManagedMaterialsFor(nil)
+}
+
+// ManagedMaterialsFor 实现 ProjectScopedMaterials 子面（ADR-0036 N2 兑现节
+// 2）：htpasswd/config 材料随活跃 Project 集再生成——项目创建/删除即一次
+// 受管滚动（材料指纹变更 → reconciler 滚替，60s stop-grace 数据面无扰）。
+// 幂等纯函数：同集同字节（集排序去重自稳；Project 凭证缓存复用原字节，
+// bcrypt 行不重铸）。config 门禁形状（zot v2.1.21 doublestar 语义实证）：
+//   - adminPolicy = 平台用户全域四动作（备份/迁移/修复面）；
+//   - "<projectID>/**" = 该 Project 用户 read/create/update（推 + 拉）；
+//   - "*" = defaultPolicy read——扁平仓存量 digest 引用保持全用户可读
+//     （存量暴露不扩大不收缩；`*` 不跨 `/`，不触及前缀仓）；
+//   - 其余（未知前缀/多段仓）不匹配任何 pattern = 拒绝（非 admin）——
+//     不加 "**" catch-all：最长匹配会压过 "*" 反噬扁平仓可读。
+//
+// 失败语义（集内单 Project 读盘/铸造失败——文件损坏/文件系统故障）分层：
+// ①进程已铸过完整集 → 冻结上一稳定集（在场用户一个不滚）；②无前史（首
+// 铸即遇坏盘）→ 跳过坏项带全健康项（比平台单行底多保住每个能保的用户；
+// 坏项的部署/构建路径由 EndpointForProject 精确 fail loud）。已删 Project
+// 的凭证文件不随集清扫：访问撤销由 htpasswd 摘行承载（真撤销面），文件是
+// keys/ 私有目录里的无害残留（ULID 不复用，重铸无门）。
+func (p *Provider) ManagedMaterialsFor(projectIDs []string) capability.Materials {
+	ids := dedupeSorted(projectIDs)
+	if m, err := p.materialsFor(ids); err == nil {
+		p.projectsMu.Lock()
+		p.lastMaterials = &m
+		p.projectsMu.Unlock()
+		return m
+	}
+	p.projectsMu.Lock()
+	last := p.lastMaterials
+	p.projectsMu.Unlock()
+	if last != nil {
+		return *last // 冻结：材料面下一拍重试，滚替不摘任何在场用户
+	}
+	// 无前史：跳过坏项（缓存命中的恒可用，只有未缓存的坏项缺席）。
+	m, _ := p.materialsForSkippingBroken(ids)
+	return m
+}
+
+// materialsFor 按已排序去重集铸造材料（任何单 Project 失败即整体失败——
+// 上层取稳定集语义）。
+func (p *Provider) materialsFor(ids []string) (capability.Materials, error) {
+	lines := make([]string, 0, len(ids)+1)
+	repos := map[string]any{
+		"*": map[string]any{"defaultPolicy": []string{"read"}},
+	}
+	for _, id := range ids {
+		c, err := p.projectCredential(id)
+		if err != nil {
+			return capability.Materials{}, err
+		}
+		lines = append(lines, c.HTPasswd)
+		repos[strings.ToLower(id)+"/**"] = map[string]any{
+			"policies": []any{map[string]any{
+				"users":   []string{c.Username},
+				"actions": []string{"read", "create", "update"},
+			}},
+		}
+	}
+	all := append([]string{p.htpasswd}, lines...)
+	return p.materialsForBase(all, repos), nil
+}
+
+// materialsForSkippingBroken 是无前史失败面的降级铸造：逐项装载、坏项
+// 缺席（其部署/构建路径已由 EndpointForProject fail loud），健康项全保。
+func (p *Provider) materialsForSkippingBroken(ids []string) (capability.Materials, error) {
+	lines := []string{p.htpasswd}
+	repos := map[string]any{
+		"*": map[string]any{"defaultPolicy": []string{"read"}},
+	}
+	for _, id := range ids {
+		c, err := p.projectCredential(id)
+		if err != nil {
+			continue
+		}
+		lines = append(lines, c.HTPasswd)
+		repos[strings.ToLower(id)+"/**"] = map[string]any{
+			"policies": []any{map[string]any{
+				"users":   []string{c.Username},
+				"actions": []string{"read", "create", "update"},
+			}},
+		}
+	}
+	return p.materialsForBase(lines, repos), nil
+}
+
+// materialsForBase 是材料铸造的共用底（htpasswd 行集 + repositories 门禁集
+// → 材料对；config 字节只依赖输入与平台常量，Marshal 对 map 键排序——字节
+// 稳定）。
+func (p *Provider) materialsForBase(htpasswdLines []string, repos map[string]any) capability.Materials {
 	cfg := map[string]any{
 		"storage": map[string]any{"rootDirectory": storageRoot},
 		"http": map[string]any{
@@ -234,13 +386,19 @@ func (p *Provider) ManagedMaterials() capability.Materials {
 					"path": "/run/secrets/" + htpasswdFile,
 				},
 			},
+			"accessControl": map[string]any{
+				"adminPolicy": map[string]any{
+					"users":   []string{credentialUser},
+					"actions": []string{"read", "create", "update", "delete"},
+				},
+				"repositories": repos,
+			},
 		},
 	}
-	// Marshal 对 map 键排序：配置字节稳定（载体指纹只随密码变）。
 	cfgBytes, _ := json.Marshal(cfg)
 	return capability.Materials{SecretFiles: map[string][]byte{
 		configFile:   cfgBytes,
-		htpasswdFile: []byte(p.htpasswd),
+		htpasswdFile: []byte(strings.Join(htpasswdLines, "\n")),
 	}}
 }
 
@@ -310,6 +468,126 @@ func mintHTPasswdLine(username, password string) (string, error) {
 	// golang bcrypt 原生 $2a$ 前缀（F1.11 真机基线形态；$2y$ 生态惯例
 	// 在 zot 的验证面未被证实——staging 真机 401 实测回退，2026-10-02）。
 	return username + ":" + string(h), nil
+}
+
+// validProjectID 报告 projectID 是否可用于三面（凭证文件名 / 仓前缀 /
+// htpasswd 用户名）：限 [0-9A-Za-z_-]、非空、≤64 字符——拒路径分隔符、
+// 穿越（./..）、htpasswd 冒号分隔符与空白。ULID（Crockford base32 大写
+// 26 位）恒过。projectID 来自平台权威行（engine 解析 App→Project），此处
+// 是 Provider 侧钳制执法（端口不信任调用方）。
+func validProjectID(id string) bool {
+	if id == "" || len(id) > projectIDMaxLen {
+		return false
+	}
+	for _, c := range id {
+		switch {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '-', c == '_':
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// projectCredential 返回该 Project 的凭证（缓存 → 读盘 → 铸造，首次访问
+// 定型）。判定序与平台凭证同款：文件在且形态好 → 原样复用（htpasswd 行
+// 与密码同文件原子落盘，不存在独立轮换漂移面；bcrypt 失配 = 文件对内
+// 不自洽，按密码重铸行自愈覆写）；形态坏/不可读 → fail loud（部署与构建
+// 路径精确失败，材料面取稳定集）。
+func (p *Provider) projectCredential(projectID string) (*projectCredential, error) {
+	p.projectsMu.Lock()
+	if c, ok := p.projects[projectID]; ok {
+		p.projectsMu.Unlock()
+		return c, nil
+	}
+	p.projectsMu.Unlock()
+	c, err := loadOrPersistProjectCredential(p.dataRoot, projectID)
+	if err != nil {
+		return nil, err
+	}
+	p.projectsMu.Lock()
+	p.projects[projectID] = c
+	p.projectsMu.Unlock()
+	return c, nil
+}
+
+// loadOrPersistProjectCredential 读或铸一个 Project 的凭证（tmp+rename
+// 原子落位，并发双写容忍）。
+func loadOrPersistProjectCredential(dataRoot, projectID string) (*projectCredential, error) {
+	if !validProjectID(projectID) {
+		return nil, fmt.Errorf("zot provider: invalid project id %q for a registry credential", projectID)
+	}
+	path := filepath.Join(dataRoot, "keys", projectCredDir, projectID+".json")
+	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // 数据根私有目录（G304/G703）
+		var j projectCredentialJSON
+		if jerr := json.Unmarshal(b, &j); jerr != nil || j.Username != projectID || j.Password == "" || j.HTPasswd == "" {
+			return nil, fmt.Errorf("zot provider: project credential %s is malformed", path)
+		}
+		// 行与密码同文件原子写——失配只可能是人为改档：按密码重铸行（与
+		// 平台凭证轮换同款自愈；密码是分发面真源）。
+		if bcrypt.CompareHashAndPassword([]byte(strings.SplitN(j.HTPasswd, ":", 2)[1]), []byte(j.Password)) != nil {
+			line, err := mintHTPasswdLine(j.Username, j.Password)
+			if err != nil {
+				return nil, err
+			}
+			j.HTPasswd = line
+			if werr := writeProjectCredential(path, &j); werr != nil {
+				return nil, werr
+			}
+		}
+		return &projectCredential{Username: j.Username, Password: j.Password, HTPasswd: j.HTPasswd}, nil
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("zot provider: read project credential: %w", err)
+	}
+	raw := make([]byte, passwordBytes)
+	if _, err := rand.Read(raw); err != nil {
+		return nil, fmt.Errorf("zot provider: generate project credential: %w", err)
+	}
+	c := &projectCredentialJSON{Username: projectID, Password: hex.EncodeToString(raw)}
+	line, err := mintHTPasswdLine(c.Username, c.Password)
+	if err != nil {
+		return nil, err
+	}
+	c.HTPasswd = line
+	if err := writeProjectCredential(path, c); err != nil {
+		return nil, err
+	}
+	return &projectCredential{Username: c.Username, Password: c.Password, HTPasswd: c.HTPasswd}, nil
+}
+
+// writeProjectCredential 原子落盘一个 Project 凭证（0o600 同平台凭证口径；
+// 并发双写容忍——后到 rename 失败即复用先行者）。
+func writeProjectCredential(path string, c *projectCredentialJSON) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil { //nolint:gosec // 数据根私有目录
+		return fmt.Errorf("zot provider: project credential dir: %w", err)
+	}
+	b, err := json.Marshal(c)
+	if err != nil {
+		return fmt.Errorf("zot provider: encode project credential: %w", err)
+	}
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil { //nolint:gosec // 数据根私有目录
+		return fmt.Errorf("zot provider: write project credential: %w", err)
+	}
+	if err := os.Rename(tmp, path); err != nil { //nolint:gosec // 数据根私有目录
+		_ = os.Remove(tmp) //nolint:gosec // 数据根私有目录；并发先行者已落位或不可恢复，均无残留面
+		return fmt.Errorf("zot provider: publish project credential: %w", err)
+	}
+	return nil
+}
+
+// dedupeSorted 排序去重（材料铸造的集自稳：调用方序漂移不影响字节）。
+func dedupeSorted(ids []string) []string {
+	seen := make(map[string]bool, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。地址解析序：装配 ctx

@@ -167,6 +167,28 @@ type RegistryEndpoint struct {
 	Cred RegistryCredential
 }
 
+// ProjectEndpoints 是 Registry 端口的可选 per-Project 端点面（ADR-0036
+// N2 兑现节 2）：凭证按 Project 铸造分发——构建推送与 workload 拉取用
+// 所属 Project 的凭证，zot accessControl 以 <projectID>/** 仓门禁实现
+// 域隔离。未实现 = 单一平台凭证形态（现状，升级零扰动）。
+type ProjectEndpoints interface {
+	// EndpointForProject 返回该 Project 的端点与凭证。铸造幂等：同
+	// projectID 二次调用返回同凭证（值持久化于平台数据根，载体指纹
+	// 稳定——E28 教训按面适用）。
+	EndpointForProject(ctx context.Context, projectID string) (RegistryEndpoint, error)
+}
+
+// ProjectScopedMaterials 是 MaterialsSource 的可选扩展面（ADR-0036 N2
+// 兑现节 2）：材料随活跃 Project 集再生成——zot htpasswd/config 携带
+// per-Project 用户与 <projectID>/** 仓门禁，项目创建/删除即一次受管
+// 滚动（60s stop-grace，数据面无扰）。reconciler 探测本面并喂活跃集；
+// 未实现时退回 ManagedMaterials()（现状）。
+type ProjectScopedMaterials interface {
+	// ManagedMaterialsFor 按活跃 projectID 集返回受管域材料集。幂等纯
+	// 函数：同集同字节（集序由调用方排序，实现侧仍须自稳——双保险）。
+	ManagedMaterialsFor(projectIDs []string) Materials
+}
+
 // registryAddrKey 是 Registry 参考地址的装配期 ctx 注入键（唯一写入点在
 // internal/assembly 的 NewRegistryProvider）。
 type registryAddrKey struct{}
