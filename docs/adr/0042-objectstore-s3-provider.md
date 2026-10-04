@@ -93,12 +93,19 @@ F2.2 随 ADR-0039 落地；消费方（engine 备份执行器）经 `capability.
 
 ## 验收锚
 
-- [ ] s3 Provider 五操作行为语义与 localobjectstore 同构：键穿越拒绝、Put 流式
+- [x] s3 Provider 五操作行为语义与 localobjectstore 同构：键穿越拒绝、Put 流式
       digest 回执、NoSuchKey→ErrObjectNotFound、幂等删、List 前缀钳制 + 稳定排序
-      （fake 缝单测）
-- [ ] 装配选择：未配 s3 = local（现状零差）；配 s3 = s3 工厂装配（ctx 注入），
-      配置缺席被选 s3 = 精确失败
-- [ ] 配 s3 后 `databases backup` 产物落 S3 桶且 verify 绿；恢复到新库数据断言
-      （e2e S3 腿）
-- [ ] 内置规则 platform-offsite-backup 不 firing（消警路径零改动回归）
-- [ ] e2e S3 演练进 CI（e2e-backup job 扩腿，六 job 全绿）
+      （fake 缝单测；另本地真机对 silo RELEASE.2026-09-16 二进制 roundtrip 全绿）
+- [x] 装配选择：未配 s3 = local（现状零差）；配 s3 = s3 工厂装配（ctx 注入），
+      配置缺席被选 s3 = 精确失败（objectStoreSelection 纯函数测试 + 工厂测试 +
+      五元组 env 覆盖常驻测试——viper 裸 Unmarshal 不吃 env-only 嵌套键的坑钉死）
+- [x] 配 s3 后 `databases backup` 产物落 S3 桶且 verify 绿；恢复到新库数据断言
+      （e2e S3 腿，CI run 37217410590：object_key/size 桶内精确断言 + 本地目录
+      零新增 + S3 件恢复数据断言 DRILL_S3）
+- [x] 内置规则 platform-offsite-backup 不 firing（消警路径零改动回归：e2e
+      alerts list 断言 state ok；engine 侧 24h 窗测试既有覆盖未动）
+- [x] e2e S3 演练进 CI（e2e-backup job 扩腿；三修实录：mcli alias set 自身是
+      签名探针需重试环——nc -z 探到 dockerd userland-proxy 非服务器本体；
+      protojson int64 带引号形态；run 37217410590 六 job 全绿，silo 钉版
+      RELEASE.2026-09-16T00-00-00Z 经 restic 0.19.1 s3 backend init/backup/check
+      本地预验证）

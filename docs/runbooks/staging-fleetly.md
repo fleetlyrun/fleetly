@@ -261,6 +261,14 @@ CI 升级零扰动锚咬出**全域滚动缺陷**（b6f59f3 根治）：受管 G
 
 **staging 真机锚（7232da4-f25final）**：daemon 重启后**五件受管域全部零滚**（traefik/zot/victorialogs/victoriametrics/cadvisor task id 不变）+ 零 drift 事件 + 服务全绿——与 F2.4 时代"每次重启各滚一次"对照，升级零扰动语义首次全量成立。
 
+## 2026-10-04 记录·五（F2.8 ObjectStore S3 Provider：离机备份通道，staging 换装待所有者）
+
+ADR-0042 落地（64f07f0..11b34c7，CI run 37217410590 六 job 全绿含 e2e S3 离机腿）。**staging 换装未做**——本批按"CI 绿 + 本地门禁即交付"交付，换装留给所有者（换装序走下方"平台升级操作序"）。
+
+**新能力面（换装后生效）**：`platform_backup.s3` 五元组在场 → ObjectStore 装配切 s3 Provider（数据库备份对象直写远端桶，键 `backups/<projectID>/<databaseID>/<ts>-<id>`）+ restic 外置仓同批启用（同桶 `<prefix>/`——**prefix 勿取 `backups`**，对象键与仓前缀双命名空间）；缺席 → local 现状零差。staging 物化：`/etc/fleetlyd.env` 追加五件 `FLEETLY_PLATFORM_BACKUP_S3_*`（endpoint http:// 前缀=明文；桶须预建——Provider 探测不代建）后同文件重启。
+
+**边界（ADR-0042）**：①**切换不迁移**——切 s3 前的台账行对象留本地 `backups/`（restic 备份集捎带离机），这些行对新端点 verify/restore 诚实报 object not found；②secret_access_key 沿用 config 明文（env 文件 0600，建议专用低权 access key；信封化挂账）；③RustFS opt-in 自宿挂账不做（自宿推荐 silo——MinIO 社区版 2026-02 EOL 的社区续命版，e2e 假端点已用 `pgsty/silo:RELEASE.2026-09-16T00-00-00Z` 验过全链）。消警：五元组在场 = platform-offsite-backup 内置规则归位（24h 窗口径不变）。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
