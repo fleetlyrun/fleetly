@@ -207,6 +207,37 @@ staging 真机验收（14:53-14:56）：
 - scratch 项目源目录（--from-dir）内容寻址：同内容重部署复用同 Revision——终态失败 Build 行会被继承，重试需改内容。
 - curl 探 staging 路由要 -k（LE staging CA 不入系统信任根）；manager 直跑 `https://` 探针 exit 60 属预期。
 
+## 2026-10-04 记录·三（F2.4 VictoriaLogs 上线：九锚全绿 + 真机咬出四修）
+
+**换装**：c7de917-perproj2 → **09c9ad7-f24c（现役；= 09c9ad7 + 真机修复四件同批）**。goose v20→v21（00021_log_cursors）干净前滚；Platform Backup 前后各一（前置 + c51ecd26 收尾）+ 手工卷 tar（zot/torchwood-pg/redis 系全量至 upgrade-09c9ad7-f24/vols/）。配置面新增：unit drop-in `10-logging.conf` 物化 `FLEETLY_LOGGING_ADDR=10.124.0.3:9428`（lynx env 桥 → config logging.addr 同键；install.sh 已同源内置给新装）。
+
+**受管面**：VL 服务名按命名公式 = `fleetly-fleetly-system-logging-victorialogs`（不是 workload ID 直用——诊断过滤器勿拿 workload ID 当服务名）。首启 traefik/zot/VL 各滚一次：**受管 Generation 是进程内计数（每进程重置为 1），而 fleetly.generation 标签持久在 spec 里**——前一进程存活期内材料变更把 gen 推到 2（zot accessControl 批）+ 强制重放节拍把 traefik 也写成 2，新进程 gen=1 → 全域各滚一次归一。**二连重启零滚**（gen 已归 1）= 判别法；系统性回归被此法 + CI e2e-upgrade 排除。既有语义非本批引入（良性：60s stop-grace 数据面无扰），挂账观察。
+
+**真机咬出四修（全部同批回仓 + 单测以真机 ground truth 为夹具）**：
+1. **VL 查询响应 `_stream` 是字符串不是 JSON 对象**（LogsQL 文本形态 `{fleetly_app=...}`）——严格 Unmarshal 整行失败 → 行行被静默跳过（200 + 0 帧）。修：平铺字段解码 + `_stream`/`_stream_id` 按未知字段忽略。教训：对外 API 形态没有真机 ground truth 夹具前，"防御性双形态解析"是自嗨。
+2. **LogsQL 文本过滤的合法形态是过滤器位 `_msg:~"regex"`**——管道形态 `| ~ "re"` 被拒（400 "missing ':' in front of '~'"；官方 docs 通篇无此形态，凭记忆写的语法）。修：`{...} _msg:~"escaped"`。
+3. **LogsQL `{}` 花括号过滤器只作用于流字段**（`_stream_fields` 成员）——非流字段（fleetly_team 是行字段）进 `{}` 恒空集**且不报错**（200 + 0 行的静默空，比报错更险）。修：查询构造只收流字段（project/app/workload/task/kind/build）；行级隔离锚 = project+app（team 是派生轴冗余）。
+4. **低流量域永不入库**——批汇器只有 256 帧阈值 flush，没有时间面：受管 pg 域 checkpoint 每 5 分钟一行，批永远不满。staging 实证：VL 全库只有高流量 probe 域的行。修：loggingStep 节拍驱动的空闲冲刷（批非空且闲置 ≥1s 即冲；不违 loop.go 的 ticker 单源纪律——时间面由环节拍承载）。**ADR-0040 写的 "≤1s 或 256 帧" 在初版实现里只做了一半，真机把另一半咬出来了。**
+
+**验收锚（九项全绿）**：
+- VL 1/1（钉版 victoria-logs:v1.52.0，入口 /victoria-logs-prod 绝对路径）；mesh 端点无凭证 401 / 有凭证过（basic auth 执法）；
+- **发现 A 修复真机锚**：双副本跨节点 app（probe 副本分落 fleetly-dev/fleetly-node2），实时日志流 node 归因双节点齐全（swarm ServiceLogs 集群聚合 + details 归因）；
+- `--text` 检索双形态（人读/JSON）命中双节点行；`--text --since` 时间窗；
+- 低流量域入库（system 580+ 行 / torchwood 域持续流入）；
+- build 日志链：RUN 步帧进 ring + VL（kind=build + fleetly_build 过滤锚）；
+- **P11 真机锚**：构建推送凭证（keys/registry-projects/<pid>.json 的 password）在 build log 全量零出现；
+- **重启回读**：daemon 重启 → ring 蒸发 → `builds logs` 经 VL 保留窗回读历史（step markers 完整返回）；
+- **采集续流**：重启后游标重放，probe 行连续（跨三次 daemon 重启无缺口）；
+- 零扰动：用户域任务 20h 零重启、tw/ml 路由 200/415 正常、torchwood-pg 未触。
+
+**操作教训（runbook 级）**：
+- **shell 解析 `--json` 输出取 id 是雷**：`projects list` 非"最新优先"，`sed | head -1` 取到的是首行项目——本批 probe 误部署到 N0 期 app（01M3SGPMMWT，镜像 n0/private:1），经 `rollback --to <原始 revision>` 显式恢复（默认回滚目标是"最后成功基线"= 误部署本身，必须带 --to）。**id 一律从 create 输出取，不从 list 头行取**。
+- 全缓存无步骤的构建（纯 FROM + CMD）VertexLog 零帧是正常形态（推送帧也少）——builds logs 空先查构建内容再怀疑管线。
+- 诊断新受管域时：服务名按命名公式拼（fleetly-<team>-<project>-<app>-<process>）；VL 行为面直查（/select/logsql/query + hits stats + /metrics 的 vl_http_requests_total/vl_rows_ingested_total 计数器）比读库表直接。
+- manager 无 sqlite3/python3——控制面库表直查不可用，走行为面（同材料核验文化）。
+- 换装二进制要带 `-ldflags "-X main.version=<commit>-<tag>"`（裸 go build 的 service.version 空，journal 排障少一个锚）。
+
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
@@ -295,6 +326,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 | 9081 | REST gateway（SSE/幂等等同源面） | Token | 仅 VPC/内网 |
 | 9082 | Edge config 拉取端点（traefik HTTP provider） | **无认证**（traefik HTTP provider 不支持凭证的既知形态） | 仅 VPC/内网，**公网可达 = 任意人可改写全量路由** |
 | 5000 | 受管 zot（镜像仓库） | HTTP 明文 + 单一平台凭证（htpasswd） | 仅 VPC/内网；两台 dockerd 的 `--insecure-registry` 同依赖此形态 |
+| 9428 | 受管 VictoriaLogs（日志存储，F2.4） | basic auth（keys/victorialogs.json 随机密码；VL 单租户——域隔离由平台查询构造执法） | 仅 VPC/内网；mesh 端点无凭证 401 已实证 |
 
 **绑面配置化（ADR-0036）**：四面绑址/引用地址全部可配置（缺省 = 上表现状，升级不静默改绑）。本拓扑的收窄配置示例（fleetlyd 配置文件，钉 VPC eth1 地址）：
 
@@ -308,6 +340,8 @@ server:
     addr: "10.124.0.3:9082"
 registry:
   addr: "10.124.0.3:5000"     # 与旧通道 env FLEETLY_REGISTRY_ADDR 同键，config 值优先
+logging:
+  addr: "10.124.0.3:9428"     # F2.4 受管日志存储（VL）；env FLEETLY_LOGGING_ADDR 同键；空 = 面停用
 ```
 
 **自证**（防火墙失配从人工核对降为一条命令）：manager 侧带同组 env 跑 doctor——

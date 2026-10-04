@@ -40,6 +40,6 @@
 
 ## 结论
 
-- 违例清零：唯一真缺陷是 **A（StreamLogs 本节点视角）**，修复归宿 F2.4（挂账 + e2e 现状断言钉边界）。
-- 双节点 e2e 补断言：`dind-two-node.sh` 尾部新增"日志流覆盖 manager 侧副本"下限断言（发现 A 的现状锚）。
+- 违例清零：唯一真缺陷是 **A（StreamLogs 本节点视角）**，修复归宿 F2.4（挂账 + e2e 现状断言钉边界）。〔**已兑现（2026-10-04，ADR-0040）**：StreamLogs 重做为 ServiceList+ServiceLogs 集群聚合流（details 归因 + stdcopy 解复用）——实时路径与 engine 采集环同修同源；staging 真机双节点日志覆盖锚 + e2e 两节点断言双绿，"manager 侧下限"现状断言退役〕
+- 双节点 e2e 补断言：`dind-two-node.sh` 尾部新增"日志流覆盖 manager 侧副本"下限断言（发现 A 的现状锚）。〔F2.4 批升级为两节点全覆盖 + `--text` 检索断言〕
 - 附加产出：P2 注入守卫核对中确认 git clone（`--` 终结 + 禁 ext/file 传输）与 traefik 规则内插（ValidateRouteHost/Path 双面白名单）两处执行/定界面防线已在位（安全批遗产），P2 增量为 shellguard 静态红线 + image ref 字符级校验。

@@ -145,16 +145,25 @@ build），不落库不落盘。
 
 ## 验收锚
 
-- [ ] 双节点 e2e：`dind-two-node.sh` 日志断言升级为两节点全覆盖（发现
+- [x] 双节点 e2e：`dind-two-node.sh` 日志断言升级为两节点全覆盖（发现
   A 现状下限断言退役）+ `--text` 检索断言（VL 经采集环落地后可查）
-- [ ] VL 受管域起服后：`--text` 检索命中跨重启/跨任务替换的历史行；
-  mesh 端点无凭证 401（auth 执法锚）
-- [ ] build log 注入已知 Secret 后全量帧零出现（P11 锚）+ `secret:<fp>`
-  指纹形态在场
-- [ ] VL 受管 Workload 材料指纹跨进程重启稳定（E28：无逐重启滚动）
-- [ ] daemon 重启采集补窗：重启窗内产生的日志在恢复后可查（docker
-  缓冲在场时）
-- [ ] `fleetly logs`（无 --text）输出与升级前形态一致（实时路径零扰动）
-- [ ] CLI 错误链无双打（流式动词错误路径核对）
-- [ ] Platform Backup 对 VL 数据卷的口径已裁决并记 runbook（纳管或
-  显式不纳管 + 恢复语义）
+- [x] VL 受管域起服后：`--text` 检索命中跨重启/跨任务替换的历史行；
+  mesh 端点无凭证 401（auth 执法锚）〔staging 真机 2026-10-04：九锚全绿
+  见 runbook 10-04 记录·三——含重启 ring 蒸发后 builds logs VL 回读、
+  采集续流跨三次重启无缺口、低流量域入库〕
+- [x] build log 注入已知 Secret 后全量帧零出现（P11 锚）+ `secret:<fp>`
+  指纹形态在场〔单测 TestBuildLogRedactionSecretZeroOccurrence + staging
+  真机（推送凭证零出现）双锚〕
+- [x] VL 受管 Workload 材料指纹跨进程重启稳定（E28：无逐重启滚动）
+  〔TestMaterialsStableAcrossRestarts + staging 二连重启零滚实证〕
+- [x] daemon 重启采集补窗：重启窗内产生的日志在恢复后可查（docker
+  缓冲在场时）〔staging：probe 行跨三次 daemon 重启连续无缺口〕
+- [x] `fleetly logs`（无 --text）输出与升级前形态一致（实时路径零扰动）
+  〔staging：用户域任务 20h 零重启 + 实时流帧形态不变〕
+- [x] CLI 错误链无双打（流式动词错误路径核对）〔renderErrorFor 单点 +
+  流式动词纯上抛，核对通过无需修〕
+- [x] Platform Backup 对 VL 数据卷的口径已裁决并记 runbook（纳管或
+  显式不纳管 + 恢复语义）〔口径 = 显式不纳管：restic 只快照数据根，VL
+  卷同 zot/库卷走换装前手工卷 tar 纪律（belt-and-suspenders）；日志可
+  重采（docker 缓冲）+ 保留窗从零积累，卷丢失不破坏平台功能——runbook
+  10-04 记录·三操作序沿用〕

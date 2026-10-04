@@ -272,7 +272,7 @@ fleetly 的 Runtime 契约是"Ensure(ns, 期望 Workload 集, gen) 幂等收敛"
 - 构建日志流（builder 面向用户的 build log）与未来的 exec 输出：敏感值过滤在**出口单点**实现（不散布在各产生点）——Secret 值注入构建 env 时，同步把值登记进该次构建的脱敏表，出口统一替换为指纹短形态。
 - 错误链：一处错误在 CLI 输出只出现一次（错误信封 errcode + suggestion 已有；核对长链路错误的重复打印面）。
 
-**验收锚**：随 N2b ADR；占位一条：[ ] build log 中 Secret 值零出现（注入已知 Secret 后全量断言）。
+**验收锚**：随 N2b ADR；占位一条：[x] build log 中 Secret 值零出现（注入已知 Secret 后全量断言）。〔2026-10-04 随 ADR-0040 落地：出口单点 = builder.Build writer 链（redactWriter→环形缓冲+VL ingest），脱敏表 = PushCred.Secret + SecretFiles 值 → `secret:<fp8>` 指纹短形态；单测锚 TestBuildLogRedactionSecretZeroOccurrence + staging 真机（推送凭证零出现）双绿；错误只打一次核对 = CLI renderErrorFor 单点已立、流式动词纯上抛无双打面，核对通过无需修〕
 
 ---
 
