@@ -17,9 +17,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -30,11 +33,12 @@ const PinnedResticVersion = "0.19.1"
 
 // Platform Backup 的数据根内布局（platformBackupDir 相对 DataRoot）。
 const (
-	platformBackupDir    = "platform-backups"
-	platformRepoSubdir   = "restic"              // 本地仓（restic repo）
-	platformSnapshotName = "state-snapshot.db"   // SQLite VACUUM INTO 落点
-	platformLastRunFile  = "last-run"            // 节拍锚（RFC3339）
-	platformRepoKeyFile  = "platform-backup.key" // 仓密（keys/ 下，0600，排除备份集）
+	platformBackupDir       = "platform-backups"    // 域目录
+	platformRepoSubdir      = "restic"              // 本地仓（restic repo）
+	platformSnapshotName    = "state-snapshot.db"   // SQLite VACUUM INTO 落点
+	platformLastRunFile     = "last-run"            // 成功锚（RFC3339；interval 语义）
+	platformLastAttemptFile = "last-attempt"        // 尝试锚（RFC3339；失败退避语义）
+	platformRepoKeyFile     = "platform-backup.key" // 仓密（keys/ 下，0600，排除备份集）
 )
 
 // PlatformBackupConfig 是执行链的配置快照（assembly 从 AppConfig 注入；
@@ -79,27 +83,44 @@ func (e *Engine) PlatformBackupAvailable() bool {
 	return err == nil
 }
 
-// platformBackupDue 报告节拍到点（锚文件缺席 = 首拍立即）。
+// platformBackupDue 报告节拍到点：成功锚（interval 语义）与尝试锚（失败
+// 退避语义——无退避则失败后每拍重试，事件/日志风暴）。两锚皆缺席（首启）
+// 或损坏 = 立即。
 func (e *Engine) platformBackupDue(cfg PlatformBackupConfig) bool {
 	if !e.PlatformBackupAvailable() {
 		return false
 	}
-	anchor, err := os.ReadFile(e.platformBackupPath(platformLastRunFile))
-	if err != nil {
-		return true // 无锚 = 从未跑过 → 立即
+	now := e.clock.Now()
+	if anchor, err := os.ReadFile(e.platformBackupPath(platformLastRunFile)); err == nil {
+		if t, perr := time.Parse(time.RFC3339, string(anchor)); perr == nil && now.Sub(t) < cfg.Interval {
+			return false // 成功锚未到期
+		}
 	}
-	t, err := time.Parse(time.RFC3339, string(anchor))
-	if err != nil {
-		return true // 锚损坏 = 诚实重跑（幂等：快照去重）
+	if attempt, err := os.ReadFile(e.platformBackupPath(platformLastAttemptFile)); err == nil {
+		if t, perr := time.Parse(time.RFC3339, string(attempt)); perr == nil && now.Sub(t) < platformBackupRetryBackoff {
+			return false // 失败退避窗内
+		}
 	}
-	return e.clock.Now().Sub(t) >= cfg.Interval
+	return true
 }
 
-// runPlatformBackup 执行一次 Platform Backup（快照 → 双仓 backup →
-// check → forget；s3 仓失败不阻断本地仓完成事实——事件按整体成败落）。
+// platformBackupRetryBackoff 是失败重试退避（dind 实证：无退避则失败后
+// 每拍重试——秒级事件风暴；5min 足够瞬时性故障自愈，持续性故障日志有界）。
+const platformBackupRetryBackoff = 5 * time.Minute
+
+// runPlatformBackup 执行一次 Platform Backup（快照 → 仓初始化（幂等）→
+// 双仓 backup → check → forget；s3 仓失败不阻断本地仓完成事实——事件按
+// 整体成败落）。尝试锚先落（失败退避的计时起点），成功锚仅全链成功推进。
 func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig) error {
 	if !e.PlatformBackupAvailable() {
 		return fmt.Errorf("platform backup: restic binary not found (pin %s); install it or disable platform backup", PinnedResticVersion)
+	}
+	if err := os.MkdirAll(e.platformBackupPath(""), 0o750); err != nil {
+		return err
+	}
+	if err := os.WriteFile(e.platformBackupPath(platformLastAttemptFile),
+		[]byte(e.clock.Now().UTC().Format(time.RFC3339)), 0o600); err != nil {
+		return err
 	}
 	if err := e.snapshotState(ctx); err != nil {
 		return fmt.Errorf("platform backup: sqlite snapshot: %w", err)
@@ -110,10 +131,22 @@ func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig
 	}
 	var firstErr error
 	for _, repo := range repos {
+		// 仓初始化（首用）：目录/桶 ≠ 仓——restic 需要 init 建 config。
+		// 本地仓以 config 文件在场判定；s3 仓 init 幂等（已初始化的报错
+		// 按"已在场"忽略）。
+		if err := e.ensureResticRepo(ctx, repo); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
 		if err := e.resticRun(ctx, repo, "backup", e.opts.DataRoot,
 			"--exclude", filepath.Join(e.opts.DataRoot, "fleetly.db"),
 			"--exclude", filepath.Join(e.opts.DataRoot, "fleetly.db-wal"),
 			"--exclude", filepath.Join(e.opts.DataRoot, "fleetly.db-shm"),
+			// 仓密排除（决策 9：仓密进仓自锁的循环依赖——恢复所需的密在
+			// 仓外，runbook 提示离机保管）。
+			"--exclude", filepath.Join(e.opts.DataRoot, "keys", platformRepoKeyFile),
 			"--exclude", e.platformBackupPath(platformRepoSubdir)); err != nil {
 			if firstErr == nil {
 				firstErr = err
@@ -127,7 +160,7 @@ func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig
 			continue
 		}
 		if err := e.resticRun(ctx, repo, "forget", "--keep-within",
-			cfg.Retention.String(), "--prune"); err != nil {
+			resticKeepWithin(cfg.Retention), "--prune"); err != nil {
 			if firstErr == nil {
 				firstErr = err
 			}
@@ -139,6 +172,37 @@ func (e *Engine) runPlatformBackup(ctx context.Context, cfg PlatformBackupConfig
 	// 节拍锚只在全链成功推进（失败下拍重试）。
 	return os.WriteFile(e.platformBackupPath(platformLastRunFile),
 		[]byte(e.clock.Now().UTC().Format(time.RFC3339)), 0o600)
+}
+
+// resticKeepWithin 把保留窗铸成 restic duration（值域单位 y/m/w/d/h——
+// 不收 Go duration 串的 m/s 尾巴；dind 实证 "168h0m0s" 被拒）。小时向上
+// 取整、最小 1h（亚小时保留窗在 restic 面无法表达，向上取整 = 多留不
+// 少留的诚实方向）。
+func resticKeepWithin(retention time.Duration) string {
+	hours := int(math.Ceil(retention.Hours()))
+	if hours < 1 {
+		hours = 1
+	}
+	return strconv.Itoa(hours) + "h"
+}
+
+// ensureResticRepo 幂等初始化一个仓（本地以 config 文件判定；s3 尝试
+// init 且把"已初始化"报错按在场处理——restic 对已建仓 init 的报错文本
+// 含 config file already exists / already initialized）。
+func (e *Engine) ensureResticRepo(ctx context.Context, repo resticRepo) error {
+	if strings.HasPrefix(repo.repo, "/") {
+		if _, err := os.Stat(filepath.Join(repo.repo, "config")); err == nil {
+			return nil
+		}
+	}
+	if err := e.resticRun(ctx, repo, "init"); err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "already exists") || strings.Contains(msg, "already initialized") {
+			return nil
+		}
+		return err
+	}
+	return nil
 }
 
 // snapshotState 铸 SQLite 一致快照（VACUUM INTO——在线一致，WAL 安全；

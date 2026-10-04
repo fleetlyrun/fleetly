@@ -17,23 +17,19 @@ import (
 	"github.com/fleetlyrun/fleetly/internal/capability"
 )
 
-// captureSpec 是缝注入的捕获器（stdout/stderr/stdin 直通记录）。
+// captureSpec 是缝注入的捕获器（stdout/stderr 直通记录）。
 type captureSpec struct {
 	got    utilityContainerSpec
 	stdout strings.Builder
 	stderr strings.Builder
-	stdin  string
 }
 
 func TestRunUtilitySpecAssembly(t *testing.T) {
-	captured := &captureSpec{stdin: "DUMPSTREAM"}
-	p := &Provider{utilityExec: func(_ context.Context, spec utilityContainerSpec, stdout, stderr io.Writer, stdin io.Reader) (int, error) {
+	captured := &captureSpec{}
+	p := &Provider{utilityExec: func(_ context.Context, spec utilityContainerSpec, stdout, stderr io.Writer) (int, error) {
 		captured.got = spec
 		_, _ = stdout.Write([]byte("out-frame"))
 		_, _ = stderr.Write([]byte("err-frame"))
-		buf := make([]byte, 64)
-		n, _ := stdin.Read(buf)
-		captured.stdin = string(buf[:n])
 		return 0, nil
 	}}
 	err := p.RunUtility(context.Background(), capability.UtilityRequest{
@@ -47,7 +43,6 @@ func TestRunUtilitySpecAssembly(t *testing.T) {
 			"database-backup-pgpass": []byte("db-x:5432:fleetly:fleetly:pw"),
 		},
 		Volume: &capability.UtilityVolumeMount{VolumeID: "01JDV00000000000000000000", Target: "/seed"},
-		Stdin:  strings.NewReader("DUMPSTREAM"),
 	}, &captured.stdout, &captured.stderr)
 
 	require.NoError(t, err)
@@ -57,19 +52,35 @@ func TestRunUtilitySpecAssembly(t *testing.T) {
 	assert.Equal(t, []string{"pg_dump", "-h", "db-01j8", "--format=custom"}, spec.argv)
 	assert.Equal(t, []string{"A_VAR=a", "Z_VAR=z"}, spec.env, "env sorted for deterministic spec")
 	assert.Equal(t, []string{"fleetly-net-shop-default", "fleetly-net-shop-internal"}, spec.networks, "carrier names sorted")
-	assert.True(t, spec.openStdin)
 	require.Len(t, spec.binds, 2)
 	assert.Regexp(t, `^[A-Za-z]:?[\\/].*[/\\]fleetly-utility-[^/\\]+[/\\]database-backup-pgpass:/run/secrets/database-backup-pgpass:ro$`,
 		spec.binds[0], "material source lives in a private temp dir, mounts read-only at the secrets path")
 	assert.Equal(t, "fleetly-vol-01jdv00000000000000000000:/seed:rw", spec.binds[1], "volume bind uses the carrier formula and rw for seeding")
 	assert.Equal(t, "out-frame", captured.stdout.String())
 	assert.Equal(t, "err-frame", captured.stderr.String())
-	assert.Equal(t, "DUMPSTREAM", captured.stdin, "stdin streams through the lifecycle seam")
+}
+
+// 输入文件面（恢复流）：物化 + 只读 bind 到 Target。
+func TestRunUtilityInputFile(t *testing.T) {
+	var got utilityContainerSpec
+	p := &Provider{utilityExec: func(_ context.Context, spec utilityContainerSpec, _, _ io.Writer) (int, error) {
+		got = spec
+		return 0, nil
+	}}
+	err := p.RunUtility(context.Background(), capability.UtilityRequest{
+		ID: "u0", Namespace: capability.NamespaceRef{Project: "p"}, Image: "i", Argv: []string{"x"},
+		Networks: []string{"default"},
+		Input:    &capability.UtilityInput{Content: strings.NewReader("BACKUP-BYTES"), Target: "/backup-input"},
+	}, io.Discard, io.Discard)
+	require.NoError(t, err)
+	require.Len(t, got.binds, 1)
+	assert.Regexp(t, `^[A-Za-z]:?[\\/].*[/\\]backup-input:/backup-input:ro$`, got.binds[0],
+		"input materializes in a private temp file and mounts read-only at the target path")
 }
 
 func TestRunUtilityReadOnlyVolume(t *testing.T) {
 	var got utilityContainerSpec
-	p := &Provider{utilityExec: func(_ context.Context, spec utilityContainerSpec, _, _ io.Writer, _ io.Reader) (int, error) {
+	p := &Provider{utilityExec: func(_ context.Context, spec utilityContainerSpec, _, _ io.Writer) (int, error) {
 		got = spec
 		return 0, nil
 	}}
@@ -83,7 +94,7 @@ func TestRunUtilityReadOnlyVolume(t *testing.T) {
 }
 
 func TestRunUtilityExitCodeMapsToError(t *testing.T) {
-	p := &Provider{utilityExec: func(context.Context, utilityContainerSpec, io.Writer, io.Writer, io.Reader) (int, error) {
+	p := &Provider{utilityExec: func(context.Context, utilityContainerSpec, io.Writer, io.Writer) (int, error) {
 		return 3, nil
 	}}
 	err := p.RunUtility(context.Background(), capability.UtilityRequest{

@@ -99,10 +99,11 @@ func (mysqlTemplate) Restore(host, password string) (RestoreSpec, error) {
 	if err != nil {
 		return RestoreSpec{}, err
 	}
-	// 目标库由模板 env 面（MYSQL_DATABASE）首启建好；SQL 流走 stdin。
+	// 目标库由模板 env 面（MYSQL_DATABASE）首启建好；SQL 流经文件挂载
+	//（source 客户端命令读文件——hijack stdin EOF 不可达，ADR-0039 实录）。
 	return RestoreSpec{
 		Mode:        RestoreStream,
-		Argv:        []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile, myDBName},
+		Argv:        []string{"mysql", "--defaults-extra-file=/run/secrets/" + myBackupDefaultsFile, "-e", "source " + BackupInputPath, myDBName},
 		SecretFiles: files,
 	}, nil
 }

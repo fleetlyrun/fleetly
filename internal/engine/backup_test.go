@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/fleetlyrun/fleetly/internal/capability"
+	"github.com/fleetlyrun/fleetly/internal/engine/dbtemplate"
 	"github.com/fleetlyrun/fleetly/internal/material"
 	"github.com/fleetlyrun/fleetly/internal/state/backup"
 	dbrepo "github.com/fleetlyrun/fleetly/internal/state/database"
@@ -119,8 +120,8 @@ func (f *fakeUtility) RunUtility(_ context.Context, req capability.UtilityReques
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.reqs = append(f.reqs, req)
-	if req.Stdin != nil {
-		b, _ := io.ReadAll(req.Stdin)
+	if req.Input != nil {
+		b, _ := io.ReadAll(req.Input.Content)
 		f.stdins = append(f.stdins, string(b))
 	}
 	if f.execErr != nil {
@@ -305,8 +306,8 @@ func TestRestoreStreamFlow(t *testing.T) {
 
 	reqs := ut.requests()
 	require.Len(t, reqs, 1)
-	assert.Equal(t, []string{"pg_restore", "-h", DatabaseDNSName(tDatabaseID), "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password"}, reqs[0].Argv)
-	assert.Equal(t, "BACKUP-BYTES-0123456789", ut.capturedStdins()[0], "restore stdin streams the backup object")
+	assert.Equal(t, []string{"pg_restore", "-h", DatabaseDNSName(tDatabaseID), "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", dbtemplate.BackupInputPath}, reqs[0].Argv)
+	assert.Equal(t, "BACKUP-BYTES-0123456789", ut.capturedStdins()[0], "restore input file carries the backup object")
 
 	fresh, err := e.databases.Get(ctx, e.db.Runner(), tDatabaseID)
 	require.NoError(t, err)

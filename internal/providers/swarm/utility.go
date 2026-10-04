@@ -46,7 +46,6 @@ type utilityContainerSpec struct {
 	env        []string // 排序稳定（spec 对账/测试确定性）
 	networks   []string // 载体名（全部附着；首个进 NetworkMode）
 	binds      []string // bind 语法（材料文件 ro / 命名卷按需）
-	openStdin  bool     // Stdin 在场
 	attachHint string   // 不可附着类错误的可行动提示（存量网络 flag-day）
 }
 
@@ -63,7 +62,7 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 		return fmt.Errorf("swarm utility: material dir: %w", err)
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
-	binds := make([]string, 0, len(req.SecretFiles)+1)
+	binds := make([]string, 0, len(req.SecretFiles)+2)
 	for name, value := range req.SecretFiles {
 		if err := safeUtilityMaterialName(name); err != nil {
 			return err
@@ -73,6 +72,27 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 			return fmt.Errorf("swarm utility: write material %q: %w", name, err)
 		}
 		binds = append(binds, path+":/run/secrets/"+name+":ro")
+	}
+	// 恢复输入文件（ADR-0039 实录：hijack attach 的 CloseWrite 不向容器
+	// stdin 送 EOF——dind 实证 mysql 客户端读流永挂；输入走文件挂载）。
+	if req.Input != nil {
+		inputPath := filepath.Join(dir, "backup-input")
+		f, ferr := os.OpenFile(inputPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600) //nolint:gosec // G304：路径段为平台常量 + 私有临时目录
+		if ferr != nil {
+			return fmt.Errorf("swarm utility: input file: %w", ferr)
+		}
+		if _, cerr := io.Copy(f, req.Input.Content); cerr != nil {
+			_ = f.Close()
+			return fmt.Errorf("swarm utility: stream input: %w", cerr)
+		}
+		if serr := f.Sync(); serr != nil {
+			_ = f.Close()
+			return fmt.Errorf("swarm utility: sync input: %w", serr)
+		}
+		if serr := f.Close(); serr != nil {
+			return fmt.Errorf("swarm utility: close input: %w", serr)
+		}
+		binds = append(binds, inputPath+":"+req.Input.Target+":ro")
 	}
 	if req.Volume != nil {
 		mode := "rw"
@@ -93,14 +113,13 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 		env:        env,
 		networks:   utilityNetworkCarriers(req.Namespace, req.Networks),
 		binds:      binds,
-		openStdin:  req.Stdin != nil,
 		attachHint: "project networks created before fleetly F2.2 are not attachable; see the operations runbook to recreate the network",
 	}
 	exec := p.daemonUtilityExec
 	if p.utilityExec != nil {
 		exec = p.utilityExec
 	}
-	exitCode, err := exec(ctx, spec, stdout, stderr, req.Stdin)
+	exitCode, err := exec(ctx, spec, stdout, stderr)
 	if err != nil {
 		return err
 	}
@@ -111,8 +130,9 @@ func (p *Provider) RunUtility(ctx context.Context, req capability.UtilityRequest
 }
 
 // daemonUtilityExec 是工具容器的 daemon 生命周期（create → attach →
-// start → wait → remove；镜像缺失时先匿名拉取）。返回退出码。
-func (p *Provider) daemonUtilityExec(ctx context.Context, spec utilityContainerSpec, stdout, stderr io.Writer, stdin io.Reader) (int, error) {
+// start → wait → remove；镜像缺失时先匿名拉取）。返回退出码。stdin 面
+// 不存在（输入经文件挂载——CloseWrite EOF 不可达，见 RunUtility 注释）。
+func (p *Provider) daemonUtilityExec(ctx context.Context, spec utilityContainerSpec, stdout, stderr io.Writer) (int, error) {
 	if err := p.ensureUtilityImage(ctx, spec.image); err != nil {
 		return 0, err
 	}
@@ -126,7 +146,6 @@ func (p *Provider) daemonUtilityExec(ctx context.Context, spec utilityContainerS
 			Image:      spec.image,
 			Cmd:        spec.argv,
 			Env:        spec.env,
-			OpenStdin:  spec.openStdin,
 			Labels:     map[string]string{labelManaged: "true", labelUtility: "true"},
 			Entrypoint: []string{},
 		},
@@ -148,7 +167,7 @@ func (p *Provider) daemonUtilityExec(ctx context.Context, spec utilityContainerS
 	}()
 
 	attach, err := p.cli.ContainerAttach(ctx, id, client.ContainerAttachOptions{
-		Stream: true, Stdin: spec.openStdin, Stdout: true, Stderr: true,
+		Stream: true, Stdout: true, Stderr: true,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("swarm utility: attach container: %w", err)
@@ -166,13 +185,6 @@ func (p *Provider) daemonUtilityExec(ctx context.Context, spec utilityContainerS
 		_, err := stdcopy.StdCopy(stdout, stderr, attach.Reader)
 		pumpErr <- err
 	}()
-	// stdin 流（恢复面）：EOF 即半关——容器读端见到流结束。
-	if stdin != nil {
-		go func() {
-			_, _ = io.Copy(attach.Conn, stdin)
-			_ = attach.CloseWrite()
-		}()
-	}
 
 	waitRes := p.cli.ContainerWait(ctx, id, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
 	select {

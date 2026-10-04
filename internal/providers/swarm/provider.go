@@ -51,7 +51,7 @@ type Provider struct {
 	// utilityExec 是工具容器 daemon 生命周期的函数值缝（ADR-0039；nil =
 	// 生产实现 daemonUtilityExec。attach 走 postHijacked 独立 dialer，
 	// 传输级假面够不到——builders push seam 同款理由）。
-	utilityExec func(ctx context.Context, spec utilityContainerSpec, stdout, stderr io.Writer, stdin io.Reader) (int, error)
+	utilityExec func(ctx context.Context, spec utilityContainerSpec, stdout, stderr io.Writer) (int, error)
 }
 
 // 编译期契约断言：核心面 + 五个子面（F0.19 全契约；C-10 补 Inspector 面

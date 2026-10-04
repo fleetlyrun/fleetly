@@ -15,10 +15,17 @@ const PasswordFile = "database-password"
 // postgresTemplate 是 postgres 引擎的模板 adapter。
 type postgresTemplate struct{}
 
-func (postgresTemplate) Engine() string     { return "postgres" }
-func (postgresTemplate) Meta() Info         { return Info{Version: "17-bookworm", Port: 5432} }
-func (postgresTemplate) Image() string      { return "postgres:17-bookworm" }
-func (postgresTemplate) DataTarget() string { return "/var/lib/postgresql/data" }
+func (postgresTemplate) Engine() string { return "postgres" }
+func (postgresTemplate) Meta() Info     { return Info{Version: "17-bookworm", Port: 5432} }
+func (postgresTemplate) Image() string  { return "postgres:17-bookworm" }
+
+// DataTarget 挂父目录而非 /var/lib/postgresql/data：2026-10 刷新的
+// postgres:17-bookworm 镜像带 18+ 目录布局入口（docker-library/postgres
+// #1259）——挂在 data 子路径会被判"unused mount"拒启（dind 实证）；挂
+// 父目录对旧/新入口双兼容（旧：initdb 落 <卷>/data；新：落 <卷>/17/docker）。
+// 存量旧布局卷（数据在卷根）的迁移 = 重建 + 备份恢复（F2.2 链路，ADR-0029
+// "版本升级路径"口径）。
+func (postgresTemplate) DataTarget() string { return "/var/lib/postgresql" }
 
 // user / dbName 是 postgres 系的连接账号与库名（模板冻结值）。
 const (
@@ -91,10 +98,11 @@ func (postgresTemplate) Restore(host, password string) (RestoreSpec, error) {
 	if err != nil {
 		return RestoreSpec{}, err
 	}
-	// 无文件参数 = 从 stdin 读档（工具容器 stdin 由执行器接 ObjectStore）。
+	// 输入经文件挂载（BackupInputPath 单源——hijack stdin EOF 不可达，
+	// ADR-0039 落地实录）；custom 格式恢复目标库（模板 env 面首启建库）。
 	return RestoreSpec{
 		Mode:        RestoreStream,
-		Argv:        []string{"pg_restore", "-h", host, "-p", "5432", "-U", pgUser, "-d", pgDBName, "--no-password"},
+		Argv:        []string{"pg_restore", "-h", host, "-p", "5432", "-U", pgUser, "-d", pgDBName, "--no-password", BackupInputPath},
 		Env:         map[string]string{"PGPASSFILE": "/run/secrets/" + pgBackupPassFile},
 		SecretFiles: files,
 	}, nil

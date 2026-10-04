@@ -127,8 +127,20 @@ type UtilityRequest struct {
 	// Volume 是可选平台卷挂载（预置卷恢复形态；VolumeID 平台锚，Provider
 	// 解析卷载体名）。
 	Volume *UtilityVolumeMount
-	// Stdin 非空时接容器 stdin（恢复流；EOF 即半关）。
-	Stdin io.Reader
+	// Input 是可选输入文件（恢复流：Backup 对象经 Provider 落临时文件并
+	// 只读 bind 到 Target——dind 实证 hijack attach 的 CloseWrite 不向容器
+	// stdin 送 EOF（mysql 客户端读流到 EOF 永挂），文件挂载是确定性通道；
+	// pg_restore 此前能通仅因 custom 格式自知档长不需 EOF）。
+	Input *UtilityInput
+}
+
+// UtilityInput 是恢复流的输入文件面。
+type UtilityInput struct {
+	// Content 是输入字节流（调用方负责关闭；Provider 物化到临时文件，
+	// 执行完销毁）。
+	Content io.Reader
+	// Target 是容器内只读挂载路径（dbtemplate.BackupInputPath 单源）。
+	Target string
 }
 
 // UtilityVolumeMount 是工具容器的平台卷挂载。

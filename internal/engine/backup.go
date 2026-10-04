@@ -370,7 +370,9 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *dbrepo.Database) {
 		Env:         spec.Env,
 		Networks:    e.projectNetworkNames(execCtx, db.ProjectID),
 		SecretFiles: spec.SecretFiles,
-		Stdin:       object,
+		// 恢复流经文件挂载（BackupInputPath 单源——hijack stdin EOF 不可
+		// 达的 dind 实证，ADR-0039 落地实录）。
+		Input: &capability.UtilityInput{Content: object, Target: dbtemplate.BackupInputPath},
 	}
 	switch spec.Mode {
 	case dbtemplate.RestoreStream:

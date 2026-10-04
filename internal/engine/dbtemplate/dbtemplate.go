@@ -93,6 +93,12 @@ const (
 // （模板 argv 与 engine 执行器共用的单源常量）。
 const SeedMountPoint = "/seed"
 
+// BackupInputPath 是恢复流的输入文件容器内固定挂载路径（ADR-0039 落地
+// 实录：hijack attach 的 CloseWrite 不向容器 stdin 送 EOF——dind 实证
+// mysql 客户端读流永挂；恢复流经文件挂载承载，模板 argv 与执行器共用
+// 本单源）。
+const BackupInputPath = "/backup-input"
+
 // RestoreSpec 是一次恢复的引擎渲染产物。
 type RestoreSpec struct {
 	Mode RestoreMode

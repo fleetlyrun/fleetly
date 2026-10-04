@@ -49,7 +49,7 @@ func TestTemplateFaces(t *testing.T) {
 			engine:     "postgres",
 			meta:       dbtemplate.Info{Version: "17-bookworm", Port: 5432},
 			image:      "postgres:17-bookworm",
-			dataTarget: "/var/lib/postgresql/data",
+			dataTarget: "/var/lib/postgresql",
 			env: map[string]string{
 				"POSTGRES_USER":          "fleetly",
 				"POSTGRES_DB":            "fleetly",
@@ -63,7 +63,7 @@ func TestTemplateFaces(t *testing.T) {
 			engine:     "pgvector",
 			meta:       dbtemplate.Info{Version: "0.8.6-pg17-bookworm", Port: 5432},
 			image:      "pgvector/pgvector:0.8.6-pg17-bookworm",
-			dataTarget: "/var/lib/postgresql/data",
+			dataTarget: "/var/lib/postgresql",
 			env: map[string]string{
 				"POSTGRES_USER":          "fleetly",
 				"POSTGRES_DB":            "fleetly",
@@ -156,7 +156,7 @@ func TestBackupRestoreFaces(t *testing.T) {
 			backupArgv:  []string{"pg_dump", "-h", "db-01j8", "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--format=custom"},
 			backupEnv:   map[string]string{"PGPASSFILE": "/run/secrets/database-backup-pgpass"}, //nolint:gosec // G101 误报：路径串非凭证
 			backupMats:  map[string][]byte{"database-backup-pgpass": []byte("db-01j8:5432:fleetly:fleetly:secretpw\n")},
-			restoreArgv: []string{"pg_restore", "-h", "db-01j8", "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password"},
+			restoreArgv: []string{"pg_restore", "-h", "db-01j8", "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", dbtemplate.BackupInputPath},
 			restoreMode: dbtemplate.RestoreStream,
 		},
 		{
@@ -164,7 +164,7 @@ func TestBackupRestoreFaces(t *testing.T) {
 			backupArgv:  []string{"pg_dump", "-h", "db-01j8", "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--format=custom"},
 			backupEnv:   map[string]string{"PGPASSFILE": "/run/secrets/database-backup-pgpass"}, //nolint:gosec // G101 误报：路径串非凭证
 			backupMats:  map[string][]byte{"database-backup-pgpass": []byte("db-01j8:5432:fleetly:fleetly:secretpw\n")},
-			restoreArgv: []string{"pg_restore", "-h", "db-01j8", "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password"},
+			restoreArgv: []string{"pg_restore", "-h", "db-01j8", "-p", "5432", "-U", "fleetly", "-d", "fleetly", "--no-password", dbtemplate.BackupInputPath},
 			restoreMode: dbtemplate.RestoreStream,
 		},
 		{
@@ -172,7 +172,7 @@ func TestBackupRestoreFaces(t *testing.T) {
 			backupArgv: []string{"mysqldump", "--defaults-extra-file=/run/secrets/database-backup-defaults",
 				"--single-transaction", "--routines", "--triggers", "--events", "fleetly"},
 			backupMats:  map[string][]byte{"database-backup-defaults": []byte("[client]\nhost=db-01j8\nuser=fleetly\npassword=secretpw\n")},
-			restoreArgv: []string{"mysql", "--defaults-extra-file=/run/secrets/database-backup-defaults", "fleetly"},
+			restoreArgv: []string{"mysql", "--defaults-extra-file=/run/secrets/database-backup-defaults", "-e", "source " + dbtemplate.BackupInputPath, "fleetly"},
 			restoreMode: dbtemplate.RestoreStream,
 		},
 		{
@@ -180,14 +180,20 @@ func TestBackupRestoreFaces(t *testing.T) {
 			backupArgv: []string{"mongodump", "--config=/run/secrets/database-backup-config",
 				"--archive", "--gzip", "--db", "fleetly"},
 			backupMats:  map[string][]byte{"database-backup-config": []byte(`{"uri":"mongodb://fleetly:secretpw@db-01j8:27017/fleetly"}`)},
-			restoreArgv: []string{"mongorestore", "--config=/run/secrets/database-backup-config", "--archive", "--gzip"},
+			restoreArgv: []string{"mongorestore", "--config=/run/secrets/database-backup-config", "--archive=" + dbtemplate.BackupInputPath, "--gzip"},
 			restoreMode: dbtemplate.RestoreStream,
 		},
 		{
-			engine:      "redis",
-			backupArgv:  []string{"redis-cli", "-h", "db-01j8", "-p", "6379", "--rdb", "-"},
-			backupEnv:   map[string]string{"REDISCLI_AUTH": "secretpw"},
-			restoreArgv: []string{"cp", "/dev/stdin", dbtemplate.SeedMountPoint + "/dump.rdb"},
+			engine:     "redis",
+			backupArgv: []string{"redis-cli", "-h", "db-01j8", "-p", "6379", "--rdb", "-"},
+			backupEnv:  map[string]string{"REDISCLI_AUTH": "secretpw"},
+			restoreArgv: []string{"sh", "-c",
+				"cp /backup-input /seed/dump.rdb; " +
+					"redis-server --dir /seed --port 6399 --daemonize no --appendonly no & " +
+					"i=0; until redis-cli -p 6399 ping >/dev/null 2>&1; do i=$((i+1)); [ $i -gt 300 ] && exit 1; sleep 0.1; done; " +
+					"redis-cli -p 6399 BGREWRITEAOF; " +
+					"i=0; until [ -f /seed/appendonlydir/appendonly.aof.manifest ]; do i=$((i+1)); [ $i -gt 300 ] && exit 1; sleep 0.1; done; " +
+					"redis-cli -p 6399 shutdown nosave; rm -f /seed/dump.rdb"},
 			restoreMode: dbtemplate.RestorePreseed,
 		},
 	} {

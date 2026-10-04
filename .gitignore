@@ -8,6 +8,9 @@
 # Test binary, built with `go test -c`
 *.test
 
+# e2e 本地资产（出站波动环境的确定性通道；dind-backup.sh 消费，不入仓）
+.tmp-local-restic
+
 # Output of the go coverage tool
 *.out
 

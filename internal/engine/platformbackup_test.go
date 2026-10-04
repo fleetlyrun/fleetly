@@ -100,14 +100,16 @@ func TestPlatformBackupRunSucceeds(t *testing.T) {
 	assert.Greater(t, st.Size(), int64(0), "VACUUM INTO must produce a real snapshot file")
 
 	calls := fr.snapshotCalls()
-	require.Len(t, calls, 3, "local repo: backup + check + forget")
+	require.Len(t, calls, 4, "local repo: init + backup + check + forget")
 	// argv 前缀恒 ["-r", repo]；动作段在 [2:]。
-	assert.Equal(t, []string{"backup", e.opts.DataRoot}, calls[0][2:4], "backup targets the data root")
-	assert.Contains(t, strings.Join(calls[0], " "), "--exclude")
-	assert.Contains(t, strings.Join(calls[0], " "), "fleetly.db", "live sqlite files are excluded in favor of the snapshot")
-	assert.Contains(t, strings.Join(calls[0], " "), "platform-backups", "the repo directory itself is excluded")
-	assert.Equal(t, []string{"check"}, calls[1][2:], "verify after every snapshot")
-	assert.Equal(t, []string{"forget", "--keep-within", (7 * 24 * time.Hour).String(), "--prune"}, calls[2][2:], "retention rides forget --keep-within with prune")
+	assert.Equal(t, []string{"init"}, calls[0][2:], "first use initializes the repository")
+	assert.Equal(t, []string{"backup", e.opts.DataRoot}, calls[1][2:4], "backup targets the data root")
+	assert.Contains(t, strings.Join(calls[1], " "), "--exclude")
+	assert.Contains(t, strings.Join(calls[1], " "), "fleetly.db", "live sqlite files are excluded in favor of the snapshot")
+	assert.Contains(t, strings.Join(calls[1], " "), "platform-backups", "the repo directory itself is excluded")
+	assert.Contains(t, strings.Join(calls[1], " "), platformRepoKeyFile, "the repo password key is excluded (self-lock circularity, ADR-0039 decision 9)")
+	assert.Equal(t, []string{"check"}, calls[2][2:], "verify after every snapshot")
+	assert.Equal(t, []string{"forget", "--keep-within", "168h", "--prune"}, calls[3][2:], "retention rides forget --keep-within with prune")
 
 	// 节拍锚推进。
 	anchor, err := os.ReadFile(e.platformBackupPath(platformLastRunFile))
@@ -138,10 +140,10 @@ func TestPlatformBackupS3SecondRepo(t *testing.T) {
 
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
-	require.Len(t, fr.calls, 6, "two repos x (backup + check + forget)")
-	assert.Contains(t, fr.calls[3][1], "s3:s3.example.com/fleetly/platform", "s3 repo endpoint from config")
-	assert.Equal(t, "ak", fr.envs[3]["AWS_ACCESS_KEY_ID"])
-	assert.Equal(t, "sk", fr.envs[3]["AWS_SECRET_ACCESS_KEY"])
+	require.Len(t, fr.calls, 8, "two repos x (init + backup + check + forget)")
+	assert.Contains(t, fr.calls[4][1], "s3:s3.example.com/fleetly/platform", "s3 repo endpoint from config")
+	assert.Equal(t, "ak", fr.envs[4]["AWS_ACCESS_KEY_ID"])
+	assert.Equal(t, "sk", fr.envs[4]["AWS_SECRET_ACCESS_KEY"])
 }
 
 // 失败链路：事件 + 锚不推进（失败下拍重试）。

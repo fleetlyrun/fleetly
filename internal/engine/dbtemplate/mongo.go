@@ -106,10 +106,11 @@ func (mongoTemplate) Restore(host, password string) (RestoreSpec, error) {
 	if err != nil {
 		return RestoreSpec{}, err
 	}
-	// 归档流走 stdin；目标库同名（ns 映射恒等，模板库名冻结）。
+	// 归档经文件挂载（--archive 带路径实参——hijack stdin EOF 不可达，
+	// ADR-0039 实录）；目标库同名（ns 映射恒等，模板库名冻结）。
 	return RestoreSpec{
 		Mode:        RestoreStream,
-		Argv:        []string{"mongorestore", "--config=/run/secrets/" + moBackupConfigFile, "--archive", "--gzip"},
+		Argv:        []string{"mongorestore", "--config=/run/secrets/" + moBackupConfigFile, "--archive=" + BackupInputPath, "--gzip"},
 		SecretFiles: files,
 	}, nil
 }

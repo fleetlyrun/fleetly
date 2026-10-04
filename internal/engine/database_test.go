@@ -86,7 +86,7 @@ func TestDatabaseReconcileConverges(t *testing.T) {
 	assert.Equal(t, []capability.Address{{Name: DatabaseDNSName(tDatabaseID)}}, w.Addressing)
 	require.Len(t, w.Volumes, 1)
 	assert.Equal(t, tDatabaseName, w.Volumes[0].VolumeID, "volume name = database name formula")
-	assert.Equal(t, "/var/lib/postgresql/data", w.Volumes[0].Target)
+	assert.Equal(t, "/var/lib/postgresql", w.Volumes[0].Target, "parent mount: 18+ layout entrypoint compatible")
 	// 数据面停止宽限（升级/轮换滚动替换的优雅收口窗）：编排器缺省 10s
 	// 硬杀窗会把 WAL 留在损坏态（staging pgvector 事故实证，2026-10-03）。
 	assert.Equal(t, 60*time.Second, w.StopGrace, "database workload must carry an explicit generous stop grace")
