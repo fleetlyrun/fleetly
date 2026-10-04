@@ -92,6 +92,10 @@ _Avoid_: compile, pipeline, ci
 构建 Capability 的 Provider：dockerfile、railpack、static…。
 _Avoid_: buildpack(泛指)
 
+**Build Log**:
+构建执行日志帧流：live 经最近缓冲、持久经 Logging 承载；出口单点脱敏（Secret 值→指纹短形态，P11/ADR-0040）。
+_Avoid_: build output
+
 **Revision**:
 冻结且不可变的规范化 Spec 快照，回滚与审计的单位。
 _Avoid_: version, snapshot
@@ -188,9 +192,13 @@ _Avoid_: mirror, hub
 S3 兼容对象存储 Capability，承载 Backup 与产物。
 _Avoid_: storage, bucket, S3(泛指)
 
-**Logging / Metrics**:
-日志与指标 Capability：采集、查询、保留、告警。
-_Avoid_: observability(泛指单一系统)
+**Logging**:
+日志 Capability：控制面集中采集（runtime 容器日志）与 build 日志承载；查询双径（Runtime 实时 / 持久化检索），保留窗可配（ADR-0040）。
+_Avoid_: observability(泛指单一系统), log pipeline
+
+**Metrics**:
+指标 Capability：容器指标采集、查询、阈值告警与通知通道。
+_Avoid_: monitoring(泛指), telemetry(另指事件面)
 
 **Managed Provider**:
 由平台以普通 Workload 形式托管部署的 Provider 实例。

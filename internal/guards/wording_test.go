@@ -49,6 +49,10 @@ var bannedPatterns = map[string]*regexp.Regexp{
 	// Route/Edge 词条。
 	"vhost":         wordRe(`vhost|vhosts`),
 	"load balancer": wordRe(`load[ -]balancer|load[ -]balancers`),
+	// Logging/Metrics/Build Log 词条（ADR-0040 入册；Logging 与 Metrics
+	// 原合并词条分立）。
+	"log pipeline": wordRe(`log[ _-]pipelines?`),
+	"build output": wordRe(`build[ _]outputs?`),
 	// Token 词条。
 	"api key":        wordRe(`api[_ -]?key|api[_ -]?keys`),
 	"pat":            regexp.MustCompile(`\bPAT\b`),
@@ -171,6 +175,8 @@ var skippedTokens = map[string]string{
 	"bucket":           "S3 bucket 技术语；人工评审",
 	"s3":               "S3 兼容协议名为选型契约（ObjectStore）",
 	"observability":    "仅禁泛指单一系统；观测泛论义合法",
+	"monitoring":       "通用英文（指标/观测泛论）；Metrics 同义词语境人工评审",
+	"telemetry":        "proto telemetry 上下文是冻结包名（事件/日志查询面）；Metrics 同义词语境人工评审",
 	"component":        "通用词；Managed Provider 同义词语境人工评审",
 	"internal service": "短语；人工评审",
 	// ---- 状态语义 ----

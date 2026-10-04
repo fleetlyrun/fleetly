@@ -16,6 +16,7 @@
 #   FLEETLY_DATA_ROOT 数据根（默认 /var/lib/fleetly）
 #   FLEETLY_ADVERTISE_ADDR  swarm advertise 地址（默认自动探测默认路由 IP）
 #   FLEETLY_REGISTRY_ADDR   受管仓库地址（默认 <advertise>:5000；空 = 禁用
+#   FLEETLY_LOGGING_ADDR    受管日志存储地址（默认 <advertise>:9428；空 = 禁用
 #                           构建链——镜像直投部署不受影响）
 #
 # railpack 构建器（零配置源码构建）随脚本钉版安装（F1.14，ADR-0032）；
@@ -171,11 +172,20 @@ fi
 DATA_ROOT="${FLEETLY_DATA_ROOT:-/var/lib/fleetly}"
 mkdir -p "$DATA_ROOT"
 
+# 受管日志存储端点（F2.4，ADR-0040）：与 registry 同源物化
+#（<advertise>:9428，routing mesh 发布）；空 = Logging 面停用。
+LOGGING_ADDR="${FLEETLY_LOGGING_ADDR:-}"
+[ -z "$LOGGING_ADDR" ] && [ -n "$ADDR" ] && LOGGING_ADDR="$ADDR:9428"
+
 start_fleetlyd_systemd() {
   log "starting fleetlyd via systemd"
-  REG_ENV=""
+  EXTRA_ENV=""
   if [ -n "$REGISTRY_ADDR" ]; then
-    REG_ENV="Environment=FLEETLY_REGISTRY_ADDR=$REGISTRY_ADDR
+    EXTRA_ENV="Environment=FLEETLY_REGISTRY_ADDR=$REGISTRY_ADDR
+"
+  fi
+  if [ -n "$LOGGING_ADDR" ]; then
+    EXTRA_ENV="${EXTRA_ENV}Environment=FLEETLY_LOGGING_ADDR=$LOGGING_ADDR
 "
   fi
   cat > /etc/systemd/system/fleetlyd.service <<UNIT
@@ -187,7 +197,7 @@ Wants=network-online.target
 [Service]
 ExecStart=$BIN_DIR/fleetlyd
 Environment=FLEETLY_DATA_ROOT=$DATA_ROOT
-${REG_ENV}Restart=always
+${EXTRA_ENV}Restart=always
 RestartSec=3
 
 [Install]
@@ -202,6 +212,7 @@ start_fleetlyd_background() {
   #（与 e2e dind 同款形态；进程托管随容器形态批次收口）。
   log "no systemd — starting fleetlyd in background (log: /var/log/fleetlyd.log)"
   setsid env FLEETLY_DATA_ROOT="$DATA_ROOT" FLEETLY_REGISTRY_ADDR="${REGISTRY_ADDR:-}" \
+    FLEETLY_LOGGING_ADDR="${LOGGING_ADDR:-}" \
     "$BIN_DIR/fleetlyd" > /var/log/fleetlyd.log 2>&1 < /dev/null &
 }
 

@@ -46,6 +46,7 @@ var ProviderSet = wire.NewSet(
 	NewBuilderProviders,
 	NewEdgeProvider,
 	NewRegistryProvider,
+	NewLoggingProvider,
 	NewObjectStore,
 	NewMaterialCipher,
 	NewEngine,
@@ -170,6 +171,35 @@ func NewRegistryProvider(app lynx.App, cfg *config.AppConfig) (capability.Regist
 	return reg, func() {}, nil
 }
 
+// NewLoggingProvider 构造 Logging Provider（VictoriaLogs 受管自宿；可选
+// 能力——config.logging.addr 未配置时返回 nil，Logging 面停用：logs 回退
+// Runtime 实时路径、build 日志回退环形缓冲，ADR-0040。addr/保留窗经装配
+// ctx 注入工厂（config 是唯一契约源，无 env 旧通道——本批首生即带键）。
+func NewLoggingProvider(app lynx.App, cfg *config.AppConfig) (capability.Logging, func(), error) {
+	providers := capability.RegisteredFactories()
+	if len(providers[capability.KindLogging]) == 0 {
+		return nil, func() {}, nil
+	}
+	if cfg.LoggingAddr() == "" {
+		app.Logger().Info("logging address not configured; the managed log store stays disabled (logs fall back to the realtime path)")
+		return nil, func() {}, nil
+	}
+	ctx := capability.WithLoggingAddr(context.Background(), cfg.LoggingAddr())
+	ctx = capability.WithLoggingRetentionDays(ctx, cfg.LoggingRetentionDays())
+	p, err := capability.Build(ctx, capability.KindLogging, "")
+	if err != nil {
+		// 工厂 fail loud 形态（地址在册但构造失败=数据根/凭证面故障）不吞：
+		// 装配失败优于带病运行。
+		return nil, nil, fmt.Errorf("assembly: logging provider: %w", err)
+	}
+	lg, ok := p.(capability.Logging)
+	if !ok {
+		return nil, nil, fmt.Errorf("assembly: provider %s does not implement the Logging port", p.Describe().Name)
+	}
+	logCapabilityFaces(app.Logger(), "logging", lg)
+	return lg, func() {}, nil
+}
+
 // NewMaterialCipher 打开数据根 KEK（首启生成；ADR-0014 信封加密根）。
 func NewMaterialCipher(cfg *config.AppConfig) (*material.Cipher, func(), error) {
 	c, err := material.LoadCipher(cfg.DataRoot())
@@ -204,6 +234,7 @@ func NewEngine(
 	b map[string]capability.Builder,
 	edge capability.Edge,
 	reg capability.Registry,
+	logs capability.Logging,
 	store capability.ObjectStore,
 	cipher *material.Cipher,
 	app lynx.App,
@@ -226,7 +257,7 @@ func NewEngine(
 		}
 	}
 	return engine.New(engine.Deps{
-		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg,
+		DB: db, Runtime: rt, Builders: b, Edge: edge, Registry: reg, Logging: logs,
 		ObjectStore: store, Cipher: cipher, Logger: app.Logger(),
 	}, engine.Options{
 		DataRoot:        cfg.DataRoot(),

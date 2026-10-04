@@ -203,18 +203,44 @@ case "$CONSTRAINT" in
   *) echo "placement constraint missing/wrong: $CONSTRAINT" >&2; exit 1 ;;
 esac
 
-# P3 单机假设审计（docs/reviews/2026-10-03-single-node-assumption-audit.md
-# 发现 A）：StreamLogs 的容器发现走 manager 本节点的 ContainerList——
-# 调度到 worker 的容器日志静默缺失（已知边界，修复归宿=F2.4 日志管线
-# 重做）。本断言把"manager 节点容器日志可见"的现状下限钉进 e2e：
-# web 双副本必有其一在 manager，日志流不得为空。F2.4 落地后应升级为
-# "两节点容器日志都在流内"。
-log "asserting log stream covers manager-node containers (known boundary until F2.4)"
-LOG_LINES=$(cli --json logs --app "$APP_ID" --process web --tail 50 | grep -c '"' || true)
-if [ "${LOG_LINES:-0}" -eq 0 ]; then
-  echo "log stream returned no frames for web (expected at least the manager-node replica)" >&2
+# P3 单机假设审计发现 A 的根治锚（F2.4/ADR-0040 已落地）：StreamLogs 重做
+# 为集群面 ServiceList+ServiceLogs——两节点容器的日志都必须在实时流内。
+# 帧的 node 字段（swarm 节点归因，details 面携带）双节点齐全。
+log "asserting log stream covers BOTH nodes (finding A fixed)"
+LOG_NODES=$(cli --json logs --app "$APP_ID" --process web --tail 50 \
+  | sed -n 's/.*"node": *"\([^"]*\)".*/\1/p' | sort -u | grep -c . || true)
+if [ "${LOG_NODES:-0}" -lt 2 ]; then
+  echo "log stream covered $LOG_NODES nodes (expected both; finding A regression)" >&2
+  cli --json logs --app "$APP_ID" --process web --tail 50 >&2 || true
   exit 1
 fi
-log "log stream live for manager-node replicas ($LOG_LINES frames)"
+log "log stream covers both nodes ($LOG_NODES node ids seen)"
+
+# 受管日志存储（F2.4/ADR-0040）：VL 起服 + 采集环落地后 --text 检索路径
+# 可查（跨节点历史 + 全文过滤；install.sh 默认物化 logging.addr）。
+log "waiting for the managed log store to come up"
+VL_UP=0
+i=0
+while [ "$i" -lt 90 ]; do
+  if docker exec "$MGR_CID" docker service ls --filter name=fleetly-logging-victorialogs \
+    --format '{{.Replicas}}' 2>/dev/null | grep -q '1/1'; then
+    VL_UP=1; break
+  fi
+  i=$((i + 1)); sleep 2
+done
+[ "$VL_UP" = "1" ] || { echo "managed victoria-logs never became 1/1" >&2; \
+  docker exec "$MGR_CID" docker service ps fleetly-logging-victorialogs >&2 || true; exit 1; }
+log "managed victoria-logs running"
+
+log "asserting --text search returns persisted frames (collection loop live)"
+TEXT_HITS=0
+i=0
+while [ "$i" -lt 60 ]; do
+  n=$(cli --json logs --app "$APP_ID" --text worker --tail 20 2>/dev/null | grep -c '"line"' || true)
+  if [ "${n:-0}" -gt 0 ]; then TEXT_HITS=1; break; fi
+  i=$((i + 1)); sleep 2
+done
+[ "$TEXT_HITS" = "1" ] || { echo "log search (--text) returned no persisted frames" >&2; exit 1; }
+log "log search --text live over the retention store"
 
 log "TWO-NODE E2E PASSED"

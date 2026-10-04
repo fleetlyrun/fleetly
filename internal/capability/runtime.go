@@ -476,6 +476,9 @@ type LogQuery struct {
 	Follow bool
 	// Text 是文本过滤（ADR-0040 检索路径）：非空时只返回包含该子串的行。
 	Text string
+	// Source 是 build 域回读的过滤锚（Build ID；运行时路径不消费——
+	// ADR-0040 决策 3）。
+	Source string
 }
 
 // LogWriter 是日志帧接收端（流式背压由实现负责）。

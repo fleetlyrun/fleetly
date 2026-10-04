@@ -365,21 +365,19 @@ func eventMsg(ev *outbox.Event) *telemetryv1.Event {
 	}
 }
 
-// ---- Logs（F0.25：RuntimeLogs 直读；诚实边界——仅实时+最近缓冲，持久化
-// 检索 N2。Runtime 未实现 RuntimeLogs 子面时显式降级 E_INTERNAL →） ----
+// ---- Logs（ADR-0040 双径：无 text = Runtime 实时路径——集群面
+// ServiceLogs（swarm），字节级保持既有形态；text = 持久化检索路径
+//（VictoriaLogs 保留窗 + 全文过滤，Follow 经 /select/logsql/tail 实时
+// 尾随）。Logging 面停用时检索路径精确失败、实时路径不受影响。） ----
 
 type LogsService struct {
 	telemetryv1.UnimplementedLogsServiceServer
 	s *Services
 }
 
-// StreamLogs 转发 RuntimeLogs 流（appID → 隔离域解析经 app 行 + project 行
-// ——Team 轴实取，不再硬编码 default；ADR-0035 行级授权同调用点）。
+// StreamLogs 双径路由（appID → 隔离域解析经 app 行 + project 行——Team
+// 轴实取；ADR-0035 行级授权同调用点——两路径共用同一授权链）。
 func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream telemetryv1.LogsService_StreamLogsServer) error {
-	logs := capability.FacesOf(svc.s.Runtime).Logs // 日志子面（FacesOf 协商点）
-	if logs == nil {
-		return apperr.New("E_INTERNAL", "the runtime provider does not expose container logs")
-	}
 	if req.GetAppId() == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "app_id: must not be empty")
 	}
@@ -402,6 +400,21 @@ func (svc *LogsService) StreamLogs(req *telemetryv1.StreamLogsRequest, stream te
 		return err
 	}
 	w := &streamLogWriter{stream: stream}
+	if req.GetText() != "" {
+		// 检索路径（ADR-0040 决策 4）：行级隔离由查询构造执法——只携带
+		// 本 App 的域字段（VL 单租户，凭证不离开 daemon）。
+		if svc.s.Logging == nil {
+			return apperr.New("E_INTERNAL", "log search requires the managed log store; set config logging.addr to enable it")
+		}
+		if err := svc.s.Logging.Query(stream.Context(), q, w); err != nil {
+			return mapStateError(err, "logs")
+		}
+		return nil
+	}
+	logs := capability.FacesOf(svc.s.Runtime).Logs // 日志子面（FacesOf 协商点）
+	if logs == nil {
+		return apperr.New("E_INTERNAL", "the runtime provider does not expose container logs")
+	}
 	if err := logs.StreamLogs(stream.Context(), q, w); err != nil {
 		return mapStateError(err, "logs")
 	}
@@ -435,6 +448,7 @@ func logQueryFromRequest(team string, appRow *app.App, req *telemetryv1.StreamLo
 		}
 		q.Until = t
 	}
+	q.Text = req.GetText()
 	return q, nil
 }
 

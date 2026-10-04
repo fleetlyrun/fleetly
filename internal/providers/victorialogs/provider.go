@@ -39,11 +39,11 @@ const Image = "victoriametrics/victoria-logs:v1.52.0"
 // routing mesh 发布；数据卷挂 -storageDataPath；密码材料文件名即容器内
 // /run/secrets/<名> 路径（-httpAuth.password=file:/// 旗标读取）。
 const (
-	publishPort  = 9428
-	storageRoot  = "/victoria-logs-data"
-	volumeID     = "fleetly-logging-victorialogs"
-	binaryPath   = "/victoria-logs-prod"
-	authFile     = "victorialogs-auth"
+	publishPort    = 9428
+	storageRoot    = "/victoria-logs-data"
+	volumeID       = "fleetly-logging-victorialogs"
+	binaryPath     = "/victoria-logs-prod"
+	authFile       = "victorialogs-auth"
 	credentialUser = "fleetly"
 	// credentialFile 是平台凭证落盘（<DataRoot>/keys/ 下，与 KEK/zot 凭证
 	// 同目录文化；0o600，备份随数据根）。
@@ -90,8 +90,8 @@ type Provider struct {
 
 // 编译期契约断言：Logging 端口 + 受管形态声明 + 材料子面（ADR-0040）。
 var (
-	_ capability.Logging        = (*Provider)(nil)
-	_ capability.Managed        = (*Provider)(nil)
+	_ capability.Logging         = (*Provider)(nil)
+	_ capability.Managed         = (*Provider)(nil)
 	_ capability.MaterialsSource = (*Provider)(nil)
 )
 
@@ -184,7 +184,7 @@ func (p *Provider) Describe() capability.ProviderDescriptor {
 		Notes: []string{
 			"managed self-hosted VictoriaLogs; the persistent log store for the whole cluster (ADR-0040)",
 			"collects runtime container logs and build logs through the control-plane daemon; query via `fleetly logs --text`",
-			fmt.Sprintf("retention is %d days (config logging.retention_days); the store is single-tenant with platform-only basic auth", p.retentionDays),
+			fmt.Sprintf("retention is %d days (config logging.retention_days); the store accepts only platform credentials (basic auth)", p.retentionDays),
 		},
 	}
 }
@@ -292,14 +292,13 @@ func (p *Provider) Ingest(ctx context.Context, frames []capability.LogFrame) err
 	return p.post(ctx, "/insert/jsonline?_stream_fields="+streamFields, "application/stream+json", buf.Bytes())
 }
 
-// Query 实现 Logging 端口（检索路径）：LogsQL 流过滤 + 文本管道 →
-// /select/logsql/query（非 follow，limit = tail 语义——VL 返回最大 _time
-// 的 N 条）；Follow 经 /select/logsql/tail 实时尾随（start_offset 回填
-// Since 起的历史，官方流式端点，≥5s 批汇延迟诚实标注）。
+// Query 实现 Logging 端口（检索路径）：LogsQL 流过滤（域字段 +
+// fleetly_build）+ 可选文本管道 → /select/logsql/query（非 follow，
+// limit = tail 语义——VL 返回最大 _time 的 N 条）；Follow 经
+// /select/logsql/tail 实时尾随（start_offset 回填 Since 起的历史，官方
+// 流式端点，≥5s 批汇延迟诚实标注）。text 是否必填是调用方（server 双径
+// 路由）的策略，本端口不执法。
 func (p *Provider) Query(ctx context.Context, q capability.LogQuery, w capability.LogWriter) error {
-	if strings.TrimSpace(q.Text) == "" {
-		return fmt.Errorf("victorialogs provider: query requires a text filter (the runtime path serves no-text reads)")
-	}
 	query := buildLogSQL(q)
 	if q.Follow {
 		return p.tail(ctx, query, q, w)
@@ -489,9 +488,10 @@ func parseVLTime(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("victorialogs: unparsable _time %q", s)
 }
 
-// buildLogSQL 构造 LogsQL：流过滤 {域字段} + 文本管道 | ~ "regexp"。
-// 值经字符串字面量转义（\ 与 "）；文本经 regexp 引用元字符转义（子串
-// 语义，非用户正则——检索面词汇是"包含该文本"）。
+// buildLogSQL 构造 LogsQL：流过滤 {域字段 + fleetly_build} + 可选文本
+// 管道 | ~ "regexp"。Source 是 build 域回读的过滤锚（fleetly_build=Build
+// ID）。值经字符串字面量转义（\ 与 "）；文本经 regexp 引用元字符转义
+// （子串语义，非用户正则——检索面词汇是"包含该文本"）。
 func buildLogSQL(q capability.LogQuery) string {
 	var conds []string
 	if v := q.Namespace.Project; v != "" {
@@ -505,6 +505,9 @@ func buildLogSQL(q capability.LogQuery) string {
 	}
 	if q.WorkloadID != "" {
 		conds = append(conds, fieldWorkload+"="+quoteLogSQL(q.WorkloadID))
+	}
+	if q.Source != "" {
+		conds = append(conds, fieldBuild+"="+quoteLogSQL(q.Source))
 	}
 	query := "{" + strings.Join(conds, ",") + "}"
 	if q.Text != "" {
@@ -534,8 +537,8 @@ func formatOffset(d time.Duration) string {
 }
 
 // init 自注册工厂（cmd/fleetlyd blank import 触发）。地址经装配 ctx 注入
-//（config.logging.addr 唯一契约源，ADR-0040）；空 = Logging 面停用
-//（logs 回退 Runtime 实时路径、build 日志回退环形缓冲——诚实降级，升级
+// （config.logging.addr 唯一契约源，ADR-0040）；空 = Logging 面停用
+// （logs 回退 Runtime 实时路径、build 日志回退环形缓冲——诚实降级，升级
 // 零扰动）。
 func init() {
 	capability.RegisterFactory(capability.KindLogging, "victorialogs", func(ctx context.Context) (capability.Provider, error) {

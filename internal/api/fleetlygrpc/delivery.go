@@ -18,10 +18,12 @@ import (
 	deliveryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/delivery/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/apperr"
 	"github.com/fleetlyrun/fleetly/internal/authn"
+	"github.com/fleetlyrun/fleetly/internal/capability"
 	"github.com/fleetlyrun/fleetly/internal/engine"
 	"github.com/fleetlyrun/fleetly/internal/spec"
 	"github.com/fleetlyrun/fleetly/internal/state/app"
 	"github.com/fleetlyrun/fleetly/internal/state/audit"
+	"github.com/fleetlyrun/fleetly/internal/state/build"
 	"github.com/fleetlyrun/fleetly/internal/state/revision"
 	"github.com/fleetlyrun/fleetly/internal/state/sourceupload"
 )
@@ -356,10 +358,11 @@ func (svc *BuildsService) ListBuilds(ctx context.Context, req *deliveryv1.ListBu
 	return out, nil
 }
 
-// StreamBuildLogs 读构建日志（B4）：先发最近缓冲，follow 时轮询增量续流
-// 至终态（诚实边界：仅实时+最近缓冲，持久化检索 N2）。未知 build id 是
-// 精确拒绝——不静默空流。游标用帧序列号（N0.1 P2-1）：环形缓冲回绕丢帧
-// 后按 seq 续流，不受 len 位置假象影响。
+// StreamBuildLogs 读构建日志（B4 + ADR-0040 决策 3）：环形缓冲（live +
+// 末 8 个 build）优先；缓冲不在场（已淘汰/重启丢失）且 Logging 面在册 →
+// VL 保留窗回读（kind=build 全量帧）。follow 时轮询增量续流至终态。
+// 未知 build id 是精确拒绝——不静默空流。游标用帧序列号（N0.1 P2-1）：
+// 环形缓冲回绕丢帧后按 seq 续流，不受 len 位置假象影响。
 func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest, stream deliveryv1.BuildsService_StreamBuildLogsServer) error {
 	if req.GetBuildId() == "" {
 		return apperr.New("E_INVALID_ARGUMENT", "build_id: must not be empty")
@@ -388,6 +391,17 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 	if err := flush(); err != nil {
 		return err
 	}
+	// 缓冲不在场的终态 build：VL 保留窗回读（历史全量；ring 只保末 8 个，
+	// 重启即失——持久化面正是为此）。行级隔离 = 查询构造只携带本 build
+	// 的域锚（fleetly_build=<id> + 归属域字段）。
+	if newFrames == 0 && svc.s.Logging != nil {
+		b, err := svc.s.Builds.Get(ctx, svc.s.DB.Runner(), req.GetBuildId())
+		if err == nil && b.State.Terminal() {
+			if backfillErr := svc.backfillBuildLogs(ctx, b, stream); backfillErr != nil {
+				return backfillErr
+			}
+		}
+	}
 	if !req.GetFollow() {
 		return nil
 	}
@@ -407,6 +421,42 @@ func (svc *BuildsService) StreamBuildLogs(req *deliveryv1.StreamBuildLogsRequest
 			return nil
 		}
 	}
+}
+
+// backfillBuildLogs 从 VL 回读一个终态 build 的日志（域锚 = Build 行的
+// 归属 App/Project + Team 实取）。
+func (svc *BuildsService) backfillBuildLogs(ctx context.Context, b *build.Build, stream deliveryv1.BuildsService_StreamBuildLogsServer) error {
+	appRow, err := svc.s.Apps.Get(ctx, svc.s.DB.Runner(), b.AppID)
+	if err != nil {
+		return mapStateError(err, "app")
+	}
+	proj, err := svc.s.Projects.Get(ctx, svc.s.DB.Runner(), appRow.ProjectID)
+	if err != nil {
+		return mapStateError(err, "project")
+	}
+	w := buildLogBackfillWriter{stream: stream, buildID: b.ID}
+	q := capability.LogQuery{
+		Namespace: capability.NamespaceRef{Team: proj.TeamID, Project: appRow.ProjectID, App: appRow.ID},
+		Source:    b.ID,
+	}
+	if err := svc.s.Logging.Query(ctx, q, &w); err != nil {
+		return mapStateError(err, "logs")
+	}
+	return nil
+}
+
+// buildLogBackfillWriter 把 VL 帧转发为 RPC 流帧。
+type buildLogBackfillWriter struct {
+	stream  deliveryv1.BuildsService_StreamBuildLogsServer
+	buildID string
+}
+
+func (w *buildLogBackfillWriter) WriteLog(_ context.Context, f capability.LogFrame) error {
+	return w.stream.Send(&deliveryv1.StreamBuildLogsResponse{
+		BuildId: w.buildID,
+		Time:    f.Time.UTC().Format(timeFormatRFC3339),
+		Line:    f.Line,
+	})
 }
 
 // scalarJSON 渲染 diff 标量（nil → 空串 = 缺失侧）。

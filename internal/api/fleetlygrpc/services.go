@@ -49,6 +49,9 @@ type Services struct {
 	Engine  *engine.Engine
 	Cipher  *material.Cipher
 	Runtime capability.Runtime
+	// Logging 是受管日志存储（可空 = Logging 面停用：text 检索路径精确
+	// 失败、logs 回退 Runtime 实时路径——ADR-0040 双径）。
+	Logging capability.Logging
 
 	Projects     *project.Repo
 	Apps         *app.Repo
@@ -112,6 +115,7 @@ func NewServices(db *state.DB, e *engine.Engine, c *material.Cipher, rt capabili
 		Engine:          e,
 		Cipher:          c,
 		Runtime:         rt,
+		Logging:         e.LoggingProvider(),
 		Projects:        project.New(clock),
 		Apps:            app.New(clock),
 		Deployments:     deployment.New(clock),

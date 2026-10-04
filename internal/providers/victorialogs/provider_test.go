@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -96,7 +97,7 @@ func TestRetentionVariants(t *testing.T) {
 }
 
 // TestMaterialsStableAcrossRestarts 钉 E28/决策 1：材料字节跨构造稳定
-//（P7 纪律：受管载体指纹不随进程重启漂移）。
+// （P7 纪律：受管载体指纹不随进程重启漂移）。
 func TestMaterialsStableAcrossRestarts(t *testing.T) {
 	dir := t.TempDir()
 	p1, err := New("10.0.0.1:9428", dir, 30)
@@ -194,21 +195,36 @@ func TestIngestRejected(t *testing.T) {
 	assert.Contains(t, err.Error(), "maintenance")
 }
 
-// TestQueryRequiresText 钉端口契约：检索路径必须有文本过滤（无 text 的
-// 读取归 Runtime 实时路径，ADR-0040 决策 4 双径）。
-func TestQueryRequiresText(t *testing.T) {
-	p := newTestProvider(t)
-	err := p.Query(context.Background(), capability.LogQuery{Text: "  "}, &collectWriter{})
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "text filter")
+// collectWriter 收集帧的测试 writer（并发安全——tail 流在独立 goroutine
+// 写、测试主体读）。
+type collectWriter struct {
+	mu     sync.Mutex
+	frames []capability.LogFrame
 }
 
-// collectWriter 收集帧的测试 writer。
-type collectWriter struct{ frames []capability.LogFrame }
-
 func (c *collectWriter) WriteLog(_ context.Context, f capability.LogFrame) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	c.frames = append(c.frames, f)
 	return nil
+}
+
+func (c *collectWriter) len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.frames)
+}
+
+// TestQueryBuildFilter 钉 build 域回读过滤锚：Source → fleetly_build 流
+// 过滤；text 缺席 = 无管道（build 回读是全量读，ADR-0040 决策 3）。
+func TestQueryBuildFilter(t *testing.T) {
+	q := capability.LogQuery{
+		Namespace: capability.NamespaceRef{Team: "t1", Project: "P1"},
+		Source:    "01JD0BUILD0000000000000000C1",
+	}
+	assert.Equal(t,
+		`{fleetly_project="P1",fleetly_team="t1",fleetly_build="01JD0BUILD0000000000000000C1"}`,
+		buildLogSQL(q))
 }
 
 // TestQueryRoundTrip 钉检索请求形态（query/start/end/limit form 字段）与
@@ -266,10 +282,13 @@ func TestQueryRoundTrip(t *testing.T) {
 // TestTailStream 钉 tail 端点：start_offset 回填窗（Since 距今秒数）、
 // 流式逐帧写出、ctx 取消干净收口。
 func TestTailStream(t *testing.T) {
+	var formMu sync.Mutex
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.NoError(t, r.ParseForm())
+		formMu.Lock()
 		gotForm = r.Form
+		formMu.Unlock()
 		w.Header().Set("Content-Type", "application/stream+json; charset=utf-8")
 		_, _ = w.Write([]byte(`{"_time":"2026-10-04T12:00:01Z","_msg":"live1","fleetly_workload":"W1","fleetly_kind":"runtime"}` + "\n"))
 		_, _ = w.Write([]byte(`{"_time":"2026-10-04T12:00:02Z","_msg":"live2","fleetly_workload":"W1","fleetly_kind":"runtime"}` + "\n"))
@@ -292,14 +311,20 @@ func TestTailStream(t *testing.T) {
 		}, &cw)
 	}()
 	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) && len(cw.frames) < 2 {
+	for time.Now().Before(deadline) && cw.len() < 2 {
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
-	require.Len(t, cw.frames, 2, "tail must stream frames until cancel")
-	assert.Equal(t, "live1", string(cw.frames[0].Line))
-	assert.Contains(t, gotForm.Get("start_offset"), "s")
-	assert.GreaterOrEqual(t, parseOffsetSeconds(t, gotForm.Get("start_offset")), int64(5300), "backfill window ≈ now-since (90m)")
+	cw.mu.Lock()
+	frames := append([]capability.LogFrame(nil), cw.frames...)
+	cw.mu.Unlock()
+	require.Len(t, frames, 2, "tail must stream frames until cancel")
+	assert.Equal(t, "live1", string(frames[0].Line))
+	formMu.Lock()
+	offset := gotForm.Get("start_offset")
+	formMu.Unlock()
+	assert.Contains(t, offset, "s")
+	assert.GreaterOrEqual(t, parseOffsetSeconds(t, offset), int64(5300), "backfill window ≈ now-since (90m)")
 }
 
 func parseOffsetSeconds(t *testing.T, s string) int64 {
@@ -317,7 +342,7 @@ func TestHealthProbe(t *testing.T) {
 	report := p.Health(context.Background())
 	assert.False(t, report.Healthy)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
 	require.NoError(t, err)
 	defer func() { _ = ln.Close() }()
 	go func() {

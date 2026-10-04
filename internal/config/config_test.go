@@ -53,3 +53,18 @@ func TestEdgeConfigAuthToken(t *testing.T) {
 	assert.Equal(t, "edge-secret", c.EdgeConfigAuthToken())
 	assert.Empty(t, (*AppConfig)(nil).EdgeConfigAuthToken())
 }
+
+// Logging 面缺省语义（ADR-0040）：addr 空 = 面停用（logs 回退实时路径，
+// 升级零扰动）；retention_days 空 = 30d；显式值原样透传；nil 链安全。
+func TestLoggingDefaults(t *testing.T) {
+	assert.Empty(t, WithDefaults(&AppConfig{}).LoggingAddr(), "unset addr keeps the logging face disabled")
+	assert.Equal(t, DefaultLoggingRetentionDays, WithDefaults(&AppConfig{}).LoggingRetentionDays())
+	c := WithDefaults(&AppConfig{Logging: &Logging{Addr: "10.124.0.3:9428", RetentionDays: 90}})
+	assert.Equal(t, "10.124.0.3:9428", c.LoggingAddr())
+	assert.Equal(t, int64(90), c.LoggingRetentionDays())
+	// 非正值回退缺省（0/负 = 未配置口径）。
+	c = WithDefaults(&AppConfig{Logging: &Logging{RetentionDays: -1}})
+	assert.Equal(t, DefaultLoggingRetentionDays, c.LoggingRetentionDays())
+	assert.Empty(t, (*AppConfig)(nil).LoggingAddr())
+	assert.Equal(t, DefaultLoggingRetentionDays, (*AppConfig)(nil).LoggingRetentionDays())
+}

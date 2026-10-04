@@ -35,7 +35,7 @@ type fakeLogStream struct {
 func stdcopyFrame(payload string) []byte {
 	h := make([]byte, 8, 8+len(payload))
 	h[0] = 1
-	binary.BigEndian.PutUint32(h[4:], uint32(len(payload)))
+	binary.BigEndian.PutUint32(h[4:], uint32(len(payload))) //nolint:gosec // G115 测试夹具：payload 是本文件短行，域内恒安全
 	return append(h, payload...)
 }
 

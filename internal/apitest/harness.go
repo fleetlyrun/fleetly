@@ -391,6 +391,55 @@ func (f *FakeRuntime) StreamLogs(_ context.Context, q capability.LogQuery, w cap
 	return nil
 }
 
+// FakeLogging 是 Logging 端口假底座（--text 检索路径 golden 的确定性底座：
+// 固定两帧 + 查询记录——行前缀 search- 与实时路径的 frame- 区分双径）。
+// 注入面：Harness.Services.Logging（server 双径路由消费；engine 采集环
+// 不参与——Services.Logging 与 Deps.Logging 分立，ADR-0040）。
+type FakeLogging struct {
+	mu      sync.Mutex
+	queries []capability.LogQuery
+	ingests [][]capability.LogFrame
+}
+
+func (f *FakeLogging) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "apitest-logging", Capability: capability.KindLogging, Version: "test"}
+}
+func (f *FakeLogging) Health(context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+func (f *FakeLogging) Ingest(_ context.Context, frames []capability.LogFrame) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.ingests = append(f.ingests, frames)
+	return nil
+}
+func (f *FakeLogging) Query(_ context.Context, q capability.LogQuery, w capability.LogWriter) error {
+	f.mu.Lock()
+	f.queries = append(f.queries, q)
+	f.mu.Unlock()
+	for i := 1; i <= 2; i++ {
+		if err := w.WriteLog(context.Background(), capability.LogFrame{
+			WorkloadID: q.Namespace.App + "-web",
+			Container:  "task-search",
+			Node:       "node-search",
+			Time:       time.Unix(1767225700, 0).UTC(),
+			Line:       []byte(fmt.Sprintf("search-frame-%d", i)),
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Queries 返回收到的检索查询快照（双径路由断言面）。
+func (f *FakeLogging) Queries() []capability.LogQuery {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]capability.LogQuery, len(f.queries))
+	copy(out, f.queries)
+	return out
+}
+
 // FakeBuilder 是假构建底座（git 触发链的 building 推进用；digest 固定、
 // 记录调用）。构建上下文由测试预置（跳过真实 clone）。
 type FakeBuilder struct {
