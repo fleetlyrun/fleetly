@@ -114,18 +114,20 @@ func TestMaterialsStableAcrossRestarts(t *testing.T) {
 	assert.NotContains(t, string(first.SecretFiles[authFile]), "\n")
 }
 
-// TestBuildLogSQL 钉 LogsQL 构造：域过滤 + WorkloadID 过滤 + 文本管道；
-// 字符串字面量转义（\ 与 "）；文本子串语义（正则元字符转义）。
+// TestBuildLogSQL 钉 LogsQL 构造：域过滤 + WorkloadID 过滤 + 文本过滤器
+// （_msg:~ 形态——管道形态被 VL 拒，真机实证 2026-10-04）；{} 只收流字段
+// （fleetly_team 是行字段——进 {} 恒空集不报错，不参与构造）；字符串字面量
+// 转义（\ 与 "）；文本子串语义（正则元字符转义）。
 func TestBuildLogSQL(t *testing.T) {
 	q := capability.LogQuery{
 		Namespace:  capability.NamespaceRef{Team: "t1", Project: "P1", App: "app1"},
 		WorkloadID: "W1",
 		Text:       "err.or",
 	}
-	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_team="t1",fleetly_workload="W1"} | ~ "err\.or"`, buildLogSQL(q))
+	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_workload="W1"} _msg:~"err\.or"`, buildLogSQL(q))
 
 	q.Text = `he said "hi"\done`
-	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_team="t1",fleetly_workload="W1"} | ~ "he said \"hi\"\\done"`, buildLogSQL(q))
+	assert.Equal(t, `{fleetly_project="P1",fleetly_app="app1",fleetly_workload="W1"} _msg:~"he said \"hi\"\\done"`, buildLogSQL(q))
 
 	// 值内引号与反斜杠的字面量转义。
 	q2 := capability.LogQuery{Namespace: capability.NamespaceRef{Project: `a"b\c`}, Text: "x"}
@@ -223,12 +225,13 @@ func TestQueryBuildFilter(t *testing.T) {
 		Source:    "01JD0BUILD0000000000000000C1",
 	}
 	assert.Equal(t,
-		`{fleetly_project="P1",fleetly_team="t1",fleetly_build="01JD0BUILD0000000000000000C1"}`,
+		`{fleetly_project="P1",fleetly_build="01JD0BUILD0000000000000000C1"}`,
 		buildLogSQL(q))
 }
 
 // TestQueryRoundTrip 钉检索请求形态（query/start/end/limit form 字段）与
-// 响应解析（平铺 + _stream 双形态）、升序输出。
+// 响应解析——夹具 = staging 真机 ground truth 形态（平铺字段 + `_stream`
+// 字符串 + `_stream_id` 附加面，2026-10-04 实录）、升序输出。
 func TestQueryRoundTrip(t *testing.T) {
 	var gotForm url.Values
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -237,10 +240,10 @@ func TestQueryRoundTrip(t *testing.T) {
 		w.Header().Set("Content-Type", "application/stream+json; charset=utf-8")
 		// 乱序返回（倒序）——断言实现侧统一升序。
 		_, _ = w.Write([]byte(
-			`{"_time":"2026-10-04T12:00:03Z","_msg":"third","fleetly_workload":"W1","fleetly_task":"t3","fleetly_node":"n2","fleetly_project":"P1","fleetly_kind":"runtime"}` + "\n" +
-				`{"_time":"2026-10-04T12:00:01.5Z","_msg":"first","_stream":{"fleetly_workload":"W1","fleetly_task":"t1","fleetly_kind":"runtime"},"fleetly_node":"n1"}` + "\n" +
+			`{"_msg":"third","_stream":"{fleetly_app=\"A\",fleetly_task=\"t3\"}","_stream_id":"00000000000000004052ddcf1691e8128","_time":"2026-10-04T12:00:03.466359027Z","fleetly_workload":"W1","fleetly_task":"t3","fleetly_node":"n2","fleetly_project":"P1","fleetly_kind":"runtime"}` + "\n" +
+				`{"_msg":"first","_stream":"{fleetly_app=\"A\",fleetly_task=\"t1\"}","_stream_id":"00000000000000000df346141b478a812","_time":"2026-10-04T12:00:01.5Z","fleetly_workload":"W1","fleetly_task":"t1","fleetly_kind":"runtime","fleetly_node":"n1"}` + "\n" +
 				"\n" + // 空行容忍
-				`{"_time":"2026-10-04T12:00:02Z","_msg":"second","fleetly_workload":"W1","fleetly_task":"t2","fleetly_kind":"build","fleetly_build":"B1"}` + "\n"))
+				`{"_msg":"second","_stream_id":"00000000000000000df346141b478a813","_time":"2026-10-04T12:00:02Z","fleetly_workload":"W1","fleetly_task":"t2","fleetly_kind":"build","fleetly_build":"B1"}` + "\n"))
 	}))
 	defer srv.Close()
 
@@ -260,20 +263,21 @@ func TestQueryRoundTrip(t *testing.T) {
 	assert.Equal(t, "first", string(cw.frames[0].Line))
 	assert.Equal(t, "second", string(cw.frames[1].Line))
 	assert.Equal(t, "third", string(cw.frames[2].Line))
-	// 平铺形态解析。
+	// 平铺形态解析（_stream 字符串附加面被忽略、不碍解码）。
 	assert.Equal(t, "t3", cw.frames[2].Container)
 	assert.Equal(t, "n2", cw.frames[2].Node)
-	// _stream 对象形态解析。
 	assert.Equal(t, "t1", cw.frames[0].Container)
 	assert.Equal(t, "W1", cw.frames[0].WorkloadID)
+	// 纳秒 _time 完整往返。
+	assert.Equal(t, "2026-10-04T12:00:03.466359027Z", cw.frames[2].Time.UTC().Format(time.RFC3339Nano))
 	// build 域归因。
 	assert.Equal(t, "B1", cw.frames[1].Source)
 	assert.Equal(t, capability.LogKindBuild, cw.frames[1].Kind)
 
-	// form 断言（检索请求契约面）。
+	// form 断言（检索请求契约面——过滤器位 _msg:~ 形态，真机实证）。
 	assert.Contains(t, gotForm.Get("query"), `fleetly_project="P1"`)
 	assert.Contains(t, gotForm.Get("query"), `fleetly_workload="W1"`)
-	assert.Contains(t, gotForm.Get("query"), `| ~ "`)
+	assert.Contains(t, gotForm.Get("query"), ` _msg:~"`)
 	assert.Equal(t, "50", gotForm.Get("limit"))
 	assert.Equal(t, "2026-10-04T11:00:00Z", gotForm.Get("start"))
 	assert.Equal(t, "2026-10-04T13:00:00Z", gotForm.Get("end"))

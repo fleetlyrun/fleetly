@@ -513,6 +513,7 @@ func New(deps Deps, opts Options) *Engine {
 	e.build.logs = newLogBuffer(500)
 	e.build.inputs = make(map[string]capability.BuildRequest)
 	e.logpipe.streams = make(map[string]context.CancelFunc)
+	e.logpipe.batches = make(map[string]*nsBatch)
 	e.logpipe.cursors = logcursor.New(clock)
 	e.obs.observations = make(map[string]capability.WorkloadEvent)
 	e.obs.workloadApp = make(map[string]workloadOwner)

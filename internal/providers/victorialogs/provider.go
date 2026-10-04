@@ -437,44 +437,34 @@ func decodeFrames(body []byte) ([]capability.LogFrame, error) {
 	return out, nil
 }
 
-// decodeFrame 解析一行检索响应为 LogFrame。流字段兼容两种承载形态：
-// 平铺（默认 /select/logsql/query 响应）与 _stream 对象（Grafana 插件
-// API 形态）——防御性双读，取先中者。
+// decodeFrame 解析一行检索响应为 LogFrame。字段形态 = 平铺（staging
+// 真机实证 2026-10-04：VL query 响应每行平铺携带全部字段，另有 `_stream`
+// （LogsQL 文本形态的**字符串**，非 JSON 对象）与 `_stream_id` 附加面——
+// 按未知字段忽略，不参与解码）。
 func decodeFrame(line []byte) (capability.LogFrame, error) {
-	var head struct {
-		Time   string            `json:"_time"`
-		Msg    string            `json:"_msg"`
-		Stream map[string]string `json:"_stream"`
-	}
-	if err := json.Unmarshal(line, &head); err != nil {
+	var m map[string]any
+	if err := json.Unmarshal(line, &m); err != nil {
 		return capability.LogFrame{}, err
 	}
-	flat := map[string]any{}
-	_ = json.Unmarshal(line, &flat)
-	field := func(name string) string {
-		if v, ok := head.Stream[name]; ok && v != "" {
-			return v
-		}
-		if v, ok := flat[name].(string); ok {
-			return v
-		}
-		return ""
+	str := func(key string) string {
+		v, _ := m[key].(string)
+		return v
 	}
-	ts, err := parseVLTime(head.Time)
+	ts, err := parseVLTime(str("_time"))
 	if err != nil {
 		return capability.LogFrame{}, err
 	}
 	return capability.LogFrame{
-		WorkloadID: field(fieldWorkload),
-		Container:  field(fieldTask),
-		Node:       field(fieldNode),
+		WorkloadID: str(fieldWorkload),
+		Container:  str(fieldTask),
+		Node:       str(fieldNode),
 		Time:       ts,
-		Line:       []byte(head.Msg),
-		Team:       field(fieldTeam),
-		Project:    field(fieldProject),
-		App:        field(fieldApp),
-		Kind:       field(fieldKind),
-		Source:     field(fieldBuild),
+		Line:       []byte(str("_msg")),
+		Team:       str(fieldTeam),
+		Project:    str(fieldProject),
+		App:        str(fieldApp),
+		Kind:       str(fieldKind),
+		Source:     str(fieldBuild),
 	}, nil
 }
 
@@ -489,9 +479,16 @@ func parseVLTime(s string) (time.Time, error) {
 }
 
 // buildLogSQL 构造 LogsQL：流过滤 {域字段 + fleetly_build} + 可选文本
-// 管道 | ~ "regexp"。Source 是 build 域回读的过滤锚（fleetly_build=Build
-// ID）。值经字符串字面量转义（\ 与 "）；文本经 regexp 引用元字符转义
-// （子串语义，非用户正则——检索面词汇是"包含该文本"）。
+// 过滤（过滤器位 `_msg:~"regexp"`——staging 真机实证 2026-10-04：管道形态
+// `| ~` 被拒（"missing ':' in front of '~'"），正则过滤必须挂在字段上）。
+// Source 是 build 域回读的过滤锚（fleetly_build=Build ID）。值经字符串字面量
+// 转义（\ 与 "）；文本经 regexp 引用元字符转义（子串语义，非用户正则——
+// 检索面词汇是"包含该文本"）。
+//
+// 过滤项只收 _stream_fields 成员（project/app/workload/task/kind/build）：
+// LogsQL 的 {} 花括号过滤器只作用于流字段，非流字段（如 fleetly_team 的
+// 行字段）进 {} 恒空集不报错（staging 真机实证 2026-10-04——200 + 0 行的
+// 静默空）。行级隔离锚 = project+app（team 是 project 的派生轴，冗余）。
 func buildLogSQL(q capability.LogQuery) string {
 	var conds []string
 	if v := q.Namespace.Project; v != "" {
@@ -499,9 +496,6 @@ func buildLogSQL(q capability.LogQuery) string {
 	}
 	if v := q.Namespace.App; v != "" {
 		conds = append(conds, fieldApp+"="+quoteLogSQL(v))
-	}
-	if v := q.Namespace.Team; v != "" {
-		conds = append(conds, fieldTeam+"="+quoteLogSQL(v))
 	}
 	if q.WorkloadID != "" {
 		conds = append(conds, fieldWorkload+"="+quoteLogSQL(q.WorkloadID))
@@ -511,7 +505,7 @@ func buildLogSQL(q capability.LogQuery) string {
 	}
 	query := "{" + strings.Join(conds, ",") + "}"
 	if q.Text != "" {
-		query += ` | ~ "` + escapeRegexp(q.Text) + `"`
+		query += ` _msg:~"` + escapeRegexp(q.Text) + `"`
 	}
 	return query
 }

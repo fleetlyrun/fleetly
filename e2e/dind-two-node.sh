@@ -222,14 +222,14 @@ log "waiting for the managed log store to come up"
 VL_UP=0
 i=0
 while [ "$i" -lt 90 ]; do
-  if docker exec "$MGR_CID" docker service ls --filter name=fleetly-logging-victorialogs \
+  if docker exec "$MGR_CID" docker service ls --filter name=fleetly-fleetly-system-logging-victorialogs \
     --format '{{.Replicas}}' 2>/dev/null | grep -q '1/1'; then
     VL_UP=1; break
   fi
   i=$((i + 1)); sleep 2
 done
 [ "$VL_UP" = "1" ] || { echo "managed victoria-logs never became 1/1" >&2; \
-  docker exec "$MGR_CID" docker service ps fleetly-logging-victorialogs >&2 || true; exit 1; }
+  docker exec "$MGR_CID" docker service ps fleetly-fleetly-system-logging-victorialogs >&2 || true; exit 1; }
 log "managed victoria-logs running"
 
 log "asserting --text search returns persisted frames (collection loop live)"
