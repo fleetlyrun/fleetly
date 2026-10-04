@@ -64,10 +64,10 @@ F2.9 落地两级变量合成。ADR-0027 已钉死合成时机（**归一化期�
 
 ## 验收锚
 
-- [ ] 同 Source 同变量状态两次归一化逐字节相等（digest 相等，内容寻址复用命中——性质测试）
-- [ ] App 层覆盖同键生效（compose environment 与 DeployRequest.env 两形态各有测试）
-- [ ] FirstBootJobs 进程参与合成（job env 同享共享层）
-- [ ] 改/删 SharedVariable 后既有 Revision 不变且无新部署行（行为不变钉死）
-- [ ] Put/Delete 响应含 affected_apps（近似口径：覆盖误报可接受，文案记录）
-- [ ] 守卫全绿：幂等面含 PutSharedVariable、冻结面含 Put/Delete、scope 词表含
-      shared_variables、CLI 新动词双形态 golden、事件名入册
+- [x] 同 Source 同变量状态两次归一化逐字节相等（digest 相等，内容寻址复用命中——性质测试）〔spec TestMergeSharedEnvByteDeterminism + apitest TestSharedVariableMergeAtNormalization〕
+- [x] App 层覆盖同键生效（compose environment 与 DeployRequest.env 两形态各有测试）〔TestSharedVariableComposeOverride / TestSharedVariableMergeAtNormalization〕
+- [x] FirstBootJobs 进程参与合成（job env 同享共享层）〔TestMergeSharedEnvLayers〕
+- [x] 改/删 SharedVariable 后既有 Revision 不变且无新部署行（行为不变钉死）〔TestSharedVariableChangeNoRedeployButAffectedHint / TestSharedVariableDelete〕
+- [x] Put/Delete 响应含 affected_apps（近似口径：覆盖误报可接受，文案记录）〔apitest 断言 + golden 双形态（put 提示两 App、delete 提示一 App 的近似集形态在 golden 可见）〕
+- [x] 守卫全绿：幂等面含 PutSharedVariable、冻结面含 Put/Delete、scope 词表含
+      shared_variables、CLI 新动词双形态 golden、事件名入册〔variable.updated/deleted 三链（eventcode + schemareg + golden）同 commit〕
