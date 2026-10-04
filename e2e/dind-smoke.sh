@@ -42,8 +42,12 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cclient" ./e2
 # 2. 起 dind（privileged；29 线与生产对齐）。
 log "starting dind container"
 DIND_CID=$(docker run -d --privileged --name fleetly-e2e-smoke-"$$" \
+  --cgroupns=host \
   -e DOCKER_TLS_CERTDIR= \
   docker:29-dind)
+# --cgroupns=host：嵌套容器的 cgroup 在宿主层级可见——cadvisor（受管指标
+# 采集端）读 /sys 才能看到 dind 内容器（私有 cgroupns 下只见 root/system
+# 条目，容器样本缺席，告警评估面失明——CI 实证 2026-10-04）。
 
 wait_docker() {
   i=0
@@ -169,9 +173,9 @@ docker exec "$DIND_CID" docker service ls --format '{{.Name}}' | grep -q "fleetl
 restart_fleetlyd() {
   # env 同源 /etc/fleetlyd.env（install.sh 无 systemd 形态落的启动 env）——
   # 手拼 env 会丢受管面地址（F2.5 实证：丢 FLEETLY_METRICS_ADDR = Metrics
-  # 面静默停用，采集/查询全灭）。
+  # 面静默停用，采集/查询全灭）。文件缺席回退旧内联形态（健壮性）。
   docker exec "$DIND_CID" sh -c \
-    'setsid env $(grep -v "^$" /etc/fleetlyd.env | tr "\n" " ") /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
+    'ENVARGS="$(grep -v "^$" /etc/fleetlyd.env 2>/dev/null | tr "\n" " ")"; [ -n "$ENVARGS" ] || ENVARGS="FLEETLY_DATA_ROOT=/var/lib/fleetly"; setsid env $ENVARGS /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
   i=0
   while [ "$i" -lt 60 ]; do
     if cli whoami >/dev/null 2>&1; then
@@ -505,7 +509,8 @@ while [ "$i" -lt 45 ]; do
   [ "$st" = "firing" ] && FIRING=1 && break
   i=$((i + 1)); sleep 2
 done
-[ "$FIRING" = "1" ] || { echo "memory threshold rule never reached firing" >&2; cli --json alerts list >&2 || true; exit 1; }
+[ "$FIRING" = "1" ] || { echo "memory threshold rule never reached firing" >&2; cli --json alerts list >&2 || true; \
+  docker exec "$DIND_CID" sh -c 'wget -q -O - http://127.0.0.1:8080/metrics 2>/dev/null | grep -c "container_label_fleetly_ns_app=.0"' >&2 2>&1 || true; exit 1; }
 log "threshold alert fired and is listed"
 
 # 通道链（无接收端形态）：登记 webhook 通道 + test —— delivered=false +

@@ -308,8 +308,11 @@ docker cp "$WORKDIR/bins-new/fleetlyd" "$DIND_CID":/usr/local/bin/fleetlyd
 docker cp "$WORKDIR/bins-new/fleetly" "$DIND_CID":/usr/local/bin/fleetly
 
 log "UPGRADE: starting NEW fleetlyd (goose rollforward + managed reconcile)"
+# env 同源 /etc/fleetlyd.env；文件缺席（HEAD~1 的旧 install.sh 未写——升级
+# 矩阵的旧相位）回退旧内联形态。空 env 起旁路 daemon（./data 新数据根 +
+# 受管面扰动）是升级零扰动锚的破坏面，CI 实证 2026-10-04。
 docker exec -e FLEETLY_EDGE_CONFIG_ENDPOINT="http://$DIND_IP:9082/edge/config" "$DIND_CID" sh -c \
-  'setsid env $(grep -v "^$" /etc/fleetlyd.env | tr "\n" " ") /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
+  'ENVARGS="$(grep -v "^$" /etc/fleetlyd.env 2>/dev/null | tr "\n" " ")"; [ -n "$ENVARGS" ] || ENVARGS="FLEETLY_DATA_ROOT=/var/lib/fleetly"; setsid env $ENVARGS /usr/local/bin/fleetlyd >>/var/log/fleetlyd.log 2>&1 </dev/null &'
 
 i=0
 while [ "$i" -lt 60 ]; do
