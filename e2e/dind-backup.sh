@@ -232,10 +232,12 @@ MY_CID=$(db_container_id "$MY_SRC")
 MY_PW=$(docker exec "$DIND_CID" docker exec "$MY_CID" cat /run/secrets/database-password)
 
 log "[mysql] seeding probe data"
-docker exec "$DIND_CID" docker exec "$MY_CID" mysql -ufleetly -p"$MY_PW" fleetly \
-  -e "CREATE TABLE drill(k VARCHAR(32), v VARCHAR(32)); INSERT INTO drill VALUES (\"probe\", \"DRILL_OK\");" >/dev/null 2>&1 \
+# -h 127.0.0.1 显式 TCP + 单引号 SQL 字面量（双引号字符串依赖 sql_mode
+# 的 ANSI_QUOTES 位——不赌默认位）；种子命令不吞 stderr（CI 失败面可见）。
+docker exec "$DIND_CID" docker exec "$MY_CID" mysql -h 127.0.0.1 -ufleetly -p"$MY_PW" fleetly \
+  -e "CREATE TABLE drill(k VARCHAR(32), v VARCHAR(32)); INSERT INTO drill VALUES ('probe', 'DRILL_OK');" \
   || fail "mysql seed"
-MY_COUNT=$(docker exec "$DIND_CID" docker exec "$MY_CID" mysql -N -ufleetly -p"$MY_PW" fleetly -e "SELECT count(*) FROM drill" 2>/dev/null)
+MY_COUNT=$(docker exec "$DIND_CID" docker exec "$MY_CID" mysql -N -h 127.0.0.1 -ufleetly -p"$MY_PW" fleetly -e "SELECT count(*) FROM drill" 2>/dev/null)
 [ "$MY_COUNT" = "1" ] || fail "mysql seed count=$MY_COUNT"
 
 log "[mysql] backup + verify"
@@ -248,7 +250,7 @@ wait_restore_done "$MY_DST"
 MY_DST_CID=$(db_container_id "$MY_DST")
 [ -n "$MY_DST_CID" ] || fail "mysql restore target container"
 MY_PW2=$(docker exec "$DIND_CID" docker exec "$MY_DST_CID" cat /run/secrets/database-password)
-MY_RESTORED=$(docker exec "$DIND_CID" docker exec "$MY_DST_CID" mysql -N -ufleetly -p"$MY_PW2" fleetly -e "SELECT v FROM drill LIMIT 1" 2>/dev/null)
+MY_RESTORED=$(docker exec "$DIND_CID" docker exec "$MY_DST_CID" mysql -N -h 127.0.0.1 -ufleetly -p"$MY_PW2" fleetly -e "SELECT v FROM drill LIMIT 1" 2>/dev/null)
 [ "$MY_RESTORED" = "DRILL_OK" ] || fail "mysql restored value=$MY_RESTORED"
 log "[mysql] roundtrip green"
 

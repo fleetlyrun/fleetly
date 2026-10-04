@@ -53,7 +53,7 @@ func TestRunUtilitySpecAssembly(t *testing.T) {
 	assert.Equal(t, []string{"A_VAR=a", "Z_VAR=z"}, spec.env, "env sorted for deterministic spec")
 	assert.Equal(t, []string{"fleetly-net-shop-default", "fleetly-net-shop-internal"}, spec.networks, "carrier names sorted")
 	require.Len(t, spec.binds, 2)
-	assert.Regexp(t, `^[A-Za-z]:?[\\/].*[/\\]fleetly-utility-[^/\\]+[/\\]database-backup-pgpass:/run/secrets/database-backup-pgpass:ro$`,
+	assert.Regexp(t, `^(?:[A-Za-z]:)?[\\/].*[/\\]fleetly-utility-[^/\\]+[/\\]database-backup-pgpass:/run/secrets/database-backup-pgpass:ro$`,
 		spec.binds[0], "material source lives in a private temp dir, mounts read-only at the secrets path")
 	assert.Equal(t, "fleetly-vol-01jdv00000000000000000000:/seed:rw", spec.binds[1], "volume bind uses the carrier formula and rw for seeding")
 	assert.Equal(t, "out-frame", captured.stdout.String())
@@ -74,7 +74,7 @@ func TestRunUtilityInputFile(t *testing.T) {
 	}, io.Discard, io.Discard)
 	require.NoError(t, err)
 	require.Len(t, got.binds, 1)
-	assert.Regexp(t, `^[A-Za-z]:?[\\/].*[/\\]backup-input:/backup-input:ro$`, got.binds[0],
+	assert.Regexp(t, `^(?:[A-Za-z]:)?[\\/].*[/\\]backup-input:/backup-input:ro$`, got.binds[0],
 		"input materializes in a private temp file and mounts read-only at the target path")
 }
 
