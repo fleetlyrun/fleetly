@@ -253,6 +253,14 @@ staging 真机验收（14:53-14:56）：
 
 **端口表 +1**：8428 VM（basic auth 平台凭证）；**8080 cadvisor（每节点 host 直绑，无认证——VPC-only 边界，多租户前挂账：前置认证代理或节点防火墙收窄）**。
 
+### F2.5 尾批：受管 Generation per-域化（7232da4，2026-10-04）
+
+CI 升级零扰动锚咬出**全域滚动缺陷**（b6f59f3 根治）：受管 Generation 原为全局单计数 + 进程内重置回 1，而 `fleetly.generation` 标签持久在 spec——新 daemon 首拍给 Edge 发 gen=1 ≠ 载体现行标签 = traefik stop-first 滚动 = 路由中断；且任一受管 Provider 指纹变化（新增 Provider/zot 材料随 Project 集变化）都放大成全部受管域滚一遍。**F2.4 记录的"受管 gen 重置滚动"挂账就此闭合。**
+
+修复双件：①per-受管域独立计数（指纹=本域 Workload+材料，跨域不再传染）；②`InspectWorkloads` 观测播种续接（重启从载体现行 gen 续接，首见指纹沿用不假 +1）。附带：cadvisor 全局形态声明 `Replicas=1`（InspectWorkloads 对全局服务报缺省 1——声明侧 0 = 每拍假 drift 风暴，升级矩阵零漂移锚咬出）。
+
+**staging 真机锚（7232da4-f25final）**：daemon 重启后**五件受管域全部零滚**（traefik/zot/victorialogs/victoriametrics/cadvisor task id 不变）+ 零 drift 事件 + 服务全绿——与 F2.4 时代"每次重启各滚一次"对照，升级零扰动语义首次全量成立。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。
