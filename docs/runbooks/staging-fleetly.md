@@ -175,6 +175,7 @@ staging 真机验收（14:53-14:56）：
 ### F2.2 备份链 staging 真机验收（scratch 项目形态）
 
 - **存量边界咬实**：torchwood/messaging/n0reg/n0probe 四个 pre-F2.2 项目网无 attachable 位——Database Backup 的 utility 附着被拒（ADR-0039 §47 预告的精确错误路径）。`docker network update --attachable` 不存在；平台无 networks delete/recreate 动词——**网络重建动词缺口挂账**（错误文案承诺的 runbook 指引即本节：等动词落地，勿手工拆网——service 级 network-rm/add 会被平台 reconcile 回滚）。
+  - **闭合注记（2026-10-05，N2 评审批 P1-4 根修）**：`RebuildNetwork` 动词落地（ADR-0046，bce7f01；CLI `fleetly networks rebuild --project <id> <name>`）。平台中介的受监督重建：附着载体逐个 detach → 删网（带界排水 + 等 swarm overlay 异步退役落地）→ ensureNetworks 同源复建（attachable）→ 载体 re-attach；与部署 Ensure/受管 reconciler 全程串行化（引擎维护锁），外来附着诚实拒绝（E_CONFLICT 列出）。staging 恢复操作序 = 换装新版后对 torchwood/messaging/n0reg/n0probe 四项目网逐个 `fleetly networks rebuild --project <项目ID> default`（重建窗分钟级：库服务各滚两轮，低峰窗执行；dind 实测单网 ~4s CLI + 滚动收口 ~30s），torchwood-pg 定时备份自愈——随换装批执行。**操作注记**：re-attach 滚动收口窗内（秒级~半分钟）立即触发的备份可能撞 db-\<id\> 的 overlay DNS 未注册窗（报 could not translate host name，dind 实录）——重试即愈；判断收口 = 库容器内 `getent hosts db-<id>` 可解析。
 - **scratch 项目（出生即 attachable）全链绿**：pgvector 建库→种子→backup succeeded→verify ok=true→delete→**卷真删**（等容器 GC，rm 循环到成功）→同名 recreate `--restore-from-backup`→anchor 表回归。首轮"恢复绿"实为同名卷残留数据（volume rm 被 GC 窗挡下且被 2>/dev/null 吞）——**恢复证明必须空卷起家**；恢复是异步任务，断言要等。
 
 ### 工程事实（本批积累）
@@ -271,7 +272,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 1. **验证类存储负载必须 bind 卷**：silo 容器 /data 落 overlayfs（无 bind 卷）时 517MiB 平台备份引发 manager I/O 停滞（silo 自报 "unable to write+read for 32.6s"）→ docker API 超时 → 平台备份一次失败 + daemon reconcile 全面 deadline。改 host bind 卷后全绿。
 2. **观测失败被当 drift → 受管域假滚动（产品挂账）**：I/O 风暴期（docker API 停滞）受管 reconciler 的 InspectWorkloads/list 失败被当作 spec 失配处理——五受管域连滚三次；删除操作期 traefik 又假滚一次（zot 同拍滚动是项目材料语义、预期）。与 7232da4 的重启零滚语义冲突：**观测错误不得触发 spec 对照判 drift**（Ensure 前置观测失败的保守化），待专属批根修。
 3. **项目删除不级联库（既有行为实录）**：`projects delete` 后库行仍 running、服务/卷原样；须逐库 `databases delete`（载体拆 + 卷/凭证保留）再手工 `docker volume rm`。
-4. **legacy 项目网不 attachable 使 torchwood-pg 定时备份持续失败**（F2.2 已知挂账，错误文本自带 runbook 指引；s3 链路无辜——失败链经 s3objectstore Put 包装报出，链路语义正确）。
+4. **legacy 项目网不 attachable 使 torchwood-pg 定时备份持续失败**（F2.2 已知挂账，错误文本自带 runbook 指引；s3 链路无辜——失败链经 s3objectstore Put 包装报出，链路语义正确）。**已闭合（2026-10-05）**：网络重建动词 `RebuildNetwork` 落地（ADR-0046，N2 评审批 P1-4 根修；换装后对四项目网逐个 `fleetly networks rebuild` 即自愈——见 F2.2 节闭合注记）。
 
 **新能力面（物化指引）**：`platform_backup.s3` 五元组在场 → ObjectStore 装配切 s3 Provider（数据库备份对象直写远端桶，键 `backups/<projectID>/<databaseID>/<ts>-<id>`）+ restic 外置仓同批启用（同桶 `<prefix>/`——**prefix 勿取 `backups`**，双命名空间）；缺席 → local 现状零差。staging 物化：unit drop-in 五件 `Environment=FLEETLY_PLATFORM_BACKUP_S3_*`（endpoint `http://` 前缀=明文；**桶须预建**——Provider 探测不代建）。**边界（ADR-0042）**：切前台账行对象留本地 `backups/`（restic 备份集捎带离机），对新端点 verify/restore 诚实报 object not found；凭证 config 明文（0600，专用低权 key 建议；信封化挂账）；RustFS 自宿挂账（自宿推荐 silo——MinIO 社区版 2026-02 EOL 的社区续命版）。消警：五元组在场 = 内置规则归位（staging 现无真实离机端点，告警已重新武装——诚实姿态）。
 
@@ -324,7 +325,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 5. `--replicas 1` 起库 → **数据核对**（已知表行数）→ `systemctl start fleetlyd`。
 6. 变更后 `fleetly platform backup`。
 
-重建+恢复（delete → 真删卷 → recreate `--restore-from-backup`）保留为**灾备路径**（CI e2e 四引擎演练常态回归）。真机操作要点（10-04 scratch 实录）：删库后容器 GC 有窗，`docker volume rm` 需循环到成功（残留即假恢复）；恢复是异步任务，库状态先 running、数据后到（等 `database.restore_*` 收口或隔 30s 断言）。**pre-F2.2 存量项目网不 attachable 会挡 Database Backup/Restore 的 utility 附着**（见 10-04 记录——重建动词缺口挂账）。
+重建+恢复（delete → 真删卷 → recreate `--restore-from-backup`）保留为**灾备路径**（CI e2e 四引擎演练常态回归）。真机操作要点（10-04 scratch 实录）：删库后容器 GC 有窗，`docker volume rm` 需循环到成功（残留即假恢复）；恢复是异步任务，库状态先 running、数据后到（等 `database.restore_*` 收口或隔 30s 断言）。**pre-F2.2 存量项目网不 attachable 会挡 Database Backup/Restore 的 utility 附着**（见 10-04 记录——已由 `fleetly networks rebuild` 收口，ADR-0046/F2.2 节闭合注记）。
 
 ## KEK 轮换操作序（`fleetlyd admin rewrap`，2026-10-03 工具化）
 

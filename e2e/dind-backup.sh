@@ -125,6 +125,20 @@ cli projects create shop >/dev/null
 PROJECT_ID=$(cli --json projects list | sed -n "s/.*\"id\": *\"\([^\"]*\)\".*/\1/p" | head -1)
 [ -n "$PROJECT_ID" ] || fail "project id not extracted"
 
+# ---- P1-4 场景腿（ADR-0046 网络重建动词，N2 评审批根修的端到端锚）----
+# 出生网（attachable）尚无服务附着 → docker 原面 rm + 同名复建不带
+# --attachable（模拟 pre-F2.2 legacy 形态——平台 create 面恒 attachable，
+# 病态只能从 docker 原面制造，这正是缺口所在）。随后 postgres 腿部署库，
+# 备份在 utility 附着面精确失败（attachHint 文案锚），rebuild 后重试成功。
+BIRTH_NET="fleetly-net-$(printf '%s' "$PROJECT_ID" | tr 'A-Z' 'a-z')-default"
+# 出生网的 swarm 载体是惰性物化的（ensureNetworks 首次挂靠才 create）——
+# 尚无附着时 rm 报 not found 属预期，容忍；真移除（或本来就缺席）之后
+# 统一落到手工复建形态。
+docker exec "$DIND_CID" docker network rm "$BIRTH_NET" >/dev/null 2>&1 || true
+docker exec "$DIND_CID" docker network create -d overlay "$BIRTH_NET" >/dev/null \
+  || fail "legacy (non-attachable) network creation failed"
+log "legacy non-attachable network form in place ($BIRTH_NET)"
+
 # db_id_by_name 经列表回显定位（name → id；--json 列表 name 后于 id，
 # 逐块 grep）。
 db_id_by_name() {
@@ -233,6 +247,56 @@ done
 PG_COUNT2=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM drill")
 [ "$PG_COUNT2" = "1" ] || fail "postgres data lost across task replacement (count=$PG_COUNT2)"
 log "[postgres] data survived task replacement"
+
+# ---- P1-4 场景腿（续）：legacy 非 attachable 网挡 utility 附着 → 精确
+# 失败（ADR-0039 §47 预告的错误路径，attachHint 文案锚）→ rebuild → 重试
+# 成功。rebuild 是分钟级同步动词（detach 排水 + 复建 + re-attach 的滚动
+# 替换窗）；本腿唯一附着载体 = 库服务（dind 腿无受管 Edge 挂网）。----
+log "[postgres] backup must fail on the legacy non-attachable network"
+cli databases backup "$PG_SRC" >/dev/null
+i=0; st=""
+while [ "$i" -lt 120 ]; do
+  st=$(cli --json databases backups "$PG_SRC" | sed -n "s/.*\"status\": *\"\([^\"]*\)\".*/\1/p" | head -1)
+  [ "$st" = "failed" ] && break
+  [ "$st" = "succeeded" ] && fail "backup unexpectedly succeeded on a non-attachable network"
+  i=$((i + 1)); sleep 2
+done
+[ "$st" = "failed" ] || fail "legacy-form backup did not fail (last=$st)"
+# 精确失败锚（ADR-0039 §47 预告的错误路径）：错误文本携带 attachable
+# 指引（daemon 文案与平台 attachHint 任一命中即锚在）。
+cli --json databases backups "$PG_SRC" | grep -q "not attachable" \
+  || fail "legacy-form backup error lacks the attachable anchor"
+log "legacy-form backup failed as designed (attachable anchor present)"
+
+log "[postgres] rebuilding the network (ADR-0046 verb)"
+REBUILD_OUT=$(cli networks rebuild --project "$PROJECT_ID" default)
+echo "$REBUILD_OUT" | grep -q "rebuilt network default (detached 1, reattached 1)" \
+  || fail "unexpected rebuild output: $REBUILD_OUT"
+# 复建后 carrier 形态锚：attachable 位在位（docker 原面 inspect）。
+docker exec "$DIND_CID" docker network inspect "$BIRTH_NET" --format "{{.Attachable}}" \
+  | grep -q true || fail "rebuilt carrier network is not attachable"
+log "network rebuilt; carrier is attachable again"
+
+# re-attach 的滚动替换收口：备份的依赖面是 db-<id> 经 overlay DNS 可解析
+# （utility 容器 pg_dump 的寻址通道），不是容器本地可服务——detach 时代的
+# 无网任务对 docker exec psql 照常应答、对网络 DNS 却无 endpoint（dind
+# 实录：撞窗备份报 could not translate host name）。等新任务把别名注册进
+# 网络DNS（getent 从库容器自身走它的嵌入式 DNS）。
+DB_DNS="db-$(printf '%s' "$PG_SRC" | tr 'A-Z' 'a-z')"
+i=0
+while [ "$i" -lt 120 ]; do
+  PG_CID=$(db_container_id "$PG_SRC")
+  if [ -n "$PG_CID" ] && docker exec "$DIND_CID" docker exec "$PG_CID" getent hosts "$DB_DNS" >/dev/null 2>&1; then
+    break
+  fi
+  i=$((i + 1)); sleep 2
+done
+[ -n "$PG_CID" ] || fail "database container missing after the rebuild rolling"
+docker exec "$DIND_CID" docker exec "$PG_CID" getent hosts "$DB_DNS" >/dev/null 2>&1 \
+  || fail "db DNS name never resolved on the rebuilt network ($DB_DNS)"
+PG_AFTER=$(docker exec "$DIND_CID" docker exec "$PG_CID" psql -U fleetly -d fleetly -tAc "SELECT count(*) FROM drill")
+[ "$PG_AFTER" = "1" ] || fail "postgres data lost across the rebuild rolling (count=$PG_AFTER)"
+log "database serving again after rebuild (network DNS + data intact)"
 
 log "[postgres] backup + verify"
 PG_BACKUP=$(backup_and_verify "$PG_SRC")

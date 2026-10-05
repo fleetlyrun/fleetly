@@ -116,10 +116,18 @@ network-rm/add 会被平台 reconcile 回滚**（Ensure 全量替换语义把载
   滚动替换（swarm 网络附件变更语义）；torchwood-pg 实测量级 = stop-first +
   60s grace 的两轮替换。操作纪律：重建前 Platform Backup 不强制（网络/载体
   spec 不是数据面），但换装批对四项目逐网执行的序 = 低峰窗（runbook 记）。
+- **两枚真机语义（dind e2e 实录，实现已内置）**：① swarm overlay 的
+  `network rm` 返回成功≠已消失（端点排空后网络才真退役）——RemoveNetwork
+  删除后轮询 inspect 至 NotFound 才返回，否则复建的 create-or-get 会 get
+  半边复用残留载体（非 attachable 旧网）；② re-attach 的滚动收口窗内，
+  detach 时代的无网任务对容器本地探测（docker exec）照常应答、对网络 DNS
+  却无 endpoint（备份的 pg_dump 寻址 db-\<id\> 走 overlay DNS）——e2e 的
+  收口断言用网络 DNS 可解析锚（容器内 getent），生产面同理：重建后立即
+  触发的备份可能撞窗报 could not translate host name——重试即愈（秒级窗）。
 - 重建窗内全部部署/受管/数据库/Task 收敛与备份执行排队（读锁等待）；窗有
   硬界（NetworkRebuildTimeout），不会永久卡环。
 - Runtime 子面 +1：非 swarm Runtime（假想 k8s）未实现时动词诚实失败
-  （E_FAILED_PRECONDITION 信封），降级文化与 Inspector/Utility 一致。
+  （E_INTERNAL 信封），降级文化与 Inspector/Utility 一致。
 - 外来附着（无平台标签的 service 挂进项目网）使重建拒绝——这是设计不是
   缺陷：平台对不认识的载体零动作（WorkloadOrphaned 只登记原则的网络面
   同款）；操作者先自行处置外来载体。
@@ -156,8 +164,10 @@ network-rm/add 会被平台 reconcile 回滚**（Ensure 全量替换语义把载
       follow golden 含 network.rebuilt 事件行）
 - [x] e2e dind-backup.sh 插腿：legacy 非 attachable 形态制造 → backup 精确
       失败（attachable 文案锚）→ rebuild（detached 1/reattached 1 + carrier
-      Attachable=true 原面断言）→ backup succeeded（本地 dind 实录见
-      runbook 闭合注记；CI e2e-backup job 常态）
+      Attachable=true 原面断言 + 网络 DNS 收口锚）→ backup succeeded
+      （2026-10-05 本地 dind 全量演练 ALL DRILLS GREEN：四引擎恢复 +
+      Platform Backup roundtrip + S3 离机腿含本腿全绿；CI e2e-backup job
+      常态）
 - [x] runbook 回写：177 行挂账段闭合注记 + 记录·五 #4 追记（换装批执行序）
 - [x] 全门禁：mise run test（三 module -race）+ lint + guards +
       generate:verify 全绿
