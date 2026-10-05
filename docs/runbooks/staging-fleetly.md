@@ -246,6 +246,8 @@ staging 真机验收（14:53-14:56）：
 
 **受管面**：VM 单节点（`fleetly-fleetly-system-metrics-victoriametrics` 1/1，8428 mesh）+ cadvisor 全局（`fleetly-fleetly-system-metrics-cadvisor` **2/2 双节点 task**——每节点一个 host:8080 端点）。首启滚动卡死一次（旧 task 占 host 8080 + start-first 双 task 争位——`docker service rm` 后 reconciler 重建即愈；host 端口类全局服务的滚动序语义挂账观察）。
 
+**闭合注记（2026-10-05，N2 评审批 P2-5 根修，随批 commit）**：host 端口滚动序收口——swarm 翻译层 `rolloutOrder`（translate.go）对一切 host 模式发布（`PublishModeHost`）统一强制 stop-first：旧 task 先退让宿主端口、新 task 再起，争位卡死不再可能；cadvisor 未来 tag bump / spec 变更不再需要手工 `docker service rm`。判定刻意不看全局形态（replicated 单副本在单节点集群滚动同样同节点共存）——第二个 host 端口服务自动同款，无防呆缺口。StopGrace 取舍：cadvisor 留零 = 编排器缺省（10s 硬杀兜底）——无状态采集端 SIGTERM 即退，宽限窗只在进程滞留时才消耗（挂卷负载的 60s 是数据面排水窗，此处无数据面）。诚实边界：stop-first 每节点滚动窗内 8080 有秒级无监听空窗（采集环节拍退避容忍，换取不再卡死）；存量在役 cadvisor（spec 仍是 start-first）换装后下一拍 Ensure 见 spec diff 按新序各节点滚一次。
+
 **真机咬出三修（2d01193）**：
 1. **域材料默认挂全域 Workload 咬死 cadvisor**：VM 密码材料（swarm secret → /run/secrets/）注入同域的 cadvisor，其镜像无该目录且 overlayfs 只读 → mountpoint 创建失败 crash-loop。修 = IR 新增 `Workload.SkipMaterials`（显式退出面；无状态采集端不收存储凭证——本就是安全正确取向）。
 2. **swarm Command 是全量 argv**：只给旗标会把入口二进制丢掉（`exec "--housekeeping_interval=15s" not found`）。zot 绝对路径先例再证——受管域 Command 恒写全量。

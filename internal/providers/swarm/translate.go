@@ -268,10 +268,11 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 		// 经 Edge，见函数注释）。
 		EndpointSpec: endpointSpec(w.Publish),
 		// UpdateConfig 语义由平台 Deployment 状态机掌管（滚动与回滚 =
-		// Replay），编排器原生回滚不用（ADR-0005）。顺序按数据面分流
+		// Replay），编排器原生回滚不用（ADR-0005）。顺序按争用面分流
 		// （rolloutOrder）：挂卷负载必须 stop-first——start-first 的新任务
 		// 与单副本卷钉住互斥，抢不到卷只会让 swarm 超时硬杀旧任务
-		// （staging pgvector WAL 损坏事故实证，2026-10-03）。
+		// （staging pgvector WAL 损坏事故实证，2026-10-03）；host 发布负载
+		// 同理必须 stop-first（宿主端口节点级排他，N2 评审 P2-5）。
 		UpdateConfig: &swarm.UpdateConfig{
 			Parallelism:   1,
 			Order:         rolloutOrder(w),
@@ -280,14 +281,32 @@ func toServiceSpec(ns capability.NamespaceRef, w capability.Workload, gen capabi
 	}
 }
 
-// rolloutOrder 把滚动顺序按数据面与否分流：挂卷负载 stop-first（数据卷
-// 单写者，先停旧再起新；硬杀窗见 toServiceSpec UpdateConfig 注释），无卷
+// rolloutOrder 把滚动顺序按争用面分流：挂卷负载 stop-first（数据卷
+// 单写者，先停旧再起新；硬杀窗见 toServiceSpec UpdateConfig 注释），
+// host 发布负载同样 stop-first（宿主端口直绑在节点上排他——start-first
+// 滚动的新旧 task 同节点共存必争位：全局形态尤为必然，新 task 须落在
+// 每个节点，与旧 task 抢同一宿主端口直到滚动卡死。staging cadvisor
+// 首启滚动卡死实证 2026-10-04，runbook 记录·四/N2 评审 P2-5），其余
 // 负载维持 start-first（先起新再停旧，无争用面、切换更平滑）。
 func rolloutOrder(w capability.Workload) swarm.UpdateOrder {
-	if len(w.Volumes) > 0 {
+	if len(w.Volumes) > 0 || hasHostPublish(w) {
 		return swarm.UpdateOrderStopFirst
 	}
 	return swarm.UpdateOrderStartFirst
+}
+
+// hasHostPublish 报告 Workload 是否声明 host 模式端口发布
+// （PublishModeHost）。判定刻意不看 Global/Replicas 形态：端口排他性
+// 来自 host 直绑本身——全局形态保证滚动期新旧 task 同节点，replicated
+// 单副本在单节点集群同样同节点。在翻译层统一执法（而非 provider 声明处
+// 逐个标注）：第二个 host 端口服务自动同款，无防呆缺口。
+func hasHostPublish(w capability.Workload) bool {
+	for _, p := range w.Publish {
+		if p.Mode == capability.PublishModeHost {
+			return true
+		}
+	}
+	return false
 }
 
 // restartPolicyCondition 把平台生命周期声明映射为 swarm 重启条件（ADR-0025

@@ -78,6 +78,11 @@ func TestManagedWorkloadsShape(t *testing.T) {
 	require.Len(t, cd.Publish, 1)
 	assert.Equal(t, capability.PublishModeHost, cd.Publish[0].Mode, "cadvisor endpoint is host-published per node")
 	assert.Equal(t, int32(8080), cd.Publish[0].PublishedPort)
+	// 滚动序取舍钉死（N2 评审 P2-5）：host 发布的 stop-first 由 swarm 翻译层
+	// 按本声明（PublishModeHost）统一执法，声明面无序字段；宽限留零 =
+	// 编排器缺省硬杀兜底——无状态采集端 SIGTERM 即退，与数据面 60s 排水窗
+	// 分立。
+	assert.Zero(t, cd.StopGrace, "stateless collector keeps zero grace (provider default 10s hard-kill bound); rolling order is enforced at the swarm translation layer from the host-publish declaration")
 	require.Len(t, cd.HostBinds, 4)
 	for _, b := range cd.HostBinds {
 		assert.True(t, b.ReadOnly, "collector binds must be read-only")

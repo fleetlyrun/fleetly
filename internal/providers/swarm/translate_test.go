@@ -244,6 +244,48 @@ func TestRolloutOrderByVolumePresence(t *testing.T) {
 	assert.Nil(t, spec.TaskTemplate.ContainerSpec.StopGracePeriod, "zero StopGrace must stay unset (engine default, not provider-invented)")
 }
 
+// TestRolloutOrderHostPublishForcesStopFirst（staging cadvisor 首启滚动
+// 卡死回归钉，2026-10-04，runbook 记录·四/N2 评审 P2-5）：host 模式发布的
+// 负载滚动必须 stop-first——宿主端口直绑在节点上排他，start-first 的新旧
+// task 同节点共存必争位（旧 task 占 host 8080 + 新 task 绑不上 = 滚动卡死，
+// 曾需手工 docker service rm 解锁）。判定不依赖 Volumes/Global 形态：host
+// 发布本身承载排他性。
+func TestRolloutOrderHostPublishForcesStopFirst(t *testing.T) {
+	ns := capability.NamespaceRef{Team: "fleetly", Project: "system", App: "metrics"}
+
+	// cadvisor 同款形态：全局 + host 发布 8080 + 无卷 + 零宽限。
+	globalCollector := capability.Workload{
+		ID: "fleetly-metrics-cadvisor", Process: "cadvisor", Image: "gcr.io/cadvisor/cadvisor:v0.55.1",
+		Global: true, Replicas: 1,
+		Publish: []capability.PortPublish{{PublishedPort: 8080, TargetPort: 8080, Mode: capability.PublishModeHost}},
+	}
+	spec := toServiceSpec(ns, globalCollector, capability.Generation(1), nil)
+	require.NotNil(t, spec.UpdateConfig)
+	assert.Equal(t, swarm.UpdateOrderStopFirst, spec.UpdateConfig.Order,
+		"host-published workloads must roll stop-first (start-first co-locates old+new tasks fighting for the same node port; global form guarantees the co-location)")
+
+	// replicated 形态同样强制：排他性来自 host 直绑，不来自全局调度
+	// （单节点集群上 replicated 单副本滚动同样同节点共存）。
+	replicated := capability.Workload{
+		ID: "wl_01H", Process: "agent", Image: "nginx:1", Replicas: 1,
+		Publish: []capability.PortPublish{{PublishedPort: 9100, TargetPort: 9100, Mode: capability.PublishModeHost}},
+	}
+	spec = toServiceSpec(ns, replicated, capability.Generation(1), nil)
+	require.NotNil(t, spec.UpdateConfig)
+	assert.Equal(t, swarm.UpdateOrderStopFirst, spec.UpdateConfig.Order,
+		"host publish alone must force stop-first regardless of global/replicated form")
+
+	// mesh 发布（缺省模式）不受影响：无节点级端口争用面，维持 start-first。
+	mesh := capability.Workload{
+		ID: "fleetly-metrics-victoriametrics", Process: "victoriametrics", Image: "victoriametrics/victoria-metrics:v1.152.0",
+		Replicas: 1,
+		Publish:  []capability.PortPublish{{PublishedPort: 8428, TargetPort: 8428}},
+	}
+	spec = toServiceSpec(ns, mesh, capability.Generation(1), nil)
+	require.NotNil(t, spec.UpdateConfig)
+	assert.Equal(t, swarm.UpdateOrderStartFirst, spec.UpdateConfig.Order)
+}
+
 func TestPlacementConstraintsLabelFormula(t *testing.T) {
 	// 约束走节点 label 公式（真机坑：不用 hostname/ID 直引用）。
 	got := placementConstraints(capability.Placement{NodeIDs: []string{"node_01H"}})

@@ -214,6 +214,12 @@ func (p *Provider) ManagedWorkloads() []capability.Workload {
 			// 15s（与采集环对齐；默认 1s 采样密度对小微负载是浪费）。
 			Command: []string{"/usr/bin/cadvisor", "-logtostderr", "--housekeeping_interval=15s"},
 			Ports:   []capability.WorkloadPort{{Port: cadvisorPort, Protocol: capability.ProtocolHTTP}},
+			// host 发布的滚动序由 swarm 翻译层统一强制 stop-first
+			// （translate.go rolloutOrder，N2 评审 P2-5）：宿主端口节点级
+			// 排他，旧 task 先退让端口、新 task 再起。StopGrace 取舍留零：
+			// 无状态采集端 SIGTERM 即退，零值 = 编排器缺省（10s 硬杀兜底）
+			// ——宽限窗只在进程滞留时才消耗，显式声明不改变行为面（挂卷
+			// 负载的 60s 是数据面排水窗，此处无数据面）。
 			Publish: []capability.PortPublish{{PublishedPort: cadvisorPort, TargetPort: cadvisorPort, Mode: capability.PublishModeHost}},
 			// 每节点一 task（docker stats 无集群 API——多节点采集的端点形态，
 			// ADR-0041 决策 2）。Replicas=1 是全局形态的 per-node 期望数
