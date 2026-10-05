@@ -88,7 +88,9 @@ fi
 docker exec "$DIND_CID" restic version | grep -q 0.19.1 || fail "restic version mismatch"
 
 # 镜像通道：宿侧已有 → image save | load（离线确定、smoke 同款）；缺席 →
-# dind 内拉取（单次重试——出站波动的最小重试面）。
+# dind 内拉取（单次重试——出站波动的最小重试面）。tag 预拉只暖层不暖
+# index（save/load 不保留 RepoDigests）：平台 digest 引用（F2.7/ADR-0045）
+# 解析需 registry 可达一次、层已本地零字节下载。
 log "preloading engine template images into dind"
 for img in postgres:17-bookworm mysql:8.4 mongo:8.0 redis:7.4; do
   if docker image inspect "$img" >/dev/null 2>&1; then

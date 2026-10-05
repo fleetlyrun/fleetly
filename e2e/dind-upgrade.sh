@@ -9,7 +9,9 @@
 #     （存量路由不依赖控制面活着，架构 §8 降级矩阵 Edge 行的实证）；
 #   ②第二 App 无 Route——断言平台零重启用户 Workload（task 行零新增）；
 #   ③受管 postgres Database——断言零滚动零硬杀（task 恰 1 Running）+
-#     pg_isready 活体（挂卷 stop-first 的数据面回归锚）。
+#     pg_isready 活体（挂卷 stop-first 的数据面回归锚）；两代模板 digest
+#     集有差时准许恰一次受监督滚动（F2.7/ADR-0045——digest bump 即平台
+#     升级批，滚动是收敛环正当行为，见步骤 9）。
 #
 # 旧版来源：HEAD~1——仓尚无 git tag（Releases 通道随首 tag 批次生效），
 # 连续验证"上一版→本版"；tag 通道成型后切 latest-tag→HEAD 配对。
@@ -20,7 +22,9 @@
 #
 # 前置：本机 docker 可用且可拉取 nginx:1.27 / traefik:v3.5 /
 # traefik/whoami:v1.10 / postgres:17-bookworm（宿侧 pull 后 save|load 注入
-# dind，dind 内离线确定性不赌网络——与既有三脚本同款）。
+# dind，dind 内离线确定性不赌网络——与既有三脚本同款）。tag 预拉只暖
+# 层不暖 index（save/load 不保留 RepoDigests）：新代二进制的 digest 引用
+# 解析需 registry 可达一次、层已本地零字节下载（F2.7/ADR-0045 诚实边界）。
 set -eu
 
 # Git-Bash（MSYS）会把以 / 开头的容器侧路径参数转译成本机路径（实证坑，
@@ -363,8 +367,21 @@ if [ "$(task_count "$WORKER_SVC")" -ne "$WORKER_BASE" ]; then
   echo "worker workload restarted during upgrade: $(task_count "$WORKER_SVC") tasks (baseline $WORKER_BASE)" >&2
   exit 1
 fi
-if [ "$(task_count "$DB_SVC")" -ne "$DB_BASE" ]; then
-  echo "database carrier rolled or restarted during upgrade: $(task_count "$DB_SVC") tasks (baseline $DB_BASE)" >&2
+# 库零滚动断言按模板 digest 集条件化（F2.7/ADR-0045 决策 4）：两代二进制
+# 的 dbtemplate digest 集有差时，库任务升级后滚一次是收敛环的正当行为
+# （fingerprint 含 Image → gen 推进 → stop-first 滚动、卷钉住数据存活；
+# F2.3 staging DataTarget 变更实录同款）——有差准许恰一次受监督滚动，
+# 滚后 running + pg_isready 活体断言（在后）不变；无差维持严格零滚动。
+db_digest_set() { grep -rhoE '@sha256:[0-9a-f]{64}' "$1"/internal/engine/dbtemplate/*.go 2>/dev/null | sort; }
+DB_ROLL_BUDGET=0
+if [ "$(db_digest_set "$OLDWT")" != "$(db_digest_set ".")" ]; then
+  DB_ROLL_BUDGET=1
+  log "template digest set changed across upgrade; allowing one supervised db roll (ADR-0045)"
+fi
+DB_DELTA=$(( $(task_count "$DB_SVC") - DB_BASE ))
+log "db task delta across upgrade: $DB_DELTA (budget $DB_ROLL_BUDGET)"
+if [ "$DB_DELTA" -lt 0 ] || [ "$DB_DELTA" -gt "$DB_ROLL_BUDGET" ]; then
+  echo "database carrier rolled $DB_DELTA time(s) during upgrade (budget $DB_ROLL_BUDGET)" >&2
   docker exec "$DIND_CID" docker service ps "$DB_SVC" >&2 || true
   exit 1
 fi
