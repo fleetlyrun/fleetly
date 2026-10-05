@@ -270,7 +270,7 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 
 **真机咬出四实录（产品挂账两件）**：
 1. **验证类存储负载必须 bind 卷**：silo 容器 /data 落 overlayfs（无 bind 卷）时 517MiB 平台备份引发 manager I/O 停滞（silo 自报 "unable to write+read for 32.6s"）→ docker API 超时 → 平台备份一次失败 + daemon reconcile 全面 deadline。改 host bind 卷后全绿。
-2. **观测失败被当 drift → 受管域假滚动（产品挂账）**：I/O 风暴期（docker API 停滞）受管 reconciler 的 InspectWorkloads/list 失败被当作 spec 失配处理——五受管域连滚三次；删除操作期 traefik 又假滚一次（zot 同拍滚动是项目材料语义、预期）。与 7232da4 的重启零滚语义冲突：**观测错误不得触发 spec 对照判 drift**（Ensure 前置观测失败的保守化），待专属批根修。
+2. **观测失败被当 drift → 受管域假滚动（产品挂账）**：I/O 风暴期（docker API 停滞）受管 reconciler 的 InspectWorkloads/list 失败被当作 spec 失配处理——五受管域连滚三次；删除操作期 traefik 又假滚一次（zot 同拍滚动是项目材料语义、预期）。与 7232da4 的重启零滚语义冲突：**观测错误不得触发 spec 对照判 drift**（Ensure 前置观测失败的保守化），待专属批根修。**已闭合（2026-10-05）**：观测失败保守化落地（a30944f，N2 评审批 P1-5 根修）——观测面返回错误 = 跳过该受管域本拍 + warn 告警（沿触发不刷屏），不判 drift、不冷启 gen、不折成"无网络"挖 Edge 挂网引用集；双分支带回归锚（播种 Inspect 失败 / 挂网 list 失败，观测恢复下一拍正常收敛）。staging 换装后受管域重启零滚语义（7232da4）不再受观测风暴窗口破坏——换装窗 docker API 停滞不再有受管域假滚叠加面（与 digest 滚动的归因也不再需要按 task 龄 + fleetly.generation 标签差区分）。
 3. **项目删除不级联库（既有行为实录）**：`projects delete` 后库行仍 running、服务/卷原样；须逐库 `databases delete`（载体拆 + 卷/凭证保留）再手工 `docker volume rm`。
 4. **legacy 项目网不 attachable 使 torchwood-pg 定时备份持续失败**（F2.2 已知挂账，错误文本自带 runbook 指引；s3 链路无辜——失败链经 s3objectstore Put 包装报出，链路语义正确）。**已闭合（2026-10-05）**：网络重建动词 `RebuildNetwork` 落地（ADR-0046，N2 评审批 P1-4 根修；换装后对四项目网逐个 `fleetly networks rebuild` 即自愈——见 F2.2 节闭合注记）。
 
