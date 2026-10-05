@@ -421,7 +421,8 @@ type Engine struct {
 	// maintenanceMu 是载体网络维护互斥（ADR-0046 网络重建动词的串行化
 	// 锚）：RebuildNetwork 持写锁贯穿 detach→rm→create→attach 全序；
 	// 全部 Ensure 族调用点（materialize/databaseStep/managedStep/
-	// driveEnsure/backup 环的 utility 附着）持读锁——读锁间照旧并发，
+	// driveEnsure/backup 环的 utility 附着）与 TeardownDatabase（拆载体
+	// 是载体写动词，2026-10-05 级联批入册）持读锁——读锁间照旧并发，
 	// 只有重建排他（受管 Edge 单次 Ensure 引用全部活跃项目网络，全局
 	// 粒度是对该耦合的诚实取舍，ADR-0046 决策 3）。锁等待不占步预算
 	// （排队语义，见 lockMaintenance）。

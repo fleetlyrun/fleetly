@@ -205,6 +205,11 @@ type FakeRuntime struct {
 	// 在 removeBlock）。
 	removeEntered chan struct{}
 
+	// removeErrByDB 是按 Database 轴注入的 Remove 错误（项目删除级联的
+	// 失败注入缝：对指定库的拆载体报错，其余库照常——SetRemoveErrFor
+	// 布置/清除；SetAdminErr 同款形态）。
+	removeErrByDB map[string]error
+
 	// 载体网络假状态（RuntimeNetworkMaintenance 假底座，ADR-0046）：
 	// netCarriers 是载体网在场面（SeedNetworkCarrier 预置 / EnsureNetwork
 	// 复建）；maintOps 是维护原语调用流水（重建序断言面）。
@@ -262,8 +267,26 @@ func (f *FakeRuntime) Remove(ctx context.Context, ns capability.NamespaceRef) er
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if err := f.removeErrByDB[ns.Database]; err != nil {
+		return err
+	}
 	f.removed = append(f.removed, ns)
 	return nil
+}
+
+// SetRemoveErrFor 注入/清除对指定 Database 轴的 Remove 错误（级联失败
+// 测试：err 非 nil 即该库拆载体恒败，nil 清除恢复）。
+func (f *FakeRuntime) SetRemoveErrFor(databaseID string, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.removeErrByDB == nil {
+		f.removeErrByDB = map[string]error{}
+	}
+	if err == nil {
+		delete(f.removeErrByDB, databaseID)
+		return
+	}
+	f.removeErrByDB[databaseID] = err
 }
 
 // ArmRemoveBlock 使下一次 Remove 阻塞在注入点，返回入口信号与解除函数。

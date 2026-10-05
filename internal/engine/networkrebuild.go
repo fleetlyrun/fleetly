@@ -12,8 +12,9 @@ package engine
 // drift）→ 终态核验（attachable + 平台标签在位）。
 //
 // 串行化：全序持 maintenanceMu 写锁；全部 Ensure 族调用点（materialize/
-// databaseStep/managedStep/driveEnsure/backup 环的 utility 附着）持读锁
-// ——读锁间照旧并发，只有重建排他（ADR-0046 决策 3 的取舍记录）。
+// databaseStep/managedStep/driveEnsure/backup 环的 utility 附着）与
+// TeardownDatabase（拆载体，2026-10-05 级联批入册）持读锁——读锁间照旧
+// 并发，只有重建排他（ADR-0046 决策 3 的取舍记录）。
 
 import (
 	"context"

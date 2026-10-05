@@ -310,7 +310,8 @@ func databaseSpecFromRow(row *dbrepo.Database, tpl dbtemplate.Template) *specv1.
 
 // TeardownDatabase 收口拆除（ADR-0029 决策 8）：Runtime.Remove（幂等拆域
 // 内全部载体）+ 清归属/期望/观测缓存。tombstone 与事件由 API 受理位在
-// 后续事务落（先变更后留痕，ADR-0023 同款序）。
+// 后续事务落（先变更后留痕，ADR-0023 同款序）。单库删除与项目删除级联
+// 共用本口（级联语义见 ADR-0029 追记 2026-10-05）。
 func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 	row, err := e.databases.Get(ctx, e.db.Runner(), id)
 	if err != nil {
@@ -321,6 +322,13 @@ func (e *Engine) TeardownDatabase(ctx context.Context, id string) error {
 		return err
 	}
 	ns := capability.NamespaceRef{Team: team, Project: row.ProjectID, Database: row.ID}
+	// 维护互斥读半边（项目删除级联批，2026-10-05）：Remove 是载体写动词，
+	// 与 Ensure 族同面——网络重建（写半边）的 detach→rm→create→attach 全
+	// 序期间不得插入拆载体（半拆网与半拆库交错会把重建的 re-attach 面对
+	// 已逝归属）。锁等待不占步预算（排队语义，lockMaintenance 约定：读锁
+	// 在带界 ctx 派生之前获取）。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	// Remove 带界（B15-1，批 3 判定的反转）：API 请求路径的 Remove 挂死会
 	// 卡住 API 调用本身（与收敛环卡死同害）。带 ManagedStepTimeout 硬上限，
 	// 超时如实上抛（API 404/冲突语义不变，行保持可重试收口）。

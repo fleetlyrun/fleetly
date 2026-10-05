@@ -203,6 +203,75 @@ func (svc *DatabasesService) DeleteDatabase(ctx context.Context, req *structurev
 	return &structurev1.DeleteDatabaseResponse{}, nil
 }
 
+// cascadeDeleteDatabases 级联收口项目下全部活跃 Database（DeleteProject
+// 受理消费，2026-10-05 评审批台账 #4 / ADR-0029 追记）：逐库与
+// DeleteDatabase 同款收口序——TeardownDatabase 先行（拆载体）→ tombstone
+// + database.deleted 事件 + 审计一事务（先变更后留痕，ADR-0023 同款序）。
+// 卷与凭证 Secret 不随级联删（Project 级材料，备份保留义——与单库删除
+// 同口径）。失败语义：任一库失败即整体诚实失败（精确错误带库 ID 与
+// name）；已收口的库保持 tombstone 不回滚——重试时枚举面自然跳过（幂等
+// 收敛）。并发窗口：枚举后被他方单删的库按"已收口"跳过（NotFound 容
+// 忍）；级联与项目 tombstone 之间新建的库由 DeleteProject 事务内的
+// noActiveDatabases 复查拒绝（重试即收敛）。
+func (s *Services) cascadeDeleteDatabases(ctx context.Context, projectID string) error {
+	rows, err := s.listActiveDatabases(ctx, projectID)
+	if err != nil {
+		return err
+	}
+	for i := range rows {
+		db := &rows[i]
+		if err := s.Engine.TeardownDatabase(ctx, db.ID); err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				continue // 并发单删已收口（幂等收敛）
+			}
+			return apperr.New("E_INTERNAL",
+				"project delete: database %s (%s) teardown failed; databases torn down so far stay deleted - retry the project delete to converge",
+				db.ID, db.Name).WithCause(err)
+		}
+		err = s.commit(ctx, writeFact{
+			write: func(ctx context.Context, tx *sql.Tx) error {
+				return s.Databases.SoftDelete(ctx, tx, db.ID)
+			},
+			events: []eventFact{structureEvent(eventDatabaseDeleted, "database", db.ID, db.ProjectID)},
+			audits: []*audit.Entry{{
+				ID: newID(), Actor: authn.ActorFromContext(ctx), Source: authn.SourceFromContext(ctx), Action: "database.delete",
+				Resource: "database/" + db.ID,
+			}},
+		})
+		if err != nil {
+			if errors.Is(err, state.ErrNotFound) {
+				continue // 并发赢家先落了 tombstone（幂等收敛）
+			}
+			return apperr.New("E_INTERNAL",
+				"project delete: database %s (%s) could not be tombstoned", db.ID, db.Name).WithCause(err)
+		}
+	}
+	if len(rows) > 0 {
+		s.Engine.KickDatabases()
+	}
+	return nil
+}
+
+// listActiveDatabases 枚举项目下全部活跃 Database（级联的枚举面；
+// ListByProject 分页循环——per-Project 配额 16 但配额可漂移，循环对
+// 任意存量面收敛）。
+func (s *Services) listActiveDatabases(ctx context.Context, projectID string) ([]dbrepo.Database, error) {
+	var out []dbrepo.Database
+	const page = 200 // 与 repo maxListLimit 对齐（超出值被钳回）
+	after := ""
+	for {
+		rows, err := s.Databases.ListByProject(ctx, s.DB.Runner(), projectID, after, page)
+		if err != nil {
+			return nil, mapStateError(err, "database")
+		}
+		out = append(out, rows...)
+		if len(rows) < page {
+			return out, nil
+		}
+		after = rows[len(rows)-1].ID
+	}
+}
+
 // TriggerBackup 手动触发（ADR-0039）：铸一行 pending 台账 + 审计，Kick
 // 备份环；执行完成事实由事件与 ListBackups 观测（触发不等执行——
 // 备份时长无上界承诺，同步面不成立）。

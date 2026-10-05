@@ -215,3 +215,72 @@ func TestRebuildNetworkSerializesWithDeployEnsure(t *testing.T) {
 	}
 	assert.GreaterOrEqual(t, ensureCountOf(t, rt, tAppID), 1, "queued ensure proceeds after the rebuild releases the lock")
 }
+
+// 串行化执法锚（项目删除级联批，2026-10-05）：重建持写锁期间，
+// TeardownDatabase 的 Remove（读锁）排队不并行——detach 窗内不得插入
+// 拆库载体（半拆网与半拆库交错会把重建的 re-attach 面对已逝归属）；
+// 释放后排队的拆除照常收口。
+func TestRebuildNetworkSerializesWithDatabaseTeardown(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, rt, _ := newDatabaseFixture(t, "postgres", url)
+
+	ns := capability.NamespaceRef{Team: "default", Project: tProjectID}
+	rt.seedNetworkCarrier(ns, "default", false,
+		capability.NetworkAttachment{
+			Carrier: "fleetly-db-" + tDatabaseID,
+			Domain:  lowerDomain(capability.NamespaceRef{Team: "default", Project: tProjectID, Database: tDatabaseID}),
+		},
+	)
+
+	// detach 卡点：重建进入 detach 后持写锁等待释放。
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	rt.setMaintHook(func(op string) {
+		if strings.HasPrefix(op, "detach ") {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+	})
+
+	rebuilt := make(chan error, 1)
+	go func() {
+		_, err := e.RebuildNetwork(context.Background(), tProjectID, "default")
+		rebuilt <- err
+	}()
+	select {
+	case <-entered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("rebuild never reached the detach step")
+	}
+
+	// 重建持锁期间启动库拆除（项目删除级联的收口动词）：Remove 必须排队
+	// （不进 runtime.Remove——detach 窗内无互踩）。拆除在后台 goroutine
+	//（RLock 排队阻塞是断言前提，不能占本 goroutine）。
+	torn := make(chan error, 1)
+	go func() {
+		torn <- e.TeardownDatabase(context.Background(), tDatabaseID)
+	}()
+	select {
+	case <-torn:
+		t.Fatal("the database teardown must queue behind the rebuild write lock, not complete")
+	case <-time.After(150 * time.Millisecond):
+	}
+	assert.NotContains(t, rt.removedSnapshot(), capability.NamespaceRef{
+		Team: "default", Project: tProjectID, Database: tDatabaseID,
+	}, "database carrier removal must queue behind the rebuild write lock")
+
+	close(release)
+	require.NoError(t, <-rebuilt)
+	// 释放后：排队的拆除完成，载体收口。
+	select {
+	case <-torn:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the queued teardown never completed after the rebuild released the lock")
+	}
+	assert.Contains(t, rt.removedSnapshot(), capability.NamespaceRef{
+		Team: "default", Project: tProjectID, Database: tDatabaseID,
+	}, "queued teardown proceeds after the rebuild releases the lock")
+}

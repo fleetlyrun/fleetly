@@ -199,21 +199,43 @@ func (svc *ProjectsService) ListProjects(ctx context.Context, req *structurev1.L
 // （Secret/Config/Volume/Network）不随 Project 删除——各自生命周期独立
 // （操作者按需先删材料再删 Project，本守卫不级联、不代删）。
 //
-// 删除后窗口：本守卫只保证"删除瞬间无活跃 App"；删除落账后 CreateApp 面
-// 不得再向已删项目挂 App——由 CreateApp 事务内的 requireActiveProject 对偶
-// 守卫承载（两守卫同处各自事务、单写者串行，任一交错下"项目存活 ⇔ App
-// 可建"；批 0 复核：此前 CreateApp 无校验、apps.project_id 无 FK，该窗口
-// 实际敞开，注释宣称的"窗口闭合"不成立，已随对偶守卫落地闭合）。
+// 数据库级联（2026-10-05 评审批台账 #4，ADR-0029 追记）：项目下的活跃
+// Database 随删除按单库删除同款收口序级联（TeardownDatabase 先行 →
+// tombstone + database.deleted + 审计，逐库一事务），全部收口后项目才
+// tombstone；卷与凭证 Secret 仍保留（备份保留义）。App 与 Database 的
+// 处置分立是有意裁决：App 有部署状态机与路由撤除面，级联会静默拆走带
+// 路由的活服务（用户可感知流量中断）；Database 是项目私有寻址的内部
+// 依赖（db-<id> 只在项目网内可达），不删即孤儿——事故实录的痛点在库
+// 不在 App（runbook 记录·五 #3）。
+//
+// 删除后窗口：本守卫只保证"删除瞬间无活跃 App 与活跃 Database"；删除
+// 落账后 CreateApp/CreateDatabase 面不得再向已删项目挂子资源——由各自
+// 事务内的 requireActiveProject 对偶守卫承载（两守卫同处各自事务、单写
+// 者串行，任一交错下"项目存活 ⇔ 子资源可建"；批 0 复核：此前 CreateApp
+// 无校验、apps.project_id 无 FK，该窗口实际敞开，注释宣称的"窗口闭合"
+// 不成立，已随对偶守卫落地闭合）。
 func (svc *ProjectsService) DeleteProject(ctx context.Context, req *structurev1.DeleteProjectRequest) (*structurev1.DeleteProjectResponse, error) {
 	// 行级授权（ADR-0035）：载行比对归属 Team（不存在 → 既有 404 形态）。
 	if err := svc.s.authorizeProjectID(ctx, req.GetId()); err != nil {
 		return nil, err
 	}
+	// 无锁预检（DeleteApp 同款形态，拒绝零副作用）：有活 App 在此拒绝，
+	// 不进入库级联拆载体；事务内 noActiveApps 复查仍是终局守卫。
+	if err := svc.s.rejectActiveApps(ctx, svc.s.DB.Runner(), req.GetId()); err != nil {
+		return nil, mapStateError(err, "project")
+	}
+	// 数据库级联（ADR-0029 追记 2026-10-05）：逐库同款收口序；任一库
+	// 失败即整体诚实失败，已收口库保持 tombstone（重试收敛）。
+	if err := svc.s.cascadeDeleteDatabases(ctx, req.GetId()); err != nil {
+		return nil, err
+	}
 	err := svc.s.commit(ctx, writeFact{
 		// 删除守卫与 tombstone 同事务：并发建 App 的窗口由两侧守卫对偶
 		// 闭合（本侧拒绝"删除时仍有 App"；CreateApp 侧受理检查拒绝"删除
-		// 后挂 App"；单写者事务串行，见函数注释）。
-		checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId())},
+		// 后挂 App"；单写者事务串行，见函数注释）。并发建库窗口由
+		// noActiveDatabases 复查闭合——级联的事务内终局，命中即拒（重试
+		// 把新库纳入级联）。
+		checks: []acceptanceCheck{svc.s.noActiveApps(req.GetId()), svc.s.noActiveDatabases(req.GetId())},
 		write: func(ctx context.Context, tx *sql.Tx) error {
 			return svc.s.Projects.SoftDelete(ctx, tx, req.GetId())
 		},

@@ -147,3 +147,48 @@ F1.12 要求 postgres（含 pgvector 形态）+ redis 模板、默认本地备�
 - [x] 备份执行链 + 恢复演练（F2；ADR-0020 验收 N2 e2e 不变）（排期 = 功能清单 F2.2，验收必过项）〔2026-10-04 兑现：ADR-0039——执行载体修订为控制面 daemon 工具容器（RuntimeUtility 子面）；四引擎 dind 演练全绿（本机真机，dind-backup.sh 进 CI e2e-backup job）〕
 - [x] staging 真机实证（受管形态起服 + App 经项目网连接 + 双节点卷
   钉住；随 F1.15 批记录）（F1.15 ⑥：pgvector torchwood-pg running + App/migrate job 经项目网连 db-<id> 跨节点 + 卷钉住 manager；runbook 2026-10-02 节）
+
+## 项目删除级联（2026-10-05 评审批台账 #4）
+
+N2 评审（docs/reviews/2026-10-05-n2-review.md 台账 #4）钉出的完整性破口：
+`projects delete` 后库行仍 running、服务/卷原样——须逐库 `databases delete`
+再手工 `docker volume rm`（runbook 记录·五 #3 实录）。本节裁决项目删除对
+Database 的级联语义，不新开 ADR（决策 8 删除语义的自然延伸）。
+
+**裁决**：`projects delete` 受理时发现项目下有非 tombstone 数据库 → 对
+每个库执行与单库删除同款收口序（TeardownDatabase 先行 → tombstone +
+`database.deleted` 事件 + 审计一事务），全部成功后项目才 tombstone。级联
+序 = 先无锁预检活跃 App（拒绝零副作用，不进级联）→ 逐库收口 → 项目
+tombstone 事务（受理守卫复查活跃 App 与活跃 Database 双面）。
+
+**边界**：
+
+- 卷与凭证 Secret 保留（不级联删）——与决策 8 单库删除同口径（备份保留
+  义，Project 级材料各自生命周期）；数据卷回收仍走手工 `docker volume rm`。
+- 共享变量/secrets 等行级材料维持现状不级联——项目 tombstone 已盖住访问
+  面（ADR-0043 决策 5 同挂账口径的既有边界），行级清理不动。
+- **App 面维持"先手工清"（现状对齐，不级联）**：现状 DeleteProject 对
+  在役 App 是拒绝（E_CONFLICT，Q-15 守卫），本批不翻案。分立理由：App 有
+  部署状态机与路由撤除面，级联会静默拆走带路由的活服务（用户可感知流量
+  中断，且活跃部署收口语义（ADR-0023 ③）在级联形态下无诚实承载）；而
+  Database 是项目私有寻址的内部依赖（`db-<id>` 只在项目网内可达），不随
+  删即孤儿——事故实录的痛点在库不在 App。Task/Schedule 行为本批同样
+  不动。
+
+**失败语义**：任一库 teardown/tombstone 失败 → 整个 projects delete 诚实
+失败（E_INTERNAL 精确错误带库 ID 与名称，成因在 cause 链）；已收口的库
+保持 tombstone 不回滚——重试时枚举面（活跃行口径）自然跳过，幂等收敛；
+禁止半事务态静默。并发窗口：级联与他方单删交错按"已收口"跳过（NotFound
+容忍）；级联与项目 tombstone 之间并发新建的库由项目 tombstone 事务内的
+noActiveDatabases 复查拒绝（重试把新库纳入级联）——CreateDatabase 的
+parentProjectAlive 对偶守卫保证项目落 tombstone 后无新库可建。
+
+**串行化**：TeardownDatabase 持 maintenanceMu 读锁（与 Ensure 族同面，
+ADR-0046 网络重建写锁的排他对象）——网络重建的 detach→rm→create→attach
+全序期间不得插入拆库载体（半拆网与半拆库交错会把重建的 re-attach 面对已
+逝归属）。锁等待不占 Remove 的步预算（排队语义，lockMaintenance 约定）。
+
+**面零改动**：proto/API/CLI 零变更（行为变更不加面）；事件复用
+`database.deleted`（eventcode 零新码）；errcode 复用 E_INTERNAL/
+E_CONFLICT/E_NOT_FOUND；审计复用 `database.delete` 动作名（每库一行）+
+`project.delete`（项目一行）。

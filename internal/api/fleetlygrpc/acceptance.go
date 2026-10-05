@@ -102,16 +102,46 @@ func (s *Services) projectAppAlive(projectID, appID string) acceptanceCheck {
 
 // noActiveApps：DeleteProject 的删除守卫——项目下有未删 App 即拒
 // （E_CONFLICT，先删 App）。Project 级材料不级联、不代删（各自生命周期）。
+// 事务内守卫与 DeleteProject 的无锁预检（先拒零副作用，再进库级联）经
+// rejectActiveApps 共用同一核（文案单源）。
 func (s *Services) noActiveApps(projectID string) acceptanceCheck {
 	return func(ctx context.Context, tx *sql.Tx) error {
-		apps, err := s.Apps.ListByProject(ctx, tx, projectID)
+		return s.rejectActiveApps(ctx, tx, projectID)
+	}
+}
+
+// rejectActiveApps 是活跃 App 拒绝判定的运行器无关核（*sql.Tx 与
+// *sql.DB 同满足 state.Runner）：事务内守卫与 DeleteProject 入口的
+// 无锁预检共用。
+func (s *Services) rejectActiveApps(ctx context.Context, run state.Runner, projectID string) error {
+	apps, err := s.Apps.ListByProject(ctx, run, projectID)
+	if err != nil {
+		return err
+	}
+	if len(apps) > 0 {
+		return apperr.New("E_CONFLICT",
+			"project %s still holds %d app(s); delete them before deleting the project",
+			projectID, len(apps))
+	}
+	return nil
+}
+
+// noActiveDatabases：DeleteProject 的级联复查守卫（2026-10-05 评审批
+// 台账 #4 / ADR-0029 追记）——项目删除对活跃 Database 级联收口（先拆
+// 载体后落账），本守卫闭合"级联与项目 tombstone 落账之间并发建库"的
+// 窗口：命中即拒（重试项目删除即把新库纳入级联）。与 noActiveApps 的
+// 处置分立：App 是手工前置面（先删 App 才受理），Database 是级联面
+// （项目删除自己收口）。
+func (s *Services) noActiveDatabases(projectID string) acceptanceCheck {
+	return func(ctx context.Context, tx *sql.Tx) error {
+		n, err := s.Databases.CountByProject(ctx, tx, projectID)
 		if err != nil {
 			return err
 		}
-		if len(apps) > 0 {
+		if n > 0 {
 			return apperr.New("E_CONFLICT",
-				"project %s still holds %d app(s); delete them before deleting the project",
-				projectID, len(apps))
+				"project %s still holds %d database(s) created while the delete was cascading; retry the project delete to cascade them",
+				projectID, n)
 		}
 		return nil
 	}
