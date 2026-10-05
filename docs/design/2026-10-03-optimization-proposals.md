@@ -53,7 +53,7 @@
 
 **验收锚**：
 - [x] `e2e/dind-upgrade.sh` + `mise run e2e:upgrade` + CI job `e2e-upgrade` 落地〔2026-10-03：旧版=HEAD~1 的 worktree 构建（仓尚无 tag，连续验证"上一版→本版"；tag 通道随发布节奏切换，ci.yml fetch-depth:2 为前提）；本地结构验证走通安装/身份链/三件负载部署（本机 Windows Docker Desktop 当日病灶——docker cp 大文件进 dind 产生"可见不可开"的坏 inode，完整断言链未本地跑完，**CI 首跑为验证真源**）〕
-- [ ] CI `e2e-upgrade` 首绿（含 database 负载——受管 DB 在 dind 属首跑面，首轮若 pending 复现则取 CI 日志诊断：本机首跑曾卡 `pending` 超时，现场被环境病灶污染未取证，疑点=离线 dind 受管 postgres 环境面 vs 升级路径，待 CI 干净环境区分）
+- [x] CI `e2e-upgrade` 首绿（含 database 负载——受管 DB 在 dind 属首跑面，首轮若 pending 复现则取 CI 日志诊断：本机首跑曾卡 `pending` 超时，现场被环境病灶污染未取证，疑点=离线 dind 受管 postgres 环境面 vs 升级路径，待 CI 干净环境区分）〔2026-10-05 补勾：e2e-upgrade job 自 P1 批后 CI 常态绿（最近实证 run 37268079795 七 job 全绿；评审 P2-7 记账缺口）〕
 - [x] runbook `staging-fleetly.md` 升级章引用本脚本为前置检查〔2026-10-03〕
 - 注：数据面 stop-first 修复本体已由同日修复批先行落地并真机验收（`3b3dd85` + runbook `9674340`），本脚本锚语义调整为**回归锚**（每次 push 验证"上一版→本版"升级零扰动）。
 

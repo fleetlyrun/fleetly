@@ -352,6 +352,8 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 - nodes 表会保留历史行（swarm 重建前后平台 ID 不同、旧行 available=false）——观测缓存非权威、ID 永不复用，CLI 侧按 available=true 取现行。
 - **受管 zot 边界（ADR-0019 附录 B.5）**：~~数据卷节点本地无钉住~~（F2.3b 429b521 收口：带卷受管 Workload 钉控制面节点——zot/edge 均已钉住；spec 变更不再漂移）；镜像无 GC（只增）；新 worker 加入时 dockerd 必须带同款 `--insecure-registry 10.124.0.3:5000`。
 - **ssh 命令里的 `$()`/管道在 Windows 侧会被转义吃掉**——远程复杂操作一律写脚本→scp→sh（本 runbook 2026-10-02 的全部诊断脚本在 manager `/root/dogfooding/`）。
+- **dbtemplate digest 钉不防 registry 侧清退**（上游删 digest 后重拉失败；ADR-0045 决策 5 诚实边界）：换装/新装前预拉镜像或评估镜像入受管 zot（超射程记档）；e2e 预拉只暖层不暖 index，digest 解析需 registry 可达一次。
+- **docker 日志驱动默认 json-file 无轮转**（ADR-0040 卫生挂账）：磁盘占用无界 + VL 断流补窗深度以日志文件在场为界；运维建议 daemon.json 配 log-opts max-size/max-file（改后新容器生效）。
 
 ### 端口暴露矩阵（操作者责任 + 平台自证，ADR-0036）
 
@@ -361,7 +363,7 @@ ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM �
 |---|---|---|---|
 | 9080 | fleetlyd gRPC（控制面 API） | Token（authn 拦截链） | 仅 VPC/内网；CLI 经 manager 本机回环或跳板访问 |
 | 9081 | REST gateway（SSE/幂等等同源面） | Token | 仅 VPC/内网 |
-| 9082 | Edge config 拉取端点（traefik HTTP provider） | **无认证**（traefik HTTP provider 不支持凭证的既知形态） | 仅 VPC/内网，**公网可达 = 任意人可改写全量路由** |
+| 9082 | Edge config 拉取端点（traefik HTTP provider） | 共享令牌头可选（`server.edge_config.auth_token`，缺省关=升级零扰动；traefik providers.http.headers 原生通道——ADR-0036 N2 兑现节 1） | 仅 VPC/内网，**公网可达 = 任意人可改写全量路由**（置 auth_token 后未带头的拉取 401，仍建议钉内网绑址） |
 | 5000 | 受管 zot（镜像仓库） | HTTP 明文 + 单一平台凭证（htpasswd） | 仅 VPC/内网；两台 dockerd 的 `--insecure-registry` 同依赖此形态 |
 | 9428 | 受管 VictoriaLogs（日志存储，F2.4） | basic auth（keys/victorialogs.json 随机密码；VL 单租户——域隔离由平台查询构造执法） | 仅 VPC/内网；mesh 端点无凭证 401 已实证 |
 | 8428 | 受管 VictoriaMetrics（指标存储，F2.5） | basic auth（keys/victoriametrics.json 随机密码；单租户同 VL 口径） | 仅 VPC/内网 |
@@ -396,4 +398,4 @@ fleetly doctor
 已知边界（记档不遮掩）：
 
 1. **zot 平台凭证全域可读**：任何租户可拉他人镜像——单租户窗口下接受；多租户前必须按租户隔离或经 Edge 前置认证（per-Project 凭证/前置认证已裁决推迟 N2，ADR-0036 决策 3，不静默升级）。
-2. **9082 无认证**：traefik HTTP provider 无凭证机制的既知形态；绑面已可配置（ADR-0036 `server.edge_config.addr`，可钉回环/VPC 地址）且 doctor 可自证公网不可达；防火墙白名单仍是对外边界，Unix socket 形态仍挂账。
+2. **9082 前置认证已具备、缺省关**：`server.edge_config.auth_token` 置值后拉取端点要求 `X-Fleetly-Edge-Token` 头常量时间比对（traefik 受管实例随 token 增同名头，providers.http.headers 原生通道）；Unix socket 形态已否决（traefik http provider 无 unix scheme 支持，ADR-0036 N2 兑现节 1）。多租户启用前置=置值。
