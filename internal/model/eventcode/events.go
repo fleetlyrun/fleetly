@@ -62,13 +62,18 @@ var builtins = []Event{
 	{Name: "variable.updated", Summary: "A project shared variable was set (values are readable via the API; redeploy affected apps to pick up the new value).", Source: "internal/api/fleetlygrpc/structure.go PutSharedVariable"},
 	{Name: "variable.deleted", Summary: "A project shared variable was deleted.", Source: "internal/api/fleetlygrpc/structure.go DeleteSharedVariable"},
 	{Name: "volume.created", Summary: "A volume was created.", Source: "internal/api/fleetlygrpc/structure.go CreateVolume"},
-	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/structure.go CreateNetwork"},
+	{Name: "network.created", Summary: "A project network was created.", Source: "internal/api/fleetlygrpc/networks.go CreateNetwork"},
 
 	// 跨 Project peer 声明三拍（F1.8，ADR-0013 附录 A.1：双向声明、接收方
 	// 批准、撤销即时隔离）。
-	{Name: "network.peer_declared", Summary: "A peer project declared intent to attach to a network (pending; needs receiver approval).", Source: "internal/api/fleetlygrpc/structure.go DeclareNetworkPeer"},
-	{Name: "network.peer_approved", Summary: "The receiving project approved a peer attachment; references become projectable.", Source: "internal/api/fleetlygrpc/structure.go ApproveNetworkPeer"},
-	{Name: "network.peer_revoked", Summary: "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).", Source: "internal/api/fleetlygrpc/structure.go RevokeNetworkPeer"},
+	{Name: "network.peer_declared", Summary: "A peer project declared intent to attach to a network (pending; needs receiver approval).", Source: "internal/api/fleetlygrpc/networks.go DeclareNetworkPeer"},
+	{Name: "network.peer_approved", Summary: "The receiving project approved a peer attachment; references become projectable.", Source: "internal/api/fleetlygrpc/networks.go ApproveNetworkPeer"},
+	{Name: "network.peer_revoked", Summary: "A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).", Source: "internal/api/fleetlygrpc/networks.go RevokeNetworkPeer"},
+
+	// 网络重建（ADR-0046，N2 评审批 P1-4）：平台中介的载体网络重建——
+	// 存量非 attachable 项目网的 flag-day 通道（detach→rm→recreate→
+	// re-attach 计数在载荷；失败无事件，行级错误即事实面）。
+	{Name: "network.rebuilt", Summary: "A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.", Source: "internal/api/fleetlygrpc/networks.go RebuildNetwork"},
 
 	// Git 触发（F0.13 webhook 接收链）。
 	{Name: "hook.push_accepted", Summary: "A verified webhook push triggered a deployment.", Source: "internal/api/fleetlygrpc/webhook.go handlePush"},

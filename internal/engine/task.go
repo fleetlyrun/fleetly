@@ -474,10 +474,13 @@ func (e *Engine) ensureTaskWorkloads(ctx context.Context, t *task.Task, ws []cap
 	if _, fresh := e.ensureFresh(e.task.ensure, t.ID, sig, e.clock.Now()); fresh {
 		return nil
 	}
-	// 下发段带界（boundedStep，Options.ManagedStepTimeout 的实证背景）：
-	// 材料解析与 runtime.Ensure 都跑在 Task 单写者环上，无界 hang 卡死整
-	// 个环（janitor/租约排空/停止兜底/补足全住环上）。Ensure 失败本就是
-	// 清签名下拍重试语义，带界无损。
+	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚；锁等待
+	// 不占步预算（排队语义）。下发段带界（boundedStep，Options.
+	// ManagedStepTimeout 的实证背景）：材料解析与 runtime.Ensure 都跑在
+	// Task 单写者环上，无界 hang 卡死整个环（janitor/租约排空/停止兜底/
+	// 补足全住环上）。Ensure 失败本就是清签名下拍重试语义，带界无损。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	ctx, cancel := e.boundedStep(ctx)
 	defer cancel()
 	team, err := e.taskTeam(ctx, t)

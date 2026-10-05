@@ -253,6 +253,12 @@
       "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"id\":{\"type\":\"string\"},\"network_id\":{\"type\":\"string\"},\"network_name\":{\"type\":\"string\"},\"network_project_id\":{\"type\":\"string\"},\"peer_project_id\":{\"type\":\"string\"}},\"required\":[\"id\",\"network_id\",\"network_name\",\"network_project_id\",\"peer_project_id\"],\"type\":\"object\"}"
     },
     {
+      "name": "network.rebuilt",
+      "kind": "event",
+      "summary": "A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.",
+      "schema_json": "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalProperties\":false,\"properties\":{\"detached\":{\"type\":\"integer\"},\"network\":{\"type\":\"string\"},\"project_id\":{\"type\":\"string\"},\"reattached\":{\"type\":\"integer\"}},\"required\":[\"project_id\",\"network\",\"detached\",\"reattached\"],\"type\":\"object\"}"
+    },
+    {
       "name": "node.joined",
       "kind": "event",
       "summary": "Node joined the cluster and was anchored with a platform node ID.",

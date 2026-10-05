@@ -41,6 +41,7 @@ network.created	event	A project network was created.
 network.peer_approved	event	The receiving project approved a peer attachment; references become projectable.
 network.peer_declared	event	A peer project declared intent to attach to a network (pending; needs receiver approval).
 network.peer_revoked	event	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).
+network.rebuilt	event	A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.
 node.joined	event	Node joined the cluster and was anchored with a platform node ID.
 node.left	event	Node left the cluster.
 platform.backup_failed	event	A platform backup failed; the payload carries the restic error tail.

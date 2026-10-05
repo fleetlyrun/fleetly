@@ -83,6 +83,10 @@ var EnforcedMethods = map[string]bool{
 	// databases 面随批补录（决策 10 承诺的兑现注）。
 	"/fleetly.structure.v1.DatabasesService/TriggerBackup":     true,
 	"/fleetly.system.v1.PlatformService/TriggerPlatformBackup": true,
+	// 网络重建（ADR-0046，N2 评审批 P1-4）：创建型前缀集外的维护动词，
+	// 显式纳入——重放安全（已 attachable 即快速路径零扰动；ClaimTTL 内
+	// 的重放拿回首次响应）。
+	"/fleetly.structure.v1.NetworksService/RebuildNetwork": true,
 }
 
 // dualSourceBearing 是自带幂等键 body 字段的请求（DeployRequest.

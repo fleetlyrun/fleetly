@@ -17,6 +17,8 @@ type ProviderFaces struct {
 	Inspector RuntimeInspector // spec 对照 drift（ADR-0022）
 	Hygiene   RuntimeHygiene   // 孤儿载体清扫（E29-1）
 	Utility   RuntimeUtility   // 一次性工具容器执行（ADR-0039 备份执行链）
+	// NetworkMaintenance 是载体网络重建原语（ADR-0046 网络重建动词）。
+	NetworkMaintenance RuntimeNetworkMaintenance
 	// 跨 Capability 子面（受管自宿 ADR-0004 与其材料/配置源）
 	Managed         Managed         // 受管部署声明
 	MaterialsSource MaterialsSource // 受管域材料集
@@ -45,6 +47,9 @@ func FacesOf(p Provider) ProviderFaces {
 	}
 	if v, ok := p.(RuntimeUtility); ok {
 		f.Utility = v
+	}
+	if v, ok := p.(RuntimeNetworkMaintenance); ok {
+		f.NetworkMaintenance = v
 	}
 	if v, ok := p.(Managed); ok {
 		f.Managed = v
@@ -82,6 +87,9 @@ func (f ProviderFaces) Offered() []string {
 	}
 	if f.Utility != nil {
 		out = append(out, "utility")
+	}
+	if f.NetworkMaintenance != nil {
+		out = append(out, "network-maintenance")
 	}
 	if f.Managed != nil {
 		out = append(out, "managed")

@@ -90,6 +90,52 @@ type RuntimeHygiene interface {
 	SweepOrphanSecrets(ctx context.Context, maxDelete int) (int, error)
 }
 
+// NetworkAttachment 是一条附着在载体网络上的编排器载体投影（ADR-0046
+// 网络重建动词的枚举面）：平台中立——Workload/Domain 还原自 fleetly 域
+// 标签，缺失即外来附着（引擎侧拒绝，不碰不认识的载体）。
+type NetworkAttachment struct {
+	// Carrier 是编排器侧载体名（detach/attach 的寻址锚）。
+	Carrier string
+	// Workload 是平台 Workload ID（域标签还原；空 = 无平台标记）。
+	Workload string
+	// Domain 是平台域（App/Task/Database 轴；零值 = 无平台标记）。
+	Domain NamespaceRef
+}
+
+// NetworkCarrierState 是载体网络的平台中立快照（重建动词的受理面：在场/
+// attachable/平台标签 + 附着载体清单）。
+type NetworkCarrierState struct {
+	Exists     bool
+	Attachable bool
+	// Managed 报告载体网是否带平台网络标签（复建同源判定锚）。
+	Managed bool
+	// Attachments 是当前附着载体（服务面；daemon 一次性容器不在内——
+	// rm 的 in-use 失败如实兜底）。
+	Attachments []NetworkAttachment
+}
+
+// RuntimeNetworkMaintenance 是网络维护子面（ADR-0046 网络重建动词）：
+// 平台中介的载体网络重建原语——枚举附着、载体级 detach/attach、网络删除
+// （带界排水）与 ensureNetworks 同源复建。按需实现（RuntimeAdmin 同款
+// 装配语义）；未实现时重建动词诚实失败，Inspector/Utility 降级文化同款。
+type RuntimeNetworkMaintenance interface {
+	// InspectNetwork 返回载体网络快照（不存在时 Exists=false，非错误）。
+	InspectNetwork(ctx context.Context, ns NamespaceRef, network string) (NetworkCarrierState, error)
+	// DetachNetwork 从载体上摘除网络附件（service update 摘目标；已无该
+	// 附件即 no-op）。实现须同步作废自身的 spec 等价账本（若有）。
+	DetachNetwork(ctx context.Context, ns NamespaceRef, network, carrier string) error
+	// RemoveNetwork 删除载体网络（幂等：已不存在不计错）。附着端点未清空
+	// 的 in-use 类错误按有界退避重试至 ctx 结束（detach 触发的任务替换需要
+	// 时间排水），其余错误如实上抛。
+	RemoveNetwork(ctx context.Context, ns NamespaceRef, network string) error
+	// EnsureNetwork 按 ensureNetworks create 半边同源复建载体网络
+	//（overlay + Attachable=true + 平台标签）；已存在即复用（幂等）。
+	EnsureNetwork(ctx context.Context, ns NamespaceRef, network string) error
+	// AttachNetwork 把网络附件加回载体（service update 加目标，解析为
+	// 当前网络 ID）。实现须同步作废自身的 spec 等价账本（若有）。
+	AttachNetwork(ctx context.Context, ns NamespaceRef, network, carrier string) error
+}
+
 // RuntimeUtility 是工具执行子面（ADR-0039 备份执行链）：在控制面 daemon
 // 上铸一次性工具容器——镜像由平台给定（数据库模板镜像，自带引擎客户端
 // 工具），附着平台网络（经 attachable overlay 达 db-<id> DNS，多节点），

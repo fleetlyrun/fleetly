@@ -45,33 +45,44 @@ func (p *Provider) ensureNetworks(ctx context.Context, ns capability.NamespaceRe
 		}
 	}
 	for ref := range refs {
-		name := carrierNetworkName(ref.ns, ref.name)
-		if err := p.inspectNetworkCarrier(ctx, name); err == nil {
-			continue // create-or-get 的 get 半边：已存在即复用
-		} else if !isNotFound(err) {
-			// Q-20：inspect 失败 ≠ 不存在——权限/连接类错误必须上抛带
-			// 原因，不得伪装 404 触发 create（撞既有载体名只会得到误导性
-			// 的"already exists"）。对照 service 路径 isNotFound 先例。
-			return fmt.Errorf("swarm ensure network %s: inspect: %w", name, err)
+		if err := p.ensureOneNetwork(ctx, ref.ns, ref.name); err != nil {
+			return err
 		}
-		labels := map[string]string{
-			labelNetManaged:  "true",
-			labelNetProject:  sanitizeNamePart(ref.ns.Project),
-			labelNetPlatform: sanitizeNamePart(ref.name),
-		}
-		if _, err := p.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
-			Driver: "overlay",
-			Labels: labels,
-			// attachable：工具容器（daemon 一次性容器，ADR-0039 备份执行
-			// 链）可入项目网解析 db-<id>——swarm 服务不受影响，仅放行
-			// 控制面侧附着。存量非 attachable 网络不改不炸（附着失败带
-			// flag-day 指引）。
-			Attachable: true,
-			// swarm v1 弱隔离口径（领域模型 §6）：不设 Internal——
-			// 出网不阻断、明示弱隔离的诚实边界（架构 §10）。
-		}); err != nil {
-			return fmt.Errorf("swarm ensure network %s: create: %w", name, err)
-		}
+	}
+	return nil
+}
+
+// ensureOneNetwork 是单个网络载体的 create-or-get（ensureNetworks 的
+// 元素级单源；ADR-0046 网络重建动词的复建路径同源消费——Attachable=true
+// 与标签集只此一处定义）。get 半边对已存在载体复用（attachable 与标签
+// 形态不在此改写：存量非 attachable 网络的处置走 RebuildNetwork）。
+func (p *Provider) ensureOneNetwork(ctx context.Context, ns capability.NamespaceRef, platformName string) error {
+	name := carrierNetworkName(ns, platformName)
+	if err := p.inspectNetworkCarrier(ctx, name); err == nil {
+		return nil // create-or-get 的 get 半边：已存在即复用
+	} else if !isNotFound(err) {
+		// Q-20：inspect 失败 ≠ 不存在——权限/连接类错误必须上抛带
+		// 原因，不得伪装 404 触发 create（撞既有载体名只会得到误导性
+		// 的"already exists"）。对照 service 路径 isNotFound 先例。
+		return fmt.Errorf("swarm ensure network %s: inspect: %w", name, err)
+	}
+	labels := map[string]string{
+		labelNetManaged:  "true",
+		labelNetProject:  sanitizeNamePart(ns.Project),
+		labelNetPlatform: sanitizeNamePart(platformName),
+	}
+	if _, err := p.cli.NetworkCreate(ctx, name, client.NetworkCreateOptions{
+		Driver: "overlay",
+		Labels: labels,
+		// attachable：工具容器（daemon 一次性容器，ADR-0039 备份执行
+		// 链）可入项目网解析 db-<id>——swarm 服务不受影响，仅放行
+		// 控制面侧附着。存量非 attachable 网络不改不炸（附着失败带
+		// flag-day 指引；RebuildNetwork 是 flag-day 的平台中介通道）。
+		Attachable: true,
+		// swarm v1 弱隔离口径（领域模型 §6）：不设 Internal——
+		// 出网不阻断、明示弱隔离的诚实边界（架构 §10）。
+	}); err != nil {
+		return fmt.Errorf("swarm ensure network %s: create: %w", name, err)
 	}
 	return nil
 }

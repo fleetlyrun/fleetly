@@ -160,6 +160,11 @@ func (e *Engine) executeOneBackup(ctx context.Context) {
 	if err != nil || !ok {
 		return
 	}
+	// 维护互斥读半边（ADR-0046）：utility 容器附着项目网（attachable 依赖
+	// 面），网络重建窗内排队而非撞不可附着中间态；锁等待不占执行预算
+	// （排队语义，BackupTimeout 只量执行本体）。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
 	defer cancel()
 	fail := func(errMsg string) {
@@ -353,6 +358,10 @@ func (e *Engine) restoreDatabase(ctx context.Context, db *dbrepo.Database) {
 		fail("%v", err)
 		return
 	}
+	// 维护互斥读半边（ADR-0046）：同 executeOneBackup——utility 附着项目网
+	// 与网络重建串行化；锁等待不占执行预算（排队语义）。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	execCtx, cancel := context.WithTimeout(ctx, e.opts.BackupTimeout)
 	defer cancel()
 	object, err := e.objectStore.Get(execCtx, src.ObjectKey)

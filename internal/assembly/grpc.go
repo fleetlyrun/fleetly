@@ -56,11 +56,24 @@ func GRPCServerOptions() []grpc.ServerOption {
 	return []grpc.ServerOption{grpc.MaxRecvMsgSize(grpcMaxRecvMsgSize)}
 }
 
+// longRunningUnary 是通用 30s unary 预算的豁免面（维护型长执行动词——
+// 服务端自带的执行硬上限就是它们的界，超时拦截器不重复设界）：
+// - RebuildNetwork（ADR-0046）：detach 排水（stop-first + StopGrace 量级）
+//   - 复建 + re-attach 全序以引擎 NetworkRebuildTimeout（缺省 5m）为界；
+//     30s 通用预算会腰斩真实排水窗。CLI 侧同款豁免（noDeadline 拨号）。
+var longRunningUnary = map[string]bool{
+	"/fleetly.structure.v1.NetworksService/RebuildNetwork": true,
+}
+
 // newUnaryTimeoutInterceptor 构造 unary 请求超时拦截器：handler 的 ctx
 // 包 WithTimeout，挂死的 handler 经 ctx 取消链回收（仓储/docker 调用均
-// 透传 ctx），不再无限占用连接与 goroutine。
+// 透传 ctx），不再无限占用连接与 goroutine。longRunningUnary 豁免面
+// 原样放行（各自的引擎级硬上限承担防挂死职责）。
 func newUnaryTimeoutInterceptor(timeout time.Duration) grpc.UnaryServerInterceptor {
-	return func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		if longRunningUnary[info.FullMethod] {
+			return handler(ctx, req)
+		}
 		ctx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
 		return handler(ctx, req)

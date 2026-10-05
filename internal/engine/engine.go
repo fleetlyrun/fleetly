@@ -116,6 +116,11 @@ type Options struct {
 	// 流式执行面——单写者环卡死即时间看门狗失明，ManagedStepTimeout 同
 	// 源教训）。
 	BackupTimeout time.Duration
+	// NetworkRebuildTimeout 是网络重建全序（detach 排水 + rm 重试 + 复建
+	// + re-attach）的硬上限（默认 5m；ADR-0046）。detach 触发的任务替换
+	// 以 stop-first + StopGrace 量级排水（数据库 60s 宽限），分钟级是
+	// 重建窗的实测量级；超时中断在可重试中间态。
+	NetworkRebuildTimeout time.Duration
 	// PlatformBackup 是控制面 restic 快照配置（nil = Platform Backup 停用
 	//——装配缺省注入，nil 只属测试形态；ADR-0039）。
 	PlatformBackup *PlatformBackupConfig
@@ -150,6 +155,9 @@ func (o *Options) fill() {
 	}
 	if o.BackupTimeout <= 0 {
 		o.BackupTimeout = 15 * time.Minute
+	}
+	if o.NetworkRebuildTimeout <= 0 {
+		o.NetworkRebuildTimeout = 5 * time.Minute
 	}
 	if o.ManagedStepTimeout <= 0 {
 		o.ManagedStepTimeout = 30 * time.Second
@@ -409,6 +417,15 @@ type Engine struct {
 	// ensureMu 是收敛域签名短路备忘族的共用锁（五张 memo map 分住各域
 	// 子结构，锁保持单点——拆锁随域分化需要时再裁，本批锁语义零漂移）。
 	ensureMu sync.Mutex
+
+	// maintenanceMu 是载体网络维护互斥（ADR-0046 网络重建动词的串行化
+	// 锚）：RebuildNetwork 持写锁贯穿 detach→rm→create→attach 全序；
+	// 全部 Ensure 族调用点（materialize/databaseStep/managedStep/
+	// driveEnsure/backup 环的 utility 附着）持读锁——读锁间照旧并发，
+	// 只有重建排他（受管 Edge 单次 Ensure 引用全部活跃项目网络，全局
+	// 粒度是对该耦合的诚实取舍，ADR-0046 决策 3）。锁等待不占步预算
+	// （排队语义，见 lockMaintenance）。
+	maintenanceMu sync.RWMutex
 
 	// lifecycleMu 同步引擎生命周期（B12 P3-6）：Start 全程持锁（cancel
 	// 判空/赋值 + wg.Add）与 Stop 全程持锁（cancel 置 nil + wg.Wait 排水）

@@ -100,7 +100,11 @@ func (e *Engine) reconcileDatabase(ctx context.Context, row *dbrepo.Database) {
 			}
 		}
 	}
-	// 单步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
+	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚；锁等待
+	// 不占步预算（排队语义）。单步带界（staging 实证：无界的 docker API
+	// hang 卡死单写者循环）。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 	defer cancel()
 

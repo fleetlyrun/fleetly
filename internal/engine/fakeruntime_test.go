@@ -38,6 +38,156 @@ type fakeRuntime struct {
 	tamper map[string]tamperEntry // workloadID → 人工改载体注入（场景 7）
 
 	health capability.HealthReport
+
+	// 载体网络假状态（RuntimeNetworkMaintenance 假底座，ADR-0046）：
+	// netCarriers 在场面（seed 复现 legacy 非 attachable 形态）+ 维护
+	// 原语调用流水（重建序断言面）。maintHookFn 非空时在每个维护原语
+	// 入口（锁外）调用（串行化测试的卡点注入）。
+	netCarriers map[string]*fakeNetCarrier
+	maintOps    []string
+	maintHookFn func(op string)
+}
+
+// fakeNetCarrier 是假载体网络状态。
+type fakeNetCarrier struct {
+	attachable  bool
+	managed     bool
+	attachments map[string]capability.NetworkAttachment
+}
+
+// fakeNetKey 是假底座的载体网络命名（测试内稳定即可——真公式是 Provider
+// 私有，引擎不解析）。
+func fakeNetKey(ns capability.NamespaceRef, network string) string {
+	return ns.Team + "/" + ns.Project + "/" + network
+}
+
+// setMaintHook 注入维护原语入口卡点（串行化测试：锁外调用，卡点阻塞
+// 不持假底座互斥）。
+func (f *fakeRuntime) setMaintHook(fn func(op string)) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.maintHookFn = fn
+}
+
+// maintHook 取当前卡点（无则 nil）。
+func (f *fakeRuntime) maintHook() func(string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.maintHookFn
+}
+
+// seedNetworkCarrier 预置载体网形态（legacy 测试腿：attachable=false +
+// 附着载体集——归属裁决的通过/拒绝面）。
+func (f *fakeRuntime) seedNetworkCarrier(ns capability.NamespaceRef, network string, attachable bool, attachments ...capability.NetworkAttachment) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.netCarriers == nil {
+		f.netCarriers = map[string]*fakeNetCarrier{}
+	}
+	m := map[string]capability.NetworkAttachment{}
+	for _, a := range attachments {
+		m[a.Carrier] = a
+	}
+	f.netCarriers[fakeNetKey(ns, network)] = &fakeNetCarrier{attachable: attachable, managed: true, attachments: m}
+}
+
+// maintFlow 返回维护原语调用流水快照。
+func (f *fakeRuntime) maintFlow() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, len(f.maintOps))
+	copy(out, f.maintOps)
+	return out
+}
+
+// netAttachable 报告载体网当前的 attachable 形态（不存在即 false）。
+func (f *fakeRuntime) netAttachable(ns capability.NamespaceRef, network string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.netCarriers[fakeNetKey(ns, network)].attachable
+}
+
+// InspectNetwork 实现 RuntimeNetworkMaintenance 子面。
+func (f *fakeRuntime) InspectNetwork(_ context.Context, ns capability.NamespaceRef, network string) (capability.NetworkCarrierState, error) {
+	if hook := f.maintHook(); hook != nil {
+		hook("inspect " + fakeNetKey(ns, network))
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c, ok := f.netCarriers[fakeNetKey(ns, network)]
+	if !ok {
+		return capability.NetworkCarrierState{}, nil
+	}
+	state := capability.NetworkCarrierState{Exists: true, Attachable: c.attachable, Managed: c.managed}
+	for _, a := range c.attachments {
+		state.Attachments = append(state.Attachments, a)
+	}
+	f.maintOps = append(f.maintOps, "inspect "+fakeNetKey(ns, network))
+	return state, nil
+}
+
+// DetachNetwork 实现 RuntimeNetworkMaintenance 子面。
+func (f *fakeRuntime) DetachNetwork(_ context.Context, ns capability.NamespaceRef, network, carrier string) error {
+	if hook := f.maintHook(); hook != nil {
+		hook("detach " + fakeNetKey(ns, network) + " " + carrier)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if c := f.netCarriers[fakeNetKey(ns, network)]; c != nil {
+		delete(c.attachments, carrier)
+	}
+	f.maintOps = append(f.maintOps, "detach "+fakeNetKey(ns, network)+" "+carrier)
+	return nil
+}
+
+// RemoveNetwork 实现 RuntimeNetworkMaintenance 子面。
+func (f *fakeRuntime) RemoveNetwork(_ context.Context, ns capability.NamespaceRef, network string) error {
+	if hook := f.maintHook(); hook != nil {
+		hook("remove " + fakeNetKey(ns, network))
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.netCarriers, fakeNetKey(ns, network))
+	f.maintOps = append(f.maintOps, "remove "+fakeNetKey(ns, network))
+	return nil
+}
+
+// EnsureNetwork 实现 RuntimeNetworkMaintenance 子面（复建恒 attachable）。
+func (f *fakeRuntime) EnsureNetwork(_ context.Context, ns capability.NamespaceRef, network string) error {
+	if hook := f.maintHook(); hook != nil {
+		hook("ensure " + fakeNetKey(ns, network))
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := fakeNetKey(ns, network)
+	if f.netCarriers == nil {
+		f.netCarriers = map[string]*fakeNetCarrier{}
+	}
+	if _, exists := f.netCarriers[key]; !exists {
+		f.netCarriers[key] = &fakeNetCarrier{attachable: true, managed: true, attachments: map[string]capability.NetworkAttachment{}}
+	}
+	f.maintOps = append(f.maintOps, "ensure "+key)
+	return nil
+}
+
+// AttachNetwork 实现 RuntimeNetworkMaintenance 子面。
+func (f *fakeRuntime) AttachNetwork(_ context.Context, ns capability.NamespaceRef, network, carrier string) error {
+	if hook := f.maintHook(); hook != nil {
+		hook("attach " + fakeNetKey(ns, network) + " " + carrier)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	key := fakeNetKey(ns, network)
+	if c := f.netCarriers[key]; c != nil {
+		if c.attachments == nil {
+			c.attachments = map[string]capability.NetworkAttachment{}
+		}
+		if _, ok := c.attachments[carrier]; !ok {
+			c.attachments[carrier] = capability.NetworkAttachment{Carrier: carrier}
+		}
+	}
+	f.maintOps = append(f.maintOps, "attach "+key+" "+carrier)
+	return nil
 }
 
 type ensureCall struct {

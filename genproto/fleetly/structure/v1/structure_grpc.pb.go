@@ -1514,6 +1514,7 @@ var DatabasesService_ServiceDesc = grpc.ServiceDesc{
 const (
 	NetworksService_CreateNetwork_FullMethodName      = "/fleetly.structure.v1.NetworksService/CreateNetwork"
 	NetworksService_ListNetworks_FullMethodName       = "/fleetly.structure.v1.NetworksService/ListNetworks"
+	NetworksService_RebuildNetwork_FullMethodName     = "/fleetly.structure.v1.NetworksService/RebuildNetwork"
 	NetworksService_DeclareNetworkPeer_FullMethodName = "/fleetly.structure.v1.NetworksService/DeclareNetworkPeer"
 	NetworksService_ApproveNetworkPeer_FullMethodName = "/fleetly.structure.v1.NetworksService/ApproveNetworkPeer"
 	NetworksService_RevokeNetworkPeer_FullMethodName  = "/fleetly.structure.v1.NetworksService/RevokeNetworkPeer"
@@ -1531,6 +1532,12 @@ const (
 type NetworksServiceClient interface {
 	CreateNetwork(ctx context.Context, in *CreateNetworkRequest, opts ...grpc.CallOption) (*CreateNetworkResponse, error)
 	ListNetworks(ctx context.Context, in *ListNetworksRequest, opts ...grpc.CallOption) (*ListNetworksResponse, error)
+	// RebuildNetwork 是网络重建维护动词（ADR-0046）：平台中介地删除并按
+	// ensureNetworks 同源形态复建载体网络（Attachable=true，标签同源）——
+	// 平台归属载体逐个 detach/re-attach，编排全程与部署 Ensure/受管
+	// reconciler 串行化。存在平台无法归属的附着即 E_CONFLICT 拒绝并列出。
+	// 在幂等执法面（Idempotency-Key 头，ADR-0024）；变更冻结期拒绝。
+	RebuildNetwork(ctx context.Context, in *RebuildNetworkRequest, opts ...grpc.CallOption) (*RebuildNetworkResponse, error)
 	// DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠
 	// 目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。
 	DeclareNetworkPeer(ctx context.Context, in *DeclareNetworkPeerRequest, opts ...grpc.CallOption) (*DeclareNetworkPeerResponse, error)
@@ -1568,6 +1575,16 @@ func (c *networksServiceClient) ListNetworks(ctx context.Context, in *ListNetwor
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ListNetworksResponse)
 	err := c.cc.Invoke(ctx, NetworksService_ListNetworks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *networksServiceClient) RebuildNetwork(ctx context.Context, in *RebuildNetworkRequest, opts ...grpc.CallOption) (*RebuildNetworkResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(RebuildNetworkResponse)
+	err := c.cc.Invoke(ctx, NetworksService_RebuildNetwork_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -1634,6 +1651,12 @@ func (c *networksServiceClient) ListNetworkPeers(ctx context.Context, in *ListNe
 type NetworksServiceServer interface {
 	CreateNetwork(context.Context, *CreateNetworkRequest) (*CreateNetworkResponse, error)
 	ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error)
+	// RebuildNetwork 是网络重建维护动词（ADR-0046）：平台中介地删除并按
+	// ensureNetworks 同源形态复建载体网络（Attachable=true，标签同源）——
+	// 平台归属载体逐个 detach/re-attach，编排全程与部署 Ensure/受管
+	// reconciler 串行化。存在平台无法归属的附着即 E_CONFLICT 拒绝并列出。
+	// 在幂等执法面（Idempotency-Key 头，ADR-0024）；变更冻结期拒绝。
+	RebuildNetwork(context.Context, *RebuildNetworkRequest) (*RebuildNetworkResponse, error)
 	// DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠
 	// 目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。
 	DeclareNetworkPeer(context.Context, *DeclareNetworkPeerRequest) (*DeclareNetworkPeerResponse, error)
@@ -1662,6 +1685,9 @@ func (UnimplementedNetworksServiceServer) CreateNetwork(context.Context, *Create
 }
 func (UnimplementedNetworksServiceServer) ListNetworks(context.Context, *ListNetworksRequest) (*ListNetworksResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListNetworks not implemented")
+}
+func (UnimplementedNetworksServiceServer) RebuildNetwork(context.Context, *RebuildNetworkRequest) (*RebuildNetworkResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method RebuildNetwork not implemented")
 }
 func (UnimplementedNetworksServiceServer) DeclareNetworkPeer(context.Context, *DeclareNetworkPeerRequest) (*DeclareNetworkPeerResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method DeclareNetworkPeer not implemented")
@@ -1731,6 +1757,24 @@ func _NetworksService_ListNetworks_Handler(srv interface{}, ctx context.Context,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(NetworksServiceServer).ListNetworks(ctx, req.(*ListNetworksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _NetworksService_RebuildNetwork_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RebuildNetworkRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(NetworksServiceServer).RebuildNetwork(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: NetworksService_RebuildNetwork_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(NetworksServiceServer).RebuildNetwork(ctx, req.(*RebuildNetworkRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1839,6 +1883,10 @@ var NetworksService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListNetworks",
 			Handler:    _NetworksService_ListNetworks_Handler,
+		},
+		{
+			MethodName: "RebuildNetwork",
+			Handler:    _NetworksService_RebuildNetwork_Handler,
 		},
 		{
 			MethodName: "DeclareNetworkPeer",

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -203,6 +204,13 @@ type FakeRuntime struct {
 	// removeEntered 非空时 Remove 入口非阻塞发信号（探知 teardown 已停
 	// 在 removeBlock）。
 	removeEntered chan struct{}
+
+	// 载体网络假状态（RuntimeNetworkMaintenance 假底座，ADR-0046）：
+	// netCarriers 是载体网在场面（SeedNetworkCarrier 预置 / EnsureNetwork
+	// 复建）；maintOps 是维护原语调用流水（重建序断言面）。
+	netMu       sync.Mutex
+	netCarriers map[string]*fakeNetCarrier
+	maintOps    []string
 }
 
 // AdminCall 是一次 RuntimeAdmin 动词记录。
@@ -391,6 +399,140 @@ func (f *FakeRuntime) StreamLogs(_ context.Context, q capability.LogQuery, w cap
 	return nil
 }
 
+// ---- RuntimeNetworkMaintenance 假底座（ADR-0046 网络重建动词） ----
+
+// fakeNetCarrier 是假载体网络状态（attachable 形态 + 附着载体集）。
+type fakeNetCarrier struct {
+	attachable  bool
+	managed     bool
+	id          int
+	attachments map[string]capability.NetworkAttachment // 载体名 → 附着投影
+}
+
+// fakeCarrierKey 是假底座的载体网络命名（测试内稳定即可——真公式是
+// Provider 私有，引擎不解析）。
+func fakeCarrierKey(ns capability.NamespaceRef, network string) string {
+	return ns.Team + "/" + ns.Project + "/" + network
+}
+
+// SeedNetworkCarrier 预置载体网络形态（legacy 测试腿：attachable=false +
+// 附着载体；attachments 的 Domain/Workload 决定引擎归属裁决的通过面）。
+func (f *FakeRuntime) SeedNetworkCarrier(ns capability.NamespaceRef, network string, attachable bool, attachments ...capability.NetworkAttachment) {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	if f.netCarriers == nil {
+		f.netCarriers = map[string]*fakeNetCarrier{}
+	}
+	m := map[string]capability.NetworkAttachment{}
+	for _, a := range attachments {
+		m[a.Carrier] = a
+	}
+	f.netCarriers[fakeCarrierKey(ns, network)] = &fakeNetCarrier{
+		attachable: attachable, managed: true, id: len(f.netCarriers) + 1, attachments: m,
+	}
+}
+
+// MaintenanceOps 返回维护原语调用流水（顺序与参数断言面：inspect/detach/
+// remove/ensure/attach）。
+func (f *FakeRuntime) MaintenanceOps() []string {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	out := make([]string, len(f.maintOps))
+	copy(out, f.maintOps)
+	return out
+}
+
+// NetworkCarrierState 返回载体网络的平台中立快照（attachable/附件断言面；
+// 不存在即 ok=false）。
+func (f *FakeRuntime) NetworkCarrierState(ns capability.NamespaceRef, network string) (capability.NetworkCarrierState, bool) {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	c, ok := f.netCarriers[fakeCarrierKey(ns, network)]
+	if !ok {
+		return capability.NetworkCarrierState{}, false
+	}
+	state := capability.NetworkCarrierState{Exists: true, Attachable: c.attachable, Managed: c.managed}
+	for _, a := range c.attachments {
+		state.Attachments = append(state.Attachments, a)
+	}
+	return state, true
+}
+
+func (f *FakeRuntime) recordMaint(op string) {
+	f.maintOps = append(f.maintOps, op)
+}
+
+// InspectNetwork 实现 RuntimeNetworkMaintenance 子面。
+func (f *FakeRuntime) InspectNetwork(_ context.Context, ns capability.NamespaceRef, network string) (capability.NetworkCarrierState, error) {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	c, ok := f.netCarriers[fakeCarrierKey(ns, network)]
+	if !ok {
+		return capability.NetworkCarrierState{}, nil
+	}
+	state := capability.NetworkCarrierState{Exists: true, Attachable: c.attachable, Managed: c.managed}
+	for _, a := range c.attachments {
+		state.Attachments = append(state.Attachments, a)
+	}
+	sort.Slice(state.Attachments, func(i, j int) bool { return state.Attachments[i].Carrier < state.Attachments[j].Carrier })
+	f.recordMaint("inspect " + fakeCarrierKey(ns, network))
+	return state, nil
+}
+
+// DetachNetwork 实现 RuntimeNetworkMaintenance 子面。
+func (f *FakeRuntime) DetachNetwork(_ context.Context, ns capability.NamespaceRef, network, carrier string) error {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	if c := f.netCarriers[fakeCarrierKey(ns, network)]; c != nil {
+		delete(c.attachments, carrier)
+	}
+	f.recordMaint("detach " + fakeCarrierKey(ns, network) + " " + carrier)
+	return nil
+}
+
+// RemoveNetwork 实现 RuntimeNetworkMaintenance 子面。
+func (f *FakeRuntime) RemoveNetwork(_ context.Context, ns capability.NamespaceRef, network string) error {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	delete(f.netCarriers, fakeCarrierKey(ns, network))
+	f.recordMaint("remove " + fakeCarrierKey(ns, network))
+	return nil
+}
+
+// EnsureNetwork 实现 RuntimeNetworkMaintenance 子面（复建恒 attachable +
+// 平台标签——ensureNetworks create 半边的假形态）。
+func (f *FakeRuntime) EnsureNetwork(_ context.Context, ns capability.NamespaceRef, network string) error {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	key := fakeCarrierKey(ns, network)
+	if f.netCarriers == nil {
+		f.netCarriers = map[string]*fakeNetCarrier{}
+	}
+	if _, exists := f.netCarriers[key]; !exists {
+		f.netCarriers[key] = &fakeNetCarrier{attachable: true, managed: true, id: len(f.netCarriers) + 1, attachments: map[string]capability.NetworkAttachment{}}
+	}
+	f.recordMaint("ensure " + key)
+	return nil
+}
+
+// AttachNetwork 实现 RuntimeNetworkMaintenance 子面（裸附件兜底——假底座
+// 无 Aliases 面，归属断言只看在场性）。
+func (f *FakeRuntime) AttachNetwork(_ context.Context, ns capability.NamespaceRef, network, carrier string) error {
+	f.netMu.Lock()
+	defer f.netMu.Unlock()
+	key := fakeCarrierKey(ns, network)
+	if c := f.netCarriers[key]; c != nil {
+		if c.attachments == nil {
+			c.attachments = map[string]capability.NetworkAttachment{}
+		}
+		if _, ok := c.attachments[carrier]; !ok {
+			c.attachments[carrier] = capability.NetworkAttachment{Carrier: carrier}
+		}
+	}
+	f.recordMaint("attach " + key + " " + carrier)
+	return nil
+}
+
 // FakeLogging 是 Logging 端口假底座（--text 检索路径 golden 的确定性底座：
 // 固定两帧 + 查询记录——行前缀 search- 与实时路径的 frame- 区分双径）。
 // 注入面：Harness.Services.Logging（server 双径路由消费；engine 采集环
@@ -475,11 +617,12 @@ func (f *FakeBuilder) Calls() []capability.BuildRequest {
 }
 
 var (
-	_ capability.Runtime      = (*FakeRuntime)(nil)
-	_ capability.RuntimeLogs  = (*FakeRuntime)(nil)
-	_ capability.RuntimeAdmin = (*FakeRuntime)(nil)
-	_ capability.Builder      = (*FakeBuilder)(nil)
-	_ capability.Registry     = (*FakeRegistry)(nil)
+	_ capability.Runtime                   = (*FakeRuntime)(nil)
+	_ capability.RuntimeLogs               = (*FakeRuntime)(nil)
+	_ capability.RuntimeAdmin              = (*FakeRuntime)(nil)
+	_ capability.RuntimeNetworkMaintenance = (*FakeRuntime)(nil)
+	_ capability.Builder                   = (*FakeBuilder)(nil)
+	_ capability.Registry                  = (*FakeRegistry)(nil)
 )
 
 // FakeRegistryAddr 是 apitest 假受管仓库地址（引用形态断言锚）。

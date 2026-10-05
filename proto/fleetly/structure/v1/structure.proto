@@ -279,6 +279,18 @@ service NetworksService {
       api_key_scope: { resource: "networks" op: SCOPE_OP_READ }
     };
   }
+  // RebuildNetwork 是网络重建维护动词（ADR-0046）：平台中介地删除并按
+  // ensureNetworks 同源形态复建载体网络（Attachable=true，标签同源）——
+  // 平台归属载体逐个 detach/re-attach，编排全程与部署 Ensure/受管
+  // reconciler 串行化。存在平台无法归属的附着即 E_CONFLICT 拒绝并列出。
+  // 在幂等执法面（Idempotency-Key 头，ADR-0024）；变更冻结期拒绝。
+  rpc RebuildNetwork(RebuildNetworkRequest) returns (RebuildNetworkResponse) {
+    option (google.api.http) = { post: "/v1/networks/rebuild" body: "*" };
+    option (grpcapi.v1.method_auth) = {
+      access: ACCESS_LEVEL_SERVER
+      api_key_scope: { resource: "networks" op: SCOPE_OP_WRITE }
+    };
+  }
   // DeclareNetworkPeer 是挂靠方声明（落 pending 行）：peer 项目请求挂靠
   // 目标网络。在幂等执法面（Idempotency-Key 头，ADR-0024）。
   rpc DeclareNetworkPeer(DeclareNetworkPeerRequest) returns (DeclareNetworkPeerResponse) {
@@ -573,6 +585,16 @@ message ListNetworksRequest {
   int32 limit = 3;
 }
 message ListNetworksResponse { repeated Network networks = 1; }
+
+// RebuildNetworkResponse 携带网络引用与本次执行的载体计数（幂等重跑的
+// 快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。
+message RebuildNetworkRequest { string project_id = 1; string name = 2; }
+message RebuildNetworkResponse {
+  Network network = 1;
+  // detached/reattached 是本次被摘除又加回的附着载体数。
+  int32 detached = 2;
+  int32 reattached = 3;
+}
 
 // NetworkPeer 是一条跨 Project 挂靠声明（ADR-0013 附录 A.1）：挂靠方
 // 项目 declare（pending）→ 接收方 approve（approved）→ 任一侧 revoke

@@ -81,6 +81,8 @@ func init() {
 	} {
 		registerEventPayload(name, networkPeerEventPayload{})
 	}
+	// 网络重建（ADR-0046；networkRebuiltEventPayload，structure.go 单源）。
+	registerEventPayload(eventNetworkRebuilt, networkRebuiltEventPayload{})
 	// 身份面。
 	registerEventPayload("user.created", nameEventPayload{})
 	registerEventPayload("team.created", nameEventPayload{})

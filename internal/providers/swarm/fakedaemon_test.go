@@ -39,17 +39,29 @@ type fakeDaemon struct {
 	counts map[string]int           // 路由键 → 调用次数
 	keys   []string                 // 路由键序列（量级断言）
 	qs     map[string]url.Values    // 路由键 → 最近一次请求的 query（过滤断言）
+
+	// netDetails 是网络 inspect 的富形态覆盖层（attachable/labels 断言面，
+	// ADR-0046；缺席时回落 nets 的纯 ID 形态）。netInUse 是网络删除的
+	// 剩余 in-use 故障次数（排水重试路径注入）。netLinger 是删除后 inspect
+	// 仍返回旧网络的剩余次数（swarm overlay 异步退役形态——rm 成功后网络
+	// 待端点排空才真消失，dind e2e 实证）。
+	netDetails map[string]network.Inspect
+	netInUse   map[string]int
+	netLinger  map[string]int
 }
 
 func newFakeDaemon() *fakeDaemon {
 	return &fakeDaemon{
-		store:   map[string]swarm.Service{},
-		secrets: map[string]swarm.Secret{},
-		tasks:   map[string][]swarm.Task{},
-		nets:    map[string]string{},
-		fail:    map[string]int{},
-		counts:  map[string]int{},
-		qs:      map[string]url.Values{},
+		store:      map[string]swarm.Service{},
+		secrets:    map[string]swarm.Secret{},
+		tasks:      map[string][]swarm.Task{},
+		nets:       map[string]string{},
+		netDetails: map[string]network.Inspect{},
+		netInUse:   map[string]int{},
+		netLinger:  map[string]int{},
+		fail:       map[string]int{},
+		counts:     map[string]int{},
+		qs:         map[string]url.Values{},
 	}
 }
 
@@ -247,9 +259,28 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 	case strings.HasPrefix(key, "GET /networks/"):
 		name := strings.TrimPrefix(key, "GET /networks/")
 		if id, ok := f.nets[name]; ok {
-			return http.StatusOK, network.Inspect{Network: network.Network{Name: name, ID: id}}, true
+			inspect := network.Inspect{Network: network.Network{Name: name, ID: id}}
+			if d, ok := f.netDetails[name]; ok {
+				inspect = d
+			}
+			return http.StatusOK, inspect, true
+		}
+		// 异步退役形态：删除后的残留窗（rm 已成功、网络待端点排空才消失）。
+		if n := f.netLinger[name]; n > 0 {
+			f.netLinger[name] = n - 1
+			return http.StatusOK, network.Inspect{Network: network.Network{Name: name, ID: "net-" + name}}, true
 		}
 		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("network %s not found", name)}, true
+	case strings.HasPrefix(key, "DELETE /networks/"):
+		name := strings.TrimPrefix(key, "DELETE /networks/")
+		if n := f.netInUse[name]; n > 0 {
+			f.netInUse[name] = n - 1
+			// docker 的 in-use 文案（swarm overlay：附着端点未清空）。
+			return http.StatusForbidden, map[string]string{"message": fmt.Sprintf("network %s has active endpoints", name)}, true
+		}
+		delete(f.nets, name)
+		delete(f.netDetails, name)
+		return http.StatusOK, map[string]string{}, true
 	case key == "POST /networks/create":
 		// 网络创建流水（attachable/labels 断言）：body = Name + 内嵌
 		// NetworkCreateOptions（client 无 json tag，PascalCase 即 wire 面）。
@@ -268,6 +299,11 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 			f.nets = map[string]string{}
 		}
 		f.nets[body.Name] = "net-" + body.Name
+		// 创建选项同步进 inspect 富形态（attachable/labels 断言面）。
+		f.netDetails[body.Name] = network.Inspect{Network: network.Network{
+			Name: body.Name, ID: "net-" + body.Name,
+			Attachable: body.Attachable, Labels: body.Labels,
+		}}
 		return http.StatusCreated, client.NetworkCreateResult{ID: "net-" + body.Name}, true
 	case key == "GET /nodes":
 		return http.StatusOK, f.nodes, true

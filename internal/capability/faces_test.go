@@ -5,6 +5,7 @@ package capability
 
 import (
 	"context"
+	"io"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -25,10 +26,24 @@ func (p *fakeFaceProvider) InspectWorkloads(context.Context, NamespaceRef) ([]Wo
 	return nil, nil
 }
 func (p *fakeFaceProvider) SweepOrphanSecrets(context.Context, int) (int, error) { return 0, nil }
-func (p *fakeFaceProvider) ManagedWorkloads() []Workload                         { return nil }
-func (p *fakeFaceProvider) ManagedNamespace() NamespaceRef                       { return NamespaceRef{} }
-func (p *fakeFaceProvider) ManagedMaterials() Materials                          { return Materials{} }
-func (p *fakeFaceProvider) ConfigSnapshot() []byte                               { return nil }
+func (p *fakeFaceProvider) RunUtility(context.Context, UtilityRequest, io.Writer, io.Writer) error {
+	return nil
+}
+func (p *fakeFaceProvider) InspectNetwork(context.Context, NamespaceRef, string) (NetworkCarrierState, error) {
+	return NetworkCarrierState{}, nil
+}
+func (p *fakeFaceProvider) DetachNetwork(context.Context, NamespaceRef, string, string) error {
+	return nil
+}
+func (p *fakeFaceProvider) RemoveNetwork(context.Context, NamespaceRef, string) error { return nil }
+func (p *fakeFaceProvider) EnsureNetwork(context.Context, NamespaceRef, string) error { return nil }
+func (p *fakeFaceProvider) AttachNetwork(context.Context, NamespaceRef, string, string) error {
+	return nil
+}
+func (p *fakeFaceProvider) ManagedWorkloads() []Workload   { return nil }
+func (p *fakeFaceProvider) ManagedNamespace() NamespaceRef { return NamespaceRef{} }
+func (p *fakeFaceProvider) ManagedMaterials() Materials    { return Materials{} }
+func (p *fakeFaceProvider) ConfigSnapshot() []byte         { return nil }
 func (p *fakeFaceProvider) EndpointForProject(context.Context, string) (RegistryEndpoint, error) {
 	return RegistryEndpoint{}, nil
 }
@@ -41,12 +56,14 @@ func TestFacesOfAllOffered(t *testing.T) {
 	assert.NotNil(t, f.Admin)
 	assert.NotNil(t, f.Inspector)
 	assert.NotNil(t, f.Hygiene)
+	assert.NotNil(t, f.Utility)
+	assert.NotNil(t, f.NetworkMaintenance)
 	assert.NotNil(t, f.Managed)
 	assert.NotNil(t, f.MaterialsSource)
 	assert.NotNil(t, f.ConfigSource)
 	assert.NotNil(t, f.ProjectEndpoints)
 	assert.NotNil(t, f.ProjectScopedMaterials)
-	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "managed", "materials", "config",
+	assert.Equal(t, []string{"logs", "admin", "inspector", "hygiene", "utility", "network-maintenance", "managed", "materials", "config",
 		"project-endpoints", "project-materials"},
 		f.Offered(), "enumeration order is frozen")
 }

@@ -806,6 +806,39 @@
         ]
       }
     },
+    "/v1/networks/rebuild": {
+      "post": {
+        "summary": "RebuildNetwork 是网络重建维护动词（ADR-0046）：平台中介地删除并按\nensureNetworks 同源形态复建载体网络（Attachable=true，标签同源）——\n平台归属载体逐个 detach/re-attach，编排全程与部署 Ensure/受管\nreconciler 串行化。存在平台无法归属的附着即 E_CONFLICT 拒绝并列出。\n在幂等执法面（Idempotency-Key 头，ADR-0024）；变更冻结期拒绝。",
+        "operationId": "NetworksService_RebuildNetwork",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/v1RebuildNetworkResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response.",
+            "schema": {
+              "$ref": ".fleetly.shared.v1.ErrorResponse"
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "body",
+            "in": "body",
+            "required": true,
+            "schema": {
+              "$ref": "#/definitions/v1RebuildNetworkRequest"
+            }
+          }
+        ],
+        "tags": [
+          "NetworksService"
+        ]
+      }
+    },
     "/v1/projects": {
       "get": {
         "operationId": "ProjectsService_ListProjects",
@@ -1840,6 +1873,35 @@
         }
       },
       "title": "affected_apps 是受影响 App 提示（近似口径，ADR-0043 决策 4）：项目内\n已有 Revision 且最新冻结 env 会因本次变更而不同的 App——重部署取新值；\n不触发任何自动重部署。"
+    },
+    "v1RebuildNetworkRequest": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "title": "RebuildNetworkResponse 携带网络引用与本次执行的载体计数（幂等重跑的\n快速路径两者为 0——已 attachable 且标签在位即零扰动返回）。"
+    },
+    "v1RebuildNetworkResponse": {
+      "type": "object",
+      "properties": {
+        "network": {
+          "$ref": "#/definitions/v1Network"
+        },
+        "detached": {
+          "type": "integer",
+          "format": "int32",
+          "title": "detached/reattached 是本次被摘除又加回的附着载体数。"
+        },
+        "reattached": {
+          "type": "integer",
+          "format": "int32"
+        }
+      }
     },
     "v1RevokeNetworkPeerResponse": {
       "type": "object",

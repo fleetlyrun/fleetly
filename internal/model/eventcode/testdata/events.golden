@@ -34,10 +34,11 @@ invitation.accepted	An invitation was redeemed; the invitee became a user.	added
 invitation.created	An invitation was issued (single-use, time-boxed, role-bound).	added during implementation
 lease.expired	A task's owner lease expired past grace; the pool drains.	internal/engine/task.go driveTask
 lease.renewed	A task's owner lease was renewed (deadline advanced).	internal/engine/task.go RenewTask
-network.created	A project network was created.	internal/api/fleetlygrpc/structure.go CreateNetwork
-network.peer_approved	The receiving project approved a peer attachment; references become projectable.	internal/api/fleetlygrpc/structure.go ApproveNetworkPeer
-network.peer_declared	A peer project declared intent to attach to a network (pending; needs receiver approval).	internal/api/fleetlygrpc/structure.go DeclareNetworkPeer
-network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/api/fleetlygrpc/structure.go RevokeNetworkPeer
+network.created	A project network was created.	internal/api/fleetlygrpc/networks.go CreateNetwork
+network.peer_approved	The receiving project approved a peer attachment; references become projectable.	internal/api/fleetlygrpc/networks.go ApproveNetworkPeer
+network.peer_declared	A peer project declared intent to attach to a network (pending; needs receiver approval).	internal/api/fleetlygrpc/networks.go DeclareNetworkPeer
+network.peer_revoked	A peer attachment was revoked; existing attachments are isolated by an immediate isolate reconverge (ADR-0013 appendix A.4).	internal/api/fleetlygrpc/networks.go RevokeNetworkPeer
+network.rebuilt	A project network carrier was rebuilt through the platform in the attachable form; attached carriers were detached and re-attached.	internal/api/fleetlygrpc/networks.go RebuildNetwork
 node.joined	Node joined the cluster and was anchored with a platform node ID.	added during implementation
 node.left	Node left the cluster.	added during implementation
 platform.backup_failed	A platform backup failed; the payload carries the restic error tail.	internal/engine/backup.go platformBackupPass

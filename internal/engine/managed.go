@@ -23,7 +23,11 @@ import (
 //     PublishRoutes（强制全量；解析不到的 Route 跳过并记日志——存量路由
 //     继续服务的降级语义）。
 func (e *Engine) managedStep(ctx context.Context) {
+	// 维护互斥读半边（ADR-0046）：受管 Ensure 引用全部活跃项目网络（Edge
+	// 挂网面），网络重建窗内必须排队；锁等待不占步预算（排队语义）。
 	// 全步带界（staging 实证：无界的 docker API hang 卡死单写者循环）。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
 	stepCtx, cancel := context.WithTimeout(ctx, e.opts.ManagedStepTimeout)
 	defer cancel()
 	e.reconcileNodes(stepCtx) // 节点对账不依赖 Edge（观测面独立收敛）

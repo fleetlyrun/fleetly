@@ -26,6 +26,11 @@ import (
 // 由漂移扫描拍与重放持续重申）。部署链（release/rollback/prepare）恒
 // strict。
 func (e *Engine) materialize(ctx context.Context, d *deployment.Deployment, revision string, gen uint64, isolate bool) error {
+	// 维护互斥读半边（ADR-0046）：Ensure 族与网络重建的串行化锚。锁获取
+	// 在带界 ctx 派生之前——锁等待是排队语义，不占步预算。
+	unlockMaintenance := e.lockMaintenance()
+	defer unlockMaintenance()
+
 	// 全序列带界（boundedStep，Options.ManagedStepTimeout 的实证背景）：
 	// Ensure 与其上游 DescribeCluster（卷钉住）都跑在部署单写者环上，无界
 	// hang 即卡死部署收敛。收口在序列唯一真源处（本函数头），release/

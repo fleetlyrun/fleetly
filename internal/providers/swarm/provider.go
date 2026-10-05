@@ -53,17 +53,23 @@ type Provider struct {
 	// 生产实现 daemonUtilityExec。attach 走 postHijacked 独立 dialer，
 	// 传输级假面够不到——builders push seam 同款理由）。
 	utilityExec func(ctx context.Context, spec utilityContainerSpec, stdout, stderr io.Writer) (int, error)
+
+	// 网络重建的 detach 附件形状快照（maintenance.go；attach 的还原锚——
+	// 保存整个附件 config 使 re-attach 与 fresh Ensure 逐字节同形）。
+	savedMu      sync.Mutex
+	rebuildSaved map[string]swarm.NetworkAttachmentConfig
 }
 
 // 编译期契约断言：核心面 + 五个子面（F0.19 全契约；C-10 补 Inspector 面
 // ——缺此断言则接口改名时静默降级 gen-only 无红灯；ADR-0039 补 Utility）。
 var (
-	_ capability.Runtime          = (*Provider)(nil)
-	_ capability.RuntimeLogs      = (*Provider)(nil)
-	_ capability.RuntimeAdmin     = (*Provider)(nil)
-	_ capability.RuntimeInspector = (*Provider)(nil)
-	_ capability.RuntimeHygiene   = (*Provider)(nil)
-	_ capability.RuntimeUtility   = (*Provider)(nil)
+	_ capability.Runtime                   = (*Provider)(nil)
+	_ capability.RuntimeLogs               = (*Provider)(nil)
+	_ capability.RuntimeAdmin              = (*Provider)(nil)
+	_ capability.RuntimeInspector          = (*Provider)(nil)
+	_ capability.RuntimeHygiene            = (*Provider)(nil)
+	_ capability.RuntimeUtility            = (*Provider)(nil)
+	_ capability.RuntimeNetworkMaintenance = (*Provider)(nil)
 )
 
 // New 构造 Provider：host 为 daemon 端点（空 = DOCKER_HOST / 默认套接字）。
