@@ -13,6 +13,7 @@ import (
 
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
+	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 )
@@ -48,6 +49,12 @@ type fakeDaemon struct {
 	netDetails map[string]network.Inspect
 	netInUse   map[string]int
 	netLinger  map[string]int
+
+	// volumes 是卷存储（键 = 名；匿名孤儿卷清扫面 P2-4）。volInUse 是
+	// 容器引用中的卷名集（daemon dangling 过滤的引用真源——fake 无容器
+	// 面，引用事实由种子侧直给）。
+	volumes  map[string]volume.Volume
+	volInUse map[string]bool
 }
 
 func newFakeDaemon() *fakeDaemon {
@@ -59,6 +66,8 @@ func newFakeDaemon() *fakeDaemon {
 		netDetails: map[string]network.Inspect{},
 		netInUse:   map[string]int{},
 		netLinger:  map[string]int{},
+		volumes:    map[string]volume.Volume{},
+		volInUse:   map[string]bool{},
 		fail:       map[string]int{},
 		counts:     map[string]int{},
 		qs:         map[string]url.Values{},
@@ -130,6 +139,27 @@ func (f *fakeDaemon) secretCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return len(f.secrets)
+}
+
+// addVolume 预置存量卷（匿名孤儿卷清扫面 P2-4 的形态；inUse 模拟容器
+// 引用事实——daemon dangling 过滤的引用真源）。
+func (f *fakeDaemon) addVolume(v volume.Volume, inUse bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.volumes[v.Name] = v
+	f.volInUse[v.Name] = inUse
+}
+
+// volumeNames 返回存量卷名字典序快照（清扫结果断言）。
+func (f *fakeDaemon) volumeNames() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.volumes))
+	for name := range f.volumes {
+		out = append(out, name)
+	}
+	sort.Strings(out)
+	return out
 }
 
 // networkCreates 返回网络创建流水拷贝（attachable 断言）。
@@ -245,6 +275,25 @@ func (f *fakeDaemon) routeLocked(r *http.Request, key string) (status int, body 
 			}
 		}
 		return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("secret %s not found", ref)}, true
+	case key == "GET /volumes":
+		items := make([]volume.Volume, 0, len(f.volumes))
+		for _, v := range f.volumes {
+			items = append(items, v)
+		}
+		items = filterVolumes(items, decodeFilters(r.URL.Query()), f.volInUse)
+		sort.Slice(items, func(i, j int) bool { return items[i].Name < items[j].Name })
+		return http.StatusOK, volume.ListResponse{Volumes: items}, true
+	case strings.HasPrefix(key, "DELETE /volumes/"):
+		name := strings.TrimPrefix(key, "DELETE /volumes/")
+		if f.volInUse[name] {
+			// docker 的 in-use 文案（卷被容器引用时 rm 拒绝，409）。
+			return http.StatusConflict, map[string]string{"message": fmt.Sprintf("volume %s is in use", name)}, true
+		}
+		if _, ok := f.volumes[name]; !ok {
+			return http.StatusNotFound, map[string]string{"message": fmt.Sprintf("volume %s not found", name)}, true
+		}
+		delete(f.volumes, name)
+		return http.StatusOK, map[string]string{}, true
 	case key == "GET /tasks":
 		filters := decodeFilters(r.URL.Query())
 		items := make([]swarm.Task, 0)
@@ -379,6 +428,28 @@ func filterSecrets(items []swarm.Secret, filters map[string]map[string]bool) []s
 		if match {
 			out = append(out, sec)
 		}
+	}
+	return out
+}
+
+// filterVolumes 按 dangling 过滤卷（真 daemon 的服务端过滤语义；fake 以
+// volInUse 为容器引用真源，只实现测试用到的 dangling 项——true 只留无
+// 引用卷、false 只留在引用卷）。
+func filterVolumes(items []volume.Volume, filters map[string]map[string]bool, inUse map[string]bool) []volume.Volume {
+	danglings := filters["dangling"]
+	if len(danglings) == 0 {
+		return items
+	}
+	wantDangling := false
+	for v := range danglings {
+		wantDangling = v == "true" || v == "1"
+	}
+	out := items[:0]
+	for _, v := range items {
+		if inUse[v.Name] == wantDangling {
+			continue // dangling=true 只留无引用；false 只留在引用（取反即保留面）
+		}
+		out = append(out, v)
 	}
 	return out
 }

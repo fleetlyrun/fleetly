@@ -1,8 +1,8 @@
 package engine
 
 // 载体卫生清扫面测试（收尾批 E29）：终态收口次序门控（E29-2 根修）+ 终态
-// Task 残留载体清扫 + 孤儿 Secret 载体清扫透传。手动驱动形态，假底座记录
-// 断言（删除调用记录 + 现役/窗外不删）。
+// Task 残留载体清扫 + 孤儿 Secret/匿名孤儿卷载体清扫透传（P2-4）。手动
+// 驱动形态，假底座记录断言（删除调用记录 + 现役/窗外不删）。
 
 import (
 	"context"
@@ -136,14 +136,22 @@ func TestSweepTerminalTaskCarriersDisabled(t *testing.T) {
 // 避免复制含锁的 fakeRuntime 值）。
 type hygieneRuntime struct {
 	*fakeRuntime
-	swept    int
-	maxGiven int
+	swept       int
+	maxGiven    int
+	volSwept    int
+	volMaxGiven int
 }
 
 func (h *hygieneRuntime) SweepOrphanSecrets(_ context.Context, maxDelete int) (int, error) {
 	h.maxGiven = maxDelete
 	h.swept++
 	return 7, nil
+}
+
+func (h *hygieneRuntime) SweepOrphanVolumes(_ context.Context, maxDelete int) (int, error) {
+	h.volMaxGiven = maxDelete
+	h.volSwept++
+	return 3, nil
 }
 
 // TestSweepOrphanSecretCarriersDelegates 钉透传面：实现 RuntimeHygiene 的
@@ -171,5 +179,34 @@ func TestSweepOrphanSecretCarriersDelegates(t *testing.T) {
 		require.NoError(t, err)
 		assert.Zero(t, n)
 		assert.Zero(t, h.swept)
+	})
+}
+
+// TestSweepOrphanVolumeCarriersDelegates 钉 P2-4 卷面透传：实现
+// RuntimeHygiene 的 Runtime 被调用且预算透传；未实现的 Runtime 静默跳过
+// （与 Secret 面同款降级文化）。
+func TestSweepOrphanVolumeCarriersDelegates(t *testing.T) {
+	_, base, _ := newTestEngine(t)
+	t.Run("runtime without the hygiene face skips silently", func(t *testing.T) {
+		e := &Engine{runtime: base, log: discardLogger()}
+		n, err := e.SweepOrphanVolumeCarriers(context.Background(), 100)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+	})
+	t.Run("runtime with the hygiene face passes the budget through", func(t *testing.T) {
+		h := &hygieneRuntime{fakeRuntime: base}
+		e := &Engine{runtime: h, log: discardLogger()}
+		n, err := e.SweepOrphanVolumeCarriers(context.Background(), 42)
+		require.NoError(t, err)
+		assert.Equal(t, 3, n)
+		assert.Equal(t, 42, h.volMaxGiven)
+	})
+	t.Run("non-positive budget is a no-op", func(t *testing.T) {
+		h := &hygieneRuntime{fakeRuntime: base}
+		e := &Engine{runtime: h, log: discardLogger()}
+		n, err := e.SweepOrphanVolumeCarriers(context.Background(), 0)
+		require.NoError(t, err)
+		assert.Zero(t, n)
+		assert.Zero(t, h.volSwept)
 	})
 }

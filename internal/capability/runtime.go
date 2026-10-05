@@ -77,17 +77,27 @@ type RuntimeInspector interface {
 	InspectWorkloads(ctx context.Context, ns NamespaceRef) ([]WorkloadObservation, error)
 }
 
-// RuntimeHygiene 是载体卫生子面（收尾批 E29：孤儿 Secret 载体清理；按
-// 需实现——未实现时卫生清扫静默跳过，与 Inspector 的降级文化一致）。
-// 与 WorkloadOrphaned 的"只登记永不自动删"分立：那是 Workload 载体观测
-// 面（归属不明的用户域状态须人裁）；这里是材料通道的派生副本——现役值
-// 真源在平台侧（ADR-0014），无引用副本删除零信息损失。
+// RuntimeHygiene 是载体卫生子面（收尾批 E29：孤儿 Secret 载体清理；N2 评审
+// P2-4：匿名孤儿卷清扫；按需实现——未实现时卫生清扫静默跳过，与 Inspector
+// 的降级文化一致）。与 WorkloadOrphaned 的"只登记永不自动删"分立：那是
+// Workload 载体观测面（归属不明的用户域状态须人裁）；这里只收法律依据
+// 明确的删除——Secret 面是材料通道的派生副本（现役值真源在平台侧，
+// ADR-0014，无引用副本删除零信息损失），卷面是平台自建残留的看门狗收口
+// （架构 §8 孤儿词条后半句：镜像 VOLUME 遗产的匿名卷，平台工作负载副产物）。
 type RuntimeHygiene interface {
 	// SweepOrphanSecrets 删除非现役的受管 Secret 载体（现役集由 Provider
 	// 依现存服务的引用关系自判定，平台无需下发期望集）。幂等：已不存在
 	// 不计错。maxDelete 是单次调用删除上限（调用方节拍限流防 API 风暴）。
 	// 返回实际删除数；列表级错误上抛，单体删除失败不中断（计入下一拍）。
 	SweepOrphanSecrets(ctx context.Context, maxDelete int) (int, error)
+
+	// SweepOrphanVolumes 删除匿名孤儿卷（五重判据全满足才删，宁可漏扫不可
+	// 误删：64 位小写 hex 匿名名 + 悬空无容器引用 + 出生超年龄窗 + 无任何
+	// label + 控制面节点本机 daemon；判据细节见 swarm 侧实现）。幂等：已
+	// 不存在不计错。maxDelete 是单次调用删除上限（调用方节拍限流防 API
+	// 风暴）。返回实际删除数；列表级错误上抛，单体删除失败不中断（计入
+	// 下一拍）。
+	SweepOrphanVolumes(ctx context.Context, maxDelete int) (int, error)
 }
 
 // NetworkAttachment 是一条附着在载体网络上的编排器载体投影（ADR-0046

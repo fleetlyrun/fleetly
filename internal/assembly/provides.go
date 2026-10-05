@@ -353,12 +353,16 @@ const (
 	uploadTmpAge    = 1 * time.Hour
 )
 
-// 载体卫生清扫面（收尾批 E29）：孤儿 Secret 载体删除预算（每拍上限——
-// staging zot 风暴存量 1300+，100/拍×10 分钟节拍 ≈ 2 小时清空，稳态近零）
-// 与终态 Task 残留载体清扫的候选窗/每拍行数。窗取 7d 与事件/上传保留窗同
-// 文化；行序新→旧（近期收口才是残留实际所在），已收敛行是幂等 no-op。
+// 载体卫生清扫面（收尾批 E29 + N2 评审 P2-4）：孤儿 Secret 载体删除预算
+// （每拍上限——staging zot 风暴存量 1300+，100/拍×10 分钟节拍 ≈ 2 小时清
+// 空，稳态近零）、匿名孤儿卷删除预算（staging manager 积 1680 枚镜像
+// VOLUME 遗产，100/拍 ≈ 17 拍 ≈ 3 小时清空，稳态每次 db 替换泄漏一枚、
+// 7d 窗后回收）与终态 Task 残留载体清扫的候选窗/每拍行数。窗取 7d 与事件/
+// 上传保留窗同文化；行序新→旧（近期收口才是残留实际所在），已收敛行是
+// 幂等 no-op。
 const (
 	orphanSecretDeleteBudget = 100
+	orphanVolumeDeleteBudget = 100
 	terminalCarrierWindow    = 7 * 24 * time.Hour
 	terminalCarrierLimit     = 20
 )
@@ -396,12 +400,17 @@ func (s *RetentionJanitorService) Start(ctx context.Context) error {
 		} else if n > 0 {
 			s.log.Info("retention janitor: removed orphaned upload staging files", "count", n)
 		}
-		// 载体卫生（E29）：删除面在 engine/Runtime Provider，本服务只供节
+		// 载体卫生（E29 + P2-4）：删除面在 engine/Runtime Provider，本服务只供节
 		// 拍与预算（幂等可重放：预算内下一拍续清）。
 		if n, err := s.engine.SweepOrphanSecretCarriers(ctx, orphanSecretDeleteBudget); err != nil {
 			s.log.Error("retention janitor: orphan secret sweep", "err", err)
 		} else if n > 0 {
 			s.log.Info("retention janitor: removed orphaned secret carriers", "count", n)
+		}
+		if n, err := s.engine.SweepOrphanVolumeCarriers(ctx, orphanVolumeDeleteBudget); err != nil {
+			s.log.Error("retention janitor: orphan volume sweep", "err", err)
+		} else if n > 0 {
+			s.log.Info("retention janitor: removed orphaned anonymous volumes", "count", n)
 		}
 		if n, err := s.engine.SweepTerminalTaskCarriers(ctx, terminalCarrierWindow, terminalCarrierLimit); err != nil {
 			s.log.Error("retention janitor: terminal task carrier sweep", "err", err)

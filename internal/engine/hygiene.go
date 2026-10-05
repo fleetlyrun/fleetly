@@ -28,6 +28,20 @@ func (e *Engine) SweepOrphanSecretCarriers(ctx context.Context, maxDelete int) (
 	return h.SweepOrphanSecrets(ctx, maxDelete)
 }
 
+// SweepOrphanVolumeCarriers 清扫匿名孤儿卷（RuntimeHygiene 子面透传；N2
+// 评审 P2-4：镜像 VOLUME 遗产的匿名卷，架构 §8"平台自建残留由看门狗
+// 收口"条款）。判据与删除全在 Provider 侧（五重全满足才删，宁可漏扫不
+// 可误删），engine 只做面协商与预算透传——与 Secret 清扫同一分层。Runtime
+// 未实现该子面时静默跳过（返回 0,nil）。maxDelete 是单次删除预算（janitor
+// 节拍限流防 API 风暴）。
+func (e *Engine) SweepOrphanVolumeCarriers(ctx context.Context, maxDelete int) (int, error) {
+	h := capability.FacesOf(e.runtime).Hygiene // 清扫子面（FacesOf 协商点）
+	if h == nil || maxDelete <= 0 {
+		return 0, nil
+	}
+	return h.SweepOrphanVolumes(ctx, maxDelete)
+}
+
 // SweepTerminalTaskCarriers 对窗内收口的终态 Task 逐个拆除隔离域残留载体
 // （runtime.Remove；E29-2 兜底面）。正常链路的残留收敛是终态收口拍自身的
 // 空集 Ensure（task.go 收口次序：Ensure 成功才落终态迁移）——本扫兜的
