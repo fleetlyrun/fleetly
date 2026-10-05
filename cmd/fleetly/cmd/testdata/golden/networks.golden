@@ -3,4 +3,5 @@ create
 declare
 list
 peers
+rebuild
 revoke

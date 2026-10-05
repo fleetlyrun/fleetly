@@ -76,7 +76,7 @@ func NewApp(info buildinfo.BuildInfo) *commands.App {
 			newSharedVarsPutVerb(), newSharedVarsListVerb(), newSharedVarsDeleteVerb()),
 		groupVerb("volumes", "manage volumes", newVolumesCreateVerb()),
 		groupVerb("networks", "manage project networks and cross-project peer attachments",
-			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
+			newNetworksCreateVerb(), newNetworksListVerb(), newNetworksRebuildVerb(), newNetworksDeclareVerb(), newNetworksApproveVerb(),
 			newNetworksRevokeVerb(), newNetworksPeersVerb()),
 		// 托管数据服务（F1.12，ADR-0029；备份动词 F2.2/ADR-0039）。
 		groupVerb("databases", "manage managed data services (postgres/pgvector/redis/mysql/mongo templates; credential values never shown)",

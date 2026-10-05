@@ -112,6 +112,10 @@ func TestGoldenBusinessVerbs(t *testing.T) {
 		{"networks list", []string{"networks", "list", "--project", "GOLDEN_PROJECT"}, 0},
 		// 分页读面：name 字典序首页截断（default < internal）。
 		{"networks list page", []string{"networks", "list", "--project", "GOLDEN_PROJECT", "--limit", "1"}, 0},
+		// 网络重建（ADR-0046）：假底座无存量载体网——人类轮走 create 腿
+		//（detached 0）；--json 轮撞快速路径（已 attachable 零扰动）——
+		// 双形态同输出，幂等面即断言。
+		{"networks rebuild", []string{"networks", "rebuild", "--project", "GOLDEN_PROJECT", "internal"}, 0},
 		{"routes create", []string{"routes", "create", "--project", "GOLDEN_PROJECT", "--host", "shop.127.0.0.1.sslip.io", "--app", "GOLDEN_APP", "--process", "web", "--port", "8080", "--protocol", "h2c"}, 0},
 		{"routes list", []string{"routes", "list"}, 0},
 		// 分页读面：ULID 创建序首页截断（首建路由行）。

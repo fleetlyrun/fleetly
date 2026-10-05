@@ -677,6 +677,53 @@ func newNetworksListVerb() commands.Command {
 	}
 }
 
+// newNetworksRebuildVerb 构造 networks rebuild（ADR-0046 网络重建动词）：
+// 平台中介地删除并按 ensureNetworks 同源形态复建载体网络（attachable），
+// 附着载体逐个 detach/re-attach。存量 pre-F2.2 非 attachable 网络的
+// flag-day 通道（N2 评审批 P1-4 根修）。
+func newNetworksRebuildVerb() commands.Command {
+	const name = "rebuild"
+	var project string
+	var idem idemKeyFlag
+	return &flaggedVerb{
+		name:     name,
+		synopsis: "Rebuild a project network carrier (platform-mediated; restores the attachable form)",
+		usage:    "networks rebuild --project PROJECT_ID NAME",
+		setFlags: func(fs *flag.FlagSet) {
+			fs.StringVar(&project, "project", "", "project id (required)")
+			idem.declare(fs)
+		},
+		run: func(ctx context.Context, env *commands.Environment, args []string, jsonOut bool) error {
+			if len(args) != 1 {
+				return usageErr(name, "expected exactly one NAME argument")
+			}
+			if project == "" {
+				return usageErr(name, "--project is required")
+			}
+			// 长执行维护动词：detach 排水（stop-first + StopGrace）+ 复建 +
+			// re-attach 是分钟级受维护窗（服务端 NetworkRebuildTimeout 硬界）
+			//——拨号豁免 120s 默认 deadline（platform backup 同款先例）。
+			ctx, cancel, c, err := dialFromEnv(ctx, noDeadline())
+			if err != nil {
+				return err
+			}
+			defer cancel()
+			defer c.Close() //nolint:errcheck // 进程退出路径
+			ctx = idem.bind(ctx)
+			resp, err := c.Networks.RebuildNetwork(ctx, &structurev1.RebuildNetworkRequest{
+				ProjectId: project, Name: args[0],
+			})
+			if err != nil {
+				return err
+			}
+			return renderOut(env, jsonOut, resp, func() {
+				_, _ = fmt.Fprintf(env.Stdout, "rebuilt network %s (detached %d, reattached %d)\n",
+					resp.GetNetwork().GetName(), resp.GetDetached(), resp.GetReattached())
+			})
+		},
+	}
+}
+
 // ---- networks peers（跨 Project 挂靠声明，ADR-0013 附录 A） ----
 
 func newNetworksDeclareVerb() commands.Command {

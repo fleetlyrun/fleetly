@@ -4,5 +4,6 @@
   "declare",
   "list",
   "peers",
+  "rebuild",
   "revoke"
 ]
