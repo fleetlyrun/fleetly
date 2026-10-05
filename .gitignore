@@ -38,8 +38,9 @@
 
 # Console（F2.6/ADR-0044）：依赖不入仓（lockfile 复现）；构建产物在
 # internal/console/dist——提交进仓（go:embed 面，纪律同 genproto，
-# CI console job 零漂移门禁）。
+# CI console job 零漂移门禁）。tsbuildinfo 是 tsc -b 增量缓存。
 console/node_modules/
+console/tsconfig.tsbuildinfo
 
 # e2e 本地工作产物（中断跑批的日志/二进制）
 .e2ebin/
