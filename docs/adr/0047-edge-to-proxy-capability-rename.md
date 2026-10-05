@@ -126,6 +126,12 @@ ADR-0007 把 Edge 列入禁改清单，同时留了出口：发现词条不合�
       / proxy_config；无兼容层；staging flag-day 换装序回写 runbook 记录·六
       （含 FLEETLY_EDGE_CONFIG_ENDPOINT / FLEETLY_EDGE_ACME_EMAIL 旧值清理
       与 /edge/config → /proxy/config 值内路径换代注记）
+      〔**换装实录补记（2026-10-05，runbook 记录·八）**：两处原文未覆盖的
+      操作面——① 受管域 App 轴更名使 traefik 服务名换代，reconciler 不拆
+      旧域（孤儿永不自动删），旧服务占 mesh 80/443 会卡死新 traefik 创建，
+      停机窗内需 `docker service rm` 旧 edge-traefik；② ACME 卷名随更名换代
+      （fleetly-edge-acme → fleetly-proxy-acme），不预置卷内容则证书全重签
+      （换装窗 cp -a 预置即可无感）〕
 - [x] console:gen + console:build 同 commit，console:verify 零漂移
       （structure.ts 随 structure.proto 注释更新；dist 字节级未变）
 - [x] doctor 文案与双形态 golden 更新（proxy config exposure）；

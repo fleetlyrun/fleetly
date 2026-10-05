@@ -139,12 +139,13 @@ e2e/dind-smoke.sh 与 e2e/dind-two-node.sh 的断言块，单测锚指向本仓�
   TestCredentialPersistRoundTrip（幂等/权限/fail loud）；8428 四面锚：CI
   e2e/dind-two-node.sh 无凭证 401 + 平台凭证 200（busybox wget --header），
   staging 真机 401（runbook 2026-10-04 记录·四）〕
-- [ ] staging 真机：双节点序列 + 一条告警真发（webhook 到 requestbin 类端点或
+- [x] staging 真机：双节点序列 + 一条告警真发（webhook 到 requestbin 类端点或
   staging 本机接收器）+ runbook 回写
-  〔**偏差注（不整条勾）**：staging 双节点序列 + 阈值 firing + 8428 401 已真机
-  （runbook 2026-10-04 记录·四）；告警**真发到外部端点**（requestbin 类或
-  staging 本机接收器）未做——真投递由本批 CI 假接收器锚承载
-  （alert.fired/resolved 字段真值断言）；staging 外投真机随换装批补〕
+  〔staging 双节点序列 + 阈值 firing + 8428 401 真机（runbook 2026-10-04 记录·四）；
+  **告警真发已闭（2026-10-05 换装批）**：staging 本机 webhookrecv 接收器形态——
+  `alert.fired` 真载荷（真实 rule/app ID + 真实采样值）+ `channels test`
+  `alert_test` 载荷双落盘，runbook 记录·八；外投公网端点（requestbin 类）仍留
+  观察项，非本锚语义必需〕
 - [x] Metrics 面停用（addr 空）升级零扰动：无新受管服务、CLI 精确失败
   〔装配面 internal/assembly/provides_test.go TestMetricsFaceDisabledWhenAddrEmpty：
   工厂在册的同一夹具下 addr 空 → nil Provider（受管声明不进 reconciler 集 =
