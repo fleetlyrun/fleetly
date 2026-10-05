@@ -32,12 +32,14 @@ log() { printf '==> %s\n' "$1"; }
 
 # 1. 交叉编译两个二进制（linux/amd64；纯 Go 零 cgo）——install.sh 的
 #    bin-dir 模式消费；h2cclient 同批（webhook 段的 HTTP 面自备——dind 无
-#    curl、apk 依赖出站网，离线确定性不赌网络）。
-log "cross-compiling fleetlyd + fleetly + h2cclient (linux/amd64)"
+#    curl、apk 依赖出站网，离线确定性不赌网络）；webhookrecv 同批（F2.5
+#    告警通道的真投递接收面，ADR-0041 锚 2/3）。
+log "cross-compiling fleetlyd + fleetly + h2cclient + webhookrecv (linux/amd64)"
 mkdir -p "$WORKDIR/bins"
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetlyd" ./cmd/fleetlyd
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetly" ./cmd/fleetly
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/h2cclient" ./e2e/h2cclient
+GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/webhookrecv" ./e2e/webhookrecv
 
 # 2. 起 dind（privileged；29 线与生产对齐）。
 log "starting dind container"
@@ -113,6 +115,9 @@ cli whoami >/dev/null
 log "identity chain green (init -> credentials chain, revoke->401)"
 
 # 3c. doctor 冒烟（F0.4）：本机诊断 + 远程 status 合流；全绿退出 0。
+#     无通道 warn 面（ADR-0041 锚 4 的前半，F2.5/doctor 两件）：init 后
+#     零通道——"notification channels" 检查必须是 warn 且带可行动建议
+#     （通道在场后的消警 ok 面在 F2.5 段断言——同一检查的两面）。
 log "fleetly doctor smoke"
 docker exec -e FLEETLY_ADDR=127.0.0.1:9080 "$DIND_CID" fleetly doctor --json > "$WORKDIR/doctor.json"
 grep -q '"fail": *0' "$WORKDIR/doctor.json" || {
@@ -120,6 +125,16 @@ grep -q '"fail": *0' "$WORKDIR/doctor.json" || {
   cat "$WORKDIR/doctor.json" >&2
   exit 1
 }
+grep -A 1 '"name": *"notification channels"' "$WORKDIR/doctor.json" | grep -q '"status": *"warn"' || {
+  echo "doctor: 'notification channels' must warn while no channel is configured" >&2
+  cat "$WORKDIR/doctor.json" >&2
+  exit 1
+}
+grep -q 'fleetly channels create' "$WORKDIR/doctor.json" || {
+  echo "doctor: the channel warn must carry actionable advice" >&2
+  exit 1
+}
+log "doctor green; notification-channels warn present (no channel configured yet)"
 
 # 4. 全链冒烟。
 log "creating project + app"
@@ -463,7 +478,9 @@ cli audit --source webhook --limit 5 >/dev/null
 # ---- F2.5 Metrics/Alerting 面（ADR-0041）----
 # install.sh 物化 FLEETLY_METRICS_ADDR（同 registry/logging 源）——受管
 # VM + cadvisor 全局端随新版起服。等待受管双件 1/1（全局服务单节点也是
-# 1/1；镜像拉取有窗）。
+# 1/1；镜像拉取有窗）。随后三段：采集序列可查 → webhook 假接收器 + 通道
+# test 双面（可达 delivered=true / 不可达诚实失败）→ 阈值规则全链真投递
+#（fired + 回落 resolved；能力门控语义对齐 0f8d4da 先例）。
 log "waiting for the managed metrics store (VM + cAdvisor)"
 i=0
 while [ "$i" -lt 120 ]; do
@@ -498,33 +515,146 @@ if [ "$POINTS" != "1" ]; then
 fi
 log "cadvisor series queryable through the managed store"
 
+# webhook 假接收器（ADR-0041 锚 2/3 的真投递面——后果节"dind e2e 走假
+# webhook 接收器"的兑现）：dind 内后台跑，fleetlyd 同容器网络栈经
+# loopback 投递（通道 URL 即凭证，无需 HMAC——ADR-0041 决策 4）。/reset
+# 使 test 载荷与告警载荷分阶段断言互不污染。
+log "starting the webhook receiver (alert delivery face)"
+docker exec "$DIND_CID" sh -c 'setsid /root/bins/webhookrecv :9099 >/var/log/webhookrecv.log 2>&1 </dev/null &'
+i=0
+while [ "$i" -lt 15 ]; do
+  if docker exec "$DIND_CID" wget -q -O /dev/null http://127.0.0.1:9099/dump 2>/dev/null; then
+    break
+  fi
+  i=$((i + 1)); sleep 1
+done
+if [ "$i" -ge 15 ]; then
+  echo "webhook receiver did not come up" >&2
+  docker exec "$DIND_CID" sh -c 'cat /var/log/webhookrecv.log 2>/dev/null' >&2 || true
+  exit 1
+fi
+recv_dump() { docker exec "$DIND_CID" wget -q -O - http://127.0.0.1:9099/dump 2>/dev/null || true; }
+recv_reset() { docker exec "$DIND_CID" wget -q -O /dev/null http://127.0.0.1:9099/reset 2>/dev/null || true; }
+alert_diag() {
+  echo "--- webhook receiver dump ---" >&2
+  recv_dump >&2 || true
+  echo "--- alerts list ---" >&2
+  cli --json alerts list >&2 || true
+  echo "--- fleetlyd journal tail (alerting) ---" >&2
+  docker exec "$DIND_CID" sh -c 'grep -E "alert|channel" /var/log/fleetlyd.log | tail -10' >&2 2>&1 || true
+}
+
+# 通道链可达面（锚 3 成功侧——与文末不可达侧成对）：登记可达通道 +
+# test 动词即时投递——delivered=true 且接收器收到 alert_test 载荷（字段
+# 真值断言：type/rule_id/metric/state 一行内齐命中，不做 substring 松断言）。
+log "notification channel test (reachable endpoint: delivered=true)"
+CH_LIVE_ID=$(cli channels create --name ops-hook-live --kind webhook --url http://127.0.0.1:9099/hook | sed -n 's/.*(id \([^)]*\)).*/\1/p')
+[ -n "$CH_LIVE_ID" ] || { echo "channel create (reachable endpoint) produced no id" >&2; exit 1; }
+cli --json channels test --channel "$CH_LIVE_ID" | grep -q '"delivered": *true' || {
+  echo "channel test should deliver to the reachable receiver (delivered=true)" >&2
+  cli --json channels test --channel "$CH_LIVE_ID" >&2 || true
+  recv_dump >&2 || true
+  exit 1
+}
+TEST_HIT=0
+i=0
+while [ "$i" -lt 10 ]; do
+  if recv_dump | grep -q '"type":"alert_test".*"rule_id":"test".*"metric":"test".*"state":"test"'; then
+    TEST_HIT=1; break
+  fi
+  i=$((i + 1)); sleep 1
+done
+[ "$TEST_HIT" = "1" ] || {
+  echo "the receiver did not record the alert_test payload (fields incomplete)" >&2
+  alert_diag
+  exit 1
+}
+log "test payload delivered and verified at the receiver"
+
+# doctor 消警面（锚 4 后半）：通道在场 → "notification channels" 检查归位
+# ok（3c 断言过无通道 warn 面——同一检查两面齐）。
+cli doctor --json > "$WORKDIR/doctor2.json"
+grep -A 1 '"name": *"notification channels"' "$WORKDIR/doctor2.json" | grep -q '"status": *"ok"' || {
+  echo "doctor: 'notification channels' should be ok after a channel is configured" >&2
+  cat "$WORKDIR/doctor2.json" >&2
+  exit 1
+}
+log "doctor notification-channels check cleared after channel configuration"
+recv_reset
+
 # 阈值规则全链（环境能力门控）：cadvisor 的容器样本带平台标签
 #（container_label_fleetly_ns_app）时才可能评估——部分嵌套环境（CI dind）
 # cadvisor 看不到内容器（cgroup/docker 发现面差异），标签恒空。能力在场
-# → 全链断言（memory > 1B 必越限 → firing）；缺席 → 响亮 SKIP（真机
-# staging 已全链验收，ADR-0041 锚；CI 不谎报绿也不误报红）。
-cli alerts rules create --app "$APP_ID" --metric memory_working_set_bytes --threshold 1 >/dev/null
+# → 全链断言（memory > 1B 必越限 → firing → 真投递 → 回落 resolved 真
+# 投递）；缺席 → 响亮 SKIP（真机 staging 已全链验收，ADR-0041 锚 6 偏差
+# 注；CI 不谎报绿也不误报红）。
+RULE_ID=$(cli --json alerts rules create --app "$APP_ID" --metric memory_working_set_bytes --threshold 1 \
+  | sed -n 's/.*"id": *"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$RULE_ID" ] || { echo "alert rule create produced no id" >&2; exit 1; }
 LABELED=$(docker exec "$DIND_CID" sh -c \
   'wget -q -O - http://127.0.0.1:8080/metrics 2>/dev/null | grep -c "container_label_fleetly_ns_app=\"0"' || true)
 if [ "${LABELED:-0}" -gt 0 ]; then
   FIRING=0
   i=0
-  while [ "$i" -lt 45 ]; do
+  # 窗宽 150x2s：本段在 webhook 段（TEST-NET 仓库）之后——黑洞环境下
+  # clone 在单写者 drive 步内挂起、引擎循环冻结最长 5 分钟（CI 快败不受
+  # 影响），评估恢复后的首个 15s 节拍即 firing；窗宽盖过冻结尾沿。
+  while [ "$i" -lt 150 ]; do
     st=$(cli --json alerts list 2>/dev/null | sed -n 's/.*"state": *"\([^"]*\)".*/\1/p' | head -1)
     [ "$st" = "firing" ] && FIRING=1 && break
     i=$((i + 1)); sleep 2
   done
   [ "$FIRING" = "1" ] || { echo "labeled cadvisor samples present but rule never fired" >&2; cli --json alerts list >&2 || true; exit 1; }
   log "threshold alert fired and is listed"
+
+  # alert.fired 真投递（锚 2 前半）：firing 迁移沿的通道载荷到达接收器——
+  # 字段真值断言（type/rule_id/app_id/metric/state 一行内齐命中；载荷是
+  # engine json.Marshal 的紧凑 JSON 字段序稳定，rule/app 是本链铸的真
+  # ULID——不是 substring 松断言）。
+  FIRED=0
+  i=0
+  while [ "$i" -lt 30 ]; do
+    if recv_dump | grep -q "\"type\":\"alert\".*\"rule_id\":\"$RULE_ID\".*\"app_id\":\"$APP_ID\".*\"metric\":\"memory_working_set_bytes\".*\"state\":\"firing\""; then
+      FIRED=1; break
+    fi
+    i=$((i + 1)); sleep 2
+  done
+  [ "$FIRED" = "1" ] || {
+    echo "alert.fired payload never reached the webhook receiver" >&2
+    alert_diag
+    exit 1
+  }
+  log "alert.fired payload delivered (rule/app/metric/state verified at the receiver)"
+
+  # resolved 真投递（锚 2 后半——回落形态）：拆 App 使该 App 容器样本消失，
+  # 下一拍评估 value 零 → firing→ok 迁移沿派发 resolved。规则行删除本身
+  # 不派发（行删除即无评估面）——回落是 e2e 可确定的 resolved 路径。
+  log "tearing the app down to force the resolve edge (samples fall back)"
+  cli apps delete --app "$APP_ID" >/dev/null
+  RESOLVED=0
+  i=0
+  while [ "$i" -lt 30 ]; do
+    if recv_dump | grep -q "\"type\":\"alert\".*\"rule_id\":\"$RULE_ID\".*\"state\":\"ok\""; then
+      RESOLVED=1; break
+    fi
+    i=$((i + 1)); sleep 2
+  done
+  [ "$RESOLVED" = "1" ] || {
+    echo "alert.resolved payload never reached the webhook receiver" >&2
+    alert_diag
+    exit 1
+  }
+  log "alert.resolved payload delivered (state=ok verified at the receiver)"
 else
-  log "SKIP: cAdvisor container labels unavailable in this environment (nested visibility) — alert firing chain validated on staging (ADR-0041); asserting rule lifecycle only"
+  log "SKIP: cAdvisor container labels unavailable in this environment (nested visibility) — alert firing + real delivery chain validated on staging (ADR-0041 anchors 2/6 deviation note); asserting rule lifecycle + channel test delivery only"
   cli alerts rules list 2>/dev/null | grep -q "memory_working_set_bytes" || {
     echo "alert rule lifecycle broken" >&2; exit 1
   }
 fi
 
-# 通道链（无接收端形态）：登记 webhook 通道 + test —— delivered=false +
-# 错误文本是响应数据（age 信封写面 + 解封派发面双绿即锚）。
+# 通道链诚实失败面（锚 3 不可达侧——与上文可达侧成对）：登记不可达通道 +
+# test —— delivered=false + 错误文本是响应数据（age 信封写面 + 解封派发
+# 面 + 失败记账三绿即锚）。
 CH_ID=$(cli channels create --name ops-hook --kind webhook --url http://127.0.0.1:1/x | sed -n 's/.*(id \([^)]*\)).*/\1/p')
 [ -n "$CH_ID" ] || { echo "channel create produced no id" >&2; exit 1; }
 cli --json channels test --channel "$CH_ID" | grep -q '"error":' || {

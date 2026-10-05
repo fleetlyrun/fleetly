@@ -367,16 +367,20 @@ if [ "$(task_count "$WORKER_SVC")" -ne "$WORKER_BASE" ]; then
   echo "worker workload restarted during upgrade: $(task_count "$WORKER_SVC") tasks (baseline $WORKER_BASE)" >&2
   exit 1
 fi
-# 库零滚动断言按模板 digest 集条件化（F2.7/ADR-0045 决策 4）：两代二进制
-# 的 dbtemplate digest 集有差时，库任务升级后滚一次是收敛环的正当行为
+# 库零滚动断言按模板 digest 条件化（F2.7/ADR-0045 决策 4）：两代二进制
+# 的 dbtemplate digest 有差时，库任务升级后滚一次是收敛环的正当行为
 # （fingerprint 含 Image → gen 推进 → stop-first 滚动、卷钉住数据存活；
 # F2.3 staging DataTarget 变更实录同款）——有差准许恰一次受监督滚动，
 # 滚后 running + pg_isready 活体断言（在后）不变；无差维持严格零滚动。
-db_digest_set() { grep -rhoE '@sha256:[0-9a-f]{64}' "$1"/internal/engine/dbtemplate/*.go 2>/dev/null | sort; }
+# 预算按被部署引擎授予（评审批 P3-1 收口）：本脚本部署 postgres 库——
+# 只对比 postgres.go 自身的 digest 集（常量形态是裸 "sha256:<64hex>" 无
+# @ 前缀；旧实现的 '@sha256' 全仓 grep 命中的是测试文件里的全形态引用串，
+# 把集合差放大到了无关引擎——redis-only 变更也会给 postgres 预算）。
+db_engine_digest() { grep -hoE 'sha256:[0-9a-f]{64}' "$1"/internal/engine/dbtemplate/postgres.go 2>/dev/null | sort; }
 DB_ROLL_BUDGET=0
-if [ "$(db_digest_set "$OLDWT")" != "$(db_digest_set ".")" ]; then
+if [ "$(db_engine_digest "$OLDWT")" != "$(db_engine_digest ".")" ]; then
   DB_ROLL_BUDGET=1
-  log "template digest set changed across upgrade; allowing one supervised db roll (ADR-0045)"
+  log "postgres template digest changed across upgrade; allowing one supervised db roll (ADR-0045)"
 fi
 DB_DELTA=$(( $(task_count "$DB_SVC") - DB_BASE ))
 log "db task delta across upgrade: $DB_DELTA (budget $DB_ROLL_BUDGET)"

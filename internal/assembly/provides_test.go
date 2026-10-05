@@ -1,8 +1,14 @@
 package assembly
 
 import (
+	"context"
+	"fmt"
+	"io"
+	"log/slog"
 	"testing"
+	"time"
 
+	"github.com/lynx-go/lynx"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -51,4 +57,61 @@ func TestObjectStoreSelection(t *testing.T) {
 	name, ctx = objectStoreSelection(cfg)
 	assert.Equal(t, "local", name)
 	assert.Nil(t, capability.ObjectStoreS3FromContext(ctx))
+}
+
+// metricsFaceApp 是 NewMetricsProvider 的最小 App 夹具：嵌入接口零值
+// （未触碰的成员 panic——装配面只用 Logger，越界即测试红）+ 显式 Logger。
+type metricsFaceApp struct {
+	lynx.App
+	log *slog.Logger
+}
+
+func (a *metricsFaceApp) Logger(_ ...any) *slog.Logger { return a.log }
+
+// fakeMetricsProvider 是正形态对照的假 Provider（Metrics 端口最小实现）。
+type fakeMetricsProvider struct{}
+
+func (fakeMetricsProvider) Describe() capability.ProviderDescriptor {
+	return capability.ProviderDescriptor{Name: "assembly-test-metrics", Capability: capability.KindMetrics}
+}
+func (fakeMetricsProvider) Health(context.Context) capability.HealthReport {
+	return capability.HealthReport{Healthy: true}
+}
+func (fakeMetricsProvider) Managed() bool { return false }
+func (fakeMetricsProvider) ImportPrometheus(_ context.Context, _ []byte, _ map[string]string) error {
+	return nil
+}
+func (fakeMetricsProvider) QuerySeries(_ context.Context, _ string, _, _ time.Time, _ time.Duration) (capability.Series, error) {
+	return capability.Series{}, nil
+}
+
+// TestMetricsFaceDisabledWhenAddrEmpty（ADR-0041 锚 7 装配面）：metrics.addr
+// 空 = Metrics 面停用——工厂在册的同一夹具下仍返回 nil Provider：装配不
+// 注入受管声明（VM/cadvisor 的受管 Workload 无从进入 reconciler 集——
+// "无新受管服务、零采集零告警"），addr 在场正形态对照证明 nil 结果来自
+// 地址门而非工厂缺席。查询精确失败由 apitest TestMetricsQueryDisabledFace
+// 承载（E_INTERNAL 信封）。
+func TestMetricsFaceDisabledWhenAddrEmpty(t *testing.T) {
+	capability.RegisterFactory(capability.KindMetrics, "assembly-test-metrics", func(ctx context.Context) (capability.Provider, error) {
+		if capability.MetricsAddrFromContext(ctx) == "" {
+			return nil, fmt.Errorf("test factory must not be built without a metrics address")
+		}
+		return fakeMetricsProvider{}, nil
+	})
+	app := &metricsFaceApp{log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+
+	cfg := config.WithDefaults(&config.AppConfig{})
+	require.Empty(t, cfg.MetricsAddr(), "fixture precondition: no metrics address configured")
+	m, cleanup, err := NewMetricsProvider(app, cfg)
+	require.NoError(t, err)
+	assert.Nil(t, m, "empty metrics.addr must not build the managed metrics provider (no managed workloads injected)")
+	require.NotNil(t, cleanup)
+	cleanup()
+
+	cfg.Metrics = &config.Metrics{Addr: "10.0.0.1:8428"}
+	m2, cleanup2, err2 := NewMetricsProvider(app, cfg)
+	require.NoError(t, err2)
+	assert.NotNil(t, m2, "a configured address must build the provider (positive control for the gate)")
+	require.NotNil(t, cleanup2)
+	cleanup2()
 }

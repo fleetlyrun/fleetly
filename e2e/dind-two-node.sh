@@ -43,8 +43,13 @@ GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetlyd" ./cmd
 GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o "$WORKDIR/bins/fleetly" ./cmd/fleetly
 
 log "starting manager + worker dind containers"
-MGR_CID=$(docker run -d --privileged --name fleetly-e2e-mgr-"$$" -e DOCKER_TLS_CERTDIR= docker:29-dind)
-WRK_CID=$(docker run -d --privileged --name fleetly-e2e-wrk-"$$" -e DOCKER_TLS_CERTDIR= docker:29-dind)
+# --cgroupns=host（14abbae 只给 smoke 加过的同款修正，此处补齐两节点面）：
+# 嵌套容器的 cgroup 在宿主层级可见——cadvisor（受管指标采集端，全局任务
+# 两节点各一）读 /sys 才能看到 dind 内容器样本（私有 cgroupns 下只见
+# root/system 条目，容器序列缺席——CI 实证 2026-10-04）。两节点 metrics
+# 断言（node 标签双值）依赖此面。
+MGR_CID=$(docker run -d --privileged --name fleetly-e2e-mgr-"$$" --cgroupns=host -e DOCKER_TLS_CERTDIR= docker:29-dind)
+WRK_CID=$(docker run -d --privileged --name fleetly-e2e-wrk-"$$" --cgroupns=host -e DOCKER_TLS_CERTDIR= docker:29-dind)
 wait_docker "$MGR_CID"
 wait_docker "$WRK_CID"
 MGR_IP=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$MGR_CID")
@@ -242,5 +247,82 @@ while [ "$i" -lt 60 ]; do
 done
 [ "$TEXT_HITS" = "1" ] || { echo "log search (--text) returned no persisted frames" >&2; exit 1; }
 log "log search --text live over the retention store"
+
+# 受管指标面（F2.5/ADR-0041 锚 1 的两节点形态）：install.sh 默认物化
+# FLEETLY_METRICS_ADDR（<advertise>:8428，bd3f04c 同源）——受管 VM 1/1 +
+# cadvisor 全局 2/2（每节点恰一 task）。序列按 node 标签双值：从
+# nodes list 取两节点平台 ID，逐节点查 cadvisor 序列非空（采集环按
+# 平台节点归因入库——双节点采集的查询面证据）。
+log "waiting for the managed metrics store (VM + global cAdvisor)"
+i=0
+while [ "$i" -lt 120 ]; do
+  vm=$(docker exec "$MGR_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-victoriametrics --format '{{.Replicas}}' 2>/dev/null)
+  cd_=$(docker exec "$MGR_CID" docker service ls --filter name=fleetly-fleetly-system-metrics-cadvisor --format '{{.Replicas}}' 2>/dev/null)
+  [ "$vm" = "1/1" ] && [ "$cd_" = "2/2" ] && break
+  i=$((i + 1)); sleep 2
+done
+[ "${vm:-}" = "1/1" ] || { echo "victoria-metrics never became 1/1 on the two-node cluster (got ${vm:-none})" >&2; \
+  docker exec "$MGR_CID" docker service ps fleetly-fleetly-system-metrics-victoriametrics >&2 || true; exit 1; }
+[ "${cd_:-}" = "2/2" ] || { echo "cadvisor never became 2/2 (one global task per node; got ${cd_:-none})" >&2; \
+  docker exec "$MGR_CID" docker service ps fleetly-fleetly-system-metrics-cadvisor >&2 || true; exit 1; }
+log "managed VM 1/1 + cAdvisor 2/2 (global: one task per node)"
+
+NODE_IDS=$(cli --json nodes list | sed -n 's/.*"platform_id": *"\([^"]*\)".*/\1/p')
+N_NODES=$(printf '%s\n' "$NODE_IDS" | grep -c . || true)
+[ "$N_NODES" = "2" ] || { echo "expected exactly two platform node ids, got ($N_NODES): $NODE_IDS" >&2; exit 1; }
+for NID in $NODE_IDS; do
+  NODE_OK=0
+  i=0
+  while [ "$i" -lt 45 ]; do
+    n=$(cli --json metrics query "max(container_cpu_usage_seconds_total{job=\"fleetly-cadvisor\",node=\"$NID\"})" 2>/dev/null | grep -c '"value"' || true)
+    if [ "${n:-0}" -gt 0 ]; then NODE_OK=1; break; fi
+    i=$((i + 1)); sleep 2
+  done
+  if [ "$NODE_OK" != "1" ]; then
+    echo "metrics query returned no points for node $NID (node-label dual-value assertion)" >&2
+    echo "--- raw query output (no node filter) ---" >&2
+    cli --json metrics query 'max(container_cpu_usage_seconds_total{job="fleetly-cadvisor"})' >&2 2>&1 || true
+    echo "--- fleetlyd journal tail (metrics) ---" >&2
+    docker exec "$MGR_CID" sh -c 'grep -o "\"msg\":\"[^\"]*metrics[^\"]*\".*" /var/log/fleetlyd.log | tail -5' >&2 2>&1 || true
+    exit 1
+  fi
+  log "cadvisor series queryable for node $NID"
+done
+log "metrics series carry both node labels (two-node collection attribution)"
+
+# 内存序列非空（ADR-0041 锚 1 原文的第二序列家族——gauge 直取面）。
+MEM_OK=0
+i=0
+while [ "$i" -lt 45 ]; do
+  n=$(cli --json metrics query 'max(container_memory_working_set_bytes{job="fleetly-cadvisor"})' 2>/dev/null | grep -c '"value"' || true)
+  if [ "${n:-0}" -gt 0 ]; then MEM_OK=1; break; fi
+  i=$((i + 1)); sleep 2
+done
+[ "$MEM_OK" = "1" ] || { echo "metrics query returned no points for the memory series" >&2; \
+  cli --json metrics query 'max(container_memory_working_set_bytes{job="fleetly-cadvisor"})' >&2 2>&1 || true; exit 1; }
+log "memory series non-empty through the managed store"
+
+# 8428 认证面（ADR-0041 锚 5 的 CI 半锚，staging 真机同款 2026-10-04）：
+# 无凭证 → 401（VM -httpAuth 面；实证 v1.152.0 豁免 /health——401 腿打
+# 根路径）；带 keys/victoriametrics.json 的平台凭证 → 200（/health 的 OK
+# 体；busybox wget --header 显式 Authorization，凭据从数据根读出——密码
+# 绝不进 argv 之外的日志面由 wget 输出天然满足）。
+VM_CREDS=/var/lib/fleetly/keys/victoriametrics.json
+VM_USER=$(docker exec "$MGR_CID" sed -n 's/.*"username": *"\([^"]*\)".*/\1/p' "$VM_CREDS")
+VM_PASS=$(docker exec "$MGR_CID" sed -n 's/.*"password": *"\([^"]*\)".*/\1/p' "$VM_CREDS")
+if [ -z "$VM_USER" ] || [ -z "$VM_PASS" ]; then
+  echo "could not read the victoria-metrics credential file ($VM_CREDS)" >&2
+  exit 1
+fi
+NOAUTH=$(docker exec "$MGR_CID" wget -q -O - "http://$MGR_IP:8428/" 2>&1 || true)
+case "$NOAUTH" in
+  *401*) log "VM 8428 rejects unauthenticated requests (401)" ;;
+  *) echo "expected 401 without credentials at 8428, got: $NOAUTH" >&2; exit 1 ;;
+esac
+AUTHED=$(docker exec "$MGR_CID" sh -c "B64=\$(printf '%s:%s' '$VM_USER' '$VM_PASS' | base64 | tr -d '\n'); wget -q -O - --header \"Authorization: Basic \$B64\" http://$MGR_IP:8428/health" 2>&1 || true)
+case "$AUTHED" in
+  OK*) log "VM 8428 serves authenticated requests (200 OK)" ;;
+  *) echo "expected 200 OK with platform credentials at 8428, got: $AUTHED" >&2; exit 1 ;;
+esac
 
 log "TWO-NODE E2E PASSED"
