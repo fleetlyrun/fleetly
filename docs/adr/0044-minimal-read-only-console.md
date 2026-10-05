@@ -17,9 +17,12 @@ TanStack Query + xterm（node 24 / pnpm，openapi-typescript 生成链）。本 
 
 1. **三页消费面盘点 = 零 proto 改动**（以现网注解面为准，逐一核实）：
    - **部署状态页**：`GET /v1/projects` + `GET /v1/apps?project_id=` + `GET
-     /v1/deployments?app_id=&limit=`（全部既有注解面）。刷新形态 = TanStack Query 轮询
-     5s。不选 `GET /v1/deployments/{id}/wait` 流：列表页并发观察多个部署，每行一条流的
-     管理成本不抵收益；wait 流留给写面前批（F3.1）做单部署跟踪。
+     /v1/deployments?app_id=&limit=`（全部既有注解面；**部署列表是 per-App 轴**——
+     app_id 服务端必填（行级授权锚），页面 App 必选、目录到达自动选首个，不提供
+     跨 App 聚合视图——聚合面若将来需要是 API 面的事，不是 Console 私有服务端面）。
+     刷新形态 = TanStack Query 轮询 5s。不选 `GET /v1/deployments/{id}/wait` 流：
+     列表页并发观察多个部署，每行一条流的管理成本不抵收益；wait 流留给写面前批
+     （F3.1）做单部署跟踪。
    - **日志页**：`GET /v1/logs`（StreamLogs）REST 形态**核实存在**——grpc-gateway 对
      server-streaming 注解面走 ForwardResponseStream：chunked 响应、每帧一个 protojson
      （snake_case）对象 + 换行分隔（NDJSON）。EventSource 不能带 Authorization 头，但本
@@ -74,14 +77,21 @@ TanStack Query + xterm（node 24 / pnpm，openapi-typescript 生成链）。本 
 
 ## 验收锚
 
-- [ ] fleetlyd 静态服务 Console：`GET /` 返回 index.html（200、text/html）、SPA fallback
+- [x] fleetlyd 静态服务 Console：`GET /` 返回 index.html（200、text/html）、SPA fallback
   （未知非 /v1 路径回 index.html）、hashed asset 带 immutable 缓存头（httptest 级钉死）
-- [ ] `/v1/*` 行为零变化：既有 REST 冒烟（identity 面/错误信封/未带凭证 401）不红；未知
-  `/v1/*` 路径仍是 gateway 404 而非 SPA fallback
-- [ ] 三页只消费公共 API：代码面零 console 专属服务端逻辑（embed 包纯静态、无任何 fetch
-  处理器）；事件订阅走票据（无自定义头 EventSource）
-- [ ] `pnpm gen` 再生成零漂移：openapi-typescript 从 genproto swagger 再生成与提交的
-  `console/src/api/*.ts` 逐字节一致（CI console job 断言）
-- [ ] dist 再构建零漂移：`pnpm build` 产物与提交的 `internal/console/dist` 一致（CI
+  （internal/console/console_test.go 六件：TestRootServesIndexHTML/TestSPAFallbackServesIndexHTML/
+  TestHashedAssetImmutableCache/TestIndexHTMLDirectIsNoCache/TestMountPassesV1Through/
+  TestNonGetIs405）
+- [x] `/v1/*` 行为零变化：既有 REST 冒烟（identity 面/错误信封/未带凭证 401）不红；未知
+  `/v1/*` 路径仍是 gateway 404 而非 SPA fallback（internal/apitest/console_static_test.go：
+  未知 /v1/* JSON 404 + 非 html 断言 + whoami 照常；既有 rest_gateway_test 全绿同批）
+- [x] 三页只消费公共 API：代码面零 console 专属服务端逻辑（embed 包纯静态、无任何 fetch
+  处理器）；事件订阅走票据（无自定义头面——console fetch 解帧消费，服务端契约对
+  EventSource 兼容性由既有 events_sse_test 钉死）（/v1/logs NDJSON 帧契约进
+  internal/apitest/rest_logs_test.go——含未带凭证 401）
+- [x] `pnpm gen` 再生成零漂移：openapi-typescript 从 genproto swagger 再生成与提交的
+  `console/src/api/*.ts` 逐字节一致（CI console job 断言；本地连跑两次 md5 一致实证）
+- [x] dist 再构建零漂移：`pnpm build` 产物与提交的 `internal/console/dist` 一致（CI
   console job 断言；连续两次本地构建一致实证后才进门禁）
-- [ ] node/pnpm 与 CI 同版本（mise.toml 单源，CI 经 mise-action 安装）
+- [x] node/pnpm 与 CI 同版本（mise.toml 单源，CI 经 mise-action 安装；mise run
+  console:verify 本地与 CI 同口径）
