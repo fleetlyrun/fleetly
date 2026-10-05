@@ -105,14 +105,48 @@ F2.2 挂账：**「未配异地持续告警」**（platform_backup.s3 未配置�
 
 ## 验收锚
 
-- [ ] e2e（dind 两节点）：cadvisor 全局每节点一 task + VM 1/1；`metrics query` 返回
+（2026-10-05 评审批 P1-3/P3-2 收口勾稽：七锚逐条核实后勾——CI 锚指向
+e2e/dind-smoke.sh 与 e2e/dind-two-node.sh 的断言块，单测锚指向本仓测试。）
+
+- [x] e2e（dind 两节点）：cadvisor 全局每节点一 task + VM 1/1；`metrics query` 返回
   双节点容器序列（node 标签双值）；内存序列非空
-- [ ] 阈值规则全链：规则（memory > 极小值）→ firing → webhook 接收器收到
+  〔e2e/dind-two-node.sh 尾段：VM 1/1 + cadvisor **2/2**（全局每节点一 task）+
+  从 `nodes list` 取两平台 ID 逐节点查 `max(container_cpu_usage_seconds_total{job="fleetly-cadvisor",node=<id>})`
+  非空（node 标签双值）；两 dind 补 `--cgroupns=host`（14abbae 的 smoke 修正
+  同款——嵌套 cgroup 可见面，容器样本才不缺席）；staging 真机同款 2/2 在册
+  （runbook 2026-10-04 记录·四）〕
+- [x] 阈值规则全链：规则（memory > 极小值）→ firing → webhook 接收器收到
   alert.fired 载荷 → 规则删除/回落收到 resolved
-- [ ] 通知通道 test 动词：webhook 接收器收到测试载荷；telegram 未配出网环境跳过
+  〔e2e/dind-smoke.sh F2.5 段（能力门控语义对齐 0f8d4da——CI dind 门控在场
+  时全链）：`e2e/webhookrecv` 假接收器（dind 内 loopback）收 fired 载荷并按
+  type/rule_id/app_id/metric/state 真值断言；**resolved 走回落形态**——拆 App
+  使容器样本消失 → firing→ok 迁移沿派发（规则行删除本身不派发，行删除即
+  无评估面——engine evaluateRules 语义，勾稽时核实现场事实）；单测双锚
+  engine/metrics_test.go TestEvaluateRulesStateMachine（httptest 派发面）〕
+- [x] 通知通道 test 动词：webhook 接收器收到测试载荷；telegram 未配出网环境跳过
   （e2e 只测 webhook）
-- [ ] doctor：s3 未配 + 无通道 → warn 文本可行动；配通道后消警
-- [ ] VM 材料指纹跨进程重启稳定（E28）；8428 无凭证 401
+  〔e2e/dind-smoke.sh 通道链双面：可达端点（接收器 /hook）→ `channels test`
+  delivered=true + 接收器收 alert_test 载荷（字段真值断言）；不可达端点 →
+  delivered=false 诚实失败（既有断言保留）；telegram 维持 e2e 只测 webhook〕
+- [x] doctor：s3 未配 + 无通道 → warn 文本可行动；配通道后消警
+  〔单测 cmd/fleetly/cmd/doctor_golden_test.go TestDoctorAlertingChecks 三面：
+  无通道 warn 带可行动建议 / 内置规则 firing warn 带 platform_backup.s3 处置
+  （24h 持续窗不进 e2e——单测是唯一锚）/ 通道在场消警 ok；e2e dind-smoke
+  同款双面（3c 无通道 warn + F2.5 配通道后 ok）〕
+- [x] VM 材料指纹跨进程重启稳定（E28）；8428 无凭证 401
+  〔E28：internal/providers/victoriametrics/provider_test.go
+  TestMaterialsStableAcrossRestarts（50 次跨构造字节稳定）+
+  TestCredentialPersistRoundTrip（幂等/权限/fail loud）；8428 四面锚：CI
+  e2e/dind-two-node.sh 无凭证 401 + 平台凭证 200（busybox wget --header），
+  staging 真机 401（runbook 2026-10-04 记录·四）〕
 - [ ] staging 真机：双节点序列 + 一条告警真发（webhook 到 requestbin 类端点或
   staging 本机接收器）+ runbook 回写
-- [ ] Metrics 面停用（addr 空）升级零扰动：无新受管服务、CLI 精确失败
+  〔**偏差注（不整条勾）**：staging 双节点序列 + 阈值 firing + 8428 401 已真机
+  （runbook 2026-10-04 记录·四）；告警**真发到外部端点**（requestbin 类或
+  staging 本机接收器）未做——真投递由本批 CI 假接收器锚承载
+  （alert.fired/resolved 字段真值断言）；staging 外投真机随换装批补〕
+- [x] Metrics 面停用（addr 空）升级零扰动：无新受管服务、CLI 精确失败
+  〔装配面 internal/assembly/provides_test.go TestMetricsFaceDisabledWhenAddrEmpty：
+  工厂在册的同一夹具下 addr 空 → nil Provider（受管声明不进 reconciler 集 =
+  无新受管服务，addr 在场正形态对照）；查询精确失败 apitest/alerting_test.go
+  TestMetricsQueryDisabledFace（E_INTERNAL 信封——夹具未配 metrics.addr）〕
