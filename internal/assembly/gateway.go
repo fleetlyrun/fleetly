@@ -22,6 +22,7 @@ import (
 	telemetryv1 "github.com/fleetlyrun/fleetly/genproto/fleetly/telemetry/v1"
 	"github.com/fleetlyrun/fleetly/internal/api/fleetlygrpc"
 	"github.com/fleetlyrun/fleetly/internal/config"
+	"github.com/fleetlyrun/fleetly/internal/console"
 )
 
 // httpReadHeaderTimeout 慢握手/Slowloris 上限；SSE 长连接落地（events
@@ -72,10 +73,12 @@ func gatewayRegistrations() []gateway.RegisterFunc {
 }
 
 // NewGatewayHandler 构造 gateway 的 HTTP handler（grpc-gateway mux + 注解面
-// 全量注册 + 原生 webhook 挂法 + 原生 SSE 事件入口）。从 NewGatewayServer
-// 抽出为独立入口：apitest REST 冒烟经 httptest 驱动与生产完全同一清单与
-// 错误信封——清单漂移先在守卫 A 红，行为面在此冒烟红。eventsSrc 为 nil
-// 时跳过 SSE 挂载（不需要订阅面的 REST 冒烟）。
+// 全量注册 + 原生 webhook 挂法 + 原生 SSE 事件入口 + Console 静态面）。
+// 从 NewGatewayServer 抽出为独立入口：apitest REST 冒烟经 httptest 驱动与
+// 生产完全同一清单与错误信封——清单漂移先在守卫 A 红，行为面在此冒烟红。
+// eventsSrc 为 nil 时跳过 SSE 挂载（不需要订阅面的 REST 冒烟）。最外层
+// console.Mount 把非 /v1 路径交给 embed 静态产物（F2.6/ADR-0044；/v1/*
+// 零变化）。
 func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, eventsSrc *fleetlygrpc.EventStreamSource) (http.Handler, error) {
 	mux := gateway.NewMux(gateway.MuxOptions{
 		ErrorHandler: newGatewayErrorHandler(logger),
@@ -87,7 +90,7 @@ func NewGatewayHandler(logger *slog.Logger, conn grpc.ClientConnInterface, event
 	if eventsSrc != nil {
 		h = mountEventsSSE(h, newEventsSSEHandler(eventsSrc))
 	}
-	return h, nil
+	return console.Mount(h), nil
 }
 
 // NewGatewayServer 装配 REST gateway（grpc-gateway）：统一错误信封出口

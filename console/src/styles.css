@@ -1,0 +1,6 @@
+@import "tailwindcss";
+
+/* 最小只读 Console（F2.6）：暗色基线，观测面等宽。 */
+:root {
+  color-scheme: dark;
+}
