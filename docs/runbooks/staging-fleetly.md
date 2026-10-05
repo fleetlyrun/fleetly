@@ -287,6 +287,32 @@ ADR-0042 落地（64f07f0..8b7f51d 七 commit，CI run 37218474928 六 job 全�
 2. 配置文件如有 `edge_config` 键 → `proxy_config`（staging 现为 env 注入形态，无配置键面）。
 3. 按平台升级操作序换装（前置 Platform Backup → 替换二进制 → 起新版）；新版 `fleetly doctor` 的 `proxy config exposure` / `bind surface` 行复核（文案与端点已随 ADR-0047 更名）。
 
+## 2026-10-05 记录·七（备份重试风暴事故 + 网络重建四刀实录：torchwood-pg 备份自愈）
+
+### 事故：116,938 枚匿名卷（诊断链完整，复盘锚）
+
+- **机制链（三因叠加）**：① torchwood-pg 定时备份因 legacy 非 attachable 网附着被拒（START 期 PermissionDenied——**容器 create 已成功**，pgvector 镜像 VOLUME 的匿名卷已在 create 期分配）；② 备份失败不推进 `last_backup_at` 也无退避 → 1s tick 每秒重铸行重试；③ utility 收尾 `ContainerRemove(Force)` 不带 `RemoveVolumes` → 每次尝试漏一枚匿名卷。F2.2 上线（10-04 ~04:30）→ 止血（10-05 13:26）≈ 33h × ~1/s ≈ 11.4 万 + 基线 1.7k ≈ 11.7 万，实测 116,938——算术闭环。
+- **同规模连带**：~11.4 万行 failed 备份台账行 + 同数 `database.backup_failed` 事件（outbox 7d 保留窗自清；台账行由本批 48h 失败行清扫出清）。
+- **修复三补丁（本批复入 main）**：utility 清理带 `RemoveVolumes: true`；备份失败 5min 退避（f6040c4 platform 轨同款）；失败行 48h 清扫。e2e dind-backup 增双窗匿名卷零增量锚（失败面 + 成功面）。
+- **清量**：`docker volume prune -f`（默认只碰悬空匿名卷；db task 在用卷不受影响）116,938 → **27** 枚（回收 101.3kB——全是空卷元数据垃圾，无数据损失面）。
+
+### 网络重建四刀实录（ADR-0046 动词的第一次真机洗礼）
+
+#1/#2/#3 均在 RemoveNetwork 排水 deadline（300s 全程 "active endpoints"）失败，根因三层逐刀咬出：
+
+1. **crash-loop 服务卡死排水**：torchwood app 进程 crash-loop（应用侧：自带 :9000 探针 exit(1)）→ task 高频替换 → 网络端点永不清零；且 detach 触发的滚动更新被失败替换卡住、**健康副本不被替换**（swarm 滚动暂停语义）。操作解：`docker rm -f <健康 task 容器>`——swarm 按"已 detach 的现行 spec"补无网 task（与目标态合作，非对抗）。
+2. **半死节点卡死 overlay 退役**：node2 dockerd agent 半死（30 分钟 804 条 journal 错误、node.left×13 抖动、manager→node2 ssh 断）→ swarm overlay 删除要全集群节点放行。操作解：**直连 node2（143.198.234.68）重启 dockerd**——worker 自动重入集群，容器照常。
+3. **app 域无周期 ensure 重放面**：失败尝试的半 detach 态（app 服务被 network-rm 后 spec 与载体不一致）要等下次部署才愈——受管/数据库域每拍自愈，app 域不会。**本批补失败回滚（rollbackDetach，detach 后任何步失败即尽力挂回）**；旧版遗留的半 detach 态需 app 重部署收敛（torchwood app 待用户侧重部署恢复网挂）。
+
+#4 成功：`rebuilt network default (detached 2, reattached 2)`、attachable=true → **torchwood-pg 备份 1 秒成功、`last_backup_at` 自 F2.2 以来首次推进**（13:59:45Z，对象 55KB+digest 落地）——P1-4 现场闭环。
+
+### 挂账与待办
+
+- **torchwood app 进程 crash-loop 未处置**（应用侧：:9000 探针失败退 1；node2 抖动可能相关）——torchwood 仓排查；重部署同时恢复 app 网挂。
+- **node2 抖动根因未深查**（dockerd journal 804 错误未逐条分诊；重启后恢复，观察窗）。
+- 其余三 legacy 网（messaging/n0reg/n0probe）待新版部署后逐个 `fleetly networks rebuild`（低峰窗；操作序同上三层排查法）。
+- rebuild 遇 "attached endpoints did not drain" 的分诊序：`docker service ps`（失败列=crash-loop？）→ `docker node ls` + 节点 dockerd journal（半死？）→ 处置后重试（动词幂等收敛）。
+
 ## 平台升级操作序（F2.3 工具化，2026-10-04）
 
 ADR-0015 升级序的完整落地形态：**Platform Backup 前置 → SIGTERM 排水 → 二进制替换 → 起新版（goose 前滚 + Managed Provider 逐个 reconcile + 解除只读，全自动）**。前置动词自 75a3d31 起可用（旧版无 platform 组时按 b4cfea0 节的手工快照纪律执行）。

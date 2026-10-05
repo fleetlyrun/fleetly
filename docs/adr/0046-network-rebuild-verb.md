@@ -171,3 +171,45 @@ network-rm/add 会被平台 reconcile 回滚**（Ensure 全量替换语义把载
 - [x] runbook 回写：177 行挂账段闭合注记 + 记录·五 #4 追记（换装批执行序）
 - [x] 全门禁：mise run test（三 module -race）+ lint + guards +
       generate:verify 全绿
+
+## 追记：staging 实录与失败回滚收口（2026-10-05）
+
+### staging 四刀实录（动词第一次真机洗礼）
+
+#1/#2/#3 均在 RemoveNetwork 排水 deadline 失败（300s 全程 "active endpoints"
+重试），根因三层（runbook 记录·七全文）：
+
+1. **crash-loop 服务卡死排水**：torchwood app 进程 crash-loop → task 高频
+   替换使网络端点永不清零；且 detach 触发的滚动更新被失败替换卡住、健康
+   副本不被替换（swarm 滚动暂停语义）——操作解 = 删健康 task 容器让 swarm
+   按已 detach 的现行 spec 补无网 task。
+2. **半死节点卡死 overlay 退役**：swarm overlay 删除要全集群节点放行，
+   node2 dockerd agent 半死（journal 高频错误 + node 抖动）卡住退役——
+   操作解 = 重启该节点 dockerd（worker 自动重入）。
+3. **app 域无周期 ensure 重放面**：失败尝试的半 detach 态只有受管/数据库
+   域会自愈（每拍 ensure 重放），app 服务要等下次部署——本批补**失败回滚**
+   （见下）。旧版（a57de18 之前语义）遗留的半 detach 态需 app 重部署收敛。
+
+#4 成功收敛：detached 2/reattached 2、attachable=true → torchwood-pg 备份
+自 F2.2 以来首次成功、`last_backup_at` 首次推进（P1-4 现场闭环）。
+
+### 本批收口（随批三补丁中的动词侧）
+
+- **失败回滚**：detach 之后的任何一步失败（remove/recreate/verify），把已
+  detach 的载体尽力挂回（AttachNetwork 幂等；独立 1m 带界 ctx——bctx 此刻
+  可能已耗尽，utility remove 的 WithoutCancel 同款）。错误文本从"stay
+  detached until their domain's next ensure replay"改为"detach rolled
+  back"——原语义对 app 域不成立。
+- 关联事故（同日诊断，backup 域收口见 ADR-0039 射程内的本批 commit）：
+  备份失败无退避的 1s 重试 × utility 删容器不带 RemoveVolumes = 33h 累计
+  11.6 万枚匿名卷；runbook 记录·七为复盘真源。
+- 教训入操作序：重建遇排水超时的分诊序 = 先查 crash-loop 服务、再查半死
+  节点、处置后重试（动词幂等收敛）。
+
+### 追加验收锚
+
+- [x] 失败回滚：detach 后 remove 失败 → 已 detach 载体全部挂回 + 错误文本
+      含 "detach rolled back"（TestRebuildNetworkRollbackReattachesDetached
+      Carriers；fake InspectNetwork 补排序契约对齐真源）
+- [x] e2e 匿名卷零增量双窗锚（失败面 + 成功面，dind-backup.sh P1-4 腿内）
+      ——utility RemoveVolumes 修复的行为锚
