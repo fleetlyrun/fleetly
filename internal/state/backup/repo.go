@@ -131,6 +131,34 @@ func (r *Repo) HasActiveFor(ctx context.Context, run state.Runner, databaseID st
 	return n > 0, nil
 }
 
+// LatestFailedFor 返回该库最新一行失败（退避锚——失败不推进 last_backup_at，
+// 重试节奏由本行 FinishedAt 承载；id 是 ULID 时序，走 (database_id, id)
+// 索引序即时间序。无失败行即 ok=false）。
+func (r *Repo) LatestFailedFor(ctx context.Context, run state.Runner, databaseID string) (*Backup, bool, error) {
+	row := run.QueryRowContext(ctx,
+		selectCols+` WHERE database_id = ? AND status = 'failed' ORDER BY id DESC LIMIT 1`, databaseID)
+	b, err := scanBackup(row.Scan)
+	if err != nil {
+		if errors.Is(err, state.ErrNotFound) || errors.Is(err, sql.ErrNoRows) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	return b, true, nil
+}
+
+// DueForFailedRowSweep 返回失败行保留窗外的行（失败行无对象产物，仅删行
+// ——错误文本的诊断价值短命，48h 窗后由保留滚动同环清扫；created_at 升序
+// 限量分拍，DueForPrune 同款形态）。
+func (r *Repo) DueForFailedRowSweep(ctx context.Context, run state.Runner, now time.Time, retention time.Duration, limit int) ([]Backup, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	cutoff := now.Add(-retention).UTC().Format(time.RFC3339)
+	return r.query(ctx, run,
+		selectCols+` WHERE status = 'failed' AND created_at < ? ORDER BY created_at LIMIT ?`, cutoff, limit)
+}
+
 // MarkRunning 摘件落执行态（CAS：仅 pending 行命中）。
 func (r *Repo) MarkRunning(ctx context.Context, run state.Runner, id string) error {
 	now := state.FormatTime(r.clock.Now())

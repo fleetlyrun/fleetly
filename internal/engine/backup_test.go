@@ -447,3 +447,70 @@ func TestBackupKeyMint(t *testing.T) {
 	assert.Equal(t, "backups/01JPROJ/01JDB/20261004T123456Z-01JBKP", key)
 	assert.NotContains(t, key, ":", "key must stay colon-free for windows control planes")
 }
+
+// 失败退避窗（2026-10-05 staging 实录收口）：失败后 backupFailureBackoff
+// 内调度面不重铸行——1s tick × 无退避 = 每秒重试风暴（33h/11.4 万行台账
+// 与事件垃圾）。手动 TriggerBackup 直铸行不经 schedulePass，不受影响。
+func TestBackupFailureBackoffWindow(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, _, ut, _, clock := newBackupFixture(t, "postgres", url)
+	ut.execErr = errors.New("boom")
+	ctx := context.Background()
+
+	clock.Advance(2 * time.Hour) // 过 interval：到期铸行 + 执行失败
+	e.backupStep(ctx)
+	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	require.NoError(t, err)
+	require.Len(t, rows, 1)
+	require.Equal(t, backup.StatusFailed, rows[0].Status)
+	assert.Len(t, ut.requests(), 1)
+
+	clock.Advance(2 * time.Minute) // 仍到期（锚未推进），但失败未满退避窗
+	e.backupStep(ctx)
+	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	require.NoError(t, err)
+	assert.Len(t, rows, 1, "backoff window must suppress recasting")
+	assert.Len(t, ut.requests(), 1, "backoff window must suppress execution")
+
+	clock.Advance(4 * time.Minute) // 距失败 ~6min：窗外，重铸重试
+	e.backupStep(ctx)
+	rows, err = e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	require.NoError(t, err)
+	assert.Len(t, rows, 2, "past the backoff window the scheduler recasts")
+	assert.Len(t, ut.requests(), 2)
+}
+
+// 失败行保留清扫：失败行 48h 后由 prunePass 同环出清（无对象产物仅删行），
+// 成功行不受失败窗影响（保留滚动另管）。
+func TestBackupFailedRowSweep(t *testing.T) {
+	const url = "postgresql://fleetly:secretpw@db-01jd0db000000000000000000:5432/fleetly" //nolint:gosec // G101 误报：测试夹具 URL，非真凭证
+	e, _, _, store, clock := newBackupFixture(t, "postgres", url)
+	ctx := context.Background()
+
+	seedFailed := func(id string) {
+		require.NoError(t, e.backups.Create(ctx, e.db.Runner(), &backup.Backup{
+			ID: id, ProjectID: tProjectID, DatabaseID: tDatabaseID,
+			Engine: "postgres", RetentionSecs: 604800,
+		}))
+		require.NoError(t, e.backups.MarkRunning(ctx, e.db.Runner(), id))
+		require.NoError(t, e.backups.FinishFailed(ctx, e.db.Runner(), id, "boom"))
+	}
+	clock.Advance(time.Hour)
+	seedFailed("01JD0FLD00000000000000000A")
+	seedFailed("01JD0FLD00000000000000000B")
+	seedSucceededBackup(t, e, store, "01JD0FLD00000000000000000C", "postgres", "KEEP-ME")
+
+	clock.Advance(49 * time.Hour)
+	e.backupStep(ctx) // prunePass 随步执行（库此刻也到期——step 会另铸一颗
+	// 真实成功行，断言按语义：失败行必须出清、成功种子行必须在场）
+
+	rows, err := e.backups.ListByDatabase(ctx, e.db.Runner(), tDatabaseID, "", 50)
+	require.NoError(t, err)
+	ids := make(map[string]bool, len(rows))
+	for _, r := range rows {
+		ids[r.ID] = true
+	}
+	assert.False(t, ids["01JD0FLD00000000000000000A"], "stale failed row A must be swept")
+	assert.False(t, ids["01JD0FLD00000000000000000B"], "stale failed row B must be swept")
+	assert.True(t, ids["01JD0FLD00000000000000000C"], "succeeded row must survive the failed-row sweep")
+}

@@ -29,6 +29,17 @@ import (
 // KickBackups 唤醒 Backup 环（API 手动触发面消费）。
 func (e *Engine) KickBackups() { e.backupLoop.Kick() }
 
+// 失败退避与失败行保留窗（2026-10-05 staging 实录收口）：失败不推进
+// last_backup_at 也不退避 + 1s tick = 每秒重铸行重试——33h 累计 11.4 万
+// 行台账/事件垃圾，叠加 utility 匿名卷泄漏成 11.6 万枚。退避走最新失败
+// 行的 FinishedAt（f6040c4 platform 轨 5min last-attempt 锚同款教训）；
+// 手动 TriggerBackup 直铸行不经调度面，不受退避影响。失败行 48h 后由
+// 保留滚动同环清行（无对象产物，仅删行）。
+const (
+	backupFailureBackoff     = 5 * time.Minute
+	backupFailedRowRetention = 48 * time.Hour
+)
+
 // backupStep 是 Backup 环的单次推进：恢复（用户在等，最高优先）→ 调度
 // → 执行一件 → 保留滚动 → Platform Backup 节拍。
 func (e *Engine) backupStep(ctx context.Context) {
@@ -123,6 +134,16 @@ func (e *Engine) schedulePass(ctx context.Context) {
 		}
 		if active {
 			continue
+		}
+		// 失败退避窗：最新失败行完结未满窗即不重铸（防 1s tick 重试风暴；
+		// 时间面异常的行不挡调度——退避失效比调度停摆便宜）。
+		if latest, ok, ferr := e.backups.LatestFailedFor(ctx, e.db.Runner(), row.ID); ferr != nil {
+			e.log.Error("backup step: probe last failure", "database", row.ID, "err", ferr)
+			continue
+		} else if ok {
+			if t, terr := time.Parse(time.RFC3339, latest.FinishedAt); terr == nil && now.Sub(t) < backupFailureBackoff {
+				continue
+			}
 		}
 		anchor := row.LastBackupAt
 		if anchor == "" {
@@ -483,6 +504,19 @@ func (e *Engine) prunePass(ctx context.Context) {
 		}
 		if err := e.backups.Delete(ctx, e.db.Runner(), b.ID); err != nil {
 			e.log.Error("prune pass: delete row", "backup", b.ID, "err", err)
+		}
+	}
+	// 失败行保留清扫（同环收尾；失败行无对象产物仅删行——重试风暴的台账
+	// 垃圾由此出清，48h 窗见 backupFailureBackoff 注释）。
+	stale, err := e.backups.DueForFailedRowSweep(ctx, e.db.Runner(), e.clock.Now(), backupFailedRowRetention, 500)
+	if err != nil {
+		e.log.Error("prune pass: stale failed rows", "err", err)
+		return
+	}
+	for i := range stale {
+		if err := e.backups.Delete(ctx, e.db.Runner(), stale[i].ID); err != nil {
+			e.log.Error("prune pass: delete failed row", "backup", stale[i].ID, "err", err)
+			return
 		}
 	}
 }
