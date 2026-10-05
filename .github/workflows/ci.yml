@@ -50,6 +50,29 @@ jobs:
       - name: Tests (race, three modules)
         run: go test -race ./... ./genproto/... ./sdk/go/...
 
+  # Console（F2.6/ADR-0044）：类型再生成 + 构建 + 零漂移断言（src/api
+  # 类型 + internal/console/dist 产物双钉）；node/pnpm 走 mise.toml 钉版
+  #（与本地同源）。构建产物 committed 进仓（纪律同 genproto），漂移在此
+  # 红即"改了 proto/前端没再生成"。
+  console:
+    name: Console (types + build drift)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: jdx/mise-action@v4
+
+      - uses: actions/cache@v4
+        with:
+          path: |
+            console/node_modules
+            ~/.local/share/pnpm/store
+          key: pnpm-${{ runner.os }}-${{ hashFiles('console/pnpm-lock.yaml') }}
+
+      - name: Console types + build (drift gate)
+        run: mise run console:verify
+
   e2e:
     name: E2E (dind single-node smoke)
     runs-on: ubuntu-latest
