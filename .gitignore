@@ -36,9 +36,10 @@
 .vscode/
 .DS_Store
 
-# Console（N2 批次引入；依赖与构建产物可由 lockfile 复现）
+# Console（F2.6/ADR-0044）：依赖不入仓（lockfile 复现）；构建产物在
+# internal/console/dist——提交进仓（go:embed 面，纪律同 genproto，
+# CI console job 零漂移门禁）。
 console/node_modules/
-console/dist/
 
 # e2e 本地工作产物（中断跑批的日志/二进制）
 .e2ebin/

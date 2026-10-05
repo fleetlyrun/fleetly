@@ -5,7 +5,6 @@
 #   mise run <task>   执行任务
 #
 # 任务统一用 sh 执行：Linux 自带，Windows 需 Git Bash 的 sh 在 PATH。
-# console 前端工具链（node/pnpm）随 N2 Console 批次进本表。
 
 [tools]
 go = "1.26.6"              # go.mod `go 1.26.6`
@@ -13,6 +12,8 @@ buf = "1.65.0"             # buf lint / buf generate（生成物零漂移）
 protoc = "31.1"            # generate:config（config.pb.go 生成工具锁定）
 protoc-gen-go = "1.36.11"  # generate:config；本地生成通道经 tools:protoc-plugins 同版本钉装
 golangci-lint = "2.12.2"   # lint:golangci（与 CI 同版本）
+node = "24.21.0"           # console 前端（F2.6/ADR-0044）；技术栈钉 node 24 线
+pnpm = "12.9.1"            # console 包管理（aqua 后端 = GitHub releases）
 
 [task_config]
 shell = "sh -o errexit -c"
@@ -134,3 +135,36 @@ run = "sh e2e/dind-upgrade.sh"
 [tasks."e2e:backup"]
 description = "e2e dind 备份演练（F2.2 四引擎恢复演练 + Platform Backup roundtrip + F2.8 S3 离机腿，ADR-0039/0020/0042 验收必过项）"
 run = "sh e2e/dind-backup.sh"
+
+# ---- Console（F2.6/ADR-0044：最小只读三页，React+Vite）----
+# 产物输出 internal/console/dist（committed 生成物，纪律同 genproto）；
+# 漂移门禁 console:verify 与 CI console job 同口径。
+
+[tasks."console:install"]
+description = "console 依赖安装（pnpm frozen lockfile）"
+dir = "console"
+run = "pnpm install --frozen-lockfile"
+
+[tasks."console:gen"]
+description = "openapi-typescript 从 genproto swagger 再生成 console/src/api（ADR-0044 悬空 $ref 预处理在内）"
+dir = "console"
+run = "pnpm gen"
+
+[tasks."console:build"]
+description = "console 类型检查 + 构建（产物进 internal/console/dist）"
+dir = "console"
+run = "pnpm build"
+
+[tasks."console:dev"]
+description = "console 开发服（vite，/v1 代理到 localhost:9081）"
+dir = "console"
+run = "pnpm dev"
+
+[tasks."console:verify"]
+description = "console 再生成 + 再构建 + 零漂移断言（src/api 类型 + dist 产物）"
+run = [
+  { task = "console:install" },
+  { task = "console:gen" },
+  { task = "console:build" },
+  "git diff --exit-code -- console/src/api internal/console/dist",
+]

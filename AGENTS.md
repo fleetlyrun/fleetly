@@ -16,12 +16,14 @@
 任务统一经 sh 执行：Linux 自带，Windows 需 Git Bash 的 sh 在 PATH。
 
 ```sh
-mise install              # 安装 go/buf/protoc/protoc-gen-go/golangci-lint
+mise install              # 安装 go/buf/protoc/protoc-gen-go/golangci-lint/node/pnpm
 mise run generate:all     # 基线生成通道：插件钉装 .tmp-bin → buf generate（本地插件）→ config.pb.go → wire（GOWORK=off）
 mise run generate:verify  # 基线通道再生成 + 零漂移断言（genproto/config/wire）
 mise run test             # go test -race 三 module（根 + genproto + sdk/go）
 mise run lint             # go vet/gofmt + golangci + buf lint + buf breaking（对 origin/main）
 ```
+
+console 前端（F2.6/ADR-0044，node 24/pnpm 钉版入 mise）：`console:install`/`console:gen`（openapi-typescript 从 genproto swagger 再生成 src/api）/`console:build`（产物进 internal/console/dist）/`console:verify`（再生成 + 再构建 + 零漂移，与 CI console job 同口径；dist 是提交进仓的生成物，改 proto/前端后必须 `console:gen && console:build` 同 commit）。
 
 e2e dind 套件（CI 常态跑 upgrade/backup 两矩阵）：`e2e:dind`（单节点冒烟）/ `e2e:h2c`（受管 traefik Route）/ `e2e:twonode`（enroll + 双节点 + 卷钉住）/ `e2e:upgrade`（升级零扰动）/ `e2e:backup`（四引擎恢复演练 + 平台仓 roundtrip）。
 
